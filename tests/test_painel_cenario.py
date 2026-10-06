@@ -382,6 +382,8 @@ def test_quem_esta_preso_nao_abre_nem_grava_os_parametros(preso, monkeypatch):
     o simulador de regras estavam fora da lista do administrador, e quem tinha
     uma obra gravava sócios, participações e regras da empresa inteira — e,
     com o projeto das obras, poderia mudar quem enxerga cada obra."""
+    from app.apps.painel import prestacao_dados
+    antes = prestacao_dados.config().get("projeto_da_obra")
     cliente = _cliente_preso(monkeypatch)
     assert cliente.get("/painel/prestacao/parametros?aba=projetos").status_code == 404
     assert cliente.get("/painel/prestacao/cenarios").status_code == 404
@@ -389,8 +391,7 @@ def test_quem_esta_preso_nao_abre_nem_grava_os_parametros(preso, monkeypatch):
         "acao": "projeto_da_obra", "aba": "projetos",
         "codigo": "1", "projeto": "DELE"})
     assert resposta.status_code == 404
-    from app.apps.painel import prestacao_dados
-    assert "projeto_da_obra" not in prestacao_dados.config()
+    assert prestacao_dados.config().get("projeto_da_obra") == antes
 
 
 # ===========================================================================

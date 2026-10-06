@@ -455,6 +455,18 @@ def _consultar_falso(sql, params=()):
         if marca in sql:
             return resposta
 
+    # ---- as partes de um pagamento dividido entre obras (06/10/2026) ----
+    # Antes de tudo: a consulta cita a obra e a categoria e cairia em outro ramo.
+    # O título 998877 foi pago em DUAS obras no mesmo dia e conta.
+    if "AS partes_do_movimento" in sql:
+        return [(998877, dt.date(2025, 4, 8), "Bradesco 7011-4", 2, -1500.0, 2)]
+    if "AS partes_em_aberto" in sql:
+        return []
+    if "AS pagamento_do_analitico" in sql:
+        return [(1,)]
+    if "AS pagina_do_analitico" in sql:
+        return [(998877, dt.date(2025, 3, 10), "(sem conta)")]
+
     # ---- as retencoes por tributo (janela do DRE) ----
     if "FROM (SELECT codigo_lancamento AS cod" in sql:
         return [(998877, "CLIENTE A", "NF123", "Obra Um", dt.date(2025, 5, 2), "",

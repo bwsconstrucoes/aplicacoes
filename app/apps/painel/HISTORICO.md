@@ -2182,6 +2182,31 @@ tinha — era a mensagem da regra "consolidada", e a regra saía consolidada
 mesmo com bancária presente. Com a decisão separada, "consolidada" só aparece
 quando de fato não há bancária.
 
+## Um pagamento, várias obras: agrupar como no extrato — 06/10/2026
+
+O dono: *"o mesmo título, dividido para duas obras — visualmente a gente
+enxerga dois lançamentos, mas na conta corrente eles somam o valor. Seria
+interessante ver de forma consolidada e expandido."*
+
+**A chave:** título + dia + conta é UM débito no banco (em aberto: título +
+vencimento + conta prevista). O `fato` tem uma linha por título × obra × baixa.
+
+**Onde entrou:**
+- **Calendário, detalhe do dia:** "Agrupar como no extrato" (ligado por padrão,
+  lembrado no navegador). O pagamento dividido vira uma linha com "▸ N obras",
+  que abre as partes. Desligado, cada linha mostra o selo "N partes · no
+  extrato R$ X".
+- **Despesas Analítico:** caixa "Agrupar como no extrato". Agrupado, a
+  **página passa a ser de pagamentos** (um débito nunca fica partido entre duas
+  páginas) e a ordenação vale para o pagamento inteiro. Aberto, a linha
+  filtrada numa obra diz "2 partes, 1 fora do filtro · no extrato R$ X".
+
+**Decisões:** o "no extrato" vem da base INTEIRA, não do filtro — é o número
+que se compara com o banco. **Exceção: quem está preso a obras** só conta as
+partes que já vê (somar a da obra de outro revelaria quanto foi para ela). A
+linha de imposto retido não entra (nunca passa pela conta). Planilha e PDF
+continuam uma linha por obra.
+
 ## Projeto das obras em Parâmetros — 05/10/2026
 
 O dono, diante do aviso "Obras sem projeto no OMIE: AREACA · ARESOBRAL · …

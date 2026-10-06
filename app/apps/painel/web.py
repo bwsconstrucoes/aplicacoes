@@ -696,12 +696,15 @@ def analitico():
         pagina = int(request.args.get("pagina") or 1)
     except ValueError:
         pagina = 1
+    # Agrupar como no extrato: um pagamento dividido entre obras vira uma
+    # linha, com as partes por baixo (dono, 06/10/2026).
+    agrupar = request.args.get("agrupar") == "1"
     return render_template(
         "painel_analitico.html",
         **_contexto_comum("analitico"),
         chips=f.resumo(),
         grupo=grupo, categoria=categoria, credor=credor, busca=busca,
-        visao=visao, ordem=ordem, de=de, ate=ate, base=base,
+        visao=visao, ordem=ordem, de=de, ate=ate, base=base, agrupar=agrupar,
         bases=consultas.BASES_DE_DATA,
         # as colunas novas nascem vazias; a tela avisa em vez de mostrar
         # travessão e deixar parecer que o dado não existe
@@ -709,7 +712,9 @@ def analitico():
         opcoes_analitico=consultas.opcoes_do_analitico(f),
         dados=consultas.analitico_despesas(
             f, grupo=grupo, categoria=categoria, credor=credor, busca=busca,
-            visao=visao, ordem=ordem, de=de, ate=ate, base=base, pagina=pagina),
+            visao=visao, ordem=ordem, de=de, ate=ate, base=base, pagina=pagina,
+            agrupar=agrupar, marcar_partes=True,
+            escopo_das_partes=_escopo_das_partes(f)),
     )
 
 
@@ -864,15 +869,33 @@ def calendario_dia():
         return jsonify({"ok": False, "erro": "Dia inválido."}), 400
     f, proprios = _filtros_do_calendario()
     linhas = consultas.lancamentos_do_dia(f, dia, **proprios)
+    # Um pagamento dividido entre obras vira UMA linha, como no extrato do
+    # banco, com as partes por baixo (dono, 06/10/2026).
+    grupos = consultas.agrupar_por_movimento(
+        linhas, consultas.partes_dos_movimentos(
+            [l["codigo"] for l in linhas], _escopo_das_partes(f)))
     for l in linhas:
         l["data"] = l["data"].isoformat() if l.get("data") else ""
     entradas = sum(l["valor"] for l in linhas if l["valor"] > 0 and not l["em_aberto"])
     saidas = sum(l["valor"] for l in linhas if l["valor"] < 0 and not l["em_aberto"])
     a_pagar = sum(l["valor"] for l in linhas if l["em_aberto"])
-    return jsonify({"ok": True, "dia": dia, "linhas": linhas,
+    return jsonify({"ok": True, "dia": dia, "linhas": linhas, "grupos": grupos,
                     "quantos": len(linhas), "entradas": entradas,
                     "saidas": saidas, "liquido": entradas + saidas,
                     "a_pagar": a_pagar})
+
+
+def _escopo_das_partes(f):
+    """Onde contar as partes de um pagamento dividido entre obras.
+
+    O dono vê a base inteira: o "no extrato" é o débito todo, mesmo com a tela
+    filtrada numa obra. Quem está preso a obras só conta as partes que já pode
+    ver — somar a da obra de outro revelaria quanto foi para ela."""
+    from . import auth
+    from .consultas import Filtros
+    if auth.usuario_da_sessao() is None:
+        return None
+    return Filtros(departamentos=f.departamentos, contas=f.contas, excluir_trf=False)
 
 
 @bp.route("/conferir/dia")

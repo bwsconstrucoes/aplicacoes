@@ -1392,6 +1392,7 @@ def lancamentos_do_dia(f: Filtros, dia: str, *, tipo="", grupo="", categoria="",
             l["encargo"] = float(l["encargo"] or 0)
             l["natureza"] = "Recebimento" if l["valor"] > 0 else "Pagamento"
             l["em_aberto"] = False
+            l["movimento"] = chave_do_movimento(l["codigo"], l["data"], l["conta"])
             linhas.append(l)
     if tipo in ("", "a_pagar"):
         condicoes, extras = _condicoes_do_calendario(
@@ -1417,8 +1418,102 @@ def lancamentos_do_dia(f: Filtros, dia: str, *, tipo="", grupo="", categoria="",
             l["encargo"] = 0.0
             l["natureza"] = "Vencido" if vencido else "A pagar"
             l["em_aberto"] = True
+            l["movimento"] = chave_do_movimento(l["codigo"], l["data"], l["conta"],
+                                                em_aberto=True)
             linhas.append(l)
     return linhas
+
+
+# ---------------------------------------------------------------------------
+# UM PAGAMENTO, VÁRIAS OBRAS — a visão da conta corrente
+# ---------------------------------------------------------------------------
+# 06/10/2026, o dono: *"tem um determinado pagamento, que é o mesmo título, só
+# que ele está dividido para duas obras. Visualmente a gente enxerga dois
+# lançamentos. Mas se você for verificar na conta corrente, eles somam o valor.
+# (…) seria interessante que a gente pudesse ver de forma consolidada e
+# expandido os dois lançamentos."*
+#
+# O `fato` tem uma linha por título × obra (o rateio do OMIE) × baixa. O
+# extrato do banco tem UMA linha por baixa. A chave que junta as duas visões é
+# título + dia + conta: o mesmo título, pago no mesmo dia, pela mesma conta, é
+# UM débito no banco. Em aberto, a chave é título + vencimento + conta prevista.
+#
+# A linha de imposto retido fica de fora: ela nunca passa pela conta corrente
+# (é o cliente que retém), e somá-la faria o "no extrato" mentir.
+SEM_CONTA = "(sem conta)"
+
+
+def chave_do_movimento(codigo, dia, conta, em_aberto: bool = False) -> str:
+    """Texto estável que identifica um pagamento como a conta corrente o vê."""
+    dia = dia.isoformat() if hasattr(dia, "isoformat") else str(dia or "")
+    return f"{'A' if em_aberto else 'P'}|{codigo or ''}|{dia}|{conta or SEM_CONTA}"
+
+
+def partes_dos_movimentos(codigos, escopo: "Filtros | None" = None) -> dict:
+    """Para cada pagamento destes títulos: quantas partes (obras) ele tem e
+    quanto soma — na base INTEIRA, não só no que o filtro da tela deixou ver.
+
+    É isso que permite dizer "esta linha é 1 de 2 partes de um débito de
+    R$ X na conta", mesmo com a tela filtrada numa obra só.
+
+    `escopo` é para quem está preso a obras: aí as partes contadas são só as
+    que ele já pode ver. Somar a parte da obra de outro, mesmo sem nome,
+    revelaria quanto foi para ela."""
+    numeros = sorted({int(c) for c in (codigos or ()) if str(c or "").strip().isdigit()})
+    if not numeros:
+        return {}
+    base = escopo or Filtros(excluir_trf=False)
+    where, params = base.where(f"codigo_lancamento = ANY(?) AND NOT ({RETIDO})", [numeros])
+    saida = {}
+    for (cod, dia, conta, n_pago, pago, n_obras_pago) in consultar(
+            f"""SELECT codigo_lancamento AS partes_do_movimento, data,
+                       COALESCE(conta_corrente, '{SEM_CONTA}'),
+                       COUNT(*), SUM({EXECUTADO_COM_ENCARGO}),
+                       COUNT(DISTINCT {OBRA_OU_SEM})
+                  FROM fato{where}
+                   AND ABS({EXECUTADO_COM_ENCARGO}) > 0.005
+                 GROUP BY 1, 2, 3""", params):
+        saida[chave_do_movimento(cod, dia, conta)] = {
+            "partes": int(n_pago or 0), "obras": int(n_obras_pago or 0),
+            "total": float(pago or 0)}
+    for (cod, dia, conta, n_aberto, aberto, n_obras_aberto) in consultar(
+            f"""SELECT codigo_lancamento AS partes_em_aberto, {DIA_DO_VENCIMENTO},
+                       COALESCE(conta_corrente, '{SEM_CONTA}'),
+                       COUNT(*), SUM({EM_ABERTO}),
+                       COUNT(DISTINCT {OBRA_OU_SEM})
+                  FROM fato{where}
+                   AND ABS({EM_ABERTO}) > 0.005
+                 GROUP BY 1, 2, 3""", params):
+        saida[chave_do_movimento(cod, dia, conta, em_aberto=True)] = {
+            "partes": int(n_aberto or 0), "obras": int(n_obras_aberto or 0),
+            "total": float(aberto or 0)}
+    return saida
+
+
+def agrupar_por_movimento(linhas, partes: dict, *, valor="valor") -> list[dict]:
+    """Junta as linhas que são o MESMO pagamento, na ordem em que vieram.
+
+    Cada grupo diz o que a tela mostra (a soma das partes visíveis), o que o
+    banco mostra (`no_extrato`, da base inteira) e quantas partes ficaram fora
+    do filtro — para ninguém comparar com o extrato um número pela metade sem
+    saber."""
+    grupos, por_chave = [], {}
+    for l in linhas:
+        chave = l["movimento"]
+        g = por_chave.get(chave)
+        if g is None:
+            g = por_chave[chave] = {"chave": chave, "linhas": []}
+            grupos.append(g)
+        g["linhas"].append(l)
+    for g in grupos:
+        g["valor"] = round(sum(float(l.get(valor) or 0) for l in g["linhas"]), 2)
+        info = partes.get(g["linhas"][0].get("movimento_extrato") or g["chave"]) or {}
+        g["partes_aqui"] = len(g["linhas"])
+        g["partes"] = max(int(info.get("partes") or 0), g["partes_aqui"])
+        g["fora_do_filtro"] = g["partes"] - g["partes_aqui"]
+        g["no_extrato"] = round(float(info["total"]), 2) if info else g["valor"]
+        g["obras"] = sorted({l.get("obra") or "" for l in g["linhas"]})
+    return grupos
 
 
 def origem_da_conta(codigo) -> dict | None:
@@ -1612,10 +1707,25 @@ def categorias_do_extrato(f: Filtros) -> list[str]:
               FROM fato{where} ORDER BY 1 LIMIT 300""", params)]
 
 
+# A mesma ordenação, aplicada ao PAGAMENTO inteiro quando a lista é agrupada
+# (várias linhas de obra num débito só). Desempate pelo número do título, para
+# a página seguinte nunca repetir nem pular um pagamento.
+ORDENS_DO_PAGAMENTO = {
+    "valor": "ABS(SUM({medida})) DESC",
+    "data": "data DESC NULLS LAST",
+    "vencimento": "MAX(data_vencimento) DESC NULLS LAST",
+    "atraso": "MAX(data_pagamento - data_vencimento) DESC NULLS LAST",
+    "credor": "MIN(razao_social) ASC",
+    "categoria": "MIN(categoria) ASC",
+}
+
+
 def analitico_despesas(f: Filtros, grupo="", categoria="", credor="",
                        busca="", visao="comprometido", ordem="valor",
                        de="", ate="", base="movimento",
-                       pagina=1, por_pagina=200) -> dict:
+                       pagina=1, por_pagina=200, agrupar=False,
+                       marcar_partes=False,
+                       escopo_das_partes: "Filtros | None" = None) -> dict:
     """Os lançamentos de despesa, um por linha, com filtros próprios.
 
     `de` e `ate` são a faixa de data, no formato AAAA-MM-DD (o que o calendário
@@ -1680,6 +1790,29 @@ def analitico_despesas(f: Filtros, grupo="", categoria="", credor="",
 
     ordenacao = ORDENS.get(ordem, ORDENS["valor"]).format(medida=medida)
     pagina = max(int(pagina or 1), 1)
+    paginando = f"LIMIT {int(por_pagina)} OFFSET {int((pagina - 1) * por_pagina)}"
+    quantos_grupos = None
+    if agrupar:
+        # A página passa a ser de PAGAMENTOS, não de linhas: senão um débito
+        # dividido em duas obras podia ficar com uma parte em cada página.
+        chave_sql = f"codigo_lancamento, data, COALESCE(conta_corrente, '{SEM_CONTA}')"
+        quantos_grupos = consultar(
+            f"SELECT COUNT(*) FROM (SELECT 1 AS pagamento_do_analitico"
+            f"  FROM fato{where} GROUP BY {chave_sql}) t", params)[0][0] or 0
+        ordem_g = ORDENS_DO_PAGAMENTO.get(ordem, ORDENS_DO_PAGAMENTO["valor"]
+                                          ).format(medida=medida)
+        da_pagina = consultar(
+            f"""SELECT {chave_sql} AS pagina_do_analitico
+                  FROM fato{where}
+                 GROUP BY {chave_sql}
+                 ORDER BY {ordem_g}, codigo_lancamento
+                 {paginando}""", params)
+        ordem_dos_grupos = {chave_do_movimento(c, d, cc): i
+                            for i, (c, d, cc) in enumerate(da_pagina)}
+        where, params = f.where(
+            " AND ".join(condicoes + ["codigo_lancamento = ANY(?)"]),
+            extras + [sorted({int(c) for c, _d, _cc in da_pagina if c is not None}) or [0]])
+        paginando = ""
     sql = f"""
         SELECT data, razao_social, cnpj_cpf, grupo, categoria, departamento,
                projeto, numero_documento, observacao, conta_corrente, situacao,
@@ -1692,7 +1825,7 @@ def analitico_despesas(f: Filtros, grupo="", categoria="", credor="",
                     THEN data_pagamento - data_vencimento END
           FROM fato{where}
          ORDER BY {ordenacao}
-         LIMIT {int(por_pagina)} OFFSET {int((pagina - 1) * por_pagina)}"""
+         {paginando}"""
     campos = ("data", "credor", "cnpj", "grupo", "categoria", "obra", "projeto",
               "documento", "observacao", "conta", "situacao", "pago", "a_pagar",
               "juros", "multa", "link",
@@ -1716,14 +1849,50 @@ def analitico_despesas(f: Filtros, grupo="", categoria="", credor="",
         # amarrada a nenhuma medição.
         if (linha.get("medicao") or "").strip() == (linha.get("documento") or "").strip():
             linha["medicao"] = ""
+        # O pagamento a que a linha pertence, como a conta corrente o vê. Pago
+        # se compara ao débito; em aberto, à previsão do vencimento.
+        conta = linha["conta"] or SEM_CONTA
+        linha["movimento"] = chave_do_movimento(linha["lancamento"], linha["data"], conta)
+        linha["movimento_extrato"] = (
+            linha["movimento"] if linha["pago"] or linha["juros"] or linha["multa"]
+            else chave_do_movimento(linha["lancamento"],
+                                    linha["data_vencimento"] or linha["data"], conta,
+                                    em_aberto=True))
+        linha["valor_extrato"] = linha["total"] + linha["juros"] + linha["multa"]
         linhas.append(linha)
 
     quantos = quantos or 0
+    grupos = []
+    if agrupar:
+        # só os pagamentos DESTA página, na ordem que o banco decidiu
+        linhas = [l for l in linhas if l["movimento"] in ordem_dos_grupos]
+        grupos = agrupar_por_movimento(
+            linhas, partes_dos_movimentos([l["lancamento"] for l in linhas],
+                                          escopo_das_partes),
+            valor="valor_extrato")
+        grupos.sort(key=lambda g: ordem_dos_grupos[g["chave"]])
+        for g in grupos:
+            for campo in ("pago", "a_pagar", "juros", "multa", "total"):
+                g[campo] = round(sum(l[campo] for l in g["linhas"]), 2)
+    elif linhas and marcar_partes:
+        # Mesmo aberto, cada linha diz se é parte de um pagamento maior. Só na
+        # tela: a planilha e o PDF levam a linha crua.
+        grupos_soltos = agrupar_por_movimento(
+            linhas, partes_dos_movimentos([l["lancamento"] for l in linhas],
+                                          escopo_das_partes),
+            valor="valor_extrato")
+        do_grupo = {g["chave"]: g for g in grupos_soltos}
+        for l in linhas:
+            l["pagamento"] = do_grupo.get(l["movimento"])
+    unidades = quantos_grupos if agrupar else quantos
     return {
         "linhas": linhas,
+        "grupos": grupos,
+        "agrupado": bool(agrupar),
         "quantos": quantos,
+        "quantos_pagamentos": quantos_grupos,
         "pagina": pagina,
-        "paginas": max((quantos + por_pagina - 1) // por_pagina, 1),
+        "paginas": max((unidades + por_pagina - 1) // por_pagina, 1),
         "por_pagina": por_pagina,
         "total_pago": float(executado or 0),
         "total_a_pagar": float(aberto or 0),

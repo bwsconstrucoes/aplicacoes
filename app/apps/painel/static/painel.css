@@ -359,6 +359,12 @@ dialog::backdrop { background: rgba(7,30,64,.45); }
 .cal-dialogo-cab { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
 .cal-dialogo-cab h3 { margin: 0; font-size: 15px; }
 .cal-dialogo-resumo { font-size: 13px; color: var(--tinta-suave); flex: 1; }
+/* Um pagamento dividido entre obras, como no extrato (06/10/2026) */
+.cal-agrupar { font-size: 12px; color: var(--tinta-suave); display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+tr.cal-grupo td { border-bottom-style: dashed; }
+tr.cal-parte td { background: var(--papel); font-size: 12px; padding-top: 4px; padding-bottom: 4px; }
+tr.mov-grupo td { border-bottom-style: dashed; }
+tr.mov-parte td { background: var(--papel); font-size: 12px; }
 .cal-dialogo table { width: 100%; }
 /* Na tela pequena — DEPOIS das regras acima, senao elas ganham por virem
    depois no arquivo. Fonte normal (a monoespacada e larga demais para 34 px)
