@@ -2,6 +2,21 @@
 {% block titulo %}Configurações — Painel Financeiro BWS{% endblock %}
 {% block classe_corpo %}sem-filtros{% endblock %}
 
+{# Um passo da atualização: o que fez, até onde foi, onde parou (06/10/2026) #}
+{% macro lista_de_passos(passos, id='') %}
+  <ol class="passos-sync"{% if id %} id="{{ id }}"{% endif %}>
+    {% for p in passos %}
+    <li class="passo-{{ p.estado }}">
+      <span class="passo-marca">{{ {'feito': '✔', 'andando': '▶', 'parou_aqui': '✖', 'nao_chegou': '○'}[p.estado] }}</span>
+      <span class="passo-nome">{{ p.etapa[:1]|upper }}{{ p.etapa[1:] }}</span>
+      {% if p.detalhe %}<small class="passo-detalhe">{{ p.detalhe }}</small>{% endif %}
+      {% if p.estado == 'parou_aqui' %}<b class="v-neg">← parou aqui</b>
+      {% elif p.estado == 'nao_chegou' %}<small class="passo-detalhe">não chegou a este passo</small>{% endif %}
+    </li>
+    {% endfor %}
+  </ol>
+{% endmacro %}
+
 {% block conteudo %}
 <h2>Configurações</h2>
 
@@ -97,6 +112,8 @@
     <div id="andamento-detalhe" class="dados" style="margin-top:4px; font-size:13px">
       {{ sincronizacao.detalhe.detalhe_progresso if sincronizacao.detalhe else '' }}
     </div>
+    {% set atual = historico.execucoes[0] if historico and historico.execucoes and historico.execucoes[0].situacao == 'rodando' else none %}
+    {{ lista_de_passos(atual.passos if atual else [], 'andamento-passos') }}
     <small>Pode fechar esta página; o trabalho continua no servidor.
       Esta tela se atualiza sozinha e recarrega quando terminar.</small>
   </div>
@@ -156,6 +173,86 @@
   </div>
   <div id="saida-sync"></div>
 </div>
+
+<!-- ============ O QUE ACONTECEU NAS ATUALIZAÇÕES — dono, 06/10/2026 ============ -->
+{% if historico %}
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>O que aconteceu nas atualizações</h3>
+    <small>o que rodou, até onde foi, onde parou e o que fazer</small>
+  </div>
+  {% if not historico.tem_passos %}
+  <div class="aviso info">
+    Para ver os passos de cada atualização, aperte <b>Aplicar atualizações do
+    banco</b> (no quadro 1). Até lá aparece só onde cada uma parou.
+  </div>
+  {% endif %}
+
+  {% set ultima = historico.execucoes[0] if historico.execucoes else none %}
+  {% if ultima %}
+  <div class="aviso {{ 'ok' if ultima.situacao in ('concluida', 'rodando') else 'erro' if ultima.situacao in ('falhou', 'parada', 'interrompida') else 'info' }}">
+    <b>Agora:</b> a última foi <b>“{{ ultima.rotulo }}”</b> ({{ ultima.disparo_rotulo }}),
+    começou em {{ ultima.inicio.strftime('%d/%m às %H:%M') }} —
+    <b>{{ ultima.situacao_rotulo|lower }}</b>{% if ultima.situacao in ('parada', 'interrompida', 'falhou') and ultima.etapa %}
+    no passo “{{ ultima.etapa }}”{% if ultima.progresso %} ({{ ultima.progresso }}){% endif %}{% endif %}.
+    {% if ultima.o_que_fazer %}<br><b>O que fazer:</b> {{ ultima.o_que_fazer }}{% endif %}
+  </div>
+  {% endif %}
+
+  <h4 style="margin:14px 0 6px">Cada tipo de atualização</h4>
+  <div class="tabela-rolagem">
+  <table>
+    <thead><tr><th class="sem-ordem">Atualização</th>
+               <th class="sem-ordem">Última que terminou bem</th>
+               <th class="sem-ordem">Última tentativa</th></tr></thead>
+    <tbody>
+      {% for m in historico.por_modo %}
+      <tr>
+        <td class="desc"><b>{{ m.rotulo }}</b></td>
+        <td class="dados">{{ m.ultima_concluida.strftime('%d/%m/%Y %H:%M') if m.ultima_concluida else 'nunca' }}</td>
+        <td class="desc">
+          {% set t = m.ultima_tentativa %}
+          {% if t %}{{ t.inicio.strftime('%d/%m %H:%M') }} —
+            <span class="sync-{{ t.situacao }}">{{ t.situacao_rotulo }}</span>
+          {% else %}<span class="cartao-dica">nenhuma recente</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  <h4 style="margin:16px 0 6px">As últimas {{ historico.execucoes|length }} atualizações</h4>
+  <p class="cartao-dica" style="margin-top:0">Clique numa linha para ver os passos.</p>
+  {% for e in historico.execucoes %}
+  <details class="sync-execucao" {% if loop.first and e.situacao != 'concluida' %}open{% endif %}>
+    <summary>
+      <span class="dados">{{ e.inicio.strftime('%d/%m %H:%M') }}</span>
+      <b>{{ e.rotulo }}</b>
+      <small>{{ e.disparo_rotulo }}</small>
+      <span class="sync-{{ e.situacao }}">{{ e.situacao_rotulo }}</span>
+      <small>{{ e.duracao_minutos }} min</small>
+      {% if e.situacao in ('parada', 'interrompida', 'falhou') and e.etapa %}
+        <small>— parou em “{{ e.etapa }}”{% if e.progresso %} ({{ e.progresso }}){% endif %}</small>
+      {% elif e.linhas %}<small>— {{ '{:,}'.format(e.linhas).replace(',', '.') }} linhas</small>{% endif %}
+    </summary>
+    <div style="padding:6px 0 10px 18px">
+      {{ lista_de_passos(e.passos) }}
+      {# a interrompida já é explicada no "o que fazer"; repetir a frase do
+         faxineiro de órfãs só confunde (teste da caixa vermelha) #}
+      {% if e.mensagem and e.situacao != 'interrompida' %}<p class="cartao-dica" style="margin:6px 0">{{ e.mensagem }}</p>{% endif %}
+      {% if e.o_que_fazer %}<p style="margin:6px 0"><b>O que fazer:</b> {{ e.o_que_fazer }}</p>{% endif %}
+    </div>
+  </details>
+  {% endfor %}
+  <p class="cartao-dica" style="margin-top:10px">
+    <b>Por que a da madrugada quase nunca para e a do botão para?</b> Toda
+    publicação de código (de qualquer área do sistema) reinicia o serviço e
+    corta a atualização que estiver rodando. De madrugada ninguém publica; de
+    dia, sim. Desde 06/10/2026 a atualização cortada é retomada sozinha.
+  </p>
+</div>
+{% endif %}
 
 <!-- ===================== SANEAMENTO ===================== -->
 <div class="cartao">
@@ -1337,6 +1434,19 @@ async function acompanhar() {
         const detalhe = d.sincronizacao.detalhe || {};
         els("andamento-etapa").textContent = detalhe.etapa || "";
         els("andamento-detalhe").textContent = detalhe.detalhe_progresso || "";
+        // a sequência de passos, ao vivo (06/10/2026)
+        const lista = els("andamento-passos");
+        if (lista && d.passos) {
+          const marca = {feito: "✔", andando: "▶", parou_aqui: "✖", nao_chegou: "○"};
+          lista.innerHTML = d.passos.map(p => {
+            const li = document.createElement("li");
+            li.className = "passo-" + p.estado;
+            li.innerHTML = `<span class="passo-marca">${marca[p.estado] || ""}</span> <span class="passo-nome"></span> <small class="passo-detalhe"></small>`;
+            li.querySelector(".passo-nome").textContent = p.etapa.charAt(0).toUpperCase() + p.etapa.slice(1);
+            li.querySelector(".passo-detalhe").textContent = p.detalhe || (p.estado === "nao_chegou" ? "ainda não" : "");
+            return li.outerHTML;
+          }).join("");
+        }
         semSinal = 0;
       } else {
         location.reload();

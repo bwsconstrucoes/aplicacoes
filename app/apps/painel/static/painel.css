@@ -562,3 +562,19 @@ tr.marcada.com-rascunho { background: #FFF3D0; }
   font-family: inherit; color: inherit;
 }
 .picker-item:hover { background: #EEF2FA; }
+
+/* A história das atualizações (06/10/2026) */
+ol.passos-sync { list-style: none; padding: 0; margin: 8px 0 4px; font-size: 13px; }
+ol.passos-sync li { padding: 3px 0; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.passo-marca { width: 16px; text-align: center; font-weight: 700; }
+.passo-feito .passo-marca { color: var(--verde); }
+.passo-andando .passo-marca { color: var(--azul-claro); }
+.passo-parou_aqui .passo-marca { color: var(--vermelho); }
+.passo-nao_chegou { color: var(--tinta-suave); }
+.passo-detalhe { color: var(--tinta-suave); }
+details.sync-execucao { border-top: 1px solid var(--borda); padding: 6px 0; }
+details.sync-execucao summary { cursor: pointer; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; font-size: 13px; }
+.sync-concluida { color: var(--verde); font-weight: 600; }
+.sync-rodando { color: var(--azul-claro); font-weight: 600; }
+.sync-com_aviso { color: var(--ambar); font-weight: 600; }
+.sync-falhou, .sync-parada, .sync-interrompida { color: var(--vermelho); font-weight: 600; }

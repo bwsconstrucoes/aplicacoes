@@ -1464,8 +1464,7 @@ def sync_incremental(env=".env", margem_dias=2, com_catalogos=True,
                 # SINAL DE VIDA a cada página (o relator só grava de 10 em 10 s).
                 # Sem isto a tela dava a atualização por morta no meio da
                 # leitura — 06/10/2026, "Reler todos os pagamentos".
-                _progresso("baixando o que mudou no OMIE",
-                           f"títulos {'a pagar' if natureza == 'P' else 'a receber'}: "
+                _progresso(f"lendo os títulos {'a pagar' if natureza == 'P' else 'a receber'} no OMIE",
                            f"página {pagina} de {total_paginas}")
                 qt, qr, qi, mx, probs = aplicar_incremental_titulos(conn, natureza, registros, data_de)
                 tot += qt; rat += qr; ign += qi
@@ -1495,8 +1494,8 @@ def sync_incremental(env=".env", margem_dias=2, com_catalogos=True,
         param_mov = {"dDtPagtoDe": ini_str, "dDtPagtoAte": hoje_str}
         tot_mov = 0
         for pagina, total_paginas, total_registros, registros in cli.listar_movimentos(param_extra=param_mov):
-            _progresso("baixando o que mudou no OMIE",
-                       f"pagamentos desde {ini_str}: página {pagina} de {total_paginas}")
+            _progresso("lendo os pagamentos no OMIE",
+                       f"desde {ini_str}: página {pagina} de {total_paginas}")
             qm, _ = gravar_movimentos(conn, registros)
             tot_mov += qm
         conn.execute("UPDATE sync_state SET ultima_sync=?, total_registros="
@@ -1507,6 +1506,7 @@ def sync_incremental(env=".env", margem_dias=2, com_catalogos=True,
 
         # ---- Catalogos (baratos; upsert idempotente) ----
         if com_catalogos:
+            _progresso("atualizando o plano de contas e os cadastros")
             tot = 0
             for _, _, _, registros in cli.listar_categorias():
                 tot += gravar_categorias(conn, registros)

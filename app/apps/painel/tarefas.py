@@ -162,6 +162,23 @@ def _carimbar(execucao_id: int, etapa: str, detalhe: str) -> None:
             conn.commit()
     except Exception:
         logger.exception("Painel: não consegui gravar o andamento")
+        return
+    # O PASSO, para a tela contar a história (migração 020). Separado: sem a
+    # tabela, a atualização segue — só a história fica mais curta.
+    try:
+        with conexao() as conn:
+            conn.execute(
+                "INSERT INTO execucao_passos (execucao_id, etapa, ordem, detalhe)"
+                " VALUES (?, ?, COALESCE((SELECT MAX(ordem) FROM execucao_passos"
+                "                          WHERE execucao_id = ?), 0) + 1, ?)"
+                " ON CONFLICT (execucao_id, etapa) DO UPDATE"
+                "   SET visto_em = now(),"
+                "       detalhe = COALESCE(NULLIF(EXCLUDED.detalhe, ''),"
+                "                          execucao_passos.detalhe)",
+                (execucao_id, etapa[:200], execucao_id, (detalhe or "")[:200]))
+            conn.commit()
+    except Exception:  # noqa: BLE001 — migração 020 pendente
+        logger.debug("Painel: passo não gravado (migração 020 pendente?)")
 
 
 # ---------------------------------------------------------------------------
@@ -176,21 +193,28 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
 
     from .db import conexao
     from .horario import agora
+    from . import andamento
     from .sync import espelho, fato
 
     inicio = agora()
     ultimo = [0.0]
 
+    etapa_gravada = [""]
+
     def _anotar(etapa: str, detalhe: str = "") -> None:
-        """Vai para o banco de tempos em tempos, não a cada página."""
-        if time.time() - ultimo[0] < SEGUNDOS_ENTRE_BATIMENTOS:
+        """Vai para o banco de tempos em tempos, não a cada página — mas a
+        MUDANÇA de passo vai na hora, senão um passo curto some da história."""
+        if (etapa == etapa_gravada[0]
+                and time.time() - ultimo[0] < SEGUNDOS_ENTRE_BATIMENTOS):
             return
         ultimo[0] = time.time()
+        etapa_gravada[0] = etapa
         _carimbar(execucao_id, etapa, detalhe)
 
     def _etapa(etapa: str, detalhe: str = "") -> None:
         """Mudança de etapa: vai na hora, sem esperar o intervalo."""
         ultimo[0] = time.time()
+        etapa_gravada[0] = etapa
         _carimbar(execucao_id, etapa, detalhe)
 
     # Falha de uma etapa NÃO essencial fica registrada aqui e é contada no fim.
@@ -227,7 +251,7 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                     f"{f} de {t} — {g} com observação"))
             observacoes_achadas = (n_r or 0) + (n_p or 0)
         elif modo in ("rapida", "completa", "pagamentos"):
-            _etapa("baixando o que mudou no OMIE")
+            _etapa(andamento.TITULOS_A_PAGAR)
             # A completa rele seis meses de pagamentos; a do dia, um mes.
             # E o que pega baixa lancada com data antiga e estorno refeito
             # em outra conta (ver DIAS_REVISADOS_NA_ATUALIZACAO). "Reler
@@ -245,7 +269,7 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
             # do acesso de quem tem o projeto. Agora é lido todo dia.
             # Se a planilha falhar, a atualização segue: é um de-para,
             # não a base.
-            _etapa("lendo a planilha de projetos")
+            _etapa(andamento.PLANILHA)
             try:
                 espelho.atualizar_projetos()
             except Exception as e:  # noqa: BLE001
@@ -267,7 +291,7 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                 # Achar título apagado é um extra semanal; refazer os
                 # números é o que faz a tela valer. O extra nunca mais
                 # custa o essencial.
-                _etapa("procurando títulos excluídos no OMIE")
+                _etapa(andamento.EXCLUIDOS)
                 try:
                     espelho.reconcile()
                 except Exception as e:  # noqa: BLE001
@@ -280,7 +304,7 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
 
         # ---- etapa 2: refazer os números que as telas leem ---------------
         # O relator continua ligado aqui: o recálculo também dá sinal de vida.
-        _etapa("recalculando os números do painel")
+        _etapa(andamento.RECALCULO)
         try:
             with conexao() as conn:
                 n_fato, n_receb = fato.reconstruir(conn)

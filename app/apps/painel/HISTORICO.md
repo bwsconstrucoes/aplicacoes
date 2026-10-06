@@ -2182,6 +2182,36 @@ tinha — era a mensagem da regra "consolidada", e a regra saía consolidada
 mesmo com bancária presente. Com a decisão separada, "consolidada" só aparece
 quando de fato não há bancária.
 
+## "O que aconteceu nas atualizações" — a história de cada uma — 06/10/2026
+
+O dono: *"essa tela de atualizar os dados era para ter mais informativo (…) o
+que atualizou, até onde, onde interrompeu, quantas páginas, quantas linhas, o
+que ficou pendente, qual foi a última tentativa (…) e qual ação eu preciso
+fazer. Ninguém entende direito."* E: *"os cron jobs de madrugada nunca dão
+problema; quando eu atualizo pela aplicação, é muito frequente dar."*
+
+**Migração 020** (`execucao_passos`): um registro por passo de cada
+atualização — quando começou, último sinal, último andamento ("página 37 de
+420"). Gravado pelo mesmo carimbo que mantém a execução viva; a MUDANÇA de passo
+vai na hora (o intervalo de 10 s não engole passo curto). Sem chave estrangeira
+de propósito (os testes fazem TRUNCATE em `execucoes`). O código tolera a
+tabela ausente.
+
+**Os passos têm nome** (`andamento.py`, os mesmos textos que a atualização
+grava): títulos a pagar, títulos a receber, pagamentos, plano de contas e
+cadastros, planilha de projetos, títulos excluídos (só a completa), recálculo.
+
+**O quadro novo em Configurações:** "Agora" (a última, onde parou, o que fazer),
+"Cada tipo de atualização" (última que terminou bem × última tentativa — p.ex.
+"Reler todos os pagamentos: nunca terminou") e as últimas 15, cada uma abrindo
+os passos com ✔ feito / ✖ parou aqui / ○ não chegou, e a ação. O quadro do
+"Atualizando…" mostra a sequência ao vivo.
+
+**Madrugada × botão — explicação, não prova:** em 06/10/2026 a `main` recebeu
+12 mudanças entre 0h e 19h (todas as áreas); cada uma reinicia o serviço e corta
+a atualização em curso. De madrugada ninguém publica. Somava-se o alarme falso
+das leituras longas sem sinal (já consertado).
+
 ## A releitura "interrompida" que talvez estivesse viva; o vigia; o PDF do DRE — 06/10/2026
 
 **O alarme.** O dono disparou "Reler todos os pagamentos" às 19:05 e a tela

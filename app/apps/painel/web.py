@@ -2352,6 +2352,14 @@ def configuracoes():
     conferencias_com_erro: list[dict] = []
     contexto = {"aba_ativa": "config", "abas": ABAS}
     sincronizacao = tarefas.estado()
+    # A historia das atualizacoes, passo a passo (dono, 06/10/2026: "ninguem
+    # entende direito"). Falha aqui nao derruba a tela de configuracao.
+    try:
+        from . import andamento
+        historico_atualizacoes = andamento.historico()
+    except Exception:  # noqa: BLE001 — banco fora, migracao 002 pendente
+        logger.exception("Painel: historico das atualizacoes indisponivel")
+        historico_atualizacoes = None
     # Se as tabelas ainda nao existem, nem tenta consultar a base.
     if estado_migracoes["pendentes"]:
         atualizacao, vazia, etapas = None, True, []
@@ -2440,7 +2448,7 @@ def configuracoes():
         contas_conf=contas_conf,
         juros_conf=juros_conf,
         modos=tarefas.MODOS, rotulos_dos_modos=tarefas.ROTULOS,
-        sincronizacao=sincronizacao,
+        sincronizacao=sincronizacao, historico=historico_atualizacoes,
         pessoas=_pessoas_do_painel(estado_migracoes),
         telas_liberaveis=usuarios_mod.TELAS,
         telas_sugeridas=usuarios_mod.TELAS_SUGERIDAS,
@@ -3053,7 +3061,18 @@ def estado():
     atualizacao sem recarregar a pagina."""
     from . import tarefas
     from . import consultas
-    return jsonify({"ok": True, "sincronizacao": tarefas.estado(),
+    sincronizacao = tarefas.estado()
+    passos = []
+    if sincronizacao["rodando"]:
+        # os passos da que esta rodando, para a tela mostrar a sequencia ao vivo
+        try:
+            from . import andamento
+            atual = andamento.historico(limite=1)["execucoes"]
+            passos = [{"etapa": p["etapa"], "estado": p["estado"],
+                       "detalhe": p["detalhe"]} for p in (atual[0]["passos"] if atual else [])]
+        except Exception:  # noqa: BLE001
+            passos = []
+    return jsonify({"ok": True, "sincronizacao": sincronizacao, "passos": passos,
                     "ultima": _serializar(consultas.atualizado_em())})
 
 
