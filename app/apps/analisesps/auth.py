@@ -265,7 +265,59 @@ def telas_permitidas() -> set[str] | None:
     if not esta_logado() or e_mestre():
         return None
     pessoa = usuario_da_sessao()
-    return set(pessoa.get("telas") or []) if pessoa else set()
+    return telas_da_pessoa(pessoa) if pessoa else set()
+
+
+# ---------------------------------------------------------------------------
+# PRESO A UMA CONTA BANCÁRIA (migração 051)
+#
+# O dono, 06/10/2026: *"quero criar um usuario que vai poder acessar somente
+# Solicitações de uma conta especifica"*.
+#
+# ⚠️ SÓ AS TELAS QUE RESPEITAM O RECORTE FICAM ABERTAS para quem está preso a
+# uma conta. As outras (Relatório, Agenda, Conciliação, Folha…) somam todas as
+# contas juntas: abrir uma delas mostraria, num total ou numa lista, justamente
+# o que o recorte esconde. Marcar essas telas no cadastro não as abre — elas
+# saem do menu e respondem "não encontrado". Tela nova só entra aqui quando
+# todas as consultas dela passarem pelo recorte, com teste provando.
+# ---------------------------------------------------------------------------
+TELAS_COM_RECORTE_DE_CONTA = frozenset({"solicitacoes"})
+
+# Rotas de uma tela com recorte que mesmo assim olham além dele: o cadastro
+# BeeVale procura gente por CPF em todas as SPs. Fechadas para quem está preso.
+ROTAS_SEM_RECORTE_DE_CONTA = frozenset({"analisesps.beevale_cadastro"})
+
+# Uma "conta" que nenhuma SP tem: o recorte que não deixa passar nada.
+SEM_CONTA_NENHUMA = "— nenhuma conta —"
+
+
+def telas_da_pessoa(pessoa: dict) -> set[str]:
+    """As telas que o cadastro alcança DE VERDADE: as marcadas, menos as que não
+    sabem respeitar o recorte de conta, quando ele existe."""
+    telas = set(pessoa.get("telas") or [])
+    if pessoa.get("contas") and not pessoa.get("mestre"):
+        telas &= TELAS_COM_RECORTE_DE_CONTA
+    return telas
+
+
+def contas_permitidas() -> set[str] | None:
+    """As contas bancárias que a pessoa logada enxerga. `None` = TODAS.
+
+    Todas para o mestre, para a porta de emergência, para quem não está logado
+    (a sincronização, as tarefas de fundo) e para o cadastro sem conta marcada.
+
+    ⚠️ CONJUNTO VAZIO NUNCA SAI DAQUI: ou a pessoa está presa a alguma conta,
+    ou vê todas. Quem consulta trata `None` como "sem recorte"."""
+    if not esta_logado() or e_mestre():
+        return None
+    pessoa = usuario_da_sessao()
+    if not pessoa:
+        # Sessão de cadastro que não se lê: o guarda já a manda embora. Até lá,
+        # nada — banco fora do ar não vira acesso a todas as contas.
+        return {SEM_CONTA_NENHUMA}
+    contas = {str(c).strip() for c in (pessoa.get("contas") or [])
+              if str(c).strip()}
+    return contas or None
 
 
 def e_porta_de_emergencia() -> bool:
@@ -627,7 +679,9 @@ def exigir_login():
                              "isso, está fechada para quem tem cadastro "
                              "próprio. Classifique-a.", endpoint)
                 return _recusar()
-            if not (set(telas) & set(pessoa.get("telas") or [])):
+            if not (set(telas) & telas_da_pessoa(pessoa)):
+                return _recusar()
+            if pessoa.get("contas") and endpoint in ROTAS_SEM_RECORTE_DE_CONTA:
                 return _recusar()
 
     if exigencia == OPERADOR and not pode_operar():

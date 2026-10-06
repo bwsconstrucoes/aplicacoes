@@ -398,8 +398,10 @@
               {%- elif p.pode_operar %}alterar{% else %}só ver{% endif %}</small></td>
           <td><small>{% if p.mestre %}todas
               {%- elif p.telas %}{{ p.telas|length }}:
-              {% for chave, rotulo in telas_liberaveis %}{% if chave in p.telas %}{{ rotulo }}{% if not loop.last %}, {% endif %}{% endif %}{% endfor %}
-              {% else %}<b>nenhuma — não entra</b>{% endif %}</small></td>
+              {% for chave, rotulo in telas_liberaveis if chave in p.telas %}{{ rotulo }}{% if not loop.last %}, {% endif %}{% endfor %}
+              {% else %}<b>nenhuma — não entra</b>{% endif %}
+              {%- if p.contas and not p.mestre %}<br>🔒 só a conta
+              <b>{{ p.contas|join(', ') }}</b>{% endif %}</small></td>
           <td><small>{{ p.ultimo_acesso|momento_br if p.ultimo_acesso
                         else 'nunca entrou' }}</small></td>
           <td>
@@ -457,6 +459,23 @@
                       {{ rotulo }}</label>
                   {% endfor %}
                 </div>
+                {% if contas_prontas %}
+                <div class="rotulo-campo" style="margin-top:8px">Contas bancárias que ele enxerga
+                  <small>(nenhuma marcada = todas)</small></div>
+                <p class="cartao-dica" style="margin:0 0 4px">
+                  🔒 Marcando uma conta, ele vê <b>só as SPs dela</b> — na lista, nos
+                  totais, na ficha e na exportação — e só abre as telas que sabem
+                  fazer esse recorte (hoje: {% for chave, rotulo in telas_liberaveis
+                  if chave in telas_com_recorte %}{{ rotulo }}{% if not loop.last %}, {% endif %}{% endfor %}).
+                  As outras somam todas as contas juntas e ficam fechadas para ele.
+                </p>
+                <div class="telas-do-usuario">
+                  {% for conta in contas_liberaveis %}
+                    <label><input type="checkbox" name="conta_do_usuario"
+                           value="{{ conta }}" {% if conta in p.contas %}checked{% endif %}> {{ conta }}</label>
+                  {% endfor %}
+                </div>
+                {% endif %}
                 <div style="margin-top:10px">
                   <button class="btn" type="submit">Salvar {{ p.usuario }}</button>
                 </div>
@@ -509,6 +528,23 @@
                  value="{{ chave }}"> {{ rotulo }}</label>
         {% endfor %}
       </div>
+                {% if contas_prontas %}
+                <div class="rotulo-campo" style="margin-top:8px">Contas bancárias que ele enxerga
+                  <small>(nenhuma marcada = todas)</small></div>
+                <p class="cartao-dica" style="margin:0 0 4px">
+                  🔒 Marcando uma conta, ele vê <b>só as SPs dela</b> — na lista, nos
+                  totais, na ficha e na exportação — e só abre as telas que sabem
+                  fazer esse recorte (hoje: {% for chave, rotulo in telas_liberaveis
+                  if chave in telas_com_recorte %}{{ rotulo }}{% if not loop.last %}, {% endif %}{% endfor %}).
+                  As outras somam todas as contas juntas e ficam fechadas para ele.
+                </p>
+                <div class="telas-do-usuario">
+                  {% for conta in contas_liberaveis %}
+                    <label><input type="checkbox" name="conta_do_usuario"
+                           value="{{ conta }}" > {{ conta }}</label>
+                  {% endfor %}
+                </div>
+                {% endif %}
       <div style="margin-top:10px">
         <button class="btn" type="submit">Cadastrar</button>
       </div>

@@ -771,6 +771,13 @@ def solicitacoes():
         return render_template("analisesps_vazio.html", base=base,
                                pode_operar=auth.pode_operar())
 
+    # PRESO A UMA CONTA: o "de tantas na base" conta só as SPs dela. O total
+    # da base inteira também é dado das outras contas.
+    contas = auth.contas_permitidas()
+    if contas is not None:
+        base = dict(base, quantidade=consultas.resumo({})["quantidade"],
+                    recorte=", ".join(sorted(contas)))
+
     filtros = _filtros_do_pedido()
     ordem = request.args.get("ordem", "vencimento")
     try:
@@ -812,7 +819,7 @@ def solicitacoes():
         colunas=_colunas_da_pessoa(), todas_colunas=_TODAS_COLUNAS(),
         args=request.args, opcoes=_opcoes_dos_filtros(base.get("ultima")),
         recado_dos_filtros=_recado_dos_filtros(base),
-        pode_operar=auth.pode_operar(),
+        pode_operar=auth.pode_operar(), preso_a_conta=contas is not None,
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
 
@@ -1120,7 +1127,29 @@ def _ids_do_pedido(dados: dict):
         return None, ({"ok": False,
                        "erro": "São no máximo 500 SPs por vez. Refine a "
                                "seleção."}, 400)
+    erro = _fora_do_recorte(ids)
+    if erro:
+        return None, erro
     return ids, None
+
+
+def _fora_do_recorte(ids):
+    """Recusa o pedido inteiro quando algum número é de SP fora da conta de quem
+    está preso a uma (migração 051). None quando está tudo dentro.
+
+    ⚠️ "NÃO ENCONTRADA", e não "sem permissão": dizer que não pode confirmaria
+    que aquele número existe. E recusa TUDO, não só o que está fora — gravar
+    metade de uma seleção e calar sobre a outra metade é pior que não gravar."""
+    from . import consultas
+    fora = consultas.fora_do_recorte(ids)
+    if not fora:
+        return None
+    logger.warning("Análise de SPs: %s pediu %d SP(s) fora das contas dele: %s",
+                   auth.nome_atual() or "sem nome", len(fora),
+                   ", ".join(fora[:10]))
+    return ({"ok": False, "erro": (f"SP {fora[0]} não encontrada." if len(fora) == 1
+                                   else f"{len(fora)} SPs não encontradas.")},
+            404)
 
 
 @bp.route("/api/alterar", methods=["POST"])
@@ -1361,6 +1390,9 @@ def configuracoes():
         pessoas_com_acesso=pessoas_com_acesso,
         cadastro_pronto=cadastro_pronto,
         telas_liberaveis=usuarios.telas_liberaveis() if cadastro_pronto else [],
+        contas_liberaveis=_contas_liberaveis() if cadastro_pronto else [],
+        contas_prontas=cadastro_pronto and usuarios._tem_contas(),
+        telas_com_recorte=auth.TELAS_COM_RECORTE_DE_CONTA,
         erro_usuario=request.args.get("erro_usuario") or None,
         usuario_ok=request.args.get("usuario_ok") or None,
         cofre_ok=certificados.cofre_configurado(),
@@ -1371,6 +1403,21 @@ def configuracoes():
         modos=tarefas.MODOS, modos_da_base=tarefas.MODOS_DA_BASE,
         versao=os.getenv("RENDER_GIT_COMMIT", "")[:8] or "desenvolvimento",
         pode_operar=auth.pode_operar())
+
+
+def _contas_liberaveis() -> list[str]:
+    """As contas que se pode marcar no cadastro: as que existem nas SPs, mais as
+    já marcadas em alguém (uma conta que sumiu da base não pode sumir da tela
+    — senão o cadastro mostraria uma pessoa presa a nada)."""
+    from . import consultas, usuarios
+    try:
+        contas = set(consultas.opcoes("conta", limite=400))
+        for p in usuarios.listar():
+            contas.update(p.get("contas") or [])
+        return sorted(contas, key=str.lower)
+    except Exception:  # noqa: BLE001 — a tela de Configurações abre mesmo assim
+        logger.exception("Análise de SPs: não consegui listar as contas")
+        return []
 
 
 @bp.route("/usuarios", methods=["POST"])
@@ -1389,6 +1436,9 @@ def usuarios_salvar():
 
     acao = (request.form.get("acao") or "").strip()
     telas = [t for t in request.form.getlist("tela_do_usuario") if t.strip()]
+    # As contas bancárias a que a pessoa fica presa (migração 051). Nenhuma
+    # marcada = todas, como sempre foi.
+    contas = [c for c in request.form.getlist("conta_do_usuario") if c.strip()]
     uid = (request.form.get("usuario_id") or "").strip()
     pode_operar = request.form.get("pode_operar") == "1"
     mestre = request.form.get("mestre") == "1"
@@ -1397,7 +1447,8 @@ def usuarios_salvar():
         r = usuarios.criar(request.form.get("novo_usuario", ""),
                            request.form.get("nova_senha", ""),
                            nome=request.form.get("nome", ""),
-                           telas=telas, pode_operar=pode_operar, mestre=mestre)
+                           telas=telas, pode_operar=pode_operar, mestre=mestre,
+                           contas=contas)
     elif acao == "apagar" and uid.isdigit():
         r = usuarios.apagar(int(uid))
     elif acao == "salvar" and uid.isdigit():
@@ -1405,7 +1456,7 @@ def usuarios_salvar():
                                senha=request.form.get("nova_senha"),
                                ativo=request.form.get("ativo") == "1",
                                telas=telas, pode_operar=pode_operar,
-                               mestre=mestre)
+                               mestre=mestre, contas=contas)
     else:
         r = {"ok": False, "erro": "Pedido não reconhecido."}
 
@@ -5296,6 +5347,10 @@ def beevale_gerar():
                                titulo="Nada selecionado",
                                mensagem="Marque as SPs BeeVale na lista e "
                                         "clique em \"Gerar BeeVale\"."), 400
+    # A conferência lê os cards no Pipefy: SP de outra conta não chega lá.
+    if _fora_do_recorte(ids):
+        return render_template("analisesps_erro.html", titulo="Não encontrado",
+                               mensagem="Esta página não existe."), 404
 
     pasta, _origem = beevale.pasta_do_drive()
     preparado, erro = {"prontos": [], "erros": []}, None

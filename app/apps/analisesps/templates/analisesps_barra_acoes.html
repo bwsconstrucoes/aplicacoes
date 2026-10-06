@@ -114,10 +114,13 @@
               data-url="{{ url_for('analisesps.beevale_gerar') }}"
               title="Monta as planilhas BeeVale das SPs marcadas">
         Gerar BeeVale</button>
+      {# Fechado para quem está preso a uma conta: procura gente em todas. #}
+      {% if not preso_a_conta %}
       <a class="btn secundario"
          href="{{ url_for('analisesps.beevale_cadastro', origem=origem) }}"
          title="Planilha de cadastro para quem ainda não tem cartão">
         Cadastro BeeVale</a>
+      {% endif %}
     {% endif %}
     {% if tela != 'codigos' %}
       <button class="btn secundario" id="ba-codigos" data-precisa-selecao>QR / Código</button>
