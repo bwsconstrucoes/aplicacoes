@@ -602,6 +602,38 @@
   {% endif %}
 </div>
 
+<!-- ------------- POR QUE NÃO APARECE? — dono, 06/10/2026 ------------- -->
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Não achou um aporte ou dividendo?</h3>
+    <small>confere lançamento a lançamento, ignorando os filtros da tela</small>
+  </div>
+  <p class="cartao-dica" style="margin-top:0">
+    Escolha a obra (ou digite o <b>Nº no OMIE</b> de um título) e veja cada
+    lançamento com cara de aporte ou dividendo, e o motivo de ele entrar ou
+    ficar de fora: categoria não reconhecida, não quitado, lado de quem mandou o
+    dinheiro, sem projeto, filtro de ano… Se o lançamento nem aparecer na
+    lista, ele ainda não chegou ao painel (ou está em outra obra — procure pelo
+    número).
+  </p>
+  <form id="conferir-aportes" class="form-grade" style="margin-top:6px">
+    <div class="campo">
+      <label for="obra-conferida">Obra</label>
+      <select id="obra-conferida" name="obra_conferida">
+        <option value="">(escolha)</option>
+        {% for o in opcoes.obras %}<option value="{{ o }}">{{ o }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="campo">
+      <label for="codigo-conferido">ou o Nº no OMIE</label>
+      <input id="codigo-conferido" name="codigo" inputmode="numeric" placeholder="ex.: 11204772585">
+    </div>
+    <div class="campo" style="align-self:end">
+      <button class="btn" type="submit">Conferir</button>
+    </div>
+  </form>
+</div>
+
 <!-- ---------------------- O DINHEIRO DA OBRA, COM OS SÓCIOS ---------------------- -->
 <div class="cartao">
   <div class="cartao-cab">
@@ -986,6 +1018,51 @@
       corpo.innerHTML = '<p class="aviso erro">Não deu para carregar os dividendos. Tente de novo.</p>';
     }
   }
+  // ---- por que um aporte/dividendo não aparece — dono, 06/10/2026 ----
+  // o formulário só existe na aba de aportes: sem ele, nada a ligar
+  const formAportes = els("conferir-aportes");
+  if (formAportes) formAportes.addEventListener("submit", async ev => {
+    ev.preventDefault();
+    const form = ev.target;
+    const obra = form.obra_conferida.value, codigo = form.codigo.value.trim();
+    if (!obra && !codigo) { form.obra_conferida.focus(); return; }
+    titulo.textContent = "Aportes e dividendos — " + (codigo ? "título " + codigo : obra);
+    resumo.textContent = "";
+    corpo.innerHTML = '<p class="cartao-dica">Conferindo…</p>';
+    if (!dialogo.open) dialogo.showModal();
+    const consulta = new URLSearchParams(filtros);
+    if (codigo) consulta.set("codigo", codigo); else consulta.set("obra_conferida", obra);
+    try {
+      const r = await fetch("{{ url_for('painel.dre_conferir_aportes') }}?" + consulta.toString());
+      const d = await r.json();
+      if (!d.ok) { corpo.innerHTML = `<p class="aviso erro">${escapar(d.erro || "Não deu para conferir.")}</p>`; return; }
+      verTudo.style.display = "none";
+      resumo.innerHTML = `${d.quantos} lançamento(s) &nbsp;·&nbsp; <b class="v-pos">${d.entram} entram</b> &nbsp;·&nbsp; <b class="v-neg">${d.quantos - d.entram} ficam de fora</b>`;
+      if (!d.linhas.length) {
+        corpo.innerHTML = codigo
+          ? '<p class="aviso">Este número não está no painel. Ou ainda não chegou (a atualização traz os últimos 30 dias; a completa, 180), ou foi digitado errado.</p>'
+          : '<p class="aviso">Nenhum lançamento com cara de aporte ou dividendo nesta obra. Se no OMIE ele existe, procure pelo Nº no OMIE: ele pode estar em outra obra, ou sem obra.</p>';
+        return;
+      }
+      corpo.innerHTML = `<table><thead><tr>
+          <th class="sem-ordem">Data</th><th class="sem-ordem">Nº no OMIE</th>
+          <th class="sem-ordem">Quem</th><th class="sem-ordem">Categoria</th>
+          <th class="sem-ordem">Obra · projeto</th><th class="sem-ordem direita">Valor</th>
+          <th class="sem-ordem">Entra?</th></tr></thead><tbody>`
+        + d.linhas.map(l => `<tr>
+          <td class="dados">${data(l.data)}</td>
+          <td class="dados"><small>${l.link ? `<a href="${escapar(l.link)}" target="_blank" rel="noopener">${escapar(l.codigo)} ↗</a>` : escapar(l.codigo)}</small></td>
+          <td class="desc">${escapar(l.quem || "—")}</td>
+          <td class="desc">${escapar(l.categoria || "—")}${l.codigo_categoria ? ` <small>${escapar(l.codigo_categoria)}</small>` : ""}</td>
+          <td class="desc">${escapar(l.obra || "(não apropriado)")}<br><small>${escapar(l.projeto || "sem projeto")}</small></td>
+          <td class="dados direita ${l.valor < 0 ? "v-neg" : "v-pos"}">${moeda(l.valor)}</td>
+          <td class="desc"><b class="${l.entra ? "v-pos" : "v-neg"}">${l.entra ? "Sim" : "Não"}</b><br><small>${escapar(l.motivo)}</small></td>
+        </tr>`).join("") + "</tbody></table>";
+    } catch (e) {
+      corpo.innerHTML = '<p class="aviso erro">Não deu para conferir. Tente de novo.</p>';
+    }
+  });
+
   document.querySelectorAll(".abre-dividendos").forEach(b => {
     b.addEventListener("click", () => abrirDividendos(b));
   });

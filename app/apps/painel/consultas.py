@@ -2173,6 +2173,116 @@ def aportes_na_base_inteira() -> dict:
             "lancamentos": n or 0, "por_obra": por_obra}
 
 
+# ---------------------------------------------------------------------------
+# POR QUE ESTE APORTE (OU DIVIDENDO) NÃO APARECE?
+# ---------------------------------------------------------------------------
+# 06/10/2026, o dono, olhando outro projeto depois do Mercado Barbalha: *"embora
+# esteja lançado no OMIE, os aportes associados a uma obra desse projeto não
+# estão aparecendo (…) o que pode estar acontecendo e o que eu posso fazer para
+# identificar?"* — e o mesmo com dividendos pagos.
+#
+# O bloco decide com regras, e cada uma corta calada. Esta conferência passa
+# os lançamentos da obra que TÊM CARA de aporte ou dividendo por todas elas e
+# diz, linha a linha, qual cortou. Ignora de propósito os filtros da tela —
+# mas diz quando um deles é o que esconde a linha.
+_CARA_DE_APORTE = ("categoria ~* '(aport|dividend|lucro|distribui|capital|s[oó]cio"
+                   "|integraliza|mutuo|mútuo)'")
+
+
+def conferir_aportes(f: Filtros, *, obra: str = "", codigo=None,
+                     escopo: "Filtros | None" = None, limite: int = 500) -> dict:
+    """Os candidatos a aporte/dividendo de uma obra (ou um título), cada um
+    com o veredito: entra no bloco, ou o motivo de ficar de fora."""
+    from .sync.fato import CODIGOS_APORTE, CODIGOS_LADO_PROVEDOR
+
+    codigos = sorted(CODIGOS_APORTE) + sorted(CODIGOS_LADO_PROVEDOR)
+    condicoes, extras = [], []
+    numero = str(codigo or "").strip()
+    if numero.isdigit():
+        # pelo número, qualquer categoria: a pergunta é "onde foi parar ESTE"
+        condicoes.append("codigo_lancamento = ?")
+        extras.append(int(numero))
+    elif obra:
+        condicoes.append(f"{OBRA_OU_SEM} = ?")
+        extras.append(obra)
+        condicoes.append(f"({_CARA_DE_APORTE} OR COALESCE(codigo_categoria,'') = ANY(?)"
+                         " OR COALESCE(tipo_aporte,'') <> '')")
+        extras.append(codigos)
+    else:
+        return {"linhas": [], "quantos": 0}
+    base = escopo or Filtros(excluir_trf=False)
+    where, params = base.where(" AND ".join(condicoes), extras)
+    campos = ("codigo", "data", "categoria", "codigo_categoria", "quem", "pago",
+              "aberto", "situacao", "foi_pago", "obra", "projeto", "ano",
+              "analise", "tipo", "link", "documento", "conta")
+    linhas = []
+    for bruta in consultar(
+            f"""SELECT codigo_lancamento AS conferir_aporte, data,
+                       COALESCE(categoria,''), COALESCE(codigo_categoria,''),
+                       COALESCE(razao_social,''), pago_recebido, a_pagar_receber,
+                       COALESCE(situacao_vencimento, situacao, ''), {PAGO},
+                       COALESCE(NULLIF(TRIM(departamento),''), ''),
+                       COALESCE(projeto,''), ano, COALESCE(analise,''),
+                       {TIPO_APORTE}, COALESCE(link,''),
+                       COALESCE(numero_documento,''), COALESCE(conta_corrente,'')
+                  FROM fato{where}
+                 ORDER BY data DESC NULLS LAST, codigo_lancamento
+                 LIMIT {int(limite)}""", params):
+        l = dict(zip(campos, bruta))
+        l["pago"] = float(l["pago"] or 0)
+        l["aberto"] = float(l["aberto"] or 0)
+        l["valor"] = l["pago"] if l["foi_pago"] else l["aberto"]
+        l["entra"], l["motivo"] = _veredito_do_aporte(l, f, CODIGOS_LADO_PROVEDOR)
+        linhas.append(l)
+    return {"linhas": linhas, "quantos": len(linhas),
+            "entram": sum(1 for l in linhas if l["entra"])}
+
+
+def _veredito_do_aporte(l: dict, f: Filtros, lado_provedor) -> tuple[bool, str]:
+    """(entra?, por quê) — na MESMA ordem em que o bloco corta."""
+    tipo = l.get("tipo")
+    if l["codigo_categoria"] in lado_provedor:
+        return False, (f"Categoria {l['codigo_categoria']} é a do lado de quem MANDA o "
+                       "dinheiro: é o espelho do aporte e fica de fora de propósito. "
+                       "Se este lançamento está na conta da obra, a categoria certa "
+                       "é 1.02.94 (Aportes BWS) ou 1.02.02 (Aportes Parceiros).")
+    if not tipo:
+        return False, ("A categoria não é reconhecida como aporte nem dividendo. "
+                       "Se é um, a categoria no OMIE precisa ser uma das de aporte "
+                       "(1.02.94, 1.02.02, 2.08.02) ou ter \"dividendo\" ou "
+                       "\"distribuição de lucro\" no nome.")
+    if not l["foi_pago"]:
+        return False, (f"Não está quitado (situação: {l['situacao'] or '—'}). O bloco "
+                       "só mostra o que já virou dinheiro.")
+    if tipo == "Dividendos" and l["pago"] > 0:
+        return False, ("Entrada com nome de dividendo: não é distribuição. Aparece "
+                       "à parte, em \"entrou com nome de dividendo\".")
+    if tipo == "Devolução de Aporte" and l["pago"] > 0:
+        return False, ("Entrada com nome de devolução: devolução só conta quando SAI "
+                       "da obra. Esta é o lado de quem recebeu de volta.")
+    if tipo != "Dividendos" and tipo != "Devolução de Aporte" and l["pago"] < 0:
+        return False, ("Saída com nome de aporte: aporte só conta quando ENTRA na "
+                       "obra. Esta é o lado de quem mandou o dinheiro.")
+    # passou pelas regras: entra — se nenhum filtro da tela esconder
+    if not l["obra"]:
+        return True, ("Entra, mas sem obra: aparece como \"(não apropriado)\". "
+                      "Apropriar no OMIE (ou pelo Explorador) põe na obra certa.")
+    if f.anos and l["ano"] not in f.anos:
+        return True, (f"Entra, mas o filtro de ANO da tela esconde ({l['ano']}). "
+                      "Tire o ano na barra lateral.")
+    if f.projetos and l["projeto"] not in f.projetos:
+        if not l["projeto"]:
+            return True, ("Entra, mas a obra está SEM PROJETO, e o filtro de projeto "
+                          "da tela a esconde. Dê o projeto em Parâmetros › Projeto "
+                          "das obras.")
+        return True, (f"Entra, mas é do projeto {l['projeto']}, fora do filtro de "
+                      "projeto da tela.")
+    if f.departamentos and l["obra"] not in f.departamentos:
+        return True, "Entra, mas o filtro de OBRA da tela esconde."
+    rotulo = "dividendo" if tipo == "Dividendos" else tipo.lower()
+    return True, f"Entra no bloco, como {rotulo}."
+
+
 def dividendos_por_socio(f: Filtros) -> list[dict]:
     """Dividendo é distribuição de LUCRO, não devolução de capital.
 

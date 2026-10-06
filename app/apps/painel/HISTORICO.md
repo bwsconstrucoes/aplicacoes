@@ -2182,6 +2182,33 @@ tinha — era a mensagem da regra "consolidada", e a regra saía consolidada
 mesmo com bancária presente. Com a decisão separada, "consolidada" só aparece
 quando de fato não há bancária.
 
+## "Não achou um aporte ou dividendo?" — conferência por obra — 06/10/2026
+
+O dono, olhando outro projeto depois do Mercado Barbalha: *"embora esteja
+lançado no OMIE, os aportes de uma obra desse projeto não estão aparecendo (…)
+o que pode estar acontecendo e o que posso fazer para identificar?"* — e o
+mesmo com dividendos pagos.
+
+**Não sei qual é o caso dele** (não alcanço a produção). Por isso, em vez de
+apostar numa causa, o bloco de aportes do DRE ganhou uma conferência: escolhe
+a obra (ou digita o Nº no OMIE) e cada lançamento com cara de aporte ou
+dividendo aparece com o veredito, **na mesma ordem em que o bloco corta**:
+1. categoria do lado PROVEDOR (2.08.97 / 1.02.95) — espelho, fica fora;
+2. categoria não reconhecida como aporte/dividendo;
+3. não quitado (o bloco só mostra caixa);
+4. sentido errado (aporte saindo, devolução entrando, dividendo entrando);
+5. entra — mas sem obra, ou escondido pelo filtro de ano, de projeto (com o
+   caso da OBRA SEM PROJETO apontado) ou de obra da barra lateral.
+
+Ignora os filtros da tela de propósito, mas diz quando um deles é o culpado.
+Lançamento que nem aparece = não chegou ao painel ou está em outra obra (a
+busca pelo número acha em qualquer obra e categoria). Quem está preso a obras
+só confere as dele.
+
+**Suspeita principal, não confirmada:** as 24 obras sem projeto (corrigíveis
+desde 05/10 em Parâmetros › Projeto das obras) somem do bloco quando a tela é
+filtrada por projeto.
+
 ## Um pagamento, várias obras: agrupar como no extrato — 06/10/2026
 
 O dono: *"o mesmo título, dividido para duas obras — visualmente a gente

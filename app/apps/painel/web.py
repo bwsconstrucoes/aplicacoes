@@ -651,6 +651,23 @@ def dre_dividendos():
     return jsonify({"ok": True, "sentido": sentido, **dados})
 
 
+@bp.route("/dre/conferir-aportes")
+def dre_conferir_aportes():
+    """Por que um aporte ou dividendo nao aparece no bloco (dono, 06/10/2026):
+    os candidatos de uma obra, ou um titulo pelo numero, cada um com o motivo."""
+    from . import consultas
+    f = _filtros_do_pedido()
+    obra = (request.args.get("obra_conferida") or "").strip()
+    codigo = (request.args.get("codigo") or "").strip()
+    if not obra and not codigo:
+        return jsonify({"ok": False, "erro": "Escolha uma obra ou digite o número."}), 400
+    dados = consultas.conferir_aportes(f, obra=obra, codigo=codigo,
+                                       escopo=_escopo_das_partes(f))
+    for l in dados["linhas"]:
+        l["data"] = l["data"].isoformat() if l.get("data") else ""
+    return jsonify({"ok": True, **dados})
+
+
 @bp.route("/dre/retencoes")
 def dre_retencoes():
     """As retencoes por tras do numero do DRE, abertas por tributo."""
