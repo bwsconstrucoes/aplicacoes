@@ -11994,8 +11994,55 @@ Ordenados → Diárias.
   Alimentação, transporte → Despesas com Transporte, diária → Diárias,
   gratificação → "Gratiticações e Extras" (grafia da tabela). A DC continua
   lendo a aba na hora.
-- ⚠️ A folha da contabilidade segue "Produção" (pela tabela seria "Diárias",
-  via Salários e Ordenados) — perguntado a ele.
+- A folha da contabilidade segue "Produção" (pela tabela seria "Diárias", via
+  Salários e Ordenados) — confirmado por ele. E "Gratiticações e Extras" é como
+  o portal escreve: não corrigir a grafia.
+
+#### Leva 181 — Conciliação: filtro "Conc.", alinhamento das linhas, conta do extrato (06/10/2026)
+
+- **O filtro da conciliação no cabeçalho "Conc." tinha sumido.** A coluna "No
+  OMIE" (29/09) entrou sem a casa dela na linha de filtros, e o seletor
+  (todos/falta/sim/com obs.) escorregou para baixo de "No OMIE". Voltou para
+  baixo de "Conc."; teste novo confere uma casa por coluna, na ordem.
+- **As linhas desalinhadas** (o degrau na imagem dele): o corte do histórico em
+  três linhas (`display: -webkit-box`) estava na própria `<td>`, que deixava de
+  ser célula de tabela. O corte foi para um bloco dentro dela
+  (`.historico-texto`); conferido no navegador — altura igual em todas.
+- **"Extratos de conta que já haviam sido detectados, ele não detecta a conta
+  novamente."** Duas causas: (1) a conta guardava UM jeito de o OFX escrevê-la e
+  descartava os outros (o mesmo banco escreve com/sem agência, outro dígito…);
+  agora os outros vão para `ofx_outros` (migração **050**) e também casam — o do
+  cadastro continua não sendo sobrescrito, e extrato já reconhecido como de
+  OUTRA conta não é ensinado em silêncio; (2) a conta escolhida só era lembrada
+  ao GRAVAR — extrato sem nada novo (gravar desligado) nunca a ensinava; agora
+  é lembrada já na conferência.
+- Ele perguntou se dá para importar vários extratos de uma vez: sim, a caixa
+  "Trazer extrato" aceita vários OFX juntos (já aceitava).
+- **Diagnóstico pedido por ele ("tenta entender por que eles não batem"):** três
+  PIX de abril/2026 apareciam como "o que entraria" e, ao mesmo tempo, como
+  "estão aqui e não vêm neste extrato". As linhas guardadas (histórico no
+  formato da planilha antiga, "PAGAMENTO PIX 33231372000188 BR-SUL") têm os
+  VALORES GIRADOS entre as três datas (BR-SUL 300.000 × 22.000 no banco;
+  MATHEUS 22.000 × 3.500; e no dia 27 outro favorecido, JOSE EDVALDO 3.500 ×
+  BAZZE 300.000). Erro de digitação na planilha antiga — não do leitor. A
+  identidade exige data + valor + histórico, e casar só pelo dia esconderia
+  justamente isso. Recomendado a ele: apagar as três antigas (× da linha) e
+  gravar as do extrato. Oferecido, não feito: um "trocar pela do extrato" que
+  preserve conciliado e observação.
+
+#### Leva 182 — Conciliação: a resposta do extrato sobe à vista; ordem escolhida na lateral (06/10/2026)
+
+- *"Toda vida que incluo um novo extrato, o sistema deveria subir a tela para eu
+  visualizar as mensagens de alerta."* A tela abre no fim da lista e a resposta
+  do extrato aparece no alto: quem soltava o arquivo não via os alertas. Agora,
+  cada vez que a resposta muda, ela é trazida para a vista.
+- *"Eu havia pedido pra ordenar com o mais recente embaixo, mas acho que isso
+  deveria ser uma opção de visualização, pode ser definido no sidebar."* Bloco
+  "Visualização" na lateral: "Mais recente embaixo (como o extrato do banco)"
+  (padrão) ou "Mais recente em cima". A página continua sendo a dos 200 mais
+  recentes; muda só a ordem, e o saldo de cada linha é o dela. A escolha fica
+  GUARDADA por pessoa (preferência `conciliacao_ordem`), vale no filtro do
+  cabeçalho e na paginação; com "em cima", a tela não pula para o fim.
 
 #### ⚠️ Pendente AGORA
 
@@ -12037,7 +12084,8 @@ Ordenados → Diárias.
 | DC: no primeiro lançamento, conferir na prévia o tipo de despesa e as categorias, e no Pipefy se os cards de origem foram para a fase certa | ele |
 | decidir a CARTEIRA do BeeVale da alimentação e do transporte (hoje "Produção"; os diaristas já saem em "Diárias") | ele |
 | ~~publicar as levas 177 a 179~~ — **publicadas em 05/10/2026** (main em `b18f6f0`, suíte inteira verde salvo o teste do painel que falha igual na main). Carteira da alimentação e do transporte decidida (leva 180) | — |
-| publicar a leva 180; confirmar a carteira da FOLHA (Produção ou Diárias?) e a grafia "Gratiticações e Extras" | ele |
+| publicar as levas 181 e 182 (migração **050**: apertar "Aplicar atualizações do banco" no mesmo momento) | ele |
+| ~~publicar a leva 180~~ — **publicada em 05/10/2026** (main em `5f21ffe`). Confirmado por ele: a folha da contabilidade segue "Produção", e "Gratiticações e Extras" é a grafia do PORTAL (*"tá errado mesmo, gratiti"*) — não corrigir | — |
 | ~~publicar as levas 174 a 176~~ — **publicadas em 05/10/2026** (main em `02c26af`; suíte inteira verde, salvo `test_painel_cenario::test_quem_esta_preso_nao_abre_nem_grava_os_parametros`, que falha igual na main — área do painel, depende da ordem). Conferir que ele apertou "Aplicar atualizações do banco" (**048** e **049**) e importar a Listagem de Férias de 09 e 10/2026 | ele |
 | campo de automação da SP (`automa_o_2`): segue vazio nas outras folhas (na DC vai "BeeVale", como no script); ver no primeiro lançamento se faz falta, junto com a categoria do segundo card | ele |
 | primeiro lançamento: conferir na prévia se cada obra achou o centro de custo, e no Pipefy os dois cards | ele |

@@ -1962,12 +1962,17 @@ table.conciliacao td {
    resto. Tres linhas cobrem o historico do Bradesco inteiro ("PAGTO ELETRON
    COBRANCA / ALPE FUNDO DE INVESTIMENTO EM DI"), que e o mais comprido que
    aparece — o clique e para o caso raro, nao para o dia a dia. */
-table.conciliacao .historico {
+/* ⚠️ O CORTE FICA NO BLOCO DE DENTRO (`.historico-texto`), NÃO NA CÉLULA —
+   06/10/2026. Com `display: -webkit-box` na própria <td>, ela deixava de ser
+   célula de tabela: a altura e a linha de baixo dela descolavam das vizinhas, e
+   o dono viu o degrau em cada linha. A célula fica célula. */
+table.conciliacao .historico { cursor: pointer; }
+table.conciliacao .historico-texto {
   white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.3;
   display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
-  overflow: hidden; cursor: pointer;
+  overflow: hidden;
 }
-table.conciliacao .historico.aberto {
+table.conciliacao .historico.aberto .historico-texto {
   display: block; -webkit-line-clamp: none; overflow: visible;
 }
 /* ⚠️ `valor-entrada` E `valor-saida`, NAO `entrada` E `saida` — 24/09/2026.

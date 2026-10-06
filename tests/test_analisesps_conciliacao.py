@@ -278,6 +278,28 @@ def test_conta_desconhecida_nao_e_chutada_pela_rota(app_com_dados, monkeypatch):
     assert "237" in dados["erro"]
 
 
+def test_a_conta_ESCOLHIDA_para_extrato_desconhecido_e_lembrada_JA_na_conferencia(
+        app_com_dados, monkeypatch):
+    """06/10/2026: o extrato sem nada novo (gravar desligado) nunca ensinava a
+    conta escolhida — e a pergunta voltava. Agora ela é lembrada ao conferir."""
+    lembradas = []
+    monkeypatch.setattr(conciliacao, "conta_do_extrato", lambda bankid, acctid: None)
+    monkeypatch.setattr(conciliacao, "lembrar_conta_do_extrato",
+                        lambda conta_id, b, a, quem="": lembradas.append((conta_id, b)))
+    monkeypatch.setattr(conciliacao, "conferir", lambda conta_id, lido: {
+        "conta_id": conta_id, "periodo_ini": lido.periodo_ini,
+        "periodo_fim": lido.periodo_fim, "saldo": lido.saldo,
+        "saldo_em": lido.saldo_em, "lidas": 2, "novas": [], "ja_estavam": 2,
+        "so_aqui": [], "arquivo_repetido": None})
+    from io import BytesIO
+    resposta = como(app_com_dados).post(
+        "/analisesps/api/conciliacao/conferir",
+        data={"extrato": (BytesIO(EXTRATO.encode("utf-8")), "set.ofx"), "conta_id": "1"},
+        content_type="multipart/form-data")
+    assert resposta.get_json()["ok"] is True
+    assert lembradas == [(1, "237")]
+
+
 def test_conferir_NAO_grava(app_com_dados, monkeypatch):
     """A resposta "estava tudo lá" não pode ser dada por quem acabou de mudar
     o mundo que está descrevendo."""
@@ -894,6 +916,47 @@ def test_cada_coluna_tem_a_sua_caixinha_de_filtro(app_com_dados):
                   "observacao"):
         assert f'name="{campo}" form="filtro-colunas"' in html or \
                f'type="date" name="{campo}" form="filtro-colunas"' in html, campo
+
+
+def test_cada_filtro_fica_EMBAIXO_da_sua_coluna(app_com_dados):
+    """06/10/2026: *"o filtro de conciliação no header sumiu"* — a coluna "No
+    OMIE" entrou sem a casa dela na linha de filtros, e o seletor da
+    conciliação escorregou para baixo dela. Uma casa por coluna, na ordem."""
+    import re
+    html = como(app_com_dados).get(
+        "/analisesps/conciliacao").get_data(as_text=True)
+    thead = html[html.index('<table class="sps conciliacao">'):html.index("</thead>")]
+    titulos, filtros = thead.split('<tr class="filtros-coluna">')
+    nomes = [re.sub(r"<[^>]+>", "", t).strip()
+             for t in re.findall(r"<th[^>]*>(.*?)</th>", titulos, re.S)]
+    casas = re.findall(r"<th[^>]*>(.*?)</th>", filtros, re.S)
+    assert len(nomes) == len(casas)
+    assert 'name="situacao"' in casas[nomes.index("Conc.")]
+    assert 'name="observacao"' in casas[nomes.index("Observação")]
+
+
+def test_a_ORDEM_do_extrato_se_escolhe_na_lateral_e_vale_no_cabecalho(app_com_dados):
+    """06/10/2026: *"acho que isso deveria ser uma opção de visualização, pode
+    ser definido no sidebar"*."""
+    html = como(app_com_dados).get(
+        "/analisesps/conciliacao?ordem=recente_em_cima").get_data(as_text=True)
+    assert 'name="ordem"' in html and "Mais recente em cima" in html
+    assert '<option value="recente_em_cima" selected>' in html
+    # O filtro do cabeçalho leva a ordem junto (não a perde ao filtrar).
+    assert '<input type="hidden" name="ordem" value="recente_em_cima">' in html
+
+
+def test_a_ORDEM_escolhida_fica_GUARDADA_para_a_proxima_visita(app_com_dados, monkeypatch):
+    """É preferência de visualização: escolhida uma vez, vale nas próximas."""
+    from app.apps.analisesps import preferencias
+    guardado = {}
+    monkeypatch.setattr(preferencias, "ler", lambda pessoa, chave: dict(guardado.get(chave, {})))
+    monkeypatch.setattr(preferencias, "gravar",
+                        lambda pessoa, chave, valor: guardado.__setitem__(chave, valor))
+    cliente = como(app_com_dados)
+    cliente.get("/analisesps/conciliacao?ordem=recente_em_cima")
+    html = cliente.get("/analisesps/conciliacao").get_data(as_text=True)
+    assert '<option value="recente_em_cima" selected>' in html
 
 
 def test_o_formulario_fica_FORA_da_tabela(app_com_dados):
