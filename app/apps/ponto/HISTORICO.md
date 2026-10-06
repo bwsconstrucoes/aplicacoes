@@ -41,6 +41,17 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1g. **Três decisões em aberto com o dono (06/10/2026, "vou pensar")**:
+   (a) prazo para entregar atestado (hoje: qualquer tempo, com o mês aberto;
+   sugerido 48 h); (b) atestado de HORAS / declaração de comparecimento (hoje
+   só dias inteiros); (c) documento obrigatório na licença (hoje opcional).
+   Também publicado em 06/10: "Alterar"/"Reativar" aparelho aprovado ou
+   bloqueado (aprovar de novo; grupo mantido se não redigitado), CPF do dono
+   já preenchido ao aprovar o celular de quem entrou nele, e o código de 6
+   letras visível depois de entrar. Sem migração nova.
+   ⚠️ Fora do ponto: `test_painel_cenario.py::test_quem_esta_preso_nao_abre_nem_grava_os_parametros`
+   falha quando roda depois de `test_painel_projeto_das_obras.py` (dado que
+   sobra entre testes) — avisado ao dono para levar ao chat do painel.
 1f. **Modo de teste PUBLICADO em 06/10/2026** (com o "pode" do dono). Traz a
    migração **005**: confirmar com o dono se ele apertou "Aplicar atualizações
    do ponto". Combinado: no dia de começar o ponto com a equipe, apagar tudo do
