@@ -1461,6 +1461,12 @@ def sync_incremental(env=".env", margem_dias=2, com_catalogos=True,
             maior = cutoff
             t0 = time.time()
             for pagina, total_paginas, total_registros, registros in metodo(param_extra=param):
+                # SINAL DE VIDA a cada página (o relator só grava de 10 em 10 s).
+                # Sem isto a tela dava a atualização por morta no meio da
+                # leitura — 06/10/2026, "Reler todos os pagamentos".
+                _progresso("baixando o que mudou no OMIE",
+                           f"títulos {'a pagar' if natureza == 'P' else 'a receber'}: "
+                           f"página {pagina} de {total_paginas}")
                 qt, qr, qi, mx, probs = aplicar_incremental_titulos(conn, natureza, registros, data_de)
                 tot += qt; rat += qr; ign += qi
                 if mx and (maior is None or mx > maior):
@@ -1489,6 +1495,8 @@ def sync_incremental(env=".env", margem_dias=2, com_catalogos=True,
         param_mov = {"dDtPagtoDe": ini_str, "dDtPagtoAte": hoje_str}
         tot_mov = 0
         for pagina, total_paginas, total_registros, registros in cli.listar_movimentos(param_extra=param_mov):
+            _progresso("baixando o que mudou no OMIE",
+                       f"pagamentos desde {ini_str}: página {pagina} de {total_paginas}")
             qm, _ = gravar_movimentos(conn, registros)
             tot_mov += qm
         conn.execute("UPDATE sync_state SET ultima_sync=?, total_registros="
@@ -1633,6 +1641,10 @@ def reconcile(env=".env"):
             pag_inicial = ck["pagina"] + 1 if ck.get("atual") == entidade and ck["pagina"] else 1
             log.info("=== Reconcile: varrendo ids de %s (a partir da pag %d) ===", entidade, pag_inicial)
             for pagina, total_paginas, total_registros, registros in metodo(pagina_inicial=pag_inicial):
+                # sinal de vida: a varredura passa de 10 minutos, e sem ele a
+                # tela (e a retomada automática) a dariam por morta
+                _progresso("procurando títulos excluídos no OMIE",
+                           f"{entidade}: página {pagina} de {total_paginas}")
                 for r in registros:
                     c = r.get("codigo_lancamento_omie")
                     if c not in (None, ""):

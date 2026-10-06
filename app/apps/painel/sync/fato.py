@@ -1216,6 +1216,13 @@ def _insert_de(tabela, colunas):
     return f"INSERT INTO {tabela} ({', '.join(colunas)}) VALUES ({marcas})"
 
 
+def _sinal_de_vida(detalhe: str) -> None:
+    """Avisa a tela de que o recálculo segue vivo (mesmo relator da leitura do
+    OMIE). Sem ele, um recálculo longo era dado por morto."""
+    from .espelho import _progresso
+    _progresso("recalculando os números do painel", detalhe)
+
+
 def reconstruir_fato(conn, tamanho_lote=2000):
     """Regrava a tabela `fato` do zero a partir do espelho. Devolve o total.
 
@@ -1236,6 +1243,8 @@ def reconstruir_fato(conn, tamanho_lote=2000):
                 conn.executemany(sql, lote)
                 total += len(lote)
                 lote = []
+                # sinal de vida: o recálculo também passa de 10 minutos
+                _sinal_de_vida(f"{total:,} linhas".replace(",", "."))
         if lote:
             conn.executemany(sql, lote)
             total += len(lote)

@@ -61,8 +61,8 @@
   {% if atualizacao %}
     <div class="aviso {{ 'ok' if atualizacao.ok else 'erro' }}">
       Última atualização
-      ({{ 'automática' if atualizacao.disparo == 'agendado' else 'manual' }},
-       {{ atualizacao.tipo }}):
+      ({{ 'automática' if atualizacao.disparo == 'agendado' else 'retomada automática' if atualizacao.disparo == 'retomada' else 'manual' }},
+       {{ rotulos_dos_modos.get(atualizacao.tipo, atualizacao.tipo) }}):
       <b>{{ atualizacao.fim.strftime('%d/%m/%Y às %H:%M') if atualizacao.fim else '—' }}</b>
       <small>(hora de Brasília)</small>
       — {{ atualizacao.mensagem }}
@@ -77,13 +77,17 @@
 
   {% if sincronizacao.interrompida %}
   <div class="aviso erro">
-    <b>A atualização anterior foi interrompida.</b>
+    <b>A atualização anterior foi interrompida:
+      “{{ rotulos_dos_modos.get(sincronizacao.interrompida.tipo, sincronizacao.interrompida.tipo) }}”.</b>
     Ela começou em {{ sincronizacao.interrompida.inicio.strftime('%d/%m/%Y às %H:%M') }}
     e parou de dar sinal há {{ sincronizacao.interrompida.silencio_minutos }} minutos,
-    na etapa "{{ sincronizacao.interrompida.etapa }}".
+    na etapa "{{ sincronizacao.interrompida.etapa }}"{% if sincronizacao.interrompida.progresso %}
+    ({{ sincronizacao.interrompida.progresso }}){% endif %}.
     <br>Quase sempre isso é o serviço tendo reiniciado — o que acontece a cada
-    publicação de código. <b>Nada foi corrompido</b>: a carga só acrescenta e
-    atualiza, nunca duplica. É só rodar de novo.
+    publicação de código. <b>Nada foi corrompido</b>: cada etapa grava tudo de
+    uma vez ou nada. <b>O painel a retoma sozinho</b> em até 5 minutos (no máximo
+    duas vezes seguidas); se esta caixa continuar aqui depois disso, rode de novo
+    pelo botão.
   </div>
   {% endif %}
 

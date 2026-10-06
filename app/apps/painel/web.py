@@ -39,6 +39,23 @@ bp = Blueprint("painel", __name__,
                static_url_path="/static")
 
 
+@bp.record_once
+def _ligar_o_vigia(_estado):
+    """Liga, no serviço de verdade, o vigia que retoma atualização interrompida
+    (dono, 06/10/2026: "não tem como ficar em looping até finalizar?").
+
+    Só sob o gunicorn: nos testes e no `python app/main.py` uma thread presa em
+    `sleep` não tem o que vigiar. Uma por processo — o `record_once` garante."""
+    import sys
+    import threading
+    if "gunicorn" not in " ".join(sys.argv) or os.getenv("PAINEL_SEM_VIGIA"):
+        return
+    from . import tarefas
+    threading.Thread(target=tarefas.vigiar_para_sempre, name="painel-vigia",
+                     daemon=True).start()
+    logger.info("Painel: vigia das atualizações ligado.")
+
+
 @bp.before_request
 def _porta_de_entrada():
     """Padrao NEGAR: rota que nao esteja na lista de publicas exige login."""
@@ -2421,7 +2438,7 @@ def configuracoes():
         fora=fora,
         contas_conf=contas_conf,
         juros_conf=juros_conf,
-        modos=tarefas.MODOS,
+        modos=tarefas.MODOS, rotulos_dos_modos=tarefas.ROTULOS,
         sincronizacao=sincronizacao,
         pessoas=_pessoas_do_painel(estado_migracoes),
         telas_liberaveis=usuarios_mod.TELAS,
