@@ -213,14 +213,35 @@ def test_a_DUPLICIDADE_acusa_o_mesmo_CPF_e_tipo_dos_ultimos_10_dias(banco_dc):
     assert "800000" in " ".join(p["motivos"])
 
 
-def test_sem_a_aba_das_CARTEIRAS_vale_Producao_com_aviso(banco_dc, monkeypatch):
+def test_sem_a_aba_das_CARTEIRAS_vale_a_TABELA_GRAVADA(banco_dc, monkeypatch):
+    """06/10/2026: *"não pode ser assim (…) eu já disse quais são os tipos, por
+    que não grava logo"*. Sem a aba, vale a tabela que ele passou — sem aviso."""
     from app.apps.analisesps import dc
     monkeypatch.setattr(dc, "_ler_aba", lambda nome: DATA if nome == dc.ABA_DATA
                         else (_ for _ in ()).throw(RuntimeError("sem aba")))
     dc._cache.clear()
     calculado = dc.calcular()
-    assert all(p["carteira"] == "Produção" for p in calculado["pessoas"])
-    assert any("Data base BeeVale" in a for a in calculado["avisos"])
+    ativo = next(p for p in calculado["pessoas"] if p["cpf"] == ATIVO)
+    assert ativo["carteira"] == "Auxílio Alimentação"
+    assert not any("Data base BeeVale" in a for a in calculado["avisos"])
+    mapa, aviso = dc.carteiras(recarregar=True)
+    assert aviso == ""
+    assert {k: mapa[dc._sem_acento(k)] for k in dc.CARTEIRAS_DA_DC} == {
+        "Despesas com Alimentação": "Auxílio Alimentação",
+        "Despesas com Transporte": "Despesas com Transporte",
+        "Diárias": "Diárias",
+        "Gratificações e Extras": "Gratiticações e Extras",
+        "Produção": "Produção",
+        "Salários e Ordenados": "Diárias"}
+
+
+def test_a_aba_com_cabecalho_TIPO_DC_e_lida(banco_dc, monkeypatch):
+    """O cabeçalho da aba dele é "Tipo DC | Tipo BeeVale" — antes não era
+    reconhecido."""
+    from app.apps.analisesps import dc
+    assert dc._carteiras_de([["Tipo DC", "Tipo BeeVale"],
+                             ["Bonificação", "Gratiticações e Extras"]]) == {
+        "bonificacao": "Gratiticações e Extras"}
 
 
 def test_a_TELA_mostra_as_linhas_e_os_blocos_da_lateral(banco_dc, cliente_mestre):

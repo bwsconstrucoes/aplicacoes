@@ -141,29 +141,42 @@ def lida_em():
     return _dt.datetime.fromtimestamp(guardado[0], tz=_dt.timezone.utc).astimezone(FUSO)
 
 
+# ⚠️ A TABELA DAS CARTEIRAS FICA AQUI, GRAVADA (06/10/2026). Ela vinha só da aba
+# "Data base BeeVale" da planilha da DC — e, sem conseguir ler a aba, tudo saía
+# como "Produção", com aviso. O dono, que já a tinha passado no dia anterior:
+# *"não pode ser assim (…) eu já disse quais são os tipos, por que não grava
+# logo"*. "Gratiticações" é a grafia do PORTAL (*"tá errado mesmo, gratiti"*).
+# A aba, quando lida, ainda acrescenta ou corrige linhas — mas não é mais
+# necessária.
+CARTEIRAS_DA_DC = {
+    "Despesas com Alimentação": "Auxílio Alimentação",
+    "Despesas com Transporte": "Despesas com Transporte",
+    "Diárias": "Diárias",
+    "Gratificações e Extras": "Gratiticações e Extras",
+    "Produção": "Produção",
+    "Salários e Ordenados": "Diárias",
+}
+
+
 def carteiras(recarregar: bool = False) -> tuple:
-    """(`{tipo de despesa sem acento: carteira}`, aviso) — da aba "Data base
-    BeeVale" da planilha da DC (dono: *"converte a categoria do plano financeiro
-    em como ela é chamada no BeeVale: despesa com alimentação no BeeVale é
-    auxílio alimentação"*). Sem a aba, `{}` e o aviso: vale "Produção"."""
+    """(`{tipo de despesa sem acento: carteira}`, aviso) — a tabela gravada
+    (`CARTEIRAS_DA_DC`), mais o que a aba "Data base BeeVale" da planilha da DC
+    trouxer (dono: *"converte a categoria do plano financeiro em como ela é
+    chamada no BeeVale: despesa com alimentação no BeeVale é auxílio
+    alimentação"*). Aba ilegível não é mais aviso: a tabela gravada basta."""
     agora = time.time()
     guardado = _cache.get("carteiras")
     if guardado and not recarregar and agora - guardado[0] < 600:
         return guardado[1]
-    ultimo = ""
+    mapa = {_sem_acento(tipo): carteira for tipo, carteira in CARTEIRAS_DA_DC.items()}
     for nome in ABAS_DAS_CARTEIRAS:
         try:
             valores = _ler_aba(nome)
-        except Exception as e:  # noqa: BLE001
-            ultimo = str(e)
+        except Exception:  # noqa: BLE001 — a tabela gravada vale sozinha
             continue
-        mapa = _carteiras_de(valores)
-        resposta = (mapa, "" if mapa else
-                    f'a aba "{nome}" não tem as colunas do plano financeiro e da carteira.')
-        _cache["carteiras"] = (agora, resposta)
-        return resposta
-    resposta = ({}, 'aba "Data base BeeVale" não lida — a carteira fica "Produção"'
-                + (f" ({ultimo[:200]})" if ultimo else ""))
+        mapa.update(_carteiras_de(valores))
+        break
+    resposta = (mapa, "")
     _cache["carteiras"] = (agora, resposta)
     return resposta
 
@@ -173,8 +186,9 @@ def _carteiras_de(valores) -> dict:
     a da carteira (ou BeeVale) — em qualquer das 5 primeiras linhas."""
     for i, cab in enumerate(valores[:5]):
         nomes = [_sem_acento(c) for c in cab]
+        # "Tipo DC" | "Tipo BeeVale" é o cabeçalho da aba dele (05/10/2026).
         i_cat = next((j for j, c in enumerate(nomes) if c and any(
-            p in c for p in ("plano", "categoria", "despesa"))), None)
+            p in c for p in ("plano", "categoria", "despesa", "tipo dc"))), None)
         i_cart = next((j for j, c in enumerate(nomes) if c and j != i_cat and any(
             p in c for p in ("carteira", "beevale", "bee vale"))), None)
         if i_cat is None or i_cart is None:
@@ -448,6 +462,7 @@ def calcular(recarregar: bool = False, mostrar_geradas: bool = False) -> dict:
             "conta": contas.get(obra, ""), "omie": omie.get(folha_cards._chave(obra), ""),
             "tipo_despesa": tipo, "categoria": categoria, "record_id": record,
             "carteira": mapa_carteiras.get(chave_tipo) or CARTEIRA_PADRAO,
+            "carteira_achada": chave_tipo in mapa_carteiras,
             "quantidade": formatos.para_numero(linha["quantidade"]) or Decimal("0"),
             "valor_informado": formatos.para_numero(linha["valor"]),
             "origem_valor": origem_valor,
@@ -494,6 +509,11 @@ def calcular(recarregar: bool = False, mostrar_geradas: bool = False) -> dict:
 
     pessoas.sort(key=lambda p: (p["pagar"], (p["nome"] or "").lower(), p["card_id"]))
     a_pagar = [p for p in pessoas if p["pagar"] and p["valor"] > 0 and not p["gerada"]]
+    sem_carteira = sorted({p["tipo_despesa"] for p in a_pagar if not p.get("carteira_achada")})
+    if sem_carteira:
+        base["avisos"].append(
+            "tipo de despesa sem carteira do BeeVale na tabela: " + ", ".join(sem_carteira)
+            + f' — vai como "{CARTEIRA_PADRAO}". Diga qual é a carteira para gravar.')
     por_obra: dict = {}
     for p in a_pagar:
         o = por_obra.setdefault(p["obra"] or "(sem obra)", {

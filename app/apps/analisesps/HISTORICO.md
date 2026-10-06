@@ -12197,6 +12197,21 @@ somente Solicitações de uma conta especifica"*.
 - **Afastado continua política** (marcado, recebe) — ele não falou de afastado.
   **Diaristas não mudam:** lá o desligado que trabalhou recebe (02/10/2026).
 
+#### Leva 189 — DC: a tabela das carteiras GRAVADA no sistema (06/10/2026)
+
+- O aviso *"aba 'Data base BeeVale' não lida — a carteira fica 'Produção'"*. O
+  dono: *"não pode ser assim (…) eu já disse quais são os tipos, por que não
+  grava logo"*. A tabela que ele passou em 05/10 virou `dc.CARTEIRAS_DA_DC`:
+  Despesas com Alimentação → Auxílio Alimentação; Despesas com Transporte →
+  Despesas com Transporte; Diárias → Diárias; Gratificações e Extras →
+  Gratiticações e Extras (grafia do portal); Produção → Produção; Salários e
+  Ordenados → Diárias.
+- A aba continua sendo lida quando dá, e acrescenta/corrige linhas — mas não é
+  mais necessária, e não lê-la não gera aviso. O cabeçalho dela ("Tipo DC |
+  Tipo BeeVale") não era reconhecido — agora é.
+- Tipo de despesa que não está na tabela vai como "Produção" COM aviso na tela,
+  dizendo qual tipo falta.
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |
