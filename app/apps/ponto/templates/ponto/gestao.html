@@ -494,6 +494,21 @@
   <div id="c-obras-base">carregando…</div>
 </div>
 
+{% if pode.configurar_ponto %}
+<div class="cartao">
+  <div class="cartao-cab"><h3>Modo de teste</h3></div>
+  <div class="cartao-dica" style="margin-top:0">Para testar o ponto com você mesmo, sem mexer na planilha
+    C. Diários nem no Registro de Colaboradores. <b>1.</b> Vá ao lugar do teste (o escritório, por
+    exemplo) e grave a obra de teste com a sua localização — de preferência pelo celular, que tem GPS.
+    <b>2.</b> Cadastre a pessoa de teste (o seu nome, CPF e celular). <b>3.</b> No celular, abra
+    <b>/ponto/app</b>, toque em “Primeiro acesso”, peça o código e, em seguida, aperte aqui “Mostrar código
+    de primeiro acesso” — use esse código para criar o PIN (o WhatsApp não é necessário). A obra de
+    teste (TESTE-PONTO) não aparece nas listas de obras ativas do ERP; as batidas de teste ficam
+    registradas nela.</div>
+  <div id="c-ensaio">carregando…</div>
+</div>
+{% endif %}
+
 <div class="cartao">
   <div class="cartao-cab"><h3>Exceções ao padrão</h3></div>
   <div class="cartao-dica" style="margin-top:0">O padrão vale para todos e não se cadastra: <b>só o
@@ -846,8 +861,11 @@ const linkEspelho = (id, competencia) =>
 
 // --- Aparelhos: aprovar e bloquear (usados em Validações e em Configuração).
 async function aprovarAparelho(a, depois) {
+  // Aparelho já aprovado (ou bloqueado) abre com o que ele tem: trocar o uso,
+  // o dono, as obras ou o nome é aprovar de novo (pedido do dono, 06/10/2026).
+  const jaAprovado = a.status && a.status !== "PENDENTE";
   const r = await perguntar({
-    titulo: "Aprovar aparelho",
+    titulo: jaAprovado ? (a.status === "BLOQUEADO" ? "Reativar aparelho" : "Alterar aparelho") : "Aprovar aparelho",
     aviso: `Aparelho: <b>${escapar(a.descricao || "sem nome")}</b> — código <b class="dados">${escapar(a.codigo || "?")}</b>.
       <b>Confira o código na tela do aparelho antes de aprovar</b>: “sem nome” pode ser o celular de
       qualquer pessoa que abriu o endereço, e aprovado como aparelho da obra ele bateria por todo mundo.
@@ -856,30 +874,38 @@ async function aprovarAparelho(a, depois) {
       Na dúvida entre "tablet da obra" e "celular de uma pessoa", escolha o
       celular de uma pessoa: é o que fecha mais portas.`,
     campos: [
-      {nome: "perfil", rotulo: "Como vai ser usado", tipo: "select", valor: "INDIVIDUAL",
+      {nome: "perfil", rotulo: "Como vai ser usado", tipo: "select", valor: jaAprovado ? a.perfil : "INDIVIDUAL",
        opcoes: PERFIS_APARELHO, largura: 3, obrigatorio: true},
-      {nome: "cpf", rotulo: "CPF do dono (celular de uma pessoa)", largura: 3,
+      // Quem entrou com CPF e PIN neste celular já disse de quem ele é: o campo
+      // vem preenchido (pedido do dono, 06/10/2026 — "não é redundante?").
+      {nome: "cpf", rotulo: a.dono ? `CPF do dono — já preenchido: ${a.dono.nome} entrou neste celular`
+                                   : "CPF do dono (celular de uma pessoa)", largura: 3,
+       valor: a.dono && a.dono.cpf ? a.dono.cpf : "",
        dica: "Só para \"celular de uma pessoa\": só esse CPF bate por este aparelho."},
       {nome: "autorizados", rotulo: "CPFs do grupo (grupo de pessoas)", tipo: "textarea", linhas: 2,
-       largura: 3, dica: "Só para \"grupo de pessoas\": os CPFs separados por vírgula."},
+       largura: 3, dica: jaAprovado && a.perfil === "LISTA"
+         ? `Hoje são ${a.qtd_autorizados} pessoa(s). Deixe vazio para manter o grupo; preencha para trocá-lo inteiro.`
+         : "Só para \"grupo de pessoas\": os CPFs separados por vírgula."},
       {nome: "obras", rotulo: "Obras onde vale", largura: 3, exemplo: "deixe vazio para todas",
+       valor: jaAprovado && a.obras ? a.obras : "",
        dica: "Códigos das obras separados por vírgula. Para o tablet da obra, diga a obra dele: sem GPS, a batida dele só pode cair nela."},
       {nome: "descricao", rotulo: "Nome do aparelho", valor: escapar(a.descricao || ""), largura: 3,
        exemplo: "ex.: tablet do portão — obra Alfa"},
     ],
-    textoOk: "Aprovar aparelho",
+    textoOk: jaAprovado ? "Salvar" : "Aprovar aparelho",
   });
   if (!r) return;
-  if (r.perfil === "INDIVIDUAL" && !r.cpf) { aviso("mensagem", "Diga o CPF do dono do celular.", "erro"); return; }
-  if (r.perfil === "LISTA" && !listaDeTexto(r.autorizados).length) {
+  if (r.perfil === "INDIVIDUAL" && !r.cpf && !a.dono) { aviso("mensagem", "Diga o CPF do dono do celular.", "erro"); return; }
+  const manterGrupo = jaAprovado && a.perfil === "LISTA" && r.perfil === "LISTA" && !listaDeTexto(r.autorizados).length;
+  if (r.perfil === "LISTA" && !listaDeTexto(r.autorizados).length && !manterGrupo) {
     aviso("mensagem", "Diga os CPFs do grupo de pessoas.", "erro"); return;
   }
   try {
     await postar(`/erp/api/ponto/dispositivos/${a.id}/aprovar`, {
       perfil: r.perfil, cpf: r.perfil === "INDIVIDUAL" ? r.cpf : "",
-      autorizados: r.perfil === "LISTA" ? listaDeTexto(r.autorizados) : [],
+      autorizados: r.perfil === "LISTA" ? listaDeTexto(r.autorizados) : [], manter_grupo: manterGrupo,
       obras: listaDeTexto(r.obras), descricao: r.descricao});
-    aviso("mensagem", "Aparelho aprovado. Ele já pode bater ponto.", "ok");
+    aviso("mensagem", jaAprovado ? "Aparelho alterado." : "Aparelho aprovado. Ele já pode bater ponto.", "ok");
     if (depois) await depois();
   } catch (e) { falhou(e); }
 }
@@ -2869,7 +2895,8 @@ async function carregarAparelhos() {
           : a.perfil === "LISTA" ? `${a.qtd_autorizados} pessoa(s)` : `<span class="suave">—</span>`}</td>
       <td class="dados">${a.obras ? escapar(a.obras) : `<span class="suave">todas</span>`}</td>
       <td class="dados">${escapar(quando(a.ultimo_uso_em))}</td>
-      <td><div class="acoes">${a.status === "PENDENTE" ? `<button class="btn" type="button" data-aprovar-ap="${a.id}">Aprovar</button>` : ""}
+      <td><div class="acoes">${a.status === "PENDENTE" ? `<button class="btn" type="button" data-aprovar-ap="${a.id}">Aprovar</button>`
+          : `<button class="btn secundario" type="button" data-aprovar-ap="${a.id}">${a.status === "BLOQUEADO" ? "Reativar" : "Alterar"}</button>`}
         ${a.status !== "BLOQUEADO" ? `<button class="link-btn" type="button" data-bloquear-ap="${a.id}">bloquear</button>` : ""}</div></td>
     </tr>`).join("")}</tbody></table>`
     : `<div class="cartao-dica">Nenhum aparelho registrado ainda. O primeiro aparece quando alguém abrir o app do colaborador.</div>`;
@@ -3365,6 +3392,132 @@ async function ligarObrasAutomatico(ev) {
   caixa.disabled = false;
 }
 
+// --------------------------------------- 10d. modo de teste
+// Pedido do dono, 05/10/2026: testar com ele mesmo, gravando a localização ali
+// e pondo nome e CPF, sem depender da planilha nem do Registro.
+async function carregarEnsaio(mensagem, tipo) {
+  const alvo = els("c-ensaio");
+  if (!alvo) return;
+  let d;
+  try { d = await api("/erp/api/ponto/ensaio"); } catch (e) { erroNoCartao("c-ensaio", e); return; }
+  if (!d.disponivel) {
+    alvo.innerHTML = `<div class="aviso alerta">Aplique as atualizações do ponto (acima) para ligar o modo de teste.</div>`;
+    return;
+  }
+  const o = d.obra;
+  const pessoas = d.pessoas || [];
+  alvo.innerHTML = `<div><b>Obra de teste:</b> ${o && o.latitude !== null
+      ? `${o.ligada ? `<span style="color:var(--verde); font-weight:600">ligada</span>` : `<span class="suave">desligada</span>`}
+         — ${escapar(o.latitude.toFixed(6))}, ${escapar(o.longitude.toFixed(6))}, raio de ${o.raio_metros} m
+         <small><a class="elo" target="_blank" rel="noopener" href="https://www.google.com/maps?q=${o.latitude},${o.longitude}">ver no mapa</a></small>`
+      : `<span class="suave">ainda não gravada</span>`}</div>
+    <div class="barra-acoes" style="margin-top:8px">
+      <button class="btn" type="button" id="ens-aqui">${o ? "Mover a obra de teste para onde estou agora" : "Gravar a obra de teste onde estou agora"}</button>
+      <button class="btn secundario" type="button" id="ens-digitar">Digitar a coordenada</button>
+      ${o && o.ligada ? `<button class="btn secundario" type="button" id="ens-desligar">Desligar o teste</button>` : ""}
+      ${o ? `<button class="btn secundario" type="button" id="ens-pessoa">+ Pessoa de teste</button>` : ""}
+    </div>
+    ${pessoas.length ? `<table style="margin-top:10px"><thead><tr><th class="sem-ordem">Pessoa de teste</th>
+        <th class="sem-ordem">PIN</th><th class="sem-ordem direita">Batidas no teste</th><th class="sem-ordem"></th></tr></thead><tbody>
+      ${pessoas.map(p => `<tr><td><b>${escapar(p.nome)}</b><small>CPF final ${escapar(p.cpf_final)}</small></td>
+        <td>${p.tem_pin ? "criado" : `<span class="suave">ainda não</span>`}</td>
+        <td class="dados direita">${p.batidas}</td>
+        <td><button class="btn secundario" type="button" data-ens-codigo="${p.id}" ${p.tem_telefone ? "" : "disabled"}>
+          Mostrar código de primeiro acesso</button></td></tr>`).join("")}</tbody></table>` : ""}
+    <div id="c-ensaio-msg" style="margin-top:8px"></div>`;
+  els("ens-aqui").addEventListener("click", gravarObraDeTeste);
+  els("ens-digitar").addEventListener("click", () => digitarObraDeTeste(o));
+  if (els("ens-desligar")) els("ens-desligar").addEventListener("click", desligarTeste);
+  if (els("ens-pessoa")) els("ens-pessoa").addEventListener("click", pessoaDeTeste);
+  alvo.querySelectorAll("[data-ens-codigo]").forEach(b => b.addEventListener("click", () => codigoDeTeste(b.dataset.ensCodigo)));
+  if (mensagem) aviso("c-ensaio-msg", mensagem, tipo || "ok");
+}
+
+function minhaLocalizacao() {
+  return new Promise((ok, falha) => {
+    if (!navigator.geolocation) return falha(new Error("este navegador não dá a localização"));
+    navigator.geolocation.getCurrentPosition(
+      p => ok({latitude: p.coords.latitude, longitude: p.coords.longitude, precisao: Math.round(p.coords.accuracy)}),
+      e => falha(new Error(e.code === 1 ? "a localização foi negada — permita no navegador e tente de novo"
+                                        : "não consegui a localização agora; tente de novo")),
+      {enableHighAccuracy: true, timeout: 20000, maximumAge: 0});
+  });
+}
+
+async function gravarObraDeTeste() {
+  const b = els("ens-aqui");
+  b.disabled = true; b.textContent = "Pegando a localização…";
+  let l;
+  try { l = await minhaLocalizacao(); }
+  catch (e) { b.disabled = false; b.textContent = "Gravar a obra de teste onde estou agora"; falhou(e, "c-ensaio-msg"); return; }
+  b.disabled = false;
+  const r = await perguntar({titulo: "Obra de teste aqui",
+    aviso: `Localização: <b>${l.latitude.toFixed(6)}, ${l.longitude.toFixed(6)}</b>, com precisão de
+      <b>${l.precisao} m</b>.${l.precisao > 100 ? ` <br>⚠️ Precisão fraca (computador sem GPS?). Grave pelo
+      celular, no lugar do teste, para a cerca ficar certa.` : ""}`,
+    campos: [{nome: "raio", rotulo: "Raio da cerca (metros)", valor: "200", largura: 1}],
+    textoOk: "Gravar aqui"});
+  if (!r) { carregarEnsaio(); return; }
+  try {
+    await postar("/erp/api/ponto/ensaio/obra", {latitude: l.latitude, longitude: l.longitude,
+                                                 raio_metros: Number(r.raio) || 200});
+    await carregarEnsaio("Obra de teste gravada e ligada.");
+    if (typeof carregarCercas === "function") carregarCercas();
+  } catch (e) { falhou(e, "c-ensaio-msg"); carregarEnsaio(); }
+}
+
+async function digitarObraDeTeste(o) {
+  const r = await perguntar({titulo: "Obra de teste pela coordenada",
+    aviso: `Cole a coordenada do Google Maps (botão direito no local › clicar nos números), no formato
+      <b>-3.731862, -38.526670</b> — o mesmo da coluna AM da C. Diários.`,
+    campos: [{nome: "coordenada", rotulo: "Coordenada", largura: 2, obrigatorio: true,
+              exemplo: "-3.731862, -38.526670",
+              valor: o && o.latitude !== null ? `${o.latitude.toFixed(6)}, ${o.longitude.toFixed(6)}` : ""},
+             {nome: "raio", rotulo: "Raio da cerca (metros)", valor: String((o && o.raio_metros) || 200), largura: 1}],
+    textoOk: "Gravar"});
+  if (!r) return;
+  try {
+    await postar("/erp/api/ponto/ensaio/obra", {coordenada: r.coordenada, raio_metros: Number(r.raio) || 200});
+    await carregarEnsaio("Obra de teste gravada e ligada.");
+    if (typeof carregarCercas === "function") carregarCercas();
+  } catch (e) { falhou(e, "c-ensaio-msg"); }
+}
+
+async function desligarTeste() {
+  const r = await perguntar({titulo: "Desligar o teste",
+    aviso: "A obra de teste sai do ponto: ninguém bate mais nela. As batidas feitas no teste continuam registradas.",
+    campos: [], textoOk: "Desligar"});
+  if (!r) return;
+  try { await postar("/erp/api/ponto/ensaio/desligar"); await carregarEnsaio("Teste desligado."); }
+  catch (e) { falhou(e, "c-ensaio-msg"); }
+}
+
+async function pessoaDeTeste() {
+  const r = await perguntar({titulo: "Pessoa de teste",
+    aviso: `Se o CPF já existe no cadastro do ERP, a pessoa só ganha a obra de teste. Senão, é criada no
+      cadastro de colaboradores do ERP com nome, CPF, celular e a obra de teste. Ela bate também no
+      próprio celular, e como ativa, mesmo fora do Registro de Colaboradores.`,
+    campos: [{nome: "nome", rotulo: "Nome", largura: 3, obrigatorio: true},
+             {nome: "cpf", rotulo: "CPF", largura: 2, obrigatorio: true},
+             {nome: "telefone", rotulo: "Celular com DDD", largura: 1, obrigatorio: true}],
+    textoOk: "Cadastrar"});
+  if (!r) return;
+  try {
+    await postar("/erp/api/ponto/ensaio/pessoa", {nome: r.nome, cpf: r.cpf, celular: r.telefone});
+    await carregarEnsaio("Pessoa de teste cadastrada. Agora: “Mostrar código de primeiro acesso”.");
+  } catch (e) { falhou(e, "c-ensaio-msg"); }
+}
+
+async function codigoDeTeste(id) {
+  try {
+    const d = await postar(`/erp/api/ponto/ensaio/pessoa/${id}/codigo`);
+    aviso("c-ensaio-msg", `Código de primeiro acesso: <b class="dados" style="font-size:20px; letter-spacing:.15em">${escapar(d.codigo)}</b>
+      — vale 15 minutos e só o último gerado vale. Ordem: no celular, <b>/ponto/app</b> › “Primeiro acesso ou
+      esqueci o PIN” › CPF › “Mandar o código”; DEPOIS aperte este botão e digite no celular o código daqui
+      (não o do WhatsApp) e o PIN novo.`, "ok");
+  } catch (e) { falhou(e, "c-ensaio-msg"); }
+}
+
 // --------------------------------------- 10c. exceções ao padrão
 async function carregarExcecoes() {
   const alvo = els("c-excecoes");
@@ -3500,7 +3653,7 @@ function anosParaEscolher() {
 async function carregarTudoMenosConfig() {
   await Promise.all([carregarEscalas(), carregarFeriados(), carregarCompetencias(), carregarAparelhos(),
                     carregarCercas(), carregarQuemValida(), carregarRegistro(), carregarObrasBase(),
-                    carregarExcecoes()]);
+                    carregarExcecoes(), carregarEnsaio()]);
 }
 
 anosParaEscolher();

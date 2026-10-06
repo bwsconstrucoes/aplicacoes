@@ -198,6 +198,13 @@ exceções. Banco de horas, mesma coisa."* (`core/forma_de_bater.py`)
   (a gestão confere o mesmo código antes de aprovar); sempre abre na batida; não
   aceita login com CPF e PIN.
 
+## O modo de teste (05/10/2026)
+
+Ponto › Configuração › "Modo de teste" (`core/ensaio.py`, migração 005): grava a
+obra `TESTE-PONTO` onde a pessoa está, cadastra pessoas de teste (nome, CPF,
+celular) que batem como ativas e no próprio celular, e mostra na tela o código de
+primeiro acesso delas. "Desligar o teste" tira a obra do ponto; as batidas ficam.
+
 ## Validações: tudo o que espera alguém, e quem valida o quê (04/10/2026)
 
 **Quem valida** (`core/validacao.py`, Ponto › Configuração › Quem valida cada

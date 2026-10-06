@@ -599,7 +599,8 @@ async function carregarInicio() {
   } else if (!APARELHO) {
     avisoAparelho = `<div class="aviso erro">Não consegui registrar este celular. Feche e abra de novo.</div>`; podeBater = false;
   } else if (APARELHO.status === "PENDENTE") {
-    avisoAparelho = `<div class="aviso ambar">Este celular está esperando aprovação do DP ou do encarregado. Enquanto isso você vê o seu ponto, mas ainda não bate por aqui.</div>`;
+    const codAp = aparelho().uuid.replace(/[^A-Za-z0-9]/g, "").slice(-6).toUpperCase();
+    avisoAparelho = `<div class="aviso ambar">Este celular está esperando aprovação do DP ou do encarregado (código <b>${codAp}</b>). Enquanto isso você vê o seu ponto, mas ainda não bate por aqui.</div>`;
     podeBater = false;
   } else if (APARELHO.status === "BLOQUEADO") {
     avisoAparelho = `<div class="aviso erro">Este celular foi bloqueado para bater ponto. Fale com o DP.</div>`; podeBater = false;

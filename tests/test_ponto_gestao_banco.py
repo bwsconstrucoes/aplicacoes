@@ -185,7 +185,7 @@ def test_migracoes_do_ponto_e_feriados_nacionais(banco, mundo):
         secoes = conn.execute(text("""SELECT ps.secao, ps.nivel FROM perfil_secoes ps JOIN perfis p ON p.id = ps.perfil_id
                                        WHERE p.nome = 'Departamento pessoal' AND ps.secao LIKE 'pon_%' ORDER BY 1""")).all()
     assert nomes == ["001_ponto_base.sql", "002_gestao.sql", "003_qr_mosaico_e_sinais.sql",
-                     "004_obras_da_planilha_e_forma_de_bater.sql"]
+                     "004_obras_da_planilha_e_forma_de_bater.sql", "005_modo_de_teste.sql"]
     assert natal == "Natal"
     assert [s[0] for s in secoes] == ["pon_competencia", "pon_config", "pon_dp", "pon_gestao"]
 
