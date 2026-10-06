@@ -97,6 +97,13 @@
    ========================================================================= #}
 {% block conteudo %}
 <style>
+  /* O submenu da Configuração (06/10/2026). */
+  .sub-abas { display:flex; flex-wrap:wrap; gap:6px; margin:0 0 14px; padding-bottom:10px;
+              border-bottom:1px solid var(--borda); }
+  .sub-abas button { border:1px solid var(--borda-forte); background:var(--fundo-cartao, #fff); color:var(--tinta);
+                     border-radius:999px; padding:6px 14px; font-weight:600; font-size:13.5px; cursor:pointer; }
+  .sub-abas button.ativa { background:var(--azul); border-color:var(--azul); color:#fff; }
+  [data-secao-card][hidden] { display:none !important; }
   /* A batida como "pílula": a hora, e a marca do que ela tem de diferente. */
   .chip { display:inline-block; font-family:var(--fonte-dados); font-size:12.5px;
           padding:1px 7px; margin:0 4px 4px 0; border-radius:999px;
@@ -257,6 +264,8 @@
   {% endif %}
   {% if pode.aprovar_afastamento %}
   <button class="btn amarelo" id="e-btn-afastamento" type="button">Lançar afastamento</button>
+  {% elif pode.tratar_ponto %}
+  <button class="btn amarelo" id="e-btn-documento" type="button">Entregar atestado ou licença</button>
   {% endif %}
 </div>
 <div class="kpis" id="e-kpis"></div>
@@ -460,11 +469,34 @@
 {% elif aba_ponto == "ponto_config" %}
 {# ----------------------------------------------------------- CONFIGURAÇÃO #}
 <h2>Configuração do ponto</h2>
+{# O SUBMENU (pedido do dono, 06/10/2026: "acho que tem que ter um submenu
+   simples, tipo como tem em Análise de SPs (…) está bagunçado, tudo na mesma
+   tela"). Cada cartão diz de que seção é (`data-secao-card`); a seção escolhida
+   fica no endereço (#aparelhos), para voltar nela e mandar o link. #}
+<nav class="sub-abas" id="c-secoes" aria-label="Seções da configuração">
+  <button type="button" data-secao="geral">Geral</button>
+  <button type="button" data-secao="pessoas">Pessoas</button>
+  <button type="button" data-secao="obras">Obras e cerca</button>
+  <button type="button" data-secao="aparelhos">Aparelhos</button>
+  <button type="button" data-secao="fotos">Fotos</button>
+  <button type="button" data-secao="jornada">Jornada e licenças</button>
+  <button type="button" data-secao="validacao">Quem valida</button>
+  <button type="button" data-secao="mensagens">Mensagens</button>
+  <button type="button" data-secao="teste">Teste</button>
+</nav>
 <div id="mensagem"></div>
 
-<div class="cartao" id="c-migracoes">carregando…</div>
+<div class="cartao" id="c-migracoes" data-secao-card="geral">carregando…</div>
 
-<div class="cartao">
+<div class="cartao" data-secao-card="jornada">
+  <div class="cartao-cab"><h3>Licenças da lei</h3></div>
+  <div class="cartao-dica" style="margin-top:0">As licenças que a lei garante (CLT art. 473 e leis próprias), para
+    escolher no pedido em vez de escrever: o último dia sai dos dias da lei, o documento exigido aparece, e o
+    sistema confere o limite por ano. A convenção coletiva pode dar mais — ajuste os dias aqui.</div>
+  <div class="tabela-rolagem"><div id="c-licencas">carregando…</div></div>
+</div>
+
+<div class="cartao" data-secao-card="validacao">
   <div class="cartao-cab"><h3>Quem valida cada pedido</h3></div>
   <div class="cartao-dica" style="margin-top:0">Encarregado da obra = quem trata o ponto da obra
     (só as obras dele). DP = quem aprova afastamento. “Encarregado e depois o DP” = os dois,
@@ -472,7 +504,7 @@
   <div id="c-quem-valida">carregando…</div>
 </div>
 
-<div class="cartao">
+<div class="cartao" data-secao-card="pessoas">
   <div class="cartao-cab"><h3>Base de pessoas do ponto</h3></div>
   <div class="cartao-dica" style="margin-top:0">Critério igual ao da Análise de SPs: desligado =
     a data de saída já passou (o dia da saída ainda se bate) ou a Fase Atual do Pipefy diz
@@ -482,7 +514,7 @@
   <div id="c-registro">carregando…</div>
 </div>
 
-<div class="cartao">
+<div class="cartao" data-secao-card="obras">
   <div class="cartao-cab"><h3>Base de obras do ponto</h3>
     {% if pode.configurar_ponto %}<button class="btn secundario" id="c-obras-ler" type="button">Ler a planilha agora</button>{% endif %}</div>
   <div class="cartao-dica" style="margin-top:0">Por ora as obras vêm da aba <b>C. Diários</b> (planilha
@@ -495,7 +527,7 @@
 </div>
 
 {% if pode.configurar_ponto %}
-<div class="cartao">
+<div class="cartao" data-secao-card="teste">
   <div class="cartao-cab"><h3>Modo de teste</h3></div>
   <div class="cartao-dica" style="margin-top:0">Para testar o ponto com você mesmo, sem mexer na planilha
     C. Diários nem no Registro de Colaboradores. <b>1.</b> Vá ao lugar do teste (o escritório, por
@@ -509,7 +541,7 @@
 </div>
 {% endif %}
 
-<div class="cartao">
+<div class="cartao" data-secao-card="pessoas">
   <div class="cartao-cab"><h3>Exceções ao padrão</h3></div>
   <div class="cartao-dica" style="margin-top:0">O padrão vale para todos e não se cadastra: <b>só o
     aparelho da obra bate</b> e <b>ninguém tem banco de horas</b>. Aqui aparecem só as exceções, para
@@ -518,7 +550,7 @@
   <div id="c-excecoes">carregando…</div>
 </div>
 
-<div class="cartao">
+<div class="cartao" data-secao-card="jornada">
   <div class="cartao-cab"><h3>Escalas de trabalho</h3>
     {% if pode.configurar_ponto %}<button class="btn" id="c-nova-escala" type="button">+ Nova escala</button>{% endif %}</div>
   <div id="c-escalas">carregando…</div>
@@ -527,7 +559,7 @@
     todos que estão nela; trocar a escala de uma pessoa não muda o passado dela.</div>
 </div>
 
-<div class="cartao">
+<div class="cartao" data-secao-card="jornada">
   <div class="cartao-cab"><h3>Feriados</h3>
     <div style="display:flex; gap:8px; align-items:center">
       <select id="c-ano" data-sem-busca style="padding:6px 8px; border:1px solid var(--borda-forte); border-radius:8px"></select>
@@ -540,7 +572,7 @@
     obras daquela UF; municipal, para as obras daquele município.</div>
 </div>
 
-<div class="cartao">
+<div class="cartao" data-secao-card="jornada">
   <div class="cartao-cab"><h3>Fechamento do mês</h3>
     <small>os últimos 12 meses</small></div>
   <div id="c-competencias">carregando…</div>
@@ -550,18 +582,18 @@
 </div>
 
 {% if pode.configurar_ponto %}
-<div class="cartao">
+<div class="cartao" data-secao-card="aparelhos">
   <div class="cartao-cab"><h3>Aparelhos</h3><small>todos os celulares e tablets do ponto</small></div>
   <div class="tabela-rolagem" style="max-height:none"><div id="c-aparelhos">carregando…</div></div>
 </div>
 {% endif %}
 
-<div class="cartao">
+<div class="cartao" data-secao-card="mensagens">
   <div class="cartao-cab"><h3>Resumo diário por WhatsApp</h3></div>
   <div id="c-resumo">carregando…</div>
 </div>
 
-<div class="cartao">
+<div class="cartao" data-secao-card="mensagens">
   <div class="cartao-cab"><h3>QR Code pelo WhatsApp</h3></div>
   <div id="c-qr">carregando…</div>
   {% if pode.configurar_ponto %}
@@ -573,7 +605,7 @@
 </div>
 
 {% if pode.configurar_ponto %}
-<div class="cartao">
+<div class="cartao" data-secao-card="obras">
   <div class="cartao-cab"><h3>Cerca das obras</h3></div>
   <div class="cartao-dica" style="margin-top:0">A obra da batida é a da cerca em que o celular ou
     o tablet está — a pessoa não escolhe. Fora da cerca, a batida é recusada e fica registrada (o
@@ -586,7 +618,18 @@
   <div class="tabela-rolagem" style="max-height:420px"><div id="c-cercas">carregando…</div></div>
 </div>
 
-<div class="cartao">
+<div class="cartao" data-secao-card="fotos">
+  <div class="cartao-cab"><h3>Conferência do rosto (AWS)</h3>
+    <button class="btn secundario" id="c-rosto-rodar" type="button">Conferir agora</button></div>
+  <div class="cartao-dica" style="margin-top:0">A foto de cada batida é comparada com a foto cadastral da pessoa
+    pelo Amazon Rekognition. Rosto de outra pessoa ou foto sem rosto → a batida vai para conferência e abre o
+    alerta urgente. Quem ainda não tem foto cadastral ganha a da primeira batida (confira no mosaico). O padrão é
+    conferir todas; exclua obras, dias ou horários para gastar menos. O teto do mês é o freio: chegou nele, para
+    até o mês seguinte.</div>
+  <div id="c-rosto">carregando…</div>
+</div>
+
+<div class="cartao" data-secao-card="fotos">
   <div class="cartao-cab"><h3>Mosaico de fotos por obra</h3></div>
   <div class="cartao-dica" style="margin-top:0"><b>Opcional:</b> o mosaico fica sempre
     disponível na aba Mosaico. <b>Obrigatório:</b> na manhã seguinte o responsável recebe
@@ -598,12 +641,12 @@
 </div>
 {% endif %}
 
-<div class="cartao">
+<div class="cartao" data-secao-card="geral">
   <div class="cartao-cab"><h3>Google Drive e fila de envio</h3></div>
   <div id="c-drive">carregando…</div>
 </div>
 
-<div class="cartao">
+<div class="cartao" data-secao-card="geral">
   <div class="cartao-cab"><h3>App do colaborador</h3></div>
   <div class="endereco-app" id="c-app">…</div>
   <div style="margin-top:8px"><button class="btn secundario" id="c-copiar-app" type="button">Copiar o endereço</button></div>
@@ -860,6 +903,26 @@ const linkEspelho = (id, competencia) =>
   + (competencia ? `&competencia=${encodeURIComponent(competencia)}` : "");
 
 // --- Aparelhos: aprovar e bloquear (usados em Validações e em Configuração).
+async function renovarGrupo(id, depois, perfil) {
+  const grupo = perfil === "LISTA";
+  const r = await perguntar({titulo: grupo ? "Renovar a permissão de grupo" : "Renovar a liberação do aparelho",
+    aviso: grupo ? "O grupo é passageiro: renove só se a situação continua (no máximo 90 dias a partir de hoje)."
+                 : "Todo aparelho se renova a cada 90 dias. Confira que ele ainda é usado e está com quem deve.",
+    campos: [{nome: "valido_ate", rotulo: "Liberado até", tipo: "date", valor: somarDias(hojeISO(), grupo ? 15 : 90),
+              largura: 1, obrigatorio: true}],
+    textoOk: "Renovar"});
+  if (!r) return;
+  try { await postar(`/erp/api/ponto/dispositivos/${id}/renovar`, {valido_ate: r.valido_ate});
+        aviso("mensagem", "Liberação renovada.", "ok"); if (depois) await depois(); }
+  catch (e) { falhou(e); }
+}
+
+async function tirarSemUso(id, depois) {
+  try { const d = await postar(`/erp/api/ponto/dispositivos/${id}/tirar-sem-uso`);
+        aviso("mensagem", `${d.retirados} pessoa(s) que não batiam mais nele saíram do grupo.`, "ok"); if (depois) await depois(); }
+  catch (e) { falhou(e); }
+}
+
 async function aprovarAparelho(a, depois) {
   // Aparelho já aprovado (ou bloqueado) abre com o que ele tem: trocar o uso,
   // o dono, as obras ou o nome é aprovar de novo (pedido do dono, 06/10/2026).
@@ -872,7 +935,8 @@ async function aprovarAparelho(a, depois) {
       ${a.dono ? `<br>⚠️ Alguém entrou neste aparelho como <b>${escapar(a.dono.nome)}</b>: só aprove como
         aparelho da obra se o código bater com o do tablet.` : ""}
       Na dúvida entre "tablet da obra" e "celular de uma pessoa", escolha o
-      celular de uma pessoa: é o que fecha mais portas.`,
+      celular de uma pessoa: é o que fecha mais portas. Cada pessoa tem um celular só: aprovar
+      um novo bloqueia o anterior dela.`,
     campos: [
       {nome: "perfil", rotulo: "Como vai ser usado", tipo: "select", valor: jaAprovado ? a.perfil : "INDIVIDUAL",
        opcoes: PERFIS_APARELHO, largura: 3, obrigatorio: true},
@@ -886,6 +950,9 @@ async function aprovarAparelho(a, depois) {
        largura: 3, dica: jaAprovado && a.perfil === "LISTA"
          ? `Hoje são ${a.qtd_autorizados} pessoa(s). Deixe vazio para manter o grupo; preencha para trocá-lo inteiro.`
          : "Só para \"grupo de pessoas\": os CPFs separados por vírgula."},
+      {nome: "valido_ate", rotulo: "Liberado até", tipo: "date", largura: 1,
+       valor: a.valido_ate && a.valido_ate >= hojeISO() ? a.valido_ate : "",
+       dica: "Todo aparelho vence e se renova: vazio = 90 dias (o de grupo, 15 — é passageiro). No máximo 90. Vencido, para de bater."},
       {nome: "obras", rotulo: "Obras onde vale", largura: 3, exemplo: "deixe vazio para todas",
        valor: jaAprovado && a.obras ? a.obras : "",
        dica: "Códigos das obras separados por vírgula. Para o tablet da obra, diga a obra dele: sem GPS, a batida dele só pode cair nela."},
@@ -901,11 +968,13 @@ async function aprovarAparelho(a, depois) {
     aviso("mensagem", "Diga os CPFs do grupo de pessoas.", "erro"); return;
   }
   try {
-    await postar(`/erp/api/ponto/dispositivos/${a.id}/aprovar`, {
+    const resp = await postar(`/erp/api/ponto/dispositivos/${a.id}/aprovar`, {
       perfil: r.perfil, cpf: r.perfil === "INDIVIDUAL" ? r.cpf : "",
       autorizados: r.perfil === "LISTA" ? listaDeTexto(r.autorizados) : [], manter_grupo: manterGrupo,
+      valido_ate: r.valido_ate || null,
       obras: listaDeTexto(r.obras), descricao: r.descricao});
-    aviso("mensagem", jaAprovado ? "Aparelho alterado." : "Aparelho aprovado. Ele já pode bater ponto.", "ok");
+    aviso("mensagem", (jaAprovado ? "Aparelho alterado." : "Aparelho aprovado. Ele já pode bater ponto.")
+      + (resp.substituidos ? " O celular que essa pessoa usava antes foi bloqueado: vale um celular por pessoa." : ""), "ok");
     if (depois) await depois();
   } catch (e) { falhou(e); }
 }
@@ -1226,9 +1295,57 @@ async function registrarCompensacao() {
   } catch (e) { falhou(e); }
 }
 
+// As licenças da lei (06/10/2026), para escolher o tipo em vez de escrever.
+let LICENCAS_LEI = null;
+async function licencasDaLei() {
+  if (LICENCAS_LEI === null) {
+    try { LICENCAS_LEI = (await api("/erp/api/ponto/licencas")).licencas || []; } catch (e) { LICENCAS_LEI = []; }
+  }
+  return LICENCAS_LEI;
+}
+const opcoesDeLicenca = l => [{valor: "", rotulo: "— (só para licença)"},
+  ...l.map(x => ({valor: x.codigo, rotulo: escapar(`${x.nome}${x.dias ? ` — ${x.dias} dia(s)` : ""}`)}))];
+
+// O responsável da obra entrega atestado ou licença com o documento; quem
+// valida é o DP (atestado, sempre) — pedido do dono, 06/10/2026.
+async function entregarDocumento() {
+  if (!ESP) return;
+  const p = ESP.pessoa;
+  const lic = await licencasDaLei();
+  const r = await perguntar({
+    titulo: `Entregar atestado ou licença — ${escapar(p.nome)}`,
+    aviso: `O documento vai para o DP validar. O atestado fica em sigilo: depois de enviado, só o DP abre.`,
+    campos: [
+      {nome: "tipo", rotulo: "O que é", tipo: "select", valor: "ATESTADO", largura: 3, opcoes: [
+        {valor: "ATESTADO", rotulo: "Atestado médico"}, {valor: "LICENCA", rotulo: "Licença da lei"}]},
+      {nome: "subtipo", rotulo: "Tipo de licença", tipo: "select", valor: "", largura: 3, opcoes: opcoesDeLicenca(lic)},
+      {nome: "data_inicio", rotulo: "Primeiro dia", tipo: "date", obrigatorio: true, largura: 1},
+      {nome: "data_fim", rotulo: "Último dia", tipo: "date", largura: 1, dica: "Vazio = um dia só (na licença, os dias da lei)."},
+      {nome: "descricao", rotulo: "Observação", tipo: "textarea", linhas: 2, largura: 3},
+      {nome: "documento", rotulo: "Documento (foto ou PDF)", tipo: "arquivo", largura: 3, obrigatorio: true,
+       aceita: ".pdf,.jpg,.jpeg,.png,.webp"},
+    ],
+    textoOk: "Enviar para o DP",
+  });
+  if (!r) return;
+  let fim = r.data_fim;
+  const l = lic.find(x => x.codigo === r.subtipo);
+  if (!fim && r.tipo === "LICENCA" && l && l.dias) fim = somarDias(r.data_inicio, l.dias - 1);
+  try {
+    const conteudo = await lerArquivo(r.documento);
+    await postar("/erp/api/ponto/ocorrencias", {
+      tipo: r.tipo, subtipo: r.tipo === "LICENCA" ? r.subtipo : "", colaborador_id: p.id,
+      data_inicio: r.data_inicio, data_fim: fim || r.data_inicio, descricao: r.descricao,
+      documento_base64: conteudo, documento_nome: r.documento ? r.documento.name : ""});
+    aviso("mensagem", "Enviado. O pedido aparece em Validações até o DP decidir.", "ok");
+    await carregarEspelho();
+  } catch (e) { falhou(e); }
+}
+
 async function lancarAfastamento() {
   if (!ESP) return;
   const p = ESP.pessoa;
+  const lic = await licencasDaLei();
   const r = await perguntar({
     titulo: `Lançar afastamento — ${escapar(p.nome)}`,
     aviso: `Lançado por você, já entra aprovado e abona os dias. O documento de
@@ -1236,10 +1353,11 @@ async function lancarAfastamento() {
     campos: [
       {nome: "tipo", rotulo: "Tipo", tipo: "select", valor: "ATESTADO", largura: 3, opcoes: [
         {valor: "ATESTADO", rotulo: "Atestado médico"},
-        {valor: "LICENCA", rotulo: "Licença (maternidade, paternidade, casamento, luto…)"},
+        {valor: "LICENCA", rotulo: "Licença da lei (casamento, luto, paternidade…)"},
         {valor: "FERIAS", rotulo: "Férias"},
-        {valor: "AFASTAMENTO", rotulo: "Afastamento (INSS, acidente)"},
+        {valor: "AFASTAMENTO", rotulo: "Afastamento (INSS, acidente, maternidade)"},
         {valor: "ABONO", rotulo: "Abono (dia dispensado pela empresa)"}]},
+      {nome: "subtipo", rotulo: "Tipo de licença", tipo: "select", valor: "", largura: 3, opcoes: opcoesDeLicenca(lic)},
       {nome: "data_inicio", rotulo: "Primeiro dia", tipo: "date", obrigatorio: true, largura: 1},
       {nome: "data_fim", rotulo: "Último dia", tipo: "date", largura: 1,
        dica: "Vazio = um dia só."},
@@ -1255,9 +1373,12 @@ async function lancarAfastamento() {
   if (!r) return;
   try {
     const conteudo = await lerArquivo(r.documento);
+    let fim = r.data_fim;
+    const l = lic.find(x => x.codigo === r.subtipo);
+    if (!fim && r.tipo === "LICENCA" && l && l.dias) fim = somarDias(r.data_inicio, l.dias - 1);
     await postar("/erp/api/ponto/afastamentos", {
-      tipo: r.tipo, colaborador_id: p.id, data_inicio: r.data_inicio,
-      data_fim: r.data_fim || r.data_inicio, descricao: r.descricao, cid: r.cid,
+      tipo: r.tipo, subtipo: r.tipo === "LICENCA" ? r.subtipo : "", colaborador_id: p.id, data_inicio: r.data_inicio,
+      data_fim: fim || r.data_inicio, descricao: r.descricao, cid: r.cid,
       medico: r.medico, crm: r.crm, documento_base64: conteudo,
       documento_nome: r.documento ? r.documento.name : "", aprovar_ja: true});
     aviso("mensagem", "Afastamento lançado e aprovado. Os dias já aparecem abonados.", "ok");
@@ -1279,6 +1400,7 @@ els("e-imprimir").addEventListener("click", () => {
 if (els("e-btn-ajuste")) els("e-btn-ajuste").addEventListener("click", () => pedirAjuste(null));
 if (els("e-btn-compensacao")) els("e-btn-compensacao").addEventListener("click", registrarCompensacao);
 if (els("e-btn-afastamento")) els("e-btn-afastamento").addEventListener("click", lancarAfastamento);
+if (els("e-btn-documento")) els("e-btn-documento").addEventListener("click", entregarDocumento);
 carregarPessoasDoEspelho().then(() => {
   const id = doUrl("colaborador_id");
   if (id && /^\d+$/.test(id)) {
@@ -1305,8 +1427,8 @@ let VAL = null, ESPERA_BUSCA = null, PEDIDOS_COMPLETOS = null;
 const TIPOS_VAL = {AJUSTE_BATIDA: "Ajuste de batida", ATESTADO: "Atestado", LICENCA: "Licença",
   COMPENSACAO: "Compensação", FOLGA_BANCO: "Folga do banco", FERIAS: "Férias",
   AFASTAMENTO: "Afastamento", ABONO: "Abono", BATIDA_EM_ANALISE: "Batida em conferência",
-  MOSAICO: "Mosaico", APARELHO: "Aparelho"};
-const SELO_CATEGORIA = {PEDIDO: "pago", BATIDA: "aguardando", MOSAICO: "outro", APARELHO: "outro"};
+  MOSAICO: "Mosaico", APARELHO: "Aparelho", RENOVAR: "Aparelho a renovar"};
+const SELO_CATEGORIA = {PEDIDO: "pago", BATIDA: "aguardando", MOSAICO: "outro", APARELHO: "outro", RENOVAR: "aguardando"};
 const doUrl = nome => new URLSearchParams(location.search).get(nome);
 const chaveDoItem = i => `${i.categoria}:${i.id}`;
 const emLote = i => i.pode_decidir && (i.categoria === "PEDIDO" || i.categoria === "BATIDA");
@@ -1437,6 +1559,11 @@ function acoesDoItem(i) {
     }
   } else if (i.categoria === "MOSAICO") {
     a.push(`<a class="btn ${i.pode_decidir ? "" : "secundario"}" style="text-decoration:none" href="${escapar(i.abrir_em)}">Abrir mosaico</a>`);
+  } else if (i.categoria === "RENOVAR") {
+    // Todo aparelho vence (06/10/2026): renovar para continuar batendo, ou desativar de vez.
+    a.push(`<button class="btn ${i.sugestao === "DESATIVAR" ? "secundario" : ""}" type="button" data-acao="grupo-renovar" data-item="${k}">Renovar</button>`);
+    a.push(`<button class="btn ${i.sugestao === "DESATIVAR" ? "" : "secundario"}" type="button" data-acao="grupo-cancelar" data-item="${k}">Desativar</button>`);
+    if (i.perfil === "LISTA") a.push(`<button class="link-btn" type="button" data-acao="grupo-tirar" data-item="${k}">tirar quem não usa</button>`);
   } else if (i.categoria === "APARELHO" && i.pode_decidir) {
     a.push(`<button class="btn" type="button" data-acao="aparelho" data-item="${k}">Aprovar aparelho</button>`);
     a.push(`<button class="link-btn" type="button" data-acao="bloquear" data-item="${k}">bloquear</button>`);
@@ -1486,6 +1613,9 @@ function desenharValidacoes() {
     else if (acao === "corrigir") corrigirPedido(i, false);
     else if (acao === "aparelho") aprovarAparelho({id: i.id, descricao: i.descricao, codigo: i.codigo, dono: i.dono}, carregarValidacoes);
     else if (acao === "bloquear") bloquearAparelho({id: i.id, descricao: i.detalhe}, carregarValidacoes);
+    else if (acao === "grupo-cancelar") bloquearAparelho({id: i.id, descricao: i.detalhe}, carregarValidacoes);
+    else if (acao === "grupo-renovar") renovarGrupo(i.id, carregarValidacoes, i.perfil);
+    else if (acao === "grupo-tirar") tirarSemUso(i.id, carregarValidacoes);
   }));
   els("v-corpo").querySelectorAll("[data-marcar]").forEach(c => c.addEventListener("change", () => {
     if (c.checked) MARCADOS.add(c.dataset.marcar); else MARCADOS.delete(c.dataset.marcar);
@@ -2595,6 +2725,7 @@ function desenharMigracoes() {
   const cartao = els("c-migracoes");
   if (m.pendentes.length) {
     cartao.classList.add("cartao-alerta");
+    cartao.hidden = false;        // aparece em toda seção do submenu
     cartao.innerHTML = `<div class="cartao-cab"><h3 style="color:var(--vermelho); font-size:16px">
         O banco do ponto precisa de ${m.pendentes.length} atualização(ões)</h3></div>
       <div>Até aplicar, as outras telas do ponto podem dar erro. Falta:
@@ -2648,10 +2779,24 @@ async function aplicarMigracoes() {
 
 // ------------------------------------------------------------- 2. escalas
 async function carregarEscalas() {
+  let resp;
   try {
-    ESCALAS = (await api("/erp/api/ponto/escalas")).escalas;
+    resp = await api("/erp/api/ponto/escalas");
+    ESCALAS = resp.escalas;
   } catch (e) { erroNoCartao("c-escalas", e); return; }
-  els("c-escalas").innerHTML = ESCALAS.length ? `<table><thead><tr><th class="sem-ordem">Nome</th>
+  // A escala padrão da empresa (06/10/2026): quem não tem escala própria é
+  // julgado por ela — e a falta aparece no dia seguinte.
+  const semanais = ESCALAS.filter(e => e.ativo && e.tipo !== "CICLO_12X36");
+  const padrao = `<div class="campo" style="max-width:520px; margin-bottom:12px">
+      <label for="c-escala-padrao">Escala padrão da empresa (para quem não tem escala própria)</label>
+      <select id="c-escala-padrao" data-sem-busca ${PODE_CONFIGURAR ? "" : "disabled"}>
+        <option value="">Nenhuma — sem escala, o dia não é julgado (não aparece falta)</option>
+        ${semanais.map(e => `<option value="${e.id}" ${e.id === resp.padrao_id ? "selected" : ""}>${escapar(e.nome)}</option>`).join("")}
+      </select>
+      <div class="cartao-dica" style="margin-top:4px">Com ela escolhida, o dia sem batida aparece como falta já no dia
+        seguinte para todo mundo. Quem tem escala própria continua com a dela.</div>
+      <div id="c-escala-padrao-msg"></div></div>`;
+  els("c-escalas").innerHTML = padrao + (ESCALAS.length ? `<table><thead><tr><th class="sem-ordem">Nome</th>
       <th class="sem-ordem">Tipo</th><th class="sem-ordem direita">Horas por semana</th>
       <th class="sem-ordem direita">Pessoas</th><th class="sem-ordem">Situação</th><th class="sem-ordem"></th></tr></thead><tbody>
     ${ESCALAS.map(e => `<tr>
@@ -2663,7 +2808,14 @@ async function carregarEscalas() {
       <td>${PODE_CONFIGURAR ? `<button class="link-btn" type="button" data-editar-escala="${e.id}">editar</button>` : ""}</td>
     </tr>`).join("")}</tbody></table>`
     : `<div class="cartao-dica">Nenhuma escala cadastrada. Sem escala o espelho não sabe o
-        que era previsto — comece por aqui.</div>`;
+        que era previsto — comece por aqui.</div>`);
+  els("c-escala-padrao").addEventListener("change", async ev => {
+    try {
+      await postar("/erp/api/ponto/escalas/padrao", {escala_id: ev.target.value || null});
+      aviso("c-escala-padrao-msg", ev.target.value ? "Escala padrão gravada: quem não tem escala própria passa a ser julgado por ela."
+        : "Sem escala padrão: quem não tem escala própria não tem o dia julgado.", "ok");
+    } catch (e) { falhou(e, "c-escala-padrao-msg"); }
+  });
   els("c-escalas").querySelectorAll("[data-editar-escala]").forEach(b =>
     b.addEventListener("click", () => abrirEscala(ESCALAS.find(e => e.id === Number(b.dataset.editarEscala)))));
 }
@@ -2892,17 +3044,21 @@ async function carregarAparelhos() {
       <td>${seloAparelho(a.status)}${a.motivo_bloqueio ? `<small>${escapar(a.motivo_bloqueio)}</small>` : ""}</td>
       <td>${a.status === "PENDENTE" ? `<span class="suave">—</span>` : escapar(rotuloPerfil(a.perfil))}</td>
       <td>${a.dono ? `${escapar(a.dono.nome)}<small>${escapar(documento(a.dono.cpf))}</small>`
-          : a.perfil === "LISTA" ? `${a.qtd_autorizados} pessoa(s)` : `<span class="suave">—</span>`}</td>
+          : a.perfil === "LISTA" ? `${a.qtd_autorizados} pessoa(s)` : `<span class="suave">—</span>`}
+          ${a.valido_ate && a.status === "APROVADO" ? `<small style="${a.valido_ate < hojeISO() ? "color:var(--vermelho); font-weight:700" : ""}">liberado até ${dataBR(a.valido_ate)}</small>` : ""}</td>
       <td class="dados">${a.obras ? escapar(a.obras) : `<span class="suave">todas</span>`}</td>
       <td class="dados">${escapar(quando(a.ultimo_uso_em))}</td>
       <td><div class="acoes">${a.status === "PENDENTE" ? `<button class="btn" type="button" data-aprovar-ap="${a.id}">Aprovar</button>`
           : `<button class="btn secundario" type="button" data-aprovar-ap="${a.id}">${a.status === "BLOQUEADO" ? "Reativar" : "Alterar"}</button>`}
+        ${a.status === "APROVADO" ? `<button class="link-btn" type="button" data-renovar-ap="${a.id}">renovar</button>` : ""}
         ${a.status !== "BLOQUEADO" ? `<button class="link-btn" type="button" data-bloquear-ap="${a.id}">bloquear</button>` : ""}</div></td>
     </tr>`).join("")}</tbody></table>`
     : `<div class="cartao-dica">Nenhum aparelho registrado ainda. O primeiro aparece quando alguém abrir o app do colaborador.</div>`;
   const achar = id => lista.find(a => a.id === Number(id));
   els("c-aparelhos").querySelectorAll("[data-aprovar-ap]").forEach(b =>
     b.addEventListener("click", () => aprovarAparelho(achar(b.dataset.aprovarAp), carregarAparelhos)));
+  els("c-aparelhos").querySelectorAll("[data-renovar-ap]").forEach(b =>
+    b.addEventListener("click", () => renovarGrupo(Number(b.dataset.renovarAp), carregarAparelhos, achar(b.dataset.renovarAp).perfil)));
   els("c-aparelhos").querySelectorAll("[data-bloquear-ap]").forEach(b =>
     b.addEventListener("click", () => bloquearAparelho(achar(b.dataset.bloquearAp), carregarAparelhos)));
 }
@@ -3653,13 +3809,153 @@ function anosParaEscolher() {
 async function carregarTudoMenosConfig() {
   await Promise.all([carregarEscalas(), carregarFeriados(), carregarCompetencias(), carregarAparelhos(),
                     carregarCercas(), carregarQuemValida(), carregarRegistro(), carregarObrasBase(),
-                    carregarExcecoes(), carregarEnsaio()]);
+                    carregarExcecoes(), carregarEnsaio(), carregarLicencas(), carregarRosto()]);
+}
+
+// --------------------------------------------- conferência do rosto (06/10/2026)
+const DIAS_DA_SEMANA = ["seg", "ter", "qua", "qui", "sex", "sáb", "dom"];
+let ROSTO = null;
+async function carregarRosto(mensagem, tipo) {
+  const alvo = els("c-rosto");
+  if (!alvo) return;
+  try { ROSTO = await api("/erp/api/ponto/rosto"); } catch (e) { erroNoCartao("c-rosto", e); return; }
+  const d = ROSTO;
+  if (!d.disponivel) { alvo.innerHTML = `<div class="aviso alerta">Aplique as atualizações do ponto (migração 007).</div>`; return; }
+  const c = d.config, mes = d.mes || {}, est = d.estimativa || {};
+  const real = v => `US$ ${Number(v || 0).toFixed(2).replace(".", ",")}`;
+  const falta = [!d.credenciais ? "as chaves da AWS no Render (AWS_ACCESS_KEY_ID e AWS_SECRET_ACCESS_KEY)" : "",
+                 !d.biblioteca ? "a biblioteca da AWS no servidor" : ""].filter(Boolean);
+  const kpi = (rot, valor, cor, sub) => `<div class="kpi estatico ${cor}"><div class="kpi-rotulo">${rot}</div>
+    <div class="kpi-valor">${valor}</div><div class="kpi-sub">${sub}</div></div>`;
+  alvo.innerHTML = `${falta.length ? `<div class="aviso alerta" style="margin:0 0 10px">Para funcionar, falta: ${falta.join(" e ")}.</div>` : ""}
+    <label class="interruptor"><input type="checkbox" id="ros-ligado" ${c.ligado ? "checked" : ""}>
+      <span><b>Conferir o rosto</b><span class="explica">Roda sozinha a cada 10 minutos, nas batidas com foto dos últimos 3 dias.</span></span></label>
+    <div class="kpis" style="margin-top:10px">
+      ${kpi("Gasto do mês", real(mes.custo_usd), "", `${mes.cobradas || 0} foto(s) cobradas · teto ${real(c.teto_mensal_usd)}`)}
+      ${kpi("Rostos que não conferem", mes.suspeitas || 0, mes.suspeitas ? "vermelho" : "", "no mês")}
+      ${kpi("Estimativa com esta regra", real(est.custo_estimado_usd), "ciano", `${est.entrariam || 0} de ${est.fotos_30_dias || 0} fotos dos últimos 30 dias`)}
+      ${kpi("Sem foto cadastral", d.sem_cadastral || 0, d.sem_cadastral ? "ambar" : "", "ganham a da 1ª batida")}
+    </div>
+    <div class="grade-campos" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px; margin-top:12px">
+      <div class="campo"><label for="ros-teto">Teto do mês (US$)</label><input id="ros-teto" data-sem-mascara value="${escapar(c.teto_mensal_usd)}"></div>
+      <div class="campo"><label for="ros-min">Semelhança mínima (%)</label><input id="ros-min" data-sem-mascara value="${escapar(c.semelhanca_minima)}"></div>
+      <div class="campo"><label for="ros-regiao">Região da AWS</label><input id="ros-regiao" data-sem-mascara value="${escapar(c.regiao)}"></div>
+    </div>
+    <label class="interruptor" style="margin-top:10px"><input type="checkbox" id="ros-primeira" ${c.so_primeira_do_dia ? "checked" : ""}>
+      <span><b>Só a primeira batida de cada dia</b><span class="explica">Confere 1 em cada 4 batidas: o custo cai uns 75 %.</span></span></label>
+    <div style="margin-top:10px"><b>Dias que não conferem:</b>
+      ${DIAS_DA_SEMANA.map((n, i) => `<label style="margin-right:10px"><input type="checkbox" data-ros-dia="${i}" ${(c.dias_excluidos || []).includes(i) ? "checked" : ""}> ${n}</label>`).join("")}</div>
+    <div class="campo" style="margin-top:10px"><label for="ros-horarios">Horários que não conferem</label>
+      <input id="ros-horarios" data-sem-mascara value="${escapar((c.horarios_excluidos || []).map(f => `${f.de}-${f.ate}`).join(", "))}"
+             placeholder="ex.: 11:00-13:30, 22:00-05:00"></div>
+    <div class="campo" style="margin-top:10px"><label>Obras que não conferem</label>
+      <div style="max-height:160px; overflow:auto; border:1px solid var(--borda); border-radius:8px; padding:6px 10px">
+        ${(d.obras || []).map(o => `<label style="display:block"><input type="checkbox" data-ros-obra="${o.id}" ${(c.obras_excluidas || []).includes(o.id) ? "checked" : ""}> ${escapar(o.codigo)} — ${escapar(o.nome)}</label>`).join("")
+          || `<span class="suave">nenhuma obra ativa</span>`}</div></div>
+    <div style="margin-top:10px"><button class="btn" type="button" id="ros-salvar">Salvar a regra</button></div>
+    <div id="c-rosto-msg" style="margin-top:8px"></div>`;
+  els("ros-salvar").addEventListener("click", salvarRosto);
+  if (mensagem) aviso("c-rosto-msg", mensagem, tipo || "ok");
+}
+
+async function salvarRosto() {
+  const horarios = els("ros-horarios").value.split(",").map(t => t.trim()).filter(Boolean).map(t => {
+    const [de, ate] = t.split("-").map(x => x.trim()); return {de, ate};
+  });
+  if (horarios.some(f => !/^\d{1,2}:\d{2}$/.test(f.de || "") || !/^\d{1,2}:\d{2}$/.test(f.ate || ""))) {
+    aviso("c-rosto-msg", "Horários no formato 11:00-13:30, separados por vírgula.", "erro"); return;
+  }
+  try {
+    await postar("/erp/api/ponto/rosto", {
+      ligado: els("ros-ligado").checked, teto_mensal_usd: els("ros-teto").value,
+      semelhanca_minima: els("ros-min").value, regiao: els("ros-regiao").value,
+      so_primeira_do_dia: els("ros-primeira").checked,
+      dias_excluidos: [...document.querySelectorAll("[data-ros-dia]:checked")].map(x => Number(x.dataset.rosDia)),
+      obras_excluidas: [...document.querySelectorAll("[data-ros-obra]:checked")].map(x => Number(x.dataset.rosObra)),
+      horarios_excluidos: horarios});
+    await carregarRosto("Regra salva. A estimativa acima já usa a regra nova.");
+  } catch (e) { falhou(e, "c-rosto-msg"); }
+}
+
+async function rodarRostoAgora() {
+  const b = els("c-rosto-rodar");
+  b.disabled = true;
+  try {
+    const r = (await postar("/erp/api/ponto/rosto/rodar")).rodada;
+    await carregarRosto(`${r.conferidas} conferida(s), ${r.suspeitas} suspeita(s), ${r.viraram_cadastral} virou(aram) foto cadastral`
+      + (r.parou ? ` — parou: ${r.parou}.` : "."), r.parou && r.parou !== "desligada" ? "alerta" : "ok");
+  } catch (e) { falhou(e, "c-rosto-msg"); }
+  b.disabled = false;
+}
+
+// --------------------------------------------- o submenu (06/10/2026)
+const SECOES = ["geral", "pessoas", "obras", "aparelhos", "fotos", "jornada", "validacao", "mensagens", "teste"];
+function mostrarSecao(secao) {
+  if (!SECOES.includes(secao)) secao = "geral";
+  document.querySelectorAll("[data-secao-card]").forEach(c => { c.hidden = c.dataset.secaoCard !== secao; });
+  // Atualização do banco pendente aparece em toda seção: sem ela, nada funciona.
+  const mig = els("c-migracoes");
+  if (mig && mig.classList.contains("cartao-alerta")) mig.hidden = false;
+  document.querySelectorAll("#c-secoes [data-secao]").forEach(b => b.classList.toggle("ativa", b.dataset.secao === secao));
+  try { history.replaceState(null, "", `#${secao}`); } catch (e) {}
+}
+document.querySelectorAll("#c-secoes [data-secao]").forEach(b => b.addEventListener("click", () => mostrarSecao(b.dataset.secao)));
+mostrarSecao((location.hash || "").slice(1));
+
+// --------------------------------------------- licenças da lei (06/10/2026)
+async function carregarLicencas() {
+  const alvo = els("c-licencas");
+  if (!alvo) return;
+  let d;
+  try { d = await api("/erp/api/ponto/licencas?todas=1"); } catch (e) { erroNoCartao("c-licencas", e); return; }
+  if (!d.disponivel) { alvo.innerHTML = `<div class="aviso alerta">Aplique as atualizações do ponto para ter a lista.</div>`; return; }
+  const lista = d.licencas || [];
+  alvo.innerHTML = `<table><thead><tr><th class="sem-ordem">Licença</th><th class="sem-ordem">Base legal</th>
+      <th class="sem-ordem direita">Dias</th><th class="sem-ordem direita">Vezes em 12 meses</th>
+      <th class="sem-ordem">Documento</th><th class="sem-ordem">Situação</th><th class="sem-ordem"></th></tr></thead><tbody>
+    ${lista.map(l => `<tr><td><b>${escapar(l.nome)}</b></td><td>${escapar(l.base_legal || "—")}</td>
+      <td class="dados direita">${l.dias ?? "o do documento"}</td><td class="dados direita">${l.limite_ano ?? "—"}</td>
+      <td>${l.exige_documento ? escapar(l.documento) : `<span class="suave">opcional</span>`}</td>
+      <td>${l.ativo ? `<span class="selo aprovado">em uso</span>` : `<span class="selo outro">desligada</span>`}</td>
+      <td>${PODE_DP ? `<button class="link-btn" type="button" data-licenca="${escapar(l.codigo)}">ajustar</button>` : ""}</td></tr>`).join("")}
+    </tbody></table>
+    ${PODE_DP ? `<div style="margin-top:8px"><button class="btn secundario" type="button" id="c-licenca-nova">+ Licença da convenção</button></div>` : ""}`;
+  alvo.querySelectorAll("[data-licenca]").forEach(b => b.addEventListener("click", () =>
+    ajustarLicenca(lista.find(l => l.codigo === b.dataset.licenca))));
+  if (els("c-licenca-nova")) els("c-licenca-nova").addEventListener("click", () => ajustarLicenca(null));
+}
+
+async function ajustarLicenca(l) {
+  const r = await perguntar({titulo: l ? `Ajustar — ${escapar(l.nome)}` : "Nova licença (convenção ou acordo)",
+    aviso: "Os dias são o máximo por pedido; vazio = o que o documento disser.",
+    campos: [
+      ...(l ? [] : [{nome: "codigo", rotulo: "Código curto", largura: 1, obrigatorio: true, exemplo: "ex.: ANIVERSARIO"}]),
+      {nome: "nome", rotulo: "Nome", valor: l ? l.nome : "", largura: 3, obrigatorio: !l},
+      {nome: "base_legal", rotulo: "Base legal", valor: l ? l.base_legal : "", largura: 2, exemplo: "ex.: CCT 2026, cláusula 30"},
+      {nome: "dias", rotulo: "Dias", valor: l && l.dias ? String(l.dias) : "", largura: 1},
+      {nome: "limite_ano", rotulo: "Vezes em 12 meses", valor: l && l.limite_ano ? String(l.limite_ano) : "", largura: 1},
+      {nome: "documento", rotulo: "Documento exigido", valor: l ? l.documento : "", largura: 2},
+      {nome: "exige_documento", rotulo: "O documento é obrigatório?", tipo: "select", valor: !l || l.exige_documento ? "1" : "0",
+       largura: 1, opcoes: [{valor: "1", rotulo: "Sim"}, {valor: "0", rotulo: "Não"}]},
+      {nome: "ativo", rotulo: "Situação", tipo: "select", valor: !l || l.ativo ? "1" : "0", largura: 1,
+       opcoes: [{valor: "1", rotulo: "Em uso"}, {valor: "0", rotulo: "Desligada"}]},
+    ], textoOk: "Salvar"});
+  if (!r) return;
+  const codigo = l ? l.codigo : r.codigo;
+  try {
+    await postar(`/erp/api/ponto/licencas/${encodeURIComponent(codigo)}`, {
+      nome: r.nome, base_legal: r.base_legal, dias: r.dias, limite_ano: r.limite_ano, documento: r.documento,
+      exige_documento: r.exige_documento === "1", ativo: r.ativo === "1"});
+    aviso("mensagem", "Licença salva.", "ok");
+    carregarLicencas();
+  } catch (e) { falhou(e); }
 }
 
 anosParaEscolher();
 els("c-ano").addEventListener("change", carregarFeriados);
 if (els("c-envios-atualizar")) els("c-envios-atualizar").addEventListener("click", carregarEnvios);
 if (els("c-obras-ler")) els("c-obras-ler").addEventListener("click", lerObrasAgora);
+if (els("c-rosto-rodar")) els("c-rosto-rodar").addEventListener("click", rodarRostoAgora);
 if (els("c-nova-escala")) els("c-nova-escala").addEventListener("click", () => abrirEscala(null));
 if (els("c-novo-feriado")) els("c-novo-feriado").addEventListener("click", novoFeriado);
 els("esc-tipo").addEventListener("change", alternarTipoDeEscala);

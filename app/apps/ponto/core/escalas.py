@@ -190,6 +190,39 @@ def historico_da_pessoa(conn: Connection, colaborador_id: int) -> list[dict]:
     """, c=colaborador_id)
 
 
+# A ESCALA PADRÃO DA EMPRESA (pedido do dono, 06/10/2026: "falta de batida de um
+# dia, no dia seguinte o sistema já deveria apresentar como falta"). Sem escala o
+# espelho não sabe o que era esperado e não aponta falta; com a escala padrão
+# escolhida na Configuração, quem ainda não tem escala própria é julgado por ela
+# — antes da primeira escala própria, e só nesse intervalo.
+PARAMETRO_PADRAO = "escalas.padrao"
+
+
+def escala_padrao(conn: Connection) -> Optional[dict]:
+    if not db.tem_coluna(conn, "parametros", "valor"):
+        return None
+    from . import parametros
+    valor = (parametros.ler(conn, PARAMETRO_PADRAO, "") or "").strip()
+    if not valor.isdigit():
+        return None
+    return db.um(conn, "SELECT * FROM ponto.escalas WHERE id = :id AND ativo", id=int(valor))
+
+
+def gravar_padrao(conn: Connection, escala_id, por: str) -> Optional[dict]:
+    from . import parametros
+    if escala_id in (None, "", 0, "0"):
+        parametros.gravar(conn, PARAMETRO_PADRAO, "", por)
+        return None
+    e = db.um(conn, "SELECT * FROM ponto.escalas WHERE id = :id AND ativo", id=int(escala_id))
+    if not e:
+        raise ErroDeValidacao("escala não encontrada ou inativa", campo="escala_id")
+    if e["tipo"] != "SEMANAL":
+        raise ErroDeValidacao("a escala padrão precisa ser semanal (12x36 depende do dia de início de cada um)",
+                              campo="escala_id")
+    parametros.gravar(conn, PARAMETRO_PADRAO, str(int(escala_id)), por)
+    return e
+
+
 class EscalasDaPessoa:
     """As vigências de uma pessoa, carregadas UMA vez para um período inteiro."""
 
@@ -199,6 +232,7 @@ class EscalasDaPessoa:
               FROM ponto.colaborador_escalas ce JOIN ponto.escalas e ON e.id = ce.escala_id
              WHERE ce.colaborador_id = :c ORDER BY ce.vigencia_inicio
         """, c=colaborador_id)
+        self.padrao = escala_padrao(conn)
         self._cache: dict = {}
 
     def no_dia(self, dia: dt.date) -> tuple[Optional[apuracao.Escala], Optional[dict]]:
@@ -209,7 +243,12 @@ class EscalasDaPessoa:
             else:
                 break
         if atual is None:
-            return None, None
+            if self.padrao is None:
+                return None, None
+            if "padrao" not in self._cache:
+                self._cache["padrao"] = para_apuracao(self.padrao, None)
+            return self._cache["padrao"], {**self.padrao, "nome": f"{self.padrao['nome']} (padrão da empresa)",
+                                            "vigencia_inicio": None, "ciclo_data_base": None}
         chave = (atual["id"], atual["vigencia_inicio"])
         if chave not in self._cache:
             self._cache[chave] = para_apuracao(atual, atual["ciclo_data_base"])

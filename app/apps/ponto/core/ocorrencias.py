@@ -37,7 +37,7 @@ from sqlalchemy.engine import Connection
 
 from .. import db, horario
 from ..erros import ErroDeValidacao, NaoEncontrado
-from . import ajustes, banco, cadastros, competencias, documentos, escalas, marcacoes, validacao
+from . import ajustes, banco, cadastros, competencias, documentos, escalas, licencas, marcacoes, validacao
 
 logger = logging.getLogger("ponto.ocorrencias")
 
@@ -52,6 +52,8 @@ STATUS_DA_ETAPA = {SUPERVISOR: "AGUARDANDO_SUPERVISOR", DP: "AGUARDANDO_DP"}
 SAUDE = ("ATESTADO", "AFASTAMENTO")
 # O que o próprio colaborador pode pedir pelo celular. Férias e abono nascem no DP.
 PEDIDOS_DO_APP = ("ATESTADO", "AJUSTE_BATIDA", "COMPENSACAO", "FOLGA_BANCO", "LICENCA")
+RECUSA_PEDIDO_NO_CELULAR = ("atestado, licença, ajuste e compensação são entregues no aparelho da obra "
+                            "ou pelo responsável da obra")
 MAX_DIAS = 120
 
 
@@ -140,15 +142,25 @@ def criar(conn: Connection, quem: Quem, dados: dict, *, origem: str = "GESTAO") 
     tipo = str(dados.get("tipo") or "").strip().upper()
     if tipo not in ETAPAS:
         raise ErroDeValidacao("tipo de pedido desconhecido", campo="tipo")
-    if origem == "APP" and tipo not in PEDIDOS_DO_APP:
+    if origem in ("APP", "APARELHO") and tipo not in PEDIDOS_DO_APP:
         raise ErroDeValidacao("este pedido é feito pelo DP, não pelo celular", campo="tipo")
     colaborador_id = int(dados.get("colaborador_id") or quem.colaborador_id or 0)
     pessoa = exigir_pessoa_no_alcance(conn, quem, colaborador_id)
+    # QUEM FAZ PEDIDO (decisão do dono, 06/10/2026): quem tem permissão de bater
+    # o ponto — o aparelho da obra (ou o de grupo) e o responsável da obra no
+    # ERP. No próprio celular, só quem é exceção e bate nele.
+    if origem == "APP":
+        from . import forma_de_bater
+        if not forma_de_bater.pode_no_celular(pessoa, forma_de_bater.em_vigor(conn)):
+            raise ErroDeValidacao(RECUSA_PEDIDO_NO_CELULAR, campo="tipo")
     if origem == "GESTAO" and not (quem.supervisor or quem.dp):
         raise ErroDeValidacao("você não pode registrar pedidos de ponto", campo="tipo")
-    if origem == "GESTAO" and tipo in ("ATESTADO", "LICENCA", "FERIAS", "AFASTAMENTO", "ABONO") \
-            and not quem.dp:
+    # O responsável da obra registra atestado e licença (com o documento) e o DP
+    # valida; férias, afastamento e abono continuam só do DP.
+    if origem == "GESTAO" and tipo in ("FERIAS", "AFASTAMENTO", "ABONO") and not quem.dp:
         raise ErroDeValidacao("este tipo é registrado pelo DP", campo="tipo")
+    if origem == "GESTAO" and tipo == "ATESTADO" and not quem.dp and not dados.get("documento_base64"):
+        raise ErroDeValidacao("anexe a foto ou o PDF do atestado", campo="documento")
 
     inicio = _data(dados.get("data_inicio") or dados.get("data"), "data_inicio")
     fim = _data(dados.get("data_fim") or inicio, "data_fim")
@@ -196,8 +208,16 @@ def criar(conn: Connection, quem: Quem, dados: dict, *, origem: str = "GESTAO") 
     elif tipo == "FOLGA_BANCO":
         if pessoa.get("regime_banco") in (None, "SEM_BANCO"):
             raise ErroDeValidacao("esta pessoa não tem banco de horas", campo="tipo")
-    elif tipo == "ATESTADO" and origem == "APP" and not dados.get("documento_base64"):
+    elif tipo == "ATESTADO" and origem in ("APP", "APARELHO") and not dados.get("documento_base64"):
         raise ErroDeValidacao("anexe a foto ou o PDF do atestado", campo="documento")
+    subtipo = None
+    if tipo == "LICENCA" and licencas.disponivel(conn):
+        # A licença sai da lista da lei (licencas.py): dias, limite e documento conferidos.
+        t = licencas.conferir(conn, colaborador_id=colaborador_id, subtipo=str(dados.get("subtipo") or ""),
+                              inicio=inicio, fim=fim, tem_documento=bool(dados.get("documento_base64")))
+        subtipo = t["codigo"]
+        if not descricao:
+            descricao = t["nome"]
 
     competencias.exigir_aberta(conn, inicio, fim, dia_trabalhado)
     sobreposta = db.um(conn, """
@@ -225,12 +245,14 @@ def criar(conn: Connection, quem: Quem, dados: dict, *, origem: str = "GESTAO") 
         RETURNING id
     """, c=colaborador_id, t=tipo, i=inicio, f=fim, h=horario_ajuste, o=obra_id,
          dt=dia_trabalhado, m=minutos, d=descricao[:1000],
-         cid=(str(dados.get("cid") or "").strip()[:20] or None) if quem.dp or origem == "APP" else None,
+         cid=(str(dados.get("cid") or "").strip()[:20] or None) if quem.dp or origem in ("APP", "APARELHO") else None,
          med=(str(dados.get("medico") or "").strip()[:120] or None),
          crm=(str(dados.get("crm") or "").strip()[:30] or None),
          doc=documento_id, st=STATUS_DA_ETAPA[etapas[0]], orig=origem,
          por=quem.nome[:120], uid=quem.usuario_id)
     ocorrencia_id = int(linha["id"])
+    if subtipo:
+        db.executar(conn, "UPDATE ponto.ocorrencias SET subtipo = :s WHERE id = :id", s=subtipo, id=ocorrencia_id)
     logger.info("Ponto: pedido %d (%s) aberto para colaborador %d por %s", ocorrencia_id, tipo,
                 colaborador_id, quem.nome)
 
@@ -259,11 +281,23 @@ _SQL = """
 """
 
 
+# Os nomes das licenças da lei, para o rótulo do pedido (lidos uma vez).
+_NOME_SUBTIPO: dict = {}
+
+
+def _nomes_das_licencas(conn: Connection) -> None:
+    if not _NOME_SUBTIPO and licencas.disponivel(conn):
+        _NOME_SUBTIPO.update({t["codigo"]: t["nome"] for t in licencas.listar(conn, so_ativos=False)})
+
+
 def _para_json(o: dict, quem: Quem, etapas: tuple | None = None) -> dict:
     sigilo = o["tipo"] in SAUDE and not quem.dp and quem.colaborador_id != o["colaborador_id"]
     from .espelho import ROTULO_TIPO
     return {
-        "id": o["id"], "tipo": o["tipo"], "rotulo": ROTULO_TIPO[o["tipo"]],
+        "id": o["id"], "tipo": o["tipo"],
+        "rotulo": ROTULO_TIPO[o["tipo"]] + (f" — {_NOME_SUBTIPO.get(o['subtipo'], o['subtipo']).split(' (')[0].lower()}"
+                                             if o.get("subtipo") else ""),
+        "subtipo": o.get("subtipo"),
         "colaborador_id": o["colaborador_id"], "colaborador": o["colaborador_nome"],
         "cpf": o["cpf"], "obra": o.get("obra_codigo") or o.get("obra_principal_codigo"),
         "data_inicio": o["data_inicio"].isoformat(), "data_fim": o["data_fim"].isoformat(),
@@ -298,6 +332,7 @@ def obter(conn: Connection, ocorrencia_id: int, quem: Quem) -> dict:
     o = _bruta(conn, ocorrencia_id)
     if not pessoa_no_alcance(conn, quem, o["colaborador_id"]):
         raise NaoEncontrado("pedido não encontrado")
+    _nomes_das_licencas(conn)
     j = _para_json(o, quem, validacao.etapas_do_tipo(conn, o["tipo"]))
     j["pode_decidir"] = (j["etapa_atual"] is not None
                          and _pode_na_etapa(conn, quem, o, j["etapa_atual"]))
@@ -306,6 +341,7 @@ def obter(conn: Connection, ocorrencia_id: int, quem: Quem) -> dict:
 
 def listar(conn: Connection, quem: Quem, *, status: str | None = None,
            colaborador_id: int | None = None, limite: int = 300) -> list[dict]:
+    _nomes_das_licencas(conn)
     sql, params = _SQL + " WHERE 1 = 1", {"lim": max(1, min(int(limite), 1000))}
     if status == "PENDENTES":
         sql += " AND oc.status IN ('AGUARDANDO_SUPERVISOR', 'AGUARDANDO_DP')"

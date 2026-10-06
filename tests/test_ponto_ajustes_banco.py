@@ -32,7 +32,7 @@ def test_corrigir_o_dia_mostra_o_que_falta_e_barra_o_pedido_errado(app, mundo, b
                              solicitado_por) VALUES (:c, 'ATESTADO', :d, :d, 'APROVADA', 'DP')"""),
                      {"c": mundo["joao"], "d": qua})
         conn.commit()
-    cel = _entrar_no_app(app, CPF_JOAO, monkeypatch)
+    cel = _entrar_no_app(app, CPF_JOAO, monkeypatch, excecao=True)
 
     d = _dia(cel, seg)
     assert [f["rotulo"] for f in d["faltando"]] == ["Volta do intervalo", "Saída"]

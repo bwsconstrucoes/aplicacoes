@@ -332,6 +332,25 @@ dizer "tem batida"; presença, horas e faltas são regra da fase 3.
   EXCEÇÕES; quem não está nela bate só no aparelho da obra e não tem banco)
 - Quais celulares tentaram bater sem ser exceção? (recusas "celular próprio sem
   exceção cadastrada")
+- Quais aparelhos param de bater nos próximos 15 dias? Quais já pararam por
+  liberação vencida? Quais estão sem batida há 30 dias? (todo aparelho se renova
+  a cada 90 dias; o de grupo, 15) — Validações › "Aparelho a renovar ou desativar"
+- Quem está num grupo e não bate mais nele?
+- Quantas licenças de casamento/luto/doação de sangue houve no ano? Quem já usou
+  a doação de sangue nos últimos 12 meses? ⚠️ ("no ano" = últimos 12 meses para o
+  limite da lei; "ano civil" é outra conta)
+- Quantos pedidos vieram do aparelho da obra, do responsável no ERP e do próprio
+  celular? (origem do pedido)
+- Quais batidas foram para conferência por fila rápida ou foto que não deixa
+  ver? De quem foi trocado o QR por sinal de fraude?
+- Quem foi desligado e ainda tinha celular aprovado ou QR valendo? (o ponto fecha
+  sozinho; a resposta é o que foi fechado e quando)
+- Quem não tem escala própria e está sendo julgado pela escala padrão? 🔒
+- Quanto a conferência do rosto gastou este mês? Quantas fotos não conferiram?
+  De quem? ⚠️ ("este mês" = mês civil, horário de Fortaleza; o custo é o gravado
+  em cada conferência, não a fatura da AWS) 🔒
+- Quais obras, dias e horários estão fora da conferência do rosto?
+- Quem ainda não tem foto cadastral (e vai ganhar a da primeira batida)?
 - **Ainda não responde:** "a pessoa da foto é mesmo o Fulano?" — não há
   reconhecimento facial; quem confere é gente, no mosaico. E "quantas pessoas
   usaram o QR de outra" — o sistema vê o QR antigo e o rosto no mosaico, não a

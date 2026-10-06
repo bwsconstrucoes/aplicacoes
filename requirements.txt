@@ -41,3 +41,10 @@ xlrd
 # volta como "recusado" sem dizer por que. Autorizada pelo dono em 12/09/2026.
 erpbrasil.edoc==3.1.1
 erpbrasil.assinatura==1.8.0
+
+# DEPENDENCIA NOVA, 06/10/2026 - pedida pelo dono ("acho que devemos ativar a
+# análise via AWS"). A conferência do rosto do ponto (`ponto/core/rosto.py`)
+# compara a foto da batida com a foto cadastral pelo Amazon Rekognition
+# (CompareFaces). Importada só quando a conferência roda: sem ela instalada, ou
+# sem as chaves AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY, o ponto segue igual.
+boto3

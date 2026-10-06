@@ -291,6 +291,14 @@ def _pedir_copia(agora) -> dict:
 def _trabalhar() -> None:
     from .. import horario
     try:
+        # Quem foi desligado perde o acesso (celular, QR, grupo) — valha a base
+        # que valer, e com a base automática ligada ou não (06/10/2026).
+        try:
+            from . import desligamentos
+            with db.conexao() as conn:
+                desligamentos.aplicar(conn)
+        except Exception:  # noqa: BLE001
+            logger.warning("Ponto: não consegui fechar o acesso de quem saiu", exc_info=True)
         with db.conexao() as conn:
             if not automatico(conn) or not estado(conn, fresco=True)["usar"]:
                 return

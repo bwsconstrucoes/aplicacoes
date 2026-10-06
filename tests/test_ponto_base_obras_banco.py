@@ -175,3 +175,22 @@ def test_aparelho_aprovado_se_altera_e_bloqueado_se_reativa(app, mundo):
     r = dp.post(f"/erp/api/ponto/dispositivos/{ap['id']}/aprovar",
                 json={"perfil": "INDIVIDUAL", "cpf": CPF_JOAO}).get_json()["dispositivo"]
     assert r["status"] == "APROVADO" and r["perfil"] == "INDIVIDUAL" and r["dono"]["id"] == mundo["joao"]
+
+
+def test_um_celular_pessoal_por_pessoa(app, mundo):
+    """Pergunta do dono, 06/10/2026: "uma pessoa consegue cadastrar mais de um
+    aparelho no seu CPF?" — aprovar o segundo bloqueia o primeiro."""
+    c = app.test_client()
+    dp = como(app, mundo["dp"])
+    ids = []
+    for uuid in ("primeiro-celular-do-joao-0123456", "segundo-celular-do-joao-6543210"):
+        c.post("/ponto/api/dispositivo/registrar", json={"device_uuid": uuid})
+        ap = next(a for a in dp.get("/erp/api/ponto/dispositivos").get_json()["dispositivos"]
+                  if a["device_uuid"] == uuid)
+        r = dp.post(f"/erp/api/ponto/dispositivos/{ap['id']}/aprovar",
+                    json={"perfil": "INDIVIDUAL", "cpf": CPF_JOAO}).get_json()
+        ids.append(ap["id"])
+    assert r["substituidos"] == 1
+    lista = {a["id"]: a for a in dp.get("/erp/api/ponto/dispositivos").get_json()["dispositivos"]}
+    assert lista[ids[0]]["status"] == "BLOQUEADO" and "trocado" in lista[ids[0]]["motivo_bloqueio"]
+    assert lista[ids[1]]["status"] == "APROVADO"

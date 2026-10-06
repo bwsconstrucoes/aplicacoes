@@ -30,7 +30,7 @@ from . import dispositivos, mosaico, ocorrencias, validacao
 from .ocorrencias import Quem
 
 ROTULO = {"BATIDA_EM_ANALISE": "Batida em conferência", "MOSAICO": "Mosaico sem conferência",
-          "APARELHO": "Aparelho esperando aprovação"}
+          "APARELHO": "Aparelho esperando aprovação", "RENOVAR": "Aparelho a renovar ou desativar"}
 ETAPA_ROTULO = {"SUPERVISOR": "Encarregado", "DP": "DP"}
 
 
@@ -170,6 +170,20 @@ def listar(conn: Connection, quem: Quem, *, obra_id: Optional[int] = None, de=No
                 "etapa": "Quem configura o ponto",
                 "pode_decidir": True, "abrir_em": "/erp/ponto/configuracao",
                 "desde": j.get("criado_em"), "dias_esperando": None,
+            })
+
+    # --- aparelhos a renovar ou desativar (todos vencem; o de grupo é passageiro) ---
+    if ver_aparelhos and quer("RENOVAR") and obra_id is None and not busca:
+        for g in dispositivos.aparelhos_a_rever(conn):
+            quem_tem = (f"de {g['dono']}" if g["dono"] else
+                        f"{g['pessoas']} pessoa(s) no grupo" if g["perfil"] == "LISTA" else "da obra")
+            itens.append({
+                "categoria": "RENOVAR", "tipo": "RENOVAR", "rotulo": ROTULO["RENOVAR"], "id": g["id"],
+                "pessoa": g["dono"], "obra": None, "data": None,
+                "quando": f"vale até {dt.date.fromisoformat(g['valido_ate']):%d/%m/%Y}" if g["valido_ate"] else "—",
+                "detalhe": f"{g['descricao']} ({quem_tem}) — código {g['codigo']}: " + "; ".join(g["motivos"]),
+                "sugestao": g["sugestao"], "perfil": g["perfil"], "etapa": "Quem configura o ponto",
+                "pode_decidir": True, "desde": None, "dias_esperando": None,
             })
 
     if so_minhas:

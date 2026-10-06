@@ -340,7 +340,9 @@ def test_foto_escura_repetida_e_sem_foto_viram_alerta_e_aviso(app, mundo, banco,
         aviso = conn.execute(text("SELECT tipo, texto FROM ponto.envios WHERE tipo = 'AVISO_FOTO'")).one()
         analise = conn.execute(text("SELECT count(*) FROM ponto.marcacoes WHERE status = 'EM_ANALISE'")).scalar()
     assert "sem foto" in aviso[1] and "17:00" in aviso[1]
-    assert analise == 1                                     # só a sem foto; foto ruim é alerta, não análise
+    # A sem foto e, desde 06/10/2026, a foto que não deixa ver ninguém (pedido do
+    # dono: "foto que não permite visualização") — esta vai para conferência na hora.
+    assert analise == 2
 
 
 def test_foto_de_cadastro_sai_de_uma_batida_da_propria_pessoa(app, mundo, banco):

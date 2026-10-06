@@ -41,10 +41,10 @@ GRAVIDADE = {
     "FALTAS_SEGUIDAS": "URGENTE", "ATRASO_RECORRENTE": "ATENCAO",
     "FORA_DA_CERCA_REPETIDO": "ATENCAO", "DOIS_LUGARES": "URGENTE",
     "PEDIDO_PARADO": "ATENCAO", "BATIDA_EM_ANALISE_PARADA": "ATENCAO",
-    "APARELHO_PENDENTE": "INFO", "BANCO_VENCENDO": "ATENCAO", "BANCO_NEGATIVO": "ATENCAO",
+    "APARELHO_PENDENTE": "INFO", "APARELHO_VENCENDO": "ATENCAO", "BANCO_VENCENDO": "ATENCAO", "BANCO_NEGATIVO": "ATENCAO",
     # Sinais de fraude e de foto (migração 003)
     "SEM_FOTO": "ATENCAO", "FOTO_ESCURA": "ATENCAO", "FOTO_REPETIDA": "URGENTE",
-    "SEQUENCIA_RAPIDA": "ATENCAO", "QR_ANTIGO_USADO": "ATENCAO", "TENTATIVAS_DE_CPF": "ATENCAO",
+    "SEQUENCIA_RAPIDA": "ATENCAO", "ROSTO_NAO_CONFERE": "URGENTE", "QR_ANTIGO_USADO": "ATENCAO", "TENTATIVAS_DE_CPF": "ATENCAO",
     "MOSAICO_PENDENTE": "ATENCAO", "BATIDA_RECUSADA_FORA_DA_OBRA": "ATENCAO",
 }
 ROTULO = {
@@ -57,10 +57,12 @@ ROTULO = {
     "ATRASO_RECORRENTE": "Atraso que se repete", "FORA_DA_CERCA_REPETIDO": "Fora da cerca várias vezes",
     "DOIS_LUGARES": "Dois lugares ao mesmo tempo", "PEDIDO_PARADO": "Pedido esperando decisão",
     "BATIDA_EM_ANALISE_PARADA": "Batida em análise esperando", "APARELHO_PENDENTE": "Aparelho esperando aprovação",
+    "APARELHO_VENCENDO": "Aparelho com a liberação vencendo",
     "BANCO_VENCENDO": "Banco de horas vencendo", "BANCO_NEGATIVO": "Banco de horas negativo",
     "SEM_FOTO": "Batida sem foto", "FOTO_ESCURA": "Foto escura ou sem rosto",
     "FOTO_REPETIDA": "A mesma foto em batidas diferentes",
     "SEQUENCIA_RAPIDA": "Muitas pessoas em sequência rápida no mesmo aparelho",
+    "ROSTO_NAO_CONFERE": "Rosto não confere com a foto cadastral",
     "QR_ANTIGO_USADO": "QR Code antigo usado", "TENTATIVAS_DE_CPF": "CPFs errados em sequência no tablet",
     "MOSAICO_PENDENTE": "Mosaico de fotos sem conferência",
     "BATIDA_RECUSADA_FORA_DA_OBRA": "Tentou bater fora da área da obra",
@@ -293,6 +295,21 @@ def _parados(conn: Connection, vistos: set) -> Counter:
         _registrar(conn, vistos, chave=f"APARELHO_PENDENTE:{d['id']}", codigo="APARELHO_PENDENTE",
                    mensagem=f"Aparelho “{d['descricao'] or 'sem nome'}” esperando aprovação")
         contagem["APARELHO_PENDENTE"] += 1
+    # Todo aparelho vence (06/10/2026): o RH vê "vai parar de bater em X dias"
+    # e decide renovar ou desativar — um alerta por prazo de cada aparelho.
+    from . import dispositivos
+    for a in dispositivos.aparelhos_a_rever(conn):
+        if not a["valido_ate"]:
+            continue
+        venc = dt.date.fromisoformat(a["valido_ate"])
+        if venc > horario.hoje() + dt.timedelta(days=dispositivos.dias_de_aviso(a["perfil"])):
+            continue
+        dono = f" de {a['dono']}" if a["dono"] else ""
+        _registrar(conn, vistos, chave=f"APARELHO_VENCENDO:{a['id']}:{a['valido_ate']}", codigo="APARELHO_VENCENDO",
+                   mensagem=(f"Aparelho “{a['descricao']}”{dono} (código {a['codigo']}): "
+                             + ("a liberação venceu" if venc < horario.hoje() else "a liberação vence")
+                             + f" em {venc:%d/%m/%Y} — renove ou desative em Validações"))
+        contagem["APARELHO_VENCENDO"] += 1
     return contagem
 
 
@@ -437,9 +454,9 @@ def sinais_de_fraude(conn: Connection, vistos: set, inicio: dt.date, fim: dt.dat
 
     # --- fila rápida no mesmo aparelho ----------------------------------------
     por_aparelho: dict[int, list] = {}
-    for l in db.todos(conn, """
+    for l in db.todos(conn, f"""
         SELECT m.id, m.colaborador_id, m.obra_id, m.dispositivo_id, m.timestamp_servidor,
-               m.data_referencia, d.descricao
+               m.data_referencia, d.descricao, {"m.identificacao" if db.tem_003(conn) else "NULL::text"} AS identificacao
           FROM ponto.marcacoes m JOIN ponto.dispositivos d ON d.id = m.dispositivo_id
          WHERE m.data_referencia BETWEEN :i AND :f AND m.status <> 'REJEITADA'
          ORDER BY m.dispositivo_id, m.timestamp_servidor""", i=inicio, f=fim):
@@ -456,6 +473,32 @@ def sinais_de_fraude(conn: Connection, vistos: set, inicio: dt.date, fim: dt.dat
                                 f"{primeira['data_referencia']:%d/%m} — confira as fotos no mosaico",
                        obra_id=primeira["obra_id"], data=primeira["data_referencia"])
             contagem["SEQUENCIA_RAPIDA"] += 1
+            # Encerrada a coleta (a rotina roda no dia seguinte), o QR do WhatsApp
+            # de quem passou pela fila é TROCADO: se alguém juntou prints de QR
+            # dos colegas, eles param de valer (pedido do dono, 06/10/2026).
+            if db.tem_003(conn):
+                from . import envios
+                for cid in sorted({x["colaborador_id"] for x in fila if x.get("identificacao") == "QR_WHATSAPP"}):
+                    envios.pedir_qr(conn, int(cid), motivo="GESTAO", por="sinal de fraude: fila rápida no aparelho")
+                    contagem["QR_TROCADO"] += 1
+
+    # --- o rosto que não confere (Amazon Rekognition, rosto.py) ----------------
+    if db.tem_coluna(conn, "conferencias_rosto", "marcacao_id"):
+        for r in db.todos(conn, """
+            SELECT m.id, m.colaborador_id, m.obra_id, m.data_referencia, m.timestamp_servidor, c.nome,
+                   r.resultado, r.detalhe
+              FROM ponto.conferencias_rosto r JOIN ponto.marcacoes m ON m.id = r.marcacao_id
+              JOIN public.colaboradores c ON c.id = m.colaborador_id
+             WHERE r.resultado IN ('OUTRA_PESSOA', 'SEM_ROSTO') AND m.data_referencia BETWEEN :i AND :f""",
+                i=inicio, f=fim):
+            _registrar(conn, vistos, chave=f"ROSTO_NAO_CONFERE:{r['id']}", codigo="ROSTO_NAO_CONFERE",
+                       mensagem=(f"{r['nome']}: a foto da batida de "
+                                 f"{horario.para_local(r['timestamp_servidor']):%d/%m às %H:%M} "
+                                 + ("não confere com a foto cadastral" if r["resultado"] == "OUTRA_PESSOA"
+                                    else "não mostra rosto")
+                                 + (f" ({r['detalhe']})" if r["detalhe"] else "") + " — confira no mosaico"),
+                       colaborador_id=r["colaborador_id"], obra_id=r["obra_id"], data=r["data_referencia"])
+            contagem["ROSTO_NAO_CONFERE"] += 1
 
     # --- QR antigo e CPFs errados (o que o tablet recusou) ---------------------
     inicio_ts = dt.datetime.combine(inicio, dt.time(0), tzinfo=horario.FUSO)

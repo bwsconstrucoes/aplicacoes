@@ -128,6 +128,32 @@ def modo_fora_da_cerca(conn: Connection, obra_id: int) -> str:
     return (linha or {}).get("fora_da_cerca") or "BLOQUEAR"
 
 
+SEQUENCIA_NA_HORA_SEGUNDOS = 10   # o mesmo critério do alerta do dia seguinte (alertas.py)
+SEQUENCIA_NA_HORA_PESSOAS = 5
+
+
+def sinais_na_hora(conn: Connection, *, foto, aparelho: Optional[dict], pessoa_id: int,
+                   momento: dt.datetime, no_tablet: bool) -> list[str]:
+    from . import mosaico
+    motivos = []
+    if foto is not None:
+        for s in mosaico.sinais_da_foto(getattr(foto, "luminancia", None), getattr(foto, "contraste", None)):
+            motivos.append(f"foto {s}")
+    if aparelho and no_tablet:
+        anteriores = db.todos(conn, """
+            SELECT colaborador_id, timestamp_servidor FROM ponto.marcacoes
+             WHERE dispositivo_id = :d AND timestamp_servidor > :desde
+             ORDER BY timestamp_servidor""", d=aparelho["id"],
+            desde=momento - dt.timedelta(seconds=SEQUENCIA_NA_HORA_SEGUNDOS * SEQUENCIA_NA_HORA_PESSOAS))
+        fila = anteriores + [{"colaborador_id": pessoa_id, "timestamp_servidor": momento}]
+        from .alertas import sequencias_rapidas
+        if any(fila[-1] in f for f in sequencias_rapidas(fila, segundos=SEQUENCIA_NA_HORA_SEGUNDOS,
+                                                          minimo=SEQUENCIA_NA_HORA_PESSOAS)):
+            motivos.append(f"fila rápida: {SEQUENCIA_NA_HORA_PESSOAS} ou mais pessoas diferentes em menos de "
+                           f"{SEQUENCIA_NA_HORA_SEGUNDOS} s cada, neste aparelho")
+    return motivos
+
+
 def decidir_lugar(*, situacao: str, detectada: Optional[dict], distancia: Optional[float],
                   enviada: Optional[dict], no_tablet: bool, precisao, modo,
                   latitude=None, longitude=None) -> tuple[Optional[dict], Optional[str], Optional[str]]:
@@ -392,6 +418,17 @@ def registrar(conn: Connection, *, cpf, obra, origem: str = "PWA",
 
     # --- foto: valida e reduz ANTES de gravar (foto ilegível é 400 limpo) ----
     foto = fotos.preparar(foto_base64) if foto_base64 else None
+
+    # --- sinais de fraude NA HORA (pedido do dono, 06/10/2026: "quando for
+    # detectado anomalias (…) batidas muito rápidas, o sistema faz como?"). O que
+    # antes só virava alerta no dia seguinte agora manda a batida para
+    # conferência no momento: a foto que não deixa ver ninguém e a fila rápida
+    # de pessoas diferentes no mesmo aparelho.
+    motivos_na_hora = sinais_na_hora(conn, foto=foto, aparelho=aparelho, pessoa_id=int(pessoa["id"]),
+                                     momento=momento, no_tablet=no_tablet)
+    if motivos_na_hora:
+        status = "EM_ANALISE"
+        motivos.extend(m for m in motivos_na_hora if m not in motivos)
 
     # --- NSR e corrente -----------------------------------------------------
     nsr, corrente = _proximo_nsr(conn, int(pessoa["id"]), int(obra_ok["id"]), momento, origem_ok)
