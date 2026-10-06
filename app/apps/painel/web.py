@@ -2374,8 +2374,11 @@ def configuracoes():
         # para de repetir interrupcao e passa a responder outra pergunta, que e
         # a util no momento: quando a base foi atualizada de verdade pela
         # ultima vez.
+        # Tambem enquanto outra RODA (06/10/2026): a linha mostrava a tentativa
+        # anterior, fechada como "interrompida" no instante em que a nova
+        # comecou — e o dono leu como se a que estava rodando tivesse caido.
         atualizacao = consultas.atualizado_em(
-            so_concluidas=bool(sincronizacao["interrompida"]))
+            so_concluidas=bool(sincronizacao["interrompida"] or sincronizacao["rodando"]))
         vazia = consultas.base_vazia()
         etapas = consultas.etapas_da_carga()
         # Aviso que NAO pode faltar: a migracao 010 arruma o tipo da coluna, mas
