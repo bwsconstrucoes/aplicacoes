@@ -12092,6 +12092,8 @@ somente Solicitações de uma conta especifica"*.
   estiver sem o dígito, vai sem o dígito.
 - Fora: a geração BeeVale das Solicitações não cria card — só acrescenta links
   à descrição que o card já tem; ela não foi mexida.
+- **Publicada em 06/10/2026** (sem migração). O dono confirmou que a "C.
+  Diários" tem a conta com o dígito.
 
 #### ⚠️ Pendente AGORA
 
