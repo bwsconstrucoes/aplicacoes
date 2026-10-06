@@ -12080,6 +12080,19 @@ somente Solicitações de uma conta especifica"*.
 - De carona: a lista de telas no cadastro deixava uma vírgula sobrando
   ("1: Solicitações,").
 
+#### Leva 184 — "Conta Origem:" na primeira linha da descrição dos cards da folha (06/10/2026)
+
+- O dono: a primeira linha da descrição tem de ser **exatamente**
+  `Conta Origem: <número da conta>` (exemplo dele: `Conta Origem: 92945-8`). É
+  LIDA POR MÁQUINA — é o parâmetro usado para trocar a conta de saída de obras
+  que são CONS. Vale em toda geração: diaristas, alimentação, transporte,
+  gratificação e Despesas com colaboradores (`folha_cards._com_conta_origem`).
+  A linha "Conta de origem:" do meio da descrição saiu (ficaria repetida).
+- A conta vai como está na aba "C. Diários" (coluna Conta de Pagamento). Se lá
+  estiver sem o dígito, vai sem o dígito.
+- Fora: a geração BeeVale das Solicitações não cria card — só acrescenta links
+  à descrição que o card já tem; ela não foi mexida.
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |

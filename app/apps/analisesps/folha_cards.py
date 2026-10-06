@@ -199,6 +199,22 @@ def grupo_da_verba(verba: str, tipo: str) -> tuple:
     return achado
 
 
+# ⚠️ A PRIMEIRA LINHA DA DESCRIÇÃO É "Conta Origem: <conta>", EXATAMENTE ASSIM.
+# O dono, 06/10/2026: *"a gente coloca conta origem dois pontos e o número da
+# conta (…) a Análise de SPs faz uma leitura e, a partir dela, (…) a gente
+# utiliza esse parâmetro para poder substituir a conta, alterar a conta. (…) Tem
+# que colocar em toda a geração de arquivos, determinando qual é a conta de saída
+# do recurso."* É LIDA POR MÁQUINA: não traduzir, não mudar maiúscula, não pôr
+# nada antes. Exemplo dele: "Conta Origem: 92945-8".
+ROTULO_CONTA_ORIGEM = "Conta Origem: "
+
+
+def _com_conta_origem(conta: str, linhas: list) -> list:
+    """As linhas da descrição com a conta de saída do recurso na PRIMEIRA."""
+    conta = " ".join(str(conta or "").split())
+    return ([f"{ROTULO_CONTA_ORIGEM}{conta}"] if conta else []) + linhas
+
+
 def descricao_do_card(competencia: str, tipo: str, verbas, conta: str,
                       pessoas: int, total, link_pagamento: str = "",
                       link_analise: str = "") -> str:
@@ -212,7 +228,6 @@ def descricao_do_card(competencia: str, tipo: str, verbas, conta: str,
         f"Competência: {competencia}",
         f"Pagamento: {rotulo_tipo}" if rotulo_tipo else "",
         "Verbas: " + " + ".join(geracao.rotulo_da_verba(v) for v in (verbas or [])),
-        f"Conta de pagamento: {conta}" if conta else "",
         f"Pessoas: {pessoas}",
         # O valor com vírgula e ponto de milhar: o card é lido por gente, e
         # "4200.00" num card de despesa se confunde com quatro reais.
@@ -222,7 +237,7 @@ def descricao_do_card(competencia: str, tipo: str, verbas, conta: str,
         linhas.append(f"Planilha de pagamento: {link_pagamento}")
     if link_analise:
         linhas.append(f"Planilha de análise: {link_analise}")
-    corpo = [l for l in linhas if l]
+    corpo = _com_conta_origem(conta, [l for l in linhas if l])
     return "\n".join(corpo + ["", "Gerado pelo Análise de SPs."])
 
 
@@ -818,12 +833,11 @@ def descricao_da_dc(sp: dict, link_analise: str) -> str:
     valor por obra e por tipo de despesa e o relatório."""
     from . import dc
     destino = geracao.ROTULO_DO_DESTINO.get(sp.get("destino") or "", "")
-    linhas = [
+    linhas = _com_conta_origem(sp.get("conta"), [
         "Despesas com colaboradores",
-        f"Conta Origem: {sp['conta']}" if sp.get("conta") else "",
         f"Arquivo de pagamento: {destino}" if destino else "",
         f"Valor: R$ {formatos.moeda(sp['valor'])}",
-    ]
+    ])
     if sp.get("destino") == "beevale":
         # Só informado, como no script: a SP vai pelo valor original.
         com_taxa = (Decimal(str(sp["valor"])) * (1 + dc.ACRESCIMO_BEEVALE / 100)
@@ -861,16 +875,15 @@ def descricao_da_sp(competencia: str, tipo: str, verba: str, sp: dict,
                    "fim_de_mes": "Fim de mês (16 ao último dia)"}.get(
                        str(tipo or ""), str(tipo or ""))
     destino = geracao.ROTULO_DO_DESTINO.get(sp.get("destino") or "", "")
-    linhas = [
+    linhas = _com_conta_origem(sp.get("conta"), [
         f"{geracao.rotulo_da_verba(verba)} — competência {competencia}",
         f"Pagamento: {rotulo_tipo}" if rotulo_tipo else "",
-        f"Conta de origem: {sp['conta']}" if sp.get("conta") else "",
         f"Arquivo de pagamento: {destino}" if destino else "",
         f"Colaboradores: {sp.get('pessoas', 0)}",
         f"Total: R$ {formatos.moeda(sp['valor'])}",
         "",
         "Valor por obra:",
-    ]
+    ])
     linhas += [f"- {o['obra']}: R$ {formatos.moeda(o['valor'])}"
                for o in sp.get("obras") or []]
     linhas.append("")
