@@ -37,27 +37,29 @@
   <div class="lat-num"><span>A pagar</span>
     <b>{{ resultado.total|moeda }}</b>
     <small>{{ resultado.quantos_a_pagar }} colaborador(es) · pagamento em {{ resultado.pagamento_em }}</small></div>
+  {# O BOTÃO "FECHAR" SAIU em 06/10/2026 — o dono: *"só serviria de fechar se
+     fosse para criar um bloqueio, uma trava (…) a trava é o arquivo que a gente
+     gerou"*. "Gerar arquivos" já refazia o fechamento sozinho; o botão só
+     confundia, e refeito depois de gerar barrava o lançamento no Pipefy. #}
   <p class="cartao-dica lat-estado">
-    {% if resultado.fechamento %}
-      <b>Fechado</b> em {{ resultado.fechamento.fechado_em|momento_br }}{% if resultado.fechamento.fechado_por %}
-      por {{ resultado.fechamento.fechado_por }}{% endif %}, no pagamento de
-      <b>{{ 'quinzena' if resultado.fechamento.tipo == 'quinzena' else 'fim de mês' }}</b>
-      ({{ resultado.fechamento.total_apropriado|moeda }}). O arquivo é gerado a partir
-      deste fechamento; após alterar a seleção, refaça o fechamento.
+    {% if ultima_geracao %}
+      <b>Arquivos gerados</b> em {{ ultima_geracao.criado_em|momento_br }}{% if ultima_geracao.criado_por %}
+      por {{ ultima_geracao.criado_por }}{% endif %}, no pagamento de
+      <b>{{ 'quinzena' if ultima_geracao.tipo == 'quinzena' else 'fim de mês' }}</b>
+      ({{ ultima_geracao.total|moeda }}). Gerar de novo pede confirmação — para
+      refazer, exclua a geração em Arquivos gerados.
     {% else %}
-      <b>Não fechado.</b> O fechamento é necessário para gerar o arquivo de pagamento.
+      <b>Ainda não gerado.</b> O arquivo sai da seleção salva, em "Gerar arquivos".
     {% endif %}
   </p>
   {% if pode_operar %}
     <label class="cartao-dica" style="display:block; margin:0 0 6px">Incluir no pagamento de
       <select id="pagamento-do-auxilio" aria-label="Pagamento em que o auxílio será incluído">
         {% for chave, rotulo in pagamentos %}
-          <option value="{{ chave }}" {% if resultado.fechamento and resultado.fechamento.tipo == chave %}selected{% endif %}>{{ rotulo }}</option>
+          <option value="{{ chave }}" {% if ultima_geracao and ultima_geracao.tipo == chave %}selected{% endif %}>{{ rotulo }}</option>
         {% endfor %}
       </select></label>
     <div class="lat-acoes">
-      <button type="button" class="btn" id="fechar-auxilio">
-        {% if resultado.fechamento %}Refazer o fechamento{% else %}Fechar {{ 'a alimentação' if tipo == 'alimentacao' else 'o transporte' }}{% endif %}</button>
       {% if pode_gerar %}
         {% set gd_origem = tipo %}
         {% set gd_dados = {'ano': ano, 'mes': mes} %}
@@ -79,7 +81,7 @@
   <b class="lateral-titulo">Pendências antes do pagamento</b>
   <a class="lat-critica erro" href="{{ url_tela }}{{ base_qs }}&situacao=sem_obra">
     <b>{{ resultado.sem_obra|length }} sem obra do ponto</b>
-    <small>Sem obra não há conta de pagamento e o fechamento não passa. O certo é
+    <small>Sem obra não há conta de pagamento e o arquivo não é gerado. O certo é
       corrigir o ponto; senão, escolha a obra na linha ("usar esta obra" ou
       "outra obra…"). Clique para ver quem é.</small>
   </a>
@@ -534,11 +536,14 @@
 
    Aparecer só na mudança resolvia "tem coisa para salvar" e ignorava o que ele
    usa a barra para fazer: conferir o total enquanto marca. #}
-<div class="barra-salvar" id="barra-salvar">
+<div class="barra-salvar" id="barra-salvar"
+     data-fora-quantos="{{ fora_do_filtro.quantos if fora_do_filtro else 0 }}"
+     data-fora-total="{{ fora_do_filtro.total if fora_do_filtro else 0 }}">
   <span class="conta-selecao">
     Selecionados para pagamento: <span id="quantos-marcados">{{ resultado.quantos_a_pagar }}</span>
     <span class="total-selecao" id="total-marcado">{{ resultado.total|moeda }}</span>
   </span>
+  <span class="cartao-dica" id="fora-do-filtro"></span>
   <span class="cartao-dica" id="recado-selecao"></span>
   <span class="sobra">
     <button class="btn secundario" type="button" id="btn-desfazer">Desfazer</button>
@@ -646,6 +651,16 @@ function atualizar() {
   });
   const q = document.getElementById("quantos-marcados");
   const t = document.getElementById("total-marcado");
+  // ⚠️ OS MARCADOS QUE O FILTRO ESCONDE TAMBÉM VÃO NO ARQUIVO (06/10/2026): a
+  // barra soma os dois, para o total dela ser o que vai ser pago.
+  const barraSel = document.getElementById("barra-salvar");
+  const foraQ = parseInt((barraSel && barraSel.dataset.foraQuantos) || "0", 10) || 0;
+  const foraT = parseFloat((barraSel && barraSel.dataset.foraTotal) || "0") || 0;
+  quantos += foraQ; total += foraT;
+  const avisoFora = document.getElementById("fora-do-filtro");
+  if (avisoFora) avisoFora.textContent = foraQ
+    ? "inclui " + foraQ + " marcado(s) fora do filtro (" + dinheiro(foraT) + "), que também vão no arquivo"
+    : "";
   if (q) q.textContent = quantos;
   if (t) t.textContent = dinheiro(total);
   // ⚠️ A BARRA NÃO SOME MAIS. O que muda com `mudou` são os BOTÕES: sem mudança
@@ -892,29 +907,6 @@ document.querySelectorAll(".usar-obra").forEach(b => b.addEventListener("click",
     else usar.disabled = false;
   });
 })();
-
-// --- fechar o auxílio do mês -------------------------------------------------
-const fecharAux = document.getElementById("fechar-auxilio");
-if (fecharAux) fecharAux.addEventListener("click", async () => {
-  if (caixas.some((c, i) => c.checked !== inicial[i])) {
-    alert("Salve a seleção antes do fechamento. O fechamento utiliza a seleção salva.");
-    return;
-  }
-  const pagamento = document.getElementById("pagamento-do-auxilio").value;
-  if (!confirm("Fechar {{ resultado.rotulo if resultado else '' }} de {{ '%02d'|format(mes) }}/{{ ano }}?\n\n" +
-               "O fechamento registra os colaboradores selecionados e a obra de origem " +
-               "de cada valor, e libera o arquivo de pagamento. É possível refazê-lo.")) return;
-  fecharAux.disabled = true;
-  try {
-    const r = await fetch("{{ url_for('analisesps.folha_auxilio_fechar') }}", {
-      method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({tipo: "{{ tipo }}", ano: {{ ano }}, mes: {{ mes }},
-                            pagamento: pagamento})});
-    const d = await r.json();
-    if (!d.ok) { alert(d.erro); fecharAux.disabled = false; return; }
-    location.reload();
-  } catch (e) { alert("Não foi possível realizar o fechamento: " + e); fecharAux.disabled = false; }
-});
 
 </script>
 {% set ag_parte = 'script' %}{% set ag_tabela = 'tabela-auxilio' %}

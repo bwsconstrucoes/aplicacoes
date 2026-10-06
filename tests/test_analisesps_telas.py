@@ -6074,6 +6074,28 @@ def test_a_tela_do_auxilio_mostra_o_CAMINHO_da_conta(app, monkeypatch):
     assert "Feriados" in html and "Férias" in html and ">Dias<" in html
 
 
+def test_a_barra_de_SELECIONADOS_conta_quem_o_FILTRO_esconde(app, monkeypatch):
+    """O dono, 06/10/2026: *"tem 24 mil selecionados. Só que na hora que eu vou
+    gerar o arquivo, ele está gerando o arquivo do todo."* A barra somava só as
+    linhas à vista; os marcados que o filtro escondia saíam no arquivo calados."""
+    _preparar_auxilio(monkeypatch)
+    cliente = _como_mestre(app)
+    sem_filtro = cliente.get("/analisesps/folha/auxilios").get_data(as_text=True)
+    assert 'data-fora-quantos="0"' in sem_filtro
+    filtrado = cliente.get("/analisesps/folha/auxilios?q=NINGUEM").get_data(as_text=True)
+    assert 'data-fora-quantos="1"' in filtrado and 'id="fora-do-filtro"' in filtrado
+    assert "também vão no arquivo" in filtrado
+
+
+def test_GERAR_com_selecao_por_salvar_nao_abre_a_janela(app, monkeypatch):
+    """O arquivo sai da seleção SALVA: com mudança pendente, a janela pede para
+    salvar antes, em vez de gerar a seleção antiga calada."""
+    _preparar_auxilio(monkeypatch)
+    html = _como_mestre(app).get("/analisesps/folha/auxilios").get_data(as_text=True)
+    assert 'getElementById("btn-salvar-selecao")' in html
+    assert "da seleção SALVA" in html
+
+
 def test_a_tela_do_auxilio_diz_QUAL_REGUA_esta_vendo(app, monkeypatch):
     """As colunas das duas verbas são iguais e o número muda. Sem dizer qual
     régua está na tela, quem confere confere errado."""
@@ -6770,7 +6792,8 @@ def test_a_tela_de_diaristas_mostra_QUANTO_e_explica_a_regra(app, monkeypatch):
     assert "+20 no feriado, +10 no sábado e +20 no domingo" in html
     assert "8 de CTPS" in html, "os dias de CTPS ficam ditos no dia a dia"
     assert "sábado" in html, "o adicional do dia, com o porquê"
-    assert 'id="fechar-diaria"' in html
+    # O botão "Fechar" saiu em 06/10/2026: a trava é o arquivo gerado.
+    assert 'id="fechar-diaria"' not in html and 'id="gd-botao"' in html
 
 
 def test_DESLIGADO_com_diaria_aparece_A_PAGAR_com_o_alerta(app, monkeypatch):
@@ -7625,8 +7648,10 @@ def test_o_botao_de_gerar_do_auxilio_fica_na_LATERAL(app, monkeypatch):
 
     lateral = html.index('<aside class="filtros">')
     principal = html.index('<main class="principal">')
-    # Desde 01/10/2026 o caminho até o arquivo começa por FECHAR, na lateral.
-    assert lateral < html.index('id="fechar-auxilio"') < principal
+    # O "Fechar" saiu em 06/10/2026 (a trava é o arquivo gerado): o caminho até o
+    # arquivo é o "Gerar arquivos", na lateral.
+    assert 'id="fechar-auxilio"' not in html
+    assert lateral < html.index('id="gd-botao"') < principal
 
 
 def test_por_obra_vem_DEPOIS_da_lista_de_pessoas_no_auxilio(app, monkeypatch):
@@ -7649,7 +7674,7 @@ def test_o_total_do_auxilio_fica_SEMPRE_a_vista(app, monkeypatch):
 
     barra = html.index('id="barra-salvar"')
     # A barra existe e NÃO nasce escondida.
-    assert 'class="barra-salvar" id="barra-salvar">' in html
+    assert 'class="barra-salvar" id="barra-salvar"' in html
     assert html[barra:barra + 200].count("hidden") == 0
     assert "Selecionados para pagamento:" in html[barra:]
 

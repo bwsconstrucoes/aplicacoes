@@ -108,3 +108,35 @@ def test_a_REGRA_DE_RATEIO_divide_o_auxilio_entre_as_obras(banco_auxilio):
     pagas = fp.linhas_para_pagar(2026, 9, "fim_de_mes", ["alimentacao"])
     assert sorted((l["obra"], l["valor"]) for l in pagas) == [
         ("CREPEAREIAS", D("120.00")), ("CREPEOLINDA", D("180.00"))]
+
+
+def test_A_TRAVA_E_O_ARQUIVO_gerar_de_novo_pede_confirmacao(banco_auxilio, monkeypatch):
+    """O dono, 06/10/2026, ao tirar o botão "Fechar": *"a trava é o arquivo que a
+    gente gerou"*. Nada impedia gerar o mesmo auxílio duas vezes (pagaria duas)."""
+    from app.apps.analisesps import beevale, drive, folha_pagamento as fp
+    subidos = []
+    monkeypatch.setattr(beevale, "pasta_do_drive", lambda: ("PASTA", "teste"))
+    monkeypatch.setattr(drive, "subir_arquivo", lambda conteudo, nome, pasta, **k:
+                        subidos.append(nome)
+                        or {"id": f"d{len(subidos)}", "link": f"https://drive/{len(subidos)}"})
+    monkeypatch.setattr(drive, "mover_para_lixeira", lambda arquivo: None)
+    pedido = {"ano": 2026, "mes": 9, "pagamento": "fim_de_mes"}
+    assert fp.resumo_direto("alimentacao", pedido, "beevale")["resumo"]["ja_gerado"] == []
+    primeira = fp.gerar_direto("alimentacao", pedido, "beevale", quem="MARCELO")
+
+    resumo = fp.resumo_direto("alimentacao", pedido, "beevale")["resumo"]
+    assert len(resumo["ja_gerado"]) == 1 and not resumo["pode_gerar"]
+    # O auxílio é um por mês: na quinzena também conta.
+    quinzena = dict(pedido, pagamento="quinzena")
+    assert fp.resumo_direto("alimentacao", quinzena, "beevale")["resumo"]["ja_gerado"]
+    with pytest.raises(fp.ErroDoPagamento) as e:
+        fp.gerar_direto("alimentacao", pedido, "beevale", quem="MARCELO")
+    assert "já foi gerado" in str(e.value) and "MARCELO" in str(e.value)
+    antes = len(subidos)
+    fp.gerar_direto("alimentacao", pedido, "beevale", quem="MARCELO", forcar=True)
+    assert len(subidos) > antes, "com a confirmação, gera"
+
+    # Excluir as gerações destrava.
+    fp.excluir_arquivos([a["id"] for a in fp.log()], quem="MARCELO")
+    assert fp.resumo_direto("alimentacao", pedido, "beevale")["resumo"]["ja_gerado"] == []
+    assert primeira

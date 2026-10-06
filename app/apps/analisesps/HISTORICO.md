@@ -12120,6 +12120,35 @@ somente Solicitações de uma conta especifica"*.
   mover) não tinha por onde ser feito. Agora a prévia traz `so_terminar`, e o
   botão aparece só nesse caso.
 
+#### Leva 186 — o "Fechar" saiu; a seleção que o filtro esconde; a trava é o arquivo (06/10/2026)
+
+- *"Eu fiz o fechamento e tem 24 mil selecionados. Só que na hora que eu vou
+  gerar o arquivo, ele está gerando o arquivo do todo, como se eu não tivesse
+  feito a seleção."* O cálculo do pagamento respeita a seleção SALVA — não
+  havia erro nele. Os dois caminhos que levam a isso, ambos fechados:
+  1. **A barra "Selecionados para pagamento" somava só as linhas À VISTA.** Com
+     um filtro (busca, obra, situação…), quem ficava fora dele continuava
+     marcado e saía no arquivo. Agora a barra soma os dois e diz "inclui N
+     marcado(s) fora do filtro, que também vão no arquivo" — nas três telas
+     (alimentação/transporte, diaristas, DC). `web._marcados_fora_do_filtro`.
+  2. **"Gerar arquivos" com seleção não salva** gerava a seleção antiga, calado.
+     Agora a janela não abre: pede para salvar antes (`_gerar_direto.html`).
+  ⚠️ **Não reproduzido com o dado dele** — é a leitura do código. Se depois disto
+  o arquivo ainda vier maior que a barra, a causa é outra e precisa de exemplo.
+- **O botão "Fechar" saiu** da alimentação, do transporte e dos diaristas
+  (dono: *"só serviria de fechar se fosse para criar uma trava (…) a trava é o
+  arquivo que a gente gerou"*). "Gerar arquivos" já refazia o fechamento
+  sozinho; o botão não mudava o pagamento e, refeito depois de gerar, barrava o
+  lançamento no Pipefy. Saíram as rotas `/api/folha/auxilio/fechar` e
+  `/api/folha/diaristas/fechar`. A lateral mostra "Arquivos gerados em … por …".
+  A folha da contabilidade manteve o "Fechar a apropriação" — não foi pedido.
+- **A trava é o arquivo, de verdade:** nada impedia gerar o mesmo pagamento duas
+  vezes. Agora a janela diz "este pagamento já foi gerado em … por …" e só gera
+  com "gerar mesmo assim"; o caminho limpo é excluir a geração em Arquivos
+  gerados (`folha_pagamento.ja_gerado`). Auxílio: um por mês (quinzena ou fim
+  de mês contam juntos). Diárias e folha: por período. DC fica fora (as linhas
+  geradas já saem da lista).
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |

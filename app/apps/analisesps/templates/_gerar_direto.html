@@ -91,9 +91,16 @@
       c.criticas = c.criticas.concat(l.criticas);
       contas.set(l.conta, c);
     });
-    const avisos = d.lotes.some(l => l.criticas.length);
+    const jaGerado = (d.resumo.ja_gerado || []);
+    const avisos = d.lotes.some(l => l.criticas.length) || jaGerado.length > 0;
     corpo.innerHTML =
       "<p><b>" + esc(d.rotulo) + "</b></p>" +
+      // A TRAVA É O ARQUIVO GERADO (06/10/2026): o mesmo pagamento já saiu.
+      (jaGerado.length ? '<div class="aviso erro"><b>Este pagamento já foi gerado</b> em ' +
+        jaGerado.map(a => esc(a.quando) + (a.por ? " por " + esc(a.por) : "") +
+                          " (" + real(a.total) + ")").join("; ") +
+        ". Gerar de novo pagaria duas vezes. Para refazer, exclua a geração anterior em " +
+        "Arquivos gerados; para gerar assim mesmo, marque a opção abaixo.</div>" : "") +
       '<div class="tabela-rolagem livre"><table class="sps"><thead><tr><th>Conta</th>' +
       "<th>Destino</th>" +
       '<th class="num">Colaboradores</th><th class="num">Total</th><th>Avisos</th>' +
@@ -137,6 +144,17 @@
   }
 
   document.getElementById("gd-botao").addEventListener("click", () => {
+    // ⚠️ O ARQUIVO SAI DA SELEÇÃO SALVA (06/10/2026). Ele desmarcou, viu o total
+    // da barra cair e gerou — e o arquivo veio com todos, porque a mudança não
+    // estava salva. Com mudança pendente, a janela não abre: salva primeiro.
+    const salvarSelecao = document.getElementById("btn-salvar-selecao");
+    if (salvarSelecao && !salvarSelecao.disabled) {
+      if (confirm("A seleção tem mudanças que ainda não foram salvas, e o arquivo sai " +
+                  "da seleção SALVA.\n\nSalvar agora? Depois, clique em Gerar arquivos de novo.")) {
+        salvarSelecao.click();
+      }
+      return;
+    }
     corpo.innerHTML = '<p class="cartao-dica">Montando o resumo…</p>';
     botoes.hidden = true; forcarRotulo.hidden = true; forcar.checked = false;
     confirmar.disabled = false; confirmar.textContent = "Gerar definitivo";

@@ -3849,6 +3849,9 @@ def tela_folha_auxilio():
         grupos=subtelas_agrupadas(), pronto=pronto, resultado=resultado,
         tipo=tipo, ano=ano, mes=mes, erro=erro, pessoas=lista["pessoas"],
         lista=lista, filtrando=lista["filtrando"],
+        fora_do_filtro=_marcados_fora_do_filtro(
+            (resultado or {}).get("pessoas"), lista["pessoas"]),
+        ultima_geracao=_ultima_geracao(tipo, ano, mes) if resultado else None,
         divisao=_divisao_da_tela(resultado, tipo, fx.apropriado) if resultado else {},
         tipos=[(t, fx.ROTULO_DO_TIPO[t]) for t in fx.TIPOS],
         pagamentos=list(fx.TIPOS_DO_FECHAMENTO.items()),
@@ -3858,24 +3861,35 @@ def tela_folha_auxilio():
         nome=auth.nome_atual())
 
 
-@bp.route("/api/folha/auxilio/fechar", methods=["POST"])
-@exige_operador
-def folha_auxilio_fechar():
-    """Congela o auxílio do mês — o passo que faltava para o arquivo sair."""
-    from . import folha_auxilio as fx
-
-    dados = request.get_json(silent=True) or {}
-    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+def _ultima_geracao(verba: str, ano: int, mes: int, tipo: str | None = None):
+    """A geração mais recente desta verba no mês (o arquivo de análise), ou None.
+    É o que a lateral mostra no lugar do antigo "Fechado em…": desde 06/10/2026
+    a trava é o arquivo gerado, não um botão de fechar."""
+    from . import folha_pagamento as fpg
     try:
-        feito = fx.fechar(str(dados.get("tipo") or ""), int(dados.get("ano") or 0),
-                          int(dados.get("mes") or 0),
-                          str(dados.get("pagamento") or "fim_de_mes"), quem=quem)
-    except (fx.ErroDoAuxilio, ValueError, TypeError) as e:
-        return {"ok": False, "erro": str(e)}, 400
-    except Exception as e:  # noqa: BLE001
-        logger.exception("Folha: falhou fechar o auxílio")
-        return {"ok": False, "erro": f"Não foi possível concluir o fechamento: {e}"}, 500
-    return {"ok": True, **{k: str(v) for k, v in feito.items()}}
+        for a in fpg.log(teto=400, ano=ano, mes=mes):
+            if (a["destino"] == fpg.ANALISE
+                    and verba in (a["verbas"] or "").split("+")
+                    and (tipo is None or a["tipo"] == tipo)):
+                return a
+    except Exception:  # noqa: BLE001 — a tela abre sem esta linha
+        logger.exception("Folha: não consegui ler a última geração")
+    return None
+
+
+def _marcados_fora_do_filtro(todas, visiveis, chave: str = "cpf",
+                             vai=lambda p: p.get("pagar") and p.get("valor", 0) > 0) -> dict:
+    """Quantos marcados para pagar o filtro da tela esconde, e quanto somam.
+
+    ⚠️ ELES TAMBÉM VÃO NO ARQUIVO. O dono, 06/10/2026: *"tem 24 mil
+    selecionados. Só que na hora que eu vou gerar o arquivo, ele está gerando o
+    arquivo do todo."* A barra de "Selecionados para pagamento" somava só as
+    linhas à vista; com um filtro, quem estava fora dele continuava marcado e
+    saía no arquivo. A barra agora soma os dois e diz quantos estão fora."""
+    vistos = {p.get(chave) for p in (visiveis or [])}
+    fora = [p for p in (todas or []) if p.get(chave) not in vistos and vai(p)]
+    return {"quantos": len(fora),
+            "total": float(sum((p.get("valor") or 0) for p in fora))}
 
 
 @bp.route("/api/folha/auxilio/selecao", methods=["POST"])
@@ -4181,6 +4195,9 @@ def tela_folha_dc():
         grupos=subtelas_agrupadas(), resultado=calculado, erro=erro,
         pronto=dc._pronto(), pessoas=lista["pessoas"], lista=lista,
         filtrando=lista["filtrando"], divisao=divisao,
+        fora_do_filtro=_marcados_fora_do_filtro(
+            (calculado or {}).get("pessoas"), lista["pessoas"], chave="chave",
+            vai=lambda p: p.get("pagar") and p.get("valor", 0) > 0 and not p.get("gerada")),
         mostrar_geradas=mostrar_geradas, obras_c_diarios=_obras_c_diarios(),
         planilha_dc=dc.PLANILHA_DC,
         pode_operar=auth.pode_operar(), pode_gerar=auth.e_mestre(),
@@ -4338,6 +4355,11 @@ def tela_folha_diaristas():
         "analisesps_folha_diaristas.html", aba="folha", subaba="diaristas",
         grupos=subtelas_agrupadas(), r=resultado, erro=erro, lista=lista,
         pessoas=lista["pessoas"], ano=ano, mes=mes, qual=qual, divisao=divisao,
+        fora_do_filtro=_marcados_fora_do_filtro(resultado.get("pessoas"),
+                                                lista["pessoas"]),
+        ultima_geracao=(_ultima_geracao("diaria", ano, mes,
+                                        fd.TIPO_DO_FECHAMENTO.get(resultado.get("qual")))
+                        if resultado.get("qual") else None),
         periodos=list(fd.PERIODOS.items()), ano_padrao=hoje.year,
         pode_operar=auth.pode_operar(), pode_gerar=auth.e_mestre(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
@@ -4363,25 +4385,6 @@ def folha_diaristas_selecao():
         logger.exception("Folha: falhou salvar a seleção dos diaristas")
         return {"ok": False, "erro": f"Não foi possível salvar: {e}"}, 500
     return {"ok": True, **feito}
-
-
-@bp.route("/api/folha/diaristas/fechar", methods=["POST"])
-@exige_operador
-def folha_diaristas_fechar():
-    """Congela a diária do período — o passo antes de gerar o arquivo."""
-    from . import folha_apropriacao_guardada as guardada, folha_diaristas as fd
-
-    dados = request.get_json(silent=True) or {}
-    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
-    try:
-        feito = fd.fechar(int(dados.get("ano") or 0), int(dados.get("mes") or 0),
-                          str(dados.get("periodo") or "quinzena"), quem=quem)
-    except (guardada.ErroDaApropriacao, ValueError, TypeError) as e:
-        return {"ok": False, "erro": str(e)}, 400
-    except Exception as e:  # noqa: BLE001
-        logger.exception("Folha: falhou fechar a diária")
-        return {"ok": False, "erro": f"Não foi possível concluir o fechamento: {e}"}, 500
-    return {"ok": True, **{k: str(v) for k, v in feito.items()}}
 
 
 @bp.route("/folha/pagamento")
@@ -4442,7 +4445,7 @@ def _pedido_de_geracao_direta():
 def folha_gerar_direto_resumo():
     """O resumo do que vai ser gerado, a partir da folha aberta na tela. NÃO
     grava nada (02/10/2026: gerar sem sair da folha)."""
-    from . import folha_geracao as geracao, folha_pagamento as fpg
+    from . import folha_geracao as geracao, folha_pagamento as fpg, formatos
     dados, origem, destino = _pedido_de_geracao_direta()
     try:
         plano = fpg.resumo_direto(origem, dados, destino,
@@ -4458,7 +4461,11 @@ def folha_gerar_direto_resumo():
             "resumo": {"arquivos": plano["resumo"]["arquivos"],
                        "pessoas": plano["resumo"]["pessoas"],
                        "total": float(plano["resumo"]["total"]),
-                       "pode_gerar": plano["resumo"]["pode_gerar"]},
+                       "pode_gerar": plano["resumo"]["pode_gerar"],
+                       "ja_gerado": [{"quando": formatos.momento_br(a["criado_em"]),
+                                      "por": a["criado_por"] or "",
+                                      "total": float(a["total"])}
+                                     for a in plano["resumo"]["ja_gerado"]]},
             "lotes": [{"conta": l["conta"], "quantos": l["quantos"],
                        "destino": l["destino"],
                        "rotulo_destino": geracao.ROTULO_DO_DESTINO.get(l["destino"], ""),
