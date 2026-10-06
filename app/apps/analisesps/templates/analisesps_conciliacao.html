@@ -121,6 +121,21 @@
     </div>
   </div>
 
+  {# A ORDEM DO EXTRATO (06/10/2026): *"eu havia pedido pra ordenar com o mais
+     recente embaixo, mas acho que isso deveria ser uma opção de visualização,
+     pode ser definido no sidebar"*. Fica guardada como os filtros. #}
+  <div class="filtro aberto">
+    <div class="filtro-cab"><span>Visualização</span></div>
+    <div class="filtro-cont">
+      <select class="campo-largo" name="ordem" onchange="this.form.submit()"
+              aria-label="Ordem do extrato">
+        {% for chave, rotulo in (ordens or {}).items() %}
+          <option value="{{ chave }}" {% if filtros.ordem == chave %}selected{% endif %}>{{ rotulo }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
   <p style="margin:12px 2px"><button class="btn" type="submit">Aplicar</button></p>
 </form>
 
@@ -391,7 +406,7 @@
        via a lista mudar e não fazia ideia de por quê. #}
     {% for chave, valores in args.lists()
        if chave in ('sentido', 'busca', 'data_ini', 'data_fim',
-                    'valor_ini', 'valor_fim') %}
+                    'valor_ini', 'valor_fim', 'ordem') %}
       {% for v in valores %}<input type="hidden" name="{{ chave }}" value="{{ v }}">{% endfor %}
     {% endfor %}
     {# ⚠️ ESTE BOTÃO É O QUE FAZ O ENTER FUNCIONAR, e a falta dele era o
@@ -1001,6 +1016,8 @@
   try { tipo = (performance.getEntriesByType("navigation")[0] || {}).type || ""; }
   catch (e) { tipo = ""; }
   if (tipo === "reload" || tipo === "back_forward" || location.hash) return;
+  // Com o mais recente EM CIMA (escolha da lateral), a tela fica no topo.
+  if ({{ (filtros.ordem == 'recente_em_cima')|tojson }}) return;
   const ultima = document.querySelector("table.conciliacao tbody tr:last-child");
   if (ultima) window.addEventListener("load", () =>
     ultima.scrollIntoView({block: "center"}));
@@ -1186,6 +1203,14 @@ document.querySelectorAll(".anotacao").forEach(campo => {
 const area = document.getElementById("solta-extrato");
 const campoArq = document.getElementById("arq-extrato");
 const saida = document.getElementById("saida-extrato");
+// ⚠️ A RESPOSTA DO EXTRATO SOBE À VISTA (06/10/2026): *"toda vida que incluo um
+// novo extrato, o sistema deveria subir a tela para eu visualizar as mensagens
+// de alerta"*. A tela abre no fim da lista, e a resposta aparece no alto — quem
+// soltava o arquivo lá embaixo não via os alertas. Cada vez que a resposta
+// muda, ela é trazida para a vista.
+if (saida) new MutationObserver(() => {
+  if (saida.childElementCount) saida.scrollIntoView({behavior: "smooth", block: "start"});
+}).observe(saida, {childList: true});
 let arquivoNaMao = null;
 
 if (area) {

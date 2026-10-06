@@ -12030,6 +12030,20 @@ Ordenados → Diárias.
   gravar as do extrato. Oferecido, não feito: um "trocar pela do extrato" que
   preserve conciliado e observação.
 
+#### Leva 182 — Conciliação: a resposta do extrato sobe à vista; ordem escolhida na lateral (06/10/2026)
+
+- *"Toda vida que incluo um novo extrato, o sistema deveria subir a tela para eu
+  visualizar as mensagens de alerta."* A tela abre no fim da lista e a resposta
+  do extrato aparece no alto: quem soltava o arquivo não via os alertas. Agora,
+  cada vez que a resposta muda, ela é trazida para a vista.
+- *"Eu havia pedido pra ordenar com o mais recente embaixo, mas acho que isso
+  deveria ser uma opção de visualização, pode ser definido no sidebar."* Bloco
+  "Visualização" na lateral: "Mais recente embaixo (como o extrato do banco)"
+  (padrão) ou "Mais recente em cima". A página continua sendo a dos 200 mais
+  recentes; muda só a ordem, e o saldo de cada linha é o dela. A escolha fica
+  GUARDADA por pessoa (preferência `conciliacao_ordem`), vale no filtro do
+  cabeçalho e na paginação; com "em cima", a tela não pula para o fim.
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |
@@ -12070,7 +12084,7 @@ Ordenados → Diárias.
 | DC: no primeiro lançamento, conferir na prévia o tipo de despesa e as categorias, e no Pipefy se os cards de origem foram para a fase certa | ele |
 | decidir a CARTEIRA do BeeVale da alimentação e do transporte (hoje "Produção"; os diaristas já saem em "Diárias") | ele |
 | ~~publicar as levas 177 a 179~~ — **publicadas em 05/10/2026** (main em `b18f6f0`, suíte inteira verde salvo o teste do painel que falha igual na main). Carteira da alimentação e do transporte decidida (leva 180) | — |
-| publicar a leva 181 (migração **050**: apertar "Aplicar atualizações do banco" no mesmo momento) | ele |
+| publicar as levas 181 e 182 (migração **050**: apertar "Aplicar atualizações do banco" no mesmo momento) | ele |
 | ~~publicar a leva 180~~ — **publicada em 05/10/2026** (main em `5f21ffe`). Confirmado por ele: a folha da contabilidade segue "Produção", e "Gratiticações e Extras" é a grafia do PORTAL (*"tá errado mesmo, gratiti"*) — não corrigir | — |
 | ~~publicar as levas 174 a 176~~ — **publicadas em 05/10/2026** (main em `02c26af`; suíte inteira verde, salvo `test_painel_cenario::test_quem_esta_preso_nao_abre_nem_grava_os_parametros`, que falha igual na main — área do painel, depende da ordem). Conferir que ele apertou "Aplicar atualizações do banco" (**048** e **049**) e importar a Listagem de Férias de 09 e 10/2026 | ele |
 | campo de automação da SP (`automa_o_2`): segue vazio nas outras folhas (na DC vai "BeeVale", como no script); ver no primeiro lançamento se faz falta, junto com a categoria do segundo card | ele |

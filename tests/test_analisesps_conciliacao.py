@@ -935,6 +935,30 @@ def test_cada_filtro_fica_EMBAIXO_da_sua_coluna(app_com_dados):
     assert 'name="observacao"' in casas[nomes.index("Observação")]
 
 
+def test_a_ORDEM_do_extrato_se_escolhe_na_lateral_e_vale_no_cabecalho(app_com_dados):
+    """06/10/2026: *"acho que isso deveria ser uma opção de visualização, pode
+    ser definido no sidebar"*."""
+    html = como(app_com_dados).get(
+        "/analisesps/conciliacao?ordem=recente_em_cima").get_data(as_text=True)
+    assert 'name="ordem"' in html and "Mais recente em cima" in html
+    assert '<option value="recente_em_cima" selected>' in html
+    # O filtro do cabeçalho leva a ordem junto (não a perde ao filtrar).
+    assert '<input type="hidden" name="ordem" value="recente_em_cima">' in html
+
+
+def test_a_ORDEM_escolhida_fica_GUARDADA_para_a_proxima_visita(app_com_dados, monkeypatch):
+    """É preferência de visualização: escolhida uma vez, vale nas próximas."""
+    from app.apps.analisesps import preferencias
+    guardado = {}
+    monkeypatch.setattr(preferencias, "ler", lambda pessoa, chave: dict(guardado.get(chave, {})))
+    monkeypatch.setattr(preferencias, "gravar",
+                        lambda pessoa, chave, valor: guardado.__setitem__(chave, valor))
+    cliente = como(app_com_dados)
+    cliente.get("/analisesps/conciliacao?ordem=recente_em_cima")
+    html = cliente.get("/analisesps/conciliacao").get_data(as_text=True)
+    assert '<option value="recente_em_cima" selected>' in html
+
+
 def test_o_formulario_fica_FORA_da_tabela(app_com_dados):
     """⚠️ Um `<form>` no meio de `<tr>` não é HTML válido: o navegador o
     expulsa da tabela e as caixinhas param de enviar, sem erro nenhum na tela.

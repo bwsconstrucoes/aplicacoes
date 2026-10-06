@@ -552,6 +552,12 @@ def test_a_pagina_1_sao_os_ULTIMOS_200_com_o_mais_recente_no_fim(banco_conc,
     pagina1 = conciliacao.listar({"conta_id": conta_id}, 1)
     assert [l["data"].day for l in pagina1] == [2, 3], "os últimos, em ordem crescente"
     assert [l["data"].day for l in conciliacao.listar({"conta_id": conta_id}, 2)] == [1]
+    # A ORDEM É ESCOLHA DELE (06/10/2026): "mais recente em cima" mostra a mesma
+    # página ao contrário — e o saldo de cada linha continua o dela.
+    em_cima = conciliacao.listar({"conta_id": conta_id,
+                                  "ordem": conciliacao.ORDEM_RECENTE_EM_CIMA}, 1)
+    assert [l["data"].day for l in em_cima] == [3, 2]
+    assert [l["saldo"] for l in em_cima] == [l["saldo"] for l in pagina1][::-1]
 
 
 def test_sem_saldo_inicial_nada_muda(banco_conc):

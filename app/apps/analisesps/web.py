@@ -1836,6 +1836,9 @@ def conciliacao_procurar():
          "arquivo": a["arquivo"]} for a in achados]}
 
 
+PREFERENCIA_ORDEM_CONC = "conciliacao_ordem"
+
+
 def _filtros_da_conciliacao(contas_cadastradas: list) -> dict:
     """O que a barra desta tela manda, com um padrão sensato para cada coisa."""
     from . import conciliacao as conc
@@ -1865,6 +1868,25 @@ def _filtros_da_conciliacao(contas_cadastradas: list) -> dict:
     sentido = request.args.get("sentido") or ""
     if sentido not in ("", "entrada", "saida"):
         sentido = ""
+    # A ORDEM DE EXIBIÇÃO (06/10/2026), escolhida na lateral — e GUARDADA por
+    # pessoa (é preferência de visualização, não filtro do momento): escolhida
+    # uma vez, vale nas próximas visitas, em qualquer aparelho.
+    from . import preferencias
+    pessoa = auth.pessoa_atual()
+    ordem = request.args.get("ordem") or ""
+    if ordem in conc.ORDENS:
+        try:
+            if preferencias.ler(pessoa, PREFERENCIA_ORDEM_CONC).get("ordem") != ordem:
+                preferencias.gravar(pessoa, PREFERENCIA_ORDEM_CONC, {"ordem": ordem})
+        except Exception:  # noqa: BLE001 — preferência é conforto
+            logger.exception("Conciliação: não consegui guardar a ordem escolhida")
+    else:
+        try:
+            ordem = preferencias.ler(pessoa, PREFERENCIA_ORDEM_CONC).get("ordem") or ""
+        except Exception:  # noqa: BLE001
+            ordem = ""
+        if ordem not in conc.ORDENS:
+            ordem = conc.ORDEM_RECENTE_EMBAIXO
 
     # ⚠️ A BUSCA RÁPIDA DO TOPO NÃO É UM SEGUNDO FILTRO — ela preenche ESTE.
     # Pedido do dono em 24/09/2026: *"se na parte superior eu pudesse já
@@ -1883,7 +1905,7 @@ def _filtros_da_conciliacao(contas_cadastradas: list) -> dict:
         return (request.args.get(nome) or "").strip()
 
     return {"conta_id": conta_id, "situacao": situacao, "sentido": sentido,
-            "busca": texto("busca"),
+            "ordem": ordem, "busca": texto("busca"),
             "data_ini": dia or data("data_ini"),
             "data_fim": dia or data("data_fim"),
             "valor_ini": abs(exato) if exato is not None else numero("valor_ini"),
@@ -2019,7 +2041,7 @@ def tela_conciliacao():
     return render_template(
         "analisesps_conciliacao.html", aba="conciliacao", estado=estado,
         contas=contas, conta=conta, linhas=linhas, filtros=filtros,
-        resumo=resumo, situacoes=conc.SITUACOES, pagina=pagina,
+        resumo=resumo, situacoes=conc.SITUACOES, pagina=pagina, ordens=conc.ORDENS,
         # ⚠️ QUANTAS A CONTA TEM NO TOTAL, para a tela poder dizer o que o filtro
         # está escondendo. O filtro fica guardado de uma visita para a outra, e um
         # período de ontem esconde hoje uma linha que está gravada — foi o que fez

@@ -957,7 +957,19 @@ def listar(f: dict, pagina: int = 1) -> list[dict]:
     # do banco e o OMIE mostram. O dono, 02/10/2026: *"colocar o mais recente ao
     # final da tela pra casar com a visualização do extrato bancário e com o
     # sistema. Dessa forma facilita a conferência visual."*
-    return [dict(zip(nomes, linha)) for linha in reversed(linhas)]
+    #
+    # E desde 06/10/2026 isso é ESCOLHA dele, na lateral (*"acho que isso
+    # deveria ser uma opção de visualização"*): `ordem = "recente_em_cima"`
+    # mostra a página do mais recente para o mais antigo.
+    em_ordem = [dict(zip(nomes, linha)) for linha in linhas]
+    return em_ordem if f.get("ordem") == ORDEM_RECENTE_EM_CIMA else em_ordem[::-1]
+
+
+# A ordem de exibição do extrato (escolha da lateral, 06/10/2026).
+ORDEM_RECENTE_EMBAIXO = "recente_embaixo"
+ORDEM_RECENTE_EM_CIMA = "recente_em_cima"
+ORDENS = {ORDEM_RECENTE_EMBAIXO: "Mais recente embaixo (como o extrato do banco)",
+          ORDEM_RECENTE_EM_CIMA: "Mais recente em cima"}
 
 
 def resumo(f: dict) -> dict:
