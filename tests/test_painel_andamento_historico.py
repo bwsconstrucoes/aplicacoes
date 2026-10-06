@@ -45,13 +45,35 @@ def test_os_passos_dizem_o_que_fez_onde_parou_e_o_que_nao_chegou():
     assert "37 de 420" in parou["detalhe"]
 
 
-def test_sem_passos_gravados_ainda_mostra_onde_parou():
-    """Execução antiga ou migração 020 pendente: sabe-se só a etapa."""
-    passos = a.passos_da_execucao(_e(viva=False, etapa=a.PAGAMENTOS,
+def test_sem_passos_gravados_mostra_so_onde_esta_e_nao_inventa_o_resto():
+    """Execução antiga ou migração 020 pendente: sabe-se só a etapa. Em
+    06/10/2026 a tela marcou seis passos como "feitos" que ninguém viu."""
+    passos = a.passos_da_execucao(_e(viva=False, etapa="baixando o que mudou no OMIE",
                                      progresso="página 9 de 40"), [])
-    parou = [p for p in passos if p["estado"] == "parou_aqui"]
-    assert parou and parou[0]["etapa"] == a.PAGAMENTOS
-    assert parou[0]["detalhe"] == "página 9 de 40"
+    assert passos == [{"etapa": "baixando o que mudou no OMIE", "estado": "parou_aqui",
+                       "detalhe": "página 9 de 40", "inicio": None, "visto_em": None}]
+    rodando = a.passos_da_execucao(_e(etapa="x", progresso="p"), [])
+    assert [p["estado"] for p in rodando] == ["andando"]
+
+
+def test_a_espera_pedida_pelo_omie_avisa_e_mantem_a_carga_viva(monkeypatch):
+    """06/10/2026: a página "parada" na 247 era o OMIE mandando esperar — sem
+    aviso, e sem sinal de vida por até 10 minutos."""
+    from app.apps.painel.sync import espelho, omie_client
+    avisos, dormidas = [], []
+    monkeypatch.setattr(omie_client.time, "sleep", dormidas.append)
+    espelho.definir_progresso(lambda etapa, detalhe: avisos.append((etapa, detalhe)))
+    try:
+        espelho._progresso(a.PAGAMENTOS, "desde 01/01/2015: página 247 de 2716")
+        omie_client._esperar(75, "limite de consultas")
+    finally:
+        espelho.definir_progresso(None)
+    assert dormidas == [30.0, 30.0, 15.0]
+    esperas = [d for e, d in avisos if "esperando o OMIE" in d]
+    assert len(esperas) == 3 and all(e == a.PAGAMENTOS for e, d in avisos)
+    assert esperas[0] == ("desde 01/01/2015: página 247 de 2716 — esperando o OMIE "
+                          "liberar (limite de consultas) — faltam 75 s")
+    assert omie_client._aviso_de_espera is None     # desligado no fim
 
 
 def test_o_que_fazer_muda_com_a_situacao():

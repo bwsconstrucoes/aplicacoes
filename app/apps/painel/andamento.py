@@ -79,6 +79,18 @@ def passos_da_execucao(e: dict, gravados: list[dict]) -> list[dict]:
     que o modo não prevê (a primeira carga tem os dela) entram na ordem em que
     aconteceram."""
     sit = situacao(e)
+    if not gravados:
+        # Sem passos gravados (execução de antes da migração 020, ou com ela
+        # pendente) não há como saber o que já foi feito — só onde está ou
+        # parou. Marcar o resto como "feito" seria inventar (06/10/2026: a
+        # tela mostrou seis passos "feitos" que ninguém viu acontecer).
+        if not e.get("etapa"):
+            return []
+        estado = {RODANDO: "andando", CONCLUIDA: "feito", COM_AVISO: "feito"}.get(
+            sit, "parou_aqui")
+        return [{"etapa": e["etapa"], "estado": estado,
+                 "detalhe": e.get("progresso") or "", "inicio": None,
+                 "visto_em": None}]
     esperados = list(PASSOS_POR_MODO.get(e.get("tipo"), []))
     nomes = [p["etapa"] for p in gravados]
     for nome in nomes:

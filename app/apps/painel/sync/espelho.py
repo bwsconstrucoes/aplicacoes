@@ -49,10 +49,26 @@ log = logging.getLogger("painel.espelho")
 _relator = None
 
 
+_ultimo_andamento = ["", ""]   # (etapa, detalhe) — para a espera do OMIE dizer onde
+
+
 def definir_progresso(funcao):
-    """Recebe uma funcao `f(etapa, detalhe)` chamada ao longo da atualizacao."""
+    """Recebe uma funcao `f(etapa, detalhe)` chamada ao longo da atualizacao.
+
+    Liga tambem o aviso das ESPERAS pedidas pelo OMIE (06/10/2026): sem ele, a
+    pagina ficava "parada" sem explicacao e a espera longa parecia morte."""
     global _relator
     _relator = funcao
+    from .omie_client import definir_aviso_de_espera
+    if funcao is None:
+        definir_aviso_de_espera(None)
+        return
+
+    def _na_espera(texto):
+        etapa, detalhe = _ultimo_andamento
+        funcao(etapa or "esperando o OMIE",
+               f"{detalhe} — {texto}" if detalhe else texto)
+    definir_aviso_de_espera(_na_espera)
 
 
 # ---------------------------------------------------------------------------
@@ -168,6 +184,7 @@ def limpar_etapas(conn) -> None:
 
 
 def _progresso(etapa, detalhe=""):
+    _ultimo_andamento[0], _ultimo_andamento[1] = etapa, detalhe
     if _relator is None:
         return
     try:
