@@ -6087,6 +6087,21 @@ def test_a_barra_de_SELECIONADOS_conta_quem_o_FILTRO_esconde(app, monkeypatch):
     assert "também vão no arquivo" in filtrado
 
 
+def test_DESLIGADO_marcado_para_receber_aparece_e_a_lateral_avisa(app, monkeypatch):
+    """06/10/2026: 77 desligados marcados à mão saíam no arquivo sem aparecer."""
+    marcado = dict(_auxilio_calculado()["pessoas"][0])
+    marcado.update({"cpf": "11122233396", "nome": "JASAIU", "situacao": "saiu",
+                    "desligado": True, "pagar": True, "pagar_calculado": False})
+    calculado = _auxilio_calculado()
+    calculado["pessoas"] = calculado["pessoas"] + [marcado]
+    _preparar_auxilio(monkeypatch, calculado)
+    html = _como_mestre(app).get("/analisesps/folha/auxilios").get_data(as_text=True)
+    assert "JASAIU" in html, "vai ser pago: aparece na lista"
+    assert "Desligados marcados para receber" in html
+    assert 'id="desmarcar-desligados"' in html and 'data-cpfs="11122233396"' in html
+    assert 'data-fora-quantos="0"' in html
+
+
 def test_GERAR_com_selecao_por_salvar_nao_abre_a_janela(app, monkeypatch):
     """O arquivo sai da seleção SALVA: com mudança pendente, a janela pede para
     salvar antes, em vez de gerar a seleção antiga calada."""

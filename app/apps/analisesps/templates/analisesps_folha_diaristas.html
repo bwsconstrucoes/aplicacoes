@@ -348,6 +348,10 @@
 document.querySelectorAll(".abrir-ficha").forEach(b => b.addEventListener("click",
   () => abrirFichaDoFuncionario(b.dataset.cpf, {{ ano }}, {{ mes }})));
 const caixas = [...document.querySelectorAll(".marca-pessoa")];
+// ⚠️ A CAIXINHA ABRE NO ESTADO SALVO (06/10/2026). O navegador, ao recarregar,
+// pode devolver a marcação de antes da recarga — e a barra mostrava um total que
+// não era o salvo (é o salvo que vai no arquivo).
+caixas.forEach(c => { c.checked = c.defaultChecked; });
 const inicial = caixas.map(c => c.checked);
 function dinheiro(n) { return n.toLocaleString("pt-BR", {style: "currency", currency: "BRL"}); }
 function atualizar() {

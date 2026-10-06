@@ -76,6 +76,24 @@
   </div>
 </div>
 
+{% if desligados_marcados %}
+{# 06/10/2026: desligados marcados À MÃO para receber ficavam escondidos da lista
+   e saíam no arquivo — o dono via 24 mil selecionados e o arquivo vinha com 43. #}
+<div class="cartao lateral-folha">
+  <b class="lateral-titulo">Desligados marcados para receber</b>
+  <a class="lat-critica erro" href="{{ url_tela }}{{ base_qs }}&situacao=saiu">
+    <b>{{ desligados_marcados|length }} desligado(s) — {{ desligados_marcados|sum(attribute='valor')|moeda }}</b>
+    <small>A regra não paga quem já saiu; estes foram marcados à mão e VÃO no
+      arquivo. Clique para ver quem é e desmarque quem não deve receber.</small>
+  </a>
+  {% if pode_operar %}
+    <button type="button" class="btn secundario" id="desmarcar-desligados"
+            data-cpfs="{{ desligados_marcados|map(attribute='cpf')|join(',') }}"
+            style="margin-top:6px">Desmarcar os {{ desligados_marcados|length }} desligados</button>
+  {% endif %}
+</div>
+{% endif %}
+
 {% if resultado and resultado.sem_obra %}
 <div class="cartao lateral-folha">
   <b class="lateral-titulo">Pendências antes do pagamento</b>
@@ -630,6 +648,10 @@
 const tabela = document.getElementById("tabela-auxilio");
 const barra = document.getElementById("barra-salvar");
 const caixas = [...document.querySelectorAll(".marca-pessoa")];
+// ⚠️ A CAIXINHA ABRE NO ESTADO SALVO (06/10/2026). O navegador, ao recarregar,
+// pode devolver a marcação de antes da recarga — e a barra mostrava um total que
+// não era o salvo (é o salvo que vai no arquivo).
+caixas.forEach(c => { c.checked = c.defaultChecked; });
 const inicial = caixas.map(c => c.checked);
 
 function linhaDa(caixa) { return caixa.closest("tr"); }
@@ -727,6 +749,24 @@ if (salvar) salvar.addEventListener("click", async () => {
     recado.textContent = "Não foi possível salvar: " + e;
     salvar.disabled = false;
   }
+});
+
+// --- desmarcar de uma vez os desligados marcados à mão (06/10/2026) ----------
+const desmarcarDesligados = document.getElementById("desmarcar-desligados");
+if (desmarcarDesligados) desmarcarDesligados.addEventListener("click", async () => {
+  if (avisarSeHaSelecaoPorSalvar()) return;
+  const cpfs = desmarcarDesligados.dataset.cpfs.split(",").filter(Boolean);
+  if (!confirm("Desmarcar " + cpfs.length + " desligado(s)? Eles saem do pagamento.")) return;
+  desmarcarDesligados.disabled = true;
+  try {
+    const r = await fetch("{{ url_for('analisesps.folha_auxilio_selecao') }}", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({tipo: "{{ tipo }}", ano: {{ ano }}, mes: {{ mes }},
+                            decisoes: cpfs.map(cpf => ({cpf: cpf, pagar: false}))})});
+    const d = await r.json();
+    if (!d.ok) { alert(d.erro); desmarcarDesligados.disabled = false; return; }
+    location.reload();
+  } catch (e) { alert("Não foi possível desmarcar: " + e); desmarcarDesligados.disabled = false; }
 });
 
 // --- ajustes: desconto de ausências e valor acrescentado (03/10/2026) --------
