@@ -483,10 +483,13 @@
         <th><input name="saida" form="filtro-colunas" placeholder="valor"
                    class="direita" value="{{ filtros.saida or '' }}"></th>
         <th></th>
-        <th></th>
+        {# ⚠️ O FILTRO DA CONCILIAÇÃO FICA EMBAIXO DE "CONC." — quando a coluna
+           "No OMIE" entrou (29/09/2026), esta linha não ganhou a casa dela, e
+           o seletor escorregou para baixo de "No OMIE" (o dono, 06/10/2026:
+           *"o filtro de conciliação no header sumiu"*). Uma casa por coluna. #}
         <th>
           <select name="situacao" form="filtro-colunas"
-                  onchange="this.form.submit()">
+                  onchange="this.form.submit()" aria-label="Filtrar pela conciliação">
             {% for chave, rotulo in situacoes.items() %}
               <option value="{{ chave }}"
                 {% if filtros.situacao == chave %}selected{% endif %}>
@@ -495,6 +498,7 @@
             {% endfor %}
           </select>
         </th>
+        <th></th>
         <th><input name="observacao" form="filtro-colunas" placeholder="procurar…"
                    value="{{ filtros.observacao }}"></th>
         {% if pode_operar %}<th></th>{% endif %}

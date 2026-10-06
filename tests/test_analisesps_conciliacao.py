@@ -896,6 +896,23 @@ def test_cada_coluna_tem_a_sua_caixinha_de_filtro(app_com_dados):
                f'type="date" name="{campo}" form="filtro-colunas"' in html, campo
 
 
+def test_cada_filtro_fica_EMBAIXO_da_sua_coluna(app_com_dados):
+    """06/10/2026: *"o filtro de conciliação no header sumiu"* — a coluna "No
+    OMIE" entrou sem a casa dela na linha de filtros, e o seletor da
+    conciliação escorregou para baixo dela. Uma casa por coluna, na ordem."""
+    import re
+    html = como(app_com_dados).get(
+        "/analisesps/conciliacao").get_data(as_text=True)
+    thead = html[html.index('<table class="sps conciliacao">'):html.index("</thead>")]
+    titulos, filtros = thead.split('<tr class="filtros-coluna">')
+    nomes = [re.sub(r"<[^>]+>", "", t).strip()
+             for t in re.findall(r"<th[^>]*>(.*?)</th>", titulos, re.S)]
+    casas = re.findall(r"<th[^>]*>(.*?)</th>", filtros, re.S)
+    assert len(nomes) == len(casas)
+    assert 'name="situacao"' in casas[nomes.index("Conc.")]
+    assert 'name="observacao"' in casas[nomes.index("Observação")]
+
+
 def test_o_formulario_fica_FORA_da_tabela(app_com_dados):
     """⚠️ Um `<form>` no meio de `<tr>` não é HTML válido: o navegador o
     expulsa da tabela e as caixinhas param de enviar, sem erro nenhum na tela.
