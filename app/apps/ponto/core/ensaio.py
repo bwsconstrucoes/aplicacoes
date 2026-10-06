@@ -85,9 +85,18 @@ def situacao(conn: Connection) -> dict:
     }
 
 
-def gravar_obra(conn: Connection, *, latitude, longitude, raio_metros=None, por: str) -> dict:
-    """Cria ou move a obra de teste para o lugar informado, e a liga."""
+def gravar_obra(conn: Connection, *, latitude=None, longitude=None, coordenada: str = "",
+                raio_metros=None, por: str) -> dict:
+    """Cria ou move a obra de teste para o lugar informado, e a liga. O lugar
+    vem da localização do navegador (latitude, longitude) ou digitado/colado
+    (`coordenada`), no mesmo formato da coluna AM da C. Diários."""
     _exigir(conn)
+    if str(coordenada or "").strip():
+        from . import base_obras
+        lido = base_obras.ler_coordenada(coordenada)
+        if lido["problema"]:
+            raise ErroDeValidacao(f"coordenada: {lido['problema']}", campo="coordenada")
+        latitude, longitude = lido["latitude"], lido["longitude"]
     if not geo.coordenada_valida(latitude, longitude):
         raise ErroDeValidacao("localização inválida — permita a localização no navegador e tente de novo")
     raio = int(raio_metros) if raio_metros not in (None, "") else RAIO_PADRAO

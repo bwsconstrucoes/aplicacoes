@@ -100,6 +100,13 @@ def test_modo_de_teste_de_ponta_a_ponta(app, mundo, com_planilha_e_registro, lim
     assert longe.status_code == 403
     assert dp.get("/erp/api/ponto/ensaio").get_json()["pessoas"][0]["batidas"] == 1
 
+    # A coordenada digitada (o formato da coluna AM) também move a obra; errada, diz por quê
+    ruim = dp.post("/erp/api/ponto/ensaio/obra", json={"coordenada": "-3.73, -38.52"})
+    assert ruim.status_code == 400 and "poucas casas" in ruim.get_json()["erro"]
+    r = dp.post("/erp/api/ponto/ensaio/obra", json={"coordenada": "-3.750000, -38.490000",
+                                                    "raio_metros": 300}).get_json()
+    assert (r["obra"]["latitude"], r["obra"]["longitude"], r["obra"]["raio_metros"]) == (-3.75, -38.49, 300)
+
     # Desligar: a obra de teste sai do ponto
     assert dp.post("/erp/api/ponto/ensaio/desligar").get_json()["obra"]["ligada"] is False
     with db.conexao() as conn:

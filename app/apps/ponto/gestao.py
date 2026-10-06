@@ -783,6 +783,7 @@ def ponto_api_ensaio_obra():
     quem, d = _quem(), _corpo()
     with db.conexao() as conn:
         r = ensaio.gravar_obra(conn, latitude=d.get("latitude"), longitude=d.get("longitude"),
+                               coordenada=str(d.get("coordenada") or ""),
                                raio_metros=d.get("raio_metros"), por=quem.nome)
     return _ok(**r)
 

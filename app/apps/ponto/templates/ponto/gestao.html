@@ -3401,6 +3401,7 @@ async function carregarEnsaio(mensagem, tipo) {
       : `<span class="suave">ainda não gravada</span>`}</div>
     <div class="barra-acoes" style="margin-top:8px">
       <button class="btn" type="button" id="ens-aqui">${o ? "Mover a obra de teste para onde estou agora" : "Gravar a obra de teste onde estou agora"}</button>
+      <button class="btn secundario" type="button" id="ens-digitar">Digitar a coordenada</button>
       ${o && o.ligada ? `<button class="btn secundario" type="button" id="ens-desligar">Desligar o teste</button>` : ""}
       ${o ? `<button class="btn secundario" type="button" id="ens-pessoa">+ Pessoa de teste</button>` : ""}
     </div>
@@ -3413,6 +3414,7 @@ async function carregarEnsaio(mensagem, tipo) {
           Mostrar código de primeiro acesso</button></td></tr>`).join("")}</tbody></table>` : ""}
     <div id="c-ensaio-msg" style="margin-top:8px"></div>`;
   els("ens-aqui").addEventListener("click", gravarObraDeTeste);
+  els("ens-digitar").addEventListener("click", () => digitarObraDeTeste(o));
   if (els("ens-desligar")) els("ens-desligar").addEventListener("click", desligarTeste);
   if (els("ens-pessoa")) els("ens-pessoa").addEventListener("click", pessoaDeTeste);
   alvo.querySelectorAll("[data-ens-codigo]").forEach(b => b.addEventListener("click", () => codigoDeTeste(b.dataset.ensCodigo)));
@@ -3450,6 +3452,23 @@ async function gravarObraDeTeste() {
     await carregarEnsaio("Obra de teste gravada e ligada.");
     if (typeof carregarCercas === "function") carregarCercas();
   } catch (e) { falhou(e, "c-ensaio-msg"); carregarEnsaio(); }
+}
+
+async function digitarObraDeTeste(o) {
+  const r = await perguntar({titulo: "Obra de teste pela coordenada",
+    aviso: `Cole a coordenada do Google Maps (botão direito no local › clicar nos números), no formato
+      <b>-3.731862, -38.526670</b> — o mesmo da coluna AM da C. Diários.`,
+    campos: [{nome: "coordenada", rotulo: "Coordenada", largura: 2, obrigatorio: true,
+              exemplo: "-3.731862, -38.526670",
+              valor: o && o.latitude !== null ? `${o.latitude.toFixed(6)}, ${o.longitude.toFixed(6)}` : ""},
+             {nome: "raio", rotulo: "Raio da cerca (metros)", valor: String((o && o.raio_metros) || 200), largura: 1}],
+    textoOk: "Gravar"});
+  if (!r) return;
+  try {
+    await postar("/erp/api/ponto/ensaio/obra", {coordenada: r.coordenada, raio_metros: Number(r.raio) || 200});
+    await carregarEnsaio("Obra de teste gravada e ligada.");
+    if (typeof carregarCercas === "function") carregarCercas();
+  } catch (e) { falhou(e, "c-ensaio-msg"); }
 }
 
 async function desligarTeste() {
