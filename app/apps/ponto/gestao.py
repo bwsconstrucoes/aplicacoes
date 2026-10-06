@@ -1501,6 +1501,9 @@ def ponto_api_dispositivo_aprovar(dispositivo_id: int):
             if not o:
                 raise ErroDeValidacao(f"obra não cadastrada: {ref}", campo="obras")
             obras.append(int(o["id"]))
+        if d.get("manter_grupo") and not autorizados:
+            # Alterar um aparelho de grupo sem redigitar o grupo: fica o que já está.
+            autorizados = sorted(dispositivos.autorizados_de(conn, dispositivo_id))
         a = dispositivos.aprovar(conn, dispositivo_id, perfil=d.get("perfil", "COMPARTILHADO"),
                                  aprovado_por=quem.nome, colaborador_id=colaborador_id,
                                  descricao=d.get("descricao"), autorizados=autorizados, obras=obras)

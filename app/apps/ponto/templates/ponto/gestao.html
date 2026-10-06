@@ -861,8 +861,11 @@ const linkEspelho = (id, competencia) =>
 
 // --- Aparelhos: aprovar e bloquear (usados em Validações e em Configuração).
 async function aprovarAparelho(a, depois) {
+  // Aparelho já aprovado (ou bloqueado) abre com o que ele tem: trocar o uso,
+  // o dono, as obras ou o nome é aprovar de novo (pedido do dono, 06/10/2026).
+  const jaAprovado = a.status && a.status !== "PENDENTE";
   const r = await perguntar({
-    titulo: "Aprovar aparelho",
+    titulo: jaAprovado ? (a.status === "BLOQUEADO" ? "Reativar aparelho" : "Alterar aparelho") : "Aprovar aparelho",
     aviso: `Aparelho: <b>${escapar(a.descricao || "sem nome")}</b> — código <b class="dados">${escapar(a.codigo || "?")}</b>.
       <b>Confira o código na tela do aparelho antes de aprovar</b>: “sem nome” pode ser o celular de
       qualquer pessoa que abriu o endereço, e aprovado como aparelho da obra ele bateria por todo mundo.
@@ -871,7 +874,7 @@ async function aprovarAparelho(a, depois) {
       Na dúvida entre "tablet da obra" e "celular de uma pessoa", escolha o
       celular de uma pessoa: é o que fecha mais portas.`,
     campos: [
-      {nome: "perfil", rotulo: "Como vai ser usado", tipo: "select", valor: "INDIVIDUAL",
+      {nome: "perfil", rotulo: "Como vai ser usado", tipo: "select", valor: jaAprovado ? a.perfil : "INDIVIDUAL",
        opcoes: PERFIS_APARELHO, largura: 3, obrigatorio: true},
       // Quem entrou com CPF e PIN neste celular já disse de quem ele é: o campo
       // vem preenchido (pedido do dono, 06/10/2026 — "não é redundante?").
@@ -880,25 +883,29 @@ async function aprovarAparelho(a, depois) {
        valor: a.dono && a.dono.cpf ? a.dono.cpf : "",
        dica: "Só para \"celular de uma pessoa\": só esse CPF bate por este aparelho."},
       {nome: "autorizados", rotulo: "CPFs do grupo (grupo de pessoas)", tipo: "textarea", linhas: 2,
-       largura: 3, dica: "Só para \"grupo de pessoas\": os CPFs separados por vírgula."},
+       largura: 3, dica: jaAprovado && a.perfil === "LISTA"
+         ? `Hoje são ${a.qtd_autorizados} pessoa(s). Deixe vazio para manter o grupo; preencha para trocá-lo inteiro.`
+         : "Só para \"grupo de pessoas\": os CPFs separados por vírgula."},
       {nome: "obras", rotulo: "Obras onde vale", largura: 3, exemplo: "deixe vazio para todas",
+       valor: jaAprovado && a.obras ? a.obras : "",
        dica: "Códigos das obras separados por vírgula. Para o tablet da obra, diga a obra dele: sem GPS, a batida dele só pode cair nela."},
       {nome: "descricao", rotulo: "Nome do aparelho", valor: escapar(a.descricao || ""), largura: 3,
        exemplo: "ex.: tablet do portão — obra Alfa"},
     ],
-    textoOk: "Aprovar aparelho",
+    textoOk: jaAprovado ? "Salvar" : "Aprovar aparelho",
   });
   if (!r) return;
   if (r.perfil === "INDIVIDUAL" && !r.cpf && !a.dono) { aviso("mensagem", "Diga o CPF do dono do celular.", "erro"); return; }
-  if (r.perfil === "LISTA" && !listaDeTexto(r.autorizados).length) {
+  const manterGrupo = jaAprovado && a.perfil === "LISTA" && r.perfil === "LISTA" && !listaDeTexto(r.autorizados).length;
+  if (r.perfil === "LISTA" && !listaDeTexto(r.autorizados).length && !manterGrupo) {
     aviso("mensagem", "Diga os CPFs do grupo de pessoas.", "erro"); return;
   }
   try {
     await postar(`/erp/api/ponto/dispositivos/${a.id}/aprovar`, {
       perfil: r.perfil, cpf: r.perfil === "INDIVIDUAL" ? r.cpf : "",
-      autorizados: r.perfil === "LISTA" ? listaDeTexto(r.autorizados) : [],
+      autorizados: r.perfil === "LISTA" ? listaDeTexto(r.autorizados) : [], manter_grupo: manterGrupo,
       obras: listaDeTexto(r.obras), descricao: r.descricao});
-    aviso("mensagem", "Aparelho aprovado. Ele já pode bater ponto.", "ok");
+    aviso("mensagem", jaAprovado ? "Aparelho alterado." : "Aparelho aprovado. Ele já pode bater ponto.", "ok");
     if (depois) await depois();
   } catch (e) { falhou(e); }
 }
@@ -2888,7 +2895,8 @@ async function carregarAparelhos() {
           : a.perfil === "LISTA" ? `${a.qtd_autorizados} pessoa(s)` : `<span class="suave">—</span>`}</td>
       <td class="dados">${a.obras ? escapar(a.obras) : `<span class="suave">todas</span>`}</td>
       <td class="dados">${escapar(quando(a.ultimo_uso_em))}</td>
-      <td><div class="acoes">${a.status === "PENDENTE" ? `<button class="btn" type="button" data-aprovar-ap="${a.id}">Aprovar</button>` : ""}
+      <td><div class="acoes">${a.status === "PENDENTE" ? `<button class="btn" type="button" data-aprovar-ap="${a.id}">Aprovar</button>`
+          : `<button class="btn secundario" type="button" data-aprovar-ap="${a.id}">${a.status === "BLOQUEADO" ? "Reativar" : "Alterar"}</button>`}
         ${a.status !== "BLOQUEADO" ? `<button class="link-btn" type="button" data-bloquear-ap="${a.id}">bloquear</button>` : ""}</div></td>
     </tr>`).join("")}</tbody></table>`
     : `<div class="cartao-dica">Nenhum aparelho registrado ainda. O primeiro aparece quando alguém abrir o app do colaborador.</div>`;

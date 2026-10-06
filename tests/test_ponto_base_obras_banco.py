@@ -153,3 +153,25 @@ def test_aparelho_da_obra_mostra_codigo_e_nao_aceita_login(app, mundo, monkeypat
                              obras=[mundo["obra_a"]])
     r = c.post("/ponto/app/api/entrar", json={"cpf": CPF_JOAO, "pin": "481927"}, headers=h)
     assert r.status_code == 403 and "aparelho da obra" in r.get_json()["erro"]
+
+
+def test_aparelho_aprovado_se_altera_e_bloqueado_se_reativa(app, mundo):
+    """Pedido do dono, 06/10/2026: "depois de verificado um telefone, como altero
+    a permissão?" — aprovar de novo altera; o grupo fica se não for redigitado."""
+    c = app.test_client()
+    uuid = "celular-do-encarregado-0123456789"
+    c.post("/ponto/api/dispositivo/registrar", json={"device_uuid": uuid})
+    dp = como(app, mundo["dp"])
+    ap = next(a for a in dp.get("/erp/api/ponto/dispositivos").get_json()["dispositivos"]
+              if a["device_uuid"] == uuid)
+    assert dp.post(f"/erp/api/ponto/dispositivos/{ap['id']}/aprovar",
+                   json={"perfil": "LISTA", "autorizados": [CPF_JOAO, CPF_MARIA]}).status_code == 200
+    r = dp.post(f"/erp/api/ponto/dispositivos/{ap['id']}/aprovar",
+                json={"perfil": "LISTA", "autorizados": [], "manter_grupo": True, "obras": ["PG-A"]})
+    assert r.status_code == 200
+    j = r.get_json()["dispositivo"]
+    assert j["qtd_autorizados"] == 2 and j["obras"] == "PG-A"
+    assert dp.post(f"/erp/api/ponto/dispositivos/{ap['id']}/bloquear", json={"motivo": "perdido"}).status_code == 200
+    r = dp.post(f"/erp/api/ponto/dispositivos/{ap['id']}/aprovar",
+                json={"perfil": "INDIVIDUAL", "cpf": CPF_JOAO}).get_json()["dispositivo"]
+    assert r["status"] == "APROVADO" and r["perfil"] == "INDIVIDUAL" and r["dono"]["id"] == mundo["joao"]
