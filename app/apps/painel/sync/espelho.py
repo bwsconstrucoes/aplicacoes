@@ -1399,6 +1399,18 @@ def _apagar_movimentos_janela(conn, ini, fim):
 DIAS_REVISADOS_NA_ATUALIZACAO = 30
 DIAS_REVISADOS_NA_COMPLETA = 180
 
+# "Reler todos os pagamentos" (06/10/2026). O dono ajustou lançamentos de aporte
+# com baixa de mais de seis meses: a completa relê só 180 dias, e a baixa antiga
+# lançada hoje nunca chegava. Esta releitura vai desde o primeiro ano possível
+# da base. É a mesma janela da atualização do dia — apaga e regrava NA MESMA
+# TRANSAÇÃO —, só que larga: se cair no meio, nada se perde.
+PRIMEIRO_DIA_DOS_PAGAMENTOS = dt.date(2015, 1, 1)
+
+
+def dias_desde_o_primeiro_pagamento(hoje=None) -> int:
+    hoje = hoje or dt.date.today()
+    return (hoje - PRIMEIRO_DIA_DOS_PAGAMENTOS).days
+
 
 def janela_de_movimentos(hoje, ultima_sync, margem_dias=2, revisar_dias=0):
     """O primeiro dia da janela de pagamentos que a atualizacao rele.

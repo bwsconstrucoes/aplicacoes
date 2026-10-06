@@ -2182,6 +2182,28 @@ tinha — era a mensagem da regra "consolidada", e a regra saía consolidada
 mesmo com bancária presente. Com a decisão separada, "consolidada" só aparece
 quando de fato não há bancária.
 
+## "Reler todos os pagamentos" — baixa de mais de 6 meses — 06/10/2026
+
+O dono fez muitos lançamentos e ajustes de aportes, rodou a completa (terminou
+17:10, levou 53 min) e eles não apareciam no Extrato. Expliquei as três causas
+possíveis (lançou depois que a completa começou a ler; lançamento direto na
+conta, sem título; baixa com data antiga). Ele: *"tem coisa de mais de 6
+meses, como resolve?"*
+
+**Por quê:** os títulos vêm pela data de ALTERAÇÃO (pegam tudo), mas os
+pagamentos vêm por janela de DATA DE PAGAMENTO — 30 dias na do dia, 180 na
+completa. Baixa lançada hoje com data de 2025 nunca entrava; o título ficava
+"em aberto" no painel.
+
+**O que entrou:** modo **"Reler todos os pagamentos"** em Configurações. É a
+mesma atualização, com a janela desde 01/01/2015
+(`espelho.PRIMEIRO_DIA_DOS_PAGAMENTOS`): apaga e regrava os pagamentos NA MESMA
+TRANSAÇÃO — se cair no meio, nada se perde. Sem a varredura de excluídos.
+Para um dia só, o "Conferir/Trazer este dia" do Calendário continua valendo.
+
+**Não medido:** quanto tempo leva na base real (a completa relê 6 meses em
+~53 min; a releitura inteira deve levar mais). Rodar fora do horário de uso.
+
 ## "Não achou um aporte ou dividendo?" — conferência por obra — 06/10/2026
 
 O dono, olhando outro projeto depois do Mercado Barbalha: *"embora esteja

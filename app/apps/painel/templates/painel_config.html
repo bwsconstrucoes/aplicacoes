@@ -143,6 +143,7 @@
           {% elif chave == 'completa' %}Atualização completa
           {% elif chave == 'so_numeros' %}Só refazer os números
           {% elif chave == 'observacoes' %}Buscar as observações
+          {% elif chave == 'pagamentos' %}Reler todos os pagamentos
           {% else %}Primeira carga{% endif %}
         </button>
         <p class="cartao-dica">{{ descricao }}</p>
@@ -1243,7 +1244,7 @@ if (btnMigrar) {
 document.querySelectorAll("button[data-modo]").forEach(b => {
   b.onclick = async () => {
     const modo = b.dataset.modo;
-    if (modo === "completa" || modo === "carga_inicial") {
+    if (modo === "completa" || modo === "carga_inicial" || modo === "pagamentos") {
       if (!confirm("Essa atualização é demorada (pode levar horas na primeira " +
                    "vez). Ela roda no servidor; você pode fechar a página. Começar?")) return;
     }

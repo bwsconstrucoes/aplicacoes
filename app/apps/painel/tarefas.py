@@ -47,6 +47,7 @@ MODOS = {
     "rapida": "Atualização do dia — baixa o que mudou e refaz os números",
     "completa": "Atualização completa — inclui a varredura de títulos excluídos no OMIE",
     "so_numeros": "Só refazer os números, sem baixar nada do OMIE",
+    "pagamentos": "Reler todos os pagamentos do OMIE, de qualquer data — para baixa lançada com data de mais de 6 meses (demorado)",
     "observacoes": "Buscar as observações dos títulos no OMIE (bloco a bloco, pode parar e continuar)",
     "carga_inicial": "Primeira carga — baixa toda a base do OMIE (demorado)",
 }
@@ -207,14 +208,18 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                         "observações dos títulos a pagar",
                         f"{f} de {t} — {g} com observação"))
                 observacoes_achadas = (n_r or 0) + (n_p or 0)
-            elif modo in ("rapida", "completa"):
+            elif modo in ("rapida", "completa", "pagamentos"):
                 _etapa("baixando o que mudou no OMIE")
                 # A completa rele seis meses de pagamentos; a do dia, um mes.
                 # E o que pega baixa lancada com data antiga e estorno refeito
-                # em outra conta (ver DIAS_REVISADOS_NA_ATUALIZACAO).
+                # em outra conta (ver DIAS_REVISADOS_NA_ATUALIZACAO). "Reler
+                # todos os pagamentos" vai desde o comeco da base: e o caso da
+                # baixa de mais de seis meses (dono, 06/10/2026).
                 espelho.sync_incremental(
                     revisar_dias=(espelho.DIAS_REVISADOS_NA_COMPLETA
                                   if modo == "completa"
+                                  else espelho.dias_desde_o_primeiro_pagamento()
+                                  if modo == "pagamentos"
                                   else espelho.DIAS_REVISADOS_NA_ATUALIZACAO))
                 # O de-para obra -> projeto vem da planilha "C. Diários" e
                 # até 23/09/2026 só era lido na primeira carga. Obra nova
