@@ -556,8 +556,6 @@ TELA_DA_ROTA = {
     "analisesps.folha_card_lancar": ("folha",),
     "analisesps.folha_card_preparar": ("folha",),
     "analisesps.folha_diaristas_selecao": ("folha",),
-    "analisesps.folha_diaristas_fechar": ("folha",),
-    "analisesps.folha_auxilio_fechar": ("folha",),
     "analisesps.tela_ficha_do_funcionario": ("folha",),
     "analisesps.folha_gerar_direto": ("folha",),
     "analisesps.folha_gerar_direto_resumo": ("folha",),

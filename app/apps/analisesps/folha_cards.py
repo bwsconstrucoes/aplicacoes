@@ -520,7 +520,13 @@ def previa(analise_id: int, contas=None) -> dict:
 
     `bloqueios` vazio é a única situação em que `lancar` cria alguma coisa.
     `contas`: só os arquivos dessas contas (None = todos) — ver `_chave_do_lote`."""
-    return _previa(analise_id, contas=contas)[0]
+    vista = _previa(analise_id, contas=contas)[0]
+    # JÁ LANÇADO, MAS FALTOU TERMINAR (DC): mover algum card de origem que o
+    # Pipefy recusou, ou pôr o número da SP no relatório. A tela libera o botão
+    # só para isso — `lancar` não cria SP nenhuma nesse caminho.
+    vista["so_terminar"] = bool(vista["ja_lancado"] and (
+        _cards_da_dc_a_mover(vista) or _relatorio_da_dc_pendente(vista["andamento"])))
+    return vista
 
 
 # ---------------------------------------------------------------------------
@@ -1018,15 +1024,18 @@ def lancar(analise_id: int, quem: str = "", contas=None) -> dict:
     vista, sp_pipe = _previa(analise_id, contas=contas)
     if vista["bloqueios"]:
         raise ErroDosCards("nenhum card foi criado: " + " ".join(vista["bloqueios"]))
-    if vista["ja_lancado"] and _cards_da_dc_a_mover(vista):
+    if vista["ja_lancado"] and (_cards_da_dc_a_mover(vista)
+                                or _relatorio_da_dc_pendente(vista["andamento"])):
         # A SP já existe e só falta mover os cards de origem (o Pipefy recusou
-        # da outra vez): apertar de novo termina isso, sem criar nada.
+        # da outra vez) ou pôr o número dela no relatório: apertar de novo
+        # termina isso, sem criar nada.
         movidos = _mover_cards_da_dc(analise_id, vista["grupos"], vista["andamento"])
         if movidos["falhas"]:
             raise ErroDosCards("as SPs já existem, mas o Pipefy recusou mover "
                                + "; ".join(movidos["falhas"]) + ".")
         return {"ok": True, "competencia": vista["competencia"], "despesas": [],
-                "sps": [], "criados": [], "cards_movidos": movidos["movidos"]}
+                "sps": [], "criados": [], "cards_movidos": movidos["movidos"],
+                "avisos": _relatorios_da_dc_com_sp(analise_id, vista["andamento"])}
     if vista["ja_lancado"]:
         raise ErroDosCards(
             "este pagamento já foi lançado no Pipefy. Para relançar, cancele os cards "
@@ -1085,15 +1094,78 @@ def lancar(analise_id: int, quem: str = "", contas=None) -> dict:
     # A DC: com a SP criada, os cards de origem vão para a fase de processados.
     # Uma recusa aqui NÃO desfaz a SP — vai como aviso, e lançar de novo termina.
     movidos = _mover_cards_da_dc(analise_id, vista["grupos"], andamento)
+    avisos_relatorio = _relatorios_da_dc_com_sp(analise_id, andamento)
     return {"ok": True, "competencia": vista["competencia"], "despesas": [],
             "cards_movidos": movidos["movidos"],
             "avisos": ([f"SP criada, mas o Pipefy recusou mover {'; '.join(movidos['falhas'])}. "
-                        "Clique em lançar de novo para terminar."] if movidos["falhas"] else []),
+                        "Clique em lançar de novo para terminar."] if movidos["falhas"] else [])
+                      + avisos_relatorio,
             "sps": [{"conta": sp["conta"],
                      "id": (andamento[g["chave"]]["sps"][sp["conta"]])["id"],
                      "link": (andamento[g["chave"]]["sps"][sp["conta"]])["link"]}
                     for g in vista["grupos"] for sp in g["sps"]],
             "criados": criados}
+
+
+def _relatorio_da_dc_pendente(andamento: dict) -> bool:
+    feitos = set(andamento.get("_dc_relatorio_sp") or [])
+    return any(sp.get("completa") and c not in feitos
+               for c, sp in contas_lancadas(andamento, "dc").items())
+
+
+def _relatorios_da_dc_com_sp(analise_id: int, andamento: dict) -> list:
+    """Refaz o PDF do relatório de cada conta da DC com o NÚMERO DA SP, depois
+    que ela existe — e grava por cima do arquivo no Drive, mantendo o link que
+    já está no card. O dono, 06/10/2026: *"no relatório dela é importante que
+    saia o registro da SP"*. O PDF nasce na geração, antes da SP existir; só
+    agora há número para pôr.
+
+    Nunca derruba o lançamento: devolve os avisos. O que já foi refeito fica no
+    andamento (`_dc_relatorio_sp`) e não é refeito de novo."""
+    from . import dc, drive, folha_pagamento as fpg
+    from . import folha_relatorio as fr
+    lancadas = contas_lancadas(andamento, dc.VERBA)
+    feitos = set(andamento.get("_dc_relatorio_sp") or [])
+    pendentes = {c: sp for c, sp in lancadas.items()
+                 if sp.get("completa") and c not in feitos}
+    if not pendentes:
+        return []
+    avisos = []
+    try:
+        r = rodada(analise_id)
+        lote = dc.lote_da_analise(analise_id)
+        calculado = dc.calcular(mostrar_geradas=True)
+        contas = fpg.conta_por_obra()
+    except Exception as e:  # noqa: BLE001
+        logger.exception("DC: não consegui preparar o relatório com a SP")
+        return [f"o relatório em PDF não foi atualizado com o número da SP ({e})."]
+    for conta, sp in sorted(pendentes.items()):
+        arquivo = (r.get("relatorios") or {}).get(conta) or {}
+        if not arquivo.get("drive_id") or not lote:
+            # Geração sem PDF (anterior a 03/10/2026, ou cujo PDF falhou): não há
+            # o que refazer — e fica anotada, para não voltar como pendência.
+            feitos.add(conta)
+            andamento["_dc_relatorio_sp"] = sorted(feitos)
+            _guardar_andamento(analise_id, andamento)
+            continue
+        chaves = {l["chave"] for l in lote["linhas"]
+                  if " ".join(str(l.get("conta") or "").split()) == conta}
+        pessoas = [p for p in calculado["pessoas"] if p["chave"] in chaves]
+        try:
+            montado = dc.montado_do_relatorio(calculado, pessoas, geradas_entram=True,
+                                              sp=str(sp["id"]))
+            dados = fr.montar(montado, contas, conta)
+            drive.substituir_conteudo(arquivo["drive_id"], fr.pdf(dados),
+                                      "application/pdf")
+        except Exception as e:  # noqa: BLE001
+            logger.exception("DC: falhou refazer o relatório da conta %s", conta)
+            avisos.append(f"o relatório em PDF da conta {conta} não foi atualizado "
+                          f"com o número da SP ({e}).")
+            continue
+        feitos.add(conta)
+        andamento["_dc_relatorio_sp"] = sorted(feitos)
+        _guardar_andamento(analise_id, andamento)
+    return avisos
 
 
 def _cards_da_dc_a_mover(vista: dict) -> list:

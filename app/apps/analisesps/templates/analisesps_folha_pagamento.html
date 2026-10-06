@@ -182,7 +182,11 @@ function desenhaPrevia(d) {
   let html = '<p class="cartao-dica">' + escapa(d.competencia) + " · " +
     (d.tipo === "quinzena" ? "quinzena" : (d.tipo === "dc" ? "despesas com colaboradores" : "fim de mês")) +
     ". Tipo de despesa: " + escapa(d.como_tipo) + ".</p>";
-  if (d.ja_lancado) {
+  if (d.ja_lancado && d.so_terminar) {
+    html += '<div class="aviso atencao">Este pagamento já foi lançado no Pipefy, mas ' +
+      "falta terminar: mover cards de origem ou pôr o número da SP no relatório. " +
+      "Clique em lançar para concluir — nenhuma SP nova será criada.</div>";
+  } else if (d.ja_lancado) {
     html += '<div class="aviso">Este pagamento já foi lançado no Pipefy.</div>';
   }
   if (d.bloqueios.length) {
@@ -314,7 +318,7 @@ if (botaoPipefy) botaoPipefy.addEventListener("click", async () => {
         body: JSON.stringify(lote)});
       const d = await r.json();
       if (!d.ok) { lugar.innerHTML = '<div class="aviso erro">' + escapa(d.erro) + "</div>"; bloqueado = true; return; }
-      if (d.bloqueios.length || d.ja_lancado) bloqueado = true;
+      if (d.bloqueios.length || (d.ja_lancado && !d.so_terminar)) bloqueado = true;
       const verbas = [...new Set(d.grupos.map(g => g.rotulo_verba))].join(" + ");
       lugar.innerHTML = "<h4 style=\"margin:14px 0 4px\">" + (verbas ? escapa(verbas) + " — " : "") +
               "Geração " + escapa(d.competencia) + ' <small>conta(s) ' + escapa(d.escolhidas.join(", ")) +

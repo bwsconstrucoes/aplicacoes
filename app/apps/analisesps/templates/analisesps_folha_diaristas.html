@@ -29,20 +29,20 @@
       <b>{{ r.quantos_incompletos }}</b>
       <small>cadastro incompleto</small></div>
   {% endif %}
+  {# O botão "Fechar" saiu em 06/10/2026 — a trava é o arquivo gerado (ver a
+     tela do auxílio). #}
   <p class="cartao-dica lat-estado">
-    {% if r.fechamento %}
-      <b>Diária fechada</b> em {{ r.fechamento.fechado_em|momento_br }}{% if r.fechamento.fechado_por %}
-      por {{ r.fechamento.fechado_por }}{% endif %}
-      ({{ r.fechamento.total_apropriado|moeda }}). O arquivo é gerado a partir deste
-      fechamento; após alterar a seleção, refaça o fechamento.
+    {% if ultima_geracao %}
+      <b>Arquivos gerados</b> em {{ ultima_geracao.criado_em|momento_br }}{% if ultima_geracao.criado_por %}
+      por {{ ultima_geracao.criado_por }}{% endif %}
+      ({{ ultima_geracao.total|moeda }}). Gerar de novo pede confirmação — para
+      refazer, exclua a geração em Arquivos gerados.
     {% else %}
-      <b>Diária não fechada.</b> O fechamento é necessário para gerar o arquivo de pagamento.
+      <b>Ainda não gerado.</b> O arquivo sai da seleção salva, em "Gerar arquivos".
     {% endif %}
   </p>
   {% if pode_operar %}
     <div class="lat-acoes">
-      <button type="button" class="btn" id="fechar-diaria">
-        {% if r.fechamento %}Refazer fechamento{% else %}Fechar a diária{% endif %}</button>
       {% if pode_gerar %}
         {% set gd_origem = 'diaria' %}
         {% set gd_dados = {'ano': ano, 'mes': mes, 'periodo': qual} %}
@@ -77,7 +77,7 @@
       <b>{{ c.saiu }} {{ 'desligado' if c.saiu == 1 else 'desligados' }} com diária</b>
       <small>Constam como desligados no cadastro e trabalharam no período. A
         diária é devida e eles <b>entram no pagamento</b>; confira antes de
-        fechar. Clique para listar.</small>
+        gerar. Clique para listar.</small>
     </a>
   {% endif %}
   {% if r.sem_cadastro %}
@@ -327,10 +327,13 @@
 </div>
 
 {% if pode_operar %}
-<div class="barra-salvar" id="barra-salvar">
+<div class="barra-salvar" id="barra-salvar"
+     data-fora-quantos="{{ fora_do_filtro.quantos if fora_do_filtro else 0 }}"
+     data-fora-total="{{ fora_do_filtro.total if fora_do_filtro else 0 }}">
   <span class="conta-selecao">Incluído no pagamento:
     <span class="total-selecao" id="total-marcado">{{ r.total|moeda }}</span>
     <span class="cartao-dica"><span id="quantos-marcados">{{ r.quantos_a_pagar }}</span> colaborador(es)</span></span>
+  <span class="cartao-dica" id="fora-do-filtro"></span>
   <span class="cartao-dica" id="recado-selecao"></span>
   <span class="sobra">
     <button class="btn secundario" type="button" id="btn-desfazer" hidden>Desfazer</button>
@@ -357,6 +360,16 @@ function atualizar() {
   });
   const q = document.getElementById("quantos-marcados");
   const t = document.getElementById("total-marcado");
+  // ⚠️ OS MARCADOS QUE O FILTRO ESCONDE TAMBÉM VÃO NO ARQUIVO (06/10/2026): a
+  // barra soma os dois, para o total dela ser o que vai ser pago.
+  const barraSel = document.getElementById("barra-salvar");
+  const foraQ = parseInt((barraSel && barraSel.dataset.foraQuantos) || "0", 10) || 0;
+  const foraT = parseFloat((barraSel && barraSel.dataset.foraTotal) || "0") || 0;
+  quantos += foraQ; total += foraT;
+  const avisoFora = document.getElementById("fora-do-filtro");
+  if (avisoFora) avisoFora.textContent = foraQ
+    ? "inclui " + foraQ + " marcado(s) fora do filtro (" + dinheiro(foraT) + "), que também vão no arquivo"
+    : "";
   if (q) q.textContent = quantos;
   if (t) t.textContent = dinheiro(total);
   const salvar = document.getElementById("btn-salvar-selecao");
@@ -395,24 +408,5 @@ if (salvar) salvar.addEventListener("click", async () => {
   } catch (e) { recado.textContent = "Não foi possível salvar: " + e; salvar.disabled = false; }
 });
 
-const fechar = document.getElementById("fechar-diaria");
-if (fechar) fechar.addEventListener("click", async () => {
-  if (caixas.some((c, i) => c.checked !== inicial[i])) {
-    alert("Salve a seleção antes do fechamento. O fechamento utiliza a seleção salva.");
-    return;
-  }
-  if (!confirm("Fechar a diária de {{ r.competencia }} ({{ r.rotulo_periodo }})?\n\n" +
-               "O fechamento registra os colaboradores selecionados e a obra de origem " +
-               "de cada valor, e libera o arquivo de pagamento. É possível refazê-lo.")) return;
-  fechar.disabled = true;
-  try {
-    const r = await fetch("{{ url_for('analisesps.folha_diaristas_fechar') }}", {
-      method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({ano: {{ ano }}, mes: {{ mes }}, periodo: "{{ qual }}"})});
-    const d = await r.json();
-    if (!d.ok) { alert(d.erro); fechar.disabled = false; return; }
-    location.reload();
-  } catch (e) { alert("Não foi possível fechar a diária: " + e); fechar.disabled = false; }
-});
 </script>
 {% endblock %}

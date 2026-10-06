@@ -202,6 +202,34 @@ def _gerados() -> dict:
         "  JOIN analisesps.dc_lote lo ON lo.id = li.lote_id")}
 
 
+def sps_das_linhas() -> dict:
+    """`{chave: {"id", "link", "conta"}}` — a SP do Pipefy que pagou cada linha
+    já gerada. O dono, 06/10/2026: *"no relatório dela é importante que saia o
+    registro da SP"*.
+
+    A ponte: a linha guarda o lote e a conta; o lote, a geração (análise); o
+    andamento do lançamento daquela geração, a SP de cada conta. Linha gerada e
+    ainda não lançada fica fora — não há SP para dizer."""
+    from .db import consultar
+    from . import folha_cards
+    if not _pronto():
+        return {}
+    linhas = consultar(
+        "SELECT li.chave, li.conta, lo.analise_id FROM analisesps.dc_linha li "
+        "  JOIN analisesps.dc_lote lo ON lo.id = li.lote_id")
+    por_analise: dict = {}
+    saida = {}
+    for chave, conta, analise_id in linhas:
+        if analise_id not in por_analise:
+            por_analise[analise_id] = folha_cards.contas_lancadas(
+                folha_cards._andamento(int(analise_id)), VERBA)
+        sp = por_analise[analise_id].get(" ".join(str(conta or "").split()))
+        if sp and sp.get("id"):
+            saida[chave] = {"id": str(sp["id"]), "link": sp.get("link") or "",
+                            "conta": conta}
+    return saida
+
+
 def _recentes() -> dict:
     """`{(cpf, tipo sem acento): [{data, valor, card_id}]}` — o gerado nos
     últimos 10 dias, para a crítica de duplicidade (a do script)."""
@@ -384,6 +412,8 @@ def calcular(recarregar: bool = False, mostrar_geradas: bool = False) -> dict:
     gerados = _gerados()
     recentes = _recentes()
     mao = ajustes()
+    # A SP de cada linha já lançada — só quando as geradas aparecem.
+    sps = sps_das_linhas() if mostrar_geradas else {}
 
     pessoas = []
     for linha, chave in zip(linhas, _chaves(linhas)):
@@ -430,6 +460,7 @@ def calcular(recarregar: bool = False, mostrar_geradas: bool = False) -> dict:
             "requerente": linha["requerente"], "responsavel": linha["responsavel"],
             "periodo": linha["periodo"], "data_solicitacao": linha["data_solicitacao"],
             "data_vencimento": linha["data_vencimento"], "gerada": gerada,
+            "sp": sps.get(chave),
             "motivos": motivos, "duplicidade": recentes.get((linha["cpf"], chave_tipo)) or [],
             "impossivel": False,
         }
@@ -627,13 +658,19 @@ def marcar_cards_movidos(lote_id: int) -> None:
 # O RELATÓRIO — o mesmo das outras folhas
 # ---------------------------------------------------------------------------
 def montado_do_relatorio(calculado: dict, pessoas=None, filtros=None,
-                         so_a_pagar: bool = False) -> dict:
-    """O montado de `folha_relatorio`: uma linha por solicitação × colaborador."""
+                         so_a_pagar: bool = False, geradas_entram: bool = False,
+                         sp: str = "") -> dict:
+    """O montado de `folha_relatorio`: uma linha por solicitação × colaborador.
+
+    `geradas_entram`: o relatório de um pagamento JÁ FEITO (refeito depois do
+    lançamento, com o número da SP) — as linhas dele estão geradas, e é delas
+    que ele fala. `sp`: o número da SP do Pipefy, que vai no subtítulo."""
     from .horario import agora
     pessoas = calculado["pessoas"] if pessoas is None else pessoas
     linhas = []
     for p in pessoas:
-        entra = bool(p["pagar"] and p["valor"] > 0 and not p["gerada"])
+        entra = bool(p["pagar"] and p["valor"] > 0
+                     and (geradas_entram or not p["gerada"]))
         if so_a_pagar and not entra:
             continue
         por_obra = [{"obra": p["obra"], "dias": p["quantidade"], "valor": p["valor"]}]
@@ -644,10 +681,12 @@ def montado_do_relatorio(calculado: dict, pessoas=None, filtros=None,
             "valor_por_dia": p["valor_diaria_informada"] or p["valor_diaria_cadastrada"],
             "obras_resumo": p["obra"] or "-", "obra_do_cadastro": p["obra_cadastro"],
             "contas": [p["conta"]] if p["conta"] else [],
-            "situacao_rotulo": f"{p['tipo_despesa']} · card {p['card_id']}"})
+            "situacao_rotulo": f"{p['tipo_despesa']} · card {p['card_id']}"
+                               + (f" · SP {p['sp']['id']}" if p.get("sp") else "")})
     hoje = agora().strftime("%d/%m/%Y")
+    rotulo = "Solicitações do Pipefy" + (f" · SP nº {sp}" if sp else "")
     return {"titulo": f"Despesas com colaboradores {hoje}",
             "prefixo_arquivo": "Despesas com colaboradores",
-            "folha": {"competencia": hoje, "rotulo_do_tipo": "Solicitações do Pipefy"},
+            "folha": {"competencia": hoje, "rotulo_do_tipo": rotulo},
             "pessoas": linhas, "filtros_texto": [], "filtros": filtros or {},
             "totais": {"pessoas": len(pessoas)}, "fechamento": None}

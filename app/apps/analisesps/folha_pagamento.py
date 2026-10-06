@@ -33,6 +33,7 @@ from decimal import Decimal
 
 from . import folha_apropriacao_guardada as guardada
 from . import folha_geracao as geracao
+from . import formatos
 
 logger = logging.getLogger("analisesps.folha")
 
@@ -742,9 +743,35 @@ def resumo_direto(origem: str, dados: dict, destino: str,
         [l for l in pedido["linhas"] if l["valor"] > 0], destinos or {}, destino)
     if not lotes:
         raise ErroDoPagamento("nenhum colaborador selecionado para pagamento.")
-    return {**pedido, "destino": destino, "lotes": lotes,
-            "resumo": geracao.resumo_dos_lotes(lotes),
+    resumo = geracao.resumo_dos_lotes(lotes)
+    # ⚠️ A TRAVA É O ARQUIVO GERADO (dono, 06/10/2026, ao tirar o botão "Fechar":
+    # *"só serviria de fechar se fosse para criar um bloqueio, uma trava (…) a
+    # trava é o arquivo que a gente gerou"*). Nada impedia gerar o mesmo
+    # pagamento duas vezes; agora a janela diz que já foi gerado, e só segue com
+    # "gerar mesmo assim" — o caminho limpo é excluir a geração anterior.
+    resumo["ja_gerado"] = [] if origem == "dc" else ja_gerado(origem, pedido)
+    if resumo["ja_gerado"]:
+        resumo["pode_gerar"] = False
+    return {**pedido, "destino": destino, "lotes": lotes, "resumo": resumo,
             "competencia": f"{int(pedido['mes']):02d}/{int(pedido['ano'])}"}
+
+
+def ja_gerado(origem: str, pedido: dict) -> list:
+    """As gerações anteriores deste mesmo pagamento (o arquivo de análise de
+    cada uma), mais recente primeiro.
+
+    O auxílio é UM por mês, saia na quinzena ou no fim do mês — qualquer dos
+    dois conta. Diárias e folha têm um pagamento por período, e só o mesmo
+    período conta."""
+    from . import folha_auxilio
+    verba = pedido["verba"]
+    um_por_mes = origem in folha_auxilio.TIPOS
+    return [{"id": a["id"], "criado_em": a["criado_em"], "criado_por": a["criado_por"],
+             "total": a["total"], "tipo": a["tipo"]}
+            for a in log(teto=400, ano=pedido["ano"], mes=pedido["mes"])
+            if a["destino"] == ANALISE
+            and verba in (a["verbas"] or "").split("+")
+            and (um_por_mes or a["tipo"] == pedido["tipo"])]
 
 
 def gerar_direto(origem: str, dados: dict, destino: str, quem: str = "",
@@ -756,6 +783,14 @@ def gerar_direto(origem: str, dados: dict, destino: str, quem: str = "",
     saem do mesmo cálculo."""
     from . import folha_auxilio, folha_diaristas, folha_gestao
     pedido = resumo_direto(origem, dados, destino, destinos)
+    if pedido["resumo"]["ja_gerado"] and not forcar:
+        anterior = pedido["resumo"]["ja_gerado"][0]
+        raise ErroDoPagamento(
+            "este pagamento já foi gerado em "
+            + formatos.momento_br(anterior["criado_em"])
+            + (f" por {anterior['criado_por']}" if anterior["criado_por"] else "")
+            + ". Gerar de novo pagaria duas vezes: exclua a geração anterior em "
+            "Arquivos gerados, ou marque \"gerar mesmo assim\".")
     if not pedido["resumo"]["pode_gerar"] and not forcar:
         raise ErroDoPagamento(
             "há avisos nos arquivos. Confira o resumo e marque a opção de gerar "
