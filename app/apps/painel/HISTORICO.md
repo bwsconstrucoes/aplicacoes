@@ -2212,6 +2212,20 @@ sem conferir no código.
 na conferência do dia, Calendário — rota `/painel/conferir/dia/json`, só do
 administrador). Pedido ao dono o de 09/01/2026 (o lançamento da Sicredi).
 
+**Item 3 começado no mesmo dia (o dono: "precisa ser feito isso, sim"):**
+"Conferir o saldo das contas com o OMIE", em Configurações (`conferencia_saldo.py`,
+rotas `/painel/conferir/saldo` e `/saldo/json`, só do administrador). Por mês,
+conta a conta: OMIE = saldo final − saldo anterior do extrato (`ListarExtrato`,
+em `financas/extrato/`); painel = soma do pago/recebido com encargos, sem
+retenção, naquela conta. **Formato da resposta do extrato NÃO confirmado** (a
+documentação do OMIE é bloqueada daqui; a busca confirmou só que o método
+existe): os saldos são achados pelo NOME do campo, e cada linha tem "⬇ cru"
+para ajustar com a resposta real. Por ora é manual; vira automática na
+madrugada depois de confirmado o formato. A busca também indicou que o
+`ListarMovimentos` traz `departamentos` (cCodDepartamento, nDistrPercentual,
+nDistrValor, nValorFixo) e `categorias` por movimento — a confirmar no arquivo
+cru.
+
 ## Lançamentos de conta corrente ENTRAM no painel; "Atualizar um período" — 07/10/2026
 
 O dono mostrou um lançamento de conta corrente na Sicredi LC (09/01/2026,

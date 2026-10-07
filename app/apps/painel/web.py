@@ -933,6 +933,44 @@ def _escopo_das_partes(f):
     return Filtros(departamentos=f.departamentos, contas=f.contas, excluir_trf=False)
 
 
+_MES_ISO = re.compile(r"^\d{4}-\d{2}$")
+
+
+@bp.route("/conferir/saldo")
+def conferir_saldo():
+    """O saldo de cada conta no mes, painel x OMIE (dono, 07/10/2026). So do
+    administrador (prefixo painel.conferir_)."""
+    from . import conferencia_saldo
+    mes = (request.args.get("mes") or "").strip()
+    if not _MES_ISO.match(mes):
+        return jsonify({"ok": False, "erro": "Escolha o mês."}), 400
+    try:
+        return jsonify({"ok": True, **conferencia_saldo.conferir_mes(mes)})
+    except Exception as e:  # noqa: BLE001 — credencial, OMIE fora
+        logger.exception("Painel: conferencia de saldo de %s falhou", mes)
+        return jsonify({"ok": False, "erro": f"Não consegui conferir agora: {e}"}), 502
+
+
+@bp.route("/conferir/saldo/json")
+def conferir_saldo_json():
+    """A resposta crua do extrato do OMIE de uma conta num mes."""
+    import json as _json
+    from flask import Response
+    from . import conferencia_saldo
+    mes = (request.args.get("mes") or "").strip()
+    conta = (request.args.get("conta") or "").strip()
+    if not _MES_ISO.match(mes) or not conta.isdigit():
+        return jsonify({"ok": False, "erro": "Conta ou mês inválido."}), 400
+    try:
+        resposta = conferencia_saldo.extrato_cru(int(conta), mes)
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "erro": f"Não consegui ler o OMIE agora: {e}"}), 502
+    return Response(_json.dumps(resposta, ensure_ascii=False, indent=2, default=str),
+                    mimetype="application/json",
+                    headers={"Content-Disposition":
+                             f'attachment; filename="omie_extrato_{conta}_{mes}.json"'})
+
+
 @bp.route("/conferir/dia/json")
 def conferir_dia_json():
     """O que o OMIE manda num dia, CRU, como arquivo (dono, 07/10/2026: "a

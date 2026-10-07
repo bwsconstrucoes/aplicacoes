@@ -196,6 +196,25 @@
   <div id="saida-sync"></div>
 </div>
 
+<!-- ============ O SALDO DE CADA CONTA, PAINEL × OMIE — dono, 07/10/2026 ============ -->
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Conferir o saldo das contas com o OMIE</h3>
+    <small>a rede que pega o que ninguém previu</small>
+  </div>
+  <p class="cartao-dica" style="margin-top:0">
+    Para cada conta, no mês: quanto o dinheiro andou segundo o OMIE (saldo final
+    menos saldo anterior) e quanto o painel conta. Se não bate, falta ou sobra
+    alguma coisa no painel naquela conta e mês — abra o Calendário nela e use
+    “Conferir este dia com o OMIE”. Lê o OMIE na hora: uma consulta por conta.
+  </p>
+  <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+    <input type="month" id="saldo-mes">
+    <button type="button" class="btn" id="saldo-conferir">Conferir</button>
+  </div>
+  <div id="saldo-saida" style="margin-top:10px"></div>
+</div>
+
 <!-- ============ O QUE ACONTECEU NAS ATUALIZAÇÕES — dono, 06/10/2026 ============ -->
 {% if historico %}
 <div class="cartao">
@@ -1500,5 +1519,41 @@ async function acompanhar() {
   }
 }
 {% if sincronizacao.rodando %}acompanhar();{% endif %}
+
+// A conferência de saldo, painel × OMIE (07/10/2026)
+(function () {
+  const botao = els("saldo-conferir"), saida = els("saldo-saida"), mes = els("saldo-mes");
+  if (!botao) return;
+  const hoje = new Date();
+  mes.value = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}`;
+  const brl = v => v == null ? "—" : v.toLocaleString("pt-BR", {style: "currency", currency: "BRL"});
+  const esc = t => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  botao.onclick = async () => {
+    if (!mes.value) return;
+    botao.disabled = true;
+    saida.innerHTML = '<p class="cartao-dica">Lendo o OMIE, conta por conta… pode levar um ou dois minutos.</p>';
+    try {
+      const d = await (await fetch("{{ url_for('painel.conferir_saldo') }}?mes=" + mes.value)).json();
+      if (!d.ok) { saida.innerHTML = `<p class="aviso erro">${esc(d.erro)}</p>`; return; }
+      const cru = c => "{{ url_for('painel.conferir_saldo_json') }}?mes=" + d.mes + "&conta=" + c;
+      saida.innerHTML = `<div class="aviso ${d.com_diferenca ? 'erro' : 'ok'}">
+          ${d.com_diferenca ? `<b>${d.com_diferenca} conta(s) não batem</b> neste mês.` : "<b>Todas as contas lidas batem</b> neste mês."}
+          ${d.sem_leitura ? ` ${d.sem_leitura} não deu para ler (veja a última coluna).` : ""}</div>
+        <div class="tabela-rolagem"><table><thead><tr>
+          <th class="sem-ordem">Conta</th><th class="sem-ordem direita">OMIE</th>
+          <th class="sem-ordem direita">Painel</th><th class="sem-ordem direita">Diferença</th>
+          <th class="sem-ordem"></th></tr></thead><tbody>`
+        + d.linhas.map(l => `<tr>
+          <td class="desc">${esc(l.conta)}</td>
+          <td class="dados direita">${brl(l.omie)}</td>
+          <td class="dados direita">${brl(l.painel)}</td>
+          <td class="dados direita ${l.diferenca && Math.abs(l.diferenca) > 0.05 ? 'v-neg' : ''}"><b>${brl(l.diferenca)}</b></td>
+          <td class="desc"><small>${esc(l.problema)}</small> <a href="${cru(l.codigo)}" title="a resposta do OMIE, sem interpretação">⬇ cru</a></td>
+        </tr>`).join("") + "</tbody></table></div>";
+    } catch (e) {
+      saida.innerHTML = '<p class="aviso erro">Não deu para conferir. Tente de novo.</p>';
+    } finally { botao.disabled = false; }
+  };
+})();
 </script>
 {% endblock %}
