@@ -2451,6 +2451,7 @@ def configuracoes():
         contas_conf=contas_conf,
         juros_conf=juros_conf,
         modos=tarefas.MODOS, rotulos_dos_modos=tarefas.ROTULOS,
+        anos_da_releitura=_anos_da_releitura(),
         sincronizacao=sincronizacao, historico=historico_atualizacoes,
         pessoas=_pessoas_do_painel(estado_migracoes),
         telas_liberaveis=usuarios_mod.TELAS,
@@ -2534,6 +2535,17 @@ def sincronizar():
         logger.warning("Painel: disparo recusado — %s", motivo)
         return jsonify({"ok": False, "erro": f"Não autorizado: {motivo}"}), 401
 
+    anos = dados.get("anos") if isinstance(dados.get("anos"), list) else None
+    try:
+        anos = [int(a) for a in (anos or [])]
+    except (TypeError, ValueError):
+        anos = []
+    if modo == "pagamentos":
+        return jsonify(tarefas.disparar(modo, disparo, anos=anos))
+    if modo == "periodo":
+        return jsonify(tarefas.disparar(modo, disparo, periodo={
+            "de": dados.get("de") or request.form.get("de", ""),
+            "ate": dados.get("ate") or request.form.get("ate", "")}))
     return jsonify(tarefas.disparar(modo, disparo))
 
 
@@ -3077,6 +3089,11 @@ def estado():
             passos = []
     return jsonify({"ok": True, "sincronizacao": sincronizacao, "passos": passos,
                     "ultima": _serializar(consultas.atualizado_em())})
+
+
+def _anos_da_releitura() -> list[int]:
+    from .sync.espelho import anos_da_releitura
+    return list(reversed(anos_da_releitura()))
 
 
 def _serializar(d):

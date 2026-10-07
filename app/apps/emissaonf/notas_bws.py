@@ -11,6 +11,7 @@ Mapeamento (confirmado pelo cabeçalho + linha real CREPEEXU/3067):
  P Valor Líquido Tributado (= valor - todos os federais cheios: PIS 0,65 / COFINS 3 / IR 1,2 / CSLL 1,08 / INSS / ISS)
 """
 from __future__ import annotations
+from dataclasses import dataclass
 from decimal import Decimal
 from preview import brl
 
@@ -27,6 +28,99 @@ def _num_medicao(card) -> str:
     if num and "REAJUSTE" in tipo_doc and not num.upper().endswith("R"):
         return f"{num}R"
     return num
+
+
+@dataclass
+class ValoresDaNota:
+    """Os valores da nota lidos do XML dela — só o que a linha da planilha usa.
+
+    Existe porque, depois de emitir, o card do Pipefy tem **doze campos
+    limpos** (valor parcial, tipo de medição, alíquotas, banco…). Recalcular a
+    nota a partir do card dias depois daria números diferentes dos que foram
+    realmente emitidos. O XML é a fonte da verdade.
+    """
+    valor_total: Decimal
+    valor_liquido: Decimal
+    inss: Decimal
+    iss: Decimal
+    ir: Decimal
+    pis: Decimal
+    cofins: Decimal
+
+
+def _d(v) -> Decimal:
+    try:
+        return Decimal(str(v).strip() or 0)
+    except Exception:
+        return Decimal("0")
+
+
+def _cheio(do_xml: Decimal, aliquota: Decimal, total: Decimal) -> Decimal:
+    """O federal cheio: o do XML quando houve retenção, senão a alíquota padrão.
+
+    A coluna P desconta os federais cheios independentemente de retenção, e o XML
+    só traz os retidos."""
+    if do_xml > 0:
+        return do_xml
+    return (aliquota * total).quantize(Decimal("0.01"))
+
+
+def valores_do_xml(xml_texto: str) -> ValoresDaNota:
+    """Lê os valores da nota, aceitando o modelo NACIONAL e o antigo (ABRASF).
+
+    Decide pelo conteúdo, e não por quem chama: há XML dos dois modelos
+    arquivado, e quem precisa consertar uma linha da planilha não tem como saber
+    em qual deles a nota saiu.
+
+    **PIS, COFINS e IR podem não estar no XML, e isso é esperado:** eles só
+    aparecem quando foram RETIDOS. A coluna P da planilha ("Valor Líquido
+    Tributado"), porém, desconta os federais **cheios**, retidos ou não — é como
+    a planilha sempre foi. Então: havendo o valor no XML, vale o do XML (é o que
+    a nota realmente destacou, inclusive com alíquota diferenciada); não havendo,
+    aplica-se a alíquota padrão sobre o total. É o mesmo número que o motor
+    fiscal teria produzido nos dois casos.
+
+    O que isto NÃO recupera: nota emitida com alíquota diferenciada e **sem**
+    retenção daquele tributo. O campo de alíquota do card é um dos doze que a
+    conclusão limpa, então esse dado não existe mais em lugar nenhum — a coluna P
+    sai com a alíquota padrão. Afeta só a coluna P, que é informativa.
+    """
+    import xml.etree.ElementTree as ET
+    from tributacao import ALIQ_PIS, ALIQ_COFINS, ALIQ_IR
+
+    root = ET.fromstring(xml_texto.encode("utf-8") if isinstance(xml_texto, str) else xml_texto)
+    for el in root.iter():                      # tira o namespace para os find funcionarem
+        if isinstance(el.tag, str) and "}" in el.tag:
+            el.tag = el.tag.split("}", 1)[1]
+
+    def t(*caminhos):
+        for c in caminhos:
+            el = root.find(".//" + c)
+            if el is not None and (el.text or "").strip():
+                return el.text.strip()
+        return ""
+
+    if root.find(".//infNFSe") is not None:      # modelo NACIONAL
+        total = _d(t("vServ"))
+        return ValoresDaNota(
+            valor_total=total,
+            valor_liquido=_d(t("vLiq")),
+            inss=_d(t("vRetCP")),
+            iss=_d(t("vISSQN")),
+            ir=_cheio(_d(t("vRetIRRF")), ALIQ_IR, total),
+            pis=_cheio(_d(t("vPis", "vRetPIS")), ALIQ_PIS, total),
+            cofins=_cheio(_d(t("vCofins", "vRetCofins")), ALIQ_COFINS, total),
+        )
+    total = _d(t("ValorServicos"))               # modelo antigo (ABRASF)
+    return ValoresDaNota(
+        valor_total=total,
+        valor_liquido=_d(t("ValorLiquidoNfse")),
+        inss=_d(t("ValorInss")),
+        iss=_d(t("ValorIss")),
+        ir=_cheio(_d(t("ValorIr")), ALIQ_IR, total),
+        pis=_cheio(_d(t("ValorPis")), ALIQ_PIS, total),
+        cofins=_cheio(_d(t("ValorCofins")), ALIQ_COFINS, total),
+    )
 
 
 def montar_linha(card, obra, r, numero, data_emissao_iso) -> list:

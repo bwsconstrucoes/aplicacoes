@@ -56,12 +56,46 @@ def abrir_aba(planilha, candidatos):
     )
 
 
-def proximo_numero(gc) -> tuple[int, int]:
-    ws = abrir_aba(gc.open_by_key(ID_PROC), ABA_NOTAS)
+def proximo_numero(gc, card_id=None) -> tuple[int, int]:
+    """Próximo número da nota, e o último de fato emitido.
+
+    O próximo sai do maior número da planilha MAIS os números presos a
+    declarações em aberto — e esta segunda parte não é refinamento, é conserto
+    de um defeito real, visto em 07/10/2026:
+
+    uma declaração que a prefeitura aceitou mas que ainda não virou nota **não
+    entra na planilha**, porque a planilha só recebe nota pronta. Então o número
+    dela ficava "livre" para a próxima emissão — enquanto a prefeitura o
+    mantinha RESERVADO para a declaração travada. A nota seguinte sairia pedindo
+    o mesmo número, e a prefeitura leria isso como reenvio da declaração
+    anterior, não como nota nova: dois serviços colapsados num documento.
+
+    Para o MESMO card o número é reaproveitado de propósito — aí é o reenvio que
+    o manual da prefeitura prevê, com a mesma identificação.
+    """
+    planilha = gc.open_by_key(ID_PROC)
+    ws = abrir_aba(planilha, ABA_NOTAS)
     col = ws.col_values(COL_NUMERO)
     nums = [int(re.sub(r"\D", "", c)) for c in col if re.sub(r"\D", "", c).isdigit()]
-    ultimo = max(nums) if nums else 0
-    return ultimo + 1, ultimo
+    ultimo = max(nums) if nums else 0        # o último REALMENTE emitido
+
+    presos = []
+    try:
+        import declaracoes
+        for d in declaracoes.listar_abertas(planilha):
+            n = re.sub(r"\D", "", str(d.get("numero") or ""))
+            mesmo_card = (card_id and str(d.get("card_id") or "").strip() == str(card_id).strip())
+            if n and not mesmo_card:
+                presos.append(int(n))
+    except Exception as e:
+        print(f"  [aviso] não consegui ler as declarações em aberto "
+              f"({type(e).__name__}: {e}) — o número pode colidir com uma delas.")
+
+    prox = max([ultimo] + presos) + 1
+    if presos and prox > ultimo + 1:
+        print(f"  >> número {ultimo + 1} está preso a uma declaração em aberto "
+              f"(nº {max(presos)}); esta nota vai sair como {prox}.")
+    return prox, ultimo
 
 
 def preparar(card_id: str, tipo_medicao_override=None, valor_override=None,
@@ -117,7 +151,7 @@ def preparar(card_id: str, tipo_medicao_override=None, valor_override=None,
     if ov.usar_aliquotas or ov.usar_deducoes:
         print(f"  >> OVERRIDES ativos (ignora C. Diários): alíquotas={ov.usar_aliquotas} | deduções/ISS={ov.usar_deducoes}")
     ibge = resolver(obra.municipio, carregar_cache())
-    prox, ultimo = proximo_numero(gc)
+    prox, ultimo = proximo_numero(gc, card_id=card_id)
 
     data_emissao = datetime.date.today().isoformat()
     dados_rps, avisos, end_tom = montar_dados_rps(card, obra, r, prox, ibge, data_emissao, carregar_cache())

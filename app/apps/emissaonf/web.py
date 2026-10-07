@@ -33,8 +33,11 @@ import preview as _preview
 import montar_dps as _dps
 import emitir_dps as _edps
 import concluir as _concluir
+import declaracoes as _decl
 import substituicao as _sub
 import omie
+import pipefy as _pipefy
+import notas_bws as _notas
 from decimal import Decimal
 import completar_imediato as _compl
 
@@ -287,13 +290,52 @@ def emitir():
             return Response(_pagina_erro(f"Emissão barrada: {e}"), mimetype="text/html")
 
         try:
-            res = _edps.emitir(ctx, dps, _token_prefeitura(ctx["cred"]), producao)
+            def _registrar(id_dps):
+                """Grava a declaração aceita. Se não der, RECLAMA ALTO.
+
+                Silenciar aqui seria repetir o problema que esta gravação existe
+                para resolver: a declaração ficar sem registro nenhum do nosso
+                lado, e a identificação só existir na tela aberta."""
+                if not ctx.get("gc"):
+                    print(f">>> AVISO: sem acesso à planilha, a declaração {id_dps} "
+                          f"NÃO foi registrada. Anote esta identificação.")
+                    return
+                _decl.registrar(ctx["gc"].open_by_key(_worker.ID_PROC), id_dps,
+                                ctx.get("prox"), card_id,
+                                obra=ctx["card"].get("codigo_obra", ""),
+                                med=ctx["card"].get("numero_medicao", ""),
+                                producao=producao)
+
+            res = _edps.emitir(ctx, dps, _token_prefeitura(ctx["cred"]), producao,
+                               espera_total_s=(_edps.ESPERA_ENSAIO_S if ensaio else None),
+                               ao_aceitar=_registrar)
         except _edps.NotaTalvezTenhaSaido as e:
             # O caso delicado: a prefeitura aceitou, a nota pode existir. NÃO
-            # oferecer "tentar de novo" aqui é de propósito.
-            return Response(_pagina_erro_diag(
-                "A declaração foi aceita, mas a nota não ficou pronta no tempo esperado.",
-                str(e)), mimetype="text/html")
+            # oferecer "tentar de novo" aqui é de propósito — o botão oferecido é
+            # o de CONFERIR, já com a identificação e o card dentro do link, para
+            # ninguém ter de copiar 45 caracteres à mão.
+            link = (f"{url_for('.declaracao')}?token={html.escape(token)}"
+                    f"&id_dps={html.escape(e.id_dps)}&card_id={html.escape(card_id)}"
+                    f"&ambiente={'producao' if producao else 'homologacao'}")
+            corpo = (f"<h1>A prefeitura recebeu, e ainda está processando</h1>"
+                     f"<div class='warn'>Isto <b>não é erro</b>: o processamento da "
+                     f"declaração é uma fila do lado da prefeitura, e ela ainda não "
+                     f"terminou. {'Como este foi um ENSAIO, não há nada pendente do nosso lado.' if ensaio else ''}</div>"
+                     f"<p><a class='btn' href='{link}'>Conferir se a nota saiu</a></p>"
+                     f"<p class='sub'>Pode clicar quantas vezes quiser: consultar não cria "
+                     f"nada. {'' if ensaio else 'Se a nota tiver saído, essa tela termina o serviço — planilha, Omie, card, Drive e avisos.'}</p>"
+                     f"<div class='card'><b>O que a prefeitura respondeu</b>"
+                     f"<pre>{html.escape(str(e))}</pre></div>")
+            return Response(_doc("Ainda processando", corpo), mimetype="text/html")
+        except _edps.DeclaracaoRecusada as e:
+            try:
+                if ctx.get("gc"):
+                    _decl.marcar_recusada(ctx["gc"].open_by_key(_worker.ID_PROC),
+                                          e.id_dps, e.motivos)
+            except Exception:
+                pass
+            return Response(_pagina_recusa(str(ctx.get("prox") or ""), e.motivos),
+                            mimetype="text/html")
         except _edps.NotaNaoSaiu as e:
             return Response(_pagina_erro_diag(
                 "A prefeitura NÃO emitiu a nota — nada foi criado, pode corrigir e tentar "
@@ -356,6 +398,279 @@ def resultado():
     return Response(_pagina_resultado(r), mimetype="text/html")
 
 
+@bp.route("/manual", methods=["GET", "POST"])
+def manual():
+    """Registra no sistema uma nota que foi emitida NO PORTAL da prefeitura.
+
+    Para que serve: quando o canal da emissão está fora do ar — como em
+    07/10/2026, com a prefeitura aceitando a declaração e nunca transmitindo —
+    a empresa não pode parar de faturar. A nota sai no portal, à mão, e esta
+    tela faz todo o resto: planilha, Omie, card, Drive e avisos.
+
+    **O XML manda nos dados, e isso não é preferência.** Dele saem número,
+    chave, valores e datas como dados exatos. Do PDF seria preciso LER os
+    números de um texto, e um valor lido errado iria para a planilha e para o
+    Omie sem ninguém notar — em documento fiscal isso não se faz.
+
+    **O PDF, quando anexado, entra como o documento.** O que o sistema desenha é
+    uma réplica boa; o do portal é o original. Tendo o original, é ele que o
+    cliente recebe.
+    """
+    if not _token_ok():
+        return Response(_pagina_erro("Acesso não autorizado."), status=403, mimetype="text/html")
+    token = request.values.get("token", "")
+    card_id = (request.values.get("card_id") or "").strip()
+
+    if request.method == "GET":
+        return Response(_pagina_manual(token, card_id), mimetype="text/html")
+
+    xml_texto = (request.form.get("xml") or "").strip()
+    arquivo_xml = request.files.get("arquivo_xml")
+    if arquivo_xml and arquivo_xml.filename:
+        try:
+            xml_texto = arquivo_xml.read().decode("utf-8", "replace").strip()
+        except Exception as e:
+            return Response(_pagina_manual(token, card_id,
+                            aviso=f"Não consegui ler o arquivo do XML: {e}"),
+                            mimetype="text/html")
+    if not card_id or not xml_texto:
+        return Response(_pagina_manual(token, card_id,
+                        aviso="Preciso do número do card E do XML da nota "
+                              "(o arquivo ou o texto colado)."), mimetype="text/html")
+
+    pdf_bytes = None
+    arquivo_pdf = request.files.get("arquivo_pdf")
+    if arquivo_pdf and arquivo_pdf.filename:
+        pdf_bytes = arquivo_pdf.read() or None
+
+    try:
+        numero, codigo, data_iso, eh_nacional, chave_nac = _ids_da_nota(xml_texto)
+    except Exception as e:
+        return Response(_pagina_manual(token, card_id,
+                        aviso=f"O XML não pôde ser lido: {type(e).__name__}: {e}. "
+                              f"Baixe o XML da nota no portal e tente de novo."),
+                        mimetype="text/html")
+    if not numero:
+        return Response(_pagina_manual(token, card_id,
+                        aviso="Não achei o número da nota dentro do XML. Confira se "
+                              "baixou o XML da NOTA (e não o da declaração)."),
+                        mimetype="text/html")
+
+    tmp = os.path.join(_DIR, f"manual_{numero}.xml")
+    with open(tmp, "w", encoding="utf-8") as fh:
+        fh.write(xml_texto)
+    buf = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buf):
+            print(f">>> NOTA EMITIDA NO PORTAL — nº {numero}, modelo "
+                  f"{'NACIONAL' if eh_nacional else 'antigo (ABRASF)'}"
+                  f"{', com o PDF oficial anexado' if pdf_bytes else ''}.")
+            _concluir.concluir(card_id, numero, codigo, data_iso, tmp,
+                               nacional=eh_nacional, chave_nacional=chave_nac,
+                               pdf_municipal=pdf_bytes)
+    except Exception as e:
+        buf.write(f"\n>>> ERRO no processamento: {type(e).__name__}: {e}")
+    finally:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+
+    rid = uuid.uuid4().hex
+    _RESULTADOS[rid] = {"numero": numero, "codigo": codigo, "data": data_iso,
+                        "log": buf.getvalue(), "card_id": card_id, "prox": None,
+                        "sub": None, "chave": chave_nac, "ensaio": False}
+    return redirect(url_for(".resultado", id=rid, token=token))
+
+
+def _pagina_manual(token, card_id, aviso=""):
+    t = html.escape(token)
+    box = (f"<div class='warn'>{html.escape(aviso)}</div>") if aviso else ""
+    return _doc("Nota emitida no portal", f"""
+      <h1>Nota emitida no portal</h1>
+      <p class='sub'>Use quando a nota foi emitida <b>à mão, no portal da
+      prefeitura</b> — porque o canal automático estava fora, ou porque era um caso
+      que só dá pelo portal. Daqui o sistema faz <b>todo o resto</b>: a linha na
+      planilha, as retenções no Omie, o slot no card, os arquivos no Drive e os
+      avisos. Ele <b>não emite nada</b>.</p>
+      {box}
+      <div class='card'>
+        <form method='post' action='{url_for('.manual')}' enctype='multipart/form-data'>
+          <div style='background:#eef5ff;border:1px solid #9cc0e8;border-radius:8px;padding:12px;margin-bottom:12px'>
+            <label class='lbl' style='margin:0'><b>1. O XML da nota</b> — é daqui que
+              saem os dados</label>
+            <p class='sub' style='margin:6px 0'>Baixe o XML da nota no portal e jogue o
+            arquivo aqui. Os números vêm dele, exatos; se eu tivesse que lê-los de um
+            PDF, um valor mal lido iria para a planilha e para o Omie sem ninguém ver.</p>
+            <input type='file' name='arquivo_xml' accept='.xml,text/xml'>
+            <p class='sub' style='margin:8px 0 4px'>Ou cole o conteúdo do XML:</p>
+            <textarea name='xml' rows='6' placeholder='&lt;?xml ...&gt;'></textarea>
+          </div>
+
+          <div style='background:#f6f8fb;border:1px solid #e1e7ee;border-radius:8px;padding:12px;margin-bottom:12px'>
+            <label class='lbl' style='margin:0'><b>2. O PDF da nota</b> — opcional, mas
+              melhor se tiver</label>
+            <p class='sub' style='margin:6px 0'>Se você anexar o PDF do portal, é ele
+            que vai para o Drive e para o cliente. Sem ele, o sistema desenha um
+            parecido a partir do XML — fica bom, mas o do portal é o original.</p>
+            <input type='file' name='arquivo_pdf' accept='.pdf,application/pdf'>
+          </div>
+
+          <label class='lbl'><b>3. Número do card no Pipefy</b>
+            <input name='card_id' value='{html.escape(card_id)}' style='padding:8px;
+                   border:1px solid #c8d0da;border-radius:6px'></label>
+          <input type='hidden' name='token' value='{t}'>
+          <button type='submit'>Registrar a nota e completar tudo</button>
+        </form>
+        <p class='sub'>Tem trava contra fazer duas vezes: se o número já estiver na
+        "Notas BWS", ele avisa e não duplica nada.</p>
+      </div>""")
+
+
+def _card_e_aba_notas(card_id):
+    """Carrega SÓ o card do Pipefy e a aba 'Notas BWS'.
+
+    Existe separado do `preparar` do worker de propósito: o `preparar` calcula a
+    nota, resolve o município, abre o certificado e monta a declaração. Para
+    consertar uma linha da planilha nada disso é necessário — e o cálculo daria
+    número ERRADO, porque depois de emitir o card fica com doze campos limpos
+    (valor parcial, tipo de medição, alíquotas, banco).
+    """
+    gc = _worker.cliente_gspread()
+    cred = _worker.ler_credenciais(gc)
+    token = cred.get("PIPEFY_TOKEN")
+    if not token:
+        raise KeyError("PIPEFY_TOKEN não encontrado na aba 'Credenciais'.")
+    card = _pipefy.extrair_card(_pipefy.get_card(card_id, token))
+    ws = _worker.abrir_aba(gc.open_by_key(_worker.ID_PROC), _worker.ABA_NOTAS)
+    return card, ws
+
+
+@bp.route("/planilha", methods=["GET", "POST"])
+def planilha():
+    """Acrescenta SÓ a linha da 'Notas BWS' — e não toca em mais nada.
+
+    Para que serve: a nota saiu certa, o Omie recebeu as retenções, o card tem o
+    slot preenchido, o cliente recebeu os arquivos — e a linha da planilha não
+    entrou (queda no meio do caminho, erro de rede na gravação). Aqui só falta a
+    planilha.
+
+    **Por que não usar "Recuperar entrega" ou "Nota emitida no portal":** as duas
+    rodam a conclusão inteira. Elas preencheriam um SEGUNDO slot no card, mexeriam
+    no Omie de novo e mandariam o WhatsApp outra vez. Para quem só precisa da
+    linha, isso cria três problemas no lugar de resolver um.
+
+    **Os valores vêm do XML, não do card.** A conclusão limpa doze campos de
+    entrada do card ao terminar; recalcular a nota a partir dele dias depois daria
+    números diferentes dos que foram emitidos de fato. Do card ficam só o código
+    da obra e o número da medição, que sobrevivem à limpeza.
+    """
+    if not _token_ok():
+        return Response(_pagina_erro("Acesso não autorizado."), status=403, mimetype="text/html")
+    token = request.values.get("token", "")
+    card_id = (request.values.get("card_id") or "").strip()
+
+    if request.method == "GET":
+        return Response(_pagina_planilha(token, card_id), mimetype="text/html")
+
+    xml_texto = (request.form.get("xml") or "").strip()
+    arquivo = request.files.get("arquivo_xml")
+    if arquivo and arquivo.filename:
+        try:
+            xml_texto = arquivo.read().decode("utf-8", "replace").strip()
+        except Exception as e:
+            return Response(_pagina_planilha(token, card_id,
+                            aviso=f"Não consegui ler o arquivo do XML: {e}"),
+                            mimetype="text/html")
+    if not card_id or not xml_texto:
+        return Response(_pagina_planilha(token, card_id,
+                        aviso="Preciso do número do card E do XML da nota (o arquivo "
+                              "ou o texto colado). Os valores saem do XML."),
+                        mimetype="text/html")
+
+    try:
+        numero, _cod, data_iso, eh_nacional, _chave = _ids_da_nota(xml_texto)
+    except Exception as e:
+        return Response(_pagina_planilha(token, card_id,
+                        aviso=f"O XML não pôde ser lido: {type(e).__name__}: {e}. "
+                              f"Baixe o XML da nota e tente de novo."),
+                        mimetype="text/html")
+    if not numero or not data_iso:
+        return Response(_pagina_planilha(token, card_id,
+                        aviso="Não achei o número e a data da nota dentro do XML. "
+                              "Confira se baixou o XML da NOTA (e não o da declaração)."),
+                        mimetype="text/html")
+
+    buf = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buf):
+            print(f">>> SÓ A LINHA DA PLANILHA — nota {numero}, modelo "
+                  f"{'NACIONAL' if eh_nacional else 'antigo (ABRASF)'}. "
+                  f"Omie, card, Drive e WhatsApp NÃO são tocados.")
+            valores = _notas.valores_do_xml(xml_texto)
+            print(f"    valores lidos do XML: total R$ {_preview.brl(valores.valor_total)} | "
+                  f"líquido R$ {_preview.brl(valores.valor_liquido)} | "
+                  f"ISS R$ {_preview.brl(valores.iss)} | INSS R$ {_preview.brl(valores.inss)} | "
+                  f"IR R$ {_preview.brl(valores.ir)} | PIS R$ {_preview.brl(valores.pis)} | "
+                  f"COFINS R$ {_preview.brl(valores.cofins)}")
+            card, ws = _card_e_aba_notas(card_id)
+            print(f"    card {card_id}: obra {card.get('codigo_obra')} | "
+                  f"medição {_notas._num_medicao(card)}")
+            if _notas.gravar_linha(ws, card, None, valores, numero, data_iso):
+                print(f">>> Linha da nota {numero} gravada na 'Notas BWS'.")
+            else:
+                print(f">>> A nota {numero} JÁ estava na 'Notas BWS' — não dupliquei nada.")
+    except Exception as e:
+        buf.write(f"\n>>> ERRO: {type(e).__name__}: {e}")
+
+    rid = uuid.uuid4().hex
+    _RESULTADOS[rid] = {"numero": numero, "codigo": "", "data": data_iso,
+                        "log": buf.getvalue(), "card_id": card_id, "prox": None,
+                        "sub": None, "chave": "", "ensaio": False,
+                        "so_planilha": True}
+    return redirect(url_for(".resultado", id=rid, token=token))
+
+
+def _pagina_planilha(token, card_id, aviso=""):
+    t = html.escape(token)
+    box = (f"<div class='warn'>{html.escape(aviso)}</div>") if aviso else ""
+    return _doc("Só a linha da planilha", f"""
+      <h1>Só a linha da planilha</h1>
+      <p class='sub'>Use quando a nota <b>já saiu certa em tudo</b> — Omie, card,
+      arquivos, cliente — e <b>só a linha da "Notas BWS" não entrou</b>. Esta tela
+      grava essa linha e <b>não mexe em mais nada</b>: não emite nota, não toca no
+      Omie, não preenche slot no card, não manda WhatsApp.</p>
+      <p class='sub'>Se o que faltou foi mais do que a planilha, a tela certa é
+      <a href='{url_for('.recuperar')}?token={t}'>Recuperar entrega</a>; se a nota
+      foi emitida à mão no portal, é
+      <a href='{url_for('.manual')}?token={t}'>Nota emitida no portal</a>. As duas
+      fazem o serviço completo — e usar uma delas aqui preencheria um segundo slot
+      no card e mandaria o aviso ao cliente de novo.</p>
+      {box}
+      <div class='card'>
+        <form method='post' action='{url_for('.planilha')}' enctype='multipart/form-data'>
+          <div style='background:#eef5ff;border:1px solid #9cc0e8;border-radius:8px;padding:12px;margin-bottom:12px'>
+            <label class='lbl' style='margin:0'><b>1. O XML da nota</b> — é daqui que
+              saem os valores</label>
+            <p class='sub' style='margin:6px 0'>Os valores da linha vêm do XML, e não
+            do card: ao concluir, o sistema limpa doze campos de entrada do card
+            (valor parcial, tipo de medição, alíquotas, banco), então recalcular a
+            nota hoje daria números diferentes dos que foram emitidos.</p>
+            <input type='file' name='arquivo_xml' accept='.xml,text/xml'>
+            <p class='sub' style='margin:8px 0 4px'>Ou cole o conteúdo do XML:</p>
+            <textarea name='xml' rows='6' placeholder='&lt;?xml ...&gt;'></textarea>
+          </div>
+          <label class='lbl'><b>2. Número do card no Pipefy</b> — dele saem só o
+            código da obra e o número da medição
+            <input name='card_id' value='{html.escape(card_id)}' style='padding:8px;
+                   border:1px solid #c8d0da;border-radius:6px'></label>
+          <input type='hidden' name='token' value='{t}'>
+          <button type='submit'>Gravar a linha na planilha</button>
+        </form>
+        <p class='sub'>Tem trava contra fazer duas vezes: se o número já estiver na
+        coluna "Nº Nota" da "Notas BWS", ele avisa e não grava nada.</p>
+      </div>""")
+
 @bp.route("/declaracao", methods=["GET", "POST"])
 def declaracao():
     """Pergunta à prefeitura se uma declaração já virou nota — e termina o serviço.
@@ -376,7 +691,14 @@ def declaracao():
     producao = (request.values.get("ambiente") or "producao") != "homologacao"
 
     if request.method == "GET" and not id_dps:
-        return Response(_pagina_declaracao(token, "", ""), mimetype="text/html")
+        # Lista o que está em aberto: é o que dispensa guardar a identificação.
+        abertas, erro_lista = [], ""
+        try:
+            abertas = _decl.listar_abertas(_ctx_minimo()["gc"].open_by_key(_worker.ID_PROC))
+        except Exception as e:
+            erro_lista = f"{type(e).__name__}: {e}"
+        return Response(_pagina_declaracao(token, "", "", abertas=abertas,
+                                           erro_lista=erro_lista), mimetype="text/html")
 
     if not id_dps.startswith("DPS"):
         return Response(_pagina_declaracao(
@@ -385,14 +707,42 @@ def declaracao():
                   "Ela aparece na mensagem que a emissão mostrou."), mimetype="text/html")
 
     numero_esperado, _ano = _edps.numero_da_declaracao(id_dps)
+
+    # Diagnóstico completo: pergunta em todos os lugares e mostra as respostas
+    # cruas. É o que se usa quando a nota não aparece em canto nenhum e ninguém
+    # sabe de quem é a vez — e serve de prova para levar à prefeitura.
+    if request.values.get("diagnostico") == "1":
+        try:
+            ctx = _worker.preparar(card_id) if card_id else _ctx_minimo()
+            ctx["_token"] = _token_prefeitura(ctx["cred"])
+            texto = _edps.diagnostico(ctx, id_dps, producao)
+        except Exception as e:
+            texto = f"Não consegui rodar o diagnóstico: {type(e).__name__}: {e}"
+        corpo = (f"<h1>Diagnóstico da declaração</h1>"
+                 f"<p class='sub'>O que cada lado respondeu, sem filtro. Pode copiar e "
+                 f"mandar para a prefeitura.</p>"
+                 f"<div class='card'><pre>{html.escape(texto)}</pre></div>"
+                 f"<p><a class='btn' href='{url_for('.declaracao')}?token={html.escape(token)}'>"
+                 f"Voltar</a></p>")
+        return Response(_doc("Diagnóstico da declaração", corpo), mimetype="text/html")
+
     buf = io.StringIO()
     try:
         ctx = _worker.preparar(card_id) if card_id else _ctx_minimo()
         res = _edps.consultar(ctx, id_dps, _token_prefeitura(ctx["cred"]), producao)
+    except _edps.DeclaracaoRecusada as e:
+        # O desfecho mais tranquilo dos três, e o que vinha disfarçado de
+        # "não consegui consultar": não existe nota, e o próprio manual diz que a
+        # mesma declaração pode ser reenviada com a correção.
+        return Response(_pagina_recusa(numero_esperado, e.motivos), mimetype="text/html")
     except _edps.AindaProcessando as e:
         return Response(_pagina_declaracao(
             token, id_dps, card_id,
-            aviso=f"A nota {numero_esperado or ''} ainda NÃO ficou pronta.\n\n{e}"),
+            aviso=f"A nota {numero_esperado or ''} ainda NÃO ficou pronta.\n\n{e}",
+            link_diagnostico=(f"{url_for('.declaracao')}?token={html.escape(token)}"
+                              f"&id_dps={html.escape(id_dps)}&card_id={html.escape(card_id)}"
+                              f"&ambiente={'producao' if producao else 'homologacao'}"
+                              f"&diagnostico=1")),
             mimetype="text/html")
     except Exception as e:
         return Response(_pagina_declaracao(
@@ -423,6 +773,12 @@ def declaracao():
                                nacional=True, chave_nacional=chave)
     except Exception as e:
         buf.write(f"\n>>> ERRO no concluir: {type(e).__name__}: {e}")
+    try:
+        _decl.marcar_concluida(ctx["gc"].open_by_key(_worker.ID_PROC), id_dps,
+                               numero, chave)
+    except Exception as e:
+        buf.write(f"\n>>> AVISO: não consegui marcar a declaração como concluída "
+                  f"({type(e).__name__}: {e}). Os efeitos acima já foram feitos.")
 
     rid = uuid.uuid4().hex
     _RESULTADOS[rid] = {"numero": numero, "codigo": "", "data": data_iso,
@@ -442,11 +798,57 @@ def _ctx_minimo() -> dict:
     return {"gc": gc, "cred": cred, "chave_pem": chave_pem, "cert_pem": cert_pem}
 
 
-def _pagina_declaracao(token, id_dps, card_id, aviso=""):
+def _pagina_declaracao(token, id_dps, card_id, aviso="", abertas=None, erro_lista="",
+                       link_diagnostico=""):
     t = html.escape(token)
     numero, _ano = _edps.numero_da_declaracao(id_dps) if id_dps else ("", "")
     box = (f"<div class='warn'><pre style='background:none;color:inherit;padding:0;"
            f"white-space:pre-wrap'>{html.escape(aviso)}</pre></div>") if aviso else ""
+    if link_diagnostico:
+        box += (f"<p><a class='btn' href='{link_diagnostico}'>Diagnóstico completo "
+                f"desta declaração</a></p>"
+                f"<p class='sub'>Pergunta em todos os lugares — prefeitura e plataforma "
+                f"nacional — e mostra as respostas cruas. Use quando a nota não aparece "
+                f"em canto nenhum: ele diz de quem é a vez, e serve de prova.</p>")
+
+    # A lista do que está em aberto é o que dispensa guardar a identificação. Sem
+    # ela, a pessoa só chega aqui se tiver anotado 45 caracteres — e em 07/10/2026
+    # a identificação foi reencontrada no portal da prefeitura, não aqui.
+    if erro_lista:
+        lista = (f"<div class='warn'>Não consegui ler a lista de declarações em "
+                 f"aberto: {html.escape(erro_lista)}. Dá para conferir pela "
+                 f"identificação, no formulário abaixo.</div>")
+    elif abertas:
+        linhas = ""
+        for d in abertas:
+            link = (f"{url_for('.declaracao')}?token={t}&id_dps={html.escape(d['id_dps'])}"
+                    f"&card_id={html.escape(d['card_id'])}&ambiente={html.escape(d['ambiente'] or 'producao')}")
+            amb = "" if (d["ambiente"] or "producao") == "producao" else " <b>(ensaio)</b>"
+            # Declaração parada há horas não é fila: dizer "espere" para ela
+            # manda a pessoa esperar por algo que não vai acontecer sozinho.
+            if d.get("travada"):
+                horas = int(d.get("horas_aberta") or 0)
+                marca = (f"<br><span style='color:#a32118'><b>Parada há {horas}h</b> — "
+                         f"isto já não é fila. Rode o diagnóstico e fale com a "
+                         f"prefeitura.</span>")
+            else:
+                marca = ""
+            linhas += (f"<li style='margin:8px 0'>Nota <b>{html.escape(d['numero'])}</b> — "
+                       f"obra {html.escape(d['obra'] or '?')}, medição "
+                       f"{html.escape(d['med'] or '?')} — enviada em "
+                       f"{html.escape(d['enviada_em'])}{amb}{marca}<br>"
+                       f"<a class='btn' style='padding:6px 12px;font-size:13px' "
+                       f"href='{link}'>Conferir esta</a>"
+                       f" &nbsp;<a href='{link}&diagnostico=1'>diagnóstico</a></li>")
+        lista = (f"<div class='card'><b>Declarações em aberto ({len(abertas)})</b>"
+                 f"<ul style='padding-left:18px'>{linhas}</ul>"
+                 f"<p class='sub'>São as que a prefeitura aceitou e ainda não viraram "
+                 f"nota. Clicar aqui não emite nada.</p></div>")
+    elif abertas is not None:
+        lista = ("<div class='ok'>Nenhuma declaração em aberto — tudo o que foi "
+                 "enviado já virou nota ou foi recusado.</div>")
+    else:
+        lista = ""
     return _doc("Conferir declaração", f"""
       <h1>Conferir declaração{(' — nota ' + html.escape(numero)) if numero else ''}</h1>
       <p class='sub'>Use esta tela quando a emissão disse que a prefeitura
@@ -456,6 +858,7 @@ def _pagina_declaracao(token, id_dps, card_id, aviso=""):
       nota já existe, emitir outra cria a segunda nota do mesmo serviço — e nota
       emitida não se apaga.</div>
       {box}
+      {lista}
       <div class='card'>
         <form method='post' action='{url_for('.declaracao')}'>
           <label class='lbl'>Identificação da declaração (começa com DPS, 45 caracteres):
@@ -928,8 +1331,33 @@ def _pagina_pedir_card(token):
         <a href='{url_for('.diag')}?token={t}'>Diagnóstico</a> &nbsp;·&nbsp;
         <a href='{url_for('.recuperar')}?token={t}'>Recuperar entrega</a> &nbsp;·&nbsp;
         <a href='{url_for('.regerar')}?token={t}'>Regravar PDFs</a> &nbsp;·&nbsp;
-        <a href='{url_for('.declaracao')}?token={t}'>Conferir declaração</a>
+        <a href='{url_for('.declaracao')}?token={t}'>Conferir declaração</a> &nbsp;·&nbsp;
+        <a href='{url_for('.manual')}?token={t}'>Nota emitida no portal</a> &nbsp;·&nbsp;
+        <a href='{url_for('.planilha')}?token={t}'>Só a linha da planilha</a>
       </p>""")
+
+
+def _pagina_recusa(numero, motivos):
+    """Página da declaração recusada — a mesma nas duas rotas que podem cair nela.
+
+    Além dos motivos crus, mostra a explicação do manual quando o erro é um dos
+    que enganam (ver `emitir_dps.EXPLICACAO_DOS_ERROS`). Texto cru de integração
+    manda a pessoa procurar o problema no lugar errado.
+    """
+    itens = "".join(f"<li>{html.escape(m)}</li>" for m in motivos)
+    explicacoes = "".join(
+        f"<div class='warn'><pre style='background:none;color:inherit;padding:0;"
+        f"white-space:pre-wrap'>{html.escape(x)}</pre></div>"
+        for x in _edps.explicar_erros(motivos))
+    return _doc("Declaração recusada", (
+        f"<h1>A plataforma nacional recusou a declaração</h1>"
+        f"<div class='ok'><b>Nenhuma nota foi criada.</b> Pode corrigir e emitir de "
+        f"novo — inclusive com o mesmo número{(' (' + html.escape(numero) + ')') if numero else ''}, "
+        f"que é o caminho previsto pela prefeitura para este caso.</div>"
+        f"<div class='card'><b>O que ela recusou</b><ul>{itens}</ul></div>"
+        f"{explicacoes}"
+        f"<p class='sub'>Se o motivo não estiver claro, me mande este texto — os "
+        f"códigos de erro dela são documentados.</p>"))
 
 
 def _pagina_erro(msg):
@@ -1129,6 +1557,12 @@ def _render_pagina(ctx, card_id, token, nota_sub="", tm_over="", val_over=None, 
               f"<a href='{url_for('.regerar')}?token={html.escape(token)}'>Regravar PDFs</a>"
               f" &nbsp;·&nbsp; "
               f"<a href='{url_for('.declaracao')}?token={html.escape(token)}'>Conferir declaração</a>"
+              f" &nbsp;·&nbsp; "
+              f"<a href='{url_for('.manual')}?token={html.escape(token)}"
+              f"&card_id={html.escape(card_id)}'>Nota emitida no portal</a>"
+              f" &nbsp;·&nbsp; "
+              f"<a href='{url_for('.planilha')}?token={html.escape(token)}"
+              f"&card_id={html.escape(card_id)}'>Só a linha da planilha</a>"
               f"</p>")
     return _doc("Emissão NFS-e", sub_banner + cab + f"<div class='card'>{metrics}{alertas}</div>"
                 + form + f"<div class='card'><b>Espelho</b>{iframe}</div>" + rodape)
@@ -1157,6 +1591,19 @@ def _pagina_resultado(r):
                      f"<p class='sub'>No modelo nacional é a chave que identifica a nota — "
                      f"ela substituiu o antigo código de verificação, e é por ela que o "
                      f"cliente consulta a nota no portal nacional.</p></div>")
+
+    if r.get("so_planilha"):
+        # Página própria de propósito: a de emissão diria "nota emitida" e "os
+        # documentos sobem no Drive", e aqui nada disso aconteceu — só a linha.
+        return _doc("Linha gravada na planilha", f"""
+          <h1>Só a linha da planilha</h1>
+          <div class='ok'>Nota <b>{html.escape(str(r['numero']))}</b>, emissão
+            {html.escape(str(r['data']))}.</div>
+          <div class='card'><b>O que foi feito</b><pre>{log}</pre></div>
+          <p class='sub'>Nada além da planilha foi tocado: nenhuma nota foi emitida,
+          o Omie não mudou, o card não ganhou slot novo e ninguém recebeu aviso.
+          Confira a linha na aba "Notas BWS" — as colunas de Q em diante são fórmulas
+          e preenchem sozinhas.</p>""")
 
     if r.get("ensaio"):
         return _doc("Ensaio em homologação", f"""

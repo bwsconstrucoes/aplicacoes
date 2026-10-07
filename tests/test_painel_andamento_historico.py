@@ -126,7 +126,7 @@ def test_o_carimbo_grava_os_passos_e_o_historico_os_conta(banco, monkeypatch):
     h = a.historico()
     (e,) = h["execucoes"]
     assert h["tem_passos"]
-    assert e["rotulo"] == "Reler todos os pagamentos"
+    assert e["rotulo"] == "Reler os pagamentos"
     assert e["situacao"] == a.PARADA
     estados = {p["etapa"]: (p["estado"], p["detalhe"]) for p in e["passos"]}
     assert estados[a.TITULOS_A_PAGAR] == ("feito", "página 2 de 2")

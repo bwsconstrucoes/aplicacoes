@@ -708,6 +708,452 @@ cegamente pendura a tela por minutos e ocupa uma das quatro linhas de atendiment
 do serviço. A tela de conferir resolve o caso sem esse custo — e, com algumas
 emissões, dá para saber se vale subir.
 
+### O terceiro desfecho que faltava: a declaração RECUSADA — 07/10/2026
+
+Depois do aviso da nota 3281, o dono foi conferir e disse: **"não existe nota
+3281 emitida, você fala da próxima?"**
+
+Duas coisas saíram daí, e as duas eram defeito de comunicação do sistema.
+
+**1. O número da declaração é o NOSSO pedido, não o número da nota.**
+
+O número que vai dentro da declaração vem da nossa planilha (o maior da coluna F
+mais um). O número de verdade da nota só existe quando a prefeitura **autoriza**.
+Então "não existe nota 3281" é perfeitamente compatível com "a declaração da 3281
+foi enviada" — e a tela não deixava isso claro.
+
+**2. Havia um terceiro desfecho, e o sistema o tratava como falha nossa.**
+
+O manual é explícito: quando a resposta da plataforma traz a lista `erros`, a
+solicitação **não foi processada**, alguma correção é necessária, e **a mesma
+declaração pode ser reenviada com a correção, mantendo a mesma identificação**.
+
+Ou seja, são **três** desfechos, não dois:
+
+| | O que é | Existe nota? | O que fazer |
+|---|---|---|---|
+| **Pronta** | virou nota | sim | terminar o serviço |
+| **Ainda processando** | na fila da prefeitura | ainda não | esperar e consultar de novo |
+| **Recusada** | a plataforma rejeitou | **não** | corrigir e **reenviar, com o mesmo número** |
+
+O sistema conhecia os dois primeiros. O terceiro caía no `except Exception` e
+aparecia como *"não consegui consultar"* — transformando **"a prefeitura recusou,
+e aqui está o motivo"** em **"algo deu errado aqui"**. Pior: na emissão, a recusa
+era engolida e a espera de 150s rodava **inteira**, para no fim mostrar um aviso
+que não dizia o motivo.
+
+**O que mudou:**
+
+- a consulta passou a devolver a recusa como **resposta**, não como erro de
+  consulta. São coisas diferentes, e tratá-las igual foi o que mandou o dono
+  para a tela errada;
+- **a emissão para na hora** quando a declaração é recusada — poupa a espera
+  inteira e diz o motivo de verdade, com o código de erro da prefeitura;
+- as duas telas ganharam a mensagem certa: **"nenhuma nota foi criada, pode
+  corrigir e emitir de novo — inclusive com o mesmo número, que é o caminho
+  previsto pela prefeitura"**;
+- o aviso do estouro de espera deixou de insinuar que a nota existe. Ele agora
+  diz que **pode** existir ou **pode** ter sido recusada, e que só a consulta
+  diz qual é.
+
+**A lição, e ela vale para qualquer integração:** o desfecho que o código não
+conhece não desaparece — ele vira a mensagem genérica, e a mensagem genérica
+manda a pessoa para o lugar errado. Aqui custou uma espera de 150 segundos e uma
+ida e volta do dono para descobrir que **não havia problema nenhum**: só uma
+declaração recusada, que é o caso mais fácil dos três.
+
+### O ensaio que não terminava, e o erro cujo texto engana — 07/10/2026
+
+O dono tentou ensaiar e voltou: **"não consegui concluir o ensaio, tá demorando
+muito"**. Três coisas saíram daí.
+
+**1. Prender a tela no ensaio não compra nada.** A espera de 150s existia para
+que a emissão conseguisse terminar o serviço (planilha, Omie, card, Drive) na
+mesma visita. **No ensaio não há serviço para terminar** — então a tela girava
+dois minutos e meio em troca de nada, e ele desistiu antes do fim. A espera do
+ensaio caiu para 30s, e as duas ficaram ajustáveis por variável de ambiente
+(`EMISSAO_NF_ESPERA_S` e `EMISSAO_NF_ESPERA_ENSAIO_S`), porque ainda não se sabe
+como a fila da prefeitura se comporta no dia a dia e adivinhar um bom número
+agora seria chute.
+
+**2. A tela de "ainda processando" entrega um BOTÃO, não um código.** Antes ela
+mostrava a identificação de 45 caracteres para a pessoa copiar e colar na outra
+tela. Agora é um link que já leva a identificação, o card e o ambiente dentro.
+
+**3. O erro E0037 diz uma coisa e significa outra — e isso resolve o mistério do
+ensaio.** O manual da prefeitura tem uma seção própria para ele:
+
+> O texto do erro diz que o município não existe no cadastro nacional, mas na
+> prática ele ocorre quando **o município ainda não configurou a Produção
+> Restrita** junto à Plataforma Nacional. O município precisa habilitar o módulo
+> e concluir as configurações de convênio. *O contribuinte deverá entrar em
+> contato com a prefeitura e solicitar a habilitação.*
+
+**Ou seja: é bem possível que o ensaio nunca funcione em Eusébio**, porque o
+ambiente de teste pode não estar habilitado — e isso não é defeito nosso nem dos
+dados da nota. Não há o que corrigir aqui: é um pedido à prefeitura.
+
+Por isso o sistema passou a **traduzir** esse erro na tela, dizendo o que ele
+realmente significa e de quem é a ação. Texto cru de integração manda a pessoa
+procurar o problema no lugar errado — e, neste caso, procurar nos dados da nota,
+onde ele não está. A tradução só existe para erros documentados; erro
+desconhecido aparece cru, porque explicar errado é pior que não explicar.
+
+**Consequência prática, se o ensaio não for habilitado:** a conferência de uma
+emissão real passa a ser a tela "Conferir declaração". Não é o ideal — o ideal é
+ensaiar —, mas é seguro: ela pergunta à prefeitura e termina o serviço, sem nunca
+emitir nada.
+
+### ⚠️ Uma correção a um commit anterior: o conserto da espera não tinha subido
+
+Fica registrado porque é exatamente o tipo de coisa que corrói a confiança no
+histórico: o commit *"a saída do aperto"* afirmou que o defeito do valor padrão
+congelado (`espera_total_s`) estava corrigido. **Não estava.** O comando que
+aplicava a correção morreu antes de rodar, e eu não conferi o resultado antes de
+seguir.
+
+**Como isso passou por uma suíte verde:** o sintoma era a suíte ficando **três
+vezes mais lenta** (de 60s para 200s), porque um teste rodava os 150 segundos
+inteiros girando. Ninguém liga uma suíte devagar a um defeito de código — e
+nenhum teste falhava.
+
+Agora a correção está aplicada de verdade, e há um teste que olha a **assinatura
+da função** e acusa se o valor padrão voltar. Ele existe porque o sintoma natural
+deste defeito é lento e silencioso: sem um teste olhando direto para a causa,
+ele volta e ninguém vê.
+
+### "Aguardando Transmissão", o Bad Gateway, e a declaração que vivia só na tela
+
+Três coisas no mesmo fim de tarde de 07/10/2026, e as três têm a mesma raiz: eu
+desenhei a emissão como se a nota voltasse na mesma visita, e ela não volta.
+
+**1. O portal da prefeitura mostrou o estado de verdade.** O dono foi lá e trouxe:
+
+```
+DPS ...260000000003281 | Tipo: API | Situação: Aguardando Transmissão
+Data: 07/10/2026 | Número Nfs Reservado: 3281 | Chave Nacional: (vazia)
+```
+
+Isso diz tudo: a prefeitura **recebeu e aceitou**, **reservou o número 3281** para
+aquela declaração, e **ainda não transmitiu** para a plataforma nacional. A nota
+só existe como documento fiscal quando a chave nacional aparece.
+
+E traz duas consequências práticas que o sistema não estava dizendo: **não emitir
+com outro número** (o 3281 está reservado para essa declaração) e **não
+reenviar** — basta consultar depois. O aviso de "ainda processando" passou a
+explicar esse estado com essas palavras.
+
+**2. O Bad Gateway, e este é o mais grave: o desenho da emissão derrubava o
+serviço inteiro.**
+
+O serviço atende **4 pedidos ao mesmo tempo** (1 worker, 4 threads) e é
+compartilhado com o ERP, o painel e todo o resto. Cada emissão esperando a nota
+prendia **uma dessas quatro linhas**, por até 150 segundos. Umas poucas
+tentativas seguidas ocuparam as quatro — e o monorepo **inteiro** passou a
+responder *"Bad Gateway"*.
+
+Ou seja: uma fila do lado da prefeitura virava indisponibilidade do ERP. Isso não
+é desconforto de tela, é defeito de arquitetura, e foi meu.
+
+**A espera caiu para 25s** (15s no ensaio). Ela serve só para o caso feliz, em
+que a nota sai em segundos e dá para terminar o serviço na mesma visita. Quando
+não sai, quem termina é a tela "Conferir declaração". Há teste exigindo que a
+espera continue curta, com o motivo escrito nele — porque o número parece
+inofensivo e não é.
+
+**3. A declaração vivia só na tela aberta no navegador.**
+
+Entre o aceite e a nota, o único registro da identificação era a página que o
+dono estava olhando. Publicar o serviço, fechar a aba ou cair a conexão perdia o
+rastro — e foi o que aconteceu: a identificação da 3281 só foi reencontrada
+porque ele foi procurar **no portal da prefeitura**.
+
+Agora existe a aba **"Declaracoes"**, e a declaração é gravada nela **antes de
+qualquer espera**. Três decisões dentro disso:
+
+- **gravar é a primeira coisa depois do aceite.** Não depois da espera, não "se
+  der tempo". É o "antes" que garante que nada se perde;
+- **se a gravação falhar, a emissão NÃO para** — a declaração já está com a
+  prefeitura, e abortar não desfaz nada. Mas **reclama alto no log**, com a
+  identificação, porque silenciar aí seria recriar o problema que a gravação
+  existe para resolver;
+- **a tela "Conferir declaração" LISTA o que está em aberto**, com um botão em
+  cada. Assim ninguém precisa guardar 45 caracteres: é por isso que a lista
+  existe, não por enfeite.
+
+**A lição que atravessa as três:** quando o outro lado tem fila, esperar por ele
+dentro de um pedido web é pedir para transformar a lentidão dele em
+indisponibilidade nossa. O certo é registrar o protocolo, soltar a linha, e ter
+uma tela que fecha o ciclo depois.
+
+### A fila mudou de dono, e eu perguntava para o lado errado — 07/10/2026
+
+A tela de conferir finalmente mostrou a resposta crua da prefeitura, e ela era
+diferente do que eu supunha:
+
+```
+O que ela respondeu agora: <em processamento adn nacional>
+```
+
+**"ADN nacional" é o Ambiente de Dados Nacional.** Ou seja: a prefeitura **já
+transmitiu** o documento. A fila deixou de ser dela — quem tem de autorizar agora
+é a plataforma nacional. O estado "Aguardando Transmissão" que o portal mostrava
+antes já havia passado.
+
+**E a partir desse momento a prefeitura deixa de ser a melhor fonte.** A resposta
+dela pode continuar nesse mesmo texto mesmo depois de a nota existir no nacional:
+ela está dizendo "entreguei", não "não existe".
+
+**O que eu não estava fazendo, e deveria:** o sistema **já sabia** perguntar
+direto à plataforma nacional, pelo certificado — é assim que ele reencontra nota
+antiga desde setembro (a busca por DPS/chave na SEFIN). Eu simplesmente não
+liguei isso na consulta nova. Então a conferência tinha uma fonte só, e era a
+fonte que para de saber justamente quando o documento sai da mão dela.
+
+**Agora a consulta pergunta nos dois lugares:** primeiro à prefeitura; se ela
+disser que está no nacional, pergunta direto ao nacional. A mesma segunda fonte
+entrou também na espera da emissão.
+
+**Três cuidados dentro disso:**
+
+1. **falha na segunda fonte não é erro da consulta.** Se a plataforma nacional não
+   responder, a tela mostra o que a prefeitura disse e registra no log que a
+   segunda fonte falhou. Melhor resposta incompleta que tela de erro;
+2. **no ensaio a plataforma nacional de produção não é consultada** — ensaio vive
+   em outro ambiente, e perguntar ali daria resposta errada;
+3. **as duas filas são explicadas diferente, porque muda a quem se reclama.**
+   Antes de transmitir, é com a prefeitura. Depois, a autorização é do ambiente
+   nacional — e a pergunta útil para a prefeitura passa a ser se o **convênio do
+   município com o ambiente nacional** está em ordem, que é o que costuma travar.
+
+**A lição:** numa integração em etapas, "quem sabe a resposta" muda de mão ao
+longo do caminho. Consultar sempre o mesmo lado dá resposta velha — e, pior, dá
+uma resposta velha que *parece* atual.
+
+### A nota 3281 não estava em lugar nenhum — e o que foi conferido
+
+O dono checou **os dois sites** — o da prefeitura e o nacional — e a nota não
+estava em nenhum. Aí deixou de ser "esperar a fila" e passou a ser "descobrir o
+que travou".
+
+**O que foi conferido do NOSSO lado, e está certo:**
+
+- **o código do serviço.** `070202` existe na lista oficial de serviços nacionais
+  (Anexo B do pacote) e é exatamente *"Execução, por empreitada ou subempreitada,
+  de obras de construção civil…"*;
+- **a classificação do IBS/CBS**, que era a minha principal suspeita por ser a
+  parte nova e nunca conferida. Está certa, e agora com fonte: a tabela oficial
+  (Anexo VIII) diz que o item **07.02** vai com `INDOP` **020201**, `cClassTrib`
+  **200046** ("Operações com bens imóveis") e NBS **1.0101.11.00** — que é o que
+  o sistema manda;
+- **a estrutura da declaração**, que passa no schema oficial (já havia teste).
+
+Ou seja: o conteúdo da declaração confere com as tabelas oficiais. O que sobra
+está fora do nosso alcance, e é preciso prova para levar a quem resolve.
+
+**O que foi construído: o "Diagnóstico completo desta declaração".**
+
+Ele pergunta sobre a mesma declaração em três lugares e mostra as respostas
+**cruas**:
+
+1. à prefeitura, o processamento da declaração;
+2. à prefeitura, a chave;
+3. **à plataforma nacional, direto pelo certificado: "você conhece esta
+   declaração?"**
+
+**A terceira é a que decide**, e é por ela que a tela existe: se a plataforma
+nacional responde que **não conhece** a declaração, enquanto a prefeitura diz que
+"está em processamento adn nacional", as duas versões **não fecham** — e a
+transmissão é a prefeitura que faz. A tela diz isso com essas palavras, e o texto
+é feito para ser copiado e mandado a ela.
+
+**Dois cuidados dentro disso:** o texto **nunca** mostra o token nem nada do
+certificado (ele existe para sair daqui, então isso não é detalhe — há teste), e
+a falta do token aparece como uma linha explicando, em vez de estourar.
+
+**O que continua sem resposta, e não é nosso:** por que a autorização não sai.
+Os dois candidatos são o convênio do município com o ambiente nacional e alguma
+fila do lado deles. O diagnóstico é o que transforma "não funciona" em uma
+pergunta concreta com evidência.
+
+### O veredito da 3281, e o número que ficava preso — 07/10/2026
+
+O diagnóstico respondeu, e sem ambiguidade:
+
+```
+[prefeitura] HTTP 200 — "em processamento adn nacional"   (nos dois endpoints)
+[plataforma nacional] HTTP 404 — E2404
+   "Não foi gerada uma NFS-e com o identificador de DPS informado"
+```
+
+**As duas versões não fecham.** A prefeitura diz que entregou ao ambiente
+nacional; o ambiente nacional diz que **não gerou nota** para aquela declaração.
+E a transmissão é a prefeitura que faz. Com isso, "não está funcionando" virou um
+pedido concreto, com os códigos de erro deles próprios dentro.
+
+**Nada disso é do nosso lado**, e foi conferido antes de afirmar: o código do
+serviço, a classificação do IBS/CBS e a estrutura da declaração batem com as
+tabelas e o schema oficiais (seção anterior).
+
+### O defeito sério que esse impasse revelou: o número ficava preso e era reusado
+
+Este é o achado que importa para o futuro, e ele teria causado estrago sozinho.
+
+A numeração das notas sai da planilha: **maior número da coluna F mais um**. E a
+planilha só recebe **nota pronta** — uma declaração aceita mas sem nota **não
+entra lá**.
+
+Resultado: o 3281 ficava "livre" do nosso lado, enquanto a prefeitura o mantinha
+**reservado** para a declaração travada. **A próxima nota, de outra medição,
+sairia pedindo o mesmo 3281** — e o manual da prefeitura diz que a mesma
+identificação é lida como **reenvio da declaração anterior**, não como nota nova.
+
+Ou seja: dois serviços diferentes colapsariam num documento só. Sem erro na tela,
+sem ninguém perceber — e documento fiscal não se desfaz.
+
+**O conserto:** o próximo número passou a considerar também os números presos a
+declarações em aberto. Três detalhes com motivo:
+
+1. **para o MESMO card o número é reaproveitado de propósito** — ali é o reenvio
+   que o manual prevê, com a mesma identificação. Só número de *outro* card conta
+   como ocupado;
+2. **"o último emitido" continua sendo o da planilha.** Declaração aberta não é
+   nota emitida, e misturar as duas coisas num número só confundiria a leitura;
+3. **se as declarações não puderem ser lidas, a emissão numera como antes e
+   AVISA** que o número pode colidir. Falhar em silêncio aqui devolveria o
+   defeito.
+
+### E a tela parou de dizer "espere" para o que está parado
+
+A fila do nacional leva segundos. Uma declaração aberta há horas não é espera: é
+coisa travada. A lista de declarações passou a mostrar **"Parada há Xh — isto já
+não é fila. Rode o diagnóstico e fale com a prefeitura"**, com link direto para o
+diagnóstico. Duas horas é o corte.
+
+Mandar alguém esperar por algo que não vai acontecer sozinho é pior que não dizer
+nada — custa o dia dele.
+
+### "Nota emitida no portal": a saída para quando o canal está fora — 07/10/2026
+
+Com o canal travado e a empresa sem poder faturar, o dono pediu:
+
+> *"Minha sugestão é que você crie um botão na tela de emissão de emissão
+> manual. Pensei em poder anexar o pdf da nota emitida ou xml, você me diz o
+> melhor, e a partir dali você vai fazer a leitura do que foi emitido e fazer o
+> processamento e atualizações."*
+
+Feito, e **a escolha entre PDF e XML não é preferência**: é a diferença entre
+dado e leitura.
+
+**O XML manda nos dados.** Dele saem número, chave, valores e datas como **dados
+exatos**. Do PDF seria preciso *ler* números de um texto — e um valor mal lido
+iria para a planilha e para o Omie **sem ninguém notar**. Em documento fiscal
+isso não se faz: o erro silencioso é o pior que existe nesta área.
+
+**O PDF, quando anexado, entra como o documento.** O que o sistema desenha é uma
+réplica boa; o do portal é o **original**. Tendo o original, é ele que vai para o
+Drive e para o cliente — e é melhor assim.
+
+A tela aceita o XML como **arquivo** (era o pedido) ou colado, aceita os dois
+modelos (antigo e nacional, decidindo pelo conteúdo), e tem a mesma trava
+anti-duplicação do `concluir`. Ela **não emite nada**, e diz isso em letras
+grandes.
+
+Erro comum previsto na própria mensagem: baixar o XML da **declaração** em vez do
+da **nota**. A tela explica a diferença em vez de só recusar.
+
+### E a pergunta do RPS: a resposta é boa notícia
+
+Junto do pedido, ele levantou uma dúvida importante:
+
+> *"A nota manual não gera número RPS eu acho. Isso será problema quando formos
+> emitir nova via API? Uma coisa que não tenho conseguido por conta desse RPS é
+> substituir uma nota manual por nota via API."*
+
+**O RPS era um problema do modelo ANTIGO, e ele morreu com o modelo.** No ABRASF,
+substituir exigia apontar o RPS da nota antiga, e nota manual tinha RPS com série
+vazia e tipo 0 — que a prefeitura guardava mas o XSD de envio recusava. Foi o que
+tornou nota manual insubstituível pela aplicação (ver a seção da substituição,
+mais acima).
+
+**No modelo nacional não existe RPS.** Quem identifica a nota é a **chave de
+acesso**, e a substituição é um **evento** registrado sobre ela. Nota manual tem
+chave como qualquer outra. Então o impedimento que o incomodava há meses
+**deixou de existir** — não por conserto nosso, mas porque o formato mudou.
+
+**Duas ressalvas honestas:** a substituição por evento ainda **não está
+implementada** aqui (segue como pendência), e emitir manualmente **não cria
+dívida nenhuma** para a emissão seguinte pela API — desde que a nota seja
+registrada por esta tela. É o registro que mantém a numeração alinhada: a
+numeração sai da planilha, e nota que não entra nela faria o sistema pedir um
+número que o município já usou.
+
+### "Só a linha da planilha": uma nota certa com a planilha faltando — 07/10/2026
+
+**O que ele trouxe:**
+
+> *"Tenho uma nota emitida antes que não entrou correta na planilha. Foi emitido
+> tudo certo. É só planilha. Como faço pra inserir ela na planilha?"*
+
+**Por que nenhuma das telas que existiam servia.** Tanto "Recuperar entrega"
+(modo completo) como "Nota emitida no portal" rodam a **conclusão inteira**.
+Usar qualquer das duas para resolver só a planilha faria, de quebra, três
+estragos: preencheria um **segundo slot** de nota no card (o card tem cinco, A–E,
+e o primeiro vazio é o que o sistema usa), mexeria no **Omie** outra vez, e
+mandaria o **WhatsApp** ao cliente de novo. Trocar um problema por três.
+
+**O que foi feito:** a tela `/emissao/planilha`, "Só a linha da planilha". Ela
+grava a linha A–P da "Notas BWS" e **não faz nada além disso** — não emite, não
+toca no Omie, não preenche slot, não sobe arquivo, não avisa ninguém. A trava de
+duplicidade que já existia (o número na coluna F) continua valendo, então repetir
+não duplica.
+
+**A decisão que de fato importa: os valores vêm do XML, não do card.** E isso não
+é preferência — é a única fonte que ainda existe. Ao concluir uma emissão, o
+sistema **limpa doze campos de entrada do card** (`CAMPOS_LIMPAR`, em
+`pipefy_update.py`), e entre eles estão justamente os que mandam na conta: valor
+parcial, tipo de medição, as alíquotas de IR/INSS/ISS e o banco. Recalcular a
+nota pelo card dias depois da emissão produziria números **diferentes dos que
+foram realmente emitidos** — e eles iriam para a planilha com cara de certos. Do
+card ficam só o **código da obra** e o **número da medição**, que sobrevivem à
+limpeza e são o que a linha precisa dele.
+
+**A leitura aceita os dois modelos, decidindo pelo conteúdo do arquivo.** No
+nacional os totais estão em `infNFSe/valores` (`vISSQN`, `vLiq`) e o valor do
+serviço e os federais retidos moram dentro da **declaração embutida na nota**
+(`vServ`, `vRetCP`, `vRetIRRF`, `vPis`, `vCofins`). No modelo antigo é tudo
+`ValoresNfse`. Quem precisa consertar uma linha não tem como saber em que modelo
+a nota saiu, e há notas dos dois no Drive — então a tela não pergunta.
+
+**Uma sutileza que quase passou, e ela mudaria número na planilha.** A coluna P
+("Valor Líquido Tributado") desconta os federais **cheios**, retidos ou não — é
+como a planilha sempre foi. O XML, porém, só traz o que foi **retido**: PIS,
+COFINS e IR simplesmente não aparecem quando não houve retenção. Ler o XML cru
+deixaria a coluna P alta nessas notas. A regra ficou: **havendo valor no XML vale
+o do XML** (é o que a nota destacou, inclusive com alíquota diferenciada), **não
+havendo, aplica-se a alíquota padrão sobre o total** — que é exatamente o número
+que o motor fiscal produziria nos dois casos.
+
+**O limite disso, dito claro:** nota emitida com alíquota diferenciada **e sem**
+retenção daquele tributo sai com a alíquota padrão na coluna P. O campo de
+alíquota do card é um dos doze que a conclusão limpa, então esse dado não existe
+mais em lugar nenhum — não é perda nova, é perda antiga que só agora apareceu.
+Afeta só a coluna P, que é informativa.
+
+**A página de resultado é própria.** A de emissão diz "NFS-e emitida" e "os
+documentos sobem no Drive" — aqui nada disso aconteceu, e reusá-la faria a tela
+mentir sobre o que fez.
+
+**Conferido:** 16 casos novos em `tests/test_emissaonf_linha_planilha.py`, e
+entre eles os dois que importam — que a linha sai com os valores do **XML** mesmo
+quando o card traz um valor absurdo, e que o pós-emissão e o Omie **não são
+chamados**. Mais: os dois modelos de XML lidos, o federal sem retenção caindo na
+alíquota cheia, a trava de duplicidade, o XML da declaração (sem número de nota)
+sendo recusado em vez de gravar linha sem número, e a linha mantendo as 16
+colunas — tamanho diferente desalinharia as fórmulas de Q em diante.
+
+**NÃO conferido:** a gravação na planilha de verdade. Nenhum teste faz rede.
+
 ### A limpeza do que o modelo antigo deixou
 
 Saíram do `web.py` o preparo do certificado para o envelope SOAP, a busca

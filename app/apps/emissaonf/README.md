@@ -125,6 +125,13 @@ que é editável — o que estiver ali é o corpo que vai ser emitido.
 
 Nada foi enviado ainda. Sair da página não deixa rastro.
 
+> ⚠️ **O ensaio depende da prefeitura ter habilitado o ambiente de teste.** Se
+> ele recusar com o erro **E0037**, a tela explica: apesar do texto oficial falar
+> de "município inexistente", o manual diz que na prática significa que o
+> município **não configurou a Produção Restrita** na Plataforma Nacional. Não há
+> o que corrigir aqui — é um pedido à prefeitura. Enquanto isso, a conferência de
+> uma emissão real é a tela "Conferir declaração".
+
 **Antes de emitir de verdade, dá para ensaiar.** A caixa "Ensaiar primeiro"
 manda a **mesma** nota para o ambiente de homologação da prefeitura: ela volta
 inteira, com número e chave, para ser conferida — e **não vale como documento
@@ -144,6 +151,24 @@ ela até aparecer. Da nota pronta saem o **número**, a **chave de acesso** e a
 O código de verificação **não existe mais**: no modelo nacional quem identifica
 a nota é a chave de acesso de 50 dígitos, que vai no PDF com o QR ao lado.
 
+### A declaração é gravada antes de qualquer espera
+
+Entre a prefeitura **aceitar** a declaração e a nota **ficar pronta** passa um
+tempo que não depende de nós — o portal dela chama esse estado de *"Aguardando
+Transmissão"*, com o número já reservado e a chave nacional ainda vazia.
+
+Nesse intervalo, a declaração é gravada na aba **`Declaracoes`**, e isso acontece
+**antes** de o sistema esperar um segundo. É o que garante que nada se perde se a
+tela fechar, o serviço for publicado ou a conexão cair.
+
+A tela **"Conferir declaração"** lista o que está em aberto, com um botão em cada
+— então ninguém precisa guardar a identificação de 45 caracteres.
+
+**E a espera é curta de propósito, por um motivo que não é de conforto:** o
+serviço atende 4 pedidos ao mesmo tempo e é compartilhado com o ERP e o painel.
+Cada emissão esperando prende uma dessas quatro linhas. Com a espera longa, umas
+poucas tentativas seguidas derrubaram o monorepo inteiro com "Bad Gateway".
+
 **Se a espera estourar, o sistema NÃO oferece "tentar de novo".** É de propósito:
 a declaração já está com a prefeitura, e a nota pode ter saído. A tela mostra a
 identificação da declaração e manda para a tela **"Conferir declaração"**, que
@@ -154,6 +179,28 @@ Isso já aconteceu de verdade, na primeira emissão real (nota 3281, 07/10/2026)
 processamento da declaração é uma **fila do lado da prefeitura**, e o manual diz
 que o aceite dela significa "recebi", não "autorizei". Demorar mais que a nossa
 espera é normal, não é defeito.
+
+### Os TRÊS desfechos de uma declaração enviada
+
+Confundir dois deles custou uma ida e volta inteira. São três, e cada um tem uma
+ação diferente:
+
+| Desfecho | Existe nota? | O que fazer |
+|---|---|---|
+| **virou nota** | sim | terminar o serviço (a tela "Conferir declaração" faz) |
+| **ainda processando** | ainda não | esperar e consultar de novo |
+| **recusada** pela plataforma | **não** | corrigir e **reenviar com o MESMO número** |
+
+O terceiro é o mais fácil, e o que mais assusta quando mal explicado: quando a
+plataforma devolve a lista de erros, **nada foi criado**. O manual diz que a mesma
+declaração pode ser reenviada com a correção, **mantendo a mesma identificação** —
+então reemitir com o mesmo número não é risco de nota duplicada: é o caminho
+previsto.
+
+**O número que vai na declaração é o NOSSO pedido**, tirado da planilha. O número
+de verdade da nota só existe quando a prefeitura autoriza. Por isso "não existe a
+nota N" e "a declaração da nota N foi enviada" podem ser as duas verdadeiras ao
+mesmo tempo.
 
 **Há exatamente uma situação em que o envio é repetido:** quando a prefeitura
 responde que o **endereço não existe** (404 ou 405). Aí ela não recebeu
@@ -257,9 +304,21 @@ declara uma retenção de valor zero, o que é diferente de não declarar nada.
 
 ---
 
-## A numeração vem da planilha, não da prefeitura
+## A numeração vem da planilha, MAIS as declarações em aberto
 
-O próximo número é o **maior número da coluna F da "Notas BWS" mais um**. A
+O próximo número é o maior entre o **maior número da coluna F da "Notas BWS"** e
+os **números presos a declarações em aberto**, mais um.
+
+A segunda parte não é refinamento: a planilha só recebe **nota pronta**, então
+uma declaração que a prefeitura aceitou e ainda não virou nota não entra lá — e o
+número dela ficava livre do nosso lado enquanto a prefeitura o mantinha
+**reservado**. A nota seguinte sairia pedindo o mesmo número, e a prefeitura leria
+isso como **reenvio da declaração anterior**, não como nota nova: dois serviços
+num documento só, sem erro na tela. Aconteceu de verdade em 07/10/2026 (ver o
+`HISTORICO.md`).
+
+**Para o mesmo card o número é reaproveitado de propósito** — ali é o reenvio que
+o manual da prefeitura prevê, com a mesma identificação. A
 prefeitura devolve o número que ela gravou; se os dois divergirem, a tela avisa
 — mas a nota já foi emitida. Numeração é a parte do sistema que mais depende da
 planilha estar íntegra.
@@ -303,6 +362,9 @@ Todas pedem o mesmo `token` na URL. Não há login: quem tem o link, entra.
 | `/emissao/nacional` | roda o fechamento nacional na mão |
 | `/emissao/nacional_chave` | fecha uma nota colando a **chave** de 50 dígitos |
 | `/emissao/nacional_xml` | fecha uma nota colando o **XML nacional** baixado do portal |
+| `/emissao/manual` | **"Nota emitida no portal".** Para nota emitida à mão no portal da prefeitura (canal fora do ar, ou caso que só dá por lá). Recebe o **XML** — dele saem os dados, exatos — e, opcionalmente, o **PDF oficial**, que entra como o documento em vez da nossa réplica. Faz todo o resto: planilha, Omie, card, Drive e avisos. **Não emite nada** |
+| `/emissao/planilha` | **"Só a linha da planilha".** Para a nota que saiu certa em TUDO — Omie, card, arquivos, cliente — e cuja linha da "Notas BWS" não entrou. Grava a linha e **não toca em mais nada**. Os valores saem do **XML**, não do card: a conclusão limpa doze campos de entrada do card, então recalcular a nota depois daria números diferentes dos emitidos. Usar `/emissao/recuperar` ou `/emissao/manual` neste caso preencheria um **segundo slot** no card, mexeria no Omie de novo e mandaria o WhatsApp outra vez |
+| `/emissao/declaracao?…&diagnostico=1` | **"Diagnóstico completo desta declaração".** Pergunta sobre ela na prefeitura E direto na plataforma nacional, e mostra as respostas cruas. A pergunta que decide é a terceira: se o nacional **não conhece** a declaração e a prefeitura diz que transmitiu, as versões não fecham — e a transmissão é ela que faz. O texto é feito para ser copiado e mandado a ela; nunca mostra token nem certificado |
 | `/emissao/declaracao` | **"Conferir declaração".** A saída do único aperto desta área: a prefeitura aceitou a declaração e a nota não ficou pronta na hora. Pergunta a ela se a nota saiu e, se saiu, **termina o serviço** — sem emitir nada. Consultar não cria nada, então pode repetir |
 | `/emissao/diag` | diz **por que** o certificado não carregou, qual token chegou e de onde, e qual conta do Google está sendo usada — sem mostrar segredo |
 | `/emissao/diag_nacional_chave` | só leitura: testa quais endpoints federais respondem por chave |
@@ -328,6 +390,18 @@ substituída" — ele refaz os efeitos internos (Pipefy, Omie, Drive, planilha,
 WhatsApp). É o mesmo caminho que já se usava para nota emitida manualmente, e a
 tela de emissão explica isso em vez de deixar tentar e falhar.
 
+### O RPS morreu com o modelo antigo — e com ele um impedimento antigo
+
+Vale saber, porque incomodou por meses: no modelo antigo, **nota emitida à mão no
+portal não podia ser substituída pela aplicação**. A substituição exigia apontar
+o **RPS** da nota antiga, e nota manual tinha RPS com série vazia e tipo 0 — que a
+prefeitura guardava mas o XSD de envio recusava.
+
+**No modelo nacional não existe RPS.** Quem identifica a nota é a **chave de
+acesso**, e nota manual tem chave como qualquer outra. Ou seja: quando a
+substituição por evento for implementada, **nota manual vai ser substituível** —
+o impedimento não foi consertado, ele deixou de existir junto com o formato.
+
 Quando a substituição dá certo, a nota antiga é marcada **Cancelada** no slot do
 card, ganha a observação na "Notas BWS" e, no Omie, o número antigo sai e o novo
 entra **numa única chamada** — o Omie trava o registro por alguns segundos
@@ -339,7 +413,7 @@ depois de cada escrita.
 
 | Onde | O quê |
 |---|---|
-| Planilha **Notas BWS** (`1NOEzey3…PpEbU`) | aba `Notas BWS` (numeração e apuração), `Notas BWS Links` (links dos arquivos), `Controle Nacional` (a fila do nacional + o último NSU na célula P1) |
+| Planilha **Notas BWS** (`1NOEzey3…PpEbU`) | aba `Notas BWS` (numeração e apuração), `Notas BWS Links` (links dos arquivos), `Declaracoes` (as declarações enviadas e ainda sem nota), `Controle Nacional` (a fila do nacional antigo + o último NSU na célula P1) |
 | Planilha **C. Diários** (`1C7MWQmr…PsBk`) | aba `Centro de Custo`: obra, município, alíquota de ISS, tributação, CNO |
 | Planilha **Credenciais** (`1D4aVC7w…B9i-U`) | aba `Credenciais` (chave/valor) e `Destinatarios WhatsApp` |
 | **Google Drive** (`1-NxQ1Q35…QtZyh`) | XML, recibo, NFS-e municipal e DANFSe nacional de cada nota |
@@ -360,6 +434,8 @@ o que vale é o Render.
 | Variável | Para quê |
 |---|---|
 | `EL_NFSE_TOKEN` | **o token de integração da prefeitura.** É ele que autentica o canal da emissão. Sem ele **nenhuma nota sai** — nem em ensaio. Gerado no portal do município, em Configurações › APIs de Integração. **Não é o `EMISSAO_NF_TOKEN`** — ver o aviso abaixo da tabela |
+| `EMISSAO_NF_ESPERA_S` | segundos de espera pela nota numa emissão de verdade (padrão **25**). **Não aumente sem pensar:** o serviço atende 4 pedidos por vez e é compartilhado com o ERP e o painel — espera longa prende uma das quatro linhas e já derrubou o monorepo inteiro |
+| `EMISSAO_NF_ESPERA_ENSAIO_S` | o mesmo, para o ensaio (padrão 15) |
 | `EMISSAO_NF_AMBIENTE` | `HOMOLOGACAO` trava o serviço inteiro em teste: nenhuma nota tem validade fiscal, mesmo sem marcar o ensaio, e a tela avisa em letras grandes. Qualquer outro valor (ou vazio) = produção |
 | `EMISSAO_NF_TOKEN` | o token do link. **Sem ela configurada, a tela fica aberta a qualquer um** — falha ABERTO, ao contrário do resto do repositório |
 | `EMISSAO_NF_CERTIFICADO_P12_BASE64` | o certificado A1 da empresa, em base64 |

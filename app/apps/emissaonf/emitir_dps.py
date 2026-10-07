@@ -21,16 +21,40 @@ um erro de rede depois do envio NÃO autoriza reenviar — autoriza consultar.
 """
 from __future__ import annotations
 
+import os
 import time
 
 import el_nfse_nacional as nac
 
 
 # Quanto tempo esperar a prefeitura converter a declaração em nota. O manual diz
-# que o processamento é assíncrono e vai para uma fila; na prática leva segundos.
-# O teto existe para a tela não ficar pendurada — passado ele, a nota pode ter
-# saído, e quem decide é a consulta, não um reenvio.
-ESPERA_TOTAL_S = 150
+# que o processamento é assíncrono e vai para uma fila — então esperar é esperar
+# a fila DELA, e o tempo não depende de nós.
+#
+# O teto existe para a tela não ficar pendurada. Passado ele, a nota pode ter
+# saído, e quem decide é a consulta ("Conferir declaração"), nunca um reenvio.
+#
+# Ajustável sem publicar nada, pela env EMISSAO_NF_ESPERA_S: até se saber como a
+# fila da prefeitura se comporta no dia a dia, é melhor poder mexer no número do
+# que adivinhar um bom valor agora.
+# ⚠️ O NÚMERO AQUI NÃO É SÓ CONFORTO DE TELA. O serviço atende **4 pedidos ao
+# mesmo tempo** (gunicorn: 1 worker, 4 threads) e é compartilhado com o ERP, o
+# painel e todo o resto. Cada emissão esperando prende uma dessas quatro linhas.
+# Com a espera em 150s, umas poucas tentativas seguidas ocupavam as quatro e o
+# monorepo INTEIRO respondia "Bad Gateway" — aconteceu em 07/10/2026.
+#
+# Por isso a espera é curta: ela serve só para o caso feliz, em que a nota sai em
+# segundos e dá para terminar o serviço na mesma visita. Quando não sai, quem
+# termina é a tela "Conferir declaração" — e a declaração já está gravada.
+ESPERA_TOTAL_S = int(os.getenv("EMISSAO_NF_ESPERA_S", "25") or 25)
+
+# No ENSAIO a espera é curta de propósito. Ensaio não tem pós-emissão: não há
+# planilha, Omie, card nem Drive para completar. Então prender a tela por dois
+# minutos e meio não compra nada — melhor devolver a identificação e deixar a
+# pessoa conferir quando quiser. Prender a tela foi, aliás, o que fez o dono
+# desistir do primeiro ensaio em 07/10/2026.
+ESPERA_ENSAIO_S = int(os.getenv("EMISSAO_NF_ESPERA_ENSAIO_S", "15") or 15)
+
 ESPERA_ENTRE_CONSULTAS_S = 5
 
 
@@ -76,6 +100,83 @@ class AindaProcessando(RuntimeError):
     """A prefeitura recebeu a declaração e ainda não terminou. Nota não existe ainda."""
 
 
+# Erros da plataforma nacional cujo texto oficial engana, e que o manual explica
+# numa seção própria. Traduzir é parte da entrega: o texto cru manda a pessoa
+# procurar o problema no lugar errado.
+# O estado que o portal da prefeitura mostra enquanto a declaração espera a vez
+# dela. Não é erro, e explicar isso evita a conclusão errada de que algo falhou.
+EXPLICACAO_AGUARDANDO_TRANSMISSAO = (
+    "Se o portal da prefeitura mostrar esta declaração como **\"Aguardando "
+    "Transmissão\"**, com o número reservado e a chave nacional vazia, é isso que "
+    "está acontecendo: a prefeitura recebeu e aceitou, guardou o número para esta "
+    "declaração, e ainda não transmitiu para a plataforma nacional.\n\n"
+    "A nota só existe como documento fiscal quando a chave nacional aparece. Até "
+    "lá: não emita com outro número (este está reservado) e não reenvie — basta "
+    "consultar de novo mais tarde.\n\n"
+    "Se ficar nesse estado por horas, aí não é fila: é caso de falar com a "
+    "prefeitura, porque a transmissão é ela que faz."
+)
+
+# Quando a prefeitura responde "em processamento adn nacional", a fila deixou de
+# ser dela. Dizer de quem é a fila muda a quem se reclama.
+EXPLICACAO_FILA_NACIONAL = (
+    "**A fila não é mais da prefeitura: é da plataforma nacional.** O retorno "
+    "\"em processamento adn nacional\" quer dizer que o município já transmitiu o "
+    "documento, e quem precisa autorizar agora é o ambiente nacional da NFS-e.\n\n"
+    "Isto muda a quem se reclama. Se demorar horas, a prefeitura provavelmente vai "
+    "dizer — com razão — que do lado dela está feito. O que vale perguntar a ela é "
+    "se o **convênio do município com o ambiente nacional** está em ordem, porque é "
+    "isso que costuma travar a autorização.\n\n"
+    "Enquanto isso: o número segue reservado para esta declaração, não emita com "
+    "outro número e não reenvie. A nota só vale quando a chave nacional aparece."
+)
+
+EXPLICACAO_DOS_ERROS = {
+    "E0037": (
+        "O texto deste erro diz que o município não existe no cadastro nacional, "
+        "mas o manual da prefeitura explica, numa seção própria, que na prática "
+        "ele significa outra coisa: **o município ainda não habilitou o ambiente "
+        "de TESTE (Produção Restrita) na Plataforma Nacional**.\n\n"
+        "Não é defeito do nosso sistema nem dos dados da nota, e não há nada a "
+        "corrigir aqui. Quem resolve é a prefeitura: ela precisa habilitar o "
+        "módulo de Produção Restrita e concluir as configurações de convênio no "
+        "ambiente nacional.\n\n"
+        "O que fazer: pedir isso à prefeitura. Enquanto não houver ambiente de "
+        "teste, o ensaio não vai funcionar — e a conferência de uma emissão real "
+        "passa a ser a tela \"Conferir declaração\"."
+    ),
+}
+
+
+def explicar_erros(motivos) -> list[str]:
+    """Para cada motivo recusado, devolve a explicação do manual quando houver."""
+    saida = []
+    for m in motivos or []:
+        for codigo, texto in EXPLICACAO_DOS_ERROS.items():
+            if codigo in str(m):
+                saida.append(texto)
+                break
+    return saida
+
+
+class DeclaracaoRecusada(RuntimeError):
+    """A plataforma nacional RECUSOU a declaração. Nenhuma nota foi criada.
+
+    É o terceiro desfecho, e o mais tranquilo dos três: o manual diz que quando a
+    resposta traz a lista de erros, a solicitação não foi processada e alguma
+    correção é necessária antes de nova tentativa — e que **a mesma declaração
+    pode ser reenviada com a correção, mantendo a mesma identificação**.
+
+    Ou seja: corrigir e emitir de novo, com o MESMO número, é o caminho previsto.
+    Não é risco de nota duplicada — é o que a prefeitura manda fazer.
+    """
+
+    def __init__(self, motivos, id_dps=""):
+        self.motivos = list(motivos or [])
+        self.id_dps = id_dps
+        super().__init__("; ".join(self.motivos) or "sem detalhes")
+
+
 def numero_da_declaracao(id_dps: str) -> tuple[str, str]:
     """Tira o número da nota e o ano de dentro da identificação da declaração.
 
@@ -110,20 +211,142 @@ def consultar(ctx: dict, id_dps: str, token: str, producao: bool) -> dict:
         token=token, chave_pem=chave_pem, cert_pem=cert_pem,
         ambiente="producao" if producao else "homologacao",
     )
-    proc = cliente.consultar_processamento_dps(id_dps)
+    proc = cliente.consultar_processamento_dps(id_dps, bruto=True)
+
+    # Recusada: não existe nota, e o caminho é corrigir e reenviar com o MESMO
+    # número. É o desfecho mais tranquilo dos três, e era o que vinha disfarçado
+    # de "não consegui consultar".
+    motivos = nac.ELNfseNacional.erros_da_resposta(proc)
+    if motivos:
+        raise DeclaracaoRecusada(motivos, id_dps=id_dps)
+
     xml_nac = nac.ELNfseNacional.descompactar(proc.get("nfseXmlGZipB64", "") or "")
     pronta = (proc.get("chaveAcesso") and xml_nac
               and "processamento" not in xml_nac.lower() and "<" in xml_nac)
-    if not pronta:
-        bruto = (xml_nac or "").strip()[:300]
-        raise AindaProcessando(
-            f"A prefeitura confirma que recebeu a declaração, mas a nota ainda não "
-            f"ficou pronta.\n\nO que ela respondeu agora: "
-            f"{bruto or '(sem conteúdo — só o protocolo)'}\n\n"
-            f">>> Isto NÃO é erro, e NÃO autoriza emitir de novo. Espere alguns "
-            f"minutos e consulte esta mesma identificação outra vez."
-        )
-    return dados_da_nota(xml_nac)
+    if pronta:
+        return dados_da_nota(xml_nac)
+
+    # SEGUNDA FONTE, e ela é o ponto desta função: perguntar DIRETO à plataforma
+    # nacional, com o certificado, sem passar pela prefeitura.
+    #
+    # Por que isso importa: quando a prefeitura responde "em processamento adn
+    # nacional", ela está dizendo que JÁ TRANSMITIU e que a fila agora é da
+    # plataforma nacional. A resposta dela pode ficar nesse texto mesmo depois de
+    # a nota já existir lá — ou seja, a prefeitura deixa de ser a melhor fonte
+    # justamente a partir do momento em que ela entrega o documento.
+    #
+    # Este é o mesmo caminho que o sistema já usava há meses para reencontrar
+    # notas antigas (a busca por DPS/chave na SEFIN). Ele não estava sendo usado
+    # aqui, e por isso uma nota que podia já existir aparecia como "esperando".
+    por_dentro = _consultar_no_nacional(ctx, id_dps, producao)
+    if por_dentro:
+        return por_dentro
+
+    # Nenhuma das duas fontes tem a nota: ela não existe ainda.
+    bruto = (xml_nac or "").strip()[:300]
+    no_nacional = "adn" in (xml_nac or "").lower()
+    onde = ("A prefeitura já TRANSMITIU: a declaração está na fila da plataforma "
+            "nacional, e perguntei direto a ela também — a nota ainda não está lá."
+            if no_nacional else
+            "A prefeitura recebeu e aceitou, e ainda não transmitiu para a "
+            "plataforma nacional.")
+    raise AindaProcessando(
+        f"A nota ainda não ficou pronta.\n\n{onde}\n\n"
+        f"O que a prefeitura respondeu agora: "
+        f"{bruto or '(sem conteúdo — só o protocolo)'}\n\n"
+        f">>> Isto NÃO é erro, e NÃO autoriza emitir de novo. Espere e consulte "
+        f"esta mesma identificação outra vez.\n\n"
+        f"{EXPLICACAO_FILA_NACIONAL if no_nacional else EXPLICACAO_AGUARDANDO_TRANSMISSAO}"
+    )
+
+
+def _consultar_no_nacional(ctx: dict, id_dps: str, producao: bool):
+    """Pergunta à plataforma nacional, pelo certificado, se aquela declaração já
+    virou nota. Devolve os dados da nota, ou None se ela ainda não existe lá.
+
+    Falha de rede aqui NÃO é erro da emissão: é só uma segunda fonte que não
+    respondeu. Devolve None e deixa o chamador seguir com o que a prefeitura
+    disse — melhor uma resposta incompleta que uma tela de erro.
+    """
+    if not producao:
+        return None          # a plataforma nacional de teste é outra, e não a usamos
+    try:
+        import adn_nfse
+        chave = adn_nfse.consultar_chave_por_dps(
+            ctx.get("cert_pem"), ctx.get("chave_pem"), id_dps)
+        if not chave:
+            return None
+        xml_nac = adn_nfse.consultar_nfse_por_chave(
+            ctx.get("cert_pem"), ctx.get("chave_pem"), chave)
+        print(f">>> A nota foi encontrada DIRETO na plataforma nacional "
+              f"(chave ...{str(chave)[-8:]}), apesar de a prefeitura ainda "
+              f"responder 'em processamento'.")
+        return dados_da_nota(xml_nac)
+    except Exception as e:
+        print(f">>> (a consulta direta à plataforma nacional não respondeu: "
+              f"{type(e).__name__}: {e})")
+        return None
+
+
+def diagnostico(ctx: dict, id_dps: str, producao: bool) -> str:
+    """Pergunta sobre uma declaração em TODOS os lugares que dá, e devolve as
+    respostas cruas.
+
+    Serve para o caso em que a nota não aparece em lugar nenhum e ninguém sabe
+    de quem é a vez. A pergunta que mais decide está na terceira consulta: **se a
+    plataforma nacional não conhece a declaração**, então ela não foi transmitida
+    de verdade — e aí o problema é do lado do município, com prova.
+
+    Nunca mostra o token nem nada do certificado: só o que cada serviço respondeu.
+    """
+    linhas = [f"Declaração: {id_dps}",
+              f"Ambiente: {'produção' if producao else 'homologação'}",
+              f"Nota pedida: {numero_da_declaracao(id_dps)[0] or '?'}", ""]
+
+    chave_pem, cert_pem = ctx.get("chave_pem"), ctx.get("cert_pem")
+    token = (ctx.get("_token") or "").strip()
+
+    # ---- 1 e 2: a prefeitura ----
+    if not token:
+        linhas += ["[prefeitura] token de integração ausente — não dá para perguntar.", ""]
+    else:
+        cliente = nac.ELNfseNacional(token=token, chave_pem=chave_pem, cert_pem=cert_pem,
+                                     ambiente="producao" if producao else "homologacao")
+        for rotulo, caminho in (("processamento da declaração", f"nfseDps/{id_dps}"),
+                                ("chave da declaração", f"dps/{id_dps}")):
+            try:
+                resp = cliente._chamar("GET", caminho, params={"token": token})
+                corpo = (resp.text or "")[:700]
+                linhas.append(f"[prefeitura: {rotulo}] HTTP {resp.status_code}")
+                linhas.append(f"  {corpo or '(corpo vazio)'}")
+            except Exception as e:
+                linhas.append(f"[prefeitura: {rotulo}] falhou — {type(e).__name__}: {e}")
+            linhas.append("")
+
+    # ---- 3: a plataforma nacional, direto, só com o certificado ----
+    if not producao:
+        linhas += ["[plataforma nacional] não consultada (ensaio vive em outro ambiente)."]
+        return "\n".join(linhas)
+    if not (chave_pem and cert_pem):
+        linhas += ["[plataforma nacional] certificado não carregado — não dá para perguntar."]
+        return "\n".join(linhas)
+    try:
+        import adn_nfse
+        import requests
+        caminho_cert, caminho_chave = adn_nfse._cert_temp(cert_pem, chave_pem)
+        url = f"{adn_nfse.SEFIN_PROD}/dps/{id_dps}"
+        r = requests.get(url, headers={"Accept": "application/json"},
+                         cert=(caminho_cert, caminho_chave), timeout=40)
+        linhas.append(f"[plataforma nacional: conhece esta declaração?] HTTP {r.status_code}")
+        linhas.append(f"  {(r.text or '')[:700] or '(corpo vazio)'}")
+        if r.status_code == 404:
+            linhas += ["", ">>> ESTA É A RESPOSTA QUE IMPORTA: a plataforma nacional NÃO "
+                       "conhece esta declaração. Como a prefeitura diz que já transmitiu, "
+                       "as duas versões não fecham — e a transmissão é ela que faz. "
+                       "É com ela, e esta tela é a prova."]
+    except Exception as e:
+        linhas.append(f"[plataforma nacional] falhou — {type(e).__name__}: {e}")
+    return "\n".join(linhas)
 
 
 def _mensagem_de_erro(e: Exception) -> str:
@@ -136,12 +359,19 @@ def _mensagem_de_erro(e: Exception) -> str:
 
 
 def emitir(ctx: dict, dados_dps: nac.DadosDPS, token: str, producao: bool,
-           espera_total_s: int = ESPERA_TOTAL_S) -> dict:
+           espera_total_s: int | None = None, ao_aceitar=None) -> dict:
     """Declara a nota à prefeitura e devolve número, chave, data e o XML.
 
     `ctx` é o contexto do `worker.preparar` (de onde saem o certificado e a
     chave já em memória). `token` é o token de integração da prefeitura.
     """
+    # O teto é lido AQUI, e não como valor padrão do argumento: valor padrão é
+    # congelado quando a função nasce, então mudar a constante (ou a env) depois
+    # não teria efeito nenhum. Isso já custou um teste que rodou os 150 segundos
+    # inteiros sem ninguém perceber — ver o HISTORICO.md, 07/10/2026.
+    if espera_total_s is None:
+        espera_total_s = ESPERA_TOTAL_S
+
     chave_pem, cert_pem = ctx.get("chave_pem"), ctx.get("cert_pem")
     if not (chave_pem and cert_pem):
         raise NotaNaoSaiu("Certificado A1 não carregado — a declaração tem de ser assinada.")
@@ -178,19 +408,44 @@ def emitir(ctx: dict, dados_dps: nac.DadosDPS, token: str, producao: bool,
         raise NotaNaoSaiu(f"A prefeitura aceitou mas não devolveu a identificação da "
                           f"declaração (idDPS). Resposta: {envio}")
 
+    # A PRIMEIRA COISA depois do aceite é registrar — antes de esperar um segundo.
+    # Enquanto a declaração não estava gravada, o único registro dela era a tela
+    # aberta no navegador: fechar a aba, publicar o serviço ou cair a conexão
+    # perdia a identificação. Aconteceu em 07/10/2026.
+    #
+    # Se o registro falhar, a emissão NÃO para: a declaração já está com a
+    # prefeitura, e abortar aqui não desfaz nada — só esconderia o que aconteceu.
+    if ao_aceitar:
+        try:
+            ao_aceitar(id_dps)
+        except Exception as e:
+            print(f">>> AVISO: não consegui registrar a declaração {id_dps} "
+                  f"({type(e).__name__}: {e}). Anote esta identificação.")
+
     # Daqui para baixo a declaração JÁ ESTÁ com a prefeitura. Só consultamos.
     limite = time.time() + espera_total_s
     ultimo = ""
     while True:
         try:
-            proc = cliente.consultar_processamento_dps(id_dps)
+            proc = cliente.consultar_processamento_dps(id_dps, bruto=True)
         except Exception as e:
             # A consulta falhou, não a emissão. Insistir é seguro.
             ultimo = f"consulta falhou: {type(e).__name__}: {e}"
             proc = {}
+        # Recusa é resposta definitiva: não há nota e não há o que esperar.
+        # Sair daqui na hora poupa a espera inteira e diz o motivo de verdade.
+        motivos = nac.ELNfseNacional.erros_da_resposta(proc)
+        if motivos:
+            raise DeclaracaoRecusada(motivos, id_dps=id_dps)
         xml_nac = nac.ELNfseNacional.descompactar(proc.get("nfseXmlGZipB64", "") or "")
         if proc.get("chaveAcesso") and xml_nac and "processamento" not in xml_nac.lower():
             return dados_da_nota(xml_nac)
+        # Quando a prefeitura diz que já transmitiu, a plataforma nacional passa a
+        # ser a fonte melhor — e às vezes a nota já está lá.
+        if "adn" in (xml_nac or "").lower():
+            achada = _consultar_no_nacional(ctx, id_dps, producao)
+            if achada:
+                return achada
         if xml_nac and "processamento" not in xml_nac.lower() and "<" not in xml_nac:
             ultimo = xml_nac
         if time.time() >= limite:
@@ -204,8 +459,12 @@ def emitir(ctx: dict, dados_dps: nac.DadosDPS, token: str, producao: bool,
         f"Isto não é erro: o processamento dela é uma fila do lado da prefeitura, e "
         f"às vezes demora mais que a nossa espera.\n"
         f"{('O último retorno dela foi: ' + ultimo) if ultimo else 'Até o fim ela respondeu apenas que estava processando.'}\n\n"
-        f">>> NÃO EMITA DE NOVO. A nota {numero or ''} pode já existir, e emitir "
-        f"outra criaria a segunda nota do mesmo serviço — que é o que não se desfaz.\n\n"
+        f">>> NÃO EMITA DE NOVO ANTES DE CONFERIR. Pode ser que a nota "
+        f"{numero or ''} já exista — e aí emitir outra criaria a segunda nota do "
+        f"mesmo serviço, que é o que não se desfaz. Pode também ser que a "
+        f"plataforma tenha recusado a declaração, e nesse caso não existe nota "
+        f"nenhuma e é seguro corrigir e reenviar. São coisas diferentes, e só a "
+        f"consulta diz qual é.\n\n"
         f">>> O QUE FAZER: abra a tela \"Conferir declaração\" (link no pé da tela de "
         f"emissão), cole a identificação abaixo e clique em consultar. Ela pergunta à "
         f"prefeitura se a nota saiu e, se saiu, termina o serviço — planilha, Omie, "

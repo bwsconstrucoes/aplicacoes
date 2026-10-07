@@ -164,10 +164,32 @@
           {% elif chave == 'completa' %}Atualização completa
           {% elif chave == 'so_numeros' %}Só refazer os números
           {% elif chave == 'observacoes' %}Buscar as observações
-          {% elif chave == 'pagamentos' %}Reler todos os pagamentos
+          {% elif chave == 'pagamentos' %}Reler os pagamentos
+          {% elif chave == 'periodo' %}Atualizar um período
           {% else %}Primeira carga{% endif %}
         </button>
         <p class="cartao-dica">{{ descricao }}</p>
+        {% if chave == 'periodo' %}
+          {# um dia ou um mês, para testar rápido (dono, 07/10/2026) #}
+          <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-top:4px">
+            <input type="date" id="periodo-de" aria-label="de">
+            <span class="cartao-dica">até</span>
+            <input type="date" id="periodo-ate" aria-label="até">
+          </div>
+          <p class="dica">Um dia: deixe as duas datas iguais. Até 3 meses.
+            Leva o tempo de ler o período mais o de refazer os números (uns 8 min).</p>
+        {% endif %}
+        {% if chave == 'pagamentos' %}
+          {# escolher o ano, ou todos (dono, 07/10/2026) #}
+          <div class="anos-releitura" style="display:flex; flex-wrap:wrap; gap:6px; margin-top:4px">
+            {% for ano in anos_da_releitura %}
+              <label class="selo neutro" style="cursor:pointer">
+                <input type="checkbox" name="ano_releitura" value="{{ ano }}"> {{ ano }}
+              </label>
+            {% endfor %}
+          </div>
+          <p class="dica">Nenhum marcado = todos os anos.</p>
+        {% endif %}
       </div>
     {% endfor %}
   </div>
@@ -1029,14 +1051,17 @@
 {% if fora %}
 <div class="cartao" style="margin-top:14px;
      border-left:4px solid {{ 'var(--vermelho)' if fora.linhas else 'var(--verde)' }}">
-  <div class="cartao-cab"><h3>Movimentos que não estão no painel</h3></div>
+  <div class="cartao-cab"><h3>Lançamentos de conta corrente (sem título)</h3></div>
   {% if fora.linhas %}
   <div class="aviso info">
     <b>{{ '{:,}'.format(fora.linhas).replace(',', '.') }}</b> movimentos somando
     <b>{{ brl(fora.valor) }}</b> andaram na conta corrente <b>sem título por
     trás</b> — entraram {{ brl(fora.entrou) }} e saíram {{ brl(fora.saiu) }}.
-    Esse dinheiro <b>não está em nenhuma tela</b>: nem no DRE, nem na Visão
-    Geral, nem no fluxo de caixa.
+    <b>Desde 07/10/2026 eles entram no painel</b> (DRE, fluxo, Analítico, aportes),
+    rateados nas obras pela apropriação do OMIE; sem apropriação, ficam em
+    "(não apropriado)". No Analítico aparecem com
+    “[lançamento de conta corrente]” na observação. Ficam de fora só as
+    previsões e o que repete uma baixa de título na mesma conta, dia e valor.
   </div>
   {% else %}
   <div class="aviso ok">
@@ -1044,11 +1069,11 @@
   </div>
   {% endif %}
   <p class="cartao-dica">
-    O painel é montado a partir dos <b>títulos</b> (contas a pagar e a receber).
-    Movimento lançado direto na conta corrente, sem título, não tem de onde
-    virar linha. Esta lista <b>não altera número nenhum</b> — ela existe para
-    você ver o que está de fora e decidir o que fazer: normalmente o caminho é
-    criar o título no OMIE, e aí ele entra sozinho na próxima atualização.
+    O painel é montado a partir dos <b>títulos</b> (contas a pagar e a receber)
+    e, desde 07/10/2026, também dos <b>lançamentos feitos direto na conta
+    corrente</b>. A apropriação deles só é guardada a partir da primeira leitura
+    depois dessa data: os de antes ficam "(não apropriado)" até o período ser
+    relido (botão "Atualizar um período" ou "Reler os pagamentos").
     {% if fora.orfaos %}
     <br><br><b>Além desses</b>, há
     {{ '{:,}'.format(fora.orfaos).replace(',', '.') }} movimentos
@@ -1345,7 +1370,20 @@ if (btnMigrar) {
 document.querySelectorAll("button[data-modo]").forEach(b => {
   b.onclick = async () => {
     const modo = b.dataset.modo;
-    if (modo === "completa" || modo === "carga_inicial" || modo === "pagamentos") {
+    const anos = modo === "pagamentos"
+      ? Array.from(document.querySelectorAll('input[name="ano_releitura"]:checked')).map(c => Number(c.value))
+      : [];
+    const de = modo === "periodo" ? (els("periodo-de").value || "") : "";
+    const ate = modo === "periodo" ? (els("periodo-ate").value || de) : "";
+    if (modo === "periodo") {
+      if (!de) { alert("Escolha a data inicial do período."); return; }
+      if (!confirm("Atualizar de " + de.split("-").reverse().join("/") + " a " +
+                   ate.split("-").reverse().join("/") + "? Relê os pagamentos desse período e refaz os números.")) return;
+    } else if (modo === "pagamentos") {
+      const quais = anos.length ? "os anos " + anos.join(", ") : "TODOS os anos (demorado)";
+      if (!confirm("Reler os pagamentos de " + quais + "? Roda no servidor; " +
+                   "você pode fechar a página.")) return;
+    } else if (modo === "completa" || modo === "carga_inicial") {
       if (!confirm("Essa atualização é demorada (pode levar horas na primeira " +
                    "vez). Ela roda no servidor; você pode fechar a página. Começar?")) return;
     }
@@ -1353,7 +1391,7 @@ document.querySelectorAll("button[data-modo]").forEach(b => {
     try {
       const r = await fetch("{{ url_for('painel.sincronizar') }}", {
         method: "POST", headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({modo: modo})
+        body: JSON.stringify({modo: modo, anos: anos, de: de, ate: ate})
       });
       const d = await r.json();
       if (d.ok) {

@@ -459,6 +459,17 @@ _COLS_MST = _COLS_MOV.replace("ncodtitulo, ", "")
 _PH_MST = ",".join(["?"] * 19)
 
 
+def _mst_guarda_bruto(conn) -> bool:
+    """A migração 021 já criou a coluna `bruto`? Sem ela, grava como antes."""
+    try:
+        return bool(conn.execute(
+            "SELECT 1 FROM information_schema.columns WHERE table_schema = 'painel'"
+            "   AND table_name = 'movimentos_sem_titulo' AND column_name = 'bruto'"
+        ).fetchone())
+    except Exception:  # noqa: BLE001 — conexão de teste, sem catálogo
+        return False
+
+
 def gravar_movimentos(conn, registros, confirmar=True):
     """Insere um lote de movimentos. Retorna (qtd, quantos_sem_titulo).
 
@@ -472,20 +483,29 @@ def gravar_movimentos(conn, registros, confirmar=True):
     conta de verdade. Descartar na hora significava nao poder nem responder
     quanto era. Agora vai para `movimentos_sem_titulo`, que nao entra em numero
     de tela nenhum e existe para poder ser olhada (migracao 012)."""
+    import json
     linhas, sem_titulo = [], []
     for mv in registros:
         linha = _linha_movimento(mv)
         if linha[0] is None:
-            sem_titulo.append(linha[1:])   # tudo menos o ncodtitulo, que e None
+            # tudo menos o ncodtitulo, que e None — e o movimento inteiro, com a
+            # apropriacao, para o fato ratear nas obras (07/10/2026)
+            sem_titulo.append(linha[1:] + (json.dumps(mv, ensure_ascii=False,
+                                                      default=str),))
             continue
         linhas.append(linha)
     if linhas:
         conn.executemany(
             f"INSERT INTO movimentos ({_COLS_MOV}) VALUES ({_PH_MOV})", linhas)
     if sem_titulo:
-        conn.executemany(
-            f"INSERT INTO movimentos_sem_titulo ({_COLS_MST}) VALUES ({_PH_MST})",
-            sem_titulo)
+        if _mst_guarda_bruto(conn):
+            conn.executemany(
+                f"INSERT INTO movimentos_sem_titulo ({_COLS_MST}, bruto)"
+                f" VALUES ({_PH_MST}, ?)", sem_titulo)
+        else:
+            conn.executemany(
+                f"INSERT INTO movimentos_sem_titulo ({_COLS_MST}) VALUES ({_PH_MST})",
+                [l[:-1] for l in sem_titulo])
     if confirmar:
         conn.commit()
     return len(linhas), len(sem_titulo)
@@ -1470,6 +1490,65 @@ def _marcar_anos_relidos(conn, anos) -> None:
                  (CHAVE_ANOS_RELIDOS, json.dumps(sorted(set(anos)))))
 
 
+def anos_da_releitura(hoje=None) -> list[int]:
+    hoje = hoje or dt.date.today()
+    return list(range(PRIMEIRO_DIA_DOS_PAGAMENTOS.year, hoje.year + 1))
+
+
+def preparar_releitura(anos_escolhidos, hoje=None) -> dict:
+    """Abre uma releitura SÓ dos anos escolhidos (dono, 07/10/2026: "deveria
+    poder eu selecionar o ano ou fazer tudo").
+
+    Usa a mesma marca da retomada: os anos NÃO escolhidos entram como "já
+    feitos", e a releitura lê só o resto. Se já houver uma releitura pela
+    metade, ela não é trocada — é terminada primeiro, senão o buraco que ela
+    deixou ficaria para trás. Vazio = todos os anos."""
+    todos = anos_da_releitura(hoje)
+    escolhidos = sorted({int(a) for a in (anos_escolhidos or []) if int(a) in todos})
+    conn = conectar()
+    try:
+        pendente = conn.execute("SELECT 1 FROM config WHERE chave = ?",
+                                (CHAVE_ANOS_RELIDOS,)).fetchone()
+        if pendente:
+            faltam = sorted(set(todos) - set(_anos_relidos(conn)))
+            return {"aberta_antes": True, "anos": faltam}
+        if escolhidos:
+            _marcar_anos_relidos(conn, set(todos) - set(escolhidos))
+            conn.commit()
+        return {"aberta_antes": False, "anos": escolhidos or todos}
+    finally:
+        conn.close()
+
+
+CHAVE_PERIODO = "atualizacao_periodo"
+
+
+def reler_periodo(de, ate, env=".env", cli=None) -> int:
+    """Relê do OMIE os pagamentos de UM PERÍODO — um dia, um mês — numa
+    transação só (dono, 07/10/2026: "uma forma de atualizar os dados de um dia
+    específico ou um mês apenas, pra ser rápido no teste"). Devolve quantos
+    movimentos regravou."""
+    cli = cli or OmieClient.de_ambiente(env)
+    ini_str, fim_str = de.strftime("%d/%m/%Y"), ate.strftime("%d/%m/%Y")
+    conn = conectar()
+    try:
+        _apagar_movimentos_janela(conn, de, ate, confirmar=False)
+        total = 0
+        for pagina, total_paginas, _tr, registros in cli.listar_movimentos(
+                param_extra={"dDtPagtoDe": ini_str, "dDtPagtoAte": fim_str}):
+            _progresso("lendo os pagamentos do período no OMIE",
+                       f"{ini_str} a {fim_str}: página {pagina} de {total_paginas}")
+            qm, qs = gravar_movimentos(conn, registros, confirmar=False)
+            total += qm + qs
+        conn.commit()
+        return total
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 def reler_pagamentos_por_ano(env=".env", hoje=None, cli=None) -> dict:
     """Relê do OMIE os pagamentos de todos os anos, um ano por vez.
 
@@ -1486,7 +1565,7 @@ def reler_pagamentos_por_ano(env=".env", hoje=None, cli=None) -> dict:
         # (`tarefas._releitura_pendente`).
         _marcar_anos_relidos(conn, feitos)
         conn.commit()
-        anos = list(range(PRIMEIRO_DIA_DOS_PAGAMENTOS.year, hoje.year + 1))
+        anos = anos_da_releitura(hoje)
         relidos, total = [], 0
         for i, ano in enumerate(anos, 1):
             if ano in feitos:
@@ -1496,12 +1575,13 @@ def reler_pagamentos_por_ano(env=".env", hoje=None, cli=None) -> dict:
             ini_str, fim_str = ini.strftime("%d/%m/%Y"), fim.strftime("%d/%m/%Y")
             apagados = _apagar_movimentos_janela(conn, ini, fim, confirmar=False)
             n_ano = 0
+            depois = sum(1 for a in anos if a > ano and a not in feitos)
             for pagina, total_paginas, _tr, registros in cli.listar_movimentos(
                     param_extra={"dDtPagtoDe": ini_str, "dDtPagtoAte": fim_str}):
                 _progresso("relendo os pagamentos no OMIE, ano a ano",
-                           f"{ano} ({i} de {len(anos)} anos"
-                           f"{', ' + str(len(feitos)) + ' já feitos antes' if feitos else ''})"
-                           f": página {pagina} de {total_paginas}")
+                           f"{ano}: página {pagina} de {total_paginas}"
+                           + (f" — depois dele, mais {depois} ano(s)" if depois
+                              else " — é o último ano"))
                 qm, _ = gravar_movimentos(conn, registros, confirmar=False)
                 n_ano += qm
             feitos.add(ano)
