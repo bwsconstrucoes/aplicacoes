@@ -706,7 +706,11 @@ def calcular(tipo: str, ano: int, mes: int) -> dict:
         # A ordem de quem manda, como na folha da contabilidade: a obra
         # escolhida à mão, a regra de rateio, o ponto.
         escolhida = str((ajustes.get(ficha["cpf"]) or {}).get("obra") or "").strip()
-        if escolhida:
+        dividida = rateio_da_escolha(escolhida)
+        if dividida:
+            aplicar_regra_de_rateio(p, {"nome": "dividida por você", "obras": dividida})
+            p["rateio_a_mao"] = True
+        elif escolhida and not escolhida.upper().startswith(RATEIO_A_MAO):
             p["obra"], p["obra_de_onde"] = escolhida, "mao"
         elif regras.get(ficha["cpf"]):
             aplicar_regra_de_rateio(p, regras[ficha["cpf"]])
@@ -876,7 +880,8 @@ def gravar_extras(tipo: str, ano: int, mes: int, cpfs, quem: str = "",
                 'em "Aplicar atualizações do banco" em Configurações.')
     if "obra" in mudancas:
         # A obra escolhida à mão para quem não tem ponto (vazio = tira).
-        colunas["obra"] = " ".join(str(mudancas["obra"] or "").split()).upper()[:60]
+        # (Dividida entre obras — "RATEIO:A=60;B=40" — cabe mais: 07/10/2026.)
+        colunas["obra"] = " ".join(str(mudancas["obra"] or "").split()).upper()[:400]
     if not colunas:
         return 0
 
@@ -1084,6 +1089,38 @@ def fechamento(tipo: str, ano: int, mes: int) -> dict | None:
         if achado:
             return achado
     return None
+
+
+# ⚠️ A OBRA DIVIDIDA À MÃO (07/10/2026). O dono: *"a questão da obra é para ser
+# padrão, igual aos demais: a princípio usar a obra do ponto, mas eu preciso poder
+# alterar, ou ratear"*. Guardada no MESMO campo da obra escolhida (o ajuste do
+# mês), como "RATEIO:OBRA1=60;OBRA2=40" — sem coluna nova, sem migração — e
+# aplicada pela mesma conta da regra de rateio (`folha_rateio.distribuir`, que
+# garante que as partes somam o valor).
+RATEIO_A_MAO = "RATEIO:"
+
+
+def rateio_da_escolha(texto) -> list:
+    """`[{obra, percentual}]` de "RATEIO:A=60;B=40" — vazio se não for rateio ou
+    se os percentuais não somarem 100."""
+    texto = str(texto or "").strip()
+    if not texto.upper().startswith(RATEIO_A_MAO):
+        return []
+    obras = []
+    for parte in texto[len(RATEIO_A_MAO):].split(";"):
+        if "=" not in parte:
+            continue
+        obra, pct = parte.rsplit("=", 1)
+        try:
+            pct = Decimal(pct.strip().replace(",", "."))
+        except Exception:  # noqa: BLE001
+            return []
+        if obra.strip() and pct > 0:
+            obras.append({"obra": " ".join(obra.split()).upper(), "percentual": pct})
+    if (not obras or len({o["obra"] for o in obras}) != len(obras)
+            or sum(o["percentual"] for o in obras) != Decimal("100")):
+        return []
+    return obras
 
 
 def aplicar_regra_de_rateio(p: dict, regra: dict) -> dict:
