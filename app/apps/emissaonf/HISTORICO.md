@@ -510,6 +510,47 @@ afrouxada por descuido depois.
 Quando o plano B funciona, o log diz qual caminho era o certo — então a primeira
 emissão de verdade também responde a pergunta do manual contra o portal.
 
+### O PDF em branco que teria apagado o documento bom
+
+Terceiro conserto do dia, e é o que mais assusta de todos.
+
+Os arquivos sobem no Drive **com o mesmo nome**, de propósito: mesmo link, nada
+duplicado na planilha nem no card. O outro lado disso é que **um PDF ruim não
+fica ao lado do bom — ele toma o lugar dele.**
+
+E havia um caminho para gerar um PDF ruim. A tela `/emissao/regerar` (usada para
+regravar PDFs com o layout novo) lê o XML arquivado no Drive **sem saber de qual
+modelo ele é** — e, para nota emitida de 07/10/2026 em diante, o que está
+arquivado é o nacional. O leitor do modelo antigo, recebendo um XML nacional,
+**não dá erro**: ele não acha nenhum campo e devolve tudo vazio. O resultado
+seria um PDF em branco subindo com o nome do documento que o cliente recebeu.
+
+Ninguém teria visto acontecer: a tela diria "regravada".
+
+**Dois consertos, e os dois na raiz, para valer em todo caminho:**
+
+1. **a decisão de qual leitor usar passou a ser pelo CONTEÚDO do XML**, dentro do
+   gerador do PDF — não por quem chama. Assim qualquer caminho que leia XML do
+   Drive acerta, inclusive os que ninguém pensou ainda;
+2. **nota sem número não gera PDF nenhum.** É o sinal de que a leitura não
+   entendeu o XML; melhor falhar alto, com o motivo escrito, do que entregar um
+   arquivo vazio. A mensagem diz exatamente isso: *"gerar aqui sobrescreveria,
+   no Drive, o documento bom por um em branco"*.
+
+**A lição, que vale além desta área:** "mesmo nome = mesmo link" é uma boa
+decisão de arquivo e uma armadilha de segurança. Onde um arquivo substitui outro,
+o código tem de se recusar a escrever lixo — não basta ele não dar erro.
+
+### A limpeza do que o modelo antigo deixou
+
+Saíram do `web.py` o preparo do certificado para o envelope SOAP, a busca
+nacional em segundo plano (60s/180s/300s depois de emitir) e os imports do
+emissor antigo. Nada disso tinha mais caminho até ele.
+
+Ficou de propósito: as telas de busca nacional **manual**, o job por NSU e o
+leitor do modelo ABRASF. Há notas emitidas antes de 07/10/2026 que ainda
+precisam ser reencontradas, ter PDF regerado e ser recuperadas.
+
 ### O que foi conferido, e o que NÃO foi
 
 Dito sem rodeio, porque a decisão de emitir é do dono:

@@ -18,7 +18,6 @@ import uuid
 import html
 import contextlib
 import threading
-import tempfile
 
 # permite os imports planos dos módulos desta pasta (worker, validacao, etc.)
 _DIR = os.path.dirname(os.path.abspath(__file__))
@@ -30,8 +29,6 @@ from flask import Blueprint, request, redirect, url_for, Response
 import worker as _worker
 import validacao as _val
 import preview as _preview
-import montar_emissao as _me
-import el_nfse_envio as _envio          # modelo antigo (ABRASF) — desativado pela prefeitura
 import montar_dps as _dps
 import emitir_dps as _edps
 import concluir as _concluir
@@ -69,10 +66,6 @@ def _producao_permitida() -> bool:
     return (os.getenv("EMISSAO_NF_AMBIENTE", "PRODUCAO") or "").strip().upper() != "HOMOLOGACAO"
 
 
-def _cert_temp(cert_pem: bytes, chave_pem: bytes):
-    cf = tempfile.NamedTemporaryFile("wb", suffix=".pem", delete=False); cf.write(cert_pem); cf.close()
-    kf = tempfile.NamedTemporaryFile("wb", suffix=".pem", delete=False); kf.write(chave_pem); kf.close()
-    return cf.name, kf.name
 
 
 def _diag_cert() -> str:
@@ -544,31 +537,11 @@ def _rodar_nacional() -> str:
     return buf.getvalue()
 
 
-def _rodar_sefin_bg() -> str:
-    """Fecha pendentes pela SEFIN (DPS/chave) — caminho rápido, sem NSU."""
-    if not _NAC_LOCK.acquire(blocking=False):
-        return "(nacional já em execução — pulei)"
-    buf = io.StringIO()
-    try:
-        import job_nacional
-        with contextlib.redirect_stdout(buf):
-            job_nacional.fechar_via_sefin()
-    except Exception as e:
-        buf.write(f"\n>>> ERRO SEFIN: {type(e).__name__}: {e}")
-    finally:
-        _NAC_LOCK.release()
-    return buf.getvalue()
-
-
-def _auto_nacional_bg():
-    """Após emitir, fecha o nacional pela SEFIN assim que ele sobe (segundos).
-    A SEFIN tem a nota pela chave/DPS bem antes do ADN distribuir por NSU, então
-    tentamos em 60/180/300s — a maioria fecha já junto da emissão. O Cron de
-    10 em 10 min fica só como rede de segurança."""
-    import time
-    for atraso in (60, 180, 300):
-        time.sleep(atraso)
-        _rodar_sefin_bg()
+# A busca nacional em segundo plano (que rodava em 60s/180s/300s depois de
+# emitir) foi removida em 07/10/2026: ela existia porque a nota nacional saía
+# minutos depois da municipal. Agora a emissão JÁ acontece pelo nacional e a
+# chave vem na resposta — não há o que ficar procurando. A busca MANUAL
+# (/emissao/nacional) continua, para as notas emitidas antes dessa data.
 
 
 @bp.route("/nacional", methods=["GET"])
