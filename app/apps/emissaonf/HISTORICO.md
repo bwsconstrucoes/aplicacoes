@@ -541,6 +541,79 @@ Ninguém teria visto acontecer: a tela diria "regravada".
 decisão de arquivo e uma armadilha de segurança. Onde um arquivo substitui outro,
 o código tem de se recusar a escrever lixo — não basta ele não dar erro.
 
+### A varredura pelo resto da mesma armadilha
+
+Os três consertos acima eram do MESMO tipo: código que recebe o formato novo e
+**não reclama** — devolve vazio e segue. Em nota fiscal isso é pior que erro,
+porque ninguém vê acontecer. Então valeu varrer o módulo procurando os outros.
+
+Achou mais um: **o valor bruto que vai para o recibo.** Ele era lido por busca de
+texto no campo do modelo antigo; recebendo o XML nacional, devolvia nada, e o
+recibo sairia sem valor. Passou a decidir pelo conteúdo, como o gerador do PDF.
+
+E ficou marcado, em letras grandes no topo dos arquivos, que **`emitir_real.py` e
+`app_emissao.py` falam o modelo desativado** — qualquer envio por eles volta com
+o E999. Não é defeito deles; é o canal que não existe mais. São scripts de linha
+de comando, fora do caminho da tela, e ficam como registro.
+
+**A regra que saiu disso, e vale para a próxima vez que um formato mudar:** não
+basta trocar quem escreve. Tem de varrer quem LÊ — e, em cada leitor, perguntar
+*"o que este código faz se receber o formato errado?"*. Se a resposta for "devolve
+vazio e segue", ele é um defeito esperando a hora.
+
+### Os dois tokens, e a tela que "não funcionou" — 07/10/2026
+
+Primeira tentativa de ensaio depois de publicar, e ela parou em duas coisas.
+
+**O que o dono viu:** o `/emissao/diag` "não funcionou", e o ensaio respondeu
+*"Token de integração da prefeitura ausente"*. A dúvida dele foi exata: *"eu já
+emiti várias notas e sempre funcionou, e no Render tem a chave
+EMISSAO_NF_TOKEN — essa EL_NFSE_TOKEN é outra?"*
+
+**São outras, sim, e a pergunta estava mais certa do que o código.** São dois
+tokens que não se substituem:
+
+- **`EMISSAO_NF_TOKEN`** é **nosso**: protege o endereço da tela de emissão, para
+  que o link do card não abra para qualquer um;
+- **`EL_NFSE_TOKEN`** é **da prefeitura**: autentica o canal da emissão, e é
+  gerado no portal do município, em Configurações › APIs de Integração.
+
+**Por que ele nunca foi necessário antes — e isto é o ponto:** o modelo antigo
+autenticava pelo **certificado digital**, no aperto de mão da conexão. Não havia
+token nenhum no caminho da emissão. O modelo nacional exige **certificado E
+token**. Ou seja: um serviço que emitiu notas por meses sem esse token não estava
+mal configurado; a exigência é nova. A pergunta dele ("sempre funcionou") não era
+confusão — era a observação correta de alguém que conhece o sistema.
+
+**E o diagnóstico não estava quebrado.** Ele responde 200. O que aconteceu: a
+tela exige o token do link no endereço, e **não havia link nenhum para ela na
+tela de emissão** — a única forma de chegar lá era digitar o endereço e saber o
+token de cor. Sem o token, a resposta é "acesso não autorizado", que **parece
+defeito e não é**.
+
+**O que mudou por causa disso:**
+
+1. **a tela de emissão ganhou um rodapé com links** para Diagnóstico, Recuperar
+   entrega e Regravar PDFs, cada um já com o token dentro. Ferramenta que só se
+   alcança decorando endereço não existe na prática;
+2. **o diagnóstico passou a explicar os dois tokens lado a lado** — de quem é
+   cada um, para que serve, onde se consegue, e o que acontece sem ele. Mais a
+   informação que faltava: **de onde** o token veio (variável de ambiente ou
+   planilha), porque "está configurado" sem dizer onde não ajuda a consertar;
+3. **ele lista os NOMES das credenciais da planilha**, nunca os valores, para
+   achar o token quando está lá com outro rótulo. A busca também passou a aceitar
+   vários nomes (`EL_TOKEN`, `NFSE_TOKEN`, `TOKEN_PREFEITURA`…), porque o token é
+   anterior a este código;
+4. **a mensagem de erro da emissão passou a ensinar**: diz que são dois tokens
+   diferentes, por que o antigo não precisava, e onde conseguir o novo.
+
+**A lição, e ela não é sobre token:** *"não funcionou"* numa ferramenta de
+diagnóstico quase sempre é a ferramenta sendo inalcançável, não quebrada. E
+**nenhum teste tocava nas telas** — por isso um 403 numa página sem link para
+ela passou batido por toda a migração. Agora há `tests/test_emissaonf_telas.py`,
+que abre as telas de verdade e exige, entre outras coisas, que o diagnóstico
+nunca mostre valor de credencial.
+
 ### A limpeza do que o modelo antigo deixou
 
 Saíram do `web.py` o preparo do certificado para o envelope SOAP, a busca

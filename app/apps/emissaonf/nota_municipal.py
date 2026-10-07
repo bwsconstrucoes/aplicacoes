@@ -41,23 +41,6 @@ def _t(base, *tags):
     return (el.text or "").strip() if el is not None else ""
 
 
-def valor_bruto_nf(xml_abrasf: str):
-    """Valor BRUTO da NF emitida = ValorServicos do XML ABRASF. É a fonte da
-    verdade (independe do card, que pode já ter sido limpo). float ou None."""
-    import re
-    m = re.search(r"ValorServicos>\s*([0-9]+(?:\.[0-9]+)?)\s*<", xml_abrasf)
-    return float(m.group(1)) if m else None
-
-
-def valor_bruto_nf_nacional(xml_nacional: str):
-    """Valor BRUTO da nota a partir do XML NACIONAL (campo vServ da declaração).
-    Mesmo papel do `valor_bruto_nf`, para o modelo que a prefeitura passou a
-    exigir em 07/10/2026. float ou None."""
-    import re
-    m = re.search(r"vServ>\s*([0-9]+(?:\.[0-9]+)?)\s*<", xml_nacional)
-    return float(m.group(1)) if m else None
-
-
 def eh_xml_nacional(xml: str | None) -> bool:
     """Diz se o texto é o XML da NFS-e NACIONAL (e não o do modelo antigo).
 
@@ -68,6 +51,26 @@ def eh_xml_nacional(xml: str | None) -> bool:
     if not xml:
         return False
     return ("infNFSe" in xml) or ("sped.fazenda.gov.br/nfse" in xml)
+
+
+def valor_bruto_nf(xml: str):
+    """Valor BRUTO da nota, lido do XML. É a fonte da verdade — independe do
+    card, que pode já ter sido limpo quando o recibo é gerado.
+
+    Aceita os dois modelos e decide pelo CONTEÚDO, mesma razão do gerador do PDF:
+    recebendo o XML nacional, a busca pelo campo do modelo antigo não daria erro
+    — devolveria None, e o recibo sairia sem valor. float ou None.
+    """
+    import re
+    campo = "vServ" if eh_xml_nacional(xml) else "ValorServicos"
+    m = re.search(campo + r">\s*([0-9]+(?:\.[0-9]+)?)\s*<", xml or "")
+    return float(m.group(1)) if m else None
+
+
+def valor_bruto_nf_nacional(xml_nacional: str):
+    """Mesmo que o `valor_bruto_nf`, mantido pelo nome para quem já chamava
+    assim. Os dois decidem pelo conteúdo, então dão o mesmo resultado."""
+    return valor_bruto_nf(xml_nacional)
 
 
 def parse_do_nacional(xml_nacional: str) -> dict:

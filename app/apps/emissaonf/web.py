@@ -52,12 +52,30 @@ def _token_ok() -> bool:
     return request.values.get("token", "") == esperado
 
 
+# Nomes já vistos para o token de integração da prefeitura. Ele é gerado no
+# portal do município (Configurações › APIs de Integração) e **não é** o
+# EMISSAO_NF_TOKEN, que protege o link desta tela — são coisas diferentes, e
+# confundir os dois custou tempo em 07/10/2026.
+NOMES_TOKEN_PREFEITURA = ["EL_NFSE_TOKEN", "EL_TOKEN", "NFSE_TOKEN",
+                          "TOKEN_PREFEITURA", "TOKEN_NFSE", "EMISSAO_NF_EL_TOKEN"]
+
+
 def _token_prefeitura(cred: dict) -> str:
     """Token de integração da prefeitura (autentica o canal da emissão).
 
-    A variável de ambiente ganha da planilha — mesmo padrão do resto do módulo.
+    Procura por vários nomes, de propósito: o token é anterior a este código
+    (o script de consulta crua já o usava) e pode estar na planilha com outro
+    rótulo. A variável de ambiente ganha da planilha — padrão do módulo.
     """
-    return (os.getenv("EL_NFSE_TOKEN") or cred.get("EL_NFSE_TOKEN") or "").strip()
+    for nome in NOMES_TOKEN_PREFEITURA:
+        v = (os.getenv(nome) or "").strip()
+        if v:
+            return v
+    for nome in NOMES_TOKEN_PREFEITURA:
+        v = str(cred.get(nome) or "").strip()
+        if v:
+            return v
+    return ""
 
 
 def _producao_permitida() -> bool:
@@ -358,12 +376,55 @@ def diag():
     b64 = os.getenv("EMISSAO_NF_CERTIFICADO_P12_BASE64") or os.getenv("CERTIFICADO_P12_BASE64") or ""
     # O token da prefeitura passou a ser essencial: é ele que autentica o canal
     # da emissão no modelo nacional. Sem ele, nenhuma nota sai.
-    _tok_pref = (os.getenv("EL_NFSE_TOKEN") or "").strip()
+    #
+    # ATENÇÃO ao ler o que vem abaixo: o token DA PREFEITURA e o token DESTE LINK
+    # são coisas diferentes. Confundir os dois custou tempo em 07/10/2026, então
+    # o diagnóstico passou a dizer os dois, lado a lado, com o que cada um faz.
+    _tok_pref, _de_onde = "", ""
+    for _n in NOMES_TOKEN_PREFEITURA:
+        if (os.getenv(_n) or "").strip():
+            _tok_pref, _de_onde = os.getenv(_n).strip(), f"variável de ambiente {_n}"
+            break
+
+    # Nomes que existem na aba Credenciais — **só os nomes, nunca os valores**.
+    # Serve para achar o token quando ele está lá com outro rótulo.
+    _chaves_planilha, _erro_planilha = [], ""
+    try:
+        from credenciais import cliente_gspread, ler_credenciais
+        _cred = ler_credenciais(cliente_gspread())
+        _chaves_planilha = sorted(k for k in _cred if k)
+        if not _tok_pref:
+            for _n in NOMES_TOKEN_PREFEITURA:
+                if str(_cred.get(_n) or "").strip():
+                    _tok_pref, _de_onde = str(_cred[_n]).strip(), f"aba Credenciais, linha {_n}"
+                    break
+    except Exception as e:
+        _erro_planilha = f"{type(e).__name__}: {e}"
+
+    _tok_link = (os.getenv("EMISSAO_NF_TOKEN") or os.getenv("EMISSAO_TOKEN") or "").strip()
+    _candidatos = [k for k in _chaves_planilha
+                   if "TOKEN" in k.upper() and "PIPEFY" not in k.upper()]
+
     linhas = [
-        "----- Emissão (modelo NACIONAL / DPS) -----",
-        f"EL_NFSE_TOKEN definida: {'sim' if _tok_pref else 'NÃO — sem ela a emissão não sai'}"
+        "===== O QUE AUTENTICA O QUÊ (são dois tokens diferentes) =====",
+        "",
+        "1) TOKEN DE INTEGRAÇÃO DA PREFEITURA — autentica o canal da emissão.",
+        "   É gerado no portal do município: Configurações › APIs de Integração.",
+        "   Sem ele NENHUMA nota sai, nem em ensaio.",
+        f"   Encontrado: {('SIM — ' + _de_onde) if _tok_pref else 'NÃO'}"
         + (f" (termina em ...{_tok_pref[-4:]})" if _tok_pref else ""),
+        f"   Nomes procurados: {', '.join(NOMES_TOKEN_PREFEITURA)}",
+        "",
+        "2) TOKEN DESTE LINK (EMISSAO_NF_TOKEN) — protege o endereço desta tela.",
+        "   É nosso, não da prefeitura, e NÃO serve para emitir.",
+        f"   Configurado: {'sim' if _tok_link else 'NÃO — a tela está aberta a quem tiver o link'}",
+        "",
         f"Ambiente: {'PRODUÇÃO (nota com validade fiscal)' if _producao_permitida() else 'HOMOLOGAÇÃO (travado por EMISSAO_NF_AMBIENTE)'}",
+        "",
+        "----- Nomes que existem na aba Credenciais (só os NOMES) -----",
+        (f"  erro ao ler a planilha: {_erro_planilha}" if _erro_planilha else
+         (f"  com 'TOKEN' no nome: {', '.join(_candidatos) or '(nenhum)'}\n"
+          f"  todos os {len(_chaves_planilha)}: {', '.join(_chaves_planilha)}")),
         "",
         f"EMISSAO_NF_CERTIFICADO_P12_BASE64 definida: {'sim' if b64 else 'NÃO'}"
         + (f" (tamanho do texto: {len(b64)} chars)" if b64 else ""),
@@ -752,7 +813,12 @@ def _pagina_pedir_card(token):
           <button type='submit'>Carregar</button>
         </form>
         <p class='sub'>Ou abra direto com <code>?card_id=NUMERO&amp;token=...</code></p>
-      </div>""")
+      </div>
+      <p class='sub' style='text-align:center'>
+        <a href='{url_for('.diag')}?token={t}'>Diagnóstico</a> &nbsp;·&nbsp;
+        <a href='{url_for('.recuperar')}?token={t}'>Recuperar entrega</a> &nbsp;·&nbsp;
+        <a href='{url_for('.regerar')}?token={t}'>Regravar PDFs</a>
+      </p>""")
 
 
 def _pagina_erro(msg):
@@ -930,8 +996,18 @@ def _render_pagina(ctx, card_id, token, nota_sub="", tm_over="", val_over=None, 
         form = "<div class='card'><div class='warn'>Emissão bloqueada pela validação acima. " \
                "Ajuste o card no Pipefy e recarregue a página.</div></div>"
 
+    # Link do diagnóstico, já com o token dentro. Sem isto, abrir o diagnóstico
+    # exige digitar o endereço E saber o token de cor — e sem o token a página
+    # responde "acesso não autorizado", que parece defeito e não é.
+    rodape = (f"<p class='sub' style='text-align:center'>"
+              f"<a href='{url_for('.diag')}?token={html.escape(token)}'>Diagnóstico</a>"
+              f" &nbsp;·&nbsp; "
+              f"<a href='{url_for('.recuperar')}?token={html.escape(token)}'>Recuperar entrega</a>"
+              f" &nbsp;·&nbsp; "
+              f"<a href='{url_for('.regerar')}?token={html.escape(token)}'>Regravar PDFs</a>"
+              f"</p>")
     return _doc("Emissão NFS-e", sub_banner + cab + f"<div class='card'>{metrics}{alertas}</div>"
-                + form + f"<div class='card'><b>Espelho</b>{iframe}</div>")
+                + form + f"<div class='card'><b>Espelho</b>{iframe}</div>" + rodape)
 
 
 def _pagina_resultado(r):
