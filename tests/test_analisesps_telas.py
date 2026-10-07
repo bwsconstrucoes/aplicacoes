@@ -6724,6 +6724,34 @@ def test_o_arquivo_com_AVISO_fica_marcado_no_log(app, monkeypatch):
     assert "sem conta de pagamento" in html
 
 
+def test_ARQUIVOS_GERADOS_mostram_a_ETIQUETA_da_situacao_de_cada_SP(app, monkeypatch):
+    """07/10/2026: *"colocar uma tag pra na tela sabermos a situação de cada SP"*."""
+    from decimal import Decimal as D
+    from app.apps.analisesps import folha_pagamento as fpg
+    base = {"ano": 2026, "mes": 9, "tipo": "quinzena", "verbas": "alimentacao",
+            "rotulo_verbas": "Alimentação", "nome": "x.xlsx", "pessoas": 1,
+            "total": D("10.00"), "link": "https://drive/x", "link_card": "",
+            "avisos": "", "criado_em": None, "criado_por": "MARCELO",
+            "competencia": "09/2026", "drive_id": ""}
+    _preparar_pagamento(monkeypatch, log=[
+        dict(base, id=2, destino="analise", rotulo_destino="Analise", conta="",
+             card_pipefy="900111"),
+        dict(base, id=1, destino="beevale", rotulo_destino="BeeVale", conta="50024",
+             card_pipefy="900111")])
+
+    def situacao(rodadas):
+        for r in rodadas:
+            for a in r["pagamentos"]:
+                a["sps"] = [{"id": "900111", "link": "https://app.pipefy.com/open-cards/900111",
+                             "status_pgt": "Pagar", "status_agend": "Agendado",
+                             "na_base": True}]
+    monkeypatch.setattr(fpg, "situacao_das_sps", situacao)
+    html = _como_mestre(app).get("/analisesps/folha/pagamento").get_data(as_text=True)
+    trecho = html[html.index("SP 900111"):][:600]
+    assert 'class="selo pagar"' in trecho and ">Pagar<" in trecho
+    assert 'class="selo agendado"' in trecho and ">Agendado<" in trecho
+
+
 def test_sem_a_migracao_a_tela_de_pagamento_AVISA(app, monkeypatch):
     _preparar_pagamento(monkeypatch, pronto=False)
     resposta = _como_mestre(app).get("/analisesps/folha/pagamento")

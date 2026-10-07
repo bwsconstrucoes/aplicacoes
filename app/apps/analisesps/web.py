@@ -4403,6 +4403,7 @@ def tela_folha_pagamento():
     registro, erro = [], None
     try:
         registro = fpg.rodadas(teto=400)
+        fpg.situacao_das_sps(registro)
     except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
         logger.exception("Folha: não consegui montar a tela de pagamento")
         erro = str(e)
