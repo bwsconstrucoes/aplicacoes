@@ -12228,6 +12228,16 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 196 — quem tem a Folha vê todas as subtelas (07/10/2026)
+
+- *"Quem vê a Folha PGT precisa ver os submenus da folha. Tem uma pessoa que
+  liberei só a folha e não consegue ver, por exemplo, arquivos gerados."*
+  "Arquivos gerados" (`tela_folha_pagamento`) e "Rateio das obras"
+  (`tela_folha_rateio`) saíram de `SO_DO_MESTRE` e passaram a ser da tela
+  "folha". As AÇÕES continuam do mestre: gerar, prévia, conferir/lançar no
+  Pipefy, excluir arquivo, gravar/colar/apagar/simular rateio — e nas duas telas
+  `pode_operar` = mestre, então os botões só aparecem para ele.
+
 #### Leva 195 — transporte: categorias diárias e a AUDITORIA da verba (07/10/2026)
 
 - O dono comparou a saída com a base do script: 38 colaboradores sumiam do

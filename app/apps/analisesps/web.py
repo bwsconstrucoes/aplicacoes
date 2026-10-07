@@ -187,8 +187,8 @@ def subtelas_da_folha() -> list:
     """As subtelas que a pessoa logada alcança.
 
     Mesmo motivo do menu de cima: aba que responde 404 é pior do que aba
-    nenhuma. O Rateio é só do mestre (ele decide para qual obra vai o salário),
-    então quem opera a folha não vê essa aba."""
+    nenhuma. Desde 07/10/2026 quem tem a Folha vê TODAS as subtelas (Rateio e
+    Arquivos gerados inclusive); as ações do mestre ficam só com ele."""
     return [s for s in SUBTELAS_DA_FOLHA
             if not (auth.e_so_do_mestre(s[2]) and not auth.e_mestre())]
 
@@ -2561,7 +2561,7 @@ def tela_folha_rateio():
         "analisesps_folha_rateio.html", aba="folha", subaba="rateio",
         grupos=subtelas_agrupadas(),
         pronto=pronto, regras=regras, obras=obras, cadastro=cadastro,
-        pode_operar=auth.pode_operar(),
+        pode_operar=auth.e_mestre(),   # ver é da folha; agir é do mestre (07/10/2026)
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
 
@@ -4423,8 +4423,9 @@ def tela_folha_pagamento():
     Os arquivos nascem no botão "Gerar arquivos" de cada folha; o "Gerar por
     competência" que ficava aqui saiu em 03/10/2026.
 
-    ⚠️ SÓ DO MESTRE (`auth.SO_DO_MESTRE`): o log mostra o link de arquivos com
-    nome, CPF e valor de ~500 pessoas."""
+    VER É DA TELA FOLHA desde 07/10/2026 (dono: *"quem vê a Folha PGT precisa ver
+    os submenus"*). Gerar, lançar no Pipefy e excluir continuam do mestre — os
+    botões só aparecem para ele (`pode_operar` = mestre aqui)."""
     from . import folha_pagamento as fpg
 
     pronto = fpg._pronto()
@@ -4441,7 +4442,7 @@ def tela_folha_pagamento():
         grupos=subtelas_agrupadas(), pronto=pronto, rodadas=registro,
         destaque=request.args.get("rodada") or "",
         erro=erro,
-        pode_operar=auth.pode_operar(),
+        pode_operar=auth.e_mestre(),   # ver é da folha; agir é do mestre (07/10/2026)
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
 

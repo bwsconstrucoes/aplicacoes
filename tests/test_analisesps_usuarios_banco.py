@@ -595,3 +595,19 @@ def test_a_tela_mostra_quem_e_mestre(app):
         html = cliente.get("/analisesps/configuracoes").get_data(as_text=True)
     assert "MESTRE" in html
     assert "É mestre" in html          # a caixinha de marcar
+
+
+def test_quem_tem_a_FOLHA_ve_TODAS_as_subtelas_mas_nao_age_como_mestre(app, monkeypatch):
+    """07/10/2026: *"quem vê a Folha PGT precisa ver os submenus da folha. Tem uma
+    pessoa que liberei só a folha e não consegue ver, por exemplo, arquivos
+    gerados."* Ver: sim. Lançar no Pipefy, excluir arquivo, gravar rateio: não."""
+    criar(telas=("folha",), pode_operar=True)
+    with app.test_client() as cliente:
+        entrar_como(cliente)
+        tela = cliente.get("/analisesps/folha/pagamento")
+        assert tela.status_code == 200
+        html = tela.get_data(as_text=True)
+        assert "Arquivos gerados" in html and "Rateio das obras" in html
+        assert "/api/folha/arquivos/excluir" not in html
+        assert cliente.get("/analisesps/folha/rateio").status_code == 200
+        assert cliente.post("/analisesps/api/folha/rateio", json={}).status_code == 404

@@ -397,7 +397,12 @@ SO_DO_MESTRE_POR_TELA = frozenset({"configuracoes"})
 # configurarem o módulo. Nome exato, para não pegar vizinho por engano.
 SO_DO_MESTRE = frozenset({
     "analisesps.configuracoes",
-    "analisesps.tela_folha_rateio",      # decide o rateio do salário
+    # ⚠️ AS TELAS "RATEIO DAS OBRAS" E "ARQUIVOS GERADOS" SAÍRAM DAQUI em
+    # 07/10/2026 — o dono: *"quem vê a Folha PGT precisa ver os submenus da folha.
+    # Tem uma pessoa que liberei só a folha e não consegue ver, por exemplo,
+    # arquivos gerados."* VER passou a ser da tela Folha; GRAVAR o rateio, gerar,
+    # lançar no Pipefy e excluir continuam do mestre (abaixo), e os botões dessas
+    # ações só aparecem para ele.
     "analisesps.folha_rateio_gravar",
     "analisesps.folha_rateio_colar",   # substitui o rateio do mês inteiro
     "analisesps.folha_rateio_apagar",
@@ -405,7 +410,6 @@ SO_DO_MESTRE = frozenset({
     # ⚠️ GERAR PAGAMENTO É A AÇÃO MAIS SENSÍVEL DA ÁREA: o arquivo vai para o
     # portal do banco e o dinheiro sai. A tela também é do mestre porque o log
     # mostra o link de arquivos com nome, CPF e valor de ~500 pessoas.
-    "analisesps.tela_folha_pagamento",
     "analisesps.folha_previa_pagamento",  # mesmo arquivo, só não sobe
     "analisesps.folha_previa_direta",     # a prévia das diárias e auxílios
     "analisesps.folha_pipe_conferir",
@@ -542,6 +546,8 @@ TELA_DA_ROTA = {
     # A geração do arquivo mora na mesma tela, e além disto é só do mestre
     # (SO_DO_MESTRE): a tela decide quem entra, o mestre decide quem paga.
     "analisesps.tela_folha_pagamento": ("folha",),
+    # Ver o rateio das obras é da folha (07/10/2026); gravar continua do mestre.
+    "analisesps.tela_folha_rateio": ("folha",),
     "analisesps.folha_previa_pagamento": ("folha",),
     "analisesps.folha_previa_direta": ("folha",),
     "analisesps.folha_diaristas_relatorio": ("folha",),
