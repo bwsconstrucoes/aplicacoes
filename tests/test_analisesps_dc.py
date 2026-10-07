@@ -423,3 +423,46 @@ def test_se_o_Pipefy_recusa_MOVER_lancar_de_novo_so_termina_a_mudanca(banco_dc, 
     assert len(pipe.do_pipe(fcd.PIPE_SP)) == 1, "nenhuma SP a mais"
     assert dc.lote_da_analise(analise)["cards_movidos"]
     assert not fcd.previa(analise)["so_terminar"], "tudo terminado: botão fechado"
+
+
+def test_DIARIAS_usa_a_linha_de_SALARIOS_E_ORDENADOS_do_plano(banco_dc, monkeypatch):
+    """07/10/2026: lançar a DC barrou *tipo de despesa "Diárias" sem Código Omie
+    (…) sem Record ID* — "Diárias" não existe no Plano Financeiro. Vale a linha
+    que os diaristas já usam, "Salários e Ordenados" (só quando o nome falta)."""
+    from app.apps.analisesps import dc, folha_cards
+    plano = {folha_cards._chave("Salários e Ordenados"): [
+        {"nome": "Salários e Ordenados", "record_id": "R-SAL", "codigo_omie": "2.03.01"}]}
+    assert dc.classificacao_no_plano("Diárias", plano) == ("2.03.01", "R-SAL")
+    assert dc.classificacao_no_plano("Outra Coisa", plano) == ("", "")
+    # Se um dia o plano tiver "Diárias", vale a linha dela.
+    plano[folha_cards._chave("Diárias")] = [
+        {"nome": "Diárias", "record_id": "R-DIA", "codigo_omie": "2.09.09"}]
+    assert dc.classificacao_no_plano("Diárias", plano) == ("2.09.09", "R-DIA")
+
+
+def test_DC_ja_GERADA_sem_classificacao_lanca_resolvendo_AGORA(banco_dc, monkeypatch):
+    """A geração grava a categoria de cada linha; a que foi gerada antes da regra
+    (sem categoria) é resolvida na hora de lançar, sem gerar de novo."""
+    from app.apps.analisesps import dc, folha_cards as fcd
+    from tests.test_analisesps_folha_cards import PipefyFalso
+    data = DATA[:1] + [
+        ["900500", "02/10/2026", "06/10/2026", "CREPEOLINDA", "Diárias",
+         "", "", "JOAO", "MARIA", "997.133.493-34", "", "100,00", "", "Diária"]]
+    original = dc._ler_aba
+    monkeypatch.setattr(dc, "_ler_aba", lambda nome: data if nome == dc.ABA_DATA
+                        else original(nome))
+    dc._cache.clear()
+    PipefyFalso(monkeypatch)
+    monkeypatch.setattr(fcd, "_plano_financeiro", lambda: ({}, ""))   # sem a linha
+    analise = _gerar_dc(monkeypatch)
+    assert dc.lote_da_analise(analise)["linhas"][0]["categoria"] == ""
+    assert any("Diárias" in b for b in fcd.previa(analise)["bloqueios"])
+
+    monkeypatch.setattr(fcd, "_plano_financeiro", lambda: ({
+        fcd._chave("Salários e Ordenados"): [
+            {"nome": "Salários e Ordenados", "record_id": "R-SAL", "codigo_omie": "2.03.01"}]},
+        ""))
+    vista = fcd.previa(analise)
+    assert not any("Diárias" in b for b in vista["bloqueios"]), vista["bloqueios"]
+    sp = vista["grupos"][0]["sps"][0]
+    assert sp["tipo_sp"] == "R-SAL" and '"codigo_categoria":"2.03.01"' in sp["rateio"]

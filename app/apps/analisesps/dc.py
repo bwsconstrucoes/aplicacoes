@@ -158,6 +158,30 @@ CARTEIRAS_DA_DC = {
 }
 
 
+# O tipo da DC que não tem linha própria no Plano Financeiro → a linha usada.
+# ⚠️ "Diárias" não existe no Plano Financeiro (07/10/2026: o lançamento da DC
+# barrou "sem Código Omie" e "sem Record ID"). Nos diaristas a diária é lançada
+# como "Salários e Ordenados" (`folha_cards.DESCRICAO_DA_VERBA`); a DC usa a
+# mesma — só quando o nome não estiver no plano.
+TIPO_NO_PLANO = {"Diárias": "Salários e Ordenados"}
+
+
+def classificacao_no_plano(tipo: str, plano: dict) -> tuple:
+    """(Código Omie da categoria, Record ID do Tipo de Despesa) do tipo da DC: a
+    linha do Plano Financeiro com o mesmo nome; sem ela, a de `TIPO_NO_PLANO`."""
+    from . import folha_cards
+    chave_tipo = _sem_acento(tipo)
+    do_plano = (plano.get(folha_cards._chave(tipo))
+                or plano.get(folha_cards._chave(next(
+                    (v for k, v in TIPO_NO_PLANO.items() if _sem_acento(k) == chave_tipo),
+                    ""))) or [])
+    categoria = next((str(x.get("codigo_omie") or "") for x in do_plano
+                      if x.get("codigo_omie")), "")
+    record = next((str(x.get("record_id") or "") for x in do_plano
+                   if x.get("record_id")), "")
+    return categoria, record
+
+
 def carteiras(recarregar: bool = False) -> tuple:
     """(`{tipo de despesa sem acento: carteira}`, aviso) — a tabela gravada
     (`CARTEIRAS_DA_DC`), mais o que a aba "Data base BeeVale" da planilha da DC
@@ -443,11 +467,11 @@ def calcular(recarregar: bool = False, mostrar_geradas: bool = False) -> dict:
         obra = aj.get("obra") or obra_solicitada
         tipo = " ".join(linha["tipo_despesa"].split())
         chave_tipo = _sem_acento(tipo)
-        do_plano = plano.get(folha_cards._chave(tipo)) or []
-        categoria = next((str(x.get("codigo_omie") or "") for x in do_plano
-                          if x.get("codigo_omie")), "")
-        record = next((str(x.get("record_id") or "") for x in do_plano
-                       if x.get("record_id")), "")
+        # ⚠️ "Diárias" não existe no Plano Financeiro (07/10/2026: o lançamento da
+        # DC barrou "sem Código Omie" e "sem Record ID"). Nos diaristas a diária
+        # é lançada como "Salários e Ordenados" (`folha_cards.DESCRICAO_DA_VERBA`);
+        # a DC usa a mesma — só quando o nome não estiver no plano.
+        categoria, record = classificacao_no_plano(tipo, plano)
         p = {
             "chave": chave, "card_id": linha["card_id"],
             "link_card": f"https://app.pipefy.com/open-cards/{linha['card_id']}",

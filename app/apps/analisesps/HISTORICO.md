@@ -12212,6 +12212,19 @@ somente Solicitações de uma conta especifica"*.
 - Tipo de despesa que não está na tabela vai como "Produção" COM aviso na tela,
   dizendo qual tipo falta.
 
+#### Leva 190 — DC: "Diárias" classificada como "Salários e Ordenados" (07/10/2026)
+
+- Lançar a DC no Pipefy barrou: *tipo de despesa "Diárias" sem Código Omie na
+  aba "Plano Financeiro" (categoria do rateio)* e *sem Record ID*. "Diárias" é
+  um tipo da DC que não existe no Plano Financeiro (o script antigo tirava os
+  dois códigos de colunas da própria planilha da DC).
+- **Decisão minha, dita a ele:** usar a linha que os diaristas já usam,
+  "Salários e Ordenados" (`folha_cards.DESCRICAO_DA_VERBA["diaria"]`) — só
+  quando o nome não está no plano (`dc.TIPO_NO_PLANO`,
+  `dc.classificacao_no_plano`). Se ele quiser outra linha, é trocar a tabela.
+- A DC JÁ GERADA (linhas gravadas sem categoria) não precisa ser gerada de
+  novo: o lançamento resolve a classificação na hora (`_grupo_da_dc`).
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |

@@ -597,7 +597,7 @@ def _previa(analise_id: int, ler_pipes: bool = True, contas=None) -> tuple:
         if verba == "dc":
             grupo_dc = _grupo_da_dc(analise, r, escolhidas, todas_as_contas,
                                     andamento_atual, achar_tipo, ler_pipes, omie,
-                                    destino_da_conta, bloqueios, esperado_por_conta)
+                                    destino_da_conta, bloqueios, esperado_por_conta, plano=plano)
             if grupo_dc:
                 grupos.append(grupo_dc)
             continue
@@ -735,7 +735,7 @@ def _previa(analise_id: int, ler_pipes: bool = True, contas=None) -> tuple:
 # ---------------------------------------------------------------------------
 def _grupo_da_dc(analise, r, escolhidas, todas_as_contas, andamento_atual,
                  achar_tipo, ler_pipes, omie, destino_da_conta, bloqueios,
-                 esperado_por_conta):
+                 esperado_por_conta, plano=None):
     from . import dc
     lote = dc.lote_da_analise(analise["id"])
     if not lote:
@@ -765,10 +765,16 @@ def _grupo_da_dc(analise, r, escolhidas, todas_as_contas, andamento_atual,
         obra = _chave(l["obra"]) or "(SEM OBRA)"
         c["obras"][obra] = c["obras"].get(obra, Decimal("0.00")) + l["valor"]
         cat = str(l.get("categoria") or "").strip()
-        c["categorias"][cat] = c["categorias"].get(cat, Decimal("0.00")) + l["valor"]
         nome_tipo = l.get("tipo_despesa") or ""
+        record_id = l.get("record_id") or ""
+        if not cat or not record_id:
+            # A linha gravada na geração sem a classificação (o tipo não estava no
+            # plano, ou a regra veio depois — "Diárias", 07/10/2026): resolve agora.
+            de_agora = dc.classificacao_no_plano(nome_tipo, plano or {})
+            cat, record_id = cat or de_agora[0], record_id or de_agora[1]
+        c["categorias"][cat] = c["categorias"].get(cat, Decimal("0.00")) + l["valor"]
         t = c["tipos"].setdefault(nome_tipo, {"valor": Decimal("0.00"),
-                                              "record_id": l.get("record_id") or ""})
+                                              "record_id": record_id})
         t["valor"] += l["valor"]
         c["pessoas"].add(l["cpf"])
         if l.get("card_id"):
