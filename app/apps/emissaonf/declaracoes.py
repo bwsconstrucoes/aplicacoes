@@ -80,10 +80,38 @@ def registrar(planilha, id_dps: str, numero, card_id: str, obra: str = "",
     return True
 
 
+# Depois de quantas horas uma declaração em aberto deixa de ser "fila" e passa a
+# ser "travada". Veio de 07/10/2026: a fila da plataforma nacional costuma levar
+# segundos, e uma declaração parada por horas é assunto para a prefeitura, não
+# para esperar mais.
+HORAS_ATE_SUSPEITAR = 2
+
+
+def _horas_desde(texto: str):
+    """Quantas horas desde 'DD/MM/AAAA HH:MM'. None se não der para ler."""
+    try:
+        quando = datetime.datetime.strptime(texto.strip(), "%d/%m/%Y %H:%M")
+        quando = quando.replace(tzinfo=FUSO_BRASILIA)
+        return (datetime.datetime.now(FUSO_BRASILIA) - quando).total_seconds() / 3600
+    except Exception:
+        return None
+
+
 def listar_abertas(planilha) -> list[dict]:
-    """As declarações que ainda não viraram nota nem foram recusadas."""
-    return [d for d in _linhas(_ws(planilha))
-            if d["status"].strip().lower() == AGUARDANDO]
+    """As declarações que ainda não viraram nota nem foram recusadas.
+
+    Cada uma vem com `horas_aberta` e `travada` — é o que permite a tela parar de
+    dizer "espere" para algo que já está parado há horas.
+    """
+    saida = []
+    for d in _linhas(_ws(planilha)):
+        if d["status"].strip().lower() != AGUARDANDO:
+            continue
+        horas = _horas_desde(d.get("enviada_em", ""))
+        d["horas_aberta"] = horas
+        d["travada"] = bool(horas is not None and horas >= HORAS_ATE_SUSPEITAR)
+        saida.append(d)
+    return saida
 
 
 def _atualizar(planilha, id_dps: str, status: str, chave="", numero_nota="",
