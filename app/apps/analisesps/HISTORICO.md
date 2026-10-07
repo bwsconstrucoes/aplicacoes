@@ -12228,6 +12228,17 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 194 — Arquivos gerados: a situação de cada SP, em etiqueta (07/10/2026)
+
+- *"Fizesse uma leitura do número da SP pra saber o status de cada uma e colocar
+  uma tag pra na tela sabermos a situação de cada SP gerada."* Cada SP lançada
+  (o `card_pipefy` do arquivo, pode ser mais de uma) ganha as etiquetas do Status
+  Pgt (Pagar/Pago/Pago Parcial…) e do agendamento (Agendar/Agendado/Falha…),
+  com as mesmas cores da lista de Solicitações (`folha_pagamento.situacao_das_sps`).
+- Lido da BASE das SPs (a SPsBD sincronizada), numa consulta só — não vai ao
+  Pipefy a cada tela. SP recém-criada só aparece depois da próxima
+  sincronização: a etiqueta diz "aguardando base" em vez de inventar status.
+
 #### Leva 193 — consolidação por CPF no arquivo (07/10/2026)
 
 - O dono: o BeeVale recusa a mesma pessoa duas vezes na mesma carteira; regra:
