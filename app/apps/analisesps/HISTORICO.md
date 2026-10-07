@@ -12228,6 +12228,25 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 197 — auxílio: a obra como nas outras folhas — ponto, trocar ou dividir (07/10/2026)
+
+- *"Tem gente sem obra, mas não consigo colocar a obra"* (no transporte). Os
+  botões "usar esta obra" / "selecionar obra…" só apareciam para quem estava
+  MARCADO para receber; o resto via "—". Agora aparecem para todo mundo sem
+  obra (o selo vermelho de pendência continua só para quem vai receber).
+- *"A questão da obra é para ser padrão, igual aos demais: a princípio usar a
+  obra do ponto, mas eu preciso poder alterar, ou ratear."* Testado no navegador
+  que escolher a obra grava (não estava quebrado — faltava o botão). Agora:
+  "trocar…" também na obra do ponto e na da regra de rateio; e "Ou dividir entre
+  obras" na mesma janela — percentuais que fecham 100%, guardados no campo da
+  obra do ajuste do mês como `RATEIO:A=60;B=40` (sem migração), aplicados pela
+  mesma conta da regra de rateio (`folha_auxilio.rateio_da_escolha`). "remover
+  ajuste" volta ao ponto. Os nomes dos botões são os das outras telas (pedido
+  dele): "trocar…" (DC), "remover ajuste", "ou dividir…", "+ adicionar obra" e
+  "Salvar divisão" (folha da contabilidade). Ordem de quem manda: à mão (obra ou divisão) > regra > ponto.
+- Na lateral, "sem obra do ponto" da auditoria virou "sem marcação no ponto do
+  mês" (contava também quem não vai receber).
+
 #### Leva 196 — quem tem a Folha vê todas as subtelas (07/10/2026)
 
 - *"Quem vê a Folha PGT precisa ver os submenus da folha. Tem uma pessoa que
@@ -12237,6 +12256,9 @@ somente Solicitações de uma conta especifica"*.
   "folha". As AÇÕES continuam do mestre: gerar, prévia, conferir/lançar no
   Pipefy, excluir arquivo, gravar/colar/apagar/simular rateio — e nas duas telas
   `pode_operar` = mestre, então os botões só aparecem para ele.
+- **Levas 195 e 196 publicadas em 07/10/2026** (sem migração; suíte inteira
+  8.764 verdes). Falta ele: baixar a auditoria do transporte de 09/2026 e
+  conferir os 11 "Mensal" que faltavam e as reduções de valor.
 
 #### Leva 195 — transporte: categorias diárias e a AUDITORIA da verba (07/10/2026)
 
