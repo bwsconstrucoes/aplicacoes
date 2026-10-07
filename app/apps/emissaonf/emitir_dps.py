@@ -93,8 +93,18 @@ def emitir(ctx: dict, dados_dps: nac.DadosDPS, token: str, producao: bool,
         raise NotaNaoSaiu("Certificado A1 não carregado — a declaração tem de ser assinada.")
     if not token:
         raise NotaNaoSaiu(
-            "Token de integração da prefeitura ausente. Ele é o que autentica o canal: "
-            "defina EL_NFSE_TOKEN no serviço (ou a chave EL_NFSE_TOKEN na aba Credenciais)."
+            "Falta o TOKEN DE INTEGRAÇÃO DA PREFEITURA.\n\n"
+            "Ele NÃO é o token do link desta tela (EMISSAO_NF_TOKEN) — são duas coisas "
+            "diferentes:\n"
+            "  • EMISSAO_NF_TOKEN protege o endereço desta página, e é nosso;\n"
+            "  • o token de integração autentica o canal com a prefeitura, e é dela.\n\n"
+            "Por que ele nunca foi necessário antes: o modelo antigo (ABRASF) autenticava "
+            "pelo CERTIFICADO digital, no próprio aperto de mão da conexão. O modelo "
+            "nacional (DPS) exige certificado E token.\n\n"
+            "Onde conseguir: no portal da prefeitura, na mesma tela de onde saiu o pacote "
+            "da documentação — Configurações › APIs de Integração. Depois é só gravar como "
+            "EL_NFSE_TOKEN no Render (ou na aba Credenciais da planilha).\n\n"
+            "A tela de Diagnóstico mostra se ele chegou, e com que nome."
         )
 
     cliente = nac.ELNfseNacional(

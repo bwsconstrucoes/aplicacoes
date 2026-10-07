@@ -351,7 +351,7 @@ o que vale é o Render.
 
 | Variável | Para quê |
 |---|---|
-| `EL_NFSE_TOKEN` | **o token de integração da prefeitura.** É ele que autentica o canal da emissão. Sem ele **nenhuma nota sai** — e é a primeira coisa a conferir em `/emissao/diag` |
+| `EL_NFSE_TOKEN` | **o token de integração da prefeitura.** É ele que autentica o canal da emissão. Sem ele **nenhuma nota sai** — nem em ensaio. Gerado no portal do município, em Configurações › APIs de Integração. **Não é o `EMISSAO_NF_TOKEN`** — ver o aviso abaixo da tabela |
 | `EMISSAO_NF_AMBIENTE` | `HOMOLOGACAO` trava o serviço inteiro em teste: nenhuma nota tem validade fiscal, mesmo sem marcar o ensaio, e a tela avisa em letras grandes. Qualquer outro valor (ou vazio) = produção |
 | `EMISSAO_NF_TOKEN` | o token do link. **Sem ela configurada, a tela fica aberta a qualquer um** — falha ABERTO, ao contrário do resto do repositório |
 | `EMISSAO_NF_CERTIFICADO_P12_BASE64` | o certificado A1 da empresa, em base64 |
@@ -363,6 +363,28 @@ o que vale é o Render.
 
 Da aba `Credenciais` vêm ainda `PIPEFY_TOKEN`, `OMIE_KEY`/`OMIE_SECRET` e os três
 tokens da Z-API.
+
+### ⚠️ São DOIS tokens, e eles não se substituem
+
+Isto custou tempo em 07/10/2026, então fica em destaque:
+
+| | `EMISSAO_NF_TOKEN` | `EL_NFSE_TOKEN` |
+|---|---|---|
+| de quem é | **nosso** | **da prefeitura** |
+| para que serve | proteger o endereço da tela | autenticar o canal da emissão |
+| onde se consegue | foi escolhido por nós | portal do município › Configurações › APIs de Integração |
+| sem ele | a tela fica aberta a quem tiver o link | **nenhuma nota sai** |
+
+**Por que o token da prefeitura nunca foi necessário antes:** o modelo antigo
+(ABRASF) autenticava pelo **certificado digital**, no próprio aperto de mão da
+conexão — não havia token nenhum no caminho. O modelo nacional exige
+**certificado E token**. Então um serviço que emitiu notas por meses sem esse
+token não está mal configurado: ele é exigência nova.
+
+A tela de **Diagnóstico** mostra os dois lado a lado, diz se cada um chegou e de
+onde veio, e lista os **nomes** das credenciais da planilha (nunca os valores) —
+para achar o token quando ele está lá com outro rótulo. Chega-se a ela pelo link
+no pé da tela de emissão, que já leva o token dentro.
 
 ---
 
