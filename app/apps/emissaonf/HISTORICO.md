@@ -1088,6 +1088,72 @@ registrada por esta tela. É o registro que mantém a numeração alinhada: a
 numeração sai da planilha, e nota que não entra nela faria o sistema pedir um
 número que o município já usou.
 
+### "Só a linha da planilha": uma nota certa com a planilha faltando — 07/10/2026
+
+**O que ele trouxe:**
+
+> *"Tenho uma nota emitida antes que não entrou correta na planilha. Foi emitido
+> tudo certo. É só planilha. Como faço pra inserir ela na planilha?"*
+
+**Por que nenhuma das telas que existiam servia.** Tanto "Recuperar entrega"
+(modo completo) como "Nota emitida no portal" rodam a **conclusão inteira**.
+Usar qualquer das duas para resolver só a planilha faria, de quebra, três
+estragos: preencheria um **segundo slot** de nota no card (o card tem cinco, A–E,
+e o primeiro vazio é o que o sistema usa), mexeria no **Omie** outra vez, e
+mandaria o **WhatsApp** ao cliente de novo. Trocar um problema por três.
+
+**O que foi feito:** a tela `/emissao/planilha`, "Só a linha da planilha". Ela
+grava a linha A–P da "Notas BWS" e **não faz nada além disso** — não emite, não
+toca no Omie, não preenche slot, não sobe arquivo, não avisa ninguém. A trava de
+duplicidade que já existia (o número na coluna F) continua valendo, então repetir
+não duplica.
+
+**A decisão que de fato importa: os valores vêm do XML, não do card.** E isso não
+é preferência — é a única fonte que ainda existe. Ao concluir uma emissão, o
+sistema **limpa doze campos de entrada do card** (`CAMPOS_LIMPAR`, em
+`pipefy_update.py`), e entre eles estão justamente os que mandam na conta: valor
+parcial, tipo de medição, as alíquotas de IR/INSS/ISS e o banco. Recalcular a
+nota pelo card dias depois da emissão produziria números **diferentes dos que
+foram realmente emitidos** — e eles iriam para a planilha com cara de certos. Do
+card ficam só o **código da obra** e o **número da medição**, que sobrevivem à
+limpeza e são o que a linha precisa dele.
+
+**A leitura aceita os dois modelos, decidindo pelo conteúdo do arquivo.** No
+nacional os totais estão em `infNFSe/valores` (`vISSQN`, `vLiq`) e o valor do
+serviço e os federais retidos moram dentro da **declaração embutida na nota**
+(`vServ`, `vRetCP`, `vRetIRRF`, `vPis`, `vCofins`). No modelo antigo é tudo
+`ValoresNfse`. Quem precisa consertar uma linha não tem como saber em que modelo
+a nota saiu, e há notas dos dois no Drive — então a tela não pergunta.
+
+**Uma sutileza que quase passou, e ela mudaria número na planilha.** A coluna P
+("Valor Líquido Tributado") desconta os federais **cheios**, retidos ou não — é
+como a planilha sempre foi. O XML, porém, só traz o que foi **retido**: PIS,
+COFINS e IR simplesmente não aparecem quando não houve retenção. Ler o XML cru
+deixaria a coluna P alta nessas notas. A regra ficou: **havendo valor no XML vale
+o do XML** (é o que a nota destacou, inclusive com alíquota diferenciada), **não
+havendo, aplica-se a alíquota padrão sobre o total** — que é exatamente o número
+que o motor fiscal produziria nos dois casos.
+
+**O limite disso, dito claro:** nota emitida com alíquota diferenciada **e sem**
+retenção daquele tributo sai com a alíquota padrão na coluna P. O campo de
+alíquota do card é um dos doze que a conclusão limpa, então esse dado não existe
+mais em lugar nenhum — não é perda nova, é perda antiga que só agora apareceu.
+Afeta só a coluna P, que é informativa.
+
+**A página de resultado é própria.** A de emissão diz "NFS-e emitida" e "os
+documentos sobem no Drive" — aqui nada disso aconteceu, e reusá-la faria a tela
+mentir sobre o que fez.
+
+**Conferido:** 16 casos novos em `tests/test_emissaonf_linha_planilha.py`, e
+entre eles os dois que importam — que a linha sai com os valores do **XML** mesmo
+quando o card traz um valor absurdo, e que o pós-emissão e o Omie **não são
+chamados**. Mais: os dois modelos de XML lidos, o federal sem retenção caindo na
+alíquota cheia, a trava de duplicidade, o XML da declaração (sem número de nota)
+sendo recusado em vez de gravar linha sem número, e a linha mantendo as 16
+colunas — tamanho diferente desalinharia as fórmulas de Q em diante.
+
+**NÃO conferido:** a gravação na planilha de verdade. Nenhum teste faz rede.
+
 ### A limpeza do que o modelo antigo deixou
 
 Saíram do `web.py` o preparo do certificado para o envelope SOAP, a busca
