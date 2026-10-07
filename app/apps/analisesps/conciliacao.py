@@ -2174,3 +2174,110 @@ def _resumo_do_omie(ano: int) -> dict:
             "lancados": int((linha or (0,))[0] or 0),
             "lancados_valor": (linha or (0, 0))[1] or 0,
             "com_problema": int((linha or (0, 0, 0))[2] or 0)}
+
+
+# ---------------------------------------------------------------------------
+# A SP DE CADA SAÍDA DO EXTRATO — 07/10/2026
+#
+# O dono: *"será que a gente consegue cruzar a conciliação do extrato com os
+# números das SPs? (…) identificar pela conta de pagamento, data, valor (…) na
+# planilha de pagamento também tem a data que foi pago (…) às vezes acontece
+# de a planilha não atualizar na hora que é feita a baixa. Pelo menos o que
+# der. E ser clicável, para abrir o pipe."*
+#
+# A regra, da mais forte para a mais fraca, SEMPRE com o mesmo valor:
+#   1. a data de pagamento da SP é o dia do lançamento        → "pago"
+#   2. a data de pagamento ou o vencimento a até 3 dias       → "provável"
+# A conta tem de bater (pelos números da conta: nome, número, OFX e os outros
+# jeitos do extrato); SP sem conta preenchida entra, dita como tal. Nada é
+# gravado: é leitura, para quem confere — e a SP que ainda está "Pagar" com o
+# lançamento no banco é a planilha que não baixou, e a etiqueta diz isso.
+# ---------------------------------------------------------------------------
+JANELA_DA_SP = 3
+
+
+def _digitos_sem_zero(texto) -> str:
+    return re.sub(r"\D", "", str(texto or "")).lstrip("0")
+
+
+def numeros_da_conta(conta: dict) -> set:
+    """Os jeitos de escrever esta conta, só dígitos (4 ou mais)."""
+    saida = set()
+    for campo in ("nome", "numero", "ofx_acctid"):
+        d = _digitos_sem_zero(conta.get(campo))
+        if len(d) >= 4:
+            saida.add(d)
+    for _banco, numero in _outros_numeros().get(conta.get("id"), []):
+        d = _digitos_sem_zero(numero)
+        if len(d) >= 4:
+            saida.add(d)
+    return saida
+
+
+def conta_da_sp_confere(texto_da_sp, numeros: set, nome: str = "") -> bool | None:
+    """True/False se a conta da SP é (ou não) esta; None se a SP não diz."""
+    texto = " ".join(str(texto_da_sp or "").split())
+    if not texto:
+        return None
+    if nome and texto.upper() == " ".join(str(nome).split()).upper():
+        return True
+    d = _digitos_sem_zero(texto)
+    if len(d) < 4:
+        return False
+    # Com ou sem o dígito, com ou sem a agência na frente.
+    return any(d == n or d.startswith(n) or n.startswith(d) or d.endswith(n)
+               or n.endswith(d) for n in numeros)
+
+
+def sps_das_linhas(conta: dict | None, linhas: list) -> dict:
+    """`{id da linha: [{id, link, como, status, sem_baixa, credor, conta_ok}]}` —
+    as SPs que casam com cada SAÍDA da página. Nunca levanta."""
+    import datetime as dt
+    from .db import consultar
+    if not conta or not linhas:
+        return {}
+    saidas = [l for l in linhas if l.get("valor") is not None and l["valor"] < 0
+              and l.get("data")]
+    if not saidas:
+        return {}
+    numeros = numeros_da_conta(conta)
+    valores = sorted({abs(Decimal(str(l["valor"]))) for l in saidas})
+    ini = min(l["data"] for l in saidas) - dt.timedelta(days=JANELA_DA_SP)
+    fim = max(l["data"] for l in saidas) + dt.timedelta(days=JANELA_DA_SP)
+    try:
+        candidatas = consultar(
+            "SELECT id, coalesce(conta,''), valor_num, data_pagamento_d, vencimento_d, "
+            "       trim(coalesce(status_pgt,'')), coalesce(credor,'') "
+            "  FROM analisesps.sps "
+            f" WHERE valor_num IN ({','.join(['?'] * len(valores))}) "
+            "   AND ((data_pagamento_d BETWEEN ? AND ?) OR (vencimento_d BETWEEN ? AND ?)) "
+            "   AND lower(trim(coalesce(status_pgt,''))) NOT LIKE 'cancel%' "
+            " LIMIT 5000", tuple(valores) + (ini, fim, ini, fim))
+    except Exception:  # noqa: BLE001 — a conciliação abre sem o cruzamento
+        logger.exception("Conciliação: não consegui cruzar com as SPs")
+        return {}
+    por_valor: dict = {}
+    for sp_id, conta_sp, valor, pago_em, venc, status, credor in candidatas:
+        confere = conta_da_sp_confere(conta_sp, numeros, conta.get("nome", ""))
+        if confere is False:
+            continue
+        por_valor.setdefault(Decimal(str(valor)).quantize(Decimal("0.01")), []).append(
+            {"id": str(sp_id), "pago_em": pago_em, "venc": venc, "status": status,
+             "credor": credor, "conta_ok": bool(confere)})
+    saida = {}
+    for l in saidas:
+        valor = abs(Decimal(str(l["valor"]))).quantize(Decimal("0.01"))
+        fortes, provaveis = [], []
+        for c in por_valor.get(valor, []):
+            if c["pago_em"] == l["data"]:
+                fortes.append(dict(c, como="pago no dia"))
+            elif ((c["pago_em"] and abs((c["pago_em"] - l["data"]).days) <= JANELA_DA_SP)
+                  or (c["venc"] and abs((c["venc"] - l["data"]).days) <= JANELA_DA_SP)):
+                provaveis.append(dict(c, como="data próxima"))
+        achadas = fortes or provaveis
+        if achadas:
+            saida[l["id"]] = [dict(
+                c, link=f"https://app.pipefy.com/open-cards/{c['id']}",
+                sem_baixa=c["status"].lower() not in ("pago", "pago parcial"))
+                for c in achadas[:4]]
+    return saida

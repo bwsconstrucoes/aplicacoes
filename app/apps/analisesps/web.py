@@ -2088,6 +2088,11 @@ def tela_conciliacao():
     linhas = conc.listar(filtros, pagina) if filtros["conta_id"] else []
     resumo = conc.resumo(filtros) if filtros["conta_id"] else {}
     conta = next((c for c in contas if c["id"] == filtros["conta_id"]), None)
+    # A SP de cada saída (07/10/2026): valor + conta + data de pagamento ou
+    # vencimento próximo. Só leitura; a linha mostra o link do card.
+    sps_das_linhas = conc.sps_das_linhas(conta, linhas)
+    for l in linhas:
+        l["sps"] = sps_das_linhas.get(l["id"], [])
 
     return render_template(
         "analisesps_conciliacao.html", aba="conciliacao", estado=estado,
