@@ -398,8 +398,10 @@
       const d = await r.json();
       if (!d.ok) { alvo.innerHTML = `<p class="aviso erro">${escapar(d.erro || "Não deu para conferir.")}</p>`; return; }
       const planilha = "{{ url_for('painel.baixar', assunto='conferencia') }}?dia=" + encodeURIComponent(dia);
+      const cru = "{{ url_for('painel.conferir_dia_json') }}?dia=" + encodeURIComponent(dia);
       const topo = `<p class="cartao-dica" style="margin:0 0 8px">Dia <b>${escapar(d.dia)}</b>: ${d.pernas_no_painel} registro(s) no painel, ${d.pernas_no_omie} no OMIE, ${d.iguais} iguais.
-        <a href="${planilha}">⬇ Planilha com os dois lados</a></p>`;
+        <a href="${planilha}">⬇ Planilha com os dois lados</a> ·
+        <a href="${cru}" title="tudo o que o OMIE mandou sobre este dia, sem interpretação">⬇ O que o OMIE mandou (arquivo cru)</a></p>`;
       if (d.bate) { alvo.innerHTML = `<div class="aviso ok">O painel bate com o OMIE neste dia.</div>` + topo; return; }
       const linhas = d.titulos.map(t => `<tr>
           <td class="desc"><b>${escapar(t.quem || "—")}</b><br><small>${escapar(t.documento || "")} ${t.obra ? "· " + escapar(t.obra) : ""} · nº ${escapar(t.codigo ?? "—")}</small></td>

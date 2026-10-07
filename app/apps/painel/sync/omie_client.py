@@ -91,6 +91,7 @@ URL_MOVIMENTOS        = "https://app.omie.com.br/api/v1/financas/mf/"
 URL_CATEGORIAS        = "https://app.omie.com.br/api/v1/geral/categorias/"
 URL_CLIENTES          = "https://app.omie.com.br/api/v1/geral/clientes/"
 URL_CONTAS_CORRENTES  = "https://app.omie.com.br/api/v1/geral/contacorrente/"
+URL_EXTRATO           = "https://app.omie.com.br/api/v1/financas/extrato/"
 
 # Trechos de faultstring da Omie que indicam rate limit / consumo indevido -> vale retry.
 _RATE_LIMIT_HINTS = (
@@ -448,6 +449,15 @@ class OmieClient:
                             campo_pagina="nPagina", campo_regpp="nRegPorPagina",
                             campo_totpag="nTotPaginas", campo_totreg="nTotRegistros",
                             max_paginas=max_paginas, pagina_inicial=pagina_inicial)
+
+    def extrato(self, codigo_conta, de, ate):
+        """O extrato de UMA conta num período, como o OMIE calcula (07/10/2026:
+        a conferência de saldo). `de`/`ate` em dd/mm/aaaa. Devolve a resposta
+        crua — o formato não foi confirmado contra o OMIE real, e quem lê
+        procura os campos de saldo pelo nome."""
+        return self._call(URL_EXTRATO, "ListarExtrato",
+                          {"nCodCC": int(codigo_conta),
+                           "dPeriodoInicial": de, "dPeriodoFinal": ate})
 
     def listar_categorias(self, *, max_paginas=None):
         return self._listar(URL_CATEGORIAS, "ListarCategorias", "categoria_cadastro",
