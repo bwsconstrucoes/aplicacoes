@@ -75,7 +75,7 @@
   <p class="cartao-dica lat-estado">
     <b>Auditoria:</b> {{ auditoria.base }} com o benefício no cadastro ·
     {{ auditoria.a_pagar }} a pagar · {{ auditoria.nao_pagos }} não pago(s)
-    ({{ auditoria.sem_correspondencia }} sem obra do ponto).<br>
+    ({{ auditoria.sem_correspondencia }} sem marcação no ponto do mês).<br>
     Base {{ auditoria.total_base|moeda }} → a pagar {{ auditoria.total_final|moeda }}
     (diferença {{ auditoria.diferenca|moeda }}).
     <a href="{{ url_for('analisesps.folha_auxilio_auditoria', tipo=tipo, ano=ano, mes=mes) }}"
@@ -397,20 +397,30 @@
               {% if p.obra_de_onde == 'regra' %}
                 <br><span class="cartao-dica" title="Regra de rateio das obras">rateio: {{ p.regra }}
                   {% for x in p.rateio %}<br>{{ x.obra }} {{ '%.0f'|format(x.percentual) }}% · {{ x.valor|moeda }}{% endfor %}</span>
+                {% if pode_operar %}<br><button type="button" class="link-btn escolher-obra"
+                    data-sugerida="{{ p.obra }}">trocar…</button>
+                  {% if p.rateio_a_mao %}<button type="button" class="link-btn usar-obra" data-obra="">tirar</button>{% endif %}{% endif %}
               {% elif p.obra_de_onde == 'ponto' %}
                 <br><span class="cartao-dica">{{ p.dias_na_obra }} dia(s) no ponto{% if resultado.janela_da_obra %} de {{ resultado.janela_da_obra[0].strftime('%d/%m') }} a {{ resultado.janela_da_obra[1].strftime('%d/%m') }}{% endif %}</span>
+                {% if pode_operar %}<br><button type="button" class="link-btn escolher-obra"
+                    data-sugerida="{{ p.obra }}">trocar…</button>{% endif %}
               {% elif p.obra_de_onde == 'mao' %}
                 <br><span class="cartao-dica">escolhida por você — sem ponto</span>
                 {% if pode_operar %}<br><button type="button" class="link-btn escolher-obra"
                     data-sugerida="{{ p.obra }}">trocar…</button>
                   <button type="button" class="link-btn usar-obra" data-obra="">tirar</button>{% endif %}
               {% endif %}
-            {% elif p.sem_obra %}
+            {% elif p.sem_obra or not p.rateio %}
               {# ⚠️ SEM PONTO = PENDÊNCIA (03/10/2026): *"Não utilizar obra de
                  cadastro automático (…) o correto seria corrigir o ponto. Mas se
                  não for, vamos selecionar e isso precisa ter destaque."* O
                  cadastro vai como sugestão, com um clique. #}
-              <span class="selo risco">sem obra do ponto</span>
+              {# 07/10/2026: *"tem gente sem obra, mas não consigo colocar a obra"* —
+                 os botões só apareciam para quem estava marcado para receber. Agora
+                 aparecem para todo mundo sem obra; o selo vermelho continua só para
+                 quem vai receber (é a pendência que trava o arquivo). #}
+              {% if p.sem_obra %}<span class="selo risco">sem obra do ponto</span>
+              {% else %}<span class="cartao-dica">sem obra</span>{% endif %}
               {% if p.obra_do_cadastro %}<br><span class="cartao-dica">no cadastro: <b>{{ p.obra_do_cadastro }}</b></span>{% endif %}
               {% if pode_operar %}<br>
                 {% if p.obra_do_cadastro %}<button type="button" class="link-btn usar-obra"
@@ -628,6 +638,22 @@
   <div class="lat-acoes" style="margin-top:10px">
     <button type="button" class="btn" id="dialogo-obra-usar">Usar esta obra</button>
   </div>
+  {# DIVIDIR ENTRE OBRAS (07/10/2026): *"usar a obra do ponto, mas eu preciso poder
+     alterar, ou ratear"*. Vale só para esta pessoa, neste mês. #}
+  <details style="margin-top:12px" id="dialogo-obra-dividir">
+    <summary style="cursor:pointer"><b>Ou dividir entre obras</b></summary>
+    <datalist id="obras-para-dividir">
+      {% for o in obras_c_diarios or [] %}<option value="{{ o }}">{% endfor %}
+    </datalist>
+    <div class="tabela-rolagem livre" style="margin-top:6px">
+    <table class="sps"><thead><tr><th>Obra</th><th class="num">%</th></tr></thead>
+      <tbody id="dividir-linhas"></tbody></table></div>
+    <p class="cartao-dica" id="dividir-soma">Soma: 0%</p>
+    <div class="lat-acoes">
+      <button type="button" class="btn secundario" id="dividir-mais">+ obra</button>
+      <button type="button" class="btn" id="dividir-usar">Dividir</button>
+    </div>
+  </details>
 </dialog>
 {% endif %}
 
@@ -916,6 +942,47 @@ document.querySelectorAll(".usar-obra").forEach(b => b.addEventListener("click",
     if (e.key === "Enter") { e.preventDefault(); usar.click(); }
   });
   if (lista) lista.addEventListener("dblclick", () => usar.click());
+
+  // --- dividir entre obras (07/10/2026) ---------------------------------------
+  const linhasDiv = document.getElementById("dividir-linhas");
+  const somaDiv = document.getElementById("dividir-soma");
+  function linhaDiv(obra, pct) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = '<td><input type="text" list="obras-para-dividir" class="div-obra" ' +
+      'aria-label="Obra" style="width:16em"></td>' +
+      '<td class="num"><input type="number" min="0" max="100" step="0.01" class="div-pct" ' +
+      'aria-label="Percentual" style="width:6em"></td>';
+    tr.querySelector(".div-obra").value = obra || "";
+    tr.querySelector(".div-pct").value = pct || "";
+    tr.querySelector(".div-pct").addEventListener("input", somar);
+    linhasDiv.appendChild(tr);
+  }
+  function partesDiv() {
+    return [...linhasDiv.querySelectorAll("tr")].map(tr => ({
+      obra: tr.querySelector(".div-obra").value.trim().toUpperCase(),
+      pct: parseFloat(tr.querySelector(".div-pct").value.replace(",", ".")) || 0
+    })).filter(x => x.obra && x.pct > 0);
+  }
+  function somar() {
+    const soma = partesDiv().reduce((a, x) => a + x.pct, 0);
+    somaDiv.textContent = "Soma: " + soma.toFixed(2).replace(".", ",") + "%" +
+      (Math.abs(soma - 100) > 0.001 ? " — precisa fechar 100%" : "");
+  }
+  document.querySelectorAll(".escolher-obra").forEach(b => b.addEventListener("click", () => {
+    linhasDiv.innerHTML = "";
+    linhaDiv(b.dataset.sugerida || "", ""); linhaDiv("", "");
+    somar();
+  }));
+  document.getElementById("dividir-mais").addEventListener("click", () => linhaDiv("", ""));
+  document.getElementById("dividir-usar").addEventListener("click", async () => {
+    const partes = partesDiv();
+    const soma = partes.reduce((a, x) => a + x.pct, 0);
+    if (partes.length < 2) { alert("Informe ao menos duas obras."); return; }
+    if (new Set(partes.map(x => x.obra)).size !== partes.length) { alert("Obra repetida."); return; }
+    if (Math.abs(soma - 100) > 0.001) { alert("Os percentuais precisam somar 100%."); return; }
+    const texto = "RATEIO:" + partes.map(x => x.obra + "=" + x.pct).join(";");
+    if (await gravarExtras({cpfs: [cpf], obra: texto})) location.reload();
+  });
   usar.addEventListener("click", async () => {
     const obra = ((lista ? lista.value : texto.value) || "").trim().toUpperCase();
     if (!obra) { alert("Selecione a obra."); return; }
