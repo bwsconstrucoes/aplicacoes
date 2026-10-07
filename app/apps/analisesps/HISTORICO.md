@@ -12237,6 +12237,9 @@ somente Solicitações de uma conta especifica"*.
   "folha". As AÇÕES continuam do mestre: gerar, prévia, conferir/lançar no
   Pipefy, excluir arquivo, gravar/colar/apagar/simular rateio — e nas duas telas
   `pode_operar` = mestre, então os botões só aparecem para ele.
+- **Levas 195 e 196 publicadas em 07/10/2026** (sem migração; suíte inteira
+  8.764 verdes). Falta ele: baixar a auditoria do transporte de 09/2026 e
+  conferir os 11 "Mensal" que faltavam e as reduções de valor.
 
 #### Leva 195 — transporte: categorias diárias e a AUDITORIA da verba (07/10/2026)
 
