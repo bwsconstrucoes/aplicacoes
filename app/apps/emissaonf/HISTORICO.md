@@ -886,6 +886,50 @@ dentro de um pedido web é pedir para transformar a lentidão dele em
 indisponibilidade nossa. O certo é registrar o protocolo, soltar a linha, e ter
 uma tela que fecha o ciclo depois.
 
+### A fila mudou de dono, e eu perguntava para o lado errado — 07/10/2026
+
+A tela de conferir finalmente mostrou a resposta crua da prefeitura, e ela era
+diferente do que eu supunha:
+
+```
+O que ela respondeu agora: <em processamento adn nacional>
+```
+
+**"ADN nacional" é o Ambiente de Dados Nacional.** Ou seja: a prefeitura **já
+transmitiu** o documento. A fila deixou de ser dela — quem tem de autorizar agora
+é a plataforma nacional. O estado "Aguardando Transmissão" que o portal mostrava
+antes já havia passado.
+
+**E a partir desse momento a prefeitura deixa de ser a melhor fonte.** A resposta
+dela pode continuar nesse mesmo texto mesmo depois de a nota existir no nacional:
+ela está dizendo "entreguei", não "não existe".
+
+**O que eu não estava fazendo, e deveria:** o sistema **já sabia** perguntar
+direto à plataforma nacional, pelo certificado — é assim que ele reencontra nota
+antiga desde setembro (a busca por DPS/chave na SEFIN). Eu simplesmente não
+liguei isso na consulta nova. Então a conferência tinha uma fonte só, e era a
+fonte que para de saber justamente quando o documento sai da mão dela.
+
+**Agora a consulta pergunta nos dois lugares:** primeiro à prefeitura; se ela
+disser que está no nacional, pergunta direto ao nacional. A mesma segunda fonte
+entrou também na espera da emissão.
+
+**Três cuidados dentro disso:**
+
+1. **falha na segunda fonte não é erro da consulta.** Se a plataforma nacional não
+   responder, a tela mostra o que a prefeitura disse e registra no log que a
+   segunda fonte falhou. Melhor resposta incompleta que tela de erro;
+2. **no ensaio a plataforma nacional de produção não é consultada** — ensaio vive
+   em outro ambiente, e perguntar ali daria resposta errada;
+3. **as duas filas são explicadas diferente, porque muda a quem se reclama.**
+   Antes de transmitir, é com a prefeitura. Depois, a autorização é do ambiente
+   nacional — e a pergunta útil para a prefeitura passa a ser se o **convênio do
+   município com o ambiente nacional** está em ordem, que é o que costuma travar.
+
+**A lição:** numa integração em etapas, "quem sabe a resposta" muda de mão ao
+longo do caminho. Consultar sempre o mesmo lado dá resposta velha — e, pior, dá
+uma resposta velha que *parece* atual.
+
 ### A limpeza do que o modelo antigo deixou
 
 Saíram do `web.py` o preparo do certificado para o envelope SOAP, a busca
