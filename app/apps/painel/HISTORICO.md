@@ -2361,6 +2361,31 @@ só visualiza um mês, não tem como colocar início e fim"*.
   AAAA-MM-DD): o servidor não mudou. Conferido num navegador de verdade:
   digitar, clicar, atalho, valor posto por script e envio do formulário.
 
+## O aporte da Sicredi apareceu; "o resto deste ano" — 07/10/2026 (noite)
+
+O dono confirmou: **o aporte de 09/01/2026 apareceu** depois de "Atualizar um
+período" — ou seja, a consulta do lançamento de conta corrente no OMIE e o
+número (`nCodMovCC` = `nCodLanc`) funcionaram. Pediu em seguida: *"como
+resolver o resto agora? São dados apenas deste ano que preciso hoje."*
+
+**O que impedia o resto do ano:** o lançamento de conta lido ANTES da migração
+021 está guardado sem o movimento inteiro — sem o número dele, não há como
+perguntar a obra. Só entra quando o pagamento daquele dia é relido. E as
+atualizações comuns liam no máximo 600 apropriações por vez.
+
+**Conserto:**
+- "Reler os pagamentos" de UM ou DOIS anos lê, na mesma rodada, a apropriação
+  de TODOS os lançamentos de conta daquele(s) ano(s), sem o teto de 600. Todos
+  os anos continua com o teto (seriam milhares de consultas numa rodada).
+- "Conferir o saldo das contas com o OMIE" ganhou **"Conferir o ano
+  inteiro"** (o ano do mês escolhido, até hoje se for o corrente): uma
+  consulta por conta. A conta que não bate no ano é aberta mês a mês.
+  NÃO VERIFICADO: se o extrato do OMIE aceita um período de um ano numa
+  consulta só; se recusar, a linha mostra o erro.
+
+**Caminho combinado para 2026:** Reler os pagamentos só de 2026 → Conferir o
+ano inteiro → abrir mês a mês só a conta que não bater.
+
 ## Reler os pagamentos de um ano, de alguns ou de todos — 07/10/2026
 
 O dono, vendo a releitura retomada em "2025 (11 de 12 anos, 10 já feitos

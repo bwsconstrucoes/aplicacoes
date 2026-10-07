@@ -248,9 +248,13 @@ def _releitura_pendente(execucao_id: int) -> bool:
         return False
 
 
-def _ler_apropriacoes(modo: str, anotar, de=None, ate=None) -> str:
+def _ler_apropriacoes(modo: str, anotar, de=None, ate=None, sem_teto=False) -> str:
     """Pergunta ao OMIE as obras dos lançamentos de conta corrente que ainda
-    não têm. Devolve o aviso para a tela, ou "" quando correu bem."""
+    não têm. Devolve o aviso para a tela, ou "" quando correu bem.
+
+    `sem_teto`: lê TODOS os pendentes entre `de` e `ate` — o período escolhido,
+    ou o ano relido (dono, 07/10/2026: "são dados apenas deste ano que preciso
+    hoje"). Sem ele, no máximo LIMITE_POR_RODADA por atualização."""
     from . import andamento
     from .db import conexao
     from .sync import apropriacao_cc
@@ -259,7 +263,8 @@ def _ler_apropriacoes(modo: str, anotar, de=None, ate=None) -> str:
         with conexao() as conn:
             r = apropriacao_cc.buscar(
                 conn, OmieClient.de_ambiente, de, ate,
-                limite=None if modo == "periodo" else apropriacao_cc.LIMITE_POR_RODADA,
+                limite=None if (sem_teto or modo == "periodo")
+                else apropriacao_cc.LIMITE_POR_RODADA,
                 progresso=lambda f, t: anotar(andamento.APROPRIACAO_CC,
                                               f"{f} de {t} lançamentos"))
     except Exception as e:  # noqa: BLE001 — extra, não pode custar o recálculo
@@ -309,6 +314,7 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
     # Falha de uma etapa NÃO essencial fica registrada aqui e é contada no fim.
     falha_parcial = ""
     observacoes_achadas = None
+    janela_da_apropriacao = (None, None, False)
 
     try:
         espelho.definir_progresso(_anotar)
@@ -363,6 +369,12 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                 # manda de volta à página 1 (dono, 06/10/2026).
                 _etapa(andamento.PAGAMENTOS_ANTIGOS)
                 relidos = espelho.reler_pagamentos_por_ano()
+                # o ano (ou os dois) relido tem as obras de TODOS os seus
+                # lançamentos de conta lidas nesta mesma rodada, sem teto
+                if 0 < len(relidos["relidos"]) <= 2:
+                    import datetime as _dt
+                    janela_da_apropriacao = (_dt.date(min(relidos["relidos"]), 1, 1),
+                                             _dt.date(max(relidos["relidos"]), 12, 31), True)
                 if relidos["pulados"]:
                     logger.info("Painel: releitura pulou %s (já feitos antes).",
                                 relidos["pulados"])
@@ -413,7 +425,8 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
             _etapa(andamento.APROPRIACAO_CC)
             aviso = _ler_apropriacoes(
                 modo, _anotar,
-                *(_periodo_escolhido() if modo == "periodo" else (None, None)))
+                *(_periodo_escolhido() + (True,) if modo == "periodo"
+                  else janela_da_apropriacao))
             if aviso:
                 falha_parcial = ((falha_parcial + "; ") if falha_parcial else "") + aviso
 

@@ -213,3 +213,40 @@ def test_falha_na_apropriacao_vira_aviso_e_nao_derruba(monkeypatch):
         raise RuntimeError("OMIE fora")
     monkeypatch.setattr(apropriacao_cc, "buscar", explode)
     assert "OMIE fora" in tarefas._ler_apropriacoes("periodo", anotar)
+
+
+def test_reler_um_ano_le_as_obras_de_todos_os_lancamentos_dele(monkeypatch):
+    """07/10/2026, o dono: "são dados apenas deste ano que preciso hoje". A
+    releitura de UM ano lê a apropriação de todos os lançamentos dele, sem o
+    teto de 600 por atualização."""
+    import contextlib
+    import datetime as dt
+
+    from app.apps.painel import db as painel_db
+    from app.apps.painel import tarefas
+    from app.apps.painel.sync import espelho
+    from app.apps.painel.sync import fato as fato_mod
+
+    monkeypatch.setattr(espelho, "definir_progresso", lambda *a, **k: None)
+    monkeypatch.setattr(espelho, "sync_incremental", lambda *a, **k: None)
+    monkeypatch.setattr(espelho, "atualizar_projetos", lambda *a, **k: 0)
+    monkeypatch.setattr(tarefas, "_carimbar", lambda *a, **k: None)
+    monkeypatch.setattr(tarefas, "_releitura_pendente", lambda *a: False)
+    monkeypatch.setattr(painel_db, "conexao", lambda: contextlib.nullcontext(object()))
+    monkeypatch.setattr(fato_mod, "reconstruir", lambda conn: (1, 1))
+    monkeypatch.setattr(tarefas, "_fechar_execucao", lambda *a, **k: None)
+    pedidos = []
+    monkeypatch.setattr(tarefas, "_ler_apropriacoes",
+                        lambda modo, anotar, *args: pedidos.append(args) or "")
+    monkeypatch.setattr(espelho, "reler_pagamentos_por_ano",
+                        lambda *a, **k: {"relidos": [2026], "pulados": [], "movimentos": 0})
+    assert tarefas.executar_trabalho("pagamentos", 1)
+    assert pedidos == [(dt.date(2026, 1, 1), dt.date(2026, 12, 31), True)]
+
+    # todos os anos: fica o teto (seriam milhares de consultas numa rodada só)
+    pedidos.clear()
+    monkeypatch.setattr(espelho, "reler_pagamentos_por_ano",
+                        lambda *a, **k: {"relidos": list(range(2015, 2027)), "pulados": [],
+                                         "movimentos": 0})
+    assert tarefas.executar_trabalho("pagamentos", 2)
+    assert pedidos == [(None, None, False)]

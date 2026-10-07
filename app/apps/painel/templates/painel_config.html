@@ -203,14 +203,15 @@
     <small>a rede que pega o que ninguém previu</small>
   </div>
   <p class="cartao-dica" style="margin-top:0">
-    Para cada conta, no mês: quanto o dinheiro andou segundo o OMIE (saldo final
-    menos saldo anterior) e quanto o painel conta. Se não bate, falta ou sobra
+    Para cada conta, no mês ou no ano inteiro: quanto o dinheiro andou segundo o
+    OMIE (saldo final menos saldo anterior) e quanto o painel conta. Se não bate, falta ou sobra
     alguma coisa no painel naquela conta e mês — abra o Calendário nela e use
     “Conferir este dia com o OMIE”. Lê o OMIE na hora: uma consulta por conta.
   </p>
   <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
     <input type="month" id="saldo-mes">
-    <button type="button" class="btn" id="saldo-conferir">Conferir</button>
+    <button type="button" class="btn" id="saldo-conferir">Conferir o mês</button>
+    <button type="button" class="btn" id="saldo-conferir-ano">Conferir o ano inteiro</button>
   </div>
   <div id="saldo-saida" style="margin-top:10px"></div>
 </div>
@@ -1543,22 +1544,25 @@ async function acompanhar() {
 
 // A conferência de saldo, painel × OMIE (07/10/2026)
 (function () {
-  const botao = els("saldo-conferir"), saida = els("saldo-saida"), mes = els("saldo-mes");
+  const botao = els("saldo-conferir"), botaoAno = els("saldo-conferir-ano"),
+        saida = els("saldo-saida"), mes = els("saldo-mes");
   if (!botao) return;
   const hoje = new Date();
   mes.value = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}`;
   const brl = v => v == null ? "—" : v.toLocaleString("pt-BR", {style: "currency", currency: "BRL"});
   const esc = t => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
-  botao.onclick = async () => {
-    if (!mes.value) return;
-    botao.disabled = true;
+  // o mês escolhido, ou o ano dele inteiro (até hoje, se for o ano corrente)
+  const conferir = async (periodo) => {
+    if (!periodo) return;
+    botao.disabled = botaoAno.disabled = true;
     saida.innerHTML = '<p class="cartao-dica">Lendo o OMIE, conta por conta… pode levar um ou dois minutos.</p>';
     try {
-      const d = await (await fetch("{{ url_for('painel.conferir_saldo') }}?mes=" + mes.value)).json();
+      const d = await (await fetch("{{ url_for('painel.conferir_saldo') }}?mes=" + periodo)).json();
       if (!d.ok) { saida.innerHTML = `<p class="aviso erro">${esc(d.erro)}</p>`; return; }
+      const quando = d.mes.length === 4 ? `em ${d.mes} (de janeiro até ${d.ate})` : "neste mês";
       const cru = c => "{{ url_for('painel.conferir_saldo_json') }}?mes=" + d.mes + "&conta=" + c;
       saida.innerHTML = `<div class="aviso ${d.com_diferenca ? 'erro' : 'ok'}">
-          ${d.com_diferenca ? `<b>${d.com_diferenca} conta(s) não batem</b> neste mês.` : "<b>Todas as contas lidas batem</b> neste mês."}
+          ${d.com_diferenca ? `<b>${d.com_diferenca} conta(s) não batem</b> ${quando}.` : `<b>Todas as contas lidas batem</b> ${quando}.`}
           ${d.sem_leitura ? ` ${d.sem_leitura} não deu para ler (veja a última coluna).` : ""}</div>
         <div class="tabela-rolagem"><table><thead><tr>
           <th class="sem-ordem">Conta</th><th class="sem-ordem direita">OMIE</th>
@@ -1573,8 +1577,10 @@ async function acompanhar() {
         </tr>`).join("") + "</tbody></table></div>";
     } catch (e) {
       saida.innerHTML = '<p class="aviso erro">Não deu para conferir. Tente de novo.</p>';
-    } finally { botao.disabled = false; }
+    } finally { botao.disabled = botaoAno.disabled = false; }
   };
+  botao.onclick = () => conferir(mes.value);
+  botaoAno.onclick = () => conferir((mes.value || "").slice(0, 4));
 })();
 </script>
 {% endblock %}

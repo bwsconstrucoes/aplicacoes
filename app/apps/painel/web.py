@@ -934,6 +934,8 @@ def _escopo_das_partes(f):
 
 
 _MES_ISO = re.compile(r"^\d{4}-\d{2}$")
+# a conferência de saldo aceita também o ANO inteiro ("2026") — dono, 07/10/2026
+_MES_OU_ANO = re.compile(r"^\d{4}(-\d{2})?$")
 
 
 @bp.route("/conferir/saldo")
@@ -942,8 +944,8 @@ def conferir_saldo():
     administrador (prefixo painel.conferir_)."""
     from . import conferencia_saldo
     mes = (request.args.get("mes") or "").strip()
-    if not _MES_ISO.match(mes):
-        return jsonify({"ok": False, "erro": "Escolha o mês."}), 400
+    if not _MES_OU_ANO.match(mes):
+        return jsonify({"ok": False, "erro": "Escolha o mês ou o ano."}), 400
     try:
         return jsonify({"ok": True, **conferencia_saldo.conferir_mes(mes)})
     except Exception as e:  # noqa: BLE001 — credencial, OMIE fora
@@ -959,8 +961,8 @@ def conferir_saldo_json():
     from . import conferencia_saldo
     mes = (request.args.get("mes") or "").strip()
     conta = (request.args.get("conta") or "").strip()
-    if not _MES_ISO.match(mes) or not conta.isdigit():
-        return jsonify({"ok": False, "erro": "Conta ou mês inválido."}), 400
+    if not _MES_OU_ANO.match(mes) or not conta.isdigit():
+        return jsonify({"ok": False, "erro": "Conta ou período inválido."}), 400
     try:
         resposta = conferencia_saldo.extrato_cru(int(conta), mes)
     except Exception as e:  # noqa: BLE001
