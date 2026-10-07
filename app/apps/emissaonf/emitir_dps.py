@@ -37,14 +37,23 @@ import el_nfse_nacional as nac
 # Ajustável sem publicar nada, pela env EMISSAO_NF_ESPERA_S: até se saber como a
 # fila da prefeitura se comporta no dia a dia, é melhor poder mexer no número do
 # que adivinhar um bom valor agora.
-ESPERA_TOTAL_S = int(os.getenv("EMISSAO_NF_ESPERA_S", "150") or 150)
+# ⚠️ O NÚMERO AQUI NÃO É SÓ CONFORTO DE TELA. O serviço atende **4 pedidos ao
+# mesmo tempo** (gunicorn: 1 worker, 4 threads) e é compartilhado com o ERP, o
+# painel e todo o resto. Cada emissão esperando prende uma dessas quatro linhas.
+# Com a espera em 150s, umas poucas tentativas seguidas ocupavam as quatro e o
+# monorepo INTEIRO respondia "Bad Gateway" — aconteceu em 07/10/2026.
+#
+# Por isso a espera é curta: ela serve só para o caso feliz, em que a nota sai em
+# segundos e dá para terminar o serviço na mesma visita. Quando não sai, quem
+# termina é a tela "Conferir declaração" — e a declaração já está gravada.
+ESPERA_TOTAL_S = int(os.getenv("EMISSAO_NF_ESPERA_S", "25") or 25)
 
 # No ENSAIO a espera é curta de propósito. Ensaio não tem pós-emissão: não há
 # planilha, Omie, card nem Drive para completar. Então prender a tela por dois
 # minutos e meio não compra nada — melhor devolver a identificação e deixar a
 # pessoa conferir quando quiser. Prender a tela foi, aliás, o que fez o dono
 # desistir do primeiro ensaio em 07/10/2026.
-ESPERA_ENSAIO_S = int(os.getenv("EMISSAO_NF_ESPERA_ENSAIO_S", "30") or 30)
+ESPERA_ENSAIO_S = int(os.getenv("EMISSAO_NF_ESPERA_ENSAIO_S", "15") or 15)
 
 ESPERA_ENTRE_CONSULTAS_S = 5
 
@@ -94,6 +103,20 @@ class AindaProcessando(RuntimeError):
 # Erros da plataforma nacional cujo texto oficial engana, e que o manual explica
 # numa seção própria. Traduzir é parte da entrega: o texto cru manda a pessoa
 # procurar o problema no lugar errado.
+# O estado que o portal da prefeitura mostra enquanto a declaração espera a vez
+# dela. Não é erro, e explicar isso evita a conclusão errada de que algo falhou.
+EXPLICACAO_AGUARDANDO_TRANSMISSAO = (
+    "Se o portal da prefeitura mostrar esta declaração como **\"Aguardando "
+    "Transmissão\"**, com o número reservado e a chave nacional vazia, é isso que "
+    "está acontecendo: a prefeitura recebeu e aceitou, guardou o número para esta "
+    "declaração, e ainda não transmitiu para a plataforma nacional.\n\n"
+    "A nota só existe como documento fiscal quando a chave nacional aparece. Até "
+    "lá: não emita com outro número (este está reservado) e não reenvie — basta "
+    "consultar de novo mais tarde.\n\n"
+    "Se ficar nesse estado por horas, aí não é fila: é caso de falar com a "
+    "prefeitura, porque a transmissão é ela que faz."
+)
+
 EXPLICACAO_DOS_ERROS = {
     "E0037": (
         "O texto deste erro diz que o município não existe no cadastro nacional, "
@@ -193,7 +216,8 @@ def consultar(ctx: dict, id_dps: str, token: str, producao: bool) -> dict:
             f"ficou pronta.\n\nO que ela respondeu agora: "
             f"{bruto or '(sem conteúdo — só o protocolo)'}\n\n"
             f">>> Isto NÃO é erro, e NÃO autoriza emitir de novo. Espere alguns "
-            f"minutos e consulte esta mesma identificação outra vez."
+            f"minutos e consulte esta mesma identificação outra vez.\n\n"
+            f"{EXPLICACAO_AGUARDANDO_TRANSMISSAO}"
         )
     return dados_da_nota(xml_nac)
 
@@ -208,7 +232,7 @@ def _mensagem_de_erro(e: Exception) -> str:
 
 
 def emitir(ctx: dict, dados_dps: nac.DadosDPS, token: str, producao: bool,
-           espera_total_s: int | None = None) -> dict:
+           espera_total_s: int | None = None, ao_aceitar=None) -> dict:
     """Declara a nota à prefeitura e devolve número, chave, data e o XML.
 
     `ctx` é o contexto do `worker.preparar` (de onde saem o certificado e a
@@ -256,6 +280,20 @@ def emitir(ctx: dict, dados_dps: nac.DadosDPS, token: str, producao: bool,
     if not id_dps:
         raise NotaNaoSaiu(f"A prefeitura aceitou mas não devolveu a identificação da "
                           f"declaração (idDPS). Resposta: {envio}")
+
+    # A PRIMEIRA COISA depois do aceite é registrar — antes de esperar um segundo.
+    # Enquanto a declaração não estava gravada, o único registro dela era a tela
+    # aberta no navegador: fechar a aba, publicar o serviço ou cair a conexão
+    # perdia a identificação. Aconteceu em 07/10/2026.
+    #
+    # Se o registro falhar, a emissão NÃO para: a declaração já está com a
+    # prefeitura, e abortar aqui não desfaz nada — só esconderia o que aconteceu.
+    if ao_aceitar:
+        try:
+            ao_aceitar(id_dps)
+        except Exception as e:
+            print(f">>> AVISO: não consegui registrar a declaração {id_dps} "
+                  f"({type(e).__name__}: {e}). Anote esta identificação.")
 
     # Daqui para baixo a declaração JÁ ESTÁ com a prefeitura. Só consultamos.
     limite = time.time() + espera_total_s
