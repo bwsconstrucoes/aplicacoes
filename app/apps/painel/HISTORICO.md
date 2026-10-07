@@ -2265,6 +2265,59 @@ essa consulta, e o próximo passo é ler pela API de lançamentos de conta corre
 por transferência, o que a conciliação do Análise de SPs lança) passa a contar
 no DRE, no fluxo e no resto, depois do próximo recálculo.
 
+## O arquivo cru respondeu: a apropriação NÃO vem nos pagamentos — 07/10/2026
+
+O dono mandou o arquivo cru de 09/01/2026 ("⬇ O que o OMIE mandou") e a
+conferência do dia em planilha. O que mostraram, sem interpretação:
+
+- **Os 193 movimentos do dia vêm só com "detalhes" e "resumo". Nenhum traz
+  departamento nem categoria rateada** — nem título, nem lançamento de conta.
+  A busca na internet dizia o contrário (seção anterior); o dado real decide.
+  Logo, o item 2 do plano definitivo ("uma fonte só, o movimento financeiro")
+  **não se sustenta sozinho para as obras**: o dinheiro vem dele, a obra não.
+- O lançamento da Sicredi está lá: origem `EXTR` (lançamento de extrato),
+  grupo `CONTA_CORRENTE_REC`, categoria 1.02.01, conta 11203364651, favorecido
+  1304759743 (CNPJ 38.240.209/0001-03), 100.000,01, conciliado em 06/10/2026,
+  número do movimento (`nCodMovCC`) **11309733447**, sem título.
+- Os outros sem título do dia: 4 tarifas (`EXTP`, 2.05.04), 4 entradas `EXTR`
+  1.02.99 e 4 pares de transferência entre contas (`TRAP`/`TRAR`, categorias
+  0.01.02/0.01.01).
+- Na planilha da conferência, a aba de diferenças veio vazia: para esse dia,
+  o que o painel tinha batia com o OMIE nos títulos.
+
+**O que foi feito:**
+- Migração **022**: tabela `apropriacao_lancamentos_cc` — a resposta INTEIRA
+  da consulta de cada lançamento de conta corrente no OMIE, uma linha por
+  número. Não é apagada quando a janela de pagamentos é relida (para não
+  perguntar de novo o que já foi respondido).
+- `sync/apropriacao_cc.py`: a cada atualização (do dia, completa, releitura e
+  período) pergunta ao OMIE (`financas/contacorrentelancamentos/`,
+  `ConsultaLancCC` com `nCodLanc` = `nCodMovCC`) pelos lançamentos que ainda
+  não têm resposta — do mais recente para o mais antigo, no máximo 600 por
+  atualização (o período, todos os dele). Não pergunta por transferência
+  entre contas. Três tentativas por lançamento. **Para sozinho se as cinco
+  primeiras perguntas falharem**, e diz por quê na tela ("Concluída, com
+  aviso"): é o sinal de que o número ou o método estão errados, e evita
+  milhares de chamadas inúteis.
+- O fato rateia o lançamento pela apropriação guardada. A lista de
+  departamentos é procurada pelo nome (`departamentos`/`distribuicao`) em
+  qualquer nível da resposta, com percentual ou valor.
+- **Transferência entre contas da empresa vai para TRF** (origem TRAP/TRAR,
+  tipo TRA ou categoria 0.01.x), mesmo que a categoria não esteja no plano de
+  contas guardado. Antes disto, desde a publicação de `2769e76`, essas pernas
+  entravam no fato com a análise que a categoria desse — se o plano de contas
+  guardado não tinha 0.01.x, caíam na heurística. Somam zero entre as duas
+  contas, mas aparecem como entrada e saída por conta.
+- Em Configurações, "Baixar um lançamento de conta corrente do OMIE": digita o
+  número e baixa a resposta crua (rota `/painel/conferir/lancamento-cc/json`,
+  só do administrador).
+
+**NÃO VERIFICADO, e é o que decide se funciona:** (1) o nome do método — se o
+OMIE recusar `ConsultaLancCC` dizendo que o método não existe, tenta
+`ConsultarLancCC` sozinho; (2) se o `nCodMovCC` do movimento é o mesmo número
+do lançamento (`nCodLanc`). O teste é o dono baixar o 11309733447 pela tela
+nova: se vier o lançamento com CRECHESUAPE e ESCPE18, está certo.
+
 ## Reler os pagamentos de um ano, de alguns ou de todos — 07/10/2026
 
 O dono, vendo a releitura retomada em "2025 (11 de 12 anos, 10 já feitos
