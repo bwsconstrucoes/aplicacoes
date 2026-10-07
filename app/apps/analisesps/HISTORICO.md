@@ -12228,6 +12228,25 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 198 — conciliação: a SP de cada saída do extrato (07/10/2026)
+
+- *"Cruzar a conciliação do extrato com os números das SPs (…) pela conta de
+  pagamento, data, valor (…) às vezes a planilha não atualiza na baixa (…) e ser
+  clicável, para abrir o pipe."* Cada SAÍDA da página procura SPs com o MESMO
+  valor e a mesma conta (números da conta: nome, número, OFX, outros jeitos do
+  extrato; SP sem conta entra, dito no balão), e: paga no dia (forte) ou data de
+  pagamento/vencimento a até 3 dias (provável, com "?"). Link "SP nº" no campo
+  Documento, abre o card. SP ainda "Pagar" com o lançamento no banco ganha a
+  etiqueta "sem baixa" — a planilha que não baixou. Só leitura, nada é gravado
+  (`conciliacao.sps_das_linhas`); canceladas ficam fora.
+- **O nome desempata** (pedido dele no mesmo dia): mesmo valor no mesmo dia →
+  as palavras do credor (sem acento, 3+ letras, fora LTDA/PIX/PAGTO/BOLETO…)
+  presentes na descrição do extrato; quem tiver mais fica sozinha, sem "?".
+  Sem nome que desempate, todas ficam, com "?" (`_palavras_do_nome`).
+- Não verificado: o formato real da coluna Conta das SPs × o nome/número das
+  contas da conciliação. Se não casar, nenhum link aparece (não aparece link
+  errado) — e o ajuste é em `conta_da_sp_confere`.
+
 #### Leva 197 — auxílio: a obra como nas outras folhas — ponto, trocar ou dividir (07/10/2026)
 
 - *"Tem gente sem obra, mas não consigo colocar a obra"* (no transporte). Os
@@ -12246,6 +12265,7 @@ somente Solicitações de uma conta especifica"*.
   "Salvar divisão" (folha da contabilidade). Ordem de quem manda: à mão (obra ou divisão) > regra > ponto.
 - Na lateral, "sem obra do ponto" da auditoria virou "sem marcação no ponto do
   mês" (contava também quem não vai receber).
+- **Publicada em 07/10/2026** (sem migração; suíte inteira 8.769 verdes).
 
 #### Leva 196 — quem tem a Folha vê todas as subtelas (07/10/2026)
 
