@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block titulo %}Painel Financeiro BWS{% endblock %}</title>
 <link rel="stylesheet" href="{{ estatico('painel.css') }}">
+<link rel="icon" type="image/png" sizes="64x64" href="{{ url_for('painel.static', filename='icone-64.png') }}">
+<link rel="icon" type="image/png" sizes="192x192" href="{{ url_for('painel.static', filename='icone-192.png') }}">
+<link rel="apple-touch-icon" href="{{ url_for('painel.static', filename='icone-apple.png') }}">
 </head>
 <body>
 <header class="topo">
@@ -55,6 +58,71 @@
 // nem memoria montando texto. Os numeros chegam crus do banco.
 const moeda = v => (v||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
 const els = id => document.getElementById(id);
+
+// O CAMPO DE MÊS VIRA DUAS LISTAS, MM / AAAA (dono, 07/10/2026: "não tem um
+// campo melhor pra seleção? além disso tá no padrão YYYY-MM" e "estamos no
+// Brasil, tem que ser MM/AAAA").
+// O campo de mês do navegador aparece como texto "AAAA-MM" em parte deles.
+// O campo original continua lá, escondido, com o mesmo nome e o mesmo valor
+// AAAA-MM — o servidor e os scripts das telas não percebem a troca. Vale para
+// toda tela do painel; quem não quiser marca o campo com data-sem-troca.
+(function () {
+  const nativo = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value");
+  const anoAtual = new Date().getFullYear();
+  document.querySelectorAll('input[type="month"]:not([data-sem-troca])').forEach(campo => {
+    const caixa = document.createElement("span");
+    caixa.className = "campo-mes";
+    caixa.style.cssText = "display:inline-flex; gap:6px; align-items:center";
+    const selMes = document.createElement("select");
+    const selAno = document.createElement("select");
+    selMes.setAttribute("aria-label", "Mês");
+    selAno.setAttribute("aria-label", "Ano");
+    selMes.style.width = "4.8em";
+    selAno.style.width = "6.2em";
+    const barra = document.createElement("span");
+    barra.textContent = "/";
+    const vazio = !campo.required;
+    if (vazio) {
+      selMes.add(new Option("—", ""));
+      selAno.add(new Option("—", ""));
+    }
+    for (let m = 1; m <= 12; m++) {
+      const mm = String(m).padStart(2, "0");
+      selMes.add(new Option(mm, mm));
+    }
+    const inicial = nativo.get.call(campo) || "";
+    const anoDoValor = parseInt(inicial.slice(0, 4), 10);
+    const primeiro = Math.min(2015, anoDoValor || 2015), ultimo = Math.max(anoAtual + 5, anoDoValor || 0);
+    for (let a = ultimo; a >= primeiro; a--) selAno.add(new Option(String(a), String(a)));
+    const mostrar = v => {
+      const m = /^(\d{4})-(\d{2})$/.exec(v || "");
+      selAno.value = m ? m[1] : (vazio ? "" : String(anoAtual));
+      selMes.value = m ? m[2] : (vazio ? "" : String(new Date().getMonth() + 1).padStart(2, "0"));
+    };
+    const juntar = () => {
+      const v = (selAno.value && selMes.value) ? `${selAno.value}-${selMes.value}` : "";
+      if (v === nativo.get.call(campo)) return;
+      nativo.set.call(campo, v);
+      campo.dispatchEvent(new Event("input", {bubbles: true}));
+      campo.dispatchEvent(new Event("change", {bubbles: true}));
+    };
+    selMes.addEventListener("change", juntar);
+    selAno.addEventListener("change", juntar);
+    campo.type = "hidden";
+    // quem muda o valor por script (ex.: "mês atual" na conferência de saldo)
+    // vê as listas acompanharem
+    Object.defineProperty(campo, "value", {
+      get: () => nativo.get.call(campo),
+      set: v => { nativo.set.call(campo, v); mostrar(v); },
+    });
+    mostrar(inicial);
+    if (!inicial && !vazio) juntar();
+    campo.parentNode.insertBefore(caixa, campo);
+    caixa.append(selMes, barra, selAno, campo);
+    const rotulo = campo.id && document.querySelector(`label[for="${campo.id}"]`);
+    if (rotulo) rotulo.htmlFor = "";
+  });
+})();
 </script>
 {% block scripts %}{% endblock %}
 </body>

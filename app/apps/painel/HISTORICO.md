@@ -2318,6 +2318,40 @@ OMIE recusar `ConsultaLancCC` dizendo que o método não existe, tenta
 do lançamento (`nCodLanc`). O teste é o dono baixar o 11309733447 pela tela
 nova: se vier o lançamento com CRECHESUAPE e ESCPE18, está certo.
 
+## "Parou de dar sinal" nos cadastros; ícone; mês em MM/AAAA — 07/10/2026
+
+O dono rodou "Atualizar um período" às 15:37 e a tela disse que ela parou de
+dar sinal no passo "atualizando o plano de contas e os cadastros".
+
+**O que o código mostrou (sem o log do Render, a causa da parada não está
+provada):** esse passo lia o plano de contas, os milhares de fornecedores e
+clientes e as contas correntes SEM dar sinal de vida nenhum — só um aviso no
+começo. Passou de 10 minutos calado, a tela e o vigia a dão por morta, e o
+vigia dispara OUTRA atualização do mesmo tipo, possivelmente por cima da que
+ainda rodava. Se o processo tinha mesmo morrido (reinício, memória), só o log
+diz.
+
+**Conserto:**
+- Os cadastros dão sinal a cada página ("fornecedores e clientes: página 3
+  de 20").
+- Toda chamada ao OMIE dá sinal de vida, sem mudar o texto da tela —
+  nenhum trecho que só conversa com o OMIE fica calado.
+- **Calada não é morta:** antes de dar uma atualização por morta, o painel
+  procura o processo dela na máquina (`executar_sync.processo_vivo`, lendo
+  `/proc`). Se está de pé, ela segue "rodando" e o vigia não dispara outra.
+  O lado ruim, aceito: um processo travado de verdade não é mais retomado
+  sozinho — mas, com sinal a cada chamada ao OMIE, travar calado ficou
+  difícil.
+
+**Ícone:** o painel ganhou ícone próprio (fundo azul-escuro, três barras
+subindo em azul e amarelo), na aba do navegador e no atalho do celular.
+
+**Campo de mês:** o campo "AAAA-MM" do navegador virou duas listas, MM / AAAA
+("estamos no Brasil, tem que ser MM/AAAA"), em toda tela do painel que pede
+mês (Calendário, conferência de saldo, ajuste do rateio). O campo original
+continua escondido com o valor de sempre: o servidor não mudou. Conferido num
+navegador de verdade (escolher, enviar o formulário, valor posto por script).
+
 ## Reler os pagamentos de um ano, de alguns ou de todos — 07/10/2026
 
 O dono, vendo a releitura retomada em "2025 (11 de 12 anos, 10 já feitos

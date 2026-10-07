@@ -207,6 +207,16 @@ def _esperar(segundos: float, motivo: str) -> None:
         falta -= pedaco
 
 
+def _sinal_de_vida() -> None:
+    """Cada chamada ao OMIE avisa que a atualização segue viva, sem mudar o
+    texto da tela — nenhum trecho que só conversa com o OMIE fica calado."""
+    if _aviso_de_espera is not None:
+        try:
+            _aviso_de_espera("")
+        except Exception:  # avisar nunca derruba a carga
+            pass
+
+
 class OmieBloqueada(Exception):
     """A Omie bloqueou as chamadas e disse por quanto tempo.
 
@@ -302,6 +312,7 @@ class OmieClient:
         }
         ultimo_erro = None
         for tentativa in range(1, self.max_tentativas + 1):
+            _sinal_de_vida()
             try:
                 resp = self.sessao.post(url, data=json.dumps(corpo), timeout=self.timeout)
             except requests.RequestException as e:
