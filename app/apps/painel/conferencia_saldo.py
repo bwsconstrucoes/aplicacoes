@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Conferir o saldo de cada conta, painel × OMIE, mês a mês.
+Conferir o saldo de cada conta, painel × OMIE, no mês ou no ano inteiro.
 
 07/10/2026, o dono: *"toda vida que eu vou analisar uma obra, eu descubro alguma
 coisa que não está sendo vista"* — e, comparando com o BI da Controladoria:
@@ -29,7 +29,13 @@ VALIDADE = 150.0                 # o OMIE recusa a mesma chamada repetida em seg
 _LIDOS: dict = {}
 
 
-def _periodo(mes: str) -> tuple[dt.date, dt.date]:
+def _periodo(mes: str, hoje: dt.date | None = None) -> tuple[dt.date, dt.date]:
+    """"AAAA-MM" é o mês; "AAAA" é o ano inteiro, até hoje se for o corrente
+    (dono, 07/10/2026: "são dados apenas deste ano que preciso hoje")."""
+    if len(mes) == 4:
+        ano = int(mes)
+        hoje = hoje or dt.date.today()
+        return dt.date(ano, 1, 1), min(dt.date(ano, 12, 31), hoje)
     ano, m = (int(x) for x in mes.split("-"))
     ini = dt.date(ano, m, 1)
     fim = (dt.date(ano + (m == 12), m % 12 + 1, 1) - dt.timedelta(days=1))
@@ -136,5 +142,7 @@ def conferir_mes(mes: str, cliente=None) -> dict:
             linha["diferenca"] = round(linha["painel"] - linha["omie"], 2)
         linhas.append(linha)
     com_diferenca = [l for l in linhas if l["diferenca"] and abs(l["diferenca"]) > 0.05]
-    return {"mes": mes, "linhas": linhas, "com_diferenca": len(com_diferenca),
+    ini, fim = _periodo(mes)
+    return {"mes": mes, "de": f"{ini:%d/%m/%Y}", "ate": f"{fim:%d/%m/%Y}",
+            "linhas": linhas, "com_diferenca": len(com_diferenca),
             "sem_leitura": sum(1 for l in linhas if l["problema"])}

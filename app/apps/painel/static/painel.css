@@ -578,3 +578,37 @@ details.sync-execucao summary { cursor: pointer; display: flex; gap: 10px; align
 .sync-rodando { color: var(--azul-claro); font-weight: 600; }
 .sync-com_aviso { color: var(--ambar); font-weight: 600; }
 .sync-falhou, .sync-parada, .sync-interrompida { color: var(--vermelho); font-weight: 600; }
+
+
+/* ===== Campos de mês e de período: digitar ou clicar (07/10/2026) ===== */
+input.campo-data-texto { width: 9.5em; padding: 8px 10px; font-size: 14px; background: #fff;
+  border: 1px solid var(--borda-forte); border-radius: var(--raio-p); }
+input.campo-data-texto[maxlength="7"] { width: 8em; }
+.campo input.campo-data-texto { width: 100%; }
+.seletor-pop {
+  position: absolute; z-index: 1000; background: var(--branco);
+  border: 1px solid var(--borda-forte); border-radius: var(--raio-p);
+  box-shadow: var(--sombra); padding: 10px; font-size: 14px; color: var(--tinta);
+}
+.seletor-pop button {
+  border: 0; background: transparent; color: inherit; font: inherit;
+  cursor: pointer; border-radius: 6px; padding: 0;
+}
+.seletor-pop button:hover { background: var(--papel); }
+.seletor-cab { display: flex; align-items: center; gap: 4px; margin-bottom: 8px; }
+.seletor-cab > b, .seletor-cab > .seletor-dica { flex: 1; text-align: center; }
+.seletor-cab button { width: 30px; height: 30px; font-size: 18px; line-height: 1; }
+.seletor-dica { color: var(--tinta-suave); font-size: 13px; }
+.seletor-meses { display: grid; grid-template-columns: repeat(4, 64px); gap: 6px; }
+.seletor-meses button { height: 38px; }
+.seletor-dois-meses { display: flex; gap: 18px; }
+.seletor-nome-mes { text-align: center; font-weight: 600; margin-bottom: 4px; }
+.seletor-dias { display: grid; grid-template-columns: repeat(7, 34px); gap: 2px; }
+.seletor-dias button, .seletor-semana { height: 32px; text-align: center; line-height: 32px; }
+.seletor-semana { color: var(--tinta-suave); font-size: 12px; }
+.seletor-pop button.hoje { box-shadow: inset 0 0 0 1px var(--azul-claro); }
+.seletor-pop button.no-periodo { background: #DCE8F5; border-radius: 0; }
+.seletor-pop button.escolhido { background: var(--azul); color: var(--branco); }
+.seletor-atalhos { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px;
+  border-top: 1px solid var(--borda); padding-top: 8px; }
+.seletor-atalhos button { padding: 4px 10px; border: 1px solid var(--borda); }

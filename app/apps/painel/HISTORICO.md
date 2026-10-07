@@ -2318,6 +2318,74 @@ OMIE recusar `ConsultaLancCC` dizendo que o método não existe, tenta
 do lançamento (`nCodLanc`). O teste é o dono baixar o 11309733447 pela tela
 nova: se vier o lançamento com CRECHESUAPE e ESCPE18, está certo.
 
+## "Parou de dar sinal" nos cadastros; ícone; mês em MM/AAAA — 07/10/2026
+
+O dono rodou "Atualizar um período" às 15:37 e a tela disse que ela parou de
+dar sinal no passo "atualizando o plano de contas e os cadastros".
+
+**O que o código mostrou (sem o log do Render, a causa da parada não está
+provada):** esse passo lia o plano de contas, os milhares de fornecedores e
+clientes e as contas correntes SEM dar sinal de vida nenhum — só um aviso no
+começo. Passou de 10 minutos calado, a tela e o vigia a dão por morta, e o
+vigia dispara OUTRA atualização do mesmo tipo, possivelmente por cima da que
+ainda rodava. Se o processo tinha mesmo morrido (reinício, memória), só o log
+diz.
+
+**Conserto:**
+- Os cadastros dão sinal a cada página ("fornecedores e clientes: página 3
+  de 20").
+- Toda chamada ao OMIE dá sinal de vida, sem mudar o texto da tela —
+  nenhum trecho que só conversa com o OMIE fica calado.
+- **Calada não é morta:** antes de dar uma atualização por morta, o painel
+  procura o processo dela na máquina (`executar_sync.processo_vivo`, lendo
+  `/proc`). Se está de pé, ela segue "rodando" e o vigia não dispara outra.
+  O lado ruim, aceito: um processo travado de verdade não é mais retomado
+  sozinho — mas, com sinal a cada chamada ao OMIE, travar calado ficou
+  difícil.
+
+**Ícone:** o painel ganhou ícone próprio (fundo azul-escuro, três barras
+subindo em azul e amarelo), na aba do navegador e no atalho do celular.
+
+**Campos de mês e de período (`static/campos_data.js`, para toda tela do
+painel):** o dono recusou as duas listas que fiz primeiro — quer *"clica,
+abre, ou escrever 01/…"*, e reclamou que no calendário do navegador *"a gente
+só visualiza um mês, não tem como colocar início e fim"*.
+- Mês: campo "MM/AAAA" que aceita digitação (a barra entra sozinha) e, ao
+  clicar, abre os 12 meses com o ano em cima (‹ 2026 ›).
+- Período (todo par de datas "de"/"até": Analítico, Explorador, Extrato,
+  "Atualizar um período"): dois campos "dd/mm/aaaa" que aceitam digitação e,
+  ao clicar em qualquer um, abrem UM calendário de dois meses lado a lado —
+  primeiro clique é o início, segundo é o fim, o meio fica pintado — com
+  atalhos (Hoje, Este mês, Mês passado, Este ano, Limpar). No celular, um mês.
+- O campo original fica escondido com o valor de sempre (AAAA-MM /
+  AAAA-MM-DD): o servidor não mudou. Conferido num navegador de verdade:
+  digitar, clicar, atalho, valor posto por script e envio do formulário.
+
+## O aporte da Sicredi apareceu; "o resto deste ano" — 07/10/2026 (noite)
+
+O dono confirmou: **o aporte de 09/01/2026 apareceu** depois de "Atualizar um
+período" — ou seja, a consulta do lançamento de conta corrente no OMIE e o
+número (`nCodMovCC` = `nCodLanc`) funcionaram. Pediu em seguida: *"como
+resolver o resto agora? São dados apenas deste ano que preciso hoje."*
+
+**O que impedia o resto do ano:** o lançamento de conta lido ANTES da migração
+021 está guardado sem o movimento inteiro — sem o número dele, não há como
+perguntar a obra. Só entra quando o pagamento daquele dia é relido. E as
+atualizações comuns liam no máximo 600 apropriações por vez.
+
+**Conserto:**
+- "Reler os pagamentos" de UM ou DOIS anos lê, na mesma rodada, a apropriação
+  de TODOS os lançamentos de conta daquele(s) ano(s), sem o teto de 600. Todos
+  os anos continua com o teto (seriam milhares de consultas numa rodada).
+- "Conferir o saldo das contas com o OMIE" ganhou **"Conferir o ano
+  inteiro"** (o ano do mês escolhido, até hoje se for o corrente): uma
+  consulta por conta. A conta que não bate no ano é aberta mês a mês.
+  NÃO VERIFICADO: se o extrato do OMIE aceita um período de um ano numa
+  consulta só; se recusar, a linha mostra o erro.
+
+**Caminho combinado para 2026:** Reler os pagamentos só de 2026 → Conferir o
+ano inteiro → abrir mês a mês só a conta que não bater.
+
 ## Reler os pagamentos de um ano, de alguns ou de todos — 07/10/2026
 
 O dono, vendo a releitura retomada em "2025 (11 de 12 anos, 10 já feitos

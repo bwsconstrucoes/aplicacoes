@@ -1008,6 +1008,12 @@ def execucao_em_andamento() -> dict | None:
     (execucao_id, tipo, disparo, inicio, etapa,
      progresso, visto_em, silencio) = linha[0]
     silencio = float(silencio or 0)
+    viva = silencio < MINUTOS_SEM_SINAL_ATE_MORTA * 60
+    if not viva:
+        # calada não é morta: se o processo dela está de pé, ela está rodando
+        # (07/10/2026 — ver executar_sync.processo_vivo)
+        from .executar_sync import processo_vivo
+        viva = processo_vivo(execucao_id)
     return {
         "id": execucao_id, "tipo": tipo, "disparo": disparo,
         "inicio": para_brasilia(inicio),
@@ -1016,7 +1022,7 @@ def execucao_em_andamento() -> dict | None:
         "detalhe_progresso": progresso or "",
         "visto_em": para_brasilia(visto_em),
         "silencio_minutos": round(silencio / 60, 1),
-        "viva": silencio < MINUTOS_SEM_SINAL_ATE_MORTA * 60,
+        "viva": viva,
     }
 
 
