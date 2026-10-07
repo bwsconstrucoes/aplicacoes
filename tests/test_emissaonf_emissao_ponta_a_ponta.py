@@ -114,6 +114,12 @@ def cenario(monkeypatch, certificado):
                 # o manual exige GZip + Base64; se não for isso, isto estoura
                 enviados["dps"] = gzip.decompress(base64.b64decode(b64)).decode("utf-8")
                 return _Resposta({"idDPS": enviados.get("id_dps", "DPS-DE-TESTE")})
+            if enviados.get("modo") == "recusa":
+                # a plataforma nacional recusou: resposta definitiva, sem nota
+                return _Resposta({"idDPS": enviados.get("id_dps", ""), "erros": [
+                    {"Codigo": "E0037",
+                     "Descricao": "O código do município emissor informado na DPS é "
+                                  "inexistente no cadastro de convênio municipal"}]})
             if enviados.get("modo") == "processando":
                 # a fila da prefeitura ainda não terminou — foi o caso da nota 3281
                 return _Resposta({"nfseXmlGZipB64": "<em processamento no ambiente nacional>"})
@@ -392,3 +398,101 @@ def test_a_tela_de_emissao_tem_link_para_conferir_declaracao(cenario):
     cliente, _ = cenario
     corpo = cliente.get(f"/emissao/?token={TOKEN}", follow_redirects=True).get_data(as_text=True)
     assert f"/emissao/declaracao?token={TOKEN}" in corpo
+
+
+# --------------------------------------------------------------------------- #
+# O terceiro desfecho: a plataforma RECUSOU a declaração
+# --------------------------------------------------------------------------- #
+# É o mais tranquilo dos três, e vinha disfarçado de "não consegui consultar".
+# O manual é explícito: quando a resposta traz a lista de erros, a solicitação
+# NÃO foi processada — e a mesma declaração pode ser reenviada com a correção,
+# mantendo a mesma identificação. Ou seja: não existe nota, e reemitir com o
+# mesmo número é o caminho previsto, não um risco de nota duplicada.
+
+RECUSA = {"idDPS": ID_DPS_3281, "erros": [
+    {"Codigo": "E0037", "Descricao": "O código do município emissor informado na DPS é "
+                                     "inexistente no cadastro de convênio municipal"},
+]}
+
+
+def test_a_recusa_e_lida_como_recusa_e_nao_como_falha_de_consulta():
+    import el_nfse_nacional as n
+    assert n.ELNfseNacional.erros_da_resposta(RECUSA) == [
+        "E0037 - O código do município emissor informado na DPS é inexistente no "
+        "cadastro de convênio municipal"]
+    assert n.ELNfseNacional.erros_da_resposta({"chaveAcesso": "x"}) == []
+    assert n.ELNfseNacional.erros_da_resposta(None) == []
+
+
+def test_a_emissao_para_na_hora_quando_a_declaracao_e_recusada(cenario, monkeypatch):
+    """Antes a recusa era engolida e a espera rodava inteira — a pessoa esperava
+    150s para receber um aviso que não dizia o motivo."""
+    cliente, enviados = cenario
+    enviados["modo"] = "recusa"
+    enviados["id_dps"] = ID_DPS_3281
+
+    import emitir_dps
+    import time as _t
+    chamadas = {"sleeps": 0}
+    monkeypatch.setattr(emitir_dps.time, "sleep",
+                        lambda s: chamadas.__setitem__("sleeps", chamadas["sleeps"] + 1))
+
+    corpo = _emitir(cliente).get_data(as_text=True)
+    assert "recusou a declaração" in corpo
+    assert "Nenhuma nota foi criada" in corpo
+    assert "E0037" in corpo                       # o motivo aparece
+    assert "mesmo número" in corpo                # e a liberação para reemitir
+    assert chamadas["sleeps"] == 0                # não esperou nada
+
+
+def test_a_tela_de_conferir_diz_que_a_recusa_libera_reemitir(cenario, monkeypatch):
+    cliente, _ = cenario
+    import emitir_dps
+
+    def recusou(*a, **k):
+        raise emitir_dps.DeclaracaoRecusada(["E0037 - municipio sem convenio"],
+                                            id_dps=ID_DPS_3281)
+
+    servindo = sys.modules["app.apps.emissaonf.web"]
+    monkeypatch.setattr(servindo, "_ctx_minimo", lambda: {"cred": {}, "chave_pem": b"x",
+                                                          "cert_pem": b"x", "gc": None})
+    monkeypatch.setattr(emitir_dps, "consultar", recusou)
+    corpo = cliente.post("/emissao/declaracao",
+                         data={"token": TOKEN, "id_dps": ID_DPS_3281}).get_data(as_text=True)
+    assert "RECUSOU" in corpo
+    assert "Não existe nota nenhuma" in corpo
+    assert "3281" in corpo
+    assert "E0037" in corpo
+
+
+def test_a_consulta_classifica_os_tres_desfechos(certificado, monkeypatch):
+    """Pronta, recusada e ainda processando são três coisas diferentes, e tratá-las
+    igual foi o que mandou o dono para a tela errada."""
+    import emitir_dps
+    chave_pem, cert_pem = certificado
+    ctx = {"chave_pem": chave_pem, "cert_pem": cert_pem}
+
+    def responder(payload):
+        monkeypatch.setattr(nac.ELNfseNacional, "consultar_processamento_dps",
+                            lambda self, id_dps, bruto=False: payload)
+
+    # 1) recusada
+    responder(RECUSA)
+    with pytest.raises(emitir_dps.DeclaracaoRecusada) as e:
+        emitir_dps.consultar(ctx, ID_DPS_3281, "tok", True)
+    assert "E0037" in str(e.value)
+
+    # 2) ainda processando
+    responder({"nfseXmlGZipB64": "<em processamento no ambiente nacional>"})
+    with pytest.raises(emitir_dps.AindaProcessando):
+        emitir_dps.consultar(ctx, ID_DPS_3281, "tok", True)
+
+    # 3) pronta
+    import base64 as b64, gzip as gz, montar_dps
+    dps = nac.montar_dps_xml(montar_dps.montar(
+        card=_card(), obra=ObraFalsa(), r=_calculo(), dados_rps=_dados_rps(),
+        numero_nota=3281, ibge_obra=2601607, data_emissao="2026-10-07", producao=True))
+    xml_nac = nfse_exemplo.como_texto(dps, numero_nfse="3281")
+    responder({"chaveAcesso": "2" * 50,
+               "nfseXmlGZipB64": b64.b64encode(gz.compress(xml_nac.encode())).decode()})
+    assert emitir_dps.consultar(ctx, ID_DPS_3281, "tok", True)["numero"] == "3281"

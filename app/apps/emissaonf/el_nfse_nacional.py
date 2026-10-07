@@ -374,6 +374,25 @@ class ELNfseNacional:
         except Exception:
             return b64_str  # texto indicativo de "em processamento"
 
+    @staticmethod
+    def erros_da_resposta(data) -> list[str]:
+        """Lê a lista de erros que a plataforma devolve, em texto legível.
+
+        O manual é explícito: quando a propriedade `erros` vem na resposta, a
+        solicitação NÃO foi processada e alguma correção é necessária antes de
+        tentar de novo. Ou seja: **não existe nota**. Saber disso é o que separa
+        "espere" de "corrija e reenvie".
+        """
+        if not isinstance(data, dict):
+            return []
+        partes = []
+        for e in (data.get("erros") or []):
+            cod = e.get("codigo") or e.get("Codigo") or ""
+            desc = e.get("descricao") or e.get("Descricao") or ""
+            comp = e.get("complemento") or e.get("Complemento") or ""
+            partes.append(" - ".join(x for x in (cod, desc, comp) if x))
+        return partes
+
     def _checar(self, resp):
         try:
             data = resp.json()
@@ -400,8 +419,21 @@ class ELNfseNacional:
                             json={"dpsXmlGZipB64": self._gzip_b64(xml_bytes)})
         return self._checar(resp)
 
-    def consultar_processamento_dps(self, id_dps) -> dict:
+    def consultar_processamento_dps(self, id_dps, bruto: bool = False) -> dict:
+        """Situação da declaração. Com `bruto=True`, devolve a resposta inteira
+        SEM levantar erro quando ela trouxer a lista `erros`.
+
+        Isso existe porque, numa consulta, `erros` não é falha da consulta: é a
+        resposta — a declaração foi recusada. Tratar as duas coisas igual
+        transformava "a prefeitura recusou, e aqui está o motivo" em "não
+        consegui consultar", que manda a pessoa para o lugar errado.
+        """
         resp = self._chamar("GET", f"nfseDps/{id_dps}", params={"token": self.token})
+        if bruto:
+            try:
+                return resp.json()
+            except ValueError:
+                return {"_corpo": (resp.text or "")[:500], "_http": resp.status_code}
         return self._checar(resp)
 
     def consultar_dps(self, id_dps) -> dict:

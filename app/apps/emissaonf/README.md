@@ -155,6 +155,28 @@ processamento da declaração é uma **fila do lado da prefeitura**, e o manual 
 que o aceite dela significa "recebi", não "autorizei". Demorar mais que a nossa
 espera é normal, não é defeito.
 
+### Os TRÊS desfechos de uma declaração enviada
+
+Confundir dois deles custou uma ida e volta inteira. São três, e cada um tem uma
+ação diferente:
+
+| Desfecho | Existe nota? | O que fazer |
+|---|---|---|
+| **virou nota** | sim | terminar o serviço (a tela "Conferir declaração" faz) |
+| **ainda processando** | ainda não | esperar e consultar de novo |
+| **recusada** pela plataforma | **não** | corrigir e **reenviar com o MESMO número** |
+
+O terceiro é o mais fácil, e o que mais assusta quando mal explicado: quando a
+plataforma devolve a lista de erros, **nada foi criado**. O manual diz que a mesma
+declaração pode ser reenviada com a correção, **mantendo a mesma identificação** —
+então reemitir com o mesmo número não é risco de nota duplicada: é o caminho
+previsto.
+
+**O número que vai na declaração é o NOSSO pedido**, tirado da planilha. O número
+de verdade da nota só existe quando a prefeitura autoriza. Por isso "não existe a
+nota N" e "a declaração da nota N foi enviada" podem ser as duas verdadeiras ao
+mesmo tempo.
+
 **Há exatamente uma situação em que o envio é repetido:** quando a prefeitura
 responde que o **endereço não existe** (404 ou 405). Aí ela não recebeu
 declaração nenhuma, nada foi criado, e o sistema tenta o outro jeito de escrever

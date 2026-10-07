@@ -294,6 +294,16 @@ def emitir():
             return Response(_pagina_erro_diag(
                 "A declaração foi aceita, mas a nota não ficou pronta no tempo esperado.",
                 str(e)), mimetype="text/html")
+        except _edps.DeclaracaoRecusada as e:
+            motivos = "".join(f"<li>{html.escape(m)}</li>" for m in e.motivos)
+            return Response(_doc("Declaração recusada", (
+                f"<h1>A plataforma nacional recusou a declaração</h1>"
+                f"<div class='ok'><b>Nenhuma nota foi criada.</b> Pode corrigir e emitir "
+                f"de novo — inclusive com o mesmo número, que é o caminho previsto pela "
+                f"prefeitura para este caso.</div>"
+                f"<div class='card'><b>O que ela recusou</b><ul>{motivos}</ul></div>"
+                f"<p class='sub'>Se o motivo não estiver claro, me mande este texto — os "
+                f"códigos de erro dela são documentados.</p>")), mimetype="text/html")
         except _edps.NotaNaoSaiu as e:
             return Response(_pagina_erro_diag(
                 "A prefeitura NÃO emitiu a nota — nada foi criado, pode corrigir e tentar "
@@ -389,6 +399,20 @@ def declaracao():
     try:
         ctx = _worker.preparar(card_id) if card_id else _ctx_minimo()
         res = _edps.consultar(ctx, id_dps, _token_prefeitura(ctx["cred"]), producao)
+    except _edps.DeclaracaoRecusada as e:
+        # O desfecho mais tranquilo dos três, e o que vinha disfarçado de
+        # "não consegui consultar": não existe nota, e o próprio manual diz que a
+        # mesma declaração pode ser reenviada com a correção.
+        motivos = "".join(f"<li>{html.escape(m)}</li>" for m in e.motivos)
+        corpo = (f"<h1>A plataforma RECUSOU a declaração</h1>"
+                 f"<div class='ok'><b>Não existe nota nenhuma</b>, e nada foi criado. "
+                 f"Pode corrigir e emitir de novo com tranquilidade — inclusive com o "
+                 f"mesmo número ({html.escape(numero_esperado or '?')}), que é o que a "
+                 f"prefeitura manda fazer.</div>"
+                 f"<div class='card'><b>O que ela recusou</b><ul>{motivos}</ul></div>"
+                 f"<p class='sub'>Se o motivo não estiver claro, me mande este texto — "
+                 f"os códigos de erro dela são documentados.</p>")
+        return Response(_doc("Declaração recusada", corpo), mimetype="text/html")
     except _edps.AindaProcessando as e:
         return Response(_pagina_declaracao(
             token, id_dps, card_id,
