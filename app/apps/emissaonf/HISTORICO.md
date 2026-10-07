@@ -762,6 +762,66 @@ manda a pessoa para o lugar errado. Aqui custou uma espera de 150 segundos e uma
 ida e volta do dono para descobrir que **não havia problema nenhum**: só uma
 declaração recusada, que é o caso mais fácil dos três.
 
+### O ensaio que não terminava, e o erro cujo texto engana — 07/10/2026
+
+O dono tentou ensaiar e voltou: **"não consegui concluir o ensaio, tá demorando
+muito"**. Três coisas saíram daí.
+
+**1. Prender a tela no ensaio não compra nada.** A espera de 150s existia para
+que a emissão conseguisse terminar o serviço (planilha, Omie, card, Drive) na
+mesma visita. **No ensaio não há serviço para terminar** — então a tela girava
+dois minutos e meio em troca de nada, e ele desistiu antes do fim. A espera do
+ensaio caiu para 30s, e as duas ficaram ajustáveis por variável de ambiente
+(`EMISSAO_NF_ESPERA_S` e `EMISSAO_NF_ESPERA_ENSAIO_S`), porque ainda não se sabe
+como a fila da prefeitura se comporta no dia a dia e adivinhar um bom número
+agora seria chute.
+
+**2. A tela de "ainda processando" entrega um BOTÃO, não um código.** Antes ela
+mostrava a identificação de 45 caracteres para a pessoa copiar e colar na outra
+tela. Agora é um link que já leva a identificação, o card e o ambiente dentro.
+
+**3. O erro E0037 diz uma coisa e significa outra — e isso resolve o mistério do
+ensaio.** O manual da prefeitura tem uma seção própria para ele:
+
+> O texto do erro diz que o município não existe no cadastro nacional, mas na
+> prática ele ocorre quando **o município ainda não configurou a Produção
+> Restrita** junto à Plataforma Nacional. O município precisa habilitar o módulo
+> e concluir as configurações de convênio. *O contribuinte deverá entrar em
+> contato com a prefeitura e solicitar a habilitação.*
+
+**Ou seja: é bem possível que o ensaio nunca funcione em Eusébio**, porque o
+ambiente de teste pode não estar habilitado — e isso não é defeito nosso nem dos
+dados da nota. Não há o que corrigir aqui: é um pedido à prefeitura.
+
+Por isso o sistema passou a **traduzir** esse erro na tela, dizendo o que ele
+realmente significa e de quem é a ação. Texto cru de integração manda a pessoa
+procurar o problema no lugar errado — e, neste caso, procurar nos dados da nota,
+onde ele não está. A tradução só existe para erros documentados; erro
+desconhecido aparece cru, porque explicar errado é pior que não explicar.
+
+**Consequência prática, se o ensaio não for habilitado:** a conferência de uma
+emissão real passa a ser a tela "Conferir declaração". Não é o ideal — o ideal é
+ensaiar —, mas é seguro: ela pergunta à prefeitura e termina o serviço, sem nunca
+emitir nada.
+
+### ⚠️ Uma correção a um commit anterior: o conserto da espera não tinha subido
+
+Fica registrado porque é exatamente o tipo de coisa que corrói a confiança no
+histórico: o commit *"a saída do aperto"* afirmou que o defeito do valor padrão
+congelado (`espera_total_s`) estava corrigido. **Não estava.** O comando que
+aplicava a correção morreu antes de rodar, e eu não conferi o resultado antes de
+seguir.
+
+**Como isso passou por uma suíte verde:** o sintoma era a suíte ficando **três
+vezes mais lenta** (de 60s para 200s), porque um teste rodava os 150 segundos
+inteiros girando. Ninguém liga uma suíte devagar a um defeito de código — e
+nenhum teste falhava.
+
+Agora a correção está aplicada de verdade, e há um teste que olha a **assinatura
+da função** e acusa se o valor padrão voltar. Ele existe porque o sintoma natural
+deste defeito é lento e silencioso: sem um teste olhando direto para a causa,
+ele volta e ninguém vê.
+
 ### A limpeza do que o modelo antigo deixou
 
 Saíram do `web.py` o preparo do certificado para o envelope SOAP, a busca

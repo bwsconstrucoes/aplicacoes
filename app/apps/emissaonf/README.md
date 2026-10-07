@@ -125,6 +125,13 @@ que é editável — o que estiver ali é o corpo que vai ser emitido.
 
 Nada foi enviado ainda. Sair da página não deixa rastro.
 
+> ⚠️ **O ensaio depende da prefeitura ter habilitado o ambiente de teste.** Se
+> ele recusar com o erro **E0037**, a tela explica: apesar do texto oficial falar
+> de "município inexistente", o manual diz que na prática significa que o
+> município **não configurou a Produção Restrita** na Plataforma Nacional. Não há
+> o que corrigir aqui — é um pedido à prefeitura. Enquanto isso, a conferência de
+> uma emissão real é a tela "Conferir declaração".
+
 **Antes de emitir de verdade, dá para ensaiar.** A caixa "Ensaiar primeiro"
 manda a **mesma** nota para o ambiente de homologação da prefeitura: ela volta
 inteira, com número e chave, para ser conferida — e **não vale como documento
@@ -382,6 +389,8 @@ o que vale é o Render.
 | Variável | Para quê |
 |---|---|
 | `EL_NFSE_TOKEN` | **o token de integração da prefeitura.** É ele que autentica o canal da emissão. Sem ele **nenhuma nota sai** — nem em ensaio. Gerado no portal do município, em Configurações › APIs de Integração. **Não é o `EMISSAO_NF_TOKEN`** — ver o aviso abaixo da tabela |
+| `EMISSAO_NF_ESPERA_S` | quantos segundos esperar a prefeitura virar a declaração em nota, numa emissão de verdade (padrão 150). Passado isso, a tela manda conferir — nunca reenviar |
+| `EMISSAO_NF_ESPERA_ENSAIO_S` | o mesmo, para o ensaio (padrão 30). É curto de propósito: ensaio não tem serviço a terminar, então prender a tela não compra nada |
 | `EMISSAO_NF_AMBIENTE` | `HOMOLOGACAO` trava o serviço inteiro em teste: nenhuma nota tem validade fiscal, mesmo sem marcar o ensaio, e a tela avisa em letras grandes. Qualquer outro valor (ou vazio) = produção |
 | `EMISSAO_NF_TOKEN` | o token do link. **Sem ela configurada, a tela fica aberta a qualquer um** — falha ABERTO, ao contrário do resto do repositório |
 | `EMISSAO_NF_CERTIFICADO_P12_BASE64` | o certificado A1 da empresa, em base64 |

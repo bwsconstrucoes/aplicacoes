@@ -287,23 +287,29 @@ def emitir():
             return Response(_pagina_erro(f"Emissão barrada: {e}"), mimetype="text/html")
 
         try:
-            res = _edps.emitir(ctx, dps, _token_prefeitura(ctx["cred"]), producao)
+            res = _edps.emitir(ctx, dps, _token_prefeitura(ctx["cred"]), producao,
+                               espera_total_s=(_edps.ESPERA_ENSAIO_S if ensaio else None))
         except _edps.NotaTalvezTenhaSaido as e:
             # O caso delicado: a prefeitura aceitou, a nota pode existir. NÃO
-            # oferecer "tentar de novo" aqui é de propósito.
-            return Response(_pagina_erro_diag(
-                "A declaração foi aceita, mas a nota não ficou pronta no tempo esperado.",
-                str(e)), mimetype="text/html")
+            # oferecer "tentar de novo" aqui é de propósito — o botão oferecido é
+            # o de CONFERIR, já com a identificação e o card dentro do link, para
+            # ninguém ter de copiar 45 caracteres à mão.
+            link = (f"{url_for('.declaracao')}?token={html.escape(token)}"
+                    f"&id_dps={html.escape(e.id_dps)}&card_id={html.escape(card_id)}"
+                    f"&ambiente={'producao' if producao else 'homologacao'}")
+            corpo = (f"<h1>A prefeitura recebeu, e ainda está processando</h1>"
+                     f"<div class='warn'>Isto <b>não é erro</b>: o processamento da "
+                     f"declaração é uma fila do lado da prefeitura, e ela ainda não "
+                     f"terminou. {'Como este foi um ENSAIO, não há nada pendente do nosso lado.' if ensaio else ''}</div>"
+                     f"<p><a class='btn' href='{link}'>Conferir se a nota saiu</a></p>"
+                     f"<p class='sub'>Pode clicar quantas vezes quiser: consultar não cria "
+                     f"nada. {'' if ensaio else 'Se a nota tiver saído, essa tela termina o serviço — planilha, Omie, card, Drive e avisos.'}</p>"
+                     f"<div class='card'><b>O que a prefeitura respondeu</b>"
+                     f"<pre>{html.escape(str(e))}</pre></div>")
+            return Response(_doc("Ainda processando", corpo), mimetype="text/html")
         except _edps.DeclaracaoRecusada as e:
-            motivos = "".join(f"<li>{html.escape(m)}</li>" for m in e.motivos)
-            return Response(_doc("Declaração recusada", (
-                f"<h1>A plataforma nacional recusou a declaração</h1>"
-                f"<div class='ok'><b>Nenhuma nota foi criada.</b> Pode corrigir e emitir "
-                f"de novo — inclusive com o mesmo número, que é o caminho previsto pela "
-                f"prefeitura para este caso.</div>"
-                f"<div class='card'><b>O que ela recusou</b><ul>{motivos}</ul></div>"
-                f"<p class='sub'>Se o motivo não estiver claro, me mande este texto — os "
-                f"códigos de erro dela são documentados.</p>")), mimetype="text/html")
+            return Response(_pagina_recusa(str(ctx.get("prox") or ""), e.motivos),
+                            mimetype="text/html")
         except _edps.NotaNaoSaiu as e:
             return Response(_pagina_erro_diag(
                 "A prefeitura NÃO emitiu a nota — nada foi criado, pode corrigir e tentar "
@@ -403,16 +409,7 @@ def declaracao():
         # O desfecho mais tranquilo dos três, e o que vinha disfarçado de
         # "não consegui consultar": não existe nota, e o próprio manual diz que a
         # mesma declaração pode ser reenviada com a correção.
-        motivos = "".join(f"<li>{html.escape(m)}</li>" for m in e.motivos)
-        corpo = (f"<h1>A plataforma RECUSOU a declaração</h1>"
-                 f"<div class='ok'><b>Não existe nota nenhuma</b>, e nada foi criado. "
-                 f"Pode corrigir e emitir de novo com tranquilidade — inclusive com o "
-                 f"mesmo número ({html.escape(numero_esperado or '?')}), que é o que a "
-                 f"prefeitura manda fazer.</div>"
-                 f"<div class='card'><b>O que ela recusou</b><ul>{motivos}</ul></div>"
-                 f"<p class='sub'>Se o motivo não estiver claro, me mande este texto — "
-                 f"os códigos de erro dela são documentados.</p>")
-        return Response(_doc("Declaração recusada", corpo), mimetype="text/html")
+        return Response(_pagina_recusa(numero_esperado, e.motivos), mimetype="text/html")
     except _edps.AindaProcessando as e:
         return Response(_pagina_declaracao(
             token, id_dps, card_id,
@@ -954,6 +951,29 @@ def _pagina_pedir_card(token):
         <a href='{url_for('.regerar')}?token={t}'>Regravar PDFs</a> &nbsp;·&nbsp;
         <a href='{url_for('.declaracao')}?token={t}'>Conferir declaração</a>
       </p>""")
+
+
+def _pagina_recusa(numero, motivos):
+    """Página da declaração recusada — a mesma nas duas rotas que podem cair nela.
+
+    Além dos motivos crus, mostra a explicação do manual quando o erro é um dos
+    que enganam (ver `emitir_dps.EXPLICACAO_DOS_ERROS`). Texto cru de integração
+    manda a pessoa procurar o problema no lugar errado.
+    """
+    itens = "".join(f"<li>{html.escape(m)}</li>" for m in motivos)
+    explicacoes = "".join(
+        f"<div class='warn'><pre style='background:none;color:inherit;padding:0;"
+        f"white-space:pre-wrap'>{html.escape(x)}</pre></div>"
+        for x in _edps.explicar_erros(motivos))
+    return _doc("Declaração recusada", (
+        f"<h1>A plataforma nacional recusou a declaração</h1>"
+        f"<div class='ok'><b>Nenhuma nota foi criada.</b> Pode corrigir e emitir de "
+        f"novo — inclusive com o mesmo número{(' (' + html.escape(numero) + ')') if numero else ''}, "
+        f"que é o caminho previsto pela prefeitura para este caso.</div>"
+        f"<div class='card'><b>O que ela recusou</b><ul>{itens}</ul></div>"
+        f"{explicacoes}"
+        f"<p class='sub'>Se o motivo não estiver claro, me mande este texto — os "
+        f"códigos de erro dela são documentados.</p>"))
 
 
 def _pagina_erro(msg):

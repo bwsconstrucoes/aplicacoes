@@ -459,8 +459,10 @@ def test_a_tela_de_conferir_diz_que_a_recusa_libera_reemitir(cenario, monkeypatc
     monkeypatch.setattr(emitir_dps, "consultar", recusou)
     corpo = cliente.post("/emissao/declaracao",
                          data={"token": TOKEN, "id_dps": ID_DPS_3281}).get_data(as_text=True)
-    assert "RECUSOU" in corpo
-    assert "Não existe nota nenhuma" in corpo
+    # as duas rotas que podem cair na recusa usam a MESMA página, de propósito:
+    # a mensagem não pode depender de por onde a pessoa chegou
+    assert "recusou a declaração" in corpo
+    assert "Nenhuma nota foi criada" in corpo
     assert "3281" in corpo
     assert "E0037" in corpo
 
@@ -496,3 +498,116 @@ def test_a_consulta_classifica_os_tres_desfechos(certificado, monkeypatch):
     responder({"chaveAcesso": "2" * 50,
                "nfseXmlGZipB64": b64.b64encode(gz.compress(xml_nac.encode())).decode()})
     assert emitir_dps.consultar(ctx, ID_DPS_3281, "tok", True)["numero"] == "3281"
+
+
+# --------------------------------------------------------------------------- #
+# A tela não pode ficar pendurada
+# --------------------------------------------------------------------------- #
+# Em 07/10/2026 o dono desistiu do primeiro ensaio porque a tela girou 150s. No
+# ensaio isso não compra nada: não há planilha, Omie, card nem Drive para
+# completar depois. Então a espera do ensaio é curta, e o que a tela entrega é um
+# BOTÃO para conferir — não um identificador de 45 caracteres para copiar à mão.
+
+def test_o_ensaio_espera_muito_menos_que_a_emissao_de_verdade():
+    import emitir_dps
+    assert emitir_dps.ESPERA_ENSAIO_S < emitir_dps.ESPERA_TOTAL_S
+
+
+def test_as_duas_esperas_sao_ajustaveis_sem_publicar(monkeypatch):
+    """Até se saber como a fila da prefeitura se comporta, é melhor poder mexer
+    no número do que adivinhar um bom valor."""
+    import importlib
+    import emitir_dps
+    monkeypatch.setenv("EMISSAO_NF_ESPERA_S", "7")
+    monkeypatch.setenv("EMISSAO_NF_ESPERA_ENSAIO_S", "3")
+    recarregado = importlib.reload(emitir_dps)
+    try:
+        assert recarregado.ESPERA_TOTAL_S == 7
+        assert recarregado.ESPERA_ENSAIO_S == 3
+    finally:
+        monkeypatch.undo()
+        importlib.reload(emitir_dps)
+
+
+def test_quando_ainda_processa_a_tela_entrega_um_botao_e_nao_um_codigo_para_copiar(cenario, monkeypatch):
+    cliente, enviados = cenario
+    enviados["modo"] = "processando"
+    enviados["id_dps"] = ID_DPS_3281
+    import emitir_dps
+    monkeypatch.setattr(emitir_dps, "ESPERA_ENSAIO_S", 0)
+
+    corpo = _emitir(cliente, ensaio="on").get_data(as_text=True)
+    assert "ainda está processando" in corpo
+    assert "não é erro" in corpo
+    # o link já leva a identificação, o card e o ambiente dentro
+    assert f"id_dps={ID_DPS_3281}" in corpo
+    assert f"card_id={CARD}" in corpo
+    assert "ambiente=homologacao" in corpo
+    assert "Conferir se a nota saiu" in corpo
+
+
+def test_no_ensaio_a_tela_diz_que_nao_ha_nada_pendente(cenario, monkeypatch):
+    cliente, enviados = cenario
+    enviados["modo"] = "processando"
+    import emitir_dps
+    monkeypatch.setattr(emitir_dps, "ESPERA_ENSAIO_S", 0)
+    corpo = _emitir(cliente, ensaio="on").get_data(as_text=True)
+    assert "não há nada pendente" in corpo
+
+
+def test_na_emissao_de_verdade_a_tela_diz_que_a_conferencia_termina_o_servico(cenario, monkeypatch):
+    cliente, enviados = cenario
+    enviados["modo"] = "processando"
+    import emitir_dps
+    monkeypatch.setattr(emitir_dps, "ESPERA_TOTAL_S", 0)
+    corpo = _emitir(cliente).get_data(as_text=True)
+    assert "termina o serviço" in corpo
+    assert "ambiente=producao" in corpo
+
+
+def test_a_espera_nao_e_valor_padrao_congelado_de_argumento():
+    """Valor padrão de argumento é congelado quando a função nasce — mudar a
+    constante depois não teria efeito. Isso já aconteceu aqui e passou batido:
+    um teste que tentou encurtar a espera rodou os 150 segundos inteiros, e o
+    único sintoma foi a suíte ficando três vezes mais lenta.
+
+    Este teste acusa a volta do problema olhando a assinatura, porque o sintoma
+    é lento e silencioso — ninguém liga uma suíte devagar a isto."""
+    import inspect
+    import emitir_dps
+    padrao = inspect.signature(emitir_dps.emitir).parameters["espera_total_s"].default
+    assert padrao is None, ("a espera voltou a ser valor padrão congelado; "
+                            "ela tem de ser resolvida DENTRO da função")
+
+
+# --------------------------------------------------------------------------- #
+# O erro cujo texto oficial engana
+# --------------------------------------------------------------------------- #
+def test_o_erro_E0037_e_traduzido_para_o_que_ele_realmente_significa():
+    """O texto oficial dele diz que o município não existe no cadastro nacional.
+    O manual da prefeitura explica, numa seção própria, que na prática significa
+    que o município não habilitou o ambiente de TESTE. Sem traduzir, a pessoa
+    procura o problema nos dados da nota — onde ele não está."""
+    import emitir_dps
+    explicacoes = emitir_dps.explicar_erros(
+        ["E0037 - O código do município emissor informado na DPS é inexistente"])
+    assert len(explicacoes) == 1
+    assert "Produção Restrita" in explicacoes[0]
+    assert "prefeitura" in explicacoes[0]
+
+
+def test_erro_desconhecido_nao_ganha_explicacao_inventada():
+    """Explicar errado é pior que não explicar: manda procurar no lugar errado."""
+    import emitir_dps
+    assert emitir_dps.explicar_erros(["E9999 - algo que nao conhecemos"]) == []
+    assert emitir_dps.explicar_erros([]) == []
+    assert emitir_dps.explicar_erros(None) == []
+
+
+def test_a_tela_de_recusa_mostra_a_traducao_quando_existe(cenario, monkeypatch):
+    cliente, enviados = cenario
+    enviados["modo"] = "recusa"
+    corpo = _emitir(cliente, ensaio="on").get_data(as_text=True)
+    assert "E0037" in corpo                        # o texto cru, para registro
+    assert "ambiente de TESTE" in corpo            # e o que ele quer dizer
+    assert "Nenhuma nota foi criada" in corpo
