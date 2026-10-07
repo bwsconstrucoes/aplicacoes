@@ -304,9 +304,21 @@ declara uma retenção de valor zero, o que é diferente de não declarar nada.
 
 ---
 
-## A numeração vem da planilha, não da prefeitura
+## A numeração vem da planilha, MAIS as declarações em aberto
 
-O próximo número é o **maior número da coluna F da "Notas BWS" mais um**. A
+O próximo número é o maior entre o **maior número da coluna F da "Notas BWS"** e
+os **números presos a declarações em aberto**, mais um.
+
+A segunda parte não é refinamento: a planilha só recebe **nota pronta**, então
+uma declaração que a prefeitura aceitou e ainda não virou nota não entra lá — e o
+número dela ficava livre do nosso lado enquanto a prefeitura o mantinha
+**reservado**. A nota seguinte sairia pedindo o mesmo número, e a prefeitura leria
+isso como **reenvio da declaração anterior**, não como nota nova: dois serviços
+num documento só, sem erro na tela. Aconteceu de verdade em 07/10/2026 (ver o
+`HISTORICO.md`).
+
+**Para o mesmo card o número é reaproveitado de propósito** — ali é o reenvio que
+o manual da prefeitura prevê, com a mesma identificação. A
 prefeitura devolve o número que ela gravou; se os dois divergirem, a tela avisa
 — mas a nota já foi emitida. Numeração é a parte do sistema que mais depende da
 planilha estar íntegra.

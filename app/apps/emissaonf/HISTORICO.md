@@ -976,6 +976,63 @@ Os dois candidatos são o convênio do município com o ambiente nacional e algu
 fila do lado deles. O diagnóstico é o que transforma "não funciona" em uma
 pergunta concreta com evidência.
 
+### O veredito da 3281, e o número que ficava preso — 07/10/2026
+
+O diagnóstico respondeu, e sem ambiguidade:
+
+```
+[prefeitura] HTTP 200 — "em processamento adn nacional"   (nos dois endpoints)
+[plataforma nacional] HTTP 404 — E2404
+   "Não foi gerada uma NFS-e com o identificador de DPS informado"
+```
+
+**As duas versões não fecham.** A prefeitura diz que entregou ao ambiente
+nacional; o ambiente nacional diz que **não gerou nota** para aquela declaração.
+E a transmissão é a prefeitura que faz. Com isso, "não está funcionando" virou um
+pedido concreto, com os códigos de erro deles próprios dentro.
+
+**Nada disso é do nosso lado**, e foi conferido antes de afirmar: o código do
+serviço, a classificação do IBS/CBS e a estrutura da declaração batem com as
+tabelas e o schema oficiais (seção anterior).
+
+### O defeito sério que esse impasse revelou: o número ficava preso e era reusado
+
+Este é o achado que importa para o futuro, e ele teria causado estrago sozinho.
+
+A numeração das notas sai da planilha: **maior número da coluna F mais um**. E a
+planilha só recebe **nota pronta** — uma declaração aceita mas sem nota **não
+entra lá**.
+
+Resultado: o 3281 ficava "livre" do nosso lado, enquanto a prefeitura o mantinha
+**reservado** para a declaração travada. **A próxima nota, de outra medição,
+sairia pedindo o mesmo 3281** — e o manual da prefeitura diz que a mesma
+identificação é lida como **reenvio da declaração anterior**, não como nota nova.
+
+Ou seja: dois serviços diferentes colapsariam num documento só. Sem erro na tela,
+sem ninguém perceber — e documento fiscal não se desfaz.
+
+**O conserto:** o próximo número passou a considerar também os números presos a
+declarações em aberto. Três detalhes com motivo:
+
+1. **para o MESMO card o número é reaproveitado de propósito** — ali é o reenvio
+   que o manual prevê, com a mesma identificação. Só número de *outro* card conta
+   como ocupado;
+2. **"o último emitido" continua sendo o da planilha.** Declaração aberta não é
+   nota emitida, e misturar as duas coisas num número só confundiria a leitura;
+3. **se as declarações não puderem ser lidas, a emissão numera como antes e
+   AVISA** que o número pode colidir. Falhar em silêncio aqui devolveria o
+   defeito.
+
+### E a tela parou de dizer "espere" para o que está parado
+
+A fila do nacional leva segundos. Uma declaração aberta há horas não é espera: é
+coisa travada. A lista de declarações passou a mostrar **"Parada há Xh — isto já
+não é fila. Rode o diagnóstico e fale com a prefeitura"**, com link direto para o
+diagnóstico. Duas horas é o corte.
+
+Mandar alguém esperar por algo que não vai acontecer sozinho é pior que não dizer
+nada — custa o dia dele.
+
 ### A limpeza do que o modelo antigo deixou
 
 Saíram do `web.py` o preparo do certificado para o envelope SOAP, a busca

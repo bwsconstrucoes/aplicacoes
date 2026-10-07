@@ -549,12 +549,22 @@ def _pagina_declaracao(token, id_dps, card_id, aviso="", abertas=None, erro_list
             link = (f"{url_for('.declaracao')}?token={t}&id_dps={html.escape(d['id_dps'])}"
                     f"&card_id={html.escape(d['card_id'])}&ambiente={html.escape(d['ambiente'] or 'producao')}")
             amb = "" if (d["ambiente"] or "producao") == "producao" else " <b>(ensaio)</b>"
+            # Declaração parada há horas não é fila: dizer "espere" para ela
+            # manda a pessoa esperar por algo que não vai acontecer sozinho.
+            if d.get("travada"):
+                horas = int(d.get("horas_aberta") or 0)
+                marca = (f"<br><span style='color:#a32118'><b>Parada há {horas}h</b> — "
+                         f"isto já não é fila. Rode o diagnóstico e fale com a "
+                         f"prefeitura.</span>")
+            else:
+                marca = ""
             linhas += (f"<li style='margin:8px 0'>Nota <b>{html.escape(d['numero'])}</b> — "
                        f"obra {html.escape(d['obra'] or '?')}, medição "
                        f"{html.escape(d['med'] or '?')} — enviada em "
-                       f"{html.escape(d['enviada_em'])}{amb}<br>"
+                       f"{html.escape(d['enviada_em'])}{amb}{marca}<br>"
                        f"<a class='btn' style='padding:6px 12px;font-size:13px' "
-                       f"href='{link}'>Conferir esta</a></li>")
+                       f"href='{link}'>Conferir esta</a>"
+                       f" &nbsp;<a href='{link}&diagnostico=1'>diagnóstico</a></li>")
         lista = (f"<div class='card'><b>Declarações em aberto ({len(abertas)})</b>"
                  f"<ul style='padding-left:18px'>{linhas}</ul>"
                  f"<p class='sub'>São as que a prefeitura aceitou e ainda não viraram "
