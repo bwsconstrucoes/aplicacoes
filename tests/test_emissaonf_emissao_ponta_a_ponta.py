@@ -781,3 +781,106 @@ def test_no_ensaio_a_plataforma_nacional_de_producao_nao_e_consultada(certificad
                         lambda *a, **k: chamou.append(1))
     assert emitir_dps._consultar_no_nacional(_ctx_cert(certificado), ID_DPS_3281, False) is None
     assert not chamou
+
+
+# --------------------------------------------------------------------------- #
+# Quando a nota não aparece em lugar NENHUM
+# --------------------------------------------------------------------------- #
+# Em 07/10/2026 o dono conferiu os dois sites — o da prefeitura e o nacional — e
+# a 3281 não estava em nenhum. Aí não é mais "esperar": é descobrir de quem é a
+# vez. O diagnóstico pergunta em todos os lugares e mostra as respostas cruas,
+# para servir de prova.
+
+def test_o_diagnostico_pergunta_nos_dois_lados_e_mostra_as_respostas(certificado, monkeypatch):
+    import emitir_dps, adn_nfse, requests
+
+    class RespFalsa:
+        def __init__(self, status, texto):
+            self.status_code, self.text = status, texto
+
+    monkeypatch.setattr(nac.ELNfseNacional, "__init__",
+                        lambda self, **k: setattr(self, "token", k.get("token")))
+    monkeypatch.setattr(nac.ELNfseNacional, "_chamar",
+                        lambda self, m, c, **k: RespFalsa(200, '{"nfseXmlGZipB64":"em processamento adn nacional"}'))
+    monkeypatch.setattr(adn_nfse, "_cert_temp", lambda c, k: ("/tmp/c", "/tmp/k"))
+    monkeypatch.setattr(requests, "get", lambda *a, **k: RespFalsa(404, '{"erro":"nao encontrado"}'))
+
+    chave_pem, cert_pem = certificado
+    texto = emitir_dps.diagnostico(
+        {"chave_pem": chave_pem, "cert_pem": cert_pem, "_token": "tok"},
+        ID_DPS_3281, True)
+
+    assert "3281" in texto                              # de que nota se trata
+    assert "[prefeitura: processamento da declaração]" in texto
+    assert "[prefeitura: chave da declaração]" in texto
+    assert "em processamento adn nacional" in texto     # a resposta crua dela
+    assert "conhece esta declaração?" in texto          # e a pergunta decisiva
+
+
+def test_quando_o_nacional_nao_conhece_a_declaracao_o_diagnostico_aponta_o_responsavel(certificado, monkeypatch):
+    """É a resposta que resolve o impasse: se o nacional não conhece a
+    declaração e a prefeitura diz que transmitiu, as duas versões não fecham — e
+    a transmissão é a prefeitura que faz."""
+    import emitir_dps, adn_nfse, requests
+
+    class RespFalsa:
+        def __init__(self, status, texto):
+            self.status_code, self.text = status, texto
+
+    monkeypatch.setattr(nac.ELNfseNacional, "__init__", lambda self, **k: None)
+    monkeypatch.setattr(nac.ELNfseNacional, "_chamar",
+                        lambda self, m, c, **k: RespFalsa(200, "{}"))
+    monkeypatch.setattr(adn_nfse, "_cert_temp", lambda c, k: ("/tmp/c", "/tmp/k"))
+    monkeypatch.setattr(requests, "get", lambda *a, **k: RespFalsa(404, "{}"))
+
+    chave_pem, cert_pem = certificado
+    texto = emitir_dps.diagnostico(
+        {"chave_pem": chave_pem, "cert_pem": cert_pem, "_token": "tok"}, ID_DPS_3281, True)
+    assert "NÃO" in texto and "conhece esta declaração" in texto
+    assert "É com ela" in texto
+
+
+def test_o_diagnostico_nunca_mostra_o_token_nem_o_certificado(certificado, monkeypatch):
+    """Regra da área: segredo não entra no chat nem na tela. E este texto existe
+    justamente para ser copiado e mandado para fora."""
+    import emitir_dps, adn_nfse, requests
+
+    class RespFalsa:
+        status_code, text = 200, "{}"
+
+    monkeypatch.setattr(nac.ELNfseNacional, "__init__", lambda self, **k: None)
+    monkeypatch.setattr(nac.ELNfseNacional, "_chamar", lambda self, m, c, **k: RespFalsa())
+    monkeypatch.setattr(adn_nfse, "_cert_temp", lambda c, k: ("/tmp/c", "/tmp/k"))
+    monkeypatch.setattr(requests, "get", lambda *a, **k: RespFalsa())
+
+    chave_pem, cert_pem = certificado
+    texto = emitir_dps.diagnostico(
+        {"chave_pem": chave_pem, "cert_pem": cert_pem,
+         "_token": "token-secreto-da-prefeitura"}, ID_DPS_3281, True)
+    assert "token-secreto-da-prefeitura" not in texto
+    assert "BEGIN" not in texto          # nada de PEM
+
+
+def test_sem_token_o_diagnostico_diz_isso_em_vez_de_estourar(certificado):
+    import emitir_dps
+    chave_pem, cert_pem = certificado
+    texto = emitir_dps.diagnostico(
+        {"chave_pem": chave_pem, "cert_pem": cert_pem, "_token": ""}, ID_DPS_3281, False)
+    assert "token de integração ausente" in texto
+
+
+def test_o_aviso_de_ainda_processando_oferece_o_diagnostico(cenario, monkeypatch):
+    cliente, _ = cenario
+    import emitir_dps
+
+    def ainda(*a, **k):
+        raise emitir_dps.AindaProcessando("na fila")
+
+    servindo = sys.modules["app.apps.emissaonf.web"]
+    monkeypatch.setattr(servindo, "_ctx_minimo", lambda: {"cred": {}, "chave_pem": b"x",
+                                                          "cert_pem": b"x", "gc": None})
+    monkeypatch.setattr(emitir_dps, "consultar", ainda)
+    corpo = cliente.post("/emissao/declaracao",
+                         data={"token": TOKEN, "id_dps": ID_DPS_3281}).get_data(as_text=True)
+    assert "Diagnóstico completo" in corpo
+    assert "diagnostico=1" in corpo

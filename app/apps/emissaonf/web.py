@@ -432,6 +432,25 @@ def declaracao():
                   "Ela aparece na mensagem que a emissão mostrou."), mimetype="text/html")
 
     numero_esperado, _ano = _edps.numero_da_declaracao(id_dps)
+
+    # Diagnóstico completo: pergunta em todos os lugares e mostra as respostas
+    # cruas. É o que se usa quando a nota não aparece em canto nenhum e ninguém
+    # sabe de quem é a vez — e serve de prova para levar à prefeitura.
+    if request.values.get("diagnostico") == "1":
+        try:
+            ctx = _worker.preparar(card_id) if card_id else _ctx_minimo()
+            ctx["_token"] = _token_prefeitura(ctx["cred"])
+            texto = _edps.diagnostico(ctx, id_dps, producao)
+        except Exception as e:
+            texto = f"Não consegui rodar o diagnóstico: {type(e).__name__}: {e}"
+        corpo = (f"<h1>Diagnóstico da declaração</h1>"
+                 f"<p class='sub'>O que cada lado respondeu, sem filtro. Pode copiar e "
+                 f"mandar para a prefeitura.</p>"
+                 f"<div class='card'><pre>{html.escape(texto)}</pre></div>"
+                 f"<p><a class='btn' href='{url_for('.declaracao')}?token={html.escape(token)}'>"
+                 f"Voltar</a></p>")
+        return Response(_doc("Diagnóstico da declaração", corpo), mimetype="text/html")
+
     buf = io.StringIO()
     try:
         ctx = _worker.preparar(card_id) if card_id else _ctx_minimo()
@@ -444,7 +463,11 @@ def declaracao():
     except _edps.AindaProcessando as e:
         return Response(_pagina_declaracao(
             token, id_dps, card_id,
-            aviso=f"A nota {numero_esperado or ''} ainda NÃO ficou pronta.\n\n{e}"),
+            aviso=f"A nota {numero_esperado or ''} ainda NÃO ficou pronta.\n\n{e}",
+            link_diagnostico=(f"{url_for('.declaracao')}?token={html.escape(token)}"
+                              f"&id_dps={html.escape(id_dps)}&card_id={html.escape(card_id)}"
+                              f"&ambiente={'producao' if producao else 'homologacao'}"
+                              f"&diagnostico=1")),
             mimetype="text/html")
     except Exception as e:
         return Response(_pagina_declaracao(
@@ -500,11 +523,18 @@ def _ctx_minimo() -> dict:
     return {"gc": gc, "cred": cred, "chave_pem": chave_pem, "cert_pem": cert_pem}
 
 
-def _pagina_declaracao(token, id_dps, card_id, aviso="", abertas=None, erro_lista=""):
+def _pagina_declaracao(token, id_dps, card_id, aviso="", abertas=None, erro_lista="",
+                       link_diagnostico=""):
     t = html.escape(token)
     numero, _ano = _edps.numero_da_declaracao(id_dps) if id_dps else ("", "")
     box = (f"<div class='warn'><pre style='background:none;color:inherit;padding:0;"
            f"white-space:pre-wrap'>{html.escape(aviso)}</pre></div>") if aviso else ""
+    if link_diagnostico:
+        box += (f"<p><a class='btn' href='{link_diagnostico}'>Diagnóstico completo "
+                f"desta declaração</a></p>"
+                f"<p class='sub'>Pergunta em todos os lugares — prefeitura e plataforma "
+                f"nacional — e mostra as respostas cruas. Use quando a nota não aparece "
+                f"em canto nenhum: ele diz de quem é a vez, e serve de prova.</p>")
 
     # A lista do que está em aberto é o que dispensa guardar a identificação. Sem
     # ela, a pessoa só chega aqui se tiver anotado 45 caracteres — e em 07/10/2026
