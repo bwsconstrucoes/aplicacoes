@@ -163,3 +163,43 @@ def test_a_recuperacao_continua_reconhecendo_o_xml_antigo():
 def test_xml_que_nao_e_nota_nenhuma_devolve_vazio():
     import web
     assert web._ids_da_nota("<raiz><x>1</x></raiz>")[0] == ""
+
+
+# --------------------------------------------------------------------------- #
+# O PDF em branco que apagaria o documento bom
+# --------------------------------------------------------------------------- #
+# Os arquivos do Drive sobem com o MESMO nome, de propósito: mesmo link, nada
+# duplicado. O outro lado disso é que um PDF em branco não fica ao lado do bom —
+# ele toma o lugar dele. Quem regera PDF de nota antiga lê o XML do Drive sem
+# saber de qual modelo ele é, e o leitor do modelo antigo, recebendo um XML
+# nacional, não dá erro: dá um PDF vazio.
+
+def test_o_xml_nacional_passado_no_lugar_do_antigo_e_reconhecido(nota_xml, tmp_path):
+    """É o caso de regerar o PDF de uma nota emitida depois de 07/10/2026: o que
+    está arquivado no Drive é o nacional, mas quem chama pede como se fosse o
+    antigo."""
+    saida = str(tmp_path / "municipal.pdf")
+    nota_municipal.gerar_nota_municipal_pdf(nota_xml, saida)     # como se fosse ABRASF
+    assert os.path.getsize(saida) > 10000
+    d = nota_municipal.parse_do_nacional(nota_xml)
+    assert d["numero"] == "3084"
+
+
+def test_reconhece_os_dois_modelos_pelo_conteudo(nota_xml):
+    assert nota_municipal.eh_xml_nacional(nota_xml) is True
+    assert nota_municipal.eh_xml_nacional("<CompNfse><Nfse><InfNfse/></Nfse></CompNfse>") is False
+    assert nota_municipal.eh_xml_nacional("") is False
+    assert nota_municipal.eh_xml_nacional(None) is False
+
+
+def test_xml_que_nao_da_para_ler_nao_gera_pdf_nenhum(tmp_path):
+    """A rede de segurança: sem número, a leitura não entendeu o XML. Gerar o PDF
+    aqui substituiria no Drive o documento que o cliente recebeu por um em
+    branco — melhor falhar alto."""
+    saida = str(tmp_path / "municipal.pdf")
+    quase = """<?xml version="1.0"?><CompNfse><Nfse><InfNfse>
+        <Numero></Numero></InfNfse></Nfse></CompNfse>"""
+    with pytest.raises(ValueError) as erro:
+        nota_municipal.gerar_nota_municipal_pdf(quase, saida)
+    assert "sobrescreveria" in str(erro.value)
+    assert not os.path.exists(saida)

@@ -58,6 +58,18 @@ def valor_bruto_nf_nacional(xml_nacional: str):
     return float(m.group(1)) if m else None
 
 
+def eh_xml_nacional(xml: str | None) -> bool:
+    """Diz se o texto é o XML da NFS-e NACIONAL (e não o do modelo antigo).
+
+    Existe porque há XML dos dois modelos arquivado no Drive, e quem lê de lá
+    (regerar PDFs, fechar nacional) não tem como saber qual é só pelo nome do
+    arquivo. Olhar o conteúdo é mais confiável que confiar na coluna da planilha.
+    """
+    if not xml:
+        return False
+    return ("infNFSe" in xml) or ("sped.fazenda.gov.br/nfse" in xml)
+
+
 def parse_do_nacional(xml_nacional: str) -> dict:
     """Monta o MESMO dicionário que o `parse_nfse_municipal`, mas lendo o XML
     nacional em vez do antigo.
@@ -274,6 +286,15 @@ def gerar_nota_municipal_pdf(xml_abrasf: str | None, saida_pdf: str,
     Passe `xml_abrasf=None` para a segunda.
     """
     from fpdf import FPDF
+    # Quem lê XML arquivado no Drive não sabe de qual modelo ele é — e passar um
+    # XML nacional para o leitor do modelo antigo não dá erro: dá um PDF EM
+    # BRANCO. Como o arquivo sobe com o mesmo nome, esse PDF em branco apagaria o
+    # documento bom. Por isso a decisão é tomada pelo CONTEÚDO, aqui, e não por
+    # quem chama.
+    if xml_abrasf and eh_xml_nacional(xml_abrasf):
+        xml_nacional = xml_nacional or xml_abrasf
+        xml_abrasf = None
+
     if xml_abrasf:
         d = parse_nfse_municipal(xml_abrasf)
     elif xml_nacional:
@@ -281,6 +302,15 @@ def gerar_nota_municipal_pdf(xml_abrasf: str | None, saida_pdf: str,
     else:
         raise ValueError("Informe o XML da nota (antigo ou nacional) para desenhar o PDF.")
     _enriquecer(d, xml_nacional)
+
+    # Rede de segurança do mesmo problema: nota sem número é sinal de que a
+    # leitura não entendeu o XML. Melhor não gerar nada do que gerar um PDF vazio
+    # que substitui, no Drive, o documento que o cliente recebeu.
+    if not (d.get("numero") or "").strip():
+        raise ValueError(
+            "Não consegui ler o número da nota no XML — não vou gerar o PDF. "
+            "Gerar aqui sobrescreveria, no Drive, o documento bom por um em branco."
+        )
     if discriminacao:                       # override limpo (quando não há nacional ainda)
         d["discriminacao"] = discriminacao
 
