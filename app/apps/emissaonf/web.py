@@ -12,6 +12,7 @@ sem depender da pasta de trabalho.
 """
 from __future__ import annotations
 import os
+import datetime
 import sys
 import io
 import uuid
@@ -228,6 +229,27 @@ def emitir():
         return Response(_pagina_erro("Você precisa marcar a confirmação antes de emitir."),
                         mimetype="text/html")
 
+    # ---- SUBSTITUIÇÃO não passa mais por aqui ----
+    # No modelo antigo a nova nota carregava, dentro dela, a identificação da
+    # nota que substituía. O modelo nacional não tem esse campo: lá a
+    # substituição é um EVENTO registrado sobre a nota já emitida, por outra
+    # operação da API. Enquanto esse caminho não existir aqui — e ele não dá
+    # para ser ensaiado sem emitir nota de verdade — a substituição é feita
+    # pelo portal, como já era o caminho da nota emitida manualmente.
+    if nota_sub:
+        return Response(_pagina_explicacao(
+            f"<b>Substituir pela tela não funciona mais.</b> Em 07/10/2026 a prefeitura "
+            f"desativou o modelo antigo, e com ele o campo que mandava a nota "
+            f"substituída dentro da nota nova. No modelo nacional a substituição é "
+            f"um evento registrado sobre a nota, e esse caminho ainda não está "
+            f"pronto aqui.<br><br>"
+            f"<b>O que fazer agora:</b> substitua a NF {html.escape(nota_sub)} pelo "
+            f"botão \"Substituir\" do portal da prefeitura e depois use o "
+            f"<b>/emissao/recuperar</b> com o número dela no campo "
+            f"\"nota substituída\" — ele refaz os efeitos internos (Pipefy, Omie, "
+            f"Drive, planilha, WhatsApp). É o mesmo caminho que já se usava para "
+            f"nota emitida manualmente."), mimetype="text/html")
+
     with _LOCK:
         if card_id in _EMITINDO:
             return Response(_pagina_erro("Emissão já em andamento para este card."), mimetype="text/html")
@@ -235,24 +257,10 @@ def emitir():
     try:
         ctx = _worker.preparar(card_id, tipo_medicao_override=(tm_over or None),
                                valor_override=val_over, nota_substituida=(nota_sub or None))
-        if nota_sub and not _sub.localizar_slot_por_numero(ctx["card"], nota_sub):
-            return Response(_pagina_erro(
-                f"Substituição: a NF {nota_sub} não foi encontrada nos slots A–E deste card. "
-                f"Confira o número no parâmetro 'nota_substituida' do link."), mimetype="text/html")
-        # regra do município: só permite substituir por valor IGUAL ou MAIOR. Barramos antes de tentar.
-        if nota_sub:
-            _slots_v = {_so_num(x["numero"]): x["valor"] for x in _val.slots_preenchidos(ctx["card"])}
-            _v_old = _slots_v.get(nota_sub)
-            try:
-                _v_new = Decimal(str(getattr(ctx["r"], "valor_total", 0) or 0))
-            except Exception:
-                _v_new = None
-            if _v_old is not None and _v_new is not None and _v_new < _v_old:
-                return Response(_pagina_erro(
-                    f"Substituição bloqueada: o valor da nova nota (R$ {_val.brl(_v_new)}) é MENOR que o da "
-                    f"NF {nota_sub} (R$ {_val.brl(_v_old)}). O município só permite substituir por valor igual "
-                    f"ou maior. Valor menor (ou troca de competência) é caso de cancelamento — passo à parte."),
-                    mimetype="text/html")
+        # A conferência de slots e a regra de "valor igual ou maior" viviam aqui.
+        # Saíram junto com a substituição pela tela: elas só faziam sentido para
+        # decidir se a nota antiga podia ser substituída por esta. O caminho de
+        # hoje é o portal da prefeitura, e lá quem confere é ela.
         val = _val.checar(ctx["card"], ctx["r"], ignorar_numero=nota_sub or None)   # revalida no servidor
         if not val["ok"]:
             return Response(_pagina_erro("Bloqueado pela validação: " + " | ".join(val["bloqueios"])),
@@ -260,27 +268,6 @@ def emitir():
         if not ctx.get("assinado"):
             return Response(_pagina_erro("XML não assinado (certificado/senha ausente)."),
                             mimetype="text/html")
-
-        # ---- SUBSTITUIÇÃO não passa mais por aqui ----
-        # No modelo antigo a nova nota carregava, dentro dela, a identificação da
-        # nota que substituía. O modelo nacional não tem esse campo: lá a
-        # substituição é um EVENTO registrado sobre a nota já emitida, por outra
-        # operação da API. Enquanto esse caminho não existir aqui — e ele não dá
-        # para ser ensaiado sem emitir nota de verdade — a substituição é feita
-        # pelo portal, como já era o caminho da nota emitida manualmente.
-        if nota_sub:
-            return Response(_pagina_erro(
-                f"Substituir pela tela não funciona mais. Em 07/10/2026 a prefeitura "
-                f"desativou o modelo antigo, e com ele o campo que mandava a nota "
-                f"substituída dentro da nota nova. No modelo nacional a substituição é "
-                f"um evento registrado sobre a nota, e esse caminho ainda não está "
-                f"pronto aqui.<br><br>"
-                f"<b>O que fazer agora:</b> substitua a NF {html.escape(nota_sub)} pelo "
-                f"botão \"Substituir\" do portal da prefeitura e depois use o "
-                f"<b>/emissao/recuperar</b> com o número dela no campo "
-                f"\"nota substituída\" — ele refaz os efeitos internos (Pipefy, Omie, "
-                f"Drive, planilha, WhatsApp). É o mesmo caminho que já se usava para "
-                f"nota emitida manualmente."), mimetype="text/html")
 
         dados = ctx["dados_rps"]
         dados.discriminacao = discr or getattr(dados, "discriminacao", "")
@@ -292,7 +279,7 @@ def emitir():
         ensaio = request.form.get("ensaio") == "on"
         producao = _producao_permitida() and not ensaio
 
-        data_emissao = __import__("datetime").date.today().isoformat()
+        data_emissao = datetime.date.today().isoformat()
         try:
             dps = _dps.montar(ctx["card"], ctx["obra"], ctx["r"], dados,
                               ctx["prox"], ctx.get("ibge"), data_emissao, producao)
@@ -822,7 +809,18 @@ def _pagina_pedir_card(token):
 
 
 def _pagina_erro(msg):
+    """Erro para a pessoa ler. O texto é ESCAPADO, porque quase sempre vem de uma
+    exceção ou de uma resposta de fora — e aí qualquer marcação dentro dele seria
+    coisa que não controlamos."""
     return _doc("Erro", f"<h1>Emissão de NFS-e</h1><div class='err'>{html.escape(msg)}</div>")
+
+
+def _pagina_explicacao(msg_html):
+    """Igual à de erro, mas para texto que NÓS escrevemos, com negrito e
+    parágrafos. Separada de propósito: a diferença entre as duas é escapar ou
+    não, e isso não pode depender de quem lembra de passar um parâmetro."""
+    return _doc("Emissão de NFS-e",
+                f"<h1>Emissão de NFS-e</h1><div class='warn'>{msg_html}</div>")
 
 
 def _pagina_erro_diag(msg, diag):

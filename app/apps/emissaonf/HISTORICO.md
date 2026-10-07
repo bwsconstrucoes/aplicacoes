@@ -614,6 +614,46 @@ ela passou batido por toda a migração. Agora há `tests/test_emissaonf_telas.p
 que abre as telas de verdade e exige, entre outras coisas, que o diagnóstico
 nunca mostre valor de credencial.
 
+### O caminho inteiro da emissão passou a ser exercitado sem prefeitura
+
+Depois de perder uma ida e volta do dono com o diagnóstico inalcançável, ficou
+claro o que faltava: **nenhum teste clicava no botão.** Os testes provavam que a
+declaração estava certa e que os documentos saíam certos, mas a *ligação* entre
+as peças — nome de campo, ordem de argumento, ordem das conferências — só era
+exercitada quando ele emitia.
+
+Agora o `tests/test_emissaonf_emissao_ponta_a_ponta.py` roda o caminho de
+verdade: o motor fiscal calcula, a declaração é montada e **assinada de verdade**
+(com um certificado descartável criado no próprio teste), e uma prefeitura
+dublada recebe o envio — conferindo que ele chegou compactado como o manual
+manda — e devolve a nota. Só o pós-emissão é dublado, porque ele escreve em
+planilha, Omie, card e Drive.
+
+**Ele achou dois defeitos na primeira execução, e os dois eram reais:**
+
+1. **A explicação da substituição era inalcançável.** O aviso de que substituir
+   pela tela não funciona mais vinha DEPOIS de carregar o card e conferir os
+   slots. Quem tentasse substituir uma nota que não estivesse nos slots recebia
+   *"confira o número no parâmetro nota_substituida do link"* — uma mensagem
+   sobre um parâmetro, quando a resposta certa é "isto não funciona mais, use o
+   portal". A explicação subiu para antes de tudo, e a conferência de slots e a
+   regra de "valor igual ou maior" saíram: elas só existiam para decidir se a
+   substituição podia ser feita aqui, e aqui ela não é mais feita.
+
+2. **O texto do aviso apareceria com as marcações cruas.** A tela de erro escapa
+   o texto — e com razão, porque quase sempre ele vem de uma exceção ou de uma
+   resposta de fora. Mas aquele aviso é escrito por nós, com negrito e
+   parágrafos. Virou uma função separada (`_pagina_explicacao`), e a separação é
+   de propósito: a diferença entre as duas é escapar ou não, e isso não pode
+   depender de alguém lembrar de passar um parâmetro.
+
+**E um detalhe de estrutura que vale saber antes de escrever teste de tela:** o
+`web.py` é carregado **duas vezes**, com dois nomes — `web` (o import plano, como
+os módulos desta pasta se importam entre si) e `app.apps.emissaonf.web` (o
+pacote, de onde o Flask registra o blueprint). Quem atende a requisição é o
+segundo. Trocar uma função no primeiro não tem efeito nenhum sobre o que roda —
+foi o que fez o primeiro teste do token passar quando não devia.
+
 ### A limpeza do que o modelo antigo deixou
 
 Saíram do `web.py` o preparo do certificado para o envelope SOAP, a busca
