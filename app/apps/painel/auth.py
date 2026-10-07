@@ -209,6 +209,7 @@ _ABAS_POR_ENDPOINT = {
     "painel.dre_despesas": "dre",
     "painel.dre_retencoes": "dre",
     "painel.dre_dividendos": "dre",
+    "painel.dre_conferir_aportes": "dre",
     "painel.analitico": "analitico",
     "painel.receita": "receita",
     "painel.medicao": "receita",

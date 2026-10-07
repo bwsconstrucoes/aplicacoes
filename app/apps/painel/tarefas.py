@@ -47,9 +47,29 @@ MODOS = {
     "rapida": "Atualização do dia — baixa o que mudou e refaz os números",
     "completa": "Atualização completa — inclui a varredura de títulos excluídos no OMIE",
     "so_numeros": "Só refazer os números, sem baixar nada do OMIE",
+    "pagamentos": "Reler todos os pagamentos do OMIE, de qualquer data — para baixa lançada com data de mais de 6 meses (demorado)",
     "observacoes": "Buscar as observações dos títulos no OMIE (bloco a bloco, pode parar e continuar)",
     "carga_inicial": "Primeira carga — baixa toda a base do OMIE (demorado)",
 }
+
+# O nome de cada modo como o botão o chama — para a tela dizer QUAL atualização
+# foi interrompida (06/10/2026, o dono: "não tem um aviso de qual era").
+ROTULOS = {
+    "rapida": "Atualização do dia",
+    "completa": "Atualização completa",
+    "so_numeros": "Só refazer os números",
+    "pagamentos": "Reler todos os pagamentos",
+    "observacoes": "Buscar as observações",
+    "carga_inicial": "Primeira carga",
+}
+
+# Quantas vezes SEGUIDAS a mesma atualização é retomada sozinha. Duas cobrem
+# o reinício por publicação; mais que isso é sinal de que é a própria
+# atualização que derruba o serviço — e aí repetir para sempre seria o pior.
+RETOMADAS_SEGUIDAS = 2
+
+# De quanto em quanto tempo o vigia confere se há atualização interrompida.
+SEGUNDOS_ENTRE_VIGIAS = 300
 
 # Quantos títulos a pagar cada rodada de observações consulta.
 #
@@ -142,11 +162,52 @@ def _carimbar(execucao_id: int, etapa: str, detalhe: str) -> None:
             conn.commit()
     except Exception:
         logger.exception("Painel: não consegui gravar o andamento")
+        return
+    # O PASSO, para a tela contar a história (migração 020). Separado: sem a
+    # tabela, a atualização segue — só a história fica mais curta.
+    try:
+        with conexao() as conn:
+            conn.execute(
+                "INSERT INTO execucao_passos (execucao_id, etapa, ordem, detalhe)"
+                " VALUES (?, ?, COALESCE((SELECT MAX(ordem) FROM execucao_passos"
+                "                          WHERE execucao_id = ?), 0) + 1, ?)"
+                " ON CONFLICT (execucao_id, etapa) DO UPDATE"
+                "   SET visto_em = now(),"
+                "       detalhe = COALESCE(NULLIF(EXCLUDED.detalhe, ''),"
+                "                          execucao_passos.detalhe)",
+                (execucao_id, etapa[:200], execucao_id, (detalhe or "")[:200]))
+            conn.commit()
+    except Exception:  # noqa: BLE001 — migração 020 pendente
+        logger.debug("Painel: passo não gravado (migração 020 pendente?)")
 
 
 # ---------------------------------------------------------------------------
 # O trabalho
 # ---------------------------------------------------------------------------
+def _releitura_pendente(execucao_id: int) -> bool:
+    """Há uma releitura de pagamentos começada e não terminada?
+
+    Duas fontes: a marca dos anos (gravada desde o início de cada releitura,
+    apagada só quando ela termina) e — para a releitura de antes de existir a
+    marca, a de 06/10/2026 — uma execução "Reler todos os pagamentos" que não
+    terminou bem e depois da qual nenhuma terminou. Na dúvida, relê: custa
+    tempo; recalcular com pagamentos faltando custa o painel inteiro errado."""
+    from .db import consultar
+    from .sync.espelho import CHAVE_ANOS_RELIDOS
+    try:
+        if consultar("SELECT 1 FROM config WHERE chave = ?", [CHAVE_ANOS_RELIDOS]):
+            return True
+        return bool(consultar(
+            "SELECT 1 FROM execucoes e"
+            " WHERE e.tipo = 'pagamentos' AND e.id <> ? AND e.ok IS NOT TRUE"
+            "   AND NOT EXISTS (SELECT 1 FROM execucoes o WHERE o.tipo = 'pagamentos'"
+            "                     AND o.ok AND o.inicio > e.inicio)"
+            " LIMIT 1", [int(execucao_id)]))
+    except Exception:  # noqa: BLE001 — banco fora: o recálculo também cairia
+        logger.exception("Painel: não consegui saber se há releitura pendente")
+        return False
+
+
 def executar_trabalho(modo: str, execucao_id: int) -> bool:
     """Faz a atualização inteira. Chamado pelo processo separado.
 
@@ -156,21 +217,28 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
 
     from .db import conexao
     from .horario import agora
+    from . import andamento
     from .sync import espelho, fato
 
     inicio = agora()
     ultimo = [0.0]
 
+    etapa_gravada = [""]
+
     def _anotar(etapa: str, detalhe: str = "") -> None:
-        """Vai para o banco de tempos em tempos, não a cada página."""
-        if time.time() - ultimo[0] < SEGUNDOS_ENTRE_BATIMENTOS:
+        """Vai para o banco de tempos em tempos, não a cada página — mas a
+        MUDANÇA de passo vai na hora, senão um passo curto some da história."""
+        if (etapa == etapa_gravada[0]
+                and time.time() - ultimo[0] < SEGUNDOS_ENTRE_BATIMENTOS):
             return
         ultimo[0] = time.time()
+        etapa_gravada[0] = etapa
         _carimbar(execucao_id, etapa, detalhe)
 
     def _etapa(etapa: str, detalhe: str = "") -> None:
         """Mudança de etapa: vai na hora, sem esperar o intervalo."""
         ultimo[0] = time.time()
+        etapa_gravada[0] = etapa
         _carimbar(execucao_id, etapa, detalhe)
 
     # Falha de uma etapa NÃO essencial fica registrada aqui e é contada no fim.
@@ -179,88 +247,108 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
 
     try:
         espelho.definir_progresso(_anotar)
-        try:
-            # ---- etapa 1: trazer do OMIE o que mudou ---------------------
-            if modo == "carga_inicial":
-                _etapa("baixando a base inteira do OMIE", "começando")
-                # A carga devolve o que NAO conseguiu garantir (etapa que
-                # terminou com menos titulos do que o OMIE diz existir). Isso
-                # tem de chegar a tela: "concluida" com dado faltando e
-                # meia-verdade, e ninguem teria como desconfiar.
-                queixas = espelho.carga_inicial() or []
-                if queixas:
-                    falha_parcial = "; ".join(queixas)
-            elif modo == "observacoes":
-                # Só LÊ do OMIE: consulta título por título para trazer a
-                # observação, que a listagem não devolve. Nada é escrito lá.
-                _etapa("buscando as observações dos títulos a receber")
-                n_r = espelho.backfill_observacoes(
-                    natureza="R", forcar=True,
-                    progresso=lambda f, t, g: _anotar(
-                        "observações dos títulos a receber",
-                        f"{f} de {t} — {g} com observação"))
-                _etapa("buscando as observações dos títulos a pagar")
-                n_p = espelho.backfill_observacoes(
-                    natureza="P", forcar=True,
-                    limite=TETO_DE_OBSERVACOES_POR_RODADA,
-                    progresso=lambda f, t, g: _anotar(
-                        "observações dos títulos a pagar",
-                        f"{f} de {t} — {g} com observação"))
-                observacoes_achadas = (n_r or 0) + (n_p or 0)
-            elif modo in ("rapida", "completa"):
-                _etapa("baixando o que mudou no OMIE")
-                # A completa rele seis meses de pagamentos; a do dia, um mes.
-                # E o que pega baixa lancada com data antiga e estorno refeito
-                # em outra conta (ver DIAS_REVISADOS_NA_ATUALIZACAO).
-                espelho.sync_incremental(
-                    revisar_dias=(espelho.DIAS_REVISADOS_NA_COMPLETA
-                                  if modo == "completa"
-                                  else espelho.DIAS_REVISADOS_NA_ATUALIZACAO))
-                # O de-para obra -> projeto vem da planilha "C. Diários" e
-                # até 23/09/2026 só era lido na primeira carga. Obra nova
-                # ficava "(sem projeto)" — e, com o acesso por projeto, fora
-                # do acesso de quem tem o projeto. Agora é lido todo dia.
-                # Se a planilha falhar, a atualização segue: é um de-para,
-                # não a base.
-                _etapa("lendo a planilha de projetos")
+        # ---- etapa 1: trazer do OMIE o que mudou ---------------------
+        if modo == "carga_inicial":
+            _etapa("baixando a base inteira do OMIE", "começando")
+            # A carga devolve o que NAO conseguiu garantir (etapa que
+            # terminou com menos titulos do que o OMIE diz existir). Isso
+            # tem de chegar a tela: "concluida" com dado faltando e
+            # meia-verdade, e ninguem teria como desconfiar.
+            queixas = espelho.carga_inicial() or []
+            if queixas:
+                falha_parcial = "; ".join(queixas)
+        elif modo == "observacoes":
+            # Só LÊ do OMIE: consulta título por título para trazer a
+            # observação, que a listagem não devolve. Nada é escrito lá.
+            _etapa("buscando as observações dos títulos a receber")
+            n_r = espelho.backfill_observacoes(
+                natureza="R", forcar=True,
+                progresso=lambda f, t, g: _anotar(
+                    "observações dos títulos a receber",
+                    f"{f} de {t} — {g} com observação"))
+            _etapa("buscando as observações dos títulos a pagar")
+            n_p = espelho.backfill_observacoes(
+                natureza="P", forcar=True,
+                limite=TETO_DE_OBSERVACOES_POR_RODADA,
+                progresso=lambda f, t, g: _anotar(
+                    "observações dos títulos a pagar",
+                    f"{f} de {t} — {g} com observação"))
+            observacoes_achadas = (n_r or 0) + (n_p or 0)
+        elif modo in ("rapida", "completa", "pagamentos"):
+            _etapa(andamento.TITULOS_A_PAGAR)
+            # A completa rele seis meses de pagamentos; a do dia, um mes.
+            # E o que pega baixa lancada com data antiga e estorno refeito
+            # em outra conta (ver DIAS_REVISADOS_NA_ATUALIZACAO). "Reler
+            # todos os pagamentos" vai desde o comeco da base: e o caso da
+            # baixa de mais de seis meses (dono, 06/10/2026).
+            espelho.sync_incremental(
+                revisar_dias=(espelho.DIAS_REVISADOS_NA_COMPLETA
+                              if modo == "completa"
+                              else espelho.DIAS_REVISADOS_NA_ATUALIZACAO))
+            if modo == "pagamentos":
+                # Ano a ano, cada um gravado ao terminar: um corte no meio não
+                # manda de volta à página 1 (dono, 06/10/2026).
+                _etapa(andamento.PAGAMENTOS_ANTIGOS)
+                relidos = espelho.reler_pagamentos_por_ano()
+                if relidos["pulados"]:
+                    logger.info("Painel: releitura pulou %s (já feitos antes).",
+                                relidos["pulados"])
+            # O de-para obra -> projeto vem da planilha "C. Diários" e
+            # até 23/09/2026 só era lido na primeira carga. Obra nova
+            # ficava "(sem projeto)" — e, com o acesso por projeto, fora
+            # do acesso de quem tem o projeto. Agora é lido todo dia.
+            # Se a planilha falhar, a atualização segue: é um de-para,
+            # não a base.
+            _etapa(andamento.PLANILHA)
+            try:
+                espelho.atualizar_projetos()
+            except Exception as e:  # noqa: BLE001
+                falha_parcial = f"a planilha de projetos não foi lida ({e})"
+                logger.exception("Painel: %s — sigo para o recálculo",
+                                 falha_parcial)
+            if modo == "completa":
+                # A varredura de exclusões lê TODOS os ids do OMIE para
+                # descobrir o que foi apagado lá e continua aqui. É a parte
+                # lenta; por isso não entra na atualização do dia.
+                #
+                # SE ELA FALHAR, A ATUALIZAÇÃO SEGUE. Em 20/09/2026 um erro
+                # bobo no fim dela (apagar um arquivo temporário cujo
+                # caminho vinha vazio) derrubou a carga inteira — e, pior,
+                # impediu a etapa seguinte, que é a que refaz os números das
+                # telas. A base atualizou e as telas continuaram mostrando
+                # número velho, sem ninguém perceber.
+                #
+                # Achar título apagado é um extra semanal; refazer os
+                # números é o que faz a tela valer. O extra nunca mais
+                # custa o essencial.
+                _etapa(andamento.EXCLUIDOS)
                 try:
-                    espelho.atualizar_projetos()
+                    espelho.reconcile()
                 except Exception as e:  # noqa: BLE001
-                    falha_parcial = f"a planilha de projetos não foi lida ({e})"
+                    # soma-se ao que ja falhou (a planilha, por exemplo):
+                    # uma falha nao pode esconder a outra na mensagem
+                    falha_parcial = ((falha_parcial + "; ") if falha_parcial else "") + (
+                        f"a varredura de títulos excluídos falhou ({e})")
                     logger.exception("Painel: %s — sigo para o recálculo",
                                      falha_parcial)
-                if modo == "completa":
-                    # A varredura de exclusões lê TODOS os ids do OMIE para
-                    # descobrir o que foi apagado lá e continua aqui. É a parte
-                    # lenta; por isso não entra na atualização do dia.
-                    #
-                    # SE ELA FALHAR, A ATUALIZAÇÃO SEGUE. Em 20/09/2026 um erro
-                    # bobo no fim dela (apagar um arquivo temporário cujo
-                    # caminho vinha vazio) derrubou a carga inteira — e, pior,
-                    # impediu a etapa seguinte, que é a que refaz os números das
-                    # telas. A base atualizou e as telas continuaram mostrando
-                    # número velho, sem ninguém perceber.
-                    #
-                    # Achar título apagado é um extra semanal; refazer os
-                    # números é o que faz a tela valer. O extra nunca mais
-                    # custa o essencial.
-                    _etapa("procurando títulos excluídos no OMIE")
-                    try:
-                        espelho.reconcile()
-                    except Exception as e:  # noqa: BLE001
-                        # soma-se ao que ja falhou (a planilha, por exemplo):
-                        # uma falha nao pode esconder a outra na mensagem
-                        falha_parcial = ((falha_parcial + "; ") if falha_parcial else "") + (
-                            f"a varredura de títulos excluídos falhou ({e})")
-                        logger.exception("Painel: %s — sigo para o recálculo",
-                                         falha_parcial)
-        finally:
-            espelho.definir_progresso(None)
+
+        # ---- a trava da releitura incompleta (06/10/2026) ------------------
+        # Uma releitura de pagamentos cortada no meio deixou anos SEM
+        # pagamento no espelho. Refazer os números assim mostraria títulos
+        # pagos como em aberto — o painel inteiro errado, com cara de certo.
+        # Então NENHUMA atualização recalcula antes de terminar a releitura.
+        if modo not in ("carga_inicial", "observacoes") and _releitura_pendente(execucao_id):
+            _etapa(andamento.PAGAMENTOS_ANTIGOS, "terminando a releitura que ficou pela metade")
+            espelho.reler_pagamentos_por_ano()
 
         # ---- etapa 2: refazer os números que as telas leem ---------------
-        _etapa("recalculando os números do painel")
-        with conexao() as conn:
-            n_fato, n_receb = fato.reconstruir(conn)
+        # O relator continua ligado aqui: o recálculo também dá sinal de vida.
+        _etapa(andamento.RECALCULO)
+        try:
+            with conexao() as conn:
+                n_fato, n_receb = fato.reconstruir(conn)
+        finally:
+            espelho.definir_progresso(None)
 
         duracao = (agora() - inicio).total_seconds()
         mensagem = (f"{n_fato:,} linhas de lançamento e {n_receb:,} recebimentos "
@@ -311,6 +399,54 @@ def _iniciar_processo(modo: str, execucao_id: int) -> None:
                      stdout=None, stderr=None, close_fds=True, **extras)
     logger.info("Painel: atualização '%s' iniciada em processo separado "
                 "(execução %d).", modo, execucao_id)
+
+
+def retomar_se_interrompida() -> dict | None:
+    """Recomeça sozinha a atualização que morreu no meio.
+
+    06/10/2026, o dono, diante de "a atualização anterior foi interrompida":
+    *"não tem como ficar em looping até finalizar?"*. Tem — com teto. A
+    execução sem sinal de vida há mais de 10 minutos é disparada de novo, com
+    o mesmo modo, marcada como "retomada". Depois de RETOMADAS_SEGUIDAS
+    retomadas seguidas que também morreram, para: aí o problema é a própria
+    atualização, e repetir derrubaria o serviço em ciclo.
+
+    Seguro porque toda atualização apaga e regrava NA MESMA TRANSAÇÃO: a que
+    morreu não deixou nada pela metade. E só age em quem parou de dar sinal —
+    desde 06/10/2026 a leitura do OMIE e o recálculo dão sinal a cada página."""
+    from .consultas import execucao_em_andamento
+    from .db import consultar
+
+    registro = execucao_em_andamento()
+    if not registro or registro["viva"] or registro["tipo"] not in MODOS:
+        return None
+    tipo = registro["tipo"]
+    seguidas = 0
+    for (disparo,) in consultar(
+            "SELECT disparo FROM execucoes WHERE tipo = ? "
+            " ORDER BY inicio DESC LIMIT ?", [tipo, RETOMADAS_SEGUIDAS + 1]):
+        if disparo != "retomada":
+            break
+        seguidas += 1
+    if seguidas >= RETOMADAS_SEGUIDAS:
+        logger.warning("Painel: '%s' parou de novo depois de %d retomadas — "
+                       "não retomo mais; precisa de alguém olhar.", tipo, seguidas)
+        return {"ok": False, "erro": "retomadas esgotadas"}
+    logger.warning("Painel: '%s' parou de dar sinal há %.1f min — retomando "
+                   "sozinho (%dª retomada).", tipo, registro["silencio_minutos"],
+                   seguidas + 1)
+    return disparar(tipo, disparo="retomada")
+
+
+def vigiar_para_sempre(intervalo: int = SEGUNDOS_ENTRE_VIGIAS) -> None:
+    """O laço do vigia, numa thread do serviço web. Nunca derruba nada."""
+    import time
+    while True:
+        time.sleep(intervalo)
+        try:
+            retomar_se_interrompida()
+        except Exception:  # noqa: BLE001 — banco fora, migração pendente…
+            logger.exception("Painel: o vigia das atualizações falhou (sigo vigiando)")
 
 
 def disparar(modo: str, disparo: str = "manual") -> dict:

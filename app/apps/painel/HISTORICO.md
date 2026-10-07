@@ -2182,6 +2182,159 @@ tinha — era a mensagem da regra "consolidada", e a regra saía consolidada
 mesmo com bancária presente. Com a decisão separada, "consolidada" só aparece
 quando de fato não há bancária.
 
+## ⚠️ INCIDENTE: a janela de pagamentos NÃO era atômica — 06/10/2026
+
+**Eu (Claude) afirmei ao dono, mais de uma vez, que a leitura de pagamentos
+"apaga e regrava na mesma transação: se cair no meio, nada se perde". Era
+falso.** `_apagar_movimentos_janela` e `gravar_movimentos` davam `commit` cada
+um: a janela era apagada e confirmada, e regravada página a página. A releitura
+desde 2015, cortada na página 247 de 2716 (pela publicação que ele autorizou),
+deixou o espelho SEM a maior parte dos pagamentos desde 2015. Os números das
+telas não chegaram a ser refeitos com isso (o fato da 18:44 seguia de pé), mas
+qualquer "Só refazer os números" — ou a atualização da madrugada — mostraria
+título pago como em aberto. A lição é a de sempre: afirmar só o que foi lido
+no código, não o que o comentário promete.
+
+**Consertos:**
+- `confirmar=False` nas duas funções quando são parte de uma janela; quem
+  chama confirma no fim (atualização do dia, releitura, "Trazer este dia").
+- **Releitura ano a ano** (`reler_pagamentos_por_ano`): cada ano é a sua
+  janela, gravada e marcada junto (`config.releitura_pagamentos_anos`); a
+  próxima tentativa pula os anos feitos. Pergunta do dono: *"não aproveita o
+  que já tinha lido?"* — agora aproveita, por ano.
+- **Trava** (`tarefas._releitura_pendente`): nenhuma atualização refaz os
+  números com releitura incompleta — termina a releitura antes. Reconhece a
+  campanha pela marca e, para a de 06/10 (de antes da marca), por uma "Reler
+  todos os pagamentos" não concluída sem nenhuma concluída depois.
+
+## "O que aconteceu nas atualizações" — a história de cada uma — 06/10/2026
+
+O dono: *"essa tela de atualizar os dados era para ter mais informativo (…) o
+que atualizou, até onde, onde interrompeu, quantas páginas, quantas linhas, o
+que ficou pendente, qual foi a última tentativa (…) e qual ação eu preciso
+fazer. Ninguém entende direito."* E: *"os cron jobs de madrugada nunca dão
+problema; quando eu atualizo pela aplicação, é muito frequente dar."*
+
+**Migração 020** (`execucao_passos`): um registro por passo de cada
+atualização — quando começou, último sinal, último andamento ("página 37 de
+420"). Gravado pelo mesmo carimbo que mantém a execução viva; a MUDANÇA de passo
+vai na hora (o intervalo de 10 s não engole passo curto). Sem chave estrangeira
+de propósito (os testes fazem TRUNCATE em `execucoes`). O código tolera a
+tabela ausente.
+
+**Os passos têm nome** (`andamento.py`, os mesmos textos que a atualização
+grava): títulos a pagar, títulos a receber, pagamentos, plano de contas e
+cadastros, planilha de projetos, títulos excluídos (só a completa), recálculo.
+
+**O quadro novo em Configurações:** "Agora" (a última, onde parou, o que fazer),
+"Cada tipo de atualização" (última que terminou bem × última tentativa — p.ex.
+"Reler todos os pagamentos: nunca terminou") e as últimas 15, cada uma abrindo
+os passos com ✔ feito / ✖ parou aqui / ○ não chegou, e a ação. O quadro do
+"Atualizando…" mostra a sequência ao vivo.
+
+**Madrugada × botão — explicação, não prova:** em 06/10/2026 a `main` recebeu
+12 mudanças entre 0h e 19h (todas as áreas); cada uma reinicia o serviço e corta
+a atualização em curso. De madrugada ninguém publica. Somava-se o alarme falso
+das leituras longas sem sinal (já consertado).
+
+## A releitura "interrompida" que talvez estivesse viva; o vigia; o PDF do DRE — 06/10/2026
+
+**O alarme.** O dono disparou "Reler todos os pagamentos" às 19:05 e a tela
+disse "interrompida, parou de dar sinal há 14,6 min, na etapa baixando o que
+mudou no OMIE". **Causa provável (não confirmada):** a atualização do dia não
+dava sinal de vida DURANTE a leitura dos títulos e dos pagamentos — só ao
+mudar de etapa. A releitura inteira passa de 10 minutos nessa leitura, e a
+tela dá por morta a execução sem sinal há 10 min. A publicação daquela tarde
+não foi: o botão só existia na versão nova, já no ar às 19:05.
+
+**Consertos:** sinal de vida a cada página na leitura de títulos e
+pagamentos, na varredura de excluídos e no recálculo dos números (que também
+não dava); o aviso diz QUAL atualização era (`tarefas.ROTULOS`); e um **vigia**
+(thread no serviço, só sob o gunicorn, de 5 em 5 min) retoma sozinho a
+execução sem sinal, com o mesmo modo, `disparo = 'retomada'`, **no máximo duas
+vezes seguidas** — a terceira morte para de insistir (`RETOMADAS_SEGUIDAS`).
+Seguro porque toda etapa grava numa transação só.
+
+**PDF do relatório completo (DRE):** o gráfico do comprometido ia até 2031
+(títulos com vencimento longe). Agora vai **no máximo 12 meses à frente** —
+no PDF e no gráfico da tela, que é o mesmo (`ate_um_ano_a_frente`). As contas
+e tabelas não mudam. E o relatório completo (PDF e Excel) ganhou as seis abas
+de **aportes e dividendos**.
+
+## "Reler todos os pagamentos" — baixa de mais de 6 meses — 06/10/2026
+
+O dono fez muitos lançamentos e ajustes de aportes, rodou a completa (terminou
+17:10, levou 53 min) e eles não apareciam no Extrato. Expliquei as três causas
+possíveis (lançou depois que a completa começou a ler; lançamento direto na
+conta, sem título; baixa com data antiga). Ele: *"tem coisa de mais de 6
+meses, como resolve?"*
+
+**Por quê:** os títulos vêm pela data de ALTERAÇÃO (pegam tudo), mas os
+pagamentos vêm por janela de DATA DE PAGAMENTO — 30 dias na do dia, 180 na
+completa. Baixa lançada hoje com data de 2025 nunca entrava; o título ficava
+"em aberto" no painel.
+
+**O que entrou:** modo **"Reler todos os pagamentos"** em Configurações. É a
+mesma atualização, com a janela desde 01/01/2015
+(`espelho.PRIMEIRO_DIA_DOS_PAGAMENTOS`): apaga e regrava os pagamentos NA MESMA
+TRANSAÇÃO — se cair no meio, nada se perde. Sem a varredura de excluídos.
+Para um dia só, o "Conferir/Trazer este dia" do Calendário continua valendo.
+
+**Não medido:** quanto tempo leva na base real (a completa relê 6 meses em
+~53 min; a releitura inteira deve levar mais). Rodar fora do horário de uso.
+
+## "Não achou um aporte ou dividendo?" — conferência por obra — 06/10/2026
+
+O dono, olhando outro projeto depois do Mercado Barbalha: *"embora esteja
+lançado no OMIE, os aportes de uma obra desse projeto não estão aparecendo (…)
+o que pode estar acontecendo e o que posso fazer para identificar?"* — e o
+mesmo com dividendos pagos.
+
+**Não sei qual é o caso dele** (não alcanço a produção). Por isso, em vez de
+apostar numa causa, o bloco de aportes do DRE ganhou uma conferência: escolhe
+a obra (ou digita o Nº no OMIE) e cada lançamento com cara de aporte ou
+dividendo aparece com o veredito, **na mesma ordem em que o bloco corta**:
+1. categoria do lado PROVEDOR (2.08.97 / 1.02.95) — espelho, fica fora;
+2. categoria não reconhecida como aporte/dividendo;
+3. não quitado (o bloco só mostra caixa);
+4. sentido errado (aporte saindo, devolução entrando, dividendo entrando);
+5. entra — mas sem obra, ou escondido pelo filtro de ano, de projeto (com o
+   caso da OBRA SEM PROJETO apontado) ou de obra da barra lateral.
+
+Ignora os filtros da tela de propósito, mas diz quando um deles é o culpado.
+Lançamento que nem aparece = não chegou ao painel ou está em outra obra (a
+busca pelo número acha em qualquer obra e categoria). Quem está preso a obras
+só confere as dele.
+
+**Suspeita principal, não confirmada:** as 24 obras sem projeto (corrigíveis
+desde 05/10 em Parâmetros › Projeto das obras) somem do bloco quando a tela é
+filtrada por projeto.
+
+## Um pagamento, várias obras: agrupar como no extrato — 06/10/2026
+
+O dono: *"o mesmo título, dividido para duas obras — visualmente a gente
+enxerga dois lançamentos, mas na conta corrente eles somam o valor. Seria
+interessante ver de forma consolidada e expandido."*
+
+**A chave:** título + dia + conta é UM débito no banco (em aberto: título +
+vencimento + conta prevista). O `fato` tem uma linha por título × obra × baixa.
+
+**Onde entrou:**
+- **Calendário, detalhe do dia:** "Agrupar como no extrato" (ligado por padrão,
+  lembrado no navegador). O pagamento dividido vira uma linha com "▸ N obras",
+  que abre as partes. Desligado, cada linha mostra o selo "N partes · no
+  extrato R$ X".
+- **Despesas Analítico:** caixa "Agrupar como no extrato". Agrupado, a
+  **página passa a ser de pagamentos** (um débito nunca fica partido entre duas
+  páginas) e a ordenação vale para o pagamento inteiro. Aberto, a linha
+  filtrada numa obra diz "2 partes, 1 fora do filtro · no extrato R$ X".
+
+**Decisões:** o "no extrato" vem da base INTEIRA, não do filtro — é o número
+que se compara com o banco. **Exceção: quem está preso a obras** só conta as
+partes que já vê (somar a da obra de outro revelaria quanto foi para ela). A
+linha de imposto retido não entra (nunca passa pela conta). Planilha e PDF
+continuam uma linha por obra.
+
 ## Projeto das obras em Parâmetros — 05/10/2026
 
 O dono, diante do aviso "Obras sem projeto no OMIE: AREACA · ARESOBRAL · …

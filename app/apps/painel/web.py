@@ -39,6 +39,23 @@ bp = Blueprint("painel", __name__,
                static_url_path="/static")
 
 
+@bp.record_once
+def _ligar_o_vigia(_estado):
+    """Liga, no serviço de verdade, o vigia que retoma atualização interrompida
+    (dono, 06/10/2026: "não tem como ficar em looping até finalizar?").
+
+    Só sob o gunicorn: nos testes e no `python app/main.py` uma thread presa em
+    `sleep` não tem o que vigiar. Uma por processo — o `record_once` garante."""
+    import sys
+    import threading
+    if "gunicorn" not in " ".join(sys.argv) or os.getenv("PAINEL_SEM_VIGIA"):
+        return
+    from . import tarefas
+    threading.Thread(target=tarefas.vigiar_para_sempre, name="painel-vigia",
+                     daemon=True).start()
+    logger.info("Painel: vigia das atualizações ligado.")
+
+
 @bp.before_request
 def _porta_de_entrada():
     """Padrao NEGAR: rota que nao esteja na lista de publicas exige login."""
@@ -568,9 +585,10 @@ def dre():
         quebra=quebra, visao=visao, medida=medida,
         bloco=bloco, blocos=BLOCOS_DRE,
         dre=consultas.dre_linhas(f),
-        # os ultimos 36 meses no grafico; alem disso as barras ficam ilegiveis
+        # os ultimos 36 meses no grafico; alem disso as barras ficam ilegiveis.
+        # E no maximo um ano a frente (06/10/2026), como no PDF.
         grafico_mensal=graficos.barras_agrupadas(
-            mensal[-36:],
+            consultas.ate_um_ano_a_frente(mensal)[-36:],
             [("receita", "b-receita", "Receita"), ("despesa", "b-despesa", "Despesa")],
             campo_rotulo="rotulo", campo_linha="acumulado"),
         **extra,
@@ -651,6 +669,23 @@ def dre_dividendos():
     return jsonify({"ok": True, "sentido": sentido, **dados})
 
 
+@bp.route("/dre/conferir-aportes")
+def dre_conferir_aportes():
+    """Por que um aporte ou dividendo nao aparece no bloco (dono, 06/10/2026):
+    os candidatos de uma obra, ou um titulo pelo numero, cada um com o motivo."""
+    from . import consultas
+    f = _filtros_do_pedido()
+    obra = (request.args.get("obra_conferida") or "").strip()
+    codigo = (request.args.get("codigo") or "").strip()
+    if not obra and not codigo:
+        return jsonify({"ok": False, "erro": "Escolha uma obra ou digite o número."}), 400
+    dados = consultas.conferir_aportes(f, obra=obra, codigo=codigo,
+                                       escopo=_escopo_das_partes(f))
+    for l in dados["linhas"]:
+        l["data"] = l["data"].isoformat() if l.get("data") else ""
+    return jsonify({"ok": True, **dados})
+
+
 @bp.route("/dre/retencoes")
 def dre_retencoes():
     """As retencoes por tras do numero do DRE, abertas por tributo."""
@@ -696,12 +731,15 @@ def analitico():
         pagina = int(request.args.get("pagina") or 1)
     except ValueError:
         pagina = 1
+    # Agrupar como no extrato: um pagamento dividido entre obras vira uma
+    # linha, com as partes por baixo (dono, 06/10/2026).
+    agrupar = request.args.get("agrupar") == "1"
     return render_template(
         "painel_analitico.html",
         **_contexto_comum("analitico"),
         chips=f.resumo(),
         grupo=grupo, categoria=categoria, credor=credor, busca=busca,
-        visao=visao, ordem=ordem, de=de, ate=ate, base=base,
+        visao=visao, ordem=ordem, de=de, ate=ate, base=base, agrupar=agrupar,
         bases=consultas.BASES_DE_DATA,
         # as colunas novas nascem vazias; a tela avisa em vez de mostrar
         # travessão e deixar parecer que o dado não existe
@@ -709,7 +747,9 @@ def analitico():
         opcoes_analitico=consultas.opcoes_do_analitico(f),
         dados=consultas.analitico_despesas(
             f, grupo=grupo, categoria=categoria, credor=credor, busca=busca,
-            visao=visao, ordem=ordem, de=de, ate=ate, base=base, pagina=pagina),
+            visao=visao, ordem=ordem, de=de, ate=ate, base=base, pagina=pagina,
+            agrupar=agrupar, marcar_partes=True,
+            escopo_das_partes=_escopo_das_partes(f)),
     )
 
 
@@ -864,15 +904,33 @@ def calendario_dia():
         return jsonify({"ok": False, "erro": "Dia inválido."}), 400
     f, proprios = _filtros_do_calendario()
     linhas = consultas.lancamentos_do_dia(f, dia, **proprios)
+    # Um pagamento dividido entre obras vira UMA linha, como no extrato do
+    # banco, com as partes por baixo (dono, 06/10/2026).
+    grupos = consultas.agrupar_por_movimento(
+        linhas, consultas.partes_dos_movimentos(
+            [l["codigo"] for l in linhas], _escopo_das_partes(f)))
     for l in linhas:
         l["data"] = l["data"].isoformat() if l.get("data") else ""
     entradas = sum(l["valor"] for l in linhas if l["valor"] > 0 and not l["em_aberto"])
     saidas = sum(l["valor"] for l in linhas if l["valor"] < 0 and not l["em_aberto"])
     a_pagar = sum(l["valor"] for l in linhas if l["em_aberto"])
-    return jsonify({"ok": True, "dia": dia, "linhas": linhas,
+    return jsonify({"ok": True, "dia": dia, "linhas": linhas, "grupos": grupos,
                     "quantos": len(linhas), "entradas": entradas,
                     "saidas": saidas, "liquido": entradas + saidas,
                     "a_pagar": a_pagar})
+
+
+def _escopo_das_partes(f):
+    """Onde contar as partes de um pagamento dividido entre obras.
+
+    O dono vê a base inteira: o "no extrato" é o débito todo, mesmo com a tela
+    filtrada numa obra. Quem está preso a obras só conta as partes que já pode
+    ver — somar a da obra de outro revelaria quanto foi para ela."""
+    from . import auth
+    from .consultas import Filtros
+    if auth.usuario_da_sessao() is None:
+        return None
+    return Filtros(departamentos=f.departamentos, contas=f.contas, excluir_trf=False)
 
 
 @bp.route("/conferir/dia")
@@ -2294,6 +2352,14 @@ def configuracoes():
     conferencias_com_erro: list[dict] = []
     contexto = {"aba_ativa": "config", "abas": ABAS}
     sincronizacao = tarefas.estado()
+    # A historia das atualizacoes, passo a passo (dono, 06/10/2026: "ninguem
+    # entende direito"). Falha aqui nao derruba a tela de configuracao.
+    try:
+        from . import andamento
+        historico_atualizacoes = andamento.historico()
+    except Exception:  # noqa: BLE001 — banco fora, migracao 002 pendente
+        logger.exception("Painel: historico das atualizacoes indisponivel")
+        historico_atualizacoes = None
     # Se as tabelas ainda nao existem, nem tenta consultar a base.
     if estado_migracoes["pendentes"]:
         atualizacao, vazia, etapas = None, True, []
@@ -2308,8 +2374,11 @@ def configuracoes():
         # para de repetir interrupcao e passa a responder outra pergunta, que e
         # a util no momento: quando a base foi atualizada de verdade pela
         # ultima vez.
+        # Tambem enquanto outra RODA (06/10/2026): a linha mostrava a tentativa
+        # anterior, fechada como "interrompida" no instante em que a nova
+        # comecou — e o dono leu como se a que estava rodando tivesse caido.
         atualizacao = consultas.atualizado_em(
-            so_concluidas=bool(sincronizacao["interrompida"]))
+            so_concluidas=bool(sincronizacao["interrompida"] or sincronizacao["rodando"]))
         vazia = consultas.base_vazia()
         etapas = consultas.etapas_da_carga()
         # Aviso que NAO pode faltar: a migracao 010 arruma o tipo da coluna, mas
@@ -2381,8 +2450,8 @@ def configuracoes():
         fora=fora,
         contas_conf=contas_conf,
         juros_conf=juros_conf,
-        modos=tarefas.MODOS,
-        sincronizacao=sincronizacao,
+        modos=tarefas.MODOS, rotulos_dos_modos=tarefas.ROTULOS,
+        sincronizacao=sincronizacao, historico=historico_atualizacoes,
         pessoas=_pessoas_do_painel(estado_migracoes),
         telas_liberaveis=usuarios_mod.TELAS,
         telas_sugeridas=usuarios_mod.TELAS_SUGERIDAS,
@@ -2499,10 +2568,10 @@ def _graficos_do_relatorio(f) -> list:
     if not mensal:
         return []
     return [(graficos.barras_agrupadas(
-        mensal[-36:],
+        consultas.ate_um_ano_a_frente(mensal)[-36:],
         [("receita", "b-receita", "Receita"), ("despesa", "b-despesa", "Despesa")],
         campo_rotulo="rotulo", campo_linha="acumulado"),
-        "Fluxo Financeiro mensal — comprometido")]
+        "Fluxo Financeiro mensal — comprometido, até 12 meses à frente")]
 
 
 @bp.route("/baixar/<assunto>")
@@ -2881,6 +2950,9 @@ def baixar(assunto):
             ("Fluxo de Caixa", C["fluxo"], consultas.caixa_por_mes(f)),
             ("Resultado por Obra", C["obras"],
              consultas.resultado_por(f, nivel="obra", limite=1000)),
+            # aportes e dividendos no mesmo relatório (dono, 06/10/2026: "aí
+            # fica completíssimo") — as mesmas abas do arquivo de aportes
+            *_abas_de_aporte(),
         ],
     }
     if assunto in ("quotas", "posicao"):
@@ -2992,7 +3064,18 @@ def estado():
     atualizacao sem recarregar a pagina."""
     from . import tarefas
     from . import consultas
-    return jsonify({"ok": True, "sincronizacao": tarefas.estado(),
+    sincronizacao = tarefas.estado()
+    passos = []
+    if sincronizacao["rodando"]:
+        # os passos da que esta rodando, para a tela mostrar a sequencia ao vivo
+        try:
+            from . import andamento
+            atual = andamento.historico(limite=1)["execucoes"]
+            passos = [{"etapa": p["etapa"], "estado": p["estado"],
+                       "detalhe": p["detalhe"]} for p in (atual[0]["passos"] if atual else [])]
+        except Exception:  # noqa: BLE001
+            passos = []
+    return jsonify({"ok": True, "sincronizacao": sincronizacao, "passos": passos,
                     "ultima": _serializar(consultas.atualizado_em())})
 
 

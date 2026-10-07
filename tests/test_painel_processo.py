@@ -59,6 +59,9 @@ def banco_do_painel():
     def _limpar():
         with painel_db.conexao() as conn:
             conn.execute("TRUNCATE TABLE execucoes")
+            # releitura de pagamentos aberta faria toda atualização ir
+            # terminá-la antes de recalcular (06/10/2026)
+            conn.execute("DELETE FROM config WHERE chave = 'releitura_pagamentos_anos'")
             conn.commit()
 
     _limpar()
@@ -239,3 +242,63 @@ def test_o_ponto_de_entrada_do_processo_recusa_argumento_errado():
     from app.apps.painel.executar_sync import main
     assert main([]) == 2
     assert main(["so_numeros"]) == 2
+
+
+# ---------------------------------------------------------------------------
+# 6. A retomada automática — 06/10/2026
+# ---------------------------------------------------------------------------
+# O dono, diante de "a atualização anterior foi interrompida" no meio do "Reler
+# todos os pagamentos": "não tem como ficar em looping até finalizar?". Tem,
+# com teto: duas retomadas seguidas; a terceira morte para de insistir.
+def _matar(conn, minutos=45):
+    conn.execute("UPDATE execucoes SET visto_em = now() - interval '%d minutes' "
+                 " WHERE fim IS NULL" % minutos)
+    conn.commit()
+
+
+def test_a_atualizacao_que_morreu_e_retomada_com_o_mesmo_modo(banco_do_painel,
+                                                              monkeypatch):
+    from app.apps.painel import consultas, tarefas
+    from app.apps.painel.db import conexao, consultar
+
+    iniciados = []
+    monkeypatch.setattr(tarefas, "_iniciar_processo",
+                        lambda modo, eid: iniciados.append(modo))
+    assert tarefas.disparar("completa")["ok"]
+    # viva: o vigia não mexe
+    assert tarefas.retomar_se_interrompida() is None
+
+    with conexao() as conn:
+        _matar(conn)
+    r = tarefas.retomar_se_interrompida()
+    assert r["ok"] and iniciados == ["completa", "completa"]
+    disparos = [d for (d,) in consultar(
+        "SELECT disparo FROM execucoes ORDER BY inicio")]
+    assert disparos == ["manual", "retomada"]
+    assert consultas.execucao_em_andamento()["viva"]
+
+
+def test_depois_de_duas_retomadas_seguidas_para_de_insistir(banco_do_painel,
+                                                           monkeypatch):
+    from app.apps.painel import tarefas
+    from app.apps.painel.db import conexao
+
+    monkeypatch.setattr(tarefas, "_iniciar_processo", lambda modo, eid: None)
+    assert tarefas.disparar("completa")["ok"]
+    for _ in range(tarefas.RETOMADAS_SEGUIDAS):
+        with conexao() as conn:
+            _matar(conn)
+        assert tarefas.retomar_se_interrompida()["ok"]
+    with conexao() as conn:
+        _matar(conn)
+    r = tarefas.retomar_se_interrompida()
+    assert r == {"ok": False, "erro": "retomadas esgotadas"}
+
+
+def test_o_vigia_nao_liga_fora_do_gunicorn():
+    """Nos testes e no `python app/main.py` não há o que vigiar — e uma thread
+    presa em `sleep` em cada create_app seria vazamento."""
+    import threading
+    from app.main import create_app
+    create_app()
+    assert not any(t.name == "painel-vigia" for t in threading.enumerate())

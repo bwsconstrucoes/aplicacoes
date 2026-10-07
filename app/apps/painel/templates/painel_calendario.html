@@ -187,8 +187,11 @@
           <button type="button"
                   class="cal-dia {% if n %}com-movimento{% else %}vazio{% endif %} {% if data == hoje %}hoje{% endif %} {% if n and n.vencido and n.a_pagar %}vencido{% endif %}"
                   data-dia="{{ data.isoformat() }}" data-rotulo="{{ data.strftime('%d/%m/%Y') }}"
-                  {% if not n %}disabled{% endif %}
-                  title="{% if n %}{{ n.quantos + n.quantos_a_pagar }} lançamento(s) — clique para ver{% else %}sem movimento{% endif %}">
+                  {# O dia vazio abre para o dono: é nele que o "Trazer este dia"
+                     mais faz falta — o painel não tem nada e o OMIE tem
+                     (dono, 06/10/2026). Para os outros, continua apagado. #}
+                  {% if not n and not administrador %}disabled{% endif %}
+                  title="{% if n %}{{ n.quantos + n.quantos_a_pagar }} lançamento(s) — clique para ver{% elif administrador %}sem movimento no painel — clique para conferir com o OMIE{% else %}sem movimento{% endif %}">
             <span class="cal-numero">{{ numero }}</span>
             {% if n %}
               {% if n.entradas > 0 %}<span class="cal-valor cal-entrou"><span class="cal-longo">+{{ brl(n.entradas) }}</span><span class="cal-curto">{{ brl_curto(n.entradas) }}</span></span>{% endif %}
@@ -217,6 +220,10 @@
     <h3 id="detalhe-titulo">Dia</h3>
     <button type="button" class="btn secundario" id="detalhe-seguinte" title="dia seguinte (seta →)">›</button>
     <div class="cal-dialogo-resumo" id="detalhe-resumo"></div>
+    {# Um pagamento dividido entre obras é UM débito no banco (dono, 06/10/2026) #}
+    <label class="cal-agrupar" title="Junta as partes de um mesmo pagamento (mesmo título, dia e conta) numa linha, como no extrato do banco">
+      <input type="checkbox" id="detalhe-agrupar" checked> Agrupar como no extrato
+    </label>
     <button type="button" class="btn secundario" id="detalhe-fechar">Fechar</button>
   </div>
   <div id="detalhe-corpo" class="tabela-rolagem" style="max-height:60vh">
@@ -237,7 +244,52 @@
   const escapar = t => String(t == null ? "" : t)
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-  function linha(l) {
+  // Agrupado (como no extrato) ou aberto (uma linha por obra). Lembrado no
+  // navegador: quem prefere um jeito não precisa escolher a cada dia.
+  const agrupar = els("detalhe-agrupar");
+  try { agrupar.checked = localStorage.getItem("painel.cal.agrupar") !== "0"; } catch (e) {}
+  let ultimo = null;   // a última resposta, para trocar a visão sem ir ao banco
+  agrupar.addEventListener("change", () => {
+    try { localStorage.setItem("painel.cal.agrupar", agrupar.checked ? "1" : "0"); } catch (e) {}
+    if (ultimo) desenhar(ultimo);
+  });
+
+  // "1 de 2 partes · no extrato R$ X": o que liga a linha ao débito do banco
+  function selo(g) {
+    if (!g || g.partes < 2) return "";
+    const fora = g.fora_do_filtro ? `, ${g.fora_do_filtro} fora do filtro` : "";
+    return `<small class="selo neutro" title="Este pagamento foi dividido entre obras. No extrato da conta é um débito só.">`
+         + `${g.partes} partes${fora} · no extrato ${moeda(g.no_extrato)}</small>`;
+  }
+
+  function cabecaDoGrupo(g, i) {
+    const l = g.linhas[0];
+    const iguais = campo => g.linhas.every(x => x[campo] === l[campo]);
+    const doc = l.link
+      ? `<a href="${escapar(l.link)}" target="_blank" rel="noopener" title="Abrir no Pipefy">${escapar(l.documento || "Pipefy")} ↗</a>`
+      : escapar(l.documento || "");
+    const classe = l.em_aberto ? (l.natureza === "Vencido" ? "v-vencido" : "v-aberto")
+                               : (g.valor > 0 ? "v-pos" : "v-pago");
+    const obras = g.obras.length;
+    return `<tr class="cal-grupo">
+      <td class="${classe}"><b>${escapar(l.natureza)}</b></td>
+      <td class="desc" title="${escapar(l.observacao)}">${escapar(l.razao_social || "(sem nome)")}</td>
+      <td class="desc">${iguais("categoria") ? escapar(l.categoria) : "<i>várias</i>"}</td>
+      <td class="desc"><button type="button" class="link-btn" data-abre-grupo="${i}" aria-expanded="false">▸ ${obras} obra${obras === 1 ? "" : "s"}</button> ${selo(g)}</td>
+      <td class="desc">${doc}</td>
+      <td class="desc">${escapar(l.conta || "(sem conta)")}</td>
+      <td class="dados direita ${classe}"><b>${moeda(g.valor)}</b></td>
+    </tr>` + g.linhas.map(x => `<tr class="cal-parte" data-parte-de="${i}" hidden>
+      <td></td>
+      <td class="desc"><small>↳ parte</small></td>
+      <td class="desc">${escapar(x.categoria)}</td>
+      <td class="desc">${escapar(x.obra)}${x.projeto ? ` <small>${escapar(x.projeto)}</small>` : ""}</td>
+      <td></td><td></td>
+      <td class="dados direita">${moeda(x.valor)}</td>
+    </tr>`).join("");
+  }
+
+  function linha(l, g) {
     const doc = l.link
       ? `<a href="${escapar(l.link)}" target="_blank" rel="noopener" title="Abrir no Pipefy">${escapar(l.documento || "Pipefy")} ↗</a>`
       : escapar(l.documento || "");
@@ -247,7 +299,7 @@
       <td class="${classe}"><b>${escapar(l.natureza)}</b></td>
       <td class="desc" title="${escapar(l.observacao)}">${escapar(l.razao_social || "(sem nome)")}</td>
       <td class="desc">${escapar(l.categoria)}${l.analise && l.analise !== "DRE" ? ` <small class="selo neutro">${escapar(l.analise)}</small>` : ""}</td>
-      <td class="desc">${escapar(l.obra)}</td>
+      <td class="desc">${escapar(l.obra)} ${selo(g)}</td>
       <td class="desc">${doc}</td>
       <td class="desc">${(ADMIN && l.codigo) ? `<button type="button" class="link-btn" data-conta-de="${escapar(l.codigo)}" title="de onde o painel tirou esta conta">${escapar(l.conta || "(sem conta)")} ⓘ</button>` : escapar(l.conta || "(sem conta)")}</td>
       <td class="dados direita ${classe}">${moeda(l.valor)}</td>
@@ -277,32 +329,63 @@
                             {headers: {"Accept": "application/json"}});
       const dados = await r.json();
       if (!dados.ok) { corpo.innerHTML = `<p class="aviso erro">${escapar(dados.erro || "Não deu para carregar.")}</p>`; return; }
-      resumo.innerHTML = `<b class="v-pos">+${moeda(dados.entradas)}</b> &nbsp;·&nbsp; `
-                       + `<b class="v-pago">${moeda(dados.saidas)}</b> &nbsp;·&nbsp; `
-                       + `líquido <b>${moeda(dados.liquido)}</b>`
-                       + (dados.a_pagar ? (dados.linhas.some(l => l.natureza === "Vencido")
-                           ? ` &nbsp;·&nbsp; <b class="v-vencido">${moeda(dados.a_pagar)} vencido</b>`
-                           : ` &nbsp;·&nbsp; <b class="v-aberto">${moeda(dados.a_pagar)} a vencer</b>`) : "")
-                       + ` &nbsp;·&nbsp; ${dados.quantos} lançamento(s)`;
-      if (!dados.linhas.length) { corpo.innerHTML = '<p class="cartao-dica">Nada neste dia com os filtros atuais.</p>'; return; }
-      corpo.innerHTML = `<table>
-        <thead><tr>
-          <th class="sem-ordem">Tipo</th><th class="sem-ordem">Quem</th>
-          <th class="sem-ordem">Categoria</th><th class="sem-ordem">Obra</th>
-          <th class="sem-ordem">Documento</th><th class="sem-ordem">Conta</th>
-          <th class="sem-ordem direita">Valor</th>
-        </tr></thead>
-        <tbody>${dados.linhas.map(linha).join("")}</tbody></table>
-        <div id="origem-da-conta" style="margin-top:12px"></div>
-        ${ADMIN ? `<div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap">
-            <button type="button" class="btn secundario" id="conferir-omie">Conferir este dia com o OMIE</button>
-          </div><div id="conferencia-omie" style="margin-top:10px"></div>` : ""}`;
-      if (ADMIN) els("conferir-omie").addEventListener("click", () => conferir(dia));
-      corpo.querySelectorAll("[data-conta-de]").forEach(b =>
-        b.addEventListener("click", () => origem(b.dataset.contaDe)));
+      ultimo = dados;
+      desenhar(dados);
     } catch (e) {
       corpo.innerHTML = '<p class="aviso erro">Não deu para carregar o dia. Tente de novo.</p>';
     }
+  }
+
+  function desenhar(dados) {
+    const dia = dados.dia;
+    resumo.innerHTML = `<b class="v-pos">+${moeda(dados.entradas)}</b> &nbsp;·&nbsp; `
+                     + `<b class="v-pago">${moeda(dados.saidas)}</b> &nbsp;·&nbsp; `
+                     + `líquido <b>${moeda(dados.liquido)}</b>`
+                     + (dados.a_pagar ? (dados.linhas.some(l => l.natureza === "Vencido")
+                         ? ` &nbsp;·&nbsp; <b class="v-vencido">${moeda(dados.a_pagar)} vencido</b>`
+                         : ` &nbsp;·&nbsp; <b class="v-aberto">${moeda(dados.a_pagar)} a vencer</b>`) : "")
+                     + ` &nbsp;·&nbsp; ${dados.quantos} lançamento(s)`;
+    // Dia vazio: o dono ainda precisa do "Conferir com o OMIE" (06/10/2026)
+    const botaoConferir = ADMIN ? `<div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap">
+          <button type="button" class="btn secundario" id="conferir-omie">Conferir este dia com o OMIE</button>
+        </div><div id="conferencia-omie" style="margin-top:10px"></div>` : "";
+    if (!dados.linhas.length) {
+      corpo.innerHTML = '<p class="cartao-dica">Nada neste dia no painel, com os filtros atuais.</p>' + botaoConferir;
+      if (ADMIN) els("conferir-omie").addEventListener("click", () => conferir(dia));
+      return;
+    }
+    corpo.innerHTML = `<table>
+      <thead><tr>
+        <th class="sem-ordem">Tipo</th><th class="sem-ordem">Quem</th>
+        <th class="sem-ordem">Categoria</th><th class="sem-ordem">Obra</th>
+        <th class="sem-ordem">Documento</th><th class="sem-ordem">Conta</th>
+        <th class="sem-ordem direita">Valor</th>
+      </tr></thead>
+      <tbody>${corpoDaTabela(dados)}</tbody></table>
+      <div id="origem-da-conta" style="margin-top:12px"></div>
+      ${botaoConferir}`;
+    if (ADMIN) els("conferir-omie").addEventListener("click", () => conferir(dia));
+    corpo.querySelectorAll("[data-conta-de]").forEach(b =>
+      b.addEventListener("click", () => origem(b.dataset.contaDe)));
+    corpo.querySelectorAll("[data-abre-grupo]").forEach(b =>
+      b.addEventListener("click", () => {
+        const aberto = b.getAttribute("aria-expanded") !== "true";
+        b.setAttribute("aria-expanded", aberto ? "true" : "false");
+        b.textContent = (aberto ? "▾" : "▸") + b.textContent.slice(1);
+        corpo.querySelectorAll(`[data-parte-de="${b.dataset.abreGrupo}"]`)
+              .forEach(tr => { tr.hidden = !aberto; });
+      }));
+  }
+
+  function corpoDaTabela(dados) {
+    const grupos = dados.grupos || [];
+    if (!agrupar.checked) {
+      const doGrupo = {};
+      grupos.forEach(g => g.linhas.forEach(l => { doGrupo[l.movimento] = g; }));
+      return dados.linhas.map(l => linha(l, doGrupo[l.movimento])).join("");
+    }
+    return grupos.map((g, i) => g.linhas.length > 1 ? cabecaDoGrupo(g, i)
+                                                    : linha(g.linhas[0], g)).join("");
   }
 
   // Conferir o dia com o OMIE, lendo o OMIE na hora (dono, 23/09/2026)
@@ -380,7 +463,7 @@
     }
   }
 
-  document.querySelectorAll(".cal-dia.com-movimento").forEach(b => {
+  document.querySelectorAll(".cal-dia.com-movimento, .cal-dia.vazio:not([disabled])").forEach(b => {
     b.addEventListener("click", () => abrir(b.dataset.dia, b.dataset.rotulo));
   });
   els("detalhe-fechar").addEventListener("click", () => dialogo.close());

@@ -549,10 +549,19 @@ def test_cada_modo_revisa_a_sua_janela(monkeypatch):
     monkeypatch.setattr(painel_db, "conexao", lambda: contextlib.nullcontext(object()))
     monkeypatch.setattr(fato, "reconstruir", lambda conn: (1, 1))
     monkeypatch.setattr(tarefas, "_fechar_execucao", lambda *a, **k: None)
+    relidas = []
+    monkeypatch.setattr(espelho, "reler_pagamentos_por_ano",
+                        lambda *a, **k: relidas.append(1) or {"relidos": [], "pulados": [],
+                                                              "movimentos": 0})
     tarefas.executar_trabalho("rapida", 1)
     tarefas.executar_trabalho("completa", 2)
+    assert not relidas
+    # "Reler todos os pagamentos" (06/10/2026): a do dia + os anos, um a um
+    tarefas.executar_trabalho("pagamentos", 3)
     assert pedidos == [espelho.DIAS_REVISADOS_NA_ATUALIZACAO,
-                       espelho.DIAS_REVISADOS_NA_COMPLETA]
+                       espelho.DIAS_REVISADOS_NA_COMPLETA,
+                       espelho.DIAS_REVISADOS_NA_ATUALIZACAO]
+    assert relidas == [1]
 
 
 def test_a_atualizacao_do_dia_le_a_planilha_de_projetos(monkeypatch):

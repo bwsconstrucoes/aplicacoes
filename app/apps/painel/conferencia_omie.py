@@ -203,8 +203,11 @@ def trazer_dia_do_omie(dia, cliente=None) -> dict:
     registros = registros_do_omie(dia, cliente, usar_guardado=True)
     d = dt.date.fromisoformat(dia) if isinstance(dia, str) else dia
     with conexao() as conn:
-        apagados = _apagar_movimentos_janela(conn, d, d)
-        gravados, sem_titulo = gravar_movimentos(conn, registros)
+        # apaga e regrava o dia numa transação só: cair no meio não deixa o
+        # dia vazio (06/10/2026)
+        apagados = _apagar_movimentos_janela(conn, d, d, confirmar=False)
+        gravados, sem_titulo = gravar_movimentos(conn, registros, confirmar=False)
+        conn.commit()
     logger.info("Painel: dia %s trazido do OMIE — apagou %d, gravou %d (+%d sem título).",
                 d, apagados, gravados, sem_titulo)
     return {"apagados": apagados, "gravados": gravados, "sem_titulo": sem_titulo}

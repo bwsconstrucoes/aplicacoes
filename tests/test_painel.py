@@ -455,6 +455,18 @@ def _consultar_falso(sql, params=()):
         if marca in sql:
             return resposta
 
+    # ---- as partes de um pagamento dividido entre obras (06/10/2026) ----
+    # Antes de tudo: a consulta cita a obra e a categoria e cairia em outro ramo.
+    # O título 998877 foi pago em DUAS obras no mesmo dia e conta.
+    if "AS partes_do_movimento" in sql:
+        return [(998877, dt.date(2025, 4, 8), "Bradesco 7011-4", 2, -1500.0, 2)]
+    if "AS partes_em_aberto" in sql:
+        return []
+    if "AS pagamento_do_analitico" in sql:
+        return [(1,)]
+    if "AS pagina_do_analitico" in sql:
+        return [(998877, dt.date(2025, 3, 10), "(sem conta)")]
+
     # ---- as retencoes por tributo (janela do DRE) ----
     if "FROM (SELECT codigo_lancamento AS cod" in sql:
         return [(998877, "CLIENTE A", "NF123", "Obra Um", dt.date(2025, 5, 2), "",
@@ -878,6 +890,21 @@ def test_a_planilha_e_um_excel_de_verdade(painel):
     assert folha.freeze_panes == "A2"                 # cabeçalho fixo
 
 
+def test_o_grafico_do_comprometido_vai_no_maximo_um_ano_a_frente():
+    """06/10/2026, o dono: "está aparecendo até 2031, a gente está em 2026 —
+    apresentar informações no máximo um ano para frente"."""
+    import datetime as _dt
+    from app.apps.painel import consultas
+    meses = [{"mes": m, "acumulado": i} for i, m in enumerate(
+        ["2026-09", "2026-10", "2027-10", "2027-11", "2031-01"])]
+    ficam = consultas.ate_um_ano_a_frente(meses, hoje=_dt.date(2026, 10, 6))
+    assert [m["mes"] for m in ficam] == ["2026-09", "2026-10", "2027-10"]
+    assert ficam[-1]["acumulado"] == 2           # o acumulado não muda
+    dezembro = consultas.ate_um_ano_a_frente([{"mes": "2027-12"}, {"mes": "2028-01"}],
+                                             hoje=_dt.date(2026, 12, 31))
+    assert [m["mes"] for m in dezembro] == ["2027-12"]
+
+
 def test_o_relatorio_completo_tem_todas_as_abas(painel):
     """Era assim na tela antiga: um arquivo, uma aba por assunto."""
     from openpyxl import load_workbook
@@ -889,7 +916,10 @@ def test_o_relatorio_completo_tem_todas_as_abas(painel):
     assert livro.sheetnames == [
         "DRE", "Despesas Categoria", "Top Credores", "Receita de Obra",
         "Outras Receitas", "Despesas Analitico", "Fluxo de Caixa",
-        "Resultado por Obra"]
+        "Resultado por Obra",
+        # aportes e dividendos no mesmo relatório (dono, 06/10/2026)
+        "Aportes por Socio", "Aportes por Obra", "Dividendos",
+        "Lancamentos de Aporte", "Resultado x Dividendos", "Caixa com Socios"]
 
 
 def test_a_aba_de_categorias_fecha_com_a_aba_do_dre(painel):
@@ -1479,7 +1509,8 @@ def test_o_relatorio_completo_em_pdf_sai_inteiro(painel):
     leitor = pypdf.PdfReader(_io.BytesIO(r.get_data()))
     texto = "\n".join(p.extract_text() for p in leitor.pages)
     for secao in ("DRE", "Top Credores", "Receita de Obra", "Outras Receitas",
-                  "Despesas Analitico", "Fluxo de Caixa", "Resultado por Obra"):
+                  "Despesas Analitico", "Fluxo de Caixa", "Resultado por Obra",
+                  "Aportes por Socio", "Dividendos", "Caixa com Socios"):
         assert secao in texto, secao
     assert "Relatório Financeiro BWS Construções" in texto
     assert "pagina 1" in texto, "o rodapé numera as páginas"
@@ -1721,6 +1752,19 @@ def test_o_analitico_e_as_medicoes_exportam_a_coluna_do_pipefy():
 # ===========================================================================
 # O Calendario — o caixa dia a dia (22/09/2026)
 # ===========================================================================
+def test_o_dia_vazio_abre_para_o_dono_conferir_com_o_omie(painel):
+    """06/10/2026, o dono: "quando não tem nada lançado, você não consegue abrir
+    o dia pra trazer este dia, então não funciona." O dia vazio é justamente o
+    caso em que o OMIE tem e o painel não."""
+    import re
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    html = painel.get("/painel/calendario?mes=2025-04").get_data(as_text=True)
+    vazio = re.search(r'<button type="button"\s+class="cal-dia vazio[^"]*"\s+'
+                      r'data-dia="2025-04-02"[^>]*>', html)
+    assert vazio and "disabled" not in vazio.group(0)
+    assert "clique para conferir com o OMIE" in vazio.group(0)
+
+
 def test_o_calendario_abre_com_o_mes_pedido_e_os_kpis(painel):
     painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
     r = painel.get("/painel/calendario?mes=2025-04")

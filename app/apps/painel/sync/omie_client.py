@@ -168,6 +168,37 @@ TETO_DE_ESPERA = 600.0          # padrao: a carga
 TETO_DE_ESPERA_NA_TELA = 30.0   # quem escreve pela tela
 
 
+# QUEM ESTÁ ESPERANDO AVISA (06/10/2026). Na releitura de todos os pagamentos o
+# dono viu a página "parada" na 247 sem saber se era trava: era o OMIE mandando
+# esperar, e a espera — até 10 minutos — não dava sinal nenhum. Pior: sem sinal
+# por 10 minutos, a tela (e o vigia) davam a carga por morta. Agora a espera é
+# feita em pedaços de 30 s, e a cada pedaço quem acompanha é avisado.
+_aviso_de_espera = None
+PEDACO_DA_ESPERA = 30.0
+
+
+def definir_aviso_de_espera(funcao) -> None:
+    """Recebe `f(texto)`, chamada durante as esperas pedidas pelo OMIE."""
+    global _aviso_de_espera
+    _aviso_de_espera = funcao
+
+
+def _esperar(segundos: float, motivo: str) -> None:
+    """Dorme `segundos`, avisando a cada pedaço. Conta por aritmética, não pelo
+    relógio — um teste que troca o `sleep` por nada não fica preso aqui."""
+    falta = float(segundos)
+    while falta > 0:
+        if _aviso_de_espera is not None:
+            try:
+                _aviso_de_espera(f"esperando o OMIE liberar ({motivo}) — "
+                                 f"faltam {int(falta)} s")
+            except Exception:  # avisar nunca derruba a carga
+                pass
+        pedaco = min(PEDACO_DA_ESPERA, falta)
+        time.sleep(pedaco)
+        falta -= pedaco
+
+
 class OmieBloqueada(Exception):
     """A Omie bloqueou as chamadas e disse por quanto tempo.
 
@@ -267,7 +298,7 @@ class OmieClient:
                 espera = self._espera(tentativa, None)
                 log.warning("Rede falhou em %s (tent. %d/%d): %s. Aguardando %.1fs.",
                             call, tentativa, self.max_tentativas, e, espera)
-                time.sleep(espera)
+                _esperar(espera, "a rede falhou")
                 continue
 
             # HTTP que merece retry. Os 500 da Omie costumam ser TRANSITORIOS (inclusive
@@ -295,7 +326,7 @@ class OmieClient:
                             resp.status_code, call, tentativa, self.max_tentativas,
                             fs[:120], espera)
                 ultimo_erro = OmieAPIError(resp.status_code, fs or resp.text[:200])
-                time.sleep(espera)
+                _esperar(espera, f"o OMIE respondeu {resp.status_code}")
                 continue
 
             if resp.status_code != 200:
@@ -322,7 +353,7 @@ class OmieClient:
                     if espera > self.teto_de_espera:
                         raise OmieBloqueada(int(espera), fs)
                     log.warning("Rate limit (faultstring) em %s. Aguardando %.1fs.", call, espera)
-                    time.sleep(espera)
+                    _esperar(espera, "limite de consultas")
                     continue
                 raise OmieAPIError(dados.get("faultcode"), fs)
 

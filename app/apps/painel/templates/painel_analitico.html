@@ -20,12 +20,54 @@
   {% for campo, valor in [('grupo', grupo), ('categoria', categoria),
                           ('credor', credor), ('busca', busca),
                           ('visao', visao), ('ordem', ordem),
-                          ('de', de), ('ate', ate), ('base', base)] %}
+                          ('de', de), ('ate', ate), ('base', base),
+                          ('agrupar', '1' if agrupar else '')] %}
     {% if valor and campo not in proprios %}
       <input type="hidden" name="{{ campo }}" value="{{ valor }}">
     {% endif %}
   {% endfor %}
 {% endmacro %}
+
+{# "3 partes · no extrato R$ X": liga a linha ao débito único da conta #}
+{% macro selo(g) %}{% if g and g.partes > 1 %}
+  <small class="selo neutro" title="Este pagamento foi dividido entre obras. No extrato da conta é um débito só.">{{ g.partes }} partes{% if g.fora_do_filtro %}, {{ g.fora_do_filtro }} fora do filtro{% endif %} · no extrato {{ brl(g.no_extrato) }}</small>
+{% endif %}{% endmacro %}
+
+{% macro celulas(l) %}
+          <td class="dados">{{ l.data.strftime('%d/%m/%Y') if l.data else '—' }}</td>
+          <td class="dados">{{ l.data_vencimento.strftime('%d/%m/%Y') if l.data_vencimento else '—' }}</td>
+          <td class="dados">{{ l.data_pagamento.strftime('%d/%m/%Y') if l.data_pagamento else '—' }}</td>
+          <td class="dados direita">
+            {% if l.atraso is none %}—
+            {% elif l.atraso > 0 %}<span class="v-neg">{{ l.atraso }}d</span>
+            {% elif l.atraso < 0 %}<span class="v-pos">{{ l.atraso }}d</span>
+            {% else %}0d{% endif %}
+          </td>
+          <td class="desc">
+            {{ l.credor }}
+            {% if l.observacao %}<small>{{ l.observacao[:70] }}</small>{% endif %}
+          </td>
+          <td class="desc">{{ l.categoria }}<small>{{ l.grupo }}</small></td>
+          <td>{{ l.obra }}{{ selo(l.pagamento) }}</td>
+          <td class="dados">
+            {% if l.link %}<a href="{{ l.link }}" target="_blank" rel="noopener">{{ l.documento }}</a>
+            {% else %}{{ l.documento or '—' }}{% endif %}
+            {% if l.pedido %}<small>PC {{ l.pedido }}</small>{% endif %}
+            {% if l.medicao %}<small>{{ l.medicao }}</small>{% endif %}
+          </td>
+          {# a conta por onde o pagamento SAIU (a baixa), e o numero para achar
+             o titulo no OMIE — o dono pediu os dois para confrontar, 23/09/2026 #}
+          <td class="desc">{{ l.conta or ('—' if not l.pago else '(sem conta)') }}</td>
+          <td class="dados"><small>{{ l.lancamento or '—' }}</small></td>
+          <td class="dados direita">{{ brl(l.pago) if l.pago else '—' }}</td>
+          <td class="dados direita {{ classe_valor(l.a_pagar) }}">{{ brl(l.a_pagar) if l.a_pagar else '—' }}</td>
+          <td class="dados direita">{{ brl(l.juros + l.multa) if (l.juros or l.multa) else '—' }}</td>
+          <td class="dados direita"><b>{{ brl(l.total) }}</b></td>
+          <td>
+            <small>{{ l.situacao }}</small>
+            {% if l.vencimento %}<small>{{ l.vencimento }}</small>{% endif %}
+          </td>
+        {% endmacro %}
 
 {% block conteudo %}
 <h2>Despesas Analítico
@@ -70,7 +112,7 @@
        viajam escondidas e a caixa avisa, em vez de mostrar só a primeira. #}
     {% set conta_propria = (selecao.contas|length) <= 1 %}
     {{ esconde(['grupo', 'categoria', 'credor', 'busca',
-                'visao', 'ordem', 'de', 'ate', 'base']
+                'visao', 'ordem', 'de', 'ate', 'base', 'agrupar']
                + (['conta'] if conta_propria else [])) }}
     <div class="form-grade">
       <div class="campo">
@@ -144,6 +186,15 @@
           <option value="credor" {% if ordem == 'credor' %}selected{% endif %}>Credor</option>
           <option value="categoria" {% if ordem == 'categoria' %}selected{% endif %}>Categoria</option>
         </select>
+      </div>
+      {# Um pagamento dividido entre obras vira UMA linha, como no extrato do
+         banco, com as partes por baixo (dono, 06/10/2026). #}
+      <div class="campo" style="align-self:end">
+        <label style="display:flex; gap:6px; align-items:center; cursor:pointer"
+               title="Junta as partes de um mesmo pagamento (mesmo título, dia e conta) numa linha só">
+          <input type="checkbox" name="agrupar" value="1" {% if agrupar %}checked{% endif %}>
+          Agrupar como no extrato
+        </label>
       </div>
       <div class="campo" style="align-self:end; display:flex; gap:8px">
         <button class="btn" type="submit">Aplicar</button>
@@ -226,43 +277,47 @@
         </tr>
       </thead>
       <tbody>
-        {% for l in dados.linhas %}
-        <tr>
-          <td class="dados">{{ l.data.strftime('%d/%m/%Y') if l.data else '—' }}</td>
-          <td class="dados">{{ l.data_vencimento.strftime('%d/%m/%Y') if l.data_vencimento else '—' }}</td>
-          <td class="dados">{{ l.data_pagamento.strftime('%d/%m/%Y') if l.data_pagamento else '—' }}</td>
-          <td class="dados direita">
-            {% if l.atraso is none %}—
-            {% elif l.atraso > 0 %}<span class="v-neg">{{ l.atraso }}d</span>
-            {% elif l.atraso < 0 %}<span class="v-pos">{{ l.atraso }}d</span>
-            {% else %}0d{% endif %}
-          </td>
-          <td class="desc">
-            {{ l.credor }}
-            {% if l.observacao %}<small>{{ l.observacao[:70] }}</small>{% endif %}
-          </td>
-          <td class="desc">{{ l.categoria }}<small>{{ l.grupo }}</small></td>
-          <td>{{ l.obra }}</td>
-          <td class="dados">
-            {% if l.link %}<a href="{{ l.link }}" target="_blank" rel="noopener">{{ l.documento }}</a>
-            {% else %}{{ l.documento or '—' }}{% endif %}
-            {% if l.pedido %}<small>PC {{ l.pedido }}</small>{% endif %}
-            {% if l.medicao %}<small>{{ l.medicao }}</small>{% endif %}
-          </td>
-          {# a conta por onde o pagamento SAIU (a baixa), e o numero para achar
-             o titulo no OMIE — o dono pediu os dois para confrontar, 23/09/2026 #}
-          <td class="desc">{{ l.conta or ('—' if not l.pago else '(sem conta)') }}</td>
-          <td class="dados"><small>{{ l.lancamento or '—' }}</small></td>
-          <td class="dados direita">{{ brl(l.pago) if l.pago else '—' }}</td>
-          <td class="dados direita {{ classe_valor(l.a_pagar) }}">{{ brl(l.a_pagar) if l.a_pagar else '—' }}</td>
-          <td class="dados direita">{{ brl(l.juros + l.multa) if (l.juros or l.multa) else '—' }}</td>
-          <td class="dados direita"><b>{{ brl(l.total) }}</b></td>
-          <td>
-            <small>{{ l.situacao }}</small>
-            {% if l.vencimento %}<small>{{ l.vencimento }}</small>{% endif %}
-          </td>
-        </tr>
-        {% endfor %}
+        {% if dados.agrupado %}
+          {% for g in dados.grupos %}
+            {% if g.linhas|length == 1 %}
+              {% set l = g.linhas[0] %}{% set _ = l.update({'pagamento': g}) %}
+              <tr>{{ celulas(l) }}</tr>
+            {% else %}
+              {% set l = g.linhas[0] %}
+              <tr class="mov-grupo">
+                <td class="dados">{{ l.data.strftime('%d/%m/%Y') if l.data else '—' }}</td>
+                <td class="dados">{{ l.data_vencimento.strftime('%d/%m/%Y') if l.data_vencimento else '—' }}</td>
+                <td class="dados">{{ l.data_pagamento.strftime('%d/%m/%Y') if l.data_pagamento else '—' }}</td>
+                <td class="dados direita">{{ l.atraso if l.atraso is not none else '—' }}{% if l.atraso is not none %}d{% endif %}</td>
+                <td class="desc">{{ l.credor }}{% if l.observacao %}<small>{{ l.observacao[:70] }}</small>{% endif %}</td>
+                <td class="desc">{% if g.linhas|map(attribute='categoria')|unique|list|length == 1 %}{{ l.categoria }}<small>{{ l.grupo }}</small>{% else %}<i>várias</i>{% endif %}</td>
+                <td>
+                  <button type="button" class="link-btn" data-abre-pagamento="{{ loop.index }}" aria-expanded="false">▸ {{ g.obras|length }} obra{{ '' if g.obras|length == 1 else 's' }}</button>
+                  {{ selo(g) }}
+                </td>
+                <td class="dados">
+                  {% if l.link %}<a href="{{ l.link }}" target="_blank" rel="noopener">{{ l.documento }}</a>
+                  {% else %}{{ l.documento or '—' }}{% endif %}
+                </td>
+                <td class="desc">{{ l.conta or '—' }}</td>
+                <td class="dados"><small>{{ l.lancamento or '—' }}</small></td>
+                <td class="dados direita">{{ brl(g.pago) if g.pago else '—' }}</td>
+                <td class="dados direita {{ classe_valor(g.a_pagar) }}">{{ brl(g.a_pagar) if g.a_pagar else '—' }}</td>
+                <td class="dados direita">{{ brl(g.juros + g.multa) if (g.juros or g.multa) else '—' }}</td>
+                <td class="dados direita"><b>{{ brl(g.total) }}</b></td>
+                <td><small>{{ l.situacao }}</small></td>
+              </tr>
+              {% set n = loop.index %}
+              {% for parte in g.linhas %}
+              <tr class="mov-parte" data-parte-do-pagamento="{{ n }}" hidden>{{ celulas(parte) }}</tr>
+              {% endfor %}
+            {% endif %}
+          {% endfor %}
+        {% else %}
+          {% for l in dados.linhas %}
+          <tr>{{ celulas(l) }}</tr>
+          {% endfor %}
+        {% endif %}
       </tbody>
     </table>
   </div>
@@ -295,4 +350,18 @@
   {% endif %}
 </div>
 {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Abre e fecha as partes de um pagamento agrupado (06/10/2026)
+document.querySelectorAll("[data-abre-pagamento]").forEach(b =>
+  b.addEventListener("click", () => {
+    const aberto = b.getAttribute("aria-expanded") !== "true";
+    b.setAttribute("aria-expanded", aberto ? "true" : "false");
+    b.textContent = (aberto ? "▾" : "▸") + b.textContent.slice(1);
+    document.querySelectorAll(`[data-parte-do-pagamento="${b.dataset.abrePagamento}"]`)
+            .forEach(tr => { tr.hidden = !aberto; });
+  }));
+</script>
 {% endblock %}

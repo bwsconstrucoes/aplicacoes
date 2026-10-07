@@ -49,10 +49,26 @@ log = logging.getLogger("painel.espelho")
 _relator = None
 
 
+_ultimo_andamento = ["", ""]   # (etapa, detalhe) — para a espera do OMIE dizer onde
+
+
 def definir_progresso(funcao):
-    """Recebe uma funcao `f(etapa, detalhe)` chamada ao longo da atualizacao."""
+    """Recebe uma funcao `f(etapa, detalhe)` chamada ao longo da atualizacao.
+
+    Liga tambem o aviso das ESPERAS pedidas pelo OMIE (06/10/2026): sem ele, a
+    pagina ficava "parada" sem explicacao e a espera longa parecia morte."""
     global _relator
     _relator = funcao
+    from .omie_client import definir_aviso_de_espera
+    if funcao is None:
+        definir_aviso_de_espera(None)
+        return
+
+    def _na_espera(texto):
+        etapa, detalhe = _ultimo_andamento
+        funcao(etapa or "esperando o OMIE",
+               f"{detalhe} — {texto}" if detalhe else texto)
+    definir_aviso_de_espera(_na_espera)
 
 
 # ---------------------------------------------------------------------------
@@ -168,6 +184,7 @@ def limpar_etapas(conn) -> None:
 
 
 def _progresso(etapa, detalhe=""):
+    _ultimo_andamento[0], _ultimo_andamento[1] = etapa, detalhe
     if _relator is None:
         return
     try:
@@ -442,8 +459,13 @@ _COLS_MST = _COLS_MOV.replace("ncodtitulo, ", "")
 _PH_MST = ",".join(["?"] * 19)
 
 
-def gravar_movimentos(conn, registros):
+def gravar_movimentos(conn, registros, confirmar=True):
     """Insere um lote de movimentos. Retorna (qtd, quantos_sem_titulo).
+
+    `confirmar=False` deixa a gravação na transação de quem chamou. É o que a
+    JANELA (apaga e regrava) tem de usar: confirmar página a página fazia um
+    corte no meio deixar a janela apagada e só metade regravada — 06/10/2026,
+    na releitura desde 2015, cortada na página 247 de 2716.
 
     O MOVIMENTO SEM TITULO NAO E MAIS JOGADO FORA. Ele nao serve para o painel
     — que e montado a partir dos titulos —, mas e dinheiro que entrou ou saiu da
@@ -464,7 +486,8 @@ def gravar_movimentos(conn, registros):
         conn.executemany(
             f"INSERT INTO movimentos_sem_titulo ({_COLS_MST}) VALUES ({_PH_MST})",
             sem_titulo)
-    conn.commit()
+    if confirmar:
+        conn.commit()
     return len(linhas), len(sem_titulo)
 
 
@@ -1357,8 +1380,12 @@ def aplicar_incremental_titulos(conn, natureza, registros, cutoff_date):
     return qt, qr, ignorados, maior, problemas
 
 
-def _apagar_movimentos_janela(conn, ini, fim):
+def _apagar_movimentos_janela(conn, ini, fim, confirmar=True):
     """Apaga movimentos com data de pagamento dentro de [ini, fim].
+
+    ⚠️ Quem vai REGRAVAR a janela passa `confirmar=False` e confirma só no fim:
+    apagar confirmado e regravar aos pedaços deixava, num corte, a janela vazia
+    (06/10/2026). Ver `gravar_movimentos`.
 
     A versao anterior lia as 240 mil linhas para a memoria so para descobrir
     quais apagar — exatamente o que a regra de memoria do CONTEXTO 3.7 proibe
@@ -1380,7 +1407,8 @@ def _apagar_movimentos_janela(conn, ini, fim):
         (ini, fim))
     apagados += cur.rowcount or 0
     cur.close()
-    conn.commit()
+    if confirmar:
+        conn.commit()
     return apagados
 
 
@@ -1398,6 +1426,103 @@ def _apagar_movimentos_janela(conn, ini, fim):
 # custa paginas a mais na leitura — e corrige sozinha o que mudou la dentro.
 DIAS_REVISADOS_NA_ATUALIZACAO = 30
 DIAS_REVISADOS_NA_COMPLETA = 180
+
+# "Reler todos os pagamentos" (06/10/2026). O dono ajustou lançamentos de aporte
+# com baixa de mais de seis meses: a completa relê só 180 dias, e a baixa antiga
+# lançada hoje nunca chegava. Esta releitura vai desde o primeiro ano possível
+# da base. É a mesma janela da atualização do dia — apaga e regrava NA MESMA
+# TRANSAÇÃO —, só que larga: se cair no meio, nada se perde.
+PRIMEIRO_DIA_DOS_PAGAMENTOS = dt.date(2015, 1, 1)
+
+
+def dias_desde_o_primeiro_pagamento(hoje=None) -> int:
+    hoje = hoje or dt.date.today()
+    return (hoje - PRIMEIRO_DIA_DOS_PAGAMENTOS).days
+
+
+# ---------------------------------------------------------------------------
+# Reler os pagamentos ANO A ANO, retomando de onde parou — 06/10/2026
+# ---------------------------------------------------------------------------
+# A releitura desde 2015 é ~2.700 páginas do OMIE. Numa transação só, cada
+# publicação de código no meio a mandava de volta à página 1 — o dono, vendo a
+# página 1 de 2717 depois de ter passado da 247: "não aproveita o que já tinha
+# lido?". Agora cada ANO é a sua janela (apaga e regrava na mesma transação,
+# como sempre — ano pela metade não existe) e o ano terminado fica marcado. A
+# próxima tentativa, retomada ou pelo botão, pula os anos feitos. Terminados
+# todos, as marcas são apagadas: a próxima releitura é uma releitura nova.
+CHAVE_ANOS_RELIDOS = "releitura_pagamentos_anos"
+
+
+def _anos_relidos(conn) -> list[int]:
+    import json
+    linha = conn.execute("SELECT valor FROM config WHERE chave = ?",
+                         (CHAVE_ANOS_RELIDOS,)).fetchone()
+    try:
+        return sorted(int(a) for a in json.loads(linha[0] if linha else "[]"))
+    except (TypeError, ValueError):
+        return []
+
+
+def _marcar_anos_relidos(conn, anos) -> None:
+    import json
+    conn.execute("INSERT INTO config (chave, valor) VALUES (?, ?) "
+                 "ON CONFLICT (chave) DO UPDATE SET valor = excluded.valor",
+                 (CHAVE_ANOS_RELIDOS, json.dumps(sorted(set(anos)))))
+
+
+def reler_pagamentos_por_ano(env=".env", hoje=None, cli=None) -> dict:
+    """Relê do OMIE os pagamentos de todos os anos, um ano por vez.
+
+    Devolve {"relidos": [...anos desta rodada], "pulados": [...já feitos],
+    "movimentos": n}. Cada ano grava e marca na mesma transação: se o serviço
+    cair entre dois anos, nada fica pela metade e nada se perde."""
+    hoje = hoje or dt.date.today()
+    cli = cli or OmieClient.de_ambiente(env)
+    conn = conectar()
+    try:
+        feitos = set(_anos_relidos(conn))
+        # A CAMPANHA FICA ABERTA desde o começo: enquanto a marca existir, toda
+        # atualização termina a releitura antes de refazer os números
+        # (`tarefas._releitura_pendente`).
+        _marcar_anos_relidos(conn, feitos)
+        conn.commit()
+        anos = list(range(PRIMEIRO_DIA_DOS_PAGAMENTOS.year, hoje.year + 1))
+        relidos, total = [], 0
+        for i, ano in enumerate(anos, 1):
+            if ano in feitos:
+                continue
+            ini = max(dt.date(ano, 1, 1), PRIMEIRO_DIA_DOS_PAGAMENTOS)
+            fim = min(dt.date(ano, 12, 31), hoje)
+            ini_str, fim_str = ini.strftime("%d/%m/%Y"), fim.strftime("%d/%m/%Y")
+            apagados = _apagar_movimentos_janela(conn, ini, fim, confirmar=False)
+            n_ano = 0
+            for pagina, total_paginas, _tr, registros in cli.listar_movimentos(
+                    param_extra={"dDtPagtoDe": ini_str, "dDtPagtoAte": fim_str}):
+                _progresso("relendo os pagamentos no OMIE, ano a ano",
+                           f"{ano} ({i} de {len(anos)} anos"
+                           f"{', ' + str(len(feitos)) + ' já feitos antes' if feitos else ''})"
+                           f": página {pagina} de {total_paginas}")
+                qm, _ = gravar_movimentos(conn, registros, confirmar=False)
+                n_ano += qm
+            feitos.add(ano)
+            _marcar_anos_relidos(conn, feitos)
+            conn.commit()                      # o ano e a marca, juntos
+            relidos.append(ano)
+            total += n_ano
+            log.info("Releitura: %d apagou %d, regravou %d.", ano, apagados, n_ano)
+        pulados = sorted(set(anos) - set(relidos))
+        # campanha completa: a proxima releitura comeca do zero
+        conn.execute("DELETE FROM config WHERE chave = ?", (CHAVE_ANOS_RELIDOS,))
+        conn.execute("UPDATE sync_state SET ultima_sync=?, total_registros="
+                     "(SELECT COUNT(*) FROM movimentos) WHERE entidade='movimentos'",
+                     (dt.datetime.now().isoformat(timespec="seconds"),))
+        conn.commit()
+        return {"relidos": relidos, "pulados": pulados, "movimentos": total}
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def janela_de_movimentos(hoje, ultima_sync, margem_dias=2, revisar_dias=0):
@@ -1449,6 +1574,11 @@ def sync_incremental(env=".env", margem_dias=2, com_catalogos=True,
             maior = cutoff
             t0 = time.time()
             for pagina, total_paginas, total_registros, registros in metodo(param_extra=param):
+                # SINAL DE VIDA a cada página (o relator só grava de 10 em 10 s).
+                # Sem isto a tela dava a atualização por morta no meio da
+                # leitura — 06/10/2026, "Reler todos os pagamentos".
+                _progresso(f"lendo os títulos {'a pagar' if natureza == 'P' else 'a receber'} no OMIE",
+                           f"página {pagina} de {total_paginas}")
                 qt, qr, qi, mx, probs = aplicar_incremental_titulos(conn, natureza, registros, data_de)
                 tot += qt; rat += qr; ign += qi
                 if mx and (maior is None or mx > maior):
@@ -1472,12 +1602,14 @@ def sync_incremental(env=".env", margem_dias=2, com_catalogos=True,
         inicio = janela_de_movimentos(hoje, ult_sync_mov, margem_dias, revisar_dias)
         ini_str = inicio.strftime("%d/%m/%Y")
         log.info("=== Incremental movimentos: janela %s a %s ===", ini_str, hoje_str)
-        apagados = _apagar_movimentos_janela(conn, inicio, hoje)
+        apagados = _apagar_movimentos_janela(conn, inicio, hoje, confirmar=False)
         # ListarMovimentos filtra por intervalo de data de PAGAMENTO via dDtPagtoDe/dDtPagtoAte.
         param_mov = {"dDtPagtoDe": ini_str, "dDtPagtoAte": hoje_str}
         tot_mov = 0
         for pagina, total_paginas, total_registros, registros in cli.listar_movimentos(param_extra=param_mov):
-            qm, _ = gravar_movimentos(conn, registros)
+            _progresso("lendo os pagamentos no OMIE",
+                       f"desde {ini_str}: página {pagina} de {total_paginas}")
+            qm, _ = gravar_movimentos(conn, registros, confirmar=False)
             tot_mov += qm
         conn.execute("UPDATE sync_state SET ultima_sync=?, total_registros="
                      "(SELECT COUNT(*) FROM movimentos) WHERE entidade='movimentos'",
@@ -1487,6 +1619,7 @@ def sync_incremental(env=".env", margem_dias=2, com_catalogos=True,
 
         # ---- Catalogos (baratos; upsert idempotente) ----
         if com_catalogos:
+            _progresso("atualizando o plano de contas e os cadastros")
             tot = 0
             for _, _, _, registros in cli.listar_categorias():
                 tot += gravar_categorias(conn, registros)
@@ -1621,6 +1754,10 @@ def reconcile(env=".env"):
             pag_inicial = ck["pagina"] + 1 if ck.get("atual") == entidade and ck["pagina"] else 1
             log.info("=== Reconcile: varrendo ids de %s (a partir da pag %d) ===", entidade, pag_inicial)
             for pagina, total_paginas, total_registros, registros in metodo(pagina_inicial=pag_inicial):
+                # sinal de vida: a varredura passa de 10 minutos, e sem ele a
+                # tela (e a retomada automática) a dariam por morta
+                _progresso("procurando títulos excluídos no OMIE",
+                           f"{entidade}: página {pagina} de {total_paginas}")
                 for r in registros:
                     c = r.get("codigo_lancamento_omie")
                     if c not in (None, ""):
