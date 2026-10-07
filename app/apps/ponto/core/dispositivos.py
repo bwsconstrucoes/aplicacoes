@@ -148,6 +148,14 @@ def codigo_curto(device_uuid: str) -> str:
     return limpo[-6:].upper()
 
 
+def autorizados_detalhados(conn: Connection, dispositivo_id: int) -> list[dict]:
+    """O grupo do aparelho, com nome e CPF — para a tela de alterar abrir preenchida."""
+    return db.todos(conn, """
+        SELECT c.id, c.nome, c.cpf FROM ponto.dispositivo_autorizados a
+          JOIN public.colaboradores c ON c.id = a.colaborador_id
+         WHERE a.dispositivo_id = :d ORDER BY c.nome""", d=dispositivo_id)
+
+
 def para_json(d: dict) -> dict:
     from ..horario import texto
     return {
@@ -240,9 +248,17 @@ def aprovar(conn: Connection, dispositivo_id: int, *, perfil: str, aprovado_por:
             valido_ate=None) -> dict:
     d = por_id(conn, dispositivo_id)
     perfil_ok = validar_perfil(perfil)
+    # O RESPONSÁVEL (pedido do dono, 07/10/2026: "tem que ter o CPF do dono, para
+    # saber quem é a pessoa que está com aquele celular"). No celular de uma
+    # pessoa é o dono — e só ele bate. No da obra e no de grupo é quem fica com o
+    # aparelho — e só ele entra no "Meu ponto" nele; no de grupo, bate também.
+    # A tela do ERP exige o responsável; aqui ele é obrigatório só no INDIVIDUAL
+    # (a integração antiga, pela chave, aprova aparelho da obra sem ele).
     if perfil_ok == "INDIVIDUAL" and not colaborador_id:
         raise ErroDeValidacao("aparelho INDIVIDUAL precisa do dono (colaborador)",
                               campo="colaborador_id")
+    if perfil_ok == "LISTA" and colaborador_id:
+        autorizados = sorted(set(autorizados or []) | {int(colaborador_id)})
     if perfil_ok == "LISTA" and not autorizados:
         raise ErroDeValidacao("aparelho LISTA precisa de ao menos uma pessoa autorizada",
                               campo="autorizados")
@@ -255,7 +271,7 @@ def aprovar(conn: Connection, dispositivo_id: int, *, perfil: str, aprovado_por:
                bloqueado_em = NULL, motivo_bloqueio = NULL,
                descricao = COALESCE(:desc, descricao)
          WHERE id = :id
-    """, p=perfil_ok, c=(colaborador_id if perfil_ok == "INDIVIDUAL" else None),
+    """, p=perfil_ok, c=colaborador_id,
          por=aprovado_por.strip()[:120], desc=(descricao.strip()[:200] if descricao else None),
          id=dispositivo_id)
     definir_autorizados(conn, dispositivo_id, autorizados or [])

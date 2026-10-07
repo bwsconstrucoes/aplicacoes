@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#12385C">
 <link rel="manifest" href="/ponto/app/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/erp/static/icone-apple.png">
@@ -69,7 +69,15 @@
   .pequeno { font-size:13px; color:var(--suave); }
   .linha { display:flex; gap:8px; } .linha > * { flex:1; }
 
-  /* ---- O TABLET DA OBRA: tela cheia, câmera sempre ligada, teclado grande ---- */
+  /* ---- O CELULAR DA OBRA: tela cheia, câmera sempre ligada, teclado grande ---- */
+  /* Toque rápido no teclado não vira zoom (07/10/2026: "quando uso rápido, ele
+     entende como se fosse zoom da tela"). */
+  #tela-tablet, #tela-tablet * { touch-action:manipulation; -webkit-user-select:none; user-select:none;
+                                 -webkit-tap-highlight-color:transparent; }
+  .kq-trocar { position:absolute; top:10px; right:10px; z-index:4; border:0; border-radius:999px; padding:8px 12px;
+               background:rgba(0,0,0,.55); color:#fff; font-size:15px; font-weight:700; }
+  .kq-obra-info { font-size:13px; color:#9EC3EA; white-space:nowrap; }
+  .kq-meu { background:none; border:0; color:#9EC3EA; font-size:14px; text-decoration:underline; padding:4px; }
   #tela-tablet { position:fixed; inset:0; z-index:50; background:#0A1B2E; color:#fff; display:flex; flex-direction:column;
                  padding:calc(10px + env(safe-area-inset-top)) 14px calc(10px + env(safe-area-inset-bottom)); gap:10px; }
   .kq-topo { display:flex; align-items:center; gap:10px; }
@@ -78,6 +86,7 @@
   .kq-corpo { flex:1; display:flex; gap:14px; min-height:0; }
   .kq-camera { flex:1.2; position:relative; background:#000; border-radius:18px; overflow:hidden; min-height:200px; }
   .kq-camera video { width:100%; height:100%; object-fit:cover; transform:scaleX(-1); display:block; }
+  .kq-camera video.traseira { transform:none; }
   .kq-mira { position:absolute; inset:18% 22%; border:4px dashed rgba(255,255,255,.55); border-radius:18px; pointer-events:none; }
   .kq-legenda { position:absolute; left:0; right:0; bottom:0; padding:12px; text-align:center; font-size:18px; font-weight:700;
                 background:linear-gradient(transparent, rgba(0,0,0,.75)); }
@@ -135,9 +144,9 @@
     </div>
     <p class="pequeno" id="codigo-aparelho" style="text-align:center"></p>
     <div class="cartao oculto" id="cartao-tablet">
-      <h2>Bater ponto neste aparelho da obra</h2>
-      <p class="pequeno">Este aparelho é da obra: QR Code ou CPF, e a foto sai sozinha.</p>
-      <button class="btn grande" id="btn-ir-tablet" type="button">Abrir o ponto da obra</button>
+      <h2>Este é o ponto da obra</h2>
+      <p class="pequeno">Só o responsável por ele entra no “Meu ponto” aqui. Para bater: QR Code ou CPF na tela da batida.</p>
+      <button class="btn grande" id="btn-ir-tablet" type="button">Voltar para a batida</button>
     </div>
   </section>
 
@@ -168,10 +177,12 @@
       <select id="t-obra" aria-label="Obra"></select>
       <div class="kq-relogio" id="t-relogio">--:--</div>
     </div>
+    <div class="kq-obra-info" id="t-obra-info">📍 Procurando a localização…</div>
     <div class="kq-vencimento oculto" id="t-vencimento"></div>
     <div class="kq-corpo">
       <div class="kq-camera">
         <video id="t-video" autoplay muted playsinline></video>
+        <button type="button" class="kq-trocar" id="t-trocar-camera" aria-label="Trocar de câmera">🔄 Trocar câmera</button>
         <div class="kq-mira" id="t-mira"></div>
         <div class="kq-legenda" id="t-legenda">Mostre o QR Code do seu celular aqui — ou digite o CPF</div>
         <div class="kq-cobre oculto" id="t-cobre"></div>
@@ -186,6 +197,7 @@
         </div>
         <button type="button" class="kq-esqueci" id="t-esqueci">Esqueci meu QR Code — receber no WhatsApp</button>
         <button type="button" class="kq-esqueci" id="t-pedido">Entregar atestado, licença ou pedir ajuste</button>
+        <button type="button" class="kq-meu" id="t-meu-ponto">Meu ponto (só o responsável por este celular)</button>
       </div>
     </div>
     <div class="kq-form oculto" id="t-form"></div>
@@ -222,7 +234,7 @@
     </div>
     <div class="cartao">
       <h2>Meu QR Code</h2>
-      <p class="pequeno">Para bater no tablet da obra sem digitar o CPF: mostre o QR na câmera dele. Este muda a cada 30 segundos — foto de tela não serve.</p>
+      <p class="pequeno">Para bater no ponto da obra sem digitar o CPF: mostre o QR na câmera dele. Este muda a cada 30 segundos — foto de tela não serve.</p>
       <button class="btn sec" id="btn-meu-qr" type="button">Mostrar meu QR Code</button>
     </div>
     <div class="cartao oculto" id="cartao-banco">
@@ -395,8 +407,10 @@ async function iniciar() {
   const compartilhado = APARELHO && APARELHO.status === "APROVADO" && APARELHO.perfil !== "INDIVIDUAL";
   $("cartao-tablet").classList.toggle("oculto", !compartilhado);
   if (compartilhado) {
-    chamar("/ponto/app/api/sair", {}).catch(() => {});
-    EU = null;
+    // Só o RESPONSÁVEL tem sessão aqui (o servidor recusa os outros). Com ela,
+    // abre o "Meu ponto" dele, que volta sozinho para a batida (07/10/2026).
+    try { EU = await chamar("/ponto/app/api/eu"); } catch (e) { EU = null; }
+    if (EU) { vigiarVoltaParaBatida(); return mostrar("inicio"); }
     return abrirTablet();
   }
   try {
@@ -414,9 +428,27 @@ $("btn-entrar").addEventListener("click", async () => {
     await chamar("/ponto/app/api/entrar", {cpf: soDigitos($("e-cpf").value), pin: soDigitos($("e-pin").value)});
     $("e-pin").value = ""; aviso("");
     EU = await chamar("/ponto/app/api/eu");
+    if (ehDaObra()) vigiarVoltaParaBatida();
     mostrar("inicio");
   } catch (e) { aviso(e.message, "erro"); }
 });
+
+// --- o responsável no ponto da obra (07/10/2026) ---------------------------
+// Ele entra no "Meu ponto" dele aqui; depois de 3 minutos sem mexer, ou no botão,
+// a sessão fecha e o celular volta para a tela da batida da obra.
+const ehDaObra = () => !!(APARELHO && APARELHO.status === "APROVADO" && APARELHO.perfil !== "INDIVIDUAL");
+let VOLTA = null;
+function vigiarVoltaParaBatida() {
+  const rearmar = () => { clearTimeout(VOLTA); VOLTA = setTimeout(voltarParaBatida, 3 * 60 * 1000); };
+  ["click", "touchstart", "keydown"].forEach(ev => document.addEventListener(ev, rearmar, {passive: true}));
+  rearmar();
+}
+async function voltarParaBatida() {
+  clearTimeout(VOLTA);
+  try { await chamar("/ponto/app/api/sair", {}); } catch (e) {}
+  EU = null;
+  abrirTablet();
+}
 $("btn-ir-primeiro").addEventListener("click", () => { $("p-cpf").value = $("e-cpf").value; mostrar("primeiro"); });
 $("btn-voltar-entrar").addEventListener("click", () => mostrar("entrar"));
 $("btn-codigo").addEventListener("click", async () => {
@@ -464,7 +496,9 @@ function preencherObras(select, obras, principal) {
       .map(o => ({o, d: distancia(LOCAL, o)})).sort((x, y) => x.d - y.d);
     if (comCoord.length && comCoord[0].d < 5000) escolhida = comCoord[0].o.codigo;
   }
-  select.innerHTML = obras.map(o => `<option value="${esc(o.codigo)}" ${o.codigo === escolhida ? "selected" : ""}>${esc(o.codigo)} — ${esc(o.nome)}</option>`).join("");
+  // O nome da obra uma vez só (07/10/2026: "aparece duplicado, o nome da obra hífen o nome de novo").
+  const rotulo = o => (!o.nome || o.nome.trim().toUpperCase() === o.codigo.trim().toUpperCase()) ? o.codigo : `${o.codigo} — ${o.nome}`;
+  select.innerHTML = obras.map(o => `<option value="${esc(o.codigo)}" ${o.codigo === escolhida ? "selected" : ""}>${esc(rotulo(o))}</option>`).join("");
 }
 
 // Onde a pessoa está, em relação às obras dela. É só AVISO: quem decide a obra
@@ -610,7 +644,7 @@ async function carregarInicio() {
   // A forma de bater (decisão do dono, 05/10/2026): o padrão é só o aparelho da
   // obra. Quem não é exceção não vê o botão de bater (nem o pedido de
   // localização), e o celular dele não entra na fila de aprovação.
-  const soNaObra = EU.bate_no_celular === false;
+  const soNaObra = EU.bate_no_celular === false || ehDaObra();
   $("cartao-bater").classList.toggle("oculto", soNaObra);
   $("cartao-so-na-obra").classList.toggle("oculto", !soNaObra);
   $("ola-obra").textContent = `Olá, ${EU.primeiro_nome}`;
@@ -638,7 +672,12 @@ async function carregarInicio() {
   } else if (APARELHO.vencimento && APARELHO.vencimento.avisar) {
     avisoAparelho = `<div class="aviso ambar">Este celular para de bater em ${APARELHO.vencimento.dias} dia(s), em ${dataBR(APARELHO.vencimento.valido_ate)}. Peça a renovação ao RH.</div>`;
   }
+  if (ehDaObra()) {
+    avisoAparelho = `<div class="aviso info">Você está no “Meu ponto” no ponto da obra. Ele volta sozinho para a batida
+      em 3 minutos sem uso. <button class="btn sec" type="button" id="btn-voltar-batida">Voltar para a batida agora</button></div>`;
+  }
   $("aviso-aparelho").innerHTML = avisoAparelho;
+  if ($("btn-voltar-batida")) $("btn-voltar-batida").addEventListener("click", voltarParaBatida);
   $("btn-bater").disabled = !podeBater; $("btn-sem-foto").disabled = !podeBater;
 
   // hoje
@@ -706,7 +745,7 @@ async function carregarMes() {
 // pode ser pedido. O servidor confere tudo de novo (core/ajustes.py).
 let MES_DADOS = null;
 const MOTIVOS_AJUSTE = [["CELULAR", "Celular quebrado, sem bateria ou sem crédito"],
-  ["INTERNET", "Sem internet ou sem sinal na obra"], ["APARELHO", "Tablet ou aparelho da obra com problema"],
+  ["INTERNET", "Sem internet ou sem sinal na obra"], ["APARELHO", "Ponto da obra com problema"],
   ["ESQUECI", "Esqueci de bater"], ["FORA", "Estava em serviço fora da obra"], ["OUTRO", "Outro motivo"]];
 function podeCorrigir(x, mes) {
   if (EU && EU.bate_no_celular === false) return false;   // pede no aparelho da obra
@@ -953,11 +992,13 @@ async function abrirTablet() {
   $("t-obra").onchange = () => { try { localStorage.setItem("ponto_tablet_obra", $("t-obra").value); } catch (e) {} };
   atualizarRelogio(); TB.relogio = setInterval(atualizarRelogio, 1000);
   mostrarVencimentoDoTablet();
+  atualizarLocalTablet().then(detectarObraDoTablet);
   // Pulso a cada 5 min: o servidor confere se o aparelho continua aprovado.
   TB.pulso = setInterval(async () => {
     await estadoDoAparelho();
     if (!APARELHO || APARELHO.status !== "APROVADO") { pararTablet(); location.reload(); }
     mostrarVencimentoDoTablet();
+    atualizarLocalTablet().then(detectarObraDoTablet);
   }, 5 * 60 * 1000);
   manterTelaAcesa();
   atualizarLocalTablet();
@@ -997,9 +1038,13 @@ async function atualizarLocalTablet() {
 async function ligarCamera() {
   $("t-legenda").textContent = "Ligando a câmera…";
   try {
+    // A câmera escolhida fica lembrada no aparelho (07/10/2026: "abre a câmera para
+    // frente (…) não tem onde escolher a câmera").
+    if (!TB.camera) { try { TB.camera = localStorage.getItem("ponto_camera") || "user"; } catch (e) { TB.camera = "user"; } }
     TB.fluxo = await navigator.mediaDevices.getUserMedia({audio: false,
-      video: {facingMode: "user", width: {ideal: 1280}, height: {ideal: 720}}});
+      video: {facingMode: TB.camera, width: {ideal: 1280}, height: {ideal: 720}}});
     $("t-video").srcObject = TB.fluxo;
+    $("t-video").classList.toggle("traseira", TB.camera === "environment");
     await $("t-video").play().catch(() => {});
   } catch (e) {
     TB.fluxo = null;
@@ -1015,6 +1060,41 @@ async function ligarCamera() {
   }
   $("t-legenda").textContent = "Mostre o QR Code do seu celular aqui — ou digite o CPF";
   procurarQr();
+}
+
+async function trocarCamera() {
+  TB.camera = TB.camera === "environment" ? "user" : "environment";
+  try { localStorage.setItem("ponto_camera", TB.camera); } catch (e) {}
+  clearTimeout(TB.timer);
+  if (TB.fluxo) TB.fluxo.getTracks().forEach(t => t.stop());
+  TB.fluxo = null;
+  await ligarCamera();
+}
+$("t-trocar-camera").addEventListener("click", trocarCamera);
+$("t-meu-ponto").addEventListener("click", () => {
+  pararTablet();
+  mostrar("entrar");
+  aviso("Só o responsável por este celular entra no “Meu ponto” aqui. Os outros, pelo próprio celular.", "info");
+});
+
+// A obra pela localização (07/10/2026: "no modo obra ele não está detectando a
+// obra automaticamente"). Dentro da cerca de uma obra do aparelho, ela fica
+// escolhida e a linha de cima diz; fora, a lista fica para escolher. Quem decide
+// de verdade é o servidor, pela cerca, em cada batida.
+function detectarObraDoTablet() {
+  const info = $("t-obra-info"), obras = (APARELHO && APARELHO.obras) || [];
+  if (!TB.local) { info.textContent = "📍 Sem localização — confira a obra na lista acima."; return; }
+  const dentro = obras.filter(o => o.latitude !== null && o.longitude !== null)
+    .map(o => ({o, d: distancia(TB.local, o)}))
+    .filter(x => x.d <= (x.o.raio_metros || 200) + Math.min(TB.local.precisao || 0, 150))
+    .sort((a, b) => a.d - b.d);
+  if (dentro.length) {
+    $("t-obra").value = dentro[0].o.codigo;
+    const o = dentro[0].o, mesmo = !o.nome || o.nome.trim().toUpperCase() === o.codigo.trim().toUpperCase();
+    info.textContent = `📍 Obra detectada pela localização: ${mesmo ? o.codigo : `${o.codigo} — ${o.nome}`}`;
+  } else {
+    info.textContent = "📍 Fora da área das obras deste celular — confira a obra na lista acima.";
+  }
 }
 
 async function procurarQr() {
@@ -1289,7 +1369,7 @@ async function mostrarMeuQr() {
   $("dlg-corpo").innerHTML = `
     <h2 style="margin:0 0 8px">Meu QR Code</h2>
     <img class="qr-grande" src="${d.imagem}" alt="QR Code pessoal para bater o ponto">
-    <p class="pequeno" style="text-align:center">Aumente o brilho da tela e mostre para a câmera do tablet. Troca em <b id="qr-seg">${d.troca_em_segundos}</b> s.</p>
+    <p class="pequeno" style="text-align:center">Aumente o brilho da tela e mostre para a câmera do ponto da obra. Troca em <b id="qr-seg">${d.troca_em_segundos}</b> s.</p>
     ${w ? `<p class="pequeno">${status}</p><button class="btn sec" type="button" id="btn-qr-whats">Receber um QR no WhatsApp</button>` : ""}`;
   if (!$("dlg").open) $("dlg").showModal();
   const b = $("btn-qr-whats");

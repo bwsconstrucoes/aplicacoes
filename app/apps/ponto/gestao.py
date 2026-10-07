@@ -1570,11 +1570,15 @@ def ponto_api_dispositivo_aprovar(dispositivo_id: int):
         if d.get("cpf"):
             p = cadastros.colaborador_por_cpf(conn, cadastros.normalizar_cpf(d["cpf"]))
             if not p:
-                raise ErroDeValidacao("pessoa não cadastrada", campo="cpf")
+                raise ErroDeValidacao("CPF do responsável não está no cadastro", campo="cpf")
             colaborador_id = int(p["id"])
-        elif str(d.get("perfil") or "").upper() == "INDIVIDUAL":
-            # Sem CPF: vale quem entrou com CPF e PIN neste celular, se alguém entrou.
+        else:
+            # Sem CPF: vale quem já está no aparelho (quem entrou nele com CPF e
+            # PIN, ou o responsável de antes).
             colaborador_id = dispositivos.por_id(conn, dispositivo_id).get("colaborador_id")
+        if not colaborador_id:
+            # Todo aparelho tem responsável (decisão do dono, 07/10/2026).
+            raise ErroDeValidacao("diga o CPF do responsável — quem fica com o aparelho", campo="cpf")
         autorizados = []
         for cpf in d.get("autorizados") or []:
             p = cadastros.colaborador_por_cpf(conn, cadastros.normalizar_cpf(cpf))
@@ -1595,6 +1599,19 @@ def ponto_api_dispositivo_aprovar(dispositivo_id: int):
                                  descricao=d.get("descricao"), autorizados=autorizados, obras=obras,
                                  valido_ate=d.get("valido_ate"))
     return _ok(dispositivo=dispositivos.para_json(a), substituidos=len(a.get("substituidos") or []))
+
+
+@bp.route("/erp/api/ponto/dispositivos/<int:dispositivo_id>")
+@login_obrigatorio
+@permissao("configurar_ponto")
+@_api
+def ponto_api_dispositivo(dispositivo_id: int):
+    """Um aparelho com o grupo dele — para "Alterar" abrir com tudo preenchido."""
+    with db.conexao() as conn:
+        a = dispositivos.para_json(dispositivos.detalhado(conn, dispositivo_id))
+        a["autorizados"] = [{"nome": p["nome"], "cpf": p["cpf"]}
+                            for p in dispositivos.autorizados_detalhados(conn, dispositivo_id)]
+    return _ok(dispositivo=a)
 
 
 @bp.route("/erp/api/ponto/dispositivos/<int:dispositivo_id>/renovar", methods=["POST"])

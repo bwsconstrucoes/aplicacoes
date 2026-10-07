@@ -558,7 +558,8 @@ def test_tablet_da_obra_bate_sem_login_com_cpf(app, mundo):
     dp = como(app, mundo["dp"])
     disp = dp.get("/erp/api/ponto/dispositivos?status=PENDENTE").get_json()["dispositivos"][0]
     dp.post(f"/erp/api/ponto/dispositivos/{disp['id']}/aprovar",
-            json={"perfil": "COMPARTILHADO", "obras": ["PG-A"], "descricao": "Tablet da Escola A"})
+            json={"perfil": "COMPARTILHADO", "obras": ["PG-A"], "descricao": "Tablet da Escola A",
+                  "cpf": CPF_MARIA})
     h = {"X-Device-UUID": uuid, "X-Device-Token": token}
     estado = t.get("/ponto/app/api/aparelho", headers=h).get_json()["aparelho"]
     assert estado["status"] == "APROVADO" and [o["codigo"] for o in estado["obras"]] == ["PG-A"]

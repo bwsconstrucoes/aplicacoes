@@ -157,14 +157,19 @@ def app_api_entrar():
         # o tablet deixaria de ser da obra e mostraria o mês daquela pessoa a
         # quem passasse na frente.
         uuid, token = request.headers.get("X-Device-UUID", ""), request.headers.get(auth.CABECALHO_TOKEN, "")
+        a = None
         if uuid and token:
             try:
                 a = dispositivos.autenticar(conn, uuid, token)
             except Exception:  # noqa: BLE001 — aparelho desconhecido: segue como celular comum
                 a = None
-            if a and a["status"] == "APROVADO" and a["perfil"] != "INDIVIDUAL":
-                raise Recusada("este é o aparelho da obra — entre no “Meu ponto” pelo seu celular")
         pessoa = acesso.entrar(conn, d.get("cpf"), d.get("pin"))
+        # No ponto da obra (ou de equipe), só o RESPONSÁVEL entra no "Meu ponto"
+        # (pedido do dono, 07/10/2026: "se ela quiser acessar o ponto dela,
+        # particular, ela não consegue"). Os outros, cada um pelo seu celular.
+        if a and a["status"] == "APROVADO" and a["perfil"] != "INDIVIDUAL" \
+                and a.get("colaborador_id") != pessoa["id"]:
+            raise Recusada("este é o ponto da obra — só o responsável por ele entra no “Meu ponto” aqui")
     _abrir_sessao(pessoa)
     return _ok(nome=pessoa["nome"])
 

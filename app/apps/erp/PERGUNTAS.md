@@ -351,8 +351,21 @@ dizer "tem batida"; presença, horas e faltas são regra da fase 3.
   em cada conferência, não a fatura da AWS) 🔒
 - Quais obras, dias e horários estão fora da conferência do rosto?
 - Quem ainda não tem foto cadastral (e vai ganhar a da primeira batida)?
-- **Ainda não responde:** "a pessoa da foto é mesmo o Fulano?" — não há
-  reconhecimento facial; quem confere é gente, no mosaico. E "quantas pessoas
+- Quem é o responsável por cada aparelho do ponto? Quais aparelhos estão com o
+  Fulano? (07/10/2026: todo aparelho tem responsável — no celular pessoal é o
+  dono; no ponto da obra e no de equipe, quem fica com ele) ⚠️ ("aparelho da
+  obra" pode ser o celular da empresa OU o próprio de alguém designado — o tipo
+  é "Ponto da obra", não quem pagou o celular)
+- Quais aparelhos foram bloqueados porque o responsável saiu da empresa?
+- Quantos pontos da obra, celulares pessoais e pontos de equipe estão valendo
+  hoje, por obra?
+- **Ainda não responde:** "o celular da obra é da empresa ou da pessoa?" — o
+  sistema não guarda de quem é a propriedade do aparelho, só o tipo e o
+  responsável.
+- "A pessoa da foto é mesmo o Fulano?" — só com a conferência do rosto (AWS)
+  ligada, e só nas batidas que entram na regra dela: a resposta é "conferiu" ou
+  "não conferiu" com a cadastral, nunca certeza; sem ela, quem confere é gente,
+  no mosaico. **Ainda não responde:** "quantas pessoas
   usaram o QR de outra" — o sistema vê o QR antigo e o rosto no mosaico, não a
   troca de celular em si.
 
