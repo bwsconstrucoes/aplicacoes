@@ -268,12 +268,16 @@ def rodada(analise_id: int) -> dict:
                  and piso < a["id"] < analise["id"]]
     # O PDF do relatório de cada conta é da rodada, mas não é arquivo de
     # pagamento: não soma no total nem vira SP — vai como link no card.
-    arquivos = sorted((a for a in da_rodada if a["destino"] != fpg.RELATORIO),
+    arquivos = sorted((a for a in da_rodada
+                       if a["destino"] not in (fpg.RELATORIO, fpg.CADASTRO)),
                       key=lambda a: a["id"])
     relatorios = {a["conta"]: a for a in da_rodada if a["destino"] == fpg.RELATORIO}
+    # A planilha de cadastro de cada conta: também só link no card (07/10/2026).
+    cadastros = {a["conta"]: a for a in da_rodada if a["destino"] == fpg.CADASTRO}
     if not arquivos:
         raise ErroDosCards("arquivos de pagamento desta rodada não encontrados.")
     return {"analise": analise, "arquivos": arquivos, "relatorios": relatorios,
+            "cadastros": cadastros,
             "verbas": [v for v in (analise["verbas"] or "").split("+") if v]}
 
 
@@ -667,6 +671,8 @@ def _previa(analise_id: int, ler_pipes: bool = True, contas=None) -> tuple:
                        "link": arquivo.get("link") or "", "destino": destino,
                        "link_relatorio": ((r.get("relatorios") or {}).get(conta)
                                           or {}).get("link") or "",
+                       "link_cadastro": ((r.get("cadastros") or {}).get(conta)
+                                         or {}).get("link") or "",
                        "obras": obras,
                        "rateio": rateio_multiplo(obras, categoria) if obras else ""}
             sp_item["etiquetas"] = rotulo_das_etiquetas(sp_item)
@@ -813,6 +819,8 @@ def _grupo_da_dc(analise, r, escolhidas, todas_as_contas, andamento_atual,
                    "link": arquivo.get("link") or "", "destino": destino,
                    "link_relatorio": ((r.get("relatorios") or {}).get(conta)
                                       or {}).get("link") or "",
+                   "link_cadastro": ((r.get("cadastros") or {}).get(conta)
+                                     or {}).get("link") or "",
                    "obras": obras, "tipo_sp": tipo_sp or "",
                    "cards_de_origem": sorted(c["cards"]),
                    "tipos": [{"nome": k, "valor": v["valor"]} for k, v in
@@ -869,6 +877,8 @@ def descricao_da_dc(sp: dict, link_analise: str) -> str:
         linhas.append(f"Planilha de pagamento: {sp['link']}")
     if sp.get("link_relatorio"):
         linhas.append(f"Relatório (PDF): {sp['link_relatorio']}")
+    if sp.get("link_cadastro"):
+        linhas.append(f"Cadastro de colaboradores: {sp['link_cadastro']}")
     if link_analise:
         linhas.append(f"Planilha de análise: {link_analise}")
     return "\n".join([l for i, l in enumerate(linhas)
@@ -905,6 +915,8 @@ def descricao_da_sp(competencia: str, tipo: str, verba: str, sp: dict,
     # arquivo de pagamento quanto o relatório também"*).
     if sp.get("link_relatorio"):
         linhas.append(f"Relatório (PDF): {sp['link_relatorio']}")
+    if sp.get("link_cadastro"):
+        linhas.append(f"Cadastro de colaboradores: {sp['link_cadastro']}")
     if link_analise:
         linhas.append(f"Planilha de análise: {link_analise}")
     return "\n".join([l for i, l in enumerate(linhas)

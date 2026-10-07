@@ -48,6 +48,8 @@ ANALISE = "analise"
 # eu quero poder baixar por aqui"*. Fica no log como um arquivo da rodada, com a
 # conta, mas NÃO é arquivo de pagamento: não entra em total nem vira SP.
 RELATORIO = "relatorio"
+# A planilha de cadastro dos colaboradores de cada conta, gerada junto (07/10/2026).
+CADASTRO = "cadastro"
 MIME_PDF = "application/pdf"
 
 
@@ -394,7 +396,7 @@ def _br(valor) -> str:
 def gerar(ano: int, mes: int, tipo: str, verbas, destino: str,
           juntar_verbas: bool = False, quem: str = "",
           forcar: bool = False, destinos: dict | None = None,
-          relatorio=None, linhas=None) -> dict:
+          relatorio=None, linhas=None, cadastro: bool = False) -> dict:
     """Gera os arquivos, sobe no Drive e registra. Devolve os links.
 
     ⚠️ SÃO SEMPRE AO MENOS DOIS ARQUIVOS: o de pagamento (um por conta) e o de
@@ -465,6 +467,31 @@ def gerar(ano: int, mes: int, tipo: str, verbas, destino: str,
             except Exception:  # noqa: BLE001 — o pagamento já está no Drive
                 logger.exception("Folha: não consegui gerar o relatório da conta %s",
                                  conta or "(sem conta)")
+
+    # A PLANILHA DE CADASTRO DE CADA CONTA (07/10/2026). O dono: *"precisa que
+    # seja gerado ainda o arquivo de cadastro dos colaboradores e enviado ao card
+    # também o link, caso precise alguém ser cadastrado."* A do destino da conta
+    # (BeeVale ou SomaPay), com quem está no arquivo dela. Falha aqui não desfaz
+    # o pagamento: fica no log.
+    from . import cadastro_planilha
+    for conta in (dict.fromkeys(l.get("conta", "") for l in lotes) if cadastro else ()):
+        dos_lotes = [l for l in lotes if l.get("conta", "") == conta]
+        nomes = {i["cpf"]: i["nome"] for l in dos_lotes for i in l.get("linhas") or []
+                 if i.get("cpf")}
+        try:
+            conteudo_cad, nome_cad, avisos_cad = cadastro_planilha.gerar(
+                dos_lotes[0]["destino"], list(nomes), nomes)
+            nome_cad = nome_cad.replace("Cadastro ", f"Cadastro conta {conta or 'sem conta'} ", 1)
+            subido_cad = drive.subir_arquivo(conteudo_cad, nome_cad, pasta)
+            gerados.append(_registrar(
+                ano, mes, tipo, CADASTRO,
+                "+".join(dict.fromkeys(v for l in dos_lotes
+                                       for v in (l.get("verbas") or []))),
+                conta, nome_cad, len(nomes), 0, subido_cad,
+                "; ".join(avisos_cad)[:900], quem))
+        except Exception:  # noqa: BLE001 — o pagamento já está no Drive
+            logger.exception("Folha: não consegui gerar o cadastro da conta %s",
+                             conta or "(sem conta)")
 
     # O ARQUIVO DE ANÁLISE, sempre, e por último: se algo falhar antes, ninguém
     # fica com um relatório de um pagamento que não foi gerado.
@@ -802,11 +829,11 @@ def gerar_direto(origem: str, dados: dict, destino: str, quem: str = "",
         saida = gerar(pedido["ano"], pedido["mes"], pedido["tipo"], [pedido["verba"]],
                       destino, quem=quem, forcar=forcar, destinos=destinos,
                       relatorio=_relatorio_por_conta(origem, dados, pedido),
-                      linhas=pedido["linhas"])
+                      linhas=pedido["linhas"], cadastro=True)
         analise = next((a["id"] for a in saida["arquivos"] if a["destino"] == ANALISE),
                        None)
         destino_da_conta = {a["conta"]: a["destino"] for a in saida["arquivos"]
-                            if a["destino"] not in (ANALISE, RELATORIO)}
+                            if a["destino"] not in (ANALISE, RELATORIO, CADASTRO)}
         dc.registrar_lote(analise, pedido["linhas"], destino_da_conta, quem=quem)
         return saida
     if origem == "folha":
@@ -819,7 +846,7 @@ def gerar_direto(origem: str, dados: dict, destino: str, quem: str = "",
                              pedido["pagamento"], quem=quem)
     return gerar(pedido["ano"], pedido["mes"], pedido["tipo"], [pedido["verba"]],
                  destino, quem=quem, forcar=forcar, destinos=destinos,
-                 relatorio=_relatorio_por_conta(origem, dados, pedido))
+                 relatorio=_relatorio_por_conta(origem, dados, pedido), cadastro=True)
 
 
 def _relatorio_por_conta(origem: str, dados: dict, pedido: dict):
@@ -897,19 +924,25 @@ def rodadas(teto: int = 400) -> list:
         if a["destino"] == RELATORIO:
             abertos.setdefault(("rel",) + chave, []).append(a)
             continue
+        if a["destino"] == CADASTRO:
+            abertos.setdefault(("cad",) + chave, []).append(a)
+            continue
         if a["destino"] != ANALISE:
             abertos.setdefault(chave, []).append(a)
             continue
         saida.append(_rodada(a, abertos.pop(chave, []),
-                             abertos.pop(("rel",) + chave, [])))
+                             abertos.pop(("rel",) + chave, []),
+                             abertos.pop(("cad",) + chave, [])))
     for chave, soltos in abertos.items():
-        if chave[0] != "rel":
-            saida.append(_rodada(None, soltos, abertos.get(("rel",) + chave) or []))
+        if chave[0] not in ("rel", "cad"):
+            saida.append(_rodada(None, soltos, abertos.get(("rel",) + chave) or [],
+                                 abertos.get(("cad",) + chave) or []))
     return sorted(saida, key=lambda r: r["ordem"], reverse=True)
 
 
-def _rodada(analise, pagamentos: list, relatorios=None) -> dict:
+def _rodada(analise, pagamentos: list, relatorios=None, cadastros=None) -> dict:
     relatorios = relatorios or []
+    cadastros = cadastros or []
     base = analise or pagamentos[-1]
     verbas = (analise or {}).get("rotulo_verbas") or " + ".join(
         sorted({p["rotulo_verbas"] for p in pagamentos if p["rotulo_verbas"]}))
@@ -917,9 +950,12 @@ def _rodada(analise, pagamentos: list, relatorios=None) -> dict:
         "chave": f"a{analise['id']}" if analise else f"s{pagamentos[0]['id']}",
         "ordem": base["id"], "analise": analise, "pagamentos": pagamentos,
         "ids": ([p["id"] for p in pagamentos] + [r["id"] for r in relatorios]
+                + [c["id"] for c in cadastros]
                 + ([analise["id"]] if analise else [])),
         # O PDF do relatório de cada conta: `{conta: arquivo}`.
         "relatorios": {r["conta"]: r for r in relatorios},
+        # A planilha de cadastro de cada conta (07/10/2026): `{conta: arquivo}`.
+        "cadastros": {c["conta"]: c for c in cadastros},
         "competencia": base["competencia"], "tipo": base["tipo"],
         "verbas": verbas,
         "destino": " + ".join(sorted({p["rotulo_destino"] for p in pagamentos})),

@@ -82,7 +82,12 @@ def test_gerar_o_auxilio_sobe_o_RELATORIO_em_PDF_da_conta(banco_auxilio, monkeyp
     assert len(pdfs) == 1 and pdfs[0][2] == b"%PDF-" and "50024" in pdfs[0][0]
     rodada = fp.rodadas()[0]
     assert rodada["relatorios"]["50024"]["link"]
-    assert rodada["total"] == D("300.00")
+    assert rodada["total"] == D("300.00"), "o cadastro não soma no total"
+    # A planilha de cadastro da conta, gerada junto (07/10/2026).
+    cadastros = [s for s in subidos if s[0].startswith("Cadastro conta 50024")]
+    assert len(cadastros) == 1 and "BeeVale" in cadastros[0][0]
+    assert rodada["cadastros"]["50024"]["link"]
+    assert rodada["cadastros"]["50024"]["id"] in rodada["ids"], "excluir leva junto"
 
 
 def test_a_REGRA_DE_RATEIO_divide_o_auxilio_entre_as_obras(banco_auxilio):

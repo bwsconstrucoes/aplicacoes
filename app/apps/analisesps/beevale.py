@@ -350,6 +350,20 @@ def cadastro_xlsx(registros: list) -> bytes:
     return _fechar(planilha)
 
 
+# ⚠️ A CARTEIRA SAI DO TIPO DE DESPESA DA SP (07/10/2026). Era "Produção" fixo,
+# herdado do `BeeVale.gs` — e o dono: *"continua errado, os arquivos tão saindo
+# tudo produção"*. A tabela é a mesma da DC (`dc.CARTEIRAS_DA_DC`, a que ele
+# passou: Despesas com Alimentação → Auxílio Alimentação etc.); tipo fora dela
+# segue "Produção".
+CARTEIRA_PADRAO = "Produção"
+
+
+def carteira_do_tipo(tipo_despesa: str) -> str:
+    from . import dc
+    mapa, _aviso = dc.carteiras()
+    return mapa.get(dc._sem_acento(tipo_despesa)) or CARTEIRA_PADRAO
+
+
 def pagamento_xlsx(linhas: list) -> bytes:
     """A planilha de recarga. `linhas`: [{nome, email, valor, cpf, card}]."""
     from openpyxl import Workbook
@@ -361,7 +375,8 @@ def pagamento_xlsx(linhas: list) -> bytes:
     aba.append(COLUNAS_PAGAMENTO)
     for linha in linhas:
         aba.append([linha.get("nome", ""), linha.get("email", ""),
-                    "Produção", "Livre", float(linha.get("valor", 0) or 0),
+                    linha.get("carteira") or CARTEIRA_PADRAO, "Livre",
+                    float(linha.get("valor", 0) or 0),
                     "Mensal", 0, linha.get("cpf", ""), linha.get("nome", ""),
                     str(linha.get("card", "")), "Terceirizados"])
     for coluna in (1, 2, 3, 4, 6, 8, 9, 10, 11):        # texto
@@ -456,12 +471,24 @@ def preparar(ids: list) -> dict:
             continue
         prontos.append({
             "sp": sp_id, "cpf": (cadastro.get("cpf") or cpf).strip(),
-            "nome": nome,
+            "nome": nome, "carteira": carteira_do_tipo(_tipo_da_sp(sp_id)),
             "valor": valor_do_card(cards[sp_id]["campos"].get(pipefy.CAMPO_VALOR, "")),
             "cadastro": cadastro,
             "descricao_atual": cards[sp_id]["campos"].get(pipefy.CAMPO_DESCRICAO, ""),
         })
     return {"prontos": prontos, "erros": erros}
+
+
+def _tipo_da_sp(sp_id: str) -> str:
+    """O tipo de despesa da SP, como a base o tem. "" se não der para ler."""
+    from .db import consultar
+    try:
+        linhas = consultar("SELECT tipo_despesa FROM analisesps.sps WHERE id = ?",
+                           (str(sp_id),))
+    except Exception:  # noqa: BLE001 — sem o tipo, vale a carteira padrão
+        logger.exception("BeeVale: não consegui ler o tipo de despesa da SP %s", sp_id)
+        return ""
+    return str(linhas[0][0] or "") if linhas else ""
 
 
 def arquivos_do_card(pronto: dict) -> tuple[bytes, bytes]:
@@ -470,7 +497,8 @@ def arquivos_do_card(pronto: dict) -> tuple[bytes, bytes]:
     email = so_digitos(pronto["cpf"]) + DOMINIO
     pagamento = pagamento_xlsx([{
         "nome": pronto["nome"], "email": email, "valor": pronto["valor"],
-        "cpf": formata_cpf(pronto["cpf"]), "card": pronto["sp"]}])
+        "cpf": formata_cpf(pronto["cpf"]), "card": pronto["sp"],
+        "carteira": pronto.get("carteira") or CARTEIRA_PADRAO}])
     ficha = cadastro_xlsx([registro(
         pronto["nome"], cadastro.get("data_de_nascimento", ""),
         cadastro.get("telefone_celular", ""), pronto["cpf"])])
