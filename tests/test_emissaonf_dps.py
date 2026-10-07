@@ -252,3 +252,115 @@ def test_a_producao_nao_leva_o_ambiente_no_endereco():
 
     hom = nac.ELNfseNacional(token="x", chave_pem=b"", cert_pem=b"", ambiente="homologacao")
     assert hom._url("nfse").endswith("/api/nacional/homologacao/nfse")
+
+
+# --------------------------------------------------------------------------- #
+# A CSLL retida sozinha — o campo que viajava sem ninguém declarar
+# --------------------------------------------------------------------------- #
+def test_csll_retida_sozinha_e_declarada_como_retencao(schema):
+    """O código tpRetPisCofins é o ÚNICO lugar que diz quais dos três foram
+    retidos. Sem o grupo, o valor da CSLL ia sozinho e nada dizia que houve
+    retenção."""
+    root = _xml(_montar(r=_calculo("ONERADA - 50/50 - 80/20 - IR,CSLL")))
+    pisc = root.find(".//{%s}piscofins" % nac.NS_NFSE)
+    assert pisc is not None, "o grupo tem de ir quando só a CSLL é retida"
+    assert _txt(pisc, "tpRetPisCofins") == "8"      # PIS/COFINS não retidos, CSLL retido
+    assert Decimal(_txt(root, "infDPS/valores/trib/tribFed/vRetCSLL")) > 0
+    doc = etree.fromstring(etree.tostring(root))
+    assert schema.validate(doc), schema.error_log
+
+
+def test_imposto_nao_retido_nao_vai_com_valor_zero_no_grupo():
+    """Mandar "0,00" num imposto não retido não é o mesmo que não mandar: o
+    primeiro declara uma retenção de valor zero."""
+    root = _xml(_montar(r=_calculo("ONERADA - 50/50 - 80/20 - IR,CSLL")))
+    pisc = root.find(".//{%s}piscofins" % nac.NS_NFSE)
+    assert pisc.find("{%s}vPis" % nac.NS_NFSE) is None
+    assert pisc.find("{%s}vCofins" % nac.NS_NFSE) is None
+
+
+def test_sem_retencao_nenhuma_o_grupo_nao_vai():
+    """Mesmo comportamento do modelo antigo, que só mandava imposto retido."""
+    root = _xml(_montar(r=_calculo("ONERADA - SD - SD - SEM RETENÇÃO")))
+    assert root.find(".//{%s}piscofins" % nac.NS_NFSE) is None
+
+
+def test_pis_e_cofins_retidos_levam_aliquota_e_valor(schema):
+    root = _xml(_montar(r=_calculo("ONERADA - 50/50 - 80/20 - PIS,COFINS,CSLL")))
+    pisc = root.find(".//{%s}piscofins" % nac.NS_NFSE)
+    assert _txt(pisc, "pAliqPis") == "0.65"
+    assert _txt(pisc, "pAliqCofins") == "3.00"
+    assert _txt(pisc, "tpRetPisCofins") == "3"      # os três retidos
+    doc = etree.fromstring(etree.tostring(root))
+    assert schema.validate(doc), schema.error_log
+
+
+# --------------------------------------------------------------------------- #
+# O endereço de produção: duas fontes oficiais que se contradizem
+# --------------------------------------------------------------------------- #
+class _RespostaFalsa:
+    def __init__(self, status):
+        self.status_code = status
+        self.text = "{}"
+
+    def json(self):
+        return {"idDPS": "DPS-DE-TESTE"}
+
+
+class _SessaoFalsa:
+    """Registra os endereços chamados e responde o que o teste mandar."""
+
+    def __init__(self, *status):
+        self.status = list(status)
+        self.chamadas = []
+
+    def request(self, metodo, url, **kw):
+        self.chamadas.append(url)
+        return _RespostaFalsa(self.status.pop(0) if self.status else 200)
+
+    def mount(self, *a, **kw):
+        pass
+
+
+def _cliente(ambiente, *status):
+    c = nac.ELNfseNacional(token="x", chave_pem=b"", cert_pem=b"", ambiente=ambiente)
+    c.session = _SessaoFalsa(*status)
+    return c
+
+
+def test_quando_o_endereco_do_portal_responde_o_do_manual_nao_e_tentado():
+    c = _cliente("producao", 200)
+    c.consultar_dps("DPS1")
+    assert len(c.session.chamadas) == 1
+    assert "/api/nacional/dps/DPS1" in c.session.chamadas[0]
+
+
+def test_endereco_que_nao_existe_libera_tentar_o_do_manual():
+    """404 e 405 provam que o endereço não existe — a prefeitura não recebeu
+    nada, então repetir não arrisca uma segunda nota."""
+    c = _cliente("producao", 404, 200)
+    c.consultar_dps("DPS1")
+    assert len(c.session.chamadas) == 2
+    assert "/api/nacional/producao/dps/DPS1" in c.session.chamadas[1]
+
+
+@pytest.mark.parametrize("status", [200, 201, 400, 401, 422, 500, 503])
+def test_qualquer_outra_resposta_nao_e_repetida(status):
+    """Esta é a trava que importa: 400, 500 ou timeout podem ter chegado à
+    prefeitura. Repetir o envio nesses casos arriscaria a segunda nota do mesmo
+    serviço — o pior desfecho possível nesta área."""
+    c = _cliente("producao", status, 200)
+    try:
+        c.consultar_dps("DPS1")
+    except Exception:
+        pass
+    assert len(c.session.chamadas) == 1
+
+
+def test_se_os_dois_enderecos_falharem_o_erro_e_o_do_caminho_preferido():
+    c = _cliente("producao", 404, 404)
+    try:
+        c.consultar_dps("DPS1")
+    except Exception:
+        pass
+    assert len(c.session.chamadas) == 2

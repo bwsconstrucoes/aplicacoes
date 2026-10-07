@@ -312,17 +312,54 @@ class ELNfseNacional:
         self.session.mount("https://", HTTPAdapter(max_retries=retry))
 
     def _url(self, path):
-        """Monta o endereço da operação.
+        """Monta o endereço da operação (o caminho PREFERIDO).
 
         A produção NÃO tem o segmento de ambiente no caminho — o portal da
         prefeitura publica `/api/nacional/nfse`, enquanto a homologação é
         `/api/nacional/homologacao/nfse`. O manual em PDF diz que o ambiente é
         sempre um segmento do caminho, e nisso ele contradiz o portal; o portal
-        ganha, porque é o que está no ar. Se um dia a produção passar a aceitar
-        o caminho com o segmento, os dois funcionam e isto não precisa mudar.
+        ganha, porque é o que está no ar.
         """
         meio = "" if self.ambiente == "producao" else f"{self.ambiente}/"
         return f"{self.urlbase}/api/nacional/{meio}{path}"
+
+    def _url_alternativa(self, path):
+        """O outro jeito de escrever o mesmo endereço — o do manual em PDF.
+
+        Existe porque a divergência acima é entre duas fontes oficiais, e
+        descobrir qual está certa custaria a primeira emissão de verdade dar
+        erro de endereço. Em vez de adivinhar, tenta-se o segundo.
+
+        **Isto só é seguro por um motivo, e ele é o que importa:** 404 e 405
+        significam que o endereço não existe — ou seja, a prefeitura não recebeu
+        declaração nenhuma e NADA foi criado. Repetir nesse caso não arrisca uma
+        segunda nota. Em qualquer outra resposta (inclusive erro de rede, que
+        pode ter chegado) não se repete nada.
+        """
+        if self.ambiente == "producao":
+            return f"{self.urlbase}/api/nacional/producao/{path}"
+        return f"{self.urlbase}/api/nacional/{path}"
+
+    # Respostas que provam que o endereço não existe — e só elas liberam a
+    # segunda tentativa no caminho alternativo.
+    _ENDERECO_NAO_EXISTE = (404, 405)
+
+    def _chamar(self, metodo, path, **kw):
+        """Faz a chamada no caminho preferido e, só se o endereço não existir,
+        no alternativo. Devolve a resposta e lembra qual caminho funcionou."""
+        resp = self.session.request(metodo, self._url(path), timeout=self.timeout, **kw)
+        if resp.status_code not in self._ENDERECO_NAO_EXISTE:
+            return resp
+        alternativa = self._url_alternativa(path)
+        print(f"[nacional] {self._url(path)} respondeu HTTP {resp.status_code} "
+              f"(endereço não existe, nada foi criado) — tentando {alternativa}")
+        segunda = self.session.request(metodo, alternativa, timeout=self.timeout, **kw)
+        if segunda.status_code not in self._ENDERECO_NAO_EXISTE:
+            self._caminho_que_funcionou = alternativa
+            print(f"[nacional] o caminho que funciona neste ambiente é o do MANUAL "
+                  f"({alternativa}) — vale corrigir o padrão no código.")
+            return segunda
+        return resp      # os dois falharam: devolve o erro do caminho preferido
 
     @staticmethod
     def _gzip_b64(xml_bytes):
@@ -359,31 +396,26 @@ class ELNfseNacional:
         root = montar_dps_xml(dados)
         assinado = assinar_dps(root, self.chave_pem, self.cert_pem)
         xml_bytes = etree.tostring(assinado, xml_declaration=True, encoding="UTF-8", standalone=False)
-        resp = self.session.post(self._url("nfse"), params={"token": self.token},
-                                 json={"dpsXmlGZipB64": self._gzip_b64(xml_bytes)},
-                                 timeout=self.timeout)
+        resp = self._chamar("POST", "nfse", params={"token": self.token},
+                            json={"dpsXmlGZipB64": self._gzip_b64(xml_bytes)})
         return self._checar(resp)
 
     def consultar_processamento_dps(self, id_dps) -> dict:
-        resp = self.session.get(self._url(f"nfseDps/{id_dps}"),
-                                params={"token": self.token}, timeout=self.timeout)
+        resp = self._chamar("GET", f"nfseDps/{id_dps}", params={"token": self.token})
         return self._checar(resp)
 
     def consultar_dps(self, id_dps) -> dict:
-        resp = self.session.get(self._url(f"dps/{id_dps}"),
-                                params={"token": self.token}, timeout=self.timeout)
+        resp = self._chamar("GET", f"dps/{id_dps}", params={"token": self.token})
         return self._checar(resp)
 
     def consultar_nfse(self, chave_acesso) -> dict:
-        resp = self.session.get(self._url(f"nfse/{chave_acesso}"),
-                                params={"token": self.token}, timeout=self.timeout)
+        resp = self._chamar("GET", f"nfse/{chave_acesso}", params={"token": self.token})
         return self._checar(resp)
 
     def registrar_evento(self, chave_acesso, evento_xml_bytes) -> dict:
-        resp = self.session.post(self._url(f"nfse/{chave_acesso}/eventos"),
-                                 params={"token": self.token},
-                                 json={"pedidoRegistroEventoXmlGZipB64": self._gzip_b64(evento_xml_bytes)},
-                                 timeout=self.timeout)
+        resp = self._chamar("POST", f"nfse/{chave_acesso}/eventos",
+                            params={"token": self.token},
+                            json={"pedidoRegistroEventoXmlGZipB64": self._gzip_b64(evento_xml_bytes)})
         return self._checar(resp)
 
     def emitir_e_aguardar(self, dados: DadosDPS, timeout_s=120, intervalo_s=5) -> dict:

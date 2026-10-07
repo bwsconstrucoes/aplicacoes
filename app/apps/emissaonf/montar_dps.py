@@ -86,17 +86,31 @@ def montar(card: dict, obra, r, dados_rps, numero_nota, ibge_obra,
     tem_pis, tem_cofins = "PIS" in fed, "COFINS" in fed
     tem_csll, tem_ir = "CSLL" in fed, "IR" in fed
 
+    # O grupo entra sempre que ALGUM dos três foi retido — inclusive quando só a
+    # CSLL foi. Isso não é detalhe: o código `tpRetPisCofins` é o ÚNICO lugar da
+    # declaração que diz quais dos três foram retidos. Sem ele, o valor da CSLL
+    # viajaria sozinho, sem nada declarando que houve retenção.
+    # Quando nenhum dos três é retido (categoria "SEM RETENÇÃO"), o grupo não vai
+    # — mesmo comportamento do modelo antigo, que só mandava imposto retido.
     pis_cofins = None
-    if tem_pis or tem_cofins:
+    if tem_pis or tem_cofins or tem_csll:
         pis_cofins = {
-            "CST": "01",                       # operação tributável, alíquota básica
+            # CST descreve a situação da operação, não a retenção: serviço de
+            # construção civil no Lucro Real é tributável à alíquota básica,
+            # independente de quem recolhe.
+            "CST": "01",
             "vBCPisCofins": _v(r.valor_total),
-            "pAliqPis": "0.65",
-            "pAliqCofins": "3.00",
-            "vPis": _v(r.pis if tem_pis else 0),
-            "vCofins": _v(r.cofins if tem_cofins else 0),
             "tpRetPisCofins": nac.tipo_retencao_pis_cofins(tem_pis, tem_cofins, tem_csll),
         }
+        # Alíquota e valor só do que foi de fato retido. Mandar "0,00" num imposto
+        # que não foi retido é diferente de não mandar: o primeiro declara uma
+        # retenção de valor zero.
+        if tem_pis:
+            pis_cofins["pAliqPis"] = "0.65"
+            pis_cofins["vPis"] = _v(r.pis)
+        if tem_cofins:
+            pis_cofins["pAliqCofins"] = "3.00"
+            pis_cofins["vCofins"] = _v(r.cofins)
 
     aliq = Decimal(str(r.aliquota_iss or 0))
     if aliq > ALIQUOTA_ISS_MAXIMA:

@@ -472,13 +472,52 @@ uma emergência.
 mesmo que já se usava para nota emitida manualmente, e funcionou nas
 substituições de setembro. Implementar o evento é pendência registrada.
 
+### Dois consertos feitos depois de publicar, no mesmo dia
+
+**1. A CSLL retida sozinha não era declarada como retenção.**
+
+No formato nacional existe **um código só** que diz quais dos três — PIS, COFINS
+e CSLL — foram retidos. O código estava mandando esse código apenas quando PIS ou
+COFINS entravam. Numa obra com categoria `IR,CSLL`, o valor da CSLL viajava
+sozinho, sem nada na declaração dizendo que houve retenção.
+
+Agora o grupo vai sempre que **algum dos três** foi retido, com o código certo
+(há teste para as oito combinações). Duas sutilezas que ficaram escritas no
+código, porque não são óbvias:
+
+- **alíquota e valor só do que foi de fato retido.** Mandar "0,00" num imposto
+  não retido não é o mesmo que não mandar: o primeiro declara uma retenção de
+  valor zero;
+- **quando nenhum dos três é retido, o grupo não vai** — mesmo comportamento do
+  modelo antigo, que só mandava imposto retido.
+
+**2. O endereço de produção passou a ter plano B.**
+
+A divergência entre o manual e o portal (acima) só se resolveria na primeira
+emissão de verdade, com um erro de endereço. Agora, se o endereço do portal
+responder que **não existe**, o sistema tenta o do manual.
+
+**Isto só é seguro por um motivo, e ele é o que importa:** as respostas 404 e 405
+provam que o endereço não existe — a prefeitura não recebeu declaração nenhuma e
+**nada foi criado**. Repetir aí não arrisca uma segunda nota.
+
+**Em qualquer outra resposta não se repete nada.** Um 400, um 500 ou um erro de
+rede podem ter chegado à prefeitura; repetir o envio nesses casos arriscaria a
+segunda nota do mesmo serviço, que é o pior desfecho possível nesta área. Há
+teste percorrendo os códigos de resposta justamente para que essa trava não seja
+afrouxada por descuido depois.
+
+Quando o plano B funciona, o log diz qual caminho era o certo — então a primeira
+emissão de verdade também responde a pergunta do manual contra o portal.
+
 ### O que foi conferido, e o que NÃO foi
 
 Dito sem rodeio, porque a decisão de emitir é do dono:
 
 **Conferido:** a declaração passa no schema oficial nas quatro formas de
 tributação que a BWS usa; a dedução de material fecha com a base do ISS; o ISS
-retido sai como retido; as oito combinações de retenção federal; a identificação
+retido sai como retido; as oito combinações de retenção federal, inclusive a
+CSLL sozinha; que nenhuma resposta além de 404/405 faz o envio ser repetido; a identificação
 da declaração continua igual à que o job antigo monta (senão as notas antigas se
 perderiam); o PDF municipal, a DANFSe e o valor do recibo saem da resposta nova;
 a tela de recuperação reconhece os dois formatos. São 46 casos, e a suíte inteira
