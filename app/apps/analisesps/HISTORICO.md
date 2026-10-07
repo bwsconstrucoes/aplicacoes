@@ -12175,6 +12175,55 @@ somente Solicitações de uma conta especifica"*.
 - **E a diferença de 1 pessoa (R$ 220) entre barra e lateral:** suspeita de o
   navegador devolver, ao recarregar, a marcação de antes. As caixinhas agora
   abrem sempre no estado salvo (`defaultChecked`). Não confirmado.
+- **Publicada em 06/10/2026** (sem migração; suíte inteira 8.542 verdes). Falta
+  ele: conferir os desligados marcados na alimentação e no transporte e
+  desmarcar quem não deve receber; a barra deve ficar igual ao "A pagar".
+
+#### Leva 188 — desligado NÃO recebe auxílio, nem marcado (06/10/2026)
+
+- Ele viu o aviso da 187 ("77 desligados marcados para receber") e respondeu:
+  *"nós já havíamos combinado essa regra. A princípio não aparece pra pagar"* —
+  a de 03/10, *"se ele já saiu, ele não recebe mais"*. O código tratava
+  desligado como POLÍTICA ("a última palavra é dele": marcado, recebia), e um
+  "marcar todos" salvo bastava para pôr os 77 no arquivo.
+- **Agora desligado é como cadastro incompleto:** marcação à mão não vale
+  (`_decidir`), "Salvar seleção" ignora (`salvar_selecao`), a caixinha fica
+  travada (e o "marcar todos" pula as travadas). A marcação antiga dos 77 fica
+  no banco, SEM efeito — não foi apagada (decisão: não mexer em dado; ela só
+  deixou de valer). Vale na alimentação e no transporte.
+- O aviso "Desligados marcados para receber" e o botão "Desmarcar" da 187
+  saíram (perderam o sentido). Ficou da 187: quem vai ser pago nunca some da
+  lista, e as caixinhas abrem no estado salvo.
+- **Afastado continua política** (marcado, recebe) — ele não falou de afastado.
+  **Diaristas não mudam:** lá o desligado que trabalhou recebe (02/10/2026).
+
+#### Leva 189 — DC: a tabela das carteiras GRAVADA no sistema (06/10/2026)
+
+- O aviso *"aba 'Data base BeeVale' não lida — a carteira fica 'Produção'"*. O
+  dono: *"não pode ser assim (…) eu já disse quais são os tipos, por que não
+  grava logo"*. A tabela que ele passou em 05/10 virou `dc.CARTEIRAS_DA_DC`:
+  Despesas com Alimentação → Auxílio Alimentação; Despesas com Transporte →
+  Despesas com Transporte; Diárias → Diárias; Gratificações e Extras →
+  Gratiticações e Extras (grafia do portal); Produção → Produção; Salários e
+  Ordenados → Diárias.
+- A aba continua sendo lida quando dá, e acrescenta/corrige linhas — mas não é
+  mais necessária, e não lê-la não gera aviso. O cabeçalho dela ("Tipo DC |
+  Tipo BeeVale") não era reconhecido — agora é.
+- Tipo de despesa que não está na tabela vai como "Produção" COM aviso na tela,
+  dizendo qual tipo falta.
+
+#### Leva 190 — DC: "Diárias" classificada como "Salários e Ordenados" (07/10/2026)
+
+- Lançar a DC no Pipefy barrou: *tipo de despesa "Diárias" sem Código Omie na
+  aba "Plano Financeiro" (categoria do rateio)* e *sem Record ID*. "Diárias" é
+  um tipo da DC que não existe no Plano Financeiro (o script antigo tirava os
+  dois códigos de colunas da própria planilha da DC).
+- **Decisão minha, dita a ele:** usar a linha que os diaristas já usam,
+  "Salários e Ordenados" (`folha_cards.DESCRICAO_DA_VERBA["diaria"]`) — só
+  quando o nome não está no plano (`dc.TIPO_NO_PLANO`,
+  `dc.classificacao_no_plano`). Se ele quiser outra linha, é trocar a tabela.
+- A DC JÁ GERADA (linhas gravadas sem categoria) não precisa ser gerada de
+  novo: o lançamento resolve a classificação na hora (`_grupo_da_dc`).
 
 #### ⚠️ Pendente AGORA
 

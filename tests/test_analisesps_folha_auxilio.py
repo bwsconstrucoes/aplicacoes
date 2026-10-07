@@ -323,16 +323,29 @@ def test_DESMARCAR_a_pessoa_manda_mais_que_o_calculo(banco_auxilio):
 
 
 def test_MARCAR_quem_o_calculo_recusou_POR_POLITICA_vale(banco_auxilio):
-    """A última palavra é dele: quem saiu não recebe por decisão, e se ele decidir
-    que é devido, paga — pelo valor calculado, não por zero."""
+    """A última palavra é dele: quem está afastado não recebe por decisão, e se
+    ele decidir que é devido, paga — pelo valor calculado, não por zero."""
+    from app.apps.analisesps import colaboradores as col, folha_auxilio as fx
+
+    r = fx.calcular_pessoa(
+        fx.ALIMENTACAO, ficha(situacao=col.SITUACAO_AFASTADO), INICIO, FIM,
+        ajuste={"pagar": True})
+    assert r["pagar"] is True
+    assert "apesar da pendência" in " ".join(r["motivos"])
+    assert r["valor"] == D("330.00")
+
+
+def test_DESLIGADO_nao_recebe_NEM_MARCADO(banco_auxilio):
+    """06/10/2026: um "marcar todos" salvo pôs 77 desligados no arquivo. O dono:
+    *"nós já havíamos combinado essa regra"* — a de 03/10, *"se ele já saiu, ele
+    não recebe mais"*. Desligado deixou de ser "política que ele pode vencer"."""
     from app.apps.analisesps import colaboradores as col, folha_auxilio as fx
 
     r = fx.calcular_pessoa(
         fx.ALIMENTACAO, ficha(situacao=col.SITUACAO_SAIU), INICIO, FIM,
         ajuste={"pagar": True})
-    assert r["pagar"] is True
-    assert "apesar da pendência" in " ".join(r["motivos"])
-    assert r["valor"] == D("330.00")
+    assert r["pagar"] is False and r["desligado"]
+    assert "mesmo marcado" in " ".join(r["motivos"])
 
 
 def test_MARCAR_nao_resolve_falta_de_dado_no_cadastro(banco_auxilio):

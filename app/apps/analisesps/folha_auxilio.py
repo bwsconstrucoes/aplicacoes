@@ -544,7 +544,16 @@ def _decidir(saida: dict, ajuste: dict) -> dict:
         saida["pagar"] = False
         saida["motivos"].append("colaborador desmarcado manualmente.")
     elif ajuste.get("pagar") is True and not saida["pagar"]:
-        if saida.get("impossivel"):
+        if saida.get("desligado"):
+            # ⚠️ DESLIGADO NÃO RECEBE, NEM MARCADO (06/10/2026). Era "política, a
+            # última palavra é dele" — e um "marcar todos" salvo pôs 77
+            # desligados (R$ 17,8 mil) no arquivo de setembro, escondidos da
+            # lista. O dono: *"nós já havíamos combinado essa regra"* — a de
+            # 03/10, *"se ele já saiu, ele não recebe mais"*. A marcação antiga
+            # fica no banco, sem efeito.
+            saida["motivos"].append(
+                "desligado — não recebe o auxílio, mesmo marcado (regra de 03/10/2026).")
+        elif saida.get("impossivel"):
             # Marcar não resolve falta de valor no cadastro: pagaria zero em
             # silêncio. O recado diz o que consertar, e onde.
             saida["motivos"].append(
@@ -1015,7 +1024,7 @@ def salvar_selecao(tipo: str, ano: int, mes: int, decisoes, quem: str = "") -> d
             continue
         # ⚠️ MARCAR NÃO RESOLVE FALTA DE DADO NO CADASTRO: pagaria zero em
         # silêncio. A pessoa fica de fora e a tela diz por quê.
-        if querido and pessoa.get("impossivel"):
+        if querido and (pessoa.get("impossivel") or pessoa.get("desligado")):
             ignorados.append(cpf)
             continue
         gravar_ajuste(tipo, ano, mes, cpf, pagar=querido, quem=quem)
