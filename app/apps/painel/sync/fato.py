@@ -25,6 +25,7 @@ Regras de negocio (inalteradas):
   - Data: data real de pagamento se quitado; senao vencimento.
   - CANCELADO e descartado.
 """
+import json
 import re
 import logging
 import datetime as dt
@@ -1244,16 +1245,19 @@ def _departamentos_do_bruto(bruto) -> list[tuple[str, float]]:
         mv = json.loads(bruto) if isinstance(bruto, str) else (bruto or {})
     except (TypeError, ValueError):
         return []
-    lista = mv.get("departamentos") or (mv.get("detalhes") or {}).get("departamentos") or []
+    lista = _lista_de_departamentos(mv)
     pares, total_valor = [], 0.0
     for d in lista if isinstance(lista, list) else []:
         if not isinstance(d, dict):
             continue
-        cod = str(d.get("cCodDepartamento") or d.get("cCodDep") or "").strip()
+        cod = str(d.get("cCodDepartamento") or d.get("cCodDep") or d.get("nCodDep")
+                  or d.get("codigo_departamento") or "").strip()
         if not cod:
             continue
-        pct = d.get("nDistrPercentual", d.get("nPerDep"))
-        valor = d.get("nDistrValor", d.get("nValDep"))
+        # o nome exato varia entre as APIs do OMIE: percentual começa com
+        # "nPer"/"nDistrPer", valor com "nVal"/"nDistrVal"
+        pct = next((v for k, v in d.items() if k.startswith(("nPer", "nDistrPer"))), None)
+        valor = next((v for k, v in d.items() if k.startswith(("nVal", "nDistrVal"))), None)
         pares.append((cod, float(pct or 0), float(valor or 0)))
         total_valor += float(valor or 0)
     if not pares:
@@ -1264,6 +1268,44 @@ def _departamentos_do_bruto(bruto) -> list[tuple[str, float]]:
     if total_valor > 0.0001:
         return [(c, v / total_valor) for c, _p, v in pares]
     return [(c, 1.0 / len(pares)) for c, _p, _v in pares]
+
+
+def _lista_de_departamentos(no, profundidade=0):
+    """A primeira lista de departamentos que aparecer na resposta, em qualquer
+    nível. A consulta do lançamento de conta corrente não teve o formato
+    conferido contra o OMIE real (07/10/2026): procurar pelo NOME da chave, e
+    não por um caminho fixo, é o que a deixa ler as duas formas prováveis."""
+    if profundidade > 4:
+        return []
+    if isinstance(no, dict):
+        for chave in ("departamentos", "distribuicao"):
+            lista = no.get(chave)
+            if isinstance(lista, list) and lista:
+                return lista
+        for valor in no.values():
+            achada = _lista_de_departamentos(valor, profundidade + 1)
+            if achada:
+                return achada
+    elif isinstance(no, list):
+        for valor in no:
+            achada = _lista_de_departamentos(valor, profundidade + 1)
+            if achada:
+                return achada
+    return []
+
+
+def _e_transferencia(bruto, codigo_categoria) -> bool:
+    """Transferência entre contas da empresa (origem TRAP/TRAR, tipo TRA, ou
+    as categorias 0.01.x do OMIE). Não é receita nem despesa: vai para TRF
+    mesmo que a categoria não esteja no plano de contas guardado."""
+    if str(codigo_categoria or "").startswith("0.01."):
+        return True
+    try:
+        d = (json.loads(bruto) if isinstance(bruto, str) else (bruto or {})).get("detalhes") or {}
+    except (TypeError, ValueError, AttributeError):
+        return False
+    return (str(d.get("cOrigem") or "").upper() in ("TRAP", "TRAR")
+            or str(d.get("cTipo") or "").upper() == "TRA")
 
 
 def _codigo_do_bruto(bruto):
@@ -1296,6 +1338,8 @@ def gerar_linhas_lancamentos_cc(conn):
     pernas_de_titulo = {(cc, dia, round(abs(float(v or 0)), 2)) for cc, dia, v in conn.execute(
         "SELECT ncodcc, ddtpagamento, nvalpago FROM movimentos"
         " WHERE COALESCE(cliquidado,'') <> 'S'").fetchall()}
+    from .apropriacao_cc import guardadas
+    apropriacoes = guardadas(conn)
     coluna_bruto = "bruto" if _mst_guarda_bruto(conn) else "NULL"
     linhas = conn.execute(
         f"SELECT id, cnatureza, ccodcateg, ncodcc, ncodcliente, ddtpagamento,"
@@ -1318,6 +1362,8 @@ def gerar_linhas_lancamentos_cc(conn):
             info_log = mapa_log.get(desc_cat.strip(), {})
             grupo = info_log.get("Grupo", grupo)
             analise = info_log.get("Análise") or _analise_por_heuristica(desc_cat, grupo)
+        if _e_transferencia(bruto, ccat):
+            analise = "TRF"
         razao, cnpj = cli.get(ncli, ("", ""))
         if not (razao or "").strip() and ncli not in (None, ""):
             razao = f"(favorecido {ncli})"
@@ -1327,7 +1373,11 @@ def gerar_linhas_lancamentos_cc(conn):
         tipo_aporte = classificar_aporte(desc_cat, ccat, razao) or ""
         # a mesma chave de "medição" que um título sem documento teria
         chave = f"COD:{codigo or 'CC' + str(mid)}"
-        partes = _departamentos_do_bruto(bruto) or [(None, 1.0)]
+        # a apropriação: do próprio movimento, se um dia vier; senão, da
+        # consulta do lançamento no OMIE (migração 022) — é de onde ela vem hoje
+        partes = (_departamentos_do_bruto(bruto)
+                  or _departamentos_do_bruto(apropriacoes.get(codigo))
+                  or [(None, 1.0)])
         # o centavo que sobra do rateio vai para a última parte: a soma das
         # obras tem de dar o lançamento, ao centavo (100.000,01 em 50/50)
         total = round(sinal * valor, 2)

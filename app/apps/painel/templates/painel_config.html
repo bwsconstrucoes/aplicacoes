@@ -215,6 +215,27 @@
   <div id="saldo-saida" style="margin-top:10px"></div>
 </div>
 
+<!-- ============ UM LANÇAMENTO DE CONTA CORRENTE, CRU — 07/10/2026 ============ -->
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Baixar um lançamento de conta corrente do OMIE</h3>
+    <small>de onde vêm as obras do lançamento</small>
+  </div>
+  <p class="cartao-dica" style="margin-top:0">
+    O OMIE não manda a apropriação (as obras) junto com os pagamentos de um
+    lançamento feito direto na conta corrente: o painel pergunta por ela,
+    lançamento por lançamento, a cada atualização. Aqui você baixa a resposta
+    do OMIE para um número, sem interpretação. O número é o “nCodMovCC” do
+    arquivo cru do dia.
+  </p>
+  <form method="get" action="{{ url_for('painel.conferir_lancamento_cc_json') }}"
+        style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+    <input type="text" name="codigo" inputmode="numeric" placeholder="ex.: 11309733447"
+           data-sem-mascara style="max-width:220px">
+    <button type="submit" class="btn">⬇ Baixar</button>
+  </form>
+</div>
+
 <!-- ============ O QUE ACONTECEU NAS ATUALIZAÇÕES — dono, 06/10/2026 ============ -->
 {% if historico %}
 <div class="cartao">

@@ -971,6 +971,30 @@ def conferir_saldo_json():
                              f'attachment; filename="omie_extrato_{conta}_{mes}.json"'})
 
 
+@bp.route("/conferir/lancamento-cc/json")
+def conferir_lancamento_cc_json():
+    """UM lançamento de conta corrente, cru, como o OMIE responde à consulta
+    dele (07/10/2026). É onde mora a apropriação que o movimento financeiro não
+    traz; serve para conferir o formato contra o OMIE real. So do
+    administrador (prefixo painel.conferir_)."""
+    import json as _json
+    from flask import Response
+    from .sync.omie_client import TETO_DE_ESPERA_NA_TELA, OmieClient
+    codigo = (request.args.get("codigo") or "").strip()
+    if not codigo.isdigit():
+        return jsonify({"ok": False, "erro": "Informe o número do lançamento."}), 400
+    try:
+        resposta = OmieClient.de_ambiente(
+            timeout=30, max_tentativas=3,
+            teto_de_espera=TETO_DE_ESPERA_NA_TELA).consultar_lancamento_cc(int(codigo))
+    except Exception as e:  # noqa: BLE001 — OMIE fora, número que não existe
+        return jsonify({"ok": False, "erro": f"O OMIE não respondeu: {e}"}), 502
+    return Response(_json.dumps(resposta, ensure_ascii=False, indent=2, default=str),
+                    mimetype="application/json",
+                    headers={"Content-Disposition":
+                             f'attachment; filename="omie_lancamento_cc_{codigo}.json"'})
+
+
 @bp.route("/conferir/dia/json")
 def conferir_dia_json():
     """O que o OMIE manda num dia, CRU, como arquivo (dono, 07/10/2026: "a
