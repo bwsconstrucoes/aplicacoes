@@ -12228,6 +12228,18 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 191 — "Gerar BeeVale" das Solicitações: carteira pelo tipo de despesa (07/10/2026)
+
+- *"Continua errado, os arquivos tão saindo tudo produção."* Conferido: o
+  arquivo de alimentação gerado pela folha sai "Auxílio Alimentação" (testado).
+  O "Produção" fixo estava no "Gerar BeeVale" da tela Solicitações (SPs de
+  terceirizados, herdado do `BeeVale.gs`). Agora a carteira sai do tipo de
+  despesa da SP, pela mesma tabela da DC (`beevale.carteira_do_tipo`); tipo fora
+  da tabela segue "Produção".
+- ⚠️ Não sei com certeza se era desse arquivo que ele falava. Outros "Produção"
+  que continuam, de propósito: a folha da contabilidade (decisão dele, 05/10) e
+  arquivos da DC gerados ANTES da leva 189 (é preciso excluir e gerar de novo).
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |
