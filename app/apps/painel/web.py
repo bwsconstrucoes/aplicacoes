@@ -933,6 +933,32 @@ def _escopo_das_partes(f):
     return Filtros(departamentos=f.departamentos, contas=f.contas, excluir_trf=False)
 
 
+@bp.route("/conferir/dia/json")
+def conferir_dia_json():
+    """O que o OMIE manda num dia, CRU, como arquivo (dono, 07/10/2026: "a
+    gente baixa toda a informação do OMIE (...) por que essa falha de
+    interpretação?"). É a fonte da verdade para desenhar regra: o que existe
+    no JSON e o painel não lê. So do administrador (prefixo painel.conferir_).
+    Usa a mesma leitura guardada por 150 s da conferencia — conferir e baixar
+    o mesmo dia nao gasta duas chamadas iguais no OMIE."""
+    import json as _json
+    from . import conferencia_omie
+    dia = (request.args.get("dia") or "").strip()
+    if not _DATA_ISO.match(dia):
+        return jsonify({"ok": False, "erro": "Dia inválido."}), 400
+    try:
+        registros = conferencia_omie.registros_do_omie(dia)
+    except Exception as e:  # noqa: BLE001 — OMIE fora, credencial, limite
+        logger.exception("Painel: leitura crua do dia %s no OMIE falhou", dia)
+        return jsonify({"ok": False, "erro": f"Não consegui ler o OMIE agora: {e}"}), 502
+    corpo = _json.dumps({"dia": dia, "movimentos": registros},
+                        ensure_ascii=False, indent=2, default=str)
+    from flask import Response
+    return Response(corpo, mimetype="application/json",
+                    headers={"Content-Disposition":
+                             f'attachment; filename="omie_movimentos_{dia}.json"'})
+
+
 @bp.route("/conferir/dia")
 def conferir_dia():
     """Confere UM dia do painel com o OMIE, lendo o OMIE na hora.
