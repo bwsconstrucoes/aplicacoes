@@ -2346,11 +2346,20 @@ diz.
 **Ícone:** o painel ganhou ícone próprio (fundo azul-escuro, três barras
 subindo em azul e amarelo), na aba do navegador e no atalho do celular.
 
-**Campo de mês:** o campo "AAAA-MM" do navegador virou duas listas, MM / AAAA
-("estamos no Brasil, tem que ser MM/AAAA"), em toda tela do painel que pede
-mês (Calendário, conferência de saldo, ajuste do rateio). O campo original
-continua escondido com o valor de sempre: o servidor não mudou. Conferido num
-navegador de verdade (escolher, enviar o formulário, valor posto por script).
+**Campos de mês e de período (`static/campos_data.js`, para toda tela do
+painel):** o dono recusou as duas listas que fiz primeiro — quer *"clica,
+abre, ou escrever 01/…"*, e reclamou que no calendário do navegador *"a gente
+só visualiza um mês, não tem como colocar início e fim"*.
+- Mês: campo "MM/AAAA" que aceita digitação (a barra entra sozinha) e, ao
+  clicar, abre os 12 meses com o ano em cima (‹ 2026 ›).
+- Período (todo par de datas "de"/"até": Analítico, Explorador, Extrato,
+  "Atualizar um período"): dois campos "dd/mm/aaaa" que aceitam digitação e,
+  ao clicar em qualquer um, abrem UM calendário de dois meses lado a lado —
+  primeiro clique é o início, segundo é o fim, o meio fica pintado — com
+  atalhos (Hoje, Este mês, Mês passado, Este ano, Limpar). No celular, um mês.
+- O campo original fica escondido com o valor de sempre (AAAA-MM /
+  AAAA-MM-DD): o servidor não mudou. Conferido num navegador de verdade:
+  digitar, clicar, atalho, valor posto por script e envio do formulário.
 
 ## Reler os pagamentos de um ano, de alguns ou de todos — 07/10/2026
 
