@@ -12246,6 +12246,7 @@ somente Solicitações de uma conta especifica"*.
 - Não verificado: o formato real da coluna Conta das SPs × o nome/número das
   contas da conciliação. Se não casar, nenhum link aparece (não aparece link
   errado) — e o ajuste é em `conta_da_sp_confere`.
+- **Publicada em 07/10/2026** (sem migração; suíte inteira 8.771 verdes).
 
 #### Leva 197 — auxílio: a obra como nas outras folhas — ponto, trocar ou dividir (07/10/2026)
 
