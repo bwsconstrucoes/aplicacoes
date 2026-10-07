@@ -21,16 +21,31 @@ um erro de rede depois do envio NÃO autoriza reenviar — autoriza consultar.
 """
 from __future__ import annotations
 
+import os
 import time
 
 import el_nfse_nacional as nac
 
 
 # Quanto tempo esperar a prefeitura converter a declaração em nota. O manual diz
-# que o processamento é assíncrono e vai para uma fila; na prática leva segundos.
-# O teto existe para a tela não ficar pendurada — passado ele, a nota pode ter
-# saído, e quem decide é a consulta, não um reenvio.
-ESPERA_TOTAL_S = 150
+# que o processamento é assíncrono e vai para uma fila — então esperar é esperar
+# a fila DELA, e o tempo não depende de nós.
+#
+# O teto existe para a tela não ficar pendurada. Passado ele, a nota pode ter
+# saído, e quem decide é a consulta ("Conferir declaração"), nunca um reenvio.
+#
+# Ajustável sem publicar nada, pela env EMISSAO_NF_ESPERA_S: até se saber como a
+# fila da prefeitura se comporta no dia a dia, é melhor poder mexer no número do
+# que adivinhar um bom valor agora.
+ESPERA_TOTAL_S = int(os.getenv("EMISSAO_NF_ESPERA_S", "150") or 150)
+
+# No ENSAIO a espera é curta de propósito. Ensaio não tem pós-emissão: não há
+# planilha, Omie, card nem Drive para completar. Então prender a tela por dois
+# minutos e meio não compra nada — melhor devolver a identificação e deixar a
+# pessoa conferir quando quiser. Prender a tela foi, aliás, o que fez o dono
+# desistir do primeiro ensaio em 07/10/2026.
+ESPERA_ENSAIO_S = int(os.getenv("EMISSAO_NF_ESPERA_ENSAIO_S", "30") or 30)
+
 ESPERA_ENTRE_CONSULTAS_S = 5
 
 
@@ -74,6 +89,37 @@ def dados_da_nota(xml_nacional: str) -> dict:
 
 class AindaProcessando(RuntimeError):
     """A prefeitura recebeu a declaração e ainda não terminou. Nota não existe ainda."""
+
+
+# Erros da plataforma nacional cujo texto oficial engana, e que o manual explica
+# numa seção própria. Traduzir é parte da entrega: o texto cru manda a pessoa
+# procurar o problema no lugar errado.
+EXPLICACAO_DOS_ERROS = {
+    "E0037": (
+        "O texto deste erro diz que o município não existe no cadastro nacional, "
+        "mas o manual da prefeitura explica, numa seção própria, que na prática "
+        "ele significa outra coisa: **o município ainda não habilitou o ambiente "
+        "de TESTE (Produção Restrita) na Plataforma Nacional**.\n\n"
+        "Não é defeito do nosso sistema nem dos dados da nota, e não há nada a "
+        "corrigir aqui. Quem resolve é a prefeitura: ela precisa habilitar o "
+        "módulo de Produção Restrita e concluir as configurações de convênio no "
+        "ambiente nacional.\n\n"
+        "O que fazer: pedir isso à prefeitura. Enquanto não houver ambiente de "
+        "teste, o ensaio não vai funcionar — e a conferência de uma emissão real "
+        "passa a ser a tela \"Conferir declaração\"."
+    ),
+}
+
+
+def explicar_erros(motivos) -> list[str]:
+    """Para cada motivo recusado, devolve a explicação do manual quando houver."""
+    saida = []
+    for m in motivos or []:
+        for codigo, texto in EXPLICACAO_DOS_ERROS.items():
+            if codigo in str(m):
+                saida.append(texto)
+                break
+    return saida
 
 
 class DeclaracaoRecusada(RuntimeError):
@@ -162,12 +208,19 @@ def _mensagem_de_erro(e: Exception) -> str:
 
 
 def emitir(ctx: dict, dados_dps: nac.DadosDPS, token: str, producao: bool,
-           espera_total_s: int = ESPERA_TOTAL_S) -> dict:
+           espera_total_s: int | None = None) -> dict:
     """Declara a nota à prefeitura e devolve número, chave, data e o XML.
 
     `ctx` é o contexto do `worker.preparar` (de onde saem o certificado e a
     chave já em memória). `token` é o token de integração da prefeitura.
     """
+    # O teto é lido AQUI, e não como valor padrão do argumento: valor padrão é
+    # congelado quando a função nasce, então mudar a constante (ou a env) depois
+    # não teria efeito nenhum. Isso já custou um teste que rodou os 150 segundos
+    # inteiros sem ninguém perceber — ver o HISTORICO.md, 07/10/2026.
+    if espera_total_s is None:
+        espera_total_s = ESPERA_TOTAL_S
+
     chave_pem, cert_pem = ctx.get("chave_pem"), ctx.get("cert_pem")
     if not (chave_pem and cert_pem):
         raise NotaNaoSaiu("Certificado A1 não carregado — a declaração tem de ser assinada.")
