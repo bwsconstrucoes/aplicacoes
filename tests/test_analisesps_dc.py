@@ -368,6 +368,7 @@ def test_a_SP_da_DC_tem_RATEIO_POR_CATEGORIA_e_move_os_cards(com_duas_categorias
     assert "Valor BeeVale (+1,50%): R$ 324,80" in descricao
     assert "Planilha de pagamento: https://drive/" in descricao
     assert "Relatório (PDF): https://drive/" in descricao
+    assert "Cadastro de colaboradores: https://drive/" in descricao   # 07/10/2026
     # "Folha de Pgt" + "BeeVale" (05/10/2026).
     assert pipe.atualizacoes_de(criada[0]["id"])["etiquetas"] == ["318116255", "317521565"]
 

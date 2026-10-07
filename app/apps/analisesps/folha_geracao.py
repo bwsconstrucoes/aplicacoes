@@ -64,7 +64,9 @@ DESTINOS = (BEEVALE, SOMAPAY)
 ROTULO_DO_DESTINO = {BEEVALE: "BeeVale", SOMAPAY: "SomaPay",
                      "analise": "Analise da folha",
                      # O relatório em PDF de cada conta, gerado junto (03/10/2026).
-                     "relatorio": "Relatório (PDF)"}
+                     "relatorio": "Relatório (PDF)",
+                     # A planilha de cadastro de cada conta (07/10/2026).
+                     "cadastro": "Cadastro de colaboradores"}
 
 # As verbas que geram arquivo. O rótulo é o que aparece na tela e no nome do
 # arquivo; a chave é a que vem da apropriação guardada.
