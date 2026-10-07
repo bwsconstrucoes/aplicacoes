@@ -822,6 +822,70 @@ da função** e acusa se o valor padrão voltar. Ele existe porque o sintoma nat
 deste defeito é lento e silencioso: sem um teste olhando direto para a causa,
 ele volta e ninguém vê.
 
+### "Aguardando Transmissão", o Bad Gateway, e a declaração que vivia só na tela
+
+Três coisas no mesmo fim de tarde de 07/10/2026, e as três têm a mesma raiz: eu
+desenhei a emissão como se a nota voltasse na mesma visita, e ela não volta.
+
+**1. O portal da prefeitura mostrou o estado de verdade.** O dono foi lá e trouxe:
+
+```
+DPS ...260000000003281 | Tipo: API | Situação: Aguardando Transmissão
+Data: 07/10/2026 | Número Nfs Reservado: 3281 | Chave Nacional: (vazia)
+```
+
+Isso diz tudo: a prefeitura **recebeu e aceitou**, **reservou o número 3281** para
+aquela declaração, e **ainda não transmitiu** para a plataforma nacional. A nota
+só existe como documento fiscal quando a chave nacional aparece.
+
+E traz duas consequências práticas que o sistema não estava dizendo: **não emitir
+com outro número** (o 3281 está reservado para essa declaração) e **não
+reenviar** — basta consultar depois. O aviso de "ainda processando" passou a
+explicar esse estado com essas palavras.
+
+**2. O Bad Gateway, e este é o mais grave: o desenho da emissão derrubava o
+serviço inteiro.**
+
+O serviço atende **4 pedidos ao mesmo tempo** (1 worker, 4 threads) e é
+compartilhado com o ERP, o painel e todo o resto. Cada emissão esperando a nota
+prendia **uma dessas quatro linhas**, por até 150 segundos. Umas poucas
+tentativas seguidas ocuparam as quatro — e o monorepo **inteiro** passou a
+responder *"Bad Gateway"*.
+
+Ou seja: uma fila do lado da prefeitura virava indisponibilidade do ERP. Isso não
+é desconforto de tela, é defeito de arquitetura, e foi meu.
+
+**A espera caiu para 25s** (15s no ensaio). Ela serve só para o caso feliz, em
+que a nota sai em segundos e dá para terminar o serviço na mesma visita. Quando
+não sai, quem termina é a tela "Conferir declaração". Há teste exigindo que a
+espera continue curta, com o motivo escrito nele — porque o número parece
+inofensivo e não é.
+
+**3. A declaração vivia só na tela aberta no navegador.**
+
+Entre o aceite e a nota, o único registro da identificação era a página que o
+dono estava olhando. Publicar o serviço, fechar a aba ou cair a conexão perdia o
+rastro — e foi o que aconteceu: a identificação da 3281 só foi reencontrada
+porque ele foi procurar **no portal da prefeitura**.
+
+Agora existe a aba **"Declaracoes"**, e a declaração é gravada nela **antes de
+qualquer espera**. Três decisões dentro disso:
+
+- **gravar é a primeira coisa depois do aceite.** Não depois da espera, não "se
+  der tempo". É o "antes" que garante que nada se perde;
+- **se a gravação falhar, a emissão NÃO para** — a declaração já está com a
+  prefeitura, e abortar não desfaz nada. Mas **reclama alto no log**, com a
+  identificação, porque silenciar aí seria recriar o problema que a gravação
+  existe para resolver;
+- **a tela "Conferir declaração" LISTA o que está em aberto**, com um botão em
+  cada. Assim ninguém precisa guardar 45 caracteres: é por isso que a lista
+  existe, não por enfeite.
+
+**A lição que atravessa as três:** quando o outro lado tem fila, esperar por ele
+dentro de um pedido web é pedir para transformar a lentidão dele em
+indisponibilidade nossa. O certo é registrar o protocolo, soltar a linha, e ter
+uma tela que fecha o ciclo depois.
+
 ### A limpeza do que o modelo antigo deixou
 
 Saíram do `web.py` o preparo do certificado para o envelope SOAP, a busca

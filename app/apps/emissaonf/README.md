@@ -151,6 +151,24 @@ ela até aparecer. Da nota pronta saem o **número**, a **chave de acesso** e a
 O código de verificação **não existe mais**: no modelo nacional quem identifica
 a nota é a chave de acesso de 50 dígitos, que vai no PDF com o QR ao lado.
 
+### A declaração é gravada antes de qualquer espera
+
+Entre a prefeitura **aceitar** a declaração e a nota **ficar pronta** passa um
+tempo que não depende de nós — o portal dela chama esse estado de *"Aguardando
+Transmissão"*, com o número já reservado e a chave nacional ainda vazia.
+
+Nesse intervalo, a declaração é gravada na aba **`Declaracoes`**, e isso acontece
+**antes** de o sistema esperar um segundo. É o que garante que nada se perde se a
+tela fechar, o serviço for publicado ou a conexão cair.
+
+A tela **"Conferir declaração"** lista o que está em aberto, com um botão em cada
+— então ninguém precisa guardar a identificação de 45 caracteres.
+
+**E a espera é curta de propósito, por um motivo que não é de conforto:** o
+serviço atende 4 pedidos ao mesmo tempo e é compartilhado com o ERP e o painel.
+Cada emissão esperando prende uma dessas quatro linhas. Com a espera longa, umas
+poucas tentativas seguidas derrubaram o monorepo inteiro com "Bad Gateway".
+
 **Se a espera estourar, o sistema NÃO oferece "tentar de novo".** É de propósito:
 a declaração já está com a prefeitura, e a nota pode ter saído. A tela mostra a
 identificação da declaração e manda para a tela **"Conferir declaração"**, que
@@ -368,7 +386,7 @@ depois de cada escrita.
 
 | Onde | O quê |
 |---|---|
-| Planilha **Notas BWS** (`1NOEzey3…PpEbU`) | aba `Notas BWS` (numeração e apuração), `Notas BWS Links` (links dos arquivos), `Controle Nacional` (a fila do nacional + o último NSU na célula P1) |
+| Planilha **Notas BWS** (`1NOEzey3…PpEbU`) | aba `Notas BWS` (numeração e apuração), `Notas BWS Links` (links dos arquivos), `Declaracoes` (as declarações enviadas e ainda sem nota), `Controle Nacional` (a fila do nacional antigo + o último NSU na célula P1) |
 | Planilha **C. Diários** (`1C7MWQmr…PsBk`) | aba `Centro de Custo`: obra, município, alíquota de ISS, tributação, CNO |
 | Planilha **Credenciais** (`1D4aVC7w…B9i-U`) | aba `Credenciais` (chave/valor) e `Destinatarios WhatsApp` |
 | **Google Drive** (`1-NxQ1Q35…QtZyh`) | XML, recibo, NFS-e municipal e DANFSe nacional de cada nota |
@@ -389,8 +407,8 @@ o que vale é o Render.
 | Variável | Para quê |
 |---|---|
 | `EL_NFSE_TOKEN` | **o token de integração da prefeitura.** É ele que autentica o canal da emissão. Sem ele **nenhuma nota sai** — nem em ensaio. Gerado no portal do município, em Configurações › APIs de Integração. **Não é o `EMISSAO_NF_TOKEN`** — ver o aviso abaixo da tabela |
-| `EMISSAO_NF_ESPERA_S` | quantos segundos esperar a prefeitura virar a declaração em nota, numa emissão de verdade (padrão 150). Passado isso, a tela manda conferir — nunca reenviar |
-| `EMISSAO_NF_ESPERA_ENSAIO_S` | o mesmo, para o ensaio (padrão 30). É curto de propósito: ensaio não tem serviço a terminar, então prender a tela não compra nada |
+| `EMISSAO_NF_ESPERA_S` | segundos de espera pela nota numa emissão de verdade (padrão **25**). **Não aumente sem pensar:** o serviço atende 4 pedidos por vez e é compartilhado com o ERP e o painel — espera longa prende uma das quatro linhas e já derrubou o monorepo inteiro |
+| `EMISSAO_NF_ESPERA_ENSAIO_S` | o mesmo, para o ensaio (padrão 15) |
 | `EMISSAO_NF_AMBIENTE` | `HOMOLOGACAO` trava o serviço inteiro em teste: nenhuma nota tem validade fiscal, mesmo sem marcar o ensaio, e a tela avisa em letras grandes. Qualquer outro valor (ou vazio) = produção |
 | `EMISSAO_NF_TOKEN` | o token do link. **Sem ela configurada, a tela fica aberta a qualquer um** — falha ABERTO, ao contrário do resto do repositório |
 | `EMISSAO_NF_CERTIFICADO_P12_BASE64` | o certificado A1 da empresa, em base64 |

@@ -33,6 +33,7 @@ import preview as _preview
 import montar_dps as _dps
 import emitir_dps as _edps
 import concluir as _concluir
+import declaracoes as _decl
 import substituicao as _sub
 import omie
 from decimal import Decimal
@@ -287,8 +288,25 @@ def emitir():
             return Response(_pagina_erro(f"Emissão barrada: {e}"), mimetype="text/html")
 
         try:
+            def _registrar(id_dps):
+                """Grava a declaração aceita. Se não der, RECLAMA ALTO.
+
+                Silenciar aqui seria repetir o problema que esta gravação existe
+                para resolver: a declaração ficar sem registro nenhum do nosso
+                lado, e a identificação só existir na tela aberta."""
+                if not ctx.get("gc"):
+                    print(f">>> AVISO: sem acesso à planilha, a declaração {id_dps} "
+                          f"NÃO foi registrada. Anote esta identificação.")
+                    return
+                _decl.registrar(ctx["gc"].open_by_key(_worker.ID_PROC), id_dps,
+                                ctx.get("prox"), card_id,
+                                obra=ctx["card"].get("codigo_obra", ""),
+                                med=ctx["card"].get("numero_medicao", ""),
+                                producao=producao)
+
             res = _edps.emitir(ctx, dps, _token_prefeitura(ctx["cred"]), producao,
-                               espera_total_s=(_edps.ESPERA_ENSAIO_S if ensaio else None))
+                               espera_total_s=(_edps.ESPERA_ENSAIO_S if ensaio else None),
+                               ao_aceitar=_registrar)
         except _edps.NotaTalvezTenhaSaido as e:
             # O caso delicado: a prefeitura aceitou, a nota pode existir. NÃO
             # oferecer "tentar de novo" aqui é de propósito — o botão oferecido é
@@ -308,6 +326,12 @@ def emitir():
                      f"<pre>{html.escape(str(e))}</pre></div>")
             return Response(_doc("Ainda processando", corpo), mimetype="text/html")
         except _edps.DeclaracaoRecusada as e:
+            try:
+                if ctx.get("gc"):
+                    _decl.marcar_recusada(ctx["gc"].open_by_key(_worker.ID_PROC),
+                                          e.id_dps, e.motivos)
+            except Exception:
+                pass
             return Response(_pagina_recusa(str(ctx.get("prox") or ""), e.motivos),
                             mimetype="text/html")
         except _edps.NotaNaoSaiu as e:
@@ -392,7 +416,14 @@ def declaracao():
     producao = (request.values.get("ambiente") or "producao") != "homologacao"
 
     if request.method == "GET" and not id_dps:
-        return Response(_pagina_declaracao(token, "", ""), mimetype="text/html")
+        # Lista o que está em aberto: é o que dispensa guardar a identificação.
+        abertas, erro_lista = [], ""
+        try:
+            abertas = _decl.listar_abertas(_ctx_minimo()["gc"].open_by_key(_worker.ID_PROC))
+        except Exception as e:
+            erro_lista = f"{type(e).__name__}: {e}"
+        return Response(_pagina_declaracao(token, "", "", abertas=abertas,
+                                           erro_lista=erro_lista), mimetype="text/html")
 
     if not id_dps.startswith("DPS"):
         return Response(_pagina_declaracao(
@@ -444,6 +475,12 @@ def declaracao():
                                nacional=True, chave_nacional=chave)
     except Exception as e:
         buf.write(f"\n>>> ERRO no concluir: {type(e).__name__}: {e}")
+    try:
+        _decl.marcar_concluida(ctx["gc"].open_by_key(_worker.ID_PROC), id_dps,
+                               numero, chave)
+    except Exception as e:
+        buf.write(f"\n>>> AVISO: não consegui marcar a declaração como concluída "
+                  f"({type(e).__name__}: {e}). Os efeitos acima já foram feitos.")
 
     rid = uuid.uuid4().hex
     _RESULTADOS[rid] = {"numero": numero, "codigo": "", "data": data_iso,
@@ -463,11 +500,40 @@ def _ctx_minimo() -> dict:
     return {"gc": gc, "cred": cred, "chave_pem": chave_pem, "cert_pem": cert_pem}
 
 
-def _pagina_declaracao(token, id_dps, card_id, aviso=""):
+def _pagina_declaracao(token, id_dps, card_id, aviso="", abertas=None, erro_lista=""):
     t = html.escape(token)
     numero, _ano = _edps.numero_da_declaracao(id_dps) if id_dps else ("", "")
     box = (f"<div class='warn'><pre style='background:none;color:inherit;padding:0;"
            f"white-space:pre-wrap'>{html.escape(aviso)}</pre></div>") if aviso else ""
+
+    # A lista do que está em aberto é o que dispensa guardar a identificação. Sem
+    # ela, a pessoa só chega aqui se tiver anotado 45 caracteres — e em 07/10/2026
+    # a identificação foi reencontrada no portal da prefeitura, não aqui.
+    if erro_lista:
+        lista = (f"<div class='warn'>Não consegui ler a lista de declarações em "
+                 f"aberto: {html.escape(erro_lista)}. Dá para conferir pela "
+                 f"identificação, no formulário abaixo.</div>")
+    elif abertas:
+        linhas = ""
+        for d in abertas:
+            link = (f"{url_for('.declaracao')}?token={t}&id_dps={html.escape(d['id_dps'])}"
+                    f"&card_id={html.escape(d['card_id'])}&ambiente={html.escape(d['ambiente'] or 'producao')}")
+            amb = "" if (d["ambiente"] or "producao") == "producao" else " <b>(ensaio)</b>"
+            linhas += (f"<li style='margin:8px 0'>Nota <b>{html.escape(d['numero'])}</b> — "
+                       f"obra {html.escape(d['obra'] or '?')}, medição "
+                       f"{html.escape(d['med'] or '?')} — enviada em "
+                       f"{html.escape(d['enviada_em'])}{amb}<br>"
+                       f"<a class='btn' style='padding:6px 12px;font-size:13px' "
+                       f"href='{link}'>Conferir esta</a></li>")
+        lista = (f"<div class='card'><b>Declarações em aberto ({len(abertas)})</b>"
+                 f"<ul style='padding-left:18px'>{linhas}</ul>"
+                 f"<p class='sub'>São as que a prefeitura aceitou e ainda não viraram "
+                 f"nota. Clicar aqui não emite nada.</p></div>")
+    elif abertas is not None:
+        lista = ("<div class='ok'>Nenhuma declaração em aberto — tudo o que foi "
+                 "enviado já virou nota ou foi recusado.</div>")
+    else:
+        lista = ""
     return _doc("Conferir declaração", f"""
       <h1>Conferir declaração{(' — nota ' + html.escape(numero)) if numero else ''}</h1>
       <p class='sub'>Use esta tela quando a emissão disse que a prefeitura
@@ -477,6 +543,7 @@ def _pagina_declaracao(token, id_dps, card_id, aviso=""):
       nota já existe, emitir outra cria a segunda nota do mesmo serviço — e nota
       emitida não se apaga.</div>
       {box}
+      {lista}
       <div class='card'>
         <form method='post' action='{url_for('.declaracao')}'>
           <label class='lbl'>Identificação da declaração (começa com DPS, 45 caracteres):

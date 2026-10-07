@@ -81,6 +81,13 @@ def _card():
     }
 
 
+class _GoogleFalso:
+    """Só o suficiente para o código chegar na planilha sem rede."""
+
+    def open_by_key(self, _k):
+        return object()
+
+
 @pytest.fixture
 def cenario(monkeypatch, certificado):
     """Liga a tela num mundo onde a prefeitura é dublada e nada é gravado."""
@@ -93,7 +100,8 @@ def cenario(monkeypatch, certificado):
            "prox": 3084, "ultimo": 3083, "dados_rps": _dados_rps(), "avisos": [],
            "end_tom": {}, "xml": "", "assinado": True,
            "chave_pem": chave_pem, "cert_pem": cert_pem, "senha_cert": "x",
-           "gc": None, "cred": {"PIPEFY_TOKEN": "x", "EL_NFSE_TOKEN": "token-da-prefeitura"}}
+           "gc": _GoogleFalso(), "cred": {"PIPEFY_TOKEN": "x",
+                                          "EL_NFSE_TOKEN": "token-da-prefeitura"}}
     monkeypatch.setattr(web._worker, "preparar", lambda *a, **k: dict(ctx))
 
     # o espelho visual lê a planilha; aqui ele não é o que se testa
@@ -611,3 +619,77 @@ def test_a_tela_de_recusa_mostra_a_traducao_quando_existe(cenario, monkeypatch):
     assert "E0037" in corpo                        # o texto cru, para registro
     assert "ambiente de TESTE" in corpo            # e o que ele quer dizer
     assert "Nenhuma nota foi criada" in corpo
+
+
+# --------------------------------------------------------------------------- #
+# A declaração é gravada ANTES de qualquer espera
+# --------------------------------------------------------------------------- #
+# Em 07/10/2026 a identificação de uma declaração aceita só foi reencontrada no
+# portal da prefeitura: do nosso lado, o único registro era a tela aberta no
+# navegador. Publicar o serviço, fechar a aba ou cair a conexão perdia o rastro.
+
+def test_a_declaracao_e_registrada_assim_que_a_prefeitura_aceita(cenario, monkeypatch):
+    cliente, enviados = cenario
+    enviados["modo"] = "processando"       # a nota NÃO fica pronta
+    enviados["id_dps"] = ID_DPS_3281
+    import emitir_dps
+    monkeypatch.setattr(emitir_dps, "ESPERA_TOTAL_S", 0)
+
+    registradas = []
+    servindo = sys.modules["app.apps.emissaonf.web"]
+    monkeypatch.setattr(servindo._decl, "registrar",
+                        lambda planilha, id_dps, numero, card_id, **k: registradas.append(
+                            (id_dps, numero, card_id, k.get("producao"))))
+
+    _emitir(cliente)
+    assert registradas, "a declaração tem de ser gravada mesmo quando a nota não sai"
+    assert registradas[0][0] == ID_DPS_3281
+    assert registradas[0][2] == CARD
+    assert registradas[0][3] is True       # produção
+
+
+def test_o_registro_que_falha_nao_derruba_a_emissao(certificado, monkeypatch, capsys):
+    """A declaração já está com a prefeitura: abortar aqui não desfaz nada — só
+    esconderia o que aconteceu."""
+    import emitir_dps
+    chave_pem, cert_pem = certificado
+
+    def explode(id_dps):
+        raise RuntimeError("planilha fora do ar")
+
+    monkeypatch.setattr(nac.ELNfseNacional, "__init__",
+                        lambda self, **k: setattr(self, "token", "x"))
+    monkeypatch.setattr(nac.ELNfseNacional, "enviar_dps",
+                        lambda self, d: {"idDPS": ID_DPS_3281})
+    monkeypatch.setattr(nac.ELNfseNacional, "consultar_processamento_dps",
+                        lambda self, i, bruto=False: {"nfseXmlGZipB64": "em processamento"})
+    with pytest.raises(emitir_dps.NotaTalvezTenhaSaido):
+        emitir_dps.emitir({"chave_pem": chave_pem, "cert_pem": cert_pem},
+                          None, "tok", True, espera_total_s=0, ao_aceitar=explode)
+    assert "não consegui registrar" in capsys.readouterr().out
+
+
+def test_a_espera_e_curta_porque_o_servico_atende_quatro_pedidos_por_vez():
+    """Não é conforto de tela: cada emissão esperando prende uma das quatro
+    linhas de atendimento do serviço, que é compartilhado com o ERP e o painel.
+    Com a espera em 150s, poucas tentativas seguidas derrubavam o monorepo
+    inteiro com Bad Gateway — aconteceu em 07/10/2026."""
+    import emitir_dps
+    assert emitir_dps.ESPERA_TOTAL_S <= 40, (
+        "espera longa prende uma das 4 linhas de atendimento do serviço inteiro")
+    assert emitir_dps.ESPERA_ENSAIO_S <= emitir_dps.ESPERA_TOTAL_S
+
+
+def test_o_aviso_de_ainda_processando_explica_o_aguardando_transmissao(certificado, monkeypatch):
+    """É o estado que o portal da prefeitura mostra, e sem explicação ele parece
+    falha."""
+    import emitir_dps
+    chave_pem, cert_pem = certificado
+    monkeypatch.setattr(nac.ELNfseNacional, "__init__", lambda self, **k: None)
+    monkeypatch.setattr(nac.ELNfseNacional, "consultar_processamento_dps",
+                        lambda self, i, bruto=False: {"nfseXmlGZipB64": "em processamento"})
+    with pytest.raises(emitir_dps.AindaProcessando) as e:
+        emitir_dps.consultar({"chave_pem": chave_pem, "cert_pem": cert_pem},
+                             ID_DPS_3281, "tok", True)
+    assert "Aguardando Transmissão" in str(e.value)
+    assert "número reservado" in str(e.value) or "está reservado" in str(e.value)
