@@ -541,6 +541,26 @@ Ninguém teria visto acontecer: a tela diria "regravada".
 decisão de arquivo e uma armadilha de segurança. Onde um arquivo substitui outro,
 o código tem de se recusar a escrever lixo — não basta ele não dar erro.
 
+### A varredura pelo resto da mesma armadilha
+
+Os três consertos acima eram do MESMO tipo: código que recebe o formato novo e
+**não reclama** — devolve vazio e segue. Em nota fiscal isso é pior que erro,
+porque ninguém vê acontecer. Então valeu varrer o módulo procurando os outros.
+
+Achou mais um: **o valor bruto que vai para o recibo.** Ele era lido por busca de
+texto no campo do modelo antigo; recebendo o XML nacional, devolvia nada, e o
+recibo sairia sem valor. Passou a decidir pelo conteúdo, como o gerador do PDF.
+
+E ficou marcado, em letras grandes no topo dos arquivos, que **`emitir_real.py` e
+`app_emissao.py` falam o modelo desativado** — qualquer envio por eles volta com
+o E999. Não é defeito deles; é o canal que não existe mais. São scripts de linha
+de comando, fora do caminho da tela, e ficam como registro.
+
+**A regra que saiu disso, e vale para a próxima vez que um formato mudar:** não
+basta trocar quem escreve. Tem de varrer quem LÊ — e, em cada leitor, perguntar
+*"o que este código faz se receber o formato errado?"*. Se a resposta for "devolve
+vazio e segue", ele é um defeito esperando a hora.
+
 ### A limpeza do que o modelo antigo deixou
 
 Saíram do `web.py` o preparo do certificado para o envelope SOAP, a busca

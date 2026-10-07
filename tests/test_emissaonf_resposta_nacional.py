@@ -203,3 +203,17 @@ def test_xml_que_nao_da_para_ler_nao_gera_pdf_nenhum(tmp_path):
         nota_municipal.gerar_nota_municipal_pdf(quase, saida)
     assert "sobrescreveria" in str(erro.value)
     assert not os.path.exists(saida)
+
+
+def test_o_valor_do_recibo_decide_pelo_conteudo_do_xml(nota_xml):
+    """Mesmo risco do PDF em branco, em outro lugar: recebendo o XML nacional, a
+    busca pelo campo do modelo antigo não dava erro — devolvia nada, e o recibo
+    sairia sem valor."""
+    antigo = """<?xml version="1.0"?><CompNfse><Nfse><InfNfse><Numero>3070</Numero>
+        <DeclaracaoPrestacaoServico><InfDeclaracaoPrestacaoServico><Servico><Valores>
+        <ValorServicos>12345.67</ValorServicos></Valores></Servico>
+        </InfDeclaracaoPrestacaoServico></DeclaracaoPrestacaoServico></InfNfse></Nfse></CompNfse>"""
+    assert nota_municipal.valor_bruto_nf(nota_xml) == 98720.04      # nacional
+    assert nota_municipal.valor_bruto_nf(antigo) == 12345.67        # modelo antigo
+    # o nome antigo continua valendo para quem já chamava assim
+    assert nota_municipal.valor_bruto_nf_nacional(nota_xml) == 98720.04

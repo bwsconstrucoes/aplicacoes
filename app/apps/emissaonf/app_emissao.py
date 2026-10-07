@@ -15,6 +15,14 @@ Segurança: trava anti-emissão-dupla por card (uma vez emitido na sessão, não
 Para mudar valores/alíquotas/tomador, ajuste no card do Pipefy e clique em "Recarregar"
 — assim o cálculo tributário continua vindo da fonte da verdade (o card), sem duplicar
 a lógica aqui.
+
+⚠️ ESTE SCRIPT FALA O MODELO ANTIGO (ABRASF), QUE A PREFEITURA DESATIVOU EM
+07/10/2026. Qualquer envio por aqui volta com o erro E999 ("o modelo Abrasf foi
+desativado e deve ser migrado para o modelo de DPS"). Não é defeito do script —
+é o canal que não existe mais.
+
+A emissão de verdade é pela tela (`/emissao`), que usa o `emitir_dps.py`. Este
+arquivo fica como registro de como era.
 """
 from __future__ import annotations
 import io
