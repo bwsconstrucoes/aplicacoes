@@ -12228,6 +12228,23 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 193 — consolidação por CPF no arquivo (07/10/2026)
+
+- O dono: o BeeVale recusa a mesma pessoa duas vezes na mesma carteira; regra:
+  *"agrupar pelo CPF, somar todos os valores, uma linha só; centro de custo e
+  demais dados da primeira ocorrência"* (ex.: 500 em CREPEMIRANDIBA + 300 em
+  CREPEEXU = uma linha de 800 em CREPEMIRANDIBA), e conferir que a soma por CPF
+  no arquivo é igual à da origem.
+- A chave era CPF + natureza + carteira: o mesmo CPF com dois tipos de despesa
+  na MESMA carteira (na DC, "Diárias" e "Salários e Ordenados" → "Diárias")
+  saía em duas linhas. Agora: BeeVale = CPF + carteira (carteiras diferentes
+  são benefícios diferentes no portal e continuam separadas — escolha minha,
+  dita a ele); SomaPay = CPF. Os valores sempre foram somados — o que havia era
+  linha duplicada, não valor perdido.
+- Conferência nova no lote (`montar_lotes`): soma por CPF no arquivo ≠ soma na
+  origem → crítica que trava; mesma pessoa duas vezes na mesma carteira no
+  BeeVale → crítica que trava.
+
 #### Leva 192 — a planilha de cadastro sai junto, com link no card (07/10/2026)
 
 - *"Precisa que seja gerado ainda o arquivo de cadastro dos colaboradores e
