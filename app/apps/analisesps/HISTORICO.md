@@ -12244,6 +12244,8 @@ somente Solicitações de uma conta especifica"*.
 - Conferência nova no lote (`montar_lotes`): soma por CPF no arquivo ≠ soma na
   origem → crítica que trava; mesma pessoa duas vezes na mesma carteira no
   BeeVale → crítica que trava.
+- **Levas 191 a 193 publicadas em 07/10/2026** (sem migração; suíte inteira
+  8.653 verdes).
 
 #### Leva 192 — a planilha de cadastro sai junto, com link no card (07/10/2026)
 
