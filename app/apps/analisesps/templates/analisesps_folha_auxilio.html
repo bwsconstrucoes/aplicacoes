@@ -69,6 +69,19 @@
       {% endif %}
     </div>
   {% endif %}
+  {# A AUDITORIA (07/10/2026): todo mundo com o benefício no cadastro, e quem não
+     vai receber com o motivo. *"Nunca excluir silenciosamente."* #}
+  {% if auditoria %}
+  <p class="cartao-dica lat-estado">
+    <b>Auditoria:</b> {{ auditoria.base }} com o benefício no cadastro ·
+    {{ auditoria.a_pagar }} a pagar · {{ auditoria.nao_pagos }} não pago(s)
+    ({{ auditoria.sem_correspondencia }} sem obra do ponto).<br>
+    Base {{ auditoria.total_base|moeda }} → a pagar {{ auditoria.total_final|moeda }}
+    (diferença {{ auditoria.diferenca|moeda }}).
+    <a href="{{ url_for('analisesps.folha_auxilio_auditoria', tipo=tipo, ano=ano, mes=mes) }}"
+       >Baixar a auditoria (Excel)</a>
+  </p>
+  {% endif %}
   <div class="lat-acoes">
     {% set dv_titulo = ('%02d/%d'|format(mes, ano)) ~ ' · ' ~ ('alimentação' if tipo == 'alimentacao' else 'transporte') %}
     {% include "_divisao_direta.html" %}

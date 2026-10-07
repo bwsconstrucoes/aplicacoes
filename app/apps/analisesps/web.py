@@ -3851,6 +3851,8 @@ def tela_folha_auxilio():
         lista=lista, filtrando=lista["filtrando"],
         fora_do_filtro=_marcados_fora_do_filtro(
             (resultado or {}).get("pessoas"), lista["pessoas"]),
+        auditoria=(fx.auditoria(tipo, ano, mes, resultado)["resumo"]
+                   if resultado else None),
         ultima_geracao=_ultima_geracao(tipo, ano, mes) if resultado else None,
         divisao=_divisao_da_tela(resultado, tipo, fx.apropriado) if resultado else {},
         tipos=[(t, fx.ROTULO_DO_TIPO[t]) for t in fx.TIPOS],
@@ -4100,6 +4102,32 @@ def folha_cadastro_planilha():
     return Response(conteudo, mimetype=tipo, headers={
         "Content-Disposition": f"attachment; filename*=UTF-8''{quote(nome)}",
         "X-Avisos": quote(_json.dumps(avisos[:200], ensure_ascii=False))})
+
+
+@bp.route("/folha/auxilio/auditoria.xlsx")
+@exige_consulta
+def folha_auxilio_auditoria():
+    """A auditoria da verba no mês (07/10/2026): todo mundo com o benefício no
+    cadastro, quem não vai receber com o motivo, e a validação base × saída."""
+    from . import folha_auxilio as fx
+    tipo = (request.args.get("tipo") or fx.ALIMENTACAO).strip().lower()
+    try:
+        ano, mes = int(request.args.get("ano") or 0), int(request.args.get("mes") or 0)
+    except (TypeError, ValueError):
+        ano = mes = 0
+    if tipo not in fx.TIPOS or not (2000 <= ano <= 2100) or not (1 <= mes <= 12):
+        return render_template("analisesps_erro.html", titulo="Auditoria",
+                               mensagem="Competência ou verba inválida."), 400
+    try:
+        conteudo = fx.auditoria_xlsx(tipo, ano, mes)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou a auditoria do auxílio")
+        return render_template("analisesps_erro.html", titulo="Auditoria",
+                               mensagem=f"Não foi possível montar a auditoria: {e}"), 500
+    nome = f"Auditoria {fx.ROTULO_DO_TIPO[tipo]} {mes:02d}-{ano}.xlsx"
+    return Response(conteudo, mimetype=("application/vnd.openxmlformats-officedocument"
+                                        ".spreadsheetml.sheet"),
+                    headers={"Content-Disposition": f'attachment; filename="{nome}"'})
 
 
 @bp.route("/api/folha/auxilio/extras", methods=["POST"])

@@ -224,3 +224,52 @@ def test_ARQUIVOS_GERADOS_mostram_a_SITUACAO_de_cada_SP(banco_auxilio, monkeypat
     rodadas = fp.rodadas()
     fp.situacao_das_sps(rodadas)
     assert rodadas[0]["pagamentos"][0]["sps"][0]["na_base"] is False
+
+
+def test_TRANSPORTE_categorias_DIARIAS_entram_e_a_AUDITORIA_nao_perde_ninguem(banco_auxilio):
+    """07/10/2026 — o dono comparou com a base do script: 27 de 38 colaboradores
+    sumiam do transporte por serem "Diário", "Vale Transporte" ou "Diário e Vale
+    Transporte". Os exemplos dele, com 22 dias úteis (setembro/2026)."""
+    import io
+    import openpyxl
+    from app.apps.analisesps import folha_auxilio as fx
+    from app.apps.analisesps.db import conexao
+    gente = [("11144477735", "MARCIO", "Diário", "12.90"),
+             ("22233344405", "EVANDRO", "Vale Transporte", "9.00"),
+             ("33344455560", "ADEMIR", "Diário e Vale Transporte", "9.00"),
+             ("44455566603", "MANASSES", "Mensal", "198.00"),
+             ("55566677715", "ERRADO", "Diário", "198.00"),
+             ("66677788820", "SEMREGRA", "Quinzenal Estranho", "50.00")]
+    with conexao() as conn:
+        for cpf, nome, cat, valor in gente:
+            conn.execute(
+                "INSERT INTO analisesps.colaborador (cpf, nome, fase, obra_codigo, "
+                "  valor_transporte, modo_transporte) VALUES (?,?,?,?,?,?)",
+                (cpf, nome, "Colaboradores Ativos", "CREPEOLINDA", D(valor), cat))
+        conn.commit()
+    for cpf, *_ in gente:
+        fx.gravar_extras(fx.TRANSPORTE, 2026, 9, cpf, obra="CREPEOLINDA")
+
+    calculado = fx.calcular(fx.TRANSPORTE, 2026, 9)
+    valor = {p["nome"]: (p["pagar"], p["valor"]) for p in calculado["pessoas"]}
+    assert valor["MARCIO"] == (True, D("283.80"))
+    assert valor["EVANDRO"] == (True, D("198.00"))
+    assert valor["ADEMIR"] == (True, D("198.00"))
+    assert valor["MANASSES"] == (True, D("198.00"))
+    assert valor["ERRADO"][0] is False, "198 'por dia' é o valor do mês: não paga"
+
+    dados = fx.auditoria(fx.TRANSPORTE, 2026, 9, calculado)
+    nomes = {l["nome"]: l for l in dados["linhas"]}
+    assert set(nomes) >= {n for _, n, _, _ in gente}, "ninguém some"
+    assert not nomes["ERRADO"]["pagar"] and "parece o valor do MÊS" in nomes["ERRADO"]["motivo"]
+    assert not nomes["SEMREGRA"]["pagar"] and "não reconhecida" in nomes["SEMREGRA"]["motivo"]
+    assert nomes["MARCIO"]["qtd"] == 22 and nomes["MARCIO"]["valor_base"] == D("283.80")
+    r = dados["resumo"]
+    assert r["base"] == r["processados"] == len(calculado["pessoas"])
+    assert r["a_pagar"] + r["nao_pagos"] == r["base"]
+    assert r["diferenca"] == r["total_base"] - r["total_final"]
+    assert sum((l["diferenca"] for l in dados["diferencas"]), D("0")) == r["diferenca"]
+
+    livro = openpyxl.load_workbook(io.BytesIO(fx.auditoria_xlsx(fx.TRANSPORTE, 2026, 9, dados)))
+    assert livro.sheetnames == ["Auditoria", "Validação", "Não pagos", "Diferenças"]
+    assert livro["Auditoria"].cell(row=1, column=20).value == "Motivo da Exclusão ou Ajuste"

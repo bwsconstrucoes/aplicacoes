@@ -526,6 +526,8 @@ TELA_DA_ROTA = {
     "analisesps.folha_auxilio_selecao": ("folha",),
     # Valor acrescentado e desconto de ausências do auxílio (03/10/2026).
     "analisesps.folha_auxilio_extras": ("folha",),
+    # A auditoria do auxílio em Excel (07/10/2026).
+    "analisesps.folha_auxilio_auditoria": ("folha",),
     # A planilha de cadastro BeeVale/SomaPay das pessoas escolhidas (03/10/2026).
     "analisesps.folha_cadastro_planilha": ("folha",),
     # Despesas com colaboradores (03/10/2026): tela, relatório, seleção e obra.

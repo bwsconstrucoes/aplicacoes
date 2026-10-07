@@ -12228,6 +12228,31 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 195 — transporte: categorias diárias e a AUDITORIA da verba (07/10/2026)
+
+- O dono comparou a saída com a base do script: 38 colaboradores sumiam do
+  transporte; 27 eram categoria "Diário", "Vale Transporte" ou "Diário e Vale
+  Transporte". Causa: `dias_da_modalidade` só conhecia Mês/Mensal/Segunda à
+  Sexta/Segunda à Quinta — o resto virava "categoria não reconhecida",
+  cadastro incompleto, e a pessoa ficava ESCONDIDA da lista e fora do arquivo.
+- **Agora as três são diárias** (`MODOS_DIARIOS`): valor × dias úteis (a "Qtd.
+  Auxílios" dele, 22 em 09/2026), depois os ajustes. ⚠️ "Vale Transporte" puro
+  como diária é SUPOSIÇÃO (o exemplo dele bate: 9,00 × 22 = 198,00) — dita na
+  linha. Trava: valor "por dia" acima de R$ 100 numa categoria diária não é
+  pago (parece o valor do mês), com o motivo.
+- **Auditoria** (`folha_auxilio.auditoria`, `auditoria_xlsx`, rota
+  `/folha/auxilio/auditoria.xlsx`): todo mundo com o benefício no cadastro —
+  CPF, categoria, valor cadastrado, qtd, base, faltas, férias, feriados,
+  ajustes, CC cadastrado/Mobponto/considerado, valor final, Pagar?, motivo. Abas
+  Validação (os 9 números que ele pediu), Não pagos e Diferenças (base − final,
+  por colaborador). Resumo na lateral e link na janela "Gerar arquivos".
+- Não verificado com o dado dele: os 11 "Mensal" que também faltavam e as
+  reduções (ex.: 200,00 → 54,55 = 200 × 6/22, cara de proporcional à saída). A
+  auditoria diz o motivo de cada um — é o que ele deve abrir primeiro.
+- CC: não há exigência de CC cadastrado = Mobponto; o considerado é ponto >
+  escolhido à mão > regra de rateio. Sem ponto, fica pendência (decisão dele de
+  03/10) — aparece na auditoria como "sem obra do ponto".
+
 #### Leva 194 — Arquivos gerados: a situação de cada SP, em etiqueta (07/10/2026)
 
 - *"Fizesse uma leitura do número da SP pra saber o status de cada uma e colocar
