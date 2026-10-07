@@ -197,3 +197,30 @@ def test_DESLIGADO_marcado_a_mao_NAO_vai_no_arquivo(banco_auxilio, monkeypatch):
     # E pela tela também não marca.
     r = fx.salvar_selecao(fx.ALIMENTACAO, 2026, 9, [{"cpf": SAIU, "pagar": True}], quem="X")
     assert SAIU in r["ignorados"]
+
+
+def test_ARQUIVOS_GERADOS_mostram_a_SITUACAO_de_cada_SP(banco_auxilio, monkeypatch):
+    """07/10/2026: *"fizesse uma leitura do número da SP pra saber o status de
+    cada uma e colocar uma tag"*. Lido da base das SPs; a que ainda não chegou à
+    base diz isso, sem inventar status."""
+    from app.apps.analisesps import beevale, drive, folha_pagamento as fp
+    from tests.test_analisesps_banco import semear, sp
+    monkeypatch.setattr(beevale, "pasta_do_drive", lambda: ("PASTA", "teste"))
+    subidos = []
+    monkeypatch.setattr(drive, "subir_arquivo", lambda conteudo, nome, pasta, **k:
+                        subidos.append(nome) or {"id": f"d{len(subidos)}", "link": "x"})
+    fp.gerar_direto("alimentacao", {"ano": 2026, "mes": 9, "pagamento": "fim_de_mes"},
+                    "beevale", quem="MARCELO")
+    pagamento = next(a for a in fp.log() if a["destino"] == "beevale")
+    fp.registrar_card(pagamento["id"], "900111,900222", "https://pipefy/900111")
+    semear([sp("900111", status_pgt="Pago"),
+            sp("900222", status_pgt="Pagar", agendado="Agendado")])
+    rodadas = fp.rodadas()
+    fp.situacao_das_sps(rodadas)
+    sps = rodadas[0]["pagamentos"][0]["sps"]
+    assert [(s["id"], s["status_pgt"], s["status_agend"], s["na_base"]) for s in sps] == [
+        ("900111", "Pago", "", True), ("900222", "Pagar", "Agendado", True)]
+    fp.registrar_card(pagamento["id"], "900333", "")
+    rodadas = fp.rodadas()
+    fp.situacao_das_sps(rodadas)
+    assert rodadas[0]["pagamentos"][0]["sps"][0]["na_base"] is False

@@ -975,6 +975,43 @@ def _rodada(analise, pagamentos: list, relatorios=None, cadastros=None) -> dict:
     }
 
 
+def situacao_das_sps(rodadas_: list) -> None:
+    """Põe em cada arquivo de pagamento a SITUAÇÃO de cada SP lançada (07/10/2026).
+
+    O dono: *"fizesse uma leitura do número da SP pra saber o status de cada uma
+    e colocar uma tag pra na tela sabermos a situação de cada SP gerada"*. Lê da
+    base das SPs (a SPsBD sincronizada) — uma consulta só, sem ir ao Pipefy a
+    cada tela. `a["sps"] = [{id, link, status_pgt, status_agend, na_base}]`.
+    SP recém-criada só aparece depois da próxima sincronização: diz "ainda não
+    na base", e não inventa status."""
+    from .consultas import SQL_STATUS_AGEND
+    from .db import consultar
+    por_arquivo = []
+    ids: set = set()
+    for r in rodadas_ or []:
+        for a in r.get("pagamentos") or []:
+            dele = [i.strip() for i in str(a.get("card_pipefy") or "").split(",") if i.strip()]
+            por_arquivo.append((a, dele))
+            ids.update(dele)
+    situacao = {}
+    if ids:
+        try:
+            marcas = ",".join(["?"] * len(ids))
+            for sp_id, status_pgt, agend in consultar(
+                    f"SELECT id, trim(coalesce(status_pgt,'')), ({SQL_STATUS_AGEND}) "
+                    f"  FROM analisesps.sps WHERE id IN ({marcas})", tuple(sorted(ids))):
+                situacao[str(sp_id)] = (status_pgt or "", agend or "")
+        except Exception:  # noqa: BLE001 — a tela abre sem as etiquetas
+            logger.exception("Folha: não consegui ler a situação das SPs geradas")
+            return
+    for a, dele in por_arquivo:
+        a["sps"] = [{"id": i,
+                     "link": f"https://app.pipefy.com/open-cards/{i}",
+                     "status_pgt": (situacao.get(i) or ("", ""))[0],
+                     "status_agend": (situacao.get(i) or ("", ""))[1],
+                     "na_base": i in situacao} for i in dele]
+
+
 def excluir_arquivos(ids, quem: str = "") -> dict:
     """Tira arquivos do registro e manda cada um para a lixeira do Drive.
 
