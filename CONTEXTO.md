@@ -1307,6 +1307,48 @@ como fronteira do nome, e como o texto examinado é `"id nome"`, o CNPJ pegava
 certo.** Só apareceu ao digitar um telefone de verdade no navegador.
 
 
+### 07/10/2026 — A PREFEITURA DESLIGOU O MODELO DA NOTA (atravessa áreas)
+
+A prefeitura de Eusébio desativou o modelo ABRASF, por causa da obrigatoriedade
+do IBS/CBS, e passou a aceitar só a DPS do padrão nacional. A emissão de NFS-e
+ficou parada e foi migrada no mesmo dia. O detalhe está no `HISTORICO.md` da
+área; aqui fica o que atravessa áreas.
+
+**1. O `el_nfse_nacional.py` deixou de ser código só do ERP.** Ele vivia na pasta
+do `emissaonf` sem ninguém de lá o importar — existia porque o ERP o usa na
+emissão automática (ver a entrada de 10/09/2026). Agora ele é **o coração da
+emissão do `emissaonf`**, e continua sendo usado pelo ERP. Mexer nele atinge as
+duas áreas, e isso tem de estar escrito em algum lugar que as duas leiam.
+
+**2. O ERP tem uma inversão do ISS retido, e ela NÃO foi corrigida aqui.** O
+campo `tpRetISSQN` do layout nacional significa **1 = NÃO retido** e **2 =
+retido pelo tomador**. O `emissaonf` estava invertido e foi consertado. O ERP
+tem a mesma inversão, em
+`app/apps/erp/core/notas_emitidas/automatica.py` (`tp_ret_issqn=(1 if obra.iss_retido else 2)`),
+e não foi mexido porque a regra do `CLAUDE.md` é não mexer nas outras áreas.
+
+**Por que isso é sério e não um detalhe:** uma nota com ISS retido que declare
+"não retido" diz à prefeitura que o imposto é devido pela empresa, e não pelo
+tomador que já descontou. Em nota fiscal, que não se apaga. **Atenuante:** a
+emissão automática do ERP pode nunca ter sido usada em produção — conferir antes
+de tratar como incidente.
+
+**3. Os schemas oficiais da NFS-e nacional entraram no repositório**
+(`app/apps/emissaonf/xsd_nacional/`). São 240 KB de `.xsd` do pacote que a
+prefeitura distribui. Não é documentação: é a regra que o teste aplica. Foi
+assim que as duas armadilhas da migração apareceram **antes** de qualquer nota
+sair. Se o ERP for emitir pelo mesmo caminho, vale usar o mesmo teste.
+
+**4. Nenhuma dependência nova.** `lxml`, `signxml` e `cryptography` já estavam
+no serviço.
+
+**A lição que vale para fora desta área:** quando a única prova de que um código
+funciona custa um ato irreversível, a conferência tem de ser trazida para dentro
+— um schema oficial versionado, uma resposta de servidor montada à mão, um
+ambiente de ensaio. Nesta migração as três coisas pegaram erro real: a inversão
+do ISS e a dedução de material que teria recriado o incidente de setembro.
+
+
 ### 21/09/2026 — A EMISSÃO DE NFS-e GANHOU MEMÓRIA (atravessa áreas)
 
 No mesmo dia em que entrou na tabela sem `README.md` nem `HISTORICO.md` (ver a

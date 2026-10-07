@@ -71,7 +71,11 @@
               {# O RELATÓRIO EM PDF DA CONTA, gerado junto (03/10/2026). #}
               {% set rel = (r.relatorios or {}).get(a.conta) %}
               {% if rel and rel.link %} · <a href="{{ rel.link }}" target="_blank" rel="noopener"
-                  title="{{ rel.nome }}">relatório PDF</a>{% endif %}<br>
+                  title="{{ rel.nome }}">relatório PDF</a>{% endif %}
+              {# A PLANILHA DE CADASTRO DA CONTA, gerada junto (07/10/2026). #}
+              {% set cad = (r.cadastros or {}).get(a.conta) %}
+              {% if cad and cad.link %} · <a href="{{ cad.link }}" target="_blank" rel="noopener"
+                  title="{{ cad.nome }}{% if cad.avisos %} — {{ cad.avisos }}{% endif %}">cadastro</a>{% endif %}<br>
             {% endfor %}
             {% if r.analise and r.analise.link %}
               <a href="{{ r.analise.link }}" target="_blank" rel="noopener"

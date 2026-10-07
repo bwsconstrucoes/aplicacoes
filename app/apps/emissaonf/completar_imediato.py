@@ -37,7 +37,13 @@ _SENTINEL = object()
 
 
 def completar(card_id, numero, codigo, data_iso, nota_xml_path,
-              enviar_whatsapp: bool = True, discriminacao=_SENTINEL):
+              enviar_whatsapp: bool = True, discriminacao=_SENTINEL, nacional=False):
+    """Refaz só a ENTREGA de uma nota já emitida (Drive, links, Descrição).
+
+    `nacional=True` quer dizer que o XML é o da NFS-e nacional — o que a
+    prefeitura devolve desde 07/10/2026. Sem isso, o PDF da nota sairia de um
+    XML no modelo antigo, que não existe mais para notas novas.
+    """
     ctx = preparar(card_id)
     card, obra, r = ctx["card"], ctx["obra"], ctx["r"]
     gc, cred = ctx["gc"], ctx["cred"]
@@ -52,9 +58,12 @@ def completar(card_id, numero, codigo, data_iso, nota_xml_path,
 
     with open(nota_xml_path, "rb") as fh:
         xml_bytes = fh.read()
-    xml_abrasf = xml_bytes.decode("utf-8", "replace")
+    xml_texto = xml_bytes.decode("utf-8", "replace")
+    xml_abrasf = None if nacional else xml_texto
+    xml_nac = xml_texto if nacional else None
 
-    print(f"\n===== COMPLETAR ENTREGA — NOTA {numero} ({obra_cod}) =====")
+    modelo = "NACIONAL (DPS)" if nacional else "antigo (ABRASF)"
+    print(f"\n===== COMPLETAR ENTREGA — NOTA {numero} ({obra_cod}) — modelo {modelo} =====")
 
     # [a] XML -> Drive
     xml_fid = ""
@@ -67,7 +76,9 @@ def completar(card_id, numero, codigo, data_iso, nota_xml_path,
     # [b] recibo -> Drive
     link_rec = ""
     try:
-        vbruto = nota_municipal.valor_bruto_nf(xml_abrasf)   # BRUTO da NF (do XML, não do card)
+        # BRUTO da NF lido do XML, nunca do card — o card já pode ter sido limpo.
+        vbruto = (nota_municipal.valor_bruto_nf_nacional(xml_nac) if nacional
+                  else nota_municipal.valor_bruto_nf(xml_abrasf))
         dados_rec = efeitos.dados_recibo(card, obra, r, numero, valor_bruto=vbruto)
         recibo.gerar_recibo_pdf(dados_rec, "recibo_tmp.pdf")
         with open("recibo_tmp.pdf", "rb") as fh:
@@ -79,8 +90,9 @@ def completar(card_id, numero, codigo, data_iso, nota_xml_path,
     # [c] municipal (sem chave) -> Drive
     link_mun = ""
     try:
-        nota_municipal.gerar_nota_municipal_pdf(xml_abrasf, "mun_tmp.pdf",
-                                                xml_nacional=None, discriminacao=discr_limpa or None)
+        nota_municipal.gerar_nota_municipal_pdf(
+            xml_abrasf, "mun_tmp.pdf", xml_nacional=xml_nac,
+            discriminacao=(None if nacional else (discr_limpa or None)))
         with open("mun_tmp.pdf", "rb") as fh:
             _, link_mun = drive.enviar(f"{nome_base} (NFS-e).pdf", fh.read(), "pdf")
         print(f"[c] Municipal .......... {link_mun}")

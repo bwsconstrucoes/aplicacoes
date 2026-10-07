@@ -40,7 +40,17 @@ ABA_LINKS = "Notas BWS Links"
 
 
 def concluir(card_id, numero, codigo, data_iso, nota_xml_path, forcar=False, ctx=None,
-             nota_substituida=None):
+             nota_substituida=None, nacional=False, chave_nacional=""):
+    """Pós-emissão imediato.
+
+    `nacional=True` quer dizer que o XML em `nota_xml_path` é o da NFS-e
+    NACIONAL — o que a prefeitura passou a devolver em 07/10/2026. Nesse caso a
+    nota já nasce completa: a chave existe, a DANFSe pode ser gerada na hora, e
+    não há nada "aguardando nacional" para um job buscar depois.
+
+    Com `nacional=False` o XML é do modelo antigo (ABRASF). Esse caminho fica de
+    pé porque a tela de recuperação ainda é usada em notas antigas.
+    """
     ctx = ctx or preparar(card_id)
     card, obra, r = ctx["card"], ctx["obra"], ctx["r"]
     gc, cred = ctx["gc"], ctx["cred"]
@@ -55,9 +65,12 @@ def concluir(card_id, numero, codigo, data_iso, nota_xml_path, forcar=False, ctx
 
     with open(nota_xml_path, "rb") as fh:
         xml_bytes = fh.read()
-    xml_abrasf = xml_bytes.decode("utf-8", "replace")
+    xml_texto = xml_bytes.decode("utf-8", "replace")
+    xml_abrasf = None if nacional else xml_texto
+    xml_nac = xml_texto if nacional else None
 
-    print(f"\n===== CONCLUSÃO (IMEDIATA) DA NOTA {numero} ({obra_cod}) =====")
+    modelo = "NACIONAL (DPS)" if nacional else "antigo (ABRASF)"
+    print(f"\n===== CONCLUSÃO (IMEDIATA) DA NOTA {numero} ({obra_cod}) — modelo {modelo} =====")
 
     ws_notas = abrir_aba(planilha, ABA_NOTAS)
     if notas_bws.ja_existe(ws_notas, numero) and not forcar:
@@ -115,16 +128,19 @@ def concluir(card_id, numero, codigo, data_iso, nota_xml_path, forcar=False, ctx
 
     # 4) DRIVE: arquiva o XML municipal
     xml_fid = ""
+    _nome_xml = f"{nome_base} (XML Nacional).xml" if nacional else f"{nome_base} (XML).xml"
     try:
-        xml_fid, _ = drive.enviar(f"{nome_base} (XML).xml", xml_bytes, "xml")
-        print(f"[4] Drive XML municipal  arquivado (id {xml_fid[:12]}...)")
+        xml_fid, _ = drive.enviar(_nome_xml, xml_bytes, "xml")
+        print(f"[4] Drive XML .......... {_nome_xml} arquivado (id {xml_fid[:12]}...)")
     except Exception as e:
-        print(f"[4] Drive XML municipal  ERRO: {e}")
+        print(f"[4] Drive XML .......... ERRO: {e}")
 
     # 5) RECIBO -> Drive
     link_rec = ""
     try:
-        vbruto = nota_municipal.valor_bruto_nf(xml_abrasf)   # BRUTO da NF (do XML, não do card)
+        # BRUTO da NF lido do XML, nunca do card — o card já pode ter sido limpo.
+        vbruto = (nota_municipal.valor_bruto_nf_nacional(xml_nac) if nacional
+                  else nota_municipal.valor_bruto_nf(xml_abrasf))
         dados_rec = efeitos.dados_recibo(card, obra, r, numero, valor_bruto=vbruto)
         recibo.gerar_recibo_pdf(dados_rec, "recibo_tmp.pdf")
         with open("recibo_tmp.pdf", "rb") as fh:
@@ -133,16 +149,32 @@ def concluir(card_id, numero, codigo, data_iso, nota_xml_path, forcar=False, ctx
     except Exception as e:
         print(f"[5] Recibo (Drive) ..... ERRO: {e}")
 
-    # 6) MUNICIPAL NF-e (sem chave; discriminação limpa) -> Drive
+    # 6) MUNICIPAL NF-e -> Drive. No modelo nacional ela já sai COM a chave de
+    #    acesso (e com o QR), porque a chave existe desde a emissão.
     link_mun = ""
     try:
-        nota_municipal.gerar_nota_municipal_pdf(xml_abrasf, "mun_tmp.pdf",
-                                                xml_nacional=None, discriminacao=discr_limpa)
+        nota_municipal.gerar_nota_municipal_pdf(
+            xml_abrasf, "mun_tmp.pdf", xml_nacional=xml_nac,
+            discriminacao=(None if nacional else discr_limpa))
         with open("mun_tmp.pdf", "rb") as fh:
             _, link_mun = drive.enviar(f"{nome_base} (NFS-e).pdf", fh.read(), "pdf")
         print(f"[6] Municipal (Drive) .. {link_mun}")
     except Exception as e:
         print(f"[6] Municipal (Drive) .. ERRO: {e}")
+
+    # 6b) DANFSe NACIONAL -> Drive. Antes isto saía minutos depois, num job que
+    #     ficava perguntando à SEFIN se a nota já havia subido. Com a emissão
+    #     indo direto pelo nacional, o XML já está na mão: sai agora.
+    link_nac = ""
+    if nacional:
+        try:
+            import danfse
+            danfse.gerar_danfse_pdf(xml_nac, "danfse_tmp.pdf")
+            with open("danfse_tmp.pdf", "rb") as fh:
+                _, link_nac = drive.enviar(f"{nome_base} (NFS-e Nacional).pdf", fh.read(), "pdf")
+            print(f"[6b] Nacional (Drive) .. {link_nac}")
+        except Exception as e:
+            print(f"[6b] Nacional (Drive) .. ERRO: {e}")
 
     # 7) NOTAS BWS LINKS (municipal + recibo; coluna nacional recebe o link de
     #    BUSCA MANUAL como placeholder — o job nacional troca pelo link real depois)
@@ -151,19 +183,23 @@ def concluir(card_id, numero, codigo, data_iso, nota_xml_path, forcar=False, ctx
         import os as _os
         _base = _os.getenv("EMISSAO_NF_BASE_URL", "").rstrip("/")
         _tok = _os.getenv("EMISSAO_NF_TOKEN") or _os.getenv("EMISSAO_TOKEN") or ""
-        _link_nac_manual = f"{_base}/emissao/nacional?token={_tok}" if _base else ""
+        # No modelo nacional o link do nacional já existe. No antigo, a coluna
+        # recebia o link da busca manual como marcador até o job preenchê-la.
+        _link_nac_col = link_nac or (f"{_base}/emissao/nacional?token={_tok}"
+                                     if (_base and not nacional) else "")
         notas_bws.gravar_links(ws_links, numero, obra_cod, ano, nome_base,
-                               link_municipal=link_mun, link_nacional=_link_nac_manual,
+                               link_municipal=link_mun, link_nacional=_link_nac_col,
                                link_recibo=link_rec)
-        print(f"[7] Notas BWS Links .... linha gravada (municipal + recibo)")
+        _oque = "municipal + nacional + recibo" if link_nac else "municipal + recibo"
+        print(f"[7] Notas BWS Links .... linha gravada ({_oque})")
     except Exception as e:
         print(f"[7] Notas BWS Links .... ERRO: {e}")
 
     # 8) PIPEFY: Descrição com os links que existirem no topo
     try:
-        if link_mun or link_rec:
-            pf.atualizar_descricao_links(card["card_id"], link_mun, "", link_rec, token)
-            n = sum(bool(x) for x in (link_mun, link_rec))
+        if link_mun or link_rec or link_nac:
+            pf.atualizar_descricao_links(card["card_id"], link_mun, link_nac, link_rec, token)
+            n = sum(bool(x) for x in (link_mun, link_nac, link_rec))
             print(f"[8] Pipefy Descrição ... {n} link(s) no topo")
     except Exception as e:
         print(f"[8] Pipefy Descrição ... ERRO: {e}")
@@ -195,7 +231,10 @@ def concluir(card_id, numero, codigo, data_iso, nota_xml_path, forcar=False, ctx
     except Exception as e:
         print(f"[9] WhatsApp ........... ERRO: {e}")
 
-    # 10) REGISTRA PENDENTE NACIONAL
+    # 10) CONTROLE NACIONAL. No modelo antigo a nota ficava numa fila, esperando
+    #     um job encontrá-la no nacional. No modelo nacional ela JÁ está lá — o
+    #     registro entra direto como concluído, para guardar a chave e para o job
+    #     não sair procurando o que já foi achado.
     try:
         ctrl.registrar_pendente(planilha, {
             "numero": numero, "card_id": card_id, "cod_verif": codigo,
@@ -204,11 +243,17 @@ def concluir(card_id, numero, codigo, data_iso, nota_xml_path, forcar=False, ctx
             "vServ": float(r.valor_total), "dCompet": str(data_iso)[:7],
             "xml_abrasf_file_id": xml_fid, "link_mun": link_mun, "link_rec": link_rec,
         })
-        print(f"[10] Aguardando nacional registrado (o job completa a nacional)")
+        if nacional:
+            ctrl.marcar_concluido(planilha, numero, link_nac, link_mun, chave_nacional)
+            print(f"[10] Controle Nacional . já CONCLUÍDA (chave "
+                  f"{chave_nacional[-8:] if chave_nacional else '—'})")
+        else:
+            print(f"[10] Controle Nacional . aguardando nacional (o job completa)")
     except Exception as e:
-        print(f"[10] Aguardando nacional ERRO: {e}")
+        print(f"[10] Controle Nacional . ERRO: {e}")
 
-    print("\n===== IMEDIATO FINALIZADO — a nacional sai no job =====")
+    print("\n===== IMEDIATO FINALIZADO" + (" — a nota já está completa =====" if nacional
+                                          else " — a nacional sai no job ====="))
 
 
 if __name__ == "__main__":

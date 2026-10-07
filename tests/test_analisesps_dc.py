@@ -213,14 +213,35 @@ def test_a_DUPLICIDADE_acusa_o_mesmo_CPF_e_tipo_dos_ultimos_10_dias(banco_dc):
     assert "800000" in " ".join(p["motivos"])
 
 
-def test_sem_a_aba_das_CARTEIRAS_vale_Producao_com_aviso(banco_dc, monkeypatch):
+def test_sem_a_aba_das_CARTEIRAS_vale_a_TABELA_GRAVADA(banco_dc, monkeypatch):
+    """06/10/2026: *"não pode ser assim (…) eu já disse quais são os tipos, por
+    que não grava logo"*. Sem a aba, vale a tabela que ele passou — sem aviso."""
     from app.apps.analisesps import dc
     monkeypatch.setattr(dc, "_ler_aba", lambda nome: DATA if nome == dc.ABA_DATA
                         else (_ for _ in ()).throw(RuntimeError("sem aba")))
     dc._cache.clear()
     calculado = dc.calcular()
-    assert all(p["carteira"] == "Produção" for p in calculado["pessoas"])
-    assert any("Data base BeeVale" in a for a in calculado["avisos"])
+    ativo = next(p for p in calculado["pessoas"] if p["cpf"] == ATIVO)
+    assert ativo["carteira"] == "Auxílio Alimentação"
+    assert not any("Data base BeeVale" in a for a in calculado["avisos"])
+    mapa, aviso = dc.carteiras(recarregar=True)
+    assert aviso == ""
+    assert {k: mapa[dc._sem_acento(k)] for k in dc.CARTEIRAS_DA_DC} == {
+        "Despesas com Alimentação": "Auxílio Alimentação",
+        "Despesas com Transporte": "Despesas com Transporte",
+        "Diárias": "Diárias",
+        "Gratificações e Extras": "Gratiticações e Extras",
+        "Produção": "Produção",
+        "Salários e Ordenados": "Diárias"}
+
+
+def test_a_aba_com_cabecalho_TIPO_DC_e_lida(banco_dc, monkeypatch):
+    """O cabeçalho da aba dele é "Tipo DC | Tipo BeeVale" — antes não era
+    reconhecido."""
+    from app.apps.analisesps import dc
+    assert dc._carteiras_de([["Tipo DC", "Tipo BeeVale"],
+                             ["Bonificação", "Gratiticações e Extras"]]) == {
+        "bonificacao": "Gratiticações e Extras"}
 
 
 def test_a_TELA_mostra_as_linhas_e_os_blocos_da_lateral(banco_dc, cliente_mestre):
@@ -347,6 +368,7 @@ def test_a_SP_da_DC_tem_RATEIO_POR_CATEGORIA_e_move_os_cards(com_duas_categorias
     assert "Valor BeeVale (+1,50%): R$ 324,80" in descricao
     assert "Planilha de pagamento: https://drive/" in descricao
     assert "Relatório (PDF): https://drive/" in descricao
+    assert "Cadastro de colaboradores: https://drive/" in descricao   # 07/10/2026
     # "Folha de Pgt" + "BeeVale" (05/10/2026).
     assert pipe.atualizacoes_de(criada[0]["id"])["etiquetas"] == ["318116255", "317521565"]
 
@@ -402,3 +424,46 @@ def test_se_o_Pipefy_recusa_MOVER_lancar_de_novo_so_termina_a_mudanca(banco_dc, 
     assert len(pipe.do_pipe(fcd.PIPE_SP)) == 1, "nenhuma SP a mais"
     assert dc.lote_da_analise(analise)["cards_movidos"]
     assert not fcd.previa(analise)["so_terminar"], "tudo terminado: botão fechado"
+
+
+def test_DIARIAS_usa_a_linha_de_SALARIOS_E_ORDENADOS_do_plano(banco_dc, monkeypatch):
+    """07/10/2026: lançar a DC barrou *tipo de despesa "Diárias" sem Código Omie
+    (…) sem Record ID* — "Diárias" não existe no Plano Financeiro. Vale a linha
+    que os diaristas já usam, "Salários e Ordenados" (só quando o nome falta)."""
+    from app.apps.analisesps import dc, folha_cards
+    plano = {folha_cards._chave("Salários e Ordenados"): [
+        {"nome": "Salários e Ordenados", "record_id": "R-SAL", "codigo_omie": "2.03.01"}]}
+    assert dc.classificacao_no_plano("Diárias", plano) == ("2.03.01", "R-SAL")
+    assert dc.classificacao_no_plano("Outra Coisa", plano) == ("", "")
+    # Se um dia o plano tiver "Diárias", vale a linha dela.
+    plano[folha_cards._chave("Diárias")] = [
+        {"nome": "Diárias", "record_id": "R-DIA", "codigo_omie": "2.09.09"}]
+    assert dc.classificacao_no_plano("Diárias", plano) == ("2.09.09", "R-DIA")
+
+
+def test_DC_ja_GERADA_sem_classificacao_lanca_resolvendo_AGORA(banco_dc, monkeypatch):
+    """A geração grava a categoria de cada linha; a que foi gerada antes da regra
+    (sem categoria) é resolvida na hora de lançar, sem gerar de novo."""
+    from app.apps.analisesps import dc, folha_cards as fcd
+    from tests.test_analisesps_folha_cards import PipefyFalso
+    data = DATA[:1] + [
+        ["900500", "02/10/2026", "06/10/2026", "CREPEOLINDA", "Diárias",
+         "", "", "JOAO", "MARIA", "997.133.493-34", "", "100,00", "", "Diária"]]
+    original = dc._ler_aba
+    monkeypatch.setattr(dc, "_ler_aba", lambda nome: data if nome == dc.ABA_DATA
+                        else original(nome))
+    dc._cache.clear()
+    PipefyFalso(monkeypatch)
+    monkeypatch.setattr(fcd, "_plano_financeiro", lambda: ({}, ""))   # sem a linha
+    analise = _gerar_dc(monkeypatch)
+    assert dc.lote_da_analise(analise)["linhas"][0]["categoria"] == ""
+    assert any("Diárias" in b for b in fcd.previa(analise)["bloqueios"])
+
+    monkeypatch.setattr(fcd, "_plano_financeiro", lambda: ({
+        fcd._chave("Salários e Ordenados"): [
+            {"nome": "Salários e Ordenados", "record_id": "R-SAL", "codigo_omie": "2.03.01"}]},
+        ""))
+    vista = fcd.previa(analise)
+    assert not any("Diárias" in b for b in vista["bloqueios"]), vista["bloqueios"]
+    sp = vista["grupos"][0]["sps"][0]
+    assert sp["tipo_sp"] == "R-SAL" and '"codigo_categoria":"2.03.01"' in sp["rateio"]

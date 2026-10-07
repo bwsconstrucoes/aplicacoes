@@ -434,3 +434,24 @@ def test_delegacao_recusada_vira_frase_que_diz_onde_consertar(monkeypatch):
     mensagem = str(erro.value)
     assert "Delegação em todo o domínio" in mensagem
     assert "fulano@bws.com.br" in mensagem
+
+
+def test_a_CARTEIRA_do_arquivo_sai_do_TIPO_DE_DESPESA_da_SP(monkeypatch):
+    """07/10/2026: *"continua errado, os arquivos tão saindo tudo produção"* —
+    o "Gerar BeeVale" das Solicitações escrevia "Produção" fixo."""
+    import io
+    import openpyxl
+    from app.apps.analisesps import beevale, dc
+    monkeypatch.setattr(dc, "_ler_aba", lambda nome: (_ for _ in ()).throw(RuntimeError("x")))
+    dc._cache.clear()
+    assert beevale.carteira_do_tipo("Despesas com Alimentação") == "Auxílio Alimentação"
+    assert beevale.carteira_do_tipo("Salários e Ordenados") == "Diárias"
+    assert beevale.carteira_do_tipo("Material de Obra") == "Produção"
+    conteudo = beevale.pagamento_xlsx([
+        {"nome": "A", "email": "a@x", "valor": 10, "cpf": "1", "card": "9",
+         "carteira": "Auxílio Alimentação"},
+        {"nome": "B", "email": "b@x", "valor": 10, "cpf": "2", "card": "8"}])
+    aba = openpyxl.load_workbook(io.BytesIO(conteudo)).active
+    assert [aba.cell(row=r, column=3).value for r in (2, 3)] == [
+        "Auxílio Alimentação", "Produção"]
+    dc._cache.clear()

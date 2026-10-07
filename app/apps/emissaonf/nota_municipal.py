@@ -41,12 +41,137 @@ def _t(base, *tags):
     return (el.text or "").strip() if el is not None else ""
 
 
-def valor_bruto_nf(xml_abrasf: str):
-    """Valor BRUTO da NF emitida = ValorServicos do XML ABRASF. É a fonte da
-    verdade (independe do card, que pode já ter sido limpo). float ou None."""
+def eh_xml_nacional(xml: str | None) -> bool:
+    """Diz se o texto é o XML da NFS-e NACIONAL (e não o do modelo antigo).
+
+    Existe porque há XML dos dois modelos arquivado no Drive, e quem lê de lá
+    (regerar PDFs, fechar nacional) não tem como saber qual é só pelo nome do
+    arquivo. Olhar o conteúdo é mais confiável que confiar na coluna da planilha.
+    """
+    if not xml:
+        return False
+    return ("infNFSe" in xml) or ("sped.fazenda.gov.br/nfse" in xml)
+
+
+def valor_bruto_nf(xml: str):
+    """Valor BRUTO da nota, lido do XML. É a fonte da verdade — independe do
+    card, que pode já ter sido limpo quando o recibo é gerado.
+
+    Aceita os dois modelos e decide pelo CONTEÚDO, mesma razão do gerador do PDF:
+    recebendo o XML nacional, a busca pelo campo do modelo antigo não daria erro
+    — devolveria None, e o recibo sairia sem valor. float ou None.
+    """
     import re
-    m = re.search(r"ValorServicos>\s*([0-9]+(?:\.[0-9]+)?)\s*<", xml_abrasf)
+    campo = "vServ" if eh_xml_nacional(xml) else "ValorServicos"
+    m = re.search(campo + r">\s*([0-9]+(?:\.[0-9]+)?)\s*<", xml or "")
     return float(m.group(1)) if m else None
+
+
+def valor_bruto_nf_nacional(xml_nacional: str):
+    """Mesmo que o `valor_bruto_nf`, mantido pelo nome para quem já chamava
+    assim. Os dois decidem pelo conteúdo, então dão o mesmo resultado."""
+    return valor_bruto_nf(xml_nacional)
+
+
+def parse_do_nacional(xml_nacional: str) -> dict:
+    """Monta o MESMO dicionário que o `parse_nfse_municipal`, mas lendo o XML
+    nacional em vez do antigo.
+
+    Por que isso é necessário: desde 07/10/2026 a prefeitura não devolve mais o
+    XML do modelo antigo — devolve o nacional. O PDF da nota no layout da
+    prefeitura continua sendo o documento que o cliente recebe, e ele é
+    desenhado a partir deste dicionário. Então em vez de refazer o desenho,
+    traduzimos a entrada.
+
+    Tudo o que o layout mostra existe no XML nacional, com UMA exceção: o
+    **código de verificação** não existe mais. Ele era do modelo antigo; no
+    nacional quem identifica a nota é a chave de acesso, que já aparece no PDF
+    com o QR ao lado. O campo vai vazio, de propósito — inventar um número ali
+    seria pior do que deixá-lo em branco.
+    """
+    root = ET.fromstring(xml_nacional.encode("utf-8") if isinstance(xml_nacional, str)
+                         else xml_nacional)
+    inf = root.find(NS_NAC + "infNFSe")
+    if inf is None:
+        raise ValueError("XML nacional sem infNFSe — não é o XML da NFS-e nacional.")
+
+    def g(base, *tags):
+        el = base
+        for tg in tags:
+            if el is None:
+                return ""
+            el = el.find(NS_NAC + tg)
+        return (el.text or "").strip() if el is not None else ""
+
+    emit = inf.find(NS_NAC + "emit")
+    valN = inf.find(NS_NAC + "valores")
+    dps_el = inf.find(NS_NAC + "DPS")
+    dps = dps_el.find(NS_NAC + "infDPS") if dps_el is not None else None
+    if dps is None:
+        raise ValueError("XML nacional sem a declaração (infDPS) dentro da nota.")
+    toma = dps.find(NS_NAC + "toma")
+    serv = dps.find(NS_NAC + "serv")
+    valD = dps.find(NS_NAC + "valores")
+    trib = valD.find(NS_NAC + "trib") if valD is not None else None
+    tribFed = trib.find(NS_NAC + "tribFed") if trib is not None else None
+    tribMun = trib.find(NS_NAC + "tribMun") if trib is not None else None
+    pisc = tribFed.find(NS_NAC + "piscofins") if tribFed is not None else None
+
+    emit_end = emit.find(NS_NAC + "enderNac") if emit is not None else None
+    toma_end = toma.find(NS_NAC + "end") if toma is not None else None
+    toma_endnac = toma_end.find(NS_NAC + "endNac") if toma_end is not None else None
+
+    local = g(inf, "xLocPrestacao") or _mun(g(serv, "locPrest", "cLocPrestacao"))
+
+    return {
+        "numero": g(inf, "nNFSe"),
+        "cod_verif": "",                      # não existe no nacional — ver a docstring
+        "data_emissao": _data(g(inf, "dhProc")),
+        "rps_num": g(dps, "nDPS"),
+        "rps_serie": g(dps, "serie"),
+        "competencia": _data(g(dps, "dCompet")),
+        "local_prest": local,
+        "exig_iss": "Exigível" if g(tribMun, "tribISSQN") == "1" else "-",
+        # No nacional, 2 é "retido pelo tomador" — 1 é NÃO retido.
+        "iss_retido": "Retido na Fonte" if g(tribMun, "tpRetISSQN") == "2" else "Não retido",
+        "optante": "Não Optante" if g(dps, "prest", "regTrib", "opSimpNac") == "1" else "Optante",
+
+        "emit_razao": g(emit, "xNome"),
+        "emit_end": (f"{LOGRADOURO_PRESTADOR_FORCADO or g(emit_end, 'xLgr')}, "
+                     f"{g(emit_end, 'nro')} - {g(emit_end, 'xBairro')}"),
+        "emit_mun": (f"{g(inf, 'xLocEmi')} - {g(emit_end, 'UF')}" if g(inf, "xLocEmi")
+                     else _mun(g(emit_end, "cMun"), g(emit_end, "UF"))),
+        "emit_cep": _cep(g(emit_end, "CEP")),
+        "emit_im": g(emit, "IM"),
+        "emit_cnpj": _cnpj(g(emit, "CNPJ")),
+
+        "toma_razao": g(toma, "xNome"),
+        "toma_end": f"{g(toma_end, 'xLgr')}, {g(toma_end, 'nro')} - {g(toma_end, 'xBairro')}",
+        "toma_mun": _mun(g(toma_endnac, "cMun")),
+        "toma_cep": _cep(g(toma_endnac, "CEP")),
+        "toma_cnpj": _cnpj(g(toma, "CNPJ")),
+
+        "cod_nac": g(serv, "cServ", "cTribNac"),
+        "cod_mun": g(serv, "cServ", "cIntContrib"),
+        "discriminacao": g(serv, "cServ", "xDescServ"),
+
+        "vServ": _brl(g(valD, "vServPrest", "vServ")),
+        "vDed": _brl(g(valD, "vDedRed", "vDR") or "0"),
+        "vBC": _brl(g(valN, "vBC")),
+        "aliq": g(valN, "pAliqAplic"),
+        "vISS": _brl(g(valN, "vISSQN")),
+        "vINSS": _brl(g(tribFed, "vRetCP") or "0"),
+        "vIR": _brl(g(tribFed, "vRetIRRF") or "0"),
+        "vCSLL": _brl(g(tribFed, "vRetCSLL") or "0"),
+        # PIS e COFINS retidos podem vir soltos no grupo federal ou dentro do
+        # subgrupo próprio deles — o layout nacional aceita os dois jeitos.
+        "vCOFINS": _brl(g(tribFed, "vRetCofins") or g(pisc, "vCofins") or "0"),
+        "vPIS": _brl(g(tribFed, "vRetPIS") or g(pisc, "vPis") or "0"),
+        "vOutras": _brl("0"),
+        "vDescCond": _brl(g(valD, "vDescCondIncond", "vDescCond") or "0"),
+        "vDescIncond": _brl(g(valD, "vDescCondIncond", "vDescIncond") or "0"),
+        "vLiq": _brl(g(valN, "vLiq")),
+    }
 
 
 def parse_nfse_municipal(xml: str) -> dict:
@@ -154,11 +279,41 @@ def _qr(chave: str):
         return None
 
 
-def gerar_nota_municipal_pdf(xml_abrasf: str, saida_pdf: str, xml_nacional: str | None = None,
+def gerar_nota_municipal_pdf(xml_abrasf: str | None, saida_pdf: str,
+                             xml_nacional: str | None = None,
                              discriminacao: str | None = None) -> str:
+    """Desenha a NFS-e no layout da prefeitura.
+
+    Aceita as duas origens, porque as duas existem no Drive: nota antiga tem o
+    XML do modelo ABRASF; nota emitida a partir de 07/10/2026 tem só o nacional.
+    Passe `xml_abrasf=None` para a segunda.
+    """
     from fpdf import FPDF
-    d = parse_nfse_municipal(xml_abrasf)
+    # Quem lê XML arquivado no Drive não sabe de qual modelo ele é — e passar um
+    # XML nacional para o leitor do modelo antigo não dá erro: dá um PDF EM
+    # BRANCO. Como o arquivo sobe com o mesmo nome, esse PDF em branco apagaria o
+    # documento bom. Por isso a decisão é tomada pelo CONTEÚDO, aqui, e não por
+    # quem chama.
+    if xml_abrasf and eh_xml_nacional(xml_abrasf):
+        xml_nacional = xml_nacional or xml_abrasf
+        xml_abrasf = None
+
+    if xml_abrasf:
+        d = parse_nfse_municipal(xml_abrasf)
+    elif xml_nacional:
+        d = parse_do_nacional(xml_nacional)
+    else:
+        raise ValueError("Informe o XML da nota (antigo ou nacional) para desenhar o PDF.")
     _enriquecer(d, xml_nacional)
+
+    # Rede de segurança do mesmo problema: nota sem número é sinal de que a
+    # leitura não entendeu o XML. Melhor não gerar nada do que gerar um PDF vazio
+    # que substitui, no Drive, o documento que o cliente recebeu.
+    if not (d.get("numero") or "").strip():
+        raise ValueError(
+            "Não consegui ler o número da nota no XML — não vou gerar o PDF. "
+            "Gerar aqui sobrescreveria, no Drive, o documento bom por um em branco."
+        )
     if discriminacao:                       # override limpo (quando não há nacional ainda)
         d["discriminacao"] = discriminacao
 

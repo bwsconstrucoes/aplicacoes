@@ -64,7 +64,9 @@ DESTINOS = (BEEVALE, SOMAPAY)
 ROTULO_DO_DESTINO = {BEEVALE: "BeeVale", SOMAPAY: "SomaPay",
                      "analise": "Analise da folha",
                      # O relatório em PDF de cada conta, gerado junto (03/10/2026).
-                     "relatorio": "Relatório (PDF)"}
+                     "relatorio": "Relatório (PDF)",
+                     # A planilha de cadastro de cada conta (07/10/2026).
+                     "cadastro": "Cadastro de colaboradores"}
 
 # As verbas que geram arquivo. O rótulo é o que aparece na tela e no nome do
 # arquivo; a chave é a que vem da apropriação guardada.
@@ -231,17 +233,25 @@ def montar_lotes(linhas, destino: str, juntar_verbas: bool = False) -> list:
         chave_lote = (conta,) if juntar_verbas else (conta, verba)
         lote = grupos.setdefault(chave_lote, {
             "conta": conta, "destino": destino, "verbas": [], "itens": {},
-            "criticas": []})
+            "criticas": [], "origem_por_cpf": {}})
         if verba and verba not in lote["verbas"]:
             lote["verbas"].append(verba)
-        # A chave da consolidação, igual à do script: conta + CPF + natureza.
         # A linha pode trazer a própria natureza e a carteira do BeeVale — é o
-        # caso da DC, em que cada solicitação tem o seu tipo de despesa (o
-        # `geraspbeevale.gs` consolida por CPF + carteira + categoria).
+        # caso da DC, em que cada solicitação tem o seu tipo de despesa.
         nat = str(bruta.get("natureza") or "").strip() or natureza(verba)
         carteira = (str(bruta.get("carteira") or "").strip()
                     or carteira_da_verba(verba))
-        chave_item = (cpf, nat, carteira)
+        # ⚠️ A CHAVE DA CONSOLIDAÇÃO É O CPF (07/10/2026) — e, no BeeVale, a
+        # carteira. Era CPF + natureza + carteira: o mesmo CPF com dois tipos de
+        # despesa que caem na MESMA carteira ("Diárias" e "Salários e Ordenados"
+        # → "Diárias") saía em duas linhas, e o BeeVale recusa a mesma pessoa
+        # duas vezes na mesma carteira. A regra do dono: *"agrupar os registros
+        # pelo CPF, somar todos os valores e gerar apenas uma linha; o centro de
+        # custo e os demais dados, os da primeira ocorrência."* No SomaPay não
+        # há carteira: uma linha por CPF.
+        chave_item = ((cpf, _sem_acento_simples(carteira)) if destino == BEEVALE
+                      else (cpf,))
+        lote["origem_por_cpf"][cpf] = lote["origem_por_cpf"].get(cpf, Decimal("0.00")) + valor
         item = lote["itens"].setdefault(chave_item, {
             "cpf": cpf, "nome": " ".join(str(bruta.get("nome") or "").split()),
             "verba": verba, "natureza": nat, "carteira": carteira,
@@ -275,6 +285,28 @@ def montar_lotes(linhas, destino: str, juntar_verbas: bool = False) -> list:
                 f"{len(itens)} linhas em um único arquivo, acima do teto de "
                 f"{MAXIMO_POR_ARQUIVO}. Quantidade incompatível com um pagamento.")
 
+        # ⚠️ A CONFERÊNCIA DA SOMA POR CPF (07/10/2026): o total de cada CPF no
+        # arquivo tem de ser EXATAMENTE o da origem — senão um lançamento se
+        # perdeu na consolidação. Diferença trava o arquivo.
+        no_arquivo: dict = {}
+        for item in itens:
+            no_arquivo[item["cpf"]] = no_arquivo.get(item["cpf"], Decimal("0.00")) + item["valor"]
+        for cpf_origem, soma in lote["origem_por_cpf"].items():
+            if no_arquivo.get(cpf_origem, Decimal("0.00")) != soma:
+                criticas.append(
+                    f"o CPF {cpf_origem} soma R$ {soma} na origem e R$ "
+                    f"{no_arquivo.get(cpf_origem, Decimal('0.00'))} no arquivo — "
+                    "lançamento perdido na consolidação.")
+        if destino == BEEVALE:
+            vistos = set()
+            for item in itens:
+                chave = (item["cpf"], _sem_acento_simples(item["carteira"]))
+                if chave in vistos:
+                    criticas.append(
+                        f'{item["nome"] or item["cpf"]} aparece duas vezes na carteira '
+                        f'"{item["carteira"]}" — o BeeVale recusa.')
+                vistos.add(chave)
+
         repetido = _cpf_repetido(itens)
         if destino == SOMAPAY and repetido:
             # Não deveria acontecer: a consolidação por CPF já resolve. Fica como
@@ -292,6 +324,12 @@ def montar_lotes(linhas, destino: str, juntar_verbas: bool = False) -> list:
             "pode_gerar": not criticas,
         })
     return lotes
+
+
+def _sem_acento_simples(texto) -> str:
+    import unicodedata
+    cru = unicodedata.normalize("NFKD", " ".join(str(texto or "").split()))
+    return "".join(c for c in cru if not unicodedata.combining(c)).lower()
 
 
 def _cpf(valor) -> str:

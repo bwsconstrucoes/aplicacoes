@@ -12175,6 +12175,101 @@ somente Solicitações de uma conta especifica"*.
 - **E a diferença de 1 pessoa (R$ 220) entre barra e lateral:** suspeita de o
   navegador devolver, ao recarregar, a marcação de antes. As caixinhas agora
   abrem sempre no estado salvo (`defaultChecked`). Não confirmado.
+- **Publicada em 06/10/2026** (sem migração; suíte inteira 8.542 verdes). Falta
+  ele: conferir os desligados marcados na alimentação e no transporte e
+  desmarcar quem não deve receber; a barra deve ficar igual ao "A pagar".
+
+#### Leva 188 — desligado NÃO recebe auxílio, nem marcado (06/10/2026)
+
+- Ele viu o aviso da 187 ("77 desligados marcados para receber") e respondeu:
+  *"nós já havíamos combinado essa regra. A princípio não aparece pra pagar"* —
+  a de 03/10, *"se ele já saiu, ele não recebe mais"*. O código tratava
+  desligado como POLÍTICA ("a última palavra é dele": marcado, recebia), e um
+  "marcar todos" salvo bastava para pôr os 77 no arquivo.
+- **Agora desligado é como cadastro incompleto:** marcação à mão não vale
+  (`_decidir`), "Salvar seleção" ignora (`salvar_selecao`), a caixinha fica
+  travada (e o "marcar todos" pula as travadas). A marcação antiga dos 77 fica
+  no banco, SEM efeito — não foi apagada (decisão: não mexer em dado; ela só
+  deixou de valer). Vale na alimentação e no transporte.
+- O aviso "Desligados marcados para receber" e o botão "Desmarcar" da 187
+  saíram (perderam o sentido). Ficou da 187: quem vai ser pago nunca some da
+  lista, e as caixinhas abrem no estado salvo.
+- **Afastado continua política** (marcado, recebe) — ele não falou de afastado.
+  **Diaristas não mudam:** lá o desligado que trabalhou recebe (02/10/2026).
+
+#### Leva 189 — DC: a tabela das carteiras GRAVADA no sistema (06/10/2026)
+
+- O aviso *"aba 'Data base BeeVale' não lida — a carteira fica 'Produção'"*. O
+  dono: *"não pode ser assim (…) eu já disse quais são os tipos, por que não
+  grava logo"*. A tabela que ele passou em 05/10 virou `dc.CARTEIRAS_DA_DC`:
+  Despesas com Alimentação → Auxílio Alimentação; Despesas com Transporte →
+  Despesas com Transporte; Diárias → Diárias; Gratificações e Extras →
+  Gratiticações e Extras (grafia do portal); Produção → Produção; Salários e
+  Ordenados → Diárias.
+- A aba continua sendo lida quando dá, e acrescenta/corrige linhas — mas não é
+  mais necessária, e não lê-la não gera aviso. O cabeçalho dela ("Tipo DC |
+  Tipo BeeVale") não era reconhecido — agora é.
+- Tipo de despesa que não está na tabela vai como "Produção" COM aviso na tela,
+  dizendo qual tipo falta.
+
+#### Leva 190 — DC: "Diárias" classificada como "Salários e Ordenados" (07/10/2026)
+
+- Lançar a DC no Pipefy barrou: *tipo de despesa "Diárias" sem Código Omie na
+  aba "Plano Financeiro" (categoria do rateio)* e *sem Record ID*. "Diárias" é
+  um tipo da DC que não existe no Plano Financeiro (o script antigo tirava os
+  dois códigos de colunas da própria planilha da DC).
+- **Decisão minha, dita a ele:** usar a linha que os diaristas já usam,
+  "Salários e Ordenados" (`folha_cards.DESCRICAO_DA_VERBA["diaria"]`) — só
+  quando o nome não está no plano (`dc.TIPO_NO_PLANO`,
+  `dc.classificacao_no_plano`). Se ele quiser outra linha, é trocar a tabela.
+- A DC JÁ GERADA (linhas gravadas sem categoria) não precisa ser gerada de
+  novo: o lançamento resolve a classificação na hora (`_grupo_da_dc`).
+- **Levas 188 a 190 publicadas em 07/10/2026** (sem migração; suíte inteira
+  8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
+  de novo e confirmar que "Salários e Ordenados" é a classificação certa.
+
+#### Leva 193 — consolidação por CPF no arquivo (07/10/2026)
+
+- O dono: o BeeVale recusa a mesma pessoa duas vezes na mesma carteira; regra:
+  *"agrupar pelo CPF, somar todos os valores, uma linha só; centro de custo e
+  demais dados da primeira ocorrência"* (ex.: 500 em CREPEMIRANDIBA + 300 em
+  CREPEEXU = uma linha de 800 em CREPEMIRANDIBA), e conferir que a soma por CPF
+  no arquivo é igual à da origem.
+- A chave era CPF + natureza + carteira: o mesmo CPF com dois tipos de despesa
+  na MESMA carteira (na DC, "Diárias" e "Salários e Ordenados" → "Diárias")
+  saía em duas linhas. Agora: BeeVale = CPF + carteira (carteiras diferentes
+  são benefícios diferentes no portal e continuam separadas — escolha minha,
+  dita a ele); SomaPay = CPF. Os valores sempre foram somados — o que havia era
+  linha duplicada, não valor perdido.
+- Conferência nova no lote (`montar_lotes`): soma por CPF no arquivo ≠ soma na
+  origem → crítica que trava; mesma pessoa duas vezes na mesma carteira no
+  BeeVale → crítica que trava.
+- **Levas 191 a 193 publicadas em 07/10/2026** (sem migração; suíte inteira
+  8.653 verdes).
+
+#### Leva 192 — a planilha de cadastro sai junto, com link no card (07/10/2026)
+
+- *"Precisa que seja gerado ainda o arquivo de cadastro dos colaboradores e
+  enviado ao card também o link, caso precise alguém ser cadastrado."* O
+  "Gerar arquivos" (as quatro folhas e a DC) sobe agora, por conta, a planilha
+  de cadastro do destino dela (BeeVale ou SomaPay — `cadastro_planilha.gerar`)
+  com quem está no arquivo. Registrada no log como destino `cadastro`, fica na
+  rodada (`cadastros`), sai junto ao excluir a geração, não soma no total e não
+  vira SP. O link vai na descrição do card ("Cadastro de colaboradores: …") e
+  aparece em Arquivos gerados ao lado do "relatório PDF". Falha nela não para o
+  pagamento (fica no log). Ligada só na geração da tela (`gerar(cadastro=True)`).
+
+#### Leva 191 — "Gerar BeeVale" das Solicitações: carteira pelo tipo de despesa (07/10/2026)
+
+- *"Continua errado, os arquivos tão saindo tudo produção."* Conferido: o
+  arquivo de alimentação gerado pela folha sai "Auxílio Alimentação" (testado).
+  O "Produção" fixo estava no "Gerar BeeVale" da tela Solicitações (SPs de
+  terceirizados, herdado do `BeeVale.gs`). Agora a carteira sai do tipo de
+  despesa da SP, pela mesma tabela da DC (`beevale.carteira_do_tipo`); tipo fora
+  da tabela segue "Produção".
+- ⚠️ Não sei com certeza se era desse arquivo que ele falava. Outros "Produção"
+  que continuam, de propósito: a folha da contabilidade (decisão dele, 05/10) e
+  arquivos da DC gerados ANTES da leva 189 (é preciso excluir e gerar de novo).
 
 #### ⚠️ Pendente AGORA
 

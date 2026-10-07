@@ -268,12 +268,16 @@ def rodada(analise_id: int) -> dict:
                  and piso < a["id"] < analise["id"]]
     # O PDF do relatório de cada conta é da rodada, mas não é arquivo de
     # pagamento: não soma no total nem vira SP — vai como link no card.
-    arquivos = sorted((a for a in da_rodada if a["destino"] != fpg.RELATORIO),
+    arquivos = sorted((a for a in da_rodada
+                       if a["destino"] not in (fpg.RELATORIO, fpg.CADASTRO)),
                       key=lambda a: a["id"])
     relatorios = {a["conta"]: a for a in da_rodada if a["destino"] == fpg.RELATORIO}
+    # A planilha de cadastro de cada conta: também só link no card (07/10/2026).
+    cadastros = {a["conta"]: a for a in da_rodada if a["destino"] == fpg.CADASTRO}
     if not arquivos:
         raise ErroDosCards("arquivos de pagamento desta rodada não encontrados.")
     return {"analise": analise, "arquivos": arquivos, "relatorios": relatorios,
+            "cadastros": cadastros,
             "verbas": [v for v in (analise["verbas"] or "").split("+") if v]}
 
 
@@ -597,7 +601,7 @@ def _previa(analise_id: int, ler_pipes: bool = True, contas=None) -> tuple:
         if verba == "dc":
             grupo_dc = _grupo_da_dc(analise, r, escolhidas, todas_as_contas,
                                     andamento_atual, achar_tipo, ler_pipes, omie,
-                                    destino_da_conta, bloqueios, esperado_por_conta)
+                                    destino_da_conta, bloqueios, esperado_por_conta, plano=plano)
             if grupo_dc:
                 grupos.append(grupo_dc)
             continue
@@ -667,6 +671,8 @@ def _previa(analise_id: int, ler_pipes: bool = True, contas=None) -> tuple:
                        "link": arquivo.get("link") or "", "destino": destino,
                        "link_relatorio": ((r.get("relatorios") or {}).get(conta)
                                           or {}).get("link") or "",
+                       "link_cadastro": ((r.get("cadastros") or {}).get(conta)
+                                         or {}).get("link") or "",
                        "obras": obras,
                        "rateio": rateio_multiplo(obras, categoria) if obras else ""}
             sp_item["etiquetas"] = rotulo_das_etiquetas(sp_item)
@@ -735,7 +741,7 @@ def _previa(analise_id: int, ler_pipes: bool = True, contas=None) -> tuple:
 # ---------------------------------------------------------------------------
 def _grupo_da_dc(analise, r, escolhidas, todas_as_contas, andamento_atual,
                  achar_tipo, ler_pipes, omie, destino_da_conta, bloqueios,
-                 esperado_por_conta):
+                 esperado_por_conta, plano=None):
     from . import dc
     lote = dc.lote_da_analise(analise["id"])
     if not lote:
@@ -765,10 +771,16 @@ def _grupo_da_dc(analise, r, escolhidas, todas_as_contas, andamento_atual,
         obra = _chave(l["obra"]) or "(SEM OBRA)"
         c["obras"][obra] = c["obras"].get(obra, Decimal("0.00")) + l["valor"]
         cat = str(l.get("categoria") or "").strip()
-        c["categorias"][cat] = c["categorias"].get(cat, Decimal("0.00")) + l["valor"]
         nome_tipo = l.get("tipo_despesa") or ""
+        record_id = l.get("record_id") or ""
+        if not cat or not record_id:
+            # A linha gravada na geração sem a classificação (o tipo não estava no
+            # plano, ou a regra veio depois — "Diárias", 07/10/2026): resolve agora.
+            de_agora = dc.classificacao_no_plano(nome_tipo, plano or {})
+            cat, record_id = cat or de_agora[0], record_id or de_agora[1]
+        c["categorias"][cat] = c["categorias"].get(cat, Decimal("0.00")) + l["valor"]
         t = c["tipos"].setdefault(nome_tipo, {"valor": Decimal("0.00"),
-                                              "record_id": l.get("record_id") or ""})
+                                              "record_id": record_id})
         t["valor"] += l["valor"]
         c["pessoas"].add(l["cpf"])
         if l.get("card_id"):
@@ -807,6 +819,8 @@ def _grupo_da_dc(analise, r, escolhidas, todas_as_contas, andamento_atual,
                    "link": arquivo.get("link") or "", "destino": destino,
                    "link_relatorio": ((r.get("relatorios") or {}).get(conta)
                                       or {}).get("link") or "",
+                   "link_cadastro": ((r.get("cadastros") or {}).get(conta)
+                                     or {}).get("link") or "",
                    "obras": obras, "tipo_sp": tipo_sp or "",
                    "cards_de_origem": sorted(c["cards"]),
                    "tipos": [{"nome": k, "valor": v["valor"]} for k, v in
@@ -863,6 +877,8 @@ def descricao_da_dc(sp: dict, link_analise: str) -> str:
         linhas.append(f"Planilha de pagamento: {sp['link']}")
     if sp.get("link_relatorio"):
         linhas.append(f"Relatório (PDF): {sp['link_relatorio']}")
+    if sp.get("link_cadastro"):
+        linhas.append(f"Cadastro de colaboradores: {sp['link_cadastro']}")
     if link_analise:
         linhas.append(f"Planilha de análise: {link_analise}")
     return "\n".join([l for i, l in enumerate(linhas)
@@ -899,6 +915,8 @@ def descricao_da_sp(competencia: str, tipo: str, verba: str, sp: dict,
     # arquivo de pagamento quanto o relatório também"*).
     if sp.get("link_relatorio"):
         linhas.append(f"Relatório (PDF): {sp['link_relatorio']}")
+    if sp.get("link_cadastro"):
+        linhas.append(f"Cadastro de colaboradores: {sp['link_cadastro']}")
     if link_analise:
         linhas.append(f"Planilha de análise: {link_analise}")
     return "\n".join([l for i, l in enumerate(linhas)

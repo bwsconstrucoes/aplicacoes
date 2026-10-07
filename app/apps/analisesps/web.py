@@ -3851,11 +3851,6 @@ def tela_folha_auxilio():
         lista=lista, filtrando=lista["filtrando"],
         fora_do_filtro=_marcados_fora_do_filtro(
             (resultado or {}).get("pessoas"), lista["pessoas"]),
-        # Desligados MARCADOS para receber (à mão — a regra os tira). Ficavam
-        # escondidos e saíam no arquivo (06/10/2026: 77 deles, R$ 17,8 mil).
-        desligados_marcados=[p for p in (resultado or {}).get("pessoas") or []
-                             if "saiu" in folha_lista.situacoes_da_pessoa(p)
-                             and folha_lista._vai(p)],
         ultima_geracao=_ultima_geracao(tipo, ano, mes) if resultado else None,
         divisao=_divisao_da_tela(resultado, tipo, fx.apropriado) if resultado else {},
         tipos=[(t, fx.ROTULO_DO_TIPO[t]) for t in fx.TIPOS],

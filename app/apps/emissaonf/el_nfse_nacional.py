@@ -21,6 +21,7 @@ from __future__ import annotations
 import base64
 import gzip
 import time
+from decimal import Decimal
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -40,6 +41,30 @@ COD_IBGE_EUSEBIO = 2304285
 
 NS_NFSE = "http://www.sped.fazenda.gov.br/nfse"
 NS_DSIG = "http://www.w3.org/2000/09/xmldsig#"
+
+# Tipo de retenção do ISSQN (XSD: TSTipoRetISSQN). Os nomes existem para que
+# ninguém precise lembrar qual número é qual — já foi trocado uma vez.
+RET_ISS_NAO_RETIDO = 1
+RET_ISS_TOMADOR = 2
+RET_ISS_INTERMEDIARIO = 3
+
+# Tipo de retenção de PIS/COFINS/CSLL (XSD: TSTipoRetPISCofins). A tabela
+# combina os três, então a escolha depende de QUAIS foram retidos.
+_RET_PIS_COFINS = {
+    (True, True, True): 3,     # PIS/COFINS/CSLL retidos
+    (True, True, False): 4,    # PIS/COFINS retidos, CSLL não
+    (True, False, False): 5,   # só PIS
+    (False, True, False): 6,   # só COFINS
+    (False, True, True): 7,    # PIS não, COFINS/CSLL retidos
+    (False, False, True): 8,   # PIS/COFINS não, CSLL retido
+    (True, False, True): 9,    # COFINS não, PIS/CSLL retidos
+    (False, False, False): 0,  # nenhum
+}
+
+
+def tipo_retencao_pis_cofins(pis: bool, cofins: bool, csll: bool) -> int:
+    """Traduz "quais foram retidos" no código que o layout nacional espera."""
+    return _RET_PIS_COFINS[(bool(pis), bool(cofins), bool(csll))]
 
 
 # --------------------------------------------------------------------------- #
@@ -136,9 +161,21 @@ class DadosDPS:
     v_serv: str = "0.00"
 
     # ISS (município)
-    trib_issqn: int = 1             # 1 = tributável
-    tp_ret_issqn: int = 1           # 1 = retido na fonte, 2 = não retido
+    trib_issqn: int = 1             # 1=tributável 2=imunidade 3=exportação 4=não incidência
+
+    # ATENÇÃO — este campo já esteve com o significado INVERTIDO aqui (ver o
+    # HISTORICO.md da área, 07/10/2026). O domínio oficial, no XSD
+    # (TSTipoRetISSQN), é:
+    #     1 = NÃO retido        2 = retido pelo TOMADOR        3 = retido pelo intermediário
+    # As notas da BWS têm ISS retido na fonte pelo tomador, então o default é 2.
+    # Mandar 1 numa nota retida declara à prefeitura que a BWS é que deve o ISS.
+    tp_ret_issqn: int = RET_ISS_TOMADOR
     p_aliq: str = "0.00"
+
+    # Dedução de material (equivale ao ValorDeducoes do modelo antigo): a
+    # prefeitura calcula a base do ISS como vServ - vDR. Sem isso, ela aplica a
+    # alíquota sobre o valor CHEIO — foi exatamente o defeito de setembro/2026.
+    v_ded_red: str = ""            # vazio = sem dedução (não envia o grupo)
 
     # retenções federais (valores retidos)
     v_ret_inss: str = "0.00"        # vRetCP (INSS/previdência)
@@ -213,6 +250,11 @@ def montar_dps_xml(d: DadosDPS) -> etree._Element:
     valores = _sub(inf, "valores")
     vsp = _sub(valores, "vServPrest")
     _sub(vsp, "vServ", d.v_serv)
+    # Dedução de material. A ordem é exigida pelo XSD: vem depois do valor do
+    # serviço e antes dos tributos.
+    if d.v_ded_red and Decimal(str(d.v_ded_red)) > 0:
+        ded = _sub(valores, "vDedRed")
+        _sub(ded, "vDR", d.v_ded_red)
     trib = _sub(valores, "trib")
     tribmun = _sub(trib, "tribMun")
     _sub(tribmun, "tribISSQN", d.trib_issqn)
@@ -270,7 +312,54 @@ class ELNfseNacional:
         self.session.mount("https://", HTTPAdapter(max_retries=retry))
 
     def _url(self, path):
-        return f"{self.urlbase}/api/nacional/{self.ambiente}/{path}"
+        """Monta o endereço da operação (o caminho PREFERIDO).
+
+        A produção NÃO tem o segmento de ambiente no caminho — o portal da
+        prefeitura publica `/api/nacional/nfse`, enquanto a homologação é
+        `/api/nacional/homologacao/nfse`. O manual em PDF diz que o ambiente é
+        sempre um segmento do caminho, e nisso ele contradiz o portal; o portal
+        ganha, porque é o que está no ar.
+        """
+        meio = "" if self.ambiente == "producao" else f"{self.ambiente}/"
+        return f"{self.urlbase}/api/nacional/{meio}{path}"
+
+    def _url_alternativa(self, path):
+        """O outro jeito de escrever o mesmo endereço — o do manual em PDF.
+
+        Existe porque a divergência acima é entre duas fontes oficiais, e
+        descobrir qual está certa custaria a primeira emissão de verdade dar
+        erro de endereço. Em vez de adivinhar, tenta-se o segundo.
+
+        **Isto só é seguro por um motivo, e ele é o que importa:** 404 e 405
+        significam que o endereço não existe — ou seja, a prefeitura não recebeu
+        declaração nenhuma e NADA foi criado. Repetir nesse caso não arrisca uma
+        segunda nota. Em qualquer outra resposta (inclusive erro de rede, que
+        pode ter chegado) não se repete nada.
+        """
+        if self.ambiente == "producao":
+            return f"{self.urlbase}/api/nacional/producao/{path}"
+        return f"{self.urlbase}/api/nacional/{path}"
+
+    # Respostas que provam que o endereço não existe — e só elas liberam a
+    # segunda tentativa no caminho alternativo.
+    _ENDERECO_NAO_EXISTE = (404, 405)
+
+    def _chamar(self, metodo, path, **kw):
+        """Faz a chamada no caminho preferido e, só se o endereço não existir,
+        no alternativo. Devolve a resposta e lembra qual caminho funcionou."""
+        resp = self.session.request(metodo, self._url(path), timeout=self.timeout, **kw)
+        if resp.status_code not in self._ENDERECO_NAO_EXISTE:
+            return resp
+        alternativa = self._url_alternativa(path)
+        print(f"[nacional] {self._url(path)} respondeu HTTP {resp.status_code} "
+              f"(endereço não existe, nada foi criado) — tentando {alternativa}")
+        segunda = self.session.request(metodo, alternativa, timeout=self.timeout, **kw)
+        if segunda.status_code not in self._ENDERECO_NAO_EXISTE:
+            self._caminho_que_funcionou = alternativa
+            print(f"[nacional] o caminho que funciona neste ambiente é o do MANUAL "
+                  f"({alternativa}) — vale corrigir o padrão no código.")
+            return segunda
+        return resp      # os dois falharam: devolve o erro do caminho preferido
 
     @staticmethod
     def _gzip_b64(xml_bytes):
@@ -284,6 +373,25 @@ class ELNfseNacional:
             return gzip.decompress(base64.b64decode(b64_str)).decode("utf-8")
         except Exception:
             return b64_str  # texto indicativo de "em processamento"
+
+    @staticmethod
+    def erros_da_resposta(data) -> list[str]:
+        """Lê a lista de erros que a plataforma devolve, em texto legível.
+
+        O manual é explícito: quando a propriedade `erros` vem na resposta, a
+        solicitação NÃO foi processada e alguma correção é necessária antes de
+        tentar de novo. Ou seja: **não existe nota**. Saber disso é o que separa
+        "espere" de "corrija e reenvie".
+        """
+        if not isinstance(data, dict):
+            return []
+        partes = []
+        for e in (data.get("erros") or []):
+            cod = e.get("codigo") or e.get("Codigo") or ""
+            desc = e.get("descricao") or e.get("Descricao") or ""
+            comp = e.get("complemento") or e.get("Complemento") or ""
+            partes.append(" - ".join(x for x in (cod, desc, comp) if x))
+        return partes
 
     def _checar(self, resp):
         try:
@@ -307,31 +415,39 @@ class ELNfseNacional:
         root = montar_dps_xml(dados)
         assinado = assinar_dps(root, self.chave_pem, self.cert_pem)
         xml_bytes = etree.tostring(assinado, xml_declaration=True, encoding="UTF-8", standalone=False)
-        resp = self.session.post(self._url("nfse"), params={"token": self.token},
-                                 json={"dpsXmlGZipB64": self._gzip_b64(xml_bytes)},
-                                 timeout=self.timeout)
+        resp = self._chamar("POST", "nfse", params={"token": self.token},
+                            json={"dpsXmlGZipB64": self._gzip_b64(xml_bytes)})
         return self._checar(resp)
 
-    def consultar_processamento_dps(self, id_dps) -> dict:
-        resp = self.session.get(self._url(f"nfseDps/{id_dps}"),
-                                params={"token": self.token}, timeout=self.timeout)
+    def consultar_processamento_dps(self, id_dps, bruto: bool = False) -> dict:
+        """Situação da declaração. Com `bruto=True`, devolve a resposta inteira
+        SEM levantar erro quando ela trouxer a lista `erros`.
+
+        Isso existe porque, numa consulta, `erros` não é falha da consulta: é a
+        resposta — a declaração foi recusada. Tratar as duas coisas igual
+        transformava "a prefeitura recusou, e aqui está o motivo" em "não
+        consegui consultar", que manda a pessoa para o lugar errado.
+        """
+        resp = self._chamar("GET", f"nfseDps/{id_dps}", params={"token": self.token})
+        if bruto:
+            try:
+                return resp.json()
+            except ValueError:
+                return {"_corpo": (resp.text or "")[:500], "_http": resp.status_code}
         return self._checar(resp)
 
     def consultar_dps(self, id_dps) -> dict:
-        resp = self.session.get(self._url(f"dps/{id_dps}"),
-                                params={"token": self.token}, timeout=self.timeout)
+        resp = self._chamar("GET", f"dps/{id_dps}", params={"token": self.token})
         return self._checar(resp)
 
     def consultar_nfse(self, chave_acesso) -> dict:
-        resp = self.session.get(self._url(f"nfse/{chave_acesso}"),
-                                params={"token": self.token}, timeout=self.timeout)
+        resp = self._chamar("GET", f"nfse/{chave_acesso}", params={"token": self.token})
         return self._checar(resp)
 
     def registrar_evento(self, chave_acesso, evento_xml_bytes) -> dict:
-        resp = self.session.post(self._url(f"nfse/{chave_acesso}/eventos"),
-                                 params={"token": self.token},
-                                 json={"pedidoRegistroEventoXmlGZipB64": self._gzip_b64(evento_xml_bytes)},
-                                 timeout=self.timeout)
+        resp = self._chamar("POST", f"nfse/{chave_acesso}/eventos",
+                            params={"token": self.token},
+                            json={"pedidoRegistroEventoXmlGZipB64": self._gzip_b64(evento_xml_bytes)})
         return self._checar(resp)
 
     def emitir_e_aguardar(self, dados: DadosDPS, timeout_s=120, intervalo_s=5) -> dict:

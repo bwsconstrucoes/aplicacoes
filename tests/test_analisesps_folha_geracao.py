@@ -449,3 +449,41 @@ def test_a_analise_diz_a_competencia_e_o_pagamento():
     assert "09/2026" in texto
     assert "Fim de mês" in texto
     assert "SomaPay" in texto
+
+
+def test_o_MESMO_CPF_vira_UMA_linha_com_a_SOMA_e_o_centro_de_custo_da_PRIMEIRA():
+    """O dono, 07/10/2026: o BeeVale recusa a mesma pessoa duas vezes na mesma
+    carteira. *"Agrupar pelo CPF, somar todos os valores e gerar apenas uma
+    linha (…) o centro de custo da primeira ocorrência. Ex.: R$ 500,00 em
+    CREPEMIRANDIBA e R$ 300,00 em CREPEEXU → uma linha de R$ 800,00 em
+    CREPEMIRANDIBA."*"""
+    from decimal import Decimal as D
+    from app.apps.analisesps import folha_geracao as g
+    linhas = [
+        {"cpf": "99713349334", "nome": "FULANO", "conta": "50024", "verba": "dc",
+         "valor": D("500.00"), "obra": "CREPEMIRANDIBA",
+         "natureza": "Diárias", "carteira": "Diárias"},
+        {"cpf": "99713349334", "nome": "FULANO", "conta": "50024", "verba": "dc",
+         "valor": D("300.00"), "obra": "CREPEEXU",
+         "natureza": "Salários e Ordenados", "carteira": "Diárias"},
+    ]
+    for destino in (g.BEEVALE, g.SOMAPAY):
+        lote, = g.montar_lotes(linhas, destino)
+        assert len(lote["linhas"]) == 1, destino
+        item = lote["linhas"][0]
+        assert item["valor"] == D("800.00") and item["obra"] == "CREPEMIRANDIBA"
+        assert lote["pode_gerar"], lote["criticas"]
+
+
+def test_CARTEIRAS_diferentes_continuam_linhas_separadas_no_BeeVale():
+    from decimal import Decimal as D
+    from app.apps.analisesps import folha_geracao as g
+    linhas = [
+        {"cpf": "99713349334", "nome": "FULANO", "conta": "50024", "verba": "dc",
+         "valor": D("100.00"), "obra": "A", "carteira": "Auxílio Alimentação"},
+        {"cpf": "99713349334", "nome": "FULANO", "conta": "50024", "verba": "dc",
+         "valor": D("50.00"), "obra": "B", "carteira": "Diárias"},
+    ]
+    lote, = g.montar_lotes(linhas, g.BEEVALE)
+    assert sorted(i["carteira"] for i in lote["linhas"]) == ["Auxílio Alimentação", "Diárias"]
+    assert lote["total"] == D("150.00") and lote["pode_gerar"]

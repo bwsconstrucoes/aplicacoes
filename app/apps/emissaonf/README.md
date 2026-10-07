@@ -11,6 +11,12 @@ com o número do card e o token dentro dele.
 > guarda as decisões já tomadas, os incidentes que custaram caro e o que está
 > pendente. Aqui está **como a coisa é**; lá está **por que é assim**.
 
+> ⚠️ **O formato da nota mudou em 07/10/2026.** A prefeitura desativou o modelo
+> antigo (ABRASF) por causa da obrigatoriedade do IBS/CBS e passou a aceitar só
+> a **DPS**, do padrão nacional. A emissão foi migrada no mesmo dia. O que está
+> escrito aqui já é o modelo novo; onde o antigo ainda aparece, é porque as
+> notas emitidas até aquela data estão nele e continuam tendo de ser lidas.
+
 ---
 
 ## Os dois riscos que não existem nas outras áreas
@@ -49,8 +55,15 @@ worker.py             o pipeline: lê o card, calcula, monta e assina o XML
   montar_emissao.py   junta tudo no formato do XML
   validacao.py        o que BARRA a emissão (teto de valor, campos, período)
 
-el_nfse_abrasf.py     monta e assina o XML no padrão ABRASF 2.04
-el_nfse_envio.py      envia ao webservice da prefeitura (SOAP GerarNfse)
+montar_dps.py         traduz a nota calculada para o formato nacional (DPS)
+el_nfse_nacional.py   monta, assina e envia a declaração; consulta a nota
+emitir_dps.py         o envio: declara, espera a nota ficar pronta, lê o retorno
+xsd_nacional/         os schemas OFICIAIS, para conferir a nota antes de emitir
+nfse_exemplo.py       monta a resposta que a prefeitura daria (só para teste)
+
+do modelo ANTIGO, desativado pela prefeitura em 07/10/2026 — só leitura:
+  el_nfse_abrasf.py   monta e assina o XML no padrão ABRASF 2.04
+  el_nfse_envio.py    enviava ao webservice (hoje devolve sempre o erro E999)
 
 concluir.py           o pós-emissão imediato (os 10 passos, abaixo)
   notas_bws.py        a linha na planilha "Notas BWS" e na "Notas BWS Links"
@@ -87,9 +100,18 @@ Fica registrado para ninguém perder tempo procurando bug em coisa morta:
   destinatários do WhatsApp.
 - **`dropbox_client.py`** — o arquivo ia para o Dropbox antes de ir para o
   Drive. Nada no caminho ativo o chama.
-- **`el_nfse_nacional.py`** — **nada aqui dentro o importa.** Ele está vivo
-  porque o **ERP** o usa na emissão automática (`CONTEXTO.md` §9, 10/09/2026).
-  Mexer nele é mexer no ERP.
+- **`el_nfse_abrasf.py` e `el_nfse_envio.py`** — o modelo antigo. **Não emitem
+  mais nada**: desde 07/10/2026 a prefeitura responde a qualquer envio deles com
+  *"o modelo Abrasf foi desativado"*. Continuam aqui porque o
+  `el_nfse_abrasf.DadosRps` é a estrutura onde o resto do sistema guarda os
+  dados da nota já resolvidos (tomador, discriminação, códigos de serviço) — o
+  `montar_dps.py` lê dela. Ou seja: o formato morreu, a estrutura de dados não.
+
+⚠️ **`el_nfse_nacional.py` é compartilhado com o ERP.** Ele agora é o coração da
+emissão daqui, e ao mesmo tempo o ERP o importa na emissão automática
+(`CONTEXTO.md` §9). Mexer nele atinge as duas áreas — e há uma divergência
+entre elas registrada no `HISTORICO.md` (07/10/2026) que o ERP precisa
+resolver do lado dele.
 
 ---
 
@@ -103,10 +125,71 @@ que é editável — o que estiver ali é o corpo que vai ser emitido.
 
 Nada foi enviado ainda. Sair da página não deixa rastro.
 
+> ⚠️ **O ensaio depende da prefeitura ter habilitado o ambiente de teste.** Se
+> ele recusar com o erro **E0037**, a tela explica: apesar do texto oficial falar
+> de "município inexistente", o manual diz que na prática significa que o
+> município **não configurou a Produção Restrita** na Plataforma Nacional. Não há
+> o que corrigir aqui — é um pedido à prefeitura. Enquanto isso, a conferência de
+> uma emissão real é a tela "Conferir declaração".
+
+**Antes de emitir de verdade, dá para ensaiar.** A caixa "Ensaiar primeiro"
+manda a **mesma** nota para o ambiente de homologação da prefeitura: ela volta
+inteira, com número e chave, para ser conferida — e **não vale como documento
+fiscal**, nem grava nada na planilha, no Omie, no card ou no Drive. É o único
+jeito de ver o resultado antes, porque não existe "quase emitir" em produção.
+
 **O botão "Confirmar e Emitir"** (`POST /emissao/emitir`) revalida tudo no
-servidor — não confia no que veio do navegador —, assina de novo com a
-discriminação final e envia o `GerarNfse` à prefeitura. Da resposta saem o
-**número**, o **código de verificação** e a **data**.
+servidor — não confia no que veio do navegador —, monta a **declaração (DPS)**,
+assina com o certificado e manda à prefeitura.
+
+Aqui há uma diferença importante em relação ao modelo antigo: **a nota não volta
+na mesma resposta.** A prefeitura confirma que recebeu a declaração e devolve um
+protocolo; a nota fica pronta segundos depois, e o sistema fica perguntando por
+ela até aparecer. Da nota pronta saem o **número**, a **chave de acesso** e a
+**data**.
+
+O código de verificação **não existe mais**: no modelo nacional quem identifica
+a nota é a chave de acesso de 50 dígitos, que vai no PDF com o QR ao lado.
+
+**Se a espera estourar, o sistema NÃO oferece "tentar de novo".** É de propósito:
+a declaração já está com a prefeitura, e a nota pode ter saído. A tela mostra a
+identificação da declaração e manda para a tela **"Conferir declaração"**, que
+pergunta à prefeitura se a nota saiu e, se saiu, **termina o serviço** (planilha,
+Omie, card, Drive, avisos) sem emitir nada.
+
+Isso já aconteceu de verdade, na primeira emissão real (nota 3281, 07/10/2026): o
+processamento da declaração é uma **fila do lado da prefeitura**, e o manual diz
+que o aceite dela significa "recebi", não "autorizei". Demorar mais que a nossa
+espera é normal, não é defeito.
+
+### Os TRÊS desfechos de uma declaração enviada
+
+Confundir dois deles custou uma ida e volta inteira. São três, e cada um tem uma
+ação diferente:
+
+| Desfecho | Existe nota? | O que fazer |
+|---|---|---|
+| **virou nota** | sim | terminar o serviço (a tela "Conferir declaração" faz) |
+| **ainda processando** | ainda não | esperar e consultar de novo |
+| **recusada** pela plataforma | **não** | corrigir e **reenviar com o MESMO número** |
+
+O terceiro é o mais fácil, e o que mais assusta quando mal explicado: quando a
+plataforma devolve a lista de erros, **nada foi criado**. O manual diz que a mesma
+declaração pode ser reenviada com a correção, **mantendo a mesma identificação** —
+então reemitir com o mesmo número não é risco de nota duplicada: é o caminho
+previsto.
+
+**O número que vai na declaração é o NOSSO pedido**, tirado da planilha. O número
+de verdade da nota só existe quando a prefeitura autoriza. Por isso "não existe a
+nota N" e "a declaração da nota N foi enviada" podem ser as duas verdadeiras ao
+mesmo tempo.
+
+**Há exatamente uma situação em que o envio é repetido:** quando a prefeitura
+responde que o **endereço não existe** (404 ou 405). Aí ela não recebeu
+declaração nenhuma, nada foi criado, e o sistema tenta o outro jeito de escrever
+o mesmo endereço — porque o manual e o portal da prefeitura discordam sobre ele.
+Qualquer outra resposta, inclusive erro de rede, **não** é repetida: pode ter
+chegado.
 
 **A partir daqui a nota existe e não se desfaz.** Por isso o pós-emissão
 (`concluir.py`) é todo em blocos separados, cada um com seu `try`: se o Drive
@@ -125,10 +208,17 @@ resultado. São dez:
 | 7 | Notas BWS Links | grava a linha com os links |
 | 8 | Pipefy | escreve os links no topo da Descrição do card |
 | 9 | WhatsApp | avisa quem está na lista de destinatários |
-| 10 | Controle Nacional | registra a nota como **aguardando nacional** |
+| 6b | DANFSe nacional | gera o documento do padrão federal e sobe |
+| 10 | Controle Nacional | registra a nota como **concluída**, com a chave |
 
 **A trava contra emissão dupla** é o passo 1: se o número já está na coluna F da
 "Notas BWS", o `concluir` para e avisa. Só repete com `FORCAR` explícito.
+
+**A nota nacional não é mais um segundo ato.** No modelo antigo ela saía minutos
+depois, por um job que ficava perguntando à SEFIN se a nota havia subido. Agora a
+emissão JÁ acontece pelo nacional: a chave e o XML vêm na própria resposta, e a
+nota nasce completa. O job e as telas de busca nacional continuam de pé **só para
+as notas antigas**.
 
 ---
 
@@ -169,12 +259,30 @@ O card pode **sobrepor** o padrão da obra, campo a campo, na fase Medições:
 na mão. Sem esses campos preenchidos, vale a C. Diários.
 
 Duas coisas são **fixas no código** e hoje não dá para variar pela tela: o ISS
-sai sempre como **Retido na Fonte**, e a **Exigibilidade do ISS** é sempre
-"Exigível". Se precisar de "Não incidência" ou outra, é mudança de código — está
-anotado como pendência.
+sai sempre como **Retido na Fonte**, e a tributação do ISS vai sempre como
+"Operação tributável". Se precisar de imunidade, exportação ou não incidência, é
+mudança de código — está anotado como pendência.
+
+**No formato nacional, "retido" é o número 2, e "não retido" é o 1.** É
+contraintuitivo, e já esteve invertido no código (ver `HISTORICO.md`,
+07/10/2026). Existem constantes com nome para isso — `RET_ISS_TOMADOR` e
+`RET_ISS_NAO_RETIDO` — justamente para ninguém mais precisar lembrar qual número
+é qual.
+
+**O teto da alíquota de ISS é 9,99%.** Não é escolha nossa: o formato nacional
+reserva um dígito só para a parte inteira. Obra com alíquota de 10% ou mais tem a
+emissão barrada, com o motivo escrito na tela, em vez de levar erro da
+prefeitura.
 
 **Imposto sem retenção não aparece** na discriminação nem na tabela de apuração.
 Nota com valor zero ao lado do nome do imposto confunde quem lê.
+
+**PIS, COFINS e CSLL são declarados juntos, por um código só.** O formato
+nacional não tem um campo por imposto: tem um código que diz, de uma vez, quais
+dos três foram retidos. Por isso o grupo deles vai na declaração sempre que
+**algum** dos três for retido — inclusive quando só a CSLL for. Alíquota e valor
+só entram para o que foi de fato retido: mandar "0,00" num imposto não retido
+declara uma retenção de valor zero, o que é diferente de não declarar nada.
 
 ---
 
@@ -187,23 +295,28 @@ planilha estar íntegra.
 
 ---
 
-## A parte nacional (o padrão federal)
+## A parte nacional, e o que sobrou do jeito antigo
 
-A NFS-e municipal sai na hora. A **nota nacional** demora alguns minutos e é
-fechada depois, sozinha:
+**Para nota emitida de 07/10/2026 em diante não há "parte nacional" separada.**
+A emissão acontece pelo nacional: a chave e o XML vêm na resposta, e a DANFSe sai
+junto dos outros documentos. Nada fica pendente.
 
-1. logo após emitir, uma thread tenta em **60s, 180s e 300s** buscar a nota na
-   **SEFIN** pelo ID da DPS (que é derivado do número da nota). Isso usa só o
-   certificado — não depende do portal da prefeitura, cujo login expira em
-   cerca de uma hora;
-2. quando acha, gera a **DANFSe nacional**, regera a municipal **já com a
-   chave**, sobe as duas com o mesmo nome (mesmo link, sem duplicar) e completa
-   os links na planilha e na Descrição do card;
-3. o **ADN por NSU** ficou como rede de segurança, para o caso de a SEFIN não
-   responder.
+**Para as notas anteriores**, a maquinaria antiga continua inteira, porque ainda
+há notas a reencontrar e PDFs a regerar. Ela funcionava assim: logo após emitir,
+o sistema tentava em 60s, 180s e 300s achar a nota na **SEFIN** pela
+identificação da declaração (derivada do número da nota) — usando só o
+certificado, sem depender do portal da prefeitura, cujo login expira em cerca de
+uma hora. Quando achava, gerava a DANFSe, regerava a municipal já com a chave e
+completava os links. O **ADN por NSU** era a rede de segurança.
 
-Uma nota só sai da fila quando o XML nacional **casa** com ela em CNPJ do
-tomador, competência e valor. Sem isso, continua pendente — e é melhor assim.
+A disparada automática dessa busca depois de emitir **foi desligada** (não há
+mais o que buscar). As telas `/emissao/nacional`, `/emissao/nacional_chave` e
+`/emissao/nacional_xml` continuam de pé, para as notas antigas.
+
+**A identificação da declaração foi mantida igual de propósito:** ano em dois
+dígitos + número da nota em treze, série 1. É por ela que a SEFIN reencontra uma
+nota. Mudar o formato faria o sistema perder de vista todas as notas antigas — há
+teste provando que a emissão e o job antigo montam a mesma identificação.
 
 ---
 
@@ -219,24 +332,30 @@ Todas pedem o mesmo `token` na URL. Não há login: quem tem o link, entra.
 | `/emissao/nacional` | roda o fechamento nacional na mão |
 | `/emissao/nacional_chave` | fecha uma nota colando a **chave** de 50 dígitos |
 | `/emissao/nacional_xml` | fecha uma nota colando o **XML nacional** baixado do portal |
-| `/emissao/diag` | diz **por que** o certificado não carregou, e qual conta do Google está sendo usada — sem mostrar segredo |
+| `/emissao/declaracao` | **"Conferir declaração".** A saída do único aperto desta área: a prefeitura aceitou a declaração e a nota não ficou pronta na hora. Pergunta a ela se a nota saiu e, se saiu, **termina o serviço** — sem emitir nada. Consultar não cria nada, então pode repetir |
+| `/emissao/diag` | diz **por que** o certificado não carregou, qual token chegou e de onde, e qual conta do Google está sendo usada — sem mostrar segredo |
 | `/emissao/diag_nacional_chave` | só leitura: testa quais endpoints federais respondem por chave |
 
 ---
 
 ## A substituição de uma nota
 
-**Só funciona pela tela para nota emitida por este sistema.** O XML carrega um
-bloco que aponta o RPS da nota antiga, e as notas do sistema têm RPS "de
-verdade" (série 1, tipo 1). Nota emitida **manualmente no portal** tem RPS com
-série vazia e tipo 0, que a própria prefeitura guarda mas o XSD de envio recusa
-— então não há como substituí-la por aqui. O caminho dela é o botão
-**"Substituir" do portal** e, depois, o `/emissao/recuperar` para fazer só os
-efeitos internos.
+**Não passa mais pela tela — nenhuma, desde 07/10/2026.**
 
-A tela barra antes de tentar quando o valor novo é **menor** que o da nota
-antiga (o município não aceita), e a própria página explica os dois erros que
-denunciam a nota manual (`E76` e erro de schema).
+No modelo antigo a nota nova carregava, dentro dela, a identificação da nota que
+substituía. O modelo nacional não tem esse campo: lá a substituição é um
+**evento** registrado sobre a nota já emitida, por outra operação da API.
+
+Esse caminho ainda não está pronto aqui, e a razão de não ter sido feito às
+pressas está no `HISTORICO.md`: um evento de substituição não dá para ser
+ensaiado sem antes emitir uma nota de verdade para substituir. Fazer isso no
+escuro, num documento que não se apaga, é pior do que não fazer.
+
+**Então hoje substituir é:** o botão **"Substituir" do portal** da prefeitura e,
+depois, o `/emissao/recuperar` com o número da nota antiga no campo "nota
+substituída" — ele refaz os efeitos internos (Pipefy, Omie, Drive, planilha,
+WhatsApp). É o mesmo caminho que já se usava para nota emitida manualmente, e a
+tela de emissão explica isso em vez de deixar tentar e falhar.
 
 Quando a substituição dá certo, a nota antiga é marcada **Cancelada** no slot do
 card, ganha a observação na "Notas BWS" e, no Omie, o número antigo sai e o novo
@@ -269,17 +388,42 @@ o que vale é o Render.
 
 | Variável | Para quê |
 |---|---|
+| `EL_NFSE_TOKEN` | **o token de integração da prefeitura.** É ele que autentica o canal da emissão. Sem ele **nenhuma nota sai** — nem em ensaio. Gerado no portal do município, em Configurações › APIs de Integração. **Não é o `EMISSAO_NF_TOKEN`** — ver o aviso abaixo da tabela |
+| `EMISSAO_NF_ESPERA_S` | quantos segundos esperar a prefeitura virar a declaração em nota, numa emissão de verdade (padrão 150). Passado isso, a tela manda conferir — nunca reenviar |
+| `EMISSAO_NF_ESPERA_ENSAIO_S` | o mesmo, para o ensaio (padrão 30). É curto de propósito: ensaio não tem serviço a terminar, então prender a tela não compra nada |
+| `EMISSAO_NF_AMBIENTE` | `HOMOLOGACAO` trava o serviço inteiro em teste: nenhuma nota tem validade fiscal, mesmo sem marcar o ensaio, e a tela avisa em letras grandes. Qualquer outro valor (ou vazio) = produção |
 | `EMISSAO_NF_TOKEN` | o token do link. **Sem ela configurada, a tela fica aberta a qualquer um** — falha ABERTO, ao contrário do resto do repositório |
 | `EMISSAO_NF_CERTIFICADO_P12_BASE64` | o certificado A1 da empresa, em base64 |
 | `EMISSAO_NF_CERTIFICADO_SENHA` | a senha do certificado |
 | `EMISSAO_NF_BASE_URL` | o endereço do serviço, usado para montar o link da busca nacional que vai na planilha |
 | `EMISSAO_NF_DRIVE_IMPERSONAR` | de quem os arquivos ficam no Drive (padrão `contato@bwsconstrucoes.com.br`); vazio desliga |
 | `GOOGLE_CREDENTIALS_BASE64` | a conta de serviço do Google — já existe, é a mesma do resto |
-| `EL_NFSE_TOKEN` | token da prefeitura, usado só pelo script de consulta crua |
 | `TELEGRAM_SECRET_TOKEN` | espelha o aviso do WhatsApp no Telegram |
 
 Da aba `Credenciais` vêm ainda `PIPEFY_TOKEN`, `OMIE_KEY`/`OMIE_SECRET` e os três
 tokens da Z-API.
+
+### ⚠️ São DOIS tokens, e eles não se substituem
+
+Isto custou tempo em 07/10/2026, então fica em destaque:
+
+| | `EMISSAO_NF_TOKEN` | `EL_NFSE_TOKEN` |
+|---|---|---|
+| de quem é | **nosso** | **da prefeitura** |
+| para que serve | proteger o endereço da tela | autenticar o canal da emissão |
+| onde se consegue | foi escolhido por nós | portal do município › Configurações › APIs de Integração |
+| sem ele | a tela fica aberta a quem tiver o link | **nenhuma nota sai** |
+
+**Por que o token da prefeitura nunca foi necessário antes:** o modelo antigo
+(ABRASF) autenticava pelo **certificado digital**, no próprio aperto de mão da
+conexão — não havia token nenhum no caminho. O modelo nacional exige
+**certificado E token**. Então um serviço que emitiu notas por meses sem esse
+token não está mal configurado: ele é exigência nova.
+
+A tela de **Diagnóstico** mostra os dois lado a lado, diz se cada um chegou e de
+onde veio, e lista os **nomes** das credenciais da planilha (nunca os valores) —
+para achar o token quando ele está lá com outro rótulo. Chega-se a ela pelo link
+no pé da tela de emissão, que já leva o token dentro.
 
 ---
 
@@ -287,16 +431,28 @@ tokens da Z-API.
 
 Dito em voz alta porque muda o jeito de trabalhar aqui:
 
-- **Quase nenhum teste automatizado.** A suíte da raiz praticamente não encosta
-  nesta pasta: o único teste dela é o `tests/test_emissaonf_codigo_obra.py`
-  (os dois códigos da obra), criado em 21/09/2026. O
-  `test_emissao_automatica_banco.py` é do **ERP**, e só dubla o cliente nacional
-  daqui. Conferência, aqui, continua sendo olhar a tela e o espelho antes de
-  clicar — o motor fiscal, a montagem do XML e o pós-emissão não têm rede.
+- **Teste, agora existe — e é o que substitui "emitir para ver".** São três
+  arquivos, 46 casos:
+  - `tests/test_emissaonf_dps.py` — a declaração que vai para a prefeitura,
+    conferida contra o **schema oficial** (`xsd_nacional/`), nas quatro formas de
+    tributação que a BWS usa. Vigia os três campos que, errados, fazem a nota
+    sair errada sem ninguém notar: o tipo de retenção do ISS, a dedução de
+    material e o código que diz quais federais foram retidos.
+  - `tests/test_emissaonf_resposta_nacional.py` — o que acontece DEPOIS de
+    emitir: o PDF da nota, a DANFSe, o valor do recibo, a tela de recuperação.
+    Tudo a partir de uma resposta de prefeitura montada aqui e validada contra o
+    schema oficial da NFS-e.
+  - `tests/test_emissaonf_codigo_obra.py` — os dois códigos da obra.
+
+  O que eles **não** cobrem: a conversa com a prefeitura de verdade. Nenhum teste
+  faz rede. Conferência final continua sendo o **ensaio em homologação** e o olho
+  na tela antes de clicar.
 - **Nenhum login.** A porta é o token na URL. E, se o token não estiver
   configurado, não há porta nenhuma.
 - **Nenhum banco e nenhuma migração.** Nada a apertar ao publicar.
-- **Nenhuma dependência nova em relação ao resto do serviço** — `gspread`,
+- **Nenhuma dependência nova** nem na migração para o modelo nacional: `lxml`,
+  `signxml` e `cryptography` já estavam no serviço, e o cliente da API nacional
+  já existia nesta pasta desde setembro. `gspread`,
   `requests`, `lxml`, `signxml`, `cryptography`, `fpdf2`, `num2words` e o
   cliente do Google já estão no `requirements.txt` da raiz. O
   `requirements.txt` desta pasta é herança de quando ela rodava sozinha.

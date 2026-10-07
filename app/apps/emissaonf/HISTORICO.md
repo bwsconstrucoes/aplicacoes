@@ -32,6 +32,34 @@ Onde os dois se contradisseram, está escrito qual venceu e por quê.
 
 ## Onde o trabalho está
 
+### ⚠️ Estado em 07/10/2026 — leia isto primeiro
+
+A prefeitura **desligou o formato de nota** que o sistema usava, e a emissão
+ficou parada. A migração para o formato novo (DPS, padrão nacional) foi feita no
+mesmo dia e está na seção própria mais abaixo.
+
+A migração **foi publicada em 07/10/2026**, com o "pode" do dono no mesmo dia.
+
+**O que falta é a primeira emissão de verdade.** Nenhum teste aqui conversa com
+a prefeitura: tudo o que dava para conferir sem emitir foi conferido (a
+declaração passa no schema oficial, os documentos saem certos da resposta nova),
+mas a primeira nota real é a primeira prova.
+
+**A sequência combinada com ele, nesta ordem:**
+
+1. abrir **`/emissao/diag`** e ver se o token da prefeitura está no serviço — a
+   primeira linha responde isso. Sem ele nenhuma nota sai, nem em ensaio;
+2. **ensaiar uma nota em homologação** (caixa "Ensaiar primeiro" na tela de
+   emissão) e conferir o resultado;
+3. só então **emitir de verdade** e conferir o número, os PDFs, a planilha, o
+   Omie e o card.
+
+**O que acontece se algum desses passos falhar está escrito abaixo, na seção da
+migração.** O que NÃO se sabe, e só a primeira emissão responde: se a prefeitura
+aceita a declaração exatamente como ela está, e qual número ela devolve.
+
+### O histórico até aqui
+
 O sistema **emite em produção há meses** e faz o ciclo inteiro sozinho: lê a
 medição no Pipefy, calcula as retenções pela tributação da obra, assina com o
 certificado A1, envia à prefeitura de Eusébio, e depois grava a planilha, ajusta
@@ -43,10 +71,26 @@ trabalho pendente é **conserto e faxina**, não funcionalidade nova.
 
 ### O que está pendente AGORA
 
-**O único item confirmado nesta sessão:** conferir na tela que o card
-1447316614 (obra AREFORTAL09) carrega, agora que a busca olha os dois códigos
-da obra. É o defeito que o dono trouxe, e o conserto está feito e testado —
-falta o olho dele na tela, com o card de verdade.
+**O que está na frente de tudo (07/10/2026):**
+
+1. **Ensaiar uma nota em homologação** e conferir o resultado. É o primeiro
+   passo depois de publicar a migração — e o único jeito de ver a nota antes de
+   emitir de verdade.
+2. **Emitir a primeira nota de verdade** no formato novo, e conferir: o número
+   que a prefeitura devolve, o PDF municipal, a DANFSe, a linha da planilha, o
+   título no Omie e o card.
+3. **Conferir se o token da prefeitura (`EL_NFSE_TOKEN`) está no serviço.**
+   Sem ele nenhuma nota sai. `/emissao/diag` responde isso.
+4. **Levar ao chat do ERP a inversão do ISS retido** (detalhe na seção de
+   07/10/2026). Lá a emissão automática manda o número errado, e não foi mexido
+   porque é outra área.
+5. **Implementar a substituição pelo evento nacional**, ou decidir que o caminho
+   pelo portal basta. Hoje substituir pela tela está bloqueado, com explicação.
+6. **Decidir se a tributação do ISS vira campo** (imunidade, exportação, não
+   incidência), hoje fixa em "operação tributável".
+
+**Também confirmado, de 21/09:** conferir na tela que o card 1447316614 (obra
+AREFORTAL09) carrega, agora que a busca olha os dois códigos da obra.
 
 **Todo o resto abaixo é pista, não tarefa.** Veio de um relato que o dono colou
 de um chat antigo, e **nada disso foi conferido contra o mundo real** — nenhuma
@@ -217,6 +261,595 @@ e ferramentas para refazer o que faltou.
 É o mesmo padrão do `analisesps` (que, aliás, copiou daqui). A aba `Credenciais`
 existe para os scripts de linha de comando rodarem fora do Render; em produção,
 o que vale é o que está no Render.
+
+---
+
+## A prefeitura desligou o modelo da nota — 07/10/2026
+
+### O que aconteceu
+
+O dono tentou emitir e a prefeitura respondeu:
+
+> *[E999] Com a Obrigatoriedade do IBS CBS o modelo Abrasf foi desativado e deve
+> ser migrado para o modelo de DPS.*
+
+Não foi erro de dado, de certificado ou de nota. O sistema falava com a
+prefeitura num formato — o **ABRASF** — e a prefeitura parou de aceitá-lo, por
+causa da obrigatoriedade do IBS e da CBS da reforma tributária. Passou a aceitar
+só a **DPS** (Declaração de Prestação de Serviço) do padrão nacional.
+
+**A emissão ficou parada.** Nenhuma nota saiu errada e nenhuma ficou pela
+metade: o envio era recusado na porta. Mas a empresa não conseguia faturar.
+
+O dono baixou no portal o pacote `Layout_EL_DPS_Nacional` (manual, schemas
+oficiais e exemplos) e passou aqui, com os dois endereços novos.
+
+### O que salvou tempo
+
+Metade do caminho já existia. O `el_nfse_nacional.py` — um cliente completo do
+formato nacional, com montagem, assinatura, compactação e consulta — estava
+nesta pasta **desde setembro**, escrito para a emissão automática do ERP e nunca
+ligado aqui. A primeira coisa feita foi gerar uma declaração com ele e conferir
+contra o schema oficial: **passou de primeira**, inclusive o grupo do IBS/CBS.
+
+Então a migração não foi reescrever o emissor. Foi: ligar o que existia, traduzir
+a nota calculada para o formato novo, e consertar o que a conferência contra o
+schema revelou de errado.
+
+### As duas armadilhas que a conferência revelou
+
+Estas são a razão de a migração não ter sido "trocar o endereço e pronto".
+
+**1. O tipo de retenção do ISS estava INVERTIDO no código.**
+
+O campo tem este domínio oficial, no schema:
+
+| valor | significado |
+|---|---|
+| 1 | **NÃO** retido |
+| 2 | retido pelo **tomador** |
+| 3 | retido pelo intermediário |
+
+E o código dizia, em comentário, exatamente o contrário — *"1 = retido na fonte,
+2 = não retido"* — com o default em 1.
+
+**O que isso faria:** as notas da BWS têm ISS retido na fonte. Mandando 1, cada
+nota declararia à prefeitura que **quem deve o ISS é a BWS**, e não o tomador que
+já descontou. Imposto declarado no lugar errado, numa nota que não se apaga, e
+sem nada na tela acusando — o PDF continuaria mostrando "Retido na Fonte",
+porque o PDF é desenhado a partir dos nossos dados.
+
+**Conserto:** o default passou a ser 2, e os números ganharam nome
+(`RET_ISS_TOMADOR`, `RET_ISS_NAO_RETIDO`) para ninguém mais precisar lembrar qual
+é qual. Há teste exigindo que nota retida saia como 2.
+
+⚠️ **O ERP tem a MESMA inversão, e não foi mexido.** Em
+`app/apps/erp/core/notas_emitidas/automatica.py` a emissão automática passa
+`1 se a obra tem ISS retido, senão 2` — ou seja, o contrário do certo. Não foi
+corrigido aqui porque é outra área, e a regra do `CLAUDE.md` é não mexer nas
+outras. **Precisa ser levado ao chat do ERP.** Atenuante: aquela emissão pode
+nunca ter sido usada em produção — vale conferir antes de assustar.
+
+**2. A dedução de material não tinha para onde ir.**
+
+Em setembro o repositório viveu o incidente mais caro desta área: o sistema não
+enviava a dedução de material, e a prefeitura calculava o ISS sobre o valor
+cheio. No formato nacional esse campo tem outro nome e outro lugar
+(`vDedRed/vDR`), e o cliente que existia **não o montava** — porque fora escrito
+para o ERP, que não usa dedução.
+
+Ou seja: migrar sem notar isso **recriaria o incidente de setembro**, inteiro.
+
+**Conserto:** a dedução entra na declaração, na posição que o schema exige, com o
+mesmo cálculo de antes (valor total menos a base do ISS). Há teste conferindo que
+o valor do serviço menos a dedução dá exatamente a base do ISS, e que em nota
+`100/0` o grupo não é enviado em vez de ir zerado.
+
+### A terceira divergência: o endereço de produção
+
+O manual em PDF diz que o ambiente é sempre um segmento do caminho
+(`/api/nacional/{ambiente}/nfse`). O portal da prefeitura, de onde o dono copiou,
+publica a produção **sem** esse segmento: `/api/nacional/nfse`.
+
+**Quem ganhou: o portal** — é o que está no ar hoje. O código monta o endereço
+sem o segmento em produção e com ele em homologação, e isso está num teste, para
+a decisão não se perder. Se um dia a produção aceitar os dois, nada precisa
+mudar. Errar aqui é inofensivo: dá erro de endereço, não nota errada.
+
+### O que mudou no comportamento, e o que NÃO mudou
+
+**Não mudou nada do que importa para quem usa:** a conta das retenções, o corpo
+da nota, o teto de valor, as críticas que barram a emissão, os documentos que o
+cliente recebe, a planilha, o Omie, o card, o WhatsApp.
+
+**Mudou o jeito de a nota voltar.** No modelo antigo o envio devolvia a nota na
+mesma resposta. Agora a prefeitura confirma que recebeu a declaração e devolve um
+protocolo; a nota fica pronta segundos depois e é preciso perguntar por ela.
+
+Isso cria uma situação nova que precisou de decisão própria, abaixo.
+
+**Mudou para melhor:** a nota nacional deixou de ser um segundo ato. Antes ela
+saía minutos depois, por um job que ficava perguntando à SEFIN se a nota havia
+subido. Agora a emissão JÁ é pelo nacional — a chave vem na resposta, a DANFSe
+sai junto dos outros documentos, e nada fica pendente. O job e as telas de busca
+nacional continuam de pé **só para as notas antigas**.
+
+**Deixou de existir o código de verificação.** Era do modelo antigo. Quem
+identifica a nota agora é a chave de acesso de 50 dígitos. No PDF municipal o
+campo do código vai **vazio, de propósito** — inventar um número ali seria pior
+do que deixá-lo em branco.
+
+---
+
+## Decisões tomadas na migração, e por quê
+
+### Entre o envio e a resposta, a nota pode existir — então não se reenvia
+
+É a decisão mais importante da migração, e é sobre o que fazer quando dá errado.
+
+Se a prefeitura **recusa a declaração**, não existe nota: é seguro corrigir e
+tentar de novo, e a tela diz isso.
+
+Mas se ela **aceita** e a nota não fica pronta no tempo esperado, a nota **pode
+ter saído**. Nesse caso a tela mostra a identificação da declaração e manda
+consultar — e **não oferece "tentar de novo"**. Oferecer o botão ali seria
+convidar a emitir a segunda nota do mesmo serviço, que é o pior desfecho possível
+nesta área: a primeira não se apaga.
+
+Os dois casos são tipos de erro diferentes no código justamente para que ninguém
+os trate igual por descuido.
+
+### Ensaio em homologação antes de emitir de verdade
+
+A prefeitura tem um ambiente de teste. A tela ganhou uma caixa **"Ensaiar
+primeiro"** que manda a mesma nota para lá: ela volta inteira, com número e
+chave, e **não vale como documento fiscal** nem grava nada na planilha, no Omie,
+no card ou no Drive.
+
+Por que isso virou parte da entrega e não um extra: **não existe "quase emitir"
+em produção.** Até aqui, a única forma de conferir uma mudança no caminho de
+emissão era emitir uma nota de verdade. Com o ensaio, dá para ver o resultado
+antes — e numa área onde o erro não se desfaz, isso vale mais que qualquer teste
+automatizado.
+
+Existe também a variável `EMISSAO_NF_AMBIENTE=HOMOLOGACAO`, que trava o serviço
+inteiro em teste. A tela avisa em letras grandes quando está travada, porque uma
+nota de teste que alguém pense ser real é ruim de outro jeito: cobra-se o cliente
+por um documento que não existe.
+
+### Os schemas oficiais entraram no repositório
+
+Os arquivos `.xsd` do pacote da prefeitura estão versionados em
+`app/apps/emissaonf/xsd_nacional/`. Não é documentação: é **a regra conferida
+pelo teste**. Com eles dentro, um campo fora de ordem, um valor fora do domínio
+ou uma casa decimal sobrando é pego aqui — não na prefeitura, não numa nota.
+
+Foi assim que as duas armadilhas acima apareceram antes de qualquer envio.
+
+### Uma resposta de prefeitura de mentira, para testar o que vem depois
+
+Metade do risco desta migração não estava em emitir: estava em emitir e os
+**documentos** saírem errados, com a nota já criada. O PDF da nota, a DANFSe e o
+valor do recibo são todos desenhados a partir do XML que a prefeitura devolve — e
+esse XML mudou.
+
+Então o `nfse_exemplo.py` monta a resposta que a prefeitura daria, a partir de uma
+declaração nossa. Ela é conferida contra o schema oficial da NFS-e (senão os
+testes estariam provando que o sistema lida bem com algo que nunca chegaria) e
+depois passa por todos os geradores.
+
+Isso não é produção e não emite nada. Vive no módulo, e não dentro de `tests/`,
+porque os módulos daqui se importam de forma plana e porque às vezes é preciso
+gerar uma amostra à mão para conferir um layout de PDF.
+
+### O PDF municipal continua existindo, traduzido
+
+Dava para argumentar que no modelo nacional o documento oficial é a DANFSe e que
+o PDF no layout da prefeitura podia ser aposentado. **Não foi essa a escolha:**
+é o documento que o cliente da BWS está acostumado a receber, e trocá-lo sem
+ninguém pedir seria mudar o que a empresa entrega por conveniência de quem
+programa.
+
+Em vez de refazer o desenho, foi escrita uma tradução: o mesmo PDF agora é
+desenhado a partir do XML nacional. Ganhou de brinde uma coisa que antes só vinha
+depois — a nota municipal já sai **com a chave de acesso e o QR**, porque a chave
+existe desde a emissão.
+
+### Substituição ficou de fora, e isso é escolha
+
+No modelo antigo a nota nova carregava, dentro dela, a identificação da nota que
+substituía. No nacional a substituição é um **evento** registrado sobre a nota já
+emitida, por outra operação da API.
+
+**Não foi implementado**, e a tela agora explica isso em vez de deixar tentar e
+falhar. O motivo: um evento de substituição não dá para ser ensaiado sem antes
+emitir uma nota de verdade para substituir — então a primeira prova de que o
+código funciona seria em cima de uma nota real, com uma segunda nota real atrás.
+Numa área onde nada se apaga, isso é caro demais para ser feito no mesmo dia de
+uma emergência.
+
+**O caminho de hoje:** botão "Substituir" do portal + `/emissao/recuperar`. É o
+mesmo que já se usava para nota emitida manualmente, e funcionou nas
+substituições de setembro. Implementar o evento é pendência registrada.
+
+### Dois consertos feitos depois de publicar, no mesmo dia
+
+**1. A CSLL retida sozinha não era declarada como retenção.**
+
+No formato nacional existe **um código só** que diz quais dos três — PIS, COFINS
+e CSLL — foram retidos. O código estava mandando esse código apenas quando PIS ou
+COFINS entravam. Numa obra com categoria `IR,CSLL`, o valor da CSLL viajava
+sozinho, sem nada na declaração dizendo que houve retenção.
+
+Agora o grupo vai sempre que **algum dos três** foi retido, com o código certo
+(há teste para as oito combinações). Duas sutilezas que ficaram escritas no
+código, porque não são óbvias:
+
+- **alíquota e valor só do que foi de fato retido.** Mandar "0,00" num imposto
+  não retido não é o mesmo que não mandar: o primeiro declara uma retenção de
+  valor zero;
+- **quando nenhum dos três é retido, o grupo não vai** — mesmo comportamento do
+  modelo antigo, que só mandava imposto retido.
+
+**2. O endereço de produção passou a ter plano B.**
+
+A divergência entre o manual e o portal (acima) só se resolveria na primeira
+emissão de verdade, com um erro de endereço. Agora, se o endereço do portal
+responder que **não existe**, o sistema tenta o do manual.
+
+**Isto só é seguro por um motivo, e ele é o que importa:** as respostas 404 e 405
+provam que o endereço não existe — a prefeitura não recebeu declaração nenhuma e
+**nada foi criado**. Repetir aí não arrisca uma segunda nota.
+
+**Em qualquer outra resposta não se repete nada.** Um 400, um 500 ou um erro de
+rede podem ter chegado à prefeitura; repetir o envio nesses casos arriscaria a
+segunda nota do mesmo serviço, que é o pior desfecho possível nesta área. Há
+teste percorrendo os códigos de resposta justamente para que essa trava não seja
+afrouxada por descuido depois.
+
+Quando o plano B funciona, o log diz qual caminho era o certo — então a primeira
+emissão de verdade também responde a pergunta do manual contra o portal.
+
+### O PDF em branco que teria apagado o documento bom
+
+Terceiro conserto do dia, e é o que mais assusta de todos.
+
+Os arquivos sobem no Drive **com o mesmo nome**, de propósito: mesmo link, nada
+duplicado na planilha nem no card. O outro lado disso é que **um PDF ruim não
+fica ao lado do bom — ele toma o lugar dele.**
+
+E havia um caminho para gerar um PDF ruim. A tela `/emissao/regerar` (usada para
+regravar PDFs com o layout novo) lê o XML arquivado no Drive **sem saber de qual
+modelo ele é** — e, para nota emitida de 07/10/2026 em diante, o que está
+arquivado é o nacional. O leitor do modelo antigo, recebendo um XML nacional,
+**não dá erro**: ele não acha nenhum campo e devolve tudo vazio. O resultado
+seria um PDF em branco subindo com o nome do documento que o cliente recebeu.
+
+Ninguém teria visto acontecer: a tela diria "regravada".
+
+**Dois consertos, e os dois na raiz, para valer em todo caminho:**
+
+1. **a decisão de qual leitor usar passou a ser pelo CONTEÚDO do XML**, dentro do
+   gerador do PDF — não por quem chama. Assim qualquer caminho que leia XML do
+   Drive acerta, inclusive os que ninguém pensou ainda;
+2. **nota sem número não gera PDF nenhum.** É o sinal de que a leitura não
+   entendeu o XML; melhor falhar alto, com o motivo escrito, do que entregar um
+   arquivo vazio. A mensagem diz exatamente isso: *"gerar aqui sobrescreveria,
+   no Drive, o documento bom por um em branco"*.
+
+**A lição, que vale além desta área:** "mesmo nome = mesmo link" é uma boa
+decisão de arquivo e uma armadilha de segurança. Onde um arquivo substitui outro,
+o código tem de se recusar a escrever lixo — não basta ele não dar erro.
+
+### A varredura pelo resto da mesma armadilha
+
+Os três consertos acima eram do MESMO tipo: código que recebe o formato novo e
+**não reclama** — devolve vazio e segue. Em nota fiscal isso é pior que erro,
+porque ninguém vê acontecer. Então valeu varrer o módulo procurando os outros.
+
+Achou mais um: **o valor bruto que vai para o recibo.** Ele era lido por busca de
+texto no campo do modelo antigo; recebendo o XML nacional, devolvia nada, e o
+recibo sairia sem valor. Passou a decidir pelo conteúdo, como o gerador do PDF.
+
+E ficou marcado, em letras grandes no topo dos arquivos, que **`emitir_real.py` e
+`app_emissao.py` falam o modelo desativado** — qualquer envio por eles volta com
+o E999. Não é defeito deles; é o canal que não existe mais. São scripts de linha
+de comando, fora do caminho da tela, e ficam como registro.
+
+**A regra que saiu disso, e vale para a próxima vez que um formato mudar:** não
+basta trocar quem escreve. Tem de varrer quem LÊ — e, em cada leitor, perguntar
+*"o que este código faz se receber o formato errado?"*. Se a resposta for "devolve
+vazio e segue", ele é um defeito esperando a hora.
+
+### Os dois tokens, e a tela que "não funcionou" — 07/10/2026
+
+Primeira tentativa de ensaio depois de publicar, e ela parou em duas coisas.
+
+**O que o dono viu:** o `/emissao/diag` "não funcionou", e o ensaio respondeu
+*"Token de integração da prefeitura ausente"*. A dúvida dele foi exata: *"eu já
+emiti várias notas e sempre funcionou, e no Render tem a chave
+EMISSAO_NF_TOKEN — essa EL_NFSE_TOKEN é outra?"*
+
+**São outras, sim, e a pergunta estava mais certa do que o código.** São dois
+tokens que não se substituem:
+
+- **`EMISSAO_NF_TOKEN`** é **nosso**: protege o endereço da tela de emissão, para
+  que o link do card não abra para qualquer um;
+- **`EL_NFSE_TOKEN`** é **da prefeitura**: autentica o canal da emissão, e é
+  gerado no portal do município, em Configurações › APIs de Integração.
+
+**Por que ele nunca foi necessário antes — e isto é o ponto:** o modelo antigo
+autenticava pelo **certificado digital**, no aperto de mão da conexão. Não havia
+token nenhum no caminho da emissão. O modelo nacional exige **certificado E
+token**. Ou seja: um serviço que emitiu notas por meses sem esse token não estava
+mal configurado; a exigência é nova. A pergunta dele ("sempre funcionou") não era
+confusão — era a observação correta de alguém que conhece o sistema.
+
+**E o diagnóstico não estava quebrado.** Ele responde 200. O que aconteceu: a
+tela exige o token do link no endereço, e **não havia link nenhum para ela na
+tela de emissão** — a única forma de chegar lá era digitar o endereço e saber o
+token de cor. Sem o token, a resposta é "acesso não autorizado", que **parece
+defeito e não é**.
+
+**O que mudou por causa disso:**
+
+1. **a tela de emissão ganhou um rodapé com links** para Diagnóstico, Recuperar
+   entrega e Regravar PDFs, cada um já com o token dentro. Ferramenta que só se
+   alcança decorando endereço não existe na prática;
+2. **o diagnóstico passou a explicar os dois tokens lado a lado** — de quem é
+   cada um, para que serve, onde se consegue, e o que acontece sem ele. Mais a
+   informação que faltava: **de onde** o token veio (variável de ambiente ou
+   planilha), porque "está configurado" sem dizer onde não ajuda a consertar;
+3. **ele lista os NOMES das credenciais da planilha**, nunca os valores, para
+   achar o token quando está lá com outro rótulo. A busca também passou a aceitar
+   vários nomes (`EL_TOKEN`, `NFSE_TOKEN`, `TOKEN_PREFEITURA`…), porque o token é
+   anterior a este código;
+4. **a mensagem de erro da emissão passou a ensinar**: diz que são dois tokens
+   diferentes, por que o antigo não precisava, e onde conseguir o novo.
+
+**A lição, e ela não é sobre token:** *"não funcionou"* numa ferramenta de
+diagnóstico quase sempre é a ferramenta sendo inalcançável, não quebrada. E
+**nenhum teste tocava nas telas** — por isso um 403 numa página sem link para
+ela passou batido por toda a migração. Agora há `tests/test_emissaonf_telas.py`,
+que abre as telas de verdade e exige, entre outras coisas, que o diagnóstico
+nunca mostre valor de credencial.
+
+### O caminho inteiro da emissão passou a ser exercitado sem prefeitura
+
+Depois de perder uma ida e volta do dono com o diagnóstico inalcançável, ficou
+claro o que faltava: **nenhum teste clicava no botão.** Os testes provavam que a
+declaração estava certa e que os documentos saíam certos, mas a *ligação* entre
+as peças — nome de campo, ordem de argumento, ordem das conferências — só era
+exercitada quando ele emitia.
+
+Agora o `tests/test_emissaonf_emissao_ponta_a_ponta.py` roda o caminho de
+verdade: o motor fiscal calcula, a declaração é montada e **assinada de verdade**
+(com um certificado descartável criado no próprio teste), e uma prefeitura
+dublada recebe o envio — conferindo que ele chegou compactado como o manual
+manda — e devolve a nota. Só o pós-emissão é dublado, porque ele escreve em
+planilha, Omie, card e Drive.
+
+**Ele achou dois defeitos na primeira execução, e os dois eram reais:**
+
+1. **A explicação da substituição era inalcançável.** O aviso de que substituir
+   pela tela não funciona mais vinha DEPOIS de carregar o card e conferir os
+   slots. Quem tentasse substituir uma nota que não estivesse nos slots recebia
+   *"confira o número no parâmetro nota_substituida do link"* — uma mensagem
+   sobre um parâmetro, quando a resposta certa é "isto não funciona mais, use o
+   portal". A explicação subiu para antes de tudo, e a conferência de slots e a
+   regra de "valor igual ou maior" saíram: elas só existiam para decidir se a
+   substituição podia ser feita aqui, e aqui ela não é mais feita.
+
+2. **O texto do aviso apareceria com as marcações cruas.** A tela de erro escapa
+   o texto — e com razão, porque quase sempre ele vem de uma exceção ou de uma
+   resposta de fora. Mas aquele aviso é escrito por nós, com negrito e
+   parágrafos. Virou uma função separada (`_pagina_explicacao`), e a separação é
+   de propósito: a diferença entre as duas é escapar ou não, e isso não pode
+   depender de alguém lembrar de passar um parâmetro.
+
+**E um detalhe de estrutura que vale saber antes de escrever teste de tela:** o
+`web.py` é carregado **duas vezes**, com dois nomes — `web` (o import plano, como
+os módulos desta pasta se importam entre si) e `app.apps.emissaonf.web` (o
+pacote, de onde o Flask registra o blueprint). Quem atende a requisição é o
+segundo. Trocar uma função no primeiro não tem efeito nenhum sobre o que roda —
+foi o que fez o primeiro teste do token passar quando não devia.
+
+### A nota 3281: a prefeitura aceitou e a nota não ficou pronta — 07/10/2026
+
+**O que aconteceu.** Primeira emissão real pelo modelo novo. A prefeitura
+aceitou a declaração `DPS...260000000003281` (nota **3281**) e ainda estava
+processando quando a espera de 150s acabou. A tela mostrou o aviso previsto:
+*"NÃO emita de novo: a nota pode ter saído."*
+
+**Isto não é defeito do nosso lado.** O processamento da declaração é uma fila da
+prefeitura, e o manual diz isso com todas as letras: o retorno HTTP 201 significa
+que ela RECEBEU, não que a nota já foi autorizada. Às vezes a fila demora mais
+que a nossa espera.
+
+**Mas a mensagem mandava para o lugar errado, e isso era defeito meu.** Ela dizia
+para usar a tela *"Fechar nacional pela chave"* — e essa tela só trabalha com
+notas que ficaram na fila do **Controle Nacional**. Uma nota nesta situação não
+está lá: o pós-emissão nunca rodou, porque a emissão não chegou até ele. A tela
+indicada não tinha o que fechar.
+
+Pior: a mensagem pedia para "consultar no portal", o que deixava o trabalho todo
+na mão do dono — e, se a nota tivesse saído, **nada** estaria feito: nem planilha,
+nem Omie, nem card, nem Drive, nem aviso.
+
+**O que foi feito: a tela "Conferir declaração".** Ela recebe a identificação da
+declaração, pergunta à prefeitura se aquilo já virou nota, e:
+
+- se **ainda não** virou, diz isso e manda esperar — deixando claro que isto
+  **não** autoriza emitir de novo;
+- se **virou** e o card foi informado, **termina o serviço**: planilha, Omie,
+  card, Drive e avisos, exatamente como a emissão teria feito. Sem emitir nada;
+- se virou e o card não foi informado, mostra o número e a chave, e avisa que
+  falta terminar.
+
+Três decisões dentro dela, cada uma por um motivo:
+
+1. **Consultar não cria nada, então pode repetir à vontade** — e o passo que
+   termina o serviço tem a trava anti-duplicação do `concluir`. Uma ferramenta de
+   emergência que a pessoa tem medo de usar duas vezes não serve.
+2. **O número da nota é extraído da identificação** e mostrado na tela. Ler 45
+   dígitos à mão para descobrir de que nota se trata é pedir erro.
+3. **A tela avisa, em vermelho, para não emitir enquanto não souber a resposta.**
+   É o único lugar do sistema onde a pressa cria uma segunda nota fiscal do mesmo
+   serviço.
+
+**E um defeito de código que isso revelou:** a espera (`ESPERA_TOTAL_S`) era valor
+padrão de argumento — congelado quando a função nasce. Mudar a constante não
+tinha efeito nenhum, e um teste que tentou encurtar a espera rodou os 150
+segundos inteiros. Agora o teto é lido dentro da função.
+
+**O que ficou em aberto, e precisa de dado real:** se a fila da prefeitura
+costuma passar de 150s, a espera deve subir. Não mexi no valor sem saber: subir
+cegamente pendura a tela por minutos e ocupa uma das quatro linhas de atendimento
+do serviço. A tela de conferir resolve o caso sem esse custo — e, com algumas
+emissões, dá para saber se vale subir.
+
+### O terceiro desfecho que faltava: a declaração RECUSADA — 07/10/2026
+
+Depois do aviso da nota 3281, o dono foi conferir e disse: **"não existe nota
+3281 emitida, você fala da próxima?"**
+
+Duas coisas saíram daí, e as duas eram defeito de comunicação do sistema.
+
+**1. O número da declaração é o NOSSO pedido, não o número da nota.**
+
+O número que vai dentro da declaração vem da nossa planilha (o maior da coluna F
+mais um). O número de verdade da nota só existe quando a prefeitura **autoriza**.
+Então "não existe nota 3281" é perfeitamente compatível com "a declaração da 3281
+foi enviada" — e a tela não deixava isso claro.
+
+**2. Havia um terceiro desfecho, e o sistema o tratava como falha nossa.**
+
+O manual é explícito: quando a resposta da plataforma traz a lista `erros`, a
+solicitação **não foi processada**, alguma correção é necessária, e **a mesma
+declaração pode ser reenviada com a correção, mantendo a mesma identificação**.
+
+Ou seja, são **três** desfechos, não dois:
+
+| | O que é | Existe nota? | O que fazer |
+|---|---|---|---|
+| **Pronta** | virou nota | sim | terminar o serviço |
+| **Ainda processando** | na fila da prefeitura | ainda não | esperar e consultar de novo |
+| **Recusada** | a plataforma rejeitou | **não** | corrigir e **reenviar, com o mesmo número** |
+
+O sistema conhecia os dois primeiros. O terceiro caía no `except Exception` e
+aparecia como *"não consegui consultar"* — transformando **"a prefeitura recusou,
+e aqui está o motivo"** em **"algo deu errado aqui"**. Pior: na emissão, a recusa
+era engolida e a espera de 150s rodava **inteira**, para no fim mostrar um aviso
+que não dizia o motivo.
+
+**O que mudou:**
+
+- a consulta passou a devolver a recusa como **resposta**, não como erro de
+  consulta. São coisas diferentes, e tratá-las igual foi o que mandou o dono
+  para a tela errada;
+- **a emissão para na hora** quando a declaração é recusada — poupa a espera
+  inteira e diz o motivo de verdade, com o código de erro da prefeitura;
+- as duas telas ganharam a mensagem certa: **"nenhuma nota foi criada, pode
+  corrigir e emitir de novo — inclusive com o mesmo número, que é o caminho
+  previsto pela prefeitura"**;
+- o aviso do estouro de espera deixou de insinuar que a nota existe. Ele agora
+  diz que **pode** existir ou **pode** ter sido recusada, e que só a consulta
+  diz qual é.
+
+**A lição, e ela vale para qualquer integração:** o desfecho que o código não
+conhece não desaparece — ele vira a mensagem genérica, e a mensagem genérica
+manda a pessoa para o lugar errado. Aqui custou uma espera de 150 segundos e uma
+ida e volta do dono para descobrir que **não havia problema nenhum**: só uma
+declaração recusada, que é o caso mais fácil dos três.
+
+### O ensaio que não terminava, e o erro cujo texto engana — 07/10/2026
+
+O dono tentou ensaiar e voltou: **"não consegui concluir o ensaio, tá demorando
+muito"**. Três coisas saíram daí.
+
+**1. Prender a tela no ensaio não compra nada.** A espera de 150s existia para
+que a emissão conseguisse terminar o serviço (planilha, Omie, card, Drive) na
+mesma visita. **No ensaio não há serviço para terminar** — então a tela girava
+dois minutos e meio em troca de nada, e ele desistiu antes do fim. A espera do
+ensaio caiu para 30s, e as duas ficaram ajustáveis por variável de ambiente
+(`EMISSAO_NF_ESPERA_S` e `EMISSAO_NF_ESPERA_ENSAIO_S`), porque ainda não se sabe
+como a fila da prefeitura se comporta no dia a dia e adivinhar um bom número
+agora seria chute.
+
+**2. A tela de "ainda processando" entrega um BOTÃO, não um código.** Antes ela
+mostrava a identificação de 45 caracteres para a pessoa copiar e colar na outra
+tela. Agora é um link que já leva a identificação, o card e o ambiente dentro.
+
+**3. O erro E0037 diz uma coisa e significa outra — e isso resolve o mistério do
+ensaio.** O manual da prefeitura tem uma seção própria para ele:
+
+> O texto do erro diz que o município não existe no cadastro nacional, mas na
+> prática ele ocorre quando **o município ainda não configurou a Produção
+> Restrita** junto à Plataforma Nacional. O município precisa habilitar o módulo
+> e concluir as configurações de convênio. *O contribuinte deverá entrar em
+> contato com a prefeitura e solicitar a habilitação.*
+
+**Ou seja: é bem possível que o ensaio nunca funcione em Eusébio**, porque o
+ambiente de teste pode não estar habilitado — e isso não é defeito nosso nem dos
+dados da nota. Não há o que corrigir aqui: é um pedido à prefeitura.
+
+Por isso o sistema passou a **traduzir** esse erro na tela, dizendo o que ele
+realmente significa e de quem é a ação. Texto cru de integração manda a pessoa
+procurar o problema no lugar errado — e, neste caso, procurar nos dados da nota,
+onde ele não está. A tradução só existe para erros documentados; erro
+desconhecido aparece cru, porque explicar errado é pior que não explicar.
+
+**Consequência prática, se o ensaio não for habilitado:** a conferência de uma
+emissão real passa a ser a tela "Conferir declaração". Não é o ideal — o ideal é
+ensaiar —, mas é seguro: ela pergunta à prefeitura e termina o serviço, sem nunca
+emitir nada.
+
+### ⚠️ Uma correção a um commit anterior: o conserto da espera não tinha subido
+
+Fica registrado porque é exatamente o tipo de coisa que corrói a confiança no
+histórico: o commit *"a saída do aperto"* afirmou que o defeito do valor padrão
+congelado (`espera_total_s`) estava corrigido. **Não estava.** O comando que
+aplicava a correção morreu antes de rodar, e eu não conferi o resultado antes de
+seguir.
+
+**Como isso passou por uma suíte verde:** o sintoma era a suíte ficando **três
+vezes mais lenta** (de 60s para 200s), porque um teste rodava os 150 segundos
+inteiros girando. Ninguém liga uma suíte devagar a um defeito de código — e
+nenhum teste falhava.
+
+Agora a correção está aplicada de verdade, e há um teste que olha a **assinatura
+da função** e acusa se o valor padrão voltar. Ele existe porque o sintoma natural
+deste defeito é lento e silencioso: sem um teste olhando direto para a causa,
+ele volta e ninguém vê.
+
+### A limpeza do que o modelo antigo deixou
+
+Saíram do `web.py` o preparo do certificado para o envelope SOAP, a busca
+nacional em segundo plano (60s/180s/300s depois de emitir) e os imports do
+emissor antigo. Nada disso tinha mais caminho até ele.
+
+Ficou de propósito: as telas de busca nacional **manual**, o job por NSU e o
+leitor do modelo ABRASF. Há notas emitidas antes de 07/10/2026 que ainda
+precisam ser reencontradas, ter PDF regerado e ser recuperadas.
+
+### O que foi conferido, e o que NÃO foi
+
+Dito sem rodeio, porque a decisão de emitir é do dono:
+
+**Conferido:** a declaração passa no schema oficial nas quatro formas de
+tributação que a BWS usa; a dedução de material fecha com a base do ISS; o ISS
+retido sai como retido; as oito combinações de retenção federal, inclusive a
+CSLL sozinha; que nenhuma resposta além de 404/405 faz o envio ser repetido; a identificação
+da declaração continua igual à que o job antigo monta (senão as notas antigas se
+perderiam); o PDF municipal, a DANFSe e o valor do recibo saem da resposta nova;
+a tela de recuperação reconhece os dois formatos. São 46 casos, e a suíte inteira
+do repositório (4.983) passa.
+
+**NÃO conferido:** a conversa com a prefeitura de verdade. **Nenhum teste faz
+rede.** Não se sabe se o token está configurado no serviço, se o endereço de
+produção é o que o portal diz, se a prefeitura aceita a declaração como ela está,
+nem qual número ela devolve. A primeira emissão de verdade é a primeira prova — e
+é por isso que o ensaio em homologação existe e deve ser o primeiro passo.
 
 ---
 
