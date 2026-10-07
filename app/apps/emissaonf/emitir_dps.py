@@ -76,6 +76,24 @@ class AindaProcessando(RuntimeError):
     """A prefeitura recebeu a declaração e ainda não terminou. Nota não existe ainda."""
 
 
+class DeclaracaoRecusada(RuntimeError):
+    """A plataforma nacional RECUSOU a declaração. Nenhuma nota foi criada.
+
+    É o terceiro desfecho, e o mais tranquilo dos três: o manual diz que quando a
+    resposta traz a lista de erros, a solicitação não foi processada e alguma
+    correção é necessária antes de nova tentativa — e que **a mesma declaração
+    pode ser reenviada com a correção, mantendo a mesma identificação**.
+
+    Ou seja: corrigir e emitir de novo, com o MESMO número, é o caminho previsto.
+    Não é risco de nota duplicada — é o que a prefeitura manda fazer.
+    """
+
+    def __init__(self, motivos, id_dps=""):
+        self.motivos = list(motivos or [])
+        self.id_dps = id_dps
+        super().__init__("; ".join(self.motivos) or "sem detalhes")
+
+
 def numero_da_declaracao(id_dps: str) -> tuple[str, str]:
     """Tira o número da nota e o ano de dentro da identificação da declaração.
 
@@ -110,7 +128,15 @@ def consultar(ctx: dict, id_dps: str, token: str, producao: bool) -> dict:
         token=token, chave_pem=chave_pem, cert_pem=cert_pem,
         ambiente="producao" if producao else "homologacao",
     )
-    proc = cliente.consultar_processamento_dps(id_dps)
+    proc = cliente.consultar_processamento_dps(id_dps, bruto=True)
+
+    # Recusada: não existe nota, e o caminho é corrigir e reenviar com o MESMO
+    # número. É o desfecho mais tranquilo dos três, e era o que vinha disfarçado
+    # de "não consegui consultar".
+    motivos = nac.ELNfseNacional.erros_da_resposta(proc)
+    if motivos:
+        raise DeclaracaoRecusada(motivos, id_dps=id_dps)
+
     xml_nac = nac.ELNfseNacional.descompactar(proc.get("nfseXmlGZipB64", "") or "")
     pronta = (proc.get("chaveAcesso") and xml_nac
               and "processamento" not in xml_nac.lower() and "<" in xml_nac)
@@ -183,11 +209,16 @@ def emitir(ctx: dict, dados_dps: nac.DadosDPS, token: str, producao: bool,
     ultimo = ""
     while True:
         try:
-            proc = cliente.consultar_processamento_dps(id_dps)
+            proc = cliente.consultar_processamento_dps(id_dps, bruto=True)
         except Exception as e:
             # A consulta falhou, não a emissão. Insistir é seguro.
             ultimo = f"consulta falhou: {type(e).__name__}: {e}"
             proc = {}
+        # Recusa é resposta definitiva: não há nota e não há o que esperar.
+        # Sair daqui na hora poupa a espera inteira e diz o motivo de verdade.
+        motivos = nac.ELNfseNacional.erros_da_resposta(proc)
+        if motivos:
+            raise DeclaracaoRecusada(motivos, id_dps=id_dps)
         xml_nac = nac.ELNfseNacional.descompactar(proc.get("nfseXmlGZipB64", "") or "")
         if proc.get("chaveAcesso") and xml_nac and "processamento" not in xml_nac.lower():
             return dados_da_nota(xml_nac)
@@ -204,8 +235,12 @@ def emitir(ctx: dict, dados_dps: nac.DadosDPS, token: str, producao: bool,
         f"Isto não é erro: o processamento dela é uma fila do lado da prefeitura, e "
         f"às vezes demora mais que a nossa espera.\n"
         f"{('O último retorno dela foi: ' + ultimo) if ultimo else 'Até o fim ela respondeu apenas que estava processando.'}\n\n"
-        f">>> NÃO EMITA DE NOVO. A nota {numero or ''} pode já existir, e emitir "
-        f"outra criaria a segunda nota do mesmo serviço — que é o que não se desfaz.\n\n"
+        f">>> NÃO EMITA DE NOVO ANTES DE CONFERIR. Pode ser que a nota "
+        f"{numero or ''} já exista — e aí emitir outra criaria a segunda nota do "
+        f"mesmo serviço, que é o que não se desfaz. Pode também ser que a "
+        f"plataforma tenha recusado a declaração, e nesse caso não existe nota "
+        f"nenhuma e é seguro corrigir e reenviar. São coisas diferentes, e só a "
+        f"consulta diz qual é.\n\n"
         f">>> O QUE FAZER: abra a tela \"Conferir declaração\" (link no pé da tela de "
         f"emissão), cole a identificação abaixo e clique em consultar. Ela pergunta à "
         f"prefeitura se a nota saiu e, se saiu, termina o serviço — planilha, Omie, "

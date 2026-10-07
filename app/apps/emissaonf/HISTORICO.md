@@ -708,6 +708,60 @@ cegamente pendura a tela por minutos e ocupa uma das quatro linhas de atendiment
 do serviço. A tela de conferir resolve o caso sem esse custo — e, com algumas
 emissões, dá para saber se vale subir.
 
+### O terceiro desfecho que faltava: a declaração RECUSADA — 07/10/2026
+
+Depois do aviso da nota 3281, o dono foi conferir e disse: **"não existe nota
+3281 emitida, você fala da próxima?"**
+
+Duas coisas saíram daí, e as duas eram defeito de comunicação do sistema.
+
+**1. O número da declaração é o NOSSO pedido, não o número da nota.**
+
+O número que vai dentro da declaração vem da nossa planilha (o maior da coluna F
+mais um). O número de verdade da nota só existe quando a prefeitura **autoriza**.
+Então "não existe nota 3281" é perfeitamente compatível com "a declaração da 3281
+foi enviada" — e a tela não deixava isso claro.
+
+**2. Havia um terceiro desfecho, e o sistema o tratava como falha nossa.**
+
+O manual é explícito: quando a resposta da plataforma traz a lista `erros`, a
+solicitação **não foi processada**, alguma correção é necessária, e **a mesma
+declaração pode ser reenviada com a correção, mantendo a mesma identificação**.
+
+Ou seja, são **três** desfechos, não dois:
+
+| | O que é | Existe nota? | O que fazer |
+|---|---|---|---|
+| **Pronta** | virou nota | sim | terminar o serviço |
+| **Ainda processando** | na fila da prefeitura | ainda não | esperar e consultar de novo |
+| **Recusada** | a plataforma rejeitou | **não** | corrigir e **reenviar, com o mesmo número** |
+
+O sistema conhecia os dois primeiros. O terceiro caía no `except Exception` e
+aparecia como *"não consegui consultar"* — transformando **"a prefeitura recusou,
+e aqui está o motivo"** em **"algo deu errado aqui"**. Pior: na emissão, a recusa
+era engolida e a espera de 150s rodava **inteira**, para no fim mostrar um aviso
+que não dizia o motivo.
+
+**O que mudou:**
+
+- a consulta passou a devolver a recusa como **resposta**, não como erro de
+  consulta. São coisas diferentes, e tratá-las igual foi o que mandou o dono
+  para a tela errada;
+- **a emissão para na hora** quando a declaração é recusada — poupa a espera
+  inteira e diz o motivo de verdade, com o código de erro da prefeitura;
+- as duas telas ganharam a mensagem certa: **"nenhuma nota foi criada, pode
+  corrigir e emitir de novo — inclusive com o mesmo número, que é o caminho
+  previsto pela prefeitura"**;
+- o aviso do estouro de espera deixou de insinuar que a nota existe. Ele agora
+  diz que **pode** existir ou **pode** ter sido recusada, e que só a consulta
+  diz qual é.
+
+**A lição, e ela vale para qualquer integração:** o desfecho que o código não
+conhece não desaparece — ele vira a mensagem genérica, e a mensagem genérica
+manda a pessoa para o lugar errado. Aqui custou uma espera de 150 segundos e uma
+ida e volta do dono para descobrir que **não havia problema nenhum**: só uma
+declaração recusada, que é o caso mais fácil dos três.
+
 ### A limpeza do que o modelo antigo deixou
 
 Saíram do `web.py` o preparo do certificado para o envelope SOAP, a busca
