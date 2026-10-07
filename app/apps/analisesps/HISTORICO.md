@@ -12238,6 +12238,8 @@ somente Solicitações de uma conta especifica"*.
 - Lido da BASE das SPs (a SPsBD sincronizada), numa consulta só — não vai ao
   Pipefy a cada tela. SP recém-criada só aparece depois da próxima
   sincronização: a etiqueta diz "aguardando base" em vez de inventar status.
+- **Publicada em 07/10/2026** (sem migração; suíte inteira 8.752 verdes, com a
+  main do painel trazida antes).
 
 #### Leva 193 — consolidação por CPF no arquivo (07/10/2026)
 
