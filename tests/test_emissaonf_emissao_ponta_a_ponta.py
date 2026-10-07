@@ -113,7 +113,10 @@ def cenario(monkeypatch, certificado):
                 b64 = kw["json"]["dpsXmlGZipB64"]
                 # o manual exige GZip + Base64; se não for isso, isto estoura
                 enviados["dps"] = gzip.decompress(base64.b64decode(b64)).decode("utf-8")
-                return _Resposta({"idDPS": "DPS-DE-TESTE"})
+                return _Resposta({"idDPS": enviados.get("id_dps", "DPS-DE-TESTE")})
+            if enviados.get("modo") == "processando":
+                # a fila da prefeitura ainda não terminou — foi o caso da nota 3281
+                return _Resposta({"nfseXmlGZipB64": "<em processamento no ambiente nacional>"})
             from lxml import etree
             dps = etree.fromstring(enviados["dps"].encode("utf-8"))
             xml_nac = nfse_exemplo.como_texto(dps, numero_nfse="3084")
@@ -261,3 +264,131 @@ def test_substituir_pela_tela_explica_o_caminho_do_portal(cenario):
     corpo = _emitir(cliente, ensaio="on", nota_substituida="3070").get_data(as_text=True)
     assert "portal" in corpo and "recuperar" in corpo
     assert "dps" not in enviados
+
+
+# --------------------------------------------------------------------------- #
+# Quando a prefeitura aceita e a nota não fica pronta na hora
+# --------------------------------------------------------------------------- #
+# Aconteceu de verdade em 07/10/2026, na nota 3281: a prefeitura aceitou a
+# declaração e ainda estava processando quando a espera acabou. É o único aperto
+# real desta área, porque a nota PODE existir — e emitir de novo criaria a
+# segunda nota do mesmo serviço.
+
+ID_DPS_3281 = "DPS230428520007952600010900001260000000003281"
+
+
+def test_a_identificacao_da_declaracao_diz_de_que_nota_se_trata():
+    """Ler 45 dígitos à mão é pedir erro; o número sai de dentro deles."""
+    import emitir_dps
+    assert emitir_dps.numero_da_declaracao(ID_DPS_3281) == ("3281", "2026")
+
+
+def test_identificacao_curta_ou_vazia_nao_estoura():
+    import emitir_dps
+    assert emitir_dps.numero_da_declaracao("") == ("", "")
+    assert emitir_dps.numero_da_declaracao("DPS123") == ("", "")
+
+
+def test_quando_a_espera_estoura_a_mensagem_manda_conferir_e_proibe_reenviar(cenario, monkeypatch):
+    cliente, enviados = cenario
+    import emitir_dps
+    enviados["modo"] = "processando"
+    enviados["id_dps"] = ID_DPS_3281
+    monkeypatch.setattr(emitir_dps, "ESPERA_TOTAL_S", 0)
+    corpo = _emitir(cliente).get_data(as_text=True)
+
+    assert "NÃO EMITA DE NOVO" in corpo
+    assert "3281" in corpo                      # diz de que nota se trata
+    assert "Conferir declaração" in corpo       # manda para a tela que RESOLVE
+    assert ID_DPS_3281 in corpo                 # e dá o que colar lá
+
+
+def test_a_tela_de_conferir_declaracao_avisa_para_nao_emitir(cenario):
+    cliente, _ = cenario
+    corpo = cliente.get(f"/emissao/declaracao?token={TOKEN}").get_data(as_text=True)
+    assert "não emita de novo" in corpo
+    assert "não se apaga" in corpo
+
+
+def test_a_tela_de_conferir_mostra_de_que_nota_se_trata(cenario):
+    cliente, _ = cenario
+    corpo = cliente.get(
+        f"/emissao/declaracao?token={TOKEN}&id_dps={ID_DPS_3281}").get_data(as_text=True)
+    assert "nota 3281" in corpo
+
+
+def test_identificacao_fora_do_padrao_e_recusada_com_explicacao(cenario):
+    cliente, _ = cenario
+    corpo = cliente.post("/emissao/declaracao",
+                         data={"token": TOKEN, "id_dps": "12345"}).get_data(as_text=True)
+    assert "começa com DPS" in corpo
+
+
+def test_conferir_a_declaracao_termina_o_servico_quando_a_nota_saiu(cenario, monkeypatch):
+    """O que fecha o aperto: a nota saiu, e o pós-emissão roda agora — sem emitir
+    nada de novo."""
+    cliente, enviados = cenario
+    import emitir_dps
+
+    r = _calculo()
+    from lxml import etree
+    import montar_dps
+    dps = nac.montar_dps_xml(montar_dps.montar(
+        card=_card(), obra=ObraFalsa(), r=r, dados_rps=_dados_rps(), numero_nota=3281,
+        ibge_obra=2601607, data_emissao="2026-10-07", producao=True))
+    xml_nac = nfse_exemplo.como_texto(dps, numero_nfse="3281")
+
+    monkeypatch.setattr(emitir_dps, "consultar",
+                        lambda ctx, id_dps, token, producao: emitir_dps.dados_da_nota(xml_nac))
+    feito = {}
+    servindo = sys.modules["app.apps.emissaonf.web"]
+    monkeypatch.setattr(servindo._concluir, "concluir",
+                        lambda *a, **k: feito.update(numero=a[1], nacional=k.get("nacional"),
+                                                     chave=k.get("chave_nacional")))
+
+    r2 = cliente.post("/emissao/declaracao",
+                      data={"token": TOKEN, "id_dps": ID_DPS_3281, "card_id": CARD},
+                      follow_redirects=True)
+    assert r2.status_code == 200
+    assert feito["numero"] == "3281"
+    assert feito["nacional"] is True
+    assert len(feito["chave"]) == 50
+    assert "3281" in r2.get_data(as_text=True)
+
+
+def test_sem_o_card_a_tela_diz_que_a_nota_saiu_mas_falta_terminar(cenario, monkeypatch):
+    cliente, _ = cenario
+    import emitir_dps
+    servindo = sys.modules["app.apps.emissaonf.web"]
+    monkeypatch.setattr(servindo, "_ctx_minimo", lambda: {"cred": {}, "chave_pem": b"x",
+                                                          "cert_pem": b"x", "gc": None})
+    monkeypatch.setattr(emitir_dps, "consultar", lambda *a, **k: {
+        "numero": "3281", "chave": "2" * 50, "data_iso": "2026-10-07", "xml_nacional": "<x/>"})
+    corpo = cliente.post("/emissao/declaracao",
+                         data={"token": TOKEN, "id_dps": ID_DPS_3281}).get_data(as_text=True)
+    assert "A nota SAIU" in corpo
+    assert "Falta terminar o serviço" in corpo
+
+
+def test_quando_ainda_esta_processando_a_tela_diz_para_esperar(cenario, monkeypatch):
+    cliente, _ = cenario
+    import emitir_dps
+
+    def ainda(*a, **k):
+        raise emitir_dps.AindaProcessando(
+            "segue na fila da prefeitura\n\n>>> Isto NÃO é erro, e NÃO autoriza emitir de novo.")
+
+    servindo = sys.modules["app.apps.emissaonf.web"]
+    monkeypatch.setattr(servindo, "_ctx_minimo", lambda: {"cred": {}, "chave_pem": b"x",
+                                                          "cert_pem": b"x", "gc": None})
+    monkeypatch.setattr(emitir_dps, "consultar", ainda)
+    corpo = cliente.post("/emissao/declaracao",
+                         data={"token": TOKEN, "id_dps": ID_DPS_3281}).get_data(as_text=True)
+    assert "ainda NÃO ficou pronta" in corpo
+    assert "NÃO autoriza emitir de novo" in corpo
+
+
+def test_a_tela_de_emissao_tem_link_para_conferir_declaracao(cenario):
+    cliente, _ = cenario
+    corpo = cliente.get(f"/emissao/?token={TOKEN}", follow_redirects=True).get_data(as_text=True)
+    assert f"/emissao/declaracao?token={TOKEN}" in corpo

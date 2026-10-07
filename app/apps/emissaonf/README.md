@@ -145,8 +145,15 @@ O código de verificação **não existe mais**: no modelo nacional quem identif
 a nota é a chave de acesso de 50 dígitos, que vai no PDF com o QR ao lado.
 
 **Se a espera estourar, o sistema NÃO oferece "tentar de novo".** É de propósito:
-a declaração já está com a prefeitura, e a nota pode ter saído. Nesse caso a
-tela mostra a identificação da declaração e manda consultar — nunca reenviar.
+a declaração já está com a prefeitura, e a nota pode ter saído. A tela mostra a
+identificação da declaração e manda para a tela **"Conferir declaração"**, que
+pergunta à prefeitura se a nota saiu e, se saiu, **termina o serviço** (planilha,
+Omie, card, Drive, avisos) sem emitir nada.
+
+Isso já aconteceu de verdade, na primeira emissão real (nota 3281, 07/10/2026): o
+processamento da declaração é uma **fila do lado da prefeitura**, e o manual diz
+que o aceite dela significa "recebi", não "autorizei". Demorar mais que a nossa
+espera é normal, não é defeito.
 
 **Há exatamente uma situação em que o envio é repetido:** quando a prefeitura
 responde que o **endereço não existe** (404 ou 405). Aí ela não recebeu
@@ -296,7 +303,8 @@ Todas pedem o mesmo `token` na URL. Não há login: quem tem o link, entra.
 | `/emissao/nacional` | roda o fechamento nacional na mão |
 | `/emissao/nacional_chave` | fecha uma nota colando a **chave** de 50 dígitos |
 | `/emissao/nacional_xml` | fecha uma nota colando o **XML nacional** baixado do portal |
-| `/emissao/diag` | diz **por que** o certificado não carregou, e qual conta do Google está sendo usada — sem mostrar segredo |
+| `/emissao/declaracao` | **"Conferir declaração".** A saída do único aperto desta área: a prefeitura aceitou a declaração e a nota não ficou pronta na hora. Pergunta a ela se a nota saiu e, se saiu, **termina o serviço** — sem emitir nada. Consultar não cria nada, então pode repetir |
+| `/emissao/diag` | diz **por que** o certificado não carregou, qual token chegou e de onde, e qual conta do Google está sendo usada — sem mostrar segredo |
 | `/emissao/diag_nacional_chave` | só leitura: testa quais endpoints federais respondem por chave |
 
 ---
