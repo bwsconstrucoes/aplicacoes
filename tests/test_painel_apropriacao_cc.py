@@ -146,9 +146,10 @@ def test_o_lancamento_da_sicredi_entra_nas_duas_obras(base):
         fato.reconstruir_fato(conn)
         linhas = conn.execute(
             "SELECT departamento, pago_recebido::float8, analise FROM fato"
-            " WHERE observacao = ? ORDER BY departamento",
+            " WHERE observacao = ?",
             (fato.MARCA_LANCAMENTO_CC,)).fetchall()
-    assert linhas == [("(não apropriado)", -23972.14, "TRF"),
+    # ordenado aqui, não no banco: a ordem do "(" muda com o idioma do servidor
+    assert sorted(linhas) == [("(não apropriado)", -23972.14, "TRF"),
                       ("CRECHESUAPE", -50000.0, "DRE"),
                       ("ESCPE18", -50000.01, "DRE")]
 
