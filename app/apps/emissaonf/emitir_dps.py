@@ -288,6 +288,67 @@ def _consultar_no_nacional(ctx: dict, id_dps: str, producao: bool):
         return None
 
 
+def diagnostico(ctx: dict, id_dps: str, producao: bool) -> str:
+    """Pergunta sobre uma declaração em TODOS os lugares que dá, e devolve as
+    respostas cruas.
+
+    Serve para o caso em que a nota não aparece em lugar nenhum e ninguém sabe
+    de quem é a vez. A pergunta que mais decide está na terceira consulta: **se a
+    plataforma nacional não conhece a declaração**, então ela não foi transmitida
+    de verdade — e aí o problema é do lado do município, com prova.
+
+    Nunca mostra o token nem nada do certificado: só o que cada serviço respondeu.
+    """
+    linhas = [f"Declaração: {id_dps}",
+              f"Ambiente: {'produção' if producao else 'homologação'}",
+              f"Nota pedida: {numero_da_declaracao(id_dps)[0] or '?'}", ""]
+
+    chave_pem, cert_pem = ctx.get("chave_pem"), ctx.get("cert_pem")
+    token = (ctx.get("_token") or "").strip()
+
+    # ---- 1 e 2: a prefeitura ----
+    if not token:
+        linhas += ["[prefeitura] token de integração ausente — não dá para perguntar.", ""]
+    else:
+        cliente = nac.ELNfseNacional(token=token, chave_pem=chave_pem, cert_pem=cert_pem,
+                                     ambiente="producao" if producao else "homologacao")
+        for rotulo, caminho in (("processamento da declaração", f"nfseDps/{id_dps}"),
+                                ("chave da declaração", f"dps/{id_dps}")):
+            try:
+                resp = cliente._chamar("GET", caminho, params={"token": token})
+                corpo = (resp.text or "")[:700]
+                linhas.append(f"[prefeitura: {rotulo}] HTTP {resp.status_code}")
+                linhas.append(f"  {corpo or '(corpo vazio)'}")
+            except Exception as e:
+                linhas.append(f"[prefeitura: {rotulo}] falhou — {type(e).__name__}: {e}")
+            linhas.append("")
+
+    # ---- 3: a plataforma nacional, direto, só com o certificado ----
+    if not producao:
+        linhas += ["[plataforma nacional] não consultada (ensaio vive em outro ambiente)."]
+        return "\n".join(linhas)
+    if not (chave_pem and cert_pem):
+        linhas += ["[plataforma nacional] certificado não carregado — não dá para perguntar."]
+        return "\n".join(linhas)
+    try:
+        import adn_nfse
+        import requests
+        caminho_cert, caminho_chave = adn_nfse._cert_temp(cert_pem, chave_pem)
+        url = f"{adn_nfse.SEFIN_PROD}/dps/{id_dps}"
+        r = requests.get(url, headers={"Accept": "application/json"},
+                         cert=(caminho_cert, caminho_chave), timeout=40)
+        linhas.append(f"[plataforma nacional: conhece esta declaração?] HTTP {r.status_code}")
+        linhas.append(f"  {(r.text or '')[:700] or '(corpo vazio)'}")
+        if r.status_code == 404:
+            linhas += ["", ">>> ESTA É A RESPOSTA QUE IMPORTA: a plataforma nacional NÃO "
+                       "conhece esta declaração. Como a prefeitura diz que já transmitiu, "
+                       "as duas versões não fecham — e a transmissão é ela que faz. "
+                       "É com ela, e esta tela é a prova."]
+    except Exception as e:
+        linhas.append(f"[plataforma nacional] falhou — {type(e).__name__}: {e}")
+    return "\n".join(linhas)
+
+
 def _mensagem_de_erro(e: Exception) -> str:
     """Deixa o erro da prefeitura legível para quem está olhando a tela."""
     texto = str(e)

@@ -930,6 +930,52 @@ entrou também na espera da emissão.
 longo do caminho. Consultar sempre o mesmo lado dá resposta velha — e, pior, dá
 uma resposta velha que *parece* atual.
 
+### A nota 3281 não estava em lugar nenhum — e o que foi conferido
+
+O dono checou **os dois sites** — o da prefeitura e o nacional — e a nota não
+estava em nenhum. Aí deixou de ser "esperar a fila" e passou a ser "descobrir o
+que travou".
+
+**O que foi conferido do NOSSO lado, e está certo:**
+
+- **o código do serviço.** `070202` existe na lista oficial de serviços nacionais
+  (Anexo B do pacote) e é exatamente *"Execução, por empreitada ou subempreitada,
+  de obras de construção civil…"*;
+- **a classificação do IBS/CBS**, que era a minha principal suspeita por ser a
+  parte nova e nunca conferida. Está certa, e agora com fonte: a tabela oficial
+  (Anexo VIII) diz que o item **07.02** vai com `INDOP` **020201**, `cClassTrib`
+  **200046** ("Operações com bens imóveis") e NBS **1.0101.11.00** — que é o que
+  o sistema manda;
+- **a estrutura da declaração**, que passa no schema oficial (já havia teste).
+
+Ou seja: o conteúdo da declaração confere com as tabelas oficiais. O que sobra
+está fora do nosso alcance, e é preciso prova para levar a quem resolve.
+
+**O que foi construído: o "Diagnóstico completo desta declaração".**
+
+Ele pergunta sobre a mesma declaração em três lugares e mostra as respostas
+**cruas**:
+
+1. à prefeitura, o processamento da declaração;
+2. à prefeitura, a chave;
+3. **à plataforma nacional, direto pelo certificado: "você conhece esta
+   declaração?"**
+
+**A terceira é a que decide**, e é por ela que a tela existe: se a plataforma
+nacional responde que **não conhece** a declaração, enquanto a prefeitura diz que
+"está em processamento adn nacional", as duas versões **não fecham** — e a
+transmissão é a prefeitura que faz. A tela diz isso com essas palavras, e o texto
+é feito para ser copiado e mandado a ela.
+
+**Dois cuidados dentro disso:** o texto **nunca** mostra o token nem nada do
+certificado (ele existe para sair daqui, então isso não é detalhe — há teste), e
+a falta do token aparece como uma linha explicando, em vez de estourar.
+
+**O que continua sem resposta, e não é nosso:** por que a autorização não sai.
+Os dois candidatos são o convênio do município com o ambiente nacional e alguma
+fila do lado deles. O diagnóstico é o que transforma "não funciona" em uma
+pergunta concreta com evidência.
+
 ### A limpeza do que o modelo antigo deixou
 
 Saíram do `web.py` o preparo do certificado para o envelope SOAP, a busca
