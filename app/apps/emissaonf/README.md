@@ -362,6 +362,7 @@ Todas pedem o mesmo `token` na URL. Não há login: quem tem o link, entra.
 | `/emissao/nacional` | roda o fechamento nacional na mão |
 | `/emissao/nacional_chave` | fecha uma nota colando a **chave** de 50 dígitos |
 | `/emissao/nacional_xml` | fecha uma nota colando o **XML nacional** baixado do portal |
+| `/emissao/manual` | **"Nota emitida no portal".** Para nota emitida à mão no portal da prefeitura (canal fora do ar, ou caso que só dá por lá). Recebe o **XML** — dele saem os dados, exatos — e, opcionalmente, o **PDF oficial**, que entra como o documento em vez da nossa réplica. Faz todo o resto: planilha, Omie, card, Drive e avisos. **Não emite nada** |
 | `/emissao/declaracao?…&diagnostico=1` | **"Diagnóstico completo desta declaração".** Pergunta sobre ela na prefeitura E direto na plataforma nacional, e mostra as respostas cruas. A pergunta que decide é a terceira: se o nacional **não conhece** a declaração e a prefeitura diz que transmitiu, as versões não fecham — e a transmissão é ela que faz. O texto é feito para ser copiado e mandado a ela; nunca mostra token nem certificado |
 | `/emissao/declaracao` | **"Conferir declaração".** A saída do único aperto desta área: a prefeitura aceitou a declaração e a nota não ficou pronta na hora. Pergunta a ela se a nota saiu e, se saiu, **termina o serviço** — sem emitir nada. Consultar não cria nada, então pode repetir |
 | `/emissao/diag` | diz **por que** o certificado não carregou, qual token chegou e de onde, e qual conta do Google está sendo usada — sem mostrar segredo |
@@ -387,6 +388,18 @@ depois, o `/emissao/recuperar` com o número da nota antiga no campo "nota
 substituída" — ele refaz os efeitos internos (Pipefy, Omie, Drive, planilha,
 WhatsApp). É o mesmo caminho que já se usava para nota emitida manualmente, e a
 tela de emissão explica isso em vez de deixar tentar e falhar.
+
+### O RPS morreu com o modelo antigo — e com ele um impedimento antigo
+
+Vale saber, porque incomodou por meses: no modelo antigo, **nota emitida à mão no
+portal não podia ser substituída pela aplicação**. A substituição exigia apontar
+o **RPS** da nota antiga, e nota manual tinha RPS com série vazia e tipo 0 — que a
+prefeitura guardava mas o XSD de envio recusava.
+
+**No modelo nacional não existe RPS.** Quem identifica a nota é a **chave de
+acesso**, e nota manual tem chave como qualquer outra. Ou seja: quando a
+substituição por evento for implementada, **nota manual vai ser substituível** —
+o impedimento não foi consertado, ele deixou de existir junto com o formato.
 
 Quando a substituição dá certo, a nota antiga é marcada **Cancelada** no slot do
 card, ganha a observação na "Notas BWS" e, no Omie, o número antigo sai e o novo

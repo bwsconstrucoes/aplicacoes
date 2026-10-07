@@ -40,8 +40,14 @@ ABA_LINKS = "Notas BWS Links"
 
 
 def concluir(card_id, numero, codigo, data_iso, nota_xml_path, forcar=False, ctx=None,
-             nota_substituida=None, nacional=False, chave_nacional=""):
+             nota_substituida=None, nacional=False, chave_nacional="",
+             pdf_municipal: bytes | None = None):
     """Pós-emissão imediato.
+
+    `pdf_municipal`, quando passado, é o PDF **oficial baixado do portal da
+    prefeitura**: ele é arquivado no lugar do que o sistema desenharia. O
+    desenhado é uma réplica boa; o do portal é o documento. Quando há o original,
+    é ele que o cliente deve receber.
 
     `nacional=True` quer dizer que o XML em `nota_xml_path` é o da NFS-e
     NACIONAL — o que a prefeitura passou a devolver em 07/10/2026. Nesse caso a
@@ -153,12 +159,18 @@ def concluir(card_id, numero, codigo, data_iso, nota_xml_path, forcar=False, ctx
     #    acesso (e com o QR), porque a chave existe desde a emissão.
     link_mun = ""
     try:
-        nota_municipal.gerar_nota_municipal_pdf(
-            xml_abrasf, "mun_tmp.pdf", xml_nacional=xml_nac,
-            discriminacao=(None if nacional else discr_limpa))
-        with open("mun_tmp.pdf", "rb") as fh:
-            _, link_mun = drive.enviar(f"{nome_base} (NFS-e).pdf", fh.read(), "pdf")
-        print(f"[6] Municipal (Drive) .. {link_mun}")
+        if pdf_municipal:
+            # O PDF do portal é o documento; o nosso é réplica. Tendo o original,
+            # é ele que vai para o Drive e para o cliente.
+            _, link_mun = drive.enviar(f"{nome_base} (NFS-e).pdf", pdf_municipal, "pdf")
+            print(f"[6] Municipal (Drive) .. PDF OFICIAL do portal: {link_mun}")
+        else:
+            nota_municipal.gerar_nota_municipal_pdf(
+                xml_abrasf, "mun_tmp.pdf", xml_nacional=xml_nac,
+                discriminacao=(None if nacional else discr_limpa))
+            with open("mun_tmp.pdf", "rb") as fh:
+                _, link_mun = drive.enviar(f"{nome_base} (NFS-e).pdf", fh.read(), "pdf")
+            print(f"[6] Municipal (Drive) .. {link_mun}")
     except Exception as e:
         print(f"[6] Municipal (Drive) .. ERRO: {e}")
 

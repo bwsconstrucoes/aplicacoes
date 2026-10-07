@@ -884,3 +884,135 @@ def test_o_aviso_de_ainda_processando_oferece_o_diagnostico(cenario, monkeypatch
                          data={"token": TOKEN, "id_dps": ID_DPS_3281}).get_data(as_text=True)
     assert "Diagnóstico completo" in corpo
     assert "diagnostico=1" in corpo
+
+
+# --------------------------------------------------------------------------- #
+# Nota emitida NO PORTAL, à mão
+# --------------------------------------------------------------------------- #
+# Pedido do dono em 07/10/2026, com o canal da emissão fora do ar: "crie um botão
+# de emissão manual; eu anexo o PDF ou o XML e você faz o processamento".
+#
+# A escolha de usar o XML para os DADOS não é preferência: dele saem número,
+# chave, valores e datas exatos. Do PDF seria preciso LER números de um texto, e
+# um valor mal lido iria para a planilha e para o Omie sem ninguém notar.
+
+@pytest.fixture
+def nota_do_portal():
+    import montar_dps
+    dps = nac.montar_dps_xml(montar_dps.montar(
+        card=_card(), obra=ObraFalsa(), r=_calculo(), dados_rps=_dados_rps(),
+        numero_nota=3281, ibge_obra=2601607, data_emissao="2026-10-07", producao=True))
+    return nfse_exemplo.como_texto(dps, numero_nfse="3281")
+
+
+@pytest.fixture
+def portal(monkeypatch):
+    """A tela, com o pós-emissão dublado — ele escreve em planilha, Omie e Drive."""
+    monkeypatch.setenv("EMISSAO_NF_TOKEN", TOKEN)
+    servindo = sys.modules["app.apps.emissaonf.web"]
+    feito = {}
+
+    def falso_concluir(card_id, numero, codigo, data_iso, caminho, **k):
+        feito.update(card_id=card_id, numero=numero, data=data_iso,
+                     nacional=k.get("nacional"), chave=k.get("chave_nacional"),
+                     pdf=k.get("pdf_municipal"))
+        with open(caminho, encoding="utf-8") as fh:
+            feito["xml_recebido"] = fh.read()
+
+    monkeypatch.setattr(servindo._concluir, "concluir", falso_concluir)
+    return app_real.test_client(), feito
+
+
+def _enviar(cliente, **campos):
+    dados = {"token": TOKEN, "card_id": CARD}
+    dados.update(campos)
+    return cliente.post("/emissao/manual", data=dados, follow_redirects=True,
+                        content_type="multipart/form-data")
+
+
+def test_a_tela_explica_que_ela_nao_emite_nada(portal):
+    cliente, _ = portal
+    corpo = cliente.get(f"/emissao/manual?token={TOKEN}").get_data(as_text=True)
+    assert "não emite nada" in corpo
+    assert "à mão, no portal" in corpo
+
+
+def test_o_xml_colado_dispara_o_processamento_completo(portal, nota_do_portal):
+    cliente, feito = portal
+    r = _enviar(cliente, xml=nota_do_portal)
+    assert r.status_code == 200
+    assert feito["numero"] == "3281"
+    assert feito["card_id"] == CARD
+    assert feito["nacional"] is True
+    assert len(feito["chave"]) == 50
+    assert feito["data"] == "2026-10-07"
+
+
+def test_o_xml_como_ARQUIVO_tambem_vale(portal, nota_do_portal):
+    """É o que o dono pediu: anexar o arquivo, não colar texto."""
+    import io as _io
+    cliente, feito = portal
+    r = _enviar(cliente, arquivo_xml=(_io.BytesIO(nota_do_portal.encode("utf-8")),
+                                      "NFSe3281.xml"))
+    assert r.status_code == 200
+    assert feito["numero"] == "3281"
+
+
+def test_o_pdf_do_portal_entra_como_o_documento(portal, nota_do_portal):
+    """O que o sistema desenha é réplica; o do portal é o original. Tendo o
+    original, é ele que o cliente recebe."""
+    import io as _io
+    cliente, feito = portal
+    _enviar(cliente, xml=nota_do_portal,
+            arquivo_pdf=(_io.BytesIO(b"%PDF-1.4 nota oficial"), "NF3281.pdf"))
+    assert feito["pdf"] == b"%PDF-1.4 nota oficial"
+
+
+def test_sem_pdf_o_sistema_desenha_o_dele(portal, nota_do_portal):
+    cliente, feito = portal
+    _enviar(cliente, xml=nota_do_portal)
+    assert feito["pdf"] is None
+
+
+def test_nota_do_modelo_antigo_tambem_e_aceita(portal):
+    """Nota emitida no portal pode vir no modelo antigo; a tela não pode exigir
+    que a pessoa saiba em qual modelo ela está."""
+    cliente, feito = portal
+    antigo = """<?xml version="1.0"?><CompNfse><Nfse><InfNfse>
+        <Numero>3070</Numero><CodigoVerificacao>ABC123</CodigoVerificacao>
+        <DataEmissao>2026-09-15T09:00:00</DataEmissao></InfNfse></Nfse></CompNfse>"""
+    _enviar(cliente, xml=antigo)
+    assert feito["numero"] == "3070"
+    assert feito["nacional"] is False
+
+
+def test_sem_o_card_nada_e_processado(portal, nota_do_portal):
+    cliente, feito = portal
+    corpo = cliente.post("/emissao/manual",
+                         data={"token": TOKEN, "xml": nota_do_portal},
+                         content_type="multipart/form-data").get_data(as_text=True)
+    assert "número do card" in corpo
+    assert not feito
+
+
+def test_sem_o_xml_nada_e_processado(portal):
+    cliente, feito = portal
+    corpo = cliente.post("/emissao/manual",
+                         data={"token": TOKEN, "card_id": CARD},
+                         content_type="multipart/form-data").get_data(as_text=True)
+    assert "XML da nota" in corpo
+    assert not feito
+
+
+def test_xml_que_nao_e_nota_explica_o_que_baixar(portal):
+    """Erro comum: baixar o XML da DECLARAÇÃO em vez do da NOTA."""
+    cliente, feito = portal
+    corpo = _enviar(cliente, xml="<DPS><infDPS/></DPS>").get_data(as_text=True)
+    assert "XML da NOTA" in corpo
+    assert not feito
+
+
+def test_a_tela_de_emissao_tem_link_para_a_nota_do_portal(cenario):
+    cliente, _ = cenario
+    corpo = cliente.get(f"/emissao/?token={TOKEN}", follow_redirects=True).get_data(as_text=True)
+    assert "Nota emitida no portal" in corpo
