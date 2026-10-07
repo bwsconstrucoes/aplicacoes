@@ -12228,6 +12228,18 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 192 — a planilha de cadastro sai junto, com link no card (07/10/2026)
+
+- *"Precisa que seja gerado ainda o arquivo de cadastro dos colaboradores e
+  enviado ao card também o link, caso precise alguém ser cadastrado."* O
+  "Gerar arquivos" (as quatro folhas e a DC) sobe agora, por conta, a planilha
+  de cadastro do destino dela (BeeVale ou SomaPay — `cadastro_planilha.gerar`)
+  com quem está no arquivo. Registrada no log como destino `cadastro`, fica na
+  rodada (`cadastros`), sai junto ao excluir a geração, não soma no total e não
+  vira SP. O link vai na descrição do card ("Cadastro de colaboradores: …") e
+  aparece em Arquivos gerados ao lado do "relatório PDF". Falha nela não para o
+  pagamento (fica no log). Ligada só na geração da tela (`gerar(cadastro=True)`).
+
 #### Leva 191 — "Gerar BeeVale" das Solicitações: carteira pelo tipo de despesa (07/10/2026)
 
 - *"Continua errado, os arquivos tão saindo tudo produção."* Conferido: o
