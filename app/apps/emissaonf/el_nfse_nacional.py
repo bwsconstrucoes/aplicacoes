@@ -21,6 +21,7 @@ from __future__ import annotations
 import base64
 import gzip
 import time
+from decimal import Decimal
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -40,6 +41,30 @@ COD_IBGE_EUSEBIO = 2304285
 
 NS_NFSE = "http://www.sped.fazenda.gov.br/nfse"
 NS_DSIG = "http://www.w3.org/2000/09/xmldsig#"
+
+# Tipo de retenção do ISSQN (XSD: TSTipoRetISSQN). Os nomes existem para que
+# ninguém precise lembrar qual número é qual — já foi trocado uma vez.
+RET_ISS_NAO_RETIDO = 1
+RET_ISS_TOMADOR = 2
+RET_ISS_INTERMEDIARIO = 3
+
+# Tipo de retenção de PIS/COFINS/CSLL (XSD: TSTipoRetPISCofins). A tabela
+# combina os três, então a escolha depende de QUAIS foram retidos.
+_RET_PIS_COFINS = {
+    (True, True, True): 3,     # PIS/COFINS/CSLL retidos
+    (True, True, False): 4,    # PIS/COFINS retidos, CSLL não
+    (True, False, False): 5,   # só PIS
+    (False, True, False): 6,   # só COFINS
+    (False, True, True): 7,    # PIS não, COFINS/CSLL retidos
+    (False, False, True): 8,   # PIS/COFINS não, CSLL retido
+    (True, False, True): 9,    # COFINS não, PIS/CSLL retidos
+    (False, False, False): 0,  # nenhum
+}
+
+
+def tipo_retencao_pis_cofins(pis: bool, cofins: bool, csll: bool) -> int:
+    """Traduz "quais foram retidos" no código que o layout nacional espera."""
+    return _RET_PIS_COFINS[(bool(pis), bool(cofins), bool(csll))]
 
 
 # --------------------------------------------------------------------------- #
@@ -136,9 +161,21 @@ class DadosDPS:
     v_serv: str = "0.00"
 
     # ISS (município)
-    trib_issqn: int = 1             # 1 = tributável
-    tp_ret_issqn: int = 1           # 1 = retido na fonte, 2 = não retido
+    trib_issqn: int = 1             # 1=tributável 2=imunidade 3=exportação 4=não incidência
+
+    # ATENÇÃO — este campo já esteve com o significado INVERTIDO aqui (ver o
+    # HISTORICO.md da área, 07/10/2026). O domínio oficial, no XSD
+    # (TSTipoRetISSQN), é:
+    #     1 = NÃO retido        2 = retido pelo TOMADOR        3 = retido pelo intermediário
+    # As notas da BWS têm ISS retido na fonte pelo tomador, então o default é 2.
+    # Mandar 1 numa nota retida declara à prefeitura que a BWS é que deve o ISS.
+    tp_ret_issqn: int = RET_ISS_TOMADOR
     p_aliq: str = "0.00"
+
+    # Dedução de material (equivale ao ValorDeducoes do modelo antigo): a
+    # prefeitura calcula a base do ISS como vServ - vDR. Sem isso, ela aplica a
+    # alíquota sobre o valor CHEIO — foi exatamente o defeito de setembro/2026.
+    v_ded_red: str = ""            # vazio = sem dedução (não envia o grupo)
 
     # retenções federais (valores retidos)
     v_ret_inss: str = "0.00"        # vRetCP (INSS/previdência)
@@ -213,6 +250,11 @@ def montar_dps_xml(d: DadosDPS) -> etree._Element:
     valores = _sub(inf, "valores")
     vsp = _sub(valores, "vServPrest")
     _sub(vsp, "vServ", d.v_serv)
+    # Dedução de material. A ordem é exigida pelo XSD: vem depois do valor do
+    # serviço e antes dos tributos.
+    if d.v_ded_red and Decimal(str(d.v_ded_red)) > 0:
+        ded = _sub(valores, "vDedRed")
+        _sub(ded, "vDR", d.v_ded_red)
     trib = _sub(valores, "trib")
     tribmun = _sub(trib, "tribMun")
     _sub(tribmun, "tribISSQN", d.trib_issqn)
@@ -270,7 +312,17 @@ class ELNfseNacional:
         self.session.mount("https://", HTTPAdapter(max_retries=retry))
 
     def _url(self, path):
-        return f"{self.urlbase}/api/nacional/{self.ambiente}/{path}"
+        """Monta o endereço da operação.
+
+        A produção NÃO tem o segmento de ambiente no caminho — o portal da
+        prefeitura publica `/api/nacional/nfse`, enquanto a homologação é
+        `/api/nacional/homologacao/nfse`. O manual em PDF diz que o ambiente é
+        sempre um segmento do caminho, e nisso ele contradiz o portal; o portal
+        ganha, porque é o que está no ar. Se um dia a produção passar a aceitar
+        o caminho com o segmento, os dois funcionam e isto não precisa mudar.
+        """
+        meio = "" if self.ambiente == "producao" else f"{self.ambiente}/"
+        return f"{self.urlbase}/api/nacional/{meio}{path}"
 
     @staticmethod
     def _gzip_b64(xml_bytes):
