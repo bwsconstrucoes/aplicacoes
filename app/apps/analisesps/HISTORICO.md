@@ -12224,6 +12224,9 @@ somente Solicitações de uma conta especifica"*.
   `dc.classificacao_no_plano`). Se ele quiser outra linha, é trocar a tabela.
 - A DC JÁ GERADA (linhas gravadas sem categoria) não precisa ser gerada de
   novo: o lançamento resolve a classificação na hora (`_grupo_da_dc`).
+- **Levas 188 a 190 publicadas em 07/10/2026** (sem migração; suíte inteira
+  8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
+  de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
 #### ⚠️ Pendente AGORA
 
