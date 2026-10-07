@@ -89,8 +89,22 @@
             {% if r.analise and r.analise.card_pipefy %}
               {% for a in r.pagamentos %}{% if not loop.first %}<br>{% endif %}
                 {% if a.card_pipefy %}
-                  {% if a.link_card %}<a href="{{ a.link_card }}" target="_blank" rel="noopener"
-                    >SP {{ a.card_pipefy }}</a>{% else %}SP {{ a.card_pipefy }}{% endif %}
+                  {# A SITUAÇÃO DE CADA SP, lida da base (07/10/2026). #}
+                  {% for sp in a.sps or [] %}
+                    <a href="{{ sp.link }}" target="_blank" rel="noopener">SP {{ sp.id }}</a>
+                    {% set st = sp.status_pgt|lower %}{% set ag = sp.status_agend|lower %}
+                    {% if not sp.na_base %}<span class="selo cancelado"
+                      title="A SP ainda não chegou à base — aparece depois da próxima sincronização">aguardando base</span>
+                    {% else %}
+                      <span class="selo {{ 'pago' if st == 'pago' else ('parcial' if st == 'pago parcial' else ('pagar' if st == 'pagar' else 'cancelado')) }}"
+                        >{{ sp.status_pgt or 'sem status' }}</span>
+                      {% if ag %}<span class="selo {{ 'agendar' if ag == 'agendar' else ('agendado' if ag == 'agendado' else ('falha' if 'falha' in ag else 'verificar')) }}"
+                        >{{ sp.status_agend }}</span>{% endif %}
+                    {% endif %}
+                  {% else %}
+                    {% if a.link_card %}<a href="{{ a.link_card }}" target="_blank" rel="noopener"
+                      >SP {{ a.card_pipefy }}</a>{% else %}SP {{ a.card_pipefy }}{% endif %}
+                  {% endfor %}
                   <span class="cartao-dica">conta {{ a.conta }}</span>
                 {% else %}<span class="cartao-dica">conta {{ a.conta }}: não lançada</span>{% endif %}
               {% endfor %}
