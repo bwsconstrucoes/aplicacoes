@@ -12246,6 +12246,7 @@ somente Solicitações de uma conta especifica"*.
   "Salvar divisão" (folha da contabilidade). Ordem de quem manda: à mão (obra ou divisão) > regra > ponto.
 - Na lateral, "sem obra do ponto" da auditoria virou "sem marcação no ponto do
   mês" (contava também quem não vai receber).
+- **Publicada em 07/10/2026** (sem migração; suíte inteira 8.769 verdes).
 
 #### Leva 196 — quem tem a Folha vê todas as subtelas (07/10/2026)
 
