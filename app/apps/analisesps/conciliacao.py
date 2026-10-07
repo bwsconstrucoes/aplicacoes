@@ -2229,6 +2229,26 @@ def conta_da_sp_confere(texto_da_sp, numeros: set, nome: str = "") -> bool | Non
                or n.endswith(d) for n in numeros)
 
 
+# Palavras que aparecem em qualquer descrição de extrato ou nome de empresa e
+# não identificam ninguém.
+PALAVRAS_SEM_NOME = {
+    "LTDA", "EIRELI", "EPP", "MEI", "SA", "S/A", "CIA", "COMERCIO", "SERVICOS",
+    "PIX", "TED", "DOC", "TEF", "PAGTO", "PAGAMENTO", "PAG", "BOLETO", "TIT",
+    "TITULO", "COBRANCA", "TRANSF", "TRANSFERENCIA", "ENVIADO", "ENVIADA",
+    "RECEBIDO", "DEBITO", "CREDITO", "CONTA", "BANCO", "AGENCIA", "OUTRA",
+    "OUTROS", "DES", "DEB", "AUT", "ELETRON", "ELETRONICO", "FORNECEDOR",
+    "DOS", "DAS", "COM", "PARA", "POR"}
+
+
+def _palavras_do_nome(texto) -> set:
+    """As palavras que identificam alguém: sem acento, maiúsculas, 3+ letras,
+    fora as genéricas de extrato e de razão social."""
+    import unicodedata
+    cru = unicodedata.normalize("NFKD", str(texto or ""))
+    limpo = "".join(c for c in cru if not unicodedata.combining(c)).upper()
+    return {p for p in re.findall(r"[A-Z]{3,}", limpo) if p not in PALAVRAS_SEM_NOME}
+
+
 def sps_das_linhas(conta: dict | None, linhas: list) -> dict:
     """`{id da linha: [{id, link, como, status, sem_baixa, credor, conta_ok}]}` —
     as SPs que casam com cada SAÍDA da página. Nunca levanta."""
@@ -2275,6 +2295,18 @@ def sps_das_linhas(conta: dict | None, linhas: list) -> dict:
                   or (c["venc"] and abs((c["venc"] - l["data"]).days) <= JANELA_DA_SP)):
                 provaveis.append(dict(c, como="data próxima"))
         achadas = fortes or provaveis
+        # ⚠️ O NOME DESEMPATA (07/10/2026). O dono: *"às vezes pode ter uma conta
+        # com o mesmo valor no mesmo dia (…) a descrição do extrato às vezes tem o
+        # nome de uma pessoa, uma porção do nome do fornecedor — cruzar com o
+        # credor"*. Cada candidata ganha quantas palavras do credor aparecem na
+        # descrição; havendo quem tenha mais que as outras, só ela fica.
+        if achadas:
+            palavras = _palavras_do_nome(l.get("descricao"))
+            for c in achadas:
+                c["nome_confere"] = len(_palavras_do_nome(c["credor"]) & palavras)
+            melhor = max(c["nome_confere"] for c in achadas)
+            if melhor and len(achadas) > 1:
+                achadas = [c for c in achadas if c["nome_confere"] == melhor]
         if achadas:
             saida[l["id"]] = [dict(
                 c, link=f"https://app.pipefy.com/open-cards/{c['id']}",

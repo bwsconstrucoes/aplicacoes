@@ -12239,6 +12239,10 @@ somente Solicitações de uma conta especifica"*.
   Documento, abre o card. SP ainda "Pagar" com o lançamento no banco ganha a
   etiqueta "sem baixa" — a planilha que não baixou. Só leitura, nada é gravado
   (`conciliacao.sps_das_linhas`); canceladas ficam fora.
+- **O nome desempata** (pedido dele no mesmo dia): mesmo valor no mesmo dia →
+  as palavras do credor (sem acento, 3+ letras, fora LTDA/PIX/PAGTO/BOLETO…)
+  presentes na descrição do extrato; quem tiver mais fica sozinha, sem "?".
+  Sem nome que desempate, todas ficam, com "?" (`_palavras_do_nome`).
 - Não verificado: o formato real da coluna Conta das SPs × o nome/número das
   contas da conciliação. Se não casar, nenhum link aparece (não aparece link
   errado) — e o ajuste é em `conta_da_sp_confere`.
