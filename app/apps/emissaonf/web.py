@@ -31,7 +31,9 @@ import worker as _worker
 import validacao as _val
 import preview as _preview
 import montar_emissao as _me
-import el_nfse_envio as _envio
+import el_nfse_envio as _envio          # modelo antigo (ABRASF) — desativado pela prefeitura
+import montar_dps as _dps
+import emitir_dps as _edps
 import concluir as _concluir
 import substituicao as _sub
 import omie
@@ -51,6 +53,20 @@ def _token_ok() -> bool:
     if not esperado:
         return True                       # sem token configurado (dev) -> livre
     return request.values.get("token", "") == esperado
+
+
+def _token_prefeitura(cred: dict) -> str:
+    """Token de integração da prefeitura (autentica o canal da emissão).
+
+    A variável de ambiente ganha da planilha — mesmo padrão do resto do módulo.
+    """
+    return (os.getenv("EL_NFSE_TOKEN") or cred.get("EL_NFSE_TOKEN") or "").strip()
+
+
+def _producao_permitida() -> bool:
+    """Se EMISSAO_NF_AMBIENTE for HOMOLOGACAO, nem o botão de emitir de verdade
+    manda nota real. É a trava para ensaiar sem medo de um clique errado."""
+    return (os.getenv("EMISSAO_NF_AMBIENTE", "PRODUCAO") or "").strip().upper() != "HOMOLOGACAO"
 
 
 def _cert_temp(cert_pem: bytes, chave_pem: bytes):
@@ -234,78 +250,96 @@ def emitir():
             return Response(_pagina_erro("XML não assinado (certificado/senha ausente)."),
                             mimetype="text/html")
 
+        # ---- SUBSTITUIÇÃO não passa mais por aqui ----
+        # No modelo antigo a nova nota carregava, dentro dela, a identificação da
+        # nota que substituía. O modelo nacional não tem esse campo: lá a
+        # substituição é um EVENTO registrado sobre a nota já emitida, por outra
+        # operação da API. Enquanto esse caminho não existir aqui — e ele não dá
+        # para ser ensaiado sem emitir nota de verdade — a substituição é feita
+        # pelo portal, como já era o caminho da nota emitida manualmente.
+        if nota_sub:
+            return Response(_pagina_erro(
+                f"Substituir pela tela não funciona mais. Em 07/10/2026 a prefeitura "
+                f"desativou o modelo antigo, e com ele o campo que mandava a nota "
+                f"substituída dentro da nota nova. No modelo nacional a substituição é "
+                f"um evento registrado sobre a nota, e esse caminho ainda não está "
+                f"pronto aqui.<br><br>"
+                f"<b>O que fazer agora:</b> substitua a NF {html.escape(nota_sub)} pelo "
+                f"botão \"Substituir\" do portal da prefeitura e depois use o "
+                f"<b>/emissao/recuperar</b> com o número dela no campo "
+                f"\"nota substituída\" — ele refaz os efeitos internos (Pipefy, Omie, "
+                f"Drive, planilha, WhatsApp). É o mesmo caminho que já se usava para "
+                f"nota emitida manualmente."), mimetype="text/html")
+
         dados = ctx["dados_rps"]
         dados.discriminacao = discr or getattr(dados, "discriminacao", "")
-        # substituição na prefeitura: a nova nota carrega o RPS da antiga (RpsSubstituido).
-        # OBS: só funciona pra nota antiga emitida pelo SISTEMA (RPS série 1 / tipo 1).
-        # Nota emitida MANUAL no portal tem RPS série vazia / tipo 0, que a prefeitura
-        # NÃO aceita no RpsSubstituido (XSD: Série min 1 char, Tipo 1|2|3) — essas têm
-        # que ser substituídas pelo botão "Substituir" do portal + /recuperar.
-        if nota_sub:
-            dados.rps_substituido_numero = nota_sub
-            dados.rps_substituido_serie = "1"
-            dados.rps_substituido_tipo = 1
-        xml = _me.gerar_xml_preview(dados, ctx["chave_pem"], ctx["cert_pem"])
 
-        cp, kp = _cert_temp(ctx["cert_pem"], ctx["chave_pem"])
+        # Ensaio: manda a MESMA declaração para o ambiente de homologação da
+        # prefeitura, que não tem validade fiscal. Serve para ver a nota inteira
+        # antes de emitir de verdade — e é o único jeito de ensaiar, porque não
+        # existe "quase emitir" em produção.
+        ensaio = request.form.get("ensaio") == "on"
+        producao = _producao_permitida() and not ensaio
+
+        data_emissao = __import__("datetime").date.today().isoformat()
         try:
-            resp = _envio.enviar(xml, de_verdade=True, incluir_cabec=True, cert=(cp, kp))
-        finally:
-            for p in (cp, kp):
-                try:
-                    os.unlink(p)
-                except OSError:
-                    pass
+            dps = _dps.montar(ctx["card"], ctx["obra"], ctx["r"], dados,
+                              ctx["prox"], ctx.get("ibge"), data_emissao, producao)
+        except _dps.DadoIncompativel as e:
+            return Response(_pagina_erro(f"Emissão barrada: {e}"), mimetype="text/html")
 
-        res = _envio.parse_resposta(resp.text)
-        if not res.get("numero"):
-            erros = "; ".join(res.get("erros") or []) or "sem detalhes"
-            corpo = resp.text or ""
-            diag = (f"HTTP {resp.status_code}\n"
-                    f"Content-Type: {resp.headers.get('Content-Type', '?')}\n"
-                    f"Tamanho: {len(resp.content)} bytes\n"
-                    f"URL final: {resp.url}\n"
-                    f"------ início do corpo (até 1800 chars) ------\n"
-                    f"{corpo[:1800] if corpo else '(corpo vazio)'}")
+        try:
+            res = _edps.emitir(ctx, dps, _token_prefeitura(ctx["cred"]), producao)
+        except _edps.NotaTalvezTenhaSaido as e:
+            # O caso delicado: a prefeitura aceitou, a nota pode existir. NÃO
+            # oferecer "tentar de novo" aqui é de propósito.
             return Response(_pagina_erro_diag(
-                "A prefeitura NÃO retornou número de NFS-e. " + erros, diag),
-                mimetype="text/html")
+                "A declaração foi aceita, mas a nota não ficou pronta no tempo esperado.",
+                str(e)), mimetype="text/html")
+        except _edps.NotaNaoSaiu as e:
+            return Response(_pagina_erro_diag(
+                "A prefeitura NÃO emitiu a nota — nada foi criado, pode corrigir e tentar "
+                "de novo.", str(e)), mimetype="text/html")
+        except Exception as e:
+            return Response(_pagina_erro_diag(
+                "Falha ao emitir.", f"{type(e).__name__}: {e}"), mimetype="text/html")
 
         numero = res["numero"]
-        codigo = res.get("codigo_verificacao", "")
-        data_iso = (res.get("data_emissao") or "")[:10]
+        codigo = ""                      # o código de verificação não existe no nacional
+        data_iso = res["data_iso"] or data_emissao
+        chave = res["chave"]
 
         nota_path = os.path.join(_DIR, f"NFSe_{numero}.xml")
-        if res.get("nota_xml"):
-            try:
-                with open(nota_path, "w", encoding="utf-8") as fh:
-                    fh.write(res["nota_xml"])
-            except Exception:
-                pass
-
-        buf = io.StringIO()
         try:
-            with contextlib.redirect_stdout(buf):
-                _concluir.concluir(card_id, numero, codigo, data_iso, nota_path, ctx=ctx,
-                                   nota_substituida=(nota_sub or None))
-        except Exception as e:
-            buf.write(f"\n>>> ERRO no concluir: {type(e).__name__}: {e}")
-
-        # SUBSTITUIÇÃO: com a nova nota já concluída, cancela a antiga (card + planilha + Omie)
-        sub_info = None
-        if nota_sub:
-            sub_info = _efeitos_substituicao(ctx, nota_sub, numero, buf)
-
-        # dispara a busca nacional em background (não bloqueia a resposta ao usuário)
-        try:
-            threading.Thread(target=_auto_nacional_bg, daemon=True).start()
+            with open(nota_path, "w", encoding="utf-8") as fh:
+                fh.write(res["xml_nacional"])
         except Exception:
             pass
+
+        buf = io.StringIO()
+        if ensaio:
+            buf.write(f">>> ENSAIO em HOMOLOGAÇÃO — a nota {numero} NÃO tem validade "
+                      f"fiscal, e nada foi gravado na planilha, no Omie, no card nem no "
+                      f"Drive. Chave: {chave}\n\n")
+            buf.write(res["xml_nacional"][:4000])
+        else:
+            try:
+                with contextlib.redirect_stdout(buf):
+                    _concluir.concluir(card_id, numero, codigo, data_iso, nota_path, ctx=ctx,
+                                       nota_substituida=None, nacional=True,
+                                       chave_nacional=chave)
+            except Exception as e:
+                buf.write(f"\n>>> ERRO no concluir: {type(e).__name__}: {e}")
+
+        # A busca nacional em segundo plano não é mais disparada: ela existia para
+        # ir atrás de uma nota que levava minutos para aparecer no nacional. Agora
+        # a emissão JÁ acontece pelo nacional — a chave e o XML vêm na resposta.
+        # A rota /emissao/nacional continua de pé para as notas antigas.
 
         rid = uuid.uuid4().hex
         _RESULTADOS[rid] = {"numero": numero, "codigo": codigo, "data": data_iso,
                             "log": buf.getvalue(), "card_id": card_id, "prox": ctx.get("prox"),
-                            "sub": sub_info}
+                            "sub": None, "chave": chave, "ensaio": ensaio}
         return redirect(url_for(".resultado", id=rid, token=token))
     except Exception as e:
         return Response(_pagina_erro(f"Erro ao emitir: {type(e).__name__}: {e}"), mimetype="text/html")
@@ -329,7 +363,15 @@ def diag():
     if not _token_ok():
         return Response(_pagina_erro("Acesso não autorizado."), status=403, mimetype="text/html")
     b64 = os.getenv("EMISSAO_NF_CERTIFICADO_P12_BASE64") or os.getenv("CERTIFICADO_P12_BASE64") or ""
+    # O token da prefeitura passou a ser essencial: é ele que autentica o canal
+    # da emissão no modelo nacional. Sem ele, nenhuma nota sai.
+    _tok_pref = (os.getenv("EL_NFSE_TOKEN") or "").strip()
     linhas = [
+        "----- Emissão (modelo NACIONAL / DPS) -----",
+        f"EL_NFSE_TOKEN definida: {'sim' if _tok_pref else 'NÃO — sem ela a emissão não sai'}"
+        + (f" (termina em ...{_tok_pref[-4:]})" if _tok_pref else ""),
+        f"Ambiente: {'PRODUÇÃO (nota com validade fiscal)' if _producao_permitida() else 'HOMOLOGAÇÃO (travado por EMISSAO_NF_AMBIENTE)'}",
+        "",
         f"EMISSAO_NF_CERTIFICADO_P12_BASE64 definida: {'sim' if b64 else 'NÃO'}"
         + (f" (tamanho do texto: {len(b64)} chars)" if b64 else ""),
         f"EMISSAO_NF_CERTIFICADO_SENHA definida: "
@@ -361,20 +403,37 @@ def diag():
 
 
 def _ids_da_nota(xml_texto: str):
-    """Extrai (numero, codigo_verificacao, data_iso) de InfNfse do XML ABRASF."""
+    """Extrai (numero, codigo_verificacao, data_iso, nacional, chave) do XML colado.
+
+    Aceita os DOIS formatos, e é de propósito: as notas antigas no Drive estão no
+    modelo ABRASF, e as emitidas a partir de 07/10/2026 estão no nacional. Esta
+    tela é justamente a que se usa quando algo deu errado — ela não pode exigir
+    que a pessoa saiba em que modelo a nota foi emitida.
+    """
     import xml.etree.ElementTree as _ET
     root = _ET.fromstring(xml_texto.encode("utf-8"))
     for el in root.iter():                       # remove namespace p/ os find funcionarem
         if isinstance(el.tag, str) and "}" in el.tag:
             el.tag = el.tag.split("}", 1)[1]
+
+    # modelo NACIONAL: a nota tem infNFSe, com o número em nNFSe e a chave no Id
+    inf_nac = root.find(".//infNFSe")
+    if inf_nac is not None:
+        def _tn(tag):
+            e = inf_nac.find(tag)
+            return (e.text or "").strip() if e is not None else ""
+        chave = (inf_nac.get("Id") or "").replace("NFS", "")
+        return _tn("nNFSe"), "", _tn("dhProc")[:10], True, chave
+
+    # modelo ANTIGO (ABRASF)
     inf = root.find(".//InfNfse")
     if inf is None:
-        return "", "", ""
+        return "", "", "", False, ""
     def _txt(tag):
         e = inf.find(tag)
         return (e.text or "").strip() if e is not None else ""
     data = _txt("DataEmissao")
-    return _txt("Numero"), _txt("CodigoVerificacao"), (data[:10] if data else "")
+    return _txt("Numero"), _txt("CodigoVerificacao"), (data[:10] if data else ""), False, ""
 
 
 def _pagina_recuperar(token):
@@ -422,12 +481,14 @@ def recuperar():
     if not card_id or not xml_texto:
         return Response(_pagina_erro("Informe o card_id e cole o XML da nota."), mimetype="text/html")
     try:
-        numero, codigo, data_iso = _ids_da_nota(xml_texto)
+        numero, codigo, data_iso, eh_nacional, chave_nac = _ids_da_nota(xml_texto)
     except Exception as e:
         return Response(_pagina_erro(f"XML inválido: {e}"), mimetype="text/html")
     if not numero:
-        return Response(_pagina_erro("Não encontrei o Número da NFS-e no XML (esperava InfNfse/Numero). "
-                                     "Confira se colou o XML completo da nota."), mimetype="text/html")
+        return Response(_pagina_erro(
+            "Não encontrei o número da NFS-e no XML. Esperava achar <b>nNFSe</b> (modelo "
+            "nacional, das notas de 07/10/2026 em diante) ou <b>InfNfse/Numero</b> (modelo "
+            "antigo). Confira se colou o XML completo da nota."), mimetype="text/html")
 
     tmp = os.path.join(_DIR, f"recuperar_{numero}.xml")
     with open(tmp, "w", encoding="utf-8") as fh:
@@ -435,17 +496,21 @@ def recuperar():
     buf = io.StringIO()
     try:
         with contextlib.redirect_stdout(buf):
+            print(f">>> XML reconhecido como modelo "
+                  f"{'NACIONAL (DPS)' if eh_nacional else 'antigo (ABRASF)'}.")
             if completo:
                 # nota emitida sem bookkeeping: roda o concluir inteiro (tem trava ja_existe)
                 ctx_sub = _worker.preparar(card_id) if nota_sub else None
                 _concluir.concluir(card_id, numero, codigo, data_iso, tmp, ctx=ctx_sub,
-                                   nota_substituida=(nota_sub or None))
+                                   nota_substituida=(nota_sub or None),
+                                   nacional=eh_nacional, chave_nacional=chave_nac)
                 # substituição manual: cancela a nota antiga (card + planilha + Omie)
                 if nota_sub:
                     _efeitos_substituicao(ctx_sub, nota_sub, numero, buf)
             else:
                 _compl.completar(card_id, numero, codigo, data_iso, tmp,
-                                 enviar_whatsapp=zap, discriminacao="")
+                                 enviar_whatsapp=zap, discriminacao="",
+                                 nacional=eh_nacional)
     except Exception as e:
         buf.write(f"\n>>> ERRO: {type(e).__name__}: {e}")
     finally:
@@ -846,6 +911,13 @@ def _render_pagina(ctx, card_id, token, nota_sub="", tm_over="", val_over=None, 
     else:
         _controles_sub = _hidden_over = _script_recarregar = ""
 
+    # Quando o serviço está travado em homologação, isso tem de aparecer: senão
+    # alguém "emite" uma nota que não existe e vai cobrar o cliente por ela.
+    _aviso_ambiente = ("" if _producao_permitida() else
+                       "<div class='warn'>Este serviço está travado em "
+                       "<b>HOMOLOGAÇÃO</b> (EMISSAO_NF_AMBIENTE). Nenhuma nota emitida "
+                       "aqui tem validade fiscal, mesmo sem marcar o ensaio.</div>")
+
     # formulário de emissão
     if pode:
         form = f"""
@@ -864,11 +936,22 @@ def _render_pagina(ctx, card_id, token, nota_sub="", tm_over="", val_over=None, 
             <input type='hidden' name='card_id' value='{html.escape(card_id)}'>
             <input type='hidden' name='token' value='{html.escape(token)}'>
             {sub_hidden}{_hidden_over}
+            <div style='background:#eef5ff;border:1px solid #9cc0e8;border-radius:8px;padding:12px;margin:12px 0'>
+              <label class='lbl' style='margin:0'>
+                <input type='checkbox' name='ensaio' onchange="document.getElementById('btn').textContent=this.checked?'🧪 Ensaiar em homologação':'✅ Confirmar e Emitir'">
+                <b>Ensaiar primeiro</b> — manda esta mesma nota para o ambiente de
+                TESTE da prefeitura.</label>
+              <p class='sub' style='margin:8px 0 0'>O ensaio devolve a nota inteira para
+              você conferir, mas <b>não vale como documento fiscal</b> e não grava nada na
+              planilha, no Omie, no card ou no Drive. Use quando quiser ver o resultado
+              antes de emitir de verdade — nota emitida de verdade não se apaga.</p>
+            </div>
             <label class='lbl'><input type='checkbox' name='confirmo' onchange="document.getElementById('btn').disabled=!this.checked">
               Confiro os dados e <b>autorizo a emissão</b> desta NFS-e.</label>
             <button id='btn' type='submit' disabled>✅ Confirmar e Emitir</button>
           </form>
           <p class='sub'>Valores, alíquotas e tomador vêm do card. Para mudá-los, ajuste no Pipefy e recarregue a página.</p>
+          {_aviso_ambiente}
         </div>"""
     else:
         form = "<div class='card'><div class='warn'>Emissão bloqueada pela validação acima. " \
@@ -892,11 +975,36 @@ def _pagina_resultado(r):
                    f"<div class='lbl'>Na planilha: {html.escape(str(sub.get('planilha','') or '—'))}</div>"
                    "<p class='sub'>Obs.: o cancelamento fiscal junto à prefeitura (ABRASF), se necessário, "
                    "é um passo separado e não é feito automaticamente.</p></div>")
+    chave = str(r.get("chave") or "")
+    chave_box = ""
+    if chave:
+        chave_box = (f"<div class='card'><b>Chave de acesso nacional</b>"
+                     f"<div style='font:14px monospace;word-break:break-all;margin-top:6px'>"
+                     f"{html.escape(chave)}</div>"
+                     f"<p class='sub'>No modelo nacional é a chave que identifica a nota — "
+                     f"ela substituiu o antigo código de verificação, e é por ela que o "
+                     f"cliente consulta a nota no portal nacional.</p></div>")
+
+    if r.get("ensaio"):
+        return _doc("Ensaio em homologação", f"""
+          <h1>Ensaio em homologação — <u>sem validade fiscal</u></h1>
+          <div class='warn'>Esta nota foi emitida no ambiente de TESTE da prefeitura.
+            Ela não vale como documento fiscal, e <b>nada</b> foi gravado na planilha, no
+            Omie, no card ou no Drive. Serve para você conferir a nota inteira antes de
+            emitir de verdade.</div>
+          <div class='ok'>Número no ensaio: <b>{html.escape(str(r['numero']))}</b> —
+            {html.escape(str(r['data']))}.</div>
+          {chave_box}
+          <div class='card'><b>O que a prefeitura devolveu</b><pre>{log}</pre></div>
+          <p>Conferiu e está certo? Volte ao card, desmarque o ensaio e emita de verdade.</p>""")
+
     return _doc("NFS-e emitida", f"""
       <h1>NFS-e emitida</h1>
-      <div class='ok'>✅ Nota <b>{html.escape(str(r['numero']))}</b> emitida — código
-        <b>{html.escape(str(r['codigo']))}</b> — emissão {html.escape(str(r['data']))}.</div>
+      <div class='ok'>✅ Nota <b>{html.escape(str(r['numero']))}</b> emitida —
+        emissão {html.escape(str(r['data']))}.</div>
       {aviso_num}
+      {chave_box}
       {sub_box}
       <div class='card'><b>Log do pós-emissão</b><pre>{log}</pre></div>
-      <p>Pode fechar esta aba. Os 4 documentos sobem no Drive e os links vão pra Descrição do card.</p>""")
+      <p>Pode fechar esta aba. Os documentos sobem no Drive e os links vão pra Descrição do
+      card. A nota nacional já sai junto — não há mais nada para esperar.</p>""")

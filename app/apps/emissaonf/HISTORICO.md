@@ -32,6 +32,34 @@ Onde os dois se contradisseram, está escrito qual venceu e por quê.
 
 ## Onde o trabalho está
 
+### ⚠️ Estado em 07/10/2026 — leia isto primeiro
+
+A prefeitura **desligou o formato de nota** que o sistema usava, e a emissão
+ficou parada. A migração para o formato novo (DPS, padrão nacional) foi feita no
+mesmo dia e está na seção própria mais abaixo.
+
+A migração **foi publicada em 07/10/2026**, com o "pode" do dono no mesmo dia.
+
+**O que falta é a primeira emissão de verdade.** Nenhum teste aqui conversa com
+a prefeitura: tudo o que dava para conferir sem emitir foi conferido (a
+declaração passa no schema oficial, os documentos saem certos da resposta nova),
+mas a primeira nota real é a primeira prova.
+
+**A sequência combinada com ele, nesta ordem:**
+
+1. abrir **`/emissao/diag`** e ver se o token da prefeitura está no serviço — a
+   primeira linha responde isso. Sem ele nenhuma nota sai, nem em ensaio;
+2. **ensaiar uma nota em homologação** (caixa "Ensaiar primeiro" na tela de
+   emissão) e conferir o resultado;
+3. só então **emitir de verdade** e conferir o número, os PDFs, a planilha, o
+   Omie e o card.
+
+**O que acontece se algum desses passos falhar está escrito abaixo, na seção da
+migração.** O que NÃO se sabe, e só a primeira emissão responde: se a prefeitura
+aceita a declaração exatamente como ela está, e qual número ela devolve.
+
+### O histórico até aqui
+
 O sistema **emite em produção há meses** e faz o ciclo inteiro sozinho: lê a
 medição no Pipefy, calcula as retenções pela tributação da obra, assina com o
 certificado A1, envia à prefeitura de Eusébio, e depois grava a planilha, ajusta
@@ -43,10 +71,26 @@ trabalho pendente é **conserto e faxina**, não funcionalidade nova.
 
 ### O que está pendente AGORA
 
-**O único item confirmado nesta sessão:** conferir na tela que o card
-1447316614 (obra AREFORTAL09) carrega, agora que a busca olha os dois códigos
-da obra. É o defeito que o dono trouxe, e o conserto está feito e testado —
-falta o olho dele na tela, com o card de verdade.
+**O que está na frente de tudo (07/10/2026):**
+
+1. **Ensaiar uma nota em homologação** e conferir o resultado. É o primeiro
+   passo depois de publicar a migração — e o único jeito de ver a nota antes de
+   emitir de verdade.
+2. **Emitir a primeira nota de verdade** no formato novo, e conferir: o número
+   que a prefeitura devolve, o PDF municipal, a DANFSe, a linha da planilha, o
+   título no Omie e o card.
+3. **Conferir se o token da prefeitura (`EL_NFSE_TOKEN`) está no serviço.**
+   Sem ele nenhuma nota sai. `/emissao/diag` responde isso.
+4. **Levar ao chat do ERP a inversão do ISS retido** (detalhe na seção de
+   07/10/2026). Lá a emissão automática manda o número errado, e não foi mexido
+   porque é outra área.
+5. **Implementar a substituição pelo evento nacional**, ou decidir que o caminho
+   pelo portal basta. Hoje substituir pela tela está bloqueado, com explicação.
+6. **Decidir se a tributação do ISS vira campo** (imunidade, exportação, não
+   incidência), hoje fixa em "operação tributável".
+
+**Também confirmado, de 21/09:** conferir na tela que o card 1447316614 (obra
+AREFORTAL09) carrega, agora que a busca olha os dois códigos da obra.
 
 **Todo o resto abaixo é pista, não tarefa.** Veio de um relato que o dono colou
 de um chat antigo, e **nada disso foi conferido contra o mundo real** — nenhuma
@@ -217,6 +261,234 @@ e ferramentas para refazer o que faltou.
 É o mesmo padrão do `analisesps` (que, aliás, copiou daqui). A aba `Credenciais`
 existe para os scripts de linha de comando rodarem fora do Render; em produção,
 o que vale é o que está no Render.
+
+---
+
+## A prefeitura desligou o modelo da nota — 07/10/2026
+
+### O que aconteceu
+
+O dono tentou emitir e a prefeitura respondeu:
+
+> *[E999] Com a Obrigatoriedade do IBS CBS o modelo Abrasf foi desativado e deve
+> ser migrado para o modelo de DPS.*
+
+Não foi erro de dado, de certificado ou de nota. O sistema falava com a
+prefeitura num formato — o **ABRASF** — e a prefeitura parou de aceitá-lo, por
+causa da obrigatoriedade do IBS e da CBS da reforma tributária. Passou a aceitar
+só a **DPS** (Declaração de Prestação de Serviço) do padrão nacional.
+
+**A emissão ficou parada.** Nenhuma nota saiu errada e nenhuma ficou pela
+metade: o envio era recusado na porta. Mas a empresa não conseguia faturar.
+
+O dono baixou no portal o pacote `Layout_EL_DPS_Nacional` (manual, schemas
+oficiais e exemplos) e passou aqui, com os dois endereços novos.
+
+### O que salvou tempo
+
+Metade do caminho já existia. O `el_nfse_nacional.py` — um cliente completo do
+formato nacional, com montagem, assinatura, compactação e consulta — estava
+nesta pasta **desde setembro**, escrito para a emissão automática do ERP e nunca
+ligado aqui. A primeira coisa feita foi gerar uma declaração com ele e conferir
+contra o schema oficial: **passou de primeira**, inclusive o grupo do IBS/CBS.
+
+Então a migração não foi reescrever o emissor. Foi: ligar o que existia, traduzir
+a nota calculada para o formato novo, e consertar o que a conferência contra o
+schema revelou de errado.
+
+### As duas armadilhas que a conferência revelou
+
+Estas são a razão de a migração não ter sido "trocar o endereço e pronto".
+
+**1. O tipo de retenção do ISS estava INVERTIDO no código.**
+
+O campo tem este domínio oficial, no schema:
+
+| valor | significado |
+|---|---|
+| 1 | **NÃO** retido |
+| 2 | retido pelo **tomador** |
+| 3 | retido pelo intermediário |
+
+E o código dizia, em comentário, exatamente o contrário — *"1 = retido na fonte,
+2 = não retido"* — com o default em 1.
+
+**O que isso faria:** as notas da BWS têm ISS retido na fonte. Mandando 1, cada
+nota declararia à prefeitura que **quem deve o ISS é a BWS**, e não o tomador que
+já descontou. Imposto declarado no lugar errado, numa nota que não se apaga, e
+sem nada na tela acusando — o PDF continuaria mostrando "Retido na Fonte",
+porque o PDF é desenhado a partir dos nossos dados.
+
+**Conserto:** o default passou a ser 2, e os números ganharam nome
+(`RET_ISS_TOMADOR`, `RET_ISS_NAO_RETIDO`) para ninguém mais precisar lembrar qual
+é qual. Há teste exigindo que nota retida saia como 2.
+
+⚠️ **O ERP tem a MESMA inversão, e não foi mexido.** Em
+`app/apps/erp/core/notas_emitidas/automatica.py` a emissão automática passa
+`1 se a obra tem ISS retido, senão 2` — ou seja, o contrário do certo. Não foi
+corrigido aqui porque é outra área, e a regra do `CLAUDE.md` é não mexer nas
+outras. **Precisa ser levado ao chat do ERP.** Atenuante: aquela emissão pode
+nunca ter sido usada em produção — vale conferir antes de assustar.
+
+**2. A dedução de material não tinha para onde ir.**
+
+Em setembro o repositório viveu o incidente mais caro desta área: o sistema não
+enviava a dedução de material, e a prefeitura calculava o ISS sobre o valor
+cheio. No formato nacional esse campo tem outro nome e outro lugar
+(`vDedRed/vDR`), e o cliente que existia **não o montava** — porque fora escrito
+para o ERP, que não usa dedução.
+
+Ou seja: migrar sem notar isso **recriaria o incidente de setembro**, inteiro.
+
+**Conserto:** a dedução entra na declaração, na posição que o schema exige, com o
+mesmo cálculo de antes (valor total menos a base do ISS). Há teste conferindo que
+o valor do serviço menos a dedução dá exatamente a base do ISS, e que em nota
+`100/0` o grupo não é enviado em vez de ir zerado.
+
+### A terceira divergência: o endereço de produção
+
+O manual em PDF diz que o ambiente é sempre um segmento do caminho
+(`/api/nacional/{ambiente}/nfse`). O portal da prefeitura, de onde o dono copiou,
+publica a produção **sem** esse segmento: `/api/nacional/nfse`.
+
+**Quem ganhou: o portal** — é o que está no ar hoje. O código monta o endereço
+sem o segmento em produção e com ele em homologação, e isso está num teste, para
+a decisão não se perder. Se um dia a produção aceitar os dois, nada precisa
+mudar. Errar aqui é inofensivo: dá erro de endereço, não nota errada.
+
+### O que mudou no comportamento, e o que NÃO mudou
+
+**Não mudou nada do que importa para quem usa:** a conta das retenções, o corpo
+da nota, o teto de valor, as críticas que barram a emissão, os documentos que o
+cliente recebe, a planilha, o Omie, o card, o WhatsApp.
+
+**Mudou o jeito de a nota voltar.** No modelo antigo o envio devolvia a nota na
+mesma resposta. Agora a prefeitura confirma que recebeu a declaração e devolve um
+protocolo; a nota fica pronta segundos depois e é preciso perguntar por ela.
+
+Isso cria uma situação nova que precisou de decisão própria, abaixo.
+
+**Mudou para melhor:** a nota nacional deixou de ser um segundo ato. Antes ela
+saía minutos depois, por um job que ficava perguntando à SEFIN se a nota havia
+subido. Agora a emissão JÁ é pelo nacional — a chave vem na resposta, a DANFSe
+sai junto dos outros documentos, e nada fica pendente. O job e as telas de busca
+nacional continuam de pé **só para as notas antigas**.
+
+**Deixou de existir o código de verificação.** Era do modelo antigo. Quem
+identifica a nota agora é a chave de acesso de 50 dígitos. No PDF municipal o
+campo do código vai **vazio, de propósito** — inventar um número ali seria pior
+do que deixá-lo em branco.
+
+---
+
+## Decisões tomadas na migração, e por quê
+
+### Entre o envio e a resposta, a nota pode existir — então não se reenvia
+
+É a decisão mais importante da migração, e é sobre o que fazer quando dá errado.
+
+Se a prefeitura **recusa a declaração**, não existe nota: é seguro corrigir e
+tentar de novo, e a tela diz isso.
+
+Mas se ela **aceita** e a nota não fica pronta no tempo esperado, a nota **pode
+ter saído**. Nesse caso a tela mostra a identificação da declaração e manda
+consultar — e **não oferece "tentar de novo"**. Oferecer o botão ali seria
+convidar a emitir a segunda nota do mesmo serviço, que é o pior desfecho possível
+nesta área: a primeira não se apaga.
+
+Os dois casos são tipos de erro diferentes no código justamente para que ninguém
+os trate igual por descuido.
+
+### Ensaio em homologação antes de emitir de verdade
+
+A prefeitura tem um ambiente de teste. A tela ganhou uma caixa **"Ensaiar
+primeiro"** que manda a mesma nota para lá: ela volta inteira, com número e
+chave, e **não vale como documento fiscal** nem grava nada na planilha, no Omie,
+no card ou no Drive.
+
+Por que isso virou parte da entrega e não um extra: **não existe "quase emitir"
+em produção.** Até aqui, a única forma de conferir uma mudança no caminho de
+emissão era emitir uma nota de verdade. Com o ensaio, dá para ver o resultado
+antes — e numa área onde o erro não se desfaz, isso vale mais que qualquer teste
+automatizado.
+
+Existe também a variável `EMISSAO_NF_AMBIENTE=HOMOLOGACAO`, que trava o serviço
+inteiro em teste. A tela avisa em letras grandes quando está travada, porque uma
+nota de teste que alguém pense ser real é ruim de outro jeito: cobra-se o cliente
+por um documento que não existe.
+
+### Os schemas oficiais entraram no repositório
+
+Os arquivos `.xsd` do pacote da prefeitura estão versionados em
+`app/apps/emissaonf/xsd_nacional/`. Não é documentação: é **a regra conferida
+pelo teste**. Com eles dentro, um campo fora de ordem, um valor fora do domínio
+ou uma casa decimal sobrando é pego aqui — não na prefeitura, não numa nota.
+
+Foi assim que as duas armadilhas acima apareceram antes de qualquer envio.
+
+### Uma resposta de prefeitura de mentira, para testar o que vem depois
+
+Metade do risco desta migração não estava em emitir: estava em emitir e os
+**documentos** saírem errados, com a nota já criada. O PDF da nota, a DANFSe e o
+valor do recibo são todos desenhados a partir do XML que a prefeitura devolve — e
+esse XML mudou.
+
+Então o `nfse_exemplo.py` monta a resposta que a prefeitura daria, a partir de uma
+declaração nossa. Ela é conferida contra o schema oficial da NFS-e (senão os
+testes estariam provando que o sistema lida bem com algo que nunca chegaria) e
+depois passa por todos os geradores.
+
+Isso não é produção e não emite nada. Vive no módulo, e não dentro de `tests/`,
+porque os módulos daqui se importam de forma plana e porque às vezes é preciso
+gerar uma amostra à mão para conferir um layout de PDF.
+
+### O PDF municipal continua existindo, traduzido
+
+Dava para argumentar que no modelo nacional o documento oficial é a DANFSe e que
+o PDF no layout da prefeitura podia ser aposentado. **Não foi essa a escolha:**
+é o documento que o cliente da BWS está acostumado a receber, e trocá-lo sem
+ninguém pedir seria mudar o que a empresa entrega por conveniência de quem
+programa.
+
+Em vez de refazer o desenho, foi escrita uma tradução: o mesmo PDF agora é
+desenhado a partir do XML nacional. Ganhou de brinde uma coisa que antes só vinha
+depois — a nota municipal já sai **com a chave de acesso e o QR**, porque a chave
+existe desde a emissão.
+
+### Substituição ficou de fora, e isso é escolha
+
+No modelo antigo a nota nova carregava, dentro dela, a identificação da nota que
+substituía. No nacional a substituição é um **evento** registrado sobre a nota já
+emitida, por outra operação da API.
+
+**Não foi implementado**, e a tela agora explica isso em vez de deixar tentar e
+falhar. O motivo: um evento de substituição não dá para ser ensaiado sem antes
+emitir uma nota de verdade para substituir — então a primeira prova de que o
+código funciona seria em cima de uma nota real, com uma segunda nota real atrás.
+Numa área onde nada se apaga, isso é caro demais para ser feito no mesmo dia de
+uma emergência.
+
+**O caminho de hoje:** botão "Substituir" do portal + `/emissao/recuperar`. É o
+mesmo que já se usava para nota emitida manualmente, e funcionou nas
+substituições de setembro. Implementar o evento é pendência registrada.
+
+### O que foi conferido, e o que NÃO foi
+
+Dito sem rodeio, porque a decisão de emitir é do dono:
+
+**Conferido:** a declaração passa no schema oficial nas quatro formas de
+tributação que a BWS usa; a dedução de material fecha com a base do ISS; o ISS
+retido sai como retido; as oito combinações de retenção federal; a identificação
+da declaração continua igual à que o job antigo monta (senão as notas antigas se
+perderiam); o PDF municipal, a DANFSe e o valor do recibo saem da resposta nova;
+a tela de recuperação reconhece os dois formatos. São 46 casos, e a suíte inteira
+do repositório (4.983) passa.
+
+**NÃO conferido:** a conversa com a prefeitura de verdade. **Nenhum teste faz
+rede.** Não se sabe se o token está configurado no serviço, se o endereço de
+produção é o que o portal diz, se a prefeitura aceita a declaração como ela está,
+nem qual número ela devolve. A primeira emissão de verdade é a primeira prova — e
+é por isso que o ensaio em homologação existe e deve ser o primeiro passo.
 
 ---
 
