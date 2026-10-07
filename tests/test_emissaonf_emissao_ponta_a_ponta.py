@@ -693,3 +693,91 @@ def test_o_aviso_de_ainda_processando_explica_o_aguardando_transmissao(certifica
                              ID_DPS_3281, "tok", True)
     assert "Aguardando Transmissão" in str(e.value)
     assert "número reservado" in str(e.value) or "está reservado" in str(e.value)
+
+
+# --------------------------------------------------------------------------- #
+# A segunda fonte: perguntar DIRETO à plataforma nacional
+# --------------------------------------------------------------------------- #
+# Em 07/10/2026 a prefeitura passou a responder "em processamento adn nacional" —
+# ou seja, ela JÁ TRANSMITIU e a fila agora é da plataforma nacional. A partir
+# desse momento a prefeitura deixa de ser a melhor fonte: a nota pode já existir
+# no nacional e a resposta dela continuar a mesma. O sistema já sabia perguntar
+# direto lá (era assim que reencontrava nota antiga) e não estava usando isso.
+
+def _ctx_cert(certificado):
+    chave_pem, cert_pem = certificado
+    return {"chave_pem": chave_pem, "cert_pem": cert_pem}
+
+
+def test_quando_a_prefeitura_ainda_processa_a_nota_e_procurada_no_nacional(certificado, monkeypatch):
+    import emitir_dps, montar_dps
+    monkeypatch.setattr(nac.ELNfseNacional, "__init__", lambda self, **k: None)
+    monkeypatch.setattr(nac.ELNfseNacional, "consultar_processamento_dps",
+                        lambda self, i, bruto=False: {"nfseXmlGZipB64": "<em processamento adn nacional>"})
+
+    dps = nac.montar_dps_xml(montar_dps.montar(
+        card=_card(), obra=ObraFalsa(), r=_calculo(), dados_rps=_dados_rps(),
+        numero_nota=3281, ibge_obra=2601607, data_emissao="2026-10-07", producao=True))
+    xml_nac = nfse_exemplo.como_texto(dps, numero_nfse="3281")
+
+    import adn_nfse
+    monkeypatch.setattr(adn_nfse, "consultar_chave_por_dps", lambda c, k, i: "2" * 50)
+    monkeypatch.setattr(adn_nfse, "consultar_nfse_por_chave", lambda c, k, ch: xml_nac)
+
+    res = emitir_dps.consultar(_ctx_cert(certificado), ID_DPS_3281, "tok", True)
+    assert res["numero"] == "3281", "a nota existia no nacional e tinha de ser achada"
+
+
+def test_se_o_nacional_tambem_nao_tem_a_nota_a_resposta_e_esperar(certificado, monkeypatch):
+    import emitir_dps, adn_nfse
+    monkeypatch.setattr(nac.ELNfseNacional, "__init__", lambda self, **k: None)
+    monkeypatch.setattr(nac.ELNfseNacional, "consultar_processamento_dps",
+                        lambda self, i, bruto=False: {"nfseXmlGZipB64": "<em processamento adn nacional>"})
+    monkeypatch.setattr(adn_nfse, "consultar_chave_por_dps", lambda c, k, i: None)
+
+    with pytest.raises(emitir_dps.AindaProcessando) as e:
+        emitir_dps.consultar(_ctx_cert(certificado), ID_DPS_3281, "tok", True)
+    texto = str(e.value)
+    assert "já TRANSMITIU" in texto                 # diz de quem é a fila
+    assert "plataforma nacional" in texto
+    assert "convênio" in texto                      # e o que perguntar à prefeitura
+
+
+def test_a_fila_da_prefeitura_e_a_do_nacional_sao_explicadas_diferente(certificado, monkeypatch):
+    """A quem se reclama muda: antes de transmitir é com a prefeitura; depois, a
+    autorização é do ambiente nacional."""
+    import emitir_dps
+    monkeypatch.setattr(nac.ELNfseNacional, "__init__", lambda self, **k: None)
+    monkeypatch.setattr(nac.ELNfseNacional, "consultar_processamento_dps",
+                        lambda self, i, bruto=False: {"nfseXmlGZipB64": "em processamento"})
+    with pytest.raises(emitir_dps.AindaProcessando) as e:
+        emitir_dps.consultar(_ctx_cert(certificado), ID_DPS_3281, "tok", True)
+    assert "ainda não transmitiu" in str(e.value)
+    assert "convênio" not in str(e.value)
+
+
+def test_a_segunda_fonte_que_nao_responde_nao_virou_erro_da_consulta(certificado, monkeypatch, capsys):
+    """Falha de rede na segunda fonte é só uma fonte que não respondeu — melhor
+    uma resposta incompleta que uma tela de erro."""
+    import emitir_dps, adn_nfse
+    monkeypatch.setattr(nac.ELNfseNacional, "__init__", lambda self, **k: None)
+    monkeypatch.setattr(nac.ELNfseNacional, "consultar_processamento_dps",
+                        lambda self, i, bruto=False: {"nfseXmlGZipB64": "<em processamento adn nacional>"})
+
+    def cai(*a, **k):
+        raise RuntimeError("timeout na SEFIN")
+
+    monkeypatch.setattr(adn_nfse, "consultar_chave_por_dps", cai)
+    with pytest.raises(emitir_dps.AindaProcessando):
+        emitir_dps.consultar(_ctx_cert(certificado), ID_DPS_3281, "tok", True)
+    assert "não respondeu" in capsys.readouterr().out
+
+
+def test_no_ensaio_a_plataforma_nacional_de_producao_nao_e_consultada(certificado, monkeypatch):
+    """Ensaio vive em outro ambiente; perguntar à produção daria resposta errada."""
+    import emitir_dps, adn_nfse
+    chamou = []
+    monkeypatch.setattr(adn_nfse, "consultar_chave_por_dps",
+                        lambda *a, **k: chamou.append(1))
+    assert emitir_dps._consultar_no_nacional(_ctx_cert(certificado), ID_DPS_3281, False) is None
+    assert not chamou

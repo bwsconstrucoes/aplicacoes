@@ -117,6 +117,20 @@ EXPLICACAO_AGUARDANDO_TRANSMISSAO = (
     "prefeitura, porque a transmissão é ela que faz."
 )
 
+# Quando a prefeitura responde "em processamento adn nacional", a fila deixou de
+# ser dela. Dizer de quem é a fila muda a quem se reclama.
+EXPLICACAO_FILA_NACIONAL = (
+    "**A fila não é mais da prefeitura: é da plataforma nacional.** O retorno "
+    "\"em processamento adn nacional\" quer dizer que o município já transmitiu o "
+    "documento, e quem precisa autorizar agora é o ambiente nacional da NFS-e.\n\n"
+    "Isto muda a quem se reclama. Se demorar horas, a prefeitura provavelmente vai "
+    "dizer — com razão — que do lado dela está feito. O que vale perguntar a ela é "
+    "se o **convênio do município com o ambiente nacional** está em ordem, porque é "
+    "isso que costuma travar a autorização.\n\n"
+    "Enquanto isso: o número segue reservado para esta declaração, não emita com "
+    "outro número e não reenvie. A nota só vale quando a chave nacional aparece."
+)
+
 EXPLICACAO_DOS_ERROS = {
     "E0037": (
         "O texto deste erro diz que o município não existe no cadastro nacional, "
@@ -209,17 +223,69 @@ def consultar(ctx: dict, id_dps: str, token: str, producao: bool) -> dict:
     xml_nac = nac.ELNfseNacional.descompactar(proc.get("nfseXmlGZipB64", "") or "")
     pronta = (proc.get("chaveAcesso") and xml_nac
               and "processamento" not in xml_nac.lower() and "<" in xml_nac)
-    if not pronta:
-        bruto = (xml_nac or "").strip()[:300]
-        raise AindaProcessando(
-            f"A prefeitura confirma que recebeu a declaração, mas a nota ainda não "
-            f"ficou pronta.\n\nO que ela respondeu agora: "
-            f"{bruto or '(sem conteúdo — só o protocolo)'}\n\n"
-            f">>> Isto NÃO é erro, e NÃO autoriza emitir de novo. Espere alguns "
-            f"minutos e consulte esta mesma identificação outra vez.\n\n"
-            f"{EXPLICACAO_AGUARDANDO_TRANSMISSAO}"
-        )
-    return dados_da_nota(xml_nac)
+    if pronta:
+        return dados_da_nota(xml_nac)
+
+    # SEGUNDA FONTE, e ela é o ponto desta função: perguntar DIRETO à plataforma
+    # nacional, com o certificado, sem passar pela prefeitura.
+    #
+    # Por que isso importa: quando a prefeitura responde "em processamento adn
+    # nacional", ela está dizendo que JÁ TRANSMITIU e que a fila agora é da
+    # plataforma nacional. A resposta dela pode ficar nesse texto mesmo depois de
+    # a nota já existir lá — ou seja, a prefeitura deixa de ser a melhor fonte
+    # justamente a partir do momento em que ela entrega o documento.
+    #
+    # Este é o mesmo caminho que o sistema já usava há meses para reencontrar
+    # notas antigas (a busca por DPS/chave na SEFIN). Ele não estava sendo usado
+    # aqui, e por isso uma nota que podia já existir aparecia como "esperando".
+    por_dentro = _consultar_no_nacional(ctx, id_dps, producao)
+    if por_dentro:
+        return por_dentro
+
+    # Nenhuma das duas fontes tem a nota: ela não existe ainda.
+    bruto = (xml_nac or "").strip()[:300]
+    no_nacional = "adn" in (xml_nac or "").lower()
+    onde = ("A prefeitura já TRANSMITIU: a declaração está na fila da plataforma "
+            "nacional, e perguntei direto a ela também — a nota ainda não está lá."
+            if no_nacional else
+            "A prefeitura recebeu e aceitou, e ainda não transmitiu para a "
+            "plataforma nacional.")
+    raise AindaProcessando(
+        f"A nota ainda não ficou pronta.\n\n{onde}\n\n"
+        f"O que a prefeitura respondeu agora: "
+        f"{bruto or '(sem conteúdo — só o protocolo)'}\n\n"
+        f">>> Isto NÃO é erro, e NÃO autoriza emitir de novo. Espere e consulte "
+        f"esta mesma identificação outra vez.\n\n"
+        f"{EXPLICACAO_FILA_NACIONAL if no_nacional else EXPLICACAO_AGUARDANDO_TRANSMISSAO}"
+    )
+
+
+def _consultar_no_nacional(ctx: dict, id_dps: str, producao: bool):
+    """Pergunta à plataforma nacional, pelo certificado, se aquela declaração já
+    virou nota. Devolve os dados da nota, ou None se ela ainda não existe lá.
+
+    Falha de rede aqui NÃO é erro da emissão: é só uma segunda fonte que não
+    respondeu. Devolve None e deixa o chamador seguir com o que a prefeitura
+    disse — melhor uma resposta incompleta que uma tela de erro.
+    """
+    if not producao:
+        return None          # a plataforma nacional de teste é outra, e não a usamos
+    try:
+        import adn_nfse
+        chave = adn_nfse.consultar_chave_por_dps(
+            ctx.get("cert_pem"), ctx.get("chave_pem"), id_dps)
+        if not chave:
+            return None
+        xml_nac = adn_nfse.consultar_nfse_por_chave(
+            ctx.get("cert_pem"), ctx.get("chave_pem"), chave)
+        print(f">>> A nota foi encontrada DIRETO na plataforma nacional "
+              f"(chave ...{str(chave)[-8:]}), apesar de a prefeitura ainda "
+              f"responder 'em processamento'.")
+        return dados_da_nota(xml_nac)
+    except Exception as e:
+        print(f">>> (a consulta direta à plataforma nacional não respondeu: "
+              f"{type(e).__name__}: {e})")
+        return None
 
 
 def _mensagem_de_erro(e: Exception) -> str:
@@ -313,6 +379,12 @@ def emitir(ctx: dict, dados_dps: nac.DadosDPS, token: str, producao: bool,
         xml_nac = nac.ELNfseNacional.descompactar(proc.get("nfseXmlGZipB64", "") or "")
         if proc.get("chaveAcesso") and xml_nac and "processamento" not in xml_nac.lower():
             return dados_da_nota(xml_nac)
+        # Quando a prefeitura diz que já transmitiu, a plataforma nacional passa a
+        # ser a fonte melhor — e às vezes a nota já está lá.
+        if "adn" in (xml_nac or "").lower():
+            achada = _consultar_no_nacional(ctx, id_dps, producao)
+            if achada:
+                return achada
         if xml_nac and "processamento" not in xml_nac.lower() and "<" not in xml_nac:
             ultimo = xml_nac
         if time.time() >= limite:
