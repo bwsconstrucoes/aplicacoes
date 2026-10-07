@@ -2182,6 +2182,45 @@ tinha — era a mensagem da regra "consolidada", e a regra saía consolidada
 mesmo com bancária presente. Com a decisão separada, "consolidada" só aparece
 quando de fato não há bancária.
 
+## Lançamentos de conta corrente ENTRAM no painel; "Atualizar um período" — 07/10/2026
+
+O dono mostrou um lançamento de conta corrente na Sicredi LC (09/01/2026,
+R$ 100.000,01, 50% CRECHESUAPE / 50% ESCPE18, com baixa, conciliação e
+favorecido no OMIE) que não aparecia em tela nenhuma: *"tem algo errado"*. Eu
+tinha sugerido que talvez fosse o mesmo dinheiro do título do Leonardo
+(Bradesco 50302) e perguntado se ele QUERIA que o painel contasse esse tipo de
+lançamento — ele cortou as duas: a 50302 não tem relação, e o painel tem de
+contar. Anotado: **não oferecer como escolha o que é defeito.**
+
+**Causa:** o painel lia esses movimentos (sem título) e os guardava à parte
+(`movimentos_sem_titulo`, migração 012), fora de todo número, sem a
+apropriação.
+
+**Conserto:**
+- Migração 021: `movimentos_sem_titulo.bruto` — o movimento inteiro como o OMIE
+  mandou (departamentos, favorecido, número do lançamento). Código tolera a
+  coluna ausente.
+- `fato.gerar_linhas_lancamentos_cc`: cada lançamento vira linha realizada
+  (Quitado) na data e conta dele, com categoria e favorecido, **rateada pela
+  apropriação** (percentual ou valor; o centavo que sobra vai na última parte).
+  Sem apropriação, "(não apropriado)". Marca "[lançamento de conta corrente]"
+  na observação. Fora: previsão (`cliquidado = 'N'`) e o que repete perna
+  bancária de título na mesma conta, dia e valor (para nunca contar em dobro).
+- **"Atualizar um período"** (modo `periodo`): um dia ou até 3 meses — títulos
+  alterados + pagamentos SÓ do período, numa transação, e refaz os números.
+
+**NÃO VERIFICADO — o ponto que decide:** se o `ListarMovimentos` do OMIE manda
+os `departamentos` desses lançamentos. Os nomes de campo foram escritos pelos
+dois vocabulários do OMIE (`cCodDepartamento`/`nDistrPercentual` e
+`cCodDep`/`nPerDep`/`nValDep`). Se depois de "Atualizar um período" em
+09/01/2026 o lançamento aparecer como "(não apropriado)", o OMIE não manda por
+essa consulta, e o próximo passo é ler pela API de lançamentos de conta corrente
+(`ListarLancCC`). O `bruto` guardado mostra o que veio.
+
+**Efeito nos números:** tudo que andou na conta sem título (tarifas, aportes
+por transferência, o que a conciliação do Análise de SPs lança) passa a contar
+no DRE, no fluxo e no resto, depois do próximo recálculo.
+
 ## Reler os pagamentos de um ano, de alguns ou de todos — 07/10/2026
 
 O dono, vendo a releitura retomada em "2025 (11 de 12 anos, 10 já feitos

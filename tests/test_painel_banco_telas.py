@@ -1435,7 +1435,7 @@ def test_as_conferencias_de_verdade_aparecem_na_tela(cliente_config):
         "/painel/configuracoes?conferir=1").get_data(as_text=True)
     assert "Aportes do DRE — onde os valores se perdem" in html
     assert "dinheiro que as telas não contam" in html
-    assert "Movimentos que não estão no painel" in html
+    assert "Lançamentos de conta corrente (sem título)" in html
     assert "falhou" not in html, "alguma conferência quebrou — o quadro diz qual"
     assert "Rodar de novo" in html, \
         "depois de rodar, o botão tem de continuar lá para repetir"

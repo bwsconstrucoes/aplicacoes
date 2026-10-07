@@ -2542,6 +2542,10 @@ def sincronizar():
         anos = []
     if modo == "pagamentos":
         return jsonify(tarefas.disparar(modo, disparo, anos=anos))
+    if modo == "periodo":
+        return jsonify(tarefas.disparar(modo, disparo, periodo={
+            "de": dados.get("de") or request.form.get("de", ""),
+            "ate": dados.get("ate") or request.form.get("ate", "")}))
     return jsonify(tarefas.disparar(modo, disparo))
 
 

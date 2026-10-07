@@ -38,6 +38,7 @@ PLANILHA = "lendo a planilha de projetos"
 EXCLUIDOS = "procurando títulos excluídos no OMIE"
 RECALCULO = "recalculando os números do painel"
 PAGAMENTOS_ANTIGOS = "relendo os pagamentos no OMIE, ano a ano"
+PERIODO = "lendo os pagamentos do período no OMIE"
 
 _LEITURA = [TITULOS_A_PAGAR, TITULOS_A_RECEBER, PAGAMENTOS, CADASTROS, PLANILHA]
 PASSOS_POR_MODO = {
@@ -45,6 +46,8 @@ PASSOS_POR_MODO = {
     "pagamentos": _LEITURA + [PAGAMENTOS_ANTIGOS, RECALCULO],
     "completa": _LEITURA + [EXCLUIDOS, RECALCULO],
     "so_numeros": [RECALCULO],
+    "periodo": [TITULOS_A_PAGAR, TITULOS_A_RECEBER, PAGAMENTOS, CADASTROS, PERIODO,
+                RECALCULO],
 }
 
 # O que cada situação quer dizer, e o que fazer — em português de gente.

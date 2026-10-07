@@ -459,6 +459,17 @@ _COLS_MST = _COLS_MOV.replace("ncodtitulo, ", "")
 _PH_MST = ",".join(["?"] * 19)
 
 
+def _mst_guarda_bruto(conn) -> bool:
+    """A migração 021 já criou a coluna `bruto`? Sem ela, grava como antes."""
+    try:
+        return bool(conn.execute(
+            "SELECT 1 FROM information_schema.columns WHERE table_schema = 'painel'"
+            "   AND table_name = 'movimentos_sem_titulo' AND column_name = 'bruto'"
+        ).fetchone())
+    except Exception:  # noqa: BLE001 — conexão de teste, sem catálogo
+        return False
+
+
 def gravar_movimentos(conn, registros, confirmar=True):
     """Insere um lote de movimentos. Retorna (qtd, quantos_sem_titulo).
 
@@ -472,20 +483,29 @@ def gravar_movimentos(conn, registros, confirmar=True):
     conta de verdade. Descartar na hora significava nao poder nem responder
     quanto era. Agora vai para `movimentos_sem_titulo`, que nao entra em numero
     de tela nenhum e existe para poder ser olhada (migracao 012)."""
+    import json
     linhas, sem_titulo = [], []
     for mv in registros:
         linha = _linha_movimento(mv)
         if linha[0] is None:
-            sem_titulo.append(linha[1:])   # tudo menos o ncodtitulo, que e None
+            # tudo menos o ncodtitulo, que e None — e o movimento inteiro, com a
+            # apropriacao, para o fato ratear nas obras (07/10/2026)
+            sem_titulo.append(linha[1:] + (json.dumps(mv, ensure_ascii=False,
+                                                      default=str),))
             continue
         linhas.append(linha)
     if linhas:
         conn.executemany(
             f"INSERT INTO movimentos ({_COLS_MOV}) VALUES ({_PH_MOV})", linhas)
     if sem_titulo:
-        conn.executemany(
-            f"INSERT INTO movimentos_sem_titulo ({_COLS_MST}) VALUES ({_PH_MST})",
-            sem_titulo)
+        if _mst_guarda_bruto(conn):
+            conn.executemany(
+                f"INSERT INTO movimentos_sem_titulo ({_COLS_MST}, bruto)"
+                f" VALUES ({_PH_MST}, ?)", sem_titulo)
+        else:
+            conn.executemany(
+                f"INSERT INTO movimentos_sem_titulo ({_COLS_MST}) VALUES ({_PH_MST})",
+                [l[:-1] for l in sem_titulo])
     if confirmar:
         conn.commit()
     return len(linhas), len(sem_titulo)
@@ -1496,6 +1516,35 @@ def preparar_releitura(anos_escolhidos, hoje=None) -> dict:
             _marcar_anos_relidos(conn, set(todos) - set(escolhidos))
             conn.commit()
         return {"aberta_antes": False, "anos": escolhidos or todos}
+    finally:
+        conn.close()
+
+
+CHAVE_PERIODO = "atualizacao_periodo"
+
+
+def reler_periodo(de, ate, env=".env", cli=None) -> int:
+    """Relê do OMIE os pagamentos de UM PERÍODO — um dia, um mês — numa
+    transação só (dono, 07/10/2026: "uma forma de atualizar os dados de um dia
+    específico ou um mês apenas, pra ser rápido no teste"). Devolve quantos
+    movimentos regravou."""
+    cli = cli or OmieClient.de_ambiente(env)
+    ini_str, fim_str = de.strftime("%d/%m/%Y"), ate.strftime("%d/%m/%Y")
+    conn = conectar()
+    try:
+        _apagar_movimentos_janela(conn, de, ate, confirmar=False)
+        total = 0
+        for pagina, total_paginas, _tr, registros in cli.listar_movimentos(
+                param_extra={"dDtPagtoDe": ini_str, "dDtPagtoAte": fim_str}):
+            _progresso("lendo os pagamentos do período no OMIE",
+                       f"{ini_str} a {fim_str}: página {pagina} de {total_paginas}")
+            qm, qs = gravar_movimentos(conn, registros, confirmar=False)
+            total += qm + qs
+        conn.commit()
+        return total
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
 

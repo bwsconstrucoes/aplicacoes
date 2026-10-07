@@ -47,6 +47,7 @@ MODOS = {
     "rapida": "Atualização do dia — baixa o que mudou e refaz os números",
     "completa": "Atualização completa — inclui a varredura de títulos excluídos no OMIE",
     "so_numeros": "Só refazer os números, sem baixar nada do OMIE",
+    "periodo": "Atualizar um período — um dia ou um mês: relê os pagamentos dele e refaz os números (rápido, para testar)",
     "pagamentos": "Reler os pagamentos do OMIE de um ano, de alguns ou de todos — para baixa lançada com data de mais de 6 meses (todos: demorado)",
     "observacoes": "Buscar as observações dos títulos no OMIE (bloco a bloco, pode parar e continuar)",
     "carga_inicial": "Primeira carga — baixa toda a base do OMIE (demorado)",
@@ -58,6 +59,7 @@ ROTULOS = {
     "rapida": "Atualização do dia",
     "completa": "Atualização completa",
     "so_numeros": "Só refazer os números",
+    "periodo": "Atualizar um período",
     "pagamentos": "Reler os pagamentos",
     "observacoes": "Buscar as observações",
     "carga_inicial": "Primeira carga",
@@ -184,6 +186,44 @@ def _carimbar(execucao_id: int, etapa: str, detalhe: str) -> None:
 # ---------------------------------------------------------------------------
 # O trabalho
 # ---------------------------------------------------------------------------
+# O período mais longo que "Atualizar um período" aceita: é para dia e mês.
+MAX_DIAS_DO_PERIODO = 92
+
+
+def _periodo_escolhido():
+    """O período gravado por quem apertou o botão (config `atualizacao_periodo`)."""
+    import datetime as dt
+    import json
+    from .db import consultar
+    from .sync.espelho import CHAVE_PERIODO
+    linha = consultar("SELECT valor FROM config WHERE chave = ?", [CHAVE_PERIODO])
+    dados = json.loads(linha[0][0]) if linha else {}
+    return (dt.date.fromisoformat(dados["de"]), dt.date.fromisoformat(dados["ate"]))
+
+
+def guardar_periodo(de: str, ate: str) -> tuple:
+    """Valida e grava o período escolhido. Devolve (de, ate) como datas."""
+    import datetime as dt
+    import json
+    from .db import conexao
+    from .sync.espelho import CHAVE_PERIODO
+    try:
+        d1, d2 = dt.date.fromisoformat(de), dt.date.fromisoformat(ate or de)
+    except (TypeError, ValueError):
+        raise ValueError("Escolha a data inicial e a final do período.")
+    if d2 < d1:
+        d1, d2 = d2, d1
+    if (d2 - d1).days > MAX_DIAS_DO_PERIODO:
+        raise ValueError(f"O período vai até {MAX_DIAS_DO_PERIODO} dias — para mais, "
+                         "use \"Reler os pagamentos\" por ano.")
+    with conexao() as conn:
+        conn.execute("INSERT INTO config (chave, valor) VALUES (?, ?) "
+                     "ON CONFLICT (chave) DO UPDATE SET valor = excluded.valor",
+                     (CHAVE_PERIODO, json.dumps({"de": d1.isoformat(), "ate": d2.isoformat()})))
+        conn.commit()
+    return d1, d2
+
+
 def _releitura_pendente(execucao_id: int) -> bool:
     """Há uma releitura de pagamentos começada e não terminada?
 
@@ -274,6 +314,14 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                     "observações dos títulos a pagar",
                     f"{f} de {t} — {g} com observação"))
             observacoes_achadas = (n_r or 0) + (n_p or 0)
+        elif modo == "periodo":
+            # Um dia ou um mês: o que mudou nos títulos (rápido) e os
+            # pagamentos SÓ do período escolhido (dono, 07/10/2026).
+            _etapa(andamento.TITULOS_A_PAGAR)
+            espelho.sync_incremental(revisar_dias=0)
+            de, ate = _periodo_escolhido()
+            _etapa(andamento.PERIODO, f"{de:%d/%m/%Y} a {ate:%d/%m/%Y}")
+            espelho.reler_periodo(de, ate)
         elif modo in ("rapida", "completa", "pagamentos"):
             _etapa(andamento.TITULOS_A_PAGAR)
             # A completa rele seis meses de pagamentos; a do dia, um mes.
@@ -449,10 +497,12 @@ def vigiar_para_sempre(intervalo: int = SEGUNDOS_ENTRE_VIGIAS) -> None:
             logger.exception("Painel: o vigia das atualizações falhou (sigo vigiando)")
 
 
-def disparar(modo: str, disparo: str = "manual", anos=None) -> dict:
+def disparar(modo: str, disparo: str = "manual", anos=None, periodo=None) -> dict:
     """Começa a atualização. Devolve o que dizer a quem pediu.
 
-    `anos`: só para "pagamentos" — os anos a reler (vazio = todos)."""
+    `anos`: só para "pagamentos" — os anos a reler (vazio = todos).
+    `periodo`: só para "periodo" — {"de": "AAAA-MM-DD", "ate": "AAAA-MM-DD"}.
+    A retomada usa o período já gravado."""
     if modo not in MODOS:
         return {"ok": False, "erro": f"Modo desconhecido: {modo}"}
     aviso_dos_anos = ""
@@ -468,6 +518,13 @@ def disparar(modo: str, disparo: str = "manual", anos=None) -> dict:
                 "erro": f"Já existe uma atualização em andamento ({etapa}). "
                         "Espere ela terminar."}
 
+    if modo == "periodo" and disparo != "retomada":
+        try:
+            d1, d2 = guardar_periodo((periodo or {}).get("de", ""),
+                                     (periodo or {}).get("ate", ""))
+        except ValueError as e:
+            return {"ok": False, "erro": str(e)}
+        aviso_dos_anos = f" Período: {d1:%d/%m/%Y} a {d2:%d/%m/%Y}."
     if modo == "pagamentos" and disparo == "manual":
         from .sync import espelho
         preparo = espelho.preparar_releitura(anos)

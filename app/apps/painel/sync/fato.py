@@ -1216,6 +1216,137 @@ def _insert_de(tabela, colunas):
     return f"INSERT INTO {tabela} ({', '.join(colunas)}) VALUES ({marcas})"
 
 
+# -----------------------------------------------------------------------------
+# LANÇAMENTOS DE CONTA CORRENTE — os movimentos sem título — 07/10/2026
+# -----------------------------------------------------------------------------
+# O dono: *"na conta Sicredi tem um lançamento com apropriação em duas obras e
+# ele não está sendo exibido nem contabilizado no painel. No OMIE existe baixa,
+# conciliação, favorecido, mas o painel não tá lendo isso."*
+#
+# O painel era montado SÓ a partir dos títulos. O lançamento feito direto na
+# conta corrente (tarifa, aporte por transferência, o que a conciliação do
+# Análise de SPs lança) chegava na leitura e ficava de lado, sem a apropriação.
+# Agora vira linha do fato como qualquer pagamento: realizado na data dele,
+# na conta dele, com o favorecido e a categoria dele, RATEADO nas obras da
+# apropriação do OMIE — sem apropriação, "(não apropriado)".
+#
+# A linha leva "[lançamento de conta corrente]" na observação: é como quem lê
+# o Analítico distingue de um título.
+MARCA_LANCAMENTO_CC = "[lançamento de conta corrente]"
+
+
+def _departamentos_do_bruto(bruto) -> list[tuple[str, float]]:
+    """[(código do departamento, fração)] a partir do movimento como o OMIE
+    mandou. Aceita os dois vocabulários (o do movimento financeiro e o do
+    lançamento de conta corrente): percentual ou valor."""
+    import json
+    try:
+        mv = json.loads(bruto) if isinstance(bruto, str) else (bruto or {})
+    except (TypeError, ValueError):
+        return []
+    lista = mv.get("departamentos") or (mv.get("detalhes") or {}).get("departamentos") or []
+    pares, total_valor = [], 0.0
+    for d in lista if isinstance(lista, list) else []:
+        if not isinstance(d, dict):
+            continue
+        cod = str(d.get("cCodDepartamento") or d.get("cCodDep") or "").strip()
+        if not cod:
+            continue
+        pct = d.get("nDistrPercentual", d.get("nPerDep"))
+        valor = d.get("nDistrValor", d.get("nValDep"))
+        pares.append((cod, float(pct or 0), float(valor or 0)))
+        total_valor += float(valor or 0)
+    if not pares:
+        return []
+    soma_pct = sum(p for _c, p, _v in pares)
+    if soma_pct > 0.0001:
+        return [(c, p / soma_pct) for c, p, _v in pares]
+    if total_valor > 0.0001:
+        return [(c, v / total_valor) for c, _p, v in pares]
+    return [(c, 1.0 / len(pares)) for c, _p, _v in pares]
+
+
+def _codigo_do_bruto(bruto):
+    """O número do lançamento no OMIE, quando o movimento traz."""
+    import json
+    try:
+        d = (json.loads(bruto) if isinstance(bruto, str) else (bruto or {})).get("detalhes") or {}
+    except (TypeError, ValueError, AttributeError):
+        return None
+    for chave in ("nCodLanc", "nCodMovCC", "nCodLancamento", "nCodBaixa"):
+        v = d.get(chave)
+        if str(v or "").strip().isdigit() and int(v) > 0:
+            return int(v)
+    return None
+
+
+def gerar_linhas_lancamentos_cc(conn):
+    """As linhas do fato que vêm dos lançamentos de conta corrente.
+
+    Fica de fora: previsão (`cliquidado = 'N'`), valor zero, data ilegível — e
+    o movimento que REPETE uma perna bancária de título na mesma conta, no
+    mesmo dia e com o mesmo valor, para nunca contar duas vezes o mesmo
+    dinheiro se o OMIE o mandar nos dois lugares."""
+    from .espelho import _mst_guarda_bruto
+    cat, cli, proj_map, ccorr = carregar_catalogos(conn)
+    mapa_log = carregar_de_para(conn)
+    nomes_dep = {c: (n or "").strip() for c, n in conn.execute(
+        "SELECT ccoddep, MAX(cdesdep) FROM rateio WHERE COALESCE(ccoddep,'') <> ''"
+        " GROUP BY 1").fetchall()}
+    pernas_de_titulo = {(cc, dia, round(abs(float(v or 0)), 2)) for cc, dia, v in conn.execute(
+        "SELECT ncodcc, ddtpagamento, nvalpago FROM movimentos"
+        " WHERE COALESCE(cliquidado,'') <> 'S'").fetchall()}
+    coluna_bruto = "bruto" if _mst_guarda_bruto(conn) else "NULL"
+    linhas = conn.execute(
+        f"SELECT id, cnatureza, ccodcateg, ncodcc, ncodcliente, ddtpagamento,"
+        f"       COALESCE(cliquidado,''), nvalpago, nvalliquido, nvalortitulo, {coluna_bruto}"
+        f"  FROM movimentos_sem_titulo").fetchall()
+    for (mid, nat, ccat, ncc, ncli, dpg, liq, vpago, vliq, vtit, bruto) in linhas:
+        if liq == "N":
+            continue
+        valor = abs(float(vpago or 0) or float(vliq or 0) or float(vtit or 0))
+        ddt = _data_para_dt(dpg)
+        if valor <= TOL or not ddt:
+            continue
+        if (ncc, dpg, round(valor, 2)) in pernas_de_titulo:
+            continue
+        is_rec = (str(nat or "").strip().upper() == "R")
+        sinal = 1.0 if is_rec else -1.0
+        tipo = REC if is_rec else PAG
+        desc_cat, grupo, analise = cat.get(str(ccat), (str(ccat or ""), str(ccat or ""), None))
+        if not analise:
+            info_log = mapa_log.get(desc_cat.strip(), {})
+            grupo = info_log.get("Grupo", grupo)
+            analise = info_log.get("Análise") or _analise_por_heuristica(desc_cat, grupo)
+        razao, cnpj = cli.get(ncli, ("", ""))
+        if not (razao or "").strip() and ncli not in (None, ""):
+            razao = f"(favorecido {ncli})"
+        conta = _nome_da_conta(ccorr, ncc)
+        codigo = _codigo_do_bruto(bruto)
+        status = "Recebido" if is_rec else "Pago"
+        tipo_aporte = classificar_aporte(desc_cat, ccat, razao) or ""
+        # a mesma chave de "medição" que um título sem documento teria
+        chave = f"COD:{codigo or 'CC' + str(mid)}"
+        partes = _departamentos_do_bruto(bruto) or [(None, 1.0)]
+        # o centavo que sobra do rateio vai para a última parte: a soma das
+        # obras tem de dar o lançamento, ao centavo (100.000,01 em 50/50)
+        total = round(sinal * valor, 2)
+        valores = [round(total * frac, 2) for _c, frac in partes]
+        valores[-1] = round(total - sum(valores[:-1]), 2)
+        for (cod_dep, _frac), parte in zip(partes, valores):
+            if cod_dep is None:
+                dep, projeto = NAO_APROP, NAO_APROP
+            else:
+                dep = nomes_dep.get(cod_dep) or cod_dep
+                projeto = proj_map.get(cod_dep, "")
+            yield (codigo, tipo, analise, status, "Quitado",
+                   desc_cat, ccat, grupo, projeto, dep, razao, cnpj,
+                   "", "", conta, MARCA_LANCAMENTO_CC, "",
+                   chave, rotulo_medicao(chave),
+                   ddt, ddt.year, ddt.month, ddt, ddt,
+                   parte, 0.0, 0.0, 0.0, tipo_aporte)
+
+
 def _sinal_de_vida(detalhe: str) -> None:
     """Avisa a tela de que o recálculo segue vivo (mesmo relator da leitura do
     OMIE). Sem ele, um recálculo longo era dado por morto."""
@@ -1237,7 +1368,10 @@ def reconstruir_fato(conn, tamanho_lote=2000):
         conn.execute("TRUNCATE TABLE fato")
         sql = _insert_de("fato", COLUNAS_FATO)
         lote, total = [], 0
-        for linha in gerar_linhas_fato(leitura):
+        # os títulos e, desde 07/10/2026, os lançamentos de conta corrente
+        import itertools
+        for linha in itertools.chain(gerar_linhas_fato(leitura),
+                                     gerar_linhas_lancamentos_cc(leitura)):
             lote.append(linha)
             if len(lote) >= tamanho_lote:
                 conn.executemany(sql, lote)
