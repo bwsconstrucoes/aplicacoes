@@ -399,7 +399,8 @@
                   {% for x in p.rateio %}<br>{{ x.obra }} {{ '%.0f'|format(x.percentual) }}% · {{ x.valor|moeda }}{% endfor %}</span>
                 {% if pode_operar %}<br><button type="button" class="link-btn escolher-obra"
                     data-sugerida="{{ p.obra }}">trocar…</button>
-                  {% if p.rateio_a_mao %}<button type="button" class="link-btn usar-obra" data-obra="">tirar</button>{% endif %}{% endif %}
+                  {% if p.rateio_a_mao %}<button type="button" class="link-btn usar-obra" data-obra=""
+                    title="O colaborador volta a seguir o ponto e a regra de rateio">remover ajuste</button>{% endif %}{% endif %}
               {% elif p.obra_de_onde == 'ponto' %}
                 <br><span class="cartao-dica">{{ p.dias_na_obra }} dia(s) no ponto{% if resultado.janela_da_obra %} de {{ resultado.janela_da_obra[0].strftime('%d/%m') }} a {{ resultado.janela_da_obra[1].strftime('%d/%m') }}{% endif %}</span>
                 {% if pode_operar %}<br><button type="button" class="link-btn escolher-obra"
@@ -408,7 +409,8 @@
                 <br><span class="cartao-dica">escolhida por você — sem ponto</span>
                 {% if pode_operar %}<br><button type="button" class="link-btn escolher-obra"
                     data-sugerida="{{ p.obra }}">trocar…</button>
-                  <button type="button" class="link-btn usar-obra" data-obra="">tirar</button>{% endif %}
+                  <button type="button" class="link-btn usar-obra" data-obra=""
+                    title="O colaborador volta a seguir o ponto e a regra de rateio">remover ajuste</button>{% endif %}
               {% endif %}
             {% elif p.sem_obra or not p.rateio %}
               {# ⚠️ SEM PONTO = PENDÊNCIA (03/10/2026): *"Não utilizar obra de
@@ -641,7 +643,7 @@
   {# DIVIDIR ENTRE OBRAS (07/10/2026): *"usar a obra do ponto, mas eu preciso poder
      alterar, ou ratear"*. Vale só para esta pessoa, neste mês. #}
   <details style="margin-top:12px" id="dialogo-obra-dividir">
-    <summary style="cursor:pointer"><b>Ou dividir entre obras</b></summary>
+    <summary style="cursor:pointer"><b>ou dividir entre obras</b></summary>
     <datalist id="obras-para-dividir">
       {% for o in obras_c_diarios or [] %}<option value="{{ o }}">{% endfor %}
     </datalist>
@@ -650,8 +652,8 @@
       <tbody id="dividir-linhas"></tbody></table></div>
     <p class="cartao-dica" id="dividir-soma">Soma: 0%</p>
     <div class="lat-acoes">
-      <button type="button" class="btn secundario" id="dividir-mais">+ obra</button>
-      <button type="button" class="btn" id="dividir-usar">Dividir</button>
+      <button type="button" class="btn secundario" id="dividir-mais">+ adicionar obra</button>
+      <button type="button" class="btn" id="dividir-usar">Salvar divisão</button>
     </div>
   </details>
 </dialog>

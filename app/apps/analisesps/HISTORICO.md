@@ -12240,8 +12240,10 @@ somente Solicitações de uma conta especifica"*.
   "trocar…" também na obra do ponto e na da regra de rateio; e "Ou dividir entre
   obras" na mesma janela — percentuais que fecham 100%, guardados no campo da
   obra do ajuste do mês como `RATEIO:A=60;B=40` (sem migração), aplicados pela
-  mesma conta da regra de rateio (`folha_auxilio.rateio_da_escolha`). "tirar"
-  volta ao ponto. Ordem de quem manda: à mão (obra ou divisão) > regra > ponto.
+  mesma conta da regra de rateio (`folha_auxilio.rateio_da_escolha`). "remover
+  ajuste" volta ao ponto. Os nomes dos botões são os das outras telas (pedido
+  dele): "trocar…" (DC), "remover ajuste", "ou dividir…", "+ adicionar obra" e
+  "Salvar divisão" (folha da contabilidade). Ordem de quem manda: à mão (obra ou divisão) > regra > ponto.
 - Na lateral, "sem obra do ponto" da auditoria virou "sem marcação no ponto do
   mês" (contava também quem não vai receber).
 
