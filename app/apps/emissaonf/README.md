@@ -148,6 +148,13 @@ a nota é a chave de acesso de 50 dígitos, que vai no PDF com o QR ao lado.
 a declaração já está com a prefeitura, e a nota pode ter saído. Nesse caso a
 tela mostra a identificação da declaração e manda consultar — nunca reenviar.
 
+**Há exatamente uma situação em que o envio é repetido:** quando a prefeitura
+responde que o **endereço não existe** (404 ou 405). Aí ela não recebeu
+declaração nenhuma, nada foi criado, e o sistema tenta o outro jeito de escrever
+o mesmo endereço — porque o manual e o portal da prefeitura discordam sobre ele.
+Qualquer outra resposta, inclusive erro de rede, **não** é repetida: pode ter
+chegado.
+
 **A partir daqui a nota existe e não se desfaz.** Por isso o pós-emissão
 (`concluir.py`) é todo em blocos separados, cada um com seu `try`: se o Drive
 falhar, a planilha já gravou; se o WhatsApp falhar, o Omie já foi ajustado.
@@ -233,6 +240,13 @@ prefeitura.
 
 **Imposto sem retenção não aparece** na discriminação nem na tabela de apuração.
 Nota com valor zero ao lado do nome do imposto confunde quem lê.
+
+**PIS, COFINS e CSLL são declarados juntos, por um código só.** O formato
+nacional não tem um campo por imposto: tem um código que diz, de uma vez, quais
+dos três foram retidos. Por isso o grupo deles vai na declaração sempre que
+**algum** dos três for retido — inclusive quando só a CSLL for. Alíquota e valor
+só entram para o que foi de fato retido: mandar "0,00" num imposto não retido
+declara uma retenção de valor zero, o que é diferente de não declarar nada.
 
 ---
 
