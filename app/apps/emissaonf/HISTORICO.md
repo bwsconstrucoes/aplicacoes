@@ -38,15 +38,25 @@ A prefeitura **desligou o formato de nota** que o sistema usava, e a emissão
 ficou parada. A migração para o formato novo (DPS, padrão nacional) foi feita no
 mesmo dia e está na seção própria mais abaixo.
 
+A migração **foi publicada em 07/10/2026**, com o "pode" do dono no mesmo dia.
+
 **O que falta é a primeira emissão de verdade.** Nenhum teste aqui conversa com
 a prefeitura: tudo o que dava para conferir sem emitir foi conferido (a
 declaração passa no schema oficial, os documentos saem certos da resposta nova),
-mas a primeira nota real é a primeira prova. **O primeiro passo é o ensaio em
-homologação**, que a tela de emissão oferece numa caixa de seleção — ele devolve
-a nota inteira para conferência e não vale como documento fiscal.
+mas a primeira nota real é a primeira prova.
 
-Se o ensaio falhar por falta do token da prefeitura, é configuração no serviço:
-`/emissao/diag` diz na primeira linha se ele está lá.
+**A sequência combinada com ele, nesta ordem:**
+
+1. abrir **`/emissao/diag`** e ver se o token da prefeitura está no serviço — a
+   primeira linha responde isso. Sem ele nenhuma nota sai, nem em ensaio;
+2. **ensaiar uma nota em homologação** (caixa "Ensaiar primeiro" na tela de
+   emissão) e conferir o resultado;
+3. só então **emitir de verdade** e conferir o número, os PDFs, a planilha, o
+   Omie e o card.
+
+**O que acontece se algum desses passos falhar está escrito abaixo, na seção da
+migração.** O que NÃO se sabe, e só a primeira emissão responde: se a prefeitura
+aceita a declaração exatamente como ela está, e qual número ela devolve.
 
 ### O histórico até aqui
 
