@@ -36,6 +36,8 @@ import concluir as _concluir
 import declaracoes as _decl
 import substituicao as _sub
 import omie
+import pipefy as _pipefy
+import notas_bws as _notas
 from decimal import Decimal
 import completar_imediato as _compl
 
@@ -524,6 +526,150 @@ def _pagina_manual(token, card_id, aviso=""):
         "Notas BWS", ele avisa e não duplica nada.</p>
       </div>""")
 
+
+def _card_e_aba_notas(card_id):
+    """Carrega SÓ o card do Pipefy e a aba 'Notas BWS'.
+
+    Existe separado do `preparar` do worker de propósito: o `preparar` calcula a
+    nota, resolve o município, abre o certificado e monta a declaração. Para
+    consertar uma linha da planilha nada disso é necessário — e o cálculo daria
+    número ERRADO, porque depois de emitir o card fica com doze campos limpos
+    (valor parcial, tipo de medição, alíquotas, banco).
+    """
+    gc = _worker.cliente_gspread()
+    cred = _worker.ler_credenciais(gc)
+    token = cred.get("PIPEFY_TOKEN")
+    if not token:
+        raise KeyError("PIPEFY_TOKEN não encontrado na aba 'Credenciais'.")
+    card = _pipefy.extrair_card(_pipefy.get_card(card_id, token))
+    ws = _worker.abrir_aba(gc.open_by_key(_worker.ID_PROC), _worker.ABA_NOTAS)
+    return card, ws
+
+
+@bp.route("/planilha", methods=["GET", "POST"])
+def planilha():
+    """Acrescenta SÓ a linha da 'Notas BWS' — e não toca em mais nada.
+
+    Para que serve: a nota saiu certa, o Omie recebeu as retenções, o card tem o
+    slot preenchido, o cliente recebeu os arquivos — e a linha da planilha não
+    entrou (queda no meio do caminho, erro de rede na gravação). Aqui só falta a
+    planilha.
+
+    **Por que não usar "Recuperar entrega" ou "Nota emitida no portal":** as duas
+    rodam a conclusão inteira. Elas preencheriam um SEGUNDO slot no card, mexeriam
+    no Omie de novo e mandariam o WhatsApp outra vez. Para quem só precisa da
+    linha, isso cria três problemas no lugar de resolver um.
+
+    **Os valores vêm do XML, não do card.** A conclusão limpa doze campos de
+    entrada do card ao terminar; recalcular a nota a partir dele dias depois daria
+    números diferentes dos que foram emitidos de fato. Do card ficam só o código
+    da obra e o número da medição, que sobrevivem à limpeza.
+    """
+    if not _token_ok():
+        return Response(_pagina_erro("Acesso não autorizado."), status=403, mimetype="text/html")
+    token = request.values.get("token", "")
+    card_id = (request.values.get("card_id") or "").strip()
+
+    if request.method == "GET":
+        return Response(_pagina_planilha(token, card_id), mimetype="text/html")
+
+    xml_texto = (request.form.get("xml") or "").strip()
+    arquivo = request.files.get("arquivo_xml")
+    if arquivo and arquivo.filename:
+        try:
+            xml_texto = arquivo.read().decode("utf-8", "replace").strip()
+        except Exception as e:
+            return Response(_pagina_planilha(token, card_id,
+                            aviso=f"Não consegui ler o arquivo do XML: {e}"),
+                            mimetype="text/html")
+    if not card_id or not xml_texto:
+        return Response(_pagina_planilha(token, card_id,
+                        aviso="Preciso do número do card E do XML da nota (o arquivo "
+                              "ou o texto colado). Os valores saem do XML."),
+                        mimetype="text/html")
+
+    try:
+        numero, _cod, data_iso, eh_nacional, _chave = _ids_da_nota(xml_texto)
+    except Exception as e:
+        return Response(_pagina_planilha(token, card_id,
+                        aviso=f"O XML não pôde ser lido: {type(e).__name__}: {e}. "
+                              f"Baixe o XML da nota e tente de novo."),
+                        mimetype="text/html")
+    if not numero or not data_iso:
+        return Response(_pagina_planilha(token, card_id,
+                        aviso="Não achei o número e a data da nota dentro do XML. "
+                              "Confira se baixou o XML da NOTA (e não o da declaração)."),
+                        mimetype="text/html")
+
+    buf = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buf):
+            print(f">>> SÓ A LINHA DA PLANILHA — nota {numero}, modelo "
+                  f"{'NACIONAL' if eh_nacional else 'antigo (ABRASF)'}. "
+                  f"Omie, card, Drive e WhatsApp NÃO são tocados.")
+            valores = _notas.valores_do_xml(xml_texto)
+            print(f"    valores lidos do XML: total R$ {_preview.brl(valores.valor_total)} | "
+                  f"líquido R$ {_preview.brl(valores.valor_liquido)} | "
+                  f"ISS R$ {_preview.brl(valores.iss)} | INSS R$ {_preview.brl(valores.inss)} | "
+                  f"IR R$ {_preview.brl(valores.ir)} | PIS R$ {_preview.brl(valores.pis)} | "
+                  f"COFINS R$ {_preview.brl(valores.cofins)}")
+            card, ws = _card_e_aba_notas(card_id)
+            print(f"    card {card_id}: obra {card.get('codigo_obra')} | "
+                  f"medição {_notas._num_medicao(card)}")
+            if _notas.gravar_linha(ws, card, None, valores, numero, data_iso):
+                print(f">>> Linha da nota {numero} gravada na 'Notas BWS'.")
+            else:
+                print(f">>> A nota {numero} JÁ estava na 'Notas BWS' — não dupliquei nada.")
+    except Exception as e:
+        buf.write(f"\n>>> ERRO: {type(e).__name__}: {e}")
+
+    rid = uuid.uuid4().hex
+    _RESULTADOS[rid] = {"numero": numero, "codigo": "", "data": data_iso,
+                        "log": buf.getvalue(), "card_id": card_id, "prox": None,
+                        "sub": None, "chave": "", "ensaio": False,
+                        "so_planilha": True}
+    return redirect(url_for(".resultado", id=rid, token=token))
+
+
+def _pagina_planilha(token, card_id, aviso=""):
+    t = html.escape(token)
+    box = (f"<div class='warn'>{html.escape(aviso)}</div>") if aviso else ""
+    return _doc("Só a linha da planilha", f"""
+      <h1>Só a linha da planilha</h1>
+      <p class='sub'>Use quando a nota <b>já saiu certa em tudo</b> — Omie, card,
+      arquivos, cliente — e <b>só a linha da "Notas BWS" não entrou</b>. Esta tela
+      grava essa linha e <b>não mexe em mais nada</b>: não emite nota, não toca no
+      Omie, não preenche slot no card, não manda WhatsApp.</p>
+      <p class='sub'>Se o que faltou foi mais do que a planilha, a tela certa é
+      <a href='{url_for('.recuperar')}?token={t}'>Recuperar entrega</a>; se a nota
+      foi emitida à mão no portal, é
+      <a href='{url_for('.manual')}?token={t}'>Nota emitida no portal</a>. As duas
+      fazem o serviço completo — e usar uma delas aqui preencheria um segundo slot
+      no card e mandaria o aviso ao cliente de novo.</p>
+      {box}
+      <div class='card'>
+        <form method='post' action='{url_for('.planilha')}' enctype='multipart/form-data'>
+          <div style='background:#eef5ff;border:1px solid #9cc0e8;border-radius:8px;padding:12px;margin-bottom:12px'>
+            <label class='lbl' style='margin:0'><b>1. O XML da nota</b> — é daqui que
+              saem os valores</label>
+            <p class='sub' style='margin:6px 0'>Os valores da linha vêm do XML, e não
+            do card: ao concluir, o sistema limpa doze campos de entrada do card
+            (valor parcial, tipo de medição, alíquotas, banco), então recalcular a
+            nota hoje daria números diferentes dos que foram emitidos.</p>
+            <input type='file' name='arquivo_xml' accept='.xml,text/xml'>
+            <p class='sub' style='margin:8px 0 4px'>Ou cole o conteúdo do XML:</p>
+            <textarea name='xml' rows='6' placeholder='&lt;?xml ...&gt;'></textarea>
+          </div>
+          <label class='lbl'><b>2. Número do card no Pipefy</b> — dele saem só o
+            código da obra e o número da medição
+            <input name='card_id' value='{html.escape(card_id)}' style='padding:8px;
+                   border:1px solid #c8d0da;border-radius:6px'></label>
+          <input type='hidden' name='token' value='{t}'>
+          <button type='submit'>Gravar a linha na planilha</button>
+        </form>
+        <p class='sub'>Tem trava contra fazer duas vezes: se o número já estiver na
+        coluna "Nº Nota" da "Notas BWS", ele avisa e não grava nada.</p>
+      </div>""")
 
 @bp.route("/declaracao", methods=["GET", "POST"])
 def declaracao():
@@ -1186,7 +1332,8 @@ def _pagina_pedir_card(token):
         <a href='{url_for('.recuperar')}?token={t}'>Recuperar entrega</a> &nbsp;·&nbsp;
         <a href='{url_for('.regerar')}?token={t}'>Regravar PDFs</a> &nbsp;·&nbsp;
         <a href='{url_for('.declaracao')}?token={t}'>Conferir declaração</a> &nbsp;·&nbsp;
-        <a href='{url_for('.manual')}?token={t}'>Nota emitida no portal</a>
+        <a href='{url_for('.manual')}?token={t}'>Nota emitida no portal</a> &nbsp;·&nbsp;
+        <a href='{url_for('.planilha')}?token={t}'>Só a linha da planilha</a>
       </p>""")
 
 
@@ -1413,6 +1560,9 @@ def _render_pagina(ctx, card_id, token, nota_sub="", tm_over="", val_over=None, 
               f" &nbsp;·&nbsp; "
               f"<a href='{url_for('.manual')}?token={html.escape(token)}"
               f"&card_id={html.escape(card_id)}'>Nota emitida no portal</a>"
+              f" &nbsp;·&nbsp; "
+              f"<a href='{url_for('.planilha')}?token={html.escape(token)}"
+              f"&card_id={html.escape(card_id)}'>Só a linha da planilha</a>"
               f"</p>")
     return _doc("Emissão NFS-e", sub_banner + cab + f"<div class='card'>{metrics}{alertas}</div>"
                 + form + f"<div class='card'><b>Espelho</b>{iframe}</div>" + rodape)
@@ -1441,6 +1591,19 @@ def _pagina_resultado(r):
                      f"<p class='sub'>No modelo nacional é a chave que identifica a nota — "
                      f"ela substituiu o antigo código de verificação, e é por ela que o "
                      f"cliente consulta a nota no portal nacional.</p></div>")
+
+    if r.get("so_planilha"):
+        # Página própria de propósito: a de emissão diria "nota emitida" e "os
+        # documentos sobem no Drive", e aqui nada disso aconteceu — só a linha.
+        return _doc("Linha gravada na planilha", f"""
+          <h1>Só a linha da planilha</h1>
+          <div class='ok'>Nota <b>{html.escape(str(r['numero']))}</b>, emissão
+            {html.escape(str(r['data']))}.</div>
+          <div class='card'><b>O que foi feito</b><pre>{log}</pre></div>
+          <p class='sub'>Nada além da planilha foi tocado: nenhuma nota foi emitida,
+          o Omie não mudou, o card não ganhou slot novo e ninguém recebeu aviso.
+          Confira a linha na aba "Notas BWS" — as colunas de Q em diante são fórmulas
+          e preenchem sozinhas.</p>""")
 
     if r.get("ensaio"):
         return _doc("Ensaio em homologação", f"""
