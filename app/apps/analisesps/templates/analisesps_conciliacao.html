@@ -537,7 +537,15 @@
             {%- elif l.origem == 'planilha' %}
               <span class="etiqueta" title="veio da planilha antiga">planilha</span>
             {%- endif %}</div></td>
-          <td>{{ l.documento }}</td>
+          <td>{{ l.documento }}
+            {# A SP DESTE PAGAMENTO (07/10/2026): mesmo valor, mesma conta, paga no
+               dia ou com data próxima. Clicável — abre o card no Pipefy. #}
+            {% for sp in l.sps or [] %}
+              {% if not loop.first or l.documento %}<br>{% endif %}<a class="sp-da-linha" href="{{ sp.link }}" target="_blank" rel="noopener"
+                     title="{{ sp.credor }} · {{ sp.como }}{% if sp.nome_confere %} · o nome confere{% endif %}{% if not sp.conta_ok %} · a SP não diz a conta{% endif %} · {{ sp.status or 'sem status' }}"
+                     >SP {{ sp.id }}{% if (sp.como != 'pago no dia' and not sp.nome_confere) or (l.sps|length) > 1 %}?{% endif %}</a>
+              {% if sp.sem_baixa %}<span class="selo pagar" title="O banco pagou, mas a SP está &quot;{{ sp.status or 'sem status' }}&quot; — a planilha não deu baixa">sem baixa</span>{% endif %}
+            {% endfor %}</td>
           <td class="direita valor-entrada">{{ l.valor|moeda if l.valor > 0 else '' }}</td>
           <td class="direita valor-saida">{{ (-l.valor)|moeda if l.valor < 0 else '' }}</td>
           <td class="direita saldo">{{ l.saldo|moeda }}</td>
