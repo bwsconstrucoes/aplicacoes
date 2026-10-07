@@ -2386,6 +2386,35 @@ atualizações comuns liam no máximo 600 apropriações por vez.
 **Caminho combinado para 2026:** Reler os pagamentos só de 2026 → Conferir o
 ano inteiro → abrir mês a mês só a conta que não bater.
 
+## Aportes e dividendos: a régua dos dividendos, agrupar, nomes — 07/10/2026 (noite)
+
+Com os aportes da Sicredi já aparecendo, o dono leu o bloco de aportes e achou
+confuso — *"gera desconfiança na informação; talvez até esteja errado"*.
+
+**Estava errado num ponto:** "O dinheiro da obra" mostrava dividendos de
+R$ 120.002,00 e o "Resultado × dividendos", logo abaixo, R$ 1,00. O segundo
+cortava o que é classificado como transferência, e os R$ 120 mil (24/07/2026,
+pagos por lançamento de conta corrente) caíam nesse corte. Agora os dois
+contam o dividendo pela mesma régua (sem cortar transferência), e o clique no
+número abre os mesmos lançamentos.
+
+**O que mudou na tela:**
+- Os lançamentos de aporte e dividendo aparecem um por lançamento; o dividido
+  entre obras mostra "▸ 2 obras" e abre as partes (mesmo agrupamento do
+  Analítico). O Excel continua uma linha por obra.
+- "O dinheiro da obra, com os sócios" virou **"O dinheiro da obra"**, e
+  "Saldo com os sócios" virou **"Saldo da obra"**, com a explicação: é o que a
+  obra gerou e ainda está nela NO PERÍODO DOS FILTROS — não é o saldo do banco
+  (o banco começa com o saldo de antes, guarda dinheiro de mais de uma obra e
+  não enxerga transferência entre contas). Para comparar com o banco, a
+  conferência de saldo.
+- O aviso de "distribuído a mais do que o resultado" agora distingue o caso
+  em que o resultado do conjunto é negativo (obras com prejuízo no período
+  puxando o total) — que era o caso dele: ESCALFREDAO e ESCPLANALTO só com
+  despesas no filtro.
+- "Não achou um aporte ou dividendo?" saiu do DRE e foi para Configurações
+  (*"não é para estar na apresentação"*).
+
 ## Reler os pagamentos de um ano, de alguns ou de todos — 07/10/2026
 
 O dono, vendo a releitura retomada em "2025 (11 de 12 anos, 10 já feitos

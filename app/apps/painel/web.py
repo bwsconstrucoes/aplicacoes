@@ -2442,6 +2442,13 @@ def configuracoes():
     conferencias_com_erro: list[dict] = []
     contexto = {"aba_ativa": "config", "abas": ABAS}
     sincronizacao = tarefas.estado()
+    # "Não achou um aporte ou dividendo?" mora aqui desde 07/10/2026 (veio do
+    # DRE): a lista de obras para escolher
+    try:
+        from . import consultas as _c
+        contexto["obras_para_conferir"] = _c.opcoes_de_filtro().get("obras", [])
+    except Exception:  # noqa: BLE001 — banco fora, migracao pendente
+        contexto["obras_para_conferir"] = []
     # A historia das atualizacoes, passo a passo (dono, 06/10/2026: "ninguem
     # entende direito"). Falha aqui nao derruba a tela de configuracao.
     try:

@@ -216,6 +216,41 @@
   <div id="saldo-saida" style="margin-top:10px"></div>
 </div>
 
+<!-- ====== NÃO ACHOU UM APORTE OU DIVIDENDO? — veio do DRE em 07/10/2026 ======
+     O dono: "isso aqui não é para estar aqui; se tiver, tem que ser em
+     Configurações, e não na apresentação." -->
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Não achou um aporte ou dividendo?</h3>
+    <small>confere lançamento a lançamento, com o motivo de entrar ou não</small>
+  </div>
+  <p class="cartao-dica" style="margin-top:0">
+    Escolha a obra (ou digite o <b>Nº no OMIE</b> de um título) e veja cada
+    lançamento com cara de aporte ou dividendo, e o motivo de ele entrar no
+    quadro de aportes do DRE ou ficar de fora: categoria não reconhecida, não
+    quitado, lado de quem mandou o dinheiro, sem projeto… Se o lançamento nem
+    aparecer na lista, ele ainda não chegou ao painel (ou está em outra obra —
+    procure pelo número).
+  </p>
+  <form id="conferir-aportes" class="form-grade" style="margin-top:6px">
+    <div class="campo">
+      <label for="obra-conferida">Obra</label>
+      <select id="obra-conferida" name="obra_conferida">
+        <option value="">(escolha)</option>
+        {% for o in obras_para_conferir or [] %}<option value="{{ o }}">{{ o }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="campo">
+      <label for="codigo-conferido">ou o Nº no OMIE</label>
+      <input id="codigo-conferido" name="codigo" inputmode="numeric" placeholder="ex.: 11204772585">
+    </div>
+    <div class="campo" style="align-self:end">
+      <button class="btn" type="submit">Conferir</button>
+    </div>
+  </form>
+  <div id="conferir-aportes-saida" style="margin-top:10px"></div>
+</div>
+
 <!-- ============ UM LANÇAMENTO DE CONTA CORRENTE, CRU — 07/10/2026 ============ -->
 <div class="cartao">
   <div class="cartao-cab">
@@ -1541,6 +1576,49 @@ async function acompanhar() {
   }
 }
 {% if sincronizacao.rodando %}acompanhar();{% endif %}
+
+// Por que um aporte/dividendo não aparece — veio do DRE (07/10/2026)
+(function () {
+  const form = els("conferir-aportes"), saida = els("conferir-aportes-saida");
+  if (!form) return;
+  const esc = t => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+  const dia = v => v ? v.slice(8, 10) + "/" + v.slice(5, 7) + "/" + v.slice(0, 4) : "—";
+  form.addEventListener("submit", async ev => {
+    ev.preventDefault();
+    const obra = form.obra_conferida.value, codigo = form.codigo.value.trim();
+    if (!obra && !codigo) { form.obra_conferida.focus(); return; }
+    saida.innerHTML = '<p class="cartao-dica">Conferindo…</p>';
+    const consulta = new URLSearchParams();
+    if (codigo) consulta.set("codigo", codigo); else consulta.set("obra_conferida", obra);
+    try {
+      const d = await (await fetch("{{ url_for('painel.dre_conferir_aportes') }}?" + consulta.toString())).json();
+      if (!d.ok) { saida.innerHTML = `<p class="aviso erro">${esc(d.erro || "Não deu para conferir.")}</p>`; return; }
+      if (!d.linhas.length) {
+        saida.innerHTML = codigo
+          ? '<p class="aviso">Este número não está no painel. Ou ainda não chegou (a atualização traz os últimos 30 dias; a completa, 180), ou foi digitado errado.</p>'
+          : '<p class="aviso">Nenhum lançamento com cara de aporte ou dividendo nesta obra. Se no OMIE ele existe, procure pelo Nº no OMIE: ele pode estar em outra obra, ou sem obra.</p>';
+        return;
+      }
+      saida.innerHTML = `<p class="cartao-dica">${d.quantos} lançamento(s) · <b class="v-pos">${d.entram} entram</b> · <b class="v-neg">${d.quantos - d.entram} ficam de fora</b></p>
+        <div class="tabela-rolagem"><table><thead><tr>
+          <th class="sem-ordem">Data</th><th class="sem-ordem">Nº no OMIE</th>
+          <th class="sem-ordem">Quem</th><th class="sem-ordem">Categoria</th>
+          <th class="sem-ordem">Obra · projeto</th><th class="sem-ordem direita">Valor</th>
+          <th class="sem-ordem">Entra?</th></tr></thead><tbody>`
+        + d.linhas.map(l => `<tr>
+          <td class="dados">${dia(l.data)}</td>
+          <td class="dados"><small>${l.link ? `<a href="${esc(l.link)}" target="_blank" rel="noopener">${esc(l.codigo)} ↗</a>` : esc(l.codigo)}</small></td>
+          <td class="desc">${esc(l.quem || "—")}</td>
+          <td class="desc">${esc(l.categoria || "—")}${l.codigo_categoria ? ` <small>${esc(l.codigo_categoria)}</small>` : ""}</td>
+          <td class="desc">${esc(l.obra || "(não apropriado)")}<br><small>${esc(l.projeto || "sem projeto")}</small></td>
+          <td class="dados direita ${l.valor < 0 ? "v-neg" : "v-pos"}">${moeda(l.valor)}</td>
+          <td class="desc"><b class="${l.entra ? "v-pos" : "v-neg"}">${l.entra ? "Sim" : "Não"}</b><br><small>${esc(l.motivo)}</small></td>
+        </tr>`).join("") + "</tbody></table></div>";
+    } catch (e) {
+      saida.innerHTML = '<p class="aviso erro">Não deu para conferir. Tente de novo.</p>';
+    }
+  });
+})();
 
 // A conferência de saldo, painel × OMIE (07/10/2026)
 (function () {
