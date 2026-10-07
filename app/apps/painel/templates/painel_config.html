@@ -164,10 +164,21 @@
           {% elif chave == 'completa' %}Atualização completa
           {% elif chave == 'so_numeros' %}Só refazer os números
           {% elif chave == 'observacoes' %}Buscar as observações
-          {% elif chave == 'pagamentos' %}Reler todos os pagamentos
+          {% elif chave == 'pagamentos' %}Reler os pagamentos
           {% else %}Primeira carga{% endif %}
         </button>
         <p class="cartao-dica">{{ descricao }}</p>
+        {% if chave == 'pagamentos' %}
+          {# escolher o ano, ou todos (dono, 07/10/2026) #}
+          <div class="anos-releitura" style="display:flex; flex-wrap:wrap; gap:6px; margin-top:4px">
+            {% for ano in anos_da_releitura %}
+              <label class="selo neutro" style="cursor:pointer">
+                <input type="checkbox" name="ano_releitura" value="{{ ano }}"> {{ ano }}
+              </label>
+            {% endfor %}
+          </div>
+          <p class="dica">Nenhum marcado = todos os anos.</p>
+        {% endif %}
       </div>
     {% endfor %}
   </div>
@@ -1345,7 +1356,14 @@ if (btnMigrar) {
 document.querySelectorAll("button[data-modo]").forEach(b => {
   b.onclick = async () => {
     const modo = b.dataset.modo;
-    if (modo === "completa" || modo === "carga_inicial" || modo === "pagamentos") {
+    const anos = modo === "pagamentos"
+      ? Array.from(document.querySelectorAll('input[name="ano_releitura"]:checked')).map(c => Number(c.value))
+      : [];
+    if (modo === "pagamentos") {
+      const quais = anos.length ? "os anos " + anos.join(", ") : "TODOS os anos (demorado)";
+      if (!confirm("Reler os pagamentos de " + quais + "? Roda no servidor; " +
+                   "você pode fechar a página.")) return;
+    } else if (modo === "completa" || modo === "carga_inicial") {
       if (!confirm("Essa atualização é demorada (pode levar horas na primeira " +
                    "vez). Ela roda no servidor; você pode fechar a página. Começar?")) return;
     }
@@ -1353,7 +1371,7 @@ document.querySelectorAll("button[data-modo]").forEach(b => {
     try {
       const r = await fetch("{{ url_for('painel.sincronizar') }}", {
         method: "POST", headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({modo: modo})
+        body: JSON.stringify({modo: modo, anos: anos})
       });
       const d = await r.json();
       if (d.ok) {

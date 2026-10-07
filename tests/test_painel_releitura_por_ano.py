@@ -156,3 +156,46 @@ def test_a_releitura_antiga_sem_marca_tambem_trava_o_recalculo(base):
     with base.conexao() as conn:
         conn.execute("TRUNCATE TABLE execucoes")
         conn.commit()
+
+
+@pytest.mark.banco
+def test_escolher_os_anos_le_so_eles(base):
+    """07/10/2026, o dono: "deveria poder eu selecionar o ano ou fazer tudo"."""
+    from app.apps.painel.sync import espelho
+    hoje = dt.date(2018, 6, 1)
+    r = espelho.preparar_releitura([2016, 2018, 1999], hoje=hoje)
+    assert r == {"aberta_antes": False, "anos": [2016, 2018]}
+    cli = ClienteFalso()
+    espelho.reler_pagamentos_por_ano(hoje=hoje, cli=cli)
+    assert cli.anos_lidos == [2016, 2018]
+    # nenhum escolhido = todos
+    assert espelho.preparar_releitura([], hoje=hoje)["anos"] == [2015, 2016, 2017, 2018]
+
+
+@pytest.mark.banco
+def test_escolher_anos_com_releitura_pela_metade_termina_a_pendente(base):
+    """O buraco da releitura cortada não pode ficar para trás porque alguém
+    escolheu outro ano."""
+    from app.apps.painel.sync import espelho
+    hoje = dt.date(2018, 6, 1)
+    with pytest.raises(RuntimeError):
+        espelho.reler_pagamentos_por_ano(hoje=hoje, cli=ClienteFalso(cair_em=2017))
+    r = espelho.preparar_releitura([2015], hoje=hoje)
+    assert r == {"aberta_antes": True, "anos": [2017, 2018]}
+
+
+@pytest.mark.banco
+def test_o_botao_manda_os_anos(base, monkeypatch):
+    from app.apps.painel import tarefas
+    monkeypatch.setattr(tarefas, "_iniciar_processo", lambda modo, eid: None)
+    with base.conexao() as conn:
+        conn.execute("TRUNCATE TABLE execucoes")
+        conn.commit()
+    r = tarefas.disparar("pagamentos", anos=[2025])
+    assert r["ok"] and "Anos: 2025." in r["descricao"]
+    from app.apps.painel.sync import espelho
+    with base.conexao() as conn:
+        feitos = espelho._anos_relidos(conn)
+        conn.execute("TRUNCATE TABLE execucoes")
+        conn.commit()
+    assert 2025 not in feitos and 2024 in feitos

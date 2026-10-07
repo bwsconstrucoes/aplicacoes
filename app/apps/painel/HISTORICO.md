@@ -2182,6 +2182,17 @@ tinha — era a mensagem da regra "consolidada", e a regra saía consolidada
 mesmo com bancária presente. Com a decisão separada, "consolidada" só aparece
 quando de fato não há bancária.
 
+## Reler os pagamentos de um ano, de alguns ou de todos — 07/10/2026
+
+O dono, vendo a releitura retomada em "2025 (11 de 12 anos, 10 já feitos
+antes)": *"deveria poder eu selecionar o ano ou fazer tudo"*. O botão virou
+"Reler os pagamentos", com os anos para marcar (nenhum = todos). Por baixo, a
+mesma marca da retomada: os anos não escolhidos entram como "já feitos"
+(`espelho.preparar_releitura`). **Com uma releitura pela metade, a escolha não
+a troca: ela é terminada primeiro** (o buraco não pode ficar para trás), e a
+tela diz quais anos faltam. O andamento passou a dizer "2025: página 69 de 506
+— depois dele, mais 1 ano(s)".
+
 ## ⚠️ INCIDENTE: a janela de pagamentos NÃO era atômica — 06/10/2026
 
 **Eu (Claude) afirmei ao dono, mais de uma vez, que a leitura de pagamentos

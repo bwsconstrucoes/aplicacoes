@@ -47,7 +47,7 @@ MODOS = {
     "rapida": "Atualização do dia — baixa o que mudou e refaz os números",
     "completa": "Atualização completa — inclui a varredura de títulos excluídos no OMIE",
     "so_numeros": "Só refazer os números, sem baixar nada do OMIE",
-    "pagamentos": "Reler todos os pagamentos do OMIE, de qualquer data — para baixa lançada com data de mais de 6 meses (demorado)",
+    "pagamentos": "Reler os pagamentos do OMIE de um ano, de alguns ou de todos — para baixa lançada com data de mais de 6 meses (todos: demorado)",
     "observacoes": "Buscar as observações dos títulos no OMIE (bloco a bloco, pode parar e continuar)",
     "carga_inicial": "Primeira carga — baixa toda a base do OMIE (demorado)",
 }
@@ -58,7 +58,7 @@ ROTULOS = {
     "rapida": "Atualização do dia",
     "completa": "Atualização completa",
     "so_numeros": "Só refazer os números",
-    "pagamentos": "Reler todos os pagamentos",
+    "pagamentos": "Reler os pagamentos",
     "observacoes": "Buscar as observações",
     "carga_inicial": "Primeira carga",
 }
@@ -449,10 +449,13 @@ def vigiar_para_sempre(intervalo: int = SEGUNDOS_ENTRE_VIGIAS) -> None:
             logger.exception("Painel: o vigia das atualizações falhou (sigo vigiando)")
 
 
-def disparar(modo: str, disparo: str = "manual") -> dict:
-    """Começa a atualização. Devolve o que dizer a quem pediu."""
+def disparar(modo: str, disparo: str = "manual", anos=None) -> dict:
+    """Começa a atualização. Devolve o que dizer a quem pediu.
+
+    `anos`: só para "pagamentos" — os anos a reler (vazio = todos)."""
     if modo not in MODOS:
         return {"ok": False, "erro": f"Modo desconhecido: {modo}"}
+    aviso_dos_anos = ""
 
     from .db import conexao
 
@@ -464,6 +467,14 @@ def disparar(modo: str, disparo: str = "manual") -> dict:
         return {"ok": False,
                 "erro": f"Já existe uma atualização em andamento ({etapa}). "
                         "Espere ela terminar."}
+
+    if modo == "pagamentos" and disparo == "manual":
+        from .sync import espelho
+        preparo = espelho.preparar_releitura(anos)
+        lista = ", ".join(str(a) for a in preparo["anos"])
+        aviso_dos_anos = (
+            f" Havia uma releitura pela metade: ela é terminada primeiro (faltam {lista})."
+            if preparo["aberta_antes"] else f" Anos: {lista}.")
 
     with conexao() as conn:
         execucao_id = _abrir_execucao(conn, modo, disparo)
@@ -477,5 +488,5 @@ def disparar(modo: str, disparo: str = "manual") -> dict:
                              f"Não consegui iniciar a atualização: {e}", None)
         return {"ok": False, "erro": f"Não consegui iniciar a atualização: {e}"}
 
-    return {"ok": True, "modo": modo, "descricao": MODOS[modo],
+    return {"ok": True, "modo": modo, "descricao": MODOS[modo] + aviso_dos_anos,
             "execucao": execucao_id}

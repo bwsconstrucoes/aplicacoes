@@ -1470,6 +1470,36 @@ def _marcar_anos_relidos(conn, anos) -> None:
                  (CHAVE_ANOS_RELIDOS, json.dumps(sorted(set(anos)))))
 
 
+def anos_da_releitura(hoje=None) -> list[int]:
+    hoje = hoje or dt.date.today()
+    return list(range(PRIMEIRO_DIA_DOS_PAGAMENTOS.year, hoje.year + 1))
+
+
+def preparar_releitura(anos_escolhidos, hoje=None) -> dict:
+    """Abre uma releitura SÓ dos anos escolhidos (dono, 07/10/2026: "deveria
+    poder eu selecionar o ano ou fazer tudo").
+
+    Usa a mesma marca da retomada: os anos NÃO escolhidos entram como "já
+    feitos", e a releitura lê só o resto. Se já houver uma releitura pela
+    metade, ela não é trocada — é terminada primeiro, senão o buraco que ela
+    deixou ficaria para trás. Vazio = todos os anos."""
+    todos = anos_da_releitura(hoje)
+    escolhidos = sorted({int(a) for a in (anos_escolhidos or []) if int(a) in todos})
+    conn = conectar()
+    try:
+        pendente = conn.execute("SELECT 1 FROM config WHERE chave = ?",
+                                (CHAVE_ANOS_RELIDOS,)).fetchone()
+        if pendente:
+            faltam = sorted(set(todos) - set(_anos_relidos(conn)))
+            return {"aberta_antes": True, "anos": faltam}
+        if escolhidos:
+            _marcar_anos_relidos(conn, set(todos) - set(escolhidos))
+            conn.commit()
+        return {"aberta_antes": False, "anos": escolhidos or todos}
+    finally:
+        conn.close()
+
+
 def reler_pagamentos_por_ano(env=".env", hoje=None, cli=None) -> dict:
     """Relê do OMIE os pagamentos de todos os anos, um ano por vez.
 
@@ -1486,7 +1516,7 @@ def reler_pagamentos_por_ano(env=".env", hoje=None, cli=None) -> dict:
         # (`tarefas._releitura_pendente`).
         _marcar_anos_relidos(conn, feitos)
         conn.commit()
-        anos = list(range(PRIMEIRO_DIA_DOS_PAGAMENTOS.year, hoje.year + 1))
+        anos = anos_da_releitura(hoje)
         relidos, total = [], 0
         for i, ano in enumerate(anos, 1):
             if ano in feitos:
@@ -1496,12 +1526,13 @@ def reler_pagamentos_por_ano(env=".env", hoje=None, cli=None) -> dict:
             ini_str, fim_str = ini.strftime("%d/%m/%Y"), fim.strftime("%d/%m/%Y")
             apagados = _apagar_movimentos_janela(conn, ini, fim, confirmar=False)
             n_ano = 0
+            depois = sum(1 for a in anos if a > ano and a not in feitos)
             for pagina, total_paginas, _tr, registros in cli.listar_movimentos(
                     param_extra={"dDtPagtoDe": ini_str, "dDtPagtoAte": fim_str}):
                 _progresso("relendo os pagamentos no OMIE, ano a ano",
-                           f"{ano} ({i} de {len(anos)} anos"
-                           f"{', ' + str(len(feitos)) + ' já feitos antes' if feitos else ''})"
-                           f": página {pagina} de {total_paginas}")
+                           f"{ano}: página {pagina} de {total_paginas}"
+                           + (f" — depois dele, mais {depois} ano(s)" if depois
+                              else " — é o último ano"))
                 qm, _ = gravar_movimentos(conn, registros, confirmar=False)
                 n_ano += qm
             feitos.add(ano)
