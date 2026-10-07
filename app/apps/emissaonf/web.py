@@ -396,6 +396,135 @@ def resultado():
     return Response(_pagina_resultado(r), mimetype="text/html")
 
 
+@bp.route("/manual", methods=["GET", "POST"])
+def manual():
+    """Registra no sistema uma nota que foi emitida NO PORTAL da prefeitura.
+
+    Para que serve: quando o canal da emissão está fora do ar — como em
+    07/10/2026, com a prefeitura aceitando a declaração e nunca transmitindo —
+    a empresa não pode parar de faturar. A nota sai no portal, à mão, e esta
+    tela faz todo o resto: planilha, Omie, card, Drive e avisos.
+
+    **O XML manda nos dados, e isso não é preferência.** Dele saem número,
+    chave, valores e datas como dados exatos. Do PDF seria preciso LER os
+    números de um texto, e um valor lido errado iria para a planilha e para o
+    Omie sem ninguém notar — em documento fiscal isso não se faz.
+
+    **O PDF, quando anexado, entra como o documento.** O que o sistema desenha é
+    uma réplica boa; o do portal é o original. Tendo o original, é ele que o
+    cliente recebe.
+    """
+    if not _token_ok():
+        return Response(_pagina_erro("Acesso não autorizado."), status=403, mimetype="text/html")
+    token = request.values.get("token", "")
+    card_id = (request.values.get("card_id") or "").strip()
+
+    if request.method == "GET":
+        return Response(_pagina_manual(token, card_id), mimetype="text/html")
+
+    xml_texto = (request.form.get("xml") or "").strip()
+    arquivo_xml = request.files.get("arquivo_xml")
+    if arquivo_xml and arquivo_xml.filename:
+        try:
+            xml_texto = arquivo_xml.read().decode("utf-8", "replace").strip()
+        except Exception as e:
+            return Response(_pagina_manual(token, card_id,
+                            aviso=f"Não consegui ler o arquivo do XML: {e}"),
+                            mimetype="text/html")
+    if not card_id or not xml_texto:
+        return Response(_pagina_manual(token, card_id,
+                        aviso="Preciso do número do card E do XML da nota "
+                              "(o arquivo ou o texto colado)."), mimetype="text/html")
+
+    pdf_bytes = None
+    arquivo_pdf = request.files.get("arquivo_pdf")
+    if arquivo_pdf and arquivo_pdf.filename:
+        pdf_bytes = arquivo_pdf.read() or None
+
+    try:
+        numero, codigo, data_iso, eh_nacional, chave_nac = _ids_da_nota(xml_texto)
+    except Exception as e:
+        return Response(_pagina_manual(token, card_id,
+                        aviso=f"O XML não pôde ser lido: {type(e).__name__}: {e}. "
+                              f"Baixe o XML da nota no portal e tente de novo."),
+                        mimetype="text/html")
+    if not numero:
+        return Response(_pagina_manual(token, card_id,
+                        aviso="Não achei o número da nota dentro do XML. Confira se "
+                              "baixou o XML da NOTA (e não o da declaração)."),
+                        mimetype="text/html")
+
+    tmp = os.path.join(_DIR, f"manual_{numero}.xml")
+    with open(tmp, "w", encoding="utf-8") as fh:
+        fh.write(xml_texto)
+    buf = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buf):
+            print(f">>> NOTA EMITIDA NO PORTAL — nº {numero}, modelo "
+                  f"{'NACIONAL' if eh_nacional else 'antigo (ABRASF)'}"
+                  f"{', com o PDF oficial anexado' if pdf_bytes else ''}.")
+            _concluir.concluir(card_id, numero, codigo, data_iso, tmp,
+                               nacional=eh_nacional, chave_nacional=chave_nac,
+                               pdf_municipal=pdf_bytes)
+    except Exception as e:
+        buf.write(f"\n>>> ERRO no processamento: {type(e).__name__}: {e}")
+    finally:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+
+    rid = uuid.uuid4().hex
+    _RESULTADOS[rid] = {"numero": numero, "codigo": codigo, "data": data_iso,
+                        "log": buf.getvalue(), "card_id": card_id, "prox": None,
+                        "sub": None, "chave": chave_nac, "ensaio": False}
+    return redirect(url_for(".resultado", id=rid, token=token))
+
+
+def _pagina_manual(token, card_id, aviso=""):
+    t = html.escape(token)
+    box = (f"<div class='warn'>{html.escape(aviso)}</div>") if aviso else ""
+    return _doc("Nota emitida no portal", f"""
+      <h1>Nota emitida no portal</h1>
+      <p class='sub'>Use quando a nota foi emitida <b>à mão, no portal da
+      prefeitura</b> — porque o canal automático estava fora, ou porque era um caso
+      que só dá pelo portal. Daqui o sistema faz <b>todo o resto</b>: a linha na
+      planilha, as retenções no Omie, o slot no card, os arquivos no Drive e os
+      avisos. Ele <b>não emite nada</b>.</p>
+      {box}
+      <div class='card'>
+        <form method='post' action='{url_for('.manual')}' enctype='multipart/form-data'>
+          <div style='background:#eef5ff;border:1px solid #9cc0e8;border-radius:8px;padding:12px;margin-bottom:12px'>
+            <label class='lbl' style='margin:0'><b>1. O XML da nota</b> — é daqui que
+              saem os dados</label>
+            <p class='sub' style='margin:6px 0'>Baixe o XML da nota no portal e jogue o
+            arquivo aqui. Os números vêm dele, exatos; se eu tivesse que lê-los de um
+            PDF, um valor mal lido iria para a planilha e para o Omie sem ninguém ver.</p>
+            <input type='file' name='arquivo_xml' accept='.xml,text/xml'>
+            <p class='sub' style='margin:8px 0 4px'>Ou cole o conteúdo do XML:</p>
+            <textarea name='xml' rows='6' placeholder='&lt;?xml ...&gt;'></textarea>
+          </div>
+
+          <div style='background:#f6f8fb;border:1px solid #e1e7ee;border-radius:8px;padding:12px;margin-bottom:12px'>
+            <label class='lbl' style='margin:0'><b>2. O PDF da nota</b> — opcional, mas
+              melhor se tiver</label>
+            <p class='sub' style='margin:6px 0'>Se você anexar o PDF do portal, é ele
+            que vai para o Drive e para o cliente. Sem ele, o sistema desenha um
+            parecido a partir do XML — fica bom, mas o do portal é o original.</p>
+            <input type='file' name='arquivo_pdf' accept='.pdf,application/pdf'>
+          </div>
+
+          <label class='lbl'><b>3. Número do card no Pipefy</b>
+            <input name='card_id' value='{html.escape(card_id)}' style='padding:8px;
+                   border:1px solid #c8d0da;border-radius:6px'></label>
+          <input type='hidden' name='token' value='{t}'>
+          <button type='submit'>Registrar a nota e completar tudo</button>
+        </form>
+        <p class='sub'>Tem trava contra fazer duas vezes: se o número já estiver na
+        "Notas BWS", ele avisa e não duplica nada.</p>
+      </div>""")
+
+
 @bp.route("/declaracao", methods=["GET", "POST"])
 def declaracao():
     """Pergunta à prefeitura se uma declaração já virou nota — e termina o serviço.
@@ -1056,7 +1185,8 @@ def _pagina_pedir_card(token):
         <a href='{url_for('.diag')}?token={t}'>Diagnóstico</a> &nbsp;·&nbsp;
         <a href='{url_for('.recuperar')}?token={t}'>Recuperar entrega</a> &nbsp;·&nbsp;
         <a href='{url_for('.regerar')}?token={t}'>Regravar PDFs</a> &nbsp;·&nbsp;
-        <a href='{url_for('.declaracao')}?token={t}'>Conferir declaração</a>
+        <a href='{url_for('.declaracao')}?token={t}'>Conferir declaração</a> &nbsp;·&nbsp;
+        <a href='{url_for('.manual')}?token={t}'>Nota emitida no portal</a>
       </p>""")
 
 
@@ -1280,6 +1410,9 @@ def _render_pagina(ctx, card_id, token, nota_sub="", tm_over="", val_over=None, 
               f"<a href='{url_for('.regerar')}?token={html.escape(token)}'>Regravar PDFs</a>"
               f" &nbsp;·&nbsp; "
               f"<a href='{url_for('.declaracao')}?token={html.escape(token)}'>Conferir declaração</a>"
+              f" &nbsp;·&nbsp; "
+              f"<a href='{url_for('.manual')}?token={html.escape(token)}"
+              f"&card_id={html.escape(card_id)}'>Nota emitida no portal</a>"
               f"</p>")
     return _doc("Emissão NFS-e", sub_banner + cab + f"<div class='card'>{metrics}{alertas}</div>"
                 + form + f"<div class='card'><b>Espelho</b>{iframe}</div>" + rodape)

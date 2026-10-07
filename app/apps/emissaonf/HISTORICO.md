@@ -1033,6 +1033,61 @@ diagnóstico. Duas horas é o corte.
 Mandar alguém esperar por algo que não vai acontecer sozinho é pior que não dizer
 nada — custa o dia dele.
 
+### "Nota emitida no portal": a saída para quando o canal está fora — 07/10/2026
+
+Com o canal travado e a empresa sem poder faturar, o dono pediu:
+
+> *"Minha sugestão é que você crie um botão na tela de emissão de emissão
+> manual. Pensei em poder anexar o pdf da nota emitida ou xml, você me diz o
+> melhor, e a partir dali você vai fazer a leitura do que foi emitido e fazer o
+> processamento e atualizações."*
+
+Feito, e **a escolha entre PDF e XML não é preferência**: é a diferença entre
+dado e leitura.
+
+**O XML manda nos dados.** Dele saem número, chave, valores e datas como **dados
+exatos**. Do PDF seria preciso *ler* números de um texto — e um valor mal lido
+iria para a planilha e para o Omie **sem ninguém notar**. Em documento fiscal
+isso não se faz: o erro silencioso é o pior que existe nesta área.
+
+**O PDF, quando anexado, entra como o documento.** O que o sistema desenha é uma
+réplica boa; o do portal é o **original**. Tendo o original, é ele que vai para o
+Drive e para o cliente — e é melhor assim.
+
+A tela aceita o XML como **arquivo** (era o pedido) ou colado, aceita os dois
+modelos (antigo e nacional, decidindo pelo conteúdo), e tem a mesma trava
+anti-duplicação do `concluir`. Ela **não emite nada**, e diz isso em letras
+grandes.
+
+Erro comum previsto na própria mensagem: baixar o XML da **declaração** em vez do
+da **nota**. A tela explica a diferença em vez de só recusar.
+
+### E a pergunta do RPS: a resposta é boa notícia
+
+Junto do pedido, ele levantou uma dúvida importante:
+
+> *"A nota manual não gera número RPS eu acho. Isso será problema quando formos
+> emitir nova via API? Uma coisa que não tenho conseguido por conta desse RPS é
+> substituir uma nota manual por nota via API."*
+
+**O RPS era um problema do modelo ANTIGO, e ele morreu com o modelo.** No ABRASF,
+substituir exigia apontar o RPS da nota antiga, e nota manual tinha RPS com série
+vazia e tipo 0 — que a prefeitura guardava mas o XSD de envio recusava. Foi o que
+tornou nota manual insubstituível pela aplicação (ver a seção da substituição,
+mais acima).
+
+**No modelo nacional não existe RPS.** Quem identifica a nota é a **chave de
+acesso**, e a substituição é um **evento** registrado sobre ela. Nota manual tem
+chave como qualquer outra. Então o impedimento que o incomodava há meses
+**deixou de existir** — não por conserto nosso, mas porque o formato mudou.
+
+**Duas ressalvas honestas:** a substituição por evento ainda **não está
+implementada** aqui (segue como pendência), e emitir manualmente **não cria
+dívida nenhuma** para a emissão seguinte pela API — desde que a nota seja
+registrada por esta tela. É o registro que mantém a numeração alinhada: a
+numeração sai da planilha, e nota que não entra nela faria o sistema pedir um
+número que o município já usou.
+
 ### A limpeza do que o modelo antigo deixou
 
 Saíram do `web.py` o preparo do certificado para o envelope SOAP, a busca
