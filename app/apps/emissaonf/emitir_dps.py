@@ -72,6 +72,60 @@ def dados_da_nota(xml_nacional: str) -> dict:
     return {"numero": numero, "chave": chave, "data_iso": data, "xml_nacional": xml_nacional}
 
 
+class AindaProcessando(RuntimeError):
+    """A prefeitura recebeu a declaração e ainda não terminou. Nota não existe ainda."""
+
+
+def numero_da_declaracao(id_dps: str) -> tuple[str, str]:
+    """Tira o número da nota e o ano de dentro da identificação da declaração.
+
+    A identificação termina em: série(5) + ano(2) + número(13). Serve para
+    reencontrar o card e dizer à pessoa de que nota se está falando — ler um
+    identificador de 45 dígitos à mão é pedir erro.
+    """
+    digitos = "".join(c for c in str(id_dps or "") if c.isdigit())
+    if len(digitos) < 15:
+        return "", ""
+    ndps = digitos[-15:]
+    return str(int(ndps[2:])), "20" + ndps[:2]
+
+
+def consultar(ctx: dict, id_dps: str, token: str, producao: bool) -> dict:
+    """Pergunta à prefeitura se aquela declaração já virou nota.
+
+    É o caminho de saída do único aperto desta área: a declaração foi aceita, a
+    nota pode existir, e reenviar seria criar a segunda nota do mesmo serviço.
+    Em vez de reenviar, pergunta-se.
+
+    Devolve os dados da nota, ou levanta `AindaProcessando` se a prefeitura
+    ainda não terminou — e aí é só esperar e perguntar de novo.
+    """
+    chave_pem, cert_pem = ctx.get("chave_pem"), ctx.get("cert_pem")
+    if not (chave_pem and cert_pem):
+        raise NotaNaoSaiu("Certificado A1 não carregado — sem ele não dá para consultar.")
+    if not token:
+        raise NotaNaoSaiu("Token de integração da prefeitura ausente — ver a tela de Diagnóstico.")
+
+    cliente = nac.ELNfseNacional(
+        token=token, chave_pem=chave_pem, cert_pem=cert_pem,
+        ambiente="producao" if producao else "homologacao",
+    )
+    proc = cliente.consultar_processamento_dps(id_dps)
+    xml_nac = nac.ELNfseNacional.descompactar(proc.get("nfseXmlGZipB64", "") or "")
+    pronta = (proc.get("chaveAcesso") and xml_nac
+              and "processamento" not in xml_nac.lower() and "<" in xml_nac)
+    if not pronta:
+        bruto = (xml_nac or "").strip()[:300]
+        raise AindaProcessando(
+            f"A prefeitura confirma que recebeu a declaração, mas a nota ainda não "
+            f"ficou pronta.\n\nO que ela respondeu agora: "
+            f"{bruto or '(sem conteúdo — só o protocolo)'}\n\n"
+            f">>> Isto NÃO é erro, e NÃO autoriza emitir de novo. Espere alguns "
+            f"minutos e consulte esta mesma identificação outra vez."
+        )
+    return dados_da_nota(xml_nac)
+
+
 def _mensagem_de_erro(e: Exception) -> str:
     """Deixa o erro da prefeitura legível para quem está olhando a tela."""
     texto = str(e)
@@ -143,11 +197,19 @@ def emitir(ctx: dict, dados_dps: nac.DadosDPS, token: str, producao: bool,
             break
         time.sleep(ESPERA_ENTRE_CONSULTAS_S)
 
+    numero, _ano = numero_da_declaracao(id_dps)
     raise NotaTalvezTenhaSaido(
-        f"A prefeitura aceitou a declaração {id_dps} mas a nota não ficou pronta em "
-        f"{espera_total_s}s. {('Último retorno: ' + ultimo) if ultimo else ''}\n\n"
-        f">>> NÃO emita de novo: a nota pode ter saído. Use a tela "
-        f"'Fechar nacional pela chave' ou consulte esta identificação de declaração "
-        f"no portal antes de qualquer nova tentativa.",
+        f"A prefeitura ACEITOU a declaração da nota {numero or '?'} e ainda estava "
+        f"processando quando a espera de {espera_total_s}s acabou.\n\n"
+        f"Isto não é erro: o processamento dela é uma fila do lado da prefeitura, e "
+        f"às vezes demora mais que a nossa espera.\n"
+        f"{('O último retorno dela foi: ' + ultimo) if ultimo else 'Até o fim ela respondeu apenas que estava processando.'}\n\n"
+        f">>> NÃO EMITA DE NOVO. A nota {numero or ''} pode já existir, e emitir "
+        f"outra criaria a segunda nota do mesmo serviço — que é o que não se desfaz.\n\n"
+        f">>> O QUE FAZER: abra a tela \"Conferir declaração\" (link no pé da tela de "
+        f"emissão), cole a identificação abaixo e clique em consultar. Ela pergunta à "
+        f"prefeitura se a nota saiu e, se saiu, termina o serviço — planilha, Omie, "
+        f"card, Drive e avisos — sem emitir nada de novo.\n\n"
+        f"Identificação da declaração:\n{id_dps}",
         id_dps=id_dps,
     )
