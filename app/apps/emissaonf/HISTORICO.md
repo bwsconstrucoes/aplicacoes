@@ -614,6 +614,100 @@ ela passou batido por toda a migração. Agora há `tests/test_emissaonf_telas.p
 que abre as telas de verdade e exige, entre outras coisas, que o diagnóstico
 nunca mostre valor de credencial.
 
+### O caminho inteiro da emissão passou a ser exercitado sem prefeitura
+
+Depois de perder uma ida e volta do dono com o diagnóstico inalcançável, ficou
+claro o que faltava: **nenhum teste clicava no botão.** Os testes provavam que a
+declaração estava certa e que os documentos saíam certos, mas a *ligação* entre
+as peças — nome de campo, ordem de argumento, ordem das conferências — só era
+exercitada quando ele emitia.
+
+Agora o `tests/test_emissaonf_emissao_ponta_a_ponta.py` roda o caminho de
+verdade: o motor fiscal calcula, a declaração é montada e **assinada de verdade**
+(com um certificado descartável criado no próprio teste), e uma prefeitura
+dublada recebe o envio — conferindo que ele chegou compactado como o manual
+manda — e devolve a nota. Só o pós-emissão é dublado, porque ele escreve em
+planilha, Omie, card e Drive.
+
+**Ele achou dois defeitos na primeira execução, e os dois eram reais:**
+
+1. **A explicação da substituição era inalcançável.** O aviso de que substituir
+   pela tela não funciona mais vinha DEPOIS de carregar o card e conferir os
+   slots. Quem tentasse substituir uma nota que não estivesse nos slots recebia
+   *"confira o número no parâmetro nota_substituida do link"* — uma mensagem
+   sobre um parâmetro, quando a resposta certa é "isto não funciona mais, use o
+   portal". A explicação subiu para antes de tudo, e a conferência de slots e a
+   regra de "valor igual ou maior" saíram: elas só existiam para decidir se a
+   substituição podia ser feita aqui, e aqui ela não é mais feita.
+
+2. **O texto do aviso apareceria com as marcações cruas.** A tela de erro escapa
+   o texto — e com razão, porque quase sempre ele vem de uma exceção ou de uma
+   resposta de fora. Mas aquele aviso é escrito por nós, com negrito e
+   parágrafos. Virou uma função separada (`_pagina_explicacao`), e a separação é
+   de propósito: a diferença entre as duas é escapar ou não, e isso não pode
+   depender de alguém lembrar de passar um parâmetro.
+
+**E um detalhe de estrutura que vale saber antes de escrever teste de tela:** o
+`web.py` é carregado **duas vezes**, com dois nomes — `web` (o import plano, como
+os módulos desta pasta se importam entre si) e `app.apps.emissaonf.web` (o
+pacote, de onde o Flask registra o blueprint). Quem atende a requisição é o
+segundo. Trocar uma função no primeiro não tem efeito nenhum sobre o que roda —
+foi o que fez o primeiro teste do token passar quando não devia.
+
+### A nota 3281: a prefeitura aceitou e a nota não ficou pronta — 07/10/2026
+
+**O que aconteceu.** Primeira emissão real pelo modelo novo. A prefeitura
+aceitou a declaração `DPS...260000000003281` (nota **3281**) e ainda estava
+processando quando a espera de 150s acabou. A tela mostrou o aviso previsto:
+*"NÃO emita de novo: a nota pode ter saído."*
+
+**Isto não é defeito do nosso lado.** O processamento da declaração é uma fila da
+prefeitura, e o manual diz isso com todas as letras: o retorno HTTP 201 significa
+que ela RECEBEU, não que a nota já foi autorizada. Às vezes a fila demora mais
+que a nossa espera.
+
+**Mas a mensagem mandava para o lugar errado, e isso era defeito meu.** Ela dizia
+para usar a tela *"Fechar nacional pela chave"* — e essa tela só trabalha com
+notas que ficaram na fila do **Controle Nacional**. Uma nota nesta situação não
+está lá: o pós-emissão nunca rodou, porque a emissão não chegou até ele. A tela
+indicada não tinha o que fechar.
+
+Pior: a mensagem pedia para "consultar no portal", o que deixava o trabalho todo
+na mão do dono — e, se a nota tivesse saído, **nada** estaria feito: nem planilha,
+nem Omie, nem card, nem Drive, nem aviso.
+
+**O que foi feito: a tela "Conferir declaração".** Ela recebe a identificação da
+declaração, pergunta à prefeitura se aquilo já virou nota, e:
+
+- se **ainda não** virou, diz isso e manda esperar — deixando claro que isto
+  **não** autoriza emitir de novo;
+- se **virou** e o card foi informado, **termina o serviço**: planilha, Omie,
+  card, Drive e avisos, exatamente como a emissão teria feito. Sem emitir nada;
+- se virou e o card não foi informado, mostra o número e a chave, e avisa que
+  falta terminar.
+
+Três decisões dentro dela, cada uma por um motivo:
+
+1. **Consultar não cria nada, então pode repetir à vontade** — e o passo que
+   termina o serviço tem a trava anti-duplicação do `concluir`. Uma ferramenta de
+   emergência que a pessoa tem medo de usar duas vezes não serve.
+2. **O número da nota é extraído da identificação** e mostrado na tela. Ler 45
+   dígitos à mão para descobrir de que nota se trata é pedir erro.
+3. **A tela avisa, em vermelho, para não emitir enquanto não souber a resposta.**
+   É o único lugar do sistema onde a pressa cria uma segunda nota fiscal do mesmo
+   serviço.
+
+**E um defeito de código que isso revelou:** a espera (`ESPERA_TOTAL_S`) era valor
+padrão de argumento — congelado quando a função nasce. Mudar a constante não
+tinha efeito nenhum, e um teste que tentou encurtar a espera rodou os 150
+segundos inteiros. Agora o teto é lido dentro da função.
+
+**O que ficou em aberto, e precisa de dado real:** se a fila da prefeitura
+costuma passar de 150s, a espera deve subir. Não mexi no valor sem saber: subir
+cegamente pendura a tela por minutos e ocupa uma das quatro linhas de atendimento
+do serviço. A tela de conferir resolve o caso sem esse custo — e, com algumas
+emissões, dá para saber se vale subir.
+
 ### A limpeza do que o modelo antigo deixou
 
 Saíram do `web.py` o preparo do certificado para o envelope SOAP, a busca
