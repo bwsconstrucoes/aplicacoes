@@ -7,16 +7,31 @@ marcou como "concluído com sucesso" **ignorando o resultado da gravação**
 se existir, só aparece comparando as duas fontes — a planilha diz "Pago", o Omie
 diz "Aberto".
 
-Três coisas que este arquivo trava, porque errar nelas custa dinheiro ou memória:
+**São DUAS direções, e o dono apontou qual importa mais** (08/10/2026):
+
+> *"fazemos conciliação bancária diária. No sistema Omie vai estar tudo
+> atualizado. O furo pode ser mais na planilha e na movimentação do card."*
+
+1. **Planilha diz paga, Omie diz aberta** — a direção que este módulo olhava
+   primeiro, e a menos provável das duas por causa da conciliação diária.
+2. **Omie diz pago, planilha não diz** — o furo de verdade: o dinheiro saiu, o
+   Omie sabe, e a SP continua aparecendo como "a pagar" para quem usa a planilha.
+   Não aparece em lugar nenhum: a fila de falhas tinha ZERO pendências de
+   planilha, porque a gravação morria antes de chegar nela.
+
+Quatro coisas que este arquivo trava, porque errar nelas custa dinheiro ou memória:
 
 1. **O conferidor NÃO grava nada.** Relatório é relatório. Um conferidor que
    também corrige erraria em silêncio na primeira divergência de valor.
 2. **Ele não lê a aba inteira.** A SPsBD tem ~52 mil linhas × 37 colunas, e ler
    tudo custa 150-250 MB — foi assim que o serviço caiu por memória em julho de
-   2026. Sete colunas resolvem.
+   2026. Nove colunas resolvem.
 3. **"Título não encontrado" não é a mesma coisa que "baixa pela metade".** Um é
    cadastro errado na planilha; o outro é dinheiro pago sem baixa. Misturar os
    dois faz o relatório mentir.
+4. **As duas direções usam datas diferentes para a janela**, e têm de usar: a
+   primeira tem data de pagamento; a segunda não tem — a planilha nem sabe que
+   foi paga —, então a janela é pelo vencimento.
 """
 from datetime import datetime, timedelta
 
@@ -33,7 +48,8 @@ class _AbaSPsBD:
     """Dublê da SPsBD. Reclama se alguém tentar ler a aba inteira."""
 
     def __init__(self, linhas):
-        # cada linha: (id, credor, valor, status_pgt, codigo, data_pgt, comprovante)
+        # cada linha: (id, vencimento, credor, valor, status_pgt, codigo, card,
+        #              data_pgt, comprovante)
         self.linhas = linhas
         self.faixas_lidas = []
 
@@ -45,8 +61,8 @@ class _AbaSPsBD:
 
     def batch_get(self, faixas):
         self.faixas_lidas.extend(faixas)
-        indices = {'A2:A': 0, 'D2:D': 1, 'G2:G': 2, 'O2:O': 3,
-                   'P2:P': 4, 'X2:X': 5, 'AG2:AG': 6}
+        indices = {'A2:A': 0, 'C2:C': 1, 'D2:D': 2, 'G2:G': 3, 'O2:O': 4,
+                   'P2:P': 5, 'R2:R': 6, 'X2:X': 7, 'AG2:AG': 8}
         saida = []
         for f in faixas:
             i = indices[f]
@@ -72,8 +88,11 @@ class _Google:
 
 
 def _linha(sp_id='1443274610', credor='Fornecedor Exemplo Ltda', valor='7.350,48',
-           status='Pago', codigo='Int1443274610', dias=3, comprovante='link'):
-    return (sp_id, credor, valor, status, codigo,
+           status='Pago', codigo='Int1443274610', dias=3, comprovante='link',
+           vencimento=None, card='https://app.pipefy.com/cards/1'):
+    return (sp_id,
+            vencimento if vencimento is not None else _dias_atras(dias or 3),
+            credor, valor, status, codigo, card,
             _dias_atras(dias) if dias is not None else '', comprovante)
 
 
@@ -114,12 +133,13 @@ def _omie(monkeypatch, respostas):
 # 1. o que é candidato a conferência
 # =====================================================================
 
-def test_le_so_as_sete_colunas_que_precisa(planilha):
+def test_le_so_as_nove_colunas_que_precisa(planilha):
     aba = planilha([_linha()])
 
     mod.candidatas({})
 
-    assert aba.faixas_lidas == ['A2:A', 'D2:D', 'G2:G', 'O2:O', 'P2:P', 'X2:X', 'AG2:AG']
+    assert aba.faixas_lidas == ['A2:A', 'C2:C', 'D2:D', 'G2:G', 'O2:O',
+                                'P2:P', 'R2:R', 'X2:X', 'AG2:AG']
 
 
 def test_so_entra_o_que_a_planilha_diz_pago_e_tem_comprovante(planilha):
@@ -185,7 +205,7 @@ def test_titulo_aberto_no_omie_com_planilha_paga_e_a_baixa_pela_metade(
     assert r['quantidade_divergentes'] == 1
     assert r['divergentes'][0]['sp_id'] == '1443274610'
     assert r['divergentes'][0]['status_omie'] == 'ABERTO'
-    assert r['confirmadas_pagas_no_omie'] == 1
+    assert r['confirmadas_pagas_nos_dois'] == 1
 
 
 def test_titulo_inexistente_nao_e_contado_como_baixa_pela_metade(
@@ -236,8 +256,7 @@ def test_o_limite_segura_quantas_consultas_vao_ao_omie(
     r = mod.conferir({'limite': 4})
 
     assert len(chamados) == 4
-    assert r['conferidas_agora'] == 4
-    assert r['a_conferir'] == 30
+    assert r['consultas_ao_omie'] == 4
     assert r['restam_para_conferir'] == 26
 
 
@@ -249,7 +268,7 @@ def test_apenas_contar_nao_fala_com_o_omie(planilha, credenciais, monkeypatch):
 
     assert chamados == []
     assert r['apenas_contou'] is True
-    assert r['a_conferir'] == 7
+    assert r['a_conferir_planilha_paga'] == 7
 
 
 def test_sem_credencial_do_omie_ele_recusa_em_vez_de_relatar_errado(
@@ -272,3 +291,130 @@ def test_sem_divergencia_o_aviso_diz_isso_com_clareza(
 
     assert r['quantidade_divergentes'] == 0
     assert 'Nenhuma divergência' in r['aviso']
+
+
+# =====================================================================
+# 3. a direção que o dono apontou: Omie pago, planilha para trás
+# =====================================================================
+
+def _nao_paga(sp_id='1445859706', codigo='IntAberta', dias_venc=5,
+              card='https://app.pipefy.com/cards/9'):
+    """Linha que a planilha diz que NÃO foi paga."""
+    return (sp_id, _dias_atras(dias_venc), 'Fornecedor Exemplo Ltda',
+            '1.200,00', 'Pagar', codigo, card, '', '')
+
+
+def test_omie_pago_com_planilha_a_pagar_e_o_furo_de_verdade(
+        planilha, credenciais, monkeypatch):
+    planilha([_nao_paga(sp_id='1445859706', codigo='IntA')])
+    _omie(monkeypatch, {'IntA': {'ok': True, 'body': {'status_titulo': 'PAGO'}}})
+
+    r = mod.conferir({})
+
+    assert r['quantidade_planilha_atrasada'] == 1
+    item = r['planilha_atrasada'][0]
+    assert item['sp_id'] == '1445859706'
+    assert item['status_na_planilha'] == 'Pagar'
+    assert item['status_omie'] == 'PAGO'
+    # o cartão vem junto: o dono disse que o furo também está na movimentação
+    assert item['card'] == 'https://app.pipefy.com/cards/9'
+
+
+def test_aberta_nos_dois_lugares_nao_e_divergencia(
+        planilha, credenciais, monkeypatch):
+    planilha([_nao_paga(codigo='IntB')])
+    _omie(monkeypatch, {'IntB': {'ok': True, 'body': {'status_titulo': 'ABERTO'}}})
+
+    r = mod.conferir({})
+
+    assert r['quantidade_planilha_atrasada'] == 0
+    assert r['confirmadas_abertas_nos_dois'] == 1
+    assert 'Nenhuma divergência' in r['aviso']
+
+
+def test_a_janela_da_direcao_nova_e_pelo_vencimento(planilha):
+    """A planilha não sabe que foi paga, então não há data de pagamento para
+    usar. Sem janela, seriam ~52 mil consultas ao Omie."""
+    planilha([_nao_paga(sp_id='velha', dias_venc=400),
+              _nao_paga(sp_id='recente', dias_venc=10)])
+
+    r = mod.candidatas({})
+
+    assert [c['sp_id'] for c in r['conferiveis_nao_pagas']] == ['recente']
+    assert r['nao_pagas_na_janela'] == 1
+
+
+def test_vencimento_muito_a_frente_nao_deveria_estar_paga(planilha):
+    """Título que só vence no ano que vem não é planilha atrasada."""
+    planilha([_nao_paga(sp_id='futura', dias_venc=-400)])
+
+    r = mod.candidatas({})
+
+    assert r['conferiveis_nao_pagas'] == []
+
+
+def test_linha_nao_paga_sem_codigo_de_integracao_fica_de_fora(planilha):
+    planilha([_nao_paga(codigo='')])
+
+    assert mod.candidatas({})['conferiveis_nao_pagas'] == []
+
+
+def test_as_duas_direcoes_rodam_na_mesma_chamada(
+        planilha, credenciais, monkeypatch):
+    planilha([
+        _linha(sp_id='paga_mas_aberta', codigo='IntX'),
+        _nao_paga(sp_id='aberta_mas_paga', codigo='IntY'),
+    ])
+    _omie(monkeypatch, {
+        'IntX': {'ok': True, 'body': {'status_titulo': 'ABERTO'}},
+        'IntY': {'ok': True, 'body': {'status_titulo': 'PAGO'}},
+    })
+
+    r = mod.conferir({})
+
+    assert [d['sp_id'] for d in r['divergentes']] == ['paga_mas_aberta']
+    assert [d['sp_id'] for d in r['planilha_atrasada']] == ['aberta_mas_paga']
+    assert r['consultas_ao_omie'] == 2
+
+
+def test_da_para_pedir_so_o_furo_e_so_a_direcao_antiga(
+        planilha, credenciais, monkeypatch):
+    planilha([
+        _linha(sp_id='paga', codigo='IntX'),
+        _nao_paga(sp_id='nao_paga', codigo='IntY'),
+    ])
+
+    chamados = _omie(monkeypatch, {})
+    mod.conferir({'sentido': 'omie_pago'})
+    assert chamados == ['IntY']
+
+    chamados2 = _omie(monkeypatch, {})
+    mod.conferir({'sentido': 'planilha_paga'})
+    assert chamados2 == ['IntX']
+
+
+def test_apenas_contar_mostra_o_tamanho_das_duas_direcoes(
+        planilha, credenciais, monkeypatch):
+    planilha([_linha(sp_id=str(i), codigo=f'Int{i}') for i in range(3)]
+             + [_nao_paga(sp_id=f'n{i}', codigo=f'IntN{i}') for i in range(8)])
+    chamados = _omie(monkeypatch, {})
+
+    r = mod.conferir({'apenas_contar': True})
+
+    assert chamados == []
+    assert r['a_conferir_planilha_paga'] == 3
+    assert r['a_conferir_planilha_nao_paga'] == 8
+    assert '3 SP(s) que a planilha diz pagas' in r['em_portugues']
+    assert '8' in r['em_portugues']
+
+
+def test_o_limite_vale_para_cada_direcao_separadamente(
+        planilha, credenciais, monkeypatch):
+    planilha([_linha(sp_id=str(i), codigo=f'Int{i}') for i in range(10)]
+             + [_nao_paga(sp_id=f'n{i}', codigo=f'IntN{i}') for i in range(10)])
+    chamados = _omie(monkeypatch, {})
+
+    r = mod.conferir({'limite': 3})
+
+    assert len(chamados) == 6          # 3 de cada lado
+    assert r['restam_para_conferir'] == 14

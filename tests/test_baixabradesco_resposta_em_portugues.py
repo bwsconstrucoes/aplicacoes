@@ -69,6 +69,19 @@ def test_o_milhar_usa_ponto_como_no_brasil():
 # a frase do conferidor
 # =====================================================================
 
+def test_a_frase_poe_o_furo_apontado_pelo_dono_na_frente():
+    """Omie pago com planilha para trás vem ANTES de planilha paga com Omie
+    aberto: a conciliação bancária é diária, então o primeiro é o provável."""
+    frase = conferencia._frase_da_conferencia(
+        divergentes=1, nao_encontradas=0, erros=0, confirmadas=10, restam=0,
+        dias=60, planilha_atrasada=4)
+
+    assert frase.index('o Omie diz PAGA e a planilha NÃO') < \
+        frase.index('a planilha diz PAGA e o Omie diz ABERTA')
+    assert 'continua aparecendo como a pagar' in frase
+    assert 'cartão do Pipefy' in frase
+
+
 def test_a_frase_do_conferidor_separa_dinheiro_de_cadastro_errado():
     frase = conferencia._frase_da_conferencia(
         divergentes=2, nao_encontradas=1, erros=0, confirmadas=47, restam=0,
@@ -77,14 +90,16 @@ def test_a_frase_do_conferidor_separa_dinheiro_de_cadastro_errado():
     assert 'baixa pela metade' in frase
     assert 'o dinheiro saiu' in frase
     assert 'não é dinheiro' in frase          # o cadastro errado, dito como tal
-    assert '47 estão certas' in frase
+    assert '47 estão de acordo' in frase
 
 
 def test_sem_divergencia_a_frase_tranquiliza_sem_exagerar():
-    frase = conferencia._frase_da_conferencia(0, 0, 0, 50, 0, 60)
+    frase = conferencia._frase_da_conferencia(0, 0, 0, 50, 0, 60,
+                                              confirmadas_abertas=12)
 
-    assert 'Nenhuma divergência' in frase
-    assert '50' in frase
+    assert 'Nenhuma divergência nos dois sentidos' in frase
+    assert '50 paga(s)' in frase
+    assert '12 ainda aberta(s)' in frase
     assert '60 dias' in frase                 # diz a janela: não é "tudo certo"
 
 

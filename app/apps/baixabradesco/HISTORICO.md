@@ -1185,3 +1185,78 @@ número a acompanhar é `pendentes_vencidos`, que tem de cair dos 2.269.
    segurança). Não impede nada; é risco.
 4. **Pix, boleto, transferência, FGTS e BeeVale seguem sem teste de campo** — falta
    um comprovante de exemplo de cada, que só o dono tem.
+
+---
+
+### 08/10/2026 (noite) — o dono apontou o alvo certo, e meu conferidor olhava para o outro lado
+
+Com a drenagem já no ar, ele respondeu:
+
+> *"está caindo o número, já vi. Esses comprovantes antigos eu já devo ter
+> resolvido, e esses avisos antigos também. Fazemos conciliação bancária diária.
+> No sistema Omie vai estar tudo atualizado. O furo pode ser mais na planilha e
+> na movimentação do card."*
+
+Três coisas nessa frase, e as três mudam o trabalho:
+
+1. **A drenagem está funcionando** — o número cai. Primeira confirmação em
+   produção.
+2. **As 238 baixas do Omie provavelmente já estão pagas**, pela conciliação
+   diária. O reprocessamento consulta antes e, se achar `PAGO`, resolve a
+   pendência sem lançar nada — então a drenagem está fechando pendência de
+   registro, não pagando nada de novo. Era o comportamento pretendido, e agora
+   tem confirmação de por que ele era o certo.
+3. **O furo é na planilha e no cartão — e o meu conferidor não enxergava isso.**
+
+**O erro de direção, escrito para não se repetir:** o conferidor selecionava as
+linhas em que a planilha diz **Pago** e perguntava ao Omie. Ou seja, só achava
+"planilha paga, Omie aberto". O furo que ele descreve é o **contrário** — "Omie
+pago, planilha não" —, e essa direção era **invisível** para o conferidor, porque
+ela mora justamente nas linhas que a planilha ainda marca como "Pagar". Pela
+conciliação bancária diária, é também a direção **mais provável** das duas.
+
+E ela não aparece em lugar nenhum sem o conferidor: a fila de falhas tinha
+**zero** pendências de planilha, porque a gravação morria antes de chegar ao
+`enqueue_failure`. O sistema não tinha como saber que deixou de gravar.
+
+**O que ficou:** o conferidor passou a rodar nos dois sentidos, e o relatório põe
+o furo apontado por ele **na frente**, com nome próprio (`planilha_atrasada`).
+`sentido` escolhe: `ambos`, `omie_pago` ou `planilha_paga`.
+
+Decisões que valem registro porque são o tipo de coisa que se refaz errado:
+
+- **As duas janelas usam datas diferentes, e têm de usar.** A direção antiga tem
+  data de pagamento na planilha. A nova não tem — a planilha nem sabe que foi
+  paga —, então a janela é pelo **vencimento**. Sem janela seriam ~52 mil
+  consultas ao Omie. Vencimento muito à frente também sai: título que vence no
+  ano que vem não é planilha atrasada.
+- **Cada item da direção nova traz o link do cartão do Pipefy**, porque ele
+  apontou os dois furos juntos. O conferidor não consulta o Pipefy (seria outra
+  volta de API por item); entrega o link para quem for olhar.
+- **O limite vale por direção**, não somado: pedir 50 faz até 50 consultas de
+  cada lado, e não 25 de cada.
+- **Continua sem corrigir nada.** Agora com mais razão: corrigir "planilha
+  atrasada" é escrever na planilha a partir do que o Omie diz, e isso precisa de
+  conferência de valor e de data — é um passo próprio, não um efeito colateral
+  de um relatório.
+
+**Um defeito meu no caminho, e conto porque é instrutivo:** ao reescrever a
+seleção de candidatas, substituí um trecho grande de arquivo delimitado por
+"daqui até a próxima função" — e a próxima função não era a que eu pensava.
+Apaguei junto a função que monta a frase em português, sem perceber. A suíte
+apontou na primeira rodada. Trecho grande se substitui por âncora exata, não por
+intervalo.
+
+**Decisão do dono registrada:** ele considera os comprovantes e os avisos antigos
+já resolvidos. Então o descarte em massa dos 1.943 avisos deixa de ser dúvida e
+passa a ser só uma chamada quando ele quiser — nada é apagado, a linha fica com o
+motivo escrito.
+
+**Verificado:** 23 testes no conferidor (10 novos, cobrindo a direção nova, as
+duas janelas, o limite por direção e a ordem da frase), suíte inteira rodada com
+a única falha sendo `erpbrasil` ausente neste ambiente, aplicação subindo com os
+18 blueprints.
+**Não verificado:** a direção nova nunca rodou contra a planilha de verdade. É a
+primeira coisa a chamar depois de publicar, e com `apenas_contar=1` primeiro —
+ela pode trazer centenas de linhas para conferir, e aí o custo é consulta ao
+Omie.

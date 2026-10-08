@@ -462,6 +462,52 @@ def _frase_do_resumo(por_etapa: Dict[str, int], vencidos: int, agendados: int,
     return frase
 
 
+# A ordem em que a fila é drenada, e ela não é alfabética: `omie` é dinheiro
+# (baixa que não aconteceu), `sheets` é a planilha desatualizada, `pipefy` é o
+# cartão no lugar errado, `zapi` é recado. Em 08/10/2026 a fila tinha 1.943
+# recados na frente de 238 baixas — na ordem da planilha, o dinheiro sairia por
+# último. Um lugar só, usado pelos dois caminhos automáticos (o cron e o lote de
+# comprovantes), para não divergirem como já divergiram.
+ORDEM_ETAPAS = ('omie', 'sheets', 'pipefy', 'zapi')
+
+
+def drenar_por_etapa(limites: Dict[str, int], payload: Optional[dict] = None) -> dict:
+    """Anda com a fila, uma etapa por vez, na ordem da importância.
+
+    ⚠️ `descartar_avisos_antigos=False` é obrigatório aqui, e não é detalhe:
+    limpar em massa o acumulado de avisos antigos é decisão do dono. Quando o
+    lote de comprovantes drenava sem este cuidado, cada lote marcava cinco
+    avisos velhos como descartados — ou seja, o sistema ia limpando sozinho o
+    que foi dito que ele não tocaria.
+    """
+    base = dict(payload or {})
+    saida: Dict[str, Any] = {}
+    for etapa in ORDEM_ETAPAS:
+        limite = int(limites.get(etapa) or 0)
+        if limite <= 0:
+            continue
+        pedido = dict(base)
+        pedido.update({'etapas': [etapa], 'limite': limite,
+                       'descartar_avisos_antigos': False})
+        try:
+            r = reprocessar_fila(pedido)
+            saida[etapa] = {
+                'processados': r.get('pendentes_processados'),
+                'concluidos': r.get('concluidos_agora'),
+                'ainda_pendentes': r.get('ainda_pendentes'),
+                'bloqueados_por_configuracao': r.get('bloqueados_por_configuracao'),
+                'o_que_falta_configurar': r.get('o_que_falta_configurar'),
+                'interrompido': r.get('interrompido'),
+            }
+            if r.get('interrompido') == 'cota_do_google':
+                # Cota estourada: para aqui e deixa o resto para a próxima vez.
+                saida['parou_por_cota_na_etapa'] = etapa
+                break
+        except Exception as e:
+            saida[etapa] = {'erro': str(e)[:200]}
+    return saida
+
+
 def resumo_fila(gc=None) -> dict:
     """Conta a fila sem reprocessar nada.
 
