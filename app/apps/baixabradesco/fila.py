@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Set
@@ -368,6 +369,13 @@ def _money_to_omie_number(valor: Any) -> str:
 
 
 def _retry_pipefy(item: Dict[str, Any], payload: dict) -> dict:
+    # Mesmo cuidado do Omie, por um caminho diferente: sem o token,
+    # `execute_graphql` LEVANTA exceção, e a exceção caía no `except` geral do
+    # laço, que incrementa a tentativa. Cinco passadas sem token marcariam os 88
+    # cartões como FALHOU sem nunca ter tentado nada.
+    if not os.getenv('PIPEFY_API_TOKEN', '').strip():
+        return {'ok': False, 'erro': 'credenciais_pipefy_ausentes'}
+
     resumo = json.loads(item.get('Payload Resumido') or '{}')
     mutation = as_string(resumo.get('pipefy_update_mutation'))
     if not mutation:
@@ -493,6 +501,7 @@ def resumo_fila(gc=None) -> dict:
 ERROS_DE_CONFIGURACAO = {
     'credenciais_zapi_ausentes',
     'credenciais_omie_ausentes',
+    'credenciais_pipefy_ausentes',
     'codigo_integracao_ausente',
     'mutation_ausente',
     'mensagens_ausentes',

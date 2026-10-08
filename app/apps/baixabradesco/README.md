@@ -315,6 +315,12 @@ jogar fora. Marcar 1.943 linhas de uma vez é decisão
 do dono — pede-se explicitamente, com `etapas: ["zapi"]`, e aí a marcação sai em
 blocos de 50 linhas por chamada, não uma por linha.
 
+**As credenciais que a drenagem automática usa vêm do ambiente do Render**, não
+do pedido — o cron não manda credencial nenhuma. São `OMIE_KEY` / `OMIE_SECRET`
+(confirmados no Render em 08/10/2026), `PIPEFY_API_TOKEN` e as três `ZAPI_*`. O
+nome da variável é parte do contrato: trocar em silêncio pararia a drenagem
+inteira, e há teste travando cada um.
+
 ⚠️ **Falta de credencial NÃO consome tentativa.** Era o jeito mais rápido de
 apagar a fila sem resolver nada: cinco passadas sem credencial marcariam as 238
 baixas como `FALHOU`. Hoje a linha fica intacta e o relatório diz o que falta

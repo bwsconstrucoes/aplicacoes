@@ -1099,15 +1099,32 @@ antes a segunda tentativa só existia quando a credencial estava *ausente*.
 - Três dias para o aviso perder a utilidade.
 - O conferidor não corrige, só relata.
 
+**O impedimento da credencial do Omie NÃO existe — eu errei o alarme.** Eu avisei
+ao dono que a drenagem automática talvez não achasse a chave do Omie, porque ela
+vive na planilha. Ele respondeu que o Render tem `OMIE_KEY` e `OMIE_SECRET`, e
+esses são justamente os **primeiros** nomes que `NOMES_APP_KEY` /
+`NOMES_APP_SECRET` procuram. A drenagem acha a credencial sozinha. (O achado de
+*segurança* continua de pé por outro motivo: a chave também está em texto na aba
+`FilaAppWeb`, e quem abre a planilha a lê.)
+
+**Conferindo isso, apareceu o mesmo risco por outro caminho:** sem
+`PIPEFY_API_TOKEN`, `execute_graphql` **levanta exceção** — e a exceção caía no
+`except` geral do laço, que incrementa a tentativa. Cinco passadas sem token
+marcariam os 88 cartões como `FALHOU` sem nunca ter tentado nada. Agora o token
+é conferido antes, e a falta dele é problema de configuração, não tentativa
+gasta. As três credenciais (`OMIE_*`, `PIPEFY_API_TOKEN`, `ZAPI_*`) têm teste
+travando o nome da variável, porque o cron só lê do ambiente e trocar o nome em
+silêncio pararia a drenagem inteira.
+
 **O que continua pendente do dono:**
 
 1. **Publicar** (isto e o conferidor estão no ramo, não na `main`).
 2. **Decidir sobre os 1.943 avisos antigos**: descartar em massa (recomendação) ou
    reenviar.
-3. **A chave do Omie em variável de ambiente.** Hoje ela vive na planilha. Se o
-   ambiente não a tiver, a drenagem automática não vai conseguir baixar nenhuma
-   das 238 — ela vai dizer isso no relatório em vez de falhar em silêncio, mas
-   não vai resolver.
+3. **Conferir se `PIPEFY_API_TOKEN` e as três `ZAPI_*` estão no Render.** Se não
+   estiverem, os 88 cartões e os avisos recentes ficam parados — e o relatório da
+   drenagem vai dizer isso em `o_que_falta_configurar`, em vez de fingir que
+   tentou.
 
 **Um defeito que eu mesmo introduzi e achei antes de publicar:** pular o aviso
 antigo **depois** de carregá-lo entupia a fila. Ela é lida em ordem — com 1.943

@@ -549,3 +549,74 @@ def test_o_corte_por_idade_nao_afeta_as_outras_etapas(aba, monkeypatch):
 
     assert r['concluidos_agora'] == 1          # a baixa de junho foi conferida
     assert r['pendentes_processados'] == 1     # o recado de junho nem entrou
+
+
+# =====================================================================
+# 10. as credenciais que a drenagem automática precisa, pelo NOME
+# =====================================================================
+# O serviço automático (o cron de 5 em 5 minutos) não recebe credencial de
+# ninguém: ele lê do ambiente do Render. Então o NOME da variável é parte do
+# contrato, e trocá-lo em silêncio pararia a drenagem inteira. O dono confirmou
+# em 08/10/2026 que o Render tem OMIE_KEY e OMIE_SECRET.
+
+def test_o_omie_le_as_variaveis_que_o_render_tem(monkeypatch):
+    from app.apps.baixabradesco import omie
+
+    assert 'OMIE_KEY' in omie.NOMES_APP_KEY
+    assert 'OMIE_SECRET' in omie.NOMES_APP_SECRET
+
+    for nome in ('OMIE_KEY', 'OMIE_BWS_APP_KEY', 'OMIE_APP_KEY',
+                 'OMIE_SECRET', 'OMIE_BWS_APP_SECRET', 'OMIE_APP_SECRET'):
+        monkeypatch.delenv(nome, raising=False)
+    monkeypatch.setenv('OMIE_KEY', 'chave-do-render')
+    monkeypatch.setenv('OMIE_SECRET', 'segredo-do-render')
+
+    # sem nada no pedido: é assim que o cron chama
+    assert omie.credentials_from_payload({}) == ('chave-do-render', 'segredo-do-render')
+
+
+def test_a_baixa_pelo_cron_funciona_so_com_o_ambiente(aba, monkeypatch):
+    """Sem credencial no pedido, como o cron faz."""
+    aba([_linha(etapa='omie', payload=PAYLOAD_OMIE)])
+    for nome in ('OMIE_KEY', 'OMIE_BWS_APP_KEY', 'OMIE_APP_KEY',
+                 'OMIE_SECRET', 'OMIE_BWS_APP_SECRET', 'OMIE_APP_SECRET'):
+        monkeypatch.delenv(nome, raising=False)
+    monkeypatch.setenv('OMIE_KEY', 'k')
+    monkeypatch.setenv('OMIE_SECRET', 's')
+    monkeypatch.setattr(mod, '_request_omie',
+                        lambda call, param, payload:
+                        {'ok': True, 'body': {'status_titulo': 'PAGO'}})
+
+    r = mod.reprocessar_fila({'limite': 10, 'etapas': ['omie']})
+
+    assert r['concluidos_agora'] == 1
+    assert r['bloqueados_por_configuracao'] == 0
+
+
+def test_pipefy_sem_token_nao_queima_tentativa(aba, monkeypatch):
+    """O token do Pipefy faltando LEVANTAVA exceção, e a exceção gastava
+    tentativa: cinco passadas marcariam os 88 cartões como FALHOU sem nunca ter
+    tentado nada."""
+    a = aba([_linha(etapa='pipefy', tentativas='4', tipo='pipefy_erro',
+                    payload='{"pipefy_update_mutation": "mutation { x }"}')])
+    monkeypatch.delenv('PIPEFY_API_TOKEN', raising=False)
+
+    r = mod.reprocessar_fila({'limite': 10, 'etapas': ['pipefy']})
+
+    assert a.gravacoes == []
+    assert r['bloqueados_por_configuracao'] == 1
+    assert r['o_que_falta_configurar'] == ['credenciais_pipefy_ausentes']
+
+
+def test_zapi_sem_credencial_nao_queima_tentativa(aba, monkeypatch):
+    a = aba([_linha(etapa='zapi', tentativas='4', tipo='zapi_erro',
+                    registro=_hoje(horas=2),
+                    payload='{"whatsapp_messages": [{"type": "text"}]}')])
+    for nome in ('ZAPI_INSTANCE_ID', 'ZAPI_API_TOKEN', 'ZAPI_CLIENT_TOKEN'):
+        monkeypatch.delenv(nome, raising=False)
+
+    r = mod.reprocessar_fila({'limite': 10, 'etapas': ['zapi']})
+
+    assert a.gravacoes == []
+    assert r['bloqueados_por_configuracao'] == 1
+    assert r['o_que_falta_configurar'] == ['credenciais_zapi_ausentes']
