@@ -172,7 +172,8 @@ def _coluna(faixas: List[Any], indice: int) -> List[str]:
 
 
 def _candidatos(ws, limite: int, somente_vencidos: bool, aceitos: set,
-                etapas: Optional[set] = None) -> List[Any]:
+                etapas: Optional[set] = None,
+                aviso_minimo: Optional[datetime] = None) -> List[Any]:
     """Varre apenas as colunas de controle (A:L) e devolve as linhas que servem.
 
     O payload de cada linha (coluna N) é um JSON que pode ter alguns kB. Ler a
@@ -189,8 +190,19 @@ def _candidatos(ws, limite: int, somente_vencidos: bool, aceitos: set,
         row = list(row) + [''] * (COLS_CONTROLE - len(row))
         if as_string(row[1]).upper() not in aceitos:
             continue
-        if etapas is not None and as_string(row[11]).lower() not in etapas:
+        etapa_linha = as_string(row[11]).lower()
+        if etapas is not None and etapa_linha not in etapas:
             continue
+        if aviso_minimo is not None and etapa_linha == 'zapi':
+            # ⚠️ O descarte precisa acontecer AQUI, na escolha das linhas, e não
+            # depois. A fila é lida em ordem: com 1.943 avisos antigos na frente,
+            # pedir "dez avisos" devolvia sempre os dez mais velhos, que seriam
+            # pulados por idade — e o aviso de ontem, que alguém ainda quer
+            # receber, nunca era alcançado. A fila entupia com o que ela mesma
+            # ia descartar.
+            registro = _parse_dt_br(row[0])
+            if registro and registro < aviso_minimo:
+                continue
         if somente_vencidos:
             dt = _parse_dt_br(row[3])
             if dt and dt > agora:
@@ -222,12 +234,17 @@ def _buscar_payloads(ws, linhas: List[int]) -> Dict[int, str]:
 
 def listar_pendentes(gc=None, limite: int = 20, somente_vencidos: bool = True,
                      incluir_falhados: bool = False,
-                     etapas: Optional[set] = None) -> List[Dict[str, Any]]:
+                     etapas: Optional[set] = None,
+                     aviso_minimo: Optional[datetime] = None) -> List[Dict[str, Any]]:
     """Itens da fila a reprocessar.
 
     `etapas`: quando informado, só traz essas etapas. Serve para drenar o que
     é dinheiro (`omie`) antes do que é recado (`zapi`) — e sem um depender do
     outro.
+
+    `aviso_minimo`: descarta na ESCOLHA os avisos registrados antes dessa data,
+    em vez de trazê-los para serem pulados depois. Sem isso, 1.943 avisos velhos
+    na frente da fila fazem com que o aviso de ontem nunca seja alcançado.
 
     `incluir_falhados`: traz também os que esgotaram as cinco tentativas e
     foram marcados FALHOU. Eles NUNCA voltavam sozinhos — ficavam abandonados na
@@ -239,7 +256,8 @@ def listar_pendentes(gc=None, limite: int = 20, somente_vencidos: bool = True,
     aceitos = {STATUS_PENDENTE}
     if incluir_falhados:
         aceitos.add(STATUS_FALHOU)
-    escolhidos = _candidatos(ws, int(limite), bool(somente_vencidos), aceitos, etapas)
+    escolhidos = _candidatos(ws, int(limite), bool(somente_vencidos), aceitos,
+                             etapas, aviso_minimo)
     if not escolhidos:
         return []
     payloads = _buscar_payloads(ws, [idx for idx, _ in escolhidos])
@@ -550,10 +568,16 @@ def reprocessar_fila(payload: dict) -> dict:
     incluir_falhados = bool(payload.get('incluir_falhados'))
     etapas = _etapas_pedidas(payload)
     pausa = _pausa_padrao(limite, payload)
+    # Quem não vai descartar aviso antigo também não deve carregá-lo: senão ele
+    # ocupa a vaga do aviso recente, que é o que ainda interessa a alguém.
+    aviso_minimo = None
+    if not payload.get('descartar_avisos_antigos', True):
+        dias = int(payload.get('dias_aviso_util') or DIAS_AVISO_UTIL)
+        aviso_minimo = datetime.now() - timedelta(days=dias)
     pendentes = listar_pendentes(gc, limite=limite,
                                  somente_vencidos=bool(somente_vencidos),
                                  incluir_falhados=incluir_falhados,
-                                 etapas=etapas)
+                                 etapas=etapas, aviso_minimo=aviso_minimo)
     resultados = []
     inicio = datetime.now()
     cota_seguidas = 0

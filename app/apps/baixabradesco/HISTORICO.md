@@ -1109,7 +1109,14 @@ antes a segunda tentativa só existia quando a credencial estava *ausente*.
    das 238 — ela vai dizer isso no relatório em vez de falhar em silêncio, mas
    não vai resolver.
 
-**Verificado:** 24 testes de fila (10 novos), 11 de aviso, 7 de cron, 14 de
+**Um defeito que eu mesmo introduzi e achei antes de publicar:** pular o aviso
+antigo **depois** de carregá-lo entupia a fila. Ela é lida em ordem — com 1.943
+avisos de junho na frente, pedir "dez avisos" devolvia sempre os dez mais
+velhos, que seriam pulados, e o aviso de ontem nunca era alcançado. A fila
+engasgava com o que ela mesma ia descartar. O corte por idade passou para a
+**escolha** das linhas. Vale só para `zapi`: baixa de junho continua sendo baixa.
+
+**Verificado:** 27 testes de fila (13 novos), 11 de aviso, 7 de cron, 14 de
 conferidor; suíte inteira rodada com a única falha sendo `erpbrasil` ausente
 neste ambiente, que falha igual na `main` publicada; aplicação subindo com os 18
 blueprints.

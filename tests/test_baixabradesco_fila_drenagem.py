@@ -454,14 +454,18 @@ def test_titulo_ja_pago_no_omie_resolve_sem_lancar_nada(aba, monkeypatch):
 # 8. o acumulado de avisos antigos não é limpo pelo cron
 # =====================================================================
 
-def test_a_drenagem_automatica_pula_aviso_antigo_sem_tocar_na_linha(aba, monkeypatch):
+def test_a_drenagem_automatica_nao_toca_no_aviso_antigo(aba, monkeypatch):
+    """Nem envia, nem marca, nem gasta tentativa: ele nem é carregado."""
     a = aba([_linha(etapa='zapi', registro=_hoje(dias=100), tipo='zapi_erro')])
-    monkeypatch.setattr(mod, '_retry_zapi', lambda item, payload: {'ok': True})
+    enviou = {'n': 0}
+    monkeypatch.setattr(mod, '_retry_zapi',
+                        lambda item, payload: enviou.__setitem__('n', enviou['n'] + 1) or {'ok': True})
 
     r = mod.reprocessar_fila({'limite': 10, 'descartar_avisos_antigos': False})
 
+    assert enviou['n'] == 0
     assert a.gravacoes == []
-    assert r['avisos_antigos_pulados'] == 1
+    assert r['pendentes_processados'] == 0
     assert r['avisos_descartados_por_idade'] == 0
 
 
@@ -489,3 +493,59 @@ def test_aviso_recente_e_enviado_mesmo_na_drenagem_automatica(aba, monkeypatch):
 
     assert enviou['n'] == 1
     assert r['concluidos_agora'] == 1
+
+
+# =====================================================================
+# 9. o acumulado antigo não pode ocupar a vaga do recado de ontem
+# =====================================================================
+
+def test_aviso_velho_nao_entope_a_fila_e_deixa_o_recente_passar(aba, monkeypatch):
+    """O defeito: a fila é lida em ordem.
+
+    Com 1.943 avisos de junho na frente, pedir "dez avisos" devolvia sempre os
+    dez mais velhos — que seriam pulados por idade. O aviso de ontem, que alguém
+    ainda quer receber, nunca era alcançado: a fila entupia com o que ela mesma
+    ia descartar.
+    """
+    linhas = [_linha(etapa='zapi', registro=_hoje(dias=100), tipo='zapi_erro')
+              for _ in range(50)]
+    linhas.append(_linha(etapa='zapi', registro=_hoje(horas=3), tipo='zapi_erro'))
+    aba(linhas)
+    enviados = []
+    monkeypatch.setattr(mod, '_retry_zapi',
+                        lambda item, payload: enviados.append(item['_row_number']) or {'ok': True})
+
+    r = mod.reprocessar_fila({'limite': 10, 'etapas': ['zapi'],
+                              'descartar_avisos_antigos': False})
+
+    # a única linha alcançada é a recente (linha 52), não as 50 velhas
+    assert enviados == [52]
+    assert r['concluidos_agora'] == 1
+    assert r['avisos_antigos_pulados'] == 0   # nem foram carregados
+
+
+def test_quando_o_pedido_e_para_descartar_os_velhos_voltam_a_ser_carregados(
+        aba, monkeypatch):
+    aba([_linha(etapa='zapi', registro=_hoje(dias=100), tipo='zapi_erro')
+         for _ in range(10)])
+    monkeypatch.setattr(mod, 'time', type('T', (), {'sleep': staticmethod(lambda s: None)}))
+
+    r = mod.reprocessar_fila({'limite': 10, 'etapas': ['zapi']})
+
+    assert r['avisos_descartados_por_idade'] == 10
+
+
+def test_o_corte_por_idade_nao_afeta_as_outras_etapas(aba, monkeypatch):
+    """Baixa de junho continua sendo baixa — só o recado envelhece."""
+    aba([_linha(etapa='omie', registro=_hoje(dias=100), payload=PAYLOAD_OMIE),
+         _linha(etapa='zapi', registro=_hoje(dias=100), tipo='zapi_erro')])
+    monkeypatch.setattr(mod, 'credentials_from_payload', lambda payload: ('k', 's'))
+    monkeypatch.setattr(mod, '_request_omie',
+                        lambda call, param, payload:
+                        {'ok': True, 'body': {'status_titulo': 'PAGO'}})
+    monkeypatch.setattr(mod, 'time', type('T', (), {'sleep': staticmethod(lambda s: None)}))
+
+    r = mod.reprocessar_fila({'limite': 10, 'descartar_avisos_antigos': False})
+
+    assert r['concluidos_agora'] == 1          # a baixa de junho foi conferida
+    assert r['pendentes_processados'] == 1     # o recado de junho nem entrou

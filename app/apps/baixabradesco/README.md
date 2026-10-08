@@ -307,7 +307,11 @@ fila tinha 1.943 recados de WhatsApp na frente de 238 baixas no Omie. Drenar na
 ordem da planilha deixaria o dinheiro para o fim.
 
 **O cron NÃO limpa o acumulado de avisos antigos.** Aviso com mais de três dias
-é pulado por ele, sem gastar tentativa. Marcar 1.943 linhas de uma vez é decisão
+nem é carregado por ele — e isso tem de acontecer na **escolha** das linhas, não
+depois. A fila é lida em ordem: com 1.943 avisos de junho na frente, pedir "dez
+avisos" devolvia sempre os dez mais velhos, que seriam descartados por idade, e
+o aviso de ontem nunca era alcançado. A fila entupia com o que ela mesma ia
+jogar fora. Marcar 1.943 linhas de uma vez é decisão
 do dono — pede-se explicitamente, com `etapas: ["zapi"]`, e aí a marcação sai em
 blocos de 50 linhas por chamada, não uma por linha.
 
