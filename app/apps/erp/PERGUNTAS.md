@@ -361,7 +361,7 @@ dizer "tem batida"; presença, horas e faltas são regra da fase 3.
 - Quantos pedidos foram lançados pelo administrativo ou pelo responsável da obra
   em nome de outra pessoa, e por quem? (origem "pelo responsável")
 - O administrativo Fulano pode ver o ponto do Beltrano agora? ⚠️ muda conforme ONDE
-  ele está (a cerca da obra, ou o ponto aberto hoje) e o mês consultado — a
+  ele está (a cerca da obra, ou as obras em que bateu na última semana) e o mês consultado — a
   resposta é "hoje, aqui", não um "sim" fixo
 - **Ainda não responde:** "quem consultou a folha do Fulano?" — a consulta não é
   registrada, só o pedido que nasce dela.

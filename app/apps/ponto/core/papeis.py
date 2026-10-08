@@ -18,12 +18,13 @@ OS PAPÉIS
       administrativo_obra`)  em qualquer aparelho — o celular dele, o ponto da
       obra, o computador — consulta e pede pelas pessoas da obra em que ESTÁ:
         · pela localização: a obra cuja cerca contém o aparelho agora;
-        · sem localização (o computador): a obra em que o ponto dele está ABERTO
-          hoje — bateu a entrada e ainda não bateu a saída. Assim ele não age
-          fora do horário nem de longe (pedido do dono: "a pessoa só pode
-          requerer coisas dentro da cerca da obra (...) o cara não está fazendo
-          coisa fora de horário").
-      Mudou de obra? Vê a nova quando estiver nela; a antiga sai sozinha. O
+        · MAIS as obras em que ele bateu ponto nos últimos DIAS_RECENTES dias —
+          é o que vale no computador, que não tem localização, e a qualquer
+          hora. Decisão do dono, 08/10/2026: "acho que pode afrouxar mais (...)
+          se precisar lançar algo fora do horário, deixa". (A primeira versão,
+          do mesmo dia, só valia com o ponto dele aberto naquele momento.)
+      Mudou de obra? Vê a nova quando bater nela (ou estiver dentro dela); a
+      antiga sai sozinha DIAS_RECENTES dias depois da última batida lá. O
       próprio ponto ele vê sempre, e pede por si mesmo.
   PONTO DE EQUIPE (aparelho LISTA)  o responsável vê a equipe da lista e pede
       por ela só se tiver a marcação "faz pedidos pelo celular".
@@ -55,7 +56,11 @@ from .. import db, horario
 from . import cadastros, competencias, dispositivos, forma_de_bater, geo
 
 DE_ONDE_CERCA = "CERCA"
-DE_ONDE_PONTO_ABERTO = "PONTO_ABERTO"
+DE_ONDE_BATIDAS = "BATIDAS"
+# Por quantos dias a obra em que o administrativo bateu ponto continua ao alcance
+# dele sem localização (o computador). Uma semana cobre o fim de semana e a
+# folga; mais que isso, a obra antiga demoraria a sair.
+DIAS_RECENTES = 7
 DE_ONDE_EQUIPE = "EQUIPE"
 
 
@@ -113,17 +118,15 @@ def aparelho_valendo(a: Optional[dict]) -> bool:
     return not (v and v["vencido"])
 
 
-def obra_do_ponto_aberto(conn: Connection, colaborador_id: int, hoje: Optional[dt.date] = None) -> Optional[int]:
-    """A obra em que a pessoa está DE PONTO ABERTO hoje: o número de batidas do
-    dia é ímpar (entrou e ainda não saiu). Devolve a obra da última batida."""
+def obras_recentes(conn: Connection, colaborador_id: int, hoje: Optional[dt.date] = None) -> list[int]:
+    """As obras em que a pessoa bateu ponto nos últimos DIAS_RECENTES dias, da
+    batida mais recente para a mais antiga."""
     hoje = hoje or horario.hoje()
-    linhas = db.todos(conn, """
-        SELECT obra_id FROM ponto.marcacoes
-         WHERE colaborador_id = :c AND data_referencia = :d AND status <> 'REJEITADA'
-         ORDER BY timestamp_servidor""", c=colaborador_id, d=hoje)
-    if len(linhas) % 2 == 1:
-        return int(linhas[-1]["obra_id"])
-    return None
+    return [int(l["obra_id"]) for l in db.todos(conn, """
+        SELECT obra_id, max(timestamp_servidor) AS ultima FROM ponto.marcacoes
+         WHERE colaborador_id = :c AND data_referencia BETWEEN :i AND :f AND status <> 'REJEITADA'
+         GROUP BY obra_id ORDER BY ultima DESC""", c=colaborador_id,
+        i=hoje - dt.timedelta(days=DIAS_RECENTES - 1), f=hoje)]
 
 
 def _obra_da_cerca(conn: Connection, local: Optional[dict], so_estas: Optional[set] = None) -> Optional[dict]:
@@ -164,14 +167,16 @@ def alcance(conn: Connection, pessoa: Optional[dict], aparelho: Optional[dict],
         if o:
             r.obras[int(o["id"])] = _curta(o)
             r.de_onde.append(f"pela localização: dentro da obra {o['codigo']}")
-    # 2. O ponto aberto hoje (o administrativo no computador).
+    # 2. As obras em que ele bateu ponto nos últimos dias (o computador; e
+    #    também fora do horário — decisão do dono, 08/10/2026).
     if admin:
-        oid = obra_do_ponto_aberto(conn, pessoa["id"], hoje)
-        if oid and oid not in r.obras:
+        for oid in obras_recentes(conn, pessoa["id"], hoje):
+            if oid in r.obras:
+                continue
             o = cadastros.obra_por_id(conn, oid)
             if o:
                 r.obras[oid] = _curta(o)
-                r.de_onde.append(f"pelo seu ponto aberto hoje na obra {o['codigo']}")
+                r.de_onde.append(f"pelas suas batidas dos últimos {DIAS_RECENTES} dias na obra {o['codigo']}")
     # 3. A equipe do ponto de equipe.
     if meu and aparelho["perfil"] == "LISTA":
         r.equipe = set(dispositivos.autorizados_de(conn, aparelho["id"])) - {pessoa["id"]}
@@ -182,8 +187,8 @@ def alcance(conn: Connection, pessoa: Optional[dict], aparelho: Optional[dict],
                         or (meu and aparelho["perfil"] == "LISTA" and pede_pelo_proprio_celular(conn, pessoa)))
     if r.vazio:
         if admin:
-            r.sem_alcance = ("você não está dentro da área de nenhuma obra, nem de ponto aberto hoje — "
-                             "a consulta vale na obra em que você está")
+            r.sem_alcance = (f"você não está dentro da área de nenhuma obra nem bateu ponto em obra nos últimos "
+                             f"{DIAS_RECENTES} dias — a consulta vale nas obras em que você trabalha")
         elif meu and aparelho["perfil"] == "COMPARTILHADO":
             r.sem_alcance = "o aparelho não está dentro da área de nenhuma obra dele — confira a localização"
         else:

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Ponto — a tela inicial e quem enxerga quem (pedido do dono, 08/10/2026), com
 Postgres de verdade: o administrativo de obra consulta e pede pelas pessoas da
-obra em que ESTÁ (pela cerca, ou pelo ponto aberto hoje, no computador); o
+obra em que ESTÁ (pela cerca) ou em que bateu ponto nos últimos dias (o computador); o
 ponto da obra aceita o responsável e o administrativo; o ponto de equipe vê a
 equipe; e pedido pelo próprio celular só com a marcação."""
 from __future__ import annotations
@@ -72,17 +72,22 @@ def test_administrativo_ve_a_obra_em_que_esta(app, mundo, carlos, monkeypatch):
     assert set(nomes) == {"João Obra A", "Maria Obra B"} and nomes["Maria Obra B"]["batidas_na_obra"] == 1
     assert d["alcance"]["papel"] == "ADMINISTRATIVO" and "PG-A" in d["alcance"]["de_onde"][0]
     assert c.get(f"/ponto/app/api/equipe/{mundo['maria']}/mes?{NA_OBRA_A}").status_code == 200
-    # Longe de qualquer obra, e sem ponto aberto: ninguém — e o número da Maria é "não encontrada"
+    # Longe de qualquer obra, e sem batida dele em obra nenhuma: ninguém — e a Maria é "não encontrada"
     d = c.get(f"/ponto/app/api/equipe?{LONGE}").get_json()
     assert d["pessoas"] == [] and "não está dentro" in d["alcance"]["sem_alcance"]
     r = c.get(f"/ponto/app/api/equipe/{mundo['maria']}/mes?{LONGE}")
     assert r.status_code == 404
-    # No computador (sem localização): vale a obra em que o ponto dele está ABERTO hoje
+    # No computador (sem localização) e a qualquer hora: as obras em que ele bateu nos últimos dias
     _bater(CPF_CARLOS, "PG-A", 20)
+    _bater(CPF_CARLOS, "PG-A", 1)                       # já bateu a saída: continua valendo
     d = c.get("/ponto/app/api/equipe").get_json()
     assert {p["nome"] for p in d["pessoas"]} >= {"João Obra A", "Maria Obra B"}
-    assert "ponto aberto" in d["alcance"]["de_onde"][0]
-    _bater(CPF_CARLOS, "PG-A", 1)                       # bateu a saída: fechou
+    assert "últimos 7 dias" in d["alcance"]["de_onde"][0]
+    # Batida de mais de 7 dias atrás não conta: a obra antiga sai sozinha
+    from app.apps.ponto import db
+    with db.conexao() as conn:
+        conn.execute(text("UPDATE ponto.marcacoes SET data_referencia = data_referencia - 8 "
+                          "WHERE colaborador_id = :c"), {"c": carlos})
     assert c.get("/ponto/app/api/equipe").get_json()["pessoas"] == []
     # E a tela inicial diz o que ele pode
     ini = c.get(f"/ponto/app/api/inicio?{NA_OBRA_A}").get_json()

@@ -2375,8 +2375,9 @@ async function formaDeBater(p) {
     aviso: `O padrão: bate <b>só no ponto da obra</b> (QR Code ou CPF) e, no próprio celular, <b>vê o próprio
       ponto</b>. Atestado e pedidos são entregues no ponto da obra ou com o administrativo.
       <br><b>Administrativo de obra:</b> no celular dele, no ponto da obra ou no computador, consulta o ponto e
-      faz pedidos pelas pessoas da obra em que <b>está</b> — pela localização, ou, sem ela, pela obra em que o
-      ponto dele está aberto hoje. Mudou de obra, passa a ver a nova; a antiga sai sozinha.`,
+      faz pedidos pelas pessoas da obra em que <b>está</b> (pela localização) e das obras em que ele <b>bateu ponto
+      nos últimos 7 dias</b> — a qualquer hora, também no computador. Mudou de obra, passa a ver a nova; a antiga
+      sai sozinha uma semana depois da última batida lá.`,
     campos: [
       {nome: "forma", rotulo: "Bater no próprio celular", tipo: "select", valor: p.bate_no_celular ? "1" : "0",
        largura: 3, opcoes: simNao("Também bate no próprio celular (exceção)", "Só no ponto da obra (padrão)")},

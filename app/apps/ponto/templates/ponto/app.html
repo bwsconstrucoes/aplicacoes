@@ -133,8 +133,13 @@
                   border-bottom:1px solid var(--borda); padding:12px 2px; font-size:16px; color:var(--tinta); }
   .pessoa-linha:last-child { border-bottom:0; }
   .pessoa-linha b { flex:1; } .pessoa-linha small { color:var(--suave); }
-  .acoes-dia { display:flex; flex-direction:column; align-items:flex-start; gap:0; margin-top:4px; }
-  .acoes-dia .link { text-align:left; padding:5px 0; font-size:14px; }
+  /* As ações do dia são ÍCONES (08/10/2026: "dois textos gigantes (…) ícones
+     sugestivos pra economizar tela"); a legenda fica uma vez só, no topo. */
+  .acoes-dia { display:flex; gap:6px; flex:none; align-self:center; }
+  .icone-dia { width:42px; height:42px; border-radius:12px; border:1px solid var(--borda); background:#fff;
+               font-size:20px; line-height:1; padding:0; }
+  .icone-dia:active { background:var(--fundo); }
+  .legenda-dias { font-size:13px; color:var(--suave); padding:0 0 8px; border-bottom:1px solid var(--borda); }
 </style>
 </head>
 <body>
@@ -789,12 +794,16 @@ function resumoDoMes(r, deOutro) {
       ${r.sem_escala ? `<p class="pequeno">${deOutro ? "A escala desta pessoa" : "Sua escala"} ainda não foi cadastrada; os dias aparecem sem julgamento de falta.</p>` : ""}`;
 }
 function diasDoMes(d, regras) {
-  return d.dias.filter(x => x.situacao !== "FUTURO").reverse().map(x => {
+  let temAcao = false;
+  const linhas = d.dias.filter(x => x.situacao !== "FUTURO").reverse().map(x => {
     const [cls, rot] = SITUACAO[x.situacao] || ["", x.situacao];
     const alertas = x.alertas.filter(a => a !== "FALTA").map(a => ROTULO_ALERTA[a] || a).join(", ");
     const acoes = [
-      regras.corrigir(x) ? `<button class="link" type="button" data-corrigir="${x.data}">✏️ Corrigir: faltou ${esc(x.faltando.map(f => f.rotulo.toLowerCase()).join(", ")) || "batida"}</button>` : "",
-      regras.lancar(x) ? `<button class="link" type="button" data-lancar="${x.data}">📝 Lançar atestado ou licença neste dia</button>` : ""].join("");
+      regras.corrigir(x) ? `<button class="icone-dia" type="button" data-corrigir="${x.data}" title="Corrigir a batida que faltou"
+        aria-label="Corrigir ${dataBR(x.data)}: faltou ${esc(x.faltando.map(f => f.rotulo.toLowerCase()).join(", ")) || "batida"}">✏️</button>` : "",
+      regras.lancar(x) ? `<button class="icone-dia" type="button" data-lancar="${x.data}" title="Atestado, licença ou compensação"
+        aria-label="Lançar atestado, licença ou compensação em ${dataBR(x.data)}">🩺</button>` : ""].join("");
+    if (acoes) temAcao = true;
     return `<div class="dia"><div class="data">${dataBR(x.data).slice(0, 5)}<small>${esc(x.dia_semana)}</small></div>
       <div class="corpo">
         <div class="chips">${x.batidas.map(b => `<span class="chip ${b.status === "EM_ANALISE" ? "analise" : b.status === "AJUSTADA" ? "ajustada" : ""}">${esc(b.hora)}</span>`).join("")}</div>
@@ -803,9 +812,11 @@ function diasDoMes(d, regras) {
           ${x.feriado ? ` · ${esc(x.feriado)}` : ""}</div>
         ${alertas ? `<div class="pequeno">${esc(alertas)}</div>` : ""}
         ${x.pendentes.length ? `<div class="pequeno">Pedido esperando: ${esc(x.pendentes.map(p => p.rotulo).join(", "))}</div>` : ""}
-        ${acoes ? `<div class="acoes-dia">${acoes}</div>` : ""}
-      </div></div>`;
-  }).join("") || "<p>Nada neste mês ainda.</p>";
+      </div>${acoes ? `<div class="acoes-dia">${acoes}</div>` : ""}</div>`;
+  }).join("");
+  if (!linhas) return "<p>Nada neste mês ainda.</p>";
+  return (temAcao ? `<div class="legenda-dias">Toque no dia: ✏️ corrigir a batida que faltou · 🩺 atestado, licença ou compensação</div>` : "")
+    + linhas;
 }
 function ligarDias(idCaixa, d, aoCorrigir, aoLancar) {
   $(idCaixa).querySelectorAll("[data-corrigir]").forEach(b =>

@@ -134,7 +134,7 @@ mostra quem bateu na obra no mês e quem é dela no cadastro; o pedido por outra
 pessoa (`.../equipe/<id>/pedidos` e `/ajuste-do-dia`) sai em nome de quem lançou,
 origem `RESPONSAVEL`. Quem consulta: o responsável no ponto da obra dele (pela
 cerca do aparelho), o **administrativo de obra** em qualquer aparelho (pela
-cerca; sem localização, pela obra em que o ponto dele está aberto hoje), e o
+cerca, mais as obras em que ele bateu nos últimos 7 dias), e o
 responsável do ponto de equipe (a lista). Toda chamada leva `lat`, `lon` e
 `precisao`. As marcações por pessoa ficam em `colaborador_config`
 (`bate_no_celular`, `pede_no_celular`, `administrativo_obra`), na ficha da pessoa

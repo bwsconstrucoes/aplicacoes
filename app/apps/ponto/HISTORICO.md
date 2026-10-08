@@ -114,9 +114,11 @@ em `colaborador_config`; origem de pedido `RESPONSAVEL`):
    em outra) **e quem é da obra no cadastro** — o segundo grupo é o furo de quem
    passou o mês de atestado ou chegou hoje (sem batida, não haveria como lançar
    nada para ele). Fora do alcance, a pessoa responde "não encontrada".
-3. **Na folha da pessoa, o dia leva ao pedido**: "Corrigir: faltou …" (o mesmo
-   ajuste do dia, já com o que falta) e "Lançar atestado ou licença neste dia"
-   (atestado, licença da lei, compensação, folga do banco). O pedido sai **em
+3. **Na folha da pessoa, o dia leva ao pedido**, por dois ÍCONES ao lado do dia
+   (o dono achou os textos "gigantes"): ✏️ corrigir a batida que faltou (o
+   mesmo ajuste do dia, já com o que falta) e 🩺 atestado, licença ou
+   compensação. A legenda aparece uma vez, no topo da lista. Vale também no
+   "Meu mês". O pedido sai **em
    nome de quem lançou** (origem `RESPONSAVEL`) e vai para a validação de
    sempre — ninguém no aplicativo aprova nada. Atestado aparece como
    "Atestado", sem CID nem documento (só o DP vê).
@@ -130,12 +132,12 @@ em `colaborador_config`; origem de pedido `RESPONSAVEL`):
    - **Administrativo de obra** (marcação na ficha da pessoa, ERP › Ponto ›
      Pessoas › "Acesso no aplicativo"): em qualquer aparelho — o celular dele,
      o ponto da obra, o computador. Vale a obra cuja cerca contém o aparelho
-     agora; **sem localização (o computador), vale a obra em que o ponto dele
-     está ABERTO hoje** (número ímpar de batidas: entrou e não saiu). Foi a
-     resposta ao furo do computador: "a obra em que ele vem batendo" deixaria
-     agir de casa, à noite — o dono queria justamente "dentro da cerca, não
-     fora de horário". Mudou de obra, vê a nova quando estiver nela. O próprio
-     ponto ele vê sempre, e pede por si.
+     agora **e as obras em que ele bateu ponto nos últimos 7 dias** — é o que
+     vale no computador, a qualquer hora. (A primeira versão só valia com o
+     ponto dele aberto naquele momento; o dono afrouxou no mesmo dia: "pode
+     afrouxar mais (...) se precisar lançar algo fora do horário, deixa".)
+     Mudou de obra, a antiga sai sozinha uma semana depois da última batida
+     lá. O próprio ponto ele vê sempre, e pede por si.
    - **Ponto de equipe**: o responsável vê a equipe da lista (sem cerca — a
      equipe anda); pede por ela só com a marcação "faz pedidos pelo celular".
    - **Celular pessoal**: vê o próprio ponto; pede pelo celular só com a
@@ -151,15 +153,15 @@ em `colaborador_config`; origem de pedido `RESPONSAVEL`):
 Furos que ficam, ditos ao dono: localização falsa (aplicativo que finge GPS)
 engana a cerca da consulta como engana a da batida — o que segura é tudo ficar
 em nome de quem fez e o pedido passar pela validação; e o administrativo que
-precisa fazer papelada DEPOIS de bater a saída não consegue pelo computador
-(faz antes, ou pelo celular dentro da obra).
+tem acesso às obras em que bateu na última semana, a qualquer hora e de
+qualquer lugar pelo computador (escolha do dono; o PIN dele é a única chave ali).
 
 Conferido no navegador simulado: a tela inicial do ponto da obra (sem e com
 login), a batida com "‹ Início", a consulta com o administrativo (lista, folha,
 corrigir o dia, lançar atestado e licença), e a tela do João sem marcação
 nenhuma (só "Meu ponto"; as outras apagadas com o motivo). **Não conferido** num
 celular de verdade nem num computador de verdade (o navegador do computador
-pode pedir a localização; recusada, vale o ponto aberto).
+pode pedir a localização; recusada, valem as obras das batidas da semana).
 
 Testes: `tests/test_ponto_papeis_banco.py`.
 
