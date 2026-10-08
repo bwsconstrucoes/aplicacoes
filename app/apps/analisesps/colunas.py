@@ -8,8 +8,8 @@ volta. O que mudou foi só o destino — antes as colunas viravam uma tabela
 SQLite, agora viram uma tabela Postgres.
 
 A planilha tem 38 colunas (A..AL). Quatro delas são fórmulas que só fazem
-sentido dentro do Sheets (S, W, AC) ou não são usadas (AK): ficam marcadas como
-descartáveis e não sobem para o banco.
+sentido dentro do Sheets (S, W, AC) ou só são escritas daqui (AK, a conta do
+pagamento): ficam marcadas como descartáveis e não sobem para o banco.
 
 A coluna V é o CARIMBO de atualização. Ela é uma antiga fórmula reaproveitada,
 e é o que torna a sincronização barata: em vez de reler 59 mil linhas, lê-se só
@@ -60,7 +60,9 @@ _DEFS = [
     Col("validacao",         33, "AH", "Validação",          "texto",  False, False),
     Col("codigo_barras",     34, "AI", "Código de Barras",   "texto",  False, False),
     Col("id_contrato",       35, "AJ", "ID Pipefy Contrato", "texto",  False, False),
-    Col("_ak",               36, "AK", "(não usada)",        "texto",  True,  False),
+    # AK = CONTA DO PAGAMENTO (o dono, 08/10/2026). Não sobe para o banco —
+    # só é ESCRITA, pelo "Marcar Pago" que lê o card (e pelo BaixaBradesco).
+    Col("_ak",               36, "AK", "Conta do Pagamento", "texto",  True,  False),
     Col("analise_ia",        37, "AL", "Análise IA",         "texto",  False, False),
 ]
 

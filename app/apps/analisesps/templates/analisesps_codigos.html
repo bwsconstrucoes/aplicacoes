@@ -45,6 +45,14 @@
       <small>
         {% if b.sp %}{{ b.sp.valor_num|moeda }} · vence {{ b.sp.vencimento_d|data_br }}{% endif %}
       </small>
+      {# 08/10/2026, pedido do dono: a categoria e a descrição junto do credor,
+         para conferir o que se está pagando sem abrir a ficha. #}
+      {% if b.sp and (b.sp.tipo_despesa or b.sp.descricao) %}
+        <p class="codigo-desc">
+          {% if b.sp.tipo_despesa %}<b>{{ b.sp.tipo_despesa }}</b>{% endif %}
+          {% if b.sp.tipo_despesa and b.sp.descricao %} · {% endif %}{{ b.sp.descricao }}
+        </p>
+      {% endif %}
     </div>
 
     {% if b.erro %}

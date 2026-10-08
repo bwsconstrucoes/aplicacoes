@@ -36,6 +36,18 @@ no próprio código.
 
 ---
 
+## 08/10/2026 — o robô do Telegram passou a alimentar o lote do Análise de SPs
+
+Mudança feita pelo chat do Análise de SPs, com o "pode" do dono para mexer no
+robô. O que mudou AQUI: o webhook (`telegram_bot.telegram_webhook`) pergunta
+primeiro ao `analisesps.telegram_lote.receber` se a mensagem é dele —
+`/start lote_<código>` (o link de ligar, gerado na tela Lote) ou texto com
+número de SP (10 dígitos) vindo de conversa ligada. Se for, responde e para;
+se não, o robô segue o caminho de sempre (cadastro, contracheque). Um erro do
+Análise de SPs vira uma frase ao usuário e nunca derruba o robô
+(`_lote_analisesps`). CPF (11 dígitos) não é confundido com SP. O motivo, o
+desenho e os testes estão no `analisesps/HISTORICO.md` (leva 200).
+
 ## Onde o trabalho está
 
 **05/10/2026, noite — a TELA MENSAGENS está PUBLICADA** (junção `25cf488`, com o

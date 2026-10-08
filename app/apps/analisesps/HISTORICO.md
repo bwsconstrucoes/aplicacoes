@@ -12228,6 +12228,111 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 204 — auxílio: o limite é o ÚLTIMO DIA TRABALHADO (BC), não a saída (BD) (08/10/2026)
+
+- *"Na hora de calcular alimentação e transporte estamos usando a Data de Saída
+  (BD) para limitar o cálculo; o certo é usar a coluna BC, Último dia
+  Trabalhado, que é o último dia efetivo em obra — os demais são os dias de
+  aviso prévio."* Em `folha_auxilio.calcular_pessoa`: último dia dentro da
+  competência → não recebe, com ou sem data de saída (antes, só sem); último
+  dia no mês do pagamento → proporcional até ele. A data de saída só vale
+  quando o último dia não veio. Diárias e folha da contabilidade NÃO mudaram
+  (o pedido foi para alimentação e transporte). Sem migração. **Publicada em
+  08/10/2026**, junto com a leva 203 (suíte inteira 9.025 verdes).
+
+#### Leva 203 — conciliação: a etiqueta da situação da SP; robô mais cuidadoso (08/10/2026)
+
+- *"Quero que apareça uma tag ao lado da SP no extrato de conciliação,
+  semelhante à que aparece em arquivos gerados."* Mesmas etiquetas: status do
+  pagamento e do agendamento (o "sem baixa" continua).
+- *"O bot não vai confundir com pedido de contracheque?"* Não confundia quem
+  está ligado (mensagem sem número de SP segue o caminho de sempre), mas uma
+  conversa NÃO ligada com um número de 10 dígitos (fixo com DDD) recebia o
+  recado "não ligado" em vez do menu. Agora só recebe quem escreve como pedido
+  de SP ("SP", "Solicitação"). Sem migração.
+
+#### Leva 202 — conciliação: a SP do BeeVale com 1,5% a mais no extrato (08/10/2026)
+
+- *"Quando o credor do extrato for Beevale Pagamentos e Benefícios Ltda, ou
+  tiver algo como Beevale, Bee Vale (…) a maioria desses lançamentos tem 1,5%
+  de acréscimo em relação ao valor da SP."* Saída cuja descrição tem "BEEVALE"
+  (sem acento, espaço ou hífen: "Bee Vale", "BEE-VALE") procura também a SP de
+  valor = lançamento ÷ 1,015, no CENTAVO exato (arredondando ou cortando o
+  centavo — não se sabe qual o BeeVale faz). O valor igual continua valendo; as
+  mesmas regras de conta, data e nome. O balão do link diz "BeeVale: o extrato
+  tem 1,5% a mais que a SP" (`conciliacao.e_beevale`,
+  `valores_sem_acrescimo_beevale`).
+- Fica de fora: um lançamento BeeVale que some VÁRIAS SPs (cruzamento é 1 para
+  1, como o resto). Sem migração. **Publicada em 08/10/2026**, junto com a
+  categoria e a descrição da SP na tela de QR / código.
+
+#### Leva 201 — Consultar Omie e o "Marcar Pago" completo (08/10/2026)
+
+- *"Preciso poder consultar um ou vários títulos no Omie (…) num modal (…) se
+  for Pago, poder equalizar na SPsBD, que com alguma frequência não tem
+  atualizado (…) coletar a 'Data do Pagamento', o 'Comprovante HTML/Email
+  (Integração)' e o 'Banco do Pagamento' do card (…) X é a data, AG o
+  comprovante, AK a conta (…) se o card não estiver na fase 309521694 'Pago /
+  Alimentar Omie', fazer esse movimento (…) mutation em lote para economizar
+  API. A função Marcar Pago precisa também gravar a data e o comprovante."*
+- **Consultar Omie** (barra de ações, até 60 SPs): `ConsultarContaPagar` pelo
+  código da coluna P, ou "Int" + nº da SP quando P está vazia (como o
+  ProcessarNovaSP cria); 3 de cada vez. O modal mostra planilha × Omie e o que
+  falta na planilha (status, data, comprovante); as PAGAS que a planilha não
+  diz por inteiro já vêm marcadas. Só lê (`pagamento_omie.consultar`).
+- **Marcar Pago do modal**: só aceita SP que o Omie disse PAGO na consulta dos
+  últimos 15 min (guardado em memória, `web._CONSULTADAS`). Grava Status =
+  Pago, e do card: X (data, em dd/mm/aaaa), AG (comprovante), AK (só o número
+  da conta, ex. "50024-0", como o BaixaBradesco grava). Campo vazio no card
+  NÃO apaga o que a planilha tem. Cards fora de "Pago / Alimentar Omie" vão
+  para lá. Pipefy: leitura e movimento em lote, 20 cards por ida
+  (`pipefy.ler_pagamentos`, `pipefy.mover_cards`, com `graphql_parcial` para
+  um card ruim não esconder os outros).
+- **O Marcar Pago de sempre** (barra e ficha) também lê o card e grava X, AG e
+  AK — mas NÃO move o card (só o do modal move, que é o caso que o dono
+  descreveu). Pipefy fora não desfaz o "Pago": a tela avisa o que faltou.
+- **No Lote o modal só consulta** — "Marcar Pago" ali continua proibido
+  (decisão antiga do dono, com teste).
+- A coluna AK ganhou nome ("Conta do Pagamento"); continua fora do banco — só
+  é escrita (fila da planilha + log), por isso não aparece na tela.
+- Não testado contra o Omie e o Pipefy de verdade: o formato real da data e do
+  banco no card é suposto (lista de conector e datas dd/mm/aaaa ou aaaa-mm-dd
+  são aceitas). Sem migração. **Publicada em 08/10/2026.**
+
+#### Leva 200 — o grupo "WhatsApp" do lote, alimentado pelo robô do Telegram (08/10/2026) — migração 052
+
+- *"Muitas pessoas me pedem para colocar para pagar alguma SP via WhatsApp (…)
+  eu copio, colo no Extrair SPs do lote (…) alimentar um lote chamado WhatsApp
+  (…) sempre o primeiro de todos (…) atrelar isso ao usuário."* Encaminhar pelo
+  WhatsApp foi descartado com ele: o número do Z-API é o do contracheque e
+  bloqueia com volume. Escolhido: copiar as mensagens no WhatsApp (várias de
+  uma vez) e colar no robô do Telegram da BWS, que já está de pé.
+- **Ligar** (tela Lote › janela "Lote" › "Ligar ao Telegram"): link de USO
+  ÚNICO, 15 minutos, `t.me/<robô>?start=lote_<código>`; no banco só o sha256
+  do código. Só quem entrou com usuário próprio liga (a senha geral não sabe
+  de quem é o lote). Ligar de novo (celular novo) troca a conversa; há
+  "Desligar o Telegram".
+- **Receber**: o robô pesca os números de SP (`lote.extrair_ids`) e soma no
+  grupo "WhatsApp" (`lote.juntar_no_grupo_whatsapp`): UM grupo, sempre levado
+  ao topo, sem repetir SP que já esteja em qualquer grupo do lote. Responde
+  quantas entraram, quais já estavam, quais não estão na base (entram mesmo
+  assim) e quais estão no lote de outra pessoa. Só alimenta quem pode alterar
+  o Lote pela tela (operador com a tela Lote, ou mestre); preso a conta não
+  tem a tela Lote, então também não.
+- **A tela aberta não apaga o que chegou pelo robô**: a janela manda a hora do
+  lote que carregou (`versao`); no Salvar/Extrair/Remover…, o que chegou pelo
+  Telegram depois dela e não está no texto volta ao grupo WhatsApp, com aviso
+  (`telegram_lote.manter_chegadas`, tabela `lote_telegram`). SP tirada de
+  propósito depois de vista não volta.
+- O robô é da área de Mensageria: a mudança lá é só o desvio no webhook
+  (registrado no `mensageria/HISTORICO.md`).
+- Testado no navegador (ligar mostra o botão "Abrir no Telegram") e ponta a
+  ponta pelo webhook do robô com o envio dublado. NÃO testado com o Telegram
+  de verdade — o primeiro uso do dono é o teste.
+- ⚠️ **Migração 052** — apertar "Aplicar atualizações do banco" ao publicar.
+  Antes dela, o robô e a tela seguem como antes (nada aparece).
+- **Publicada em 08/10/2026** (com as levas 201 e 202; suíte inteira 9.023 verdes).
+
 #### Leva 199 — conciliação: duplo clique na linha abre a ficha da SP (07/10/2026)
 
 - *"Voce colocou o link para a SP, mas queria que ao dar dois clique na linha

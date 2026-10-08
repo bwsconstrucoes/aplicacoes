@@ -2249,10 +2249,38 @@ def _palavras_do_nome(texto) -> set:
     return {p for p in re.findall(r"[A-Z]{3,}", limpo) if p not in PALAVRAS_SEM_NOME}
 
 
+# O BEEVALE COBRA 1,5% POR CIMA (08/10/2026). O dono: *"quando o credor do
+# extrato for Beevale Pagamentos e Benefícios Ltda, ou tiver algo como Beevale,
+# Bee Vale (…) a maioria desses lançamentos tem 1,5% de acréscimo em relação ao
+# valor da SP"*. Para essas saídas, a SP procurada vale o lançamento ÷ 1,015.
+ACRESCIMO_BEEVALE = Decimal("1.015")
+_CENTAVO = Decimal("0.01")
+
+
+def e_beevale(descricao) -> bool:
+    """"BEEVALE", "Bee Vale", "BEE-VALE PAGAMENTOS"… — sem acento e sem espaço."""
+    import unicodedata
+    cru = unicodedata.normalize("NFKD", str(descricao or ""))
+    limpo = "".join(c for c in cru if c.isalpha() and not unicodedata.combining(c))
+    return "BEEVALE" in limpo.upper()
+
+
+def valores_sem_acrescimo_beevale(valor: Decimal) -> list:
+    """Os valores de SP que, com 1,5% por cima, dão EXATAMENTE este lançamento
+    no centavo — arredondando ou cortando o centavo, que não se sabe qual dos
+    dois o BeeVale faz. Costuma ser um só."""
+    from decimal import ROUND_DOWN, ROUND_HALF_UP
+    base = (valor / ACRESCIMO_BEEVALE).quantize(_CENTAVO)
+    return [v for v in (base - _CENTAVO, base, base + _CENTAVO)
+            if v > 0 and valor in {(v * ACRESCIMO_BEEVALE).quantize(_CENTAVO, r)
+                                   for r in (ROUND_HALF_UP, ROUND_DOWN)}]
+
+
 def sps_das_linhas(conta: dict | None, linhas: list) -> dict:
     """`{id da linha: [{id, link, como, status, sem_baixa, credor, conta_ok}]}` —
     as SPs que casam com cada SAÍDA da página. Nunca levanta."""
     import datetime as dt
+    from .consultas import SQL_STATUS_AGEND
     from .db import consultar
     if not conta or not linhas:
         return {}
@@ -2261,13 +2289,20 @@ def sps_das_linhas(conta: dict | None, linhas: list) -> dict:
     if not saidas:
         return {}
     numeros = numeros_da_conta(conta)
-    valores = sorted({abs(Decimal(str(l["valor"]))) for l in saidas})
+    procurados = {}
+    for l in saidas:
+        valor = abs(Decimal(str(l["valor"]))).quantize(_CENTAVO)
+        procurados[l["id"]] = [(valor, False)] + (
+            [(v, True) for v in valores_sem_acrescimo_beevale(valor)]
+            if e_beevale(l.get("descricao")) else [])
+    valores = sorted({v for lista in procurados.values() for v, _ in lista})
     ini = min(l["data"] for l in saidas) - dt.timedelta(days=JANELA_DA_SP)
     fim = max(l["data"] for l in saidas) + dt.timedelta(days=JANELA_DA_SP)
     try:
         candidatas = consultar(
             "SELECT id, coalesce(conta,''), valor_num, data_pagamento_d, vencimento_d, "
-            "       trim(coalesce(status_pgt,'')), coalesce(credor,'') "
+            "       trim(coalesce(status_pgt,'')), coalesce(credor,''), "
+            f"      ({SQL_STATUS_AGEND}) "
             "  FROM analisesps.sps "
             f" WHERE valor_num IN ({','.join(['?'] * len(valores))}) "
             "   AND ((data_pagamento_d BETWEEN ? AND ?) OR (vencimento_d BETWEEN ? AND ?)) "
@@ -2277,23 +2312,24 @@ def sps_das_linhas(conta: dict | None, linhas: list) -> dict:
         logger.exception("Conciliação: não consegui cruzar com as SPs")
         return {}
     por_valor: dict = {}
-    for sp_id, conta_sp, valor, pago_em, venc, status, credor in candidatas:
+    for sp_id, conta_sp, valor, pago_em, venc, status, credor, agend in candidatas:
         confere = conta_da_sp_confere(conta_sp, numeros, conta.get("nome", ""))
         if confere is False:
             continue
         por_valor.setdefault(Decimal(str(valor)).quantize(Decimal("0.01")), []).append(
             {"id": str(sp_id), "pago_em": pago_em, "venc": venc, "status": status,
-             "credor": credor, "conta_ok": bool(confere)})
+             "status_agend": agend or "", "credor": credor, "conta_ok": bool(confere)})
     saida = {}
     for l in saidas:
-        valor = abs(Decimal(str(l["valor"]))).quantize(Decimal("0.01"))
         fortes, provaveis = [], []
-        for c in por_valor.get(valor, []):
-            if c["pago_em"] == l["data"]:
-                fortes.append(dict(c, como="pago no dia"))
-            elif ((c["pago_em"] and abs((c["pago_em"] - l["data"]).days) <= JANELA_DA_SP)
-                  or (c["venc"] and abs((c["venc"] - l["data"]).days) <= JANELA_DA_SP)):
-                provaveis.append(dict(c, como="data próxima"))
+        for valor, com_acrescimo in procurados[l["id"]]:
+            extra = {"beevale": True} if com_acrescimo else {}
+            for c in por_valor.get(valor, []):
+                if c["pago_em"] == l["data"]:
+                    fortes.append(dict(c, como="pago no dia", **extra))
+                elif ((c["pago_em"] and abs((c["pago_em"] - l["data"]).days) <= JANELA_DA_SP)
+                      or (c["venc"] and abs((c["venc"] - l["data"]).days) <= JANELA_DA_SP)):
+                    provaveis.append(dict(c, como="data próxima", **extra))
         achadas = fortes or provaveis
         # ⚠️ O NOME DESEMPATA (07/10/2026). O dono: *"às vezes pode ter uma conta
         # com o mesmo valor no mesmo dia (…) a descrição do extrato às vezes tem o
