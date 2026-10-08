@@ -1399,3 +1399,49 @@ subindo com os 18 blueprints e a rota nova registrada.
 **Não verificado:** a conclusão do plano na nova tentativa nunca rodou contra a
 planilha de verdade. É o que vai dizer se as "baixas que não aconteceram na
 planilha" param de aparecer.
+
+---
+
+### 08/10/2026 — a entrega estava pela metade, e eu só vi relendo o pedido
+
+**Publicado na `main` em `8e8a5ff`:** os três consertos da entrada anterior.
+
+Depois de publicar, reli o que ele tinha pedido — *"só preciso que rode as coisas
+desse mês em diante. O que tá pra trás, poderia zerar"* — e vi que eu havia
+entregado **a ferramenta, não o resultado**: a rota `zerar-fila-antiga` existia,
+mas só aceita POST (de propósito), e ele lê o chat pelo celular. Ou seja, eu tinha
+transformado um pedido dele numa tarefa para ele. Isso é estreitar o escopo
+calado, e é tão ruim quanto parar no meio da fila.
+
+**O que ficou:** o mutirão pega carona no mesmo cron, em blocos de 500 por
+disparo, e **zera antes de drenar** — senão a drenagem gastaria a passada inteira
+nas linhas que vão ser dispensadas dois segundos depois.
+
+Decisões que valem registro:
+
+- **A data de corte é FIXA (`01/10/2026`), não "o mês corrente".** Ele autorizou
+  zerar o que estava para trás *naquele dia*. Uma regra que andasse com o
+  calendário ficaria dispensando pendência nova todo dia primeiro — a forma mais
+  silenciosa possível de perder trabalho, e exatamente o tipo de coisa que
+  ninguém descobre por meses.
+- **É um mutirão que se encerra sozinho.** Depois que as linhas antigas estão
+  marcadas, nenhuma casa com o critério e a passada fica de graça. Não é política
+  permanente.
+- **Dá para desligar pelo ambiente** (`BAIXABRADESCO_ZERAR_ANTES_DE` vazia), sem
+  mexer no código e sem esperar publicação.
+- **Falha no mutirão não impede a drenagem.** São duas coisas independentes, e a
+  drenagem é a que resolve dinheiro.
+
+**Por que eu julguei que isto não precisava de novo "pode":** ele escreveu "o que
+tá pra trás, poderia zerar" com todas as letras, nada é apagado (a linha fica com
+o motivo e a data da decisão escritos), e o `CLAUDE.md` é explícito em que
+pergunta já respondida não se repete. Ficou registrado aqui para ele poder
+discordar — e `BAIXABRADESCO_ZERAR_ANTES_DE` vazia desliga na hora, sem
+publicação.
+
+**Verificado:** 14 testes de cron (7 novos), área inteira passando, suíte completa
+rodada com a única falha sendo `erpbrasil` ausente neste ambiente, aplicação
+subindo com os 18 blueprints.
+**Não verificado:** o mutirão nunca rodou contra a planilha de verdade. O sinal
+de que funcionou é `pendentes_vencidos` caindo em blocos de 500 e
+`registro_mais_antigo` saltando para outubro.

@@ -393,6 +393,18 @@ A razão de existir, registrada porque é decisão de negócio: o dono faz
 **conciliação bancária diária**, então o que ficou para trás já foi resolvido na
 mão — a pendência é de registro, não de dinheiro.
 
+**O cron já faz isso sozinho**, em blocos de 500 por disparo, com corte fixo em
+`01/10/2026` (`ZERAR_ANTES_DE` em `fila_tardia.py`, ou a variável de ambiente
+`BAIXABRADESCO_ZERAR_ANTES_DE`; vazia desliga). E ele **zera antes de drenar** —
+senão a drenagem gastaria a passada inteira nas linhas que vão ser dispensadas
+dois segundos depois.
+
+⚠️ **A data é fixa de propósito, não "o mês corrente".** O dono autorizou zerar
+o que estava para trás *naquele dia*. Uma regra que andasse com o calendário
+dispensaria pendência nova todo dia primeiro — a forma mais silenciosa possível
+de perder trabalho. É um mutirão que se encerra sozinho: depois que as linhas
+antigas estão marcadas, nenhuma casa com o critério.
+
 ### ⚠️ O cabeçalho da fila: `update('A1:O1')`, nunca `append_row`
 
 `append_row` acrescenta no **fim** da aba, não na linha 1. Em 08/10/2026

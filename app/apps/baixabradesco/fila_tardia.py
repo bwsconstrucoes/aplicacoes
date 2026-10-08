@@ -58,6 +58,49 @@ def adiar_payload(payload: dict, erro: str) -> dict:
 # dois caminhos automáticos já divergiram uma vez.
 LIMITES_CRON = {'omie': 15, 'sheets': 15, 'pipefy': 15, 'zapi': 10}
 
+# ── Mutirão único: zerar o que ficou para trás ────────────────────────────────
+#
+# Pedido do dono em 08/10/2026, vendo a fila com 2.213 pendências cuja mais
+# antiga era de 18/06: *"só preciso que rode as coisas desse mês em diante. O que
+# tá pra trás, poderia zerar."* A razão é dele e é boa: faz conciliação bancária
+# diária, então o que ficou para trás já foi resolvido na mão — a pendência é de
+# registro, não de dinheiro.
+#
+# ⚠️ A data é FIXA de propósito, não "o mês corrente". Ele autorizou zerar o que
+# estava para trás *naquele dia*; uma regra que andasse com o calendário ficaria
+# dispensando pendência nova todo mês primeiro, o que ele não pediu e seria a
+# forma mais silenciosa possível de perder trabalho.
+#
+# É um mutirão que se encerra sozinho: depois que as linhas antigas estão
+# marcadas, nenhuma casa com o critério e a passada fica de graça.
+ZERAR_ANTES_DE = '01/10/2026'
+ZERAR_POR_DISPARO = 500
+
+
+def _zerar_atraso_uma_vez(payload: dict | None = None) -> dict:
+    """Dispensa, aos poucos, as pendências anteriores ao corte autorizado.
+
+    Em blocos por disparo para não tomar a cota do Google de uma vez — ela é
+    por minuto e é compartilhada com o ERP, o painel e o Análise de SPs.
+    """
+    from .fila import zerar_fila_antiga
+
+    corte = (os.getenv('BAIXABRADESCO_ZERAR_ANTES_DE', '') or ZERAR_ANTES_DE).strip()
+    if not corte:
+        return {'desligado': True}
+    pedido = dict(payload or {})
+    pedido.update({'antes_de': corte, 'limite': ZERAR_POR_DISPARO})
+    try:
+        r = zerar_fila_antiga(pedido)
+        return {
+            'antes_de': r.get('antes_de'),
+            'dispensadas': r.get('dispensadas'),
+            'por_etapa': r.get('por_etapa'),
+            'erro': r.get('erro'),
+        }
+    except Exception as e:
+        return {'erro': str(e)[:200]}
+
 
 def _drenar_a_fila(payload: dict | None = None) -> dict:
     from .fila import drenar_por_etapa
@@ -111,5 +154,9 @@ def processar_fila_tardia(payload: dict | None = None) -> dict:
         # falhas pega carona nele. Antes ela só andava se alguém chamasse a rota
         # à mão — e, pelos números de 08/10/2026 (2.269 linhas, nenhuma
         # concluída, a mais antiga de 18/06/2026), nunca ninguém chamou.
+        # A ORDEM importa: zerar primeiro, drenar depois. Senão a drenagem
+        # gastaria a passada inteira nas linhas antigas que vão ser dispensadas
+        # dois segundos mais tarde.
+        'atraso_zerado': _zerar_atraso_uma_vez(payload),
         'fila_de_falhas': _drenar_a_fila(payload),
     }

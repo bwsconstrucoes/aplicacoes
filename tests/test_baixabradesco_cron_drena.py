@@ -128,3 +128,112 @@ def test_a_drenagem_nao_derruba_o_trabalho_original_do_cron(monkeypatch):
 
     assert r['ok'] is True
     assert r['processados'] == []
+
+
+# =====================================================================
+# o mutirão único: zerar o que ficou para trás
+# =====================================================================
+# Pedido do dono em 08/10/2026: *"só preciso que rode as coisas desse mês em
+# diante. O que tá pra trás, poderia zerar."* Eu tinha entregado a ferramenta e
+# deixado o gatilho com ele — que não tem como fazer um POST pelo celular. Ou
+# seja: entrega pela metade. O mutirão pega carona no mesmo cron.
+
+def _dublar_zerar(monkeypatch, resposta=None):
+    pedidos = []
+    import app.apps.baixabradesco.fila as f
+
+    def _zerar(pedido):
+        pedidos.append(pedido)
+        return resposta or {'ok': True, 'antes_de': pedido.get('antes_de'),
+                            'dispensadas': 7, 'por_etapa': {'zapi': 7}}
+
+    monkeypatch.setattr(f, 'zerar_fila_antiga', _zerar)
+    return pedidos
+
+
+def test_o_cron_zera_o_atraso_com_a_data_autorizada(sem_payload_adiado, monkeypatch):
+    _dublar_fila(monkeypatch)
+    pedidos = _dublar_zerar(monkeypatch)
+
+    r = mod.processar_fila_tardia({})
+
+    assert pedidos[0]['antes_de'] == '01/10/2026'
+    assert r['atraso_zerado']['dispensadas'] == 7
+
+
+def test_a_data_do_mutirao_e_fixa_nao_anda_com_o_calendario(sem_payload_adiado,
+                                                            monkeypatch):
+    """Ele autorizou zerar o que estava para trás NAQUELE dia.
+
+    Uma regra que andasse com o calendário dispensaria pendência nova todo dia
+    primeiro — a forma mais silenciosa possível de perder trabalho.
+    """
+    assert mod.ZERAR_ANTES_DE == '01/10/2026'
+    _dublar_fila(monkeypatch)
+    pedidos = _dublar_zerar(monkeypatch)
+
+    mod.processar_fila_tardia({})
+
+    assert pedidos[0]['antes_de'] == '01/10/2026'
+
+
+def test_o_mutirao_anda_em_blocos_para_nao_tomar_a_cota(sem_payload_adiado,
+                                                        monkeypatch):
+    _dublar_fila(monkeypatch)
+    pedidos = _dublar_zerar(monkeypatch)
+
+    mod.processar_fila_tardia({})
+
+    assert pedidos[0]['limite'] == mod.ZERAR_POR_DISPARO
+    assert mod.ZERAR_POR_DISPARO <= 500
+
+
+def test_zera_ANTES_de_drenar(sem_payload_adiado, monkeypatch):
+    """Senão a drenagem gastaria a passada nas linhas que vão ser dispensadas
+    dois segundos mais tarde."""
+    ordem = []
+    import app.apps.baixabradesco.fila as f
+    monkeypatch.setattr(f, 'zerar_fila_antiga',
+                        lambda p: ordem.append('zerar') or {'dispensadas': 0})
+    monkeypatch.setattr(f, 'reprocessar_fila',
+                        lambda p: ordem.append('drenar') or
+                        {'pendentes_processados': 0, 'interrompido': ''})
+
+    mod.processar_fila_tardia({})
+
+    assert ordem[0] == 'zerar'
+    assert 'drenar' in ordem
+
+
+def test_da_para_desligar_o_mutirao_sem_mexer_no_codigo(sem_payload_adiado,
+                                                        monkeypatch):
+    monkeypatch.setenv('BAIXABRADESCO_ZERAR_ANTES_DE', ' ')
+    _dublar_fila(monkeypatch)
+    pedidos = _dublar_zerar(monkeypatch)
+
+    r = mod.processar_fila_tardia({})
+
+    assert pedidos == []
+    assert r['atraso_zerado'] == {'desligado': True}
+
+
+def test_o_ambiente_pode_trocar_a_data_do_mutirao(sem_payload_adiado, monkeypatch):
+    monkeypatch.setenv('BAIXABRADESCO_ZERAR_ANTES_DE', '15/09/2026')
+    _dublar_fila(monkeypatch)
+    pedidos = _dublar_zerar(monkeypatch)
+
+    mod.processar_fila_tardia({})
+
+    assert pedidos[0]['antes_de'] == '15/09/2026'
+
+
+def test_mutirao_que_explode_nao_impede_a_drenagem(sem_payload_adiado, monkeypatch):
+    chamadas = _dublar_fila(monkeypatch)
+    import app.apps.baixabradesco.fila as f
+    monkeypatch.setattr(f, 'zerar_fila_antiga',
+                        lambda p: (_ for _ in ()).throw(RuntimeError('planilha fora')))
+
+    r = mod.processar_fila_tardia({})
+
+    assert 'planilha fora' in r['atraso_zerado']['erro']
+    assert [c['etapas'][0] for c in chamadas] == ['omie', 'sheets', 'pipefy', 'zapi']
