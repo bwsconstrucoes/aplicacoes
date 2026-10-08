@@ -818,3 +818,139 @@ dois dias. Junto vieram três endurecimentos no `core.py` deste módulo: não
 mandar pedido sem credencial, interromper quando a consulta não confirma o
 título, e só alterar o título quando algo diverge de verdade. Vale ler o
 registro daquele chat antes de mexer na sequência do Omie.
+
+### 07/10/2026 — a não-atualização silenciosa da SPsBD: quatro causas, não uma
+
+Queixa do dono: *"tem algo que tem acontecido com muita frequência: a não
+atualização silenciosa da aba SPsBD. Precisa criar uma sistemática pra impedir
+que isso aconteça."*
+
+Em 13/09 eu tinha tratado **uma** das causas (o erro engolido num `except`
+vazio). As outras três continuavam, e juntas explicam a frequência:
+
+1. **A gravação rodava numa thread solta, e a resposta saía antes dela
+   terminar.** O gunicorn recicla o trabalhador a cada mil pedidos
+   (`--max-requests 1000`) e o serviço reinicia a cada publicação — nos dois
+   casos a thread morre no meio, sem erro em lugar nenhum. **Era a causa
+   principal**, e explica por que acontecia "com frequência" e sem padrão.
+2. **O resultado da gravação era escrito no plano DEPOIS** de a resposta já ter
+   sido montada. Quem lia o retorno do Make nunca via o que aconteceu — havia
+   uma corrida entre a thread e a montagem da resposta.
+3. **Ninguém conferia** se a célula ficou com o valor. O `batch_update` não
+   reclama quando a escrita não vale.
+4. **A fila de falhas só andava se alguém chamasse a rota à mão** — e o
+   reprocessamento de planilha **ignorava o resultado** da gravação: marcava
+   "reprocessado com sucesso" e tirava o item da fila sem ter gravado. Era o
+   último lugar onde a perda acontecia em silêncio.
+
+**A sistemática que ficou:**
+
+- **Gravar, conferir, e só então responder.** Lê de volta a coluna de status e
+  compara. Custo: cerca de um segundo por comprovante na resposta, contra o
+  limite de 300 segundos do Make. Baixa errada custa mais do que um segundo.
+- **Uma segunda tentativa imediata** antes de desistir (cota do Google é por
+  minuto; resposta parcial costuma passar na segunda).
+- **Falha confirmada vai para a fila e para o aviso**, com o resultado real no
+  retorno.
+- **Cada lote drena algumas pendências da fila** (limite 5, para não esticar a
+  resposta). Comprovante chega sempre; a fila anda junto.
+- **O reprocessamento não mente mais**: devolve o resultado da gravação.
+- **Item que esgotou as cinco tentativas (FALHOU) pode voltar**, com
+  `incluir_falhados` no pedido de reprocessamento. Antes ficava abandonado na
+  planilha para sempre — não-atualização silenciosa com outro nome. O
+  reprocessamento automático **não** os inclui: insistir de minuto em minuto no
+  que já falhou cinco vezes só gasta cota.
+
+**Sobre o lado do Omie**, que ele levantou junto: aquele caminho já estava
+coberto desde 17/09 (não manda pedido sem credencial, interrompe quando a
+consulta não confirma o título, só altera quando algo diverge) e a falha já ia
+para a fila e para o aviso. O que faltava era a fila **andar** — e agora anda.
+
+**O que a leitura da planilha mostrou, e é decisão do dono:** a aba
+`BaixaBradescoFila` tem **cerca de 2.270 linhas** acumuladas. Não dá para dizer
+daqui quantas são pendências de verdade e quantas são histórico, porque o
+conector do Google devolve só o cabeçalho de abas grandes. Com a drenagem
+automática, 5 por lote, uma fila de pendências antigas leva muitos lotes para
+andar — se forem muitas, vale uma chamada manual à rota de reprocessar com
+`limite` alto e `incluir_falhados`.
+
+⚠️ **Achado de segurança, de passagem:** a planilha *Registro de SPs* guarda, na
+aba `FilaAppWeb`, a **chave e o segredo da API do Omie** em texto, numa coluna do
+payload. Quem tem acesso à planilha tem as credenciais do Omie. Não foi mexido
+nem copiado para lugar nenhum — fica registrado para o dono decidir (o caminho
+seria o Make e o Análise de SPs lerem de variável de ambiente, como o resto).
+
+**Verificado:** 5.131 testes passando (14 novos desta entrega) e a aplicação
+subindo. A única falha na rodada local é biblioteca ausente neste ambiente
+(`erpbrasil`), e ela falha igual na `main` publicada sem o meu trabalho.
+**Não verificado:** nada disso passou por produção. A prova é a primeira baixa
+real depois de publicado — e, se a gravação falhar, o aviso tem de chegar.
+
+---
+
+### 08/10/2026 — "e essa fila, de 2.270 linhas, vai rodar?" — não ia
+
+Pergunta do dono, logo depois da entrega anterior. A resposta honesta era
+**não**: no ritmo automático de cinco por lote, uma fila de pendências antigas
+não anda. Três coisas impediam, e as três foram tratadas.
+
+**1. Ninguém sabia quantas das 2.270 linhas eram pendência de verdade.** A aba
+guarda **tudo** que já passou por ela, concluído inclusive — então o número de
+linhas não é o número de pendências. Eu disse isso na entrega anterior e parei
+aí, o que é pouco: ficou uma pergunta sem meio de resposta. Agora existe
+`GET /api/baixabradesco/fila-resumo`, que conta por situação (`PENDENTE`
+vencido, `PENDENTE` agendado, `FALHOU`, `CONCLUIDO`), por etapa e por tipo de
+falha, diz a data do registro mais antigo, e não grava nada. Diagnóstico se faz
+pelo sistema, não abrindo a planilha na mão.
+
+**2. Ler a fila custava a aba inteira.** `_rows_as_dicts` fazia
+`get_all_values()` — as 2.270 linhas **com o JSON do payload de cada uma** — só
+para achar cinco. E `ensure_fila_sheet` fazia o mesmo, em **toda** chamada,
+apenas para conferir o cabeçalho. Isso é exatamente o que `CONTEXTO.md` §3.7
+proíbe, e era o tipo de leitura que causou o OOM de julho de 2026. Agora: o
+cabeçalho lê `A1:O1`; o filtro lê `A2:L` (as colunas leves, sem a mensagem de
+erro nem o payload); o payload vem só das linhas escolhidas, em blocos de cem.
+
+**3. Drenar de uma vez estouraria a cota de todo mundo.** A cota de escrita do
+Google é **por minuto** e é do **mesmo usuário de serviço** que o ERP, o painel e
+o Análise de SPs usam — uma drenagem de centenas de itens no soco não quebraria
+só esta fila, tiraria os outros do ar. Três medidas: marcar a linha passou a
+custar **uma** chamada de escrita em vez de duas; lote acima de 20 itens anda com
+**pausa** entre eles (1,2 s, ajustável por `pausa_ms`); e a varredura **para
+sozinha** na terceira recusa seguida por cota, devolve o que fez e deixa o resto
+`PENDENTE` para a próxima passada.
+
+**Uma trava de bom senso que entrou junto:** aviso de WhatsApp parado na fila há
+mais de três dias **não é reenviado**. Drenar fila velha mandaria para os dois
+celulares avisos sobre problemas provavelmente já resolvidos na mão — e aviso
+demais faz a pessoa parar de ler, que é o oposto do que o aviso existe para
+fazer. Ele sai da fila com o motivo escrito na linha. Quem quiser o contrário
+manda `reenviar_avisos_antigos: true`. A trava vale **só** para aviso: baixa de
+dois meses atrás continua sendo baixa, e o dinheiro não envelhece.
+
+**O que NÃO é risco, e vale estar escrito:** repetir uma baixa não baixa duas
+vezes. O reprocessamento do Omie consulta o título primeiro e, se já estiver
+`PAGO`, dá a pendência por resolvida sem lançar nada. Então drenar fila antiga
+não duplica pagamento no Omie. O reprocessamento de planilha regrava as mesmas
+células — se alguém tiver corrigido aquela linha na mão com outra informação, a
+regravação passa por cima. É o único efeito colateral conhecido da drenagem.
+
+**O que continua fora do alcance da fila, e não tem volta por ela:** item que o
+reprocessamento antigo marcou `CONCLUIDO` sem ter gravado (o defeito corrigido
+em 07/10). Para a fila ele está resolvido; a pendência real, se existir, só
+aparece na comparação entre a SPsBD e o Omie, não aqui.
+
+**O caminho prático para zerar o acumulado**, depois de publicado: primeiro o
+resumo, para saber o tamanho; depois `POST /api/baixabradesco/reprocessar-fila`
+com `limite` alto e `incluir_falhados: true`, uma chamada por vez, olhando o
+campo `interrompido` da resposta — se vier `cota_do_google`, esperar alguns
+minutos e repetir.
+
+**Verificado:** suíte inteira rodada, uma única falha e é a biblioteca ausente
+deste ambiente (`erpbrasil`), que falha igual na `main` publicada sem o meu
+trabalho; 16 testes novos cobrindo a contagem, a leitura limitada, a pausa, a
+parada por cota e a trava de aviso antigo; aplicação subindo com os 18
+blueprints e a rota nova no lugar.
+**Não verificado:** nada disso encostou na planilha de verdade. Quantas das
+2.270 linhas são pendência real continua sem resposta até alguém chamar o
+resumo em produção — e é a primeira coisa a fazer depois de publicar.

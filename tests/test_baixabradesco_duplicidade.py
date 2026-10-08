@@ -148,11 +148,15 @@ def test_a_impressao_digital_carrega_o_numero_da_pagina():
 # barrado como repetido, em silêncio.
 
 def test_a_gravacao_na_planilha_deixou_de_ser_silenciosa():
-    """Falha ao gravar vai para a fila, como já acontecia com Pipefy."""
+    """Falha ao gravar vai para a fila, como já acontecia com Pipefy.
+
+    A função mudou de nome em 07/10/2026, quando a gravação deixou de rodar em
+    thread solta e passou a ser confirmada antes de a resposta sair.
+    """
     import inspect
     from app.apps.baixabradesco import core
-    fonte = inspect.getsource(core._executar_sheets_async)
-    assert "enqueue_failure(plan, 'sheets'" in fonte
+    fonte = inspect.getsource(core._gravar_planilha)
+    assert "enqueue_failure(" in fonte
     assert "plan.responses['sheets']" in fonte
 
 

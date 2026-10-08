@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import time
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -35,6 +36,18 @@ STATUS_PENDENTE = 'PENDENTE'
 STATUS_CONCLUIDO = 'CONCLUIDO'
 STATUS_FALHOU = 'FALHOU'
 
+# A:L é tudo que o filtro da fila precisa ler. A mensagem de erro (M) e o
+# payload (N) ficam fora de propósito: são as duas colunas grandes.
+FAIXA_CONTROLE = 'A2:L'
+COLS_CONTROLE = 12
+COL_PAYLOAD = 'N'
+
+# Aviso de falha enfileirado há mais de três dias não é mais aviso, é confusão:
+# avisa de um problema que já foi resolvido na mão, e vai para dois celulares.
+# Ao drenar fila velha ele é descartado com o motivo escrito, a menos que o
+# pedido traga `reenviar_avisos_antigos: true`.
+DIAS_AVISO_UTIL = 3
+
 
 def now_str() -> str:
     return datetime.now().strftime('%d/%m/%Y %H:%M:%S')
@@ -54,14 +67,23 @@ def ensure_fila_sheet(gc=None):
         ws.append_row(HEADERS, value_input_option='USER_ENTERED')
         return ws
 
-    values = ws.get_all_values()
-    if not values:
+    # Lê SÓ a linha do cabeçalho. Antes era `get_all_values()`, ou seja: toda
+    # vez que alguém enfileirava uma falha ou reprocessava a fila, a aba
+    # inteira vinha pela rede — com o JSON do payload em cada linha. Com a aba
+    # passando de duas mil linhas isso virou megabytes por chamada, que é
+    # exatamente o que CONTEXTO.md §3.7 proíbe.
+    try:
+        topo = ws.get('A1:O1') or []
+    except Exception:
+        topo = []
+    atuais = topo[0] if topo else []
+    if not atuais:
         ws.append_row(HEADERS, value_input_option='USER_ENTERED')
-    else:
-        atuais = values[0]
-        if atuais[:len(HEADERS)] != HEADERS:
-            # Não apaga dados. Apenas garante cabeçalho mínimo nas primeiras colunas.
-            ws.update('A1:O1', [HEADERS], value_input_option='USER_ENTERED')
+        return ws
+    atuais = (list(atuais) + [''] * len(HEADERS))[:len(HEADERS)]
+    if atuais != HEADERS:
+        # Não apaga dados. Apenas garante cabeçalho mínimo nas primeiras colunas.
+        ws.update('A1:O1', [HEADERS], value_input_option='USER_ENTERED')
     return ws
 
 
@@ -140,42 +162,98 @@ def _parse_dt_br(texto: str) -> Optional[datetime]:
     return None
 
 
-def _rows_as_dicts(ws) -> List[Dict[str, Any]]:
-    values = ws.get_all_values()
-    if not values:
+def _coluna(faixas: List[Any], indice: int) -> List[str]:
+    """Transforma uma faixa de coluna única do batch_get numa lista simples."""
+    try:
+        bruto = faixas[indice] or []
+    except Exception:
         return []
-    headers = values[0]
+    return [as_string(c[0]) if c else '' for c in bruto]
+
+
+def _candidatos(ws, limite: int, somente_vencidos: bool, aceitos: set) -> List[Any]:
+    """Varre apenas as colunas de controle (A:L) e devolve as linhas que servem.
+
+    O payload de cada linha (coluna N) é um JSON que pode ter alguns kB. Ler a
+    aba toda para achar cinco linhas custava a aba toda; aqui o filtro roda
+    sobre as colunas leves e o payload é buscado depois, só do que foi escolhido.
+    """
+    try:
+        valores = ws.get(FAIXA_CONTROLE) or []
+    except Exception:
+        return []
+    agora = datetime.now()
+    escolhidos = []
+    for idx, row in enumerate(valores, start=2):
+        row = list(row) + [''] * (COLS_CONTROLE - len(row))
+        if as_string(row[1]).upper() not in aceitos:
+            continue
+        if somente_vencidos:
+            dt = _parse_dt_br(row[3])
+            if dt and dt > agora:
+                continue
+        escolhidos.append((idx, row))
+        if len(escolhidos) >= limite:
+            break
+    return escolhidos
+
+
+def _buscar_payloads(ws, linhas: List[int]) -> Dict[int, str]:
+    """Busca a coluna N só das linhas escolhidas, em blocos de 100 faixas."""
+    saida: Dict[int, str] = {}
+    for inicio in range(0, len(linhas), 100):
+        bloco = linhas[inicio:inicio + 100]
+        try:
+            resposta = ws.batch_get([f'{COL_PAYLOAD}{n}' for n in bloco]) or []
+        except Exception:
+            resposta = []
+        for i, n in enumerate(bloco):
+            texto = ''
+            if i < len(resposta):
+                celulas = resposta[i] or []
+                if celulas and celulas[0]:
+                    texto = as_string(celulas[0][0])
+            saida[n] = texto
+    return saida
+
+
+def listar_pendentes(gc=None, limite: int = 20, somente_vencidos: bool = True,
+                     incluir_falhados: bool = False) -> List[Dict[str, Any]]:
+    """Itens da fila a reprocessar.
+
+    `incluir_falhados`: traz também os que esgotaram as cinco tentativas e
+    foram marcados FALHOU. Eles NUNCA voltavam sozinhos — ficavam abandonados na
+    planilha, o que é a não-atualização silenciosa com outro nome. O
+    reprocessamento automático não os inclui (de nada serve insistir de minuto
+    em minuto no que já falhou cinco vezes); quem pede explicitamente, inclui.
+    """
+    ws = ensure_fila_sheet(gc)
+    aceitos = {STATUS_PENDENTE}
+    if incluir_falhados:
+        aceitos.add(STATUS_FALHOU)
+    escolhidos = _candidatos(ws, int(limite), bool(somente_vencidos), aceitos)
+    if not escolhidos:
+        return []
+    payloads = _buscar_payloads(ws, [idx for idx, _ in escolhidos])
     out = []
-    for idx, row in enumerate(values[1:], start=2):
-        row = row + [''] * (len(headers) - len(row))
-        d = {headers[i]: row[i] if i < len(row) else '' for i in range(len(headers))}
+    for idx, row in escolhidos:
+        d: Dict[str, Any] = {HEADERS[c]: row[c] for c in range(COLS_CONTROLE)}
+        d['Mensagem Erro'] = ''
+        d['Payload Resumido'] = payloads.get(idx, '')
+        d['Última Execução'] = ''
         d['_row_number'] = idx
         out.append(d)
     return out
 
 
-def listar_pendentes(gc=None, limite: int = 20, somente_vencidos: bool = True) -> List[Dict[str, Any]]:
-    ws = ensure_fila_sheet(gc)
-    rows = _rows_as_dicts(ws)
-    now = datetime.now()
-    out = []
-    for r in rows:
-        if as_string(r.get('Status')).upper() != STATUS_PENDENTE:
-            continue
-        if somente_vencidos:
-            dt = _parse_dt_br(r.get('Próxima Tentativa'))
-            if dt and dt > now:
-                continue
-        out.append(r)
-        if len(out) >= limite:
-            break
-    return out
-
-
 def _update_row(ws, row_number: int, status: str, tentativas: int, mensagem: str = '', retry_minutes: int = 10):
     proxima = '' if status == STATUS_CONCLUIDO else next_try(retry_minutes)
-    ws.update(f'B{row_number}:D{row_number}', [[status, tentativas, proxima]], value_input_option='USER_ENTERED')
-    ws.update(f'M{row_number}:O{row_number}', [[as_string(mensagem)[:1000], '', now_str()]], value_input_option='USER_ENTERED')
+    # Uma chamada em vez de duas: a cota de escrita do Sheets é por minuto, e
+    # drenar uma fila grande gastava o dobro do necessário só nisto.
+    ws.batch_update([
+        {'range': f'B{row_number}:D{row_number}', 'values': [[status, tentativas, proxima]]},
+        {'range': f'M{row_number}:O{row_number}', 'values': [[as_string(mensagem)[:1000], '', now_str()]]},
+    ], value_input_option='USER_ENTERED')
 
 
 def _request_omie(call: str, param: dict, payload: dict) -> dict:
@@ -249,24 +327,167 @@ def _retry_sheets(item: Dict[str, Any], payload: dict) -> dict:
     updates = resumo.get('sheets_updates') or []
     if not updates:
         return {'ok': False, 'erro': 'updates_ausentes'}
-    execute_spsbd_updates(updates)
-    return {'ok': True, 'updates': len(updates)}
+    # O resultado era IGNORADO: a fila marcava "reprocessado com sucesso" mesmo
+    # quando a gravação falhava de novo, e o item saía da fila sem ter sido
+    # gravado. Era o último lugar onde a perda ainda acontecia em silêncio.
+    resultado = execute_spsbd_updates(updates)
+    return {'ok': bool(resultado.get('ok')), 'updates': len(updates), 'detalhe': resultado}
+
+
+def _parece_cota(texto: str) -> bool:
+    t = (texto or '').lower()
+    return ('429' in t or 'quota exceeded' in t or 'resource_exhausted' in t
+            or 'rate_limit' in t)
+
+
+def resumo_fila(gc=None) -> dict:
+    """Conta a fila sem reprocessar nada.
+
+    A aba `BaixaBradescoFila` guarda TUDO que já passou por ela, concluído
+    inclusive. Então o número de linhas da aba não é o número de pendências —
+    e essa diferença é a primeira coisa que alguém precisa saber antes de
+    mandar drenar. Lê só cinco colunas leves, numa chamada.
+    """
+    ws = ensure_fila_sheet(gc)
+    try:
+        faixas = ws.batch_get(['A2:A', 'B2:B', 'D2:D', 'E2:E', 'L2:L']) or []
+    except Exception as e:
+        return {'ok': False, 'erro': str(e)[:300]}
+
+    datas = _coluna(faixas, 0)
+    status = _coluna(faixas, 1)
+    proximas = _coluna(faixas, 2)
+    tipos = _coluna(faixas, 3)
+    etapas = _coluna(faixas, 4)
+    total = max(len(datas), len(status), len(proximas), len(tipos), len(etapas))
+
+    def em(lista, i):
+        return lista[i] if i < len(lista) else ''
+
+    agora = datetime.now()
+    por_status: Dict[str, int] = {}
+    por_etapa: Dict[str, int] = {}
+    por_tipo: Dict[str, int] = {}
+    vencidos = 0
+    agendados = 0
+    sem_etapa = 0
+    mais_antiga = None
+    mais_nova = None
+
+    for i in range(total):
+        st = as_string(em(status, i)).upper() or '(vazio)'
+        por_status[st] = por_status.get(st, 0) + 1
+        if st not in (STATUS_PENDENTE, STATUS_FALHOU):
+            continue
+        etapa = as_string(em(etapas, i)).lower() or '(vazia)'
+        if etapa == '(vazia)':
+            sem_etapa += 1
+        por_etapa[etapa] = por_etapa.get(etapa, 0) + 1
+        tipo = as_string(em(tipos, i)) or '(vazio)'
+        por_tipo[tipo] = por_tipo.get(tipo, 0) + 1
+        if st == STATUS_PENDENTE:
+            dt = _parse_dt_br(em(proximas, i))
+            if dt and dt > agora:
+                agendados += 1
+            else:
+                vencidos += 1
+        reg = _parse_dt_br(em(datas, i))
+        if reg:
+            if mais_antiga is None or reg < mais_antiga:
+                mais_antiga = reg
+            if mais_nova is None or reg > mais_nova:
+                mais_nova = reg
+
+    a_reprocessar = vencidos + por_status.get(STATUS_FALHOU, 0)
+    return {
+        'ok': True,
+        'app': 'baixabradesco',
+        'acao': 'resumo_fila',
+        'linhas_na_aba': total,
+        'por_status': por_status,
+        'pendentes_vencidos': vencidos,
+        'pendentes_agendados': agendados,
+        'falhados': por_status.get(STATUS_FALHOU, 0),
+        'concluidos': por_status.get(STATUS_CONCLUIDO, 0),
+        'a_reprocessar_agora': a_reprocessar,
+        'por_etapa': por_etapa,
+        'por_tipo_falha': por_tipo,
+        'sem_etapa': sem_etapa,
+        'registro_mais_antigo': mais_antiga.strftime('%d/%m/%Y %H:%M:%S') if mais_antiga else '',
+        'registro_mais_recente': mais_nova.strftime('%d/%m/%Y %H:%M:%S') if mais_nova else '',
+        'lotes_de_5_necessarios': (vencidos + 4) // 5,
+    }
+
+
+def _pausa_padrao(limite: int, payload: dict) -> float:
+    """Segundos de espera entre itens.
+
+    A cota de escrita do Google é por minuto e é do mesmo usuário de serviço que
+    o ERP, o painel e o Análise de SPs usam. Drenar centenas de itens no soco
+    estouraria a cota de TODO MUNDO, não só desta fila. Lote pequeno segue sem
+    pausa; lote grande anda devagar de propósito.
+    """
+    bruto = payload.get('pausa_ms')
+    if bruto is not None:
+        try:
+            return max(0.0, float(bruto) / 1000.0)
+        except Exception:
+            pass
+    return 0.0 if limite <= 20 else 1.2
+
+
+def _aviso_velho_demais(item: Dict[str, Any], payload: dict) -> bool:
+    """Aviso de WhatsApp enfileirado há dias não deve ser reenviado."""
+    if bool(payload.get('reenviar_avisos_antigos')):
+        return False
+    registro = _parse_dt_br(item.get('Data Registro'))
+    if not registro:
+        return False
+    dias = int(payload.get('dias_aviso_util') or DIAS_AVISO_UTIL)
+    return (datetime.now() - registro) > timedelta(days=dias)
 
 
 def reprocessar_fila(payload: dict) -> dict:
-    """Reprocessa pendências vencidas da fila.\n\n    Body opcional:\n      {"limite": 10, "somente_vencidos": true, "omie": {...}}\n    """
+    """Reprocessa pendências da fila.
+
+    Body opcional:
+      {"limite": 10, "somente_vencidos": true, "incluir_falhados": false,
+       "pausa_ms": 1200, "reenviar_avisos_antigos": false, "omie": {...}}
+
+    `limite` alto serve para drenar fila acumulada de uma vez; nesse caso entra
+    pausa entre itens (ver `_pausa_padrao`) e a varredura para sozinha se a cota
+    do Google começar a recusar, em vez de insistir e derrubar os outros apps.
+    """
     gc = get_gc()
     ws = ensure_fila_sheet(gc)
     limite = int(payload.get('limite') or 10)
     somente_vencidos = payload.get('somente_vencidos', True)
-    pendentes = listar_pendentes(gc, limite=limite, somente_vencidos=bool(somente_vencidos))
+    incluir_falhados = bool(payload.get('incluir_falhados'))
+    pausa = _pausa_padrao(limite, payload)
+    pendentes = listar_pendentes(gc, limite=limite,
+                                 somente_vencidos=bool(somente_vencidos),
+                                 incluir_falhados=incluir_falhados)
     resultados = []
+    inicio = datetime.now()
+    cota_seguidas = 0
+    interrompido = ''
+    avisos_descartados = 0
 
-    for item in pendentes:
+    for posicao, item in enumerate(pendentes):
+        if pausa and posicao:
+            time.sleep(pausa)
         row_number = int(item.get('_row_number'))
         tentativas = int(as_string(item.get('Tentativas') or '0') or 0) + 1
         etapa = as_string(item.get('Etapa')).lower()
         try:
+            if etapa == 'zapi' and _aviso_velho_demais(item, payload):
+                avisos_descartados += 1
+                _update_row(ws, row_number, STATUS_CONCLUIDO, tentativas,
+                            'Aviso antigo: não reenviado (fora do prazo de utilidade).')
+                resultados.append({'row': row_number, 'etapa': etapa, 'ok': True,
+                                   'response': {'ok': True, 'status': 'aviso_descartado_por_idade'}})
+                continue
+
             if etapa == 'omie':
                 resp = _retry_omie(item, payload)
             elif etapa == 'pipefy':
@@ -280,17 +501,48 @@ def reprocessar_fila(payload: dict) -> dict:
 
             if resp.get('ok'):
                 _update_row(ws, row_number, STATUS_CONCLUIDO, tentativas, 'Reprocessado com sucesso.')
+            elif incluir_falhados and tentativas >= 5:
+                # Pedido explícito: continua FALHOU, mas com a mensagem nova —
+                # senão a planilha guarda o erro da primeira vez e engana quem lê.
+                _update_row(ws, row_number, STATUS_FALHOU, tentativas, _safe_json(resp))
             else:
                 _update_row(ws, row_number, STATUS_PENDENTE if tentativas < 5 else STATUS_FALHOU, tentativas, _safe_json(resp))
             resultados.append({'row': row_number, 'etapa': etapa, 'ok': bool(resp.get('ok')), 'response': resp})
-        except Exception as e:
-            _update_row(ws, row_number, STATUS_PENDENTE if tentativas < 5 else STATUS_FALHOU, tentativas, str(e))
-            resultados.append({'row': row_number, 'etapa': etapa, 'ok': False, 'error': str(e)})
 
+            if resp.get('ok'):
+                cota_seguidas = 0
+            elif _parece_cota(_safe_json(resp)):
+                cota_seguidas += 1
+            else:
+                cota_seguidas = 0
+        except Exception as e:
+            try:
+                _update_row(ws, row_number, STATUS_PENDENTE if tentativas < 5 else STATUS_FALHOU, tentativas, str(e))
+            except Exception:
+                pass
+            resultados.append({'row': row_number, 'etapa': etapa, 'ok': False, 'error': str(e)})
+            cota_seguidas = cota_seguidas + 1 if _parece_cota(str(e)) else 0
+
+        if cota_seguidas >= 3:
+            # A cota é compartilhada com os outros apps: insistir aqui tira o
+            # ERP e o painel do ar. Para, devolve o que fez e deixa o resto
+            # PENDENTE para a próxima passada.
+            interrompido = 'cota_do_google'
+            break
+
+    ok = sum(1 for r in resultados if r.get('ok'))
     return {
         'ok': True,
         'app': 'baixabradesco',
         'acao': 'reprocessar_fila',
         'pendentes_processados': len(resultados),
+        'concluidos_agora': ok,
+        'ainda_pendentes': len(resultados) - ok,
+        'avisos_descartados_por_idade': avisos_descartados,
+        'incluiu_falhados': incluir_falhados,
+        'limite_pedido': limite,
+        'pausa_entre_itens_s': pausa,
+        'interrompido': interrompido,
+        'segundos': round((datetime.now() - inicio).total_seconds(), 1),
         'resultados': resultados,
     }

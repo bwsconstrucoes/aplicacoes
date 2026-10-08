@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import threading
+import time
 from typing import Dict, Any, List
 
 import requests
@@ -322,9 +323,9 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
                     'comprovante — ele não baixa duas vezes.')
                 continue
 
-            # 2. Sheets SPsBD (em background para não atrasar resposta)
+            # 2. Sheets SPsBD — gravação CONFIRMADA, antes de responder
             if plan.sheets_updates and atualizar_spsbd:
-                _executar_sheets_async(plan, payload)
+                _gravar_planilha(plan, payload)
 
             # 3. Pipefy mutation montada com dados do get
             if atualizar_pipefy and plan.match.id:
@@ -381,6 +382,13 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
         'completados': completados,
         'planos': [p.to_dict() for p in plans],
     }
+
+    # Drena a fila de falhas pendentes. Antes ela só andava se alguém chamasse a
+    # rota à mão — então uma gravação que caiu na fila ficava lá para sempre, o
+    # que é a não-atualização silenciosa por outro caminho. Limite baixo para
+    # não esticar a resposta; comprovante chega sempre, e a fila anda junto.
+    if not modo_teste:
+        resultado['fila_reprocessada'] = _drenar_fila(payload)
 
     # Avisa o dono do que NÃO foi baixado. Só em produção, e nunca derruba a
     # resposta: a baixa já aconteceu, o aviso é sobre o que ficou de fora.
@@ -763,29 +771,65 @@ def _executar_sequencia_omie(plan: ExecutionPlan, payload: dict) -> List[dict]:
     return resultados
 
 
-def _executar_sheets_async(plan: ExecutionPlan, payload: dict):
-    """Grava na SPsBD em segundo plano, sem atrasar a resposta ao Make.
+def _drenar_fila(payload: dict, limite: int = 5) -> dict:
+    """Reprocessa algumas pendências da fila, junto com o lote.
 
-    Falha aqui NÃO pode mais sumir: o Omie já baixou, a impressão digital já
-    foi registrada, e uma gravação perdida deixava a SP como "Pagar" para
-    sempre. Agora vai para a fila, como já acontecia com Pipefy e WhatsApp.
+    Nunca levanta erro: a baixa deste lote já aconteceu, e a fila é sobre
+    lotes passados.
     """
-    updates = plan.sheets_updates
+    try:
+        from .fila import reprocessar_fila
+        pedido = dict(payload or {})
+        pedido['limite'] = limite
+        return reprocessar_fila(pedido)
+    except Exception as e:
+        return {'ok': False, 'erro': str(e)[:200]}
 
-    def _run():
+
+def _gravar_planilha(plan: ExecutionPlan, payload: dict) -> dict:
+    """Grava na SPsBD, confere, e só então deixa a resposta sair.
+
+    ⚠️ Isto era um "manda e esquece" numa thread de fundo, e era a causa da
+    não-atualização silenciosa que o dono via com frequência. Três coisas
+    conspiravam:
+
+    1. A resposta ao Make saía ANTES de a gravação terminar. O gunicorn recicla
+       o trabalhador a cada mil pedidos e o serviço reinicia a cada publicação —
+       nos dois casos a thread morria no meio, sem erro em lugar nenhum.
+    2. O resultado da gravação era escrito no plano DEPOIS de a resposta já ter
+       sido montada: quem lia o retorno nunca via o que aconteceu.
+    3. Ninguém conferia se a célula ficou com o valor.
+
+    O custo é ~1 segundo por comprovante na resposta. O limite do Make é 300
+    segundos, e baixa errada custa mais do que um segundo.
+    """
+    tentativas = []
+    for tentativa in (1, 2):
         try:
-            resultado = execute_spsbd_updates(updates)
+            resultado = execute_spsbd_updates(plan.sheets_updates)
         except Exception as e:
-            resultado = {'ok': False, 'erros': [str(e)[:200]]}
-        plan.responses['sheets'] = resultado
-        if not resultado.get('ok'):
-            try:
-                enqueue_failure(plan, 'sheets', 'sheets_erro', str(resultado), payload)
-            except Exception:
-                pass
+            resultado = {'ok': False, 'gravados': 0, 'erros': [str(e)[:200]]}
+        tentativas.append(resultado)
+        if resultado.get('ok'):
+            break
+        if tentativa == 1:
+            # Quase sempre é cota do Google (429), que é por minuto. Uma segunda
+            # tentativa imediata resolve o caso de resposta parcial; cota mesmo
+            # cai na fila logo abaixo.
+            time.sleep(2)
 
-    t = threading.Thread(target=_run, daemon=True)
-    t.start()
+    final = tentativas[-1]
+    final['tentativas'] = len(tentativas)
+    plan.responses['sheets'] = final
+
+    if not final.get('ok'):
+        try:
+            plan.responses['fila_sheets'] = enqueue_failure(
+                plan, 'sheets', 'sheets_erro', str(tentativas), payload)
+        except Exception as e:
+            plan.responses['fila_sheets'] = {'ok': False, 'erro': str(e)[:200]}
+
+    return final
 
 
 def _executar_pipefy_batch(mutations: List[str]) -> List[dict]:
