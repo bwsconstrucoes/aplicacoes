@@ -583,7 +583,7 @@
 
 {% if pode.configurar_ponto %}
 <div class="cartao" data-secao-card="aparelhos">
-  <div class="cartao-cab"><h3>Aparelhos</h3><small>todos os celulares e tablets do ponto</small></div>
+  <div class="cartao-cab"><h3>Aparelhos</h3><small>todos os celulares do ponto</small></div>
   <div class="tabela-rolagem" style="max-height:none"><div id="c-aparelhos">carregando…</div></div>
 </div>
 {% endif %}
@@ -607,8 +607,7 @@
 {% if pode.configurar_ponto %}
 <div class="cartao" data-secao-card="obras">
   <div class="cartao-cab"><h3>Cerca das obras</h3></div>
-  <div class="cartao-dica" style="margin-top:0">A obra da batida é a da cerca em que o celular ou
-    o tablet está — a pessoa não escolhe. Fora da cerca, a batida é recusada e fica registrada (o
+  <div class="cartao-dica" style="margin-top:0">A obra da batida é a da cerca em que o celular está — a pessoa não escolhe. Fora da cerca, a batida é recusada e fica registrada (o
     alerta “Tentou bater fora da área da obra” aparece no dia seguinte, para quem estava em serviço
     fora receber o ajuste). Quem está na borda, com GPS impreciso (até 150 m de folga), bate e a
     batida vai para conferência. Obra sem coordenada não bloqueia ninguém: a batida vai para
@@ -812,10 +811,14 @@ const REGIMES = [
   {valor: "BANCO_12_MESES", rotulo: "Banco de 12 meses (acordo coletivo)"},
 ];
 const rotuloRegime = v => (REGIMES.find(r => r.valor === v) || {rotulo: v || "—"}).rotulo;
+// "Tablet" saiu (07/10/2026: "não tem tablet, é tudo telefone — é acesso de obra").
+// "Ponto da obra" e não "celular da obra": pode ser o celular da empresa OU o
+// próprio de alguém designado — o dono dele é o responsável e entra no "Meu
+// ponto" pelo botão da tela da batida.
 const PERFIS_APARELHO = [
-  {valor: "COMPARTILHADO", rotulo: "Tablet da obra (todos)"},
-  {valor: "INDIVIDUAL", rotulo: "Celular de uma pessoa"},
-  {valor: "LISTA", rotulo: "Grupo de pessoas"},
+  {valor: "COMPARTILHADO", rotulo: "Ponto da obra — todos da obra batem nele"},
+  {valor: "INDIVIDUAL", rotulo: "Celular pessoal — só o dono bate"},
+  {valor: "LISTA", rotulo: "Ponto de equipe — só a lista bate (passageiro)"},
 ];
 const rotuloPerfil = v => (PERFIS_APARELHO.find(p => p.valor === v) || {rotulo: v || "—"}).rotulo;
 const SELO_APARELHO = {PENDENTE: ["aguardando", "esperando aprovação"],
@@ -925,58 +928,66 @@ async function tirarSemUso(id, depois) {
 
 async function aprovarAparelho(a, depois) {
   // Aparelho já aprovado (ou bloqueado) abre com o que ele tem: trocar o uso,
-  // o dono, as obras ou o nome é aprovar de novo (pedido do dono, 06/10/2026).
+  // o responsável, o grupo, as obras ou o nome é aprovar de novo. Erro de
+  // preenchimento aparece DENTRO da janela, que reabre com o que foi digitado
+  // (07/10/2026: "eu salvo e ele nem salva" — o erro ia para o alto da página).
   const jaAprovado = a.status && a.status !== "PENDENTE";
-  const r = await perguntar({
-    titulo: jaAprovado ? (a.status === "BLOQUEADO" ? "Reativar aparelho" : "Alterar aparelho") : "Aprovar aparelho",
-    aviso: `Aparelho: <b>${escapar(a.descricao || "sem nome")}</b> — código <b class="dados">${escapar(a.codigo || "?")}</b>.
-      <b>Confira o código na tela do aparelho antes de aprovar</b>: “sem nome” pode ser o celular de
-      qualquer pessoa que abriu o endereço, e aprovado como aparelho da obra ele bateria por todo mundo.
-      ${a.dono ? `<br>⚠️ Alguém entrou neste aparelho como <b>${escapar(a.dono.nome)}</b>: só aprove como
-        aparelho da obra se o código bater com o do tablet.` : ""}
-      Na dúvida entre "tablet da obra" e "celular de uma pessoa", escolha o
-      celular de uma pessoa: é o que fecha mais portas. Cada pessoa tem um celular só: aprovar
-      um novo bloqueia o anterior dela.`,
-    campos: [
-      {nome: "perfil", rotulo: "Como vai ser usado", tipo: "select", valor: jaAprovado ? a.perfil : "INDIVIDUAL",
-       opcoes: PERFIS_APARELHO, largura: 3, obrigatorio: true},
-      // Quem entrou com CPF e PIN neste celular já disse de quem ele é: o campo
-      // vem preenchido (pedido do dono, 06/10/2026 — "não é redundante?").
-      {nome: "cpf", rotulo: a.dono ? `CPF do dono — já preenchido: ${a.dono.nome} entrou neste celular`
-                                   : "CPF do dono (celular de uma pessoa)", largura: 3,
-       valor: a.dono && a.dono.cpf ? a.dono.cpf : "",
-       dica: "Só para \"celular de uma pessoa\": só esse CPF bate por este aparelho."},
-      {nome: "autorizados", rotulo: "CPFs do grupo (grupo de pessoas)", tipo: "textarea", linhas: 2,
-       largura: 3, dica: jaAprovado && a.perfil === "LISTA"
-         ? `Hoje são ${a.qtd_autorizados} pessoa(s). Deixe vazio para manter o grupo; preencha para trocá-lo inteiro.`
-         : "Só para \"grupo de pessoas\": os CPFs separados por vírgula."},
-      {nome: "valido_ate", rotulo: "Liberado até", tipo: "date", largura: 1,
-       valor: a.valido_ate && a.valido_ate >= hojeISO() ? a.valido_ate : "",
-       dica: "Todo aparelho vence e se renova: vazio = 90 dias (o de grupo, 15 — é passageiro). No máximo 90. Vencido, para de bater."},
-      {nome: "obras", rotulo: "Obras onde vale", largura: 3, exemplo: "deixe vazio para todas",
-       valor: jaAprovado && a.obras ? a.obras : "",
-       dica: "Códigos das obras separados por vírgula. Para o tablet da obra, diga a obra dele: sem GPS, a batida dele só pode cair nela."},
-      {nome: "descricao", rotulo: "Nome do aparelho", valor: escapar(a.descricao || ""), largura: 3,
-       exemplo: "ex.: tablet do portão — obra Alfa"},
-    ],
-    textoOk: jaAprovado ? "Salvar" : "Aprovar aparelho",
-  });
-  if (!r) return;
-  if (r.perfil === "INDIVIDUAL" && !r.cpf && !a.dono) { aviso("mensagem", "Diga o CPF do dono do celular.", "erro"); return; }
-  const manterGrupo = jaAprovado && a.perfil === "LISTA" && r.perfil === "LISTA" && !listaDeTexto(r.autorizados).length;
-  if (r.perfil === "LISTA" && !listaDeTexto(r.autorizados).length && !manterGrupo) {
-    aviso("mensagem", "Diga os CPFs do grupo de pessoas.", "erro"); return;
+  let grupoAtual = [];
+  if (jaAprovado) {
+    try {
+      const d = (await api(`/erp/api/ponto/dispositivos/${a.id}`)).dispositivo;
+      a = {...a, ...d};
+      grupoAtual = (d.autorizados || []).map(p => documento(p.cpf));
+    } catch (e) {}
   }
-  try {
-    const resp = await postar(`/erp/api/ponto/dispositivos/${a.id}/aprovar`, {
-      perfil: r.perfil, cpf: r.perfil === "INDIVIDUAL" ? r.cpf : "",
-      autorizados: r.perfil === "LISTA" ? listaDeTexto(r.autorizados) : [], manter_grupo: manterGrupo,
-      valido_ate: r.valido_ate || null,
-      obras: listaDeTexto(r.obras), descricao: r.descricao});
-    aviso("mensagem", (jaAprovado ? "Aparelho alterado." : "Aparelho aprovado. Ele já pode bater ponto.")
-      + (resp.substituidos ? " O celular que essa pessoa usava antes foi bloqueado: vale um celular por pessoa." : ""), "ok");
-    if (depois) await depois();
-  } catch (e) { falhou(e); }
+  let valores = {perfil: jaAprovado ? a.perfil : (a.dono ? "INDIVIDUAL" : "COMPARTILHADO"),
+                 cpf: a.dono && a.dono.cpf ? documento(a.dono.cpf) : "",
+                 autorizados: grupoAtual.join(", "),
+                 valido_ate: a.valido_ate && a.valido_ate >= hojeISO() ? a.valido_ate : "",
+                 obras: jaAprovado && a.obras ? a.obras : "", descricao: a.descricao || ""};
+  let erro = "";
+  for (;;) {
+    const r = await perguntar({
+      titulo: jaAprovado ? (a.status === "BLOQUEADO" ? "Reativar aparelho" : "Alterar aparelho") : "Aprovar aparelho",
+      aviso: `${erro ? `<div class="aviso erro" style="margin:0 0 8px">${escapar(erro)}</div>` : ""}
+        Aparelho: <b>${escapar(a.descricao || "sem nome")}</b> — código <b class="dados">${escapar(a.codigo || "?")}</b>.
+        ${jaAprovado ? "" : `<b>Confira o código na tela do aparelho antes de aprovar</b>: “sem nome” pode ser o celular de
+        qualquer pessoa que abriu o endereço, e aprovado como ponto da obra ele bateria por todo mundo.`}
+        <br><b>Celular pessoal:</b> só o responsável bate nele. <b>Ponto da obra:</b> todos da obra batem; só o
+        responsável entra no “Meu ponto” nele. <b>Ponto de equipe:</b> só a lista (e o responsável) bate — é passageiro.
+        Cada pessoa tem um celular pessoal só: aprovar um novo bloqueia o anterior dela.`,
+      campos: [
+        {nome: "perfil", rotulo: "Tipo", tipo: "select", valor: valores.perfil,
+         opcoes: PERFIS_APARELHO, largura: 3, obrigatorio: true},
+        {nome: "cpf", rotulo: a.dono ? `CPF do responsável (hoje: ${a.dono.nome})` : "CPF do responsável — quem fica com o aparelho",
+         largura: 3, valor: valores.cpf, obrigatorio: true,
+         dica: "Obrigatório em todo aparelho: é quem responde por ele."},
+        {nome: "autorizados", rotulo: "CPFs do grupo (só para ponto de equipe)", tipo: "textarea", linhas: 2,
+         largura: 3, valor: valores.autorizados, dica: "Separados por vírgula. O responsável entra no grupo sozinho."},
+        {nome: "valido_ate", rotulo: "Liberado até", tipo: "date", largura: 1, valor: valores.valido_ate,
+         dica: "Vazio = 90 dias (o de grupo, 15). No máximo 90. Vencido, para de bater até renovar."},
+        {nome: "obras", rotulo: "Obras onde vale", largura: 3, exemplo: "deixe vazio para todas", valor: valores.obras,
+         dica: "Códigos das obras separados por vírgula. Para o ponto da obra, diga a obra dele."},
+        {nome: "descricao", rotulo: "Nome do aparelho", valor: escapar(valores.descricao), largura: 3,
+         exemplo: "ex.: celular do portão — obra Alfa"},
+      ],
+      textoOk: jaAprovado ? "Salvar" : "Aprovar aparelho",
+    });
+    if (!r) return;
+    valores = {...valores, ...r};
+    if (!r.cpf && !a.dono) { erro = "Diga o CPF do responsável."; continue; }
+    if (r.perfil === "LISTA" && !listaDeTexto(r.autorizados).length) { erro = "Diga os CPFs do grupo."; continue; }
+    try {
+      const resp = await postar(`/erp/api/ponto/dispositivos/${a.id}/aprovar`, {
+        perfil: r.perfil, cpf: r.cpf || "",
+        autorizados: r.perfil === "LISTA" ? listaDeTexto(r.autorizados) : [],
+        valido_ate: r.valido_ate || null, obras: listaDeTexto(r.obras), descricao: r.descricao});
+      aviso("mensagem", (jaAprovado ? "Aparelho alterado." : "Aparelho aprovado. Ele já pode bater ponto.")
+        + (resp.substituidos ? " O celular que essa pessoa usava antes foi bloqueado: vale um celular por pessoa." : ""), "ok");
+      if (depois) await depois();
+      return;
+    } catch (e) { erro = e.message || "Não deu certo."; }
+  }
 }
 
 async function bloquearAparelho(a, depois) {
@@ -1833,7 +1844,7 @@ const VERSAO_CADASTRO = {};
 const doUrl = nome => new URLSearchParams(location.search).get(nome);
 const IDENTIFICACAO = {QR_WHATSAPP: "QR", QR_APP: "QR app", CPF: "CPF", SESSAO: "celular"};
 const DICA_IDENTIFICACAO = {QR_WHATSAPP: "pelo QR Code recebido no WhatsApp",
-  QR_APP: "pelo QR Code do app da pessoa", CPF: "digitou o CPF no tablet",
+  QR_APP: "pelo QR Code do app da pessoa", CPF: "digitou o CPF no ponto da obra",
   SESSAO: "pelo celular da própria pessoa"};
 
 async function carregarObrasDoMosaico() {
@@ -2165,9 +2176,12 @@ async function abrirPessoa(id) {
         <div class="kpi estatico"><div class="kpi-rotulo">Jornada</div>
           <div class="kpi-valor" style="font-size:16px">${escapar(rotuloJornada(p.tipo_jornada))}</div>
           <div class="kpi-sub">${p.ativo_no_ponto ? "bate ponto" : "não bate ponto"}</div></div>
-        <div class="kpi estatico ${p.bate_no_celular ? "ambar" : ""}"><div class="kpi-rotulo">Forma de bater</div>
-          <div class="kpi-valor" style="font-size:16px">${p.bate_no_celular ? "Obra e celular próprio" : "Aparelho da obra"}</div>
-          <div class="kpi-sub">${p.bate_no_celular ? "exceção cadastrada" : "o padrão"}</div></div>
+        <div class="kpi estatico ${p.bate_no_celular || p.pede_no_celular || p.administrativo_obra ? "ambar" : ""}"><div class="kpi-rotulo">Acesso no aplicativo</div>
+          <div class="kpi-valor" style="font-size:16px">${p.administrativo_obra ? "Administrativo de obra"
+            : p.bate_no_celular ? "Obra e celular próprio" : "Aparelho da obra"}</div>
+          <div class="kpi-sub">${[p.bate_no_celular ? "bate no celular" : "",
+            p.pede_no_celular || p.administrativo_obra ? "faz pedidos pelo celular" : "",
+            p.administrativo_obra ? "consulta a obra em que está" : ""].filter(Boolean).join(" · ") || "o padrão"}</div></div>
         <div class="kpi estatico roxo"><div class="kpi-rotulo">Banco de horas</div>
           <div class="kpi-valor" style="font-size:16px">${escapar(rotuloRegime(p.regime_banco))}</div>
           <div class="kpi-sub">${p.banco_inicio ? `desde ${dataBR(p.banco_inicio)}` : ""}
@@ -2176,7 +2190,7 @@ async function abrirPessoa(id) {
       <div class="barra-acoes">
         ${PODE_TRATAR ? `<button class="btn" type="button" id="pe-escala">Trocar escala</button>
           <button class="btn secundario" type="button" id="pe-jornada">Jornada e obras</button>
-          <button class="btn secundario" type="button" id="pe-forma">Forma de bater</button>` : ""}
+          <button class="btn secundario" type="button" id="pe-forma">Acesso no aplicativo</button>` : ""}
         ${PODE_DP ? `<button class="btn secundario" type="button" id="pe-banco">Banco de horas</button>` : ""}
         <a class="btn secundario" style="text-decoration:none" href="${linkEspelho(p.id)}">Ver espelho</a>
       </div>
@@ -2197,7 +2211,7 @@ async function abrirPessoa(id) {
           <td>${escapar(rotuloPerfil(a.perfil))}</td><td>${seloAparelho(a.status)}</td>
           <td class="dados">${escapar(quando(a.ultimo_uso_em))}</td></tr>`).join("")}</tbody></table>`
         : `<div class="cartao-dica">Nenhum celular registrado em nome desta pessoa. Ela
-            pode bater pelo tablet da obra.</div>`}`;
+            pode bater pelo ponto da obra.</div>`}`;
     els("pe-fechar").addEventListener("click", () => { ficha.hidden = true; });
     if (els("pe-escala")) els("pe-escala").addEventListener("click", () => trocarEscala(p));
     if (els("pe-jornada")) els("pe-jornada").addEventListener("click", () => jornadaEObras(p));
@@ -2266,7 +2280,7 @@ async function revogarQr(p) {
   const r = await perguntar({
     titulo: `Cancelar o QR Code — ${escapar(p.nome)}`,
     aviso: `Nenhum QR desta pessoa vale mais até o próximo envio. O CPF continua
-      funcionando no tablet.`,
+      funcionando no ponto da obra.`,
     campos: [], textoOk: "Cancelar o QR Code"});
   if (!r) return;
   try {
@@ -2351,23 +2365,35 @@ async function jornadaEObras(p) {
   } catch (e) { falhou(e, "pe-msg"); }
 }
 
+// O acesso da pessoa no aplicativo (08/10/2026): o padrão é bater no ponto da
+// obra e, no próprio celular, só ver o próprio ponto. As três marcações são as
+// exceções — cada uma independente (core/papeis.py).
 async function formaDeBater(p) {
+  const simNao = (sim, nao) => [{valor: "0", rotulo: nao}, {valor: "1", rotulo: sim}];
   const r = await perguntar({
-    titulo: `Forma de bater — ${escapar(p.nome)}`,
-    aviso: `O padrão é bater <b>só no aparelho da obra</b> (QR Code ou CPF). Marque a exceção para quem
-      também precisa bater no próprio celular (quem trabalha fora da obra, por exemplo). O celular dela
-      ainda precisa ser aprovado em Validações depois de ela entrar nele.`,
-    campos: [{nome: "forma", rotulo: "Forma de bater", tipo: "select", valor: p.bate_no_celular ? "1" : "0",
-              largura: 3, opcoes: [{valor: "0", rotulo: "Só no aparelho da obra (padrão)"},
-                                   {valor: "1", rotulo: "No aparelho da obra e no próprio celular (exceção)"}]}],
+    titulo: `Acesso no aplicativo — ${escapar(p.nome)}`,
+    aviso: `O padrão: bate <b>só no ponto da obra</b> (QR Code ou CPF) e, no próprio celular, <b>vê o próprio
+      ponto</b>. Atestado e pedidos são entregues no ponto da obra ou com o administrativo.
+      <br><b>Administrativo de obra:</b> no celular dele, no ponto da obra ou no computador, consulta o ponto e
+      faz pedidos pelas pessoas da obra em que <b>está</b> (pela localização) e das obras em que ele <b>bateu ponto
+      nos últimos 7 dias</b> — a qualquer hora, também no computador. Mudou de obra, passa a ver a nova; a antiga
+      sai sozinha uma semana depois da última batida lá.`,
+    campos: [
+      {nome: "forma", rotulo: "Bater no próprio celular", tipo: "select", valor: p.bate_no_celular ? "1" : "0",
+       largura: 3, opcoes: simNao("Também bate no próprio celular (exceção)", "Só no ponto da obra (padrão)")},
+      {nome: "pede", rotulo: "Pedidos pelo próprio celular", tipo: "select", valor: p.pede_no_celular ? "1" : "0",
+       largura: 3, opcoes: simNao("Faz pedidos para si pelo celular (exceção)", "Não — entrega no ponto da obra (padrão)")},
+      {nome: "adm", rotulo: "Administrativo de obra", tipo: "select", valor: p.administrativo_obra ? "1" : "0",
+       largura: 3, opcoes: simNao("Sim — consulta e pede pelas pessoas da obra em que está", "Não (padrão)")},
+    ],
     textoOk: "Salvar",
   });
   if (!r) return;
   try {
-    await postar(`/erp/api/ponto/pessoas/${p.id}/forma-de-bater`, {bate_no_celular: r.forma === "1"});
+    await postar(`/erp/api/ponto/pessoas/${p.id}/forma-de-bater`, {bate_no_celular: r.forma === "1",
+      pede_no_celular: r.pede === "1", administrativo_obra: r.adm === "1"});
     await abrirPessoa(p.id);
-    aviso("pe-msg", r.forma === "1" ? "Exceção cadastrada: também bate no próprio celular."
-      : "Voltou ao padrão: só bate no aparelho da obra.", "ok");
+    aviso("pe-msg", "Acesso no aplicativo salvo.", "ok");
     if (typeof carregarExcecoes === "function") carregarExcecoes();
   } catch (e) { falhou(e, "pe-msg"); }
 }
@@ -3100,7 +3126,7 @@ function desenharQrEAvisos() {
           espaçadas — de 30 a 90 segundos entre uma e outra, no máximo 40 por hora e 150 automáticas
           por dia, de segunda a sábado das 7h30 às 17h30 — para o número do WhatsApp da empresa não
           ser bloqueado. O primeiro envio para todo mundo se espalha por alguns dias. Quem esquece
-          pode pedir de novo no próprio tablet.</span></span></label>
+          pode pedir de novo no próprio ponto da obra.</span></span></label>
     <label class="interruptor" style="margin-top:14px"><input type="checkbox" id="c-aviso-foto"
         ${CONFIG.aviso_sem_foto ? "checked" : ""} ${mexe ? "" : "disabled"}>
       <span><b>Avisar a pessoa por WhatsApp quando a batida ficar sem foto</b>
@@ -3132,7 +3158,7 @@ async function ligarQrAutomatico(ev) {
     CONFIG.qr_envio_automatico = ligar;
     aviso("c-qr-msg", ligar
       ? "Envio automático ligado. Os primeiros envios são agendados na próxima rotina do dia e se espalham por alguns dias."
-      : "Envio automático desligado. As trocas agendadas ficam paradas na fila; quem pedir o QR no tablet ou no app continua recebendo.", "ok");
+      : "Envio automático desligado. As trocas agendadas ficam paradas na fila; quem pedir o QR no ponto da obra ou no app continua recebendo.", "ok");
     carregarEnvios();
   } catch (e) { caixa.checked = !ligar; falhou(e, "c-qr-msg"); }
   caixa.disabled = false;
@@ -3686,6 +3712,8 @@ async function carregarExcecoes() {
       bate” passa a valer quando as atualizações do ponto forem aplicadas (migração 004). Até lá, celular aprovado bate.</div>`}
     <div><b>Também batem no próprio celular (${d.celular.length}):</b> ${lista(d.celular, pessoa)}</div>
     <div style="margin-top:6px"><b>Têm banco de horas (${d.banco.length}):</b> ${lista(d.banco, p => `${pessoa(p)} <small>(${escapar(p.regime)})</small>`)}</div>
+    ${d.papeis_disponivel ? `<div style="margin-top:6px"><b>Administrativos de obra (${d.administrativos.length}):</b> ${lista(d.administrativos, pessoa)}</div>
+      <div style="margin-top:6px"><b>Fazem pedidos pelo próprio celular (${d.pedem_no_celular.length}):</b> ${lista(d.pedem_no_celular, pessoa)}</div>` : ""}
     <div style="margin-top:6px"><b>Aparelhos em que alguém bate por outros (${d.aparelhos_de_lista.length}):</b>
       ${lista(d.aparelhos_de_lista, a => `${escapar(a.descricao || "sem nome")} <small>(${a.pessoas} pessoa(s), ${escapar(a.status.toLowerCase())})</small>`)}</div>`;
 }

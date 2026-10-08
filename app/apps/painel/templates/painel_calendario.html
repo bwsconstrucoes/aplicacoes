@@ -220,10 +220,6 @@
     <h3 id="detalhe-titulo">Dia</h3>
     <button type="button" class="btn secundario" id="detalhe-seguinte" title="dia seguinte (seta →)">›</button>
     <div class="cal-dialogo-resumo" id="detalhe-resumo"></div>
-    {# Um pagamento dividido entre obras é UM débito no banco (dono, 06/10/2026) #}
-    <label class="cal-agrupar" title="Junta as partes de um mesmo pagamento (mesmo título, dia e conta) numa linha, como no extrato do banco">
-      <input type="checkbox" id="detalhe-agrupar" checked> Agrupar como no extrato
-    </label>
     <button type="button" class="btn secundario" id="detalhe-fechar">Fechar</button>
   </div>
   <div id="detalhe-corpo" class="tabela-rolagem" style="max-height:60vh">
@@ -244,22 +240,18 @@
   const escapar = t => String(t == null ? "" : t)
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-  // Agrupado (como no extrato) ou aberto (uma linha por obra). Lembrado no
-  // navegador: quem prefere um jeito não precisa escolher a cada dia.
-  const agrupar = els("detalhe-agrupar");
-  try { agrupar.checked = localStorage.getItem("painel.cal.agrupar") !== "0"; } catch (e) {}
-  let ultimo = null;   // a última resposta, para trocar a visão sem ir ao banco
-  agrupar.addEventListener("change", () => {
-    try { localStorage.setItem("painel.cal.agrupar", agrupar.checked ? "1" : "0"); } catch (e) {}
-    if (ultimo) desenhar(ultimo);
-  });
+  // SEMPRE agrupado: o pagamento dividido entre obras é uma linha, com ▸ para
+  // abrir as obras (dono, 08/10/2026: "ninguém que opere esse painel vai
+  // entender" o selo de partes, nem a opção de desagrupar).
+  const agrupar = {checked: true};
+  let ultimo = null;   // a última resposta
 
-  // "1 de 2 partes · no extrato R$ X": o que liga a linha ao débito do banco
+  // o único aviso que fica: o filtro esconde parte do pagamento
   function selo(g) {
-    if (!g || g.partes < 2) return "";
-    const fora = g.fora_do_filtro ? `, ${g.fora_do_filtro} fora do filtro` : "";
-    return `<small class="selo neutro" title="Este pagamento foi dividido entre obras. No extrato da conta é um débito só.">`
-         + `${g.partes} partes${fora} · no extrato ${moeda(g.no_extrato)}</small>`;
+    if (!g || !g.fora_do_filtro) return "";
+    const n = g.fora_do_filtro;
+    return `<small class="selo neutro" title="O pagamento inteiro foi de ${moeda(g.no_extrato)}; o filtro da tela esconde a parte das outras obras.">`
+         + `+${n} obra${n === 1 ? "" : "s"} fora do filtro</small>`;
   }
 
   function cabecaDoGrupo(g, i) {

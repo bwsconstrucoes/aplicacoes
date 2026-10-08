@@ -146,8 +146,14 @@ def test_as_telas_abrem_agrupadas(pagamentos, monkeypatch):
     cliente = app.test_client()
     cliente.post("/painel/entrar", data={"senha": "senha-do-dono-teste"})
 
-    html = cliente.get("/painel/analitico?agrupar=1&visao=executado").get_data(as_text=True)
-    assert "2 obras" in html and "no extrato" in html
+    # SEMPRE agrupado, sem o selo "partes · no extrato" (dono, 08/10/2026:
+    # "ninguém que opere esse painel vai entender")
+    html = cliente.get("/painel/analitico?visao=executado").get_data(as_text=True)
+    assert "2 obras" in html and "no extrato" not in html and "partes ·" not in html
+    assert 'name="agrupar"' not in html
+    # o filtro numa obra só: o aviso de que o pagamento tem outra obra fica
+    html = cliente.get("/painel/analitico?visao=executado&obra=CASA").get_data(as_text=True)
+    assert "+1 obra fora do filtro" in html
 
     r = cliente.get(f"/painel/calendario/dia?dia={DIA.isoformat()}").get_json()
     assert r["ok"]

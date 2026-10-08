@@ -2386,6 +2386,70 @@ atualizações comuns liam no máximo 600 apropriações por vez.
 **Caminho combinado para 2026:** Reler os pagamentos só de 2026 → Conferir o
 ano inteiro → abrir mês a mês só a conta que não bater.
 
+## Aportes e dividendos: a régua dos dividendos, agrupar, nomes — 07/10/2026 (noite)
+
+Com os aportes da Sicredi já aparecendo, o dono leu o bloco de aportes e achou
+confuso — *"gera desconfiança na informação; talvez até esteja errado"*.
+
+**Estava errado num ponto:** "O dinheiro da obra" mostrava dividendos de
+R$ 120.002,00 e o "Resultado × dividendos", logo abaixo, R$ 1,00. O segundo
+cortava o que é classificado como transferência, e os R$ 120 mil (24/07/2026,
+pagos por lançamento de conta corrente) caíam nesse corte. Agora os dois
+contam o dividendo pela mesma régua (sem cortar transferência), e o clique no
+número abre os mesmos lançamentos.
+
+**O que mudou na tela:**
+- Os lançamentos de aporte e dividendo aparecem um por lançamento; o dividido
+  entre obras mostra "▸ 2 obras" e abre as partes (mesmo agrupamento do
+  Analítico). O Excel continua uma linha por obra.
+- "O dinheiro da obra, com os sócios" virou **"O dinheiro da obra"**, e
+  "Saldo com os sócios" virou **"Saldo da obra"**, com a explicação: é o que a
+  obra gerou e ainda está nela NO PERÍODO DOS FILTROS — não é o saldo do banco
+  (o banco começa com o saldo de antes, guarda dinheiro de mais de uma obra e
+  não enxerga transferência entre contas). Para comparar com o banco, a
+  conferência de saldo.
+- O aviso de "distribuído a mais do que o resultado" agora distingue o caso
+  em que o resultado do conjunto é negativo (obras com prejuízo no período
+  puxando o total) — que era o caso dele: ESCALFREDAO e ESCPLANALTO só com
+  despesas no filtro.
+- "Não achou um aporte ou dividendo?" saiu do DRE e foi para Configurações
+  (*"não é para estar na apresentação"*).
+
+## Pagamento dividido: sempre agrupado, sem o selo de "partes" — 08/10/2026
+
+O dono, sobre o selo "2 partes · no extrato R$ X": *"fica esquisito (…)
+ninguém que opere esse painel vai entender"*; e *"no extrato tá aparecendo
+mesmo em coisa não paga — se não tá pago, não pode tá no extrato"*.
+
+- Analítico e Calendário abrem SEMPRE agrupados: o pagamento dividido entre
+  obras é uma linha com "▸ N obras", que abre as partes. A caixa "Agrupar
+  como no extrato" saiu das duas telas.
+- O selo "N partes · no extrato R$ X" saiu. O único aviso que ficou é quando
+  o filtro esconde alguma das obras do pagamento: "+1 obra fora do filtro"
+  (passando o mouse, o valor inteiro) — sem ele, o valor da linha pareceria o
+  pagamento inteiro.
+
+## O PDF de duas páginas; as contas da obra na barra — 08/10/2026
+
+**"O relatório PDF tá saindo só as duas primeiras páginas, e o gráfico da
+primeira não" — e o Excel também.** Reproduzido aqui com o administrador: o
+completo sai inteiro (15 páginas, 14 abas). O que sai com duas páginas e sem
+gráfico é o PDF do DRE — que é o que o botão "(tudo)" baixava para quem entra
+por USUÁRIO (o completo era só da senha geral, desde 22/09/2026), sem dizer
+nada. A pergunta seguinte do dono ("preciso marcar as contas na
+configuração?") confirma que ele estava num acesso de usuário.
+- Quem tem TODAS as telas que o completo junta (DRE, Analítico, Receita,
+  Fluxo, Resultado por obra) agora baixa o completo, com o gráfico — cada
+  pedaço preso às obras dele, como nas telas (`auth.TELAS_DO_COMPLETO`).
+- O botão diz o que baixa: "(tudo)" ou "do DRE".
+
+**Contas na barra lateral:** o dono não quer marcar conta por conta. A lista
+de contas passa a mostrar as contas por onde andou dinheiro da obra/projeto
+escolhido na barra (`consultas.contas_do_recorte`, lembrado até a próxima
+carga); sem obra escolhida, o administrador vê todas. Para o usuário sem
+conta marcada, as contas das obras dele. Conta marcada no cadastro continua
+sendo LIMITE (só ela) — isso não mudou.
+
 ## Reler os pagamentos de um ano, de alguns ou de todos — 07/10/2026
 
 O dono, vendo a releitura retomada em "2025 (11 de 12 anos, 10 já feitos

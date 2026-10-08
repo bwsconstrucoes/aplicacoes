@@ -8,8 +8,9 @@ from flask import request, jsonify
 
 from . import bp
 from .core import processar_baixabradesco
+from .conferencia import conferir
 from .diagnostico import executar_diagnostico
-from .fila import reprocessar_fila
+from .fila import reprocessar_fila, resumo_fila
 from .fila_tardia import adiar_payload, processar_fila_tardia
 
 
@@ -97,6 +98,59 @@ def reprocessar_fila_route():
             'traceback': traceback.format_exc(),
         }), 500
 
+@bp.route('/fila-resumo', methods=['GET', 'POST'])
+def fila_resumo_route():
+    """Conta a fila por situação. Não reprocessa nada, não grava nada."""
+    try:
+        payload = request.get_json(force=True, silent=True) or {}
+        if request.method == 'POST' and not _authorized(payload):
+            return jsonify({'ok': False, 'app': 'baixabradesco', 'error': 'Não autorizado.'}), 401
+        if request.method == 'GET':
+            segredo = os.getenv('BAIXABRADESCO_SECRET', '')
+            if segredo and request.args.get('secret') != segredo \
+                    and request.headers.get('X-BaixaBradesco-Secret') != segredo:
+                return jsonify({'ok': False, 'app': 'baixabradesco', 'error': 'Não autorizado.'}), 401
+        return jsonify(resumo_fila())
+    except Exception as e:
+        return jsonify({
+            'ok': False,
+            'app': 'baixabradesco',
+            'error': str(e),
+            'traceback': traceback.format_exc(),
+        }), 500
+
+
+@bp.route('/conferir-omie', methods=['GET', 'POST'])
+def conferir_omie_route():
+    """Compara a SPsBD com o Omie e relata divergências. Não grava nada."""
+    try:
+        payload = request.get_json(force=True, silent=True) or {}
+        segredo = os.getenv('BAIXABRADESCO_SECRET', '')
+        if request.method == 'POST':
+            if not _authorized(payload):
+                return jsonify({'ok': False, 'app': 'baixabradesco', 'error': 'Não autorizado.'}), 401
+        elif segredo and request.args.get('secret') != segredo \
+                and request.headers.get('X-BaixaBradesco-Secret') != segredo:
+            return jsonify({'ok': False, 'app': 'baixabradesco', 'error': 'Não autorizado.'}), 401
+
+        if request.method == 'GET':
+            # Pela barra do navegador: ?dias=60&limite=50&apenas_contar=1
+            for chave in ('dias', 'limite', 'pausa_ms', 'sentido'):
+                if request.args.get(chave):
+                    payload[chave] = request.args.get(chave)
+            if request.args.get('apenas_contar') in {'1', 'true', 'sim', 'yes'}:
+                payload['apenas_contar'] = True
+
+        return jsonify(conferir(payload))
+    except Exception as e:
+        return jsonify({
+            'ok': False,
+            'app': 'baixabradesco',
+            'error': str(e),
+            'traceback': traceback.format_exc(),
+        }), 500
+
+
 @bp.route('/processar-fila-tardia', methods=['POST'])
 def processar_fila_tardia_route():
     """Reprocessa payloads adiados por quota. Disparado pelo cron-job.org."""
@@ -104,7 +158,7 @@ def processar_fila_tardia_route():
         payload = request.get_json(force=True, silent=True) or {}
         if not _authorized(payload):
             return jsonify({'ok': False, 'app': 'baixabradesco', 'error': 'Não autorizado.'}), 401
-        return jsonify(processar_fila_tardia())
+        return jsonify(processar_fila_tardia(payload))
     except Exception as e:
         return jsonify({
             'ok': False,
