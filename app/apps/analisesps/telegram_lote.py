@@ -25,6 +25,7 @@ cadastro; um erro do Análise de SPs não pode levar isso junto. Quem chama
 from __future__ import annotations
 
 import hashlib
+import re
 import logging
 import os
 import secrets
@@ -174,6 +175,15 @@ def _usuario_do_chat(chat_id):
     return usuarios.buscar_por_id(linha[0]) if linha else None
 
 
+def _parece_pedido_de_sp(texto: str) -> bool:
+    """"Nº da SP", "SP 1426…", "Solicitação de Pagamento" — a cara das
+    mensagens que o sistema manda e que são coladas aqui."""
+    import unicodedata
+    cru = unicodedata.normalize("NFKD", str(texto or ""))
+    limpo = "".join(c for c in cru if not unicodedata.combining(c)).upper()
+    return bool(re.search(r"\bSPS?\b|SOLICITACAO", limpo))
+
+
 def receber(chat_id, texto: str) -> str | None:
     """A resposta do robô para esta mensagem — ou None, quando ela não é do
     Análise de SPs e o robô deve seguir o caminho de sempre (cadastro,
@@ -194,7 +204,11 @@ def receber(chat_id, texto: str) -> str | None:
         return None
     pessoa = _usuario_do_chat(chat_id)
     if not pessoa:
-        return MSG_NAO_LIGADO
+        # ⚠️ CONVERSA NÃO LIGADA é quase sempre um colaborador (contracheque,
+        # cadastro). Um número de 10 dígitos sozinho — um telefone fixo com
+        # DDD, por exemplo — não pode desviar ele do caminho de sempre: só
+        # responde quem escreve como pedido de SP.
+        return MSG_NAO_LIGADO if _parece_pedido_de_sp(texto) else None
     if not _alcanca_o_lote(pessoa):
         return ("O seu usuário do Análise de SPs não pode alterar o Lote. Peça "
                 "para liberarem a tela Lote com permissão de alterar.")

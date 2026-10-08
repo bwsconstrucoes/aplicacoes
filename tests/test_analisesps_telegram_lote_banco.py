@@ -93,6 +93,20 @@ def test_conversa_NAO_LIGADA_ou_sem_SP(app):
     assert telegram_lote.receber(CHAT, "1") is None
     assert telegram_lote.receber(CHAT, "/start") is None
     assert telegram_lote.receber(CHAT, "12345678901") is None, "CPF não é SP"
+    # colaborador NÃO ligado que digita um fixo com DDD (10 dígitos) segue o
+    # caminho do contracheque — só pedido com cara de SP recebe o recado
+    assert telegram_lote.receber(CHAT, "meu telefone é 8132345678") is None
+    assert telegram_lote.receber(CHAT, "SP 1426036778") == telegram_lote.MSG_NAO_LIGADO
+
+
+def test_quem_esta_LIGADO_e_pede_contracheque_segue_para_o_contracheque(app):
+    from app.apps.analisesps import telegram_lote
+    uid = criar(telas=("lote",), pode_operar=True)
+    _ligar(uid)
+    for texto in ("1", "contracheque", "quero meu contracheque de 09/2026",
+                  "12345678901", "123.456.789-01"):
+        assert telegram_lote.receber(CHAT, texto) is None, texto
+    assert _lote() == ""
 
 
 def test_quem_NAO_PODE_alterar_o_lote_nao_alimenta_pelo_robo(app):
