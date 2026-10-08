@@ -357,6 +357,14 @@ dizer "tem batida"; presença, horas e faltas são regra da fase 3.
   obra" pode ser o celular da empresa OU o próprio de alguém designado — o tipo
   é "Ponto da obra", não quem pagou o celular)
 - Quais aparelhos foram bloqueados porque o responsável saiu da empresa?
+- Quem é administrativo de obra? Quem faz pedidos pelo próprio celular? (08/10/2026)
+- Quantos pedidos foram lançados pelo administrativo ou pelo responsável da obra
+  em nome de outra pessoa, e por quem? (origem "pelo responsável")
+- O administrativo Fulano pode ver o ponto do Beltrano agora? ⚠️ muda conforme ONDE
+  ele está (a cerca da obra, ou o ponto aberto hoje) e o mês consultado — a
+  resposta é "hoje, aqui", não um "sim" fixo
+- **Ainda não responde:** "quem consultou a folha do Fulano?" — a consulta não é
+  registrada, só o pedido que nasce dela.
 - Quantos pontos da obra, celulares pessoais e pontos de equipe estão valendo
   hoje, por obra?
 - **Ainda não responde:** "o celular da obra é da empresa ou da pessoa?" — o

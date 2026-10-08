@@ -126,6 +126,20 @@ batida em 3 minutos sem uso). No de equipe o responsável entra no grupo.
 Responsável desligado bloqueia o aparelho (`core/desligamentos.py`). "Alterar"
 abre preenchido por `GET /erp/api/ponto/dispositivos/<id>`, que traz o grupo.
 
+**A tela inicial e a consulta pela cerca (08/10/2026, `core/papeis.py`,
+`app_obra.py`).** Todo aparelho abre numa tela com Bater ponto · Atestados e
+pedidos · Consultar o ponto das pessoas · Meu ponto (`GET /ponto/app/api/inicio`
+diz o que vale ali). A consulta (`/ponto/app/api/equipe`, `.../equipe/<id>/mes`)
+mostra quem bateu na obra no mês e quem é dela no cadastro; o pedido por outra
+pessoa (`.../equipe/<id>/pedidos` e `/ajuste-do-dia`) sai em nome de quem lançou,
+origem `RESPONSAVEL`. Quem consulta: o responsável no ponto da obra dele (pela
+cerca do aparelho), o **administrativo de obra** em qualquer aparelho (pela
+cerca; sem localização, pela obra em que o ponto dele está aberto hoje), e o
+responsável do ponto de equipe (a lista). Toda chamada leva `lat`, `lon` e
+`precisao`. As marcações por pessoa ficam em `colaborador_config`
+(`bate_no_celular`, `pede_no_celular`, `administrativo_obra`), na ficha da pessoa
+› "Acesso no aplicativo".
+
 **Regras novas do cálculo** (`core/apuracao.py`, `espelho.py`, `banco.py`):
 tolerância de 5 min por batida e 10 no dia (passou, conta tudo — Súmula 366);
 intervalo mínimo; extra acima de 2 h; menos de 11 h entre jornadas; hora noturna

@@ -754,13 +754,24 @@ def ponto_api_excecoes():
 @permissao("tratar_ponto")
 @_api
 def ponto_api_pessoa_forma_de_bater(colaborador_id: int):
-    """Exceção: a pessoa também bate no próprio celular."""
-    from .core import forma_de_bater
+    """Exceções da pessoa no aplicativo: também bate no próprio celular; faz
+    pedidos pelo próprio celular; é administrativo de obra (08/10/2026,
+    core/papeis.py). Campo ausente fica como está."""
+    from .core import forma_de_bater, papeis
     quem, d = _quem(), _corpo()
     with db.conexao() as conn:
         _exigir_pessoa(conn, quem, colaborador_id)
-        forma_de_bater.definir(conn, colaborador_id, bool(d.get("bate_no_celular")), quem.nome)
-    return _ok(bate_no_celular=bool(d.get("bate_no_celular")))
+        if "bate_no_celular" in d:
+            forma_de_bater.definir(conn, colaborador_id, bool(d.get("bate_no_celular")), quem.nome)
+        if "pede_no_celular" in d or "administrativo_obra" in d:
+            papeis.definir(conn, colaborador_id,
+                           pede_no_celular=(bool(d["pede_no_celular"]) if "pede_no_celular" in d else None),
+                           administrativo_obra=(bool(d["administrativo_obra"]) if "administrativo_obra" in d else None))
+            logger.info("Ponto: papéis da pessoa %s no aplicativo — pedidos %s, administrativo %s (por %s)",
+                        colaborador_id, d.get("pede_no_celular"), d.get("administrativo_obra"), quem.nome)
+        p = cadastros.colaborador_por_id(conn, colaborador_id)
+    return _ok(bate_no_celular=bool(p.get("bate_no_celular")), pede_no_celular=bool(p.get("pede_no_celular")),
+               administrativo_obra=bool(p.get("administrativo_obra")))
 
 
 @bp.route("/erp/api/ponto/ensaio")

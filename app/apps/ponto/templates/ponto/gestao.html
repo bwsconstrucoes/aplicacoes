@@ -2176,9 +2176,12 @@ async function abrirPessoa(id) {
         <div class="kpi estatico"><div class="kpi-rotulo">Jornada</div>
           <div class="kpi-valor" style="font-size:16px">${escapar(rotuloJornada(p.tipo_jornada))}</div>
           <div class="kpi-sub">${p.ativo_no_ponto ? "bate ponto" : "não bate ponto"}</div></div>
-        <div class="kpi estatico ${p.bate_no_celular ? "ambar" : ""}"><div class="kpi-rotulo">Forma de bater</div>
-          <div class="kpi-valor" style="font-size:16px">${p.bate_no_celular ? "Obra e celular próprio" : "Aparelho da obra"}</div>
-          <div class="kpi-sub">${p.bate_no_celular ? "exceção cadastrada" : "o padrão"}</div></div>
+        <div class="kpi estatico ${p.bate_no_celular || p.pede_no_celular || p.administrativo_obra ? "ambar" : ""}"><div class="kpi-rotulo">Acesso no aplicativo</div>
+          <div class="kpi-valor" style="font-size:16px">${p.administrativo_obra ? "Administrativo de obra"
+            : p.bate_no_celular ? "Obra e celular próprio" : "Aparelho da obra"}</div>
+          <div class="kpi-sub">${[p.bate_no_celular ? "bate no celular" : "",
+            p.pede_no_celular || p.administrativo_obra ? "faz pedidos pelo celular" : "",
+            p.administrativo_obra ? "consulta a obra em que está" : ""].filter(Boolean).join(" · ") || "o padrão"}</div></div>
         <div class="kpi estatico roxo"><div class="kpi-rotulo">Banco de horas</div>
           <div class="kpi-valor" style="font-size:16px">${escapar(rotuloRegime(p.regime_banco))}</div>
           <div class="kpi-sub">${p.banco_inicio ? `desde ${dataBR(p.banco_inicio)}` : ""}
@@ -2187,7 +2190,7 @@ async function abrirPessoa(id) {
       <div class="barra-acoes">
         ${PODE_TRATAR ? `<button class="btn" type="button" id="pe-escala">Trocar escala</button>
           <button class="btn secundario" type="button" id="pe-jornada">Jornada e obras</button>
-          <button class="btn secundario" type="button" id="pe-forma">Forma de bater</button>` : ""}
+          <button class="btn secundario" type="button" id="pe-forma">Acesso no aplicativo</button>` : ""}
         ${PODE_DP ? `<button class="btn secundario" type="button" id="pe-banco">Banco de horas</button>` : ""}
         <a class="btn secundario" style="text-decoration:none" href="${linkEspelho(p.id)}">Ver espelho</a>
       </div>
@@ -2362,23 +2365,34 @@ async function jornadaEObras(p) {
   } catch (e) { falhou(e, "pe-msg"); }
 }
 
+// O acesso da pessoa no aplicativo (08/10/2026): o padrão é bater no ponto da
+// obra e, no próprio celular, só ver o próprio ponto. As três marcações são as
+// exceções — cada uma independente (core/papeis.py).
 async function formaDeBater(p) {
+  const simNao = (sim, nao) => [{valor: "0", rotulo: nao}, {valor: "1", rotulo: sim}];
   const r = await perguntar({
-    titulo: `Forma de bater — ${escapar(p.nome)}`,
-    aviso: `O padrão é bater <b>só no aparelho da obra</b> (QR Code ou CPF). Marque a exceção para quem
-      também precisa bater no próprio celular (quem trabalha fora da obra, por exemplo). O celular dela
-      ainda precisa ser aprovado em Validações depois de ela entrar nele.`,
-    campos: [{nome: "forma", rotulo: "Forma de bater", tipo: "select", valor: p.bate_no_celular ? "1" : "0",
-              largura: 3, opcoes: [{valor: "0", rotulo: "Só no aparelho da obra (padrão)"},
-                                   {valor: "1", rotulo: "No aparelho da obra e no próprio celular (exceção)"}]}],
+    titulo: `Acesso no aplicativo — ${escapar(p.nome)}`,
+    aviso: `O padrão: bate <b>só no ponto da obra</b> (QR Code ou CPF) e, no próprio celular, <b>vê o próprio
+      ponto</b>. Atestado e pedidos são entregues no ponto da obra ou com o administrativo.
+      <br><b>Administrativo de obra:</b> no celular dele, no ponto da obra ou no computador, consulta o ponto e
+      faz pedidos pelas pessoas da obra em que <b>está</b> — pela localização, ou, sem ela, pela obra em que o
+      ponto dele está aberto hoje. Mudou de obra, passa a ver a nova; a antiga sai sozinha.`,
+    campos: [
+      {nome: "forma", rotulo: "Bater no próprio celular", tipo: "select", valor: p.bate_no_celular ? "1" : "0",
+       largura: 3, opcoes: simNao("Também bate no próprio celular (exceção)", "Só no ponto da obra (padrão)")},
+      {nome: "pede", rotulo: "Pedidos pelo próprio celular", tipo: "select", valor: p.pede_no_celular ? "1" : "0",
+       largura: 3, opcoes: simNao("Faz pedidos para si pelo celular (exceção)", "Não — entrega no ponto da obra (padrão)")},
+      {nome: "adm", rotulo: "Administrativo de obra", tipo: "select", valor: p.administrativo_obra ? "1" : "0",
+       largura: 3, opcoes: simNao("Sim — consulta e pede pelas pessoas da obra em que está", "Não (padrão)")},
+    ],
     textoOk: "Salvar",
   });
   if (!r) return;
   try {
-    await postar(`/erp/api/ponto/pessoas/${p.id}/forma-de-bater`, {bate_no_celular: r.forma === "1"});
+    await postar(`/erp/api/ponto/pessoas/${p.id}/forma-de-bater`, {bate_no_celular: r.forma === "1",
+      pede_no_celular: r.pede === "1", administrativo_obra: r.adm === "1"});
     await abrirPessoa(p.id);
-    aviso("pe-msg", r.forma === "1" ? "Exceção cadastrada: também bate no próprio celular."
-      : "Voltou ao padrão: só bate no aparelho da obra.", "ok");
+    aviso("pe-msg", "Acesso no aplicativo salvo.", "ok");
     if (typeof carregarExcecoes === "function") carregarExcecoes();
   } catch (e) { falhou(e, "pe-msg"); }
 }
@@ -3697,6 +3711,8 @@ async function carregarExcecoes() {
       bate” passa a valer quando as atualizações do ponto forem aplicadas (migração 004). Até lá, celular aprovado bate.</div>`}
     <div><b>Também batem no próprio celular (${d.celular.length}):</b> ${lista(d.celular, pessoa)}</div>
     <div style="margin-top:6px"><b>Têm banco de horas (${d.banco.length}):</b> ${lista(d.banco, p => `${pessoa(p)} <small>(${escapar(p.regime)})</small>`)}</div>
+    ${d.papeis_disponivel ? `<div style="margin-top:6px"><b>Administrativos de obra (${d.administrativos.length}):</b> ${lista(d.administrativos, pessoa)}</div>
+      <div style="margin-top:6px"><b>Fazem pedidos pelo próprio celular (${d.pedem_no_celular.length}):</b> ${lista(d.pedem_no_celular, pessoa)}</div>` : ""}
     <div style="margin-top:6px"><b>Aparelhos em que alguém bate por outros (${d.aparelhos_de_lista.length}):</b>
       ${lista(d.aparelhos_de_lista, a => `${escapar(a.descricao || "sem nome")} <small>(${a.pessoas} pessoa(s), ${escapar(a.status.toLowerCase())})</small>`)}</div>`;
 }

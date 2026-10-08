@@ -129,9 +129,14 @@ def test_so_quem_bate_faz_pedido(app, mundo, monkeypatch):
     # 1. No próprio celular, quem não é exceção não pede
     cel = _entrar_no_app(app, CPF_JOAO, monkeypatch)
     r = cel.post("/ponto/app/api/pedidos", json=atestado)
-    assert r.status_code == 400 and "aparelho da obra" in r.get_json()["erro"]
+    assert r.status_code == 400 and "ponto da obra" in r.get_json()["erro"]
     with db.conexao() as conn:
         forma_de_bater.definir(conn, mundo["joao"], True, "teste")
+    # Desde 08/10/2026 bater no celular não basta: o pedido pelo celular é outra marcação
+    assert cel.post("/ponto/app/api/pedidos", json=atestado).status_code == 400
+    from app.apps.ponto.core import papeis
+    with db.conexao() as conn:
+        papeis.definir(conn, mundo["joao"], pede_no_celular=True)
     assert cel.post("/ponto/app/api/pedidos", json=atestado).status_code == 201       # exceção pede
     # 2. No aparelho da obra, identificado pelo CPF
     tab, h = _aparelho(app, "tablet-da-obra-pedidos-01234567")

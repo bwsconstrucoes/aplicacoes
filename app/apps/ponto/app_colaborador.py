@@ -35,7 +35,7 @@ from flask import Response, g, jsonify, render_template, request, send_from_dire
 
 from . import auth, db, horario
 from .core import (banco, cadastros, competencias, dispositivos, envios, espelho, forma_de_bater,
-                   fotos, marcacoes, acesso, ocorrencias, qr, recusas)
+                   fotos, marcacoes, acesso, ocorrencias, papeis, qr, recusas)
 from .core.ocorrencias import Quem
 from .erros import ErroDeValidacao, NaoAutenticado, NaoEncontrado, Recusada
 from .routes import bp
@@ -167,9 +167,12 @@ def app_api_entrar():
         # No ponto da obra (ou de equipe), só o RESPONSÁVEL entra no "Meu ponto"
         # (pedido do dono, 07/10/2026: "se ela quiser acessar o ponto dela,
         # particular, ela não consegue"). Os outros, cada um pelo seu celular.
+        # Desde 08/10/2026 o administrativo de obra também entra (core/papeis.py):
+        # ele consulta e pede pelas pessoas da obra em que o aparelho está.
         if a and a["status"] == "APROVADO" and a["perfil"] != "INDIVIDUAL" \
-                and a.get("colaborador_id") != pessoa["id"]:
-            raise Recusada("este é o ponto da obra — só o responsável por ele entra no “Meu ponto” aqui")
+                and a.get("colaborador_id") != pessoa["id"] and not papeis.e_administrativo(conn, pessoa):
+            raise Recusada("este é o ponto da obra — só o responsável por ele (ou o administrativo da obra) "
+                           "entra aqui")
     _abrir_sessao(pessoa)
     return _ok(nome=pessoa["nome"])
 
@@ -249,7 +252,10 @@ def app_api_eu():
         saldo = banco.saldo(conn, p["id"]) if p.get("regime_banco") not in (None, "SEM_BANCO") else None
         obras = _obras_da_pessoa(conn, p["id"])
         no_celular = forma_de_bater.pode_no_celular(p, forma_de_bater.em_vigor(conn))
+        pede = papeis.pede_pelo_proprio_celular(conn, p)
+        administrativo = papeis.e_administrativo(conn, p)
     return _ok(nome=p["nome"], primeiro_nome=p["nome"].split(" ")[0], bate_no_celular=no_celular,
+               pede_no_celular=pede, administrativo=administrativo,
                cpf_final=p["cpf"][-3:], obra_principal=p.get("obra_codigo"),
                obras=obras, hoje=esp["dias"][0], pedidos_pendentes=len(pedidos),
                banco=({"saldo": saldo["saldo"], "regime": saldo["regime_rotulo"]} if saldo else None))

@@ -186,7 +186,8 @@ def test_migracoes_do_ponto_e_feriados_nacionais(banco, mundo):
                                        WHERE p.nome = 'Departamento pessoal' AND ps.secao LIKE 'pon_%' ORDER BY 1""")).all()
     assert nomes == ["001_ponto_base.sql", "002_gestao.sql", "003_qr_mosaico_e_sinais.sql",
                      "004_obras_da_planilha_e_forma_de_bater.sql", "005_modo_de_teste.sql",
-                     "006_grupo_temporario_e_licencas_da_lei.sql", "007_conferencia_do_rosto.sql"]
+                     "006_grupo_temporario_e_licencas_da_lei.sql", "007_conferencia_do_rosto.sql",
+                     "008_papeis_no_aplicativo.sql"]
     assert natal == "Natal"
     assert [s[0] for s in secoes] == ["pon_competencia", "pon_config", "pon_dp", "pon_gestao"]
 
@@ -247,14 +248,16 @@ def test_escala_so_quem_configura_cria_e_supervisor_so_mexe_na_obra_dele(app, mu
 # Pedidos: ajuste (supervisor), atestado (DP, sigilo), compensação (dois passos)
 # ---------------------------------------------------------------------------
 def _entrar_no_app(app, cpf, monkeypatch, *, excecao: bool = False):
-    """`excecao=True`: a pessoa também bate no próprio celular — só assim ela faz
-    pedido por ele (decisão do dono, 06/10/2026)."""
+    """`excecao=True`: a pessoa também bate no próprio celular E faz pedido por ele
+    (as duas marcações; desde 08/10/2026 são separadas — core/papeis.py)."""
     from app.apps.ponto import db
     from app.apps.ponto.core import acesso
     if excecao:
-        from app.apps.ponto.core import cadastros, forma_de_bater
+        from app.apps.ponto.core import cadastros, forma_de_bater, papeis
         with db.conexao() as conn:
-            forma_de_bater.definir(conn, int(cadastros.colaborador_por_cpf(conn, cpf)["id"]), True, "teste")
+            pid = int(cadastros.colaborador_por_cpf(conn, cpf)["id"])
+            forma_de_bater.definir(conn, pid, True, "teste")
+            papeis.definir(conn, pid, pede_no_celular=True)
     enviados = []
     with db.conexao() as conn:
         acesso.pedir_codigo(conn, cpf, enviar=lambda tel, msg: enviados.append((tel, msg)))

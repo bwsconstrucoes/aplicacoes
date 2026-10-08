@@ -41,11 +41,15 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
-1i. **NO RAMO, NÃO PUBLICADO (07/10/2026)**: as correções do cadastro de
-   aparelhos e do ponto da obra (seção de 07/10 abaixo). Sem migração nova.
-   Esperando o "pode" do dono. Ficou para ele decidir: se a exceção (quem bate
-   no próprio celular) continua podendo mandar atestado e pedidos por ele — é
-   como está desde 06/10, ele perguntou "foi assim que a gente combinou?".
+1i. **NO RAMO, NÃO PUBLICADO (07 e 08/10/2026)**: as correções do cadastro de
+   aparelhos (seção de 07/10) e a TELA INICIAL com consulta pela cerca e o
+   administrativo de obra (seção de 08/10), com a migração **008**. Em 07/10 o
+   dono disse "pode", mas o envio para a `main` foi barrado pela permissão da
+   sessão (faltou a resposta sobre carga do painel/sincronização da Análise de
+   SPs). Publicar = os dois juntos + apertar "Aplicar atualizações do ponto".
+   A pergunta de 07/10 ("o modo pessoa já libera atestado, foi assim que a
+   gente combinou?") foi respondida pelo próprio dono em 08/10: pedido pelo
+   próprio celular passou a ser uma marcação por pessoa.
 1h. **PUBLICADO em 06/10/2026** (com o "pode" do dono): os pedidos de 06/10
    (itens 1 a 10 abaixo), com as migrações **006 e 007**. Confirmar com o dono:
    apertou "Aplicar atualizações do ponto"? escolheu a **escala padrão da
@@ -89,6 +93,75 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 08/10/2026 — A tela inicial, a consulta pela cerca da obra e o administrativo de obra
+
+O dono descreveu a dinâmica inteira (ainda sem ter testado a de 07/10) e pediu
+para conferir e apontar furos. Feito assim — regras em `core/papeis.py`, rotas
+em `app_obra.py`, migração **008** (`pede_no_celular` e `administrativo_obra`
+em `colaborador_config`; origem de pedido `RESPONSAVEL`):
+
+1. **Tela inicial em todo aparelho** ("tem que ter uma tela inicial, e dali a
+   gente é direcionado"): Bater ponto · Atestados, afastamentos e ajustes ·
+   Consultar o ponto das pessoas · Meu ponto. Cada opção aparece conforme o
+   aparelho e a pessoa (`GET /ponto/app/api/inicio`); a que não vale aparece
+   apagada, dizendo por quê. Toda tela tem "‹ Início". Os links pequenos de
+   baixo da tela da batida (de que ele não gostou) saíram: entregar atestado
+   e "Meu ponto" foram para a tela inicial; ficou só "Esqueci meu QR Code". O
+   ponto da obra reiniciado volta direto para a batida se era nela que estava.
+2. **Consulta das pessoas da obra**, com busca por nome e mês a mês. Aparece
+   quem **bateu ponto naquela obra no mês** (mesmo que tenha batido outros dias
+   em outra) **e quem é da obra no cadastro** — o segundo grupo é o furo de quem
+   passou o mês de atestado ou chegou hoje (sem batida, não haveria como lançar
+   nada para ele). Fora do alcance, a pessoa responde "não encontrada".
+3. **Na folha da pessoa, o dia leva ao pedido**: "Corrigir: faltou …" (o mesmo
+   ajuste do dia, já com o que falta) e "Lançar atestado ou licença neste dia"
+   (atestado, licença da lei, compensação, folga do banco). O pedido sai **em
+   nome de quem lançou** (origem `RESPONSAVEL`) e vai para a validação de
+   sempre — ninguém no aplicativo aprova nada. Atestado aparece como
+   "Atestado", sem CID nem documento (só o DP vê).
+4. **Quem consulta** ("o que vai dar poderes é ele ser administrativo de obra,
+   e o celular de obra vai ter os mesmos poderes"):
+   - **Ponto da obra**: bater e entregar atestado continuam SEM login (como
+     antes). Consultar e pedir por outros pedem **CPF e PIN do responsável
+     pelo aparelho ou de um administrativo de obra** — decisão minha, avisada
+     ao dono: sem isso, qualquer um na frente do aparelho veria a folha de
+     todos. Vale a obra cuja cerca contém o aparelho. Sai sozinho em 3 min.
+   - **Administrativo de obra** (marcação na ficha da pessoa, ERP › Ponto ›
+     Pessoas › "Acesso no aplicativo"): em qualquer aparelho — o celular dele,
+     o ponto da obra, o computador. Vale a obra cuja cerca contém o aparelho
+     agora; **sem localização (o computador), vale a obra em que o ponto dele
+     está ABERTO hoje** (número ímpar de batidas: entrou e não saiu). Foi a
+     resposta ao furo do computador: "a obra em que ele vem batendo" deixaria
+     agir de casa, à noite — o dono queria justamente "dentro da cerca, não
+     fora de horário". Mudou de obra, vê a nova quando estiver nela. O próprio
+     ponto ele vê sempre, e pede por si.
+   - **Ponto de equipe**: o responsável vê a equipe da lista (sem cerca — a
+     equipe anda); pede por ela só com a marcação "faz pedidos pelo celular".
+   - **Celular pessoal**: vê o próprio ponto; pede pelo celular só com a
+     marcação "faz pedidos pelo celular" — **separada** da de "bate no próprio
+     celular" (antes, uma dava a outra). Antes da 008, vale a regra de 06/10.
+5. **O que NÃO mudou, de propósito**: para o celular de alguém **bater pelos
+   outros** (QR/CPF), ele continua sendo aprovado como **Ponto da obra**, com a
+   pessoa de responsável. A marcação de administrativo dá consulta e pedidos,
+   não a batida pelos outros — que é o poder mais sensível e passa pela
+   aprovação do RH (e vence em 90 dias). O ponto da obra também passou a
+   aceitar o login do administrativo (antes, só o do responsável).
+
+Furos que ficam, ditos ao dono: localização falsa (aplicativo que finge GPS)
+engana a cerca da consulta como engana a da batida — o que segura é tudo ficar
+em nome de quem fez e o pedido passar pela validação; e o administrativo que
+precisa fazer papelada DEPOIS de bater a saída não consegue pelo computador
+(faz antes, ou pelo celular dentro da obra).
+
+Conferido no navegador simulado: a tela inicial do ponto da obra (sem e com
+login), a batida com "‹ Início", a consulta com o administrativo (lista, folha,
+corrigir o dia, lançar atestado e licença), e a tela do João sem marcação
+nenhuma (só "Meu ponto"; as outras apagadas com o motivo). **Não conferido** num
+celular de verdade nem num computador de verdade (o navegador do computador
+pode pedir a localização; recusada, vale o ponto aberto).
+
+Testes: `tests/test_ponto_papeis_banco.py`.
 
 ## 07/10/2026 — Responsável em todo aparelho, "Ponto da obra" e os defeitos do primeiro teste de verdade
 
