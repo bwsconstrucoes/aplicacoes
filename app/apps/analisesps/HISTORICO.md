@@ -12228,6 +12228,17 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 203 — conciliação: a etiqueta da situação da SP; robô mais cuidadoso (08/10/2026)
+
+- *"Quero que apareça uma tag ao lado da SP no extrato de conciliação,
+  semelhante à que aparece em arquivos gerados."* Mesmas etiquetas: status do
+  pagamento e do agendamento (o "sem baixa" continua).
+- *"O bot não vai confundir com pedido de contracheque?"* Não confundia quem
+  está ligado (mensagem sem número de SP segue o caminho de sempre), mas uma
+  conversa NÃO ligada com um número de 10 dígitos (fixo com DDD) recebia o
+  recado "não ligado" em vez do menu. Agora só recebe quem escreve como pedido
+  de SP ("SP", "Solicitação"). Sem migração.
+
 #### Leva 202 — conciliação: a SP do BeeVale com 1,5% a mais no extrato (08/10/2026)
 
 - *"Quando o credor do extrato for Beevale Pagamentos e Benefícios Ltda, ou

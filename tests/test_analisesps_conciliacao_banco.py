@@ -1969,6 +1969,7 @@ def test_a_SAIDA_do_extrato_acha_a_SP_pelo_valor_conta_e_data(banco_conc):
     assert [(s["id"], s["sem_baixa"]) for s in por_desc["BOLETO"]] == [("900002", True)]
     assert por_desc["TARIFA"] == [] and por_desc["TED RECEBIDA"] == []
     assert por_desc["PIX FORNECEDOR"][0]["link"].endswith("/900001")
+    assert "status_agend" in por_desc["BOLETO"][0], "a etiqueta do agendamento"
 
 
 def test_mesmo_valor_no_mesmo_dia_o_NOME_do_credor_desempata(banco_conc):
@@ -2018,6 +2019,9 @@ def test_DUPLO_CLIQUE_na_linha_com_SP_abre_a_ficha_dela(app):
     assert 'id="ficha-modal"' in tela
     assert tela.count("data-ficha=") == 1, "só a linha com SP achada"
     assert 'data-ficha="/analisesps/sp/900001"' in tela and 'data-sp="900001"' in tela
+    # 08/10/2026: a etiqueta da situação, como em "Arquivos gerados"
+    trecho = tela[tela.index("SP 900001"):][:900]
+    assert 'class="selo pago"' in trecho and ">Pago</span>" in trecho
 
 
 def test_quem_NAO_tem_Solicitacoes_nao_ganha_duplo_clique_que_daria_erro(app):

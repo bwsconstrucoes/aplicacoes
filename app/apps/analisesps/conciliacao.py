@@ -2280,6 +2280,7 @@ def sps_das_linhas(conta: dict | None, linhas: list) -> dict:
     """`{id da linha: [{id, link, como, status, sem_baixa, credor, conta_ok}]}` —
     as SPs que casam com cada SAÍDA da página. Nunca levanta."""
     import datetime as dt
+    from .consultas import SQL_STATUS_AGEND
     from .db import consultar
     if not conta or not linhas:
         return {}
@@ -2300,7 +2301,8 @@ def sps_das_linhas(conta: dict | None, linhas: list) -> dict:
     try:
         candidatas = consultar(
             "SELECT id, coalesce(conta,''), valor_num, data_pagamento_d, vencimento_d, "
-            "       trim(coalesce(status_pgt,'')), coalesce(credor,'') "
+            "       trim(coalesce(status_pgt,'')), coalesce(credor,''), "
+            f"      ({SQL_STATUS_AGEND}) "
             "  FROM analisesps.sps "
             f" WHERE valor_num IN ({','.join(['?'] * len(valores))}) "
             "   AND ((data_pagamento_d BETWEEN ? AND ?) OR (vencimento_d BETWEEN ? AND ?)) "
@@ -2310,13 +2312,13 @@ def sps_das_linhas(conta: dict | None, linhas: list) -> dict:
         logger.exception("Conciliação: não consegui cruzar com as SPs")
         return {}
     por_valor: dict = {}
-    for sp_id, conta_sp, valor, pago_em, venc, status, credor in candidatas:
+    for sp_id, conta_sp, valor, pago_em, venc, status, credor, agend in candidatas:
         confere = conta_da_sp_confere(conta_sp, numeros, conta.get("nome", ""))
         if confere is False:
             continue
         por_valor.setdefault(Decimal(str(valor)).quantize(Decimal("0.01")), []).append(
             {"id": str(sp_id), "pago_em": pago_em, "venc": venc, "status": status,
-             "credor": credor, "conta_ok": bool(confere)})
+             "status_agend": agend or "", "credor": credor, "conta_ok": bool(confere)})
     saida = {}
     for l in saidas:
         fortes, provaveis = [], []

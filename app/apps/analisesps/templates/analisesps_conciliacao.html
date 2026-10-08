@@ -549,6 +549,13 @@
               {% if not loop.first or l.documento %}<br>{% endif %}<a class="sp-da-linha" href="{{ sp.link }}" target="_blank" rel="noopener"
                      title="{{ sp.credor }} · {{ sp.como }}{% if sp.beevale %} · BeeVale: o extrato tem 1,5% a mais que a SP{% endif %}{% if sp.nome_confere %} · o nome confere{% endif %}{% if not sp.conta_ok %} · a SP não diz a conta{% endif %} · {{ sp.status or 'sem status' }}"
                      >SP {{ sp.id }}{% if (sp.como != 'pago no dia' and not sp.nome_confere) or (l.sps|length) > 1 %}?{% endif %}</a>
+              {# A SITUAÇÃO DA SP (08/10/2026), com as mesmas etiquetas de
+                 "Arquivos gerados": status do pagamento e do agendamento. #}
+              {% set st = sp.status|lower %}{% set ag = sp.status_agend|lower %}
+              <span class="selo {{ 'pago' if st == 'pago' else ('parcial' if st == 'pago parcial' else ('pagar' if st == 'pagar' else 'cancelado')) }}"
+                >{{ sp.status or 'sem status' }}</span>
+              {% if ag %}<span class="selo {{ 'agendar' if ag == 'agendar' else ('agendado' if ag == 'agendado' else ('falha' if 'falha' in ag else 'verificar')) }}"
+                >{{ sp.status_agend }}</span>{% endif %}
               {% if sp.sem_baixa %}<span class="selo pagar" title="O banco pagou, mas a SP está &quot;{{ sp.status or 'sem status' }}&quot; — a planilha não deu baixa">sem baixa</span>{% endif %}
             {% endfor %}</td>
           <td class="direita valor-entrada">{{ l.valor|moeda if l.valor > 0 else '' }}</td>
