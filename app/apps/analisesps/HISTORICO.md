@@ -12240,7 +12240,8 @@ somente Solicitações de uma conta especifica"*.
   tem 1,5% a mais que a SP" (`conciliacao.e_beevale`,
   `valores_sem_acrescimo_beevale`).
 - Fica de fora: um lançamento BeeVale que some VÁRIAS SPs (cruzamento é 1 para
-  1, como o resto). Sem migração.
+  1, como o resto). Sem migração. **Publicada em 08/10/2026**, junto com a
+  categoria e a descrição da SP na tela de QR / código.
 
 #### Leva 201 — Consultar Omie e o "Marcar Pago" completo (08/10/2026)
 
@@ -12273,7 +12274,7 @@ somente Solicitações de uma conta especifica"*.
   é escrita (fila da planilha + log), por isso não aparece na tela.
 - Não testado contra o Omie e o Pipefy de verdade: o formato real da data e do
   banco no card é suposto (lista de conector e datas dd/mm/aaaa ou aaaa-mm-dd
-  são aceitas). Sem migração.
+  são aceitas). Sem migração. **Publicada em 08/10/2026.**
 
 #### Leva 200 — o grupo "WhatsApp" do lote, alimentado pelo robô do Telegram (08/10/2026) — migração 052
 
@@ -12307,6 +12308,7 @@ somente Solicitações de uma conta especifica"*.
   de verdade — o primeiro uso do dono é o teste.
 - ⚠️ **Migração 052** — apertar "Aplicar atualizações do banco" ao publicar.
   Antes dela, o robô e a tela seguem como antes (nada aparece).
+- **Publicada em 08/10/2026** (com as levas 201 e 202; suíte inteira 9.023 verdes).
 
 #### Leva 199 — conciliação: duplo clique na linha abre a ficha da SP (07/10/2026)
 
