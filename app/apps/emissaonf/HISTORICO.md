@@ -32,7 +32,23 @@ Onde os dois se contradisseram, está escrito qual venceu e por quê.
 
 ## Onde o trabalho está
 
-### ⚠️ Estado em 08/10/2026 — leia isto primeiro
+### ✅ Estado em 08/10/2026 — leia isto primeiro
+
+**A EMISSÃO VOLTOU A FUNCIONAR.** A nota `2600000003283` (obra IFSPSAOJOSE,
+medição 11) saiu em 08/10/2026 no padrão nacional, com o pós-emissão inteiro —
+planilha, Omie, card, Drive, recibo e WhatsApp. É a primeira nota do modelo novo,
+e o XML oficial dela foi lido campo por campo: a seção "A PRIMEIRA NOTA DO PADRÃO
+NACIONAL SAIU" tem a conferência e os dois defeitos que ela revelou (o número que
+quase destruiu a numeração, e o `vLiq` que não é o líquido).
+
+**Foram QUATRO recusas antes dela, todas em 08/10**, uma por tentativa, porque
+não havia onde ensaiar. Em ordem: E0370 (faltava o grupo de obra), EL99 (número já
+enviado não se reusa), E0959 (CST não casava com a classificação), E0699 (imposto
+não retido ia como zero). O detalhe de cada uma está nas seções abaixo.
+
+---
+
+#### Como a emissão chegou até aqui
 
 A prefeitura **desligou o formato de nota** que o sistema usava em 07/10/2026, e
 a emissão ficou parada. A migração para o formato novo (DPS, padrão nacional) foi
@@ -63,18 +79,42 @@ tentativa, e todas com seção própria abaixo:
 **A causa comum das três, e ela é a lição do dia:** a plataforma valida
 combinações e regras de negócio que o **schema oficial aceita**. Conferir contra
 o schema — que é a única conferência que dá para fazer aqui dentro — não é
-suficiente, e cada descoberta custou uma emissão real porque o município não
-habilitou o ambiente de ensaio (E0037).
+suficiente, e cada descoberta custou **uma emissão real**.
 
-**O que falta continua sendo a primeira emissão de verdade.** Nenhum teste aqui
-conversa com a prefeitura, e o ensaio em homologação segue indisponível (o
-município não habilitou a Produção Restrita — erro E0037). Tudo o que dava para
-conferir sem emitir foi conferido; a primeira nota real é a primeira prova.
+### ⚠️ CORREÇÃO a este próprio arquivo: o ensaio NUNCA foi testado
+
+**Escrito em 08/10/2026, depois de o dono perguntar "não é isso que você
+precisa?" e colar o endereço de homologação.** Era, e o sistema já o usa —
+palavra por palavra, incluindo o `/nfse40`. O endereço nunca foi o problema.
+
+**O que este arquivo passou a afirmar, e não devia:** que *"o ensaio está
+indisponível"*, que *"em Eusébio ela devolve o E0037"*, que *"a Produção Restrita
+segue desabilitada"*. **Nada disso foi observado.** O que existe de verdade é
+uma seção do manual da prefeitura dizendo que o erro E0037, *quando acontece*,
+significa Produção Restrita não habilitada. Eu transformei essa possibilidade em
+fato e repeti como fato em quatro seções.
+
+**O que de fato aconteceu com o ensaio, em ordem:** na primeira tentativa a tela
+girou 150s e o dono desistiu (*"não consegui concluir o ensaio, tá demorando
+muito"*) — defeito nosso, consertado; na segunda, faltava o token da prefeitura
+(*"deu Token de integração da prefeitura ausente"*) — também consertado. Depois
+disso **o ensaio não foi tentado mais nenhuma vez**, porque eu já havia escrito
+aqui que ele não funcionava.
+
+**O custo desse erro:** as quatro recusas do dia (E0370, EL99, E0959, E0699)
+foram descobertas em **emissão de verdade**, uma por tentativa, horas de espera
+do dono cada. Se o ensaio funcionar — e não há evidência de que não funcione —
+todas as quatro teriam custado cliques.
+
+**Então a sequência certa é tentar o ensaio ANTES de emitir**, e só concluir que
+ele não serve se ele devolver E0037 de fato. Ensaio não cria documento fiscal:
+tentar não custa nada.
 
 **A sequência, com o que se aprendeu da 3281:**
 
-1. **emitir de verdade** (o ensaio está indisponível — ver E0037 acima; a caixa
-   "Ensaiar primeiro" continua na tela, mas em Eusébio ela devolve o E0037);
+1. **ensaiar primeiro** (caixa "Ensaiar primeiro" na tela de emissão). Se
+   devolver **E0037**, aí sim o ambiente de teste não está habilitado e o caminho
+   é pedir isso à prefeitura — e emitir de verdade;
 2. se a nota não ficar pronta na hora, **"Conferir declaração"** — e, se a
    consulta insistir em "em processamento" por horas, **olhar o portal da
    prefeitura**, na tela de pendências de transmissão da DPS Nacional. Foi lá, e
@@ -99,11 +139,11 @@ trabalho pendente é **conserto e faxina**, não funcionalidade nova.
 
 **O que está na frente de tudo (08/10/2026):**
 
-1. **Emitir de novo, agora com a identificação da obra.** É o que destrava o
-   faturamento. O número 3281 está livre (a declaração foi recusada); se a lista
-   de declarações em aberto ainda mostrar a 3281 parada, usar o "liberar o
-   número" nela antes. Conferir, na nota que sair: o número devolvido, o PDF
-   municipal, a DANFSe, a linha da planilha, o título no Omie e o card.
+1. ✅ **FEITO — a nota `2600000003283` saiu** (obra IFSPSAOJOSE, medição 11), com
+   o pós-emissão inteiro. O que falta é **conferir as outras tributações**: essa
+   nota tem PIS, COFINS, IR e CSLL retidos, ISS retido e **sem INSS**. As outras
+   combinações da BWS seguem provadas só contra o schema — e foi justamente uma
+   combinação diferente (sem INSS) que revelou o E0699.
 2. **Se vier recusa nova**, os suspeitos já estão mapeados, nesta ordem:
    **(a)** `tpOper` — "Tipo de Operação com Entes Governamentais ou outros
    serviços sobre bens imóveis"; o candidato é `1` (fornecimento com pagamento
@@ -113,9 +153,12 @@ trabalho pendente é **conserto e faxina**, não funcionalidade nova.
    é a convenção do layout, mas o manual não traz exemplo de `<cObra>`. Os dois
    primeiros já estão implementados e desligados (ver
    `xsd_nacional/IBSCBS_CLASSIFICACAO.md`); ligar é uma linha.
-3. **Pedir à prefeitura que habilite a Produção Restrita** (erro E0037). Sem
-   ambiente de teste, toda mudança no caminho da emissão é provada em nota de
-   verdade — foi o que custou a 3281.
+3. **TENTAR O ENSAIO** (caixa "Ensaiar primeiro"). Nunca foi concluído, e eu
+   havia escrito aqui que ele não funcionava sem nunca ter visto isso acontecer
+   — ver a correção na seção de estado, acima. Se ele funcionar, toda correção
+   futura passa a custar um clique em vez de uma emissão de verdade. Só se ele
+   devolver **E0037** é que o caminho passa a ser pedir a habilitação da Produção
+   Restrita à prefeitura.
 4. **Levar ao chat do ERP a inversão do ISS retido** (detalhe na seção de
    07/10/2026). Lá a emissão automática manda o número errado, e não foi mexido
    porque é outra área.
@@ -815,8 +858,14 @@ agora seria chute.
 mostrava a identificação de 45 caracteres para a pessoa copiar e colar na outra
 tela. Agora é um link que já leva a identificação, o card e o ambiente dentro.
 
-**3. O erro E0037 diz uma coisa e significa outra — e isso resolve o mistério do
-ensaio.** O manual da prefeitura tem uma seção própria para ele:
+**3. O erro E0037 diz uma coisa e significa outra.** O manual da prefeitura tem
+uma seção própria para ele:
+
+> ⚠️ **Nota de 08/10/2026:** este item dizia "e isso resolve o mistério do
+> ensaio". **Não resolvia nada** — o E0037 nunca foi visto acontecer aqui. Ler o
+> manual e concluir que o ensaio estava bloqueado foi um salto, e ele parou de
+> ser tentado por quatro correções seguidas. Ver a correção na seção de estado.
+
 
 > O texto do erro diz que o município não existe no cadastro nacional, mas na
 > prática ele ocorre quando **o município ainda não configurou a Produção
@@ -824,9 +873,11 @@ ensaio.** O manual da prefeitura tem uma seção própria para ele:
 > e concluir as configurações de convênio. *O contribuinte deverá entrar em
 > contato com a prefeitura e solicitar a habilitação.*
 
-**Ou seja: é bem possível que o ensaio nunca funcione em Eusébio**, porque o
-ambiente de teste pode não estar habilitado — e isso não é defeito nosso nem dos
-dados da nota. Não há o que corrigir aqui: é um pedido à prefeitura.
+**Ou seja: SE este erro aparecer**, o ambiente de teste não está habilitado — e
+isso não é defeito nosso nem dos dados da nota. Não há o que corrigir aqui: é um
+pedido à prefeitura. **Enquanto ele não aparecer, não há motivo para supor que o
+ensaio esteja bloqueado**, e o ensaio é a única forma de provar uma mudança sem
+gastar nota.
 
 Por isso o sistema passou a **traduzir** esse erro na tela, dizendo o que ele
 realmente significa e de quem é a ação. Texto cru de integração manda a pessoa
@@ -1233,8 +1284,10 @@ de sair como `<obra/>`; a declaração que a tela de emissão envia de fato leva
 do CNO que mandamos. Dígitos sem pontuação é a convenção do layout e o que o
 resto do arquivo já faz, mas não há no manual um exemplo de `<cObra>` — os dois
 exemplos oficiais não são de serviço de obra. E não houve ensaio: a Produção
-Restrita do município continua desabilitada (E0037), então **a primeira emissão
-de verdade segue sendo a primeira prova**. Se vier recusa com o grupo presente, o
+Restrita do município **pode** não estar habilitada (o erro E0037 indicaria
+isso, mas nunca foi observado — ver a correção na seção de estado), então **a
+primeira emissão de verdade segue sendo a primeira prova** enquanto o ensaio não
+for tentado. Se vier recusa com o grupo presente, o
 mais provável é o formato do número, e o conserto é de uma linha.
 
 ### Dois erros a mais no mesmo dia: EL99 e E0959 — 08/10/2026
@@ -1325,11 +1378,96 @@ padrão e, quando preenchidos, saem na ordem do XSD; a numeração conta declara
 recusada; nem o mesmo card reusa número; EL99 e E0959 traduzidos. 14 casos novos.
 
 **NÃO conferido:** se a plataforma aceita a declaração agora. Nada aqui faz rede,
-e o ensaio segue indisponível (E0037). Se vier recusa nova **com o CST casado**,
+e o ensaio nunca foi tentado até o fim (ver a correção na seção de estado). Se
+vier recusa nova **com o CST casado**,
 os suspeitos já estão identificados e prontos para ligar: `tpOper` (o candidato
 é `1`, fornecimento com pagamento posterior) e `tpEnteGov` — este último o
 sistema **não pode** deduzir, porque não dá para saber do CNPJ se o órgão é
 federal, estadual ou municipal. Essa é pergunta para o dono.
+
+### ✅ A PRIMEIRA NOTA DO PADRÃO NACIONAL SAIU — 08/10/2026
+
+**Nota `2600000003283`**, obra IFSPSAOJOSE, medição 11, emitida em 08/10/2026,
+chave `23042851200079526000109260000000328326100010793653`. O pós-emissão rodou
+inteiro: planilha, Omie (documento 3255/2600000003283), slot A do card, XML e
+DANFSe no Drive, recibo, links na Descrição e WhatsApp.
+
+**O XML oficial dela foi lido campo por campo** (está no Drive, "NOTA FISCAL
+2600000003283 … (XML Nacional).xml"), e ele é a prova de que os quatro consertos
+do dia passaram pela plataforma:
+
+| Conserto | No XML da nota |
+|---|---|
+| grupo de obra (E0370) | `<obra><cObra>900232558978</cObra></obra>` |
+| CST derivado (E0959) | `<CST>200</CST><cClassTrib>200046</cClassTrib>` |
+| imposto não retido omitido (E0699) | `tribFed` **sem `vRetCP`** — esta obra não retém INSS |
+| total de tributos | `<totTrib><indTotTrib>0</indTotTrib></totTrib>` |
+
+E o que já estava certo desde a migração continua certo: `tpRetISSQN=2` (ISS
+retido pelo tomador), `vDedRed/vDR = 12.576,34` (dedução de material, com
+`vBC = 12.576,35` — a base do ISS fechando), `tpRetPisCofins=3`.
+
+**A plataforma calculou o IBS/CBS**, e o resultado confirma que o CST 200 era o
+certo: `pRedAliqUF = 50,00`, `pRedAliqCBS = 50,00` — redução de 50%, que é
+exatamente o que a classificação "Operações com bens imóveis" prevê. Valores
+`vIBS = 11,93` e `vCBS = 107,36`.
+
+#### ⚠️ E o número quase destruiu a numeração — pego antes da segunda nota
+
+A nota voltou como **`2600000003283`**: ano (26) + o nosso sequencial (3283) em
+11 dígitos. Tanto `nNFSe` como `nDFSe` vêm assim — **não existe, no XML, um
+número municipal "3283" separado**. Esse é o número oficial, e é ele que foi para
+a planilha, o Omie, os nomes dos arquivos e o cliente.
+
+**O problema:** o próximo número sai do maior da planilha MAIS UM. Lido cru,
+`2600000003283 + 1` faria a nota seguinte pedir **2.600.000.003.284** — e a
+sequência da BWS nunca mais voltaria. A nota seguinte sairia com número absurdo,
+e a de depois também.
+
+**O conserto:** o número gravado é traduzido de volta ao sequencial antes de
+qualquer conta (`worker.sequencial_da_nota`). Número de **13 dígitos** é nacional
+e tem o ano na frente; qualquer outro é do modelo antigo e vale como está — um
+sequencial da BWS tem 4 dígitos e não chega perto de 13. Então a planilha pode ter
+os dois formatos convivendo, que é o estado real dela: milhares de linhas `3280` e
+as novas `2600000003283`.
+
+**Decisão, e o motivo:** o número **oficial** é o que fica na planilha, no Omie e
+no documento do cliente. Guardar `3283` ali seria mais cômodo para a numeração,
+mas faria o sistema divergir do que a prefeitura e o cliente veem — e conciliação
+é exatamente o que essa coluna serve para fazer. A tradução resolve a numeração
+sem mentir sobre o número.
+
+**E o alarme falso saiu da tela.** Ela dizia *"Número devolvido (2600000003283) ≠
+esperado (3283). Confira a numeração."* — em TODA nota nacional. Alarme que
+sempre aparece deixa de ser lido. Agora a comparação é pelo sequencial, e quando
+os dois batem a tela **explica o formato**: o número oficial é ano + sequencial, e
+diz qual é o próximo.
+
+#### O `vLiq` da nota não é o líquido que a BWS recebe
+
+Descoberto no mesmo XML, e vale para a tela "Só a linha da planilha": o
+`vLiq` do modelo nacional **não desconta PIS nem COFINS**. Nesta nota ele veio
+`24.222,04`, e o que a BWS recebe de fato é **23.303,97** — PIS (163,49) e COFINS
+(754,58) foram retidos.
+
+A coluna O da planilha é "valor a ser recebido", ou seja valor menos **todas** as
+retenções. A tela publicada de manhã lia o `vLiq` — e teria posto R$ 918,07 a
+mais nessa coluna, num campo que o dono usa para conferir recebimento. Agora o
+líquido é **calculado** a partir das retenções presentes no XML (imposto não
+retido não aparece lá, pela regra do E0699, então presença quer dizer retenção).
+O número confere com o do motor fiscal, centavo a centavo.
+
+#### O que foi conferido
+
+A nota real, campo por campo, contra o XML assinado que a prefeitura devolveu —
+é a primeira vez nesta migração que a conferência não é contra um dublê. Mais: 10
+casos novos, entre eles o que impede o estrago da numeração (planilha com os dois
+formatos devolvendo 3284) e o líquido da nota 3283 fechando em 23.303,97. Suíte
+inteira: 5.287 passando.
+
+**O que NÃO foi conferido:** a nota saiu de UMA obra, com UMA tributação (PIS,
+COFINS, IR e CSLL retidos, ISS retido, sem INSS). As outras combinações da BWS
+seguem provadas só contra o schema.
 
 ### E0699, e a varredura que devia ter existido desde a migração — 08/10/2026
 
@@ -1400,7 +1538,8 @@ Suíte inteira: 5.277 passando.
 
 **NÃO conferido:** se a plataforma aceita a declaração agora. É a quarta correção
 do dia e nenhuma delas pôde ser ensaiada, porque o ambiente de teste do município
-segue desabilitado (E0037). Os suspeitos seguintes continuam os de antes —
+nunca foi tentado até o fim — ver a correção na seção de estado, que é
+justamente sobre isso. Os suspeitos seguintes continuam os de antes —
 `tpOper` e `tpEnteGov`, prontos e desligados.
 
 ### "Só a linha da planilha": uma nota certa com a planilha faltando — 07/10/2026

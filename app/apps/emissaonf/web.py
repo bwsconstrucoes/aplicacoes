@@ -1643,9 +1643,23 @@ def _render_pagina(ctx, card_id, token, nota_sub="", tm_over="", val_over=None, 
 def _pagina_resultado(r):
     log = html.escape(r.get("log", "") or "")
     aviso_num = ""
-    if r.get("prox") and str(r["numero"]) != str(r["prox"]):
-        aviso_num = (f"<div class='warn'>Número devolvido ({r['numero']}) ≠ esperado "
-                     f"({r['prox']}). Confira a numeração.</div>")
+    # O número devolvido é comparado pelo SEQUENCIAL, não pelo texto: no modelo
+    # nacional a nota 3283 volta como "2600000003283" (ano + sequencial), e
+    # comparar os textos acusava divergência em TODA nota — alarme que, de tanto
+    # aparecer, deixa de ser lido. Aconteceu na primeira nota nacional, 08/10/2026.
+    if r.get("prox"):
+        devolvido = _worker.sequencial_da_nota(r["numero"])
+        esperado = _worker.sequencial_da_nota(r["prox"])
+        if devolvido != esperado:
+            aviso_num = (f"<div class='warn'>Número devolvido ({r['numero']}) ≠ "
+                         f"esperado ({r['prox']}). Confira a numeração.</div>")
+        elif str(r["numero"]) != str(r["prox"]):
+            aviso_num = (f"<div class='ok'>O número oficial desta nota é "
+                         f"<b>{html.escape(str(r['numero']))}</b> — é o formato do "
+                         f"padrão nacional: ano (26) mais o nosso sequencial "
+                         f"({esperado}). É este número que está no documento do "
+                         f"cliente e na planilha; a próxima nota sai como "
+                         f"{esperado + 1}.</div>")
     sub_box = ""
     sub = r.get("sub")
     if sub:

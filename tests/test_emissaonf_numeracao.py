@@ -200,3 +200,42 @@ def test_linha_sem_numero_nao_estoura(monkeypatch):
 
     monkeypatch.setattr(declaracoes, "_ws", lambda p: WS())
     assert declaracoes.numeros_registrados(None) == []
+
+
+# --------------------------------------------------------------------------- #
+# O número que a plataforma nacional devolve, e a sequência que quase se perdeu
+#
+# A primeira nota do padrão nacional (08/10/2026) voltou como **2600000003283**
+# — ano (26) + o nosso sequencial (3283) em 11 dígitos. É o número OFICIAL, é
+# ele que vai no documento do cliente e é ele que fica na planilha.
+#
+# Só que o próximo número sai do maior da planilha MAIS UM. Lido cru,
+# 2600000003283 + 1 pediria a nota 2.600.000.003.284 — e a sequência nunca mais
+# voltaria. Foi pego antes da segunda nota.
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize("gravado,sequencial", [
+    ("2600000003283", 3283),     # nacional: ano + 11 dígitos  <- o caso real
+    ("3280", 3280),              # modelo antigo
+    ("NOTA 3281", 3281),         # com texto em volta
+    (3282, 3282),                # já numérico
+    ("", 0),                     # célula vazia
+    ("2700000000001", 1),        # nacional no ano seguinte
+])
+def test_o_sequencial_e_recuperado_do_numero_gravado(gravado, sequencial):
+    assert worker.sequencial_da_nota(gravado) == sequencial
+
+
+def test_depois_da_primeira_nota_nacional_a_proxima_e_o_sequencial_mais_um(numeros_na_planilha):
+    """O teste que impede o estrago: planilha com o número nacional da 3283, e a
+    próxima tem de ser 3284 — não 2.600.000.003.284."""
+    gc = numeros_na_planilha([3280, 3281, "2600000003283"], [])
+    prox, ultimo = worker.proximo_numero(gc)
+    assert prox == 3284
+    assert ultimo == 3283
+
+
+def test_planilha_com_os_dois_formatos_convivendo_numera_certo(numeros_na_planilha):
+    """É o estado real da planilha: milhares de linhas do modelo antigo e as
+    novas em formato nacional."""
+    gc = numeros_na_planilha([3278, 3279, 3280, "2600000003283"], [])
+    assert worker.proximo_numero(gc)[0] == 3284
