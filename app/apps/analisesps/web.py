@@ -1174,7 +1174,194 @@ def alterar():
         return {"ok": False,
                 "erro": f"A coluna '{coluna}' não é alterável por aqui."}, 400
 
-    return _gravar_alteracao(ids, coluna, valor, acao)
+    resposta = _gravar_alteracao(ids, coluna, valor, acao)
+    # MARCAR PAGO GRAVA TAMBÉM A DATA, O COMPROVANTE E A CONTA (08/10/2026),
+    # lidos do card. O dono: *"a função Marcar Pago precisa também gravar a
+    # data e o comprovante"*. Se o Pipefy falhar, o "Pago" já está gravado —
+    # e a resposta diz o que ficou faltando.
+    if (coluna == "status_pgt" and valor.lower() == "pago"
+            and isinstance(resposta, dict) and resposta.get("ok")):
+        resposta["complemento"] = _completar_pagamento(ids, acao, mover=False)
+    return resposta
+
+
+def _gravar_valores(itens: list, acao: str) -> int:
+    """Grava VALORES DIFERENTES POR SP numa ida só ao banco: `itens` é uma
+    lista de `(sp_id, coluna, valor)`. O mesmo caminho de `_gravar_alteracao`
+    (banco, fila da planilha, log) — que só sabe gravar um valor para todas.
+
+    A coluna AK (`_ak`, a conta do pagamento) não existe no banco: vai só para
+    a fila da planilha e para o log."""
+    from . import colunas, formatos
+    from .db import conexao, tem_coluna
+    if not itens:
+        return 0
+    perfil = auth.perfil_atual() or "?"
+    quem = auth.nome_atual()
+    com_pessoa = tem_coluna("log_alteracoes", "pessoa")
+    with conexao() as conn:
+        for sp_id, coluna, valor in itens:
+            anterior = None
+            if coluna in colunas.CHAVES:
+                cur = conn.execute(
+                    f'SELECT "{coluna}" FROM analisesps.sps WHERE id = ?', (sp_id,))
+                linha = cur.fetchone()
+                cur.close()
+                anterior = linha[0] if linha else None
+                derivada = colunas.DERIVADAS_DATA.get(coluna)
+                if derivada:
+                    conn.execute(
+                        f'UPDATE analisesps.sps SET "{coluna}" = ?, "{derivada}" = ?, '
+                        " atualizado_em = now() WHERE id = ?",
+                        (valor, formatos.para_data(valor), sp_id))
+                else:
+                    conn.execute(
+                        f'UPDATE analisesps.sps SET "{coluna}" = ?, '
+                        " atualizado_em = now() WHERE id = ?", (valor, sp_id))
+            conn.execute(
+                "INSERT INTO analisesps.fila (sp_id, coluna, valor, criado_em, "
+                "                             tentativas, ultimo_erro) "
+                "VALUES (?, ?, ?, now(), 0, NULL) "
+                "ON CONFLICT (sp_id, coluna) DO UPDATE SET "
+                "  valor = EXCLUDED.valor, criado_em = now(), "
+                "  tentativas = 0, ultimo_erro = NULL",
+                (sp_id, coluna, valor))
+            if com_pessoa:
+                conn.execute(
+                    "INSERT INTO analisesps.log_alteracoes "
+                    "  (sp_id, coluna, valor, valor_anterior, acao, perfil, "
+                    "   pessoa, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'pendente')",
+                    (sp_id, coluna, valor, anterior, acao, perfil, quem))
+            else:
+                conn.execute(
+                    "INSERT INTO analisesps.log_alteracoes "
+                    "  (sp_id, coluna, valor, valor_anterior, acao, perfil, "
+                    "   status) VALUES (?, ?, ?, ?, ?, ?, 'pendente')",
+                    (sp_id, coluna, valor, anterior, acao, perfil))
+        conn.commit()
+    logger.info("Análise de SPs: %s (%s) — %s: %d célula(s) gravada(s).",
+                quem or "sem nome", perfil, acao, len(itens))
+    return len(itens)
+
+
+def _completar_pagamento(ids, acao: str, mover: bool) -> dict:
+    """Lê os cards (uma ida ao Pipefy a cada 20) e grava na SPsBD a data do
+    pagamento (X), o comprovante (AG) e a conta (AK). Com `mover`, leva para
+    "Pago / Alimentar Omie" os cards que ainda não estão lá (também em lote).
+
+    Devolve `{"sps": {id: {...}}, "erro": frase ou ""}` — nunca levanta: o
+    "Pago" já foi gravado por quem chamou, e isto é o complemento."""
+    from . import pagamento_omie, pipefy, tarefas
+    ids = [str(i) for i in ids]
+    sps = {i: {"gravou": [], "faltou": [], "movido": False, "fase": "",
+               "erro": ""} for i in ids}
+    try:
+        cards = pipefy.ler_pagamentos(ids)
+    except Exception as e:  # noqa: BLE001 — o "Pago" fica; o resto, dito
+        logger.exception("Análise de SPs: não li os cards para completar o pagamento")
+        return {"sps": sps, "erro": f"Não consegui ler os cards no Pipefy: {e}"}
+
+    for sp_id, frase in (cards.pop("_erros", None) or {}).items():
+        if sp_id in sps:
+            sps[sp_id]["erro"] = frase
+    itens = []
+    for sp_id in ids:
+        card = cards.get(sp_id)
+        if not card:
+            sps[sp_id]["erro"] = sps[sp_id]["erro"] or "O Pipefy não devolveu este card."
+            continue
+        sps[sp_id]["fase"] = card["fase"]
+        valores = pagamento_omie.valores_do_card(card)
+        for coluna, rotulo in (("data_pagamento", "data"), ("comprovante", "comprovante"),
+                               ("_ak", "conta")):
+            if coluna in valores:
+                itens.append((sp_id, coluna, valores[coluna]))
+                sps[sp_id]["gravou"].append(rotulo)
+            else:
+                sps[sp_id]["faltou"].append(rotulo)
+    try:
+        _gravar_valores(itens, acao)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Análise de SPs: falhou gravar o complemento do pagamento")
+        return {"sps": sps, "erro": f"Não consegui gravar data/comprovante/conta: {e}"}
+
+    erro = ""
+    if mover:
+        fora = [i for i in ids if cards.get(i)
+                and cards[i]["fase_id"] != pipefy.FASE_PAGO_ALIMENTAR_OMIE]
+        if fora:
+            try:
+                movimento = pipefy.mover_cards(fora, pipefy.FASE_PAGO_ALIMENTAR_OMIE)
+            except Exception as e:  # noqa: BLE001
+                logger.exception("Análise de SPs: falhou mover os cards para Pago")
+                movimento = {"movidos": [], "erros": {i: str(e) for i in fora}}
+            for sp_id in movimento["movidos"]:
+                sps[sp_id]["movido"] = True
+            for sp_id, frase in movimento["erros"].items():
+                sps[sp_id]["erro"] = "Não mudou de fase: " + frase
+    if itens:
+        tarefas.disparar("fila", disparo="pagamento completado pelo card")
+    return {"sps": sps, "erro": erro}
+
+
+# A última consulta ao Omie, por SP: {id: (status, quando)}. Marcar Pago pelo
+# modal só aceita o que o Omie disse PAGO há pouco — e não reconsulta à toa.
+_CONSULTADAS: dict = {}
+VALIDADE_DA_CONSULTA = 15 * 60
+
+
+@bp.route("/api/omie/consultar", methods=["POST"])
+@exige_operador
+def omie_consultar():
+    """O status no Omie das SPs marcadas, para o modal "Consultar Omie"."""
+    import time
+    from . import pagamento_omie
+    ids, erro = _ids_do_pedido(request.get_json(silent=True) or {})
+    if erro:
+        return erro
+    if len(ids) > pagamento_omie.MAX_POR_CONSULTA:
+        return {"ok": False, "erro": (
+            f"São no máximo {pagamento_omie.MAX_POR_CONSULTA} SPs por consulta — "
+            "cada uma é uma pergunta ao Omie.")}, 400
+    try:
+        linhas = pagamento_omie.consultar(ids)
+    except Exception as e:  # noqa: BLE001 — credencial, rede: a frase vai inteira
+        logger.exception("Análise de SPs: falhou consultar o Omie")
+        return {"ok": False, "erro": f"Não consegui consultar o Omie: {e}"}, 502
+    agora = time.monotonic()
+    for l in linhas:
+        if l["status_omie"]:
+            _CONSULTADAS[l["id"]] = (l["status_omie"], agora)
+    return {"ok": True, "linhas": linhas}
+
+
+@bp.route("/api/omie/marcar-pago", methods=["POST"])
+@exige_operador
+def omie_marcar_pago():
+    """Equaliza a SPsBD com o Omie e o card: Status = Pago, data, comprovante e
+    conta lidos do card, e o card vai para "Pago / Alimentar Omie" se ainda
+    não estiver lá. Só para SP que o Omie disse PAGO na consulta recente."""
+    import time
+    from . import pagamento_omie
+    ids, erro = _ids_do_pedido(request.get_json(silent=True) or {})
+    if erro:
+        return erro
+    agora = time.monotonic()
+    sem_confirmacao = [i for i in ids if not (
+        i in _CONSULTADAS and _CONSULTADAS[i][0] == pagamento_omie.STATUS_PAGO
+        and agora - _CONSULTADAS[i][1] <= VALIDADE_DA_CONSULTA)]
+    if sem_confirmacao:
+        return {"ok": False, "erro": (
+            "Só dá para marcar como pago o que o Omie confirmou PAGO na consulta "
+            "dos últimos 15 minutos. Consulte de novo: "
+            + ", ".join(sem_confirmacao[:5]))}, 400
+
+    acao = "Marcar Pago (Omie)"
+    resposta = _gravar_alteracao(ids, "status_pgt", "Pago", acao)
+    if not isinstance(resposta, dict) or not resposta.get("ok"):
+        return resposta
+    resposta["complemento"] = _completar_pagamento(ids, acao, mover=True)
+    return resposta
 
 
 @bp.route("/api/enviar-ao-lote", methods=["POST"])

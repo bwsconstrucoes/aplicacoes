@@ -2745,3 +2745,11 @@ table.conciliacao tr.com-sp { cursor: pointer; }
 .lote-telegram { margin-top: 14px; padding: 10px 12px; border-top: 1px solid #e3e7ee;
                  font-size: 13px; line-height: 1.6; }
 .lote-telegram .btn { margin-left: 6px; text-decoration: none; }
+
+/* A consulta ao Omie (08/10/2026). */
+.dialogo-omie { width: min(1000px, 96vw); }
+.tabela-omie { width: 100%; border-collapse: collapse; font-size: 13px; }
+.tabela-omie th, .tabela-omie td { padding: 6px 8px; border-bottom: 1px solid #e3e7ee; text-align: left; }
+.tabela-omie td.num { text-align: right; white-space: nowrap; }
+.tabela-omie tr.omie-pago { background: #F7FCF4; }
+.tabela-omie .omie-erro { color: #a33; }

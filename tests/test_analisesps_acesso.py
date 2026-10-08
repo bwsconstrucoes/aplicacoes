@@ -92,6 +92,8 @@ TODAS_AS_TELAS = [
     ("GET", "/analisesps/lote"),
     ("POST", "/analisesps/lote"),
     ("POST", "/analisesps/lote/telegram"),
+    ("POST", "/analisesps/api/omie/consultar"),
+    ("POST", "/analisesps/api/omie/marcar-pago"),
     ("GET", "/analisesps/relatorio"),
     ("GET", "/analisesps/calendario"),
     # A CONCILIAÇÃO mostra o extrato bancário inteiro da empresa — é das telas

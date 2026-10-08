@@ -3998,8 +3998,9 @@ def test_agir_sobre_a_selecao_apaga_a_memoria_dela():
     from pathlib import Path
     js = Path("app/apps/analisesps/static/analisesps.js").read_text(encoding="utf-8")
     assert "function selecaoConsumida()" in js
-    # As quatro ações que ALTERAM alguma coisa têm de chamar.
-    assert js.count("selecaoConsumida();") == 4, (
+    # As cinco ações que ALTERAM alguma coisa têm de chamar (a quinta, de
+    # 08/10/2026, é o "Marcar Pago" do modal Consultar Omie).
+    assert js.count("selecaoConsumida();") == 5, (
         "cada ação que altera precisa apagar a memória da seleção")
 
 

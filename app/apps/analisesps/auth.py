@@ -457,6 +457,8 @@ TELA_DA_ROTA = {
     "analisesps.exportar": ("solicitacoes",),
     "analisesps.alterar": ("solicitacoes",),
     "analisesps.enviar_ao_lote": ("solicitacoes",),
+    "analisesps.omie_consultar": ("solicitacoes",),
+    "analisesps.omie_marcar_pago": ("solicitacoes",),
     "analisesps.sem_risco": ("solicitacoes",),
     "analisesps.validar": ("solicitacoes",),
     # O BeeVale e os códigos de pagamento servem as duas pontas do mesmo

@@ -12228,6 +12228,39 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 201 — Consultar Omie e o "Marcar Pago" completo (08/10/2026)
+
+- *"Preciso poder consultar um ou vários títulos no Omie (…) num modal (…) se
+  for Pago, poder equalizar na SPsBD, que com alguma frequência não tem
+  atualizado (…) coletar a 'Data do Pagamento', o 'Comprovante HTML/Email
+  (Integração)' e o 'Banco do Pagamento' do card (…) X é a data, AG o
+  comprovante, AK a conta (…) se o card não estiver na fase 309521694 'Pago /
+  Alimentar Omie', fazer esse movimento (…) mutation em lote para economizar
+  API. A função Marcar Pago precisa também gravar a data e o comprovante."*
+- **Consultar Omie** (barra de ações, até 60 SPs): `ConsultarContaPagar` pelo
+  código da coluna P, ou "Int" + nº da SP quando P está vazia (como o
+  ProcessarNovaSP cria); 3 de cada vez. O modal mostra planilha × Omie e o que
+  falta na planilha (status, data, comprovante); as PAGAS que a planilha não
+  diz por inteiro já vêm marcadas. Só lê (`pagamento_omie.consultar`).
+- **Marcar Pago do modal**: só aceita SP que o Omie disse PAGO na consulta dos
+  últimos 15 min (guardado em memória, `web._CONSULTADAS`). Grava Status =
+  Pago, e do card: X (data, em dd/mm/aaaa), AG (comprovante), AK (só o número
+  da conta, ex. "50024-0", como o BaixaBradesco grava). Campo vazio no card
+  NÃO apaga o que a planilha tem. Cards fora de "Pago / Alimentar Omie" vão
+  para lá. Pipefy: leitura e movimento em lote, 20 cards por ida
+  (`pipefy.ler_pagamentos`, `pipefy.mover_cards`, com `graphql_parcial` para
+  um card ruim não esconder os outros).
+- **O Marcar Pago de sempre** (barra e ficha) também lê o card e grava X, AG e
+  AK — mas NÃO move o card (só o do modal move, que é o caso que o dono
+  descreveu). Pipefy fora não desfaz o "Pago": a tela avisa o que faltou.
+- **No Lote o modal só consulta** — "Marcar Pago" ali continua proibido
+  (decisão antiga do dono, com teste).
+- A coluna AK ganhou nome ("Conta do Pagamento"); continua fora do banco — só
+  é escrita (fila da planilha + log), por isso não aparece na tela.
+- Não testado contra o Omie e o Pipefy de verdade: o formato real da data e do
+  banco no card é suposto (lista de conector e datas dd/mm/aaaa ou aaaa-mm-dd
+  são aceitas). Sem migração.
+
 #### Leva 200 — o grupo "WhatsApp" do lote, alimentado pelo robô do Telegram (08/10/2026) — migração 052
 
 - *"Muitas pessoas me pedem para colocar para pagar alguma SP via WhatsApp (…)
