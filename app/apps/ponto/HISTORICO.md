@@ -116,9 +116,10 @@ em `colaborador_config`; origem de pedido `RESPONSAVEL`):
    nada para ele). Fora do alcance, a pessoa responde "não encontrada".
 3. **Na folha da pessoa, o dia leva ao pedido**, por dois ÍCONES ao lado do dia
    (o dono achou os textos "gigantes"): ✏️ corrigir a batida que faltou (o
-   mesmo ajuste do dia, já com o que falta) e 📎 justificar a ausência
-   (atestado, licença, afastamento, compensação — o 🩺 da primeira versão saiu
-   porque "fica muito restrito à saúde", por exemplo num exame do Detran). A legenda aparece uma vez, no topo da lista. Vale também no
+   mesmo ajuste do dia, já com o que falta) e 🗓️ justificar a ausência
+   (atestado, licença, afastamento, compensação). O 🩺 da primeira versão saiu
+   porque "fica muito restrito à saúde" (um exame do Detran, por exemplo); entre
+   📎, 📄 e 🗓️, o dono escolheu o calendário. A legenda aparece uma vez, no topo da lista. Vale também no
    "Meu mês". O pedido sai **em
    nome de quem lançou** (origem `RESPONSAVEL`) e vai para a validação de
    sempre — ninguém no aplicativo aprova nada. Atestado aparece como
