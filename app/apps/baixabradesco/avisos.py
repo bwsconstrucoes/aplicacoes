@@ -183,24 +183,105 @@ def enviar_aviso(resultado: Dict[str, Any], payload: Dict[str, Any] | None = Non
         return {'ok': None, 'skipped': True, 'motivo': 'nada a avisar'}
 
     envios = {t: _enviar_para(t, texto, payload) for t in telefones}
-    return {'ok': any(bool(r.get('ok')) for r in envios.values()), 'envios': envios}
+
+    # ⚠️ Aqui estava um "ok" que mentia, e é o mesmo defeito da gravação da
+    # SPsBD com outra roupa: o envio devolve sucesso quando QUALQUER canal
+    # entrega, e o Telegram do dono entrega quase sempre. Então o WhatsApp podia
+    # falhar para o financeiro — que não tem Telegram — e tudo reportava
+    # sucesso. Foi exatamente o que aconteceu em 13/09/2026: o dono recebeu pelo
+    # Telegram e o financeiro, pelo visto, não recebeu nada.
+    so_telegram = [t for t, r in envios.items() if _so_pelo_telegram(r)]
+    sem_entrega = [t for t, r in envios.items() if not r.get('ok')]
+
+    saida: Dict[str, Any] = {
+        'ok': any(bool(r.get('ok')) for r in envios.values()),
+        'envios': envios,
+        'entregues_no_whatsapp': [t for t, r in envios.items() if _whatsapp_entregou(r)],
+        'so_pelo_telegram': so_telegram,
+        'sem_entrega': sem_entrega,
+    }
+    if sem_entrega:
+        saida['alerta'] = ('Nenhum canal entregou para: ' + ', '.join(sem_entrega))
+    elif so_telegram:
+        saida['alerta'] = ('WhatsApp não entregou para: ' + ', '.join(so_telegram)
+                           + '. Quem não tem Telegram cadastrado não recebeu o aviso.')
+    return saida
+
+
+def _whatsapp_entregou(resultado: Dict[str, Any]) -> bool:
+    """O braço do WhatsApp, especificamente, deu certo?"""
+    wa = resultado.get('whatsapp')
+    if isinstance(wa, dict):
+        return bool(wa.get('ok'))
+    return False
+
+
+def _so_pelo_telegram(resultado: Dict[str, Any]) -> bool:
+    """Entregou, mas só pelo espelho do Telegram — o WhatsApp não foi."""
+    if not resultado.get('ok'):
+        return False
+    if _whatsapp_entregou(resultado):
+        return False
+    wa = resultado.get('whatsapp')
+    if isinstance(wa, dict) and wa.get('ok') is None:
+        # Canal desligado de propósito (NOTIFICAR_WHATSAPP=0) não é falha.
+        return False
+    return True
 
 
 def _enviar_para(telefone: str, texto: str, payload: Dict[str, Any] | None) -> Dict[str, Any]:
     """Um destinatário. Falha de um não impede o outro, nem derruba a baixa."""
+    primeiro: Dict[str, Any] | None = None
     try:
         from .zapi import resolve_zapi_auth, send_text, validate_zapi_auth
         auth = resolve_zapi_auth(payload or {})
         if not validate_zapi_auth(auth):
-            return send_text(auth, telefone, texto)
+            primeiro = send_text(auth, telefone, texto)
+            if _whatsapp_entregou(primeiro):
+                return primeiro
+            wa = primeiro.get('whatsapp')
+            if isinstance(wa, dict) and wa.get('ok') is None:
+                # WhatsApp desligado de propósito: não insiste.
+                return primeiro
     except Exception as e:
-        return {'ok': False, 'erro': str(e)[:200]}
+        primeiro = {'ok': False, 'erro': str(e)[:200]}
 
-    # Sem credenciais Z-API no pedido nem no ambiente: tenta o notificador,
-    # que tem as suas próprias e ainda alcança o Telegram.
+    # Chega aqui em dois casos, e os dois precisavam de segunda tentativa:
+    # credencial Z-API ausente (já era tratado) **ou** credencial presente e o
+    # envio falhou — este último não tinha tratamento nenhum, e é o que deixa o
+    # financeiro sem aviso quando a instância do Z-API está fora.
     try:
         from app.apps.notificador import notificar
-        return notificar(telefone=telefone, mensagem=texto,
-                         canais=('whatsapp', 'telegram'), politica='fallback')
+        segunda = notificar(telefone=telefone, mensagem=texto,
+                            canais=('whatsapp', 'telegram'), politica='fallback')
     except Exception as e:
-        return {'ok': False, 'erro': str(e)[:200]}
+        segunda = {'ok': False, 'erro': str(e)[:200]}
+
+    if primeiro is None:
+        return segunda
+
+    # Junta as duas tentativas num resultado só, sem esconder nenhuma.
+    wa_segunda = segunda.get('whatsapp') if isinstance(segunda, dict) else None
+    entregou_wa = (_whatsapp_entregou(primeiro)
+                   or (isinstance(wa_segunda, dict) and bool(wa_segunda.get('ok'))))
+    juntado: Dict[str, Any] = {
+        'ok': bool(primeiro.get('ok')) or _notificador_entregou(segunda),
+        'whatsapp': {'ok': entregou_wa,
+                     'primeira_tentativa': primeiro.get('whatsapp'),
+                     'segunda_tentativa': wa_segunda},
+        'telegram': primeiro.get('telegram'),
+        'notificador': segunda,
+    }
+    # A mensagem da primeira falha não se perde: é ela que diz o que aconteceu.
+    if primeiro.get('erro'):
+        juntado['erro'] = primeiro['erro']
+    return juntado
+
+
+def _notificador_entregou(resposta: Any) -> bool:
+    """O notificador devolve um dicionário por canal; basta um ter entregue."""
+    if not isinstance(resposta, dict):
+        return False
+    if 'ok' in resposta:
+        return bool(resposta.get('ok'))
+    return any(isinstance(v, dict) and v.get('ok') for v in resposta.values())

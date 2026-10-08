@@ -1014,3 +1014,105 @@ novas registradas.
 **Não verificado:** o conferidor nunca encostou na planilha de verdade nem no
 Omie de verdade. Os dublês cobrem a regra; a primeira chamada em produção é a
 prova — e é ela que vai dizer se o defeito de 07/10 deixou prejuízo escondido.
+
+---
+
+### 08/10/2026 — a contagem da fila em produção: ela nunca andou, nem uma vez
+
+O dono chamou `fila-resumo` em produção. A resposta mudou o entendimento do
+problema, e vale copiada aqui porque é a prova:
+
+```
+linhas_na_aba          2269
+por_status             PENDENTE 2269
+pendentes_vencidos     2269
+pendentes_agendados    0
+concluidos             0
+falhados               0
+por_etapa              zapi 1943 | omie 238 | pipefy 88
+por_tipo_falha         zapi_erro 1943 | omie_erro 238 | pipefy_erro 88
+sem_etapa              0
+registro_mais_antigo   18/06/2026 18:31:09
+registro_mais_recente  07/10/2026 20:45:45
+```
+
+**Nenhuma concluída e nenhuma falhada.** Isso não é uma fila lenta: é uma fila
+que **nunca andou, nem uma vez, em quase quatro meses**. Se tivesse andado,
+haveria linhas `CONCLUIDO`; se tivesse insistido e desistido, haveria `FALHOU`.
+A rota de reprocessar existia, funcionava, e ninguém nunca a chamou — porque ela
+só andava à mão. Minha entrega da manhã (drenar 5 por lote) teria levado 454
+lotes de comprovantes para dar uma volta.
+
+**Três consequências que eu tinha anotado como risco e que a contagem desfez ou
+confirmou:**
+
+1. **O grupo "marcado CONCLUIDO sem ter gravado" está VAZIO** — `concluidos: 0`.
+   Aquele defeito nunca chegou a apagar nada, porque o reprocessamento nunca
+   rodou. O conferidor SPsBD × Omie continua útil, mas por outro motivo (ver a
+   entrada anterior), não por este.
+2. **`sheets: 0`.** A não-atualização silenciosa da SPsBD **nunca passou pela
+   fila** — o que confirma o diagnóstico de 07/10: a gravação morria numa thread
+   solta, antes de chegar ao `enqueue_failure`. De agora em diante uma gravação
+   falhada aparece aqui.
+3. **1.943 das 2.269 (86%) são `zapi`** — as mensagens *"Informação de
+   Pagamento"* que avisam quem pediu a SP, com o comprovante em PDF. Ou seja:
+   desde junho, quem pede uma SP vem não sendo avisado de que o pagamento saiu, e
+   ninguém soube. Os 238 `omie` são o que custa dinheiro: baixa que não
+   aconteceu.
+
+**O que foi feito, em cima desses números:**
+
+- **A fila pegou carona no cron que já roda de 5 em 5 minutos**
+  (`/processar-fila-tardia`, já autenticado). Pedir que alguém chame a rota à mão
+  foi o que falhou por quatro meses; não vale repetir o pedido com mais ênfase.
+- **Drenagem por etapa, na ordem da importância**: `omie` (dinheiro), `sheets`,
+  `pipefy`, `zapi` (recado) — 15, 15, 15 e 10 por disparo, ~180 itens por hora.
+  Na ordem da planilha, 1.943 recados ficariam na frente de 238 baixas.
+- **Filtro `etapas` na rota de reprocessar**, para drenar só o dinheiro quando
+  for o caso.
+- **Falta de credencial não consome tentativa** (`ERROS_DE_CONFIGURACAO`). Isto
+  era urgente: a chave do Omie está na planilha, não no ambiente (ver o achado de
+  segurança da entrada anterior). Se a drenagem automática subisse sem essa
+  guarda e o ambiente não tivesse a credencial, cinco passadas marcariam as 238
+  baixas como `FALHOU` — apagando a pendência sem resolver nenhuma. Agora a linha
+  fica intacta e o relatório diz `o_que_falta_configurar`.
+- **O cron não limpa o acumulado de avisos antigos.** Ele pula o que tem mais de
+  três dias, sem gastar tentativa. Marcar 1.943 linhas é decisão do dono, e sai
+  em blocos de 50 linhas por chamada quando ele pedir — uma escrita por linha
+  seriam 1.943 escritas, meia hora travando a cota do ERP e do painel.
+
+**E o item que estava aberto desde 13/09 foi fechado, porque a contagem explicou
+o sintoma:** o aviso chegou ao dono **pelo Telegram**. O envio devolve sucesso
+quando QUALQUER canal entrega, e o Telegram dele entrega quase sempre — então o
+WhatsApp falhava para o financeiro, que não tem Telegram cadastrado, e tudo
+reportava sucesso. Os 1.943 `zapi_erro` na fila são a escala disso. Dois
+consertos: o resultado passou a dizer `entregues_no_whatsapp`,
+`so_pelo_telegram` e `sem_entrega`, com alerta em português; e **credencial
+presente com envio falhando ganhou segunda tentativa** pelo notificador comum —
+antes a segunda tentativa só existia quando a credencial estava *ausente*.
+
+**Decisões que tomei sozinho, e o dono pode desfazer:**
+
+- 15/15/15/10 por disparo do cron. Conservador de propósito: a cota de escrita do
+  Google é por minuto e é da mesma credencial do ERP, do painel e do Análise de
+  SPs. Subir é fácil se a memória e a cota aguentarem.
+- Três dias para o aviso perder a utilidade.
+- O conferidor não corrige, só relata.
+
+**O que continua pendente do dono:**
+
+1. **Publicar** (isto e o conferidor estão no ramo, não na `main`).
+2. **Decidir sobre os 1.943 avisos antigos**: descartar em massa (recomendação) ou
+   reenviar.
+3. **A chave do Omie em variável de ambiente.** Hoje ela vive na planilha. Se o
+   ambiente não a tiver, a drenagem automática não vai conseguir baixar nenhuma
+   das 238 — ela vai dizer isso no relatório em vez de falhar em silêncio, mas
+   não vai resolver.
+
+**Verificado:** 24 testes de fila (10 novos), 11 de aviso, 7 de cron, 14 de
+conferidor; suíte inteira rodada com a única falha sendo `erpbrasil` ausente
+neste ambiente, que falha igual na `main` publicada; aplicação subindo com os 18
+blueprints.
+**Não verificado:** a drenagem pelo cron nunca rodou em produção. O primeiro
+disparo depois de publicar é a prova — e o campo a olhar é
+`fila_de_falhas.omie.o_que_falta_configurar`.

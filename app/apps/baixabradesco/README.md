@@ -284,15 +284,37 @@ essa diferença é a primeira coisa a saber antes de mandar drenar.
 | saber quantas pendências de verdade existem | `GET /api/baixabradesco/fila-resumo` |
 | drenar o acumulado | `POST /api/baixabradesco/reprocessar-fila` com `limite` alto |
 | drenar incluindo o que esgotou as cinco tentativas | o mesmo, com `incluir_falhados: true` |
+| drenar só uma etapa (o dinheiro primeiro) | o mesmo, com `etapas: ["omie"]` |
+| limpar o acumulado de avisos antigos | o mesmo, com `etapas: ["zapi"]` |
 
 O **resumo** não grava nada e não reprocessa nada: conta por situação
 (`PENDENTE` vencido, `PENDENTE` agendado para depois, `FALHOU`, `CONCLUIDO`),
 por etapa, por tipo de falha, diz a data do registro mais antigo e quantos lotes
 de cinco seriam necessários no ritmo automático.
 
-**O ritmo automático é de cinco por lote de comprovantes.** Serve para não
-deixar pendência nova envelhecer; não serve para zerar acumulado. Acumulado se
-zera com uma chamada de `limite` alto.
+**Quem anda com a fila, hoje:**
+
+1. **O cron de 5 em 5 minutos** (`/processar-fila-tardia`, que já existia e já
+   era autenticado). Ele drena **por etapa, na ordem da importância** — `omie`
+   (dinheiro), `sheets` (planilha), `pipefy` (cartão), `zapi` (recado) —, 15, 15,
+   15 e 10 por disparo. Dá ~180 itens por hora sem encostar na cota.
+2. **Cada lote de comprovantes**, cinco itens, para pendência nova não
+   envelhecer.
+3. **Uma chamada à mão** com `limite` alto, para zerar acumulado.
+
+⚠️ **A ordem das etapas não é alfabética, e não pode virar.** Em 08/10/2026 a
+fila tinha 1.943 recados de WhatsApp na frente de 238 baixas no Omie. Drenar na
+ordem da planilha deixaria o dinheiro para o fim.
+
+**O cron NÃO limpa o acumulado de avisos antigos.** Aviso com mais de três dias
+é pulado por ele, sem gastar tentativa. Marcar 1.943 linhas de uma vez é decisão
+do dono — pede-se explicitamente, com `etapas: ["zapi"]`, e aí a marcação sai em
+blocos de 50 linhas por chamada, não uma por linha.
+
+⚠️ **Falta de credencial NÃO consome tentativa.** Era o jeito mais rápido de
+apagar a fila sem resolver nada: cinco passadas sem credencial marcariam as 238
+baixas como `FALHOU`. Hoje a linha fica intacta e o relatório diz o que falta
+configurar (`o_que_falta_configurar`).
 
 ⚠️ **A cota do Google é por minuto e é do mesmo usuário de serviço que o ERP, o
 painel e o Análise de SPs usam.** Por isso, em lote grande:
@@ -369,6 +391,19 @@ Entram no aviso:
 **Não** entram, de propósito: o que baixou (é o esperado) e o que foi barrado por
 já ter sido baixado (a trava fez o trabalho dela). Aviso demais faz a pessoa
 parar de ler, e aí o que importava se perde.
+
+⚠️ **O resultado do aviso diz QUEM recebeu, e por onde** — e isso não era
+visível antes. O envio devolvia sucesso quando **qualquer** canal entregava, e o
+Telegram do dono entrega quase sempre; então o WhatsApp podia falhar para o
+financeiro, que não tem Telegram, e tudo reportava sucesso. É o mesmo defeito da
+gravação silenciosa, com outra roupa — e num aviso de falha ele é pior, porque
+falha em silêncio justamente quando algo já deu errado.
+
+Hoje a resposta traz `entregues_no_whatsapp`, `so_pelo_telegram` e `sem_entrega`,
+com um alerta em português quando alguém ficou só no Telegram. **E credencial
+presente com envio falhando ganha segunda tentativa** pelo notificador comum —
+antes a segunda tentativa só existia quando a credencial estava *ausente*, então
+instância do Z-API fora do ar significava financeiro sem aviso e sem retentativa.
 
 É **um aviso por lote**, não um por comprovante, com no máximo dez itens
 listados — acima disso ele diz quantos ficaram de fora.

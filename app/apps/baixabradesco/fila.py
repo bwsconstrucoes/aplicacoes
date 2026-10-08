@@ -4,11 +4,11 @@ from __future__ import annotations
 import json
 import time
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from .sheets import get_gc, SPS_SHEET_ID, execute_spsbd_updates
 from .utils import as_string
-from .omie import execute_omie, omie_body
+from .omie import execute_omie, omie_body, credentials_from_payload
 from .pipefy import execute_graphql
 from .zapi import resolve_zapi_auth, validate_zapi_auth, send_messages_batch
 
@@ -171,7 +171,8 @@ def _coluna(faixas: List[Any], indice: int) -> List[str]:
     return [as_string(c[0]) if c else '' for c in bruto]
 
 
-def _candidatos(ws, limite: int, somente_vencidos: bool, aceitos: set) -> List[Any]:
+def _candidatos(ws, limite: int, somente_vencidos: bool, aceitos: set,
+                etapas: Optional[set] = None) -> List[Any]:
     """Varre apenas as colunas de controle (A:L) e devolve as linhas que servem.
 
     O payload de cada linha (coluna N) é um JSON que pode ter alguns kB. Ler a
@@ -187,6 +188,8 @@ def _candidatos(ws, limite: int, somente_vencidos: bool, aceitos: set) -> List[A
     for idx, row in enumerate(valores, start=2):
         row = list(row) + [''] * (COLS_CONTROLE - len(row))
         if as_string(row[1]).upper() not in aceitos:
+            continue
+        if etapas is not None and as_string(row[11]).lower() not in etapas:
             continue
         if somente_vencidos:
             dt = _parse_dt_br(row[3])
@@ -218,8 +221,13 @@ def _buscar_payloads(ws, linhas: List[int]) -> Dict[int, str]:
 
 
 def listar_pendentes(gc=None, limite: int = 20, somente_vencidos: bool = True,
-                     incluir_falhados: bool = False) -> List[Dict[str, Any]]:
+                     incluir_falhados: bool = False,
+                     etapas: Optional[set] = None) -> List[Dict[str, Any]]:
     """Itens da fila a reprocessar.
+
+    `etapas`: quando informado, só traz essas etapas. Serve para drenar o que
+    é dinheiro (`omie`) antes do que é recado (`zapi`) — e sem um depender do
+    outro.
 
     `incluir_falhados`: traz também os que esgotaram as cinco tentativas e
     foram marcados FALHOU. Eles NUNCA voltavam sozinhos — ficavam abandonados na
@@ -231,7 +239,7 @@ def listar_pendentes(gc=None, limite: int = 20, somente_vencidos: bool = True,
     aceitos = {STATUS_PENDENTE}
     if incluir_falhados:
         aceitos.add(STATUS_FALHOU)
-    escolhidos = _candidatos(ws, int(limite), bool(somente_vencidos), aceitos)
+    escolhidos = _candidatos(ws, int(limite), bool(somente_vencidos), aceitos, etapas)
     if not escolhidos:
         return []
     payloads = _buscar_payloads(ws, [idx for idx, _ in escolhidos])
@@ -256,12 +264,52 @@ def _update_row(ws, row_number: int, status: str, tentativas: int, mensagem: str
     ], value_input_option='USER_ENTERED')
 
 
+def _marcar_em_lote(ws, marcas: List[Dict[str, Any]]) -> int:
+    """Marca várias linhas numa chamada só.
+
+    Existe por um número concreto: em 08/10/2026 a fila tinha 1.943 avisos
+    antigos para descartar. Uma chamada por linha seriam 1.943 escritas, e a
+    cota do Google é por minuto e compartilhada com o ERP e o painel — levaria
+    meia hora travando os outros. Em blocos de 50 linhas (100 faixas), são 39
+    chamadas.
+    """
+    gravadas = 0
+    for inicio in range(0, len(marcas), 50):
+        bloco = marcas[inicio:inicio + 50]
+        dados = []
+        for m in bloco:
+            n = m['row']
+            proxima = '' if m['status'] == STATUS_CONCLUIDO else next_try(10)
+            dados.append({'range': f'B{n}:D{n}',
+                          'values': [[m['status'], m['tentativas'], proxima]]})
+            dados.append({'range': f'M{n}:O{n}',
+                          'values': [[as_string(m.get('mensagem'))[:1000], '', now_str()]]})
+        try:
+            ws.batch_update(dados, value_input_option='USER_ENTERED')
+            gravadas += len(bloco)
+        except Exception:
+            # Bloco que não gravou fica PENDENTE na planilha, que é o estado
+            # verdadeiro. Não se finge que gravou.
+            pass
+    return gravadas
+
+
 def _request_omie(call: str, param: dict, payload: dict) -> dict:
     body = omie_body(call, param, payload)
     return execute_omie(body)
 
 
 def _retry_omie(item: Dict[str, Any], payload: dict) -> dict:
+    # Credencial primeiro, e antes de QUALQUER chamada: sem ela a consulta
+    # falha e, pior, a falha seria contada como tentativa gasta. Com 238 baixas
+    # na fila, uma drenagem sem credencial apagaria as 238 em cinco passadas.
+    try:
+        app_key, app_secret = credentials_from_payload(payload)
+    except Exception:
+        app_key = app_secret = ''
+    if not app_key or not app_secret:
+        return {'ok': False, 'erro': 'credenciais_omie_ausentes'}
+
     resumo = json.loads(item.get('Payload Resumido') or '{}')
     codigo = as_string(resumo.get('codigo_integracao'))
     if not codigo:
@@ -419,6 +467,43 @@ def resumo_fila(gc=None) -> dict:
     }
 
 
+# Falha de CONFIGURAÇÃO, não de execução. Não consome tentativa: senão uma
+# drenagem disparada sem credencial queimaria as cinco tentativas de todos os
+# itens e os marcaria FALHOU — com 238 baixas de dinheiro na fila em 08/10/2026,
+# isso apagaria a pendência sem resolver nada. Insistir não ajuda; marcar como
+# fracassado mente.
+ERROS_DE_CONFIGURACAO = {
+    'credenciais_zapi_ausentes',
+    'credenciais_omie_ausentes',
+    'codigo_integracao_ausente',
+    'mutation_ausente',
+    'mensagens_ausentes',
+    'updates_ausentes',
+}
+
+
+def _e_problema_de_configuracao(resp: Dict[str, Any]) -> bool:
+    return as_string(resp.get('erro')) in ERROS_DE_CONFIGURACAO
+
+
+def _etapas_pedidas(payload: dict) -> Optional[Set[str]]:
+    """`etapas: ["omie"]` ou `etapa: "omie"`. Vazio = todas.
+
+    Existe porque as etapas não valem o mesmo: `omie` é dinheiro (baixa que não
+    aconteceu), `sheets` é a planilha desatualizada, `pipefy` é o cartão no lugar
+    errado e `zapi` é recado. Drenar na ordem da planilha misturaria as quatro, e
+    1.943 recados na frente de 238 baixas é a ordem errada.
+    """
+    bruto = payload.get('etapas') or payload.get('etapa')
+    if not bruto:
+        return None
+    if isinstance(bruto, str):
+        bruto = [p for p in bruto.replace(';', ',').split(',') if p.strip()]
+    etapas = {as_string(e).strip().lower() for e in bruto}
+    etapas.discard('')
+    return etapas or None
+
+
 def _pausa_padrao(limite: int, payload: dict) -> float:
     """Segundos de espera entre itens.
 
@@ -463,15 +548,19 @@ def reprocessar_fila(payload: dict) -> dict:
     limite = int(payload.get('limite') or 10)
     somente_vencidos = payload.get('somente_vencidos', True)
     incluir_falhados = bool(payload.get('incluir_falhados'))
+    etapas = _etapas_pedidas(payload)
     pausa = _pausa_padrao(limite, payload)
     pendentes = listar_pendentes(gc, limite=limite,
                                  somente_vencidos=bool(somente_vencidos),
-                                 incluir_falhados=incluir_falhados)
+                                 incluir_falhados=incluir_falhados,
+                                 etapas=etapas)
     resultados = []
     inicio = datetime.now()
     cota_seguidas = 0
     interrompido = ''
-    avisos_descartados = 0
+    descartes: List[Dict[str, Any]] = []
+    bloqueados: List[Dict[str, Any]] = []
+    pulados: List[Dict[str, Any]] = []
 
     for posicao, item in enumerate(pendentes):
         if pausa and posicao:
@@ -481,9 +570,21 @@ def reprocessar_fila(payload: dict) -> dict:
         etapa = as_string(item.get('Etapa')).lower()
         try:
             if etapa == 'zapi' and _aviso_velho_demais(item, payload):
-                avisos_descartados += 1
-                _update_row(ws, row_number, STATUS_CONCLUIDO, tentativas,
-                            'Aviso antigo: não reenviado (fora do prazo de utilidade).')
+                if not payload.get('descartar_avisos_antigos', True):
+                    # A drenagem automática NÃO limpa o acumulado de avisos
+                    # antigos: são 1.943 linhas do dono, e marcá-las em massa é
+                    # decisão dele, não do cron. Fica intacto, sem gastar
+                    # tentativa, e some da passada.
+                    pulados.append({'row': row_number, 'etapa': etapa})
+                    resultados.append({'row': row_number, 'etapa': etapa, 'ok': None,
+                                       'pulado_por_idade': True})
+                    continue
+                # Não grava agora: junta e grava em lote no fim. Com 1.943
+                # avisos antigos, uma escrita por linha estouraria a cota.
+                descartes.append({'row': row_number, 'status': STATUS_CONCLUIDO,
+                                  'tentativas': tentativas,
+                                  'mensagem': 'Aviso antigo: não reenviado '
+                                              '(fora do prazo de utilidade).'})
                 resultados.append({'row': row_number, 'etapa': etapa, 'ok': True,
                                    'response': {'ok': True, 'status': 'aviso_descartado_por_idade'}})
                 continue
@@ -501,6 +602,14 @@ def reprocessar_fila(payload: dict) -> dict:
 
             if resp.get('ok'):
                 _update_row(ws, row_number, STATUS_CONCLUIDO, tentativas, 'Reprocessado com sucesso.')
+            elif _e_problema_de_configuracao(resp):
+                # Fica PENDENTE com as tentativas INTACTAS, e a linha explica o
+                # que falta. Quem resolve isso é quem configura, não a insistência.
+                bloqueados.append({'row': row_number, 'etapa': etapa,
+                                   'erro': as_string(resp.get('erro'))})
+                resultados.append({'row': row_number, 'etapa': etapa, 'ok': False,
+                                   'bloqueado_por_configuracao': True, 'response': resp})
+                continue
             elif incluir_falhados and tentativas >= 5:
                 # Pedido explícito: continua FALHOU, mas com a mensagem nova —
                 # senão a planilha guarda o erro da primeira vez e engana quem lê.
@@ -530,16 +639,22 @@ def reprocessar_fila(payload: dict) -> dict:
             interrompido = 'cota_do_google'
             break
 
-    ok = sum(1 for r in resultados if r.get('ok'))
+    descartes_gravados = _marcar_em_lote(ws, descartes) if descartes else 0
+    ok = sum(1 for r in resultados if r.get('ok') is True)
     return {
         'ok': True,
         'app': 'baixabradesco',
         'acao': 'reprocessar_fila',
         'pendentes_processados': len(resultados),
         'concluidos_agora': ok,
-        'ainda_pendentes': len(resultados) - ok,
-        'avisos_descartados_por_idade': avisos_descartados,
+        'ainda_pendentes': sum(1 for r in resultados if r.get('ok') is False),
+        'avisos_descartados_por_idade': len(descartes),
+        'descartes_gravados': descartes_gravados,
+        'bloqueados_por_configuracao': len(bloqueados),
+        'o_que_falta_configurar': sorted({b['erro'] for b in bloqueados}),
+        'avisos_antigos_pulados': len(pulados),
         'incluiu_falhados': incluir_falhados,
+        'etapas': sorted(etapas) if etapas else 'todas',
         'limite_pedido': limite,
         'pausa_entre_itens_s': pausa,
         'interrompido': interrompido,

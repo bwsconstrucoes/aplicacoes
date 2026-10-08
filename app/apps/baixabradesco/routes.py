@@ -158,7 +158,7 @@ def processar_fila_tardia_route():
         payload = request.get_json(force=True, silent=True) or {}
         if not _authorized(payload):
             return jsonify({'ok': False, 'app': 'baixabradesco', 'error': 'Não autorizado.'}), 401
-        return jsonify(processar_fila_tardia())
+        return jsonify(processar_fila_tardia(payload))
     except Exception as e:
         return jsonify({
             'ok': False,
