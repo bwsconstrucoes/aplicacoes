@@ -251,10 +251,16 @@ class DadosDPS:
     # alíquota sobre o valor CHEIO — foi exatamente o defeito de setembro/2026.
     v_ded_red: str = ""            # vazio = sem dedução (não envia o grupo)
 
-    # retenções federais (valores retidos)
+    # Retenções federais (valores retidos). Zero quer dizer "não houve", e nesse
+    # caso o campo NÃO é enviado — a plataforma recusa valor zero (erro E0699).
     v_ret_inss: str = "0.00"        # vRetCP (INSS/previdência)
     v_ret_irrf: str = "0.00"
     v_ret_csll: str = "0.00"
+
+    # Total aproximado dos tributos (Lei 12.741/2012): três valores
+    # (federal, estadual, municipal) OU None para declarar que não se informa
+    # valor estimado (`indTotTrib=0`, a opção que o próprio layout dá).
+    v_tot_trib: Optional[tuple] = field(default=None)
     # PIS/COFINS (opcional; só preencher se houver)
     pis_cofins: Optional[dict] = field(default=None)
 
@@ -372,15 +378,45 @@ def montar_dps_xml(d: DadosDPS) -> etree._Element:
                   "vPis", "vCofins", "tpRetPisCofins"):
             if k in d.pis_cofins:
                 _sub(pc, k, d.pis_cofins[k])
-    _sub(tribfed, "vRetCP", d.v_ret_inss)
-    _sub(tribfed, "vRetIRRF", d.v_ret_irrf)
-    _sub(tribfed, "vRetCSLL", d.v_ret_csll)
+    # Imposto que NÃO foi retido não vai, nem como zero. Os três campos são
+    # opcionais no layout, e a plataforma recusa valor zero: é o erro **E0699**
+    # ("o valor do tributo CP deve ser maior que zero e menor que o valor do
+    # serviço"), que custou uma emissão em 08/10/2026. Mandar "0,00" declara uma
+    # retenção DE valor zero, que é diferente de não haver retenção — a mesma
+    # regra que o grupo piscofins acima já seguia, e que o modelo antigo também
+    # seguia (ver o HISTORICO da área: "imposto sem retenção não aparece na nota").
+    v_serv = Decimal(str(d.v_serv or 0))
+    for tag, valor in (("vRetCP", d.v_ret_inss), ("vRetIRRF", d.v_ret_irrf),
+                       ("vRetCSLL", d.v_ret_csll)):
+        v = Decimal(str(valor or 0))
+        if v <= 0:
+            continue
+        if v_serv and v >= v_serv:
+            # A outra metade da regra do E0699. Retenção maior que o serviço é
+            # erro de dado, e falhar aqui é mais barato que descobrir depois.
+            raise ValueError(
+                f"A retenção {tag} (R$ {v}) é maior ou igual ao valor do serviço "
+                f"(R$ {v_serv}). A plataforma recusa, e o número do dado está errado."
+            )
+        _sub(tribfed, tag, f"{v:.2f}")
+    if len(tribfed) == 0:
+        # Grupo vazio é válido no schema e não diz nada. Nota sem retenção
+        # federal nenhuma simplesmente não tem o grupo.
+        trib.remove(tribfed)
 
+    # Total aproximado dos tributos (Lei 12.741/2012). O layout dá uma ESCOLHA de
+    # quatro, e uma delas existe justamente para quem não informa valor estimado:
+    # `indTotTrib=0`. Mandávamos a outra, `vTotTrib`, com os três valores em
+    # 0,00 — o que DECLARA que o total aproximado é zero, e é falso. Mesmo
+    # defeito do vRetCP acima, só que este ainda não tinha dado erro.
     tottrib = _sub(trib, "totTrib")
-    vtt = _sub(tottrib, "vTotTrib")
-    _sub(vtt, "vTotTribFed", "0.00")
-    _sub(vtt, "vTotTribEst", "0.00")
-    _sub(vtt, "vTotTribMun", "0.00")
+    if d.v_tot_trib:
+        vtt = _sub(tottrib, "vTotTrib")
+        _sub(vtt, "vTotTribFed", d.v_tot_trib[0])
+        _sub(vtt, "vTotTribEst", d.v_tot_trib[1])
+        _sub(vtt, "vTotTribMun", d.v_tot_trib[2])
+    else:
+        _sub(tottrib, "indTotTrib", "0")
 
     # grupo IBS/CBS (reforma) - filho de infDPS, depois de <valores>
     if d.ibscbs:

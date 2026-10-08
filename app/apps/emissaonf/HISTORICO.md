@@ -51,13 +51,20 @@ seção "O VEREDITO DA 3281" explica por que isso não apareceu em nada que havi
 sido conferido — a declaração sem o grupo é **válida no schema oficial**, e a
 obrigatoriedade é regra de negócio da plataforma, não do arquivo.
 
-**E a emissão seguinte revelou mais dois, no mesmo dia:** **EL99** (número já
-enviado não se reusa — a frase do manual sobre reenviar com a mesma
-identificação não vale em Eusébio) e **E0959** (o CST do IBS/CBS são os três
-primeiros dígitos da classificação tributária; ia `000` com `200046`). Os dois
-estão consertados e têm seção própria abaixo. **A numeração passou a nunca reusar
-número já enviado**, e o "liberar o número" publicado de manhã virou "encerrar",
-que não libera.
+**E as emissões seguintes revelaram mais três, no mesmo dia** — uma por
+tentativa, e todas com seção própria abaixo:
+
+| Erro | O que era | Consertado |
+|---|---|---|
+| **EL99** | número já enviado não se reusa; a frase do manual sobre reenviar com a mesma identificação não vale em Eusébio | a numeração nunca reusa número enviado; o "liberar o número" publicado de manhã virou "encerrar", que não libera |
+| **E0959** | o CST do IBS/CBS são os três primeiros dígitos da classificação; ia `000` com `200046` | o CST é derivado da classificação, e a montagem recusa um par que não casa |
+| **E0699** | imposto não retido ia com `0,00`; a plataforma recusa zero e o campo é opcional | só vai o que foi retido; e uma **varredura** passou a acusar qualquer campo opcional indo com zero |
+
+**A causa comum das três, e ela é a lição do dia:** a plataforma valida
+combinações e regras de negócio que o **schema oficial aceita**. Conferir contra
+o schema — que é a única conferência que dá para fazer aqui dentro — não é
+suficiente, e cada descoberta custou uma emissão real porque o município não
+habilitou o ambiente de ensaio (E0037).
 
 **O que falta continua sendo a primeira emissão de verdade.** Nenhum teste aqui
 conversa com a prefeitura, e o ensaio em homologação segue indisponível (o
@@ -1323,6 +1330,78 @@ os suspeitos já estão identificados e prontos para ligar: `tpOper` (o candidat
 é `1`, fornecimento com pagamento posterior) e `tpEnteGov` — este último o
 sistema **não pode** deduzir, porque não dá para saber do CNPJ se o órgão é
 federal, estadual ou municipal. Essa é pergunta para o dono.
+
+### E0699, e a varredura que devia ter existido desde a migração — 08/10/2026
+
+> *E0699 — O valor do tributo CP deve ser maior que zero e menor que o valor do
+> serviço informado na DPS.*
+
+**CP é a contribuição previdenciária — o INSS.** A declaração mandava o campo
+dele com **0,00**, numa obra cuja tributação não retém INSS. O campo é
+**opcional** no layout, e a plataforma recusa valor zero: zero declara uma
+retenção DE valor zero, que é diferente de não haver retenção.
+
+**E esta é a parte feia: a regra já estava escrita neste arquivo.** A decisão
+"imposto sem retenção não aparece na nota" está registrada aqui desde
+21/09/2026, descrevendo o comportamento do modelo antigo. O grupo de PIS/COFINS
+da declaração nova a segue — tem até comentário no código dizendo que mandar
+"0,00" é diferente de não mandar. **Os três campos de retenção federal (INSS, IR
+e CSLL) não seguiam**, e só eles.
+
+**Pior: havia um teste afirmando o contrário.** O
+`test_imposto_nao_retido_vai_zerado_e_nao_omitido`, escrito por mim em 07/10,
+dizia que "ausência e zero são lidas igual aqui, mas zero é explícito". A
+primeira metade é falsa, e o teste trancava o defeito no lugar. Ele foi
+invertido, com o motivo escrito dentro.
+
+#### O conserto, e um segundo defeito que ele revelou
+
+1. **Os três campos federais só vão quando foram de fato retidos**, e quando
+   nenhum foi, o grupo `tribFed` inteiro não sai (grupo vazio é válido no schema
+   e não diz nada).
+2. **A outra metade da regra do E0699 virou trava:** retenção maior ou igual ao
+   valor do serviço derruba a montagem, com o motivo e os dois números na
+   mensagem. Isso é erro de dado, e falhar antes de enviar é mais barato.
+3. **O total aproximado de tributos estava errado também, e ainda não tinha dado
+   erro.** O layout dá uma escolha de quatro para `totTrib`, e uma delas existe
+   exatamente para quem não informa valor estimado: **`indTotTrib=0`**.
+   Mandávamos a outra, `vTotTrib`, com os três valores em **0,00** — declarando
+   que o total aproximado dos tributos da nota é zero, o que é falso. Mesmo
+   defeito, mesma família, encontrado antes de custar uma emissão.
+
+#### A varredura — o que eu devia ter feito em vez de consertar campo por campo
+
+O mesmo defeito apareceu **três vezes em formas diferentes**: PIS/COFINS (pego
+na migração), os três federais (E0699) e o total de tributos. A causa comum é
+simples de dizer: **a plataforma trata "zero" e "ausente" como coisas
+diferentes, e o schema não ajuda** — campo opcional com zero é arquivo válido.
+
+Então, em vez de confiar em lembrar da regra campo por campo, passou a existir um
+teste que **varre a declaração inteira contra o XSD**: todo elemento que o layout
+permite omitir e que está indo com valor zero é acusado. A exceção são os
+**indicadores** (`indFinal`, `indDest`, `indTotTrib`, `finNFSe`, `regEspTrib`),
+onde o zero é um **significado** — "não é consumidor final" — e não um valor.
+Roda nas quatro tributações que a BWS usa.
+
+Esse teste é o que teria pego o E0699 em 07/10, e teria pego o total de tributos
+junto. A lição, para a próxima vez que um layout novo entrar: **a pergunta não é
+"este campo está certo?", é "que classe de erro este campo pertence, e como eu
+varro a classe inteira?"**.
+
+#### O que foi conferido, e o que NÃO foi
+
+**Conferido:** imposto não retido é omitido e não vai zerado; nota sem retenção
+federal nenhuma não leva o grupo, e continua passando no schema; retenção maior
+que o serviço derruba a montagem; o total de tributos sai como "não informado" e
+a outra opção continua disponível se um dia quiserem informar; a varredura não
+acusa nada nas quatro tributações; E0699 traduzido (começando por dizer que CP é
+o INSS, que o texto cru não diz). 9 casos novos, e um teste antigo invertido.
+Suíte inteira: 5.277 passando.
+
+**NÃO conferido:** se a plataforma aceita a declaração agora. É a quarta correção
+do dia e nenhuma delas pôde ser ensaiada, porque o ambiente de teste do município
+segue desabilitado (E0037). Os suspeitos seguintes continuam os de antes —
+`tpOper` e `tpEnteGov`, prontos e desligados.
 
 ### "Só a linha da planilha": uma nota certa com a planilha faltando — 07/10/2026
 
