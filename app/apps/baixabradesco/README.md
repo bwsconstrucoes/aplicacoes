@@ -355,32 +355,54 @@ nada.
 
 ## O conferidor SPsBD × Omie
 
-A fila de falhas não alcança um grupo de itens: os que o reprocessamento antigo
-marcou como "concluído" **sem ter gravado** (defeito corrigido em 07/10/2026).
-Para a fila eles acabaram. A pendência real, se existir, só aparece comparando
-as duas fontes — a planilha diz "Pago", o Omie diz "Aberto".
+São **duas** direções, e elas não valem o mesmo. O dono explicou por quê em
+08/10/2026: *"fazemos conciliação bancária diária. No sistema Omie vai estar tudo
+atualizado. O furo pode ser mais na planilha e na movimentação do card."*
 
-`GET /api/baixabradesco/conferir-omie` faz essa comparação. Parâmetros, todos
+| Direção | O que significa | Probabilidade |
+|---|---|---|
+| **Omie pago, planilha não** | o dinheiro saiu, o Omie sabe, e a SP continua aparecendo como "a pagar" para quem usa a planilha | **o furo de verdade** |
+| **Planilha paga, Omie aberto** | baixa pela metade: o dinheiro saiu e o título não baixou | menos provável, pela conciliação diária |
+
+A primeira direção **não aparece em lugar nenhum** sem este conferidor: a fila de
+falhas tinha ZERO pendências de planilha, porque a gravação morria antes de
+chegar nela — o sistema não tinha como saber que deixou de gravar. Ela também era
+invisível para a primeira versão deste módulo, que partia das linhas marcadas
+"Pago"; o furo mora justamente nas linhas marcadas "Pagar".
+
+`GET /api/baixabradesco/conferir-omie` faz a comparação. Parâmetros, todos
 opcionais, aceitos pela barra do navegador: `dias` (janela, 60 por padrão),
-`limite` (consultas ao Omie por chamada, 50 por padrão) e `apenas_contar=1`.
+`limite` (consultas ao Omie por chamada e **por direção**, 50 por padrão),
+`sentido` (`ambos`, `omie_pago` ou `planilha_paga`) e `apenas_contar=1`.
 
 **Ele não grava nada.** Nem na planilha, nem no Omie. É relatório. Corrigir é
 decisão de quem lê — um conferidor que também corrigisse erraria em silêncio na
 primeira divergência de valor, e aí seria pior que não ter conferidor.
 
-O relatório separa três coisas que **não** são a mesma:
+O relatório separa quatro coisas que **não** são a mesma:
 
 | No relatório | O que é | O que fazer |
 |---|---|---|
+| `planilha_atrasada` | Omie pago, planilha não | **o furo apontado pelo dono** — a SP aparece como a pagar sem ser; traz o link do cartão do Pipefy junto |
 | `divergentes` | planilha paga, Omie aberto | **é a baixa pela metade** — dinheiro saiu, título não baixou |
 | `titulos_nao_encontrados` | o código de integração não existe no Omie | cadastro errado na planilha, outro problema |
 | `erros_de_consulta` | a chamada falhou (rede, cota) | tentar de novo |
 
-Misturar os três faria o relatório mentir, e o primeiro é o único que custa
+Misturar os quatro faria o relatório mentir, e só os dois primeiros têm a ver com
 dinheiro.
 
-**Ele lê só sete colunas da SPsBD** (A, D, G, O, P, X, AG). Ler `A:AK` inteiro
-custa 150–250 MB e foi assim que o serviço caiu por memória em julho de 2026.
+⚠️ **As duas janelas usam datas diferentes, e têm de usar.** A direção
+"planilha paga" tem data de pagamento na planilha. A direção "Omie pago" não tem
+— a planilha nem sabe que foi paga —, então a janela é pelo **vencimento**. Sem
+janela seriam ~52 mil consultas ao Omie. Vencimento muito à frente também fica de
+fora: título que vence no ano que vem não é planilha atrasada.
+
+**O conferidor não consulta o Pipefy.** Seria outra volta de API por item; ele
+entrega o link do cartão para quem for olhar.
+
+**Ele lê só nove colunas da SPsBD** (A, C, D, G, O, P, R, X, AG). Ler `A:AK`
+inteiro custa 150–250 MB e foi assim que o serviço caiu por memória em julho de
+2026.
 
 `apenas_contar=1` mede o tamanho do problema **sem** gastar uma consulta ao Omie
 por linha — é por onde começar quando a janela é grande.
