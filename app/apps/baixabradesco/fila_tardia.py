@@ -17,6 +17,8 @@ import os
 import time
 import uuid
 
+from .utils import as_string
+
 FILA_DIR = '/tmp/baixabradesco_fila_tardia'
 MAX_TENTATIVAS = 10
 
@@ -92,12 +94,23 @@ def _zerar_atraso_uma_vez(payload: dict | None = None) -> dict:
     pedido.update({'antes_de': corte, 'limite': ZERAR_POR_DISPARO})
     try:
         r = zerar_fila_antiga(pedido)
-        return {
+        saida = {
             'antes_de': r.get('antes_de'),
             'dispensadas': r.get('dispensadas'),
             'por_etapa': r.get('por_etapa'),
             'erro': r.get('erro'),
         }
+        # Um mutirão precisa saber dizer que acabou, senão alguém fica olhando
+        # número sem saber o que esperar — e a varredura segue custando uma
+        # leitura da faixa de controle a cada cinco minutos, de graça.
+        if r.get('ok') and not r.get('encontradas'):
+            saida['concluido'] = True
+            saida['em_portugues'] = (
+                'Mutirão concluído: não há mais pendência anterior a '
+                + as_string(r.get('antes_de'))
+                + '. Pode esvaziar BAIXABRADESCO_ZERAR_ANTES_DE no Render para'
+                  ' a varredura parar de rodar à toa.')
+        return saida
     except Exception as e:
         return {'erro': str(e)[:200]}
 

@@ -399,6 +399,11 @@ mão — a pendência é de registro, não de dinheiro.
 senão a drenagem gastaria a passada inteira nas linhas que vão ser dispensadas
 dois segundos depois.
 
+**O mutirão avisa quando acabou.** Na resposta do cron, `atraso_zerado.concluido`
+vira verdadeiro e a frase em português diz para esvaziar
+`BAIXABRADESCO_ZERAR_ANTES_DE`. Até alguém fazer isso, a varredura continua
+custando uma leitura da faixa de controle a cada cinco minutos, à toa.
+
 ⚠️ **A data é fixa de propósito, não "o mês corrente".** O dono autorizou zerar
 o que estava para trás *naquele dia*. Uma regra que andasse com o calendário
 dispensaria pendência nova todo dia primeiro — a forma mais silenciosa possível

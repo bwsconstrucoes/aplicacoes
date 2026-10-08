@@ -237,3 +237,36 @@ def test_mutirao_que_explode_nao_impede_a_drenagem(sem_payload_adiado, monkeypat
 
     assert 'planilha fora' in r['atraso_zerado']['erro']
     assert [c['etapas'][0] for c in chamadas] == ['omie', 'sheets', 'pipefy', 'zapi']
+
+
+def test_o_mutirao_avisa_quando_acabou_e_diz_o_que_fazer(sem_payload_adiado,
+                                                         monkeypatch):
+    """Um mutirão precisa saber dizer que acabou.
+
+    Senão alguém fica olhando número sem saber o que esperar — e a varredura
+    segue custando uma leitura da faixa de controle a cada cinco minutos, de
+    graça.
+    """
+    _dublar_fila(monkeypatch)
+    _dublar_zerar(monkeypatch, {'ok': True, 'antes_de': '01/10/2026',
+                                'encontradas': 0, 'dispensadas': 0,
+                                'por_etapa': {}})
+
+    r = mod.processar_fila_tardia({})
+
+    assert r['atraso_zerado']['concluido'] is True
+    assert 'BAIXABRADESCO_ZERAR_ANTES_DE' in r['atraso_zerado']['em_portugues']
+    assert '01/10/2026' in r['atraso_zerado']['em_portugues']
+
+
+def test_enquanto_ha_atraso_ele_nao_se_declara_concluido(sem_payload_adiado,
+                                                         monkeypatch):
+    _dublar_fila(monkeypatch)
+    _dublar_zerar(monkeypatch, {'ok': True, 'antes_de': '01/10/2026',
+                                'encontradas': 500, 'dispensadas': 500,
+                                'por_etapa': {'zapi': 500}})
+
+    r = mod.processar_fila_tardia({})
+
+    assert 'concluido' not in r['atraso_zerado']
+    assert r['atraso_zerado']['dispensadas'] == 500

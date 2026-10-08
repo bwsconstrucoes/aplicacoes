@@ -1445,3 +1445,30 @@ subindo com os 18 blueprints.
 **Não verificado:** o mutirão nunca rodou contra a planilha de verdade. O sinal
 de que funcionou é `pendentes_vencidos` caindo em blocos de 500 e
 `registro_mais_antigo` saltando para outubro.
+
+---
+
+### 08/10/2026 — publicado o mutirão, e ele passou a saber dizer que acabou
+
+**Publicado na `main` em `7c26b0b`**, com o "pode ligar o serviço automático e
+pode publicar ao concluir" do dono — que era exatamente o que havia acabado de
+ser ligado.
+
+Logo depois, um detalhe que ia sobrar para ele: o mutirão **não sabia dizer que
+havia terminado**. Ele ficaria olhando a contagem sem saber o que esperar, e a
+varredura seguiria custando uma leitura da faixa de controle a cada cinco
+minutos, de graça, para sempre. Agora, quando não há mais nada anterior ao
+corte, a resposta do cron traz `atraso_zerado.concluido` e a frase diz para
+esvaziar `BAIXABRADESCO_ZERAR_ANTES_DE`.
+
+Ficou anotado o encadeamento, porque é o tipo de coisa que a próxima sessão
+precisa saber para não achar que está tudo certo: **enquanto ninguém esvaziar
+aquela variável, a leitura extra continua.** Não quebra nada e está dentro da
+cota — mas é a mesma ineficiência das quatro leituras por disparo, agora cinco.
+O conserto de verdade é ler a faixa uma vez por disparo e distribuir entre as
+etapas, e segue valendo o motivo de não fazer agora: há 2.213 pendências reais
+passando por esse laço neste momento.
+
+**Verificado:** 16 testes de cron (2 novos), suíte inteira rodada com a única
+falha sendo `erpbrasil` ausente neste ambiente, aplicação subindo com os 18
+blueprints.
