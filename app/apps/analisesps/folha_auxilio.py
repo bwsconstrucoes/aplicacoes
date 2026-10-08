@@ -261,8 +261,8 @@ def calcular_pessoa(tipo: str, ficha: dict, inicio, fim,
     # mês SEGUINTE e é o benefício daquele mês. O dono: *"Se ele já saiu, ele não
     # recebe mais."* Então:
     #   - saiu ATÉ o fim da competência  → não recebe (situação "saiu");
-    #   - sai DENTRO do mês do pagamento → proporcional até a data de saída
-    #     (*"proporcionalize o pagamento considerando data de saída"*);
+    #   - sai DENTRO do mês do pagamento → proporcional até o ÚLTIMO DIA
+    #     TRABALHADO (08/10/2026; antes, a data de saída);
     #   - sai depois                     → recebe inteiro, com o aviso.
     # Na primeira versão (leva 161) quem saiu no meio da competência recebia
     # proporcional — e ele viu alguém desligado em 19/09 aparecendo para pagar.
@@ -270,28 +270,34 @@ def calcular_pessoa(tipo: str, ficha: dict, inicio, fim,
     pag_ini = fim + dt.timedelta(days=1)
     pag_fim = pag_ini.replace(day=calendar.monthrange(pag_ini.year, pag_ini.month)[1])
     ultimo_dia = ficha.get("ultimo_dia")
+    # ⚠️ O LIMITE É O ÚLTIMO DIA TRABALHADO (coluna BC), NÃO A DATA DE SAÍDA
+    # (BD) — o dono, 08/10/2026: *"o certo é usar a coluna BC, Último dia
+    # Trabalhado, que é o último dia efetivo em obra; os demais são os dias de
+    # aviso prévio."* A data de saída só vale quando o último dia não veio.
+    fim_efetivo = ultimo_dia or data_saida
     if situacao in (colaboradores.SITUACAO_SAIU,
                     colaboradores.SITUACAO_AFASTADO):
         saida["pagar"] = False
         saida["motivos"].append(ficha.get("motivo")
                                 or "colaborador inativo no cadastro.")
-    elif (situacao == colaboradores.SITUACAO_SAINDO and not data_saida
+    elif (situacao == colaboradores.SITUACAO_SAINDO
             and ultimo_dia and ultimo_dia <= fim):
-        # ⚠️ O ÚLTIMO DIA TRABALHADO DENTRO DA COMPETÊNCIA, sem data de saída
-        # lançada (05/10/2026): a pessoa já saiu — e *"se ele já saiu, ele não
-        # recebe mais"*. Até aqui ela ficava "em desligamento", recebendo, e
-        # aparecia entre os "sem obra" que ele queria tratar.
+        # ⚠️ O ÚLTIMO DIA TRABALHADO DENTRO DA COMPETÊNCIA: a pessoa já saiu da
+        # obra — e *"se ele já saiu, ele não recebe mais"* (05/10/2026). Vale
+        # COM ou SEM data de saída lançada (08/10/2026): os dias entre o último
+        # dia trabalhado e a saída são aviso prévio, fora da obra.
         saida["pagar"] = False
         saida["desligado"] = True
         saida["motivos"].append(
             f"último dia trabalhado em {ultimo_dia.strftime('%d/%m/%Y')}, dentro da "
-            "competência (sem data de saída lançada) — não recebe.")
-    elif (situacao == colaboradores.SITUACAO_SAINDO and data_saida
-            and pag_ini <= data_saida <= pag_fim):
-        saida["saida_no_mes"] = data_saida
+            "competência — não recebe.")
+    elif (situacao == colaboradores.SITUACAO_SAINDO and fim_efetivo
+            and pag_ini <= fim_efetivo <= pag_fim):
+        saida["saida_no_mes"] = fim_efetivo
         saida["motivos"].append(
-            f"sai em {data_saida.strftime('%d/%m/%Y')}, no mês do pagamento — "
-            "pago proporcional até a data de saída.")
+            (f"último dia trabalhado em {fim_efetivo.strftime('%d/%m/%Y')}"
+             if ultimo_dia else f"sai em {fim_efetivo.strftime('%d/%m/%Y')}")
+            + ", no mês do pagamento — pago proporcional até essa data.")
     elif situacao == colaboradores.SITUACAO_SAINDO:
         # Não trava: pode haver valor devido até o último dia. Mas fica dito.
         saida["motivos"].append(ficha.get("motivo") or "em processo de desligamento.")

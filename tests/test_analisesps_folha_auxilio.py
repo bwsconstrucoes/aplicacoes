@@ -727,6 +727,25 @@ def test_ULTIMO_DIA_trabalhado_na_competencia_sem_saida_NAO_recebe():
     assert r["pagar"] is True
 
 
+def test_o_limite_e_o_ULTIMO_DIA_TRABALHADO_e_nao_a_data_de_saida(banco_auxilio):
+    """08/10/2026: *"o certo é usar a coluna BC, Último dia Trabalhado, que é o
+    último dia efetivo em obra; os demais são os dias de aviso prévio."*"""
+    from app.apps.analisesps import colaboradores as col, folha_auxilio as fx
+    # Último dia na competência e saída no mês do pagamento (aviso prévio no
+    # meio): NÃO recebe — antes recebia proporcional até a saída.
+    r = fx.calcular_pessoa(fx.TRANSPORTE, ficha(
+        situacao=col.SITUACAO_SAINDO, ultimo_dia=dt.date(2026, 9, 25),
+        data_saida=dt.date(2026, 10, 25)), INICIO, FIM)
+    assert r["pagar"] is False and r["desligado"]
+    # Último dia no mês do pagamento, saída depois: proporcional até o ÚLTIMO
+    # DIA (15/10), não até a saída. Outubro: 11 de 22 dias úteis até 15/10.
+    r = fx.calcular_pessoa(fx.TRANSPORTE, ficha(
+        situacao=col.SITUACAO_SAINDO, ultimo_dia=dt.date(2026, 10, 15),
+        data_saida=dt.date(2026, 11, 14)), INICIO, FIM)
+    assert r["valor"] == D("110.00") and r["proporcao"] == "11/22 dias úteis até 15/10"
+    assert any("último dia trabalhado em 15/10/2026" in m for m in r["motivos"])
+
+
 def test_o_filtro_SEM_OBRA_nao_traz_os_DESLIGADOS():
     """05/10/2026: *"quero tratar somente os que devem receber, mas estão sem obra.
     O filtro que tem exibe os que estão desligados."* O escondido continua

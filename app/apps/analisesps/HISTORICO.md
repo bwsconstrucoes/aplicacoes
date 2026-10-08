@@ -12228,6 +12228,17 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 204 — auxílio: o limite é o ÚLTIMO DIA TRABALHADO (BC), não a saída (BD) (08/10/2026)
+
+- *"Na hora de calcular alimentação e transporte estamos usando a Data de Saída
+  (BD) para limitar o cálculo; o certo é usar a coluna BC, Último dia
+  Trabalhado, que é o último dia efetivo em obra — os demais são os dias de
+  aviso prévio."* Em `folha_auxilio.calcular_pessoa`: último dia dentro da
+  competência → não recebe, com ou sem data de saída (antes, só sem); último
+  dia no mês do pagamento → proporcional até ele. A data de saída só vale
+  quando o último dia não veio. Diárias e folha da contabilidade NÃO mudaram
+  (o pedido foi para alimentação e transporte). Sem migração.
+
 #### Leva 203 — conciliação: a etiqueta da situação da SP; robô mais cuidadoso (08/10/2026)
 
 - *"Quero que apareça uma tag ao lado da SP no extrato de conciliação,
