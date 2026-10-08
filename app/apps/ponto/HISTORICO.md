@@ -41,15 +41,14 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
-1i. **NO RAMO, NÃO PUBLICADO (07 e 08/10/2026)**: as correções do cadastro de
-   aparelhos (seção de 07/10) e a TELA INICIAL com consulta pela cerca e o
-   administrativo de obra (seção de 08/10), com a migração **008**. Em 07/10 o
-   dono disse "pode", mas o envio para a `main` foi barrado pela permissão da
-   sessão (faltou a resposta sobre carga do painel/sincronização da Análise de
-   SPs). Publicar = os dois juntos + apertar "Aplicar atualizações do ponto".
-   A pergunta de 07/10 ("o modo pessoa já libera atestado, foi assim que a
-   gente combinou?") foi respondida pelo próprio dono em 08/10: pedido pelo
-   próprio celular passou a ser uma marcação por pessoa.
+1i. **PUBLICADO em 08/10/2026** (com o "pode" do dono, `main` em `29bd1f0`): as
+   correções do cadastro de aparelhos (seção de 07/10) e a TELA INICIAL com a
+   consulta pela cerca, o administrativo de obra, os ícones ✏️/🗓️ e a regra
+   do computador (seção de 08/10), com a migração **008**. Confirmar com o dono:
+   apertou "Aplicar atualizações do ponto"? Sem ela, ninguém é administrativo e
+   o pedido pelo celular segue a regra de 06/10. Depois: marcar os
+   administrativos de obra (Pessoas › "Acesso no aplicativo") e testar a tela
+   inicial num celular de verdade (câmera traseira e zoom ainda não conferidos).
 1h. **PUBLICADO em 06/10/2026** (com o "pode" do dono): os pedidos de 06/10
    (itens 1 a 10 abaixo), com as migrações **006 e 007**. Confirmar com o dono:
    apertou "Aplicar atualizações do ponto"? escolheu a **escala padrão da
