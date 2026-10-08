@@ -111,6 +111,13 @@ def carregar_de_para(conn):
 # ----------------------------------------------------------------------------- 
 # Carrega catalogos e auxiliares do espelho
 # ----------------------------------------------------------------------------- 
+def _sem_entidade(texto) -> str:
+    """O OMIE manda "&" como "&amp;" em alguns nomes (07/10/2026). Desfaz."""
+    import html
+    texto = (texto or "").strip()
+    return html.unescape(texto) if "&" in texto else texto
+
+
 def carregar_catalogos(conn):
     """Catalogos pequenos que cabem na memoria sem susto: categorias (172),
     clientes (7 mil), obras (154) e contas correntes (60).
@@ -138,12 +145,13 @@ def carregar_catalogos(conn):
             else:
                 analise_omie = "Fluxo de Caixa"
             grupo_final = (desc_dre or "").strip() if (analise_omie == "DRE" and desc_dre)                 else (grupo or desc or "")
-        cat[str(cod)] = (desc or "", grupo_final, analise_omie)
+        cat[str(cod)] = (_sem_entidade(desc), _sem_entidade(grupo_final), analise_omie)
 
     cli = {}
     cur = conn.execute("SELECT codigo, razao_social, cnpj_cpf FROM clientes")
     for cod, razao, cnpj in cur.fetchall():
-        cli[cod] = (razao or "", cnpj or "")
+        # "&amp;" -> "&" também no que já está guardado (ver espelho._s)
+        cli[cod] = (_sem_entidade(razao), cnpj or "")
     cur.close()
 
     cur = conn.execute("SELECT ccoddep, projeto FROM depto_projeto")
@@ -155,7 +163,7 @@ def carregar_catalogos(conn):
     proj.update(projetos.projetos_da_tela(conn))
 
     cur = conn.execute("SELECT codigo, descricao FROM contas_correntes")
-    ccorr = {cod: (desc or "").strip() for cod, desc in cur.fetchall() if (desc or "").strip()}
+    ccorr = {cod: _sem_entidade(desc) for cod, desc in cur.fetchall() if (desc or "").strip()}
     cur.close()
 
     return cat, cli, proj, ccorr

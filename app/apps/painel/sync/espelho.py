@@ -20,6 +20,7 @@ A regra de negocio nao foi tocada.
 As datas continuam guardadas como texto dd/mm/aaaa, como o OMIE devolve; quem
 converte e o modulo `fato`.
 """
+import html
 import os
 import json
 import time
@@ -236,7 +237,13 @@ def _f(v):
 
 
 def _s(v):
-    return "" if v is None else str(v).strip()
+    """Texto do OMIE, limpo. O OMIE manda alguns nomes com o "&" escrito como
+    "&amp;" (07/10/2026, o dono: "A F &amp; CIA MINERACAO LTDA") — volta a
+    ser "&" na entrada."""
+    if v is None:
+        return ""
+    texto = str(v).strip()
+    return html.unescape(texto) if "&" in texto else texto
 
 
 def _dalt_para_data(dalt):
