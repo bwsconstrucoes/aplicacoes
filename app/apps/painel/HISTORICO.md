@@ -2415,6 +2415,20 @@ número abre os mesmos lançamentos.
 - "Não achou um aporte ou dividendo?" saiu do DRE e foi para Configurações
   (*"não é para estar na apresentação"*).
 
+## Pagamento dividido: sempre agrupado, sem o selo de "partes" — 08/10/2026
+
+O dono, sobre o selo "2 partes · no extrato R$ X": *"fica esquisito (…)
+ninguém que opere esse painel vai entender"*; e *"no extrato tá aparecendo
+mesmo em coisa não paga — se não tá pago, não pode tá no extrato"*.
+
+- Analítico e Calendário abrem SEMPRE agrupados: o pagamento dividido entre
+  obras é uma linha com "▸ N obras", que abre as partes. A caixa "Agrupar
+  como no extrato" saiu das duas telas.
+- O selo "N partes · no extrato R$ X" saiu. O único aviso que ficou é quando
+  o filtro esconde alguma das obras do pagamento: "+1 obra fora do filtro"
+  (passando o mouse, o valor inteiro) — sem ele, o valor da linha pareceria o
+  pagamento inteiro.
+
 ## Reler os pagamentos de um ano, de alguns ou de todos — 07/10/2026
 
 O dono, vendo a releitura retomada em "2025 (11 de 12 anos, 10 já feitos
