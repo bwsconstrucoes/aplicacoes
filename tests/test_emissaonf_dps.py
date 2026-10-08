@@ -504,3 +504,87 @@ def test_a_inscricao_imobiliaria_quando_houver_vem_antes_da_identificacao(schema
     obra = doc.find("{%s}infDPS/{%s}serv/{%s}obra"
                     % (nac.NS_NFSE, nac.NS_NFSE, nac.NS_NFSE))
     assert [etree.QName(e).localname for e in obra] == ["inscImobFisc", "cObra"]
+
+
+# --------------------------------------------------------------------------- #
+# O CST do IBS/CBS — o erro E0959
+#
+# "cClassTrib não pertence ao grupo CST indicado." Mandávamos CST 000 com a
+# classificação 200046, e eles não casam: **o CST são os três primeiros dígitos
+# da classificação**. Está nos dados do Anexo VIII oficial — 000001 ("Situações
+# tributadas integralmente") é do grupo 000; 200046 ("Operações com bens
+# imóveis"), que é o nosso, é do grupo 200.
+#
+# Como o E0370, este também passa pelo schema: os dois campos são válidos
+# sozinhos, e quem confere a combinação é a plataforma. Por isso a regra virou
+# código — o CST é derivado, não digitado — e o construtor recusa um par que não
+# casa, para o erro aparecer aqui e não num dia depois.
+# --------------------------------------------------------------------------- #
+def test_o_CST_sai_do_cClassTrib_e_nao_de_um_valor_digitado():
+    g = nac.GrupoIBSCBS()
+    assert g.c_class_trib == "200046"      # Anexo VIII, item 07.02
+    assert g.cst == "200"                  # os três primeiros dígitos dela
+
+
+def test_a_declaracao_de_obra_leva_CST_200(schema):
+    doc = etree.fromstring(etree.tostring(_xml(_montar())))
+    assert schema.validate(doc), schema.error_log
+    assert _txt(doc, "infDPS/IBSCBS/valores/trib/gIBSCBS/CST") == "200"
+    assert _txt(doc, "infDPS/IBSCBS/valores/trib/gIBSCBS/cClassTrib") == "200046"
+
+
+@pytest.mark.parametrize("classificacao,cst", [
+    ("000001", "000"),   # situações tributadas integralmente
+    ("200046", "200"),   # operações com bens imóveis  <- o nosso
+    ("200045", "200"),   # reabilitação urbana
+    ("400001", "400"),   # transporte público coletivo
+])
+def test_o_CST_derivado_segue_a_tabela_oficial(classificacao, cst):
+    assert nac.GrupoIBSCBS(c_class_trib=classificacao).cst == cst
+
+
+def test_CST_digitado_que_nao_casa_derruba_a_declaracao():
+    """O par 000 + 200046 era exatamente o que ia, e a plataforma recusou um dia
+    depois. Agora falha na montagem, com o motivo e o valor certo na mensagem."""
+    d = _montar()
+    d.ibscbs = nac.GrupoIBSCBS(c_class_trib="200046", cst="000")
+    with pytest.raises(ValueError) as e:
+        _xml(d)
+    assert "200046" in str(e.value)
+    assert "o CST é 200" in str(e.value)
+
+
+def test_CST_digitado_que_casa_e_aceito(schema):
+    d = _montar()
+    d.ibscbs = nac.GrupoIBSCBS(c_class_trib="200046", cst="200")
+    doc = etree.fromstring(etree.tostring(_xml(d)))
+    assert schema.validate(doc), schema.error_log
+
+
+def test_o_codigo_indicador_da_operacao_tem_os_seis_digitos_do_schema():
+    """No Anexo VIII ele aparece como 20201, porque o Excel come o zero da
+    frente. O schema exige SEIS dígitos — 020201."""
+    assert nac.GrupoIBSCBS().c_ind_op == "020201"
+    assert len(nac.GrupoIBSCBS().c_ind_op) == 6
+
+
+# --- os dois campos opcionais que são os próximos suspeitos ---------------- #
+def test_por_padrao_tpOper_e_tpEnteGov_nao_sao_enviados(schema):
+    """Mandar valor fiscal por palpite é pior que omitir campo opcional: o tipo
+    de ente governamental não dá para deduzir do CNPJ do tomador."""
+    doc = etree.fromstring(etree.tostring(_xml(_montar())))
+    assert schema.validate(doc), schema.error_log
+    assert _txt(doc, "infDPS/IBSCBS/tpOper") is None
+    assert _txt(doc, "infDPS/IBSCBS/tpEnteGov") is None
+
+
+def test_quando_preenchidos_tpOper_e_tpEnteGov_saem_na_ordem_do_schema(schema):
+    """Deixados prontos: se a próxima recusa pedir um deles, é uma linha. A ordem
+    dentro do grupo é exigida pelo XSD."""
+    d = _montar()
+    d.ibscbs = nac.GrupoIBSCBS(tp_oper="1", tp_ente_gov="4")
+    doc = etree.fromstring(etree.tostring(_xml(d)))
+    assert schema.validate(doc), schema.error_log
+    grupo = doc.find("{%s}infDPS/{%s}IBSCBS" % (nac.NS_NFSE, nac.NS_NFSE))
+    assert [etree.QName(e).localname for e in grupo] == [
+        "finNFSe", "indFinal", "cIndOp", "tpOper", "tpEnteGov", "indDest", "valores"]

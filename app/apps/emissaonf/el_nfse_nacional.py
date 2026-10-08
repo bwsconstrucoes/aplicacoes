@@ -117,12 +117,45 @@ def gerar_id_dps(c_loc_emi: int, cnpj_cpf: str, serie: int, n_dps: int) -> str:
 # --------------------------------------------------------------------------- #
 @dataclass
 class GrupoIBSCBS:
+    """Grupo da reforma tributária (IBS/CBS).
+
+    ⚠️ **O CST NÃO é um campo livre: ele são os TRÊS PRIMEIROS DÍGITOS do
+    `cClassTrib`.** Isso está nos dados do Anexo VIII oficial e é verificado pela
+    plataforma nacional — `000001` ("Situações tributadas integralmente") é do
+    grupo CST 000; `200046` ("Operações com bens imóveis"), que é o nosso, é do
+    grupo CST **200**. Mandar os dois sem casar é o erro **E0959**
+    ("cClassTrib não pertence ao grupo CST indicado"), que custou uma emissão em
+    08/10/2026.
+
+    Por isso o `cst` nasce VAZIO e é derivado do `c_class_trib`. Preencher à mão
+    só é aceito se bater — e o construtor da declaração recusa se não bater, para
+    o erro aparecer aqui e não num dia depois, numa tela de pendências.
+    """
     c_ind_op: str = "020201"        # 7.02 - obras de construção civil
-    cst: str = "000"
-    c_class_trib: str = "200046"    # Operações com bens imóveis
+    c_class_trib: str = "200046"    # Operações com bens imóveis (Anexo VIII, item 07.02)
+    cst: str = ""                   # vazio = derivado do c_class_trib
     fin_nfse: int = 0
     ind_final: int = 0              # 0 = tomador não é consumidor final (B2B/órgão)
     ind_dest: int = 0
+
+    # Opcionais no schema, e NÃO enviados por padrão — são os dois suspeitos da
+    # próxima recusa, se vier uma com o CST já casado:
+    #   tpOper     1 Fornecimento com pagamento posterior | 2 Recebimento do
+    #              pagamento com fornecimento já realizado | 3 Fornecimento com
+    #              pagamento já realizado | 4 Recebimento com fornecimento
+    #              posterior | 5 Fornecimento e recebimento concomitantes
+    #   tpEnteGov  1 União | 2 Estado | 3 Distrito Federal | 4 Município
+    # Ficam vazios porque mandar valor fiscal por palpite é pior que omitir um
+    # campo opcional: o tipo de ente não dá para deduzir do CNPJ do tomador.
+    tp_oper: str = ""
+    tp_ente_gov: str = ""
+
+    def __post_init__(self):
+        if not self.cst:
+            self.cst = str(self.c_class_trib or "")[:3]
+
+    def cst_casa_com_a_classificacao(self) -> bool:
+        return bool(self.c_class_trib) and self.cst == str(self.c_class_trib)[:3]
 
 
 # --------------------------------------------------------------------------- #
@@ -352,10 +385,25 @@ def montar_dps_xml(d: DadosDPS) -> etree._Element:
     # grupo IBS/CBS (reforma) - filho de infDPS, depois de <valores>
     if d.ibscbs:
         g = d.ibscbs
+        if not g.cst_casa_com_a_classificacao():
+            # Falhar AQUI, e não um dia depois numa tela de pendências da
+            # prefeitura: é o erro E0959, e ele não é pegável pelo schema
+            # (os dois campos são válidos sozinhos).
+            raise ValueError(
+                f"O CST ({g.cst}) não casa com a classificação tributária "
+                f"({g.c_class_trib}): o CST são os três primeiros dígitos dela. "
+                f"Para {g.c_class_trib} o CST é {str(g.c_class_trib)[:3]}."
+            )
         ib = _sub(inf, "IBSCBS")
         _sub(ib, "finNFSe", g.fin_nfse)
         _sub(ib, "indFinal", g.ind_final)
         _sub(ib, "cIndOp", g.c_ind_op)
+        # A ordem abaixo é a do XSD: tpOper vem depois de cIndOp, tpEnteGov
+        # depois dele, e indDest por último.
+        if g.tp_oper:
+            _sub(ib, "tpOper", g.tp_oper)
+        if g.tp_ente_gov:
+            _sub(ib, "tpEnteGov", g.tp_ente_gov)
         _sub(ib, "indDest", g.ind_dest)
         ibval = _sub(ib, "valores")
         ibtrib = _sub(ibval, "trib")

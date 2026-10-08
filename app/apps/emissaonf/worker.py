@@ -59,19 +59,27 @@ def abrir_aba(planilha, candidatos):
 def proximo_numero(gc, card_id=None) -> tuple[int, int]:
     """Próximo número da nota, e o último de fato emitido.
 
-    O próximo sai do maior número da planilha MAIS os números presos a
-    declarações em aberto — e esta segunda parte não é refinamento, é conserto
-    de um defeito real, visto em 07/10/2026:
+    O próximo sai do maior número da planilha MAIS **todos** os números que já
+    tiveram declaração enviada, qualquer que seja o desfecho dela. As duas
+    parcelas vieram de defeitos reais, e a segunda mudou de forma em 08/10/2026:
 
-    uma declaração que a prefeitura aceitou mas que ainda não virou nota **não
-    entra na planilha**, porque a planilha só recebe nota pronta. Então o número
-    dela ficava "livre" para a próxima emissão — enquanto a prefeitura o
-    mantinha RESERVADO para a declaração travada. A nota seguinte sairia pedindo
-    o mesmo número, e a prefeitura leria isso como reenvio da declaração
-    anterior, não como nota nova: dois serviços colapsados num documento.
+    **07/10/2026** — uma declaração que a prefeitura aceitou e que ainda não
+    virou nota **não entra na planilha**, porque a planilha só recebe nota
+    pronta. O número dela ficava "livre" para a próxima emissão enquanto a
+    prefeitura o mantinha reservado: a nota seguinte sairia pedindo o mesmo
+    número, e a prefeitura leria isso como reenvio da anterior — dois serviços
+    colapsados num documento.
 
-    Para o MESMO card o número é reaproveitado de propósito — aí é o reenvio que
-    o manual da prefeitura prevê, com a mesma identificação.
+    **08/10/2026** — a versão de 07/10 ainda reaproveitava o número para o MESMO
+    card, porque o manual diz que declaração recusada pode ser reenviada com a
+    mesma identificação. Em Eusébio não é assim: a declaração da 3281 foi aceita,
+    transmitida, recusada no nacional, teve o número liberado e reusado — e a
+    prefeitura respondeu **EL99, "chave informada para a DPS não existe no
+    repositório municipal"**. Número já enviado é número gasto, e a exceção do
+    mesmo card saiu.
+
+    Pular um número deixa buraco na sequência, e isso é normal — nota cancelada
+    faz o mesmo. Reusar um número gasta uma emissão e horas até descobrir.
     """
     planilha = gc.open_by_key(ID_PROC)
     ws = abrir_aba(planilha, ABA_NOTAS)
@@ -82,19 +90,15 @@ def proximo_numero(gc, card_id=None) -> tuple[int, int]:
     presos = []
     try:
         import declaracoes
-        for d in declaracoes.listar_abertas(planilha):
-            n = re.sub(r"\D", "", str(d.get("numero") or ""))
-            mesmo_card = (card_id and str(d.get("card_id") or "").strip() == str(card_id).strip())
-            if n and not mesmo_card:
-                presos.append(int(n))
+        presos = declaracoes.numeros_registrados(planilha)
     except Exception as e:
-        print(f"  [aviso] não consegui ler as declarações em aberto "
+        print(f"  [aviso] não consegui ler as declarações já enviadas "
               f"({type(e).__name__}: {e}) — o número pode colidir com uma delas.")
 
     prox = max([ultimo] + presos) + 1
     if presos and prox > ultimo + 1:
-        print(f"  >> número {ultimo + 1} está preso a uma declaração em aberto "
-              f"(nº {max(presos)}); esta nota vai sair como {prox}.")
+        print(f"  >> número {ultimo + 1} já foi usado numa declaração enviada "
+              f"(maior enviado: {max(presos)}); esta nota vai sair como {prox}.")
     return prox, ultimo
 
 

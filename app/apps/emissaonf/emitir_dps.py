@@ -158,6 +158,32 @@ EXPLICACAO_DOS_ERROS = {
         "tiver e o erro persistir, o número pode estar errado ou truncado — o "
         "normal são 12 dígitos."
     ),
+    "E0959": (
+        "O **CST** e a **classificação tributária** do IBS/CBS não casavam. Não é "
+        "campo de escolha: **o CST são os três primeiros dígitos da "
+        "classificação**. O nosso serviço (obra, item 07.02) usa a classificação "
+        "`200046` — \"Operações com bens imóveis\" —, então o CST tem de ser "
+        "`200`, e ia `000`.\n\n"
+        "Consertado em 08/10/2026: o CST passou a ser derivado da classificação, "
+        "e a declaração nem é montada se os dois não casarem.\n\n"
+        "O que fazer: se este erro voltar, foi a classificação que mudou — "
+        "conferir no Anexo VIII oficial qual classificação vale para o item de "
+        "serviço, que o CST sai dela sozinho."
+    ),
+    "EL99": (
+        "Este erro é da **prefeitura**, não da plataforma nacional, e quer dizer "
+        "que ela não encontrou a declaração no repositório dela — a identificação "
+        "informada não existe lá.\n\n"
+        "Quando aparece logo depois de enviar, as duas causas conhecidas são: a "
+        "gravação dela ainda não tinha terminado quando perguntamos (e aí "
+        "consultar de novo em alguns minutos resolve), ou o **número da nota já "
+        "havia sido usado numa declaração anterior** — reusar o número reusa a "
+        "identificação, e a prefeitura não aceita.\n\n"
+        "⚠️ **Isto NÃO quer dizer que nada foi criado.** Diferente de uma recusa "
+        "de conteúdo, aqui a prefeitura já tinha aceitado o envio. **Antes de "
+        "emitir de novo, confira no portal da prefeitura** se a nota existe — e, "
+        "se for emitir, use um número NOVO."
+    ),
 }
 
 
