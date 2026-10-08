@@ -24,6 +24,8 @@ substituiu esse cenário.
 | **cron-job.org** | `POST /api/baixabradesco/processar-fila-tardia` | de 5 em 5 minutos, para retomar o que ficou parado |
 | Quem estiver investigando | `POST /api/baixabradesco/diagnostico` | quando um comprovante não casou e ninguém sabe por quê |
 | Quem estiver investigando | `POST /api/baixabradesco/reprocessar-fila` | para tentar de novo o que falhou depois do casamento |
+| Quem estiver investigando | `GET /api/baixabradesco/fila-resumo` | para contar a fila de falhas por situação |
+| Quem estiver investigando | `GET /api/baixabradesco/conferir-omie` | para comparar a SPsBD com o Omie e achar baixa pela metade |
 | Monitor | `GET /api/baixabradesco/health` | sinal de vida |
 
 Ninguém abre tela aqui: **não existe interface**. A aplicação só responde a
@@ -314,6 +316,38 @@ dois meses atrás continua sendo baixa.
 **Repetir uma baixa não baixa duas vezes.** O reprocessamento do Omie consulta o
 título primeiro e, se já estiver `PAGO`, dá a pendência por resolvida sem lançar
 nada.
+
+## O conferidor SPsBD × Omie
+
+A fila de falhas não alcança um grupo de itens: os que o reprocessamento antigo
+marcou como "concluído" **sem ter gravado** (defeito corrigido em 07/10/2026).
+Para a fila eles acabaram. A pendência real, se existir, só aparece comparando
+as duas fontes — a planilha diz "Pago", o Omie diz "Aberto".
+
+`GET /api/baixabradesco/conferir-omie` faz essa comparação. Parâmetros, todos
+opcionais, aceitos pela barra do navegador: `dias` (janela, 60 por padrão),
+`limite` (consultas ao Omie por chamada, 50 por padrão) e `apenas_contar=1`.
+
+**Ele não grava nada.** Nem na planilha, nem no Omie. É relatório. Corrigir é
+decisão de quem lê — um conferidor que também corrigisse erraria em silêncio na
+primeira divergência de valor, e aí seria pior que não ter conferidor.
+
+O relatório separa três coisas que **não** são a mesma:
+
+| No relatório | O que é | O que fazer |
+|---|---|---|
+| `divergentes` | planilha paga, Omie aberto | **é a baixa pela metade** — dinheiro saiu, título não baixou |
+| `titulos_nao_encontrados` | o código de integração não existe no Omie | cadastro errado na planilha, outro problema |
+| `erros_de_consulta` | a chamada falhou (rede, cota) | tentar de novo |
+
+Misturar os três faria o relatório mentir, e o primeiro é o único que custa
+dinheiro.
+
+**Ele lê só sete colunas da SPsBD** (A, D, G, O, P, X, AG). Ler `A:AK` inteiro
+custa 150–250 MB e foi assim que o serviço caiu por memória em julho de 2026.
+
+`apenas_contar=1` mede o tamanho do problema **sem** gastar uma consulta ao Omie
+por linha — é por onde começar quando a janela é grande.
 
 ## O aviso do que NÃO foi baixado
 

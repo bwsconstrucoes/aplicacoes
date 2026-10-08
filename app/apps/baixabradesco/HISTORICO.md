@@ -954,3 +954,63 @@ blueprints e a rota nova no lugar.
 **Não verificado:** nada disso encostou na planilha de verdade. Quantas das
 2.270 linhas são pendência real continua sem resposta até alguém chamar o
 resumo em produção — e é a primeira coisa a fazer depois de publicar.
+
+---
+
+### 08/10/2026 (depois de publicar) — o conferidor SPsBD × Omie
+
+Publicado na `main` em `bacc190`, com o "pode" do dono: o conserto da
+não-atualização silenciosa da SPsBD e a fila contável e drenável. Sem migração
+de banco.
+
+Na mesma resposta eu levantei um buraco que nenhuma das duas entregas fecha, e
+em seguida o fechei em vez de esperar resposta — a regra do `CLAUDE.md` é clara
+e o custo de esperar é horas paradas dele.
+
+**O buraco:** até 07/10 o reprocessamento de planilha marcava o item como
+"concluído com sucesso" **ignorando o resultado da gravação**. Então há itens
+que saíram da fila sem nunca ter sido gravados. Para a fila eles estão
+resolvidos — e nenhuma passada, por mais completa, os traz de volta. A pendência
+real, se existir, só aparece comparando as duas fontes lado a lado: a planilha
+diz "Pago", o Omie diz "Aberto". Isso é dinheiro que saiu da conta sem o título
+baixar.
+
+**O que foi feito:** `GET /api/baixabradesco/conferir-omie`. Lê a SPsBD, pergunta
+ao Omie título por título, e relata. Decisões que importam:
+
+- **Não grava nada**, nem na planilha nem no Omie. Relatório é relatório. Um
+  conferidor que também corrigisse erraria em silêncio na primeira divergência
+  de valor, e aí seria pior que não ter conferidor. Corrigir é decisão de quem
+  lê — e, quando o dono pedir, a correção entra como passo separado e explícito.
+- **Separa três coisas que não são a mesma:** planilha paga com Omie aberto (a
+  baixa pela metade, a única que custa dinheiro); código de integração que não
+  existe no Omie (cadastro errado na planilha); e falha de consulta (rede ou
+  cota). Misturar os três faria o relatório mentir.
+- **Lê sete colunas da SPsBD**, não `A:AK`. A aba tem ~52 mil linhas × 37
+  colunas e a leitura inteira custa 150–250 MB — foi assim que o serviço caiu
+  por memória em julho de 2026.
+- **`apenas_contar=1` mede o tamanho sem gastar consulta ao Omie por linha**, e
+  o `limite` segura quantas consultas vão por chamada (50 por padrão).
+- **Sem credencial do Omie ele recusa** em vez de relatar "nenhuma divergência",
+  que é a resposta mais perigosa possível para um conferidor.
+
+**Decisão de janela:** 60 dias por padrão, ajustável por `dias`. Não é limite
+técnico: a SPsBD tem anos de histórico e conferir tudo seriam dezenas de
+milhares de consultas ao Omie. Sessenta dias cobre com folga o período em que o
+defeito de 07/10 esteve vivo nesta forma.
+
+**O que ficou pendente do dono, e trava trabalho de verdade:**
+
+1. **Chamar a contagem da fila em produção.** Eu não consigo daqui: o endereço
+   do serviço e o `BAIXABRADESCO_SECRET` ficam nas configurações do Render, e
+   senha não entra no chat. Sem isso, "2.270 linhas" continua sendo um número
+   sem significado — pode ser 50 pendências ou 2.000.
+2. **Decidir o que fazer com as divergências** que o conferidor achar. A
+   correção automática não foi escrita de propósito.
+
+**Verificado:** 14 testes novos nesta entrega (30 somando com a da fila), a área
+inteira passando, e a aplicação subindo com os 18 blueprints e as duas rotas
+novas registradas.
+**Não verificado:** o conferidor nunca encostou na planilha de verdade nem no
+Omie de verdade. Os dublês cobrem a regra; a primeira chamada em produção é a
+prova — e é ela que vai dizer se o defeito de 07/10 deixou prejuízo escondido.
