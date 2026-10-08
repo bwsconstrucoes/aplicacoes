@@ -4771,7 +4771,9 @@ def test_o_rateio_da_folha_e_SO_DO_MESTRE():
     # agora é a lista por NOME DE ROTA — que não depende de ninguém lembrar de
     # classificar uma tela.
     assert "folha_rateio" not in guarda.SO_DO_MESTRE_POR_TELA
-    for rota in ("analisesps.tela_folha_rateio", "analisesps.folha_rateio_gravar",
+    # VER o rateio é da folha desde 07/10/2026; GRAVAR continua do mestre.
+    assert guarda.e_so_do_mestre("analisesps.tela_folha_rateio") is False
+    for rota in ("analisesps.folha_rateio_gravar",
                  "analisesps.folha_rateio_apagar",
                  "analisesps.folha_rateio_simular",
                  "analisesps.folha_rateio_colar"):
@@ -5300,18 +5302,14 @@ def test_as_subtelas_aparecem_dentro_da_tela_da_folha(app, monkeypatch):
     assert html.count(">Folha PGT<") == html.count("Folha PGT")
 
 
-def test_quem_NAO_e_mestre_nao_ve_a_subtela_do_rateio(app, monkeypatch):
-    """Aba que responde 404 é pior do que aba nenhuma — mesmo motivo do menu de
-    cima. O rateio decide para qual obra vai o salário: é do dono."""
+def test_quem_tem_a_folha_ve_TODAS_as_subtelas(app, monkeypatch):
+    """07/10/2026: *"quem vê a Folha PGT precisa ver os submenus da folha"*. Antes
+    o Rateio e os Arquivos gerados sumiam para quem não era mestre."""
     from app.apps.analisesps import auth as guarda, web
 
     monkeypatch.setattr(guarda, "e_mestre", lambda: False)
     nomes = [s[1] for s in web.subtelas_da_folha()]
-    assert "Colaboradores" in nomes
-    assert "Rateio das obras" not in nomes
-
-    monkeypatch.setattr(guarda, "e_mestre", lambda: True)
-    assert "Rateio das obras" in [s[1] for s in web.subtelas_da_folha()]
+    assert nomes == [s[1] for s in web.SUBTELAS_DA_FOLHA]
 
 
 def test_a_caixa_de_colar_a_tabela_e_o_caminho_PRINCIPAL_do_rateio(app, monkeypatch):
@@ -6671,14 +6669,15 @@ def test_GERAR_POR_COMPETENCIA_saiu_da_tela_de_arquivos(app, monkeypatch):
                             json={}).status_code in (403, 404, 405)
 
 
-def test_a_tela_de_pagamento_e_SO_DO_MESTRE(app):
-    """O log mostra o link de arquivos com nome, CPF e valor de ~500 pessoas."""
+def test_a_tela_de_pagamento_e_DA_FOLHA_e_agir_e_do_MESTRE():
+    """07/10/2026: *"quem vê a Folha PGT precisa ver os submenus"*. Ver os arquivos
+    gerados é da folha; gerar, lançar e excluir continuam do mestre."""
     from app.apps.analisesps import auth
 
-    assert auth.e_so_do_mestre("analisesps.tela_folha_pagamento") is True
-
-    resposta = como(app, SENHA_CONSULTA).get("/analisesps/folha/pagamento")
-    assert resposta.status_code in (302, 403, 404)
+    assert auth.e_so_do_mestre("analisesps.tela_folha_pagamento") is False
+    for rota in ("analisesps.folha_card_lancar", "analisesps.folha_arquivos_excluir",
+                 "analisesps.folha_gerar_direto", "analisesps.folha_card_preparar"):
+        assert auth.e_so_do_mestre(rota) is True, rota
 
 
 def test_o_log_mostra_o_LINK_de_baixar(app, monkeypatch):
@@ -6722,6 +6721,34 @@ def test_o_arquivo_com_AVISO_fica_marcado_no_log(app, monkeypatch):
         "/analisesps/folha/pagamento").get_data(as_text=True)
     assert "linha-alerta" in html
     assert "sem conta de pagamento" in html
+
+
+def test_ARQUIVOS_GERADOS_mostram_a_ETIQUETA_da_situacao_de_cada_SP(app, monkeypatch):
+    """07/10/2026: *"colocar uma tag pra na tela sabermos a situação de cada SP"*."""
+    from decimal import Decimal as D
+    from app.apps.analisesps import folha_pagamento as fpg
+    base = {"ano": 2026, "mes": 9, "tipo": "quinzena", "verbas": "alimentacao",
+            "rotulo_verbas": "Alimentação", "nome": "x.xlsx", "pessoas": 1,
+            "total": D("10.00"), "link": "https://drive/x", "link_card": "",
+            "avisos": "", "criado_em": None, "criado_por": "MARCELO",
+            "competencia": "09/2026", "drive_id": ""}
+    _preparar_pagamento(monkeypatch, log=[
+        dict(base, id=2, destino="analise", rotulo_destino="Analise", conta="",
+             card_pipefy="900111"),
+        dict(base, id=1, destino="beevale", rotulo_destino="BeeVale", conta="50024",
+             card_pipefy="900111")])
+
+    def situacao(rodadas):
+        for r in rodadas:
+            for a in r["pagamentos"]:
+                a["sps"] = [{"id": "900111", "link": "https://app.pipefy.com/open-cards/900111",
+                             "status_pgt": "Pagar", "status_agend": "Agendado",
+                             "na_base": True}]
+    monkeypatch.setattr(fpg, "situacao_das_sps", situacao)
+    html = _como_mestre(app).get("/analisesps/folha/pagamento").get_data(as_text=True)
+    trecho = html[html.index("SP 900111"):][:600]
+    assert 'class="selo pagar"' in trecho and ">Pagar<" in trecho
+    assert 'class="selo agendado"' in trecho and ">Agendado<" in trecho
 
 
 def test_sem_a_migracao_a_tela_de_pagamento_AVISA(app, monkeypatch):

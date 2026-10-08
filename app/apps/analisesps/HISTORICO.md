@@ -12228,6 +12228,109 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 199 — conciliação: duplo clique na linha abre a ficha da SP (07/10/2026)
+
+- *"Voce colocou o link para a SP, mas queria que ao dar dois clique na linha
+  identificada, fosse aberto o modal daquele lancamento de analisps."* A linha
+  com SP achada leva `data-ficha` e a tela inclui o mesmo modal da lista de
+  Solicitações (`analisesps_ficha_modal.html`). Com mais de uma SP possível,
+  abre a primeira; as outras seguem nos links. O clique simples no "SP nº"
+  continua abrindo o card no Pipefy. Testado no navegador.
+- A ficha mora na tela Solicitações: quem só tem a Conciliação não ganha o
+  duplo clique (abriria "não encontrado") — `abre_ficha` na rota.
+- **Publicada em 08/10/2026** (sem migração; suíte inteira 8.884 verdes).
+
+#### Leva 198 — conciliação: a SP de cada saída do extrato (07/10/2026)
+
+- *"Cruzar a conciliação do extrato com os números das SPs (…) pela conta de
+  pagamento, data, valor (…) às vezes a planilha não atualiza na baixa (…) e ser
+  clicável, para abrir o pipe."* Cada SAÍDA da página procura SPs com o MESMO
+  valor e a mesma conta (números da conta: nome, número, OFX, outros jeitos do
+  extrato; SP sem conta entra, dito no balão), e: paga no dia (forte) ou data de
+  pagamento/vencimento a até 3 dias (provável, com "?"). Link "SP nº" no campo
+  Documento, abre o card. SP ainda "Pagar" com o lançamento no banco ganha a
+  etiqueta "sem baixa" — a planilha que não baixou. Só leitura, nada é gravado
+  (`conciliacao.sps_das_linhas`); canceladas ficam fora.
+- **O nome desempata** (pedido dele no mesmo dia): mesmo valor no mesmo dia →
+  as palavras do credor (sem acento, 3+ letras, fora LTDA/PIX/PAGTO/BOLETO…)
+  presentes na descrição do extrato; quem tiver mais fica sozinha, sem "?".
+  Sem nome que desempate, todas ficam, com "?" (`_palavras_do_nome`).
+- Não verificado: o formato real da coluna Conta das SPs × o nome/número das
+  contas da conciliação. Se não casar, nenhum link aparece (não aparece link
+  errado) — e o ajuste é em `conta_da_sp_confere`.
+- **Publicada em 07/10/2026** (sem migração; suíte inteira 8.771 verdes).
+
+#### Leva 197 — auxílio: a obra como nas outras folhas — ponto, trocar ou dividir (07/10/2026)
+
+- *"Tem gente sem obra, mas não consigo colocar a obra"* (no transporte). Os
+  botões "usar esta obra" / "selecionar obra…" só apareciam para quem estava
+  MARCADO para receber; o resto via "—". Agora aparecem para todo mundo sem
+  obra (o selo vermelho de pendência continua só para quem vai receber).
+- *"A questão da obra é para ser padrão, igual aos demais: a princípio usar a
+  obra do ponto, mas eu preciso poder alterar, ou ratear."* Testado no navegador
+  que escolher a obra grava (não estava quebrado — faltava o botão). Agora:
+  "trocar…" também na obra do ponto e na da regra de rateio; e "Ou dividir entre
+  obras" na mesma janela — percentuais que fecham 100%, guardados no campo da
+  obra do ajuste do mês como `RATEIO:A=60;B=40` (sem migração), aplicados pela
+  mesma conta da regra de rateio (`folha_auxilio.rateio_da_escolha`). "remover
+  ajuste" volta ao ponto. Os nomes dos botões são os das outras telas (pedido
+  dele): "trocar…" (DC), "remover ajuste", "ou dividir…", "+ adicionar obra" e
+  "Salvar divisão" (folha da contabilidade). Ordem de quem manda: à mão (obra ou divisão) > regra > ponto.
+- Na lateral, "sem obra do ponto" da auditoria virou "sem marcação no ponto do
+  mês" (contava também quem não vai receber).
+- **Publicada em 07/10/2026** (sem migração; suíte inteira 8.769 verdes).
+
+#### Leva 196 — quem tem a Folha vê todas as subtelas (07/10/2026)
+
+- *"Quem vê a Folha PGT precisa ver os submenus da folha. Tem uma pessoa que
+  liberei só a folha e não consegue ver, por exemplo, arquivos gerados."*
+  "Arquivos gerados" (`tela_folha_pagamento`) e "Rateio das obras"
+  (`tela_folha_rateio`) saíram de `SO_DO_MESTRE` e passaram a ser da tela
+  "folha". As AÇÕES continuam do mestre: gerar, prévia, conferir/lançar no
+  Pipefy, excluir arquivo, gravar/colar/apagar/simular rateio — e nas duas telas
+  `pode_operar` = mestre, então os botões só aparecem para ele.
+- **Levas 195 e 196 publicadas em 07/10/2026** (sem migração; suíte inteira
+  8.764 verdes). Falta ele: baixar a auditoria do transporte de 09/2026 e
+  conferir os 11 "Mensal" que faltavam e as reduções de valor.
+
+#### Leva 195 — transporte: categorias diárias e a AUDITORIA da verba (07/10/2026)
+
+- O dono comparou a saída com a base do script: 38 colaboradores sumiam do
+  transporte; 27 eram categoria "Diário", "Vale Transporte" ou "Diário e Vale
+  Transporte". Causa: `dias_da_modalidade` só conhecia Mês/Mensal/Segunda à
+  Sexta/Segunda à Quinta — o resto virava "categoria não reconhecida",
+  cadastro incompleto, e a pessoa ficava ESCONDIDA da lista e fora do arquivo.
+- **Agora as três são diárias** (`MODOS_DIARIOS`): valor × dias úteis (a "Qtd.
+  Auxílios" dele, 22 em 09/2026), depois os ajustes. ⚠️ "Vale Transporte" puro
+  como diária é SUPOSIÇÃO (o exemplo dele bate: 9,00 × 22 = 198,00) — dita na
+  linha. Trava: valor "por dia" acima de R$ 100 numa categoria diária não é
+  pago (parece o valor do mês), com o motivo.
+- **Auditoria** (`folha_auxilio.auditoria`, `auditoria_xlsx`, rota
+  `/folha/auxilio/auditoria.xlsx`): todo mundo com o benefício no cadastro —
+  CPF, categoria, valor cadastrado, qtd, base, faltas, férias, feriados,
+  ajustes, CC cadastrado/Mobponto/considerado, valor final, Pagar?, motivo. Abas
+  Validação (os 9 números que ele pediu), Não pagos e Diferenças (base − final,
+  por colaborador). Resumo na lateral e link na janela "Gerar arquivos".
+- Não verificado com o dado dele: os 11 "Mensal" que também faltavam e as
+  reduções (ex.: 200,00 → 54,55 = 200 × 6/22, cara de proporcional à saída). A
+  auditoria diz o motivo de cada um — é o que ele deve abrir primeiro.
+- CC: não há exigência de CC cadastrado = Mobponto; o considerado é ponto >
+  escolhido à mão > regra de rateio. Sem ponto, fica pendência (decisão dele de
+  03/10) — aparece na auditoria como "sem obra do ponto".
+
+#### Leva 194 — Arquivos gerados: a situação de cada SP, em etiqueta (07/10/2026)
+
+- *"Fizesse uma leitura do número da SP pra saber o status de cada uma e colocar
+  uma tag pra na tela sabermos a situação de cada SP gerada."* Cada SP lançada
+  (o `card_pipefy` do arquivo, pode ser mais de uma) ganha as etiquetas do Status
+  Pgt (Pagar/Pago/Pago Parcial…) e do agendamento (Agendar/Agendado/Falha…),
+  com as mesmas cores da lista de Solicitações (`folha_pagamento.situacao_das_sps`).
+- Lido da BASE das SPs (a SPsBD sincronizada), numa consulta só — não vai ao
+  Pipefy a cada tela. SP recém-criada só aparece depois da próxima
+  sincronização: a etiqueta diz "aguardando base" em vez de inventar status.
+- **Publicada em 07/10/2026** (sem migração; suíte inteira 8.752 verdes, com a
+  main do painel trazida antes).
+
 #### Leva 193 — consolidação por CPF no arquivo (07/10/2026)
 
 - O dono: o BeeVale recusa a mesma pessoa duas vezes na mesma carteira; regra:

@@ -120,6 +120,10 @@ def test_a_tela_abre_a_conferencia(obra, monkeypatch):
     r = cliente.get("/painel/dre/conferir-aportes?obra_conferida=PONTE").get_json()
     assert r["ok"] and r["quantos"] == 5 and r["entram"] == 2
     assert cliente.get("/painel/dre/conferir-aportes").status_code == 400
+    # mudou do DRE para Configurações em 07/10/2026 (o dono: "não é para estar
+    # na apresentação")
     html = cliente.get("/painel/dre?bloco=aportes").get_data(as_text=True)
+    assert "Não achou um aporte ou dividendo?" not in html
+    html = cliente.get("/painel/configuracoes").get_data(as_text=True)
     assert "Não achou um aporte ou dividendo?" in html
     assert '<option value="PONTE">' in html

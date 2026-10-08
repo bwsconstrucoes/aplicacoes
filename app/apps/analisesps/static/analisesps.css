@@ -2733,3 +2733,10 @@ table.sps.mini th, table.sps.mini td { padding: 4px 8px; }
   border-radius: 8px; padding: 6px 8px; margin-top: 6px; }
 #cp-dialogo .cp-item { display: flex; gap: 8px; align-items: baseline; padding: 3px 0; }
 #cp-dialogo .cp-item small { color: #64748b; margin-left: auto; }
+
+/* A SP da saída do extrato (07/10/2026): pequena, para não engordar a linha. */
+table.conciliacao .sp-da-linha { font-size: 11.5px; white-space: nowrap; }
+table.conciliacao td .selo { font-size: 10.5px; }
+
+/* Linha da conciliação com SP identificada: duplo clique abre a ficha (07/10/2026). */
+table.conciliacao tr.com-sp { cursor: pointer; }

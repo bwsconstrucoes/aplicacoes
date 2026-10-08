@@ -818,3 +818,477 @@ dois dias. Junto vieram três endurecimentos no `core.py` deste módulo: não
 mandar pedido sem credencial, interromper quando a consulta não confirma o
 título, e só alterar o título quando algo diverge de verdade. Vale ler o
 registro daquele chat antes de mexer na sequência do Omie.
+
+### 07/10/2026 — a não-atualização silenciosa da SPsBD: quatro causas, não uma
+
+Queixa do dono: *"tem algo que tem acontecido com muita frequência: a não
+atualização silenciosa da aba SPsBD. Precisa criar uma sistemática pra impedir
+que isso aconteça."*
+
+Em 13/09 eu tinha tratado **uma** das causas (o erro engolido num `except`
+vazio). As outras três continuavam, e juntas explicam a frequência:
+
+1. **A gravação rodava numa thread solta, e a resposta saía antes dela
+   terminar.** O gunicorn recicla o trabalhador a cada mil pedidos
+   (`--max-requests 1000`) e o serviço reinicia a cada publicação — nos dois
+   casos a thread morre no meio, sem erro em lugar nenhum. **Era a causa
+   principal**, e explica por que acontecia "com frequência" e sem padrão.
+2. **O resultado da gravação era escrito no plano DEPOIS** de a resposta já ter
+   sido montada. Quem lia o retorno do Make nunca via o que aconteceu — havia
+   uma corrida entre a thread e a montagem da resposta.
+3. **Ninguém conferia** se a célula ficou com o valor. O `batch_update` não
+   reclama quando a escrita não vale.
+4. **A fila de falhas só andava se alguém chamasse a rota à mão** — e o
+   reprocessamento de planilha **ignorava o resultado** da gravação: marcava
+   "reprocessado com sucesso" e tirava o item da fila sem ter gravado. Era o
+   último lugar onde a perda acontecia em silêncio.
+
+**A sistemática que ficou:**
+
+- **Gravar, conferir, e só então responder.** Lê de volta a coluna de status e
+  compara. Custo: cerca de um segundo por comprovante na resposta, contra o
+  limite de 300 segundos do Make. Baixa errada custa mais do que um segundo.
+- **Uma segunda tentativa imediata** antes de desistir (cota do Google é por
+  minuto; resposta parcial costuma passar na segunda).
+- **Falha confirmada vai para a fila e para o aviso**, com o resultado real no
+  retorno.
+- **Cada lote drena algumas pendências da fila** (limite 5, para não esticar a
+  resposta). Comprovante chega sempre; a fila anda junto.
+- **O reprocessamento não mente mais**: devolve o resultado da gravação.
+- **Item que esgotou as cinco tentativas (FALHOU) pode voltar**, com
+  `incluir_falhados` no pedido de reprocessamento. Antes ficava abandonado na
+  planilha para sempre — não-atualização silenciosa com outro nome. O
+  reprocessamento automático **não** os inclui: insistir de minuto em minuto no
+  que já falhou cinco vezes só gasta cota.
+
+**Sobre o lado do Omie**, que ele levantou junto: aquele caminho já estava
+coberto desde 17/09 (não manda pedido sem credencial, interrompe quando a
+consulta não confirma o título, só altera quando algo diverge) e a falha já ia
+para a fila e para o aviso. O que faltava era a fila **andar** — e agora anda.
+
+**O que a leitura da planilha mostrou, e é decisão do dono:** a aba
+`BaixaBradescoFila` tem **cerca de 2.270 linhas** acumuladas. Não dá para dizer
+daqui quantas são pendências de verdade e quantas são histórico, porque o
+conector do Google devolve só o cabeçalho de abas grandes. Com a drenagem
+automática, 5 por lote, uma fila de pendências antigas leva muitos lotes para
+andar — se forem muitas, vale uma chamada manual à rota de reprocessar com
+`limite` alto e `incluir_falhados`.
+
+⚠️ **Achado de segurança, de passagem:** a planilha *Registro de SPs* guarda, na
+aba `FilaAppWeb`, a **chave e o segredo da API do Omie** em texto, numa coluna do
+payload. Quem tem acesso à planilha tem as credenciais do Omie. Não foi mexido
+nem copiado para lugar nenhum — fica registrado para o dono decidir (o caminho
+seria o Make e o Análise de SPs lerem de variável de ambiente, como o resto).
+
+**Verificado:** 5.131 testes passando (14 novos desta entrega) e a aplicação
+subindo. A única falha na rodada local é biblioteca ausente neste ambiente
+(`erpbrasil`), e ela falha igual na `main` publicada sem o meu trabalho.
+**Não verificado:** nada disso passou por produção. A prova é a primeira baixa
+real depois de publicado — e, se a gravação falhar, o aviso tem de chegar.
+
+---
+
+### 08/10/2026 — "e essa fila, de 2.270 linhas, vai rodar?" — não ia
+
+Pergunta do dono, logo depois da entrega anterior. A resposta honesta era
+**não**: no ritmo automático de cinco por lote, uma fila de pendências antigas
+não anda. Três coisas impediam, e as três foram tratadas.
+
+**1. Ninguém sabia quantas das 2.270 linhas eram pendência de verdade.** A aba
+guarda **tudo** que já passou por ela, concluído inclusive — então o número de
+linhas não é o número de pendências. Eu disse isso na entrega anterior e parei
+aí, o que é pouco: ficou uma pergunta sem meio de resposta. Agora existe
+`GET /api/baixabradesco/fila-resumo`, que conta por situação (`PENDENTE`
+vencido, `PENDENTE` agendado, `FALHOU`, `CONCLUIDO`), por etapa e por tipo de
+falha, diz a data do registro mais antigo, e não grava nada. Diagnóstico se faz
+pelo sistema, não abrindo a planilha na mão.
+
+**2. Ler a fila custava a aba inteira.** `_rows_as_dicts` fazia
+`get_all_values()` — as 2.270 linhas **com o JSON do payload de cada uma** — só
+para achar cinco. E `ensure_fila_sheet` fazia o mesmo, em **toda** chamada,
+apenas para conferir o cabeçalho. Isso é exatamente o que `CONTEXTO.md` §3.7
+proíbe, e era o tipo de leitura que causou o OOM de julho de 2026. Agora: o
+cabeçalho lê `A1:O1`; o filtro lê `A2:L` (as colunas leves, sem a mensagem de
+erro nem o payload); o payload vem só das linhas escolhidas, em blocos de cem.
+
+**3. Drenar de uma vez estouraria a cota de todo mundo.** A cota de escrita do
+Google é **por minuto** e é do **mesmo usuário de serviço** que o ERP, o painel e
+o Análise de SPs usam — uma drenagem de centenas de itens no soco não quebraria
+só esta fila, tiraria os outros do ar. Três medidas: marcar a linha passou a
+custar **uma** chamada de escrita em vez de duas; lote acima de 20 itens anda com
+**pausa** entre eles (1,2 s, ajustável por `pausa_ms`); e a varredura **para
+sozinha** na terceira recusa seguida por cota, devolve o que fez e deixa o resto
+`PENDENTE` para a próxima passada.
+
+**Uma trava de bom senso que entrou junto:** aviso de WhatsApp parado na fila há
+mais de três dias **não é reenviado**. Drenar fila velha mandaria para os dois
+celulares avisos sobre problemas provavelmente já resolvidos na mão — e aviso
+demais faz a pessoa parar de ler, que é o oposto do que o aviso existe para
+fazer. Ele sai da fila com o motivo escrito na linha. Quem quiser o contrário
+manda `reenviar_avisos_antigos: true`. A trava vale **só** para aviso: baixa de
+dois meses atrás continua sendo baixa, e o dinheiro não envelhece.
+
+**O que NÃO é risco, e vale estar escrito:** repetir uma baixa não baixa duas
+vezes. O reprocessamento do Omie consulta o título primeiro e, se já estiver
+`PAGO`, dá a pendência por resolvida sem lançar nada. Então drenar fila antiga
+não duplica pagamento no Omie. O reprocessamento de planilha regrava as mesmas
+células — se alguém tiver corrigido aquela linha na mão com outra informação, a
+regravação passa por cima. É o único efeito colateral conhecido da drenagem.
+
+**O que continua fora do alcance da fila, e não tem volta por ela:** item que o
+reprocessamento antigo marcou `CONCLUIDO` sem ter gravado (o defeito corrigido
+em 07/10). Para a fila ele está resolvido; a pendência real, se existir, só
+aparece na comparação entre a SPsBD e o Omie, não aqui.
+
+**O caminho prático para zerar o acumulado**, depois de publicado: primeiro o
+resumo, para saber o tamanho; depois `POST /api/baixabradesco/reprocessar-fila`
+com `limite` alto e `incluir_falhados: true`, uma chamada por vez, olhando o
+campo `interrompido` da resposta — se vier `cota_do_google`, esperar alguns
+minutos e repetir.
+
+**Verificado:** suíte inteira rodada, uma única falha e é a biblioteca ausente
+deste ambiente (`erpbrasil`), que falha igual na `main` publicada sem o meu
+trabalho; 16 testes novos cobrindo a contagem, a leitura limitada, a pausa, a
+parada por cota e a trava de aviso antigo; aplicação subindo com os 18
+blueprints e a rota nova no lugar.
+**Não verificado:** nada disso encostou na planilha de verdade. Quantas das
+2.270 linhas são pendência real continua sem resposta até alguém chamar o
+resumo em produção — e é a primeira coisa a fazer depois de publicar.
+
+---
+
+### 08/10/2026 (depois de publicar) — o conferidor SPsBD × Omie
+
+Publicado na `main` em `bacc190`, com o "pode" do dono: o conserto da
+não-atualização silenciosa da SPsBD e a fila contável e drenável. Sem migração
+de banco.
+
+Na mesma resposta eu levantei um buraco que nenhuma das duas entregas fecha, e
+em seguida o fechei em vez de esperar resposta — a regra do `CLAUDE.md` é clara
+e o custo de esperar é horas paradas dele.
+
+**O buraco:** até 07/10 o reprocessamento de planilha marcava o item como
+"concluído com sucesso" **ignorando o resultado da gravação**. Então há itens
+que saíram da fila sem nunca ter sido gravados. Para a fila eles estão
+resolvidos — e nenhuma passada, por mais completa, os traz de volta. A pendência
+real, se existir, só aparece comparando as duas fontes lado a lado: a planilha
+diz "Pago", o Omie diz "Aberto". Isso é dinheiro que saiu da conta sem o título
+baixar.
+
+**O que foi feito:** `GET /api/baixabradesco/conferir-omie`. Lê a SPsBD, pergunta
+ao Omie título por título, e relata. Decisões que importam:
+
+- **Não grava nada**, nem na planilha nem no Omie. Relatório é relatório. Um
+  conferidor que também corrigisse erraria em silêncio na primeira divergência
+  de valor, e aí seria pior que não ter conferidor. Corrigir é decisão de quem
+  lê — e, quando o dono pedir, a correção entra como passo separado e explícito.
+- **Separa três coisas que não são a mesma:** planilha paga com Omie aberto (a
+  baixa pela metade, a única que custa dinheiro); código de integração que não
+  existe no Omie (cadastro errado na planilha); e falha de consulta (rede ou
+  cota). Misturar os três faria o relatório mentir.
+- **Lê sete colunas da SPsBD**, não `A:AK`. A aba tem ~52 mil linhas × 37
+  colunas e a leitura inteira custa 150–250 MB — foi assim que o serviço caiu
+  por memória em julho de 2026.
+- **`apenas_contar=1` mede o tamanho sem gastar consulta ao Omie por linha**, e
+  o `limite` segura quantas consultas vão por chamada (50 por padrão).
+- **Sem credencial do Omie ele recusa** em vez de relatar "nenhuma divergência",
+  que é a resposta mais perigosa possível para um conferidor.
+
+**Decisão de janela:** 60 dias por padrão, ajustável por `dias`. Não é limite
+técnico: a SPsBD tem anos de histórico e conferir tudo seriam dezenas de
+milhares de consultas ao Omie. Sessenta dias cobre com folga o período em que o
+defeito de 07/10 esteve vivo nesta forma.
+
+**O que ficou pendente do dono, e trava trabalho de verdade:**
+
+1. **Chamar a contagem da fila em produção.** Eu não consigo daqui: o endereço
+   do serviço e o `BAIXABRADESCO_SECRET` ficam nas configurações do Render, e
+   senha não entra no chat. Sem isso, "2.270 linhas" continua sendo um número
+   sem significado — pode ser 50 pendências ou 2.000.
+2. **Decidir o que fazer com as divergências** que o conferidor achar. A
+   correção automática não foi escrita de propósito.
+
+**Verificado:** 14 testes novos nesta entrega (30 somando com a da fila), a área
+inteira passando, e a aplicação subindo com os 18 blueprints e as duas rotas
+novas registradas.
+**Não verificado:** o conferidor nunca encostou na planilha de verdade nem no
+Omie de verdade. Os dublês cobrem a regra; a primeira chamada em produção é a
+prova — e é ela que vai dizer se o defeito de 07/10 deixou prejuízo escondido.
+
+---
+
+### 08/10/2026 — a contagem da fila em produção: ela nunca andou, nem uma vez
+
+O dono chamou `fila-resumo` em produção. A resposta mudou o entendimento do
+problema, e vale copiada aqui porque é a prova:
+
+```
+linhas_na_aba          2269
+por_status             PENDENTE 2269
+pendentes_vencidos     2269
+pendentes_agendados    0
+concluidos             0
+falhados               0
+por_etapa              zapi 1943 | omie 238 | pipefy 88
+por_tipo_falha         zapi_erro 1943 | omie_erro 238 | pipefy_erro 88
+sem_etapa              0
+registro_mais_antigo   18/06/2026 18:31:09
+registro_mais_recente  07/10/2026 20:45:45
+```
+
+**Nenhuma concluída e nenhuma falhada.** Isso não é uma fila lenta: é uma fila
+que **nunca andou, nem uma vez, em quase quatro meses**. Se tivesse andado,
+haveria linhas `CONCLUIDO`; se tivesse insistido e desistido, haveria `FALHOU`.
+A rota de reprocessar existia, funcionava, e ninguém nunca a chamou — porque ela
+só andava à mão. Minha entrega da manhã (drenar 5 por lote) teria levado 454
+lotes de comprovantes para dar uma volta.
+
+**Três consequências que eu tinha anotado como risco e que a contagem desfez ou
+confirmou:**
+
+1. **O grupo "marcado CONCLUIDO sem ter gravado" está VAZIO** — `concluidos: 0`.
+   Aquele defeito nunca chegou a apagar nada, porque o reprocessamento nunca
+   rodou. O conferidor SPsBD × Omie continua útil, mas por outro motivo (ver a
+   entrada anterior), não por este.
+2. **`sheets: 0`.** A não-atualização silenciosa da SPsBD **nunca passou pela
+   fila** — o que confirma o diagnóstico de 07/10: a gravação morria numa thread
+   solta, antes de chegar ao `enqueue_failure`. De agora em diante uma gravação
+   falhada aparece aqui.
+3. **1.943 das 2.269 (86%) são `zapi`** — as mensagens *"Informação de
+   Pagamento"* que avisam quem pediu a SP, com o comprovante em PDF. Ou seja:
+   desde junho, quem pede uma SP vem não sendo avisado de que o pagamento saiu, e
+   ninguém soube. Os 238 `omie` são o que custa dinheiro: baixa que não
+   aconteceu.
+
+**O que foi feito, em cima desses números:**
+
+- **A fila pegou carona no cron que já roda de 5 em 5 minutos**
+  (`/processar-fila-tardia`, já autenticado). Pedir que alguém chame a rota à mão
+  foi o que falhou por quatro meses; não vale repetir o pedido com mais ênfase.
+- **Drenagem por etapa, na ordem da importância**: `omie` (dinheiro), `sheets`,
+  `pipefy`, `zapi` (recado) — 15, 15, 15 e 10 por disparo, ~180 itens por hora.
+  Na ordem da planilha, 1.943 recados ficariam na frente de 238 baixas.
+- **Filtro `etapas` na rota de reprocessar**, para drenar só o dinheiro quando
+  for o caso.
+- **Falta de credencial não consome tentativa** (`ERROS_DE_CONFIGURACAO`). Isto
+  era urgente: a chave do Omie está na planilha, não no ambiente (ver o achado de
+  segurança da entrada anterior). Se a drenagem automática subisse sem essa
+  guarda e o ambiente não tivesse a credencial, cinco passadas marcariam as 238
+  baixas como `FALHOU` — apagando a pendência sem resolver nenhuma. Agora a linha
+  fica intacta e o relatório diz `o_que_falta_configurar`.
+- **O cron não limpa o acumulado de avisos antigos.** Ele pula o que tem mais de
+  três dias, sem gastar tentativa. Marcar 1.943 linhas é decisão do dono, e sai
+  em blocos de 50 linhas por chamada quando ele pedir — uma escrita por linha
+  seriam 1.943 escritas, meia hora travando a cota do ERP e do painel.
+
+**E o item que estava aberto desde 13/09 foi fechado, porque a contagem explicou
+o sintoma:** o aviso chegou ao dono **pelo Telegram**. O envio devolve sucesso
+quando QUALQUER canal entrega, e o Telegram dele entrega quase sempre — então o
+WhatsApp falhava para o financeiro, que não tem Telegram cadastrado, e tudo
+reportava sucesso. Os 1.943 `zapi_erro` na fila são a escala disso. Dois
+consertos: o resultado passou a dizer `entregues_no_whatsapp`,
+`so_pelo_telegram` e `sem_entrega`, com alerta em português; e **credencial
+presente com envio falhando ganhou segunda tentativa** pelo notificador comum —
+antes a segunda tentativa só existia quando a credencial estava *ausente*.
+
+**Decisões que tomei sozinho, e o dono pode desfazer:**
+
+- 15/15/15/10 por disparo do cron. Conservador de propósito: a cota de escrita do
+  Google é por minuto e é da mesma credencial do ERP, do painel e do Análise de
+  SPs. Subir é fácil se a memória e a cota aguentarem.
+- Três dias para o aviso perder a utilidade.
+- O conferidor não corrige, só relata.
+
+**O impedimento da credencial do Omie NÃO existe — eu errei o alarme.** Eu avisei
+ao dono que a drenagem automática talvez não achasse a chave do Omie, porque ela
+vive na planilha. Ele respondeu que o Render tem `OMIE_KEY` e `OMIE_SECRET`, e
+esses são justamente os **primeiros** nomes que `NOMES_APP_KEY` /
+`NOMES_APP_SECRET` procuram. A drenagem acha a credencial sozinha. (O achado de
+*segurança* continua de pé por outro motivo: a chave também está em texto na aba
+`FilaAppWeb`, e quem abre a planilha a lê.)
+
+**Conferindo isso, apareceu o mesmo risco por outro caminho:** sem
+`PIPEFY_API_TOKEN`, `execute_graphql` **levanta exceção** — e a exceção caía no
+`except` geral do laço, que incrementa a tentativa. Cinco passadas sem token
+marcariam os 88 cartões como `FALHOU` sem nunca ter tentado nada. Agora o token
+é conferido antes, e a falta dele é problema de configuração, não tentativa
+gasta. As três credenciais (`OMIE_*`, `PIPEFY_API_TOKEN`, `ZAPI_*`) têm teste
+travando o nome da variável, porque o cron só lê do ambiente e trocar o nome em
+silêncio pararia a drenagem inteira.
+
+**O que continua pendente do dono:**
+
+1. **Publicar** (isto e o conferidor estão no ramo, não na `main`).
+2. **Decidir sobre os 1.943 avisos antigos**: descartar em massa (recomendação) ou
+   reenviar.
+3. **Conferir se `PIPEFY_API_TOKEN` e as três `ZAPI_*` estão no Render.** Se não
+   estiverem, os 88 cartões e os avisos recentes ficam parados — e o relatório da
+   drenagem vai dizer isso em `o_que_falta_configurar`, em vez de fingir que
+   tentou.
+
+**Um defeito que eu mesmo introduzi e achei antes de publicar:** pular o aviso
+antigo **depois** de carregá-lo entupia a fila. Ela é lida em ordem — com 1.943
+avisos de junho na frente, pedir "dez avisos" devolvia sempre os dez mais
+velhos, que seriam pulados, e o aviso de ontem nunca era alcançado. A fila
+engasgava com o que ela mesma ia descartar. O corte por idade passou para a
+**escolha** das linhas. Vale só para `zapi`: baixa de junho continua sendo baixa.
+
+**Verificado:** 27 testes de fila (13 novos), 11 de aviso, 7 de cron, 14 de
+conferidor; suíte inteira rodada com a única falha sendo `erpbrasil` ausente
+neste ambiente, que falha igual na `main` publicada; aplicação subindo com os 18
+blueprints.
+**Não verificado:** a drenagem pelo cron nunca rodou em produção. O primeiro
+disparo depois de publicar é a prova — e o campo a olhar é
+`fila_de_falhas.omie.o_que_falta_configurar`.
+
+---
+
+### 08/10/2026 (fim do dia) — publicado, e as respostas passaram a falar português
+
+**Publicado na `main` em `26e9187`**, com o "pode" do dono e a confirmação de que
+as variáveis do Render existem (`OMIE_KEY`, `OMIE_SECRET`, `PIPEFY_API_TOKEN`,
+`ZAPI_*`). A `main` havia andado — outro chat publicou mexidas no painel —, então
+a `main` veio para o ramo primeiro, a suíte rodou com as duas coisas juntas e só
+então a junção. Sem conflito. Sem migração de banco.
+
+Entrou: o conferidor SPsBD × Omie, a fila andando sozinha pelo cron de 5 em 5
+minutos com o dinheiro na frente, o conserto do entupimento por aviso velho e a
+guarda do token do Pipefy.
+
+**Depois disso, uma coisa pequena e de efeito grande:** as respostas de
+`fila-resumo` e `conferir-omie` ganharam um campo `em_portugues`, com uma frase
+que diz o que os números querem dizer. O motivo é literal: o dono colou no chat
+a resposta inteira de `fila-resumo`, campo por campo, para perguntar o que ela
+significava. Ele lê isso pelo celular e não é programador — a resposta crua é
+chave-e-número. A frase vem **junto** com os números, nunca em lugar deles.
+
+Decisões pequenas registradas porque voltam a aparecer: a etapa aparece com nome
+de gente ("baixa no Omie", "aviso de pagamento"), não com o nome técnico; a maior
+quantidade vem primeiro; e a frase do conferidor **separa explicitamente** o que
+é dinheiro (planilha paga, Omie aberto) do que é cadastro errado (código que não
+existe no Omie) — juntar os dois assustaria sem motivo ou tranquilizaria sem
+motivo.
+
+**Verificado:** 9 testes novos sobre as frases, suíte inteira rodada (única falha
+é `erpbrasil` ausente neste ambiente, que falha igual na `main` publicada),
+aplicação subindo com os 18 blueprints.
+**Não verificado:** a drenagem pelo cron ainda não foi observada em produção. O
+número a acompanhar é `pendentes_vencidos`, que tem de cair dos 2.269.
+
+### Pendente AGORA (para a próxima sessão desta área)
+
+1. **Os 1.943 avisos antigos esperam decisão do dono** — descartar em massa
+   (recomendação registrada) ou reenviar. O cron não toca neles.
+2. **Confirmar que a drenagem andou**: `pendentes_vencidos` tem de cair. Se
+   continuar em 2.269, olhar `fila_de_falhas` na resposta do cron.
+3. **A chave do Omie em texto na aba `FilaAppWeb`** continua lá (achado de
+   segurança). Não impede nada; é risco.
+4. **Pix, boleto, transferência, FGTS e BeeVale seguem sem teste de campo** — falta
+   um comprovante de exemplo de cada, que só o dono tem.
+
+---
+
+### 08/10/2026 (noite) — o dono apontou o alvo certo, e meu conferidor olhava para o outro lado
+
+Com a drenagem já no ar, ele respondeu:
+
+> *"está caindo o número, já vi. Esses comprovantes antigos eu já devo ter
+> resolvido, e esses avisos antigos também. Fazemos conciliação bancária diária.
+> No sistema Omie vai estar tudo atualizado. O furo pode ser mais na planilha e
+> na movimentação do card."*
+
+Três coisas nessa frase, e as três mudam o trabalho:
+
+1. **A drenagem está funcionando** — o número cai. Primeira confirmação em
+   produção.
+2. **As 238 baixas do Omie provavelmente já estão pagas**, pela conciliação
+   diária. O reprocessamento consulta antes e, se achar `PAGO`, resolve a
+   pendência sem lançar nada — então a drenagem está fechando pendência de
+   registro, não pagando nada de novo. Era o comportamento pretendido, e agora
+   tem confirmação de por que ele era o certo.
+3. **O furo é na planilha e no cartão — e o meu conferidor não enxergava isso.**
+
+**O erro de direção, escrito para não se repetir:** o conferidor selecionava as
+linhas em que a planilha diz **Pago** e perguntava ao Omie. Ou seja, só achava
+"planilha paga, Omie aberto". O furo que ele descreve é o **contrário** — "Omie
+pago, planilha não" —, e essa direção era **invisível** para o conferidor, porque
+ela mora justamente nas linhas que a planilha ainda marca como "Pagar". Pela
+conciliação bancária diária, é também a direção **mais provável** das duas.
+
+E ela não aparece em lugar nenhum sem o conferidor: a fila de falhas tinha
+**zero** pendências de planilha, porque a gravação morria antes de chegar ao
+`enqueue_failure`. O sistema não tinha como saber que deixou de gravar.
+
+**O que ficou:** o conferidor passou a rodar nos dois sentidos, e o relatório põe
+o furo apontado por ele **na frente**, com nome próprio (`planilha_atrasada`).
+`sentido` escolhe: `ambos`, `omie_pago` ou `planilha_paga`.
+
+Decisões que valem registro porque são o tipo de coisa que se refaz errado:
+
+- **As duas janelas usam datas diferentes, e têm de usar.** A direção antiga tem
+  data de pagamento na planilha. A nova não tem — a planilha nem sabe que foi
+  paga —, então a janela é pelo **vencimento**. Sem janela seriam ~52 mil
+  consultas ao Omie. Vencimento muito à frente também sai: título que vence no
+  ano que vem não é planilha atrasada.
+- **Cada item da direção nova traz o link do cartão do Pipefy**, porque ele
+  apontou os dois furos juntos. O conferidor não consulta o Pipefy (seria outra
+  volta de API por item); entrega o link para quem for olhar.
+- **O limite vale por direção**, não somado: pedir 50 faz até 50 consultas de
+  cada lado, e não 25 de cada.
+- **Continua sem corrigir nada.** Agora com mais razão: corrigir "planilha
+  atrasada" é escrever na planilha a partir do que o Omie diz, e isso precisa de
+  conferência de valor e de data — é um passo próprio, não um efeito colateral
+  de um relatório.
+
+**Um defeito meu no caminho, e conto porque é instrutivo:** ao reescrever a
+seleção de candidatas, substituí um trecho grande de arquivo delimitado por
+"daqui até a próxima função" — e a próxima função não era a que eu pensava.
+Apaguei junto a função que monta a frase em português, sem perceber. A suíte
+apontou na primeira rodada. Trecho grande se substitui por âncora exata, não por
+intervalo.
+
+**Decisão do dono registrada:** ele considera os comprovantes e os avisos antigos
+já resolvidos. Então o descarte em massa dos 1.943 avisos deixa de ser dúvida e
+passa a ser só uma chamada quando ele quiser — nada é apagado, a linha fica com o
+motivo escrito.
+
+**Verificado:** 23 testes no conferidor (10 novos, cobrindo a direção nova, as
+duas janelas, o limite por direção e a ordem da frase), suíte inteira rodada com
+a única falha sendo `erpbrasil` ausente neste ambiente, aplicação subindo com os
+18 blueprints.
+**Não verificado:** a direção nova nunca rodou contra a planilha de verdade. É a
+primeira coisa a chamar depois de publicar, e com `apenas_contar=1` primeiro —
+ela pode trazer centenas de linhas para conferir, e aí o custo é consulta ao
+Omie.
+
+---
+
+### 08/10/2026 (noite, depois de publicar) — a continuação que a frase prometia e o código não cumpria
+
+**Publicado na `main` em `7d4e0cc`**, com o "pode" do dono: o conferidor nos dois
+sentidos, o conserto do segundo caminho de drenagem e as respostas em português.
+A `main` havia andado outra vez (o chat do ponto publicou, com migração própria —
+avisado ao dono), então a `main` veio para o ramo, a suíte rodou com as duas
+coisas juntas, e só então a junção.
+
+Revisando o meu próprio código depois de publicar, achei um defeito no que eu
+tinha **escrito para o dono ler**: a frase em português dizia *"faltam N para
+conferir — chame de novo para continuar"*, e isso era **mentira**. O conferidor
+não grava nada, então nada sai do conjunto entre uma chamada e a seguinte:
+chamar de novo reconsultaria as mesmas primeiras cinquenta linhas, para sempre.
+Ele pagaria consulta ao Omie para reler o mesmo pedaço e nunca chegaria ao resto.
+
+Entrou `pular`, que continua de onde parou, e a resposta devolve o
+`proximo_pular` **pronto** — quem lê isto no celular não deve ter de calcular
+nada. A frase só promete continuação quando existe continuação: na última
+página ela não manda chamar de novo.
+
+Registrado como lição porque é um tipo de erro que escapa fácil: **a frase em
+português é interface, e interface que promete o que o código não faz é pior que
+resposta crua.** Um teste cobre exatamente isso — frase sem continuação possível
+não contém "chame de novo".
+
+**Verificado:** 27 testes no conferidor (4 novos sobre a continuação), 11 sobre
+as frases, suíte inteira rodada com a única falha sendo `erpbrasil` ausente neste
+ambiente, aplicação subindo com os 18 blueprints.
+**Não verificado:** nada do conferidor rodou contra a planilha de verdade ainda.

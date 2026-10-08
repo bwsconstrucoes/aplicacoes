@@ -91,6 +91,14 @@ URL_MOVIMENTOS        = "https://app.omie.com.br/api/v1/financas/mf/"
 URL_CATEGORIAS        = "https://app.omie.com.br/api/v1/geral/categorias/"
 URL_CLIENTES          = "https://app.omie.com.br/api/v1/geral/clientes/"
 URL_CONTAS_CORRENTES  = "https://app.omie.com.br/api/v1/geral/contacorrente/"
+URL_EXTRATO           = "https://app.omie.com.br/api/v1/financas/extrato/"
+URL_LANC_CC           = "https://app.omie.com.br/api/v1/financas/contacorrentelancamentos/"
+
+# O nome da consulta de UM lançamento de conta corrente. A documentação do
+# OMIE não abre daqui, e o repositório só usa a INCLUSÃO (IncluirLancCC) —
+# por isso o primeiro nome é tentado e, se o OMIE disser que o método não
+# existe, vale o segundo. Fica anotado qual respondeu.
+NOMES_DA_CONSULTA_LANC_CC = ("ConsultaLancCC", "ConsultarLancCC")
 
 # Trechos de faultstring da Omie que indicam rate limit / consumo indevido -> vale retry.
 _RATE_LIMIT_HINTS = (
@@ -199,6 +207,16 @@ def _esperar(segundos: float, motivo: str) -> None:
         falta -= pedaco
 
 
+def _sinal_de_vida() -> None:
+    """Cada chamada ao OMIE avisa que a atualização segue viva, sem mudar o
+    texto da tela — nenhum trecho que só conversa com o OMIE fica calado."""
+    if _aviso_de_espera is not None:
+        try:
+            _aviso_de_espera("")
+        except Exception:  # avisar nunca derruba a carga
+            pass
+
+
 class OmieBloqueada(Exception):
     """A Omie bloqueou as chamadas e disse por quanto tempo.
 
@@ -239,6 +257,9 @@ def erro_definitivo(exc):
 
 
 class OmieClient:
+    # qual nome de NOMES_DA_CONSULTA_LANC_CC o OMIE aceitou da última vez
+    _consulta_lanc_cc = None
+
     def __init__(self, app_key, app_secret, *,
                  pausa_entre_chamadas=0.3, max_tentativas=8,
                  backoff_base=1.6, timeout=120, registros_por_pagina=500,
@@ -291,6 +312,7 @@ class OmieClient:
         }
         ultimo_erro = None
         for tentativa in range(1, self.max_tentativas + 1):
+            _sinal_de_vida()
             try:
                 resp = self.sessao.post(url, data=json.dumps(corpo), timeout=self.timeout)
             except requests.RequestException as e:
@@ -448,6 +470,36 @@ class OmieClient:
                             campo_pagina="nPagina", campo_regpp="nRegPorPagina",
                             campo_totpag="nTotPaginas", campo_totreg="nTotRegistros",
                             max_paginas=max_paginas, pagina_inicial=pagina_inicial)
+
+    def extrato(self, codigo_conta, de, ate):
+        """O extrato de UMA conta num período, como o OMIE calcula (07/10/2026:
+        a conferência de saldo). `de`/`ate` em dd/mm/aaaa. Devolve a resposta
+        crua — o formato não foi confirmado contra o OMIE real, e quem lê
+        procura os campos de saldo pelo nome."""
+        return self._call(URL_EXTRATO, "ListarExtrato",
+                          {"nCodCC": int(codigo_conta),
+                           "dPeriodoInicial": de, "dPeriodoFinal": ate})
+
+    def consultar_lancamento_cc(self, codigo):
+        """UM lançamento de conta corrente, como o OMIE guarda — é onde está a
+        APROPRIAÇÃO (as obras), que o movimento financeiro não traz (07/10/2026,
+        o arquivo cru de 09/01/2026). Devolve a resposta crua."""
+        nomes = list(NOMES_DA_CONSULTA_LANC_CC)
+        if self._consulta_lanc_cc in nomes:
+            nomes.remove(self._consulta_lanc_cc)
+            nomes.insert(0, self._consulta_lanc_cc)
+        ultimo = None
+        for nome in nomes:
+            try:
+                resposta = self._call(URL_LANC_CC, nome, {"nCodLanc": int(codigo)})
+            except OmieAPIError as e:
+                if re.search(r"m[ée]todo|method", str(e), re.I):
+                    ultimo = e
+                    continue
+                raise
+            OmieClient._consulta_lanc_cc = nome
+            return resposta
+        raise ultimo
 
     def listar_categorias(self, *, max_paginas=None):
         return self._listar(URL_CATEGORIAS, "ListarCategorias", "categoria_cadastro",

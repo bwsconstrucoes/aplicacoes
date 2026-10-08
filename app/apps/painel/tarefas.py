@@ -248,6 +248,36 @@ def _releitura_pendente(execucao_id: int) -> bool:
         return False
 
 
+def _ler_apropriacoes(modo: str, anotar, de=None, ate=None, sem_teto=False) -> str:
+    """Pergunta ao OMIE as obras dos lançamentos de conta corrente que ainda
+    não têm. Devolve o aviso para a tela, ou "" quando correu bem.
+
+    `sem_teto`: lê TODOS os pendentes entre `de` e `ate` — o período escolhido,
+    ou o ano relido (dono, 07/10/2026: "são dados apenas deste ano que preciso
+    hoje"). Sem ele, no máximo LIMITE_POR_RODADA por atualização."""
+    from . import andamento
+    from .db import conexao
+    from .sync import apropriacao_cc
+    from .sync.omie_client import OmieClient
+    try:
+        with conexao() as conn:
+            r = apropriacao_cc.buscar(
+                conn, OmieClient.de_ambiente, de, ate,
+                limite=None if (sem_teto or modo == "periodo")
+                else apropriacao_cc.LIMITE_POR_RODADA,
+                progresso=lambda f, t: anotar(andamento.APROPRIACAO_CC,
+                                              f"{f} de {t} lançamentos"))
+    except Exception as e:  # noqa: BLE001 — extra, não pode custar o recálculo
+        logger.exception("Painel: apropriação dos lançamentos de conta corrente falhou")
+        return f"a apropriação dos lançamentos de conta corrente não foi lida ({e})"
+    if r["parou"]:
+        return f"a apropriação dos lançamentos de conta corrente não foi lida: {r['parou']}"
+    if r["falhas"]:
+        return (f"{r['falhas']} lançamento(s) de conta corrente ficaram sem a "
+                f"apropriação (o OMIE recusou a consulta)")
+    return ""
+
+
 def executar_trabalho(modo: str, execucao_id: int) -> bool:
     """Faz a atualização inteira. Chamado pelo processo separado.
 
@@ -284,6 +314,7 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
     # Falha de uma etapa NÃO essencial fica registrada aqui e é contada no fim.
     falha_parcial = ""
     observacoes_achadas = None
+    janela_da_apropriacao = (None, None, False)
 
     try:
         espelho.definir_progresso(_anotar)
@@ -338,6 +369,12 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                 # manda de volta à página 1 (dono, 06/10/2026).
                 _etapa(andamento.PAGAMENTOS_ANTIGOS)
                 relidos = espelho.reler_pagamentos_por_ano()
+                # o ano (ou os dois) relido tem as obras de TODOS os seus
+                # lançamentos de conta lidas nesta mesma rodada, sem teto
+                if 0 < len(relidos["relidos"]) <= 2:
+                    import datetime as _dt
+                    janela_da_apropriacao = (_dt.date(min(relidos["relidos"]), 1, 1),
+                                             _dt.date(max(relidos["relidos"]), 12, 31), True)
                 if relidos["pulados"]:
                     logger.info("Painel: releitura pulou %s (já feitos antes).",
                                 relidos["pulados"])
@@ -379,6 +416,19 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                         f"a varredura de títulos excluídos falhou ({e})")
                     logger.exception("Painel: %s — sigo para o recálculo",
                                      falha_parcial)
+
+        # ---- a apropriação dos lançamentos de conta corrente (07/10/2026) ----
+        # O movimento financeiro do OMIE não a traz; vem de uma consulta por
+        # lançamento. Falhar aqui não derruba nada: o lançamento entra no
+        # painel como "(não apropriado)" e a tela diz o que faltou.
+        if modo in ("rapida", "completa", "pagamentos", "periodo"):
+            _etapa(andamento.APROPRIACAO_CC)
+            aviso = _ler_apropriacoes(
+                modo, _anotar,
+                *(_periodo_escolhido() + (True,) if modo == "periodo"
+                  else janela_da_apropriacao))
+            if aviso:
+                falha_parcial = ((falha_parcial + "; ") if falha_parcial else "") + aviso
 
         # ---- a trava da releitura incompleta (06/10/2026) ------------------
         # Uma releitura de pagamentos cortada no meio deixou anos SEM

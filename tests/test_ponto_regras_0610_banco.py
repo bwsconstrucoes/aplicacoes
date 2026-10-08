@@ -36,7 +36,8 @@ def test_quem_e_desligado_perde_celular_qr_e_grupo(app, mundo, banco):
     dp.post(f"/erp/api/ponto/dispositivos/{cel}/aprovar", json={"perfil": "INDIVIDUAL", "cpf": CPF_JOAO})
     _, _h2 = _aparelho(app, "aparelho-de-grupo-desligado-0123")
     grupo = _id_do_aparelho(dp, "aparelho-de-grupo-desligado-0123")
-    dp.post(f"/erp/api/ponto/dispositivos/{grupo}/aprovar", json={"perfil": "LISTA", "autorizados": [CPF_JOAO, CPF_MARIA]})
+    dp.post(f"/erp/api/ponto/dispositivos/{grupo}/aprovar", json={"perfil": "LISTA", "autorizados": [CPF_JOAO, CPF_MARIA],
+                                                                      "cpf": CPF_MARIA})
     with db.conexao() as conn:
         qr.gravar_enviado(conn, mundo["joao"], "BWSP1.qr-do-joao-desligado-00000001", "GESTAO")
         assert desligamentos.aplicar(conn)["pessoas"] == 0                      # ninguém saiu ainda
@@ -79,10 +80,10 @@ def test_grupo_e_temporario_e_o_sistema_sugere_cancelar(app, mundo, banco):
     g = _id_do_aparelho(dp, "aparelho-de-grupo-temporario-012")
     longe = (horario.hoje() + dt.timedelta(days=120)).isoformat()
     r = dp.post(f"/erp/api/ponto/dispositivos/{g}/aprovar", json={"perfil": "LISTA", "autorizados": [CPF_JOAO],
-                                                                  "valido_ate": longe})
+                                                                  "cpf": CPF_JOAO, "valido_ate": longe})
     assert r.status_code == 400 and "90 dias" in r.get_json()["erro"]
     j = dp.post(f"/erp/api/ponto/dispositivos/{g}/aprovar",
-                json={"perfil": "LISTA", "autorizados": [CPF_JOAO]}).get_json()["dispositivo"]
+                json={"perfil": "LISTA", "autorizados": [CPF_JOAO], "cpf": CPF_JOAO}).get_json()["dispositivo"]
     assert j["valido_ate"] == (horario.hoje() + dt.timedelta(days=15)).isoformat()
     with banco.connect() as conn:                   # o grupo venceu
         conn.execute(text("UPDATE ponto.dispositivos SET valido_ate = :v WHERE id = :g"),
@@ -128,9 +129,14 @@ def test_so_quem_bate_faz_pedido(app, mundo, monkeypatch):
     # 1. No próprio celular, quem não é exceção não pede
     cel = _entrar_no_app(app, CPF_JOAO, monkeypatch)
     r = cel.post("/ponto/app/api/pedidos", json=atestado)
-    assert r.status_code == 400 and "aparelho da obra" in r.get_json()["erro"]
+    assert r.status_code == 400 and "ponto da obra" in r.get_json()["erro"]
     with db.conexao() as conn:
         forma_de_bater.definir(conn, mundo["joao"], True, "teste")
+    # Desde 08/10/2026 bater no celular não basta: o pedido pelo celular é outra marcação
+    assert cel.post("/ponto/app/api/pedidos", json=atestado).status_code == 400
+    from app.apps.ponto.core import papeis
+    with db.conexao() as conn:
+        papeis.definir(conn, mundo["joao"], pede_no_celular=True)
     assert cel.post("/ponto/app/api/pedidos", json=atestado).status_code == 201       # exceção pede
     # 2. No aparelho da obra, identificado pelo CPF
     tab, h = _aparelho(app, "tablet-da-obra-pedidos-01234567")
@@ -206,7 +212,7 @@ def test_todo_aparelho_vence_em_90_dias_e_avisa_antes(app, mundo, banco):
     tab, h = _aparelho(app, "tablet-que-vence-em-90-dias-0123")
     t = _id_do_aparelho(dp, "tablet-que-vence-em-90-dias-0123")
     j = dp.post(f"/erp/api/ponto/dispositivos/{t}/aprovar",
-                json={"perfil": "COMPARTILHADO", "obras": ["PG-A"]}).get_json()["dispositivo"]
+                json={"perfil": "COMPARTILHADO", "obras": ["PG-A"], "cpf": CPF_MARIA}).get_json()["dispositivo"]
     assert j["valido_ate"] == (horario.hoje() + dt.timedelta(days=90)).isoformat()
     assert tab.get("/ponto/app/api/aparelho", headers=h).get_json()["aparelho"]["vencimento"]["avisar"] is False
     with banco.connect() as conn:                   # faltam 10 dias

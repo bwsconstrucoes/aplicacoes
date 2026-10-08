@@ -24,6 +24,8 @@ substituiu esse cenário.
 | **cron-job.org** | `POST /api/baixabradesco/processar-fila-tardia` | de 5 em 5 minutos, para retomar o que ficou parado |
 | Quem estiver investigando | `POST /api/baixabradesco/diagnostico` | quando um comprovante não casou e ninguém sabe por quê |
 | Quem estiver investigando | `POST /api/baixabradesco/reprocessar-fila` | para tentar de novo o que falhou depois do casamento |
+| Quem estiver investigando | `GET /api/baixabradesco/fila-resumo` | para contar a fila de falhas por situação |
+| Quem estiver investigando | `GET /api/baixabradesco/conferir-omie` | para comparar a SPsBD com o Omie e achar baixa pela metade |
 | Monitor | `GET /api/baixabradesco/health` | sinal de vida |
 
 Ninguém abre tela aqui: **não existe interface**. A aplicação só responde a
@@ -242,6 +244,175 @@ depois a planilha. A impressão digital é registrada assim que o Omie aceita.
 E a gravação na planilha **deixou de falhar em silêncio**: erro ali vai para a
 fila de tentativas, como já acontecia com o Pipefy, e aparece no aviso.
 
+### As planilhas que ele escreve, e como a gravação é garantida
+
+Ele escreve em **uma planilha só** — a *Registro de SPs* (a mesma da SPsBD) — e
+dentro dela em **três abas**:
+
+| Aba | O que ele grava |
+|---|---|
+| `SPsBD` | a baixa: status Pago, carimbo, data, link do comprovante e conta |
+| `LogBaixaBradesco` | a impressão digital do comprovante já baixado |
+| `BaixaBradescoFila` | a falha, quando alguma etapa não foi |
+
+A **BaseBancos** e a **SPsAgendar** ele só **lê** — nunca escreve.
+
+**A gravação na SPsBD é confirmada antes de a resposta sair** (desde 07/10/2026):
+ele grava, **lê de volta** a coluna de status e só então segue. Se não confirmar,
+tenta outra vez; se falhar de novo, vai para a fila e entra no aviso.
+
+⚠️ Três coisas que **não** podem voltar, porque eram a causa da não-atualização
+silenciosa:
+
+1. **Gravar em thread solta.** A resposta saía antes da gravação terminar, e o
+   trabalhador do serviço é reciclado a cada mil pedidos (e reinicia a cada
+   publicação) — a thread morria no meio, sem erro em lugar nenhum.
+2. **Não conferir.** O comando de gravação não reclama quando a escrita não
+   vale.
+3. **Deixar a fila parada.** Ela só andava se alguém chamasse a rota à mão.
+   Agora cada lote drena cinco pendências junto — e o acumulado se zera pela
+   rota de reprocessar com `limite` alto (ver a seção da fila, abaixo).
+
+## A fila de falhas: como contar e como drenar
+
+A aba `BaixaBradescoFila` guarda **tudo** que já passou por ela, concluído
+inclusive. Então o número de linhas da aba **não** é o número de pendências — e
+essa diferença é a primeira coisa a saber antes de mandar drenar.
+
+| O que você quer | Como |
+|---|---|
+| saber quantas pendências de verdade existem | `GET /api/baixabradesco/fila-resumo` |
+| drenar o acumulado | `POST /api/baixabradesco/reprocessar-fila` com `limite` alto |
+| drenar incluindo o que esgotou as cinco tentativas | o mesmo, com `incluir_falhados: true` |
+| drenar só uma etapa (o dinheiro primeiro) | o mesmo, com `etapas: ["omie"]` |
+| limpar o acumulado de avisos antigos | o mesmo, com `etapas: ["zapi"]` |
+
+**As duas respostas trazem um campo `em_portugues`**, com uma frase dizendo o que
+os números querem dizer — quem lê isto costuma estar no celular. A frase vem
+junto com os números, nunca em lugar deles.
+
+O **resumo** não grava nada e não reprocessa nada: conta por situação
+(`PENDENTE` vencido, `PENDENTE` agendado para depois, `FALHOU`, `CONCLUIDO`),
+por etapa, por tipo de falha, diz a data do registro mais antigo e quantos lotes
+de cinco seriam necessários no ritmo automático.
+
+**Quem anda com a fila, hoje:**
+
+1. **O cron de 5 em 5 minutos** (`/processar-fila-tardia`, que já existia e já
+   era autenticado). Ele drena **por etapa, na ordem da importância** — `omie`
+   (dinheiro), `sheets` (planilha), `pipefy` (cartão), `zapi` (recado) —, 15, 15,
+   15 e 10 por disparo. Dá ~180 itens por hora sem encostar na cota.
+2. **Cada lote de comprovantes**, cinco itens, para pendência nova não
+   envelhecer.
+3. **Uma chamada à mão** com `limite` alto, para zerar acumulado.
+
+⚠️ **A ordem das etapas não é alfabética, e não pode virar.** Em 08/10/2026 a
+fila tinha 1.943 recados de WhatsApp na frente de 238 baixas no Omie. Drenar na
+ordem da planilha deixaria o dinheiro para o fim.
+
+**O cron NÃO limpa o acumulado de avisos antigos.** Aviso com mais de três dias
+nem é carregado por ele — e isso tem de acontecer na **escolha** das linhas, não
+depois. A fila é lida em ordem: com 1.943 avisos de junho na frente, pedir "dez
+avisos" devolvia sempre os dez mais velhos, que seriam descartados por idade, e
+o aviso de ontem nunca era alcançado. A fila entupia com o que ela mesma ia
+jogar fora. Marcar 1.943 linhas de uma vez é decisão
+do dono — pede-se explicitamente, com `etapas: ["zapi"]`, e aí a marcação sai em
+blocos de 50 linhas por chamada, não uma por linha.
+
+**As credenciais que a drenagem automática usa vêm do ambiente do Render**, não
+do pedido — o cron não manda credencial nenhuma. São `OMIE_KEY` / `OMIE_SECRET`
+(confirmados no Render em 08/10/2026), `PIPEFY_API_TOKEN` e as três `ZAPI_*`. O
+nome da variável é parte do contrato: trocar em silêncio pararia a drenagem
+inteira, e há teste travando cada um.
+
+⚠️ **Falta de credencial NÃO consome tentativa.** Era o jeito mais rápido de
+apagar a fila sem resolver nada: cinco passadas sem credencial marcariam as 238
+baixas como `FALHOU`. Hoje a linha fica intacta e o relatório diz o que falta
+configurar (`o_que_falta_configurar`).
+
+⚠️ **A cota do Google é por minuto e é do mesmo usuário de serviço que o ERP, o
+painel e o Análise de SPs usam.** Por isso, em lote grande:
+
+- entra **pausa entre itens** (1,2 s acima de 20 itens; `pausa_ms` muda isso);
+- a varredura **para sozinha** na terceira recusa seguida por cota, devolve o
+  que fez e deixa o resto `PENDENTE` para a próxima passada — insistir aqui
+  tiraria os outros sistemas do ar.
+
+**O que a fila lê da planilha:** só as colunas A:L para filtrar, e o payload
+(coluna N, um JSON por linha) apenas das linhas escolhidas. Antes ela lia a aba
+inteira a cada chamada — com duas mil linhas isso era megabytes por chamada, e
+é justamente o que `CONTEXTO.md` §3.7 proíbe.
+
+**Aviso de WhatsApp parado na fila há mais de três dias não é reenviado.** Ele
+avisaria de um problema provavelmente já resolvido na mão, e iria para dois
+celulares; sai da fila com o motivo escrito na linha. Quem quiser o contrário
+manda `reenviar_avisos_antigos: true`. A trava vale **só** para aviso: baixa de
+dois meses atrás continua sendo baixa.
+
+**Repetir uma baixa não baixa duas vezes.** O reprocessamento do Omie consulta o
+título primeiro e, se já estiver `PAGO`, dá a pendência por resolvida sem lançar
+nada.
+
+## O conferidor SPsBD × Omie
+
+São **duas** direções, e elas não valem o mesmo. O dono explicou por quê em
+08/10/2026: *"fazemos conciliação bancária diária. No sistema Omie vai estar tudo
+atualizado. O furo pode ser mais na planilha e na movimentação do card."*
+
+| Direção | O que significa | Probabilidade |
+|---|---|---|
+| **Omie pago, planilha não** | o dinheiro saiu, o Omie sabe, e a SP continua aparecendo como "a pagar" para quem usa a planilha | **o furo de verdade** |
+| **Planilha paga, Omie aberto** | baixa pela metade: o dinheiro saiu e o título não baixou | menos provável, pela conciliação diária |
+
+A primeira direção **não aparece em lugar nenhum** sem este conferidor: a fila de
+falhas tinha ZERO pendências de planilha, porque a gravação morria antes de
+chegar nela — o sistema não tinha como saber que deixou de gravar. Ela também era
+invisível para a primeira versão deste módulo, que partia das linhas marcadas
+"Pago"; o furo mora justamente nas linhas marcadas "Pagar".
+
+`GET /api/baixabradesco/conferir-omie` faz a comparação. Parâmetros, todos
+opcionais, aceitos pela barra do navegador: `dias` (janela, 60 por padrão),
+`limite` (consultas ao Omie por chamada e **por direção**, 50 por padrão),
+`pular` (continua de onde a chamada anterior parou), `sentido` (`ambos`,
+`omie_pago` ou `planilha_paga`) e `apenas_contar=1`.
+
+⚠️ **`pular` não é conveniência, é correção.** O conferidor não grava nada, então
+nada sai do conjunto entre uma chamada e a seguinte: sem `pular`, chamar de novo
+reconsultaria as mesmas primeiras linhas, para sempre. A resposta devolve
+`proximo_pular` pronto, e a frase em português já traz o número.
+
+**Ele não grava nada.** Nem na planilha, nem no Omie. É relatório. Corrigir é
+decisão de quem lê — um conferidor que também corrigisse erraria em silêncio na
+primeira divergência de valor, e aí seria pior que não ter conferidor.
+
+O relatório separa quatro coisas que **não** são a mesma:
+
+| No relatório | O que é | O que fazer |
+|---|---|---|
+| `planilha_atrasada` | Omie pago, planilha não | **o furo apontado pelo dono** — a SP aparece como a pagar sem ser; traz o link do cartão do Pipefy junto |
+| `divergentes` | planilha paga, Omie aberto | **é a baixa pela metade** — dinheiro saiu, título não baixou |
+| `titulos_nao_encontrados` | o código de integração não existe no Omie | cadastro errado na planilha, outro problema |
+| `erros_de_consulta` | a chamada falhou (rede, cota) | tentar de novo |
+
+Misturar os quatro faria o relatório mentir, e só os dois primeiros têm a ver com
+dinheiro.
+
+⚠️ **As duas janelas usam datas diferentes, e têm de usar.** A direção
+"planilha paga" tem data de pagamento na planilha. A direção "Omie pago" não tem
+— a planilha nem sabe que foi paga —, então a janela é pelo **vencimento**. Sem
+janela seriam ~52 mil consultas ao Omie. Vencimento muito à frente também fica de
+fora: título que vence no ano que vem não é planilha atrasada.
+
+**O conferidor não consulta o Pipefy.** Seria outra volta de API por item; ele
+entrega o link do cartão para quem for olhar.
+
+**Ele lê só nove colunas da SPsBD** (A, C, D, G, O, P, R, X, AG). Ler `A:AK`
+inteiro custa 150–250 MB e foi assim que o serviço caiu por memória em julho de
+2026.
+
+`apenas_contar=1` mede o tamanho do problema **sem** gastar uma consulta ao Omie
+por linha — é por onde começar quando a janela é grande.
+
 ## O aviso do que NÃO foi baixado
 
 Comprovante que baixa normalmente não gera aviso nenhum — é o esperado. O que
@@ -262,6 +433,19 @@ Entram no aviso:
 **Não** entram, de propósito: o que baixou (é o esperado) e o que foi barrado por
 já ter sido baixado (a trava fez o trabalho dela). Aviso demais faz a pessoa
 parar de ler, e aí o que importava se perde.
+
+⚠️ **O resultado do aviso diz QUEM recebeu, e por onde** — e isso não era
+visível antes. O envio devolvia sucesso quando **qualquer** canal entregava, e o
+Telegram do dono entrega quase sempre; então o WhatsApp podia falhar para o
+financeiro, que não tem Telegram, e tudo reportava sucesso. É o mesmo defeito da
+gravação silenciosa, com outra roupa — e num aviso de falha ele é pior, porque
+falha em silêncio justamente quando algo já deu errado.
+
+Hoje a resposta traz `entregues_no_whatsapp`, `so_pelo_telegram` e `sem_entrega`,
+com um alerta em português quando alguém ficou só no Telegram. **E credencial
+presente com envio falhando ganha segunda tentativa** pelo notificador comum —
+antes a segunda tentativa só existia quando a credencial estava *ausente*, então
+instância do Z-API fora do ar significava financeiro sem aviso e sem retentativa.
 
 É **um aviso por lote**, não um por comprovante, com no máximo dez itens
 listados — acima disso ele diz quantos ficaram de fora.

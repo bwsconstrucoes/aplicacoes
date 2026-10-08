@@ -434,6 +434,33 @@ def _letra_to_idx(letra: str) -> int:
     return result
 
 
+# Colunas cuja gravação é conferida lendo de volta. Só as de texto simples: o
+# Google reescreve data e número conforme o formato da célula (USER_ENTERED), e
+# comparar esses daria divergência onde não há.
+COLUNAS_CONFERIDAS = ('O',)
+
+
+def _conferir_gravacao(sheet, target_row: int, updates_cols: dict) -> list:
+    """Lê de volta e devolve as colunas que NÃO ficaram com o valor gravado."""
+    conferir = {c: v for c, v in updates_cols.items()
+                if c in COLUNAS_CONFERIDAS and as_string(v)}
+    if not conferir:
+        return []
+    try:
+        lidos = sheet.batch_get([f'{c}{target_row}' for c in conferir])
+    except Exception as e:
+        return [f'não deu para conferir ({str(e)[:80]})']
+
+    falta = []
+    for (col, esperado), bloco in zip(conferir.items(), lidos):
+        atual = ''
+        if bloco and bloco[0]:
+            atual = as_string(bloco[0][0])
+        if normalize_compact(atual) != normalize_compact(esperado):
+            falta.append(f'{col} (esperado "{esperado}", está "{atual}")')
+    return falta
+
+
 def execute_spsbd_updates(updates: list) -> dict:
     """Executa updates na planilha via gspread (chamada direta, sem GAS).
 
@@ -501,6 +528,15 @@ def execute_spsbd_updates(updates: list) -> dict:
                 for col_letra, novo_val in updates_cols.items()
             ]
             sheet.batch_update(data, value_input_option='USER_ENTERED')
+
+            # Confere lendo de volta. Gravação que não chegou é o defeito mais
+            # frequente desta área, e ela nunca avisava: o batch_update não
+            # levanta erro quando a escrita não vale (linha travada, permissão,
+            # resposta parcial do Google).
+            falta = _conferir_gravacao(sheet, target_row, updates_cols)
+            if falta:
+                erros.append(f'linha {target_row}: gravação não confirmada em {falta}')
+                continue
             gravados += 1
 
         except Exception as e:

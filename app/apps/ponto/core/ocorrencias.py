@@ -52,8 +52,12 @@ STATUS_DA_ETAPA = {SUPERVISOR: "AGUARDANDO_SUPERVISOR", DP: "AGUARDANDO_DP"}
 SAUDE = ("ATESTADO", "AFASTAMENTO")
 # O que o próprio colaborador pode pedir pelo celular. Férias e abono nascem no DP.
 PEDIDOS_DO_APP = ("ATESTADO", "AJUSTE_BATIDA", "COMPENSACAO", "FOLGA_BANCO", "LICENCA")
-RECUSA_PEDIDO_NO_CELULAR = ("atestado, licença, ajuste e compensação são entregues no aparelho da obra "
-                            "ou pelo responsável da obra")
+RECUSA_PEDIDO_NO_CELULAR = ("atestado, licença, ajuste e compensação são entregues no ponto da obra "
+                            "ou com o administrativo da obra")
+# Onde o pedido nasce fora do ERP: o próprio celular (APP), o ponto da obra com a
+# pessoa identificada (APARELHO), e o responsável ou administrativo da obra
+# pedindo POR OUTRA PESSOA no aplicativo (RESPONSAVEL, migração 008).
+ORIGENS_DO_APLICATIVO = ("APP", "APARELHO", "RESPONSAVEL")
 MAX_DIAS = 120
 
 
@@ -66,6 +70,7 @@ class Quem:
     dp: bool = False                  # tem "aprovar_afastamento"
     obras: Optional[list[int]] = None  # None = todas
     colaborador_id: Optional[int] = None  # quando é o próprio colaborador (app)
+    pessoas: Optional[set] = None      # alcance fechado numa lista (o administrativo no app)
     extras: dict = field(default_factory=dict)
 
     def alcanca_obra(self, obra_id: Optional[int]) -> bool:
@@ -80,6 +85,8 @@ def _data(valor, campo: str) -> dt.date:
 
 
 def pessoa_no_alcance(conn: Connection, quem: Quem, colaborador_id: int) -> bool:
+    if quem.pessoas is not None:
+        return int(colaborador_id) in quem.pessoas
     if quem.colaborador_id is not None:
         return quem.colaborador_id == colaborador_id
     if quem.obras is None:
@@ -142,16 +149,16 @@ def criar(conn: Connection, quem: Quem, dados: dict, *, origem: str = "GESTAO") 
     tipo = str(dados.get("tipo") or "").strip().upper()
     if tipo not in ETAPAS:
         raise ErroDeValidacao("tipo de pedido desconhecido", campo="tipo")
-    if origem in ("APP", "APARELHO") and tipo not in PEDIDOS_DO_APP:
+    if origem in ORIGENS_DO_APLICATIVO and tipo not in PEDIDOS_DO_APP:
         raise ErroDeValidacao("este pedido é feito pelo DP, não pelo celular", campo="tipo")
     colaborador_id = int(dados.get("colaborador_id") or quem.colaborador_id or 0)
     pessoa = exigir_pessoa_no_alcance(conn, quem, colaborador_id)
-    # QUEM FAZ PEDIDO (decisão do dono, 06/10/2026): quem tem permissão de bater
-    # o ponto — o aparelho da obra (ou o de grupo) e o responsável da obra no
-    # ERP. No próprio celular, só quem é exceção e bate nele.
+    # QUEM FAZ PEDIDO PELO PRÓPRIO CELULAR (decisão do dono, 08/10/2026): só quem
+    # tem a marcação "faz pedidos pelo celular", ou é administrativo de obra
+    # (papeis.py). Os outros entregam no ponto da obra ou com o administrativo.
     if origem == "APP":
-        from . import forma_de_bater
-        if not forma_de_bater.pode_no_celular(pessoa, forma_de_bater.em_vigor(conn)):
+        from . import papeis
+        if not papeis.pede_pelo_proprio_celular(conn, pessoa):
             raise ErroDeValidacao(RECUSA_PEDIDO_NO_CELULAR, campo="tipo")
     if origem == "GESTAO" and not (quem.supervisor or quem.dp):
         raise ErroDeValidacao("você não pode registrar pedidos de ponto", campo="tipo")
@@ -185,7 +192,10 @@ def criar(conn: Connection, quem: Quem, dados: dict, *, origem: str = "GESTAO") 
                                        or pessoa.get("obra_id"))
         if not obra:
             raise ErroDeValidacao("diga a obra da batida", campo="obra")
-        if obra["id"] not in cadastros.obras_da_pessoa(conn, colaborador_id):
+        # O administrativo pede o ajuste na obra em que ele está (a do alcance),
+        # mesmo que ela não seja a do cadastro da pessoa: ela bateu ali.
+        na_obra_do_alcance = origem == "RESPONSAVEL" and quem.alcanca_obra(obra["id"]) and quem.obras is not None
+        if not na_obra_do_alcance and obra["id"] not in cadastros.obras_da_pessoa(conn, colaborador_id):
             raise ErroDeValidacao("essa obra não é da pessoa", campo="obra")
         obra_id = int(obra["id"])
         motivo = str(dados.get("motivo") or "").strip().upper()
@@ -208,7 +218,7 @@ def criar(conn: Connection, quem: Quem, dados: dict, *, origem: str = "GESTAO") 
     elif tipo == "FOLGA_BANCO":
         if pessoa.get("regime_banco") in (None, "SEM_BANCO"):
             raise ErroDeValidacao("esta pessoa não tem banco de horas", campo="tipo")
-    elif tipo == "ATESTADO" and origem in ("APP", "APARELHO") and not dados.get("documento_base64"):
+    elif tipo == "ATESTADO" and origem in ORIGENS_DO_APLICATIVO and not dados.get("documento_base64"):
         raise ErroDeValidacao("anexe a foto ou o PDF do atestado", campo="documento")
     subtipo = None
     if tipo == "LICENCA" and licencas.disponivel(conn):
@@ -245,7 +255,7 @@ def criar(conn: Connection, quem: Quem, dados: dict, *, origem: str = "GESTAO") 
         RETURNING id
     """, c=colaborador_id, t=tipo, i=inicio, f=fim, h=horario_ajuste, o=obra_id,
          dt=dia_trabalhado, m=minutos, d=descricao[:1000],
-         cid=(str(dados.get("cid") or "").strip()[:20] or None) if quem.dp or origem in ("APP", "APARELHO") else None,
+         cid=(str(dados.get("cid") or "").strip()[:20] or None) if quem.dp or origem in ORIGENS_DO_APLICATIVO else None,
          med=(str(dados.get("medico") or "").strip()[:120] or None),
          crm=(str(dados.get("crm") or "").strip()[:30] or None),
          doc=documento_id, st=STATUS_DA_ETAPA[etapas[0]], orig=origem,

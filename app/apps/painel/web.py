@@ -456,7 +456,20 @@ def _opcoes_no_escopo():
     from . import auth, consultas
     opcoes = consultas.opcoes_de_filtro()
     pessoa = auth.usuario_da_sessao()
+    obras_pedidas = [o for o in request.args.getlist("obra") if o]
+    projetos_pedidos = [p for p in request.args.getlist("projeto") if p]
+    contas_pedidas = [c for c in request.args.getlist("conta") if c]
+
+    def _contas_de(obras, projetos):
+        # AS CONTAS DA OBRA/PROJETO NA TELA (dono, 08/10/2026): a lista de
+        # contas mostra as que tiveram dinheiro do recorte, e a que já está
+        # marcada nunca some (senão não dava para desmarcar)
+        do_recorte = set(consultas.contas_do_recorte(obras, projetos)) | set(contas_pedidas)
+        return [c for c in opcoes.get("contas", []) if c in do_recorte]
+
     if pessoa is None:
+        if obras_pedidas or projetos_pedidos:
+            return dict(opcoes, contas=_contas_de(obras_pedidas, projetos_pedidos))
         return opcoes
     permitidas = set(pessoa.get("obras") or [])
     contas_ok = set(pessoa.get("contas") or [])
@@ -465,10 +478,19 @@ def _opcoes_no_escopo():
     mapa = consultas.obra_para_projeto() if permitidas else {}
     projetos_ok = (set(pessoa.get("projetos") or [])
                    | {mapa.get(o, "") for o in permitidas}) - {""}
+    if contas_ok:
+        # contas marcadas no cadastro continuam sendo um LIMITE: só elas
+        contas = [c for c in opcoes.get("contas", []) if c in contas_ok]
+    else:
+        # sem nada marcado: as contas por onde andou dinheiro das obras dela
+        # (ou só das escolhidas na barra). Ela já vê esses pagamentos, com a
+        # conta, em toda tela — a lista não revela nada novo.
+        obras_vistas = [o for o in obras_pedidas if o in permitidas] or sorted(permitidas)
+        contas = _contas_de(obras_vistas, [p for p in projetos_pedidos if p in projetos_ok])
     return dict(opcoes,
                 obras=[o for o in opcoes["obras"] if o in permitidas],
                 projetos=[p for p in opcoes.get("projetos", []) if p in projetos_ok],
-                contas=[c for c in opcoes.get("contas", []) if c in contas_ok])
+                contas=contas)
 
 
 def _contexto_comum(aba: str):
@@ -482,6 +504,8 @@ def _contexto_comum(aba: str):
         # so o DRE. Sem isto o botao levava a "pagina nao encontrada" —
         # 22/09/2026, visto pelo dono no acesso de um usuario.
         "administrador": auth.e_administrador(),
+        # o relatório completo: o dono, e quem tem todas as telas que ele junta
+        "pode_baixar_completo": auth.pode_baixar("completo"),
         "opcoes": _opcoes_no_escopo(),
         "atualizacao": consultas.atualizado_em(),
         "selecao": {
@@ -731,9 +755,10 @@ def analitico():
         pagina = int(request.args.get("pagina") or 1)
     except ValueError:
         pagina = 1
-    # Agrupar como no extrato: um pagamento dividido entre obras vira uma
-    # linha, com as partes por baixo (dono, 06/10/2026).
-    agrupar = request.args.get("agrupar") == "1"
+    # SEMPRE agrupado: um pagamento dividido entre obras é uma linha, com as
+    # obras por baixo (dono, 08/10/2026: "tem que ficar o lançamento sempre
+    # agrupado e eu poder expandir"). A opção de desagrupar saiu.
+    agrupar = True
     return render_template(
         "painel_analitico.html",
         **_contexto_comum("analitico"),
@@ -931,6 +956,96 @@ def _escopo_das_partes(f):
     if auth.usuario_da_sessao() is None:
         return None
     return Filtros(departamentos=f.departamentos, contas=f.contas, excluir_trf=False)
+
+
+_MES_ISO = re.compile(r"^\d{4}-\d{2}$")
+# a conferência de saldo aceita também o ANO inteiro ("2026") — dono, 07/10/2026
+_MES_OU_ANO = re.compile(r"^\d{4}(-\d{2})?$")
+
+
+@bp.route("/conferir/saldo")
+def conferir_saldo():
+    """O saldo de cada conta no mes, painel x OMIE (dono, 07/10/2026). So do
+    administrador (prefixo painel.conferir_)."""
+    from . import conferencia_saldo
+    mes = (request.args.get("mes") or "").strip()
+    if not _MES_OU_ANO.match(mes):
+        return jsonify({"ok": False, "erro": "Escolha o mês ou o ano."}), 400
+    try:
+        return jsonify({"ok": True, **conferencia_saldo.conferir_mes(mes)})
+    except Exception as e:  # noqa: BLE001 — credencial, OMIE fora
+        logger.exception("Painel: conferencia de saldo de %s falhou", mes)
+        return jsonify({"ok": False, "erro": f"Não consegui conferir agora: {e}"}), 502
+
+
+@bp.route("/conferir/saldo/json")
+def conferir_saldo_json():
+    """A resposta crua do extrato do OMIE de uma conta num mes."""
+    import json as _json
+    from flask import Response
+    from . import conferencia_saldo
+    mes = (request.args.get("mes") or "").strip()
+    conta = (request.args.get("conta") or "").strip()
+    if not _MES_OU_ANO.match(mes) or not conta.isdigit():
+        return jsonify({"ok": False, "erro": "Conta ou período inválido."}), 400
+    try:
+        resposta = conferencia_saldo.extrato_cru(int(conta), mes)
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "erro": f"Não consegui ler o OMIE agora: {e}"}), 502
+    return Response(_json.dumps(resposta, ensure_ascii=False, indent=2, default=str),
+                    mimetype="application/json",
+                    headers={"Content-Disposition":
+                             f'attachment; filename="omie_extrato_{conta}_{mes}.json"'})
+
+
+@bp.route("/conferir/lancamento-cc/json")
+def conferir_lancamento_cc_json():
+    """UM lançamento de conta corrente, cru, como o OMIE responde à consulta
+    dele (07/10/2026). É onde mora a apropriação que o movimento financeiro não
+    traz; serve para conferir o formato contra o OMIE real. So do
+    administrador (prefixo painel.conferir_)."""
+    import json as _json
+    from flask import Response
+    from .sync.omie_client import TETO_DE_ESPERA_NA_TELA, OmieClient
+    codigo = (request.args.get("codigo") or "").strip()
+    if not codigo.isdigit():
+        return jsonify({"ok": False, "erro": "Informe o número do lançamento."}), 400
+    try:
+        resposta = OmieClient.de_ambiente(
+            timeout=30, max_tentativas=3,
+            teto_de_espera=TETO_DE_ESPERA_NA_TELA).consultar_lancamento_cc(int(codigo))
+    except Exception as e:  # noqa: BLE001 — OMIE fora, número que não existe
+        return jsonify({"ok": False, "erro": f"O OMIE não respondeu: {e}"}), 502
+    return Response(_json.dumps(resposta, ensure_ascii=False, indent=2, default=str),
+                    mimetype="application/json",
+                    headers={"Content-Disposition":
+                             f'attachment; filename="omie_lancamento_cc_{codigo}.json"'})
+
+
+@bp.route("/conferir/dia/json")
+def conferir_dia_json():
+    """O que o OMIE manda num dia, CRU, como arquivo (dono, 07/10/2026: "a
+    gente baixa toda a informação do OMIE (...) por que essa falha de
+    interpretação?"). É a fonte da verdade para desenhar regra: o que existe
+    no JSON e o painel não lê. So do administrador (prefixo painel.conferir_).
+    Usa a mesma leitura guardada por 150 s da conferencia — conferir e baixar
+    o mesmo dia nao gasta duas chamadas iguais no OMIE."""
+    import json as _json
+    from . import conferencia_omie
+    dia = (request.args.get("dia") or "").strip()
+    if not _DATA_ISO.match(dia):
+        return jsonify({"ok": False, "erro": "Dia inválido."}), 400
+    try:
+        registros = conferencia_omie.registros_do_omie(dia)
+    except Exception as e:  # noqa: BLE001 — OMIE fora, credencial, limite
+        logger.exception("Painel: leitura crua do dia %s no OMIE falhou", dia)
+        return jsonify({"ok": False, "erro": f"Não consegui ler o OMIE agora: {e}"}), 502
+    corpo = _json.dumps({"dia": dia, "movimentos": registros},
+                        ensure_ascii=False, indent=2, default=str)
+    from flask import Response
+    return Response(corpo, mimetype="application/json",
+                    headers={"Content-Disposition":
+                             f'attachment; filename="omie_movimentos_{dia}.json"'})
 
 
 @bp.route("/conferir/dia")
@@ -2352,6 +2467,13 @@ def configuracoes():
     conferencias_com_erro: list[dict] = []
     contexto = {"aba_ativa": "config", "abas": ABAS}
     sincronizacao = tarefas.estado()
+    # "Não achou um aporte ou dividendo?" mora aqui desde 07/10/2026 (veio do
+    # DRE): a lista de obras para escolher
+    try:
+        from . import consultas as _c
+        contexto["obras_para_conferir"] = _c.opcoes_de_filtro().get("obras", [])
+    except Exception:  # noqa: BLE001 — banco fora, migracao pendente
+        contexto["obras_para_conferir"] = []
     # A historia das atualizacoes, passo a passo (dono, 06/10/2026: "ninguem
     # entende direito"). Falha aqui nao derruba a tela de configuracao.
     try:

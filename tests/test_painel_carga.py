@@ -587,6 +587,8 @@ def test_a_atualizacao_do_dia_le_a_planilha_de_projetos(monkeypatch):
 
     lida = []
     monkeypatch.setattr(espelho, "atualizar_projetos", lambda *a, **k: lida.append(1) or 12)
+    # a apropriação dos lançamentos de conta corrente tem teste próprio
+    monkeypatch.setattr(tarefas, "_ler_apropriacoes", lambda *a, **k: "")
     assert tarefas.executar_trabalho("rapida", 1) is True
     assert lida, "a atualização do dia tem de ler a planilha de projetos"
     assert refez and fechou["ok"] is True and "ATENÇÃO" not in fechou["mensagem"]

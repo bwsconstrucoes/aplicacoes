@@ -10,6 +10,9 @@ está DESLIGADO são recusadas, e a sessão aberta cai na primeira tela que ele
 abrir. O que esta rotina acrescenta é o que sobrava ATIVO em nome da pessoa:
 
   · o celular pessoal aprovado → BLOQUEADO ("desligado");
+  · o ponto da obra ou de equipe de que ela era a RESPONSÁVEL → BLOQUEADO
+    também (07/10/2026: todo aparelho tem responsável; sem ele, ninguém
+    responde pelo aparelho — reativa-se aprovando de novo com outra pessoa);
   · os QR Codes ainda valendo → cancelados (o print no celular não serve mais);
   · os WhatsApps de QR esperando na fila → CANCELADOS;
   · o lugar nos aparelhos de grupo (quem bate pela equipe) → retirado.
@@ -37,7 +40,7 @@ def _candidatos(conn: Connection) -> set[int]:
     """Quem ainda tem alguma coisa valendo no ponto — a lista é curta."""
     ids = {int(l["c"]) for l in db.todos(conn, """
         SELECT colaborador_id AS c FROM ponto.dispositivos
-         WHERE perfil = 'INDIVIDUAL' AND status = 'APROVADO' AND colaborador_id IS NOT NULL
+         WHERE status = 'APROVADO' AND colaborador_id IS NOT NULL
         UNION SELECT colaborador_id FROM ponto.dispositivo_autorizados""")}
     if db.tem_003(conn):
         ids |= {int(l["c"]) for l in db.todos(conn, """
@@ -56,8 +59,10 @@ def aplicar(conn: Connection) -> dict:
         feito["pessoas"] += 1
         feito["celulares"] += db.executar(conn, """
             UPDATE ponto.dispositivos SET status = 'BLOQUEADO', bloqueado_em = now(),
-                   motivo_bloqueio = 'pessoa desligada (bloqueio automático)'
-             WHERE colaborador_id = :c AND perfil = 'INDIVIDUAL' AND status = 'APROVADO'""", c=cid)
+                   motivo_bloqueio = CASE WHEN perfil = 'INDIVIDUAL'
+                                          THEN 'pessoa desligada (bloqueio automático)'
+                                          ELSE 'responsável desligado — aprove de novo com outro responsável' END
+             WHERE colaborador_id = :c AND status = 'APROVADO'""", c=cid)
         feito["grupos"] += db.executar(conn, "DELETE FROM ponto.dispositivo_autorizados WHERE colaborador_id = :c",
                                        c=cid)
         if db.tem_003(conn):

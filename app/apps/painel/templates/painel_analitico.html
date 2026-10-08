@@ -20,17 +20,20 @@
   {% for campo, valor in [('grupo', grupo), ('categoria', categoria),
                           ('credor', credor), ('busca', busca),
                           ('visao', visao), ('ordem', ordem),
-                          ('de', de), ('ate', ate), ('base', base),
-                          ('agrupar', '1' if agrupar else '')] %}
+                          ('de', de), ('ate', ate), ('base', base)] %}
     {% if valor and campo not in proprios %}
       <input type="hidden" name="{{ campo }}" value="{{ valor }}">
     {% endif %}
   {% endfor %}
 {% endmacro %}
 
-{# "3 partes · no extrato R$ X": liga a linha ao débito único da conta #}
-{% macro selo(g) %}{% if g and g.partes > 1 %}
-  <small class="selo neutro" title="Este pagamento foi dividido entre obras. No extrato da conta é um débito só.">{{ g.partes }} partes{% if g.fora_do_filtro %}, {{ g.fora_do_filtro }} fora do filtro{% endif %} · no extrato {{ brl(g.no_extrato) }}</small>
+{# Pagamento dividido entre obras: a linha é UMA, com ▸ para abrir as obras
+   (dono, 08/10/2026: o selo "2 partes · no extrato R$ X" "vai soar esquisito,
+   ninguém que opere o painel vai entender"). O único aviso que fica é quando
+   o filtro esconde alguma das obras — aí o valor da linha não é o pagamento
+   inteiro, e isso tem de estar dito. #}
+{% macro selo(g) %}{% if g and g.fora_do_filtro %}
+  <small class="selo neutro" title="O pagamento inteiro foi de {{ brl(g.no_extrato) }}; o filtro da tela esconde a parte das outras obras.">+{{ g.fora_do_filtro }} obra{{ '' if g.fora_do_filtro == 1 else 's' }} fora do filtro</small>
 {% endif %}{% endmacro %}
 
 {% macro celulas(l) %}
@@ -186,15 +189,6 @@
           <option value="credor" {% if ordem == 'credor' %}selected{% endif %}>Credor</option>
           <option value="categoria" {% if ordem == 'categoria' %}selected{% endif %}>Categoria</option>
         </select>
-      </div>
-      {# Um pagamento dividido entre obras vira UMA linha, como no extrato do
-         banco, com as partes por baixo (dono, 06/10/2026). #}
-      <div class="campo" style="align-self:end">
-        <label style="display:flex; gap:6px; align-items:center; cursor:pointer"
-               title="Junta as partes de um mesmo pagamento (mesmo título, dia e conta) numa linha só">
-          <input type="checkbox" name="agrupar" value="1" {% if agrupar %}checked{% endif %}>
-          Agrupar como no extrato
-        </label>
       </div>
       <div class="campo" style="align-self:end; display:flex; gap:8px">
         <button class="btn" type="submit">Aplicar</button>

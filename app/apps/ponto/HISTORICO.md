@@ -41,6 +41,14 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1i. **PUBLICADO em 08/10/2026** (com o "pode" do dono, `main` em `29bd1f0`): as
+   correções do cadastro de aparelhos (seção de 07/10) e a TELA INICIAL com a
+   consulta pela cerca, o administrativo de obra, os ícones ✏️/🗓️ e a regra
+   do computador (seção de 08/10), com a migração **008**. Confirmar com o dono:
+   apertou "Aplicar atualizações do ponto"? Sem ela, ninguém é administrativo e
+   o pedido pelo celular segue a regra de 06/10. Depois: marcar os
+   administrativos de obra (Pessoas › "Acesso no aplicativo") e testar a tela
+   inicial num celular de verdade (câmera traseira e zoom ainda não conferidos).
 1h. **PUBLICADO em 06/10/2026** (com o "pode" do dono): os pedidos de 06/10
    (itens 1 a 10 abaixo), com as migrações **006 e 007**. Confirmar com o dono:
    apertou "Aplicar atualizações do ponto"? escolheu a **escala padrão da
@@ -84,6 +92,141 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 08/10/2026 — A tela inicial, a consulta pela cerca da obra e o administrativo de obra
+
+O dono descreveu a dinâmica inteira (ainda sem ter testado a de 07/10) e pediu
+para conferir e apontar furos. Feito assim — regras em `core/papeis.py`, rotas
+em `app_obra.py`, migração **008** (`pede_no_celular` e `administrativo_obra`
+em `colaborador_config`; origem de pedido `RESPONSAVEL`):
+
+1. **Tela inicial em todo aparelho** ("tem que ter uma tela inicial, e dali a
+   gente é direcionado"): Bater ponto · Atestados, afastamentos e ajustes ·
+   Consultar o ponto das pessoas · Meu ponto. Cada opção aparece conforme o
+   aparelho e a pessoa (`GET /ponto/app/api/inicio`); a que não vale aparece
+   apagada, dizendo por quê. Toda tela tem "‹ Início". Os links pequenos de
+   baixo da tela da batida (de que ele não gostou) saíram: entregar atestado
+   e "Meu ponto" foram para a tela inicial; ficou só "Esqueci meu QR Code". O
+   ponto da obra reiniciado volta direto para a batida se era nela que estava.
+2. **Consulta das pessoas da obra**, com busca por nome e mês a mês. Aparece
+   quem **bateu ponto naquela obra no mês** (mesmo que tenha batido outros dias
+   em outra) **e quem é da obra no cadastro** — o segundo grupo é o furo de quem
+   passou o mês de atestado ou chegou hoje (sem batida, não haveria como lançar
+   nada para ele). Fora do alcance, a pessoa responde "não encontrada".
+3. **Na folha da pessoa, o dia leva ao pedido**, por dois ÍCONES ao lado do dia
+   (o dono achou os textos "gigantes"): ✏️ corrigir a batida que faltou (o
+   mesmo ajuste do dia, já com o que falta) e 🗓️ justificar a ausência
+   (atestado, licença, afastamento, compensação). O 🩺 da primeira versão saiu
+   porque "fica muito restrito à saúde" (um exame do Detran, por exemplo); entre
+   📎, 📄 e 🗓️, o dono escolheu o calendário. A legenda aparece uma vez, no topo da lista. Vale também no
+   "Meu mês". O pedido sai **em
+   nome de quem lançou** (origem `RESPONSAVEL`) e vai para a validação de
+   sempre — ninguém no aplicativo aprova nada. Atestado aparece como
+   "Atestado", sem CID nem documento (só o DP vê).
+4. **Quem consulta** ("o que vai dar poderes é ele ser administrativo de obra,
+   e o celular de obra vai ter os mesmos poderes"):
+   - **Ponto da obra**: bater e entregar atestado continuam SEM login (como
+     antes). Consultar e pedir por outros pedem **CPF e PIN do responsável
+     pelo aparelho ou de um administrativo de obra** — decisão minha, avisada
+     ao dono: sem isso, qualquer um na frente do aparelho veria a folha de
+     todos. Vale a obra cuja cerca contém o aparelho. Sai sozinho em 3 min.
+   - **Administrativo de obra** (marcação na ficha da pessoa, ERP › Ponto ›
+     Pessoas › "Acesso no aplicativo"): em qualquer aparelho — o celular dele,
+     o ponto da obra, o computador. Vale a obra cuja cerca contém o aparelho
+     agora **e as obras em que ele bateu ponto nos últimos 7 dias** — é o que
+     vale no computador, a qualquer hora. (A primeira versão só valia com o
+     ponto dele aberto naquele momento; o dono afrouxou no mesmo dia: "pode
+     afrouxar mais (...) se precisar lançar algo fora do horário, deixa".)
+     Mudou de obra, a antiga sai sozinha uma semana depois da última batida
+     lá. O próprio ponto ele vê sempre, e pede por si.
+   - **Ponto de equipe**: o responsável vê a equipe da lista (sem cerca — a
+     equipe anda); pede por ela só com a marcação "faz pedidos pelo celular".
+   - **Celular pessoal**: vê o próprio ponto; pede pelo celular só com a
+     marcação "faz pedidos pelo celular" — **separada** da de "bate no próprio
+     celular" (antes, uma dava a outra). Antes da 008, vale a regra de 06/10.
+5. **O que NÃO mudou, de propósito**: para o celular de alguém **bater pelos
+   outros** (QR/CPF), ele continua sendo aprovado como **Ponto da obra**, com a
+   pessoa de responsável. A marcação de administrativo dá consulta e pedidos,
+   não a batida pelos outros — que é o poder mais sensível e passa pela
+   aprovação do RH (e vence em 90 dias). O ponto da obra também passou a
+   aceitar o login do administrativo (antes, só o do responsável).
+
+Furos que ficam, ditos ao dono: localização falsa (aplicativo que finge GPS)
+engana a cerca da consulta como engana a da batida — o que segura é tudo ficar
+em nome de quem fez e o pedido passar pela validação; e o administrativo que
+tem acesso às obras em que bateu na última semana, a qualquer hora e de
+qualquer lugar pelo computador (escolha do dono; o PIN dele é a única chave ali).
+
+Conferido no navegador simulado: a tela inicial do ponto da obra (sem e com
+login), a batida com "‹ Início", a consulta com o administrativo (lista, folha,
+corrigir o dia, lançar atestado e licença), e a tela do João sem marcação
+nenhuma (só "Meu ponto"; as outras apagadas com o motivo). **Não conferido** num
+celular de verdade nem num computador de verdade (o navegador do computador
+pode pedir a localização; recusada, valem as obras das batidas da semana).
+
+Testes: `tests/test_ponto_papeis_banco.py`.
+
+## 07/10/2026 — Responsável em todo aparelho, "Ponto da obra" e os defeitos do primeiro teste de verdade
+
+O dono testou o cadastro e o modo da obra num celular e mandou a lista. Tudo
+corrigido, sem migração nova:
+
+1. **"Salvo e ele nem salva" / o grupo volta para tablet / os CPFs somem ao
+   reabrir.** Duas causas. (a) O erro de validação ia para o aviso no alto da
+   página e a janela FECHAVA — parecia que não tinha salvo. Agora a janela
+   reabre com o erro dentro dela e com o que foi digitado. (b) "Alterar" abria
+   em branco, porque a lista de aparelhos não traz o grupo: rota nova
+   `GET /erp/api/ponto/dispositivos/<id>` devolve o aparelho com o grupo (nome
+   e CPF) e a janela abre preenchida — tipo, responsável, grupo, prazo, obras.
+   Conferido no navegador: salvar como ponto de equipe e reabrir mostra o tipo,
+   o responsável e o grupo.
+2. **Todo aparelho tem RESPONSÁVEL** (o dono: "tem que ter o CPF do dono, para
+   saber quem está com aquele celular… acho que sim"). A coluna
+   `dispositivos.colaborador_id` deixou de ser só o dono do celular pessoal: é
+   o responsável de qualquer tipo. A tela do ERP recusa salvar sem ele ("diga o
+   CPF do responsável"); ao alterar, vale o de antes se não redigitado. No ponto
+   de equipe o responsável entra no grupo sozinho. A integração antiga (pela
+   chave) continua aprovando ponto da obra sem responsável. **Responsável
+   desligado bloqueia o aparelho** (não só o celular pessoal): ninguém responde
+   mais por ele; reativa-se aprovando de novo com outra pessoa. Escolha minha,
+   avisada ao dono — o risco é a obra ficar sem bater até o RH trocar o
+   responsável.
+3. **O nome "tablet" saiu.** O dono: "não tem tablet… é o celular da obra", e
+   depois: "às vezes o celular não é da empresa — pode ser o telefone próprio
+   de alguém designado". Os três tipos passaram a se chamar **Ponto da obra**
+   (todos da obra batem; pode ser o celular da empresa ou o de alguém
+   designado), **Celular pessoal** (só o dono bate) e **Ponto de equipe** (só
+   a lista; passageiro). Nos valores gravados nada mudou (COMPARTILHADO,
+   INDIVIDUAL, LISTA).
+4. **Quem está com o ponto da obra quer ver o próprio ponto.** No ponto da obra
+   e no de equipe, **só o responsável** entra no "Meu ponto" (botão "Meu ponto"
+   na tela da batida); qualquer outro CPF é recusado ("este é o ponto da obra —
+   só o responsável por ele entra"). Dentro, um aviso lembra que é o ponto da
+   obra, com "Voltar para a batida agora"; sem uso por 3 minutos, volta
+   sozinho. Antes disso ninguém entrava (regra de 05/10). Conferido no
+   navegador com duas pessoas.
+5. **Obra não detectada no modo da obra, nome duplicado.** O aparelho agora
+   escolhe sozinho a obra cuja cerca o contém (raio + precisão do GPS, até
+   150 m a mais) e diz na linha de cima "Obra detectada pela localização:
+   CÓDIGO — Nome"; fora da cerca, pede para conferir. O nome aparece uma vez só
+   quando a obra não tem nome diferente do código. Quem decide de verdade
+   continua sendo o servidor, pela cerca, a cada batida.
+6. **Toque rápido no teclado do CPF dava zoom** ("33" rápido virava zoom). A
+   página do ponto não deixa mais ampliar e os botões do teclado não esperam o
+   duplo toque. Conferido no navegador simulado (dois toques = "33", escala 1).
+   **Não conferido num celular de verdade.**
+7. **Escolher a câmera.** Botão de trocar frente/traseira na tela da batida; o
+   aparelho lembra a escolha. **Não conferido com câmera de verdade** — no
+   navegador simulado só há uma.
+
+Pergunta do dono respondida, sem mudança: o celular pessoal da EXCEÇÃO (quem
+bate no próprio celular) manda atestado, licença e ajuste por ele — foi a
+decisão de 06/10 ("só quem pode bater faz pedido"). Oferecido restringir.
+
+Testes: `tests/test_ponto_responsavel_banco.py` (CPF obrigatório, alterar com
+o grupo, só o responsável no "Meu ponto" do ponto da obra, responsável
+desligado bloqueia). Os testes que aprovavam aparelho pelo ERP sem CPF passaram
+a mandar o do responsável.
 
 ## 06/10/2026 — Oito pedidos de uma vez: acesso de quem sai, falta no dia seguinte, grupo temporário, licenças da lei, quem faz pedido, fraude na hora, submenu
 

@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block titulo %}Painel Financeiro BWS{% endblock %}</title>
 <link rel="stylesheet" href="{{ estatico('painel.css') }}">
+<link rel="icon" type="image/png" sizes="64x64" href="{{ url_for('painel.static', filename='icone-64.png') }}">
+<link rel="icon" type="image/png" sizes="192x192" href="{{ url_for('painel.static', filename='icone-192.png') }}">
+<link rel="apple-touch-icon" href="{{ url_for('painel.static', filename='icone-apple.png') }}">
 </head>
 <body>
 <header class="topo">
@@ -56,6 +59,8 @@
 const moeda = v => (v||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
 const els = id => document.getElementById(id);
 </script>
+{# mês "MM/AAAA" e período "de/até": digitar ou clicar e escolher (07/10/2026) #}
+<script src="{{ estatico('campos_data.js') }}"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

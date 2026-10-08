@@ -329,6 +329,10 @@ def test_conferir_com_o_omie_e_so_do_dono(espelho_de_um_titulo, monkeypatch):
     assert dono.get("/painel/conferir/dia?dia=ontem").status_code == 400
     r = dono.get("/painel/baixar/conferencia?dia=2025-06-10")
     assert r.status_code == 200 and "spreadsheet" in r.mimetype
+    # o que o OMIE mandou, cru (07/10/2026): a fonte para desenhar regra
+    r = dono.get("/painel/conferir/dia/json?dia=2025-06-10")
+    assert r.status_code == 200 and r.mimetype == "application/json"
+    assert r.get_json()["movimentos"][0]["detalhes"]["nCodTitulo"] == 2
     html = dono.get("/painel/calendario?mes=2025-06").get_data(as_text=True)
     assert "/painel/conferir/dia" in html and "Conferir este dia com o OMIE" in html
     r = dono.post("/painel/conferir/dia/trazer", data={"dia": "2025-06-10"}).get_json()
@@ -343,6 +347,7 @@ def test_conferir_com_o_omie_e_so_do_dono(espelho_de_um_titulo, monkeypatch):
     assert preso.get("/painel/conferir/dia?dia=2025-06-10").status_code == 404
     assert preso.post("/painel/conferir/dia/trazer", data={"dia": "2025-06-10"}).status_code == 404
     assert preso.get("/painel/baixar/conferencia?dia=2025-06-10").status_code == 404
+    assert preso.get("/painel/conferir/dia/json?dia=2025-06-10").status_code == 404
     with conexao() as conn:
         conn.execute("DELETE FROM usuarios WHERE usuario = 'preso-conf'")
         conn.commit()

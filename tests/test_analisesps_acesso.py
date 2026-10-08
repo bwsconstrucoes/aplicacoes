@@ -130,6 +130,7 @@ TODAS_AS_TELAS = [
     ("GET",  "/analisesps/folha/previa-direta"),
     ("GET",  "/analisesps/folha/diaristas/relatorio.pdf"),
     ("GET",  "/analisesps/folha/auxilio/relatorio.pdf"),
+    ("GET",  "/analisesps/folha/auxilio/auditoria.xlsx"),
     # O relatório da folha em Excel e PDF: dado pessoal.
     ("GET",  "/analisesps/folha/123/relatorio.pdf"),
     # Lançar batidas no Mobponto: grava em sistema de terceiro.

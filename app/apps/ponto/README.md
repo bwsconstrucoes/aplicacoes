@@ -110,10 +110,35 @@ depois DP. Negar exige motivo. Mês fechado não aceita pedido nem decisão.
 No celular da pessoa: CPF + PIN (criado com código de 6 números pelo WhatsApp do
 cadastro do ERP; 5 erros bloqueiam 15 min); bater com foto e localização (a obra
 mais perto vem escolhida); comprovante de cada batida; "Meu mês"; pedidos com
-foto do atestado. No **tablet da obra** (aparelho COMPARTILHADO aprovado): só
-bater, com CPF — não mostra nada de ninguém. Todo aparelho novo espera
-aprovação em Pendências; o celular se identifica como "Celular de Fulano" depois
-que a pessoa entra.
+foto do atestado. No **ponto da obra** (aparelho COMPARTILHADO aprovado — o
+celular da empresa ou o próprio de alguém designado): bater, com CPF ou QR —
+não mostra nada de ninguém. Todo aparelho novo espera aprovação em Pendências;
+o celular se identifica como "Celular de Fulano" depois que a pessoa entra.
+
+**Os três tipos de aparelho, e o RESPONSÁVEL (07/10/2026).** Na tela:
+**Ponto da obra** (COMPARTILHADO: todos da obra batem), **Celular pessoal**
+(INDIVIDUAL: só o dono bate) e **Ponto de equipe** (LISTA: só a lista bate;
+passageiro, 15 dias de início). Todo aparelho aprovado pelo ERP tem um
+responsável (`dispositivos.colaborador_id`): no celular pessoal é o dono; no
+ponto da obra e no de equipe é quem fica com o aparelho, e **só ele** entra no
+"Meu ponto" por ali (botão "Meu ponto" na tela da batida; volta sozinho para a
+batida em 3 minutos sem uso). No de equipe o responsável entra no grupo.
+Responsável desligado bloqueia o aparelho (`core/desligamentos.py`). "Alterar"
+abre preenchido por `GET /erp/api/ponto/dispositivos/<id>`, que traz o grupo.
+
+**A tela inicial e a consulta pela cerca (08/10/2026, `core/papeis.py`,
+`app_obra.py`).** Todo aparelho abre numa tela com Bater ponto · Atestados e
+pedidos · Consultar o ponto das pessoas · Meu ponto (`GET /ponto/app/api/inicio`
+diz o que vale ali). A consulta (`/ponto/app/api/equipe`, `.../equipe/<id>/mes`)
+mostra quem bateu na obra no mês e quem é dela no cadastro; o pedido por outra
+pessoa (`.../equipe/<id>/pedidos` e `/ajuste-do-dia`) sai em nome de quem lançou,
+origem `RESPONSAVEL`. Quem consulta: o responsável no ponto da obra dele (pela
+cerca do aparelho), o **administrativo de obra** em qualquer aparelho (pela
+cerca, mais as obras em que ele bateu nos últimos 7 dias), e o
+responsável do ponto de equipe (a lista). Toda chamada leva `lat`, `lon` e
+`precisao`. As marcações por pessoa ficam em `colaborador_config`
+(`bate_no_celular`, `pede_no_celular`, `administrativo_obra`), na ficha da pessoa
+› "Acesso no aplicativo".
 
 **Regras novas do cálculo** (`core/apuracao.py`, `espelho.py`, `banco.py`):
 tolerância de 5 min por batida e 10 no dia (passou, conta tudo — Súmula 366);

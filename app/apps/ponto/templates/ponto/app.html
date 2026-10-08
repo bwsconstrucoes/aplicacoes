@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#12385C">
 <link rel="manifest" href="/ponto/app/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/erp/static/icone-apple.png">
@@ -69,7 +69,15 @@
   .pequeno { font-size:13px; color:var(--suave); }
   .linha { display:flex; gap:8px; } .linha > * { flex:1; }
 
-  /* ---- O TABLET DA OBRA: tela cheia, câmera sempre ligada, teclado grande ---- */
+  /* ---- O CELULAR DA OBRA: tela cheia, câmera sempre ligada, teclado grande ---- */
+  /* Toque rápido no teclado não vira zoom (07/10/2026: "quando uso rápido, ele
+     entende como se fosse zoom da tela"). */
+  #tela-tablet, #tela-tablet * { touch-action:manipulation; -webkit-user-select:none; user-select:none;
+                                 -webkit-tap-highlight-color:transparent; }
+  .kq-trocar { position:absolute; top:10px; right:10px; z-index:4; border:0; border-radius:999px; padding:8px 12px;
+               background:rgba(0,0,0,.55); color:#fff; font-size:15px; font-weight:700; }
+  .kq-obra-info { font-size:13px; color:#9EC3EA; white-space:nowrap; }
+  .kq-meu { background:none; border:0; color:#9EC3EA; font-size:14px; text-decoration:underline; padding:4px; }
   #tela-tablet { position:fixed; inset:0; z-index:50; background:#0A1B2E; color:#fff; display:flex; flex-direction:column;
                  padding:calc(10px + env(safe-area-inset-top)) 14px calc(10px + env(safe-area-inset-bottom)); gap:10px; }
   .kq-topo { display:flex; align-items:center; gap:10px; }
@@ -78,6 +86,7 @@
   .kq-corpo { flex:1; display:flex; gap:14px; min-height:0; }
   .kq-camera { flex:1.2; position:relative; background:#000; border-radius:18px; overflow:hidden; min-height:200px; }
   .kq-camera video { width:100%; height:100%; object-fit:cover; transform:scaleX(-1); display:block; }
+  .kq-camera video.traseira { transform:none; }
   .kq-mira { position:absolute; inset:18% 22%; border:4px dashed rgba(255,255,255,.55); border-radius:18px; pointer-events:none; }
   .kq-legenda { position:absolute; left:0; right:0; bottom:0; padding:12px; text-align:center; font-size:18px; font-weight:700;
                 background:linear-gradient(transparent, rgba(0,0,0,.75)); }
@@ -109,10 +118,33 @@
   .kq-cobre button { border:2px solid #fff; background:transparent; color:#fff; border-radius:12px; padding:12px 22px; font-size:18px; font-weight:700; }
   @media (max-width: 760px) and (orientation: portrait) { .kq-corpo { flex-direction:column; } .kq-camera { flex:1; } .kq-teclas button { min-height:52px; font-size:28px; } }
   .qr-grande { display:block; width:100%; max-width:340px; margin:0 auto; image-rendering:pixelated; }
+
+  /* ---- A TELA INICIAL (08/10/2026): daqui se vai para bater, pedir e consultar ---- */
+  .menu-grade { display:grid; gap:12px; }
+  .opcao { display:flex; gap:14px; align-items:center; width:100%; text-align:left; border:0; border-radius:16px;
+           padding:18px 16px; background:var(--branco); color:var(--tinta); font-size:19px; font-weight:800;
+           box-shadow:0 1px 3px rgba(11,44,92,.12); }
+  .opcao .icone { font-size:34px; flex:none; width:44px; text-align:center; }
+  .opcao small { display:block; font-size:14px; font-weight:400; color:var(--suave); margin-top:3px; }
+  .opcao:active { transform:scale(.99); }
+  .opcao.desligada { opacity:.55; }
+  .opcao.principal { background:var(--verde); color:#fff; } .opcao.principal small { color:#E3F3E8; }
+  .pessoa-linha { display:flex; align-items:center; gap:10px; width:100%; text-align:left; background:none; border:0;
+                  border-bottom:1px solid var(--borda); padding:12px 2px; font-size:16px; color:var(--tinta); }
+  .pessoa-linha:last-child { border-bottom:0; }
+  .pessoa-linha b { flex:1; } .pessoa-linha small { color:var(--suave); }
+  /* As ações do dia são ÍCONES (08/10/2026: "dois textos gigantes (…) ícones
+     sugestivos pra economizar tela"); a legenda fica uma vez só, no topo. */
+  .acoes-dia { display:flex; gap:6px; flex:none; align-self:center; }
+  .icone-dia { width:42px; height:42px; border-radius:12px; border:1px solid var(--borda); background:#fff;
+               font-size:20px; line-height:1; padding:0; }
+  .icone-dia:active { background:var(--fundo); }
+  .legenda-dias { font-size:13px; color:var(--suave); padding:0 0 8px; border-bottom:1px solid var(--borda); }
 </style>
 </head>
 <body>
 <header>
+  <button id="btn-inicio" class="oculto" type="button" aria-label="Voltar ao início">‹ Início</button>
   <h1 id="titulo">BWS Ponto</h1>
   <button id="btn-sair" class="oculto" type="button">Sair</button>
 </header>
@@ -135,9 +167,9 @@
     </div>
     <p class="pequeno" id="codigo-aparelho" style="text-align:center"></p>
     <div class="cartao oculto" id="cartao-tablet">
-      <h2>Bater ponto neste aparelho da obra</h2>
-      <p class="pequeno">Este aparelho é da obra: QR Code ou CPF, e a foto sai sozinha.</p>
-      <button class="btn grande" id="btn-ir-tablet" type="button">Abrir o ponto da obra</button>
+      <h2>Este é o ponto da obra</h2>
+      <p class="pequeno">Aqui entram o responsável por ele e o administrativo da obra. Para bater: QR Code ou CPF na tela da batida.</p>
+      <button class="btn grande" id="btn-ir-tablet" type="button">Voltar ao início</button>
     </div>
   </section>
 
@@ -165,13 +197,16 @@
   <!-- TABLET DA OBRA (tela cheia) -->
   <section id="tela-tablet" class="oculto" aria-label="Bater ponto no aparelho da obra">
     <div class="kq-topo">
+      <button type="button" class="kq-meu" id="t-inicio" style="font-size:16px; text-decoration:none">‹ Início</button>
       <select id="t-obra" aria-label="Obra"></select>
       <div class="kq-relogio" id="t-relogio">--:--</div>
     </div>
+    <div class="kq-obra-info" id="t-obra-info">📍 Procurando a localização…</div>
     <div class="kq-vencimento oculto" id="t-vencimento"></div>
     <div class="kq-corpo">
       <div class="kq-camera">
         <video id="t-video" autoplay muted playsinline></video>
+        <button type="button" class="kq-trocar" id="t-trocar-camera" aria-label="Trocar de câmera">🔄 Trocar câmera</button>
         <div class="kq-mira" id="t-mira"></div>
         <div class="kq-legenda" id="t-legenda">Mostre o QR Code do seu celular aqui — ou digite o CPF</div>
         <div class="kq-cobre oculto" id="t-cobre"></div>
@@ -185,10 +220,51 @@
           <button type="button" data-t="limpar" class="apagar">Limpar</button><button type="button" data-t="0">0</button><button type="button" data-t="apagar" class="apagar">⌫</button>
         </div>
         <button type="button" class="kq-esqueci" id="t-esqueci">Esqueci meu QR Code — receber no WhatsApp</button>
-        <button type="button" class="kq-esqueci" id="t-pedido">Entregar atestado, licença ou pedir ajuste</button>
       </div>
     </div>
     <div class="kq-form oculto" id="t-form"></div>
+  </section>
+
+  <!-- A TELA INICIAL (08/10/2026) -->
+  <section id="tela-menu" class="oculto">
+    <div class="cartao">
+      <h2 id="m-ola" style="margin:0">BWS Ponto</h2>
+      <div id="m-onde" class="pequeno" style="margin-top:6px"></div>
+    </div>
+    <div id="m-aviso"></div>
+    <div class="menu-grade" id="m-opcoes"></div>
+    <p class="pequeno" id="m-codigo" style="text-align:center"></p>
+  </section>
+
+  <!-- O PONTO DAS PESSOAS DA OBRA -->
+  <section id="tela-equipe" class="oculto">
+    <div class="cartao">
+      <h2 id="eq-titulo">Ponto das pessoas</h2>
+      <div id="eq-onde" class="aviso info">📍 Procurando a obra em que você está…</div>
+      <div class="linha">
+        <button class="btn sec" id="eq-ant" type="button">‹ Mês anterior</button>
+        <button class="btn sec" id="eq-prox" type="button">Próximo ›</button>
+      </div>
+      <p id="eq-mes" style="margin:10px 0 0; font-weight:700"></p>
+      <label for="eq-busca">Buscar pelo nome</label>
+      <input id="eq-busca" type="search" placeholder="Digite parte do nome" autocomplete="off">
+    </div>
+    <div class="cartao"><div id="eq-lista"></div></div>
+  </section>
+  <section id="tela-pessoa" class="oculto">
+    <div class="cartao">
+      <button class="link" id="ps-voltar" type="button">‹ Voltar à lista</button>
+      <h2 id="ps-nome" style="margin-top:4px">—</h2>
+      <p class="pequeno" id="ps-info"></p>
+      <div class="linha">
+        <button class="btn sec" id="ps-ant" type="button">‹ Mês anterior</button>
+        <button class="btn sec" id="ps-prox" type="button">Próximo ›</button>
+      </div>
+      <h2 id="ps-mes" style="margin-top:12px"></h2>
+      <div id="ps-resumo"></div>
+      <button class="btn" id="ps-novo" type="button">Lançar atestado, licença ou compensação</button>
+    </div>
+    <div class="cartao"><div id="ps-dias"></div></div>
   </section>
 
   <!-- INÍCIO -->
@@ -222,7 +298,7 @@
     </div>
     <div class="cartao">
       <h2>Meu QR Code</h2>
-      <p class="pequeno">Para bater no tablet da obra sem digitar o CPF: mostre o QR na câmera dele. Este muda a cada 30 segundos — foto de tela não serve.</p>
+      <p class="pequeno">Para bater no ponto da obra sem digitar o CPF: mostre o QR na câmera dele. Este muda a cada 30 segundos — foto de tela não serve.</p>
       <button class="btn sec" id="btn-meu-qr" type="button">Mostrar meu QR Code</button>
     </div>
     <div class="cartao oculto" id="cartao-banco">
@@ -273,7 +349,7 @@
 </main>
 
 <nav class="abas oculto" id="abas">
-  <button type="button" data-tela="inicio" class="ativa"><span>⏱</span>Bater</button>
+  <button type="button" data-tela="inicio" class="ativa"><span>⏱</span>Hoje</button>
   <button type="button" data-tela="mes"><span>📅</span>Meu mês</button>
   <button type="button" data-tela="pedidos"><span>📝</span>Pedidos</button>
 </nav>
@@ -353,19 +429,24 @@ async function garantirRegistro(descricao) {
 }
 
 // --- telas -----------------------------------------------------------------
-const TELAS = ["carregando", "entrar", "primeiro", "tablet", "inicio", "mes", "pedidos"];
+const TELAS = ["carregando", "entrar", "primeiro", "tablet", "menu", "equipe", "pessoa", "inicio", "mes", "pedidos"];
 function mostrar(tela) {
   if (tela !== "tablet" && typeof pararTablet === "function") pararTablet();
   TELAS.forEach(t => $("tela-" + t).classList.toggle("oculto", t !== tela));
-  const logado = ["inicio", "mes", "pedidos"].includes(tela);
-  $("abas").classList.toggle("oculto", !logado);
+  const meu = ["inicio", "mes", "pedidos"].includes(tela);
+  const logado = meu || ["equipe", "pessoa"].includes(tela) || (tela === "menu" && !!(INICIO && INICIO.pessoa));
+  $("abas").classList.toggle("oculto", !meu);
   $("btn-sair").classList.toggle("oculto", !logado);
+  // "‹ Início" em toda tela, menos na própria tela inicial (08/10/2026: "volto
+  // para a tela inicial, e dali eu vou para…").
+  $("btn-inicio").classList.toggle("oculto", !(meu || ["equipe", "pessoa", "primeiro"].includes(tela)
+                                                 || (tela === "entrar" && ehDaObra())));
   document.querySelectorAll("nav.abas button").forEach(b => b.classList.toggle("ativa", b.dataset.tela === tela));
   if (tela === "mes") carregarMes();
   if (tela === "pedidos") {
     // Quem não é exceção (não bate no celular) não faz pedido por aqui: entrega
     // no aparelho da obra ou pelo responsável (decisão do dono, 06/10/2026).
-    const podePedir = !EU || EU.bate_no_celular !== false;
+    const podePedir = !EU || EU.pede_no_celular !== false;
     $("cartao-fazer-pedido").classList.toggle("oculto", !podePedir);
     $("cartao-pedido-na-obra").classList.toggle("oculto", podePedir);
     if (podePedir) carregarLicencas().then(montarCamposPedido);
@@ -375,7 +456,7 @@ function mostrar(tela) {
 }
 document.querySelectorAll("nav.abas button").forEach(b => b.addEventListener("click", () => mostrar(b.dataset.tela)));
 
-let EU = null, APARELHO = null, OBRAS = [], LOCAL = null;
+let EU = null, APARELHO = null, OBRAS = [], LOCAL = null, LOCAL_EM = 0, INICIO = null, DESTINO = null;
 
 async function estadoDoAparelho() {
   try { APARELHO = (await chamar("/ponto/app/api/aparelho")).aparelho; } catch (e) { APARELHO = null; }
@@ -390,18 +471,21 @@ async function iniciar() {
   const cod = aparelho().uuid.replace(/[^A-Za-z0-9]/g, "").slice(-6).toUpperCase();
   $("codigo-aparelho").textContent = APARELHO && APARELHO.status === "APROVADO" ? "" :
     `Código deste aparelho: ${cod}. Se ele for o aparelho da obra, passe este código a quem aprova.`;
-  // O aparelho da obra abre direto na batida, câmera ligada, sem toque nenhum —
-  // mesmo que alguém tenha entrado com CPF e PIN nele antes: a sessão é fechada.
+  // O ponto da obra abre na TELA INICIAL (08/10/2026) — ou direto na batida, se
+  // era nela que estava (o aparelho reiniciado às 7h não espera um toque).
   const compartilhado = APARELHO && APARELHO.status === "APROVADO" && APARELHO.perfil !== "INDIVIDUAL";
   $("cartao-tablet").classList.toggle("oculto", !compartilhado);
   if (compartilhado) {
-    chamar("/ponto/app/api/sair", {}).catch(() => {});
-    EU = null;
-    return abrirTablet();
+    let ultima = null; try { ultima = localStorage.getItem("ponto_tela"); } catch (e) {}
+    // Só o responsável e o administrativo têm sessão aqui (o servidor recusa os outros).
+    try { EU = await chamar("/ponto/app/api/eu"); } catch (e) { EU = null; }
+    if (EU) vigiarVoltaAoInicio();
+    if (ultima === "tablet" && !EU) return abrirTablet();
+    return abrirMenu();
   }
   try {
     EU = await chamar("/ponto/app/api/eu");
-    mostrar("inicio");
+    abrirMenu();
   } catch (e) {
     EU = null;
     mostrar("entrar");
@@ -414,9 +498,32 @@ $("btn-entrar").addEventListener("click", async () => {
     await chamar("/ponto/app/api/entrar", {cpf: soDigitos($("e-cpf").value), pin: soDigitos($("e-pin").value)});
     $("e-pin").value = ""; aviso("");
     EU = await chamar("/ponto/app/api/eu");
-    mostrar("inicio");
+    if (ehDaObra()) vigiarVoltaAoInicio();
+    const destino = DESTINO; DESTINO = null;
+    if (destino === "equipe") return abrirEquipe("consulta");
+    if (destino === "inicio") return mostrar("inicio");
+    abrirMenu();
   } catch (e) { aviso(e.message, "erro"); }
 });
+
+// --- o responsável e o administrativo no ponto da obra (07 e 08/10/2026) -------
+// Entram aqui com CPF e PIN; depois de 3 minutos sem mexer, ou no "Sair", a
+// sessão fecha e o aparelho volta para a tela inicial — que é de todos.
+const ehDaObra = () => !!(APARELHO && APARELHO.status === "APROVADO" && APARELHO.perfil !== "INDIVIDUAL");
+let VOLTA = null, VIGIANDO = false;
+function vigiarVoltaAoInicio() {
+  const rearmar = () => { clearTimeout(VOLTA); if (EU) VOLTA = setTimeout(voltarAoInicio, 3 * 60 * 1000); };
+  if (!VIGIANDO) ["click", "touchstart", "keydown"].forEach(ev => document.addEventListener(ev, rearmar, {passive: true}));
+  VIGIANDO = true;
+  rearmar();
+}
+async function voltarAoInicio() {
+  clearTimeout(VOLTA);
+  try { await chamar("/ponto/app/api/sair", {}); } catch (e) {}
+  EU = null;
+  if ($("dlg").open) $("dlg").close();
+  abrirMenu();
+}
 $("btn-ir-primeiro").addEventListener("click", () => { $("p-cpf").value = $("e-cpf").value; mostrar("primeiro"); });
 $("btn-voltar-entrar").addEventListener("click", () => mostrar("entrar"));
 $("btn-codigo").addEventListener("click", async () => {
@@ -434,13 +541,15 @@ $("btn-criar-pin").addEventListener("click", async () => {
                                         pin: soDigitos($("p-pin").value)});
     aviso("PIN criado. Pronto!", "ok");
     EU = await chamar("/ponto/app/api/eu");
-    mostrar("inicio");
+    abrirMenu();
   } catch (e) { aviso(e.message, "erro"); }
 });
 $("btn-sair").addEventListener("click", async () => {
+  if (ehDaObra()) return voltarAoInicio();
   try { await chamar("/ponto/app/api/sair", {}); } catch (e) {}
-  EU = null; mostrar("entrar");
+  EU = null; INICIO = null; mostrar("entrar");
 });
+$("btn-inicio").addEventListener("click", () => { aviso(""); abrirMenu(); });
 
 // --- localização e obra mais perto --------------------------------------------
 function localizacao() {
@@ -464,7 +573,8 @@ function preencherObras(select, obras, principal) {
       .map(o => ({o, d: distancia(LOCAL, o)})).sort((x, y) => x.d - y.d);
     if (comCoord.length && comCoord[0].d < 5000) escolhida = comCoord[0].o.codigo;
   }
-  select.innerHTML = obras.map(o => `<option value="${esc(o.codigo)}" ${o.codigo === escolhida ? "selected" : ""}>${esc(o.codigo)} — ${esc(o.nome)}</option>`).join("");
+  // O nome da obra uma vez só (07/10/2026: "aparece duplicado, o nome da obra hífen o nome de novo").
+  select.innerHTML = obras.map(o => `<option value="${esc(o.codigo)}" ${o.codigo === escolhida ? "selected" : ""}>${esc(rotuloObra(o))}</option>`).join("");
 }
 
 // Onde a pessoa está, em relação às obras dela. É só AVISO: quem decide a obra
@@ -576,7 +686,7 @@ async function bater({obra, comFoto}) {
 }
 $("btn-bater").addEventListener("click", () => bater({obra: $("i-obra").value, comFoto: true}));
 $("btn-sem-foto").addEventListener("click", () => bater({obra: $("i-obra").value, comFoto: false}));
-$("btn-ir-tablet").addEventListener("click", () => abrirTablet());
+$("btn-ir-tablet").addEventListener("click", () => { aviso(""); abrirMenu(); });
 
 function mostrarComprovante(c, repetida, status, motivo) {
   const analise = status === "EM_ANALISE"
@@ -610,7 +720,7 @@ async function carregarInicio() {
   // A forma de bater (decisão do dono, 05/10/2026): o padrão é só o aparelho da
   // obra. Quem não é exceção não vê o botão de bater (nem o pedido de
   // localização), e o celular dele não entra na fila de aprovação.
-  const soNaObra = EU.bate_no_celular === false;
+  const soNaObra = EU.bate_no_celular === false || ehDaObra();
   $("cartao-bater").classList.toggle("oculto", soNaObra);
   $("cartao-so-na-obra").classList.toggle("oculto", !soNaObra);
   $("ola-obra").textContent = `Olá, ${EU.primeiro_nome}`;
@@ -638,7 +748,12 @@ async function carregarInicio() {
   } else if (APARELHO.vencimento && APARELHO.vencimento.avisar) {
     avisoAparelho = `<div class="aviso ambar">Este celular para de bater em ${APARELHO.vencimento.dias} dia(s), em ${dataBR(APARELHO.vencimento.valido_ate)}. Peça a renovação ao RH.</div>`;
   }
+  if (ehDaObra()) {
+    avisoAparelho = `<div class="aviso info">Você está no “Meu ponto” no ponto da obra. Ele sai e volta sozinho para o
+      início em 3 minutos sem uso. <button class="btn sec" type="button" id="btn-voltar-batida">Sair e voltar ao início</button></div>`;
+  }
   $("aviso-aparelho").innerHTML = avisoAparelho;
+  if ($("btn-voltar-batida")) $("btn-voltar-batida").addEventListener("click", voltarAoInicio);
   $("btn-bater").disabled = !podeBater; $("btn-sem-foto").disabled = !podeBater;
 
   // hoje
@@ -665,37 +780,63 @@ function mudarMes(n) { const [a, m] = MES.split("-").map(Number); const d = new 
   MES = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; carregarMes(); }
 $("mes-ant").addEventListener("click", () => mudarMes(-1));
 $("mes-prox").addEventListener("click", () => mudarMes(1));
-async function carregarMes() {
-  try {
-    const d = await chamar(`/ponto/app/api/mes?competencia=${MES}`);
-    const [a, m] = MES.split("-");
-    $("mes-titulo").textContent = `Meu mês — ${m}/${a}` + (d.competencia_fechada ? " (fechado)" : "");
-    const r = d.resumo;
-    $("mes-resumo").innerHTML = `<div class="numeros">
+// O resumo e os dias do mês — os MESMOS para o "Meu mês" e para a folha de outra
+// pessoa na consulta da obra (08/10/2026). Cada dia pode ter dois botões:
+// corrigir (o que faltou bater) e lançar atestado/licença a partir dele.
+function resumoDoMes(r, deOutro) {
+  return `<div class="numeros">
       <div class="numero"><b>${hm(r.trabalhado)}</b><span>trabalhado</span></div>
       <div class="numero"><b>${hm(r.extra)}</b><span>extra</span></div>
       <div class="numero"><b>${hm(r.debito)}</b><span>a menos</span></div>
       <div class="numero"><b>${r.faltas}</b><span>faltas</span></div>
       <div class="numero"><b>${r.abonados}</b><span>abonados</span></div>
       <div class="numero"><b>${r.incompletos}</b><span>batida faltando</span></div></div>
-      ${r.sem_escala ? `<p class="pequeno">Sua escala ainda não foi cadastrada; os dias aparecem sem julgamento de falta.</p>` : ""}`;
-    $("mes-dias").innerHTML = d.dias.filter(x => x.situacao !== "FUTURO").reverse().map(x => {
-      const [cls, rot] = SITUACAO[x.situacao] || ["", x.situacao];
-      const alertas = x.alertas.filter(a => a !== "FALTA").map(a => ROTULO_ALERTA[a] || a).join(", ");
-      return `<div class="dia"><div class="data">${dataBR(x.data).slice(0, 5)}<small>${esc(x.dia_semana)}</small></div>
-        <div class="corpo">
-          <div class="chips">${x.batidas.map(b => `<span class="chip ${b.status === "EM_ANALISE" ? "analise" : b.status === "AJUSTADA" ? "ajustada" : ""}">${esc(b.hora)}</span>`).join("")}</div>
-          <div style="margin-top:6px"><span class="selo ${cls}">${esc(x.ocorrencia ? x.ocorrencia.rotulo : rot)}</span>
-            ${x.trabalhado ? ` trabalhou ${hm(x.trabalhado)}` : ""}${x.extra ? ` · extra ${hm(x.extra)}` : ""}${x.debito && !x.falta ? ` · a menos ${hm(x.debito)}` : ""}
-            ${x.feriado ? ` · ${esc(x.feriado)}` : ""}</div>
-          ${alertas ? `<div class="pequeno">${esc(alertas)}</div>` : ""}
-          ${x.pendentes.length ? `<div class="pequeno">Pedido esperando: ${esc(x.pendentes.map(p => p.rotulo).join(", "))}</div>` : ""}
-          ${podeCorrigir(x, d) ? `<button class="link" type="button" data-corrigir="${x.data}">Corrigir este dia — faltou ${esc(x.faltando.map(f => f.rotulo.toLowerCase()).join(", ")) || "batida"}</button>` : ""}
-        </div></div>`;
-    }).join("") || "<p>Nada neste mês ainda.</p>";
+      ${r.sem_escala ? `<p class="pequeno">${deOutro ? "A escala desta pessoa" : "Sua escala"} ainda não foi cadastrada; os dias aparecem sem julgamento de falta.</p>` : ""}`;
+}
+function diasDoMes(d, regras) {
+  let temAcao = false;
+  const linhas = d.dias.filter(x => x.situacao !== "FUTURO").reverse().map(x => {
+    const [cls, rot] = SITUACAO[x.situacao] || ["", x.situacao];
+    const alertas = x.alertas.filter(a => a !== "FALTA").map(a => ROTULO_ALERTA[a] || a).join(", ");
+    const acoes = [
+      regras.corrigir(x) ? `<button class="icone-dia" type="button" data-corrigir="${x.data}" title="Corrigir a batida que faltou"
+        aria-label="Corrigir ${dataBR(x.data)}: faltou ${esc(x.faltando.map(f => f.rotulo.toLowerCase()).join(", ")) || "batida"}">✏️</button>` : "",
+      // 🗓️ e não um ícone de saúde (escolha do dono, 08/10/2026): a ausência justificada pode
+      // ser exame do Detran, audiência, licença da lei — não só atestado.
+      regras.lancar(x) ? `<button class="icone-dia" type="button" data-lancar="${x.data}" title="Justificar a ausência"
+        aria-label="Justificar a ausência em ${dataBR(x.data)}: atestado, licença, afastamento ou compensação">🗓️</button>` : ""].join("");
+    if (acoes) temAcao = true;
+    return `<div class="dia"><div class="data">${dataBR(x.data).slice(0, 5)}<small>${esc(x.dia_semana)}</small></div>
+      <div class="corpo">
+        <div class="chips">${x.batidas.map(b => `<span class="chip ${b.status === "EM_ANALISE" ? "analise" : b.status === "AJUSTADA" ? "ajustada" : ""}">${esc(b.hora)}</span>`).join("")}</div>
+        <div style="margin-top:6px"><span class="selo ${cls}">${esc(x.ocorrencia ? x.ocorrencia.rotulo : rot)}</span>
+          ${x.trabalhado ? ` trabalhou ${hm(x.trabalhado)}` : ""}${x.extra ? ` · extra ${hm(x.extra)}` : ""}${x.debito && !x.falta ? ` · a menos ${hm(x.debito)}` : ""}
+          ${x.feriado ? ` · ${esc(x.feriado)}` : ""}</div>
+        ${alertas ? `<div class="pequeno">${esc(alertas)}</div>` : ""}
+        ${x.pendentes.length ? `<div class="pequeno">Pedido esperando: ${esc(x.pendentes.map(p => p.rotulo).join(", "))}</div>` : ""}
+      </div>${acoes ? `<div class="acoes-dia">${acoes}</div>` : ""}</div>`;
+  }).join("");
+  if (!linhas) return "<p>Nada neste mês ainda.</p>";
+  return (temAcao ? `<div class="legenda-dias">Toque no dia: ✏️ corrigir a batida que faltou · 🗓️ justificar a ausência (atestado, licença, afastamento, compensação)</div>` : "")
+    + linhas;
+}
+function ligarDias(idCaixa, d, aoCorrigir, aoLancar) {
+  $(idCaixa).querySelectorAll("[data-corrigir]").forEach(b =>
+    b.addEventListener("click", () => aoCorrigir(d.dias.find(x => x.data === b.dataset.corrigir))));
+  $(idCaixa).querySelectorAll("[data-lancar]").forEach(b =>
+    b.addEventListener("click", () => aoLancar(d.dias.find(x => x.data === b.dataset.lancar))));
+}
+
+async function carregarMes() {
+  try {
+    const d = await chamar(`/ponto/app/api/mes?competencia=${MES}`);
+    const [a, m] = MES.split("-");
+    $("mes-titulo").textContent = `Meu mês — ${m}/${a}` + (d.competencia_fechada ? " (fechado)" : "");
+    $("mes-resumo").innerHTML = resumoDoMes(d.resumo, false);
+    $("mes-dias").innerHTML = diasDoMes(d, {corrigir: x => podeCorrigir(x, d),
+                                           lancar: x => !!(EU && EU.pede_no_celular) && podeLancarNoDia(x, d)});
     MES_DADOS = d;
-    $("mes-dias").querySelectorAll("[data-corrigir]").forEach(b =>
-      b.addEventListener("click", () => abrirCorrecao(d.dias.find(x => x.data === b.dataset.corrigir))));
+    ligarDias("mes-dias", d, x => abrirCorrecao(x), x => irParaPedido(x.data));
   } catch (e) { if (e.status === 401) return mostrar("entrar"); aviso(e.message, "erro"); }
 }
 
@@ -706,19 +847,29 @@ async function carregarMes() {
 // pode ser pedido. O servidor confere tudo de novo (core/ajustes.py).
 let MES_DADOS = null;
 const MOTIVOS_AJUSTE = [["CELULAR", "Celular quebrado, sem bateria ou sem crédito"],
-  ["INTERNET", "Sem internet ou sem sinal na obra"], ["APARELHO", "Tablet ou aparelho da obra com problema"],
+  ["INTERNET", "Sem internet ou sem sinal na obra"], ["APARELHO", "Ponto da obra com problema"],
   ["ESQUECI", "Esqueci de bater"], ["FORA", "Estava em serviço fora da obra"], ["OUTRO", "Outro motivo"]];
 function podeCorrigir(x, mes) {
-  if (EU && EU.bate_no_celular === false) return false;   // pede no aparelho da obra
+  if (EU && EU.pede_no_celular === false) return false;   // pede no ponto da obra ou com o administrativo
+  return podeCorrigirDia(x, mes);
+}
+function podeLancarNoDia(x, mes) {
+  return !mes.competencia_fechada && !x.ocorrencia && x.situacao !== "FORA_DO_CONTRATO";
+}
+function podeCorrigirDia(x, mes) {
   if (mes.competencia_fechada || x.ocorrencia || x.situacao === "FUTURO") return false;
   if (x.faltando && x.faltando.length) return true;
   // sem escala cadastrada não dá para saber o que falta: deixa pedir no dia de falta ou incompleto
   return !x.previstas.length && ["FALTA", "INCOMPLETO", "SEM_ESCALA"].includes(x.situacao) && x.batidas.length < 4;
 }
-function abrirCorrecao(x) {
+// `alvo`: outra pessoa, na consulta da obra (08/10/2026) — o pedido sai em nome
+// de quem está logado, para a obra do alcance dele.
+function abrirCorrecao(x, alvo) {
   if (!x) return;
-  const obras = (EU && EU.obras) || [];
-  const obraDoDia = (x.batidas[0] && x.batidas[0].obra) || EU.obra_principal;
+  const obras = alvo ? (alvo.obras || []) : ((EU && EU.obras) || []);
+  const daBatida = x.batidas[0] && x.batidas[0].obra;
+  const obraDoDia = alvo ? (obras.some(o => o.codigo === daBatida) ? daBatida : (obras[0] && obras[0].codigo))
+                         : (daBatida || EU.obra_principal);
   const linhas = x.faltando.length
     ? x.faltando.map((f, i) => `<label style="display:flex;gap:10px;align-items:center;color:var(--tinta)">
         <input type="checkbox" data-i="${i}" checked style="width:auto">
@@ -728,7 +879,7 @@ function abrirCorrecao(x) {
         <input type="checkbox" data-i="${i}" ${i === 0 ? "checked" : ""} style="width:auto">
         <span style="flex:1">Batida ${i + 1}</span><input type="time" data-hora="${i}" style="width:130px"></label>`).join("");
   $("dlg-corpo").innerHTML = `
-    <h2 style="margin:0 0 6px">Corrigir ${dataBR(x.data)}</h2>
+    <h2 style="margin:0 0 6px">Corrigir ${dataBR(x.data)}${alvo ? ` — ${esc(alvo.nome)}` : ""}</h2>
     <p class="pequeno">Já batido: ${x.batidas.length ? x.batidas.map(b => esc(b.hora)).join(", ") : "nada"}.
       ${x.previstas.length ? `Previsto: ${x.previstas.map(p => esc(p.hora)).join(", ")}.` : "Sem escala cadastrada."}</p>
     <p style="margin:10px 0 4px"><b>O que faltou?</b> Confira o horário de cada uma.</p>
@@ -736,10 +887,12 @@ function abrirCorrecao(x) {
     <label for="c-motivo">Por quê?</label>
     <select id="c-motivo">${MOTIVOS_AJUSTE.map(([v, t]) => `<option value="${v}">${esc(t)}</option>`).join("")}</select>
     <label for="c-obra">Obra</label>
-    <select id="c-obra">${obras.map(o => `<option value="${esc(o.codigo)}" ${o.codigo === obraDoDia ? "selected" : ""}>${esc(o.codigo)} — ${esc(o.nome)}</option>`).join("")}</select>
+    <select id="c-obra">${obras.length ? obras.map(o => `<option value="${esc(o.codigo)}" ${o.codigo === obraDoDia ? "selected" : ""}>${esc(rotuloObra(o))}</option>`).join("")
+                                       : `<option value="">a obra do cadastro</option>`}</select>
     <label for="c-desc">Conte em poucas palavras</label>
     <textarea id="c-desc" placeholder="Ex.: o celular descarregou depois do almoço"></textarea>
-    <p class="pequeno">O encarregado confere e aprova. Aprovado, a batida entra no seu ponto marcada como ajustada.</p>
+    <p class="pequeno">${alvo ? "O pedido sai em seu nome e vai para validação." : "O encarregado confere e aprova."}
+      Aprovado, a batida entra no ponto marcada como ajustada.</p>
     <button class="btn" type="button" id="c-enviar">Enviar o pedido</button>`;
   $("dlg").showModal();
   $("c-enviar").onclick = async () => {
@@ -753,11 +906,13 @@ function abrirCorrecao(x) {
     const horarios = marcados.map(h => `${atravessa && primeira && h < primeira ? proximo : x.data}T${h}:00`);
     $("c-enviar").disabled = true;
     try {
-      const r = await chamar("/ponto/app/api/pedidos/ajuste-do-dia", {horarios, motivo: $("c-motivo").value,
-        descricao: $("c-desc").value, obra: $("c-obra").value});
+      const corpo = {horarios, motivo: $("c-motivo").value, descricao: $("c-desc").value, obra: $("c-obra").value};
+      if (alvo) Object.assign(corpo, localNoCorpo(await onde()));
+      const r = await chamar(alvo ? `/ponto/app/api/equipe/${alvo.id}/ajuste-do-dia` : "/ponto/app/api/pedidos/ajuste-do-dia", corpo);
       $("dlg").close();
-      aviso(`Pedido enviado: ${r.quantidade} batida(s) para o encarregado conferir. Você acompanha em Pedidos.`, "ok");
-      carregarMes();
+      aviso(alvo ? `Pedido enviado para ${alvo.nome}: ${r.quantidade} batida(s) para validação.`
+                 : `Pedido enviado: ${r.quantidade} batida(s) para o encarregado conferir. Você acompanha em Pedidos.`, "ok");
+      (alvo ? alvo.depois : carregarMes)();
     } catch (e) {
       $("c-enviar").disabled = false;
       aviso(e.message, "erro"); $("dlg").close();
@@ -792,33 +947,73 @@ function ligarLicenca(idTipo, idInicio, idFim, idInfo) {
   ajustar();
 }
 
-function montarCamposPedido() {
-  const t = $("ped-tipo").value;
-  const obras = (EU && EU.obras) || [];
-  const campos = {
-    ATESTADO: `<label>Primeiro dia de afastamento</label><input type="date" id="pc-inicio" value="${hojeISO()}">
-      <label>Quantos dias o médico deu?</label><input type="number" id="pc-dias" min="1" max="120" value="1">
-      <label>Foto ou PDF do atestado</label><button class="btn sec" type="button" id="pc-doc">Escolher foto ou arquivo</button>
-      <p class="pequeno" id="pc-doc-nome">Nenhum arquivo escolhido.</p>
-      <p class="pequeno">Só o DP vê o seu atestado.</p>`,
-    AJUSTE_BATIDA: `<label>Que dia?</label><input type="date" id="pc-inicio" value="${hojeISO()}">
+// Os campos do pedido, com um prefixo: "pc" no "Meu ponto › Pedidos", "dp" no
+// pedido por outra pessoa (a janela da consulta da obra, 08/10/2026).
+function camposDePedido(px, t, dia) {
+  const d0 = dia || hojeISO();
+  return {
+    ATESTADO: `<label>Primeiro dia de afastamento</label><input type="date" id="${px}-inicio" value="${d0}">
+      <label>Quantos dias o médico deu?</label><input type="number" id="${px}-dias" min="1" max="120" value="1">
+      <label>Foto ou PDF do atestado</label><button class="btn sec" type="button" id="${px}-doc">Escolher foto ou arquivo</button>
+      <p class="pequeno" id="${px}-doc-nome">Nenhum arquivo escolhido.</p>
+      <p class="pequeno">Só o DP vê o atestado.</p>`,
+    AJUSTE_BATIDA: `<label>Que dia?</label><input type="date" id="${px}-inicio" value="${d0}">
       <p class="pequeno">O dia abre com o que já foi batido e o que falta — você marca só o que esqueceu.</p>
-      <button class="btn sec" type="button" id="pc-abrir-dia">Abrir o dia</button>`,
-    COMPENSACAO: `<label>Dia em que vai trabalhar (ou trabalhou)</label><input type="date" id="pc-trabalhado">
-      <label>Dia da folga no lugar</label><input type="date" id="pc-inicio">
-      <label>Motivo</label><textarea id="pc-descricao"></textarea>`,
-    LICENCA: `<label>Tipo de licença</label><select id="pc-subtipo">${opcoesLicenca()}</select>
-      <p class="pequeno" id="pc-licenca-info"></p>
-      <label>Primeiro dia</label><input type="date" id="pc-inicio" value="${hojeISO()}">
-      <label>Último dia</label><input type="date" id="pc-fim" value="${hojeISO()}">
-      <label>Observação</label><textarea id="pc-descricao" placeholder="Ex.: luto (pai)"></textarea>
-      <label>Documento</label><button class="btn sec" type="button" id="pc-doc">Escolher foto ou arquivo</button>
-      <p class="pequeno" id="pc-doc-nome">Nenhum arquivo escolhido.</p>`,
-    FOLGA_BANCO: `<label>Dia da folga</label><input type="date" id="pc-inicio">
-      <label>Último dia (se mais de um)</label><input type="date" id="pc-fim">
-      <label>Observação</label><textarea id="pc-descricao"></textarea>`,
+      <button class="btn sec" type="button" id="${px}-abrir-dia">Abrir o dia</button>`,
+    COMPENSACAO: `<label>Dia em que vai trabalhar (ou trabalhou)</label><input type="date" id="${px}-trabalhado">
+      <label>Dia da folga no lugar</label><input type="date" id="${px}-inicio" value="${dia || ""}">
+      <label>Motivo</label><textarea id="${px}-descricao"></textarea>`,
+    LICENCA: `<label>Tipo de licença</label><select id="${px}-subtipo">${opcoesLicenca()}</select>
+      <p class="pequeno" id="${px}-licenca-info"></p>
+      <label>Primeiro dia</label><input type="date" id="${px}-inicio" value="${d0}">
+      <label>Último dia</label><input type="date" id="${px}-fim" value="${d0}">
+      <label>Observação</label><textarea id="${px}-descricao" placeholder="Ex.: luto (pai)"></textarea>
+      <label>Documento</label><button class="btn sec" type="button" id="${px}-doc">Escolher foto ou arquivo</button>
+      <p class="pequeno" id="${px}-doc-nome">Nenhum arquivo escolhido.</p>`,
+    FOLGA_BANCO: `<label>Dia da folga</label><input type="date" id="${px}-inicio" value="${dia || ""}">
+      <label>Último dia (se mais de um)</label><input type="date" id="${px}-fim">
+      <label>Observação</label><textarea id="${px}-descricao"></textarea>`,
+  }[t];
+}
+function escolherDocumento(pronto) {
+  const f = $("arquivo-doc"); f.value = "";
+  f.onchange = () => {
+    const arq = f.files && f.files[0]; if (!arq) return;
+    if (arq.size > 10 * 1024 * 1024) return aviso("O arquivo passa de 10 MB.", "erro");
+    const leitor = new FileReader();
+    leitor.onload = () => pronto(leitor.result, arq.name);
+    leitor.readAsDataURL(arq);
   };
-  $("ped-campos").innerHTML = campos[t];
+  f.click();
+}
+function ligarCamposDePedido(px, t, aoDocumento) {
+  if (t === "LICENCA") ligarLicenca(`${px}-subtipo`, `${px}-inicio`, `${px}-fim`, `${px}-licenca-info`);
+  const b = $(`${px}-doc`);
+  if (b) b.addEventListener("click", () => escolherDocumento((base64, nome) => {
+    aoDocumento({base64, nome}); $(`${px}-doc-nome`).textContent = nome; }));
+}
+function corpoDoPedido(px, t, doc) {
+  const v = id => ($(`${px}-${id}`) ? $(`${px}-${id}`).value : "");
+  const corpo = {tipo: t, descricao: v("descricao")};
+  if (t === "ATESTADO") {
+    const inicio = v("inicio"), dias = Math.max(1, parseInt(v("dias") || "1", 10));
+    Object.assign(corpo, {data_inicio: inicio, data_fim: somarDiasISO(inicio, dias - 1)});
+    if (!doc) throw new Error("Escolha a foto ou o PDF do atestado.");
+  } else if (t === "COMPENSACAO") {
+    Object.assign(corpo, {data_inicio: v("inicio"), dia_trabalhado: v("trabalhado")});
+  } else {
+    Object.assign(corpo, {data_inicio: v("inicio"), data_fim: v("fim") || v("inicio")});
+    if (t === "LICENCA") corpo.subtipo = v("subtipo");
+  }
+  if (doc) { corpo.documento_base64 = doc.base64; corpo.documento_nome = doc.nome; }
+  return corpo;
+}
+
+let DOC = null, PEDIDO_DIA = null;
+function montarCamposPedido() {
+  const t = $("ped-tipo").value, dia = PEDIDO_DIA;
+  PEDIDO_DIA = null;
+  $("ped-campos").innerHTML = camposDePedido("pc", t, dia);
   $("btn-pedir").classList.toggle("oculto", t === "AJUSTE_BATIDA");
   if (t === "AJUSTE_BATIDA") $("pc-abrir-dia").addEventListener("click", async () => {
     const dia = $("pc-inicio").value; if (!dia) return;
@@ -832,41 +1027,19 @@ function montarCamposPedido() {
       abrirCorrecao(x);
     } catch (e) { aviso(e.message, "erro"); }
   });
-  if (t === "LICENCA") ligarLicenca("pc-subtipo", "pc-inicio", "pc-fim", "pc-licenca-info");
   DOC = null;
-  const botaoDoc = $("pc-doc");
-  if (botaoDoc) botaoDoc.addEventListener("click", () => {
-    const f = $("arquivo-doc"); f.value = "";
-    f.onchange = () => {
-      const arq = f.files && f.files[0]; if (!arq) return;
-      if (arq.size > 10 * 1024 * 1024) return aviso("O arquivo passa de 10 MB.", "erro");
-      const leitor = new FileReader();
-      leitor.onload = () => { DOC = {base64: leitor.result, nome: arq.name}; $("pc-doc-nome").textContent = arq.name; };
-      leitor.readAsDataURL(arq);
-    };
-    f.click();
-  });
+  ligarCamposDePedido("pc", t, d => { DOC = d; });
 }
-let DOC = null;
+// "Atestado a partir deste dia", no Meu mês: abre o pedido com o dia já posto.
+function irParaPedido(dia) {
+  PEDIDO_DIA = dia;
+  $("ped-tipo").value = "ATESTADO";
+  mostrar("pedidos");
+}
 $("ped-tipo").addEventListener("change", montarCamposPedido);
 $("btn-pedir").addEventListener("click", async () => {
-  const t = $("ped-tipo").value, v = id => ($(id) ? $(id).value : "");
-  const corpo = {tipo: t, descricao: v("pc-descricao")};
-  if (t === "ATESTADO") {
-    const inicio = v("pc-inicio"), dias = Math.max(1, parseInt(v("pc-dias") || "1", 10));
-    const fim = new Date(inicio + "T12:00:00"); fim.setDate(fim.getDate() + dias - 1);
-    Object.assign(corpo, {data_inicio: inicio, data_fim: fim.toISOString().slice(0, 10)});
-    if (!DOC) return aviso("Escolha a foto ou o PDF do atestado.", "erro");
-  } else if (t === "AJUSTE_BATIDA") {
-    if (!v("pc-hora")) return aviso("Diga o horário da batida.", "erro");
-    Object.assign(corpo, {data_inicio: v("pc-inicio"), horario: `${v("pc-inicio")}T${v("pc-hora")}:00`, obra: v("pc-obra")});
-  } else if (t === "COMPENSACAO") {
-    Object.assign(corpo, {data_inicio: v("pc-inicio"), dia_trabalhado: v("pc-trabalhado")});
-  } else {
-    Object.assign(corpo, {data_inicio: v("pc-inicio"), data_fim: v("pc-fim") || v("pc-inicio")});
-    if (t === "LICENCA") corpo.subtipo = v("pc-subtipo");
-  }
-  if (DOC) { corpo.documento_base64 = DOC.base64; corpo.documento_nome = DOC.nome; }
+  let corpo;
+  try { corpo = corpoDoPedido("pc", $("ped-tipo").value, DOC); } catch (e) { return aviso(e.message, "erro"); }
   $("btn-pedir").disabled = true;
   try {
     await chamar("/ponto/app/api/pedidos", corpo);
@@ -943,9 +1116,17 @@ function mostrarVencimentoDoTablet() {
     : `Este aparelho para de bater em ${v.dias} dia(s), em ${dataBR(v.valido_ate)}. Avise o RH para renovar.`;
 }
 
-async function abrirTablet() {
+// `pedido`: o aparelho abre para ENTREGAR atestado, licença ou ajuste — a pessoa se
+// identifica e o formulário abre (o caminho da tela inicial, 08/10/2026).
+async function abrirTablet(opcoes = {}) {
+  // A batida é de todos: quem tinha entrado com CPF e PIN neste aparelho sai.
+  if (EU && ehDaObra()) { clearTimeout(VOLTA); EU = null; chamar("/ponto/app/api/sair", {}).catch(() => {}); }
+  TB.pedido = !!opcoes.pedido; TB.esqueci = false; TB.cpf = "";
+  try { localStorage.setItem("ponto_tela", TB.pedido ? "menu" : "tablet"); } catch (e) {}
   mostrar("tablet");
   $("titulo").textContent = "BWS Ponto";
+  $("t-esqueci").classList.toggle("oculto", TB.pedido);
+  $("t-esqueci").textContent = "Esqueci meu QR Code — receber no WhatsApp";
   const obras = (APARELHO && APARELHO.obras) || [];
   let guardada = null; try { guardada = localStorage.getItem("ponto_tablet_obra"); } catch (e) {}
   preencherObras($("t-obra"), obras, guardada);
@@ -953,11 +1134,13 @@ async function abrirTablet() {
   $("t-obra").onchange = () => { try { localStorage.setItem("ponto_tablet_obra", $("t-obra").value); } catch (e) {} };
   atualizarRelogio(); TB.relogio = setInterval(atualizarRelogio, 1000);
   mostrarVencimentoDoTablet();
+  atualizarLocalTablet().then(detectarObraDoTablet);
   // Pulso a cada 5 min: o servidor confere se o aparelho continua aprovado.
   TB.pulso = setInterval(async () => {
     await estadoDoAparelho();
     if (!APARELHO || APARELHO.status !== "APROVADO") { pararTablet(); location.reload(); }
     mostrarVencimentoDoTablet();
+    atualizarLocalTablet().then(detectarObraDoTablet);
   }, 5 * 60 * 1000);
   manterTelaAcesa();
   atualizarLocalTablet();
@@ -997,9 +1180,13 @@ async function atualizarLocalTablet() {
 async function ligarCamera() {
   $("t-legenda").textContent = "Ligando a câmera…";
   try {
+    // A câmera escolhida fica lembrada no aparelho (07/10/2026: "abre a câmera para
+    // frente (…) não tem onde escolher a câmera").
+    if (!TB.camera) { try { TB.camera = localStorage.getItem("ponto_camera") || "user"; } catch (e) { TB.camera = "user"; } }
     TB.fluxo = await navigator.mediaDevices.getUserMedia({audio: false,
-      video: {facingMode: "user", width: {ideal: 1280}, height: {ideal: 720}}});
+      video: {facingMode: TB.camera, width: {ideal: 1280}, height: {ideal: 720}}});
     $("t-video").srcObject = TB.fluxo;
+    $("t-video").classList.toggle("traseira", TB.camera === "environment");
     await $("t-video").play().catch(() => {});
   } catch (e) {
     TB.fluxo = null;
@@ -1013,8 +1200,44 @@ async function ligarCamera() {
     await new Promise(ok => { const sc = document.createElement("script"); sc.src = "/ponto/app/jsQR.js";
       sc.onload = () => { TB.jsqr = true; ok(); }; sc.onerror = ok; document.head.appendChild(sc); });
   }
-  $("t-legenda").textContent = "Mostre o QR Code do seu celular aqui — ou digite o CPF";
+  $("t-legenda").textContent = TB.pedido ? "ENTREGAR ATESTADO OU PEDIDO: mostre o QR Code de quem vai entregar — ou digite o CPF"
+                                         : "Mostre o QR Code do seu celular aqui — ou digite o CPF";
   procurarQr();
+}
+
+async function trocarCamera() {
+  TB.camera = TB.camera === "environment" ? "user" : "environment";
+  try { localStorage.setItem("ponto_camera", TB.camera); } catch (e) {}
+  clearTimeout(TB.timer);
+  if (TB.fluxo) TB.fluxo.getTracks().forEach(t => t.stop());
+  TB.fluxo = null;
+  await ligarCamera();
+}
+$("t-trocar-camera").addEventListener("click", trocarCamera);
+$("t-inicio").addEventListener("click", () => {
+  pararTablet(); TB.pedido = false;
+  try { localStorage.setItem("ponto_tela", "menu"); } catch (e) {}
+  abrirMenu();
+});
+
+// A obra pela localização (07/10/2026: "no modo obra ele não está detectando a
+// obra automaticamente"). Dentro da cerca de uma obra do aparelho, ela fica
+// escolhida e a linha de cima diz; fora, a lista fica para escolher. Quem decide
+// de verdade é o servidor, pela cerca, em cada batida.
+function detectarObraDoTablet() {
+  const info = $("t-obra-info"), obras = (APARELHO && APARELHO.obras) || [];
+  if (!TB.local) { info.textContent = "📍 Sem localização — confira a obra na lista acima."; return; }
+  const dentro = obras.filter(o => o.latitude !== null && o.longitude !== null)
+    .map(o => ({o, d: distancia(TB.local, o)}))
+    .filter(x => x.d <= (x.o.raio_metros || 200) + Math.min(TB.local.precisao || 0, 150))
+    .sort((a, b) => a.d - b.d);
+  if (dentro.length) {
+    $("t-obra").value = dentro[0].o.codigo;
+    const o = dentro[0].o, mesmo = !o.nome || o.nome.trim().toUpperCase() === o.codigo.trim().toUpperCase();
+    info.textContent = `📍 Obra detectada pela localização: ${mesmo ? o.codigo : `${o.codigo} — ${o.nome}`}`;
+  } else {
+    info.textContent = "📍 Fora da área das obras deste celular — confira a obra na lista acima.";
+  }
 }
 
 async function procurarQr() {
@@ -1070,17 +1293,8 @@ $("t-teclas").addEventListener("click", ev => {
   }
   visor();
 });
-$("t-pedido").addEventListener("click", () => {
-  TB.pedido = !TB.pedido; TB.esqueci = false; TB.cpf = "";
-  $("t-pedido").textContent = TB.pedido ? "Voltar para bater o ponto" : "Entregar atestado, licença ou pedir ajuste";
-  $("t-esqueci").textContent = "Esqueci meu QR Code — receber no WhatsApp";
-  $("t-legenda").textContent = TB.pedido ? "PEDIDO: mostre o QR Code de quem vai entregar — ou digite o CPF"
-                                         : "Mostre o QR Code do seu celular aqui — ou digite o CPF";
-  visor();
-});
 $("t-esqueci").addEventListener("click", () => {
-  TB.esqueci = !TB.esqueci; TB.cpf = ""; TB.pedido = false;
-  $("t-pedido").textContent = "Entregar atestado, licença ou pedir ajuste";
+  TB.esqueci = !TB.esqueci; TB.cpf = "";
   $("t-esqueci").textContent = TB.esqueci ? "Voltar para bater o ponto" : "Esqueci meu QR Code — receber no WhatsApp";
   visor();
 });
@@ -1260,6 +1474,8 @@ function abrirFormularioDoTablet(d, tipo) {
       const r = await chamar("/ponto/app/api/tablet/pedido", corpo);
       fechar();
       cobrir("ok", `<h2>Pedido entregue</h2><p>${esc(r.pedido.rotulo)} nº ${esc(r.pedido.id)} — vai para validação.</p>`, 4000);
+      // Entregue, o aparelho volta para a tela inicial (a próxima pessoa pode querer bater).
+      setTimeout(() => { if (TB.pedido && !$("tela-tablet").classList.contains("oculto")) { pararTablet(); abrirMenu(); } }, 4000);
     } catch (e) { $("tf-msg").textContent = e.message; $("tf-enviar").disabled = false; }
   });
 }
@@ -1272,6 +1488,201 @@ function fotoDoVideo() {
   c.width = Math.round(v.videoWidth * k); c.height = Math.round(v.videoHeight * k);
   c.getContext("2d").drawImage(v, 0, 0, c.width, c.height);
   return c.toDataURL("image/jpeg", 0.8);
+}
+
+// =============================================================================
+// A TELA INICIAL (pedido do dono, 08/10/2026)
+//
+// "A tela vai ter uma tela principal e dali eu vou para essas três
+// funcionalidades": bater o ponto, incluir atestado/afastamento/ajuste e
+// consultar o ponto das pessoas — e o "Meu ponto". O que cada aparelho e cada
+// pessoa pode vem do servidor (/ponto/app/api/inicio, core/papeis.py); a tela só
+// mostra. Na consulta, a obra é a da cerca em que o aparelho ESTÁ — por isso
+// toda chamada leva a localização.
+// =============================================================================
+function rotuloObra(o) {
+  return (!o.nome || o.nome.trim().toUpperCase() === o.codigo.trim().toUpperCase()) ? o.codigo : `${o.codigo} — ${o.nome}`;
+}
+function comLocal(url, l) {
+  if (!l) return url;
+  return `${url}${url.includes("?") ? "&" : "?"}lat=${l.latitude}&lon=${l.longitude}&precisao=${l.precisao ?? ""}`;
+}
+function localNoCorpo(l) {
+  return l ? {latitude: l.latitude, longitude: l.longitude, precisao: l.precisao} : {};
+}
+async function onde() {
+  if (ehDaObra()) return await atualizarLocalTablet();
+  if (LOCAL && Date.now() - LOCAL_EM < 2 * 60 * 1000) return LOCAL;
+  const l = await localizacao();
+  if (l) { LOCAL = l; LOCAL_EM = Date.now(); }
+  return l;
+}
+
+async function abrirMenu() {
+  try { localStorage.setItem("ponto_tela", "menu"); } catch (e) {}
+  mostrar("menu");
+  $("titulo").textContent = "BWS Ponto";
+  $("m-opcoes").innerHTML = `<div class="cartao">Abrindo…</div>`;
+  const l = await onde();
+  try { INICIO = await chamar(comLocal("/ponto/app/api/inicio", l)); }
+  catch (e) { $("m-opcoes").innerHTML = ""; return aviso(e.message, "erro"); }
+  if (!INICIO.da_obra && !INICIO.pessoa) { EU = null; return mostrar("entrar"); }
+  mostrar("menu");
+  const p = INICIO.pessoa, pode = INICIO.pode, alc = INICIO.alcance;
+  $("m-ola").textContent = p ? `Olá, ${p.primeiro_nome}` : ((APARELHO && APARELHO.descricao) || "Ponto da obra");
+  const linha = [];
+  if (INICIO.da_obra) linha.push(INICIO.perfil === "LISTA" ? "Ponto de equipe" : "Ponto da obra");
+  if (p && alc.papel_rotulo) linha.push(`você entrou como ${alc.papel_rotulo}`);
+  if (alc.obras.length) linha.push("📍 " + alc.obras.map(rotuloObra).join(", "));
+  $("m-onde").textContent = linha.join(" · ");
+
+  const ops = [];
+  // 1. bater
+  if (pode.bater_aqui) ops.push({icone: "⏱", titulo: "Bater ponto", sub: "QR Code ou CPF — para todos da obra", principal: true,
+                                 acao: () => abrirTablet()});
+  else if (pode.bater_o_meu) ops.push({icone: "⏱", titulo: "Bater o meu ponto", sub: "com foto e localização", principal: true,
+                                      acao: () => mostrar("inicio")});
+  else if (p) ops.push({icone: "⏱", titulo: "Bater ponto", sub: "o seu ponto é batido no ponto da obra (QR Code ou CPF)", desligada: true});
+  // 2. atestados e pedidos
+  if (pode.pedir_por_outros) ops.push({icone: "📝", titulo: "Atestados, afastamentos e ajustes",
+    sub: "escolha a pessoa da obra; no dia, toque para lançar ou corrigir", acao: () => abrirEquipe("pedido")});
+  else if (pode.entregar_aqui) ops.push({icone: "📝", titulo: "Atestados, afastamentos e ajustes",
+    sub: "a pessoa mostra o QR Code ou digita o CPF e entrega aqui", acao: () => abrirTablet({pedido: true})});
+  else if (pode.pedir_o_meu) ops.push({icone: "📝", titulo: "Atestados e pedidos",
+    sub: "os seus: atestado, licença, ajuste, compensação", acao: () => mostrar("pedidos")});
+  else if (p) ops.push({icone: "📝", titulo: "Atestados e pedidos",
+    sub: "entregue no ponto da obra ou com o administrativo da obra", desligada: true});
+  // 3. consultar o ponto das pessoas
+  if (pode.consultar) ops.push({icone: "👥", titulo: "Consultar o ponto das pessoas", sub: alc.de_onde.join(" · "),
+                               acao: () => abrirEquipe("consulta")});
+  else if (pode.entrar_para_consultar) ops.push({icone: "👥", titulo: "Consultar o ponto das pessoas",
+    sub: "pede o CPF e o PIN do responsável ou do administrativo da obra", acao: () => entrarPara("equipe")});
+  else if (p && (p.administrativo || alc.papel)) ops.push({icone: "👥", titulo: "Consultar o ponto das pessoas",
+    sub: alc.sem_alcance || "", desligada: true});
+  // 4. o meu ponto
+  if (p) ops.push({icone: "📅", titulo: "Meu ponto", sub: "o seu dia, o seu mês e os seus pedidos", acao: () => mostrar("inicio")});
+  else ops.push({icone: "📅", titulo: "Meu ponto", sub: "do responsável por este aparelho ou do administrativo da obra",
+                 acao: () => entrarPara("inicio")});
+
+  $("m-opcoes").innerHTML = ops.map((o, i) => `<button type="button" class="opcao ${o.principal ? "principal" : ""} ${o.desligada ? "desligada" : ""}" data-op="${i}">
+      <span class="icone">${o.icone}</span><span>${esc(o.titulo)}<small>${esc(o.sub)}</small></span></button>`).join("");
+  $("m-opcoes").querySelectorAll("[data-op]").forEach(b => b.addEventListener("click", () => {
+    const o = ops[+b.dataset.op]; aviso("");
+    if (o.desligada) return aviso(o.sub, "info");
+    o.acao();
+  }));
+  $("m-aviso").innerHTML = p && INICIO.da_obra
+    ? `<div class="aviso info">Você entrou neste aparelho. Ele sai sozinho em 3 minutos sem uso — ou toque em “Sair”.</div>` : "";
+  const cod = aparelho().uuid.replace(/[^A-Za-z0-9]/g, "").slice(-6).toUpperCase();
+  $("m-codigo").textContent = APARELHO && APARELHO.status === "APROVADO" ? "" : `Código deste aparelho: ${cod}.`;
+}
+function entrarPara(destino) {
+  DESTINO = destino;
+  mostrar("entrar");
+  aviso("Entre com o CPF e o PIN do responsável por este aparelho ou do administrativo da obra.", "info");
+}
+
+// --- o ponto das pessoas da obra ---------------------------------------------------
+const EQ = {modo: "consulta", mes: null, pessoas: [], alvo: null, mesAlvo: null, dados: null};
+function somarMes(m, n) {
+  const [a, b] = m.split("-").map(Number); const d = new Date(a, b - 1 + n, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+const nomeMes = m => { const [a, b] = m.split("-"); return `${b}/${a}`; };
+const semAcento = t => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
+async function abrirEquipe(modo) {
+  if (modo) EQ.modo = modo;
+  if (!EQ.mes) EQ.mes = hojeISO().slice(0, 7);
+  mostrar("equipe");
+  $("titulo").textContent = EQ.modo === "pedido" ? "Atestados e pedidos" : "Ponto das pessoas";
+  $("eq-titulo").textContent = EQ.modo === "pedido" ? "Para quem é o pedido?" : "Ponto das pessoas da obra";
+  $("eq-lista").innerHTML = "<p>Carregando…</p>";
+  const l = await onde();
+  let d;
+  try { d = await chamar(comLocal(`/ponto/app/api/equipe?competencia=${EQ.mes}`, l)); }
+  catch (e) { $("eq-lista").innerHTML = ""; if (e.status === 401) return entrarPara("equipe"); return aviso(e.message, "erro"); }
+  EQ.pessoas = d.pessoas;
+  const a = d.alcance, tem = a.obras.length || a.tem_equipe;
+  $("eq-onde").className = "aviso " + (tem ? "info" : "erro");
+  $("eq-onde").textContent = tem ? `📍 ${a.de_onde.join(" · ")}. Aparece quem bateu ponto aqui no mês e quem é desta obra.`
+                                 : `📍 ${a.sem_alcance || "nenhuma obra"}`;
+  $("eq-mes").textContent = `${nomeMes(EQ.mes)} — ${d.pessoas.length} pessoa(s)`;
+  desenharEquipe();
+}
+function desenharEquipe() {
+  const termo = semAcento($("eq-busca").value.trim());
+  const lista = EQ.pessoas.filter(p => !termo || semAcento(p.nome).includes(termo));
+  $("eq-lista").innerHTML = lista.map(p => `<button type="button" class="pessoa-linha" data-p="${p.id}">
+      <b>${esc(p.nome)}</b><small>${esc(p.funcao || "")}${p.batidas_na_obra ? ` · ${p.batidas_na_obra} batida(s) aqui` : " · sem batida aqui no mês"}</small></button>`).join("")
+    || `<p>Ninguém ${termo ? "com esse nome" : "neste mês"}.</p>`;
+  $("eq-lista").querySelectorAll("[data-p]").forEach(b => b.addEventListener("click", () => abrirPessoaDaObra(+b.dataset.p)));
+}
+$("eq-busca").addEventListener("input", desenharEquipe);
+$("eq-ant").addEventListener("click", () => { EQ.mes = somarMes(EQ.mes, -1); abrirEquipe(); });
+$("eq-prox").addEventListener("click", () => { EQ.mes = somarMes(EQ.mes, 1); abrirEquipe(); });
+
+async function abrirPessoaDaObra(id) {
+  EQ.alvo = id; EQ.mesAlvo = EQ.mes;
+  mostrar("pessoa");
+  $("ps-dias").innerHTML = "<p>Carregando…</p>";
+  await carregarPessoaDaObra();
+}
+const alvoAtual = () => ({id: EQ.alvo, nome: EQ.dados.pessoa.nome, tem_banco: EQ.dados.pessoa.tem_banco,
+                          obras: EQ.dados.obras, depois: carregarPessoaDaObra});
+async function carregarPessoaDaObra() {
+  const l = await onde();
+  let d;
+  try { d = await chamar(comLocal(`/ponto/app/api/equipe/${EQ.alvo}/mes?competencia=${EQ.mesAlvo}`, l)); }
+  catch (e) { if (e.status === 401) return entrarPara("equipe"); $("ps-dias").innerHTML = ""; return aviso(e.message, "erro"); }
+  EQ.dados = d;
+  $("ps-nome").textContent = d.pessoa.nome;
+  $("ps-info").textContent = [d.pessoa.funcao, d.pessoa.obra ? `obra ${d.pessoa.obra}` : "", `CPF final ${d.pessoa.cpf_final}`]
+    .filter(Boolean).join(" · ");
+  $("ps-mes").textContent = nomeMes(d.competencia) + (d.competencia_fechada ? " (fechado)" : "");
+  $("ps-resumo").innerHTML = resumoDoMes(d.resumo, true);
+  $("ps-novo").classList.toggle("oculto", !d.pode_pedir || d.competencia_fechada);
+  $("ps-dias").innerHTML = diasDoMes(d, {corrigir: x => d.pode_pedir && podeCorrigirDia(x, d),
+                                         lancar: x => d.pode_pedir && podeLancarNoDia(x, d)});
+  ligarDias("ps-dias", d, x => abrirCorrecao(x, alvoAtual()), x => abrirPedidoPara(alvoAtual(), x.data));
+}
+$("ps-voltar").addEventListener("click", () => abrirEquipe());
+$("ps-ant").addEventListener("click", () => { EQ.mesAlvo = somarMes(EQ.mesAlvo, -1); carregarPessoaDaObra(); });
+$("ps-prox").addEventListener("click", () => { EQ.mesAlvo = somarMes(EQ.mesAlvo, 1); carregarPessoaDaObra(); });
+$("ps-novo").addEventListener("click", () => abrirPedidoPara(alvoAtual(), null));
+
+// O pedido POR OUTRA PESSOA (atestado, licença, compensação, folga do banco). O
+// ajuste de batida é pelo "Corrigir este dia", que mostra o que falta.
+async function abrirPedidoPara(alvo, dia, tipo = "ATESTADO") {
+  if (!LICENCAS.length) await carregarLicencas();
+  const opcoes = [["ATESTADO", "Atestado médico"], ["LICENCA", "Licença (casamento, luto, paternidade…)"],
+                  ["COMPENSACAO", "Compensação (trabalhar num dia no lugar de outro)"]]
+    .concat(alvo.tem_banco ? [["FOLGA_BANCO", "Folga do banco de horas"]] : []);
+  let doc = null;
+  $("dlg-corpo").innerHTML = `<h2 style="margin:0 0 6px">Pedido para ${esc(alvo.nome)}</h2>
+    <label for="dp-tipo">O que vai lançar?</label>
+    <select id="dp-tipo">${opcoes.map(o => `<option value="${o[0]}" ${o[0] === tipo ? "selected" : ""}>${esc(o[1])}</option>`).join("")}</select>
+    ${camposDePedido("dp", tipo, dia)}
+    ${tipo === "ATESTADO" ? `<label>Observação</label><textarea id="dp-descricao"></textarea>` : ""}
+    <div id="dp-msg" class="aviso erro oculto"></div>
+    <p class="pequeno">O pedido sai em seu nome e vai para validação. O atestado só o DP vê.</p>
+    <button class="btn" type="button" id="dp-enviar">Enviar o pedido</button>`;
+  if (!$("dlg").open) $("dlg").showModal();
+  $("dp-tipo").addEventListener("change", ev => abrirPedidoPara(alvo, $("dp-inicio") ? $("dp-inicio").value || dia : dia, ev.target.value));
+  ligarCamposDePedido("dp", tipo, d => { doc = d; });
+  const erro = t => { $("dp-msg").textContent = t; $("dp-msg").classList.remove("oculto"); };
+  $("dp-enviar").addEventListener("click", async () => {
+    let corpo;
+    try { corpo = corpoDoPedido("dp", tipo, doc); } catch (e) { return erro(e.message); }
+    $("dp-enviar").disabled = true;
+    try {
+      Object.assign(corpo, localNoCorpo(await onde()));
+      const r = await chamar(`/ponto/app/api/equipe/${alvo.id}/pedidos`, corpo);
+      $("dlg").close();
+      aviso(`${r.pedido.rotulo} nº ${r.pedido.id} lançado para ${alvo.nome} — vai para validação.`, "ok");
+      alvo.depois();
+    } catch (e) { $("dp-enviar").disabled = false; erro(e.message); }
+  });
 }
 
 // =============================================================================
@@ -1289,7 +1700,7 @@ async function mostrarMeuQr() {
   $("dlg-corpo").innerHTML = `
     <h2 style="margin:0 0 8px">Meu QR Code</h2>
     <img class="qr-grande" src="${d.imagem}" alt="QR Code pessoal para bater o ponto">
-    <p class="pequeno" style="text-align:center">Aumente o brilho da tela e mostre para a câmera do tablet. Troca em <b id="qr-seg">${d.troca_em_segundos}</b> s.</p>
+    <p class="pequeno" style="text-align:center">Aumente o brilho da tela e mostre para a câmera do ponto da obra. Troca em <b id="qr-seg">${d.troca_em_segundos}</b> s.</p>
     ${w ? `<p class="pequeno">${status}</p><button class="btn sec" type="button" id="btn-qr-whats">Receber um QR no WhatsApp</button>` : ""}`;
   if (!$("dlg").open) $("dlg").showModal();
   const b = $("btn-qr-whats");

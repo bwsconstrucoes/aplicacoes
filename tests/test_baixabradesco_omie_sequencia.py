@@ -225,7 +225,7 @@ FONTE = inspect.getsource(core.processar_baixabradesco)
 
 def test_a_planilha_so_e_marcada_DEPOIS_de_o_omie_confirmar():
     posicao_guarda = FONTE.find('devia_baixar and not omie_confirmou')
-    posicao_sheets = FONTE.find('_executar_sheets_async(plan, payload)')
+    posicao_sheets = FONTE.find('_gravar_planilha(plan, payload)')
     posicao_pipefy = FONTE.find('build_update_card_mutation(plan, card_info)')
 
     assert posicao_guarda != -1, (

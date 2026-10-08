@@ -37,6 +37,39 @@ import logging
 import sys
 
 
+MODULO = "app.apps.painel.executar_sync"
+
+
+def processo_vivo(execucao_id) -> bool:
+    """O processo desta execução ainda existe nesta máquina?
+
+    07/10/2026: "Atualizar um período" foi dada por morta no passo dos
+    cadastros — a leitura dos fornecedores não dava sinal a cada página, e
+    silêncio de 10 minutos era tratado como morte. O vigia então disparava
+    OUTRA atualização por cima da que ainda podia estar rodando. O sinal de
+    vida mais seguro é o próprio processo: se ele está lá, ninguém o substitui.
+
+    Lê a lista de processos do Linux (`/proc`). Fora do Linux, devolve False e
+    vale só o carimbo de hora, como antes."""
+    import os
+    try:
+        pids = [p for p in os.listdir("/proc") if p.isdigit()]
+    except OSError:
+        return False
+    for pid in pids:
+        try:
+            with open(f"/proc/{pid}/cmdline", "rb") as f:
+                partes = f.read().decode("utf-8", "replace").split("\0")
+        except OSError:
+            continue
+        # python -m app.apps.painel.executar_sync <modo> <id>
+        if MODULO in partes:
+            i = partes.index(MODULO)
+            if partes[i + 2:i + 3] == [str(execucao_id)]:
+                return True
+    return False
+
+
 def _configurar_log() -> None:
     """Sem isto o processo separado não escreveria nada nos logs do Render —
     e a única janela para dentro de uma carga de horas se fecharia."""

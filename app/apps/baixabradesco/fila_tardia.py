@@ -52,7 +52,19 @@ def adiar_payload(payload: dict, erro: str) -> dict:
     }
 
 
-def processar_fila_tardia() -> dict:
+# Quanto o cron drena por disparo. Ele roda de 5 em 5 minutos: 15 por etapa dá
+# ~180 itens por hora sem encostar na cota do Google, que é compartilhada com o
+# ERP e o painel. A ORDEM mora em `fila.ORDEM_ETAPAS`, num lugar só, porque os
+# dois caminhos automáticos já divergiram uma vez.
+LIMITES_CRON = {'omie': 15, 'sheets': 15, 'pipefy': 15, 'zapi': 10}
+
+
+def _drenar_a_fila(payload: dict | None = None) -> dict:
+    from .fila import drenar_por_etapa
+    return drenar_por_etapa(LIMITES_CRON, payload)
+
+
+def processar_fila_tardia(payload: dict | None = None) -> dict:
     """Reprocessa os payloads adiados, um a um, em ordem de chegada.
 
     - Sucesso: remove o arquivo.
@@ -95,4 +107,9 @@ def processar_fila_tardia() -> dict:
         'app': 'baixabradesco',
         'processados': resultados,
         'pendentes': len(_listar()),
+        # O cron já roda de 5 em 5 minutos e já está autenticado: a fila de
+        # falhas pega carona nele. Antes ela só andava se alguém chamasse a rota
+        # à mão — e, pelos números de 08/10/2026 (2.269 linhas, nenhuma
+        # concluída, a mais antiga de 18/06/2026), nunca ninguém chamou.
+        'fila_de_falhas': _drenar_a_fila(payload),
     }
