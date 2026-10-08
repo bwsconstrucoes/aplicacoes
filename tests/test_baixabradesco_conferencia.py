@@ -418,3 +418,65 @@ def test_o_limite_vale_para_cada_direcao_separadamente(
 
     assert len(chamados) == 6          # 3 de cada lado
     assert r['restam_para_conferir'] == 14
+
+
+# =====================================================================
+# 4. continuar de onde parou — a frase prometia e o código não cumpria
+# =====================================================================
+
+def test_sem_pular_cada_chamada_repetiria_as_mesmas_linhas(
+        planilha, credenciais, monkeypatch):
+    """O conferidor não grava nada, então nada sai do conjunto entre chamadas.
+
+    A frase em português dizia "chame de novo para continuar" e isso era
+    mentira: a segunda chamada reconsultaria as mesmas primeiras linhas, para
+    sempre. `pular` existe por isso, e a resposta devolve o número pronto.
+    """
+    planilha([_nao_paga(sp_id=f'n{i}', codigo=f'IntN{i}') for i in range(10)])
+
+    chamados = _omie(monkeypatch, {})
+    r1 = mod.conferir({'limite': 4, 'sentido': 'omie_pago'})
+    assert chamados == ['IntN0', 'IntN1', 'IntN2', 'IntN3']
+    assert r1['restam_para_conferir'] == 6
+    assert r1['proximo_pular'] == 4
+    assert 'pular=4' in r1['em_portugues']
+
+    chamados2 = _omie(monkeypatch, {})
+    r2 = mod.conferir({'limite': 4, 'pular': r1['proximo_pular'],
+                       'sentido': 'omie_pago'})
+    assert chamados2 == ['IntN4', 'IntN5', 'IntN6', 'IntN7']
+    assert r2['pulou'] == 4
+    assert r2['proximo_pular'] == 8
+
+
+def test_na_ultima_pagina_ela_nao_manda_continuar(
+        planilha, credenciais, monkeypatch):
+    planilha([_nao_paga(sp_id=f'n{i}', codigo=f'IntN{i}') for i in range(6)])
+    _omie(monkeypatch, {})
+
+    r = mod.conferir({'limite': 4, 'pular': 4, 'sentido': 'omie_pago'})
+
+    assert r['restam_para_conferir'] == 0
+    assert r['proximo_pular'] == 0
+    assert 'pular=' not in r['em_portugues']
+    assert 'Faltam' not in r['em_portugues']
+
+
+def test_pular_vale_para_as_duas_direcoes(planilha, credenciais, monkeypatch):
+    planilha([_linha(sp_id=str(i), codigo=f'Int{i}') for i in range(6)]
+             + [_nao_paga(sp_id=f'n{i}', codigo=f'IntN{i}') for i in range(6)])
+    chamados = _omie(monkeypatch, {})
+
+    mod.conferir({'limite': 2, 'pular': 2})
+
+    assert chamados == ['Int2', 'Int3', 'IntN2', 'IntN3']
+
+
+def test_pular_negativo_nao_quebra(planilha, credenciais, monkeypatch):
+    planilha([_nao_paga(codigo='IntA')])
+    chamados = _omie(monkeypatch, {})
+
+    r = mod.conferir({'pular': -5, 'sentido': 'omie_pago'})
+
+    assert chamados == ['IntA']
+    assert r['pulou'] == 0

@@ -188,7 +188,8 @@ def _e_nao_encontrado(registro: Dict[str, Any]) -> bool:
 def _frase_da_conferencia(divergentes: int, nao_encontradas: int, erros: int,
                           confirmadas: int, restam: int, dias: int,
                           planilha_atrasada: int = 0,
-                          confirmadas_abertas: int = 0) -> str:
+                          confirmadas_abertas: int = 0,
+                          proximo: int = 0) -> str:
     """Uma frase em português, para quem lê isto pelo celular."""
     partes = []
     if planilha_atrasada:
@@ -217,7 +218,12 @@ def _frase_da_conferencia(divergentes: int, nao_encontradas: int, erros: int,
             base += (f' Outras {confirmadas + confirmadas_abertas} estão de acordo'
                      ' nos dois lugares.')
     if restam:
-        base += f' Faltam {restam} para conferir — chame de novo para continuar.'
+        base += f' Faltam {restam} para conferir'
+        if proximo:
+            # O número pronto, para quem lê isto no celular não ter de calcular.
+            base += f' — chame de novo com pular={proximo} para seguir daí.'
+        else:
+            base += '.'
     return base
 
 
@@ -225,8 +231,13 @@ def conferir(payload: dict) -> Dict[str, Any]:
     """Compara a planilha com o Omie nos DOIS sentidos. Não grava nada.
 
     Body opcional:
-      {"dias": 60, "limite": 50, "pausa_ms": 200,
+      {"dias": 60, "limite": 50, "pular": 0, "pausa_ms": 200,
        "apenas_contar": false, "sentido": "ambos", "omie": {...}}
+
+    `pular` continua de onde a chamada anterior parou. Sem ele, cada chamada
+    reconsultaria as mesmas primeiras linhas: o conferidor não grava nada, então
+    nada sai do conjunto entre uma chamada e a seguinte. A resposta já devolve o
+    `proximo_pular` pronto.
 
     `sentido`: "ambos" (padrão), "planilha_paga" (só a direção antiga) ou
     "omie_pago" (só o furo que o dono apontou — Omie pago, planilha para trás).
@@ -266,6 +277,10 @@ def conferir(payload: dict) -> Dict[str, Any]:
         }
 
     limite = int(payload.get('limite') or LIMITE_PADRAO)
+    # ⚠️ Sem `pular`, a frase "chame de novo para continuar" era mentira: cada
+    # chamada reconsultava as MESMAS primeiras linhas, para sempre — o
+    # conferidor não corrige nada, então nada sai do conjunto entre chamadas.
+    pular = max(0, int(payload.get('pular') or 0))
     try:
         pausa = max(0.0, float(payload.get('pausa_ms', PAUSA_OMIE * 1000)) / 1000.0)
     except Exception:
@@ -280,8 +295,11 @@ def conferir(payload: dict) -> Dict[str, Any]:
     confirmadas_abertas = 0
     consultas = 0
 
+    lote_pagas = pagas[pular:pular + limite]
+    lote_nao_pagas = nao_pagas[pular:pular + limite]
+
     # Direção 1: a planilha diz paga. O que o Omie negar é baixa pela metade.
-    for posicao, item in enumerate(pagas[:limite]):
+    for posicao, item in enumerate(lote_pagas):
         if pausa and consultas:
             time.sleep(pausa)
         registro = _consultar(item, payload)
@@ -295,7 +313,7 @@ def conferir(payload: dict) -> Dict[str, Any]:
 
     # Direção 2: a planilha NÃO diz paga. O que o Omie disser PAGO é planilha
     # para trás — o furo que a conciliação bancária diária torna o mais provável.
-    for posicao, item in enumerate(nao_pagas[:limite]):
+    for posicao, item in enumerate(lote_nao_pagas):
         if pausa and consultas:
             time.sleep(pausa)
         registro = _consultar(item, payload)
@@ -307,7 +325,9 @@ def conferir(payload: dict) -> Dict[str, Any]:
         else:
             confirmadas_abertas += 1
 
-    restam = (max(0, len(pagas) - limite)) + (max(0, len(nao_pagas) - limite))
+    restam = (max(0, len(pagas) - pular - limite)
+              + max(0, len(nao_pagas) - pular - limite))
+    proximo = pular + limite if restam else 0
     achou_algo = bool(divergentes or planilha_atrasada or nao_encontradas or erros)
 
     return {
@@ -317,7 +337,9 @@ def conferir(payload: dict) -> Dict[str, Any]:
         'sentido': sentido,
         **base,
         'consultas_ao_omie': consultas,
+        'pulou': pular,
         'restam_para_conferir': restam,
+        'proximo_pular': proximo,
         # Direção 2 primeiro: é a que o dono apontou como o furo de verdade.
         'planilha_atrasada': planilha_atrasada,
         'quantidade_planilha_atrasada': len(planilha_atrasada),
@@ -333,5 +355,5 @@ def conferir(payload: dict) -> Dict[str, Any]:
                   else 'Nenhuma divergência na janela conferida.'),
         'em_portugues': _frase_da_conferencia(
             len(divergentes), len(nao_encontradas), len(erros), confirmadas,
-            restam, dias, len(planilha_atrasada), confirmadas_abertas),
+            restam, dias, len(planilha_atrasada), confirmadas_abertas, proximo),
     }

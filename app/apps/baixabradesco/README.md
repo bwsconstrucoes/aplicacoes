@@ -373,7 +373,13 @@ invisível para a primeira versão deste módulo, que partia das linhas marcadas
 `GET /api/baixabradesco/conferir-omie` faz a comparação. Parâmetros, todos
 opcionais, aceitos pela barra do navegador: `dias` (janela, 60 por padrão),
 `limite` (consultas ao Omie por chamada e **por direção**, 50 por padrão),
-`sentido` (`ambos`, `omie_pago` ou `planilha_paga`) e `apenas_contar=1`.
+`pular` (continua de onde a chamada anterior parou), `sentido` (`ambos`,
+`omie_pago` ou `planilha_paga`) e `apenas_contar=1`.
+
+⚠️ **`pular` não é conveniência, é correção.** O conferidor não grava nada, então
+nada sai do conjunto entre uma chamada e a seguinte: sem `pular`, chamar de novo
+reconsultaria as mesmas primeiras linhas, para sempre. A resposta devolve
+`proximo_pular` pronto, e a frase em português já traz o número.
 
 **Ele não grava nada.** Nem na planilha, nem no Omie. É relatório. Corrigir é
 decisão de quem lê — um conferidor que também corrigisse erraria em silêncio na

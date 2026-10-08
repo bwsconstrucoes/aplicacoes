@@ -1260,3 +1260,35 @@ a única falha sendo `erpbrasil` ausente neste ambiente, aplicação subindo com
 primeira coisa a chamar depois de publicar, e com `apenas_contar=1` primeiro —
 ela pode trazer centenas de linhas para conferir, e aí o custo é consulta ao
 Omie.
+
+---
+
+### 08/10/2026 (noite, depois de publicar) — a continuação que a frase prometia e o código não cumpria
+
+**Publicado na `main` em `7d4e0cc`**, com o "pode" do dono: o conferidor nos dois
+sentidos, o conserto do segundo caminho de drenagem e as respostas em português.
+A `main` havia andado outra vez (o chat do ponto publicou, com migração própria —
+avisado ao dono), então a `main` veio para o ramo, a suíte rodou com as duas
+coisas juntas, e só então a junção.
+
+Revisando o meu próprio código depois de publicar, achei um defeito no que eu
+tinha **escrito para o dono ler**: a frase em português dizia *"faltam N para
+conferir — chame de novo para continuar"*, e isso era **mentira**. O conferidor
+não grava nada, então nada sai do conjunto entre uma chamada e a seguinte:
+chamar de novo reconsultaria as mesmas primeiras cinquenta linhas, para sempre.
+Ele pagaria consulta ao Omie para reler o mesmo pedaço e nunca chegaria ao resto.
+
+Entrou `pular`, que continua de onde parou, e a resposta devolve o
+`proximo_pular` **pronto** — quem lê isto no celular não deve ter de calcular
+nada. A frase só promete continuação quando existe continuação: na última
+página ela não manda chamar de novo.
+
+Registrado como lição porque é um tipo de erro que escapa fácil: **a frase em
+português é interface, e interface que promete o que o código não faz é pior que
+resposta crua.** Um teste cobre exatamente isso — frase sem continuação possível
+não contém "chame de novo".
+
+**Verificado:** 27 testes no conferidor (4 novos sobre a continuação), 11 sobre
+as frases, suíte inteira rodada com a única falha sendo `erpbrasil` ausente neste
+ambiente, aplicação subindo com os 18 blueprints.
+**Não verificado:** nada do conferidor rodou contra a planilha de verdade ainda.
