@@ -12237,7 +12237,8 @@ somente Solicitações de uma conta especifica"*.
   competência → não recebe, com ou sem data de saída (antes, só sem); último
   dia no mês do pagamento → proporcional até ele. A data de saída só vale
   quando o último dia não veio. Diárias e folha da contabilidade NÃO mudaram
-  (o pedido foi para alimentação e transporte). Sem migração.
+  (o pedido foi para alimentação e transporte). Sem migração. **Publicada em
+  08/10/2026**, junto com a leva 203 (suíte inteira 9.025 verdes).
 
 #### Leva 203 — conciliação: a etiqueta da situação da SP; robô mais cuidadoso (08/10/2026)
 
