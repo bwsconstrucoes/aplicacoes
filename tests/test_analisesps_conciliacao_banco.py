@@ -2038,3 +2038,43 @@ def test_quem_NAO_tem_Solicitacoes_nao_ganha_duplo_clique_que_daria_erro(app):
                            ).get_data(as_text=True)
     assert "900001" in tela, "o link do card continua"
     assert "data-ficha=" not in tela
+
+
+def test_BEEVALE_acha_a_SP_com_o_extrato_1_5_por_cento_maior(banco_conc):
+    """08/10/2026: *"quando o credor do extrato for Beevale Pagamentos e
+    Benefícios Ltda, ou tiver algo como Beevale, Bee Vale (…) a maioria desses
+    lançamentos tem 1,5% de acréscimo em relação ao valor da SP"*."""
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    from tests.test_analisesps_banco import semear, sp
+    conta_id = conta_de_teste()
+    conciliacao.importar(conta_id, conciliacao_ofx.ler(ofx([
+        ("20260910", "-1015.00", "S1", "PIX BEEVALE PAGAMENTOS E BENEFICIOS LTDA"),
+        ("20260911", "-152.25", "S2", "TED BEE VALE"),
+        ("20260912", "-1015.00", "S3", "PIX OUTRO FORNECEDOR")])), "x.ofx", "T")
+    semear([
+        sp("900021", conta="BD 7011", valor="1.000,00", status_pgt="Pago",
+           data_pagamento="10/09/2026", credor="ALIMENTACAO OBRA X"),
+        sp("900022", conta="BD 7011", valor="150,00", status_pgt="Pagar",
+           vencimento="11/09/2026", credor="BEEVALE"),
+        sp("900023", conta="BD 7011", valor="1.000,00", status_pgt="Pago",
+           data_pagamento="12/09/2026", credor="OUTRO FORNECEDOR"),
+    ])
+    conta = next(c for c in conciliacao.contas() if c["id"] == conta_id)
+    linhas = conciliacao.listar({"conta_id": conta_id})
+    achadas = conciliacao.sps_das_linhas(conta, linhas)
+    por_desc = {l["descricao"]: achadas.get(l["id"], []) for l in linhas}
+    beevale = por_desc["PIX BEEVALE PAGAMENTOS E BENEFICIOS LTDA"]
+    assert [(s["id"], s["como"], s.get("beevale")) for s in beevale] == [
+        ("900021", "pago no dia", True)]
+    assert [s["id"] for s in por_desc["TED BEE VALE"]] == ["900022"]
+    # quem NÃO é BeeVale não ganha o desconto de 1,5%
+    assert por_desc["PIX OUTRO FORNECEDOR"] == []
+
+
+def test_o_valor_da_SP_sem_o_acrescimo_e_o_do_CENTAVO_exato():
+    from app.apps.analisesps.conciliacao import (e_beevale,
+                                                 valores_sem_acrescimo_beevale)
+    assert valores_sem_acrescimo_beevale(Decimal("1015.00")) == [Decimal("1000.00")]
+    assert valores_sem_acrescimo_beevale(Decimal("10.15")) == [Decimal("10.00")]
+    assert e_beevale("Beevale Pagamentos e Benefícios Ltda")
+    assert e_beevale("PIX BEE-VALE") and not e_beevale("VALE TRANSPORTE")

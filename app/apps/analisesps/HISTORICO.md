@@ -12228,6 +12228,20 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 202 — conciliação: a SP do BeeVale com 1,5% a mais no extrato (08/10/2026)
+
+- *"Quando o credor do extrato for Beevale Pagamentos e Benefícios Ltda, ou
+  tiver algo como Beevale, Bee Vale (…) a maioria desses lançamentos tem 1,5%
+  de acréscimo em relação ao valor da SP."* Saída cuja descrição tem "BEEVALE"
+  (sem acento, espaço ou hífen: "Bee Vale", "BEE-VALE") procura também a SP de
+  valor = lançamento ÷ 1,015, no CENTAVO exato (arredondando ou cortando o
+  centavo — não se sabe qual o BeeVale faz). O valor igual continua valendo; as
+  mesmas regras de conta, data e nome. O balão do link diz "BeeVale: o extrato
+  tem 1,5% a mais que a SP" (`conciliacao.e_beevale`,
+  `valores_sem_acrescimo_beevale`).
+- Fica de fora: um lançamento BeeVale que some VÁRIAS SPs (cruzamento é 1 para
+  1, como o resto). Sem migração.
+
 #### Leva 201 — Consultar Omie e o "Marcar Pago" completo (08/10/2026)
 
 - *"Preciso poder consultar um ou vários títulos no Omie (…) num modal (…) se
