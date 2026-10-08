@@ -465,7 +465,7 @@ def _consultar_falso(sql, params=()):
     if "AS pagamento_do_analitico" in sql:
         return [(1,)]
     if "AS pagina_do_analitico" in sql:
-        return [(998877, dt.date(2025, 3, 10), "(sem conta)")]
+        return [(998877, dt.date(2025, 4, 8), "Bradesco C/C")]
 
     # ---- as retencoes por tributo (janela do DRE) ----
     if "FROM (SELECT codigo_lancamento AS cod" in sql:
