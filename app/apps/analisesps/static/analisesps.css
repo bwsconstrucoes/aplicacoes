@@ -2737,3 +2737,6 @@ table.sps.mini th, table.sps.mini td { padding: 4px 8px; }
 /* A SP da saída do extrato (07/10/2026): pequena, para não engordar a linha. */
 table.conciliacao .sp-da-linha { font-size: 11.5px; white-space: nowrap; }
 table.conciliacao td .selo { font-size: 10.5px; }
+
+/* Linha da conciliação com SP identificada: duplo clique abre a ficha (07/10/2026). */
+table.conciliacao tr.com-sp { cursor: pointer; }

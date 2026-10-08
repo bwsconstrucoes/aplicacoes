@@ -200,13 +200,41 @@ def test_a_fila_e_drenada_junto_com_o_lote():
 
 
 def test_drenar_fila_nunca_derruba_a_resposta(monkeypatch):
+    """A baixa deste lote já aconteceu; a fila é sobre lotes passados.
+
+    Hoje a drenagem é por etapa (dinheiro primeiro), então o relatório vem por
+    etapa — mas a garantia é a mesma: nunca levanta erro, e o erro aparece
+    escrito em vez de desaparecer.
+    """
     from app.apps.baixabradesco.core import _drenar_fila
     import app.apps.baixabradesco.fila as fila
     monkeypatch.setattr(fila, 'reprocessar_fila',
                         lambda p: (_ for _ in ()).throw(RuntimeError('planilha fora')))
     r = _drenar_fila({})
-    assert r['ok'] is False
-    assert 'planilha fora' in r['erro']
+    assert 'planilha fora' in r['omie']['erro']
+    assert 'planilha fora' in r['sheets']['erro']
+
+
+def test_o_lote_de_comprovantes_nao_limpa_o_acumulado_de_avisos(monkeypatch):
+    """Eu disse ao dono que o automático não tocaria nos 1.943 avisos antigos.
+
+    O cron tinha esse cuidado; o lote de comprovantes NÃO tinha — ele chamava o
+    reprocessamento sem etapa e sem restrição, então pegava as cinco pendências
+    mais antigas (avisos de junho) e as marcava como descartadas. Ou seja: o
+    sistema ia limpando sozinho o que foi dito que ele não tocaria, e ainda
+    deixava as 238 baixas para o fim.
+    """
+    from app.apps.baixabradesco.core import _drenar_fila, LIMITES_LOTE
+    import app.apps.baixabradesco.fila as fila
+    pedidos = []
+    monkeypatch.setattr(fila, 'reprocessar_fila',
+                        lambda p: pedidos.append(p) or {'pendentes_processados': 0})
+
+    _drenar_fila({})
+
+    assert all(p['descartar_avisos_antigos'] is False for p in pedidos)
+    assert [p['etapas'][0] for p in pedidos] == ['omie', 'sheets', 'pipefy', 'zapi']
+    assert LIMITES_LOTE['omie'] >= LIMITES_LOTE['zapi']   # dinheiro na frente
 
 
 def test_reprocessar_planilha_nao_mente_mais_sobre_sucesso(monkeypatch):

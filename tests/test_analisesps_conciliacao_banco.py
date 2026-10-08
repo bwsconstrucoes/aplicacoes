@@ -13,6 +13,8 @@ from decimal import Decimal
 
 import pytest
 
+from tests.test_analisesps_usuarios_banco import app, banco_acesso  # noqa: F401 — fixtures
+
 pytestmark = pytest.mark.banco
 
 
@@ -1993,3 +1995,46 @@ def test_mesmo_valor_no_mesmo_dia_o_NOME_do_credor_desempata(banco_conc):
     assert ids["PAGTO BOLETO MADEIREIRA SAO JORGE"] == ["900012"]
     assert sorted(ids["PIX ENVIADO NINGUEM CONHECIDO"]) == ["900011", "900012"], \
         "sem nome que desempate, as duas ficam (com ?)"
+
+
+def test_DUPLO_CLIQUE_na_linha_com_SP_abre_a_ficha_dela(app):
+    """07/10/2026: *"queria que ao dar dois clique na linha identificada, fosse
+    aberto o modal daquele lancamento de analisps"*. A linha leva o endereço da
+    ficha, e a tela carrega o mesmo modal da lista de Solicitações."""
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    from tests.test_analisesps_banco import semear, sp
+    from tests.test_analisesps_usuarios_banco import SENHA_MESTRE_OPERADOR
+    conta_id = conta_de_teste()
+    conciliacao.importar(conta_id, conciliacao_ofx.ler(ofx([
+        ("20260910", "-500.00", "S1", "PIX FORNECEDOR"),
+        ("20260912", "-99.00", "S3", "TARIFA")])), "x.ofx", "T")
+    semear([sp("900001", conta="BD 7011", valor="500,00", status_pgt="Pago",
+               data_pagamento="10/09/2026", credor="FORNECEDOR A")])
+    with app.test_client() as cliente:
+        cliente.post("/analisesps/entrar", data={"senha": SENHA_MESTRE_OPERADOR})
+        tela = cliente.get(f"/analisesps/conciliacao?conta_id={conta_id}"
+                           ).get_data(as_text=True)
+        assert cliente.get("/analisesps/sp/900001?modal=1").status_code == 200
+    assert 'id="ficha-modal"' in tela
+    assert tela.count("data-ficha=") == 1, "só a linha com SP achada"
+    assert 'data-ficha="/analisesps/sp/900001"' in tela and 'data-sp="900001"' in tela
+
+
+def test_quem_NAO_tem_Solicitacoes_nao_ganha_duplo_clique_que_daria_erro(app):
+    """A ficha da SP é da tela Solicitações. Para quem só tem a Conciliação, o
+    modal abriria "não encontrado" — então a linha nem liga o duplo clique."""
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    from tests.test_analisesps_banco import semear, sp
+    from tests.test_analisesps_usuarios_banco import criar, entrar_como
+    conta_id = conta_de_teste()
+    conciliacao.importar(conta_id, conciliacao_ofx.ler(ofx([
+        ("20260910", "-500.00", "S1", "PIX FORNECEDOR")])), "x.ofx", "T")
+    semear([sp("900001", conta="BD 7011", valor="500,00", status_pgt="Pago",
+               data_pagamento="10/09/2026", credor="FORNECEDOR A")])
+    criar(telas=("conciliacao",))
+    with app.test_client() as cliente:
+        entrar_como(cliente)
+        tela = cliente.get(f"/analisesps/conciliacao?conta_id={conta_id}"
+                           ).get_data(as_text=True)
+    assert "900001" in tela, "o link do card continua"
+    assert "data-ficha=" not in tela

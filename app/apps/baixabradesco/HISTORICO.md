@@ -1140,3 +1140,155 @@ blueprints.
 **Não verificado:** a drenagem pelo cron nunca rodou em produção. O primeiro
 disparo depois de publicar é a prova — e o campo a olhar é
 `fila_de_falhas.omie.o_que_falta_configurar`.
+
+---
+
+### 08/10/2026 (fim do dia) — publicado, e as respostas passaram a falar português
+
+**Publicado na `main` em `26e9187`**, com o "pode" do dono e a confirmação de que
+as variáveis do Render existem (`OMIE_KEY`, `OMIE_SECRET`, `PIPEFY_API_TOKEN`,
+`ZAPI_*`). A `main` havia andado — outro chat publicou mexidas no painel —, então
+a `main` veio para o ramo primeiro, a suíte rodou com as duas coisas juntas e só
+então a junção. Sem conflito. Sem migração de banco.
+
+Entrou: o conferidor SPsBD × Omie, a fila andando sozinha pelo cron de 5 em 5
+minutos com o dinheiro na frente, o conserto do entupimento por aviso velho e a
+guarda do token do Pipefy.
+
+**Depois disso, uma coisa pequena e de efeito grande:** as respostas de
+`fila-resumo` e `conferir-omie` ganharam um campo `em_portugues`, com uma frase
+que diz o que os números querem dizer. O motivo é literal: o dono colou no chat
+a resposta inteira de `fila-resumo`, campo por campo, para perguntar o que ela
+significava. Ele lê isso pelo celular e não é programador — a resposta crua é
+chave-e-número. A frase vem **junto** com os números, nunca em lugar deles.
+
+Decisões pequenas registradas porque voltam a aparecer: a etapa aparece com nome
+de gente ("baixa no Omie", "aviso de pagamento"), não com o nome técnico; a maior
+quantidade vem primeiro; e a frase do conferidor **separa explicitamente** o que
+é dinheiro (planilha paga, Omie aberto) do que é cadastro errado (código que não
+existe no Omie) — juntar os dois assustaria sem motivo ou tranquilizaria sem
+motivo.
+
+**Verificado:** 9 testes novos sobre as frases, suíte inteira rodada (única falha
+é `erpbrasil` ausente neste ambiente, que falha igual na `main` publicada),
+aplicação subindo com os 18 blueprints.
+**Não verificado:** a drenagem pelo cron ainda não foi observada em produção. O
+número a acompanhar é `pendentes_vencidos`, que tem de cair dos 2.269.
+
+### Pendente AGORA (para a próxima sessão desta área)
+
+1. **Os 1.943 avisos antigos esperam decisão do dono** — descartar em massa
+   (recomendação registrada) ou reenviar. O cron não toca neles.
+2. **Confirmar que a drenagem andou**: `pendentes_vencidos` tem de cair. Se
+   continuar em 2.269, olhar `fila_de_falhas` na resposta do cron.
+3. **A chave do Omie em texto na aba `FilaAppWeb`** continua lá (achado de
+   segurança). Não impede nada; é risco.
+4. **Pix, boleto, transferência, FGTS e BeeVale seguem sem teste de campo** — falta
+   um comprovante de exemplo de cada, que só o dono tem.
+
+---
+
+### 08/10/2026 (noite) — o dono apontou o alvo certo, e meu conferidor olhava para o outro lado
+
+Com a drenagem já no ar, ele respondeu:
+
+> *"está caindo o número, já vi. Esses comprovantes antigos eu já devo ter
+> resolvido, e esses avisos antigos também. Fazemos conciliação bancária diária.
+> No sistema Omie vai estar tudo atualizado. O furo pode ser mais na planilha e
+> na movimentação do card."*
+
+Três coisas nessa frase, e as três mudam o trabalho:
+
+1. **A drenagem está funcionando** — o número cai. Primeira confirmação em
+   produção.
+2. **As 238 baixas do Omie provavelmente já estão pagas**, pela conciliação
+   diária. O reprocessamento consulta antes e, se achar `PAGO`, resolve a
+   pendência sem lançar nada — então a drenagem está fechando pendência de
+   registro, não pagando nada de novo. Era o comportamento pretendido, e agora
+   tem confirmação de por que ele era o certo.
+3. **O furo é na planilha e no cartão — e o meu conferidor não enxergava isso.**
+
+**O erro de direção, escrito para não se repetir:** o conferidor selecionava as
+linhas em que a planilha diz **Pago** e perguntava ao Omie. Ou seja, só achava
+"planilha paga, Omie aberto". O furo que ele descreve é o **contrário** — "Omie
+pago, planilha não" —, e essa direção era **invisível** para o conferidor, porque
+ela mora justamente nas linhas que a planilha ainda marca como "Pagar". Pela
+conciliação bancária diária, é também a direção **mais provável** das duas.
+
+E ela não aparece em lugar nenhum sem o conferidor: a fila de falhas tinha
+**zero** pendências de planilha, porque a gravação morria antes de chegar ao
+`enqueue_failure`. O sistema não tinha como saber que deixou de gravar.
+
+**O que ficou:** o conferidor passou a rodar nos dois sentidos, e o relatório põe
+o furo apontado por ele **na frente**, com nome próprio (`planilha_atrasada`).
+`sentido` escolhe: `ambos`, `omie_pago` ou `planilha_paga`.
+
+Decisões que valem registro porque são o tipo de coisa que se refaz errado:
+
+- **As duas janelas usam datas diferentes, e têm de usar.** A direção antiga tem
+  data de pagamento na planilha. A nova não tem — a planilha nem sabe que foi
+  paga —, então a janela é pelo **vencimento**. Sem janela seriam ~52 mil
+  consultas ao Omie. Vencimento muito à frente também sai: título que vence no
+  ano que vem não é planilha atrasada.
+- **Cada item da direção nova traz o link do cartão do Pipefy**, porque ele
+  apontou os dois furos juntos. O conferidor não consulta o Pipefy (seria outra
+  volta de API por item); entrega o link para quem for olhar.
+- **O limite vale por direção**, não somado: pedir 50 faz até 50 consultas de
+  cada lado, e não 25 de cada.
+- **Continua sem corrigir nada.** Agora com mais razão: corrigir "planilha
+  atrasada" é escrever na planilha a partir do que o Omie diz, e isso precisa de
+  conferência de valor e de data — é um passo próprio, não um efeito colateral
+  de um relatório.
+
+**Um defeito meu no caminho, e conto porque é instrutivo:** ao reescrever a
+seleção de candidatas, substituí um trecho grande de arquivo delimitado por
+"daqui até a próxima função" — e a próxima função não era a que eu pensava.
+Apaguei junto a função que monta a frase em português, sem perceber. A suíte
+apontou na primeira rodada. Trecho grande se substitui por âncora exata, não por
+intervalo.
+
+**Decisão do dono registrada:** ele considera os comprovantes e os avisos antigos
+já resolvidos. Então o descarte em massa dos 1.943 avisos deixa de ser dúvida e
+passa a ser só uma chamada quando ele quiser — nada é apagado, a linha fica com o
+motivo escrito.
+
+**Verificado:** 23 testes no conferidor (10 novos, cobrindo a direção nova, as
+duas janelas, o limite por direção e a ordem da frase), suíte inteira rodada com
+a única falha sendo `erpbrasil` ausente neste ambiente, aplicação subindo com os
+18 blueprints.
+**Não verificado:** a direção nova nunca rodou contra a planilha de verdade. É a
+primeira coisa a chamar depois de publicar, e com `apenas_contar=1` primeiro —
+ela pode trazer centenas de linhas para conferir, e aí o custo é consulta ao
+Omie.
+
+---
+
+### 08/10/2026 (noite, depois de publicar) — a continuação que a frase prometia e o código não cumpria
+
+**Publicado na `main` em `7d4e0cc`**, com o "pode" do dono: o conferidor nos dois
+sentidos, o conserto do segundo caminho de drenagem e as respostas em português.
+A `main` havia andado outra vez (o chat do ponto publicou, com migração própria —
+avisado ao dono), então a `main` veio para o ramo, a suíte rodou com as duas
+coisas juntas, e só então a junção.
+
+Revisando o meu próprio código depois de publicar, achei um defeito no que eu
+tinha **escrito para o dono ler**: a frase em português dizia *"faltam N para
+conferir — chame de novo para continuar"*, e isso era **mentira**. O conferidor
+não grava nada, então nada sai do conjunto entre uma chamada e a seguinte:
+chamar de novo reconsultaria as mesmas primeiras cinquenta linhas, para sempre.
+Ele pagaria consulta ao Omie para reler o mesmo pedaço e nunca chegaria ao resto.
+
+Entrou `pular`, que continua de onde parou, e a resposta devolve o
+`proximo_pular` **pronto** — quem lê isto no celular não deve ter de calcular
+nada. A frase só promete continuação quando existe continuação: na última
+página ela não manda chamar de novo.
+
+Registrado como lição porque é um tipo de erro que escapa fácil: **a frase em
+português é interface, e interface que promete o que o código não faz é pior que
+resposta crua.** Um teste cobre exatamente isso — frase sem continuação possível
+não contém "chame de novo".
+
+**Verificado:** 27 testes no conferidor (4 novos sobre a continuação), 11 sobre
+as frases, suíte inteira rodada com a única falha sendo `erpbrasil` ausente neste
+ambiente, aplicação subindo com os 18 blueprints.
+**Não verificado:** nada do conferidor rodou contra a planilha de verdade ainda.

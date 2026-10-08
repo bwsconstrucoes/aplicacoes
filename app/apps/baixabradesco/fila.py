@@ -414,6 +414,100 @@ def _parece_cota(texto: str) -> bool:
             or 'rate_limit' in t)
 
 
+ROTULOS_ETAPA = {
+    'omie': 'baixa no Omie',
+    'sheets': 'atualização da planilha',
+    'pipefy': 'cartão do Pipefy',
+    'zapi': 'aviso de pagamento',
+}
+
+
+def _em_milhar(n: int) -> str:
+    return f'{n:,}'.replace(',', '.')
+
+
+def _frase_do_resumo(por_etapa: Dict[str, int], vencidos: int, agendados: int,
+                     falhados: int, concluidos: int, mais_antigo: str) -> str:
+    """Uma frase em português, para quem lê isto pelo celular.
+
+    A resposta crua é chave-e-número; o dono olha o chat pelo telefone e não é
+    programador. A frase não substitui os números, vem junto.
+    """
+    total = vencidos + agendados + falhados
+    if not total:
+        return ('Nenhuma pendência na fila'
+                + (f'; {_em_milhar(concluidos)} já concluídas.' if concluidos else '.'))
+
+    partes = []
+    for etapa, qtd in sorted(por_etapa.items(), key=lambda x: -x[1]):
+        if not qtd:
+            continue
+        partes.append(f'{_em_milhar(qtd)} de {ROTULOS_ETAPA.get(etapa, etapa)}')
+
+    frase = f'{_em_milhar(total)} pendência(s) na fila'
+    if partes:
+        frase += ': ' + ', '.join(partes) + '.'
+    else:
+        frase += '.'
+    if falhados:
+        frase += (f' {_em_milhar(falhados)} já tentaram cinco vezes e só voltam'
+                  ' se forem pedidas explicitamente.')
+    if agendados:
+        frase += f' {_em_milhar(agendados)} estão agendadas para mais tarde.'
+    if mais_antigo:
+        frase += f' A mais antiga é de {mais_antigo[:10]}.'
+    if concluidos:
+        frase += (f' Fora essas, {_em_milhar(concluidos)} linha(s) da aba já são'
+                  ' histórico concluído.')
+    return frase
+
+
+# A ordem em que a fila é drenada, e ela não é alfabética: `omie` é dinheiro
+# (baixa que não aconteceu), `sheets` é a planilha desatualizada, `pipefy` é o
+# cartão no lugar errado, `zapi` é recado. Em 08/10/2026 a fila tinha 1.943
+# recados na frente de 238 baixas — na ordem da planilha, o dinheiro sairia por
+# último. Um lugar só, usado pelos dois caminhos automáticos (o cron e o lote de
+# comprovantes), para não divergirem como já divergiram.
+ORDEM_ETAPAS = ('omie', 'sheets', 'pipefy', 'zapi')
+
+
+def drenar_por_etapa(limites: Dict[str, int], payload: Optional[dict] = None) -> dict:
+    """Anda com a fila, uma etapa por vez, na ordem da importância.
+
+    ⚠️ `descartar_avisos_antigos=False` é obrigatório aqui, e não é detalhe:
+    limpar em massa o acumulado de avisos antigos é decisão do dono. Quando o
+    lote de comprovantes drenava sem este cuidado, cada lote marcava cinco
+    avisos velhos como descartados — ou seja, o sistema ia limpando sozinho o
+    que foi dito que ele não tocaria.
+    """
+    base = dict(payload or {})
+    saida: Dict[str, Any] = {}
+    for etapa in ORDEM_ETAPAS:
+        limite = int(limites.get(etapa) or 0)
+        if limite <= 0:
+            continue
+        pedido = dict(base)
+        pedido.update({'etapas': [etapa], 'limite': limite,
+                       'descartar_avisos_antigos': False})
+        try:
+            r = reprocessar_fila(pedido)
+            saida[etapa] = {
+                'processados': r.get('pendentes_processados'),
+                'concluidos': r.get('concluidos_agora'),
+                'ainda_pendentes': r.get('ainda_pendentes'),
+                'bloqueados_por_configuracao': r.get('bloqueados_por_configuracao'),
+                'o_que_falta_configurar': r.get('o_que_falta_configurar'),
+                'interrompido': r.get('interrompido'),
+            }
+            if r.get('interrompido') == 'cota_do_google':
+                # Cota estourada: para aqui e deixa o resto para a próxima vez.
+                saida['parou_por_cota_na_etapa'] = etapa
+                break
+        except Exception as e:
+            saida[etapa] = {'erro': str(e)[:200]}
+    return saida
+
+
 def resumo_fila(gc=None) -> dict:
     """Conta a fila sem reprocessar nada.
 
@@ -490,6 +584,10 @@ def resumo_fila(gc=None) -> dict:
         'registro_mais_antigo': mais_antiga.strftime('%d/%m/%Y %H:%M:%S') if mais_antiga else '',
         'registro_mais_recente': mais_nova.strftime('%d/%m/%Y %H:%M:%S') if mais_nova else '',
         'lotes_de_5_necessarios': (vencidos + 4) // 5,
+        'em_portugues': _frase_do_resumo(
+            por_etapa, vencidos, agendados, por_status.get(STATUS_FALHOU, 0),
+            por_status.get(STATUS_CONCLUIDO, 0),
+            mais_antiga.strftime('%d/%m/%Y') if mais_antiga else ''),
     }
 
 

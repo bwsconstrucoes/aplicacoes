@@ -2429,6 +2429,27 @@ mesmo em coisa não paga — se não tá pago, não pode tá no extrato"*.
   (passando o mouse, o valor inteiro) — sem ele, o valor da linha pareceria o
   pagamento inteiro.
 
+## O PDF de duas páginas; as contas da obra na barra — 08/10/2026
+
+**"O relatório PDF tá saindo só as duas primeiras páginas, e o gráfico da
+primeira não" — e o Excel também.** Reproduzido aqui com o administrador: o
+completo sai inteiro (15 páginas, 14 abas). O que sai com duas páginas e sem
+gráfico é o PDF do DRE — que é o que o botão "(tudo)" baixava para quem entra
+por USUÁRIO (o completo era só da senha geral, desde 22/09/2026), sem dizer
+nada. A pergunta seguinte do dono ("preciso marcar as contas na
+configuração?") confirma que ele estava num acesso de usuário.
+- Quem tem TODAS as telas que o completo junta (DRE, Analítico, Receita,
+  Fluxo, Resultado por obra) agora baixa o completo, com o gráfico — cada
+  pedaço preso às obras dele, como nas telas (`auth.TELAS_DO_COMPLETO`).
+- O botão diz o que baixa: "(tudo)" ou "do DRE".
+
+**Contas na barra lateral:** o dono não quer marcar conta por conta. A lista
+de contas passa a mostrar as contas por onde andou dinheiro da obra/projeto
+escolhido na barra (`consultas.contas_do_recorte`, lembrado até a próxima
+carga); sem obra escolhida, o administrador vê todas. Para o usuário sem
+conta marcada, as contas das obras dele. Conta marcada no cadastro continua
+sendo LIMITE (só ela) — isso não mudou.
+
 ## Reler os pagamentos de um ano, de alguns ou de todos — 07/10/2026
 
 O dono, vendo a releitura retomada em "2025 (11 de 12 anos, 10 já feitos
