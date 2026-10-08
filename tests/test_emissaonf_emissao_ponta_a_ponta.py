@@ -1162,3 +1162,14 @@ def test_os_erros_novos_do_dia_ganham_traducao():
     # O que mais importa nesta tradução: ela NÃO afirma que nada foi criado
     assert "NÃO quer dizer que nada foi criado" in el[0]
     assert "número NOVO" in el[0]
+
+
+def test_o_erro_E0699_explica_que_CP_e_o_INSS():
+    """"CP" não diz nada a quem lê. É a contribuição previdenciária — o INSS."""
+    import emitir_dps
+    t = emitir_dps.explicar_erros(
+        ["E0699 - O valor do tributo CP deve ser maior que zero e menor que o "
+         "valor do serviço informado na DPS."])
+    assert len(t) == 1
+    assert "INSS" in t[0]
+    assert "não vai" in t[0]

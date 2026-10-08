@@ -185,12 +185,64 @@ def test_so_entra_o_grupo_de_pis_cofins_quando_algum_dos_dois_e_retido():
     assert com.find(".//{%s}piscofins" % nac.NS_NFSE) is not None
 
 
-def test_imposto_nao_retido_vai_zerado_e_nao_omitido():
-    """A categoria 'IR' retém só o IR: CSLL tem de ir zerado, não ausente —
-    ausência e zero são lidas igual aqui, mas zero é explícito."""
+def test_imposto_nao_retido_e_OMITIDO_e_nao_vai_zerado():
+    """⚠️ Este teste afirmava o CONTRÁRIO até 08/10/2026, e estava errado.
+
+    Ele dizia que "ausência e zero são lidas igual aqui, mas zero é explícito".
+    A plataforma nacional não as lê igual: ela recusa valor zero, com o erro
+    **E0699** — "o valor do tributo CP deve ser maior que zero e menor que o
+    valor do serviço informado na DPS". Custou uma emissão.
+
+    Zero declara uma retenção DE valor zero, que é diferente de não haver
+    retenção. É a mesma regra que o grupo piscofins (teste acima) já seguia, e
+    que o modelo antigo seguia — o HISTORICO da área tem a decisão escrita desde
+    21/09/2026: "imposto sem retenção não aparece na nota". A migração a perdeu
+    para estes três campos, e só para eles.
+    """
     root = _xml(_montar(r=_calculo("ONERADA - 50/50 - 80/20 - IR")))
-    assert _txt(root, "infDPS/valores/trib/tribFed/vRetCSLL") == "0.00"
+    assert _txt(root, "infDPS/valores/trib/tribFed/vRetCSLL") is None
     assert Decimal(_txt(root, "infDPS/valores/trib/tribFed/vRetIRRF")) > 0
+
+
+def test_nota_sem_retencao_federal_nenhuma_nao_leva_o_grupo(schema):
+    """Grupo vazio é válido no schema e não diz nada. Foi este o caso que deu
+    E0699: obra sem retenção de INSS mandava vRetCP igual a 0,00."""
+    d = _montar(r=_calculo("ONERADA - SD - SD - SEM RETENÇÃO"))
+    root = _xml(d)
+    assert root.find(".//{%s}tribFed" % nac.NS_NFSE) is None
+    doc = etree.fromstring(etree.tostring(root))
+    assert schema.validate(doc), schema.error_log
+
+
+def test_retencao_maior_que_o_servico_derruba_a_declaracao():
+    """A outra metade da regra do E0699. Retenção maior que o serviço é erro de
+    dado — e falhar aqui é mais barato que descobrir num dia depois."""
+    d = _montar()
+    d.v_serv = "1000.00"
+    d.v_ret_inss = "1000.00"
+    with pytest.raises(ValueError, match="maior ou igual ao valor do serviço"):
+        _xml(d)
+
+
+def test_o_total_aproximado_de_tributos_e_declarado_como_NAO_INFORMADO(schema):
+    """O layout dá uma escolha de quatro, e uma delas existe exatamente para
+    quem não informa valor estimado: `indTotTrib=0`. Mandávamos a outra
+    (`vTotTrib`) com os três valores em 0,00 — o que DECLARA que o total
+    aproximado dos tributos é zero, e é falso. Mesmo defeito do vRetCP, só que
+    este ainda não tinha dado erro."""
+    doc = etree.fromstring(etree.tostring(_xml(_montar())))
+    assert schema.validate(doc), schema.error_log
+    assert _txt(doc, "infDPS/valores/trib/totTrib/indTotTrib") == "0"
+    assert doc.find(".//{%s}vTotTrib" % nac.NS_NFSE) is None
+
+
+def test_se_um_dia_quiserem_informar_o_total_a_outra_opcao_continua_valendo(schema):
+    d = _montar()
+    d.v_tot_trib = ("10.00", "0.00", "5.00")
+    doc = etree.fromstring(etree.tostring(_xml(d)))
+    assert schema.validate(doc), schema.error_log
+    assert _txt(doc, "infDPS/valores/trib/totTrib/vTotTrib/vTotTribFed") == "10.00"
+    assert doc.find(".//{%s}indTotTrib" % nac.NS_NFSE) is None
 
 
 # --------------------------------------------------------------------------- #
@@ -588,3 +640,64 @@ def test_quando_preenchidos_tpOper_e_tpEnteGov_saem_na_ordem_do_schema(schema):
     grupo = doc.find("{%s}infDPS/{%s}IBSCBS" % (nac.NS_NFSE, nac.NS_NFSE))
     assert [etree.QName(e).localname for e in grupo] == [
         "finNFSe", "indFinal", "cIndOp", "tpOper", "tpEnteGov", "indDest", "valores"]
+
+
+# --------------------------------------------------------------------------- #
+# A varredura: NENHUM campo opcional vai com zero
+#
+# Este teste existe porque o mesmo defeito apareceu três vezes em formas
+# diferentes — PIS/COFINS (visto na migração), vRetCP/vRetIRRF/vRetCSLL (erro
+# E0699, 08/10/2026) e o total aproximado de tributos (que ainda não tinha dado
+# erro). A plataforma trata "zero" e "ausente" como coisas diferentes, e o
+# schema não ajuda: campo opcional com zero é um arquivo válido.
+#
+# Em vez de confiar em lembrar da regra campo por campo, aqui a declaração é
+# varrida inteira contra o XSD: todo elemento que o layout permite OMITIR e que
+# está indo com valor zero é um defeito, salvo os indicadores — neles o zero é
+# um SIGNIFICADO ("não é consumidor final"), não um valor.
+# --------------------------------------------------------------------------- #
+INDICADORES_EM_QUE_ZERO_E_SIGNIFICADO = {
+    "indFinal",      # 0 = tomador não é consumidor final
+    "indDest",       # 0 = o destinatário é o próprio tomador
+    "indTotTrib",    # 0 = não se informa valor estimado de tributos
+    "finNFSe",       # 0 = finalidade normal
+    "regEspTrib",    # 0 = nenhum regime especial
+}
+
+
+def _opcionais_do_layout():
+    nomes = set()
+    for arquivo in os.listdir(os.path.join(_EMISSAONF, "xsd_nacional")):
+        if not arquivo.endswith(".xsd"):
+            continue
+        doc = etree.parse(os.path.join(_EMISSAONF, "xsd_nacional", arquivo))
+        for el in doc.iter("{http://www.w3.org/2001/XMLSchema}element"):
+            if el.get("minOccurs") == "0" and el.get("name"):
+                nomes.add(el.get("name"))
+    return nomes
+
+
+@pytest.mark.parametrize("categoria", [
+    "ONERADA - 50/50 - 80/20 - IR",
+    "ONERADA - 100/0 - 100/0 - IR,PIS,COFINS,CSLL",
+    "ONERADA - SD - SD - SEM RETENÇÃO",
+    "ONERADA - 60/40 - 60/40 - PIS,COFINS",
+])
+def test_nenhum_campo_opcional_do_layout_vai_com_valor_zero(categoria):
+    opcionais = _opcionais_do_layout()
+    root = _xml(_montar(r=_calculo(categoria)))
+    culpados = []
+    for el in root.iter():
+        tag = etree.QName(el).localname
+        texto = (el.text or "").strip()
+        if not texto or len(el) or tag in INDICADORES_EM_QUE_ZERO_E_SIGNIFICADO:
+            continue
+        try:
+            zero = Decimal(texto) == 0
+        except Exception:
+            continue
+        if zero and tag in opcionais:
+            culpados.append(f"{tag}={texto}")
+    assert not culpados, (
+        f"{categoria}: campo opcional indo com zero — a plataforma recusa "
+        f"(E0699): {culpados}")

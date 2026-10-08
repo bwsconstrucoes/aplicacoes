@@ -184,6 +184,17 @@ EXPLICACAO_DOS_ERROS = {
         "emitir de novo, confira no portal da prefeitura** se a nota existe — e, "
         "se for emitir, use um número NOVO."
     ),
+    "E0699": (
+        "**CP** é a contribuição previdenciária — o INSS. A declaração mandava o "
+        "campo dele com **0,00**, e a plataforma recusa valor zero: o campo é "
+        "opcional no layout, e imposto que não foi retido simplesmente **não "
+        "vai**.\n\n"
+        "Zero declara uma retenção DE valor zero, que é diferente de não haver "
+        "retenção. A nota afetada é a de obra cuja tributação não retém INSS.\n\n"
+        "Consertado em 08/10/2026 para os três campos federais (INSS, IR e CSLL): "
+        "só vão os que foram de fato retidos, e se nenhum foi o grupo inteiro não "
+        "sai. É a mesma regra que o PIS/COFINS já seguia."
+    ),
 }
 
 

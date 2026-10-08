@@ -209,6 +209,26 @@ a prática ganhou do manual. Então:
 - não há exceção para o mesmo card;
 - buraco na sequência é normal — nota cancelada faz o mesmo.
 
+### Imposto que não foi retido NÃO vai, nem como zero
+
+A plataforma trata **zero** e **ausente** como coisas diferentes: campo opcional
+com valor zero é recusado. Mandar `0,00` declara uma retenção **de** valor zero,
+que é diferente de não haver retenção. É o erro **E0699** ("o valor do tributo CP
+deve ser maior que zero…"), e CP é o INSS.
+
+Então: dos três campos federais (INSS, IR, CSLL) só vão os que foram de fato
+retidos; se nenhum foi, o grupo inteiro não sai. O total aproximado de tributos
+vai como **"não informado"** (`indTotTrib=0`, a opção que o layout dá) em vez de
+três zeros. E retenção maior que o valor do serviço **derruba a montagem**, com
+os dois números na mensagem — é erro de dado.
+
+**O que vigia isso de verdade não é a memória de quem mexe:** um teste varre a
+declaração inteira contra o XSD e acusa qualquer elemento que o layout permita
+omitir e que esteja indo com zero. A exceção são os indicadores (`indFinal`,
+`indDest`, `indTotTrib`, `finNFSe`, `regEspTrib`), onde zero é um **significado**
+e não um valor. O mesmo defeito já tinha aparecido em três campos diferentes
+antes de virar varredura.
+
 ### A declaração é gravada antes de qualquer espera
 
 Entre a prefeitura **aceitar** a declaração e a nota **ficar pronta** passa um
