@@ -456,7 +456,20 @@ def _opcoes_no_escopo():
     from . import auth, consultas
     opcoes = consultas.opcoes_de_filtro()
     pessoa = auth.usuario_da_sessao()
+    obras_pedidas = [o for o in request.args.getlist("obra") if o]
+    projetos_pedidos = [p for p in request.args.getlist("projeto") if p]
+    contas_pedidas = [c for c in request.args.getlist("conta") if c]
+
+    def _contas_de(obras, projetos):
+        # AS CONTAS DA OBRA/PROJETO NA TELA (dono, 08/10/2026): a lista de
+        # contas mostra as que tiveram dinheiro do recorte, e a que já está
+        # marcada nunca some (senão não dava para desmarcar)
+        do_recorte = set(consultas.contas_do_recorte(obras, projetos)) | set(contas_pedidas)
+        return [c for c in opcoes.get("contas", []) if c in do_recorte]
+
     if pessoa is None:
+        if obras_pedidas or projetos_pedidos:
+            return dict(opcoes, contas=_contas_de(obras_pedidas, projetos_pedidos))
         return opcoes
     permitidas = set(pessoa.get("obras") or [])
     contas_ok = set(pessoa.get("contas") or [])
@@ -465,10 +478,19 @@ def _opcoes_no_escopo():
     mapa = consultas.obra_para_projeto() if permitidas else {}
     projetos_ok = (set(pessoa.get("projetos") or [])
                    | {mapa.get(o, "") for o in permitidas}) - {""}
+    if contas_ok:
+        # contas marcadas no cadastro continuam sendo um LIMITE: só elas
+        contas = [c for c in opcoes.get("contas", []) if c in contas_ok]
+    else:
+        # sem nada marcado: as contas por onde andou dinheiro das obras dela
+        # (ou só das escolhidas na barra). Ela já vê esses pagamentos, com a
+        # conta, em toda tela — a lista não revela nada novo.
+        obras_vistas = [o for o in obras_pedidas if o in permitidas] or sorted(permitidas)
+        contas = _contas_de(obras_vistas, [p for p in projetos_pedidos if p in projetos_ok])
     return dict(opcoes,
                 obras=[o for o in opcoes["obras"] if o in permitidas],
                 projetos=[p for p in opcoes.get("projetos", []) if p in projetos_ok],
-                contas=[c for c in opcoes.get("contas", []) if c in contas_ok])
+                contas=contas)
 
 
 def _contexto_comum(aba: str):
@@ -482,6 +504,8 @@ def _contexto_comum(aba: str):
         # so o DRE. Sem isto o botao levava a "pagina nao encontrada" —
         # 22/09/2026, visto pelo dono no acesso de um usuario.
         "administrador": auth.e_administrador(),
+        # o relatório completo: o dono, e quem tem todas as telas que ele junta
+        "pode_baixar_completo": auth.pode_baixar("completo"),
         "opcoes": _opcoes_no_escopo(),
         "atualizacao": consultas.atualizado_em(),
         "selecao": {

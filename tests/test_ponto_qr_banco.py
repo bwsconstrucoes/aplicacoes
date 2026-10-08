@@ -45,7 +45,8 @@ def _tablet(app, mundo, uuid="tablet-qr-obra-a-0123456789abcd"):
     disp = next(d for d in dp.get("/erp/api/ponto/dispositivos?status=PENDENTE").get_json()["dispositivos"]
                 if d["device_uuid"] == uuid)
     r = dp.post(f"/erp/api/ponto/dispositivos/{disp['id']}/aprovar",
-                json={"perfil": "COMPARTILHADO", "obras": ["PG-A"], "descricao": "Tablet da Escola A"})
+                json={"perfil": "COMPARTILHADO", "obras": ["PG-A"], "descricao": "Tablet da Escola A",
+                      "cpf": CPF_MARIA})
     assert r.status_code == 200, r.get_json()
     return t, {"X-Device-UUID": uuid, "X-Device-Token": token}, disp["id"]
 

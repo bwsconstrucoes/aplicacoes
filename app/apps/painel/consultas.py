@@ -688,6 +688,31 @@ def financeiro_mensal() -> list[dict]:
             for linha in consultar(sql)]
 
 
+def contas_do_recorte(obras=(), projetos=()) -> list[str]:
+    """As contas correntes por onde andou dinheiro destas obras ou destes
+    projetos (08/10/2026, o dono: "queria que aparecessem para filtragem
+    todas as contas relacionadas à obra/projeto exibido", sem precisar marcar
+    uma a uma). Lembrado até a próxima carga: uma varredura por base, não por
+    clique."""
+    def calcular():
+        mapa = {}
+        for obra, projeto, conta in consultar(
+                "SELECT COALESCE(departamento,''), COALESCE(projeto,''), conta_corrente"
+                "  FROM fato WHERE COALESCE(conta_corrente,'') <> ''"
+                " GROUP BY 1, 2, 3"):
+            mapa.setdefault(("obra", obra), set()).add(conta)
+            mapa.setdefault(("projeto", projeto), set()).add(conta)
+        return mapa
+
+    mapa = _lembrando(("contas_do_recorte",), calcular)
+    contas = set()
+    for o in obras or ():
+        contas |= mapa.get(("obra", o), set())
+    for p in projetos or ():
+        contas |= mapa.get(("projeto", p), set())
+    return sorted(contas)
+
+
 def obra_para_projeto() -> dict:
     """A que projeto cada obra pertence. Quando a obra aparece com mais de um
     projeto (dado inconsistente na planilha), vale o mais frequente."""
