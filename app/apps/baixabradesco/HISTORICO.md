@@ -1513,3 +1513,31 @@ neste ambiente, aplicação subindo com os 18 blueprints.
 **Não verificado:** se o WhatsApp está de fato entregando em produção. O
 relatório agora diz a verdade sobre isso — antes não dizia —, mas só a primeira
 falha real depois disto vai mostrar.
+
+---
+
+### 08/10/2026 — aplicando a própria lição: os caminhos de exceção do conferidor
+
+**Publicado na `main` em `546a89b`:** o conserto do aviso que mentia no caminho
+sem credencial Z-API.
+
+Logo depois, apliquei ao conferidor a lição que eu mesmo acabei de escrever —
+*os defeitos de hoje todos moravam no caminho de exceção* — e achei outro, que
+atingiria o dono diretamente:
+
+**Os parâmetros da rota chegam como TEXTO**, porque vêm da barra do navegador
+(`?dias=60&limite=50`). E `int('sessenta')` levanta exceção, que virava **500 com
+rastro de pilha** na tela de quem digitou. Quem usa isto digita o endereço no
+celular; um erro de digitação não pode responder com página de erro de
+programador. Agora cada número passa por `_inteiro`, que cai no padrão quando
+não dá para ler.
+
+**Uma decisão de desenho que importa mais do que parece:** valor **fora de faixa
+cai no PADRÃO, não no mínimo.** `dias=0` virando janela de um dia não acharia
+quase nada e responderia *"nenhuma divergência"* — a resposta mais perigosa que
+um conferidor pode dar, porque tranquiliza sem ter conferido. Com `dias=0` a
+janela volta a ser 60 dias.
+
+**Verificado:** 32 testes no conferidor (5 novos, todos de caminho de exceção),
+suíte inteira rodada com a única falha sendo `erpbrasil` ausente neste ambiente,
+aplicação subindo com os 18 blueprints.
