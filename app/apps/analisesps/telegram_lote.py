@@ -159,7 +159,8 @@ def ligar(codigo: str, chat_id) -> str:
         "\n\nAtenção: o seu usuário ainda não pode alterar o Lote. Peça para "
         "liberarem a tela Lote com permissão de alterar.")
     return (f"Pronto, esta conversa está ligada ao usuário {nome} do Análise "
-            "de SPs.\n\nCole aqui as mensagens de pedido de pagamento (pode "
+            "de SPs — e fica ligada de vez (só desliga pelo botão na tela do "
+            "Lote).\n\nCole aqui as mensagens de pedido de pagamento (pode "
             "ser várias de uma vez): as SPs entram no grupo WhatsApp, no topo "
             f"do seu lote.{aviso}")
 

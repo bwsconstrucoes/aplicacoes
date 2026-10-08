@@ -12243,7 +12243,10 @@ somente Solicitações de uma conta especifica"*.
   `executar_sync.main`. Não cicla: a baixa tira cada lote de ESPERANDO.
 - Continua valendo: PDF de lote que estava na fila durante uma publicação se
   perde com o disco do contêiner — esse lote vai para FALHOU pedindo para
-  arrastar de novo (não baixa duas vezes). Sem migração.
+  arrastar de novo (não baixa duas vezes). Sem migração. **Publicada em
+  08/10/2026**, junto com o texto do Telegram: o dono entendeu que a LIGAÇÃO
+  durava 15 minutos (*"tenho que ficar toda hora ligando?"*) — os 15 min são
+  só do link de ligar; a tela e o robô agora dizem que fica ligado de vez.
 
 #### Leva 204 — auxílio: o limite é o ÚLTIMO DIA TRABALHADO (BC), não a saída (BD) (08/10/2026)
 

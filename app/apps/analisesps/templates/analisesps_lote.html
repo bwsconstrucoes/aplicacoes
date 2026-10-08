@@ -129,8 +129,9 @@
           <button type="button" class="btn secundario" data-telegram="desligar">Desligar o Telegram</button>
         {% endif %}
       {% elif telegram.pode_ligar %}
-        ligue a sua conversa com o robô da BWS e cole lá as mensagens de pedido
-        de pagamento do WhatsApp: as SPs entram sozinhas no grupo
+        ligue UMA VEZ a sua conversa com o robô da BWS (fica ligada de vez) e
+        cole lá as mensagens de pedido de pagamento do WhatsApp: as SPs entram
+        sozinhas no grupo
         <b>WhatsApp</b>, no topo deste lote.
         <button type="button" class="btn secundario" data-telegram="ligar">Ligar ao Telegram</button>
       {% else %}
@@ -302,7 +303,7 @@ document.querySelectorAll("[data-telegram]").forEach(botao => {
       const a = document.createElement("a");
       a.href = d.link; a.target = "_blank"; a.rel = "noopener";
       a.className = "btn"; a.textContent = "Abrir no Telegram";
-      recado.append(a, " Toque e depois em \"Começar\". O link vale uma vez, por 15 minutos.");
+      recado.append(a, " Toque e depois em \"Começar\" — é UMA VEZ só: depois de ligado, fica ligado de vez, até você apertar \"Desligar\". (Este botão de ligar é que vence em 15 minutos se não for usado.)");
     } catch (e) {
       recado.textContent = "Não consegui: " + e.message;
     } finally {
