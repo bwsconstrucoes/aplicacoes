@@ -62,6 +62,20 @@ MODO_SEG_QUI = "segunda a quinta"
 # O que o transporte NÃO paga em dinheiro, porque a pessoa tem cartão.
 MODO_CARTAO = "cartao"
 
+# ⚠️ AS CATEGORIAS "DIÁRIAS" DO CADASTRO (07/10/2026). Eram "categoria não
+# reconhecida" — zero dias, cadastro incompleto, e a pessoa SUMIA da lista e do
+# arquivo. O dono comparou com a base do script: 27 de 38 colaboradores que
+# desapareceram do transporte eram "Diário", "Vale Transporte" e "Diário e Vale
+# Transporte". A regra dele: *"Diário: valor cadastrado × quantidade de
+# auxílios, depois os ajustes de dias"* — a quantidade é a dos dias úteis (22 em
+# setembro/2026 nos exemplos dele), a mesma régua de "Segunda à Sexta". "Vale
+# Transporte" e "Diário e Vale Transporte" seguem a mesma conta (o exemplo dele:
+# 9,00 × 22 = 198,00) — SUPOSIÇÃO para "Vale Transporte" puro, dita na tela.
+MODOS_DIARIOS = ("diario", "vale transporte", "diario e vale transporte")
+# Valor "por dia" acima disto quase certamente é o valor do MÊS cadastrado numa
+# categoria diária: multiplicar por 22 pagaria 22 vezes. Não paga — e diz por quê.
+TETO_DO_VALOR_DIARIO = Decimal("100.00")
+
 
 class ErroDoAuxilio(RuntimeError):
     """Não deu para calcular ou gravar. A frase vai para a tela."""
@@ -126,7 +140,7 @@ def dias_da_modalidade(modo: str, inicio, fim, tipo: str = "") -> tuple:
         return max(0, (fim - inicio).days + 1 - 3), True, True
     if limpo == MODO_SEG_QUI:
         return folha_calendario.dias_uteis(inicio, fim, sexta=False), False, False
-    if limpo == MODO_SEG_SEX:
+    if limpo == MODO_SEG_SEX or limpo in MODOS_DIARIOS:
         return folha_calendario.dias_uteis(inicio, fim), False, True
     # Modalidade desconhecida: NÃO chuta. Zero dias, e a tela diz que não sabe —
     # pagar por uma régua inventada é pior que não pagar e alguém reclamar.
@@ -313,6 +327,16 @@ def calcular_pessoa(tipo: str, ficha: dict, inicio, fim,
             "aceitas: Mês, Mensal, Segunda à Sexta e Segunda à Quinta.")
         return _decidir(saida, ajuste)
     saida["dias_base"] = base
+    if _sem_acento(modo) in MODOS_DIARIOS:
+        if valor_unitario > TETO_DO_VALOR_DIARIO:
+            saida["pagar"] = False
+            saida["motivos"].append(
+                f'categoria "{modo}" é por dia, mas o valor cadastrado é R$ '
+                f"{valor_unitario} — parece o valor do MÊS. Não pago para não "
+                "multiplicar por dia; corrija a categoria ou o valor no cadastro.")
+        elif _sem_acento(modo) != "diario":
+            saida["motivos"].append(
+                f'categoria "{modo}": calculada como diária (valor × dias úteis).')
 
     # VALOR FIXO ("Mês"; "Mensal" no transporte) não desconta dia: é valor fechado.
     if valor_fechado(modo, tipo):
@@ -682,7 +706,11 @@ def calcular(tipo: str, ano: int, mes: int) -> dict:
         # A ordem de quem manda, como na folha da contabilidade: a obra
         # escolhida à mão, a regra de rateio, o ponto.
         escolhida = str((ajustes.get(ficha["cpf"]) or {}).get("obra") or "").strip()
-        if escolhida:
+        dividida = rateio_da_escolha(escolhida)
+        if dividida:
+            aplicar_regra_de_rateio(p, {"nome": "dividida por você", "obras": dividida})
+            p["rateio_a_mao"] = True
+        elif escolhida and not escolhida.upper().startswith(RATEIO_A_MAO):
             p["obra"], p["obra_de_onde"] = escolhida, "mao"
         elif regras.get(ficha["cpf"]):
             aplicar_regra_de_rateio(p, regras[ficha["cpf"]])
@@ -852,7 +880,8 @@ def gravar_extras(tipo: str, ano: int, mes: int, cpfs, quem: str = "",
                 'em "Aplicar atualizações do banco" em Configurações.')
     if "obra" in mudancas:
         # A obra escolhida à mão para quem não tem ponto (vazio = tira).
-        colunas["obra"] = " ".join(str(mudancas["obra"] or "").split()).upper()[:60]
+        # (Dividida entre obras — "RATEIO:A=60;B=40" — cabe mais: 07/10/2026.)
+        colunas["obra"] = " ".join(str(mudancas["obra"] or "").split()).upper()[:400]
     if not colunas:
         return 0
 
@@ -1062,6 +1091,38 @@ def fechamento(tipo: str, ano: int, mes: int) -> dict | None:
     return None
 
 
+# ⚠️ A OBRA DIVIDIDA À MÃO (07/10/2026). O dono: *"a questão da obra é para ser
+# padrão, igual aos demais: a princípio usar a obra do ponto, mas eu preciso poder
+# alterar, ou ratear"*. Guardada no MESMO campo da obra escolhida (o ajuste do
+# mês), como "RATEIO:OBRA1=60;OBRA2=40" — sem coluna nova, sem migração — e
+# aplicada pela mesma conta da regra de rateio (`folha_rateio.distribuir`, que
+# garante que as partes somam o valor).
+RATEIO_A_MAO = "RATEIO:"
+
+
+def rateio_da_escolha(texto) -> list:
+    """`[{obra, percentual}]` de "RATEIO:A=60;B=40" — vazio se não for rateio ou
+    se os percentuais não somarem 100."""
+    texto = str(texto or "").strip()
+    if not texto.upper().startswith(RATEIO_A_MAO):
+        return []
+    obras = []
+    for parte in texto[len(RATEIO_A_MAO):].split(";"):
+        if "=" not in parte:
+            continue
+        obra, pct = parte.rsplit("=", 1)
+        try:
+            pct = Decimal(pct.strip().replace(",", "."))
+        except Exception:  # noqa: BLE001
+            return []
+        if obra.strip() and pct > 0:
+            obras.append({"obra": " ".join(obra.split()).upper(), "percentual": pct})
+    if (not obras or len({o["obra"] for o in obras}) != len(obras)
+            or sum(o["percentual"] for o in obras) != Decimal("100")):
+        return []
+    return obras
+
+
 def aplicar_regra_de_rateio(p: dict, regra: dict) -> dict:
     """O auxílio de quem tem REGRA DE RATEIO ativa vai para as obras da regra,
     nos percentuais dela — a regra manda sobre o ponto, como na folha da
@@ -1094,6 +1155,156 @@ def agrupar(pessoas, campo: str, contas: dict) -> list:
         p["conta"] = contas.get(" ".join(str(p.get("obra") or "").split()).upper(), "")
     return folha_lista.agrupar(
         pessoas, campo, pendente=lambda p: bool(p.get("impossivel") or p.get("sem_obra")))
+
+
+# ---------------------------------------------------------------------------
+# A AUDITORIA DA VERBA — 07/10/2026
+#
+# O dono, comparando a saída com a base do script: *"nenhum colaborador que
+# tenha benefício cadastrado deve simplesmente desaparecer da saída. Se não for
+# pagar alguém, ele deve permanecer na tabela de auditoria com Pagar? = Não e um
+# motivo explícito (…) Nunca excluir silenciosamente."* E a validação: base,
+# processados, a pagar, não pagos, sem correspondência, a lista dos não pagos,
+# o total antes e depois dos ajustes e a diferença por colaborador.
+# ---------------------------------------------------------------------------
+def valor_base(p: dict) -> Decimal:
+    """O valor do cadastro ANTES de qualquer ajuste: o mensal inteiro, ou o do
+    dia × a quantidade de dias da categoria. Zero quando não há como calcular."""
+    unitario = p.get("valor_unitario")
+    if unitario is None or not p.get("dias_base"):
+        return Decimal("0.00")
+    if p.get("valor_fechado"):
+        return Decimal(str(unitario)).quantize(CENTAVO)
+    return (Decimal(str(unitario)) * int(p["dias_base"])).quantize(CENTAVO)
+
+
+def linha_da_auditoria(p: dict) -> dict:
+    vai = bool(p.get("pagar") and (p.get("valor") or 0) > 0)
+    motivos = list(p.get("motivos") or [])
+    if p.get("proporcao"):
+        motivos.append(f"proporcional à saída: {p['proporcao']}")
+    if not vai and not motivos:
+        motivos.append("sem dias elegíveis nesta competência."
+                       if (p.get("valor") or 0) <= 0 else "não selecionado.")
+    if vai and p.get("sem_obra"):
+        motivos.append("sem obra do ponto — escolha a obra antes de gerar.")
+    return {
+        "cpf": p.get("cpf_bonito") or p.get("cpf") or "",
+        "nome": p.get("nome") or "",
+        "categoria": p.get("modo") or "",
+        "valor_cadastrado": p.get("valor_unitario"),
+        "qtd": int(p.get("dias_base") or 0),
+        "valor_base": valor_base(p),
+        "faltas": int(p.get("dias_descontados") or 0),
+        "desconto_faltas": p.get("desconto_valor") or Decimal("0.00"),
+        "ferias": int(p.get("ferias") or 0),
+        "feriados": int(p.get("feriados") or 0),
+        "ajuste_dias": int(p.get("dias_ajuste") or 0),
+        "adicao": p.get("valor_extra") or Decimal("0.00"),
+        "cc_cadastro": p.get("obra_do_cadastro") or "",
+        "cc_ponto": p.get("obra_do_ponto") or "",
+        "cc_considerado": p.get("obra") or "",
+        "cc_de_onde": {"ponto": "ponto", "mao": "escolhida à mão",
+                       "regra": "regra de rateio", "cadastro": "cadastro"}.get(
+                           p.get("obra_de_onde") or "", ""),
+        "valor_final": (p.get("valor") or Decimal("0.00")) if vai else Decimal("0.00"),
+        "valor_calculado": p.get("valor") or Decimal("0.00"),
+        "pagar": vai,
+        "motivo": " · ".join(motivos),
+    }
+
+
+def auditoria(tipo: str, ano: int, mes: int, calculado: dict | None = None) -> dict:
+    """A tabela de auditoria e a validação da verba no mês. Todo mundo que tem
+    o benefício no cadastro entra — quem não vai receber, com o motivo."""
+    calculado = calculado or calcular(tipo, ano, mes)
+    linhas = sorted((linha_da_auditoria(p) for p in calculado["pessoas"]),
+                    key=lambda l: (l["pagar"], l["nome"].lower()))
+    pagos = [l for l in linhas if l["pagar"]]
+    nao_pagos = [l for l in linhas if not l["pagar"]]
+    total_base = sum((l["valor_base"] for l in linhas), Decimal("0.00"))
+    total_final = sum((l["valor_final"] for l in linhas), Decimal("0.00"))
+    diferencas = [dict(l, diferenca=(l["valor_base"] - l["valor_final"]))
+                  for l in linhas if l["valor_base"] != l["valor_final"]]
+    return {
+        "linhas": linhas, "nao_pagos": nao_pagos,
+        "diferencas": sorted(diferencas, key=lambda l: -l["diferenca"]),
+        "resumo": {
+            "base": len(linhas),
+            "processados": len(linhas),
+            "a_pagar": len(pagos),
+            "nao_pagos": len(nao_pagos),
+            "sem_correspondencia": sum(1 for l in linhas if not l["cc_ponto"]),
+            "total_base": total_base,
+            "total_final": total_final,
+            "diferenca": total_base - total_final,
+        },
+    }
+
+
+def auditoria_xlsx(tipo: str, ano: int, mes: int, dados: dict | None = None) -> bytes:
+    """A auditoria em Excel: Auditoria, Validação, Não pagos e Diferenças."""
+    import io
+    from openpyxl import Workbook
+    dados = dados or auditoria(tipo, ano, mes)
+    livro = Workbook()
+    cab = ["CPF", "Colaborador", "Categoria", "Valor Cadastrado", "Qtd. Auxílios",
+           "Valor Base Calculado", "Faltas (dias descontados)", "Desconto das faltas",
+           "Férias (dias)", "Feriados (dias)", "Ajuste de dias", "Adição",
+           "Centro de Custo Cadastrado", "Centro de Custo Mobponto",
+           "Centro de Custo Considerado", "De onde veio o CC", "Valor Calculado",
+           "Valor Final", "Pagar?", "Motivo da Exclusão ou Ajuste"]
+
+    def fila(l):
+        return [l["cpf"], l["nome"], l["categoria"],
+                float(l["valor_cadastrado"]) if l["valor_cadastrado"] is not None else None,
+                l["qtd"], float(l["valor_base"]), l["faltas"], float(l["desconto_faltas"]),
+                l["ferias"], l["feriados"], l["ajuste_dias"], float(l["adicao"]),
+                l["cc_cadastro"], l["cc_ponto"], l["cc_considerado"], l["cc_de_onde"],
+                float(l["valor_calculado"]), float(l["valor_final"]),
+                "Sim" if l["pagar"] else "Não", l["motivo"]]
+
+    aba = livro.active
+    aba.title = "Auditoria"
+    aba.append(cab)
+    for l in dados["linhas"]:
+        aba.append(fila(l))
+    r = dados["resumo"]
+    val = livro.create_sheet("Validação")
+    rotulo = ROTULO_DO_TIPO.get(tipo, tipo)
+    for linha in [
+            [f"{rotulo} — {int(mes):02d}/{int(ano)}"], [],
+            ["1. Colaboradores com o benefício no cadastro", r["base"]],
+            ["2. Processados", r["processados"]],
+            ["3. A pagar", r["a_pagar"]],
+            ["4. Não pagos", r["nao_pagos"]],
+            ["5. Sem correspondência no ponto (sem obra do Mobponto)",
+             r["sem_correspondencia"]],
+            ["6. Lista dos não pagos, com o motivo", "aba \"Não pagos\""],
+            ["7. Total da base antes dos ajustes", float(r["total_base"])],
+            ["8. Total após os ajustes (a pagar)", float(r["total_final"])],
+            ["9. Diferença total (decomposta na aba \"Diferenças\")",
+             float(r["diferenca"])]]:
+        val.append(linha)
+    nao = livro.create_sheet("Não pagos")
+    nao.append(cab)
+    for l in dados["nao_pagos"]:
+        nao.append(fila(l))
+    dif = livro.create_sheet("Diferenças")
+    dif.append(["CPF", "Colaborador", "Categoria", "Valor Base Calculado",
+                "Valor Final", "Diferença", "Pagar?", "Motivo"])
+    for l in dados["diferencas"]:
+        dif.append([l["cpf"], l["nome"], l["categoria"], float(l["valor_base"]),
+                    float(l["valor_final"]), float(l["diferenca"]),
+                    "Sim" if l["pagar"] else "Não", l["motivo"]])
+    for planilha in livro.worksheets:
+        planilha.freeze_panes = "A2"
+        for coluna in planilha.columns:
+            largura = max(len(str(c.value or "")) for c in coluna)
+            planilha.column_dimensions[coluna[0].column_letter].width = min(60, max(10, largura + 2))
+    memoria = io.BytesIO()
+    livro.save(memoria)
+    return memoria.getvalue()
 
 
 def partes_por_obra(p: dict) -> list:

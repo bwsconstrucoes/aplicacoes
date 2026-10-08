@@ -934,6 +934,8 @@ def _escopo_das_partes(f):
 
 
 _MES_ISO = re.compile(r"^\d{4}-\d{2}$")
+# a conferência de saldo aceita também o ANO inteiro ("2026") — dono, 07/10/2026
+_MES_OU_ANO = re.compile(r"^\d{4}(-\d{2})?$")
 
 
 @bp.route("/conferir/saldo")
@@ -942,8 +944,8 @@ def conferir_saldo():
     administrador (prefixo painel.conferir_)."""
     from . import conferencia_saldo
     mes = (request.args.get("mes") or "").strip()
-    if not _MES_ISO.match(mes):
-        return jsonify({"ok": False, "erro": "Escolha o mês."}), 400
+    if not _MES_OU_ANO.match(mes):
+        return jsonify({"ok": False, "erro": "Escolha o mês ou o ano."}), 400
     try:
         return jsonify({"ok": True, **conferencia_saldo.conferir_mes(mes)})
     except Exception as e:  # noqa: BLE001 — credencial, OMIE fora
@@ -959,8 +961,8 @@ def conferir_saldo_json():
     from . import conferencia_saldo
     mes = (request.args.get("mes") or "").strip()
     conta = (request.args.get("conta") or "").strip()
-    if not _MES_ISO.match(mes) or not conta.isdigit():
-        return jsonify({"ok": False, "erro": "Conta ou mês inválido."}), 400
+    if not _MES_OU_ANO.match(mes) or not conta.isdigit():
+        return jsonify({"ok": False, "erro": "Conta ou período inválido."}), 400
     try:
         resposta = conferencia_saldo.extrato_cru(int(conta), mes)
     except Exception as e:  # noqa: BLE001
@@ -969,6 +971,30 @@ def conferir_saldo_json():
                     mimetype="application/json",
                     headers={"Content-Disposition":
                              f'attachment; filename="omie_extrato_{conta}_{mes}.json"'})
+
+
+@bp.route("/conferir/lancamento-cc/json")
+def conferir_lancamento_cc_json():
+    """UM lançamento de conta corrente, cru, como o OMIE responde à consulta
+    dele (07/10/2026). É onde mora a apropriação que o movimento financeiro não
+    traz; serve para conferir o formato contra o OMIE real. So do
+    administrador (prefixo painel.conferir_)."""
+    import json as _json
+    from flask import Response
+    from .sync.omie_client import TETO_DE_ESPERA_NA_TELA, OmieClient
+    codigo = (request.args.get("codigo") or "").strip()
+    if not codigo.isdigit():
+        return jsonify({"ok": False, "erro": "Informe o número do lançamento."}), 400
+    try:
+        resposta = OmieClient.de_ambiente(
+            timeout=30, max_tentativas=3,
+            teto_de_espera=TETO_DE_ESPERA_NA_TELA).consultar_lancamento_cc(int(codigo))
+    except Exception as e:  # noqa: BLE001 — OMIE fora, número que não existe
+        return jsonify({"ok": False, "erro": f"O OMIE não respondeu: {e}"}), 502
+    return Response(_json.dumps(resposta, ensure_ascii=False, indent=2, default=str),
+                    mimetype="application/json",
+                    headers={"Content-Disposition":
+                             f'attachment; filename="omie_lancamento_cc_{codigo}.json"'})
 
 
 @bp.route("/conferir/dia/json")
@@ -2416,6 +2442,13 @@ def configuracoes():
     conferencias_com_erro: list[dict] = []
     contexto = {"aba_ativa": "config", "abas": ABAS}
     sincronizacao = tarefas.estado()
+    # "Não achou um aporte ou dividendo?" mora aqui desde 07/10/2026 (veio do
+    # DRE): a lista de obras para escolher
+    try:
+        from . import consultas as _c
+        contexto["obras_para_conferir"] = _c.opcoes_de_filtro().get("obras", [])
+    except Exception:  # noqa: BLE001 — banco fora, migracao pendente
+        contexto["obras_para_conferir"] = []
     # A historia das atualizacoes, passo a passo (dono, 06/10/2026: "ninguem
     # entende direito"). Falha aqui nao derruba a tela de configuracao.
     try:

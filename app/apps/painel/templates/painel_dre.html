@@ -578,15 +578,28 @@
         </tr>
       </thead>
       <tbody>
+        {# um por lançamento; o dividido entre obras abre as partes (07/10/2026) #}
         {% for l in aportes.lancamentos.linhas %}
-        <tr>
+        <tr{% if l.partes|length > 1 %} class="mov-grupo"{% endif %}>
           <td class="dados">{{ l.data.strftime('%d/%m/%Y') if l.data else '—' }}</td>
-          <td>{{ l.obra }}</td>
+          <td>{% if l.partes|length > 1 %}<button type="button" class="link-btn" data-abre-aporte="{{ loop.index }}" aria-expanded="false">▸ {{ l.partes|length }} obras</button>{% else %}{{ l.obra }}{% endif %}</td>
           <td class="desc">{{ l.socio }}</td>
           <td class="desc">{{ l.tipo }}<small>{{ l.categoria }}</small></td>
-          <td class="dados direita {{ classe_valor(l.valor) }}">{{ brl(l.valor) }}</td>
+          <td class="dados direita {{ classe_valor(l.valor) }}">{% if l.partes|length > 1 %}<b>{{ brl(l.valor) }}</b>{% else %}{{ brl(l.valor) }}{% endif %}</td>
           <td><small>{{ l.conta }}</small></td>
         </tr>
+        {% if l.partes|length > 1 %}{% set n = loop.index %}
+          {% for p in l.partes %}
+          <tr class="mov-parte" data-parte-do-aporte="{{ n }}" hidden>
+            <td></td>
+            <td>{{ p.obra }}</td>
+            <td class="desc"><small>{{ l.socio }}</small></td>
+            <td class="desc"><small>{{ l.tipo }}</small></td>
+            <td class="dados direita {{ classe_valor(p.valor) }}">{{ brl(p.valor) }}</td>
+            <td></td>
+          </tr>
+          {% endfor %}
+        {% endif %}
         {% endfor %}
       </tbody>
     </table>
@@ -602,43 +615,11 @@
   {% endif %}
 </div>
 
-<!-- ------------- POR QUE NÃO APARECE? — dono, 06/10/2026 ------------- -->
+<!-- ---------------------- O DINHEIRO DA OBRA ---------------------- -->
 <div class="cartao">
   <div class="cartao-cab">
-    <h3>Não achou um aporte ou dividendo?</h3>
-    <small>confere lançamento a lançamento, ignorando os filtros da tela</small>
-  </div>
-  <p class="cartao-dica" style="margin-top:0">
-    Escolha a obra (ou digite o <b>Nº no OMIE</b> de um título) e veja cada
-    lançamento com cara de aporte ou dividendo, e o motivo de ele entrar ou
-    ficar de fora: categoria não reconhecida, não quitado, lado de quem mandou o
-    dinheiro, sem projeto, filtro de ano… Se o lançamento nem aparecer na
-    lista, ele ainda não chegou ao painel (ou está em outra obra — procure pelo
-    número).
-  </p>
-  <form id="conferir-aportes" class="form-grade" style="margin-top:6px">
-    <div class="campo">
-      <label for="obra-conferida">Obra</label>
-      <select id="obra-conferida" name="obra_conferida">
-        <option value="">(escolha)</option>
-        {% for o in opcoes.obras %}<option value="{{ o }}">{{ o }}</option>{% endfor %}
-      </select>
-    </div>
-    <div class="campo">
-      <label for="codigo-conferido">ou o Nº no OMIE</label>
-      <input id="codigo-conferido" name="codigo" inputmode="numeric" placeholder="ex.: 11204772585">
-    </div>
-    <div class="campo" style="align-self:end">
-      <button class="btn" type="submit">Conferir</button>
-    </div>
-  </form>
-</div>
-
-<!-- ---------------------- O DINHEIRO DA OBRA, COM OS SÓCIOS ---------------------- -->
-<div class="cartao">
-  <div class="cartao-cab">
-    <h3>O dinheiro da obra, com os sócios</h3>
-    <small>o que entrou e o que saiu, em caixa, obra por obra</small>
+    <h3>O dinheiro da obra</h3>
+    <small>o que entrou, o que saiu e o saldo, em caixa, obra por obra</small>
   </div>
   {% if not caixa_socios.tem_dados %}
     <div class="vazio"><b>Sem dados</b>Nenhum movimento nos filtros escolhidos.</div>
@@ -656,7 +637,7 @@
       <div class="kpi-sub">despesas {{ brl(t.despesas) }} · devoluções {{ brl(t.devolucoes) }} · dividendos {{ brl(t.dividendos) }}</div>
     </div>
     <div class="kpi estatico ciano">
-      <div class="kpi-rotulo">Saldo com os sócios</div>
+      <div class="kpi-rotulo">Saldo da obra</div>
       <div class="kpi-valor {{ classe_valor(t.saldo) }}">{{ brl(t.saldo) }}</div>
       <div class="kpi-sub">resultado {{ brl(t.resultado) }} + aportes − devoluções − dividendos</div>
     </div>
@@ -707,9 +688,17 @@
     Tudo em caixa: só o que foi pago ou recebido de fato. <b>Receitas</b> sem as
     retenções (o cliente reteve, nunca entrou); <b>despesas</b> com juros e multa
     pagos; <b>aportes</b> só quando entram na obra, <b>devoluções</b> só quando
-    saem dela; <b>dividendos</b> só o que foi distribuído. Saldo positivo é
-    dinheiro que a obra gerou além do que os sócios puseram; negativo é quanto
-    os sócios estão sustentando. O "Resultado" é o mesmo do quadro abaixo.
+    saem dela; <b>dividendos</b> só o que foi distribuído.
+    <br><b>Saldo da obra</b> = o que ela recebeu e o que os sócios puseram, menos
+    o que ela pagou, devolveu e distribuiu — <b>no período dos filtros</b>. É o
+    dinheiro que a obra gerou e que ainda está nela: positivo, é o que em tese
+    poderia voltar aos sócios; negativo, é quanto eles estão sustentando.
+    <b>Não é o saldo do banco</b>: o banco começa com o que já havia antes do
+    período, pode guardar dinheiro de mais de uma obra e não enxerga a
+    transferência entre contas. Para comparar com o banco, conta a conta, use
+    "Conferir o saldo das contas com o OMIE", em Configurações.
+    O total soma obras com saldo positivo e negativo. O "Resultado" é o mesmo
+    do quadro abaixo.
   </p>
   {% endif %}
 </div>
@@ -731,7 +720,7 @@
     </div>
     <div class="kpi estatico ambar">
       <div class="kpi-rotulo">Dividendos pagos</div>
-      <div class="kpi-valor"><button type="button" class="link-btn dados abre-dividendos" data-sentido="pago" data-trf="0" data-rotulo="todas as obras" title="ver os lançamentos">{{ brl(divisao.dividendos) }}</button></div>
+      <div class="kpi-valor"><button type="button" class="link-btn dados abre-dividendos" data-sentido="pago" data-rotulo="todas as obras" title="ver os lançamentos">{{ brl(divisao.dividendos) }}</button></div>
     </div>
     <div class="kpi estatico ciano">
       <div class="kpi-rotulo">Disponível</div>
@@ -752,9 +741,17 @@
 
   {% if divisao.disponivel < 0 %}
     <p class="aviso-teto">
+      {% if divisao.resultado < 0 %}
+      O <b>resultado realizado é negativo</b> no filtro atual
+      ({{ brl(divisao.resultado) }}): no conjunto, as obras pagaram mais do que
+      receberam no período, e não há o que distribuir no total — veja abaixo
+      quais obras puxam o número para baixo. Somar obras diferentes mistura
+      parcerias diferentes: o disponível que vale é o de cada obra.
+      {% else %}
       Foi distribuído <b>{{ brl(-divisao.disponivel) }}</b> a mais do que o
       resultado realizado no filtro atual. Confira se o período selecionado
       cobre o exercício em que o lucro foi gerado.
+      {% endif %}
     </p>
   {% endif %}
 
@@ -773,7 +770,7 @@
         <tr>
           <td class="desc">{{ l.obra }}</td>
           <td class="dados direita {{ classe_valor(l.resultado) }}">{{ brl(l.resultado) }}</td>
-          <td class="dados direita">{% if l.dividendos %}<button type="button" class="link-btn dados abre-dividendos" data-sentido="pago" data-trf="0" data-obra="{{ l.obra }}" data-rotulo="{{ l.obra }}" title="ver os lançamentos">{{ brl(l.dividendos) }}</button>{% else %}—{% endif %}</td>
+          <td class="dados direita">{% if l.dividendos %}<button type="button" class="link-btn dados abre-dividendos" data-sentido="pago" data-obra="{{ l.obra }}" data-rotulo="{{ l.obra }}" title="ver os lançamentos">{{ brl(l.dividendos) }}</button>{% else %}—{% endif %}</td>
           <td class="dados direita {{ classe_valor(l.disponivel) }}"><b>{{ brl(l.disponivel) }}</b></td>
         </tr>
         {% endfor %}
@@ -1018,50 +1015,15 @@
       corpo.innerHTML = '<p class="aviso erro">Não deu para carregar os dividendos. Tente de novo.</p>';
     }
   }
-  // ---- por que um aporte/dividendo não aparece — dono, 06/10/2026 ----
-  // o formulário só existe na aba de aportes: sem ele, nada a ligar
-  const formAportes = els("conferir-aportes");
-  if (formAportes) formAportes.addEventListener("submit", async ev => {
-    ev.preventDefault();
-    const form = ev.target;
-    const obra = form.obra_conferida.value, codigo = form.codigo.value.trim();
-    if (!obra && !codigo) { form.obra_conferida.focus(); return; }
-    titulo.textContent = "Aportes e dividendos — " + (codigo ? "título " + codigo : obra);
-    resumo.textContent = "";
-    corpo.innerHTML = '<p class="cartao-dica">Conferindo…</p>';
-    if (!dialogo.open) dialogo.showModal();
-    const consulta = new URLSearchParams(filtros);
-    if (codigo) consulta.set("codigo", codigo); else consulta.set("obra_conferida", obra);
-    try {
-      const r = await fetch("{{ url_for('painel.dre_conferir_aportes') }}?" + consulta.toString());
-      const d = await r.json();
-      if (!d.ok) { corpo.innerHTML = `<p class="aviso erro">${escapar(d.erro || "Não deu para conferir.")}</p>`; return; }
-      verTudo.style.display = "none";
-      resumo.innerHTML = `${d.quantos} lançamento(s) &nbsp;·&nbsp; <b class="v-pos">${d.entram} entram</b> &nbsp;·&nbsp; <b class="v-neg">${d.quantos - d.entram} ficam de fora</b>`;
-      if (!d.linhas.length) {
-        corpo.innerHTML = codigo
-          ? '<p class="aviso">Este número não está no painel. Ou ainda não chegou (a atualização traz os últimos 30 dias; a completa, 180), ou foi digitado errado.</p>'
-          : '<p class="aviso">Nenhum lançamento com cara de aporte ou dividendo nesta obra. Se no OMIE ele existe, procure pelo Nº no OMIE: ele pode estar em outra obra, ou sem obra.</p>';
-        return;
-      }
-      corpo.innerHTML = `<table><thead><tr>
-          <th class="sem-ordem">Data</th><th class="sem-ordem">Nº no OMIE</th>
-          <th class="sem-ordem">Quem</th><th class="sem-ordem">Categoria</th>
-          <th class="sem-ordem">Obra · projeto</th><th class="sem-ordem direita">Valor</th>
-          <th class="sem-ordem">Entra?</th></tr></thead><tbody>`
-        + d.linhas.map(l => `<tr>
-          <td class="dados">${data(l.data)}</td>
-          <td class="dados"><small>${l.link ? `<a href="${escapar(l.link)}" target="_blank" rel="noopener">${escapar(l.codigo)} ↗</a>` : escapar(l.codigo)}</small></td>
-          <td class="desc">${escapar(l.quem || "—")}</td>
-          <td class="desc">${escapar(l.categoria || "—")}${l.codigo_categoria ? ` <small>${escapar(l.codigo_categoria)}</small>` : ""}</td>
-          <td class="desc">${escapar(l.obra || "(não apropriado)")}<br><small>${escapar(l.projeto || "sem projeto")}</small></td>
-          <td class="dados direita ${l.valor < 0 ? "v-neg" : "v-pos"}">${moeda(l.valor)}</td>
-          <td class="desc"><b class="${l.entra ? "v-pos" : "v-neg"}">${l.entra ? "Sim" : "Não"}</b><br><small>${escapar(l.motivo)}</small></td>
-        </tr>`).join("") + "</tbody></table>";
-    } catch (e) {
-      corpo.innerHTML = '<p class="aviso erro">Não deu para conferir. Tente de novo.</p>';
-    }
-  });
+  // abre e fecha as obras de um aporte ou dividendo agrupado (07/10/2026)
+  document.querySelectorAll("[data-abre-aporte]").forEach(b =>
+    b.addEventListener("click", () => {
+      const aberto = b.getAttribute("aria-expanded") !== "true";
+      b.setAttribute("aria-expanded", aberto ? "true" : "false");
+      b.textContent = (aberto ? "▾" : "▸") + b.textContent.slice(1);
+      document.querySelectorAll(`[data-parte-do-aporte="${b.dataset.abreAporte}"]`)
+              .forEach(tr => { tr.hidden = !aberto; });
+    }));
 
   document.querySelectorAll(".abre-dividendos").forEach(b => {
     b.addEventListener("click", () => abrirDividendos(b));

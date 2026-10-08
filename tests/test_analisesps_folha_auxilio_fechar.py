@@ -224,3 +224,78 @@ def test_ARQUIVOS_GERADOS_mostram_a_SITUACAO_de_cada_SP(banco_auxilio, monkeypat
     rodadas = fp.rodadas()
     fp.situacao_das_sps(rodadas)
     assert rodadas[0]["pagamentos"][0]["sps"][0]["na_base"] is False
+
+
+def test_TRANSPORTE_categorias_DIARIAS_entram_e_a_AUDITORIA_nao_perde_ninguem(banco_auxilio):
+    """07/10/2026 — o dono comparou com a base do script: 27 de 38 colaboradores
+    sumiam do transporte por serem "Diário", "Vale Transporte" ou "Diário e Vale
+    Transporte". Os exemplos dele, com 22 dias úteis (setembro/2026)."""
+    import io
+    import openpyxl
+    from app.apps.analisesps import folha_auxilio as fx
+    from app.apps.analisesps.db import conexao
+    gente = [("11144477735", "MARCIO", "Diário", "12.90"),
+             ("22233344405", "EVANDRO", "Vale Transporte", "9.00"),
+             ("33344455560", "ADEMIR", "Diário e Vale Transporte", "9.00"),
+             ("44455566603", "MANASSES", "Mensal", "198.00"),
+             ("55566677715", "ERRADO", "Diário", "198.00"),
+             ("66677788820", "SEMREGRA", "Quinzenal Estranho", "50.00")]
+    with conexao() as conn:
+        for cpf, nome, cat, valor in gente:
+            conn.execute(
+                "INSERT INTO analisesps.colaborador (cpf, nome, fase, obra_codigo, "
+                "  valor_transporte, modo_transporte) VALUES (?,?,?,?,?,?)",
+                (cpf, nome, "Colaboradores Ativos", "CREPEOLINDA", D(valor), cat))
+        conn.commit()
+    for cpf, *_ in gente:
+        fx.gravar_extras(fx.TRANSPORTE, 2026, 9, cpf, obra="CREPEOLINDA")
+
+    calculado = fx.calcular(fx.TRANSPORTE, 2026, 9)
+    valor = {p["nome"]: (p["pagar"], p["valor"]) for p in calculado["pessoas"]}
+    assert valor["MARCIO"] == (True, D("283.80"))
+    assert valor["EVANDRO"] == (True, D("198.00"))
+    assert valor["ADEMIR"] == (True, D("198.00"))
+    assert valor["MANASSES"] == (True, D("198.00"))
+    assert valor["ERRADO"][0] is False, "198 'por dia' é o valor do mês: não paga"
+
+    dados = fx.auditoria(fx.TRANSPORTE, 2026, 9, calculado)
+    nomes = {l["nome"]: l for l in dados["linhas"]}
+    assert set(nomes) >= {n for _, n, _, _ in gente}, "ninguém some"
+    assert not nomes["ERRADO"]["pagar"] and "parece o valor do MÊS" in nomes["ERRADO"]["motivo"]
+    assert not nomes["SEMREGRA"]["pagar"] and "não reconhecida" in nomes["SEMREGRA"]["motivo"]
+    assert nomes["MARCIO"]["qtd"] == 22 and nomes["MARCIO"]["valor_base"] == D("283.80")
+    r = dados["resumo"]
+    assert r["base"] == r["processados"] == len(calculado["pessoas"])
+    assert r["a_pagar"] + r["nao_pagos"] == r["base"]
+    assert r["diferenca"] == r["total_base"] - r["total_final"]
+    assert sum((l["diferenca"] for l in dados["diferencas"]), D("0")) == r["diferenca"]
+
+    livro = openpyxl.load_workbook(io.BytesIO(fx.auditoria_xlsx(fx.TRANSPORTE, 2026, 9, dados)))
+    assert livro.sheetnames == ["Auditoria", "Validação", "Não pagos", "Diferenças"]
+    assert livro["Auditoria"].cell(row=1, column=20).value == "Motivo da Exclusão ou Ajuste"
+
+
+def test_a_OBRA_pode_ser_TROCADA_ou_DIVIDIDA_a_mao(banco_auxilio):
+    """07/10/2026: *"a questão da obra é para ser padrão, igual aos demais: a
+    princípio usar a obra do ponto, mas eu preciso poder alterar, ou ratear"*."""
+    from app.apps.analisesps import folha_auxilio as fx, folha_pagamento as fp
+    assert fx.rateio_da_escolha("RATEIO:A=60;B=40") == [
+        {"obra": "A", "percentual": D("60")}, {"obra": "B", "percentual": D("40")}]
+    assert fx.rateio_da_escolha("RATEIO:A=60;B=30") == [], "não fecha 100%"
+    assert fx.rateio_da_escolha("RATEIO:A=50;A=50") == [], "obra repetida"
+    assert fx.rateio_da_escolha("CREPEOLINDA") == []
+
+    fx.gravar_extras(fx.ALIMENTACAO, 2026, 9, ATIVO,
+                     obra="RATEIO:CREPEOLINDA=60;CREPEAREIAS=40")
+    p = next(x for x in fx.calcular(fx.ALIMENTACAO, 2026, 9)["pessoas"] if x["cpf"] == ATIVO)
+    assert p["rateio_a_mao"] and not p["sem_obra"]
+    assert [(r["obra"], r["valor"]) for r in p["rateio"]] == [
+        ("CREPEOLINDA", D("180.00")), ("CREPEAREIAS", D("120.00"))]
+    fx.fechar(fx.ALIMENTACAO, 2026, 9, "fim_de_mes", quem="MARCELO")
+    pagas = fp.linhas_para_pagar(2026, 9, "fim_de_mes", ["alimentacao"])
+    assert sorted((l["obra"], l["valor"]) for l in pagas) == [
+        ("CREPEAREIAS", D("120.00")), ("CREPEOLINDA", D("180.00"))]
+    # Tirar volta ao ponto (aqui sem ponto: sem obra, pendência).
+    fx.gravar_extras(fx.ALIMENTACAO, 2026, 9, ATIVO, obra="")
+    p = next(x for x in fx.calcular(fx.ALIMENTACAO, 2026, 9)["pessoas"] if x["cpf"] == ATIVO)
+    assert p["sem_obra"] and not p.get("rateio")

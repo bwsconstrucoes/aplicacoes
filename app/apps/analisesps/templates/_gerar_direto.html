@@ -114,6 +114,12 @@
         "</td></tr>").join("") +
       '</tbody><tfoot><tr><th>Total</th><th></th><th class="num">' + d.resumo.pessoas +
       '</th><th class="num">' + real(d.resumo.total) + "</th><th></th></tr></tfoot></table></div>" +
+      // A AUDITORIA ANTES DA PLANILHA FINAL (07/10/2026), no auxílio.
+      (ORIGEM === "alimentacao" || ORIGEM === "transporte"
+        ? '<p class="cartao-dica">Antes de gerar, confira a <a href="{{ url_for('analisesps.folha_auxilio_auditoria') }}?tipo=' +
+          ORIGEM + "&ano=" + DADOS.ano + "&mes=" + DADOS.mes +
+          '">auditoria (Excel)</a>: quem tem o benefício, quem não vai receber e por quê, e a diferença base × arquivo.</p>'
+        : "") +
       '<p class="cartao-dica"><b>Baixar prévia</b>: os arquivos como sairiam agora, num .zip, ' +
       "sem fechar e sem gravar no Drive. <b>Gerar definitivo</b>: " +
       (ORIGEM === "dc" ? "com as linhas selecionadas agora (elas saem da lista), gera "

@@ -20,6 +20,7 @@ A regra de negocio nao foi tocada.
 As datas continuam guardadas como texto dd/mm/aaaa, como o OMIE devolve; quem
 converte e o modulo `fato`.
 """
+import html
 import os
 import json
 import time
@@ -66,6 +67,9 @@ def definir_progresso(funcao):
 
     def _na_espera(texto):
         etapa, detalhe = _ultimo_andamento
+        if not texto:      # só um sinal de vida: a chamada ao OMIE começou
+            funcao(etapa or "esperando o OMIE", detalhe)
+            return
         funcao(etapa or "esperando o OMIE",
                f"{detalhe} — {texto}" if detalhe else texto)
     definir_aviso_de_espera(_na_espera)
@@ -233,7 +237,13 @@ def _f(v):
 
 
 def _s(v):
-    return "" if v is None else str(v).strip()
+    """Texto do OMIE, limpo. O OMIE manda alguns nomes com o "&" escrito como
+    "&amp;" (07/10/2026, o dono: "A F &amp; CIA MINERACAO LTDA") — volta a
+    ser "&" na entrada."""
+    if v is None:
+        return ""
+    texto = str(v).strip()
+    return html.unescape(texto) if "&" in texto else texto
 
 
 def _dalt_para_data(dalt):
@@ -1699,15 +1709,21 @@ def sync_incremental(env=".env", margem_dias=2, com_catalogos=True,
 
         # ---- Catalogos (baratos; upsert idempotente) ----
         if com_catalogos:
-            _progresso("atualizando o plano de contas e os cadastros")
+            # sinal de vida a cada página (07/10/2026): a lista de fornecedores
+            # tem milhares, e sem sinal a atualização foi dada por morta aqui
+            cadastros = "atualizando o plano de contas e os cadastros"
+            _progresso(cadastros)
             tot = 0
-            for _, _, _, registros in cli.listar_categorias():
+            for pagina, total_paginas, _, registros in cli.listar_categorias():
+                _progresso(cadastros, f"plano de contas: página {pagina} de {total_paginas}")
                 tot += gravar_categorias(conn, registros)
             log.info("categorias atualizadas: %d", tot)
             tot = 0
-            for _, _, _, registros in cli.listar_clientes():
+            for pagina, total_paginas, _, registros in cli.listar_clientes():
+                _progresso(cadastros, f"fornecedores e clientes: página {pagina} de {total_paginas}")
                 tot += gravar_clientes(conn, registros)
             log.info("clientes/fornecedores atualizados: %d", tot)
+            _progresso(cadastros, "contas correntes")
             sincronizar_contas_correntes(conn, cli)
             try:
                 from . import projetos

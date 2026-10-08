@@ -1008,6 +1008,12 @@ def execucao_em_andamento() -> dict | None:
     (execucao_id, tipo, disparo, inicio, etapa,
      progresso, visto_em, silencio) = linha[0]
     silencio = float(silencio or 0)
+    viva = silencio < MINUTOS_SEM_SINAL_ATE_MORTA * 60
+    if not viva:
+        # calada não é morta: se o processo dela está de pé, ela está rodando
+        # (07/10/2026 — ver executar_sync.processo_vivo)
+        from .executar_sync import processo_vivo
+        viva = processo_vivo(execucao_id)
     return {
         "id": execucao_id, "tipo": tipo, "disparo": disparo,
         "inicio": para_brasilia(inicio),
@@ -1016,7 +1022,7 @@ def execucao_em_andamento() -> dict | None:
         "detalhe_progresso": progresso or "",
         "visto_em": para_brasilia(visto_em),
         "silencio_minutos": round(silencio / 60, 1),
-        "viva": silencio < MINUTOS_SEM_SINAL_ATE_MORTA * 60,
+        "viva": viva,
     }
 
 
@@ -2143,7 +2149,9 @@ def aportes(f: Filtros) -> dict:
     return {
         "por_socio": por_socio, "por_obra": por_obra,
         "dividendos": dividendos_por_socio(f),
-        "lancamentos": lancamentos_de_aporte(f),
+        # na tela, um por lançamento, com as obras por baixo (07/10/2026);
+        # o Excel continua uma linha por obra
+        "lancamentos": lancamentos_de_aporte_agrupados(f),
         "aportado": total_ap, "devolvido": total_dev,
         "saldo": total_ap - total_dev,
         "tem_dados": bool(por_socio),
@@ -2335,8 +2343,8 @@ def lancamentos_de_dividendo(f: Filtros, *, socio_id: str = "", obra: str = "",
     Mesmo critério dos quadros: categoria com "dividendo" ou "distribuição de
     lucro(s)" no nome, pago ou recebido. `sentido`: "pago" (o que saiu, o
     distribuído), "recebido" (o que entrou com esse nome) ou "todos".
-    `com_transferencias` segue o quadro de onde veio o clique: o bloco de
-    aportes não corta transferência; o "Resultado × dividendos", sim."""
+    `com_transferencias`: desde 07/10/2026 nenhum quadro corta transferência
+    no dividendo (ver `resultado_dividendos`)."""
     base = _sem_cortar_transferencia(f) if com_transferencias else f
     condicoes = [PAGO, f"({TIPO_APORTE}) = 'Dividendos'"]
     extras: list = []
@@ -2397,6 +2405,43 @@ def lancamentos_de_aporte(f: Filtros, limite: int | None = LIMITE_LANCAMENTOS) -
             "linhas": [dict(zip(campos, linha)) for linha in consultar(sql, params)]}
 
 
+def lancamentos_de_aporte_agrupados(f: Filtros,
+                                    limite: int | None = LIMITE_LANCAMENTOS) -> dict:
+    """Os lançamentos de aporte e dividendo, UM POR LANÇAMENTO, com as obras
+    por baixo — o mesmo agrupamento do Analítico e do Calendário.
+
+    07/10/2026, o dono, diante de duas linhas de R$ 0,50 para o mesmo
+    dividendo de R$ 1,00 dividido em duas obras: *"você pensa que o lançamento
+    está errado. Vamos agrupar o que é igual e possibilitar abrir, para a gente
+    ver de qual obra é."* Junta o que tem o mesmo número no OMIE, dia, sócio,
+    tipo, categoria e conta; o que não tem número fica sozinho."""
+    where, params = _sem_cortar_transferencia(f).where(
+        f"{PAGO} AND ({TIPO_APORTE}) IS NOT NULL")
+    grupo = ("COALESCE(codigo_lancamento::text, 'linha-' || ctid::text)")
+    corpo = f"""
+        SELECT data, {grupo} AS lancamento_agrupado, {_SOCIO} AS socio,
+               {TIPO_APORTE} AS tipo,
+               COALESCE(NULLIF(categoria,''), '(sem categoria)') AS categoria,
+               COALESCE(conta_corrente,'') AS conta,
+               SUM(pago_recebido) AS valor,
+               json_agg(json_build_object('obra', {_OBRA}, 'valor', pago_recebido)
+                        ORDER BY {_OBRA}) AS partes
+          FROM fato{where}
+         GROUP BY 1, 2, 3, 4, 5, 6"""
+    (quantos,) = consultar(f"SELECT COUNT(*) FROM ({corpo}) AS g", params)[0]
+    teto = f" LIMIT {int(limite)}" if limite else ""
+    linhas = []
+    for data, _chave, socio, tipo, categoria, conta, valor, partes in consultar(
+            f"{corpo} ORDER BY 1, 3, 2{teto}", params):
+        partes = [{"obra": p["obra"], "valor": float(p["valor"] or 0)}
+                  for p in (partes or [])]
+        linhas.append({"data": data, "socio": socio, "tipo": tipo,
+                       "categoria": categoria, "conta": conta,
+                       "valor": float(valor or 0), "partes": partes,
+                       "obra": partes[0]["obra"] if len(partes) == 1 else ""})
+    return {"quantos": int(quantos or 0), "teto": limite, "linhas": linhas}
+
+
 def resultado_dividendos(f: Filtros) -> dict:
     """A ponte entre RESULTADO e DIVIDENDO, obra por obra.
 
@@ -2414,7 +2459,13 @@ def resultado_dividendos(f: Filtros) -> dict:
         f"SELECT {_OBRA}, SUM({MOVIMENTO_DE_CAIXA}) FROM fato{where_r} GROUP BY 1",
         params_r)}
 
-    where_d, params_d = f.where(
+    # O DIVIDENDO NÃO É CORTADO COMO TRANSFERÊNCIA (07/10/2026). Era, e o
+    # quadro mostrava R$ 1,00 de dividendos enquanto "o dinheiro da obra",
+    # logo acima, mostrava R$ 120.002,00: os R$ 120 mil foram pagos por
+    # lançamento de conta corrente, que o OMIE (ou a regra das transferências)
+    # marca como transferência — e o dono: "gera desconfiança na informação".
+    # Os dois quadros contam o dividendo pela MESMA régua agora.
+    where_d, params_d = _sem_cortar_transferencia(f).where(
         f"{PAGO} AND ({TIPO_APORTE}) = 'Dividendos' AND pago_recebido < 0")
     pagos = {obra: float(valor or 0) for obra, valor in consultar(
         f"SELECT {_OBRA}, SUM(-pago_recebido) FROM fato{where_d} GROUP BY 1",
@@ -2437,7 +2488,8 @@ def resultado_dividendos(f: Filtros) -> dict:
 
 
 def caixa_com_socios(f: Filtros) -> dict:
-    """O dinheiro da obra, com os sócios dentro — obra por obra.
+    """O dinheiro da obra — obra por obra (o título era "com os sócios" até
+    07/10/2026; o dono: "esse termo com os sócios não casa legal").
 
     Pedido do dono em 23/09/2026: *"o que eu tenho de positivo? Receitas e
     aportes. De negativo? Despesas, devolução de aportes e distribuição de
@@ -2447,7 +2499,7 @@ def caixa_com_socios(f: Filtros) -> dict:
 
         receitas recebidas (sem as retenções) + despesas pagas = resultado
         + aportes que entraram − devoluções que saíram − dividendos pagos
-        = saldo com os sócios
+        = saldo da obra
 
     Uma consulta só, com uma soma condicional por coluna. Dividendo que
     ENTROU (dinheiro recebido com nome de dividendo) fica numa coluna à parte

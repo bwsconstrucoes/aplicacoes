@@ -1973,6 +1973,11 @@ def test_a_entrada_com_nome_de_dividendo_nao_vira_liquido_negativo(base_com_soci
     por_socio = {d["socio"]: d for d in consultas.dividendos_por_socio(consultas.Filtros())}
     assert por_socio["MORAIS"]["pago"] == pytest.approx(50000.0)
     assert por_socio["MORAIS"]["recebido"] == pytest.approx(700.0)
+    # 07/10/2026: os dois quadros contam o dividendo pela mesma régua (o
+    # "Resultado × dividendos" mostrava R$ 1,00 contra R$ 120.002,00)
+    f = consultas.Filtros()
+    assert consultas.resultado_dividendos(f)["dividendos"] == pytest.approx(
+        -consultas.caixa_com_socios(f)["total"]["dividendos"])
 
     monkeypatch.setenv("PAINEL_SENHA", "segredo-de-teste")
     from app.main import create_app
@@ -1985,8 +1990,8 @@ def test_a_entrada_com_nome_de_dividendo_nao_vira_liquido_negativo(base_com_soci
     assert "R$ 50.000,00" in html
     assert "Entrou com nome de dividendo" in html and "R$ 700,00" in html
     assert "−R$ 49.300,00" not in html          # o líquido que confundia sumiu
-    assert "O dinheiro da obra, com os sócios" in html
-    assert "−R$ 744.400,00" in html             # o saldo com os sócios
+    assert "O dinheiro da obra</h3>" in html
+    assert "−R$ 744.400,00" in html             # o saldo da obra
     r = cliente.get("/painel/baixar/aportes")
     assert r.status_code == 200
 

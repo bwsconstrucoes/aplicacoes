@@ -2265,6 +2265,156 @@ essa consulta, e o próximo passo é ler pela API de lançamentos de conta corre
 por transferência, o que a conciliação do Análise de SPs lança) passa a contar
 no DRE, no fluxo e no resto, depois do próximo recálculo.
 
+## O arquivo cru respondeu: a apropriação NÃO vem nos pagamentos — 07/10/2026
+
+O dono mandou o arquivo cru de 09/01/2026 ("⬇ O que o OMIE mandou") e a
+conferência do dia em planilha. O que mostraram, sem interpretação:
+
+- **Os 193 movimentos do dia vêm só com "detalhes" e "resumo". Nenhum traz
+  departamento nem categoria rateada** — nem título, nem lançamento de conta.
+  A busca na internet dizia o contrário (seção anterior); o dado real decide.
+  Logo, o item 2 do plano definitivo ("uma fonte só, o movimento financeiro")
+  **não se sustenta sozinho para as obras**: o dinheiro vem dele, a obra não.
+- O lançamento da Sicredi está lá: origem `EXTR` (lançamento de extrato),
+  grupo `CONTA_CORRENTE_REC`, categoria 1.02.01, conta 11203364651, favorecido
+  1304759743 (CNPJ 38.240.209/0001-03), 100.000,01, conciliado em 06/10/2026,
+  número do movimento (`nCodMovCC`) **11309733447**, sem título.
+- Os outros sem título do dia: 4 tarifas (`EXTP`, 2.05.04), 4 entradas `EXTR`
+  1.02.99 e 4 pares de transferência entre contas (`TRAP`/`TRAR`, categorias
+  0.01.02/0.01.01).
+- Na planilha da conferência, a aba de diferenças veio vazia: para esse dia,
+  o que o painel tinha batia com o OMIE nos títulos.
+
+**O que foi feito:**
+- Migração **022**: tabela `apropriacao_lancamentos_cc` — a resposta INTEIRA
+  da consulta de cada lançamento de conta corrente no OMIE, uma linha por
+  número. Não é apagada quando a janela de pagamentos é relida (para não
+  perguntar de novo o que já foi respondido).
+- `sync/apropriacao_cc.py`: a cada atualização (do dia, completa, releitura e
+  período) pergunta ao OMIE (`financas/contacorrentelancamentos/`,
+  `ConsultaLancCC` com `nCodLanc` = `nCodMovCC`) pelos lançamentos que ainda
+  não têm resposta — do mais recente para o mais antigo, no máximo 600 por
+  atualização (o período, todos os dele). Não pergunta por transferência
+  entre contas. Três tentativas por lançamento. **Para sozinho se as cinco
+  primeiras perguntas falharem**, e diz por quê na tela ("Concluída, com
+  aviso"): é o sinal de que o número ou o método estão errados, e evita
+  milhares de chamadas inúteis.
+- O fato rateia o lançamento pela apropriação guardada. A lista de
+  departamentos é procurada pelo nome (`departamentos`/`distribuicao`) em
+  qualquer nível da resposta, com percentual ou valor.
+- **Transferência entre contas da empresa vai para TRF** (origem TRAP/TRAR,
+  tipo TRA ou categoria 0.01.x), mesmo que a categoria não esteja no plano de
+  contas guardado. Antes disto, desde a publicação de `2769e76`, essas pernas
+  entravam no fato com a análise que a categoria desse — se o plano de contas
+  guardado não tinha 0.01.x, caíam na heurística. Somam zero entre as duas
+  contas, mas aparecem como entrada e saída por conta.
+- Em Configurações, "Baixar um lançamento de conta corrente do OMIE": digita o
+  número e baixa a resposta crua (rota `/painel/conferir/lancamento-cc/json`,
+  só do administrador).
+
+**NÃO VERIFICADO, e é o que decide se funciona:** (1) o nome do método — se o
+OMIE recusar `ConsultaLancCC` dizendo que o método não existe, tenta
+`ConsultarLancCC` sozinho; (2) se o `nCodMovCC` do movimento é o mesmo número
+do lançamento (`nCodLanc`). O teste é o dono baixar o 11309733447 pela tela
+nova: se vier o lançamento com CRECHESUAPE e ESCPE18, está certo.
+
+## "Parou de dar sinal" nos cadastros; ícone; mês em MM/AAAA — 07/10/2026
+
+O dono rodou "Atualizar um período" às 15:37 e a tela disse que ela parou de
+dar sinal no passo "atualizando o plano de contas e os cadastros".
+
+**O que o código mostrou (sem o log do Render, a causa da parada não está
+provada):** esse passo lia o plano de contas, os milhares de fornecedores e
+clientes e as contas correntes SEM dar sinal de vida nenhum — só um aviso no
+começo. Passou de 10 minutos calado, a tela e o vigia a dão por morta, e o
+vigia dispara OUTRA atualização do mesmo tipo, possivelmente por cima da que
+ainda rodava. Se o processo tinha mesmo morrido (reinício, memória), só o log
+diz.
+
+**Conserto:**
+- Os cadastros dão sinal a cada página ("fornecedores e clientes: página 3
+  de 20").
+- Toda chamada ao OMIE dá sinal de vida, sem mudar o texto da tela —
+  nenhum trecho que só conversa com o OMIE fica calado.
+- **Calada não é morta:** antes de dar uma atualização por morta, o painel
+  procura o processo dela na máquina (`executar_sync.processo_vivo`, lendo
+  `/proc`). Se está de pé, ela segue "rodando" e o vigia não dispara outra.
+  O lado ruim, aceito: um processo travado de verdade não é mais retomado
+  sozinho — mas, com sinal a cada chamada ao OMIE, travar calado ficou
+  difícil.
+
+**Ícone:** o painel ganhou ícone próprio (fundo azul-escuro, três barras
+subindo em azul e amarelo), na aba do navegador e no atalho do celular.
+
+**Campos de mês e de período (`static/campos_data.js`, para toda tela do
+painel):** o dono recusou as duas listas que fiz primeiro — quer *"clica,
+abre, ou escrever 01/…"*, e reclamou que no calendário do navegador *"a gente
+só visualiza um mês, não tem como colocar início e fim"*.
+- Mês: campo "MM/AAAA" que aceita digitação (a barra entra sozinha) e, ao
+  clicar, abre os 12 meses com o ano em cima (‹ 2026 ›).
+- Período (todo par de datas "de"/"até": Analítico, Explorador, Extrato,
+  "Atualizar um período"): dois campos "dd/mm/aaaa" que aceitam digitação e,
+  ao clicar em qualquer um, abrem UM calendário de dois meses lado a lado —
+  primeiro clique é o início, segundo é o fim, o meio fica pintado — com
+  atalhos (Hoje, Este mês, Mês passado, Este ano, Limpar). No celular, um mês.
+- O campo original fica escondido com o valor de sempre (AAAA-MM /
+  AAAA-MM-DD): o servidor não mudou. Conferido num navegador de verdade:
+  digitar, clicar, atalho, valor posto por script e envio do formulário.
+
+## O aporte da Sicredi apareceu; "o resto deste ano" — 07/10/2026 (noite)
+
+O dono confirmou: **o aporte de 09/01/2026 apareceu** depois de "Atualizar um
+período" — ou seja, a consulta do lançamento de conta corrente no OMIE e o
+número (`nCodMovCC` = `nCodLanc`) funcionaram. Pediu em seguida: *"como
+resolver o resto agora? São dados apenas deste ano que preciso hoje."*
+
+**O que impedia o resto do ano:** o lançamento de conta lido ANTES da migração
+021 está guardado sem o movimento inteiro — sem o número dele, não há como
+perguntar a obra. Só entra quando o pagamento daquele dia é relido. E as
+atualizações comuns liam no máximo 600 apropriações por vez.
+
+**Conserto:**
+- "Reler os pagamentos" de UM ou DOIS anos lê, na mesma rodada, a apropriação
+  de TODOS os lançamentos de conta daquele(s) ano(s), sem o teto de 600. Todos
+  os anos continua com o teto (seriam milhares de consultas numa rodada).
+- "Conferir o saldo das contas com o OMIE" ganhou **"Conferir o ano
+  inteiro"** (o ano do mês escolhido, até hoje se for o corrente): uma
+  consulta por conta. A conta que não bate no ano é aberta mês a mês.
+  NÃO VERIFICADO: se o extrato do OMIE aceita um período de um ano numa
+  consulta só; se recusar, a linha mostra o erro.
+
+**Caminho combinado para 2026:** Reler os pagamentos só de 2026 → Conferir o
+ano inteiro → abrir mês a mês só a conta que não bater.
+
+## Aportes e dividendos: a régua dos dividendos, agrupar, nomes — 07/10/2026 (noite)
+
+Com os aportes da Sicredi já aparecendo, o dono leu o bloco de aportes e achou
+confuso — *"gera desconfiança na informação; talvez até esteja errado"*.
+
+**Estava errado num ponto:** "O dinheiro da obra" mostrava dividendos de
+R$ 120.002,00 e o "Resultado × dividendos", logo abaixo, R$ 1,00. O segundo
+cortava o que é classificado como transferência, e os R$ 120 mil (24/07/2026,
+pagos por lançamento de conta corrente) caíam nesse corte. Agora os dois
+contam o dividendo pela mesma régua (sem cortar transferência), e o clique no
+número abre os mesmos lançamentos.
+
+**O que mudou na tela:**
+- Os lançamentos de aporte e dividendo aparecem um por lançamento; o dividido
+  entre obras mostra "▸ 2 obras" e abre as partes (mesmo agrupamento do
+  Analítico). O Excel continua uma linha por obra.
+- "O dinheiro da obra, com os sócios" virou **"O dinheiro da obra"**, e
+  "Saldo com os sócios" virou **"Saldo da obra"**, com a explicação: é o que a
+  obra gerou e ainda está nela NO PERÍODO DOS FILTROS — não é o saldo do banco
+  (o banco começa com o saldo de antes, guarda dinheiro de mais de uma obra e
+  não enxerga transferência entre contas). Para comparar com o banco, a
+  conferência de saldo.
+- O aviso de "distribuído a mais do que o resultado" agora distingue o caso
+  em que o resultado do conjunto é negativo (obras com prejuízo no período
+  puxando o total) — que era o caso dele: ESCALFREDAO e ESCPLANALTO só com
+  despesas no filtro.
+- "Não achou um aporte ou dividendo?" saiu do DRE e foi para Configurações
+  (*"não é para estar na apresentação"*).
+
 ## Reler os pagamentos de um ano, de alguns ou de todos — 07/10/2026
 
 O dono, vendo a releitura retomada em "2025 (11 de 12 anos, 10 já feitos

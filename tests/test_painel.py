@@ -514,6 +514,13 @@ def _consultar_falso(sql, params=()):
             return [(1, -1200.0)]
         if "SUM(-pago_recebido)" in sql:                        # dividendo por obra
             return [("Obra Um", 1200.0)]
+        # os lançamentos na tela, um por lançamento (07/10/2026)
+        if "AS lancamento_agrupado" in sql:
+            if sql.strip().startswith("SELECT COUNT(*) FROM ("):
+                return [(9,)]
+            return [(dt.date(2025, 2, 3), "4455", "SÓCIO A", "Aporte BWS", "Aportes BWS",
+                     "Bradesco C/C", 5000.0,
+                     [{"obra": "Obra Um", "valor": 3000.0}, {"obra": "Obra Dois", "valor": 2000.0}])]
         if "ORDER BY 2, 3, 1" in sql:                           # os lançamentos
             return [(dt.date(2025, 2, 3), "Obra Um", "SÓCIO A", "Aporte BWS",
                      "Aportes BWS", 5000.0, "Bradesco C/C", "TED", "capital")]
@@ -1865,7 +1872,9 @@ def test_o_bloco_de_aportes_mostra_o_dinheiro_da_obra_com_os_socios(painel):
     de aportes e distribuição de lucros. Seria legal visualizar isso ali"."""
     painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
     html = painel.get("/painel/dre?bloco=aportes").get_data(as_text=True)
-    assert "O dinheiro da obra, com os sócios" in html
+    assert "O dinheiro da obra</h3>" in html and "Saldo da obra" in html
+    # um por lançamento, com as obras por baixo (07/10/2026)
+    assert "▸ 2 obras" in html and 'data-parte-do-aporte="1"' in html
     # Obra Um: 9.000 − 5.000 + 5.000 − 1.000 − 1.200 = 6.800
     assert "R$ 6.800,00" in html
     # Obra Dois entrou dinheiro com nome de dividendo: marcado, não somado
@@ -1935,7 +1944,9 @@ def test_os_dividendos_abrem_os_lancamentos(painel):
     painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
     html = painel.get("/painel/dre?bloco=aportes").get_data(as_text=True)
     assert 'abre-dividendos" data-sentido="pago" data-socio="11222333000144"' in html
-    assert 'data-trf="0"' in html                   # o quadro Resultado × dividendos
+    # desde 07/10/2026 o "Resultado × dividendos" não corta mais transferência:
+    # os R$ 120 mil pagos por lançamento de conta sumiam dele
+    assert 'data-trf="0"' not in html
     d = painel.get("/painel/dre/dividendos?sentido=pago&socio=11222333000144").get_json()
     assert d["ok"] and d["quantos"] == 1 and d["total"] == -1200.0
     l = d["linhas"][0]

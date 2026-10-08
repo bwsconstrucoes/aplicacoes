@@ -246,7 +246,7 @@ COLUNAS = {
                      ("aportes", "Aportes que entraram"),
                      ("devolucoes", "Devoluções que saíram"),
                      ("dividendos", "Dividendos pagos"),
-                     ("saldo", "Saldo com os sócios"),
+                     ("saldo", "Saldo da obra"),
                      ("dividendos_recebidos", "Entrou com nome de dividendo (conferir)")],
     "divisao": [("obra", "Obra"), ("resultado", "Resultado realizado"),
                 ("dividendos", "Dividendos pagos"), ("disponivel", "Disponível")],

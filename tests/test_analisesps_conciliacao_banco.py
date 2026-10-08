@@ -1933,3 +1933,63 @@ def test_a_OBRA_DOS_MOVIMENTOS_e_gravada_na_conta(banco_conc):
     conciliacao.gravar_conta({"id": conta_id, "nome": "BD 7011",
                               "omie_departamento": ""}, quem="T")
     assert conciliacao.contas()[0]["omie_departamento"] == ""
+
+
+def test_a_SAIDA_do_extrato_acha_a_SP_pelo_valor_conta_e_data(banco_conc):
+    """07/10/2026: *"cruzar a conciliação do extrato com os números das SPs (…)
+    pela conta de pagamento, data, valor (…) às vezes a planilha não atualiza na
+    baixa (…) e ser clicável, para abrir o pipe."*"""
+    import datetime as dt
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    from tests.test_analisesps_banco import semear, sp
+    conta_id = conta_de_teste()
+    conciliacao.importar(conta_id, conciliacao_ofx.ler(ofx([
+        ("20260910", "-500.00", "S1", "PIX FORNECEDOR"),
+        ("20260911", "-320.00", "S2", "BOLETO"),
+        ("20260912", "-99.00", "S3", "TARIFA"),
+        ("20260912", "1000.00", "E1", "TED RECEBIDA")])), "x.ofx", "T")
+    semear([
+        sp("900001", conta="BD 7011", valor="500,00", status_pgt="Pago",
+           data_pagamento="10/09/2026", vencimento="10/09/2026", credor="FORNECEDOR A"),
+        # a planilha não baixou: segue "Pagar", vence perto do lançamento
+        sp("900002", conta="7011-4", valor="320,00", status_pgt="Pagar",
+           vencimento="12/09/2026", credor="FORNECEDOR B"),
+        # mesmo valor, OUTRA conta: não pode casar
+        sp("900003", conta="ITAU 9999-1", valor="500,00", status_pgt="Pago",
+           data_pagamento="10/09/2026", credor="OUTRO"),
+    ])
+    conta = next(c for c in conciliacao.contas() if c["id"] == conta_id)
+    linhas = conciliacao.listar({"conta_id": conta_id})
+    achadas = conciliacao.sps_das_linhas(conta, linhas)
+    por_desc = {l["descricao"]: achadas.get(l["id"], []) for l in linhas}
+    assert [(s["id"], s["como"], s["sem_baixa"]) for s in por_desc["PIX FORNECEDOR"]] == [
+        ("900001", "pago no dia", False)]
+    assert [(s["id"], s["sem_baixa"]) for s in por_desc["BOLETO"]] == [("900002", True)]
+    assert por_desc["TARIFA"] == [] and por_desc["TED RECEBIDA"] == []
+    assert por_desc["PIX FORNECEDOR"][0]["link"].endswith("/900001")
+
+
+def test_mesmo_valor_no_mesmo_dia_o_NOME_do_credor_desempata(banco_conc):
+    """07/10/2026: *"às vezes pode ter uma conta com o mesmo valor no mesmo dia
+    (…) a descrição do extrato às vezes tem o nome (…) cruzar com o credor"*."""
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    from tests.test_analisesps_banco import semear, sp
+    conta_id = conta_de_teste()
+    conciliacao.importar(conta_id, conciliacao_ofx.ler(ofx([
+        ("20260910", "-250.00", "S1", "PIX ENVIADO JOSE CARLOS SILVA"),
+        ("20260910", "-250.00", "S2", "PAGTO BOLETO MADEIREIRA SAO JORGE"),
+        ("20260910", "-250.00", "S3", "PIX ENVIADO NINGUEM CONHECIDO")])), "x.ofx", "T")
+    semear([
+        sp("900011", conta="BD 7011", valor="250,00", status_pgt="Pago",
+           data_pagamento="10/09/2026", credor="José Carlos da Silva"),
+        sp("900012", conta="BD 7011", valor="250,00", status_pgt="Pago",
+           data_pagamento="10/09/2026", credor="MADEIREIRA SÃO JORGE LTDA"),
+    ])
+    conta = next(c for c in conciliacao.contas() if c["id"] == conta_id)
+    linhas = conciliacao.listar({"conta_id": conta_id})
+    achadas = conciliacao.sps_das_linhas(conta, linhas)
+    ids = {l["descricao"]: [s["id"] for s in achadas.get(l["id"], [])] for l in linhas}
+    assert ids["PIX ENVIADO JOSE CARLOS SILVA"] == ["900011"]
+    assert ids["PAGTO BOLETO MADEIREIRA SAO JORGE"] == ["900012"]
+    assert sorted(ids["PIX ENVIADO NINGUEM CONHECIDO"]) == ["900011", "900012"], \
+        "sem nome que desempate, as duas ficam (com ?)"

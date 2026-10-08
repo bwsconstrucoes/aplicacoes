@@ -4771,7 +4771,9 @@ def test_o_rateio_da_folha_e_SO_DO_MESTRE():
     # agora é a lista por NOME DE ROTA — que não depende de ninguém lembrar de
     # classificar uma tela.
     assert "folha_rateio" not in guarda.SO_DO_MESTRE_POR_TELA
-    for rota in ("analisesps.tela_folha_rateio", "analisesps.folha_rateio_gravar",
+    # VER o rateio é da folha desde 07/10/2026; GRAVAR continua do mestre.
+    assert guarda.e_so_do_mestre("analisesps.tela_folha_rateio") is False
+    for rota in ("analisesps.folha_rateio_gravar",
                  "analisesps.folha_rateio_apagar",
                  "analisesps.folha_rateio_simular",
                  "analisesps.folha_rateio_colar"):
@@ -5300,18 +5302,14 @@ def test_as_subtelas_aparecem_dentro_da_tela_da_folha(app, monkeypatch):
     assert html.count(">Folha PGT<") == html.count("Folha PGT")
 
 
-def test_quem_NAO_e_mestre_nao_ve_a_subtela_do_rateio(app, monkeypatch):
-    """Aba que responde 404 é pior do que aba nenhuma — mesmo motivo do menu de
-    cima. O rateio decide para qual obra vai o salário: é do dono."""
+def test_quem_tem_a_folha_ve_TODAS_as_subtelas(app, monkeypatch):
+    """07/10/2026: *"quem vê a Folha PGT precisa ver os submenus da folha"*. Antes
+    o Rateio e os Arquivos gerados sumiam para quem não era mestre."""
     from app.apps.analisesps import auth as guarda, web
 
     monkeypatch.setattr(guarda, "e_mestre", lambda: False)
     nomes = [s[1] for s in web.subtelas_da_folha()]
-    assert "Colaboradores" in nomes
-    assert "Rateio das obras" not in nomes
-
-    monkeypatch.setattr(guarda, "e_mestre", lambda: True)
-    assert "Rateio das obras" in [s[1] for s in web.subtelas_da_folha()]
+    assert nomes == [s[1] for s in web.SUBTELAS_DA_FOLHA]
 
 
 def test_a_caixa_de_colar_a_tabela_e_o_caminho_PRINCIPAL_do_rateio(app, monkeypatch):
@@ -6671,14 +6669,15 @@ def test_GERAR_POR_COMPETENCIA_saiu_da_tela_de_arquivos(app, monkeypatch):
                             json={}).status_code in (403, 404, 405)
 
 
-def test_a_tela_de_pagamento_e_SO_DO_MESTRE(app):
-    """O log mostra o link de arquivos com nome, CPF e valor de ~500 pessoas."""
+def test_a_tela_de_pagamento_e_DA_FOLHA_e_agir_e_do_MESTRE():
+    """07/10/2026: *"quem vê a Folha PGT precisa ver os submenus"*. Ver os arquivos
+    gerados é da folha; gerar, lançar e excluir continuam do mestre."""
     from app.apps.analisesps import auth
 
-    assert auth.e_so_do_mestre("analisesps.tela_folha_pagamento") is True
-
-    resposta = como(app, SENHA_CONSULTA).get("/analisesps/folha/pagamento")
-    assert resposta.status_code in (302, 403, 404)
+    assert auth.e_so_do_mestre("analisesps.tela_folha_pagamento") is False
+    for rota in ("analisesps.folha_card_lancar", "analisesps.folha_arquivos_excluir",
+                 "analisesps.folha_gerar_direto", "analisesps.folha_card_preparar"):
+        assert auth.e_so_do_mestre(rota) is True, rota
 
 
 def test_o_log_mostra_o_LINK_de_baixar(app, monkeypatch):

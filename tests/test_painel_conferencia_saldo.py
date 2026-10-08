@@ -18,6 +18,9 @@ from app.apps.painel import conferencia_saldo as cs
 def test_o_mes_vira_o_primeiro_e_o_ultimo_dia():
     assert cs._periodo("2026-02") == (dt.date(2026, 2, 1), dt.date(2026, 2, 28))
     assert cs._periodo("2025-12") == (dt.date(2025, 12, 1), dt.date(2025, 12, 31))
+    # o ano inteiro — até hoje, se for o corrente ("são dados deste ano que preciso")
+    assert cs._periodo("2025", hoje=dt.date(2026, 10, 7)) == (dt.date(2025, 1, 1), dt.date(2025, 12, 31))
+    assert cs._periodo("2026", hoje=dt.date(2026, 10, 7)) == (dt.date(2026, 1, 1), dt.date(2026, 10, 7))
 
 
 def test_os_saldos_sao_achados_pelo_nome_do_campo():
@@ -118,6 +121,8 @@ def test_so_o_dono_confere_o_saldo(base, monkeypatch):
     r = dono.get("/painel/conferir/saldo?mes=2026-01").get_json()
     assert r["ok"] and r["com_diferenca"] == 0
     assert dono.get("/painel/conferir/saldo?mes=jan").status_code == 400
+    ano = dono.get("/painel/conferir/saldo?mes=2025").get_json()
+    assert ano["ok"] and (ano["de"], ano["ate"]) == ("01/01/2025", "31/12/2025")
     cru = dono.get("/painel/conferir/saldo/json?mes=2026-01&conta=88")
     assert cru.status_code == 200 and cru.get_json() == {"nSaldoAnterior": 0, "nSaldoAtual": 398}
     assert "Conferir o saldo das contas com o OMIE" in \
