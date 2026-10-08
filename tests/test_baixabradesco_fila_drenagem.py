@@ -620,3 +620,298 @@ def test_zapi_sem_credencial_nao_queima_tentativa(aba, monkeypatch):
     assert a.gravacoes == []
     assert r['bloqueados_por_configuracao'] == 1
     assert r['o_que_falta_configurar'] == ['credenciais_zapi_ausentes']
+
+
+# =====================================================================
+# 11. a nova tentativa do Omie tem de TERMINAR o serviço
+# =====================================================================
+# Queixa do dono em 08/10/2026: *"tenho várias baixas que não aconteceram na
+# planilha"*. A contagem dele mostrava 182 pendências de `omie` e **ZERO** de
+# `sheets` — e as duas coisas são o mesmo fato: a baixa falha no Omie ANTES de a
+# planilha ser gravada, então a planilha nunca foi escrita e nunca houve
+# pendência de planilha para enfileirar. A nova tentativa resolvia o Omie,
+# marcava CONCLUIDO, e deixava a planilha desatualizada PARA SEMPRE.
+
+PAYLOAD_COMPLETO = (
+    '{"codigo_integracao": "Int1443274610", "codigo_conta_omie": "1234567",'
+    ' "valor_pago": "7.350,48", "data_pagamento": "07/10/2026",'
+    ' "sheets_updates": [{"range": "O5", "values": [["Pago"]]}],'
+    ' "pipefy_update_mutation": "mutation { x }"}'
+)
+
+
+def test_titulo_ja_pago_ainda_grava_a_planilha(aba, monkeypatch):
+    """"Pago no Omie" não quer dizer "registrado na planilha"."""
+    aba([_linha(etapa='omie', payload=PAYLOAD_COMPLETO)])
+    monkeypatch.setattr(mod, 'credentials_from_payload', lambda payload: ('k', 's'))
+    monkeypatch.setattr(mod, '_request_omie',
+                        lambda call, param, payload:
+                        {'ok': True, 'body': {'status_titulo': 'PAGO'}})
+    gravou = []
+    monkeypatch.setattr(mod, 'execute_spsbd_updates',
+                        lambda u: gravou.append(u) or {'ok': True, 'gravados': 1})
+    monkeypatch.setenv('PIPEFY_API_TOKEN', 'tok')
+    monkeypatch.setattr(mod, 'execute_graphql', lambda m: {'ok': True})
+
+    r = mod.reprocessar_fila({'limite': 10, 'etapas': ['omie']})
+
+    assert gravou == [[{'range': 'O5', 'values': [['Pago']]}]]
+    assert r['concluidos_agora'] == 1
+
+
+def test_a_baixa_nova_tambem_grava_a_planilha(aba, monkeypatch):
+    aba([_linha(etapa='omie', payload=PAYLOAD_COMPLETO)])
+    monkeypatch.setattr(mod, 'credentials_from_payload', lambda payload: ('k', 's'))
+    chamadas = []
+
+    def _req(call, param, payload):
+        chamadas.append(call)
+        if call == 'ConsultarContaPagar':
+            return {'ok': True, 'body': {'status_titulo': 'ABERTO'}}
+        return {'ok': True, 'body': {}}
+
+    monkeypatch.setattr(mod, '_request_omie', _req)
+    gravou = []
+    monkeypatch.setattr(mod, 'execute_spsbd_updates',
+                        lambda u: gravou.append(u) or {'ok': True, 'gravados': 1})
+    monkeypatch.setenv('PIPEFY_API_TOKEN', 'tok')
+    monkeypatch.setattr(mod, 'execute_graphql', lambda m: {'ok': True})
+
+    r = mod.reprocessar_fila({'limite': 10, 'etapas': ['omie']})
+
+    assert chamadas == ['ConsultarContaPagar', 'AlterarContaPagar', 'LancarPagamento']
+    assert len(gravou) == 1
+    assert r['concluidos_agora'] == 1
+
+
+def test_planilha_que_nao_grava_segura_o_item_na_fila(aba, monkeypatch):
+    """A planilha é o registro do pagamento: sem ela, o item NÃO está concluído.
+
+    Repetir é seguro — a consulta ao Omie devolve PAGO e não lança nada de novo.
+    """
+    aba([_linha(etapa='omie', payload=PAYLOAD_COMPLETO)])
+    monkeypatch.setattr(mod, 'credentials_from_payload', lambda payload: ('k', 's'))
+    monkeypatch.setattr(mod, '_request_omie',
+                        lambda call, param, payload:
+                        {'ok': True, 'body': {'status_titulo': 'PAGO'}})
+    monkeypatch.setattr(mod, 'execute_spsbd_updates',
+                        lambda u: {'ok': False, 'erros': ['não confirmada']})
+
+    r = mod.reprocessar_fila({'limite': 10, 'etapas': ['omie']})
+
+    assert r['concluidos_agora'] == 0
+    assert r['ainda_pendentes'] == 1
+    assert r['resultados'][0]['response']['resto_do_plano']['erro'] == \
+        'falha_gravar_planilha'
+
+
+def test_o_cartao_que_nao_move_NAO_segura_o_pagamento_mas_ganha_linha(
+        aba, monkeypatch):
+    """Registro certo nos dois sistemas não fica preso por causa do cartão —
+    mas o cartão não pode desaparecer: ganha pendência própria."""
+    a = aba([_linha(etapa='omie', payload=PAYLOAD_COMPLETO)])
+    monkeypatch.setattr(mod, 'credentials_from_payload', lambda payload: ('k', 's'))
+    monkeypatch.setattr(mod, '_request_omie',
+                        lambda call, param, payload:
+                        {'ok': True, 'body': {'status_titulo': 'PAGO'}})
+    monkeypatch.setattr(mod, 'execute_spsbd_updates', lambda u: {'ok': True})
+    monkeypatch.setenv('PIPEFY_API_TOKEN', 'tok')
+    monkeypatch.setattr(mod, 'execute_graphql', lambda m: {'ok': False, 'erro': 'x'})
+
+    antes = len(a.linhas)
+    r = mod.reprocessar_fila({'limite': 10, 'etapas': ['omie']})
+
+    assert r['concluidos_agora'] == 1               # o pagamento está registrado
+    assert len(a.linhas) == antes + 1               # e o cartão ficou na fila
+    assert a.linhas[-1][11] == 'pipefy'
+
+
+def test_sem_token_do_pipefy_o_cartao_tambem_ganha_linha(aba, monkeypatch):
+    a = aba([_linha(etapa='omie', payload=PAYLOAD_COMPLETO)])
+    monkeypatch.setattr(mod, 'credentials_from_payload', lambda payload: ('k', 's'))
+    monkeypatch.setattr(mod, '_request_omie',
+                        lambda call, param, payload:
+                        {'ok': True, 'body': {'status_titulo': 'PAGO'}})
+    monkeypatch.setattr(mod, 'execute_spsbd_updates', lambda u: {'ok': True})
+    monkeypatch.delenv('PIPEFY_API_TOKEN', raising=False)
+
+    antes = len(a.linhas)
+    r = mod.reprocessar_fila({'limite': 10, 'etapas': ['omie']})
+
+    assert r['concluidos_agora'] == 1
+    assert len(a.linhas) == antes + 1
+
+
+def test_item_sem_plano_de_planilha_nao_inventa_gravacao(aba, monkeypatch):
+    aba([_linha(etapa='omie', payload=PAYLOAD_OMIE)])   # sem sheets_updates
+    monkeypatch.setattr(mod, 'credentials_from_payload', lambda payload: ('k', 's'))
+    monkeypatch.setattr(mod, '_request_omie',
+                        lambda call, param, payload:
+                        {'ok': True, 'body': {'status_titulo': 'PAGO'}})
+    chamou = {'n': 0}
+    monkeypatch.setattr(mod, 'execute_spsbd_updates',
+                        lambda u: chamou.__setitem__('n', chamou['n'] + 1) or {'ok': True})
+
+    r = mod.reprocessar_fila({'limite': 10, 'etapas': ['omie']})
+
+    assert chamou['n'] == 0
+    assert r['concluidos_agora'] == 1
+
+
+# =====================================================================
+# 12. o cabeçalho nunca mais vai para o fim da aba
+# =====================================================================
+
+def test_cabecalho_ausente_e_escrito_em_A1_nunca_acrescentado_no_fim(monkeypatch):
+    """Defeito meu, visto nos dados do dono: três linhas com Status = "STATUS".
+
+    `append_row` acrescenta no FIM da aba, não na linha 1. Bastava a leitura de
+    A1:O1 voltar vazia uma vez — soluço de rede — para nascer uma linha de lixo
+    no meio da fila, contada como pendência.
+    """
+    class _AbaSemCabecalho(_AbaFila):
+        def get(self, faixa):
+            self.faixas_lidas.append(faixa)
+            if faixa == 'A1:O1':
+                return []
+            return [l[:mod.COLS_CONTROLE] for l in self.linhas]
+
+    a = _AbaSemCabecalho([_linha()])
+    escritas = []
+    a.update = lambda faixa, valores, value_input_option=None: escritas.append(faixa)
+
+    class _P:
+        def worksheet(self, nome):
+            return a
+
+    class _G:
+        def open_by_key(self, k):
+            return _P()
+
+    monkeypatch.setattr(mod, 'get_gc', lambda: _G())
+    antes = len(a.linhas)
+
+    mod.ensure_fila_sheet()
+
+    assert escritas == ['A1:O1']
+    assert len(a.linhas) == antes      # nada foi acrescentado no fim
+
+
+def test_leitura_do_cabecalho_que_falha_nao_escreve_nada(monkeypatch):
+    """Escrever por cima do que não se conseguiu ler é como o lixo nasceu."""
+    class _AbaQueFalha(_AbaFila):
+        def get(self, faixa):
+            raise RuntimeError('Google fora do ar')
+
+    a = _AbaQueFalha([_linha()])
+    a.update = lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError('não pode escrever sem ter lido'))
+
+    class _P:
+        def worksheet(self, nome):
+            return a
+
+    class _G:
+        def open_by_key(self, k):
+            return _P()
+
+    monkeypatch.setattr(mod, 'get_gc', lambda: _G())
+    mod.ensure_fila_sheet()   # não levanta, não escreve
+
+
+def test_linha_de_cabecalho_perdida_nao_e_tratada_como_pendencia(aba):
+    """Os três "STATUS" que apareceram na contagem do dono."""
+    lixo = _linha()
+    lixo[1] = 'Status'
+    aba([_linha(), lixo, _linha()])
+
+    itens = mod.listar_pendentes(limite=10)
+
+    assert [i['_row_number'] for i in itens] == [2, 4]
+
+
+# =====================================================================
+# 13. zerar o que está para trás, sem apagar nada
+# =====================================================================
+
+def test_zerar_dispensa_o_que_e_anterior_a_data_e_so_isso(aba):
+    a = aba([
+        _linha(etapa='zapi', registro='18/06/2026 18:31:09', tipo='zapi_erro'),
+        _linha(etapa='omie', registro='30/09/2026 10:00:00', payload=PAYLOAD_OMIE),
+        _linha(etapa='omie', registro='07/10/2026 10:00:00', payload=PAYLOAD_OMIE),
+    ])
+
+    r = mod.zerar_fila_antiga({'antes_de': '01/10/2026'})
+
+    assert r['ok'] is True
+    assert r['dispensadas'] == 2
+    assert r['por_etapa'] == {'zapi': 1, 'omie': 1}
+    # as linhas 2 e 3, não a 4
+    faixas = [g[0] for g in a.gravacoes if g[0].startswith('B')]
+    assert faixas == ['B2:D2', 'B3:D3']
+
+
+def test_zerar_escreve_o_motivo_na_linha_e_nao_apaga_nada(aba):
+    a = aba([_linha(etapa='zapi', registro='18/06/2026 18:31:09', tipo='zapi_erro')])
+    antes = len(a.linhas)
+
+    r = mod.zerar_fila_antiga({'antes_de': '01/10/2026'})
+
+    assert len(a.linhas) == antes
+    mensagem = [g[1][0] for g in a.gravacoes if g[0].startswith('M')][0]
+    assert 'Dispensada por decisão do dono' in mensagem
+    assert 'anterior a 01/10/2026' in mensagem
+    assert 'conciliação bancária' in mensagem
+    assert r['por_etapa'] == {'zapi': 1}
+
+
+def test_zerar_marca_em_lote_e_nao_uma_chamada_por_linha(aba):
+    a = aba([_linha(etapa='zapi', registro='18/06/2026 18:31:09', tipo='zapi_erro')
+             for _ in range(120)])
+
+    r = mod.zerar_fila_antiga({'antes_de': '01/10/2026'})
+
+    assert r['dispensadas'] == 120
+    assert a.chamadas_batch_update == 3      # blocos de 50
+
+
+def test_zerar_sem_data_recusa_em_vez_de_zerar_tudo(aba):
+    a = aba([_linha(etapa='zapi', registro='18/06/2026 18:31:09')])
+
+    r = mod.zerar_fila_antiga({})
+
+    assert r['ok'] is False
+    assert r['erro'] == 'antes_de_ausente_ou_invalido'
+    assert a.gravacoes == []
+
+
+def test_zerar_pode_pedir_so_uma_etapa(aba):
+    aba([
+        _linha(etapa='zapi', registro='18/06/2026 18:31:09', tipo='zapi_erro'),
+        _linha(etapa='omie', registro='18/06/2026 18:31:09', payload=PAYLOAD_OMIE),
+    ])
+
+    r = mod.zerar_fila_antiga({'antes_de': '01/10/2026', 'etapas': ['zapi']})
+
+    assert r['dispensadas'] == 1
+    assert r['por_etapa'] == {'zapi': 1}
+
+
+def test_zerar_nao_toca_no_que_ja_esta_concluido(aba):
+    a = aba([_linha(status='CONCLUIDO', registro='18/06/2026 18:31:09')])
+
+    r = mod.zerar_fila_antiga({'antes_de': '01/10/2026'})
+
+    assert r['dispensadas'] == 0
+    assert a.gravacoes == []
+
+
+def test_zerar_explica_em_portugues_o_que_fez(aba):
+    aba([_linha(etapa='zapi', registro='18/06/2026 18:31:09', tipo='zapi_erro')
+         for _ in range(1943)])
+
+    r = mod.zerar_fila_antiga({'antes_de': '01/10/2026'})
+
+    assert '1.943' in r['em_portugues']
+    assert 'aviso de pagamento' in r['em_portugues']
+    assert 'Nada foi apagado' in r['em_portugues']

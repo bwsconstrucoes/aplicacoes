@@ -1292,3 +1292,252 @@ não contém "chame de novo".
 as frases, suíte inteira rodada com a única falha sendo `erpbrasil` ausente neste
 ambiente, aplicação subindo com os 18 blueprints.
 **Não verificado:** nada do conferidor rodou contra a planilha de verdade ainda.
+
+---
+
+### 08/10/2026 — revisão do que passou a rodar sozinho, e uma ineficiência deixada de propósito
+
+**Publicado na `main` em `6d307fe`:** a continuação do conferidor (`pular`). A
+`main` havia andado outra vez (Análise de SPs, conciliação), mesmo
+procedimento — `main` para o ramo, suíte inteira, junção. Sem migração.
+
+Depois de publicar, reli o laço de drenagem com cuidado, porque ele agora roda
+**sem ninguém olhando, a cada cinco minutos, contra os dados de verdade**. O que
+a revisão mostrou:
+
+**Está correto, e por quê, para não ser "consertado" errado depois:**
+
+- **Os itens não são remartelados.** Quem falha recebe próxima tentativa em +10
+  min, e a seleção só traz vencidos. Então cada disparo pega os *seguintes*, não
+  os mesmos — é isso que faz 238 baixas levarem ~80 minutos em vez de girar no
+  mesmo lugar.
+- **As quatro leituras por disparo são de linhas estáveis.** `enqueue_failure`
+  só acrescenta no fim e nada é apagado, então o número da linha não desloca
+  entre uma etapa e a seguinte. Não há risco de marcar a linha errada.
+- **O descarte em lote roda mesmo quando o laço para por cota**, e se a gravação
+  falhar ali os itens ficam `PENDENTE` — o estado verdadeiro. Não se finge que
+  gravou.
+
+**A ineficiência, deixada como está de propósito:** drenar por etapa faz
+`reprocessar_fila` ser chamada quatro vezes por disparo, e **cada chamada relê a
+faixa de controle `A2:L` inteira**. Com 2.269 linhas são ~27 mil células por
+leitura, quatro vezes a cada cinco minutos. Dá alguns megabytes por disparo —
+longe dos 150–250 MB que causaram o OOM de julho, e dentro da cota de leitura.
+
+O conserto seria ler uma vez e distribuir entre as etapas, o que obriga a
+reorganizar `reprocessar_fila`. **Não fiz hoje, e a razão é a situação:** isso
+acabou de entrar em produção e está drenando 2.269 pendências reais; mexer na
+estrutura do laço agora troca uma ineficiência tolerada por risco de defeito no
+que está funcionando. Fica anotado para quando a fila estiver vazia — aí o custo
+de errar é baixo. Se a aba crescer muito (dezenas de milhares de linhas), isso
+sai de "tolerável" e passa a ser o primeiro lugar a olhar.
+
+---
+
+### 08/10/2026 (manhã seguinte) — a segunda contagem do dono achou três coisas, e uma é grave
+
+Ele voltou com a contagem e uma queixa: *"tenho várias baixas que não aconteceram
+na planilha, mas acredito que foram depois das mudanças aqui, mas a fila ainda
+não rodou. E só preciso que rode as coisas desse mês em diante. O que tá pra
+trás, poderia zerar."*
+
+```
+linhas_na_aba      2273
+por_status         PENDENTE 2213 | CONCLUIDO 57 | STATUS 3
+por_etapa          zapi 1943 | omie 182 | pipefy 88
+mais antiga        18/06/2026 | mais recente  08/10/2026 09:05:45
+```
+
+**Primeiro: a fila RODOU.** Ele achou que não, e os números mostram que sim — 57
+concluídas (eram zero) e as baixas do Omie caindo de 238 para 182, 56 fechadas.
+A drenagem pelo cron funciona. Vale anotado porque é o tipo de coisa que ele não
+tem como ver: a planilha não mostra "o que mudou desde ontem".
+
+**Segundo, e é o furo que ele relatou — 182 pendências de `omie` com ZERO de
+`sheets`.** As duas coisas são o mesmo fato, e o fato é grave: a baixa falha no
+Omie **antes** de a planilha ser gravada. Então a planilha nunca foi escrita, e
+nunca houve pendência de planilha para enfileirar. Pior: a nova tentativa
+resolvia o Omie, marcava `CONCLUIDO` e **deixava a planilha desatualizada para
+sempre**. Ou seja, a drenagem que eu publiquei ontem estava fechando pendências e
+criando exatamente o problema que ele descreveu.
+
+Corrigido: quando o título está pago (inclusive quando já estava, pela
+conciliação diária), a nova tentativa **termina o plano** — grava a planilha e
+move o cartão. A gravação da planilha **segura** o item na fila se falhar: é o
+registro do pagamento. O cartão do Pipefy **não** segura, ganha pendência própria
+— registro certo nos dois sistemas não deve ficar preso por um cartão. Repetir é
+seguro, e é o que sustenta o desenho: a consulta devolve "já pago" e não lança
+nada de novo, e a regravação escreve os mesmos valores nas mesmas células.
+
+**Terceiro: `STATUS 3` no `por_status` era defeito MEU, visível nos dados dele.**
+Três linhas com Status = "STATUS" no meio da fila, contadas como pendência. Eu
+troquei a conferência do cabeçalho por uma leitura de `A1:O1` (certo, para não
+ler a aba inteira), mas deixei o `append_row` do caminho "cabeçalho ausente" —
+e `append_row` acrescenta no **fim** da aba, não na linha 1. Bastou a leitura
+voltar vazia uma vez, num soluço de rede, para nascer lixo. Agora: `update`
+na faixa `A1:O1`, nunca `append_row`; leitura que falha **não** autoriza escrita
+nenhuma; e a seleção ignora linha cujo Status seja "STATUS", para o estrago já
+feito não voltar a contar.
+
+**Quarto, o pedido dele: zerar o que está para trás.** Entrou
+`POST /api/baixabradesco/zerar-fila-antiga` com `antes_de`. Decisões:
+
+- **Nada é apagado.** A linha fica, marcada concluída, com o motivo e a data da
+  decisão escritos — quem abrir a planilha em dezembro entende por quê.
+- **`antes_de` é obrigatório.** Um "zerar tudo" sem data é fácil de disparar por
+  engano, e desfazer linha por linha seria trabalho de horas.
+- **Só POST**, pelo mesmo motivo: um endereço que o navegador ou a prévia de um
+  aplicativo de mensagem busque sozinho dispararia isso por acidente.
+- **Marcação em lote** (blocos de 50 linhas): 1.943 linhas não podem custar 1.943
+  escritas de cota.
+- A razão de negócio, porque é dele e não minha: ele faz **conciliação bancária
+  diária**, então o que ficou para trás já foi resolvido na mão — a pendência é
+  de registro, não de dinheiro.
+
+**Verificado:** 47 testes de fila (16 novos), área inteira passando, aplicação
+subindo com os 18 blueprints e a rota nova registrada.
+**Não verificado:** a conclusão do plano na nova tentativa nunca rodou contra a
+planilha de verdade. É o que vai dizer se as "baixas que não aconteceram na
+planilha" param de aparecer.
+
+---
+
+### 08/10/2026 — a entrega estava pela metade, e eu só vi relendo o pedido
+
+**Publicado na `main` em `8e8a5ff`:** os três consertos da entrada anterior.
+
+Depois de publicar, reli o que ele tinha pedido — *"só preciso que rode as coisas
+desse mês em diante. O que tá pra trás, poderia zerar"* — e vi que eu havia
+entregado **a ferramenta, não o resultado**: a rota `zerar-fila-antiga` existia,
+mas só aceita POST (de propósito), e ele lê o chat pelo celular. Ou seja, eu tinha
+transformado um pedido dele numa tarefa para ele. Isso é estreitar o escopo
+calado, e é tão ruim quanto parar no meio da fila.
+
+**O que ficou:** o mutirão pega carona no mesmo cron, em blocos de 500 por
+disparo, e **zera antes de drenar** — senão a drenagem gastaria a passada inteira
+nas linhas que vão ser dispensadas dois segundos depois.
+
+Decisões que valem registro:
+
+- **A data de corte é FIXA (`01/10/2026`), não "o mês corrente".** Ele autorizou
+  zerar o que estava para trás *naquele dia*. Uma regra que andasse com o
+  calendário ficaria dispensando pendência nova todo dia primeiro — a forma mais
+  silenciosa possível de perder trabalho, e exatamente o tipo de coisa que
+  ninguém descobre por meses.
+- **É um mutirão que se encerra sozinho.** Depois que as linhas antigas estão
+  marcadas, nenhuma casa com o critério e a passada fica de graça. Não é política
+  permanente.
+- **Dá para desligar pelo ambiente** (`BAIXABRADESCO_ZERAR_ANTES_DE` vazia), sem
+  mexer no código e sem esperar publicação.
+- **Falha no mutirão não impede a drenagem.** São duas coisas independentes, e a
+  drenagem é a que resolve dinheiro.
+
+**Por que eu julguei que isto não precisava de novo "pode":** ele escreveu "o que
+tá pra trás, poderia zerar" com todas as letras, nada é apagado (a linha fica com
+o motivo e a data da decisão escritos), e o `CLAUDE.md` é explícito em que
+pergunta já respondida não se repete. Ficou registrado aqui para ele poder
+discordar — e `BAIXABRADESCO_ZERAR_ANTES_DE` vazia desliga na hora, sem
+publicação.
+
+**Verificado:** 14 testes de cron (7 novos), área inteira passando, suíte completa
+rodada com a única falha sendo `erpbrasil` ausente neste ambiente, aplicação
+subindo com os 18 blueprints.
+**Não verificado:** o mutirão nunca rodou contra a planilha de verdade. O sinal
+de que funcionou é `pendentes_vencidos` caindo em blocos de 500 e
+`registro_mais_antigo` saltando para outubro.
+
+---
+
+### 08/10/2026 — publicado o mutirão, e ele passou a saber dizer que acabou
+
+**Publicado na `main` em `7c26b0b`**, com o "pode ligar o serviço automático e
+pode publicar ao concluir" do dono — que era exatamente o que havia acabado de
+ser ligado.
+
+Logo depois, um detalhe que ia sobrar para ele: o mutirão **não sabia dizer que
+havia terminado**. Ele ficaria olhando a contagem sem saber o que esperar, e a
+varredura seguiria custando uma leitura da faixa de controle a cada cinco
+minutos, de graça, para sempre. Agora, quando não há mais nada anterior ao
+corte, a resposta do cron traz `atraso_zerado.concluido` e a frase diz para
+esvaziar `BAIXABRADESCO_ZERAR_ANTES_DE`.
+
+Ficou anotado o encadeamento, porque é o tipo de coisa que a próxima sessão
+precisa saber para não achar que está tudo certo: **enquanto ninguém esvaziar
+aquela variável, a leitura extra continua.** Não quebra nada e está dentro da
+cota — mas é a mesma ineficiência das quatro leituras por disparo, agora cinco.
+O conserto de verdade é ler a faixa uma vez por disparo e distribuir entre as
+etapas, e segue valendo o motivo de não fazer agora: há 2.213 pendências reais
+passando por esse laço neste momento.
+
+**Verificado:** 16 testes de cron (2 novos), suíte inteira rodada com a única
+falha sendo `erpbrasil` ausente neste ambiente, aplicação subindo com os 18
+blueprints.
+
+---
+
+### 08/10/2026 — relendo o módulo de avisos, um defeito no caminho que a produção usa
+
+**Publicado na `main` em `df183ff`:** o mutirão avisando quando acaba.
+
+Depois disso reli o `avisos.py` inteiro — ele manda mensagem para dois celulares
+e foi mexido hoje — e achei um defeito que os testes de hoje não pegavam, porque
+eu só havia coberto o caminho **com** credencial Z-API.
+
+**O defeito:** quando a credencial Z-API não vem, o aviso sai pelo notificador
+comum, que devolve um dicionário **por canal** (`{"whatsapp": {...}, "telegram":
+{...}}`), **sem `ok` no topo**. Esse resultado era devolvido cru. Como o relatório
+decide tudo por `r.get('ok')`, o aviso entregue pelo Telegram era contado como
+**"nenhum canal entregou"**, e o `ok` do aviso inteiro ia para falso.
+
+**Por que isso importa mais do que parece:** as credenciais Z-API chegam *dentro
+do pedido do Make*. O serviço automático — o cron que acabou de ganhar a
+drenagem e o mutirão — **não tem pedido nenhum**. Então esse é, muito
+provavelmente, o caminho que a produção percorre, e o relatório mentiria
+justamente onde mais se olha. É plausível que explique parte dos 1.943
+`zapi_erro` acumulados.
+
+Corrigido: a resposta do notificador passa a ser traduzida para o mesmo formato
+dos outros envios, com `ok` no topo e o braço do WhatsApp separado — e a resposta
+original fica guardada inteira, para quem for investigar.
+
+**A lição, e ela é a mesma de hoje mais cedo:** cobri o caminho feliz e deixei o
+caminho sem credencial sem teste. Os quatro defeitos que achei hoje por releitura
+(a função apagada, o entupimento da fila, a frase que prometia continuação, o
+cabeçalho no fim da aba) e este têm a mesma assinatura: **o caminho de exceção não
+tinha teste.** Caminho de exceção em código que mexe com dinheiro é onde o defeito
+mora, porque é o que ninguém exercita à mão.
+
+**Verificado:** 15 testes de entrega de aviso (4 novos, todos no caminho sem
+credencial), suíte inteira rodada com a única falha sendo `erpbrasil` ausente
+neste ambiente, aplicação subindo com os 18 blueprints.
+**Não verificado:** se o WhatsApp está de fato entregando em produção. O
+relatório agora diz a verdade sobre isso — antes não dizia —, mas só a primeira
+falha real depois disto vai mostrar.
+
+---
+
+### 08/10/2026 — aplicando a própria lição: os caminhos de exceção do conferidor
+
+**Publicado na `main` em `546a89b`:** o conserto do aviso que mentia no caminho
+sem credencial Z-API.
+
+Logo depois, apliquei ao conferidor a lição que eu mesmo acabei de escrever —
+*os defeitos de hoje todos moravam no caminho de exceção* — e achei outro, que
+atingiria o dono diretamente:
+
+**Os parâmetros da rota chegam como TEXTO**, porque vêm da barra do navegador
+(`?dias=60&limite=50`). E `int('sessenta')` levanta exceção, que virava **500 com
+rastro de pilha** na tela de quem digitou. Quem usa isto digita o endereço no
+celular; um erro de digitação não pode responder com página de erro de
+programador. Agora cada número passa por `_inteiro`, que cai no padrão quando
+não dá para ler.
+
+**Uma decisão de desenho que importa mais do que parece:** valor **fora de faixa
+cai no PADRÃO, não no mínimo.** `dias=0` virando janela de um dia não acharia
+quase nada e responderia *"nenhuma divergência"* — a resposta mais perigosa que
+um conferidor pode dar, porque tranquiliza sem ter conferido. Com `dias=0` a
+janela volta a ser 60 dias.
+
+**Verificado:** 32 testes no conferidor (5 novos, todos de caminho de exceção),
+suíte inteira rodada com a única falha sendo `erpbrasil` ausente neste ambiente,
+aplicação subindo com os 18 blueprints.

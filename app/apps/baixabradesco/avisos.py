@@ -258,7 +258,20 @@ def _enviar_para(telefone: str, texto: str, payload: Dict[str, Any] | None) -> D
         segunda = {'ok': False, 'erro': str(e)[:200]}
 
     if primeiro is None:
-        return segunda
+        # ⚠️ Sem credencial Z-API, o aviso sai pelo notificador — e ele devolve
+        # um dicionário POR CANAL, sem `ok` no topo. Devolver isso cru fazia o
+        # relatório dizer "nenhum canal entregou" mesmo quando o Telegram tinha
+        # entregado, e ainda zerava o `ok` do aviso inteiro. Pior: este é
+        # provavelmente o caminho da produção — as credenciais Z-API chegam
+        # dentro do pedido do Make, e o serviço automático não tem pedido
+        # nenhum. Então o relatório mentiria justamente onde mais se olha.
+        wa = segunda.get('whatsapp') if isinstance(segunda, dict) else None
+        return {
+            'ok': _notificador_entregou(segunda),
+            'whatsapp': wa if isinstance(wa, dict) else {'ok': False},
+            'telegram': segunda.get('telegram') if isinstance(segunda, dict) else None,
+            'notificador': segunda,
+        }
 
     # Junta as duas tentativas num resultado só, sem esconder nenhuma.
     wa_segunda = segunda.get('whatsapp') if isinstance(segunda, dict) else None

@@ -51,6 +51,29 @@ LIMITE_PADRAO = 50     # consultas ao Omie por chamada, em cada direção
 PAUSA_OMIE = 0.2       # segundos entre consultas, para não irritar a API
 
 
+def _inteiro(payload: dict, chave: str, padrao: int, minimo: int = 0) -> int:
+    """Número vindo da barra do navegador, sem derrubar nada.
+
+    Os parâmetros chegam como TEXTO (`?dias=60`), e `int('sessenta')` levanta
+    exceção — que virava 500 com rastro de pilha na tela de quem digitou. Quem
+    usa isto digita o endereço no celular; um erro de digitação não pode
+    responder com página de erro de programador.
+    """
+    bruto = payload.get(chave)
+    if bruto is None or bruto == '':
+        return padrao
+    try:
+        valor = int(str(bruto).strip())
+    except Exception:
+        return padrao
+    if valor < minimo:
+        # Fora de faixa cai no PADRÃO, não no mínimo. `dias=0` virando janela de
+        # um dia não acharia quase nada e pareceria "está tudo certo" — a
+        # resposta mais perigosa que um conferidor pode dar.
+        return max(padrao, minimo)
+    return valor
+
+
 def _coluna(faixas: List[Any], indice: int) -> List[str]:
     try:
         bruto = faixas[indice] or []
@@ -79,6 +102,7 @@ def candidatas(payload: dict, gc=None) -> Dict[str, Any]:
     ws = gc.open_by_key(SPS_SHEET_ID).worksheet('SPsBD')
     faixas = ws.batch_get(FAIXAS) or []
 
+
     ids = _coluna(faixas, 0)
     vencimentos = _coluna(faixas, 1)
     credores = _coluna(faixas, 2)
@@ -90,7 +114,7 @@ def candidatas(payload: dict, gc=None) -> Dict[str, Any]:
     comprovantes = _coluna(faixas, 8)
     total = max(len(ids), len(status))
 
-    dias = int(payload.get('dias') or DIAS_PADRAO)
+    dias = _inteiro(payload, 'dias', DIAS_PADRAO, minimo=1)
     corte = datetime.now() - timedelta(days=dias)
 
     def em(lista, i):
@@ -257,7 +281,7 @@ def conferir(payload: dict) -> Dict[str, Any]:
     elif sentido == 'omie_pago':
         pagas = []
 
-    dias = int(payload.get('dias') or DIAS_PADRAO)
+    dias = _inteiro(payload, 'dias', DIAS_PADRAO, minimo=1)
 
     if payload.get('apenas_contar'):
         return {
@@ -276,15 +300,12 @@ def conferir(payload: dict) -> Dict[str, Any]:
                 " Chame sem 'apenas_contar' para comparar de verdade."),
         }
 
-    limite = int(payload.get('limite') or LIMITE_PADRAO)
+    limite = _inteiro(payload, 'limite', LIMITE_PADRAO, minimo=1)
     # ⚠️ Sem `pular`, a frase "chame de novo para continuar" era mentira: cada
     # chamada reconsultava as MESMAS primeiras linhas, para sempre — o
     # conferidor não corrige nada, então nada sai do conjunto entre chamadas.
-    pular = max(0, int(payload.get('pular') or 0))
-    try:
-        pausa = max(0.0, float(payload.get('pausa_ms', PAUSA_OMIE * 1000)) / 1000.0)
-    except Exception:
-        pausa = PAUSA_OMIE
+    pular = _inteiro(payload, 'pular', 0)
+    pausa = _inteiro(payload, 'pausa_ms', int(PAUSA_OMIE * 1000)) / 1000.0
 
     inicio = datetime.now()
     divergentes: List[Dict[str, Any]] = []
