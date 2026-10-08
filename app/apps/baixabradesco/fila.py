@@ -76,14 +76,18 @@ def ensure_fila_sheet(gc=None):
     try:
         topo = ws.get('A1:O1') or []
     except Exception:
-        topo = []
-    atuais = topo[0] if topo else []
-    if not atuais:
-        ws.append_row(HEADERS, value_input_option='USER_ENTERED')
+        # Leitura falhou: NÃO mexe no cabeçalho. Escrever por cima do que não se
+        # conseguiu ler é como a aba ganhou linhas de lixo (ver abaixo).
         return ws
+    atuais = topo[0] if topo else []
     atuais = (list(atuais) + [''] * len(HEADERS))[:len(HEADERS)]
     if atuais != HEADERS:
-        # Não apaga dados. Apenas garante cabeçalho mínimo nas primeiras colunas.
+        # ⚠️ `update('A1:O1')`, nunca `append_row`. Em 08/10/2026 a contagem do
+        # dono mostrou três linhas com Status = "STATUS" no meio da fila: eram
+        # cabeçalhos escritos por `append_row`, que acrescenta no FIM da aba, não
+        # na linha 1. Bastava a leitura de `A1:O1` voltar vazia uma vez — o que
+        # acontece num soluço de rede — para nascer uma linha de lixo. Defeito
+        # meu, introduzido junto com a leitura limitada.
         ws.update('A1:O1', [HEADERS], value_input_option='USER_ENTERED')
     return ws
 
@@ -190,6 +194,9 @@ def _candidatos(ws, limite: int, somente_vencidos: bool, aceitos: set,
     for idx, row in enumerate(valores, start=2):
         row = list(row) + [''] * (COLS_CONTROLE - len(row))
         if as_string(row[1]).upper() not in aceitos:
+            continue
+        if as_string(row[1]).strip().upper() == 'STATUS':
+            # Linha de cabeçalho perdida no meio dos dados. Não é pendência.
             continue
         etapa_linha = as_string(row[11]).lower()
         if etapas is not None and etapa_linha not in etapas:
@@ -318,6 +325,87 @@ def _request_omie(call: str, param: dict, payload: dict) -> dict:
     return execute_omie(body)
 
 
+def _enfileirar_etapa(item: Dict[str, Any], etapa: str, tipo_falha: str,
+                      mensagem: str) -> dict:
+    """Cria uma pendência nova para uma etapa, a partir de um item da fila.
+
+    Serve para o caso em que a baixa no Omie é concluída na nova tentativa e
+    uma etapa SEGUINTE falha: ela precisa de linha própria, senão desaparece.
+    """
+    try:
+        ws = ensure_fila_sheet()
+        ws.append_row([
+            now_str(), STATUS_PENDENTE, 0, next_try(10), tipo_falha,
+            as_string(item.get('ID SP')),
+            as_string(item.get('Código Integração')),
+            as_string(item.get('Arquivo')),
+            as_string(item.get('Página')),
+            as_string(item.get('Fingerprint')),
+            as_string(item.get('Link Comprovante')),
+            etapa,
+            as_string(mensagem)[:1000],
+            as_string(item.get('Payload Resumido')),
+            '',
+        ], value_input_option='USER_ENTERED')
+        return {'ok': True, 'etapa': etapa}
+    except Exception as e:
+        return {'ok': False, 'erro': str(e)[:200], 'etapa': etapa}
+
+
+def _concluir_plano(resumo: Dict[str, Any], item: Dict[str, Any],
+                    payload: dict) -> dict:
+    """Depois que o título está pago no Omie, ainda falta o resto do plano.
+
+    ⚠️ Era o furo que o dono relatou em 08/10/2026: *"tenho várias baixas que não
+    aconteceram na planilha"*. A fila tinha 182 pendências de `omie` e **zero**
+    de `sheets` — e a razão é que a baixa falha no Omie ANTES de a planilha ser
+    gravada. Então a planilha nunca foi escrita, e nunca houve pendência de
+    planilha para enfileirar. A nova tentativa resolvia o Omie, marcava
+    `CONCLUIDO` e **deixava a planilha desatualizada para sempre**.
+
+    Agora a nova tentativa termina o serviço: grava a planilha e move o cartão.
+
+    A gravação da planilha é **obrigatória** para dar o item por concluído: é o
+    registro do pagamento, e é o que o dono lê. Repetir é seguro — a consulta ao
+    Omie no início devolve `ja_pago` e não lança nada de novo, e a regravação
+    escreve os mesmos valores nas mesmas células.
+
+    O cartão do Pipefy **não** bloqueia: se falhar, ganha pendência própria, para
+    não segurar um registro de pagamento que já está correto nos dois sistemas.
+    """
+    etapas: Dict[str, Any] = {}
+
+    updates = resumo.get('sheets_updates') or []
+    if updates:
+        try:
+            r = execute_spsbd_updates(updates)
+        except Exception as e:
+            r = {'ok': False, 'erros': [str(e)[:200]]}
+        etapas['sheets'] = r
+        if not r.get('ok'):
+            return {'ok': False, 'erro': 'falha_gravar_planilha', 'etapas': etapas}
+
+    mutation = as_string(resumo.get('pipefy_update_mutation'))
+    if mutation:
+        if not os.getenv('PIPEFY_API_TOKEN', '').strip():
+            etapas['pipefy'] = {'ok': False, 'erro': 'credenciais_pipefy_ausentes'}
+            etapas['pipefy_enfileirado'] = _enfileirar_etapa(
+                item, 'pipefy', 'pipefy_erro',
+                'Omie e planilha concluídos; falta o cartão (sem PIPEFY_API_TOKEN).')
+        else:
+            try:
+                r = execute_graphql(mutation)
+            except Exception as e:
+                r = {'ok': False, 'erro': str(e)[:200]}
+            etapas['pipefy'] = r
+            if not r.get('ok'):
+                etapas['pipefy_enfileirado'] = _enfileirar_etapa(
+                    item, 'pipefy', 'pipefy_erro',
+                    'Omie e planilha concluídos; o cartão não moveu.')
+
+    return {'ok': True, 'etapas': etapas}
+
+
 def _retry_omie(item: Dict[str, Any], payload: dict) -> dict:
     # Credencial primeiro, e antes de QUALQUER chamada: sem ela a consulta
     # falha e, pior, a falha seria contada como tentativa gasta. Com 238 baixas
@@ -337,7 +425,12 @@ def _retry_omie(item: Dict[str, Any], payload: dict) -> dict:
     consulta = _request_omie('ConsultarContaPagar', {'codigo_lancamento_integracao': codigo}, payload)
     body = consulta.get('body') or {}
     if as_string(body.get('status_titulo')).upper() == 'PAGO':
-        return {'ok': True, 'status': 'ja_pago', 'consulta': consulta}
+        # Já pago no Omie — pela conciliação bancária diária, é o caso comum.
+        # Mas "pago no Omie" não quer dizer "registrado na planilha": falta o
+        # resto do plano, e era justamente isso que ficava para trás.
+        resto = _concluir_plano(resumo, item, payload)
+        return {'ok': bool(resto.get('ok')), 'status': 'ja_pago',
+                'consulta': consulta, 'resto_do_plano': resto}
     if not consulta.get('ok'):
         return {'ok': False, 'erro': 'falha_consulta_omie', 'consulta': consulta}
 
@@ -358,7 +451,13 @@ def _retry_omie(item: Dict[str, Any], payload: dict) -> dict:
         'juros': _money_to_omie_number(resumo.get('acrescimos') or '0,00'),
         'observacao': 'Baixa realizada via baixabradesco/retry',
     }, payload)
-    return {'ok': bool(baixar.get('ok')), 'consulta': consulta, 'alterar': alterar, 'baixar': baixar}
+    if not baixar.get('ok'):
+        return {'ok': False, 'erro': 'falha_lancar_pagamento', 'consulta': consulta,
+                'alterar': alterar, 'baixar': baixar}
+
+    resto = _concluir_plano(resumo, item, payload)
+    return {'ok': bool(resto.get('ok')), 'consulta': consulta, 'alterar': alterar,
+            'baixar': baixar, 'resto_do_plano': resto}
 
 
 def _money_to_omie_number(valor: Any) -> str:
@@ -655,6 +754,97 @@ def _aviso_velho_demais(item: Dict[str, Any], payload: dict) -> bool:
         return False
     dias = int(payload.get('dias_aviso_util') or DIAS_AVISO_UTIL)
     return (datetime.now() - registro) > timedelta(days=dias)
+
+
+def zerar_fila_antiga(payload: dict) -> dict:
+    """Dispensa as pendências registradas antes de uma data. Não apaga nada.
+
+    Pedido do dono em 08/10/2026, vendo a fila com 2.213 pendências cuja mais
+    antiga era de 18/06: *"só preciso que rode as coisas desse mês em diante. O
+    que tá pra trás, poderia zerar."*
+
+    A razão dele é boa, e vale registrada: ele faz **conciliação bancária
+    diária**, então o que ficou para trás já foi resolvido na mão — a pendência
+    é de registro, não de dinheiro. Insistir nelas gastaria cota e encheria dois
+    celulares de avisos sobre pagamentos de junho.
+
+    **Nada é apagado.** A linha fica onde está, marcada `CONCLUIDO`, com o motivo
+    e a data da decisão escritos — quem abrir a planilha depois entende por quê.
+
+    Body:
+      {"antes_de": "01/10/2026", "limite": 2000, "etapas": ["zapi"]}
+
+    `antes_de` é obrigatório: um "zerar tudo" sem data é fácil de disparar por
+    engano, e desfazer linha por linha seria trabalho de horas.
+    """
+    corte = _parse_dt_br(as_string(payload.get('antes_de')) + ' 00:00:00') \
+        or _parse_dt_br(as_string(payload.get('antes_de')))
+    if not corte:
+        return {'ok': False, 'app': 'baixabradesco', 'acao': 'zerar_fila_antiga',
+                'erro': 'antes_de_ausente_ou_invalido',
+                'em_portugues': 'Informe a data de corte no formato dd/mm/aaaa'
+                                " (por exemplo, antes_de=01/10/2026)."}
+
+    gc = get_gc()
+    ws = ensure_fila_sheet(gc)
+    limite = int(payload.get('limite') or 2000)
+    etapas = _etapas_pedidas(payload)
+
+    try:
+        valores = ws.get(FAIXA_CONTROLE) or []
+    except Exception as e:
+        return {'ok': False, 'app': 'baixabradesco', 'acao': 'zerar_fila_antiga',
+                'erro': str(e)[:300]}
+
+    motivo = ('Dispensada por decisão do dono em ' + datetime.now().strftime('%d/%m/%Y')
+              + ': anterior a ' + corte.strftime('%d/%m/%Y')
+              + ' e já resolvida pela conciliação bancária.')
+
+    marcas: List[Dict[str, Any]] = []
+    por_etapa: Dict[str, int] = {}
+    for idx, row in enumerate(valores, start=2):
+        row = list(row) + [''] * (COLS_CONTROLE - len(row))
+        status = as_string(row[1]).strip().upper()
+        if status == 'STATUS':
+            continue
+        if status not in (STATUS_PENDENTE, STATUS_FALHOU):
+            continue
+        etapa = as_string(row[11]).lower()
+        if etapas is not None and etapa not in etapas:
+            continue
+        registro = _parse_dt_br(row[0])
+        if not registro or registro >= corte:
+            continue
+        por_etapa[etapa or '(vazia)'] = por_etapa.get(etapa or '(vazia)', 0) + 1
+        marcas.append({'row': idx, 'status': STATUS_CONCLUIDO,
+                       'tentativas': as_string(row[2]) or 0, 'mensagem': motivo})
+        if len(marcas) >= limite:
+            break
+
+    gravadas = _marcar_em_lote(ws, marcas) if marcas else 0
+    detalhe = ', '.join(f'{q} de {ROTULOS_ETAPA.get(e, e)}'
+                        for e, q in sorted(por_etapa.items(), key=lambda x: -x[1]))
+    return {
+        'ok': True,
+        'app': 'baixabradesco',
+        'acao': 'zerar_fila_antiga',
+        'antes_de': corte.strftime('%d/%m/%Y'),
+        'encontradas': len(marcas),
+        'dispensadas': gravadas,
+        'por_etapa': por_etapa,
+        'etapas_pedidas': sorted(etapas) if etapas else 'todas',
+        'motivo_gravado': motivo,
+        'em_portugues': (
+            f'{_em_milhar(gravadas)} pendência(s) anteriores a'
+            f' {corte.strftime("%d/%m/%Y")} foram dispensadas'
+            + (f' ({detalhe})' if detalhe else '')
+            + '. Nada foi apagado: a linha continua na planilha com o motivo'
+              ' escrito. A fila agora só tem o que é de'
+              f' {corte.strftime("%d/%m/%Y")} em diante.'
+            if gravadas else
+            f'Nenhuma pendência anterior a {corte.strftime("%d/%m/%Y")}'
+            ' encontrada — não havia nada a dispensar.'),
+    }
 
 
 def reprocessar_fila(payload: dict) -> dict:

@@ -286,6 +286,7 @@ essa diferença é a primeira coisa a saber antes de mandar drenar.
 | drenar incluindo o que esgotou as cinco tentativas | o mesmo, com `incluir_falhados: true` |
 | drenar só uma etapa (o dinheiro primeiro) | o mesmo, com `etapas: ["omie"]` |
 | limpar o acumulado de avisos antigos | o mesmo, com `etapas: ["zapi"]` |
+| dispensar tudo que é anterior a uma data | `POST /api/baixabradesco/zerar-fila-antiga` com `antes_de` |
 
 **As duas respostas trazem um campo `em_portugues`**, com uma frase dizendo o que
 os números querem dizer — quem lê isto costuma estar no celular. A frase vem
@@ -352,6 +353,54 @@ dois meses atrás continua sendo baixa.
 **Repetir uma baixa não baixa duas vezes.** O reprocessamento do Omie consulta o
 título primeiro e, se já estiver `PAGO`, dá a pendência por resolvida sem lançar
 nada.
+
+### A nova tentativa do Omie TERMINA o serviço
+
+⚠️ **Não é opcional, e esquecer isso foi um furo real.** Em 08/10/2026 o dono
+relatou *"várias baixas que não aconteceram na planilha"*, e a contagem mostrava
+182 pendências de `omie` com **zero** de `sheets`. As duas coisas são o mesmo
+fato: a baixa falha no Omie **antes** de a planilha ser gravada — então a
+planilha nunca foi escrita, e nunca houve pendência de planilha para enfileirar.
+A nova tentativa resolvia o Omie, marcava concluído, e deixava a planilha
+desatualizada **para sempre**.
+
+Hoje, quando o título está pago (inclusive quando já estava, pela conciliação
+bancária), a nova tentativa segue o resto do plano:
+
+| Etapa | Segura o item na fila? | Por quê |
+|---|---|---|
+| gravar a planilha | **sim** | é o registro do pagamento, e é o que o dono lê |
+| mover o cartão do Pipefy | não — ganha pendência própria | registro certo nos dois sistemas não fica preso por um cartão |
+
+**Repetir é seguro**, e é isso que sustenta o desenho: a consulta ao Omie no
+início devolve "já pago" e não lança nada de novo, e a regravação escreve os
+mesmos valores nas mesmas células.
+
+### Zerar o que ficou para trás
+
+`POST /api/baixabradesco/zerar-fila-antiga` com `antes_de: "01/10/2026"` dispensa
+as pendências registradas antes dessa data. Opcionalmente `etapas` e `limite`.
+
+**Nada é apagado.** A linha fica onde está, marcada concluída, com o motivo e a
+data da decisão escritos — quem abrir a planilha depois entende por quê.
+
+`antes_de` é **obrigatório**: um "zerar tudo" sem data é fácil de disparar por
+engano, e desfazer linha por linha seria trabalho de horas. A rota é **só POST**
+pelo mesmo motivo — um endereço que o navegador ou a prévia de um aplicativo de
+mensagem possa buscar sozinho dispararia isso por acidente.
+
+A razão de existir, registrada porque é decisão de negócio: o dono faz
+**conciliação bancária diária**, então o que ficou para trás já foi resolvido na
+mão — a pendência é de registro, não de dinheiro.
+
+### ⚠️ O cabeçalho da fila: `update('A1:O1')`, nunca `append_row`
+
+`append_row` acrescenta no **fim** da aba, não na linha 1. Em 08/10/2026
+apareceram três linhas com Status = "STATUS" no meio da fila, contadas como
+pendência: bastou a leitura de `A1:O1` voltar vazia uma vez — um soluço de rede —
+para nascer lixo. E leitura que falha **não** autoriza escrita nenhuma: escrever
+por cima do que não se conseguiu ler é como o lixo nasceu. A seleção também
+ignora linha cujo Status seja "STATUS", para o estrago não voltar a contar.
 
 ## O conferidor SPsBD × Omie
 

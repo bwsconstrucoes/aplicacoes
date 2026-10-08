@@ -1331,3 +1331,71 @@ estrutura do laço agora troca uma ineficiência tolerada por risco de defeito n
 que está funcionando. Fica anotado para quando a fila estiver vazia — aí o custo
 de errar é baixo. Se a aba crescer muito (dezenas de milhares de linhas), isso
 sai de "tolerável" e passa a ser o primeiro lugar a olhar.
+
+---
+
+### 08/10/2026 (manhã seguinte) — a segunda contagem do dono achou três coisas, e uma é grave
+
+Ele voltou com a contagem e uma queixa: *"tenho várias baixas que não aconteceram
+na planilha, mas acredito que foram depois das mudanças aqui, mas a fila ainda
+não rodou. E só preciso que rode as coisas desse mês em diante. O que tá pra
+trás, poderia zerar."*
+
+```
+linhas_na_aba      2273
+por_status         PENDENTE 2213 | CONCLUIDO 57 | STATUS 3
+por_etapa          zapi 1943 | omie 182 | pipefy 88
+mais antiga        18/06/2026 | mais recente  08/10/2026 09:05:45
+```
+
+**Primeiro: a fila RODOU.** Ele achou que não, e os números mostram que sim — 57
+concluídas (eram zero) e as baixas do Omie caindo de 238 para 182, 56 fechadas.
+A drenagem pelo cron funciona. Vale anotado porque é o tipo de coisa que ele não
+tem como ver: a planilha não mostra "o que mudou desde ontem".
+
+**Segundo, e é o furo que ele relatou — 182 pendências de `omie` com ZERO de
+`sheets`.** As duas coisas são o mesmo fato, e o fato é grave: a baixa falha no
+Omie **antes** de a planilha ser gravada. Então a planilha nunca foi escrita, e
+nunca houve pendência de planilha para enfileirar. Pior: a nova tentativa
+resolvia o Omie, marcava `CONCLUIDO` e **deixava a planilha desatualizada para
+sempre**. Ou seja, a drenagem que eu publiquei ontem estava fechando pendências e
+criando exatamente o problema que ele descreveu.
+
+Corrigido: quando o título está pago (inclusive quando já estava, pela
+conciliação diária), a nova tentativa **termina o plano** — grava a planilha e
+move o cartão. A gravação da planilha **segura** o item na fila se falhar: é o
+registro do pagamento. O cartão do Pipefy **não** segura, ganha pendência própria
+— registro certo nos dois sistemas não deve ficar preso por um cartão. Repetir é
+seguro, e é o que sustenta o desenho: a consulta devolve "já pago" e não lança
+nada de novo, e a regravação escreve os mesmos valores nas mesmas células.
+
+**Terceiro: `STATUS 3` no `por_status` era defeito MEU, visível nos dados dele.**
+Três linhas com Status = "STATUS" no meio da fila, contadas como pendência. Eu
+troquei a conferência do cabeçalho por uma leitura de `A1:O1` (certo, para não
+ler a aba inteira), mas deixei o `append_row` do caminho "cabeçalho ausente" —
+e `append_row` acrescenta no **fim** da aba, não na linha 1. Bastou a leitura
+voltar vazia uma vez, num soluço de rede, para nascer lixo. Agora: `update`
+na faixa `A1:O1`, nunca `append_row`; leitura que falha **não** autoriza escrita
+nenhuma; e a seleção ignora linha cujo Status seja "STATUS", para o estrago já
+feito não voltar a contar.
+
+**Quarto, o pedido dele: zerar o que está para trás.** Entrou
+`POST /api/baixabradesco/zerar-fila-antiga` com `antes_de`. Decisões:
+
+- **Nada é apagado.** A linha fica, marcada concluída, com o motivo e a data da
+  decisão escritos — quem abrir a planilha em dezembro entende por quê.
+- **`antes_de` é obrigatório.** Um "zerar tudo" sem data é fácil de disparar por
+  engano, e desfazer linha por linha seria trabalho de horas.
+- **Só POST**, pelo mesmo motivo: um endereço que o navegador ou a prévia de um
+  aplicativo de mensagem busque sozinho dispararia isso por acidente.
+- **Marcação em lote** (blocos de 50 linhas): 1.943 linhas não podem custar 1.943
+  escritas de cota.
+- A razão de negócio, porque é dele e não minha: ele faz **conciliação bancária
+  diária**, então o que ficou para trás já foi resolvido na mão — a pendência é
+  de registro, não de dinheiro.
+
+**Verificado:** 47 testes de fila (16 novos), área inteira passando, aplicação
+subindo com os 18 blueprints e a rota nova registrada.
+**Não verificado:** a conclusão do plano na nova tentativa nunca rodou contra a
+planilha de verdade. É o que vai dizer se as "baixas que não aconteceram na
+planilha" param de aparecer.
