@@ -1140,3 +1140,48 @@ blueprints.
 **Não verificado:** a drenagem pelo cron nunca rodou em produção. O primeiro
 disparo depois de publicar é a prova — e o campo a olhar é
 `fila_de_falhas.omie.o_que_falta_configurar`.
+
+---
+
+### 08/10/2026 (fim do dia) — publicado, e as respostas passaram a falar português
+
+**Publicado na `main` em `26e9187`**, com o "pode" do dono e a confirmação de que
+as variáveis do Render existem (`OMIE_KEY`, `OMIE_SECRET`, `PIPEFY_API_TOKEN`,
+`ZAPI_*`). A `main` havia andado — outro chat publicou mexidas no painel —, então
+a `main` veio para o ramo primeiro, a suíte rodou com as duas coisas juntas e só
+então a junção. Sem conflito. Sem migração de banco.
+
+Entrou: o conferidor SPsBD × Omie, a fila andando sozinha pelo cron de 5 em 5
+minutos com o dinheiro na frente, o conserto do entupimento por aviso velho e a
+guarda do token do Pipefy.
+
+**Depois disso, uma coisa pequena e de efeito grande:** as respostas de
+`fila-resumo` e `conferir-omie` ganharam um campo `em_portugues`, com uma frase
+que diz o que os números querem dizer. O motivo é literal: o dono colou no chat
+a resposta inteira de `fila-resumo`, campo por campo, para perguntar o que ela
+significava. Ele lê isso pelo celular e não é programador — a resposta crua é
+chave-e-número. A frase vem **junto** com os números, nunca em lugar deles.
+
+Decisões pequenas registradas porque voltam a aparecer: a etapa aparece com nome
+de gente ("baixa no Omie", "aviso de pagamento"), não com o nome técnico; a maior
+quantidade vem primeiro; e a frase do conferidor **separa explicitamente** o que
+é dinheiro (planilha paga, Omie aberto) do que é cadastro errado (código que não
+existe no Omie) — juntar os dois assustaria sem motivo ou tranquilizaria sem
+motivo.
+
+**Verificado:** 9 testes novos sobre as frases, suíte inteira rodada (única falha
+é `erpbrasil` ausente neste ambiente, que falha igual na `main` publicada),
+aplicação subindo com os 18 blueprints.
+**Não verificado:** a drenagem pelo cron ainda não foi observada em produção. O
+número a acompanhar é `pendentes_vencidos`, que tem de cair dos 2.269.
+
+### Pendente AGORA (para a próxima sessão desta área)
+
+1. **Os 1.943 avisos antigos esperam decisão do dono** — descartar em massa
+   (recomendação registrada) ou reenviar. O cron não toca neles.
+2. **Confirmar que a drenagem andou**: `pendentes_vencidos` tem de cair. Se
+   continuar em 2.269, olhar `fila_de_falhas` na resposta do cron.
+3. **A chave do Omie em texto na aba `FilaAppWeb`** continua lá (achado de
+   segurança). Não impede nada; é risco.
+4. **Pix, boleto, transferência, FGTS e BeeVale seguem sem teste de campo** — falta
+   um comprovante de exemplo de cada, que só o dono tem.

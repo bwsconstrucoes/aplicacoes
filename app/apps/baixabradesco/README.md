@@ -287,6 +287,10 @@ essa diferença é a primeira coisa a saber antes de mandar drenar.
 | drenar só uma etapa (o dinheiro primeiro) | o mesmo, com `etapas: ["omie"]` |
 | limpar o acumulado de avisos antigos | o mesmo, com `etapas: ["zapi"]` |
 
+**As duas respostas trazem um campo `em_portugues`**, com uma frase dizendo o que
+os números querem dizer — quem lê isto costuma estar no celular. A frase vem
+junto com os números, nunca em lugar deles.
+
 O **resumo** não grava nada e não reprocessa nada: conta por situação
 (`PENDENTE` vencido, `PENDENTE` agendado para depois, `FALHOU`, `CONCLUIDO`),
 por etapa, por tipo de falha, diz a data do registro mais antigo e quantos lotes

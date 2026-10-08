@@ -110,6 +110,32 @@ def candidatas(payload: dict, gc=None) -> Dict[str, Any]:
     }
 
 
+def _frase_da_conferencia(divergentes: int, nao_encontradas: int, erros: int,
+                          confirmadas: int, restam: int, dias: int) -> str:
+    """Uma frase em português, para quem lê isto pelo celular."""
+    if not (divergentes or nao_encontradas or erros):
+        base = (f'Nenhuma divergência: as {confirmadas} SPs conferidas estão pagas'
+                f' nos dois lugares, na janela de {dias} dias.')
+    else:
+        partes = []
+        if divergentes:
+            partes.append(f'{divergentes} SP(s) a planilha diz PAGA e o Omie diz'
+                          ' ABERTA — é baixa pela metade, o dinheiro saiu e o'
+                          ' título não baixou')
+        if nao_encontradas:
+            partes.append(f'{nao_encontradas} com código que não existe no Omie'
+                          ' (cadastro errado na planilha, não é dinheiro)')
+        if erros:
+            partes.append(f'{erros} que não deu para consultar agora'
+                          ' (vale tentar de novo)')
+        base = 'Achei ' + '; '.join(partes) + '.'
+        if confirmadas:
+            base += f' Outras {confirmadas} estão certas nos dois lugares.'
+    if restam:
+        base += f' Faltam {restam} para conferir — chame de novo para continuar.'
+    return base
+
+
 def conferir(payload: dict) -> Dict[str, Any]:
     """Compara a planilha com o Omie e relata divergências. Não grava nada.
 
@@ -134,6 +160,10 @@ def conferir(payload: dict) -> Dict[str, Any]:
             'apenas_contou': True,
             'a_conferir': len(conferiveis),
             **base,
+            'em_portugues': (
+                f"{len(conferiveis)} SP(s) entram na comparação, numa janela de "
+                f"{base.get('dias')} dias. Nenhuma consulta ao Omie foi gasta. "
+                f"Chame sem 'apenas_contar' para comparar de verdade."),
         }
 
     limite = int(payload.get('limite') or LIMITE_PADRAO)
@@ -191,4 +221,7 @@ def conferir(payload: dict) -> Dict[str, Any]:
         'aviso': ('Relatório apenas. Nada foi gravado na planilha nem no Omie.'
                   if divergentes or nao_encontradas or erros
                   else 'Nenhuma divergência na janela conferida.'),
+        'em_portugues': _frase_da_conferencia(
+            len(divergentes), len(nao_encontradas), len(erros), confirmadas,
+            max(0, len(conferiveis) - limite), int(payload.get('dias') or DIAS_PADRAO)),
     }
