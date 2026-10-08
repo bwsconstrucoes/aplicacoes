@@ -154,13 +154,25 @@ def _rows_as_dicts(ws) -> List[Dict[str, Any]]:
     return out
 
 
-def listar_pendentes(gc=None, limite: int = 20, somente_vencidos: bool = True) -> List[Dict[str, Any]]:
+def listar_pendentes(gc=None, limite: int = 20, somente_vencidos: bool = True,
+                     incluir_falhados: bool = False) -> List[Dict[str, Any]]:
+    """Itens da fila a reprocessar.
+
+    `incluir_falhados`: traz também os que esgotaram as cinco tentativas e
+    foram marcados FALHOU. Eles NUNCA voltavam sozinhos — ficavam abandonados na
+    planilha, o que é a não-atualização silenciosa com outro nome. O
+    reprocessamento automático não os inclui (de nada serve insistir de minuto
+    em minuto no que já falhou cinco vezes); quem pede explicitamente, inclui.
+    """
     ws = ensure_fila_sheet(gc)
     rows = _rows_as_dicts(ws)
     now = datetime.now()
+    aceitos = {STATUS_PENDENTE}
+    if incluir_falhados:
+        aceitos.add(STATUS_FALHOU)
     out = []
     for r in rows:
-        if as_string(r.get('Status')).upper() != STATUS_PENDENTE:
+        if as_string(r.get('Status')).upper() not in aceitos:
             continue
         if somente_vencidos:
             dt = _parse_dt_br(r.get('Próxima Tentativa'))
@@ -249,8 +261,11 @@ def _retry_sheets(item: Dict[str, Any], payload: dict) -> dict:
     updates = resumo.get('sheets_updates') or []
     if not updates:
         return {'ok': False, 'erro': 'updates_ausentes'}
-    execute_spsbd_updates(updates)
-    return {'ok': True, 'updates': len(updates)}
+    # O resultado era IGNORADO: a fila marcava "reprocessado com sucesso" mesmo
+    # quando a gravação falhava de novo, e o item saía da fila sem ter sido
+    # gravado. Era o último lugar onde a perda ainda acontecia em silêncio.
+    resultado = execute_spsbd_updates(updates)
+    return {'ok': bool(resultado.get('ok')), 'updates': len(updates), 'detalhe': resultado}
 
 
 def reprocessar_fila(payload: dict) -> dict:
@@ -259,7 +274,10 @@ def reprocessar_fila(payload: dict) -> dict:
     ws = ensure_fila_sheet(gc)
     limite = int(payload.get('limite') or 10)
     somente_vencidos = payload.get('somente_vencidos', True)
-    pendentes = listar_pendentes(gc, limite=limite, somente_vencidos=bool(somente_vencidos))
+    incluir_falhados = bool(payload.get('incluir_falhados'))
+    pendentes = listar_pendentes(gc, limite=limite,
+                                 somente_vencidos=bool(somente_vencidos),
+                                 incluir_falhados=incluir_falhados)
     resultados = []
 
     for item in pendentes:
@@ -280,6 +298,10 @@ def reprocessar_fila(payload: dict) -> dict:
 
             if resp.get('ok'):
                 _update_row(ws, row_number, STATUS_CONCLUIDO, tentativas, 'Reprocessado com sucesso.')
+            elif incluir_falhados and tentativas >= 5:
+                # Pedido explícito: continua FALHOU, mas com a mensagem nova —
+                # senão a planilha guarda o erro da primeira vez e engana quem lê.
+                _update_row(ws, row_number, STATUS_FALHOU, tentativas, _safe_json(resp))
             else:
                 _update_row(ws, row_number, STATUS_PENDENTE if tentativas < 5 else STATUS_FALHOU, tentativas, _safe_json(resp))
             resultados.append({'row': row_number, 'etapa': etapa, 'ok': bool(resp.get('ok')), 'response': resp})
@@ -292,5 +314,6 @@ def reprocessar_fila(payload: dict) -> dict:
         'app': 'baixabradesco',
         'acao': 'reprocessar_fila',
         'pendentes_processados': len(resultados),
+        'incluiu_falhados': incluir_falhados,
         'resultados': resultados,
     }

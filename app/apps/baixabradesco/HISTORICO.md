@@ -818,3 +818,70 @@ dois dias. Junto vieram três endurecimentos no `core.py` deste módulo: não
 mandar pedido sem credencial, interromper quando a consulta não confirma o
 título, e só alterar o título quando algo diverge de verdade. Vale ler o
 registro daquele chat antes de mexer na sequência do Omie.
+
+### 07/10/2026 — a não-atualização silenciosa da SPsBD: quatro causas, não uma
+
+Queixa do dono: *"tem algo que tem acontecido com muita frequência: a não
+atualização silenciosa da aba SPsBD. Precisa criar uma sistemática pra impedir
+que isso aconteça."*
+
+Em 13/09 eu tinha tratado **uma** das causas (o erro engolido num `except`
+vazio). As outras três continuavam, e juntas explicam a frequência:
+
+1. **A gravação rodava numa thread solta, e a resposta saía antes dela
+   terminar.** O gunicorn recicla o trabalhador a cada mil pedidos
+   (`--max-requests 1000`) e o serviço reinicia a cada publicação — nos dois
+   casos a thread morre no meio, sem erro em lugar nenhum. **Era a causa
+   principal**, e explica por que acontecia "com frequência" e sem padrão.
+2. **O resultado da gravação era escrito no plano DEPOIS** de a resposta já ter
+   sido montada. Quem lia o retorno do Make nunca via o que aconteceu — havia
+   uma corrida entre a thread e a montagem da resposta.
+3. **Ninguém conferia** se a célula ficou com o valor. O `batch_update` não
+   reclama quando a escrita não vale.
+4. **A fila de falhas só andava se alguém chamasse a rota à mão** — e o
+   reprocessamento de planilha **ignorava o resultado** da gravação: marcava
+   "reprocessado com sucesso" e tirava o item da fila sem ter gravado. Era o
+   último lugar onde a perda acontecia em silêncio.
+
+**A sistemática que ficou:**
+
+- **Gravar, conferir, e só então responder.** Lê de volta a coluna de status e
+  compara. Custo: cerca de um segundo por comprovante na resposta, contra o
+  limite de 300 segundos do Make. Baixa errada custa mais do que um segundo.
+- **Uma segunda tentativa imediata** antes de desistir (cota do Google é por
+  minuto; resposta parcial costuma passar na segunda).
+- **Falha confirmada vai para a fila e para o aviso**, com o resultado real no
+  retorno.
+- **Cada lote drena algumas pendências da fila** (limite 5, para não esticar a
+  resposta). Comprovante chega sempre; a fila anda junto.
+- **O reprocessamento não mente mais**: devolve o resultado da gravação.
+- **Item que esgotou as cinco tentativas (FALHOU) pode voltar**, com
+  `incluir_falhados` no pedido de reprocessamento. Antes ficava abandonado na
+  planilha para sempre — não-atualização silenciosa com outro nome. O
+  reprocessamento automático **não** os inclui: insistir de minuto em minuto no
+  que já falhou cinco vezes só gasta cota.
+
+**Sobre o lado do Omie**, que ele levantou junto: aquele caminho já estava
+coberto desde 17/09 (não manda pedido sem credencial, interrompe quando a
+consulta não confirma o título, só altera quando algo diverge) e a falha já ia
+para a fila e para o aviso. O que faltava era a fila **andar** — e agora anda.
+
+**O que a leitura da planilha mostrou, e é decisão do dono:** a aba
+`BaixaBradescoFila` tem **cerca de 2.270 linhas** acumuladas. Não dá para dizer
+daqui quantas são pendências de verdade e quantas são histórico, porque o
+conector do Google devolve só o cabeçalho de abas grandes. Com a drenagem
+automática, 5 por lote, uma fila de pendências antigas leva muitos lotes para
+andar — se forem muitas, vale uma chamada manual à rota de reprocessar com
+`limite` alto e `incluir_falhados`.
+
+⚠️ **Achado de segurança, de passagem:** a planilha *Registro de SPs* guarda, na
+aba `FilaAppWeb`, a **chave e o segredo da API do Omie** em texto, numa coluna do
+payload. Quem tem acesso à planilha tem as credenciais do Omie. Não foi mexido
+nem copiado para lugar nenhum — fica registrado para o dono decidir (o caminho
+seria o Make e o Análise de SPs lerem de variável de ambiente, como o resto).
+
+**Verificado:** 5.131 testes passando (14 novos desta entrega) e a aplicação
+subindo. A única falha na rodada local é biblioteca ausente neste ambiente
+(`erpbrasil`), e ela falha igual na `main` publicada sem o meu trabalho.
+**Não verificado:** nada disso passou por produção. A prova é a primeira baixa
+real depois de publicado — e, se a gravação falhar, o aviso tem de chegar.

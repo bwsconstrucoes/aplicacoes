@@ -242,6 +242,34 @@ depois a planilha. A impressão digital é registrada assim que o Omie aceita.
 E a gravação na planilha **deixou de falhar em silêncio**: erro ali vai para a
 fila de tentativas, como já acontecia com o Pipefy, e aparece no aviso.
 
+### As planilhas que ele escreve, e como a gravação é garantida
+
+Ele escreve em **uma planilha só** — a *Registro de SPs* (a mesma da SPsBD) — e
+dentro dela em **três abas**:
+
+| Aba | O que ele grava |
+|---|---|
+| `SPsBD` | a baixa: status Pago, carimbo, data, link do comprovante e conta |
+| `LogBaixaBradesco` | a impressão digital do comprovante já baixado |
+| `BaixaBradescoFila` | a falha, quando alguma etapa não foi |
+
+A **BaseBancos** e a **SPsAgendar** ele só **lê** — nunca escreve.
+
+**A gravação na SPsBD é confirmada antes de a resposta sair** (desde 07/10/2026):
+ele grava, **lê de volta** a coluna de status e só então segue. Se não confirmar,
+tenta outra vez; se falhar de novo, vai para a fila e entra no aviso.
+
+⚠️ Três coisas que **não** podem voltar, porque eram a causa da não-atualização
+silenciosa:
+
+1. **Gravar em thread solta.** A resposta saía antes da gravação terminar, e o
+   trabalhador do serviço é reciclado a cada mil pedidos (e reinicia a cada
+   publicação) — a thread morria no meio, sem erro em lugar nenhum.
+2. **Não conferir.** O comando de gravação não reclama quando a escrita não
+   vale.
+3. **Deixar a fila parada.** Ela só andava se alguém chamasse a rota à mão.
+   Agora cada lote drena algumas pendências junto.
+
 ## O aviso do que NÃO foi baixado
 
 Comprovante que baixa normalmente não gera aviso nenhum — é o esperado. O que
