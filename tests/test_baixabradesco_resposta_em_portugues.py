@@ -103,8 +103,19 @@ def test_sem_divergencia_a_frase_tranquiliza_sem_exagerar():
     assert '60 dias' in frase                 # diz a janela: não é "tudo certo"
 
 
-def test_quando_sobra_para_conferir_a_frase_diz_como_continuar():
+def test_quando_sobra_para_conferir_a_frase_da_o_numero_pronto():
+    """Quem lê isto no celular não deve ter de calcular nada."""
+    frase = conferencia._frase_da_conferencia(0, 0, 0, 50, 180, 60, proximo=50)
+
+    assert 'Faltam 180' in frase
+    assert 'pular=50' in frase
+
+
+def test_sem_proximo_a_frase_nao_promete_continuacao():
+    """Prometer "chame de novo" sem dizer como era mentira: sem `pular`, a
+    chamada seguinte repetiria as mesmas linhas."""
     frase = conferencia._frase_da_conferencia(0, 0, 0, 50, 180, 60)
 
     assert 'Faltam 180' in frase
-    assert 'chame de novo' in frase
+    assert 'pular=' not in frase
+    assert 'chame de novo' not in frase

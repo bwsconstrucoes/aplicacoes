@@ -102,24 +102,40 @@ def valores_do_xml(xml_texto: str) -> ValoresDaNota:
 
     if root.find(".//infNFSe") is not None:      # modelo NACIONAL
         total = _d(t("vServ"))
-        return ValoresDaNota(
-            valor_total=total,
-            valor_liquido=_d(t("vLiq")),
-            inss=_d(t("vRetCP")),
-            iss=_d(t("vISSQN")),
-            ir=_cheio(_d(t("vRetIRRF")), ALIQ_IR, total),
-            pis=_cheio(_d(t("vPis", "vRetPIS")), ALIQ_PIS, total),
-            cofins=_cheio(_d(t("vCofins", "vRetCofins")), ALIQ_COFINS, total),
-        )
-    total = _d(t("ValorServicos"))               # modelo antigo (ABRASF)
+        inss, iss = _d(t("vRetCP")), _d(t("vISSQN"))
+        ir = _d(t("vRetIRRF"))
+        pis = _d(t("vPis", "vRetPIS"))
+        cofins = _d(t("vCofins", "vRetCofins"))
+        csll = _d(t("vRetCSLL"))
+    else:                                        # modelo antigo (ABRASF)
+        total = _d(t("ValorServicos"))
+        inss, iss = _d(t("ValorInss")), _d(t("ValorIss"))
+        ir = _d(t("ValorIr"))
+        pis = _d(t("ValorPis"))
+        cofins = _d(t("ValorCofins"))
+        csll = _d(t("ValorCsll"))
+
+    # ⚠️ O líquido é CALCULADO, e não lido do `vLiq` da nota — isto não é
+    # preferência. O `vLiq` do modelo nacional NÃO desconta PIS e COFINS: na nota
+    # 3283 (08/10/2026) ele veio R$ 24.222,04 enquanto o que a BWS recebe de
+    # fato é R$ 23.303,97, porque PIS (163,49) e COFINS (754,58) foram retidos.
+    # A coluna O da planilha é "valor a ser recebido", ou seja valor menos TODAS
+    # as retenções — então ela sai do mesmo jeito que o motor fiscal calcula.
+    #
+    # Só entram as retenções que estão NO XML: imposto não retido não aparece lá
+    # (é a regra do E0699), então presença quer dizer retenção.
+    liquido = total - inss - iss - ir - pis - cofins - csll
+
     return ValoresDaNota(
         valor_total=total,
-        valor_liquido=_d(t("ValorLiquidoNfse")),
-        inss=_d(t("ValorInss")),
-        iss=_d(t("ValorIss")),
-        ir=_cheio(_d(t("ValorIr")), ALIQ_IR, total),
-        pis=_cheio(_d(t("ValorPis")), ALIQ_PIS, total),
-        cofins=_cheio(_d(t("ValorCofins")), ALIQ_COFINS, total),
+        valor_liquido=liquido,
+        inss=inss,
+        iss=iss,
+        # Daqui para baixo é a coluna P, que desconta os federais CHEIOS: o do
+        # XML quando houve retenção, a alíquota padrão quando não houve.
+        ir=_cheio(ir, ALIQ_IR, total),
+        pis=_cheio(pis, ALIQ_PIS, total),
+        cofins=_cheio(cofins, ALIQ_COFINS, total),
     )
 
 

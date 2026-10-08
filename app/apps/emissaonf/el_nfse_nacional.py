@@ -117,12 +117,86 @@ def gerar_id_dps(c_loc_emi: int, cnpj_cpf: str, serie: int, n_dps: int) -> str:
 # --------------------------------------------------------------------------- #
 @dataclass
 class GrupoIBSCBS:
+    """Grupo da reforma tributária (IBS/CBS).
+
+    ⚠️ **O CST NÃO é um campo livre: ele são os TRÊS PRIMEIROS DÍGITOS do
+    `cClassTrib`.** Isso está nos dados do Anexo VIII oficial e é verificado pela
+    plataforma nacional — `000001` ("Situações tributadas integralmente") é do
+    grupo CST 000; `200046` ("Operações com bens imóveis"), que é o nosso, é do
+    grupo CST **200**. Mandar os dois sem casar é o erro **E0959**
+    ("cClassTrib não pertence ao grupo CST indicado"), que custou uma emissão em
+    08/10/2026.
+
+    Por isso o `cst` nasce VAZIO e é derivado do `c_class_trib`. Preencher à mão
+    só é aceito se bater — e o construtor da declaração recusa se não bater, para
+    o erro aparecer aqui e não num dia depois, numa tela de pendências.
+    """
     c_ind_op: str = "020201"        # 7.02 - obras de construção civil
-    cst: str = "000"
-    c_class_trib: str = "200046"    # Operações com bens imóveis
+    c_class_trib: str = "200046"    # Operações com bens imóveis (Anexo VIII, item 07.02)
+    cst: str = ""                   # vazio = derivado do c_class_trib
     fin_nfse: int = 0
     ind_final: int = 0              # 0 = tomador não é consumidor final (B2B/órgão)
     ind_dest: int = 0
+
+    # Opcionais no schema, e NÃO enviados por padrão — são os dois suspeitos da
+    # próxima recusa, se vier uma com o CST já casado:
+    #   tpOper     1 Fornecimento com pagamento posterior | 2 Recebimento do
+    #              pagamento com fornecimento já realizado | 3 Fornecimento com
+    #              pagamento já realizado | 4 Recebimento com fornecimento
+    #              posterior | 5 Fornecimento e recebimento concomitantes
+    #   tpEnteGov  1 União | 2 Estado | 3 Distrito Federal | 4 Município
+    # Ficam vazios porque mandar valor fiscal por palpite é pior que omitir um
+    # campo opcional: o tipo de ente não dá para deduzir do CNPJ do tomador.
+    tp_oper: str = ""
+    tp_ente_gov: str = ""
+
+    def __post_init__(self):
+        if not self.cst:
+            self.cst = str(self.c_class_trib or "")[:3]
+
+    def cst_casa_com_a_classificacao(self) -> bool:
+        return bool(self.c_class_trib) and self.cst == str(self.c_class_trib)[:3]
+
+
+# --------------------------------------------------------------------------- #
+# Grupo de obra - OBRIGATORIO para servico de construcao civil.
+#
+# Descoberto em 08/10/2026, pela TI da prefeitura: a declaracao 3281 foi
+# ACEITA pelo municipio e RECUSADA na plataforma nacional, com o erro
+#
+#   E0370 - O grupo de informacoes de obra e obrigatorio quando o codigo de
+#   tributacao nacional pertencer a um dos subitens 07.02.01, 07.02.02,
+#   07.04.01, 07.05.01, 07.05.02, 07.06.01, 07.06.02, 07.07.01, 07.08.01,
+#   07.17.01, 07.19.01, 14.14.03 e 14.14.04 da lista de servicos.
+#
+# A BWS emite sempre em 07.02.02 (empreitada), entao para ela o grupo e
+# obrigatorio em TODA nota. No modelo antigo (ABRASF) nao existia campo para
+# isto: o CNO ia solto no texto da discriminacao, e por isso o defeito nao
+# apareceu na migracao.
+#
+# O layout (TCInfoObra) exige UM de tres, e so um:
+#   cObra  - numero do CNO ou do CEI da obra  <- o que a BWS tem
+#   cCIB   - codigo do Cadastro Imobiliario Brasileiro (8 digitos)
+#   end    - o endereco da obra (CEP + logradouro + numero + bairro)
+# A inscricao imobiliaria fiscal (inscImobFisc) e opcional e vem antes.
+# --------------------------------------------------------------------------- #
+@dataclass
+class GrupoObra:
+    """Identificação da obra. Preencher UM dos três: CNO/CEI, CIB ou endereço."""
+    c_obra: str = ""                # CNO ou CEI (o que a C. Diários guarda)
+    c_cib: str = ""                 # Cadastro Imobiliário Brasileiro (8 dígitos)
+    end: Optional[dict] = None      # {"CEP","xLgr","nro","xCpl","xBairro"}
+    insc_imob_fisc: str = ""        # opcional: inscrição imobiliária / IPTU
+
+    def identificacao(self) -> str:
+        """Qual das três alternativas está preenchida. Vazio = nenhuma."""
+        if self.c_obra:
+            return "cObra"
+        if self.c_cib:
+            return "cCIB"
+        if self.end:
+            return "end"
+        return ""
 
 
 @dataclass
@@ -177,15 +251,25 @@ class DadosDPS:
     # alíquota sobre o valor CHEIO — foi exatamente o defeito de setembro/2026.
     v_ded_red: str = ""            # vazio = sem dedução (não envia o grupo)
 
-    # retenções federais (valores retidos)
+    # Retenções federais (valores retidos). Zero quer dizer "não houve", e nesse
+    # caso o campo NÃO é enviado — a plataforma recusa valor zero (erro E0699).
     v_ret_inss: str = "0.00"        # vRetCP (INSS/previdência)
     v_ret_irrf: str = "0.00"
     v_ret_csll: str = "0.00"
+
+    # Total aproximado dos tributos (Lei 12.741/2012): três valores
+    # (federal, estadual, municipal) OU None para declarar que não se informa
+    # valor estimado (`indTotTrib=0`, a opção que o próprio layout dá).
+    v_tot_trib: Optional[tuple] = field(default=None)
     # PIS/COFINS (opcional; só preencher se houver)
     pis_cofins: Optional[dict] = field(default=None)
 
     c_loc_emi: int = COD_IBGE_EUSEBIO
     tp_emit: int = 1                # 1 = prestador
+
+    # grupo de OBRA. Obrigatório nos subitens de construção civil (E0370) — e a
+    # BWS emite sempre em 07.02.02, então na prática é obrigatório sempre.
+    obra: Optional[GrupoObra] = field(default=None)
 
     # grupo reforma (default: construção civil). Definir None p/ omitir.
     ibscbs: Optional[GrupoIBSCBS] = field(default_factory=GrupoIBSCBS)
@@ -247,6 +331,32 @@ def montar_dps_xml(d: DadosDPS) -> etree._Element:
         _sub(cserv, "cNBS", d.c_nbs)
     _sub(cserv, "cIntContrib", d.c_int_contrib)
 
+    # Grupo de OBRA. A ordem é exigida pelo XSD: dentro de <serv>, depois de
+    # <cServ> (o grupo <comExt>, que não usamos, ficaria entre os dois).
+    if d.obra is not None:
+        qual = d.obra.identificacao()
+        if not qual:
+            raise ValueError(
+                "O grupo de obra foi pedido sem nenhuma das três identificações. "
+                "O layout exige UMA: o CNO/CEI (cObra), o CIB (cCIB) ou o "
+                "endereço da obra (end)."
+            )
+        g = _sub(serv, "obra")
+        if d.obra.insc_imob_fisc:
+            _sub(g, "inscImobFisc", d.obra.insc_imob_fisc)
+        if qual == "cObra":
+            _sub(g, "cObra", d.obra.c_obra)
+        elif qual == "cCIB":
+            _sub(g, "cCIB", d.obra.c_cib)
+        else:
+            e = _sub(g, "end")
+            _sub(e, "CEP", "".join(filter(str.isdigit, str(d.obra.end.get("CEP", "")))))
+            _sub(e, "xLgr", d.obra.end.get("xLgr", ""))
+            _sub(e, "nro", d.obra.end.get("nro", ""))
+            if d.obra.end.get("xCpl"):
+                _sub(e, "xCpl", d.obra.end["xCpl"])
+            _sub(e, "xBairro", d.obra.end.get("xBairro", ""))
+
     valores = _sub(inf, "valores")
     vsp = _sub(valores, "vServPrest")
     _sub(vsp, "vServ", d.v_serv)
@@ -268,23 +378,68 @@ def montar_dps_xml(d: DadosDPS) -> etree._Element:
                   "vPis", "vCofins", "tpRetPisCofins"):
             if k in d.pis_cofins:
                 _sub(pc, k, d.pis_cofins[k])
-    _sub(tribfed, "vRetCP", d.v_ret_inss)
-    _sub(tribfed, "vRetIRRF", d.v_ret_irrf)
-    _sub(tribfed, "vRetCSLL", d.v_ret_csll)
+    # Imposto que NÃO foi retido não vai, nem como zero. Os três campos são
+    # opcionais no layout, e a plataforma recusa valor zero: é o erro **E0699**
+    # ("o valor do tributo CP deve ser maior que zero e menor que o valor do
+    # serviço"), que custou uma emissão em 08/10/2026. Mandar "0,00" declara uma
+    # retenção DE valor zero, que é diferente de não haver retenção — a mesma
+    # regra que o grupo piscofins acima já seguia, e que o modelo antigo também
+    # seguia (ver o HISTORICO da área: "imposto sem retenção não aparece na nota").
+    v_serv = Decimal(str(d.v_serv or 0))
+    for tag, valor in (("vRetCP", d.v_ret_inss), ("vRetIRRF", d.v_ret_irrf),
+                       ("vRetCSLL", d.v_ret_csll)):
+        v = Decimal(str(valor or 0))
+        if v <= 0:
+            continue
+        if v_serv and v >= v_serv:
+            # A outra metade da regra do E0699. Retenção maior que o serviço é
+            # erro de dado, e falhar aqui é mais barato que descobrir depois.
+            raise ValueError(
+                f"A retenção {tag} (R$ {v}) é maior ou igual ao valor do serviço "
+                f"(R$ {v_serv}). A plataforma recusa, e o número do dado está errado."
+            )
+        _sub(tribfed, tag, f"{v:.2f}")
+    if len(tribfed) == 0:
+        # Grupo vazio é válido no schema e não diz nada. Nota sem retenção
+        # federal nenhuma simplesmente não tem o grupo.
+        trib.remove(tribfed)
 
+    # Total aproximado dos tributos (Lei 12.741/2012). O layout dá uma ESCOLHA de
+    # quatro, e uma delas existe justamente para quem não informa valor estimado:
+    # `indTotTrib=0`. Mandávamos a outra, `vTotTrib`, com os três valores em
+    # 0,00 — o que DECLARA que o total aproximado é zero, e é falso. Mesmo
+    # defeito do vRetCP acima, só que este ainda não tinha dado erro.
     tottrib = _sub(trib, "totTrib")
-    vtt = _sub(tottrib, "vTotTrib")
-    _sub(vtt, "vTotTribFed", "0.00")
-    _sub(vtt, "vTotTribEst", "0.00")
-    _sub(vtt, "vTotTribMun", "0.00")
+    if d.v_tot_trib:
+        vtt = _sub(tottrib, "vTotTrib")
+        _sub(vtt, "vTotTribFed", d.v_tot_trib[0])
+        _sub(vtt, "vTotTribEst", d.v_tot_trib[1])
+        _sub(vtt, "vTotTribMun", d.v_tot_trib[2])
+    else:
+        _sub(tottrib, "indTotTrib", "0")
 
     # grupo IBS/CBS (reforma) - filho de infDPS, depois de <valores>
     if d.ibscbs:
         g = d.ibscbs
+        if not g.cst_casa_com_a_classificacao():
+            # Falhar AQUI, e não um dia depois numa tela de pendências da
+            # prefeitura: é o erro E0959, e ele não é pegável pelo schema
+            # (os dois campos são válidos sozinhos).
+            raise ValueError(
+                f"O CST ({g.cst}) não casa com a classificação tributária "
+                f"({g.c_class_trib}): o CST são os três primeiros dígitos dela. "
+                f"Para {g.c_class_trib} o CST é {str(g.c_class_trib)[:3]}."
+            )
         ib = _sub(inf, "IBSCBS")
         _sub(ib, "finNFSe", g.fin_nfse)
         _sub(ib, "indFinal", g.ind_final)
         _sub(ib, "cIndOp", g.c_ind_op)
+        # A ordem abaixo é a do XSD: tpOper vem depois de cIndOp, tpEnteGov
+        # depois dele, e indDest por último.
+        if g.tp_oper:
+            _sub(ib, "tpOper", g.tp_oper)
+        if g.tp_ente_gov:
+            _sub(ib, "tpEnteGov", g.tp_ente_gov)
         _sub(ib, "indDest", g.ind_dest)
         ibval = _sub(ib, "valores")
         ibtrib = _sub(ibval, "trib")

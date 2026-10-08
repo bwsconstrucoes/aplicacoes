@@ -135,7 +135,7 @@ def conferir_omie_route():
 
         if request.method == 'GET':
             # Pela barra do navegador: ?dias=60&limite=50&apenas_contar=1
-            for chave in ('dias', 'limite', 'pausa_ms', 'sentido'):
+            for chave in ('dias', 'limite', 'pular', 'pausa_ms', 'sentido'):
                 if request.args.get(chave):
                     payload[chave] = request.args.get(chave)
             if request.args.get('apenas_contar') in {'1', 'true', 'sim', 'yes'}:
