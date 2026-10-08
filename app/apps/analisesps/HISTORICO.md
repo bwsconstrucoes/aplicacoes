@@ -12228,6 +12228,18 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 199 — conciliação: duplo clique na linha abre a ficha da SP (07/10/2026)
+
+- *"Voce colocou o link para a SP, mas queria que ao dar dois clique na linha
+  identificada, fosse aberto o modal daquele lancamento de analisps."* A linha
+  com SP achada leva `data-ficha` e a tela inclui o mesmo modal da lista de
+  Solicitações (`analisesps_ficha_modal.html`). Com mais de uma SP possível,
+  abre a primeira; as outras seguem nos links. O clique simples no "SP nº"
+  continua abrindo o card no Pipefy. Testado no navegador.
+- A ficha mora na tela Solicitações: quem só tem a Conciliação não ganha o
+  duplo clique (abriria "não encontrado") — `abre_ficha` na rota.
+- **Publicada em 08/10/2026** (sem migração; suíte inteira 8.884 verdes).
+
 #### Leva 198 — conciliação: a SP de cada saída do extrato (07/10/2026)
 
 - *"Cruzar a conciliação do extrato com os números das SPs (…) pela conta de
@@ -12246,6 +12258,7 @@ somente Solicitações de uma conta especifica"*.
 - Não verificado: o formato real da coluna Conta das SPs × o nome/número das
   contas da conciliação. Se não casar, nenhum link aparece (não aparece link
   errado) — e o ajuste é em `conta_da_sp_confere`.
+- **Publicada em 07/10/2026** (sem migração; suíte inteira 8.771 verdes).
 
 #### Leva 197 — auxílio: a obra como nas outras folhas — ponto, trocar ou dividir (07/10/2026)
 
