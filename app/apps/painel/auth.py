@@ -259,9 +259,15 @@ TELA_DO_DOWNLOAD = {
 
 # Estes leem a empresa INTEIRA, por definicao. Sao do dono.
 SO_DO_DONO_PARA_BAIXAR = frozenset({
-    "quotas", "posicao", "rateio_admin", "cenario", "explorador", "completo",
+    "quotas", "posicao", "rateio_admin", "cenario", "explorador",
     "conferencia",
 })
+
+# O relatório completo junta estas telas, e cada pedaço dele passa pelos
+# filtros da pessoa (presa às obras dela). Quem tem TODAS elas baixa o
+# completo; quem não tem, só o DRE (08/10/2026 — o dono, entrando por usuário,
+# recebia um PDF de duas páginas sem gráfico achando que era o completo).
+TELAS_DO_COMPLETO = frozenset({"dre", "analitico", "receita", "fluxo", "obras"})
 
 
 def pode_baixar(assunto: str) -> bool:
@@ -271,6 +277,9 @@ def pode_baixar(assunto: str) -> bool:
         return True
     if assunto in SO_DO_DONO_PARA_BAIXAR:
         return False
+    if assunto == "completo":
+        pessoa = usuario_da_sessao()
+        return bool(pessoa) and TELAS_DO_COMPLETO <= set(pessoa.get("telas") or [])
     tela = TELA_DO_DOWNLOAD.get(assunto)
     if not tela:
         return False                      # assunto novo nasce fechado

@@ -546,3 +546,64 @@ def test_as_medicoes_do_dre_respeitam_a_tela_e_a_obra(parceiro, monkeypatch):
     dados = r.get_json()
     assert dados["ok"] and dados["pode_abrir"] is False
     assert all(l["obra"] == "OBRA DELE" for l in dados["linhas"])
+
+
+# ===========================================================================
+# As contas da obra na barra, e o relatório completo para quem tem as telas
+# — 08/10/2026
+# ===========================================================================
+def _com_contas():
+    from app.apps.painel import consultas
+    from app.apps.painel import db as painel_db
+    with painel_db.conexao() as conn:
+        conn.execute("UPDATE fato SET conta_corrente = 'Sicredi LC' WHERE departamento = 'OBRA DELE'")
+        conn.execute("UPDATE fato SET conta_corrente = 'Bradesco 50302' WHERE departamento = 'OBRA DE OUTRO'")
+        conn.commit()
+    consultas.esquecer_listas()
+
+
+def test_a_barra_mostra_as_contas_da_obra_sem_precisar_marcar(parceiro, monkeypatch):
+    """O dono: "para filtragem por conta corrente eu preciso marcar elas na
+    configuração? Queria que aparecessem todas as contas relacionadas à
+    obra/projeto exibido." Sem conta marcada, aparecem as das obras dela — e
+    nunca a conta por onde só andou dinheiro de obra alheia."""
+    _com_contas()
+    cliente = _cliente(monkeypatch)
+    _entrar(cliente, usuario="parceiro", senha="senha-dele")
+    html = cliente.get("/painel/dre").get_data(as_text=True)
+    assert "Sicredi LC" in html and "Bradesco 50302" not in html
+
+    dono = _cliente(monkeypatch)
+    _entrar(dono)
+    html = dono.get("/painel/dre").get_data(as_text=True)
+    assert "Sicredi LC" in html and "Bradesco 50302" in html      # tudo
+    html = dono.get("/painel/dre?obra=OBRA+DE+OUTRO").get_data(as_text=True)
+    assert "Bradesco 50302" in html and "Sicredi LC" not in html  # só a da obra
+
+
+def test_quem_tem_todas_as_telas_baixa_o_relatorio_completo(base_com_duas_obras, monkeypatch):
+    """08/10/2026: entrando por usuário, o dono recebia um PDF de duas páginas,
+    sem gráfico, achando que era o completo. Quem tem as telas que o completo
+    junta, baixa o completo — preso às obras dele, como em cada tela."""
+    from app.apps.painel import usuarios
+    assert usuarios.criar("gerente", "senha-dele", nome="Gerente", obras=["OBRA DELE"],
+                          telas=["dre", "analitico", "receita", "fluxo", "obras"])["ok"]
+    cliente = _cliente(monkeypatch)
+    _entrar(cliente, usuario="gerente", senha="senha-dele")
+    html = cliente.get("/painel/dre").get_data(as_text=True)
+    assert "/painel/baixar/completo" in html and "Baixar PDF (tudo)" in html
+    r = cliente.get("/painel/baixar/completo")
+    assert r.status_code == 200
+    import io
+
+    import openpyxl
+    abas = openpyxl.load_workbook(io.BytesIO(r.data)).sheetnames
+    assert "Despesas Analitico" in abas
+    assert cliente.get("/painel/baixar/completo?formato=pdf").status_code == 200
+    # e o que não tem todas continua no DRE, com o botão dizendo isso
+    assert usuarios.criar("so-dre", "senha-dele", obras=["OBRA DELE"], telas=["dre"])["ok"]
+    outro = _cliente(monkeypatch)
+    _entrar(outro, usuario="so-dre", senha="senha-dele")
+    html = outro.get("/painel/dre").get_data(as_text=True)
+    assert "/painel/baixar/completo" not in html and "Baixar PDF do DRE" in html
+    assert outro.get("/painel/baixar/completo").status_code in (403, 404)

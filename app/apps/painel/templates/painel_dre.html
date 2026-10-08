@@ -68,12 +68,14 @@
       <b>Comprometido</b> = os dois somados
     </span>
     <span class="espaco"></span>
+    {# o botão diz o que baixa: o completo, ou só o DRE (08/10/2026) #}
+    {% set relatorio = 'completo' if (administrador or pode_baixar_completo) else 'dre' %}
     <a class="btn secundario" style="text-decoration:none"
-       href="{{ link_baixar('completo' if administrador else 'dre') }}">
-      ⬇ Baixar Excel (tudo)</a>
+       href="{{ link_baixar(relatorio) }}">
+      ⬇ Baixar Excel {{ '(tudo)' if relatorio == 'completo' else 'do DRE' }}</a>
     <a class="btn secundario" style="text-decoration:none"
-       href="{{ link_baixar('completo' if administrador else 'dre', formato='pdf') }}">
-      ⬇ Baixar PDF (tudo)</a>
+       href="{{ link_baixar(relatorio, formato='pdf') }}">
+      ⬇ Baixar PDF {{ '(tudo)' if relatorio == 'completo' else 'do DRE' }}</a>
   </div>
   <div class="tabela-rolagem" style="max-height:none">
     <table>

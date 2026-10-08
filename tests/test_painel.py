@@ -430,6 +430,10 @@ RESPOSTAS_FALSAS = {
     "DISTINCT departamento": [("Obra Um",), ("Obra Dois",)],
     # a conta corrente entrou na barra lateral com o Extrato, em 21/09/2026
     "DISTINCT conta_corrente": [("Bradesco 22069-8",), ("Itaú 7011-4",)],
+    # as contas de cada obra/projeto, para a barra mostrar só as do recorte
+    # (08/10/2026)
+    "COALESCE(projeto,''), conta_corrente": [("Obra Um", "PROJ-A", "Bradesco 22069-8"),
+                                             ("Obra Dois", "PROJ-B", "Itaú 7011-4")],
     # o carimbo da base: e ele que diz se as listas guardadas ainda valem
     "MAX(fim) FROM execucoes": [(dt.datetime(2026, 9, 2, 3, 12),)],
     # as colunas de vencimento/pagamento já preenchidas — a tela sem o aviso.
