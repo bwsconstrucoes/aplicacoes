@@ -2753,3 +2753,6 @@ table.conciliacao tr.com-sp { cursor: pointer; }
 .tabela-omie td.num { text-align: right; white-space: nowrap; }
 .tabela-omie tr.omie-pago { background: #F7FCF4; }
 .tabela-omie .omie-erro { color: #a33; }
+
+/* Categoria e descrição da SP na tela de QR / código (08/10/2026). */
+.codigo-desc { margin: 4px 0 0; font-size: 13px; color: var(--tinta-suave); white-space: pre-line; }

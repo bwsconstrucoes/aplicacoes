@@ -8465,3 +8465,15 @@ def test_a_PLANILHA_DE_CADASTRO_sai_pela_rota_com_os_avisos(app, monkeypatch):
     assert avisos and "GERLANIO" in avisos[0]
     assert _como_mestre(app).post("/analisesps/folha/cadastro-planilha",
                                   json={"destino": "x", "cpfs": []}).status_code == 400
+
+
+def test_o_qr_mostra_a_CATEGORIA_e_a_DESCRICAO_da_SP(app, monkeypatch):
+    """08/10/2026, o dono: *"além do número da SP e Credor, aparecesse a
+    descrição e categoria de despesa"*."""
+    from app.apps.analisesps import consultas
+    monkeypatch.setattr(consultas, "uma", lambda i: linha_falsa(
+        i, tipo_despesa="Material de Construção", descricao="Cimento CP-II obra 12"))
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/codigos?id=1").get_data(as_text=True)
+    trecho = html[html.index('class="codigo-desc"'):]
+    assert "Material de Construção" in trecho[:300] and "Cimento CP-II obra 12" in trecho[:300]
