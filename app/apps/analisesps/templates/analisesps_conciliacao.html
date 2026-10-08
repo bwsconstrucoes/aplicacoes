@@ -521,8 +521,13 @@
     </thead>
     <tbody>
       {% for l in linhas %}
-        <tr class="linha-extrato {{ 'conciliada' if l.conciliado }}"
-            data-id="{{ l.id }}">
+        {# DUPLO CLIQUE ABRE A SP (07/10/2026): a linha com a SP identificada abre a
+           ficha dela no modal, como na lista de Solicitações. Com mais de uma
+           possível, abre a primeira; as outras seguem nos links. #}
+        <tr class="linha-extrato {{ 'conciliada' if l.conciliado }}{{ ' com-sp' if l.sps and abre_ficha }}"
+            data-id="{{ l.id }}"
+            {% if l.sps and abre_ficha %}data-ficha="{{ url_for('analisesps.detalhe', sp_id=l.sps[0].id) }}"
+            data-sp="{{ l.sps[0].id }}" title="Duplo clique abre a SP {{ l.sps[0].id }}"{% endif %}>
           {% if pode_operar %}
             <td><input type="checkbox" class="marca-linha" value="{{ l.id }}"
                        data-valor="{{ l.valor }}"></td>
@@ -2174,5 +2179,7 @@ if (btnProcurarTudo) btnProcurarTudo.addEventListener("click", async () => {
 
 </script>
 {% endif %}
+{# Duplo clique na linha com SP identificada abre a ficha dela aqui (07/10/2026). #}
+{% include "analisesps_ficha_modal.html" %}
 {% endblock %}
 

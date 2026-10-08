@@ -2098,6 +2098,10 @@ def tela_conciliacao():
         "analisesps_conciliacao.html", aba="conciliacao", estado=estado,
         contas=contas, conta=conta, linhas=linhas, filtros=filtros,
         resumo=resumo, situacoes=conc.SITUACOES, pagina=pagina, ordens=conc.ORDENS,
+        # O duplo clique abre a ficha da SP — que mora na tela Solicitações.
+        # Quem não a tem receberia "não encontrado" no modal: nem liga.
+        abre_ficha=(auth.telas_permitidas() is None
+                    or "solicitacoes" in auth.telas_permitidas()),
         # ⚠️ QUANTAS A CONTA TEM NO TOTAL, para a tela poder dizer o que o filtro
         # está escondendo. O filtro fica guardado de uma visita para a outra, e um
         # período de ontem esconde hoje uma linha que está gravada — foi o que fez
