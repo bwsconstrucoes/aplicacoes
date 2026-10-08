@@ -1292,3 +1292,42 @@ não contém "chame de novo".
 as frases, suíte inteira rodada com a única falha sendo `erpbrasil` ausente neste
 ambiente, aplicação subindo com os 18 blueprints.
 **Não verificado:** nada do conferidor rodou contra a planilha de verdade ainda.
+
+---
+
+### 08/10/2026 — revisão do que passou a rodar sozinho, e uma ineficiência deixada de propósito
+
+**Publicado na `main` em `6d307fe`:** a continuação do conferidor (`pular`). A
+`main` havia andado outra vez (Análise de SPs, conciliação), mesmo
+procedimento — `main` para o ramo, suíte inteira, junção. Sem migração.
+
+Depois de publicar, reli o laço de drenagem com cuidado, porque ele agora roda
+**sem ninguém olhando, a cada cinco minutos, contra os dados de verdade**. O que
+a revisão mostrou:
+
+**Está correto, e por quê, para não ser "consertado" errado depois:**
+
+- **Os itens não são remartelados.** Quem falha recebe próxima tentativa em +10
+  min, e a seleção só traz vencidos. Então cada disparo pega os *seguintes*, não
+  os mesmos — é isso que faz 238 baixas levarem ~80 minutos em vez de girar no
+  mesmo lugar.
+- **As quatro leituras por disparo são de linhas estáveis.** `enqueue_failure`
+  só acrescenta no fim e nada é apagado, então o número da linha não desloca
+  entre uma etapa e a seguinte. Não há risco de marcar a linha errada.
+- **O descarte em lote roda mesmo quando o laço para por cota**, e se a gravação
+  falhar ali os itens ficam `PENDENTE` — o estado verdadeiro. Não se finge que
+  gravou.
+
+**A ineficiência, deixada como está de propósito:** drenar por etapa faz
+`reprocessar_fila` ser chamada quatro vezes por disparo, e **cada chamada relê a
+faixa de controle `A2:L` inteira**. Com 2.269 linhas são ~27 mil células por
+leitura, quatro vezes a cada cinco minutos. Dá alguns megabytes por disparo —
+longe dos 150–250 MB que causaram o OOM de julho, e dentro da cota de leitura.
+
+O conserto seria ler uma vez e distribuir entre as etapas, o que obriga a
+reorganizar `reprocessar_fila`. **Não fiz hoje, e a razão é a situação:** isso
+acabou de entrar em produção e está drenando 2.269 pendências reais; mexer na
+estrutura do laço agora troca uma ineficiência tolerada por risco de defeito no
+que está funcionando. Fica anotado para quando a fila estiver vazia — aí o custo
+de errar é baixo. Se a aba crescer muito (dezenas de milhares de linhas), isso
+sai de "tolerável" e passa a ser o primeiro lugar a olhar.
