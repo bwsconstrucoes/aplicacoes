@@ -9,7 +9,7 @@ from flask import request, jsonify
 from . import bp
 from .core import processar_baixabradesco
 from .diagnostico import executar_diagnostico
-from .fila import reprocessar_fila
+from .fila import reprocessar_fila, resumo_fila
 from .fila_tardia import adiar_payload, processar_fila_tardia
 
 
@@ -96,6 +96,28 @@ def reprocessar_fila_route():
             'error': str(e),
             'traceback': traceback.format_exc(),
         }), 500
+
+@bp.route('/fila-resumo', methods=['GET', 'POST'])
+def fila_resumo_route():
+    """Conta a fila por situação. Não reprocessa nada, não grava nada."""
+    try:
+        payload = request.get_json(force=True, silent=True) or {}
+        if request.method == 'POST' and not _authorized(payload):
+            return jsonify({'ok': False, 'app': 'baixabradesco', 'error': 'Não autorizado.'}), 401
+        if request.method == 'GET':
+            segredo = os.getenv('BAIXABRADESCO_SECRET', '')
+            if segredo and request.args.get('secret') != segredo \
+                    and request.headers.get('X-BaixaBradesco-Secret') != segredo:
+                return jsonify({'ok': False, 'app': 'baixabradesco', 'error': 'Não autorizado.'}), 401
+        return jsonify(resumo_fila())
+    except Exception as e:
+        return jsonify({
+            'ok': False,
+            'app': 'baixabradesco',
+            'error': str(e),
+            'traceback': traceback.format_exc(),
+        }), 500
+
 
 @bp.route('/processar-fila-tardia', methods=['POST'])
 def processar_fila_tardia_route():

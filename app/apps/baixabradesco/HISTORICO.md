@@ -885,3 +885,72 @@ subindo. A única falha na rodada local é biblioteca ausente neste ambiente
 (`erpbrasil`), e ela falha igual na `main` publicada sem o meu trabalho.
 **Não verificado:** nada disso passou por produção. A prova é a primeira baixa
 real depois de publicado — e, se a gravação falhar, o aviso tem de chegar.
+
+---
+
+### 08/10/2026 — "e essa fila, de 2.270 linhas, vai rodar?" — não ia
+
+Pergunta do dono, logo depois da entrega anterior. A resposta honesta era
+**não**: no ritmo automático de cinco por lote, uma fila de pendências antigas
+não anda. Três coisas impediam, e as três foram tratadas.
+
+**1. Ninguém sabia quantas das 2.270 linhas eram pendência de verdade.** A aba
+guarda **tudo** que já passou por ela, concluído inclusive — então o número de
+linhas não é o número de pendências. Eu disse isso na entrega anterior e parei
+aí, o que é pouco: ficou uma pergunta sem meio de resposta. Agora existe
+`GET /api/baixabradesco/fila-resumo`, que conta por situação (`PENDENTE`
+vencido, `PENDENTE` agendado, `FALHOU`, `CONCLUIDO`), por etapa e por tipo de
+falha, diz a data do registro mais antigo, e não grava nada. Diagnóstico se faz
+pelo sistema, não abrindo a planilha na mão.
+
+**2. Ler a fila custava a aba inteira.** `_rows_as_dicts` fazia
+`get_all_values()` — as 2.270 linhas **com o JSON do payload de cada uma** — só
+para achar cinco. E `ensure_fila_sheet` fazia o mesmo, em **toda** chamada,
+apenas para conferir o cabeçalho. Isso é exatamente o que `CONTEXTO.md` §3.7
+proíbe, e era o tipo de leitura que causou o OOM de julho de 2026. Agora: o
+cabeçalho lê `A1:O1`; o filtro lê `A2:L` (as colunas leves, sem a mensagem de
+erro nem o payload); o payload vem só das linhas escolhidas, em blocos de cem.
+
+**3. Drenar de uma vez estouraria a cota de todo mundo.** A cota de escrita do
+Google é **por minuto** e é do **mesmo usuário de serviço** que o ERP, o painel e
+o Análise de SPs usam — uma drenagem de centenas de itens no soco não quebraria
+só esta fila, tiraria os outros do ar. Três medidas: marcar a linha passou a
+custar **uma** chamada de escrita em vez de duas; lote acima de 20 itens anda com
+**pausa** entre eles (1,2 s, ajustável por `pausa_ms`); e a varredura **para
+sozinha** na terceira recusa seguida por cota, devolve o que fez e deixa o resto
+`PENDENTE` para a próxima passada.
+
+**Uma trava de bom senso que entrou junto:** aviso de WhatsApp parado na fila há
+mais de três dias **não é reenviado**. Drenar fila velha mandaria para os dois
+celulares avisos sobre problemas provavelmente já resolvidos na mão — e aviso
+demais faz a pessoa parar de ler, que é o oposto do que o aviso existe para
+fazer. Ele sai da fila com o motivo escrito na linha. Quem quiser o contrário
+manda `reenviar_avisos_antigos: true`. A trava vale **só** para aviso: baixa de
+dois meses atrás continua sendo baixa, e o dinheiro não envelhece.
+
+**O que NÃO é risco, e vale estar escrito:** repetir uma baixa não baixa duas
+vezes. O reprocessamento do Omie consulta o título primeiro e, se já estiver
+`PAGO`, dá a pendência por resolvida sem lançar nada. Então drenar fila antiga
+não duplica pagamento no Omie. O reprocessamento de planilha regrava as mesmas
+células — se alguém tiver corrigido aquela linha na mão com outra informação, a
+regravação passa por cima. É o único efeito colateral conhecido da drenagem.
+
+**O que continua fora do alcance da fila, e não tem volta por ela:** item que o
+reprocessamento antigo marcou `CONCLUIDO` sem ter gravado (o defeito corrigido
+em 07/10). Para a fila ele está resolvido; a pendência real, se existir, só
+aparece na comparação entre a SPsBD e o Omie, não aqui.
+
+**O caminho prático para zerar o acumulado**, depois de publicado: primeiro o
+resumo, para saber o tamanho; depois `POST /api/baixabradesco/reprocessar-fila`
+com `limite` alto e `incluir_falhados: true`, uma chamada por vez, olhando o
+campo `interrompido` da resposta — se vier `cota_do_google`, esperar alguns
+minutos e repetir.
+
+**Verificado:** suíte inteira rodada, uma única falha e é a biblioteca ausente
+deste ambiente (`erpbrasil`), que falha igual na `main` publicada sem o meu
+trabalho; 16 testes novos cobrindo a contagem, a leitura limitada, a pausa, a
+parada por cota e a trava de aviso antigo; aplicação subindo com os 18
+blueprints e a rota nova no lugar.
+**Não verificado:** nada disso encostou na planilha de verdade. Quantas das
+2.270 linhas são pendência real continua sem resposta até alguém chamar o
+resumo em produção — e é a primeira coisa a fazer depois de publicar.
