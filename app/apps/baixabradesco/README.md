@@ -24,6 +24,8 @@ substituiu esse cenário.
 | **cron-job.org** | `POST /api/baixabradesco/processar-fila-tardia` | de 5 em 5 minutos, para retomar o que ficou parado |
 | Quem estiver investigando | `POST /api/baixabradesco/diagnostico` | quando um comprovante não casou e ninguém sabe por quê |
 | Quem estiver investigando | `POST /api/baixabradesco/reprocessar-fila` | para tentar de novo o que falhou depois do casamento |
+| Quem estiver investigando | `GET /api/baixabradesco/fila-resumo` | para contar a fila de falhas por situação |
+| Quem estiver investigando | `GET /api/baixabradesco/conferir-omie` | para comparar a SPsBD com o Omie e achar baixa pela metade |
 | Monitor | `GET /api/baixabradesco/health` | sinal de vida |
 
 Ninguém abre tela aqui: **não existe interface**. A aplicação só responde a
@@ -282,15 +284,47 @@ essa diferença é a primeira coisa a saber antes de mandar drenar.
 | saber quantas pendências de verdade existem | `GET /api/baixabradesco/fila-resumo` |
 | drenar o acumulado | `POST /api/baixabradesco/reprocessar-fila` com `limite` alto |
 | drenar incluindo o que esgotou as cinco tentativas | o mesmo, com `incluir_falhados: true` |
+| drenar só uma etapa (o dinheiro primeiro) | o mesmo, com `etapas: ["omie"]` |
+| limpar o acumulado de avisos antigos | o mesmo, com `etapas: ["zapi"]` |
 
 O **resumo** não grava nada e não reprocessa nada: conta por situação
 (`PENDENTE` vencido, `PENDENTE` agendado para depois, `FALHOU`, `CONCLUIDO`),
 por etapa, por tipo de falha, diz a data do registro mais antigo e quantos lotes
 de cinco seriam necessários no ritmo automático.
 
-**O ritmo automático é de cinco por lote de comprovantes.** Serve para não
-deixar pendência nova envelhecer; não serve para zerar acumulado. Acumulado se
-zera com uma chamada de `limite` alto.
+**Quem anda com a fila, hoje:**
+
+1. **O cron de 5 em 5 minutos** (`/processar-fila-tardia`, que já existia e já
+   era autenticado). Ele drena **por etapa, na ordem da importância** — `omie`
+   (dinheiro), `sheets` (planilha), `pipefy` (cartão), `zapi` (recado) —, 15, 15,
+   15 e 10 por disparo. Dá ~180 itens por hora sem encostar na cota.
+2. **Cada lote de comprovantes**, cinco itens, para pendência nova não
+   envelhecer.
+3. **Uma chamada à mão** com `limite` alto, para zerar acumulado.
+
+⚠️ **A ordem das etapas não é alfabética, e não pode virar.** Em 08/10/2026 a
+fila tinha 1.943 recados de WhatsApp na frente de 238 baixas no Omie. Drenar na
+ordem da planilha deixaria o dinheiro para o fim.
+
+**O cron NÃO limpa o acumulado de avisos antigos.** Aviso com mais de três dias
+nem é carregado por ele — e isso tem de acontecer na **escolha** das linhas, não
+depois. A fila é lida em ordem: com 1.943 avisos de junho na frente, pedir "dez
+avisos" devolvia sempre os dez mais velhos, que seriam descartados por idade, e
+o aviso de ontem nunca era alcançado. A fila entupia com o que ela mesma ia
+jogar fora. Marcar 1.943 linhas de uma vez é decisão
+do dono — pede-se explicitamente, com `etapas: ["zapi"]`, e aí a marcação sai em
+blocos de 50 linhas por chamada, não uma por linha.
+
+**As credenciais que a drenagem automática usa vêm do ambiente do Render**, não
+do pedido — o cron não manda credencial nenhuma. São `OMIE_KEY` / `OMIE_SECRET`
+(confirmados no Render em 08/10/2026), `PIPEFY_API_TOKEN` e as três `ZAPI_*`. O
+nome da variável é parte do contrato: trocar em silêncio pararia a drenagem
+inteira, e há teste travando cada um.
+
+⚠️ **Falta de credencial NÃO consome tentativa.** Era o jeito mais rápido de
+apagar a fila sem resolver nada: cinco passadas sem credencial marcariam as 238
+baixas como `FALHOU`. Hoje a linha fica intacta e o relatório diz o que falta
+configurar (`o_que_falta_configurar`).
 
 ⚠️ **A cota do Google é por minuto e é do mesmo usuário de serviço que o ERP, o
 painel e o Análise de SPs usam.** Por isso, em lote grande:
@@ -315,6 +349,38 @@ dois meses atrás continua sendo baixa.
 título primeiro e, se já estiver `PAGO`, dá a pendência por resolvida sem lançar
 nada.
 
+## O conferidor SPsBD × Omie
+
+A fila de falhas não alcança um grupo de itens: os que o reprocessamento antigo
+marcou como "concluído" **sem ter gravado** (defeito corrigido em 07/10/2026).
+Para a fila eles acabaram. A pendência real, se existir, só aparece comparando
+as duas fontes — a planilha diz "Pago", o Omie diz "Aberto".
+
+`GET /api/baixabradesco/conferir-omie` faz essa comparação. Parâmetros, todos
+opcionais, aceitos pela barra do navegador: `dias` (janela, 60 por padrão),
+`limite` (consultas ao Omie por chamada, 50 por padrão) e `apenas_contar=1`.
+
+**Ele não grava nada.** Nem na planilha, nem no Omie. É relatório. Corrigir é
+decisão de quem lê — um conferidor que também corrigisse erraria em silêncio na
+primeira divergência de valor, e aí seria pior que não ter conferidor.
+
+O relatório separa três coisas que **não** são a mesma:
+
+| No relatório | O que é | O que fazer |
+|---|---|---|
+| `divergentes` | planilha paga, Omie aberto | **é a baixa pela metade** — dinheiro saiu, título não baixou |
+| `titulos_nao_encontrados` | o código de integração não existe no Omie | cadastro errado na planilha, outro problema |
+| `erros_de_consulta` | a chamada falhou (rede, cota) | tentar de novo |
+
+Misturar os três faria o relatório mentir, e o primeiro é o único que custa
+dinheiro.
+
+**Ele lê só sete colunas da SPsBD** (A, D, G, O, P, X, AG). Ler `A:AK` inteiro
+custa 150–250 MB e foi assim que o serviço caiu por memória em julho de 2026.
+
+`apenas_contar=1` mede o tamanho do problema **sem** gastar uma consulta ao Omie
+por linha — é por onde começar quando a janela é grande.
+
 ## O aviso do que NÃO foi baixado
 
 Comprovante que baixa normalmente não gera aviso nenhum — é o esperado. O que
@@ -335,6 +401,19 @@ Entram no aviso:
 **Não** entram, de propósito: o que baixou (é o esperado) e o que foi barrado por
 já ter sido baixado (a trava fez o trabalho dela). Aviso demais faz a pessoa
 parar de ler, e aí o que importava se perde.
+
+⚠️ **O resultado do aviso diz QUEM recebeu, e por onde** — e isso não era
+visível antes. O envio devolvia sucesso quando **qualquer** canal entregava, e o
+Telegram do dono entrega quase sempre; então o WhatsApp podia falhar para o
+financeiro, que não tem Telegram, e tudo reportava sucesso. É o mesmo defeito da
+gravação silenciosa, com outra roupa — e num aviso de falha ele é pior, porque
+falha em silêncio justamente quando algo já deu errado.
+
+Hoje a resposta traz `entregues_no_whatsapp`, `so_pelo_telegram` e `sem_entrega`,
+com um alerta em português quando alguém ficou só no Telegram. **E credencial
+presente com envio falhando ganha segunda tentativa** pelo notificador comum —
+antes a segunda tentativa só existia quando a credencial estava *ausente*, então
+instância do Z-API fora do ar significava financeiro sem aviso e sem retentativa.
 
 É **um aviso por lote**, não um por comprovante, com no máximo dez itens
 listados — acima disso ele diz quantos ficaram de fora.

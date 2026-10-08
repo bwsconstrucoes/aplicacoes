@@ -95,6 +95,11 @@ class _AbaFila:
         self.linhas.append(list(valores))
 
 
+PAYLOAD_OMIE = ('{"codigo_integracao": "Int1443274610", '
+                '"codigo_conta_omie": "1234567", '
+                '"valor_pago": "7.350,48", "data_pagamento": "07/10/2026"}')
+
+
 def _linha(status='PENDENTE', etapa='sheets', proxima='', tentativas='0',
            registro=None, payload='{"sheets_updates": [{"range": "O5", "values": [["Pago"]]}]}',
            tipo='sheets_erro'):
@@ -352,3 +357,266 @@ def test_a_trava_de_idade_vale_so_para_aviso_nao_para_baixa(aba, monkeypatch):
 
     assert r['avisos_descartados_por_idade'] == 0
     assert r['concluidos_agora'] == 2
+
+
+# =====================================================================
+# 6. a ordem importa: dinheiro antes de recado
+# =====================================================================
+# Os números reais da fila em 08/10/2026, lidos em produção:
+#   2.269 linhas, TODAS PENDENTE, nenhuma concluída, nenhuma falhada
+#   zapi 1.943 | omie 238 | pipefy 88 | sheets 0
+#   mais antiga: 18/06/2026
+# Ou seja: a fila nunca andou, nem uma vez, em quase quatro meses. E 86% dela é
+# recado, na frente de 238 baixas que são dinheiro.
+
+def test_da_para_drenar_so_uma_etapa(aba, monkeypatch):
+    aba([
+        _linha(etapa='zapi', tipo='zapi_erro'),
+        _linha(etapa='omie', tipo='omie_erro'),
+        _linha(etapa='zapi', tipo='zapi_erro'),
+        _linha(etapa='omie', tipo='omie_erro'),
+        _linha(etapa='pipefy', tipo='pipefy_erro'),
+    ])
+    monkeypatch.setattr(mod, 'time', type('T', (), {'sleep': staticmethod(lambda s: None)}))
+    vistos = []
+    monkeypatch.setattr(mod, '_retry_omie',
+                        lambda item, payload: vistos.append('omie') or {'ok': True})
+    monkeypatch.setattr(mod, '_retry_zapi',
+                        lambda item, payload: vistos.append('zapi') or {'ok': True})
+
+    r = mod.reprocessar_fila({'limite': 50, 'etapas': ['omie']})
+
+    assert vistos == ['omie', 'omie']
+    assert r['etapas'] == ['omie']
+    assert r['pendentes_processados'] == 2
+
+
+def test_a_etapa_aceita_texto_simples_e_lista(aba):
+    linhas = [_linha(etapa='omie'), _linha(etapa='pipefy'), _linha(etapa='zapi')]
+    aba(linhas)
+
+    assert mod._etapas_pedidas({'etapa': 'omie'}) == {'omie'}
+    assert mod._etapas_pedidas({'etapa': 'omie,pipefy'}) == {'omie', 'pipefy'}
+    assert mod._etapas_pedidas({'etapas': ['OMIE']}) == {'omie'}
+    assert mod._etapas_pedidas({}) is None
+
+
+# =====================================================================
+# 7. falta de credencial NÃO consome tentativa
+# =====================================================================
+
+def test_falta_de_credencial_nao_queima_tentativa_nem_marca_falhou(aba, monkeypatch):
+    """Era o jeito de apagar 238 baixas sem resolver nenhuma."""
+    a = aba([_linha(etapa='omie', tentativas='4')])
+    monkeypatch.setattr(mod, 'credentials_from_payload', lambda payload: ('', ''))
+
+    r = mod.reprocessar_fila({'limite': 10, 'etapas': ['omie']})
+
+    assert a.gravacoes == []          # a linha não foi tocada
+    assert r['bloqueados_por_configuracao'] == 1
+    assert r['o_que_falta_configurar'] == ['credenciais_omie_ausentes']
+    assert r['concluidos_agora'] == 0
+
+
+def test_com_credencial_a_baixa_e_tentada_normalmente(aba, monkeypatch):
+    a = aba([_linha(etapa='omie', payload=PAYLOAD_OMIE)])
+    monkeypatch.setattr(mod, 'credentials_from_payload', lambda payload: ('k', 's'))
+    monkeypatch.setattr(mod, '_request_omie',
+                        lambda call, param, payload:
+                        {'ok': True, 'body': {'status_titulo': 'PAGO'}})
+
+    r = mod.reprocessar_fila({'limite': 10, 'etapas': ['omie']})
+
+    assert r['concluidos_agora'] == 1
+    assert r['bloqueados_por_configuracao'] == 0
+    assert a.chamadas_batch_update == 1
+
+
+def test_titulo_ja_pago_no_omie_resolve_sem_lancar_nada(aba, monkeypatch):
+    """Drenar fila antiga não pode pagar duas vezes."""
+    aba([_linha(etapa='omie', payload=PAYLOAD_OMIE)])
+    monkeypatch.setattr(mod, 'credentials_from_payload', lambda payload: ('k', 's'))
+    chamadas = []
+
+    def _req(call, param, payload):
+        chamadas.append(call)
+        return {'ok': True, 'body': {'status_titulo': 'PAGO'}}
+
+    monkeypatch.setattr(mod, '_request_omie', _req)
+
+    r = mod.reprocessar_fila({'limite': 10, 'etapas': ['omie']})
+
+    assert chamadas == ['ConsultarContaPagar']   # nada de LancarPagamento
+    assert r['concluidos_agora'] == 1
+
+
+# =====================================================================
+# 8. o acumulado de avisos antigos não é limpo pelo cron
+# =====================================================================
+
+def test_a_drenagem_automatica_nao_toca_no_aviso_antigo(aba, monkeypatch):
+    """Nem envia, nem marca, nem gasta tentativa: ele nem é carregado."""
+    a = aba([_linha(etapa='zapi', registro=_hoje(dias=100), tipo='zapi_erro')])
+    enviou = {'n': 0}
+    monkeypatch.setattr(mod, '_retry_zapi',
+                        lambda item, payload: enviou.__setitem__('n', enviou['n'] + 1) or {'ok': True})
+
+    r = mod.reprocessar_fila({'limite': 10, 'descartar_avisos_antigos': False})
+
+    assert enviou['n'] == 0
+    assert a.gravacoes == []
+    assert r['pendentes_processados'] == 0
+    assert r['avisos_descartados_por_idade'] == 0
+
+
+def test_quem_pede_explicitamente_limpa_e_em_lote(aba, monkeypatch):
+    """1.943 linhas não podem custar 1.943 escritas."""
+    a = aba([_linha(etapa='zapi', registro=_hoje(dias=100), tipo='zapi_erro')
+             for _ in range(120)])
+    monkeypatch.setattr(mod, 'time', type('T', (), {'sleep': staticmethod(lambda s: None)}))
+
+    r = mod.reprocessar_fila({'limite': 200, 'etapas': ['zapi']})
+
+    assert r['avisos_descartados_por_idade'] == 120
+    assert r['descartes_gravados'] == 120
+    # blocos de 50 linhas: 3 chamadas, não 120
+    assert a.chamadas_batch_update == 3
+
+
+def test_aviso_recente_e_enviado_mesmo_na_drenagem_automatica(aba, monkeypatch):
+    aba([_linha(etapa='zapi', registro=_hoje(horas=1), tipo='zapi_erro')])
+    enviou = {'n': 0}
+    monkeypatch.setattr(mod, '_retry_zapi',
+                        lambda item, payload: enviou.__setitem__('n', enviou['n'] + 1) or {'ok': True})
+
+    r = mod.reprocessar_fila({'limite': 10, 'descartar_avisos_antigos': False})
+
+    assert enviou['n'] == 1
+    assert r['concluidos_agora'] == 1
+
+
+# =====================================================================
+# 9. o acumulado antigo não pode ocupar a vaga do recado de ontem
+# =====================================================================
+
+def test_aviso_velho_nao_entope_a_fila_e_deixa_o_recente_passar(aba, monkeypatch):
+    """O defeito: a fila é lida em ordem.
+
+    Com 1.943 avisos de junho na frente, pedir "dez avisos" devolvia sempre os
+    dez mais velhos — que seriam pulados por idade. O aviso de ontem, que alguém
+    ainda quer receber, nunca era alcançado: a fila entupia com o que ela mesma
+    ia descartar.
+    """
+    linhas = [_linha(etapa='zapi', registro=_hoje(dias=100), tipo='zapi_erro')
+              for _ in range(50)]
+    linhas.append(_linha(etapa='zapi', registro=_hoje(horas=3), tipo='zapi_erro'))
+    aba(linhas)
+    enviados = []
+    monkeypatch.setattr(mod, '_retry_zapi',
+                        lambda item, payload: enviados.append(item['_row_number']) or {'ok': True})
+
+    r = mod.reprocessar_fila({'limite': 10, 'etapas': ['zapi'],
+                              'descartar_avisos_antigos': False})
+
+    # a única linha alcançada é a recente (linha 52), não as 50 velhas
+    assert enviados == [52]
+    assert r['concluidos_agora'] == 1
+    assert r['avisos_antigos_pulados'] == 0   # nem foram carregados
+
+
+def test_quando_o_pedido_e_para_descartar_os_velhos_voltam_a_ser_carregados(
+        aba, monkeypatch):
+    aba([_linha(etapa='zapi', registro=_hoje(dias=100), tipo='zapi_erro')
+         for _ in range(10)])
+    monkeypatch.setattr(mod, 'time', type('T', (), {'sleep': staticmethod(lambda s: None)}))
+
+    r = mod.reprocessar_fila({'limite': 10, 'etapas': ['zapi']})
+
+    assert r['avisos_descartados_por_idade'] == 10
+
+
+def test_o_corte_por_idade_nao_afeta_as_outras_etapas(aba, monkeypatch):
+    """Baixa de junho continua sendo baixa — só o recado envelhece."""
+    aba([_linha(etapa='omie', registro=_hoje(dias=100), payload=PAYLOAD_OMIE),
+         _linha(etapa='zapi', registro=_hoje(dias=100), tipo='zapi_erro')])
+    monkeypatch.setattr(mod, 'credentials_from_payload', lambda payload: ('k', 's'))
+    monkeypatch.setattr(mod, '_request_omie',
+                        lambda call, param, payload:
+                        {'ok': True, 'body': {'status_titulo': 'PAGO'}})
+    monkeypatch.setattr(mod, 'time', type('T', (), {'sleep': staticmethod(lambda s: None)}))
+
+    r = mod.reprocessar_fila({'limite': 10, 'descartar_avisos_antigos': False})
+
+    assert r['concluidos_agora'] == 1          # a baixa de junho foi conferida
+    assert r['pendentes_processados'] == 1     # o recado de junho nem entrou
+
+
+# =====================================================================
+# 10. as credenciais que a drenagem automática precisa, pelo NOME
+# =====================================================================
+# O serviço automático (o cron de 5 em 5 minutos) não recebe credencial de
+# ninguém: ele lê do ambiente do Render. Então o NOME da variável é parte do
+# contrato, e trocá-lo em silêncio pararia a drenagem inteira. O dono confirmou
+# em 08/10/2026 que o Render tem OMIE_KEY e OMIE_SECRET.
+
+def test_o_omie_le_as_variaveis_que_o_render_tem(monkeypatch):
+    from app.apps.baixabradesco import omie
+
+    assert 'OMIE_KEY' in omie.NOMES_APP_KEY
+    assert 'OMIE_SECRET' in omie.NOMES_APP_SECRET
+
+    for nome in ('OMIE_KEY', 'OMIE_BWS_APP_KEY', 'OMIE_APP_KEY',
+                 'OMIE_SECRET', 'OMIE_BWS_APP_SECRET', 'OMIE_APP_SECRET'):
+        monkeypatch.delenv(nome, raising=False)
+    monkeypatch.setenv('OMIE_KEY', 'chave-do-render')
+    monkeypatch.setenv('OMIE_SECRET', 'segredo-do-render')
+
+    # sem nada no pedido: é assim que o cron chama
+    assert omie.credentials_from_payload({}) == ('chave-do-render', 'segredo-do-render')
+
+
+def test_a_baixa_pelo_cron_funciona_so_com_o_ambiente(aba, monkeypatch):
+    """Sem credencial no pedido, como o cron faz."""
+    aba([_linha(etapa='omie', payload=PAYLOAD_OMIE)])
+    for nome in ('OMIE_KEY', 'OMIE_BWS_APP_KEY', 'OMIE_APP_KEY',
+                 'OMIE_SECRET', 'OMIE_BWS_APP_SECRET', 'OMIE_APP_SECRET'):
+        monkeypatch.delenv(nome, raising=False)
+    monkeypatch.setenv('OMIE_KEY', 'k')
+    monkeypatch.setenv('OMIE_SECRET', 's')
+    monkeypatch.setattr(mod, '_request_omie',
+                        lambda call, param, payload:
+                        {'ok': True, 'body': {'status_titulo': 'PAGO'}})
+
+    r = mod.reprocessar_fila({'limite': 10, 'etapas': ['omie']})
+
+    assert r['concluidos_agora'] == 1
+    assert r['bloqueados_por_configuracao'] == 0
+
+
+def test_pipefy_sem_token_nao_queima_tentativa(aba, monkeypatch):
+    """O token do Pipefy faltando LEVANTAVA exceção, e a exceção gastava
+    tentativa: cinco passadas marcariam os 88 cartões como FALHOU sem nunca ter
+    tentado nada."""
+    a = aba([_linha(etapa='pipefy', tentativas='4', tipo='pipefy_erro',
+                    payload='{"pipefy_update_mutation": "mutation { x }"}')])
+    monkeypatch.delenv('PIPEFY_API_TOKEN', raising=False)
+
+    r = mod.reprocessar_fila({'limite': 10, 'etapas': ['pipefy']})
+
+    assert a.gravacoes == []
+    assert r['bloqueados_por_configuracao'] == 1
+    assert r['o_que_falta_configurar'] == ['credenciais_pipefy_ausentes']
+
+
+def test_zapi_sem_credencial_nao_queima_tentativa(aba, monkeypatch):
+    a = aba([_linha(etapa='zapi', tentativas='4', tipo='zapi_erro',
+                    registro=_hoje(horas=2),
+                    payload='{"whatsapp_messages": [{"type": "text"}]}')])
+    for nome in ('ZAPI_INSTANCE_ID', 'ZAPI_API_TOKEN', 'ZAPI_CLIENT_TOKEN'):
+        monkeypatch.delenv(nome, raising=False)
+
+    r = mod.reprocessar_fila({'limite': 10, 'etapas': ['zapi']})
+
+    assert a.gravacoes == []
+    assert r['bloqueados_por_configuracao'] == 1
+    assert r['o_que_falta_configurar'] == ['credenciais_zapi_ausentes']

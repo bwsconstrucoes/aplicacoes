@@ -52,7 +52,57 @@ def adiar_payload(payload: dict, erro: str) -> dict:
     }
 
 
-def processar_fila_tardia() -> dict:
+# A drenagem que pega carona neste cron. Os números são por disparo, e o cron
+# roda de 5 em 5 minutos: 15 por etapa dá ~180 itens por hora sem encostar na
+# cota do Google, que é compartilhada com o ERP e o painel.
+#
+# A ordem importa e não é alfabética: `omie` é dinheiro (baixa que não
+# aconteceu), `sheets` é a planilha desatualizada, `pipefy` é o cartão no lugar
+# errado, `zapi` é recado. Em 08/10/2026 a fila tinha 1.943 recados na frente de
+# 238 baixas — drenar na ordem da planilha deixaria o dinheiro para o fim.
+ETAPAS_DRENAGEM = (
+    ('omie', 15),
+    ('sheets', 15),
+    ('pipefy', 15),
+    ('zapi', 10),
+)
+
+
+def _drenar_por_etapa(payload: dict | None = None) -> dict:
+    """Anda com a fila de falhas, uma etapa por vez, na ordem de importância.
+
+    `descartar_avisos_antigos=False` de propósito: limpar em massa as 1.943
+    linhas de aviso antigo é decisão do dono, não do cron. Aqui elas são
+    puladas, sem gastar tentativa.
+    """
+    from .fila import reprocessar_fila
+
+    base = dict(payload or {})
+    saida = {}
+    for etapa, limite in ETAPAS_DRENAGEM:
+        pedido = dict(base)
+        pedido.update({'etapas': [etapa], 'limite': limite,
+                       'descartar_avisos_antigos': False})
+        try:
+            r = reprocessar_fila(pedido)
+            saida[etapa] = {
+                'processados': r.get('pendentes_processados'),
+                'concluidos': r.get('concluidos_agora'),
+                'ainda_pendentes': r.get('ainda_pendentes'),
+                'bloqueados_por_configuracao': r.get('bloqueados_por_configuracao'),
+                'o_que_falta_configurar': r.get('o_que_falta_configurar'),
+                'interrompido': r.get('interrompido'),
+            }
+            if r.get('interrompido') == 'cota_do_google':
+                # Cota estourada: para aqui e deixa o resto para o próximo cron.
+                saida['parou_por_cota_na_etapa'] = etapa
+                break
+        except Exception as e:
+            saida[etapa] = {'erro': str(e)[:200]}
+    return saida
+
+
+def processar_fila_tardia(payload: dict | None = None) -> dict:
     """Reprocessa os payloads adiados, um a um, em ordem de chegada.
 
     - Sucesso: remove o arquivo.
@@ -95,4 +145,9 @@ def processar_fila_tardia() -> dict:
         'app': 'baixabradesco',
         'processados': resultados,
         'pendentes': len(_listar()),
+        # O cron já roda de 5 em 5 minutos e já está autenticado: a fila de
+        # falhas pega carona nele. Antes ela só andava se alguém chamasse a rota
+        # à mão — e, pelos números de 08/10/2026 (2.269 linhas, nenhuma
+        # concluída, a mais antiga de 18/06/2026), nunca ninguém chamou.
+        'fila_de_falhas': _drenar_por_etapa(payload),
     }
