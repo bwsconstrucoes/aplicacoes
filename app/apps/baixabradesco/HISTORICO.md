@@ -1541,3 +1541,62 @@ janela volta a ser 60 dias.
 **Verificado:** 32 testes no conferidor (5 novos, todos de caminho de exceção),
 suíte inteira rodada com a única falha sendo `erpbrasil` ausente neste ambiente,
 aplicação subindo com os 18 blueprints.
+
+---
+
+### 08/10/2026 — o mutirão funcionou, e a fila travou em dois limbos meus
+
+Números do dono, depois do mutirão rodar:
+
+```
+concluidos             2149   (eram 57)
+pendentes_vencidos      121   (eram 2.213)
+por_etapa              zapi 116 | omie 5
+pendentes_agendados       0
+falhados                  0
+registro_mais_antigo   01/10/2026 11:25:49   (era 18/06)
+```
+
+**O mutirão fez o trabalho:** 2.149 dispensadas, e a mais antiga saltou de junho
+para 1º de outubro, exatamente o corte autorizado. A drenagem fechou o resto.
+
+Mas ele voltou dizendo *"não baixa mais disso, já tá há muito tempo aí"* — e
+estava certo. As 121 restantes **nunca** iam andar, por dois motivos, e os dois
+eram limbos que eu mesmo criei:
+
+**1. Os 116 avisos (01/10 a 05/10).** A regra "aviso com mais de três dias não é
+reenviado" fazia a drenagem apenas **pular** esses itens: não enviava e não
+marcava. Ficavam `PENDENTE` para sempre. Eu tinha escrito a metade da regra e
+parado: decidi que não seriam enviados e não concluí o raciocínio — se nunca mais
+serão enviados, estão resolvidos do ponto de vista da fila, e a linha tem de
+dizer isso. Agora `dispensar_avisos_vencidos` roda no cron, antes da drenagem,
+com o motivo escrito na linha. Vale **só** para aviso: dinheiro não envelhece.
+
+**2. As 5 baixas paradas por configuração.** A linha não recebia **nada** — nem
+motivo, nem próxima tentativa. Resultado: retentadas de cinco em cinco minutos
+para sempre, sem nada escrito dizendo por quê, e aparecendo na contagem como
+pendência comum. Daí `pendentes_agendados: 0` e `falhados: 0` ao mesmo tempo —
+que, lidos juntos, eram a assinatura do defeito. Agora o motivo vai para a linha
+e a próxima tentativa vai para seis horas à frente.
+
+**A distinção que sustenta esse conserto, e errar em qualquer direção custa:**
+*tentativa* não é *agendamento*. Contar o bloqueio como tentativa marcaria o item
+como `FALHOU` em cinco passadas, apagando pendência de verdade. Não reagendar faz
+a varredura insistir a cada cinco minutos e esconder o que de fato anda. Então:
+reagenda longe, não gasta tentativa, e escreve o motivo.
+
+**A lição, e é a sétima do dia com a mesma assinatura:** *"pular"* não é um
+estado — é a ausência de decisão. Todo item que o sistema decide não processar
+tem de receber um estado que diga isso, senão vira pendência eterna. O mesmo
+raciocínio dos seis defeitos anteriores: **o caminho que não faz nada é um
+caminho, e precisa de teste.**
+
+**O que o dono vai ver:** as 116 saem no próximo disparo; as 5 passam a dizer na
+planilha o que falta configurar (a suspeita é SP sem Código Integração, que a
+nova tentativa não tem como baixar no Omie — e aí é cadastro, não robô).
+
+**Verificado:** 53 testes de fila (6 novos), 18 de cron (2 novos), suíte inteira
+rodada com a única falha sendo `erpbrasil` ausente neste ambiente, aplicação
+subindo com os 18 blueprints.
+**Não verificado:** nada disso rodou contra a planilha de verdade. O sinal é
+`pendentes_vencidos` cair de 121 para ~5, e essas 5 ganharem motivo escrito.

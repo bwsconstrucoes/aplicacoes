@@ -115,6 +115,16 @@ def _zerar_atraso_uma_vez(payload: dict | None = None) -> dict:
         return {'erro': str(e)[:200]}
 
 
+def _dispensar_avisos_vencidos(payload: dict | None = None) -> dict:
+    """Tira da fila o aviso que já não serve. Vale só para aviso."""
+    from .fila import dispensar_avisos_vencidos
+    try:
+        r = dispensar_avisos_vencidos(dict(payload or {}))
+        return {'dispensadas': r.get('dispensadas'), 'erro': r.get('erro')}
+    except Exception as e:
+        return {'erro': str(e)[:200]}
+
+
 def _drenar_a_fila(payload: dict | None = None) -> dict:
     from .fila import drenar_por_etapa
     return drenar_por_etapa(LIMITES_CRON, payload)
@@ -171,5 +181,9 @@ def processar_fila_tardia(payload: dict | None = None) -> dict:
         # gastaria a passada inteira nas linhas antigas que vão ser dispensadas
         # dois segundos mais tarde.
         'atraso_zerado': _zerar_atraso_uma_vez(payload),
+        # Aviso que passou do prazo nunca mais vai ser enviado: deixá-lo
+        # PENDENTE era um limbo que travava a contagem em 121 pendências que
+        # jamais andariam (números do dono em 08/10/2026).
+        'avisos_vencidos': _dispensar_avisos_vencidos(payload),
         'fila_de_falhas': _drenar_a_fila(payload),
     }

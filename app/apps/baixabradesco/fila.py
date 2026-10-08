@@ -320,6 +320,28 @@ def _marcar_em_lote(ws, marcas: List[Dict[str, Any]]) -> int:
     return gravadas
 
 
+def _anotar_bloqueio(ws, row_number: int, tentativas: Any, mensagem: str,
+                     horas: int = 6) -> None:
+    """Escreve o motivo e empurra a próxima tentativa, SEM gastar tentativa.
+
+    A diferença entre "tentativa" e "agendamento" é o ponto todo: insistir de
+    cinco em cinco minutos no que falta configurar não resolve nada e esconde as
+    pendências que de fato andam; mas contar isso como tentativa marcaria o item
+    como fracassado depois de cinco passadas, apagando pendência de verdade.
+    """
+    proxima = (datetime.now() + timedelta(hours=horas)).strftime('%d/%m/%Y %H:%M:%S')
+    try:
+        ws.batch_update([
+            {'range': f'B{row_number}:D{row_number}',
+             'values': [[STATUS_PENDENTE, tentativas, proxima]]},
+            {'range': f'M{row_number}:O{row_number}',
+             'values': [[as_string(mensagem)[:1000], '', now_str()]]},
+        ], value_input_option='USER_ENTERED')
+    except Exception:
+        # Não gravou: o estado na planilha continua o verdadeiro.
+        pass
+
+
 def _request_omie(call: str, param: dict, payload: dict) -> dict:
     body = omie_body(call, param, payload)
     return execute_omie(body)
@@ -756,6 +778,74 @@ def _aviso_velho_demais(item: Dict[str, Any], payload: dict) -> bool:
     return (datetime.now() - registro) > timedelta(days=dias)
 
 
+def dispensar_avisos_vencidos(payload: dict | None = None, gc=None) -> dict:
+    """Dispensa os avisos que já passaram do prazo de utilidade. Não apaga nada.
+
+    ⚠️ Conserta um limbo que eu mesmo criei, e que apareceu nos números do dono
+    em 08/10/2026: a fila travou em 121 pendências, 116 delas avisos de
+    01/10 a 05/10. A regra dizia "aviso com mais de três dias não é reenviado" e
+    a drenagem automática apenas **pulava** esses itens — não enviava e não
+    marcava. Então eles ficavam `PENDENTE` **para sempre**, e a contagem mostrava
+    121 pendências que nunca iam andar. Pendência que não anda é pior que
+    pendência: parece trabalho a fazer e não é.
+
+    A regra certa é a conclusão da outra: se o aviso **nunca mais vai ser
+    enviado**, ele está resolvido do ponto de vista da fila, e a linha tem de
+    dizer isso.
+
+    Vale **só** para aviso. Baixa não vence — dinheiro não envelhece.
+    """
+    payload = payload or {}
+    dias = int(payload.get('dias_aviso_util') or DIAS_AVISO_UTIL)
+    corte = datetime.now() - timedelta(days=dias)
+
+    gc = gc or get_gc()
+    ws = ensure_fila_sheet(gc)
+    limite = int(payload.get('limite') or 500)
+
+    try:
+        valores = ws.get(FAIXA_CONTROLE) or []
+    except Exception as e:
+        return {'ok': False, 'erro': str(e)[:300]}
+
+    motivo = (f'Aviso vencido ({dias} dias): não será reenviado, porque avisar'
+              ' hoje de um pagamento antigo não ajuda ninguém. Dispensado da fila'
+              f' em {datetime.now().strftime("%d/%m/%Y")}.')
+
+    marcas: List[Dict[str, Any]] = []
+    for idx, row in enumerate(valores, start=2):
+        row = list(row) + [''] * (COLS_CONTROLE - len(row))
+        status = as_string(row[1]).strip().upper()
+        if status == 'STATUS' or status not in (STATUS_PENDENTE, STATUS_FALHOU):
+            continue
+        if as_string(row[11]).lower() != 'zapi':
+            continue
+        registro = _parse_dt_br(row[0])
+        if not registro or registro >= corte:
+            continue
+        marcas.append({'row': idx, 'status': STATUS_CONCLUIDO,
+                       'tentativas': as_string(row[2]) or 0, 'mensagem': motivo})
+        if len(marcas) >= limite:
+            break
+
+    gravadas = _marcar_em_lote(ws, marcas) if marcas else 0
+    return {
+        'ok': True,
+        'app': 'baixabradesco',
+        'acao': 'dispensar_avisos_vencidos',
+        'dias_aviso_util': dias,
+        'encontradas': len(marcas),
+        'dispensadas': gravadas,
+        'em_portugues': (
+            f'{_em_milhar(gravadas)} aviso(s) com mais de {dias} dias foram'
+            ' dispensados: nunca seriam enviados, e ficavam travando a fila como'
+            ' pendência que não anda. Nada foi apagado — a linha continua na'
+            ' planilha com o motivo escrito.'
+            if gravadas else
+            f'Nenhum aviso com mais de {dias} dias na fila.'),
+    }
+
+
 def zerar_fila_antiga(payload: dict) -> dict:
     """Dispensa as pendências registradas antes de uma data. Não apaga nada.
 
@@ -924,8 +1014,24 @@ def reprocessar_fila(payload: dict) -> dict:
             if resp.get('ok'):
                 _update_row(ws, row_number, STATUS_CONCLUIDO, tentativas, 'Reprocessado com sucesso.')
             elif _e_problema_de_configuracao(resp):
-                # Fica PENDENTE com as tentativas INTACTAS, e a linha explica o
-                # que falta. Quem resolve isso é quem configura, não a insistência.
+                # Fica PENDENTE com as TENTATIVAS intactas — quem resolve isso é
+                # quem configura, não a insistência.
+                #
+                # ⚠️ Mas antes a linha não recebia NADA: nem motivo, nem próxima
+                # tentativa. Resultado, visto nos números do dono em 08/10/2026:
+                # cinco baixas paradas como "pendente" com zero tentativa e sem
+                # agendamento, retentadas a cada cinco minutos para sempre, e sem
+                # nada escrito dizendo por quê. Pendência invisível é pior que
+                # pendência: parece trabalho a fazer e não é.
+                #
+                # Agora: o motivo vai para a linha e a próxima tentativa vai para
+                # LONGE (seis horas). Reagendar não é gastar tentativa — e tira o
+                # item do caminho das pendências que de fato andam.
+                _anotar_bloqueio(ws, row_number, tentativas - 1,
+                                 'Parada por configuração: '
+                                 + as_string(resp.get('erro'))
+                                 + '. Não gasta tentativa; some da varredura por'
+                                   ' seis horas.')
                 bloqueados.append({'row': row_number, 'etapa': etapa,
                                    'erro': as_string(resp.get('erro'))})
                 resultados.append({'row': row_number, 'etapa': etapa, 'ok': False,

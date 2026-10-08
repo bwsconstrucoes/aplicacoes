@@ -412,7 +412,11 @@ def test_falta_de_credencial_nao_queima_tentativa_nem_marca_falhou(aba, monkeypa
 
     r = mod.reprocessar_fila({'limite': 10, 'etapas': ['omie']})
 
-    assert a.gravacoes == []          # a linha não foi tocada
+    # A tentativa NÃO é gasta (era 4, segue 4) — mas a linha agora explica o que
+    # falta, em vez de ficar muda e ser retentada de cinco em cinco minutos.
+    controle = [g[1] for g in a.gravacoes if g[0].startswith('B')][0]
+    assert controle[0] == mod.STATUS_PENDENTE
+    assert str(controle[1]) == '4'
     assert r['bloqueados_por_configuracao'] == 1
     assert r['o_que_falta_configurar'] == ['credenciais_omie_ausentes']
     assert r['concluidos_agora'] == 0
@@ -603,7 +607,10 @@ def test_pipefy_sem_token_nao_queima_tentativa(aba, monkeypatch):
 
     r = mod.reprocessar_fila({'limite': 10, 'etapas': ['pipefy']})
 
-    assert a.gravacoes == []
+    controle = [g[1] for g in a.gravacoes if g[0].startswith('B')][0]
+    assert str(controle[1]) == '4'          # tentativa intacta
+    mensagem = [g[1][0] for g in a.gravacoes if g[0].startswith('M')][0]
+    assert 'credenciais_pipefy_ausentes' in mensagem
     assert r['bloqueados_por_configuracao'] == 1
     assert r['o_que_falta_configurar'] == ['credenciais_pipefy_ausentes']
 
@@ -617,7 +624,10 @@ def test_zapi_sem_credencial_nao_queima_tentativa(aba, monkeypatch):
 
     r = mod.reprocessar_fila({'limite': 10, 'etapas': ['zapi']})
 
-    assert a.gravacoes == []
+    controle = [g[1] for g in a.gravacoes if g[0].startswith('B')][0]
+    assert str(controle[1]) == '4'          # tentativa intacta
+    mensagem = [g[1][0] for g in a.gravacoes if g[0].startswith('M')][0]
+    assert 'credenciais_zapi_ausentes' in mensagem
     assert r['bloqueados_por_configuracao'] == 1
     assert r['o_que_falta_configurar'] == ['credenciais_zapi_ausentes']
 
@@ -915,3 +925,96 @@ def test_zerar_explica_em_portugues_o_que_fez(aba):
     assert '1.943' in r['em_portugues']
     assert 'aviso de pagamento' in r['em_portugues']
     assert 'Nada foi apagado' in r['em_portugues']
+
+
+# =====================================================================
+# 14. pendência que não anda é pior que pendência
+# =====================================================================
+# Números do dono em 08/10/2026, depois do mutirão: a fila travou em 121
+# pendências — 116 avisos de 01/10 a 05/10 e 5 baixas no Omie —, com
+# `pendentes_agendados: 0` e `falhados: 0`. Os dois grupos estavam em limbo, e os
+# dois limbos eram meus:
+#
+#   - os 116 avisos: velhos demais para enviar (regra dos três dias) e nunca
+#     dispensados. A drenagem apenas os PULAVA. Ficariam PENDENTE para sempre.
+#   - as 5 baixas: paradas por configuração. A linha não recebia nada — nem
+#     motivo, nem próxima tentativa —, então eram retentadas de cinco em cinco
+#     minutos, sem nada escrito dizendo por quê.
+#
+# Pendência que não anda parece trabalho a fazer e não é. É pior que pendência.
+
+def test_aviso_vencido_sai_da_fila_com_o_motivo_escrito(aba):
+    a = aba([_linha(etapa='zapi', registro=_hoje(dias=7), tipo='zapi_erro')])
+
+    r = mod.dispensar_avisos_vencidos({})
+
+    assert r['dispensadas'] == 1
+    mensagem = [g[1][0] for g in a.gravacoes if g[0].startswith('M')][0]
+    assert 'Aviso vencido' in mensagem
+    assert 'não será reenviado' in mensagem
+    assert 'nunca seriam enviados' in r['em_portugues']
+
+
+def test_aviso_dentro_do_prazo_continua_na_fila_para_ser_enviado(aba):
+    a = aba([_linha(etapa='zapi', registro=_hoje(horas=5), tipo='zapi_erro')])
+
+    r = mod.dispensar_avisos_vencidos({})
+
+    assert r['dispensadas'] == 0
+    assert a.gravacoes == []
+
+
+def test_dispensar_aviso_vencido_NAO_toca_em_baixa(aba):
+    """Dinheiro não envelhece: baixa de dois meses atrás continua sendo baixa."""
+    a = aba([_linha(etapa='omie', registro=_hoje(dias=60), payload=PAYLOAD_OMIE),
+             _linha(etapa='sheets', registro=_hoje(dias=60)),
+             _linha(etapa='pipefy', registro=_hoje(dias=60))])
+
+    r = mod.dispensar_avisos_vencidos({})
+
+    assert r['dispensadas'] == 0
+    assert a.gravacoes == []
+
+
+def test_os_116_avisos_do_caso_real_saem_em_lote(aba):
+    a = aba([_linha(etapa='zapi', registro=_hoje(dias=5), tipo='zapi_erro')
+             for _ in range(116)])
+
+    r = mod.dispensar_avisos_vencidos({})
+
+    assert r['dispensadas'] == 116
+    assert a.chamadas_batch_update == 3       # blocos de 50, não 116 escritas
+    assert '116' in r['em_portugues']
+
+
+def test_bloqueio_por_configuracao_escreve_o_motivo_na_linha(aba, monkeypatch):
+    a = aba([_linha(etapa='omie', tentativas='0')])   # payload sem código
+    monkeypatch.setattr(mod, 'credentials_from_payload', lambda payload: ('k', 's'))
+
+    r = mod.reprocessar_fila({'limite': 10, 'etapas': ['omie']})
+
+    assert r['bloqueados_por_configuracao'] == 1
+    mensagem = [g[1][0] for g in a.gravacoes if g[0].startswith('M')][0]
+    assert 'Parada por configuração' in mensagem
+    assert 'codigo_integracao_ausente' in mensagem
+
+
+def test_bloqueio_nao_gasta_tentativa_mas_some_da_varredura(aba, monkeypatch):
+    """A diferença entre tentativa e agendamento é o ponto todo.
+
+    Contar como tentativa marcaria o item como fracassado em cinco passadas,
+    apagando pendência de verdade. Não reagendar faria a varredura insistir de
+    cinco em cinco minutos, escondendo as pendências que de fato andam.
+    """
+    a = aba([_linha(etapa='omie', tentativas='3')])
+    monkeypatch.setattr(mod, 'credentials_from_payload', lambda payload: ('k', 's'))
+
+    mod.reprocessar_fila({'limite': 10, 'etapas': ['omie']})
+
+    controle = [g[1] for g in a.gravacoes if g[0].startswith('B')][0]
+    assert controle[0] == mod.STATUS_PENDENTE
+    assert str(controle[1]) == '3'          # tentativa NÃO foi gasta
+    assert controle[2]                      # mas ganhou próxima tentativa
+    # e ela é longe, não dez minutos
+    agendada = mod._parse_dt_br(controle[2])
+    assert (agendada - datetime.now()) > timedelta(hours=1)
