@@ -12228,6 +12228,23 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 205 — a fila de comprovantes anda sozinha (08/10/2026)
+
+- *"Por que essa fila trava? 10 lote(s) parado(s) há mais de 15 minutos."* O
+  comprovante arrastado tenta começar a baixa na hora; com OUTRA tarefa rodando
+  na pista geral (a atualização que a tela aberta pede, o ponto, o cadastro…)
+  o disparo é recusado e o lote fica ESPERANDO "para a próxima" — mas nenhuma
+  outra tarefa dá baixa em comprovante, então ele esperava alguém apertar
+  "Retomar a fila". Com a tela aberta pedindo atualização a cada poucos
+  minutos, cair nessa janela era comum.
+- Agora o processo separado, ao terminar QUALQUER tarefa da pista geral (bem
+  ou mal), começa a baixa se houver lote ESPERANDO ou RODANDO há mais de 15
+  min (processo morto) — `tarefas.encadear_comprovantes`, chamado em
+  `executar_sync.main`. Não cicla: a baixa tira cada lote de ESPERANDO.
+- Continua valendo: PDF de lote que estava na fila durante uma publicação se
+  perde com o disco do contêiner — esse lote vai para FALHOU pedindo para
+  arrastar de novo (não baixa duas vezes). Sem migração.
+
 #### Leva 204 — auxílio: o limite é o ÚLTIMO DIA TRABALHADO (BC), não a saída (BD) (08/10/2026)
 
 - *"Na hora de calcular alimentação e transporte estamos usando a Data de Saída
