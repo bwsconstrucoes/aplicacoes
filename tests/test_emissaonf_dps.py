@@ -67,10 +67,19 @@ def _calculo(categoria="ONERADA - 50/50 - 80/20 - IR", valor="98720.04", aliquot
                     bdi_diferenciado="0", iss_retido=True)
 
 
+def _dados_rps_com_servico(codigo):
+    """O mesmo tomador, trocando só o código de tributação nacional do serviço —
+    é ele que decide se o grupo de obra é obrigatório."""
+    d = _dados_rps()
+    d.codigo_servico_nacional = codigo
+    return d
+
+
 def _montar(**kw):
     r = kw.pop("r", None) or _calculo()
     return montar_dps.montar(
-        card={}, obra=ObraFalsa(), r=r, dados_rps=kw.pop("dados_rps", None) or _dados_rps(),
+        card={}, obra=kw.pop("obra", None) or ObraFalsa(), r=r,
+        dados_rps=kw.pop("dados_rps", None) or _dados_rps(),
         numero_nota=kw.pop("numero_nota", 3084), ibge_obra=kw.pop("ibge_obra", 2601607),
         data_emissao=kw.pop("data_emissao", "2026-10-07"), producao=kw.pop("producao", False),
     )
@@ -364,3 +373,134 @@ def test_se_os_dois_enderecos_falharem_o_erro_e_o_do_caminho_preferido():
     except Exception:
         pass
     assert len(c.session.chamadas) == 2
+
+
+# --------------------------------------------------------------------------- #
+# O grupo de OBRA — o que faltava e derrubou a nota 3281
+#
+# Em 08/10/2026 a TI da prefeitura mostrou o erro que a plataforma nacional
+# tinha guardado: E0370, "o grupo de informações de obra é obrigatório quando o
+# código de tributação nacional pertencer a um dos subitens 07.02.01, 07.02.02
+# (…)". A BWS emite SEMPRE em 07.02.02. O município aceitava a declaração e o
+# nacional recusava, por isso a nota ficava "em processamento" para sempre.
+#
+# É o tipo de defeito que só um teste de schema não pega: a declaração sem o
+# grupo de obra é VÁLIDA no XSD (o grupo é minOccurs="0"). A obrigatoriedade é
+# regra de negócio da plataforma, não do arquivo. Por isso os testes abaixo
+# vigiam a REGRA, e não só a forma.
+# --------------------------------------------------------------------------- #
+class _ObraSemCNO(ObraFalsa):
+    cno = ""
+
+
+def test_a_obra_vai_identificada_na_declaracao_pelo_CNO(schema):
+    doc = etree.fromstring(etree.tostring(_xml(_montar())))
+    assert schema.validate(doc), schema.error_log
+    assert _txt(doc, "infDPS/serv/obra/cObra") == "900252541076"
+
+
+def test_o_CNO_vai_sem_pontuacao_como_todo_documento_deste_layout():
+    """O CNPJ, o CPF e o CEP já são enviados só com dígitos pelo construtor; o
+    CNO segue a mesma regra. Na C. Diários ele está escrito com pontos e barra."""
+    assert ObraFalsa.cno == "90.025.25410/76"      # como está na planilha
+    d = _montar()
+    assert d.obra.c_obra == "900252541076"
+
+
+def test_o_grupo_de_obra_vem_depois_do_grupo_do_servico():
+    """A ordem é exigida pelo XSD e é o tipo de erro que a prefeitura devolve
+    como mensagem obscura. O schema já garante, mas isto deixa escrito."""
+    root = _xml(_montar())
+    serv = root.find("{%s}infDPS/{%s}serv" % (nac.NS_NFSE, nac.NS_NFSE))
+    tags = [etree.QName(e).localname for e in serv]
+    assert tags == ["locPrest", "cServ", "obra"]
+
+
+def test_obra_sem_CNO_barra_a_emissao_antes_de_enviar():
+    """Barrar aqui custa um aviso na tela. Deixar passar custa um número de nota
+    queimado e uma declaração presa na fila — foi o que aconteceu com a 3281."""
+    with pytest.raises(montar_dps.DadoIncompativel) as e:
+        _montar(obra=_ObraSemCNO())
+    msg = str(e.value)
+    assert "CNO" in msg
+    assert "C. Diários" in msg          # onde a pessoa resolve
+    assert "E0370" in msg               # para casar com o erro que ela viu
+
+
+@pytest.mark.parametrize("subitem", sorted(montar_dps.SUBITENS_QUE_EXIGEM_OBRA))
+def test_todos_os_subitens_da_lista_do_erro_exigem_a_obra(subitem):
+    d = _montar(dados_rps=_dados_rps_com_servico(subitem))
+    assert d.obra is not None, f"{subitem} deveria exigir o grupo de obra"
+    assert d.obra.c_obra == "900252541076"
+
+
+def test_servico_fora_da_lista_nao_leva_grupo_de_obra(schema):
+    """Mandar o grupo onde ele não é previsto é tão errado quanto omiti-lo onde
+    é. A lista do erro E0370 é a regra, e nada além dela."""
+    d = _montar(dados_rps=_dados_rps_com_servico("010101"))
+    assert d.obra is None
+    doc = etree.fromstring(etree.tostring(_xml(d)))
+    assert schema.validate(doc), schema.error_log
+    assert _txt(doc, "infDPS/serv/obra/cObra") is None
+
+
+def test_servico_fora_da_lista_nao_exige_CNO():
+    """Obra sem CNO só barra onde o nacional de fato exige."""
+    d = _montar(obra=_ObraSemCNO(), dados_rps=_dados_rps_com_servico("010101"))
+    assert d.obra is None
+
+
+def test_CNO_com_tamanho_estranho_avisa_mas_nao_barra(capsys):
+    """A plataforma é que valida o número contra a base da Receita. Barrar por
+    palpite impediria uma obra legítima de faturar — mas o aviso sai no log,
+    porque CNO truncado é a explicação mais provável de uma recusa com o grupo
+    presente."""
+    class _ObraCurta(ObraFalsa):
+        cno = "90.025.254"
+    d = _montar(obra=_ObraCurta())
+    assert d.obra.c_obra == "90025254"
+    assert "ATENÇÃO" in capsys.readouterr().out
+
+
+# --- as outras duas identificações que o layout aceita ---------------------- #
+def test_a_identificacao_pode_ser_o_CIB(schema):
+    """Não é o caminho da BWS, mas é uma das três do layout. Fica provado para
+    quando aparecer obra sem CNO e com CIB."""
+    d = _montar()
+    d.obra = nac.GrupoObra(c_cib="12345678")
+    doc = etree.fromstring(etree.tostring(_xml(d)))
+    assert schema.validate(doc), schema.error_log
+    assert _txt(doc, "infDPS/serv/obra/cCIB") == "12345678"
+
+
+def test_a_identificacao_pode_ser_o_ENDERECO_DA_OBRA(schema):
+    """A terceira alternativa. A C. Diários não guarda o endereço da OBRA (o que
+    ela tem é o do cliente, que é outra coisa), então hoje este caminho não é
+    usado — mas ele é o que destrava uma obra sem CNO, e por isso tem de estar
+    provado antes de ser preciso."""
+    d = _montar()
+    d.obra = nac.GrupoObra(end={"CEP": "61.760-000", "xLgr": "Rua Luis Moreira Gomes",
+                                "nro": "100", "xBairro": "Centro"})
+    doc = etree.fromstring(etree.tostring(_xml(d)))
+    assert schema.validate(doc), schema.error_log
+    assert _txt(doc, "infDPS/serv/obra/end/CEP") == "61760000"   # sem pontuação
+    assert _txt(doc, "infDPS/serv/obra/end/xBairro") == "Centro"
+
+
+def test_grupo_de_obra_sem_nenhuma_identificacao_e_recusado():
+    """O layout exige UMA das três. Um grupo vazio passaria batido num
+    `if obra:` e sairia na declaração como `<obra/>`."""
+    d = _montar()
+    d.obra = nac.GrupoObra()
+    with pytest.raises(ValueError, match="UMA"):
+        _xml(d)
+
+
+def test_a_inscricao_imobiliaria_quando_houver_vem_antes_da_identificacao(schema):
+    d = _montar()
+    d.obra = nac.GrupoObra(c_obra="900252541076", insc_imob_fisc="1234567")
+    doc = etree.fromstring(etree.tostring(_xml(d)))
+    assert schema.validate(doc), schema.error_log
+    obra = doc.find("{%s}infDPS/{%s}serv/{%s}obra"
+                    % (nac.NS_NFSE, nac.NS_NFSE, nac.NS_NFSE))
+    assert [etree.QName(e).localname for e in obra] == ["inscImobFisc", "cObra"]

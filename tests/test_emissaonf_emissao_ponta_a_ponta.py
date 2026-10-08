@@ -1016,3 +1016,124 @@ def test_a_tela_de_emissao_tem_link_para_a_nota_do_portal(cenario):
     cliente, _ = cenario
     corpo = cliente.get(f"/emissao/?token={TOKEN}", follow_redirects=True).get_data(as_text=True)
     assert "Nota emitida no portal" in corpo
+
+
+# --------------------------------------------------------------------------- #
+# O erro que ficou escondido na fila por um dia
+# --------------------------------------------------------------------------- #
+def test_o_erro_E0370_explica_que_faltava_a_identificacao_da_obra():
+    """A TI da prefeitura mostrou este erro em 08/10/2026, e ele é o veredito da
+    nota 3281. O texto cru fala em "grupo de informações de obra" e lista treze
+    subitens — quem lê não tem como saber que o que falta é o CNO da obra na
+    C. Diários. A tradução diz onde resolver."""
+    import emitir_dps
+    texto = emitir_dps.explicar_erros([
+        "[E0370] O grupo de informações de obra é obrigatório quando o código de "
+        "tributação nacional pertencer a um dos subitens 07.02.01, 07.02.02 (…)"
+    ])
+    assert len(texto) == 1
+    assert "CNO" in texto[0]
+    assert "C. Diários" in texto[0]
+    assert "3281" in texto[0]          # liga o erro ao caso que ele explica
+
+
+def test_a_declaracao_enviada_leva_a_identificacao_da_obra(cenario):
+    """O fecho da história: a declaração que sai agora traz o grupo que faltava.
+    Sem isto, a prefeitura aceita e o nacional recusa — e a nota fica presa."""
+    cliente, enviados = cenario
+    _emitir(cliente)
+    assert "<obra>" in enviados["dps"]
+    assert "<cObra>900252541076</cObra>" in enviados["dps"]
+
+
+# --------------------------------------------------------------------------- #
+# O número preso numa declaração que morreu
+#
+# A recusa pode chegar HORAS depois, e por fora: a declaração da nota 3281 ficou
+# um dia respondendo "em processamento" à consulta enquanto o portal da
+# prefeitura já a mostrava como "Processado com Erros". Enquanto a declaração
+# fica em aberto, ela SEGURA o número dela, e a numeração pula esse número para
+# sempre.
+# --------------------------------------------------------------------------- #
+def test_recusa_descoberta_na_conferencia_libera_o_numero(cenario, monkeypatch):
+    """A emissão já marcava a recusa. Esta tela não marcava — e é justamente por
+    ela que se descobre a recusa que chegou tarde."""
+    cliente, _enviados = cenario
+    from app.apps.emissaonf import web as servindo
+    import emitir_dps
+
+    marcadas = []
+    monkeypatch.setattr(servindo._decl, "marcar_recusada",
+                        lambda planilha, id_dps, motivos: marcadas.append((id_dps, motivos)))
+
+    def recusou(*a, **k):
+        raise emitir_dps.DeclaracaoRecusada(["[E0370] falta o grupo de obra"],
+                                            id_dps="DPS" + "1" * 42)
+    monkeypatch.setattr(emitir_dps, "consultar", recusou)
+
+    r = cliente.post("/emissao/declaracao",
+                     data={"id_dps": "DPS" + "1" * 42, "token": TOKEN, "card_id": CARD},
+                     follow_redirects=True)
+    assert r.status_code == 200
+    assert len(marcadas) == 1, "a declaração recusada tem de ser marcada, senão o número fica preso"
+
+
+def test_liberar_o_numero_a_mao_marca_recusada_e_nao_emite_nada(cenario, monkeypatch):
+    """A saída para a recusa que a API nunca conta. Mexe só no controle de
+    numeração: não emite, não cancela e não apaga."""
+    cliente, _enviados = cenario
+    from app.apps.emissaonf import web as servindo
+    import emitir_dps
+
+    marcadas = []
+    monkeypatch.setattr(servindo._decl, "marcar_recusada",
+                        lambda planilha, id_dps, motivos: (marcadas.append(id_dps), True)[1])
+    monkeypatch.setattr(servindo, "_ctx_minimo",
+                        lambda: {"cred": {}, "gc": _GoogleFalso()})
+    # se algum destes for chamado, a tela está fazendo mais do que diz
+    monkeypatch.setattr(emitir_dps, "consultar",
+                        lambda *a, **k: pytest.fail("liberar não consulta a prefeitura"))
+    monkeypatch.setattr(servindo._concluir, "concluir",
+                        lambda *a, **k: pytest.fail("liberar não roda o pós-emissão"))
+
+    id_dps = "DPS2304285200007952600010900001260000000003281"
+    corpo = cliente.get(f"/emissao/declaracao?token={TOKEN}&liberar=1&id_dps={id_dps}"
+                        ).get_data(as_text=True)
+    assert marcadas == [id_dps]
+    assert "liberado" in corpo
+    assert "Nada foi emitido" in corpo
+
+
+def test_liberar_declaracao_que_nao_existe_na_aba_avisa(cenario, monkeypatch):
+    cliente, _enviados = cenario
+    from app.apps.emissaonf import web as servindo
+    monkeypatch.setattr(servindo._decl, "marcar_recusada", lambda *a, **k: False)
+    monkeypatch.setattr(servindo, "_ctx_minimo",
+                        lambda: {"cred": {}, "gc": _GoogleFalso()})
+    corpo = cliente.get(f"/emissao/declaracao?token={TOKEN}&liberar=1"
+                        f"&id_dps=DPS{'9' * 42}").get_data(as_text=True)
+    assert "Não achei essa declaração" in corpo
+
+
+def test_liberar_o_numero_so_aparece_na_declaracao_parada(cenario, monkeypatch):
+    """Oferecer isto numa declaração que ainda está na fila convidaria a liberar
+    o número de uma nota que talvez exista."""
+    cliente, _enviados = cenario
+    from app.apps.emissaonf import web as servindo
+    monkeypatch.setattr(servindo, "_ctx_minimo",
+                        lambda: {"cred": {}, "gc": _GoogleFalso()})
+
+    def abertas(_planilha):
+        return [
+            {"id_dps": "DPS" + "1" * 42, "numero": "3281", "card_id": CARD,
+             "obra": "CREPEEXU", "med": "10", "ambiente": "producao",
+             "enviada_em": "07/10/2026 11:00", "horas_aberta": 26, "travada": True},
+            {"id_dps": "DPS" + "2" * 42, "numero": "3285", "card_id": CARD,
+             "obra": "CREPEEXU", "med": "11", "ambiente": "producao",
+             "enviada_em": "08/10/2026 10:00", "horas_aberta": 0, "travada": False},
+        ]
+    monkeypatch.setattr(servindo._decl, "listar_abertas", abertas)
+
+    corpo = cliente.get(f"/emissao/declaracao?token={TOKEN}").get_data(as_text=True)
+    assert corpo.count("liberar o número") == 1
+    assert ("id_dps=" + "DPS" + "1" * 42 + "&card_id=" + CARD) in corpo.replace("&amp;", "&")

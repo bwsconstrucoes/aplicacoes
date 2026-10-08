@@ -32,31 +32,42 @@ Onde os dois se contradisseram, está escrito qual venceu e por quê.
 
 ## Onde o trabalho está
 
-### ⚠️ Estado em 07/10/2026 — leia isto primeiro
+### ⚠️ Estado em 08/10/2026 — leia isto primeiro
 
-A prefeitura **desligou o formato de nota** que o sistema usava, e a emissão
-ficou parada. A migração para o formato novo (DPS, padrão nacional) foi feita no
-mesmo dia e está na seção própria mais abaixo.
+A prefeitura **desligou o formato de nota** que o sistema usava em 07/10/2026, e
+a emissão ficou parada. A migração para o formato novo (DPS, padrão nacional) foi
+feita e publicada no mesmo dia.
 
-A migração **foi publicada em 07/10/2026**, com o "pode" do dono no mesmo dia.
+**A primeira tentativa real (nota 3281) não virou nota, e já se sabe por quê.**
+A prefeitura aceitou a declaração e a plataforma nacional a recusou com o erro
+**E0370: faltava o grupo de informações da obra**, obrigatório para serviço de
+construção civil. A recusa ficou numa tela de pendências que a nossa consulta não
+alcança — por um dia a consulta respondeu "em processamento" para uma declaração
+já morta. A TI da prefeitura mostrou o erro ao dono em 08/10/2026.
 
-**O que falta é a primeira emissão de verdade.** Nenhum teste aqui conversa com
-a prefeitura: tudo o que dava para conferir sem emitir foi conferido (a
-declaração passa no schema oficial, os documentos saem certos da resposta nova),
-mas a primeira nota real é a primeira prova.
+**Consertado no mesmo dia:** a declaração passou a levar o **CNO da obra** (da
+C. Diários, coluna "CNO"), e obra sem CNO barra a emissão antes de enviar. A
+seção "O VEREDITO DA 3281" explica por que isso não apareceu em nada que havia
+sido conferido — a declaração sem o grupo é **válida no schema oficial**, e a
+obrigatoriedade é regra de negócio da plataforma, não do arquivo.
 
-**A sequência combinada com ele, nesta ordem:**
+**O que falta continua sendo a primeira emissão de verdade.** Nenhum teste aqui
+conversa com a prefeitura, e o ensaio em homologação segue indisponível (o
+município não habilitou a Produção Restrita — erro E0037). Tudo o que dava para
+conferir sem emitir foi conferido; a primeira nota real é a primeira prova.
 
-1. abrir **`/emissao/diag`** e ver se o token da prefeitura está no serviço — a
-   primeira linha responde isso. Sem ele nenhuma nota sai, nem em ensaio;
-2. **ensaiar uma nota em homologação** (caixa "Ensaiar primeiro" na tela de
-   emissão) e conferir o resultado;
-3. só então **emitir de verdade** e conferir o número, os PDFs, a planilha, o
-   Omie e o card.
+**A sequência, com o que se aprendeu da 3281:**
 
-**O que acontece se algum desses passos falhar está escrito abaixo, na seção da
-migração.** O que NÃO se sabe, e só a primeira emissão responde: se a prefeitura
-aceita a declaração exatamente como ela está, e qual número ela devolve.
+1. **emitir de verdade** (o ensaio está indisponível — ver E0037 acima; a caixa
+   "Ensaiar primeiro" continua na tela, mas em Eusébio ela devolve o E0037);
+2. se a nota não ficar pronta na hora, **"Conferir declaração"** — e, se a
+   consulta insistir em "em processamento" por horas, **olhar o portal da
+   prefeitura**, na tela de pendências de transmissão da DPS Nacional. Foi lá, e
+   só lá, que a recusa da 3281 apareceu. A nossa consulta não alcança essa tela;
+3. conferir o número devolvido, os PDFs, a planilha, o Omie e o card.
+
+**O que NÃO se sabe, e só a primeira emissão responde:** se a plataforma aceita o
+formato do CNO que mandamos, e qual número a prefeitura devolve.
 
 ### O histórico até aqui
 
@@ -71,16 +82,20 @@ trabalho pendente é **conserto e faxina**, não funcionalidade nova.
 
 ### O que está pendente AGORA
 
-**O que está na frente de tudo (07/10/2026):**
+**O que está na frente de tudo (08/10/2026):**
 
-1. **Ensaiar uma nota em homologação** e conferir o resultado. É o primeiro
-   passo depois de publicar a migração — e o único jeito de ver a nota antes de
-   emitir de verdade.
-2. **Emitir a primeira nota de verdade** no formato novo, e conferir: o número
-   que a prefeitura devolve, o PDF municipal, a DANFSe, a linha da planilha, o
-   título no Omie e o card.
-3. **Conferir se o token da prefeitura (`EL_NFSE_TOKEN`) está no serviço.**
-   Sem ele nenhuma nota sai. `/emissao/diag` responde isso.
+1. **Emitir de novo, agora com a identificação da obra.** É o que destrava o
+   faturamento. O número 3281 está livre (a declaração foi recusada); se a lista
+   de declarações em aberto ainda mostrar a 3281 parada, usar o "liberar o
+   número" nela antes. Conferir, na nota que sair: o número devolvido, o PDF
+   municipal, a DANFSe, a linha da planilha, o título no Omie e o card.
+2. **Se vier recusa com o grupo de obra presente**, o suspeito nº 1 é o
+   **formato do CNO**: mandamos só os dígitos (`900252541076`), que é a
+   convenção do layout, mas o manual não traz exemplo de `<cObra>`. O conserto
+   é de uma linha em `montar_dps._grupo_obra`.
+3. **Pedir à prefeitura que habilite a Produção Restrita** (erro E0037). Sem
+   ambiente de teste, toda mudança no caminho da emissão é provada em nota de
+   verdade — foi o que custou a 3281.
 4. **Levar ao chat do ERP a inversão do ISS retido** (detalhe na seção de
    07/10/2026). Lá a emissão automática manda o número errado, e não foi mexido
    porque é outra área.
@@ -1087,6 +1102,120 @@ dívida nenhuma** para a emissão seguinte pela API — desde que a nota seja
 registrada por esta tela. É o registro que mantém a numeração alinhada: a
 numeração sai da planilha, e nota que não entra nela faria o sistema pedir um
 número que o município já usou.
+
+### ✅ O VEREDITO DA 3281: faltava a identificação da obra (E0370) — 08/10/2026
+
+**O dono trouxe, da TI da prefeitura, o erro que a plataforma nacional tinha
+guardado:**
+
+> *Pendências / Erros de Transmissão da DPS Nacional — Código: **E0370** — O
+> grupo de informações de obra é obrigatório quando o código de tributação
+> nacional pertencer a um dos subitens 07.02.01, 07.02.02, 07.04.01, 07.05.01,
+> 07.05.02, 07.06.01, 07.06.02, 07.07.01, 07.08.01, 07.17.01, 07.19.01, 14.14.03
+> e 14.14.04 da lista de serviços.*
+
+E, no portal, a declaração passou de "Aguardando Transmissão" para
+**"Processado com Erros"**. Ou seja: a nota 3281 **nunca existiu e nunca vai
+existir**, e o número está livre.
+
+**Isto fecha o impasse de 07/10/2026.** O que estava escrito aqui — "as duas
+versões não fecham, a transmissão é da prefeitura" — descrevia o sintoma
+corretamente e **errava o dono do problema**. A fila não estava travada: a
+plataforma nacional recusou, e a recusa ficou numa tela de pendências que a
+nossa consulta não alcança. Durante um dia a consulta respondeu "em
+processamento adn nacional" para uma declaração **já morta**.
+
+#### Por que não apareceu em nada que conferimos
+
+É o ponto que vale guardar, porque vai se repetir.
+
+**A declaração sem o grupo de obra é VÁLIDA no schema oficial.** No XSD o grupo
+é `minOccurs="0"` — opcional. A obrigatoriedade não está no arquivo: é **regra de
+negócio da plataforma nacional**, condicionada ao código do serviço. Então a
+conferência contra o schema, que pegou tudo o mais, **não tinha como pegar esta**.
+
+**E o modelo antigo não tinha esse campo.** No ABRASF o CNO ia solto no texto da
+discriminação ("CNO Nº 90.025.25410/76") — e ia, em todas as notas, há meses. A
+migração traduziu campo por campo o que existia; um campo que **passou a existir**
+não aparece numa tradução.
+
+**A divisão de responsabilidade escondeu o resto:** o município aceitou (HTTP
+200, `idDPS` devolvido) e o nacional recusou, depois, do outro lado da fila. Os
+dois estavam certos sobre a sua parte, e nenhum dos dois contava a do outro.
+
+#### O conserto
+
+**O grupo de obra passou a ir na declaração**, com o **CNO** da obra — que o dono
+confirmou estar na **C. Diários, coluna Z, cabeçalho "CNO"**, que é exatamente a
+coluna que o carregador já lia (por nome, não por posição).
+
+**Por que o CNO e não as outras duas.** O layout (`TCInfoObra`) aceita três
+identificações e exige **exatamente uma**:
+
+| Alternativa | O que é | Por que não |
+|---|---|---|
+| `cObra` | CNO ou CEI da obra | **é o que usamos** — a BWS tem para cada obra |
+| `cCIB` | Cadastro Imobiliário Brasileiro | a empresa não usa |
+| `end` | endereço da obra (CEP, logradouro, nº, bairro) | a C. Diários não tem o endereço da OBRA; o que ela tem é o do cliente, que é outra coisa |
+
+As três estão implementadas e provadas contra o schema — o endereço é o que
+destrava uma obra sem CNO, e por isso tem de estar pronto **antes** de ser
+preciso.
+
+**O número vai sem pontuação**, como todo documento deste layout: o CNPJ, o CPF
+e o CEP já eram enviados só com dígitos pelo próprio construtor. Na planilha o
+CNO está escrito `90.025.25410/76`; na declaração vai `900252541076`.
+
+**Obra sem CNO barra a emissão ANTES de enviar**, com o motivo escrito e dizendo
+onde resolver. Essa escolha tem conta: barrar custa um aviso na tela; deixar
+passar custa um número de nota queimado, uma declaração presa na fila e — como
+se viu — um dia para descobrir. Sem o `print` de aviso quando o número tem
+tamanho diferente de 12 dígitos, um CNO truncado seria a próxima caçada.
+
+**Só nos treze subitens da lista.** Mandar o grupo onde ele não é previsto é tão
+errado quanto omiti-lo onde é. A lista do erro é a regra, e nada além dela — a
+BWS emite sempre em 070202, então para ela é sempre.
+
+#### Dois consertos que o impasse revelou, e eles não são do E0370
+
+**1. A recusa descoberta pela conferência não liberava o número.** A emissão já
+marcava a declaração como recusada; a tela "Conferir declaração" **não marcava**
+— e ela é justamente a tela por onde se descobre a recusa que chegou tarde.
+Enquanto a declaração fica "aguardando", ela **segura o número dela** (defeito
+consertado em 07/10, ver acima), e a numeração pularia 3281 para sempre. Agora
+marca.
+
+**2. A API pode nunca contar a recusa.** Foi o caso: um dia inteiro respondendo
+"em processamento" para uma declaração que o portal já dava como recusada. Então
+a lista de declarações em aberto ganhou, **só nas declarações paradas**, um
+"liberar o número": marca como recusada e devolve o número ao uso. Oferecer isso
+numa declaração que ainda está na fila convidaria a liberar o número de uma nota
+que talvez exista — por isso só na parada, e com confirmação que diz em letras
+claras para usar apenas quando o portal mostra a recusa. Não emite, não cancela
+e não apaga nada: mexe só no controle de numeração.
+
+**E o E0370 ganhou tradução.** O texto cru fala em "grupo de informações de obra"
+e lista treze subitens; quem lê não tem como saber que o que falta é o CNO da
+obra na C. Diários. A tela da recusa agora diz isso, e cita a 3281.
+
+#### O que foi conferido, e o que NÃO foi
+
+**Conferido:** a declaração com o grupo de obra passa no schema oficial nas
+quatro tributações que a BWS usa; o grupo sai na posição que o XSD exige (dentro
+de `serv`, depois de `cServ`); o CNO vai sem pontuação; os treze subitens da
+lista exigem o grupo e um código fora da lista não o leva; obra sem CNO barra
+antes de enviar, com mensagem que nomeia a coluna e o erro; as outras duas
+identificações (CIB e endereço) montam e validam; grupo vazio é recusado em vez
+de sair como `<obra/>`; a declaração que a tela de emissão envia de fato leva o
+`<cObra>`. São 24 casos novos; a suíte inteira passa (5.133).
+
+**NÃO conferido, e é o que importa:** se a plataforma nacional aceita o **formato**
+do CNO que mandamos. Dígitos sem pontuação é a convenção do layout e o que o
+resto do arquivo já faz, mas não há no manual um exemplo de `<cObra>` — os dois
+exemplos oficiais não são de serviço de obra. E não houve ensaio: a Produção
+Restrita do município continua desabilitada (E0037), então **a primeira emissão
+de verdade segue sendo a primeira prova**. Se vier recusa com o grupo presente, o
+mais provável é o formato do número, e o conserto é de uma linha.
 
 ### "Só a linha da planilha": uma nota certa com a planilha faltando — 07/10/2026
 
