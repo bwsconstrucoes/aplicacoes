@@ -85,5 +85,14 @@ def excecoes(conn: Connection, obras: Optional[list[int]] = None) -> dict:
         SELECT d.id, d.descricao, d.status,
                (SELECT count(*) FROM ponto.dispositivo_autorizados a WHERE a.dispositivo_id = d.id) AS pessoas
           FROM ponto.dispositivos d WHERE d.perfil = 'LISTA' AND d.status <> 'BLOQUEADO' ORDER BY d.id""")
+    from . import papeis
+    # Os papéis no aplicativo (08/10/2026): quem faz pedido pelo próprio celular
+    # e quem é administrativo de obra — também são exceções, e ficam à vista.
+    pedem = [{"id": p["id"], "nome": p["nome"], "obra": p.get("obra_codigo")}
+             for p in pessoas if p.get("pede_no_celular")]
+    administrativos = [{"id": p["id"], "nome": p["nome"], "obra": p.get("obra_codigo")}
+                       for p in pessoas if p.get("administrativo_obra")]
     return {"em_vigor": em_vigor(conn), "celular": celular, "banco": com_banco,
-            "aparelhos_de_lista": [{**l, "pessoas": int(l["pessoas"])} for l in listas]}
+            "aparelhos_de_lista": [{**l, "pessoas": int(l["pessoas"])} for l in listas],
+            "papeis_disponivel": papeis.disponivel(conn), "pedem_no_celular": pedem,
+            "administrativos": administrativos}

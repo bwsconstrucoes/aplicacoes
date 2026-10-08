@@ -347,3 +347,4 @@ def aplicar_migracoes():
 
 # O "Meu ponto" do celular pendura as rotas dele neste mesmo blueprint.
 from . import app_colaborador  # noqa: E402,F401
+from . import app_obra  # noqa: E402,F401

@@ -754,13 +754,24 @@ def ponto_api_excecoes():
 @permissao("tratar_ponto")
 @_api
 def ponto_api_pessoa_forma_de_bater(colaborador_id: int):
-    """Exceção: a pessoa também bate no próprio celular."""
-    from .core import forma_de_bater
+    """Exceções da pessoa no aplicativo: também bate no próprio celular; faz
+    pedidos pelo próprio celular; é administrativo de obra (08/10/2026,
+    core/papeis.py). Campo ausente fica como está."""
+    from .core import forma_de_bater, papeis
     quem, d = _quem(), _corpo()
     with db.conexao() as conn:
         _exigir_pessoa(conn, quem, colaborador_id)
-        forma_de_bater.definir(conn, colaborador_id, bool(d.get("bate_no_celular")), quem.nome)
-    return _ok(bate_no_celular=bool(d.get("bate_no_celular")))
+        if "bate_no_celular" in d:
+            forma_de_bater.definir(conn, colaborador_id, bool(d.get("bate_no_celular")), quem.nome)
+        if "pede_no_celular" in d or "administrativo_obra" in d:
+            papeis.definir(conn, colaborador_id,
+                           pede_no_celular=(bool(d["pede_no_celular"]) if "pede_no_celular" in d else None),
+                           administrativo_obra=(bool(d["administrativo_obra"]) if "administrativo_obra" in d else None))
+            logger.info("Ponto: papéis da pessoa %s no aplicativo — pedidos %s, administrativo %s (por %s)",
+                        colaborador_id, d.get("pede_no_celular"), d.get("administrativo_obra"), quem.nome)
+        p = cadastros.colaborador_por_id(conn, colaborador_id)
+    return _ok(bate_no_celular=bool(p.get("bate_no_celular")), pede_no_celular=bool(p.get("pede_no_celular")),
+               administrativo_obra=bool(p.get("administrativo_obra")))
 
 
 @bp.route("/erp/api/ponto/ensaio")
@@ -1570,11 +1581,15 @@ def ponto_api_dispositivo_aprovar(dispositivo_id: int):
         if d.get("cpf"):
             p = cadastros.colaborador_por_cpf(conn, cadastros.normalizar_cpf(d["cpf"]))
             if not p:
-                raise ErroDeValidacao("pessoa não cadastrada", campo="cpf")
+                raise ErroDeValidacao("CPF do responsável não está no cadastro", campo="cpf")
             colaborador_id = int(p["id"])
-        elif str(d.get("perfil") or "").upper() == "INDIVIDUAL":
-            # Sem CPF: vale quem entrou com CPF e PIN neste celular, se alguém entrou.
+        else:
+            # Sem CPF: vale quem já está no aparelho (quem entrou nele com CPF e
+            # PIN, ou o responsável de antes).
             colaborador_id = dispositivos.por_id(conn, dispositivo_id).get("colaborador_id")
+        if not colaborador_id:
+            # Todo aparelho tem responsável (decisão do dono, 07/10/2026).
+            raise ErroDeValidacao("diga o CPF do responsável — quem fica com o aparelho", campo="cpf")
         autorizados = []
         for cpf in d.get("autorizados") or []:
             p = cadastros.colaborador_por_cpf(conn, cadastros.normalizar_cpf(cpf))
@@ -1595,6 +1610,19 @@ def ponto_api_dispositivo_aprovar(dispositivo_id: int):
                                  descricao=d.get("descricao"), autorizados=autorizados, obras=obras,
                                  valido_ate=d.get("valido_ate"))
     return _ok(dispositivo=dispositivos.para_json(a), substituidos=len(a.get("substituidos") or []))
+
+
+@bp.route("/erp/api/ponto/dispositivos/<int:dispositivo_id>")
+@login_obrigatorio
+@permissao("configurar_ponto")
+@_api
+def ponto_api_dispositivo(dispositivo_id: int):
+    """Um aparelho com o grupo dele — para "Alterar" abrir com tudo preenchido."""
+    with db.conexao() as conn:
+        a = dispositivos.para_json(dispositivos.detalhado(conn, dispositivo_id))
+        a["autorizados"] = [{"nome": p["nome"], "cpf": p["cpf"]}
+                            for p in dispositivos.autorizados_detalhados(conn, dispositivo_id)]
+    return _ok(dispositivo=a)
 
 
 @bp.route("/erp/api/ponto/dispositivos/<int:dispositivo_id>/renovar", methods=["POST"])

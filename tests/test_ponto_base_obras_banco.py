@@ -152,7 +152,7 @@ def test_aparelho_da_obra_mostra_codigo_e_nao_aceita_login(app, mundo, monkeypat
         dispositivos.aprovar(conn, item["id"], perfil="COMPARTILHADO", aprovado_por="teste",
                              obras=[mundo["obra_a"]])
     r = c.post("/ponto/app/api/entrar", json={"cpf": CPF_JOAO, "pin": "481927"}, headers=h)
-    assert r.status_code == 403 and "aparelho da obra" in r.get_json()["erro"]
+    assert r.status_code == 403 and "ponto da obra" in r.get_json()["erro"]
 
 
 def test_aparelho_aprovado_se_altera_e_bloqueado_se_reativa(app, mundo):
@@ -165,7 +165,7 @@ def test_aparelho_aprovado_se_altera_e_bloqueado_se_reativa(app, mundo):
     ap = next(a for a in dp.get("/erp/api/ponto/dispositivos").get_json()["dispositivos"]
               if a["device_uuid"] == uuid)
     assert dp.post(f"/erp/api/ponto/dispositivos/{ap['id']}/aprovar",
-                   json={"perfil": "LISTA", "autorizados": [CPF_JOAO, CPF_MARIA]}).status_code == 200
+                   json={"perfil": "LISTA", "autorizados": [CPF_JOAO, CPF_MARIA], "cpf": CPF_MARIA}).status_code == 200
     r = dp.post(f"/erp/api/ponto/dispositivos/{ap['id']}/aprovar",
                 json={"perfil": "LISTA", "autorizados": [], "manter_grupo": True, "obras": ["PG-A"]})
     assert r.status_code == 200
