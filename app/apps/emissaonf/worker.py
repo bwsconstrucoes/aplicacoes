@@ -56,6 +56,37 @@ def abrir_aba(planilha, candidatos):
     )
 
 
+# Quantos dígitos tem o número que a plataforma NACIONAL devolve. O layout
+# (TSNNFSe) permite até 13, e Eusébio usa os 13: ano em 2 dígitos + o nosso
+# sequencial em 11. A nota 3283, de 08/10/2026, voltou como 2600000003283.
+DIGITOS_NUMERO_NACIONAL = 13
+
+
+def sequencial_da_nota(numero) -> int:
+    """O nosso número sequencial, a partir do número que está gravado.
+
+    ⚠️ **Sem isto a numeração se perde para sempre, e isso quase aconteceu.** Com
+    o modelo antigo a nota 3280 voltava como `3280`. No modelo nacional ela volta
+    como **`2600000003283`** — ano (26) + o nosso sequencial em 11 dígitos. É o
+    número OFICIAL da nota, é ele que vai no documento do cliente, e é ele que
+    fica na planilha.
+
+    Só que o próximo número sai do maior número da planilha MAIS UM. Lido cru,
+    `2600000003283 + 1` pediria a nota **2.600.000.003.284** — e a sequência
+    nunca mais voltaria. Então o número gravado é traduzido de volta ao
+    sequencial antes de qualquer conta: 2600000003283 → 3283 → a próxima é 3284.
+
+    Número de 13 dígitos é nacional; qualquer outro é do modelo antigo e vale
+    como está (um sequencial da BWS tem 4 dígitos e não chega perto disso).
+    """
+    digitos = "".join(c for c in str(numero or "") if c.isdigit())
+    if not digitos:
+        return 0
+    if len(digitos) == DIGITOS_NUMERO_NACIONAL:
+        return int(digitos[2:])          # tira o ano
+    return int(digitos)
+
+
 def proximo_numero(gc, card_id=None) -> tuple[int, int]:
     """Próximo número da nota, e o último de fato emitido.
 
@@ -84,7 +115,10 @@ def proximo_numero(gc, card_id=None) -> tuple[int, int]:
     planilha = gc.open_by_key(ID_PROC)
     ws = abrir_aba(planilha, ABA_NOTAS)
     col = ws.col_values(COL_NUMERO)
-    nums = [int(re.sub(r"\D", "", c)) for c in col if re.sub(r"\D", "", c).isdigit()]
+    # Traduzido de volta ao sequencial: a coluna tem número do modelo antigo
+    # (3280) e número nacional (2600000003283) convivendo. Ver `sequencial_da_nota`.
+    nums = [sequencial_da_nota(c) for c in col if any(ch.isdigit() for ch in str(c))]
+    nums = [n for n in nums if n]
     ultimo = max(nums) if nums else 0        # o último REALMENTE emitido
 
     presos = []

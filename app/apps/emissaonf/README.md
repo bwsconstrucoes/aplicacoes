@@ -125,8 +125,15 @@ que é editável — o que estiver ali é o corpo que vai ser emitido.
 
 Nada foi enviado ainda. Sair da página não deixa rastro.
 
-> ⚠️ **O ensaio depende da prefeitura ter habilitado o ambiente de teste.** Se
-> ele recusar com o erro **E0037**, a tela explica: apesar do texto oficial falar
+> ⚠️ **TENTE O ENSAIO ANTES DE EMITIR.** Até 08/10/2026 ele nunca foi concluído:
+> na primeira tentativa a tela demorava 150s (defeito nosso, consertado), na
+> segunda faltava o token da prefeitura (também consertado) — e a memória da área
+> passou a afirmar, sem evidência, que ele estava bloqueado. Isso fez quatro
+> recusas do padrão nacional serem descobertas em **emissão de verdade**, uma por
+> tentativa. Ensaio não cria documento fiscal: tentar não custa nada.
+>
+> **O ensaio depende de a prefeitura ter habilitado o ambiente de teste**, e é o
+> erro **E0037** que diria que não está. Se ele aparecer, a tela explica: apesar do texto oficial falar
 > de "município inexistente", o manual diz que na prática significa que o
 > município **não configurou a Produção Restrita** na Plataforma Nacional. Não há
 > o que corrigir aqui — é um pedido à prefeitura. Enquanto isso, a conferência de
@@ -228,6 +235,24 @@ omitir e que esteja indo com zero. A exceção são os indicadores (`indFinal`,
 `indDest`, `indTotTrib`, `finNFSe`, `regEspTrib`), onde zero é um **significado**
 e não um valor. O mesmo defeito já tinha aparecido em três campos diferentes
 antes de virar varredura.
+
+### O número da nota agora tem o ano na frente — e a numeração sabe disso
+
+No padrão nacional a nota volta com **13 dígitos**: ano (26) + o nosso sequencial
+em 11. A primeira, de 08/10/2026, é a **`2600000003283`** — o sequencial dela é
+3283. Tanto `nNFSe` como `nDFSe` vêm assim; **não existe um número municipal
+curto separado** no XML.
+
+É esse número oficial que fica na planilha, no Omie e no documento do cliente —
+guardar o `3283` ali seria mais cômodo, mas faria o sistema divergir do que a
+prefeitura e o cliente veem, e conciliar é para que a coluna serve.
+
+**O cuidado que isso exige, e ele não é opcional:** o próximo número sai do maior
+da planilha mais um. Lido cru, `2600000003283 + 1` pediria a nota
+**2.600.000.003.284**, e a sequência nunca mais voltaria. Então o número gravado é
+traduzido de volta ao sequencial antes de qualquer conta
+(`worker.sequencial_da_nota`): 13 dígitos é nacional e tem o ano na frente,
+qualquer outro é do modelo antigo. A planilha tem os dois formatos convivendo.
 
 ### A declaração é gravada antes de qualquer espera
 
