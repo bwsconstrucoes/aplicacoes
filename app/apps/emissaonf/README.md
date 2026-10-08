@@ -239,9 +239,10 @@ antes de virar varredura.
 ### O número da nota agora tem o ano na frente — e a numeração sabe disso
 
 No padrão nacional a nota volta com **13 dígitos**: ano (26) + o nosso sequencial
-em 11. A primeira, de 08/10/2026, é a **`2600000003283`** — o sequencial dela é
-3283. Tanto `nNFSe` como `nDFSe` vêm assim; **não existe um número municipal
-curto separado** no XML.
+em 11. As duas primeiras, de 08/10/2026, são a **`2600000003283`** e a
+**`2600000003284`** — sequenciais 3283 e 3284, confirmando que o número longo é
+montado a partir do nosso. Tanto `nNFSe` como `nDFSe` vêm assim; **não existe um
+número municipal curto separado** no XML.
 
 É esse número oficial que fica na planilha, no Omie e no documento do cliente —
 guardar o `3283` ali seria mais cômodo, mas faria o sistema divergir do que a

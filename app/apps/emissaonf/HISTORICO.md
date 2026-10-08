@@ -1412,7 +1412,7 @@ certo: `pRedAliqUF = 50,00`, `pRedAliqCBS = 50,00` — redução de 50%, que é
 exatamente o que a classificação "Operações com bens imóveis" prevê. Valores
 `vIBS = 11,93` e `vCBS = 107,36`.
 
-#### ⚠️ E o número quase destruiu a numeração — pego antes da segunda nota
+#### ⚠️ E o número quase destruiu a numeração — pego a tempo
 
 A nota voltou como **`2600000003283`**: ano (26) + o nosso sequencial (3283) em
 11 dígitos. Tanto `nNFSe` como `nDFSe` vêm assim — **não existe, no XML, um
@@ -1443,6 +1443,17 @@ sempre aparece deixa de ser lido. Agora a comparação é pelo sequencial, e qua
 os dois batem a tela **explica o formato**: o número oficial é ano + sequencial, e
 diz qual é o próximo.
 
+**✅ CONFIRMADO pela segunda nota, no mesmo dia.** Isto estava escrito aqui como
+dedução de um caso só: que o número longo é montado a partir do NOSSO sequencial.
+A nota seguinte saiu como **`2600000003284`** — o sequencial pedido era 3284.
+Então a regra é essa, e são dois casos: **o número da nota é ano (2 dígitos) + o
+nosso sequencial (11 dígitos)**, e o que a BWS controla continua sendo o
+sequencial.
+
+Essa nota também é a prova de que o conserto funcionou em produção: sem ele, ela
+teria pedido o número 2.600.000.003.284 em vez de 3284, e a sequência estaria
+perdida.
+
 #### O `vLiq` da nota não é o líquido que a BWS recebe
 
 Descoberto no mesmo XML, e vale para a tela "Só a linha da planilha": o
@@ -1465,9 +1476,10 @@ casos novos, entre eles o que impede o estrago da numeração (planilha com os d
 formatos devolvendo 3284) e o líquido da nota 3283 fechando em 23.303,97. Suíte
 inteira: 5.287 passando.
 
-**O que NÃO foi conferido:** a nota saiu de UMA obra, com UMA tributação (PIS,
-COFINS, IR e CSLL retidos, ISS retido, sem INSS). As outras combinações da BWS
-seguem provadas só contra o schema.
+**O que NÃO foi conferido:** as duas notas saíram da MESMA obra e tributação
+(PIS, COFINS, IR e CSLL retidos, ISS retido, sem INSS). As outras combinações da
+BWS seguem provadas só contra o schema — e foi justamente uma combinação
+diferente (esta, sem INSS) que revelou o E0699.
 
 ### E0699, e a varredura que devia ter existido desde a migração — 08/10/2026
 
