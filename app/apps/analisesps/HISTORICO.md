@@ -12238,7 +12238,7 @@ somente Solicitações de uma conta especifica"*.
   continua abrindo o card no Pipefy. Testado no navegador.
 - A ficha mora na tela Solicitações: quem só tem a Conciliação não ganha o
   duplo clique (abriria "não encontrado") — `abre_ficha` na rota.
-- Sem migração.
+- **Publicada em 08/10/2026** (sem migração; suíte inteira 8.884 verdes).
 
 #### Leva 198 — conciliação: a SP de cada saída do extrato (07/10/2026)
 
