@@ -449,7 +449,10 @@ def test_a_emissao_para_na_hora_quando_a_declaracao_e_recusada(cenario, monkeypa
     assert "recusou a declaração" in corpo
     assert "Nenhuma nota foi criada" in corpo
     assert "E0037" in corpo                       # o motivo aparece
-    assert "mesmo número" in corpo                # e a liberação para reemitir
+    # E a tela diz o que fazer: emitir de novo, com número NOVO. Dizer "mesmo
+    # número" era o que o manual manda e o que a prefeitura recusou (EL99).
+    assert "número <b>novo</b>" in corpo
+    assert "EL99" in corpo
     assert chamadas["sleeps"] == 0                # não esperou nada
 
 
@@ -1078,9 +1081,9 @@ def test_recusa_descoberta_na_conferencia_libera_o_numero(cenario, monkeypatch):
     assert len(marcadas) == 1, "a declaração recusada tem de ser marcada, senão o número fica preso"
 
 
-def test_liberar_o_numero_a_mao_marca_recusada_e_nao_emite_nada(cenario, monkeypatch):
-    """A saída para a recusa que a API nunca conta. Mexe só no controle de
-    numeração: não emite, não cancela e não apaga."""
+def test_encerrar_a_declaracao_a_mao_marca_recusada_e_nao_emite_nada(cenario, monkeypatch):
+    """A saída para a recusa que a API nunca conta. Tira da lista e não mexe em
+    mais nada: não emite, não cancela, não apaga — e NÃO libera o número."""
     cliente, _enviados = cenario
     from app.apps.emissaonf import web as servindo
     import emitir_dps
@@ -1097,11 +1100,14 @@ def test_liberar_o_numero_a_mao_marca_recusada_e_nao_emite_nada(cenario, monkeyp
                         lambda *a, **k: pytest.fail("liberar não roda o pós-emissão"))
 
     id_dps = "DPS2304285200007952600010900001260000000003281"
-    corpo = cliente.get(f"/emissao/declaracao?token={TOKEN}&liberar=1&id_dps={id_dps}"
+    corpo = cliente.get(f"/emissao/declaracao?token={TOKEN}&encerrar=1&id_dps={id_dps}"
                         ).get_data(as_text=True)
     assert marcadas == [id_dps]
-    assert "liberado" in corpo
+    assert "Declaração encerrada" in corpo
     assert "Nada foi emitido" in corpo
+    # E diz, em letras claras, que o número NÃO volta — foi a lição do EL99
+    assert "NÃO volta a ser usado" in corpo
+    assert "EL99" in corpo
 
 
 def test_liberar_declaracao_que_nao_existe_na_aba_avisa(cenario, monkeypatch):
@@ -1110,14 +1116,14 @@ def test_liberar_declaracao_que_nao_existe_na_aba_avisa(cenario, monkeypatch):
     monkeypatch.setattr(servindo._decl, "marcar_recusada", lambda *a, **k: False)
     monkeypatch.setattr(servindo, "_ctx_minimo",
                         lambda: {"cred": {}, "gc": _GoogleFalso()})
-    corpo = cliente.get(f"/emissao/declaracao?token={TOKEN}&liberar=1"
+    corpo = cliente.get(f"/emissao/declaracao?token={TOKEN}&encerrar=1"
                         f"&id_dps=DPS{'9' * 42}").get_data(as_text=True)
     assert "Não achei essa declaração" in corpo
 
 
-def test_liberar_o_numero_so_aparece_na_declaracao_parada(cenario, monkeypatch):
-    """Oferecer isto numa declaração que ainda está na fila convidaria a liberar
-    o número de uma nota que talvez exista."""
+def test_encerrar_so_aparece_na_declaracao_parada(cenario, monkeypatch):
+    """Oferecer isto numa declaração que ainda está na fila convidaria a encerrar
+    uma nota que talvez exista."""
     cliente, _enviados = cenario
     from app.apps.emissaonf import web as servindo
     monkeypatch.setattr(servindo, "_ctx_minimo",
@@ -1135,5 +1141,24 @@ def test_liberar_o_numero_so_aparece_na_declaracao_parada(cenario, monkeypatch):
     monkeypatch.setattr(servindo._decl, "listar_abertas", abertas)
 
     corpo = cliente.get(f"/emissao/declaracao?token={TOKEN}").get_data(as_text=True)
-    assert corpo.count("liberar o número") == 1
+    assert corpo.count("encerrar (o número não volta)") == 1
     assert ("id_dps=" + "DPS" + "1" * 42 + "&card_id=" + CARD) in corpo.replace("&amp;", "&")
+
+
+def test_os_erros_novos_do_dia_ganham_traducao():
+    """E0959 e EL99 chegaram em 08/10/2026, um atrás do outro. Texto cru de
+    integração manda a pessoa procurar o problema no lugar errado."""
+    import emitir_dps
+    cst = emitir_dps.explicar_erros(
+        ["E0959 - cClassTrib não pertence ao grupo CST indicado."])
+    assert len(cst) == 1
+    assert "três primeiros dígitos" in cst[0]
+    assert "200046" in cst[0]
+
+    el = emitir_dps.explicar_erros(
+        ["EL99 - ID da DPS inválida - Chave informada para a DPS não existe "
+         "no repositório municipal."])
+    assert len(el) == 1
+    # O que mais importa nesta tradução: ela NÃO afirma que nada foi criado
+    assert "NÃO quer dizer que nada foi criado" in el[0]
+    assert "número NOVO" in el[0]

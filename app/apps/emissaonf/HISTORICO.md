@@ -51,6 +51,14 @@ seção "O VEREDITO DA 3281" explica por que isso não apareceu em nada que havi
 sido conferido — a declaração sem o grupo é **válida no schema oficial**, e a
 obrigatoriedade é regra de negócio da plataforma, não do arquivo.
 
+**E a emissão seguinte revelou mais dois, no mesmo dia:** **EL99** (número já
+enviado não se reusa — a frase do manual sobre reenviar com a mesma
+identificação não vale em Eusébio) e **E0959** (o CST do IBS/CBS são os três
+primeiros dígitos da classificação tributária; ia `000` com `200046`). Os dois
+estão consertados e têm seção própria abaixo. **A numeração passou a nunca reusar
+número já enviado**, e o "liberar o número" publicado de manhã virou "encerrar",
+que não libera.
+
 **O que falta continua sendo a primeira emissão de verdade.** Nenhum teste aqui
 conversa com a prefeitura, e o ensaio em homologação segue indisponível (o
 município não habilitou a Produção Restrita — erro E0037). Tudo o que dava para
@@ -89,10 +97,15 @@ trabalho pendente é **conserto e faxina**, não funcionalidade nova.
    de declarações em aberto ainda mostrar a 3281 parada, usar o "liberar o
    número" nela antes. Conferir, na nota que sair: o número devolvido, o PDF
    municipal, a DANFSe, a linha da planilha, o título no Omie e o card.
-2. **Se vier recusa com o grupo de obra presente**, o suspeito nº 1 é o
-   **formato do CNO**: mandamos só os dígitos (`900252541076`), que é a
-   convenção do layout, mas o manual não traz exemplo de `<cObra>`. O conserto
-   é de uma linha em `montar_dps._grupo_obra`.
+2. **Se vier recusa nova**, os suspeitos já estão mapeados, nesta ordem:
+   **(a)** `tpOper` — "Tipo de Operação com Entes Governamentais ou outros
+   serviços sobre bens imóveis"; o candidato é `1` (fornecimento com pagamento
+   posterior). **(b)** `tpEnteGov` — União/Estado/DF/Município; **isto o sistema
+   não pode deduzir**, porque não dá para saber do CNPJ de que esfera é o órgão:
+   é pergunta para o dono. **(c)** o formato do CNO: mandamos só os dígitos, que
+   é a convenção do layout, mas o manual não traz exemplo de `<cObra>`. Os dois
+   primeiros já estão implementados e desligados (ver
+   `xsd_nacional/IBSCBS_CLASSIFICACAO.md`); ligar é uma linha.
 3. **Pedir à prefeitura que habilite a Produção Restrita** (erro E0037). Sem
    ambiente de teste, toda mudança no caminho da emissão é provada em nota de
    verdade — foi o que custou a 3281.
@@ -1216,6 +1229,100 @@ exemplos oficiais não são de serviço de obra. E não houve ensaio: a Produç�
 Restrita do município continua desabilitada (E0037), então **a primeira emissão
 de verdade segue sendo a primeira prova**. Se vier recusa com o grupo presente, o
 mais provável é o formato do número, e o conserto é de uma linha.
+
+### Dois erros a mais no mesmo dia: EL99 e E0959 — 08/10/2026
+
+Depois do conserto do grupo de obra, o dono emitiu de novo. Deu **EL99**; e,
+pouco depois, na tela de pendências do portal, apareceu **E0959**. São coisas
+diferentes e vale separar, porque uma delas desmente o manual.
+
+#### E0959 — o CST não é um campo de escolha
+
+> *E0959 — cClassTrib não pertence ao grupo CST indicado.*
+
+**O que era:** o grupo da reforma tributária ia com `CST = 000` e
+`cClassTrib = 200046`. **O CST são os três primeiros dígitos do `cClassTrib`** —
+e `200046` é do grupo **200**, não do 000.
+
+Isso está nos dados do **Anexo VIII oficial**, que veio no pacote da prefeitura:
+`000001` ("Situações tributadas integralmente") é do grupo 000, `200046`
+("Operações com bens imóveis") é do 200, `400001` (transporte público) é do 400.
+Sem exceção em toda a tabela. A regra, os valores da BWS e a procedência de cada
+um ficaram escritos em `xsd_nacional/IBSCBS_CLASSIFICACAO.md`, porque a planilha
+do Anexo VIII não está no repositório e a próxima pessoa não vai ter o pacote.
+
+**Como eu tinha "conferido" isso antes e errei:** em 07/10 eu conferi o
+`cClassTrib` contra o Anexo VIII — e ele está certo, é 200046 mesmo. O CST eu
+não conferi contra nada: `000` entrou como "operação tributável", que é o que
+`tribISSQN=1` significa no ISS, e os dois campos não têm nada a ver um com o
+outro. Foi palpite com cara de verificação.
+
+**O conserto, que é mais do que trocar o valor:** o CST passou a ser **derivado**
+do `cClassTrib`, e o construtor da declaração **recusa** um par que não casa. Não
+dá mais para digitar os dois e eles divergirem. Trocar `000` por `200` consertaria
+esta emissão; derivar impede a próxima.
+
+**E, de novo, o schema não pegava:** os dois campos são válidos sozinhos. Quem
+confere a combinação é a plataforma, horas depois. É a mesma lição do E0370, e já
+é a segunda vez no mesmo dia.
+
+#### EL99 — e a frase do manual que não vale em Eusébio
+
+> *EL99 — ID da DPS inválida. Chave informada para a DPS não existe no
+> repositório municipal.*
+
+Este veio da **prefeitura**, não do nacional, e no caminho da consulta: ela não
+encontrou a declaração no repositório dela.
+
+**O que aconteceu antes dele:** o dono usou o "liberar o número" (publicado
+horas antes, naquele mesmo dia) para soltar o 3281, e emitiu de novo. A
+identificação da declaração é construída **a partir do número da nota** — então
+reusar o número reusou a identificação de uma declaração que a prefeitura já
+tinha recebido e transmitido.
+
+**A frase do manual que caiu:** *"a mesma declaração pode ser reenviada com a
+correção, mantendo a mesma identificação"*. Está escrita no manual, foi a base
+de duas decisões registradas aqui (a exceção do mesmo card na numeração e o
+próprio "liberar o número"), e **em Eusébio ela não se sustentou**. Número já
+enviado fica gasto.
+
+**Os consertos:**
+
+1. **A numeração conta TODAS as declarações já enviadas**, qualquer que seja o
+   desfecho — recusada, aguardando ou concluída. A aba só recebe declaração
+   **depois** de a prefeitura aceitar, então todo número que está lá já foi
+   enviado. **A exceção do mesmo card saiu.**
+2. **O "liberar o número" virou "encerrar"**: tira a declaração da lista e diz,
+   em letras claras, que o número **não volta**. A versão que liberava durou
+   horas e produziu este erro — fica registrado porque foi uma decisão minha,
+   tomada por leitura do manual, contra a qual não havia evidência nenhuma.
+3. **A tela de recusa parou de prometer o mesmo número.** Ela dizia "pode emitir
+   de novo, inclusive com o mesmo número, que é o caminho previsto pela
+   prefeitura". Era o manual falando, e estava errado.
+4. **EL99 ganhou tradução, e ela é cuidadosa num ponto:** diz que o erro **não**
+   significa que nada foi criado. Diferente de uma recusa de conteúdo, aqui o
+   envio já tinha sido aceito — então a instrução é conferir no portal antes de
+   emitir, e emitir com número novo.
+
+**Buraco na sequência de números é normal**, e vale dizer para não assustar: nota
+cancelada faz o mesmo. O número 3281 não existe e não vai existir.
+
+#### O que foi conferido, e o que NÃO foi
+
+**Conferido:** o CST derivado bate com a tabela oficial nos quatro grupos
+observados; a declaração de obra sai com CST 200 e passa no schema; par digitado
+que não casa derruba a montagem **com o valor certo na mensagem**; `cIndOp` tem
+os seis dígitos que o schema exige (no Excel ele aparece com cinco, porque a
+planilha come o zero da frente); `tpOper` e `tpEnteGov` não são enviados por
+padrão e, quando preenchidos, saem na ordem do XSD; a numeração conta declaração
+recusada; nem o mesmo card reusa número; EL99 e E0959 traduzidos. 14 casos novos.
+
+**NÃO conferido:** se a plataforma aceita a declaração agora. Nada aqui faz rede,
+e o ensaio segue indisponível (E0037). Se vier recusa nova **com o CST casado**,
+os suspeitos já estão identificados e prontos para ligar: `tpOper` (o candidato
+é `1`, fornecimento com pagamento posterior) e `tpEnteGov` — este último o
+sistema **não pode** deduzir, porque não dá para saber do CNPJ se o órgão é
+federal, estadual ou municipal. Essa é pergunta para o dono.
 
 ### "Só a linha da planilha": uma nota certa com a planilha faltando — 07/10/2026
 

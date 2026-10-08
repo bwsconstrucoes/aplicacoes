@@ -176,6 +176,39 @@ implementadas; a BWS usa o CNO, porque é o dado que ela tem.
 é assimétrica: barrar custa um aviso na tela, deixar passar custa um número de
 nota queimado e uma declaração presa na fila.
 
+### O CST do IBS/CBS sai da classificação, e não de uma escolha
+
+**O CST são os três primeiros dígitos do `cClassTrib`.** Para a BWS a
+classificação é `200046` ("Operações com bens imóveis", item 07.02 do Anexo
+VIII), então o CST é `200`. Mandar o par sem casar é o erro **E0959**, que custou
+uma emissão em 08/10/2026 — ia `000` com `200046`.
+
+Por isso o CST é **derivado** no código, e a montagem da declaração **recusa** um
+par que não casa. A regra, os valores que a BWS manda e a procedência de cada um
+estão em `xsd_nacional/IBSCBS_CLASSIFICACAO.md` — inclusive os dois campos
+opcionais (`tpOper`, `tpEnteGov`) que ficaram implementados e **desligados**, por
+serem os próximos suspeitos de uma recusa.
+
+Como o grupo de obra, **isto também não é pegável pelo schema**: os dois campos
+são válidos sozinhos, e quem confere a combinação é a plataforma.
+
+### Número de nota já enviado não volta a ser usado
+
+A identificação da declaração é construída **a partir do número da nota**. Então
+reusar o número reusa a identificação — e identificação já enviada à prefeitura
+não serve mais: ela responde **EL99** ("chave informada para a DPS não existe no
+repositório municipal"). Aconteceu em 08/10/2026, com o número 3281.
+
+O manual da prefeitura diz o contrário — que a declaração recusada pode ser
+reenviada com a mesma identificação. **Em Eusébio essa frase não se sustentou**, e
+a prática ganhou do manual. Então:
+
+- a numeração conta **todas** as declarações já enviadas, qualquer que seja o
+  desfecho (a aba `Declaracoes` só recebe declaração **depois** do aceite, então
+  todo número que está nela já foi enviado);
+- não há exceção para o mesmo card;
+- buraco na sequência é normal — nota cancelada faz o mesmo.
+
 ### A declaração é gravada antes de qualquer espera
 
 Entre a prefeitura **aceitar** a declaração e a nota **ficar pronta** passa um
@@ -390,7 +423,7 @@ Todas pedem o mesmo `token` na URL. Não há login: quem tem o link, entra.
 | `/emissao/manual` | **"Nota emitida no portal".** Para nota emitida à mão no portal da prefeitura (canal fora do ar, ou caso que só dá por lá). Recebe o **XML** — dele saem os dados, exatos — e, opcionalmente, o **PDF oficial**, que entra como o documento em vez da nossa réplica. Faz todo o resto: planilha, Omie, card, Drive e avisos. **Não emite nada** |
 | `/emissao/planilha` | **"Só a linha da planilha".** Para a nota que saiu certa em TUDO — Omie, card, arquivos, cliente — e cuja linha da "Notas BWS" não entrou. Grava a linha e **não toca em mais nada**. Os valores saem do **XML**, não do card: a conclusão limpa doze campos de entrada do card, então recalcular a nota depois daria números diferentes dos emitidos. Usar `/emissao/recuperar` ou `/emissao/manual` neste caso preencheria um **segundo slot** no card, mexeria no Omie de novo e mandaria o WhatsApp outra vez |
 | `/emissao/declaracao?…&diagnostico=1` | **"Diagnóstico completo desta declaração".** Pergunta sobre ela na prefeitura E direto na plataforma nacional, e mostra as respostas cruas. A pergunta que decide é a terceira: se o nacional **não conhece** a declaração e a prefeitura diz que transmitiu, as versões não fecham — e a transmissão é ela que faz. O texto é feito para ser copiado e mandado a ela; nunca mostra token nem certificado |
-| `/emissao/declaracao?…&liberar=1` | **"Liberar o número".** Aparece só nas declarações **paradas** da lista. Marca a declaração como recusada e devolve o número ao uso — para o caso em que a API nunca conta a recusa (a 3281 passou um dia respondendo "em processamento" enquanto o portal já a dava como recusada). Não emite, não cancela e não apaga nada: mexe só no controle de numeração |
+| `/emissao/declaracao?…&encerrar=1` | **"Encerrar".** Aparece só nas declarações **paradas** da lista. Tira a declaração da lista, para o caso em que a API nunca conta a recusa (a 3281 passou um dia respondendo "em processamento" enquanto o portal já a dava como recusada). **Não libera o número** — número enviado fica gasto (ver EL99 acima). Não emite, não cancela e não apaga nada |
 | `/emissao/declaracao` | **"Conferir declaração".** A saída do único aperto desta área: a prefeitura aceitou a declaração e a nota não ficou pronta na hora. Pergunta a ela se a nota saiu e, se saiu, **termina o serviço** — sem emitir nada. Consultar não cria nada, então pode repetir |
 | `/emissao/diag` | diz **por que** o certificado não carregou, qual token chegou e de onde, e qual conta do Google está sendo usada — sem mostrar segredo |
 | `/emissao/diag_nacional_chave` | só leitura: testa quais endpoints federais respondem por chave |
