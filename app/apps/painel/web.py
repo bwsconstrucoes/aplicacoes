@@ -731,9 +731,10 @@ def analitico():
         pagina = int(request.args.get("pagina") or 1)
     except ValueError:
         pagina = 1
-    # Agrupar como no extrato: um pagamento dividido entre obras vira uma
-    # linha, com as partes por baixo (dono, 06/10/2026).
-    agrupar = request.args.get("agrupar") == "1"
+    # SEMPRE agrupado: um pagamento dividido entre obras é uma linha, com as
+    # obras por baixo (dono, 08/10/2026: "tem que ficar o lançamento sempre
+    # agrupado e eu poder expandir"). A opção de desagrupar saiu.
+    agrupar = True
     return render_template(
         "painel_analitico.html",
         **_contexto_comum("analitico"),
