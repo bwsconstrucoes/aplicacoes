@@ -507,6 +507,14 @@ financeiro, que não tem Telegram, e tudo reportava sucesso. É o mesmo defeito 
 gravação silenciosa, com outra roupa — e num aviso de falha ele é pior, porque
 falha em silêncio justamente quando algo já deu errado.
 
+⚠️ **O caminho sem credencial Z-API é provavelmente o da produção**, e ele
+mentia. As credenciais Z-API chegam **dentro do pedido do Make**; o serviço
+automático não tem pedido nenhum, então ele cai sempre no notificador comum — que
+devolve um resultado **por canal**, sem um "deu certo" no topo. Devolver aquilo
+cru fazia o relatório dizer "nenhum canal entregou" mesmo quando o Telegram tinha
+entregado, e zerava o `ok` do aviso inteiro. Hoje a resposta do notificador é
+traduzida para o mesmo formato dos outros envios.
+
 Hoje a resposta traz `entregues_no_whatsapp`, `so_pelo_telegram` e `sem_entrega`,
 com um alerta em português quando alguém ficou só no Telegram. **E credencial
 presente com envio falhando ganha segunda tentativa** pelo notificador comum —

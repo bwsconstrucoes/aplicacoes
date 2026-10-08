@@ -1472,3 +1472,44 @@ passando por esse laço neste momento.
 **Verificado:** 16 testes de cron (2 novos), suíte inteira rodada com a única
 falha sendo `erpbrasil` ausente neste ambiente, aplicação subindo com os 18
 blueprints.
+
+---
+
+### 08/10/2026 — relendo o módulo de avisos, um defeito no caminho que a produção usa
+
+**Publicado na `main` em `df183ff`:** o mutirão avisando quando acaba.
+
+Depois disso reli o `avisos.py` inteiro — ele manda mensagem para dois celulares
+e foi mexido hoje — e achei um defeito que os testes de hoje não pegavam, porque
+eu só havia coberto o caminho **com** credencial Z-API.
+
+**O defeito:** quando a credencial Z-API não vem, o aviso sai pelo notificador
+comum, que devolve um dicionário **por canal** (`{"whatsapp": {...}, "telegram":
+{...}}`), **sem `ok` no topo**. Esse resultado era devolvido cru. Como o relatório
+decide tudo por `r.get('ok')`, o aviso entregue pelo Telegram era contado como
+**"nenhum canal entregou"**, e o `ok` do aviso inteiro ia para falso.
+
+**Por que isso importa mais do que parece:** as credenciais Z-API chegam *dentro
+do pedido do Make*. O serviço automático — o cron que acabou de ganhar a
+drenagem e o mutirão — **não tem pedido nenhum**. Então esse é, muito
+provavelmente, o caminho que a produção percorre, e o relatório mentiria
+justamente onde mais se olha. É plausível que explique parte dos 1.943
+`zapi_erro` acumulados.
+
+Corrigido: a resposta do notificador passa a ser traduzida para o mesmo formato
+dos outros envios, com `ok` no topo e o braço do WhatsApp separado — e a resposta
+original fica guardada inteira, para quem for investigar.
+
+**A lição, e ela é a mesma de hoje mais cedo:** cobri o caminho feliz e deixei o
+caminho sem credencial sem teste. Os quatro defeitos que achei hoje por releitura
+(a função apagada, o entupimento da fila, a frase que prometia continuação, o
+cabeçalho no fim da aba) e este têm a mesma assinatura: **o caminho de exceção não
+tinha teste.** Caminho de exceção em código que mexe com dinheiro é onde o defeito
+mora, porque é o que ninguém exercita à mão.
+
+**Verificado:** 15 testes de entrega de aviso (4 novos, todos no caminho sem
+credencial), suíte inteira rodada com a única falha sendo `erpbrasil` ausente
+neste ambiente, aplicação subindo com os 18 blueprints.
+**Não verificado:** se o WhatsApp está de fato entregando em produção. O
+relatório agora diz a verdade sobre isso — antes não dizia —, mas só a primeira
+falha real depois disto vai mostrar.
