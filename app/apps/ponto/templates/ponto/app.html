@@ -801,8 +801,10 @@ function diasDoMes(d, regras) {
     const acoes = [
       regras.corrigir(x) ? `<button class="icone-dia" type="button" data-corrigir="${x.data}" title="Corrigir a batida que faltou"
         aria-label="Corrigir ${dataBR(x.data)}: faltou ${esc(x.faltando.map(f => f.rotulo.toLowerCase()).join(", ")) || "batida"}">✏️</button>` : "",
-      regras.lancar(x) ? `<button class="icone-dia" type="button" data-lancar="${x.data}" title="Atestado, licença ou compensação"
-        aria-label="Lançar atestado, licença ou compensação em ${dataBR(x.data)}">🩺</button>` : ""].join("");
+      // 📎 e não um ícone de saúde (08/10/2026): a ausência justificada pode ser exame do Detran,
+      // audiência, licença da lei — o que todas têm em comum é o documento anexado.
+      regras.lancar(x) ? `<button class="icone-dia" type="button" data-lancar="${x.data}" title="Justificar a ausência"
+        aria-label="Justificar a ausência em ${dataBR(x.data)}: atestado, licença, afastamento ou compensação">📎</button>` : ""].join("");
     if (acoes) temAcao = true;
     return `<div class="dia"><div class="data">${dataBR(x.data).slice(0, 5)}<small>${esc(x.dia_semana)}</small></div>
       <div class="corpo">
@@ -815,7 +817,7 @@ function diasDoMes(d, regras) {
       </div>${acoes ? `<div class="acoes-dia">${acoes}</div>` : ""}</div>`;
   }).join("");
   if (!linhas) return "<p>Nada neste mês ainda.</p>";
-  return (temAcao ? `<div class="legenda-dias">Toque no dia: ✏️ corrigir a batida que faltou · 🩺 atestado, licença ou compensação</div>` : "")
+  return (temAcao ? `<div class="legenda-dias">Toque no dia: ✏️ corrigir a batida que faltou · 📎 justificar a ausência (atestado, licença, afastamento, compensação)</div>` : "")
     + linhas;
 }
 function ligarDias(idCaixa, d, aoCorrigir, aoLancar) {
