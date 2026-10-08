@@ -12228,6 +12228,39 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 200 — o grupo "WhatsApp" do lote, alimentado pelo robô do Telegram (08/10/2026) — migração 052
+
+- *"Muitas pessoas me pedem para colocar para pagar alguma SP via WhatsApp (…)
+  eu copio, colo no Extrair SPs do lote (…) alimentar um lote chamado WhatsApp
+  (…) sempre o primeiro de todos (…) atrelar isso ao usuário."* Encaminhar pelo
+  WhatsApp foi descartado com ele: o número do Z-API é o do contracheque e
+  bloqueia com volume. Escolhido: copiar as mensagens no WhatsApp (várias de
+  uma vez) e colar no robô do Telegram da BWS, que já está de pé.
+- **Ligar** (tela Lote › janela "Lote" › "Ligar ao Telegram"): link de USO
+  ÚNICO, 15 minutos, `t.me/<robô>?start=lote_<código>`; no banco só o sha256
+  do código. Só quem entrou com usuário próprio liga (a senha geral não sabe
+  de quem é o lote). Ligar de novo (celular novo) troca a conversa; há
+  "Desligar o Telegram".
+- **Receber**: o robô pesca os números de SP (`lote.extrair_ids`) e soma no
+  grupo "WhatsApp" (`lote.juntar_no_grupo_whatsapp`): UM grupo, sempre levado
+  ao topo, sem repetir SP que já esteja em qualquer grupo do lote. Responde
+  quantas entraram, quais já estavam, quais não estão na base (entram mesmo
+  assim) e quais estão no lote de outra pessoa. Só alimenta quem pode alterar
+  o Lote pela tela (operador com a tela Lote, ou mestre); preso a conta não
+  tem a tela Lote, então também não.
+- **A tela aberta não apaga o que chegou pelo robô**: a janela manda a hora do
+  lote que carregou (`versao`); no Salvar/Extrair/Remover…, o que chegou pelo
+  Telegram depois dela e não está no texto volta ao grupo WhatsApp, com aviso
+  (`telegram_lote.manter_chegadas`, tabela `lote_telegram`). SP tirada de
+  propósito depois de vista não volta.
+- O robô é da área de Mensageria: a mudança lá é só o desvio no webhook
+  (registrado no `mensageria/HISTORICO.md`).
+- Testado no navegador (ligar mostra o botão "Abrir no Telegram") e ponta a
+  ponta pelo webhook do robô com o envio dublado. NÃO testado com o Telegram
+  de verdade — o primeiro uso do dono é o teste.
+- ⚠️ **Migração 052** — apertar "Aplicar atualizações do banco" ao publicar.
+  Antes dela, o robô e a tela seguem como antes (nada aparece).
+
 #### Leva 199 — conciliação: duplo clique na linha abre a ficha da SP (07/10/2026)
 
 - *"Voce colocou o link para a SP, mas queria que ao dar dois clique na linha

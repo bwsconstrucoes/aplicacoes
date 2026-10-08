@@ -8,7 +8,7 @@ em quatro lugares, e esta é a primeira coisa a saber antes de mexer:
 |---|---|---|
 | **Mensageria** (esta pasta) | `app/apps/mensageria/` | `core.py`: o catálogo de tipos de mensagem, a política por tipo, a chave geral e o teto do WhatsApp, o registro de envios. `gestao.py`: a tela **ERP › Mensagens**, pendurada no blueprint do ERP como o ponto. Schema `mensageria` no banco do ERP (migração **083** do ERP) |
 | **Notificador** | `app/apps/notificador.py` | Quem **manda**: `notificar()`, `enviar_telegram()`, `enviar_whatsapp()`. Pergunta à mensageria por onde sair, manda, registra. Usado pelo ERP, ponto, Análise de SPs, BaixaBradesco, ProcessarNovaSP, ValidaSP e pelo bot do Telegram |
-| **Telegram** | `app/apps/telegram/` | O bot: autocadastro (aba `TelegramID` em planilha), assistente de contracheque, e a porta de envio `/telegram/enviar` usada pelo Make e pela emissão de NFS-e. O notificador chama as funções dele por dentro |
+| **Telegram** | `app/apps/telegram/` | O bot: autocadastro (aba `TelegramID` em planilha), assistente de contracheque, e a porta de envio `/telegram/enviar` usada pelo Make e pela emissão de NFS-e. O notificador chama as funções dele por dentro. Desde 08/10/2026 também recebe, de quem ligou a conversa a um usuário do Análise de SPs, as mensagens de pedido de pagamento e põe as SPs no lote dele (`analisesps/telegram_lote.py`) |
 | **Chatbot** | `app/apps/chatbot/` | Assistente de **WhatsApp** (Z-API) que entrega o contracheque a quem informa o CPF. Guarda o "cérebro" reaproveitado pelo Telegram (sessão, validação, planilha, PDF, Dropbox). Não passa pela mensageria |
 
 > **Pegando este trabalho agora?** Leia antes o `HISTORICO.md` ao lado: estado,

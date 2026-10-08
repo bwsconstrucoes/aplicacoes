@@ -5170,6 +5170,24 @@ def tela_lote():
                      "primeira aparição de cada SP."
                      if quantos else "Não havia nenhuma SP repetida no lote.")
 
+        # ⚠️ O QUE CHEGOU PELO TELEGRAM COM A JANELA ABERTA (08/10/2026). Estas
+        # ações mandam de volta o texto que a tela carregou; sem isto, o
+        # "Salvar" apagava em silêncio as SPs que o robô somou nesse meio tempo.
+        if acao in ("salvar", "extrair", "trazer_antigo", "remover_pagos",
+                    "remover_cancelados", "remover_duplicados"):
+            from . import telegram_lote
+            try:
+                conteudo, voltaram = telegram_lote.manter_chegadas(
+                    conteudo, pessoa, request.form.get("versao", ""))
+            except Exception:  # noqa: BLE001 — a proteção não impede salvar
+                logger.exception("Análise de SPs: não conferi as chegadas do "
+                                 "Telegram no lote")
+                voltaram = []
+            if voltaram:
+                aviso = ((aviso + " ") if aviso else "") + (
+                    f"{len(voltaram)} SP(s) que chegaram pelo Telegram com a "
+                    "tela aberta foram mantidas no grupo WhatsApp.")
+
         lote.salvar(conteudo, quem, pessoa)
         return redirect(url_for("analisesps.tela_lote", aviso=aviso or ""))
 
@@ -5217,9 +5235,22 @@ def tela_lote():
         if len(outras) == len(conhecidas) and not conhecidas:
             outras = []
 
+    # O robô do Telegram (08/10/2026): só quem entrou com usuário próprio liga,
+    # porque o robô precisa saber de quem é o lote.
+    from . import telegram_lote
+    usuario_id = session.get(auth.CHAVE_USUARIO)
+    try:
+        telegram = ({"pode_ligar": bool(usuario_id) and auth.pode_operar(),
+                     "ligacao": telegram_lote.ligacao(usuario_id)}
+                    if telegram_lote.pronto() else None)
+    except Exception:  # noqa: BLE001 — o lote é o principal; o robô, um extra
+        logger.exception("Análise de SPs: não li a ligação com o Telegram")
+        telegram = None
+
     return render_template(
         "analisesps_lote.html",
         aba="lote", base=base, lote=guardado, montado=montado, antes=antes,
+        telegram=telegram,
         outras_pessoas=outras,
         # Quantas cópias sobrando há. O botão de remover duplicados só aparece
         # quando existe o que remover — botão que não faz nada quando apertado
@@ -5230,6 +5261,29 @@ def tela_lote():
         aviso=request.args.get("aviso") or None,
         pode_operar=auth.pode_operar(), nome=auth.nome_atual(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""))
+
+
+@bp.route("/lote/telegram", methods=["POST"])
+@exige_operador
+def lote_telegram():
+    """Liga (link de uso único) ou desliga o robô do Telegram ao lote da pessoa.
+
+    O link volta no corpo da resposta, nunca na URL: endereço vai para o log do
+    servidor, e este vale 15 minutos para ligar a conversa de quem o abrir."""
+    from . import telegram_lote
+    usuario_id = session.get(auth.CHAVE_USUARIO)
+    if not usuario_id:
+        return {"ok": False, "erro": (
+            "Entre com o seu usuário (não com a senha geral) para ligar o "
+            "Telegram — o robô precisa saber de quem é o lote.")}, 400
+    if not telegram_lote.pronto():
+        return {"ok": False, "erro": (
+            "Falta aplicar as atualizações do banco (Configurações).")}, 400
+    acao = (request.get_json(silent=True) or {}).get("acao")
+    if acao == "desligar":
+        telegram_lote.desligar(usuario_id)
+        return {"ok": True}
+    return {"ok": True, "link": telegram_lote.gerar_convite(usuario_id)}
 
 
 # ---------------------------------------------------------------------------

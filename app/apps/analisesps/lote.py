@@ -95,6 +95,57 @@ def acrescentar_grupo(texto_atual: str, ids: list[str]) -> tuple[str, str]:
     return novo, titulo
 
 
+# O grupo que o robô do Telegram alimenta (08/10/2026) — sempre o primeiro.
+GRUPO_WHATSAPP = "WhatsApp"
+
+
+def _e_linha_de_ids(linha: str) -> bool:
+    """A mesma leitura de `separar_grupos`: só números (e separadores)."""
+    pedacos = [p for p in SEPARADORES.split(linha.strip()) if p]
+    return bool(pedacos) and all(SO_DIGITOS.fullmatch(p) for p in pedacos)
+
+
+def juntar_no_grupo_whatsapp(texto_atual: str, ids) -> tuple[str, list[str]]:
+    """Acrescenta SPs ao grupo "WhatsApp" e o põe NO TOPO do lote.
+
+    O dono, 08/10/2026: *"alimentar um lote chamado WhatsApp (…) sempre o
+    primeiro de todos"*. Diferente do "Extrair SPs", que cria um "Novo Lote N"
+    a cada colagem: aqui o grupo é UM só, e cada envio soma nele.
+
+    SP que já está em QUALQUER grupo do lote não entra de novo — repetida, ela
+    seria somada duas vezes no total. O resto do texto fica como a pessoa
+    escreveu (só o bloco do WhatsApp é reescrito). Devolve o texto novo e as
+    SPs que de fato entraram."""
+    linhas = str(texto_atual or "").split("\n")
+    alvo = GRUPO_WHATSAPP.lower()
+    no_grupo: list[str] = []
+    resto: list[str] = []
+    dentro = False
+    for bruta in linhas:
+        limpa = bruta.strip()
+        if limpa and not _e_linha_de_ids(limpa):
+            dentro = limpa.lower() == alvo
+            if dentro:
+                continue
+        if dentro:
+            if limpa:
+                no_grupo.extend(p for p in SEPARADORES.split(limpa) if p)
+            continue
+        resto.append(bruta)
+
+    ja_no_lote = {sp for g in separar_grupos(texto_atual) for sp in g["ids"]}
+    entraram: list[str] = []
+    for sp in ids or []:
+        sp = str(sp).strip()
+        if sp and sp not in ja_no_lote and sp not in entraram:
+            entraram.append(sp)
+
+    todos = list(dict.fromkeys(no_grupo + entraram))
+    bloco = GRUPO_WHATSAPP + ("\n" + "\n".join(todos) if todos else "")
+    corpo = "\n".join(resto).strip("\n")
+    return (bloco + ("\n\n" + corpo if corpo.strip() else "")), entraram
+
+
 def _limpar(texto: str, sai) -> tuple[str, int]:
     """A limpeza do lote, com a regra de quem sai vindo de fora.
 

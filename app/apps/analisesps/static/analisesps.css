@@ -2740,3 +2740,8 @@ table.conciliacao td .selo { font-size: 10.5px; }
 
 /* Linha da conciliação com SP identificada: duplo clique abre a ficha (07/10/2026). */
 table.conciliacao tr.com-sp { cursor: pointer; }
+
+/* O robô do Telegram na janela do Lote (08/10/2026). */
+.lote-telegram { margin-top: 14px; padding: 10px 12px; border-top: 1px solid #e3e7ee;
+                 font-size: 13px; line-height: 1.6; }
+.lote-telegram .btn { margin-left: 6px; }

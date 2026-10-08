@@ -466,6 +466,7 @@ TELA_DA_ROTA = {
     "analisesps.beevale_executar": ("solicitacoes", "lote"),
     "analisesps.codigos": ("solicitacoes", "lote"),
     "analisesps.tela_lote": ("lote",),
+    "analisesps.lote_telegram": ("lote",),
     "analisesps.exportar_lote": ("lote",),
     "analisesps.lote_excel_rota": ("lote",),
     "analisesps.lote_excel_todos": ("lote",),

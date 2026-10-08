@@ -73,6 +73,7 @@
         <form method="post" style="display:inline">
           <input type="hidden" name="acao" value="trazer_antigo">
           <input type="hidden" name="conteudo" value="{{ lote.conteudo }}">
+          <input type="hidden" name="versao" value="{{ lote.salvo_em or '' }}">
           <button class="btn secundario" type="submit"
                   style="margin-left:8px">Trazer para o meu</button>
         </form>
@@ -82,6 +83,9 @@
 
   {% if pode_operar %}
     <form method="post" id="form-lote">
+      {# A hora do lote que a tela carregou: no "Salvar", o que chegou pelo
+         Telegram DEPOIS dela é mantido (`telegram_lote.manter_chegadas`). #}
+      <input type="hidden" name="versao" value="{{ lote.salvo_em or '' }}">
       <div class="lote-campos">
         <div>
           <label class="rotulo-campo" for="lote-conteudo">IDs das SPs</label>
@@ -110,6 +114,30 @@
   {% else %}
     <pre class="lote-texto">{{ lote.conteudo or '(o lote está vazio)' }}</pre>
     <p class="cartao-dica">O perfil Consulta vê o lote, mas não o altera.</p>
+  {% endif %}
+
+  {# O ROBÔ DO TELEGRAM (08/10/2026): cole no robô as mensagens de pedido de
+     pagamento e as SPs entram no grupo WhatsApp, no topo deste lote. #}
+  {% if telegram %}
+    <div class="lote-telegram" id="lote-telegram">
+      <b>Telegram</b> —
+      {% if telegram.ligacao %}
+        ligado desde {{ telegram.ligacao.ligado_em|momento_br }}. Cole no robô
+        as mensagens de pedido de pagamento: as SPs entram no grupo
+        <b>WhatsApp</b>, no topo deste lote.
+        {% if telegram.pode_ligar %}
+          <button type="button" class="btn secundario" data-telegram="desligar">Desligar o Telegram</button>
+        {% endif %}
+      {% elif telegram.pode_ligar %}
+        ligue a sua conversa com o robô da BWS e cole lá as mensagens de pedido
+        de pagamento do WhatsApp: as SPs entram sozinhas no grupo
+        <b>WhatsApp</b>, no topo deste lote.
+        <button type="button" class="btn secundario" data-telegram="ligar">Ligar ao Telegram</button>
+      {% else %}
+        para ligar o robô, entre com o seu usuário (não com a senha geral).
+      {% endif %}
+      <span id="lote-telegram-link" class="cartao-dica"></span>
+    </div>
   {% endif %}
 </dialog>
 
@@ -254,5 +282,33 @@ function abrirLote() {
   const campo = document.getElementById("lote-conteudo");
   if (campo) campo.focus();
 }
+
+// Ligar/desligar o robô do Telegram. O link vem no corpo da resposta (vale uma
+// vez e por 15 minutos) e vira um botão que abre o Telegram.
+document.querySelectorAll("[data-telegram]").forEach(botao => {
+  botao.addEventListener("click", async () => {
+    const acao = botao.dataset.telegram;
+    if (acao === "desligar" && !confirm("Desligar o Telegram deste lote?")) return;
+    const recado = document.getElementById("lote-telegram-link");
+    botao.disabled = true;
+    try {
+      const r = await fetch("{{ url_for('analisesps.lote_telegram') }}", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({acao})});
+      const d = await r.json();
+      if (!d.ok) throw new Error(d.erro || ("HTTP " + r.status));
+      if (acao === "desligar") { location.reload(); return; }
+      recado.textContent = "";
+      const a = document.createElement("a");
+      a.href = d.link; a.target = "_blank"; a.rel = "noopener";
+      a.className = "btn"; a.textContent = "Abrir no Telegram";
+      recado.append(a, " Toque e depois em \"Começar\". O link vale uma vez, por 15 minutos.");
+    } catch (e) {
+      recado.textContent = "Não consegui: " + e.message;
+    } finally {
+      botao.disabled = false;
+    }
+  });
+});
 </script>
 {% endblock %}
