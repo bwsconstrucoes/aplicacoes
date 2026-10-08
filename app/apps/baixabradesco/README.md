@@ -311,8 +311,17 @@ de cinco seriam necessários no ritmo automático.
 fila tinha 1.943 recados de WhatsApp na frente de 238 baixas no Omie. Drenar na
 ordem da planilha deixaria o dinheiro para o fim.
 
-**O cron NÃO limpa o acumulado de avisos antigos.** Aviso com mais de três dias
-nem é carregado por ele — e isso tem de acontecer na **escolha** das linhas, não
+⚠️ **Aviso vencido é DISPENSADO, não deixado pendente.** Esta é a correção de um
+limbo real: a regra "aviso com mais de três dias não é reenviado" fazia a
+drenagem apenas **pular** esses itens — não enviava e não marcava. Eles ficavam
+pendentes **para sempre**, e em 08/10/2026 a fila travou em 121 pendências, 116
+delas exatamente isso. **Pendência que não anda é pior que pendência: parece
+trabalho a fazer e não é.** A regra certa é a conclusão da outra — se o aviso
+nunca mais vai ser enviado, ele está resolvido do ponto de vista da fila, e a
+linha tem de dizer isso. Vale **só** para aviso: dinheiro não envelhece.
+
+**O cron não carrega o aviso velho para a drenagem.** Aviso com mais de três dias
+nem é carregado por ela — e isso tem de acontecer na **escolha** das linhas, não
 depois. A fila é lida em ordem: com 1.943 avisos de junho na frente, pedir "dez
 avisos" devolvia sempre os dez mais velhos, que seriam descartados por idade, e
 o aviso de ontem nunca era alcançado. A fila entupia com o que ela mesma ia
@@ -325,6 +334,15 @@ do pedido — o cron não manda credencial nenhuma. São `OMIE_KEY` / `OMIE_SECR
 (confirmados no Render em 08/10/2026), `PIPEFY_API_TOKEN` e as três `ZAPI_*`. O
 nome da variável é parte do contrato: trocar em silêncio pararia a drenagem
 inteira, e há teste travando cada um.
+
+⚠️ **Parada por configuração: escreve o motivo, reagenda longe, não gasta
+tentativa.** A distinção entre *tentativa* e *agendamento* é o ponto todo, e
+errar em qualquer direção custa: contar como tentativa marcaria o item como
+fracassado em cinco passadas, apagando pendência de verdade; não reagendar faria
+a varredura insistir de cinco em cinco minutos e esconder as pendências que de
+fato andam. Antes a linha não recebia **nada** — nem motivo, nem próxima
+tentativa —, e foi assim que cinco baixas apareceram paradas com zero tentativa e
+sem explicação nos números de 08/10/2026.
 
 ⚠️ **Falta de credencial NÃO consome tentativa.** Era o jeito mais rápido de
 apagar a fila sem resolver nada: cinco passadas sem credencial marcariam as 238

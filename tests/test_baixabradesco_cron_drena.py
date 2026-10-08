@@ -270,3 +270,40 @@ def test_enquanto_ha_atraso_ele_nao_se_declara_concluido(sem_payload_adiado,
 
     assert 'concluido' not in r['atraso_zerado']
     assert r['atraso_zerado']['dispensadas'] == 500
+
+
+def test_o_cron_dispensa_aviso_vencido_antes_de_drenar(sem_payload_adiado,
+                                                       monkeypatch):
+    """Sem isso, a fila trava em avisos que nunca serão enviados.
+
+    Foi o que aconteceu em 08/10/2026: 116 das 121 pendências restantes eram
+    aviso de 01/10 a 05/10, velho demais para enviar e nunca dispensado.
+    """
+    ordem = []
+    import app.apps.baixabradesco.fila as f
+    monkeypatch.setattr(f, 'zerar_fila_antiga',
+                        lambda p: ordem.append('zerar') or {'dispensadas': 0})
+    monkeypatch.setattr(f, 'dispensar_avisos_vencidos',
+                        lambda p: ordem.append('avisos') or {'dispensadas': 116})
+    monkeypatch.setattr(f, 'reprocessar_fila',
+                        lambda p: ordem.append('drenar') or
+                        {'pendentes_processados': 0, 'interrompido': ''})
+
+    r = mod.processar_fila_tardia({})
+
+    assert ordem.index('avisos') < ordem.index('drenar')
+    assert r['avisos_vencidos']['dispensadas'] == 116
+
+
+def test_falha_ao_dispensar_aviso_nao_impede_a_drenagem(sem_payload_adiado,
+                                                        monkeypatch):
+    chamadas = _dublar_fila(monkeypatch)
+    import app.apps.baixabradesco.fila as f
+    monkeypatch.setattr(f, 'zerar_fila_antiga', lambda p: {'dispensadas': 0})
+    monkeypatch.setattr(f, 'dispensar_avisos_vencidos',
+                        lambda p: (_ for _ in ()).throw(RuntimeError('planilha fora')))
+
+    r = mod.processar_fila_tardia({})
+
+    assert 'planilha fora' in r['avisos_vencidos']['erro']
+    assert [c['etapas'][0] for c in chamadas] == ['omie', 'sheets', 'pipefy', 'zapi']
