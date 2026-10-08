@@ -145,6 +145,19 @@ EXPLICACAO_DOS_ERROS = {
         "teste, o ensaio não vai funcionar — e a conferência de uma emissão real "
         "passa a ser a tela \"Conferir declaração\"."
     ),
+    "E0370": (
+        "A declaração saiu **sem a identificação da obra**, e a plataforma "
+        "nacional exige esse grupo para serviço de construção civil. É o erro "
+        "que derrubou a nota 3281 em 07/10/2026 — o município aceitou a "
+        "declaração e o nacional recusou, por isso a nota ficava \"em "
+        "processamento\" para sempre.\n\n"
+        "A identificação é o **CNO** da obra, que fica na coluna CNO da "
+        "C. Diários. O sistema passou a mandá-lo em 08/10/2026 e barra a "
+        "emissão antes de enviar quando ele está vazio.\n\n"
+        "O que fazer: conferir se a obra tem CNO preenchido na C. Diários. Se "
+        "tiver e o erro persistir, o número pode estar errado ou truncado — o "
+        "normal são 12 dígitos."
+    ),
 }
 
 

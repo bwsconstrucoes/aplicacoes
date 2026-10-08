@@ -53,6 +53,58 @@ def numero_dps(numero_nota, ano: int) -> int:
     return int(f"{int(ano) % 100:02d}{int(numero_nota):013d}")
 
 
+# Subitens da lista de serviços em que a plataforma nacional EXIGE o grupo de
+# obra. A lista é a do próprio erro E0370, que a TI da prefeitura mostrou em
+# 08/10/2026 — ela é a razão de a declaração 3281 ter sido aceita pelo município
+# e recusada no nacional. A BWS emite sempre em 070202, então para ela o grupo é
+# obrigatório em toda nota.
+SUBITENS_QUE_EXIGEM_OBRA = frozenset({
+    "070201", "070202", "070401", "070501", "070502", "070601", "070602",
+    "070701", "070801", "071701", "071901", "141403", "141404",
+})
+
+# Quantos dígitos tem um CNO (e um CEI): doze. Serve só para avisar quando o
+# número parece truncado — não barra, porque a recusa pela plataforma é
+# informativa e barrar por palpite impediria uma obra legítima de faturar.
+DIGITOS_CNO = 12
+
+
+def _grupo_obra(obra, c_trib_nac: str):
+    """Monta o grupo de obra a partir do CNO da C. Diários.
+
+    **Por que o CNO, e não o endereço:** o layout aceita três identificações
+    (CNO/CEI, CIB ou o endereço da obra) e exige exatamente uma. A C. Diários
+    guarda o CNO de cada obra — é o dado que a BWS realmente tem, e ele já
+    aparecia no texto da discriminação de todas as notas. Endereço da obra a
+    planilha não tem (o que ela tem é o endereço do cliente, que é outra coisa),
+    e CIB a empresa não usa.
+
+    **O número vai sem pontuação**, como todo documento neste layout (o CNPJ, o
+    CPF e o CEP também são enviados só com dígitos pelo próprio construtor).
+    """
+    if c_trib_nac not in SUBITENS_QUE_EXIGEM_OBRA:
+        return None
+
+    cno = "".join(filter(str.isdigit, str(getattr(obra, "cno", "") or "")))
+    if not cno:
+        raise DadoIncompativel(
+            "A plataforma nacional EXIGE a identificação da obra para serviço de "
+            f"construção civil (subitem {c_trib_nac[:2]}.{c_trib_nac[2:4]}.{c_trib_nac[4:]}), "
+            "e esta obra está sem CNO na C. Diários. Preencha a coluna CNO da obra "
+            "na planilha e emita de novo. É exatamente a falta disso que fez a "
+            "declaração da nota 3281 ser aceita pela prefeitura e recusada no "
+            "nacional (erro E0370)."
+        )
+    if len(cno) != DIGITOS_CNO:
+        # Não barra: a plataforma é que valida o número contra a base da Receita,
+        # e barrar por palpite impediria uma obra legítima de faturar. Mas sai no
+        # log da emissão, porque CNO truncado é a explicação mais provável de uma
+        # recusa com o grupo de obra presente.
+        print(f"  >> ATENÇÃO: o CNO da obra tem {len(cno)} dígitos "
+              f"(o normal são {DIGITOS_CNO}): {cno}")
+    return nac.GrupoObra(c_obra=cno)
+
+
 def montar(card: dict, obra, r, dados_rps, numero_nota, ibge_obra,
            data_emissao: str, producao: bool) -> nac.DadosDPS:
     """Traduz a nota já calculada para a declaração nacional.
@@ -137,6 +189,15 @@ def montar(card: dict, obra, r, dados_rps, numero_nota, ibge_obra,
 
     agora = datetime.datetime.now(FUSO_BRASILIA).replace(microsecond=0)
 
+    c_trib_nac = (dados_rps.codigo_servico_nacional or "070202")
+
+    # --- 4. O grupo de obra: o que faltava e derrubou a nota 3281 ---
+    # O município aceita a declaração sem ele; a plataforma nacional recusa
+    # (E0370). Como a recusa só aparece depois, do outro lado da fila, a nota
+    # ficava "em processamento" para sempre. Barrar aqui, com o motivo escrito,
+    # custa um aviso na tela; deixar passar custa um número de nota queimado.
+    grupo_obra = _grupo_obra(obra, c_trib_nac)
+
     return nac.DadosDPS(
         serie=1,
         n_dps=numero_dps(numero_nota, ano),
@@ -156,7 +217,8 @@ def montar(card: dict, obra, r, dados_rps, numero_nota, ibge_obra,
         toma_nro=(dados_rps.toma_numero or ""),
         toma_bairro=(dados_rps.toma_bairro or ""),
         c_loc_prestacao=int(ibge_obra),
-        c_trib_nac=(dados_rps.codigo_servico_nacional or "070202"),
+        c_trib_nac=c_trib_nac,
+        obra=grupo_obra,
         c_int_contrib=(dados_rps.codigo_tributacao_municipio or "702"),
         x_desc_serv=discriminacao,
         v_serv=_v(r.valor_total),

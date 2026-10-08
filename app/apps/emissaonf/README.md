@@ -151,6 +151,31 @@ ela até aparecer. Da nota pronta saem o **número**, a **chave de acesso** e a
 O código de verificação **não existe mais**: no modelo nacional quem identifica
 a nota é a chave de acesso de 50 dígitos, que vai no PDF com o QR ao lado.
 
+### A identificação da obra é obrigatória, e não está no schema
+
+A plataforma nacional **exige o grupo de obra** quando o serviço é de construção
+civil — treze subitens da lista, entre eles o **07.02.02**, que é o único que a
+BWS usa. Sem ele a nota não sai, e o modo de falhar é o pior possível: **o
+município aceita a declaração e o nacional recusa depois**, do outro lado da
+fila, numa tela de pendências que a nossa consulta não alcança. Foi o que
+aconteceu com a nota 3281 em 07/10/2026 (erro **E0370**).
+
+**Isto não é pegável pelo schema.** No XSD o grupo é opcional (`minOccurs="0"`):
+a declaração sem ele é um arquivo válido. A obrigatoriedade é regra de negócio
+da plataforma, condicionada ao código do serviço. Toda a conferência contra o
+schema oficial — que pega campo fora de ordem, valor fora do domínio e casa
+decimal sobrando — passava batido por esta.
+
+**O que vai:** o **CNO** da obra, lido da coluna "CNO" da C. Diários, **sem
+pontuação** (na planilha `90.025.25410/76`, na declaração `900252541076`) — como
+todo documento neste layout. O layout aceita três identificações e exige
+exatamente uma: o CNO/CEI, o CIB, ou o endereço da obra. As três estão
+implementadas; a BWS usa o CNO, porque é o dado que ela tem.
+
+**Obra sem CNO barra a emissão antes de enviar**, dizendo onde resolver. A conta
+é assimétrica: barrar custa um aviso na tela, deixar passar custa um número de
+nota queimado e uma declaração presa na fila.
+
 ### A declaração é gravada antes de qualquer espera
 
 Entre a prefeitura **aceitar** a declaração e a nota **ficar pronta** passa um
@@ -365,6 +390,7 @@ Todas pedem o mesmo `token` na URL. Não há login: quem tem o link, entra.
 | `/emissao/manual` | **"Nota emitida no portal".** Para nota emitida à mão no portal da prefeitura (canal fora do ar, ou caso que só dá por lá). Recebe o **XML** — dele saem os dados, exatos — e, opcionalmente, o **PDF oficial**, que entra como o documento em vez da nossa réplica. Faz todo o resto: planilha, Omie, card, Drive e avisos. **Não emite nada** |
 | `/emissao/planilha` | **"Só a linha da planilha".** Para a nota que saiu certa em TUDO — Omie, card, arquivos, cliente — e cuja linha da "Notas BWS" não entrou. Grava a linha e **não toca em mais nada**. Os valores saem do **XML**, não do card: a conclusão limpa doze campos de entrada do card, então recalcular a nota depois daria números diferentes dos emitidos. Usar `/emissao/recuperar` ou `/emissao/manual` neste caso preencheria um **segundo slot** no card, mexeria no Omie de novo e mandaria o WhatsApp outra vez |
 | `/emissao/declaracao?…&diagnostico=1` | **"Diagnóstico completo desta declaração".** Pergunta sobre ela na prefeitura E direto na plataforma nacional, e mostra as respostas cruas. A pergunta que decide é a terceira: se o nacional **não conhece** a declaração e a prefeitura diz que transmitiu, as versões não fecham — e a transmissão é ela que faz. O texto é feito para ser copiado e mandado a ela; nunca mostra token nem certificado |
+| `/emissao/declaracao?…&liberar=1` | **"Liberar o número".** Aparece só nas declarações **paradas** da lista. Marca a declaração como recusada e devolve o número ao uso — para o caso em que a API nunca conta a recusa (a 3281 passou um dia respondendo "em processamento" enquanto o portal já a dava como recusada). Não emite, não cancela e não apaga nada: mexe só no controle de numeração |
 | `/emissao/declaracao` | **"Conferir declaração".** A saída do único aperto desta área: a prefeitura aceitou a declaração e a nota não ficou pronta na hora. Pergunta a ela se a nota saiu e, se saiu, **termina o serviço** — sem emitir nada. Consultar não cria nada, então pode repetir |
 | `/emissao/diag` | diz **por que** o certificado não carregou, qual token chegou e de onde, e qual conta do Google está sendo usada — sem mostrar segredo |
 | `/emissao/diag_nacional_chave` | só leitura: testa quais endpoints federais respondem por chave |

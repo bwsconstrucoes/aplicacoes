@@ -708,6 +708,43 @@ def declaracao():
 
     numero_esperado, _ano = _edps.numero_da_declaracao(id_dps)
 
+    # Liberar o número à mão. Existe porque a API pode nunca contar a recusa: a
+    # declaração da nota 3281 ficou um dia respondendo "em processamento" para a
+    # consulta enquanto o PORTAL da prefeitura já a mostrava como "Processado com
+    # Erros". Enquanto ela fica em aberto, segura o número dela, e a numeração
+    # pula esse número para sempre.
+    #
+    # Não emite nada e não apaga nada: só marca na planilha de controle que não
+    # existe nota com esse número. Pior caso de uso errado: o número é reusado
+    # numa emissão seguinte e a prefeitura recusa por número repetido.
+    if request.values.get("liberar") == "1":
+        try:
+            ok = _decl.marcar_recusada(
+                _ctx_minimo()["gc"].open_by_key(_worker.ID_PROC), id_dps,
+                ["liberada à mão na tela: o portal da prefeitura mostra esta "
+                 "declaração como recusada / processada com erros"])
+        except Exception as e:
+            return Response(_pagina_declaracao(
+                token, id_dps, card_id,
+                aviso=f"Não consegui liberar: {type(e).__name__}: {e}"),
+                mimetype="text/html")
+        if not ok:
+            return Response(_pagina_declaracao(
+                token, id_dps, card_id,
+                aviso="Não achei essa declaração na aba de controle — confira a "
+                      "identificação."), mimetype="text/html")
+        return Response(_pagina_explicacao(
+            f"<h1>Número {html.escape(numero_esperado or '')} liberado</h1>"
+            f"<div class='ok'>Marquei esta declaração como <b>recusada</b>: o sistema "
+            f"passa a tratar o número {html.escape(numero_esperado or '')} como livre, "
+            f"e a próxima emissão volta a usá-lo.</div>"
+            f"<p>Nada foi emitido, nada foi apagado e nenhuma nota foi criada ou "
+            f"cancelada — isto mexeu só no controle interno de numeração.</p>"
+            f"<p class='sub'>Se mais tarde aparecer uma nota com esse número, avise: "
+            f"aí é a planilha que precisa ser conferida, não a prefeitura.</p>"
+            f"<p><a class='btn' href='{url_for('.declaracao')}?token={html.escape(token)}'>"
+            f"Voltar</a></p>"), mimetype="text/html")
+
     # Diagnóstico completo: pergunta em todos os lugares e mostra as respostas
     # cruas. É o que se usa quando a nota não aparece em canto nenhum e ninguém
     # sabe de quem é a vez — e serve de prova para levar à prefeitura.
@@ -734,6 +771,17 @@ def declaracao():
         # O desfecho mais tranquilo dos três, e o que vinha disfarçado de
         # "não consegui consultar": não existe nota, e o próprio manual diz que a
         # mesma declaração pode ser reenviada com a correção.
+        #
+        # Marcar aqui não é detalhe de registro: enquanto a declaração fica como
+        # "aguardando", ela SEGURA o número dela, e a numeração pula esse número
+        # para sempre. Recusada quer dizer que não existe nota — o número volta a
+        # estar livre. A emissão já marcava; esta tela não marcava, e é por ela
+        # que se descobre a recusa que chegou tarde.
+        try:
+            _decl.marcar_recusada(ctx["gc"].open_by_key(_worker.ID_PROC),
+                                  id_dps, e.motivos)
+        except Exception:
+            pass
         return Response(_pagina_recusa(numero_esperado, e.motivos), mimetype="text/html")
     except _edps.AindaProcessando as e:
         return Response(_pagina_declaracao(
@@ -833,13 +881,25 @@ def _pagina_declaracao(token, id_dps, card_id, aviso="", abertas=None, erro_list
                          f"prefeitura.</span>")
             else:
                 marca = ""
+            # Só na parada: o número preso é problema dela. Oferecer isto numa
+            # declaração que ainda está na fila convidaria a liberar número de
+            # nota que talvez exista.
+            liberar = ""
+            if d.get("travada"):
+                liberar = (f" &nbsp;<a href='{link}&liberar=1' "
+                           f"onclick=\"return confirm('Isto marca a declaração como "
+                           f"RECUSADA e libera o número {d['numero']} para ser usado de "
+                           f"novo. Use apenas se o portal da prefeitura mostrar esta "
+                           f"declaração como recusada ou processada com erros. "
+                           f"Confirma?')\">liberar o número</a>")
             linhas += (f"<li style='margin:8px 0'>Nota <b>{html.escape(d['numero'])}</b> — "
                        f"obra {html.escape(d['obra'] or '?')}, medição "
                        f"{html.escape(d['med'] or '?')} — enviada em "
                        f"{html.escape(d['enviada_em'])}{amb}{marca}<br>"
                        f"<a class='btn' style='padding:6px 12px;font-size:13px' "
                        f"href='{link}'>Conferir esta</a>"
-                       f" &nbsp;<a href='{link}&diagnostico=1'>diagnóstico</a></li>")
+                       f" &nbsp;<a href='{link}&diagnostico=1'>diagnóstico</a>"
+                       f"{liberar}</li>")
         lista = (f"<div class='card'><b>Declarações em aberto ({len(abertas)})</b>"
                  f"<ul style='padding-left:18px'>{linhas}</ul>"
                  f"<p class='sub'>São as que a prefeitura aceitou e ainda não viraram "

@@ -125,6 +125,47 @@ class GrupoIBSCBS:
     ind_dest: int = 0
 
 
+# --------------------------------------------------------------------------- #
+# Grupo de obra - OBRIGATORIO para servico de construcao civil.
+#
+# Descoberto em 08/10/2026, pela TI da prefeitura: a declaracao 3281 foi
+# ACEITA pelo municipio e RECUSADA na plataforma nacional, com o erro
+#
+#   E0370 - O grupo de informacoes de obra e obrigatorio quando o codigo de
+#   tributacao nacional pertencer a um dos subitens 07.02.01, 07.02.02,
+#   07.04.01, 07.05.01, 07.05.02, 07.06.01, 07.06.02, 07.07.01, 07.08.01,
+#   07.17.01, 07.19.01, 14.14.03 e 14.14.04 da lista de servicos.
+#
+# A BWS emite sempre em 07.02.02 (empreitada), entao para ela o grupo e
+# obrigatorio em TODA nota. No modelo antigo (ABRASF) nao existia campo para
+# isto: o CNO ia solto no texto da discriminacao, e por isso o defeito nao
+# apareceu na migracao.
+#
+# O layout (TCInfoObra) exige UM de tres, e so um:
+#   cObra  - numero do CNO ou do CEI da obra  <- o que a BWS tem
+#   cCIB   - codigo do Cadastro Imobiliario Brasileiro (8 digitos)
+#   end    - o endereco da obra (CEP + logradouro + numero + bairro)
+# A inscricao imobiliaria fiscal (inscImobFisc) e opcional e vem antes.
+# --------------------------------------------------------------------------- #
+@dataclass
+class GrupoObra:
+    """Identificação da obra. Preencher UM dos três: CNO/CEI, CIB ou endereço."""
+    c_obra: str = ""                # CNO ou CEI (o que a C. Diários guarda)
+    c_cib: str = ""                 # Cadastro Imobiliário Brasileiro (8 dígitos)
+    end: Optional[dict] = None      # {"CEP","xLgr","nro","xCpl","xBairro"}
+    insc_imob_fisc: str = ""        # opcional: inscrição imobiliária / IPTU
+
+    def identificacao(self) -> str:
+        """Qual das três alternativas está preenchida. Vazio = nenhuma."""
+        if self.c_obra:
+            return "cObra"
+        if self.c_cib:
+            return "cCIB"
+        if self.end:
+            return "end"
+        return ""
+
+
 @dataclass
 class DadosDPS:
     # identificação
@@ -187,6 +228,10 @@ class DadosDPS:
     c_loc_emi: int = COD_IBGE_EUSEBIO
     tp_emit: int = 1                # 1 = prestador
 
+    # grupo de OBRA. Obrigatório nos subitens de construção civil (E0370) — e a
+    # BWS emite sempre em 07.02.02, então na prática é obrigatório sempre.
+    obra: Optional[GrupoObra] = field(default=None)
+
     # grupo reforma (default: construção civil). Definir None p/ omitir.
     ibscbs: Optional[GrupoIBSCBS] = field(default_factory=GrupoIBSCBS)
 
@@ -246,6 +291,32 @@ def montar_dps_xml(d: DadosDPS) -> etree._Element:
     if d.c_nbs:
         _sub(cserv, "cNBS", d.c_nbs)
     _sub(cserv, "cIntContrib", d.c_int_contrib)
+
+    # Grupo de OBRA. A ordem é exigida pelo XSD: dentro de <serv>, depois de
+    # <cServ> (o grupo <comExt>, que não usamos, ficaria entre os dois).
+    if d.obra is not None:
+        qual = d.obra.identificacao()
+        if not qual:
+            raise ValueError(
+                "O grupo de obra foi pedido sem nenhuma das três identificações. "
+                "O layout exige UMA: o CNO/CEI (cObra), o CIB (cCIB) ou o "
+                "endereço da obra (end)."
+            )
+        g = _sub(serv, "obra")
+        if d.obra.insc_imob_fisc:
+            _sub(g, "inscImobFisc", d.obra.insc_imob_fisc)
+        if qual == "cObra":
+            _sub(g, "cObra", d.obra.c_obra)
+        elif qual == "cCIB":
+            _sub(g, "cCIB", d.obra.c_cib)
+        else:
+            e = _sub(g, "end")
+            _sub(e, "CEP", "".join(filter(str.isdigit, str(d.obra.end.get("CEP", "")))))
+            _sub(e, "xLgr", d.obra.end.get("xLgr", ""))
+            _sub(e, "nro", d.obra.end.get("nro", ""))
+            if d.obra.end.get("xCpl"):
+                _sub(e, "xCpl", d.obra.end["xCpl"])
+            _sub(e, "xBairro", d.obra.end.get("xBairro", ""))
 
     valores = _sub(inf, "valores")
     vsp = _sub(valores, "vServPrest")
