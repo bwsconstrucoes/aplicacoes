@@ -51,19 +51,22 @@ def notas_que_contam(linhas: list[dict]) -> list[dict]:
 
 
 def tem_tributos_declarados(linhas: list[dict]) -> bool:
-    """A nota tem tributo declarado? Para as ANTIGAS a resposta é NÃO.
+    """A nota tem tributo registrado? Quase sempre sim — e as exceções importam.
 
-    ⚠️ **Esta é a trava que impede o pior estrago possível desta tela.** O emissor
-    nunca gravou tributo nenhum até 09/10/2026, e os blocos de fórmula da
-    planilha são de uma metodologia abandonada — então a base nasce com o lado da
-    nota VAZIO para as ~3.300 notas antigas.
+    ⚠️ **Esta é a trava que impede o pior estrago possível desta tela.**
 
-    Sem esta verificação, a soma das notas daria zero, a equalização veria
-    divergência em tudo e **zeraria as retenções no Omie** — apagando a única
-    cópia que existe delas, e a baixa passaria a sair errada em toda nota antiga.
+    A maioria das notas tem: o bloco BB:BM da planilha é justamente o que o dono
+    criou para equalizar, e ele confirmou em 09/10/2026 que *"já está tudo
+    equalizado ali"*. Esse valor entra na base como o tributo da nota.
 
-    Então: título cujas notas não declararam tributo NÃO é conferível, e nunca é
-    equalizado. Ele aparece na tela como "sem tributo na nota".
+    **As exceções são as mais recentes**, que ele ainda não equalizou e chegam em
+    branco. Para essas, a soma daria zero, a equalização veria divergência em
+    tudo e **zeraria as retenções no Omie** — apagando a única cópia que existe
+    delas, e a baixa passaria a sair errada.
+
+    Então: título cujas notas não têm tributo registrado NÃO é conferível, e
+    nunca é equalizado. Ele aparece na tela como "sem tributo na nota" — que é
+    exatamente o aviso de que falta equalizar aquela, e não de que algo quebrou.
     """
     for d in notas_que_contam(linhas):
         for t in TRIBUTOS:

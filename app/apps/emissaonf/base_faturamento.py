@@ -203,16 +203,30 @@ NB_LIQUIDO_DESTAQUE = 14
 # abandonada. Ler dali encheria a base de números plausíveis e errados, que é o
 # pior resultado possível: ninguém desconfia de um número com cara de certo.
 #
-# BB:BM — os tributos do OMIE, em pares valor/retém, escritos ali pelo Apps
-# Script. A ORDEM é a do script (PIS, COFINS, **CSLL, IR**, ISS, INSS) e NÃO a do
+# BB:BM — **os tributos EQUALIZADOS**, em pares valor/retém. O dono esclareceu
+# em 09/10/2026 o que esse bloco é:
+#
+#   *"A parte de tributos Omie, aquilo dali eu criei exatamente para equalizar.
+#    Já está tudo equalizado ali. E o que não tiver, talvez tenha alguns que
+#    estão em branco, mas são poucos, são as mais recentes."*
+#
+# Ou seja: não é "o que o Omie tem" por acaso — é o valor **acordado** entre a
+# nota e o título, conferido por ele ao longo do tempo. É, portanto, o melhor
+# (e o único) registro que existe dos tributos das notas antigas, e é o LADO DA
+# NOTA da base que ele preenche.
+#
+# As colunas `omie_*` da base ficam para o que a consulta ao Omie devolver
+# AGORA: é comparando as duas que se vê se o título saiu do lugar depois.
+#
+# A ORDEM é a do Apps Script (PIS, COFINS, **CSLL, IR**, ISS, INSS) e NÃO a do
 # nosso cabeçalho: trocar uma pela outra põe o ISS no lugar do IR.
-NB_OMIE = {
-    "omie_pis": 53, "omie_cofins": 55, "omie_csll": 57,
-    "omie_ir": 59, "omie_iss": 61, "omie_inss": 63,
+NB_TRIBUTOS = {
+    "pis": 53, "cofins": 55, "csll": 57,
+    "ir": 59, "iss": 61, "inss": 63,
 }
 # O "retido ou não" de cada um, na coluna seguinte à do valor. O dono quer essa
 # informação por um motivo só: compatibilizar com o Omie.
-NB_OMIE_RETEM = {k: v + 1 for k, v in NB_OMIE.items()}
+NB_TRIBUTOS_RETEM = {k: v + 1 for k, v in NB_TRIBUTOS.items()}
 
 
 def de_notas_bws(linha: list) -> dict:
@@ -233,17 +247,13 @@ def de_notas_bws(linha: list) -> dict:
         "valor_liquido_previsto": c(NB_LIQUIDO_DESTAQUE),
         "origem": "consolidacao",
     }
-    # Só o que o Omie tem. **Os tributos que a NOTA declarou ficam vazios para as
-    # notas antigas** — e isso não é desleixo, é o estado do mundo: o emissor
-    # nunca gravou tributo nenhum, e os blocos de fórmula da planilha são de uma
-    # metodologia abandonada. Preencher o lado da nota com eles seria inventar
-    # uma declaração fiscal que não existe.
-    for nome, idx in NB_OMIE.items():
-        valor = c(idx)
-        retido = c(NB_OMIE_RETEM[nome]).upper().startswith("S")
-        # Valor sem a marca de retido não conta: o Omie guarda os dois campos, e
-        # valor com retém=N é imposto que ele NÃO está descontando.
-        d[nome] = valor if (valor and retido) else ""
+    # Os tributos EQUALIZADOS de BB:BM entram como o lado da NOTA: é o valor
+    # acordado, e para as notas antigas é o único registro que existe. As poucas
+    # linhas em branco são as mais recentes, que ele ainda não equalizou — e
+    # vazio aqui é o que impede a tela do Omie de mexer nelas.
+    for nome, idx in NB_TRIBUTOS.items():
+        d[nome] = c(idx)
+        d[f"retem_{nome}"] = (c(NB_TRIBUTOS_RETEM[nome]).upper()[:1] or "")
     return d
 
 

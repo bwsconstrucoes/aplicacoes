@@ -110,16 +110,35 @@ encheria a base de **números plausíveis e errados**, que é o pior resultado
 possível: ninguém desconfia de um número com cara de certo.
 
 **De P a BA não se lê nada.** O que se lê é **E:O** (os dados da nota e o
-recebimento) e **BB:BM** (os tributos do Omie, em pares valor/retém). O "retido
-ou não" entra por um motivo só, que é o que ele pediu: **compatibilizar com o
-Omie** — valor com retém=N é imposto que o Omie não está descontando, e não
-conta.
+recebimento) e **BB:BM** (os tributos, em pares valor/retém).
 
-**Consequência que exigiu uma trava:** como o emissor nunca gravou tributo
-nenhum, a nota antiga chega à base **sem tributo declarado**. A tela do Omie
-confere e grava o que o Omie tem, mas **nunca equaliza** esses títulos — fazer a
-conta com zero zeraria as retenções no Omie, que são a única cópia que existe
-delas. A trava vale mesmo com a confirmação marcada.
+### E BB:BM é o tributo EQUALIZADO — o lado da NOTA
+
+Esclarecimento dele no mesmo dia, e é o que define para onde esse bloco vai:
+
+> *"A parte de tributos Omie, aquilo dali eu criei exatamente para equalizar. Já
+> está tudo equalizado ali. E o que não tiver, talvez tenha alguns que estão em
+> branco, mas são poucos, são as mais recentes."*
+
+Então BB:BM **não** é "o que o Omie tem por acaso": é o valor **acordado** entre a
+nota e o título, conferido por ele ao longo do tempo. Para as notas antigas é o
+**único registro que existe** dos tributos delas — o emissor nunca gravou nenhum.
+Por isso entra como o **lado da NOTA** da base.
+
+As colunas `omie_*` ficam para o que a consulta ao Omie devolver **agora**. É
+comparando as duas que se vê **se o título saiu do lugar depois de equalizado** —
+que é a utilidade real da tela do Omie para o acervo antigo.
+
+O "retido ou não" entra por um motivo só, que é o que ele pediu: **compatibilizar
+com o Omie**. O valor fica (é informação) e a marca diz se é descontado; só o que
+foi retido entra na soma que vai para o título.
+
+**A trava que sobra, e ela protege as poucas em branco:** as notas mais recentes,
+que ele ainda não equalizou, chegam **sem tributo**. Para essas a soma daria zero,
+a equalização veria divergência em tudo e **zeraria as retenções no Omie**. Então
+título sem tributo registrado **nunca é equalizado**, mesmo com a confirmação
+marcada — e a tela diz "sem tributo na nota", que é o aviso de que falta equalizar
+aquela.
 
 ### Nota declarada × Omie: dois campos, não um
 

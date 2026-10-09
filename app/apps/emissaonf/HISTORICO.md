@@ -1488,18 +1488,35 @@ não existem.
 
 **Saldo: 71 → 64 colunas.**
 
-#### E a trava que a correção 1 exigiu
+#### E o que BB:BM realmente é — esclarecimento dele, no mesmo dia
 
-Se os tributos da nota só vêm de BB em diante — que é o que o **Omie** tem — então
-**a nota antiga chega à base sem tributo declarado**, porque o emissor nunca
-gravou nenhum. E aí a soma das notas de um título daria **zero**, a equalização
-veria divergência em tudo e **zeraria as retenções no Omie** — apagando a única
-cópia que existe delas, e fazendo a baixa sair errada em toda nota antiga.
+Minha primeira leitura da correção 1 foi pessimista: tratei BB:BM como "o que o
+Omie tem", e concluí que a nota antiga ficaria sem tributo nenhum. Ele corrigiu:
 
-Então: **título cujas notas não declararam tributo nunca é equalizado**, e a trava
-vale mesmo com a confirmação marcada. Autorizar equalizar não é autorizar apagar
-o que o Omie tem e a nota não tem. A tela confere, grava, e diz "sem tributo na
-nota — não equalizável".
+> *"A parte de tributos Omie, aquilo dali eu criei exatamente para equalizar. Já
+> está tudo equalizado ali. E o que não tiver, talvez tenha alguns que estão em
+> branco, mas são poucos, são as mais recentes."*
+
+Isso muda o destino do bloco. BB:BM é o valor **acordado** entre a nota e o
+título, conferido por ele ao longo de anos — e, para as notas antigas, é o
+**único registro que existe** dos tributos delas. Então ele entra como o **lado da
+NOTA**, e não como o lado do Omie.
+
+As colunas `omie_*` ficaram para o que a consulta devolver **agora**. É comparando
+as duas que se vê **se o título saiu do lugar depois de equalizado** — e essa é a
+utilidade real da tela do Omie para o acervo antigo, que eu tinha dado como
+perdida.
+
+#### A trava continua, e agora protege o que realmente precisa
+
+As **poucas notas mais recentes** que ele ainda não equalizou chegam sem tributo.
+Para essas, a soma daria **zero**, a equalização veria divergência em tudo e
+**zeraria as retenções no Omie** — apagando a única cópia que existe delas.
+
+Então: **título sem tributo registrado nunca é equalizado**, e a trava vale mesmo
+com a confirmação marcada. Autorizar equalizar não é autorizar apagar o que o
+Omie tem e a nota não tem. A tela diz "sem tributo na nota", que é o aviso de que
+**falta equalizar aquela** — e não de que algo quebrou.
 
 **Conferido:** os quatro consertos, mais a trava, em 18 casos novos — entre eles o
 que põe lixo em T:Y e exige que não apareça na base, o valor com retém=N não

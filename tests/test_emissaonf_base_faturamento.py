@@ -118,12 +118,36 @@ def test_o_bloco_de_formula_da_planilha_e_IGNORADO():
         assert lixo not in inteiro, f"entrou lixo da planilha: {lixo}"
 
 
-def test_a_nota_antiga_chega_SEM_tributo_declarado():
-    """E é o estado do mundo, não desleixo: o emissor nunca gravou tributo
-    nenhum. É isto que torna a nota antiga não equalizável."""
+def test_o_bloco_BB_BM_entra_como_o_tributo_da_NOTA():
+    """Esclarecimento do dono em 09/10/2026: *"a parte de tributos Omie, aquilo
+    dali eu criei exatamente para equalizar. Já está tudo equalizado ali."*
+
+    Então BB:BM não é "o que o Omie tem por acaso" — é o valor ACORDADO entre a
+    nota e o título, e para as notas antigas é o único registro que existe dos
+    tributos delas. Vai para o lado da NOTA."""
+    d = bf.de_notas_bws(_linha_notas_bws())
+    assert d["pis"] == "1.099,98"
+    assert d["cofins"] == "5.076,85"
+    assert d["csll"] == "1.827,66"
+    assert d["ir"] == "2.030,74"
+    assert d["iss"] == "2.538,43"
+    assert d["retem_pis"] == "S"
+
+
+def test_o_lado_OMIE_fica_vazio_ate_alguem_consultar():
+    """As colunas `omie_*` são o que a consulta devolver AGORA. É comparando as
+    duas que se vê se o título saiu do lugar depois de equalizado."""
     d = bf.de_notas_bws(_linha_notas_bws())
     for t in ("pis", "cofins", "ir", "csll", "inss", "iss"):
-        assert not d.get(t), t
+        assert not d.get(f"omie_{t}"), t
+    assert bf.conferir_tributos(d) == "", "sem consulta, não há o que divergir"
+
+
+def test_imposto_nao_retido_guarda_valor_E_a_marca():
+    """O valor fica (é informação), e o retém diz que não é descontado. Só o que
+    foi retido entra na soma que vai para o Omie."""
+    d = bf.de_notas_bws(_linha_notas_bws())
+    assert d["inss"] == "0,00" and d["retem_inss"] == "N"
 
 
 def test_os_valores_da_nota_saem_das_colunas_certas():
@@ -137,22 +161,12 @@ def test_os_valores_da_nota_saem_das_colunas_certas():
     assert d["valor_liquido_previsto"] == "144.808,69"
 
 
-def test_os_tributos_do_omie_nao_trocam_de_lugar():
-    """BB:BM está na ordem PIS, COFINS, CSLL, IR, ISS, INSS — e o nosso cabeçalho
-    está em outra. Este teste é a única coisa que impede o ISS de virar IR."""
+def test_os_tributos_nao_trocam_de_lugar():
+    """BB:BM está na ordem PIS, COFINS, **CSLL, IR**, ISS, INSS — e o nosso
+    cabeçalho está em outra. Este teste é a única coisa que impede o ISS de
+    virar IR: são dois números plausíveis na mesma linha."""
     d = bf.de_notas_bws(_linha_notas_bws())
-    assert d["omie_pis"] == "1.099,98"
-    assert d["omie_cofins"] == "5.076,85"
-    assert d["omie_csll"] == "1.827,66"
-    assert d["omie_ir"] == "2.030,74"
-    assert d["omie_iss"] == "2.538,43"
-
-
-def test_valor_do_omie_com_retem_N_nao_conta():
-    """O Omie guarda valor E retém. Valor com retém=N é imposto que ele não está
-    descontando — contá-lo inflaria a conferência."""
-    d = bf.de_notas_bws(_linha_notas_bws())
-    assert d["omie_inss"] == "", "BL tem valor mas BM diz N"
+    assert (d["csll"], d["ir"]) == ("1.827,66", "2.030,74")
 
 
 def test_imposto_da_nota_e_do_omie_sao_campos_SEPARADOS():
@@ -195,13 +209,15 @@ def test_sem_consulta_ao_omie_a_divergencia_de_tributos_fica_VAZIA():
     assert bf.conferir_tributos(bf.de_notas_bws(linha)) == ""
 
 
-def test_tributo_que_o_omie_tem_diferente_da_nota_e_acusado():
-    """Com a nota declarando (caso das notas NOVAS), a divergência aparece."""
+def test_titulo_que_saiu_do_lugar_depois_de_equalizado_e_acusado():
+    """O caso que a tela do Omie serve para pegar: a nota tem o tributo
+    equalizado, a consulta volta com outro valor — alguém mexeu no título."""
     d = bf.de_notas_bws(_linha_notas_bws())
-    d["ir"] = "1.000,00"             # a nota declarou outro valor
+    for t in ("pis", "cofins", "csll", "ir", "iss", "inss"):
+        d[f"omie_{t}"] = d[t]
+    assert bf.conferir_tributos(d) == "N", "equalizado: tem de bater"
+    d["omie_ir"] = "1.000,00"
     assert bf.conferir_tributos(d) == "S"
-    d["ir"] = "2.030,74"             # igual ao do Omie
-    assert bf.conferir_tributos(d) == "N"
 
 
 def test_valor_em_pt_br_com_milhar_e_lido_certo():
