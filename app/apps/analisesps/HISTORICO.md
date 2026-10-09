@@ -12228,6 +12228,43 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 215 — Faturamento: colunas escolhidas, arquivos em ícone, conferência no Omie (09/10/2026)
+
+- *"Na aba Solicitações você consegue definir quais colunas exibir; quero a
+  mesma coisa para essa de notas."* A lista de notas ganhou o mesmo "Colunas da
+  tabela" (mesma peça, `analisesps_colunas.html` com `tabela_colunas`), guardado
+  por pessoa na preferência `colunas_faturamento`. A coluna Nota não sai (é a
+  linha). Os seis tributos são uma escolha só. `tabela.escolhidas` e
+  `para_guardar` passaram a aceitar outra lista de colunas.
+- *"Essa parte dos arquivos, DANF e tal, poderia ser só um iconezinho."* Ícones
+  (nota, XML, recibo) com o nome no balão (`_faturamento_arquivos.html`). A
+  ficha continua com os botões por extenso.
+- *"A sincronia com o Omie já está funcionando? Não tem nada (…) precisamos
+  poder fazer aquela consulta do título ao Omie, para compatibilizar."* Não
+  estava: as colunas `omie_*` da base só eram preenchidas pela tela do emissor
+  (`/emissao/omie`, 40 títulos por clique), que ninguém tinha rodado. Agora:
+  - **na ficha**, "Consultar título no Omie": consulta o título daquela nota na
+    hora, rateia entre as notas do mesmo título, regrava SÓ essas linhas da base
+    e o banco, e devolve a ficha dizendo se bate ou em quais tributos não;
+  - **no alto**, "Conferir títulos no Omie" (operador): tarefa de fundo
+    (`faturamento_omie`) que confere todos, começando pelos nunca conferidos,
+    até 800 por rodada, gravando a cada 40; para se o Omie pedir pausa longa e
+    diz quantos faltam. Entra na fila se outra tarefa estiver rodando;
+  - **na lista**, a coluna "Omie": bate / não bate / sem tributo (falta
+    equalizar) / sem título / "—" (não conferido).
+  As regras são as do emissor (`omie_conferencia.py`: rateio fechando ao
+  centavo, só o retido soma, cancelada fora) — importadas, não copiadas. A
+  consulta usa o cliente do painel (que sabe esperar a pausa do Omie), com a
+  mesma credencial do ambiente (`OMIE_KEY`/`OMIE_SECRET`).
+- **Decisão: aqui só se LÊ o Omie.** Equalizar (gravar o tributo no título)
+  continua na tela do emissor, que mostra o que vai mudar e pede confirmação
+  marcada. Trazer o equalizar para cá é uma decisão do dono — escreve em
+  sistema financeiro.
+- Não testado contra o Omie e a planilha de verdade (Omie e aba dublados nos
+  testes). Risco conhecido, o mesmo da tela do emissor: a conferência regrava a
+  linha inteira da nota; se o emissor alterar a mesma linha no mesmo minuto, a
+  última gravação vence. Sem migração.
+
 #### Leva 214 — Faturamento: a aba vazia dita, e o "Importar" que entra na fila (09/10/2026)
 
 - *"Outra tarefa de fundo está rodando agora (…) Tente de novo em alguns

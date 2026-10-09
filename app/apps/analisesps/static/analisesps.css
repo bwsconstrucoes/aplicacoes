@@ -2824,3 +2824,9 @@ table.conciliacao tr.com-sp { cursor: pointer; }
 .icone-baixar:hover { background: #DCE5F3; }
 .icone-baixar.comprovante { color: #1E7A3C; background: #E9F5EC; }
 .icone-baixar.comprovante:hover { background: #D5EEDC; }
+
+/* Faturamento — arquivos como ícones e a linha do Omie na ficha (09/10/2026) */
+.fat-arquivos .icones-sp { white-space: nowrap; }
+.fat-arquivos a.fat-icone { margin-right: 2px; }
+.fat-omie-linha .btn { margin-left: 8px; }
+.fat-planilha-cartao .linha-colunas { margin: 0 0 8px; }

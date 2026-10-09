@@ -27,6 +27,8 @@ from __future__ import annotations
 import json
 import logging
 
+from .tabela import Coluna
+
 logger = logging.getLogger("analisesps.faturamento")
 
 # A planilha "Controle de Impostos e Emissão de Nota" e a "Bases de Dados
@@ -52,6 +54,30 @@ CAMPOS_DA_OBRA = {
     "scp": "SCP",
     "scp_cnpj": "CNPJ SCP",
 }
+
+# AS COLUNAS DA LISTA DE NOTAS, que cada pessoa escolhe (09/10/2026 — *"na aba
+# Solicitações você consegue definir quais colunas exibir; quero a mesma coisa
+# para essa de notas (…) de repente se eu quiser que apareça menos"*). A NOTA
+# não entra na lista: é a identidade da linha, e é nela que o duplo clique
+# abre a ficha. Mesma mecânica e mesma guarda da tabela de SPs (`tabela.py`).
+COLUNAS = [
+    Coluna("emissao",     "Emissão",              "data",    True),
+    Coluna("competencia", "Competência",          "texto",   True),
+    Coluna("obra",        "Obra",                 "texto",   True),
+    Coluna("empresa",     "Empresa",              "texto",   True),
+    Coluna("tomador",     "Tomador",              "texto",   True),
+    Coluna("medicao",     "Medição",              "texto",   True),
+    Coluna("valor",       "Valor",                "moeda",   True),
+    Coluna("tributos",    "Tributos (PIS a ISS)", "moeda",   True),
+    Coluna("liquido",     "Líquido",              "moeda",   True),
+    Coluna("recebido_em", "Recebido em",          "data",    True),
+    Coluna("recebido",    "Valor recebido",       "moeda",   True),
+    Coluna("situacao",    "Situação",             "texto",   True),
+    Coluna("omie",        "Omie",                 "texto",   True),
+    Coluna("arquivos",    "Arquivos",             "link",    True),
+]
+COLUNAS_POR_CHAVE = {c.chave: c for c in COLUNAS}
+PREFERENCIA_COLUNAS = "colunas_faturamento"
 
 STATUS_VALIDA = "valida"
 # A lista é "como a planilha" (pedido do dono, 09/10/2026): muitas linhas por
@@ -196,22 +222,32 @@ def carregar(anotar=None) -> dict:
 # separado, sem prender o serviço. Não apaga nada e não emite nada: só lê as
 # abas antigas e escreve na aba nova. Rodar de novo não duplica.
 # ---------------------------------------------------------------------------
+def _emissor():
+    """Os módulos do emissor que guardam as regras da base e do Omie.
+
+    O emissor se importa de forma PLANA (`import base_faturamento`), como
+    scripts — ver `emissaonf/README.md`. A pasta dele entra no caminho, como o
+    web.py dele faz. As regras NÃO são copiadas para cá: são dele."""
+    import os
+    import sys
+    pasta = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "emissaonf"))
+    if pasta not in sys.path:
+        sys.path.insert(0, pasta)
+    import base_faturamento as bfat
+    import omie as emissor_omie
+    import omie_conferencia as ocf
+    return bfat, emissor_omie, ocf
+
+
 LOTE_DA_IMPORTACAO = 1000
 MAX_RODADAS = 20
 
 
 def importar_antigas(anotar=None) -> dict:
-    import os
-    import sys
     from .credenciais import cliente, com_retry
 
     anotar = anotar or (lambda *a, **k: None)
-    # O emissor se importa de forma PLANA (`import worker`), como scripts — ver
-    # `emissaonf/README.md`. A pasta dele entra no caminho, como o web.py dele faz.
-    pasta = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "emissaonf"))
-    if pasta not in sys.path:
-        sys.path.insert(0, pasta)
-    import base_faturamento as bfat
+    bfat, _, _ = _emissor()
 
     planilha = com_retry(lambda: cliente().open_by_key(PLANILHA_NOTAS))
     gravadas, r = 0, {"faltam": None}
@@ -226,6 +262,202 @@ def importar_antigas(anotar=None) -> dict:
             break
     return {"gravadas": gravadas, "faltam": r["faltam"] or 0,
             "total_na_base": r.get("total_na_base")}
+
+
+# ---------------------------------------------------------------------------
+# CONFERIR OS TÍTULOS NO OMIE (09/10/2026) — *"a gente precisa poder fazer
+# aquela consulta do título ao Omie, para compatibilizar"*.
+#
+# É a "Conferir" da tela do emissor (`/emissao/omie`), trazida para cá: as
+# regras são as DELE (`emissaonf/omie_conferencia.py`) e não são copiadas —
+#
+#   - um título cobre VÁRIAS notas: o valor do título é RATEADO entre elas pelo
+#     valor bruto, fechando ao centavo;
+#   - só o que foi RETIDO entra na soma; cancelada e substituída ficam fora;
+#   - nota sem tributo registrado não é "divergente": é "falta equalizar".
+#
+# ⚠️ AQUI SÓ SE LÊ O OMIE. O que se escreve é na base ("Base Faturamento"): os
+# campos `omie_*`, a data da conferência e as duas divergências — exatamente o
+# que a "Conferir" do emissor escreve. EQUALIZAR (gravar no Omie) continua só
+# na tela do emissor, com a confirmação marcada e a lista do que vai mudar.
+#
+# A consulta usa o cliente do painel (`OmieClient`), que já sabe esperar
+# quando o Omie pede pausa — com a MESMA credencial (OMIE_KEY/OMIE_SECRET do
+# ambiente, que o emissor também prefere à aba Credenciais).
+# ---------------------------------------------------------------------------
+# Num processo separado, sozinho, mas não sem fim: o Omie tem cota, e a base
+# tem milhares de títulos. Primeiro os nunca conferidos; depois os mais velhos.
+MAX_TITULOS_POR_RODADA = 800
+GRAVAR_A_CADA = 40
+
+
+def _consultar_titulo(cliente_omie, codigo: str) -> dict:
+    from app.apps.painel.sync.omie_client import URL_CONTARECEBER
+    _, emissor_omie, _ = _emissor()
+    resposta = cliente_omie._call(URL_CONTARECEBER, "ConsultarContaReceber",
+                                  {"codigo_lancamento_integracao": codigo})
+    return emissor_omie.ler_titulo(resposta or {})
+
+
+def conferir_grupo(notas: list[dict], titulo: dict) -> dict:
+    """Escreve nas linhas da base o que o Omie tem (rateado) e diz o que não
+    bate. Não fala com ninguém: recebe o título já consultado."""
+    bfat, _, ocf = _emissor()
+    conferivel = ocf.tem_tributos_declarados(notas)
+    desejado = ocf.somar_tributos(notas)
+    fora = ocf.precisa_equalizar(titulo, desejado) if conferivel else []
+    partes = ocf.ratear_titulo(notas, titulo)
+    for d in notas:
+        ocf.aplicar_no_registro(d, titulo, partes.get(bfat._txt(d.get("nota_numero"))))
+    return {"conferivel": conferivel, "fora": fora, "desejado": desejado}
+
+
+def _ordem_da_conferencia(notas: list[dict]):
+    """Nunca conferido vem primeiro; depois, o conferido há mais tempo."""
+    import datetime as dt
+    momentos = []
+    for d in notas:
+        texto = str(d.get("omie_conferido_em") or "").strip()
+        if not texto:
+            return (0, dt.datetime.min)
+        try:
+            momentos.append(dt.datetime.strptime(texto, "%d/%m/%Y %H:%M"))
+        except ValueError:
+            return (0, dt.datetime.min)
+    return (1, min(momentos) if momentos else dt.datetime.min)
+
+
+def _gravar_no_banco(registros: list[dict]) -> None:
+    """A tela mostra a conferência sem esperar a próxima carga da planilha."""
+    from .db import conexao
+    with conexao() as conn:
+        for d in registros:
+            dados = {k: v for k, v in d.items() if not str(k).startswith("_")}
+            conn.execute("UPDATE analisesps.faturamento_nota SET dados = ?::jsonb "
+                         " WHERE nota_numero = ?",
+                         (json.dumps(dados, ensure_ascii=False),
+                          str(d.get("nota_numero") or "")))
+        conn.commit()
+
+
+def conferir_no_omie(anotar=None, cliente_omie=None, planilha=None) -> dict:
+    """Confere no Omie os títulos da base inteira (no processo separado)."""
+    from app.apps.painel.sync.omie_client import OmieAPIError, OmieBloqueada, OmieClient
+    from .credenciais import cliente, com_retry
+
+    anotar = anotar or (lambda *a, **k: None)
+    bfat, _, ocf = _emissor()
+    planilha = planilha or com_retry(lambda: cliente().open_by_key(PLANILHA_NOTAS))
+    ws = bfat._ws(planilha)
+    anotar("lendo a Base Faturamento", "")
+    linhas = com_retry(lambda: bfat.ler_linhas(ws))
+    grupos = ocf.agrupar_por_titulo(linhas)
+    sem_codigo = len(linhas) - sum(len(v) for v in grupos.values())
+    ordem = sorted(grupos.items(), key=lambda kv: _ordem_da_conferencia(kv[1]))
+    da_vez = ordem[:MAX_TITULOS_POR_RODADA]
+    cli = cliente_omie or OmieClient.de_ambiente()
+
+    r = {"titulos": len(grupos), "conferidos": 0, "divergentes": 0,
+         "sem_tributo": 0, "nao_achados": 0, "erros": 0, "sem_codigo": sem_codigo,
+         "faltam": max(len(ordem) - len(da_vez), 0), "bloqueio": "", "gravadas": 0}
+    pendentes = []
+
+    def gravar():
+        if pendentes:
+            r["gravadas"] += com_retry(lambda: bfat.gravar_lote(ws, pendentes))
+            _gravar_no_banco(pendentes)
+            pendentes.clear()
+
+    for i, (codigo, notas) in enumerate(da_vez, start=1):
+        anotar("conferindo os títulos no Omie", f"{i} de {len(da_vez)}")
+        try:
+            titulo = _consultar_titulo(cli, codigo)
+        except OmieBloqueada as e:
+            # Insistir prolonga o bloqueio: para aqui, guarda o que já foi.
+            r["bloqueio"] = str(e)
+            r["faltam"] += len(da_vez) - i + 1
+            break
+        except OmieAPIError as e:
+            if getattr(e, "definitivo", False):
+                r["nao_achados"] += 1
+            else:
+                r["erros"] += 1
+            logger.info("Faturamento: título %s não conferido: %s", codigo, e)
+            continue
+        except Exception:  # noqa: BLE001 — um título ruim não para os outros
+            r["erros"] += 1
+            logger.exception("Faturamento: falha ao conferir o título %s", codigo)
+            continue
+        c = conferir_grupo(notas, titulo)
+        r["conferidos"] += 1
+        if not c["conferivel"]:
+            r["sem_tributo"] += 1
+        elif c["fora"]:
+            r["divergentes"] += 1
+        pendentes.extend(notas)
+        if len(pendentes) >= GRAVAR_A_CADA:
+            gravar()
+    gravar()
+    logger.info("Faturamento: conferência no Omie — %s", r)
+    return r
+
+
+def conferir_uma_no_omie(numero: str, cliente_omie=None, planilha=None) -> dict:
+    """Confere AGORA o título de uma nota — o botão da ficha.
+
+    Lê só as linhas daquele título na aba (não a aba inteira) e uma vez o Omie.
+    As notas irmãs (mesmo título) entram junto: o rateio é entre elas."""
+    from app.apps.painel.sync.omie_client import OmieAPIError, OmieBloqueada
+    from .conciliacao_omie import _cliente as cliente_de_tela
+    from .credenciais import cliente, com_retry
+    from .db import consultar
+
+    bfat, _, _ = _emissor()
+    nota = uma(numero)
+    if not nota:
+        return {"ok": False, "erro": "Nota não encontrada."}
+    codigo = str(nota.get("omie_codigo") or "").strip()
+    if not codigo:
+        return {"ok": False, "erro": (
+            "Esta nota não tem o código do título no Omie na base. Ele vem da aba "
+            "\"Protocolos\" (por obra e medição) — sem ele não há título para consultar.")}
+    irmas = [str(l[0]) for l in consultar(
+        "SELECT nota_numero FROM analisesps.faturamento_nota "
+        " WHERE dados->>'omie_codigo_integracao' = ?", (codigo,))]
+
+    planilha = planilha or com_retry(lambda: cliente().open_by_key(PLANILHA_NOTAS))
+    ws = bfat._ws(planilha)
+    mapa = com_retry(lambda: bfat.numeros_na_base(ws))
+    linhas_da_aba = sorted({mapa[n] for n in irmas if n in mapa})
+    if not linhas_da_aba:
+        return {"ok": False, "erro": "A nota não foi achada na aba \"Base Faturamento\" "
+                                     "— aperte \"Atualizar da planilha\" e tente de novo."}
+    ultima_coluna = bfat._col(len(bfat.CAB) - 1)
+    blocos = com_retry(lambda: ws.batch_get(
+        [f"A{l}:{ultima_coluna}{l}" for l in linhas_da_aba]))
+    registros = []
+    for linha, bloco in zip(linhas_da_aba, blocos):
+        valores = list(bloco[0]) if bloco else []
+        d = {nome: bfat._txt(valores[i]) if i < len(valores) else ""
+             for i, nome in enumerate(bfat.CAB)}
+        d["_linha"] = linha
+        registros.append(d)
+
+    try:
+        titulo = _consultar_titulo(cliente_omie or cliente_de_tela(), codigo)
+    except OmieBloqueada as e:
+        return {"ok": False, "erro": str(e)}
+    except OmieAPIError as e:
+        return {"ok": False, "erro": (
+            f"O título {codigo} não foi achado no Omie." if getattr(e, "definitivo", False)
+            else f"O Omie não respondeu: {str(e)[:200]}")}
+    c = conferir_grupo(registros, titulo)
+    com_retry(lambda: bfat.gravar_lote(ws, registros))
+    _gravar_no_banco(registros)
+    return {"ok": True, "codigo": codigo, "notas": len(registros),
+            "conferivel": c["conferivel"], "fora": c["fora"],
+            "valor_titulo": titulo.get("valor_titulo"),
+            "numero_documento": titulo.get("numero_documento", "")}
 
 
 # ---------------------------------------------------------------------------
@@ -441,6 +673,11 @@ def _linha_da_tela(dados, obra, data_emissao, valor_total, valor_liquido,
         "tributos": tributos,
         "ibs": dados.get("ibs", ""), "cbs": dados.get("cbs", ""),
         "divergencia_tributos": dados.get("divergencia_tributos", ""),
+        "omie_codigo": dados.get("omie_codigo_integracao", ""),
+        "omie_conferido_em": dados.get("omie_conferido_em", ""),
+        "omie_valor_titulo": (para_numero(dados.get("omie_valor_titulo"))
+                              if str(dados.get("omie_valor_titulo", "")).strip() else None),
+        "omie_numero_documento": dados.get("omie_numero_documento", ""),
         "divergencia_recebimento": dados.get("divergencia_recebimento", ""),
         "discriminacao": dados.get("discriminacao", ""),
         "link_card": dados.get("link_card", ""),

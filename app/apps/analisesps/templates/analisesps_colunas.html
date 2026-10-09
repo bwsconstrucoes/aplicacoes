@@ -15,6 +15,8 @@
   <summary>Colunas da tabela <span class="qtd">{{ colunas|length }} de {{ todas|length }}</span></summary>
   <form method="post" action="{{ url_for('analisesps.escolher_colunas') }}">
     <input type="hidden" name="voltar" value="{{ request.full_path }}">
+    {# Qual tabela: vazio é a das SPs; "faturamento" é a das notas (09/10/2026). #}
+    {% if tabela_colunas %}<input type="hidden" name="tabela" value="{{ tabela_colunas }}">{% endif %}
     <div class="colunas-opcoes">
       {% set marcadas = colunas|map(attribute='chave')|list %}
       {% for c in todas %}
@@ -38,6 +40,7 @@
   </form>
 </details>
 
+{% if not tabela_colunas %}
 {# Um clique para a descrição sair ou voltar. Abrir a lista inteira para
    mexer numa coluna só é caro demais para uma coisa que se faz o dia todo. #}
 <form method="post" action="{{ url_for('analisesps.escolher_colunas') }}">
@@ -48,4 +51,5 @@
     {% if 'descricao' in marcadas_agora %}Esconder a descrição{% else %}Mostrar a descrição{% endif %}
   </button>
 </form>
+{% endif %}
 </div>

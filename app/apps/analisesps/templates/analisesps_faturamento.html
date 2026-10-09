@@ -23,62 +23,78 @@
 {% else %}
 {% include "_faturamento_topo.html" %}
 
+{% from "_faturamento_arquivos.html" import icones_da_nota, selo_omie %}
+{% set ver = colunas|map(attribute='chave')|list %}
 <div class="cartao fat-planilha-cartao">
   <div class="cartao-cab">
     <h3>Notas <small>{{ resumo.quantidade }} · R$ {{ resumo.bruto|moeda }}</small></h3>
     <small>duplo clique numa nota abre a ficha dela · tributo "—" = ainda não informado</small>
   </div>
+  {# As colunas: cada pessoa escolhe as suas (09/10/2026), como em Solicitações. #}
+  {% with tabela_colunas = "faturamento" %}{% include "analisesps_colunas.html" %}{% endwith %}
   {% if not notas %}
     <p class="cartao-dica">Nenhuma nota com estes filtros{% if not carregado_em %} — as notas ainda não vieram da planilha{% elif total_no_banco %} — há {{ total_no_banco }} nota(s) no total; sem mexer na barra, a tela mostra só os últimos doze meses{% endif %}.</p>
   {% else %}
+    {# Quantas colunas vêm ANTES do Valor e entre ele e o Líquido: é o que
+       mantém os totais do rodapé debaixo das colunas certas. #}
+    {% set antes_do_valor = ['emissao','competencia','obra','empresa','tomador','medicao']|select('in', ver)|list|length %}
     <div class="tabela-rolagem fat-planilha">
       <table class="tabela-fat">
         <thead><tr>
-          <th>Nota</th><th>Emissão</th><th>Compet.</th><th>Obra</th><th>Empresa</th>
-          <th>Tomador</th><th>Medição</th><th class="direita">Valor</th>
-          <th class="direita">PIS</th><th class="direita">COFINS</th><th class="direita">IR</th>
-          <th class="direita">CSLL</th><th class="direita">INSS</th><th class="direita">ISS</th>
-          <th class="direita">Líquido</th><th>Recebido em</th><th class="direita">Recebido</th>
-          <th>Situação</th><th>Arquivos</th>
+          <th>Nota</th>
+          {% if 'emissao' in ver %}<th>Emissão</th>{% endif %}
+          {% if 'competencia' in ver %}<th>Compet.</th>{% endif %}
+          {% if 'obra' in ver %}<th>Obra</th>{% endif %}
+          {% if 'empresa' in ver %}<th>Empresa</th>{% endif %}
+          {% if 'tomador' in ver %}<th>Tomador</th>{% endif %}
+          {% if 'medicao' in ver %}<th>Medição</th>{% endif %}
+          {% if 'valor' in ver %}<th class="direita">Valor</th>{% endif %}
+          {% if 'tributos' in ver %}<th class="direita">PIS</th><th class="direita">COFINS</th><th class="direita">IR</th>
+            <th class="direita">CSLL</th><th class="direita">INSS</th><th class="direita">ISS</th>{% endif %}
+          {% if 'liquido' in ver %}<th class="direita">Líquido</th>{% endif %}
+          {% if 'recebido_em' in ver %}<th>Recebido em</th>{% endif %}
+          {% if 'recebido' in ver %}<th class="direita">Recebido</th>{% endif %}
+          {% if 'situacao' in ver %}<th>Situação</th>{% endif %}
+          {% if 'omie' in ver %}<th title="Os tributos da nota batem com o título no Omie?">Omie</th>{% endif %}
+          {% if 'arquivos' in ver %}<th>Arquivos</th>{% endif %}
         </tr></thead>
         <tbody>
           {% for n in notas %}
             <tr class="fat-linha" data-nota="{{ url_for('analisesps.faturamento_nota', numero=n.numero) }}"
                 title="Duplo clique abre a nota {{ n.sequencial or n.numero }}">
               <td><b>{{ n.sequencial or n.numero }}</b></td>
-              <td>{{ n.data_emissao|data_br }}</td>
-              <td>{{ n.competencia }}</td>
-              <td>{{ n.obra }}</td>
-              <td>{{ n.empresa }}{% if n.e_scp %} <small class="selo neutro">SCP</small>{% endif %}</td>
-              <td class="fat-tomador" title="{{ n.tomador }}">{{ n.tomador }}</td>
-              <td>{{ n.medicao }}</td>
-              <td class="direita"><b>{{ n.valor_total|moeda }}</b></td>
-              {% for t in n.tributos %}
+              {% if 'emissao' in ver %}<td>{{ n.data_emissao|data_br }}</td>{% endif %}
+              {% if 'competencia' in ver %}<td>{{ n.competencia }}</td>{% endif %}
+              {% if 'obra' in ver %}<td>{{ n.obra }}</td>{% endif %}
+              {% if 'empresa' in ver %}<td>{{ n.empresa }}{% if n.e_scp %} <small class="selo neutro">SCP</small>{% endif %}</td>{% endif %}
+              {% if 'tomador' in ver %}<td class="fat-tomador" title="{{ n.tomador }}">{{ n.tomador }}</td>{% endif %}
+              {% if 'medicao' in ver %}<td>{{ n.medicao }}</td>{% endif %}
+              {% if 'valor' in ver %}<td class="direita"><b>{{ n.valor_total|moeda }}</b></td>{% endif %}
+              {% if 'tributos' in ver %}{% for t in n.tributos %}
                 <td class="direita {{ 'fat-nao-retido' if t.retem == 'N' }}"
                     title="{{ t.nome }}{% if t.retem == 'S' %} retido{% elif t.retem == 'N' %} não retido{% endif %}">
                   {{ t.valor|moeda if t.valor is not none else '—' }}</td>
-              {% endfor %}
-              <td class="direita">{{ n.valor_liquido|moeda }}</td>
-              <td>{{ n.data_recebimento|data_br if n.data_recebimento else '' }}</td>
-              <td class="direita">{{ n.valor_recebido|moeda if n.data_recebimento else '' }}</td>
-              <td>{% if n.status != 'valida' %}<span class="selo cancelado">{{ n.status }}</span>
+              {% endfor %}{% endif %}
+              {% if 'liquido' in ver %}<td class="direita">{{ n.valor_liquido|moeda }}</td>{% endif %}
+              {% if 'recebido_em' in ver %}<td>{{ n.data_recebimento|data_br if n.data_recebimento else '' }}</td>{% endif %}
+              {% if 'recebido' in ver %}<td class="direita">{{ n.valor_recebido|moeda if n.data_recebimento else '' }}</td>{% endif %}
+              {% if 'situacao' in ver %}<td>{% if n.status != 'valida' %}<span class="selo cancelado">{{ n.status }}</span>
                   {% elif not n.data_recebimento %}<span class="cartao-dica">a receber</span>
-                  {% else %}<span class="selo pago">recebida</span>{% endif %}</td>
-              <td class="fat-arquivos">
-                {% for rotulo, link in n.links %}<a href="{{ link }}" target="_blank" rel="noopener"
-                   title="{{ rotulo }}">{{ rotulo.split(' ')[0] }}</a>{% endfor %}
-              </td>
+                  {% else %}<span class="selo pago">recebida</span>{% endif %}</td>{% endif %}
+              {% if 'omie' in ver %}<td>{{ selo_omie(n) }}</td>{% endif %}
+              {% if 'arquivos' in ver %}<td class="fat-arquivos">{{ icones_da_nota(n.links) }}</td>{% endif %}
             </tr>
           {% endfor %}
         </tbody>
         <tfoot><tr>
-          <td colspan="7"><b>Total do filtro</b> ({{ resumo.quantidade }} nota(s))</td>
-          <td class="direita"><b>{{ resumo.bruto|moeda }}</b></td>
-          <td colspan="6"></td>
-          <td class="direita"><b>{{ resumo.liquido|moeda }}</b></td>
-          <td></td>
-          <td class="direita"><b>{{ resumo.recebido|moeda }}</b></td>
-          <td colspan="2"></td>
+          <td colspan="{{ 1 + antes_do_valor }}"><b>Total do filtro</b> ({{ resumo.quantidade }} nota(s))</td>
+          {% if 'valor' in ver %}<td class="direita"><b>{{ resumo.bruto|moeda }}</b></td>{% endif %}
+          {% if 'tributos' in ver %}<td colspan="6"></td>{% endif %}
+          {% if 'liquido' in ver %}<td class="direita"><b>{{ resumo.liquido|moeda }}</b></td>{% endif %}
+          {% if 'recebido_em' in ver %}<td></td>{% endif %}
+          {% if 'recebido' in ver %}<td class="direita"><b>{{ resumo.recebido|moeda }}</b></td>{% endif %}
+          {% set depois = ['situacao','omie','arquivos']|select('in', ver)|list|length %}
+          {% if depois %}<td colspan="{{ depois }}"></td>{% endif %}
         </tr></tfoot>
       </table>
     </div>
@@ -108,6 +124,21 @@
   const corpo = document.getElementById("fat-corpo");
   document.getElementById("fat-fechar").addEventListener("click", () => dlg.close());
   dlg.addEventListener("click", e => { if (e.target === dlg) dlg.close(); });
+  // "Consultar título no Omie", dentro da ficha: a ficha volta já conferida.
+  corpo.addEventListener("click", async e => {
+    const botao = e.target.closest("[data-conferir-omie]");
+    if (!botao) return;
+    botao.disabled = true;
+    botao.textContent = "Consultando o Omie…";
+    try {
+      const r = await fetch(botao.dataset.conferirOmie, {method: "POST"});
+      corpo.innerHTML = await r.text();
+    } catch (err) {
+      botao.disabled = false;
+      botao.textContent = "Consultar título no Omie";
+      alert("Não consegui falar com o servidor. Tente de novo.");
+    }
+  });
   document.querySelectorAll("tr.fat-linha[data-nota]").forEach(tr => tr.addEventListener("dblclick", async e => {
     if (e.target.closest("a, button, input")) return;
     corpo.innerHTML = '<p class="cartao-dica">Carregando…</p>';

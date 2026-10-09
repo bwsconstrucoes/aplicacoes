@@ -499,6 +499,8 @@ TELA_DA_ROTA = {
     "analisesps.faturamento_atualizar": ("faturamento",),
     "analisesps.faturamento_importar": ("faturamento",),
     "analisesps.faturamento_nota": ("faturamento",),
+    "analisesps.faturamento_nota_omie": ("faturamento",),
+    "analisesps.faturamento_omie": ("faturamento",),
     "analisesps.calendario": ("calendario",),
     "analisesps.calendario_dia": ("calendario",),
     "analisesps.auditoria": ("auditoria",),

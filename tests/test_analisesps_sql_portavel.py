@@ -609,6 +609,8 @@ def test_tudo_que_o_modulo_importa_esta_no_requirements():
         # de forma plana como o próprio emissor faz — é código deste
         # repositório (`app/apps/emissaonf/base_faturamento.py`).
         "base_faturamento": "",
+        "omie": "",                 # app/apps/emissaonf/omie.py (leitura do título)
+        "omie_conferencia": "",     # app/apps/emissaonf/omie_conferencia.py
     }
 
     faltando = []

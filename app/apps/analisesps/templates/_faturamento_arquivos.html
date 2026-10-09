@@ -1,0 +1,38 @@
+{# ---------------------------------------------------------------------------
+   OS ARQUIVOS DA NOTA COMO ÍCONES (09/10/2026 — *"essa parte dos arquivos,
+   DANF e tal, poderia ser só uma espécie de iconezinho, para ocupar menos
+   tela"*). O nome inteiro fica no balão. A ficha continua com os botões.
+--------------------------------------------------------------------------- #}
+{% macro icones_da_nota(links) %}
+  <span class="icones-sp">
+  {%- for rotulo, link in links %}
+    {%- set tipo = rotulo.split(' ')[0] -%}
+    <a class="icone-baixar fat-icone fat-icone-{{ tipo|lower }}" href="{{ link }}" target="_blank" rel="noopener"
+       title="{{ rotulo }}" aria-label="{{ rotulo }}">
+      {%- if tipo == 'XML' -%}
+        <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      {%- elif tipo == 'Recibo' -%}
+        <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M9 8h6M9 12h6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      {%- else -%}
+        {# DANFSe (nacional) e NFS-e (municipal): a nota em si #}
+        <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path d="M6 2h8l5 5v15H6z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M14 2v5h5M9 13h7M9 17h7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      {%- endif -%}
+    </a>
+  {%- endfor %}
+  </span>
+{% endmacro %}
+
+{# A CONFERÊNCIA COM O OMIE numa célula: bate, não bate, ou ainda não se sabe. #}
+{% macro selo_omie(n) %}
+  {%- if n.divergencia_tributos == 'S' -%}
+    <span class="selo cancelado" title="Os tributos da nota e do título no Omie não batem (conferido {{ n.omie_conferido_em }})">não bate</span>
+  {%- elif n.divergencia_tributos == 'N' -%}
+    <span class="selo pago" title="Conferido {{ n.omie_conferido_em }}">bate</span>
+  {%- elif n.omie_conferido_em -%}
+    <span class="selo neutro" title="Título consultado {{ n.omie_conferido_em }}, mas a nota não tem tributo registrado para comparar — falta equalizar">sem tributo</span>
+  {%- elif not n.omie_codigo -%}
+    <span class="cartao-dica" title="A nota não tem o código do título no Omie (vem da aba Protocolos)">sem título</span>
+  {%- else -%}
+    <span class="cartao-dica" title="Ainda não conferido no Omie">—</span>
+  {%- endif -%}
+{% endmacro %}

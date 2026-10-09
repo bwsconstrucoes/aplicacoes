@@ -631,6 +631,22 @@ def escolher_colunas():
     perfil Consulta olha."""
     from . import tabela
 
+    # Qual tabela: a das SPs (padrão) ou a das notas do Faturamento — esta,
+    # pedido do dono em 09/10/2026: *"na aba Solicitações você consegue definir
+    # quais colunas exibir; quero a mesma coisa para essa de notas"*.
+    if request.form.get("tabela") == "faturamento":
+        from . import faturamento
+        escolhidas = [c for c in request.form.getlist("coluna")
+                      if c in faturamento.COLUNAS_POR_CHAVE]
+        if request.form.get("acao") == "padrao":
+            escolhidas = []
+        preferencias.gravar(auth.pessoa_atual(), faturamento.PREFERENCIA_COLUNAS,
+                            tabela.para_guardar(escolhidas, faturamento.COLUNAS))
+        voltar = (request.form.get("voltar") or "").strip()
+        if voltar.startswith("/analisesps"):
+            return redirect(voltar)
+        return redirect(url_for("analisesps.tela_faturamento"))
+
     acao = request.form.get("acao", "")
     if acao == "padrao":
         escolhidas = []          # vazio = volta ao padrão, ver tabela.py
@@ -2200,6 +2216,13 @@ def _filtros_do_faturamento() -> dict:
     }
 
 
+def _colunas_do_faturamento() -> list:
+    """As colunas da lista de notas que ESTA pessoa vê (09/10/2026)."""
+    from . import faturamento, tabela
+    guardado = preferencias.ler(auth.pessoa_atual(), faturamento.PREFERENCIA_COLUNAS)
+    return tabela.escolhidas(guardado, faturamento.COLUNAS)
+
+
 def _carga_do_faturamento():
     """Quando a cópia foi trazida e se uma carga está rodando — e pede uma nova
     se a cópia estiver velha (recusada em silêncio se outra tarefa roda: a
@@ -2218,8 +2241,13 @@ def _carga_do_faturamento():
             # Outra tarefa ocupa a vez: a carga entra sozinha quando ela acabar.
             tarefas.pedir_depois("faturamento")
             na_fila = True
+    conferindo = bool(andamento.get("rodando")
+                      and (andamento.get("detalhe") or {}).get("tipo") == "faturamento_omie")
     return {"carregado_em": carregado_em, "rodando": rodando, "na_fila": na_fila,
             "e_mestre": auth.e_mestre(),
+            "conferindo": conferindo,
+            "conferencia": tarefas.ultima_do_tipo("faturamento_omie"),
+            "conferencia_na_fila": tarefas._pedido_pendente("faturamento_omie"),
             "total_no_banco": faturamento.total_no_banco(),
             "importacao_na_fila": tarefas._pedido_pendente("faturamento_antigas"),
             "importacao": tarefas.ultima_do_tipo("faturamento_antigas"),
@@ -2272,6 +2300,7 @@ def tela_faturamento():
     return render_template(
         "analisesps_faturamento.html", pronto=True, filtros=filtros,
         pagina=pagina, por_pagina=faturamento.POR_PAGINA,
+        colunas=_colunas_do_faturamento(), todas=faturamento.COLUNAS,
         resumo=faturamento.resumo(filtros),
         notas=faturamento.listar(filtros, pagina), opcoes=faturamento.opcoes(),
         args=request.args, **_carga_do_faturamento(), **base)
@@ -2354,6 +2383,45 @@ def faturamento_importar():
     return redirect(url_for("analisesps.tela_faturamento") + "?aviso=" + quote(aviso))
 
 
+@bp.route("/faturamento/omie", methods=["POST"])
+@exige_operador
+def faturamento_omie():
+    """Confere no Omie os títulos das notas, em segundo plano (09/10/2026: *"a
+    gente precisa poder fazer aquela consulta do título ao Omie, para
+    compatibilizar"*). Só LÊ o Omie; grava na base o que ele tem e se bate —
+    ver `faturamento.conferir_no_omie`."""
+    from urllib.parse import quote
+    from . import tarefas
+    r = tarefas.disparar("faturamento_omie", disparo=auth.nome_atual() or "conferir omie")
+    if r.get("ok"):
+        aviso = ("Conferindo os títulos no Omie — um por um, porque o Omie tem cota. "
+                 "Pode levar vários minutos; o resultado aparece aqui no alto.")
+    else:
+        tarefas.pedir_depois("faturamento_omie")
+        aviso = ("Outra tarefa de fundo está rodando agora (só roda uma por vez). "
+                 "A conferência no Omie ficou na fila e começa sozinha assim que "
+                 "ela terminar — pode deixar.")
+    return redirect(url_for("analisesps.tela_faturamento") + "?aviso=" + quote(aviso))
+
+
+@bp.route("/faturamento/nota/<numero>/omie", methods=["POST"])
+@exige_operador
+def faturamento_nota_omie(numero):
+    """Confere AGORA, no Omie, o título de uma nota — o botão da ficha. Devolve
+    a ficha de novo, já com o que o Omie tem e se bate."""
+    from . import faturamento
+    try:
+        resultado = faturamento.conferir_uma_no_omie(numero)
+    except Exception as e:  # noqa: BLE001 — a frase vai para a ficha
+        logger.exception("Faturamento: falha ao conferir a nota %s no Omie", numero)
+        resultado = {"ok": False, "erro": f"Não consegui conferir: {str(e)[:200]}"}
+    nota = faturamento.uma(numero)
+    if not nota:
+        return ("<div class=\"aviso erro\">Nota não encontrada.</div>", 404)
+    return render_template("analisesps_faturamento_nota.html", n=nota,
+                           conferencia=resultado, pode_operar=auth.pode_operar())
+
+
 @bp.route("/faturamento/nota/<numero>")
 @exige_consulta
 def faturamento_nota(numero):
@@ -2362,7 +2430,8 @@ def faturamento_nota(numero):
     nota = faturamento.uma(numero)
     if not nota:
         return ("<div class=\"aviso erro\">Nota não encontrada.</div>", 404)
-    return render_template("analisesps_faturamento_nota.html", n=nota)
+    return render_template("analisesps_faturamento_nota.html", n=nota,
+                           pode_operar=auth.pode_operar())
 
 
 # ---------------------------------------------------------------------------
