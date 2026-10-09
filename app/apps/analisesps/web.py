@@ -368,6 +368,14 @@ def _filtro_falta_nf(linha) -> bool:
                       linha.get("nf"), linha.get("status_pgt"))
 
 
+@bp.app_template_filter("atualizar_sp")
+def _filtro_atualizar_sp(linha) -> bool:
+    """A etiqueta "Atualizar SP" (09/10/2026) — `pagamentos.atualizar_sp`."""
+    from .pagamentos import atualizar_sp
+    linha = linha or {}
+    return atualizar_sp(linha.get("centro_custo"), linha.get("status_pgt"))
+
+
 @bp.app_template_filter("sem_validacao")
 def _filtro_sem_validacao(linha) -> bool:
     from .pagamentos import sem_validacao

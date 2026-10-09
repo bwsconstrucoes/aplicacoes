@@ -106,3 +106,11 @@ def test_SEM_NF_destaca_menos_BeeVale_rescisao_ferias_e_salarios():
     assert sem_validacao("", "Pagar") and sem_validacao(None, "")
     assert not sem_validacao("Sim", "Pagar")
     assert not sem_validacao("", "Pago") and not sem_validacao("", "Cancelado")
+
+
+def test_ATUALIZAR_SP_quando_falta_a_obra():
+    """09/10/2026: SP que veio incompleta do sistema de compras (sem obra)."""
+    from app.apps.analisesps.pagamentos import atualizar_sp
+    assert atualizar_sp("", "Pagar") and atualizar_sp("  ", "")
+    assert not atualizar_sp("CREPEEXU", "Pagar")
+    assert not atualizar_sp("", "Pago") and not atualizar_sp("", "Cancelado")

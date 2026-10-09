@@ -12242,6 +12242,12 @@ somente Solicitações de uma conta especifica"*.
   As exceções moram em `pagamentos.TIPOS_SEM_NOTA` e `FORMAS_SEM_NOTA` —
   regra nova do dono entra ali, comparada pelo começo, sem acento.
 - Solicitações e Lote (a mesma tabela). Sem migração.
+- **"Atualizar SP"** (mesmo dia): *"o sistema de compra gera a SP incompleta, os
+  dados vêm na descrição (…) ela vai estar sem centro de custo e a conta em erro
+  (…) coloca 'atualizar SP'"*. Etiqueta ao lado do número quando a obra (centro
+  de custo) está em branco, em SP ainda a pagar (`pagamentos.atualizar_sp`).
+  Só destaque — não trava o Agendar.
+- **Levas 208 a 210 publicadas em 09/10/2026**, sem migração.
 
 #### Leva 209 — chave Pix "Atualizar Chave": etiqueta na lista e trava no Agendar (09/10/2026)
 

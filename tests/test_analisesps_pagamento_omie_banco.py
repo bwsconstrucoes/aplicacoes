@@ -221,5 +221,6 @@ def test_a_LISTA_destaca_sem_validacao_e_sem_NF(app, monkeypatch):
                             follow_redirects=True).get_data(as_text=True)
     linha = lista[lista.index("1000000201"):lista.index("1000000202")]
     assert "Sem NF" in linha and "sem validação" in linha
+    assert "Atualizar SP" in linha, "veio sem obra"
     resto = lista[lista.index("1000000202"):]
     assert "Sem NF" not in resto[:3000], "rescisão não pede nota"

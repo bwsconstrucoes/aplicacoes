@@ -2814,3 +2814,4 @@ table.conciliacao tr.com-sp { cursor: pointer; }
 /* Sem validação e sem número de nota (09/10/2026). */
 .selo.sem-validacao { background: #FFF1DC; color: #7A4300; font-weight: 600; white-space: nowrap; }
 .selo.sem-nf { background: #FFEAEA; color: #8C1F19; font-weight: 600; white-space: nowrap; }
+.selo.atualizar-sp { background: #EDE7FF; color: #4B2A9A; font-weight: 600; white-space: nowrap; }

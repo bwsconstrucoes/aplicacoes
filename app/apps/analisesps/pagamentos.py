@@ -262,6 +262,19 @@ def falta_nota(forma, tipo_despesa, nf, status_pgt="") -> bool:
     return not _normal(tipo_despesa).startswith(TIPOS_SEM_NOTA)
 
 
+def atualizar_sp(centro_custo, status_pgt="") -> bool:
+    """A SP chegou incompleta do sistema de compras e precisa ser tratada?
+
+    09/10/2026, o dono: *"o sistema de compra gera a solicitação de pagamento e
+    ela vem incompleta, os dados vêm na descrição (…) ela vai estar sem centro
+    de custo e a conta em erro (…) o fato de estar sem obra já é a trava (…)
+    coloca 'atualizar SP'"*. O sinal é a OBRA (centro de custo) em branco.
+    Paga ou cancelada não tem mais o que tratar."""
+    if str(centro_custo or "").strip():
+        return False
+    return not _normal(status_pgt).startswith(("pago", "cancel"))
+
+
 def sem_validacao(validacao, status_pgt="") -> bool:
     """A Validação está em branco numa SP que ainda vai ser paga? (09/10/2026:
     *"quando tem uma SP sem validação fica só a célula em branco; era bom um
