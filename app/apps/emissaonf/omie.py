@@ -53,19 +53,68 @@ def _split_docs(s):
     return [x for x in str(s or "").replace(" ", "").split("/") if x]
 
 
-def _merge_doc(atual, novo):
-    """Acrescenta 'novo' ao campo, mantendo os que já existem. Não duplica."""
-    docs = _split_docs(atual)
-    novo = str(novo).strip()
+# ⚠️ O Omie recusa mais de 20 caracteres em `numero_documento_fiscal`. Com os
+# números de 4 dígitos do modelo antigo caberiam quatro notas ("3283/3294/3295/
+# 3296" = 19). Com os números de 13 dígitos do padrão nacional, **duas já não
+# cabem** — e foi o erro da nota 2600000003294, em 09/10/2026:
+#
+#   "O número máximo de caracteres permitido para o elemento
+#    [NUMERO_DOCUMENTO_FISCAL] é de 20. O número de caracteres informado foi
+#    de 32!"
+#
+# O título ficou sem o número daquela nota.
+LIMITE_NUMERO_DOCUMENTO = 20
+
+
+def numero_curto(numero) -> str:
+    """O número da nota na forma CURTA — o sequencial.
+
+    No padrão nacional a nota volta com 13 dígitos (ano + sequencial): a 3294 é
+    `2600000003294`. No campo do Omie vai o **sequencial**, e por três motivos:
+
+    1. **cabe.** Três notas em 20 caracteres, contra uma só no formato longo;
+    2. **é o número pelo qual o dono procura** ("a 3294"), não o longo;
+    3. **é o que já está lá.** Os títulos antigos têm "3270/3271" — misturar
+       formatos faria o mesmo título ter dois jeitos de escrever nota.
+
+    A regra de conversão é a mesma de `worker.sequencial_da_nota`, e vem dela
+    para não existirem duas versões que possam divergir.
+    """
+    from worker import sequencial_da_nota
+    seq = sequencial_da_nota(numero)
+    return str(seq) if seq else str(numero or "").strip()
+
+
+def montar_numero_documento(atual, novo="", remover="") -> tuple:
+    """Monta o campo respeitando o limite de 20 caracteres.
+
+    Devolve `(texto, descartados)`. Quando não cabe tudo, **os mais ANTIGOS
+    saem** — a nota recém-emitida é a que alguém está procurando agora, e perder
+    silenciosamente a nova seria o pior dos dois. Os descartados são devolvidos
+    para o chamador avisar no log, em vez de desaparecerem.
+    """
+    docs = [numero_curto(d) for d in _split_docs(atual)]
+    if remover:
+        alvo = numero_curto(remover)
+        docs = [d for d in docs if d != alvo]
+    novo = numero_curto(novo) if novo else ""
     if novo and novo not in docs:
         docs.append(novo)
-    return "/".join(docs)
+
+    descartados = []
+    while docs and len("/".join(docs)) > LIMITE_NUMERO_DOCUMENTO:
+        descartados.append(docs.pop(0))
+    return "/".join(docs), descartados
+
+
+def _merge_doc(atual, novo):
+    """Acrescenta 'novo' ao campo, na forma curta e dentro do limite."""
+    return montar_numero_documento(atual, novo=novo)[0]
 
 
 def _remove_doc(atual, alvo):
     """Remove 'alvo' do campo (usado quando uma nota é cancelada)."""
-    alvo = str(alvo).strip()
-    return "/".join(d for d in _split_docs(atual) if d != alvo)
+    return montar_numero_documento(atual, remover=alvo)[0]
 
 
 def _ler_num_doc(consulta):
@@ -110,9 +159,20 @@ def alterar_retencoes(creds, codigo_integracao, r, numero_nota):
         atual = _ler_num_doc(consultar(creds, codigo_integracao))
     except Exception:
         atual = ""                      # se a consulta falhar, grava só o novo número
-    doc = _merge_doc(atual, numero_nota)
+    doc, descartados = montar_numero_documento(atual, novo=numero_nota)
+    _avisar_descartados(descartados, doc)
     param = montar_param_retencoes(codigo_integracao, r, doc)
     return _post("AlterarContaReceber", param, creds), doc
+
+
+def _avisar_descartados(descartados, doc_final):
+    """Número que não caberia no campo do Omie sai do campo, mas NÃO sai em
+    silêncio: quem leu o log precisa saber qual nota deixou de estar referenciada
+    no título."""
+    if descartados:
+        print(f"  >> ATENÇÃO: o campo do Omie aceita {LIMITE_NUMERO_DOCUMENTO} "
+              f"caracteres, e não couberam todas as notas. Saíram as mais "
+              f"antigas: {', '.join(descartados)}. Ficou: {doc_final}")
 
 
 def adicionar_numero(creds, codigo_integracao, numero_nota):
@@ -124,7 +184,8 @@ def adicionar_numero(creds, codigo_integracao, numero_nota):
         atual = _ler_num_doc(consultar(creds, codigo_integracao))
     except Exception:
         atual = ""
-    doc = _merge_doc(atual, numero_nota)
+    doc, descartados = montar_numero_documento(atual, novo=numero_nota)
+    _avisar_descartados(descartados, doc)
     param = {
         "codigo_lancamento_integracao": codigo_integracao,
         "numero_documento_fiscal": str(doc),
@@ -148,7 +209,9 @@ def substituir_numero(creds, codigo_integracao, numero_antigo, numero_novo):
     título (que o Omie bloqueia por trava de registro / consumo redundante).
     Retorna (resposta, doc_final)."""
     atual = _ler_num_doc(consultar(creds, codigo_integracao))
-    doc = _merge_doc(_remove_doc(atual, numero_antigo), numero_novo)
+    doc, descartados = montar_numero_documento(atual, novo=numero_novo,
+                                               remover=numero_antigo)
+    _avisar_descartados(descartados, doc)
     param = {"codigo_lancamento_integracao": codigo_integracao,
              "numero_documento_fiscal": doc}
     return _post("AlterarContaReceber", param, creds), doc

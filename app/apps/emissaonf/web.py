@@ -848,6 +848,56 @@ def omie_tributos():
     return Response(_pagina_omie(token, log=buf.getvalue()), mimetype="text/html")
 
 
+@bp.route("/omie_numero", methods=["POST"])
+def omie_numero():
+    """Acerta o NÚMERO da nota no título do Omie — a reparação de 09/10/2026.
+
+    Por que precisa existir: o campo `numero_documento_fiscal` do Omie aceita 20
+    caracteres, e com os números de 13 dígitos do padrão nacional **duas notas já
+    não cabem**. A nota 2600000003294 falhou nesse passo e o título ficou sem o
+    número dela. O conserto (mandar o número curto) resolve as próximas, mas não
+    volta atrás: a emissão já passou, e a conclusão tem trava contra repetir.
+
+    É idempotente: o número é acumulado sem duplicar, e esta tela **não toca nas
+    retenções** — só no campo do número.
+    """
+    if not _token_ok():
+        return Response(_pagina_erro("Acesso não autorizado."), status=403, mimetype="text/html")
+    token = request.values.get("token", "")
+    numero = (request.form.get("numero") or "").strip()
+    if not numero:
+        return Response(_pagina_omie(token, log=">>> Informe o número da nota."),
+                        mimetype="text/html")
+
+    buf = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buf):
+            gc = _worker.cliente_gspread()
+            cred = _worker.ler_credenciais(gc)
+            ws = _bfat._ws(gc.open_by_key(_worker.ID_PROC))
+            alvo = _worker.sequencial_da_nota(numero)
+            achada = None
+            for d in _bfat.ler_linhas(ws):
+                if _worker.sequencial_da_nota(d.get("nota_numero")) == alvo:
+                    achada = d
+                    break
+            if not achada:
+                print(f">>> A nota {numero} não está na Base Faturamento. Rode a "
+                      f"'Base de Faturamento' primeiro, ou confira o número.")
+            elif not _bfat._txt(achada.get("omie_codigo_integracao")):
+                print(f">>> A nota {numero} está na base, mas SEM código de "
+                      f"integração do Omie — não há título para acertar.")
+            else:
+                codigo = _bfat._txt(achada["omie_codigo_integracao"])
+                antes = omie._ler_num_doc(omie.consultar(cred, codigo))
+                print(f">>> Título {codigo}: o campo tinha '{antes}'.")
+                _, doc = omie.adicionar_numero(cred, codigo, achada["nota_numero"])
+                print(f">>> Agora tem '{doc}'. As retenções NÃO foram tocadas.")
+    except Exception as e:
+        buf.write(f"\n>>> ERRO: {type(e).__name__}: {e}")
+    return Response(_pagina_omie(token, log=buf.getvalue()), mimetype="text/html")
+
+
 def _pagina_omie(token, log=""):
     t = html.escape(token)
     caixa = (f"<div class='card'><b>O que aconteceu</b><pre>{html.escape(log)}</pre></div>"
@@ -892,6 +942,23 @@ def _pagina_omie(token, log=""):
         </form>
         <p class='sub'>Roda em lotes e diz quantos títulos faltam. Conferir de novo
         é seguro: consulta não altera nada.</p>
+      </div>
+      <div class='card'><b>Acertar o número da nota no título</b>
+        <p class='sub'>Use quando a emissão falhou justamente nesse passo e o
+        título ficou sem o número da nota. O campo do Omie aceita <b>20
+        caracteres</b>, e com os números de 13 dígitos do padrão nacional duas
+        notas já não cabiam — por isso o sistema passou a gravar ali o número
+        <b>curto</b> (3294, e não 2600000003294), que é o mesmo formato que os
+        títulos antigos já têm.</p>
+        <form method='post' action='{url_for('.omie_numero')}'>
+          <label class='lbl'>Número da nota (curto ou longo, tanto faz)
+            <input name='numero' style='padding:8px;border:1px solid #c8d0da;
+                   border-radius:6px;width:220px'></label>
+          <input type='hidden' name='token' value='{t}'>
+          <button type='submit'>Acertar o número</button>
+        </form>
+        <p class='sub'>Não mexe nas retenções e pode repetir: o número é
+        acumulado sem duplicar.</p>
       </div>
       <p class='sub' style='text-align:center'>
         <a href='{url_for('.faturamento')}?token={t}'>Base de Faturamento</a> &nbsp;·&nbsp;
