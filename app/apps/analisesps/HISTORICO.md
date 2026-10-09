@@ -12228,6 +12228,30 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 216 — Faturamento: nota com número repetido não some mais (09/10/2026)
+
+- *"Última importação das antigas: 3.468 notas levadas à Base Faturamento.
+  3.284 notas fiscais (…) por algum motivo não está completo."* Duas coisas:
+  1. A lista mostra 761 notas porque, sem mexer na barra, o período são os
+     últimos 12 meses (a leva 214 passa a dizer o total no alto).
+  2. **Defeito de verdade:** a carga guardava UMA nota por número e descartava
+     calada as outras linhas com o mesmo número — 184 (3.468 − 3.284). Agora
+     `separar_repetidas` distingue: a MESMA nota escrita duas vezes (mesma
+     emissão, obra e valor) fica uma; OUTRA nota com o mesmo número (outra
+     série, ano ou empresa) entra com a chave "número-2" e o selo "nº repetido".
+     A carga diz quantas de cada tipo no recado. Sem migração: a coluna-chave
+     do banco guarda a chave, e o número verdadeiro continua no `dados`.
+- Cada nota guarda a linha dela na aba (`_linha_base`): a conferência no Omie
+  acha a nota pela linha, e confere se a linha ainda é a daquela nota antes de
+  regravar (se a aba mudou, pede "Atualizar da planilha"). Na conferência de
+  todas, a mesma nota escrita duas vezes conta uma vez só — senão o tributo
+  dela entraria duas vezes na soma do título.
+- **Não se sabe ainda qual dos dois tipos são as 184.** A próxima carga, já
+  publicada, diz. Se forem a mesma nota duas vezes, a origem é a consolidação
+  do emissor, que dentro de uma rodada não confere repetição na própria "Notas
+  BWS" (`base_faturamento.consolidar`) — conserto da área do emissor, não feito
+  aqui.
+
 #### Leva 215 — Faturamento: colunas escolhidas, arquivos em ícone, conferência no Omie (09/10/2026)
 
 - *"Na aba Solicitações você consegue definir quais colunas exibir; quero a

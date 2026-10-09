@@ -99,23 +99,66 @@ def _chave_obra(v) -> str:
 # ---------------------------------------------------------------------------
 # A carga (processo separado)
 # ---------------------------------------------------------------------------
-def notas_das_linhas(valores: list) -> list[dict]:
+def _assinatura(d: dict) -> tuple:
+    """O que faz duas linhas com o MESMO número serem a mesma nota: mesma
+    emissão, mesma obra, mesmo valor."""
+    from .formatos import para_data, para_numero
+    return (para_data(d.get("data_emissao")), _chave_obra(d.get("obra_codigo")),
+            para_numero(d.get("valor_total")))
+
+
+def separar_repetidas(notas: list[dict], contagem: dict | None = None) -> list[dict]:
+    """Tira as linhas REPETIDAS (mesmo número E mesma nota) e dá chave própria
+    a nota DIFERENTE que repete um número já usado.
+
+    ⚠️ 09/10/2026 — o dono: *"3.468 notas levadas à base, 3.284 notas fiscais
+    (…) ela não está completa"*. A primeira versão guardava uma nota por
+    número e jogava fora as outras 184 linhas sem dizer nada. Número repetido
+    pode ser duas coisas, e elas pedem tratamentos opostos:
+
+      - a MESMA nota escrita duas vezes (mesma emissão, obra e valor) — fica uma;
+      - OUTRA nota com o mesmo número (outra data, obra ou valor: outra série,
+        outro ano, outra empresa) — entra, com a chave "número-2", "número-3"…
+
+    `contagem` recebe quantas foram de cada tipo, para a carga dizer."""
+    contagem = contagem if contagem is not None else {}
+    contagem.setdefault("repetidas", 0)
+    contagem.setdefault("mesmo_numero", 0)
+    vistas: dict = {}
+    saida = []
+    for d in notas:
+        numero = d.get("nota_numero", "")
+        assinatura = _assinatura(d)
+        ja = vistas.setdefault(numero, [])
+        if assinatura in ja:
+            contagem["repetidas"] += 1
+            continue
+        ja.append(assinatura)
+        if len(ja) > 1:
+            contagem["mesmo_numero"] += 1
+            d["_chave"] = f"{numero}-{len(ja)}"
+        saida.append(d)
+    return saida
+
+
+def notas_das_linhas(valores: list, contagem: dict | None = None) -> list[dict]:
     """As linhas da aba viram dicionários pelo NOME do cabeçalho. Linha sem
-    número de nota fica de fora. Repetida: vale a PRIMEIRA (a regra da
-    consolidação, para a base não mudar entre duas rodadas)."""
+    número de nota fica de fora; número repetido — ver `separar_repetidas`.
+
+    Cada nota guarda a linha dela na aba (`_linha_base`): é por ela que a
+    conferência no Omie acha a linha certa, mesmo quando o número se repete."""
     if not valores:
         return []
     cabecalho = [str(c).strip() for c in valores[0]]
-    vistas, saida = set(), []
-    for linha in valores[1:]:
-        dados = {nome: (str(linha[i]).strip() if i < len(linha) else "")
-                 for i, nome in enumerate(cabecalho) if nome}
-        numero = dados.get("nota_numero", "")
-        if not numero or numero in vistas:
+    notas = []
+    for i, linha in enumerate(valores[1:], start=2):
+        dados = {nome: (str(linha[j]).strip() if j < len(linha) else "")
+                 for j, nome in enumerate(cabecalho) if nome}
+        if not dados.get("nota_numero", ""):
             continue
-        vistas.add(numero)
-        saida.append(dados)
-    return saida
+        dados["_linha_base"] = i
+        notas.append(dados)
+    return separar_repetidas(notas, contagem)
 
 
 def obras_das_linhas(valores: list) -> dict:
@@ -159,7 +202,9 @@ def carregar(anotar=None) -> dict:
     avisos = []
     anotar("trazendo as notas fiscais", ABA_BASE)
     try:
-        notas = notas_das_linhas(com_retry(_aba(PLANILHA_NOTAS, ABA_BASE).get_all_values))
+        contagem = {}
+        notas = notas_das_linhas(com_retry(_aba(PLANILHA_NOTAS, ABA_BASE).get_all_values),
+                                 contagem)
     except Exception as e:  # noqa: BLE001 — a frase vai para a tela
         raise RuntimeError(_explicar_aba(PLANILHA_NOTAS, ABA_BASE, e)) from e
 
@@ -176,6 +221,13 @@ def carregar(anotar=None) -> dict:
         avisos.append("C. Diários: " + _explicar_aba(PLANILHA_OBRAS, ABAS_OBRAS[0],
                                                        erro_obras or "vazia"))
 
+    if contagem.get("mesmo_numero"):
+        avisos.append(f"{contagem['mesmo_numero']} nota(s) repetem o número de outra "
+                      "(data, obra ou valor diferentes) — entram como \"número-2\".")
+    if contagem.get("repetidas"):
+        avisos.append(f"{contagem['repetidas']} linha(s) da base são a mesma nota "
+                      "escrita duas vezes — contadas uma vez só.")
+
     def numero(v):
         return formatos.para_numero(v)
 
@@ -189,7 +241,7 @@ def carregar(anotar=None) -> dict:
                 " tomador_nome, valor_total, valor_liquido, valor_recebido, "
                 " data_recebimento, dados) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb)",
-                (n["nota_numero"], n.get("nota_sequencial", ""),
+                (n.get("_chave") or n["nota_numero"], n.get("nota_sequencial", ""),
                  formatos.para_data(n.get("data_emissao")),
                  n.get("competencia", ""),
                  (n.get("status") or STATUS_VALIDA).lower(),
@@ -208,7 +260,9 @@ def carregar(anotar=None) -> dict:
         _meta_gravar(conn, CHAVE_META, agora().isoformat())
     logger.info("Faturamento: %d nota(s) e %d código(s) de obra carregados.",
                 len(notas), len(obras))
-    return {"notas": len(notas), "obras": len(obras), "avisos": avisos}
+    return {"notas": len(notas), "obras": len(obras), "avisos": avisos,
+            "repetidas": contagem.get("repetidas", 0),
+            "mesmo_numero": contagem.get("mesmo_numero", 0)}
 
 
 # ---------------------------------------------------------------------------
@@ -333,10 +387,20 @@ def _gravar_no_banco(registros: list[dict]) -> None:
     with conexao() as conn:
         for d in registros:
             dados = {k: v for k, v in d.items() if not str(k).startswith("_")}
-            conn.execute("UPDATE analisesps.faturamento_nota SET dados = ?::jsonb "
-                         " WHERE nota_numero = ?",
-                         (json.dumps(dados, ensure_ascii=False),
-                          str(d.get("nota_numero") or "")))
+            # MESCLA (`||`): o que a carga guardou só para si (`_chave`,
+            # `_linha_base`) fica. E acha a nota pela LINHA da aba — o número
+            # pode se repetir (`separar_repetidas`).
+            cur = conn.execute(
+                "UPDATE analisesps.faturamento_nota SET dados = dados || ?::jsonb "
+                " WHERE dados->>'_linha_base' = ?",
+                (json.dumps(dados, ensure_ascii=False), str(d.get("_linha") or "")))
+            if not cur.rowcount:
+                # carga de antes da `_linha_base`: pelo número
+                conn.execute(
+                    "UPDATE analisesps.faturamento_nota SET dados = dados || ?::jsonb "
+                    " WHERE nota_numero = ?",
+                    (json.dumps(dados, ensure_ascii=False),
+                     str(d.get("nota_numero") or "")))
         conn.commit()
 
 
@@ -351,6 +415,9 @@ def conferir_no_omie(anotar=None, cliente_omie=None, planilha=None) -> dict:
     ws = bfat._ws(planilha)
     anotar("lendo a Base Faturamento", "")
     linhas = com_retry(lambda: bfat.ler_linhas(ws))
+    # A mesma nota escrita duas vezes somaria o tributo dela duas vezes no
+    # título: fica uma, como na tela.
+    linhas = separar_repetidas(linhas)
     grupos = ocf.agrupar_por_titulo(linhas)
     sem_codigo = len(linhas) - sum(len(v) for v in grupos.values())
     ordem = sorted(grupos.items(), key=lambda kv: _ordem_da_conferencia(kv[1]))
@@ -421,14 +488,20 @@ def conferir_uma_no_omie(numero: str, cliente_omie=None, planilha=None) -> dict:
         return {"ok": False, "erro": (
             "Esta nota não tem o código do título no Omie na base. Ele vem da aba "
             "\"Protocolos\" (por obra e medição) — sem ele não há título para consultar.")}
-    irmas = [str(l[0]) for l in consultar(
-        "SELECT nota_numero FROM analisesps.faturamento_nota "
-        " WHERE dados->>'omie_codigo_integracao' = ?", (codigo,))]
+    # As notas do mesmo título, cada uma com a SUA linha na aba (o número pode
+    # se repetir — `separar_repetidas`; a linha não).
+    irmas = {str(l[1]): str(l[0]) for l in consultar(
+        "SELECT dados->>'nota_numero', coalesce(dados->>'_linha_base', '') "
+        "  FROM analisesps.faturamento_nota "
+        " WHERE dados->>'omie_codigo_integracao' = ?", (codigo,))}
 
     planilha = planilha or com_retry(lambda: cliente().open_by_key(PLANILHA_NOTAS))
     ws = bfat._ws(planilha)
-    mapa = com_retry(lambda: bfat.numeros_na_base(ws))
-    linhas_da_aba = sorted({mapa[n] for n in irmas if n in mapa})
+    if "" in irmas:
+        # carga de antes da `_linha_base`: acha pelo número
+        mapa = com_retry(lambda: bfat.numeros_na_base(ws))
+        irmas = {str(mapa[n]): n for n in irmas.values() if n in mapa}
+    linhas_da_aba = sorted(int(l) for l in irmas if l)
     if not linhas_da_aba:
         return {"ok": False, "erro": "A nota não foi achada na aba \"Base Faturamento\" "
                                      "— aperte \"Atualizar da planilha\" e tente de novo."}
@@ -441,6 +514,11 @@ def conferir_uma_no_omie(numero: str, cliente_omie=None, planilha=None) -> dict:
         d = {nome: bfat._txt(valores[i]) if i < len(valores) else ""
              for i, nome in enumerate(bfat.CAB)}
         d["_linha"] = linha
+        if d.get("nota_numero") != irmas.get(str(linha)):
+            # Alguém mexeu na ordem da aba depois da carga: regravar aqui poria
+            # o resultado na nota errada.
+            return {"ok": False, "erro": "A aba \"Base Faturamento\" mudou desde a "
+                    "última carga — aperte \"Atualizar da planilha\" e tente de novo."}
         registros.append(d)
 
     try:
@@ -650,6 +728,10 @@ def _linha_da_tela(dados, obra, data_emissao, valor_total, valor_liquido,
         })
     empresa = obra.get("scp") or obra.get("empresa") or ""
     return {
+        # A CHAVE da nota na tela (link da ficha): o número, ou "número-2"
+        # quando outra nota já usa esse número (`separar_repetidas`).
+        "chave": dados.get("_chave") or dados.get("nota_numero", ""),
+        "numero_repetido": bool(dados.get("_chave")),
         "numero": dados.get("nota_numero", ""),
         "sequencial": dados.get("nota_sequencial", ""),
         "modelo": dados.get("modelo", ""),

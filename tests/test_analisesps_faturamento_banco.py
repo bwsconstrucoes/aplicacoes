@@ -60,13 +60,16 @@ def carregado(app, monkeypatch):
              nota("3100", "3100", "2026-08-15", "crepeexu", "2.000,00",
                   status="cancelada"),
              nota("3050", "3050", "15/07/2026", "IFS2", "1.000,00"),
-             nota("2600000003283", "3283", "2026-10-08", "REPETIDA", "999,00")]
+             # a MESMA nota escrita duas vezes (mesma emissão, obra e valor)
+             nota("2600000003283", "3283", "08/10/2026", "IFSPSAOJOSE", "10000,00")]
     abas = {(faturamento.PLANILHA_NOTAS, faturamento.ABA_BASE): Aba(notas),
             (faturamento.PLANILHA_OBRAS, "Centro de Custo"): Aba(OBRAS)}
     monkeypatch.setattr(sincronizacao, "_aba", lambda p, n: abas[(p, n)])
     monkeypatch.setattr(tarefas, "disparar", lambda *a, **k: {"ok": False})
     r = faturamento.carregar()
-    assert r == {"notas": 4, "obras": 4, "avisos": []}, r
+    assert (r["notas"], r["obras"], r["repetidas"], r["mesmo_numero"]) == (4, 4, 1, 0), r
+    assert r["avisos"] == ["1 linha(s) da base são a mesma nota escrita duas vezes "
+                           "— contadas uma vez só."], r
     return app
 
 
@@ -74,7 +77,7 @@ def test_a_carga_traz_as_notas_e_cruza_a_obra_pelos_DOIS_codigos(carregado):
     from app.apps.analisesps import faturamento
     n = faturamento.uma("2600000003283")
     assert n["obra"] == "IFSPSAOJOSE" and n["empresa"] == "SCP IF" and n["e_scp"]
-    assert n["valor_total"] == Decimal("10000.00"), "a repetida não substitui a primeira"
+    assert n["valor_total"] == Decimal("10000.00") and not n["numero_repetido"]
     # pelo código secundário (coluna A) também acha a obra
     assert faturamento.uma("3050")["contrato"] == "CT-02"
     # minúscula/espaço no código da obra não separa
@@ -199,3 +202,21 @@ def test_ABA_VAZIA_e_dita_com_todas_as_letras(app, monkeypatch):
         tela = cliente.get("/analisesps/faturamento").get_data(as_text=True)
     assert "0 nota(s)" in tela
     assert 'A aba "Base Faturamento" está vazia' in tela and "Importar notas antigas" in tela
+
+
+def test_NUMERO_REPETIDO_de_outra_nota_entra_e_a_mesma_nota_duas_vezes_nao():
+    """09/10/2026: *"3.468 notas levadas à base, 3.284 notas fiscais (…) não
+    está completo"*. A primeira versão guardava uma nota por número e jogava
+    fora 184 linhas sem dizer nada."""
+    from app.apps.analisesps import faturamento
+    contagem = {}
+    notas = faturamento.notas_das_linhas([
+        CAB,
+        nota("3050", "3050", "2019-03-10", "IFS2", "1.000,00"),
+        nota("3050", "3050", "10/03/2019", "ifs2", "1000,00"),        # a mesma
+        nota("3050", "3050", "2023-05-02", "CREPEEXU", "7.500,00"),   # outra
+        nota("3050", "3050", "2024-01-09", "CREPEEXU", "100,00")],    # outra
+        contagem)
+    assert contagem == {"repetidas": 1, "mesmo_numero": 2}
+    assert [n.get("_chave") for n in notas] == [None, "3050-2", "3050-3"]
+    assert [n["_linha_base"] for n in notas] == [2, 4, 5], "a linha da aba vai junto"

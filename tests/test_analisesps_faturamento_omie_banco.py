@@ -192,3 +192,21 @@ def test_CONFERIR_TODAS_com_outra_tarefa_rodando_fica_na_fila(app, monkeypatch):
     assert disparos[-1] == "faturamento_omie"
     assert not tarefas._pedido_pendente("faturamento_omie")
 
+
+
+def test_NUMERO_REPETIDO_confere_a_nota_certa(base):
+    """Duas notas com o mesmo número (outra data, outra obra): a conferência
+    acha a linha pela posição na aba, e não pelo número."""
+    from app.apps.analisesps import faturamento
+    base.valores.append(linha_da_base(nota_numero="3283", nota_sequencial="3283",
+                                      data_emissao="2019-01-01", obra_codigo="CREPEEXU",
+                                      valor_total="700.00", omie_codigo_integracao="INT-9"))
+    assert faturamento.carregar()["mesmo_numero"] == 1
+    omie = OmieFalso({"INT-9": {"codigo_lancamento_integracao": "INT-9",
+                                "valor_documento": 700}})
+    r = faturamento.conferir_uma_no_omie("3283-2", cliente_omie=omie, planilha=Planilha(base))
+    assert r["ok"] and r["notas"] == 1, r
+    assert base.gravacoes == [6], "só a linha da nota de 2019"
+    assert faturamento.uma("3283-2")["omie_conferido_em"]
+    assert not faturamento.uma("3283")["omie_conferido_em"], "a outra 3283 não foi tocada"
+    assert faturamento.uma("3283-2")["numero"] == "3283"

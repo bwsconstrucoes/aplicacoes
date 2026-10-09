@@ -4,7 +4,8 @@
 {% if n.observacao %}<p class="cartao-dica">{{ n.observacao }}</p>{% endif %}
 
 <div class="fat-ficha">
-  <div><span class="rotulo-campo">Número oficial</span>{{ n.numero }}</div>
+  <div><span class="rotulo-campo">Número oficial</span>{{ n.numero }}{% if n.numero_repetido %}
+    <br><small>outra nota usa o mesmo número — esta aparece como {{ n.chave }}</small>{% endif %}</div>
   <div><span class="rotulo-campo">Emissão</span>{{ n.data_emissao|data_br }}{% if n.competencia %} · competência {{ n.competencia }}{% endif %}</div>
   <div><span class="rotulo-campo">Obra</span>{{ n.obra }}{% if n.centro_custo and n.centro_custo != n.obra %} · {{ n.centro_custo }}{% endif %}</div>
   <div><span class="rotulo-campo">Empresa</span>{{ n.empresa or '—' }}{% if n.e_scp %} (SCP){% endif %}</div>
@@ -46,7 +47,7 @@
   {% if pode_operar and n.omie_codigo %}
     {# Só LÊ o Omie; grava na base o que ele tem. Ver `faturamento.conferir_uma_no_omie`. #}
     <button type="button" class="btn secundario"
-            data-conferir-omie="{{ url_for('analisesps.faturamento_nota_omie', numero=n.numero) }}">
+            data-conferir-omie="{{ url_for('analisesps.faturamento_nota_omie', numero=n.chave) }}">
       Consultar título no Omie</button>
   {% endif %}
 </p>

@@ -60,9 +60,10 @@
         </tr></thead>
         <tbody>
           {% for n in notas %}
-            <tr class="fat-linha" data-nota="{{ url_for('analisesps.faturamento_nota', numero=n.numero) }}"
+            <tr class="fat-linha" data-nota="{{ url_for('analisesps.faturamento_nota', numero=n.chave) }}"
                 title="Duplo clique abre a nota {{ n.sequencial or n.numero }}">
-              <td><b>{{ n.sequencial or n.numero }}</b></td>
+              <td><b>{{ n.sequencial or n.numero }}</b>{% if n.numero_repetido %}
+                <small class="selo neutro" title="Outra nota (de outra data, obra ou valor) usa o mesmo número">nº repetido</small>{% endif %}</td>
               {% if 'emissao' in ver %}<td>{{ n.data_emissao|data_br }}</td>{% endif %}
               {% if 'competencia' in ver %}<td>{{ n.competencia }}</td>{% endif %}
               {% if 'obra' in ver %}<td>{{ n.obra }}</td>{% endif %}
