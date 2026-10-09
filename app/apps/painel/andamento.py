@@ -40,6 +40,7 @@ RECALCULO = "recalculando os números do painel"
 PAGAMENTOS_ANTIGOS = "relendo os pagamentos no OMIE, ano a ano"
 PERIODO = "lendo os pagamentos do período no OMIE"
 APROPRIACAO_CC = "lendo no OMIE as obras dos lançamentos de conta corrente"
+TITULOS_TODOS = "relendo todos os títulos no OMIE"
 
 _LEITURA = [TITULOS_A_PAGAR, TITULOS_A_RECEBER, PAGAMENTOS, CADASTROS, PLANILHA]
 PASSOS_POR_MODO = {
@@ -47,6 +48,7 @@ PASSOS_POR_MODO = {
     "pagamentos": _LEITURA + [PAGAMENTOS_ANTIGOS, APROPRIACAO_CC, RECALCULO],
     "completa": _LEITURA + [EXCLUIDOS, APROPRIACAO_CC, RECALCULO],
     "so_numeros": [RECALCULO],
+    "titulos": [TITULOS_TODOS, PLANILHA, RECALCULO],
     "periodo": [TITULOS_A_PAGAR, TITULOS_A_RECEBER, PAGAMENTOS, CADASTROS, PERIODO,
                 APROPRIACAO_CC, RECALCULO],
 }

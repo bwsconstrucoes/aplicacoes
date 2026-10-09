@@ -2450,6 +2450,31 @@ carga); sem obra escolhida, o administrador vê todas. Para o usuário sem
 conta marcada, as contas das obras dele. Conta marcada no cadastro continua
 sendo LIMITE (só ela) — isso não mudou.
 
+## Título com duas categorias (empréstimo: principal + juros) — 09/10/2026
+
+O dono: títulos de empréstimo divididos no OMIE entre duas categorias — a
+devolução do principal (fluxo) e os juros (DRE) — "não estão aparecendo nada,
+nem a porção de juros nem a do principal".
+
+**O que o código mostrou:** o espelho guardava UMA categoria por título; com
+mais de uma, `_categoria_principal` ficava com a de maior valor e o título
+INTEIRO ia para ela. Os juros nunca chegavam ao DRE. Se a categoria de maior
+valor (o principal) estiver marcada como transferência no OMIE, o título todo
+caía em TRF — fora das telas com o filtro padrão "sem transferências", o que
+explicaria "nada aparece". NÃO verificado com o título real (falta o número).
+
+**Conserto:**
+- Migração **023**: `titulo_categorias` — a lista de categorias do título
+  quando são duas ou mais, com percentual e valor, gravada a cada leitura do
+  título (apaga e regrava; quem volta a ter uma categoria só, some dela).
+- O fato divide o título entre as categorias na proporção do OMIE
+  (percentual; sem ele, valor), cada parte com a análise dela (DRE, fluxo,
+  TRF) e o tipo de aporte dela. Rateio por obra × categoria se combinam.
+- Modo novo **"Reler todos os títulos"**: a categoria dividida só chega
+  quando o título é relido, e a atualização do dia relê só o que mudou.
+  Página a página, anotando em `config` (`releitura_titulos_pagina`); um corte
+  retoma de uma página antes. Não mexe na marca da atualização do dia.
+
 ## Reler os pagamentos de um ano, de alguns ou de todos — 07/10/2026
 
 O dono, vendo a releitura retomada em "2025 (11 de 12 anos, 10 já feitos

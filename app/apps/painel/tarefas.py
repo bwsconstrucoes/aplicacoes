@@ -49,6 +49,7 @@ MODOS = {
     "so_numeros": "Só refazer os números, sem baixar nada do OMIE",
     "periodo": "Atualizar um período — um dia ou um mês: relê os pagamentos dele e refaz os números (rápido, para testar)",
     "pagamentos": "Reler os pagamentos do OMIE de um ano, de alguns ou de todos — para baixa lançada com data de mais de 6 meses (todos: demorado)",
+    "titulos": "Reler todos os títulos do OMIE — traz de novo categoria (inclusive a dividida entre duas), obra e valores de cada título. Demorado; pode parar e continuar",
     "observacoes": "Buscar as observações dos títulos no OMIE (bloco a bloco, pode parar e continuar)",
     "carga_inicial": "Primeira carga — baixa toda a base do OMIE (demorado)",
 }
@@ -61,6 +62,7 @@ ROTULOS = {
     "so_numeros": "Só refazer os números",
     "periodo": "Atualizar um período",
     "pagamentos": "Reler os pagamentos",
+    "titulos": "Reler todos os títulos",
     "observacoes": "Buscar as observações",
     "carga_inicial": "Primeira carga",
 }
@@ -345,6 +347,17 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                     "observações dos títulos a pagar",
                     f"{f} de {t} — {g} com observação"))
             observacoes_achadas = (n_r or 0) + (n_p or 0)
+        elif modo == "titulos":
+            # Todos os títulos, de novo (09/10/2026): a categoria dividida e
+            # tudo do título só chegam relendo-o. Retoma de onde parou.
+            _etapa(andamento.TITULOS_TODOS)
+            espelho.reler_titulos()
+            _etapa(andamento.PLANILHA)
+            try:
+                espelho.atualizar_projetos()
+            except Exception as e:  # noqa: BLE001
+                falha_parcial = f"a planilha de projetos não foi lida ({e})"
+                logger.exception("Painel: %s — sigo para o recálculo", falha_parcial)
         elif modo == "periodo":
             # Um dia ou um mês: o que mudou nos títulos (rápido) e os
             # pagamentos SÓ do período escolhido (dono, 07/10/2026).

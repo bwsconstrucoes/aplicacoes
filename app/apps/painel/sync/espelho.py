@@ -273,6 +273,29 @@ def _categoria_principal(rec):
     return _s(melhor.get("codigo_categoria")) or None
 
 
+def _linhas_categorias(rec) -> list[tuple]:
+    """As categorias do título quando são DUAS ou mais (migração 023):
+    [(código do título, seq, categoria, percentual, valor)]. Com uma só, vazio —
+    a categoria única já está em `titulos`."""
+    cats = [c for c in (rec.get("categorias") or [])
+            if isinstance(c, dict) and _s(c.get("codigo_categoria"))]
+    if len(cats) < 2:
+        return []
+    cod = int(rec["codigo_lancamento_omie"])
+    return [(cod, i, _s(c.get("codigo_categoria")), _f(c.get("percentual")),
+             _f(c.get("valor"))) for i, c in enumerate(cats, 1)]
+
+
+def _tem_titulo_categorias(conn) -> bool:
+    """A migração 023 já foi aplicada? Sem ela, grava como antes."""
+    try:
+        return bool(conn.execute(
+            "SELECT 1 FROM information_schema.tables WHERE table_schema = 'painel'"
+            "   AND table_name = 'titulo_categorias'").fetchone())
+    except Exception:  # noqa: BLE001 — conexão de teste, sem catálogo
+        return False
+
+
 def _observacao_titulo(rec):
     """Observacao do titulo. A Omie varia o nome do campo entre endpoints/versoes
     (e em alguns retornos ela vem aninhada em 'cabecTitulo'), entao tentamos os
@@ -346,13 +369,14 @@ def gravar_titulos(conn, registros, natureza):
     Retorna (qtd_titulos, qtd_linhas_rateio, problemas[]).
     problemas: lista de (codigo, motivo) com inconsistencias de rateio.
     """
-    titulos, rateios, problemas = [], [], []
+    titulos, rateios, problemas, categorias = [], [], [], []
     for rec in registros:
         if rec.get("codigo_lancamento_omie") in (None, ""):
             problemas.append((None, "registro sem codigo_lancamento_omie"))
             continue
         cod = int(rec["codigo_lancamento_omie"])
         titulos.append(_linha_titulo(rec, natureza))
+        categorias.extend(_linhas_categorias(rec))
         linhas = _linhas_rateio(rec)
         rateios.extend(linhas)
         # validacao: soma do rateio deve fechar com o valor do documento
@@ -389,6 +413,15 @@ def gravar_titulos(conn, registros, natureza):
         cur.executemany(
             "INSERT INTO rateio (codigo_lancamento_omie, seq, ccoddep, cdesdep, nperdep, nvaldep) "
             "VALUES (?,?,?,?,?,?)", rateios)
+    # as categorias (09/10/2026): apaga as desses títulos e regrava — inclusive
+    # de quem passou a ter uma categoria só
+    if titulos and _tem_titulo_categorias(conn):
+        cur.executemany("DELETE FROM titulo_categorias WHERE codigo_lancamento_omie=?",
+                        [(t[0],) for t in titulos])
+        if categorias:
+            cur.executemany(
+                "INSERT INTO titulo_categorias (codigo_lancamento_omie, seq,"
+                " codigo_categoria, percentual, valor) VALUES (?,?,?,?,?)", categorias)
     conn.commit()
     return len(titulos), len(rateios), problemas
 
@@ -1007,6 +1040,62 @@ def recarregar_titulos(env=".env"):
         log.info("Titulos sem categoria DEPOIS: %s (antes era %s)",
                  f"{depois:,}".replace(",", "."), f"{antes:,}".replace(",", "."))
         _resumo(conn)
+    finally:
+        conn.close()
+
+
+CHAVE_RELEITURA_TITULOS = "releitura_titulos_pagina"
+
+
+def reler_titulos(env=".env", cli=None) -> dict:
+    """Relê do OMIE TODOS os títulos, a pagar e a receber (09/10/2026).
+
+    Para quê: a categoria dividida (migração 023) e qualquer outro dado do
+    título só chegam quando o título é lido de novo — e a atualização do dia lê
+    só o que MUDOU. Título antigo, parado, nunca seria relido.
+
+    Grava página a página (cada título por inteiro, por cima do que havia: não
+    há como deixar nada pela metade) e anota a página em `config`. Um corte no
+    meio retoma de uma página antes da anotada, e não da primeira. NÃO mexe na
+    marca da atualização do dia: ela continua de onde estava.
+
+    Não guarda a lista inteira na memória — eram 120 mil títulos."""
+    import json
+    cli = cli or OmieClient.de_ambiente(env)
+    conn = conectar()
+    lidos = {}
+    try:
+        linha = conn.execute("SELECT valor FROM config WHERE chave = ?",
+                             (CHAVE_RELEITURA_TITULOS,)).fetchone()
+        try:
+            onde = json.loads(linha[0]) if linha else {}
+        except (TypeError, ValueError):
+            onde = {}
+        for entidade, natureza, metodo in (
+                ("contapagar", "P", cli.listar_contas_pagar),
+                ("contareceber", "R", cli.listar_contas_receber)):
+            rotulo = "a pagar" if natureza == "P" else "a receber"
+            feita = onde.get(entidade)
+            if feita == "fim":
+                continue
+            inicio = max(1, int(feita or 0))       # uma página antes da anotada
+            tot = 0
+            for pagina, total_paginas, _tr, registros in metodo(pagina_inicial=inicio):
+                _progresso("relendo todos os títulos no OMIE",
+                           f"títulos {rotulo}: página {pagina} de {total_paginas}")
+                qt, _qr, _pr = gravar_titulos(conn, registros, natureza)
+                tot += qt
+                onde[entidade] = pagina
+                conn.execute("INSERT INTO config (chave, valor) VALUES (?, ?) "
+                             "ON CONFLICT (chave) DO UPDATE SET valor = excluded.valor",
+                             (CHAVE_RELEITURA_TITULOS, json.dumps(onde)))
+                conn.commit()
+            onde[entidade] = "fim"
+            lidos[entidade] = tot
+            log.info("Releitura de títulos %s: %s títulos.", rotulo, tot)
+        conn.execute("DELETE FROM config WHERE chave = ?", (CHAVE_RELEITURA_TITULOS,))
+        conn.commit()
+        return lidos
     finally:
         conn.close()
 
