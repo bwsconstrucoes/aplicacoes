@@ -865,7 +865,17 @@ def encadear_comprovantes(modo: str) -> dict | None:
     # tarefa rodava (09/10/2026 — *"cliquei em atualizar e apareceu: já existe
     # uma atualização em andamento"*). Com comprovante, ela vem na volta
     # seguinte: a baixa termina e passa por aqui de novo.
-    if modo != "faturamento" and _pedido_pendente("faturamento", apagar=True):
+    # A importação das antigas vem antes: ela já termina trazendo as notas
+    # para a tela (etapas "faturamento_antigas" + "faturamento"), então atende
+    # também uma carga simples que estivesse pedida.
+    if modo != "faturamento_antigas" and _pedido_pendente("faturamento_antigas",
+                                                          apagar=True):
+        _pedido_pendente("faturamento", apagar=True)
+        logger.info("Análise de SPs: importação das notas antigas pedida durante "
+                    "'%s' — começando agora.", modo)
+        return disparar("faturamento_antigas", disparo="pedida durante outra tarefa")
+    if modo not in ("faturamento", "faturamento_antigas") and _pedido_pendente(
+            "faturamento", apagar=True):
         logger.info("Análise de SPs: carga do faturamento pedida durante '%s' — "
                     "começando agora.", modo)
         return disparar("faturamento", disparo="pedida durante outra tarefa")

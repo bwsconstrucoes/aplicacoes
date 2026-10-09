@@ -29,7 +29,7 @@
     <small>duplo clique numa nota abre a ficha dela · tributo "—" = ainda não informado</small>
   </div>
   {% if not notas %}
-    <p class="cartao-dica">Nenhuma nota com estes filtros{% if not carregado_em %} — as notas ainda não vieram da planilha{% endif %}.</p>
+    <p class="cartao-dica">Nenhuma nota com estes filtros{% if not carregado_em %} — as notas ainda não vieram da planilha{% elif total_no_banco %} — há {{ total_no_banco }} nota(s) no total; sem mexer na barra, a tela mostra só os últimos doze meses{% endif %}.</p>
   {% else %}
     <div class="tabela-rolagem fat-planilha">
       <table class="tabela-fat">

@@ -2220,6 +2220,8 @@ def _carga_do_faturamento():
             na_fila = True
     return {"carregado_em": carregado_em, "rodando": rodando, "na_fila": na_fila,
             "e_mestre": auth.e_mestre(),
+            "total_no_banco": faturamento.total_no_banco(),
+            "importacao_na_fila": tarefas._pedido_pendente("faturamento_antigas"),
             "importacao": tarefas.ultima_do_tipo("faturamento_antigas"),
             "outra_tarefa": ((andamento.get("detalhe") or {}).get("etapa")
                              if andamento.get("rodando") and not rodando else ""),
@@ -2338,11 +2340,17 @@ def faturamento_importar():
     if not auth.e_mestre():
         return auth._sem_permissao()
     r = tarefas.disparar("faturamento_antigas", disparo=auth.nome_atual() or "importar")
-    aviso = ("Importando as notas antigas — leva alguns minutos (são milhares). "
-             "A tela se atualiza sozinha; o resultado aparece aqui no alto."
-             if r.get("ok") else
-             "Outra tarefa de fundo está rodando agora (só roda uma por vez). "
-             "Tente de novo em alguns minutos.")
+    if r.get("ok"):
+        aviso = ("Importando as notas antigas — leva alguns minutos (são milhares). "
+                 "A tela se atualiza sozinha; o resultado aparece aqui no alto.")
+    else:
+        # Como no "Atualizar da planilha": recusar e mandar tentar de novo
+        # deixava o dono voltando à tela para clicar (09/10/2026). Fica pedida
+        # e começa sozinha quando a tarefa que ocupa a vez terminar.
+        tarefas.pedir_depois("faturamento_antigas")
+        aviso = ("Outra tarefa de fundo está rodando agora (só roda uma por vez). "
+                 "A importação das notas antigas ficou na fila e começa sozinha "
+                 "assim que ela terminar — pode deixar.")
     return redirect(url_for("analisesps.tela_faturamento") + "?aviso=" + quote(aviso))
 
 

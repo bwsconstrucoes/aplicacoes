@@ -381,6 +381,18 @@ def carregado_em():
     return linha[0] if linha else None
 
 
+def total_no_banco() -> int:
+    """Quantas notas a última carga trouxe, SEM filtro nenhum. É o que separa
+    "a aba está vazia" de "nenhuma nota neste filtro" (09/10/2026 — o dono viu
+    "notas trazidas às 18:38" e a tela vazia, sem saber qual dos dois era)."""
+    from .db import consultar_um
+    try:
+        linha = consultar_um("SELECT count(*) FROM analisesps.faturamento_nota")
+    except Exception:  # noqa: BLE001
+        return 0
+    return int(linha[0] or 0) if linha else 0
+
+
 TRIBUTOS = ("pis", "cofins", "ir", "csll", "inss", "iss")
 LINKS = (("link_nfse_nacional", "DANFSe (nacional)"),
          ("link_nfse_municipal", "NFS-e (municipal)"),

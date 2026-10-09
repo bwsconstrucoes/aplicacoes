@@ -155,3 +155,47 @@ def test_ATUALIZAR_com_outra_tarefa_rodando_fica_na_fila_e_comeca_sozinha(app, m
     tarefas.encadear_comprovantes("colaboradores")     # a outra terminou
     assert disparos[-1] == "faturamento"
     assert not tarefas._pedido_pendente("faturamento"), "o pedido é atendido uma vez só"
+
+
+def test_IMPORTAR_com_outra_tarefa_rodando_fica_na_fila_e_comeca_sozinha(app, monkeypatch):
+    """09/10/2026: *"Outra tarefa de fundo está rodando agora (…) Tente de novo
+    em alguns minutos."* Recusar e mandar voltar deixava o dono clicando de
+    novo; a importação fica pedida, como o "Atualizar da planilha"."""
+    from app.apps.analisesps import tarefas
+    disparos = []
+    monkeypatch.setattr(tarefas, "disparar", lambda modo, disparo="manual": (
+        disparos.append(modo) or {"ok": False, "erro": "Já existe uma atualização"}))
+    with app.test_client() as cliente:
+        cliente.post("/analisesps/entrar", data={"senha": SENHA_MESTRE_OPERADOR})
+        r = cliente.post("/analisesps/faturamento/importar", data={})
+        tela = cliente.get("/analisesps/faturamento").get_data(as_text=True)
+    assert "fila" in r.location and "Tente de novo" not in r.location
+    assert tarefas._pedido_pendente("faturamento_antigas")
+    assert "A importação das notas antigas está na fila" in tela
+    monkeypatch.setattr(tarefas, "disparar", lambda modo, disparo="manual": (
+        disparos.append(modo) or {"ok": True}))
+    tarefas.encadear_comprovantes("colaboradores")     # a outra terminou
+    assert disparos[-1] == "faturamento_antigas"
+    assert not tarefas._pedido_pendente("faturamento_antigas")
+    # a importação já termina trazendo as notas: a carga simples não vem depois
+    assert not tarefas._pedido_pendente("faturamento")
+
+
+def test_ABA_VAZIA_e_dita_com_todas_as_letras(app, monkeypatch):
+    """A carga rodou e a aba só tinha o cabeçalho: a tela dizia "notas trazidas
+    às 18:38" e não mostrava nada — sem explicar qual dos dois estava errado."""
+    from app.apps.analisesps import faturamento, tarefas
+    from app.apps.analisesps.db import conexao
+    from app.apps.analisesps.sincronizacao import _meta_gravar
+    monkeypatch.setattr(tarefas, "disparar", lambda modo, disparo="manual": {"ok": False})
+    with conexao() as conn:
+        conn.execute("DELETE FROM analisesps.faturamento_nota")
+        conn.commit()
+        _meta_gravar(conn, faturamento.CHAVE_META, "2026-10-09T18:38:00-03:00")
+    monkeypatch.setattr("app.apps.analisesps.web._faturamento_desatualizado",
+                        lambda _c: False)
+    with app.test_client() as cliente:
+        cliente.post("/analisesps/entrar", data={"senha": SENHA_MESTRE_OPERADOR})
+        tela = cliente.get("/analisesps/faturamento").get_data(as_text=True)
+    assert "0 nota(s)" in tela
+    assert 'A aba "Base Faturamento" está vazia' in tela and "Importar notas antigas" in tela

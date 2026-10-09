@@ -12228,6 +12228,27 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 214 — Faturamento: a aba vazia dita, e o "Importar" que entra na fila (09/10/2026)
+
+- *"Outra tarefa de fundo está rodando agora (…) Tente de novo em alguns
+  minutos. Notas trazidas da planilha 'Base Faturamento' em 09/10/2026 às
+  18:38. Mas não visualizo nada."* Duas coisas juntas:
+  1. A carga das 18:38 rodou e leu a aba **vazia** (só o cabeçalho): as notas
+     antigas nunca tinham sido levadas da "Notas BWS" para a "Base
+     Faturamento" — isso é o "Importar notas antigas". A tela dizia "trazidas"
+     sem dizer quantas, e o vazio parecia defeito. Agora o alto diz "— N
+     nota(s)" e, com zero, um aviso amarelo explica que a aba está vazia e o
+     que apertar (`faturamento.total_no_banco`). Com notas no banco mas nenhuma
+     no filtro, a lista diz quantas há no total e lembra dos 12 meses padrão.
+  2. O "Importar" recusava e mandava tentar de novo. Agora fica pedido
+     (`tarefas.pedir_depois("faturamento_antigas")`) e começa sozinho quando a
+     tarefa que ocupa a vez terminar — vem ANTES da carga simples no
+     encadeamento, e a atende (a importação já termina trazendo as notas).
+- Conferido que a leitura de data e valor da base (AAAA-MM-DD, "1.234,56")
+  não era a causa. Não conferido contra a planilha de verdade: que a aba esteja
+  vazia é a explicação que o código e o recado dele sustentam; o aviso novo
+  vai confirmar na tela. Sem migração.
+
 #### Leva 213 — comprovantes: desempate de mesmo valor entre arquivos separados (09/10/2026)
 
 - *"Dois comprovantes de mesmo valor do mesmo dia: a regra da baixa é, entrando

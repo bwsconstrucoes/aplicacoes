@@ -17,9 +17,14 @@
     ({{ outra_tarefa or 'em andamento' }}) e só roda uma por vez. Ela começa sozinha
     assim que essa terminar.
   {% elif carregado_em %}
-    Notas trazidas da planilha "Base Faturamento" em {{ carregado_em|momento_br }}.
+    Notas trazidas da planilha "Base Faturamento" em {{ carregado_em|momento_br }}
+    — <b>{{ total_no_banco }} nota(s)</b>.
   {% else %}
     As notas ainda não foram trazidas da planilha "Base Faturamento".
+  {% endif %}
+  {% if importacao_na_fila %}
+    <span><b>A importação das notas antigas está na fila</b> e começa sozinha
+      quando a tarefa que está rodando terminar.</span>
   {% endif %}
   {% if importacao and not importacao.em_andamento and importacao.mensagem %}
     <span>Última importação das antigas: {{ importacao.mensagem }}</span>
@@ -27,7 +32,7 @@
   {% if ultima and not ultima.em_andamento and ultima.ok is sameas false %}
     <span class="omie-erro">A última tentativa falhou: {{ ultima.mensagem }}</span>
   {% endif %}
-  {% if e_mestre %}
+  {% if e_mestre and not importacao_na_fila %}
     {# As notas antigas vêm pela consolidação do emissor — todos os lotes de uma
        vez, no processo separado (09/10/2026). Só o mestre: escreve na aba nova. #}
     <form method="post" action="{{ url_for('analisesps.faturamento_importar') }}"
@@ -44,3 +49,18 @@
       Atualizar da planilha</button>
   </form>
 </div>
+
+{# A ABA VAZIA, dita com todas as letras (09/10/2026). O dono viu "notas
+   trazidas às 18:38" e a tela em branco: a carga tinha rodado, mas a aba
+   "Base Faturamento" só tinha o cabeçalho — as notas antigas nunca tinham sido
+   levadas para ela. Sem esta frase, "trazidas" e "nada na tela" se contradizem. #}
+{% if carregado_em and not total_no_banco and not rodando %}
+  <div class="aviso atencao">
+    <b>A aba "Base Faturamento" está vazia</b> — a carga leu a planilha e não
+    achou nenhuma nota nela. As notas antigas ainda não foram levadas da
+    "Notas BWS" para essa aba{% if importacao_na_fila %}: a importação já está
+    na fila e começa sozinha.{% elif e_mestre %}: aperte <b>Importar notas
+    antigas</b>, acima.{% else %}: quem tem a senha mestre precisa apertar
+    "Importar notas antigas".{% endif %}
+  </div>
+{% endif %}
