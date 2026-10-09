@@ -12228,6 +12228,21 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 212 — ícones de baixar o anexo e o comprovante (09/10/2026)
+
+- *"Coloca um ícone, tanto em Solicitações quanto em Lote: dois ícones de
+  download — o anexo, se houver, e o comprovante de pagamento, se houver."* E,
+  no mesmo dia: *"a mesma coisa dentro da conciliação, ao lado do número da SP."*
+- Uma peça só (`_icones_sp.html`, macro `icones_sp`) nas três telas: clipe
+  (anexo, coluna Q) e recibo verde (comprovante, coluna AG), ao lado do número
+  da SP; só aparece o que existe. O link vira a versão de BAIXAR quando o
+  serviço tem uma (`formatos.link_de_download`: Dropbox `dl=1`, Drive
+  `uc?export=download`); o resto abre como está (o navegador baixa o PDF). Anexo
+  com vários links: o ícone leva ao primeiro e o balão diz quantos são. Na
+  conciliação, os dois campos passaram a vir em `sps_das_linhas`. Sem migração.
+- Não conferido com link de verdade de cada serviço — o formato do anexo do
+  Pipefy (link assinado, que vence) abre como está.
+
 #### Leva 211 — "Atualizar SP" trava o Agendar; importar as notas antigas pelo Faturamento (09/10/2026)
 
 - *"Sim, é para bloquear também SP sem obra."* A trava do `/api/alterar`

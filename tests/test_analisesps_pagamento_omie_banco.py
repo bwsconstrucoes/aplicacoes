@@ -277,3 +277,20 @@ def test_IMPORTAR_AS_ANTIGAS_roda_todos_os_lotes_e_so_o_mestre_pede(app, monkeyp
         assert "Importar notas antigas" in c.get("/analisesps/faturamento").get_data(as_text=True)
         c.post("/analisesps/faturamento/importar")
     assert disparos.count("faturamento_antigas") == 1
+
+
+def test_os_ICONES_de_baixar_aparecem_nas_Solicitacoes(app):
+    from tests.test_analisesps_banco import semear, sp
+    semear([sp("1000000401", forma_pagamento="Boleto", status_pgt="Pago", valor="10,00",
+               vencimento="10/10/2026", centro_custo="OBRA",
+               anexo_link="https://drive.google.com/file/d/ANEXO1/view",
+               comprovante="https://www.dropbox.com/s/c/comp.pdf?dl=0"),
+            sp("1000000402", forma_pagamento="Boleto", status_pgt="Pagar", valor="10,00",
+               vencimento="10/10/2026", centro_custo="OBRA")])
+    with app.test_client() as cliente:
+        cliente.post("/analisesps/entrar", data={"senha": SENHA_MESTRE_OPERADOR})
+        lista = cliente.get("/analisesps/solicitacoes?f=1&busca=10000004",
+                            follow_redirects=True).get_data(as_text=True)
+    assert "uc?export=download&amp;id=ANEXO1" in lista
+    assert "comp.pdf?dl=1" in lista
+    assert lista.count('class="icones-sp"') == 1, "a SP sem anexo nem comprovante não ganha ícone"

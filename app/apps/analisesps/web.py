@@ -383,6 +383,19 @@ def _filtro_sem_validacao(linha) -> bool:
     return sem_validacao(linha.get("validacao"), linha.get("status_pgt"))
 
 
+@bp.app_template_filter("links_celula")
+def _filtro_links_celula(texto):
+    from .formatos import links_da_celula
+    return links_da_celula(texto)
+
+
+@bp.app_template_filter("baixar")
+def _filtro_baixar(url):
+    """O link na versão de baixar (Dropbox dl=1, Drive uc?export) — 09/10/2026."""
+    from .formatos import link_de_download
+    return link_de_download(url)
+
+
 @bp.app_template_filter("moeda_curta")
 def _filtro_moeda_curta(valor):
     """O valor em poucas letras, para onde ele não cabe. Ver `formatos`."""

@@ -262,3 +262,40 @@ def com_links(texto) -> str:
                 f'{bruto}</a>{rabo}')
 
     return _ENDERECO.sub(trocar, seguro)
+
+
+# ---------------------------------------------------------------------------
+# BAIXAR O ANEXO E O COMPROVANTE (09/10/2026)
+#
+# O dono: *"dois ícones de download: um é o download do anexo, se houver, e o
+# outro é o download do comprovante de pagamento, também se houver"* — nas
+# Solicitações, no Lote e na Conciliação. A célula guarda um LINK (Dropbox,
+# Google Drive, Pipefy); o ícone leva à versão de BAIXAR quando o serviço tem
+# uma, e ao próprio link quando não tem (aí o navegador abre o arquivo).
+# ---------------------------------------------------------------------------
+_URL = re.compile(r"https?://[^\s,;\"'<>]+")
+_DRIVE_ID = re.compile(r"drive\.google\.com/(?:file/d/([\w-]+)|open\?id=([\w-]+)|uc\?[^ ]*id=([\w-]+))")
+
+
+def links_da_celula(texto) -> list:
+    """Os endereços de uma célula, na ordem (pode haver mais de um anexo)."""
+    return [u.rstrip(".)]") for u in _URL.findall(str(texto or ""))]
+
+
+def link_de_download(url) -> str:
+    """A versão "baixar" do link: Dropbox com dl=1; Drive pelo endereço de
+    download; o resto como está."""
+    url = str(url or "").strip()
+    if not url:
+        return ""
+    if "dropbox.com" in url:
+        if "dl=0" in url:
+            return url.replace("dl=0", "dl=1")
+        if "raw=1" in url or "dl=1" in url:
+            return url
+        return url + ("&" if "?" in url else "?") + "dl=1"
+    achado = _DRIVE_ID.search(url)
+    if achado:
+        arquivo = next(g for g in achado.groups() if g)
+        return f"https://drive.google.com/uc?export=download&id={arquivo}"
+    return url

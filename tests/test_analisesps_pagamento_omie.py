@@ -114,3 +114,21 @@ def test_ATUALIZAR_SP_quando_falta_a_obra():
     assert atualizar_sp("", "Pagar") and atualizar_sp("  ", "")
     assert not atualizar_sp("CREPEEXU", "Pagar")
     assert not atualizar_sp("", "Pago") and not atualizar_sp("", "Cancelado")
+
+
+def test_o_LINK_DE_BAIXAR_do_anexo_e_do_comprovante():
+    """09/10/2026: dois ícones de baixar, anexo e comprovante."""
+    from app.apps.analisesps.formatos import link_de_download, links_da_celula
+    assert link_de_download("https://www.dropbox.com/s/abc/c.pdf?dl=0") == \
+        "https://www.dropbox.com/s/abc/c.pdf?dl=1"
+    assert link_de_download("https://www.dropbox.com/scl/fi/x/c.pdf?rlkey=k") == \
+        "https://www.dropbox.com/scl/fi/x/c.pdf?rlkey=k&dl=1"
+    assert link_de_download("https://drive.google.com/file/d/1AbC_d-9/view?usp=sharing") == \
+        "https://drive.google.com/uc?export=download&id=1AbC_d-9"
+    assert link_de_download("https://drive.google.com/open?id=XYZ") == \
+        "https://drive.google.com/uc?export=download&id=XYZ"
+    assert link_de_download("https://app.pipefy.com/storage/v1/signed/a.pdf") == \
+        "https://app.pipefy.com/storage/v1/signed/a.pdf"
+    assert links_da_celula("https://a.com/1.pdf, https://b.com/2.pdf") == [
+        "https://a.com/1.pdf", "https://b.com/2.pdf"]
+    assert links_da_celula("sem link") == [] and links_da_celula(None) == []

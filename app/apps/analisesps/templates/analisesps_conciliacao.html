@@ -212,6 +212,7 @@
 {% endblock %}
 
 {% block conteudo %}
+{% from "_icones_sp.html" import icones_sp %}
 {# ⚠️ A MIGRAÇÃO PODE NÃO TER SIDO APLICADA AINDA. O código sobe para o Render
    antes de o dono apertar o botão, e uma tela que estourasse aqui derrubaria a
    confiança na publicação inteira. #}
@@ -556,6 +557,8 @@
                 >{{ sp.status or 'sem status' }}</span>
               {% if ag %}<span class="selo {{ 'agendar' if ag == 'agendar' else ('agendado' if ag == 'agendado' else ('falha' if 'falha' in ag else 'verificar')) }}"
                 >{{ sp.status_agend }}</span>{% endif %}
+              {# 09/10/2026: baixar o anexo e o comprovante da SP. #}
+              {{ icones_sp(sp.anexo_link, sp.comprovante) }}
               {% if sp.sem_baixa %}<span class="selo pagar" title="O banco pagou, mas a SP está &quot;{{ sp.status or 'sem status' }}&quot; — a planilha não deu baixa">sem baixa</span>{% endif %}
             {% endfor %}</td>
           <td class="direita valor-entrada">{{ l.valor|moeda if l.valor > 0 else '' }}</td>

@@ -2010,7 +2010,8 @@ def test_DUPLO_CLIQUE_na_linha_com_SP_abre_a_ficha_dela(app):
         ("20260910", "-500.00", "S1", "PIX FORNECEDOR"),
         ("20260912", "-99.00", "S3", "TARIFA")])), "x.ofx", "T")
     semear([sp("900001", conta="BD 7011", valor="500,00", status_pgt="Pago",
-               data_pagamento="10/09/2026", credor="FORNECEDOR A")])
+               data_pagamento="10/09/2026", credor="FORNECEDOR A",
+               comprovante="https://www.dropbox.com/s/c/comp.pdf?dl=0")])
     with app.test_client() as cliente:
         cliente.post("/analisesps/entrar", data={"senha": SENHA_MESTRE_OPERADOR})
         tela = cliente.get(f"/analisesps/conciliacao?conta_id={conta_id}"
@@ -2022,6 +2023,8 @@ def test_DUPLO_CLIQUE_na_linha_com_SP_abre_a_ficha_dela(app):
     # 08/10/2026: a etiqueta da situação, como em "Arquivos gerados"
     trecho = tela[tela.index("SP 900001"):][:900]
     assert 'class="selo pago"' in trecho and ">Pago</span>" in trecho
+    # 09/10/2026: o comprovante da SP, para baixar dali mesmo
+    assert "comp.pdf?dl=1" in trecho
 
 
 def test_quem_NAO_tem_Solicitacoes_nao_ganha_duplo_clique_que_daria_erro(app):

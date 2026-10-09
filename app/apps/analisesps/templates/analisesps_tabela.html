@@ -1,3 +1,4 @@
+{% from "_icones_sp.html" import icones_sp %}
 {# ---------------------------------------------------------------------------
    A TABELA DE SPs — uma só, para Solicitações e para cada grupo do Lote.
 
@@ -121,6 +122,7 @@
                      title="SP sem obra (centro de custo): veio incompleta — os dados estão na descrição. Trate a SP (obra e conta) antes de pagar — o Agendar está bloqueado.">Atualizar SP</span>{% endif %}
                 {% if l|falta_nf %}<span class="selo sem-nf"
                      title="Esta SP está sem número de nota fiscal. Confira antes de pagar.">Sem NF</span>{% endif %}
+                {{ icones_sp(l.anexo_link, l.comprovante) }}
               </td>
 
             {% elif c.tipo == 'data' %}
