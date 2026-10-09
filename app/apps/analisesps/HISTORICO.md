@@ -12242,6 +12242,7 @@ somente Solicitações de uma conta especifica"*.
   conciliação, os dois campos passaram a vir em `sps_das_linhas`. Sem migração.
 - Não conferido com link de verdade de cada serviço — o formato do anexo do
   Pipefy (link assinado, que vence) abre como está.
+- **Publicada em 09/10/2026** (suíte inteira 9.163 verdes).
 
 #### Leva 211 — "Atualizar SP" trava o Agendar; importar as notas antigas pelo Faturamento (09/10/2026)
 
