@@ -416,6 +416,39 @@ def disparar_se_preciso() -> bool:
     return True
 
 
+def _acordar() -> bool:
+    if not _trabalhando.acquire(blocking=False):
+        return False
+    threading.Thread(target=_trabalhar, name="ponto-envios", daemon=True).start()
+    return True
+
+
+def enviar_agora() -> bool:
+    """Chamada DEPOIS de um pedido entrar na fila, com a transação já fechada:
+    acorda a linha que envia na hora, sem esperar o minuto nem a próxima batida.
+
+    O defeito de 09/10/2026 ("precisei solicitar umas três vezes para ele
+    chegar"): a fila só era acordada no COMEÇO de cada requisição do ponto,
+    antes de o pedido ser gravado — olhava, não achava nada, e só voltava a olhar
+    um minuto depois, SE viesse outra requisição. O pedido feito pela tela do
+    ERP nem isso. Se a linha já está enviando, ela pega o pedido na volta (ele é
+    o primeiro da fila); se estava terminando naquele instante, a nova olhada
+    em 15 s garante."""
+    global _ultima_verificacao
+    try:
+        if not whatsapp_pronto():
+            return False
+    except Exception:  # noqa: BLE001 — sem mensageria, o pedido fica na fila
+        return False
+    _ultima_verificacao = time.time()
+    if _acordar():
+        return True
+    t = threading.Timer(15, _acordar)
+    t.daemon = True
+    t.start()
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Para a tela
 # ---------------------------------------------------------------------------

@@ -490,6 +490,7 @@ def app_api_tablet_esqueci_qr():
         if pessoa:
             envios.pedir_qr(conn, int(pessoa["id"]), motivo="PEDIDO",
                             por=f"a própria pessoa, no aparelho {aparelho['id']}")
+    envios.enviar_agora()            # depois de gravado (09/10/2026: o pedido esperava na fila)
     return _ok(mensagem=RESPOSTA_DO_QR)
 
 
@@ -518,6 +519,8 @@ def app_api_meu_qr_whatsapp():
         if not db.tem_003(conn):
             raise ErroDeValidacao("o QR Code por WhatsApp ainda não foi ativado")
         r = envios.pedir_qr(conn, quem.colaborador_id, motivo="PEDIDO", por="a própria pessoa")
+    if r.get("enfileirado"):
+        envios.enviar_agora()        # depois de gravado (09/10/2026: o pedido esperava na fila)
     if not r.get("enfileirado"):
         mensagens = {"sem telefone no cadastro": "seu cadastro está sem telefone — avise o DP",
                      "teto de pedidos do dia": "você já pediu 3 vezes hoje; use o QR desta tela"}

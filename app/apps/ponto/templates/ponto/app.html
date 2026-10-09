@@ -83,6 +83,8 @@
                  padding:calc(10px + env(safe-area-inset-top)) 14px calc(10px + env(safe-area-inset-bottom)); gap:10px; }
   .kq-topo { display:flex; align-items:center; gap:10px; }
   .kq-topo select { flex:1; font-size:15px; padding:8px; background:#12385C; color:#fff; border:1px solid #2B5A86; }
+  .kq-obra-nome { flex:1; font-size:17px; font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .kq-obra-info.erro { color:#FFB4AB; font-weight:700; }
   .kq-relogio { font-size:30px; font-weight:800; font-variant-numeric:tabular-nums; }
   .kq-corpo { flex:1; display:flex; gap:14px; min-height:0; }
   .kq-camera { flex:1.2; position:relative; background:#000; border-radius:18px; overflow:hidden; min-height:200px; }
@@ -199,7 +201,8 @@
   <section id="tela-tablet" class="oculto" aria-label="Bater ponto no aparelho da obra">
     <div class="kq-topo">
       <button type="button" class="kq-meu" id="t-inicio" style="font-size:16px; text-decoration:none">‹ Início</button>
-      <select id="t-obra" aria-label="Obra"></select>
+      <div class="kq-obra-nome" id="t-obra-nome">Procurando a obra…</div>
+      <select id="t-obra" aria-label="Obra" class="oculto"></select>
       <div class="kq-relogio" id="t-relogio">--:--</div>
     </div>
     <div class="kq-obra-info" id="t-obra-info">📍 Procurando a localização…</div>
@@ -281,7 +284,7 @@
       <h2 id="ola">Olá</h2>
       <div id="i-local" class="aviso info">📍 Procurando a sua localização…</div>
       <div id="i-escolha" class="oculto">
-        <div class="aviso ambar"><b>⚠️ Batida fora da obra.</b> Se você bater escolhendo a obra na lista,
+        <div class="aviso ambar"><b>⚠️ Batida fora do normal</b> (fora da obra ou sem localização). Se você bater escolhendo a obra na lista,
           vai precisar explicar o motivo; a batida vai para a conferência da administração da obra,
           com a sua localização, e só vale depois de validada.</div>
         <label for="i-obra">Em que obra você está?</label>
@@ -597,7 +600,10 @@ function mostrarLocal(l) {
   // permitir o ponto sem localização"); COM ela, fora da obra, qualquer pessoa
   // escolhe a obra, explica o motivo, e a batida vai para conferência ("não tá
   // na obra, alerta; e se a pessoa ainda for bater, explicar o motivo").
-  const aceita = semLocal => semLocal ? [] : (OBRAS || []);
+  // E (09/10/2026, mais tarde) SEM localização também: "o individual pode
+  // permitir (…) que você bata sem a localização ou fora da localização,
+  // contanto que você selecione a obra e ainda assim justifique".
+  const aceita = () => (OBRAS || []);
   const escolha = lista => {
     const mostrar = !!(lista && lista.length);
     $("i-escolha").classList.toggle("oculto", !mostrar);
@@ -608,7 +614,7 @@ function mostrarLocal(l) {
   if (!l) {
     const lista = aceita(true);
     caixa.className = "aviso erro";
-    caixa.textContent = "📍 Localização desligada. Ligue a localização do celular: sem ela o ponto não é registrado.";
+    caixa.textContent = "⚠️ Sem localização. Ligue a localização do celular. Se não der, escolha a obra abaixo e explique o motivo: a batida vai para a conferência da administração da obra e só vale depois de validada.";
     escolha(lista);
     return;
   }
@@ -666,10 +672,10 @@ function tirarFoto() {
 function pedirJustificativa() {
   return new Promise(resolve => {
     $("dlg-corpo").innerHTML = `
-      <h2 style="margin:0 0 6px">⚠️ Você não está na obra</h2>
-      <div class="aviso ambar">A batida vai para a conferência da administração da obra, com a sua localização,
+      <h2 style="margin:0 0 6px">⚠️ ${LOCAL ? "Você não está na obra" : "Sem localização"}</h2>
+      <div class="aviso ambar">A batida vai para a conferência da administração da obra${LOCAL ? ", com a sua localização," : ""}
         e só vale depois de validada. Ela aparece no seu dia como “em conferência”.</div>
-      <label for="j-texto">Por que você está batendo fora da obra?</label>
+      <label for="j-texto">${LOCAL ? "Por que você está batendo fora da obra?" : "Por que a localização não está funcionando?"}</label>
       <textarea id="j-texto" placeholder="Ex.: fui comprar material; serviço em outro endereço; o GPS não achou a obra"></textarea>
       <button class="btn" type="button" id="j-ok">Bater e mandar para conferência</button>
       <button class="btn sec" type="button" id="j-cancelar">Não bater agora</button>`;
@@ -1183,10 +1189,14 @@ async function abrirTablet(opcoes = {}) {
   $("t-esqueci").classList.toggle("oculto", TB.pedido);
   $("t-esqueci").textContent = "Esqueci meu QR Code — receber no WhatsApp";
   const obras = (APARELHO && APARELHO.obras) || [];
-  let guardada = null; try { guardada = localStorage.getItem("ponto_tablet_obra"); } catch (e) {}
-  preencherObras($("t-obra"), obras, guardada);
-  if (guardada && obras.some(o => o.codigo === guardada)) $("t-obra").value = guardada;
-  $("t-obra").onchange = () => { try { localStorage.setItem("ponto_tablet_obra", $("t-obra").value); } catch (e) {} };
+  // A obra do ponto da obra é a da LOCALIZAÇÃO, sem caixa para trocar (09/10/2026:
+  // "se já identificou a obra, não tem que selecionar mais nada"). A caixa só
+  // aparece para escolher entre obras do aparelho SEM coordenada cadastrada.
+  preencherObras($("t-obra"), obras, null);
+  TB.obraOk = null;
+  $("t-obra").onchange = () => { TB.obraOk = $("t-obra").value; };
+  clearInterval(TB.reLocal);
+  TB.reLocal = setInterval(() => { if (!TB.obraOk || !TB.local) { TB.localEm = 0; atualizarLocalTablet().then(detectarObraDoTablet); } }, 30000);
   atualizarRelogio(); TB.relogio = setInterval(atualizarRelogio, 1000);
   mostrarVencimentoDoTablet();
   atualizarLocalTablet().then(detectarObraDoTablet);
@@ -1203,7 +1213,7 @@ async function abrirTablet(opcoes = {}) {
   await ligarCamera();
 }
 function pararTablet() {
-  clearInterval(TB.relogio); clearInterval(TB.pulso); clearTimeout(TB.timer);
+  clearInterval(TB.relogio); clearInterval(TB.pulso); clearInterval(TB.reLocal); clearTimeout(TB.timer);
   if (TB.fluxo) { TB.fluxo.getTracks().forEach(t => t.stop()); TB.fluxo = null; }
   if (TB.trava) { try { TB.trava.release(); } catch (e) {} TB.trava = null; }
 }
@@ -1229,6 +1239,12 @@ async function atualizarLocalTablet() {
   if (TB.local && Date.now() - TB.localEm < 10 * 60 * 1000) return TB.local;
   const l = await localizacao();
   if (l) { TB.local = l; TB.localEm = Date.now(); LOCAL = l; }
+  else {
+    // Uma leitura que falha não apaga a boa de há pouco (o GPS oscila); passada
+    // meia hora sem conseguir, o aparelho fica sem localização e para de bater.
+    TB.tentou = true;
+    if (TB.local && Date.now() - TB.localEm > 30 * 60 * 1000) TB.local = null;
+  }
   return TB.local;
 }
 
@@ -1276,22 +1292,41 @@ $("t-inicio").addEventListener("click", () => {
 });
 
 // A obra pela localização (07/10/2026: "no modo obra ele não está detectando a
-// obra automaticamente"). Dentro da cerca de uma obra do aparelho, ela fica
-// escolhida e a linha de cima diz; fora, a lista fica para escolher. Quem decide
-// de verdade é o servidor, pela cerca, em cada batida.
+// obra automaticamente"; 09/10/2026: "o celular ponto de obra (…) só é para bater
+// com a geolocalização"). Dentro da cerca de uma obra do aparelho, a obra é ela,
+// e só ela. Sem localização, ou fora da área, o ponto da obra não bate. A única
+// escolha que sobra é entre obras do aparelho SEM coordenada cadastrada (não há
+// como detectar — a batida vai para conferência). Quem decide de verdade é o
+// servidor, pela cerca, em cada batida.
 function detectarObraDoTablet() {
-  const info = $("t-obra-info"), obras = (APARELHO && APARELHO.obras) || [];
-  if (!TB.local) { info.textContent = "📍 Sem localização — confira a obra na lista acima."; return; }
+  const info = $("t-obra-info"), nome = $("t-obra-nome"), sel = $("t-obra");
+  const obras = (APARELHO && APARELHO.obras) || [];
+  const marcar = (texto, erro) => { info.textContent = texto; info.classList.toggle("erro", !!erro); };
+  sel.classList.add("oculto");
+  if (!TB.local) {
+    TB.obraOk = null; nome.textContent = "Sem localização";
+    return marcar("📍 Ligue a localização do aparelho: o ponto da obra só bate com ela.", true);
+  }
   const dentro = obras.filter(o => o.latitude !== null && o.longitude !== null)
     .map(o => ({o, d: distancia(TB.local, o)}))
     .filter(x => x.d <= (x.o.raio_metros || 200) + Math.min(TB.local.precisao || 0, 150))
     .sort((a, b) => a.d - b.d);
   if (dentro.length) {
-    $("t-obra").value = dentro[0].o.codigo;
-    info.textContent = `📍 Obra detectada pela localização: ${rotuloObra(dentro[0].o)}`;
-  } else {
-    info.textContent = "📍 Fora da área das obras deste celular — confira a obra na lista acima.";
+    TB.obraOk = dentro[0].o.codigo; sel.value = TB.obraOk; nome.textContent = rotuloObra(dentro[0].o);
+    return marcar("📍 Obra detectada pela localização");
   }
+  const semCoordenada = obras.filter(o => o.latitude === null || o.longitude === null);
+  if (semCoordenada.length === 1) {
+    TB.obraOk = semCoordenada[0].codigo; sel.value = TB.obraOk; nome.textContent = rotuloObra(semCoordenada[0]);
+    return marcar("📍 Obra sem coordenada cadastrada: a batida vai para conferência.");
+  }
+  if (semCoordenada.length > 1) {
+    preencherObras(sel, semCoordenada, TB.obraOk); sel.classList.remove("oculto");
+    TB.obraOk = sel.value; nome.textContent = "";
+    return marcar("📍 Obras sem coordenada cadastrada: escolha a obra — a batida vai para conferência.");
+  }
+  TB.obraOk = null; nome.textContent = "Fora da área da obra";
+  marcar("📍 Este aparelho está fora da área das obras dele: o ponto não é registrado aqui.", true);
 }
 
 async function procurarQr() {
@@ -1378,6 +1413,15 @@ function descobrir() { COBRE_VEZ++; $("t-cobre").className = "kq-cobre oculto"; 
 async function identificar(quem) {
   if (TB.pedido) return identificarParaPedido(quem);
   if (TB.ocupado) return;
+  if (!TB.obraOk) {
+    TB.ocupado = true;
+    if (!TB.local && !TB.tentou) {
+      atualizarLocalTablet().then(detectarObraDoTablet);
+      return cobrir("ambar", `<h2>Procurando a localização…</h2><p>Tente de novo em alguns segundos.</p>`, 3000);
+    }
+    return cobrir("erro", `<h2>Ponto não registrado</h2><p>${TB.local ? "Este aparelho está fora da área da obra."
+      : "Este aparelho está sem localização."} O ponto da obra só bate dentro da obra, com a localização ligada.</p>`, 4500);
+  }
   TB.ocupado = true;
   cobrir("", `<p>Identificando…</p>`);
   let d;
