@@ -41,6 +41,11 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1l. **PUBLICADO em 09/10/2026, terceira leva** (com o "pode" do dono, sem
+   migração nova): o ponto da obra só pela localização (sem caixa de obra; sem
+   localização ou fora da área, não bate), o celular da pessoa explicando sem
+   localização, e o QR que sai no primeiro pedido. Confirmar com o dono: o QR
+   chegou no primeiro pedido? O ponto da obra mostrou a obra certa no alto?
 1k. **PUBLICADO em 09/10/2026, segunda leva** (com o "pode" do dono, sem
    migração nova): fora da obra só explicando (vai para conferência), nada
    sem localização no celular, ⏳ na batida em conferência, e o aparelho que
