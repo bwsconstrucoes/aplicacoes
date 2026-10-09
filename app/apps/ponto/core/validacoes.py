@@ -158,14 +158,29 @@ def listar(conn: Connection, quem: Quem, *, obra_id: Optional[int] = None, de=No
         if forma_de_bater.em_vigor(conn):
             excecoes = {int(l["colaborador_id"]) for l in db.todos(
                 conn, "SELECT colaborador_id FROM ponto.colaborador_config WHERE bate_no_celular")}
+        # Quem já tem celular pessoal aprovado (09/10/2026: "uma pessoa que já tinha
+        # o celular cadastrado (…) está pedindo novamente o cadastro do aparelho"):
+        # o pedido novo diz isso, para quem aprova saber que é troca.
+        aprovados = {int(l["colaborador_id"]): l for l in db.todos(conn, """
+            SELECT DISTINCT ON (colaborador_id) colaborador_id, aprovado_em, descricao
+              FROM ponto.dispositivos
+             WHERE perfil = 'INDIVIDUAL' AND status = 'APROVADO' AND colaborador_id IS NOT NULL
+             ORDER BY colaborador_id, aprovado_em DESC NULLS LAST""")}
         for a in dispositivos.listar(conn, "PENDENTE"):
             if excecoes is not None and a.get("colaborador_id") and int(a["colaborador_id"]) not in excecoes:
                 continue
             j = dispositivos.para_json(a)
+            antigo = aprovados.get(int(a["colaborador_id"])) if a.get("colaborador_id") else None
+            troca = (f" · já tem um celular aprovado"
+                     + (f" desde {horario.para_local(antigo['aprovado_em']):%d/%m/%Y}" if antigo["aprovado_em"] else "")
+                     + ": provavelmente trocou de celular ou apagou os dados do navegador — aprovar este "
+                       "bloqueia o anterior") if antigo else ""
             itens.append({
                 "categoria": "APARELHO", "tipo": "APARELHO", "rotulo": ROTULO["APARELHO"], "id": j["id"],
-                "pessoa": None, "obra": None, "data": None, "quando": j.get("criado_em"),
-                "detalhe": f"{j.get('descricao') or 'aparelho sem nome'} — código {j.get('codigo')}",
+                "pessoa": (j.get("dono") or {}).get("nome"), "obra": None, "data": None, "quando": j.get("criado_em"),
+                "detalhe": (f"{j.get('descricao') or 'aparelho sem nome (ninguém entrou nele com CPF e PIN)'}"
+                            f" — código {j.get('codigo')}{troca}"),
+                "troca_de_celular": bool(antigo),
                 "codigo": j.get("codigo"), "descricao": j.get("descricao"), "dono": j.get("dono"),
                 "etapa": "Quem configura o ponto",
                 "pode_decidir": True, "abrir_em": "/erp/ponto/configuracao",
