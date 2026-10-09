@@ -486,3 +486,43 @@ def test_os_tres_estados_do_campo_de_tributo_sao_distinguiveis():
     # e a soma só conta o retido
     assert oc.somar_tributos(nao_reteve)["pis"] == Decimal("0")
     assert oc.somar_tributos(reteve)["pis"] == Decimal("0.65")
+
+
+# --------------------------------------------------------------------------- #
+# ⚠️ A "Notas BWS" CONTINUA sendo atualizada — e isto é trava, não sobra
+#
+# O dono reforçou em 09/10/2026, depois de a base nova ser publicada:
+#
+#   *"Só lembrando que, por enquanto, a nota do BWS a gente vai continuar usando
+#    normal. Só depois que estiver consolidado essa nova etapa aí, a gente vai
+#    deixar de usar ela."*
+#
+# Ou seja: a gravação duplicada é o estado desejado, não um resíduo da
+# transição. Desligar a "Notas BWS" é decisão DELE, e só depois de a base nova
+# ser conferida contra a antiga. Este teste existe para que nenhuma sessão
+# futura — vendo a base nova funcionando — conclua que o passo 1 virou
+# redundante e o apague "limpando o código".
+# --------------------------------------------------------------------------- #
+def test_o_emissor_continua_gravando_na_notas_bws():
+    fonte = open(os.path.join(_EMISSAONF, "concluir.py"), encoding="utf-8").read()
+    assert "notas_bws.gravar_linha(" in fonte, (
+        "a gravação na 'Notas BWS' foi removida — ela só sai com o dono pedindo")
+    assert "# 1) NOTAS BWS" in fonte
+
+
+def test_a_notas_bws_vem_ANTES_da_base_nova():
+    """A ordem importa num detalhe: a trava anti-duplicação da conclusão olha a
+    "Notas BWS". Se a base nova passasse na frente, uma reexecução gravaria nela
+    antes de a trava poder abortar."""
+    fonte = open(os.path.join(_EMISSAONF, "concluir.py"), encoding="utf-8").read()
+    assert fonte.index("# 1) NOTAS BWS") < fonte.index("# 11) BASE FATURAMENTO")
+
+
+def test_as_duas_gravacoes_falham_separado():
+    """Cada passo da conclusão tem o seu try/except. A base nova não pode
+    derrubar a "Notas BWS", nem o contrário — era assim antes dela existir."""
+    fonte = open(os.path.join(_EMISSAONF, "concluir.py"), encoding="utf-8").read()
+    bloco_1 = fonte.split("# 1) NOTAS BWS")[1].split("# 2)")[0]
+    bloco_11 = fonte.split("# 11) BASE FATURAMENTO")[1].split("IMEDIATO FINALIZADO")[0]
+    for bloco, nome in ((bloco_1, "passo 1"), (bloco_11, "passo 11")):
+        assert "try:" in bloco and "except Exception" in bloco, nome

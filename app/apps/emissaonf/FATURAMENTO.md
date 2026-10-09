@@ -288,9 +288,15 @@ do git (conferido).
    cabeçalho** (`SCP`, `CNPJ SCP`, `Empresa`, `CNPJ Empresa`). Ele disse que vai
    criar e que seria "provavelmente a coluna AN". Enquanto o cabeçalho não
    existir, os campos ficam vazios — sem erro.
-3. **A "Notas BWS" para de ser atualizada quando?** Hoje é duplicado de
-   propósito. Desligar é uma linha no `concluir.py`, mas só depois de a base ser
-   conferida contra a planilha.
+3. **A "Notas BWS" para de ser atualizada quando? — decisão DELE, e tem trava.**
+   Ele reforçou em 09/10/2026, depois de a base nova ser publicada: *"por
+   enquanto, a nota do BWS a gente vai continuar usando normal. Só depois que
+   estiver consolidado essa nova etapa aí, a gente vai deixar de usar ela."*
+
+   A gravação duplicada é o estado **desejado**, não resíduo de transição — e há
+   teste exigindo que ela continue. Desligar é uma linha no `concluir.py`, mas
+   **não se faz sem ele pedir**: a base nova precisa estar conferida contra a
+   antiga primeiro.
 4. **Deduplicar a "Notas BWS Links"** (~20 mil linhas) continua pendente desde
    setembro. A consolidação convive com isso: a PRIMEIRA ocorrência ganha,
    sempre, para a base não mudar de valor entre duas rodadas.
