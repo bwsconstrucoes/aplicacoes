@@ -840,14 +840,55 @@ def encadear_comprovantes(modo: str) -> dict | None:
             " WHERE situacao = 'ESPERANDO' OR (situacao = 'RODANDO' "
             "   AND recebido_em < now() - (? || ' minutes')::interval)",
             (str(int(MINUTOS_PARA_ABANDONADO)),))
-        if not linha or not linha[0]:
-            return None
-        logger.info("Análise de SPs: %d lote(s) de comprovantes esperando — "
-                    "começando a baixa depois de '%s'.", linha[0], modo)
-        return disparar("comprovantes", disparo="fila de comprovantes")
+        if linha and linha[0]:
+            logger.info("Análise de SPs: %d lote(s) de comprovantes esperando — "
+                        "começando a baixa depois de '%s'.", linha[0], modo)
+            return disparar("comprovantes", disparo="fila de comprovantes")
     except Exception:  # noqa: BLE001 — sem a tabela, ou banco fora: fica para o botão
         logger.exception("Análise de SPs: não consegui encadear os comprovantes")
         return None
+    # Sem comprovante esperando: a carga do Faturamento pedida enquanto outra
+    # tarefa rodava (09/10/2026 — *"cliquei em atualizar e apareceu: já existe
+    # uma atualização em andamento"*). Com comprovante, ela vem na volta
+    # seguinte: a baixa termina e passa por aqui de novo.
+    if modo != "faturamento" and _pedido_pendente("faturamento", apagar=True):
+        logger.info("Análise de SPs: carga do faturamento pedida durante '%s' — "
+                    "começando agora.", modo)
+        return disparar("faturamento", disparo="pedida durante outra tarefa")
+    return None
+
+
+CHAVE_PEDIDO = "pedido_pendente_"
+
+
+def pedir_depois(modo: str) -> None:
+    """Guarda que `modo` foi pedido e recusado (outra tarefa rodando): ele
+    começa sozinho quando ela terminar (`encadear_comprovantes`)."""
+    try:
+        from .db import conexao
+        from .sincronizacao import _meta_gravar
+        with conexao() as conn:
+            _meta_gravar(conn, CHAVE_PEDIDO + modo, "1")
+    except Exception:  # noqa: BLE001 — sem isso, fica para o próximo clique
+        logger.exception("Análise de SPs: não consegui guardar o pedido de %s", modo)
+
+
+def _pedido_pendente(modo: str, apagar: bool = False) -> bool:
+    try:
+        from .db import conexao
+        with conexao() as conn:
+            cur = conn.execute("SELECT valor FROM analisesps.meta WHERE chave = ?",
+                               (CHAVE_PEDIDO + modo,))
+            linha = cur.fetchone()
+            cur.close()
+            if linha and linha[0] == "1" and apagar:
+                conn.execute("DELETE FROM analisesps.meta WHERE chave = ?",
+                             (CHAVE_PEDIDO + modo,))
+                conn.commit()
+            return bool(linha and linha[0] == "1")
+    except Exception:  # noqa: BLE001
+        logger.exception("Análise de SPs: não consegui ler o pedido de %s", modo)
+        return False
 
 
 # ---------------------------------------------------------------------------

@@ -95,6 +95,7 @@ TODAS_AS_TELAS = [
     ("POST", "/analisesps/api/omie/consultar"),
     ("GET", "/analisesps/calendario/dia"),
     ("GET", "/analisesps/faturamento"),
+    ("GET", "/analisesps/faturamento/periodos"),
     ("POST", "/analisesps/faturamento/atualizar"),
     ("GET", "/analisesps/faturamento/nota/123"),
     ("POST", "/analisesps/api/omie/marcar-pago"),

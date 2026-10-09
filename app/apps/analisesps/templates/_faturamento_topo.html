@@ -1,0 +1,33 @@
+{# O alto das duas subtelas do Faturamento: as abas e de quando são as notas. #}
+<nav class="abas-folha" aria-label="Telas do faturamento">
+  {% for chave, nome, rota in subtelas %}
+    <a class="aba-folha {% if subaba == chave %}ativa{% endif %}"
+       href="{{ url_for(rota, **args_filtro) }}"
+       {% if subaba == chave %}aria-current="page"{% endif %}>{{ nome }}</a>
+  {% endfor %}
+</nav>
+
+{% if request.args.get('aviso') %}<div class="aviso">{{ request.args.get('aviso') }}</div>{% endif %}
+
+<div class="fat-carga">
+  {% if rodando %}
+    <b>Trazendo as notas da planilha agora…</b> a tela se atualiza sozinha.
+  {% elif na_fila %}
+    <b>A atualização das notas está na fila:</b> outra tarefa de fundo está rodando
+    ({{ outra_tarefa or 'em andamento' }}) e só roda uma por vez. Ela começa sozinha
+    assim que essa terminar.
+  {% elif carregado_em %}
+    Notas trazidas da planilha "Base Faturamento" em {{ carregado_em|momento_br }}.
+  {% else %}
+    As notas ainda não foram trazidas da planilha "Base Faturamento".
+  {% endif %}
+  {% if ultima and not ultima.em_andamento and ultima.ok is sameas false %}
+    <span class="omie-erro">A última tentativa falhou: {{ ultima.mensagem }}</span>
+  {% endif %}
+  <form method="post" action="{{ url_for('analisesps.faturamento_atualizar') }}">
+    <input type="hidden" name="volta" value="{{ request.full_path }}">
+    <button class="btn secundario" type="submit" {{ 'disabled' if rodando }}
+            title="Lê de novo a aba Base Faturamento e a C. Diários. Só leitura.">
+      Atualizar da planilha</button>
+  </form>
+</div>

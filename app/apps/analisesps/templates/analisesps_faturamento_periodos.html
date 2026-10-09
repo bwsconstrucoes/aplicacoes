@@ -1,0 +1,94 @@
+{% extends "analisesps_base.html" %}
+{% block titulo %}Faturamento por período — Análise de SPs{% endblock %}
+{% block filtros %}{% if pronto %}{% include "analisesps_faturamento_filtros.html" %}{% endif %}{% endblock %}
+
+{% block conteudo %}
+{# ---------------------------------------------------------------------------
+   FATURAMENTO › POR PERÍODO (09/10/2026): *"crie subtela para visualizar
+   faturamento de períodos em gráfico e tabela"*. Mês, trimestre ou ano, pela
+   data de emissão, com os mesmos filtros da barra lateral. Uma série só no
+   gráfico (o faturado); recebido e a receber na tabela e no passar do mouse.
+--------------------------------------------------------------------------- #}
+{% if not pronto %}
+  <div class="aviso atencao">
+    <b>A tela de Faturamento ainda não está pronta neste banco.</b> Aperte
+    "Aplicar atualizações do banco" em Configurações.
+  </div>
+{% else %}
+{% include "_faturamento_topo.html" %}
+
+<div class="kpis">
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Faturado no filtro</div>
+    <div class="kpi-valor">{{ resumo.bruto|moeda }}</div>
+    <div class="kpi-sub">{{ resumo.quantidade }} nota(s)</div>
+  </div>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Recebido</div>
+    <div class="kpi-valor">{{ resumo.recebido|moeda }}</div>
+  </div>
+  <div class="kpi estatico laranja">
+    <div class="kpi-rotulo">A receber</div>
+    <div class="kpi-valor">{{ resumo.a_receber|moeda }}</div>
+    <div class="kpi-sub">{{ resumo.abertas }} nota(s) sem recebimento — pelo líquido previsto</div>
+  </div>
+</div>
+
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Faturado por {{ agrupamentos[agrupar][1]|lower }}</h3>
+    <nav class="fat-agrupar">
+      {% for chave, (_t, rotulo) in agrupamentos.items() %}
+        <a class="btn {{ '' if chave == agrupar else 'secundario' }}"
+           href="{{ url_for('analisesps.tela_faturamento_periodos', agrupar=chave, **args_filtro) }}">{{ rotulo }}</a>
+      {% endfor %}
+    </nav>
+  </div>
+  {% if not periodos %}
+    <p class="cartao-dica">Nenhuma nota com estes filtros{% if not carregado_em %} — as notas ainda não vieram da planilha{% endif %}.</p>
+  {% else %}
+    {% set maior = periodos|map(attribute='bruto')|max %}
+    <div class="fat-grafico" role="img"
+         aria-label="Faturado por período: {% for p in periodos %}{{ p.rotulo }} {{ p.bruto|moeda }}{{ '; ' if not loop.last }}{% endfor %}">
+      {% for p in periodos %}
+        {% set pct = ((100 * p.bruto / maior) if maior else 0)|float %}
+        <div class="fat-mes-col"
+             title="{{ p.rotulo }} — faturado R$ {{ p.bruto|moeda }} · recebido R$ {{ p.recebido|moeda }} · a receber R$ {{ p.a_receber|moeda }} · {{ p.quantidade }} nota(s)">
+          <div class="fat-valor">{{ p.bruto|moeda_curta if p.bruto else '' }}</div>
+          <div class="fat-trilho"><div class="fat-coluna" style="height: {{ '%.1f'|format(pct) }}%"></div></div>
+          <div class="fat-mes">{{ p.rotulo }}</div>
+        </div>
+      {% endfor %}
+    </div>
+    <p class="cartao-dica">Passe o mouse numa barra para ver o recebido e o a receber. Período sem nota aparece vazio.</p>
+
+    <div class="tabela-rolagem livre">
+      <table class="tabela-fat">
+        <thead><tr><th>{{ agrupamentos[agrupar][1] }}</th><th class="direita">Notas</th>
+          <th class="direita">Faturado</th><th class="direita">Líquido previsto</th>
+          <th class="direita">Recebido</th><th class="direita">A receber</th></tr></thead>
+        <tbody>
+          {% for p in periodos|reverse %}
+            {# o período leva às NOTAS dele, com os mesmos filtros #}
+            <tr><td><a href="{{ url_for('analisesps.tela_faturamento', **dict(args_filtro, f='1', de=p.inicio.isoformat(), ate=p.fim.isoformat())) }}"
+                       title="Ver as notas de {{ p.rotulo }}">{{ p.rotulo }}</a></td>
+                <td class="direita">{{ p.quantidade }}</td>
+                <td class="direita"><b>{{ p.bruto|moeda }}</b></td>
+                <td class="direita">{{ p.liquido|moeda }}</td>
+                <td class="direita">{{ p.recebido|moeda }}</td>
+                <td class="direita">{{ p.a_receber|moeda }}</td></tr>
+          {% endfor %}
+        </tbody>
+        <tfoot><tr><td><b>Total</b></td><td class="direita"><b>{{ resumo.quantidade }}</b></td>
+          <td class="direita"><b>{{ resumo.bruto|moeda }}</b></td><td class="direita"><b>{{ resumo.liquido|moeda }}</b></td>
+          <td class="direita"><b>{{ resumo.recebido|moeda }}</b></td><td class="direita"><b>{{ resumo.a_receber|moeda }}</b></td></tr></tfoot>
+      </table>
+    </div>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if rodando %}<script>setTimeout(() => location.reload(), 15000);</script>{% endif %}
+{% endblock %}

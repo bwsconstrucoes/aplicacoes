@@ -54,7 +54,9 @@ CAMPOS_DA_OBRA = {
 }
 
 STATUS_VALIDA = "valida"
-POR_PAGINA = 100
+# A lista é "como a planilha" (pedido do dono, 09/10/2026): muitas linhas por
+# página, cabeçalho fixo e rolagem.
+POR_PAGINA = 300
 CHAVE_META = "faturamento_carregado_em"
 
 
@@ -201,12 +203,15 @@ def _where(f: dict, com_datas: bool = True) -> tuple[str, list]:
     if f.get("status", STATUS_VALIDA) != "todas":
         condicoes.append("n.status = ?")
         params.append(f.get("status") or STATUS_VALIDA)
-    if f.get("obra"):
-        condicoes.append("n.obra_codigo = ?")
-        params.append(_chave_obra(f["obra"]))
-    if f.get("empresa"):
-        condicoes.append("coalesce(nullif(o.dados->>'scp',''), o.dados->>'empresa', '') = ?")
-        params.append(f["empresa"])
+    obras = [_chave_obra(o) for o in (f.get("obras") or []) if str(o).strip()]
+    if obras:
+        condicoes.append(f"n.obra_codigo IN ({', '.join('?' for _ in obras)})")
+        params += obras
+    empresas = [e for e in (f.get("empresas") or []) if str(e).strip()]
+    if empresas:
+        condicoes.append("coalesce(nullif(o.dados->>'scp',''), o.dados->>'empresa', '') "
+                         f"IN ({', '.join('?' for _ in empresas)})")
+        params += empresas
     if f.get("recebimento") == "recebidas":
         condicoes.append("n.data_recebimento IS NOT NULL")
     elif f.get("recebimento") == "a_receber":
@@ -236,47 +241,56 @@ def resumo(f: dict) -> dict:
             "recebido": recebido, "abertas": int(abertas or 0), "a_receber": a_receber}
 
 
-def evolucao(f: dict, meses: int = 13) -> list[dict]:
-    """O faturamento mês a mês (pela data de emissão): o bruto e o recebido.
+AGRUPAMENTOS = {"mes": ("month", "Mês"), "trimestre": ("quarter", "Trimestre"),
+                "ano": ("year", "Ano")}
 
-    As datas do filtro limitam a janela; sem elas, os últimos `meses` meses."""
+
+def _rotulo_do_periodo(inicio, agrupar: str) -> str:
+    if agrupar == "ano":
+        return f"{inicio.year}"
+    if agrupar == "trimestre":
+        return f"{(inicio.month - 1) // 3 + 1}º tri/{inicio.year}"
+    return f"{inicio.month:02d}/{inicio.year}"
+
+
+def _seguinte(inicio, agrupar: str):
+    meses = {"mes": 1, "trimestre": 3, "ano": 12}[agrupar]
+    total = inicio.year * 12 + inicio.month - 1 + meses
+    return inicio.replace(year=total // 12, month=total % 12 + 1, day=1)
+
+
+def por_periodo(f: dict, agrupar: str = "mes") -> list[dict]:
+    """O faturamento por período (mês, trimestre ou ano, pela data de emissão):
+    notas, faturado, líquido previsto, recebido e a receber.
+
+    ⚠️ PERÍODO SEM NOTA APARECE COM ZERO: pular faria dois meses vizinhos
+    parecerem seguidos, e o "buraco" é justamente a informação."""
+    import datetime as dt
     from .db import consultar
+    agrupar = agrupar if agrupar in AGRUPAMENTOS else "mes"
+    trunc = AGRUPAMENTOS[agrupar][0]
     where, params = _where(f)
     linhas = consultar(
-        "SELECT to_char(date_trunc('month', n.data_emissao), 'YYYY-MM') AS mes, "
-        "       count(*), coalesce(sum(n.valor_total), 0), "
-        "       coalesce(sum(n.valor_recebido) FILTER (WHERE n.data_recebimento IS NOT NULL), 0) "
+        f"SELECT date_trunc('{trunc}', n.data_emissao)::date AS ini, count(*), "
+        "       coalesce(sum(n.valor_total), 0), coalesce(sum(n.valor_liquido), 0), "
+        "       coalesce(sum(n.valor_recebido) FILTER (WHERE n.data_recebimento IS NOT NULL), 0), "
+        "       coalesce(sum(coalesce(n.valor_liquido, n.valor_total)) "
+        "                FILTER (WHERE n.data_recebimento IS NULL), 0) "
         + _JUNTA_OBRA + where + " AND n.data_emissao IS NOT NULL "
-        " GROUP BY 1 ORDER BY 1 DESC LIMIT ?", tuple(params) + (meses,))
-    achados = {m: {"mes": m, "quantidade": int(q), "bruto": b, "recebido": r}
-               for m, q, b, r in linhas}
+        " GROUP BY 1 ORDER BY 1", tuple(params))
+    achados = {ini: (q, b, l, r, a) for ini, q, b, l, r, a in linhas}
     if not achados:
         return []
-    # ⚠️ MÊS SEM NOTA APARECE COM ZERO: pular o mês faria duas barras vizinhas
-    # parecerem meses seguidos, e o "buraco" é justamente a informação.
-    ano, mes = map(int, min(achados).split("-"))
-    fim = max(achados)
-    saida = []
-    while True:
-        chave = f"{ano:04d}-{mes:02d}"
-        saida.append(achados.get(chave) or {"mes": chave, "quantidade": 0,
-                                            "bruto": 0, "recebido": 0})
-        if chave >= fim:
-            break
-        ano, mes = (ano + 1, 1) if mes == 12 else (ano, mes + 1)
-    return saida[-meses:]
-
-
-def por_obra(f: dict, quantos: int = 12) -> list[dict]:
-    from .db import consultar
-    where, params = _where(f)
-    linhas = consultar(
-        "SELECT n.obra_codigo, max(coalesce(o.dados->>'cliente','')), count(*), "
-        "       coalesce(sum(n.valor_total), 0) "
-        + _JUNTA_OBRA + where + " GROUP BY 1 ORDER BY 4 DESC LIMIT ?",
-        tuple(params) + (quantos,))
-    return [{"obra": o or "(sem obra)", "cliente": c, "quantidade": int(q), "bruto": b}
-            for o, c, q, b in linhas]
+    saida, atual, fim = [], min(achados), max(achados)
+    while atual <= fim and len(saida) < 400:
+        q, b, l, r, a = achados.get(atual, (0, 0, 0, 0, 0))
+        saida.append({"inicio": atual,
+                      "fim": _seguinte(atual, agrupar) - dt.timedelta(days=1),
+                      "rotulo": _rotulo_do_periodo(atual, agrupar),
+                      "quantidade": int(q), "bruto": b, "liquido": l,
+                      "recebido": r, "a_receber": a})
+        atual = _seguinte(atual, agrupar)
+    return saida
 
 
 def listar(f: dict, pagina: int = 1) -> list[dict]:

@@ -2088,6 +2088,10 @@ MINUTOS_PARA_RECARREGAR_FATURAMENTO = 60
 
 
 def _filtros_do_faturamento() -> dict:
+    """Os filtros da barra lateral do Faturamento (09/10/2026: *"filtro é no
+    sidebar"*). A marca `f` diz que a barra já foi usada: sem ela, o período
+    padrão são os últimos doze meses; com ela, vale o que estiver nos campos —
+    inclusive vazio, que é "sem limite"."""
     import datetime as dt
     from .horario import agora
 
@@ -2096,19 +2100,51 @@ def _filtros_do_faturamento() -> dict:
             return dt.date.fromisoformat(str(request.args.get(nome) or ""))
         except ValueError:
             return None
+
+    def lista(nome):
+        return [v for v in request.args.getlist(nome) if str(v).strip()]
     hoje = agora().date()
-    # O padrão são os últimos doze meses: é a janela do gráfico de evolução.
+    usou_a_barra = "f" in request.args
     padrao_de = (hoje.replace(day=1) - dt.timedelta(days=330)).replace(day=1)
-    tem_filtro = "de" in request.args or "ate" in request.args
     return {
-        "de": data("de") if tem_filtro else padrao_de,
-        "ate": data("ate") if tem_filtro else None,
+        "de": data("de") if usou_a_barra else padrao_de,
+        "ate": data("ate") if usou_a_barra else None,
         "status": request.args.get("status") or "valida",
-        "obra": (request.args.get("obra") or "").strip(),
-        "empresa": (request.args.get("empresa") or "").strip(),
+        "obras": lista("obra"),
+        "empresas": lista("empresa"),
         "recebimento": request.args.get("recebimento") or "",
         "busca": (request.args.get("busca") or "").strip(),
     }
+
+
+def _carga_do_faturamento():
+    """Quando a cópia foi trazida e se uma carga está rodando — e pede uma nova
+    se a cópia estiver velha (recusada em silêncio se outra tarefa roda: a
+    próxima abertura pede de novo)."""
+    from . import faturamento, tarefas
+    carregado_em = faturamento.carregado_em()
+    andamento = tarefas.estado()
+    rodando = bool(andamento.get("rodando")
+                   and (andamento.get("detalhe") or {}).get("tipo") == "faturamento")
+    na_fila = False
+    if _faturamento_desatualizado(carregado_em) and not rodando:
+        r = tarefas.disparar("faturamento", disparo="tela de faturamento")
+        rodando = bool(r.get("ok"))
+        if not rodando:
+            # Outra tarefa ocupa a vez: a carga entra sozinha quando ela acabar.
+            tarefas.pedir_depois("faturamento")
+            na_fila = True
+    return {"carregado_em": carregado_em, "rodando": rodando, "na_fila": na_fila,
+            "outra_tarefa": ((andamento.get("detalhe") or {}).get("etapa")
+                             if andamento.get("rodando") and not rodando else ""),
+            "ultima": tarefas.ultima_do_tipo("faturamento")}
+
+
+# As subtelas do Faturamento, na ordem das abas.
+SUBTELAS_FATURAMENTO = [
+    ("notas", "Notas", "analisesps.tela_faturamento"),
+    ("periodos", "Por período", "analisesps.tela_faturamento_periodos"),
+]
 
 
 def _faturamento_desatualizado(carregado_em) -> bool:
@@ -2127,42 +2163,57 @@ def _faturamento_desatualizado(carregado_em) -> bool:
 @bp.route("/faturamento")
 @exige_consulta
 def tela_faturamento():
-    from . import faturamento, tarefas
+    """As notas, como a planilha (09/10/2026: *"quero uma tela de faturamento só
+    com a parte das notas, como se fosse a planilha"*)."""
+    from . import faturamento
 
+    base = {"aba": "faturamento", "subtelas": SUBTELAS_FATURAMENTO,
+            # os filtros viajam de uma subtela para a outra pelas abas
+            "args_filtro": {k: v for k, v in request.args.lists()
+                            if k not in ("pagina", "aviso", "agrupar")},
+            "subaba": "notas", "pode_operar": auth.pode_operar(),
+            "nome": auth.nome_atual(), "perfil": auth.ROTULOS.get(auth.perfil_atual(), "")}
     if not faturamento.pronto():
-        return render_template(
-            "analisesps_faturamento.html", aba="faturamento", pronto=False,
-            pode_operar=auth.pode_operar(), nome=auth.nome_atual())
+        return render_template("analisesps_faturamento.html", pronto=False, **base)
 
     filtros = _filtros_do_faturamento()
     try:
         pagina = max(1, int(request.args.get("pagina") or 1))
     except ValueError:
         pagina = 1
-    carregado_em = faturamento.carregado_em()
-    andamento = tarefas.estado()
-    rodando = (andamento.get("rodando")
-               and (andamento.get("detalhe") or {}).get("tipo") == "faturamento")
-    # Abriu a tela e a cópia está velha (ou nunca veio): pede a carga. Se outra
-    # tarefa estiver rodando, o pedido é recusado em silêncio e tudo bem — a
-    # próxima abertura pede de novo.
-    if not andamento.get("rodando") and _faturamento_desatualizado(carregado_em):
-        r = tarefas.disparar("faturamento", disparo="tela de faturamento")
-        rodando = bool(r.get("ok"))
-
-    notas = faturamento.listar(filtros, pagina)
     return render_template(
-        "analisesps_faturamento.html", aba="faturamento", pronto=True,
-        filtros=filtros, pagina=pagina, por_pagina=faturamento.POR_PAGINA,
+        "analisesps_faturamento.html", pronto=True, filtros=filtros,
+        pagina=pagina, por_pagina=faturamento.POR_PAGINA,
         resumo=faturamento.resumo(filtros),
-        evolucao=faturamento.evolucao(filtros),
-        por_obra=faturamento.por_obra(filtros),
-        notas=notas, opcoes=faturamento.opcoes(),
-        carregado_em=carregado_em, rodando=rodando,
-        ultima=tarefas.ultima_do_tipo("faturamento"),
-        args=request.args,
-        pode_operar=auth.pode_operar(), nome=auth.nome_atual(),
-        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""))
+        notas=faturamento.listar(filtros, pagina), opcoes=faturamento.opcoes(),
+        args=request.args, **_carga_do_faturamento(), **base)
+
+
+@bp.route("/faturamento/periodos")
+@exige_consulta
+def tela_faturamento_periodos():
+    """O faturamento por período, em gráfico e tabela (09/10/2026: *"crie
+    subtela para visualizar faturamento de períodos em gráfico e tabela"*)."""
+    from . import faturamento
+
+    base = {"aba": "faturamento", "subtelas": SUBTELAS_FATURAMENTO,
+            # os filtros viajam de uma subtela para a outra pelas abas
+            "args_filtro": {k: v for k, v in request.args.lists()
+                            if k not in ("pagina", "aviso", "agrupar")},
+            "subaba": "periodos", "pode_operar": auth.pode_operar(),
+            "nome": auth.nome_atual(), "perfil": auth.ROTULOS.get(auth.perfil_atual(), "")}
+    if not faturamento.pronto():
+        return render_template("analisesps_faturamento_periodos.html", pronto=False, **base)
+    filtros = _filtros_do_faturamento()
+    agrupar = request.args.get("agrupar") or "mes"
+    if agrupar not in faturamento.AGRUPAMENTOS:
+        agrupar = "mes"
+    return render_template(
+        "analisesps_faturamento_periodos.html", pronto=True, filtros=filtros,
+        agrupar=agrupar, agrupamentos=faturamento.AGRUPAMENTOS,
+        periodos=faturamento.por_periodo(filtros, agrupar),
+        resumo=faturamento.resumo(filtros), opcoes=faturamento.opcoes(),
+        args=request.args, **_carga_do_faturamento(), **base)
 
 
 @bp.route("/faturamento/atualizar", methods=["POST"])
@@ -2172,8 +2223,15 @@ def faturamento_atualizar():
     from urllib.parse import quote
     from . import tarefas
     r = tarefas.disparar("faturamento", disparo=auth.nome_atual() or "faturamento")
-    aviso = ("Trazendo as notas da planilha — a tela se atualiza em instantes."
-             if r.get("ok") else r.get("erro", "Não deu para começar agora."))
+    if r.get("ok"):
+        aviso = "Trazendo as notas da planilha — a tela se atualiza em instantes."
+    else:
+        # Uma tarefa de fundo por vez: a carga fica pedida e começa sozinha
+        # quando a que está rodando terminar (`tarefas.pedir_depois`).
+        tarefas.pedir_depois("faturamento")
+        aviso = ("Outra tarefa de fundo está rodando agora (só roda uma por vez). "
+                 "A atualização das notas ficou na fila e começa sozinha assim que "
+                 "ela terminar — pode deixar.")
     volta = request.form.get("volta") or url_for("analisesps.tela_faturamento")
     if not str(volta).startswith("/analisesps/faturamento"):
         volta = url_for("analisesps.tela_faturamento")

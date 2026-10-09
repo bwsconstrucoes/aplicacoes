@@ -97,12 +97,20 @@ def test_resumo_evolucao_e_filtros(carregado):
     assert r["recebido"] == Decimal("4500.00")
     assert r["abertas"] == 2
     assert r["a_receber"] == Decimal("10000.00"), "9.000 líquido + 1.000 sem líquido"
-    meses = faturamento.evolucao(tudo)
+    meses = faturamento.por_periodo(tudo, "mes")
     # mês sem nota aparece com zero — o "buraco" é informação
-    assert [(m["mes"], m["bruto"]) for m in meses] == [
-        ("2026-07", Decimal("1000.00")), ("2026-08", 0), ("2026-09", 0),
-        ("2026-10", Decimal("15000.00"))]
-    assert faturamento.resumo(dict(tudo, empresa="SCP IF"))["quantidade"] == 2
+    assert [(m["rotulo"], m["bruto"]) for m in meses] == [
+        ("07/2026", Decimal("1000.00")), ("08/2026", 0), ("09/2026", 0),
+        ("10/2026", Decimal("15000.00"))]
+    assert meses[-1]["fim"] == dt.date(2026, 10, 31)
+    assert meses[-1]["recebido"] == Decimal("4500.00")
+    tri = faturamento.por_periodo(tudo, "trimestre")
+    assert [(t["rotulo"], t["bruto"]) for t in tri] == [
+        ("3º tri/2026", Decimal("1000.00")), ("4º tri/2026", Decimal("15000.00"))]
+    assert [a["rotulo"] for a in faturamento.por_periodo(tudo, "ano")] == ["2026"]
+    assert faturamento.resumo(dict(tudo, empresas=["SCP IF"]))["quantidade"] == 2
+    assert faturamento.resumo(dict(tudo, empresas=["SCP IF", "BWS"]))["quantidade"] == 3
+    assert faturamento.resumo(dict(tudo, obras=["crepeexu"]))["quantidade"] == 1
     assert faturamento.resumo(dict(tudo, status="cancelada"))["bruto"] == Decimal("2000.00")
     assert faturamento.resumo(dict(tudo, recebimento="recebidas"))["quantidade"] == 1
     assert [n["sequencial"] for n in faturamento.listar(dict(tudo, busca="3284"))] == ["3284"]
@@ -112,12 +120,38 @@ def test_resumo_evolucao_e_filtros(carregado):
 def test_a_TELA_mostra_as_notas_o_grafico_e_a_ficha(carregado):
     with carregado.test_client() as cliente:
         cliente.post("/analisesps/entrar", data={"senha": SENHA_MESTRE_OPERADOR})
-        tela = cliente.get("/analisesps/faturamento?de=2026-01-01").get_data(as_text=True)
+        tela = cliente.get("/analisesps/faturamento?f=1&de=2026-01-01").get_data(as_text=True)
+        periodos = cliente.get("/analisesps/faturamento/periodos?f=1&de=2026-01-01&agrupar=trimestre"
+                               ).get_data(as_text=True)
         ficha = cliente.get("/analisesps/faturamento/nota/2600000003283").get_data(as_text=True)
         assert cliente.get("/analisesps/faturamento/nota/999").status_code == 404
-    assert "3283" in tela and "Faturado por mês" in tela and "fat-coluna" in tela
-    assert tela.count('class="fat-mes-col"') == 4, "jul, ago, set e out"
+    # a tela principal é a lista, como a planilha; o filtro mora na barra lateral
+    assert "3283" in tela and 'id="form-filtros-fat"' in tela and "Total do filtro" in tela
+    assert "fat-coluna" not in tela, "o gráfico mora na subtela Por período"
+    assert "Faturado por trimestre" in periodos and periodos.count('class="fat-mes-col"') == 2
+    assert "de=2026-10-01" in periodos and "ate=2026-12-31" in periodos, "o período leva às notas dele"
     assert "https://drive/xml/3283" in tela, "o download da nota"
     assert "SCP IF" in ficha and "Medição 11" in ficha and "65,00" in ficha
     # divergência VAZIA = não conferido, nunca "bate"
     assert "ainda não conferidos com o Omie" in ficha and "batem" not in ficha
+
+
+def test_ATUALIZAR_com_outra_tarefa_rodando_fica_na_fila_e_comeca_sozinha(app, monkeypatch):
+    """09/10/2026: *"cliquei em atualizar planilha e apareceu: já existe uma
+    atualização em andamento (importando o cadastro de colaboradores)"*. Só roda
+    uma tarefa de fundo por vez; a carga das notas fica pedida e começa quando a
+    outra terminar."""
+    from app.apps.analisesps import tarefas
+    disparos = []
+    monkeypatch.setattr(tarefas, "disparar", lambda modo, disparo="manual": (
+        disparos.append(modo) or {"ok": False, "erro": "Já existe uma atualização"}))
+    with app.test_client() as cliente:
+        cliente.post("/analisesps/entrar", data={"senha": SENHA_MESTRE_OPERADOR})
+        r = cliente.post("/analisesps/faturamento/atualizar", data={})
+    assert "fila" in r.location
+    assert tarefas._pedido_pendente("faturamento")
+    monkeypatch.setattr(tarefas, "disparar", lambda modo, disparo="manual": (
+        disparos.append(modo) or {"ok": True}))
+    tarefas.encadear_comprovantes("colaboradores")     # a outra terminou
+    assert disparos[-1] == "faturamento"
+    assert not tarefas._pedido_pendente("faturamento"), "o pedido é atendido uma vez só"

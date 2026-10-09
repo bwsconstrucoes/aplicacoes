@@ -2794,3 +2794,16 @@ table.conciliacao tr.com-sp { cursor: pointer; }
 .fat-ficha .rotulo-campo { display: block; }
 .fat-discriminacao { white-space: pre-wrap; font-size: 12.5px; background: #f6f8fb; padding: 10px; border-radius: 6px; max-height: 260px; overflow: auto; }
 .paginacao { display: flex; gap: 8px; margin-top: 10px; }
+
+/* Faturamento como planilha + subtela por período (09/10/2026). */
+.fat-carga { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 13px;
+             color: var(--tinta-suave); margin: 4px 0 12px; }
+.fat-carga form { margin-left: auto; }
+.fat-planilha { max-height: 72vh; overflow: auto; }
+.fat-planilha thead th { position: sticky; top: 0; background: #f6f8fb; z-index: 1; }
+.fat-planilha .tabela-fat td, .fat-planilha .tabela-fat th { white-space: nowrap; padding: 5px 7px; font-size: 12.5px; }
+.fat-planilha .fat-tomador { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+.fat-planilha tfoot td { position: sticky; bottom: 0; background: #f6f8fb; border-top: 2px solid #d5dbe5; }
+.fat-nao-retido { color: #9aa3b2; }
+.fat-agrupar { display: flex; gap: 6px; margin-left: auto; }
+.fat-agrupar a.btn { text-decoration: none; padding: 4px 12px; }

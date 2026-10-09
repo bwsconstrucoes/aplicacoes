@@ -12228,6 +12228,30 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 208 — Faturamento: filtro na barra lateral, notas como planilha, subtela por período (09/10/2026)
+
+- Primeira observação do dono depois de publicar: *"filtro é no sidebar. Quero
+  uma tela de faturamento só com a parte das notas, como se fosse a planilha.
+  Crie subtela para visualizar faturamento de períodos em gráfico e tabela."*
+- **Filtros na barra lateral** (`analisesps_faturamento_filtros.html`), aplicando
+  sozinhos como nas Solicitações: emissão de/até (sem filtro, últimos 12 meses;
+  apagar as datas mostra tudo), situação da nota, recebimento, empresa/SCP e obra
+  (várias de uma vez), busca. Valem para as duas subtelas — as abas levam o filtro.
+- **Notas** (`/faturamento`): só a lista, como a planilha — 300 por página,
+  cabeçalho e total fixos, colunas de nota, emissão, competência, obra,
+  empresa, tomador, medição, valor, os seis tributos (cinza = não retido; "—" =
+  não informado), líquido, recebimento, situação e arquivos. Duplo clique abre
+  a ficha.
+- **Por período** (`/faturamento/periodos`): mês, trimestre ou ano; gráfico do
+  faturado (período sem nota aparece vazio) e tabela com notas, faturado,
+  líquido, recebido e a receber; cada período leva às notas dele.
+- *"Cliquei em atualizar planilha e apareceu: já existe uma atualização em
+  andamento (importando o cadastro de colaboradores) — é só erro de
+  nomenclatura?"* Não: só roda UMA tarefa de fundo por vez, e a mensagem era da
+  outra. Agora o pedido fica guardado e a carga das notas começa sozinha quando
+  a outra terminar (`tarefas.pedir_depois` + `encadear_comprovantes`), e a tela
+  diz isso. Sem migração.
+
 #### Leva 207 — a tela de FATURAMENTO (09/10/2026) — migração 053
 
 - *"Numa nova tela, que a gente pode chamar de Faturamento, eu quero fazer o
