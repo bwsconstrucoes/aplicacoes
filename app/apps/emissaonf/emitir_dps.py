@@ -489,13 +489,15 @@ def emitir(ctx: dict, dados_dps: nac.DadosDPS, token: str, producao: bool,
             raise DeclaracaoRecusada(motivos, id_dps=id_dps)
         xml_nac = nac.ELNfseNacional.descompactar(proc.get("nfseXmlGZipB64", "") or "")
         if proc.get("chaveAcesso") and xml_nac and "processamento" not in xml_nac.lower():
-            return dados_da_nota(xml_nac)
+            # O id da declaração viaja junto: é por ele que a nota se liga à
+            # declaração que a gerou, e a base de faturamento guarda essa ligação.
+            return {**dados_da_nota(xml_nac), "id_dps": id_dps}
         # Quando a prefeitura diz que já transmitiu, a plataforma nacional passa a
         # ser a fonte melhor — e às vezes a nota já está lá.
         if "adn" in (xml_nac or "").lower():
             achada = _consultar_no_nacional(ctx, id_dps, producao)
             if achada:
-                return achada
+                return {**achada, "id_dps": id_dps}
         if xml_nac and "processamento" not in xml_nac.lower() and "<" not in xml_nac:
             ultimo = xml_nac
         if time.time() >= limite:

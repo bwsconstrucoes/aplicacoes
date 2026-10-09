@@ -44,6 +44,14 @@ class Obra:
     conta_pagamento: str
     num_centro_custo: str
     bruto: dict              # linha inteira, p/ qualquer campo extra
+    # Nem toda obra é faturada no CNPJ da BWS, e isso nunca foi lido daqui. O
+    # dono apontou a coluna em 09/10/2026: "Na C. Diários existe. Na coluna L, a
+    # empresa". Algumas obras são **SCP**, com CNPJ próprio, embora o contrato
+    # seja da BWS — essa coluna ele vai criar (ver FATURAMENTO.md).
+    empresa: str = ""
+    empresa_cnpj: str = ""
+    scp: str = ""
+    scp_cnpj: str = ""
 
 
 # nomes de coluna esperados na C. Diários (tolerante a espaços/acentos)
@@ -64,6 +72,13 @@ _MAPA = {
     "codigo_omie": "Código Omie",
     "conta_pagamento": "Conta de Pagamento",
     "num_centro_custo": "Nº Centro de Custo",
+    # Lidas por NOME do cabeçalho, como todo o resto deste mapa: a coluna L de
+    # hoje pode virar outra amanhã, mas o rótulo "Empresa" acompanha. Ausente, o
+    # campo fica vazio e a base registra isso em vez de inventar "BWS".
+    "empresa": "Empresa",
+    "empresa_cnpj": "CNPJ Empresa",
+    "scp": "SCP",
+    "scp_cnpj": "CNPJ SCP",
 }
 
 
@@ -115,6 +130,8 @@ def carregar_obras(linhas: list[list[str]]) -> dict[str, Obra]:
             cnpj_cliente=g("cnpj_cliente"), endereco_cliente=g("endereco_cliente"),
             contrato=g("contrato"), objeto=g("objeto"), codigo_omie=g("codigo_omie"),
             conta_pagamento=g("conta_pagamento"), num_centro_custo=g("num_centro_custo"),
+            empresa=g("empresa"), empresa_cnpj=g("empresa_cnpj"),
+            scp=g("scp"), scp_cnpj=g("scp_cnpj"),
             bruto=bruto,
         )
         if cod:
