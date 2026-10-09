@@ -12259,6 +12259,7 @@ somente Solicitações de uma conta especifica"*.
   fora da base, tributo em dois campos, número de 13 dígitos + sequencial). Corrigido
   na ficha: as duas divergências são S/N, e VAZIO diz "ainda não conferido" — nunca
   "bate".
+- **Publicada em 09/10/2026** (suíte inteira 9.148 verdes) — apertar a 053.
 
 #### Leva 206 — Consultar Omie atravessa a pausa do Omie; calendário abre o dia numa janela (09/10/2026)
 
@@ -12277,7 +12278,7 @@ somente Solicitações de uma conta especifica"*.
   "Ver na lista" leva à lista de antes; ctrl+clique no dia continua abrindo a
   lista numa aba. Mesmo filtro e mesma data da célula (`consultas.sps_do_dia`,
   com teste provando que bate com `calendario_do_mes`). Até 300 SPs por dia na
-  janela. Sem migração.
+  janela. Sem migração. **Publicada em 09/10/2026**, junto com a leva 207.
 
 #### Leva 205 — a fila de comprovantes anda sozinha (08/10/2026)
 
