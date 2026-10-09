@@ -286,6 +286,29 @@ def gravar_coordenadas_da_obra(conn: Connection, obra_id: int, latitude, longitu
                 id=obra_id, lat=latitude, lon=longitude)
 
 
+def rotulo_obra(codigo, nome) -> str:
+    """O nome da obra UMA vez — a mesma regra do `rotuloObra` do erp_base.html:
+    se o código e o nome dizem a mesma coisa, basta um."""
+    import re
+    import unicodedata
+    cod, nom = str(codigo or "").strip(), str(nome or "").strip()
+    if not nom or not cod:
+        return nom or cod
+
+    def sem_acento(t):
+        return "".join(ch for ch in unicodedata.normalize("NFD", t.lower()) if unicodedata.category(ch) != "Mn")
+    c, n = re.sub(r"[^a-z0-9]", "", sem_acento(cod)), re.sub(r"[^a-z0-9]", "", sem_acento(nom))
+    if c in n:
+        return nom
+    if n in c:
+        return cod
+    do_cod = [p for p in re.split(r"[^a-z0-9]+", sem_acento(cod)) if len(p) >= 2]
+    do_nome = {p for p in re.split(r"[^a-z0-9]+", sem_acento(nom)) if len(p) >= 2}
+    if do_cod and all(p in do_nome for p in do_cod):
+        return nom
+    return f"{cod} — {nom}"
+
+
 def obra_para_json(o: dict) -> dict:
     return {
         "id": o["id"], "codigo": o["codigo"], "nome": o["nome"],

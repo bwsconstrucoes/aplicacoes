@@ -12228,6 +12228,274 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 211 — "Atualizar SP" trava o Agendar; importar as notas antigas pelo Faturamento (09/10/2026)
+
+- *"Sim, é para bloquear também SP sem obra."* A trava do `/api/alterar`
+  ("Agendar"/"Agendado") passou a recusar também a SP sem obra
+  (`pagamentos.atualizar_sp`), com a mesma mensagem dizendo quais e por quê
+  (`web._sps_presas_no_agendar`). Ficha: aviso "Atualizar SP" e o botão explica.
+- *"As notas anteriores, como faço para importar elas? Não estão aparecendo."*
+  Elas só aparecem depois de levadas da "Notas BWS" para a "Base Faturamento" —
+  e isso é a CONSOLIDAÇÃO DO EMISSOR (`emissaonf/base_faturamento.consolidar`),
+  que pela tela dele (`/emissao/faturamento?token=…`) roda um lote por clique.
+  Agora o Faturamento tem **"Importar notas antigas"** (só o mestre): uma
+  tarefa de fundo nova, `faturamento_antigas`, roda TODOS os lotes (1.000 por
+  vez, até 20 rodadas) no processo separado e em seguida traz tudo para a tela.
+  A regra continua sendo a do emissor — chamada, não copiada (import plano,
+  como o próprio emissor faz). Não apaga nada, não emite nada; repetir não
+  duplica. Não testado contra a planilha de verdade. Sem migração.
+- **Publicada em 09/10/2026** (suíte inteira 9.158 verdes).
+
+#### Leva 210 — destaque de "sem validação" e de "Sem NF" na lista (09/10/2026)
+
+- *"Quando tem uma SP sem validação fica só a célula em branco; era bom um
+  destaque."* A coluna Validação mostra a etiqueta **"sem validação"** — só
+  para SP que ainda vai ser paga (paga ou cancelada não pede validação; destacar
+  o histórico inteiro esconderia as que importam). `pagamentos.sem_validacao`.
+- *"Tudo que não tiver número de nota, um destaque (…) se for BeeVale não
+  precisa (…) rescisão, férias, salários e ordenados não (…) vai ter outras
+  regras, depois eu vou adicionando."* Etiqueta **"Sem NF"** ao lado do número
+  da SP (sempre visível — a coluna Nº NF vem escondida por padrão), e na própria
+  coluna quando ela está ligada. Cancelada fica de fora; paga sem nota aparece.
+  As exceções moram em `pagamentos.TIPOS_SEM_NOTA` e `FORMAS_SEM_NOTA` —
+  regra nova do dono entra ali, comparada pelo começo, sem acento.
+- Solicitações e Lote (a mesma tabela). Sem migração.
+- **"Atualizar SP"** (mesmo dia): *"o sistema de compra gera a SP incompleta, os
+  dados vêm na descrição (…) ela vai estar sem centro de custo e a conta em erro
+  (…) coloca 'atualizar SP'"*. Etiqueta ao lado do número quando a obra (centro
+  de custo) está em branco, em SP ainda a pagar (`pagamentos.atualizar_sp`).
+  Só destaque — não trava o Agendar.
+- **Levas 208 a 210 publicadas em 09/10/2026**, sem migração.
+
+#### Leva 209 — chave Pix "Atualizar Chave": etiqueta na lista e trava no Agendar (09/10/2026)
+
+- *"As SPs que têm o tipo de pagamento BeeVale e a chave Pix com a informação
+  'atualizar chave Pix' a gente precisa tratar antes de colocar em agendar (…)
+  bloqueio de impedir que ela seja colocada em agendar (…) e uma tag de atualizar
+  a Pix na listagem, tanto de solicitações quanto no lote."*
+- Regra única: `pagamentos.chave_a_atualizar` — forma BeeVale **ou Pix** (pagar
+  Pix com essa "chave" também não paga ninguém) e a chave da coluna Y contendo
+  "atualizar" (é a chave aleatória que a geração da folha põe no card).
+- **Etiqueta "Atualizar Pix"** ao lado do número da SP, nas Solicitações e no
+  Lote (a mesma tabela).
+- **Trava no SERVIDOR** (`/api/alterar`): "Agendar" e "Agendado" com qualquer
+  SP assim são recusados INTEIROS, dizendo quais — vale para a barra, a ficha e
+  qualquer caminho. Desagendar e Falha Agendar continuam livres. Na ficha, aviso
+  e o botão explica o bloqueio no clique. Sem migração.
+
+#### Leva 208 — Faturamento: filtro na barra lateral, notas como planilha, subtela por período (09/10/2026)
+
+- Primeira observação do dono depois de publicar: *"filtro é no sidebar. Quero
+  uma tela de faturamento só com a parte das notas, como se fosse a planilha.
+  Crie subtela para visualizar faturamento de períodos em gráfico e tabela."*
+- **Filtros na barra lateral** (`analisesps_faturamento_filtros.html`), aplicando
+  sozinhos como nas Solicitações: emissão de/até (sem filtro, últimos 12 meses;
+  apagar as datas mostra tudo), situação da nota, recebimento, empresa/SCP e obra
+  (várias de uma vez), busca. Valem para as duas subtelas — as abas levam o filtro.
+- **Notas** (`/faturamento`): só a lista, como a planilha — 300 por página,
+  cabeçalho e total fixos, colunas de nota, emissão, competência, obra,
+  empresa, tomador, medição, valor, os seis tributos (cinza = não retido; "—" =
+  não informado), líquido, recebimento, situação e arquivos. Duplo clique abre
+  a ficha.
+- **Por período** (`/faturamento/periodos`): mês, trimestre ou ano; gráfico do
+  faturado (período sem nota aparece vazio) e tabela com notas, faturado,
+  líquido, recebido e a receber; cada período leva às notas dele.
+- *"Cliquei em atualizar planilha e apareceu: já existe uma atualização em
+  andamento (importando o cadastro de colaboradores) — é só erro de
+  nomenclatura?"* Não: só roda UMA tarefa de fundo por vez, e a mensagem era da
+  outra. Agora o pedido fica guardado e a carga das notas começa sozinha quando
+  a outra terminar (`tarefas.pedir_depois` + `encadear_comprovantes`), e a tela
+  diz isso. Sem migração.
+
+#### Leva 207 — a tela de FATURAMENTO (09/10/2026) — migração 053
+
+- *"Numa nova tela, que a gente pode chamar de Faturamento, eu quero fazer o
+  controle de notas — ver faturamento, fazer o download da nota, uma parte
+  gráfica de evolução."* O desenho e as regras da base estão em
+  `app/apps/emissaonf/FATURAMENTO.md` (escrito pelo chat do emissor).
+- **De onde vem:** a aba "Base Faturamento" (planilha das notas, que o emissor
+  grava) e a C. Diários ("Centro de Custo" da Bases de Dados Pipefy) para
+  empresa, SCP, contrato, município e tributação — cruzadas pelo código da obra,
+  pelos DOIS códigos (primário e coluna A). Uma tarefa nova do processo
+  separado, **"faturamento"**, traz as duas para o banco (`faturamento.carregar`,
+  numa transação só) — a tela não vai ao Google. A carga roda sozinha quando a
+  tela abre e a cópia tem mais de 60 min, e há o botão "Atualizar da planilha".
+- **A tela:** filtros (período de emissão — padrão: últimos 12 meses —, obra,
+  empresa/SCP, recebimento, situação, busca no número/tomador/obra/texto);
+  quadros de faturado, recebido e a receber (pelo líquido previsto); gráfico de
+  barras do faturado por mês (mês sem nota aparece com zero; recebido e
+  quantidade no passar do mouse); tabela por obra; lista de notas com os links
+  dos arquivos (DANFSe, NFS-e municipal, XML, recibo); duplo clique abre a
+  ficha da nota (dados, tributos nota × Omie, texto da nota, arquivos, card).
+- **Tributo vazio continua vazio** ("não se sabe" — nota antiga não
+  equalizada), nunca vira zero. Nota cancelada/substituída fica fora das somas
+  por padrão (filtro "Situação").
+- Permissão: tela nova "faturamento", liberável no cadastro (preso a conta não
+  alcança). ⚠️ **Migração 053** — apertar "Aplicar atualizações do banco".
+- Não testado com a planilha de verdade: a aba "Base Faturamento" precisa estar
+  preenchida (as antigas entram pela consolidação em `/emissao/faturamento`).
+- Conferido contra a orientação do emissor (`CONTEXTO.md`, 09/10/2026: C. Diários
+  fora da base, tributo em dois campos, número de 13 dígitos + sequencial). Corrigido
+  na ficha: as duas divergências são S/N, e VAZIO diz "ainda não conferido" — nunca
+  "bate".
+- **Publicada em 09/10/2026** (suíte inteira 9.148 verdes) — apertar a 053.
+
+#### Leva 206 — Consultar Omie atravessa a pausa do Omie; calendário abre o dia numa janela (09/10/2026)
+
+- *"Na consulta Omie tem que contornar essas mensagens: o Omie bloqueou as
+  chamadas por consumo excessivo e pediu 60 segundos."* A consulta agora é UMA
+  SP de cada vez (eram três juntas), guarda a resposta de cada título por 2
+  min (o Omie bloqueia pergunta repetida — consultar, marcar e consultar de
+  novo) e, quando o Omie pede pausa, PARA ali e devolve as que faltaram como
+  "aguardando o Omie". A janela conta o tempo pedido e pede só essas de novo,
+  sozinha (`pagamento_omie.consultar` devolve `espera`).
+- *"O calendário tem que abrir um modal conforme abre no painel, para exibir as
+  informações do dia; da forma que está, redireciona para Solicitações."* O
+  clique no dia abre uma janela com as SPs dele (SP, credor, categoria,
+  descrição, valor, vencimento/pagamento, situação), na ordem vencido → a
+  vencer → pago; setas ‹ › (e ← →) andam de dia; duplo clique abre a ficha;
+  "Ver na lista" leva à lista de antes; ctrl+clique no dia continua abrindo a
+  lista numa aba. Mesmo filtro e mesma data da célula (`consultas.sps_do_dia`,
+  com teste provando que bate com `calendario_do_mes`). Até 300 SPs por dia na
+  janela. Sem migração. **Publicada em 09/10/2026**, junto com a leva 207.
+
+#### Leva 205 — a fila de comprovantes anda sozinha (08/10/2026)
+
+- *"Por que essa fila trava? 10 lote(s) parado(s) há mais de 15 minutos."* O
+  comprovante arrastado tenta começar a baixa na hora; com OUTRA tarefa rodando
+  na pista geral (a atualização que a tela aberta pede, o ponto, o cadastro…)
+  o disparo é recusado e o lote fica ESPERANDO "para a próxima" — mas nenhuma
+  outra tarefa dá baixa em comprovante, então ele esperava alguém apertar
+  "Retomar a fila". Com a tela aberta pedindo atualização a cada poucos
+  minutos, cair nessa janela era comum.
+- Agora o processo separado, ao terminar QUALQUER tarefa da pista geral (bem
+  ou mal), começa a baixa se houver lote ESPERANDO ou RODANDO há mais de 15
+  min (processo morto) — `tarefas.encadear_comprovantes`, chamado em
+  `executar_sync.main`. Não cicla: a baixa tira cada lote de ESPERANDO.
+- Continua valendo: PDF de lote que estava na fila durante uma publicação se
+  perde com o disco do contêiner — esse lote vai para FALHOU pedindo para
+  arrastar de novo (não baixa duas vezes). Sem migração. **Publicada em
+  08/10/2026**, junto com o texto do Telegram: o dono entendeu que a LIGAÇÃO
+  durava 15 minutos (*"tenho que ficar toda hora ligando?"*) — os 15 min são
+  só do link de ligar; a tela e o robô agora dizem que fica ligado de vez.
+
+#### Leva 204 — auxílio: o limite é o ÚLTIMO DIA TRABALHADO (BC), não a saída (BD) (08/10/2026)
+
+- *"Na hora de calcular alimentação e transporte estamos usando a Data de Saída
+  (BD) para limitar o cálculo; o certo é usar a coluna BC, Último dia
+  Trabalhado, que é o último dia efetivo em obra — os demais são os dias de
+  aviso prévio."* Em `folha_auxilio.calcular_pessoa`: último dia dentro da
+  competência → não recebe, com ou sem data de saída (antes, só sem); último
+  dia no mês do pagamento → proporcional até ele. A data de saída só vale
+  quando o último dia não veio. Diárias e folha da contabilidade NÃO mudaram
+  (o pedido foi para alimentação e transporte). Sem migração. **Publicada em
+  08/10/2026**, junto com a leva 203 (suíte inteira 9.025 verdes).
+
+#### Leva 203 — conciliação: a etiqueta da situação da SP; robô mais cuidadoso (08/10/2026)
+
+- *"Quero que apareça uma tag ao lado da SP no extrato de conciliação,
+  semelhante à que aparece em arquivos gerados."* Mesmas etiquetas: status do
+  pagamento e do agendamento (o "sem baixa" continua).
+- *"O bot não vai confundir com pedido de contracheque?"* Não confundia quem
+  está ligado (mensagem sem número de SP segue o caminho de sempre), mas uma
+  conversa NÃO ligada com um número de 10 dígitos (fixo com DDD) recebia o
+  recado "não ligado" em vez do menu. Agora só recebe quem escreve como pedido
+  de SP ("SP", "Solicitação"). Sem migração.
+
+#### Leva 202 — conciliação: a SP do BeeVale com 1,5% a mais no extrato (08/10/2026)
+
+- *"Quando o credor do extrato for Beevale Pagamentos e Benefícios Ltda, ou
+  tiver algo como Beevale, Bee Vale (…) a maioria desses lançamentos tem 1,5%
+  de acréscimo em relação ao valor da SP."* Saída cuja descrição tem "BEEVALE"
+  (sem acento, espaço ou hífen: "Bee Vale", "BEE-VALE") procura também a SP de
+  valor = lançamento ÷ 1,015, no CENTAVO exato (arredondando ou cortando o
+  centavo — não se sabe qual o BeeVale faz). O valor igual continua valendo; as
+  mesmas regras de conta, data e nome. O balão do link diz "BeeVale: o extrato
+  tem 1,5% a mais que a SP" (`conciliacao.e_beevale`,
+  `valores_sem_acrescimo_beevale`).
+- Fica de fora: um lançamento BeeVale que some VÁRIAS SPs (cruzamento é 1 para
+  1, como o resto). Sem migração. **Publicada em 08/10/2026**, junto com a
+  categoria e a descrição da SP na tela de QR / código.
+
+#### Leva 201 — Consultar Omie e o "Marcar Pago" completo (08/10/2026)
+
+- *"Preciso poder consultar um ou vários títulos no Omie (…) num modal (…) se
+  for Pago, poder equalizar na SPsBD, que com alguma frequência não tem
+  atualizado (…) coletar a 'Data do Pagamento', o 'Comprovante HTML/Email
+  (Integração)' e o 'Banco do Pagamento' do card (…) X é a data, AG o
+  comprovante, AK a conta (…) se o card não estiver na fase 309521694 'Pago /
+  Alimentar Omie', fazer esse movimento (…) mutation em lote para economizar
+  API. A função Marcar Pago precisa também gravar a data e o comprovante."*
+- **Consultar Omie** (barra de ações, até 60 SPs): `ConsultarContaPagar` pelo
+  código da coluna P, ou "Int" + nº da SP quando P está vazia (como o
+  ProcessarNovaSP cria); 3 de cada vez. O modal mostra planilha × Omie e o que
+  falta na planilha (status, data, comprovante); as PAGAS que a planilha não
+  diz por inteiro já vêm marcadas. Só lê (`pagamento_omie.consultar`).
+- **Marcar Pago do modal**: só aceita SP que o Omie disse PAGO na consulta dos
+  últimos 15 min (guardado em memória, `web._CONSULTADAS`). Grava Status =
+  Pago, e do card: X (data, em dd/mm/aaaa), AG (comprovante), AK (só o número
+  da conta, ex. "50024-0", como o BaixaBradesco grava). Campo vazio no card
+  NÃO apaga o que a planilha tem. Cards fora de "Pago / Alimentar Omie" vão
+  para lá. Pipefy: leitura e movimento em lote, 20 cards por ida
+  (`pipefy.ler_pagamentos`, `pipefy.mover_cards`, com `graphql_parcial` para
+  um card ruim não esconder os outros).
+- **O Marcar Pago de sempre** (barra e ficha) também lê o card e grava X, AG e
+  AK — mas NÃO move o card (só o do modal move, que é o caso que o dono
+  descreveu). Pipefy fora não desfaz o "Pago": a tela avisa o que faltou.
+- **No Lote o modal só consulta** — "Marcar Pago" ali continua proibido
+  (decisão antiga do dono, com teste).
+- A coluna AK ganhou nome ("Conta do Pagamento"); continua fora do banco — só
+  é escrita (fila da planilha + log), por isso não aparece na tela.
+- Não testado contra o Omie e o Pipefy de verdade: o formato real da data e do
+  banco no card é suposto (lista de conector e datas dd/mm/aaaa ou aaaa-mm-dd
+  são aceitas). Sem migração. **Publicada em 08/10/2026.**
+
+#### Leva 200 — o grupo "WhatsApp" do lote, alimentado pelo robô do Telegram (08/10/2026) — migração 052
+
+- *"Muitas pessoas me pedem para colocar para pagar alguma SP via WhatsApp (…)
+  eu copio, colo no Extrair SPs do lote (…) alimentar um lote chamado WhatsApp
+  (…) sempre o primeiro de todos (…) atrelar isso ao usuário."* Encaminhar pelo
+  WhatsApp foi descartado com ele: o número do Z-API é o do contracheque e
+  bloqueia com volume. Escolhido: copiar as mensagens no WhatsApp (várias de
+  uma vez) e colar no robô do Telegram da BWS, que já está de pé.
+- **Ligar** (tela Lote › janela "Lote" › "Ligar ao Telegram"): link de USO
+  ÚNICO, 15 minutos, `t.me/<robô>?start=lote_<código>`; no banco só o sha256
+  do código. Só quem entrou com usuário próprio liga (a senha geral não sabe
+  de quem é o lote). Ligar de novo (celular novo) troca a conversa; há
+  "Desligar o Telegram".
+- **Receber**: o robô pesca os números de SP (`lote.extrair_ids`) e soma no
+  grupo "WhatsApp" (`lote.juntar_no_grupo_whatsapp`): UM grupo, sempre levado
+  ao topo, sem repetir SP que já esteja em qualquer grupo do lote. Responde
+  quantas entraram, quais já estavam, quais não estão na base (entram mesmo
+  assim) e quais estão no lote de outra pessoa. Só alimenta quem pode alterar
+  o Lote pela tela (operador com a tela Lote, ou mestre); preso a conta não
+  tem a tela Lote, então também não.
+- **A tela aberta não apaga o que chegou pelo robô**: a janela manda a hora do
+  lote que carregou (`versao`); no Salvar/Extrair/Remover…, o que chegou pelo
+  Telegram depois dela e não está no texto volta ao grupo WhatsApp, com aviso
+  (`telegram_lote.manter_chegadas`, tabela `lote_telegram`). SP tirada de
+  propósito depois de vista não volta.
+- O robô é da área de Mensageria: a mudança lá é só o desvio no webhook
+  (registrado no `mensageria/HISTORICO.md`).
+- Testado no navegador (ligar mostra o botão "Abrir no Telegram") e ponta a
+  ponta pelo webhook do robô com o envio dublado. NÃO testado com o Telegram
+  de verdade — o primeiro uso do dono é o teste.
+- ⚠️ **Migração 052** — apertar "Aplicar atualizações do banco" ao publicar.
+  Antes dela, o robô e a tela seguem como antes (nada aparece).
+- **Publicada em 08/10/2026** (com as levas 201 e 202; suíte inteira 9.023 verdes).
+
+#### Leva 199 — conciliação: duplo clique na linha abre a ficha da SP (07/10/2026)
+
+- *"Voce colocou o link para a SP, mas queria que ao dar dois clique na linha
+  identificada, fosse aberto o modal daquele lancamento de analisps."* A linha
+  com SP achada leva `data-ficha` e a tela inclui o mesmo modal da lista de
+  Solicitações (`analisesps_ficha_modal.html`). Com mais de uma SP possível,
+  abre a primeira; as outras seguem nos links. O clique simples no "SP nº"
+  continua abrindo o card no Pipefy. Testado no navegador.
+- A ficha mora na tela Solicitações: quem só tem a Conciliação não ganha o
+  duplo clique (abriria "não encontrado") — `abre_ficha` na rota.
+- **Publicada em 08/10/2026** (sem migração; suíte inteira 8.884 verdes).
+
 #### Leva 198 — conciliação: a SP de cada saída do extrato (07/10/2026)
 
 - *"Cruzar a conciliação do extrato com os números das SPs (…) pela conta de
@@ -12246,6 +12514,7 @@ somente Solicitações de uma conta especifica"*.
 - Não verificado: o formato real da coluna Conta das SPs × o nome/número das
   contas da conciliação. Se não casar, nenhum link aparece (não aparece link
   errado) — e o ajuste é em `conta_da_sp_confere`.
+- **Publicada em 07/10/2026** (sem migração; suíte inteira 8.771 verdes).
 
 #### Leva 197 — auxílio: a obra como nas outras folhas — ponto, trocar ou dividir (07/10/2026)
 

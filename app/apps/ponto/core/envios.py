@@ -281,7 +281,7 @@ def _texto_do_qr(nome: str, motivo: str) -> str:
             "No tablet da obra, mostre esta imagem na câmera: ele reconhece você e tira a foto.\n"
             "O QR anterior para de valer assim que você usar este.\n\n"
             "É pessoal, como a sua assinatura: não passe para ninguém. "
-            "Se perder o celular, avise o encarregado.")
+            "Se perder o celular, avise a administração da obra.")
 
 
 # O TIPO de cada mensagem na mensageria (tela Mensagens do ERP): é lá que o

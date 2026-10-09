@@ -125,8 +125,15 @@ que é editável — o que estiver ali é o corpo que vai ser emitido.
 
 Nada foi enviado ainda. Sair da página não deixa rastro.
 
-> ⚠️ **O ensaio depende da prefeitura ter habilitado o ambiente de teste.** Se
-> ele recusar com o erro **E0037**, a tela explica: apesar do texto oficial falar
+> ⚠️ **TENTE O ENSAIO ANTES DE EMITIR.** Até 08/10/2026 ele nunca foi concluído:
+> na primeira tentativa a tela demorava 150s (defeito nosso, consertado), na
+> segunda faltava o token da prefeitura (também consertado) — e a memória da área
+> passou a afirmar, sem evidência, que ele estava bloqueado. Isso fez quatro
+> recusas do padrão nacional serem descobertas em **emissão de verdade**, uma por
+> tentativa. Ensaio não cria documento fiscal: tentar não custa nada.
+>
+> **O ensaio depende de a prefeitura ter habilitado o ambiente de teste**, e é o
+> erro **E0037** que diria que não está. Se ele aparecer, a tela explica: apesar do texto oficial falar
 > de "município inexistente", o manual diz que na prática significa que o
 > município **não configurou a Produção Restrita** na Plataforma Nacional. Não há
 > o que corrigir aqui — é um pedido à prefeitura. Enquanto isso, a conferência de
@@ -150,6 +157,119 @@ ela até aparecer. Da nota pronta saem o **número**, a **chave de acesso** e a
 
 O código de verificação **não existe mais**: no modelo nacional quem identifica
 a nota é a chave de acesso de 50 dígitos, que vai no PDF com o QR ao lado.
+
+### A identificação da obra é obrigatória, e não está no schema
+
+A plataforma nacional **exige o grupo de obra** quando o serviço é de construção
+civil — treze subitens da lista, entre eles o **07.02.02**, que é o único que a
+BWS usa. Sem ele a nota não sai, e o modo de falhar é o pior possível: **o
+município aceita a declaração e o nacional recusa depois**, do outro lado da
+fila, numa tela de pendências que a nossa consulta não alcança. Foi o que
+aconteceu com a nota 3281 em 07/10/2026 (erro **E0370**).
+
+**Isto não é pegável pelo schema.** No XSD o grupo é opcional (`minOccurs="0"`):
+a declaração sem ele é um arquivo válido. A obrigatoriedade é regra de negócio
+da plataforma, condicionada ao código do serviço. Toda a conferência contra o
+schema oficial — que pega campo fora de ordem, valor fora do domínio e casa
+decimal sobrando — passava batido por esta.
+
+**O que vai:** o **CNO** da obra, lido da coluna "CNO" da C. Diários, **sem
+pontuação** (na planilha `90.025.25410/76`, na declaração `900252541076`) — como
+todo documento neste layout. O layout aceita três identificações e exige
+exatamente uma: o CNO/CEI, o CIB, ou o endereço da obra. As três estão
+implementadas; a BWS usa o CNO, porque é o dado que ela tem.
+
+**Obra sem CNO barra a emissão antes de enviar**, dizendo onde resolver. A conta
+é assimétrica: barrar custa um aviso na tela, deixar passar custa um número de
+nota queimado e uma declaração presa na fila.
+
+### O CST do IBS/CBS sai da classificação, e não de uma escolha
+
+**O CST são os três primeiros dígitos do `cClassTrib`.** Para a BWS a
+classificação é `200046` ("Operações com bens imóveis", item 07.02 do Anexo
+VIII), então o CST é `200`. Mandar o par sem casar é o erro **E0959**, que custou
+uma emissão em 08/10/2026 — ia `000` com `200046`.
+
+Por isso o CST é **derivado** no código, e a montagem da declaração **recusa** um
+par que não casa. A regra, os valores que a BWS manda e a procedência de cada um
+estão em `xsd_nacional/IBSCBS_CLASSIFICACAO.md` — inclusive os dois campos
+opcionais (`tpOper`, `tpEnteGov`) que ficaram implementados e **desligados**, por
+serem os próximos suspeitos de uma recusa.
+
+Como o grupo de obra, **isto também não é pegável pelo schema**: os dois campos
+são válidos sozinhos, e quem confere a combinação é a plataforma.
+
+### No campo do Omie vai o número CURTO (limite de 20 caracteres)
+
+O `numero_documento_fiscal` do Omie acumula os números das notas daquele título,
+separados por barra, e aceita **20 caracteres**. Com os números de 4 dígitos do
+modelo antigo caberiam quatro; com os de **13 dígitos** do padrão nacional,
+**duas já não cabem** — foi o erro da nota 2600000003294 em 09/10/2026, e o
+título ficou sem o número dela.
+
+Então ali vai o **sequencial**: `3294`, não `2600000003294`. Cabe, é o número
+pelo qual o dono procura, e é o formato que os títulos antigos já têm — misturar
+faria o mesmo título ter dois jeitos de escrever nota.
+
+Se ainda não couber (o card tem cinco slots), **saem os mais antigos**, e os
+descartados viram **aviso no log**. Para acertar uma nota que ficou fora, a tela
+`/emissao/omie` tem "Acertar o número da nota no título".
+
+### Número de nota já enviado não volta a ser usado
+
+A identificação da declaração é construída **a partir do número da nota**. Então
+reusar o número reusa a identificação — e identificação já enviada à prefeitura
+não serve mais: ela responde **EL99** ("chave informada para a DPS não existe no
+repositório municipal"). Aconteceu em 08/10/2026, com o número 3281.
+
+O manual da prefeitura diz o contrário — que a declaração recusada pode ser
+reenviada com a mesma identificação. **Em Eusébio essa frase não se sustentou**, e
+a prática ganhou do manual. Então:
+
+- a numeração conta **todas** as declarações já enviadas, qualquer que seja o
+  desfecho (a aba `Declaracoes` só recebe declaração **depois** do aceite, então
+  todo número que está nela já foi enviado);
+- não há exceção para o mesmo card;
+- buraco na sequência é normal — nota cancelada faz o mesmo.
+
+### Imposto que não foi retido NÃO vai, nem como zero
+
+A plataforma trata **zero** e **ausente** como coisas diferentes: campo opcional
+com valor zero é recusado. Mandar `0,00` declara uma retenção **de** valor zero,
+que é diferente de não haver retenção. É o erro **E0699** ("o valor do tributo CP
+deve ser maior que zero…"), e CP é o INSS.
+
+Então: dos três campos federais (INSS, IR, CSLL) só vão os que foram de fato
+retidos; se nenhum foi, o grupo inteiro não sai. O total aproximado de tributos
+vai como **"não informado"** (`indTotTrib=0`, a opção que o layout dá) em vez de
+três zeros. E retenção maior que o valor do serviço **derruba a montagem**, com
+os dois números na mensagem — é erro de dado.
+
+**O que vigia isso de verdade não é a memória de quem mexe:** um teste varre a
+declaração inteira contra o XSD e acusa qualquer elemento que o layout permita
+omitir e que esteja indo com zero. A exceção são os indicadores (`indFinal`,
+`indDest`, `indTotTrib`, `finNFSe`, `regEspTrib`), onde zero é um **significado**
+e não um valor. O mesmo defeito já tinha aparecido em três campos diferentes
+antes de virar varredura.
+
+### O número da nota agora tem o ano na frente — e a numeração sabe disso
+
+No padrão nacional a nota volta com **13 dígitos**: ano (26) + o nosso sequencial
+em 11. As duas primeiras, de 08/10/2026, são a **`2600000003283`** e a
+**`2600000003284`** — sequenciais 3283 e 3284, confirmando que o número longo é
+montado a partir do nosso. Tanto `nNFSe` como `nDFSe` vêm assim; **não existe um
+número municipal curto separado** no XML.
+
+É esse número oficial que fica na planilha, no Omie e no documento do cliente —
+guardar o `3283` ali seria mais cômodo, mas faria o sistema divergir do que a
+prefeitura e o cliente veem, e conciliar é para que a coluna serve.
+
+**O cuidado que isso exige, e ele não é opcional:** o próximo número sai do maior
+da planilha mais um. Lido cru, `2600000003283 + 1` pediria a nota
+**2.600.000.003.284**, e a sequência nunca mais voltaria. Então o número gravado é
+traduzido de volta ao sequencial antes de qualquer conta
+(`worker.sequencial_da_nota`): 13 dígitos é nacional e tem o ano na frente,
+qualquer outro é do modelo antigo. A planilha tem os dois formatos convivendo.
 
 ### A declaração é gravada antes de qualquer espera
 
@@ -364,7 +484,10 @@ Todas pedem o mesmo `token` na URL. Não há login: quem tem o link, entra.
 | `/emissao/nacional_xml` | fecha uma nota colando o **XML nacional** baixado do portal |
 | `/emissao/manual` | **"Nota emitida no portal".** Para nota emitida à mão no portal da prefeitura (canal fora do ar, ou caso que só dá por lá). Recebe o **XML** — dele saem os dados, exatos — e, opcionalmente, o **PDF oficial**, que entra como o documento em vez da nossa réplica. Faz todo o resto: planilha, Omie, card, Drive e avisos. **Não emite nada** |
 | `/emissao/planilha` | **"Só a linha da planilha".** Para a nota que saiu certa em TUDO — Omie, card, arquivos, cliente — e cuja linha da "Notas BWS" não entrou. Grava a linha e **não toca em mais nada**. Os valores saem do **XML**, não do card: a conclusão limpa doze campos de entrada do card, então recalcular a nota depois daria números diferentes dos emitidos. Usar `/emissao/recuperar` ou `/emissao/manual` neste caso preencheria um **segundo slot** no card, mexeria no Omie de novo e mandaria o WhatsApp outra vez |
+| `/emissao/faturamento` | **"Base de Faturamento".** Consolida numa aba só (`Base Faturamento`) o que hoje está em cinco planilhas — e é ela que vai alimentar a tela de Faturamento do Análise de SPs. Roda em **lotes** e diz quantas faltam; repetir não duplica. Não apaga nada e não emite nada. O desenho está em `FATURAMENTO.md` |
+| `/emissao/omie` | **"Tributos no Omie".** As três operações que sobraram do Apps Script: **consultar** o título, **equalizar** os tributos e **atualizar** o Omie. Confere por padrão (leitura); alterar o Omie exige **confirmação marcada**. A nota manda e o título obedece; nota cancelada fica fora |
 | `/emissao/declaracao?…&diagnostico=1` | **"Diagnóstico completo desta declaração".** Pergunta sobre ela na prefeitura E direto na plataforma nacional, e mostra as respostas cruas. A pergunta que decide é a terceira: se o nacional **não conhece** a declaração e a prefeitura diz que transmitiu, as versões não fecham — e a transmissão é ela que faz. O texto é feito para ser copiado e mandado a ela; nunca mostra token nem certificado |
+| `/emissao/declaracao?…&encerrar=1` | **"Encerrar".** Aparece só nas declarações **paradas** da lista. Tira a declaração da lista, para o caso em que a API nunca conta a recusa (a 3281 passou um dia respondendo "em processamento" enquanto o portal já a dava como recusada). **Não libera o número** — número enviado fica gasto (ver EL99 acima). Não emite, não cancela e não apaga nada |
 | `/emissao/declaracao` | **"Conferir declaração".** A saída do único aperto desta área: a prefeitura aceitou a declaração e a nota não ficou pronta na hora. Pergunta a ela se a nota saiu e, se saiu, **termina o serviço** — sem emitir nada. Consultar não cria nada, então pode repetir |
 | `/emissao/diag` | diz **por que** o certificado não carregou, qual token chegou e de onde, e qual conta do Google está sendo usada — sem mostrar segredo |
 | `/emissao/diag_nacional_chave` | só leitura: testa quais endpoints federais respondem por chave |
@@ -471,6 +594,21 @@ para achar o token quando ele está lá com outro rótulo. Chega-se a ela pelo l
 no pé da tela de emissão, que já leva o token dentro.
 
 ---
+
+## A base consolidada de faturamento
+
+A gestão das notas emitidas está saindo da aba "Notas BWS" para uma **base
+consolidada** (`Base Faturamento`, 64 colunas), que alimenta uma tela de
+Faturamento no Análise de SPs.
+
+Duas regras valem decoradas, porque errá-las enche a base de número errado:
+**os tributos vêm de BB em diante e SÓ** (de P a BA é metodologia abandonada,
+com o mesmo conjunto repetido três vezes), e **nada que venha da C. Diários
+entra na base** — a tela cruza pelo código da obra. **Todo o desenho está em `FATURAMENTO.md`**: o que o emissor usa
+de cada planilha hoje, as 71 colunas da base e de onde cada uma vem, o inventário
+do Apps Script da planilha, e o que depende de decisão do dono.
+
+Enquanto a transição não acabar, **o emissor grava nos dois lugares**.
 
 ## O que esta área NÃO tem
 

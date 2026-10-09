@@ -145,6 +145,56 @@ EXPLICACAO_DOS_ERROS = {
         "teste, o ensaio não vai funcionar — e a conferência de uma emissão real "
         "passa a ser a tela \"Conferir declaração\"."
     ),
+    "E0370": (
+        "A declaração saiu **sem a identificação da obra**, e a plataforma "
+        "nacional exige esse grupo para serviço de construção civil. É o erro "
+        "que derrubou a nota 3281 em 07/10/2026 — o município aceitou a "
+        "declaração e o nacional recusou, por isso a nota ficava \"em "
+        "processamento\" para sempre.\n\n"
+        "A identificação é o **CNO** da obra, que fica na coluna CNO da "
+        "C. Diários. O sistema passou a mandá-lo em 08/10/2026 e barra a "
+        "emissão antes de enviar quando ele está vazio.\n\n"
+        "O que fazer: conferir se a obra tem CNO preenchido na C. Diários. Se "
+        "tiver e o erro persistir, o número pode estar errado ou truncado — o "
+        "normal são 12 dígitos."
+    ),
+    "E0959": (
+        "O **CST** e a **classificação tributária** do IBS/CBS não casavam. Não é "
+        "campo de escolha: **o CST são os três primeiros dígitos da "
+        "classificação**. O nosso serviço (obra, item 07.02) usa a classificação "
+        "`200046` — \"Operações com bens imóveis\" —, então o CST tem de ser "
+        "`200`, e ia `000`.\n\n"
+        "Consertado em 08/10/2026: o CST passou a ser derivado da classificação, "
+        "e a declaração nem é montada se os dois não casarem.\n\n"
+        "O que fazer: se este erro voltar, foi a classificação que mudou — "
+        "conferir no Anexo VIII oficial qual classificação vale para o item de "
+        "serviço, que o CST sai dela sozinho."
+    ),
+    "EL99": (
+        "Este erro é da **prefeitura**, não da plataforma nacional, e quer dizer "
+        "que ela não encontrou a declaração no repositório dela — a identificação "
+        "informada não existe lá.\n\n"
+        "Quando aparece logo depois de enviar, as duas causas conhecidas são: a "
+        "gravação dela ainda não tinha terminado quando perguntamos (e aí "
+        "consultar de novo em alguns minutos resolve), ou o **número da nota já "
+        "havia sido usado numa declaração anterior** — reusar o número reusa a "
+        "identificação, e a prefeitura não aceita.\n\n"
+        "⚠️ **Isto NÃO quer dizer que nada foi criado.** Diferente de uma recusa "
+        "de conteúdo, aqui a prefeitura já tinha aceitado o envio. **Antes de "
+        "emitir de novo, confira no portal da prefeitura** se a nota existe — e, "
+        "se for emitir, use um número NOVO."
+    ),
+    "E0699": (
+        "**CP** é a contribuição previdenciária — o INSS. A declaração mandava o "
+        "campo dele com **0,00**, e a plataforma recusa valor zero: o campo é "
+        "opcional no layout, e imposto que não foi retido simplesmente **não "
+        "vai**.\n\n"
+        "Zero declara uma retenção DE valor zero, que é diferente de não haver "
+        "retenção. A nota afetada é a de obra cuja tributação não retém INSS.\n\n"
+        "Consertado em 08/10/2026 para os três campos federais (INSS, IR e CSLL): "
+        "só vão os que foram de fato retidos, e se nenhum foi o grupo inteiro não "
+        "sai. É a mesma regra que o PIS/COFINS já seguia."
+    ),
 }
 
 
@@ -439,13 +489,15 @@ def emitir(ctx: dict, dados_dps: nac.DadosDPS, token: str, producao: bool,
             raise DeclaracaoRecusada(motivos, id_dps=id_dps)
         xml_nac = nac.ELNfseNacional.descompactar(proc.get("nfseXmlGZipB64", "") or "")
         if proc.get("chaveAcesso") and xml_nac and "processamento" not in xml_nac.lower():
-            return dados_da_nota(xml_nac)
+            # O id da declaração viaja junto: é por ele que a nota se liga à
+            # declaração que a gerou, e a base de faturamento guarda essa ligação.
+            return {**dados_da_nota(xml_nac), "id_dps": id_dps}
         # Quando a prefeitura diz que já transmitiu, a plataforma nacional passa a
         # ser a fonte melhor — e às vezes a nota já está lá.
         if "adn" in (xml_nac or "").lower():
             achada = _consultar_no_nacional(ctx, id_dps, producao)
             if achada:
-                return achada
+                return {**achada, "id_dps": id_dps}
         if xml_nac and "processamento" not in xml_nac.lower() and "<" not in xml_nac:
             ultimo = xml_nac
         if time.time() >= limite:

@@ -1307,6 +1307,41 @@ como fronteira do nome, e como o texto examinado é `"id nome"`, o CNPJ pegava
 certo.** Só apareceu ao digitar um telefone de verdade no navegador.
 
 
+### 09/10/2026 — A TELA DE FATURAMENTO É DO ANÁLISE DE SPs (atravessa áreas)
+
+**Para o chat do Análise de SPs, que é quem vai construir a tela.** O dono pediu
+uma tela de **Faturamento** para fazer a gestão das notas emitidas — ver
+faturamento, baixar a nota, gráfico de evolução, filtros — em vez de trabalhar
+na planilha "Notas BWS", que ele chama de bagunça.
+
+**A base de dados dela já existe e já está no ar.** Foi construída na área
+`emissaonf` em 09/10/2026, porque é o emissor que produz o dado:
+
+- **aba `Base Faturamento`**, na planilha das notas (`1NOEzey3…PpEbU`), 64
+  colunas, **uma linha por nota**;
+- o emissor grava nela a cada emissão (e continua gravando na "Notas BWS"
+  também, por decisão do dono, até a base nova estar conferida);
+- a tela `/emissao/faturamento` traz as notas antigas, em lotes;
+- a tela `/emissao/omie` confere os tributos contra o título do Omie.
+
+> 📄 **Leia `app/apps/emissaonf/FATURAMENTO.md` antes de começar a tela.** Está
+> lá: o nome e o significado de cada uma das 64 colunas, de onde cada uma vem,
+> **o que está vazio e por quê**, e as regras que não dá para adivinhar.
+
+**Os três pontos que mais importam para quem monta a tela:**
+
+1. **A C. Diários NÃO está na base, de propósito.** Obra, contrato, tributação,
+   município, **empresa** e **SCP** são atributos da obra — a tela cruza pela
+   coluna `obra_codigo`. Nem toda obra é faturada no CNPJ da BWS, e algumas são
+   SCP com CNPJ próprio: é um eixo de visualização que ele quer.
+2. **Cada tributo aparece duas vezes:** o que a nota declarou e o que está no
+   título do Omie, mais os campos `divergencia_tributos` e
+   `divergencia_recebimento`. Eles ficam **vazios** quando não há com o que
+   comparar — vazio não é zero, e mostrar "conferido" ali seria mentira.
+3. **O número da nota tem 13 dígitos no padrão nacional** (ano + sequencial).
+   Há a coluna `nota_sequencial` com o número curto, que é por onde o dono
+   procura.
+
 ### 07/10/2026 — A PREFEITURA DESLIGOU O MODELO DA NOTA (atravessa áreas)
 
 A prefeitura de Eusébio desativou o modelo ABRASF, por causa da obrigatoriedade
@@ -1332,6 +1367,43 @@ e não foi mexido porque a regra do `CLAUDE.md` é não mexer nas outras áreas.
 tomador que já descontou. Em nota fiscal, que não se apaga. **Atenuante:** a
 emissão automática do ERP pode nunca ter sido usada em produção — conferir antes
 de tratar como incidente.
+
+**2-B. E o ERP tem o MESMO defeito do grupo de obra (08/10/2026) — também não
+corrigido aqui.** A plataforma nacional **exige o grupo de obra** quando o código
+do serviço é de construção civil (erro **E0370**, treze subitens, entre eles o
+**07.02.02**). O `emissaonf` descobriu isso do jeito caro: a nota 3281 foi aceita
+pelo município e recusada no nacional, e a recusa só apareceu numa tela de
+pendências do portal, um dia depois. O `emissaonf` foi consertado — passou a
+mandar o CNO da obra.
+
+O ERP monta o `DadosDPS` na mesma função que tem a inversão do ISS
+(`app/apps/erp/core/notas_emitidas/automatica.py`), com
+`c_trib_nac=COD_TRIB_NAC_EMPREITADA` e **sem o grupo de obra**. O campo novo
+`DadosDPS.obra` nasce `None`, então o ERP continua funcionando exatamente como
+antes — e exatamente como antes ele vai levar E0370 na primeira emissão real de
+serviço de construção.
+
+**O que o chat do ERP precisa fazer:** preencher `obra=GrupoObra(c_obra=<CNO>)`.
+O ERP tem onde guardar — o cadastro de obra já prevê a matrícula CNO. E vale
+notar: **nenhum teste de schema pega isso**, porque no XSD o grupo é opcional; a
+obrigatoriedade é regra de negócio da plataforma.
+
+**2-C. ⚠️ A credencial do OMIE está em texto claro no Apps Script da planilha
+(09/10/2026).** Ao mandar o projeto do Apps Script da planilha "Controle de
+Impostos e Emissão de Nota" para análise, apareceu que o arquivo
+`OmieRateiroeConsulta.gs` traz, em texto claro, as chaves que o código chama de
+`OMIE_APP_KEY` e `OMIE_APP_SECRET` — e também a URL do webhook do Make
+(`WEBHOOK_BASE`). Quem abre o editor de script da planilha tem a credencial do
+OMIE da empresa.
+
+**Os valores não entram aqui, e não entraram no repositório** — conferido: não
+estão em nenhum arquivo nem no histórico do git. **A ação é do dono: trocar na
+origem**, no painel do OMIE, e passar a ler de onde o repositório já lê.
+
+No repositório o padrão sempre foi outro: `app/apps/emissaonf/omie.py` lê
+`OMIE_KEY` e `OMIE_SECRET` da aba Credenciais. É o mesmo tipo de incidente do
+`EL_NFSE_TOKEN` (§9) — e, como lá, o que resolve é a troca na origem, não apagar
+o arquivo.
 
 **3. Os schemas oficiais da NFS-e nacional entraram no repositório**
 (`app/apps/emissaonf/xsd_nacional/`). São 240 KB de `.xsd` do pacote que a

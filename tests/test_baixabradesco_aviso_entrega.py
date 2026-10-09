@@ -201,3 +201,78 @@ def test_avisar_nunca_derruba_a_baixa_que_ja_aconteceu(monkeypatch):
 
     assert r['ok'] is False
     assert 'alerta' in r
+
+
+# =====================================================================
+# 3. sem credencial Z-API — provavelmente o caminho da produção
+# =====================================================================
+# As credenciais Z-API chegam DENTRO do pedido do Make. O serviço automático
+# (o cron) não tem pedido nenhum, então ele cai sempre no notificador — que
+# devolve um dicionário POR CANAL, sem `ok` no topo. Devolver isso cru fazia o
+# relatório dizer "nenhum canal entregou" mesmo quando o Telegram entregava, e
+# zerava o `ok` do aviso inteiro. Mentia justamente onde mais se olha.
+
+def _sem_zapi(monkeypatch):
+    import app.apps.baixabradesco.zapi as z
+    monkeypatch.setattr(z, 'resolve_zapi_auth',
+                        lambda payload: {'instanceId': '', 'apiToken': '',
+                                         'clientToken': ''})
+    monkeypatch.setattr(z, 'validate_zapi_auth',
+                        lambda auth: 'ZAPI_INSTANCE_ID, ZAPI_API_TOKEN')
+    monkeypatch.setattr(z, 'send_text',
+                        lambda *a, **k: (_ for _ in ()).throw(
+                            AssertionError('não deve chamar o Z-API sem credencial')))
+
+
+def test_notificador_que_entrega_pelo_telegram_nao_e_contado_como_falha(
+        monkeypatch):
+    monkeypatch.setattr(mod, 'resolver_telefones', lambda: ['5585987846225'])
+    _sem_zapi(monkeypatch)
+    _notificador(monkeypatch, {'whatsapp': {'ok': False},
+                               'telegram': {'ok': True, 'chat_id': '701...'}})
+
+    r = mod.enviar_aviso(RESULTADO, {})
+
+    assert r['ok'] is True
+    assert r['sem_entrega'] == []
+    assert r['so_pelo_telegram'] == ['5585987846225']
+    assert 'WhatsApp não entregou' in r['alerta']
+
+
+def test_notificador_que_entrega_pelo_whatsapp_conta_como_whatsapp(monkeypatch):
+    monkeypatch.setattr(mod, 'resolver_telefones', lambda: ['5585996992197'])
+    _sem_zapi(monkeypatch)
+    _notificador(monkeypatch, {'whatsapp': {'ok': True},
+                               'telegram': {'ok': None, 'detalhe': 'não executado'}})
+
+    r = mod.enviar_aviso(RESULTADO, {})
+
+    assert r['ok'] is True
+    assert r['entregues_no_whatsapp'] == ['5585996992197']
+    assert r['so_pelo_telegram'] == []
+    assert 'alerta' not in r
+
+
+def test_notificador_que_nao_entrega_por_canal_nenhum_e_falha_mesmo(monkeypatch):
+    monkeypatch.setattr(mod, 'resolver_telefones', lambda: ['5585996992197'])
+    _sem_zapi(monkeypatch)
+    _notificador(monkeypatch, {'whatsapp': {'ok': False}, 'telegram': {'ok': False}})
+
+    r = mod.enviar_aviso(RESULTADO, {})
+
+    assert r['ok'] is False
+    assert r['sem_entrega'] == ['5585996992197']
+    assert 'Nenhum canal entregou' in r['alerta']
+
+
+def test_a_resposta_do_notificador_fica_guardada_inteira(monkeypatch):
+    """Para quem for investigar: nada da resposta original se perde."""
+    monkeypatch.setattr(mod, 'resolver_telefones', lambda: ['5585996992197'])
+    _sem_zapi(monkeypatch)
+    bruto = {'whatsapp': {'ok': False, 'detalhe': 'instância desconectada'},
+             'telegram': {'ok': True}}
+    _notificador(monkeypatch, bruto)
+
+    r = mod.enviar_aviso(RESULTADO, {})
+
+    assert r['envios']['5585996992197']['notificador'] == bruto

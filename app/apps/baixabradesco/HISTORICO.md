@@ -1140,3 +1140,463 @@ blueprints.
 **Não verificado:** a drenagem pelo cron nunca rodou em produção. O primeiro
 disparo depois de publicar é a prova — e o campo a olhar é
 `fila_de_falhas.omie.o_que_falta_configurar`.
+
+---
+
+### 08/10/2026 (fim do dia) — publicado, e as respostas passaram a falar português
+
+**Publicado na `main` em `26e9187`**, com o "pode" do dono e a confirmação de que
+as variáveis do Render existem (`OMIE_KEY`, `OMIE_SECRET`, `PIPEFY_API_TOKEN`,
+`ZAPI_*`). A `main` havia andado — outro chat publicou mexidas no painel —, então
+a `main` veio para o ramo primeiro, a suíte rodou com as duas coisas juntas e só
+então a junção. Sem conflito. Sem migração de banco.
+
+Entrou: o conferidor SPsBD × Omie, a fila andando sozinha pelo cron de 5 em 5
+minutos com o dinheiro na frente, o conserto do entupimento por aviso velho e a
+guarda do token do Pipefy.
+
+**Depois disso, uma coisa pequena e de efeito grande:** as respostas de
+`fila-resumo` e `conferir-omie` ganharam um campo `em_portugues`, com uma frase
+que diz o que os números querem dizer. O motivo é literal: o dono colou no chat
+a resposta inteira de `fila-resumo`, campo por campo, para perguntar o que ela
+significava. Ele lê isso pelo celular e não é programador — a resposta crua é
+chave-e-número. A frase vem **junto** com os números, nunca em lugar deles.
+
+Decisões pequenas registradas porque voltam a aparecer: a etapa aparece com nome
+de gente ("baixa no Omie", "aviso de pagamento"), não com o nome técnico; a maior
+quantidade vem primeiro; e a frase do conferidor **separa explicitamente** o que
+é dinheiro (planilha paga, Omie aberto) do que é cadastro errado (código que não
+existe no Omie) — juntar os dois assustaria sem motivo ou tranquilizaria sem
+motivo.
+
+**Verificado:** 9 testes novos sobre as frases, suíte inteira rodada (única falha
+é `erpbrasil` ausente neste ambiente, que falha igual na `main` publicada),
+aplicação subindo com os 18 blueprints.
+**Não verificado:** a drenagem pelo cron ainda não foi observada em produção. O
+número a acompanhar é `pendentes_vencidos`, que tem de cair dos 2.269.
+
+### Pendente AGORA (para a próxima sessão desta área)
+
+1. **Os 1.943 avisos antigos esperam decisão do dono** — descartar em massa
+   (recomendação registrada) ou reenviar. O cron não toca neles.
+2. **Confirmar que a drenagem andou**: `pendentes_vencidos` tem de cair. Se
+   continuar em 2.269, olhar `fila_de_falhas` na resposta do cron.
+3. **A chave do Omie em texto na aba `FilaAppWeb`** continua lá (achado de
+   segurança). Não impede nada; é risco.
+4. **Pix, boleto, transferência, FGTS e BeeVale seguem sem teste de campo** — falta
+   um comprovante de exemplo de cada, que só o dono tem.
+
+---
+
+### 08/10/2026 (noite) — o dono apontou o alvo certo, e meu conferidor olhava para o outro lado
+
+Com a drenagem já no ar, ele respondeu:
+
+> *"está caindo o número, já vi. Esses comprovantes antigos eu já devo ter
+> resolvido, e esses avisos antigos também. Fazemos conciliação bancária diária.
+> No sistema Omie vai estar tudo atualizado. O furo pode ser mais na planilha e
+> na movimentação do card."*
+
+Três coisas nessa frase, e as três mudam o trabalho:
+
+1. **A drenagem está funcionando** — o número cai. Primeira confirmação em
+   produção.
+2. **As 238 baixas do Omie provavelmente já estão pagas**, pela conciliação
+   diária. O reprocessamento consulta antes e, se achar `PAGO`, resolve a
+   pendência sem lançar nada — então a drenagem está fechando pendência de
+   registro, não pagando nada de novo. Era o comportamento pretendido, e agora
+   tem confirmação de por que ele era o certo.
+3. **O furo é na planilha e no cartão — e o meu conferidor não enxergava isso.**
+
+**O erro de direção, escrito para não se repetir:** o conferidor selecionava as
+linhas em que a planilha diz **Pago** e perguntava ao Omie. Ou seja, só achava
+"planilha paga, Omie aberto". O furo que ele descreve é o **contrário** — "Omie
+pago, planilha não" —, e essa direção era **invisível** para o conferidor, porque
+ela mora justamente nas linhas que a planilha ainda marca como "Pagar". Pela
+conciliação bancária diária, é também a direção **mais provável** das duas.
+
+E ela não aparece em lugar nenhum sem o conferidor: a fila de falhas tinha
+**zero** pendências de planilha, porque a gravação morria antes de chegar ao
+`enqueue_failure`. O sistema não tinha como saber que deixou de gravar.
+
+**O que ficou:** o conferidor passou a rodar nos dois sentidos, e o relatório põe
+o furo apontado por ele **na frente**, com nome próprio (`planilha_atrasada`).
+`sentido` escolhe: `ambos`, `omie_pago` ou `planilha_paga`.
+
+Decisões que valem registro porque são o tipo de coisa que se refaz errado:
+
+- **As duas janelas usam datas diferentes, e têm de usar.** A direção antiga tem
+  data de pagamento na planilha. A nova não tem — a planilha nem sabe que foi
+  paga —, então a janela é pelo **vencimento**. Sem janela seriam ~52 mil
+  consultas ao Omie. Vencimento muito à frente também sai: título que vence no
+  ano que vem não é planilha atrasada.
+- **Cada item da direção nova traz o link do cartão do Pipefy**, porque ele
+  apontou os dois furos juntos. O conferidor não consulta o Pipefy (seria outra
+  volta de API por item); entrega o link para quem for olhar.
+- **O limite vale por direção**, não somado: pedir 50 faz até 50 consultas de
+  cada lado, e não 25 de cada.
+- **Continua sem corrigir nada.** Agora com mais razão: corrigir "planilha
+  atrasada" é escrever na planilha a partir do que o Omie diz, e isso precisa de
+  conferência de valor e de data — é um passo próprio, não um efeito colateral
+  de um relatório.
+
+**Um defeito meu no caminho, e conto porque é instrutivo:** ao reescrever a
+seleção de candidatas, substituí um trecho grande de arquivo delimitado por
+"daqui até a próxima função" — e a próxima função não era a que eu pensava.
+Apaguei junto a função que monta a frase em português, sem perceber. A suíte
+apontou na primeira rodada. Trecho grande se substitui por âncora exata, não por
+intervalo.
+
+**Decisão do dono registrada:** ele considera os comprovantes e os avisos antigos
+já resolvidos. Então o descarte em massa dos 1.943 avisos deixa de ser dúvida e
+passa a ser só uma chamada quando ele quiser — nada é apagado, a linha fica com o
+motivo escrito.
+
+**Verificado:** 23 testes no conferidor (10 novos, cobrindo a direção nova, as
+duas janelas, o limite por direção e a ordem da frase), suíte inteira rodada com
+a única falha sendo `erpbrasil` ausente neste ambiente, aplicação subindo com os
+18 blueprints.
+**Não verificado:** a direção nova nunca rodou contra a planilha de verdade. É a
+primeira coisa a chamar depois de publicar, e com `apenas_contar=1` primeiro —
+ela pode trazer centenas de linhas para conferir, e aí o custo é consulta ao
+Omie.
+
+---
+
+### 08/10/2026 (noite, depois de publicar) — a continuação que a frase prometia e o código não cumpria
+
+**Publicado na `main` em `7d4e0cc`**, com o "pode" do dono: o conferidor nos dois
+sentidos, o conserto do segundo caminho de drenagem e as respostas em português.
+A `main` havia andado outra vez (o chat do ponto publicou, com migração própria —
+avisado ao dono), então a `main` veio para o ramo, a suíte rodou com as duas
+coisas juntas, e só então a junção.
+
+Revisando o meu próprio código depois de publicar, achei um defeito no que eu
+tinha **escrito para o dono ler**: a frase em português dizia *"faltam N para
+conferir — chame de novo para continuar"*, e isso era **mentira**. O conferidor
+não grava nada, então nada sai do conjunto entre uma chamada e a seguinte:
+chamar de novo reconsultaria as mesmas primeiras cinquenta linhas, para sempre.
+Ele pagaria consulta ao Omie para reler o mesmo pedaço e nunca chegaria ao resto.
+
+Entrou `pular`, que continua de onde parou, e a resposta devolve o
+`proximo_pular` **pronto** — quem lê isto no celular não deve ter de calcular
+nada. A frase só promete continuação quando existe continuação: na última
+página ela não manda chamar de novo.
+
+Registrado como lição porque é um tipo de erro que escapa fácil: **a frase em
+português é interface, e interface que promete o que o código não faz é pior que
+resposta crua.** Um teste cobre exatamente isso — frase sem continuação possível
+não contém "chame de novo".
+
+**Verificado:** 27 testes no conferidor (4 novos sobre a continuação), 11 sobre
+as frases, suíte inteira rodada com a única falha sendo `erpbrasil` ausente neste
+ambiente, aplicação subindo com os 18 blueprints.
+**Não verificado:** nada do conferidor rodou contra a planilha de verdade ainda.
+
+---
+
+### 08/10/2026 — revisão do que passou a rodar sozinho, e uma ineficiência deixada de propósito
+
+**Publicado na `main` em `6d307fe`:** a continuação do conferidor (`pular`). A
+`main` havia andado outra vez (Análise de SPs, conciliação), mesmo
+procedimento — `main` para o ramo, suíte inteira, junção. Sem migração.
+
+Depois de publicar, reli o laço de drenagem com cuidado, porque ele agora roda
+**sem ninguém olhando, a cada cinco minutos, contra os dados de verdade**. O que
+a revisão mostrou:
+
+**Está correto, e por quê, para não ser "consertado" errado depois:**
+
+- **Os itens não são remartelados.** Quem falha recebe próxima tentativa em +10
+  min, e a seleção só traz vencidos. Então cada disparo pega os *seguintes*, não
+  os mesmos — é isso que faz 238 baixas levarem ~80 minutos em vez de girar no
+  mesmo lugar.
+- **As quatro leituras por disparo são de linhas estáveis.** `enqueue_failure`
+  só acrescenta no fim e nada é apagado, então o número da linha não desloca
+  entre uma etapa e a seguinte. Não há risco de marcar a linha errada.
+- **O descarte em lote roda mesmo quando o laço para por cota**, e se a gravação
+  falhar ali os itens ficam `PENDENTE` — o estado verdadeiro. Não se finge que
+  gravou.
+
+**A ineficiência, deixada como está de propósito:** drenar por etapa faz
+`reprocessar_fila` ser chamada quatro vezes por disparo, e **cada chamada relê a
+faixa de controle `A2:L` inteira**. Com 2.269 linhas são ~27 mil células por
+leitura, quatro vezes a cada cinco minutos. Dá alguns megabytes por disparo —
+longe dos 150–250 MB que causaram o OOM de julho, e dentro da cota de leitura.
+
+O conserto seria ler uma vez e distribuir entre as etapas, o que obriga a
+reorganizar `reprocessar_fila`. **Não fiz hoje, e a razão é a situação:** isso
+acabou de entrar em produção e está drenando 2.269 pendências reais; mexer na
+estrutura do laço agora troca uma ineficiência tolerada por risco de defeito no
+que está funcionando. Fica anotado para quando a fila estiver vazia — aí o custo
+de errar é baixo. Se a aba crescer muito (dezenas de milhares de linhas), isso
+sai de "tolerável" e passa a ser o primeiro lugar a olhar.
+
+---
+
+### 08/10/2026 (manhã seguinte) — a segunda contagem do dono achou três coisas, e uma é grave
+
+Ele voltou com a contagem e uma queixa: *"tenho várias baixas que não aconteceram
+na planilha, mas acredito que foram depois das mudanças aqui, mas a fila ainda
+não rodou. E só preciso que rode as coisas desse mês em diante. O que tá pra
+trás, poderia zerar."*
+
+```
+linhas_na_aba      2273
+por_status         PENDENTE 2213 | CONCLUIDO 57 | STATUS 3
+por_etapa          zapi 1943 | omie 182 | pipefy 88
+mais antiga        18/06/2026 | mais recente  08/10/2026 09:05:45
+```
+
+**Primeiro: a fila RODOU.** Ele achou que não, e os números mostram que sim — 57
+concluídas (eram zero) e as baixas do Omie caindo de 238 para 182, 56 fechadas.
+A drenagem pelo cron funciona. Vale anotado porque é o tipo de coisa que ele não
+tem como ver: a planilha não mostra "o que mudou desde ontem".
+
+**Segundo, e é o furo que ele relatou — 182 pendências de `omie` com ZERO de
+`sheets`.** As duas coisas são o mesmo fato, e o fato é grave: a baixa falha no
+Omie **antes** de a planilha ser gravada. Então a planilha nunca foi escrita, e
+nunca houve pendência de planilha para enfileirar. Pior: a nova tentativa
+resolvia o Omie, marcava `CONCLUIDO` e **deixava a planilha desatualizada para
+sempre**. Ou seja, a drenagem que eu publiquei ontem estava fechando pendências e
+criando exatamente o problema que ele descreveu.
+
+Corrigido: quando o título está pago (inclusive quando já estava, pela
+conciliação diária), a nova tentativa **termina o plano** — grava a planilha e
+move o cartão. A gravação da planilha **segura** o item na fila se falhar: é o
+registro do pagamento. O cartão do Pipefy **não** segura, ganha pendência própria
+— registro certo nos dois sistemas não deve ficar preso por um cartão. Repetir é
+seguro, e é o que sustenta o desenho: a consulta devolve "já pago" e não lança
+nada de novo, e a regravação escreve os mesmos valores nas mesmas células.
+
+**Terceiro: `STATUS 3` no `por_status` era defeito MEU, visível nos dados dele.**
+Três linhas com Status = "STATUS" no meio da fila, contadas como pendência. Eu
+troquei a conferência do cabeçalho por uma leitura de `A1:O1` (certo, para não
+ler a aba inteira), mas deixei o `append_row` do caminho "cabeçalho ausente" —
+e `append_row` acrescenta no **fim** da aba, não na linha 1. Bastou a leitura
+voltar vazia uma vez, num soluço de rede, para nascer lixo. Agora: `update`
+na faixa `A1:O1`, nunca `append_row`; leitura que falha **não** autoriza escrita
+nenhuma; e a seleção ignora linha cujo Status seja "STATUS", para o estrago já
+feito não voltar a contar.
+
+**Quarto, o pedido dele: zerar o que está para trás.** Entrou
+`POST /api/baixabradesco/zerar-fila-antiga` com `antes_de`. Decisões:
+
+- **Nada é apagado.** A linha fica, marcada concluída, com o motivo e a data da
+  decisão escritos — quem abrir a planilha em dezembro entende por quê.
+- **`antes_de` é obrigatório.** Um "zerar tudo" sem data é fácil de disparar por
+  engano, e desfazer linha por linha seria trabalho de horas.
+- **Só POST**, pelo mesmo motivo: um endereço que o navegador ou a prévia de um
+  aplicativo de mensagem busque sozinho dispararia isso por acidente.
+- **Marcação em lote** (blocos de 50 linhas): 1.943 linhas não podem custar 1.943
+  escritas de cota.
+- A razão de negócio, porque é dele e não minha: ele faz **conciliação bancária
+  diária**, então o que ficou para trás já foi resolvido na mão — a pendência é
+  de registro, não de dinheiro.
+
+**Verificado:** 47 testes de fila (16 novos), área inteira passando, aplicação
+subindo com os 18 blueprints e a rota nova registrada.
+**Não verificado:** a conclusão do plano na nova tentativa nunca rodou contra a
+planilha de verdade. É o que vai dizer se as "baixas que não aconteceram na
+planilha" param de aparecer.
+
+---
+
+### 08/10/2026 — a entrega estava pela metade, e eu só vi relendo o pedido
+
+**Publicado na `main` em `8e8a5ff`:** os três consertos da entrada anterior.
+
+Depois de publicar, reli o que ele tinha pedido — *"só preciso que rode as coisas
+desse mês em diante. O que tá pra trás, poderia zerar"* — e vi que eu havia
+entregado **a ferramenta, não o resultado**: a rota `zerar-fila-antiga` existia,
+mas só aceita POST (de propósito), e ele lê o chat pelo celular. Ou seja, eu tinha
+transformado um pedido dele numa tarefa para ele. Isso é estreitar o escopo
+calado, e é tão ruim quanto parar no meio da fila.
+
+**O que ficou:** o mutirão pega carona no mesmo cron, em blocos de 500 por
+disparo, e **zera antes de drenar** — senão a drenagem gastaria a passada inteira
+nas linhas que vão ser dispensadas dois segundos depois.
+
+Decisões que valem registro:
+
+- **A data de corte é FIXA (`01/10/2026`), não "o mês corrente".** Ele autorizou
+  zerar o que estava para trás *naquele dia*. Uma regra que andasse com o
+  calendário ficaria dispensando pendência nova todo dia primeiro — a forma mais
+  silenciosa possível de perder trabalho, e exatamente o tipo de coisa que
+  ninguém descobre por meses.
+- **É um mutirão que se encerra sozinho.** Depois que as linhas antigas estão
+  marcadas, nenhuma casa com o critério e a passada fica de graça. Não é política
+  permanente.
+- **Dá para desligar pelo ambiente** (`BAIXABRADESCO_ZERAR_ANTES_DE` vazia), sem
+  mexer no código e sem esperar publicação.
+- **Falha no mutirão não impede a drenagem.** São duas coisas independentes, e a
+  drenagem é a que resolve dinheiro.
+
+**Por que eu julguei que isto não precisava de novo "pode":** ele escreveu "o que
+tá pra trás, poderia zerar" com todas as letras, nada é apagado (a linha fica com
+o motivo e a data da decisão escritos), e o `CLAUDE.md` é explícito em que
+pergunta já respondida não se repete. Ficou registrado aqui para ele poder
+discordar — e `BAIXABRADESCO_ZERAR_ANTES_DE` vazia desliga na hora, sem
+publicação.
+
+**Verificado:** 14 testes de cron (7 novos), área inteira passando, suíte completa
+rodada com a única falha sendo `erpbrasil` ausente neste ambiente, aplicação
+subindo com os 18 blueprints.
+**Não verificado:** o mutirão nunca rodou contra a planilha de verdade. O sinal
+de que funcionou é `pendentes_vencidos` caindo em blocos de 500 e
+`registro_mais_antigo` saltando para outubro.
+
+---
+
+### 08/10/2026 — publicado o mutirão, e ele passou a saber dizer que acabou
+
+**Publicado na `main` em `7c26b0b`**, com o "pode ligar o serviço automático e
+pode publicar ao concluir" do dono — que era exatamente o que havia acabado de
+ser ligado.
+
+Logo depois, um detalhe que ia sobrar para ele: o mutirão **não sabia dizer que
+havia terminado**. Ele ficaria olhando a contagem sem saber o que esperar, e a
+varredura seguiria custando uma leitura da faixa de controle a cada cinco
+minutos, de graça, para sempre. Agora, quando não há mais nada anterior ao
+corte, a resposta do cron traz `atraso_zerado.concluido` e a frase diz para
+esvaziar `BAIXABRADESCO_ZERAR_ANTES_DE`.
+
+Ficou anotado o encadeamento, porque é o tipo de coisa que a próxima sessão
+precisa saber para não achar que está tudo certo: **enquanto ninguém esvaziar
+aquela variável, a leitura extra continua.** Não quebra nada e está dentro da
+cota — mas é a mesma ineficiência das quatro leituras por disparo, agora cinco.
+O conserto de verdade é ler a faixa uma vez por disparo e distribuir entre as
+etapas, e segue valendo o motivo de não fazer agora: há 2.213 pendências reais
+passando por esse laço neste momento.
+
+**Verificado:** 16 testes de cron (2 novos), suíte inteira rodada com a única
+falha sendo `erpbrasil` ausente neste ambiente, aplicação subindo com os 18
+blueprints.
+
+---
+
+### 08/10/2026 — relendo o módulo de avisos, um defeito no caminho que a produção usa
+
+**Publicado na `main` em `df183ff`:** o mutirão avisando quando acaba.
+
+Depois disso reli o `avisos.py` inteiro — ele manda mensagem para dois celulares
+e foi mexido hoje — e achei um defeito que os testes de hoje não pegavam, porque
+eu só havia coberto o caminho **com** credencial Z-API.
+
+**O defeito:** quando a credencial Z-API não vem, o aviso sai pelo notificador
+comum, que devolve um dicionário **por canal** (`{"whatsapp": {...}, "telegram":
+{...}}`), **sem `ok` no topo**. Esse resultado era devolvido cru. Como o relatório
+decide tudo por `r.get('ok')`, o aviso entregue pelo Telegram era contado como
+**"nenhum canal entregou"**, e o `ok` do aviso inteiro ia para falso.
+
+**Por que isso importa mais do que parece:** as credenciais Z-API chegam *dentro
+do pedido do Make*. O serviço automático — o cron que acabou de ganhar a
+drenagem e o mutirão — **não tem pedido nenhum**. Então esse é, muito
+provavelmente, o caminho que a produção percorre, e o relatório mentiria
+justamente onde mais se olha. É plausível que explique parte dos 1.943
+`zapi_erro` acumulados.
+
+Corrigido: a resposta do notificador passa a ser traduzida para o mesmo formato
+dos outros envios, com `ok` no topo e o braço do WhatsApp separado — e a resposta
+original fica guardada inteira, para quem for investigar.
+
+**A lição, e ela é a mesma de hoje mais cedo:** cobri o caminho feliz e deixei o
+caminho sem credencial sem teste. Os quatro defeitos que achei hoje por releitura
+(a função apagada, o entupimento da fila, a frase que prometia continuação, o
+cabeçalho no fim da aba) e este têm a mesma assinatura: **o caminho de exceção não
+tinha teste.** Caminho de exceção em código que mexe com dinheiro é onde o defeito
+mora, porque é o que ninguém exercita à mão.
+
+**Verificado:** 15 testes de entrega de aviso (4 novos, todos no caminho sem
+credencial), suíte inteira rodada com a única falha sendo `erpbrasil` ausente
+neste ambiente, aplicação subindo com os 18 blueprints.
+**Não verificado:** se o WhatsApp está de fato entregando em produção. O
+relatório agora diz a verdade sobre isso — antes não dizia —, mas só a primeira
+falha real depois disto vai mostrar.
+
+---
+
+### 08/10/2026 — aplicando a própria lição: os caminhos de exceção do conferidor
+
+**Publicado na `main` em `546a89b`:** o conserto do aviso que mentia no caminho
+sem credencial Z-API.
+
+Logo depois, apliquei ao conferidor a lição que eu mesmo acabei de escrever —
+*os defeitos de hoje todos moravam no caminho de exceção* — e achei outro, que
+atingiria o dono diretamente:
+
+**Os parâmetros da rota chegam como TEXTO**, porque vêm da barra do navegador
+(`?dias=60&limite=50`). E `int('sessenta')` levanta exceção, que virava **500 com
+rastro de pilha** na tela de quem digitou. Quem usa isto digita o endereço no
+celular; um erro de digitação não pode responder com página de erro de
+programador. Agora cada número passa por `_inteiro`, que cai no padrão quando
+não dá para ler.
+
+**Uma decisão de desenho que importa mais do que parece:** valor **fora de faixa
+cai no PADRÃO, não no mínimo.** `dias=0` virando janela de um dia não acharia
+quase nada e responderia *"nenhuma divergência"* — a resposta mais perigosa que
+um conferidor pode dar, porque tranquiliza sem ter conferido. Com `dias=0` a
+janela volta a ser 60 dias.
+
+**Verificado:** 32 testes no conferidor (5 novos, todos de caminho de exceção),
+suíte inteira rodada com a única falha sendo `erpbrasil` ausente neste ambiente,
+aplicação subindo com os 18 blueprints.
+
+---
+
+### 08/10/2026 — o mutirão funcionou, e a fila travou em dois limbos meus
+
+Números do dono, depois do mutirão rodar:
+
+```
+concluidos             2149   (eram 57)
+pendentes_vencidos      121   (eram 2.213)
+por_etapa              zapi 116 | omie 5
+pendentes_agendados       0
+falhados                  0
+registro_mais_antigo   01/10/2026 11:25:49   (era 18/06)
+```
+
+**O mutirão fez o trabalho:** 2.149 dispensadas, e a mais antiga saltou de junho
+para 1º de outubro, exatamente o corte autorizado. A drenagem fechou o resto.
+
+Mas ele voltou dizendo *"não baixa mais disso, já tá há muito tempo aí"* — e
+estava certo. As 121 restantes **nunca** iam andar, por dois motivos, e os dois
+eram limbos que eu mesmo criei:
+
+**1. Os 116 avisos (01/10 a 05/10).** A regra "aviso com mais de três dias não é
+reenviado" fazia a drenagem apenas **pular** esses itens: não enviava e não
+marcava. Ficavam `PENDENTE` para sempre. Eu tinha escrito a metade da regra e
+parado: decidi que não seriam enviados e não concluí o raciocínio — se nunca mais
+serão enviados, estão resolvidos do ponto de vista da fila, e a linha tem de
+dizer isso. Agora `dispensar_avisos_vencidos` roda no cron, antes da drenagem,
+com o motivo escrito na linha. Vale **só** para aviso: dinheiro não envelhece.
+
+**2. As 5 baixas paradas por configuração.** A linha não recebia **nada** — nem
+motivo, nem próxima tentativa. Resultado: retentadas de cinco em cinco minutos
+para sempre, sem nada escrito dizendo por quê, e aparecendo na contagem como
+pendência comum. Daí `pendentes_agendados: 0` e `falhados: 0` ao mesmo tempo —
+que, lidos juntos, eram a assinatura do defeito. Agora o motivo vai para a linha
+e a próxima tentativa vai para seis horas à frente.
+
+**A distinção que sustenta esse conserto, e errar em qualquer direção custa:**
+*tentativa* não é *agendamento*. Contar o bloqueio como tentativa marcaria o item
+como `FALHOU` em cinco passadas, apagando pendência de verdade. Não reagendar faz
+a varredura insistir a cada cinco minutos e esconder o que de fato anda. Então:
+reagenda longe, não gasta tentativa, e escreve o motivo.
+
+**A lição, e é a sétima do dia com a mesma assinatura:** *"pular"* não é um
+estado — é a ausência de decisão. Todo item que o sistema decide não processar
+tem de receber um estado que diga isso, senão vira pendência eterna. O mesmo
+raciocínio dos seis defeitos anteriores: **o caminho que não faz nada é um
+caminho, e precisa de teste.**
+
+**O que o dono vai ver:** as 116 saem no próximo disparo; as 5 passam a dizer na
+planilha o que falta configurar (a suspeita é SP sem Código Integração, que a
+nova tentativa não tem como baixar no Omie — e aí é cadastro, não robô).
+
+**Verificado:** 53 testes de fila (6 novos), 18 de cron (2 novos), suíte inteira
+rodada com a única falha sendo `erpbrasil` ausente neste ambiente, aplicação
+subindo com os 18 blueprints.
+**Não verificado:** nada disso rodou contra a planilha de verdade. O sinal é
+`pendentes_vencidos` cair de 121 para ~5, e essas 5 ganharem motivo escrito.

@@ -131,7 +131,9 @@
         {# O dia sem nada não é link: clicar para ver uma lista vazia gasta uma
            ida ao servidor para não responder nada. #}
         {% if d.quantidade %}
-          <a class="cal-dia {{ '' if d.do_mes else 'fora' }}
+          {# 09/10/2026: o clique ABRE O DIA NUMA JANELA, como no painel; o
+             endereço da lista continua no link (ctrl+clique, nova aba). #}
+          <a data-dia="{{ d.data }}" class="cal-dia {{ '' if d.do_mes else 'fora' }}
                     {{ 'hoje' if d.hoje }} {{ 'nao-util' if d.feriado or d.fim_de_semana }}
                     {{ 'urgencia-' ~ d.faixas[0].cor if d.faixas }}"
              href="{{ url_for('analisesps.solicitacoes') }}?f=1&{{ 'pgt_ini' if tipo == 'pagas' else 'periodo_ini' }}={{ d.data }}&{{ 'pgt_fim' if tipo == 'pagas' else 'periodo_fim' }}={{ d.data }}{{ sem(['ano', 'mes', 'pagina', 'periodo_ini', 'periodo_fim', 'pgt_ini', 'pgt_fim', 'tipo', 'f', 'status_pgt']) }}{% for s in status_do_dia %}&status_pgt={{ s|urlencode }}{% endfor %}"
@@ -187,4 +189,116 @@
     inclusive os dias do mês vizinho que aparecem nela.
   </p>
 </div>
+
+{# ---------------------------------------------------------------------------
+   O DIA NUMA JANELA (09/10/2026). O dono: *"o calendário tem que abrir um modal
+   conforme abre no painel, para exibir as informações do dia; da forma que
+   está, ele está redirecionando para a tela de Solicitações."* As setas andam
+   de um dia para o outro; duplo clique numa SP abre a ficha dela por cima.
+--------------------------------------------------------------------------- #}
+<dialog id="dia-cal" class="dialogo dialogo-dia-cal">
+  <div class="dia-cal-cab">
+    <button type="button" class="btn secundario" id="dia-cal-anterior" title="dia anterior (seta ←)">‹</button>
+    <h3 id="dia-cal-titulo">Dia</h3>
+    <button type="button" class="btn secundario" id="dia-cal-seguinte" title="dia seguinte (seta →)">›</button>
+    <span class="cartao-dica" id="dia-cal-resumo"></span>
+    <a class="btn secundario" id="dia-cal-lista" href="#">Ver na lista</a>
+    <button type="button" class="btn secundario" id="dia-cal-fechar">Fechar</button>
+  </div>
+  <div id="dia-cal-corpo"><p class="cartao-dica">Carregando…</p></div>
+</dialog>
+{% endblock %}
+
+{% block scripts %}
+{% if abre_ficha %}{% include "analisesps_ficha_modal.html" %}{% endif %}
+<script>
+(function () {
+  const dlg = document.getElementById("dia-cal");
+  if (!dlg || !dlg.showModal) return;          // navegador antigo: o link serve
+  const corpo = document.getElementById("dia-cal-corpo");
+  const titulo = document.getElementById("dia-cal-titulo");
+  const resumo = document.getElementById("dia-cal-resumo");
+  const lista = document.getElementById("dia-cal-lista");
+  const ABRE_FICHA = {{ 'true' if abre_ficha else 'false' }};
+  const esc = t => String(t == null ? "" : t).replace(/[&<>"]/g,
+      c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+  const SITUACAO = {vencido: ["vencido", "faixa-vermelho"], a_vencer: ["a vencer", "faixa-laranja"],
+                    pago: ["pago", "faixa-azul"], outros: ["outros", "faixa-cinza"]};
+  const linkDoDia = {};
+  document.querySelectorAll("a.cal-dia[data-dia]").forEach(a => { linkDoDia[a.dataset.dia] = a.href; });
+  let diaAberto = null, pedido = 0;
+
+  const somar = (iso, n) => {
+    const d = new Date(iso + "T12:00:00Z");
+    d.setUTCDate(d.getUTCDate() + n);
+    return d.toISOString().slice(0, 10);
+  };
+
+  async function abrir(dia) {
+    diaAberto = dia;
+    const meu = ++pedido;
+    titulo.textContent = "Dia " + dia.slice(8, 10) + "/" + dia.slice(5, 7) + "/" + dia.slice(0, 4);
+    resumo.textContent = "";
+    lista.hidden = !linkDoDia[dia];
+    if (linkDoDia[dia]) lista.href = linkDoDia[dia];
+    corpo.innerHTML = '<p class="cartao-dica">Carregando…</p>';
+    if (!dlg.open) dlg.showModal();
+    const consulta = new URLSearchParams(window.location.search);
+    consulta.set("dia", dia);
+    try {
+      const r = await fetch("{{ url_for('analisesps.calendario_dia') }}?" + consulta.toString(),
+                            {headers: {"Accept": "application/json"}});
+      const d = await r.json();
+      if (meu !== pedido) return;
+      if (!d.ok) throw new Error(d.erro || ("HTTP " + r.status));
+      resumo.innerHTML = d.quantidade
+        ? `<b>${d.quantidade}</b> SP(s) · <b>R$ ${esc(d.total)}</b>`
+          + (d.mostradas < d.quantidade ? ` — mostrando ${d.mostradas}; o resto em "Ver na lista"` : "")
+        : "";
+      if (!d.linhas.length) {
+        corpo.innerHTML = '<p class="cartao-dica">Nada neste dia, com os filtros atuais.</p>';
+        return;
+      }
+      corpo.innerHTML = `<div class="tabela-rolagem livre" style="max-height:62vh"><table class="tabela-dia-cal">
+        <thead><tr><th>SP</th><th>Credor</th><th>Categoria</th><th>Descrição</th>
+          <th class="direita">Valor</th><th>Vencimento</th><th>Situação</th></tr></thead>
+        <tbody>${d.linhas.map(l => {
+          const [rot, cls] = SITUACAO[l.situacao] || SITUACAO.outros;
+          return `<tr${ABRE_FICHA ? ` data-ficha="${esc(l.ficha)}" data-sp="${esc(l.id)}" title="Duplo clique abre a SP ${esc(l.id)}"` : ""}>
+            <td><a href="${esc(l.card)}" target="_blank" rel="noopener" title="Abrir o card no Pipefy">${esc(l.id)}</a></td>
+            <td>${esc(l.credor)}</td><td>${esc(l.tipo_despesa)}</td>
+            <td class="dia-cal-desc" title="${esc(l.descricao)}">${esc(l.descricao)}</td>
+            <td class="direita">${esc(l.valor)}</td>
+            <td>${esc(l.vencimento)}${l.pago_em ? `<br><small>pago ${esc(l.pago_em)}</small>` : ""}</td>
+            <td><span class="cal-faixa ${cls}">${rot}</span>
+                ${l.status_agend ? `<small>${esc(l.status_agend)}</small>` : ""}</td></tr>`;
+        }).join("")}</tbody></table></div>`;
+      if (ABRE_FICHA && window.abrirFicha) {
+        corpo.querySelectorAll("tr[data-ficha]").forEach(tr => tr.addEventListener("dblclick", e => {
+          if (e.target.closest("a, input, button")) return;
+          window.abrirFicha(tr.dataset.ficha, tr.dataset.sp);
+        }));
+      }
+    } catch (e) {
+      if (meu === pedido) corpo.innerHTML = `<div class="aviso erro">Não consegui abrir o dia: ${esc(e.message)}</div>`;
+    }
+  }
+
+  document.querySelectorAll("a.cal-dia[data-dia]").forEach(a => a.addEventListener("click", e => {
+    // Ctrl/⌘/shift ou botão do meio: a lista numa aba nova, como sempre foi.
+    if (e.ctrlKey || e.metaKey || e.shiftKey || e.button !== 0) return;
+    e.preventDefault();
+    abrir(a.dataset.dia);
+  }));
+  document.getElementById("dia-cal-anterior").addEventListener("click", () => diaAberto && abrir(somar(diaAberto, -1)));
+  document.getElementById("dia-cal-seguinte").addEventListener("click", () => diaAberto && abrir(somar(diaAberto, 1)));
+  document.getElementById("dia-cal-fechar").addEventListener("click", () => dlg.close());
+  dlg.addEventListener("click", e => { if (e.target === dlg) dlg.close(); });
+  document.addEventListener("keydown", e => {
+    if (!dlg.open || document.querySelector("#ficha-modal[open]")) return;
+    if (e.key === "ArrowLeft") { e.preventDefault(); diaAberto && abrir(somar(diaAberto, -1)); }
+    if (e.key === "ArrowRight") { e.preventDefault(); diaAberto && abrir(somar(diaAberto, 1)); }
+  });
+})();
+</script>
 {% endblock %}

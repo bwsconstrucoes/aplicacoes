@@ -1107,6 +1107,9 @@ def ponto_api_cercas():
     with db.conexao() as conn:
         obras = cadastros.listar_obras(conn, so_ativas=True)
         tem_modo = db.tem_coluna(conn, "obra_config", "fora_da_cerca")
+        tem_duas = db.tem_coluna(conn, "obra_config", "intervalo_pre_assinalado")
+        so_duas = ({int(l["obra_id"]) for l in db.todos(
+            conn, "SELECT obra_id FROM ponto.obra_config WHERE intervalo_pre_assinalado")} if tem_duas else set())
         barradas = {r["obra"]: int(r["n"]) for r in db.todos(conn, """
             SELECT obra_informada AS obra, count(*) AS n FROM ponto.recusas
              WHERE (motivo LIKE 'fora da área da obra%' OR motivo LIKE 'localização desligada%')
@@ -1118,10 +1121,11 @@ def ponto_api_cercas():
             j["tem_coordenada"] = j["latitude"] is not None and j["longitude"] is not None
             j["fora_da_cerca"] = marc.modo_fora_da_cerca(conn, int(o["id"])) if tem_modo else "ANALISAR"
             j["barradas_7_dias"] = barradas.get(o["codigo"], 0)
+            j["so_entrada_e_saida"] = int(o["id"]) in so_duas
             saida.append(j)
         from .core import base_obras
         base_planilha = base_obras.usando(conn)
-    return _ok(obras=saida, modo_disponivel=tem_modo, base_planilha=base_planilha)
+    return _ok(obras=saida, modo_disponivel=tem_modo, base_planilha=base_planilha, batidas_disponivel=tem_duas)
 
 
 @bp.route("/erp/api/ponto/cercas/<int:obra_id>", methods=["POST"])
@@ -1153,12 +1157,20 @@ def ponto_api_cerca_gravar(obra_id: int):
                 raise ErroDeValidacao("aplique as atualizações do ponto antes de mudar isto")
             db.executar(conn, "UPDATE ponto.obra_config SET fora_da_cerca = :m, atualizado_em = now() "
                               "WHERE obra_id = :o", m=modo, o=obra_id)
-        logger.info("Ponto: cerca da obra %s ajustada por %s (raio %s, fora: %s)",
-                    obra_id, quem.nome, raio, d.get("fora_da_cerca"))
+        if "so_entrada_e_saida" in d:
+            # Só entrada e saída — o intervalo pré-assinalado (migração 009, 09/10/2026).
+            if not db.tem_coluna(conn, "obra_config", "intervalo_pre_assinalado"):
+                raise ErroDeValidacao("aplique as atualizações do ponto (migração 009) antes de mudar isto")
+            db.executar(conn, "UPDATE ponto.obra_config SET intervalo_pre_assinalado = :v, atualizado_em = now() "
+                              "WHERE obra_id = :o", v=bool(d.get("so_entrada_e_saida")), o=obra_id)
+        logger.info("Ponto: cerca da obra %s ajustada por %s (raio %s, fora: %s, só entrada e saída: %s)",
+                    obra_id, quem.nome, raio, d.get("fora_da_cerca"), d.get("so_entrada_e_saida"))
         o = cadastros.obra_por_id(conn, obra_id)
         j = cadastros.obra_para_json(o)
         j["fora_da_cerca"] = marc.modo_fora_da_cerca(conn, obra_id)
         j["tem_coordenada"] = j["latitude"] is not None and j["longitude"] is not None
+        j["so_entrada_e_saida"] = bool(db.tem_coluna(conn, "obra_config", "intervalo_pre_assinalado") and db.um(
+            conn, "SELECT 1 FROM ponto.obra_config WHERE obra_id = :o AND intervalo_pre_assinalado", o=obra_id))
     return _ok(obra=j)
 
 

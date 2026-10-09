@@ -243,6 +243,8 @@ TELAS = [
     # Ao lado da Agenda também lê bem: são as duas grades de mês do módulo.
     ("calendario",    "Calendário",    "analisesps.calendario"),
     ("conciliacao",   "Conciliação",   "analisesps.tela_conciliacao"),
+    # 09/10/2026: as notas fiscais emitidas (ver `faturamento.py`).
+    ("faturamento",   "Faturamento",   "analisesps.tela_faturamento"),
     ("auditoria",     "Auditoria",     "analisesps.auditoria"),
     ("ratear",        "Ratear",        "analisesps.ratear"),
     # ⚠️ UMA ENTRADA SÓ PARA A FOLHA, e por dentro as subtelas. Correção do dono
@@ -346,6 +348,39 @@ def _comprimir(resposta):
 def _filtro_moeda(valor):
     from .formatos import moeda
     return moeda(valor)
+
+
+@bp.app_template_filter("atualizar_pix")
+def _filtro_atualizar_pix(linha) -> bool:
+    """A etiqueta "Atualizar Pix" da lista (09/10/2026) — ver
+    `pagamentos.chave_a_atualizar`."""
+    from .pagamentos import chave_a_atualizar
+    linha = linha or {}
+    return chave_a_atualizar(linha.get("forma_pagamento"), linha.get("info_pgt"))
+
+
+@bp.app_template_filter("falta_nf")
+def _filtro_falta_nf(linha) -> bool:
+    """A etiqueta "Sem NF" da lista (09/10/2026) — `pagamentos.falta_nota`."""
+    from .pagamentos import falta_nota
+    linha = linha or {}
+    return falta_nota(linha.get("forma_pagamento"), linha.get("tipo_despesa"),
+                      linha.get("nf"), linha.get("status_pgt"))
+
+
+@bp.app_template_filter("atualizar_sp")
+def _filtro_atualizar_sp(linha) -> bool:
+    """A etiqueta "Atualizar SP" (09/10/2026) — `pagamentos.atualizar_sp`."""
+    from .pagamentos import atualizar_sp
+    linha = linha or {}
+    return atualizar_sp(linha.get("centro_custo"), linha.get("status_pgt"))
+
+
+@bp.app_template_filter("sem_validacao")
+def _filtro_sem_validacao(linha) -> bool:
+    from .pagamentos import sem_validacao
+    linha = linha or {}
+    return sem_validacao(linha.get("validacao"), linha.get("status_pgt"))
 
 
 @bp.app_template_filter("moeda_curta")
@@ -1174,7 +1209,233 @@ def alterar():
         return {"ok": False,
                 "erro": f"A coluna '{coluna}' não é alterável por aqui."}, 400
 
-    return _gravar_alteracao(ids, coluna, valor, acao)
+    # ⚠️ NÃO SE AGENDA SP COM A CHAVE PIX "ATUALIZAR CHAVE" (09/10/2026). O
+    # dono: *"a gente precisa tratar elas antes de colocar em agendar (…) fazer
+    # esse bloqueio de impedir que ela seja colocada em agendar"*. A trava é
+    # AQUI, no servidor, e não só no botão: vale para a barra, para a ficha e
+    # para qualquer outro caminho. Recusa o pedido inteiro, dizendo quais.
+    #
+    # E A SP SEM OBRA (09/10/2026, "Atualizar SP"): *"sim, é para bloquear
+    # também SP sem obra"* — veio incompleta do sistema de compras.
+    if coluna == "agendado" and valor.lower() in ("agendar", "agendado"):
+        pix, sem_obra = _sps_presas_no_agendar(ids)
+        if pix or sem_obra:
+            partes = []
+            if pix:
+                partes.append(f"{len(pix)} com a chave Pix \"Atualizar Chave\" ("
+                              + ", ".join(pix[:10]) + ("…" if len(pix) > 10 else "") + ")")
+            if sem_obra:
+                partes.append(f"{len(sem_obra)} sem obra — \"Atualizar SP\" ("
+                              + ", ".join(sem_obra[:10])
+                              + ("…" if len(sem_obra) > 10 else "") + ")")
+            return {"ok": False, "erro": (
+                "Não dá para agendar: " + "; ".join(partes) + ". Trate essas SPs "
+                "antes (desmarque-as para agendar as outras).")}, 409
+
+    resposta = _gravar_alteracao(ids, coluna, valor, acao)
+    # MARCAR PAGO GRAVA TAMBÉM A DATA, O COMPROVANTE E A CONTA (08/10/2026),
+    # lidos do card. O dono: *"a função Marcar Pago precisa também gravar a
+    # data e o comprovante"*. Se o Pipefy falhar, o "Pago" já está gravado —
+    # e a resposta diz o que ficou faltando.
+    if (coluna == "status_pgt" and valor.lower() == "pago"
+            and isinstance(resposta, dict) and resposta.get("ok")):
+        resposta["complemento"] = _completar_pagamento(ids, acao, mover=False)
+    return resposta
+
+
+def _sps_presas_no_agendar(ids) -> tuple[list, list]:
+    """Das SPs pedidas, as que NÃO podem ser agendadas: (chave Pix "Atualizar
+    Chave", sem obra). As regras moram em `pagamentos`."""
+    from .db import consultar
+    from .pagamentos import atualizar_sp, chave_a_atualizar
+    marcadores = ", ".join("?" for _ in ids)
+    linhas = consultar(
+        "SELECT id, forma_pagamento, info_pgt, centro_custo, status_pgt "
+        f"  FROM analisesps.sps WHERE id IN ({marcadores})", tuple(ids))
+    pix = [str(i) for i, forma, info, _cc, _st in linhas if chave_a_atualizar(forma, info)]
+    sem_obra = [str(i) for i, _f, _i, cc, st in linhas if atualizar_sp(cc, st)]
+    return pix, sem_obra
+
+
+def _gravar_valores(itens: list, acao: str) -> int:
+    """Grava VALORES DIFERENTES POR SP numa ida só ao banco: `itens` é uma
+    lista de `(sp_id, coluna, valor)`. O mesmo caminho de `_gravar_alteracao`
+    (banco, fila da planilha, log) — que só sabe gravar um valor para todas.
+
+    A coluna AK (`_ak`, a conta do pagamento) não existe no banco: vai só para
+    a fila da planilha e para o log."""
+    from . import colunas, formatos
+    from .db import conexao, tem_coluna
+    if not itens:
+        return 0
+    perfil = auth.perfil_atual() or "?"
+    quem = auth.nome_atual()
+    com_pessoa = tem_coluna("log_alteracoes", "pessoa")
+    with conexao() as conn:
+        for sp_id, coluna, valor in itens:
+            anterior = None
+            if coluna in colunas.CHAVES:
+                cur = conn.execute(
+                    f'SELECT "{coluna}" FROM analisesps.sps WHERE id = ?', (sp_id,))
+                linha = cur.fetchone()
+                cur.close()
+                anterior = linha[0] if linha else None
+                derivada = colunas.DERIVADAS_DATA.get(coluna)
+                if derivada:
+                    conn.execute(
+                        f'UPDATE analisesps.sps SET "{coluna}" = ?, "{derivada}" = ?, '
+                        " atualizado_em = now() WHERE id = ?",
+                        (valor, formatos.para_data(valor), sp_id))
+                else:
+                    conn.execute(
+                        f'UPDATE analisesps.sps SET "{coluna}" = ?, '
+                        " atualizado_em = now() WHERE id = ?", (valor, sp_id))
+            conn.execute(
+                "INSERT INTO analisesps.fila (sp_id, coluna, valor, criado_em, "
+                "                             tentativas, ultimo_erro) "
+                "VALUES (?, ?, ?, now(), 0, NULL) "
+                "ON CONFLICT (sp_id, coluna) DO UPDATE SET "
+                "  valor = EXCLUDED.valor, criado_em = now(), "
+                "  tentativas = 0, ultimo_erro = NULL",
+                (sp_id, coluna, valor))
+            if com_pessoa:
+                conn.execute(
+                    "INSERT INTO analisesps.log_alteracoes "
+                    "  (sp_id, coluna, valor, valor_anterior, acao, perfil, "
+                    "   pessoa, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'pendente')",
+                    (sp_id, coluna, valor, anterior, acao, perfil, quem))
+            else:
+                conn.execute(
+                    "INSERT INTO analisesps.log_alteracoes "
+                    "  (sp_id, coluna, valor, valor_anterior, acao, perfil, "
+                    "   status) VALUES (?, ?, ?, ?, ?, ?, 'pendente')",
+                    (sp_id, coluna, valor, anterior, acao, perfil))
+        conn.commit()
+    logger.info("Análise de SPs: %s (%s) — %s: %d célula(s) gravada(s).",
+                quem or "sem nome", perfil, acao, len(itens))
+    return len(itens)
+
+
+def _completar_pagamento(ids, acao: str, mover: bool) -> dict:
+    """Lê os cards (uma ida ao Pipefy a cada 20) e grava na SPsBD a data do
+    pagamento (X), o comprovante (AG) e a conta (AK). Com `mover`, leva para
+    "Pago / Alimentar Omie" os cards que ainda não estão lá (também em lote).
+
+    Devolve `{"sps": {id: {...}}, "erro": frase ou ""}` — nunca levanta: o
+    "Pago" já foi gravado por quem chamou, e isto é o complemento."""
+    from . import pagamento_omie, pipefy, tarefas
+    ids = [str(i) for i in ids]
+    sps = {i: {"gravou": [], "faltou": [], "movido": False, "fase": "",
+               "erro": ""} for i in ids}
+    try:
+        cards = pipefy.ler_pagamentos(ids)
+    except Exception as e:  # noqa: BLE001 — o "Pago" fica; o resto, dito
+        logger.exception("Análise de SPs: não li os cards para completar o pagamento")
+        return {"sps": sps, "erro": f"Não consegui ler os cards no Pipefy: {e}"}
+
+    for sp_id, frase in (cards.pop("_erros", None) or {}).items():
+        if sp_id in sps:
+            sps[sp_id]["erro"] = frase
+    itens = []
+    for sp_id in ids:
+        card = cards.get(sp_id)
+        if not card:
+            sps[sp_id]["erro"] = sps[sp_id]["erro"] or "O Pipefy não devolveu este card."
+            continue
+        sps[sp_id]["fase"] = card["fase"]
+        valores = pagamento_omie.valores_do_card(card)
+        for coluna, rotulo in (("data_pagamento", "data"), ("comprovante", "comprovante"),
+                               ("_ak", "conta")):
+            if coluna in valores:
+                itens.append((sp_id, coluna, valores[coluna]))
+                sps[sp_id]["gravou"].append(rotulo)
+            else:
+                sps[sp_id]["faltou"].append(rotulo)
+    try:
+        _gravar_valores(itens, acao)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Análise de SPs: falhou gravar o complemento do pagamento")
+        return {"sps": sps, "erro": f"Não consegui gravar data/comprovante/conta: {e}"}
+
+    erro = ""
+    if mover:
+        fora = [i for i in ids if cards.get(i)
+                and cards[i]["fase_id"] != pipefy.FASE_PAGO_ALIMENTAR_OMIE]
+        if fora:
+            try:
+                movimento = pipefy.mover_cards(fora, pipefy.FASE_PAGO_ALIMENTAR_OMIE)
+            except Exception as e:  # noqa: BLE001
+                logger.exception("Análise de SPs: falhou mover os cards para Pago")
+                movimento = {"movidos": [], "erros": {i: str(e) for i in fora}}
+            for sp_id in movimento["movidos"]:
+                sps[sp_id]["movido"] = True
+            for sp_id, frase in movimento["erros"].items():
+                sps[sp_id]["erro"] = "Não mudou de fase: " + frase
+    if itens:
+        tarefas.disparar("fila", disparo="pagamento completado pelo card")
+    return {"sps": sps, "erro": erro}
+
+
+# A última consulta ao Omie, por SP: {id: (status, quando)}. Marcar Pago pelo
+# modal só aceita o que o Omie disse PAGO há pouco — e não reconsulta à toa.
+_CONSULTADAS: dict = {}
+VALIDADE_DA_CONSULTA = 15 * 60
+
+
+@bp.route("/api/omie/consultar", methods=["POST"])
+@exige_operador
+def omie_consultar():
+    """O status no Omie das SPs marcadas, para o modal "Consultar Omie"."""
+    import time
+    from . import pagamento_omie
+    ids, erro = _ids_do_pedido(request.get_json(silent=True) or {})
+    if erro:
+        return erro
+    if len(ids) > pagamento_omie.MAX_POR_CONSULTA:
+        return {"ok": False, "erro": (
+            f"São no máximo {pagamento_omie.MAX_POR_CONSULTA} SPs por consulta — "
+            "cada uma é uma pergunta ao Omie.")}, 400
+    try:
+        resultado = pagamento_omie.consultar(ids)
+    except Exception as e:  # noqa: BLE001 — credencial, rede: a frase vai inteira
+        logger.exception("Análise de SPs: falhou consultar o Omie")
+        return {"ok": False, "erro": f"Não consegui consultar o Omie: {e}"}, 502
+    agora = time.monotonic()
+    for l in resultado["linhas"]:
+        if l["status_omie"]:
+            _CONSULTADAS[l["id"]] = (l["status_omie"], agora)
+    # `espera` > 0: o Omie pediu uma pausa; as `pendente` a janela pede de novo
+    # sozinha depois desse tempo.
+    return {"ok": True, "linhas": resultado["linhas"], "espera": resultado["espera"]}
+
+
+@bp.route("/api/omie/marcar-pago", methods=["POST"])
+@exige_operador
+def omie_marcar_pago():
+    """Equaliza a SPsBD com o Omie e o card: Status = Pago, data, comprovante e
+    conta lidos do card, e o card vai para "Pago / Alimentar Omie" se ainda
+    não estiver lá. Só para SP que o Omie disse PAGO na consulta recente."""
+    import time
+    from . import pagamento_omie
+    ids, erro = _ids_do_pedido(request.get_json(silent=True) or {})
+    if erro:
+        return erro
+    agora = time.monotonic()
+    sem_confirmacao = [i for i in ids if not (
+        i in _CONSULTADAS and _CONSULTADAS[i][0] == pagamento_omie.STATUS_PAGO
+        and agora - _CONSULTADAS[i][1] <= VALIDADE_DA_CONSULTA)]
+    if sem_confirmacao:
+        return {"ok": False, "erro": (
+            "Só dá para marcar como pago o que o Omie confirmou PAGO na consulta "
+            "dos últimos 15 minutos. Consulte de novo: "
+            + ", ".join(sem_confirmacao[:5]))}, 400
+
+    acao = "Marcar Pago (Omie)"
+    resposta = _gravar_alteracao(ids, "status_pgt", "Pago", acao)
+    if not isinstance(resposta, dict) or not resposta.get("ok"):
+        return resposta
+    resposta["complemento"] = _completar_pagamento(ids, acao, mover=True)
+    return resposta
 
 
 @bp.route("/api/enviar-ao-lote", methods=["POST"])
@@ -1830,9 +2091,257 @@ def calendario():
         # A barra de filtros é a mesma das outras telas; estas duas dizem a
         # ela que aqui a data não manda, e se havia alguma marcada.
         datas_nao_valem=True, datas_ignoradas=datas_ignoradas,
+        # A ficha da SP (duplo clique na janela do dia) é da tela Solicitações.
+        abre_ficha=(auth.telas_permitidas() is None
+                    or "solicitacoes" in auth.telas_permitidas()),
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
+
+
+@bp.route("/calendario/dia")
+@exige_consulta
+def calendario_dia():
+    """As SPs de UM dia do calendário, para a janela que abre no clique.
+
+    09/10/2026, o dono: *"o calendário tem que abrir um modal conforme abre no
+    painel para exibir as informações do dia; da forma que está, ele está
+    redirecionando para a tela de Solicitações."* Mesmo filtro da tela (as
+    datas da barra não valem aqui, como na grade) e mesma data da célula."""
+    import datetime as dt
+    from . import consultas
+    try:
+        dia = dt.date.fromisoformat(str(request.args.get("dia") or ""))
+    except ValueError:
+        return {"ok": False, "erro": "Dia inválido."}, 400
+    tipo = request.args.get("tipo", "geral")
+    if tipo not in consultas.TIPOS:
+        tipo = "geral"
+    filtros = _filtros_do_pedido()
+    for chave in ("periodo_ini", "periodo_fim", "pgt_ini", "pgt_fim"):
+        filtros[chave] = None
+    try:
+        achado = consultas.sps_do_dia(filtros, dia, tipo)
+    except Exception as e:  # noqa: BLE001 — a janela diz, a tela fica de pé
+        logger.exception("Análise de SPs: falhou ler o dia %s do calendário", dia)
+        return {"ok": False, "erro": f"Não consegui ler o dia: {e}"}, 500
+    from .formatos import data_br, moeda
+    return {
+        "ok": True, "dia": dia.isoformat(), "rotulo": dia.strftime("%d/%m/%Y"),
+        "quantidade": achado["quantidade"], "total": moeda(achado["total"]),
+        "mostradas": len(achado["linhas"]),
+        "linhas": [{
+            "id": l["id"], "credor": l["credor"] or "",
+            "descricao": l["descricao"] or "", "tipo_despesa": l["tipo_despesa"] or "",
+            "valor": moeda(l["valor_num"]) if l["valor_num"] is not None else "",
+            "vencimento": data_br(l["vencimento_d"]),
+            "pago_em": data_br(l["data_pagamento_d"]),
+            "status_pgt": l["status_pgt"] or "", "status_agend": l["status_agend"] or "",
+            "situacao": l["situacao"],
+            "ficha": url_for("analisesps.detalhe", sp_id=l["id"]),
+            "card": f"https://app.pipefy.com/open-cards/{l['id']}",
+        } for l in achado["linhas"]],
+    }
+
+
+# ---------------------------------------------------------------------------
+# FATURAMENTO — as notas fiscais emitidas (09/10/2026, migração 053)
+#
+# O dono: *"numa nova tela no Análise de SPs, que a gente pode chamar de
+# Faturamento, eu quero fazer o controle de notas — ver faturamento, fazer o
+# download da nota, uma parte gráfica de evolução."* A fonte e as regras estão
+# em `faturamento.py` e em `emissaonf/FATURAMENTO.md`.
+# ---------------------------------------------------------------------------
+# A cópia das notas é refeita sozinha quando a tela abre e ela tem mais que
+# isto — o emissor grava notas novas na planilha ao longo do dia.
+MINUTOS_PARA_RECARREGAR_FATURAMENTO = 60
+
+
+def _filtros_do_faturamento() -> dict:
+    """Os filtros da barra lateral do Faturamento (09/10/2026: *"filtro é no
+    sidebar"*). A marca `f` diz que a barra já foi usada: sem ela, o período
+    padrão são os últimos doze meses; com ela, vale o que estiver nos campos —
+    inclusive vazio, que é "sem limite"."""
+    import datetime as dt
+    from .horario import agora
+
+    def data(nome):
+        try:
+            return dt.date.fromisoformat(str(request.args.get(nome) or ""))
+        except ValueError:
+            return None
+
+    def lista(nome):
+        return [v for v in request.args.getlist(nome) if str(v).strip()]
+    hoje = agora().date()
+    usou_a_barra = "f" in request.args
+    padrao_de = (hoje.replace(day=1) - dt.timedelta(days=330)).replace(day=1)
+    return {
+        "de": data("de") if usou_a_barra else padrao_de,
+        "ate": data("ate") if usou_a_barra else None,
+        "status": request.args.get("status") or "valida",
+        "obras": lista("obra"),
+        "empresas": lista("empresa"),
+        "recebimento": request.args.get("recebimento") or "",
+        "busca": (request.args.get("busca") or "").strip(),
+    }
+
+
+def _carga_do_faturamento():
+    """Quando a cópia foi trazida e se uma carga está rodando — e pede uma nova
+    se a cópia estiver velha (recusada em silêncio se outra tarefa roda: a
+    próxima abertura pede de novo)."""
+    from . import faturamento, tarefas
+    carregado_em = faturamento.carregado_em()
+    andamento = tarefas.estado()
+    rodando = bool(andamento.get("rodando")
+                   and (andamento.get("detalhe") or {}).get("tipo")
+                   in ("faturamento", "faturamento_antigas"))
+    na_fila = False
+    if _faturamento_desatualizado(carregado_em) and not rodando:
+        r = tarefas.disparar("faturamento", disparo="tela de faturamento")
+        rodando = bool(r.get("ok"))
+        if not rodando:
+            # Outra tarefa ocupa a vez: a carga entra sozinha quando ela acabar.
+            tarefas.pedir_depois("faturamento")
+            na_fila = True
+    return {"carregado_em": carregado_em, "rodando": rodando, "na_fila": na_fila,
+            "e_mestre": auth.e_mestre(),
+            "importacao": tarefas.ultima_do_tipo("faturamento_antigas"),
+            "outra_tarefa": ((andamento.get("detalhe") or {}).get("etapa")
+                             if andamento.get("rodando") and not rodando else ""),
+            "ultima": tarefas.ultima_do_tipo("faturamento")}
+
+
+# As subtelas do Faturamento, na ordem das abas.
+SUBTELAS_FATURAMENTO = [
+    ("notas", "Notas", "analisesps.tela_faturamento"),
+    ("periodos", "Por período", "analisesps.tela_faturamento_periodos"),
+]
+
+
+def _faturamento_desatualizado(carregado_em) -> bool:
+    from .formatos import _como_momento
+    from .horario import agora
+    momento = _como_momento(carregado_em) if carregado_em else None
+    if not momento or not hasattr(momento, "tzinfo"):
+        return True
+    try:
+        idade = agora() - momento
+    except TypeError:
+        return True
+    return idade.total_seconds() > MINUTOS_PARA_RECARREGAR_FATURAMENTO * 60
+
+
+@bp.route("/faturamento")
+@exige_consulta
+def tela_faturamento():
+    """As notas, como a planilha (09/10/2026: *"quero uma tela de faturamento só
+    com a parte das notas, como se fosse a planilha"*)."""
+    from . import faturamento
+
+    base = {"aba": "faturamento", "subtelas": SUBTELAS_FATURAMENTO,
+            # os filtros viajam de uma subtela para a outra pelas abas
+            "args_filtro": {k: v for k, v in request.args.lists()
+                            if k not in ("pagina", "aviso", "agrupar")},
+            "subaba": "notas", "pode_operar": auth.pode_operar(),
+            "nome": auth.nome_atual(), "perfil": auth.ROTULOS.get(auth.perfil_atual(), "")}
+    if not faturamento.pronto():
+        return render_template("analisesps_faturamento.html", pronto=False, **base)
+
+    filtros = _filtros_do_faturamento()
+    try:
+        pagina = max(1, int(request.args.get("pagina") or 1))
+    except ValueError:
+        pagina = 1
+    return render_template(
+        "analisesps_faturamento.html", pronto=True, filtros=filtros,
+        pagina=pagina, por_pagina=faturamento.POR_PAGINA,
+        resumo=faturamento.resumo(filtros),
+        notas=faturamento.listar(filtros, pagina), opcoes=faturamento.opcoes(),
+        args=request.args, **_carga_do_faturamento(), **base)
+
+
+@bp.route("/faturamento/periodos")
+@exige_consulta
+def tela_faturamento_periodos():
+    """O faturamento por período, em gráfico e tabela (09/10/2026: *"crie
+    subtela para visualizar faturamento de períodos em gráfico e tabela"*)."""
+    from . import faturamento
+
+    base = {"aba": "faturamento", "subtelas": SUBTELAS_FATURAMENTO,
+            # os filtros viajam de uma subtela para a outra pelas abas
+            "args_filtro": {k: v for k, v in request.args.lists()
+                            if k not in ("pagina", "aviso", "agrupar")},
+            "subaba": "periodos", "pode_operar": auth.pode_operar(),
+            "nome": auth.nome_atual(), "perfil": auth.ROTULOS.get(auth.perfil_atual(), "")}
+    if not faturamento.pronto():
+        return render_template("analisesps_faturamento_periodos.html", pronto=False, **base)
+    filtros = _filtros_do_faturamento()
+    agrupar = request.args.get("agrupar") or "mes"
+    if agrupar not in faturamento.AGRUPAMENTOS:
+        agrupar = "mes"
+    return render_template(
+        "analisesps_faturamento_periodos.html", pronto=True, filtros=filtros,
+        agrupar=agrupar, agrupamentos=faturamento.AGRUPAMENTOS,
+        periodos=faturamento.por_periodo(filtros, agrupar),
+        resumo=faturamento.resumo(filtros), opcoes=faturamento.opcoes(),
+        args=request.args, **_carga_do_faturamento(), **base)
+
+
+@bp.route("/faturamento/atualizar", methods=["POST"])
+@exige_consulta
+def faturamento_atualizar():
+    """Traz de novo as notas da planilha, agora (é leitura: não escreve nada)."""
+    from urllib.parse import quote
+    from . import tarefas
+    r = tarefas.disparar("faturamento", disparo=auth.nome_atual() or "faturamento")
+    if r.get("ok"):
+        aviso = "Trazendo as notas da planilha — a tela se atualiza em instantes."
+    else:
+        # Uma tarefa de fundo por vez: a carga fica pedida e começa sozinha
+        # quando a que está rodando terminar (`tarefas.pedir_depois`).
+        tarefas.pedir_depois("faturamento")
+        aviso = ("Outra tarefa de fundo está rodando agora (só roda uma por vez). "
+                 "A atualização das notas ficou na fila e começa sozinha assim que "
+                 "ela terminar — pode deixar.")
+    volta = request.form.get("volta") or url_for("analisesps.tela_faturamento")
+    if not str(volta).startswith("/analisesps/faturamento"):
+        volta = url_for("analisesps.tela_faturamento")
+    separador = "&" if "?" in volta else "?"
+    return redirect(volta + separador + "aviso=" + quote(aviso))
+
+
+@bp.route("/faturamento/importar", methods=["POST"])
+@exige_operador
+def faturamento_importar():
+    """Leva as notas ANTIGAS da "Notas BWS" para a Base Faturamento e traz tudo
+    para a tela (09/10/2026: *"as notas anteriores, como faço para importar?"*).
+
+    Só o MESTRE: escreve na aba nova da planilha das notas (não apaga nada, não
+    emite nada — ver `faturamento.importar_antigas`)."""
+    from urllib.parse import quote
+    from . import tarefas
+    if not auth.e_mestre():
+        return auth._sem_permissao()
+    r = tarefas.disparar("faturamento_antigas", disparo=auth.nome_atual() or "importar")
+    aviso = ("Importando as notas antigas — leva alguns minutos (são milhares). "
+             "A tela se atualiza sozinha; o resultado aparece aqui no alto."
+             if r.get("ok") else
+             "Outra tarefa de fundo está rodando agora (só roda uma por vez). "
+             "Tente de novo em alguns minutos.")
+    return redirect(url_for("analisesps.tela_faturamento") + "?aviso=" + quote(aviso))
+
+
+@bp.route("/faturamento/nota/<numero>")
+@exige_consulta
+def faturamento_nota(numero):
+    """A ficha de uma nota, para o modal da tela."""
+    from . import faturamento
+    nota = faturamento.uma(numero)
+    if not nota:
+        return ("<div class=\"aviso erro\">Nota não encontrada.</div>", 404)
+    return render_template("analisesps_faturamento_nota.html", n=nota)
 
 
 # ---------------------------------------------------------------------------
@@ -2098,6 +2607,10 @@ def tela_conciliacao():
         "analisesps_conciliacao.html", aba="conciliacao", estado=estado,
         contas=contas, conta=conta, linhas=linhas, filtros=filtros,
         resumo=resumo, situacoes=conc.SITUACOES, pagina=pagina, ordens=conc.ORDENS,
+        # O duplo clique abre a ficha da SP — que mora na tela Solicitações.
+        # Quem não a tem receberia "não encontrado" no modal: nem liga.
+        abre_ficha=(auth.telas_permitidas() is None
+                    or "solicitacoes" in auth.telas_permitidas()),
         # ⚠️ QUANTAS A CONTA TEM NO TOTAL, para a tela poder dizer o que o filtro
         # está escondendo. O filtro fica guardado de uma visita para a outra, e um
         # período de ontem esconde hoje uma linha que está gravada — foi o que fez
@@ -5166,6 +5679,24 @@ def tela_lote():
                      "primeira aparição de cada SP."
                      if quantos else "Não havia nenhuma SP repetida no lote.")
 
+        # ⚠️ O QUE CHEGOU PELO TELEGRAM COM A JANELA ABERTA (08/10/2026). Estas
+        # ações mandam de volta o texto que a tela carregou; sem isto, o
+        # "Salvar" apagava em silêncio as SPs que o robô somou nesse meio tempo.
+        if acao in ("salvar", "extrair", "trazer_antigo", "remover_pagos",
+                    "remover_cancelados", "remover_duplicados"):
+            from . import telegram_lote
+            try:
+                conteudo, voltaram = telegram_lote.manter_chegadas(
+                    conteudo, pessoa, request.form.get("versao", ""))
+            except Exception:  # noqa: BLE001 — a proteção não impede salvar
+                logger.exception("Análise de SPs: não conferi as chegadas do "
+                                 "Telegram no lote")
+                voltaram = []
+            if voltaram:
+                aviso = ((aviso + " ") if aviso else "") + (
+                    f"{len(voltaram)} SP(s) que chegaram pelo Telegram com a "
+                    "tela aberta foram mantidas no grupo WhatsApp.")
+
         lote.salvar(conteudo, quem, pessoa)
         return redirect(url_for("analisesps.tela_lote", aviso=aviso or ""))
 
@@ -5213,9 +5744,22 @@ def tela_lote():
         if len(outras) == len(conhecidas) and not conhecidas:
             outras = []
 
+    # O robô do Telegram (08/10/2026): só quem entrou com usuário próprio liga,
+    # porque o robô precisa saber de quem é o lote.
+    from . import telegram_lote
+    usuario_id = session.get(auth.CHAVE_USUARIO)
+    try:
+        telegram = ({"pode_ligar": bool(usuario_id) and auth.pode_operar(),
+                     "ligacao": telegram_lote.ligacao(usuario_id)}
+                    if telegram_lote.pronto() else None)
+    except Exception:  # noqa: BLE001 — o lote é o principal; o robô, um extra
+        logger.exception("Análise de SPs: não li a ligação com o Telegram")
+        telegram = None
+
     return render_template(
         "analisesps_lote.html",
         aba="lote", base=base, lote=guardado, montado=montado, antes=antes,
+        telegram=telegram,
         outras_pessoas=outras,
         # Quantas cópias sobrando há. O botão de remover duplicados só aparece
         # quando existe o que remover — botão que não faz nada quando apertado
@@ -5226,6 +5770,29 @@ def tela_lote():
         aviso=request.args.get("aviso") or None,
         pode_operar=auth.pode_operar(), nome=auth.nome_atual(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""))
+
+
+@bp.route("/lote/telegram", methods=["POST"])
+@exige_operador
+def lote_telegram():
+    """Liga (link de uso único) ou desliga o robô do Telegram ao lote da pessoa.
+
+    O link volta no corpo da resposta, nunca na URL: endereço vai para o log do
+    servidor, e este vale 15 minutos para ligar a conversa de quem o abrir."""
+    from . import telegram_lote
+    usuario_id = session.get(auth.CHAVE_USUARIO)
+    if not usuario_id:
+        return {"ok": False, "erro": (
+            "Entre com o seu usuário (não com a senha geral) para ligar o "
+            "Telegram — o robô precisa saber de quem é o lote.")}, 400
+    if not telegram_lote.pronto():
+        return {"ok": False, "erro": (
+            "Falta aplicar as atualizações do banco (Configurações).")}, 400
+    acao = (request.get_json(silent=True) or {}).get("acao")
+    if acao == "desligar":
+        telegram_lote.desligar(usuario_id)
+        return {"ok": True}
+    return {"ok": True, "link": telegram_lote.gerar_convite(usuario_id)}
 
 
 # ---------------------------------------------------------------------------

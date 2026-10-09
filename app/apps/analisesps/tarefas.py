@@ -58,6 +58,10 @@ MODOS = {
     # é o botão que o dono pediu em 27/09/2026 para puxar uma alteração de
     # auxílio ou de gratificação "imediatamente", sem esperar nada.
     "colaboradores": "Atualizar o cadastro de colaboradores (traz da planilha)",
+    # 09/10/2026: a tela de Faturamento lê do banco; isto traz a aba "Base
+    # Faturamento" (que o emissor grava) e a C. Diários. Ver `faturamento.py`.
+    "faturamento": "Trazer as notas fiscais emitidas (Base Faturamento)",
+    "faturamento_antigas": "Importar as notas antigas da Notas BWS para a Base Faturamento",
     # ⚠️ O PONTO É O GARGALO DA FOLHA: sem ele não há total por obra, não há
     # diária e não há apropriação. Roda no processo separado porque são várias
     # páginas da API do Mobponto, e um mês pode ter dezenas de milhares de dias.
@@ -122,6 +126,8 @@ ETAPAS = {
     "fila": ["fila"],
     "comprovantes": ["comprovantes"],
     "colaboradores": ["colaboradores"],
+    "faturamento": ["faturamento"],
+    "faturamento_antigas": ["faturamento_antigas", "faturamento"],
     "ponto": ["ponto"],
     "ponto_diario": ["ponto_diario"],
     "ponto_pessoa": ["ponto_pessoa"],
@@ -621,6 +627,27 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                     + ". O XML de cada uma chega na PRÓXIMA busca na Receita, "
                       "e é guardado no Drive.")
 
+            elif etapa == "faturamento_antigas":
+                mudar_etapa("trazendo as notas antigas para a Base Faturamento")
+                from . import faturamento as _faturamento
+                c = _faturamento.importar_antigas(anotar)
+                recado_apoios[0] = (f"{c['gravadas']} nota(s) antiga(s) levada(s) à "
+                                    "Base Faturamento"
+                                    + (f" — FALTAM {c['faltam']} (rode de novo)"
+                                       if c["faltam"] else "")
+                                    + ". ")
+
+            elif etapa == "faturamento":
+                # As notas emitidas para a tela de Faturamento (09/10/2026).
+                mudar_etapa("trazendo as notas fiscais emitidas")
+                from . import faturamento as _faturamento
+                c = _faturamento.carregar(anotar)
+                total_linhas[0] = c["notas"]
+                recado_apoios[0] = recado_apoios[0] + (f"{c['notas']} nota(s) fiscal(is) e "
+                                    f"{c['obras']} código(s) de obra"
+                                    + ("" if not c["avisos"]
+                                       else " — " + " ".join(c["avisos"])))
+
             elif etapa == "colaboradores":
                 # NO PROCESSO SEPARADO como toda leitura de planilha grande:
                 # são ~3.500 linhas em faixas de coluna, várias idas ao Sheets.
@@ -765,6 +792,7 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
         # com o nome errado é pior que número nenhum, porque parece certo.
         if modo in ("apoios", "comprovantes", "fiscal", "fiscal_ia",
                     "notas_receita", "notas_ciencia", "colaboradores", "ponto",
+                    "faturamento", "faturamento_antigas",
                     "ponto_pessoa", "ponto_lancar"):
             # Neste modo nenhuma SP é trazida: dizer "0 SPs" fazia a tela
             # parecer que nada aconteceu justamente quando algo aconteceu.
@@ -792,6 +820,86 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
             # alguém abrir a tela para ser descoberto.
             from . import avisos_ponto
             avisos_ponto.avisar_que_parou(str(e))
+        return False
+
+
+# ---------------------------------------------------------------------------
+# A FILA DE COMPROVANTES ANDA SOZINHA (08/10/2026)
+#
+# O dono: *"por que essa fila trava? 10 lote(s) parado(s) há mais de 15
+# minutos."* O comprovante arrastado tenta começar na hora; se outra tarefa
+# está rodando (a atualização da tela aberta, o ponto, o cadastro…), o disparo
+# é recusado e o lote fica ESPERANDO — "para a próxima". Mas a próxima era a
+# próxima de COMPROVANTES, e nada disparava uma: a atualização do dia não dá
+# baixa em comprovante. O lote ficava parado até alguém apertar "Retomar".
+#
+# Agora toda tarefa da pista geral, ao terminar (bem ou mal), olha se há
+# comprovante esperando e, havendo, começa a baixa. Não entra em ciclo: a baixa
+# tira cada lote de ESPERANDO (PRONTO ou FALHOU), e só se encadeia de novo se
+# chegou lote novo enquanto ela rodava.
+# ---------------------------------------------------------------------------
+def encadear_comprovantes(modo: str) -> dict | None:
+    """Começa a baixa dos comprovantes que ficaram esperando. Nunca levanta."""
+    if pista_do(modo) != "geral":
+        return None
+    try:
+        from .db import consultar_um
+        from .comprovantes import MINUTOS_PARA_ABANDONADO
+        # RODANDO há muito tempo também conta: é o lote cujo processo morreu
+        # no meio (publicação, reinício). A baixa o destrava antes de começar.
+        linha = consultar_um(
+            "SELECT count(*) FROM analisesps.comprovantes_lote "
+            " WHERE situacao = 'ESPERANDO' OR (situacao = 'RODANDO' "
+            "   AND recebido_em < now() - (? || ' minutes')::interval)",
+            (str(int(MINUTOS_PARA_ABANDONADO)),))
+        if linha and linha[0]:
+            logger.info("Análise de SPs: %d lote(s) de comprovantes esperando — "
+                        "começando a baixa depois de '%s'.", linha[0], modo)
+            return disparar("comprovantes", disparo="fila de comprovantes")
+    except Exception:  # noqa: BLE001 — sem a tabela, ou banco fora: fica para o botão
+        logger.exception("Análise de SPs: não consegui encadear os comprovantes")
+        return None
+    # Sem comprovante esperando: a carga do Faturamento pedida enquanto outra
+    # tarefa rodava (09/10/2026 — *"cliquei em atualizar e apareceu: já existe
+    # uma atualização em andamento"*). Com comprovante, ela vem na volta
+    # seguinte: a baixa termina e passa por aqui de novo.
+    if modo != "faturamento" and _pedido_pendente("faturamento", apagar=True):
+        logger.info("Análise de SPs: carga do faturamento pedida durante '%s' — "
+                    "começando agora.", modo)
+        return disparar("faturamento", disparo="pedida durante outra tarefa")
+    return None
+
+
+CHAVE_PEDIDO = "pedido_pendente_"
+
+
+def pedir_depois(modo: str) -> None:
+    """Guarda que `modo` foi pedido e recusado (outra tarefa rodando): ele
+    começa sozinho quando ela terminar (`encadear_comprovantes`)."""
+    try:
+        from .db import conexao
+        from .sincronizacao import _meta_gravar
+        with conexao() as conn:
+            _meta_gravar(conn, CHAVE_PEDIDO + modo, "1")
+    except Exception:  # noqa: BLE001 — sem isso, fica para o próximo clique
+        logger.exception("Análise de SPs: não consegui guardar o pedido de %s", modo)
+
+
+def _pedido_pendente(modo: str, apagar: bool = False) -> bool:
+    try:
+        from .db import conexao
+        with conexao() as conn:
+            cur = conn.execute("SELECT valor FROM analisesps.meta WHERE chave = ?",
+                               (CHAVE_PEDIDO + modo,))
+            linha = cur.fetchone()
+            cur.close()
+            if linha and linha[0] == "1" and apagar:
+                conn.execute("DELETE FROM analisesps.meta WHERE chave = ?",
+                             (CHAVE_PEDIDO + modo,))
+                conn.commit()
+            return bool(linha and linha[0] == "1")
+    except Exception:  # noqa: BLE001
+        logger.exception("Análise de SPs: não consegui ler o pedido de %s", modo)
         return False
 
 

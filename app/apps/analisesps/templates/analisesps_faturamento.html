@@ -1,0 +1,128 @@
+{% extends "analisesps_base.html" %}
+{% block titulo %}Faturamento — Análise de SPs{% endblock %}
+{% block filtros %}{% if pronto %}{% include "analisesps_faturamento_filtros.html" %}{% endif %}{% endblock %}
+
+{% block conteudo %}
+{# ---------------------------------------------------------------------------
+   FATURAMENTO › NOTAS — "como se fosse a planilha" (09/10/2026).
+
+   O dono: *"filtro é no sidebar. Quero uma tela de faturamento só com a parte
+   das notas, como se fosse a planilha. Crie subtela para visualizar
+   faturamento de períodos em gráfico e tabela."* Os gráficos e as somas por
+   período moram na subtela "Por período".
+
+   A fonte é a aba "Base Faturamento" (o emissor grava); empresa e SCP vêm da
+   C. Diários, pela obra. ⚠️ Tributo VAZIO aparece "—" (não se sabe — nota antiga
+   não equalizada), nunca 0,00. Ver `faturamento.py`.
+--------------------------------------------------------------------------- #}
+{% if not pronto %}
+  <div class="aviso atencao">
+    <b>A tela de Faturamento ainda não está pronta neste banco.</b> Aperte
+    "Aplicar atualizações do banco" em Configurações.
+  </div>
+{% else %}
+{% include "_faturamento_topo.html" %}
+
+<div class="cartao fat-planilha-cartao">
+  <div class="cartao-cab">
+    <h3>Notas <small>{{ resumo.quantidade }} · R$ {{ resumo.bruto|moeda }}</small></h3>
+    <small>duplo clique numa nota abre a ficha dela · tributo "—" = ainda não informado</small>
+  </div>
+  {% if not notas %}
+    <p class="cartao-dica">Nenhuma nota com estes filtros{% if not carregado_em %} — as notas ainda não vieram da planilha{% endif %}.</p>
+  {% else %}
+    <div class="tabela-rolagem fat-planilha">
+      <table class="tabela-fat">
+        <thead><tr>
+          <th>Nota</th><th>Emissão</th><th>Compet.</th><th>Obra</th><th>Empresa</th>
+          <th>Tomador</th><th>Medição</th><th class="direita">Valor</th>
+          <th class="direita">PIS</th><th class="direita">COFINS</th><th class="direita">IR</th>
+          <th class="direita">CSLL</th><th class="direita">INSS</th><th class="direita">ISS</th>
+          <th class="direita">Líquido</th><th>Recebido em</th><th class="direita">Recebido</th>
+          <th>Situação</th><th>Arquivos</th>
+        </tr></thead>
+        <tbody>
+          {% for n in notas %}
+            <tr class="fat-linha" data-nota="{{ url_for('analisesps.faturamento_nota', numero=n.numero) }}"
+                title="Duplo clique abre a nota {{ n.sequencial or n.numero }}">
+              <td><b>{{ n.sequencial or n.numero }}</b></td>
+              <td>{{ n.data_emissao|data_br }}</td>
+              <td>{{ n.competencia }}</td>
+              <td>{{ n.obra }}</td>
+              <td>{{ n.empresa }}{% if n.e_scp %} <small class="selo neutro">SCP</small>{% endif %}</td>
+              <td class="fat-tomador" title="{{ n.tomador }}">{{ n.tomador }}</td>
+              <td>{{ n.medicao }}</td>
+              <td class="direita"><b>{{ n.valor_total|moeda }}</b></td>
+              {% for t in n.tributos %}
+                <td class="direita {{ 'fat-nao-retido' if t.retem == 'N' }}"
+                    title="{{ t.nome }}{% if t.retem == 'S' %} retido{% elif t.retem == 'N' %} não retido{% endif %}">
+                  {{ t.valor|moeda if t.valor is not none else '—' }}</td>
+              {% endfor %}
+              <td class="direita">{{ n.valor_liquido|moeda }}</td>
+              <td>{{ n.data_recebimento|data_br if n.data_recebimento else '' }}</td>
+              <td class="direita">{{ n.valor_recebido|moeda if n.data_recebimento else '' }}</td>
+              <td>{% if n.status != 'valida' %}<span class="selo cancelado">{{ n.status }}</span>
+                  {% elif not n.data_recebimento %}<span class="cartao-dica">a receber</span>
+                  {% else %}<span class="selo pago">recebida</span>{% endif %}</td>
+              <td class="fat-arquivos">
+                {% for rotulo, link in n.links %}<a href="{{ link }}" target="_blank" rel="noopener"
+                   title="{{ rotulo }}">{{ rotulo.split(' ')[0] }}</a>{% endfor %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot><tr>
+          <td colspan="7"><b>Total do filtro</b> ({{ resumo.quantidade }} nota(s))</td>
+          <td class="direita"><b>{{ resumo.bruto|moeda }}</b></td>
+          <td colspan="6"></td>
+          <td class="direita"><b>{{ resumo.liquido|moeda }}</b></td>
+          <td></td>
+          <td class="direita"><b>{{ resumo.recebido|moeda }}</b></td>
+          <td colspan="2"></td>
+        </tr></tfoot>
+      </table>
+    </div>
+    {% if resumo.quantidade > por_pagina %}
+      <div class="paginacao">
+        {% set q = args_filtro %}
+        {% if pagina > 1 %}<a class="btn secundario" href="{{ url_for('analisesps.tela_faturamento', pagina=pagina - 1, **q) }}">‹ anteriores</a>{% endif %}
+        <span class="cartao-dica">página {{ pagina }} de {{ ((resumo.quantidade + por_pagina - 1) // por_pagina) }}</span>
+        {% if notas|length == por_pagina %}<a class="btn secundario" href="{{ url_for('analisesps.tela_faturamento', pagina=pagina + 1, **q) }}">próximas ›</a>{% endif %}
+      </div>
+    {% endif %}
+  {% endif %}
+</div>
+
+<dialog class="dialogo dialogo-fat" id="fat-modal">
+  <button type="button" class="btn secundario dialogo-fechar" id="fat-fechar">Fechar</button>
+  <div id="fat-corpo"><p class="cartao-dica">Carregando…</p></div>
+</dialog>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const dlg = document.getElementById("fat-modal");
+  if (!dlg || !dlg.showModal) return;
+  const corpo = document.getElementById("fat-corpo");
+  document.getElementById("fat-fechar").addEventListener("click", () => dlg.close());
+  dlg.addEventListener("click", e => { if (e.target === dlg) dlg.close(); });
+  document.querySelectorAll("tr.fat-linha[data-nota]").forEach(tr => tr.addEventListener("dblclick", async e => {
+    if (e.target.closest("a, button, input")) return;
+    corpo.innerHTML = '<p class="cartao-dica">Carregando…</p>';
+    dlg.showModal();
+    try {
+      const r = await fetch(tr.dataset.nota);
+      corpo.innerHTML = await r.text();
+    } catch (err) {
+      corpo.innerHTML = '<div class="aviso erro">Não consegui abrir a nota.</div>';
+    }
+  }));
+  {% if rodando %}
+  // A carga está rodando: a tela se recarrega sozinha quando ela terminar.
+  setTimeout(() => location.reload(), 15000);
+  {% endif %}
+})();
+</script>
+{% endblock %}

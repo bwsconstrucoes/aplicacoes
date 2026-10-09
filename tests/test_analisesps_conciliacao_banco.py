@@ -13,6 +13,8 @@ from decimal import Decimal
 
 import pytest
 
+from tests.test_analisesps_usuarios_banco import app, banco_acesso  # noqa: F401 — fixtures
+
 pytestmark = pytest.mark.banco
 
 
@@ -1967,6 +1969,7 @@ def test_a_SAIDA_do_extrato_acha_a_SP_pelo_valor_conta_e_data(banco_conc):
     assert [(s["id"], s["sem_baixa"]) for s in por_desc["BOLETO"]] == [("900002", True)]
     assert por_desc["TARIFA"] == [] and por_desc["TED RECEBIDA"] == []
     assert por_desc["PIX FORNECEDOR"][0]["link"].endswith("/900001")
+    assert "status_agend" in por_desc["BOLETO"][0], "a etiqueta do agendamento"
 
 
 def test_mesmo_valor_no_mesmo_dia_o_NOME_do_credor_desempata(banco_conc):
@@ -1993,3 +1996,89 @@ def test_mesmo_valor_no_mesmo_dia_o_NOME_do_credor_desempata(banco_conc):
     assert ids["PAGTO BOLETO MADEIREIRA SAO JORGE"] == ["900012"]
     assert sorted(ids["PIX ENVIADO NINGUEM CONHECIDO"]) == ["900011", "900012"], \
         "sem nome que desempate, as duas ficam (com ?)"
+
+
+def test_DUPLO_CLIQUE_na_linha_com_SP_abre_a_ficha_dela(app):
+    """07/10/2026: *"queria que ao dar dois clique na linha identificada, fosse
+    aberto o modal daquele lancamento de analisps"*. A linha leva o endereço da
+    ficha, e a tela carrega o mesmo modal da lista de Solicitações."""
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    from tests.test_analisesps_banco import semear, sp
+    from tests.test_analisesps_usuarios_banco import SENHA_MESTRE_OPERADOR
+    conta_id = conta_de_teste()
+    conciliacao.importar(conta_id, conciliacao_ofx.ler(ofx([
+        ("20260910", "-500.00", "S1", "PIX FORNECEDOR"),
+        ("20260912", "-99.00", "S3", "TARIFA")])), "x.ofx", "T")
+    semear([sp("900001", conta="BD 7011", valor="500,00", status_pgt="Pago",
+               data_pagamento="10/09/2026", credor="FORNECEDOR A")])
+    with app.test_client() as cliente:
+        cliente.post("/analisesps/entrar", data={"senha": SENHA_MESTRE_OPERADOR})
+        tela = cliente.get(f"/analisesps/conciliacao?conta_id={conta_id}"
+                           ).get_data(as_text=True)
+        assert cliente.get("/analisesps/sp/900001?modal=1").status_code == 200
+    assert 'id="ficha-modal"' in tela
+    assert tela.count("data-ficha=") == 1, "só a linha com SP achada"
+    assert 'data-ficha="/analisesps/sp/900001"' in tela and 'data-sp="900001"' in tela
+    # 08/10/2026: a etiqueta da situação, como em "Arquivos gerados"
+    trecho = tela[tela.index("SP 900001"):][:900]
+    assert 'class="selo pago"' in trecho and ">Pago</span>" in trecho
+
+
+def test_quem_NAO_tem_Solicitacoes_nao_ganha_duplo_clique_que_daria_erro(app):
+    """A ficha da SP é da tela Solicitações. Para quem só tem a Conciliação, o
+    modal abriria "não encontrado" — então a linha nem liga o duplo clique."""
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    from tests.test_analisesps_banco import semear, sp
+    from tests.test_analisesps_usuarios_banco import criar, entrar_como
+    conta_id = conta_de_teste()
+    conciliacao.importar(conta_id, conciliacao_ofx.ler(ofx([
+        ("20260910", "-500.00", "S1", "PIX FORNECEDOR")])), "x.ofx", "T")
+    semear([sp("900001", conta="BD 7011", valor="500,00", status_pgt="Pago",
+               data_pagamento="10/09/2026", credor="FORNECEDOR A")])
+    criar(telas=("conciliacao",))
+    with app.test_client() as cliente:
+        entrar_como(cliente)
+        tela = cliente.get(f"/analisesps/conciliacao?conta_id={conta_id}"
+                           ).get_data(as_text=True)
+    assert "900001" in tela, "o link do card continua"
+    assert "data-ficha=" not in tela
+
+
+def test_BEEVALE_acha_a_SP_com_o_extrato_1_5_por_cento_maior(banco_conc):
+    """08/10/2026: *"quando o credor do extrato for Beevale Pagamentos e
+    Benefícios Ltda, ou tiver algo como Beevale, Bee Vale (…) a maioria desses
+    lançamentos tem 1,5% de acréscimo em relação ao valor da SP"*."""
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    from tests.test_analisesps_banco import semear, sp
+    conta_id = conta_de_teste()
+    conciliacao.importar(conta_id, conciliacao_ofx.ler(ofx([
+        ("20260910", "-1015.00", "S1", "PIX BEEVALE PAGAMENTOS E BENEFICIOS LTDA"),
+        ("20260911", "-152.25", "S2", "TED BEE VALE"),
+        ("20260912", "-1015.00", "S3", "PIX OUTRO FORNECEDOR")])), "x.ofx", "T")
+    semear([
+        sp("900021", conta="BD 7011", valor="1.000,00", status_pgt="Pago",
+           data_pagamento="10/09/2026", credor="ALIMENTACAO OBRA X"),
+        sp("900022", conta="BD 7011", valor="150,00", status_pgt="Pagar",
+           vencimento="11/09/2026", credor="BEEVALE"),
+        sp("900023", conta="BD 7011", valor="1.000,00", status_pgt="Pago",
+           data_pagamento="12/09/2026", credor="OUTRO FORNECEDOR"),
+    ])
+    conta = next(c for c in conciliacao.contas() if c["id"] == conta_id)
+    linhas = conciliacao.listar({"conta_id": conta_id})
+    achadas = conciliacao.sps_das_linhas(conta, linhas)
+    por_desc = {l["descricao"]: achadas.get(l["id"], []) for l in linhas}
+    beevale = por_desc["PIX BEEVALE PAGAMENTOS E BENEFICIOS LTDA"]
+    assert [(s["id"], s["como"], s.get("beevale")) for s in beevale] == [
+        ("900021", "pago no dia", True)]
+    assert [s["id"] for s in por_desc["TED BEE VALE"]] == ["900022"]
+    # quem NÃO é BeeVale não ganha o desconto de 1,5%
+    assert por_desc["PIX OUTRO FORNECEDOR"] == []
+
+
+def test_o_valor_da_SP_sem_o_acrescimo_e_o_do_CENTAVO_exato():
+    from app.apps.analisesps.conciliacao import (e_beevale,
+                                                 valores_sem_acrescimo_beevale)
+    assert valores_sem_acrescimo_beevale(Decimal("1015.00")) == [Decimal("1000.00")]
+    assert valores_sem_acrescimo_beevale(Decimal("10.15")) == [Decimal("10.00")]
+    assert e_beevale("Beevale Pagamentos e Benefícios Ltda")
+    assert e_beevale("PIX BEE-VALE") and not e_beevale("VALE TRANSPORTE")

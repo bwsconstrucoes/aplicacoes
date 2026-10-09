@@ -38,6 +38,8 @@ import substituicao as _sub
 import omie
 import pipefy as _pipefy
 import notas_bws as _notas
+import base_faturamento as _bfat
+import omie_conferencia as _ocf
 from decimal import Decimal
 import completar_imediato as _compl
 
@@ -366,6 +368,7 @@ def emitir():
             try:
                 with contextlib.redirect_stdout(buf):
                     _concluir.concluir(card_id, numero, codigo, data_iso, nota_path, ctx=ctx,
+                                       id_dps=res.get("id_dps", "") if isinstance(res, dict) else "",
                                        nota_substituida=None, nacional=True,
                                        chave_nacional=chave)
             except Exception as e:
@@ -671,6 +674,298 @@ def _pagina_planilha(token, card_id, aviso=""):
         coluna "Nº Nota" da "Notas BWS", ele avisa e não grava nada.</p>
       </div>""")
 
+@bp.route("/faturamento", methods=["GET", "POST"])
+def faturamento():
+    """Consolida as notas numa aba só — a base da futura tela de Faturamento.
+
+    Pedido do dono em 09/10/2026: a informação de uma nota está espalhada por
+    cinco planilhas, e ele quer uma base só para fazer a gestão das notas
+    emitidas numa tela (no Análise de SPs), em vez de na "Notas BWS".
+
+    **Roda em LOTES, e é de propósito.** São ~3.300 notas antigas; ler e escrever
+    tudo de uma vez prenderia uma das quatro threads do serviço por minutos — foi
+    assim que o monorepo caiu em 07/10/2026. Cada rodada processa um lote e diz
+    quantas faltam; clicar de novo continua de onde parou. Rodar duas vezes não
+    duplica: a chave é o número da nota.
+    """
+    if not _token_ok():
+        return Response(_pagina_erro("Acesso não autorizado."), status=403, mimetype="text/html")
+    token = request.values.get("token", "")
+    if request.method == "GET":
+        return Response(_pagina_faturamento(token), mimetype="text/html")
+
+    try:
+        limite = max(1, min(int(request.form.get("limite") or _bfat.LOTE_PADRAO), 2000))
+    except ValueError:
+        limite = _bfat.LOTE_PADRAO
+
+    buf = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buf):
+            gc = _worker.cliente_gspread()
+            print(f">>> Consolidando até {limite} notas na aba "
+                  f"'{_bfat.ABA}'. Nada é apagado e nada é emitido.")
+            print("    A C. Diários NÃO é lida: obra, contrato, tributação, "
+                  "empresa e SCP são atributos da obra, e a tela cruza pelo código.")
+            r = _bfat.consolidar(gc.open_by_key(_worker.ID_PROC), limite=limite)
+            print(f">>> {r['gravadas']} nota(s) gravada(s); {r['ja_estavam']} já "
+                  f"estavam; FALTAM {r['faltam']}; total na base: "
+                  f"{r['total_na_base']}.")
+            if r["faltam"]:
+                print(">>> Clique de novo para continuar de onde parou.")
+            else:
+                print(">>> Acabou: todas as notas da 'Notas BWS' estão na base.")
+    except Exception as e:
+        buf.write(f"\n>>> ERRO: {type(e).__name__}: {e}")
+    return Response(_pagina_faturamento(token, log=buf.getvalue()),
+                    mimetype="text/html")
+
+
+def _pagina_faturamento(token, log=""):
+    t = html.escape(token)
+    caixa = (f"<div class='card'><b>O que aconteceu</b><pre>{html.escape(log)}</pre></div>"
+             if log else "")
+    return _doc("Base de Faturamento", f"""
+      <h1>Base de Faturamento</h1>
+      <p class='sub'>Junta numa aba só (<b>{html.escape(_bfat.ABA)}</b>) o que hoje
+      está espalhado por cinco planilhas: a "Notas BWS", a "Notas BWS Links", o
+      "Controle Nacional", a C. Diários (obra, contrato, tributação, alíquota,
+      <b>empresa</b>) e a "Protocolos" (o card do Pipefy e o código do Omie).</p>
+      <p class='sub'>É ela que vai alimentar a tela de Faturamento. <b>Não apaga
+      nada</b>, não emite nada e não mexe na "Notas BWS" — só lê e escreve na aba
+      nova.</p>
+      <div class='warn'><b>Roda em lotes.</b> São milhares de notas; fazer tudo de
+      uma vez prenderia o serviço. Cada clique processa um lote e diz quantas
+      faltam — clique de novo até acabar. Repetir não duplica.</div>
+      {caixa}
+      <div class='card'>
+        <form method='post' action='{url_for('.faturamento')}'>
+          <label class='lbl'>Quantas notas nesta rodada
+            <input name='limite' value='{_bfat.LOTE_PADRAO}' style='padding:8px;
+                   border:1px solid #c8d0da;border-radius:6px;width:120px'></label>
+          <input type='hidden' name='token' value='{t}'>
+          <button type='submit'>Consolidar este lote</button>
+        </form>
+        <p class='sub'>Três campos que a base guarda e a "Notas BWS" nunca
+        guardou: o <b>período da medição</b>, o <b>corpo da nota</b> e a
+        <b>empresa/SCP</b> que faturou. Para as notas antigas eles ficam vazios —
+        não existem em lugar nenhum; para as novas, o emissor grava.</p>
+      </div>
+      <p class='sub' style='text-align:center'>
+        <a href='{url_for('.declaracao')}?token={t}'>Conferir declaração</a> &nbsp;·&nbsp;
+        <a href='{url_for('.diag')}?token={t}'>Diagnóstico</a>
+      </p>""")
+
+
+@bp.route("/omie", methods=["GET", "POST"])
+def omie_tributos():
+    """Conferir e equalizar os TRIBUTOS do título no Omie.
+
+    As três operações que o dono quer manter (09/10/2026): consulta, equalização
+    e atualização dos tributos. Elas viviam num Apps Script da planilha, com a
+    credencial do Omie em texto claro; aqui a credencial vem da aba Credenciais.
+
+    **Conferir é só leitura.** Ela consulta o título de cada nota, rateia o valor
+    dele entre as notas daquele título (fechando ao centavo) e grava na base o
+    que o Omie tem — mais a divergência. Nada é alterado no Omie.
+
+    **Equalizar ESCREVE no Omie, e por isso exige confirmação marcada.** A
+    direção é sempre a mesma: a nota manda, o título obedece. O que vai para o
+    Omie é a soma dos tributos das notas válidas daquele título — nunca o
+    contrário, porque nota fiscal não se desfaz e título é registro interno.
+    """
+    if not _token_ok():
+        return Response(_pagina_erro("Acesso não autorizado."), status=403, mimetype="text/html")
+    token = request.values.get("token", "")
+    if request.method == "GET":
+        return Response(_pagina_omie(token), mimetype="text/html")
+
+    escrever = request.form.get("confirmo_escrever") == "on"
+    try:
+        limite = max(1, min(int(request.form.get("limite") or 40), 300))
+    except ValueError:
+        limite = 40
+
+    buf = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buf):
+            gc = _worker.cliente_gspread()
+            cred = _worker.ler_credenciais(gc)
+            ws = _bfat._ws(gc.open_by_key(_worker.ID_PROC))
+            linhas = _bfat.ler_linhas(ws)
+            grupos = _ocf.agrupar_por_titulo(linhas)
+            sem_titulo = len(linhas) - sum(len(v) for v in grupos.values())
+            print(f">>> {len(linhas)} nota(s) na base; {len(grupos)} título(s) do "
+                  f"Omie; {sem_titulo} sem código de integração (ficam de fora).")
+            print(f">>> Modo: {'CONFERIR E EQUALIZAR (escreve no Omie)' if escrever else 'SÓ CONFERIR (leitura)'}.")
+
+            atualizar, conferidos, equalizados, divergentes = [], 0, 0, 0
+            sem_tributo = 0
+            for codigo, notas in list(grupos.items())[:limite]:
+                try:
+                    titulo = omie.ler_titulo(omie.consultar(cred, codigo))
+                except Exception as e:
+                    print(f"  [{codigo}] consulta falhou: {type(e).__name__}: {e}")
+                    continue
+                conferivel = _ocf.tem_tributos_declarados(notas)
+                desejado = _ocf.somar_tributos(notas)
+                fora = _ocf.precisa_equalizar(titulo, desejado) if conferivel else []
+                partes = _ocf.ratear_titulo(notas, titulo)
+                for d in notas:
+                    _ocf.aplicar_no_registro(
+                        d, titulo, partes.get(_bfat._txt(d.get("nota_numero"))))
+                    atualizar.append(d)
+                conferidos += 1
+                if not conferivel:
+                    # Nota antiga não tem tributo declarado — o emissor nunca os
+                    # gravou. Equalizar aqui ZERARIA as retenções do Omie, que
+                    # são a única cópia que existe delas.
+                    sem_tributo += 1
+                    print(f"  [{codigo}] sem tributo na NOTA — conferido e "
+                          f"gravado na base, mas NÃO equalizável.")
+                elif fora:
+                    divergentes += 1
+                    nomes = ", ".join(f"{t.upper()}: Omie {titulo.get(t)} × notas "
+                                      f"{desejado.get(t)}" for t in fora)
+                    print(f"  [{codigo}] DIVERGE em {nomes}")
+                    if escrever:
+                        try:
+                            omie.alterar_tributos(cred, codigo, desejado)
+                            equalizados += 1
+                            print(f"  [{codigo}] equalizado no Omie.")
+                        except Exception as e:
+                            print(f"  [{codigo}] ERRO ao gravar: {type(e).__name__}: {e}")
+
+            gravadas = _bfat.gravar_lote(ws, atualizar)
+            print(f">>> {conferidos} título(s) conferido(s); {divergentes} "
+                  f"divergente(s); {equalizados} equalizado(s) no Omie; "
+                  f"{sem_tributo} sem tributo na nota (não equalizáveis); "
+                  f"{gravadas} linha(s) da base atualizada(s).")
+            if len(grupos) > limite:
+                print(f">>> FALTAM {len(grupos) - limite} título(s). Clique de novo.")
+    except Exception as e:
+        buf.write(f"\n>>> ERRO: {type(e).__name__}: {e}")
+    return Response(_pagina_omie(token, log=buf.getvalue()), mimetype="text/html")
+
+
+@bp.route("/omie_numero", methods=["POST"])
+def omie_numero():
+    """Acerta o NÚMERO da nota no título do Omie — a reparação de 09/10/2026.
+
+    Por que precisa existir: o campo `numero_documento_fiscal` do Omie aceita 20
+    caracteres, e com os números de 13 dígitos do padrão nacional **duas notas já
+    não cabem**. A nota 2600000003294 falhou nesse passo e o título ficou sem o
+    número dela. O conserto (mandar o número curto) resolve as próximas, mas não
+    volta atrás: a emissão já passou, e a conclusão tem trava contra repetir.
+
+    É idempotente: o número é acumulado sem duplicar, e esta tela **não toca nas
+    retenções** — só no campo do número.
+    """
+    if not _token_ok():
+        return Response(_pagina_erro("Acesso não autorizado."), status=403, mimetype="text/html")
+    token = request.values.get("token", "")
+    numero = (request.form.get("numero") or "").strip()
+    if not numero:
+        return Response(_pagina_omie(token, log=">>> Informe o número da nota."),
+                        mimetype="text/html")
+
+    buf = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buf):
+            gc = _worker.cliente_gspread()
+            cred = _worker.ler_credenciais(gc)
+            ws = _bfat._ws(gc.open_by_key(_worker.ID_PROC))
+            alvo = _worker.sequencial_da_nota(numero)
+            achada = None
+            for d in _bfat.ler_linhas(ws):
+                if _worker.sequencial_da_nota(d.get("nota_numero")) == alvo:
+                    achada = d
+                    break
+            if not achada:
+                print(f">>> A nota {numero} não está na Base Faturamento. Rode a "
+                      f"'Base de Faturamento' primeiro, ou confira o número.")
+            elif not _bfat._txt(achada.get("omie_codigo_integracao")):
+                print(f">>> A nota {numero} está na base, mas SEM código de "
+                      f"integração do Omie — não há título para acertar.")
+            else:
+                codigo = _bfat._txt(achada["omie_codigo_integracao"])
+                antes = omie._ler_num_doc(omie.consultar(cred, codigo))
+                print(f">>> Título {codigo}: o campo tinha '{antes}'.")
+                _, doc = omie.adicionar_numero(cred, codigo, achada["nota_numero"])
+                print(f">>> Agora tem '{doc}'. As retenções NÃO foram tocadas.")
+    except Exception as e:
+        buf.write(f"\n>>> ERRO: {type(e).__name__}: {e}")
+    return Response(_pagina_omie(token, log=buf.getvalue()), mimetype="text/html")
+
+
+def _pagina_omie(token, log=""):
+    t = html.escape(token)
+    caixa = (f"<div class='card'><b>O que aconteceu</b><pre>{html.escape(log)}</pre></div>"
+             if log else "")
+    return _doc("Tributos no Omie", f"""
+      <h1>Tributos no Omie</h1>
+      <p class='sub'>As três operações que sobraram do Apps Script da planilha:
+      <b>consultar</b> o título, <b>equalizar</b> os tributos e <b>atualizar</b> o
+      Omie. O resto das funções daquele script não veio.</p>
+      <div class='warn'><b>Nota antiga não é equalizável, e isso é trava de
+        propósito.</b> O emissor nunca gravou tributo nenhum até 09/10/2026, então
+        as notas antigas chegam à base <b>sem tributo declarado</b>. Equalizar
+        nesse caso zeraria as retenções no Omie — que são a única cópia que existe
+        delas. A tela confere, grava o que o Omie tem, e <b>não equaliza</b>.</div>
+      <div class='card'><b>Como ela pensa</b>
+        <p class='sub'>A <b>nota manda, o título obedece</b>. O que pode ir para o
+        Omie é a <b>soma dos tributos das notas válidas</b> daquele título — nunca
+        o contrário: nota fiscal não se desfaz, título é registro interno. Nota
+        <b>cancelada fica fora</b> da soma.</p>
+        <p class='sub'>Um título cobre várias notas. Para mostrar quanto do título
+        cabe a cada uma, o valor é <b>rateado pelo valor bruto da nota, fechando ao
+        centavo</b> — senão a conferência acusaria um centavo de diferença em toda
+        nota, e alarme assim deixa de ser lido.</p>
+      </div>
+      {caixa}
+      <div class='card'>
+        <form method='post' action='{url_for('.omie_tributos')}'>
+          <label class='lbl'>Quantos títulos nesta rodada
+            <input name='limite' value='40' style='padding:8px;border:1px solid
+                   #c8d0da;border-radius:6px;width:110px'></label>
+          <div class='err' style='margin:12px 0'>
+            <label><input type='checkbox' name='confirmo_escrever'>
+            &nbsp;<b>Também ALTERAR os tributos no Omie</b> onde houver
+            divergência.</label>
+            <p class='sub' style='margin:6px 0 0'>Desmarcado, esta tela só
+            <b>confere</b> e grava o resultado na base — não toca no Omie. Marcado,
+            ela <b>escreve no sistema financeiro</b>: confira a lista de
+            divergências de uma rodada só de leitura antes.</p>
+          </div>
+          <input type='hidden' name='token' value='{t}'>
+          <button type='submit'>Rodar</button>
+        </form>
+        <p class='sub'>Roda em lotes e diz quantos títulos faltam. Conferir de novo
+        é seguro: consulta não altera nada.</p>
+      </div>
+      <div class='card'><b>Acertar o número da nota no título</b>
+        <p class='sub'>Use quando a emissão falhou justamente nesse passo e o
+        título ficou sem o número da nota. O campo do Omie aceita <b>20
+        caracteres</b>, e com os números de 13 dígitos do padrão nacional duas
+        notas já não cabiam — por isso o sistema passou a gravar ali o número
+        <b>curto</b> (3294, e não 2600000003294), que é o mesmo formato que os
+        títulos antigos já têm.</p>
+        <form method='post' action='{url_for('.omie_numero')}'>
+          <label class='lbl'>Número da nota (curto ou longo, tanto faz)
+            <input name='numero' style='padding:8px;border:1px solid #c8d0da;
+                   border-radius:6px;width:220px'></label>
+          <input type='hidden' name='token' value='{t}'>
+          <button type='submit'>Acertar o número</button>
+        </form>
+        <p class='sub'>Não mexe nas retenções e pode repetir: o número é
+        acumulado sem duplicar.</p>
+      </div>
+      <p class='sub' style='text-align:center'>
+        <a href='{url_for('.faturamento')}?token={t}'>Base de Faturamento</a> &nbsp;·&nbsp;
+        <a href='{url_for('.diag')}?token={t}'>Diagnóstico</a>
+      </p>""")
+
+
 @bp.route("/declaracao", methods=["GET", "POST"])
 def declaracao():
     """Pergunta à prefeitura se uma declaração já virou nota — e termina o serviço.
@@ -708,6 +1003,50 @@ def declaracao():
 
     numero_esperado, _ano = _edps.numero_da_declaracao(id_dps)
 
+    # Encerrar a declaração à mão. Existe porque a API pode nunca contar a
+    # recusa: a declaração da nota 3281 ficou um dia respondendo "em
+    # processamento" para a consulta enquanto o PORTAL da prefeitura já a
+    # mostrava como "Processado com Erros", e depois como recusada no nacional.
+    #
+    # ⚠️ Isto NÃO libera o número, e essa parte mudou em 08/10/2026: na primeira
+    # versão ela liberava, o número 3281 foi reusado e a prefeitura respondeu
+    # EL99 ("chave informada para a DPS não existe no repositório municipal").
+    # Número já enviado é número gasto. Encerrar serve para a lista parar de
+    # pedir conferência de algo que já morreu — nada mais.
+    #
+    # Não emite, não cancela e não apaga nada.
+    if request.values.get("encerrar") == "1" or request.values.get("liberar") == "1":
+        try:
+            ok = _decl.marcar_recusada(
+                _ctx_minimo()["gc"].open_by_key(_worker.ID_PROC), id_dps,
+                ["liberada à mão na tela: o portal da prefeitura mostra esta "
+                 "declaração como recusada / processada com erros"])
+        except Exception as e:
+            return Response(_pagina_declaracao(
+                token, id_dps, card_id,
+                aviso=f"Não consegui liberar: {type(e).__name__}: {e}"),
+                mimetype="text/html")
+        if not ok:
+            return Response(_pagina_declaracao(
+                token, id_dps, card_id,
+                aviso="Não achei essa declaração na aba de controle — confira a "
+                      "identificação."), mimetype="text/html")
+        return Response(_pagina_explicacao(
+            f"<h1>Declaração encerrada</h1>"
+            f"<div class='ok'>Marquei esta declaração como <b>recusada</b>: ela sai da "
+            f"lista e o sistema para de pedir conferência dela.</div>"
+            f"<div class='warn'>O número "
+            f"{('<b>' + html.escape(numero_esperado) + '</b> ') if numero_esperado else ''}"
+            f"<b>NÃO volta a ser usado</b>, e isso é de propósito. Número que já foi "
+            f"enviado à prefeitura fica gasto: a identificação da declaração é montada "
+            f"a partir dele, e reusar o número reusa a identificação — a prefeitura "
+            f"responde <b>EL99</b>, que foi o que aconteceu com a 3281 em 08/10/2026. "
+            f"A próxima nota sai com o número seguinte.</div>"
+            f"<p>Nada foi emitido, nada foi apagado e nenhuma nota foi criada ou "
+            f"cancelada — isto mexeu só no controle interno de numeração.</p>"
+            f"<p><a class='btn' href='{url_for('.declaracao')}?token={html.escape(token)}'>"
+            f"Voltar</a></p>"), mimetype="text/html")
+
     # Diagnóstico completo: pergunta em todos os lugares e mostra as respostas
     # cruas. É o que se usa quando a nota não aparece em canto nenhum e ninguém
     # sabe de quem é a vez — e serve de prova para levar à prefeitura.
@@ -734,6 +1073,17 @@ def declaracao():
         # O desfecho mais tranquilo dos três, e o que vinha disfarçado de
         # "não consegui consultar": não existe nota, e o próprio manual diz que a
         # mesma declaração pode ser reenviada com a correção.
+        #
+        # Marcar aqui não é detalhe de registro: enquanto a declaração fica como
+        # "aguardando", ela SEGURA o número dela, e a numeração pula esse número
+        # para sempre. Recusada quer dizer que não existe nota — o número volta a
+        # estar livre. A emissão já marcava; esta tela não marcava, e é por ela
+        # que se descobre a recusa que chegou tarde.
+        try:
+            _decl.marcar_recusada(ctx["gc"].open_by_key(_worker.ID_PROC),
+                                  id_dps, e.motivos)
+        except Exception:
+            pass
         return Response(_pagina_recusa(numero_esperado, e.motivos), mimetype="text/html")
     except _edps.AindaProcessando as e:
         return Response(_pagina_declaracao(
@@ -770,7 +1120,7 @@ def declaracao():
     try:
         with contextlib.redirect_stdout(buf):
             _concluir.concluir(card_id, numero, "", data_iso, nota_path, ctx=ctx,
-                               nacional=True, chave_nacional=chave)
+                               nacional=True, chave_nacional=chave, id_dps=id_dps)
     except Exception as e:
         buf.write(f"\n>>> ERRO no concluir: {type(e).__name__}: {e}")
     try:
@@ -833,13 +1183,25 @@ def _pagina_declaracao(token, id_dps, card_id, aviso="", abertas=None, erro_list
                          f"prefeitura.</span>")
             else:
                 marca = ""
+            # Só na parada: oferecer isto numa declaração que ainda está na
+            # fila convidaria a encerrar uma nota que talvez exista.
+            liberar = ""
+            if d.get("travada"):
+                liberar = (f" &nbsp;<a href='{link}&encerrar=1' "
+                           f"onclick=\"return confirm('Isto marca a declaração como "
+                           f"RECUSADA e tira ela da lista. O numero {d['numero']} NAO "
+                           f"volta a ser usado - numero ja enviado fica gasto. Use "
+                           f"apenas se o portal da prefeitura mostrar esta declaracao "
+                           f"como recusada ou processada com erros. Confirma?')\">"
+                           f"encerrar (o número não volta)</a>")
             linhas += (f"<li style='margin:8px 0'>Nota <b>{html.escape(d['numero'])}</b> — "
                        f"obra {html.escape(d['obra'] or '?')}, medição "
                        f"{html.escape(d['med'] or '?')} — enviada em "
                        f"{html.escape(d['enviada_em'])}{amb}{marca}<br>"
                        f"<a class='btn' style='padding:6px 12px;font-size:13px' "
                        f"href='{link}'>Conferir esta</a>"
-                       f" &nbsp;<a href='{link}&diagnostico=1'>diagnóstico</a></li>")
+                       f" &nbsp;<a href='{link}&diagnostico=1'>diagnóstico</a>"
+                       f"{liberar}</li>")
         lista = (f"<div class='card'><b>Declarações em aberto ({len(abertas)})</b>"
                  f"<ul style='padding-left:18px'>{linhas}</ul>"
                  f"<p class='sub'>São as que a prefeitura aceitou e ainda não viraram "
@@ -1333,7 +1695,9 @@ def _pagina_pedir_card(token):
         <a href='{url_for('.regerar')}?token={t}'>Regravar PDFs</a> &nbsp;·&nbsp;
         <a href='{url_for('.declaracao')}?token={t}'>Conferir declaração</a> &nbsp;·&nbsp;
         <a href='{url_for('.manual')}?token={t}'>Nota emitida no portal</a> &nbsp;·&nbsp;
-        <a href='{url_for('.planilha')}?token={t}'>Só a linha da planilha</a>
+        <a href='{url_for('.planilha')}?token={t}'>Só a linha da planilha</a> &nbsp;·&nbsp;
+        <a href='{url_for('.faturamento')}?token={t}'>Base de Faturamento</a> &nbsp;·&nbsp;
+        <a href='{url_for('.omie_tributos')}?token={t}'>Tributos no Omie</a>
       </p>""")
 
 
@@ -1352,8 +1716,13 @@ def _pagina_recusa(numero, motivos):
     return _doc("Declaração recusada", (
         f"<h1>A plataforma nacional recusou a declaração</h1>"
         f"<div class='ok'><b>Nenhuma nota foi criada.</b> Pode corrigir e emitir de "
-        f"novo — inclusive com o mesmo número{(' (' + html.escape(numero) + ')') if numero else ''}, "
-        f"que é o caminho previsto pela prefeitura para este caso.</div>"
+        f"novo.</div>"
+        f"<div class='warn'>A nota sairá com um número <b>novo</b>"
+        f"{(', e não com o ' + html.escape(numero)) if numero else ''}. O manual da "
+        f"prefeitura diz que a declaração recusada pode ser reenviada com a mesma "
+        f"identificação, mas em Eusébio isso devolveu <b>EL99</b> em 08/10/2026 — "
+        f"número já enviado fica gasto. Buraco na sequência é normal; nota cancelada "
+        f"faz o mesmo.</div>"
         f"<div class='card'><b>O que ela recusou</b><ul>{itens}</ul></div>"
         f"{explicacoes}"
         f"<p class='sub'>Se o motivo não estiver claro, me mande este texto — os "
@@ -1563,6 +1932,9 @@ def _render_pagina(ctx, card_id, token, nota_sub="", tm_over="", val_over=None, 
               f" &nbsp;·&nbsp; "
               f"<a href='{url_for('.planilha')}?token={html.escape(token)}"
               f"&card_id={html.escape(card_id)}'>Só a linha da planilha</a>"
+              f" &nbsp;·&nbsp; "
+              f"<a href='{url_for('.faturamento')}?token={html.escape(token)}'>"
+              f"Base de Faturamento</a>"
               f"</p>")
     return _doc("Emissão NFS-e", sub_banner + cab + f"<div class='card'>{metrics}{alertas}</div>"
                 + form + f"<div class='card'><b>Espelho</b>{iframe}</div>" + rodape)
@@ -1571,9 +1943,23 @@ def _render_pagina(ctx, card_id, token, nota_sub="", tm_over="", val_over=None, 
 def _pagina_resultado(r):
     log = html.escape(r.get("log", "") or "")
     aviso_num = ""
-    if r.get("prox") and str(r["numero"]) != str(r["prox"]):
-        aviso_num = (f"<div class='warn'>Número devolvido ({r['numero']}) ≠ esperado "
-                     f"({r['prox']}). Confira a numeração.</div>")
+    # O número devolvido é comparado pelo SEQUENCIAL, não pelo texto: no modelo
+    # nacional a nota 3283 volta como "2600000003283" (ano + sequencial), e
+    # comparar os textos acusava divergência em TODA nota — alarme que, de tanto
+    # aparecer, deixa de ser lido. Aconteceu na primeira nota nacional, 08/10/2026.
+    if r.get("prox"):
+        devolvido = _worker.sequencial_da_nota(r["numero"])
+        esperado = _worker.sequencial_da_nota(r["prox"])
+        if devolvido != esperado:
+            aviso_num = (f"<div class='warn'>Número devolvido ({r['numero']}) ≠ "
+                         f"esperado ({r['prox']}). Confira a numeração.</div>")
+        elif str(r["numero"]) != str(r["prox"]):
+            aviso_num = (f"<div class='ok'>O número oficial desta nota é "
+                         f"<b>{html.escape(str(r['numero']))}</b> — é o formato do "
+                         f"padrão nacional: ano (26) mais o nosso sequencial "
+                         f"({esperado}). É este número que está no documento do "
+                         f"cliente e na planilha; a próxima nota sai como "
+                         f"{esperado + 1}.</div>")
     sub_box = ""
     sub = r.get("sub")
     if sub:

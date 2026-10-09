@@ -397,7 +397,7 @@ def sinais_de_fraude(conn: Connection, vistos: set, inicio: dt.date, fim: dt.dat
                      f"{'suas batidas' if plural else 'sua batida'} das {_horas(r['horas'])} "
                      f"{'ficaram' if plural else 'ficou'} sem foto. A foto faz parte do registro "
                      "do ponto: ao bater, deixe a câmera ver o seu rosto. Se a câmera do aparelho "
-                     "não funcionou, avise o encarregado.")
+                     "não funcionou, avise a administração da obra.")
             envios.enfileirar(conn, tipo="AVISO_FOTO",
                               referencia=f"AVISO_FOTO:{r['colaborador_id']}:{d.isoformat()}",
                               telefone=telefone, texto=texto, colaborador_id=r["colaborador_id"],

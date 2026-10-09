@@ -213,6 +213,78 @@ def precisa_atualizar(forma: str, y: str, centro_custo: str) -> bool:
     return bool(falta_chave or sem_cc)
 
 
+def chave_a_atualizar(forma, info_pgt) -> bool:
+    """A SP é BeeVale/Pix e a "chave" na coluna Y é o aviso "Atualizar Chave"?
+
+    09/10/2026, o dono: *"as SPs que têm o tipo de pagamento BeeVale e a chave
+    Pix com a informação 'atualizar chave Pix' a gente precisa tratar antes de
+    colocar em agendar"*. É a chave aleatória que a geração da folha põe no card
+    (`folha_cards.CHAVE_PIX_A_ATUALIZAR`) — não é chave de verdade, e pagar com
+    ela não paga ninguém. Pix entra junto pelo mesmo motivo.
+    """
+    import unicodedata
+    info = classificar(forma, info_pgt)
+    if info["tipo"] != "pix" or not info["chave"]:
+        return False
+    cru = unicodedata.normalize("NFKD", str(info["chave"]))
+    limpo = "".join(c for c in cru if not unicodedata.combining(c)).upper()
+    return "ATUALIZAR" in limpo
+
+
+def _normal(texto) -> str:
+    import unicodedata
+    cru = unicodedata.normalize("NFKD", " ".join(str(texto or "").split()))
+    return "".join(c for c in cru if not unicodedata.combining(c)).lower()
+
+
+# OS TIPOS DE DESPESA QUE NÃO TÊM NOTA FISCAL (09/10/2026). O dono: *"quando a
+# categoria de despesa for rescisão, férias, salários e ordenados, não precisa
+# destaque de número de nota (…) vai ter outras regras, depois eu vou
+# adicionando"*. Comparado pelo COMEÇO, sem acento e sem maiúscula
+# ("Rescisão", "Rescisões" e "RESCISAO" são o mesmo). Regra nova entra AQUI.
+TIPOS_SEM_NOTA = ("rescis", "ferias", "salarios e ordenados")
+# E as formas de pagamento que não têm nota: o BeeVale paga gente, não serviço.
+FORMAS_SEM_NOTA = ("beevale",)
+
+
+def falta_nota(forma, tipo_despesa, nf, status_pgt="") -> bool:
+    """A SP deveria ter número de nota fiscal e está sem?
+
+    *"Às vezes a gente esquece de conferir se tem o número da nota (…) bater o
+    olho e já saber que aquele pagamento tem alguma coisa errada."* Cancelada
+    não precisa de nota."""
+    if str(nf or "").strip():
+        return False
+    if _normal(status_pgt).startswith("cancel"):
+        return False
+    if any(f in _normal(forma) for f in FORMAS_SEM_NOTA):
+        return False
+    return not _normal(tipo_despesa).startswith(TIPOS_SEM_NOTA)
+
+
+def atualizar_sp(centro_custo, status_pgt="") -> bool:
+    """A SP chegou incompleta do sistema de compras e precisa ser tratada?
+
+    09/10/2026, o dono: *"o sistema de compra gera a solicitação de pagamento e
+    ela vem incompleta, os dados vêm na descrição (…) ela vai estar sem centro
+    de custo e a conta em erro (…) o fato de estar sem obra já é a trava (…)
+    coloca 'atualizar SP'"*. O sinal é a OBRA (centro de custo) em branco.
+    Paga ou cancelada não tem mais o que tratar."""
+    if str(centro_custo or "").strip():
+        return False
+    return not _normal(status_pgt).startswith(("pago", "cancel"))
+
+
+def sem_validacao(validacao, status_pgt="") -> bool:
+    """A Validação está em branco numa SP que ainda vai ser paga? (09/10/2026:
+    *"quando tem uma SP sem validação fica só a célula em branco; era bom um
+    destaque"*). Paga ou cancelada não pede mais validação — destacar o
+    histórico inteiro esconderia as que importam."""
+    if str(validacao or "").strip():
+        return False
+    return not _normal(status_pgt).startswith(("pago", "cancel"))
+
+
 def pendencias(forma, info_pgt, centro_custo, codigo_integracao, status_pgt) -> list:
     """
     Lista de pendências de cadastro de um lançamento (para o alerta laranja e

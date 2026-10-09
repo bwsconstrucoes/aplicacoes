@@ -114,6 +114,35 @@ def listar_abertas(planilha) -> list[dict]:
     return saida
 
 
+def numeros_registrados(planilha) -> list[int]:
+    """TODOS os números que já tiveram declaração enviada — qualquer que seja o
+    status dela.
+
+    ⚠️ **Número que já foi enviado à prefeitura não volta a ser usado, e isto
+    custou duas emissões.** O manual diz que uma declaração recusada pode ser
+    reenviada com a MESMA identificação, e foi assim que o sistema nasceu. Em
+    08/10/2026 a prática mostrou o contrário em Eusébio: a declaração da nota
+    3281 foi aceita, transmitida e recusada no nacional; o número foi liberado e
+    reusado; e a prefeitura respondeu **EL99 — "chave informada para a DPS não
+    existe no repositório municipal"**.
+
+    A identificação da declaração é construída a partir do número da nota. Então
+    reusar o número reusa a identificação — e a identificação, uma vez enviada,
+    já não serve. Como a aba só recebe declaração **depois** de a prefeitura
+    aceitar, todo número que está aqui já foi enviado: todos contam.
+
+    O custo de errar para cada lado não é parecido: pular um número deixa um
+    buraco na sequência, que é normal (nota cancelada faz o mesmo). Reusar um
+    número gasta uma emissão e horas até descobrir.
+    """
+    saida = []
+    for d in _linhas(_ws(planilha)):
+        digitos = "".join(c for c in str(d.get("numero") or "") if c.isdigit())
+        if digitos:
+            saida.append(int(digitos))
+    return saida
+
+
 def _atualizar(planilha, id_dps: str, status: str, chave="", numero_nota="",
                observacao="") -> bool:
     ws = _ws(planilha)
@@ -132,7 +161,13 @@ def marcar_concluida(planilha, id_dps: str, numero_nota, chave: str) -> bool:
 
 
 def marcar_recusada(planilha, id_dps: str, motivos) -> bool:
-    """Recusada quer dizer que NÃO existe nota: o número volta a estar livre, e a
-    mesma declaração pode ser reenviada com a correção."""
+    """Recusada quer dizer que **não existe nota** — mas o número NÃO volta a
+    estar livre.
+
+    A segunda metade da frase mudou em 08/10/2026, e mudou por evidência: o
+    manual diz que a declaração recusada pode ser reenviada com a mesma
+    identificação, e em Eusébio isso devolveu **EL99** ("chave informada para a
+    DPS não existe no repositório municipal"). Ver `numeros_registrados`.
+    """
     texto = "; ".join(motivos or [])[:400]
     return _atualizar(planilha, id_dps, RECUSADA, observacao=texto)

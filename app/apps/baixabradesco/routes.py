@@ -10,7 +10,7 @@ from . import bp
 from .core import processar_baixabradesco
 from .conferencia import conferir
 from .diagnostico import executar_diagnostico
-from .fila import reprocessar_fila, resumo_fila
+from .fila import reprocessar_fila, resumo_fila, zerar_fila_antiga
 from .fila_tardia import adiar_payload, processar_fila_tardia
 
 
@@ -135,13 +135,35 @@ def conferir_omie_route():
 
         if request.method == 'GET':
             # Pela barra do navegador: ?dias=60&limite=50&apenas_contar=1
-            for chave in ('dias', 'limite', 'pausa_ms'):
+            for chave in ('dias', 'limite', 'pular', 'pausa_ms', 'sentido'):
                 if request.args.get(chave):
                     payload[chave] = request.args.get(chave)
             if request.args.get('apenas_contar') in {'1', 'true', 'sim', 'yes'}:
                 payload['apenas_contar'] = True
 
         return jsonify(conferir(payload))
+    except Exception as e:
+        return jsonify({
+            'ok': False,
+            'app': 'baixabradesco',
+            'error': str(e),
+            'traceback': traceback.format_exc(),
+        }), 500
+
+
+@bp.route('/zerar-fila-antiga', methods=['POST'])
+def zerar_fila_antiga_route():
+    """Dispensa pendências antigas da fila. Não apaga nada; marca com o motivo.
+
+    Só POST, de propósito: marca muitas linhas de uma vez, e um link que o
+    navegador (ou a prévia de um aplicativo de mensagem) possa buscar sozinho
+    dispararia isso por acidente.
+    """
+    try:
+        payload = request.get_json(force=True, silent=True) or {}
+        if not _authorized(payload):
+            return jsonify({'ok': False, 'app': 'baixabradesco', 'error': 'Não autorizado.'}), 401
+        return jsonify(zerar_fila_antiga(payload))
     except Exception as e:
         return jsonify({
             'ok': False,

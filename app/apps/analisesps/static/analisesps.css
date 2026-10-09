@@ -2737,3 +2737,81 @@ table.sps.mini th, table.sps.mini td { padding: 4px 8px; }
 /* A SP da saída do extrato (07/10/2026): pequena, para não engordar a linha. */
 table.conciliacao .sp-da-linha { font-size: 11.5px; white-space: nowrap; }
 table.conciliacao td .selo { font-size: 10.5px; }
+
+/* Linha da conciliação com SP identificada: duplo clique abre a ficha (07/10/2026). */
+table.conciliacao tr.com-sp { cursor: pointer; }
+
+/* O robô do Telegram na janela do Lote (08/10/2026). */
+.lote-telegram { margin-top: 14px; padding: 10px 12px; border-top: 1px solid #e3e7ee;
+                 font-size: 13px; line-height: 1.6; }
+.lote-telegram .btn { margin-left: 6px; text-decoration: none; }
+
+/* A consulta ao Omie (08/10/2026). */
+.dialogo-omie { width: min(1000px, 96vw); }
+.tabela-omie { width: 100%; border-collapse: collapse; font-size: 13px; }
+.tabela-omie th, .tabela-omie td { padding: 6px 8px; border-bottom: 1px solid #e3e7ee; text-align: left; }
+.tabela-omie td.num { text-align: right; white-space: nowrap; }
+.tabela-omie tr.omie-pago { background: #F7FCF4; }
+.tabela-omie .omie-erro { color: #a33; }
+
+/* Categoria e descrição da SP na tela de QR / código (08/10/2026). */
+.codigo-desc { margin: 4px 0 0; font-size: 13px; color: var(--tinta-suave); white-space: pre-line; }
+
+/* O dia do calendário numa janela (09/10/2026). */
+.dialogo-dia-cal { width: min(1150px, 96vw); }
+.dia-cal-cab { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.dia-cal-cab h3 { margin: 0; }
+.dia-cal-cab #dia-cal-resumo { flex: 1; }
+.dia-cal-cab a.btn { text-decoration: none; }
+.tabela-dia-cal { width: 100%; border-collapse: collapse; font-size: 13px; }
+.tabela-dia-cal th, .tabela-dia-cal td { padding: 6px 8px; border-bottom: 1px solid #e3e7ee; text-align: left; vertical-align: top; }
+.tabela-dia-cal td.direita, .tabela-dia-cal th.direita { text-align: right; white-space: nowrap; }
+.tabela-dia-cal .dia-cal-desc { max-width: 320px; }
+.tabela-dia-cal tr[data-ficha] { cursor: pointer; }
+.tabela-dia-cal .cal-faixa { display: inline-block; padding: 1px 6px; border-radius: 4px; }
+
+/* Faturamento (09/10/2026). */
+.fat-filtros { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-end; font-size: 13px; }
+.fat-filtros label { display: flex; flex-direction: column; gap: 3px; color: var(--tinta-suave); }
+.fat-filtros input[name="busca"] { min-width: 240px; }
+.fat-grafico { display: flex; align-items: stretch; gap: 2px; height: 210px; padding-top: 4px; }
+.fat-mes-col { flex: 1 1 0; max-width: 72px; display: flex; flex-direction: column; align-items: center; min-width: 0; }
+.fat-trilho { flex: 1; width: 100%; display: flex; align-items: flex-end; justify-content: center;
+              border-bottom: 1px solid #b9c2d0;
+              background: repeating-linear-gradient(to top, transparent 0, transparent 24.5%, #eef1f6 24.5%, #eef1f6 25%); }
+.fat-coluna { width: 62%; background: var(--azul); border-radius: 4px 4px 0 0; min-height: 0; }
+.fat-mes-col:hover .fat-coluna { background: #1d4f91; }
+.fat-valor { font-size: 10.5px; color: var(--tinta-suave); height: 16px; white-space: nowrap; }
+.fat-mes { font-size: 11px; color: var(--tinta-suave); margin-top: 4px; }
+.tabela-fat { width: 100%; border-collapse: collapse; font-size: 13px; }
+.tabela-fat th, .tabela-fat td { padding: 6px 8px; border-bottom: 1px solid #e3e7ee; text-align: left; vertical-align: top; }
+.tabela-fat .direita { text-align: right; white-space: nowrap; }
+.tabela-fat tr.fat-linha { cursor: pointer; }
+.fat-arquivos a { margin-right: 6px; white-space: nowrap; }
+.fat-arquivos a.btn { text-decoration: none; }
+.dialogo-fat { width: min(980px, 96vw); }
+.fat-ficha { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px 18px; font-size: 13px; margin: 10px 0; }
+.fat-ficha .rotulo-campo { display: block; }
+.fat-discriminacao { white-space: pre-wrap; font-size: 12.5px; background: #f6f8fb; padding: 10px; border-radius: 6px; max-height: 260px; overflow: auto; }
+.paginacao { display: flex; gap: 8px; margin-top: 10px; }
+
+/* Faturamento como planilha + subtela por período (09/10/2026). */
+.fat-carga { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 13px;
+             color: var(--tinta-suave); margin: 4px 0 12px; }
+.fat-carga form:first-of-type { margin-left: auto; }
+.fat-planilha { max-height: 72vh; overflow: auto; }
+.fat-planilha thead th { position: sticky; top: 0; background: #f6f8fb; z-index: 1; }
+.fat-planilha .tabela-fat td, .fat-planilha .tabela-fat th { white-space: nowrap; padding: 5px 7px; font-size: 12.5px; }
+.fat-planilha .fat-tomador { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+.fat-planilha tfoot td { position: sticky; bottom: 0; background: #f6f8fb; border-top: 2px solid #d5dbe5; }
+.fat-nao-retido { color: #9aa3b2; }
+.fat-agrupar { display: flex; gap: 6px; margin-left: auto; }
+.fat-agrupar a.btn { text-decoration: none; padding: 4px 12px; }
+
+/* Chave Pix "Atualizar Chave" — não agenda (09/10/2026). */
+.selo.pix-atualizar { background: #FFE8D6; color: #8A3B00; font-weight: 600; white-space: nowrap; }
+
+/* Sem validação e sem número de nota (09/10/2026). */
+.selo.sem-validacao { background: #FFF1DC; color: #7A4300; font-weight: 600; white-space: nowrap; }
+.selo.sem-nf { background: #FFEAEA; color: #8C1F19; font-weight: 600; white-space: nowrap; }
+.selo.atualizar-sp { background: #EDE7FF; color: #4B2A9A; font-weight: 600; white-space: nowrap; }

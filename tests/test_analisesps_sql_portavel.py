@@ -605,6 +605,10 @@ def test_tudo_que_o_modulo_importa_esta_no_requirements():
         # `from app.apps.baixabradesco...`. Não tem o que conferir no
         # requirements.
         "app": "",
+        # A consolidação das notas antigas do EMISSOR (09/10/2026), importada
+        # de forma plana como o próprio emissor faz — é código deste
+        # repositório (`app/apps/emissaonf/base_faturamento.py`).
+        "base_faturamento": "",
     }
 
     faltando = []

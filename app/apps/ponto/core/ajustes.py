@@ -70,6 +70,14 @@ def marcas_previstas(periodos: list[tuple[int, int]]) -> list[dict]:
     return [{"minuto": m, "hora": _hhmm(m), "rotulo": nomes[i]} for i, m in enumerate(marcas)]
 
 
+def so_entrada_e_saida(previstas: list[dict]) -> list[dict]:
+    """PURA. Na obra de intervalo pré-assinalado (migração 009), a escala espera
+    só a primeira entrada e a última saída — o intervalo não se bate."""
+    if len(previstas) <= 2:
+        return previstas
+    return [{**previstas[0], "rotulo": "Entrada"}, {**previstas[-1], "rotulo": "Saída"}]
+
+
 def faltantes(previstas: list[dict], batidas_min: list[int], *, casar_min: int = CASAR_MIN) -> list[dict]:
     """PURA. Quais horários previstos não têm batida perto. Cada batida casa com
     um previsto só (o mais perto), e só a até `casar_min` minutos."""

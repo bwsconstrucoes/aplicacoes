@@ -42,13 +42,16 @@
     }
   }
 
+  // Para janelas que montam linhas depois (o dia do calendário, 09/10/2026).
+  window.abrirFicha = abrir;
+
   // Na TABELA: duplo clique na linha. O clique simples fica para o número da
   // SP, que abre o card no Pipefy.
   document.querySelectorAll("tr[data-ficha]").forEach(tr => {
     tr.addEventListener("dblclick", e => {
       // Duplo clique em cima de um link ou da caixa de marcar não abre a ficha.
-      if (e.target.closest("a, input, button")) return;
-      abrir(tr.dataset.ficha, tr.dataset.id || "");
+      if (e.target.closest("a, input, button, textarea, select")) return;
+      abrir(tr.dataset.ficha, tr.dataset.sp || tr.dataset.id || "");
     });
   });
 

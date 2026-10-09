@@ -23,6 +23,10 @@
 {% endmacro %}
 
 {% set validado = (sp.validacao or '')|trim|lower == 'sim' %}
+{# 09/10/2026: chave Pix "Atualizar Chave" — não se agenda (a trava é no
+   servidor também; aqui o botão só diz por quê). #}
+{% set pix_atualizar = sp|atualizar_pix %}
+{% set sem_obra = sp|atualizar_sp %}
 {% set tem_risco = 'COM RISCO' in (sp.analise_ia or '')|upper %}
 
 <div class="ficha-topo">
@@ -113,16 +117,36 @@
         <button class="btn" id="ficha-validar" style="margin-left:8px">Validar</button>
       </div>
     {% endif %}
+    {% if sem_obra %}
+      <div class="aviso atencao" style="width:100%">
+        <b>🔒 Atualizar SP:</b> esta SP está sem obra (centro de custo) — veio
+        incompleta do sistema de compras, e os dados estão na descrição. Trate a
+        SP (obra e conta) antes de agendar; até lá o Agendar fica bloqueado.
+      </div>
+    {% endif %}
+    {% if pix_atualizar %}
+      <div class="aviso atencao" style="width:100%">
+        <b>🔒 Chave Pix a atualizar:</b> a chave desta SP é "Atualizar Chave" —
+        não é uma chave de verdade. Trate a chave no card antes de agendar; até lá
+        o Agendar fica bloqueado.
+      </div>
+    {% endif %}
     {# ATENÇÃO ao `data-bloqueado` em vez de `disabled`: botão desabilitado não
        recebe clique nenhum, e quem não leu o aviso acima via um botão que
        simplesmente não fazia nada. Assim a trava continua valendo — nada é
        gravado —, mas o clique diz por que não foi, e oferece validar ali. #}
     <div class="ba-grupo">
       {% for v in ['Agendar', 'Agendado', 'Desagendar', 'Falha Agendar'] %}
-        <button class="btn secundario{% if not validado %} bloqueado{% endif %}"
+        {% set trava_pix = pix_atualizar and v in ('Agendar', 'Agendado') %}
+        {% set trava_obra = sem_obra and v in ('Agendar', 'Agendado') %}
+        <button class="btn secundario{% if not validado or trava_pix or trava_obra %} bloqueado{% endif %}"
                 data-coluna="agendado" data-valor="{{ v }}"
                 {% if not validado %}data-bloqueado="1"
-                title="Bloqueado: a Validação desta SP não está como 'Sim'."{% endif %}
+                title="Bloqueado: a Validação desta SP não está como 'Sim'."
+                {% elif trava_obra %}data-motivo="Não dá para &quot;{{ v }}&quot;: esta SP está sem obra (Atualizar SP). Trate a SP antes de agendar."
+                title="Bloqueado: SP sem obra."
+                {% elif trava_pix %}data-motivo="Não dá para &quot;{{ v }}&quot;: a chave Pix desta SP é &quot;Atualizar Chave&quot;. Trate a chave no card antes de agendar."
+                title="Bloqueado: chave Pix 'Atualizar Chave'."{% endif %}
         >{{ v }}</button>
       {% endfor %}
     </div>

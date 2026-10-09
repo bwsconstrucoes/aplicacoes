@@ -91,6 +91,15 @@ TODAS_AS_TELAS = [
     ("GET", "/analisesps/sp/123"),
     ("GET", "/analisesps/lote"),
     ("POST", "/analisesps/lote"),
+    ("POST", "/analisesps/lote/telegram"),
+    ("POST", "/analisesps/api/omie/consultar"),
+    ("GET", "/analisesps/calendario/dia"),
+    ("GET", "/analisesps/faturamento"),
+    ("GET", "/analisesps/faturamento/periodos"),
+    ("POST", "/analisesps/faturamento/atualizar"),
+    ("POST", "/analisesps/faturamento/importar"),
+    ("GET", "/analisesps/faturamento/nota/123"),
+    ("POST", "/analisesps/api/omie/marcar-pago"),
     ("GET", "/analisesps/relatorio"),
     ("GET", "/analisesps/calendario"),
     # A CONCILIAÇÃO mostra o extrato bancário inteiro da empresa — é das telas
@@ -310,6 +319,7 @@ def test_a_lista_de_telas_cobre_todas_as_rotas(app):
                    .replace("<formato>", "pdf")
                    .replace("<int:item_id>", "123")
                    .replace("<int:n>", "1")
+                   .replace("<numero>", "123")
                    .replace("<chave>", CHAVE_DE_EXEMPLO))
         if caminho not in testadas:
             faltando.append(caminho)

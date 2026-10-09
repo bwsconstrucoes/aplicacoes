@@ -32,31 +32,97 @@ Onde os dois se contradisseram, está escrito qual venceu e por quê.
 
 ## Onde o trabalho está
 
-### ⚠️ Estado em 07/10/2026 — leia isto primeiro
+### ✅ Estado em 08/10/2026 — leia isto primeiro
 
-A prefeitura **desligou o formato de nota** que o sistema usava, e a emissão
-ficou parada. A migração para o formato novo (DPS, padrão nacional) foi feita no
-mesmo dia e está na seção própria mais abaixo.
+**A EMISSÃO VOLTOU A FUNCIONAR.** A nota `2600000003283` (obra IFSPSAOJOSE,
+medição 11) saiu em 08/10/2026 no padrão nacional, com o pós-emissão inteiro —
+planilha, Omie, card, Drive, recibo e WhatsApp. É a primeira nota do modelo novo,
+e o XML oficial dela foi lido campo por campo: a seção "A PRIMEIRA NOTA DO PADRÃO
+NACIONAL SAIU" tem a conferência e os dois defeitos que ela revelou (o número que
+quase destruiu a numeração, e o `vLiq` que não é o líquido).
 
-A migração **foi publicada em 07/10/2026**, com o "pode" do dono no mesmo dia.
+**Foram QUATRO recusas antes dela, todas em 08/10**, uma por tentativa, porque
+não havia onde ensaiar. Em ordem: E0370 (faltava o grupo de obra), EL99 (número já
+enviado não se reusa), E0959 (CST não casava com a classificação), E0699 (imposto
+não retido ia como zero). O detalhe de cada uma está nas seções abaixo.
 
-**O que falta é a primeira emissão de verdade.** Nenhum teste aqui conversa com
-a prefeitura: tudo o que dava para conferir sem emitir foi conferido (a
-declaração passa no schema oficial, os documentos saem certos da resposta nova),
-mas a primeira nota real é a primeira prova.
+---
 
-**A sequência combinada com ele, nesta ordem:**
+#### Como a emissão chegou até aqui
 
-1. abrir **`/emissao/diag`** e ver se o token da prefeitura está no serviço — a
-   primeira linha responde isso. Sem ele nenhuma nota sai, nem em ensaio;
-2. **ensaiar uma nota em homologação** (caixa "Ensaiar primeiro" na tela de
-   emissão) e conferir o resultado;
-3. só então **emitir de verdade** e conferir o número, os PDFs, a planilha, o
-   Omie e o card.
+A prefeitura **desligou o formato de nota** que o sistema usava em 07/10/2026, e
+a emissão ficou parada. A migração para o formato novo (DPS, padrão nacional) foi
+feita e publicada no mesmo dia.
 
-**O que acontece se algum desses passos falhar está escrito abaixo, na seção da
-migração.** O que NÃO se sabe, e só a primeira emissão responde: se a prefeitura
-aceita a declaração exatamente como ela está, e qual número ela devolve.
+**A primeira tentativa real (nota 3281) não virou nota, e já se sabe por quê.**
+A prefeitura aceitou a declaração e a plataforma nacional a recusou com o erro
+**E0370: faltava o grupo de informações da obra**, obrigatório para serviço de
+construção civil. A recusa ficou numa tela de pendências que a nossa consulta não
+alcança — por um dia a consulta respondeu "em processamento" para uma declaração
+já morta. A TI da prefeitura mostrou o erro ao dono em 08/10/2026.
+
+**Consertado no mesmo dia:** a declaração passou a levar o **CNO da obra** (da
+C. Diários, coluna "CNO"), e obra sem CNO barra a emissão antes de enviar. A
+seção "O VEREDITO DA 3281" explica por que isso não apareceu em nada que havia
+sido conferido — a declaração sem o grupo é **válida no schema oficial**, e a
+obrigatoriedade é regra de negócio da plataforma, não do arquivo.
+
+**E as emissões seguintes revelaram mais três, no mesmo dia** — uma por
+tentativa, e todas com seção própria abaixo:
+
+| Erro | O que era | Consertado |
+|---|---|---|
+| **EL99** | número já enviado não se reusa; a frase do manual sobre reenviar com a mesma identificação não vale em Eusébio | a numeração nunca reusa número enviado; o "liberar o número" publicado de manhã virou "encerrar", que não libera |
+| **E0959** | o CST do IBS/CBS são os três primeiros dígitos da classificação; ia `000` com `200046` | o CST é derivado da classificação, e a montagem recusa um par que não casa |
+| **E0699** | imposto não retido ia com `0,00`; a plataforma recusa zero e o campo é opcional | só vai o que foi retido; e uma **varredura** passou a acusar qualquer campo opcional indo com zero |
+
+**A causa comum das três, e ela é a lição do dia:** a plataforma valida
+combinações e regras de negócio que o **schema oficial aceita**. Conferir contra
+o schema — que é a única conferência que dá para fazer aqui dentro — não é
+suficiente, e cada descoberta custou **uma emissão real**.
+
+### ⚠️ CORREÇÃO a este próprio arquivo: o ensaio NUNCA foi testado
+
+**Escrito em 08/10/2026, depois de o dono perguntar "não é isso que você
+precisa?" e colar o endereço de homologação.** Era, e o sistema já o usa —
+palavra por palavra, incluindo o `/nfse40`. O endereço nunca foi o problema.
+
+**O que este arquivo passou a afirmar, e não devia:** que *"o ensaio está
+indisponível"*, que *"em Eusébio ela devolve o E0037"*, que *"a Produção Restrita
+segue desabilitada"*. **Nada disso foi observado.** O que existe de verdade é
+uma seção do manual da prefeitura dizendo que o erro E0037, *quando acontece*,
+significa Produção Restrita não habilitada. Eu transformei essa possibilidade em
+fato e repeti como fato em quatro seções.
+
+**O que de fato aconteceu com o ensaio, em ordem:** na primeira tentativa a tela
+girou 150s e o dono desistiu (*"não consegui concluir o ensaio, tá demorando
+muito"*) — defeito nosso, consertado; na segunda, faltava o token da prefeitura
+(*"deu Token de integração da prefeitura ausente"*) — também consertado. Depois
+disso **o ensaio não foi tentado mais nenhuma vez**, porque eu já havia escrito
+aqui que ele não funcionava.
+
+**O custo desse erro:** as quatro recusas do dia (E0370, EL99, E0959, E0699)
+foram descobertas em **emissão de verdade**, uma por tentativa, horas de espera
+do dono cada. Se o ensaio funcionar — e não há evidência de que não funcione —
+todas as quatro teriam custado cliques.
+
+**Então a sequência certa é tentar o ensaio ANTES de emitir**, e só concluir que
+ele não serve se ele devolver E0037 de fato. Ensaio não cria documento fiscal:
+tentar não custa nada.
+
+**A sequência, com o que se aprendeu da 3281:**
+
+1. **ensaiar primeiro** (caixa "Ensaiar primeiro" na tela de emissão). Se
+   devolver **E0037**, aí sim o ambiente de teste não está habilitado e o caminho
+   é pedir isso à prefeitura — e emitir de verdade;
+2. se a nota não ficar pronta na hora, **"Conferir declaração"** — e, se a
+   consulta insistir em "em processamento" por horas, **olhar o portal da
+   prefeitura**, na tela de pendências de transmissão da DPS Nacional. Foi lá, e
+   só lá, que a recusa da 3281 apareceu. A nossa consulta não alcança essa tela;
+3. conferir o número devolvido, os PDFs, a planilha, o Omie e o card.
+
+**O que NÃO se sabe, e só a primeira emissão responde:** se a plataforma aceita o
+formato do CNO que mandamos, e qual número a prefeitura devolve.
 
 ### O histórico até aqui
 
@@ -71,16 +137,28 @@ trabalho pendente é **conserto e faxina**, não funcionalidade nova.
 
 ### O que está pendente AGORA
 
-**O que está na frente de tudo (07/10/2026):**
+**O que está na frente de tudo (08/10/2026):**
 
-1. **Ensaiar uma nota em homologação** e conferir o resultado. É o primeiro
-   passo depois de publicar a migração — e o único jeito de ver a nota antes de
-   emitir de verdade.
-2. **Emitir a primeira nota de verdade** no formato novo, e conferir: o número
-   que a prefeitura devolve, o PDF municipal, a DANFSe, a linha da planilha, o
-   título no Omie e o card.
-3. **Conferir se o token da prefeitura (`EL_NFSE_TOKEN`) está no serviço.**
-   Sem ele nenhuma nota sai. `/emissao/diag` responde isso.
+1. ✅ **FEITO — a nota `2600000003283` saiu** (obra IFSPSAOJOSE, medição 11), com
+   o pós-emissão inteiro. O que falta é **conferir as outras tributações**: essa
+   nota tem PIS, COFINS, IR e CSLL retidos, ISS retido e **sem INSS**. As outras
+   combinações da BWS seguem provadas só contra o schema — e foi justamente uma
+   combinação diferente (sem INSS) que revelou o E0699.
+2. **Se vier recusa nova**, os suspeitos já estão mapeados, nesta ordem:
+   **(a)** `tpOper` — "Tipo de Operação com Entes Governamentais ou outros
+   serviços sobre bens imóveis"; o candidato é `1` (fornecimento com pagamento
+   posterior). **(b)** `tpEnteGov` — União/Estado/DF/Município; **isto o sistema
+   não pode deduzir**, porque não dá para saber do CNPJ de que esfera é o órgão:
+   é pergunta para o dono. **(c)** o formato do CNO: mandamos só os dígitos, que
+   é a convenção do layout, mas o manual não traz exemplo de `<cObra>`. Os dois
+   primeiros já estão implementados e desligados (ver
+   `xsd_nacional/IBSCBS_CLASSIFICACAO.md`); ligar é uma linha.
+3. **TENTAR O ENSAIO** (caixa "Ensaiar primeiro"). Nunca foi concluído, e eu
+   havia escrito aqui que ele não funcionava sem nunca ter visto isso acontecer
+   — ver a correção na seção de estado, acima. Se ele funcionar, toda correção
+   futura passa a custar um clique em vez de uma emissão de verdade. Só se ele
+   devolver **E0037** é que o caminho passa a ser pedir a habilitação da Produção
+   Restrita à prefeitura.
 4. **Levar ao chat do ERP a inversão do ISS retido** (detalhe na seção de
    07/10/2026). Lá a emissão automática manda o número errado, e não foi mexido
    porque é outra área.
@@ -780,8 +858,14 @@ agora seria chute.
 mostrava a identificação de 45 caracteres para a pessoa copiar e colar na outra
 tela. Agora é um link que já leva a identificação, o card e o ambiente dentro.
 
-**3. O erro E0037 diz uma coisa e significa outra — e isso resolve o mistério do
-ensaio.** O manual da prefeitura tem uma seção própria para ele:
+**3. O erro E0037 diz uma coisa e significa outra.** O manual da prefeitura tem
+uma seção própria para ele:
+
+> ⚠️ **Nota de 08/10/2026:** este item dizia "e isso resolve o mistério do
+> ensaio". **Não resolvia nada** — o E0037 nunca foi visto acontecer aqui. Ler o
+> manual e concluir que o ensaio estava bloqueado foi um salto, e ele parou de
+> ser tentado por quatro correções seguidas. Ver a correção na seção de estado.
+
 
 > O texto do erro diz que o município não existe no cadastro nacional, mas na
 > prática ele ocorre quando **o município ainda não configurou a Produção
@@ -789,9 +873,11 @@ ensaio.** O manual da prefeitura tem uma seção própria para ele:
 > e concluir as configurações de convênio. *O contribuinte deverá entrar em
 > contato com a prefeitura e solicitar a habilitação.*
 
-**Ou seja: é bem possível que o ensaio nunca funcione em Eusébio**, porque o
-ambiente de teste pode não estar habilitado — e isso não é defeito nosso nem dos
-dados da nota. Não há o que corrigir aqui: é um pedido à prefeitura.
+**Ou seja: SE este erro aparecer**, o ambiente de teste não está habilitado — e
+isso não é defeito nosso nem dos dados da nota. Não há o que corrigir aqui: é um
+pedido à prefeitura. **Enquanto ele não aparecer, não há motivo para supor que o
+ensaio esteja bloqueado**, e o ensaio é a única forma de provar uma mudança sem
+gastar nota.
 
 Por isso o sistema passou a **traduzir** esse erro na tela, dizendo o que ele
 realmente significa e de quem é a ação. Texto cru de integração manda a pessoa
@@ -1087,6 +1173,663 @@ dívida nenhuma** para a emissão seguinte pela API — desde que a nota seja
 registrada por esta tela. É o registro que mantém a numeração alinhada: a
 numeração sai da planilha, e nota que não entra nela faria o sistema pedir um
 número que o município já usou.
+
+### ✅ O VEREDITO DA 3281: faltava a identificação da obra (E0370) — 08/10/2026
+
+**O dono trouxe, da TI da prefeitura, o erro que a plataforma nacional tinha
+guardado:**
+
+> *Pendências / Erros de Transmissão da DPS Nacional — Código: **E0370** — O
+> grupo de informações de obra é obrigatório quando o código de tributação
+> nacional pertencer a um dos subitens 07.02.01, 07.02.02, 07.04.01, 07.05.01,
+> 07.05.02, 07.06.01, 07.06.02, 07.07.01, 07.08.01, 07.17.01, 07.19.01, 14.14.03
+> e 14.14.04 da lista de serviços.*
+
+E, no portal, a declaração passou de "Aguardando Transmissão" para
+**"Processado com Erros"**. Ou seja: a nota 3281 **nunca existiu e nunca vai
+existir**, e o número está livre.
+
+**Isto fecha o impasse de 07/10/2026.** O que estava escrito aqui — "as duas
+versões não fecham, a transmissão é da prefeitura" — descrevia o sintoma
+corretamente e **errava o dono do problema**. A fila não estava travada: a
+plataforma nacional recusou, e a recusa ficou numa tela de pendências que a
+nossa consulta não alcança. Durante um dia a consulta respondeu "em
+processamento adn nacional" para uma declaração **já morta**.
+
+#### Por que não apareceu em nada que conferimos
+
+É o ponto que vale guardar, porque vai se repetir.
+
+**A declaração sem o grupo de obra é VÁLIDA no schema oficial.** No XSD o grupo
+é `minOccurs="0"` — opcional. A obrigatoriedade não está no arquivo: é **regra de
+negócio da plataforma nacional**, condicionada ao código do serviço. Então a
+conferência contra o schema, que pegou tudo o mais, **não tinha como pegar esta**.
+
+**E o modelo antigo não tinha esse campo.** No ABRASF o CNO ia solto no texto da
+discriminação ("CNO Nº 90.025.25410/76") — e ia, em todas as notas, há meses. A
+migração traduziu campo por campo o que existia; um campo que **passou a existir**
+não aparece numa tradução.
+
+**A divisão de responsabilidade escondeu o resto:** o município aceitou (HTTP
+200, `idDPS` devolvido) e o nacional recusou, depois, do outro lado da fila. Os
+dois estavam certos sobre a sua parte, e nenhum dos dois contava a do outro.
+
+#### O conserto
+
+**O grupo de obra passou a ir na declaração**, com o **CNO** da obra — que o dono
+confirmou estar na **C. Diários, coluna Z, cabeçalho "CNO"**, que é exatamente a
+coluna que o carregador já lia (por nome, não por posição).
+
+**Por que o CNO e não as outras duas.** O layout (`TCInfoObra`) aceita três
+identificações e exige **exatamente uma**:
+
+| Alternativa | O que é | Por que não |
+|---|---|---|
+| `cObra` | CNO ou CEI da obra | **é o que usamos** — a BWS tem para cada obra |
+| `cCIB` | Cadastro Imobiliário Brasileiro | a empresa não usa |
+| `end` | endereço da obra (CEP, logradouro, nº, bairro) | a C. Diários não tem o endereço da OBRA; o que ela tem é o do cliente, que é outra coisa |
+
+As três estão implementadas e provadas contra o schema — o endereço é o que
+destrava uma obra sem CNO, e por isso tem de estar pronto **antes** de ser
+preciso.
+
+**O número vai sem pontuação**, como todo documento deste layout: o CNPJ, o CPF
+e o CEP já eram enviados só com dígitos pelo próprio construtor. Na planilha o
+CNO está escrito `90.025.25410/76`; na declaração vai `900252541076`.
+
+**Obra sem CNO barra a emissão ANTES de enviar**, com o motivo escrito e dizendo
+onde resolver. Essa escolha tem conta: barrar custa um aviso na tela; deixar
+passar custa um número de nota queimado, uma declaração presa na fila e — como
+se viu — um dia para descobrir. Sem o `print` de aviso quando o número tem
+tamanho diferente de 12 dígitos, um CNO truncado seria a próxima caçada.
+
+**Só nos treze subitens da lista.** Mandar o grupo onde ele não é previsto é tão
+errado quanto omiti-lo onde é. A lista do erro é a regra, e nada além dela — a
+BWS emite sempre em 070202, então para ela é sempre.
+
+#### Dois consertos que o impasse revelou, e eles não são do E0370
+
+**1. A recusa descoberta pela conferência não liberava o número.** A emissão já
+marcava a declaração como recusada; a tela "Conferir declaração" **não marcava**
+— e ela é justamente a tela por onde se descobre a recusa que chegou tarde.
+Enquanto a declaração fica "aguardando", ela **segura o número dela** (defeito
+consertado em 07/10, ver acima), e a numeração pularia 3281 para sempre. Agora
+marca.
+
+**2. A API pode nunca contar a recusa.** Foi o caso: um dia inteiro respondendo
+"em processamento" para uma declaração que o portal já dava como recusada. Então
+a lista de declarações em aberto ganhou, **só nas declarações paradas**, um
+"liberar o número": marca como recusada e devolve o número ao uso. Oferecer isso
+numa declaração que ainda está na fila convidaria a liberar o número de uma nota
+que talvez exista — por isso só na parada, e com confirmação que diz em letras
+claras para usar apenas quando o portal mostra a recusa. Não emite, não cancela
+e não apaga nada: mexe só no controle de numeração.
+
+**E o E0370 ganhou tradução.** O texto cru fala em "grupo de informações de obra"
+e lista treze subitens; quem lê não tem como saber que o que falta é o CNO da
+obra na C. Diários. A tela da recusa agora diz isso, e cita a 3281.
+
+#### O que foi conferido, e o que NÃO foi
+
+**Conferido:** a declaração com o grupo de obra passa no schema oficial nas
+quatro tributações que a BWS usa; o grupo sai na posição que o XSD exige (dentro
+de `serv`, depois de `cServ`); o CNO vai sem pontuação; os treze subitens da
+lista exigem o grupo e um código fora da lista não o leva; obra sem CNO barra
+antes de enviar, com mensagem que nomeia a coluna e o erro; as outras duas
+identificações (CIB e endereço) montam e validam; grupo vazio é recusado em vez
+de sair como `<obra/>`; a declaração que a tela de emissão envia de fato leva o
+`<cObra>`. São 24 casos novos; a suíte inteira passa (5.133).
+
+**NÃO conferido, e é o que importa:** se a plataforma nacional aceita o **formato**
+do CNO que mandamos. Dígitos sem pontuação é a convenção do layout e o que o
+resto do arquivo já faz, mas não há no manual um exemplo de `<cObra>` — os dois
+exemplos oficiais não são de serviço de obra. E não houve ensaio: a Produção
+Restrita do município **pode** não estar habilitada (o erro E0037 indicaria
+isso, mas nunca foi observado — ver a correção na seção de estado), então **a
+primeira emissão de verdade segue sendo a primeira prova** enquanto o ensaio não
+for tentado. Se vier recusa com o grupo presente, o
+mais provável é o formato do número, e o conserto é de uma linha.
+
+### Dois erros a mais no mesmo dia: EL99 e E0959 — 08/10/2026
+
+Depois do conserto do grupo de obra, o dono emitiu de novo. Deu **EL99**; e,
+pouco depois, na tela de pendências do portal, apareceu **E0959**. São coisas
+diferentes e vale separar, porque uma delas desmente o manual.
+
+#### E0959 — o CST não é um campo de escolha
+
+> *E0959 — cClassTrib não pertence ao grupo CST indicado.*
+
+**O que era:** o grupo da reforma tributária ia com `CST = 000` e
+`cClassTrib = 200046`. **O CST são os três primeiros dígitos do `cClassTrib`** —
+e `200046` é do grupo **200**, não do 000.
+
+Isso está nos dados do **Anexo VIII oficial**, que veio no pacote da prefeitura:
+`000001` ("Situações tributadas integralmente") é do grupo 000, `200046`
+("Operações com bens imóveis") é do 200, `400001` (transporte público) é do 400.
+Sem exceção em toda a tabela. A regra, os valores da BWS e a procedência de cada
+um ficaram escritos em `xsd_nacional/IBSCBS_CLASSIFICACAO.md`, porque a planilha
+do Anexo VIII não está no repositório e a próxima pessoa não vai ter o pacote.
+
+**Como eu tinha "conferido" isso antes e errei:** em 07/10 eu conferi o
+`cClassTrib` contra o Anexo VIII — e ele está certo, é 200046 mesmo. O CST eu
+não conferi contra nada: `000` entrou como "operação tributável", que é o que
+`tribISSQN=1` significa no ISS, e os dois campos não têm nada a ver um com o
+outro. Foi palpite com cara de verificação.
+
+**O conserto, que é mais do que trocar o valor:** o CST passou a ser **derivado**
+do `cClassTrib`, e o construtor da declaração **recusa** um par que não casa. Não
+dá mais para digitar os dois e eles divergirem. Trocar `000` por `200` consertaria
+esta emissão; derivar impede a próxima.
+
+**E, de novo, o schema não pegava:** os dois campos são válidos sozinhos. Quem
+confere a combinação é a plataforma, horas depois. É a mesma lição do E0370, e já
+é a segunda vez no mesmo dia.
+
+#### EL99 — e a frase do manual que não vale em Eusébio
+
+> *EL99 — ID da DPS inválida. Chave informada para a DPS não existe no
+> repositório municipal.*
+
+Este veio da **prefeitura**, não do nacional, e no caminho da consulta: ela não
+encontrou a declaração no repositório dela.
+
+**O que aconteceu antes dele:** o dono usou o "liberar o número" (publicado
+horas antes, naquele mesmo dia) para soltar o 3281, e emitiu de novo. A
+identificação da declaração é construída **a partir do número da nota** — então
+reusar o número reusou a identificação de uma declaração que a prefeitura já
+tinha recebido e transmitido.
+
+**A frase do manual que caiu:** *"a mesma declaração pode ser reenviada com a
+correção, mantendo a mesma identificação"*. Está escrita no manual, foi a base
+de duas decisões registradas aqui (a exceção do mesmo card na numeração e o
+próprio "liberar o número"), e **em Eusébio ela não se sustentou**. Número já
+enviado fica gasto.
+
+**Os consertos:**
+
+1. **A numeração conta TODAS as declarações já enviadas**, qualquer que seja o
+   desfecho — recusada, aguardando ou concluída. A aba só recebe declaração
+   **depois** de a prefeitura aceitar, então todo número que está lá já foi
+   enviado. **A exceção do mesmo card saiu.**
+2. **O "liberar o número" virou "encerrar"**: tira a declaração da lista e diz,
+   em letras claras, que o número **não volta**. A versão que liberava durou
+   horas e produziu este erro — fica registrado porque foi uma decisão minha,
+   tomada por leitura do manual, contra a qual não havia evidência nenhuma.
+3. **A tela de recusa parou de prometer o mesmo número.** Ela dizia "pode emitir
+   de novo, inclusive com o mesmo número, que é o caminho previsto pela
+   prefeitura". Era o manual falando, e estava errado.
+4. **EL99 ganhou tradução, e ela é cuidadosa num ponto:** diz que o erro **não**
+   significa que nada foi criado. Diferente de uma recusa de conteúdo, aqui o
+   envio já tinha sido aceito — então a instrução é conferir no portal antes de
+   emitir, e emitir com número novo.
+
+**Buraco na sequência de números é normal**, e vale dizer para não assustar: nota
+cancelada faz o mesmo. O número 3281 não existe e não vai existir.
+
+#### O que foi conferido, e o que NÃO foi
+
+**Conferido:** o CST derivado bate com a tabela oficial nos quatro grupos
+observados; a declaração de obra sai com CST 200 e passa no schema; par digitado
+que não casa derruba a montagem **com o valor certo na mensagem**; `cIndOp` tem
+os seis dígitos que o schema exige (no Excel ele aparece com cinco, porque a
+planilha come o zero da frente); `tpOper` e `tpEnteGov` não são enviados por
+padrão e, quando preenchidos, saem na ordem do XSD; a numeração conta declaração
+recusada; nem o mesmo card reusa número; EL99 e E0959 traduzidos. 14 casos novos.
+
+**NÃO conferido:** se a plataforma aceita a declaração agora. Nada aqui faz rede,
+e o ensaio nunca foi tentado até o fim (ver a correção na seção de estado). Se
+vier recusa nova **com o CST casado**,
+os suspeitos já estão identificados e prontos para ligar: `tpOper` (o candidato
+é `1`, fornecimento com pagamento posterior) e `tpEnteGov` — este último o
+sistema **não pode** deduzir, porque não dá para saber do CNPJ se o órgão é
+federal, estadual ou municipal. Essa é pergunta para o dono.
+
+### A base consolidada de faturamento, e o fim da gestão na planilha — 09/10/2026
+
+**O pedido, por áudio:** sair da gestão de notas na aba "Notas BWS" (*"essa
+planilha é um lixo, é uma bagunça"*) e ter uma **tela de Faturamento** no Análise
+de SPs, alimentada por uma **base consolidada** que junte o que hoje está
+espalhado por cinco planilhas. Ele quer ver faturamento, baixar a nota, gráfico
+de evolução, e fazer a gestão ali.
+
+**O desenho inteiro, a procedência de cada campo e o que ficou em aberto estão em
+`FATURAMENTO.md`**, na pasta da área — inclusive a resposta à pergunta direta
+dele ("o que o emissor usa dessa planilha?"). Aqui ficam só as decisões.
+
+**Decisão 1 — a base é uma ABA, não uma tabela de banco.** Palavras dele: *"como
+a gente não está no ERP ainda, aí a gente mantém a planilha"*. A aba
+`Base Faturamento` tem 71 colunas nomeadas campo por campo, justamente para
+virar tabela quando o ERP assumir.
+
+**Decisão 2 — o emissor grava nos DOIS lugares, de propósito.** Pedido dele:
+*"momentaneamente deixa o emissor atualizando essa daqui conforme ele já vem
+fazendo"*. E reforçado DEPOIS de a base nova ser publicada, no mesmo dia:
+
+> *"Só lembrando que, por enquanto, a nota do BWS a gente vai continuar usando
+> normal. Só depois que estiver consolidado essa nova etapa aí, a gente vai
+> deixar de usar ela."*
+
+Por isso a gravação duplicada **virou trava de teste**, e não é resíduo de
+transição: há um caso que exige que `notas_bws.gravar_linha` continue no
+`concluir.py`, que a "Notas BWS" venha ANTES da base nova (a trava
+anti-duplicação da conclusão olha a planilha antiga), e que as duas falhem
+separado. Existe para que nenhuma sessão futura — vendo a base nova funcionando —
+conclua que o passo 1 virou redundante e o apague "limpando o código".
+
+**Desligar é decisão DELE**, e só depois de a base nova ser conferida contra a
+antiga.
+
+**Decisão 3 — cada tributo aparece DUAS vezes: o da nota e o do Omie.** Guardar
+um só esconderia exatamente o que ele confere à mão. Daí saem dois campos
+calculados — `divergencia_tributos` e `divergencia_recebimento` — e os dois
+ficam **vazios** quando não há com o que comparar. Dizer "não divergente" numa
+nota que ninguém recebeu seria afirmar uma conferência que não aconteceu.
+
+**Decisão 4 — a consolidação das notas antigas roda em LOTES.** São ~3.300 notas.
+Ler e escrever tudo de uma vez prenderia uma das quatro threads do serviço por
+minutos, e foi assim que o monorepo caiu em 07/10/2026. Cada rodada processa um
+lote e diz quantas faltam; repetir não duplica.
+
+**Decisão 5 — o que não existe fica VAZIO.** Período da medição, corpo da nota e
+empresa/SCP não estão em fonte nenhuma para as notas antigas. Inventar seria pior.
+Dele: *"não vamos ter a completude dos dados, mas para frente a gente passa a
+ter"*.
+
+**O que a C. Diários passou a entregar:** `Empresa`, `CNPJ Empresa`, `SCP` e
+`CNPJ SCP`, lidos **pelo nome do cabeçalho**. A coluna de SCP ainda vai ser
+criada por ele; até lá os campos ficam vazios, sem erro. Nem toda obra é faturada
+no CNPJ da BWS, e isso nunca tinha sido lido.
+
+**A armadilha que o teste vigia:** a "Notas BWS" guarda os tributos do Omie em
+BB:BM, em pares valor/retém, na ordem **PIS, COFINS, CSLL, IR, ISS, INSS** — que
+não é a ordem do nosso cabeçalho. Trocar uma pela outra põe o ISS no lugar do IR,
+e são dois números plausíveis na mesma linha: ninguém perceberia.
+
+**⚠️ E um achado de segurança, que é tarefa dele:** o Apps Script da planilha traz
+a chave e o segredo do OMIE **em texto claro** (mais a URL do webhook do Make).
+Registrado em `CONTEXTO.md` §9, com os nomes e nunca os valores. Não está no
+repositório (conferido, inclusive no histórico do git). A ação é trocar na origem.
+
+**Conferido:** 28 casos novos, com o cabeçalho REAL da "Notas BWS" (lido da
+planilha, não suposto) — os índices de BB:BM, a leitura pt-BR dos valores, as duas
+divergências, o cruzamento com as quatro fontes, a duplicata da aba de Links não
+mudando o resultado entre rodadas, e a tela. Suíte inteira: 5.316 passando.
+
+**NÃO conferido:** a consolidação contra a planilha de verdade. Nenhum teste faz
+rede, e nesta sessão não há credencial do Google — a primeira rodada da tela é a
+primeira prova. Ela é segura por construção (não apaga nada, não emite nada, só
+lê e escreve na aba nova), mas o número de linhas que ela vai gravar é desconhecido.
+
+### O campo do Omie não cabe dois números nacionais — 09/10/2026
+
+**O erro, na nota 2600000003294:**
+
+> *"O número máximo de caracteres permitido para o elemento
+> [NUMERO_DOCUMENTO_FISCAL] é de 20. O número de caracteres informado foi de
+> 32!"*
+
+O passo `[2] Omie` falhou e **o título ficou sem o número daquela nota**. Todo o
+resto da conclusão rodou — planilha, card, Drive, WhatsApp, base.
+
+**O que era:** o campo acumula os números das notas daquele título, separados por
+barra. Com os números de **4 dígitos** do modelo antigo caberiam quatro
+(`3283/3294/3295/3296` = 19). Com os de **13 dígitos** do padrão nacional,
+**duas já não cabem** — e o título tinha um antigo mais um nacional, somando 32
+com o terceiro.
+
+É a terceira consequência do número de 13 dígitos, depois da numeração que quase
+se perdeu e do alarme falso na tela. Ela não aparecia nos testes porque nenhum
+media o tamanho do campo — a planilha e o Drive aceitam qualquer tamanho, e só o
+Omie tem limite.
+
+**O conserto: no campo do Omie vai o número CURTO** — `3294`, não
+`2600000003294`. Três motivos, e o terceiro é o que decide:
+
+1. **cabe** — três notas em 20 caracteres, contra uma só no formato longo;
+2. **é o número pelo qual o dono procura** ("a 3294");
+3. **é o que já está lá.** Os títulos antigos têm `3270/3271`. Misturar formatos
+   faria o mesmo título ter dois jeitos de escrever nota, e a conferência
+   humana é feita olhando esse campo.
+
+A conversão vem de `worker.sequencial_da_nota`, a mesma da numeração, **de
+propósito**: duas versões da mesma regra divergem com o tempo.
+
+**E uma trava de teto:** se ainda não couber (o card tem cinco slots, e cinco
+números de 4 dígitos passam de 20), **saem os mais ANTIGOS** — a nota
+recém-emitida é a que alguém está procurando agora. Os descartados **não saem em
+silêncio**: viram aviso no log, nomeando qual nota deixou de estar referenciada.
+
+**A reparação, porque o conserto não volta atrás.** A emissão já passou e a
+conclusão tem trava contra repetir, então a nota 2600000003294 continuaria fora
+do título. A tela "Tributos no Omie" ganhou **"Acertar o número da nota no
+título"**: informa-se o número (curto ou longo), ela acha o título pela base e
+acumula. **Não toca nas retenções** — mandar retenção ali sobrescreveria a
+equalização que já estava certa.
+
+**Conferido:** 12 casos novos, entre eles o que prova que dois números nacionais
+não cabiam (para ninguém "simplificar" a conversão de volta), o teto respeitado
+em qualquer combinação, o descartado sendo devolvido para virar aviso, o
+cancelamento removendo mesmo informando o número longo, e a reparação não levando
+retenção nenhuma no pedido. Suíte inteira: 5.446 passando.
+
+### ⚠️ Quatro correções do dono na base de faturamento — 09/10/2026
+
+Ele revisou a base e apontou quatro coisas. Três eram erro meu, e uma era campo
+que faltava. Ficam aqui porque a primeira é do tipo que estraga em silêncio.
+
+**1. Eu lia o bloco de tributos ERRADO, e era lixo.** A base lia T:Y como se
+fossem os tributos da nota. Ele:
+
+> *"Não existe aquilo dali, aquilo são repetições, é outra metodologia que eu
+> utilizava, dali é lixo. Eu comentei que eles são da coluna BB em diante só."*
+
+A planilha tem o mesmo conjunto PIS/COFINS/IR/CSLL/INSS/ISS **três vezes** (T:AB,
+AC:AK, AL:AT), mais CPRB e "REGIME ESPECIAL". Ele havia dito "BB em diante" na
+primeira mensagem e eu li T:Y de todo jeito. **Agora de P a BA não se lê nada**,
+e um teste põe valores absurdos nessas colunas: se algum aparecer na base, ele
+denuncia. É o pior tipo de defeito possível — números plausíveis e errados, de que
+ninguém desconfia.
+
+**2. O "retido ou não" existe por um motivo só:** compatibilizar com o Omie. Ele
+tem os dois campos (valor e retém), e **valor com retém=N é imposto que ele não
+está descontando** — não conta na conferência nem na soma.
+
+**3. Nada que venha da C. Diários entra na base.** *"Informação que vem da
+C. Diários não precisa entrar na base, a gente vai cruzar."* Saíram nove colunas:
+contrato, município, centro de custo, tributação, código primário, empresa, CNPJ
+da empresa, SCP e CNPJ da SCP. Da obra fica só a **chave**.
+
+A fronteira que isso desenha vale guardar: **atributo da OBRA** pode mudar amanhã
+e tem dono (a C. Diários); **fato da NOTA** é congelado no dia da emissão e não
+tem outra fonte. Por isso a `aliquota_iss` ficou — é a que a nota aplicou, não a
+que está cadastrada hoje. O risco aceito, e é dele: obra que trocar de empresa
+fará a tela mostrar a nova para as notas antigas.
+
+**4. Faltavam IBS e CBS.** *"Uma coluna que deveria ser adicionada também, uma
+não, duas."* Entraram, e o emissor as preenche do XML da nota — quem calcula é a
+plataforma nacional, com a redução de 50% da construção civil. No modelo antigo
+não existem.
+
+**Saldo: 71 → 64 colunas.**
+
+#### E o que BB:BM realmente é — esclarecimento dele, no mesmo dia
+
+Minha primeira leitura da correção 1 foi pessimista: tratei BB:BM como "o que o
+Omie tem", e concluí que a nota antiga ficaria sem tributo nenhum. Ele corrigiu:
+
+> *"A parte de tributos Omie, aquilo dali eu criei exatamente para equalizar. Já
+> está tudo equalizado ali. E o que não tiver, talvez tenha alguns que estão em
+> branco, mas são poucos, são as mais recentes."*
+
+Isso muda o destino do bloco. BB:BM é o valor **acordado** entre a nota e o
+título, conferido por ele ao longo de anos — e, para as notas antigas, é o
+**único registro que existe** dos tributos delas. Então ele entra como o **lado da
+NOTA**, e não como o lado do Omie.
+
+As colunas `omie_*` ficaram para o que a consulta devolver **agora**. É comparando
+as duas que se vê **se o título saiu do lugar depois de equalizado** — e essa é a
+utilidade real da tela do Omie para o acervo antigo, que eu tinha dado como
+perdida.
+
+#### E a nota nova grava conforme o EMITIDO
+
+Ele completou: *"as novas notas já têm a informação dos tributos emitidos, então
+vamos gravar conforme. Se necessário, a posteriori eu equalizo."*
+
+Conferindo para atender, apareceu que eu estava gravando **mais** do que a nota
+emitiu: o emissor punha o valor que o motor fiscal calcula para os cinco
+federais, e o motor calcula todos **sempre** — era assim que a coluna P da
+planilha antiga era feita. Mas a nota só **declara** o que foi retido; imposto
+não retido nem aparece no XML (regra do E0699). Gravar o calculado afirmaria uma
+retenção que não houve.
+
+Agora os três estados de um campo de tributo são distintos, e a diferença é o que
+mantém a trava funcionando:
+
+| No campo | Quer dizer |
+|---|---|
+| **vazio** | não se sabe — nota antiga não equalizada |
+| **0,00** com retém **N** | a nota não reteve |
+| valor com retém **S** | a nota reteve |
+
+O **ISS** é a exceção, e por um motivo fiscal: ele é declarado de qualquer jeito,
+porque a prefeitura o calcula e ele sai na nota — o que muda é quem recolhe.
+
+#### A trava continua, e agora protege o que realmente precisa
+
+As **poucas notas mais recentes** que ele ainda não equalizou chegam sem tributo.
+Para essas, a soma daria **zero**, a equalização veria divergência em tudo e
+**zeraria as retenções no Omie** — apagando a única cópia que existe delas.
+
+Então: **título sem tributo registrado nunca é equalizado**, e a trava vale mesmo
+com a confirmação marcada. Autorizar equalizar não é autorizar apagar o que o
+Omie tem e a nota não tem. A tela diz "sem tributo na nota", que é o aviso de que
+**falta equalizar aquela** — e não de que algo quebrou.
+
+**Conferido:** os quatro consertos, mais a trava, em 18 casos novos — entre eles o
+que põe lixo em T:Y e exige que não apareça na base, o valor com retém=N não
+contando, as nove colunas da C. Diários tendo de estar AUSENTES, e a tela não
+escrevendo no Omie nem com autorização quando a nota não declarou. Suíte inteira:
+5.360 passando.
+
+### As três operações no Omie vieram para o Python — 09/10/2026
+
+**O dono fechou a questão que estava aberta**, com estas palavras: *"os scripts,
+eles apenas para consulta, equalização e atualização da parte de tributos no
+Omie. Se as emissões estiverem todas corretas e gerando títulos corretos, a
+operação se limitará ao que eu disse e não mais a uma série de outras funções que
+foram criadas."*
+
+Ou seja: o escopo encolheu de uma dezena de menus para **três operações**. Elas
+estão em `omie.py` + `omie_conferencia.py`, na tela `/emissao/omie`, e a
+credencial vem da aba Credenciais — não mais de dentro do código, que era o
+problema de segurança do Apps Script.
+
+**As três regras que governam isso, e errar qualquer uma mexe em dinheiro:**
+
+1. **A nota manda, o título obedece.** Nota fiscal não se desfaz; título é
+   registro interno. O que vai para o Omie é a soma dos tributos das notas
+   válidas daquele título, nunca o contrário.
+2. **Um título cobre várias notas**, então o valor dele é rateado pelo valor
+   bruto de cada nota, **fechando ao centavo** — o residual vai para a maior. É a
+   regra do Apps Script (`ratearProporcional_`), a única parte dele que era regra
+   de negócio de verdade. Sem o fechamento exato, a conferência acusaria um
+   centavo de diferença em TODA nota, e alarme que sempre aparece deixa de ser
+   lido.
+3. **Só o que foi RETIDO entra na soma.** Somar imposto não retido infla a
+   retenção do título e a baixa sai errada — é exatamente o problema que ele
+   descreve quando o líquido não fecha. Cancelada e substituída ficam fora.
+
+**Conferir é leitura; equalizar escreve, e exige confirmação marcada.** A rodada
+de leitura mostra, tributo por tributo, o que mudaria. Gravar em sistema
+financeiro sem dizer o que vai mudar não se faz — é a mesma régua do "Confirmar e
+Emitir".
+
+**E uma armadilha que a atualização evita:** ela **não** manda o
+`numero_documento_fiscal`. O número da nota no título é assunto da emissão, que
+acumula `3001/3072`; mandá-lo na equalização sobrescreveria esse acúmulo por
+tabela, e ninguém ligaria uma coisa à outra depois.
+
+**Conferido:** 23 casos novos. O rateio fechando ao centavo em cinco divisões
+diferentes (inclusive 1 centavo entre dois, e 3 centavos entre sete); o residual
+indo para a maior; rateio sem peso sendo recusado em vez de dividir igual;
+imposto não retido fora da soma; cancelada e substituída fora; a leitura da
+resposta aninhada do Omie; o param sem `numero_documento_fiscal`; campo ausente
+não virando zero no param (apagar uma retenção legítima seria descoberto só na
+baixa); e a tela não escrevendo nada sem a caixa marcada. Suíte inteira: 5.342.
+
+**NÃO conferido:** nada disso falou com o Omie de verdade. A primeira rodada de
+**leitura** na tela é a primeira prova, e ela é segura — consulta não altera nada.
+
+### ✅ A PRIMEIRA NOTA DO PADRÃO NACIONAL SAIU — 08/10/2026
+
+**Nota `2600000003283`**, obra IFSPSAOJOSE, medição 11, emitida em 08/10/2026,
+chave `23042851200079526000109260000000328326100010793653`. O pós-emissão rodou
+inteiro: planilha, Omie (documento 3255/2600000003283), slot A do card, XML e
+DANFSe no Drive, recibo, links na Descrição e WhatsApp.
+
+**O XML oficial dela foi lido campo por campo** (está no Drive, "NOTA FISCAL
+2600000003283 … (XML Nacional).xml"), e ele é a prova de que os quatro consertos
+do dia passaram pela plataforma:
+
+| Conserto | No XML da nota |
+|---|---|
+| grupo de obra (E0370) | `<obra><cObra>900232558978</cObra></obra>` |
+| CST derivado (E0959) | `<CST>200</CST><cClassTrib>200046</cClassTrib>` |
+| imposto não retido omitido (E0699) | `tribFed` **sem `vRetCP`** — esta obra não retém INSS |
+| total de tributos | `<totTrib><indTotTrib>0</indTotTrib></totTrib>` |
+
+E o que já estava certo desde a migração continua certo: `tpRetISSQN=2` (ISS
+retido pelo tomador), `vDedRed/vDR = 12.576,34` (dedução de material, com
+`vBC = 12.576,35` — a base do ISS fechando), `tpRetPisCofins=3`.
+
+**A plataforma calculou o IBS/CBS**, e o resultado confirma que o CST 200 era o
+certo: `pRedAliqUF = 50,00`, `pRedAliqCBS = 50,00` — redução de 50%, que é
+exatamente o que a classificação "Operações com bens imóveis" prevê. Valores
+`vIBS = 11,93` e `vCBS = 107,36`.
+
+#### ⚠️ E o número quase destruiu a numeração — pego a tempo
+
+A nota voltou como **`2600000003283`**: ano (26) + o nosso sequencial (3283) em
+11 dígitos. Tanto `nNFSe` como `nDFSe` vêm assim — **não existe, no XML, um
+número municipal "3283" separado**. Esse é o número oficial, e é ele que foi para
+a planilha, o Omie, os nomes dos arquivos e o cliente.
+
+**O problema:** o próximo número sai do maior da planilha MAIS UM. Lido cru,
+`2600000003283 + 1` faria a nota seguinte pedir **2.600.000.003.284** — e a
+sequência da BWS nunca mais voltaria. A nota seguinte sairia com número absurdo,
+e a de depois também.
+
+**O conserto:** o número gravado é traduzido de volta ao sequencial antes de
+qualquer conta (`worker.sequencial_da_nota`). Número de **13 dígitos** é nacional
+e tem o ano na frente; qualquer outro é do modelo antigo e vale como está — um
+sequencial da BWS tem 4 dígitos e não chega perto de 13. Então a planilha pode ter
+os dois formatos convivendo, que é o estado real dela: milhares de linhas `3280` e
+as novas `2600000003283`.
+
+**Decisão, e o motivo:** o número **oficial** é o que fica na planilha, no Omie e
+no documento do cliente. Guardar `3283` ali seria mais cômodo para a numeração,
+mas faria o sistema divergir do que a prefeitura e o cliente veem — e conciliação
+é exatamente o que essa coluna serve para fazer. A tradução resolve a numeração
+sem mentir sobre o número.
+
+**E o alarme falso saiu da tela.** Ela dizia *"Número devolvido (2600000003283) ≠
+esperado (3283). Confira a numeração."* — em TODA nota nacional. Alarme que
+sempre aparece deixa de ser lido. Agora a comparação é pelo sequencial, e quando
+os dois batem a tela **explica o formato**: o número oficial é ano + sequencial, e
+diz qual é o próximo.
+
+**✅ CONFIRMADO pela segunda nota, no mesmo dia.** Isto estava escrito aqui como
+dedução de um caso só: que o número longo é montado a partir do NOSSO sequencial.
+A nota seguinte saiu como **`2600000003284`** — o sequencial pedido era 3284.
+Então a regra é essa, e são dois casos: **o número da nota é ano (2 dígitos) + o
+nosso sequencial (11 dígitos)**, e o que a BWS controla continua sendo o
+sequencial.
+
+Essa nota também é a prova de que o conserto funcionou em produção: sem ele, ela
+teria pedido o número 2.600.000.003.284 em vez de 3284, e a sequência estaria
+perdida.
+
+#### O `vLiq` da nota não é o líquido que a BWS recebe
+
+Descoberto no mesmo XML, e vale para a tela "Só a linha da planilha": o
+`vLiq` do modelo nacional **não desconta PIS nem COFINS**. Nesta nota ele veio
+`24.222,04`, e o que a BWS recebe de fato é **23.303,97** — PIS (163,49) e COFINS
+(754,58) foram retidos.
+
+A coluna O da planilha é "valor a ser recebido", ou seja valor menos **todas** as
+retenções. A tela publicada de manhã lia o `vLiq` — e teria posto R$ 918,07 a
+mais nessa coluna, num campo que o dono usa para conferir recebimento. Agora o
+líquido é **calculado** a partir das retenções presentes no XML (imposto não
+retido não aparece lá, pela regra do E0699, então presença quer dizer retenção).
+O número confere com o do motor fiscal, centavo a centavo.
+
+#### O que foi conferido
+
+A nota real, campo por campo, contra o XML assinado que a prefeitura devolveu —
+é a primeira vez nesta migração que a conferência não é contra um dublê. Mais: 10
+casos novos, entre eles o que impede o estrago da numeração (planilha com os dois
+formatos devolvendo 3284) e o líquido da nota 3283 fechando em 23.303,97. Suíte
+inteira: 5.287 passando.
+
+**O que NÃO foi conferido:** as duas notas saíram da MESMA obra e tributação
+(PIS, COFINS, IR e CSLL retidos, ISS retido, sem INSS). As outras combinações da
+BWS seguem provadas só contra o schema — e foi justamente uma combinação
+diferente (esta, sem INSS) que revelou o E0699.
+
+### E0699, e a varredura que devia ter existido desde a migração — 08/10/2026
+
+> *E0699 — O valor do tributo CP deve ser maior que zero e menor que o valor do
+> serviço informado na DPS.*
+
+**CP é a contribuição previdenciária — o INSS.** A declaração mandava o campo
+dele com **0,00**, numa obra cuja tributação não retém INSS. O campo é
+**opcional** no layout, e a plataforma recusa valor zero: zero declara uma
+retenção DE valor zero, que é diferente de não haver retenção.
+
+**E esta é a parte feia: a regra já estava escrita neste arquivo.** A decisão
+"imposto sem retenção não aparece na nota" está registrada aqui desde
+21/09/2026, descrevendo o comportamento do modelo antigo. O grupo de PIS/COFINS
+da declaração nova a segue — tem até comentário no código dizendo que mandar
+"0,00" é diferente de não mandar. **Os três campos de retenção federal (INSS, IR
+e CSLL) não seguiam**, e só eles.
+
+**Pior: havia um teste afirmando o contrário.** O
+`test_imposto_nao_retido_vai_zerado_e_nao_omitido`, escrito por mim em 07/10,
+dizia que "ausência e zero são lidas igual aqui, mas zero é explícito". A
+primeira metade é falsa, e o teste trancava o defeito no lugar. Ele foi
+invertido, com o motivo escrito dentro.
+
+#### O conserto, e um segundo defeito que ele revelou
+
+1. **Os três campos federais só vão quando foram de fato retidos**, e quando
+   nenhum foi, o grupo `tribFed` inteiro não sai (grupo vazio é válido no schema
+   e não diz nada).
+2. **A outra metade da regra do E0699 virou trava:** retenção maior ou igual ao
+   valor do serviço derruba a montagem, com o motivo e os dois números na
+   mensagem. Isso é erro de dado, e falhar antes de enviar é mais barato.
+3. **O total aproximado de tributos estava errado também, e ainda não tinha dado
+   erro.** O layout dá uma escolha de quatro para `totTrib`, e uma delas existe
+   exatamente para quem não informa valor estimado: **`indTotTrib=0`**.
+   Mandávamos a outra, `vTotTrib`, com os três valores em **0,00** — declarando
+   que o total aproximado dos tributos da nota é zero, o que é falso. Mesmo
+   defeito, mesma família, encontrado antes de custar uma emissão.
+
+#### A varredura — o que eu devia ter feito em vez de consertar campo por campo
+
+O mesmo defeito apareceu **três vezes em formas diferentes**: PIS/COFINS (pego
+na migração), os três federais (E0699) e o total de tributos. A causa comum é
+simples de dizer: **a plataforma trata "zero" e "ausente" como coisas
+diferentes, e o schema não ajuda** — campo opcional com zero é arquivo válido.
+
+Então, em vez de confiar em lembrar da regra campo por campo, passou a existir um
+teste que **varre a declaração inteira contra o XSD**: todo elemento que o layout
+permite omitir e que está indo com valor zero é acusado. A exceção são os
+**indicadores** (`indFinal`, `indDest`, `indTotTrib`, `finNFSe`, `regEspTrib`),
+onde o zero é um **significado** — "não é consumidor final" — e não um valor.
+Roda nas quatro tributações que a BWS usa.
+
+Esse teste é o que teria pego o E0699 em 07/10, e teria pego o total de tributos
+junto. A lição, para a próxima vez que um layout novo entrar: **a pergunta não é
+"este campo está certo?", é "que classe de erro este campo pertence, e como eu
+varro a classe inteira?"**.
+
+#### O que foi conferido, e o que NÃO foi
+
+**Conferido:** imposto não retido é omitido e não vai zerado; nota sem retenção
+federal nenhuma não leva o grupo, e continua passando no schema; retenção maior
+que o serviço derruba a montagem; o total de tributos sai como "não informado" e
+a outra opção continua disponível se um dia quiserem informar; a varredura não
+acusa nada nas quatro tributações; E0699 traduzido (começando por dizer que CP é
+o INSS, que o texto cru não diz). 9 casos novos, e um teste antigo invertido.
+Suíte inteira: 5.277 passando.
+
+**NÃO conferido:** se a plataforma aceita a declaração agora. É a quarta correção
+do dia e nenhuma delas pôde ser ensaiada, porque o ambiente de teste do município
+nunca foi tentado até o fim — ver a correção na seção de estado, que é
+justamente sobre isso. Os suspeitos seguintes continuam os de antes —
+`tpOper` e `tpEnteGov`, prontos e desligados.
 
 ### "Só a linha da planilha": uma nota certa com a planilha faltando — 07/10/2026
 

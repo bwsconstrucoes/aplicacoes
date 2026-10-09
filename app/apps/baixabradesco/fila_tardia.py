@@ -17,6 +17,8 @@ import os
 import time
 import uuid
 
+from .utils import as_string
+
 FILA_DIR = '/tmp/baixabradesco_fila_tardia'
 MAX_TENTATIVAS = 10
 
@@ -52,54 +54,80 @@ def adiar_payload(payload: dict, erro: str) -> dict:
     }
 
 
-# A drenagem que pega carona neste cron. Os números são por disparo, e o cron
-# roda de 5 em 5 minutos: 15 por etapa dá ~180 itens por hora sem encostar na
-# cota do Google, que é compartilhada com o ERP e o painel.
+# Quanto o cron drena por disparo. Ele roda de 5 em 5 minutos: 15 por etapa dá
+# ~180 itens por hora sem encostar na cota do Google, que é compartilhada com o
+# ERP e o painel. A ORDEM mora em `fila.ORDEM_ETAPAS`, num lugar só, porque os
+# dois caminhos automáticos já divergiram uma vez.
+LIMITES_CRON = {'omie': 15, 'sheets': 15, 'pipefy': 15, 'zapi': 10}
+
+# ── Mutirão único: zerar o que ficou para trás ────────────────────────────────
 #
-# A ordem importa e não é alfabética: `omie` é dinheiro (baixa que não
-# aconteceu), `sheets` é a planilha desatualizada, `pipefy` é o cartão no lugar
-# errado, `zapi` é recado. Em 08/10/2026 a fila tinha 1.943 recados na frente de
-# 238 baixas — drenar na ordem da planilha deixaria o dinheiro para o fim.
-ETAPAS_DRENAGEM = (
-    ('omie', 15),
-    ('sheets', 15),
-    ('pipefy', 15),
-    ('zapi', 10),
-)
+# Pedido do dono em 08/10/2026, vendo a fila com 2.213 pendências cuja mais
+# antiga era de 18/06: *"só preciso que rode as coisas desse mês em diante. O que
+# tá pra trás, poderia zerar."* A razão é dele e é boa: faz conciliação bancária
+# diária, então o que ficou para trás já foi resolvido na mão — a pendência é de
+# registro, não de dinheiro.
+#
+# ⚠️ A data é FIXA de propósito, não "o mês corrente". Ele autorizou zerar o que
+# estava para trás *naquele dia*; uma regra que andasse com o calendário ficaria
+# dispensando pendência nova todo mês primeiro, o que ele não pediu e seria a
+# forma mais silenciosa possível de perder trabalho.
+#
+# É um mutirão que se encerra sozinho: depois que as linhas antigas estão
+# marcadas, nenhuma casa com o critério e a passada fica de graça.
+ZERAR_ANTES_DE = '01/10/2026'
+ZERAR_POR_DISPARO = 500
 
 
-def _drenar_por_etapa(payload: dict | None = None) -> dict:
-    """Anda com a fila de falhas, uma etapa por vez, na ordem de importância.
+def _zerar_atraso_uma_vez(payload: dict | None = None) -> dict:
+    """Dispensa, aos poucos, as pendências anteriores ao corte autorizado.
 
-    `descartar_avisos_antigos=False` de propósito: limpar em massa as 1.943
-    linhas de aviso antigo é decisão do dono, não do cron. Aqui elas são
-    puladas, sem gastar tentativa.
+    Em blocos por disparo para não tomar a cota do Google de uma vez — ela é
+    por minuto e é compartilhada com o ERP, o painel e o Análise de SPs.
     """
-    from .fila import reprocessar_fila
+    from .fila import zerar_fila_antiga
 
-    base = dict(payload or {})
-    saida = {}
-    for etapa, limite in ETAPAS_DRENAGEM:
-        pedido = dict(base)
-        pedido.update({'etapas': [etapa], 'limite': limite,
-                       'descartar_avisos_antigos': False})
-        try:
-            r = reprocessar_fila(pedido)
-            saida[etapa] = {
-                'processados': r.get('pendentes_processados'),
-                'concluidos': r.get('concluidos_agora'),
-                'ainda_pendentes': r.get('ainda_pendentes'),
-                'bloqueados_por_configuracao': r.get('bloqueados_por_configuracao'),
-                'o_que_falta_configurar': r.get('o_que_falta_configurar'),
-                'interrompido': r.get('interrompido'),
-            }
-            if r.get('interrompido') == 'cota_do_google':
-                # Cota estourada: para aqui e deixa o resto para o próximo cron.
-                saida['parou_por_cota_na_etapa'] = etapa
-                break
-        except Exception as e:
-            saida[etapa] = {'erro': str(e)[:200]}
-    return saida
+    corte = (os.getenv('BAIXABRADESCO_ZERAR_ANTES_DE', '') or ZERAR_ANTES_DE).strip()
+    if not corte:
+        return {'desligado': True}
+    pedido = dict(payload or {})
+    pedido.update({'antes_de': corte, 'limite': ZERAR_POR_DISPARO})
+    try:
+        r = zerar_fila_antiga(pedido)
+        saida = {
+            'antes_de': r.get('antes_de'),
+            'dispensadas': r.get('dispensadas'),
+            'por_etapa': r.get('por_etapa'),
+            'erro': r.get('erro'),
+        }
+        # Um mutirão precisa saber dizer que acabou, senão alguém fica olhando
+        # número sem saber o que esperar — e a varredura segue custando uma
+        # leitura da faixa de controle a cada cinco minutos, de graça.
+        if r.get('ok') and not r.get('encontradas'):
+            saida['concluido'] = True
+            saida['em_portugues'] = (
+                'Mutirão concluído: não há mais pendência anterior a '
+                + as_string(r.get('antes_de'))
+                + '. Pode esvaziar BAIXABRADESCO_ZERAR_ANTES_DE no Render para'
+                  ' a varredura parar de rodar à toa.')
+        return saida
+    except Exception as e:
+        return {'erro': str(e)[:200]}
+
+
+def _dispensar_avisos_vencidos(payload: dict | None = None) -> dict:
+    """Tira da fila o aviso que já não serve. Vale só para aviso."""
+    from .fila import dispensar_avisos_vencidos
+    try:
+        r = dispensar_avisos_vencidos(dict(payload or {}))
+        return {'dispensadas': r.get('dispensadas'), 'erro': r.get('erro')}
+    except Exception as e:
+        return {'erro': str(e)[:200]}
+
+
+def _drenar_a_fila(payload: dict | None = None) -> dict:
+    from .fila import drenar_por_etapa
+    return drenar_por_etapa(LIMITES_CRON, payload)
 
 
 def processar_fila_tardia(payload: dict | None = None) -> dict:
@@ -149,5 +177,13 @@ def processar_fila_tardia(payload: dict | None = None) -> dict:
         # falhas pega carona nele. Antes ela só andava se alguém chamasse a rota
         # à mão — e, pelos números de 08/10/2026 (2.269 linhas, nenhuma
         # concluída, a mais antiga de 18/06/2026), nunca ninguém chamou.
-        'fila_de_falhas': _drenar_por_etapa(payload),
+        # A ORDEM importa: zerar primeiro, drenar depois. Senão a drenagem
+        # gastaria a passada inteira nas linhas antigas que vão ser dispensadas
+        # dois segundos mais tarde.
+        'atraso_zerado': _zerar_atraso_uma_vez(payload),
+        # Aviso que passou do prazo nunca mais vai ser enviado: deixá-lo
+        # PENDENTE era um limbo que travava a contagem em 121 pendências que
+        # jamais andariam (números do dono em 08/10/2026).
+        'avisos_vencidos': _dispensar_avisos_vencidos(payload),
+        'fila_de_falhas': _drenar_a_fila(payload),
     }

@@ -41,15 +41,24 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
-1i. **NO RAMO, NÃO PUBLICADO (07 e 08/10/2026)**: as correções do cadastro de
-   aparelhos (seção de 07/10) e a TELA INICIAL com consulta pela cerca e o
-   administrativo de obra (seção de 08/10), com a migração **008**. Em 07/10 o
-   dono disse "pode", mas o envio para a `main` foi barrado pela permissão da
-   sessão (faltou a resposta sobre carga do painel/sincronização da Análise de
-   SPs). Publicar = os dois juntos + apertar "Aplicar atualizações do ponto".
-   A pergunta de 07/10 ("o modo pessoa já libera atestado, foi assim que a
-   gente combinou?") foi respondida pelo próprio dono em 08/10: pedido pelo
-   próprio celular passou a ser uma marcação por pessoa.
+1k. **PUBLICADO em 09/10/2026, segunda leva** (com o "pode" do dono, sem
+   migração nova): fora da obra só explicando (vai para conferência), nada
+   sem localização no celular, ⏳ na batida em conferência, e o aparelho que
+   chega com o nome de quem entrou. Confirmar com o dono: aprovou o celular
+   novo da pessoa que tinha apagado os dados do navegador?
+1j. **PUBLICADO em 09/10/2026** (com o "pode" do dono): os seis ajustes de
+   09/10 e a correção do fuso na apuração (seção de 09/10), com a migração
+   **009**. Confirmar com o dono: apertou "Aplicar atualizações do ponto"?
+   Marcou em Cerca das obras as obras de só entrada e saída? Conferiu a
+   coordenada da obra de teste (a recusa a 16 mil km)?
+1i. **PUBLICADO em 08/10/2026** (com o "pode" do dono, `main` em `29bd1f0`): as
+   correções do cadastro de aparelhos (seção de 07/10) e a TELA INICIAL com a
+   consulta pela cerca, o administrativo de obra, os ícones ✏️/🗓️ e a regra
+   do computador (seção de 08/10), com a migração **008**. Confirmar com o dono:
+   apertou "Aplicar atualizações do ponto"? Sem ela, ninguém é administrativo e
+   o pedido pelo celular segue a regra de 06/10. Depois: marcar os
+   administrativos de obra (Pessoas › "Acesso no aplicativo") e testar a tela
+   inicial num celular de verdade (câmera traseira e zoom ainda não conferidos).
 1h. **PUBLICADO em 06/10/2026** (com o "pode" do dono): os pedidos de 06/10
    (itens 1 a 10 abaixo), com as migrações **006 e 007**. Confirmar com o dono:
    apertou "Aplicar atualizações do ponto"? escolheu a **escala padrão da
@@ -93,6 +102,97 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 09/10/2026 — Bater fora da obra (Portaria 671), nada sem localização, e o aparelho com nome
+
+Pergunta do dono: pela Portaria 671, a batida tem de ser aceita fora da obra?
+Resposta dada: a Portaria proíbe restringir HORÁRIO, marcação automática,
+autorização prévia de hora extra e alterar o registrado — restringir LUGAR não
+está na lista; o risco é a jornada fora da obra ficar sem registro num processo.
+Primeiro propus uma marcação por pessoa ("pode bater fora da área"); o dono
+resumiu a regra para TODOS, e a marcação foi desfeita antes de publicar:
+
+> *"Não tá na obra. Alerta! E se a pessoa ainda for bater, explicar o motivo e o
+> ponto ir para conferência e o sistema avisar isso. E a pessoa precisa poder
+> visualizar isso no meu dia, que aquela batida ainda não está válida."*
+
+- **Fora da obra, no celular:** a tela avisa "⚠️ Você NÃO está na obra" (com a
+  distância); para bater mesmo assim, a pessoa escolhe a obra e EXPLICA o motivo
+  — sem explicação, o servidor recusa. Com ela, a batida entra EM CONFERÊNCIA,
+  com a localização gravada e o motivo ("bateu explicando o motivo" + a
+  explicação), e vai para a fila de Validações da administração da obra.
+- **Sem localização, o celular nunca bate** — nem na obra que aceita sem
+  explicação. O **ponto da obra** sem localização continua aceitando, para
+  conferência: recusar pararia a equipe inteira por causa do GPS de um aparelho
+  já preso à obra (escolha minha, dita ao dono). O ponto da obra FORA da cerca
+  (o aparelho saiu da obra) continua recusado.
+- **A batida em conferência aparece no dia**: ⏳ antes do horário, no "Hoje" e
+  no "Meu mês", com "ainda não vale até a administração da obra validar".
+- A escolha por obra em Cerca das obras passou a se chamar "Só com explicação
+  da pessoa" (o antigo BLOQUEAR, padrão) e "Aceitar sem explicação" (ANALISAR).
+
+**O aparelho chegava "sem nome" na aprovação.** Desde a tela inicial (08/10), o
+login não passava mais pelo trecho que dava ao celular o nome de quem entrou
+(ficou só na tela "Hoje"). Agora o servidor faz isso NA ENTRADA com CPF e PIN (e
+na criação do PIN): o pedido chega "Celular de Fulano (CPF final 123)". Os
+celulares de quem não bate no celular nem entram na fila (regra de 05/10).
+**A pessoa que já tinha celular aprovado e pediu de novo:** quase certamente
+apagou os dados do navegador (ou reinstalou o aplicativo) ao mexer na
+localização — o identificador do aparelho mora ali, e o celular vira "novo". O
+pedido agora diz "já tem um celular aprovado desde … — provavelmente trocou de
+celular ou apagou os dados do navegador; aprovar este bloqueia o anterior". Não
+se aprova sozinho: com o PIN de alguém, outro celular bateria por ele. O
+aplicativo também pede ao navegador para não apagar esses dados por conta
+própria, e a tela de "esperando aprovação" explica o caso.
+
+## 09/10/2026 — Seis ajustes do teste do dono (e um defeito de fuso achado no caminho)
+
+1. **Nome da obra repetido** ("TESTE-PONTO — TESTE DO PONTO (obra de teste)").
+   A regra que junta código e nome passou a reconhecer quando TODAS as palavras
+   do código estão no nome — aí basta o nome. Vale no aplicativo
+   (`rotuloObra`), no comprovante (`cadastros.rotulo_obra`) e no ERP inteiro:
+   o `rotuloObra` do `erp_base.html` ganhou a mesma regra (antes, só "um
+   contém o outro").
+2. **"Encarregado" virou "administração da obra"** em todo texto que a pessoa
+   lê ("pode ser o encarregado, o almoxarife, o DP"), inclusive as opções de
+   Quem valida ("Administração da obra", "Administração da obra e depois o
+   DP"). O valor gravado continua `ENCARREGADO`.
+3. **"Bater e mandar para conferência" era recusado** ("fora da área da obra,
+   16 mil km"). A tela oferecia a lista de obras sempre que não achava a
+   cerca, mas a obra BLOQUEIA fora dela (o padrão desde 04/10) — prometia o
+   que o servidor não fazia. Agora a lista só traz as obras em que a batida
+   será aceita (as que mandam para conferência, em Configuração › Cerca das
+   obras, e as sem coordenada); se nenhuma, o botão de bater fica desligado e
+   a tela diz por quê. A regra de bloquear NÃO mudou. Distância acima de
+   100 km ganha o aviso "confira a localização do celular e a coordenada da
+   obra" — 16 mil km não é "fora da cerca", é coordenada ou localização errada
+   (não deu para saber qual: conferir o mapa da obra de teste).
+4. **O pedido pendente aparece no dia**, no "Meu mês" e na folha da consulta:
+   o horário pedido vira um chip ⏳ tracejado ("Ajuste pedido — esperando
+   validação"); atestado e licença, um selo âmbar. O horário pedido já não
+   aparecia como "faltando", mas a pessoa não via que tinha pedido.
+5. **Corrigir sem escala mostrava "Batida 1 / Batida 2"**: agora oferece as
+   que ainda cabem no dia, com o nome (Entrada, Saída para o intervalo, Volta
+   do intervalo, Saída).
+6. **Obra que só bate entrada e saída** (convenção — intervalo PRÉ-ASSINALADO,
+   CLT art. 74, § 2º): migração **009** (`obra_config.intervalo_pre_assinalado`),
+   marcada em Configuração › Cerca das obras › "Batidas por dia: 2". Na obra
+   marcada, o dia com só a entrada e a saída fica completo, a escala espera duas
+   marcas, e a conta desconta o intervalo da escala (sem isso, o almoço viraria
+   hora extra e alerta de intervalo curto). Quem bater as quatro, conta as
+   quatro. A regra olha a obra da primeira batida do dia.
+
+**Defeito achado ao testar o item 6:** o espelho entregava à apuração a hora
+das batidas em UTC (como o banco devolve), e a apuração conta minutos desde a
+meia-noite do fuso da batida. As horas trabalhadas saíam certas (são
+diferenças), mas **o atraso, a tolerância de 5/10 min e a hora noturna saíam 3 h
+deslocados** — toda entrada às 7h aparecia como 3 h de atraso, e quem bateu às
+19h ganhava hora noturna. Corrigido no `espelho.py` (`horario.para_local`), com
+teste que trava. O ponto ainda não está em uso real com a equipe, então não há
+espelho fechado errado; o que estava na tela se recalcula sozinho.
+
+Testes: `tests/test_ponto_duas_batidas_banco.py` e dois casos novos em
+`test_ponto_apuracao.py`.
 
 ## 08/10/2026 — A tela inicial, a consulta pela cerca da obra e o administrativo de obra
 

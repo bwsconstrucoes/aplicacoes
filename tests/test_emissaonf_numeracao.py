@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-A numeração das notas, e o número que fica preso numa declaração travada.
+A numeração das notas, e o número que não volta a ser usado.
 
 Veio de um defeito real, visto em 07/10/2026: uma declaração que a prefeitura
 aceitou mas que ainda não virou nota **não entra na planilha**, porque a planilha
@@ -11,6 +11,14 @@ O estrago que isso faria: a nota seguinte sairia pedindo o mesmo número, e a
 prefeitura leria o pedido como **reenvio da declaração anterior** (é o que o
 manual dela prevê para a mesma identificação), não como nota nova. Dois serviços
 diferentes colapsados num documento só — e documento fiscal não se desfaz.
+
+**08/10/2026 — a regra ficou mais dura, por evidência.** A versão de 07/10 ainda
+reaproveitava o número para o MESMO card, confiando no manual: declaração
+recusada pode ser reenviada com a mesma identificação. Em Eusébio não é assim. A
+declaração da nota 3281 foi aceita, transmitida, recusada no nacional, teve o
+número liberado e reusado — e a prefeitura respondeu **EL99: "chave informada
+para a DPS não existe no repositório municipal"**. Número já enviado é número
+gasto, e a exceção do mesmo card saiu.
 """
 import os
 import sys
@@ -55,7 +63,8 @@ def numeros_na_planilha(monkeypatch):
     def preparar(emitidos, abertas):
         gc = GoogleFalso(emitidos)
         monkeypatch.setattr(worker, "abrir_aba", lambda planilha, cand: planilha.aba)
-        monkeypatch.setattr(declaracoes, "listar_abertas", lambda planilha: abertas)
+        monkeypatch.setattr(declaracoes, "numeros_registrados",
+                            lambda planilha: [int(d["numero"]) for d in abertas])
         return gc
     return preparar
 
@@ -71,21 +80,26 @@ def test_sem_declaracao_em_aberto_o_proximo_e_o_seguinte_da_planilha(numeros_na_
     assert worker.proximo_numero(gc) == (3281, 3280)
 
 
-def test_numero_preso_numa_declaracao_em_aberto_nao_e_reusado(numeros_na_planilha, capsys):
+def test_numero_de_declaracao_ja_enviada_nao_e_reusado(numeros_na_planilha, capsys):
     """O caso da 3281: aceita pela prefeitura, sem nota, fora da planilha. A nota
     seguinte tem de sair como 3282."""
     gc = numeros_na_planilha([3278, 3279, 3280], [_aberta(3281, card_id="111")])
     prox, ultimo = worker.proximo_numero(gc, card_id="222")
     assert prox == 3282
     assert ultimo == 3280, "o último EMITIDO continua sendo o da planilha"
-    assert "preso a uma declaração em aberto" in capsys.readouterr().out
+    assert "já foi usado numa declaração enviada" in capsys.readouterr().out
 
 
-def test_o_mesmo_card_reaproveita_o_numero_da_sua_declaracao(numeros_na_planilha):
-    """Para o mesmo card é reenvio, não nota nova — e o manual da prefeitura
-    manda reenviar com a MESMA identificação."""
+def test_nem_o_mesmo_card_reusa_o_numero_da_sua_declaracao(numeros_na_planilha):
+    """Esta é a regra que mudou em 08/10/2026, e mudou por evidência.
+
+    Antes, o mesmo card reaproveitava o número: o manual da prefeitura diz que
+    declaração recusada pode ser reenviada com a MESMA identificação. Foi feito
+    exatamente isso com a 3281 e a resposta foi **EL99** — a prefeitura não
+    reconhece mais aquela identificação. Número enviado é número gasto, para
+    qualquer card."""
     gc = numeros_na_planilha([3278, 3279, 3280], [_aberta(3281, card_id="111")])
-    assert worker.proximo_numero(gc, card_id="111")[0] == 3281
+    assert worker.proximo_numero(gc, card_id="111")[0] == 3282
 
 
 def test_varias_declaracoes_presas_empurram_o_numero_para_depois_da_ultima(numeros_na_planilha):
@@ -102,7 +116,7 @@ def test_se_as_declaracoes_nao_puderem_ser_lidas_a_emissao_avisa(monkeypatch, ca
     def explode(_p):
         raise RuntimeError("planilha fora do ar")
 
-    monkeypatch.setattr(declaracoes, "listar_abertas", explode)
+    monkeypatch.setattr(declaracoes, "numeros_registrados", explode)
     assert worker.proximo_numero(gc, card_id="1") == (3281, 3280)
     assert "pode colidir" in capsys.readouterr().out
 
@@ -149,3 +163,79 @@ def test_data_ilegivel_nao_vira_travada_nem_estoura(monkeypatch):
     monkeypatch.setattr(declaracoes, "_ws", lambda p: WS())
     d = declaracoes.listar_abertas(None)[0]
     assert d["travada"] is False and d["horas_aberta"] is None
+
+
+# --------------------------------------------------------------------------- #
+# Toda declaração enviada conta — qualquer que seja o desfecho
+# --------------------------------------------------------------------------- #
+def test_numeros_registrados_conta_todo_status(monkeypatch):
+    """A aba só recebe declaração DEPOIS de a prefeitura aceitar. Então todo
+    número que está nela já foi enviado, e número enviado é número gasto — valha
+    a declaração ter virado nota, ter sido recusada ou estar aguardando."""
+    class WS:
+        def get_all_values(self):
+            return [declaracoes.CAB,
+                    ["DPS1", "3281", "111", "O", "10", "producao", "", "recusada", "", "", ""],
+                    ["DPS2", "3282", "222", "O", "11", "producao", "", "aguardando", "", "", ""],
+                    ["DPS3", "3283", "333", "O", "12", "producao", "", "concluida", "", "3283", ""]]
+
+    monkeypatch.setattr(declaracoes, "_ws", lambda p: WS())
+    assert sorted(declaracoes.numeros_registrados(None)) == [3281, 3282, 3283]
+
+
+def test_numero_recusado_tambem_empurra_a_numeracao(numeros_na_planilha, monkeypatch):
+    """O caso exato de 08/10/2026: a 3281 foi recusada, o número foi liberado e
+    reusado, e a prefeitura respondeu EL99. Agora ela continua contando."""
+    gc = GoogleFalso([3280])
+    monkeypatch.setattr(worker, "abrir_aba", lambda planilha, cand: planilha.aba)
+    monkeypatch.setattr(declaracoes, "numeros_registrados", lambda p: [3281])
+    assert worker.proximo_numero(gc, card_id="111")[0] == 3282
+
+
+def test_linha_sem_numero_nao_estoura(monkeypatch):
+    class WS:
+        def get_all_values(self):
+            return [declaracoes.CAB,
+                    ["DPS1", "", "111", "O", "10", "producao", "", "recusada", "", "", ""]]
+
+    monkeypatch.setattr(declaracoes, "_ws", lambda p: WS())
+    assert declaracoes.numeros_registrados(None) == []
+
+
+# --------------------------------------------------------------------------- #
+# O número que a plataforma nacional devolve, e a sequência que quase se perdeu
+#
+# A primeira nota do padrão nacional (08/10/2026) voltou como **2600000003283**
+# — ano (26) + o nosso sequencial (3283) em 11 dígitos. É o número OFICIAL, é
+# ele que vai no documento do cliente e é ele que fica na planilha.
+#
+# Só que o próximo número sai do maior da planilha MAIS UM. Lido cru,
+# 2600000003283 + 1 pediria a nota 2.600.000.003.284 — e a sequência nunca mais
+# voltaria. Foi pego antes da segunda nota.
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize("gravado,sequencial", [
+    ("2600000003283", 3283),     # nacional: ano + 11 dígitos  <- o caso real
+    ("3280", 3280),              # modelo antigo
+    ("NOTA 3281", 3281),         # com texto em volta
+    (3282, 3282),                # já numérico
+    ("", 0),                     # célula vazia
+    ("2700000000001", 1),        # nacional no ano seguinte
+])
+def test_o_sequencial_e_recuperado_do_numero_gravado(gravado, sequencial):
+    assert worker.sequencial_da_nota(gravado) == sequencial
+
+
+def test_depois_da_primeira_nota_nacional_a_proxima_e_o_sequencial_mais_um(numeros_na_planilha):
+    """O teste que impede o estrago: planilha com o número nacional da 3283, e a
+    próxima tem de ser 3284 — não 2.600.000.003.284."""
+    gc = numeros_na_planilha([3280, 3281, "2600000003283"], [])
+    prox, ultimo = worker.proximo_numero(gc)
+    assert prox == 3284
+    assert ultimo == 3283
+
+
+def test_planilha_com_os_dois_formatos_convivendo_numera_certo(numeros_na_planilha):
+    """É o estado real da planilha: milhares de linhas do modelo antigo e as
+    novas em formato nacional."""
+    gc = numeros_na_planilha([3278, 3279, 3280, "2600000003283"], [])
+    assert worker.proximo_numero(gc)[0] == 3284

@@ -76,14 +76,18 @@ def ensure_fila_sheet(gc=None):
     try:
         topo = ws.get('A1:O1') or []
     except Exception:
-        topo = []
-    atuais = topo[0] if topo else []
-    if not atuais:
-        ws.append_row(HEADERS, value_input_option='USER_ENTERED')
+        # Leitura falhou: NÃO mexe no cabeçalho. Escrever por cima do que não se
+        # conseguiu ler é como a aba ganhou linhas de lixo (ver abaixo).
         return ws
+    atuais = topo[0] if topo else []
     atuais = (list(atuais) + [''] * len(HEADERS))[:len(HEADERS)]
     if atuais != HEADERS:
-        # Não apaga dados. Apenas garante cabeçalho mínimo nas primeiras colunas.
+        # ⚠️ `update('A1:O1')`, nunca `append_row`. Em 08/10/2026 a contagem do
+        # dono mostrou três linhas com Status = "STATUS" no meio da fila: eram
+        # cabeçalhos escritos por `append_row`, que acrescenta no FIM da aba, não
+        # na linha 1. Bastava a leitura de `A1:O1` voltar vazia uma vez — o que
+        # acontece num soluço de rede — para nascer uma linha de lixo. Defeito
+        # meu, introduzido junto com a leitura limitada.
         ws.update('A1:O1', [HEADERS], value_input_option='USER_ENTERED')
     return ws
 
@@ -190,6 +194,9 @@ def _candidatos(ws, limite: int, somente_vencidos: bool, aceitos: set,
     for idx, row in enumerate(valores, start=2):
         row = list(row) + [''] * (COLS_CONTROLE - len(row))
         if as_string(row[1]).upper() not in aceitos:
+            continue
+        if as_string(row[1]).strip().upper() == 'STATUS':
+            # Linha de cabeçalho perdida no meio dos dados. Não é pendência.
             continue
         etapa_linha = as_string(row[11]).lower()
         if etapas is not None and etapa_linha not in etapas:
@@ -313,9 +320,112 @@ def _marcar_em_lote(ws, marcas: List[Dict[str, Any]]) -> int:
     return gravadas
 
 
+def _anotar_bloqueio(ws, row_number: int, tentativas: Any, mensagem: str,
+                     horas: int = 6) -> None:
+    """Escreve o motivo e empurra a próxima tentativa, SEM gastar tentativa.
+
+    A diferença entre "tentativa" e "agendamento" é o ponto todo: insistir de
+    cinco em cinco minutos no que falta configurar não resolve nada e esconde as
+    pendências que de fato andam; mas contar isso como tentativa marcaria o item
+    como fracassado depois de cinco passadas, apagando pendência de verdade.
+    """
+    proxima = (datetime.now() + timedelta(hours=horas)).strftime('%d/%m/%Y %H:%M:%S')
+    try:
+        ws.batch_update([
+            {'range': f'B{row_number}:D{row_number}',
+             'values': [[STATUS_PENDENTE, tentativas, proxima]]},
+            {'range': f'M{row_number}:O{row_number}',
+             'values': [[as_string(mensagem)[:1000], '', now_str()]]},
+        ], value_input_option='USER_ENTERED')
+    except Exception:
+        # Não gravou: o estado na planilha continua o verdadeiro.
+        pass
+
+
 def _request_omie(call: str, param: dict, payload: dict) -> dict:
     body = omie_body(call, param, payload)
     return execute_omie(body)
+
+
+def _enfileirar_etapa(item: Dict[str, Any], etapa: str, tipo_falha: str,
+                      mensagem: str) -> dict:
+    """Cria uma pendência nova para uma etapa, a partir de um item da fila.
+
+    Serve para o caso em que a baixa no Omie é concluída na nova tentativa e
+    uma etapa SEGUINTE falha: ela precisa de linha própria, senão desaparece.
+    """
+    try:
+        ws = ensure_fila_sheet()
+        ws.append_row([
+            now_str(), STATUS_PENDENTE, 0, next_try(10), tipo_falha,
+            as_string(item.get('ID SP')),
+            as_string(item.get('Código Integração')),
+            as_string(item.get('Arquivo')),
+            as_string(item.get('Página')),
+            as_string(item.get('Fingerprint')),
+            as_string(item.get('Link Comprovante')),
+            etapa,
+            as_string(mensagem)[:1000],
+            as_string(item.get('Payload Resumido')),
+            '',
+        ], value_input_option='USER_ENTERED')
+        return {'ok': True, 'etapa': etapa}
+    except Exception as e:
+        return {'ok': False, 'erro': str(e)[:200], 'etapa': etapa}
+
+
+def _concluir_plano(resumo: Dict[str, Any], item: Dict[str, Any],
+                    payload: dict) -> dict:
+    """Depois que o título está pago no Omie, ainda falta o resto do plano.
+
+    ⚠️ Era o furo que o dono relatou em 08/10/2026: *"tenho várias baixas que não
+    aconteceram na planilha"*. A fila tinha 182 pendências de `omie` e **zero**
+    de `sheets` — e a razão é que a baixa falha no Omie ANTES de a planilha ser
+    gravada. Então a planilha nunca foi escrita, e nunca houve pendência de
+    planilha para enfileirar. A nova tentativa resolvia o Omie, marcava
+    `CONCLUIDO` e **deixava a planilha desatualizada para sempre**.
+
+    Agora a nova tentativa termina o serviço: grava a planilha e move o cartão.
+
+    A gravação da planilha é **obrigatória** para dar o item por concluído: é o
+    registro do pagamento, e é o que o dono lê. Repetir é seguro — a consulta ao
+    Omie no início devolve `ja_pago` e não lança nada de novo, e a regravação
+    escreve os mesmos valores nas mesmas células.
+
+    O cartão do Pipefy **não** bloqueia: se falhar, ganha pendência própria, para
+    não segurar um registro de pagamento que já está correto nos dois sistemas.
+    """
+    etapas: Dict[str, Any] = {}
+
+    updates = resumo.get('sheets_updates') or []
+    if updates:
+        try:
+            r = execute_spsbd_updates(updates)
+        except Exception as e:
+            r = {'ok': False, 'erros': [str(e)[:200]]}
+        etapas['sheets'] = r
+        if not r.get('ok'):
+            return {'ok': False, 'erro': 'falha_gravar_planilha', 'etapas': etapas}
+
+    mutation = as_string(resumo.get('pipefy_update_mutation'))
+    if mutation:
+        if not os.getenv('PIPEFY_API_TOKEN', '').strip():
+            etapas['pipefy'] = {'ok': False, 'erro': 'credenciais_pipefy_ausentes'}
+            etapas['pipefy_enfileirado'] = _enfileirar_etapa(
+                item, 'pipefy', 'pipefy_erro',
+                'Omie e planilha concluídos; falta o cartão (sem PIPEFY_API_TOKEN).')
+        else:
+            try:
+                r = execute_graphql(mutation)
+            except Exception as e:
+                r = {'ok': False, 'erro': str(e)[:200]}
+            etapas['pipefy'] = r
+            if not r.get('ok'):
+                etapas['pipefy_enfileirado'] = _enfileirar_etapa(
+                    item, 'pipefy', 'pipefy_erro',
+                    'Omie e planilha concluídos; o cartão não moveu.')
+
+    return {'ok': True, 'etapas': etapas}
 
 
 def _retry_omie(item: Dict[str, Any], payload: dict) -> dict:
@@ -337,7 +447,12 @@ def _retry_omie(item: Dict[str, Any], payload: dict) -> dict:
     consulta = _request_omie('ConsultarContaPagar', {'codigo_lancamento_integracao': codigo}, payload)
     body = consulta.get('body') or {}
     if as_string(body.get('status_titulo')).upper() == 'PAGO':
-        return {'ok': True, 'status': 'ja_pago', 'consulta': consulta}
+        # Já pago no Omie — pela conciliação bancária diária, é o caso comum.
+        # Mas "pago no Omie" não quer dizer "registrado na planilha": falta o
+        # resto do plano, e era justamente isso que ficava para trás.
+        resto = _concluir_plano(resumo, item, payload)
+        return {'ok': bool(resto.get('ok')), 'status': 'ja_pago',
+                'consulta': consulta, 'resto_do_plano': resto}
     if not consulta.get('ok'):
         return {'ok': False, 'erro': 'falha_consulta_omie', 'consulta': consulta}
 
@@ -358,7 +473,13 @@ def _retry_omie(item: Dict[str, Any], payload: dict) -> dict:
         'juros': _money_to_omie_number(resumo.get('acrescimos') or '0,00'),
         'observacao': 'Baixa realizada via baixabradesco/retry',
     }, payload)
-    return {'ok': bool(baixar.get('ok')), 'consulta': consulta, 'alterar': alterar, 'baixar': baixar}
+    if not baixar.get('ok'):
+        return {'ok': False, 'erro': 'falha_lancar_pagamento', 'consulta': consulta,
+                'alterar': alterar, 'baixar': baixar}
+
+    resto = _concluir_plano(resumo, item, payload)
+    return {'ok': bool(resto.get('ok')), 'consulta': consulta, 'alterar': alterar,
+            'baixar': baixar, 'resto_do_plano': resto}
 
 
 def _money_to_omie_number(valor: Any) -> str:
@@ -412,6 +533,100 @@ def _parece_cota(texto: str) -> bool:
     t = (texto or '').lower()
     return ('429' in t or 'quota exceeded' in t or 'resource_exhausted' in t
             or 'rate_limit' in t)
+
+
+ROTULOS_ETAPA = {
+    'omie': 'baixa no Omie',
+    'sheets': 'atualização da planilha',
+    'pipefy': 'cartão do Pipefy',
+    'zapi': 'aviso de pagamento',
+}
+
+
+def _em_milhar(n: int) -> str:
+    return f'{n:,}'.replace(',', '.')
+
+
+def _frase_do_resumo(por_etapa: Dict[str, int], vencidos: int, agendados: int,
+                     falhados: int, concluidos: int, mais_antigo: str) -> str:
+    """Uma frase em português, para quem lê isto pelo celular.
+
+    A resposta crua é chave-e-número; o dono olha o chat pelo telefone e não é
+    programador. A frase não substitui os números, vem junto.
+    """
+    total = vencidos + agendados + falhados
+    if not total:
+        return ('Nenhuma pendência na fila'
+                + (f'; {_em_milhar(concluidos)} já concluídas.' if concluidos else '.'))
+
+    partes = []
+    for etapa, qtd in sorted(por_etapa.items(), key=lambda x: -x[1]):
+        if not qtd:
+            continue
+        partes.append(f'{_em_milhar(qtd)} de {ROTULOS_ETAPA.get(etapa, etapa)}')
+
+    frase = f'{_em_milhar(total)} pendência(s) na fila'
+    if partes:
+        frase += ': ' + ', '.join(partes) + '.'
+    else:
+        frase += '.'
+    if falhados:
+        frase += (f' {_em_milhar(falhados)} já tentaram cinco vezes e só voltam'
+                  ' se forem pedidas explicitamente.')
+    if agendados:
+        frase += f' {_em_milhar(agendados)} estão agendadas para mais tarde.'
+    if mais_antigo:
+        frase += f' A mais antiga é de {mais_antigo[:10]}.'
+    if concluidos:
+        frase += (f' Fora essas, {_em_milhar(concluidos)} linha(s) da aba já são'
+                  ' histórico concluído.')
+    return frase
+
+
+# A ordem em que a fila é drenada, e ela não é alfabética: `omie` é dinheiro
+# (baixa que não aconteceu), `sheets` é a planilha desatualizada, `pipefy` é o
+# cartão no lugar errado, `zapi` é recado. Em 08/10/2026 a fila tinha 1.943
+# recados na frente de 238 baixas — na ordem da planilha, o dinheiro sairia por
+# último. Um lugar só, usado pelos dois caminhos automáticos (o cron e o lote de
+# comprovantes), para não divergirem como já divergiram.
+ORDEM_ETAPAS = ('omie', 'sheets', 'pipefy', 'zapi')
+
+
+def drenar_por_etapa(limites: Dict[str, int], payload: Optional[dict] = None) -> dict:
+    """Anda com a fila, uma etapa por vez, na ordem da importância.
+
+    ⚠️ `descartar_avisos_antigos=False` é obrigatório aqui, e não é detalhe:
+    limpar em massa o acumulado de avisos antigos é decisão do dono. Quando o
+    lote de comprovantes drenava sem este cuidado, cada lote marcava cinco
+    avisos velhos como descartados — ou seja, o sistema ia limpando sozinho o
+    que foi dito que ele não tocaria.
+    """
+    base = dict(payload or {})
+    saida: Dict[str, Any] = {}
+    for etapa in ORDEM_ETAPAS:
+        limite = int(limites.get(etapa) or 0)
+        if limite <= 0:
+            continue
+        pedido = dict(base)
+        pedido.update({'etapas': [etapa], 'limite': limite,
+                       'descartar_avisos_antigos': False})
+        try:
+            r = reprocessar_fila(pedido)
+            saida[etapa] = {
+                'processados': r.get('pendentes_processados'),
+                'concluidos': r.get('concluidos_agora'),
+                'ainda_pendentes': r.get('ainda_pendentes'),
+                'bloqueados_por_configuracao': r.get('bloqueados_por_configuracao'),
+                'o_que_falta_configurar': r.get('o_que_falta_configurar'),
+                'interrompido': r.get('interrompido'),
+            }
+            if r.get('interrompido') == 'cota_do_google':
+                # Cota estourada: para aqui e deixa o resto para a próxima vez.
+                saida['parou_por_cota_na_etapa'] = etapa
+                break
+        except Exception as e:
+            saida[etapa] = {'erro': str(e)[:200]}
+    return saida
 
 
 def resumo_fila(gc=None) -> dict:
@@ -490,6 +705,10 @@ def resumo_fila(gc=None) -> dict:
         'registro_mais_antigo': mais_antiga.strftime('%d/%m/%Y %H:%M:%S') if mais_antiga else '',
         'registro_mais_recente': mais_nova.strftime('%d/%m/%Y %H:%M:%S') if mais_nova else '',
         'lotes_de_5_necessarios': (vencidos + 4) // 5,
+        'em_portugues': _frase_do_resumo(
+            por_etapa, vencidos, agendados, por_status.get(STATUS_FALHOU, 0),
+            por_status.get(STATUS_CONCLUIDO, 0),
+            mais_antiga.strftime('%d/%m/%Y') if mais_antiga else ''),
     }
 
 
@@ -557,6 +776,165 @@ def _aviso_velho_demais(item: Dict[str, Any], payload: dict) -> bool:
         return False
     dias = int(payload.get('dias_aviso_util') or DIAS_AVISO_UTIL)
     return (datetime.now() - registro) > timedelta(days=dias)
+
+
+def dispensar_avisos_vencidos(payload: dict | None = None, gc=None) -> dict:
+    """Dispensa os avisos que já passaram do prazo de utilidade. Não apaga nada.
+
+    ⚠️ Conserta um limbo que eu mesmo criei, e que apareceu nos números do dono
+    em 08/10/2026: a fila travou em 121 pendências, 116 delas avisos de
+    01/10 a 05/10. A regra dizia "aviso com mais de três dias não é reenviado" e
+    a drenagem automática apenas **pulava** esses itens — não enviava e não
+    marcava. Então eles ficavam `PENDENTE` **para sempre**, e a contagem mostrava
+    121 pendências que nunca iam andar. Pendência que não anda é pior que
+    pendência: parece trabalho a fazer e não é.
+
+    A regra certa é a conclusão da outra: se o aviso **nunca mais vai ser
+    enviado**, ele está resolvido do ponto de vista da fila, e a linha tem de
+    dizer isso.
+
+    Vale **só** para aviso. Baixa não vence — dinheiro não envelhece.
+    """
+    payload = payload or {}
+    dias = int(payload.get('dias_aviso_util') or DIAS_AVISO_UTIL)
+    corte = datetime.now() - timedelta(days=dias)
+
+    gc = gc or get_gc()
+    ws = ensure_fila_sheet(gc)
+    limite = int(payload.get('limite') or 500)
+
+    try:
+        valores = ws.get(FAIXA_CONTROLE) or []
+    except Exception as e:
+        return {'ok': False, 'erro': str(e)[:300]}
+
+    motivo = (f'Aviso vencido ({dias} dias): não será reenviado, porque avisar'
+              ' hoje de um pagamento antigo não ajuda ninguém. Dispensado da fila'
+              f' em {datetime.now().strftime("%d/%m/%Y")}.')
+
+    marcas: List[Dict[str, Any]] = []
+    for idx, row in enumerate(valores, start=2):
+        row = list(row) + [''] * (COLS_CONTROLE - len(row))
+        status = as_string(row[1]).strip().upper()
+        if status == 'STATUS' or status not in (STATUS_PENDENTE, STATUS_FALHOU):
+            continue
+        if as_string(row[11]).lower() != 'zapi':
+            continue
+        registro = _parse_dt_br(row[0])
+        if not registro or registro >= corte:
+            continue
+        marcas.append({'row': idx, 'status': STATUS_CONCLUIDO,
+                       'tentativas': as_string(row[2]) or 0, 'mensagem': motivo})
+        if len(marcas) >= limite:
+            break
+
+    gravadas = _marcar_em_lote(ws, marcas) if marcas else 0
+    return {
+        'ok': True,
+        'app': 'baixabradesco',
+        'acao': 'dispensar_avisos_vencidos',
+        'dias_aviso_util': dias,
+        'encontradas': len(marcas),
+        'dispensadas': gravadas,
+        'em_portugues': (
+            f'{_em_milhar(gravadas)} aviso(s) com mais de {dias} dias foram'
+            ' dispensados: nunca seriam enviados, e ficavam travando a fila como'
+            ' pendência que não anda. Nada foi apagado — a linha continua na'
+            ' planilha com o motivo escrito.'
+            if gravadas else
+            f'Nenhum aviso com mais de {dias} dias na fila.'),
+    }
+
+
+def zerar_fila_antiga(payload: dict) -> dict:
+    """Dispensa as pendências registradas antes de uma data. Não apaga nada.
+
+    Pedido do dono em 08/10/2026, vendo a fila com 2.213 pendências cuja mais
+    antiga era de 18/06: *"só preciso que rode as coisas desse mês em diante. O
+    que tá pra trás, poderia zerar."*
+
+    A razão dele é boa, e vale registrada: ele faz **conciliação bancária
+    diária**, então o que ficou para trás já foi resolvido na mão — a pendência
+    é de registro, não de dinheiro. Insistir nelas gastaria cota e encheria dois
+    celulares de avisos sobre pagamentos de junho.
+
+    **Nada é apagado.** A linha fica onde está, marcada `CONCLUIDO`, com o motivo
+    e a data da decisão escritos — quem abrir a planilha depois entende por quê.
+
+    Body:
+      {"antes_de": "01/10/2026", "limite": 2000, "etapas": ["zapi"]}
+
+    `antes_de` é obrigatório: um "zerar tudo" sem data é fácil de disparar por
+    engano, e desfazer linha por linha seria trabalho de horas.
+    """
+    corte = _parse_dt_br(as_string(payload.get('antes_de')) + ' 00:00:00') \
+        or _parse_dt_br(as_string(payload.get('antes_de')))
+    if not corte:
+        return {'ok': False, 'app': 'baixabradesco', 'acao': 'zerar_fila_antiga',
+                'erro': 'antes_de_ausente_ou_invalido',
+                'em_portugues': 'Informe a data de corte no formato dd/mm/aaaa'
+                                " (por exemplo, antes_de=01/10/2026)."}
+
+    gc = get_gc()
+    ws = ensure_fila_sheet(gc)
+    limite = int(payload.get('limite') or 2000)
+    etapas = _etapas_pedidas(payload)
+
+    try:
+        valores = ws.get(FAIXA_CONTROLE) or []
+    except Exception as e:
+        return {'ok': False, 'app': 'baixabradesco', 'acao': 'zerar_fila_antiga',
+                'erro': str(e)[:300]}
+
+    motivo = ('Dispensada por decisão do dono em ' + datetime.now().strftime('%d/%m/%Y')
+              + ': anterior a ' + corte.strftime('%d/%m/%Y')
+              + ' e já resolvida pela conciliação bancária.')
+
+    marcas: List[Dict[str, Any]] = []
+    por_etapa: Dict[str, int] = {}
+    for idx, row in enumerate(valores, start=2):
+        row = list(row) + [''] * (COLS_CONTROLE - len(row))
+        status = as_string(row[1]).strip().upper()
+        if status == 'STATUS':
+            continue
+        if status not in (STATUS_PENDENTE, STATUS_FALHOU):
+            continue
+        etapa = as_string(row[11]).lower()
+        if etapas is not None and etapa not in etapas:
+            continue
+        registro = _parse_dt_br(row[0])
+        if not registro or registro >= corte:
+            continue
+        por_etapa[etapa or '(vazia)'] = por_etapa.get(etapa or '(vazia)', 0) + 1
+        marcas.append({'row': idx, 'status': STATUS_CONCLUIDO,
+                       'tentativas': as_string(row[2]) or 0, 'mensagem': motivo})
+        if len(marcas) >= limite:
+            break
+
+    gravadas = _marcar_em_lote(ws, marcas) if marcas else 0
+    detalhe = ', '.join(f'{q} de {ROTULOS_ETAPA.get(e, e)}'
+                        for e, q in sorted(por_etapa.items(), key=lambda x: -x[1]))
+    return {
+        'ok': True,
+        'app': 'baixabradesco',
+        'acao': 'zerar_fila_antiga',
+        'antes_de': corte.strftime('%d/%m/%Y'),
+        'encontradas': len(marcas),
+        'dispensadas': gravadas,
+        'por_etapa': por_etapa,
+        'etapas_pedidas': sorted(etapas) if etapas else 'todas',
+        'motivo_gravado': motivo,
+        'em_portugues': (
+            f'{_em_milhar(gravadas)} pendência(s) anteriores a'
+            f' {corte.strftime("%d/%m/%Y")} foram dispensadas'
+            + (f' ({detalhe})' if detalhe else '')
+            + '. Nada foi apagado: a linha continua na planilha com o motivo'
+              ' escrito. A fila agora só tem o que é de'
+              f' {corte.strftime("%d/%m/%Y")} em diante.'
+            if gravadas else
+            f'Nenhuma pendência anterior a {corte.strftime("%d/%m/%Y")}'
+            ' encontrada — não havia nada a dispensar.'),
+    }
 
 
 def reprocessar_fila(payload: dict) -> dict:
@@ -636,8 +1014,24 @@ def reprocessar_fila(payload: dict) -> dict:
             if resp.get('ok'):
                 _update_row(ws, row_number, STATUS_CONCLUIDO, tentativas, 'Reprocessado com sucesso.')
             elif _e_problema_de_configuracao(resp):
-                # Fica PENDENTE com as tentativas INTACTAS, e a linha explica o
-                # que falta. Quem resolve isso é quem configura, não a insistência.
+                # Fica PENDENTE com as TENTATIVAS intactas — quem resolve isso é
+                # quem configura, não a insistência.
+                #
+                # ⚠️ Mas antes a linha não recebia NADA: nem motivo, nem próxima
+                # tentativa. Resultado, visto nos números do dono em 08/10/2026:
+                # cinco baixas paradas como "pendente" com zero tentativa e sem
+                # agendamento, retentadas a cada cinco minutos para sempre, e sem
+                # nada escrito dizendo por quê. Pendência invisível é pior que
+                # pendência: parece trabalho a fazer e não é.
+                #
+                # Agora: o motivo vai para a linha e a próxima tentativa vai para
+                # LONGE (seis horas). Reagendar não é gastar tentativa — e tira o
+                # item do caminho das pendências que de fato andam.
+                _anotar_bloqueio(ws, row_number, tentativas - 1,
+                                 'Parada por configuração: '
+                                 + as_string(resp.get('erro'))
+                                 + '. Não gasta tentativa; some da varredura por'
+                                   ' seis horas.')
                 bloqueados.append({'row': row_number, 'etapa': etapa,
                                    'erro': as_string(resp.get('erro'))})
                 resultados.append({'row': row_number, 'etapa': etapa, 'ok': False,

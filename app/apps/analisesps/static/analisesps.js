@@ -350,6 +350,8 @@ const LEMBRAR = {
         const d = await r.json();
         if (!d.ok) { alert("Não deu certo: " + (d.erro || "erro desconhecido")); return; }
         if (d.aviso) alert("Alterado aqui, mas o envio para a planilha ficou na fila:\n" + d.aviso);
+        const falhou = resumoDoComplemento(d.complemento);
+        if (falhou) alert(falhou);
         location.reload();
       } catch (e) {
         alert("Falhou a comunicação com o servidor: " + e);
@@ -358,6 +360,151 @@ const LEMBRAR = {
       }
     });
   });
+
+  // --- Consultar no Omie (08/10/2026) --------------------------------------
+  // O status de cada marcada no Omie, ao lado do que a planilha diz. As PAGAS
+  // podem ser marcadas e equalizadas: "Marcar Pago" grava o status e o que o
+  // card diz (data, comprovante, conta) e muda a fase do card se preciso.
+  const btnOmie = document.getElementById("ba-omie");
+  const dlgOmie = document.getElementById("dialogo-omie");
+  if (btnOmie && dlgOmie) {
+    const corpo = document.getElementById("omie-corpo");
+    const resumo = document.getElementById("omie-resumo");
+    const sub = document.getElementById("omie-sub");
+    const marcarPago = document.getElementById("omie-marcar-pago");
+    let mudouAlgo = false;
+    const esc = t => String(t == null ? "" : t).replace(/[&<>"]/g,
+        c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+    const ROTULO_FALTA = {status: "status", data: "data do pagamento",
+                          comprovante: "comprovante"};
+    const marcadasNoModal = () =>
+        [...corpo.querySelectorAll("input.omie-sel:checked")].map(c => c.value);
+    const conferirBotao = () => {
+      if (!marcarPago) return;
+      const n = marcadasNoModal().length;
+      marcarPago.disabled = !n;
+      marcarPago.textContent = n ? `Marcar Pago (${n})` : "Marcar Pago";
+    };
+
+    document.getElementById("omie-fechar").addEventListener("click", () => {
+      dlgOmie.close();
+      if (mudouAlgo) location.reload();
+    });
+
+    // As linhas da consulta, por SP. Quando o Omie pede uma pausa, as que
+    // faltaram voltam "pendentes": a janela conta o tempo e pede só elas de
+    // novo, sozinha (09/10/2026 — "tem que contornar essas mensagens").
+    let linhasOmie = {}, ordemOmie = [], rodada = 0;
+
+    const desenhar = () => {
+      const linhas = ordemOmie.map(id => linhasOmie[id]);
+      const pagas = linhas.filter(l => l.pago).length;
+      const antes = new Set(marcadasNoModal());
+      const jaDesenhou = !!corpo.querySelector("table.tabela-omie");
+      corpo.innerHTML = `<div class="tabela-rolagem livre"><table class="tabela-omie">
+        <thead><tr><th></th><th>SP</th><th>Credor</th><th>Valor</th>
+          <th>Na planilha</th><th>No Omie</th><th>Falta na planilha</th></tr></thead>
+        <tbody>${linhas.map(l => `<tr class="${l.pago ? "omie-pago" : ""}">
+          <td>${l.pago && marcarPago ? `<input type="checkbox" class="omie-sel" value="${esc(l.id)}"${(jaDesenhou ? antes.has(l.id) : l.equalizar) || (l.novo && l.equalizar) ? " checked" : ""}>` : ""}</td>
+          <td>${esc(l.id)}</td><td>${esc(l.credor)}</td><td class="num">${esc(l.valor)}</td>
+          <td>${esc(l.status_planilha) || "—"}</td>
+          <td>${l.pendente ? '<span class="cartao-dica">aguardando o Omie…</span>'
+               : l.erro ? `<span class="omie-erro">${esc(l.erro)}</span>`
+               : `<b>${esc(l.status_omie) || "—"}</b>`}</td>
+          <td>${l.pago ? (l.falta.length ? esc(l.falta.map(f => ROTULO_FALTA[f] || f).join(", "))
+                                         : "nada — já está igual") : ""}</td>
+        </tr>`).join("")}</tbody></table></div>`;
+      linhas.forEach(l => { l.novo = false; });
+      corpo.querySelectorAll("input.omie-sel").forEach(c => c.addEventListener("change", conferirBotao));
+      conferirBotao();
+      return pagas;
+    };
+
+    async function consultar(ids, minhaRodada) {
+      const r = await fetch(barra.dataset.urlOmieConsultar, {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ids})});
+      const d = await r.json();
+      if (!d.ok) throw new Error(d.erro || ("HTTP " + r.status));
+      if (minhaRodada !== rodada) return;           // a janela foi reaberta
+      d.linhas.forEach(l => { l.novo = true; linhasOmie[l.id] = l; });
+      const pagas = desenhar();
+      const pendentes = ordemOmie.filter(id => linhasOmie[id].pendente);
+      if (d.espera && pendentes.length) {
+        // O Omie pediu uma pausa: conta o tempo e continua sozinho.
+        let falta = d.espera + 2;
+        const tique = () => {
+          if (minhaRodada !== rodada || !dlgOmie.open) return;
+          resumo.textContent = `O Omie pediu uma pausa. Continuo sozinho em ${falta}s `
+            + `(faltam ${pendentes.length} SP(s)) — pode deixar a janela aberta.`;
+          if (falta-- > 0) { setTimeout(tique, 1000); return; }
+          resumo.textContent = `Consultando as ${pendentes.length} que faltavam…`;
+          consultar(pendentes, minhaRodada).catch(e => {
+            resumo.textContent = "Não consegui continuar: " + e.message;
+          });
+        };
+        tique();
+        return;
+      }
+      resumo.textContent = !pagas ? "Nenhuma das marcadas está paga no Omie."
+        : marcarPago ? `${pagas} paga(s) no Omie. Já vêm marcadas as que a planilha não diz por inteiro.`
+        : `${pagas} paga(s) no Omie. Para equalizar a planilha, use a consulta na tela Solicitações.`;
+    }
+
+    btnOmie.addEventListener("click", async () => {
+      const ids = idsMarcados();
+      if (!ids) return;
+      if (ids.length > 60) { alert("São no máximo 60 SPs por consulta."); return; }
+      mudouAlgo = false;
+      rodada += 1;
+      linhasOmie = {}; ordemOmie = ids.slice();
+      sub.textContent = `${ids.length} SP(s)`;
+      corpo.innerHTML = '<p class="cartao-dica">Consultando o Omie… uma SP de cada vez, pode levar alguns segundos.</p>';
+      resumo.textContent = "";
+      if (marcarPago) { marcarPago.disabled = true; marcarPago.hidden = false; }
+      dlgOmie.showModal();
+      try {
+        await consultar(ids, rodada);
+      } catch (e) {
+        corpo.innerHTML = `<div class="aviso erro">Não consegui consultar: ${esc(e.message)}</div>`;
+      }
+    });
+
+    if (marcarPago) marcarPago.addEventListener("click", async () => {
+      const ids = marcadasNoModal();
+      if (!ids.length) return;
+      if (!confirm(`Marcar Pago ${ids.length} SP(s)?\n\nGrava na planilha o status, a data do pagamento, o comprovante e a conta lidos do card, e leva para "Pago / Alimentar Omie" os cards que ainda não estão lá.`)) return;
+      marcarPago.disabled = true;
+      resumo.textContent = "Lendo os cards e gravando…";
+      try {
+        const r = await fetch(barra.dataset.urlOmiePago, {
+          method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({ids})});
+        const d = await r.json();
+        if (!d.ok) throw new Error(d.erro || ("HTTP " + r.status));
+        mudouAlgo = true;
+        selecaoConsumida();
+        const c = d.complemento || {sps: {}};
+        corpo.innerHTML = (c.erro ? `<div class="aviso erro">${esc(c.erro)}</div>` : "")
+          + `<div class="tabela-rolagem livre"><table class="tabela-omie">
+          <thead><tr><th>SP</th><th>Gravado na planilha</th><th>O card não tinha</th><th>Card no Pipefy</th></tr></thead>
+          <tbody>${ids.map(id => { const s = c.sps[id] || {gravou: [], faltou: []};
+            return `<tr><td>${esc(id)}</td>
+              <td>status${s.gravou.length ? ", " + esc(s.gravou.join(", ")) : ""}</td>
+              <td>${esc(s.faltou.join(", ")) || "—"}</td>
+              <td>${s.erro ? `<span class="omie-erro">${esc(s.erro)}</span>`
+                  : s.movido ? "movido para Pago / Alimentar Omie"
+                  : `já estava em ${esc(s.fase) || "—"}`}</td></tr>`; }).join("")}
+          </tbody></table></div>`;
+        resumo.textContent = d.aviso ? "Gravado aqui; o envio à planilha ficou na fila: " + d.aviso
+                                     : "Pronto. Feche para ver a lista atualizada.";
+        marcarPago.hidden = true;
+      } catch (e) {
+        resumo.textContent = "Não deu certo: " + e.message;
+        marcarPago.disabled = false;
+      }
+    });
+  }
 
   // --- QR Pix / código de barras das marcadas ------------------------------
   const btnCodigos = document.getElementById("ba-codigos");
@@ -548,6 +695,8 @@ window.ligarFicha = function (raiz) {
       });
       const d = await r.json();
       if (!d.ok) { alert("Não deu certo: " + (d.erro || "erro desconhecido")); return false; }
+      const falhou = resumoDoComplemento(d.complemento);
+      if (falhou) alert(falhou);
     }
     return true;
   }
@@ -559,6 +708,8 @@ window.ligarFicha = function (raiz) {
       // Trava da Validacao, como no Streamlit. Antes o botao vinha
       // `disabled`: nao gravava nada, mas tambem nao dizia nada — quem nao
       // leu o aviso logo acima achava que o botao estava quebrado.
+      // Chave Pix "Atualizar Chave" (09/10/2026): só diz por quê.
+      if (botao.dataset.motivo) { alert(botao.dataset.motivo); return; }
       if (botao.dataset.bloqueado) {
         const validarAgora = caixa.querySelector("#ficha-validar");
         const querValidar = confirm(
@@ -2215,3 +2366,20 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
     });
   });
 })();
+
+// O "Marcar Pago" também grava data, comprovante e conta lidos do card
+// (08/10/2026). Só incomoda com um alerta quando algo ficou de fora.
+function resumoDoComplemento(c) {
+  if (!c) return "";
+  const linhas = [];
+  if (c.erro) linhas.push(c.erro);
+  Object.entries(c.sps || {}).forEach(([id, s]) => {
+    if (s.erro) linhas.push(`SP ${id}: ${s.erro}`);
+    else if (s.faltou && s.faltou.length)
+      linhas.push(`SP ${id}: o card não tem ${s.faltou.join(", ")}`);
+  });
+  return linhas.length
+    ? "Marcado como Pago. Data, comprovante e conta vêm do card — o que ficou de fora:\n\n"
+      + linhas.slice(0, 15).join("\n") + (linhas.length > 15 ? "\n…" : "")
+    : "";
+}

@@ -521,8 +521,13 @@
     </thead>
     <tbody>
       {% for l in linhas %}
-        <tr class="linha-extrato {{ 'conciliada' if l.conciliado }}"
-            data-id="{{ l.id }}">
+        {# DUPLO CLIQUE ABRE A SP (07/10/2026): a linha com a SP identificada abre a
+           ficha dela no modal, como na lista de Solicitações. Com mais de uma
+           possível, abre a primeira; as outras seguem nos links. #}
+        <tr class="linha-extrato {{ 'conciliada' if l.conciliado }}{{ ' com-sp' if l.sps and abre_ficha }}"
+            data-id="{{ l.id }}"
+            {% if l.sps and abre_ficha %}data-ficha="{{ url_for('analisesps.detalhe', sp_id=l.sps[0].id) }}"
+            data-sp="{{ l.sps[0].id }}" title="Duplo clique abre a SP {{ l.sps[0].id }}"{% endif %}>
           {% if pode_operar %}
             <td><input type="checkbox" class="marca-linha" value="{{ l.id }}"
                        data-valor="{{ l.valor }}"></td>
@@ -542,8 +547,15 @@
                dia ou com data próxima. Clicável — abre o card no Pipefy. #}
             {% for sp in l.sps or [] %}
               {% if not loop.first or l.documento %}<br>{% endif %}<a class="sp-da-linha" href="{{ sp.link }}" target="_blank" rel="noopener"
-                     title="{{ sp.credor }} · {{ sp.como }}{% if sp.nome_confere %} · o nome confere{% endif %}{% if not sp.conta_ok %} · a SP não diz a conta{% endif %} · {{ sp.status or 'sem status' }}"
+                     title="{{ sp.credor }} · {{ sp.como }}{% if sp.beevale %} · BeeVale: o extrato tem 1,5% a mais que a SP{% endif %}{% if sp.nome_confere %} · o nome confere{% endif %}{% if not sp.conta_ok %} · a SP não diz a conta{% endif %} · {{ sp.status or 'sem status' }}"
                      >SP {{ sp.id }}{% if (sp.como != 'pago no dia' and not sp.nome_confere) or (l.sps|length) > 1 %}?{% endif %}</a>
+              {# A SITUAÇÃO DA SP (08/10/2026), com as mesmas etiquetas de
+                 "Arquivos gerados": status do pagamento e do agendamento. #}
+              {% set st = sp.status|lower %}{% set ag = sp.status_agend|lower %}
+              <span class="selo {{ 'pago' if st == 'pago' else ('parcial' if st == 'pago parcial' else ('pagar' if st == 'pagar' else 'cancelado')) }}"
+                >{{ sp.status or 'sem status' }}</span>
+              {% if ag %}<span class="selo {{ 'agendar' if ag == 'agendar' else ('agendado' if ag == 'agendado' else ('falha' if 'falha' in ag else 'verificar')) }}"
+                >{{ sp.status_agend }}</span>{% endif %}
               {% if sp.sem_baixa %}<span class="selo pagar" title="O banco pagou, mas a SP está &quot;{{ sp.status or 'sem status' }}&quot; — a planilha não deu baixa">sem baixa</span>{% endif %}
             {% endfor %}</td>
           <td class="direita valor-entrada">{{ l.valor|moeda if l.valor > 0 else '' }}</td>
@@ -2174,5 +2186,7 @@ if (btnProcurarTudo) btnProcurarTudo.addEventListener("click", async () => {
 
 </script>
 {% endif %}
+{# Duplo clique na linha com SP identificada abre a ficha dela aqui (07/10/2026). #}
+{% include "analisesps_ficha_modal.html" %}
 {% endblock %}
 

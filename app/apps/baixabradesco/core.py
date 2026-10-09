@@ -771,17 +771,32 @@ def _executar_sequencia_omie(plan: ExecutionPlan, payload: dict) -> List[dict]:
     return resultados
 
 
-def _drenar_fila(payload: dict, limite: int = 5) -> dict:
+# Quanto o lote de comprovantes drena de carona. Números pequenos de propósito:
+# a resposta ao Make tem 300 segundos de teto e o comprovante deste lote é a
+# prioridade — a fila é sobre lotes passados.
+LIMITES_LOTE = {'omie': 3, 'sheets': 3, 'pipefy': 2, 'zapi': 2}
+
+
+def _drenar_fila(payload: dict, limites: dict | None = None) -> dict:
     """Reprocessa algumas pendências da fila, junto com o lote.
+
+    ⚠️ Passa pelo `drenar_por_etapa`, e isso corrige dois defeitos de uma vez.
+    Antes esta função chamava o reprocessamento direto, sem etapa e sem
+    restrição, e por isso:
+
+    1. **Pegava as cinco pendências mais antigas da fila, quaisquer que fossem.**
+       Com 1.943 avisos de junho na frente de 238 baixas, o dinheiro ficava para
+       o fim.
+    2. **Marcava cinco avisos antigos como descartados a cada lote** — ou seja, o
+       sistema ia limpando sozinho o acumulado que foi dito ao dono que ele não
+       tocaria. O cron já tinha esse cuidado; este caminho, não.
 
     Nunca levanta erro: a baixa deste lote já aconteceu, e a fila é sobre
     lotes passados.
     """
     try:
-        from .fila import reprocessar_fila
-        pedido = dict(payload or {})
-        pedido['limite'] = limite
-        return reprocessar_fila(pedido)
+        from .fila import drenar_por_etapa
+        return drenar_por_etapa(limites or LIMITES_LOTE, payload)
     except Exception as e:
         return {'ok': False, 'erro': str(e)[:200]}
 

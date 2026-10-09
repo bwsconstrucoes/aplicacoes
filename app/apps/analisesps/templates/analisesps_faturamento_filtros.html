@@ -1,0 +1,121 @@
+{# ---------------------------------------------------------------------------
+   A BARRA LATERAL DO FATURAMENTO (09/10/2026: *"filtro é no sidebar"*).
+   Mesmo jeito da barra das Solicitações: aplica sozinha meio segundo depois do
+   último clique. Vale para as duas subtelas (Notas e Por período).
+--------------------------------------------------------------------------- #}
+{% macro caixas(nome, valores, marcados) %}
+  <div class="filtro {% if marcados %}aberto{% endif %}">
+    {{ caller() }}
+    <div class="filtro-cont">
+      {% if valores|length >= 12 %}
+        <input type="search" class="procura-opcao" autocomplete="off" placeholder="Procurar…">
+      {% endif %}
+      <div class="filtro-opcoes">
+        {% for v in valores %}
+          <label class="opcao"><input type="checkbox" name="{{ nome }}" value="{{ v }}"
+                 {% if v in marcados %}checked{% endif %}><span class="rotulo" title="{{ v }}">{{ v }}</span></label>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+{% endmacro %}
+
+<form method="get" id="form-filtros-fat" action="{{ url_for(request.endpoint) }}">
+  <input type="hidden" name="f" value="1">
+  {% if agrupar %}<input type="hidden" name="agrupar" value="{{ agrupar }}">{% endif %}
+  <div class="filtros-cab">
+    <h2>Filtros</h2>
+    <span class="filtros-estado" id="filtros-estado-fat" hidden>atualizando…</span>
+    <a class="link-btn" href="{{ url_for(request.endpoint) }}">Limpar</a>
+  </div>
+
+  <div class="busca">
+    <span class="lupa">⌕</span>
+    <input type="search" name="busca" value="{{ filtros.busca }}"
+           placeholder="nº da nota, tomador, obra, texto…">
+  </div>
+
+  <div class="filtro aberto">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Emissão</span><span class="seta">▾</span></div>
+    <div class="filtro-cont">
+      <div class="faixa">
+        <div><label>De</label><input type="date" name="de" value="{{ filtros.de or '' }}"></div>
+        <div><label>Até</label><input type="date" name="ate" value="{{ filtros.ate or '' }}"></div>
+      </div>
+      <p class="cartao-dica" style="margin:6px 2px 0">Sem filtro: os últimos doze meses.
+        Apague as duas datas para ver tudo.</p>
+    </div>
+  </div>
+
+  <div class="filtro aberto">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Situação da nota</span><span class="seta">▾</span></div>
+    <div class="filtro-cont"><div class="filtro-opcoes">
+      {% for valor, rotulo in [('valida', 'Válidas'), ('cancelada', 'Canceladas'),
+                               ('substituida', 'Substituídas'), ('todas', 'Todas')] %}
+        <label class="opcao"><input type="radio" name="status" value="{{ valor }}"
+               {% if filtros.status == valor %}checked{% endif %}><span class="rotulo">{{ rotulo }}</span></label>
+      {% endfor %}
+    </div></div>
+  </div>
+
+  <div class="filtro {% if filtros.recebimento %}aberto{% endif %}">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Recebimento</span><span class="seta">▾</span></div>
+    <div class="filtro-cont"><div class="filtro-opcoes">
+      {% for valor, rotulo in [('', 'Todas'), ('a_receber', 'A receber'), ('recebidas', 'Recebidas')] %}
+        <label class="opcao"><input type="radio" name="recebimento" value="{{ valor }}"
+               {% if filtros.recebimento == valor %}checked{% endif %}><span class="rotulo">{{ rotulo }}</span></label>
+      {% endfor %}
+    </div></div>
+  </div>
+
+  {% call caixas('empresa', opcoes.empresas, filtros.empresas) %}
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Empresa / SCP</span>
+      {% if filtros.empresas %}<span class="filtro-badge">{{ filtros.empresas|length }}</span>{% endif %}
+      <span class="seta">▾</span></div>
+  {% endcall %}
+  {% call caixas('obra', opcoes.obras, filtros.obras) %}
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Obra</span>
+      {% if filtros.obras %}<span class="filtro-badge">{{ filtros.obras|length }}</span>{% endif %}
+      <span class="seta">▾</span></div>
+  {% endcall %}
+</form>
+
+<script>
+(function () {
+  const form = document.getElementById("form-filtros-fat");
+  if (!form) return;
+  const estado = document.getElementById("filtros-estado-fat");
+  let relogio = null;
+  const agendar = espera => {
+    if (relogio) clearTimeout(relogio);
+    if (estado) estado.hidden = false;
+    relogio = setTimeout(() => form.submit(), espera);
+  };
+  form.addEventListener("change", e => {
+    if (e.target.matches("input[type=checkbox], input[type=radio], input[type=date]")) agendar(500);
+  });
+  form.addEventListener("input", e => {
+    if (e.target.matches("input[name=busca]")) agendar(900);
+  });
+  form.addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.target.matches(".procura-opcao")) { e.preventDefault(); agendar(0); }
+  });
+  // Procurar dentro de uma lista longa (obras): só esconde, não aplica nada.
+  const semAcento = t => (t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  form.querySelectorAll(".procura-opcao").forEach(campo => {
+    const opcoes = Array.from(campo.closest(".filtro-cont").querySelectorAll(".opcao"));
+    campo.addEventListener("input", e => {
+      e.stopPropagation();
+      const p = semAcento(campo.value.trim());
+      opcoes.forEach(o => { o.hidden = !(!p || o.querySelector("input").checked
+                                         || semAcento(o.textContent).includes(p)); });
+    });
+    campo.addEventListener("keydown", e => { if (e.key === "Enter") e.preventDefault(); });
+  });
+})();
+</script>

@@ -41,7 +41,7 @@ ABA_LINKS = "Notas BWS Links"
 
 def concluir(card_id, numero, codigo, data_iso, nota_xml_path, forcar=False, ctx=None,
              nota_substituida=None, nacional=False, chave_nacional="",
-             pdf_municipal: bytes | None = None):
+             pdf_municipal: bytes | None = None, id_dps: str = ""):
     """Pós-emissão imediato.
 
     `pdf_municipal`, quando passado, é o PDF **oficial baixado do portal da
@@ -263,6 +263,105 @@ def concluir(card_id, numero, codigo, data_iso, nota_xml_path, forcar=False, ctx
             print(f"[10] Controle Nacional . aguardando nacional (o job completa)")
     except Exception as e:
         print(f"[10] Controle Nacional . ERRO: {e}")
+
+    # 11) BASE FATURAMENTO — a base consolidada que alimenta a tela de
+    #     Faturamento (Análise de SPs). Enquanto a transição não acabar, o
+    #     emissor grava nos DOIS lugares: aqui e na "Notas BWS". É trabalho
+    #     duplicado de propósito, decisão do dono em 09/10/2026, para a base nova
+    #     ser conferida com a antiga ao lado antes de a antiga sair de cena.
+    #
+    #     É o ÚLTIMO passo porque é o único que tem tudo: os links só existem
+    #     depois do Drive. Falha aqui não desfaz nada — como em todos os passos.
+    try:
+        import base_faturamento as bfat
+        fed = r.federais_retidos or {}
+        dados_base = {
+            "nota_numero": numero, "modelo": "nacional" if nacional else "abrasf",
+            "chave_acesso": chave_nacional or "", "cod_verificacao": codigo or "",
+            "data_emissao": data_iso, "competencia": str(data_iso)[:7],
+            "status": bfat.STATUS_VALIDA,
+            # Da obra vai só a CHAVE: contrato, empresa, SCP e tributação são
+            # atributos dela, e a tela os cruza na C. Diários pelo código
+            # (decisão do dono, 09/10/2026). O que fica aqui é fato da nota.
+            "obra_codigo": obra_cod,
+            "aliquota_iss": f"{r.aliquota_iss:.2f}",   # a que a NOTA aplicou
+            # Os três campos que NUNCA foram gravados em lugar nenhum:
+            "medicao_numero": med,
+            "medicao_periodo_ini": card.get("periodo_ini", ""),
+            "medicao_periodo_fim": card.get("periodo_fim", ""),
+            "discriminacao": discr_limpa,
+            "tipo_documento": card.get("tipo_documento", ""),
+            "tipo_medicao": card.get("tipo_medicao", ""),
+            "tomador_cnpj": card.get("cnpj_contratante", "") or getattr(obra, "cnpj_cliente", ""),
+            "tomador_nome": card.get("contratante", "") or getattr(obra, "cliente", ""),
+            "valor_total": f"{r.valor_total:.2f}",
+            "valor_servicos": f"{r.base_servico:.2f}",
+            "valor_materiais": f"{(r.valor_total - r.base_iss):.2f}",
+            "base_iss": f"{r.base_iss:.2f}",
+            "valor_liquido_previsto": f"{r.valor_liquido:.2f}",
+            # ⚠️ Grava **CONFORME O EMITIDO**, e não o que o motor calculou.
+            # Pedido do dono em 09/10/2026: *"as novas notas já têm a informação
+            # dos tributos emitidos, então vamos gravar conforme. Se necessário,
+            # a posteriori eu equalizo."*
+            #
+            # A diferença não é detalhe: o motor fiscal calcula os cinco federais
+            # SEMPRE (é assim que a coluna P da planilha antiga era feita), mas a
+            # nota só DECLARA o que foi retido — imposto não retido nem aparece no
+            # XML (é a regra do erro E0699). Gravar o valor calculado de um
+            # imposto não retido diria que houve uma retenção que não houve.
+            #
+            # Os três estados da base, e eles são diferentes:
+            #   vazio       = não se sabe (nota antiga ainda não equalizada)
+            #   0,00 com N  = a nota NÃO reteve esse tributo
+            #   valor com S = a nota reteve
+            "pis": f"{r.pis:.2f}" if "PIS" in fed else "0.00",
+            "cofins": f"{r.cofins:.2f}" if "COFINS" in fed else "0.00",
+            "ir": f"{r.ir:.2f}" if "IR" in fed else "0.00",
+            "csll": f"{r.csll:.2f}" if "CSLL" in fed else "0.00",
+            "inss": f"{r.inss:.2f}",
+            # O ISS é o único que a nota declara mesmo sem retenção: ele é
+            # calculado pela prefeitura e sai na nota de qualquer jeito; o que
+            # muda é quem recolhe.
+            "iss": f"{r.iss:.2f}",
+            "retem_pis": "S" if "PIS" in fed else "N",
+            "retem_cofins": "S" if "COFINS" in fed else "N",
+            "retem_ir": "S" if "IR" in fed else "N",
+            "retem_csll": "S" if "CSLL" in fed else "N",
+            "retem_inss": "S" if r.inss > 0 else "N",
+            "retem_iss": "S" if r.iss_retido else "N",
+            "omie_codigo_integracao": card.get("omie_integracao", ""),
+            "banco_conta": card.get("banco", ""),
+            "card_id": card_id,
+            "link_card": bfat.LINK_CARD_PIPEFY + str(card_id),
+            "link_nfse_municipal": link_mun, "link_nfse_nacional": link_nac,
+            "link_recibo": link_rec,
+            "link_xml": (f"https://drive.google.com/file/d/{xml_fid}/view"
+                         if xml_fid else ""),
+            "id_dps": id_dps or "",
+            "tomador_municipio": str(getattr(ctx.get("dados_rps"), "toma_cmun", "") or ""),
+            "origem": "emissor",
+        }
+        # IBS e CBS: quem calcula é a plataforma nacional, e o resultado volta no
+        # XML da nota (com a redução de 50% da construção civil). O dono pediu as
+        # duas colunas. No modelo antigo não existem.
+        if nacional:
+            import re as _re
+            for campo, tag in (("ibs", "vIBSTot"), ("cbs", "vCBS")):
+                m = _re.search(rf"<{tag}>([^<]+)</{tag}>", xml_texto or "")
+                if m:
+                    dados_base[campo] = m.group(1).strip()
+        # O `cruzar` fecha o que é DERIVADO: o sequencial a partir do número
+        # longo, o modelo, a competência e as duas divergências. Sem ele a nota
+        # nova nasceria sem `nota_sequencial` — justamente o campo pelo qual o
+        # dono procura a nota (3283, e não 2600000003283).
+        bfat.cruzar(dados_base)
+        ws_base = bfat._ws(planilha)
+        qual = bfat.gravar(ws_base, dados_base,
+                           bfat.numeros_na_base(ws_base).get(str(numero)))
+        print(f"[11] Base Faturamento . linha {qual} (com período da medição e "
+              f"corpo da nota, que a Notas BWS não guarda)")
+    except Exception as e:
+        print(f"[11] Base Faturamento . ERRO: {type(e).__name__}: {e}")
 
     print("\n===== IMEDIATO FINALIZADO" + (" — a nota já está completa =====" if nacional
                                           else " — a nacional sai no job ====="))

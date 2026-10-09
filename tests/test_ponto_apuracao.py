@@ -127,3 +127,29 @@ def test_resumo_do_periodo():
     s = ap.resumo_do_periodo(dias)
     assert (s["extra"], s["debito"], s["faltas"], s["abonados"]) == (60, 540, 1, 1)
     assert s["alertas"] == ["FALTA"]
+
+
+def test_obra_de_so_entrada_e_saida_desconta_o_intervalo_da_escala():
+    """Pedido do dono, 09/10/2026: obra que, por convenção, só bate entrada e
+    saída (intervalo pré-assinalado, CLT art. 74, § 2º) não gera pendência — e
+    o almoço não vira hora extra."""
+    duas = b(SEGUNDA, "07:00", "17:00")
+    sem = ap.apurar_dia(SEGUNDA, OBRA, duas)
+    assert sem.situacao == "OK" and sem.trabalhado == 600 and sem.extra == 60 and "INTERVALO_CURTO" in sem.alertas
+    r = ap.apurar_dia(SEGUNDA, OBRA, duas, intervalo_pre_assinalado=True)
+    assert (r.trabalhado, r.extra, r.debito, r.intervalo, r.batidas) == (540, 0, 0, 60, 2)
+    assert r.situacao == "OK" and r.alertas == []
+    # Quem bateu as quatro conta as quatro; quem saiu antes do almoço conta o que bateu
+    quatro = ap.apurar_dia(SEGUNDA, OBRA, b(SEGUNDA, "07:00", "11:30", "12:30", "17:00"), intervalo_pre_assinalado=True)
+    assert quatro.intervalo == 60 and quatro.trabalhado == 540
+    manha = ap.apurar_dia(SEGUNDA, OBRA, b(SEGUNDA, "07:00", "10:30"), intervalo_pre_assinalado=True)
+    assert manha.trabalhado == 210 and manha.debito == 330
+    # Uma batida só continua incompleta
+    assert ap.apurar_dia(SEGUNDA, OBRA, b(SEGUNDA, "07:00"), intervalo_pre_assinalado=True).situacao == "INCOMPLETO"
+
+
+def test_so_entrada_e_saida_espera_duas_marcas():
+    from app.apps.ponto.core import ajustes
+    previstas = ajustes.marcas_previstas(OBRA.periodos(SEGUNDA))
+    assert [p["rotulo"] for p in ajustes.so_entrada_e_saida(previstas)] == ["Entrada", "Saída"]
+    assert [p["hora"] for p in ajustes.so_entrada_e_saida(previstas)] == ["07:00", "17:00"]
