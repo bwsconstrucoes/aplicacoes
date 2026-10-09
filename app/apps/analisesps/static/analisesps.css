@@ -2807,3 +2807,6 @@ table.conciliacao tr.com-sp { cursor: pointer; }
 .fat-nao-retido { color: #9aa3b2; }
 .fat-agrupar { display: flex; gap: 6px; margin-left: auto; }
 .fat-agrupar a.btn { text-decoration: none; padding: 4px 12px; }
+
+/* Chave Pix "Atualizar Chave" — não agenda (09/10/2026). */
+.selo.pix-atualizar { background: #FFE8D6; color: #8A3B00; font-weight: 600; white-space: nowrap; }

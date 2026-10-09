@@ -708,6 +708,8 @@ window.ligarFicha = function (raiz) {
       // Trava da Validacao, como no Streamlit. Antes o botao vinha
       // `disabled`: nao gravava nada, mas tambem nao dizia nada — quem nao
       // leu o aviso logo acima achava que o botao estava quebrado.
+      // Chave Pix "Atualizar Chave" (09/10/2026): só diz por quê.
+      if (botao.dataset.motivo) { alert(botao.dataset.motivo); return; }
       if (botao.dataset.bloqueado) {
         const validarAgora = caixa.querySelector("#ficha-validar");
         const querValidar = confirm(

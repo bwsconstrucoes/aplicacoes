@@ -350,6 +350,15 @@ def _filtro_moeda(valor):
     return moeda(valor)
 
 
+@bp.app_template_filter("atualizar_pix")
+def _filtro_atualizar_pix(linha) -> bool:
+    """A etiqueta "Atualizar Pix" da lista (09/10/2026) — ver
+    `pagamentos.chave_a_atualizar`."""
+    from .pagamentos import chave_a_atualizar
+    linha = linha or {}
+    return chave_a_atualizar(linha.get("forma_pagamento"), linha.get("info_pgt"))
+
+
 @bp.app_template_filter("moeda_curta")
 def _filtro_moeda_curta(valor):
     """O valor em poucas letras, para onde ele não cabe. Ver `formatos`."""
@@ -1176,6 +1185,19 @@ def alterar():
         return {"ok": False,
                 "erro": f"A coluna '{coluna}' não é alterável por aqui."}, 400
 
+    # ⚠️ NÃO SE AGENDA SP COM A CHAVE PIX "ATUALIZAR CHAVE" (09/10/2026). O
+    # dono: *"a gente precisa tratar elas antes de colocar em agendar (…) fazer
+    # esse bloqueio de impedir que ela seja colocada em agendar"*. A trava é
+    # AQUI, no servidor, e não só no botão: vale para a barra, para a ficha e
+    # para qualquer outro caminho. Recusa o pedido inteiro, dizendo quais.
+    if coluna == "agendado" and valor.lower() in ("agendar", "agendado"):
+        presas = _sps_com_chave_a_atualizar(ids)
+        if presas:
+            return {"ok": False, "erro": (
+                f"{len(presas)} SP(s) com a chave Pix \"Atualizar Chave\" — trate a "
+                "chave antes de agendar (desmarque-as para agendar as outras): "
+                + ", ".join(presas[:10]) + ("…" if len(presas) > 10 else ""))}, 409
+
     resposta = _gravar_alteracao(ids, coluna, valor, acao)
     # MARCAR PAGO GRAVA TAMBÉM A DATA, O COMPROVANTE E A CONTA (08/10/2026),
     # lidos do card. O dono: *"a função Marcar Pago precisa também gravar a
@@ -1185,6 +1207,17 @@ def alterar():
             and isinstance(resposta, dict) and resposta.get("ok")):
         resposta["complemento"] = _completar_pagamento(ids, acao, mover=False)
     return resposta
+
+
+def _sps_com_chave_a_atualizar(ids) -> list:
+    """Das SPs pedidas, as que estão com a chave Pix "Atualizar Chave"."""
+    from .db import consultar
+    from .pagamentos import chave_a_atualizar
+    marcadores = ", ".join("?" for _ in ids)
+    linhas = consultar(
+        "SELECT id, forma_pagamento, info_pgt FROM analisesps.sps "
+        f" WHERE id IN ({marcadores})", tuple(ids))
+    return [str(i) for i, forma, info in linhas if chave_a_atualizar(forma, info)]
 
 
 def _gravar_valores(itens: list, acao: str) -> int:

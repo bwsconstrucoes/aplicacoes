@@ -177,3 +177,32 @@ def test_quando_o_OMIE_PEDE_PAUSA_a_consulta_para_e_diz_quanto_esperar(cena, mon
         "ids": ["1000000003", "1000000002", "1000000001"]}).get_json()
     assert r["espera"] == 0 and not any(l["pendente"] for l in r["linhas"])
     assert ("ConsultarContaPagar", "Int1000000001") not in omie.pedidos
+
+
+def test_AGENDAR_SP_com_chave_ATUALIZAR_e_recusado_no_servidor(app, monkeypatch):
+    """09/10/2026: *"fazer esse bloqueio de impedir que ela seja colocada em
+    agendar (…) e ter uma tag de atualizar a Pix na listagem"*."""
+    from tests.test_analisesps_banco import semear, sp
+    from app.apps.analisesps import tarefas
+    monkeypatch.setattr(tarefas, "disparar", lambda *a, **k: {"ok": True})
+    semear([sp("1000000101", forma_pagamento="BeeVale", info_pgt="Chave Pix: Atualizar Chave",
+               status_pgt="Pagar", valor="10,00", vencimento="10/10/2026", validacao="Sim"),
+            sp("1000000102", forma_pagamento="BeeVale", info_pgt="Chave Pix: 12345678901",
+               status_pgt="Pagar", valor="10,00", vencimento="10/10/2026", validacao="Sim")])
+    with app.test_client() as cliente:
+        cliente.post("/analisesps/entrar", data={"senha": SENHA_MESTRE_OPERADOR})
+        r = cliente.post("/analisesps/api/alterar", json={
+            "ids": ["1000000101", "1000000102"], "coluna": "agendado", "valor": "Agendar"})
+        assert r.status_code == 409 and "1000000101" in r.get_json()["erro"]
+        assert "1000000102" not in r.get_json()["erro"]
+        assert _sp("1000000102", "agendado") == ("",), "recusa o pedido inteiro"
+        # sem a presa, agenda normalmente; e DESAGENDAR a presa continua livre
+        assert cliente.post("/analisesps/api/alterar", json={
+            "ids": ["1000000102"], "coluna": "agendado", "valor": "Agendar"}).get_json()["ok"]
+        assert cliente.post("/analisesps/api/alterar", json={
+            "ids": ["1000000101"], "coluna": "agendado", "valor": ""}).get_json()["ok"]
+        lista = cliente.get("/analisesps/solicitacoes?f=1&busca=10000001",
+                            follow_redirects=True).get_data(as_text=True)
+        ficha = cliente.get("/analisesps/sp/1000000101").get_data(as_text=True)
+    assert lista.count("pix-atualizar") >= 1 and "Atualizar Pix" in lista
+    assert "Chave Pix a atualizar" in ficha and "data-motivo" in ficha

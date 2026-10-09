@@ -213,6 +213,24 @@ def precisa_atualizar(forma: str, y: str, centro_custo: str) -> bool:
     return bool(falta_chave or sem_cc)
 
 
+def chave_a_atualizar(forma, info_pgt) -> bool:
+    """A SP é BeeVale/Pix e a "chave" na coluna Y é o aviso "Atualizar Chave"?
+
+    09/10/2026, o dono: *"as SPs que têm o tipo de pagamento BeeVale e a chave
+    Pix com a informação 'atualizar chave Pix' a gente precisa tratar antes de
+    colocar em agendar"*. É a chave aleatória que a geração da folha põe no card
+    (`folha_cards.CHAVE_PIX_A_ATUALIZAR`) — não é chave de verdade, e pagar com
+    ela não paga ninguém. Pix entra junto pelo mesmo motivo.
+    """
+    import unicodedata
+    info = classificar(forma, info_pgt)
+    if info["tipo"] != "pix" or not info["chave"]:
+        return False
+    cru = unicodedata.normalize("NFKD", str(info["chave"]))
+    limpo = "".join(c for c in cru if not unicodedata.combining(c)).upper()
+    return "ATUALIZAR" in limpo
+
+
 def pendencias(forma, info_pgt, centro_custo, codigo_integracao, status_pgt) -> list:
     """
     Lista de pendências de cadastro de um lançamento (para o alerta laranja e

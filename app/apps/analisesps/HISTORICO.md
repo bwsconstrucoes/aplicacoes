@@ -12228,6 +12228,22 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 209 — chave Pix "Atualizar Chave": etiqueta na lista e trava no Agendar (09/10/2026)
+
+- *"As SPs que têm o tipo de pagamento BeeVale e a chave Pix com a informação
+  'atualizar chave Pix' a gente precisa tratar antes de colocar em agendar (…)
+  bloqueio de impedir que ela seja colocada em agendar (…) e uma tag de atualizar
+  a Pix na listagem, tanto de solicitações quanto no lote."*
+- Regra única: `pagamentos.chave_a_atualizar` — forma BeeVale **ou Pix** (pagar
+  Pix com essa "chave" também não paga ninguém) e a chave da coluna Y contendo
+  "atualizar" (é a chave aleatória que a geração da folha põe no card).
+- **Etiqueta "Atualizar Pix"** ao lado do número da SP, nas Solicitações e no
+  Lote (a mesma tabela).
+- **Trava no SERVIDOR** (`/api/alterar`): "Agendar" e "Agendado" com qualquer
+  SP assim são recusados INTEIROS, dizendo quais — vale para a barra, a ficha e
+  qualquer caminho. Desagendar e Falha Agendar continuam livres. Na ficha, aviso
+  e o botão explica o bloqueio no clique. Sem migração.
+
 #### Leva 208 — Faturamento: filtro na barra lateral, notas como planilha, subtela por período (09/10/2026)
 
 - Primeira observação do dono depois de publicar: *"filtro é no sidebar. Quero

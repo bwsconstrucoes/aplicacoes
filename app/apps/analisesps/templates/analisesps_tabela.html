@@ -97,7 +97,8 @@
                       marcado POR CONTA — que é o número que decide se a
                       remessa cabe no banco. Pedido do dono em 11/09/2026. #}
                    data-conta="{{ l.conta or '' }}">
-            {% if not tem_coluna_id %}{{ marca_lote(l.no_lote, true) }}{% endif %}
+            {% if not tem_coluna_id %}{{ marca_lote(l.no_lote, true) }}
+              {% if l|atualizar_pix %}<span class="selo pix-atualizar" title="Chave Pix 'Atualizar Chave': o Agendar está bloqueado.">Pix</span>{% endif %}{% endif %}
           </td>
 
           {% for c in colunas %}
@@ -110,6 +111,9 @@
                      title="Abrir o card no Pipefy">{{ l.id }}</a>
                 {% else %}{{ l.id }}{% endif %}
                 {{ marca_lote(l.no_lote) }}
+                {# 09/10/2026: chave Pix "Atualizar Chave" — não agenda. #}
+                {% if l|atualizar_pix %}<span class="selo pix-atualizar"
+                     title="A chave Pix desta SP é 'Atualizar Chave': trate a chave antes de agendar. O Agendar está bloqueado.">Atualizar Pix</span>{% endif %}
               </td>
 
             {% elif c.tipo == 'data' %}

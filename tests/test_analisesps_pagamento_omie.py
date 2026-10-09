@@ -79,3 +79,14 @@ def test_mover_os_cards_em_LOTE_e_por_mutation(monkeypatch):
 def test_id_de_card_que_nao_e_numero_e_recusado_antes_de_ir_ao_pipefy():
     with pytest.raises(pipefy.ErroDoPipefy):
         pipefy.mover_cards(["11) { x }"], "1", token="t")
+
+
+def test_CHAVE_PIX_A_ATUALIZAR_e_reconhecida():
+    """09/10/2026: BeeVale/Pix com a chave "Atualizar Chave" não se agenda."""
+    from app.apps.analisesps.pagamentos import chave_a_atualizar
+    assert chave_a_atualizar("BeeVale", "Chave Pix: Atualizar Chave")
+    assert chave_a_atualizar("Pix", "Chave Pix: ATUALIZAR CHAVE PIX")
+    assert chave_a_atualizar("BEEVALE", "atualizar chave")
+    assert not chave_a_atualizar("BeeVale", "Chave Pix: 123.456.789-01")
+    assert not chave_a_atualizar("Boleto", "Atualizar Chave"), "boleto não tem chave Pix"
+    assert not chave_a_atualizar("BeeVale", "")
