@@ -258,6 +258,37 @@ def _rateio_do_bloco(conn, codigos):
     return rateio
 
 
+def _categorias_do_bloco(conn, codigos) -> dict:
+    """{codigo: [(categoria, fração), ...]} dos títulos do bloco com DUAS ou
+    mais categorias (migração 023). A fração vem do percentual do OMIE; sem
+    ele, do valor. Sem a tabela, {} — e o título fica na categoria única."""
+    if not codigos:
+        return {}
+    from .espelho import _tem_titulo_categorias
+    if not _tem_titulo_categorias(conn):
+        return {}
+    marcas = ",".join(["?"] * len(codigos))
+    cur = conn.execute(
+        "SELECT codigo_lancamento_omie, codigo_categoria, percentual::float8, valor::float8"
+        "  FROM titulo_categorias WHERE codigo_lancamento_omie IN (" + marcas + ")"
+        " ORDER BY codigo_lancamento_omie, seq", codigos)
+    brutas: dict = {}
+    for cod, ccat, pct, valor in cur.fetchall():
+        brutas.setdefault(cod, []).append((str(ccat), float(pct or 0), float(valor or 0)))
+    cur.close()
+    saida = {}
+    for cod, cats in brutas.items():
+        soma_pct = sum(p for _c, p, _v in cats)
+        soma_val = sum(v for _c, _p, v in cats)
+        if soma_pct > 0.0001:
+            saida[cod] = [(c, p / soma_pct) for c, p, _v in cats]
+        elif soma_val > 0.0001:
+            saida[cod] = [(c, v / soma_val) for c, _p, v in cats]
+        else:
+            saida[cod] = [(c, 1.0 / len(cats)) for c, _p, _v in cats]
+    return saida
+
+
 def _movimentos_detalhe_do_bloco(conn, codigos):
     """Movimentos em detalhe (sem agregar) dos titulos do bloco — base da Receita
     Analitico. O OMIE guarda o mesmo recebimento em varias pernas; quem escolhe
@@ -536,6 +567,9 @@ def gerar_linhas_fato(conn):
         # O detalhe de cada baixa — e o que permite abrir o titulo pago em
         # parcelas numa linha por parcela. Ver `_parcelas_da_baixa`.
         detalhe = _movimentos_detalhe_do_bloco(conn, codigos)
+        # título com DUAS ou mais categorias (09/10/2026: empréstimo dividido
+        # entre o principal e os juros) — ver migração 023
+        categorias_do_titulo = _categorias_do_bloco(conn, codigos)
 
         for row in bloco:
             (cod, nat, vdoc, ccat, ccli, icc, ndoc, nped, status, dvenc,
@@ -589,11 +623,14 @@ def gerar_linhas_fato(conn):
                 sit_venc = "Vencido" if (dv and dv < hoje) else "A vencer"
 
             # categoria / grupo / analise — do OMIE quando disponivel; senao de-para
-            desc_cat, grupo, analise = cat.get(str(ccat), (str(ccat or ""), str(ccat or ""), None))
-            if not analise:
-                info_log = mapa_log.get(desc_cat.strip(), {})
-                grupo = info_log.get("Grupo", grupo)
-                analise = info_log.get("Análise") or _analise_por_heuristica(desc_cat, grupo)
+            def _classificar(codigo_cat):
+                d, g, a = cat.get(str(codigo_cat), (str(codigo_cat or ""), str(codigo_cat or ""), None))
+                if not a:
+                    info_log = mapa_log.get(d.strip(), {})
+                    g = info_log.get("Grupo", g)
+                    a = info_log.get("Análise") or _analise_por_heuristica(d, g)
+                return d, g, a
+            desc_cat, grupo, analise = _classificar(ccat)
 
             # Fornecedor/cliente: NOME vindo do cadastro do OMIE. Se o catalogo
             # ainda nao tem esse codigo, o nome vinha VAZIO — e uma linha sem nome
@@ -641,6 +678,19 @@ def gerar_linhas_fato(conn):
             # O tipo de aporte, decidido uma vez por titulo. '' = nao e aporte.
             tipo_aporte = classificar_aporte(desc_cat, ccat, razao) or ""
 
+            # AS CATEGORIAS DO TÍTULO, cada uma com a sua fração. Com uma só (a
+            # esmagadora maioria), é a lista de sempre, de um item. Com mais,
+            # o título se divide entre elas na proporção do OMIE — cada parte
+            # com a análise dela (DRE, fluxo) e o tipo de aporte dela.
+            partes_cat = []
+            for c_cod, c_frac in (categorias_do_titulo.get(cod) or [(ccat, 1.0)]):
+                if c_cod == ccat:
+                    partes_cat.append((desc_cat, c_cod, grupo, analise, tipo_aporte, c_frac))
+                else:
+                    d_i, g_i, a_i = _classificar(c_cod)
+                    partes_cat.append((d_i, c_cod, g_i, a_i,
+                                       classificar_aporte(d_i, c_cod, razao) or "", c_frac))
+
             # Chave da medicao: e o que junta as parcelas de uma mesma medicao,
             # que no OMIE sao titulos separados sem numero de documento. Guardada
             # na linha para a tela poder agrupar no banco.
@@ -672,12 +722,15 @@ def gerar_linhas_fato(conn):
                     # linha LIQUIDA (categoria real). Juros e multa sao os
                     # encargos efetivamente pagos e ficam SEPARADOS do
                     # principal, para virarem linha financeira no DRE.
-                    yield comum + (desc_cat, ccat, grupo) + identificacao + (
-                        round(sinal * p_valor * frac, 2),
-                        round(sinal * em_aberto * frac, 2),
-                        round(sinal * p_juros * frac, 2),
-                        round(sinal * p_multa * frac, 2),
-                        tipo_aporte)
+                    for (c_desc, c_cod, c_grupo, c_analise, c_aporte, c_frac) in partes_cat:
+                        f = frac * c_frac
+                        yield ((cod, tipo, c_analise, status, sit_venc)
+                               + (c_desc, c_cod, c_grupo) + identificacao + (
+                            round(sinal * p_valor * f, 2),
+                            round(sinal * em_aberto * f, 2),
+                            round(sinal * p_juros * f, 2),
+                            round(sinal * p_multa * f, 2),
+                            c_aporte))
                 # linha RETIDO (so a receber). UMA so, mesmo com varias
                 # baixas: a retencao e do titulo.
                 #
