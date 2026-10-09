@@ -386,6 +386,7 @@ def ponto_api_pessoa_qr_enviar(colaborador_id: int):
         if not r.get("enfileirado"):
             raise ErroDeValidacao(f"não foi possível: {r.get('motivo')}")
         situacao = qr.situacao_da_pessoa(conn, colaborador_id)
+    envios.enviar_agora()            # a fila não acordava pelo ERP (09/10/2026)
     return _ok(qr=situacao, whatsapp_configurado=envios.whatsapp_pronto())
 
 

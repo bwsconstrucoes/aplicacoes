@@ -346,7 +346,7 @@ def test_gps_impreciso_na_borda_entra_para_analise(cliente):
     assert m["status"] == "EM_ANALISE" and "na borda da cerca" in m["motivo_analise"]
 
 
-def test_obra_sem_coordenada_e_celular_sem_localizacao_vao_para_analise(cliente):
+def test_obra_sem_coordenada_vai_para_analise_e_ponto_da_obra_sem_localizacao_nao_bate(cliente):
     dispositivo_id, token = registrar_aparelho(cliente)
     aprovar(cliente, dispositivo_id)
     # longe da PT-01, escolhendo a PT-02 (sem coordenada): não há como saber
@@ -355,8 +355,9 @@ def test_obra_sem_coordenada_e_celular_sem_localizacao_vao_para_analise(cliente)
     m = r.get_json()["marcacao"]
     assert m["status"] == "EM_ANALISE" and "sem coordenada" in m["motivo_analise"]
     assert "fora da lista da pessoa" in m["motivo_analise"]   # PT-02 não é obra do João
+    # O ponto da obra sem localização não bate (decisão do dono, 09/10/2026)
     r = bater(cliente, token, cpf=CPF_MARIA, lat=None, lon=None)
-    assert "sem localização" in r.get_json()["marcacao"]["motivo_analise"]
+    assert r.status_code == 403 and "ponto da obra só bate com a localização" in r.get_json()["erro"]
 
 
 def test_relogio_do_aparelho_fora_da_tolerancia(cliente):
@@ -373,7 +374,7 @@ def test_pessoa_desligada_e_obra_encerrada_sao_recusadas(cliente):
     aprovar(cliente, dispositivo_id)
     r = bater(cliente, token, cpf=CPF_DESLIGADO)
     assert r.status_code == 403 and "desligada" in r.get_json()["erro"]
-    r = bater(cliente, token, obra="PT-03", lat=None, lon=None)
+    r = bater(cliente, token, obra="PT-03", lat=-3.80, lon=-38.60)
     assert r.status_code == 403 and "encerrada" in r.get_json()["erro"]
     r = bater(cliente, token, cpf="39053344705")   # CPF válido, ninguém com ele
     assert r.status_code == 403 and "não cadastrada" in r.get_json()["erro"]
@@ -510,7 +511,7 @@ def test_consulta_por_periodo_cpf_obra_e_status(cliente):
     dispositivo_id, token = registrar_aparelho(cliente)
     aprovar(cliente, dispositivo_id)
     bater(cliente, token)
-    bater(cliente, token, cpf=CPF_MARIA, lat=None, lon=None)   # tablet sem localização: análise
+    bater(cliente, token, cpf=CPF_MARIA, lat=-3.72985, lon=-38.5271, precisao=80)   # na borda: análise
     hoje = dt.date.today()
     ini, fim = (hoje - dt.timedelta(days=1)).isoformat(), (hoje + dt.timedelta(days=1)).isoformat()
     todas = cliente.get(f"/ponto/api/marcacoes?data_inicio={ini}&data_fim={fim}",

@@ -103,6 +103,31 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 09/10/2026 (tarde) — O ponto da obra só pela localização, e o QR que não chegava
+
+1. **No ponto da obra, a caixa de obra saiu** (o dono: "se já identificou a
+   obra, não tem que selecionar mais nada"). A obra é a da localização, escrita
+   no alto. **Sem localização ou fora da área, o ponto da obra não bate** ("o
+   celular ponto de obra (…) só é para bater com a geolocalização") — mudou o
+   que valia desde 03/10 (sem localização ia para conferência). A tela avisa em
+   vermelho, relê a localização a cada 30 s, e uma leitura que falha não apaga a
+   boa de até meia hora. Única escolha que sobra: entre obras do aparelho SEM
+   coordenada cadastrada (não há como detectar; a batida vai para conferência).
+2. **No celular da pessoa, sem localização também se bate** escolhendo a obra e
+   explicando — vai para conferência ("o individual pode permitir que você bata
+   sem a localização ou fora da localização, contanto que selecione a obra e
+   justifique"). Isso DESFAZ o "não devíamos permitir o ponto sem localização"
+   do mesmo dia, de manhã — avisado ao dono. A caixa de obra só aparece quando
+   a obra não foi identificada.
+3. **"Precisei pedir o QR umas três vezes para chegar"**: a fila de WhatsApp é
+   acordada pelas requisições do ponto (o serviço não tem relógio), no COMEÇO
+   de cada uma e no máximo uma vez por minuto — ANTES de o pedido ser gravado.
+   Olhava, não achava nada, e só voltava a olhar um minuto depois, se viesse
+   outra requisição; o pedido feito pela tela do ERP nem acordava. Agora o
+   pedido acorda a fila logo depois de gravado (`envios.enviar_agora`), nos três
+   lugares: "Esqueci meu QR" no ponto da obra, "Receber no WhatsApp" no Meu ponto
+   e o botão do ERP. Teste: `test_pedir_o_qr_uma_vez_basta`.
+
 ## 09/10/2026 — Bater fora da obra (Portaria 671), nada sem localização, e o aparelho com nome
 
 Pergunta do dono: pela Portaria 671, a batida tem de ser aceita fora da obra?

@@ -426,3 +426,34 @@ def test_gestao_ajusta_a_cerca_de_cada_obra(app, mundo):
     assert r.get_json()["obra"]["fora_da_cerca"] == "ANALISAR"
     assert dp.post(f"/erp/api/ponto/cercas/{mundo['obra_a']}", json={"raio_metros": 10}).status_code == 400
     assert dp.post(f"/erp/api/ponto/cercas/{mundo['obra_a']}", json={"fora_da_cerca": "TALVEZ"}).status_code == 400
+
+
+def test_pedir_o_qr_uma_vez_basta(app, mundo, monkeypatch):
+    """O defeito de 09/10/2026: "precisei solicitar umas três vezes para ele
+    efetivamente chegar". A fila só acordava no começo de cada requisição, antes
+    de o pedido ser gravado. Agora o pedido acorda a fila na hora."""
+    import time as _time
+    from app.apps.ponto import db
+    from app.apps.ponto.core import envios
+    from tests.test_ponto_gestao_banco import _entrar_no_app
+    saiu = []
+    monkeypatch.setattr(envios, "whatsapp_pronto", lambda: True)
+    monkeypatch.setattr(envios, "espaco_entre_envios", lambda rng: 0)
+    monkeypatch.setattr(envios, "_notificar_padrao",
+                        lambda **kw: (saiu.append(kw), {"whatsapp": {"ok": True}})[1])
+    cel = _entrar_no_app(app, CPF_JOAO, monkeypatch)
+    envios._ultima_verificacao = _time.time()          # a "olhada do minuto" acabou de acontecer
+    r = cel.post("/ponto/app/api/meu-qr/whatsapp", json={})
+    assert r.status_code == 200, r.get_json()
+    for _ in range(50):                                # a linha que envia trabalha ao lado
+        if saiu:
+            break
+        _time.sleep(0.1)
+    assert len(saiu) == 1 and saiu[0]["finalidade"] == "ponto.qr"
+    for _ in range(20):
+        with db.conexao() as conn:
+            st = db.um(conn, "SELECT status FROM ponto.envios ORDER BY id DESC LIMIT 1")["status"]
+        if st == "ENVIADO":
+            break
+        _time.sleep(0.1)
+    assert st == "ENVIADO"

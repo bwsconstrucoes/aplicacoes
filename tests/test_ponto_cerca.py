@@ -62,14 +62,15 @@ class TestDecidirLugar:
         obra, recusa, _ = _lugar(-3.9, -38.9, enviada=SEM)
         assert obra is SEM and recusa is None
 
-    def test_celular_sem_localizacao_bloqueia_e_tablet_nao(self):
+    def test_sem_localizacao_o_celular_explica_e_o_ponto_da_obra_nao_bate(self):
+        """Decisão do dono, 09/10/2026: o ponto da obra só bate com a localização;
+        o celular da pessoa bate sem ela escolhendo a obra e explicando."""
         obra, recusa, _ = _lugar(None, None, enviada=A)
         assert obra is None and "ligue a localização" in recusa
-        obra, recusa, _ = _lugar(None, None, enviada=A, no_tablet=True)
+        obra, recusa, _ = _lugar(None, None, enviada=A, porque="o GPS do celular não pega aqui")
         assert obra is A and recusa is None
-        # Desde 09/10/2026, nem a obra que analisa aceita o CELULAR sem localização
-        obra, recusa, _ = _lugar(None, None, enviada=A, modo="ANALISAR")
-        assert obra is None and "ligue a localização" in recusa
+        obra, recusa, _ = _lugar(None, None, enviada=A, no_tablet=True, porque="qualquer coisa")
+        assert obra is None and "ponto da obra só bate com a localização" in recusa
 
     def test_fora_da_obra_explicando_vai_para_conferencia(self):
         """Decisão do dono, 09/10/2026: "não tá na obra, alerta; e se a pessoa ainda
@@ -81,9 +82,6 @@ class TestDecidirLugar:
         # o ponto da obra fora da cerca não ganha essa saída: o aparelho saiu da obra
         obra, recusa, _ = _lugar(-3.7600, -38.5270, enviada=A, no_tablet=True, porque="x")
         assert obra is None and "explique" not in recusa
-        # sem localização, nunca
-        obra, recusa, _ = _lugar(None, None, enviada=A, porque="comprando material")
-        assert obra is None and "ligue a localização" in recusa
 
     def test_sem_obra_e_sem_localizacao(self):
         obra, recusa, _ = _lugar(None, None, enviada=None)

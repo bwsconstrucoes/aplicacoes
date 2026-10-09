@@ -56,9 +56,9 @@ def test_ajuste_pedido_aparece_no_dia_com_o_horario(app, mundo, monkeypatch):
 
 
 def test_fora_da_obra_explicando_vai_para_conferencia(app, mundo, monkeypatch):
-    """Decisão do dono, 09/10/2026: fora da obra, com localização e explicação, a
-    batida vai para conferência — e aparece no dia como "em conferência"; sem
-    explicação, recusada; sem localização, nunca."""
+    """Decisão do dono, 09/10/2026: fora da obra (ou sem localização), escolhendo a
+    obra e explicando, a batida vai para conferência — e aparece no dia como "em
+    conferência"; sem explicação, recusada."""
     from app.apps.ponto import auth as _auth
     dp = como(app, mundo["dp"])
     cel = _entrar_no_app(app, CPF_JOAO, monkeypatch, excecao=True)
@@ -77,7 +77,8 @@ def test_fora_da_obra_explicando_vai_para_conferencia(app, mundo, monkeypatch):
     assert "fui comprar material" in r.get_json()["motivo_analise"]
     hoje = cel.get("/ponto/app/api/eu").get_json()["hoje"]
     assert [b["status"] for b in hoje["batidas"]] == ["EM_ANALISE"]
-    r = cel.post("/ponto/app/api/bater", json={"obra": "PG-A", "justificativa": "sem gps"}, headers=h)
+    # Sem localização: só explicando (e vai para conferência)
+    r = cel.post("/ponto/app/api/bater", json={"obra": "PG-A"}, headers=h)
     assert r.status_code == 403 and "localização" in r.get_json()["erro"]
 
 

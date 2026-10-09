@@ -164,9 +164,13 @@ def decidir_lugar(*, situacao: str, detectada: Optional[dict], distancia: Option
 
       DENTRO     a obra da cerca, sem motivo nenhum
       BORDA      a obra da cerca, para conferência (o GPS impreciso não recusa)
-      SEM_LOCAL  no ponto da obra: aceita, para conferência (o aparelho já é
-                 da obra); no celular: RECUSA, sempre (decisão do dono,
-                 09/10/2026: "não devíamos permitir o ponto sem localização")
+      SEM_LOCAL  no PONTO DA OBRA: recusa — ele só bate com a localização
+                 (decisão do dono, 09/10/2026: "o celular ponto de obra, eu acho
+                 que ele só é para bater com a geolocalização"). No CELULAR da
+                 pessoa: com a obra escolhida e a explicação, aceita para
+                 conferência; sem explicação, recusa ("o individual pode bater
+                 sem a localização ou fora da localização, contanto que
+                 selecione a obra e justifique").
       FORA       obra escolhida SEM coordenada: não há como saber, conferência.
                  No CELULAR (decisão do dono, 09/10/2026, sobre a Portaria 671:
                  "não tá na obra, alerta; e se a pessoa ainda for bater, explicar
@@ -186,8 +190,12 @@ def decidir_lugar(*, situacao: str, detectada: Optional[dict], distancia: Option
         if not alvo:
             return None, "sem localização não dá para saber a obra — ligue a localização", None
         if no_tablet:
-            return alvo, None, None          # o motivo "sem localização" sai da avaliação da cerca
-        return None, "localização desligada — ligue a localização do celular para bater o ponto", None
+            return None, ("localização desligada — o ponto da obra só bate com a localização ligada; "
+                          "ligue a localização do aparelho"), None
+        if " ".join(str(justificativa or "").split()):
+            return alvo, None, None          # o motivo "batida sem localização" sai da avaliação da cerca
+        return None, ("localização desligada — ligue a localização do celular, ou escolha a obra e explique "
+                      "o motivo (vai para conferência)"), None
     # FORA
     if enviada and not geo.coordenada_valida(enviada.get("latitude"), enviada.get("longitude")):
         return enviada, None, None           # "obra sem coordenada cadastrada" vai para análise
