@@ -41,6 +41,11 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1k. **PUBLICADO em 09/10/2026, segunda leva** (com o "pode" do dono, sem
+   migração nova): fora da obra só explicando (vai para conferência), nada
+   sem localização no celular, ⏳ na batida em conferência, e o aparelho que
+   chega com o nome de quem entrou. Confirmar com o dono: aprovou o celular
+   novo da pessoa que tinha apagado os dados do navegador?
 1j. **PUBLICADO em 09/10/2026** (com o "pode" do dono): os seis ajustes de
    09/10 e a correção do fuso na apuração (seção de 09/10), com a migração
    **009**. Confirmar com o dono: apertou "Aplicar atualizações do ponto"?
