@@ -42,21 +42,20 @@ def _linha_notas_bws():
     linha[12] = "15/10/2026"               # M Data de Recebimento
     linha[13] = "144.808,69"               # N Valor Recebido em Conta
     linha[14] = "144.808,69"               # O Valor a ser Recebido pelo Destaque
-    linha[17] = "84.614,17"                # R Valor em Serviços
-    linha[18] = "84.614,17"                # S Valor em Materiais
-    linha[19] = "1.099,98"                 # T PIS
-    linha[20] = "5.076,85"                 # U COFINS
-    linha[21] = "2.030,74"                 # V IR
-    linha[22] = "1.827,66"                 # W CSLL
-    linha[23] = "0,00"                     # X INSS
-    linha[24] = "2.538,43"                 # Y ISS
-    # BB:BM — os tributos do Omie, em pares valor/retém, NA ORDEM DO SCRIPT
-    linha[53] = "1.099,98"                 # BB valor_pis
-    linha[55] = "5.076,85"                 # BD valor_cofins
-    linha[57] = "1.827,66"                 # BF valor_csll
-    linha[59] = "2.030,74"                 # BH valor_ir
-    linha[61] = "2.538,43"                 # BJ valor_iss
-    linha[63] = "0,00"                     # BL valor_inss
+    # P:BA — LIXO. Três repetições do mesmo conjunto de tributos, de uma
+    # metodologia abandonada. Valores absurdos aqui de propósito: se algum deles
+    # aparecer na base, o teste denuncia.
+    linha[17] = "999.999,99"               # R Valor em Serviços
+    linha[18] = "888.888,88"               # S Valor em Materiais
+    linha[19] = "777.777,77"               # T PIS (bloco antigo)
+    linha[24] = "666.666,66"               # Y ISS (bloco antigo)
+    # BB:BM — os tributos do OMIE, em pares valor/retém, NA ORDEM DO SCRIPT
+    linha[53], linha[54] = "1.099,98", "S"   # BB/BC PIS
+    linha[55], linha[56] = "5.076,85", "S"   # BD/BE COFINS
+    linha[57], linha[58] = "1.827,66", "S"   # BF/BG CSLL
+    linha[59], linha[60] = "2.030,74", "S"   # BH/BI IR
+    linha[61], linha[62] = "2.538,43", "S"   # BJ/BK ISS
+    linha[63], linha[64] = "0,00", "N"       # BL/BM INSS (não retido)
     return linha
 
 
@@ -69,12 +68,27 @@ def test_o_cabecalho_nao_tem_nome_repetido():
     assert len(bf.CAB) == len(set(bf.CAB))
 
 
-def test_os_tres_campos_que_nunca_foram_gravados_existem_na_base():
-    """Era a parte do pedido que não dava para resolver com cruzamento: estes
-    três não estão em planilha nenhuma hoje."""
+def test_os_campos_que_nunca_foram_gravados_existem_na_base():
+    """A parte do pedido que não dava para resolver com cruzamento: nada disso
+    está em planilha nenhuma hoje."""
     for campo in ("medicao_periodo_ini", "medicao_periodo_fim", "discriminacao",
-                  "empresa", "scp"):
+                  "ibs", "cbs"):
         assert campo in bf.IDX, campo
+
+
+@pytest.mark.parametrize("campo", ["empresa", "empresa_cnpj", "scp", "scp_cnpj",
+                                   "contrato", "tributacao", "centro_custo",
+                                   "municipio_obra", "obra_codigo_primario"])
+def test_o_que_vem_da_c_diarios_NAO_entra_na_base(campo):
+    """Correção do dono em 09/10/2026: *"informação que vem da C. Diários não
+    precisa entrar na base, a gente vai cruzar"*. Guardar atributo de obra aqui
+    seria duplicar o que já tem dono — e a base ficaria desatualizada sozinha."""
+    assert campo not in bf.IDX
+
+
+def test_a_chave_do_cruzamento_com_a_c_diarios_fica():
+    """Sem o código da obra não há como cruzar nada."""
+    assert "obra_codigo" in bf.IDX
 
 
 def test_campo_inventado_e_recusado_em_vez_de_virar_coluna_errada():
@@ -92,6 +106,26 @@ def test_a_linha_sai_sempre_com_o_tamanho_do_cabecalho():
 # --------------------------------------------------------------------------- #
 # O mapa da "Notas BWS" — onde um índice errado troca um imposto por outro
 # --------------------------------------------------------------------------- #
+def test_o_bloco_de_formula_da_planilha_e_IGNORADO():
+    """⚠️ Correção de 09/10/2026. A primeira versão lia T:Y como se fossem os
+    tributos da nota. O dono: *"não existe aquilo dali, aquilo são repetições, é
+    outra metodologia que eu utilizava, dali é lixo"*. Ler dali encheria a base
+    de números plausíveis e errados — o pior resultado possível, porque ninguém
+    desconfia de um número com cara de certo."""
+    d = bf.de_notas_bws(_linha_notas_bws())
+    inteiro = " ".join(str(v) for v in d.values())
+    for lixo in ("999.999,99", "888.888,88", "777.777,77", "666.666,66"):
+        assert lixo not in inteiro, f"entrou lixo da planilha: {lixo}"
+
+
+def test_a_nota_antiga_chega_SEM_tributo_declarado():
+    """E é o estado do mundo, não desleixo: o emissor nunca gravou tributo
+    nenhum. É isto que torna a nota antiga não equalizável."""
+    d = bf.de_notas_bws(_linha_notas_bws())
+    for t in ("pis", "cofins", "ir", "csll", "inss", "iss"):
+        assert not d.get(t), t
+
+
 def test_os_valores_da_nota_saem_das_colunas_certas():
     d = bf.de_notas_bws(_linha_notas_bws())
     assert d["nota_numero"] == "3271"
@@ -112,15 +146,20 @@ def test_os_tributos_do_omie_nao_trocam_de_lugar():
     assert d["omie_csll"] == "1.827,66"
     assert d["omie_ir"] == "2.030,74"
     assert d["omie_iss"] == "2.538,43"
-    assert d["omie_inss"] == "0,00"
+
+
+def test_valor_do_omie_com_retem_N_nao_conta():
+    """O Omie guarda valor E retém. Valor com retém=N é imposto que ele não está
+    descontando — contá-lo inflaria a conferência."""
+    d = bf.de_notas_bws(_linha_notas_bws())
+    assert d["omie_inss"] == "", "BL tem valor mas BM diz N"
 
 
 def test_imposto_da_nota_e_do_omie_sao_campos_SEPARADOS():
     """É a razão de a base existir: poder ver que os dois divergem. Guardar um
     só esconderia justamente o que o dono confere à mão hoje."""
-    d = bf.de_notas_bws(_linha_notas_bws())
-    assert d["ir"] == "2.030,74" and d["omie_ir"] == "2.030,74"
-    assert bf.IDX["ir"] != bf.IDX["omie_ir"]
+    for t in ("pis", "cofins", "ir", "csll", "inss", "iss"):
+        assert bf.IDX[t] != bf.IDX[f"omie_{t}"]
 
 
 def test_nota_cancelada_e_lida_da_observacao():
@@ -157,9 +196,12 @@ def test_sem_consulta_ao_omie_a_divergencia_de_tributos_fica_VAZIA():
 
 
 def test_tributo_que_o_omie_tem_diferente_da_nota_e_acusado():
-    linha = _linha_notas_bws()
-    linha[59] = "1.000,00"           # BH: IR no Omie diferente do da nota
-    assert bf.conferir_tributos(bf.de_notas_bws(linha)) == "S"
+    """Com a nota declarando (caso das notas NOVAS), a divergência aparece."""
+    d = bf.de_notas_bws(_linha_notas_bws())
+    d["ir"] = "1.000,00"             # a nota declarou outro valor
+    assert bf.conferir_tributos(d) == "S"
+    d["ir"] = "2.030,74"             # igual ao do Omie
+    assert bf.conferir_tributos(d) == "N"
 
 
 def test_valor_em_pt_br_com_milhar_e_lido_certo():
@@ -189,16 +231,12 @@ class _ObraFalsa:
     scp_cnpj = "11222333000144"
 
 
-def test_a_empresa_e_a_SCP_entram_pela_c_diarios():
-    """O pedido foi explícito: nem toda obra é faturada no CNPJ da BWS, e
-    algumas são SCP com CNPJ próprio. Nada disso era lido antes."""
-    d = bf.de_notas_bws(_linha_notas_bws())
-    bf.cruzar(d, obra=_ObraFalsa())
-    assert d["empresa"] == "BWS CONSTRUCOES LTDA"
-    assert d["scp"] == "SCP MIRANDIBA I"
-    assert d["scp_cnpj"] == "11222333000144"
-    assert d["contrato"] == "268/2025"
-    assert d["tributacao"].startswith("ONERADA")
+def test_a_c_diarios_entrega_empresa_e_SCP_para_a_TELA_cruzar():
+    """A base não guarda esses campos (ver acima), mas o carregador passou a
+    lê-los: é a tela que cruza pelo código da obra. Nem toda obra é faturada no
+    CNPJ da BWS, e algumas são SCP com CNPJ próprio."""
+    o = _ObraFalsa()
+    assert o.empresa and o.scp and o.scp_cnpj
 
 
 def test_o_card_do_pipefy_vem_da_aba_protocolos_e_virou_link():
@@ -255,12 +293,14 @@ def test_nota_nacional_tem_o_sequencial_extraido_do_numero_longo():
 
 
 def test_o_cruzamento_nao_sobrescreve_o_que_a_notas_bws_trouxe():
-    """A "Notas BWS" é a fonte dos valores da nota; as outras só acrescentam.
-    Sobrescrever faria o valor da nota mudar conforme a ordem das leituras."""
+    """A "Notas BWS" é a fonte dos valores da nota; as outras abas só
+    acrescentam. Sobrescrever faria o valor mudar conforme a ordem das leituras."""
     d = bf.de_notas_bws(_linha_notas_bws())
-    d["tomador_nome"] = "QUEM ESTÁ NA NOTA"
-    bf.cruzar(d, obra=_ObraFalsa())
-    assert d["tomador_nome"] == "QUEM ESTÁ NA NOTA"
+    d["tomador_cnpj"] = "11111111111111"
+    ctrl = [""] * 15
+    ctrl[0], ctrl[6] = "3271", "22222222222222"
+    bf.cruzar(d, ctrl=ctrl)
+    assert d["tomador_cnpj"] == "11111111111111"
 
 
 def test_duplicata_nas_abas_de_apoio_nao_muda_o_resultado_entre_rodadas():
@@ -360,10 +400,13 @@ def test_o_emissor_preenche_tudo_menos_o_que_depende_do_omie():
                  "atualizado_em"}          # o `cruzar` e o `montar_linha` fecham
     vazios = [c for c in bf.CAB if c not in gravados and c not in derivados]
     esperado = [
-        # o grupo do Omie: depende da decisão de quem passa a consultá-lo
+        # o grupo do Omie: preenchido pela tela /emissao/omie, não pela emissão
         "omie_pis", "omie_cofins", "omie_ir", "omie_csll", "omie_inss", "omie_iss",
         "omie_codigo_lancamento", "omie_numero_documento", "omie_valor_titulo",
         "omie_conferido_em",
+        # IBS/CBS só existem no modelo nacional, e o `if nacional` os preenche
+        # fora do dicionário — por isso não aparecem na varredura textual
+        "ibs", "cbs",
         # o recebimento acontece DEPOIS da emissão — vazio aqui é o certo
         "data_recebimento", "valor_recebido",
         # observação é texto que alguém escreve à mão (ex.: "CANCELADA")

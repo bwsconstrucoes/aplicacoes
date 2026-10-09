@@ -50,7 +50,7 @@ na nota fiscal": eles são recalculados por fórmula, não registrados.
 
 ## 2. A base nova: aba `Base Faturamento`
 
-Mesma planilha das notas, aba nova, **71 colunas (A:BS)**, uma linha por nota.
+Mesma planilha das notas, aba nova, **64 colunas**, uma linha por nota.
 O layout e a procedência de cada campo estão em `base_faturamento.py` — o
 cabeçalho é a única fonte da verdade sobre a ordem.
 
@@ -59,20 +59,67 @@ dono foi explícito — *"porque uma base na planilha? Porque pode ser que, como
 gente não está no ERP ainda, aí a gente mantém a planilha"*. Quando virar ERP, a
 aba vira tabela: o layout já está nomeado campo por campo para isso.
 
-### Os três campos que não existiam em lugar nenhum
+### ⚠️ O que NÃO entra: nada que venha da C. Diários
+
+Correção do dono em **09/10/2026**: *"informação que vem da C. Diários não precisa
+entrar na base, a gente vai cruzar"*. Saíram da base, e a tela os busca pelo
+**código da obra**:
+
+`contrato`, `municipio_obra`, `centro_custo`, `tributacao`, `obra_codigo_primario`,
+`empresa`, `empresa_cnpj`, `scp`, `scp_cnpj`.
+
+O carregador da C. Diários **continua** lendo `Empresa`, `CNPJ Empresa`, `SCP` e
+`CNPJ SCP` (pelo nome do cabeçalho) — é a tela que cruza. Da obra, a base guarda
+só a **chave**: `obra_codigo`.
+
+**A fronteira é esta, e vale escrever:** atributo da OBRA pode mudar amanhã e tem
+dono (a C. Diários); **fato da NOTA** é congelado no dia da emissão e não tem
+outra fonte. Por isso a `aliquota_iss` **fica** — é a que a nota aplicou, não a
+que está cadastrada hoje.
+
+*Risco aceito, e é dele:* se uma obra trocar de empresa ou de tributação, a tela
+vai mostrar a nova para as notas antigas. Para faturamento é o que ele quer; se
+um dia precisar do retrato histórico, o campo volta para a base.
+
+### Os campos que não existiam em lugar nenhum
 
 1. **`medicao_periodo_ini` / `medicao_periodo_fim`** — o período da medição. Está
    no card do Pipefy e era descartado na emissão.
 2. **`discriminacao`** — o corpo da nota, o texto que o cliente lê. Era usado e
    jogado fora.
-3. **`empresa` / `empresa_cnpj` / `scp` / `scp_cnpj`** — nem toda obra é faturada
-   no CNPJ da BWS, e algumas são **SCP com CNPJ próprio** embora o contrato seja
-   da BWS.
+3. **`ibs` / `cbs`** — os tributos da reforma. Quem calcula é a plataforma
+   nacional, e o resultado volta no XML da nota (com a redução de 50% da
+   construção civil). Pedido dele: *"pode ser que isso aí seja necessário"*.
+   No modelo antigo não existem.
 
 Para as **notas antigas** esses campos ficam **vazios** — não existem em fonte
 nenhuma, e inventá-los seria pior que deixar em branco. Para as **novas**, o
 emissor grava. Era o pedido: *"não vamos ter a completude dos dados, mas para
 frente a gente passa a ter"*.
+
+### ⚠️ Os tributos vêm de BB em diante, e SÓ
+
+Correção do dono no mesmo dia: *"não existe aquilo dali, aquilo são repetições, é
+outra metodologia que eu utilizava, dali é lixo. Eu comentei que eles são da
+coluna BB em diante só."*
+
+A primeira versão lia o bloco **T:Y** como se fossem os tributos da nota. A
+planilha tem o mesmo conjunto PIS/COFINS/IR/CSLL/INSS/ISS **três vezes** (T:AB,
+AC:AK, AL:AT), mais CPRB e "REGIME ESPECIAL" — metodologia abandonada. Ler dali
+encheria a base de **números plausíveis e errados**, que é o pior resultado
+possível: ninguém desconfia de um número com cara de certo.
+
+**De P a BA não se lê nada.** O que se lê é **E:O** (os dados da nota e o
+recebimento) e **BB:BM** (os tributos do Omie, em pares valor/retém). O "retido
+ou não" entra por um motivo só, que é o que ele pediu: **compatibilizar com o
+Omie** — valor com retém=N é imposto que o Omie não está descontando, e não
+conta.
+
+**Consequência que exigiu uma trava:** como o emissor nunca gravou tributo
+nenhum, a nota antiga chega à base **sem tributo declarado**. A tela do Omie
+confere e grava o que o Omie tem, mas **nunca equaliza** esses títulos — fazer a
+conta com zero zeraria as retenções no Omie, que são a única cópia que existe
+delas. A trava vale mesmo com a confirmação marcada.
 
 ### Nota declarada × Omie: dois campos, não um
 

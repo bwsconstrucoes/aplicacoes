@@ -50,6 +50,28 @@ def notas_que_contam(linhas: list[dict]) -> list[dict]:
             if bfat._txt(d.get("status")) in ("", bfat.STATUS_VALIDA)]
 
 
+def tem_tributos_declarados(linhas: list[dict]) -> bool:
+    """A nota tem tributo declarado? Para as ANTIGAS a resposta é NÃO.
+
+    ⚠️ **Esta é a trava que impede o pior estrago possível desta tela.** O emissor
+    nunca gravou tributo nenhum até 09/10/2026, e os blocos de fórmula da
+    planilha são de uma metodologia abandonada — então a base nasce com o lado da
+    nota VAZIO para as ~3.300 notas antigas.
+
+    Sem esta verificação, a soma das notas daria zero, a equalização veria
+    divergência em tudo e **zeraria as retenções no Omie** — apagando a única
+    cópia que existe delas, e a baixa passaria a sair errada em toda nota antiga.
+
+    Então: título cujas notas não declararam tributo NÃO é conferível, e nunca é
+    equalizado. Ele aparece na tela como "sem tributo na nota".
+    """
+    for d in notas_que_contam(linhas):
+        for t in TRIBUTOS:
+            if bfat._txt(d.get(t)):
+                return True
+    return False
+
+
 def somar_tributos(linhas: list[dict]) -> dict:
     """O que o título DEVERIA ter: a soma dos tributos das notas válidas.
 

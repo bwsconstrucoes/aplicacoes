@@ -1448,6 +1448,65 @@ rede, e nesta sessão não há credencial do Google — a primeira rodada da tel
 primeira prova. Ela é segura por construção (não apaga nada, não emite nada, só
 lê e escreve na aba nova), mas o número de linhas que ela vai gravar é desconhecido.
 
+### ⚠️ Quatro correções do dono na base de faturamento — 09/10/2026
+
+Ele revisou a base e apontou quatro coisas. Três eram erro meu, e uma era campo
+que faltava. Ficam aqui porque a primeira é do tipo que estraga em silêncio.
+
+**1. Eu lia o bloco de tributos ERRADO, e era lixo.** A base lia T:Y como se
+fossem os tributos da nota. Ele:
+
+> *"Não existe aquilo dali, aquilo são repetições, é outra metodologia que eu
+> utilizava, dali é lixo. Eu comentei que eles são da coluna BB em diante só."*
+
+A planilha tem o mesmo conjunto PIS/COFINS/IR/CSLL/INSS/ISS **três vezes** (T:AB,
+AC:AK, AL:AT), mais CPRB e "REGIME ESPECIAL". Ele havia dito "BB em diante" na
+primeira mensagem e eu li T:Y de todo jeito. **Agora de P a BA não se lê nada**,
+e um teste põe valores absurdos nessas colunas: se algum aparecer na base, ele
+denuncia. É o pior tipo de defeito possível — números plausíveis e errados, de que
+ninguém desconfia.
+
+**2. O "retido ou não" existe por um motivo só:** compatibilizar com o Omie. Ele
+tem os dois campos (valor e retém), e **valor com retém=N é imposto que ele não
+está descontando** — não conta na conferência nem na soma.
+
+**3. Nada que venha da C. Diários entra na base.** *"Informação que vem da
+C. Diários não precisa entrar na base, a gente vai cruzar."* Saíram nove colunas:
+contrato, município, centro de custo, tributação, código primário, empresa, CNPJ
+da empresa, SCP e CNPJ da SCP. Da obra fica só a **chave**.
+
+A fronteira que isso desenha vale guardar: **atributo da OBRA** pode mudar amanhã
+e tem dono (a C. Diários); **fato da NOTA** é congelado no dia da emissão e não
+tem outra fonte. Por isso a `aliquota_iss` ficou — é a que a nota aplicou, não a
+que está cadastrada hoje. O risco aceito, e é dele: obra que trocar de empresa
+fará a tela mostrar a nova para as notas antigas.
+
+**4. Faltavam IBS e CBS.** *"Uma coluna que deveria ser adicionada também, uma
+não, duas."* Entraram, e o emissor as preenche do XML da nota — quem calcula é a
+plataforma nacional, com a redução de 50% da construção civil. No modelo antigo
+não existem.
+
+**Saldo: 71 → 64 colunas.**
+
+#### E a trava que a correção 1 exigiu
+
+Se os tributos da nota só vêm de BB em diante — que é o que o **Omie** tem — então
+**a nota antiga chega à base sem tributo declarado**, porque o emissor nunca
+gravou nenhum. E aí a soma das notas de um título daria **zero**, a equalização
+veria divergência em tudo e **zeraria as retenções no Omie** — apagando a única
+cópia que existe delas, e fazendo a baixa sair errada em toda nota antiga.
+
+Então: **título cujas notas não declararam tributo nunca é equalizado**, e a trava
+vale mesmo com a confirmação marcada. Autorizar equalizar não é autorizar apagar
+o que o Omie tem e a nota não tem. A tela confere, grava, e diz "sem tributo na
+nota — não equalizável".
+
+**Conferido:** os quatro consertos, mais a trava, em 18 casos novos — entre eles o
+que põe lixo em T:Y e exige que não apareça na base, o valor com retém=N não
+contando, as nove colunas da C. Diários tendo de estar AUSENTES, e a tela não
+escrevendo no Omie nem com autorização quando a nota não declarou. Suíte inteira:
+5.360 passando.
+
 ### As três operações no Omie vieram para o Python — 09/10/2026
 
 **O dono fechou a questão que estava aberta**, com estas palavras: *"os scripts,

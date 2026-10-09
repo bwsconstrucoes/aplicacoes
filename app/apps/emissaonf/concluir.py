@@ -280,16 +280,11 @@ def concluir(card_id, numero, codigo, data_iso, nota_xml_path, forcar=False, ctx
             "chave_acesso": chave_nacional or "", "cod_verificacao": codigo or "",
             "data_emissao": data_iso, "competencia": str(data_iso)[:7],
             "status": bfat.STATUS_VALIDA,
+            # Da obra vai só a CHAVE: contrato, empresa, SCP e tributação são
+            # atributos dela, e a tela os cruza na C. Diários pelo código
+            # (decisão do dono, 09/10/2026). O que fica aqui é fato da nota.
             "obra_codigo": obra_cod,
-            "obra_codigo_primario": getattr(obra, "codigo_primario", ""),
-            "centro_custo": getattr(obra, "centro_custo", ""),
-            "contrato": card.get("contrato", "") or getattr(obra, "contrato", ""),
-            "municipio_obra": getattr(obra, "municipio", ""),
-            "empresa": getattr(obra, "empresa", ""),
-            "empresa_cnpj": getattr(obra, "empresa_cnpj", ""),
-            "scp": getattr(obra, "scp", ""), "scp_cnpj": getattr(obra, "scp_cnpj", ""),
-            "tributacao": getattr(obra, "tributacao", ""),
-            "aliquota_iss": getattr(obra, "aliquota_iss", ""),
+            "aliquota_iss": f"{r.aliquota_iss:.2f}",   # a que a NOTA aplicou
             # Os três campos que NUNCA foram gravados em lugar nenhum:
             "medicao_numero": med,
             "medicao_periodo_ini": card.get("periodo_ini", ""),
@@ -327,6 +322,15 @@ def concluir(card_id, numero, codigo, data_iso, nota_xml_path, forcar=False, ctx
             "tomador_municipio": str(getattr(ctx.get("dados_rps"), "toma_cmun", "") or ""),
             "origem": "emissor",
         }
+        # IBS e CBS: quem calcula é a plataforma nacional, e o resultado volta no
+        # XML da nota (com a redução de 50% da construção civil). O dono pediu as
+        # duas colunas. No modelo antigo não existem.
+        if nacional:
+            import re as _re
+            for campo, tag in (("ibs", "vIBSTot"), ("cbs", "vCBS")):
+                m = _re.search(rf"<{tag}>([^<]+)</{tag}>", xml_texto or "")
+                if m:
+                    dados_base[campo] = m.group(1).strip()
         # O `cruzar` fecha o que é DERIVADO: o sequencial a partir do número
         # longo, o modelo, a competência e as duas divergências. Sem ele a nota
         # nova nasceria sem `nota_sequencial` — justamente o campo pelo qual o

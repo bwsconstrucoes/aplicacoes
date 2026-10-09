@@ -39,7 +39,6 @@ import omie
 import pipefy as _pipefy
 import notas_bws as _notas
 import base_faturamento as _bfat
-import cdiarios as _cdiarios
 import omie_conferencia as _ocf
 from decimal import Decimal
 import completar_imediato as _compl
@@ -706,11 +705,9 @@ def faturamento():
             gc = _worker.cliente_gspread()
             print(f">>> Consolidando até {limite} notas na aba "
                   f"'{_bfat.ABA}'. Nada é apagado e nada é emitido.")
-            obras = _cdiarios.carregar_obras(
-                _worker.abrir_aba(gc.open_by_key(_worker.ID_BASE),
-                                  _worker.ABA_CDIARIOS).get_all_values())
-            print(f"    C. Diários: {len(obras)} códigos de obra indexados")
-            r = _bfat.consolidar(gc.open_by_key(_worker.ID_PROC), obras, limite=limite)
+            print("    A C. Diários NÃO é lida: obra, contrato, tributação, "
+                  "empresa e SCP são atributos da obra, e a tela cruza pelo código.")
+            r = _bfat.consolidar(gc.open_by_key(_worker.ID_PROC), limite=limite)
             print(f">>> {r['gravadas']} nota(s) gravada(s); {r['ja_estavam']} já "
                   f"estavam; FALTAM {r['faltam']}; total na base: "
                   f"{r['total_na_base']}.")
@@ -803,21 +800,30 @@ def omie_tributos():
             print(f">>> Modo: {'CONFERIR E EQUALIZAR (escreve no Omie)' if escrever else 'SÓ CONFERIR (leitura)'}.")
 
             atualizar, conferidos, equalizados, divergentes = [], 0, 0, 0
+            sem_tributo = 0
             for codigo, notas in list(grupos.items())[:limite]:
                 try:
                     titulo = omie.ler_titulo(omie.consultar(cred, codigo))
                 except Exception as e:
                     print(f"  [{codigo}] consulta falhou: {type(e).__name__}: {e}")
                     continue
+                conferivel = _ocf.tem_tributos_declarados(notas)
                 desejado = _ocf.somar_tributos(notas)
-                fora = _ocf.precisa_equalizar(titulo, desejado)
+                fora = _ocf.precisa_equalizar(titulo, desejado) if conferivel else []
                 partes = _ocf.ratear_titulo(notas, titulo)
                 for d in notas:
                     _ocf.aplicar_no_registro(
                         d, titulo, partes.get(_bfat._txt(d.get("nota_numero"))))
                     atualizar.append(d)
                 conferidos += 1
-                if fora:
+                if not conferivel:
+                    # Nota antiga não tem tributo declarado — o emissor nunca os
+                    # gravou. Equalizar aqui ZERARIA as retenções do Omie, que
+                    # são a única cópia que existe delas.
+                    sem_tributo += 1
+                    print(f"  [{codigo}] sem tributo na NOTA — conferido e "
+                          f"gravado na base, mas NÃO equalizável.")
+                elif fora:
                     divergentes += 1
                     nomes = ", ".join(f"{t.upper()}: Omie {titulo.get(t)} × notas "
                                       f"{desejado.get(t)}" for t in fora)
@@ -833,6 +839,7 @@ def omie_tributos():
             gravadas = _bfat.gravar_lote(ws, atualizar)
             print(f">>> {conferidos} título(s) conferido(s); {divergentes} "
                   f"divergente(s); {equalizados} equalizado(s) no Omie; "
+                  f"{sem_tributo} sem tributo na nota (não equalizáveis); "
                   f"{gravadas} linha(s) da base atualizada(s).")
             if len(grupos) > limite:
                 print(f">>> FALTAM {len(grupos) - limite} título(s). Clique de novo.")
@@ -850,6 +857,11 @@ def _pagina_omie(token, log=""):
       <p class='sub'>As três operações que sobraram do Apps Script da planilha:
       <b>consultar</b> o título, <b>equalizar</b> os tributos e <b>atualizar</b> o
       Omie. O resto das funções daquele script não veio.</p>
+      <div class='warn'><b>Nota antiga não é equalizável, e isso é trava de
+        propósito.</b> O emissor nunca gravou tributo nenhum até 09/10/2026, então
+        as notas antigas chegam à base <b>sem tributo declarado</b>. Equalizar
+        nesse caso zeraria as retenções no Omie — que são a única cópia que existe
+        delas. A tela confere, grava o que o Omie tem, e <b>não equaliza</b>.</div>
       <div class='card'><b>Como ela pensa</b>
         <p class='sub'>A <b>nota manda, o título obedece</b>. O que pode ir para o
         Omie é a <b>soma dos tributos das notas válidas</b> daquele título — nunca

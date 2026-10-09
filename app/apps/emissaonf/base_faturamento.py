@@ -53,18 +53,17 @@ CAB = [
     "competencia",            # AAAA-MM
     "status",                 # valida | cancelada | substituida
     "observacao",
-    # --- obra, contrato, empresa ------------------------------------------ #
-    "obra_codigo",
-    "obra_codigo_primario",
-    "centro_custo",
-    "contrato",
-    "municipio_obra",
-    "empresa",                # C. Diários: NEM TODA obra é faturada pela BWS
-    "empresa_cnpj",
-    "scp",                    # C. Diários: algumas obras são SCP, com CNPJ próprio
-    "scp_cnpj",
-    "tributacao",             # C. Diários (categoria de 4 blocos)
-    "aliquota_iss",           # C. Diários
+    # --- a obra: SÓ a chave de cruzamento --------------------------------- #
+    # Correção de 09/10/2026, pedido do dono: *"informação que vem da C. Diários
+    # não precisa entrar na base, a gente vai cruzar"*. Então contrato, município,
+    # centro de custo, tributação, **empresa** e **SCP** saíram daqui — são
+    # atributos da OBRA, e a tela os busca na C. Diários pelo código.
+    #
+    # O que fica é o que é FATO DA NOTA, congelado no dia da emissão, e isso é
+    # diferente: a alíquota que a nota aplicou é fiscal; a tributação cadastrada
+    # na obra pode mudar amanhã.
+    "obra_codigo",            # a chave do cruzamento
+    "aliquota_iss",           # a alíquota que a NOTA aplicou (não a do cadastro)
     # --- medição ----------------------------------------------------------- #
     "medicao_numero",
     "medicao_periodo_ini",    # NUNCA foi gravado antes
@@ -83,7 +82,14 @@ CAB = [
     "valor_liquido_previsto",  # valor − TODAS as retenções
     # --- tributos: o que a NOTA declarou ----------------------------------- #
     "pis", "cofins", "ir", "csll", "inss", "iss",
+    # O "retido ou não" existe por um motivo só, e é o que o dono pediu:
+    # **compatibilizar com o Omie**. O Omie tem os dois campos (valor e retém), e
+    # só o que foi retido entra na soma que vai para o título.
     "retem_pis", "retem_cofins", "retem_ir", "retem_csll", "retem_inss", "retem_iss",
+    # IBS e CBS: os tributos da reforma. A plataforma nacional já os calcula e
+    # devolve no XML da nota (com a redução de 50% da construção civil), e o dono
+    # pediu as duas colunas porque "pode ser que isso aí seja necessário".
+    "ibs", "cbs",
     # --- tributos: o que está no título do OMIE ---------------------------- #
     "omie_pis", "omie_cofins", "omie_ir", "omie_csll", "omie_inss", "omie_iss",
     "omie_codigo_integracao",
@@ -185,19 +191,28 @@ NB_OBSERVACAO = 11
 NB_DATA_RECEBIMENTO = 12
 NB_VALOR_RECEBIDO = 13
 NB_LIQUIDO_DESTAQUE = 14
-# P:S — calculadas por fórmula na planilha
-NB_LIQUIDO_TRIBUTADO = 15
-NB_VALOR_SERVICOS = 17
-NB_VALOR_MATERIAIS = 18
-# T:Y — os tributos CALCULADOS por fórmula (o emissor nunca os gravou)
-NB_PIS, NB_COFINS, NB_IR, NB_CSLL, NB_INSS, NB_ISS = 19, 20, 21, 22, 23, 24
-# BB:BM — os tributos lidos do OMIE pelo Apps Script, em pares valor/retém.
-# A ORDEM é a do script (PIS, COFINS, CSLL, IR, ISS, INSS) e NÃO a do nosso
-# cabeçalho — trocar uma pela outra põe o ISS no lugar do IR.
+# ⚠️ **DE P A BA NÃO SE LÊ NADA, e isto é correção de 09/10/2026.** A primeira
+# versão lia o bloco T:Y como se fossem os tributos da nota. O dono corrigiu:
+#
+#   *"Não existe aquilo dali, aquilo são repetições, é outra metodologia que eu
+#    utilizava, dali é lixo. (…) Eu comentei que eles são da coluna BB em diante
+#    só."*
+#
+# A planilha tem o mesmo conjunto PIS/COFINS/IR/CSLL/INSS/ISS **três vezes**
+# (T:AB, AC:AK, AL:AT), mais CPRB e "REGIME ESPECIAL" — tudo de uma metodologia
+# abandonada. Ler dali encheria a base de números plausíveis e errados, que é o
+# pior resultado possível: ninguém desconfia de um número com cara de certo.
+#
+# BB:BM — os tributos do OMIE, em pares valor/retém, escritos ali pelo Apps
+# Script. A ORDEM é a do script (PIS, COFINS, **CSLL, IR**, ISS, INSS) e NÃO a do
+# nosso cabeçalho: trocar uma pela outra põe o ISS no lugar do IR.
 NB_OMIE = {
     "omie_pis": 53, "omie_cofins": 55, "omie_csll": 57,
     "omie_ir": 59, "omie_iss": 61, "omie_inss": 63,
 }
+# O "retido ou não" de cada um, na coluna seguinte à do valor. O dono quer essa
+# informação por um motivo só: compatibilizar com o Omie.
+NB_OMIE_RETEM = {k: v + 1 for k, v in NB_OMIE.items()}
 
 
 def de_notas_bws(linha: list) -> dict:
@@ -216,20 +231,19 @@ def de_notas_bws(linha: list) -> dict:
         "data_recebimento": c(NB_DATA_RECEBIMENTO),
         "valor_recebido": c(NB_VALOR_RECEBIDO),
         "valor_liquido_previsto": c(NB_LIQUIDO_DESTAQUE),
-        "valor_servicos": c(NB_VALOR_SERVICOS),
-        "valor_materiais": c(NB_VALOR_MATERIAIS),
-        "pis": c(NB_PIS), "cofins": c(NB_COFINS), "ir": c(NB_IR),
-        "csll": c(NB_CSLL), "inss": c(NB_INSS), "iss": c(NB_ISS),
         "origem": "consolidacao",
     }
+    # Só o que o Omie tem. **Os tributos que a NOTA declarou ficam vazios para as
+    # notas antigas** — e isso não é desleixo, é o estado do mundo: o emissor
+    # nunca gravou tributo nenhum, e os blocos de fórmula da planilha são de uma
+    # metodologia abandonada. Preencher o lado da nota com eles seria inventar
+    # uma declaração fiscal que não existe.
     for nome, idx in NB_OMIE.items():
-        d[nome] = c(idx)
-    # Para as notas antigas não existe registro de QUAIS tributos foram retidos —
-    # só os valores. Valor maior que zero é a única leitura honesta disponível, e
-    # fica marcada como dedução: para as notas novas o emissor grava o que a
-    # categoria da obra de fato determinou.
-    for imposto in ("pis", "cofins", "ir", "csll", "inss", "iss"):
-        d[f"retem_{imposto}"] = "S" if _positivo(d.get(imposto)) else "N"
+        valor = c(idx)
+        retido = c(NB_OMIE_RETEM[nome]).upper().startswith("S")
+        # Valor sem a marca de retido não conta: o Omie guarda os dois campos, e
+        # valor com retém=N é imposto que ele NÃO está descontando.
+        d[nome] = valor if (valor and retido) else ""
     return d
 
 
@@ -267,11 +281,18 @@ def conferir_tributos(d: dict) -> str:
     Só responde quando há valor do Omie para comparar — sem isso, "não bate"
     seria mentira: significaria apenas que ninguém consultou o Omie ainda.
     """
-    tem_omie = any(_positivo(d.get(f"omie_{i}"))
-                   for i in ("pis", "cofins", "ir", "csll", "inss", "iss"))
+    impostos = ("pis", "cofins", "ir", "csll", "inss", "iss")
+    tem_omie = any(_positivo(d.get(f"omie_{i}")) for i in impostos)
     if not tem_omie:
         return ""
-    for imposto in ("pis", "cofins", "ir", "csll", "inss", "iss"):
+    # Compara APENAS o que a nota declarou. Imposto que a nota não declarou é o
+    # caso da nota antiga (o emissor nunca gravou tributo) — e acusá-lo como
+    # divergente marcaria TODAS elas, escondendo as divergências de verdade.
+    # Declarado e ausente no Omie, isso sim é divergência.
+    declarados = [i for i in impostos if _txt(d.get(i))]
+    if not declarados:
+        return ""
+    for imposto in declarados:
         if divergencia(d.get(imposto), d.get(f"omie_{imposto}")) == "S":
             return "S"
     return "N"
@@ -336,27 +357,18 @@ def chave_obra_medicao(obra, medicao) -> str:
     return f"{_txt(obra).upper()}-{_txt(medicao).upper()}"
 
 
-def cruzar(d: dict, obra=None, proto=None, link=None, ctrl=None) -> dict:
-    """Completa a linha com o que vem das outras planilhas. Não sobrescreve o
-    que já veio preenchido: a "Notas BWS" é a fonte dos valores da nota, e as
-    outras só acrescentam."""
+def cruzar(d: dict, proto=None, link=None, ctrl=None) -> dict:
+    """Completa a linha com o que vem das outras abas de NOTAS.
+
+    **A C. Diários não entra aqui**, e é decisão do dono (09/10/2026): obra,
+    contrato, tributação, empresa e SCP são atributos da OBRA e a tela os cruza
+    pelo código. O que a base guarda é fato da nota.
+
+    Não sobrescreve o que já veio preenchido: a "Notas BWS" é a fonte dos valores
+    da nota, e as outras abas só acrescentam."""
     def por(nome, valor):
         if valor and not d.get(nome):
             d[nome] = _txt(valor)
-
-    if obra is not None:
-        por("obra_codigo_primario", getattr(obra, "codigo_primario", ""))
-        por("centro_custo", getattr(obra, "centro_custo", ""))
-        por("contrato", getattr(obra, "contrato", ""))
-        por("municipio_obra", getattr(obra, "municipio", ""))
-        por("tributacao", getattr(obra, "tributacao", ""))
-        por("aliquota_iss", getattr(obra, "aliquota_iss", ""))
-        por("empresa", getattr(obra, "empresa", ""))
-        por("empresa_cnpj", getattr(obra, "empresa_cnpj", ""))
-        por("scp", getattr(obra, "scp", ""))
-        por("scp_cnpj", getattr(obra, "scp_cnpj", ""))
-        por("tomador_nome", getattr(obra, "cliente", ""))
-        por("tomador_cnpj", getattr(obra, "cnpj_cliente", ""))
 
     if proto is not None:
         card = _txt(proto[PR_CARD]) if PR_CARD < len(proto) else ""
@@ -475,15 +487,14 @@ def gravar_varias(ws, linhas: list[list]) -> int:
 LOTE_PADRAO = 300
 
 
-def consolidar(planilha, obras: dict, limite: int = LOTE_PADRAO) -> dict:
+def consolidar(planilha, limite: int = LOTE_PADRAO) -> dict:
     """Preenche a Base Faturamento a partir das abas que existem hoje.
 
     Repetível e incremental: cada rodada processa até `limite` notas que ainda
     não estão na base. Rodar de novo continua; rodar duas vezes não duplica.
 
-    `obras` é o índice da C. Diários (já carregado pelo chamador, que é quem tem
-    o cliente do Google) — daqui saem contrato, tributação, alíquota, empresa e
-    SCP.
+    Não lê a C. Diários: obra, contrato, tributação, empresa e SCP são atributos
+    da OBRA, e a tela os cruza pelo código da obra (decisão do dono, 09/10/2026).
     """
     ws_base = _ws(planilha)
     ja_tem = numeros_na_base(ws_base)
@@ -514,10 +525,8 @@ def consolidar(planilha, obras: dict, limite: int = LOTE_PADRAO) -> dict:
             puladas += 1
             continue
         d = de_notas_bws(linha)
-        obra = obras.get(_txt(d["obra_codigo"]).upper())
         proto = protos.get(chave_obra_medicao(d["obra_codigo"], d["medicao_numero"]))
-        cruzar(d, obra=obra, proto=proto,
-               link=links.get(numero), ctrl=ctrl.get(numero))
+        cruzar(d, proto=proto, link=links.get(numero), ctrl=ctrl.get(numero))
         novas.append(montar_linha(d))
 
     gravadas = gravar_varias(ws_base, novas)

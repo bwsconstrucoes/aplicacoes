@@ -582,8 +582,13 @@ no pé da tela de emissão, que já leva o token dentro.
 ## A base consolidada de faturamento
 
 A gestão das notas emitidas está saindo da aba "Notas BWS" para uma **base
-consolidada** (`Base Faturamento`), que alimenta uma tela de Faturamento no
-Análise de SPs. **Todo o desenho está em `FATURAMENTO.md`**: o que o emissor usa
+consolidada** (`Base Faturamento`, 64 colunas), que alimenta uma tela de
+Faturamento no Análise de SPs.
+
+Duas regras valem decoradas, porque errá-las enche a base de número errado:
+**os tributos vêm de BB em diante e SÓ** (de P a BA é metodologia abandonada,
+com o mesmo conjunto repetido três vezes), e **nada que venha da C. Diários
+entra na base** — a tela cruza pelo código da obra. **Todo o desenho está em `FATURAMENTO.md`**: o que o emissor usa
 de cada planilha hoje, as 71 colunas da base e de onde cada uma vem, o inventário
 do Apps Script da planilha, e o que depende de decisão do dono.
 

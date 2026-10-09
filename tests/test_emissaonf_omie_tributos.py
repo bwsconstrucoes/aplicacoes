@@ -253,3 +253,76 @@ def test_a_tela_so_escreve_no_omie_com_a_caixa_marcada(cliente, monkeypatch):
                                               "confirmo_escrever": "on"})
     assert len(escritas) == 1, "com a caixa marcada, o título divergente é gravado"
     assert "escreve no Omie" in com.get_data(as_text=True)
+
+
+# --------------------------------------------------------------------------- #
+# A TRAVA que impede o pior estrago desta tela
+#
+# O emissor nunca gravou tributo nenhum até 09/10/2026, e os blocos de fórmula da
+# planilha são de uma metodologia abandonada. Então as ~3.300 notas antigas
+# chegam à base SEM tributo declarado. Sem esta trava, a soma daria zero, a
+# equalização veria divergência em tudo e ZERARIA as retenções no Omie — que são
+# a única cópia que existe delas.
+# --------------------------------------------------------------------------- #
+def test_nota_sem_tributo_declarado_nao_e_conferivel():
+    antigas = [_nota("3271", "169.228,34"), _nota("3272", "84.614,17")]
+    assert oc.tem_tributos_declarados(antigas) is False
+
+
+def test_nota_nova_com_tributo_declarado_e_conferivel():
+    assert oc.tem_tributos_declarados(_tres_notas()) is True
+
+
+def test_uma_nota_declarando_ja_torna_o_titulo_conferivel():
+    mistura = [_nota("3271", "100,00"),
+               _nota("3272", "100,00", iss="3,00", retem_iss="S")]
+    assert oc.tem_tributos_declarados(mistura) is True
+
+
+def test_so_a_cancelada_declarando_NAO_torna_conferivel():
+    """Cancelada fica fora de tudo — inclusive de decidir se há o que conferir."""
+    so_cancelada = [_nota("3271", "100,00"),
+                    _nota("3272", "100,00", iss="3,00", retem_iss="S",
+                          status="cancelada")]
+    assert oc.tem_tributos_declarados(so_cancelada) is False
+
+
+def test_a_tela_NAO_equaliza_nota_antiga_mesmo_com_a_caixa_marcada(cliente, monkeypatch):
+    """A trava vale mesmo com autorização: autorizar equalizar não é autorizar
+    apagar a retenção que o Omie tem e a nota não tem."""
+    from app.apps.emissaonf import web as servindo
+    import base_faturamento as bf
+
+    escritas = []
+    monkeypatch.setattr(servindo.omie, "alterar_tributos",
+                        lambda *a, **k: escritas.append(a))
+    monkeypatch.setattr(servindo.omie, "consultar",
+                        lambda cred, cod: {"valor_iss": 7000.0, "retem_iss": "S"})
+
+    class _GC:
+        def open_by_key(self, _k):
+            return object()
+
+    monkeypatch.setattr(servindo._worker, "cliente_gspread", lambda: _GC())
+    monkeypatch.setattr(servindo._worker, "ler_credenciais", lambda gc: {})
+
+    class _WS:
+        def get_all_values(self):
+            linha = [""] * len(bf.CAB)
+            linha[bf.IDX["nota_numero"]] = "3271"
+            linha[bf.IDX["valor_total"]] = "169.228,34"
+            linha[bf.IDX["omie_codigo_integracao"]] = "PLG-A"
+            # sem NENHUM tributo declarado — a nota antiga
+            return [bf.CAB, linha]
+
+        def batch_update(self, *a, **k):
+            pass
+
+    monkeypatch.setattr(servindo._bfat, "_ws", lambda planilha: _WS())
+
+    r = cliente.post("/emissao/omie", data={"token": TOKEN, "limite": "5",
+                                            "confirmo_escrever": "on"})
+    corpo = r.get_data(as_text=True)
+    assert escritas == [], "nota sem tributo declarado nunca vai para o Omie"
+    assert "sem tributo na NOTA" in corpo
+    assert "NÃO equalizável" in corpo
