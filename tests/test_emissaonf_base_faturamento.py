@@ -17,6 +17,7 @@ import os
 import sys
 
 import pytest
+from decimal import Decimal
 
 _EMISSAONF = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                           "app", "apps", "emissaonf")
@@ -430,3 +431,58 @@ def test_o_emissor_preenche_tudo_menos_o_que_depende_do_omie():
     ]
     assert sorted(vazios) == sorted(esperado), (
         "coluna sem ninguém para preencher é lixo: " + str(sorted(vazios)))
+
+
+# --------------------------------------------------------------------------- #
+# A nota NOVA grava conforme o EMITIDO — e os três estados do campo
+#
+# Pedido do dono em 09/10/2026: *"as novas notas já têm a informação dos tributos
+# emitidos, então vamos gravar conforme. Se necessário, a posteriori eu
+# equalizo."*
+#
+# A diferença não é detalhe: o motor fiscal calcula os cinco federais SEMPRE (era
+# assim que a coluna P da planilha antiga era feita), mas a nota só DECLARA o que
+# foi retido — imposto não retido nem aparece no XML, que é a regra do E0699.
+# Gravar o valor calculado de um imposto não retido afirmaria uma retenção que
+# não houve.
+# --------------------------------------------------------------------------- #
+def _bloco_de_tributos_do_emissor():
+    """O trecho do `concluir.py` que monta os tributos, lido do código."""
+    fonte = open(os.path.join(_EMISSAONF, "concluir.py"), encoding="utf-8").read()
+    return fonte.split("dados_base = {")[1].split("\n        # IBS e CBS")[0]
+
+
+@pytest.mark.parametrize("imposto,sigla", [
+    ("pis", "PIS"), ("cofins", "COFINS"), ("ir", "IR"), ("csll", "CSLL")])
+def test_federal_nao_retido_vai_como_zero_e_nao_com_o_valor_calculado(imposto, sigla):
+    bloco = _bloco_de_tributos_do_emissor()
+    linha = [l for l in bloco.splitlines() if f'"{imposto}":' in l]
+    assert linha, imposto
+    assert f'"{sigla}" in fed' in linha[0], (
+        f"{imposto} tem de ser gravado só quando retido")
+    assert '"0.00"' in linha[0], f"{imposto} não retido tem de ir como 0,00"
+
+
+def test_o_ISS_e_gravado_mesmo_sem_retencao():
+    """É o único que a nota declara de qualquer jeito: a prefeitura o calcula e
+    ele sai na nota; o que muda é quem recolhe."""
+    bloco = _bloco_de_tributos_do_emissor()
+    linha = [l for l in bloco.splitlines() if '"iss":' in l]
+    assert linha and "in fed" not in linha[0]
+
+
+def test_os_tres_estados_do_campo_de_tributo_sao_distinguiveis():
+    """Vazio, 0,00+N e valor+S querem dizer coisas diferentes — e é o vazio que
+    impede a tela do Omie de equalizar um título às cegas."""
+    import omie_conferencia as oc
+    nao_sei = [{"nota_numero": "1", "status": "valida", "valor_total": "100,00"}]
+    nao_reteve = [{"nota_numero": "2", "status": "valida", "valor_total": "100,00",
+                   "pis": "0,00", "retem_pis": "N"}]
+    reteve = [{"nota_numero": "3", "status": "valida", "valor_total": "100,00",
+               "pis": "0,65", "retem_pis": "S"}]
+    assert oc.tem_tributos_declarados(nao_sei) is False
+    assert oc.tem_tributos_declarados(nao_reteve) is True
+    assert oc.tem_tributos_declarados(reteve) is True
+    # e a soma só conta o retido
+    assert oc.somar_tributos(nao_reteve)["pis"] == Decimal("0")
+    assert oc.somar_tributos(reteve)["pis"] == Decimal("0.65")

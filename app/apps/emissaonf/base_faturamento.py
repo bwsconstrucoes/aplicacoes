@@ -81,6 +81,11 @@ CAB = [
     "base_iss",
     "valor_liquido_previsto",  # valor − TODAS as retenções
     # --- tributos: o que a NOTA declarou ----------------------------------- #
+    # Os TRÊS estados destes campos são diferentes, e a diferença importa:
+    #   vazio       = não se sabe (nota antiga que ele ainda não equalizou)
+    #   0,00 com N  = a nota NÃO reteve esse tributo
+    #   valor com S = a nota reteve
+    # Vazio é o que impede a tela do Omie de equalizar um título às cegas.
     "pis", "cofins", "ir", "csll", "inss", "iss",
     # O "retido ou não" existe por um motivo só, e é o que o dono pediu:
     # **compatibilizar com o Omie**. O Omie tem os dois campos (valor e retém), e

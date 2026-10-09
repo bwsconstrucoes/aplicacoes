@@ -133,6 +133,29 @@ O "retido ou não" entra por um motivo só, que é o que ele pediu: **compatibil
 com o Omie**. O valor fica (é informação) e a marca diz se é descontado; só o que
 foi retido entra na soma que vai para o título.
 
+### A nota NOVA grava conforme o EMITIDO
+
+Pedido dele no mesmo dia: *"as novas notas já têm a informação dos tributos
+emitidos, então vamos gravar conforme. Se necessário, a posteriori eu equalizo."*
+
+E isso não é o mesmo que gravar o que o motor fiscal calculou. O motor calcula os
+cinco federais **sempre** (era assim que a coluna P da planilha antiga era feita),
+mas a nota só **declara** o que foi retido — imposto não retido nem aparece no
+XML, que é a regra do erro **E0699**. Gravar o valor calculado de um imposto não
+retido afirmaria uma retenção que não houve.
+
+**Os três estados de um campo de tributo, e eles querem dizer coisas
+diferentes:**
+
+| No campo | Quer dizer |
+|---|---|
+| **vazio** | não se sabe — nota antiga que ele ainda não equalizou |
+| **0,00** com retém **N** | a nota **não** reteve esse tributo |
+| valor com retém **S** | a nota reteve |
+
+O **ISS** é a exceção: ele é declarado de qualquer jeito, porque a prefeitura o
+calcula e ele sai na nota — o que muda é quem recolhe.
+
 **A trava que sobra, e ela protege as poucas em branco:** as notas mais recentes,
 que ele ainda não equalizou, chegam **sem tributo**. Para essas a soma daria zero,
 a equalização veria divergência em tudo e **zeraria as retenções no Omie**. Então

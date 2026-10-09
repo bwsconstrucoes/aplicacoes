@@ -1507,6 +1507,30 @@ as duas que se vê **se o título saiu do lugar depois de equalizado** — e ess
 utilidade real da tela do Omie para o acervo antigo, que eu tinha dado como
 perdida.
 
+#### E a nota nova grava conforme o EMITIDO
+
+Ele completou: *"as novas notas já têm a informação dos tributos emitidos, então
+vamos gravar conforme. Se necessário, a posteriori eu equalizo."*
+
+Conferindo para atender, apareceu que eu estava gravando **mais** do que a nota
+emitiu: o emissor punha o valor que o motor fiscal calcula para os cinco
+federais, e o motor calcula todos **sempre** — era assim que a coluna P da
+planilha antiga era feita. Mas a nota só **declara** o que foi retido; imposto
+não retido nem aparece no XML (regra do E0699). Gravar o calculado afirmaria uma
+retenção que não houve.
+
+Agora os três estados de um campo de tributo são distintos, e a diferença é o que
+mantém a trava funcionando:
+
+| No campo | Quer dizer |
+|---|---|
+| **vazio** | não se sabe — nota antiga não equalizada |
+| **0,00** com retém **N** | a nota não reteve |
+| valor com retém **S** | a nota reteve |
+
+O **ISS** é a exceção, e por um motivo fiscal: ele é declarado de qualquer jeito,
+porque a prefeitura o calcula e ele sai na nota — o que muda é quem recolhe.
+
 #### A trava continua, e agora protege o que realmente precisa
 
 As **poucas notas mais recentes** que ele ainda não equalizou chegam sem tributo.

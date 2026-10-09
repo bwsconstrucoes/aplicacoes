@@ -299,11 +299,30 @@ def concluir(card_id, numero, codigo, data_iso, nota_xml_path, forcar=False, ctx
             "valor_materiais": f"{(r.valor_total - r.base_iss):.2f}",
             "base_iss": f"{r.base_iss:.2f}",
             "valor_liquido_previsto": f"{r.valor_liquido:.2f}",
-            "pis": f"{r.pis:.2f}", "cofins": f"{r.cofins:.2f}", "ir": f"{r.ir:.2f}",
-            "csll": f"{r.csll:.2f}", "inss": f"{r.inss:.2f}", "iss": f"{r.iss:.2f}",
-            # Aqui, diferente das notas antigas, "retém" é o que a categoria da
-            # obra determinou — e não um palpite a partir do valor ser maior que
-            # zero. É a razão de o emissor gravar na base: ele SABE.
+            # ⚠️ Grava **CONFORME O EMITIDO**, e não o que o motor calculou.
+            # Pedido do dono em 09/10/2026: *"as novas notas já têm a informação
+            # dos tributos emitidos, então vamos gravar conforme. Se necessário,
+            # a posteriori eu equalizo."*
+            #
+            # A diferença não é detalhe: o motor fiscal calcula os cinco federais
+            # SEMPRE (é assim que a coluna P da planilha antiga era feita), mas a
+            # nota só DECLARA o que foi retido — imposto não retido nem aparece no
+            # XML (é a regra do erro E0699). Gravar o valor calculado de um
+            # imposto não retido diria que houve uma retenção que não houve.
+            #
+            # Os três estados da base, e eles são diferentes:
+            #   vazio       = não se sabe (nota antiga ainda não equalizada)
+            #   0,00 com N  = a nota NÃO reteve esse tributo
+            #   valor com S = a nota reteve
+            "pis": f"{r.pis:.2f}" if "PIS" in fed else "0.00",
+            "cofins": f"{r.cofins:.2f}" if "COFINS" in fed else "0.00",
+            "ir": f"{r.ir:.2f}" if "IR" in fed else "0.00",
+            "csll": f"{r.csll:.2f}" if "CSLL" in fed else "0.00",
+            "inss": f"{r.inss:.2f}",
+            # O ISS é o único que a nota declara mesmo sem retenção: ele é
+            # calculado pela prefeitura e sai na nota de qualquer jeito; o que
+            # muda é quem recolhe.
+            "iss": f"{r.iss:.2f}",
             "retem_pis": "S" if "PIS" in fed else "N",
             "retem_cofins": "S" if "COFINS" in fed else "N",
             "retem_ir": "S" if "IR" in fed else "N",
