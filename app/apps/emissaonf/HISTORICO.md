@@ -1461,6 +1461,58 @@ rede, e nesta sessão não há credencial do Google — a primeira rodada da tel
 primeira prova. Ela é segura por construção (não apaga nada, não emite nada, só
 lê e escreve na aba nova), mas o número de linhas que ela vai gravar é desconhecido.
 
+### O campo do Omie não cabe dois números nacionais — 09/10/2026
+
+**O erro, na nota 2600000003294:**
+
+> *"O número máximo de caracteres permitido para o elemento
+> [NUMERO_DOCUMENTO_FISCAL] é de 20. O número de caracteres informado foi de
+> 32!"*
+
+O passo `[2] Omie` falhou e **o título ficou sem o número daquela nota**. Todo o
+resto da conclusão rodou — planilha, card, Drive, WhatsApp, base.
+
+**O que era:** o campo acumula os números das notas daquele título, separados por
+barra. Com os números de **4 dígitos** do modelo antigo caberiam quatro
+(`3283/3294/3295/3296` = 19). Com os de **13 dígitos** do padrão nacional,
+**duas já não cabem** — e o título tinha um antigo mais um nacional, somando 32
+com o terceiro.
+
+É a terceira consequência do número de 13 dígitos, depois da numeração que quase
+se perdeu e do alarme falso na tela. Ela não aparecia nos testes porque nenhum
+media o tamanho do campo — a planilha e o Drive aceitam qualquer tamanho, e só o
+Omie tem limite.
+
+**O conserto: no campo do Omie vai o número CURTO** — `3294`, não
+`2600000003294`. Três motivos, e o terceiro é o que decide:
+
+1. **cabe** — três notas em 20 caracteres, contra uma só no formato longo;
+2. **é o número pelo qual o dono procura** ("a 3294");
+3. **é o que já está lá.** Os títulos antigos têm `3270/3271`. Misturar formatos
+   faria o mesmo título ter dois jeitos de escrever nota, e a conferência
+   humana é feita olhando esse campo.
+
+A conversão vem de `worker.sequencial_da_nota`, a mesma da numeração, **de
+propósito**: duas versões da mesma regra divergem com o tempo.
+
+**E uma trava de teto:** se ainda não couber (o card tem cinco slots, e cinco
+números de 4 dígitos passam de 20), **saem os mais ANTIGOS** — a nota
+recém-emitida é a que alguém está procurando agora. Os descartados **não saem em
+silêncio**: viram aviso no log, nomeando qual nota deixou de estar referenciada.
+
+**A reparação, porque o conserto não volta atrás.** A emissão já passou e a
+conclusão tem trava contra repetir, então a nota 2600000003294 continuaria fora
+do título. A tela "Tributos no Omie" ganhou **"Acertar o número da nota no
+título"**: informa-se o número (curto ou longo), ela acha o título pela base e
+acumula. **Não toca nas retenções** — mandar retenção ali sobrescreveria a
+equalização que já estava certa.
+
+**Conferido:** 12 casos novos, entre eles o que prova que dois números nacionais
+não cabiam (para ninguém "simplificar" a conversão de volta), o teto respeitado
+em qualquer combinação, o descartado sendo devolvido para virar aviso, o
+cancelamento removendo mesmo informando o número longo, e a reparação não levando
+retenção nenhuma no pedido. Suíte inteira: 5.446 passando.
+
 ### ⚠️ Quatro correções do dono na base de faturamento — 09/10/2026
 
 Ele revisou a base e apontou quatro coisas. Três eram erro meu, e uma era campo

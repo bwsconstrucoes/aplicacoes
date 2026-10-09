@@ -199,6 +199,22 @@ serem os próximos suspeitos de uma recusa.
 Como o grupo de obra, **isto também não é pegável pelo schema**: os dois campos
 são válidos sozinhos, e quem confere a combinação é a plataforma.
 
+### No campo do Omie vai o número CURTO (limite de 20 caracteres)
+
+O `numero_documento_fiscal` do Omie acumula os números das notas daquele título,
+separados por barra, e aceita **20 caracteres**. Com os números de 4 dígitos do
+modelo antigo caberiam quatro; com os de **13 dígitos** do padrão nacional,
+**duas já não cabem** — foi o erro da nota 2600000003294 em 09/10/2026, e o
+título ficou sem o número dela.
+
+Então ali vai o **sequencial**: `3294`, não `2600000003294`. Cabe, é o número
+pelo qual o dono procura, e é o formato que os títulos antigos já têm — misturar
+faria o mesmo título ter dois jeitos de escrever nota.
+
+Se ainda não couber (o card tem cinco slots), **saem os mais antigos**, e os
+descartados viram **aviso no log**. Para acertar uma nota que ficou fora, a tela
+`/emissao/omie` tem "Acertar o número da nota no título".
+
 ### Número de nota já enviado não volta a ser usado
 
 A identificação da declaração é construída **a partir do número da nota**. Então

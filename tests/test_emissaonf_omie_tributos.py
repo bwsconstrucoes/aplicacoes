@@ -326,3 +326,127 @@ def test_a_tela_NAO_equaliza_nota_antiga_mesmo_com_a_caixa_marcada(cliente, monk
     assert escritas == [], "nota sem tributo declarado nunca vai para o Omie"
     assert "sem tributo na NOTA" in corpo
     assert "NÃO equalizável" in corpo
+
+
+# --------------------------------------------------------------------------- #
+# O campo numero_documento_fiscal e o limite de 20 caracteres
+#
+# Defeito real, visto em 09/10/2026 na nota 2600000003294:
+#
+#   "O número máximo de caracteres permitido para o elemento
+#    [NUMERO_DOCUMENTO_FISCAL] é de 20. O número de caracteres informado foi
+#    de 32!"
+#
+# Com os números de 4 dígitos do modelo antigo caberiam QUATRO notas
+# ("3283/3294/3295/3296" = 19). Com os de 13 dígitos do padrão nacional, DUAS já
+# não cabem — e o título ficou sem o número daquela nota.
+# --------------------------------------------------------------------------- #
+def test_duas_notas_nacionais_nao_cabiam_no_campo():
+    """A prova do defeito, para ninguém "simplificar" a conversão de volta."""
+    assert len("2600000003283/2600000003294") > omie.LIMITE_NUMERO_DOCUMENTO
+
+
+def test_o_numero_vai_CURTO_para_o_omie():
+    """Três motivos: cabe; é o número pelo qual o dono procura; e é o formato que
+    os títulos antigos já têm — misturar faria o mesmo título ter dois jeitos de
+    escrever nota."""
+    assert omie.numero_curto("2600000003294") == "3294"
+    assert omie.numero_curto("3270") == "3270"
+    assert omie.numero_curto("") == ""
+
+
+@pytest.mark.parametrize("atual,novo,esperado", [
+    ("3270", "2600000003283", "3270/3283"),
+    ("3270/3283", "2600000003294", "3270/3283/3294"),
+    ("2600000003283", "2600000003294", "3283/3294"),      # o campo já longo é encurtado
+    ("", "2600000003294", "3294"),
+])
+def test_o_campo_e_montado_curto_e_cabe(atual, novo, esperado):
+    doc, descartados = omie.montar_numero_documento(atual, novo=novo)
+    assert doc == esperado
+    assert len(doc) <= omie.LIMITE_NUMERO_DOCUMENTO
+    assert descartados == []
+
+
+def test_numero_repetido_nao_duplica():
+    doc, _ = omie.montar_numero_documento("3283/3294", novo="2600000003294")
+    assert doc == "3283/3294"
+
+
+def test_quando_nao_cabe_saem_os_MAIS_ANTIGOS_e_isso_e_avisado():
+    """O card tem cinco slots, e cinco números de 4 dígitos passam de 20. Sai o
+    mais antigo: a nota recém-emitida é a que alguém está procurando agora, e
+    perder a nova em silêncio seria o pior dos dois."""
+    doc, descartados = omie.montar_numero_documento("3283/3294/3295/3296",
+                                                    novo="2600000003297")
+    assert doc == "3294/3295/3296/3297"
+    assert descartados == ["3283"], "o descartado é devolvido para virar aviso"
+    assert len(doc) <= omie.LIMITE_NUMERO_DOCUMENTO
+
+
+def test_cancelar_nota_remove_mesmo_informando_o_numero_longo():
+    """O campo guarda o curto; quem cancela informa o número que tem na mão."""
+    doc, _ = omie.montar_numero_documento("3283/3294", remover="2600000003294")
+    assert doc == "3283"
+
+
+def test_o_limite_vale_em_qualquer_combinacao():
+    atual = "/".join(str(3290 + i) for i in range(8))
+    doc, descartados = omie.montar_numero_documento(atual, novo="2600000003299")
+    assert len(doc) <= omie.LIMITE_NUMERO_DOCUMENTO
+    assert descartados, "com oito notas, alguma tem de sair — e ser avisada"
+
+
+def test_a_tela_de_acertar_o_numero_nao_toca_nas_retencoes(cliente, monkeypatch):
+    """A reparação mexe num campo só. Mandar retenção aqui sobrescreveria a
+    equalização que já estava certa no título."""
+    from app.apps.emissaonf import web as servindo
+    import base_faturamento as bf
+
+    enviados = []
+    monkeypatch.setattr(servindo.omie, "_post",
+                        lambda call, param, creds, **k: enviados.append((call, param)))
+    monkeypatch.setattr(servindo.omie, "consultar",
+                        lambda cred, cod: {"numero_documento_fiscal": "3283"})
+
+    class _GC:
+        def open_by_key(self, _k):
+            return object()
+
+    monkeypatch.setattr(servindo._worker, "cliente_gspread", lambda: _GC())
+    monkeypatch.setattr(servindo._worker, "ler_credenciais", lambda gc: {})
+
+    class _WS:
+        def get_all_values(self):
+            linha = [""] * len(bf.CAB)
+            linha[bf.IDX["nota_numero"]] = "2600000003294"
+            linha[bf.IDX["omie_codigo_integracao"]] = "PLG-A"
+            return [bf.CAB, linha]
+
+    monkeypatch.setattr(servindo._bfat, "_ws", lambda planilha: _WS())
+
+    corpo = cliente.post("/emissao/omie_numero",
+                         data={"token": TOKEN, "numero": "3294"}).get_data(as_text=True)
+    assert len(enviados) == 1
+    _call, param = enviados[0]
+    assert param["numero_documento_fiscal"] == "3283/3294"
+    assert not any(k.startswith("valor_") or k.startswith("retem_") for k in param), (
+        "a reparação do número não pode levar retenção nenhuma")
+    assert "retenções NÃO foram tocadas" in corpo
+
+
+def test_acertar_numero_de_nota_que_nao_esta_na_base_avisa(cliente, monkeypatch):
+    from app.apps.emissaonf import web as servindo
+    import base_faturamento as bf
+
+    class _GC:
+        def open_by_key(self, _k):
+            return object()
+
+    monkeypatch.setattr(servindo._worker, "cliente_gspread", lambda: _GC())
+    monkeypatch.setattr(servindo._worker, "ler_credenciais", lambda gc: {})
+    monkeypatch.setattr(servindo._bfat, "_ws",
+                        lambda planilha: type("W", (), {"get_all_values": lambda s: [bf.CAB]})())
+    corpo = cliente.post("/emissao/omie_numero",
+                         data={"token": TOKEN, "numero": "9999"}).get_data(as_text=True)
+    assert "não está na Base Faturamento" in corpo
