@@ -2740,3 +2740,19 @@ table.conciliacao td .selo { font-size: 10.5px; }
 
 /* Linha da conciliação com SP identificada: duplo clique abre a ficha (07/10/2026). */
 table.conciliacao tr.com-sp { cursor: pointer; }
+
+/* O robô do Telegram na janela do Lote (08/10/2026). */
+.lote-telegram { margin-top: 14px; padding: 10px 12px; border-top: 1px solid #e3e7ee;
+                 font-size: 13px; line-height: 1.6; }
+.lote-telegram .btn { margin-left: 6px; text-decoration: none; }
+
+/* A consulta ao Omie (08/10/2026). */
+.dialogo-omie { width: min(1000px, 96vw); }
+.tabela-omie { width: 100%; border-collapse: collapse; font-size: 13px; }
+.tabela-omie th, .tabela-omie td { padding: 6px 8px; border-bottom: 1px solid #e3e7ee; text-align: left; }
+.tabela-omie td.num { text-align: right; white-space: nowrap; }
+.tabela-omie tr.omie-pago { background: #F7FCF4; }
+.tabela-omie .omie-erro { color: #a33; }
+
+/* Categoria e descrição da SP na tela de QR / código (08/10/2026). */
+.codigo-desc { margin: 4px 0 0; font-size: 13px; color: var(--tinta-suave); white-space: pre-line; }

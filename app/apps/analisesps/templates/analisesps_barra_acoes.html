@@ -23,6 +23,8 @@
      data-url-validar="{{ url_for('analisesps.validar') }}"
      data-url-enviar-lote="{{ url_for('analisesps.enviar_ao_lote') }}"
      data-url-lote="{{ url_for('analisesps.tela_lote') }}"
+     data-url-omie-consultar="{{ url_for('analisesps.omie_consultar') }}"
+     data-url-omie-pago="{{ url_for('analisesps.omie_marcar_pago') }}"
      data-origem="{{ origem }}">
 
   <div class="ba-esquerda">
@@ -105,6 +107,12 @@
     {% endif %}
     <button class="btn secundario" id="ba-cards" data-precisa-selecao
             title="Abre no Pipefy o card de cada SP marcada">Abrir cards</button>
+    {% if pode_operar and tela != 'codigos' %}
+      {# 08/10/2026: o status de cada marcada no Omie, e "Marcar Pago" para
+         equalizar a SPsBD com o que o Omie e o card dizem. #}
+      <button class="btn secundario" id="ba-omie" data-precisa-selecao
+              title="Consulta no Omie o status das SPs marcadas">Consultar Omie</button>
+    {% endif %}
     {% if pode_operar %}
       {# Os dois do Streamlit, com os mesmos nomes. "Gerar" só habilita quando
          TODAS as marcadas são BeeVale — era assim lá, e é o que impede subir
@@ -149,4 +157,29 @@
       <input type="hidden" name="ids" value="">
     </form>
   {% endif %}
+{% endif %}
+
+{% if pode_operar and tela != 'codigos' %}
+  {# A CONSULTA AO OMIE (08/10/2026). O dono: *"seleciono registros, clico em
+     consultar Omie, modal com status de pagamento; se pago, poder selecionar e
+     clicar em Marcar Pago para equalizar os dados após leitura do card"*.
+     "Marcar Pago" aqui grava Status = Pago, a data do pagamento (X), o
+     comprovante (AG) e a conta (AK) lidos do card, e leva o card para
+     "Pago / Alimentar Omie" se ele ainda não estiver lá. #}
+  <dialog class="dialogo dialogo-omie" id="dialogo-omie">
+    <button type="button" class="btn secundario dialogo-fechar" id="omie-fechar">Fechar</button>
+    <h3>Consulta no Omie <small id="omie-sub"></small></h3>
+    <div id="omie-corpo"><p class="cartao-dica">Consultando…</p></div>
+    <div class="gd-botoes">
+      <span class="cartao-dica" id="omie-resumo"></span>
+      {# No Lote só consulta: "Marcar Pago" ali o dono mandou tirar
+         (`test_o_lote_nao_tem_marcar_pago`) — pagar no meio da remessa é o
+         erro que não tem volta. #}
+      {% if com_pgt %}
+      <button class="btn" type="button" id="omie-marcar-pago" disabled
+              title="Status = Pago, data, comprovante e conta lidos do card; card para Pago / Alimentar Omie"
+              >Marcar Pago</button>
+      {% endif %}
+    </div>
+  </dialog>
 {% endif %}

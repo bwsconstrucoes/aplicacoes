@@ -196,7 +196,7 @@ def test_grava_a_linha_com_os_valores_do_xml_e_nao_do_card(cenario):
     assert linha[6] == "06/10/2026"             # G Data Emissão (do dhProc)
     assert linha[7] == "98.720,04"              # H Valor da Nota (vServ)
     assert linha[9] == "10"                     # J Nº Med. (sobrevive à limpeza)
-    assert linha[14] == "86.513,86"             # O líquido (vLiq)
+    assert linha[14] == "80.684,94"             # O líquido, CALCULADO (ver abaixo)
     assert "1,00" not in linha[7]               # o valor do card NÃO entrou
 
 
@@ -280,7 +280,6 @@ def test_xml_da_declaracao_em_vez_da_nota_e_recusado(cenario):
 def test_os_valores_do_nacional_saem_dos_lugares_certos():
     v = notas_bws.valores_do_xml(xml_nacional())
     assert v.valor_total == Decimal("98720.04")   # vServ, dentro da DPS embutida
-    assert v.valor_liquido == Decimal("86513.86")  # vLiq, nos totais da nota
     assert v.iss == Decimal("4936.00")             # vISSQN
     assert v.inss == Decimal("7245.00")            # vRetCP
     assert v.ir == Decimal("1184.64")              # vRetIRRF
@@ -299,7 +298,7 @@ def test_federal_sem_retencao_entra_pela_aliquota_cheia():
 def test_os_valores_do_modelo_antigo_saem_dos_lugares_certos():
     v = notas_bws.valores_do_xml(xml_abrasf())
     assert v.valor_total == Decimal("50000.00")
-    assert v.valor_liquido == Decimal("43000.00")
+    assert v.valor_liquido == Decimal("42575.00")   # calculado, não o ValorLiquidoNfse
     assert v.iss == Decimal("2000.00")
     assert v.inss == Decimal("3000.00")
     assert v.ir == Decimal("600.00")
@@ -313,3 +312,68 @@ def test_a_linha_montada_do_xml_tem_as_mesmas_dezesseis_colunas():
     v = notas_bws.valores_do_xml(xml_nacional())
     linha = notas_bws.montar_linha(_card(), None, v, "3084", "2026-10-06")
     assert len(linha) == 16
+
+
+# --------------------------------------------------------------------------- #
+# O líquido é CALCULADO, e não lido do `vLiq` — a nota 3283 provou por quê
+#
+# A primeira nota do padrão nacional (08/10/2026, obra IFSPSAOJOSE, medição 11)
+# voltou com `vLiq = 24.222,04`. O que a BWS recebe de fato é **23.303,97**: o
+# `vLiq` do modelo nacional NÃO desconta PIS nem COFINS, e nessa nota os dois
+# foram retidos (163,49 e 754,58).
+#
+# A coluna O da planilha é "valor a ser recebido", ou seja valor menos TODAS as
+# retenções. Ler o `vLiq` colocaria R$ 918,07 a mais nela — num campo que o dono
+# usa para conferir recebimento.
+# --------------------------------------------------------------------------- #
+XML_NOTA_3283 = """<?xml version="1.0" encoding="UTF-8"?>
+<NFSe xmlns="http://www.sped.fazenda.gov.br/nfse" versao="1.01">
+  <infNFSe Id="NFS23042851200079526000109260000000328326100010793653">
+    <nNFSe>2600000003283</nNFSe>
+    <dhProc>2026-10-08T12:22:26-03:00</dhProc>
+    <nDFSe>2600000003283</nDFSe>
+    <valores>
+      <vCalcDR>12576.34</vCalcDR><vBC>12576.35</vBC>
+      <pAliqAplic>3.00</pAliqAplic>
+      <vISSQN>377.29</vISSQN>
+      <vTotalRet>930.65</vTotalRet>
+      <vLiq>24222.04</vLiq>
+    </valores>
+    <DPS versao="1.01"><infDPS>
+      <valores>
+        <vServPrest><vServ>25152.69</vServ></vServPrest>
+        <vDedRed><vDR>12576.34</vDR></vDedRed>
+        <trib>
+          <tribMun><tribISSQN>1</tribISSQN><tpRetISSQN>2</tpRetISSQN><pAliq>3.00</pAliq></tribMun>
+          <tribFed>
+            <piscofins><CST>01</CST><vBCPisCofins>25152.69</vBCPisCofins>
+              <pAliqPis>0.65</pAliqPis><pAliqCofins>3.00</pAliqCofins>
+              <vPis>163.49</vPis><vCofins>754.58</vCofins>
+              <tpRetPisCofins>3</tpRetPisCofins></piscofins>
+            <vRetIRRF>301.83</vRetIRRF>
+            <vRetCSLL>251.53</vRetCSLL>
+          </tribFed>
+          <totTrib><indTotTrib>0</indTotTrib></totTrib>
+        </trib>
+      </valores>
+    </infDPS></DPS>
+  </infNFSe>
+</NFSe>"""
+
+
+def test_o_liquido_da_nota_3283_e_o_que_a_bws_recebe_e_nao_o_vLiq():
+    v = notas_bws.valores_do_xml(XML_NOTA_3283)
+    assert v.valor_total == Decimal("25152.69")
+    assert v.valor_liquido == Decimal("23303.97"), (
+        "o vLiq da nota diz 24.222,04 porque não desconta PIS nem COFINS")
+    assert v.iss == Decimal("377.29")
+    assert v.inss == Decimal("0.00")      # esta obra não retém INSS (foi o E0699)
+    assert v.ir == Decimal("301.83")
+    assert v.pis == Decimal("163.49")
+    assert v.cofins == Decimal("754.58")
+
+
+def test_a_nota_3283_tambem_confirma_que_o_INSS_nao_vai_quando_nao_ha():
+    """O XML oficial da nota não tem vRetCP nenhum — é a prova de que o conserto
+    do E0699 passou pela plataforma."""
+    assert "vRetCP" not in XML_NOTA_3283

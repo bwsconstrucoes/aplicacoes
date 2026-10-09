@@ -113,6 +113,32 @@ def _numero_do_card(valor) -> int:
 
 
 def graphql(consulta: str, token: str | None = None) -> dict:
+    dados = _postar(consulta, token)
+    if dados.get("errors"):
+        # ⚠️ A FRASE INTEIRA, NÃO OS PRIMEIROS 300 CARACTERES. Em 01/10/2026 o
+        # recado de "campo obrigatório" chegou cortado no meio do quarto nome de
+        # campo — justamente a lista que diz o que falta preencher.
+        frases = [str((e or {}).get("message") or e) for e in dados["errors"]]
+        raise ErroDoPipefy("O Pipefy devolveu erro: " + " | ".join(frases)[:1500])
+    return dados.get("data") or {}
+
+
+def graphql_parcial(consulta: str, token: str | None = None) -> tuple[dict, dict]:
+    """Como `graphql`, mas para um LOTE de apelidos (`c0: …, c1: …`): um card
+    com problema não esconde os outros. Devolve `(dados, {apelido: erro})`.
+
+    O Pipefy executa cada apelido por conta própria e devolve `errors` com o
+    caminho (`path`) do que falhou — quem estourasse no primeiro erro diria
+    "falhou" para uma leva em que 19 de 20 deram certo."""
+    dados = _postar(consulta, token)
+    erros = {}
+    for e in dados.get("errors") or []:
+        caminho = (e or {}).get("path") or ["?"]
+        erros[str(caminho[0])] = str((e or {}).get("message") or e)
+    return dados.get("data") or {}, erros
+
+
+def _postar(consulta: str, token: str | None = None) -> dict:
     import requests
 
     token = token or _token()
@@ -131,16 +157,10 @@ def graphql(consulta: str, token: str | None = None) -> dict:
             f"O Pipefy respondeu algo que não é JSON (HTTP "
             f"{resposta.status_code}): {resposta.text[:200]}") from e
 
-    if not 200 <= resposta.status_code < 300:
+    if not 200 <= resposta.status_code < 300 and not (dados or {}).get("errors"):
         raise ErroDoPipefy(f"O Pipefy recusou (HTTP {resposta.status_code}): "
                            f"{resposta.text[:240]}")
-    if dados.get("errors"):
-        # ⚠️ A FRASE INTEIRA, NÃO OS PRIMEIROS 300 CARACTERES. Em 01/10/2026 o
-        # recado de "campo obrigatório" chegou cortado no meio do quarto nome de
-        # campo — justamente a lista que diz o que falta preencher.
-        frases = [str((e or {}).get("message") or e) for e in dados["errors"]]
-        raise ErroDoPipefy("O Pipefy devolveu erro: " + " | ".join(frases)[:1500])
-    return dados.get("data") or {}
+    return dados or {}
 
 
 def extrair_cpf(valor_do_conector) -> str:
@@ -615,3 +635,97 @@ def atualizar_campos(card_id, valores: list, token=None) -> int:
         graphql("mutation { " + " ".join(partes) + " }", token)
         gravados += len(bloco)
     return gravados
+
+
+# ---------------------------------------------------------------------------
+# O PAGAMENTO LIDO DO CARD (08/10/2026) — para o "Marcar Pago" completo
+# ---------------------------------------------------------------------------
+# O dono: *"coletar a Data do Pagamento no campo 'Data do Pagamento' e o link
+# do comprovante no campo 'Comprovante HTML/Email (Integração)' (…) e ainda o
+# campo 'Banco do Pagamento'"*. Lidos pelo RÓTULO, como o BaixaBradesco faz:
+# o id interno destes três nunca foi anotado aqui.
+ROTULO_DATA_PAGAMENTO = "Data do Pagamento"
+ROTULO_COMPROVANTE = "Comprovante HTML/Email (Integração)"
+ROTULO_BANCO_PAGAMENTO = "Banco do Pagamento"
+FASE_PAGO_ALIMENTAR_OMIE = "309521694"     # "Pago / Alimentar Omie"
+
+
+def _primeiro_valor(valor) -> str:
+    """Conector e anexo chegam como lista em texto (`["x"]`): fica o primeiro."""
+    texto = "" if valor is None else str(valor).strip()
+    if texto.startswith("["):
+        try:
+            lista = json.loads(texto)
+            if isinstance(lista, list):
+                return str(lista[0]).strip() if lista else ""
+        except ValueError:
+            pass
+    return texto
+
+
+def ler_pagamentos(ids, token=None) -> dict:
+    """Fase, data do pagamento, comprovante e banco de cada card, por id.
+
+    UMA ida à API para cada `POR_VEZ` cards (apelidos), não uma por card — o
+    pedido do dono foi economizar API. Card que o Pipefy não devolve fica de
+    fora do resultado; o erro dele vem em `{"_erros": {id: frase}}`."""
+    token = token or _token()
+    saida, erros = {}, {}
+    for bloco in _blocos([str(i) for i in ids], POR_VEZ):
+        pedacos = [
+            f"c{i}: card(id: {_numero_do_card(cid)}) {{ id "
+            "current_phase { id name } fields { name field { label } value } }"
+            for i, cid in enumerate(bloco)]
+        dados, falhas = graphql_parcial("query { " + "\n".join(pedacos) + " }", token)
+        for apelido, frase in falhas.items():
+            if apelido.startswith("c") and apelido[1:].isdigit() \
+                    and int(apelido[1:]) < len(bloco):
+                erros[bloco[int(apelido[1:])]] = frase
+        for card in (dados or {}).values():
+            if not card:
+                continue
+            rotulos = {}
+            for campo in (card.get("fields") or []):
+                rotulo = ((campo.get("field") or {}).get("label")
+                          or campo.get("name") or "").strip().lower()
+                rotulos[rotulo] = _primeiro_valor(campo.get("value"))
+            fase = card.get("current_phase") or {}
+            saida[str(card["id"])] = {
+                "fase_id": str(fase.get("id") or ""),
+                "fase": str(fase.get("name") or ""),
+                "data": rotulos.get(ROTULO_DATA_PAGAMENTO.lower(), ""),
+                "comprovante": rotulos.get(ROTULO_COMPROVANTE.lower(), ""),
+                "banco": rotulos.get(ROTULO_BANCO_PAGAMENTO.lower(), ""),
+            }
+    if erros:
+        saida["_erros"] = erros
+    return saida
+
+
+def mover_cards(ids, fase_id, token=None) -> dict:
+    """Move vários cards para a mesma fase, `POR_VEZ` por ida à API.
+
+    ⚠️ SEM VOLTA por aqui. Devolve `{"movidos": [...], "erros": {id: frase}}`
+    — um card que o Pipefy recusa não derruba os outros da leva."""
+    token = token or _token()
+    fase = _numero_do_card(fase_id)
+    movidos, erros = [], {}
+    for bloco in _blocos([str(i) for i in ids], POR_VEZ):
+        partes = [
+            f"c{i}: moveCardToPhase(input: {{card_id: {_numero_do_card(cid)}, "
+            f"destination_phase_id: {fase}}}) {{ clientMutationId }}"
+            for i, cid in enumerate(bloco)]
+        try:
+            dados, falhas = graphql_parcial("mutation { " + " ".join(partes) + " }", token)
+        except ErroDoPipefy as e:
+            for cid in bloco:
+                erros[cid] = str(e)
+            continue
+        for i, cid in enumerate(bloco):
+            if f"c{i}" in falhas:
+                erros[cid] = falhas[f"c{i}"]
+            elif (dados or {}).get(f"c{i}") is not None:
+                movidos.append(cid)
+            else:
+                erros[cid] = "O Pipefy não confirmou a mudança de fase."
+    return {"movidos": movidos, "erros": erros}

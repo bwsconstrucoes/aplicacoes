@@ -67,10 +67,19 @@ def _calculo(categoria="ONERADA - 50/50 - 80/20 - IR", valor="98720.04", aliquot
                     bdi_diferenciado="0", iss_retido=True)
 
 
+def _dados_rps_com_servico(codigo):
+    """O mesmo tomador, trocando só o código de tributação nacional do serviço —
+    é ele que decide se o grupo de obra é obrigatório."""
+    d = _dados_rps()
+    d.codigo_servico_nacional = codigo
+    return d
+
+
 def _montar(**kw):
     r = kw.pop("r", None) or _calculo()
     return montar_dps.montar(
-        card={}, obra=ObraFalsa(), r=r, dados_rps=kw.pop("dados_rps", None) or _dados_rps(),
+        card={}, obra=kw.pop("obra", None) or ObraFalsa(), r=r,
+        dados_rps=kw.pop("dados_rps", None) or _dados_rps(),
         numero_nota=kw.pop("numero_nota", 3084), ibge_obra=kw.pop("ibge_obra", 2601607),
         data_emissao=kw.pop("data_emissao", "2026-10-07"), producao=kw.pop("producao", False),
     )
@@ -176,12 +185,64 @@ def test_so_entra_o_grupo_de_pis_cofins_quando_algum_dos_dois_e_retido():
     assert com.find(".//{%s}piscofins" % nac.NS_NFSE) is not None
 
 
-def test_imposto_nao_retido_vai_zerado_e_nao_omitido():
-    """A categoria 'IR' retém só o IR: CSLL tem de ir zerado, não ausente —
-    ausência e zero são lidas igual aqui, mas zero é explícito."""
+def test_imposto_nao_retido_e_OMITIDO_e_nao_vai_zerado():
+    """⚠️ Este teste afirmava o CONTRÁRIO até 08/10/2026, e estava errado.
+
+    Ele dizia que "ausência e zero são lidas igual aqui, mas zero é explícito".
+    A plataforma nacional não as lê igual: ela recusa valor zero, com o erro
+    **E0699** — "o valor do tributo CP deve ser maior que zero e menor que o
+    valor do serviço informado na DPS". Custou uma emissão.
+
+    Zero declara uma retenção DE valor zero, que é diferente de não haver
+    retenção. É a mesma regra que o grupo piscofins (teste acima) já seguia, e
+    que o modelo antigo seguia — o HISTORICO da área tem a decisão escrita desde
+    21/09/2026: "imposto sem retenção não aparece na nota". A migração a perdeu
+    para estes três campos, e só para eles.
+    """
     root = _xml(_montar(r=_calculo("ONERADA - 50/50 - 80/20 - IR")))
-    assert _txt(root, "infDPS/valores/trib/tribFed/vRetCSLL") == "0.00"
+    assert _txt(root, "infDPS/valores/trib/tribFed/vRetCSLL") is None
     assert Decimal(_txt(root, "infDPS/valores/trib/tribFed/vRetIRRF")) > 0
+
+
+def test_nota_sem_retencao_federal_nenhuma_nao_leva_o_grupo(schema):
+    """Grupo vazio é válido no schema e não diz nada. Foi este o caso que deu
+    E0699: obra sem retenção de INSS mandava vRetCP igual a 0,00."""
+    d = _montar(r=_calculo("ONERADA - SD - SD - SEM RETENÇÃO"))
+    root = _xml(d)
+    assert root.find(".//{%s}tribFed" % nac.NS_NFSE) is None
+    doc = etree.fromstring(etree.tostring(root))
+    assert schema.validate(doc), schema.error_log
+
+
+def test_retencao_maior_que_o_servico_derruba_a_declaracao():
+    """A outra metade da regra do E0699. Retenção maior que o serviço é erro de
+    dado — e falhar aqui é mais barato que descobrir num dia depois."""
+    d = _montar()
+    d.v_serv = "1000.00"
+    d.v_ret_inss = "1000.00"
+    with pytest.raises(ValueError, match="maior ou igual ao valor do serviço"):
+        _xml(d)
+
+
+def test_o_total_aproximado_de_tributos_e_declarado_como_NAO_INFORMADO(schema):
+    """O layout dá uma escolha de quatro, e uma delas existe exatamente para
+    quem não informa valor estimado: `indTotTrib=0`. Mandávamos a outra
+    (`vTotTrib`) com os três valores em 0,00 — o que DECLARA que o total
+    aproximado dos tributos é zero, e é falso. Mesmo defeito do vRetCP, só que
+    este ainda não tinha dado erro."""
+    doc = etree.fromstring(etree.tostring(_xml(_montar())))
+    assert schema.validate(doc), schema.error_log
+    assert _txt(doc, "infDPS/valores/trib/totTrib/indTotTrib") == "0"
+    assert doc.find(".//{%s}vTotTrib" % nac.NS_NFSE) is None
+
+
+def test_se_um_dia_quiserem_informar_o_total_a_outra_opcao_continua_valendo(schema):
+    d = _montar()
+    d.v_tot_trib = ("10.00", "0.00", "5.00")
+    doc = etree.fromstring(etree.tostring(_xml(d)))
+    assert schema.validate(doc), schema.error_log
+    assert _txt(doc, "infDPS/valores/trib/totTrib/vTotTrib/vTotTribFed") == "10.00"
+    assert doc.find(".//{%s}indTotTrib" % nac.NS_NFSE) is None
 
 
 # --------------------------------------------------------------------------- #
@@ -364,3 +425,279 @@ def test_se_os_dois_enderecos_falharem_o_erro_e_o_do_caminho_preferido():
     except Exception:
         pass
     assert len(c.session.chamadas) == 2
+
+
+# --------------------------------------------------------------------------- #
+# O grupo de OBRA — o que faltava e derrubou a nota 3281
+#
+# Em 08/10/2026 a TI da prefeitura mostrou o erro que a plataforma nacional
+# tinha guardado: E0370, "o grupo de informações de obra é obrigatório quando o
+# código de tributação nacional pertencer a um dos subitens 07.02.01, 07.02.02
+# (…)". A BWS emite SEMPRE em 07.02.02. O município aceitava a declaração e o
+# nacional recusava, por isso a nota ficava "em processamento" para sempre.
+#
+# É o tipo de defeito que só um teste de schema não pega: a declaração sem o
+# grupo de obra é VÁLIDA no XSD (o grupo é minOccurs="0"). A obrigatoriedade é
+# regra de negócio da plataforma, não do arquivo. Por isso os testes abaixo
+# vigiam a REGRA, e não só a forma.
+# --------------------------------------------------------------------------- #
+class _ObraSemCNO(ObraFalsa):
+    cno = ""
+
+
+def test_a_obra_vai_identificada_na_declaracao_pelo_CNO(schema):
+    doc = etree.fromstring(etree.tostring(_xml(_montar())))
+    assert schema.validate(doc), schema.error_log
+    assert _txt(doc, "infDPS/serv/obra/cObra") == "900252541076"
+
+
+def test_o_CNO_vai_sem_pontuacao_como_todo_documento_deste_layout():
+    """O CNPJ, o CPF e o CEP já são enviados só com dígitos pelo construtor; o
+    CNO segue a mesma regra. Na C. Diários ele está escrito com pontos e barra."""
+    assert ObraFalsa.cno == "90.025.25410/76"      # como está na planilha
+    d = _montar()
+    assert d.obra.c_obra == "900252541076"
+
+
+def test_o_grupo_de_obra_vem_depois_do_grupo_do_servico():
+    """A ordem é exigida pelo XSD e é o tipo de erro que a prefeitura devolve
+    como mensagem obscura. O schema já garante, mas isto deixa escrito."""
+    root = _xml(_montar())
+    serv = root.find("{%s}infDPS/{%s}serv" % (nac.NS_NFSE, nac.NS_NFSE))
+    tags = [etree.QName(e).localname for e in serv]
+    assert tags == ["locPrest", "cServ", "obra"]
+
+
+def test_obra_sem_CNO_barra_a_emissao_antes_de_enviar():
+    """Barrar aqui custa um aviso na tela. Deixar passar custa um número de nota
+    queimado e uma declaração presa na fila — foi o que aconteceu com a 3281."""
+    with pytest.raises(montar_dps.DadoIncompativel) as e:
+        _montar(obra=_ObraSemCNO())
+    msg = str(e.value)
+    assert "CNO" in msg
+    assert "C. Diários" in msg          # onde a pessoa resolve
+    assert "E0370" in msg               # para casar com o erro que ela viu
+
+
+@pytest.mark.parametrize("subitem", sorted(montar_dps.SUBITENS_QUE_EXIGEM_OBRA))
+def test_todos_os_subitens_da_lista_do_erro_exigem_a_obra(subitem):
+    d = _montar(dados_rps=_dados_rps_com_servico(subitem))
+    assert d.obra is not None, f"{subitem} deveria exigir o grupo de obra"
+    assert d.obra.c_obra == "900252541076"
+
+
+def test_servico_fora_da_lista_nao_leva_grupo_de_obra(schema):
+    """Mandar o grupo onde ele não é previsto é tão errado quanto omiti-lo onde
+    é. A lista do erro E0370 é a regra, e nada além dela."""
+    d = _montar(dados_rps=_dados_rps_com_servico("010101"))
+    assert d.obra is None
+    doc = etree.fromstring(etree.tostring(_xml(d)))
+    assert schema.validate(doc), schema.error_log
+    assert _txt(doc, "infDPS/serv/obra/cObra") is None
+
+
+def test_servico_fora_da_lista_nao_exige_CNO():
+    """Obra sem CNO só barra onde o nacional de fato exige."""
+    d = _montar(obra=_ObraSemCNO(), dados_rps=_dados_rps_com_servico("010101"))
+    assert d.obra is None
+
+
+def test_CNO_com_tamanho_estranho_avisa_mas_nao_barra(capsys):
+    """A plataforma é que valida o número contra a base da Receita. Barrar por
+    palpite impediria uma obra legítima de faturar — mas o aviso sai no log,
+    porque CNO truncado é a explicação mais provável de uma recusa com o grupo
+    presente."""
+    class _ObraCurta(ObraFalsa):
+        cno = "90.025.254"
+    d = _montar(obra=_ObraCurta())
+    assert d.obra.c_obra == "90025254"
+    assert "ATENÇÃO" in capsys.readouterr().out
+
+
+# --- as outras duas identificações que o layout aceita ---------------------- #
+def test_a_identificacao_pode_ser_o_CIB(schema):
+    """Não é o caminho da BWS, mas é uma das três do layout. Fica provado para
+    quando aparecer obra sem CNO e com CIB."""
+    d = _montar()
+    d.obra = nac.GrupoObra(c_cib="12345678")
+    doc = etree.fromstring(etree.tostring(_xml(d)))
+    assert schema.validate(doc), schema.error_log
+    assert _txt(doc, "infDPS/serv/obra/cCIB") == "12345678"
+
+
+def test_a_identificacao_pode_ser_o_ENDERECO_DA_OBRA(schema):
+    """A terceira alternativa. A C. Diários não guarda o endereço da OBRA (o que
+    ela tem é o do cliente, que é outra coisa), então hoje este caminho não é
+    usado — mas ele é o que destrava uma obra sem CNO, e por isso tem de estar
+    provado antes de ser preciso."""
+    d = _montar()
+    d.obra = nac.GrupoObra(end={"CEP": "61.760-000", "xLgr": "Rua Luis Moreira Gomes",
+                                "nro": "100", "xBairro": "Centro"})
+    doc = etree.fromstring(etree.tostring(_xml(d)))
+    assert schema.validate(doc), schema.error_log
+    assert _txt(doc, "infDPS/serv/obra/end/CEP") == "61760000"   # sem pontuação
+    assert _txt(doc, "infDPS/serv/obra/end/xBairro") == "Centro"
+
+
+def test_grupo_de_obra_sem_nenhuma_identificacao_e_recusado():
+    """O layout exige UMA das três. Um grupo vazio passaria batido num
+    `if obra:` e sairia na declaração como `<obra/>`."""
+    d = _montar()
+    d.obra = nac.GrupoObra()
+    with pytest.raises(ValueError, match="UMA"):
+        _xml(d)
+
+
+def test_a_inscricao_imobiliaria_quando_houver_vem_antes_da_identificacao(schema):
+    d = _montar()
+    d.obra = nac.GrupoObra(c_obra="900252541076", insc_imob_fisc="1234567")
+    doc = etree.fromstring(etree.tostring(_xml(d)))
+    assert schema.validate(doc), schema.error_log
+    obra = doc.find("{%s}infDPS/{%s}serv/{%s}obra"
+                    % (nac.NS_NFSE, nac.NS_NFSE, nac.NS_NFSE))
+    assert [etree.QName(e).localname for e in obra] == ["inscImobFisc", "cObra"]
+
+
+# --------------------------------------------------------------------------- #
+# O CST do IBS/CBS — o erro E0959
+#
+# "cClassTrib não pertence ao grupo CST indicado." Mandávamos CST 000 com a
+# classificação 200046, e eles não casam: **o CST são os três primeiros dígitos
+# da classificação**. Está nos dados do Anexo VIII oficial — 000001 ("Situações
+# tributadas integralmente") é do grupo 000; 200046 ("Operações com bens
+# imóveis"), que é o nosso, é do grupo 200.
+#
+# Como o E0370, este também passa pelo schema: os dois campos são válidos
+# sozinhos, e quem confere a combinação é a plataforma. Por isso a regra virou
+# código — o CST é derivado, não digitado — e o construtor recusa um par que não
+# casa, para o erro aparecer aqui e não num dia depois.
+# --------------------------------------------------------------------------- #
+def test_o_CST_sai_do_cClassTrib_e_nao_de_um_valor_digitado():
+    g = nac.GrupoIBSCBS()
+    assert g.c_class_trib == "200046"      # Anexo VIII, item 07.02
+    assert g.cst == "200"                  # os três primeiros dígitos dela
+
+
+def test_a_declaracao_de_obra_leva_CST_200(schema):
+    doc = etree.fromstring(etree.tostring(_xml(_montar())))
+    assert schema.validate(doc), schema.error_log
+    assert _txt(doc, "infDPS/IBSCBS/valores/trib/gIBSCBS/CST") == "200"
+    assert _txt(doc, "infDPS/IBSCBS/valores/trib/gIBSCBS/cClassTrib") == "200046"
+
+
+@pytest.mark.parametrize("classificacao,cst", [
+    ("000001", "000"),   # situações tributadas integralmente
+    ("200046", "200"),   # operações com bens imóveis  <- o nosso
+    ("200045", "200"),   # reabilitação urbana
+    ("400001", "400"),   # transporte público coletivo
+])
+def test_o_CST_derivado_segue_a_tabela_oficial(classificacao, cst):
+    assert nac.GrupoIBSCBS(c_class_trib=classificacao).cst == cst
+
+
+def test_CST_digitado_que_nao_casa_derruba_a_declaracao():
+    """O par 000 + 200046 era exatamente o que ia, e a plataforma recusou um dia
+    depois. Agora falha na montagem, com o motivo e o valor certo na mensagem."""
+    d = _montar()
+    d.ibscbs = nac.GrupoIBSCBS(c_class_trib="200046", cst="000")
+    with pytest.raises(ValueError) as e:
+        _xml(d)
+    assert "200046" in str(e.value)
+    assert "o CST é 200" in str(e.value)
+
+
+def test_CST_digitado_que_casa_e_aceito(schema):
+    d = _montar()
+    d.ibscbs = nac.GrupoIBSCBS(c_class_trib="200046", cst="200")
+    doc = etree.fromstring(etree.tostring(_xml(d)))
+    assert schema.validate(doc), schema.error_log
+
+
+def test_o_codigo_indicador_da_operacao_tem_os_seis_digitos_do_schema():
+    """No Anexo VIII ele aparece como 20201, porque o Excel come o zero da
+    frente. O schema exige SEIS dígitos — 020201."""
+    assert nac.GrupoIBSCBS().c_ind_op == "020201"
+    assert len(nac.GrupoIBSCBS().c_ind_op) == 6
+
+
+# --- os dois campos opcionais que são os próximos suspeitos ---------------- #
+def test_por_padrao_tpOper_e_tpEnteGov_nao_sao_enviados(schema):
+    """Mandar valor fiscal por palpite é pior que omitir campo opcional: o tipo
+    de ente governamental não dá para deduzir do CNPJ do tomador."""
+    doc = etree.fromstring(etree.tostring(_xml(_montar())))
+    assert schema.validate(doc), schema.error_log
+    assert _txt(doc, "infDPS/IBSCBS/tpOper") is None
+    assert _txt(doc, "infDPS/IBSCBS/tpEnteGov") is None
+
+
+def test_quando_preenchidos_tpOper_e_tpEnteGov_saem_na_ordem_do_schema(schema):
+    """Deixados prontos: se a próxima recusa pedir um deles, é uma linha. A ordem
+    dentro do grupo é exigida pelo XSD."""
+    d = _montar()
+    d.ibscbs = nac.GrupoIBSCBS(tp_oper="1", tp_ente_gov="4")
+    doc = etree.fromstring(etree.tostring(_xml(d)))
+    assert schema.validate(doc), schema.error_log
+    grupo = doc.find("{%s}infDPS/{%s}IBSCBS" % (nac.NS_NFSE, nac.NS_NFSE))
+    assert [etree.QName(e).localname for e in grupo] == [
+        "finNFSe", "indFinal", "cIndOp", "tpOper", "tpEnteGov", "indDest", "valores"]
+
+
+# --------------------------------------------------------------------------- #
+# A varredura: NENHUM campo opcional vai com zero
+#
+# Este teste existe porque o mesmo defeito apareceu três vezes em formas
+# diferentes — PIS/COFINS (visto na migração), vRetCP/vRetIRRF/vRetCSLL (erro
+# E0699, 08/10/2026) e o total aproximado de tributos (que ainda não tinha dado
+# erro). A plataforma trata "zero" e "ausente" como coisas diferentes, e o
+# schema não ajuda: campo opcional com zero é um arquivo válido.
+#
+# Em vez de confiar em lembrar da regra campo por campo, aqui a declaração é
+# varrida inteira contra o XSD: todo elemento que o layout permite OMITIR e que
+# está indo com valor zero é um defeito, salvo os indicadores — neles o zero é
+# um SIGNIFICADO ("não é consumidor final"), não um valor.
+# --------------------------------------------------------------------------- #
+INDICADORES_EM_QUE_ZERO_E_SIGNIFICADO = {
+    "indFinal",      # 0 = tomador não é consumidor final
+    "indDest",       # 0 = o destinatário é o próprio tomador
+    "indTotTrib",    # 0 = não se informa valor estimado de tributos
+    "finNFSe",       # 0 = finalidade normal
+    "regEspTrib",    # 0 = nenhum regime especial
+}
+
+
+def _opcionais_do_layout():
+    nomes = set()
+    for arquivo in os.listdir(os.path.join(_EMISSAONF, "xsd_nacional")):
+        if not arquivo.endswith(".xsd"):
+            continue
+        doc = etree.parse(os.path.join(_EMISSAONF, "xsd_nacional", arquivo))
+        for el in doc.iter("{http://www.w3.org/2001/XMLSchema}element"):
+            if el.get("minOccurs") == "0" and el.get("name"):
+                nomes.add(el.get("name"))
+    return nomes
+
+
+@pytest.mark.parametrize("categoria", [
+    "ONERADA - 50/50 - 80/20 - IR",
+    "ONERADA - 100/0 - 100/0 - IR,PIS,COFINS,CSLL",
+    "ONERADA - SD - SD - SEM RETENÇÃO",
+    "ONERADA - 60/40 - 60/40 - PIS,COFINS",
+])
+def test_nenhum_campo_opcional_do_layout_vai_com_valor_zero(categoria):
+    opcionais = _opcionais_do_layout()
+    root = _xml(_montar(r=_calculo(categoria)))
+    culpados = []
+    for el in root.iter():
+        tag = etree.QName(el).localname
+        texto = (el.text or "").strip()
+        if not texto or len(el) or tag in INDICADORES_EM_QUE_ZERO_E_SIGNIFICADO:
+            continue
+        try:
+            zero = Decimal(texto) == 0
+        except Exception:
+            continue
+        if zero and tag in opcionais:
+            culpados.append(f"{tag}={texto}")
+    assert not culpados, (
+        f"{categoria}: campo opcional indo com zero — a plataforma recusa "
+        f"(E0699): {culpados}")

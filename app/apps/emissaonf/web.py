@@ -708,6 +708,50 @@ def declaracao():
 
     numero_esperado, _ano = _edps.numero_da_declaracao(id_dps)
 
+    # Encerrar a declaração à mão. Existe porque a API pode nunca contar a
+    # recusa: a declaração da nota 3281 ficou um dia respondendo "em
+    # processamento" para a consulta enquanto o PORTAL da prefeitura já a
+    # mostrava como "Processado com Erros", e depois como recusada no nacional.
+    #
+    # ⚠️ Isto NÃO libera o número, e essa parte mudou em 08/10/2026: na primeira
+    # versão ela liberava, o número 3281 foi reusado e a prefeitura respondeu
+    # EL99 ("chave informada para a DPS não existe no repositório municipal").
+    # Número já enviado é número gasto. Encerrar serve para a lista parar de
+    # pedir conferência de algo que já morreu — nada mais.
+    #
+    # Não emite, não cancela e não apaga nada.
+    if request.values.get("encerrar") == "1" or request.values.get("liberar") == "1":
+        try:
+            ok = _decl.marcar_recusada(
+                _ctx_minimo()["gc"].open_by_key(_worker.ID_PROC), id_dps,
+                ["liberada à mão na tela: o portal da prefeitura mostra esta "
+                 "declaração como recusada / processada com erros"])
+        except Exception as e:
+            return Response(_pagina_declaracao(
+                token, id_dps, card_id,
+                aviso=f"Não consegui liberar: {type(e).__name__}: {e}"),
+                mimetype="text/html")
+        if not ok:
+            return Response(_pagina_declaracao(
+                token, id_dps, card_id,
+                aviso="Não achei essa declaração na aba de controle — confira a "
+                      "identificação."), mimetype="text/html")
+        return Response(_pagina_explicacao(
+            f"<h1>Declaração encerrada</h1>"
+            f"<div class='ok'>Marquei esta declaração como <b>recusada</b>: ela sai da "
+            f"lista e o sistema para de pedir conferência dela.</div>"
+            f"<div class='warn'>O número "
+            f"{('<b>' + html.escape(numero_esperado) + '</b> ') if numero_esperado else ''}"
+            f"<b>NÃO volta a ser usado</b>, e isso é de propósito. Número que já foi "
+            f"enviado à prefeitura fica gasto: a identificação da declaração é montada "
+            f"a partir dele, e reusar o número reusa a identificação — a prefeitura "
+            f"responde <b>EL99</b>, que foi o que aconteceu com a 3281 em 08/10/2026. "
+            f"A próxima nota sai com o número seguinte.</div>"
+            f"<p>Nada foi emitido, nada foi apagado e nenhuma nota foi criada ou "
+            f"cancelada — isto mexeu só no controle interno de numeração.</p>"
+            f"<p><a class='btn' href='{url_for('.declaracao')}?token={html.escape(token)}'>"
+            f"Voltar</a></p>"), mimetype="text/html")
+
     # Diagnóstico completo: pergunta em todos os lugares e mostra as respostas
     # cruas. É o que se usa quando a nota não aparece em canto nenhum e ninguém
     # sabe de quem é a vez — e serve de prova para levar à prefeitura.
@@ -734,6 +778,17 @@ def declaracao():
         # O desfecho mais tranquilo dos três, e o que vinha disfarçado de
         # "não consegui consultar": não existe nota, e o próprio manual diz que a
         # mesma declaração pode ser reenviada com a correção.
+        #
+        # Marcar aqui não é detalhe de registro: enquanto a declaração fica como
+        # "aguardando", ela SEGURA o número dela, e a numeração pula esse número
+        # para sempre. Recusada quer dizer que não existe nota — o número volta a
+        # estar livre. A emissão já marcava; esta tela não marcava, e é por ela
+        # que se descobre a recusa que chegou tarde.
+        try:
+            _decl.marcar_recusada(ctx["gc"].open_by_key(_worker.ID_PROC),
+                                  id_dps, e.motivos)
+        except Exception:
+            pass
         return Response(_pagina_recusa(numero_esperado, e.motivos), mimetype="text/html")
     except _edps.AindaProcessando as e:
         return Response(_pagina_declaracao(
@@ -833,13 +888,25 @@ def _pagina_declaracao(token, id_dps, card_id, aviso="", abertas=None, erro_list
                          f"prefeitura.</span>")
             else:
                 marca = ""
+            # Só na parada: oferecer isto numa declaração que ainda está na
+            # fila convidaria a encerrar uma nota que talvez exista.
+            liberar = ""
+            if d.get("travada"):
+                liberar = (f" &nbsp;<a href='{link}&encerrar=1' "
+                           f"onclick=\"return confirm('Isto marca a declaração como "
+                           f"RECUSADA e tira ela da lista. O numero {d['numero']} NAO "
+                           f"volta a ser usado - numero ja enviado fica gasto. Use "
+                           f"apenas se o portal da prefeitura mostrar esta declaracao "
+                           f"como recusada ou processada com erros. Confirma?')\">"
+                           f"encerrar (o número não volta)</a>")
             linhas += (f"<li style='margin:8px 0'>Nota <b>{html.escape(d['numero'])}</b> — "
                        f"obra {html.escape(d['obra'] or '?')}, medição "
                        f"{html.escape(d['med'] or '?')} — enviada em "
                        f"{html.escape(d['enviada_em'])}{amb}{marca}<br>"
                        f"<a class='btn' style='padding:6px 12px;font-size:13px' "
                        f"href='{link}'>Conferir esta</a>"
-                       f" &nbsp;<a href='{link}&diagnostico=1'>diagnóstico</a></li>")
+                       f" &nbsp;<a href='{link}&diagnostico=1'>diagnóstico</a>"
+                       f"{liberar}</li>")
         lista = (f"<div class='card'><b>Declarações em aberto ({len(abertas)})</b>"
                  f"<ul style='padding-left:18px'>{linhas}</ul>"
                  f"<p class='sub'>São as que a prefeitura aceitou e ainda não viraram "
@@ -1352,8 +1419,13 @@ def _pagina_recusa(numero, motivos):
     return _doc("Declaração recusada", (
         f"<h1>A plataforma nacional recusou a declaração</h1>"
         f"<div class='ok'><b>Nenhuma nota foi criada.</b> Pode corrigir e emitir de "
-        f"novo — inclusive com o mesmo número{(' (' + html.escape(numero) + ')') if numero else ''}, "
-        f"que é o caminho previsto pela prefeitura para este caso.</div>"
+        f"novo.</div>"
+        f"<div class='warn'>A nota sairá com um número <b>novo</b>"
+        f"{(', e não com o ' + html.escape(numero)) if numero else ''}. O manual da "
+        f"prefeitura diz que a declaração recusada pode ser reenviada com a mesma "
+        f"identificação, mas em Eusébio isso devolveu <b>EL99</b> em 08/10/2026 — "
+        f"número já enviado fica gasto. Buraco na sequência é normal; nota cancelada "
+        f"faz o mesmo.</div>"
         f"<div class='card'><b>O que ela recusou</b><ul>{itens}</ul></div>"
         f"{explicacoes}"
         f"<p class='sub'>Se o motivo não estiver claro, me mande este texto — os "
@@ -1571,9 +1643,23 @@ def _render_pagina(ctx, card_id, token, nota_sub="", tm_over="", val_over=None, 
 def _pagina_resultado(r):
     log = html.escape(r.get("log", "") or "")
     aviso_num = ""
-    if r.get("prox") and str(r["numero"]) != str(r["prox"]):
-        aviso_num = (f"<div class='warn'>Número devolvido ({r['numero']}) ≠ esperado "
-                     f"({r['prox']}). Confira a numeração.</div>")
+    # O número devolvido é comparado pelo SEQUENCIAL, não pelo texto: no modelo
+    # nacional a nota 3283 volta como "2600000003283" (ano + sequencial), e
+    # comparar os textos acusava divergência em TODA nota — alarme que, de tanto
+    # aparecer, deixa de ser lido. Aconteceu na primeira nota nacional, 08/10/2026.
+    if r.get("prox"):
+        devolvido = _worker.sequencial_da_nota(r["numero"])
+        esperado = _worker.sequencial_da_nota(r["prox"])
+        if devolvido != esperado:
+            aviso_num = (f"<div class='warn'>Número devolvido ({r['numero']}) ≠ "
+                         f"esperado ({r['prox']}). Confira a numeração.</div>")
+        elif str(r["numero"]) != str(r["prox"]):
+            aviso_num = (f"<div class='ok'>O número oficial desta nota é "
+                         f"<b>{html.escape(str(r['numero']))}</b> — é o formato do "
+                         f"padrão nacional: ano (26) mais o nosso sequencial "
+                         f"({esperado}). É este número que está no documento do "
+                         f"cliente e na planilha; a próxima nota sai como "
+                         f"{esperado + 1}.</div>")
     sub_box = ""
     sub = r.get("sub")
     if sub:

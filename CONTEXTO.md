@@ -1333,6 +1333,26 @@ tomador que já descontou. Em nota fiscal, que não se apaga. **Atenuante:** a
 emissão automática do ERP pode nunca ter sido usada em produção — conferir antes
 de tratar como incidente.
 
+**2-B. E o ERP tem o MESMO defeito do grupo de obra (08/10/2026) — também não
+corrigido aqui.** A plataforma nacional **exige o grupo de obra** quando o código
+do serviço é de construção civil (erro **E0370**, treze subitens, entre eles o
+**07.02.02**). O `emissaonf` descobriu isso do jeito caro: a nota 3281 foi aceita
+pelo município e recusada no nacional, e a recusa só apareceu numa tela de
+pendências do portal, um dia depois. O `emissaonf` foi consertado — passou a
+mandar o CNO da obra.
+
+O ERP monta o `DadosDPS` na mesma função que tem a inversão do ISS
+(`app/apps/erp/core/notas_emitidas/automatica.py`), com
+`c_trib_nac=COD_TRIB_NAC_EMPREITADA` e **sem o grupo de obra**. O campo novo
+`DadosDPS.obra` nasce `None`, então o ERP continua funcionando exatamente como
+antes — e exatamente como antes ele vai levar E0370 na primeira emissão real de
+serviço de construção.
+
+**O que o chat do ERP precisa fazer:** preencher `obra=GrupoObra(c_obra=<CNO>)`.
+O ERP tem onde guardar — o cadastro de obra já prevê a matrícula CNO. E vale
+notar: **nenhum teste de schema pega isso**, porque no XSD o grupo é opcional; a
+obrigatoriedade é regra de negócio da plataforma.
+
 **3. Os schemas oficiais da NFS-e nacional entraram no repositório**
 (`app/apps/emissaonf/xsd_nacional/`). São 240 KB de `.xsd` do pacote que a
 prefeitura distribui. Não é documentação: é a regra que o teste aplica. Foi
