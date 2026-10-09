@@ -427,6 +427,8 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                     + (f", {c['falhas']} com falha" if c.get("falhas") else "")
                     + (f", {c['destravados']} destravado(s) da fila"
                        if c.get("destravados") else "")
+                    + (f", {c['desempatados']} baixado(s) no desempate de mesmo valor"
+                       if c.get("desempatados") else "")
                     + (f", {c['sem_arquivo']} sem o arquivo no servidor"
                        if c.get("sem_arquivo") else ""))
 

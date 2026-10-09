@@ -12228,6 +12228,27 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 213 — comprovantes: desempate de mesmo valor entre arquivos separados (09/10/2026)
+
+- *"Dois comprovantes de mesmo valor do mesmo dia: a regra da baixa é, entrando
+  os dois no mesmo arquivo, baixar um em cada SP. Mas os comprovantes são
+  gerados individualizados — os do Sicredi eu mando separados — e aí não baixa
+  (…) teria que chegar no BaixaBradesco como um lote."*
+- O robô só desempata o que chega NO MESMO ENVIO (`baixabradesco.core.
+  resolver_empates_do_lote`, que diz isso no próprio comentário). Daqui, cada
+  arquivo — e cada leva de 10 páginas — é um envio. Agora, no fim de cada
+  rodada da fila (`processar_pendentes`), `comprovantes.desempatar` junta num
+  PDF só as páginas que voltaram PENDENTES com o MESMO VALOR vindas de envios
+  diferentes (outro arquivo, ou outra leva do mesmo arquivo), dos lotes das
+  últimas 24 h com o PDF ainda no servidor, e manda de novo. As travas do robô
+  continuam decidindo (mesma quantidade dos dois lados, comprovantes
+  diferentes); aqui só se junta. Empate antigo, já tentado, não é reenviado a
+  cada rodada — só quando entra página nova do mesmo valor. O resultado
+  substitui a linha da página na tela, com "Reenviado junto com os outros de
+  mesmo valor". Nada mudou no BaixaBradesco. Sem migração.
+- Não testado com o robô de verdade (o reenvio usa o mesmo caminho do envio
+  normal).
+
 #### Leva 212 — ícones de baixar o anexo e o comprovante (09/10/2026)
 
 - *"Coloca um ícone, tanto em Solicitações quanto em Lote: dois ícones de

@@ -7492,3 +7492,59 @@ def test_a_JANELA_DO_DIA_traz_o_que_a_celula_contou(banco_analisesps):
     assert janela["linhas"][0]["situacao"] == "vencido"
     assert janela["linhas"][0]["tipo_despesa"] == "Material"
     assert janela["linhas"][1]["situacao"] == "pago"
+
+
+def test_o_DESEMPATE_so_junta_o_mesmo_valor_vindo_de_envios_diferentes():
+    """09/10/2026: dois comprovantes de mesmo valor e dia, mandados em arquivos
+    separados (os do Sicredi), ficavam pendentes — o robô só desempata o que
+    chega no mesmo envio."""
+    from app.apps.analisesps.comprovantes import grupos_para_desempate
+    itens = [
+        {"id": 1, "lote_id": 10, "pagina": 1, "valor": "5.532,57"},
+        {"id": 2, "lote_id": 11, "pagina": 1, "valor": "R$ 5532,57"},   # outro arquivo
+        {"id": 3, "lote_id": 12, "pagina": 1, "valor": "100,00"},      # sozinho
+        {"id": 4, "lote_id": 13, "pagina": 1, "valor": "200,00"},      # mesmo envio:
+        {"id": 5, "lote_id": 13, "pagina": 2, "valor": "200,00"},      # o robô já viu juntos
+        {"id": 6, "lote_id": 1, "pagina": 1, "valor": "300,00"},       # antigo, fora
+        {"id": 7, "lote_id": 2, "pagina": 1, "valor": "300,00"},       # da rodada
+    ]
+    grupos = grupos_para_desempate(itens, da_rodada={10, 11, 12, 13})
+    assert [[i["id"] for i in g] for g in grupos] == [[1, 2]]
+    # páginas do MESMO arquivo em levas diferentes também se juntam
+    mesma = [{"id": 8, "lote_id": 20, "pagina": 3, "valor": "50,00"},
+             {"id": 9, "lote_id": 20, "pagina": 14, "valor": "50,00"}]
+    assert len(grupos_para_desempate(mesma, {20})) == 1
+
+
+@pytest.mark.banco
+def test_o_DESEMPATE_reenvia_juntos_e_grava_o_resultado(banco_analisesps, monkeypatch, tmp_path):
+    from app.apps.analisesps import comprovantes
+    from app.apps.analisesps.db import conexao, consultar
+    monkeypatch.setattr(comprovantes, "PASTA", str(tmp_path))
+    a = comprovantes.guardar(_pdf(1), "sicredi_1.pdf", "p", "P")
+    b = comprovantes.guardar(_pdf(1), "sicredi_2.pdf", "p", "P")
+    with conexao() as conn:
+        for lote in (a, b):
+            conn.execute("INSERT INTO analisesps.comprovantes_item (lote_id, pagina, "
+                         " situacao, valor, motivo) VALUES (?, 1, 'PENDENTE_VALIDACAO', "
+                         "'5.532,57', '2 SPs de mesmo valor')", (lote,))
+        conn.commit()
+    enviados = []
+
+    def mandar(pedaco, nome, anotar, onde):
+        from io import BytesIO
+        from pypdf import PdfReader
+        enviados.append(len(PdfReader(BytesIO(pedaco)).pages))
+        return {"planos": []}
+    monkeypatch.setattr(comprovantes, "_mandar_com_paciencia", mandar)
+    monkeypatch.setattr(comprovantes, "ler_resposta", lambda r, p: [
+        {"pagina": 1, "situacao": "BAIXADO", "sp_id": "1442670864", "motivo": "ok"},
+        {"pagina": 2, "situacao": "BAIXADO", "sp_id": "1442703969", "motivo": "ok"}])
+    r = comprovantes.desempatar([a, b])
+    assert enviados == [2], "as duas páginas foram num envio só"
+    assert r == {"grupos": 1, "resolvidos": 2}
+    linhas = consultar("SELECT lote_id, situacao, sp_id, motivo FROM "
+                       "analisesps.comprovantes_item ORDER BY lote_id")
+    assert [(l[1], l[2]) for l in linhas] == [("BAIXADO", "1442670864"),
+                                              ("BAIXADO", "1442703969")]
+    assert "Reenviado junto" in linhas[0][3]

@@ -924,6 +924,116 @@ def reprocessar_lote(lote_id: int) -> dict:
     return {"ok": True, "arquivo": nome, "situacao_anterior": situacao}
 
 
+# ---------------------------------------------------------------------------
+# O DESEMPATE ENTRE ARQUIVOS (09/10/2026)
+#
+# O dono: *"dois comprovantes de mesmo valor do mesmo dia (…) a regra na baixa
+# é: entrando os dois no mesmo arquivo, baixa um em cada SP. Mas os comprovantes
+# são gerados de forma individualizada — os do Sicredi eu mando separados — e
+# aí não baixa (…) teria que chegar no BaixaBradesco como um lote."*
+#
+# O robô só desempata o que chega NO MESMO ENVIO (`baixabradesco.core.
+# resolver_empates_do_lote` — "dois comprovantes em PDFs separados não se
+# encontram"). E daqui cada arquivo, e cada leva de 10 páginas, é um envio.
+# Então, no fim da rodada: as páginas que voltaram PENDENTES com o MESMO VALOR,
+# vindas de envios diferentes, são juntadas num PDF só e mandadas de novo. As
+# travas do robô continuam valendo (mesma quantidade dos dois lados,
+# comprovantes comprovadamente diferentes) — aqui só se junta, não se decide.
+# ---------------------------------------------------------------------------
+JANELA_DO_DESEMPATE_HORAS = 24
+MAX_PAGINAS_NO_DESEMPATE = 20
+
+
+def _valor_chave(valor) -> str:
+    from .formatos import para_numero
+    numero = para_numero(valor)
+    return f"{numero:.2f}" if numero is not None else ""
+
+
+def grupos_para_desempate(itens: list, da_rodada: set) -> list:
+    """Dos pendentes, os grupos de MESMO VALOR que vieram de envios diferentes
+    (lote ou leva) e que têm ao menos uma página desta rodada. `itens`:
+    [{id, lote_id, pagina, valor}]."""
+    por_valor: dict = {}
+    for item in itens:
+        chave = _valor_chave(item.get("valor"))
+        if chave and item.get("pagina"):
+            por_valor.setdefault(chave, []).append(item)
+    grupos = []
+    for chave, grupo in sorted(por_valor.items()):
+        envios = {(i["lote_id"], (i["pagina"] - 1) // POR_LEVA) for i in grupo}
+        if len(grupo) < 2 or len(envios) < 2:
+            continue      # sozinho, ou já foram juntos e o robô não desempatou
+        if not any(i["lote_id"] in da_rodada for i in grupo):
+            continue      # empate antigo, já tentado: não insiste a cada rodada
+        grupos.append(sorted(grupo, key=lambda i: (i["lote_id"], i["pagina"]))
+                      [:MAX_PAGINAS_NO_DESEMPATE])
+    return grupos
+
+
+def desempatar(da_rodada, anotar=None) -> dict:
+    """Junta e reenvia os pendentes de mesmo valor que estavam em envios
+    diferentes. Nunca derruba a rodada: falha aqui deixa tudo como estava."""
+    import os
+    from pypdf import PdfReader, PdfWriter
+    from .db import conexao, consultar
+
+    anotar = anotar or (lambda *a, **k: None)
+    da_rodada = {int(i) for i in (da_rodada or [])}
+    if not da_rodada:
+        return {"grupos": 0, "resolvidos": 0}
+    try:
+        linhas = consultar(
+            "SELECT i.id, i.lote_id, i.pagina, i.valor, l.caminho "
+            "  FROM analisesps.comprovantes_item i "
+            "  JOIN analisesps.comprovantes_lote l ON l.id = i.lote_id "
+            " WHERE i.situacao = ? AND l.recebido_em > now() - (? || ' hours')::interval",
+            (PENDENTE_VALIDACAO, str(JANELA_DO_DESEMPATE_HORAS)))
+    except Exception:  # noqa: BLE001
+        logger.exception("Análise de SPs: não consegui procurar empates")
+        return {"grupos": 0, "resolvidos": 0}
+    itens = [{"id": i, "lote_id": l, "pagina": p, "valor": v, "caminho": c}
+             for i, l, p, v, c in linhas if c and os.path.exists(c)]
+    resolvidos, grupos = 0, grupos_para_desempate(itens, da_rodada)
+    for grupo in grupos:
+        try:
+            escritor, leitores = PdfWriter(), {}
+            for item in grupo:
+                if item["caminho"] not in leitores:
+                    leitores[item["caminho"]] = PdfReader(item["caminho"])
+                escritor.add_page(leitores[item["caminho"]].pages[item["pagina"] - 1])
+            saida = io.BytesIO()
+            escritor.write(saida)
+            onde = f"desempate de {len(grupo)} comprovante(s) de R$ {grupo[0]['valor']}"
+            anotar("dando baixa nos comprovantes", onde)
+            resposta = _mandar_com_paciencia(saida.getvalue(), "desempate.pdf", anotar, onde)
+            novas = ler_resposta(resposta, 1)
+        except Exception:  # noqa: BLE001 — o empate fica como estava, com o motivo de antes
+            logger.exception("Análise de SPs: falhou o desempate de %s", grupo)
+            continue
+        juntos = ", ".join(f"{i['lote_id']}/p.{i['pagina']}" for i in grupo)
+        with conexao() as conn:
+            for nova in novas:
+                pagina = nova.get("pagina")
+                if not pagina or pagina > len(grupo):
+                    continue
+                alvo = grupo[pagina - 1]
+                conn.execute(
+                    "UPDATE analisesps.comprovantes_item SET situacao = ?, sp_id = ?, "
+                    "  recebedor = ?, motivo = ? WHERE id = ?",
+                    (nova.get("situacao", ""), nova.get("sp_id", ""),
+                     nova.get("recebedor", ""),
+                     ("Reenviado junto com os outros de mesmo valor, de outros "
+                      f"arquivos ({len(grupo)} páginas). "
+                      + (nova.get("motivo") or ""))[:500], alvo["id"]))
+                if nova.get("situacao") == BAIXADO:
+                    resolvidos += 1
+            conn.commit()
+        logger.info("Análise de SPs: desempate de %d página(s) (%s) — %d baixada(s).",
+                    len(grupo), juntos, resolvidos)
+    return {"grupos": len(grupos), "resolvidos": resolvidos}
+
+
 def processar_pendentes(anotar=None) -> dict:
     """Drena a fila de lotes ESPERANDO. É o que o processo separado chama.
 
@@ -943,9 +1053,12 @@ def processar_pendentes(anotar=None) -> dict:
             feitos += 1
         else:
             falhas += 1
+    # Os pendentes de mesmo valor que ficaram em envios separados (09/10/2026).
+    desempate = desempatar([lote_id for (lote_id,) in esperando], anotar)
     return {"lotes": feitos, "falhas": falhas,
             "destravados": destravados["devolvidos"],
-            "sem_arquivo": destravados["sem_arquivo"]}
+            "sem_arquivo": destravados["sem_arquivo"],
+            "desempatados": desempate["resolvidos"]}
 
 
 # ---------------------------------------------------------------------------
