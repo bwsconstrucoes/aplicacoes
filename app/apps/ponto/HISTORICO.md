@@ -41,6 +41,11 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1k. **PUBLICADO em 09/10/2026, segunda leva** (com o "pode" do dono, sem
+   migração nova): fora da obra só explicando (vai para conferência), nada
+   sem localização no celular, ⏳ na batida em conferência, e o aparelho que
+   chega com o nome de quem entrou. Confirmar com o dono: aprovou o celular
+   novo da pessoa que tinha apagado os dados do navegador?
 1j. **PUBLICADO em 09/10/2026** (com o "pode" do dono): os seis ajustes de
    09/10 e a correção do fuso na apuração (seção de 09/10), com a migração
    **009**. Confirmar com o dono: apertou "Aplicar atualizações do ponto"?
@@ -97,6 +102,48 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 09/10/2026 — Bater fora da obra (Portaria 671), nada sem localização, e o aparelho com nome
+
+Pergunta do dono: pela Portaria 671, a batida tem de ser aceita fora da obra?
+Resposta dada: a Portaria proíbe restringir HORÁRIO, marcação automática,
+autorização prévia de hora extra e alterar o registrado — restringir LUGAR não
+está na lista; o risco é a jornada fora da obra ficar sem registro num processo.
+Primeiro propus uma marcação por pessoa ("pode bater fora da área"); o dono
+resumiu a regra para TODOS, e a marcação foi desfeita antes de publicar:
+
+> *"Não tá na obra. Alerta! E se a pessoa ainda for bater, explicar o motivo e o
+> ponto ir para conferência e o sistema avisar isso. E a pessoa precisa poder
+> visualizar isso no meu dia, que aquela batida ainda não está válida."*
+
+- **Fora da obra, no celular:** a tela avisa "⚠️ Você NÃO está na obra" (com a
+  distância); para bater mesmo assim, a pessoa escolhe a obra e EXPLICA o motivo
+  — sem explicação, o servidor recusa. Com ela, a batida entra EM CONFERÊNCIA,
+  com a localização gravada e o motivo ("bateu explicando o motivo" + a
+  explicação), e vai para a fila de Validações da administração da obra.
+- **Sem localização, o celular nunca bate** — nem na obra que aceita sem
+  explicação. O **ponto da obra** sem localização continua aceitando, para
+  conferência: recusar pararia a equipe inteira por causa do GPS de um aparelho
+  já preso à obra (escolha minha, dita ao dono). O ponto da obra FORA da cerca
+  (o aparelho saiu da obra) continua recusado.
+- **A batida em conferência aparece no dia**: ⏳ antes do horário, no "Hoje" e
+  no "Meu mês", com "ainda não vale até a administração da obra validar".
+- A escolha por obra em Cerca das obras passou a se chamar "Só com explicação
+  da pessoa" (o antigo BLOQUEAR, padrão) e "Aceitar sem explicação" (ANALISAR).
+
+**O aparelho chegava "sem nome" na aprovação.** Desde a tela inicial (08/10), o
+login não passava mais pelo trecho que dava ao celular o nome de quem entrou
+(ficou só na tela "Hoje"). Agora o servidor faz isso NA ENTRADA com CPF e PIN (e
+na criação do PIN): o pedido chega "Celular de Fulano (CPF final 123)". Os
+celulares de quem não bate no celular nem entram na fila (regra de 05/10).
+**A pessoa que já tinha celular aprovado e pediu de novo:** quase certamente
+apagou os dados do navegador (ou reinstalou o aplicativo) ao mexer na
+localização — o identificador do aparelho mora ali, e o celular vira "novo". O
+pedido agora diz "já tem um celular aprovado desde … — provavelmente trocou de
+celular ou apagou os dados do navegador; aprovar este bloqueia o anterior". Não
+se aprova sozinho: com o PIN de alguém, outro celular bateria por ele. O
+aplicativo também pede ao navegador para não apagar esses dados por conta
+própria, e a tela de "esperando aprovação" explica o caso.
 
 ## 09/10/2026 — Seis ajustes do teste do dono (e um defeito de fuso achado no caminho)
 

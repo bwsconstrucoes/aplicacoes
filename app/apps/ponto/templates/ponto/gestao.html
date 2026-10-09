@@ -3721,8 +3721,11 @@ async function carregarExcecoes() {
 // --------------------------------------------- 11. cerca das obras
 // Decisão do dono, 04/10/2026: ninguém bate fora da área da obra, e a obra é
 // detectada pela localização. Aqui se ajusta o raio e o que fazer fora dele.
-const MODOS_CERCA = [{valor: "BLOQUEAR", rotulo: "Bloquear a batida"},
-                     {valor: "ANALISAR", rotulo: "Aceitar e mandar para conferência"}];
+// Desde 09/10/2026, no celular, fora da cerca a pessoa sempre pode bater EXPLICANDO
+// o motivo (vai para conferência). "Bloquear" passa a valer para quem não explica
+// e para o ponto da obra que saiu da obra; "aceitar" dispensa a explicação.
+const MODOS_CERCA = [{valor: "BLOQUEAR", rotulo: "Só com explicação da pessoa (conferência)"},
+                     {valor: "ANALISAR", rotulo: "Aceitar sem explicação (conferência)"}];
 let CERCAS = null;
 
 async function carregarCercas() {
@@ -3792,7 +3795,7 @@ async function gravarCerca(linha, botao) {
     desenharCercas();
     const o = (i >= 0 ? CERCAS.obras[i] : c) || {codigo: String(id)};
     aviso("c-cercas-msg", `${escapar(rotuloObra(o))}: raio de ${escapar(o.raio_metros ?? "—")} m; fora da cerca,
-      ${o.fora_da_cerca === "BLOQUEAR" ? "a batida é bloqueada" : "a batida vai para conferência"};
+      ${o.fora_da_cerca === "BLOQUEAR" ? "só com a explicação da pessoa, para conferência" : "aceita sem explicação, para conferência"};
       ${o.so_entrada_e_saida ? "só entrada e saída (o intervalo é o da escala)" : "4 batidas por dia"}.`, "ok");
   } catch (e) { botao.disabled = false; falhou(e, "c-cercas-msg"); }
 }

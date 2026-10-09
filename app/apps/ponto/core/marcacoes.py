@@ -156,17 +156,24 @@ def sinais_na_hora(conn: Connection, *, foto, aparelho: Optional[dict], pessoa_i
 
 def decidir_lugar(*, situacao: str, detectada: Optional[dict], distancia: Optional[float],
                   enviada: Optional[dict], no_tablet: bool, precisao, modo,
-                  latitude=None, longitude=None) -> tuple[Optional[dict], Optional[str], Optional[str]]:
+                  latitude=None, longitude=None,
+                  justificativa: str = "") -> tuple[Optional[dict], Optional[str], Optional[str]]:
     """PURA (o `modo` é uma função da obra). Devolve (obra, motivo da RECUSA,
     motivo de ANÁLISE). Decisão do dono, 04/10/2026: fora da área da obra não
     se bate ponto; e a obra é a da cerca, detectada sozinha.
 
       DENTRO     a obra da cerca, sem motivo nenhum
       BORDA      a obra da cerca, para conferência (o GPS impreciso não recusa)
-      SEM_LOCAL  no tablet da obra: aceita, para conferência (o aparelho já é
-                 da obra); no celular: recusa se a obra bloqueia
-      FORA       recusa se a obra bloqueia; se a obra escolhida NÃO TEM
-                 coordenada, não há como saber, e vai para conferência
+      SEM_LOCAL  no ponto da obra: aceita, para conferência (o aparelho já é
+                 da obra); no celular: RECUSA, sempre (decisão do dono,
+                 09/10/2026: "não devíamos permitir o ponto sem localização")
+      FORA       obra escolhida SEM coordenada: não há como saber, conferência.
+                 No CELULAR (decisão do dono, 09/10/2026, sobre a Portaria 671:
+                 "não tá na obra, alerta; e se a pessoa ainda for bater, explicar
+                 o motivo e o ponto ir para conferência"): COM a explicação da
+                 pessoa, aceita para conferência, com a localização gravada; sem
+                 ela, recusa — se a obra bloqueia. No PONTO DA OBRA fora da cerca
+                 (o aparelho saiu da obra): recusa se a obra bloqueia.
     """
     if situacao == geo.DENTRO:
         return detectada, None, None
@@ -178,7 +185,7 @@ def decidir_lugar(*, situacao: str, detectada: Optional[dict], distancia: Option
         alvo = enviada
         if not alvo:
             return None, "sem localização não dá para saber a obra — ligue a localização", None
-        if no_tablet or modo(alvo) == "ANALISAR":
+        if no_tablet:
             return alvo, None, None          # o motivo "sem localização" sai da avaliação da cerca
         return None, "localização desligada — ligue a localização do celular para bater o ponto", None
     # FORA
@@ -189,6 +196,11 @@ def decidir_lugar(*, situacao: str, detectada: Optional[dict], distancia: Option
         return None, "nenhuma obra com coordenada cadastrada perto daqui", None
     d = (geo.distancia_metros(latitude, longitude, alvo["latitude"], alvo["longitude"])
          if alvo is not detectada else distancia)
+    explicou = bool(" ".join(str(justificativa or "").split()))
+    if modo(alvo) == "BLOQUEAR" and explicou and not no_tablet:
+        # Bateu fora da obra e explicou: vale, mas só depois de conferida.
+        return alvo, None, (f"fora da área da obra: {geo.distancia_legivel(d)} da obra {alvo['codigo']} "
+                            f"(raio {alvo['raio_metros']} m) — bateu explicando o motivo")
     if modo(alvo) == "BLOQUEAR":
         # Centenas de quilômetros não é "fora da cerca", é localização ou coordenada
         # errada (09/10/2026: o dono foi recusado a 16 mil km da obra de teste).
@@ -196,7 +208,8 @@ def decidir_lugar(*, situacao: str, detectada: Optional[dict], distancia: Option
         return None, (f"fora da área da obra: {geo.distancia_legivel(d)} da obra {alvo['codigo']} "
                       f"(raio {alvo['raio_metros']} m)"
                       + (" — distância grande demais: confira a localização do celular e a coordenada "
-                         "da obra" if absurda else "")), None
+                         "da obra" if absurda else "")
+                      + ("" if no_tablet else " — para bater mesmo assim, explique o motivo (vai para conferência)")), None
     return alvo, None, None                  # ANALISAR: o motivo "fora da cerca" sai da avaliação
 
 
@@ -367,7 +380,7 @@ def registrar(conn: Connection, *, cpf, obra, origem: str = "PWA",
             situacao=situacao, detectada=detectada, distancia=distancia_detectada,
             enviada=enviada, no_tablet=no_tablet, precisao=precisao,
             modo=lambda o: modo_fora_da_cerca(conn, int(o["id"])),
-            latitude=latitude, longitude=longitude)
+            latitude=latitude, longitude=longitude, justificativa=justificativa or "")
         if recusa:
             _recusar(conn, recusa, situacao=situacao, distancia_metros=distancia_detectada,
                      precisao=precisao, **contexto)

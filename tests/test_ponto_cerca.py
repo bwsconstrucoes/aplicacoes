@@ -10,11 +10,11 @@ B = {"id": 2, "codigo": "B", "latitude": -3.7400, "longitude": -38.5270, "raio_m
 SEM = {"id": 3, "codigo": "S", "latitude": None, "longitude": None, "raio_metros": 200}
 
 
-def _lugar(lat, lon, precisao=0, enviada=None, no_tablet=False, modo="BLOQUEAR"):
+def _lugar(lat, lon, precisao=0, enviada=None, no_tablet=False, modo="BLOQUEAR", porque=""):
     situacao, detectada, d = geo.localizar_obra(lat, lon, precisao, [A, B, SEM])
     return marcacoes.decidir_lugar(situacao=situacao, detectada=detectada, distancia=d, enviada=enviada,
                                    no_tablet=no_tablet, precisao=precisao, modo=lambda o: modo,
-                                   latitude=lat, longitude=lon)
+                                   latitude=lat, longitude=lon, justificativa=porque)
 
 
 class TestLocalizarObra:
@@ -67,8 +67,23 @@ class TestDecidirLugar:
         assert obra is None and "ligue a localização" in recusa
         obra, recusa, _ = _lugar(None, None, enviada=A, no_tablet=True)
         assert obra is A and recusa is None
+        # Desde 09/10/2026, nem a obra que analisa aceita o CELULAR sem localização
         obra, recusa, _ = _lugar(None, None, enviada=A, modo="ANALISAR")
-        assert obra is A and recusa is None
+        assert obra is None and "ligue a localização" in recusa
+
+    def test_fora_da_obra_explicando_vai_para_conferencia(self):
+        """Decisão do dono, 09/10/2026: "não tá na obra, alerta; e se a pessoa ainda
+        for bater, explicar o motivo e o ponto ir para conferência"."""
+        obra, recusa, analise = _lugar(-3.7600, -38.5270, enviada=A, porque="comprando material")
+        assert obra is A and recusa is None and "fora da área da obra" in analise and "explicando" in analise
+        obra, recusa, _ = _lugar(-3.7600, -38.5270, enviada=A, porque="   ")
+        assert obra is None and "explique o motivo" in recusa
+        # o ponto da obra fora da cerca não ganha essa saída: o aparelho saiu da obra
+        obra, recusa, _ = _lugar(-3.7600, -38.5270, enviada=A, no_tablet=True, porque="x")
+        assert obra is None and "explique" not in recusa
+        # sem localização, nunca
+        obra, recusa, _ = _lugar(None, None, enviada=A, porque="comprando material")
+        assert obra is None and "ligue a localização" in recusa
 
     def test_sem_obra_e_sem_localizacao(self):
         obra, recusa, _ = _lugar(None, None, enviada=None)
