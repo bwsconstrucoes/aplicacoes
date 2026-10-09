@@ -325,3 +325,49 @@ def test_a_tela_de_emissao_tem_link_para_a_base(cliente):
     corpo = cliente.get(f"/emissao/?token={TOKEN}",
                         follow_redirects=True).get_data(as_text=True)
     assert f"/emissao/faturamento?token={TOKEN}" in corpo
+
+
+# --------------------------------------------------------------------------- #
+# Coluna que nada preenche é lixo — o defeito que a planilha antiga tem
+# --------------------------------------------------------------------------- #
+def test_a_nota_nova_nasce_com_o_sequencial_preenchido():
+    """O emissor monta a linha com os dados que ele SABE, e o `cruzar` fecha o
+    que é derivado. Sem essa chamada a nota nova nascia sem `nota_sequencial` —
+    justamente o campo pelo qual o dono procura a nota (3283, e não
+    2600000003283)."""
+    d = {"nota_numero": "2600000003284", "data_emissao": "2026-10-08",
+         "chave_acesso": "2" * 50, "origem": "emissor"}
+    bf.cruzar(d)
+    assert d["nota_sequencial"] == "3284"
+    assert d["modelo"] == "nacional"
+    assert d["competencia"] == "2026-10"
+
+
+def test_o_emissor_preenche_tudo_menos_o_que_depende_do_omie():
+    """Coluna que NADA preenche é exatamente o lixo de que o dono reclama na
+    planilha antiga — e foi conferindo isto que três colunas órfãs apareceram
+    (`link_xml`, `id_dps`, `tomador_municipio`), hoje preenchidas.
+
+    O teste exige que as vazias sejam SÓ três grupos, cada um com motivo: o do
+    Omie (depende de uma decisão dele, ver FATURAMENTO.md §5), o do recebimento
+    (acontece depois da emissão) e a observação (texto escrito à mão). Coluna
+    nova sem ninguém para preenchê-la quebra aqui."""
+    import re
+    fonte = open(os.path.join(_EMISSAONF, "concluir.py"), encoding="utf-8").read()
+    bloco = fonte.split("dados_base = {")[1].split("\n        # O `cruzar`")[0]
+    gravados = set(re.findall(r'"([a-z_]+)":', bloco))
+    derivados = {"nota_sequencial", "divergencia_tributos", "divergencia_recebimento",
+                 "atualizado_em"}          # o `cruzar` e o `montar_linha` fecham
+    vazios = [c for c in bf.CAB if c not in gravados and c not in derivados]
+    esperado = [
+        # o grupo do Omie: depende da decisão de quem passa a consultá-lo
+        "omie_pis", "omie_cofins", "omie_ir", "omie_csll", "omie_inss", "omie_iss",
+        "omie_codigo_lancamento", "omie_numero_documento", "omie_valor_titulo",
+        "omie_conferido_em",
+        # o recebimento acontece DEPOIS da emissão — vazio aqui é o certo
+        "data_recebimento", "valor_recebido",
+        # observação é texto que alguém escreve à mão (ex.: "CANCELADA")
+        "observacao",
+    ]
+    assert sorted(vazios) == sorted(esperado), (
+        "coluna sem ninguém para preencher é lixo: " + str(sorted(vazios)))

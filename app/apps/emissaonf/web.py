@@ -368,6 +368,7 @@ def emitir():
             try:
                 with contextlib.redirect_stdout(buf):
                     _concluir.concluir(card_id, numero, codigo, data_iso, nota_path, ctx=ctx,
+                                       id_dps=res.get("id_dps", "") if isinstance(res, dict) else "",
                                        nota_substituida=None, nacional=True,
                                        chave_nacional=chave)
             except Exception as e:
@@ -912,7 +913,7 @@ def declaracao():
     try:
         with contextlib.redirect_stdout(buf):
             _concluir.concluir(card_id, numero, "", data_iso, nota_path, ctx=ctx,
-                               nacional=True, chave_nacional=chave)
+                               nacional=True, chave_nacional=chave, id_dps=id_dps)
     except Exception as e:
         buf.write(f"\n>>> ERRO no concluir: {type(e).__name__}: {e}")
     try:

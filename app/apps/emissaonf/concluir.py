@@ -41,7 +41,7 @@ ABA_LINKS = "Notas BWS Links"
 
 def concluir(card_id, numero, codigo, data_iso, nota_xml_path, forcar=False, ctx=None,
              nota_substituida=None, nacional=False, chave_nacional="",
-             pdf_municipal: bytes | None = None):
+             pdf_municipal: bytes | None = None, id_dps: str = ""):
     """Pós-emissão imediato.
 
     `pdf_municipal`, quando passado, é o PDF **oficial baixado do portal da
@@ -321,8 +321,17 @@ def concluir(card_id, numero, codigo, data_iso, nota_xml_path, forcar=False, ctx
             "link_card": bfat.LINK_CARD_PIPEFY + str(card_id),
             "link_nfse_municipal": link_mun, "link_nfse_nacional": link_nac,
             "link_recibo": link_rec,
+            "link_xml": (f"https://drive.google.com/file/d/{xml_fid}/view"
+                         if xml_fid else ""),
+            "id_dps": id_dps or "",
+            "tomador_municipio": str(getattr(ctx.get("dados_rps"), "toma_cmun", "") or ""),
             "origem": "emissor",
         }
+        # O `cruzar` fecha o que é DERIVADO: o sequencial a partir do número
+        # longo, o modelo, a competência e as duas divergências. Sem ele a nota
+        # nova nasceria sem `nota_sequencial` — justamente o campo pelo qual o
+        # dono procura a nota (3283, e não 2600000003283).
+        bfat.cruzar(dados_base)
         ws_base = bfat._ws(planilha)
         qual = bfat.gravar(ws_base, dados_base,
                            bfat.numeros_na_base(ws_base).get(str(numero)))
