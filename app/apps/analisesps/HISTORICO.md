@@ -12244,6 +12244,7 @@ somente Solicitações de uma conta especifica"*.
   A regra continua sendo a do emissor — chamada, não copiada (import plano,
   como o próprio emissor faz). Não apaga nada, não emite nada; repetir não
   duplica. Não testado contra a planilha de verdade. Sem migração.
+- **Publicada em 09/10/2026** (suíte inteira 9.158 verdes).
 
 #### Leva 210 — destaque de "sem validação" e de "Sem NF" na lista (09/10/2026)
 
