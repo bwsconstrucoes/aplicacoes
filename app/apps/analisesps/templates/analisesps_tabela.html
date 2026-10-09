@@ -114,6 +114,10 @@
                 {# 09/10/2026: chave Pix "Atualizar Chave" — não agenda. #}
                 {% if l|atualizar_pix %}<span class="selo pix-atualizar"
                      title="A chave Pix desta SP é 'Atualizar Chave': trate a chave antes de agendar. O Agendar está bloqueado.">Atualizar Pix</span>{% endif %}
+                {# 09/10/2026: sem número de nota — fora BeeVale, rescisão,
+                   férias e salários (`pagamentos.falta_nota`). #}
+                {% if l|falta_nf %}<span class="selo sem-nf"
+                     title="Esta SP está sem número de nota fiscal. Confira antes de pagar.">Sem NF</span>{% endif %}
               </td>
 
             {% elif c.tipo == 'data' %}
@@ -159,6 +163,12 @@
                 {% if l.cadastro_incompleto %}<span class="selo incompleto"
                      title="Falta chave Pix, centro de custo ou integração Omie">Cadastro</span>{% endif %}
               </td>
+
+            {# 09/10/2026: a célula em branco não chamava atenção nenhuma. #}
+            {% elif c.chave == 'validacao' and l|sem_validacao %}
+              <td><span class="selo sem-validacao" title="A Validação desta SP está em branco — sem ela, o agendamento fica bloqueado.">sem validação</span></td>
+            {% elif c.chave == 'nf' and l|falta_nf %}
+              <td><span class="selo sem-nf" title="Sem número de nota fiscal.">sem NF</span></td>
 
             {% else %}
               <td class="cortar" title="{{ l[c.chave] or '' }}">{{ l[c.chave] or '' }}</td>

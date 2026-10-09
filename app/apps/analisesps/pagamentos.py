@@ -231,6 +231,47 @@ def chave_a_atualizar(forma, info_pgt) -> bool:
     return "ATUALIZAR" in limpo
 
 
+def _normal(texto) -> str:
+    import unicodedata
+    cru = unicodedata.normalize("NFKD", " ".join(str(texto or "").split()))
+    return "".join(c for c in cru if not unicodedata.combining(c)).lower()
+
+
+# OS TIPOS DE DESPESA QUE NÃO TÊM NOTA FISCAL (09/10/2026). O dono: *"quando a
+# categoria de despesa for rescisão, férias, salários e ordenados, não precisa
+# destaque de número de nota (…) vai ter outras regras, depois eu vou
+# adicionando"*. Comparado pelo COMEÇO, sem acento e sem maiúscula
+# ("Rescisão", "Rescisões" e "RESCISAO" são o mesmo). Regra nova entra AQUI.
+TIPOS_SEM_NOTA = ("rescis", "ferias", "salarios e ordenados")
+# E as formas de pagamento que não têm nota: o BeeVale paga gente, não serviço.
+FORMAS_SEM_NOTA = ("beevale",)
+
+
+def falta_nota(forma, tipo_despesa, nf, status_pgt="") -> bool:
+    """A SP deveria ter número de nota fiscal e está sem?
+
+    *"Às vezes a gente esquece de conferir se tem o número da nota (…) bater o
+    olho e já saber que aquele pagamento tem alguma coisa errada."* Cancelada
+    não precisa de nota."""
+    if str(nf or "").strip():
+        return False
+    if _normal(status_pgt).startswith("cancel"):
+        return False
+    if any(f in _normal(forma) for f in FORMAS_SEM_NOTA):
+        return False
+    return not _normal(tipo_despesa).startswith(TIPOS_SEM_NOTA)
+
+
+def sem_validacao(validacao, status_pgt="") -> bool:
+    """A Validação está em branco numa SP que ainda vai ser paga? (09/10/2026:
+    *"quando tem uma SP sem validação fica só a célula em branco; era bom um
+    destaque"*). Paga ou cancelada não pede mais validação — destacar o
+    histórico inteiro esconderia as que importam."""
+    if str(validacao or "").strip():
+        return False
+    return not _normal(status_pgt).startswith(("pago", "cancel"))
+
+
 def pendencias(forma, info_pgt, centro_custo, codigo_integracao, status_pgt) -> list:
     """
     Lista de pendências de cadastro de um lançamento (para o alerta laranja e

@@ -206,3 +206,20 @@ def test_AGENDAR_SP_com_chave_ATUALIZAR_e_recusado_no_servidor(app, monkeypatch)
         ficha = cliente.get("/analisesps/sp/1000000101").get_data(as_text=True)
     assert lista.count("pix-atualizar") >= 1 and "Atualizar Pix" in lista
     assert "Chave Pix a atualizar" in ficha and "data-motivo" in ficha
+
+
+def test_a_LISTA_destaca_sem_validacao_e_sem_NF(app, monkeypatch):
+    from tests.test_analisesps_banco import semear, sp
+    semear([sp("1000000201", forma_pagamento="Boleto", tipo_despesa="Material",
+               status_pgt="Pagar", valor="10,00", vencimento="10/10/2026"),
+            sp("1000000202", forma_pagamento="Boleto", tipo_despesa="Rescisão",
+               status_pgt="Pagar", valor="10,00", vencimento="10/10/2026",
+               validacao="Sim")])
+    with app.test_client() as cliente:
+        cliente.post("/analisesps/entrar", data={"senha": SENHA_MESTRE_OPERADOR})
+        lista = cliente.get("/analisesps/solicitacoes?f=1&busca=10000002",
+                            follow_redirects=True).get_data(as_text=True)
+    linha = lista[lista.index("1000000201"):lista.index("1000000202")]
+    assert "Sem NF" in linha and "sem validação" in linha
+    resto = lista[lista.index("1000000202"):]
+    assert "Sem NF" not in resto[:3000], "rescisão não pede nota"

@@ -90,3 +90,19 @@ def test_CHAVE_PIX_A_ATUALIZAR_e_reconhecida():
     assert not chave_a_atualizar("BeeVale", "Chave Pix: 123.456.789-01")
     assert not chave_a_atualizar("Boleto", "Atualizar Chave"), "boleto não tem chave Pix"
     assert not chave_a_atualizar("BeeVale", "")
+
+
+def test_SEM_NF_destaca_menos_BeeVale_rescisao_ferias_e_salarios():
+    """09/10/2026: *"tudo que não tiver número de nota (…) um destaque. Se for
+    BeeVale, não precisa (…) rescisão, férias, salários e ordenados não."*"""
+    from app.apps.analisesps.pagamentos import falta_nota, sem_validacao
+    assert falta_nota("Boleto", "Material", "", "Pagar")
+    assert falta_nota("Pix", "Serviço", " ", "Pago"), "paga sem nota também se destaca"
+    assert not falta_nota("Boleto", "Material", "1234", "Pagar")
+    assert not falta_nota("BeeVale", "Material", "", "Pagar")
+    for tipo in ("Rescisão", "RESCISOES", "Férias", "Salários e Ordenados"):
+        assert not falta_nota("Pix", tipo, "", "Pagar"), tipo
+    assert not falta_nota("Boleto", "Material", "", "Cancelado")
+    assert sem_validacao("", "Pagar") and sem_validacao(None, "")
+    assert not sem_validacao("Sim", "Pagar")
+    assert not sem_validacao("", "Pago") and not sem_validacao("", "Cancelado")

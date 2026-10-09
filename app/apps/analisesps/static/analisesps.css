@@ -2810,3 +2810,7 @@ table.conciliacao tr.com-sp { cursor: pointer; }
 
 /* Chave Pix "Atualizar Chave" — não agenda (09/10/2026). */
 .selo.pix-atualizar { background: #FFE8D6; color: #8A3B00; font-weight: 600; white-space: nowrap; }
+
+/* Sem validação e sem número de nota (09/10/2026). */
+.selo.sem-validacao { background: #FFF1DC; color: #7A4300; font-weight: 600; white-space: nowrap; }
+.selo.sem-nf { background: #FFEAEA; color: #8C1F19; font-weight: 600; white-space: nowrap; }

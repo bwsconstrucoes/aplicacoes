@@ -12228,6 +12228,21 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 210 — destaque de "sem validação" e de "Sem NF" na lista (09/10/2026)
+
+- *"Quando tem uma SP sem validação fica só a célula em branco; era bom um
+  destaque."* A coluna Validação mostra a etiqueta **"sem validação"** — só
+  para SP que ainda vai ser paga (paga ou cancelada não pede validação; destacar
+  o histórico inteiro esconderia as que importam). `pagamentos.sem_validacao`.
+- *"Tudo que não tiver número de nota, um destaque (…) se for BeeVale não
+  precisa (…) rescisão, férias, salários e ordenados não (…) vai ter outras
+  regras, depois eu vou adicionando."* Etiqueta **"Sem NF"** ao lado do número
+  da SP (sempre visível — a coluna Nº NF vem escondida por padrão), e na própria
+  coluna quando ela está ligada. Cancelada fica de fora; paga sem nota aparece.
+  As exceções moram em `pagamentos.TIPOS_SEM_NOTA` e `FORMAS_SEM_NOTA` —
+  regra nova do dono entra ali, comparada pelo começo, sem acento.
+- Solicitações e Lote (a mesma tabela). Sem migração.
+
 #### Leva 209 — chave Pix "Atualizar Chave": etiqueta na lista e trava no Agendar (09/10/2026)
 
 - *"As SPs que têm o tipo de pagamento BeeVale e a chave Pix com a informação

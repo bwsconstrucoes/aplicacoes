@@ -359,6 +359,22 @@ def _filtro_atualizar_pix(linha) -> bool:
     return chave_a_atualizar(linha.get("forma_pagamento"), linha.get("info_pgt"))
 
 
+@bp.app_template_filter("falta_nf")
+def _filtro_falta_nf(linha) -> bool:
+    """A etiqueta "Sem NF" da lista (09/10/2026) — `pagamentos.falta_nota`."""
+    from .pagamentos import falta_nota
+    linha = linha or {}
+    return falta_nota(linha.get("forma_pagamento"), linha.get("tipo_despesa"),
+                      linha.get("nf"), linha.get("status_pgt"))
+
+
+@bp.app_template_filter("sem_validacao")
+def _filtro_sem_validacao(linha) -> bool:
+    from .pagamentos import sem_validacao
+    linha = linha or {}
+    return sem_validacao(linha.get("validacao"), linha.get("status_pgt"))
+
+
 @bp.app_template_filter("moeda_curta")
 def _filtro_moeda_curta(valor):
     """O valor em poucas letras, para onde ele não cabe. Ver `formatos`."""
