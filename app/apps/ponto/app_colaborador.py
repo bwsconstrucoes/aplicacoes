@@ -74,6 +74,29 @@ def _quem(conn) -> Quem:
     return Quem(nome=f"{p['nome']} (pelo celular)", colaborador_id=p["id"])
 
 
+def _dar_nome_ao_aparelho(conn, aparelho, pessoa: dict) -> None:
+    """O celular que espera aprovação passa a dizer de quem é, NA ENTRADA com CPF
+    e PIN (09/10/2026: "chega aparelho sem nome (…) devíamos aproveitar o
+    cadastro, visto que é colocado o CPF"). Só enquanto PENDENTE: aparelho
+    aprovado não muda de dono pelo celular."""
+    if not aparelho or aparelho.get("status") != "PENDENTE":
+        return
+    db.executar(conn, "UPDATE ponto.dispositivos SET descricao = :d, colaborador_id = :c "
+                      "WHERE id = :id AND status = 'PENDENTE'",
+                d=f"Celular de {pessoa['nome']} (CPF final {pessoa['cpf'][-3:]})"[:200], c=pessoa["id"],
+                id=aparelho["id"])
+
+
+def _aparelho_que_chama(conn):
+    uuid, token = request.headers.get("X-Device-UUID", ""), request.headers.get(auth.CABECALHO_TOKEN, "")
+    if not uuid or not token:
+        return None
+    try:
+        return dispositivos.autenticar(conn, uuid, token)
+    except Exception:  # noqa: BLE001 — aparelho desconhecido: segue como celular comum
+        return None
+
+
 def _abrir_sessao(pessoa: dict) -> None:
     session.permanent = True
     session[auth.SESSAO_COLABORADOR] = int(pessoa["id"])
@@ -142,6 +165,9 @@ def app_api_pin():
     d = _corpo()
     with db.conexao() as conn:
         pessoa = acesso.criar_pin(conn, d.get("cpf"), d.get("codigo"), d.get("pin"))
+        a = _aparelho_que_chama(conn)
+        if not (a and a["status"] == "APROVADO" and a["perfil"] != "INDIVIDUAL"):
+            _dar_nome_ao_aparelho(conn, a, pessoa)
     _abrir_sessao(pessoa)
     return _ok(nome=pessoa["nome"])
 
@@ -156,13 +182,7 @@ def app_api_entrar():
         # No aparelho da obra ninguém entra com CPF e PIN: com a sessão aberta,
         # o tablet deixaria de ser da obra e mostraria o mês daquela pessoa a
         # quem passasse na frente.
-        uuid, token = request.headers.get("X-Device-UUID", ""), request.headers.get(auth.CABECALHO_TOKEN, "")
-        a = None
-        if uuid and token:
-            try:
-                a = dispositivos.autenticar(conn, uuid, token)
-            except Exception:  # noqa: BLE001 — aparelho desconhecido: segue como celular comum
-                a = None
+        a = _aparelho_que_chama(conn)
         pessoa = acesso.entrar(conn, d.get("cpf"), d.get("pin"))
         # No ponto da obra (ou de equipe), só o RESPONSÁVEL entra no "Meu ponto"
         # (pedido do dono, 07/10/2026: "se ela quiser acessar o ponto dela,
@@ -173,6 +193,7 @@ def app_api_entrar():
                 and a.get("colaborador_id") != pessoa["id"] and not papeis.e_administrativo(conn, pessoa):
             raise Recusada("este é o ponto da obra — só o responsável por ele (ou o administrativo da obra) "
                            "entra aqui")
+        _dar_nome_ao_aparelho(conn, a, pessoa)
     _abrir_sessao(pessoa)
     return _ok(nome=pessoa["nome"])
 
@@ -224,11 +245,7 @@ def app_api_aparelho_identificar():
             raise NaoEncontrado("aparelho não encontrado")
         if a["status"] != "PENDENTE":
             return _ok(mudou=False)
-        p = cadastros.colaborador_por_id(conn, _eu())
-        db.executar(conn, "UPDATE ponto.dispositivos SET descricao = :d, colaborador_id = :c "
-                          "WHERE id = :id AND status = 'PENDENTE'",
-                    d=f"Celular de {p['nome']} (CPF final {p['cpf'][-3:]})"[:200], c=p["id"],
-                    id=a["id"])
+        _dar_nome_ao_aparelho(conn, a, cadastros.colaborador_por_id(conn, _eu()))
     return _ok(mudou=True)
 
 

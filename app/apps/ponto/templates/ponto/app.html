@@ -281,14 +281,13 @@
       <h2 id="ola">Olá</h2>
       <div id="i-local" class="aviso info">📍 Procurando a sua localização…</div>
       <div id="i-escolha" class="oculto">
-        <div class="aviso ambar"><b>⚠️ Batida fora do normal.</b> A obra não foi encontrada pela
-          localização: se você bater escolhendo a obra na lista, a batida vai para a conferência do
-          a administração da obra, e você vai precisar dizer por quê.</div>
+        <div class="aviso ambar"><b>⚠️ Batida fora da obra.</b> Se você bater escolhendo a obra na lista,
+          vai precisar explicar o motivo; a batida vai para a conferência da administração da obra,
+          com a sua localização, e só vale depois de validada.</div>
         <label for="i-obra">Em que obra você está?</label>
         <select id="i-obra"></select>
-        <p class="pequeno">A lista só aparece quando o celular não acha você dentro de uma obra. Vale para
-          obra ainda sem localização cadastrada (a batida vai para conferência). Obra com cerca só aceita
-          quem está dentro dela.</p>
+        <p class="pequeno">A lista só aparece quando o celular não acha você dentro de uma obra. Sem
+          localização, o ponto não é registrado.</p>
       </div>
       <button class="btn grande" id="btn-bater" type="button">Tirar foto e bater ponto</button>
       <button class="link" id="btn-sem-foto" type="button">A câmera não abre? Bater sem foto</button>
@@ -467,6 +466,10 @@ async function estadoDoAparelho() {
 
 async function iniciar() {
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/ponto/app/sw.js", {scope: "/ponto/app"}).catch(() => {});
+  // O identificador do aparelho mora no armazenamento do navegador: apagado, o
+  // celular vira "novo" e volta para a fila de aprovação (09/10/2026). Pedir que o
+  // navegador não o apague sozinho (ele ainda some se a pessoa limpar os dados).
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {}); } catch (e) {}
   await estadoDoAparelho();
   // O código que a gestão confere antes de aprovar este aparelho (Validações ›
   // Aparelho, coluna "código"): é o fim do identificador dele.
@@ -590,8 +593,11 @@ function mostrarLocal(l) {
   // "fora da área da obra"). Obra que BLOQUEIA fora da cerca não entra nela; obra
   // sem coordenada entra (não há como saber onde ela fica); sem localização, só
   // a obra que manda para conferência (Configuração › Cerca das obras).
-  const aceita = semLocal => (OBRAS || []).filter(o => o.fora_da_cerca === "ANALISAR"
-    || (!semLocal && (o.latitude === null || o.longitude === null)));
+  // Desde 09/10/2026: SEM localização, o celular nunca bate ("não devíamos
+  // permitir o ponto sem localização"); COM ela, fora da obra, qualquer pessoa
+  // escolhe a obra, explica o motivo, e a batida vai para conferência ("não tá
+  // na obra, alerta; e se a pessoa ainda for bater, explicar o motivo").
+  const aceita = semLocal => semLocal ? [] : (OBRAS || []);
   const escolha = lista => {
     const mostrar = !!(lista && lista.length);
     $("i-escolha").classList.toggle("oculto", !mostrar);
@@ -602,8 +608,7 @@ function mostrarLocal(l) {
   if (!l) {
     const lista = aceita(true);
     caixa.className = "aviso erro";
-    caixa.textContent = "📍 Localização desligada. Ligue a localização do celular: fora da área da obra o ponto não é registrado."
-      + (lista.length ? " Se não der, escolha a obra abaixo — a batida vai para conferência." : "");
+    caixa.textContent = "📍 Localização desligada. Ligue a localização do celular: sem ela o ponto não é registrado.";
     escolha(lista);
     return;
   }
@@ -621,9 +626,9 @@ function mostrarLocal(l) {
     const d = medidas[0].d, txt = d >= 1000 ? `${(d / 1000).toFixed(1).replace(".", ",")} km` : `${Math.round(d)} m`;
     const lista = aceita(false);
     caixa.className = "aviso erro";
-    caixa.textContent = `📍 Você está a ${txt} da obra ${rotuloObra(medidas[0].o)}. Fora da área da obra o ponto não é registrado.`
+    caixa.textContent = `⚠️ Você NÃO está na obra: está a ${txt} da obra ${rotuloObra(medidas[0].o)}.`
       + (d > 100000 ? " Distância grande demais: confira se a localização do celular está certa, ou peça para conferirem a coordenada da obra." : "")
-      + (lista.length ? " Nas obras da lista abaixo, a batida vai para conferência." : "");
+      + " Se precisar bater mesmo assim, escolha a obra abaixo e explique o motivo: a batida vai para a conferência da administração da obra e só vale depois de validada.";
     escolha(lista);
   } else {
     caixa.className = "aviso info"; caixa.textContent = "📍 Nenhuma obra sua tem localização cadastrada: escolha a obra abaixo.";
@@ -661,10 +666,11 @@ function tirarFoto() {
 function pedirJustificativa() {
   return new Promise(resolve => {
     $("dlg-corpo").innerHTML = `
-      <h2 style="margin:0 0 6px">Batida fora do normal</h2>
-      <div class="aviso ambar">A obra não foi encontrada pela localização. A batida vai para a conferência da administração da obra.</div>
-      <label for="j-texto">Por que a localização não achou a obra?</label>
-      <textarea id="j-texto" placeholder="Ex.: o GPS do celular não funciona; estou no almoxarifado da obra"></textarea>
+      <h2 style="margin:0 0 6px">⚠️ Você não está na obra</h2>
+      <div class="aviso ambar">A batida vai para a conferência da administração da obra, com a sua localização,
+        e só vale depois de validada. Ela aparece no seu dia como “em conferência”.</div>
+      <label for="j-texto">Por que você está batendo fora da obra?</label>
+      <textarea id="j-texto" placeholder="Ex.: fui comprar material; serviço em outro endereço; o GPS não achou a obra"></textarea>
       <button class="btn" type="button" id="j-ok">Bater e mandar para conferência</button>
       <button class="btn sec" type="button" id="j-cancelar">Não bater agora</button>`;
     let respondido = false;
@@ -711,7 +717,7 @@ $("btn-ir-tablet").addEventListener("click", () => { aviso(""); abrirMenu(); });
 
 function mostrarComprovante(c, repetida, status, motivo) {
   const analise = status === "EM_ANALISE"
-    ? `<div class="aviso ambar">Batida registrada e enviada para conferência: ${esc(motivo || "")}.</div>` : "";
+    ? `<div class="aviso ambar">⏳ Batida registrada e enviada para conferência: ${esc(motivo || "")}. Ela só vale depois que a administração da obra validar.</div>` : "";
   $("dlg-corpo").innerHTML = `
     <h2 style="margin:0 0 6px">${repetida ? "Esta batida já tinha sido registrada" : "Ponto registrado ✔"}</h2>
     ${analise}
@@ -759,7 +765,8 @@ async function carregarInicio() {
     avisoAparelho = `<div class="aviso erro">Não consegui registrar este celular. Feche e abra de novo.</div>`; podeBater = false;
   } else if (APARELHO.status === "PENDENTE") {
     const codAp = aparelho().uuid.replace(/[^A-Za-z0-9]/g, "").slice(-6).toUpperCase();
-    avisoAparelho = `<div class="aviso ambar">Este celular está esperando aprovação do DP ou da administração da obra (código <b>${codAp}</b>). Enquanto isso você vê o seu ponto, mas ainda não bate por aqui.</div>`;
+    avisoAparelho = `<div class="aviso ambar">Este celular está esperando aprovação do DP ou da administração da obra (código <b>${codAp}</b>). Enquanto isso você vê o seu ponto, mas ainda não bate por aqui.
+      <br><small>Se ele já era aprovado: apagar os dados do navegador (ou reinstalar o aplicativo) faz o celular parecer novo — é só pedir a aprovação de novo. Para mexer na localização, mude só a permissão do site, sem apagar os dados.</small></div>`;
     podeBater = false;
   } else if (APARELHO.status === "BLOQUEADO") {
     avisoAparelho = `<div class="aviso erro">Este celular foi bloqueado para bater ponto. Fale com o DP.</div>`; podeBater = false;
@@ -780,11 +787,14 @@ async function carregarInicio() {
 
   // hoje
   const d = EU.hoje;
-  const chips = d.batidas.map(b => `<button type="button" class="chip ${b.status === "EM_ANALISE" ? "analise" : b.status === "AJUSTADA" ? "ajustada" : ""}" data-id="${b.id}">${esc(b.hora)}</button>`).join("");
+  const chips = d.batidas.map(b => `<button type="button" class="chip ${b.status === "EM_ANALISE" ? "analise" : b.status === "AJUSTADA" ? "ajustada" : ""}" data-id="${b.id}">${b.status === "EM_ANALISE" ? "⏳ " : ""}${esc(b.hora)}</button>`).join("");
+  const emConferencia = d.batidas.filter(b => b.status === "EM_ANALISE").length;
   const previsto = d.previsto ? `Previsto hoje: ${hm(d.previsto)}${d.escala ? " · " + esc(d.escala) : ""}` :
     (d.feriado ? `Feriado: ${esc(d.feriado)}` : (d.escala ? "Hoje é dia de descanso" : "Sem escala cadastrada"));
   $("hoje").innerHTML = `
     ${chips ? `<div class="chips">${chips}</div><p class="pequeno">Toque num horário para ver o comprovante.</p>` : `<p>Nenhuma batida hoje.</p>`}
+    ${emConferencia ? `<div class="aviso ambar">⏳ ${emConferencia === 1 ? "Uma batida está" : `${emConferencia} batidas estão`} em conferência:
+      ainda não ${emConferencia === 1 ? "vale" : "valem"} até a administração da obra validar.</div>` : ""}
     <p class="pequeno">${previsto}</p>
     ${d.ocorrencia ? `<div class="aviso ok">${esc(d.ocorrencia.rotulo)} aprovado para hoje.</div>` : ""}
     ${EU.pedidos_pendentes ? `<p class="pequeno">Você tem ${EU.pedidos_pendentes} pedido(s) esperando resposta.</p>` : ""}`;
@@ -842,7 +852,8 @@ function diasDoMes(d, regras) {
     if (acoes) temAcao = true;
     return `<div class="dia"><div class="data">${dataBR(x.data).slice(0, 5)}<small>${esc(x.dia_semana)}</small></div>
       <div class="corpo">
-        <div class="chips">${x.batidas.map(b => `<span class="chip ${b.status === "EM_ANALISE" ? "analise" : b.status === "AJUSTADA" ? "ajustada" : ""}">${esc(b.hora)}</span>`).join("")}</div>
+        <div class="chips">${x.batidas.map(b => `<span class="chip ${b.status === "EM_ANALISE" ? "analise" : b.status === "AJUSTADA" ? "ajustada" : ""}">${b.status === "EM_ANALISE" ? "⏳ " : ""}${esc(b.hora)}</span>`).join("")}</div>
+        ${x.batidas.some(b => b.status === "EM_ANALISE") ? `<div class="pequeno" style="color:var(--ambar)">⏳ batida em conferência — ainda não validada</div>` : ""}
         <div style="margin-top:6px"><span class="selo ${cls}">${esc(x.ocorrencia ? x.ocorrencia.rotulo : rot)}</span>
           ${x.trabalhado ? ` trabalhou ${hm(x.trabalhado)}` : ""}${x.extra ? ` · extra ${hm(x.extra)}` : ""}${x.debito && !x.falta ? ` · a menos ${hm(x.debito)}` : ""}
           ${x.feriado ? ` · ${esc(x.feriado)}` : ""}</div>

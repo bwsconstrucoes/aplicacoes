@@ -1307,6 +1307,41 @@ como fronteira do nome, e como o texto examinado é `"id nome"`, o CNPJ pegava
 certo.** Só apareceu ao digitar um telefone de verdade no navegador.
 
 
+### 09/10/2026 — A TELA DE FATURAMENTO É DO ANÁLISE DE SPs (atravessa áreas)
+
+**Para o chat do Análise de SPs, que é quem vai construir a tela.** O dono pediu
+uma tela de **Faturamento** para fazer a gestão das notas emitidas — ver
+faturamento, baixar a nota, gráfico de evolução, filtros — em vez de trabalhar
+na planilha "Notas BWS", que ele chama de bagunça.
+
+**A base de dados dela já existe e já está no ar.** Foi construída na área
+`emissaonf` em 09/10/2026, porque é o emissor que produz o dado:
+
+- **aba `Base Faturamento`**, na planilha das notas (`1NOEzey3…PpEbU`), 64
+  colunas, **uma linha por nota**;
+- o emissor grava nela a cada emissão (e continua gravando na "Notas BWS"
+  também, por decisão do dono, até a base nova estar conferida);
+- a tela `/emissao/faturamento` traz as notas antigas, em lotes;
+- a tela `/emissao/omie` confere os tributos contra o título do Omie.
+
+> 📄 **Leia `app/apps/emissaonf/FATURAMENTO.md` antes de começar a tela.** Está
+> lá: o nome e o significado de cada uma das 64 colunas, de onde cada uma vem,
+> **o que está vazio e por quê**, e as regras que não dá para adivinhar.
+
+**Os três pontos que mais importam para quem monta a tela:**
+
+1. **A C. Diários NÃO está na base, de propósito.** Obra, contrato, tributação,
+   município, **empresa** e **SCP** são atributos da obra — a tela cruza pela
+   coluna `obra_codigo`. Nem toda obra é faturada no CNPJ da BWS, e algumas são
+   SCP com CNPJ próprio: é um eixo de visualização que ele quer.
+2. **Cada tributo aparece duas vezes:** o que a nota declarou e o que está no
+   título do Omie, mais os campos `divergencia_tributos` e
+   `divergencia_recebimento`. Eles ficam **vazios** quando não há com o que
+   comparar — vazio não é zero, e mostrar "conferido" ali seria mentira.
+3. **O número da nota tem 13 dígitos no padrão nacional** (ano + sequencial).
+   Há a coluna `nota_sequencial` com o número curto, que é por onde o dono
+   procura.
+
 ### 07/10/2026 — A PREFEITURA DESLIGOU O MODELO DA NOTA (atravessa áreas)
 
 A prefeitura de Eusébio desativou o modelo ABRASF, por causa da obrigatoriedade
