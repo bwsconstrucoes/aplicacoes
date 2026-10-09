@@ -197,7 +197,7 @@ nota que ninguém recebeu seria uma conferência que não aconteceu.
 |---|---|---|
 | a aba `Base Faturamento`, o layout, a consolidação | **emissaonf** (feito) | é o emissor que produz o dado |
 | o emissor gravando na base | **emissaonf** (feito) | mesmo motivo |
-| a **tela de Faturamento** (listagem, gráficos, download, filtros) | **Análise de SPs** | é lá que o dono quer a tela, e é lá que vive a navegação |
+| a **tela de Faturamento** (listagem, gráficos, download, filtros) | **Análise de SPs** (feito em 09/10/2026 — `analisesps/faturamento.py`, migração 053, leva 207 do histórico de lá) | é lá que o dono quer a tela, e é lá que vive a navegação |
 | as 3 operações no OMIE (consultar, equalizar, atualizar tributos) | **emissaonf** (feito) | decisão dele em 09/10; tela `/emissao/omie` |
 
 A tela é trabalho do **chat do Análise de SPs**, e o que ela precisa saber está

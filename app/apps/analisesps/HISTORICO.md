@@ -12228,6 +12228,34 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 207 — a tela de FATURAMENTO (09/10/2026) — migração 053
+
+- *"Numa nova tela, que a gente pode chamar de Faturamento, eu quero fazer o
+  controle de notas — ver faturamento, fazer o download da nota, uma parte
+  gráfica de evolução."* O desenho e as regras da base estão em
+  `app/apps/emissaonf/FATURAMENTO.md` (escrito pelo chat do emissor).
+- **De onde vem:** a aba "Base Faturamento" (planilha das notas, que o emissor
+  grava) e a C. Diários ("Centro de Custo" da Bases de Dados Pipefy) para
+  empresa, SCP, contrato, município e tributação — cruzadas pelo código da obra,
+  pelos DOIS códigos (primário e coluna A). Uma tarefa nova do processo
+  separado, **"faturamento"**, traz as duas para o banco (`faturamento.carregar`,
+  numa transação só) — a tela não vai ao Google. A carga roda sozinha quando a
+  tela abre e a cópia tem mais de 60 min, e há o botão "Atualizar da planilha".
+- **A tela:** filtros (período de emissão — padrão: últimos 12 meses —, obra,
+  empresa/SCP, recebimento, situação, busca no número/tomador/obra/texto);
+  quadros de faturado, recebido e a receber (pelo líquido previsto); gráfico de
+  barras do faturado por mês (mês sem nota aparece com zero; recebido e
+  quantidade no passar do mouse); tabela por obra; lista de notas com os links
+  dos arquivos (DANFSe, NFS-e municipal, XML, recibo); duplo clique abre a
+  ficha da nota (dados, tributos nota × Omie, texto da nota, arquivos, card).
+- **Tributo vazio continua vazio** ("não se sabe" — nota antiga não
+  equalizada), nunca vira zero. Nota cancelada/substituída fica fora das somas
+  por padrão (filtro "Situação").
+- Permissão: tela nova "faturamento", liberável no cadastro (preso a conta não
+  alcança). ⚠️ **Migração 053** — apertar "Aplicar atualizações do banco".
+- Não testado com a planilha de verdade: a aba "Base Faturamento" precisa estar
+  preenchida (as antigas entram pela consolidação em `/emissao/faturamento`).
+
 #### Leva 206 — Consultar Omie atravessa a pausa do Omie; calendário abre o dia numa janela (09/10/2026)
 
 - *"Na consulta Omie tem que contornar essas mensagens: o Omie bloqueou as

@@ -1,0 +1,50 @@
+{# A FICHA DE UMA NOTA, no modal da tela de Faturamento (09/10/2026). #}
+<h3>Nota {{ n.sequencial or n.numero }}
+  <small>{{ n.modelo }}{% if n.status != 'valida' %} · <span class="selo cancelado">{{ n.status }}</span>{% endif %}</small></h3>
+{% if n.observacao %}<p class="cartao-dica">{{ n.observacao }}</p>{% endif %}
+
+<div class="fat-ficha">
+  <div><span class="rotulo-campo">Número oficial</span>{{ n.numero }}</div>
+  <div><span class="rotulo-campo">Emissão</span>{{ n.data_emissao|data_br }}{% if n.competencia %} · competência {{ n.competencia }}{% endif %}</div>
+  <div><span class="rotulo-campo">Obra</span>{{ n.obra }}{% if n.centro_custo and n.centro_custo != n.obra %} · {{ n.centro_custo }}{% endif %}</div>
+  <div><span class="rotulo-campo">Empresa</span>{{ n.empresa or '—' }}{% if n.e_scp %} (SCP){% endif %}</div>
+  <div><span class="rotulo-campo">Tomador</span>{{ n.tomador }}{% if n.tomador_cnpj %}<br><small>{{ n.tomador_cnpj }}</small>{% endif %}</div>
+  <div><span class="rotulo-campo">Contrato</span>{{ n.contrato or '—' }}</div>
+  <div><span class="rotulo-campo">Medição</span>{{ n.medicao or '—' }}{% if n.periodo %}<br><small>{{ n.periodo }}</small>{% endif %}</div>
+  <div><span class="rotulo-campo">Município da obra</span>{{ n.municipio or '—' }}</div>
+  <div><span class="rotulo-campo">Valor da nota</span><b>{{ n.valor_total|moeda }}</b></div>
+  <div><span class="rotulo-campo">Líquido previsto</span>{{ n.valor_liquido|moeda or '—' }}</div>
+  <div><span class="rotulo-campo">Recebimento</span>{% if n.data_recebimento %}{{ n.data_recebimento|data_br }} · {{ n.valor_recebido|moeda }}{% if n.banco_conta %}<br><small>{{ n.banco_conta }}</small>{% endif %}{% else %}a receber{% endif %}</div>
+  <div><span class="rotulo-campo">Tributação da obra</span>{{ n.tributacao or '—' }}{% if n.aliquota_iss %}<br><small>ISS aplicado: {{ n.aliquota_iss }}</small>{% endif %}</div>
+</div>
+
+<h4>Tributos <small>a nota × o título no Omie</small></h4>
+<div class="tabela-rolagem livre">
+  <table class="tabela-fat">
+    <thead><tr><th>Tributo</th><th class="direita">Na nota</th><th>Retido</th><th class="direita">No Omie</th></tr></thead>
+    <tbody>
+      {% for t in n.tributos %}
+        <tr><td>{{ t.nome }}</td>
+            {# ⚠️ vazio é "não se sabe" (nota antiga não equalizada), não zero #}
+            <td class="direita">{{ t.valor|moeda if t.valor is not none else '—' }}</td>
+            <td>{{ {'S': 'sim', 'N': 'não'}.get(t.retem, '—') }}</td>
+            <td class="direita">{{ t.omie|moeda if t.omie is not none else '—' }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% if n.divergencia_tributos == 'S' %}<div class="aviso atencao">A nota e o título do Omie <b>não batem</b> nos tributos.</div>{% endif %}
+{% if n.divergencia_recebimento %}<p class="cartao-dica">Diferença entre o recebido e o líquido previsto: {{ n.divergencia_recebimento }}</p>{% endif %}
+{% if n.ibs or n.cbs %}<p class="cartao-dica">IBS {{ n.ibs or '—' }} · CBS {{ n.cbs or '—' }}</p>{% endif %}
+
+{% if n.discriminacao %}
+  <h4>O texto da nota</h4>
+  <pre class="fat-discriminacao">{{ n.discriminacao }}</pre>
+{% endif %}
+
+<h4>Arquivos</h4>
+<p class="fat-arquivos">
+  {% for rotulo, link in n.links %}<a class="btn secundario" href="{{ link }}" target="_blank" rel="noopener">{{ rotulo }}</a>{% else %}<span class="cartao-dica">Nenhum arquivo registrado para esta nota.</span>{% endfor %}
+  {% if n.link_card %}<a class="btn secundario" href="{{ n.link_card }}" target="_blank" rel="noopener">Card no Pipefy</a>{% endif %}
+</p>
+{% if n.chave %}<p class="cartao-dica">Chave de acesso: {{ n.chave }}</p>{% endif %}

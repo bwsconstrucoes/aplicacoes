@@ -94,6 +94,9 @@ TODAS_AS_TELAS = [
     ("POST", "/analisesps/lote/telegram"),
     ("POST", "/analisesps/api/omie/consultar"),
     ("GET", "/analisesps/calendario/dia"),
+    ("GET", "/analisesps/faturamento"),
+    ("POST", "/analisesps/faturamento/atualizar"),
+    ("GET", "/analisesps/faturamento/nota/123"),
     ("POST", "/analisesps/api/omie/marcar-pago"),
     ("GET", "/analisesps/relatorio"),
     ("GET", "/analisesps/calendario"),
@@ -314,6 +317,7 @@ def test_a_lista_de_telas_cobre_todas_as_rotas(app):
                    .replace("<formato>", "pdf")
                    .replace("<int:item_id>", "123")
                    .replace("<int:n>", "1")
+                   .replace("<numero>", "123")
                    .replace("<chave>", CHAVE_DE_EXEMPLO))
         if caminho not in testadas:
             faltando.append(caminho)

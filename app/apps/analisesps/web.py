@@ -243,6 +243,8 @@ TELAS = [
     # Ao lado da Agenda também lê bem: são as duas grades de mês do módulo.
     ("calendario",    "Calendário",    "analisesps.calendario"),
     ("conciliacao",   "Conciliação",   "analisesps.tela_conciliacao"),
+    # 09/10/2026: as notas fiscais emitidas (ver `faturamento.py`).
+    ("faturamento",   "Faturamento",   "analisesps.tela_faturamento"),
     ("auditoria",     "Auditoria",     "analisesps.auditoria"),
     ("ratear",        "Ratear",        "analisesps.ratear"),
     # ⚠️ UMA ENTRADA SÓ PARA A FOLHA, e por dentro as subtelas. Correção do dono
@@ -2070,6 +2072,124 @@ def calendario_dia():
             "card": f"https://app.pipefy.com/open-cards/{l['id']}",
         } for l in achado["linhas"]],
     }
+
+
+# ---------------------------------------------------------------------------
+# FATURAMENTO — as notas fiscais emitidas (09/10/2026, migração 053)
+#
+# O dono: *"numa nova tela no Análise de SPs, que a gente pode chamar de
+# Faturamento, eu quero fazer o controle de notas — ver faturamento, fazer o
+# download da nota, uma parte gráfica de evolução."* A fonte e as regras estão
+# em `faturamento.py` e em `emissaonf/FATURAMENTO.md`.
+# ---------------------------------------------------------------------------
+# A cópia das notas é refeita sozinha quando a tela abre e ela tem mais que
+# isto — o emissor grava notas novas na planilha ao longo do dia.
+MINUTOS_PARA_RECARREGAR_FATURAMENTO = 60
+
+
+def _filtros_do_faturamento() -> dict:
+    import datetime as dt
+    from .horario import agora
+
+    def data(nome):
+        try:
+            return dt.date.fromisoformat(str(request.args.get(nome) or ""))
+        except ValueError:
+            return None
+    hoje = agora().date()
+    # O padrão são os últimos doze meses: é a janela do gráfico de evolução.
+    padrao_de = (hoje.replace(day=1) - dt.timedelta(days=330)).replace(day=1)
+    tem_filtro = "de" in request.args or "ate" in request.args
+    return {
+        "de": data("de") if tem_filtro else padrao_de,
+        "ate": data("ate") if tem_filtro else None,
+        "status": request.args.get("status") or "valida",
+        "obra": (request.args.get("obra") or "").strip(),
+        "empresa": (request.args.get("empresa") or "").strip(),
+        "recebimento": request.args.get("recebimento") or "",
+        "busca": (request.args.get("busca") or "").strip(),
+    }
+
+
+def _faturamento_desatualizado(carregado_em) -> bool:
+    from .formatos import _como_momento
+    from .horario import agora
+    momento = _como_momento(carregado_em) if carregado_em else None
+    if not momento or not hasattr(momento, "tzinfo"):
+        return True
+    try:
+        idade = agora() - momento
+    except TypeError:
+        return True
+    return idade.total_seconds() > MINUTOS_PARA_RECARREGAR_FATURAMENTO * 60
+
+
+@bp.route("/faturamento")
+@exige_consulta
+def tela_faturamento():
+    from . import faturamento, tarefas
+
+    if not faturamento.pronto():
+        return render_template(
+            "analisesps_faturamento.html", aba="faturamento", pronto=False,
+            pode_operar=auth.pode_operar(), nome=auth.nome_atual())
+
+    filtros = _filtros_do_faturamento()
+    try:
+        pagina = max(1, int(request.args.get("pagina") or 1))
+    except ValueError:
+        pagina = 1
+    carregado_em = faturamento.carregado_em()
+    andamento = tarefas.estado()
+    rodando = (andamento.get("rodando")
+               and (andamento.get("detalhe") or {}).get("tipo") == "faturamento")
+    # Abriu a tela e a cópia está velha (ou nunca veio): pede a carga. Se outra
+    # tarefa estiver rodando, o pedido é recusado em silêncio e tudo bem — a
+    # próxima abertura pede de novo.
+    if not andamento.get("rodando") and _faturamento_desatualizado(carregado_em):
+        r = tarefas.disparar("faturamento", disparo="tela de faturamento")
+        rodando = bool(r.get("ok"))
+
+    notas = faturamento.listar(filtros, pagina)
+    return render_template(
+        "analisesps_faturamento.html", aba="faturamento", pronto=True,
+        filtros=filtros, pagina=pagina, por_pagina=faturamento.POR_PAGINA,
+        resumo=faturamento.resumo(filtros),
+        evolucao=faturamento.evolucao(filtros),
+        por_obra=faturamento.por_obra(filtros),
+        notas=notas, opcoes=faturamento.opcoes(),
+        carregado_em=carregado_em, rodando=rodando,
+        ultima=tarefas.ultima_do_tipo("faturamento"),
+        args=request.args,
+        pode_operar=auth.pode_operar(), nome=auth.nome_atual(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""))
+
+
+@bp.route("/faturamento/atualizar", methods=["POST"])
+@exige_consulta
+def faturamento_atualizar():
+    """Traz de novo as notas da planilha, agora (é leitura: não escreve nada)."""
+    from urllib.parse import quote
+    from . import tarefas
+    r = tarefas.disparar("faturamento", disparo=auth.nome_atual() or "faturamento")
+    aviso = ("Trazendo as notas da planilha — a tela se atualiza em instantes."
+             if r.get("ok") else r.get("erro", "Não deu para começar agora."))
+    volta = request.form.get("volta") or url_for("analisesps.tela_faturamento")
+    if not str(volta).startswith("/analisesps/faturamento"):
+        volta = url_for("analisesps.tela_faturamento")
+    separador = "&" if "?" in volta else "?"
+    return redirect(volta + separador + "aviso=" + quote(aviso))
+
+
+@bp.route("/faturamento/nota/<numero>")
+@exige_consulta
+def faturamento_nota(numero):
+    """A ficha de uma nota, para o modal da tela."""
+    from . import faturamento
+    nota = faturamento.uma(numero)
+    if not nota:
+        return ("<div class=\"aviso erro\">Nota não encontrada.</div>", 404)
+    return render_template("analisesps_faturamento_nota.html", n=nota)
 
 
 # ---------------------------------------------------------------------------

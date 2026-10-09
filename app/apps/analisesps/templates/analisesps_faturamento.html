@@ -1,0 +1,218 @@
+{% extends "analisesps_base.html" %}
+{% block titulo %}Faturamento — Análise de SPs{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% block conteudo %}
+{# ---------------------------------------------------------------------------
+   FATURAMENTO — as notas fiscais emitidas (09/10/2026, migração 053).
+
+   O dono: *"numa nova tela, que a gente pode chamar de Faturamento, eu quero
+   fazer o controle de notas — ver faturamento, fazer o download da nota, uma
+   parte gráfica de evolução, poder fazer toda essa gestão."*
+
+   A fonte é a aba "Base Faturamento" (o emissor grava); empresa, SCP, contrato
+   e município vêm da C. Diários, pela obra. Ver `faturamento.py`.
+--------------------------------------------------------------------------- #}
+{% if request.args.get('aviso') %}
+  <div class="aviso">{{ request.args.get('aviso') }}</div>
+{% endif %}
+
+{% if not pronto %}
+  <div class="aviso atencao">
+    <b>A tela de Faturamento ainda não está pronta neste banco.</b> Aperte
+    "Aplicar atualizações do banco" em Configurações.
+  </div>
+{% else %}
+
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Faturamento</h3>
+    <small>
+      {% if rodando %}
+        <b>trazendo as notas da planilha agora…</b> a tela se atualiza sozinha.
+      {% elif carregado_em %}
+        notas trazidas da planilha em {{ carregado_em|momento_br }}
+      {% else %}
+        as notas ainda não foram trazidas da planilha
+      {% endif %}
+      {% if ultima and not ultima.em_andamento and ultima.ok is sameas false %}
+        — <span class="omie-erro">a última tentativa falhou: {{ ultima.mensagem }}</span>
+      {% endif %}
+    </small>
+    <form method="post" action="{{ url_for('analisesps.faturamento_atualizar') }}"
+          style="margin-left:auto">
+      <input type="hidden" name="volta" value="{{ request.full_path }}">
+      <button class="btn secundario" type="submit" {{ 'disabled' if rodando }}
+              title="Lê de novo a aba Base Faturamento e a C. Diários. Só leitura.">
+        Atualizar da planilha</button>
+    </form>
+  </div>
+
+  <form method="get" class="fat-filtros">
+    <label>Emitidas de <input type="date" name="de" value="{{ filtros.de or '' }}"></label>
+    <label>até <input type="date" name="ate" value="{{ filtros.ate or '' }}"></label>
+    <label>Obra
+      <select name="obra">
+        <option value="">todas</option>
+        {% for o in opcoes.obras %}<option {{ 'selected' if o == filtros.obra }}>{{ o }}</option>{% endfor %}
+      </select></label>
+    <label>Empresa
+      <select name="empresa">
+        <option value="">todas</option>
+        {% for e in opcoes.empresas %}<option {{ 'selected' if e == filtros.empresa }}>{{ e }}</option>{% endfor %}
+      </select></label>
+    <label>Recebimento
+      <select name="recebimento">
+        <option value="">todas</option>
+        <option value="a_receber" {{ 'selected' if filtros.recebimento == 'a_receber' }}>a receber</option>
+        <option value="recebidas" {{ 'selected' if filtros.recebimento == 'recebidas' }}>recebidas</option>
+      </select></label>
+    <label>Situação
+      <select name="status">
+        <option value="valida" {{ 'selected' if filtros.status == 'valida' }}>válidas</option>
+        <option value="cancelada" {{ 'selected' if filtros.status == 'cancelada' }}>canceladas</option>
+        <option value="substituida" {{ 'selected' if filtros.status == 'substituida' }}>substituídas</option>
+        <option value="todas" {{ 'selected' if filtros.status == 'todas' }}>todas</option>
+      </select></label>
+    <label>Procurar <input name="busca" value="{{ filtros.busca }}"
+                           placeholder="nº da nota, tomador, obra, texto da nota…"></label>
+    <button class="btn" type="submit">Aplicar</button>
+    <a class="btn secundario" href="{{ url_for('analisesps.tela_faturamento') }}">Limpar</a>
+  </form>
+</div>
+
+<div class="kpis">
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Faturado no período</div>
+    <div class="kpi-valor">{{ resumo.bruto|moeda }}</div>
+    <div class="kpi-sub">{{ resumo.quantidade }} nota(s)</div>
+  </div>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Recebido</div>
+    <div class="kpi-valor">{{ resumo.recebido|moeda }}</div>
+  </div>
+  <div class="kpi estatico laranja">
+    <div class="kpi-rotulo">A receber</div>
+    <div class="kpi-valor">{{ resumo.a_receber|moeda }}</div>
+    <div class="kpi-sub">{{ resumo.abertas }} nota(s) sem recebimento registrado — pelo líquido previsto</div>
+  </div>
+</div>
+
+{# A EVOLUÇÃO MÊS A MÊS: uma série só (o faturado), barras finas com o topo
+   arredondado; o detalhe (recebido, quantas notas) no passar do mouse. #}
+{% if evolucao %}
+  {% set maior = evolucao|map(attribute='bruto')|max %}
+  <div class="cartao">
+    <div class="cartao-cab"><h3>Faturado por mês</h3>
+      <small>pela data de emissão · passe o mouse numa barra para ver o recebido</small></div>
+    <div class="fat-grafico" role="img"
+         aria-label="Faturado por mês: {% for m in evolucao %}{{ m.mes }} {{ m.bruto|moeda }}{{ '; ' if not loop.last }}{% endfor %}">
+      {% for m in evolucao %}
+        {% set pct = ((100 * m.bruto / maior) if maior else 0)|float %}
+        <div class="fat-mes-col"
+             title="{{ m.mes[5:] }}/{{ m.mes[:4] }} — faturado R$ {{ m.bruto|moeda }} · recebido R$ {{ m.recebido|moeda }} · {{ m.quantidade }} nota(s)">
+          <div class="fat-valor">{{ m.bruto|moeda_curta if m.bruto else '' }}</div>
+          <div class="fat-trilho"><div class="fat-coluna" style="height: {{ '%.1f'|format(pct) }}%"></div></div>
+          <div class="fat-mes">{{ m.mes[5:] }}/{{ m.mes[2:4] }}</div>
+        </div>
+      {% endfor %}
+    </div>
+    <p class="cartao-dica">Maior mês: R$ {{ maior|moeda }}.</p>
+  </div>
+{% endif %}
+
+{% if por_obra %}
+  <div class="cartao">
+    <div class="cartao-cab"><h3>Por obra</h3><small>as que mais faturaram no período</small></div>
+    <div class="tabela-rolagem livre">
+      <table class="tabela-fat">
+        <thead><tr><th>Obra</th><th>Cliente</th><th class="direita">Notas</th><th class="direita">Faturado</th></tr></thead>
+        <tbody>
+          {% for o in por_obra %}
+            <tr><td><a href="?{{ args.to_dict()|urlencode }}&obra={{ o.obra|urlencode }}">{{ o.obra }}</a></td>
+                <td>{{ o.cliente }}</td><td class="direita">{{ o.quantidade }}</td>
+                <td class="direita">{{ o.bruto|moeda }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+{% endif %}
+
+<div class="cartao">
+  <div class="cartao-cab"><h3>Notas</h3>
+    <small>duplo clique numa nota abre a ficha dela</small></div>
+  {% if not notas %}
+    <p class="cartao-dica">Nenhuma nota com estes filtros{% if not carregado_em %} — as notas ainda não vieram da planilha{% endif %}.</p>
+  {% else %}
+    <div class="tabela-rolagem livre">
+      <table class="tabela-fat">
+        <thead><tr>
+          <th>Nota</th><th>Emissão</th><th>Obra</th><th>Empresa</th><th>Tomador</th>
+          <th>Medição</th><th class="direita">Valor</th><th class="direita">Líquido</th>
+          <th>Recebimento</th><th>Arquivos</th>
+        </tr></thead>
+        <tbody>
+          {% for n in notas %}
+            <tr class="fat-linha" data-nota="{{ url_for('analisesps.faturamento_nota', numero=n.numero) }}"
+                title="Duplo clique abre a nota {{ n.sequencial or n.numero }}">
+              <td><b>{{ n.sequencial or n.numero }}</b>
+                {% if n.status != 'valida' %}<span class="selo cancelado">{{ n.status }}</span>{% endif %}</td>
+              <td>{{ n.data_emissao|data_br }}</td>
+              <td>{{ n.obra }}</td>
+              <td>{{ n.empresa }}{% if n.e_scp %} <small class="selo neutro">SCP</small>{% endif %}</td>
+              <td>{{ n.tomador }}</td>
+              <td>{{ n.medicao }}</td>
+              <td class="direita">{{ n.valor_total|moeda }}</td>
+              <td class="direita">{{ n.valor_liquido|moeda }}</td>
+              <td>{% if n.data_recebimento %}{{ n.data_recebimento|data_br }}<br><small>{{ n.valor_recebido|moeda }}</small>
+                  {% else %}<span class="cartao-dica">a receber</span>{% endif %}</td>
+              <td class="fat-arquivos">
+                {% for rotulo, link in n.links %}<a href="{{ link }}" target="_blank" rel="noopener"
+                   title="{{ rotulo }}">{{ rotulo.split(' ')[0] }}</a>{% endfor %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="paginacao">
+      {% if pagina > 1 %}<a class="btn secundario" href="?{{ args.to_dict()|urlencode }}&pagina={{ pagina - 1 }}">‹ anteriores</a>{% endif %}
+      {% if notas|length == por_pagina %}<a class="btn secundario" href="?{{ args.to_dict()|urlencode }}&pagina={{ pagina + 1 }}">próximas ›</a>{% endif %}
+    </div>
+  {% endif %}
+</div>
+
+<dialog class="dialogo dialogo-fat" id="fat-modal">
+  <button type="button" class="btn secundario dialogo-fechar" id="fat-fechar">Fechar</button>
+  <div id="fat-corpo"><p class="cartao-dica">Carregando…</p></div>
+</dialog>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const dlg = document.getElementById("fat-modal");
+  if (!dlg || !dlg.showModal) return;
+  const corpo = document.getElementById("fat-corpo");
+  document.getElementById("fat-fechar").addEventListener("click", () => dlg.close());
+  dlg.addEventListener("click", e => { if (e.target === dlg) dlg.close(); });
+  document.querySelectorAll("tr.fat-linha[data-nota]").forEach(tr => tr.addEventListener("dblclick", async e => {
+    if (e.target.closest("a, button, input")) return;
+    corpo.innerHTML = '<p class="cartao-dica">Carregando…</p>';
+    dlg.showModal();
+    try {
+      const r = await fetch(tr.dataset.nota);
+      corpo.innerHTML = await r.text();
+    } catch (err) {
+      corpo.innerHTML = '<div class="aviso erro">Não consegui abrir a nota.</div>';
+    }
+  }));
+  {% if rodando %}
+  // A carga está rodando: a tela se recarrega sozinha quando ela terminar.
+  setTimeout(() => location.reload(), 15000);
+  {% endif %}
+})();
+</script>
+{% endblock %}
