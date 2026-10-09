@@ -571,6 +571,12 @@ function rotuloObra(o) {
   if (!c || !n) return nome || cod;
   if (n.includes(c)) return nome;      // "Espaço Creche Swap" já diz CRECHESWAP
   if (c.includes(n)) return cod;
+  // Todas as palavras do código estão no nome ("TESTE-PONTO" e "TESTE DO PONTO
+  // (obra de teste)", 09/10/2026): também é repetição — basta o nome.
+  const palavras = t => t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .split(/[^a-z0-9]+/).filter(p => p.length >= 2);
+  const doNome = new Set(palavras(nome)), doCod = palavras(cod);
+  if (doCod.length && doCod.every(p => doNome.has(p))) return nome;
   return `${cod} · ${nome}`;
 }
 

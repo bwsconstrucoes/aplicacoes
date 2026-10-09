@@ -84,6 +84,11 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
          ORDER BY id
     """, c=colaborador_id, i=inicio, f=fim)
 
+    # As obras de intervalo pré-assinalado (só entrada e saída — migração 009).
+    pre_assinaladas = ({int(l["obra_id"]) for l in db.todos(
+        conn, "SELECT obra_id FROM ponto.obra_config WHERE intervalo_pre_assinalado")}
+        if db.tem_coluna(conn, "obra_config", "intervalo_pre_assinalado") else set())
+
     vigencias = escalas.EscalasDaPessoa(conn, colaborador_id)
     calendario = feriados.Calendario(conn, inicio, fim)
     admissao, demissao = pessoa.get("admissao"), pessoa.get("demissao")
@@ -105,8 +110,13 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
                     and o["tipo"] == "COMPENSACAO" and o["dia_trabalhado"] == dia]
         abono = ABONO_POR_TIPO[aprovadas[0]["tipo"]] if aprovadas else None
 
-        r = apuracao.apurar_dia(dia, escala, [b["timestamp_servidor"] for b in do_dia],
-                                feriado=bool(nome_feriado), ocorrencia=abono)
+        so_duas = obra_do_dia in pre_assinaladas
+        # A hora de Fortaleza, não a do banco (que vem em UTC): a apuração conta
+        # minutos desde a meia-noite do fuso da batida — em UTC, o atraso, a
+        # tolerância e a hora noturna saíam 3 h deslocados (achado em 09/10/2026).
+        r = apuracao.apurar_dia(dia, escala, [horario.para_local(b["timestamp_servidor"]) for b in do_dia],
+                                feriado=bool(nome_feriado), ocorrencia=abono,
+                                intervalo_pre_assinalado=so_duas)
         if compensa and r.extra:
             # O dia trabalhado no lugar de outro não é extra: ele paga a folga.
             r.extra = 0
@@ -134,6 +144,8 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
         # O que a escala espera e o que falta — é isto que o "Meu mês" mostra
         # no "corrigir este dia", em vez de um formulário em branco (ajustes.py).
         previstas = ajustes.marcas_previstas(escala.periodos(dia)) if escala is not None else []
+        if so_duas:
+            previstas = ajustes.so_entrada_e_saida(previstas)
         faltando = []
         if previstas and not aprovadas and (julgavel or dia == hoje):
             # o horário que já tem pedido esperando decisão também não "falta"
@@ -161,7 +173,11 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
                             "rotulo": ROTULO_TIPO[aprovadas[0]["tipo"]]} if aprovadas else None),
             "compensacao": ({"id": compensa[0]["id"]} if compensa else None),
             "pendentes": [{"id": o["id"], "tipo": o["tipo"], "rotulo": ROTULO_TIPO[o["tipo"]],
-                           "status": o["status"]} for o in pendentes],
+                           "status": o["status"],
+                           "hora": (horario.para_local(o["horario"]).strftime("%H:%M")
+                                    if o["tipo"] == "AJUSTE_BATIDA" and o.get("horario") else None)}
+                          for o in pendentes],
+            "so_entrada_e_saida": so_duas,
             "batidas": [{
                 "id": b["id"], "nsr": b["nsr"],
                 "hora": horario.para_local(b["timestamp_servidor"]).strftime("%H:%M"),

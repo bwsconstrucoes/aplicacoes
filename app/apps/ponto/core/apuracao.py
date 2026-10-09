@@ -127,13 +127,31 @@ def _noturnos(inicio: int, fim: int) -> int:
 # ---------------------------------------------------------------------------
 # O dia
 # ---------------------------------------------------------------------------
+def completar_pre_assinalado(marcas: list[int], periodos: list[tuple[int, int]]) -> list[int]:
+    """PURA. Na obra de intervalo PRÉ-ASSINALADO (CLT art. 74, § 2º; migração 009
+    — pedido do dono, 09/10/2026: "por convenção, só é para bater o ponto de
+    entrada e de saída"), o dia com só a entrada e a saída ganha os horários de
+    intervalo da escala, como se tivessem sido batidos: o dia fica completo e o
+    almoço não vira hora extra. Só quando as duas batidas abraçam o intervalo
+    inteiro — quem bateu as quatro, ou saiu antes do almoço, conta o que bateu."""
+    if len(marcas) != 2 or len(periodos) < 2:
+        return marcas
+    internos = [m for i in range(len(periodos) - 1) for m in (periodos[i][1], periodos[i + 1][0])]
+    if marcas[0] < internos[0] and internos[-1] < marcas[1]:
+        return [marcas[0], *internos, marcas[1]]
+    return marcas
+
+
 def apurar_dia(dia: dt.date, escala: Optional[Escala], batidas: list[dt.datetime], *,
-               feriado: bool = False, ocorrencia: Optional[str] = None) -> Dia:
+               feriado: bool = False, ocorrencia: Optional[str] = None,
+               intervalo_pre_assinalado: bool = False) -> Dia:
     """Apura um dia. `batidas` são as marcações VÁLIDAS (ou ajustadas) cuja
     `data_referencia` é este dia, com fuso."""
     r = Dia(data=dia, feriado=feriado, batidas=len(batidas))
     marcas = sorted(minutos_desde(dia, b) for b in batidas)
     periodos = [] if (escala is None or feriado) else escala.periodos(dia)
+    if intervalo_pre_assinalado:
+        marcas = completar_pre_assinalado(marcas, periodos)
     r.previsto = sum(max(0, s - e) for e, s in periodos)
     r.descanso = escala is not None and not periodos
 

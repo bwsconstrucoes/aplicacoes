@@ -42,6 +42,7 @@
   .chip { background:#E7EDF7; color:var(--azul); border-radius:999px; padding:6px 12px; font-weight:700; font-size:15px; border:0; }
   .chip.analise { background:#FDF1DC; color:var(--ambar); }
   .chip.ajustada { background:#EDE7F6; color:#5B4B8A; }
+  .chip.pedido { background:#fff; color:var(--ambar); border:1px dashed var(--ambar); }
   .numeros { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
   .numero { background:var(--fundo); border-radius:10px; padding:10px; text-align:center; }
   .numero b { display:block; font-size:20px; }
@@ -282,7 +283,7 @@
       <div id="i-escolha" class="oculto">
         <div class="aviso ambar"><b>⚠️ Batida fora do normal.</b> A obra não foi encontrada pela
           localização: se você bater escolhendo a obra na lista, a batida vai para a conferência do
-          encarregado, e você vai precisar dizer por quê.</div>
+          a administração da obra, e você vai precisar dizer por quê.</div>
         <label for="i-obra">Em que obra você está?</label>
         <select id="i-obra"></select>
         <p class="pequeno">A lista só aparece quando o celular não acha você dentro de uma obra. Vale para
@@ -384,7 +385,7 @@ const SITUACAO = { OK: ["ok", "Certo"], FALTA: ["falta", "Falta"], ABONADO: ["ok
   INCOMPLETO: ["ambar", "Batida faltando"], DESCANSO: ["", "Descanso"], SEM_ESCALA: ["", "Sem escala"],
   COMPENSADO: ["ok", "Compensado"], FUTURO: ["", "—"], EM_ANDAMENTO: ["", "Hoje"],
   FORA_DO_CONTRATO: ["", "—"] };
-const STATUS_PEDIDO = { AGUARDANDO_SUPERVISOR: ["ambar", "Esperando o encarregado"],
+const STATUS_PEDIDO = { AGUARDANDO_SUPERVISOR: ["ambar", "Esperando a administração da obra"],
   AGUARDANDO_DP: ["ambar", "Esperando o DP"], APROVADA: ["ok", "Aprovado"],
   NEGADA: ["falta", "Negado"], CANCELADA: ["", "Cancelado"] };
 
@@ -457,6 +458,7 @@ function mostrar(tela) {
 document.querySelectorAll("nav.abas button").forEach(b => b.addEventListener("click", () => mostrar(b.dataset.tela)));
 
 let EU = null, APARELHO = null, OBRAS = [], LOCAL = null, LOCAL_EM = 0, INICIO = null, DESTINO = null;
+let PODE_BATER = false, LOCAL_BLOQUEIA = false;
 
 async function estadoDoAparelho() {
   try { APARELHO = (await chamar("/ponto/app/api/aparelho")).aparelho; } catch (e) { APARELHO = null; }
@@ -583,11 +585,26 @@ function preencherObras(select, obras, principal) {
 // 04/10/2026): achou a cerca, a obra é aquela e pronto; não achou, a pessoa escolhe.
 function mostrarLocal(l) {
   const caixa = $("i-local"); if (!caixa) return;
-  const escolha = mostrar => $("i-escolha").classList.toggle("oculto", !mostrar);
+  // A lista "bater escolhendo a obra" só aparece com as obras em que a batida VAI
+  // ser aceita (09/10/2026: a tela prometia conferência e o servidor recusava,
+  // "fora da área da obra"). Obra que BLOQUEIA fora da cerca não entra nela; obra
+  // sem coordenada entra (não há como saber onde ela fica); sem localização, só
+  // a obra que manda para conferência (Configuração › Cerca das obras).
+  const aceita = semLocal => (OBRAS || []).filter(o => o.fora_da_cerca === "ANALISAR"
+    || (!semLocal && (o.latitude === null || o.longitude === null)));
+  const escolha = lista => {
+    const mostrar = !!(lista && lista.length);
+    $("i-escolha").classList.toggle("oculto", !mostrar);
+    if (mostrar) preencherObras($("i-obra"), lista, $("i-obra").value);
+    LOCAL_BLOQUEIA = lista !== null && !mostrar;
+    $("btn-bater").disabled = $("btn-sem-foto").disabled = LOCAL_BLOQUEIA || !PODE_BATER;
+  };
   if (!l) {
+    const lista = aceita(true);
     caixa.className = "aviso erro";
-    caixa.textContent = "📍 Localização desligada. Ligue a localização do celular: fora da área da obra o ponto não é registrado.";
-    escolha(true);
+    caixa.textContent = "📍 Localização desligada. Ligue a localização do celular: fora da área da obra o ponto não é registrado."
+      + (lista.length ? " Se não der, escolha a obra abaixo — a batida vai para conferência." : "");
+    escolha(lista);
     return;
   }
   const medidas = (OBRAS || []).filter(o => o.latitude !== null && o.longitude !== null)
@@ -595,18 +612,22 @@ function mostrarLocal(l) {
   const dentro = medidas.find(m => m.d <= m.o.raio_metros);
   const folga = Math.min(l.precisao || 0, 150);
   if (dentro) {
-    caixa.className = "aviso ok"; caixa.textContent = `📍 Você está na obra ${dentro.o.codigo} — ${dentro.o.nome}.`;
-    $("i-obra").value = dentro.o.codigo; escolha(false);
+    caixa.className = "aviso ok"; caixa.textContent = `📍 Você está na obra ${rotuloObra(dentro.o)}.`;
+    $("i-obra").value = dentro.o.codigo; escolha(null);
   } else if (medidas.length && medidas[0].d - folga <= medidas[0].o.raio_metros) {
-    caixa.className = "aviso ambar"; caixa.textContent = `📍 Você está na borda da obra ${medidas[0].o.codigo}. Pode bater; a batida vai para conferência. Se puder, chegue mais perto.`;
-    $("i-obra").value = medidas[0].o.codigo; escolha(false);
+    caixa.className = "aviso ambar"; caixa.textContent = `📍 Você está na borda da obra ${rotuloObra(medidas[0].o)}. Pode bater; a batida vai para conferência. Se puder, chegue mais perto.`;
+    $("i-obra").value = medidas[0].o.codigo; escolha(null);
   } else if (medidas.length) {
     const d = medidas[0].d, txt = d >= 1000 ? `${(d / 1000).toFixed(1).replace(".", ",")} km` : `${Math.round(d)} m`;
-    caixa.className = "aviso erro"; caixa.textContent = `📍 Você está a ${txt} da obra ${medidas[0].o.codigo}. Fora da área da obra o ponto não é registrado.`;
-    escolha(true);
+    const lista = aceita(false);
+    caixa.className = "aviso erro";
+    caixa.textContent = `📍 Você está a ${txt} da obra ${rotuloObra(medidas[0].o)}. Fora da área da obra o ponto não é registrado.`
+      + (d > 100000 ? " Distância grande demais: confira se a localização do celular está certa, ou peça para conferirem a coordenada da obra." : "")
+      + (lista.length ? " Nas obras da lista abaixo, a batida vai para conferência." : "");
+    escolha(lista);
   } else {
     caixa.className = "aviso info"; caixa.textContent = "📍 Nenhuma obra sua tem localização cadastrada: escolha a obra abaixo.";
-    escolha(true);
+    escolha(aceita(false));
   }
 }
 
@@ -641,7 +662,7 @@ function pedirJustificativa() {
   return new Promise(resolve => {
     $("dlg-corpo").innerHTML = `
       <h2 style="margin:0 0 6px">Batida fora do normal</h2>
-      <div class="aviso ambar">A obra não foi encontrada pela localização. A batida vai para a conferência do encarregado.</div>
+      <div class="aviso ambar">A obra não foi encontrada pela localização. A batida vai para a conferência da administração da obra.</div>
       <label for="j-texto">Por que a localização não achou a obra?</label>
       <textarea id="j-texto" placeholder="Ex.: o GPS do celular não funciona; estou no almoxarifado da obra"></textarea>
       <button class="btn" type="button" id="j-ok">Bater e mandar para conferência</button>
@@ -738,7 +759,7 @@ async function carregarInicio() {
     avisoAparelho = `<div class="aviso erro">Não consegui registrar este celular. Feche e abra de novo.</div>`; podeBater = false;
   } else if (APARELHO.status === "PENDENTE") {
     const codAp = aparelho().uuid.replace(/[^A-Za-z0-9]/g, "").slice(-6).toUpperCase();
-    avisoAparelho = `<div class="aviso ambar">Este celular está esperando aprovação do DP ou do encarregado (código <b>${codAp}</b>). Enquanto isso você vê o seu ponto, mas ainda não bate por aqui.</div>`;
+    avisoAparelho = `<div class="aviso ambar">Este celular está esperando aprovação do DP ou da administração da obra (código <b>${codAp}</b>). Enquanto isso você vê o seu ponto, mas ainda não bate por aqui.</div>`;
     podeBater = false;
   } else if (APARELHO.status === "BLOQUEADO") {
     avisoAparelho = `<div class="aviso erro">Este celular foi bloqueado para bater ponto. Fale com o DP.</div>`; podeBater = false;
@@ -754,7 +775,8 @@ async function carregarInicio() {
   }
   $("aviso-aparelho").innerHTML = avisoAparelho;
   if ($("btn-voltar-batida")) $("btn-voltar-batida").addEventListener("click", voltarAoInicio);
-  $("btn-bater").disabled = !podeBater; $("btn-sem-foto").disabled = !podeBater;
+  PODE_BATER = podeBater;
+  $("btn-bater").disabled = $("btn-sem-foto").disabled = !podeBater || LOCAL_BLOQUEIA;
 
   // hoje
   const d = EU.hoje;
@@ -793,6 +815,18 @@ function resumoDoMes(r, deOutro) {
       <div class="numero"><b>${r.incompletos}</b><span>batida faltando</span></div></div>
       ${r.sem_escala ? `<p class="pequeno">${deOutro ? "A escala desta pessoa" : "Sua escala"} ainda não foi cadastrada; os dias aparecem sem julgamento de falta.</p>` : ""}`;
 }
+// O pedido que espera validação aparece NO DIA (09/10/2026: "não aparece no meu
+// mês essa requisição (…) senão a pessoa pode ficar querendo pedir mais de uma
+// vez"): o horário pedido vira um chip ⏳, e o resto, um selo âmbar.
+function pendentesDoDia(x) {
+  if (!x.pendentes.length) return "";
+  const horas = x.pendentes.filter(p => p.tipo === "AJUSTE_BATIDA" && p.hora).map(p => p.hora).sort();
+  const outros = [...new Set(x.pendentes.filter(p => p.tipo !== "AJUSTE_BATIDA" || !p.hora).map(p => p.rotulo))];
+  return `<div style="margin-top:6px">
+    ${horas.length ? `<div class="chips">${horas.map(h => `<span class="chip pedido" title="ajuste pedido, esperando validação">⏳ ${esc(h)}</span>`).join("")}</div>
+      <div class="pequeno" style="color:var(--ambar)">Ajuste pedido — esperando validação</div>` : ""}
+    ${outros.map(r => `<span class="selo ambar">⏳ ${esc(r)} esperando validação</span>`).join(" ")}</div>`;
+}
 function diasDoMes(d, regras) {
   let temAcao = false;
   const linhas = d.dias.filter(x => x.situacao !== "FUTURO").reverse().map(x => {
@@ -813,7 +847,7 @@ function diasDoMes(d, regras) {
           ${x.trabalhado ? ` trabalhou ${hm(x.trabalhado)}` : ""}${x.extra ? ` · extra ${hm(x.extra)}` : ""}${x.debito && !x.falta ? ` · a menos ${hm(x.debito)}` : ""}
           ${x.feriado ? ` · ${esc(x.feriado)}` : ""}</div>
         ${alertas ? `<div class="pequeno">${esc(alertas)}</div>` : ""}
-        ${x.pendentes.length ? `<div class="pequeno">Pedido esperando: ${esc(x.pendentes.map(p => p.rotulo).join(", "))}</div>` : ""}
+        ${pendentesDoDia(x)}
       </div>${acoes ? `<div class="acoes-dia">${acoes}</div>` : ""}</div>`;
   }).join("");
   if (!linhas) return "<p>Nada neste mês ainda.</p>";
@@ -860,7 +894,17 @@ function podeCorrigirDia(x, mes) {
   if (mes.competencia_fechada || x.ocorrencia || x.situacao === "FUTURO") return false;
   if (x.faltando && x.faltando.length) return true;
   // sem escala cadastrada não dá para saber o que falta: deixa pedir no dia de falta ou incompleto
-  return !x.previstas.length && ["FALTA", "INCOMPLETO", "SEM_ESCALA"].includes(x.situacao) && x.batidas.length < 4;
+  return !x.previstas.length && ["FALTA", "INCOMPLETO", "SEM_ESCALA"].includes(x.situacao)
+    && x.batidas.length < (x.so_entrada_e_saida ? 2 : 4);
+}
+// Sem escala, o dia não diz o que falta: oferece as batidas que ainda cabem no
+// dia, com o nome de cada uma (09/10/2026: "só está aparecendo batida 1 e batida
+// 2. Mas não são quatro batidas?"). Na obra de só entrada e saída, duas.
+const NOMES_DAS_BATIDAS = ["Entrada", "Saída para o intervalo", "Volta do intervalo", "Saída"];
+function semEscala(x) {
+  const nomes = x.so_entrada_e_saida ? ["Entrada", "Saída"] : NOMES_DAS_BATIDAS;
+  const resto = nomes.slice(Math.min(x.batidas.length, nomes.length - 1));
+  return resto.length ? resto : ["Batida"];
 }
 // `alvo`: outra pessoa, na consulta da obra (08/10/2026) — o pedido sai em nome
 // de quem está logado, para a obra do alcance dele.
@@ -875,9 +919,9 @@ function abrirCorrecao(x, alvo) {
         <input type="checkbox" data-i="${i}" checked style="width:auto">
         <span style="flex:1">${esc(f.rotulo)}</span>
         <input type="time" data-hora="${i}" value="${esc(f.sugestao)}" style="width:130px"></label>`).join("")
-    : [0, 1].map(i => `<label style="display:flex;gap:10px;align-items:center;color:var(--tinta)">
+    : semEscala(x).map((rotulo, i) => `<label style="display:flex;gap:10px;align-items:center;color:var(--tinta)">
         <input type="checkbox" data-i="${i}" ${i === 0 ? "checked" : ""} style="width:auto">
-        <span style="flex:1">Batida ${i + 1}</span><input type="time" data-hora="${i}" style="width:130px"></label>`).join("");
+        <span style="flex:1">${esc(rotulo)}</span><input type="time" data-hora="${i}" style="width:130px"></label>`).join("");
   $("dlg-corpo").innerHTML = `
     <h2 style="margin:0 0 6px">Corrigir ${dataBR(x.data)}${alvo ? ` — ${esc(alvo.nome)}` : ""}</h2>
     <p class="pequeno">Já batido: ${x.batidas.length ? x.batidas.map(b => esc(b.hora)).join(", ") : "nada"}.
@@ -891,7 +935,7 @@ function abrirCorrecao(x, alvo) {
                                        : `<option value="">a obra do cadastro</option>`}</select>
     <label for="c-desc">Conte em poucas palavras</label>
     <textarea id="c-desc" placeholder="Ex.: o celular descarregou depois do almoço"></textarea>
-    <p class="pequeno">${alvo ? "O pedido sai em seu nome e vai para validação." : "O encarregado confere e aprova."}
+    <p class="pequeno">${alvo ? "O pedido sai em seu nome e vai para validação." : "A administração da obra confere e aprova."}
       Aprovado, a batida entra no ponto marcada como ajustada.</p>
     <button class="btn" type="button" id="c-enviar">Enviar o pedido</button>`;
   $("dlg").showModal();
@@ -911,7 +955,7 @@ function abrirCorrecao(x, alvo) {
       const r = await chamar(alvo ? `/ponto/app/api/equipe/${alvo.id}/ajuste-do-dia` : "/ponto/app/api/pedidos/ajuste-do-dia", corpo);
       $("dlg").close();
       aviso(alvo ? `Pedido enviado para ${alvo.nome}: ${r.quantidade} batida(s) para validação.`
-                 : `Pedido enviado: ${r.quantidade} batida(s) para o encarregado conferir. Você acompanha em Pedidos.`, "ok");
+                 : `Pedido enviado: ${r.quantidade} batida(s) para a administração da obra conferir. Você acompanha em Pedidos.`, "ok");
       (alvo ? alvo.depois : carregarMes)();
     } catch (e) {
       $("c-enviar").disabled = false;
@@ -1023,7 +1067,7 @@ function montarCamposPedido() {
       if (!x || x.situacao === "FUTURO") return aviso("Esse dia ainda não chegou.", "erro");
       if (!podeCorrigir(x, m)) return aviso(m.competencia_fechada ? "Esse mês já foi fechado para a folha; fale com o DP."
         : x.ocorrencia ? `Esse dia já está justificado (${x.ocorrencia.rotulo}).`
-        : "Esse dia não tem batida faltando. Se alguma está errada, fale com o encarregado.", "info");
+        : "Esse dia não tem batida faltando. Se alguma está errada, fale com a administração da obra.", "info");
       abrirCorrecao(x);
     } catch (e) { aviso(e.message, "erro"); }
   });
@@ -1233,8 +1277,7 @@ function detectarObraDoTablet() {
     .sort((a, b) => a.d - b.d);
   if (dentro.length) {
     $("t-obra").value = dentro[0].o.codigo;
-    const o = dentro[0].o, mesmo = !o.nome || o.nome.trim().toUpperCase() === o.codigo.trim().toUpperCase();
-    info.textContent = `📍 Obra detectada pela localização: ${mesmo ? o.codigo : `${o.codigo} — ${o.nome}`}`;
+    info.textContent = `📍 Obra detectada pela localização: ${rotuloObra(dentro[0].o)}`;
   } else {
     info.textContent = "📍 Fora da área das obras deste celular — confira a obra na lista acima.";
   }
@@ -1500,8 +1543,23 @@ function fotoDoVideo() {
 // mostra. Na consulta, a obra é a da cerca em que o aparelho ESTÁ — por isso
 // toda chamada leva a localização.
 // =============================================================================
+// O nome da obra UMA vez (07 e 09/10/2026: "aparece duplicado"). A mesma regra
+// do ERP (rotuloObra do erp_base.html): quando o código e o nome dizem a mesma
+// coisa — um contém o outro, ou todas as palavras do código estão no nome —
+// basta um.
 function rotuloObra(o) {
-  return (!o.nome || o.nome.trim().toUpperCase() === o.codigo.trim().toUpperCase()) ? o.codigo : `${o.codigo} — ${o.nome}`;
+  const cod = String(o.codigo || "").trim(), nome = String(o.nome || "").trim();
+  if (!nome) return cod;
+  if (!cod) return nome;
+  const limpo = t => t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
+  const c = limpo(cod), n = limpo(nome);
+  if (n.includes(c)) return nome;
+  if (c.includes(n)) return cod;
+  const palavras = t => t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .split(/[^a-z0-9]+/).filter(p => p.length >= 2);
+  const doNome = new Set(palavras(nome)), doCod = palavras(cod);
+  if (doCod.length && doCod.every(p => doNome.has(p))) return nome;
+  return `${cod} — ${nome}`;
 }
 function comLocal(url, l) {
   if (!l) return url;

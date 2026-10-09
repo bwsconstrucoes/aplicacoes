@@ -152,3 +152,132 @@ def substituir_numero(creds, codigo_integracao, numero_antigo, numero_novo):
     param = {"codigo_lancamento_integracao": codigo_integracao,
              "numero_documento_fiscal": doc}
     return _post("AlterarContaReceber", param, creds), doc
+
+
+# --------------------------------------------------------------------------- #
+# Consulta, equalização e atualização dos TRIBUTOS — as três únicas operações
+# que o dono quer manter no Omie (09/10/2026, com estas palavras):
+#
+#   "Os scripts, eles apenas para consulta, equalização e atualização da parte
+#    de tributos no Omie. Se as emissões estiverem todas corretas e gerando
+#    títulos corretos, a operação se limitará ao que eu disse e não mais a uma
+#    série de outras funções que foram criadas."
+#
+# Estavam num Apps Script da planilha, com a credencial do Omie em texto claro
+# (ver CONTEXTO.md §9). Aqui a credencial vem da aba Credenciais, como todo o
+# resto do repositório.
+# --------------------------------------------------------------------------- #
+_CAMPOS_TRIBUTO = ("pis", "cofins", "csll", "ir", "iss", "inss")
+
+
+def _achar(no, chave):
+    """Procura uma chave em qualquer profundidade da resposta do Omie.
+
+    A resposta aninha de formas diferentes conforme a chamada, e procurar pelo
+    caminho exato quebrava a cada variação — foi o motivo de `_ler_num_doc` já
+    fazer busca em profundidade."""
+    if isinstance(no, dict):
+        if chave in no:
+            return no[chave]
+        for v in no.values():
+            achou = _achar(v, chave)
+            if achou not in (None, ""):
+                return achou
+    elif isinstance(no, list):
+        for v in no:
+            achou = _achar(v, chave)
+            if achou not in (None, ""):
+                return achou
+    return None
+
+
+def ler_titulo(consulta) -> dict:
+    """Tira da resposta do Omie o que a base de faturamento guarda.
+
+    Função PURA: recebe a resposta já obtida. É o que permite testar a leitura
+    sem falar com o Omie — e a leitura é a parte que erra em silêncio, porque
+    todos os campos são números plausíveis."""
+    from decimal import Decimal
+
+    def num(chave):
+        v = _achar(consulta, chave)
+        try:
+            return Decimal(str(v)) if v not in (None, "") else Decimal("0")
+        except Exception:
+            return Decimal("0")
+
+    def txt(chave):
+        v = _achar(consulta, chave)
+        return "" if v is None else str(v).strip()
+
+    d = {
+        "codigo_lancamento": txt("codigo_lancamento_omie"),
+        "codigo_integracao": txt("codigo_lancamento_integracao"),
+        "numero_documento": _ler_num_doc(consulta) or "",
+        "valor_titulo": num("valor_documento"),
+    }
+    for t in _CAMPOS_TRIBUTO:
+        d[t] = num(f"valor_{t}")
+        d[f"retem_{t}"] = (txt(f"retem_{t}") or "N").upper()[:1]
+    return d
+
+
+def ratear(valor_total, pesos) -> list:
+    """Divide um valor entre vários itens, proporcional ao peso, FECHANDO AO CENTAVO.
+
+    Por que isto existe e por que fecha ao centavo: **um título do Omie cobre
+    várias notas** (a medição é faturada em partes). Para comparar o tributo do
+    título com o de cada nota, o valor do título tem de ser dividido — e a soma
+    das partes tem de dar exatamente o total, senão a conferência acusa
+    divergência de um centavo em toda nota e o dono para de ler o alarme.
+
+    O residual do arredondamento vai para a(s) nota(s) de MAIOR peso. É a regra
+    que o Apps Script já usava (`ratearProporcional_`), e é a única parte dele
+    que é regra de negócio de verdade.
+    """
+    from decimal import Decimal
+    total_centavos = int((Decimal(str(valor_total or 0)) * 100).to_integral_value())
+    pesos = [Decimal(str(p or 0)) for p in pesos]
+    soma = sum(pesos)
+    if soma <= 0:
+        raise ValueError("Rateio impossível: a soma dos pesos é zero.")
+
+    partes = [int((total_centavos * p) / soma) for p in pesos]
+    residual = total_centavos - sum(partes)
+    # maior peso primeiro; empate decidido pela ordem, para o resultado ser o
+    # mesmo em duas rodadas com os mesmos dados
+    ordem = sorted(range(len(pesos)), key=lambda i: (-pesos[i], i))
+    i = 0
+    while residual > 0 and ordem:
+        partes[ordem[i % len(ordem)]] += 1
+        residual -= 1
+        i += 1
+    while residual < 0 and ordem:
+        partes[ordem[i % len(ordem)]] -= 1
+        residual += 1
+        i += 1
+    return [Decimal(c) / 100 for c in partes]
+
+
+def montar_param_tributos(codigo_integracao, tributos: dict) -> dict:
+    """Param do AlterarContaReceber mexendo SÓ nos tributos.
+
+    Não leva `numero_documento_fiscal` de propósito: o número da nota no título
+    é assunto da emissão, e mandá-lo aqui faria a equalização de tributos
+    sobrescrever, por tabela, o acúmulo que a emissão monta (ex.: '3001/3072').
+    """
+    param = {"codigo_lancamento_integracao": codigo_integracao}
+    for t in _CAMPOS_TRIBUTO:
+        valor = tributos.get(t)
+        if valor is None:
+            continue
+        valor = _f(valor)
+        param[f"valor_{t}"] = valor
+        param[f"retem_{t}"] = "S" if valor > 0 else "N"
+    return param
+
+
+def alterar_tributos(creds, codigo_integracao, tributos: dict):
+    """Grava os tributos equalizados no título. Só os tributos."""
+    return _post("AlterarContaReceber",
+                 montar_param_tributos(codigo_integracao, tributos), creds)

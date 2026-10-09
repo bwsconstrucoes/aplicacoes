@@ -31,7 +31,7 @@ from .ocorrencias import Quem
 
 ROTULO = {"BATIDA_EM_ANALISE": "Batida em conferência", "MOSAICO": "Mosaico sem conferência",
           "APARELHO": "Aparelho esperando aprovação", "RENOVAR": "Aparelho a renovar ou desativar"}
-ETAPA_ROTULO = {"SUPERVISOR": "Encarregado", "DP": "DP"}
+ETAPA_ROTULO = {"SUPERVISOR": "Administração da obra", "DP": "DP"}
 
 
 def _data(valor, campo) -> Optional[dt.date]:

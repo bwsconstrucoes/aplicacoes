@@ -39,8 +39,10 @@ logger = logging.getLogger("ponto.validacao")
 PARAMETRO = "validacao.quem"
 ENCARREGADO, DP, AMBOS = "ENCARREGADO", "DP", "ENCARREGADO_E_DP"
 OPCOES = (ENCARREGADO, DP, AMBOS)
-ROTULO_OPCAO = {ENCARREGADO: "Encarregado da obra", DP: "DP",
-                AMBOS: "Encarregado da obra e depois o DP"}
+# O rótulo diz "administração da obra" (09/10/2026: "o termo não é encarregado (…) pode ser o
+# encarregado, o almoxarife, o DP"); o valor gravado continua ENCARREGADO.
+ROTULO_OPCAO = {ENCARREGADO: "Administração da obra", DP: "DP",
+                AMBOS: "Administração da obra e depois o DP"}
 
 # O que se configura, com o padrão (DP) e as opções de cada um.
 CONFIGURAVEIS = {

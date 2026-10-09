@@ -1385,6 +1385,231 @@ os suspeitos já estão identificados e prontos para ligar: `tpOper` (o candidat
 sistema **não pode** deduzir, porque não dá para saber do CNPJ se o órgão é
 federal, estadual ou municipal. Essa é pergunta para o dono.
 
+### A base consolidada de faturamento, e o fim da gestão na planilha — 09/10/2026
+
+**O pedido, por áudio:** sair da gestão de notas na aba "Notas BWS" (*"essa
+planilha é um lixo, é uma bagunça"*) e ter uma **tela de Faturamento** no Análise
+de SPs, alimentada por uma **base consolidada** que junte o que hoje está
+espalhado por cinco planilhas. Ele quer ver faturamento, baixar a nota, gráfico
+de evolução, e fazer a gestão ali.
+
+**O desenho inteiro, a procedência de cada campo e o que ficou em aberto estão em
+`FATURAMENTO.md`**, na pasta da área — inclusive a resposta à pergunta direta
+dele ("o que o emissor usa dessa planilha?"). Aqui ficam só as decisões.
+
+**Decisão 1 — a base é uma ABA, não uma tabela de banco.** Palavras dele: *"como
+a gente não está no ERP ainda, aí a gente mantém a planilha"*. A aba
+`Base Faturamento` tem 71 colunas nomeadas campo por campo, justamente para
+virar tabela quando o ERP assumir.
+
+**Decisão 2 — o emissor grava nos DOIS lugares, de propósito.** Pedido dele:
+*"momentaneamente deixa o emissor atualizando essa daqui conforme ele já vem
+fazendo"*. E reforçado DEPOIS de a base nova ser publicada, no mesmo dia:
+
+> *"Só lembrando que, por enquanto, a nota do BWS a gente vai continuar usando
+> normal. Só depois que estiver consolidado essa nova etapa aí, a gente vai
+> deixar de usar ela."*
+
+Por isso a gravação duplicada **virou trava de teste**, e não é resíduo de
+transição: há um caso que exige que `notas_bws.gravar_linha` continue no
+`concluir.py`, que a "Notas BWS" venha ANTES da base nova (a trava
+anti-duplicação da conclusão olha a planilha antiga), e que as duas falhem
+separado. Existe para que nenhuma sessão futura — vendo a base nova funcionando —
+conclua que o passo 1 virou redundante e o apague "limpando o código".
+
+**Desligar é decisão DELE**, e só depois de a base nova ser conferida contra a
+antiga.
+
+**Decisão 3 — cada tributo aparece DUAS vezes: o da nota e o do Omie.** Guardar
+um só esconderia exatamente o que ele confere à mão. Daí saem dois campos
+calculados — `divergencia_tributos` e `divergencia_recebimento` — e os dois
+ficam **vazios** quando não há com o que comparar. Dizer "não divergente" numa
+nota que ninguém recebeu seria afirmar uma conferência que não aconteceu.
+
+**Decisão 4 — a consolidação das notas antigas roda em LOTES.** São ~3.300 notas.
+Ler e escrever tudo de uma vez prenderia uma das quatro threads do serviço por
+minutos, e foi assim que o monorepo caiu em 07/10/2026. Cada rodada processa um
+lote e diz quantas faltam; repetir não duplica.
+
+**Decisão 5 — o que não existe fica VAZIO.** Período da medição, corpo da nota e
+empresa/SCP não estão em fonte nenhuma para as notas antigas. Inventar seria pior.
+Dele: *"não vamos ter a completude dos dados, mas para frente a gente passa a
+ter"*.
+
+**O que a C. Diários passou a entregar:** `Empresa`, `CNPJ Empresa`, `SCP` e
+`CNPJ SCP`, lidos **pelo nome do cabeçalho**. A coluna de SCP ainda vai ser
+criada por ele; até lá os campos ficam vazios, sem erro. Nem toda obra é faturada
+no CNPJ da BWS, e isso nunca tinha sido lido.
+
+**A armadilha que o teste vigia:** a "Notas BWS" guarda os tributos do Omie em
+BB:BM, em pares valor/retém, na ordem **PIS, COFINS, CSLL, IR, ISS, INSS** — que
+não é a ordem do nosso cabeçalho. Trocar uma pela outra põe o ISS no lugar do IR,
+e são dois números plausíveis na mesma linha: ninguém perceberia.
+
+**⚠️ E um achado de segurança, que é tarefa dele:** o Apps Script da planilha traz
+a chave e o segredo do OMIE **em texto claro** (mais a URL do webhook do Make).
+Registrado em `CONTEXTO.md` §9, com os nomes e nunca os valores. Não está no
+repositório (conferido, inclusive no histórico do git). A ação é trocar na origem.
+
+**Conferido:** 28 casos novos, com o cabeçalho REAL da "Notas BWS" (lido da
+planilha, não suposto) — os índices de BB:BM, a leitura pt-BR dos valores, as duas
+divergências, o cruzamento com as quatro fontes, a duplicata da aba de Links não
+mudando o resultado entre rodadas, e a tela. Suíte inteira: 5.316 passando.
+
+**NÃO conferido:** a consolidação contra a planilha de verdade. Nenhum teste faz
+rede, e nesta sessão não há credencial do Google — a primeira rodada da tela é a
+primeira prova. Ela é segura por construção (não apaga nada, não emite nada, só
+lê e escreve na aba nova), mas o número de linhas que ela vai gravar é desconhecido.
+
+### ⚠️ Quatro correções do dono na base de faturamento — 09/10/2026
+
+Ele revisou a base e apontou quatro coisas. Três eram erro meu, e uma era campo
+que faltava. Ficam aqui porque a primeira é do tipo que estraga em silêncio.
+
+**1. Eu lia o bloco de tributos ERRADO, e era lixo.** A base lia T:Y como se
+fossem os tributos da nota. Ele:
+
+> *"Não existe aquilo dali, aquilo são repetições, é outra metodologia que eu
+> utilizava, dali é lixo. Eu comentei que eles são da coluna BB em diante só."*
+
+A planilha tem o mesmo conjunto PIS/COFINS/IR/CSLL/INSS/ISS **três vezes** (T:AB,
+AC:AK, AL:AT), mais CPRB e "REGIME ESPECIAL". Ele havia dito "BB em diante" na
+primeira mensagem e eu li T:Y de todo jeito. **Agora de P a BA não se lê nada**,
+e um teste põe valores absurdos nessas colunas: se algum aparecer na base, ele
+denuncia. É o pior tipo de defeito possível — números plausíveis e errados, de que
+ninguém desconfia.
+
+**2. O "retido ou não" existe por um motivo só:** compatibilizar com o Omie. Ele
+tem os dois campos (valor e retém), e **valor com retém=N é imposto que ele não
+está descontando** — não conta na conferência nem na soma.
+
+**3. Nada que venha da C. Diários entra na base.** *"Informação que vem da
+C. Diários não precisa entrar na base, a gente vai cruzar."* Saíram nove colunas:
+contrato, município, centro de custo, tributação, código primário, empresa, CNPJ
+da empresa, SCP e CNPJ da SCP. Da obra fica só a **chave**.
+
+A fronteira que isso desenha vale guardar: **atributo da OBRA** pode mudar amanhã
+e tem dono (a C. Diários); **fato da NOTA** é congelado no dia da emissão e não
+tem outra fonte. Por isso a `aliquota_iss` ficou — é a que a nota aplicou, não a
+que está cadastrada hoje. O risco aceito, e é dele: obra que trocar de empresa
+fará a tela mostrar a nova para as notas antigas.
+
+**4. Faltavam IBS e CBS.** *"Uma coluna que deveria ser adicionada também, uma
+não, duas."* Entraram, e o emissor as preenche do XML da nota — quem calcula é a
+plataforma nacional, com a redução de 50% da construção civil. No modelo antigo
+não existem.
+
+**Saldo: 71 → 64 colunas.**
+
+#### E o que BB:BM realmente é — esclarecimento dele, no mesmo dia
+
+Minha primeira leitura da correção 1 foi pessimista: tratei BB:BM como "o que o
+Omie tem", e concluí que a nota antiga ficaria sem tributo nenhum. Ele corrigiu:
+
+> *"A parte de tributos Omie, aquilo dali eu criei exatamente para equalizar. Já
+> está tudo equalizado ali. E o que não tiver, talvez tenha alguns que estão em
+> branco, mas são poucos, são as mais recentes."*
+
+Isso muda o destino do bloco. BB:BM é o valor **acordado** entre a nota e o
+título, conferido por ele ao longo de anos — e, para as notas antigas, é o
+**único registro que existe** dos tributos delas. Então ele entra como o **lado da
+NOTA**, e não como o lado do Omie.
+
+As colunas `omie_*` ficaram para o que a consulta devolver **agora**. É comparando
+as duas que se vê **se o título saiu do lugar depois de equalizado** — e essa é a
+utilidade real da tela do Omie para o acervo antigo, que eu tinha dado como
+perdida.
+
+#### E a nota nova grava conforme o EMITIDO
+
+Ele completou: *"as novas notas já têm a informação dos tributos emitidos, então
+vamos gravar conforme. Se necessário, a posteriori eu equalizo."*
+
+Conferindo para atender, apareceu que eu estava gravando **mais** do que a nota
+emitiu: o emissor punha o valor que o motor fiscal calcula para os cinco
+federais, e o motor calcula todos **sempre** — era assim que a coluna P da
+planilha antiga era feita. Mas a nota só **declara** o que foi retido; imposto
+não retido nem aparece no XML (regra do E0699). Gravar o calculado afirmaria uma
+retenção que não houve.
+
+Agora os três estados de um campo de tributo são distintos, e a diferença é o que
+mantém a trava funcionando:
+
+| No campo | Quer dizer |
+|---|---|
+| **vazio** | não se sabe — nota antiga não equalizada |
+| **0,00** com retém **N** | a nota não reteve |
+| valor com retém **S** | a nota reteve |
+
+O **ISS** é a exceção, e por um motivo fiscal: ele é declarado de qualquer jeito,
+porque a prefeitura o calcula e ele sai na nota — o que muda é quem recolhe.
+
+#### A trava continua, e agora protege o que realmente precisa
+
+As **poucas notas mais recentes** que ele ainda não equalizou chegam sem tributo.
+Para essas, a soma daria **zero**, a equalização veria divergência em tudo e
+**zeraria as retenções no Omie** — apagando a única cópia que existe delas.
+
+Então: **título sem tributo registrado nunca é equalizado**, e a trava vale mesmo
+com a confirmação marcada. Autorizar equalizar não é autorizar apagar o que o
+Omie tem e a nota não tem. A tela diz "sem tributo na nota", que é o aviso de que
+**falta equalizar aquela** — e não de que algo quebrou.
+
+**Conferido:** os quatro consertos, mais a trava, em 18 casos novos — entre eles o
+que põe lixo em T:Y e exige que não apareça na base, o valor com retém=N não
+contando, as nove colunas da C. Diários tendo de estar AUSENTES, e a tela não
+escrevendo no Omie nem com autorização quando a nota não declarou. Suíte inteira:
+5.360 passando.
+
+### As três operações no Omie vieram para o Python — 09/10/2026
+
+**O dono fechou a questão que estava aberta**, com estas palavras: *"os scripts,
+eles apenas para consulta, equalização e atualização da parte de tributos no
+Omie. Se as emissões estiverem todas corretas e gerando títulos corretos, a
+operação se limitará ao que eu disse e não mais a uma série de outras funções que
+foram criadas."*
+
+Ou seja: o escopo encolheu de uma dezena de menus para **três operações**. Elas
+estão em `omie.py` + `omie_conferencia.py`, na tela `/emissao/omie`, e a
+credencial vem da aba Credenciais — não mais de dentro do código, que era o
+problema de segurança do Apps Script.
+
+**As três regras que governam isso, e errar qualquer uma mexe em dinheiro:**
+
+1. **A nota manda, o título obedece.** Nota fiscal não se desfaz; título é
+   registro interno. O que vai para o Omie é a soma dos tributos das notas
+   válidas daquele título, nunca o contrário.
+2. **Um título cobre várias notas**, então o valor dele é rateado pelo valor
+   bruto de cada nota, **fechando ao centavo** — o residual vai para a maior. É a
+   regra do Apps Script (`ratearProporcional_`), a única parte dele que era regra
+   de negócio de verdade. Sem o fechamento exato, a conferência acusaria um
+   centavo de diferença em TODA nota, e alarme que sempre aparece deixa de ser
+   lido.
+3. **Só o que foi RETIDO entra na soma.** Somar imposto não retido infla a
+   retenção do título e a baixa sai errada — é exatamente o problema que ele
+   descreve quando o líquido não fecha. Cancelada e substituída ficam fora.
+
+**Conferir é leitura; equalizar escreve, e exige confirmação marcada.** A rodada
+de leitura mostra, tributo por tributo, o que mudaria. Gravar em sistema
+financeiro sem dizer o que vai mudar não se faz — é a mesma régua do "Confirmar e
+Emitir".
+
+**E uma armadilha que a atualização evita:** ela **não** manda o
+`numero_documento_fiscal`. O número da nota no título é assunto da emissão, que
+acumula `3001/3072`; mandá-lo na equalização sobrescreveria esse acúmulo por
+tabela, e ninguém ligaria uma coisa à outra depois.
+
+**Conferido:** 23 casos novos. O rateio fechando ao centavo em cinco divisões
+diferentes (inclusive 1 centavo entre dois, e 3 centavos entre sete); o residual
+indo para a maior; rateio sem peso sendo recusado em vez de dividir igual;
+imposto não retido fora da soma; cancelada e substituída fora; a leitura da
+resposta aninhada do Omie; o param sem `numero_documento_fiscal`; campo ausente
+não virando zero no param (apagar uma retenção legítima seria descoberto só na
+baixa); e a tela não escrevendo nada sem a caixa marcada. Suíte inteira: 5.342.
+
+**NÃO conferido:** nada disso falou com o Omie de verdade. A primeira rodada de
+**leitura** na tela é a primeira prova, e ela é segura — consulta não altera nada.
+
 ### ✅ A PRIMEIRA NOTA DO PADRÃO NACIONAL SAIU — 08/10/2026
 
 **Nota `2600000003283`**, obra IFSPSAOJOSE, medição 11, emitida em 08/10/2026,
