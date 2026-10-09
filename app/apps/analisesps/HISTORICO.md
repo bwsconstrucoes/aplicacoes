@@ -12228,6 +12228,23 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 211 — "Atualizar SP" trava o Agendar; importar as notas antigas pelo Faturamento (09/10/2026)
+
+- *"Sim, é para bloquear também SP sem obra."* A trava do `/api/alterar`
+  ("Agendar"/"Agendado") passou a recusar também a SP sem obra
+  (`pagamentos.atualizar_sp`), com a mesma mensagem dizendo quais e por quê
+  (`web._sps_presas_no_agendar`). Ficha: aviso "Atualizar SP" e o botão explica.
+- *"As notas anteriores, como faço para importar elas? Não estão aparecendo."*
+  Elas só aparecem depois de levadas da "Notas BWS" para a "Base Faturamento" —
+  e isso é a CONSOLIDAÇÃO DO EMISSOR (`emissaonf/base_faturamento.consolidar`),
+  que pela tela dele (`/emissao/faturamento?token=…`) roda um lote por clique.
+  Agora o Faturamento tem **"Importar notas antigas"** (só o mestre): uma
+  tarefa de fundo nova, `faturamento_antigas`, roda TODOS os lotes (1.000 por
+  vez, até 20 rodadas) no processo separado e em seguida traz tudo para a tela.
+  A regra continua sendo a do emissor — chamada, não copiada (import plano,
+  como o próprio emissor faz). Não apaga nada, não emite nada; repetir não
+  duplica. Não testado contra a planilha de verdade. Sem migração.
+
 #### Leva 210 — destaque de "sem validação" e de "Sem NF" na lista (09/10/2026)
 
 - *"Quando tem uma SP sem validação fica só a célula em branco; era bom um

@@ -186,6 +186,49 @@ def carregar(anotar=None) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# As notas ANTIGAS (09/10/2026): *"as notas anteriores, como faço para importar
+# elas? Não estão aparecendo."*
+#
+# Quem leva as notas antigas da "Notas BWS" para a "Base Faturamento" é a
+# CONSOLIDAÇÃO DO EMISSOR (`emissaonf/base_faturamento.consolidar`) — a regra é
+# dele, e não é copiada aqui. Pela tela do emissor ela roda um lote por clique
+# (com o token do link na URL); daqui ela roda TODOS os lotes, no processo
+# separado, sem prender o serviço. Não apaga nada e não emite nada: só lê as
+# abas antigas e escreve na aba nova. Rodar de novo não duplica.
+# ---------------------------------------------------------------------------
+LOTE_DA_IMPORTACAO = 1000
+MAX_RODADAS = 20
+
+
+def importar_antigas(anotar=None) -> dict:
+    import os
+    import sys
+    from .credenciais import cliente, com_retry
+
+    anotar = anotar or (lambda *a, **k: None)
+    # O emissor se importa de forma PLANA (`import worker`), como scripts — ver
+    # `emissaonf/README.md`. A pasta dele entra no caminho, como o web.py dele faz.
+    pasta = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "emissaonf"))
+    if pasta not in sys.path:
+        sys.path.insert(0, pasta)
+    import base_faturamento as bfat
+
+    planilha = com_retry(lambda: cliente().open_by_key(PLANILHA_NOTAS))
+    gravadas, r = 0, {"faltam": None}
+    for rodada in range(1, MAX_RODADAS + 1):
+        anotar("trazendo as notas antigas para a Base Faturamento",
+               f"lote {rodada}" + (f" — faltam {r['faltam']}" if r["faltam"] else ""))
+        r = bfat.consolidar(planilha, limite=LOTE_DA_IMPORTACAO)
+        gravadas += r["gravadas"]
+        logger.info("Faturamento: lote %d da importação — %d gravada(s), faltam %d.",
+                    rodada, r["gravadas"], r["faltam"])
+        if not r["faltam"] or not r["gravadas"]:
+            break
+    return {"gravadas": gravadas, "faltam": r["faltam"] or 0,
+            "total_na_base": r.get("total_na_base")}
+
+
+# ---------------------------------------------------------------------------
 # O que a tela pergunta
 # ---------------------------------------------------------------------------
 _JUNTA_OBRA = (" FROM analisesps.faturamento_nota n "

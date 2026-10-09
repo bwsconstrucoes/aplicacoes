@@ -61,6 +61,7 @@ MODOS = {
     # 09/10/2026: a tela de Faturamento lê do banco; isto traz a aba "Base
     # Faturamento" (que o emissor grava) e a C. Diários. Ver `faturamento.py`.
     "faturamento": "Trazer as notas fiscais emitidas (Base Faturamento)",
+    "faturamento_antigas": "Importar as notas antigas da Notas BWS para a Base Faturamento",
     # ⚠️ O PONTO É O GARGALO DA FOLHA: sem ele não há total por obra, não há
     # diária e não há apropriação. Roda no processo separado porque são várias
     # páginas da API do Mobponto, e um mês pode ter dezenas de milhares de dias.
@@ -126,6 +127,7 @@ ETAPAS = {
     "comprovantes": ["comprovantes"],
     "colaboradores": ["colaboradores"],
     "faturamento": ["faturamento"],
+    "faturamento_antigas": ["faturamento_antigas", "faturamento"],
     "ponto": ["ponto"],
     "ponto_diario": ["ponto_diario"],
     "ponto_pessoa": ["ponto_pessoa"],
@@ -625,13 +627,23 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                     + ". O XML de cada uma chega na PRÓXIMA busca na Receita, "
                       "e é guardado no Drive.")
 
+            elif etapa == "faturamento_antigas":
+                mudar_etapa("trazendo as notas antigas para a Base Faturamento")
+                from . import faturamento as _faturamento
+                c = _faturamento.importar_antigas(anotar)
+                recado_apoios[0] = (f"{c['gravadas']} nota(s) antiga(s) levada(s) à "
+                                    "Base Faturamento"
+                                    + (f" — FALTAM {c['faltam']} (rode de novo)"
+                                       if c["faltam"] else "")
+                                    + ". ")
+
             elif etapa == "faturamento":
                 # As notas emitidas para a tela de Faturamento (09/10/2026).
                 mudar_etapa("trazendo as notas fiscais emitidas")
                 from . import faturamento as _faturamento
                 c = _faturamento.carregar(anotar)
                 total_linhas[0] = c["notas"]
-                recado_apoios[0] = (f"{c['notas']} nota(s) fiscal(is) e "
+                recado_apoios[0] = recado_apoios[0] + (f"{c['notas']} nota(s) fiscal(is) e "
                                     f"{c['obras']} código(s) de obra"
                                     + ("" if not c["avisos"]
                                        else " — " + " ".join(c["avisos"])))
@@ -780,7 +792,7 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
         # com o nome errado é pior que número nenhum, porque parece certo.
         if modo in ("apoios", "comprovantes", "fiscal", "fiscal_ia",
                     "notas_receita", "notas_ciencia", "colaboradores", "ponto",
-                    "faturamento",
+                    "faturamento", "faturamento_antigas",
                     "ponto_pessoa", "ponto_lancar"):
             # Neste modo nenhuma SP é trazida: dizer "0 SPs" fazia a tela
             # parecer que nada aconteceu justamente quando algo aconteceu.

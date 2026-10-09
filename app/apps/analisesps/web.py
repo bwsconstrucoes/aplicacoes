@@ -1214,13 +1214,23 @@ def alterar():
     # esse bloqueio de impedir que ela seja colocada em agendar"*. A trava é
     # AQUI, no servidor, e não só no botão: vale para a barra, para a ficha e
     # para qualquer outro caminho. Recusa o pedido inteiro, dizendo quais.
+    #
+    # E A SP SEM OBRA (09/10/2026, "Atualizar SP"): *"sim, é para bloquear
+    # também SP sem obra"* — veio incompleta do sistema de compras.
     if coluna == "agendado" and valor.lower() in ("agendar", "agendado"):
-        presas = _sps_com_chave_a_atualizar(ids)
-        if presas:
+        pix, sem_obra = _sps_presas_no_agendar(ids)
+        if pix or sem_obra:
+            partes = []
+            if pix:
+                partes.append(f"{len(pix)} com a chave Pix \"Atualizar Chave\" ("
+                              + ", ".join(pix[:10]) + ("…" if len(pix) > 10 else "") + ")")
+            if sem_obra:
+                partes.append(f"{len(sem_obra)} sem obra — \"Atualizar SP\" ("
+                              + ", ".join(sem_obra[:10])
+                              + ("…" if len(sem_obra) > 10 else "") + ")")
             return {"ok": False, "erro": (
-                f"{len(presas)} SP(s) com a chave Pix \"Atualizar Chave\" — trate a "
-                "chave antes de agendar (desmarque-as para agendar as outras): "
-                + ", ".join(presas[:10]) + ("…" if len(presas) > 10 else ""))}, 409
+                "Não dá para agendar: " + "; ".join(partes) + ". Trate essas SPs "
+                "antes (desmarque-as para agendar as outras).")}, 409
 
     resposta = _gravar_alteracao(ids, coluna, valor, acao)
     # MARCAR PAGO GRAVA TAMBÉM A DATA, O COMPROVANTE E A CONTA (08/10/2026),
@@ -1233,15 +1243,18 @@ def alterar():
     return resposta
 
 
-def _sps_com_chave_a_atualizar(ids) -> list:
-    """Das SPs pedidas, as que estão com a chave Pix "Atualizar Chave"."""
+def _sps_presas_no_agendar(ids) -> tuple[list, list]:
+    """Das SPs pedidas, as que NÃO podem ser agendadas: (chave Pix "Atualizar
+    Chave", sem obra). As regras moram em `pagamentos`."""
     from .db import consultar
-    from .pagamentos import chave_a_atualizar
+    from .pagamentos import atualizar_sp, chave_a_atualizar
     marcadores = ", ".join("?" for _ in ids)
     linhas = consultar(
-        "SELECT id, forma_pagamento, info_pgt FROM analisesps.sps "
-        f" WHERE id IN ({marcadores})", tuple(ids))
-    return [str(i) for i, forma, info in linhas if chave_a_atualizar(forma, info)]
+        "SELECT id, forma_pagamento, info_pgt, centro_custo, status_pgt "
+        f"  FROM analisesps.sps WHERE id IN ({marcadores})", tuple(ids))
+    pix = [str(i) for i, forma, info, _cc, _st in linhas if chave_a_atualizar(forma, info)]
+    sem_obra = [str(i) for i, _f, _i, cc, st in linhas if atualizar_sp(cc, st)]
+    return pix, sem_obra
 
 
 def _gravar_valores(itens: list, acao: str) -> int:
@@ -2182,7 +2195,8 @@ def _carga_do_faturamento():
     carregado_em = faturamento.carregado_em()
     andamento = tarefas.estado()
     rodando = bool(andamento.get("rodando")
-                   and (andamento.get("detalhe") or {}).get("tipo") == "faturamento")
+                   and (andamento.get("detalhe") or {}).get("tipo")
+                   in ("faturamento", "faturamento_antigas"))
     na_fila = False
     if _faturamento_desatualizado(carregado_em) and not rodando:
         r = tarefas.disparar("faturamento", disparo="tela de faturamento")
@@ -2192,6 +2206,8 @@ def _carga_do_faturamento():
             tarefas.pedir_depois("faturamento")
             na_fila = True
     return {"carregado_em": carregado_em, "rodando": rodando, "na_fila": na_fila,
+            "e_mestre": auth.e_mestre(),
+            "importacao": tarefas.ultima_do_tipo("faturamento_antigas"),
             "outra_tarefa": ((andamento.get("detalhe") or {}).get("etapa")
                              if andamento.get("rodando") and not rodando else ""),
             "ultima": tarefas.ultima_do_tipo("faturamento")}
@@ -2294,6 +2310,27 @@ def faturamento_atualizar():
         volta = url_for("analisesps.tela_faturamento")
     separador = "&" if "?" in volta else "?"
     return redirect(volta + separador + "aviso=" + quote(aviso))
+
+
+@bp.route("/faturamento/importar", methods=["POST"])
+@exige_operador
+def faturamento_importar():
+    """Leva as notas ANTIGAS da "Notas BWS" para a Base Faturamento e traz tudo
+    para a tela (09/10/2026: *"as notas anteriores, como faço para importar?"*).
+
+    Só o MESTRE: escreve na aba nova da planilha das notas (não apaga nada, não
+    emite nada — ver `faturamento.importar_antigas`)."""
+    from urllib.parse import quote
+    from . import tarefas
+    if not auth.e_mestre():
+        return auth._sem_permissao()
+    r = tarefas.disparar("faturamento_antigas", disparo=auth.nome_atual() or "importar")
+    aviso = ("Importando as notas antigas — leva alguns minutos (são milhares). "
+             "A tela se atualiza sozinha; o resultado aparece aqui no alto."
+             if r.get("ok") else
+             "Outra tarefa de fundo está rodando agora (só roda uma por vez). "
+             "Tente de novo em alguns minutos.")
+    return redirect(url_for("analisesps.tela_faturamento") + "?aviso=" + quote(aviso))
 
 
 @bp.route("/faturamento/nota/<numero>")

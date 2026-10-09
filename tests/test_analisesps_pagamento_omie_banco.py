@@ -186,9 +186,11 @@ def test_AGENDAR_SP_com_chave_ATUALIZAR_e_recusado_no_servidor(app, monkeypatch)
     from app.apps.analisesps import tarefas
     monkeypatch.setattr(tarefas, "disparar", lambda *a, **k: {"ok": True})
     semear([sp("1000000101", forma_pagamento="BeeVale", info_pgt="Chave Pix: Atualizar Chave",
-               status_pgt="Pagar", valor="10,00", vencimento="10/10/2026", validacao="Sim"),
+               status_pgt="Pagar", valor="10,00", vencimento="10/10/2026", validacao="Sim",
+               centro_custo="CREPEEXU"),
             sp("1000000102", forma_pagamento="BeeVale", info_pgt="Chave Pix: 12345678901",
-               status_pgt="Pagar", valor="10,00", vencimento="10/10/2026", validacao="Sim")])
+               status_pgt="Pagar", valor="10,00", vencimento="10/10/2026", validacao="Sim",
+               centro_custo="CREPEEXU")])
     with app.test_client() as cliente:
         cliente.post("/analisesps/entrar", data={"senha": SENHA_MESTRE_OPERADOR})
         r = cliente.post("/analisesps/api/alterar", json={
@@ -224,3 +226,54 @@ def test_a_LISTA_destaca_sem_validacao_e_sem_NF(app, monkeypatch):
     assert "Atualizar SP" in linha, "veio sem obra"
     resto = lista[lista.index("1000000202"):]
     assert "Sem NF" not in resto[:3000], "rescisão não pede nota"
+
+
+def test_AGENDAR_SP_SEM_OBRA_e_recusado(app, monkeypatch):
+    """09/10/2026: *"sim, é para bloquear também SP sem obra"* ("Atualizar SP")."""
+    from tests.test_analisesps_banco import semear, sp
+    from app.apps.analisesps import tarefas
+    monkeypatch.setattr(tarefas, "disparar", lambda *a, **k: {"ok": True})
+    semear([sp("1000000301", forma_pagamento="Boleto", status_pgt="Pagar",
+               valor="10,00", vencimento="10/10/2026", validacao="Sim", centro_custo="")])
+    with app.test_client() as cliente:
+        cliente.post("/analisesps/entrar", data={"senha": SENHA_MESTRE_OPERADOR})
+        r = cliente.post("/analisesps/api/alterar", json={
+            "ids": ["1000000301"], "coluna": "agendado", "valor": "Agendado"})
+        ficha = cliente.get("/analisesps/sp/1000000301").get_data(as_text=True)
+    assert r.status_code == 409 and "sem obra" in r.get_json()["erro"]
+    assert "Atualizar SP" in ficha and "SP sem obra" in ficha
+
+
+def test_IMPORTAR_AS_ANTIGAS_roda_todos_os_lotes_e_so_o_mestre_pede(app, monkeypatch):
+    """09/10/2026: *"as notas anteriores, como faço para importar elas?"*"""
+    import sys
+    import types
+    from app.apps.analisesps import credenciais, faturamento, tarefas
+    faltam = [2500]
+
+    def consolidar(planilha, limite):
+        feitas = min(limite, faltam[0])
+        faltam[0] -= feitas
+        return {"gravadas": feitas, "faltam": faltam[0], "total_na_base": 9}
+    monkeypatch.setitem(sys.modules, "base_faturamento",
+                        types.SimpleNamespace(consolidar=consolidar))
+    monkeypatch.setattr(credenciais, "cliente", lambda: types.SimpleNamespace(
+        open_by_key=lambda chave: "planilha"))
+    r = faturamento.importar_antigas()
+    assert r == {"gravadas": 2500, "faltam": 0, "total_na_base": 9}
+
+    disparos = []
+    monkeypatch.setattr(tarefas, "disparar", lambda modo, disparo="": (
+        disparos.append(modo) or {"ok": True}))
+    from tests.test_analisesps_usuarios_banco import criar, entrar_como
+    criar(telas=("faturamento",), pode_operar=True)
+    with app.test_client() as c:
+        entrar_como(c)
+        assert "Importar notas antigas" not in c.get("/analisesps/faturamento").get_data(as_text=True)
+        c.post("/analisesps/faturamento/importar")
+    assert "faturamento_antigas" not in disparos, "só o mestre importa"
+    with app.test_client() as c:
+        c.post("/analisesps/entrar", data={"senha": SENHA_MESTRE_OPERADOR})
+        assert "Importar notas antigas" in c.get("/analisesps/faturamento").get_data(as_text=True)
+        c.post("/analisesps/faturamento/importar")
+    assert disparos.count("faturamento_antigas") == 1
