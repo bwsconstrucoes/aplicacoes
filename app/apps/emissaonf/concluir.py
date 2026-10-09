@@ -264,6 +264,73 @@ def concluir(card_id, numero, codigo, data_iso, nota_xml_path, forcar=False, ctx
     except Exception as e:
         print(f"[10] Controle Nacional . ERRO: {e}")
 
+    # 11) BASE FATURAMENTO — a base consolidada que alimenta a tela de
+    #     Faturamento (Análise de SPs). Enquanto a transição não acabar, o
+    #     emissor grava nos DOIS lugares: aqui e na "Notas BWS". É trabalho
+    #     duplicado de propósito, decisão do dono em 09/10/2026, para a base nova
+    #     ser conferida com a antiga ao lado antes de a antiga sair de cena.
+    #
+    #     É o ÚLTIMO passo porque é o único que tem tudo: os links só existem
+    #     depois do Drive. Falha aqui não desfaz nada — como em todos os passos.
+    try:
+        import base_faturamento as bfat
+        fed = r.federais_retidos or {}
+        dados_base = {
+            "nota_numero": numero, "modelo": "nacional" if nacional else "abrasf",
+            "chave_acesso": chave_nacional or "", "cod_verificacao": codigo or "",
+            "data_emissao": data_iso, "competencia": str(data_iso)[:7],
+            "status": bfat.STATUS_VALIDA,
+            "obra_codigo": obra_cod,
+            "obra_codigo_primario": getattr(obra, "codigo_primario", ""),
+            "centro_custo": getattr(obra, "centro_custo", ""),
+            "contrato": card.get("contrato", "") or getattr(obra, "contrato", ""),
+            "municipio_obra": getattr(obra, "municipio", ""),
+            "empresa": getattr(obra, "empresa", ""),
+            "empresa_cnpj": getattr(obra, "empresa_cnpj", ""),
+            "scp": getattr(obra, "scp", ""), "scp_cnpj": getattr(obra, "scp_cnpj", ""),
+            "tributacao": getattr(obra, "tributacao", ""),
+            "aliquota_iss": getattr(obra, "aliquota_iss", ""),
+            # Os três campos que NUNCA foram gravados em lugar nenhum:
+            "medicao_numero": med,
+            "medicao_periodo_ini": card.get("periodo_ini", ""),
+            "medicao_periodo_fim": card.get("periodo_fim", ""),
+            "discriminacao": discr_limpa,
+            "tipo_documento": card.get("tipo_documento", ""),
+            "tipo_medicao": card.get("tipo_medicao", ""),
+            "tomador_cnpj": card.get("cnpj_contratante", "") or getattr(obra, "cnpj_cliente", ""),
+            "tomador_nome": card.get("contratante", "") or getattr(obra, "cliente", ""),
+            "valor_total": f"{r.valor_total:.2f}",
+            "valor_servicos": f"{r.base_servico:.2f}",
+            "valor_materiais": f"{(r.valor_total - r.base_iss):.2f}",
+            "base_iss": f"{r.base_iss:.2f}",
+            "valor_liquido_previsto": f"{r.valor_liquido:.2f}",
+            "pis": f"{r.pis:.2f}", "cofins": f"{r.cofins:.2f}", "ir": f"{r.ir:.2f}",
+            "csll": f"{r.csll:.2f}", "inss": f"{r.inss:.2f}", "iss": f"{r.iss:.2f}",
+            # Aqui, diferente das notas antigas, "retém" é o que a categoria da
+            # obra determinou — e não um palpite a partir do valor ser maior que
+            # zero. É a razão de o emissor gravar na base: ele SABE.
+            "retem_pis": "S" if "PIS" in fed else "N",
+            "retem_cofins": "S" if "COFINS" in fed else "N",
+            "retem_ir": "S" if "IR" in fed else "N",
+            "retem_csll": "S" if "CSLL" in fed else "N",
+            "retem_inss": "S" if r.inss > 0 else "N",
+            "retem_iss": "S" if r.iss_retido else "N",
+            "omie_codigo_integracao": card.get("omie_integracao", ""),
+            "banco_conta": card.get("banco", ""),
+            "card_id": card_id,
+            "link_card": bfat.LINK_CARD_PIPEFY + str(card_id),
+            "link_nfse_municipal": link_mun, "link_nfse_nacional": link_nac,
+            "link_recibo": link_rec,
+            "origem": "emissor",
+        }
+        ws_base = bfat._ws(planilha)
+        qual = bfat.gravar(ws_base, dados_base,
+                           bfat.numeros_na_base(ws_base).get(str(numero)))
+        print(f"[11] Base Faturamento . linha {qual} (com período da medição e "
+              f"corpo da nota, que a Notas BWS não guarda)")
+    except Exception as e:
+        print(f"[11] Base Faturamento . ERRO: {type(e).__name__}: {e}")
+
     print("\n===== IMEDIATO FINALIZADO" + (" — a nota já está completa =====" if nacional
                                           else " — a nacional sai no job ====="))
 

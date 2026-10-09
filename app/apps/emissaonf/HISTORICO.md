@@ -1385,6 +1385,69 @@ os suspeitos já estão identificados e prontos para ligar: `tpOper` (o candidat
 sistema **não pode** deduzir, porque não dá para saber do CNPJ se o órgão é
 federal, estadual ou municipal. Essa é pergunta para o dono.
 
+### A base consolidada de faturamento, e o fim da gestão na planilha — 09/10/2026
+
+**O pedido, por áudio:** sair da gestão de notas na aba "Notas BWS" (*"essa
+planilha é um lixo, é uma bagunça"*) e ter uma **tela de Faturamento** no Análise
+de SPs, alimentada por uma **base consolidada** que junte o que hoje está
+espalhado por cinco planilhas. Ele quer ver faturamento, baixar a nota, gráfico
+de evolução, e fazer a gestão ali.
+
+**O desenho inteiro, a procedência de cada campo e o que ficou em aberto estão em
+`FATURAMENTO.md`**, na pasta da área — inclusive a resposta à pergunta direta
+dele ("o que o emissor usa dessa planilha?"). Aqui ficam só as decisões.
+
+**Decisão 1 — a base é uma ABA, não uma tabela de banco.** Palavras dele: *"como
+a gente não está no ERP ainda, aí a gente mantém a planilha"*. A aba
+`Base Faturamento` tem 71 colunas nomeadas campo por campo, justamente para
+virar tabela quando o ERP assumir.
+
+**Decisão 2 — o emissor grava nos DOIS lugares, de propósito.** Pedido dele:
+*"momentaneamente deixa o emissor atualizando essa daqui conforme ele já vem
+fazendo"*. Desligar a "Notas BWS" é uma linha no `concluir.py`, e só depois de a
+base ser conferida contra a planilha.
+
+**Decisão 3 — cada tributo aparece DUAS vezes: o da nota e o do Omie.** Guardar
+um só esconderia exatamente o que ele confere à mão. Daí saem dois campos
+calculados — `divergencia_tributos` e `divergencia_recebimento` — e os dois
+ficam **vazios** quando não há com o que comparar. Dizer "não divergente" numa
+nota que ninguém recebeu seria afirmar uma conferência que não aconteceu.
+
+**Decisão 4 — a consolidação das notas antigas roda em LOTES.** São ~3.300 notas.
+Ler e escrever tudo de uma vez prenderia uma das quatro threads do serviço por
+minutos, e foi assim que o monorepo caiu em 07/10/2026. Cada rodada processa um
+lote e diz quantas faltam; repetir não duplica.
+
+**Decisão 5 — o que não existe fica VAZIO.** Período da medição, corpo da nota e
+empresa/SCP não estão em fonte nenhuma para as notas antigas. Inventar seria pior.
+Dele: *"não vamos ter a completude dos dados, mas para frente a gente passa a
+ter"*.
+
+**O que a C. Diários passou a entregar:** `Empresa`, `CNPJ Empresa`, `SCP` e
+`CNPJ SCP`, lidos **pelo nome do cabeçalho**. A coluna de SCP ainda vai ser
+criada por ele; até lá os campos ficam vazios, sem erro. Nem toda obra é faturada
+no CNPJ da BWS, e isso nunca tinha sido lido.
+
+**A armadilha que o teste vigia:** a "Notas BWS" guarda os tributos do Omie em
+BB:BM, em pares valor/retém, na ordem **PIS, COFINS, CSLL, IR, ISS, INSS** — que
+não é a ordem do nosso cabeçalho. Trocar uma pela outra põe o ISS no lugar do IR,
+e são dois números plausíveis na mesma linha: ninguém perceberia.
+
+**⚠️ E um achado de segurança, que é tarefa dele:** o Apps Script da planilha traz
+a chave e o segredo do OMIE **em texto claro** (mais a URL do webhook do Make).
+Registrado em `CONTEXTO.md` §9, com os nomes e nunca os valores. Não está no
+repositório (conferido, inclusive no histórico do git). A ação é trocar na origem.
+
+**Conferido:** 28 casos novos, com o cabeçalho REAL da "Notas BWS" (lido da
+planilha, não suposto) — os índices de BB:BM, a leitura pt-BR dos valores, as duas
+divergências, o cruzamento com as quatro fontes, a duplicata da aba de Links não
+mudando o resultado entre rodadas, e a tela. Suíte inteira: 5.316 passando.
+
+**NÃO conferido:** a consolidação contra a planilha de verdade. Nenhum teste faz
+rede, e nesta sessão não há credencial do Google — a primeira rodada da tela é a
+primeira prova. Ela é segura por construção (não apaga nada, não emite nada, só
+lê e escreve na aba nova), mas o número de linhas que ela vai gravar é desconhecido.
+
 ### ✅ A PRIMEIRA NOTA DO PADRÃO NACIONAL SAIU — 08/10/2026
 
 **Nota `2600000003283`**, obra IFSPSAOJOSE, medição 11, emitida em 08/10/2026,

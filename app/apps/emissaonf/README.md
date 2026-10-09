@@ -468,6 +468,7 @@ Todas pedem o mesmo `token` na URL. Não há login: quem tem o link, entra.
 | `/emissao/nacional_xml` | fecha uma nota colando o **XML nacional** baixado do portal |
 | `/emissao/manual` | **"Nota emitida no portal".** Para nota emitida à mão no portal da prefeitura (canal fora do ar, ou caso que só dá por lá). Recebe o **XML** — dele saem os dados, exatos — e, opcionalmente, o **PDF oficial**, que entra como o documento em vez da nossa réplica. Faz todo o resto: planilha, Omie, card, Drive e avisos. **Não emite nada** |
 | `/emissao/planilha` | **"Só a linha da planilha".** Para a nota que saiu certa em TUDO — Omie, card, arquivos, cliente — e cuja linha da "Notas BWS" não entrou. Grava a linha e **não toca em mais nada**. Os valores saem do **XML**, não do card: a conclusão limpa doze campos de entrada do card, então recalcular a nota depois daria números diferentes dos emitidos. Usar `/emissao/recuperar` ou `/emissao/manual` neste caso preencheria um **segundo slot** no card, mexeria no Omie de novo e mandaria o WhatsApp outra vez |
+| `/emissao/faturamento` | **"Base de Faturamento".** Consolida numa aba só (`Base Faturamento`) o que hoje está em cinco planilhas — e é ela que vai alimentar a tela de Faturamento do Análise de SPs. Roda em **lotes** e diz quantas faltam; repetir não duplica. Não apaga nada e não emite nada. O desenho está em `FATURAMENTO.md` |
 | `/emissao/declaracao?…&diagnostico=1` | **"Diagnóstico completo desta declaração".** Pergunta sobre ela na prefeitura E direto na plataforma nacional, e mostra as respostas cruas. A pergunta que decide é a terceira: se o nacional **não conhece** a declaração e a prefeitura diz que transmitiu, as versões não fecham — e a transmissão é ela que faz. O texto é feito para ser copiado e mandado a ela; nunca mostra token nem certificado |
 | `/emissao/declaracao?…&encerrar=1` | **"Encerrar".** Aparece só nas declarações **paradas** da lista. Tira a declaração da lista, para o caso em que a API nunca conta a recusa (a 3281 passou um dia respondendo "em processamento" enquanto o portal já a dava como recusada). **Não libera o número** — número enviado fica gasto (ver EL99 acima). Não emite, não cancela e não apaga nada |
 | `/emissao/declaracao` | **"Conferir declaração".** A saída do único aperto desta área: a prefeitura aceitou a declaração e a nota não ficou pronta na hora. Pergunta a ela se a nota saiu e, se saiu, **termina o serviço** — sem emitir nada. Consultar não cria nada, então pode repetir |
@@ -576,6 +577,16 @@ para achar o token quando ele está lá com outro rótulo. Chega-se a ela pelo l
 no pé da tela de emissão, que já leva o token dentro.
 
 ---
+
+## A base consolidada de faturamento
+
+A gestão das notas emitidas está saindo da aba "Notas BWS" para uma **base
+consolidada** (`Base Faturamento`), que alimenta uma tela de Faturamento no
+Análise de SPs. **Todo o desenho está em `FATURAMENTO.md`**: o que o emissor usa
+de cada planilha hoje, as 71 colunas da base e de onde cada uma vem, o inventário
+do Apps Script da planilha, e o que depende de decisão do dono.
+
+Enquanto a transição não acabar, **o emissor grava nos dois lugares**.
 
 ## O que esta área NÃO tem
 

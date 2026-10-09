@@ -1353,6 +1353,23 @@ O ERP tem onde guardar — o cadastro de obra já prevê a matrícula CNO. E val
 notar: **nenhum teste de schema pega isso**, porque no XSD o grupo é opcional; a
 obrigatoriedade é regra de negócio da plataforma.
 
+**2-C. ⚠️ A credencial do OMIE está em texto claro no Apps Script da planilha
+(09/10/2026).** Ao mandar o projeto do Apps Script da planilha "Controle de
+Impostos e Emissão de Nota" para análise, apareceu que o arquivo
+`OmieRateiroeConsulta.gs` traz, em texto claro, as chaves que o código chama de
+`OMIE_APP_KEY` e `OMIE_APP_SECRET` — e também a URL do webhook do Make
+(`WEBHOOK_BASE`). Quem abre o editor de script da planilha tem a credencial do
+OMIE da empresa.
+
+**Os valores não entram aqui, e não entraram no repositório** — conferido: não
+estão em nenhum arquivo nem no histórico do git. **A ação é do dono: trocar na
+origem**, no painel do OMIE, e passar a ler de onde o repositório já lê.
+
+No repositório o padrão sempre foi outro: `app/apps/emissaonf/omie.py` lê
+`OMIE_KEY` e `OMIE_SECRET` da aba Credenciais. É o mesmo tipo de incidente do
+`EL_NFSE_TOKEN` (§9) — e, como lá, o que resolve é a troca na origem, não apagar
+o arquivo.
+
 **3. Os schemas oficiais da NFS-e nacional entraram no repositório**
 (`app/apps/emissaonf/xsd_nacional/`). São 240 KB de `.xsd` do pacote que a
 prefeitura distribui. Não é documentação: é a regra que o teste aplica. Foi

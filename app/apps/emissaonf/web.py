@@ -38,6 +38,8 @@ import substituicao as _sub
 import omie
 import pipefy as _pipefy
 import notas_bws as _notas
+import base_faturamento as _bfat
+import cdiarios as _cdiarios
 from decimal import Decimal
 import completar_imediato as _compl
 
@@ -670,6 +672,91 @@ def _pagina_planilha(token, card_id, aviso=""):
         <p class='sub'>Tem trava contra fazer duas vezes: se o número já estiver na
         coluna "Nº Nota" da "Notas BWS", ele avisa e não grava nada.</p>
       </div>""")
+
+@bp.route("/faturamento", methods=["GET", "POST"])
+def faturamento():
+    """Consolida as notas numa aba só — a base da futura tela de Faturamento.
+
+    Pedido do dono em 09/10/2026: a informação de uma nota está espalhada por
+    cinco planilhas, e ele quer uma base só para fazer a gestão das notas
+    emitidas numa tela (no Análise de SPs), em vez de na "Notas BWS".
+
+    **Roda em LOTES, e é de propósito.** São ~3.300 notas antigas; ler e escrever
+    tudo de uma vez prenderia uma das quatro threads do serviço por minutos — foi
+    assim que o monorepo caiu em 07/10/2026. Cada rodada processa um lote e diz
+    quantas faltam; clicar de novo continua de onde parou. Rodar duas vezes não
+    duplica: a chave é o número da nota.
+    """
+    if not _token_ok():
+        return Response(_pagina_erro("Acesso não autorizado."), status=403, mimetype="text/html")
+    token = request.values.get("token", "")
+    if request.method == "GET":
+        return Response(_pagina_faturamento(token), mimetype="text/html")
+
+    try:
+        limite = max(1, min(int(request.form.get("limite") or _bfat.LOTE_PADRAO), 2000))
+    except ValueError:
+        limite = _bfat.LOTE_PADRAO
+
+    buf = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buf):
+            gc = _worker.cliente_gspread()
+            print(f">>> Consolidando até {limite} notas na aba "
+                  f"'{_bfat.ABA}'. Nada é apagado e nada é emitido.")
+            obras = _cdiarios.carregar_obras(
+                _worker.abrir_aba(gc.open_by_key(_worker.ID_BASE),
+                                  _worker.ABA_CDIARIOS).get_all_values())
+            print(f"    C. Diários: {len(obras)} códigos de obra indexados")
+            r = _bfat.consolidar(gc.open_by_key(_worker.ID_PROC), obras, limite=limite)
+            print(f">>> {r['gravadas']} nota(s) gravada(s); {r['ja_estavam']} já "
+                  f"estavam; FALTAM {r['faltam']}; total na base: "
+                  f"{r['total_na_base']}.")
+            if r["faltam"]:
+                print(">>> Clique de novo para continuar de onde parou.")
+            else:
+                print(">>> Acabou: todas as notas da 'Notas BWS' estão na base.")
+    except Exception as e:
+        buf.write(f"\n>>> ERRO: {type(e).__name__}: {e}")
+    return Response(_pagina_faturamento(token, log=buf.getvalue()),
+                    mimetype="text/html")
+
+
+def _pagina_faturamento(token, log=""):
+    t = html.escape(token)
+    caixa = (f"<div class='card'><b>O que aconteceu</b><pre>{html.escape(log)}</pre></div>"
+             if log else "")
+    return _doc("Base de Faturamento", f"""
+      <h1>Base de Faturamento</h1>
+      <p class='sub'>Junta numa aba só (<b>{html.escape(_bfat.ABA)}</b>) o que hoje
+      está espalhado por cinco planilhas: a "Notas BWS", a "Notas BWS Links", o
+      "Controle Nacional", a C. Diários (obra, contrato, tributação, alíquota,
+      <b>empresa</b>) e a "Protocolos" (o card do Pipefy e o código do Omie).</p>
+      <p class='sub'>É ela que vai alimentar a tela de Faturamento. <b>Não apaga
+      nada</b>, não emite nada e não mexe na "Notas BWS" — só lê e escreve na aba
+      nova.</p>
+      <div class='warn'><b>Roda em lotes.</b> São milhares de notas; fazer tudo de
+      uma vez prenderia o serviço. Cada clique processa um lote e diz quantas
+      faltam — clique de novo até acabar. Repetir não duplica.</div>
+      {caixa}
+      <div class='card'>
+        <form method='post' action='{url_for('.faturamento')}'>
+          <label class='lbl'>Quantas notas nesta rodada
+            <input name='limite' value='{_bfat.LOTE_PADRAO}' style='padding:8px;
+                   border:1px solid #c8d0da;border-radius:6px;width:120px'></label>
+          <input type='hidden' name='token' value='{t}'>
+          <button type='submit'>Consolidar este lote</button>
+        </form>
+        <p class='sub'>Três campos que a base guarda e a "Notas BWS" nunca
+        guardou: o <b>período da medição</b>, o <b>corpo da nota</b> e a
+        <b>empresa/SCP</b> que faturou. Para as notas antigas eles ficam vazios —
+        não existem em lugar nenhum; para as novas, o emissor grava.</p>
+      </div>
+      <p class='sub' style='text-align:center'>
+        <a href='{url_for('.declaracao')}?token={t}'>Conferir declaração</a> &nbsp;·&nbsp;
+        <a href='{url_for('.diag')}?token={t}'>Diagnóstico</a>
+      </p>""")
+
 
 @bp.route("/declaracao", methods=["GET", "POST"])
 def declaracao():
@@ -1400,7 +1487,8 @@ def _pagina_pedir_card(token):
         <a href='{url_for('.regerar')}?token={t}'>Regravar PDFs</a> &nbsp;·&nbsp;
         <a href='{url_for('.declaracao')}?token={t}'>Conferir declaração</a> &nbsp;·&nbsp;
         <a href='{url_for('.manual')}?token={t}'>Nota emitida no portal</a> &nbsp;·&nbsp;
-        <a href='{url_for('.planilha')}?token={t}'>Só a linha da planilha</a>
+        <a href='{url_for('.planilha')}?token={t}'>Só a linha da planilha</a> &nbsp;·&nbsp;
+        <a href='{url_for('.faturamento')}?token={t}'>Base de Faturamento</a>
       </p>""")
 
 
@@ -1635,6 +1723,9 @@ def _render_pagina(ctx, card_id, token, nota_sub="", tm_over="", val_over=None, 
               f" &nbsp;·&nbsp; "
               f"<a href='{url_for('.planilha')}?token={html.escape(token)}"
               f"&card_id={html.escape(card_id)}'>Só a linha da planilha</a>"
+              f" &nbsp;·&nbsp; "
+              f"<a href='{url_for('.faturamento')}?token={html.escape(token)}'>"
+              f"Base de Faturamento</a>"
               f"</p>")
     return _doc("Emissão NFS-e", sub_banner + cab + f"<div class='card'>{metrics}{alertas}</div>"
                 + form + f"<div class='card'><b>Espelho</b>{iframe}</div>" + rodape)
