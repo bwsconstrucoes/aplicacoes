@@ -796,6 +796,45 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# A FILA DE COMPROVANTES ANDA SOZINHA (08/10/2026)
+#
+# O dono: *"por que essa fila trava? 10 lote(s) parado(s) há mais de 15
+# minutos."* O comprovante arrastado tenta começar na hora; se outra tarefa
+# está rodando (a atualização da tela aberta, o ponto, o cadastro…), o disparo
+# é recusado e o lote fica ESPERANDO — "para a próxima". Mas a próxima era a
+# próxima de COMPROVANTES, e nada disparava uma: a atualização do dia não dá
+# baixa em comprovante. O lote ficava parado até alguém apertar "Retomar".
+#
+# Agora toda tarefa da pista geral, ao terminar (bem ou mal), olha se há
+# comprovante esperando e, havendo, começa a baixa. Não entra em ciclo: a baixa
+# tira cada lote de ESPERANDO (PRONTO ou FALHOU), e só se encadeia de novo se
+# chegou lote novo enquanto ela rodava.
+# ---------------------------------------------------------------------------
+def encadear_comprovantes(modo: str) -> dict | None:
+    """Começa a baixa dos comprovantes que ficaram esperando. Nunca levanta."""
+    if pista_do(modo) != "geral":
+        return None
+    try:
+        from .db import consultar_um
+        from .comprovantes import MINUTOS_PARA_ABANDONADO
+        # RODANDO há muito tempo também conta: é o lote cujo processo morreu
+        # no meio (publicação, reinício). A baixa o destrava antes de começar.
+        linha = consultar_um(
+            "SELECT count(*) FROM analisesps.comprovantes_lote "
+            " WHERE situacao = 'ESPERANDO' OR (situacao = 'RODANDO' "
+            "   AND recebido_em < now() - (? || ' minutes')::interval)",
+            (str(int(MINUTOS_PARA_ABANDONADO)),))
+        if not linha or not linha[0]:
+            return None
+        logger.info("Análise de SPs: %d lote(s) de comprovantes esperando — "
+                    "começando a baixa depois de '%s'.", linha[0], modo)
+        return disparar("comprovantes", disparo="fila de comprovantes")
+    except Exception:  # noqa: BLE001 — sem a tabela, ou banco fora: fica para o botão
+        logger.exception("Análise de SPs: não consegui encadear os comprovantes")
+        return None
+
+
+# ---------------------------------------------------------------------------
 # O disparo
 # ---------------------------------------------------------------------------
 def _iniciar_processo(modo: str, execucao_id: int) -> None:

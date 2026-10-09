@@ -358,6 +358,9 @@ dizer "tem batida"; presença, horas e faltas são regra da fase 3.
   é "Ponto da obra", não quem pagou o celular)
 - Quais aparelhos foram bloqueados porque o responsável saiu da empresa?
 - Quem é administrativo de obra? Quem faz pedidos pelo próprio celular? (08/10/2026)
+- Quais obras batem só entrada e saída (intervalo pré-assinalado)? (09/10/2026) ⚠️
+  nelas "batida faltando" e "intervalo curto" não valem para o dia de duas
+  batidas — o intervalo é o da escala
 - Quantos pedidos foram lançados pelo administrativo ou pelo responsável da obra
   em nome de outra pessoa, e por quem? (origem "pelo responsável")
 - O administrativo Fulano pode ver o ponto do Beltrano agora? ⚠️ muda conforme ONDE

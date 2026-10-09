@@ -286,6 +286,7 @@ essa diferença é a primeira coisa a saber antes de mandar drenar.
 | drenar incluindo o que esgotou as cinco tentativas | o mesmo, com `incluir_falhados: true` |
 | drenar só uma etapa (o dinheiro primeiro) | o mesmo, com `etapas: ["omie"]` |
 | limpar o acumulado de avisos antigos | o mesmo, com `etapas: ["zapi"]` |
+| dispensar tudo que é anterior a uma data | `POST /api/baixabradesco/zerar-fila-antiga` com `antes_de` |
 
 **As duas respostas trazem um campo `em_portugues`**, com uma frase dizendo o que
 os números querem dizer — quem lê isto costuma estar no celular. A frase vem
@@ -310,8 +311,17 @@ de cinco seriam necessários no ritmo automático.
 fila tinha 1.943 recados de WhatsApp na frente de 238 baixas no Omie. Drenar na
 ordem da planilha deixaria o dinheiro para o fim.
 
-**O cron NÃO limpa o acumulado de avisos antigos.** Aviso com mais de três dias
-nem é carregado por ele — e isso tem de acontecer na **escolha** das linhas, não
+⚠️ **Aviso vencido é DISPENSADO, não deixado pendente.** Esta é a correção de um
+limbo real: a regra "aviso com mais de três dias não é reenviado" fazia a
+drenagem apenas **pular** esses itens — não enviava e não marcava. Eles ficavam
+pendentes **para sempre**, e em 08/10/2026 a fila travou em 121 pendências, 116
+delas exatamente isso. **Pendência que não anda é pior que pendência: parece
+trabalho a fazer e não é.** A regra certa é a conclusão da outra — se o aviso
+nunca mais vai ser enviado, ele está resolvido do ponto de vista da fila, e a
+linha tem de dizer isso. Vale **só** para aviso: dinheiro não envelhece.
+
+**O cron não carrega o aviso velho para a drenagem.** Aviso com mais de três dias
+nem é carregado por ela — e isso tem de acontecer na **escolha** das linhas, não
 depois. A fila é lida em ordem: com 1.943 avisos de junho na frente, pedir "dez
 avisos" devolvia sempre os dez mais velhos, que seriam descartados por idade, e
 o aviso de ontem nunca era alcançado. A fila entupia com o que ela mesma ia
@@ -324,6 +334,15 @@ do pedido — o cron não manda credencial nenhuma. São `OMIE_KEY` / `OMIE_SECR
 (confirmados no Render em 08/10/2026), `PIPEFY_API_TOKEN` e as três `ZAPI_*`. O
 nome da variável é parte do contrato: trocar em silêncio pararia a drenagem
 inteira, e há teste travando cada um.
+
+⚠️ **Parada por configuração: escreve o motivo, reagenda longe, não gasta
+tentativa.** A distinção entre *tentativa* e *agendamento* é o ponto todo, e
+errar em qualquer direção custa: contar como tentativa marcaria o item como
+fracassado em cinco passadas, apagando pendência de verdade; não reagendar faria
+a varredura insistir de cinco em cinco minutos e esconder as pendências que de
+fato andam. Antes a linha não recebia **nada** — nem motivo, nem próxima
+tentativa —, e foi assim que cinco baixas apareceram paradas com zero tentativa e
+sem explicação nos números de 08/10/2026.
 
 ⚠️ **Falta de credencial NÃO consome tentativa.** Era o jeito mais rápido de
 apagar a fila sem resolver nada: cinco passadas sem credencial marcariam as 238
@@ -352,6 +371,71 @@ dois meses atrás continua sendo baixa.
 **Repetir uma baixa não baixa duas vezes.** O reprocessamento do Omie consulta o
 título primeiro e, se já estiver `PAGO`, dá a pendência por resolvida sem lançar
 nada.
+
+### A nova tentativa do Omie TERMINA o serviço
+
+⚠️ **Não é opcional, e esquecer isso foi um furo real.** Em 08/10/2026 o dono
+relatou *"várias baixas que não aconteceram na planilha"*, e a contagem mostrava
+182 pendências de `omie` com **zero** de `sheets`. As duas coisas são o mesmo
+fato: a baixa falha no Omie **antes** de a planilha ser gravada — então a
+planilha nunca foi escrita, e nunca houve pendência de planilha para enfileirar.
+A nova tentativa resolvia o Omie, marcava concluído, e deixava a planilha
+desatualizada **para sempre**.
+
+Hoje, quando o título está pago (inclusive quando já estava, pela conciliação
+bancária), a nova tentativa segue o resto do plano:
+
+| Etapa | Segura o item na fila? | Por quê |
+|---|---|---|
+| gravar a planilha | **sim** | é o registro do pagamento, e é o que o dono lê |
+| mover o cartão do Pipefy | não — ganha pendência própria | registro certo nos dois sistemas não fica preso por um cartão |
+
+**Repetir é seguro**, e é isso que sustenta o desenho: a consulta ao Omie no
+início devolve "já pago" e não lança nada de novo, e a regravação escreve os
+mesmos valores nas mesmas células.
+
+### Zerar o que ficou para trás
+
+`POST /api/baixabradesco/zerar-fila-antiga` com `antes_de: "01/10/2026"` dispensa
+as pendências registradas antes dessa data. Opcionalmente `etapas` e `limite`.
+
+**Nada é apagado.** A linha fica onde está, marcada concluída, com o motivo e a
+data da decisão escritos — quem abrir a planilha depois entende por quê.
+
+`antes_de` é **obrigatório**: um "zerar tudo" sem data é fácil de disparar por
+engano, e desfazer linha por linha seria trabalho de horas. A rota é **só POST**
+pelo mesmo motivo — um endereço que o navegador ou a prévia de um aplicativo de
+mensagem possa buscar sozinho dispararia isso por acidente.
+
+A razão de existir, registrada porque é decisão de negócio: o dono faz
+**conciliação bancária diária**, então o que ficou para trás já foi resolvido na
+mão — a pendência é de registro, não de dinheiro.
+
+**O cron já faz isso sozinho**, em blocos de 500 por disparo, com corte fixo em
+`01/10/2026` (`ZERAR_ANTES_DE` em `fila_tardia.py`, ou a variável de ambiente
+`BAIXABRADESCO_ZERAR_ANTES_DE`; vazia desliga). E ele **zera antes de drenar** —
+senão a drenagem gastaria a passada inteira nas linhas que vão ser dispensadas
+dois segundos depois.
+
+**O mutirão avisa quando acabou.** Na resposta do cron, `atraso_zerado.concluido`
+vira verdadeiro e a frase em português diz para esvaziar
+`BAIXABRADESCO_ZERAR_ANTES_DE`. Até alguém fazer isso, a varredura continua
+custando uma leitura da faixa de controle a cada cinco minutos, à toa.
+
+⚠️ **A data é fixa de propósito, não "o mês corrente".** O dono autorizou zerar
+o que estava para trás *naquele dia*. Uma regra que andasse com o calendário
+dispensaria pendência nova todo dia primeiro — a forma mais silenciosa possível
+de perder trabalho. É um mutirão que se encerra sozinho: depois que as linhas
+antigas estão marcadas, nenhuma casa com o critério.
+
+### ⚠️ O cabeçalho da fila: `update('A1:O1')`, nunca `append_row`
+
+`append_row` acrescenta no **fim** da aba, não na linha 1. Em 08/10/2026
+apareceram três linhas com Status = "STATUS" no meio da fila, contadas como
+pendência: bastou a leitura de `A1:O1` voltar vazia uma vez — um soluço de rede —
+para nascer lixo. E leitura que falha **não** autoriza escrita nenhuma: escrever
+por cima do que não se conseguiu ler é como o lixo nasceu. A seleção também
+ignora linha cujo Status seja "STATUS", para o estrago não voltar a contar.
 
 ## O conferidor SPsBD × Omie
 
@@ -440,6 +524,14 @@ Telegram do dono entrega quase sempre; então o WhatsApp podia falhar para o
 financeiro, que não tem Telegram, e tudo reportava sucesso. É o mesmo defeito da
 gravação silenciosa, com outra roupa — e num aviso de falha ele é pior, porque
 falha em silêncio justamente quando algo já deu errado.
+
+⚠️ **O caminho sem credencial Z-API é provavelmente o da produção**, e ele
+mentia. As credenciais Z-API chegam **dentro do pedido do Make**; o serviço
+automático não tem pedido nenhum, então ele cai sempre no notificador comum — que
+devolve um resultado **por canal**, sem um "deu certo" no topo. Devolver aquilo
+cru fazia o relatório dizer "nenhum canal entregou" mesmo quando o Telegram tinha
+entregado, e zerava o `ok` do aviso inteiro. Hoje a resposta do notificador é
+traduzida para o mesmo formato dos outros envios.
 
 Hoje a resposta traz `entregues_no_whatsapp`, `so_pelo_telegram` e `sem_entrega`,
 com um alerta em português quando alguém ficou só no Telegram. **E credencial

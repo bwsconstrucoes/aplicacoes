@@ -87,7 +87,7 @@ def test_trocar_quem_valida_realinha_a_fila(app, mundo, monkeypatch):
     r = dp.post("/erp/api/ponto/quem-valida", json={"regra": {"AJUSTE_BATIDA": "ENCARREGADO"}})
     assert r.status_code == 200 and r.get_json()["pedidos_realinhados"] == 1
     item = next(i for i in sup.get("/erp/api/ponto/validacoes").get_json()["itens"] if i["id"] == pedido["id"])
-    assert item["pode_decidir"] is True and item["etapa"] == "Encarregado"
+    assert item["pode_decidir"] is True and item["etapa"] == "Administração da obra"
     # encarregado e depois o DP: o encarregado aprova e o pedido vai para o DP
     dp.post("/erp/api/ponto/quem-valida", json={"regra": {"AJUSTE_BATIDA": "ENCARREGADO_E_DP"}})
     passo = sup.post(item["decidir_em"], json={"aprovar": True})

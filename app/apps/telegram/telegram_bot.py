@@ -720,6 +720,17 @@ def _assistente_processar_texto(chat_id, texto, nome_tg):
 # Webhook
 # ---------------------------------------------------------------------------
 
+def _lote_analisesps(chat_id, texto):
+    """A resposta do Análise de SPs para esta mensagem, ou None (não é dele)."""
+    try:
+        from app.apps.analisesps import telegram_lote
+        return telegram_lote.receber(chat_id, texto)
+    except Exception as e:  # noqa: BLE001 — o robô dos colaboradores segue de pé
+        print(f"[telegram_bot] Falhou o lote do Análise de SPs: {e!r}")
+        return ("⚠️ Não consegui pôr as SPs no lote agora. Tente de novo em "
+                "instantes ou use o Extrair SPs na tela do Lote.")
+
+
 @telegram_bp.route("/telegram/webhook", methods=["POST"])
 def telegram_webhook():
     # Validação de origem: header enviado pelo Telegram em todo POST
@@ -814,6 +825,17 @@ def telegram_webhook():
 
     # ---- 2) Texto ----
     texto = (msg.get("text") or "").strip()
+
+    # ---- 1.5) Lote "WhatsApp" do Análise de SPs (08/10/2026) ----
+    # Quem ligou a conversa ao usuário do Análise de SPs cola aqui as
+    # mensagens de pedido de pagamento, e as SPs vão para o lote dele. Antes
+    # do cadastro e do contracheque porque o link de ligar chega como
+    # "/start lote_<código>". Mensagem sem número de SP segue o caminho de
+    # sempre — e um erro de lá nunca derruba o robô dos colaboradores.
+    resposta_lote = _lote_analisesps(chat_id, texto or msg.get("caption") or "")
+    if resposta_lote:
+        _tg_enviar(chat_id, resposta_lote, remover_teclado=True)
+        return jsonify({"ok": True})
 
     if texto.startswith("/start"):
         linha, nome_cad = _buscar_cadastro_por_chat_id(chat_id)

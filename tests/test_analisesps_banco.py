@@ -7417,3 +7417,52 @@ def test_a_COTA_DO_GOOGLE_espera_e_tenta_de_novo_sozinha(banco_analisesps,
     lote_id = comprovantes.guardar(_pdf(1), "x.pdf", "p", "P")
     assert comprovantes.processar_um(lote_id)["ok"]
     assert chamadas[0] == 2
+
+
+@pytest.mark.banco
+def test_a_FILA_DE_COMPROVANTES_anda_sozinha_quando_outra_tarefa_termina(
+        banco_analisesps, monkeypatch, tmp_path):
+    """08/10/2026, o dono: *"por que essa fila trava? 10 lote(s) parado(s)"*.
+    O comprovante arrastado com outra tarefa rodando ficava ESPERANDO até
+    alguém apertar "Retomar" — a atualização do dia não dá baixa nele."""
+    from app.apps.analisesps import comprovantes, tarefas
+    from app.apps.analisesps.db import conexao
+    disparos = []
+    monkeypatch.setattr(tarefas, "disparar",
+                        lambda modo, disparo="manual": disparos.append(modo) or {"ok": True})
+    monkeypatch.setattr(comprovantes, "PASTA", str(tmp_path))
+
+    # Fila vazia: nada a encadear.
+    assert tarefas.encadear_comprovantes("sincronizar") is None and disparos == []
+
+    lote_id = comprovantes.guardar(_pdf(1), "esperando.pdf", "p", "P")
+    tarefas.encadear_comprovantes("sincronizar")
+    assert disparos == ["comprovantes"]
+    # A pista da pessoa (ponto de UM colaborador) não mexe na fila geral.
+    tarefas.encadear_comprovantes("ponto_pessoa")
+    assert disparos == ["comprovantes"]
+
+    # Processo morto no meio (RODANDO há muito) também destrava.
+    with conexao() as conn:
+        conn.execute("UPDATE analisesps.comprovantes_lote SET situacao = 'RODANDO', "
+                     "  recebido_em = now() - interval '1 hour' WHERE id = ?", (lote_id,))
+        conn.commit()
+    tarefas.encadear_comprovantes("colaboradores")
+    assert disparos == ["comprovantes", "comprovantes"]
+    # Já terminado: não dispara à toa.
+    with conexao() as conn:
+        conn.execute("UPDATE analisesps.comprovantes_lote SET situacao = 'PRONTO' "
+                     " WHERE id = ?", (lote_id,))
+        conn.commit()
+    tarefas.encadear_comprovantes("comprovantes")
+    assert disparos == ["comprovantes", "comprovantes"]
+
+
+def test_o_processo_separado_encadeia_os_comprovantes_ao_terminar(monkeypatch):
+    from app.apps.analisesps import executar_sync, tarefas
+    chamadas = []
+    monkeypatch.setattr(tarefas, "executar_trabalho", lambda modo, eid: False)
+    monkeypatch.setattr(tarefas, "encadear_comprovantes", lambda modo: chamadas.append(modo))
+    monkeypatch.setattr(executar_sync, "_configurar_log", lambda: None)
+    assert executar_sync.main(["sincronizar", "7"]) == 1
+    assert chamadas == ["sincronizar"], "encadeia mesmo quando a tarefa falhou"

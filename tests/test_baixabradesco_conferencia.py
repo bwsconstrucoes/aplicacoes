@@ -480,3 +480,80 @@ def test_pular_negativo_nao_quebra(planilha, credenciais, monkeypatch):
 
     assert chamados == ['IntA']
     assert r['pulou'] == 0
+
+
+# =====================================================================
+# 5. o caminho de exceção: número errado digitado no celular
+# =====================================================================
+# Lição do dia 08/10/2026, escrita no HISTORICO: os cinco defeitos achados por
+# releitura naquele dia tinham a MESMA assinatura — o caminho de exceção não
+# tinha teste. Aqui está o caminho de exceção desta rota: os parâmetros chegam
+# como TEXTO pela barra do navegador, e `int('sessenta')` levanta exceção, que
+# virava página de erro de programador na tela de quem digitou.
+
+def test_numero_mal_digitado_cai_no_padrao_em_vez_de_derrubar(
+        planilha, credenciais, monkeypatch):
+    planilha([_nao_paga(codigo='IntA')])
+    _omie(monkeypatch, {})
+
+    r = mod.conferir({'dias': 'sessenta', 'limite': 'cinquenta',
+                      'pular': 'nenhum', 'pausa_ms': 'rapido',
+                      'sentido': 'omie_pago'})
+
+    assert r['ok'] is True
+    assert r['dias'] == mod.DIAS_PADRAO
+    assert r['pulou'] == 0
+
+
+def test_numero_vindo_como_texto_funciona_como_numero(planilha, credenciais,
+                                                      monkeypatch):
+    """É assim que ele chega: `?dias=30&limite=5` são strings."""
+    planilha([_nao_paga(sp_id=f'n{i}', codigo=f'IntN{i}') for i in range(10)])
+    chamados = _omie(monkeypatch, {})
+
+    r = mod.conferir({'dias': '30', 'limite': '3', 'pular': '2',
+                      'sentido': 'omie_pago'})
+
+    assert r['dias'] == 30
+    assert chamados == ['IntN2', 'IntN3', 'IntN4']
+
+
+def test_limite_zero_ou_negativo_nao_vira_chamada_vazia(planilha, credenciais,
+                                                        monkeypatch):
+    """Pedir limite=0 e receber "nada a conferir" seria uma resposta mentirosa."""
+    planilha([_nao_paga(codigo='IntA')])
+    chamados = _omie(monkeypatch, {})
+
+    r = mod.conferir({'limite': '0', 'sentido': 'omie_pago'})
+
+    assert chamados == ['IntA']
+    assert r['consultas_ao_omie'] == 1
+
+
+def test_fora_de_faixa_cai_no_PADRAO_nao_no_minimo(planilha, credenciais,
+                                                   monkeypatch):
+    """`dias=0` virando janela de UM dia é pior que erro.
+
+    Não acharia quase nada e pareceria "está tudo certo" — a resposta mais
+    perigosa que um conferidor pode dar. Fora de faixa cai no padrão.
+    """
+    planilha([_nao_paga(codigo='IntA', dias_venc=5)])
+    _omie(monkeypatch, {'IntA': {'ok': True, 'body': {'status_titulo': 'PAGO'}}})
+
+    r = mod.conferir({'dias': '0', 'sentido': 'omie_pago'})
+
+    assert r['dias'] == mod.DIAS_PADRAO
+    assert r['quantidade_planilha_atrasada'] == 1
+    assert mod._inteiro({'limite': '0'}, 'limite', 50, minimo=1) == 50
+    assert mod._inteiro({'limite': '-3'}, 'limite', 50, minimo=1) == 50
+    assert mod._inteiro({'pular': '-3'}, 'pular', 0) == 0
+
+
+def test_pausa_mal_digitada_nao_trava_a_conferencia(planilha, credenciais,
+                                                    monkeypatch):
+    planilha([_nao_paga(codigo='IntA')])
+    _omie(monkeypatch, {})
+
+    r = mod.conferir({'pausa_ms': '', 'sentido': 'omie_pago'})
+
+    assert r['ok'] is True

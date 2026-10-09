@@ -41,6 +41,11 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1j. **PUBLICADO em 09/10/2026** (com o "pode" do dono): os seis ajustes de
+   09/10 e a correção do fuso na apuração (seção de 09/10), com a migração
+   **009**. Confirmar com o dono: apertou "Aplicar atualizações do ponto"?
+   Marcou em Cerca das obras as obras de só entrada e saída? Conferiu a
+   coordenada da obra de teste (a recusa a 16 mil km)?
 1i. **PUBLICADO em 08/10/2026** (com o "pode" do dono, `main` em `29bd1f0`): as
    correções do cadastro de aparelhos (seção de 07/10) e a TELA INICIAL com a
    consulta pela cerca, o administrativo de obra, os ícones ✏️/🗓️ e a regra
@@ -92,6 +97,55 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 09/10/2026 — Seis ajustes do teste do dono (e um defeito de fuso achado no caminho)
+
+1. **Nome da obra repetido** ("TESTE-PONTO — TESTE DO PONTO (obra de teste)").
+   A regra que junta código e nome passou a reconhecer quando TODAS as palavras
+   do código estão no nome — aí basta o nome. Vale no aplicativo
+   (`rotuloObra`), no comprovante (`cadastros.rotulo_obra`) e no ERP inteiro:
+   o `rotuloObra` do `erp_base.html` ganhou a mesma regra (antes, só "um
+   contém o outro").
+2. **"Encarregado" virou "administração da obra"** em todo texto que a pessoa
+   lê ("pode ser o encarregado, o almoxarife, o DP"), inclusive as opções de
+   Quem valida ("Administração da obra", "Administração da obra e depois o
+   DP"). O valor gravado continua `ENCARREGADO`.
+3. **"Bater e mandar para conferência" era recusado** ("fora da área da obra,
+   16 mil km"). A tela oferecia a lista de obras sempre que não achava a
+   cerca, mas a obra BLOQUEIA fora dela (o padrão desde 04/10) — prometia o
+   que o servidor não fazia. Agora a lista só traz as obras em que a batida
+   será aceita (as que mandam para conferência, em Configuração › Cerca das
+   obras, e as sem coordenada); se nenhuma, o botão de bater fica desligado e
+   a tela diz por quê. A regra de bloquear NÃO mudou. Distância acima de
+   100 km ganha o aviso "confira a localização do celular e a coordenada da
+   obra" — 16 mil km não é "fora da cerca", é coordenada ou localização errada
+   (não deu para saber qual: conferir o mapa da obra de teste).
+4. **O pedido pendente aparece no dia**, no "Meu mês" e na folha da consulta:
+   o horário pedido vira um chip ⏳ tracejado ("Ajuste pedido — esperando
+   validação"); atestado e licença, um selo âmbar. O horário pedido já não
+   aparecia como "faltando", mas a pessoa não via que tinha pedido.
+5. **Corrigir sem escala mostrava "Batida 1 / Batida 2"**: agora oferece as
+   que ainda cabem no dia, com o nome (Entrada, Saída para o intervalo, Volta
+   do intervalo, Saída).
+6. **Obra que só bate entrada e saída** (convenção — intervalo PRÉ-ASSINALADO,
+   CLT art. 74, § 2º): migração **009** (`obra_config.intervalo_pre_assinalado`),
+   marcada em Configuração › Cerca das obras › "Batidas por dia: 2". Na obra
+   marcada, o dia com só a entrada e a saída fica completo, a escala espera duas
+   marcas, e a conta desconta o intervalo da escala (sem isso, o almoço viraria
+   hora extra e alerta de intervalo curto). Quem bater as quatro, conta as
+   quatro. A regra olha a obra da primeira batida do dia.
+
+**Defeito achado ao testar o item 6:** o espelho entregava à apuração a hora
+das batidas em UTC (como o banco devolve), e a apuração conta minutos desde a
+meia-noite do fuso da batida. As horas trabalhadas saíam certas (são
+diferenças), mas **o atraso, a tolerância de 5/10 min e a hora noturna saíam 3 h
+deslocados** — toda entrada às 7h aparecia como 3 h de atraso, e quem bateu às
+19h ganhava hora noturna. Corrigido no `espelho.py` (`horario.para_local`), com
+teste que trava. O ponto ainda não está em uso real com a equipe, então não há
+espelho fechado errado; o que estava na tela se recalcula sozinho.
+
+Testes: `tests/test_ponto_duas_batidas_banco.py` e dois casos novos em
+`test_ponto_apuracao.py`.
 
 ## 08/10/2026 — A tela inicial, a consulta pela cerca da obra e o administrativo de obra
 

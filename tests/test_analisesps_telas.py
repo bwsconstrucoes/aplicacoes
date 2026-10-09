@@ -3998,8 +3998,9 @@ def test_agir_sobre_a_selecao_apaga_a_memoria_dela():
     from pathlib import Path
     js = Path("app/apps/analisesps/static/analisesps.js").read_text(encoding="utf-8")
     assert "function selecaoConsumida()" in js
-    # As quatro ações que ALTERAM alguma coisa têm de chamar.
-    assert js.count("selecaoConsumida();") == 4, (
+    # As cinco ações que ALTERAM alguma coisa têm de chamar (a quinta, de
+    # 08/10/2026, é o "Marcar Pago" do modal Consultar Omie).
+    assert js.count("selecaoConsumida();") == 5, (
         "cada ação que altera precisa apagar a memória da seleção")
 
 
@@ -8464,3 +8465,15 @@ def test_a_PLANILHA_DE_CADASTRO_sai_pela_rota_com_os_avisos(app, monkeypatch):
     assert avisos and "GERLANIO" in avisos[0]
     assert _como_mestre(app).post("/analisesps/folha/cadastro-planilha",
                                   json={"destino": "x", "cpfs": []}).status_code == 400
+
+
+def test_o_qr_mostra_a_CATEGORIA_e_a_DESCRICAO_da_SP(app, monkeypatch):
+    """08/10/2026, o dono: *"além do número da SP e Credor, aparecesse a
+    descrição e categoria de despesa"*."""
+    from app.apps.analisesps import consultas
+    monkeypatch.setattr(consultas, "uma", lambda i: linha_falsa(
+        i, tipo_despesa="Material de Construção", descricao="Cimento CP-II obra 12"))
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/codigos?id=1").get_data(as_text=True)
+    trecho = html[html.index('class="codigo-desc"'):]
+    assert "Material de Construção" in trecho[:300] and "Cimento CP-II obra 12" in trecho[:300]

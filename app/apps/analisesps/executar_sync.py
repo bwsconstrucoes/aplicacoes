@@ -59,9 +59,11 @@ def main(argv=None) -> int:
     log.info("Iniciando '%s' (execução %d) em processo separado.",
              modo, execucao_id)
 
-    from .tarefas import executar_trabalho
+    from .tarefas import encadear_comprovantes, executar_trabalho
     ok = executar_trabalho(modo, execucao_id)
     log.info("'%s' terminada: %s", modo, "ok" if ok else "com falha")
+    # A fila de comprovantes não espera ninguém apertar botão (08/10/2026).
+    encadear_comprovantes(modo)
     return 0 if ok else 1
 
 
