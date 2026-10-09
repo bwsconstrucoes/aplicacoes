@@ -12255,6 +12255,10 @@ somente Solicitações de uma conta especifica"*.
   alcança). ⚠️ **Migração 053** — apertar "Aplicar atualizações do banco".
 - Não testado com a planilha de verdade: a aba "Base Faturamento" precisa estar
   preenchida (as antigas entram pela consolidação em `/emissao/faturamento`).
+- Conferido contra a orientação do emissor (`CONTEXTO.md`, 09/10/2026: C. Diários
+  fora da base, tributo em dois campos, número de 13 dígitos + sequencial). Corrigido
+  na ficha: as duas divergências são S/N, e VAZIO diz "ainda não conferido" — nunca
+  "bate".
 
 #### Leva 206 — Consultar Omie atravessa a pausa do Omie; calendário abre o dia numa janela (09/10/2026)
 

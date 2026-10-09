@@ -119,3 +119,5 @@ def test_a_TELA_mostra_as_notas_o_grafico_e_a_ficha(carregado):
     assert tela.count('class="fat-mes-col"') == 4, "jul, ago, set e out"
     assert "https://drive/xml/3283" in tela, "o download da nota"
     assert "SCP IF" in ficha and "Medição 11" in ficha and "65,00" in ficha
+    # divergência VAZIA = não conferido, nunca "bate"
+    assert "ainda não conferidos com o Omie" in ficha and "batem" not in ficha

@@ -33,8 +33,13 @@
     </tbody>
   </table>
 </div>
-{% if n.divergencia_tributos == 'S' %}<div class="aviso atencao">A nota e o título do Omie <b>não batem</b> nos tributos.</div>{% endif %}
-{% if n.divergencia_recebimento %}<p class="cartao-dica">Diferença entre o recebido e o líquido previsto: {{ n.divergencia_recebimento }}</p>{% endif %}
+{# As duas conferências são S/N, e VAZIO quer dizer "não houve com o que
+   comparar" — não "está tudo certo" (emissaonf/FATURAMENTO.md). #}
+{% if n.divergencia_tributos == 'S' %}<div class="aviso atencao">A nota e o título do Omie <b>não batem</b> nos tributos.</div>
+{% elif n.divergencia_tributos == 'N' %}<p class="cartao-dica">Tributos: a nota e o título do Omie batem.</p>
+{% else %}<p class="cartao-dica">Tributos: ainda não conferidos com o Omie.</p>{% endif %}
+{% if n.divergencia_recebimento == 'S' %}<div class="aviso atencao">O valor recebido <b>não bate</b> com o líquido previsto — o tributo no Omie pode precisar de ajuste para a baixa sair certa.</div>
+{% elif n.divergencia_recebimento == 'N' %}<p class="cartao-dica">Recebimento: o recebido bate com o líquido previsto.</p>{% endif %}
 {% if n.ibs or n.cbs %}<p class="cartao-dica">IBS {{ n.ibs or '—' }} · CBS {{ n.cbs or '—' }}</p>{% endif %}
 
 {% if n.discriminacao %}
