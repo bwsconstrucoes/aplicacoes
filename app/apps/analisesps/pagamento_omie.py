@@ -24,16 +24,12 @@ from __future__ import annotations
 
 import logging
 import re
-from concurrent.futures import ThreadPoolExecutor
 
 logger = logging.getLogger("analisesps.pagamento_omie")
 
 # Cada título é uma chamada ao Omie (ele não consulta vários de uma vez por
 # código de integração). Passar disso é tela parada esperando.
 MAX_POR_CONSULTA = 60
-# Três de cada vez: o Omie corta quem passa de algumas por segundo, e o
-# cliente do painel já sabe esperar quando isso acontece.
-EM_PARALELO = 3
 
 STATUS_PAGO = "PAGO"
 
@@ -73,46 +69,76 @@ def falta_na_planilha(reg: dict) -> list[str]:
     return falta
 
 
-def consultar(ids, cliente=None) -> list[dict]:
-    """O status no Omie de cada SP, ao lado do que a planilha diz."""
-    from app.apps.painel.sync.omie_client import URL_CONTAPAGAR
+# A ÚLTIMA RESPOSTA DO OMIE POR TÍTULO, guardada um pouco (09/10/2026). O Omie
+# bloqueia quem repete a mesma pergunta em seguida ("consumo excessivo"), e é
+# exatamente o que acontece quando se consulta, marca, e consulta de novo.
+_GUARDADO: dict = {}
+GUARDAR_POR_SEGUNDOS = 120
+
+
+def consultar(ids, cliente=None) -> dict:
+    """O status no Omie de cada SP, ao lado do que a planilha diz.
+
+    Devolve `{"linhas": [...], "espera": segundos}`. ⚠️ QUANDO O OMIE PEDE UMA
+    PAUSA (09/10/2026 — *"tem que contornar essas mensagens: o Omie bloqueou
+    as chamadas por consumo excessivo e pediu 60 segundos"*), a consulta PARA
+    ali: insistir em outro título cai no mesmo bloqueio e o prolonga. As que
+    faltaram voltam marcadas `pendente`, com `espera` = o tempo pedido, e a
+    janela continua sozinha depois desse tempo — a pessoa não refaz nada.
+
+    UMA DE CADA VEZ (eram três juntas): três perguntas ao mesmo tempo é o
+    jeito mais rápido de o Omie achar que é consumo excessivo."""
+    import time
+    from app.apps.painel.sync.omie_client import URL_CONTAPAGAR, OmieBloqueada
 
     ids = list(dict.fromkeys(str(i).strip() for i in ids if str(i).strip()))
     registros = _registros(ids)
-    def um(sp_id):
-        # Um cliente por consulta: a sessão HTTP dele não é para dividir
-        # entre as linhas que correm juntas.
-        cli = cliente or _cliente()
+    cli = None
+    linhas, espera = [], 0
+    for sp_id in ids:
         reg = registros.get(sp_id) or {"id": sp_id}
         codigo = codigo_de_integracao(sp_id, reg.get("codigo_integracao"))
         linha = {"id": sp_id, "credor": reg.get("credor") or "",
                  "valor": reg.get("valor") or "",
                  "status_planilha": reg.get("status_pgt") or "",
                  "codigo": codigo, "status_omie": "", "valor_pago": None,
-                 "erro": "", "pago": False, "falta": [], "equalizar": False}
+                 "erro": "", "pago": False, "falta": [], "equalizar": False,
+                 "pendente": False}
+        linhas.append(linha)
         if sp_id not in registros:
             linha["erro"] = "SP não está na base."
-            return linha
-        try:
-            titulo = cli._call(URL_CONTAPAGAR, "ConsultarContaPagar",
-                               {"codigo_lancamento_integracao": codigo}) or {}
-        except Exception as e:  # noqa: BLE001 — a frase do Omie vai inteira
-            texto = str(e)
-            linha["erro"] = ("Título não encontrado no Omie com o código "
-                             f"{codigo}." if re.search(r"n[ãa]o (foi )?encontrad",
-                                                        texto, re.I)
-                             else f"O Omie não respondeu: {texto[:200]}")
-            return linha
+            continue
+        if espera:
+            linha["pendente"] = True
+            continue
+        guardado = _GUARDADO.get(codigo)
+        if guardado and time.monotonic() - guardado[0] < GUARDAR_POR_SEGUNDOS:
+            titulo = guardado[1]
+        else:
+            try:
+                cli = cli or cliente or _cliente()
+                titulo = cli._call(URL_CONTAPAGAR, "ConsultarContaPagar",
+                                   {"codigo_lancamento_integracao": codigo}) or {}
+            except OmieBloqueada as e:
+                espera = max(int(e.segundos), 1)
+                linha["pendente"] = True
+                logger.info("Consultar Omie: pausa de %ss pedida pelo Omie.", espera)
+                continue
+            except Exception as e:  # noqa: BLE001 — a frase do Omie vai inteira
+                texto = str(e)
+                linha["erro"] = ("Título não encontrado no Omie com o código "
+                                 f"{codigo}." if re.search(r"n[ãa]o (foi )?encontrad",
+                                                            texto, re.I)
+                                 else f"O Omie não respondeu: {texto[:200]}")
+                continue
+            _GUARDADO[codigo] = (time.monotonic(), titulo)
         linha["status_omie"] = str(titulo.get("status_titulo") or "").upper()
         linha["valor_pago"] = titulo.get("valor_pago")
         linha["pago"] = linha["status_omie"] == STATUS_PAGO
         if linha["pago"]:
             linha["falta"] = falta_na_planilha(reg)
             linha["equalizar"] = bool(linha["falta"])
-        return linha
-
-    with ThreadPoolExecutor(max_workers=EM_PARALELO) as grupo:
-        return list(grupo.map(um, ids))
+    return {"linhas": linhas, "espera": espera}
 
 
 # ---------------------------------------------------------------------------

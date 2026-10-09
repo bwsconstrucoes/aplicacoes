@@ -1324,15 +1324,17 @@ def omie_consultar():
             f"São no máximo {pagamento_omie.MAX_POR_CONSULTA} SPs por consulta — "
             "cada uma é uma pergunta ao Omie.")}, 400
     try:
-        linhas = pagamento_omie.consultar(ids)
+        resultado = pagamento_omie.consultar(ids)
     except Exception as e:  # noqa: BLE001 — credencial, rede: a frase vai inteira
         logger.exception("Análise de SPs: falhou consultar o Omie")
         return {"ok": False, "erro": f"Não consegui consultar o Omie: {e}"}, 502
     agora = time.monotonic()
-    for l in linhas:
+    for l in resultado["linhas"]:
         if l["status_omie"]:
             _CONSULTADAS[l["id"]] = (l["status_omie"], agora)
-    return {"ok": True, "linhas": linhas}
+    # `espera` > 0: o Omie pediu uma pausa; as `pendente` a janela pede de novo
+    # sozinha depois desse tempo.
+    return {"ok": True, "linhas": resultado["linhas"], "espera": resultado["espera"]}
 
 
 @bp.route("/api/omie/marcar-pago", methods=["POST"])
@@ -2017,9 +2019,57 @@ def calendario():
         # A barra de filtros é a mesma das outras telas; estas duas dizem a
         # ela que aqui a data não manda, e se havia alguma marcada.
         datas_nao_valem=True, datas_ignoradas=datas_ignoradas,
+        # A ficha da SP (duplo clique na janela do dia) é da tela Solicitações.
+        abre_ficha=(auth.telas_permitidas() is None
+                    or "solicitacoes" in auth.telas_permitidas()),
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
+
+
+@bp.route("/calendario/dia")
+@exige_consulta
+def calendario_dia():
+    """As SPs de UM dia do calendário, para a janela que abre no clique.
+
+    09/10/2026, o dono: *"o calendário tem que abrir um modal conforme abre no
+    painel para exibir as informações do dia; da forma que está, ele está
+    redirecionando para a tela de Solicitações."* Mesmo filtro da tela (as
+    datas da barra não valem aqui, como na grade) e mesma data da célula."""
+    import datetime as dt
+    from . import consultas
+    try:
+        dia = dt.date.fromisoformat(str(request.args.get("dia") or ""))
+    except ValueError:
+        return {"ok": False, "erro": "Dia inválido."}, 400
+    tipo = request.args.get("tipo", "geral")
+    if tipo not in consultas.TIPOS:
+        tipo = "geral"
+    filtros = _filtros_do_pedido()
+    for chave in ("periodo_ini", "periodo_fim", "pgt_ini", "pgt_fim"):
+        filtros[chave] = None
+    try:
+        achado = consultas.sps_do_dia(filtros, dia, tipo)
+    except Exception as e:  # noqa: BLE001 — a janela diz, a tela fica de pé
+        logger.exception("Análise de SPs: falhou ler o dia %s do calendário", dia)
+        return {"ok": False, "erro": f"Não consegui ler o dia: {e}"}, 500
+    from .formatos import data_br, moeda
+    return {
+        "ok": True, "dia": dia.isoformat(), "rotulo": dia.strftime("%d/%m/%Y"),
+        "quantidade": achado["quantidade"], "total": moeda(achado["total"]),
+        "mostradas": len(achado["linhas"]),
+        "linhas": [{
+            "id": l["id"], "credor": l["credor"] or "",
+            "descricao": l["descricao"] or "", "tipo_despesa": l["tipo_despesa"] or "",
+            "valor": moeda(l["valor_num"]) if l["valor_num"] is not None else "",
+            "vencimento": data_br(l["vencimento_d"]),
+            "pago_em": data_br(l["data_pagamento_d"]),
+            "status_pgt": l["status_pgt"] or "", "status_agend": l["status_agend"] or "",
+            "situacao": l["situacao"],
+            "ficha": url_for("analisesps.detalhe", sp_id=l["id"]),
+            "card": f"https://app.pipefy.com/open-cards/{l['id']}",
+        } for l in achado["linhas"]],
+    }
 
 
 # ---------------------------------------------------------------------------

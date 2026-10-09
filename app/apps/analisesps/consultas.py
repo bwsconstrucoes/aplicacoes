@@ -1713,6 +1713,44 @@ def quadro_por_categoria(f: dict) -> list[dict]:
 # mesma SP em dois dias e não fecharia com o Relatório do mesmo filtro — que
 # é exatamente a conferência que o dono vai fazer.
 # ===========================================================================
+# Teto da janela do dia: um dia com mais que isso é exceção, e a janela diz
+# quantas ficaram de fora e leva para a lista completa.
+MAX_NO_DIA = 300
+
+
+def sps_do_dia(f: dict, dia, tipo: str = "geral") -> dict:
+    """As SPs que o calendário contou NESTE dia — o MESMO filtro e a MESMA data
+    da célula (`calendario_do_mes`), para a janela e o quadradinho nunca
+    divergirem. 09/10/2026: o dono quer ver o dia num modal, como no painel."""
+    from .db import consultar
+    coluna = coluna_de_data(tipo)
+    where, params = _where_relatorio(f, tipo)
+    pago = "lower(trim(coalesce(status_pgt,''))) = 'pago'"
+    a_pagar = "lower(trim(coalesce(status_pgt,''))) = 'pagar'"
+    # A ordem é a de urgência do calendário: vencido, a vencer, pago, resto.
+    linhas = consultar(
+        "SELECT * FROM ("
+        "SELECT id, credor, descricao, tipo_despesa, valor_num, vencimento_d, "
+        "       data_pagamento_d, trim(coalesce(status_pgt,'')) AS st, "
+        f"      ({SQL_STATUS_AGEND}) AS ag, "
+        f"      CASE WHEN {pago} THEN 'pago' "
+        f"           WHEN {a_pagar} AND vencimento_d < {SQL_HOJE} THEN 'vencido' "
+        f"           WHEN {a_pagar} THEN 'a_vencer' ELSE 'outros' END AS situ, "
+        "       count(*) OVER () AS qtd, coalesce(sum(valor_num) OVER (), 0) AS tot "
+        f"  FROM analisesps.sps{where} AND {coluna} = ?) t "
+        " ORDER BY CASE situ WHEN 'vencido' THEN 0 WHEN 'a_vencer' THEN 1 "
+        "                    WHEN 'pago' THEN 2 ELSE 3 END, "
+        "          valor_num DESC NULLS LAST, id "
+        " LIMIT ?", tuple(params) + (dia, MAX_NO_DIA))
+    nomes = ("id", "credor", "descricao", "tipo_despesa", "valor_num",
+             "vencimento_d", "data_pagamento_d", "status_pgt", "status_agend",
+             "situacao")
+    saida = [dict(zip(nomes, l[:10])) for l in linhas]
+    quantidade = int(linhas[0][10]) if linhas else 0
+    total = linhas[0][11] if linhas else 0
+    return {"linhas": saida, "quantidade": quantidade, "total": total}
+
+
 def calendario_do_mes(f: dict, primeiro, ultimo, tipo: str = "geral") -> dict:
     """Quantas SPs e quanto em dinheiro caem em cada dia do intervalo.
 

@@ -7466,3 +7466,29 @@ def test_o_processo_separado_encadeia_os_comprovantes_ao_terminar(monkeypatch):
     monkeypatch.setattr(executar_sync, "_configurar_log", lambda: None)
     assert executar_sync.main(["sincronizar", "7"]) == 1
     assert chamadas == ["sincronizar"], "encadeia mesmo quando a tarefa falhou"
+
+
+def test_a_JANELA_DO_DIA_traz_o_que_a_celula_contou(banco_analisesps):
+    """09/10/2026: o calendário abre o dia numa janela, como no painel. As SPs
+    da janela têm de ser exatamente as que a célula contou — mesmo filtro e
+    mesma data — e vêm na ordem de urgência: vencido, a vencer, pago."""
+    from app.apps.analisesps import consultas
+    semear([sp("1", credor="ACME", valor="1.000,00", status_pgt="Pagar",
+               vencimento="10/09/2026", conta="ITAU", tipo_despesa="Material",
+               descricao="Cimento"),
+            sp("2", credor="PAGA", valor="500,00", status_pgt="Pago",
+               vencimento="10/09/2026", data_pagamento="10/09/2026", conta="ITAU"),
+            sp("3", credor="OUTRA CONTA", valor="7.000,00", status_pgt="Pagar",
+               vencimento="10/09/2026", conta="BRADESCO"),
+            sp("4", credor="OUTRO DIA", valor="300,00", status_pgt="Pagar",
+               vencimento="11/09/2026", conta="ITAU")])
+    f = {"conta": ["ITAU"]}
+    dia = dt.date(2026, 9, 10)
+    celula = consultas.calendario_do_mes(f, dia, dia, "geral")["dias"][dia]
+    janela = consultas.sps_do_dia(f, dia, "geral")
+    assert janela["quantidade"] == celula["quantidade"] == 2
+    assert janela["total"] == celula["total"] == Decimal("1500.00")
+    assert [l["id"] for l in janela["linhas"]] == ["1", "2"]
+    assert janela["linhas"][0]["situacao"] == "vencido"
+    assert janela["linhas"][0]["tipo_despesa"] == "Material"
+    assert janela["linhas"][1]["situacao"] == "pago"

@@ -12228,6 +12228,25 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 206 — Consultar Omie atravessa a pausa do Omie; calendário abre o dia numa janela (09/10/2026)
+
+- *"Na consulta Omie tem que contornar essas mensagens: o Omie bloqueou as
+  chamadas por consumo excessivo e pediu 60 segundos."* A consulta agora é UMA
+  SP de cada vez (eram três juntas), guarda a resposta de cada título por 2
+  min (o Omie bloqueia pergunta repetida — consultar, marcar e consultar de
+  novo) e, quando o Omie pede pausa, PARA ali e devolve as que faltaram como
+  "aguardando o Omie". A janela conta o tempo pedido e pede só essas de novo,
+  sozinha (`pagamento_omie.consultar` devolve `espera`).
+- *"O calendário tem que abrir um modal conforme abre no painel, para exibir as
+  informações do dia; da forma que está, redireciona para Solicitações."* O
+  clique no dia abre uma janela com as SPs dele (SP, credor, categoria,
+  descrição, valor, vencimento/pagamento, situação), na ordem vencido → a
+  vencer → pago; setas ‹ › (e ← →) andam de dia; duplo clique abre a ficha;
+  "Ver na lista" leva à lista de antes; ctrl+clique no dia continua abrindo a
+  lista numa aba. Mesmo filtro e mesma data da célula (`consultas.sps_do_dia`,
+  com teste provando que bate com `calendario_do_mes`). Até 300 SPs por dia na
+  janela. Sem migração.
+
 #### Leva 205 — a fila de comprovantes anda sozinha (08/10/2026)
 
 - *"Por que essa fila trava? 10 lote(s) parado(s) há mais de 15 minutos."* O

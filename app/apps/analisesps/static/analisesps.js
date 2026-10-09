@@ -391,40 +391,80 @@ const LEMBRAR = {
       if (mudouAlgo) location.reload();
     });
 
+    // As linhas da consulta, por SP. Quando o Omie pede uma pausa, as que
+    // faltaram voltam "pendentes": a janela conta o tempo e pede só elas de
+    // novo, sozinha (09/10/2026 — "tem que contornar essas mensagens").
+    let linhasOmie = {}, ordemOmie = [], rodada = 0;
+
+    const desenhar = () => {
+      const linhas = ordemOmie.map(id => linhasOmie[id]);
+      const pagas = linhas.filter(l => l.pago).length;
+      const antes = new Set(marcadasNoModal());
+      const jaDesenhou = !!corpo.querySelector("table.tabela-omie");
+      corpo.innerHTML = `<div class="tabela-rolagem livre"><table class="tabela-omie">
+        <thead><tr><th></th><th>SP</th><th>Credor</th><th>Valor</th>
+          <th>Na planilha</th><th>No Omie</th><th>Falta na planilha</th></tr></thead>
+        <tbody>${linhas.map(l => `<tr class="${l.pago ? "omie-pago" : ""}">
+          <td>${l.pago && marcarPago ? `<input type="checkbox" class="omie-sel" value="${esc(l.id)}"${(jaDesenhou ? antes.has(l.id) : l.equalizar) || (l.novo && l.equalizar) ? " checked" : ""}>` : ""}</td>
+          <td>${esc(l.id)}</td><td>${esc(l.credor)}</td><td class="num">${esc(l.valor)}</td>
+          <td>${esc(l.status_planilha) || "—"}</td>
+          <td>${l.pendente ? '<span class="cartao-dica">aguardando o Omie…</span>'
+               : l.erro ? `<span class="omie-erro">${esc(l.erro)}</span>`
+               : `<b>${esc(l.status_omie) || "—"}</b>`}</td>
+          <td>${l.pago ? (l.falta.length ? esc(l.falta.map(f => ROTULO_FALTA[f] || f).join(", "))
+                                         : "nada — já está igual") : ""}</td>
+        </tr>`).join("")}</tbody></table></div>`;
+      linhas.forEach(l => { l.novo = false; });
+      corpo.querySelectorAll("input.omie-sel").forEach(c => c.addEventListener("change", conferirBotao));
+      conferirBotao();
+      return pagas;
+    };
+
+    async function consultar(ids, minhaRodada) {
+      const r = await fetch(barra.dataset.urlOmieConsultar, {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ids})});
+      const d = await r.json();
+      if (!d.ok) throw new Error(d.erro || ("HTTP " + r.status));
+      if (minhaRodada !== rodada) return;           // a janela foi reaberta
+      d.linhas.forEach(l => { l.novo = true; linhasOmie[l.id] = l; });
+      const pagas = desenhar();
+      const pendentes = ordemOmie.filter(id => linhasOmie[id].pendente);
+      if (d.espera && pendentes.length) {
+        // O Omie pediu uma pausa: conta o tempo e continua sozinho.
+        let falta = d.espera + 2;
+        const tique = () => {
+          if (minhaRodada !== rodada || !dlgOmie.open) return;
+          resumo.textContent = `O Omie pediu uma pausa. Continuo sozinho em ${falta}s `
+            + `(faltam ${pendentes.length} SP(s)) — pode deixar a janela aberta.`;
+          if (falta-- > 0) { setTimeout(tique, 1000); return; }
+          resumo.textContent = `Consultando as ${pendentes.length} que faltavam…`;
+          consultar(pendentes, minhaRodada).catch(e => {
+            resumo.textContent = "Não consegui continuar: " + e.message;
+          });
+        };
+        tique();
+        return;
+      }
+      resumo.textContent = !pagas ? "Nenhuma das marcadas está paga no Omie."
+        : marcarPago ? `${pagas} paga(s) no Omie. Já vêm marcadas as que a planilha não diz por inteiro.`
+        : `${pagas} paga(s) no Omie. Para equalizar a planilha, use a consulta na tela Solicitações.`;
+    }
+
     btnOmie.addEventListener("click", async () => {
       const ids = idsMarcados();
       if (!ids) return;
       if (ids.length > 60) { alert("São no máximo 60 SPs por consulta."); return; }
       mudouAlgo = false;
+      rodada += 1;
+      linhasOmie = {}; ordemOmie = ids.slice();
       sub.textContent = `${ids.length} SP(s)`;
-      corpo.innerHTML = '<p class="cartao-dica">Consultando o Omie… cada título é uma pergunta, pode levar alguns segundos.</p>';
+      corpo.innerHTML = '<p class="cartao-dica">Consultando o Omie… uma SP de cada vez, pode levar alguns segundos.</p>';
       resumo.textContent = "";
       if (marcarPago) { marcarPago.disabled = true; marcarPago.hidden = false; }
       dlgOmie.showModal();
       try {
-        const r = await fetch(barra.dataset.urlOmieConsultar, {
-          method: "POST", headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({ids})});
-        const d = await r.json();
-        if (!d.ok) throw new Error(d.erro || ("HTTP " + r.status));
-        const pagas = d.linhas.filter(l => l.pago).length;
-        corpo.innerHTML = `<div class="tabela-rolagem livre"><table class="tabela-omie">
-          <thead><tr><th></th><th>SP</th><th>Credor</th><th>Valor</th>
-            <th>Na planilha</th><th>No Omie</th><th>Falta na planilha</th></tr></thead>
-          <tbody>${d.linhas.map(l => `<tr class="${l.pago ? "omie-pago" : ""}">
-            <td>${l.pago && marcarPago ? `<input type="checkbox" class="omie-sel" value="${esc(l.id)}"${l.equalizar ? " checked" : ""}>` : ""}</td>
-            <td>${esc(l.id)}</td><td>${esc(l.credor)}</td><td class="num">${esc(l.valor)}</td>
-            <td>${esc(l.status_planilha) || "—"}</td>
-            <td>${l.erro ? `<span class="omie-erro">${esc(l.erro)}</span>`
-                         : `<b>${esc(l.status_omie) || "—"}</b>`}</td>
-            <td>${l.pago ? (l.falta.length ? esc(l.falta.map(f => ROTULO_FALTA[f] || f).join(", "))
-                                           : "nada — já está igual") : ""}</td>
-          </tr>`).join("")}</tbody></table></div>`;
-        resumo.textContent = !pagas ? "Nenhuma das marcadas está paga no Omie."
-          : marcarPago ? `${pagas} paga(s) no Omie. Já vêm marcadas as que a planilha não diz por inteiro.`
-          : `${pagas} paga(s) no Omie. Para equalizar a planilha, use a consulta na tela Solicitações.`;
-        corpo.querySelectorAll("input.omie-sel").forEach(c => c.addEventListener("change", conferirBotao));
-        conferirBotao();
+        await consultar(ids, rodada);
       } catch (e) {
         corpo.innerHTML = `<div class="aviso erro">Não consegui consultar: ${esc(e.message)}</div>`;
       }

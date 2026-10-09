@@ -32,6 +32,7 @@ class OmieFalso:
 def cena(app, monkeypatch):
     from app.apps.analisesps import pagamento_omie, pipefy, tarefas, web
     web._CONSULTADAS.clear()
+    pagamento_omie._GUARDADO.clear()
     semear([
         sp("1000000001", credor="PAGO SEM BAIXA", valor="100,00", status_pgt="Pagar"),
         sp("1000000002", credor="PAGO COMPLETO", valor="50,00", status_pgt="Pago",
@@ -141,3 +142,38 @@ def test_a_coluna_AK_aparece_com_nome_no_log():
     from app.apps.analisesps import colunas
     assert colunas.COLS["_ak"].letra == "AK"
     assert colunas.ROTULOS["_ak"] == "Conta do Pagamento"
+
+
+def test_quando_o_OMIE_PEDE_PAUSA_a_consulta_para_e_diz_quanto_esperar(cena, monkeypatch):
+    """09/10/2026: *"tem que contornar essas mensagens: o Omie bloqueou as
+    chamadas por consumo excessivo e pediu 60 segundos"*. A consulta para ali
+    (insistir prolonga o bloqueio), devolve as que faltaram como pendentes e o
+    tempo pedido — a janela continua sozinha."""
+    from app.apps.analisesps import pagamento_omie
+    from app.apps.painel.sync.omie_client import OmieBloqueada
+    cliente, omie, _ = cena
+    original = omie._call
+
+    def bloqueia_no_segundo(url, call, param):
+        if len(omie.pedidos) >= 1:
+            omie.pedidos.append((call, "BLOQUEADO"))
+            raise OmieBloqueada(60, "consumo excessivo")
+        return original(url, call, param)
+    monkeypatch.setattr(omie, "_call", bloqueia_no_segundo)
+    r = cliente.post("/analisesps/api/omie/consultar", json={
+        "ids": ["1000000001", "1000000003", "1000000002"]}).get_json()
+    assert r["ok"] and r["espera"] == 60
+    por_id = {l["id"]: l for l in r["linhas"]}
+    assert por_id["1000000001"]["pago"] and not por_id["1000000001"]["pendente"]
+    assert por_id["1000000003"]["pendente"] and por_id["1000000002"]["pendente"]
+    assert not por_id["1000000003"]["erro"], "pausa não é erro"
+    assert len(omie.pedidos) == 2, "parou no bloqueio — não insistiu no terceiro"
+
+    # Depois da pausa, a janela pede SÓ as pendentes; a que já veio não é
+    # perguntada de novo (o Omie bloqueia pergunta repetida).
+    monkeypatch.setattr(omie, "_call", original)
+    omie.pedidos.clear()
+    r = cliente.post("/analisesps/api/omie/consultar", json={
+        "ids": ["1000000003", "1000000002", "1000000001"]}).get_json()
+    assert r["espera"] == 0 and not any(l["pendente"] for l in r["linhas"])
+    assert ("ConsultarContaPagar", "Int1000000001") not in omie.pedidos

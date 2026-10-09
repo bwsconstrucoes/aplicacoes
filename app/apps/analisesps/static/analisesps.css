@@ -2756,3 +2756,16 @@ table.conciliacao tr.com-sp { cursor: pointer; }
 
 /* Categoria e descrição da SP na tela de QR / código (08/10/2026). */
 .codigo-desc { margin: 4px 0 0; font-size: 13px; color: var(--tinta-suave); white-space: pre-line; }
+
+/* O dia do calendário numa janela (09/10/2026). */
+.dialogo-dia-cal { width: min(1150px, 96vw); }
+.dia-cal-cab { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.dia-cal-cab h3 { margin: 0; }
+.dia-cal-cab #dia-cal-resumo { flex: 1; }
+.dia-cal-cab a.btn { text-decoration: none; }
+.tabela-dia-cal { width: 100%; border-collapse: collapse; font-size: 13px; }
+.tabela-dia-cal th, .tabela-dia-cal td { padding: 6px 8px; border-bottom: 1px solid #e3e7ee; text-align: left; vertical-align: top; }
+.tabela-dia-cal td.direita, .tabela-dia-cal th.direita { text-align: right; white-space: nowrap; }
+.tabela-dia-cal .dia-cal-desc { max-width: 320px; }
+.tabela-dia-cal tr[data-ficha] { cursor: pointer; }
+.tabela-dia-cal .cal-faixa { display: inline-block; padding: 1px 6px; border-radius: 4px; }

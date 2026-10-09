@@ -495,6 +495,7 @@ TELA_DA_ROTA = {
     "analisesps.tela_agenda": ("agenda",),
     "analisesps.tela_conciliacao": ("conciliacao",),
     "analisesps.calendario": ("calendario",),
+    "analisesps.calendario_dia": ("calendario",),
     "analisesps.auditoria": ("auditoria",),
     "analisesps.exportar_auditoria": ("auditoria",),
     "analisesps.ratear": ("ratear",),
