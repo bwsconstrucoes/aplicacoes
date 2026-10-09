@@ -40,6 +40,7 @@ import pipefy as _pipefy
 import notas_bws as _notas
 import base_faturamento as _bfat
 import cdiarios as _cdiarios
+import omie_conferencia as _ocf
 from decimal import Decimal
 import completar_imediato as _compl
 
@@ -755,6 +756,133 @@ def _pagina_faturamento(token, log=""):
       </div>
       <p class='sub' style='text-align:center'>
         <a href='{url_for('.declaracao')}?token={t}'>Conferir declaração</a> &nbsp;·&nbsp;
+        <a href='{url_for('.diag')}?token={t}'>Diagnóstico</a>
+      </p>""")
+
+
+@bp.route("/omie", methods=["GET", "POST"])
+def omie_tributos():
+    """Conferir e equalizar os TRIBUTOS do título no Omie.
+
+    As três operações que o dono quer manter (09/10/2026): consulta, equalização
+    e atualização dos tributos. Elas viviam num Apps Script da planilha, com a
+    credencial do Omie em texto claro; aqui a credencial vem da aba Credenciais.
+
+    **Conferir é só leitura.** Ela consulta o título de cada nota, rateia o valor
+    dele entre as notas daquele título (fechando ao centavo) e grava na base o
+    que o Omie tem — mais a divergência. Nada é alterado no Omie.
+
+    **Equalizar ESCREVE no Omie, e por isso exige confirmação marcada.** A
+    direção é sempre a mesma: a nota manda, o título obedece. O que vai para o
+    Omie é a soma dos tributos das notas válidas daquele título — nunca o
+    contrário, porque nota fiscal não se desfaz e título é registro interno.
+    """
+    if not _token_ok():
+        return Response(_pagina_erro("Acesso não autorizado."), status=403, mimetype="text/html")
+    token = request.values.get("token", "")
+    if request.method == "GET":
+        return Response(_pagina_omie(token), mimetype="text/html")
+
+    escrever = request.form.get("confirmo_escrever") == "on"
+    try:
+        limite = max(1, min(int(request.form.get("limite") or 40), 300))
+    except ValueError:
+        limite = 40
+
+    buf = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buf):
+            gc = _worker.cliente_gspread()
+            cred = _worker.ler_credenciais(gc)
+            ws = _bfat._ws(gc.open_by_key(_worker.ID_PROC))
+            linhas = _bfat.ler_linhas(ws)
+            grupos = _ocf.agrupar_por_titulo(linhas)
+            sem_titulo = len(linhas) - sum(len(v) for v in grupos.values())
+            print(f">>> {len(linhas)} nota(s) na base; {len(grupos)} título(s) do "
+                  f"Omie; {sem_titulo} sem código de integração (ficam de fora).")
+            print(f">>> Modo: {'CONFERIR E EQUALIZAR (escreve no Omie)' if escrever else 'SÓ CONFERIR (leitura)'}.")
+
+            atualizar, conferidos, equalizados, divergentes = [], 0, 0, 0
+            for codigo, notas in list(grupos.items())[:limite]:
+                try:
+                    titulo = omie.ler_titulo(omie.consultar(cred, codigo))
+                except Exception as e:
+                    print(f"  [{codigo}] consulta falhou: {type(e).__name__}: {e}")
+                    continue
+                desejado = _ocf.somar_tributos(notas)
+                fora = _ocf.precisa_equalizar(titulo, desejado)
+                partes = _ocf.ratear_titulo(notas, titulo)
+                for d in notas:
+                    _ocf.aplicar_no_registro(
+                        d, titulo, partes.get(_bfat._txt(d.get("nota_numero"))))
+                    atualizar.append(d)
+                conferidos += 1
+                if fora:
+                    divergentes += 1
+                    nomes = ", ".join(f"{t.upper()}: Omie {titulo.get(t)} × notas "
+                                      f"{desejado.get(t)}" for t in fora)
+                    print(f"  [{codigo}] DIVERGE em {nomes}")
+                    if escrever:
+                        try:
+                            omie.alterar_tributos(cred, codigo, desejado)
+                            equalizados += 1
+                            print(f"  [{codigo}] equalizado no Omie.")
+                        except Exception as e:
+                            print(f"  [{codigo}] ERRO ao gravar: {type(e).__name__}: {e}")
+
+            gravadas = _bfat.gravar_lote(ws, atualizar)
+            print(f">>> {conferidos} título(s) conferido(s); {divergentes} "
+                  f"divergente(s); {equalizados} equalizado(s) no Omie; "
+                  f"{gravadas} linha(s) da base atualizada(s).")
+            if len(grupos) > limite:
+                print(f">>> FALTAM {len(grupos) - limite} título(s). Clique de novo.")
+    except Exception as e:
+        buf.write(f"\n>>> ERRO: {type(e).__name__}: {e}")
+    return Response(_pagina_omie(token, log=buf.getvalue()), mimetype="text/html")
+
+
+def _pagina_omie(token, log=""):
+    t = html.escape(token)
+    caixa = (f"<div class='card'><b>O que aconteceu</b><pre>{html.escape(log)}</pre></div>"
+             if log else "")
+    return _doc("Tributos no Omie", f"""
+      <h1>Tributos no Omie</h1>
+      <p class='sub'>As três operações que sobraram do Apps Script da planilha:
+      <b>consultar</b> o título, <b>equalizar</b> os tributos e <b>atualizar</b> o
+      Omie. O resto das funções daquele script não veio.</p>
+      <div class='card'><b>Como ela pensa</b>
+        <p class='sub'>A <b>nota manda, o título obedece</b>. O que pode ir para o
+        Omie é a <b>soma dos tributos das notas válidas</b> daquele título — nunca
+        o contrário: nota fiscal não se desfaz, título é registro interno. Nota
+        <b>cancelada fica fora</b> da soma.</p>
+        <p class='sub'>Um título cobre várias notas. Para mostrar quanto do título
+        cabe a cada uma, o valor é <b>rateado pelo valor bruto da nota, fechando ao
+        centavo</b> — senão a conferência acusaria um centavo de diferença em toda
+        nota, e alarme assim deixa de ser lido.</p>
+      </div>
+      {caixa}
+      <div class='card'>
+        <form method='post' action='{url_for('.omie_tributos')}'>
+          <label class='lbl'>Quantos títulos nesta rodada
+            <input name='limite' value='40' style='padding:8px;border:1px solid
+                   #c8d0da;border-radius:6px;width:110px'></label>
+          <div class='err' style='margin:12px 0'>
+            <label><input type='checkbox' name='confirmo_escrever'>
+            &nbsp;<b>Também ALTERAR os tributos no Omie</b> onde houver
+            divergência.</label>
+            <p class='sub' style='margin:6px 0 0'>Desmarcado, esta tela só
+            <b>confere</b> e grava o resultado na base — não toca no Omie. Marcado,
+            ela <b>escreve no sistema financeiro</b>: confira a lista de
+            divergências de uma rodada só de leitura antes.</p>
+          </div>
+          <input type='hidden' name='token' value='{t}'>
+          <button type='submit'>Rodar</button>
+        </form>
+        <p class='sub'>Roda em lotes e diz quantos títulos faltam. Conferir de novo
+        é seguro: consulta não altera nada.</p>
+      </div>
+      <p class='sub' style='text-align:center'>
+        <a href='{url_for('.faturamento')}?token={t}'>Base de Faturamento</a> &nbsp;·&nbsp;
         <a href='{url_for('.diag')}?token={t}'>Diagnóstico</a>
       </p>""")
 
@@ -1489,7 +1617,8 @@ def _pagina_pedir_card(token):
         <a href='{url_for('.declaracao')}?token={t}'>Conferir declaração</a> &nbsp;·&nbsp;
         <a href='{url_for('.manual')}?token={t}'>Nota emitida no portal</a> &nbsp;·&nbsp;
         <a href='{url_for('.planilha')}?token={t}'>Só a linha da planilha</a> &nbsp;·&nbsp;
-        <a href='{url_for('.faturamento')}?token={t}'>Base de Faturamento</a>
+        <a href='{url_for('.faturamento')}?token={t}'>Base de Faturamento</a> &nbsp;·&nbsp;
+        <a href='{url_for('.omie_tributos')}?token={t}'>Tributos no Omie</a>
       </p>""")
 
 

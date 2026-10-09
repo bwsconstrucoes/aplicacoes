@@ -109,11 +109,41 @@ nota que ninguém recebeu seria uma conferência que não aconteceu.
 | a aba `Base Faturamento`, o layout, a consolidação | **emissaonf** (feito) | é o emissor que produz o dado |
 | o emissor gravando na base | **emissaonf** (feito) | mesmo motivo |
 | a **tela de Faturamento** (listagem, gráficos, download, filtros) | **Análise de SPs** | é lá que o dono quer a tela, e é lá que vive a navegação |
-| mexer no OMIE (ajuste de tributo para a baixa fechar) | **a decidir** | hoje é Apps Script; ver §5 |
+| as 3 operações no OMIE (consultar, equalizar, atualizar tributos) | **emissaonf** (feito) | decisão dele em 09/10; tela `/emissao/omie` |
 
 A tela é trabalho do **chat do Análise de SPs**, e o que ela precisa saber está
 escrito aqui para atravessar: a aba, o nome de cada campo, e o que está vazio e
 por quê.
+
+---
+
+## 3-B. As três operações no Omie — como ficaram
+
+Tela **`/emissao/omie`**. Vale a pena guardar as três regras que a governam,
+porque errar qualquer uma mexe em dinheiro:
+
+**1. A nota manda, o título obedece.** A nota fiscal não se desfaz; o título do
+Omie é registro interno. Então o que pode ir para o Omie é a **soma dos tributos
+das notas válidas** daquele título — nunca o contrário.
+
+**2. Um título cobre VÁRIAS notas.** Para mostrar quanto do título cabe a cada
+nota, o valor é **rateado pelo valor bruto da nota, fechando ao centavo** — o
+residual vai para a de maior valor. É a regra do Apps Script
+(`ratearProporcional_`), portada e testada. Sem o fechamento exato, a conferência
+acusaria um centavo de diferença em toda nota, e alarme assim deixa de ser lido.
+
+**3. Só o que foi RETIDO entra na soma.** Somar o valor de um imposto não retido
+infla a retenção do título e a baixa sai errada — é o problema que ele descreve
+quando o líquido não fecha. Nota **cancelada ou substituída fica fora** de tudo.
+
+**Conferir é leitura; equalizar escreve.** A tela confere por padrão e grava o
+resultado na base. Para alterar o Omie é preciso **marcar a confirmação**, e a
+rodada de leitura antes mostra, tributo por tributo, o que vai mudar: gravar em
+sistema financeiro sem dizer o que vai mudar não se faz.
+
+**O que a atualização NÃO toca:** o `numero_documento_fiscal` do título. O número
+da nota ali é assunto da emissão (ela acumula `3001/3072`), e mandá-lo na
+equalização sobrescreveria esse acúmulo por tabela.
 
 ---
 
@@ -156,11 +186,15 @@ do git (conferido).
 
 ## 5. O que ficou em aberto, e precisa de decisão dele
 
-1. **Quem passa a falar com o Omie?** Hoje é o Apps Script, por menu, com a
-   credencial no código. Se a tela de Faturamento vai mostrar `omie_*` e as
-   divergências, alguém tem de buscar isso — e o natural é o Python, que já tem
-   `omie.py` e credencial em lugar certo. Isso **aposenta** os scripts, e é
-   decisão de negócio porque muda onde ele clica.
+1. ~~Quem passa a falar com o Omie?~~ **RESPONDIDO em 09/10/2026**, com estas
+   palavras: *"os scripts, eles apenas para consulta, equalização e atualização
+   da parte de tributos no Omie. Se as emissões estiverem todas corretas e
+   gerando títulos corretos, a operação se limitará ao que eu disse e não mais a
+   uma série de outras funções que foram criadas."* As três operações estão
+   implementadas em Python (`omie.py` + `omie_conferencia.py` + a tela
+   `/emissao/omie`), e a credencial vem da aba Credenciais — não mais de dentro
+   do código. **Falta só ele desligar os menus do Apps Script e trocar a chave
+   do Omie na origem** (§4).
 2. **A coluna de SCP na C. Diários.** O código já a lê **pelo nome do
    cabeçalho** (`SCP`, `CNPJ SCP`, `Empresa`, `CNPJ Empresa`). Ele disse que vai
    criar e que seria "provavelmente a coluna AN". Enquanto o cabeçalho não

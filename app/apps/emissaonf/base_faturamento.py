@@ -527,3 +527,45 @@ def consolidar(planilha, obras: dict, limite: int = LOTE_PADRAO) -> dict:
                  and _txt(linha[NB_NUMERO]) not in ja_tem) - gravadas
     return {"gravadas": gravadas, "ja_estavam": puladas, "faltam": max(faltam, 0),
             "total_na_base": len(ja_tem) + gravadas}
+
+
+def ler_linhas(ws) -> list[dict]:
+    """A base como lista de dicionários, cada um com `_linha` (a linha da aba).
+
+    Uma leitura só da aba inteira, e não uma por nota: o Google limita chamadas
+    por minuto, e é assim que a conferência do Omie consegue agrupar as notas
+    por título antes de falar com ele."""
+    vals = ws.get_all_values()
+    if not vals:
+        return []
+    cab = [c.strip() for c in vals[0]]
+    saida = []
+    for i, row in enumerate(vals[1:], start=2):
+        if not any(_txt(c) for c in row):
+            continue
+        d = {nome: (_txt(row[j]) if j < len(row) else "")
+             for j, nome in enumerate(cab) if nome in IDX}
+        d["_linha"] = i
+        saida.append(d)
+    return saida
+
+
+def gravar_lote(ws, registros: list[dict]) -> int:
+    """Regrava várias linhas de uma vez (uma chamada, não uma por nota).
+
+    Cada registro traz `_linha`. Sem o lote, conferir 300 notas no Omie faria 300
+    chamadas de escrita e estouraria a cota do Google no meio — e a base ficaria
+    metade conferida, metade não, sem ninguém saber onde parou.
+    """
+    pedidos = []
+    for d in registros:
+        linha = d.get("_linha")
+        if not linha:
+            continue
+        valores = montar_linha({k: v for k, v in d.items() if k in IDX})
+        pedidos.append({"range": f"A{linha}:{_col(len(CAB) - 1)}{linha}",
+                        "values": [valores]})
+    if not pedidos:
+        return 0
+    ws.batch_update(pedidos, value_input_option="USER_ENTERED")
+    return len(pedidos)

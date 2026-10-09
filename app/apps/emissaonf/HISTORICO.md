@@ -1448,6 +1448,55 @@ rede, e nesta sessão não há credencial do Google — a primeira rodada da tel
 primeira prova. Ela é segura por construção (não apaga nada, não emite nada, só
 lê e escreve na aba nova), mas o número de linhas que ela vai gravar é desconhecido.
 
+### As três operações no Omie vieram para o Python — 09/10/2026
+
+**O dono fechou a questão que estava aberta**, com estas palavras: *"os scripts,
+eles apenas para consulta, equalização e atualização da parte de tributos no
+Omie. Se as emissões estiverem todas corretas e gerando títulos corretos, a
+operação se limitará ao que eu disse e não mais a uma série de outras funções que
+foram criadas."*
+
+Ou seja: o escopo encolheu de uma dezena de menus para **três operações**. Elas
+estão em `omie.py` + `omie_conferencia.py`, na tela `/emissao/omie`, e a
+credencial vem da aba Credenciais — não mais de dentro do código, que era o
+problema de segurança do Apps Script.
+
+**As três regras que governam isso, e errar qualquer uma mexe em dinheiro:**
+
+1. **A nota manda, o título obedece.** Nota fiscal não se desfaz; título é
+   registro interno. O que vai para o Omie é a soma dos tributos das notas
+   válidas daquele título, nunca o contrário.
+2. **Um título cobre várias notas**, então o valor dele é rateado pelo valor
+   bruto de cada nota, **fechando ao centavo** — o residual vai para a maior. É a
+   regra do Apps Script (`ratearProporcional_`), a única parte dele que era regra
+   de negócio de verdade. Sem o fechamento exato, a conferência acusaria um
+   centavo de diferença em TODA nota, e alarme que sempre aparece deixa de ser
+   lido.
+3. **Só o que foi RETIDO entra na soma.** Somar imposto não retido infla a
+   retenção do título e a baixa sai errada — é exatamente o problema que ele
+   descreve quando o líquido não fecha. Cancelada e substituída ficam fora.
+
+**Conferir é leitura; equalizar escreve, e exige confirmação marcada.** A rodada
+de leitura mostra, tributo por tributo, o que mudaria. Gravar em sistema
+financeiro sem dizer o que vai mudar não se faz — é a mesma régua do "Confirmar e
+Emitir".
+
+**E uma armadilha que a atualização evita:** ela **não** manda o
+`numero_documento_fiscal`. O número da nota no título é assunto da emissão, que
+acumula `3001/3072`; mandá-lo na equalização sobrescreveria esse acúmulo por
+tabela, e ninguém ligaria uma coisa à outra depois.
+
+**Conferido:** 23 casos novos. O rateio fechando ao centavo em cinco divisões
+diferentes (inclusive 1 centavo entre dois, e 3 centavos entre sete); o residual
+indo para a maior; rateio sem peso sendo recusado em vez de dividir igual;
+imposto não retido fora da soma; cancelada e substituída fora; a leitura da
+resposta aninhada do Omie; o param sem `numero_documento_fiscal`; campo ausente
+não virando zero no param (apagar uma retenção legítima seria descoberto só na
+baixa); e a tela não escrevendo nada sem a caixa marcada. Suíte inteira: 5.342.
+
+**NÃO conferido:** nada disso falou com o Omie de verdade. A primeira rodada de
+**leitura** na tela é a primeira prova, e ela é segura — consulta não altera nada.
+
 ### ✅ A PRIMEIRA NOTA DO PADRÃO NACIONAL SAIU — 08/10/2026
 
 **Nota `2600000003283`**, obra IFSPSAOJOSE, medição 11, emitida em 08/10/2026,
