@@ -190,8 +190,13 @@ def decidir_lugar(*, situacao: str, detectada: Optional[dict], distancia: Option
     d = (geo.distancia_metros(latitude, longitude, alvo["latitude"], alvo["longitude"])
          if alvo is not detectada else distancia)
     if modo(alvo) == "BLOQUEAR":
+        # Centenas de quilômetros não é "fora da cerca", é localização ou coordenada
+        # errada (09/10/2026: o dono foi recusado a 16 mil km da obra de teste).
+        absurda = d is not None and d > 100_000
         return None, (f"fora da área da obra: {geo.distancia_legivel(d)} da obra {alvo['codigo']} "
-                      f"(raio {alvo['raio_metros']} m)"), None
+                      f"(raio {alvo['raio_metros']} m)"
+                      + (" — distância grande demais: confira a localização do celular e a coordenada "
+                         "da obra" if absurda else "")), None
     return alvo, None, None                  # ANALISAR: o motivo "fora da cerca" sai da avaliação
 
 

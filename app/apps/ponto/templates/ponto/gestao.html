@@ -389,7 +389,7 @@
     <small id="m-marcadas">nenhuma foto marcada como suspeita</small></div>
   <div class="barra-conferir">
     <div class="campo"><label for="m-nota">Observação (opcional)</label>
-      <textarea id="m-nota" rows="2" placeholder="ex.: conferi com o encarregado; a equipe nova ainda não tem foto de cadastro"></textarea></div>
+      <textarea id="m-nota" rows="2" placeholder="ex.: conferi com a administração da obra; a equipe nova ainda não tem foto de cadastro"></textarea></div>
     <button class="btn" id="m-confirmar" type="button">Confirmar conferência</button>
   </div>
   <div id="m-conferir-msg"></div>
@@ -498,8 +498,8 @@
 
 <div class="cartao" data-secao-card="validacao">
   <div class="cartao-cab"><h3>Quem valida cada pedido</h3></div>
-  <div class="cartao-dica" style="margin-top:0">Encarregado da obra = quem trata o ponto da obra
-    (só as obras dele). DP = quem aprova afastamento. “Encarregado e depois o DP” = os dois,
+  <div class="cartao-dica" style="margin-top:0">Administração da obra = quem trata o ponto da obra
+    (só as obras dele). DP = quem aprova afastamento. “Administração da obra e depois o DP” = os dois,
     nessa ordem. Ao trocar, o que já está na fila passa para quem valida agora.</div>
   <div id="c-quem-valida">carregando…</div>
 </div>
@@ -1263,7 +1263,7 @@ async function pedirAjuste(dia) {
        opcoes: [{valor: "", rotulo: `A obra principal da pessoa${p.obra ? ` (${escapar(p.obra)})` : ""}`},
                 ...obras.map(o => ({valor: String(o.id), rotulo: escapar(rotuloObra(o))}))]},
       {nome: "descricao", rotulo: "O que aconteceu", tipo: "textarea", obrigatorio: true, largura: 3,
-       exemplo: "ex.: o celular descarregou na volta do almoço; o encarregado confirma"},
+       exemplo: "ex.: o celular descarregou na volta do almoço; a administração da obra confirma"},
     ],
     textoOk: "Enviar pedido",
   });
@@ -3749,6 +3749,7 @@ function desenharCercas() {
       do ponto para escolher bloquear ou analisar; até lá, fora da cerca vai para conferência.</div>`}
     <table><thead><tr><th class="sem-ordem">Obra</th><th class="sem-ordem">Coordenada</th>
       <th class="sem-ordem">Raio (metros)</th><th class="sem-ordem">Fora da cerca</th>
+      <th class="sem-ordem">Batidas por dia</th>
       <th class="sem-ordem direita">Barradas (7 dias)</th><th class="sem-ordem"></th></tr></thead><tbody>
     ${obras.map(o => `<tr data-cerca-obra="${o.id}">
       <td><b>${escapar(rotuloObra(o))}</b></td>
@@ -3757,6 +3758,11 @@ function desenharCercas() {
            value="${escapar(o.raio_metros ?? "")}" style="${campo}; width:96px"></td>
       <td><select data-cerca-modo data-sem-busca style="${campo}" ${modo ? "" : "disabled"}>
         ${MODOS_CERCA.map(m => `<option value="${m.valor}" ${m.valor === o.fora_da_cerca ? "selected" : ""}>${m.rotulo}</option>`).join("")}
+        </select></td>
+      <td><select data-cerca-batidas data-sem-busca style="${campo}" ${CERCAS.batidas_disponivel ? "" : "disabled"}
+            title="Só entrada e saída: o intervalo é o da escala, sem batida (pré-assinalado, por convenção)">
+        <option value="4" ${o.so_entrada_e_saida ? "" : "selected"}>4 (com o intervalo)</option>
+        <option value="2" ${o.so_entrada_e_saida ? "selected" : ""}>2 (só entrada e saída)</option>
         </select></td>
       <td class="dados direita" ${o.barradas_7_dias ? `style="color:var(--vermelho); font-weight:700"` : ""}>${o.barradas_7_dias || "—"}</td>
       <td><button class="btn secundario" type="button" data-cerca-gravar>Gravar</button></td></tr>`).join("")}
@@ -3775,16 +3781,19 @@ async function gravarCerca(linha, botao) {
   const corpo = {raio_metros: raio ? Number(raio) : null};
   // Sem a atualização do ponto o servidor recusa a escolha do modo: nem manda.
   if (CERCAS.modo_disponivel) corpo.fora_da_cerca = linha.querySelector("[data-cerca-modo]").value;
+  if (CERCAS.batidas_disponivel) corpo.so_entrada_e_saida = linha.querySelector("[data-cerca-batidas]").value === "2";
   botao.disabled = true;
   try {
     const {obra: c} = await postar(`/erp/api/ponto/cercas/${id}`, corpo);
     const i = CERCAS.obras.findIndex(o => o.id === id);
     // A resposta não traz a coordenada conferida nem as barradas: ficam as da lista.
-    if (i >= 0 && c) CERCAS.obras[i] = {...CERCAS.obras[i], raio_metros: c.raio_metros, fora_da_cerca: c.fora_da_cerca};
+    if (i >= 0 && c) CERCAS.obras[i] = {...CERCAS.obras[i], raio_metros: c.raio_metros, fora_da_cerca: c.fora_da_cerca,
+                                         so_entrada_e_saida: c.so_entrada_e_saida};
     desenharCercas();
     const o = (i >= 0 ? CERCAS.obras[i] : c) || {codigo: String(id)};
     aviso("c-cercas-msg", `${escapar(rotuloObra(o))}: raio de ${escapar(o.raio_metros ?? "—")} m; fora da cerca,
-      ${o.fora_da_cerca === "BLOQUEAR" ? "a batida é bloqueada" : "a batida vai para conferência"}.`, "ok");
+      ${o.fora_da_cerca === "BLOQUEAR" ? "a batida é bloqueada" : "a batida vai para conferência"};
+      ${o.so_entrada_e_saida ? "só entrada e saída (o intervalo é o da escala)" : "4 batidas por dia"}.`, "ok");
   } catch (e) { botao.disabled = false; falhou(e, "c-cercas-msg"); }
 }
 
@@ -3878,7 +3887,7 @@ async function carregarRosto(mensagem, tipo) {
              placeholder="ex.: 11:00-13:30, 22:00-05:00"></div>
     <div class="campo" style="margin-top:10px"><label>Obras que não conferem</label>
       <div style="max-height:160px; overflow:auto; border:1px solid var(--borda); border-radius:8px; padding:6px 10px">
-        ${(d.obras || []).map(o => `<label style="display:block"><input type="checkbox" data-ros-obra="${o.id}" ${(c.obras_excluidas || []).includes(o.id) ? "checked" : ""}> ${escapar(o.codigo)} — ${escapar(o.nome)}</label>`).join("")
+        ${(d.obras || []).map(o => `<label style="display:block"><input type="checkbox" data-ros-obra="${o.id}" ${(c.obras_excluidas || []).includes(o.id) ? "checked" : ""}> ${escapar(rotuloObra(o))}</label>`).join("")
           || `<span class="suave">nenhuma obra ativa</span>`}</div></div>
     <div style="margin-top:10px"><button class="btn" type="button" id="ros-salvar">Salvar a regra</button></div>
     <div id="c-rosto-msg" style="margin-top:8px"></div>`;
