@@ -1404,8 +1404,21 @@ virar tabela quando o ERP assumir.
 
 **Decisão 2 — o emissor grava nos DOIS lugares, de propósito.** Pedido dele:
 *"momentaneamente deixa o emissor atualizando essa daqui conforme ele já vem
-fazendo"*. Desligar a "Notas BWS" é uma linha no `concluir.py`, e só depois de a
-base ser conferida contra a planilha.
+fazendo"*. E reforçado DEPOIS de a base nova ser publicada, no mesmo dia:
+
+> *"Só lembrando que, por enquanto, a nota do BWS a gente vai continuar usando
+> normal. Só depois que estiver consolidado essa nova etapa aí, a gente vai
+> deixar de usar ela."*
+
+Por isso a gravação duplicada **virou trava de teste**, e não é resíduo de
+transição: há um caso que exige que `notas_bws.gravar_linha` continue no
+`concluir.py`, que a "Notas BWS" venha ANTES da base nova (a trava
+anti-duplicação da conclusão olha a planilha antiga), e que as duas falhem
+separado. Existe para que nenhuma sessão futura — vendo a base nova funcionando —
+conclua que o passo 1 virou redundante e o apague "limpando o código".
+
+**Desligar é decisão DELE**, e só depois de a base nova ser conferida contra a
+antiga.
 
 **Decisão 3 — cada tributo aparece DUAS vezes: o da nota e o do Omie.** Guardar
 um só esconderia exatamente o que ele confere à mão. Daí saem dois campos
