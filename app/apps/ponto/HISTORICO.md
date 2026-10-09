@@ -41,6 +41,11 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1j. **PUBLICADO em 09/10/2026** (com o "pode" do dono): os seis ajustes de
+   09/10 e a correção do fuso na apuração (seção de 09/10), com a migração
+   **009**. Confirmar com o dono: apertou "Aplicar atualizações do ponto"?
+   Marcou em Cerca das obras as obras de só entrada e saída? Conferiu a
+   coordenada da obra de teste (a recusa a 16 mil km)?
 1i. **PUBLICADO em 08/10/2026** (com o "pode" do dono, `main` em `29bd1f0`): as
    correções do cadastro de aparelhos (seção de 07/10) e a TELA INICIAL com a
    consulta pela cerca, o administrativo de obra, os ícones ✏️/🗓️ e a regra
