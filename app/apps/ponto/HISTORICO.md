@@ -41,6 +41,11 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1n. **PUBLICADO em 10/10/2026, segunda leva** (com o "pode" do dono, sem
+   migração nova): no ponto da obra todo mundo entra primeiro (CPF e PIN), a
+   consulta não depende da localização, a batida não desloga e sair dela pede o
+   PIN. Confirmar com o dono: o PIN para sair da batida ficou bom, ou prefere
+   sem? O responsável de cada ponto da obra já tem PIN criado?
 1m. **PUBLICADO em 10/10/2026** (com o "pode" do dono, sem migração nova): o
    ponto da obra como aparelho (consulta pelo CPF sem PIN, QR por WhatsApp na
    tela inicial, sem caixa de obra, opções que não mudam com quem entrou) e o
