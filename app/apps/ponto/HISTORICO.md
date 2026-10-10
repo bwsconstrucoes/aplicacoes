@@ -41,7 +41,8 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
-1p. **NO RAMO, ainda não publicado (10/10/2026, noite, segunda)**: no ponto da
+1p. **PUBLICADO em 10/10/2026, noite, segunda leva** (com o "pode" do dono, `main` em
+   `d6308fb`): no ponto da
    obra, o "Bater ponto" da tela inicial fica desligado fora da obra (com a
    distância e "toque para procurar de novo"); a linha do alto diz onde o
    aparelho está agora e o papel de quem entrou; "‹ Início" na batida volta sem
