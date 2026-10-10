@@ -41,10 +41,25 @@ OBRAS = [["Código", "Código Primário", "Cliente", "Contrato", "Empresa", "SCP
          ["IFS2", "IFSPSAOJOSE", "IF SERTÃO", "CT-02", "BWS", "SCP IF", "São José"]]
 
 
-# A "Protocolos": chave OBRA-MEDIÇÃO e o período, achado pelo NOME da coluna.
-PROTOCOLOS = [["Chave", "", "Card", "Integração Omie",
-               "Período de Início da Medição", "Período de Término da Medição"],
-              ["IFSPSAOJOSE-11", "", "123", "INT-1", "01/09/2026", "30/09/2026"]]
+# A "Protocolos" da "Recebimentos e Faturamento" (10/10/2026), com as colunas na
+# ordem real (A a W) — achadas pelo NOME, não pela posição.
+CAB_PROTOCOLOS = ["Data do Protocolo", "Órgão Contratante", "Código da Obra", "Contratante",
+                  "CNPJ Contratante", "Contrato", "Tipo de Documento", "Período Inicial",
+                  "Período Final", "Número da Medição", "Valor da Medição", "Nº do Protocolo",
+                  "Descrição", "Responsável", "Concatenar", "ID Card", "Concatenar Data",
+                  "Data de Envio", "Data de Aprovação", "Valor Aprovado", "Data da Nota",
+                  "Nº do Empenho", "Código Integração Omie"]
+
+
+def protocolo(obra, medicao, ini="", fim="", card="", omie=""):
+    linha = [""] * len(CAB_PROTOCOLOS)
+    linha[2], linha[9], linha[7], linha[8] = obra, medicao, ini, fim
+    linha[15], linha[22], linha[14] = card, omie, f"{obra}-{medicao}"
+    return linha
+
+
+PROTOCOLOS = [CAB_PROTOCOLOS,
+              protocolo("IFSPSAOJOSE", "11", "01/09/2026", "30/09/2026", "1234567", "INT-PROT-11")]
 
 
 class Aba:
@@ -70,15 +85,19 @@ def carregado(app, monkeypatch):
              nota("2600000003283", "3283", "08/10/2026", "IFSPSAOJOSE", "10000,00")]
     notas[1][CAB.index("medicao_numero")] = "11"
     abas = {(faturamento.PLANILHA_NOTAS, faturamento.ABA_BASE): Aba(notas),
-            (faturamento.PLANILHA_NOTAS, "Protocolos"): Aba(PROTOCOLOS),
+            (faturamento.PLANILHA_PROTOCOLOS, "Protocolos"): Aba(PROTOCOLOS),
             (faturamento.PLANILHA_OBRAS, "Centro de Custo"): Aba(OBRAS)}
     monkeypatch.setattr(sincronizacao, "_aba", lambda p, n: abas[(p, n)])
     monkeypatch.setattr(tarefas, "disparar", lambda *a, **k: {"ok": False})
     r = faturamento.carregar()
-    assert r["periodos_da_protocolos"] == 1, r
+    assert r["da_protocolos"]["medicao_periodo_ini"] == 1, r
+    assert r["da_protocolos"]["omie_codigo_integracao"] == 1, r
     assert (r["notas"], r["obras"], r["repetidas"], r["mesmo_numero"]) == (4, 4, 1, 0), r
-    assert r["avisos"] == ["1 linha(s) da base são a mesma nota escrita duas vezes "
-                           "— contadas uma vez só."], r
+    assert ("1 linha(s) da base são a mesma nota escrita duas vezes "
+            "— contadas uma vez só.") in r["avisos"], r
+    # o recado diz qual coluna virou o quê — para conferir com a planilha
+    assert any("obra=Código da Obra" in a and "omie=Código Integração Omie" in a
+               and "card=ID Card" in a for a in r["avisos"]), r["avisos"]
     return app
 
 
@@ -333,3 +352,55 @@ def test_RANKING_dobra_o_resto_em_outros(carregado, monkeypatch):
     r = faturamento._ranking(tudo, "n.nota_sequencial", "bruto")
     assert len(r) == 2 and r[-1]["outros"] and r[-1]["nome"] == "Outros (3)"
     assert sum(i["bruto"] for i in r) == Decimal("18000.00"), "cortar não some com dinheiro"
+
+
+def test_PROTOCOLOS_completa_a_copia_e_a_base_so_onde_esta_vazio(carregado):
+    """10/10/2026: *"a planilha de protocolo tem o período e o código de
+    integração do título Omie e o card do Pipefy (…) essa informação deve ser
+    resgatada para a base nova"*. Na cópia da tela, na carga; na base, só pelo
+    botão — e nunca por cima do que já está lá."""
+    from app.apps.analisesps import faturamento
+    n = faturamento.uma("2600000003283")
+    assert n["omie_codigo"] == "INT-PROT-11" and n["link_card"].endswith("/1234567")
+    # a base: uma linha com a medição e o card já preenchido à mão
+    bfat = faturamento._emissor()[0]
+
+    class AbaBase:
+        def __init__(self):
+            d = dict.fromkeys(bfat.CAB, "")
+            d.update(nota_numero="3283", obra_codigo="ifspsaojose", medicao_numero="11",
+                     card_id="999")
+            outra = dict.fromkeys(bfat.CAB, "")
+            outra.update(nota_numero="3284", obra_codigo="CREPEEXU", medicao_numero="2")
+            self.valores = [list(bfat.CAB), [d[c] for c in bfat.CAB], [outra[c] for c in bfat.CAB]]
+            self.pedidos = []
+
+        def get_all_values(self):
+            return self.valores
+
+        def batch_update(self, pedidos, value_input_option=None):
+            self.pedidos += pedidos
+
+    aba = AbaBase()
+
+    class Planilha:
+        def worksheet(self, nome):
+            return aba
+    r = faturamento.completar_base(planilha=Planilha())
+    escritas = {p["range"]: p["values"][0][0] for p in aba.pedidos}
+    col = lambda campo: bfat._col(bfat.IDX[campo])  # noqa: E731
+    assert escritas[f"{col('omie_codigo_integracao')}2"] == "INT-PROT-11"
+    assert escritas[f"{col('medicao_periodo_ini')}2"] == "01/09/2026"
+    assert f"{col('card_id')}2" not in escritas, "o card que já estava não é trocado"
+    assert r["notas"] == 1 and r["sem_protocolo"] == 1
+
+
+def test_a_NOTA_abre_pelo_numero_oficial_ou_pelo_sequencial(carregado):
+    """*"Clico na nota e diz nota não encontrada."*"""
+    from app.apps.analisesps import faturamento
+    assert faturamento.uma("3283")["numero"] == "2600000003283", "pelo sequencial"
+    with carregado.test_client() as c:
+        c.post("/analisesps/entrar", data={"senha": SENHA_MESTRE_OPERADOR})
+        assert c.get("/analisesps/faturamento/nota/3283").status_code == 200
+        assert c.get("/analisesps/faturamento/nota/12%2F2019").status_code == 404, \
+            "número com barra chega à rota (antes dava a página de erro geral)"

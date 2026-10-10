@@ -506,6 +506,7 @@ TELA_DA_ROTA = {
     "analisesps.faturamento_nota": ("faturamento",),
     "analisesps.faturamento_nota_omie": ("faturamento",),
     "analisesps.faturamento_omie": ("faturamento",),
+    "analisesps.faturamento_completar": ("faturamento",),
     "analisesps.calendario": ("calendario",),
     "analisesps.calendario_dia": ("calendario",),
     "analisesps.auditoria": ("auditoria",),

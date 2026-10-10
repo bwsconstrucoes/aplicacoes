@@ -23,6 +23,14 @@
     {% else %}As notas antigas ainda não foram importadas.{% endif %}
   </p>
   <p>
+    {% if fat.completando %}<b>Completando a base com a aba Protocolos agora…</b>
+    {% elif fat.completar_na_fila %}<b>Completar a base está na fila</b> e começa sozinho.
+    {% elif fat.completar and fat.completar.mensagem %}Última vez que a base foi completada
+      pelos Protocolos ({{ fat.completar.fim|momento_br }}): {{ fat.completar.mensagem }}
+    {% else %}A base ainda não foi completada com a aba Protocolos (período da medição,
+      card e código do título no Omie das notas antigas).{% endif %}
+  </p>
+  <p>
     {% if fat.conferindo %}<b>Conferindo os títulos no Omie agora…</b>
     {% elif fat.conferencia_na_fila %}<b>A conferência no Omie está na fila</b> e começa sozinha.
     {% elif fat.conferencia and fat.conferencia.mensagem %}Última conferência no Omie
@@ -44,6 +52,16 @@
         <button class="btn secundario" type="submit" {{ 'disabled' if fat.rodando }}
                 title="Leva para a Base Faturamento as notas antigas da Notas BWS (consolidação do emissor)">
           Importar notas antigas</button>
+      </form>
+    {% endif %}
+    {% if fat.e_mestre and not fat.completar_na_fila %}
+      {# 10/10/2026: período, card e código do Omie das notas antigas, da aba
+         Protocolos da "Recebimentos e Faturamento". Só célula vazia. #}
+      <form method="post" action="{{ url_for('analisesps.faturamento_completar') }}"
+            onsubmit="return confirm('Completar a Base Faturamento com a aba Protocolos?\n\nPreenche o período da medição, o card e o código do título no Omie das notas que ainda não têm. Só escreve onde está vazio — nada que já está lá é trocado.')">
+        <button class="btn secundario" type="submit" {{ 'disabled' if fat.rodando or fat.completando }}
+                title="Período da medição, card e código do Omie das notas antigas, da aba Protocolos">
+          Completar a base pelos Protocolos</button>
       </form>
     {% endif %}
     {% if pode_operar and not fat.conferencia_na_fila %}

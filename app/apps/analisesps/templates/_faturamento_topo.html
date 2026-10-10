@@ -15,7 +15,9 @@
 <p class="fat-carga-linha cartao-dica">
   {% if rodando %}<b>Trazendo as notas da planilha agora…</b> a tela se atualiza sozinha.
   {% elif na_fila %}A atualização das notas está na fila e começa sozinha.
-  {% elif carregado_em %}Notas de {{ carregado_em|momento_br }} — {{ total_no_banco }} nota(s) no total.
+  {% elif carregado_em %}Notas de {{ carregado_em|momento_br }} — {{ total_no_banco }} nota(s) no total{% if sem_data %},
+    <b title="Sem data de emissão legível na base, a nota fica fora de todo filtro por data — inclusive o padrão de doze meses">{{ sem_data }} sem data de emissão</b>
+    (só aparecem com as datas da barra apagadas){% endif %}.
   {% else %}As notas ainda não foram trazidas da planilha.{% endif %}
   {% if conferindo %} · conferindo os títulos no Omie…{% endif %}
   <a href="{{ url_for('analisesps.configuracoes', aba='faturamento') }}">importar, atualizar e Omie →</a>

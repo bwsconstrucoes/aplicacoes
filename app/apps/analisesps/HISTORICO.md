@@ -12228,6 +12228,47 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 221 — Faturamento: Protocolos de verdade (período, card, código do Omie), nota que abre com um clique (10/10/2026)
+
+- *"Não está aparecendo todas as notas, e o título Omie não sendo localizado
+  (…) essa informação deve ser resgatada para a base nova, junto com o
+  período de medição. Clico na nota e não abre o modal, ou diz nota não
+  encontrada. A planilha de protocolo é esta [Recebimentos e Faturamento,
+  `18DQhVDD…`], aba Protocolos (…) para as futuras, o código de integração pode
+  entrar pelo emissor (…) o card ID e o período também, tudo isso tem no card."*
+- **A causa do Omie "não localizado":** as notas antigas não tinham o código do
+  título na base. A consolidação do emissor procura a "Protocolos" DENTRO da
+  planilha das notas, e a leva 217 também — a aba de verdade é a da
+  "Recebimentos e Faturamento". Lida em 10/10 pelo Drive (cabeçalhos
+  truncados): A..W, com C "Código…" (obra), H/I "Períod…" (início/fim), J
+  "Número…" (medição), O "Concat…", P "ID Card", W "Código…" (integração).
+- **O que mudou:**
+  - `faturamento.ler_protocolos` lê essa aba, com as colunas achadas PELO NOME
+    (`colunas_dos_protocolos`), e o recado da carga diz qual coluna virou o quê
+    ("obra=…, medicao=…, ini=…, fim=…, card=…, omie=…") — para conferir. A
+    ligação com a nota é OBRA-MEDIÇÃO (e também a coluna "Concat…", se trouxer
+    "OBRA-MED").
+  - **Na carga** (só leitura): a cópia da tela ganha período, card e código do
+    Omie das notas que não têm. A conferência no Omie da ficha já funciona com
+    isso, e grava o código na base junto.
+  - **Botão "Completar a base pelos Protocolos"** (Configurações › Faturamento,
+    só mestre): escreve na "Base Faturamento" só o que está VAZIO — período,
+    card, link do card e código do Omie. Nada é trocado. Tarefa
+    `faturamento_completar`, que termina trazendo as notas de novo.
+- **Notas novas:** o emissor JÁ grava os três a partir do card desde 09/10
+  (`emissaonf/concluir.py`, passo [11]: período de início e término, card e
+  "Código Integração Omie Título à Receber"). Nada a mudar lá.
+- **"Não aparece tudo":** além dos doze meses padrão, nota com data de emissão
+  ilegível some de todo filtro por data. Agora a linha do alto diz quantas são
+  ("N sem data de emissão") e a carga também.
+- **A nota que não abria:** era duplo clique — agora um clique abre. E a ficha
+  procura também pelo número oficial e pelo sequencial quando a chave não acha;
+  a rota aceita número com barra.
+- Não conferido com a planilha de verdade: os nomes das colunas são lidos na
+  carga — o recado mostra o mapeamento; se alguma coluna vier errada, é só
+  ajustar `colunas_dos_protocolos`. O robô precisa ter acesso à planilha
+  "Recebimentos e Faturamento"; sem acesso, o recado diz.
+
 #### Leva 220 — Solicitações e Lote no celular (10/10/2026)
 
 - *"Qual a compatibilidade com o telefone? Solicitações e o lote, para

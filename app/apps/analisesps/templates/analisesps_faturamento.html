@@ -62,7 +62,7 @@
 <div class="cartao fat-planilha-cartao">
   <div class="cartao-cab">
     <h3>Notas <small>{{ resumo.quantidade }} · R$ {{ resumo.bruto|moeda }}</small></h3>
-    <small>duplo clique numa nota abre a ficha dela · tributo "—" = ainda não informado</small>
+    <small>clique numa nota para abrir a ficha dela · tributo "—" = ainda não informado</small>
   </div>
   {# As colunas: cada pessoa escolhe as suas (09/10/2026), como em Solicitações. #}
   {% with tabela_colunas = "faturamento" %}{% include "analisesps_colunas.html" %}{% endwith %}
@@ -81,7 +81,7 @@
         <tbody>
           {% for n in notas %}
             <tr class="fat-linha" data-nota="{{ url_for('analisesps.faturamento_nota', numero=n.chave) }}"
-                title="Duplo clique abre a nota {{ n.sequencial or n.numero }}">
+                title="Clique para abrir a nota {{ n.sequencial or n.numero }}">
               <td class="fat-nota"><b>{{ n.sequencial or n.numero }}</b>
                 {#- A SITUAÇÃO como etiqueta ao lado do número (10/10/2026). -#}
                 {% if n.status != 'valida' %}<span class="selo cancelado">{{ n.status }}</span>
@@ -146,7 +146,9 @@
       alert("Não consegui falar com o servidor. Tente de novo.");
     }
   });
-  document.querySelectorAll("tr.fat-linha[data-nota]").forEach(tr => tr.addEventListener("dblclick", async e => {
+  // UM CLIQUE abre a nota (10/10/2026 — *"clico em cima da nota e não abre o
+  // modal"*: era duplo clique). Link e ícone continuam sendo deles.
+  document.querySelectorAll("tr.fat-linha[data-nota]").forEach(tr => tr.addEventListener("click", async e => {
     if (e.target.closest("a, button, input")) return;
     corpo.innerHTML = '<p class="cartao-dica">Carregando…</p>';
     dlg.showModal();

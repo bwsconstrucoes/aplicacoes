@@ -2332,11 +2332,15 @@ def _estado_do_faturamento() -> dict:
             "na_fila": tarefas._pedido_pendente("faturamento"),
             "e_mestre": auth.e_mestre(),
             "total_no_banco": faturamento.total_no_banco(),
+            "sem_data": faturamento.sem_data_no_banco(),
             "importacao_na_fila": tarefas._pedido_pendente("faturamento_antigas"),
             "conferindo": tipo == "faturamento_omie",
             "conferencia": tarefas.ultima_do_tipo("faturamento_omie"),
             "conferencia_na_fila": tarefas._pedido_pendente("faturamento_omie"),
             "importacao": tarefas.ultima_do_tipo("faturamento_antigas"),
+            "completar": tarefas.ultima_do_tipo("faturamento_completar"),
+            "completar_na_fila": tarefas._pedido_pendente("faturamento_completar"),
+            "completando": tipo == "faturamento_completar",
             "outra_tarefa": ((andamento.get("detalhe") or {}).get("etapa")
                              if andamento.get("rodando") and not rodando else ""),
             "ultima": tarefas.ultima_do_tipo("faturamento")}
@@ -2512,6 +2516,27 @@ def faturamento_importar():
     return redirect(url_for("analisesps.configuracoes", aba="faturamento", aviso=aviso))
 
 
+@bp.route("/faturamento/completar", methods=["POST"])
+@exige_operador
+def faturamento_completar():
+    """Completa a Base Faturamento com a aba Protocolos: período da medição,
+    card e código do título no Omie (10/10/2026). Só o MESTRE — escreve na
+    planilha das notas (só célula vazia; nada é trocado)."""
+    from . import tarefas
+    if not auth.e_mestre():
+        return auth._sem_permissao()
+    r = tarefas.disparar("faturamento_completar", disparo=auth.nome_atual() or "completar")
+    if r.get("ok"):
+        aviso = ("Completando a base com a aba Protocolos — leva alguns minutos; o "
+                 "resultado aparece aqui, e a tela de notas se atualiza no fim.")
+    else:
+        tarefas.pedir_depois("faturamento_completar")
+        aviso = ("Outra tarefa de fundo está rodando agora (só roda uma por vez). "
+                 "Completar a base ficou na fila e começa sozinho assim que ela "
+                 "terminar — pode deixar.")
+    return redirect(url_for("analisesps.configuracoes", aba="faturamento", aviso=aviso))
+
+
 @bp.route("/faturamento/omie", methods=["POST"])
 @exige_operador
 def faturamento_omie():
@@ -2532,7 +2557,7 @@ def faturamento_omie():
     return redirect(url_for("analisesps.configuracoes", aba="faturamento", aviso=aviso))
 
 
-@bp.route("/faturamento/nota/<numero>/omie", methods=["POST"])
+@bp.route("/faturamento/nota/<path:numero>/omie", methods=["POST"])
 @exige_operador
 def faturamento_nota_omie(numero):
     """Confere AGORA, no Omie, o título de uma nota — o botão da ficha. Devolve
@@ -2550,7 +2575,7 @@ def faturamento_nota_omie(numero):
                            conferencia=resultado, pode_operar=auth.pode_operar())
 
 
-@bp.route("/faturamento/nota/<numero>")
+@bp.route("/faturamento/nota/<path:numero>")
 @exige_consulta
 def faturamento_nota(numero):
     """A ficha de uma nota, para o modal da tela."""

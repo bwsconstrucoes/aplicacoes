@@ -101,7 +101,7 @@ def base(app, monkeypatch):
                              valor_total="500.00")]
     aba = AbaBase(valores)
     abas = {(faturamento.PLANILHA_NOTAS, faturamento.ABA_BASE): aba,
-            (faturamento.PLANILHA_NOTAS, "Protocolos"): Aba(PROTOCOLOS),
+            (faturamento.PLANILHA_PROTOCOLOS, "Protocolos"): Aba(PROTOCOLOS),
             (faturamento.PLANILHA_OBRAS, "Centro de Custo"): Aba(OBRAS)}
     monkeypatch.setattr(sincronizacao, "_aba", lambda p, n: abas[(p, n)])
     monkeypatch.setattr(tarefas, "disparar", lambda *a, **k: {"ok": False})
