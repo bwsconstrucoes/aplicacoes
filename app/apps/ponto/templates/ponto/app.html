@@ -1352,46 +1352,16 @@ async function trocarCamera() {
   await ligarCamera();
 }
 $("t-trocar-camera").addEventListener("click", trocarCamera);
-// Sair da batida pede o PIN de quem entrou (10/10/2026): a batida fica na frente de
-// todo mundo, e o início dali abre a consulta do ponto das pessoas. Sem ninguém
-// logado (o aparelho reiniciou na batida), vai para a entrada com CPF e PIN.
+// "‹ Início" só volta para a tela anterior (10/10/2026: "pede o PIN para sair da
+// batida, não tem sentido, era só para voltar"). Sem ninguém logado (o aparelho
+// reiniciou na batida), vai para a entrada com CPF e PIN.
 $("t-inicio").addEventListener("click", async () => {
   if (!EU) { try { EU = await chamar("/ponto/app/api/eu"); } catch (e) { EU = null; } }
-  if (EU) {
-    const ok = await confirmarPin();
-    if (!ok) return;
-  }
   pararTablet(); TB.pedido = false;
   try { localStorage.setItem("ponto_tela", "menu"); } catch (e) {}
   if (EU) { vigiarVoltaAoInicio(); return abrirMenu(); }
   mostrar("entrar");
 });
-function confirmarPin() {
-  return new Promise(resolve => {
-    $("dlg-corpo").innerHTML = `<h2 style="margin:0 0 6px">Sair da batida</h2>
-      <p class="pequeno">O PIN de ${esc(EU.primeiro_nome)}, que entrou neste aparelho.</p>
-      <label for="cp-pin">PIN (6 números)</label><input id="cp-pin" type="password" inputmode="numeric" maxlength="6" autocomplete="off">
-      <div id="cp-msg" class="aviso erro oculto"></div>
-      <button class="btn" type="button" id="cp-ok">Sair da batida</button>
-      <button class="link" type="button" id="cp-outro">Não é ${esc(EU.primeiro_nome)}? Entrar com outro CPF</button>`;
-    let feito = false;
-    const fim = v => { feito = true; $("dlg").close(); resolve(v); };
-    $("cp-ok").onclick = async () => {
-      try { await chamar("/ponto/app/api/confirmar-pin", {pin: soDigitos($("cp-pin").value)}); fim(true); }
-      catch (e) { $("cp-msg").textContent = e.message; $("cp-msg").classList.remove("oculto"); }
-    };
-    $("cp-outro").onclick = async () => {
-      try { await chamar("/ponto/app/api/sair", {}); } catch (e) {}
-      EU = null; feito = true; $("dlg").close(); pararTablet();
-      try { localStorage.setItem("ponto_tela", "menu"); } catch (e) {}
-      resolve(false); mostrar("entrar");
-    };
-    $("dlg").addEventListener("close", () => { if (!feito) resolve(false); }, {once: true});
-    $("dlg").showModal();
-    setTimeout(() => $("cp-pin").focus(), 50);
-  });
-}
-
 // A obra pela localização (07/10/2026: "no modo obra ele não está detectando a
 // obra automaticamente"; 09/10/2026: "o celular ponto de obra (…) só é para bater
 // com a geolocalização"). Dentro da cerca de uma obra do aparelho, a obra é ela,
@@ -1399,27 +1369,37 @@ function confirmarPin() {
 // escolha que sobra é entre obras do aparelho SEM coordenada cadastrada (não há
 // como detectar — a batida vai para conferência). Quem decide de verdade é o
 // servidor, pela cerca, em cada batida.
+// Onde o ponto da obra está AGORA, entre as obras dele: dentro de qual (a mais
+// perto, se as cercas se encostam), ou fora — com a obra mais perto e a distância.
+// Obra sem coordenada não é detectada. A batida e a tela inicial usam a mesma
+// conta (10/10/2026: "não era nem para entrar nessa tela de batida").
+function lugarDoAparelho(l) {
+  const obras = ((APARELHO && APARELHO.obras) || []).filter(o => o.latitude !== null && o.longitude !== null);
+  if (!l) return {obra: null, curto: "📍 sem localização",
+                  texto: "📍 Sem localização — ligue a localização do aparelho: o ponto da obra só bate com ela."};
+  const perto = obras.map(o => ({o, d: distancia(l, o)})).sort((a, b) => a.d - b.d);
+  const dentro = perto.find(x => x.d <= (x.o.raio_metros || 200) + Math.min(l.precisao || 0, 150));
+  if (dentro) return {obra: dentro.o, curto: `📍 dentro da obra ${rotuloObra(dentro.o)}`,
+                      texto: `📍 Dentro da obra ${rotuloObra(dentro.o)}`};
+  if (!perto.length) return {obra: null, curto: "📍 obra sem coordenada",
+                             texto: "📍 Nenhuma obra deste aparelho tem coordenada cadastrada — o ponto não bate aqui."};
+  const m = perto[0].d, km = m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1).replace(".", ",")} km`;
+  return {obra: null, curto: `📍 fora da obra (a ${km} de ${rotuloObra(perto[0].o)})`,
+          texto: `📍 Fora da área da obra: a ${km} de ${rotuloObra(perto[0].o)} — o ponto não é registrado aqui.`};
+}
 function detectarObraDoTablet() {
   const info = $("t-obra-info"), nome = $("t-obra-nome"), sel = $("t-obra");
-  const obras = (APARELHO && APARELHO.obras) || [];
   const marcar = (texto, erro) => { info.textContent = texto; info.classList.toggle("erro", !!erro); };
   sel.classList.add("oculto");
-  if (!TB.local) {
-    TB.obraOk = null; nome.textContent = "Sem localização";
-    return marcar("📍 Ligue a localização do aparelho: o ponto da obra só bate com ela.", true);
-  }
-  const dentro = obras.filter(o => o.latitude !== null && o.longitude !== null)
-    .map(o => ({o, d: distancia(TB.local, o)}))
-    .filter(x => x.d <= (x.o.raio_metros || 200) + Math.min(TB.local.precisao || 0, 150))
-    .sort((a, b) => a.d - b.d);
-  if (dentro.length) {
-    TB.obraOk = dentro[0].o.codigo; sel.value = TB.obraOk; nome.textContent = rotuloObra(dentro[0].o);
+  const lugar = lugarDoAparelho(TB.local);
+  if (lugar.obra) {
+    TB.obraOk = lugar.obra.codigo; sel.value = TB.obraOk; nome.textContent = rotuloObra(lugar.obra);
     return marcar("📍 Obra detectada pela localização");
   }
   // Nunca uma caixa de obra aqui (10/10/2026: "nesse modo não é para ter seleção de
-  // obra, tem que ter a geolocalização"). Obra sem coordenada não é detectada.
-  TB.obraOk = null; nome.textContent = "Fora da área da obra";
-  marcar("📍 Este aparelho está fora da área das obras dele: o ponto não é registrado aqui.", true);
+  // obra, tem que ter a geolocalização").
+  TB.obraOk = null; nome.textContent = TB.local ? "Fora da área da obra" : "Sem localização";
+  marcar(lugar.texto, true);
 }
 
 async function procurarQr() {
@@ -1759,17 +1739,30 @@ async function abrirMenu() {
   const p = INICIO.pessoa, pode = INICIO.pode, alc = INICIO.alcance;
   $("m-ola").textContent = p ? `Olá, ${p.primeiro_nome}` : ((APARELHO && APARELHO.descricao) || "Ponto da obra");
   const linha = [];
+  // No ponto da obra, a linha diz QUEM entrou (o papel da pessoa, não o do
+  // aparelho) e ONDE o aparelho está agora — a lista das obras dele não é a
+  // localização (10/10/2026: "a geolocalização não está batendo").
+  const lugar = INICIO.da_obra && INICIO.perfil !== "LISTA" ? lugarDoAparelho(l) : null;
   if (INICIO.da_obra) linha.push(INICIO.perfil === "LISTA" ? "Ponto de equipe" : "Ponto da obra");
-  if (p && alc.papel_rotulo) linha.push(`você entrou como ${alc.papel_rotulo}`);
-  if (alc.obras.length) linha.push("📍 " + alc.obras.map(rotuloObra).join(", "));
+  const papel = INICIO.da_obra ? (p && p.papel_aqui) : alc.papel_rotulo;
+  if (p && papel) linha.push(`você entrou como ${papel}`);
+  if (lugar) linha.push(lugar.curto);
+  else if (alc.obras.length) linha.push("📍 " + alc.obras.map(rotuloObra).join(", "));
   $("m-onde").textContent = linha.join(" · ");
 
   const ops = [];
   if (INICIO.da_obra) {
     // O PONTO DA OBRA: as opções são do aparelho, e não mudam com quem entrou
     // (10/10/2026: "ele está meio que misturando os modos").
-    ops.push({icone: "⏱", titulo: "Bater ponto", sub: "QR Code ou CPF — para todos da obra", principal: true,
-              acao: () => abrirTablet()});
+    // Fora da obra (ou sem localização), o "Bater ponto" fica desligado e diz o
+    // porquê; tocado, procura a localização de novo (10/10/2026: "não era nem para
+    // entrar nessa tela de batida").
+    if (!lugar || lugar.obra) ops.push({icone: "⏱", titulo: "Bater ponto", principal: true,
+      sub: lugar ? `QR Code ou CPF — obra ${rotuloObra(lugar.obra)}` : "QR Code ou CPF — para todos da equipe",
+      acao: () => abrirTablet()});
+    else ops.push({icone: "⏱", titulo: "Bater ponto", desligada: true,
+      sub: lugar.texto.replace(/^📍 /, "") + " Toque para procurar a localização de novo.",
+      tentar: () => { TB.localEm = 0; abrirMenu(); }});
     ops.push({icone: "📝", titulo: "Atestados, afastamentos e ajustes",
               sub: "a pessoa mostra o QR Code ou digita o CPF e entrega aqui", acao: () => abrirTablet({pedido: true})});
     if (pode.consultar) ops.push({icone: "👥", titulo: "Consultar o ponto de uma pessoa",
@@ -1806,7 +1799,7 @@ async function abrirMenu() {
       <span class="icone">${o.icone}</span><span>${esc(o.titulo)}<small>${esc(o.sub)}</small></span></button>`).join("");
   $("m-opcoes").querySelectorAll("[data-op]").forEach(b => b.addEventListener("click", () => {
     const o = ops[+b.dataset.op]; aviso("");
-    if (o.desligada) return aviso(o.sub, "info");
+    if (o.desligada) return o.tentar ? o.tentar() : aviso(o.sub, "info");
     o.acao();
   }));
   $("m-aviso").innerHTML = p && INICIO.da_obra

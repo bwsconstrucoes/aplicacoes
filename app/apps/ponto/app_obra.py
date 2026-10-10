@@ -94,9 +94,17 @@ def app_api_inicio():
         bate_no_meu = bool(p) and not da_obra and forma_de_bater.pode_no_celular(p, forma_de_bater.em_vigor(conn))
         pede_o_meu = bool(p) and papeis.pede_pelo_proprio_celular(conn, p)
         administrativo = papeis.e_administrativo(conn, p)
+    # No ponto da obra, "você entrou como" é o papel DA PESSOA aqui — não o do
+    # aparelho (10/10/2026: a tela dizia "você entrou como ponto da obra").
+    papel_aqui = None
+    if da_obra and p:
+        if a.get("colaborador_id") == p["id"]:
+            papel_aqui = "responsável por este aparelho"
+        elif administrativo:
+            papel_aqui = "administrativo da obra"
     return _ok(
         pessoa=({"nome": p["nome"], "primeiro_nome": p["nome"].split(" ")[0],
-                 "administrativo": administrativo} if p else None),
+                 "administrativo": administrativo, "papel_aqui": papel_aqui} if p else None),
         da_obra=bool(da_obra), perfil=(a or {}).get("perfil"),
         pode={"bater_aqui": bool(da_obra), "bater_o_meu": bate_no_meu,
               "entregar_aqui": bool(da_obra), "pedir_o_meu": pede_o_meu,
