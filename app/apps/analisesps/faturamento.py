@@ -134,18 +134,36 @@ def competencia_br(valor) -> str:
 
 
 # ---------------------------------------------------------------------------
-# O PERÍODO DA MEDIÇÃO pela aba "Protocolos" (09/10/2026).
+# A ABA "PROTOCOLOS" (10/10/2026) — a da planilha "Recebimentos e Faturamento",
+# que o dono apontou: *"lá tem a informação de período e o código de
+# integração do título Omie e o card do Pipefy (…) essa informação deve ser
+# resgatada para a base nova, junto com o período de medição"*.
 #
-# A base só tem o período das notas que o emissor gravou depois de 09/10; para
-# as antigas ele está na "Protocolos" (por OBRA-MEDIÇÃO, a mesma chave que a
-# consolidação usa para o card e o código do Omie). Aqui só se LÊ: o período
-# completa a tela, e a base não é tocada.
+# Uma linha por medição. A ligação com a nota é OBRA-MEDIÇÃO (o código da obra e
+# o número da medição), a mesma chave que a consolidação do emissor usa.
 #
-# ⚠️ AS COLUNAS SÃO ACHADAS PELO NOME do cabeçalho, não pela posição: o mapa do
-# emissor só conhece A (chave), C (card) e D (código do Omie). Não achando, a
-# carga diz quais cabeçalhos viu — para acertar o nome, e não chutar a coluna.
+# Lida em DOIS momentos:
+#   - na carga da tela (`carregar`): completa a CÓPIA da tela — só leitura;
+#   - em "Completar a base pelos Protocolos" (`completar_base`): escreve na
+#     aba "Base Faturamento" o que estiver VAZIO lá. Nunca sobrescreve.
+#
+# ⚠️ AS COLUNAS SÃO ACHADAS PELO NOME do cabeçalho, não pela posição — e o
+# recado da carga diz qual coluna virou o quê, para conferir. Lidas em
+# 10/10/2026 (cabeçalhos truncados pela leitura do Drive): A "Data d…", C
+# "Código…" (a obra), H e I "Períod…" (início e fim), J "Número…" (a medição),
+# O e Q "Concat…", P "ID Card", W "Código…" (o de integração do Omie).
+# Notas novas não dependem disto: o emissor grava os três a partir do card.
 # ---------------------------------------------------------------------------
+PLANILHA_PROTOCOLOS = "18DQhVDDoh4-WwLJsIlCms3uS1HW2dWPIUVpZyrohT7g"
 ABA_PROTOCOLOS = "Protocolos"
+LINK_CARD = "https://app.pipefy.com/open-cards/"
+
+# os campos da base que a Protocolos completa
+ROTULO_DO_CAMPO = {"medicao_periodo_ini": "início de medição", "medicao_periodo_fim":
+                   "fim de medição", "card_id": "card(s)", "link_card": "link(s) de card",
+                   "omie_codigo_integracao": "código(s) do Omie"}
+CAMPOS_DA_PROTOCOLOS = ("medicao_periodo_ini", "medicao_periodo_fim", "card_id",
+                        "link_card", "omie_codigo_integracao")
 
 
 def _sem_acento(t) -> str:
@@ -154,66 +172,136 @@ def _sem_acento(t) -> str:
     return " ".join(t.lower().split())
 
 
-def periodos_dos_protocolos(valores: list) -> tuple[dict, str]:
-    """({CHAVE OBRA-MEDIÇÃO: (início, fim)}, aviso). Aviso vazio = tudo certo."""
-    import re
+def chave_obra_medicao(obra, medicao) -> str:
+    """OBRA-MEDIÇÃO, sem espaço e em maiúsculas: "CINITA-9R"."""
+    med = "".join(str(medicao or "").split()).upper()
+    return f"{_chave_obra(obra)}-{med}" if _chave_obra(obra) and med else ""
+
+
+def colunas_dos_protocolos(cabecalho: list) -> dict:
+    """{papel: índice} pelo NOME de cada coluna. Papel ausente fica de fora."""
+    nomes = [_sem_acento(c) for c in cabecalho]
+
+    def primeira(teste, salvo=()):
+        return next((i for i, n in enumerate(nomes) if i not in salvo and teste(n)), None)
+    col = {}
+    obra = primeira(lambda n: n.startswith("codigo") and ("obra" in n or "centro" in n))
+    col["obra"] = obra if obra is not None else primeira(lambda n: n.startswith("codigo"))
+    col["medicao"] = primeira(lambda n: "medic" in n and "period" not in n
+                              and (n.startswith("n") or "numero" in n))
+    if col["medicao"] is None:
+        col["medicao"] = primeira(lambda n: n.startswith("numero") or n.startswith("n "))
+    periodos = [i for i, n in enumerate(nomes) if "period" in n]
+    col["ini"] = next((i for i in periodos if "inic" in nomes[i]), periodos[0] if periodos else None)
+    col["fim"] = next((i for i in periodos if any(p in nomes[i] for p in ("fim", "final", "term"))),
+                      periodos[1] if len(periodos) > 1 else None)
+    col["card"] = primeira(lambda n: "card" in n)
+    col["omie"] = primeira(lambda n: "integra" in n or "omie" in n)
+    if col["omie"] is None:
+        codigos = [i for i, n in enumerate(nomes) if n.startswith("codigo") and i != col["obra"]]
+        col["omie"] = codigos[-1] if codigos else None
+    col["concat"] = primeira(lambda n: n.startswith("concat"))
+    return {k: v for k, v in col.items() if v is not None}
+
+
+def protocolos_das_linhas(valores: list) -> tuple[dict, str]:
+    """({OBRA-MEDIÇÃO: {campo da base: valor}}, recado de quais colunas leu).
+
+    Duas linhas para a mesma medição: vale a PRIMEIRA que tiver o dado — a
+    regra do emissor, para a base não mudar de valor entre duas leituras."""
     if not valores:
-        return {}, "aba Protocolos vazia."
+        return {}, "Protocolos: aba vazia."
+    cab = valores[0]
+    col = colunas_dos_protocolos(cab)
+    if "obra" not in col or "medicao" not in col:
+        vistos = [str(c).strip() for c in cab if str(c).strip()][:24]
+        return {}, ("Protocolos: não achei as colunas da obra e da medição "
+                    f"(cabeçalhos: {', '.join(vistos) or 'nenhum'}).")
 
-    def e_inicio(n):
-        return "inicio" in n and ("medic" in n or "period" in n)
-
-    def e_fim(n):
-        return (("termino" in n or "fim" in n or "final" in n)
-                and ("medic" in n or "period" in n))
-
-    # o cabeçalho pode não estar na primeira linha (importação de outra planilha)
-    for pos, cab in enumerate(valores[:5]):
-        nomes = [_sem_acento(c) for c in cab]
-        i_ini = next((i for i, n in enumerate(nomes) if e_inicio(n)), None)
-        i_fim = next((i for i, n in enumerate(nomes) if e_fim(n)), None)
-        i_unico = next((i for i, n in enumerate(nomes) if "periodo" in n), None)
-        if (i_ini is not None and i_fim is not None) or i_unico is not None:
-            break
-    else:
-        vistos = [str(c).strip() for c in valores[0] if str(c).strip()][:20]
-        return {}, ("Protocolos: não achei as colunas do período da medição "
-                    f"(cabeçalhos vistos: {', '.join(vistos) or 'nenhum'}).")
-    i_chave = next((i for i, n in enumerate(nomes) if "chave" in n), 0)
-
-    def celula(linha, i):
+    def celula(linha, papel):
+        i = col.get(papel)
         return str(linha[i]).strip() if i is not None and i < len(linha) else ""
+    saida: dict = {}
+    for linha in valores[1:]:
+        chaves = {chave_obra_medicao(celula(linha, "obra"), celula(linha, "medicao"))}
+        concat = "".join(celula(linha, "concat").split()).upper()
+        if "-" in concat:
+            chaves.add(concat)
+        card = celula(linha, "card")
+        dados = {"medicao_periodo_ini": celula(linha, "ini"),
+                 "medicao_periodo_fim": celula(linha, "fim"),
+                 "card_id": card, "link_card": (LINK_CARD + card) if card else "",
+                 "omie_codigo_integracao": celula(linha, "omie")}
+        for chave in chaves - {""}:
+            atual = saida.setdefault(chave, {})
+            for campo, valor in dados.items():
+                if valor and not atual.get(campo):
+                    atual[campo] = valor
+    usadas = ", ".join(f"{papel}={str(cab[i]).strip()}" for papel, i in col.items())
+    return saida, f"Protocolos: {len(saida)} medição(ões) lidas ({usadas})."
 
-    saida = {}
-    for linha in valores[pos + 1:]:
-        chave = celula(linha, i_chave).upper()
-        if not chave or chave in saida:
-            continue                       # a PRIMEIRA vale, como no emissor
-        if i_ini is not None and i_fim is not None:
-            ini, fim = celula(linha, i_ini), celula(linha, i_fim)
-        else:
-            # uma coluna só: "01/09/2026 a 30/09/2026"
-            partes = re.split(r"\s+(?:a|à|ate|até)\s+", celula(linha, i_unico))
-            ini, fim = (partes + ["", ""])[:2] if len(partes) == 2 else ("", "")
-        if ini or fim:
-            saida[chave] = (ini, fim)
-    return saida, ""
 
-
-def completar_periodos(notas: list[dict], periodos: dict) -> int:
-    """Põe o período da Protocolos nas notas que não o têm. Devolve quantas."""
-    postos = 0
+def completar_dos_protocolos(notas: list[dict], protocolos: dict) -> dict:
+    """Põe nas notas o que a Protocolos sabe e elas não. {campo: quantas}."""
+    postos = {c: 0 for c in CAMPOS_DA_PROTOCOLOS}
     for d in notas:
-        if d.get("medicao_periodo_ini") or d.get("medicao_periodo_fim"):
+        achado = protocolos.get(chave_obra_medicao(d.get("obra_codigo"), d.get("medicao_numero")))
+        if not achado:
             continue
-        chave = (f"{str(d.get('obra_codigo') or '').strip().upper()}-"
-                 f"{str(d.get('medicao_numero') or '').strip().upper()}")
-        achado = periodos.get(chave)
-        if achado:
-            d["medicao_periodo_ini"], d["medicao_periodo_fim"] = achado
-            d["_periodo_da_protocolos"] = "S"
-            postos += 1
+        for campo in CAMPOS_DA_PROTOCOLOS:
+            if not str(d.get(campo) or "").strip() and achado.get(campo):
+                d[campo] = achado[campo]
+                d.setdefault("_da_protocolos", [])
+                d["_da_protocolos"].append(campo)
+                postos[campo] += 1
     return postos
+
+
+def ler_protocolos(anotar=None) -> tuple[dict, str]:
+    from .credenciais import com_retry
+    from .sincronizacao import _aba, _explicar_aba
+    (anotar or (lambda *a, **k: None))("lendo a aba Protocolos", "")
+    try:
+        return protocolos_das_linhas(
+            com_retry(_aba(PLANILHA_PROTOCOLOS, ABA_PROTOCOLOS).get_all_values))
+    except Exception as e:  # noqa: BLE001 — sem ela, a tela vive sem os três campos
+        return {}, "Protocolos: " + _explicar_aba(PLANILHA_PROTOCOLOS, ABA_PROTOCOLOS, e)
+
+
+def completar_base(anotar=None, planilha=None) -> dict:
+    """Escreve na "Base Faturamento" o que a Protocolos sabe e a base não:
+    período da medição, card e código do título no Omie. SÓ CÉLULA VAZIA —
+    nada que já está na base é trocado. Em lotes de 500 células."""
+    from .credenciais import cliente, com_retry
+    anotar = anotar or (lambda *a, **k: None)
+    bfat, _, _ = _emissor()
+    protocolos, recado = ler_protocolos(anotar)
+    if not protocolos:
+        return {"preenchidas": {}, "notas": 0, "sem_protocolo": 0, "recado": recado}
+    planilha = planilha or com_retry(lambda: cliente().open_by_key(PLANILHA_NOTAS))
+    ws = bfat._ws(planilha)
+    anotar("lendo a Base Faturamento", "")
+    linhas = com_retry(lambda: bfat.ler_linhas(ws))
+    pedidos, preenchidas, notas, sem = [], {c: 0 for c in CAMPOS_DA_PROTOCOLOS}, 0, 0
+    for d in linhas:
+        achado = protocolos.get(chave_obra_medicao(d.get("obra_codigo"), d.get("medicao_numero")))
+        if not achado:
+            sem += 1
+            continue
+        mexeu = False
+        for campo in CAMPOS_DA_PROTOCOLOS:
+            if not str(d.get(campo) or "").strip() and achado.get(campo):
+                coluna = bfat._col(bfat.IDX[campo])
+                pedidos.append({"range": f"{coluna}{d['_linha']}", "values": [[achado[campo]]]})
+                preenchidas[campo] += 1
+                mexeu = True
+        notas += mexeu
+    for inicio in range(0, len(pedidos), 500):
+        anotar("completando a Base Faturamento", f"{inicio + 1} de {len(pedidos)} célula(s)")
+        lote = pedidos[inicio:inicio + 500]
+        com_retry(lambda: ws.batch_update(lote, value_input_option="USER_ENTERED"))
+    return {"preenchidas": preenchidas, "notas": notas, "sem_protocolo": sem,
+            "recado": recado}
 
 
 def _assinatura(d: dict) -> tuple:
@@ -325,15 +413,20 @@ def carregar(anotar=None) -> dict:
     except Exception as e:  # noqa: BLE001 — a frase vai para a tela
         raise RuntimeError(_explicar_aba(PLANILHA_NOTAS, ABA_BASE, e)) from e
 
-    anotar("trazendo o período da medição", ABA_PROTOCOLOS)
-    try:
-        periodos, aviso_protocolos = periodos_dos_protocolos(
-            com_retry(_aba(PLANILHA_NOTAS, ABA_PROTOCOLOS).get_all_values))
-    except Exception as e:  # noqa: BLE001 — sem a Protocolos, a tela vive sem período
-        periodos, aviso_protocolos = {}, _explicar_aba(PLANILHA_NOTAS, ABA_PROTOCOLOS, e)
-    if aviso_protocolos:
-        avisos.append(aviso_protocolos)
-    com_periodo = completar_periodos(notas, periodos)
+    # Período, card e código do Omie das notas ANTIGAS: a aba Protocolos
+    # (10/10/2026). Só completa a cópia da tela; a base se completa no botão.
+    protocolos, recado_protocolos = ler_protocolos(anotar)
+    avisos.append(recado_protocolos)
+    da_protocolos = completar_dos_protocolos(notas, protocolos)
+    if any(da_protocolos.values()):
+        avisos.append("Da Protocolos: " + ", ".join(
+            f"{n} {ROTULO_DO_CAMPO[c]}" for c, n in da_protocolos.items() if n) + ".")
+    sem_data = sum(1 for n in notas if not formatos.para_data(n.get("data_emissao")))
+    if sem_data:
+        # Com data de emissão ilegível a nota some de todo filtro por data —
+        # inclusive o padrão de doze meses. Dizer quantas são.
+        avisos.append(f"{sem_data} nota(s) sem data de emissão legível — não aparecem "
+                      "quando a barra filtra por data.")
 
     anotar("trazendo as obras", "C. Diários")
     obras, erro_obras = {}, None
@@ -388,7 +481,7 @@ def carregar(anotar=None) -> dict:
     logger.info("Faturamento: %d nota(s) e %d código(s) de obra carregados.",
                 len(notas), len(obras))
     return {"notas": len(notas), "obras": len(obras), "avisos": avisos,
-            "periodos_da_protocolos": com_periodo,
+            "da_protocolos": da_protocolos, "sem_data": sem_data,
             "repetidas": contagem.get("repetidas", 0),
             "mesmo_numero": contagem.get("mesmo_numero", 0)}
 
@@ -646,6 +739,10 @@ def conferir_uma_no_omie(numero: str, cliente_omie=None, planilha=None) -> dict:
         d = {nome: bfat._txt(valores[i]) if i < len(valores) else ""
              for i, nome in enumerate(bfat.CAB)}
         d["_linha"] = linha
+        # O código pode ter vindo só da Protocolos (a base ainda sem ele): a
+        # conferência o grava na base junto.
+        if not str(d.get("omie_codigo_integracao") or "").strip():
+            d["omie_codigo_integracao"] = codigo
         if d.get("nota_numero") != irmas.get(str(linha)):
             # Alguém mexeu na ordem da aba depois da carga: regravar aqui poria
             # o resultado na nota errada.
@@ -985,11 +1082,20 @@ def listar(f: dict, pagina: int = 1) -> list[dict]:
 
 
 def uma(numero: str) -> dict | None:
+    """A nota pela CHAVE da tela. Não achando (a cópia foi refeita entre a
+    lista e o clique, ou o número veio de outro jeito), procura pelo número
+    oficial e pelo sequencial — 10/10/2026: *"clico na nota e diz nota não
+    encontrada"*."""
     from .db import consultar
-    linhas = consultar(
-        "SELECT n.dados, o.dados, n.data_emissao, n.valor_total, n.valor_liquido, "
-        "       n.valor_recebido, n.data_recebimento, n.status "
-        + _JUNTA_OBRA + " WHERE n.nota_numero = ?", (str(numero),))
+    numero = str(numero or "").strip()
+    colunas = ("SELECT n.dados, o.dados, n.data_emissao, n.valor_total, n.valor_liquido, "
+               "       n.valor_recebido, n.data_recebimento, n.status ")
+    linhas = consultar(colunas + _JUNTA_OBRA + " WHERE n.nota_numero = ?", (numero,))
+    if not linhas:
+        linhas = consultar(
+            colunas + _JUNTA_OBRA + " WHERE n.dados->>'nota_numero' = ? "
+            "    OR n.nota_sequencial = ? ORDER BY n.data_emissao DESC NULLS LAST LIMIT 1",
+            (numero, numero))
     return _linha_da_tela(*linhas[0]) if linhas else None
 
 
@@ -1037,6 +1143,18 @@ def total_no_banco() -> int:
     return int(linha[0] or 0) if linha else 0
 
 
+def sem_data_no_banco() -> int:
+    """Notas sem data de emissão legível: somem de qualquer filtro por data —
+    e o padrão da tela É um filtro por data (doze meses)."""
+    from .db import consultar_um
+    try:
+        linha = consultar_um("SELECT count(*) FROM analisesps.faturamento_nota "
+                             " WHERE data_emissao IS NULL")
+    except Exception:  # noqa: BLE001
+        return 0
+    return int(linha[0] or 0) if linha else 0
+
+
 TRIBUTOS = ("pis", "cofins", "ir", "csll", "inss", "iss")
 LINKS = (("link_nfse_nacional", "DANFSe (nacional)"),
          ("link_nfse_municipal", "NFS-e (municipal)"),
@@ -1079,8 +1197,10 @@ def _linha_da_tela(dados, obra, data_emissao, valor_total, valor_liquido,
         "medicao": dados.get("medicao_numero", ""),
         "periodo_ini": para_data(dados.get("medicao_periodo_ini")),
         "periodo_fim": para_data(dados.get("medicao_periodo_fim")),
-        "periodo_da_protocolos": bool(dados.get("_periodo_da_protocolos")),
-        "tomador": dados.get("tomador_nome", ""),
+        "periodo_da_protocolos": "medicao_periodo_ini" in (dados.get("_da_protocolos") or []),
+        # Nota antiga sem tomador na base: o cliente da obra (C. Diários),
+        # para a ficha não abrir em branco (10/10/2026).
+        "tomador": dados.get("tomador_nome", "") or obra.get("cliente", ""),
         "tomador_cnpj": dados.get("tomador_cnpj", ""),
         "valor_total": valor_total,
         "valor_liquido": valor_liquido,

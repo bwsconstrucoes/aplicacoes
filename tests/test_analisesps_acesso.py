@@ -101,6 +101,7 @@ TODAS_AS_TELAS = [
     ("POST", "/analisesps/faturamento/importar"),
     ("GET", "/analisesps/faturamento/nota/123"),
     ("POST", "/analisesps/faturamento/omie"),
+    ("POST", "/analisesps/faturamento/completar"),
     ("POST", "/analisesps/faturamento/nota/123/omie"),
     ("POST", "/analisesps/api/omie/marcar-pago"),
     ("POST", "/analisesps/api/encaminhar/previa"),
@@ -326,6 +327,7 @@ def test_a_lista_de_telas_cobre_todas_as_rotas(app):
                    .replace("<int:item_id>", "123")
                    .replace("<int:n>", "1")
                    .replace("<numero>", "123")
+                   .replace("<path:numero>", "123")
                    .replace("<chave>", CHAVE_DE_EXEMPLO))
         if caminho not in testadas:
             faltando.append(caminho)

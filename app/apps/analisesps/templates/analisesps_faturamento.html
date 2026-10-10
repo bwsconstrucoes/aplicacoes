@@ -146,6 +146,7 @@
       alert("Não consegui falar com o servidor. Tente de novo.");
     }
   });
+  // DUPLO CLIQUE abre a nota — o dono preferiu manter assim (10/10/2026).
   document.querySelectorAll("tr.fat-linha[data-nota]").forEach(tr => tr.addEventListener("dblclick", async e => {
     if (e.target.closest("a, button, input")) return;
     corpo.innerHTML = '<p class="cartao-dica">Carregando…</p>';

@@ -63,6 +63,7 @@ MODOS = {
     "faturamento": "Trazer as notas fiscais emitidas (Base Faturamento)",
     "faturamento_antigas": "Importar as notas antigas da Notas BWS para a Base Faturamento",
     "faturamento_omie": "Conferir no Omie os títulos das notas fiscais (só leitura no Omie)",
+    "faturamento_completar": "Completar a Base Faturamento com a aba Protocolos (período, card, código do Omie)",
     # ⚠️ O PONTO É O GARGALO DA FOLHA: sem ele não há total por obra, não há
     # diária e não há apropriação. Roda no processo separado porque são várias
     # páginas da API do Mobponto, e um mês pode ter dezenas de milhares de dias.
@@ -130,6 +131,7 @@ ETAPAS = {
     "faturamento": ["faturamento"],
     "faturamento_antigas": ["faturamento_antigas", "faturamento"],
     "faturamento_omie": ["faturamento_omie"],
+    "faturamento_completar": ["faturamento_completar", "faturamento"],
     "ponto": ["ponto"],
     "ponto_diario": ["ponto_diario"],
     "ponto_pessoa": ["ponto_pessoa"],
@@ -641,6 +643,22 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                                        if c["faltam"] else "")
                                     + ". ")
 
+            elif etapa == "faturamento_completar":
+                # 10/10/2026: *"essa informação deve ser resgatada para a base
+                # nova, junto com o período de medição"*. Escreve só o que está
+                # VAZIO na base — ver `faturamento.completar_base`.
+                mudar_etapa("completando a Base Faturamento pelos Protocolos")
+                from . import faturamento as _faturamento
+                c = _faturamento.completar_base(anotar)
+                feitos = ", ".join(f"{n} {_faturamento.ROTULO_DO_CAMPO[k]}"
+                                   for k, n in c["preenchidas"].items() if n)
+                recado_apoios[0] = (
+                    (f"{c['notas']} nota(s) completada(s) na base: {feitos}. "
+                     if c["notas"] else "Nada a completar na base. ")
+                    + (f"{c['sem_protocolo']} nota(s) sem medição na Protocolos. "
+                       if c["sem_protocolo"] else "")
+                    + c["recado"] + " ")
+
             elif etapa == "faturamento_omie":
                 # 09/10/2026: *"a gente precisa poder fazer aquela consulta do
                 # título ao Omie, para compatibilizar"*. Só LÊ o Omie; escreve
@@ -820,6 +838,7 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
         if modo in ("apoios", "comprovantes", "fiscal", "fiscal_ia",
                     "notas_receita", "notas_ciencia", "colaboradores", "ponto",
                     "faturamento", "faturamento_antigas", "faturamento_omie",
+                    "faturamento_completar",
                     "ponto_pessoa", "ponto_lancar"):
             # Neste modo nenhuma SP é trazida: dizer "0 SPs" fazia a tela
             # parecer que nada aconteceu justamente quando algo aconteceu.
@@ -900,6 +919,10 @@ def encadear_comprovantes(modo: str) -> dict | None:
         logger.info("Análise de SPs: importação das notas antigas pedida durante "
                     "'%s' — começando agora.", modo)
         return disparar("faturamento_antigas", disparo="pedida durante outra tarefa")
+    if modo != "faturamento_completar" and _pedido_pendente("faturamento_completar",
+                                                             apagar=True):
+        _pedido_pendente("faturamento", apagar=True)
+        return disparar("faturamento_completar", disparo="pedida durante outra tarefa")
     if modo != "faturamento_omie" and _pedido_pendente("faturamento_omie", apagar=True):
         logger.info("Análise de SPs: conferência no Omie pedida durante '%s' — "
                     "começando agora.", modo)
