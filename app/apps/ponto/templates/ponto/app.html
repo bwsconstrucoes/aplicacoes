@@ -172,8 +172,8 @@
     <button class="link" id="btn-ser-da-obra" type="button" style="display:block; margin:0 auto">Este aparelho vai ser o ponto da obra? Pedir a aprovação</button>
     <div class="cartao oculto" id="cartao-tablet">
       <h2>Este é o ponto da obra</h2>
-      <p class="pequeno">Aqui entram o responsável por ele e o administrativo da obra. Para bater: QR Code ou CPF na tela da batida.</p>
-      <button class="btn grande" id="btn-ir-tablet" type="button">Voltar ao início</button>
+      <p class="pequeno">Entre com o seu CPF e PIN — o responsável por este aparelho ou o administrativo da obra. Depois
+        de entrar, você abre a batida para todos, os atestados, a consulta do ponto das pessoas, o QR Code e o seu ponto.</p>
     </div>
   </section>
 
@@ -239,6 +239,7 @@
     <div id="m-aviso"></div>
     <div class="menu-grade" id="m-opcoes"></div>
     <p class="pequeno" id="m-codigo" style="text-align:center"></p>
+    <button class="btn sec oculto" id="m-sair" type="button">Sair</button>
   </section>
 
   <!-- O PONTO DAS PESSOAS DA OBRA -->
@@ -491,8 +492,10 @@ async function iniciar() {
     // Só o responsável e o administrativo têm sessão aqui (o servidor recusa os outros).
     try { EU = await chamar("/ponto/app/api/eu"); } catch (e) { EU = null; }
     vigiarVoltaAoInicio();
-    if (ultima === "tablet" && !EU) return abrirTablet();
-    return abrirMenu();
+    // Reiniciado no meio do dia, volta direto para a batida (que é de todos); fora
+    // isso, o ponto da obra começa pela entrada com CPF e PIN.
+    if (ultima === "tablet") return abrirTablet();
+    return EU ? abrirMenu() : mostrar("entrar");
   }
   try {
     EU = await chamar("/ponto/app/api/eu");
@@ -527,7 +530,8 @@ function vigiarVoltaAoInicio() {
   // No ponto da obra, a tela que mostra o ponto de alguém (o Meu ponto de quem entrou,
   // ou a folha aberta pelo CPF) volta sozinha para o início em 3 minutos sem uso.
   const rearmar = () => { clearTimeout(VOLTA);
-    if (EU || (ehDaObra() && TELA_ATUAL && !["menu", "tablet"].includes(TELA_ATUAL))) VOLTA = setTimeout(voltarAoInicio, 3 * 60 * 1000); };
+    if (TELA_ATUAL !== "tablet" && (EU || (ehDaObra() && TELA_ATUAL && TELA_ATUAL !== "menu")))
+      VOLTA = setTimeout(voltarAoInicio, 3 * 60 * 1000); };
   if (!VIGIANDO) ["click", "touchstart", "keydown"].forEach(ev => document.addEventListener(ev, rearmar, {passive: true}));
   VIGIANDO = true;
   rearmar();
@@ -537,6 +541,7 @@ async function voltarAoInicio() {
   if (EU) { try { await chamar("/ponto/app/api/sair", {}); } catch (e) {} }
   EU = null;
   if ($("dlg").open) $("dlg").close();
+  if (TELA_ATUAL === "tablet") return;
   abrirMenu();
 }
 $("btn-ir-primeiro").addEventListener("click", () => { $("p-cpf").value = $("e-cpf").value; mostrar("primeiro"); });
@@ -736,7 +741,7 @@ async function bater({obra, comFoto}) {
 }
 $("btn-bater").addEventListener("click", () => bater({obra: $("i-obra").value, comFoto: true}));
 $("btn-sem-foto").addEventListener("click", () => bater({obra: $("i-obra").value, comFoto: false}));
-$("btn-ir-tablet").addEventListener("click", () => { aviso(""); abrirMenu(); });
+
 
 function mostrarComprovante(c, repetida, status, motivo) {
   const analise = status === "EM_ANALISE"
@@ -801,10 +806,10 @@ async function carregarInicio() {
   }
   if (ehDaObra()) {
     avisoAparelho = `<div class="aviso info">Você está no “Meu ponto” no ponto da obra. Ele sai e volta sozinho para o
-      início em 3 minutos sem uso. <button class="btn sec" type="button" id="btn-voltar-batida">Sair e voltar ao início</button></div>`;
+      início em 3 minutos sem uso. <button class="btn sec" type="button" id="btn-voltar-batida">Voltar ao início</button></div>`;
   }
   $("aviso-aparelho").innerHTML = avisoAparelho;
-  if ($("btn-voltar-batida")) $("btn-voltar-batida").addEventListener("click", voltarAoInicio);
+  if ($("btn-voltar-batida")) $("btn-voltar-batida").addEventListener("click", () => abrirMenu());
   PODE_BATER = podeBater;
   $("btn-bater").disabled = $("btn-sem-foto").disabled = !podeBater || LOCAL_BLOQUEIA;
 
@@ -1197,8 +1202,7 @@ function mostrarVencimentoDoTablet() {
 // `pedido`: o aparelho abre para ENTREGAR atestado, licença ou ajuste — a pessoa se
 // identifica e o formulário abre (o caminho da tela inicial, 08/10/2026).
 async function abrirTablet(opcoes = {}) {
-  // A batida é de todos: quem tinha entrado com CPF e PIN neste aparelho sai.
-  if (EU && ehDaObra()) { clearTimeout(VOLTA); EU = null; chamar("/ponto/app/api/sair", {}).catch(() => {}); }
+  clearTimeout(VOLTA);       // na batida, o aparelho não sai sozinho (ela fica aberta o dia todo)
   TB.pedido = !!opcoes.pedido; TB.esqueci = false; TB.cpf = "";
   try { localStorage.setItem("ponto_tela", TB.pedido ? "menu" : "tablet"); } catch (e) {}
   mostrar("tablet");
@@ -1304,11 +1308,45 @@ async function trocarCamera() {
   await ligarCamera();
 }
 $("t-trocar-camera").addEventListener("click", trocarCamera);
-$("t-inicio").addEventListener("click", () => {
+// Sair da batida pede o PIN de quem entrou (10/10/2026): a batida fica na frente de
+// todo mundo, e o início dali abre a consulta do ponto das pessoas. Sem ninguém
+// logado (o aparelho reiniciou na batida), vai para a entrada com CPF e PIN.
+$("t-inicio").addEventListener("click", async () => {
+  if (!EU) { try { EU = await chamar("/ponto/app/api/eu"); } catch (e) { EU = null; } }
+  if (EU) {
+    const ok = await confirmarPin();
+    if (!ok) return;
+  }
   pararTablet(); TB.pedido = false;
   try { localStorage.setItem("ponto_tela", "menu"); } catch (e) {}
-  abrirMenu();
+  if (EU) { vigiarVoltaAoInicio(); return abrirMenu(); }
+  mostrar("entrar");
 });
+function confirmarPin() {
+  return new Promise(resolve => {
+    $("dlg-corpo").innerHTML = `<h2 style="margin:0 0 6px">Sair da batida</h2>
+      <p class="pequeno">O PIN de ${esc(EU.primeiro_nome)}, que entrou neste aparelho.</p>
+      <label for="cp-pin">PIN (6 números)</label><input id="cp-pin" type="password" inputmode="numeric" maxlength="6" autocomplete="off">
+      <div id="cp-msg" class="aviso erro oculto"></div>
+      <button class="btn" type="button" id="cp-ok">Sair da batida</button>
+      <button class="link" type="button" id="cp-outro">Não é ${esc(EU.primeiro_nome)}? Entrar com outro CPF</button>`;
+    let feito = false;
+    const fim = v => { feito = true; $("dlg").close(); resolve(v); };
+    $("cp-ok").onclick = async () => {
+      try { await chamar("/ponto/app/api/confirmar-pin", {pin: soDigitos($("cp-pin").value)}); fim(true); }
+      catch (e) { $("cp-msg").textContent = e.message; $("cp-msg").classList.remove("oculto"); }
+    };
+    $("cp-outro").onclick = async () => {
+      try { await chamar("/ponto/app/api/sair", {}); } catch (e) {}
+      EU = null; feito = true; $("dlg").close(); pararTablet();
+      try { localStorage.setItem("ponto_tela", "menu"); } catch (e) {}
+      resolve(false); mostrar("entrar");
+    };
+    $("dlg").addEventListener("close", () => { if (!feito) resolve(false); }, {once: true});
+    $("dlg").showModal();
+    setTimeout(() => $("cp-pin").focus(), 50);
+  });
+}
 
 // A obra pela localização (07/10/2026: "no modo obra ele não está detectando a
 // obra automaticamente"; 09/10/2026: "o celular ponto de obra (…) só é para bater
@@ -1650,7 +1688,7 @@ async function abrirMenu() {
   const l = await onde();
   try { INICIO = await chamar(comLocal("/ponto/app/api/inicio", l)); }
   catch (e) { $("m-opcoes").innerHTML = ""; return aviso(e.message, "erro"); }
-  if (!INICIO.da_obra && !INICIO.pessoa) { EU = null; return mostrar("entrar"); }
+  if (!INICIO.pessoa) { EU = null; return mostrar("entrar"); }
   mostrar("menu");
   const p = INICIO.pessoa, pode = INICIO.pode, alc = INICIO.alcance;
   $("m-ola").textContent = p ? `Olá, ${p.primeiro_nome}` : ((APARELHO && APARELHO.descricao) || "Ponto da obra");
@@ -1673,10 +1711,8 @@ async function abrirMenu() {
     else ops.push({icone: "👥", titulo: "Consultar o ponto de uma pessoa", sub: alc.sem_alcance || "", desligada: true});
     ops.push({icone: "📲", titulo: "Receber o QR Code no WhatsApp", sub: "o seu ou o de outra pessoa, pelo CPF",
               acao: () => pedirQrPeloCpf()});
-    ops.push(p ? {icone: "📅", titulo: `Meu ponto — ${p.primeiro_nome}`, sub: "o seu dia, o seu mês e os seus pedidos",
-                  acao: () => mostrar("inicio")}
-               : {icone: "📅", titulo: "Meu ponto", sub: "do responsável por este aparelho ou do administrativo da obra",
-                  acao: () => entrarPara("inicio")});
+    ops.push({icone: "📅", titulo: `Meu ponto — ${p.primeiro_nome}`, sub: "o seu dia, o seu mês e os seus pedidos",
+              acao: () => mostrar("inicio")});
   } else {
     // 1. bater
     if (pode.bater_o_meu) ops.push({icone: "⏱", titulo: "Bater o meu ponto", sub: "com foto e localização", principal: true,
@@ -1708,7 +1744,8 @@ async function abrirMenu() {
     o.acao();
   }));
   $("m-aviso").innerHTML = p && INICIO.da_obra
-    ? `<div class="aviso info">Você entrou neste aparelho. Ele sai sozinho em 3 minutos sem uso — ou toque em “Sair”.</div>` : "";
+    ? `<div class="aviso info">Você entrou neste aparelho. Fora da tela de batida, ele sai sozinho em 3 minutos sem uso — ou toque em “Sair”.</div>` : "";
+  $("m-sair").classList.toggle("oculto", !p);
   const cod = aparelho().uuid.replace(/[^A-Za-z0-9]/g, "").slice(-6).toUpperCase();
   $("m-codigo").textContent = APARELHO && APARELHO.status === "APROVADO" ? "" : `Código deste aparelho: ${cod}.`;
 }
@@ -1761,8 +1798,9 @@ async function pedirQrPeloCpf() {
 function entrarPara(destino) {
   DESTINO = destino;
   mostrar("entrar");
-  aviso("Entre com o CPF e o PIN do responsável por este aparelho ou do administrativo da obra.", "info");
+  aviso("Entre com o seu CPF e PIN.", "info");
 }
+$("m-sair").addEventListener("click", () => $("btn-sair").click());
 
 // --- o ponto das pessoas da obra ---------------------------------------------------
 const EQ = {modo: "consulta", mes: null, pessoas: [], alvo: null, mesAlvo: null, dados: null};
