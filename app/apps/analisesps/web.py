@@ -1411,6 +1411,56 @@ _CONSULTADAS: dict = {}
 VALIDADE_DA_CONSULTA = 15 * 60
 
 
+# ---------------------------------------------------------------------------
+# ENCAMINHAR PELO WHATSAPP (10/10/2026) — ver `encaminhar.py`. A janela é a
+# irmã do "Consultar Omie": lista as marcadas, a pessoa escolhe o que vai e
+# para quem, e o WhatsApp DELA abre com a mensagem pronta.
+# ---------------------------------------------------------------------------
+@bp.route("/api/encaminhar/previa", methods=["POST"])
+@exige_operador
+def encaminhar_previa():
+    from . import encaminhar
+    ids, erro = _ids_do_pedido(request.get_json(silent=True) or {})
+    if erro:
+        return erro
+    if len(ids) > encaminhar.MAX_SPS:
+        return {"ok": False, "erro": f"São no máximo {encaminhar.MAX_SPS} SPs por "
+                                     "encaminhamento — a mensagem ficaria grande demais."}, 400
+    return {"ok": True, "sps": encaminhar.previa(ids),
+            "campos": [{"chave": c, "rotulo": r} for c, r in encaminhar.CAMPOS],
+            "contatos": encaminhar.listar_contatos()}
+
+
+@bp.route("/api/encaminhar/mensagem", methods=["POST"])
+@exige_operador
+def encaminhar_mensagem():
+    from . import encaminhar
+    dados = request.get_json(silent=True) or {}
+    ids, erro = _ids_do_pedido(dados)
+    if erro:
+        return erro
+    texto = encaminhar.montar_mensagem(
+        ids[:encaminhar.MAX_SPS], campos=[str(c) for c in (dados.get("campos") or [])],
+        anexo=bool(dados.get("anexo")), comprovante=bool(dados.get("comprovante")))
+    if not texto:
+        return {"ok": False, "erro": "Nenhuma das SPs marcadas está na base."}, 404
+    return {"ok": True, "texto": texto,
+            "link": encaminhar.link_whatsapp(dados.get("telefone"), texto)}
+
+
+@bp.route("/api/encaminhar/contatos", methods=["POST"])
+@exige_operador
+def encaminhar_contatos():
+    """A lista de contatos do encaminhamento: acrescentar ou apagar."""
+    from . import encaminhar
+    dados = request.get_json(silent=True) or {}
+    if dados.get("acao") == "remover":
+        return encaminhar.remover_contato(dados.get("telefone"))
+    r = encaminhar.gravar_contato(dados.get("nome"), dados.get("telefone"),
+                                  por=auth.nome_atual() or "")
+    return r if r.get("ok") else (r, 400)
+
+
 @bp.route("/api/omie/consultar", methods=["POST"])
 @exige_operador
 def omie_consultar():
@@ -5791,6 +5841,24 @@ def tela_lote():
                 aviso = f"{len(crus)} SP(s) entraram no grupo \"{titulo}\"."
             else:
                 aviso = "Nenhuma SP marcada."
+        elif acao == "receber_grupos":
+            # Veio de Arquivos gerados (10/10/2026): cada geração marcada vira
+            # um grupo, com competência e tipo no título. A primeira marcada
+            # fica no topo.
+            import json as _json
+            try:
+                grupos = _json.loads(request.form.get("grupos") or "[]")
+            except ValueError:
+                grupos = []
+            conteudo = lote.ler(pessoa)["conteudo"]
+            criados = []
+            for g in reversed([g for g in grupos if isinstance(g, dict)]):
+                ids = [str(i).strip() for i in (g.get("ids") or []) if str(i).strip().isdigit()]
+                if ids:
+                    conteudo, titulo = lote.acrescentar_grupo(conteudo, ids, g.get("titulo"))
+                    criados.insert(0, f"\"{titulo}\" ({len(ids)})")
+            aviso = (f"{len(criados)} grupo(s) entraram no lote: " + "; ".join(criados) + "."
+                     if criados else "Nenhuma SP para mandar ao lote.")
         elif acao == "remover_ids":
             # Veio da barra do alto: tira do lote o que estiver marcado, em
             # qualquer grupo. O painel por status embaixo mostra SPs que NÃO

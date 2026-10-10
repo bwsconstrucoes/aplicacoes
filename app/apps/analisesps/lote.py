@@ -81,14 +81,21 @@ def separar_grupos(texto: str) -> list[dict]:
     return [g for g in grupos if g["titulo"] or g["ids"]]
 
 
-def acrescentar_grupo(texto_atual: str, ids: list[str]) -> tuple[str, str]:
+def acrescentar_grupo(texto_atual: str, ids: list[str],
+                      titulo: str | None = None) -> tuple[str, str]:
     """Põe um grupo novo NO TOPO do lote, numerado, preservando o que havia.
 
     No topo, e não no fim, porque é o que acabou de chegar e é sobre o que se
-    vai trabalhar agora. Devolve o texto novo e o nome do grupo criado."""
+    vai trabalhar agora. Devolve o texto novo e o nome do grupo criado.
+
+    `titulo` (10/10/2026, Arquivos gerados): o cabeçalho já diz de onde vêm as
+    SPs ("Folha 09/2026 · quinzena · BeeVale"). Uma linha só, e nada que se
+    leia como número de SP — senão o título viraria SP."""
     atual = str(texto_atual or "").strip("\n")
-    numero = len(re.findall(r"(?m)^\s*Novo Lote\b", atual)) + 1
-    titulo = f"Novo Lote {numero}"
+    titulo = " ".join(str(titulo or "").split())
+    if not titulo or _e_linha_de_ids(titulo):
+        numero = len(re.findall(r"(?m)^\s*Novo Lote\b", atual)) + 1
+        titulo = f"Novo Lote {numero}"
     novo = titulo + "\n" + "\n".join(ids)
     if atual.strip():
         novo += "\n\n" + atual

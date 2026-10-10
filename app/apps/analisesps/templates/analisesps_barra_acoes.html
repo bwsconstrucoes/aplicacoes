@@ -25,6 +25,9 @@
      data-url-lote="{{ url_for('analisesps.tela_lote') }}"
      data-url-omie-consultar="{{ url_for('analisesps.omie_consultar') }}"
      data-url-omie-pago="{{ url_for('analisesps.omie_marcar_pago') }}"
+     data-url-enc-previa="{{ url_for('analisesps.encaminhar_previa') }}"
+     data-url-enc-mensagem="{{ url_for('analisesps.encaminhar_mensagem') }}"
+     data-url-enc-contatos="{{ url_for('analisesps.encaminhar_contatos') }}"
      data-origem="{{ origem }}">
 
   <div class="ba-esquerda">
@@ -113,6 +116,12 @@
       <button class="btn secundario" id="ba-omie" data-precisa-selecao
               title="Consulta no Omie o status das SPs marcadas">Consultar Omie</button>
     {% endif %}
+    {% if pode_operar and tela != 'codigos' %}
+      {# 10/10/2026: encaminhar as marcadas pelo WhatsApp — informações, anexo
+         e comprovante. Ver `encaminhar.py`. #}
+      <button class="btn secundario" id="ba-encaminhar" data-precisa-selecao
+              title="Monta a mensagem das SPs marcadas e abre o WhatsApp">Encaminhar</button>
+    {% endif %}
     {% if pode_operar %}
       {# Os dois do Streamlit, com os mesmos nomes. "Gerar" só habilita quando
          TODAS as marcadas são BeeVale — era assim lá, e é o que impede subir
@@ -180,6 +189,45 @@
               title="Status = Pago, data, comprovante e conta lidos do card; card para Pago / Alimentar Omie"
               >Marcar Pago</button>
       {% endif %}
+    </div>
+  </dialog>
+{% endif %}
+
+{% if pode_operar and tela != 'codigos' %}
+  {# ENCAMINHAR PELO WHATSAPP (10/10/2026). O dono: *"parecido com o modal do
+     Consultar Omie (…) manda informações, manda anexo, manda comprovante (…)
+     por padrão manda tudo, se não desmarca o que não quer."* O WhatsApp que
+     abre é o de quem clica: a pessoa confere e aperta enviar lá. #}
+  <dialog class="dialogo dialogo-enc" id="dialogo-enc">
+    <button type="button" class="btn secundario dialogo-fechar" id="enc-fechar">Fechar</button>
+    <h3>Encaminhar pelo WhatsApp <small id="enc-sub"></small></h3>
+    <div id="enc-corpo"><p class="cartao-dica">Carregando…</p></div>
+    <div class="enc-grade" id="enc-grade" hidden>
+      <div>
+        <p class="rotulo-campo">O que vai</p>
+        <label class="opcao"><input type="checkbox" id="enc-info" checked> Informações da SP</label>
+        <label class="opcao"><input type="checkbox" id="enc-anexo" checked> Anexo <small id="enc-n-anexo"></small></label>
+        <label class="opcao"><input type="checkbox" id="enc-comprovante" checked> Comprovante <small id="enc-n-comp"></small></label>
+        <details class="enc-campos"><summary>Quais informações</summary><div id="enc-campos"></div></details>
+      </div>
+      <div>
+        <p class="rotulo-campo">Para quem</p>
+        <select id="enc-contato" class="campo-largo"></select>
+        <details class="enc-novo"><summary>Cadastrar contato</summary>
+          <input type="text" id="enc-nome" placeholder="Nome" autocomplete="off">
+          <input type="tel" id="enc-telefone" name="telefone" placeholder="DDD e número" autocomplete="off">
+          <button type="button" class="btn secundario" id="enc-gravar">Guardar</button>
+          <button type="button" class="btn secundario" id="enc-apagar" title="Apaga da lista o contato escolhido acima">Apagar o escolhido</button>
+          <div id="enc-contato-msg" class="cartao-dica"></div>
+        </details>
+      </div>
+    </div>
+    <label class="rotulo-campo" for="enc-texto" id="enc-rotulo-texto" hidden>A mensagem (dá para mexer antes de enviar)</label>
+    <textarea id="enc-texto" class="campo-largo enc-texto" rows="12" hidden></textarea>
+    <div class="gd-botoes">
+      <span class="cartao-dica" id="enc-resumo"></span>
+      <button class="btn secundario" type="button" id="enc-copiar" disabled>Copiar</button>
+      <button class="btn" type="button" id="enc-abrir" disabled>Abrir no WhatsApp</button>
     </div>
   </dialog>
 {% endif %}

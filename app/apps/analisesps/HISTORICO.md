@@ -12228,6 +12228,41 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 219 — Encaminhar pelo WhatsApp; Arquivos gerados abrem a SP aqui e mandam ao Lote (10/10/2026)
+
+- *"Selecionar e encaminhar pelo WhatsApp (…) uma mini base de nome e
+  telefone (…) o botão tanto no Lote quanto em Solicitações (…) parecido com o
+  Consultar Omie (…) manda informações, anexo, comprovante (…) a mensagem
+  padrão: número da SP, data, vencimento, descrição, valor, tipo de despesa,
+  centro de custo, credor, CPF/CNPJ, responsável, forma de pagamento — e o
+  boleto ou a chave Pix (…) por padrão manda tudo."* Botão **Encaminhar** na
+  barra (Solicitações e Lote, operador). A janela lista as marcadas (até 30),
+  com caixas para informações / anexo / comprovante (só habilita o que existe)
+  e para cada campo; contato da lista ou "escolher no WhatsApp" (serve para
+  grupo); a mensagem aparece pronta e editável; **Abrir no WhatsApp** abre o
+  WhatsApp de quem clica com o texto — a pessoa confere e envia lá. Boleto →
+  código de barras (coluna AI, ou a informação p/ pgt); Pix → a chave; SP paga
+  → "Pago em". Anexo e comprovante vão como link de baixar. `encaminhar.py`.
+  - **Contatos:** uma lista da equipe toda, em `analisesps.meta`
+    (`contatos_encaminhar`, sem migração), cadastrada dentro da própria janela.
+  - **Decisão: sai pelo WhatsApp de quem clica, não pelo robô (Z-API).** O
+    número do robô é o dos avisos do ponto/ERP, o WhatsApp dele está desligado
+    na tela Mensagens por bloqueio de volume, e mandar documento a fornecedor
+    sem ninguém conferir é escrever em nome da empresa. Consequência: o
+    arquivo vai como link, não anexado. Mandar pelo robô, com o arquivo
+    anexado, é decisão do dono (mexe na Mensageria).
+- *"Em Arquivos gerados só consigo ir para o Pipefy (…) abrir o modal do
+  sistema para marcar agendar, ver detalhe."* O "SP 123" abre a ficha aqui; o
+  card do Pipefy ficou no ↗ ao lado.
+- *"Seleciono gerações e envio para o lote aquelas SPs; o cabeçalho já com
+  competência e tipo; vários selecionados, vários lotes."* Botão **Enviar ao
+  Lote** em Arquivos gerados: cada geração marcada vira um grupo no Lote de
+  quem clicou, com o título "Folha 09/2026 · quinzena · verbas · destino" (a
+  primeira marcada no topo). Só SPs já lançadas no Pipefy. `lote.acrescentar_grupo`
+  ganhou `titulo` (título que pareça número de SP volta a "Novo Lote N").
+- Não testado: abrir o WhatsApp de verdade (o link `wa.me` é o padrão do
+  WhatsApp) e a tela de Arquivos gerados com gerações reais.
+
 #### Leva 218 — Configurações em subtelas; Faturamento: botões lá, situação em etiqueta, colunas reordenáveis, Painel (10/10/2026)
 
 - *"Importar notas antigas e atualizar da planilha não deveria ficar aqui;

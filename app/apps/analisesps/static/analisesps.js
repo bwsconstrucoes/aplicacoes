@@ -365,6 +365,120 @@ const LEMBRAR = {
   // O status de cada marcada no Omie, ao lado do que a planilha diz. As PAGAS
   // podem ser marcadas e equalizadas: "Marcar Pago" grava o status e o que o
   // card diz (data, comprovante, conta) e muda a fase do card se preciso.
+  // --- Encaminhar pelo WhatsApp (10/10/2026) -------------------------------
+  // A janela lista as marcadas, a pessoa escolhe o que vai (tudo marcado por
+  // padrão) e para quem; a mensagem é montada no servidor e o WhatsApp de
+  // quem clica abre com ela. Ver `encaminhar.py`.
+  const btnEnc = document.getElementById("ba-encaminhar");
+  const dlgEnc = document.getElementById("dialogo-enc");
+  if (btnEnc && dlgEnc) {
+    const $ = id => document.getElementById(id);
+    const esc = t => String(t == null ? "" : t).replace(/[&<>"]/g,
+        c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+    const postar = async (url, corpo) => {
+      const r = await fetch(url, {method: "POST", headers: {"Content-Type": "application/json"},
+                                  body: JSON.stringify(corpo)});
+      const d = await r.json();
+      if (!d.ok) throw new Error(d.erro || ("HTTP " + r.status));
+      return d;
+    };
+    let idsEnc = [], linkEnc = "", relogio = null;
+    const pintarContatos = (contatos, escolher) => {
+      const sel = $("enc-contato");
+      const antes = escolher || sel.value;
+      sel.innerHTML = '<option value="">Escolher no WhatsApp (contato ou grupo)</option>' +
+        contatos.map(c => `<option value="${esc(c.telefone)}">${esc(c.nome)} — ${esc(c.telefone)}</option>`).join("");
+      if ([...sel.options].some(o => o.value === antes)) sel.value = antes;
+    };
+    const montar = async () => {
+      const campos = $("enc-info").checked
+        ? [...document.querySelectorAll("#enc-campos input:checked")].map(c => c.value) : [];
+      try {
+        const d = await postar(barra.dataset.urlEncMensagem, {
+          ids: idsEnc, campos, anexo: $("enc-anexo").checked,
+          comprovante: $("enc-comprovante").checked, telefone: $("enc-contato").value});
+        $("enc-texto").value = d.texto;
+        linkEnc = d.link;
+        $("enc-abrir").disabled = $("enc-copiar").disabled = !d.texto;
+        $("enc-resumo").textContent = "";
+      } catch (e) {
+        $("enc-resumo").textContent = "Não consegui montar a mensagem: " + e.message;
+      }
+    };
+    const remontar = () => { clearTimeout(relogio); relogio = setTimeout(montar, 250); };
+    $("enc-fechar").addEventListener("click", () => dlgEnc.close());
+    ["enc-info", "enc-anexo", "enc-comprovante", "enc-contato"].forEach(id =>
+      $(id).addEventListener("change", remontar));
+    $("enc-campos").addEventListener("change", remontar);
+    // A mensagem editada à mão vale: o link sai do texto que está na caixa.
+    const linkDoTexto = () => {
+      const tel = $("enc-contato").value;
+      return "https://wa.me/" + (tel || "") + "?text=" + encodeURIComponent($("enc-texto").value);
+    };
+    $("enc-abrir").addEventListener("click", () => {
+      window.open(linkDoTexto(), "_blank", "noopener");
+    });
+    $("enc-copiar").addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText($("enc-texto").value); $("enc-resumo").textContent = "Copiada."; }
+      catch (e) { $("enc-texto").select(); document.execCommand("copy"); $("enc-resumo").textContent = "Copiada."; }
+    });
+    $("enc-gravar").addEventListener("click", async () => {
+      try {
+        const d = await postar(barra.dataset.urlEncContatos,
+                               {nome: $("enc-nome").value, telefone: $("enc-telefone").value});
+        const tel = d.contatos.find(c => c.nome === $("enc-nome").value.trim().replace(/\s+/g, " "));
+        pintarContatos(d.contatos, tel ? tel.telefone : "");
+        $("enc-nome").value = $("enc-telefone").value = "";
+        $("enc-contato-msg").textContent = "Guardado — vale para a equipe toda.";
+        remontar();
+      } catch (e) { $("enc-contato-msg").textContent = e.message; }
+    });
+    $("enc-apagar").addEventListener("click", async () => {
+      const sel = $("enc-contato");
+      if (!sel.value) { $("enc-contato-msg").textContent = "Escolha na lista o contato a apagar."; return; }
+      if (!confirm("Apagar " + sel.options[sel.selectedIndex].text + " da lista?")) return;
+      try {
+        const d = await postar(barra.dataset.urlEncContatos, {acao: "remover", telefone: sel.value});
+        pintarContatos(d.contatos, "");
+        $("enc-contato-msg").textContent = "Apagado.";
+        remontar();
+      } catch (e) { $("enc-contato-msg").textContent = e.message; }
+    });
+    btnEnc.addEventListener("click", async () => {
+      const ids = idsMarcados();
+      if (!ids) return;
+      idsEnc = ids;
+      $("enc-sub").textContent = `${ids.length} SP(s)`;
+      $("enc-corpo").innerHTML = '<p class="cartao-dica">Carregando…</p>';
+      $("enc-grade").hidden = $("enc-texto").hidden = $("enc-rotulo-texto").hidden = true;
+      $("enc-abrir").disabled = $("enc-copiar").disabled = true;
+      $("enc-resumo").textContent = "";
+      dlgEnc.showModal();
+      try {
+        const d = await postar(barra.dataset.urlEncPrevia, {ids});
+        const anexos = d.sps.reduce((n, s) => n + s.anexos, 0);
+        const comps = d.sps.reduce((n, s) => n + s.comprovantes, 0);
+        $("enc-corpo").innerHTML = `<div class="tabela-rolagem livre"><table class="tabela-omie">
+          <thead><tr><th>SP</th><th>Credor</th><th>Valor</th><th>Situação</th><th>Anexo</th><th>Comprovante</th></tr></thead>
+          <tbody>${d.sps.map(s => `<tr><td>${esc(s.id)}</td><td>${esc(s.credor)}</td>
+            <td class="num">${esc(s.valor)}</td><td>${esc(s.situacao) || "—"}</td>
+            <td>${s.anexos ? "sim" : "—"}</td><td>${s.comprovantes ? "sim" : "—"}</td></tr>`).join("")}</tbody>
+          </table></div>`;
+        $("enc-n-anexo").textContent = anexos ? `(${anexos})` : "(nenhuma tem)";
+        $("enc-n-comp").textContent = comps ? `(${comps})` : "(nenhuma tem)";
+        $("enc-anexo").disabled = !anexos; $("enc-anexo").checked = !!anexos;
+        $("enc-comprovante").disabled = !comps; $("enc-comprovante").checked = !!comps;
+        $("enc-campos").innerHTML = d.campos.map(c =>
+          `<label class="opcao"><input type="checkbox" value="${esc(c.chave)}" checked> ${esc(c.rotulo)}</label>`).join("");
+        pintarContatos(d.contatos);
+        $("enc-grade").hidden = $("enc-texto").hidden = $("enc-rotulo-texto").hidden = false;
+        await montar();
+      } catch (e) {
+        $("enc-corpo").innerHTML = `<div class="aviso erro">Não consegui abrir: ${esc(e.message)}</div>`;
+      }
+    });
+  }
+
   const btnOmie = document.getElementById("ba-omie");
   const dlgOmie = document.getElementById("dialogo-omie");
   if (btnOmie && dlgOmie) {
