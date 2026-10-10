@@ -118,3 +118,23 @@ def test_ARQUIVOS_GERADOS_mandam_cada_geracao_ao_lote_com_titulo(app):
     assert (caixa.index("Folha 09/2026 · quinzena · BeeVale") < caixa.index("1000000501")
             < caixa.index("Folha 09/2026 · fim de mês") < caixa.index("1000000502")), \
         "um grupo por geração, a primeira marcada no topo"
+
+
+def test_ENVIO_EM_LOTE_cada_SP_com_as_suas_caixinhas(app):
+    """10/10/2026: *"tem que ser uma coisa para envio em lote: dados resumidos de
+    cada uma e as caixinhas para envio."*"""
+    semear_duas()
+    itens = [{"id": "1000000501", "info": False, "anexo": False, "comprovante": True},
+             {"id": "1000000502", "info": False, "anexo": False, "comprovante": False}]
+    with app.test_client() as c:
+        c.post("/analisesps/entrar", data={"senha": SENHA_MESTRE_OPERADOR})
+        previa = c.post("/analisesps/api/encaminhar/previa", json={"ids": ["1000000501"]}).get_json()
+        msg = c.post("/analisesps/api/encaminhar/mensagem",
+                     json={"ids": ["1000000501", "1000000502"], "itens": itens}).get_json()
+        nada = c.post("/analisesps/api/encaminhar/mensagem",
+                      json={"ids": ["1000000502"], "itens": itens[1:]})
+    assert previa["sps"][0]["vencimento"] == "10/10/2026"
+    # sem as informações, vai só o número junto do comprovante; a 502 fica fora
+    assert msg["texto"].startswith("*Solicitação de Pagamento*\n*Nº da SP:* 1000000501\n🧾")
+    assert "Credor" not in msg["texto"] and "1000000502" not in msg["texto"]
+    assert nada.status_code == 400

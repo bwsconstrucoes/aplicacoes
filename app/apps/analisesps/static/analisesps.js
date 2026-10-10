@@ -366,9 +366,10 @@ const LEMBRAR = {
   // podem ser marcadas e equalizadas: "Marcar Pago" grava o status e o que o
   // card diz (data, comprovante, conta) e muda a fase do card se preciso.
   // --- Encaminhar pelo WhatsApp (10/10/2026) -------------------------------
-  // A janela lista as marcadas, a pessoa escolhe o que vai (tudo marcado por
-  // padrão) e para quem; a mensagem é montada no servidor e o WhatsApp de
-  // quem clica abre com ela. Ver `encaminhar.py`.
+  // ENVIO EM LOTE: uma linha resumida por SP, com as caixinhas do que vai
+  // dela (informações, anexo, comprovante) — tudo o que existe vem marcado.
+  // A mensagem é montada no servidor só na hora de abrir o WhatsApp (o de
+  // quem clica). Ver `encaminhar.py`.
   const btnEnc = document.getElementById("ba-encaminhar");
   const dlgEnc = document.getElementById("dialogo-enc");
   if (btnEnc && dlgEnc) {
@@ -382,55 +383,71 @@ const LEMBRAR = {
       if (!d.ok) throw new Error(d.erro || ("HTTP " + r.status));
       return d;
     };
-    let idsEnc = [], linkEnc = "", relogio = null;
+    const TIPOS = ["info", "anexo", "comprovante"];
+    let idsEnc = [];
     const pintarContatos = (contatos, escolher) => {
       const sel = $("enc-contato");
-      const antes = escolher || sel.value;
+      const antes = escolher === undefined ? sel.value : escolher;
       sel.innerHTML = '<option value="">Escolher no WhatsApp (contato ou grupo)</option>' +
-        contatos.map(c => `<option value="${esc(c.telefone)}">${esc(c.nome)} — ${esc(c.telefone)}</option>`).join("");
+        contatos.map(c => `<option value="${esc(c.telefone)}">${esc(c.nome)}</option>`).join("");
       if ([...sel.options].some(o => o.value === antes)) sel.value = antes;
     };
-    const montar = async () => {
-      const campos = $("enc-info").checked
-        ? [...document.querySelectorAll("#enc-campos input:checked")].map(c => c.value) : [];
+    const itens = () => [...$("enc-corpo").querySelectorAll("tr[data-sp]")].map(tr => {
+      const item = {id: tr.dataset.sp};
+      TIPOS.forEach(t => { const c = tr.querySelector(`input[data-tipo="${t}"]`); item[t] = !!(c && c.checked); });
+      return item;
+    });
+    const conferir = () => {
+      const lista = itens();
+      const vao = lista.filter(i => i.info || i.anexo || i.comprovante).length;
+      $("enc-abrir").disabled = $("enc-copiar").disabled = !vao;
+      $("enc-resumo").textContent = vao === lista.length ? "" : `${vao} de ${lista.length} SP(s) vão.`;
+      TIPOS.forEach(t => {
+        const todas = $("enc-corpo").querySelector(`input[data-todas="${t}"]`);
+        const caixas = [...$("enc-corpo").querySelectorAll(`input[data-tipo="${t}"]:not(:disabled)`)];
+        if (todas) todas.checked = caixas.length && caixas.every(c => c.checked);
+      });
+    };
+    const mensagem = async () => {
+      const campos = [...document.querySelectorAll("#enc-campos input:checked")].map(c => c.value);
+      return postar(barra.dataset.urlEncMensagem, {ids: idsEnc, itens: itens(), campos,
+                                                   telefone: $("enc-contato").value});
+    };
+    $("enc-fechar").addEventListener("click", () => dlgEnc.close());
+    $("enc-corpo").addEventListener("change", e => {
+      const t = e.target.dataset.todas;
+      if (t) $("enc-corpo").querySelectorAll(`input[data-tipo="${t}"]:not(:disabled)`)
+               .forEach(c => { c.checked = e.target.checked; });
+      conferir();
+    });
+    $("enc-abrir").addEventListener("click", async () => {
+      // A janela abre JÁ no clique (senão o navegador a bloqueia) e recebe o
+      // endereço quando a mensagem fica pronta.
+      const janela = window.open("", "_blank");
       try {
-        const d = await postar(barra.dataset.urlEncMensagem, {
-          ids: idsEnc, campos, anexo: $("enc-anexo").checked,
-          comprovante: $("enc-comprovante").checked, telefone: $("enc-contato").value});
-        $("enc-texto").value = d.texto;
-        linkEnc = d.link;
-        $("enc-abrir").disabled = $("enc-copiar").disabled = !d.texto;
-        $("enc-resumo").textContent = "";
+        const d = await mensagem();
+        if (janela) { janela.opener = null; janela.location = d.link; } else { location.href = d.link; }
+        $("enc-resumo").textContent = "WhatsApp aberto — confira e envie por lá.";
       } catch (e) {
+        if (janela) janela.close();
         $("enc-resumo").textContent = "Não consegui montar a mensagem: " + e.message;
       }
-    };
-    const remontar = () => { clearTimeout(relogio); relogio = setTimeout(montar, 250); };
-    $("enc-fechar").addEventListener("click", () => dlgEnc.close());
-    ["enc-info", "enc-anexo", "enc-comprovante", "enc-contato"].forEach(id =>
-      $(id).addEventListener("change", remontar));
-    $("enc-campos").addEventListener("change", remontar);
-    // A mensagem editada à mão vale: o link sai do texto que está na caixa.
-    const linkDoTexto = () => {
-      const tel = $("enc-contato").value;
-      return "https://wa.me/" + (tel || "") + "?text=" + encodeURIComponent($("enc-texto").value);
-    };
-    $("enc-abrir").addEventListener("click", () => {
-      window.open(linkDoTexto(), "_blank", "noopener");
     });
     $("enc-copiar").addEventListener("click", async () => {
-      try { await navigator.clipboard.writeText($("enc-texto").value); $("enc-resumo").textContent = "Copiada."; }
-      catch (e) { $("enc-texto").select(); document.execCommand("copy"); $("enc-resumo").textContent = "Copiada."; }
+      try {
+        const d = await mensagem();
+        await navigator.clipboard.writeText(d.texto);
+        $("enc-resumo").textContent = "Mensagem copiada.";
+      } catch (e) { $("enc-resumo").textContent = "Não consegui copiar: " + e.message; }
     });
     $("enc-gravar").addEventListener("click", async () => {
       try {
-        const d = await postar(barra.dataset.urlEncContatos,
-                               {nome: $("enc-nome").value, telefone: $("enc-telefone").value});
-        const tel = d.contatos.find(c => c.nome === $("enc-nome").value.trim().replace(/\s+/g, " "));
-        pintarContatos(d.contatos, tel ? tel.telefone : "");
+        const nome = $("enc-nome").value.trim().replace(/\s+/g, " ");
+        const d = await postar(barra.dataset.urlEncContatos, {nome, telefone: $("enc-telefone").value});
+        const novo = d.contatos.find(c => c.nome === nome);
+        pintarContatos(d.contatos, novo ? novo.telefone : undefined);
         $("enc-nome").value = $("enc-telefone").value = "";
         $("enc-contato-msg").textContent = "Guardado — vale para a equipe toda.";
-        remontar();
       } catch (e) { $("enc-contato-msg").textContent = e.message; }
     });
     $("enc-apagar").addEventListener("click", async () => {
@@ -441,7 +458,6 @@ const LEMBRAR = {
         const d = await postar(barra.dataset.urlEncContatos, {acao: "remover", telefone: sel.value});
         pintarContatos(d.contatos, "");
         $("enc-contato-msg").textContent = "Apagado.";
-        remontar();
       } catch (e) { $("enc-contato-msg").textContent = e.message; }
     });
     btnEnc.addEventListener("click", async () => {
@@ -450,29 +466,33 @@ const LEMBRAR = {
       idsEnc = ids;
       $("enc-sub").textContent = `${ids.length} SP(s)`;
       $("enc-corpo").innerHTML = '<p class="cartao-dica">Carregando…</p>';
-      $("enc-grade").hidden = $("enc-texto").hidden = $("enc-rotulo-texto").hidden = true;
+      $("enc-rodape").hidden = true;
       $("enc-abrir").disabled = $("enc-copiar").disabled = true;
       $("enc-resumo").textContent = "";
       dlgEnc.showModal();
       try {
         const d = await postar(barra.dataset.urlEncPrevia, {ids});
-        const anexos = d.sps.reduce((n, s) => n + s.anexos, 0);
-        const comps = d.sps.reduce((n, s) => n + s.comprovantes, 0);
-        $("enc-corpo").innerHTML = `<div class="tabela-rolagem livre"><table class="tabela-omie">
-          <thead><tr><th>SP</th><th>Credor</th><th>Valor</th><th>Situação</th><th>Anexo</th><th>Comprovante</th></tr></thead>
-          <tbody>${d.sps.map(s => `<tr><td>${esc(s.id)}</td><td>${esc(s.credor)}</td>
-            <td class="num">${esc(s.valor)}</td><td>${esc(s.situacao) || "—"}</td>
-            <td>${s.anexos ? "sim" : "—"}</td><td>${s.comprovantes ? "sim" : "—"}</td></tr>`).join("")}</tbody>
+        const caixa = (s, tipo, tem) => tem
+          ? `<input type="checkbox" data-tipo="${tipo}" checked aria-label="${tipo} da SP ${esc(s.id)}">`
+          : `<input type="checkbox" data-tipo="${tipo}" disabled title="Esta SP não tem">`;
+        $("enc-corpo").innerHTML = `<div class="tabela-rolagem livre enc-lista"><table class="tabela-omie">
+          <thead><tr><th>SP</th><th>Credor</th><th class="num">Valor</th><th>Venc.</th><th>Situação</th>
+            ${["info:Informações", "anexo:Anexo", "comprovante:Comprovante"].map(x => {
+              const [t, r] = x.split(":");
+              return `<th class="enc-caixa"><label><input type="checkbox" data-todas="${t}"> ${r}</label></th>`;
+            }).join("")}</tr></thead>
+          <tbody>${d.sps.map(s => `<tr data-sp="${esc(s.id)}"><td>${esc(s.id)}</td>
+            <td class="enc-credor" title="${esc(s.credor)}">${esc(s.credor)}</td>
+            <td class="num">${esc(s.valor)}</td><td>${esc(s.vencimento)}</td><td>${esc(s.situacao) || "—"}</td>
+            <td class="enc-caixa">${caixa(s, "info", true)}</td>
+            <td class="enc-caixa">${caixa(s, "anexo", s.anexos)}</td>
+            <td class="enc-caixa">${caixa(s, "comprovante", s.comprovantes)}</td></tr>`).join("")}</tbody>
           </table></div>`;
-        $("enc-n-anexo").textContent = anexos ? `(${anexos})` : "(nenhuma tem)";
-        $("enc-n-comp").textContent = comps ? `(${comps})` : "(nenhuma tem)";
-        $("enc-anexo").disabled = !anexos; $("enc-anexo").checked = !!anexos;
-        $("enc-comprovante").disabled = !comps; $("enc-comprovante").checked = !!comps;
         $("enc-campos").innerHTML = d.campos.map(c =>
           `<label class="opcao"><input type="checkbox" value="${esc(c.chave)}" checked> ${esc(c.rotulo)}</label>`).join("");
         pintarContatos(d.contatos);
-        $("enc-grade").hidden = $("enc-texto").hidden = $("enc-rotulo-texto").hidden = false;
-        await montar();
+        $("enc-rodape").hidden = false;
+        conferir();
       } catch (e) {
         $("enc-corpo").innerHTML = `<div class="aviso erro">Não consegui abrir: ${esc(e.message)}</div>`;
       }

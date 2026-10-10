@@ -121,28 +121,46 @@ def _links(texto) -> list[str]:
 
 
 def previa(ids) -> list[dict]:
-    """O que a janela lista: cada SP com o que ela TEM para mandar."""
+    """O que a janela lista: cada SP RESUMIDA, com o que ela TEM para mandar
+    (10/10/2026 — *"dados resumidos de cada uma e as caixinhas para envio;
+    não precisa detalhar"*)."""
     saida = []
     for sp in _sps(ids):
         v = _valores(sp)
         saida.append({"id": v["id"], "credor": v["credor"], "valor": v["valor"],
-                      "situacao": v["situacao"],
+                      "vencimento": v["vencimento"], "situacao": v["situacao"],
                       "anexos": len(_links(sp.get("anexo_link"))),
                       "comprovantes": len(_links(sp.get("comprovante")))})
     return saida
 
 
-def montar_mensagem(ids, campos=None, anexo=True, comprovante=True) -> str:
+def montar_mensagem(ids, campos=None, anexo=True, comprovante=True,
+                    por_sp: dict | None = None) -> str:
     """A mensagem pronta para o WhatsApp (negrito com *asteriscos*). Campo
-    vazio não sai — "Chave Pix: " sem chave confunde mais que ajuda."""
+    vazio não sai — "Chave Pix: " sem chave confunde mais que ajuda.
+
+    `por_sp` (envio em lote, 10/10/2026): `{id: {"info", "anexo",
+    "comprovante"}}` — o que vai de CADA SP, marcado linha a linha na janela.
+    SP sem nada marcado fica fora; sem as informações, vai só o número dela
+    junto do arquivo, para quem recebe saber de qual SP é."""
     campos = [c for c in (campos if campos is not None else CAMPOS_POR_CHAVE)
               if c in CAMPOS_POR_CHAVE]
     blocos = []
     for sp in _sps(ids):
         v = _valores(sp)
+        escolha = (por_sp or {}).get(v["id"]) if por_sp is not None else None
+        if por_sp is not None and not escolha:
+            continue
+        com_info = escolha.get("info", True) if escolha else True
+        com_anexo = escolha.get("anexo", anexo) if escolha else anexo
+        com_comp = escolha.get("comprovante", comprovante) if escolha else comprovante
+        if not (com_info or com_anexo or com_comp):
+            continue
         linhas = ["*Solicitação de Pagamento*"]
         for chave, rotulo in CAMPOS:
-            if chave not in campos:
+            if chave not in campos and not (chave == "id"):
+                continue
+            if not com_info and chave != "id":
                 continue
             if chave == "pagamento":
                 rotulo, valor = v["pagamento"]
@@ -150,11 +168,11 @@ def montar_mensagem(ids, campos=None, anexo=True, comprovante=True) -> str:
                 valor = v[chave]
             if valor:
                 linhas.append(f"*{rotulo}:* {valor}")
-        if anexo:
+        if com_anexo:
             anexos = _links(sp.get("anexo_link"))
             for n, u in enumerate(anexos, start=1):
                 linhas.append(f"📎 *Anexo{f' {n}' if len(anexos) > 1 else ''}:* {u}")
-        if comprovante:
+        if com_comp:
             comps = _links(sp.get("comprovante"))
             for n, u in enumerate(comps, start=1):
                 linhas.append(f"🧾 *Comprovante{f' {n}' if len(comps) > 1 else ''}:* {u}")

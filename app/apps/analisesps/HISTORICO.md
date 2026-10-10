@@ -12243,6 +12243,13 @@ somente Solicitações de uma conta especifica"*.
   WhatsApp de quem clica com o texto — a pessoa confere e envia lá. Boleto →
   código de barras (coluna AI, ou a informação p/ pgt); Pix → a chave; SP paga
   → "Pago em". Anexo e comprovante vão como link de baixar. `encaminhar.py`.
+  - **Ajuste no mesmo dia** — *"não precisa estar detalhada; tem que ser
+    para envio em lote: dados resumidos de cada uma e as caixinhas."* A janela
+    virou uma linha por SP (SP, credor, valor, vencimento, situação) com três
+    caixinhas em cada — informações, anexo, comprovante — e o "marcar todas"
+    no cabeçalho de cada coluna. A mensagem não aparece mais: é montada na
+    hora de abrir o WhatsApp (ou de copiar). Sem as informações, a SP vai só
+    com o número junto do arquivo. "Quais informações vão" ficou recolhido.
   - **Contatos:** uma lista da equipe toda, em `analisesps.meta`
     (`contatos_encaminhar`, sem migração), cadastrada dentro da própria janela.
   - **Decisão: sai pelo WhatsApp de quem clica, não pelo robô (Z-API).** O

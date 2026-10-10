@@ -1439,11 +1439,20 @@ def encaminhar_mensagem():
     ids, erro = _ids_do_pedido(dados)
     if erro:
         return erro
+    campos = dados.get("campos")
+    # o que vai de cada SP, marcado linha a linha (envio em lote, 10/10/2026)
+    por_sp = None
+    if isinstance(dados.get("itens"), list):
+        por_sp = {str(i.get("id")): {"info": bool(i.get("info")), "anexo": bool(i.get("anexo")),
+                                     "comprovante": bool(i.get("comprovante"))}
+                  for i in dados["itens"] if isinstance(i, dict) and i.get("id")}
     texto = encaminhar.montar_mensagem(
-        ids[:encaminhar.MAX_SPS], campos=[str(c) for c in (dados.get("campos") or [])],
-        anexo=bool(dados.get("anexo")), comprovante=bool(dados.get("comprovante")))
+        ids[:encaminhar.MAX_SPS],
+        campos=None if campos is None else [str(c) for c in campos],
+        anexo=bool(dados.get("anexo", True)), comprovante=bool(dados.get("comprovante", True)),
+        por_sp=por_sp)
     if not texto:
-        return {"ok": False, "erro": "Nenhuma das SPs marcadas está na base."}, 404
+        return {"ok": False, "erro": "Nada marcado para mandar."}, 400
     return {"ok": True, "texto": texto,
             "link": encaminhar.link_whatsapp(dados.get("telefone"), texto)}
 
