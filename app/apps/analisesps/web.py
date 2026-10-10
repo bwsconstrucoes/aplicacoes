@@ -2218,7 +2218,7 @@ def _filtros_do_faturamento() -> dict:
         "competencias": lista("competencia"),
         "retencoes": {t: request.args.get("ret_" + t)
                       for t in ("pis", "cofins", "ir", "csll", "inss", "iss")
-                      if request.args.get("ret_" + t) in ("com", "sem", "vazio")},
+                      if request.args.get("ret_" + t) in ("sim", "nao")},
         "tributacoes": lista("tributacao"),
     }
 

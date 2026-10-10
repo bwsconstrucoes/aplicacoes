@@ -84,27 +84,6 @@
     </div></div>
   </div>
 
-  {# RETENÇÃO POR TRIBUTO (09/10/2026: *"às vezes preciso saber quais notas têm
-     retenção de INSS e quais não têm"*). "Não informado" é a nota antiga ainda
-     não equalizada — não é o mesmo que "sem retenção". #}
-  <div class="filtro {% if filtros.retencoes %}aberto{% endif %}">
-    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
-      <span>Retenção de tributos</span>
-      {% if filtros.retencoes %}<span class="filtro-badge">{{ filtros.retencoes|length }}</span>{% endif %}
-      <span class="seta">▾</span></div>
-    <div class="filtro-cont">
-      {% for t in ['inss', 'iss', 'ir', 'pis', 'cofins', 'csll'] %}
-        <label class="fat-retencao"><span>{{ t|upper }}</span>
-          <select name="ret_{{ t }}">
-            {% for valor, rotulo in [('', 'tanto faz'), ('com', 'com retenção'),
-                                     ('sem', 'sem retenção'), ('vazio', 'não informado')] %}
-              <option value="{{ valor }}" {% if filtros.retencoes.get(t, '') == valor %}selected{% endif %}>{{ rotulo }}</option>
-            {% endfor %}
-          </select></label>
-      {% endfor %}
-    </div>
-  </div>
-
   {% if opcoes.tributacoes %}
   {% call caixas('tributacao', opcoes.tributacoes, filtros.tributacoes) %}
     <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
@@ -126,6 +105,28 @@
       {% if filtros.obras %}<span class="filtro-badge">{{ filtros.obras|length }}</span>{% endif %}
       <span class="seta">▾</span></div>
   {% endcall %}
+  {# RETENÇÃO POR TRIBUTO (09/10/2026: *"às vezes preciso saber quais notas têm
+     retenção de INSS e quais não têm"*). Só "sim" e "não" (*"tanto faz é
+     fuleiragem"*); em branco, não filtra. "Não" inclui a nota sem marca (antiga
+     não equalizada), que na tabela aparece com "—". No fim da barra, como os
+     tributos no fim da tabela. #}
+  <div class="filtro {% if filtros.retencoes %}aberto{% endif %}">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Retenção de tributos</span>
+      {% if filtros.retencoes %}<span class="filtro-badge">{{ filtros.retencoes|length }}</span>{% endif %}
+      <span class="seta">▾</span></div>
+    <div class="filtro-cont">
+      {% for t in ['inss', 'iss', 'ir', 'pis', 'cofins', 'csll'] %}
+        <label class="fat-retencao"><span>{{ t|upper }}</span>
+          <select name="ret_{{ t }}">
+            {% for valor, rotulo in [('', ''), ('sim', 'sim'), ('nao', 'não')] %}
+              <option value="{{ valor }}" {% if filtros.retencoes.get(t, '') == valor %}selected{% endif %}>{{ rotulo }}</option>
+            {% endfor %}
+          </select></label>
+      {% endfor %}
+    </div>
+  </div>
+
 </form>
 
 <script>

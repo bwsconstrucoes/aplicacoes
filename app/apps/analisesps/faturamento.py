@@ -73,13 +73,14 @@ COLUNAS = [
     Coluna("periodo_ini", "Início da medição",    "data",    True),
     Coluna("periodo_fim", "Fim da medição",       "data",    True),
     Coluna("valor",       "Valor",                "moeda",   True),
-    Coluna("tributos",    "Tributos (PIS a ISS)", "moeda",   True),
     Coluna("liquido",     "Líquido",              "moeda",   True),
     Coluna("recebido_em", "Recebido em",          "data",    True),
     Coluna("recebido",    "Valor recebido",       "moeda",   True),
     Coluna("situacao",    "Situação",             "texto",   True),
     Coluna("omie",        "Omie",                 "texto",   True),
     Coluna("arquivos",    "Arquivos",             "link",    True),
+    # ao final (09/10/2026: *"colocar os tributos ao final"*)
+    Coluna("tributos",    "Tributos (PIS a ISS)", "moeda",   True),
 ]
 COLUNAS_POR_CHAVE = {c.chave: c for c in COLUNAS}
 PREFERENCIA_COLUNAS = "colunas_faturamento"
@@ -703,19 +704,18 @@ def _where(f: dict, com_datas: bool = True) -> tuple[str, list]:
                          f"IN ({', '.join('?' for _ in empresas)})")
         params += empresas
     # RETENÇÃO POR TRIBUTO (09/10/2026 — *"às vezes preciso saber quais notas
-    # têm retenção de INSS e quais não têm"*). A marca é o "retém" da base:
-    # S = retido, N = não retido, vazio = não informado (nota antiga ainda não
-    # equalizada — que não é "sem retenção").
+    # têm retenção de INSS e quais não têm"*), SÓ "sim" e "não" — o dono, no
+    # mesmo dia: *"vamos colocar sim e não; tanto faz é fuleiragem"*. A marca é
+    # o "retém" da base: "sim" = S. "não" = todo o resto, INCLUSIVE a nota sem
+    # marca (antiga ainda não equalizada) — na tabela ela aparece com "—".
     for tributo, escolha in (f.get("retencoes") or {}).items():
         if tributo not in TRIBUTOS:
             continue
         marca = f"upper(coalesce(n.dados->>'retem_{tributo}', ''))"
-        if escolha == "com":
+        if escolha == "sim":
             condicoes.append(f"{marca} LIKE 'S%'")
-        elif escolha == "sem":
-            condicoes.append(f"{marca} LIKE 'N%'")
-        elif escolha == "vazio":
-            condicoes.append(f"{marca} = ''")
+        elif escolha == "nao":
+            condicoes.append(f"{marca} NOT LIKE 'S%'")
     tributacoes = [t for t in (f.get("tributacoes") or []) if str(t).strip()]
     if tributacoes:
         condicoes.append("coalesce(o.dados->>'tributacao', '') "

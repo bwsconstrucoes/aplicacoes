@@ -257,7 +257,15 @@ def test_FILTRO_DE_RETENCAO_por_tributo(carregado):
     tudo = {"de": dt.date(2026, 1, 1), "status": "valida"}
     def notas(**ret):
         return sorted(n["sequencial"] for n in faturamento.listar(dict(tudo, retencoes=ret)))
-    assert notas(pis="com") == ["3283"]
-    assert notas(pis="vazio") == ["3050", "3284"], "não informado não é 'sem retenção'"
-    assert notas(pis="sem") == []
-    assert notas(pis="qualquer") == ["3050", "3283", "3284"]
+    # só "sim" e "não" (*"tanto faz é fuleiragem"*); o "não" leva a sem marca
+    assert notas(pis="sim") == ["3283"]
+    assert notas(pis="nao") == ["3050", "3284"]
+    assert notas(pis="qualquer") == ["3050", "3283", "3284"], "valor estranho não filtra"
+    with carregado.test_client() as cliente:
+        cliente.post("/analisesps/entrar", data={"senha": SENHA_MESTRE_OPERADOR})
+        tela = cliente.get("/analisesps/faturamento?f=1&de=2026-01-01&ret_pis=sim"
+                           ).get_data(as_text=True)
+    assert "tanto faz" not in tela and '<option value="sim" selected>' in tela
+    assert "3283" in tela and "3284" not in tela
+    # os tributos vêm ao final da tabela, depois dos arquivos
+    assert tela.index("<th>Arquivos</th>") < tela.index('<th class="direita">PIS</th>')

@@ -12250,6 +12250,10 @@ somente Solicitações de uma conta especifica"*.
   tanto faz / com retenção / sem retenção / não informado. "Não informado" é a
   nota antiga não equalizada — não é o mesmo que "sem retenção". E um filtro
   "Tributação da obra", pela C. Diários (só aparece se a coluna existir).
+- Ajuste no mesmo dia: *"vamos colocar sim e não; tanto faz é fuleiragem"* e
+  *"colocar os tributos ao final"*. A retenção ficou só "sim"/"não" (em branco
+  não filtra; "não" inclui a nota sem marca, que aparece com "—"), e os
+  tributos foram para o fim da tabela e da barra lateral.
 - Não conferido com a aba Protocolos de verdade: o nome das colunas do
   período é suposição — o recado da primeira carga confirma.
 
