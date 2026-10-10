@@ -3,6 +3,8 @@
    Mesmo jeito da barra das Solicitações: aplica sozinha meio segundo depois do
    último clique. Vale para as duas subtelas (Notas e Por período).
 --------------------------------------------------------------------------- #}
+{# `valores`: lista de textos, ou de pares (valor, rótulo) — a competência
+   manda "2026-09" e mostra "09/2026". #}
 {% macro caixas(nome, valores, marcados) %}
   <div class="filtro {% if marcados %}aberto{% endif %}">
     {{ caller() }}
@@ -11,9 +13,10 @@
         <input type="search" class="procura-opcao" autocomplete="off" placeholder="Procurar…">
       {% endif %}
       <div class="filtro-opcoes">
-        {% for v in valores %}
+        {% for item in valores %}
+          {% if item is string %}{% set v, rotulo = item, item %}{% else %}{% set v, rotulo = item[0], item[1] %}{% endif %}
           <label class="opcao"><input type="checkbox" name="{{ nome }}" value="{{ v }}"
-                 {% if v in marcados %}checked{% endif %}><span class="rotulo" title="{{ v }}">{{ v }}</span></label>
+                 {% if v in marcados %}checked{% endif %}><span class="rotulo" title="{{ rotulo }}">{{ rotulo }}</span></label>
         {% endfor %}
       </div>
     </div>
@@ -44,9 +47,19 @@
         <div><label>Até</label><input type="date" name="ate" value="{{ filtros.ate or '' }}"></div>
       </div>
       <p class="cartao-dica" style="margin:6px 2px 0">Sem filtro: os últimos doze meses.
-        Apague as duas datas para ver tudo.</p>
+        Apague as duas datas para ver tudo.{% if filtros.competencias %} <b>Com competência
+        marcada, as datas de emissão não filtram.</b>{% endif %}</p>
     </div>
   </div>
+
+  {# A competência é FILTRO, não coluna (09/10/2026: *"nem precisa ter coluna,
+     ela tem que estar no filtro"*), e vem mês/ano. #}
+  {% call caixas('competencia', opcoes.competencias, filtros.competencias) %}
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Competência</span>
+      {% if filtros.competencias %}<span class="filtro-badge">{{ filtros.competencias|length }}</span>{% endif %}
+      <span class="seta">▾</span></div>
+  {% endcall %}
 
   <div class="filtro aberto">
     <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
@@ -70,6 +83,36 @@
       {% endfor %}
     </div></div>
   </div>
+
+  {# RETENÇÃO POR TRIBUTO (09/10/2026: *"às vezes preciso saber quais notas têm
+     retenção de INSS e quais não têm"*). "Não informado" é a nota antiga ainda
+     não equalizada — não é o mesmo que "sem retenção". #}
+  <div class="filtro {% if filtros.retencoes %}aberto{% endif %}">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Retenção de tributos</span>
+      {% if filtros.retencoes %}<span class="filtro-badge">{{ filtros.retencoes|length }}</span>{% endif %}
+      <span class="seta">▾</span></div>
+    <div class="filtro-cont">
+      {% for t in ['inss', 'iss', 'ir', 'pis', 'cofins', 'csll'] %}
+        <label class="fat-retencao"><span>{{ t|upper }}</span>
+          <select name="ret_{{ t }}">
+            {% for valor, rotulo in [('', 'tanto faz'), ('com', 'com retenção'),
+                                     ('sem', 'sem retenção'), ('vazio', 'não informado')] %}
+              <option value="{{ valor }}" {% if filtros.retencoes.get(t, '') == valor %}selected{% endif %}>{{ rotulo }}</option>
+            {% endfor %}
+          </select></label>
+      {% endfor %}
+    </div>
+  </div>
+
+  {% if opcoes.tributacoes %}
+  {% call caixas('tributacao', opcoes.tributacoes, filtros.tributacoes) %}
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Tributação da obra</span>
+      {% if filtros.tributacoes %}<span class="filtro-badge">{{ filtros.tributacoes|length }}</span>{% endif %}
+      <span class="seta">▾</span></div>
+  {% endcall %}
+  {% endif %}
 
   {% call caixas('empresa', opcoes.empresas, filtros.empresas) %}
     <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
@@ -97,7 +140,7 @@
     relogio = setTimeout(() => form.submit(), espera);
   };
   form.addEventListener("change", e => {
-    if (e.target.matches("input[type=checkbox], input[type=radio], input[type=date]")) agendar(500);
+    if (e.target.matches("input[type=checkbox], input[type=radio], input[type=date], select")) agendar(500);
   });
   form.addEventListener("input", e => {
     if (e.target.matches("input[name=busca]")) agendar(900);

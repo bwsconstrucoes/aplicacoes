@@ -12228,6 +12228,31 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 217 — Faturamento: período da medição, competência no filtro, retenção por tributo (09/10/2026)
+
+- *"Colunas que tragam o período da medição — não vai ter para todos, mas a
+  gente tem lá na planilha Protocolos."* A carga lê a aba "Protocolos" (na
+  planilha das notas) e completa o período das notas que não o têm, pela chave
+  OBRA-MEDIÇÃO (a mesma da consolidação). Só lê — a base não é tocada. As
+  colunas são achadas PELO NOME do cabeçalho (início/término + medição ou
+  período; ou uma coluna "Período" com "x a y"), porque o mapa do emissor não
+  conhece essas colunas. Não achando, o recado da carga lista os cabeçalhos
+  vistos. Duas colunas novas: "Início med." e "Fim med."; a ficha diz quando
+  o período veio da Protocolos. A conferência no Omie não apaga esse período.
+- *"A competência está saindo ano-hífen-mês; é mês/ano. E nem precisa ter
+  coluna: tem que estar no filtro."* Saiu da lista; virou filtro na barra
+  (mês/ano). Normalizada na carga para AAAA-MM, venha como vier; sem ela, o mês
+  da emissão (regra do emissor). **Competência marcada desliga as datas de
+  emissão**: a medição de 07/2026 faturada em 10/2026 não pode sumir porque a
+  emissão caiu fora do período.
+- *"Preciso saber quais notas têm retenção de INSS e quais não têm."* Filtro
+  "Retenção de tributos": para cada um (INSS, ISS, IR, PIS, COFINS, CSLL),
+  tanto faz / com retenção / sem retenção / não informado. "Não informado" é a
+  nota antiga não equalizada — não é o mesmo que "sem retenção". E um filtro
+  "Tributação da obra", pela C. Diários (só aparece se a coluna existir).
+- Não conferido com a aba Protocolos de verdade: o nome das colunas do
+  período é suposição — o recado da primeira carga confirma.
+
 #### Leva 216 — Faturamento: nota com número repetido não some mais (09/10/2026)
 
 - *"Última importação das antigas: 3.468 notas levadas à Base Faturamento.

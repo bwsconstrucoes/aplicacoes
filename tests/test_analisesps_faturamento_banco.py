@@ -41,6 +41,12 @@ OBRAS = [["Código", "Código Primário", "Cliente", "Contrato", "Empresa", "SCP
          ["IFS2", "IFSPSAOJOSE", "IF SERTÃO", "CT-02", "BWS", "SCP IF", "São José"]]
 
 
+# A "Protocolos": chave OBRA-MEDIÇÃO e o período, achado pelo NOME da coluna.
+PROTOCOLOS = [["Chave", "", "Card", "Integração Omie",
+               "Período de Início da Medição", "Período de Término da Medição"],
+              ["IFSPSAOJOSE-11", "", "123", "INT-1", "01/09/2026", "30/09/2026"]]
+
+
 class Aba:
     def __init__(self, valores):
         self.valores = valores
@@ -62,11 +68,14 @@ def carregado(app, monkeypatch):
              nota("3050", "3050", "15/07/2026", "IFS2", "1.000,00"),
              # a MESMA nota escrita duas vezes (mesma emissão, obra e valor)
              nota("2600000003283", "3283", "08/10/2026", "IFSPSAOJOSE", "10000,00")]
+    notas[1][CAB.index("medicao_numero")] = "11"
     abas = {(faturamento.PLANILHA_NOTAS, faturamento.ABA_BASE): Aba(notas),
+            (faturamento.PLANILHA_NOTAS, "Protocolos"): Aba(PROTOCOLOS),
             (faturamento.PLANILHA_OBRAS, "Centro de Custo"): Aba(OBRAS)}
     monkeypatch.setattr(sincronizacao, "_aba", lambda p, n: abas[(p, n)])
     monkeypatch.setattr(tarefas, "disparar", lambda *a, **k: {"ok": False})
     r = faturamento.carregar()
+    assert r["periodos_da_protocolos"] == 1, r
     assert (r["notas"], r["obras"], r["repetidas"], r["mesmo_numero"]) == (4, 4, 1, 0), r
     assert r["avisos"] == ["1 linha(s) da base são a mesma nota escrita duas vezes "
                            "— contadas uma vez só."], r
@@ -220,3 +229,35 @@ def test_NUMERO_REPETIDO_de_outra_nota_entra_e_a_mesma_nota_duas_vezes_nao():
     assert contagem == {"repetidas": 1, "mesmo_numero": 2}
     assert [n.get("_chave") for n in notas] == [None, "3050-2", "3050-3"]
     assert [n["_linha_base"] for n in notas] == [2, 4, 5], "a linha da aba vai junto"
+
+
+def test_PERIODO_DA_MEDICAO_vem_da_protocolos_e_a_COMPETENCIA_e_mes_barra_ano(carregado):
+    """09/10/2026: *"colunas que tragam o período da medição — a gente tem lá na
+    planilha Protocolos"*; *"a competência está saindo ano-mês; é para ser mês
+    barra ano, e nem precisa ter coluna: tem que estar no filtro"*."""
+    from app.apps.analisesps import faturamento
+    n = faturamento.uma("2600000003283")
+    assert (n["periodo_ini"], n["periodo_fim"]) == (dt.date(2026, 9, 1), dt.date(2026, 9, 30))
+    assert n["periodo_da_protocolos"] and n["competencia"] == "10/2026"
+    assert ("2026-10", "10/2026") in faturamento.opcoes()["competencias"]
+    with carregado.test_client() as cliente:
+        cliente.post("/analisesps/entrar", data={"senha": SENHA_MESTRE_OPERADOR})
+        tela = cliente.get("/analisesps/faturamento?f=1&de=2026-01-01").get_data(as_text=True)
+        so_jul = cliente.get("/analisesps/faturamento?f=1&de=2026-10-01&competencia=2026-07"
+                             ).get_data(as_text=True)
+    assert "Início med." in tela and "01/09/2026" in tela and "Compet." not in tela
+    assert 'value="2026-10"' in tela and ">10/2026<" in tela, "o filtro mostra mês/ano"
+    # competência marcada manda no período: a de julho aparece mesmo com "de" em outubro
+    assert "3050" in so_jul and "3283" not in so_jul
+
+
+def test_FILTRO_DE_RETENCAO_por_tributo(carregado):
+    """*"Às vezes preciso saber quais notas têm retenção de INSS e quais não têm."*"""
+    from app.apps.analisesps import faturamento
+    tudo = {"de": dt.date(2026, 1, 1), "status": "valida"}
+    def notas(**ret):
+        return sorted(n["sequencial"] for n in faturamento.listar(dict(tudo, retencoes=ret)))
+    assert notas(pis="com") == ["3283"]
+    assert notas(pis="vazio") == ["3050", "3284"], "não informado não é 'sem retenção'"
+    assert notas(pis="sem") == []
+    assert notas(pis="qualquer") == ["3050", "3283", "3284"]

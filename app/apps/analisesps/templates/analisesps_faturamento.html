@@ -37,17 +37,18 @@
   {% else %}
     {# Quantas colunas vêm ANTES do Valor e entre ele e o Líquido: é o que
        mantém os totais do rodapé debaixo das colunas certas. #}
-    {% set antes_do_valor = ['emissao','competencia','obra','empresa','tomador','medicao']|select('in', ver)|list|length %}
+    {% set antes_do_valor = ['emissao','obra','empresa','tomador','medicao','periodo_ini','periodo_fim']|select('in', ver)|list|length %}
     <div class="tabela-rolagem fat-planilha">
       <table class="tabela-fat">
         <thead><tr>
           <th>Nota</th>
           {% if 'emissao' in ver %}<th>Emissão</th>{% endif %}
-          {% if 'competencia' in ver %}<th>Compet.</th>{% endif %}
           {% if 'obra' in ver %}<th>Obra</th>{% endif %}
           {% if 'empresa' in ver %}<th>Empresa</th>{% endif %}
           {% if 'tomador' in ver %}<th>Tomador</th>{% endif %}
           {% if 'medicao' in ver %}<th>Medição</th>{% endif %}
+          {% if 'periodo_ini' in ver %}<th title="Início do período da medição">Início med.</th>{% endif %}
+          {% if 'periodo_fim' in ver %}<th title="Fim do período da medição">Fim med.</th>{% endif %}
           {% if 'valor' in ver %}<th class="direita">Valor</th>{% endif %}
           {% if 'tributos' in ver %}<th class="direita">PIS</th><th class="direita">COFINS</th><th class="direita">IR</th>
             <th class="direita">CSLL</th><th class="direita">INSS</th><th class="direita">ISS</th>{% endif %}
@@ -65,11 +66,12 @@
               <td><b>{{ n.sequencial or n.numero }}</b>{% if n.numero_repetido %}
                 <small class="selo neutro" title="Outra nota (de outra data, obra ou valor) usa o mesmo número">nº repetido</small>{% endif %}</td>
               {% if 'emissao' in ver %}<td>{{ n.data_emissao|data_br }}</td>{% endif %}
-              {% if 'competencia' in ver %}<td>{{ n.competencia }}</td>{% endif %}
               {% if 'obra' in ver %}<td>{{ n.obra }}</td>{% endif %}
               {% if 'empresa' in ver %}<td>{{ n.empresa }}{% if n.e_scp %} <small class="selo neutro">SCP</small>{% endif %}</td>{% endif %}
               {% if 'tomador' in ver %}<td class="fat-tomador" title="{{ n.tomador }}">{{ n.tomador }}</td>{% endif %}
               {% if 'medicao' in ver %}<td>{{ n.medicao }}</td>{% endif %}
+              {% if 'periodo_ini' in ver %}<td>{{ n.periodo_ini|data_br if n.periodo_ini else '' }}</td>{% endif %}
+              {% if 'periodo_fim' in ver %}<td>{{ n.periodo_fim|data_br if n.periodo_fim else '' }}</td>{% endif %}
               {% if 'valor' in ver %}<td class="direita"><b>{{ n.valor_total|moeda }}</b></td>{% endif %}
               {% if 'tributos' in ver %}{% for t in n.tributos %}
                 <td class="direita {{ 'fat-nao-retido' if t.retem == 'N' }}"

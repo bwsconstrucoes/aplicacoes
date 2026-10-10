@@ -2213,6 +2213,13 @@ def _filtros_do_faturamento() -> dict:
         "empresas": lista("empresa"),
         "recebimento": request.args.get("recebimento") or "",
         "busca": (request.args.get("busca") or "").strip(),
+        # 09/10/2026: competência no filtro (não em coluna), retenção por
+        # tributo ("quais notas têm retenção de INSS") e tributação da obra.
+        "competencias": lista("competencia"),
+        "retencoes": {t: request.args.get("ret_" + t)
+                      for t in ("pis", "cofins", "ir", "csll", "inss", "iss")
+                      if request.args.get("ret_" + t) in ("com", "sem", "vazio")},
+        "tributacoes": lista("tributacao"),
     }
 
 

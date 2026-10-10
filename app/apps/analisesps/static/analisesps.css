@@ -2830,3 +2830,6 @@ table.conciliacao tr.com-sp { cursor: pointer; }
 .fat-arquivos a.fat-icone { margin-right: 2px; }
 .fat-omie-linha .btn { margin-left: 8px; }
 .fat-planilha-cartao .linha-colunas { margin: 0 0 8px; }
+.fat-retencao { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 4px 2px; font-size: 13px; }
+.fat-retencao span { font-weight: 600; min-width: 52px; }
+.fat-retencao select { flex: 1; padding: 4px 6px; border: 1px solid #c8d0da; border-radius: 6px; background: #fff; font-size: 13px; }

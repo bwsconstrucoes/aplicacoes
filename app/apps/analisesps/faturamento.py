@@ -62,11 +62,16 @@ CAMPOS_DA_OBRA = {
 # abre a ficha. Mesma mecânica e mesma guarda da tabela de SPs (`tabela.py`).
 COLUNAS = [
     Coluna("emissao",     "Emissão",              "data",    True),
-    Coluna("competencia", "Competência",          "texto",   True),
     Coluna("obra",        "Obra",                 "texto",   True),
     Coluna("empresa",     "Empresa",              "texto",   True),
     Coluna("tomador",     "Tomador",              "texto",   True),
     Coluna("medicao",     "Medição",              "texto",   True),
+    # O PERÍODO DA MEDIÇÃO (09/10/2026 — *"colunas que tragam o período da
+    # medição; não vai ter para todos, mas a gente tem lá na planilha
+    # Protocolos"*). A competência saiu da lista: *"nem precisa ter coluna, ela
+    # tem que estar no filtro"*.
+    Coluna("periodo_ini", "Início da medição",    "data",    True),
+    Coluna("periodo_fim", "Fim da medição",       "data",    True),
     Coluna("valor",       "Valor",                "moeda",   True),
     Coluna("tributos",    "Tributos (PIS a ISS)", "moeda",   True),
     Coluna("liquido",     "Líquido",              "moeda",   True),
@@ -99,6 +104,116 @@ def _chave_obra(v) -> str:
 # ---------------------------------------------------------------------------
 # A carga (processo separado)
 # ---------------------------------------------------------------------------
+def competencia_normalizada(valor, data_emissao="") -> str:
+    """A competência como "AAAA-MM" (é assim que ordena), venha como vier:
+    "2026-09", "2026-09-01", "09/2026", "01/09/2026". Sem ela, o mês da
+    emissão — a mesma regra da consolidação do emissor."""
+    import re
+    t = str(valor or "").strip()
+    m = re.match(r"^(\d{4})-(\d{1,2})", t)
+    if m:
+        return f"{m.group(1)}-{int(m.group(2)):02d}"
+    m = re.match(r"^(?:\d{1,2}/)?(\d{1,2})/(\d{4})$", t)
+    if m:
+        return f"{m.group(2)}-{int(m.group(1)):02d}"
+    if data_emissao:
+        from .formatos import para_data
+        d = para_data(data_emissao)
+        if d:
+            return d.strftime("%Y-%m")
+    return ""
+
+
+def competencia_br(valor) -> str:
+    """"2026-09" → "09/2026" (09/10/2026 — *"é para ser primeiro mês, barra,
+    depois o ano"*)."""
+    t = str(valor or "")
+    return f"{t[5:7]}/{t[:4]}" if len(t) >= 7 and t[4] == "-" else t
+
+
+# ---------------------------------------------------------------------------
+# O PERÍODO DA MEDIÇÃO pela aba "Protocolos" (09/10/2026).
+#
+# A base só tem o período das notas que o emissor gravou depois de 09/10; para
+# as antigas ele está na "Protocolos" (por OBRA-MEDIÇÃO, a mesma chave que a
+# consolidação usa para o card e o código do Omie). Aqui só se LÊ: o período
+# completa a tela, e a base não é tocada.
+#
+# ⚠️ AS COLUNAS SÃO ACHADAS PELO NOME do cabeçalho, não pela posição: o mapa do
+# emissor só conhece A (chave), C (card) e D (código do Omie). Não achando, a
+# carga diz quais cabeçalhos viu — para acertar o nome, e não chutar a coluna.
+# ---------------------------------------------------------------------------
+ABA_PROTOCOLOS = "Protocolos"
+
+
+def _sem_acento(t) -> str:
+    import unicodedata
+    t = unicodedata.normalize("NFD", str(t or "")).encode("ascii", "ignore").decode()
+    return " ".join(t.lower().split())
+
+
+def periodos_dos_protocolos(valores: list) -> tuple[dict, str]:
+    """({CHAVE OBRA-MEDIÇÃO: (início, fim)}, aviso). Aviso vazio = tudo certo."""
+    import re
+    if not valores:
+        return {}, "aba Protocolos vazia."
+
+    def e_inicio(n):
+        return "inicio" in n and ("medic" in n or "period" in n)
+
+    def e_fim(n):
+        return (("termino" in n or "fim" in n or "final" in n)
+                and ("medic" in n or "period" in n))
+
+    # o cabeçalho pode não estar na primeira linha (importação de outra planilha)
+    for pos, cab in enumerate(valores[:5]):
+        nomes = [_sem_acento(c) for c in cab]
+        i_ini = next((i for i, n in enumerate(nomes) if e_inicio(n)), None)
+        i_fim = next((i for i, n in enumerate(nomes) if e_fim(n)), None)
+        i_unico = next((i for i, n in enumerate(nomes) if "periodo" in n), None)
+        if (i_ini is not None and i_fim is not None) or i_unico is not None:
+            break
+    else:
+        vistos = [str(c).strip() for c in valores[0] if str(c).strip()][:20]
+        return {}, ("Protocolos: não achei as colunas do período da medição "
+                    f"(cabeçalhos vistos: {', '.join(vistos) or 'nenhum'}).")
+    i_chave = next((i for i, n in enumerate(nomes) if "chave" in n), 0)
+
+    def celula(linha, i):
+        return str(linha[i]).strip() if i is not None and i < len(linha) else ""
+
+    saida = {}
+    for linha in valores[pos + 1:]:
+        chave = celula(linha, i_chave).upper()
+        if not chave or chave in saida:
+            continue                       # a PRIMEIRA vale, como no emissor
+        if i_ini is not None and i_fim is not None:
+            ini, fim = celula(linha, i_ini), celula(linha, i_fim)
+        else:
+            # uma coluna só: "01/09/2026 a 30/09/2026"
+            partes = re.split(r"\s+(?:a|à|ate|até)\s+", celula(linha, i_unico))
+            ini, fim = (partes + ["", ""])[:2] if len(partes) == 2 else ("", "")
+        if ini or fim:
+            saida[chave] = (ini, fim)
+    return saida, ""
+
+
+def completar_periodos(notas: list[dict], periodos: dict) -> int:
+    """Põe o período da Protocolos nas notas que não o têm. Devolve quantas."""
+    postos = 0
+    for d in notas:
+        if d.get("medicao_periodo_ini") or d.get("medicao_periodo_fim"):
+            continue
+        chave = (f"{str(d.get('obra_codigo') or '').strip().upper()}-"
+                 f"{str(d.get('medicao_numero') or '').strip().upper()}")
+        achado = periodos.get(chave)
+        if achado:
+            d["medicao_periodo_ini"], d["medicao_periodo_fim"] = achado
+            d["_periodo_da_protocolos"] = "S"
+            postos += 1
+    return postos
+
+
 def _assinatura(d: dict) -> tuple:
     """O que faz duas linhas com o MESMO número serem a mesma nota: mesma
     emissão, mesma obra, mesmo valor."""
@@ -208,6 +323,16 @@ def carregar(anotar=None) -> dict:
     except Exception as e:  # noqa: BLE001 — a frase vai para a tela
         raise RuntimeError(_explicar_aba(PLANILHA_NOTAS, ABA_BASE, e)) from e
 
+    anotar("trazendo o período da medição", ABA_PROTOCOLOS)
+    try:
+        periodos, aviso_protocolos = periodos_dos_protocolos(
+            com_retry(_aba(PLANILHA_NOTAS, ABA_PROTOCOLOS).get_all_values))
+    except Exception as e:  # noqa: BLE001 — sem a Protocolos, a tela vive sem período
+        periodos, aviso_protocolos = {}, _explicar_aba(PLANILHA_NOTAS, ABA_PROTOCOLOS, e)
+    if aviso_protocolos:
+        avisos.append(aviso_protocolos)
+    com_periodo = completar_periodos(notas, periodos)
+
     anotar("trazendo as obras", "C. Diários")
     obras, erro_obras = {}, None
     for nome in ABAS_OBRAS:
@@ -243,7 +368,7 @@ def carregar(anotar=None) -> dict:
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb)",
                 (n.get("_chave") or n["nota_numero"], n.get("nota_sequencial", ""),
                  formatos.para_data(n.get("data_emissao")),
-                 n.get("competencia", ""),
+                 competencia_normalizada(n.get("competencia"), n.get("data_emissao")),
                  (n.get("status") or STATUS_VALIDA).lower(),
                  _chave_obra(n.get("obra_codigo")),
                  n.get("tomador_nome", ""),
@@ -261,6 +386,7 @@ def carregar(anotar=None) -> dict:
     logger.info("Faturamento: %d nota(s) e %d código(s) de obra carregados.",
                 len(notas), len(obras))
     return {"notas": len(notas), "obras": len(obras), "avisos": avisos,
+            "periodos_da_protocolos": com_periodo,
             "repetidas": contagem.get("repetidas", 0),
             "mesmo_numero": contagem.get("mesmo_numero", 0)}
 
@@ -387,6 +513,10 @@ def _gravar_no_banco(registros: list[dict]) -> None:
     with conexao() as conn:
         for d in registros:
             dados = {k: v for k, v in d.items() if not str(k).startswith("_")}
+            # Período vazio na aba não apaga o que veio da Protocolos.
+            for k in ("medicao_periodo_ini", "medicao_periodo_fim"):
+                if not str(dados.get(k) or "").strip():
+                    dados.pop(k, None)
             # MESCLA (`||`): o que a carga guardou só para si (`_chave`,
             # `_linha_base`) fica. E acha a nota pela LINHA da aba — o número
             # pode se repetir (`separar_repetidas`).
@@ -547,6 +677,13 @@ _JUNTA_OBRA = (" FROM analisesps.faturamento_nota n "
 
 def _where(f: dict, com_datas: bool = True) -> tuple[str, list]:
     condicoes, params = ["TRUE"], []
+    competencias = [c for c in (f.get("competencias") or []) if str(c).strip()]
+    if competencias:
+        # Competência marcada manda no período: a medição de 09/2024 faturada
+        # em 10/2024 não pode sumir porque a emissão ficou fora das datas.
+        com_datas = False
+        condicoes.append(f"n.competencia IN ({', '.join('?' for _ in competencias)})")
+        params += competencias
     if com_datas and f.get("de"):
         condicoes.append("n.data_emissao >= ?")
         params.append(f["de"])
@@ -565,6 +702,25 @@ def _where(f: dict, com_datas: bool = True) -> tuple[str, list]:
         condicoes.append("coalesce(nullif(o.dados->>'scp',''), o.dados->>'empresa', '') "
                          f"IN ({', '.join('?' for _ in empresas)})")
         params += empresas
+    # RETENÇÃO POR TRIBUTO (09/10/2026 — *"às vezes preciso saber quais notas
+    # têm retenção de INSS e quais não têm"*). A marca é o "retém" da base:
+    # S = retido, N = não retido, vazio = não informado (nota antiga ainda não
+    # equalizada — que não é "sem retenção").
+    for tributo, escolha in (f.get("retencoes") or {}).items():
+        if tributo not in TRIBUTOS:
+            continue
+        marca = f"upper(coalesce(n.dados->>'retem_{tributo}', ''))"
+        if escolha == "com":
+            condicoes.append(f"{marca} LIKE 'S%'")
+        elif escolha == "sem":
+            condicoes.append(f"{marca} LIKE 'N%'")
+        elif escolha == "vazio":
+            condicoes.append(f"{marca} = ''")
+    tributacoes = [t for t in (f.get("tributacoes") or []) if str(t).strip()]
+    if tributacoes:
+        condicoes.append("coalesce(o.dados->>'tributacao', '') "
+                         f"IN ({', '.join('?' for _ in tributacoes)})")
+        params += tributacoes
     if f.get("recebimento") == "recebidas":
         condicoes.append("n.data_recebimento IS NOT NULL")
     elif f.get("recebimento") == "a_receber":
@@ -678,7 +834,16 @@ def opcoes() -> dict:
         "SELECT DISTINCT coalesce(nullif(o.dados->>'scp',''), o.dados->>'empresa', '') "
         + _JUNTA_OBRA + " WHERE coalesce(nullif(o.dados->>'scp',''), "
         "                              o.dados->>'empresa', '') <> '' ORDER BY 1")]
-    return {"obras": obras, "empresas": empresas}
+    competencias = [c for (c,) in consultar(
+        "SELECT DISTINCT competencia FROM analisesps.faturamento_nota "
+        " WHERE competencia <> '' ORDER BY 1 DESC")]
+    tributacoes = [t for (t,) in consultar(
+        "SELECT DISTINCT coalesce(o.dados->>'tributacao', '') "
+        + _JUNTA_OBRA + " WHERE coalesce(o.dados->>'tributacao', '') <> '' ORDER BY 1")]
+    return {"obras": obras, "empresas": empresas,
+            # (valor, rótulo): o filtro manda "2026-09" e mostra "09/2026"
+            "competencias": [(c, competencia_br(c)) for c in competencias],
+            "tributacoes": tributacoes}
 
 
 def carregado_em():
@@ -714,7 +879,7 @@ def _linha_da_tela(dados, obra, data_emissao, valor_total, valor_liquido,
     """A nota como a tela usa: os campos da base + o que veio da obra."""
     dados = dados if isinstance(dados, dict) else json.loads(dados or "{}")
     obra = obra if isinstance(obra, dict) else json.loads(obra or "{}")
-    from .formatos import para_numero
+    from .formatos import para_data, para_numero
     tributos = []
     for t in TRIBUTOS:
         bruto = dados.get(t, "")
@@ -737,13 +902,15 @@ def _linha_da_tela(dados, obra, data_emissao, valor_total, valor_liquido,
         "modelo": dados.get("modelo", ""),
         "chave": dados.get("chave_acesso", ""),
         "data_emissao": data_emissao,
-        "competencia": dados.get("competencia", ""),
+        "competencia": competencia_br(competencia_normalizada(
+            dados.get("competencia"), dados.get("data_emissao"))),
         "status": status,
         "observacao": dados.get("observacao", ""),
         "obra": dados.get("obra_codigo", ""),
         "medicao": dados.get("medicao_numero", ""),
-        "periodo": " a ".join(p for p in (dados.get("medicao_periodo_ini", ""),
-                                           dados.get("medicao_periodo_fim", "")) if p),
+        "periodo_ini": para_data(dados.get("medicao_periodo_ini")),
+        "periodo_fim": para_data(dados.get("medicao_periodo_fim")),
+        "periodo_da_protocolos": bool(dados.get("_periodo_da_protocolos")),
         "tomador": dados.get("tomador_nome", ""),
         "tomador_cnpj": dados.get("tomador_cnpj", ""),
         "valor_total": valor_total,
