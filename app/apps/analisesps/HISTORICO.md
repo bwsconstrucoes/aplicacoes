@@ -12261,9 +12261,14 @@ somente Solicitações de uma conta especifica"*.
 - **"Não aparece tudo":** além dos doze meses padrão, nota com data de emissão
   ilegível some de todo filtro por data. Agora a linha do alto diz quantas são
   ("N sem data de emissão") e a carga também.
-- **A nota que não abria:** era duplo clique — agora um clique abre. E a ficha
-  procura também pelo número oficial e pelo sequencial quando a chave não acha;
-  a rota aceita número com barra.
+- **A nota que abria sem informação** (correção do dono: *"eu não disse que o
+  modal não abria; estava abrindo sem informação. Melhor manter duplo
+  clique"*): continua o duplo clique. A ficha procura também pelo número
+  oficial e pelo sequencial quando a chave não acha (era o "nota não
+  encontrada"); a rota aceita número com barra; nota antiga sem tomador mostra
+  o cliente da obra (C. Diários); e período, card e código do Omie vêm da
+  Protocolos.
+- **Publicada em 10/10/2026** junto com a leva 220 já no ar (sem migração).
 - Não conferido com a planilha de verdade: os nomes das colunas são lidos na
   carga — o recado mostra o mapeamento; se alguma coluna vier errada, é só
   ajustar `colunas_dos_protocolos`. O robô precisa ter acesso à planilha
