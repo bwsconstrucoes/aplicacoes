@@ -61,6 +61,8 @@ DE_ONDE_BATIDAS = "BATIDAS"
 # dele sem localização (o computador). Uma semana cobre o fim de semana e a
 # folga; mais que isso, a obra antiga demoraria a sair.
 DIAS_RECENTES = 7
+# O ponto da obra alcança as obras em que ELE registrou batida neste prazo.
+DIAS_DO_APARELHO = 30
 DE_ONDE_EQUIPE = "EQUIPE"
 
 
@@ -208,14 +210,31 @@ def alcance_do_aparelho(conn: Connection, aparelho: Optional[dict], local: Optio
         r.sem_alcance = "a consulta pelo CPF é do ponto da obra"
         return r
     if aparelho["perfil"] == "COMPARTILHADO":
+        # SEM depender da localização (10/10/2026: "consultar o ponto de uma pessoa
+        # já não está selecionável (…) tem a ver com a geolocalização? Não deveria,
+        # porque para essa função não precisaria"). A relação com a pessoa vem de:
+        #   · a obra em que o aparelho está agora (se houver localização);
+        #   · as obras fixadas no aparelho, na aprovação;
+        #   · as obras em que ESTE aparelho registrou batida nos últimos 30 dias.
         r.papel = "APARELHO_OBRA"
-        o = _obra_da_cerca(conn, local, dispositivos.obras_de(conn, aparelho["id"]) or None)
+        fixas = dispositivos.obras_de(conn, aparelho["id"])
+        o = _obra_da_cerca(conn, local, fixas or None)
         if o:
             r.obras[int(o["id"])] = _curta(o)
             r.de_onde.append(f"pela localização: dentro da obra {o['codigo']}")
-        else:
-            r.sem_alcance = ("o aparelho não está dentro da área de nenhuma obra dele (ou está sem localização) "
-                             "— a consulta vale na obra em que ele está")
+        recentes = {int(l["obra_id"]) for l in db.todos(conn, """
+            SELECT DISTINCT obra_id FROM ponto.marcacoes
+             WHERE dispositivo_id = :d AND data_referencia >= :desde AND status <> 'REJEITADA'""",
+            d=aparelho["id"], desde=horario.hoje() - dt.timedelta(days=DIAS_DO_APARELHO))}
+        for oid in sorted((fixas | recentes) - set(r.obras)):
+            ob = cadastros.obra_por_id(conn, oid)
+            if ob:
+                r.obras[oid] = _curta(ob)
+        if len(r.obras) > (1 if o else 0):
+            r.de_onde.append("as obras deste aparelho")
+        if not r.obras:
+            r.sem_alcance = ("este aparelho ainda não tem obra: ele passa a consultar a obra em que estiver "
+                             "(pela localização) ou em que já bateu ponto")
         r.pode_pedir = bool(r.obras)
         return r
     r.papel = "APARELHO_EQUIPE"

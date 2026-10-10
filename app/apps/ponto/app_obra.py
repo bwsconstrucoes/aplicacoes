@@ -141,7 +141,12 @@ def _contexto(conn) -> _Contexto:
     local = _local(_corpo() if request.method == "POST" else None)
     a = _aparelho(conn)
     if papeis.aparelho_valendo(a) and a["perfil"] != "INDIVIDUAL":
-        return _Contexto(_logado(conn), papeis.alcance_do_aparelho(conn, a, local), a, True)
+        # Todo mundo entra com CPF e PIN (10/10/2026: "todo mundo tem que logar"): no
+        # ponto da obra, só quem pode entrar nele (o responsável e o administrativo).
+        p = _logado(conn)
+        if not p:
+            raise NaoAutenticado("entre com o seu CPF e PIN")
+        return _Contexto(p, papeis.alcance_do_aparelho(conn, a, local), a, True)
     p = _logado(conn)
     if not p:
         raise NaoAutenticado("entre com o seu CPF e PIN")

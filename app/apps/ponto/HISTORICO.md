@@ -41,6 +41,11 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1n. **PUBLICADO em 10/10/2026, segunda leva** (com o "pode" do dono, sem
+   migração nova): no ponto da obra todo mundo entra primeiro (CPF e PIN), a
+   consulta não depende da localização, a batida não desloga e sair dela pede o
+   PIN. Confirmar com o dono: o PIN para sair da batida ficou bom, ou prefere
+   sem? O responsável de cada ponto da obra já tem PIN criado?
 1m. **PUBLICADO em 10/10/2026** (com o "pode" do dono, sem migração nova): o
    ponto da obra como aparelho (consulta pelo CPF sem PIN, QR por WhatsApp na
    tela inicial, sem caixa de obra, opções que não mudam com quem entrou) e o
@@ -113,6 +118,28 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 10/10/2026 (tarde) — No ponto da obra, todo mundo entra primeiro
+
+O dono, testando a versão da manhã: *"Todo mundo tem que logar (…) se eu for
+logar, vai entender quem é você — a pessoa que tem esse modo de bater ponto em
+todo mundo tem acesso a todas essas telas (…) como eu já loguei, por que preciso
+logar de novo?"* E: "consultar o ponto de uma pessoa já não está selecionável —
+tem a ver com a geolocalização? Não deveria".
+
+- **O ponto da obra abre na entrada com CPF e PIN** (só o responsável pelo
+  aparelho e o administrativo entram nele). Entrou, tem as cinco opções — bater
+  para todos, atestados, consultar pelo CPF, QR por WhatsApp e o "Meu ponto"
+  dele, sem entrar de novo. **"Sair"** no alto e no fim da tela inicial.
+- **A consulta não depende da localização.** O aparelho alcança a obra em que
+  está (se houver localização), as obras fixadas nele na aprovação, e as obras
+  em que ELE registrou batida nos últimos 30 dias (`papeis.DIAS_DO_APARELHO`).
+- **A batida não desloga quem entrou** — fica aberta o dia todo, sem sair
+  sozinha. Para sair dela ("‹ Início") pede o PIN de quem entrou (só o PIN):
+  ela fica na frente de todo mundo, e o início abre a consulta. Escolha minha,
+  dita ao dono. Reiniciado na batida, o aparelho volta para a batida; o início
+  dali leva à entrada.
+- Fora da batida, 3 minutos sem uso saem sozinhos (volta para a entrada).
 
 ## 10/10/2026 — O ponto da obra é do aparelho: consulta pelo CPF, QR na tela inicial, nada de caixa de obra
 

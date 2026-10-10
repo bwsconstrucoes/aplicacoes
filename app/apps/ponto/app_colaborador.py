@@ -198,6 +198,23 @@ def app_api_entrar():
     return _ok(nome=pessoa["nome"])
 
 
+@bp.route("/app/api/confirmar-pin", methods=["POST"])
+@auth.exige_colaborador
+def app_api_confirmar_pin():
+    """O PIN de quem está logado, de novo — para sair da tela de batida do ponto
+    da obra (10/10/2026): a batida fica na frente de todo mundo, e o "‹ Início"
+    dali abriria a consulta de quem entrou. Erros contam para o bloqueio, como
+    na entrada."""
+    if not auth.dentro_do_limite("entrar", auth.ip_de_quem_chama(), ENTRADAS_POR_HORA_POR_IP):
+        return jsonify({"ok": False, "erro": "muitas tentativas deste lugar; tente mais tarde"}), 429
+    with db.conexao() as conn:
+        p = cadastros.colaborador_por_id(conn, _eu())
+        if not p:
+            raise NaoAutenticado("entre com o seu CPF e PIN")
+        acesso.entrar(conn, p["cpf"], _corpo().get("pin"))
+    return _ok()
+
+
 @bp.route("/app/api/sair", methods=["POST"])
 @auth.publica("sair sempre pode — apagar a própria sessão não revela nada")
 def app_api_sair():
