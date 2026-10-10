@@ -216,3 +216,26 @@ def test_ponto_de_equipe_consulta_a_equipe_e_pede_so_com_a_marcacao(app, mundo, 
     assert r.status_code == 403 and "não faz pedido" in r.get_json()["erro"]
     _papeis(app, mundo, mundo["maria"], pede_no_celular=True)            # a responsável pelo aparelho
     assert t.post(f"/ponto/app/api/equipe/{mundo['joao']}/pedidos", json=pedido, headers=h).status_code == 201
+
+
+def test_pedidos_pelo_celular_marcados_no_aparelho_refletem_na_pessoa(app, mundo, monkeypatch):
+    """10/10/2026: "facilitaria se ficasse no cadastro do telefone, ou também, e uma
+    coisa refletisse na outra" — a tela do aparelho grava a marcação da PESSOA."""
+    cel = _entrar_no_app(app, CPF_JOAO, monkeypatch)
+    dp = como(app, mundo["dp"])
+    t, h = _aparelho(app, "celular-do-joao-pedidos-0123456789")
+    ap = _id_do_aparelho(dp, "celular-do-joao-pedidos-0123456789")
+    aprovar = {"perfil": "INDIVIDUAL", "cpf": CPF_JOAO}
+    assert dp.post(f"/erp/api/ponto/dispositivos/{ap}/aprovar", json=aprovar).status_code == 200
+    assert dp.get(f"/erp/api/ponto/dispositivos/{ap}").get_json()["dispositivo"]["dono_pede_no_celular"] is False
+    # sem o campo, a marcação fica como está; com ele, vai para o cadastro da pessoa
+    r = dp.post(f"/erp/api/ponto/dispositivos/{ap}/aprovar", json={**aprovar, "pede_no_celular": True})
+    assert r.status_code == 200, r.get_json()
+    assert dp.get(f"/erp/api/ponto/pessoas/{mundo['joao']}").get_json()["pessoa"]["pede_no_celular"] is True
+    assert cel.get("/ponto/app/api/eu").get_json()["pede_no_celular"] is True
+    # e o caminho de volta: desmarcado em Pessoas, o aparelho mostra desmarcado
+    assert dp.post(f"/erp/api/ponto/pessoas/{mundo['joao']}/forma-de-bater",
+                   json={"pede_no_celular": False}).status_code == 200
+    assert dp.get(f"/erp/api/ponto/dispositivos/{ap}").get_json()["dispositivo"]["dono_pede_no_celular"] is False
+    assert dp.post(f"/erp/api/ponto/dispositivos/{ap}/aprovar", json=aprovar).status_code == 200
+    assert dp.get(f"/erp/api/ponto/pessoas/{mundo['joao']}").get_json()["pessoa"]["pede_no_celular"] is False

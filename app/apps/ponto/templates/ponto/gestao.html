@@ -933,18 +933,19 @@ async function aprovarAparelho(a, depois) {
   // (07/10/2026: "eu salvo e ele nem salva" — o erro ia para o alto da página).
   const jaAprovado = a.status && a.status !== "PENDENTE";
   let grupoAtual = [];
-  if (jaAprovado) {
-    try {
-      const d = (await api(`/erp/api/ponto/dispositivos/${a.id}`)).dispositivo;
-      a = {...a, ...d};
-      grupoAtual = (d.autorizados || []).map(p => documento(p.cpf));
-    } catch (e) {}
-  }
+  try {
+    const d = (await api(`/erp/api/ponto/dispositivos/${a.id}`)).dispositivo;
+    a = {...a, ...d};
+    if (jaAprovado) grupoAtual = (d.autorizados || []).map(p => documento(p.cpf));
+  } catch (e) {}
+  // Os pedidos pelo celular são da PESSOA responsável: a mesma marcação de
+  // Pessoas › Acesso no aplicativo (10/10/2026: "uma coisa refletisse na outra").
+  const pedeAntes = a.dono_pede_no_celular ? "1" : "0";
   let valores = {perfil: jaAprovado ? a.perfil : (a.dono ? "INDIVIDUAL" : "COMPARTILHADO"),
                  cpf: a.dono && a.dono.cpf ? documento(a.dono.cpf) : "",
                  autorizados: grupoAtual.join(", "),
                  valido_ate: a.valido_ate && a.valido_ate >= hojeISO() ? a.valido_ate : "",
-                 obras: jaAprovado && a.obras ? a.obras : "", descricao: a.descricao || ""};
+                 obras: jaAprovado && a.obras ? a.obras : "", descricao: a.descricao || "", pede: pedeAntes};
   let erro = "";
   for (;;) {
     const r = await perguntar({
@@ -970,6 +971,11 @@ async function aprovarAparelho(a, depois) {
          dica: "Códigos das obras separados por vírgula. Para o ponto da obra, diga a obra dele."},
         {nome: "descricao", rotulo: "Nome do aparelho", valor: escapar(valores.descricao), largura: 3,
          exemplo: "ex.: celular do portão — obra Alfa"},
+        {nome: "pede", rotulo: "Atestados e pedidos do responsável pelo próprio celular", tipo: "select", largura: 3,
+         valor: valores.pede, opcoes: [{valor: "0", rotulo: "Não — entrega no ponto da obra (padrão)"},
+                                       {valor: "1", rotulo: "Sim — atestado, licença e ajuste pelo celular"}],
+         dica: "A mesma marcação do cadastro da pessoa (Pessoas › Acesso no aplicativo): mudar aqui muda lá. "
+             + "No ponto da obra, o responsável já pede o próprio; no ponto de equipe, vale também para pedir pelo grupo."},
       ],
       textoOk: jaAprovado ? "Salvar" : "Aprovar aparelho",
     });
@@ -981,7 +987,9 @@ async function aprovarAparelho(a, depois) {
       const resp = await postar(`/erp/api/ponto/dispositivos/${a.id}/aprovar`, {
         perfil: r.perfil, cpf: r.cpf || "",
         autorizados: r.perfil === "LISTA" ? listaDeTexto(r.autorizados) : [],
-        valido_ate: r.valido_ate || null, obras: listaDeTexto(r.obras), descricao: r.descricao});
+        valido_ate: r.valido_ate || null, obras: listaDeTexto(r.obras), descricao: r.descricao,
+        // só quando mudou: trocar o responsável não leva a marcação do anterior para o novo
+        ...(r.pede !== pedeAntes ? {pede_no_celular: r.pede === "1"} : {})});
       aviso("mensagem", (jaAprovado ? "Aparelho alterado." : "Aparelho aprovado. Ele já pode bater ponto.")
         + (resp.substituidos ? " O celular que essa pessoa usava antes foi bloqueado: vale um celular por pessoa." : ""), "ok");
       if (depois) await depois();
