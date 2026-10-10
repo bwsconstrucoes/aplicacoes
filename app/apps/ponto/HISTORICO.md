@@ -41,11 +41,12 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
-1o. **NO RAMO, ainda não publicado (10/10/2026, noite)**: documento com um botão
-   só, o "esqueci de bater" no ponto da obra abrindo o dia com os horários da
-   escala e a hora digitada, e a **migração 010** (licenças da lei atualizadas).
-   Ao publicar: apertar "Aplicar atualizações do ponto" no mesmo momento. Sem a
-   010, nada quebra — só a lista de licenças fica com o pré-natal antigo.
+1o. **PUBLICADO em 10/10/2026, noite** (com o "pode" do dono, `main` em
+   `248c90d`): documento com um botão só, o "esqueci de bater" no ponto da obra
+   abrindo o dia com os horários da escala e a hora digitada, e a **migração
+   010** (licenças da lei atualizadas). Confirmar com o dono que apertou
+   "Aplicar atualizações do ponto" — sem a 010 nada quebra, só o pré-natal fica
+   com a regra antiga. E que o botão do documento abriu o menu do iPhone.
    **Janeiro de 2027: subir a licença-paternidade de 5 para 10 dias** em
    ERP › Ponto › Configuração › Jornada e licenças (Lei 15.371/2026).
 1n. **PUBLICADO em 10/10/2026, segunda leva** (com o "pode" do dono, sem
