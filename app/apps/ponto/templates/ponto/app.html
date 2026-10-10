@@ -77,7 +77,7 @@
                                  -webkit-tap-highlight-color:transparent; }
   .kq-trocar { position:absolute; top:10px; right:10px; z-index:4; border:0; border-radius:999px; padding:8px 12px;
                background:rgba(0,0,0,.55); color:#fff; font-size:15px; font-weight:700; }
-  .kq-obra-info { font-size:13px; color:#9EC3EA; white-space:nowrap; }
+  .kq-obra-info { font-size:13px; color:#9EC3EA; white-space:normal; line-height:1.35; }
   .kq-meu { background:none; border:0; color:#9EC3EA; font-size:14px; text-decoration:underline; padding:4px; }
   #tela-tablet { position:fixed; inset:0; z-index:50; background:#0A1B2E; color:#fff; display:flex; flex-direction:column;
                  padding:calc(10px + env(safe-area-inset-top)) 14px calc(10px + env(safe-area-inset-bottom)); gap:10px; }
@@ -169,6 +169,7 @@
       <button class="link" id="btn-ir-primeiro" type="button">Primeiro acesso ou esqueci o PIN</button>
     </div>
     <p class="pequeno" id="codigo-aparelho" style="text-align:center"></p>
+    <button class="link" id="btn-ser-da-obra" type="button" style="display:block; margin:0 auto">Este aparelho vai ser o ponto da obra? Pedir a aprovação</button>
     <div class="cartao oculto" id="cartao-tablet">
       <h2>Este é o ponto da obra</h2>
       <p class="pequeno">Aqui entram o responsável por ele e o administrativo da obra. Para bater: QR Code ou CPF na tela da batida.</p>
@@ -436,6 +437,7 @@ const TELAS = ["carregando", "entrar", "primeiro", "tablet", "menu", "equipe", "
 function mostrar(tela) {
   if (tela !== "tablet" && typeof pararTablet === "function") pararTablet();
   TELAS.forEach(t => $("tela-" + t).classList.toggle("oculto", t !== tela));
+  TELA_ATUAL = tela;
   const meu = ["inicio", "mes", "pedidos"].includes(tela);
   const logado = meu || ["equipe", "pessoa"].includes(tela) || (tela === "menu" && !!(INICIO && INICIO.pessoa));
   $("abas").classList.toggle("oculto", !meu);
@@ -477,8 +479,9 @@ async function iniciar() {
   // O código que a gestão confere antes de aprovar este aparelho (Validações ›
   // Aparelho, coluna "código"): é o fim do identificador dele.
   const cod = aparelho().uuid.replace(/[^A-Za-z0-9]/g, "").slice(-6).toUpperCase();
-  $("codigo-aparelho").textContent = APARELHO && APARELHO.status === "APROVADO" ? "" :
-    `Código deste aparelho: ${cod}. Se ele for o aparelho da obra, passe este código a quem aprova.`;
+  $("codigo-aparelho").textContent = !APARELHO || APARELHO.status === "APROVADO" ? "" :
+    `Código deste aparelho: ${cod} — esperando aprovação. Passe este código a quem aprova.`;
+  $("btn-ser-da-obra").classList.toggle("oculto", !!APARELHO);
   // O ponto da obra abre na TELA INICIAL (08/10/2026) — ou direto na batida, se
   // era nela que estava (o aparelho reiniciado às 7h não espera um toque).
   const compartilhado = APARELHO && APARELHO.status === "APROVADO" && APARELHO.perfil !== "INDIVIDUAL";
@@ -487,7 +490,7 @@ async function iniciar() {
     let ultima = null; try { ultima = localStorage.getItem("ponto_tela"); } catch (e) {}
     // Só o responsável e o administrativo têm sessão aqui (o servidor recusa os outros).
     try { EU = await chamar("/ponto/app/api/eu"); } catch (e) { EU = null; }
-    if (EU) vigiarVoltaAoInicio();
+    vigiarVoltaAoInicio();
     if (ultima === "tablet" && !EU) return abrirTablet();
     return abrirMenu();
   }
@@ -519,20 +522,34 @@ $("btn-entrar").addEventListener("click", async () => {
 // sessão fecha e o aparelho volta para a tela inicial — que é de todos.
 const ehDaObra = () => !!(APARELHO && APARELHO.status === "APROVADO" && APARELHO.perfil !== "INDIVIDUAL");
 let VOLTA = null, VIGIANDO = false;
+let TELA_ATUAL = null;
 function vigiarVoltaAoInicio() {
-  const rearmar = () => { clearTimeout(VOLTA); if (EU) VOLTA = setTimeout(voltarAoInicio, 3 * 60 * 1000); };
+  // No ponto da obra, a tela que mostra o ponto de alguém (o Meu ponto de quem entrou,
+  // ou a folha aberta pelo CPF) volta sozinha para o início em 3 minutos sem uso.
+  const rearmar = () => { clearTimeout(VOLTA);
+    if (EU || (ehDaObra() && TELA_ATUAL && !["menu", "tablet"].includes(TELA_ATUAL))) VOLTA = setTimeout(voltarAoInicio, 3 * 60 * 1000); };
   if (!VIGIANDO) ["click", "touchstart", "keydown"].forEach(ev => document.addEventListener(ev, rearmar, {passive: true}));
   VIGIANDO = true;
   rearmar();
 }
 async function voltarAoInicio() {
   clearTimeout(VOLTA);
-  try { await chamar("/ponto/app/api/sair", {}); } catch (e) {}
+  if (EU) { try { await chamar("/ponto/app/api/sair", {}); } catch (e) {} }
   EU = null;
   if ($("dlg").open) $("dlg").close();
   abrirMenu();
 }
 $("btn-ir-primeiro").addEventListener("click", () => { $("p-cpf").value = $("e-cpf").value; mostrar("primeiro"); });
+$("btn-ser-da-obra").addEventListener("click", async () => {
+  try {
+    await garantirRegistro("Ponto da obra (a aprovar)");
+    await estadoDoAparelho();
+    const cod = aparelho().uuid.replace(/[^A-Za-z0-9]/g, "").slice(-6).toUpperCase();
+    $("codigo-aparelho").textContent = `Código deste aparelho: ${cod} — esperando aprovação. Passe este código a quem aprova.`;
+    $("btn-ser-da-obra").classList.add("oculto");
+    aviso(`Pedido feito. Na aprovação (ERP › Ponto › Validações), confira o código ${cod} e escolha “Ponto da obra”.`, "ok");
+  } catch (e) { aviso(e.message, "erro"); }
+});
 $("btn-voltar-entrar").addEventListener("click", () => mostrar("entrar"));
 $("btn-codigo").addEventListener("click", async () => {
   try {
@@ -1186,7 +1203,9 @@ async function abrirTablet(opcoes = {}) {
   try { localStorage.setItem("ponto_tela", TB.pedido ? "menu" : "tablet"); } catch (e) {}
   mostrar("tablet");
   $("titulo").textContent = "BWS Ponto";
-  $("t-esqueci").classList.toggle("oculto", TB.pedido);
+  // "Esqueci meu QR" não fica na tela de batida (10/10/2026: "aqui é para sair
+  // batendo o povo"): o QR por WhatsApp se pede na tela inicial.
+  $("t-esqueci").classList.add("oculto");
   $("t-esqueci").textContent = "Esqueci meu QR Code — receber no WhatsApp";
   const obras = (APARELHO && APARELHO.obras) || [];
   // A obra do ponto da obra é a da LOCALIZAÇÃO, sem caixa para trocar (09/10/2026:
@@ -1315,16 +1334,8 @@ function detectarObraDoTablet() {
     TB.obraOk = dentro[0].o.codigo; sel.value = TB.obraOk; nome.textContent = rotuloObra(dentro[0].o);
     return marcar("📍 Obra detectada pela localização");
   }
-  const semCoordenada = obras.filter(o => o.latitude === null || o.longitude === null);
-  if (semCoordenada.length === 1) {
-    TB.obraOk = semCoordenada[0].codigo; sel.value = TB.obraOk; nome.textContent = rotuloObra(semCoordenada[0]);
-    return marcar("📍 Obra sem coordenada cadastrada: a batida vai para conferência.");
-  }
-  if (semCoordenada.length > 1) {
-    preencherObras(sel, semCoordenada, TB.obraOk); sel.classList.remove("oculto");
-    TB.obraOk = sel.value; nome.textContent = "";
-    return marcar("📍 Obras sem coordenada cadastrada: escolha a obra — a batida vai para conferência.");
-  }
+  // Nunca uma caixa de obra aqui (10/10/2026: "nesse modo não é para ter seleção de
+  // obra, tem que ter a geolocalização"). Obra sem coordenada não é detectada.
   TB.obraOk = null; nome.textContent = "Fora da área da obra";
   marcar("📍 Este aparelho está fora da área das obras dele: o ponto não é registrado aqui.", true);
 }
@@ -1650,32 +1661,44 @@ async function abrirMenu() {
   $("m-onde").textContent = linha.join(" · ");
 
   const ops = [];
-  // 1. bater
-  if (pode.bater_aqui) ops.push({icone: "⏱", titulo: "Bater ponto", sub: "QR Code ou CPF — para todos da obra", principal: true,
-                                 acao: () => abrirTablet()});
-  else if (pode.bater_o_meu) ops.push({icone: "⏱", titulo: "Bater o meu ponto", sub: "com foto e localização", principal: true,
-                                      acao: () => mostrar("inicio")});
-  else if (p) ops.push({icone: "⏱", titulo: "Bater ponto", sub: "o seu ponto é batido no ponto da obra (QR Code ou CPF)", desligada: true});
-  // 2. atestados e pedidos
-  if (pode.pedir_por_outros) ops.push({icone: "📝", titulo: "Atestados, afastamentos e ajustes",
-    sub: "escolha a pessoa da obra; no dia, toque para lançar ou corrigir", acao: () => abrirEquipe("pedido")});
-  else if (pode.entregar_aqui) ops.push({icone: "📝", titulo: "Atestados, afastamentos e ajustes",
-    sub: "a pessoa mostra o QR Code ou digita o CPF e entrega aqui", acao: () => abrirTablet({pedido: true})});
-  else if (pode.pedir_o_meu) ops.push({icone: "📝", titulo: "Atestados e pedidos",
-    sub: "os seus: atestado, licença, ajuste, compensação", acao: () => mostrar("pedidos")});
-  else if (p) ops.push({icone: "📝", titulo: "Atestados e pedidos",
-    sub: "entregue no ponto da obra ou com o administrativo da obra", desligada: true});
-  // 3. consultar o ponto das pessoas
-  if (pode.consultar) ops.push({icone: "👥", titulo: "Consultar o ponto das pessoas", sub: alc.de_onde.join(" · "),
-                               acao: () => abrirEquipe("consulta")});
-  else if (pode.entrar_para_consultar) ops.push({icone: "👥", titulo: "Consultar o ponto das pessoas",
-    sub: "pede o CPF e o PIN do responsável ou do administrativo da obra", acao: () => entrarPara("equipe")});
-  else if (p && (p.administrativo || alc.papel)) ops.push({icone: "👥", titulo: "Consultar o ponto das pessoas",
-    sub: alc.sem_alcance || "", desligada: true});
-  // 4. o meu ponto
-  if (p) ops.push({icone: "📅", titulo: "Meu ponto", sub: "o seu dia, o seu mês e os seus pedidos", acao: () => mostrar("inicio")});
-  else ops.push({icone: "📅", titulo: "Meu ponto", sub: "do responsável por este aparelho ou do administrativo da obra",
-                 acao: () => entrarPara("inicio")});
+  if (INICIO.da_obra) {
+    // O PONTO DA OBRA: as opções são do aparelho, e não mudam com quem entrou
+    // (10/10/2026: "ele está meio que misturando os modos").
+    ops.push({icone: "⏱", titulo: "Bater ponto", sub: "QR Code ou CPF — para todos da obra", principal: true,
+              acao: () => abrirTablet()});
+    ops.push({icone: "📝", titulo: "Atestados, afastamentos e ajustes",
+              sub: "a pessoa mostra o QR Code ou digita o CPF e entrega aqui", acao: () => abrirTablet({pedido: true})});
+    if (pode.consultar) ops.push({icone: "👥", titulo: "Consultar o ponto de uma pessoa",
+      sub: "pelo CPF — de quem bate ponto nesta obra", acao: () => consultarPeloCpf()});
+    else ops.push({icone: "👥", titulo: "Consultar o ponto de uma pessoa", sub: alc.sem_alcance || "", desligada: true});
+    ops.push({icone: "📲", titulo: "Receber o QR Code no WhatsApp", sub: "o seu ou o de outra pessoa, pelo CPF",
+              acao: () => pedirQrPeloCpf()});
+    ops.push(p ? {icone: "📅", titulo: `Meu ponto — ${p.primeiro_nome}`, sub: "o seu dia, o seu mês e os seus pedidos",
+                  acao: () => mostrar("inicio")}
+               : {icone: "📅", titulo: "Meu ponto", sub: "do responsável por este aparelho ou do administrativo da obra",
+                  acao: () => entrarPara("inicio")});
+  } else {
+    // 1. bater
+    if (pode.bater_o_meu) ops.push({icone: "⏱", titulo: "Bater o meu ponto", sub: "com foto e localização", principal: true,
+                                    acao: () => mostrar("inicio")});
+    else if (p) ops.push({icone: "⏱", titulo: "Bater ponto", sub: "o seu ponto é batido no ponto da obra (QR Code ou CPF)", desligada: true});
+    // 2. atestados e pedidos
+    if (pode.pedir_por_outros) ops.push({icone: "📝", titulo: "Atestados, afastamentos e ajustes",
+      sub: "escolha a pessoa da obra; no dia, toque para lançar ou corrigir", acao: () => abrirEquipe("pedido")});
+    else if (pode.pedir_o_meu) ops.push({icone: "📝", titulo: "Atestados e pedidos",
+      sub: "os seus: atestado, licença, ajuste, compensação", acao: () => mostrar("pedidos")});
+    else if (p) ops.push({icone: "📝", titulo: "Atestados e pedidos",
+      sub: "entregue no ponto da obra ou com o administrativo da obra", desligada: true});
+    // 3. consultar o ponto das pessoas (o administrativo)
+    if (pode.consultar) ops.push({icone: "👥", titulo: "Consultar o ponto das pessoas", sub: alc.de_onde.join(" · "),
+                                 acao: () => abrirEquipe("consulta")});
+    else if (p && (p.administrativo || alc.papel)) ops.push({icone: "👥", titulo: "Consultar o ponto das pessoas",
+      sub: alc.sem_alcance || "", desligada: true});
+    // 4. o meu ponto e o meu QR
+    if (p) ops.push({icone: "📅", titulo: "Meu ponto", sub: "o seu dia, o seu mês e os seus pedidos", acao: () => mostrar("inicio")});
+    if (pode.meu_qr) ops.push({icone: "📲", titulo: "Meu QR Code", sub: "para bater no ponto da obra — ou receber no WhatsApp",
+                               acao: () => mostrarMeuQr()});
+  }
 
   $("m-opcoes").innerHTML = ops.map((o, i) => `<button type="button" class="opcao ${o.principal ? "principal" : ""} ${o.desligada ? "desligada" : ""}" data-op="${i}">
       <span class="icone">${o.icone}</span><span>${esc(o.titulo)}<small>${esc(o.sub)}</small></span></button>`).join("");
@@ -1688,6 +1711,52 @@ async function abrirMenu() {
     ? `<div class="aviso info">Você entrou neste aparelho. Ele sai sozinho em 3 minutos sem uso — ou toque em “Sair”.</div>` : "";
   const cod = aparelho().uuid.replace(/[^A-Za-z0-9]/g, "").slice(-6).toUpperCase();
   $("m-codigo").textContent = APARELHO && APARELHO.status === "APROVADO" ? "" : `Código deste aparelho: ${cod}.`;
+}
+// Um CPF, num diálogo — para consultar o ponto de alguém ou mandar o QR dele.
+function perguntarCpf(titulo, explicacao, textoBotao) {
+  return new Promise(resolve => {
+    $("dlg-corpo").innerHTML = `<h2 style="margin:0 0 6px">${esc(titulo)}</h2>
+      <p class="pequeno">${esc(explicacao)}</p>
+      <label for="q-cpf">CPF</label><input id="q-cpf" inputmode="numeric" placeholder="000.000.000-00" autocomplete="off">
+      <div id="q-msg" class="aviso erro oculto"></div>
+      <button class="btn" type="button" id="q-ok">${esc(textoBotao)}</button>`;
+    let feito = false;
+    const fim = v => { feito = true; resolve(v); };
+    $("q-cpf").addEventListener("input", ev => { ev.target.value = cpfComMascara(soDigitos(ev.target.value).slice(0, 11)); });
+    $("q-ok").onclick = () => {
+      const c = soDigitos($("q-cpf").value);
+      if (!cpfValido(c)) { $("q-msg").textContent = "CPF inválido — confira os números."; return $("q-msg").classList.remove("oculto"); }
+      fim({cpf: c, erro: t => { $("q-msg").textContent = t; $("q-msg").classList.remove("oculto"); }});
+    };
+    $("dlg").addEventListener("close", () => { if (!feito) resolve(null); }, {once: true});
+    if (!$("dlg").open) $("dlg").showModal();
+    setTimeout(() => $("q-cpf").focus(), 50);
+  });
+}
+// Consultar pelo CPF, no ponto da obra (10/10/2026: "aqui é para colocar só o CPF (…)
+// se tiver alguma relação com aquela pessoa na questão dos pontos, a pessoa consegue
+// visualizar; do contrário, não").
+async function consultarPeloCpf() {
+  const r = await perguntarCpf("Consultar o ponto de uma pessoa",
+    "Digite o CPF de quem bate ponto nesta obra. Abre a folha dela; no dia, dá para corrigir e lançar atestado.", "Abrir o ponto");
+  if (!r) return;
+  try {
+    const d = await chamar("/ponto/app/api/equipe/cpf", {cpf: r.cpf, ...localNoCorpo(await onde())});
+    $("dlg").close();
+    EQ.pelo_aparelho = true; EQ.mes = hojeISO().slice(0, 7);
+    abrirPessoaDaObra(d.id);
+  } catch (e) { r.erro(e.message); }
+}
+// O QR por WhatsApp, pelo ponto da obra — o seu ou o de outra pessoa.
+async function pedirQrPeloCpf() {
+  const r = await perguntarCpf("Receber o QR Code no WhatsApp",
+    "Digite o CPF. O QR Code vai para o WhatsApp do cadastro da pessoa.", "Mandar o QR Code");
+  if (!r) return;
+  try {
+    const d = await chamar("/ponto/app/api/tablet/esqueci-qr", {cpf: r.cpf});
+    $("dlg").close();
+    aviso(d.mensagem, "ok");
+  } catch (e) { r.erro(e.message); }
 }
 function entrarPara(destino) {
   DESTINO = destino;
@@ -1749,6 +1818,8 @@ async function carregarPessoaDaObra() {
   try { d = await chamar(comLocal(`/ponto/app/api/equipe/${EQ.alvo}/mes?competencia=${EQ.mesAlvo}`, l)); }
   catch (e) { if (e.status === 401) return entrarPara("equipe"); $("ps-dias").innerHTML = ""; return aviso(e.message, "erro"); }
   EQ.dados = d;
+  EQ.pelo_aparelho = !!d.pelo_aparelho;
+  $("ps-voltar").textContent = EQ.pelo_aparelho ? "‹ Início" : "‹ Voltar à lista";
   $("ps-nome").textContent = d.pessoa.nome;
   $("ps-info").textContent = [d.pessoa.funcao, d.pessoa.obra ? `obra ${d.pessoa.obra}` : "", `CPF final ${d.pessoa.cpf_final}`]
     .filter(Boolean).join(" · ");
@@ -1759,7 +1830,7 @@ async function carregarPessoaDaObra() {
                                          lancar: x => d.pode_pedir && podeLancarNoDia(x, d)});
   ligarDias("ps-dias", d, x => abrirCorrecao(x, alvoAtual()), x => abrirPedidoPara(alvoAtual(), x.data));
 }
-$("ps-voltar").addEventListener("click", () => abrirEquipe());
+$("ps-voltar").addEventListener("click", () => (EQ.pelo_aparelho ? abrirMenu() : abrirEquipe()));
 $("ps-ant").addEventListener("click", () => { EQ.mesAlvo = somarMes(EQ.mesAlvo, -1); carregarPessoaDaObra(); });
 $("ps-prox").addEventListener("click", () => { EQ.mesAlvo = somarMes(EQ.mesAlvo, 1); carregarPessoaDaObra(); });
 $("ps-novo").addEventListener("click", () => abrirPedidoPara(alvoAtual(), null));
@@ -1836,7 +1907,11 @@ $("btn-meu-qr").addEventListener("click", mostrarMeuQr);
 $("dlg").addEventListener("close", () => clearTimeout(QR_TIMER));
 
 // Primeiro: garantir que o aparelho existe no sistema (só o identificador dele).
-garantirRegistro("Aparelho sem nome").catch(() => {}).finally(iniciar);
+// O aparelho NÃO se cadastra só por abrir o endereço (10/10/2026: "só o fato de eu
+// abrir uma aba anônima ele já pede para cadastrar o aparelho"). Cadastra-se quando
+// precisa: quem bate no próprio celular, ao entrar; o ponto da obra, no botão
+// "Este aparelho vai ser o ponto da obra" da tela de entrada.
+iniciar();
 </script>
 </body>
 </html>

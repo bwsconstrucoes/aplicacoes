@@ -198,6 +198,11 @@ def decidir_lugar(*, situacao: str, detectada: Optional[dict], distancia: Option
                       "o motivo (vai para conferência)"), None
     # FORA
     if enviada and not geo.coordenada_valida(enviada.get("latitude"), enviada.get("longitude")):
+        if no_tablet:
+            # O ponto da obra só bate na obra que a localização identifica (10/10/2026:
+            # "nesse modo não é para ter seleção de obra, tem que ter a geolocalização").
+            return None, (f"a obra {enviada['codigo']} não tem coordenada cadastrada — o ponto da obra só bate "
+                          "em obra identificada pela localização; cadastre a coordenada"), None
         return enviada, None, None           # "obra sem coordenada cadastrada" vai para análise
     alvo = enviada or detectada
     if not alvo:

@@ -194,7 +194,8 @@ def criar(conn: Connection, quem: Quem, dados: dict, *, origem: str = "GESTAO") 
             raise ErroDeValidacao("diga a obra da batida", campo="obra")
         # O administrativo pede o ajuste na obra em que ele está (a do alcance),
         # mesmo que ela não seja a do cadastro da pessoa: ela bateu ali.
-        na_obra_do_alcance = origem == "RESPONSAVEL" and quem.alcanca_obra(obra["id"]) and quem.obras is not None
+        na_obra_do_alcance = (origem in ("RESPONSAVEL", "APARELHO") and quem.obras is not None
+                              and quem.alcanca_obra(obra["id"]))
         if not na_obra_do_alcance and obra["id"] not in cadastros.obras_da_pessoa(conn, colaborador_id):
             raise ErroDeValidacao("essa obra não é da pessoa", campo="obra")
         obra_id = int(obra["id"])
