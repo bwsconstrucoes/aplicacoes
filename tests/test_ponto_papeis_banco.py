@@ -145,7 +145,10 @@ def test_pedido_pelo_proprio_celular_so_com_a_marcacao(app, mundo, monkeypatch):
     assert c.get(f"/ponto/app/api/equipe/{mundo['maria']}/mes?{NA_OBRA_A}").status_code == 404
 
 
-def test_ponto_da_obra_aceita_responsavel_e_administrativo(app, mundo, carlos, monkeypatch):
+def test_ponto_da_obra_consulta_pelo_cpf_sem_pin(app, mundo, carlos, monkeypatch):
+    """Decisão do dono, 10/10/2026: no ponto da obra, a consulta é pelo CPF da
+    pessoa, sem PIN — e só de quem tem relação com a obra em que o aparelho
+    está. As opções do aparelho não mudam com quem entrou nele."""
     for cpf in (CPF_JOAO, CPF_MARIA, CPF_CARLOS):
         _entrar_no_app(app, cpf, monkeypatch)            # o PIN 481927 de cada um
     dp = como(app, mundo["dp"])
@@ -153,26 +156,38 @@ def test_ponto_da_obra_aceita_responsavel_e_administrativo(app, mundo, carlos, m
     ap = _id_do_aparelho(dp, "ponto-da-obra-a-com-tela-inicial-01")
     assert dp.post(f"/erp/api/ponto/dispositivos/{ap}/aprovar",
                    json={"perfil": "COMPARTILHADO", "obras": ["PG-A"], "cpf": CPF_MARIA}).status_code == 200
-    # Sem ninguém entrar: bate e entrega; consultar pede o PIN
     ini = t.get(f"/ponto/app/api/inicio?{NA_OBRA_A}", headers=h).get_json()
-    assert ini["da_obra"] and ini["pessoa"] is None
-    assert ini["pode"]["bater_aqui"] and ini["pode"]["entregar_aqui"] and ini["pode"]["entrar_para_consultar"]
-    assert not ini["pode"]["consultar"]
-    # O João não entra; o Carlos (administrativo) entra; a Maria (responsável) entra
-    assert t.post("/ponto/app/api/entrar", json={"cpf": CPF_JOAO, "pin": "481927"}, headers=h).status_code == 403
+    assert ini["da_obra"] and ini["pessoa"] is None and ini["alcance"]["papel"] == "APARELHO_OBRA"
+    assert ini["pode"]["bater_aqui"] and ini["pode"]["consultar"] and ini["pode"]["consultar_pelo_cpf"]
+    assert ini["pode"]["qr_por_cpf"] and ini["pode"]["pedir_por_outros"]
+    na_obra = {"latitude": OBRA_A[0], "longitude": OBRA_A[1], "precisao": 10}
+    # Lista de nomes, não: é pelo CPF. E o número da pessoa sozinho não abre nada.
+    assert t.get(f"/ponto/app/api/equipe?{NA_OBRA_A}", headers=h).status_code == 403
+    assert t.get(f"/ponto/app/api/equipe/{mundo['joao']}/mes?{NA_OBRA_A}", headers=h).status_code == 404
+    # A Maria é da obra B e não bateu na A: "não encontrada"
+    r = t.post("/ponto/app/api/equipe/cpf", json={"cpf": CPF_MARIA, **na_obra}, headers=h)
+    assert r.status_code == 404
+    r = t.post("/ponto/app/api/equipe/cpf", json={"cpf": CPF_JOAO, **na_obra}, headers=h)
+    assert r.status_code == 200 and r.get_json()["id"] == mundo["joao"]
+    m = t.get(f"/ponto/app/api/equipe/{mundo['joao']}/mes?{NA_OBRA_A}", headers=h).get_json()
+    assert m["pelo_aparelho"] and m["pode_pedir"] and m["pessoa"]["nome"] == "João Obra A"
+    hoje = dt.date.today().isoformat()
+    r = t.post(f"/ponto/app/api/equipe/{mundo['joao']}/pedidos", headers=h,
+               json={"tipo": "ATESTADO", "data_inicio": hoje, "data_fim": hoje, "documento_base64": _png(), **na_obra})
+    assert r.status_code == 201, r.get_json()
+    # Fora da cerca da obra dele, o aparelho não consulta ninguém
+    r = t.post("/ponto/app/api/equipe/cpf", json={"cpf": CPF_JOAO, "latitude": -3.80, "longitude": -38.40}, headers=h)
+    assert r.status_code == 403
+    # Quem entra no "Meu ponto" do aparelho não muda as opções dele
     _papeis(app, mundo, carlos, administrativo_obra=True)
-    assert t.post("/ponto/app/api/entrar", json={"cpf": CPF_CARLOS, "pin": "481927"}, headers=h).status_code == 200
-    t.post("/ponto/app/api/sair", json={}, headers=h)
+    assert t.post("/ponto/app/api/entrar", json={"cpf": CPF_JOAO, "pin": "481927"}, headers=h).status_code == 403
     assert t.post("/ponto/app/api/entrar", json={"cpf": CPF_MARIA, "pin": "481927"}, headers=h).status_code == 200
     ini = t.get(f"/ponto/app/api/inicio?{NA_OBRA_A}", headers=h).get_json()
-    assert ini["alcance"]["papel"] == "RESPONSAVEL_OBRA" and ini["pode"]["consultar"] and ini["pode"]["pedir_por_outros"]
-    d = t.get(f"/ponto/app/api/equipe?{NA_OBRA_A}", headers=h).get_json()
-    assert [p["nome"] for p in d["pessoas"]] == ["João Obra A"]
-    # O aparelho fora da cerca da obra dele: nada
-    assert t.get(f"/ponto/app/api/equipe?{LONGE}", headers=h).get_json()["pessoas"] == []
+    assert ini["pessoa"]["primeiro_nome"] == "Maria" and ini["alcance"]["papel"] == "APARELHO_OBRA"
+    assert ini["pode"]["consultar_pelo_cpf"] and ini["pode"]["bater_aqui"]
 
 
-def test_ponto_de_equipe_ve_a_equipe_e_pede_so_com_a_marcacao(app, mundo, monkeypatch):
+def test_ponto_de_equipe_consulta_a_equipe_e_pede_so_com_a_marcacao(app, mundo, monkeypatch):
     for cpf in (CPF_JOAO, CPF_MARIA):
         _entrar_no_app(app, cpf, monkeypatch)
     dp = como(app, mundo["dp"])
@@ -180,12 +195,13 @@ def test_ponto_de_equipe_ve_a_equipe_e_pede_so_com_a_marcacao(app, mundo, monkey
     ap = _id_do_aparelho(dp, "ponto-de-equipe-da-maria-0123456789")
     assert dp.post(f"/erp/api/ponto/dispositivos/{ap}/aprovar",
                    json={"perfil": "LISTA", "autorizados": [CPF_JOAO], "cpf": CPF_MARIA}).status_code == 200
-    assert t.post("/ponto/app/api/entrar", json={"cpf": CPF_MARIA, "pin": "481927"}, headers=h).status_code == 200
-    d = t.get("/ponto/app/api/equipe", headers=h).get_json()       # a equipe vale sem localização
-    assert [p["nome"] for p in d["pessoas"]] == ["João Obra A"] and d["alcance"]["papel"] == "RESPONSAVEL_EQUIPE"
+    r = t.post("/ponto/app/api/equipe/cpf", json={"cpf": CPF_JOAO}, headers=h)   # a equipe vale sem localização
+    assert r.status_code == 200
+    m = t.get(f"/ponto/app/api/equipe/{mundo['joao']}/mes", headers=h).get_json()
+    assert m["pessoa"]["nome"] == "João Obra A" and m["pode_pedir"] is False
     hoje = dt.date.today().isoformat()
     pedido = {"tipo": "ATESTADO", "data_inicio": hoje, "data_fim": hoje, "documento_base64": _png()}
     r = t.post(f"/ponto/app/api/equipe/{mundo['joao']}/pedidos", json=pedido, headers=h)
     assert r.status_code == 403 and "não faz pedido" in r.get_json()["erro"]
-    _papeis(app, mundo, mundo["maria"], pede_no_celular=True)
+    _papeis(app, mundo, mundo["maria"], pede_no_celular=True)            # a responsável pelo aparelho
     assert t.post(f"/ponto/app/api/equipe/{mundo['joao']}/pedidos", json=pedido, headers=h).status_code == 201

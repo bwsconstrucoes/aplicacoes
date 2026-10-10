@@ -108,6 +108,42 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 10/10/2026 — O ponto da obra é do aparelho: consulta pelo CPF, QR na tela inicial, nada de caixa de obra
+
+O dono testou de novo e listou:
+
+1. **"Só de abrir uma aba anônima já pede para cadastrar o aparelho."** O
+   aplicativo se registrava como aparelho novo ao abrir — cada navegador limpo
+   virava um pedido de aprovação. Agora NÃO se registra sozinho: quem bate no
+   próprio celular registra ao entrar (como já era, com o nome); o ponto da
+   obra, pelo botão "Este aparelho vai ser o ponto da obra? Pedir a aprovação"
+   da tela de entrada, que mostra o código.
+2. **A caixa de obra continuava no ponto da obra** — era a escolha entre obras
+   SEM coordenada (o aparelho sem lista de obras vale para todas, e muitas da
+   C. Diários ainda não têm coordenada). Saiu: o ponto da obra só bate na obra
+   que a localização identifica; obra sem coordenada, ele recusa (o servidor
+   também). **Para o ponto da obra funcionar numa obra, ela precisa da
+   coordenada na coluna AM.**
+3. **O aviso não quebrava a linha** — corrigido.
+4. **"Esqueci meu QR Code" saiu da tela de batida** ("aqui é para sair batendo o
+   povo") e virou opção da tela inicial do ponto da obra: "Receber o QR Code no
+   WhatsApp — o seu ou o de outra pessoa, pelo CPF". No celular da pessoa, a
+   tela inicial ganhou "Meu QR Code".
+5. **Consulta no ponto da obra é PELO CPF, sem PIN** ("que PIN é esse? (…) é para
+   colocar só o CPF; se tiver alguma relação com aquela pessoa (…) consegue
+   visualizar"). O aparelho, por ele mesmo, alcança quem bateu na obra em que
+   ele está (ou é dela no cadastro) — `papeis.alcance_do_aparelho`. Digita o CPF
+   (`POST /ponto/app/api/equipe/cpf`), abre a folha, e no dia corrige e lança
+   (origem `APARELHO`, "no aparelho …"). Nunca uma lista de nomes, e o número
+   da pessoa sozinho não abre nada: a folha só abre para o CPF digitado ali nos
+   últimos 10 minutos. Some sozinho para o início em 3 minutos sem uso. O
+   **risco, dito ao dono**: quem estiver na frente do aparelho e souber o CPF de
+   um colega vê o mês dele e pode lançar pedido em nome dele (o pedido vai para
+   validação e fica registrado como feito no aparelho).
+6. **"Ele está meio que misturando os modos"**: no ponto da obra, as opções da
+   tela inicial passaram a ser do APARELHO e não mudam com quem entrou; quem
+   entra (responsável ou administrativo) só ganha o "Meu ponto — Fulano".
+
 ## 09/10/2026 (tarde) — O ponto da obra só pela localização, e o QR que não chegava
 
 1. **No ponto da obra, a caixa de obra saiu** (o dono: "se já identificou a

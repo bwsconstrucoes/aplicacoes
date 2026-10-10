@@ -61,6 +61,9 @@ class TestDecidirLugar:
     def test_obra_sem_coordenada_nao_bloqueia(self):
         obra, recusa, _ = _lugar(-3.9, -38.9, enviada=SEM)
         assert obra is SEM and recusa is None
+        # o ponto da obra, não: ele só bate na obra que a localização identifica (10/10/2026)
+        obra, recusa, _ = _lugar(-3.9, -38.9, enviada=SEM, no_tablet=True)
+        assert obra is None and "não tem coordenada cadastrada" in recusa
 
     def test_sem_localizacao_o_celular_explica_e_o_ponto_da_obra_nao_bate(self):
         """Decisão do dono, 09/10/2026: o ponto da obra só bate com a localização;

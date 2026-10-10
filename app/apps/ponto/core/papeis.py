@@ -196,6 +196,39 @@ def alcance(conn: Connection, pessoa: Optional[dict], aparelho: Optional[dict],
     return r
 
 
+def alcance_do_aparelho(conn: Connection, aparelho: Optional[dict], local: Optional[dict]) -> Alcance:
+    """O que o PONTO DA OBRA (ou o de equipe) alcança por ele mesmo, sem login de
+    ninguém (decisão do dono, 10/10/2026: "aqui é para colocar só o CPF (…) se
+    tiver alguma relação com aquela pessoa na questão dos pontos, a pessoa
+    consegue visualizar; do contrário, não"). O ponto da obra: a obra cuja cerca
+    contém o aparelho agora. O de equipe: a lista dele. A consulta, nele, é PELO
+    CPF da pessoa — nunca uma lista de nomes (`app_obra.py`)."""
+    r = Alcance()
+    if not aparelho_valendo(aparelho) or aparelho.get("perfil") == "INDIVIDUAL":
+        r.sem_alcance = "a consulta pelo CPF é do ponto da obra"
+        return r
+    if aparelho["perfil"] == "COMPARTILHADO":
+        r.papel = "APARELHO_OBRA"
+        o = _obra_da_cerca(conn, local, dispositivos.obras_de(conn, aparelho["id"]) or None)
+        if o:
+            r.obras[int(o["id"])] = _curta(o)
+            r.de_onde.append(f"pela localização: dentro da obra {o['codigo']}")
+        else:
+            r.sem_alcance = ("o aparelho não está dentro da área de nenhuma obra dele (ou está sem localização) "
+                             "— a consulta vale na obra em que ele está")
+        r.pode_pedir = bool(r.obras)
+        return r
+    r.papel = "APARELHO_EQUIPE"
+    r.equipe = set(dispositivos.autorizados_de(conn, aparelho["id"]))
+    if r.equipe:
+        r.de_onde.append(f"a equipe deste aparelho ({len(r.equipe)} pessoa(s))")
+    responsavel = cadastros.colaborador_por_id(conn, aparelho["colaborador_id"]) if aparelho.get("colaborador_id") else None
+    r.pode_pedir = bool(r.equipe and responsavel and pede_pelo_proprio_celular(conn, responsavel))
+    if not r.equipe:
+        r.sem_alcance = "o aparelho de equipe está sem ninguém na lista"
+    return r
+
+
 def pessoas_do_alcance(conn: Connection, a: Alcance, competencia=None, *, exceto: Optional[int] = None) -> list[dict]:
     """Quem aparece na consulta, no mês: batidas na obra no mês + cadastrados na
     obra (ativos) + a equipe fixa. Com quantas batidas cada um tem ali no mês.

@@ -361,6 +361,8 @@ dizer "tem batida"; presença, horas e faltas são regra da fase 3.
 - Quantas batidas fora da obra (com explicação) foram para conferência este mês,
   de quem, com que motivo, e a que distância? ⚠️ ("este mês" = mês civil) (09/10/2026)
 - Quem pediu aprovação de celular novo já tendo um aprovado (troca de celular)?
+- Quantos pedidos foram lançados no ponto da obra, pela consulta por CPF, e para quem? (10/10/2026)
+- **Ainda não responde:** "quem consultou o ponto do Fulano no aparelho da obra?" — a consulta por CPF não é registrada, só o pedido que nasce dela.
 - Quais obras batem só entrada e saída (intervalo pré-assinalado)? (09/10/2026) ⚠️
   nelas "batida faltando" e "intervalo curto" não valem para o dia de duas
   batidas — o intervalo é o da escala
