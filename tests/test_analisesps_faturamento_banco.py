@@ -41,6 +41,12 @@ OBRAS = [["Código", "Código Primário", "Cliente", "Contrato", "Empresa", "SCP
          ["IFS2", "IFSPSAOJOSE", "IF SERTÃO", "CT-02", "BWS", "SCP IF", "São José"]]
 
 
+# A "Protocolos": chave OBRA-MEDIÇÃO e o período, achado pelo NOME da coluna.
+PROTOCOLOS = [["Chave", "", "Card", "Integração Omie",
+               "Período de Início da Medição", "Período de Término da Medição"],
+              ["IFSPSAOJOSE-11", "", "123", "INT-1", "01/09/2026", "30/09/2026"]]
+
+
 class Aba:
     def __init__(self, valores):
         self.valores = valores
@@ -60,13 +66,19 @@ def carregado(app, monkeypatch):
              nota("3100", "3100", "2026-08-15", "crepeexu", "2.000,00",
                   status="cancelada"),
              nota("3050", "3050", "15/07/2026", "IFS2", "1.000,00"),
-             nota("2600000003283", "3283", "2026-10-08", "REPETIDA", "999,00")]
+             # a MESMA nota escrita duas vezes (mesma emissão, obra e valor)
+             nota("2600000003283", "3283", "08/10/2026", "IFSPSAOJOSE", "10000,00")]
+    notas[1][CAB.index("medicao_numero")] = "11"
     abas = {(faturamento.PLANILHA_NOTAS, faturamento.ABA_BASE): Aba(notas),
+            (faturamento.PLANILHA_NOTAS, "Protocolos"): Aba(PROTOCOLOS),
             (faturamento.PLANILHA_OBRAS, "Centro de Custo"): Aba(OBRAS)}
     monkeypatch.setattr(sincronizacao, "_aba", lambda p, n: abas[(p, n)])
     monkeypatch.setattr(tarefas, "disparar", lambda *a, **k: {"ok": False})
     r = faturamento.carregar()
-    assert r == {"notas": 4, "obras": 4, "avisos": []}, r
+    assert r["periodos_da_protocolos"] == 1, r
+    assert (r["notas"], r["obras"], r["repetidas"], r["mesmo_numero"]) == (4, 4, 1, 0), r
+    assert r["avisos"] == ["1 linha(s) da base são a mesma nota escrita duas vezes "
+                           "— contadas uma vez só."], r
     return app
 
 
@@ -74,7 +86,7 @@ def test_a_carga_traz_as_notas_e_cruza_a_obra_pelos_DOIS_codigos(carregado):
     from app.apps.analisesps import faturamento
     n = faturamento.uma("2600000003283")
     assert n["obra"] == "IFSPSAOJOSE" and n["empresa"] == "SCP IF" and n["e_scp"]
-    assert n["valor_total"] == Decimal("10000.00"), "a repetida não substitui a primeira"
+    assert n["valor_total"] == Decimal("10000.00") and not n["numero_repetido"]
     # pelo código secundário (coluna A) também acha a obra
     assert faturamento.uma("3050")["contrato"] == "CT-02"
     # minúscula/espaço no código da obra não separa
@@ -126,7 +138,7 @@ def test_a_TELA_mostra_as_notas_o_grafico_e_a_ficha(carregado):
         ficha = cliente.get("/analisesps/faturamento/nota/2600000003283").get_data(as_text=True)
         assert cliente.get("/analisesps/faturamento/nota/999").status_code == 404
     # a tela principal é a lista, como a planilha; o filtro mora na barra lateral
-    assert "3283" in tela and 'id="form-filtros-fat"' in tela and "Total do filtro" in tela
+    assert "3283" in tela and 'id="form-filtros-fat"' in tela and "<b>Total</b>" in tela
     assert "fat-coluna" not in tela, "o gráfico mora na subtela Por período"
     assert "Faturado por trimestre" in periodos and periodos.count('class="fat-mes-col"') == 2
     assert "de=2026-10-01" in periodos and "ate=2026-12-31" in periodos, "o período leva às notas dele"
@@ -155,3 +167,169 @@ def test_ATUALIZAR_com_outra_tarefa_rodando_fica_na_fila_e_comeca_sozinha(app, m
     tarefas.encadear_comprovantes("colaboradores")     # a outra terminou
     assert disparos[-1] == "faturamento"
     assert not tarefas._pedido_pendente("faturamento"), "o pedido é atendido uma vez só"
+
+
+def test_IMPORTAR_com_outra_tarefa_rodando_fica_na_fila_e_comeca_sozinha(app, monkeypatch):
+    """09/10/2026: *"Outra tarefa de fundo está rodando agora (…) Tente de novo
+    em alguns minutos."* Recusar e mandar voltar deixava o dono clicando de
+    novo; a importação fica pedida, como o "Atualizar da planilha"."""
+    from app.apps.analisesps import tarefas
+    disparos = []
+    monkeypatch.setattr(tarefas, "disparar", lambda modo, disparo="manual": (
+        disparos.append(modo) or {"ok": False, "erro": "Já existe uma atualização"}))
+    with app.test_client() as cliente:
+        cliente.post("/analisesps/entrar", data={"senha": SENHA_MESTRE_OPERADOR})
+        r = cliente.post("/analisesps/faturamento/importar", data={})
+        # os botões moram em Configurações › Faturamento desde 10/10/2026
+        tela = cliente.get("/analisesps/configuracoes?aba=faturamento").get_data(as_text=True)
+    assert "fila" in r.location and "Tente de novo" not in r.location
+    assert tarefas._pedido_pendente("faturamento_antigas")
+    assert "A importação das notas antigas está na fila" in tela
+    monkeypatch.setattr(tarefas, "disparar", lambda modo, disparo="manual": (
+        disparos.append(modo) or {"ok": True}))
+    tarefas.encadear_comprovantes("colaboradores")     # a outra terminou
+    assert disparos[-1] == "faturamento_antigas"
+    assert not tarefas._pedido_pendente("faturamento_antigas")
+    # a importação já termina trazendo as notas: a carga simples não vem depois
+    assert not tarefas._pedido_pendente("faturamento")
+
+
+def test_ABA_VAZIA_e_dita_com_todas_as_letras(app, monkeypatch):
+    """A carga rodou e a aba só tinha o cabeçalho: a tela dizia "notas trazidas
+    às 18:38" e não mostrava nada — sem explicar qual dos dois estava errado."""
+    from app.apps.analisesps import faturamento, tarefas
+    from app.apps.analisesps.db import conexao
+    from app.apps.analisesps.sincronizacao import _meta_gravar
+    monkeypatch.setattr(tarefas, "disparar", lambda modo, disparo="manual": {"ok": False})
+    with conexao() as conn:
+        conn.execute("DELETE FROM analisesps.faturamento_nota")
+        conn.commit()
+        _meta_gravar(conn, faturamento.CHAVE_META, "2026-10-09T18:38:00-03:00")
+    monkeypatch.setattr("app.apps.analisesps.web._faturamento_desatualizado",
+                        lambda _c: False)
+    with app.test_client() as cliente:
+        cliente.post("/analisesps/entrar", data={"senha": SENHA_MESTRE_OPERADOR})
+        tela = cliente.get("/analisesps/faturamento").get_data(as_text=True)
+    assert "0 nota(s)" in tela
+    assert 'A aba "Base Faturamento" está vazia' in tela and "Importar notas antigas" in tela
+
+
+def test_NUMERO_REPETIDO_de_outra_nota_entra_e_a_mesma_nota_duas_vezes_nao():
+    """09/10/2026: *"3.468 notas levadas à base, 3.284 notas fiscais (…) não
+    está completo"*. A primeira versão guardava uma nota por número e jogava
+    fora 184 linhas sem dizer nada."""
+    from app.apps.analisesps import faturamento
+    contagem = {}
+    notas = faturamento.notas_das_linhas([
+        CAB,
+        nota("3050", "3050", "2019-03-10", "IFS2", "1.000,00"),
+        nota("3050", "3050", "10/03/2019", "ifs2", "1000,00"),        # a mesma
+        nota("3050", "3050", "2023-05-02", "CREPEEXU", "7.500,00"),   # outra
+        nota("3050", "3050", "2024-01-09", "CREPEEXU", "100,00")],    # outra
+        contagem)
+    assert contagem == {"repetidas": 1, "mesmo_numero": 2}
+    assert [n.get("_chave") for n in notas] == [None, "3050-2", "3050-3"]
+    assert [n["_linha_base"] for n in notas] == [2, 4, 5], "a linha da aba vai junto"
+
+
+def test_PERIODO_DA_MEDICAO_vem_da_protocolos_e_a_COMPETENCIA_e_mes_barra_ano(carregado):
+    """09/10/2026: *"colunas que tragam o período da medição — a gente tem lá na
+    planilha Protocolos"*; *"a competência está saindo ano-mês; é para ser mês
+    barra ano, e nem precisa ter coluna: tem que estar no filtro"*."""
+    from app.apps.analisesps import faturamento
+    n = faturamento.uma("2600000003283")
+    assert (n["periodo_ini"], n["periodo_fim"]) == (dt.date(2026, 9, 1), dt.date(2026, 9, 30))
+    assert n["periodo_da_protocolos"] and n["competencia"] == "10/2026"
+    assert ("2026-10", "10/2026") in faturamento.opcoes()["competencias"]
+    with carregado.test_client() as cliente:
+        cliente.post("/analisesps/entrar", data={"senha": SENHA_MESTRE_OPERADOR})
+        tela = cliente.get("/analisesps/faturamento?f=1&de=2026-01-01").get_data(as_text=True)
+        so_jul = cliente.get("/analisesps/faturamento?f=1&de=2026-10-01&competencia=2026-07"
+                             ).get_data(as_text=True)
+    assert "Início med." in tela and "01/09/2026" in tela and "Compet." not in tela
+    assert 'value="2026-10"' in tela and ">10/2026<" in tela, "o filtro mostra mês/ano"
+    # competência marcada manda no período: a de julho aparece mesmo com "de" em outubro
+    assert "3050" in so_jul and "3283" not in so_jul
+
+
+def test_FILTRO_DE_RETENCAO_por_tributo(carregado):
+    """*"Às vezes preciso saber quais notas têm retenção de INSS e quais não têm."*"""
+    from app.apps.analisesps import faturamento
+    tudo = {"de": dt.date(2026, 1, 1), "status": "valida"}
+    def notas(**ret):
+        return sorted(n["sequencial"] for n in faturamento.listar(dict(tudo, retencoes=ret)))
+    # só "sim" e "não" (*"tanto faz é fuleiragem"*); o "não" leva a sem marca
+    assert notas(pis="sim") == ["3283"]
+    assert notas(pis="nao") == ["3050", "3284"]
+    assert notas(pis="qualquer") == ["3050", "3283", "3284"], "valor estranho não filtra"
+    with carregado.test_client() as cliente:
+        cliente.post("/analisesps/entrar", data={"senha": SENHA_MESTRE_OPERADOR})
+        tela = cliente.get("/analisesps/faturamento?f=1&de=2026-01-01&ret_pis=sim"
+                           ).get_data(as_text=True)
+    assert "tanto faz" not in tela and '<option value="sim" selected>' in tela
+    assert "3283" in tela and "3284" not in tela
+    # os tributos vêm ao final da tabela, depois dos arquivos
+    assert tela.index("<th>Arquivos</th>") < tela.index('<th class="direita">PIS</th>')
+
+
+def test_CONFIGURACOES_tem_subtelas_e_os_botoes_do_faturamento_moram_la(carregado):
+    """10/10/2026: *"importar notas antigas e atualizar da planilha não deveria
+    ficar aqui; deixa em Configurações (…) cria subtelas para organizar"* — e
+    *"nomes já usados no sistema não precisa mais"*."""
+    with carregado.test_client() as cliente:
+        cliente.post("/analisesps/entrar", data={"senha": SENHA_MESTRE_OPERADOR})
+        notas = cliente.get("/analisesps/faturamento?f=1&de=2026-01-01").get_data(as_text=True)
+        cfg = cliente.get("/analisesps/configuracoes?aba=faturamento").get_data(as_text=True)
+        padrao = cliente.get("/analisesps/configuracoes").get_data(as_text=True)
+    assert "Importar notas antigas</button>" not in notas
+    assert "Atualizar da planilha agora</button>" not in notas
+    assert "aba=faturamento" in notas, "a tela aponta para onde os botões foram"
+    assert "Importar notas antigas</button>" in cfg and "Conferir títulos no Omie</button>" in cfg
+    assert '<section class="config-sub" data-sub="faturamento">' in cfg
+    assert '<section class="config-sub" data-sub="sistema" hidden>' in cfg
+    assert '<section class="config-sub" data-sub="sistema">' in padrao, "abre em Banco e base"
+    assert "Nomes já usados no sistema" not in padrao
+
+
+def test_SITUACAO_vira_etiqueta_e_as_COLUNAS_seguem_a_ordem_da_pessoa(carregado):
+    with carregado.test_client() as cliente:
+        cliente.post("/analisesps/entrar", data={"senha": SENHA_MESTRE_OPERADOR})
+        cliente.post("/analisesps/colunas", data={"tabela": "faturamento",
+                                                  "coluna": ["valor", "tomador", "emissao"],
+                                                  "voltar": "/analisesps/faturamento"})
+        tela = cliente.get("/analisesps/faturamento?f=1&de=2026-01-01").get_data(as_text=True)
+    assert "<th>Situação</th>" not in tela and '<span class="selo pago">recebida</span>' in tela
+    assert '<span class="selo neutro">a receber</span>' in tela
+    cab = tela[tela.index("<thead>"):tela.index("</thead>")]
+    assert cab.index("Valor") < cab.index("Tomador") < cab.index("Emissão"), "a ordem escolhida"
+    assert "col-mover" in tela, "as setas de reordenar"
+
+
+def test_PAINEL_mostra_evolucao_ano_a_ano_empresa_tomador_e_a_receber(carregado):
+    """10/10/2026: *"subtela de dashboard (…) evolução mensal, ano a ano, por
+    empresa, por cliente/tomador, o que tem a receber e de quem"*."""
+    from app.apps.analisesps import faturamento
+    tudo = {"de": dt.date(2026, 1, 1), "status": "valida"}
+    p = faturamento.painel(tudo)
+    assert [s["ano"] for s in p["anos"]["series"]] == [2026]
+    empresas = {e["nome"]: e for e in p["por_empresa"]}
+    assert empresas["SCP IF"]["bruto"] == Decimal("11000.00")
+    assert empresas["BWS"]["recebido"] == Decimal("4500.00")
+    assert [i["nome"] for i in p["a_receber_tomador"]] == ["PREFEITURA X"]
+    assert sum(i["valor"] for i in p["idade"]) == Decimal("10000.00"), "9.000 + 1.000"
+    with carregado.test_client() as cliente:
+        cliente.post("/analisesps/entrar", data={"senha": SENHA_MESTRE_OPERADOR})
+        tela = cliente.get("/analisesps/faturamento/painel?f=1&de=2026-01-01").get_data(as_text=True)
+    for titulo in ("Evolução mensal", "Ano a ano", "Por empresa", "Por cliente (tomador)",
+                   "A receber — de quem", "A receber — há quanto tempo"):
+        assert titulo in tela, titulo
+    assert tela.count("ver em tabela") == 2 and "data-tip=" in tela
+
+
+def test_RANKING_dobra_o_resto_em_outros(carregado, monkeypatch):
+    from app.apps.analisesps import faturamento
+    monkeypatch.setattr(faturamento, "TOPO_DO_PAINEL", 2)
+    tudo = {"de": dt.date(2026, 1, 1), "status": "todas"}
+    r = faturamento._ranking(tudo, "n.nota_sequencial", "bruto")
+    assert len(r) == 2 and r[-1]["outros"] and r[-1]["nome"] == "Outros (3)"
+    assert sum(i["bruto"] for i in r) == Decimal("18000.00"), "cortar não some com dinheiro"

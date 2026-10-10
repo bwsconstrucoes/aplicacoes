@@ -83,7 +83,7 @@ PADRAO = [c.chave for c in DEFINICOES if c.padrao]
 PREFERENCIA = "colunas_tabela"
 
 
-def escolhidas(guardado) -> list:
+def escolhidas(guardado, definicoes=None, na_ordem_guardada=False) -> list:
     """As colunas que esta pessoa vê, na ordem fixa da tabela.
 
     `guardado` é o que veio das preferências — pode ser lixo, de uma versão
@@ -106,6 +106,10 @@ def escolhidas(guardado) -> list:
     colunas padrão que estiverem faltando voltam, uma vez. Custa um clique a
     quem tinha escondido alguma de propósito; a alternativa era deixar a Obra
     invisível para quem mais precisa dela."""
+    # Outra tabela configurável (o Faturamento, 09/10/2026) passa as suas.
+    definicoes = definicoes or DEFINICOES
+    por_chave = {c.chave: c for c in definicoes}
+    padrao = [c.chave for c in definicoes if c.padrao]
     conhecidas = None
     if isinstance(guardado, dict):
         bruto = guardado.get("conhecidas")
@@ -114,30 +118,40 @@ def escolhidas(guardado) -> list:
         guardado = guardado.get("colunas")
 
     if not isinstance(guardado, list):
-        return [POR_CHAVE[c] for c in PADRAO]
-    marcadas = {str(c) for c in guardado if str(c) in POR_CHAVE}
+        return [por_chave[c] for c in padrao]
+    marcadas = {str(c) for c in guardado if str(c) in por_chave}
     if not marcadas:
-        return [POR_CHAVE[c] for c in PADRAO]
+        return [por_chave[c] for c in padrao]
 
     if conhecidas is None:
         # Escolha antiga: não dá para saber o que ela conhecia. Repõe o padrão
         # que falta — ver o parágrafo acima.
-        marcadas |= {c for c in PADRAO if c not in marcadas}
+        marcadas |= {c for c in padrao if c not in marcadas}
     else:
-        marcadas |= {c for c in PADRAO if c not in conhecidas}
+        marcadas |= {c for c in padrao if c not in conhecidas}
 
     # A ORDEM é a da definição, nunca a da escolha: a tabela tem de ficar
     # sempre com a mesma cara, senão cada pessoa lê num lugar diferente.
-    return [c for c in DEFINICOES if c.chave in marcadas]
+    #
+    # EXCEÇÃO, a pedido (10/10/2026 — Faturamento: *"não sei se pode talvez
+    # reordenar elas"*): com `na_ordem_guardada`, vale a ordem que a pessoa
+    # deixou; coluna nova (que ela ainda não ordenou) entra no fim.
+    if na_ordem_guardada:
+        ordem = [str(c) for c in guardado if str(c) in marcadas]
+        ordem = list(dict.fromkeys(ordem))
+        resto = [c.chave for c in definicoes if c.chave in marcadas and c.chave not in ordem]
+        return [por_chave[c] for c in ordem + resto]
+    return [c for c in definicoes if c.chave in marcadas]
 
 
-def para_guardar(chaves) -> dict:
+def para_guardar(chaves, definicoes=None) -> dict:
     """O que vai para as preferências: a escolha E o que existia na hora.
 
     Sem a segunda parte, uma coluna criada amanhã ficaria invisível para todo
     mundo que já escolheu hoje — ver `escolhidas`."""
-    return {"colunas": [str(c) for c in chaves if str(c) in POR_CHAVE],
-            "conhecidas": list(CHAVES)}
+    validas = [c.chave for c in (definicoes or DEFINICOES)]
+    return {"colunas": [str(c) for c in chaves if str(c) in validas],
+            "conhecidas": validas}
 
 
 # A coluna que mais atrapalha quando não se quer ela: comprida, e no meio da

@@ -365,6 +365,140 @@ const LEMBRAR = {
   // O status de cada marcada no Omie, ao lado do que a planilha diz. As PAGAS
   // podem ser marcadas e equalizadas: "Marcar Pago" grava o status e o que o
   // card diz (data, comprovante, conta) e muda a fase do card se preciso.
+  // --- Encaminhar pelo WhatsApp (10/10/2026) -------------------------------
+  // ENVIO EM LOTE: uma linha resumida por SP, com as caixinhas do que vai
+  // dela (informações, anexo, comprovante) — tudo o que existe vem marcado.
+  // A mensagem é montada no servidor só na hora de abrir o WhatsApp (o de
+  // quem clica). Ver `encaminhar.py`.
+  const btnEnc = document.getElementById("ba-encaminhar");
+  const dlgEnc = document.getElementById("dialogo-enc");
+  if (btnEnc && dlgEnc) {
+    const $ = id => document.getElementById(id);
+    const esc = t => String(t == null ? "" : t).replace(/[&<>"]/g,
+        c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+    const postar = async (url, corpo) => {
+      const r = await fetch(url, {method: "POST", headers: {"Content-Type": "application/json"},
+                                  body: JSON.stringify(corpo)});
+      const d = await r.json();
+      if (!d.ok) throw new Error(d.erro || ("HTTP " + r.status));
+      return d;
+    };
+    const TIPOS = ["info", "anexo", "comprovante"];
+    let idsEnc = [];
+    const pintarContatos = (contatos, escolher) => {
+      const sel = $("enc-contato");
+      const antes = escolher === undefined ? sel.value : escolher;
+      sel.innerHTML = '<option value="">Escolher no WhatsApp (contato ou grupo)</option>' +
+        contatos.map(c => `<option value="${esc(c.telefone)}">${esc(c.nome)}</option>`).join("");
+      if ([...sel.options].some(o => o.value === antes)) sel.value = antes;
+    };
+    const itens = () => [...$("enc-corpo").querySelectorAll("tr[data-sp]")].map(tr => {
+      const item = {id: tr.dataset.sp};
+      TIPOS.forEach(t => { const c = tr.querySelector(`input[data-tipo="${t}"]`); item[t] = !!(c && c.checked); });
+      return item;
+    });
+    const conferir = () => {
+      const lista = itens();
+      const vao = lista.filter(i => i.info || i.anexo || i.comprovante).length;
+      $("enc-abrir").disabled = $("enc-copiar").disabled = !vao;
+      $("enc-resumo").textContent = vao === lista.length ? "" : `${vao} de ${lista.length} SP(s) vão.`;
+      TIPOS.forEach(t => {
+        const todas = $("enc-corpo").querySelector(`input[data-todas="${t}"]`);
+        const caixas = [...$("enc-corpo").querySelectorAll(`input[data-tipo="${t}"]:not(:disabled)`)];
+        if (todas) todas.checked = caixas.length && caixas.every(c => c.checked);
+      });
+    };
+    const mensagem = async () => {
+      const campos = [...document.querySelectorAll("#enc-campos input:checked")].map(c => c.value);
+      return postar(barra.dataset.urlEncMensagem, {ids: idsEnc, itens: itens(), campos,
+                                                   telefone: $("enc-contato").value});
+    };
+    $("enc-fechar").addEventListener("click", () => dlgEnc.close());
+    $("enc-corpo").addEventListener("change", e => {
+      const t = e.target.dataset.todas;
+      if (t) $("enc-corpo").querySelectorAll(`input[data-tipo="${t}"]:not(:disabled)`)
+               .forEach(c => { c.checked = e.target.checked; });
+      conferir();
+    });
+    $("enc-abrir").addEventListener("click", async () => {
+      // A janela abre JÁ no clique (senão o navegador a bloqueia) e recebe o
+      // endereço quando a mensagem fica pronta.
+      const janela = window.open("", "_blank");
+      try {
+        const d = await mensagem();
+        if (janela) { janela.opener = null; janela.location = d.link; } else { location.href = d.link; }
+        $("enc-resumo").textContent = "WhatsApp aberto — confira e envie por lá.";
+      } catch (e) {
+        if (janela) janela.close();
+        $("enc-resumo").textContent = "Não consegui montar a mensagem: " + e.message;
+      }
+    });
+    $("enc-copiar").addEventListener("click", async () => {
+      try {
+        const d = await mensagem();
+        await navigator.clipboard.writeText(d.texto);
+        $("enc-resumo").textContent = "Mensagem copiada.";
+      } catch (e) { $("enc-resumo").textContent = "Não consegui copiar: " + e.message; }
+    });
+    $("enc-gravar").addEventListener("click", async () => {
+      try {
+        const nome = $("enc-nome").value.trim().replace(/\s+/g, " ");
+        const d = await postar(barra.dataset.urlEncContatos, {nome, telefone: $("enc-telefone").value});
+        const novo = d.contatos.find(c => c.nome === nome);
+        pintarContatos(d.contatos, novo ? novo.telefone : undefined);
+        $("enc-nome").value = $("enc-telefone").value = "";
+        $("enc-contato-msg").textContent = "Guardado — vale para a equipe toda.";
+      } catch (e) { $("enc-contato-msg").textContent = e.message; }
+    });
+    $("enc-apagar").addEventListener("click", async () => {
+      const sel = $("enc-contato");
+      if (!sel.value) { $("enc-contato-msg").textContent = "Escolha na lista o contato a apagar."; return; }
+      if (!confirm("Apagar " + sel.options[sel.selectedIndex].text + " da lista?")) return;
+      try {
+        const d = await postar(barra.dataset.urlEncContatos, {acao: "remover", telefone: sel.value});
+        pintarContatos(d.contatos, "");
+        $("enc-contato-msg").textContent = "Apagado.";
+      } catch (e) { $("enc-contato-msg").textContent = e.message; }
+    });
+    btnEnc.addEventListener("click", async () => {
+      const ids = idsMarcados();
+      if (!ids) return;
+      idsEnc = ids;
+      $("enc-sub").textContent = `${ids.length} SP(s)`;
+      $("enc-corpo").innerHTML = '<p class="cartao-dica">Carregando…</p>';
+      $("enc-rodape").hidden = true;
+      $("enc-abrir").disabled = $("enc-copiar").disabled = true;
+      $("enc-resumo").textContent = "";
+      dlgEnc.showModal();
+      try {
+        const d = await postar(barra.dataset.urlEncPrevia, {ids});
+        const caixa = (s, tipo, tem) => tem
+          ? `<input type="checkbox" data-tipo="${tipo}" checked aria-label="${tipo} da SP ${esc(s.id)}">`
+          : `<input type="checkbox" data-tipo="${tipo}" disabled title="Esta SP não tem">`;
+        $("enc-corpo").innerHTML = `<div class="tabela-rolagem livre enc-lista"><table class="tabela-omie">
+          <thead><tr><th>SP</th><th>Credor</th><th class="num">Valor</th><th>Venc.</th><th>Situação</th>
+            ${["info:Informações", "anexo:Anexo", "comprovante:Comprovante"].map(x => {
+              const [t, r] = x.split(":");
+              return `<th class="enc-caixa"><label><input type="checkbox" data-todas="${t}"> ${r}</label></th>`;
+            }).join("")}</tr></thead>
+          <tbody>${d.sps.map(s => `<tr data-sp="${esc(s.id)}"><td>${esc(s.id)}</td>
+            <td class="enc-credor" title="${esc(s.credor)}">${esc(s.credor)}</td>
+            <td class="num">${esc(s.valor)}</td><td>${esc(s.vencimento)}</td><td>${esc(s.situacao) || "—"}</td>
+            <td class="enc-caixa">${caixa(s, "info", true)}</td>
+            <td class="enc-caixa">${caixa(s, "anexo", s.anexos)}</td>
+            <td class="enc-caixa">${caixa(s, "comprovante", s.comprovantes)}</td></tr>`).join("")}</tbody>
+          </table></div>`;
+        $("enc-campos").innerHTML = d.campos.map(c =>
+          `<label class="opcao"><input type="checkbox" value="${esc(c.chave)}" checked> ${esc(c.rotulo)}</label>`).join("");
+        pintarContatos(d.contatos);
+        $("enc-rodape").hidden = false;
+        conferir();
+      } catch (e) {
+        $("enc-corpo").innerHTML = `<div class="aviso erro">Não consegui abrir: ${esc(e.message)}</div>`;
+      }
+    });
+  }
+
   const btnOmie = document.getElementById("ba-omie");
   const dlgOmie = document.getElementById("dialogo-omie");
   if (btnOmie && dlgOmie) {
@@ -2383,3 +2517,18 @@ function resumoDoComplemento(c) {
       + linhas.slice(0, 15).join("\n") + (linhas.length > 15 ? "\n…" : "")
     : "";
 }
+
+// --- Celular: os filtros recolhidos (10/10/2026) -----------------------------
+// No celular só a busca fica à vista; o resto dos filtros abre neste botão.
+(function () {
+  const botao = document.getElementById("btn-filtros-celular");
+  if (!botao) return;
+  const lateral = botao.closest(".filtros");
+  const ativos = lateral.querySelectorAll(".filtro input:checked:not([value='']), .filtro-badge").length;
+  if (ativos) botao.textContent = "Mais filtros ▾ (em uso)";
+  botao.addEventListener("click", () => {
+    const aberto = lateral.classList.toggle("aberto-celular");
+    botao.setAttribute("aria-expanded", aberto ? "true" : "false");
+    botao.textContent = aberto ? "Fechar filtros ▴" : (ativos ? "Mais filtros ▾ (em uso)" : "Mais filtros ▾");
+  });
+})();

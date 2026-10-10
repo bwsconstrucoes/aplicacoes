@@ -5,6 +5,19 @@
 {% block conteudo %}
 <h2>Configurações <small>versão publicada: {{ versao }}</small></h2>
 
+
+{# AS SUBTELAS (10/10/2026 — *"Configurações pode ter subtelas: certificado,
+   acesso… cria subtelas para organizar"*). Tudo vem na página; só a escolhida
+   aparece. #}
+<nav class="abas-folha" aria-label="Partes das configurações">
+  {% for chave, nome in subtelas_config %}
+    {% if chave != 'faturamento' or faturamento_cfg %}
+    <a class="aba-folha {% if aba_config == chave %}ativa{% endif %}"
+       href="{{ url_for('analisesps.configuracoes', aba=chave) }}"
+       {% if aba_config == chave %}aria-current="page"{% endif %}>{{ nome }}</a>
+    {% endif %}
+  {% endfor %}
+</nav>
 {% if aviso %}<div class="aviso">{{ aviso }}</div>{% endif %}
 
 {% if erro_banco %}
@@ -13,6 +26,7 @@
   </div>
 {% endif %}
 
+<section class="config-sub" data-sub="sistema"{% if aba_config != "sistema" %} hidden{% endif %}>
 <div class="cartao">
   <div class="cartao-cab">
     <h3>Estrutura do banco</h3>
@@ -55,7 +69,9 @@
   {% endif %}
   <div id="saida-migrar"></div>
 </div>
+</section>
 
+<section class="config-sub" data-sub="certificados"{% if aba_config != "certificados" %} hidden{% endif %}>
 {# ---------------------------------------------------------------------------
    CERTIFICADO DIGITAL — o que autoriza buscar nota na Receita.
 
@@ -230,7 +246,9 @@
     </details>
   {% endif %}
 </div>
+</section>
 
+<section class="config-sub" data-sub="ferramentas"{% if aba_config != "ferramentas" %} hidden{% endif %}>
 {# APORTES — 20/09/2026. Mora em Configurações por pedido do dono, e o lugar
    também se explica sozinho: a tela tem um de-para que se ajusta uma vez e um
    lançamento que se usa de vez em quando. Nenhum dos dois é trabalho de todo
@@ -261,7 +279,9 @@
   <a class="btn secundario" href="{{ url_for('analisesps.tela_credores') }}">
     Ver os nomes divergentes</a>
 </div>
+</section>
 
+<section class="config-sub" data-sub="sistema"{% if aba_config != "sistema" %} hidden{% endif %}>
 <div class="cartao">
   <div class="cartao-cab">
     <h3>A base</h3>
@@ -325,7 +345,9 @@
     <p class="cartao-dica">Só o perfil Operador dispara atualização.</p>
   {% endif %}
 </div>
+</section>
 
+<section class="config-sub" data-sub="acesso"{% if aba_config != "acesso" %} hidden{% endif %}>
 {# ---------------------------------------------------------------------------
    QUEM ENTRA — a lista que aparece na tela de entrada.
 
@@ -558,32 +580,13 @@
   </datalist>
   {% endif %}
 </div>
+</section>
 
-<div class="cartao">
-  <div class="cartao-cab"><h3>Nomes já usados no sistema</h3></div>
-  <p class="cartao-dica" style="margin:0 0 10px">
-    ⚠️ <b>Isto não é mais a entrada</b> — desde 25/09/2026 ninguém escolhe nome
-    para entrar, o nome vem do cadastro. Esta lista sobrou por um motivo
-    prático: é por estes nomes que o <b>lote</b>, os <b>filtros</b> e as
-    <b>colunas</b> de cada um foram guardados até aqui. Ela aparece como
-    sugestão no campo Nome do cadastro, para você não separar alguém do próprio
-    trabalho por escrever o nome diferente. É por eles que
-    o sistema sabe de quem é cada lote e cada filtro — <b>não</b> é senha e não
-    dá permissão nenhuma a mais.
-  </p>
-  {% if pode_operar %}
-    <label class="rotulo-campo" for="pessoas">Um nome por linha</label>
-    <textarea class="campo-largo" id="pessoas" rows="{{ [equipe|length + 1, 4]|max }}"
-              >{{ equipe|join('\n') }}</textarea>
-    <div style="margin-top:10px">
-      <button class="btn" id="btn-salvar-pessoas">Salvar a lista</button>
-    </div>
-    <div id="saida-pessoas"></div>
-  {% else %}
-    <p style="margin:0"><b>{{ equipe|join(' · ') }}</b></p>
-  {% endif %}
-</div>
+{# "Nomes já usados no sistema" saiu em 10/10/2026 — o dono: *"isso aqui não
+   precisa mais"*. A lista continua no banco e ainda é sugerida no campo Nome
+   do cadastro (Acesso); só o editor saiu. #}
 
+<section class="config-sub" data-sub="integracoes"{% if aba_config != "integracoes" %} hidden{% endif %}>
 {# ---------------------------------------------------------------------------
    O BEEVALE PRECISA DE DUAS COISAS QUE VIVEM FORA DO PROGRAMA. Este cartão
    responde "ficou salvo?" sem ninguém precisar entrar no Render — e sem
@@ -676,7 +679,9 @@
     </p>
   {% endif %}
 </div>
+</section>
 
+<section class="config-sub" data-sub="sistema"{% if aba_config != "sistema" %} hidden{% endif %}>
 <div class="cartao">
   <div class="cartao-cab"><h3>Onde ficam as coisas</h3></div>
   <p class="cartao-dica" style="margin:0">
@@ -686,6 +691,29 @@
     alteração fica numa fila e sobe sozinha depois — nada se perde.
   </p>
 </div>
+</section>
+{# O FATURAMENTO — os botões que saíram da tela de notas (10/10/2026: *"importar
+   notas antigas e atualizar da planilha não deveria ficar aqui; deixa em
+   Configurações"*). A tela se atualiza sozinha; estes são para quando
+   precisar. #}
+{% if faturamento_cfg %}
+<section class="config-sub" data-sub="faturamento"{% if aba_config != "faturamento" %} hidden{% endif %}>
+<div class="cartao">
+  <div class="cartao-cab"><h3>Faturamento — as notas fiscais</h3>
+    <a class="link-btn" href="{{ url_for('analisesps.tela_faturamento') }}">abrir a tela</a></div>
+  <p class="cartao-dica">
+    A tela de Faturamento traz as notas da aba "Base Faturamento" <b>sozinha</b>,
+    sempre que a cópia tiver mais de uma hora. Os botões abaixo são para quando
+    for preciso: trazer agora, levar as notas antigas da "Notas BWS" para a base
+    (só uma vez — rodar de novo não duplica) e conferir os títulos no Omie (só lê
+    o Omie, nada é alterado lá).
+  </p>
+  {% with fat = faturamento_cfg, pode_operar = pode_operar %}
+    {% include "_faturamento_controle.html" %}
+  {% endwith %}
+</div>
+</section>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}

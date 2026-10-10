@@ -62,6 +62,7 @@ MODOS = {
     # Faturamento" (que o emissor grava) e a C. Diários. Ver `faturamento.py`.
     "faturamento": "Trazer as notas fiscais emitidas (Base Faturamento)",
     "faturamento_antigas": "Importar as notas antigas da Notas BWS para a Base Faturamento",
+    "faturamento_omie": "Conferir no Omie os títulos das notas fiscais (só leitura no Omie)",
     # ⚠️ O PONTO É O GARGALO DA FOLHA: sem ele não há total por obra, não há
     # diária e não há apropriação. Roda no processo separado porque são várias
     # páginas da API do Mobponto, e um mês pode ter dezenas de milhares de dias.
@@ -128,6 +129,7 @@ ETAPAS = {
     "colaboradores": ["colaboradores"],
     "faturamento": ["faturamento"],
     "faturamento_antigas": ["faturamento_antigas", "faturamento"],
+    "faturamento_omie": ["faturamento_omie"],
     "ponto": ["ponto"],
     "ponto_diario": ["ponto_diario"],
     "ponto_pessoa": ["ponto_pessoa"],
@@ -427,6 +429,8 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                     + (f", {c['falhas']} com falha" if c.get("falhas") else "")
                     + (f", {c['destravados']} destravado(s) da fila"
                        if c.get("destravados") else "")
+                    + (f", {c['desempatados']} baixado(s) no desempate de mesmo valor"
+                       if c.get("desempatados") else "")
                     + (f", {c['sem_arquivo']} sem o arquivo no servidor"
                        if c.get("sem_arquivo") else ""))
 
@@ -637,6 +641,29 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                                        if c["faltam"] else "")
                                     + ". ")
 
+            elif etapa == "faturamento_omie":
+                # 09/10/2026: *"a gente precisa poder fazer aquela consulta do
+                # título ao Omie, para compatibilizar"*. Só LÊ o Omie; escreve
+                # na base os campos omie_* e as divergências, e o banco junto.
+                mudar_etapa("conferindo os títulos no Omie")
+                from . import faturamento as _faturamento
+                c = _faturamento.conferir_no_omie(anotar)
+                recado_apoios[0] = (
+                    f"{c['conferidos']} título(s) conferido(s) no Omie de {c['titulos']}"
+                    + (f" — {c['divergentes']} com tributo que NÃO bate"
+                       if c["divergentes"] else " — nenhum com tributo divergente")
+                    + (f"; {c['sem_tributo']} sem tributo na nota (falta equalizar)"
+                       if c["sem_tributo"] else "")
+                    + (f"; {c['nao_achados']} não achado(s) no Omie"
+                       if c["nao_achados"] else "")
+                    + (f"; {c['erros']} com erro na consulta" if c["erros"] else "")
+                    + (f"; {c['sem_codigo']} nota(s) sem código do título"
+                       if c["sem_codigo"] else "")
+                    + (f". FALTAM {c['faltam']} título(s) — rode de novo"
+                       if c["faltam"] else "")
+                    + (f". {c['bloqueio']}" if c["bloqueio"] else "")
+                    + ".")
+
             elif etapa == "faturamento":
                 # As notas emitidas para a tela de Faturamento (09/10/2026).
                 mudar_etapa("trazendo as notas fiscais emitidas")
@@ -792,7 +819,7 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
         # com o nome errado é pior que número nenhum, porque parece certo.
         if modo in ("apoios", "comprovantes", "fiscal", "fiscal_ia",
                     "notas_receita", "notas_ciencia", "colaboradores", "ponto",
-                    "faturamento", "faturamento_antigas",
+                    "faturamento", "faturamento_antigas", "faturamento_omie",
                     "ponto_pessoa", "ponto_lancar"):
             # Neste modo nenhuma SP é trazida: dizer "0 SPs" fazia a tela
             # parecer que nada aconteceu justamente quando algo aconteceu.
@@ -863,7 +890,22 @@ def encadear_comprovantes(modo: str) -> dict | None:
     # tarefa rodava (09/10/2026 — *"cliquei em atualizar e apareceu: já existe
     # uma atualização em andamento"*). Com comprovante, ela vem na volta
     # seguinte: a baixa termina e passa por aqui de novo.
-    if modo != "faturamento" and _pedido_pendente("faturamento", apagar=True):
+    # A importação das antigas vem antes: ela já termina trazendo as notas
+    # para a tela (etapas "faturamento_antigas" + "faturamento"), então atende
+    # também uma carga simples que estivesse pedida. Depois, a conferência no
+    # Omie (09/10/2026), que precisa das notas já na base.
+    if modo != "faturamento_antigas" and _pedido_pendente("faturamento_antigas",
+                                                          apagar=True):
+        _pedido_pendente("faturamento", apagar=True)
+        logger.info("Análise de SPs: importação das notas antigas pedida durante "
+                    "'%s' — começando agora.", modo)
+        return disparar("faturamento_antigas", disparo="pedida durante outra tarefa")
+    if modo != "faturamento_omie" and _pedido_pendente("faturamento_omie", apagar=True):
+        logger.info("Análise de SPs: conferência no Omie pedida durante '%s' — "
+                    "começando agora.", modo)
+        return disparar("faturamento_omie", disparo="pedida durante outra tarefa")
+    if modo not in ("faturamento", "faturamento_antigas") and _pedido_pendente(
+            "faturamento", apagar=True):
         logger.info("Análise de SPs: carga do faturamento pedida durante '%s' — "
                     "começando agora.", modo)
         return disparar("faturamento", disparo="pedida durante outra tarefa")

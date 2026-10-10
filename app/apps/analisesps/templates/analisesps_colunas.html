@@ -15,6 +15,8 @@
   <summary>Colunas da tabela <span class="qtd">{{ colunas|length }} de {{ todas|length }}</span></summary>
   <form method="post" action="{{ url_for('analisesps.escolher_colunas') }}">
     <input type="hidden" name="voltar" value="{{ request.full_path }}">
+    {# Qual tabela: vazio é a das SPs; "faturamento" é a das notas (09/10/2026). #}
+    {% if tabela_colunas %}<input type="hidden" name="tabela" value="{{ tabela_colunas }}">{% endif %}
     <div class="colunas-opcoes">
       {% set marcadas = colunas|map(attribute='chave')|list %}
       {% for c in todas %}
@@ -22,6 +24,11 @@
           <input type="checkbox" name="coluna" value="{{ c.chave }}"
                  {% if c.chave in marcadas %}checked{% endif %}>
           <span class="rotulo">{{ c.rotulo }}</span>
+          {% if tabela_colunas %}
+            {# REORDENAR (10/10/2026): a ordem desta lista é a da tabela. #}
+            <button type="button" class="col-mover" data-mover="-1" title="Mais para a esquerda" aria-label="Subir {{ c.rotulo }}">▲</button>
+            <button type="button" class="col-mover" data-mover="1" title="Mais para a direita" aria-label="Descer {{ c.rotulo }}">▼</button>
+          {% endif %}
         </label>
       {% endfor %}
     </div>
@@ -30,6 +37,8 @@
       <button class="btn secundario" type="submit" name="acao" value="padrao"
               title="Volta às colunas que a tela mostra para quem nunca escolheu">Voltar ao padrão</button>
     </div>
+    {% if tabela_colunas %}<p class="cartao-dica" style="margin:8px 0 0">As setas mudam a
+      ordem: de cima para baixo aqui é da esquerda para a direita na tabela.</p>{% endif %}
     <p class="cartao-dica" style="margin:8px 0 0">
       A escolha é sua e fica guardada — outra pessoa continua vendo as dela.
       Sem nenhuma marcada, volta ao padrão: tabela sem coluna não é escolha,
@@ -38,6 +47,7 @@
   </form>
 </details>
 
+{% if not tabela_colunas %}
 {# Um clique para a descrição sair ou voltar. Abrir a lista inteira para
    mexer numa coluna só é caro demais para uma coisa que se faz o dia todo. #}
 <form method="post" action="{{ url_for('analisesps.escolher_colunas') }}">
@@ -48,4 +58,21 @@
     {% if 'descricao' in marcadas_agora %}Esconder a descrição{% else %}Mostrar a descrição{% endif %}
   </button>
 </form>
+{% endif %}
 </div>
+{% if tabela_colunas %}
+<script>
+(function () {
+  // Sobe/desce a coluna na lista; o formulário manda as marcadas nessa ordem.
+  document.querySelectorAll(".escolher-colunas .col-mover").forEach(b => b.addEventListener("click", e => {
+    e.preventDefault();
+    const item = b.closest(".opcao");
+    if (b.dataset.mover === "-1" && item.previousElementSibling) {
+      item.parentNode.insertBefore(item, item.previousElementSibling);
+    } else if (b.dataset.mover === "1" && item.nextElementSibling) {
+      item.parentNode.insertBefore(item.nextElementSibling, item);
+    }
+  }));
+})();
+</script>
+{% endif %}

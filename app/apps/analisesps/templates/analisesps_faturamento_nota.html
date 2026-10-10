@@ -4,13 +4,14 @@
 {% if n.observacao %}<p class="cartao-dica">{{ n.observacao }}</p>{% endif %}
 
 <div class="fat-ficha">
-  <div><span class="rotulo-campo">Número oficial</span>{{ n.numero }}</div>
+  <div><span class="rotulo-campo">Número oficial</span>{{ n.numero }}{% if n.numero_repetido %}
+    <br><small>outra nota usa o mesmo número — esta aparece como {{ n.chave }}</small>{% endif %}</div>
   <div><span class="rotulo-campo">Emissão</span>{{ n.data_emissao|data_br }}{% if n.competencia %} · competência {{ n.competencia }}{% endif %}</div>
   <div><span class="rotulo-campo">Obra</span>{{ n.obra }}{% if n.centro_custo and n.centro_custo != n.obra %} · {{ n.centro_custo }}{% endif %}</div>
   <div><span class="rotulo-campo">Empresa</span>{{ n.empresa or '—' }}{% if n.e_scp %} (SCP){% endif %}</div>
   <div><span class="rotulo-campo">Tomador</span>{{ n.tomador }}{% if n.tomador_cnpj %}<br><small>{{ n.tomador_cnpj }}</small>{% endif %}</div>
   <div><span class="rotulo-campo">Contrato</span>{{ n.contrato or '—' }}</div>
-  <div><span class="rotulo-campo">Medição</span>{{ n.medicao or '—' }}{% if n.periodo %}<br><small>{{ n.periodo }}</small>{% endif %}</div>
+  <div><span class="rotulo-campo">Medição</span>{{ n.medicao or '—' }}{% if n.periodo_ini or n.periodo_fim %}<br><small>{{ n.periodo_ini|data_br if n.periodo_ini else '?' }} a {{ n.periodo_fim|data_br if n.periodo_fim else '?' }}{% if n.periodo_da_protocolos %} (da aba Protocolos){% endif %}</small>{% endif %}</div>
   <div><span class="rotulo-campo">Município da obra</span>{{ n.municipio or '—' }}</div>
   <div><span class="rotulo-campo">Valor da nota</span><b>{{ n.valor_total|moeda }}</b></div>
   <div><span class="rotulo-campo">Líquido previsto</span>{{ n.valor_liquido|moeda or '—' }}</div>
@@ -18,7 +19,38 @@
   <div><span class="rotulo-campo">Tributação da obra</span>{{ n.tributacao or '—' }}{% if n.aliquota_iss %}<br><small>ISS aplicado: {{ n.aliquota_iss }}</small>{% endif %}</div>
 </div>
 
+{# O RESULTADO DA CONSULTA que acabou de ser feita pelo botão abaixo. #}
+{% if conferencia %}
+  {% if not conferencia.ok %}
+    <div class="aviso erro">{{ conferencia.erro }}</div>
+  {% elif not conferencia.conferivel %}
+    <div class="aviso">Título {{ conferencia.codigo }} consultado agora no Omie
+      ({{ conferencia.notas }} nota(s) nele). A nota não tem tributo registrado para
+      comparar — falta equalizar; os valores do Omie estão na coluna "No Omie".</div>
+  {% elif conferencia.fora %}
+    <div class="aviso atencao">Título {{ conferencia.codigo }} consultado agora no Omie:
+      <b>não bate</b> em {{ conferencia.fora|map('upper')|join(', ') }}. Para acertar o
+      título, use a tela do Omie do emissor (ela mostra o que vai mudar antes de gravar).</div>
+  {% else %}
+    <div class="aviso ok">Título {{ conferencia.codigo }} consultado agora no Omie: os
+      tributos <b>batem</b> com a nota.</div>
+  {% endif %}
+{% endif %}
+
 <h4>Tributos <small>a nota × o título no Omie</small></h4>
+<p class="cartao-dica fat-omie-linha">
+  {% if n.omie_codigo %}Título no Omie: <b>{{ n.omie_codigo }}</b>
+    {% if n.omie_valor_titulo is not none %} · valor do título {{ n.omie_valor_titulo|moeda }}{% endif %}
+    {% if n.omie_numero_documento %} · notas no título: {{ n.omie_numero_documento }}{% endif %}
+    · {% if n.omie_conferido_em %}conferido em {{ n.omie_conferido_em }}{% else %}nunca conferido{% endif %}
+  {% else %}Esta nota não tem o código do título no Omie (vem da aba "Protocolos").{% endif %}
+  {% if pode_operar and n.omie_codigo %}
+    {# Só LÊ o Omie; grava na base o que ele tem. Ver `faturamento.conferir_uma_no_omie`. #}
+    <button type="button" class="btn secundario"
+            data-conferir-omie="{{ url_for('analisesps.faturamento_nota_omie', numero=n.chave) }}">
+      Consultar título no Omie</button>
+  {% endif %}
+</p>
 <div class="tabela-rolagem livre">
   <table class="tabela-fat">
     <thead><tr><th>Tributo</th><th class="direita">Na nota</th><th>Retido</th><th class="direita">No Omie</th></tr></thead>

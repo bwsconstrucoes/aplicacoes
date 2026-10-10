@@ -33,8 +33,14 @@
   <label class="cartao-dica"><input type="checkbox" id="rodadas-todas"> Selecionar todas</label>
   <span class="cartao-dica" id="rodadas-contagem">nenhuma selecionada</span>
   <button type="button" class="btn" id="rodadas-pipefy" disabled>Lançar no Pipefy</button>
+  <button type="button" class="btn secundario" id="rodadas-lote" disabled
+          title="Cada geração marcada vira um grupo no seu Lote, com a competência e o tipo no título">Enviar ao Lote</button>
   <button type="button" class="btn secundario" id="rodadas-excluir" disabled>Excluir</button>
 </div>
+<form method="post" action="{{ url_for('analisesps.tela_lote') }}" id="form-rodadas-lote" style="display:none">
+  <input type="hidden" name="acao" value="receber_grupos">
+  <input type="hidden" name="grupos" value="">
+</form>
 {% endif %}
 <div class="tabela-wrap">
   <div class="tabela-rolagem livre">
@@ -49,6 +55,10 @@
       {% for r in rodadas %}
         <tr class="{{ 'destaque' if destaque and r.analise and destaque == (r.analise.id|string) }} {{ 'linha-alerta' if r.avisos or r.incompleta }}"
             data-ids="{{ r.ids|join(',') }}"
+            {#- As SPs lançadas da geração e o título do grupo no lote (10/10/2026). -#}
+            {% set sps_da_rodada = [] %}{% for a in r.pagamentos %}{% for sp in a.sps or [] %}{% if sps_da_rodada.append(sp.id) %}{% endif %}{% endfor %}{% endfor %}
+            data-sps="{{ sps_da_rodada|join(',') }}"
+            data-titulo="Folha {{ r.competencia }} · {{ "quinzena" if r.tipo == "quinzena" else ("despesas com colaboradores" if r.tipo == "dc" else "fim de mês") }}{% if r.verbas %} · {{ r.verbas }}{% endif %}{% if r.destino %} · {{ r.destino }}{% endif %}"
             data-analise="{{ r.analise.id if r.lancavel else '' }}"
             data-com-card="{{ '1' if r.lancado else '' }}">
           {% if pode_operar %}<td class="marca"><input type="checkbox" class="marca-rodada"
@@ -91,7 +101,13 @@
                 {% if a.card_pipefy %}
                   {# A SITUAÇÃO DE CADA SP, lida da base (07/10/2026). #}
                   {% for sp in a.sps or [] %}
-                    <a href="{{ sp.link }}" target="_blank" rel="noopener">SP {{ sp.id }}</a>
+                    {# ABRE NO SISTEMA (10/10/2026 — *"se eu quisesse abrir aquela
+                       informação dentro do sistema (…) o modal, para marcar
+                       agendar, ver detalhe"*). O card do Pipefy fica no ↗. #}
+                    <a href="{{ url_for('analisesps.detalhe', sp_id=sp.id) }}" data-ficha="{{ url_for('analisesps.detalhe', sp_id=sp.id) }}"
+                       data-id="{{ sp.id }}" title="Abre a SP aqui, com as ações">SP {{ sp.id }}</a>{% if sp.link %}<a
+                       class="link-pipefy" href="{{ sp.link }}" target="_blank" rel="noopener"
+                       title="Abrir o card no Pipefy" aria-label="Abrir o card da SP {{ sp.id }} no Pipefy">↗</a>{% endif %}
                     {% set st = sp.status_pgt|lower %}{% set ag = sp.status_agend|lower %}
                     {% if not sp.na_base %}<span class="selo cancelado"
                       title="A SP ainda não chegou à base — aparece depois da próxima sincronização">aguardando base</span>
@@ -254,6 +270,7 @@ const marcas = [...document.querySelectorAll(".marca-rodada")];
 const marcasArquivo = [...document.querySelectorAll(".marca-arquivo")];
 const botaoPipefy = document.getElementById("rodadas-pipefy");
 const botaoExcluir = document.getElementById("rodadas-excluir");
+const botaoLote = document.getElementById("rodadas-lote");
 function selecionadas() { return marcas.filter(m => m.checked).map(m => m.closest("tr")); }
 // O que vai para o Pipefy: as contas marcadas, agrupadas por geração.
 function lotesParaLancar() {
@@ -274,6 +291,7 @@ function atualizarSelecao() {
     : "nenhuma selecionada";
   if (botaoPipefy) botaoPipefy.disabled = !nContas;
   if (botaoExcluir) botaoExcluir.disabled = !linhas.length;
+  if (botaoLote) botaoLote.disabled = !linhas.some(l => l.dataset.sps);
 }
 // Marcar a geração marca as contas dela ainda não lançadas; desmarcar desmarca.
 marcas.forEach(m => m.addEventListener("change", () => {
@@ -288,6 +306,23 @@ if (todas) todas.addEventListener("change", () => {
   atualizarSelecao();
 });
 atualizarSelecao();
+
+// --- enviar ao lote (10/10/2026) ----------------------------------------------
+// *"Seleciono um bloco de arquivos e envio para o lote aquelas SPs; o cabeçalho
+// do lote já com competência e tipo de arquivo; selecionar vários, ele cria
+// vários lotes."* Uma geração = um grupo. Só as SPs já lançadas no Pipefy.
+if (botaoLote) botaoLote.addEventListener("click", () => {
+  const linhas = selecionadas();
+  const grupos = linhas.filter(l => l.dataset.sps)
+    .map(l => ({titulo: l.dataset.titulo, ids: l.dataset.sps.split(",").filter(Boolean)}));
+  const sem = linhas.length - grupos.length;
+  if (!grupos.length) { alert("Nenhuma das gerações marcadas tem SP lançada no Pipefy."); return; }
+  if (!confirm(grupos.length + " grupo(s) vão para o seu Lote, um por geração." +
+               (sem ? "\n\n" + sem + " geração(ões) sem SP lançada ficam de fora." : ""))) return;
+  const form = document.getElementById("form-rodadas-lote");
+  form.querySelector("[name=grupos]").value = JSON.stringify(grupos);
+  form.submit();
+});
 
 // --- excluir ------------------------------------------------------------------
 if (botaoExcluir) botaoExcluir.addEventListener("click", async () => {
@@ -392,4 +427,6 @@ criarCards.addEventListener("click", async () => {
 
 
 {% endif %}
+{# O modal da SP: o número abre a ficha aqui (10/10/2026). #}
+{% include "analisesps_ficha_modal.html" %}
 {% endblock %}

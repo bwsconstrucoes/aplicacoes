@@ -459,6 +459,10 @@ TELA_DA_ROTA = {
     "analisesps.enviar_ao_lote": ("solicitacoes",),
     "analisesps.omie_consultar": ("solicitacoes",),
     "analisesps.omie_marcar_pago": ("solicitacoes",),
+    # 10/10/2026: encaminhar pelo WhatsApp, do Lote e das Solicitações.
+    "analisesps.encaminhar_previa": ("solicitacoes", "lote"),
+    "analisesps.encaminhar_mensagem": ("solicitacoes", "lote"),
+    "analisesps.encaminhar_contatos": ("solicitacoes", "lote"),
     "analisesps.sem_risco": ("solicitacoes",),
     "analisesps.validar": ("solicitacoes",),
     # O BeeVale e os códigos de pagamento servem as duas pontas do mesmo
@@ -496,9 +500,12 @@ TELA_DA_ROTA = {
     "analisesps.tela_conciliacao": ("conciliacao",),
     "analisesps.tela_faturamento": ("faturamento",),
     "analisesps.tela_faturamento_periodos": ("faturamento",),
+    "analisesps.tela_faturamento_painel": ("faturamento",),
     "analisesps.faturamento_atualizar": ("faturamento",),
     "analisesps.faturamento_importar": ("faturamento",),
     "analisesps.faturamento_nota": ("faturamento",),
+    "analisesps.faturamento_nota_omie": ("faturamento",),
+    "analisesps.faturamento_omie": ("faturamento",),
     "analisesps.calendario": ("calendario",),
     "analisesps.calendario_dia": ("calendario",),
     "analisesps.auditoria": ("auditoria",),

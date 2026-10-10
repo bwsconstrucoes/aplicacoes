@@ -12228,6 +12228,244 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 220 — Solicitações e Lote no celular (10/10/2026)
+
+- *"Qual a compatibilidade com o telefone? Solicitações e o lote, para
+  consultar: ver se está pago, colocar para agendar."* E, decidido: *"não
+  precisa marcar pago, é mais consultar."* Visto antes num celular simulado
+  (390 px): a ficha já servia; a lista não — filtros ocupavam a primeira tela,
+  a tabela só mostrava o número, a barra de ações cobria uma tela e cortava
+  botões, e o duplo clique (que no celular dá zoom) era a única porta da ficha.
+- Só para tela até 760 px (no computador nada muda), quase tudo em CSS:
+  - **filtros recolhidos** atrás de "Mais filtros" (botão no `analisesps_base`);
+    a busca fica à vista;
+  - **a lista vira cartões**: número (com as etiquetas), valor, credor,
+    vencimento, status de pagamento e de agendamento, obra. Cada célula ganhou
+    `data-col` (`analisesps_tabela.html`), que diz ao celular o que mostrar;
+  - **um toque no cartão abre a ficha** (em tela cheia); o número ali não leva
+    ao Pipefy — o card está na ficha;
+  - **a barra de ações** só aparece com SP marcada, presa no rodapé, com
+    Agendar/Agendado/Falha/Desagendar, Consultar Omie e Encaminhar;
+  - **nada de pagar no celular**: Marcar Pago/Parcial/Pagar e Limpar Pgto
+    somem da barra e da ficha. Validar, cards, BeeVale, QR, exportar e os
+    relatórios do Lote (`so-computador`) também ficam no computador.
+- Não testado num celular de verdade (só no simulado do navegador).
+- **Publicada em 10/10/2026** (sem migração; suíte inteira 9.197 verdes). No
+  mesmo dia, confirmado ao dono que o acesso "só Solicitações e Calendário,
+  só ver" já existe (Configurações › Acesso, sem "Pode alterar") — simulado:
+  as outras telas dão "não encontrado" e agendar/encaminhar são recusados.
+
+- **Levas 213 a 219 publicadas em 10/10/2026** (sem migração; suíte inteira
+  9.196 verdes, com a main de outro chat trazida antes). Falta ele: ver o recado
+  da primeira carga do Faturamento (quantas notas com número repetido e se a
+  aba Protocolos teve as colunas do período achadas) e testar o Encaminhar.
+
+#### Leva 219 — Encaminhar pelo WhatsApp; Arquivos gerados abrem a SP aqui e mandam ao Lote (10/10/2026)
+
+- *"Selecionar e encaminhar pelo WhatsApp (…) uma mini base de nome e
+  telefone (…) o botão tanto no Lote quanto em Solicitações (…) parecido com o
+  Consultar Omie (…) manda informações, anexo, comprovante (…) a mensagem
+  padrão: número da SP, data, vencimento, descrição, valor, tipo de despesa,
+  centro de custo, credor, CPF/CNPJ, responsável, forma de pagamento — e o
+  boleto ou a chave Pix (…) por padrão manda tudo."* Botão **Encaminhar** na
+  barra (Solicitações e Lote, operador). A janela lista as marcadas (até 30),
+  com caixas para informações / anexo / comprovante (só habilita o que existe)
+  e para cada campo; contato da lista ou "escolher no WhatsApp" (serve para
+  grupo); a mensagem aparece pronta e editável; **Abrir no WhatsApp** abre o
+  WhatsApp de quem clica com o texto — a pessoa confere e envia lá. Boleto →
+  código de barras (coluna AI, ou a informação p/ pgt); Pix → a chave; SP paga
+  → "Pago em". Anexo e comprovante vão como link de baixar. `encaminhar.py`.
+  - **Ajuste no mesmo dia** — *"não precisa estar detalhada; tem que ser
+    para envio em lote: dados resumidos de cada uma e as caixinhas."* A janela
+    virou uma linha por SP (SP, credor, valor, vencimento, situação) com três
+    caixinhas em cada — informações, anexo, comprovante — e o "marcar todas"
+    no cabeçalho de cada coluna. A mensagem não aparece mais: é montada na
+    hora de abrir o WhatsApp (ou de copiar). Sem as informações, a SP vai só
+    com o número junto do arquivo. "Quais informações vão" ficou recolhido.
+  - **Contatos:** uma lista da equipe toda, em `analisesps.meta`
+    (`contatos_encaminhar`, sem migração), cadastrada dentro da própria janela.
+  - **Decisão: sai pelo WhatsApp de quem clica, não pelo robô (Z-API).** O
+    número do robô é o dos avisos do ponto/ERP, o WhatsApp dele está desligado
+    na tela Mensagens por bloqueio de volume, e mandar documento a fornecedor
+    sem ninguém conferir é escrever em nome da empresa. Consequência: o
+    arquivo vai como link, não anexado. Mandar pelo robô, com o arquivo
+    anexado, é decisão do dono (mexe na Mensageria).
+- *"Em Arquivos gerados só consigo ir para o Pipefy (…) abrir o modal do
+  sistema para marcar agendar, ver detalhe."* O "SP 123" abre a ficha aqui; o
+  card do Pipefy ficou no ↗ ao lado.
+- *"Seleciono gerações e envio para o lote aquelas SPs; o cabeçalho já com
+  competência e tipo; vários selecionados, vários lotes."* Botão **Enviar ao
+  Lote** em Arquivos gerados: cada geração marcada vira um grupo no Lote de
+  quem clicou, com o título "Folha 09/2026 · quinzena · verbas · destino" (a
+  primeira marcada no topo). Só SPs já lançadas no Pipefy. `lote.acrescentar_grupo`
+  ganhou `titulo` (título que pareça número de SP volta a "Novo Lote N").
+- Não testado: abrir o WhatsApp de verdade (o link `wa.me` é o padrão do
+  WhatsApp) e a tela de Arquivos gerados com gerações reais.
+
+#### Leva 218 — Configurações em subtelas; Faturamento: botões lá, situação em etiqueta, colunas reordenáveis, Painel (10/10/2026)
+
+- *"Importar notas antigas e atualizar da planilha não deveria ficar aqui;
+  deixa em Configurações (…) ela pode ter subtelas: certificado, acesso (…)
+  nomes já usados no sistema não precisa mais."* Configurações ganhou abas:
+  Banco e base · Acesso · Certificados · Faturamento · Integrações ·
+  Ferramentas (`SUBTELAS_CONFIG`, `?aba=`). Todas as partes continuam na
+  página; só a escolhida aparece — por isso nenhum script quebrou. Quem volta de
+  um formulário (cadastro, certificado) cai na aba dele. "Nomes já usados no
+  sistema" saiu (a lista segue no banco e ainda é sugerida no campo Nome).
+- Faturamento: importar, atualizar e conferir no Omie foram para Configurações
+  › Faturamento (`_faturamento_controle.html`), com o estado de cada um. A tela
+  de notas ficou com uma linha só ("notas de tal hora — N no total") e o link.
+  A carga automática (cópia com mais de 1 h) continua. `_estado_do_faturamento`
+  só lê; `_carga_do_faturamento` é ele + o disparo automático.
+- *"A situação pode ficar ao lado do número da nota, como uma tag."* Saiu a
+  coluna; etiqueta recebida / a receber / cancelada ao lado do número.
+- *"Reordenar as colunas."* Setas ▲▼ na lista "Colunas da tabela" (só no
+  Faturamento); a ordem guardada é a ordem da tabela
+  (`tabela.escolhidas(..., na_ordem_guardada=True)`). Cabeçalho, célula e
+  rodapé saem do mesmo laço — não se desalinham.
+- *"Subtela de dashboard: evolução mensal, ano a ano, por empresa, por
+  cliente/tomador, o que tem a receber e de quem, o que recebeu — aplicando os
+  filtros."* Subtela **Painel** (`faturamento.painel`): números do filtro;
+  evolução mensal; ano a ano (até 5 anos, linhas no mesmo eixo, cor fixa por
+  ano — **ignora as datas de emissão**, dito no título); por empresa e por
+  tomador (recebido + a receber, 10 maiores, o resto em "Outros" — cortar não
+  some com dinheiro); a receber por tomador e por idade (dias desde a
+  emissão). Cada gráfico tem valor no mouse e os dois de tempo têm "ver em
+  tabela". Paleta validada (daltonismo e visão normal).
+- Não visto com os dados de verdade (só com notas de teste).
+
+#### Leva 217 — Faturamento: período da medição, competência no filtro, retenção por tributo (09/10/2026)
+
+- *"Colunas que tragam o período da medição — não vai ter para todos, mas a
+  gente tem lá na planilha Protocolos."* A carga lê a aba "Protocolos" (na
+  planilha das notas) e completa o período das notas que não o têm, pela chave
+  OBRA-MEDIÇÃO (a mesma da consolidação). Só lê — a base não é tocada. As
+  colunas são achadas PELO NOME do cabeçalho (início/término + medição ou
+  período; ou uma coluna "Período" com "x a y"), porque o mapa do emissor não
+  conhece essas colunas. Não achando, o recado da carga lista os cabeçalhos
+  vistos. Duas colunas novas: "Início med." e "Fim med."; a ficha diz quando
+  o período veio da Protocolos. A conferência no Omie não apaga esse período.
+- *"A competência está saindo ano-hífen-mês; é mês/ano. E nem precisa ter
+  coluna: tem que estar no filtro."* Saiu da lista; virou filtro na barra
+  (mês/ano). Normalizada na carga para AAAA-MM, venha como vier; sem ela, o mês
+  da emissão (regra do emissor). **Competência marcada desliga as datas de
+  emissão**: a medição de 07/2026 faturada em 10/2026 não pode sumir porque a
+  emissão caiu fora do período.
+- *"Preciso saber quais notas têm retenção de INSS e quais não têm."* Filtro
+  "Retenção de tributos": para cada um (INSS, ISS, IR, PIS, COFINS, CSLL),
+  tanto faz / com retenção / sem retenção / não informado. "Não informado" é a
+  nota antiga não equalizada — não é o mesmo que "sem retenção". E um filtro
+  "Tributação da obra", pela C. Diários (só aparece se a coluna existir).
+- Ajuste no mesmo dia: *"vamos colocar sim e não; tanto faz é fuleiragem"* e
+  *"colocar os tributos ao final"*. A retenção ficou só "sim"/"não" (em branco
+  não filtra; "não" inclui a nota sem marca, que aparece com "—"), e os
+  tributos foram para o fim da tabela e da barra lateral.
+- Não conferido com a aba Protocolos de verdade: o nome das colunas do
+  período é suposição — o recado da primeira carga confirma.
+
+#### Leva 216 — Faturamento: nota com número repetido não some mais (09/10/2026)
+
+- *"Última importação das antigas: 3.468 notas levadas à Base Faturamento.
+  3.284 notas fiscais (…) por algum motivo não está completo."* Duas coisas:
+  1. A lista mostra 761 notas porque, sem mexer na barra, o período são os
+     últimos 12 meses (a leva 214 passa a dizer o total no alto).
+  2. **Defeito de verdade:** a carga guardava UMA nota por número e descartava
+     calada as outras linhas com o mesmo número — 184 (3.468 − 3.284). Agora
+     `separar_repetidas` distingue: a MESMA nota escrita duas vezes (mesma
+     emissão, obra e valor) fica uma; OUTRA nota com o mesmo número (outra
+     série, ano ou empresa) entra com a chave "número-2" e o selo "nº repetido".
+     A carga diz quantas de cada tipo no recado. Sem migração: a coluna-chave
+     do banco guarda a chave, e o número verdadeiro continua no `dados`.
+- Cada nota guarda a linha dela na aba (`_linha_base`): a conferência no Omie
+  acha a nota pela linha, e confere se a linha ainda é a daquela nota antes de
+  regravar (se a aba mudou, pede "Atualizar da planilha"). Na conferência de
+  todas, a mesma nota escrita duas vezes conta uma vez só — senão o tributo
+  dela entraria duas vezes na soma do título.
+- **Não se sabe ainda qual dos dois tipos são as 184.** A próxima carga, já
+  publicada, diz. Se forem a mesma nota duas vezes, a origem é a consolidação
+  do emissor, que dentro de uma rodada não confere repetição na própria "Notas
+  BWS" (`base_faturamento.consolidar`) — conserto da área do emissor, não feito
+  aqui.
+
+#### Leva 215 — Faturamento: colunas escolhidas, arquivos em ícone, conferência no Omie (09/10/2026)
+
+- *"Na aba Solicitações você consegue definir quais colunas exibir; quero a
+  mesma coisa para essa de notas."* A lista de notas ganhou o mesmo "Colunas da
+  tabela" (mesma peça, `analisesps_colunas.html` com `tabela_colunas`), guardado
+  por pessoa na preferência `colunas_faturamento`. A coluna Nota não sai (é a
+  linha). Os seis tributos são uma escolha só. `tabela.escolhidas` e
+  `para_guardar` passaram a aceitar outra lista de colunas.
+- *"Essa parte dos arquivos, DANF e tal, poderia ser só um iconezinho."* Ícones
+  (nota, XML, recibo) com o nome no balão (`_faturamento_arquivos.html`). A
+  ficha continua com os botões por extenso.
+- *"A sincronia com o Omie já está funcionando? Não tem nada (…) precisamos
+  poder fazer aquela consulta do título ao Omie, para compatibilizar."* Não
+  estava: as colunas `omie_*` da base só eram preenchidas pela tela do emissor
+  (`/emissao/omie`, 40 títulos por clique), que ninguém tinha rodado. Agora:
+  - **na ficha**, "Consultar título no Omie": consulta o título daquela nota na
+    hora, rateia entre as notas do mesmo título, regrava SÓ essas linhas da base
+    e o banco, e devolve a ficha dizendo se bate ou em quais tributos não;
+  - **no alto**, "Conferir títulos no Omie" (operador): tarefa de fundo
+    (`faturamento_omie`) que confere todos, começando pelos nunca conferidos,
+    até 800 por rodada, gravando a cada 40; para se o Omie pedir pausa longa e
+    diz quantos faltam. Entra na fila se outra tarefa estiver rodando;
+  - **na lista**, a coluna "Omie": bate / não bate / sem tributo (falta
+    equalizar) / sem título / "—" (não conferido).
+  As regras são as do emissor (`omie_conferencia.py`: rateio fechando ao
+  centavo, só o retido soma, cancelada fora) — importadas, não copiadas. A
+  consulta usa o cliente do painel (que sabe esperar a pausa do Omie), com a
+  mesma credencial do ambiente (`OMIE_KEY`/`OMIE_SECRET`).
+- **Decisão: aqui só se LÊ o Omie.** Equalizar (gravar o tributo no título)
+  continua na tela do emissor, que mostra o que vai mudar e pede confirmação
+  marcada. Trazer o equalizar para cá é uma decisão do dono — escreve em
+  sistema financeiro.
+- Não testado contra o Omie e a planilha de verdade (Omie e aba dublados nos
+  testes). Risco conhecido, o mesmo da tela do emissor: a conferência regrava a
+  linha inteira da nota; se o emissor alterar a mesma linha no mesmo minuto, a
+  última gravação vence. Sem migração.
+
+#### Leva 214 — Faturamento: a aba vazia dita, e o "Importar" que entra na fila (09/10/2026)
+
+- *"Outra tarefa de fundo está rodando agora (…) Tente de novo em alguns
+  minutos. Notas trazidas da planilha 'Base Faturamento' em 09/10/2026 às
+  18:38. Mas não visualizo nada."* Duas coisas juntas:
+  1. A carga das 18:38 rodou e leu a aba **vazia** (só o cabeçalho): as notas
+     antigas nunca tinham sido levadas da "Notas BWS" para a "Base
+     Faturamento" — isso é o "Importar notas antigas". A tela dizia "trazidas"
+     sem dizer quantas, e o vazio parecia defeito. Agora o alto diz "— N
+     nota(s)" e, com zero, um aviso amarelo explica que a aba está vazia e o
+     que apertar (`faturamento.total_no_banco`). Com notas no banco mas nenhuma
+     no filtro, a lista diz quantas há no total e lembra dos 12 meses padrão.
+  2. O "Importar" recusava e mandava tentar de novo. Agora fica pedido
+     (`tarefas.pedir_depois("faturamento_antigas")`) e começa sozinho quando a
+     tarefa que ocupa a vez terminar — vem ANTES da carga simples no
+     encadeamento, e a atende (a importação já termina trazendo as notas).
+- Conferido que a leitura de data e valor da base (AAAA-MM-DD, "1.234,56")
+  não era a causa. Não conferido contra a planilha de verdade: que a aba esteja
+  vazia é a explicação que o código e o recado dele sustentam; o aviso novo
+  vai confirmar na tela. Sem migração.
+
+#### Leva 213 — comprovantes: desempate de mesmo valor entre arquivos separados (09/10/2026)
+
+- *"Dois comprovantes de mesmo valor do mesmo dia: a regra da baixa é, entrando
+  os dois no mesmo arquivo, baixar um em cada SP. Mas os comprovantes são
+  gerados individualizados — os do Sicredi eu mando separados — e aí não baixa
+  (…) teria que chegar no BaixaBradesco como um lote."*
+- O robô só desempata o que chega NO MESMO ENVIO (`baixabradesco.core.
+  resolver_empates_do_lote`, que diz isso no próprio comentário). Daqui, cada
+  arquivo — e cada leva de 10 páginas — é um envio. Agora, no fim de cada
+  rodada da fila (`processar_pendentes`), `comprovantes.desempatar` junta num
+  PDF só as páginas que voltaram PENDENTES com o MESMO VALOR vindas de envios
+  diferentes (outro arquivo, ou outra leva do mesmo arquivo), dos lotes das
+  últimas 24 h com o PDF ainda no servidor, e manda de novo. As travas do robô
+  continuam decidindo (mesma quantidade dos dois lados, comprovantes
+  diferentes); aqui só se junta. Empate antigo, já tentado, não é reenviado a
+  cada rodada — só quando entra página nova do mesmo valor. O resultado
+  substitui a linha da página na tela, com "Reenviado junto com os outros de
+  mesmo valor". Nada mudou no BaixaBradesco. Sem migração.
+- Não testado com o robô de verdade (o reenvio usa o mesmo caminho do envio
+  normal).
+
 #### Leva 212 — ícones de baixar o anexo e o comprovante (09/10/2026)
 
 - *"Coloca um ícone, tanto em Solicitações quanto em Lote: dois ícones de

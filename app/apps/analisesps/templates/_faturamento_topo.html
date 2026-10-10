@@ -1,4 +1,7 @@
-{# O alto das duas subtelas do Faturamento: as abas e de quando são as notas. #}
+{# O alto das subtelas do Faturamento: as abas e de quando são as notas. Os
+   botões de importar, atualizar e conferir no Omie moram em Configurações ›
+   Faturamento desde 10/10/2026 (*"isso não deveria ficar aqui"*) — a tela se
+   atualiza sozinha. #}
 <nav class="abas-folha" aria-label="Telas do faturamento">
   {% for chave, nome, rota in subtelas %}
     <a class="aba-folha {% if subaba == chave %}ativa{% endif %}"
@@ -9,38 +12,23 @@
 
 {% if request.args.get('aviso') %}<div class="aviso">{{ request.args.get('aviso') }}</div>{% endif %}
 
-<div class="fat-carga">
-  {% if rodando %}
-    <b>Trazendo as notas da planilha agora…</b> a tela se atualiza sozinha.
-  {% elif na_fila %}
-    <b>A atualização das notas está na fila:</b> outra tarefa de fundo está rodando
-    ({{ outra_tarefa or 'em andamento' }}) e só roda uma por vez. Ela começa sozinha
-    assim que essa terminar.
-  {% elif carregado_em %}
-    Notas trazidas da planilha "Base Faturamento" em {{ carregado_em|momento_br }}.
-  {% else %}
-    As notas ainda não foram trazidas da planilha "Base Faturamento".
-  {% endif %}
-  {% if importacao and not importacao.em_andamento and importacao.mensagem %}
-    <span>Última importação das antigas: {{ importacao.mensagem }}</span>
-  {% endif %}
-  {% if ultima and not ultima.em_andamento and ultima.ok is sameas false %}
-    <span class="omie-erro">A última tentativa falhou: {{ ultima.mensagem }}</span>
-  {% endif %}
-  {% if e_mestre %}
-    {# As notas antigas vêm pela consolidação do emissor — todos os lotes de uma
-       vez, no processo separado (09/10/2026). Só o mestre: escreve na aba nova. #}
-    <form method="post" action="{{ url_for('analisesps.faturamento_importar') }}"
-          onsubmit="return confirm('Importar as notas antigas da Notas BWS para a Base Faturamento?\n\nNão apaga nada e não emite nada: lê as abas antigas e escreve na aba nova. Leva alguns minutos. Rodar de novo não duplica.')">
-      <button class="btn secundario" type="submit" {{ 'disabled' if rodando }}
-              title="Leva para a Base Faturamento as notas antigas da Notas BWS (consolidação do emissor)">
-        Importar notas antigas</button>
-    </form>
-  {% endif %}
-  <form method="post" action="{{ url_for('analisesps.faturamento_atualizar') }}">
-    <input type="hidden" name="volta" value="{{ request.full_path }}">
-    <button class="btn secundario" type="submit" {{ 'disabled' if rodando }}
-            title="Lê de novo a aba Base Faturamento e a C. Diários. Só leitura.">
-      Atualizar da planilha</button>
-  </form>
-</div>
+<p class="fat-carga-linha cartao-dica">
+  {% if rodando %}<b>Trazendo as notas da planilha agora…</b> a tela se atualiza sozinha.
+  {% elif na_fila %}A atualização das notas está na fila e começa sozinha.
+  {% elif carregado_em %}Notas de {{ carregado_em|momento_br }} — {{ total_no_banco }} nota(s) no total.
+  {% else %}As notas ainda não foram trazidas da planilha.{% endif %}
+  {% if conferindo %} · conferindo os títulos no Omie…{% endif %}
+  <a href="{{ url_for('analisesps.configuracoes', aba='faturamento') }}">importar, atualizar e Omie →</a>
+</p>
+
+{# A ABA VAZIA, dita com todas as letras (09/10/2026): "notas trazidas" e "nada
+   na tela" se contradiziam. #}
+{% if carregado_em and not total_no_banco and not rodando %}
+  <div class="aviso atencao">
+    <b>A aba "Base Faturamento" está vazia</b> — a carga leu a planilha e não
+    achou nenhuma nota nela. As notas antigas ainda não foram levadas da
+    "Notas BWS" para essa aba{% if importacao_na_fila %}: a importação já está
+    na fila e começa sozinha.{% else %}: em <a href="{{ url_for('analisesps.configuracoes', aba='faturamento') }}">Configurações
+    › Faturamento</a>, "Importar notas antigas" (quem tem a senha mestre).{% endif %}
+  </div>
+{% endif %}
