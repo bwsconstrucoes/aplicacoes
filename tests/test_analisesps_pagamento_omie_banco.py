@@ -269,12 +269,15 @@ def test_IMPORTAR_AS_ANTIGAS_roda_todos_os_lotes_e_so_o_mestre_pede(app, monkeyp
     criar(telas=("faturamento",), pode_operar=True)
     with app.test_client() as c:
         entrar_como(c)
-        assert "Importar notas antigas" not in c.get("/analisesps/faturamento").get_data(as_text=True)
+        # o botão mora em Configurações › Faturamento desde 10/10/2026
+        assert "Importar notas antigas</button>" not in c.get(
+            "/analisesps/configuracoes?aba=faturamento").get_data(as_text=True)
         c.post("/analisesps/faturamento/importar")
     assert "faturamento_antigas" not in disparos, "só o mestre importa"
     with app.test_client() as c:
         c.post("/analisesps/entrar", data={"senha": SENHA_MESTRE_OPERADOR})
-        assert "Importar notas antigas" in c.get("/analisesps/faturamento").get_data(as_text=True)
+        assert "Importar notas antigas</button>" in c.get(
+            "/analisesps/configuracoes?aba=faturamento").get_data(as_text=True)
         c.post("/analisesps/faturamento/importar")
     assert disparos.count("faturamento_antigas") == 1
 
