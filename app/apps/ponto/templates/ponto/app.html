@@ -59,7 +59,10 @@
   nav.abas { position:fixed; left:0; right:0; bottom:0; background:#fff; border-top:1px solid var(--borda);
              display:flex; padding-bottom:env(safe-area-inset-bottom); }
   nav.abas button { flex:1; background:none; border:0; padding:10px 4px; font-size:13px; color:var(--suave); }
-  nav.abas button.ativa { color:var(--azul); font-weight:700; }
+  /* A aba da tela em que a pessoa já está: marcada, e sem toque (10/10/2026: "clico
+     em Hoje e não acontece nada — a impressão que dá é que tem um bug"). */
+  nav.abas button.ativa { color:var(--azul); font-weight:700; background:rgba(15,59,102,.08);
+                          box-shadow:inset 0 3px 0 var(--azul); pointer-events:none; cursor:default; }
   nav.abas button span { display:block; font-size:22px; }
   .oculto { display:none !important; }
   dialog { border:0; border-radius:var(--raio); padding:0; max-width:520px; width:calc(100% - 24px); }
@@ -284,8 +287,8 @@
     <div class="cartao oculto" id="cartao-so-na-obra">
       <h2 id="ola-obra">Olá</h2>
       <div class="aviso info">Você bate o ponto no <b>aparelho da obra</b>: mostre o seu QR Code na câmera
-        dele ou digite o CPF. Atestado, licença e ajuste também são entregues lá (ou pelo responsável da obra).
-        Por aqui você vê o seu mês e acompanha os pedidos.</div>
+        dele ou digite o CPF. <span id="so-na-obra-pedidos">Atestado, licença e ajuste também são entregues lá (ou pelo
+        responsável da obra). Por aqui você vê o seu mês e acompanha os pedidos.</span></div>
     </div>
     <div class="cartao" id="cartao-bater">
       <h2 id="ola">Olá</h2>
@@ -452,7 +455,11 @@ function mostrar(tela) {
   // para a tela inicial, e dali eu vou para…").
   $("btn-inicio").classList.toggle("oculto", !(meu || ["equipe", "pessoa", "primeiro"].includes(tela)
                                                  || (tela === "entrar" && ehDaObra())));
-  document.querySelectorAll("nav.abas button").forEach(b => b.classList.toggle("ativa", b.dataset.tela === tela));
+  document.querySelectorAll("nav.abas button").forEach(b => {
+    const aqui = b.dataset.tela === tela;
+    b.classList.toggle("ativa", aqui);
+    if (aqui) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
+  });
   if (tela === "mes") carregarMes();
   if (tela === "pedidos") {
     // Quem não é exceção (não bate no celular) não faz pedido por aqui: entrega
@@ -783,6 +790,9 @@ async function carregarInicio() {
   const soNaObra = EU.bate_no_celular === false || ehDaObra();
   $("cartao-bater").classList.toggle("oculto", soNaObra);
   $("cartao-so-na-obra").classList.toggle("oculto", !soNaObra);
+  $("so-na-obra-pedidos").textContent = EU.pede_no_celular
+    ? "Os seus atestados, licenças e ajustes você pede por aqui: na aba Pedidos, ou tocando no dia em Meu mês."
+    : "Atestado, licença e ajuste também são entregues lá (ou pelo responsável da obra). Por aqui você vê o seu mês e acompanha os pedidos.";
   $("ola-obra").textContent = `Olá, ${EU.primeiro_nome}`;
   if (!soNaObra) localizacao().then(l => { LOCAL = l; preencherObras($("i-obra"), OBRAS, $("i-obra").value); mostrarLocal(l); });
 

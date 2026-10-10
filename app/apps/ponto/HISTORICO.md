@@ -45,7 +45,8 @@ junto com o `README.md` e o `PLANO.md`.
    obra, o "Bater ponto" da tela inicial fica desligado fora da obra (com a
    distância e "toque para procurar de novo"); a linha do alto diz onde o
    aparelho está agora e o papel de quem entrou; "‹ Início" na batida volta sem
-   pedir PIN. Sem migração.
+   pedir PIN; o responsável por um ponto da obra pede o próprio no "Meu ponto";
+   a aba da tela atual fica marcada e sem toque. Sem migração.
 1o. **PUBLICADO em 10/10/2026, noite** (com o "pode" do dono, `main` em
    `248c90d`): documento com um botão só, o "esqueci de bater" no ponto da obra
    abrindo o dia com os horários da escala e a hora digitada, e a **migração
@@ -157,6 +158,18 @@ batendo".
   escolha minha da tarde (o PIN era para ninguém da fila chegar à consulta);
   o que segura agora é a saída sozinha em 3 minutos fora da batida. A rota
   `/app/api/confirmar-pin` ficou, sem uso na tela.
+- **O responsável por um ponto da obra pede o PRÓPRIO no "Meu ponto"** (o dono:
+  *"ela consegue pelo outro modo [os pedidos de todo mundo, no ponto da obra];
+  é para conseguir aqui também — não fica sem sentido"*).
+  `papeis.pede_pelo_proprio_celular` passou a incluir quem responde por um
+  ponto da obra aprovado e dentro da validade. O ponto de EQUIPE continua
+  pedindo pelos outros só com a marcação do cadastro (`_marcado_para_pedir`,
+  decisão de 08/10) — ser responsável de um ponto da obra não estende isso.
+  O aviso do alto do "Meu ponto" diz onde pedir, conforme a pessoa possa ou não.
+- **A aba da tela em que a pessoa já está fica marcada e sem toque** (*"clico em
+  Hoje, não tem batida, não acontece nada — a impressão que dá é que tem um
+  bug"*): o "Hoje" de baixo é a aba da tela, não um botão do dia. Agora ela
+  aparece selecionada (faixa azul em cima, fundo) e não reage ao toque.
 
 ## 10/10/2026 (noite) — Documento com um botão, ajuste de batida sem roleta, e as licenças conferidas na lei
 

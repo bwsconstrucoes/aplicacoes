@@ -150,13 +150,20 @@ def test_ponto_da_obra_consulta_pelo_cpf_sem_pin(app, mundo, carlos, monkeypatch
     PIN (só o responsável e o administrativo entram nele); dentro, a consulta é
     pelo CPF da pessoa — sem outro PIN e sem depender da localização — e só de
     quem tem relação com as obras do aparelho."""
-    for cpf in (CPF_JOAO, CPF_MARIA, CPF_CARLOS):
-        _entrar_no_app(app, cpf, monkeypatch)            # o PIN 481927 de cada um
+    cel = {cpf: _entrar_no_app(app, cpf, monkeypatch) for cpf in (CPF_JOAO, CPF_MARIA, CPF_CARLOS)}  # PIN 481927
     dp = como(app, mundo["dp"])
     t, h = _aparelho(app, "ponto-da-obra-a-com-tela-inicial-01")
     ap = _id_do_aparelho(dp, "ponto-da-obra-a-com-tela-inicial-01")
+    d5 = (dt.date.today() + dt.timedelta(days=5)).isoformat()
+    proprio = {"tipo": "ATESTADO", "data_inicio": d5, "data_fim": d5, "documento_base64": _png()}
+    assert cel[CPF_MARIA].post("/ponto/app/api/pedidos", json=proprio).status_code == 400
     assert dp.post(f"/erp/api/ponto/dispositivos/{ap}/aprovar",
                    json={"perfil": "COMPARTILHADO", "obras": ["PG-A"], "cpf": CPF_MARIA}).status_code == 200
+    # Responsável por um ponto da obra pede o PRÓPRIO no "Meu ponto" (10/10/2026: "ela
+    # consegue pelo outro modo, é para conseguir aqui também"); quem não é, não.
+    assert cel[CPF_MARIA].get("/ponto/app/api/eu").get_json()["pede_no_celular"] is True
+    assert cel[CPF_MARIA].post("/ponto/app/api/pedidos", json=proprio).status_code == 201
+    assert cel[CPF_JOAO].post("/ponto/app/api/pedidos", json=proprio).status_code == 400
     # Sem ninguém entrar, nada de consulta
     assert t.post("/ponto/app/api/equipe/cpf", json={"cpf": CPF_JOAO}, headers=h).status_code == 401
     assert t.post("/ponto/app/api/entrar", json={"cpf": CPF_JOAO, "pin": "481927"}, headers=h).status_code == 403
