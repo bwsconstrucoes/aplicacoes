@@ -116,7 +116,12 @@
 {% endif %}
 
 <div class="corpo {% block classe_corpo %}{% endblock %}">
-  <aside class="filtros">{% block filtros %}{% endblock %}</aside>
+  <aside class="filtros">
+    {# NO CELULAR (10/10/2026) os filtros ficam recolhidos atrás deste botão —
+       antes eles ocupavam a primeira tela inteira. A busca continua à vista. #}
+    <button type="button" class="filtros-celular" id="btn-filtros-celular"
+            aria-expanded="false">Mais filtros ▾</button>
+    {% block filtros %}{% endblock %}</aside>
   <main class="principal">{% block conteudo %}{% endblock %}</main>
 </div>
 

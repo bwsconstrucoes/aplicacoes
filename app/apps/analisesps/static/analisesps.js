@@ -2517,3 +2517,18 @@ function resumoDoComplemento(c) {
       + linhas.slice(0, 15).join("\n") + (linhas.length > 15 ? "\n…" : "")
     : "";
 }
+
+// --- Celular: os filtros recolhidos (10/10/2026) -----------------------------
+// No celular só a busca fica à vista; o resto dos filtros abre neste botão.
+(function () {
+  const botao = document.getElementById("btn-filtros-celular");
+  if (!botao) return;
+  const lateral = botao.closest(".filtros");
+  const ativos = lateral.querySelectorAll(".filtro input:checked:not([value='']), .filtro-badge").length;
+  if (ativos) botao.textContent = "Mais filtros ▾ (em uso)";
+  botao.addEventListener("click", () => {
+    const aberto = lateral.classList.toggle("aberto-celular");
+    botao.setAttribute("aria-expanded", aberto ? "true" : "false");
+    botao.textContent = aberto ? "Fechar filtros ▴" : (ativos ? "Mais filtros ▾ (em uso)" : "Mais filtros ▾");
+  });
+})();

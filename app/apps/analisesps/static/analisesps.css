@@ -2896,3 +2896,90 @@ table.conciliacao tr.com-sp { cursor: pointer; }
 .enc-campos > div { columns: 2; margin-top: 6px; }
 .enc-novo input { display: block; width: 240px; margin: 6px 0; padding: 6px 8px; border: 1px solid #c8d0da; border-radius: 6px; }
 .enc-novo .btn { margin: 4px 4px 0 0; }
+
+/* ==========================================================================
+   NO CELULAR (10/10/2026) — o dono: *"solicitação de pagamento e lote no
+   telefone, mais para consultar: ver se está pago, colocar para agendar;
+   não precisa marcar pago."*
+   - os filtros recolhidos atrás de um botão (a busca fica à vista);
+   - a lista vira CARTÕES: número, valor, credor, vencimento, status, obra —
+     um toque abre a ficha;
+   - a barra de ações só aparece com SP marcada, presa no rodapé, e só com o
+     que se faz no celular: agendar, consultar o Omie, encaminhar;
+   - nada de "Marcar Pago" no celular, nem na lista nem na ficha.
+   No computador nada disso muda.
+   ========================================================================== */
+.filtros-celular { display: none; }
+@media (max-width: 760px) {
+  /* os filtros */
+  .filtros-celular { display: block; width: 100%; margin: 0 0 10px; padding: 10px 12px;
+    background: #fff; border: 1px solid var(--borda-forte); border-radius: var(--raio-p);
+    font-weight: 600; font-size: 14px; color: var(--azul); text-align: left; }
+  .filtros:not(:has(form)) .filtros-celular { display: none; }
+  .filtros:not(.aberto-celular) .filtro,
+  .filtros:not(.aberto-celular) .filtros-ajuda { display: none; }
+  .filtros { padding-bottom: 6px; }
+
+  /* a lista vira cartões */
+  .tabela-rolagem:has(> table.sps) { overflow: visible; max-height: none; border: 0; background: transparent; box-shadow: none; }
+  table.sps { display: block; border: 0; }
+  table.sps thead { display: none; }
+  table.sps tbody { display: block; }
+  table.sps tr { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto;
+    grid-template-areas: "sel id valor" "sel credor credor" "sel venc pgt" "sel obra agend";
+    gap: 3px 8px; align-items: center; padding: 10px 12px; margin: 0 0 8px;
+    background: #fff; border: 1px solid var(--borda); border-radius: 10px; }
+  table.sps tr.marcada { border-color: var(--azul); box-shadow: 0 0 0 1px var(--azul) inset; }
+  table.sps tr:has(td[colspan]) { display: block; }
+  table.sps td { display: block; padding: 0; border: 0; background: transparent !important; min-width: 0; }
+  table.sps td.sel { grid-area: sel; align-self: start; padding-top: 2px; }
+  table.sps td.sel input { width: 20px; height: 20px; }
+  table.sps td[data-col]:not([data-col="id"]):not([data-col="valor_num"]):not([data-col="credor"]):not([data-col="vencimento_d"]):not([data-col="status_pgt"]):not([data-col="status_agend"]):not([data-col="centro_custo"]) { display: none; }
+  table.sps td[data-col="id"] { grid-area: id; font-weight: 700; font-size: 14px;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+  table.sps td[data-col="id"] > a:first-child { pointer-events: none; color: inherit; text-decoration: none; }
+  table.sps td[data-col="valor_num"] { grid-area: valor; font-weight: 700; font-size: 14px; text-align: right; }
+  table.sps td[data-col="credor"] { grid-area: credor; white-space: normal; font-size: 13.5px; }
+  table.sps td[data-col="vencimento_d"] { grid-area: venc; font-size: 12.5px; color: var(--tinta-suave); }
+  table.sps td[data-col="vencimento_d"]::before { content: "venc. "; }
+  table.sps td[data-col="status_pgt"] { grid-area: pgt; text-align: right; }
+  table.sps td[data-col="centro_custo"] { grid-area: obra; font-size: 12px; color: var(--tinta-suave);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  table.sps td[data-col="status_agend"] { grid-area: agend; text-align: right; }
+
+  /* a barra de ações: só com SP marcada, no rodapé, só o que se faz aqui */
+  .barra-acoes:not(.tem-selecao) { display: none; }
+  .barra-acoes.tem-selecao { position: fixed; left: 0; right: 0; bottom: 0; top: auto; height: auto; z-index: 40; margin: 0;
+    border-radius: 14px 14px 0 0; padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+    display: flex; flex-direction: column; gap: 8px; max-height: 50vh; overflow: auto;
+    box-shadow: 0 -6px 20px rgba(15, 31, 51, .18); }
+  .barra-acoes .ba-centro { order: -1; text-align: left; min-width: 0; display: flex; align-items: baseline; gap: 10px; }
+  .barra-acoes .ba-total { font-size: 18px; }
+  .barra-acoes [data-coluna="status_pgt"], .barra-acoes #ba-validar, .barra-acoes #ba-cards,
+  .barra-acoes #ba-beevale, .barra-acoes a.btn, .barra-acoes #ba-codigos,
+  .barra-acoes #ba-enviar-lote, .barra-acoes #ba-remover-lote,
+  .barra-acoes .ba-grupo:has(> [form="form-lote"]), .barra-acoes .ba-contas { display: none !important; }
+  .barra-acoes .ba-grupo:not(:has(> button:not([data-coluna="status_pgt"]))) { display: none; }
+  .barra-acoes .btn { padding: 10px 12px; font-size: 14px; }
+  .principal { padding-bottom: 190px; }
+
+  /* nada de pagar pelo celular, nem na ficha */
+  .modal-corpo [data-coluna="status_pgt"], .principal [data-coluna="status_pgt"], #ficha-limpar { display: none !important; }
+
+  /* o que é trabalho de computador (exportar, relatório) sai do celular */
+  .so-computador { display: none !important; }
+  .kpis-grupo { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .kpis-grupo .kpi-g { padding: 6px 8px; min-width: 0; }
+  .kpis-grupo .kpi-g-valor { font-size: 15px; }
+
+  /* escolher colunas não faz sentido no cartão; os números do alto, compactos */
+  .linha-colunas { display: none; }
+  .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .kpis .kpi { padding: 8px 10px; min-width: 0; }
+  .kpis .kpi-valor { font-size: 15px; }
+  .kpis .kpi-rotulo { font-size: 10px; }
+  .kpis .kpi-sub { display: none; }
+
+  /* a ficha ocupa a tela */
+  .modal-ficha { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; margin: 0; border-radius: 0; }
+}

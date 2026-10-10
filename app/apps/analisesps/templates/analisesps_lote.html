@@ -11,7 +11,8 @@
 {% if aviso %}<div class="aviso">{{ aviso }}</div>{% endif %}
 
 {% if montado.quantidade %}
-  <p style="margin:-6px 0 14px">
+  {# `so-computador`: exportar e relatório saem do celular (10/10/2026). #}
+  <p class="so-computador" style="margin:-6px 0 14px">
     <a class="btn secundario"
        href="{{ url_for('analisesps.exportar_lote') }}">Exportar o lote</a>
     <a class="btn secundario"
@@ -204,7 +205,7 @@
            tudo o que estiver marcado — inclusive linhas de grupos diferentes.
            "Marcar Pago" saiu por ordem do dono, e o Streamlit nunca o teve
            nesta tela. #}
-        <div class="acoes-grupo">
+        <div class="acoes-grupo so-computador">
           <a class="btn secundario"
              href="{{ url_for('analisesps.codigos', origem='lote') }}&{% for l in grupo.linhas %}id={{ l.id }}{% if not loop.last %}&amp;{% endif %}{% endfor %}">
             QR / Código deste grupo</a>

@@ -138,3 +138,22 @@ def test_ENVIO_EM_LOTE_cada_SP_com_as_suas_caixinhas(app):
     assert msg["texto"].startswith("*Solicitação de Pagamento*\n*Nº da SP:* 1000000501\n🧾")
     assert "Credor" not in msg["texto"] and "1000000502" not in msg["texto"]
     assert nada.status_code == 400
+
+
+def test_CELULAR_cartoes_toque_e_sem_pagar(app):
+    """10/10/2026: *"no telefone é mais consultar: ver se está pago, colocar para
+    agendar; não precisa marcar pago."* O celular é só CSS sobre a mesma tela:
+    cada célula diz a coluna (para o cartão), os filtros têm o botão de abrir,
+    e a regra que esconde o pagar no celular está no estilo."""
+    import pathlib
+    semear_duas()
+    with app.test_client() as c:
+        c.post("/analisesps/entrar", data={"senha": SENHA_MESTRE_OPERADOR})
+        tela = c.get("/analisesps/solicitacoes?f=1&busca=10000005",
+                     follow_redirects=True).get_data(as_text=True)
+    assert 'id="btn-filtros-celular"' in tela
+    assert 'data-col="id"' in tela and 'data-col="credor"' in tela
+    css = pathlib.Path("app/apps/analisesps/static/analisesps.css").read_text()
+    celular = css[css.index("NO CELULAR (10/10/2026)"):]
+    assert '.barra-acoes [data-coluna="status_pgt"]' in celular, "nada de pagar pela barra"
+    assert '.principal [data-coluna="status_pgt"]' in celular, "nem pela ficha"

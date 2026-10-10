@@ -12228,6 +12228,29 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 220 — Solicitações e Lote no celular (10/10/2026)
+
+- *"Qual a compatibilidade com o telefone? Solicitações e o lote, para
+  consultar: ver se está pago, colocar para agendar."* E, decidido: *"não
+  precisa marcar pago, é mais consultar."* Visto antes num celular simulado
+  (390 px): a ficha já servia; a lista não — filtros ocupavam a primeira tela,
+  a tabela só mostrava o número, a barra de ações cobria uma tela e cortava
+  botões, e o duplo clique (que no celular dá zoom) era a única porta da ficha.
+- Só para tela até 760 px (no computador nada muda), quase tudo em CSS:
+  - **filtros recolhidos** atrás de "Mais filtros" (botão no `analisesps_base`);
+    a busca fica à vista;
+  - **a lista vira cartões**: número (com as etiquetas), valor, credor,
+    vencimento, status de pagamento e de agendamento, obra. Cada célula ganhou
+    `data-col` (`analisesps_tabela.html`), que diz ao celular o que mostrar;
+  - **um toque no cartão abre a ficha** (em tela cheia); o número ali não leva
+    ao Pipefy — o card está na ficha;
+  - **a barra de ações** só aparece com SP marcada, presa no rodapé, com
+    Agendar/Agendado/Falha/Desagendar, Consultar Omie e Encaminhar;
+  - **nada de pagar no celular**: Marcar Pago/Parcial/Pagar e Limpar Pgto
+    somem da barra e da ficha. Validar, cards, BeeVale, QR, exportar e os
+    relatórios do Lote (`so-computador`) também ficam no computador.
+- Não testado num celular de verdade (só no simulado do navegador).
+
 - **Levas 213 a 219 publicadas em 10/10/2026** (sem migração; suíte inteira
   9.196 verdes, com a main de outro chat trazida antes). Falta ele: ver o recado
   da primeira carga do Faturamento (quantas notas com número repetido e se a
