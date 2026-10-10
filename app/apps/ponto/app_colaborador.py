@@ -482,6 +482,53 @@ def app_api_tablet_pedido():
     return _ok(pedido={"id": o["id"], "rotulo": o["rotulo"], "etapa": o.get("etapa_atual")}), 201
 
 
+def _quem_no_aparelho(conn, d: dict):
+    """A pessoa identificada no ponto da obra (o bilhete de QR ou CPF) e o Quem
+    do pedido em nome dela."""
+    aparelho = _aparelho_da_obra(conn)
+    colaborador_id, _ = qr.conferir_bilhete(d.get("bilhete"), aparelho["id"])
+    pessoa = cadastros.colaborador_por_id(conn, colaborador_id)
+    if not pessoa:
+        raise ErroDeValidacao("identifique-se de novo", campo="bilhete")
+    nome_ap = (aparelho.get("descricao") or "aparelho da obra")[:60]
+    return pessoa, Quem(nome=f"{pessoa['nome']} — no aparelho {nome_ap}"[:120], colaborador_id=colaborador_id)
+
+
+@bp.route("/app/api/tablet/dia", methods=["POST"])
+@auth.exige_aparelho
+def app_api_tablet_dia():
+    """O dia de quem se identificou no ponto da obra — o que já bateu, o que a
+    escala esperava e o que falta —, para o ajuste abrir com os horários já
+    postos (10/10/2026: "tem que buscar do cadastro (…) se os pontos que a pessoa
+    bate são 7, 12, 13 e 17 horas"). Só o dia pedido, só da própria pessoa."""
+    from .core.ocorrencias import _data
+    d = _corpo()
+    with db.conexao() as conn:
+        pessoa, _ = _quem_no_aparelho(conn, d)
+        dia = _data(d.get("data"), "data")
+        if dia > horario.hoje():
+            raise ErroDeValidacao("esse dia ainda não chegou", campo="data")
+        x = espelho.montar(conn, int(pessoa["id"]), dia, dia)["dias"][0]
+        fechada = competencias.esta_fechada(conn, dia)
+    return _ok(dia=x, competencia_fechada=fechada)
+
+
+@bp.route("/app/api/tablet/ajuste-do-dia", methods=["POST"])
+@auth.exige_aparelho
+def app_api_tablet_ajuste_do_dia():
+    """Os horários que faltaram num dia, de uma vez, entregues no ponto da obra
+    pela própria pessoa identificada (as travas são as de sempre — ajustes.py)."""
+    d = _corpo()
+    with db.conexao() as conn:
+        pessoa, quem = _quem_no_aparelho(conn, d)
+        dados = {k: v for k, v in d.items() if k not in ("bilhete", "aprovar_ja", "colaborador_id")}
+        dados["colaborador_id"] = int(pessoa["id"])
+        if not dados.get("obra"):
+            dados["obra"] = d.get("obra_do_aparelho")
+        criados = ocorrencias.criar_ajuste_do_dia(conn, quem, dados, origem="APARELHO")
+    return _ok(pedidos=[{"id": o["id"]} for o in criados], quantidade=len(criados)), 201
+
+
 @bp.route("/app/api/licencas")
 @auth.exige_colaborador_ou_aparelho
 def app_api_licencas():

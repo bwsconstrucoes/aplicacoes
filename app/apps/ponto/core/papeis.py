@@ -75,10 +75,29 @@ def e_administrativo(conn: Connection, pessoa: Optional[dict]) -> bool:
 
 
 def pede_pelo_proprio_celular(conn: Connection, pessoa: dict) -> bool:
-    """A pessoa faz pedido para SI pelo celular dela?"""
+    """A pessoa faz pedido para SI no "Meu ponto"? Quem tem a marcação, o
+    administrativo de obra — e o responsável por um ponto da obra (10/10/2026:
+    "ela consegue pelo outro modo [os pedidos de todo mundo, no ponto da obra];
+    é para conseguir aqui também")."""
+    return _marcado_para_pedir(conn, pessoa) or responsavel_por_ponto_da_obra(conn, pessoa)
+
+
+def _marcado_para_pedir(conn: Connection, pessoa: dict) -> bool:
+    """Só as marcações do cadastro. É o que decide o ponto de EQUIPE pedir pelos
+    outros (decisão de 08/10/2026) — ser responsável por um ponto da obra não
+    estende isso à equipe."""
     if not disponivel(conn):
         return forma_de_bater.pode_no_celular(pessoa, forma_de_bater.em_vigor(conn))
     return bool(pessoa.get("pede_no_celular") or pessoa.get("administrativo_obra"))
+
+
+def responsavel_por_ponto_da_obra(conn: Connection, pessoa: dict) -> bool:
+    """A pessoa responde por algum ponto da obra aprovado e dentro da validade?"""
+    if not pessoa or not pessoa.get("id"):
+        return False
+    return any(aparelho_valendo(a) for a in db.todos(conn, """
+        SELECT * FROM ponto.dispositivos
+         WHERE colaborador_id = :c AND perfil = 'COMPARTILHADO' AND status = 'APROVADO'""", c=int(pessoa["id"])))
 
 
 def definir(conn: Connection, colaborador_id: int, *, pede_no_celular: Optional[bool] = None,
@@ -186,7 +205,7 @@ def alcance(conn: Connection, pessoa: Optional[dict], aparelho: Optional[dict],
             r.de_onde.append(f"a equipe deste aparelho ({len(r.equipe)} pessoa(s))")
 
     r.pode_pedir = bool(admin or (meu and aparelho["perfil"] == "COMPARTILHADO")
-                        or (meu and aparelho["perfil"] == "LISTA" and pede_pelo_proprio_celular(conn, pessoa)))
+                        or (meu and aparelho["perfil"] == "LISTA" and _marcado_para_pedir(conn, pessoa)))
     if r.vazio:
         if admin:
             r.sem_alcance = (f"você não está dentro da área de nenhuma obra nem bateu ponto em obra nos últimos "
@@ -242,7 +261,7 @@ def alcance_do_aparelho(conn: Connection, aparelho: Optional[dict], local: Optio
     if r.equipe:
         r.de_onde.append(f"a equipe deste aparelho ({len(r.equipe)} pessoa(s))")
     responsavel = cadastros.colaborador_por_id(conn, aparelho["colaborador_id"]) if aparelho.get("colaborador_id") else None
-    r.pode_pedir = bool(r.equipe and responsavel and pede_pelo_proprio_celular(conn, responsavel))
+    r.pode_pedir = bool(r.equipe and responsavel and _marcado_para_pedir(conn, responsavel))
     if not r.equipe:
         r.sem_alcance = "o aparelho de equipe está sem ninguém na lista"
     return r
