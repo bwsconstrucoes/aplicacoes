@@ -12228,6 +12228,11 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+- **Levas 213 a 219 publicadas em 10/10/2026** (sem migração; suíte inteira
+  9.196 verdes, com a main de outro chat trazida antes). Falta ele: ver o recado
+  da primeira carga do Faturamento (quantas notas com número repetido e se a
+  aba Protocolos teve as colunas do período achadas) e testar o Encaminhar.
+
 #### Leva 219 — Encaminhar pelo WhatsApp; Arquivos gerados abrem a SP aqui e mandam ao Lote (10/10/2026)
 
 - *"Selecionar e encaminhar pelo WhatsApp (…) uma mini base de nome e
