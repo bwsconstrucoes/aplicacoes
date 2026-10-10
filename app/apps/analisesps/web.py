@@ -2442,6 +2442,29 @@ def tela_faturamento_periodos():
         args=request.args, **_carga_do_faturamento(), **base)
 
 
+# ---------------------------------------------------------------------------
+# VER O ANEXO / COMPROVANTE NUMA JANELA (10/10/2026) — ver `previa_arquivo.py`.
+# ---------------------------------------------------------------------------
+@bp.route("/arquivo/ver")
+@exige_consulta
+def arquivo_ver():
+    """Devolve o arquivo "para ver" (não para baixar), para a moldura da janela
+    de pré-visualização. Só de Dropbox e Pipefy, com teto de tamanho."""
+    from flask import Response, stream_with_context
+    from urllib.parse import quote
+    from . import previa_arquivo
+    url = (request.args.get("u") or "").strip()
+    try:
+        pedacos, tipo, nome = previa_arquivo.buscar(url)
+    except previa_arquivo.ErroDaPrevia as e:
+        return (render_template("analisesps_previa_erro.html", erro=str(e), url=url), 200)
+    resp = Response(stream_with_context(pedacos), mimetype=tipo)
+    resp.headers["Content-Disposition"] = f"inline; filename*=UTF-8''{quote(nome)}"
+    resp.headers["X-Frame-Options"] = "SAMEORIGIN"
+    resp.headers["Cache-Control"] = "private, max-age=300"
+    return resp
+
+
 @bp.route("/faturamento/painel")
 @exige_consulta
 def tela_faturamento_painel():

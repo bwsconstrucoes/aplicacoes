@@ -81,7 +81,8 @@
 
 <h4>Arquivos</h4>
 <p class="fat-arquivos">
-  {% for rotulo, link in n.links %}<a class="btn secundario" href="{{ link }}" target="_blank" rel="noopener">{{ rotulo }}</a>{% else %}<span class="cartao-dica">Nenhum arquivo registrado para esta nota.</span>{% endfor %}
+  {% for rotulo, link in n.links %}<a class="btn secundario" href="{{ link }}" target="_blank" rel="noopener"
+     data-previa="{{ link }}" data-titulo="{{ rotulo }}">{{ rotulo }}</a>{% else %}<span class="cartao-dica">Nenhum arquivo registrado para esta nota.</span>{% endfor %}
   {% if n.link_card %}<a class="btn secundario" href="{{ n.link_card }}" target="_blank" rel="noopener">Card no Pipefy</a>{% endif %}
 </p>
 {% if n.chave %}<p class="cartao-dica">Chave de acesso: {{ n.chave }}</p>{% endif %}

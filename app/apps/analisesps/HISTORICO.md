@@ -12228,6 +12228,28 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 222 — Ver anexo e comprovante numa janela, sem baixar (10/10/2026)
+
+- *"Os anexos e comprovantes sempre remetem ao download, sendo que muitas vezes
+  deseja-se apenas dar uma olhada rápida. A abertura num modal é viável? (…)
+  daí, se quiser, clicamos para download. No Pipefy é assim."* Viável: um clique
+  no ícone (Solicitações, Lote, Conciliação), no botão Anexo/Comprovante da
+  ficha, ou nos arquivos da nota do Faturamento abre uma janela com o arquivo,
+  e no alto **Baixar**, **Abrir em outra aba** e **Fechar**. Ctrl+clique segue
+  baixando direto. No celular, a janela ocupa a tela.
+  - **Drive:** a pré-visualização do próprio Drive numa moldura (com o login
+    Google de quem olha, como no link).
+  - **Dropbox e Pipefy:** os dois mandam o navegador BAIXAR; por isso o
+    servidor busca e devolve "para ver" (`previa_arquivo.py`, rota
+    `/arquivo/ver`). Só busca nesses endereços (conferidos também depois dos
+    redirecionamentos — senão a rota buscaria qualquer endereço da internet ou
+    da rede interna), com teto de 25 MB e em pedaços, sem guardar o arquivo
+    inteiro na memória. Tipo que o navegador não mostra (zip, planilha) e link
+    vencido do Pipefy viram um recado com "Abrir em outra aba".
+  - Outro serviço: abre em outra aba, como antes.
+- Não testado com arquivo de verdade de cada serviço (só com respostas
+  simuladas); a moldura do Drive depende de quem olha ter acesso ao arquivo.
+
 #### Leva 221 — Faturamento: Protocolos de verdade (período, card, código do Omie), nota que abre com um clique (10/10/2026)
 
 - *"Não está aparecendo todas as notas, e o título Omie não sendo localizado

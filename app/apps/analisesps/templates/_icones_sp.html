@@ -8,11 +8,15 @@
   {%- set comps = comprovante|links_celula -%}
   {%- if anexos or comps -%}
   <span class="icones-sp">
+    {#- `data-previa`: o clique abre a janela de ver (10/10/2026); o href segue
+        sendo o de baixar, para quem usar ctrl+clique. -#}
     {%- if anexos %}<a class="icone-baixar" href="{{ anexos[0]|baixar }}" target="_blank" rel="noopener"
-       title="Baixar o anexo{% if anexos|length > 1 %} (1 de {{ anexos|length }} — os outros estão na ficha da SP){% endif %}"
+       data-previa="{{ anexos[0] }}" data-titulo="Anexo"
+       title="Ver o anexo{% if anexos|length > 1 %} (1 de {{ anexos|length }} — os outros estão na ficha da SP){% endif %}"
        aria-label="Baixar o anexo"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path d="M16.5 6.5v10a4.5 4.5 0 0 1-9 0V5a3 3 0 0 1 6 0v10.5a1.5 1.5 0 0 1-3 0V6.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></a>{% endif -%}
     {%- if comps %}<a class="icone-baixar comprovante" href="{{ comps[0]|baixar }}" target="_blank" rel="noopener"
-       title="Baixar o comprovante de pagamento" aria-label="Baixar o comprovante de pagamento"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M9 11l2 2 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></a>{% endif -%}
+       data-previa="{{ comps[0] }}" data-titulo="Comprovante"
+       title="Ver o comprovante de pagamento" aria-label="Baixar o comprovante de pagamento"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M9 11l2 2 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></a>{% endif -%}
   </span>
   {%- endif -%}
 {% endmacro %}

@@ -54,10 +54,13 @@
     <a class="btn secundario" href="{{ sp.card_link }}" target="_blank" rel="noopener">Abrir Card</a>
   {% endif %}
   {% if sp.anexo_link %}
-    <a class="btn secundario" href="{{ sp.anexo_link }}" target="_blank" rel="noopener">Anexo</a>
+    {% set anexos_ficha = sp.anexo_link|links_celula %}
+    <a class="btn secundario" href="{{ sp.anexo_link }}" target="_blank" rel="noopener"
+       {% if anexos_ficha %}data-previa="{{ anexos_ficha[0] }}" data-titulo="Anexo"{% endif %}>Anexo</a>
   {% endif %}
   {% if sp.comprovante and sp.comprovante.startswith('http') %}
-    <a class="btn secundario" href="{{ sp.comprovante }}" target="_blank" rel="noopener">Comprovante</a>
+    <a class="btn secundario" href="{{ sp.comprovante }}" target="_blank" rel="noopener"
+       data-previa="{{ (sp.comprovante|links_celula or [sp.comprovante])[0] }}" data-titulo="Comprovante">Comprovante</a>
   {% endif %}
   {% if hook_omie %}
     <a class="btn secundario" href="{{ hook_omie }}?id={{ sp.id }}&acao=consultastatusomie"
