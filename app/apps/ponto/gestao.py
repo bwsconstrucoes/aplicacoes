@@ -359,6 +359,8 @@ def ponto_api_pessoa(colaborador_id: int):
         aparelhos = db.todos(conn, """SELECT id, descricao, perfil, status, ultimo_uso_em
                                         FROM ponto.dispositivos WHERE colaborador_id = :c
                                        ORDER BY id DESC""", c=colaborador_id)
+        from .core import papeis
+        responsavel = papeis.responsavel_por_ponto_da_obra(conn, p)
     j = cadastros.colaborador_para_json({**p, "obras_adicionais": adicionais})
     j["escalas"] = [{"escala_id": h["escala_id"], "escala": h["escala_nome"], "tipo": h["escala_tipo"],
                      "desde": h["vigencia_inicio"].isoformat(),
@@ -366,6 +368,9 @@ def ponto_api_pessoa(colaborador_id: int):
                      "por": h["definido_por"]} for h in historico]
     j["aparelhos"] = [{**a, "ultimo_uso_em": horario.texto(a["ultimo_uso_em"])} for a in aparelhos]
     j["acordo_banco"] = bool(p.get("acordo_documento_id"))
+    # Responsável por um ponto da obra pede o próprio pelo celular com ou sem a
+    # marcação (10/10/2026) — a tela diz isso, para a marcação não parecer mentir.
+    j["responsavel_ponto_obra"] = responsavel
     j["funcao"] = p.get("funcao")
     j["tem_telefone"] = bool(envios.telefone_valido(p.get("telefone")))
     with db.conexao() as conn:

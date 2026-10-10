@@ -42,7 +42,8 @@ junto com o `README.md` e o `PLANO.md`.
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
 1q. **NO RAMO, ainda não publicado (10/10/2026)**: fora da obra, o aviso não cita
-   mais a obra mais perto nem a distância. Sem migração.
+   mais a obra mais perto nem a distância; no ERP, a pessoa responsável por um
+   ponto da obra aparece como "faz pedidos pelo celular". Sem migração.
 1p. **PUBLICADO em 10/10/2026, noite, segunda leva** (com o "pode" do dono, `main` em
    `d6308fb`): no ponto da
    obra, o "Bater ponto" da tela inicial fica desligado fora da obra (com a
@@ -180,6 +181,14 @@ batendo".
   celular da pessoa e na recusa do servidor quando ninguém escolheu obra. Quando
   a PESSOA escolhe a obra (celular, batida fora da obra), a recusa continua
   dizendo a distância daquela obra: foi ela que a apontou.
+- **Onde se libera o pedido pelo celular** (o dono: *"não vi na configuração do
+  telefone para permitir ou não a inclusão de atestados"*): é por PESSOA, não
+  por aparelho — ERP › Ponto › Pessoas › a pessoa › "Acesso no aplicativo" ›
+  "Pedidos pelo próprio celular" (desde 08/10). O ponto da obra sempre recebe
+  pedidos de quem bate nele (decisão de 06/10). Como desde hoje o responsável
+  por um ponto da obra pede o próprio com ou sem a marcação, o cartão "Acesso no
+  aplicativo" e a janela dizem isso (`responsavel_ponto_obra` no
+  `/erp/api/ponto/pessoas/<id>`) — senão a marcação "Não" pareceria mentir.
 
 ## 10/10/2026 (noite) — Documento com um botão, ajuste de batida sem roleta, e as licenças conferidas na lei
 

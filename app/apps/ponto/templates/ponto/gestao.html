@@ -2176,11 +2176,12 @@ async function abrirPessoa(id) {
         <div class="kpi estatico"><div class="kpi-rotulo">Jornada</div>
           <div class="kpi-valor" style="font-size:16px">${escapar(rotuloJornada(p.tipo_jornada))}</div>
           <div class="kpi-sub">${p.ativo_no_ponto ? "bate ponto" : "não bate ponto"}</div></div>
-        <div class="kpi estatico ${p.bate_no_celular || p.pede_no_celular || p.administrativo_obra ? "ambar" : ""}"><div class="kpi-rotulo">Acesso no aplicativo</div>
+        <div class="kpi estatico ${p.bate_no_celular || p.pede_no_celular || p.administrativo_obra || p.responsavel_ponto_obra ? "ambar" : ""}"><div class="kpi-rotulo">Acesso no aplicativo</div>
           <div class="kpi-valor" style="font-size:16px">${p.administrativo_obra ? "Administrativo de obra"
             : p.bate_no_celular ? "Obra e celular próprio" : "Aparelho da obra"}</div>
           <div class="kpi-sub">${[p.bate_no_celular ? "bate no celular" : "",
-            p.pede_no_celular || p.administrativo_obra ? "faz pedidos pelo celular" : "",
+            p.pede_no_celular || p.administrativo_obra ? "faz pedidos pelo celular"
+              : p.responsavel_ponto_obra ? "faz pedidos pelo celular (responsável por ponto da obra)" : "",
             p.administrativo_obra ? "consulta a obra em que está" : ""].filter(Boolean).join(" · ") || "o padrão"}</div></div>
         <div class="kpi estatico roxo"><div class="kpi-rotulo">Banco de horas</div>
           <div class="kpi-valor" style="font-size:16px">${escapar(rotuloRegime(p.regime_banco))}</div>
@@ -2377,7 +2378,9 @@ async function formaDeBater(p) {
       <br><b>Administrativo de obra:</b> no celular dele, no ponto da obra ou no computador, consulta o ponto e
       faz pedidos pelas pessoas da obra em que <b>está</b> (pela localização) e das obras em que ele <b>bateu ponto
       nos últimos 7 dias</b> — a qualquer hora, também no computador. Mudou de obra, passa a ver a nova; a antiga
-      sai sozinha uma semana depois da última batida lá.`,
+      sai sozinha uma semana depois da última batida lá.
+      ${p.responsavel_ponto_obra ? `<br><b>${escapar(p.nome.split(" ")[0])} é responsável por um ponto da obra</b>: faz os
+      próprios pedidos pelo celular com ou sem a marcação abaixo (o ponto da obra já faz os de todo mundo).` : ""}`,
     campos: [
       {nome: "forma", rotulo: "Bater no próprio celular", tipo: "select", valor: p.bate_no_celular ? "1" : "0",
        largura: 3, opcoes: simNao("Também bate no próprio celular (exceção)", "Só no ponto da obra (padrão)")},
