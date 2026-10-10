@@ -663,11 +663,11 @@ function mostrarLocal(l) {
     caixa.className = "aviso ambar"; caixa.textContent = `📍 Você está na borda da obra ${rotuloObra(medidas[0].o)}. Pode bater; a batida vai para conferência. Se puder, chegue mais perto.`;
     $("i-obra").value = medidas[0].o.codigo; escolha(null);
   } else if (medidas.length) {
-    const d = medidas[0].d, txt = d >= 1000 ? `${(d / 1000).toFixed(1).replace(".", ",")} km` : `${Math.round(d)} m`;
+    // Sem citar a obra mais perto (10/10/2026): ela pode não ter nada a ver com a pessoa.
     const lista = aceita(false);
     caixa.className = "aviso erro";
-    caixa.textContent = `⚠️ Você NÃO está na obra: está a ${txt} da obra ${rotuloObra(medidas[0].o)}.`
-      + (d > 100000 ? " Distância grande demais: confira se a localização do celular está certa, ou peça para conferirem a coordenada da obra." : "")
+    caixa.textContent = "⚠️ Você NÃO está em obra: a sua localização não confere com nenhuma obra cadastrada."
+      + (medidas[0].d > 100000 ? " Confira se a localização do celular está certa." : "")
       + " Se precisar bater mesmo assim, escolha a obra abaixo e explique o motivo: a batida vai para a conferência da administração da obra e só vale depois de validada.";
     escolha(lista);
   } else {
@@ -1380,7 +1380,9 @@ $("t-inicio").addEventListener("click", async () => {
 // como detectar — a batida vai para conferência). Quem decide de verdade é o
 // servidor, pela cerca, em cada batida.
 // Onde o ponto da obra está AGORA, entre as obras dele: dentro de qual (a mais
-// perto, se as cercas se encostam), ou fora — com a obra mais perto e a distância.
+// perto, se as cercas se encostam), ou fora. Fora, NÃO cita a obra mais perto
+// (10/10/2026: "às vezes a pessoa não tem nada a ver com aquela obra — está sendo
+// sugerida uma obra só porque está mais ou menos perto").
 // Obra sem coordenada não é detectada. A batida e a tela inicial usam a mesma
 // conta (10/10/2026: "não era nem para entrar nessa tela de batida").
 function lugarDoAparelho(l) {
@@ -1393,9 +1395,8 @@ function lugarDoAparelho(l) {
                       texto: `📍 Dentro da obra ${rotuloObra(dentro.o)}`};
   if (!perto.length) return {obra: null, curto: "📍 obra sem coordenada",
                              texto: "📍 Nenhuma obra deste aparelho tem coordenada cadastrada — o ponto não bate aqui."};
-  const m = perto[0].d, km = m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1).replace(".", ",")} km`;
-  return {obra: null, curto: `📍 fora da obra (a ${km} de ${rotuloObra(perto[0].o)})`,
-          texto: `📍 Fora da área da obra: a ${km} de ${rotuloObra(perto[0].o)} — o ponto não é registrado aqui.`};
+  return {obra: null, curto: "📍 fora das obras cadastradas",
+          texto: "📍 Esta localização não confere com nenhuma obra cadastrada — o ponto não é registrado aqui."};
 }
 function detectarObraDoTablet() {
   const info = $("t-obra-info"), nome = $("t-obra-nome"), sel = $("t-obra");
@@ -1408,7 +1409,7 @@ function detectarObraDoTablet() {
   }
   // Nunca uma caixa de obra aqui (10/10/2026: "nesse modo não é para ter seleção de
   // obra, tem que ter a geolocalização").
-  TB.obraOk = null; nome.textContent = TB.local ? "Fora da área da obra" : "Sem localização";
+  TB.obraOk = null; nome.textContent = TB.local ? "Fora das obras cadastradas" : "Sem localização";
   marcar(lugar.texto, true);
 }
 
@@ -1502,7 +1503,7 @@ async function identificar(quem) {
       atualizarLocalTablet().then(detectarObraDoTablet);
       return cobrir("ambar", `<h2>Procurando a localização…</h2><p>Tente de novo em alguns segundos.</p>`, 3000);
     }
-    return cobrir("erro", `<h2>Ponto não registrado</h2><p>${TB.local ? "Este aparelho está fora da área da obra."
+    return cobrir("erro", `<h2>Ponto não registrado</h2><p>${TB.local ? "A localização deste aparelho não confere com nenhuma obra cadastrada."
       : "Este aparelho está sem localização."} O ponto da obra só bate dentro da obra, com a localização ligada.</p>`, 4500);
   }
   TB.ocupado = true;

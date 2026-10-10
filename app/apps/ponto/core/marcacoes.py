@@ -207,6 +207,12 @@ def decidir_lugar(*, situacao: str, detectada: Optional[dict], distancia: Option
     alvo = enviada or detectada
     if not alvo:
         return None, "nenhuma obra com coordenada cadastrada perto daqui", None
+    if not enviada and modo(alvo) == "BLOQUEAR":
+        # Ninguém escolheu obra: a mais perto não é citada (10/10/2026: "às vezes a
+        # pessoa não tem nada a ver com aquela obra").
+        return None, ("fora das obras: a localização não confere com nenhuma obra cadastrada"
+                      + ("" if no_tablet else " — para bater mesmo assim, escolha a obra e explique o motivo "
+                                              "(vai para conferência)")), None
     d = (geo.distancia_metros(latitude, longitude, alvo["latitude"], alvo["longitude"])
          if alvo is not detectada else distancia)
     explicou = bool(" ".join(str(justificativa or "").split()))

@@ -41,6 +41,8 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1q. **NO RAMO, ainda não publicado (10/10/2026)**: fora da obra, o aviso não cita
+   mais a obra mais perto nem a distância. Sem migração.
 1p. **PUBLICADO em 10/10/2026, noite, segunda leva** (com o "pode" do dono, `main` em
    `d6308fb`): no ponto da
    obra, o "Bater ponto" da tela inicial fica desligado fora da obra (com a
@@ -171,6 +173,13 @@ batendo".
   Hoje, não tem batida, não acontece nada — a impressão que dá é que tem um
   bug"*): o "Hoje" de baixo é a aba da tela, não um botão do dia. Agora ela
   aparece selecionada (faixa azul em cima, fundo) e não reage ao toque.
+- **Fora da obra, o aviso não cita a obra mais perto** (o dono, depois de
+  publicado: *"às vezes a pessoa não tem nada a ver com aquela obra — está sendo
+  sugerida uma obra só porque está mais ou menos perto"*). Diz só que a
+  localização não confere com nenhuma obra cadastrada — no ponto da obra, no
+  celular da pessoa e na recusa do servidor quando ninguém escolheu obra. Quando
+  a PESSOA escolhe a obra (celular, batida fora da obra), a recusa continua
+  dizendo a distância daquela obra: foi ela que a apontou.
 
 ## 10/10/2026 (noite) — Documento com um botão, ajuste de batida sem roleta, e as licenças conferidas na lei
 
