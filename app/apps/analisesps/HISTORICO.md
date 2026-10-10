@@ -12250,6 +12250,10 @@ somente Solicitações de uma conta especifica"*.
     somem da barra e da ficha. Validar, cards, BeeVale, QR, exportar e os
     relatórios do Lote (`so-computador`) também ficam no computador.
 - Não testado num celular de verdade (só no simulado do navegador).
+- **Publicada em 10/10/2026** (sem migração; suíte inteira 9.197 verdes). No
+  mesmo dia, confirmado ao dono que o acesso "só Solicitações e Calendário,
+  só ver" já existe (Configurações › Acesso, sem "Pode alterar") — simulado:
+  as outras telas dão "não encontrado" e agendar/encaminhar são recusados.
 
 - **Levas 213 a 219 publicadas em 10/10/2026** (sem migração; suíte inteira
   9.196 verdes, com a main de outro chat trazida antes). Falta ele: ver o recado
