@@ -41,7 +41,7 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
-1q. **NO RAMO, ainda não publicado (10/10/2026)**: fora da obra, o aviso não cita
+1q. **PUBLICADO em 10/10/2026** (com o "pode" do dono, `main` em `1042e5f`, sem migração): fora da obra, o aviso não cita
    mais a obra mais perto nem a distância; no ERP, a pessoa responsável por um
    ponto da obra aparece como "faz pedidos pelo celular"; e a marcação de pedidos
    pelo celular também na janela do aparelho, refletindo a da pessoa. Sem migração.
