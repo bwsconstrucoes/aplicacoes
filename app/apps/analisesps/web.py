@@ -1574,6 +1574,17 @@ def validar():
 # ---------------------------------------------------------------------------
 # Configurações e sincronização
 # ---------------------------------------------------------------------------
+# As subtelas de Configurações, na ordem das abas (10/10/2026).
+SUBTELAS_CONFIG = [
+    ("sistema", "Banco e base"),
+    ("acesso", "Acesso"),
+    ("certificados", "Certificados"),
+    ("faturamento", "Faturamento"),
+    ("integracoes", "Integrações"),
+    ("ferramentas", "Ferramentas"),
+]
+
+
 @bp.route("/configuracoes")
 @exige_consulta
 def configuracoes():
@@ -1672,8 +1683,26 @@ def configuracoes():
         logger.exception("Análise de SPs: não consegui listar quem tem acesso")
         pessoas_com_acesso, cadastro_pronto = [], False
 
+    # AS SUBTELAS (10/10/2026 — o dono: *"Configurações pode ter subtelas:
+    # certificado, acesso… cria subtelas para organizar, e põe a do
+    # faturamento"*). Todas as partes vão na página; só a da subtela escolhida
+    # aparece — os avisos de quem volta de um formulário caem na subtela certa.
+    aba = request.args.get("aba") or ""
+    if aba not in dict((c, n) for c, n in SUBTELAS_CONFIG):
+        aba = ("acesso" if request.args.get("erro_usuario") or request.args.get("usuario_ok")
+               else SUBTELAS_CONFIG[0][0])
+    telas = auth.telas_permitidas()
+    faturamento_cfg = None
+    if telas is None or "faturamento" in telas:
+        try:
+            faturamento_cfg = _estado_do_faturamento()
+        except Exception:  # noqa: BLE001 — a tela que conserta não pode cair
+            logger.exception("Análise de SPs: não consegui ler o estado do faturamento")
+
     return render_template(
         "analisesps_config.html",
+        aba_config=aba, subtelas_config=SUBTELAS_CONFIG,
+        faturamento_cfg=faturamento_cfg, e_mestre=auth.e_mestre(),
         migracoes=migracoes, erro_banco=erro_banco, integracoes=integracoes,
         equipe=equipe, certificados=lista_certificados,
         buscas_por_cnpj=buscas_por_cnpj,
@@ -1750,7 +1779,7 @@ def usuarios_salvar():
     else:
         r = {"ok": False, "erro": "Pedido não reconhecido."}
 
-    return redirect(url_for("analisesps.configuracoes",
+    return redirect(url_for("analisesps.configuracoes", aba="acesso",
                             **({"erro_usuario": r["erro"]} if not r.get("ok")
                                else {"usuario_ok": "1"})))
 
@@ -2227,46 +2256,53 @@ def _colunas_do_faturamento() -> list:
     """As colunas da lista de notas que ESTA pessoa vê (09/10/2026)."""
     from . import faturamento, tabela
     guardado = preferencias.ler(auth.pessoa_atual(), faturamento.PREFERENCIA_COLUNAS)
-    return tabela.escolhidas(guardado, faturamento.COLUNAS)
+    return tabela.escolhidas(guardado, faturamento.COLUNAS, na_ordem_guardada=True)
 
 
-def _carga_do_faturamento():
-    """Quando a cópia foi trazida e se uma carga está rodando — e pede uma nova
-    se a cópia estiver velha (recusada em silêncio se outra tarefa roda: a
-    próxima abertura pede de novo)."""
+def _estado_do_faturamento() -> dict:
+    """Em que pé está a cópia das notas — só LÊ. Serve à tela de Faturamento e
+    à subtela Faturamento de Configurações, onde moram os botões de importar,
+    atualizar e conferir no Omie (10/10/2026: *"importar notas antigas e
+    atualizar da planilha não deveria ficar aqui; deixa em Configurações"*)."""
     from . import faturamento, tarefas
-    carregado_em = faturamento.carregado_em()
     andamento = tarefas.estado()
-    rodando = bool(andamento.get("rodando")
-                   and (andamento.get("detalhe") or {}).get("tipo")
-                   in ("faturamento", "faturamento_antigas"))
-    na_fila = False
-    if _faturamento_desatualizado(carregado_em) and not rodando:
-        r = tarefas.disparar("faturamento", disparo="tela de faturamento")
-        rodando = bool(r.get("ok"))
-        if not rodando:
-            # Outra tarefa ocupa a vez: a carga entra sozinha quando ela acabar.
-            tarefas.pedir_depois("faturamento")
-            na_fila = True
-    conferindo = bool(andamento.get("rodando")
-                      and (andamento.get("detalhe") or {}).get("tipo") == "faturamento_omie")
-    return {"carregado_em": carregado_em, "rodando": rodando, "na_fila": na_fila,
+    tipo = (andamento.get("detalhe") or {}).get("tipo") if andamento.get("rodando") else ""
+    rodando = tipo in ("faturamento", "faturamento_antigas")
+    return {"carregado_em": faturamento.carregado_em(),
+            "rodando": rodando,
+            "na_fila": tarefas._pedido_pendente("faturamento"),
             "e_mestre": auth.e_mestre(),
-            "conferindo": conferindo,
-            "conferencia": tarefas.ultima_do_tipo("faturamento_omie"),
-            "conferencia_na_fila": tarefas._pedido_pendente("faturamento_omie"),
             "total_no_banco": faturamento.total_no_banco(),
             "importacao_na_fila": tarefas._pedido_pendente("faturamento_antigas"),
+            "conferindo": tipo == "faturamento_omie",
+            "conferencia": tarefas.ultima_do_tipo("faturamento_omie"),
+            "conferencia_na_fila": tarefas._pedido_pendente("faturamento_omie"),
             "importacao": tarefas.ultima_do_tipo("faturamento_antigas"),
             "outra_tarefa": ((andamento.get("detalhe") or {}).get("etapa")
                              if andamento.get("rodando") and not rodando else ""),
             "ultima": tarefas.ultima_do_tipo("faturamento")}
 
 
+def _carga_do_faturamento():
+    """O estado — e pede uma carga nova se a cópia estiver velha. É isto que
+    deixa a tela atualizada sozinha, sem botão: outra tarefa rodando, a carga
+    entra na fila e começa quando ela acabar."""
+    from . import tarefas
+    e = _estado_do_faturamento()
+    if _faturamento_desatualizado(e["carregado_em"]) and not e["rodando"]:
+        r = tarefas.disparar("faturamento", disparo="tela de faturamento")
+        e["rodando"] = bool(r.get("ok"))
+        if not e["rodando"]:
+            tarefas.pedir_depois("faturamento")
+            e["na_fila"] = True
+    return e
+
+
 # As subtelas do Faturamento, na ordem das abas.
 SUBTELAS_FATURAMENTO = [
     ("notas", "Notas", "analisesps.tela_faturamento"),
     ("periodos", "Por período", "analisesps.tela_faturamento_periodos"),
+    ("painel", "Painel", "analisesps.tela_faturamento_painel"),
 ]
 
 
@@ -2307,7 +2343,10 @@ def tela_faturamento():
     return render_template(
         "analisesps_faturamento.html", pronto=True, filtros=filtros,
         pagina=pagina, por_pagina=faturamento.POR_PAGINA,
-        colunas=_colunas_do_faturamento(), todas=faturamento.COLUNAS,
+        colunas=_colunas_do_faturamento(),
+        # na lista de escolha, as marcadas na ordem da pessoa e depois as outras
+        todas=_colunas_do_faturamento() + [c for c in faturamento.COLUNAS
+                                           if c not in _colunas_do_faturamento()],
         resumo=faturamento.resumo(filtros),
         notas=faturamento.listar(filtros, pagina), opcoes=faturamento.opcoes(),
         args=request.args, **_carga_do_faturamento(), **base)
@@ -2340,6 +2379,29 @@ def tela_faturamento_periodos():
         args=request.args, **_carga_do_faturamento(), **base)
 
 
+@bp.route("/faturamento/painel")
+@exige_consulta
+def tela_faturamento_painel():
+    """O painel de gráficos (10/10/2026: *"subtela de dashboard (…) evolução
+    mensal, ano a ano, por empresa, por cliente/tomador, o que tem a receber e
+    de quem, o que recebeu — aplicando os filtros"*)."""
+    from . import faturamento
+
+    base = {"aba": "faturamento", "subtelas": SUBTELAS_FATURAMENTO,
+            "args_filtro": {k: v for k, v in request.args.lists()
+                            if k not in ("pagina", "aviso", "agrupar")},
+            "subaba": "painel", "pode_operar": auth.pode_operar(),
+            "nome": auth.nome_atual(), "perfil": auth.ROTULOS.get(auth.perfil_atual(), "")}
+    if not faturamento.pronto():
+        return render_template("analisesps_faturamento_painel.html", pronto=False, **base)
+    filtros = _filtros_do_faturamento()
+    return render_template(
+        "analisesps_faturamento_painel.html", pronto=True, filtros=filtros,
+        resumo=faturamento.resumo(filtros), painel=faturamento.painel(filtros),
+        opcoes=faturamento.opcoes(), args=request.args,
+        **_carga_do_faturamento(), **base)
+
+
 @bp.route("/faturamento/atualizar", methods=["POST"])
 @exige_consulta
 def faturamento_atualizar():
@@ -2356,9 +2418,11 @@ def faturamento_atualizar():
         aviso = ("Outra tarefa de fundo está rodando agora (só roda uma por vez). "
                  "A atualização das notas ficou na fila e começa sozinha assim que "
                  "ela terminar — pode deixar.")
-    volta = request.form.get("volta") or url_for("analisesps.tela_faturamento")
-    if not str(volta).startswith("/analisesps/faturamento"):
-        volta = url_for("analisesps.tela_faturamento")
+    volta = request.form.get("volta") or url_for("analisesps.configuracoes",
+                                                  aba="faturamento")
+    if not str(volta).startswith(("/analisesps/faturamento",
+                                  "/analisesps/configuracoes")):
+        volta = url_for("analisesps.configuracoes", aba="faturamento")
     separador = "&" if "?" in volta else "?"
     return redirect(volta + separador + "aviso=" + quote(aviso))
 
@@ -2371,7 +2435,6 @@ def faturamento_importar():
 
     Só o MESTRE: escreve na aba nova da planilha das notas (não apaga nada, não
     emite nada — ver `faturamento.importar_antigas`)."""
-    from urllib.parse import quote
     from . import tarefas
     if not auth.e_mestre():
         return auth._sem_permissao()
@@ -2387,7 +2450,7 @@ def faturamento_importar():
         aviso = ("Outra tarefa de fundo está rodando agora (só roda uma por vez). "
                  "A importação das notas antigas ficou na fila e começa sozinha "
                  "assim que ela terminar — pode deixar.")
-    return redirect(url_for("analisesps.tela_faturamento") + "?aviso=" + quote(aviso))
+    return redirect(url_for("analisesps.configuracoes", aba="faturamento", aviso=aviso))
 
 
 @bp.route("/faturamento/omie", methods=["POST"])
@@ -2397,7 +2460,6 @@ def faturamento_omie():
     gente precisa poder fazer aquela consulta do título ao Omie, para
     compatibilizar"*). Só LÊ o Omie; grava na base o que ele tem e se bate —
     ver `faturamento.conferir_no_omie`."""
-    from urllib.parse import quote
     from . import tarefas
     r = tarefas.disparar("faturamento_omie", disparo=auth.nome_atual() or "conferir omie")
     if r.get("ok"):
@@ -2408,7 +2470,7 @@ def faturamento_omie():
         aviso = ("Outra tarefa de fundo está rodando agora (só roda uma por vez). "
                  "A conferência no Omie ficou na fila e começa sozinha assim que "
                  "ela terminar — pode deixar.")
-    return redirect(url_for("analisesps.tela_faturamento") + "?aviso=" + quote(aviso))
+    return redirect(url_for("analisesps.configuracoes", aba="faturamento", aviso=aviso))
 
 
 @bp.route("/faturamento/nota/<numero>/omie", methods=["POST"])
@@ -6842,19 +6904,19 @@ def subir_certificado():
     quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
 
     if not arquivo or not arquivo.filename:
-        return redirect(url_for("analisesps.configuracoes",
+        return redirect(url_for("analisesps.configuracoes", aba="certificados",
                                 aviso="Escolha o arquivo do certificado."))
     try:
         dados = certificados.guardar(arquivo.read(), senha, apelido, quem)
     except (certificados.ErroDeCertificado, certificados.SemCofre) as e:
-        return redirect(url_for("analisesps.configuracoes", aviso=str(e)))
+        return redirect(url_for("analisesps.configuracoes", aba="certificados", aviso=str(e)))
     except Exception as e:  # noqa: BLE001 — migração 009 ainda não aplicada
         logger.exception("Análise de SPs: falhou guardar o certificado")
         return redirect(url_for(
-            "analisesps.configuracoes",
+            "analisesps.configuracoes", aba="certificados",
             aviso=f"Não consegui guardar o certificado: {e}"))
 
-    return redirect(url_for("analisesps.configuracoes", aviso=(
+    return redirect(url_for("analisesps.configuracoes", aba="certificados", aviso=(
         f"Certificado de {dados['titular']} guardado. Vale até "
         f"{dados['valido_ate'].strftime('%d/%m/%Y') if dados['valido_ate'] else '—'}"
         ". A busca de notas na Receita passa a usá-lo na próxima rodada.")))
@@ -6881,13 +6943,13 @@ def conferir_certificado():
     arquivo = request.files.get("certificado")
     senha = request.form.get("senha") or ""
     if not arquivo or not arquivo.filename:
-        return redirect(url_for("analisesps.configuracoes",
+        return redirect(url_for("analisesps.configuracoes", aba="certificados",
                                 aviso="Escolha o arquivo para conferir."))
     try:
         r = certificados.conferir(arquivo.read(), senha)
     except Exception as e:  # noqa: BLE001
         logger.exception("Análise de SPs: falhou conferir o certificado")
-        return redirect(url_for("analisesps.configuracoes",
+        return redirect(url_for("analisesps.configuracoes", aba="certificados",
                                 aviso=f"Não consegui conferir: {e}"))
 
     if not r["ok"]:
@@ -6906,7 +6968,7 @@ def conferir_certificado():
     logger.info("Análise de SPs: %s conferiu um certificado — %s.",
                 auth.nome_atual() or auth.pessoa_atual(),
                 "abriu" if r["ok"] else "não abriu")
-    return redirect(url_for("analisesps.configuracoes", aviso=aviso))
+    return redirect(url_for("analisesps.configuracoes", aba="certificados", aviso=aviso))
 
 
 @bp.route("/certificados/remover", methods=["POST"])
@@ -6921,9 +6983,9 @@ def remover_certificado():
         saiu = certificados.remover(cnpj, quem)
     except Exception as e:  # noqa: BLE001
         logger.exception("Análise de SPs: falhou remover o certificado")
-        return redirect(url_for("analisesps.configuracoes",
+        return redirect(url_for("analisesps.configuracoes", aba="certificados",
                                 aviso=f"Não consegui remover: {e}"))
-    return redirect(url_for("analisesps.configuracoes", aviso=(
+    return redirect(url_for("analisesps.configuracoes", aba="certificados", aviso=(
         "Certificado removido. A busca de notas daquele CNPJ para agora."
         if saiu else "Não havia certificado guardado para esse CNPJ.")))
 

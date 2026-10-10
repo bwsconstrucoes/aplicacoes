@@ -12228,6 +12228,38 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 218 — Configurações em subtelas; Faturamento: botões lá, situação em etiqueta, colunas reordenáveis, Painel (10/10/2026)
+
+- *"Importar notas antigas e atualizar da planilha não deveria ficar aqui;
+  deixa em Configurações (…) ela pode ter subtelas: certificado, acesso (…)
+  nomes já usados no sistema não precisa mais."* Configurações ganhou abas:
+  Banco e base · Acesso · Certificados · Faturamento · Integrações ·
+  Ferramentas (`SUBTELAS_CONFIG`, `?aba=`). Todas as partes continuam na
+  página; só a escolhida aparece — por isso nenhum script quebrou. Quem volta de
+  um formulário (cadastro, certificado) cai na aba dele. "Nomes já usados no
+  sistema" saiu (a lista segue no banco e ainda é sugerida no campo Nome).
+- Faturamento: importar, atualizar e conferir no Omie foram para Configurações
+  › Faturamento (`_faturamento_controle.html`), com o estado de cada um. A tela
+  de notas ficou com uma linha só ("notas de tal hora — N no total") e o link.
+  A carga automática (cópia com mais de 1 h) continua. `_estado_do_faturamento`
+  só lê; `_carga_do_faturamento` é ele + o disparo automático.
+- *"A situação pode ficar ao lado do número da nota, como uma tag."* Saiu a
+  coluna; etiqueta recebida / a receber / cancelada ao lado do número.
+- *"Reordenar as colunas."* Setas ▲▼ na lista "Colunas da tabela" (só no
+  Faturamento); a ordem guardada é a ordem da tabela
+  (`tabela.escolhidas(..., na_ordem_guardada=True)`). Cabeçalho, célula e
+  rodapé saem do mesmo laço — não se desalinham.
+- *"Subtela de dashboard: evolução mensal, ano a ano, por empresa, por
+  cliente/tomador, o que tem a receber e de quem, o que recebeu — aplicando os
+  filtros."* Subtela **Painel** (`faturamento.painel`): números do filtro;
+  evolução mensal; ano a ano (até 5 anos, linhas no mesmo eixo, cor fixa por
+  ano — **ignora as datas de emissão**, dito no título); por empresa e por
+  tomador (recebido + a receber, 10 maiores, o resto em "Outros" — cortar não
+  some com dinheiro); a receber por tomador e por idade (dias desde a
+  emissão). Cada gráfico tem valor no mouse e os dois de tempo têm "ver em
+  tabela". Paleta validada (daltonismo e visão normal).
+- Não visto com os dados de verdade (só com notas de teste).
+
 #### Leva 217 — Faturamento: período da medição, competência no filtro, retenção por tributo (09/10/2026)
 
 - *"Colunas que tragam o período da medição — não vai ter para todos, mas a

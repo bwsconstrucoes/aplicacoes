@@ -1,0 +1,58 @@
+{# ---------------------------------------------------------------------------
+   OS BOTÕES DO FATURAMENTO — em Configurações › Faturamento desde 10/10/2026
+   (*"importar notas antigas e atualizar da planilha não deveria ficar aqui"*,
+   sobre a tela de notas). `fat` = `web._estado_do_faturamento()`.
+--------------------------------------------------------------------------- #}
+<div class="fat-controle">
+  <p>
+    {% if fat.rodando %}<b>Trazendo as notas da planilha agora…</b>
+    {% elif fat.na_fila %}<b>A atualização das notas está na fila</b> — começa sozinha
+      quando a tarefa que está rodando ({{ fat.outra_tarefa or 'em andamento' }}) terminar.
+    {% elif fat.carregado_em %}Notas trazidas da "Base Faturamento" em
+      {{ fat.carregado_em|momento_br }} — <b>{{ fat.total_no_banco }} nota(s)</b>.
+    {% else %}As notas ainda não foram trazidas da "Base Faturamento".{% endif %}
+    {% if fat.ultima and not fat.ultima.em_andamento and fat.ultima.mensagem %}
+      <br><small{% if fat.ultima.ok is sameas false %} class="omie-erro"{% endif %}>Última carga:
+        {{ fat.ultima.mensagem }}</small>{% endif %}
+  </p>
+  <p>
+    {% if fat.importacao_na_fila %}<b>A importação das notas antigas está na fila</b> e começa sozinha.
+    {% elif fat.importacao and fat.importacao.em_andamento %}<b>Importando as notas antigas agora…</b>
+    {% elif fat.importacao and fat.importacao.mensagem %}Última importação das antigas:
+      {{ fat.importacao.mensagem }}
+    {% else %}As notas antigas ainda não foram importadas.{% endif %}
+  </p>
+  <p>
+    {% if fat.conferindo %}<b>Conferindo os títulos no Omie agora…</b>
+    {% elif fat.conferencia_na_fila %}<b>A conferência no Omie está na fila</b> e começa sozinha.
+    {% elif fat.conferencia and fat.conferencia.mensagem %}Última conferência no Omie
+      ({{ fat.conferencia.fim|momento_br }}): {{ fat.conferencia.mensagem }}
+    {% else %}Os títulos ainda não foram conferidos no Omie.{% endif %}
+  </p>
+
+  <div class="fat-controle-botoes">
+    <form method="post" action="{{ url_for('analisesps.faturamento_atualizar') }}">
+      <input type="hidden" name="volta" value="{{ url_for('analisesps.configuracoes', aba='faturamento') }}">
+      <button class="btn secundario" type="submit" {{ 'disabled' if fat.rodando }}
+              title="Lê de novo a aba Base Faturamento, a Protocolos e a C. Diários. Só leitura.">
+        Atualizar da planilha agora</button>
+    </form>
+    {% if fat.e_mestre and not fat.importacao_na_fila %}
+      {# Só o mestre: escreve na aba nova da planilha das notas. #}
+      <form method="post" action="{{ url_for('analisesps.faturamento_importar') }}"
+            onsubmit="return confirm('Importar as notas antigas da Notas BWS para a Base Faturamento?\n\nNão apaga nada e não emite nada: lê as abas antigas e escreve na aba nova. Leva alguns minutos. Rodar de novo não duplica.')">
+        <button class="btn secundario" type="submit" {{ 'disabled' if fat.rodando }}
+                title="Leva para a Base Faturamento as notas antigas da Notas BWS (consolidação do emissor)">
+          Importar notas antigas</button>
+      </form>
+    {% endif %}
+    {% if pode_operar and not fat.conferencia_na_fila %}
+      <form method="post" action="{{ url_for('analisesps.faturamento_omie') }}"
+            onsubmit="return confirm('Conferir no Omie os títulos das notas?\n\nSó LÊ o Omie — nada é alterado lá. Grava na base o que o Omie tem e se bate com a nota. Começa pelos títulos nunca conferidos; leva vários minutos.')">
+        <button class="btn secundario" type="submit" {{ 'disabled' if fat.rodando or fat.conferindo }}
+                title="Consulta no Omie o título de cada nota e marca se os tributos batem">
+          Conferir títulos no Omie</button>
+      </form>
+    {% endif %}
+  </div>
+</div>

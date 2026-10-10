@@ -138,7 +138,7 @@ def test_a_TELA_mostra_as_notas_o_grafico_e_a_ficha(carregado):
         ficha = cliente.get("/analisesps/faturamento/nota/2600000003283").get_data(as_text=True)
         assert cliente.get("/analisesps/faturamento/nota/999").status_code == 404
     # a tela principal é a lista, como a planilha; o filtro mora na barra lateral
-    assert "3283" in tela and 'id="form-filtros-fat"' in tela and "Total do filtro" in tela
+    assert "3283" in tela and 'id="form-filtros-fat"' in tela and "<b>Total</b>" in tela
     assert "fat-coluna" not in tela, "o gráfico mora na subtela Por período"
     assert "Faturado por trimestre" in periodos and periodos.count('class="fat-mes-col"') == 2
     assert "de=2026-10-01" in periodos and "ate=2026-12-31" in periodos, "o período leva às notas dele"
@@ -180,7 +180,8 @@ def test_IMPORTAR_com_outra_tarefa_rodando_fica_na_fila_e_comeca_sozinha(app, mo
     with app.test_client() as cliente:
         cliente.post("/analisesps/entrar", data={"senha": SENHA_MESTRE_OPERADOR})
         r = cliente.post("/analisesps/faturamento/importar", data={})
-        tela = cliente.get("/analisesps/faturamento").get_data(as_text=True)
+        # os botões moram em Configurações › Faturamento desde 10/10/2026
+        tela = cliente.get("/analisesps/configuracoes?aba=faturamento").get_data(as_text=True)
     assert "fila" in r.location and "Tente de novo" not in r.location
     assert tarefas._pedido_pendente("faturamento_antigas")
     assert "A importação das notas antigas está na fila" in tela
@@ -269,3 +270,66 @@ def test_FILTRO_DE_RETENCAO_por_tributo(carregado):
     assert "3283" in tela and "3284" not in tela
     # os tributos vêm ao final da tabela, depois dos arquivos
     assert tela.index("<th>Arquivos</th>") < tela.index('<th class="direita">PIS</th>')
+
+
+def test_CONFIGURACOES_tem_subtelas_e_os_botoes_do_faturamento_moram_la(carregado):
+    """10/10/2026: *"importar notas antigas e atualizar da planilha não deveria
+    ficar aqui; deixa em Configurações (…) cria subtelas para organizar"* — e
+    *"nomes já usados no sistema não precisa mais"*."""
+    with carregado.test_client() as cliente:
+        cliente.post("/analisesps/entrar", data={"senha": SENHA_MESTRE_OPERADOR})
+        notas = cliente.get("/analisesps/faturamento?f=1&de=2026-01-01").get_data(as_text=True)
+        cfg = cliente.get("/analisesps/configuracoes?aba=faturamento").get_data(as_text=True)
+        padrao = cliente.get("/analisesps/configuracoes").get_data(as_text=True)
+    assert "Importar notas antigas</button>" not in notas
+    assert "Atualizar da planilha agora</button>" not in notas
+    assert "aba=faturamento" in notas, "a tela aponta para onde os botões foram"
+    assert "Importar notas antigas</button>" in cfg and "Conferir títulos no Omie</button>" in cfg
+    assert '<section class="config-sub" data-sub="faturamento">' in cfg
+    assert '<section class="config-sub" data-sub="sistema" hidden>' in cfg
+    assert '<section class="config-sub" data-sub="sistema">' in padrao, "abre em Banco e base"
+    assert "Nomes já usados no sistema" not in padrao
+
+
+def test_SITUACAO_vira_etiqueta_e_as_COLUNAS_seguem_a_ordem_da_pessoa(carregado):
+    with carregado.test_client() as cliente:
+        cliente.post("/analisesps/entrar", data={"senha": SENHA_MESTRE_OPERADOR})
+        cliente.post("/analisesps/colunas", data={"tabela": "faturamento",
+                                                  "coluna": ["valor", "tomador", "emissao"],
+                                                  "voltar": "/analisesps/faturamento"})
+        tela = cliente.get("/analisesps/faturamento?f=1&de=2026-01-01").get_data(as_text=True)
+    assert "<th>Situação</th>" not in tela and '<span class="selo pago">recebida</span>' in tela
+    assert '<span class="selo neutro">a receber</span>' in tela
+    cab = tela[tela.index("<thead>"):tela.index("</thead>")]
+    assert cab.index("Valor") < cab.index("Tomador") < cab.index("Emissão"), "a ordem escolhida"
+    assert "col-mover" in tela, "as setas de reordenar"
+
+
+def test_PAINEL_mostra_evolucao_ano_a_ano_empresa_tomador_e_a_receber(carregado):
+    """10/10/2026: *"subtela de dashboard (…) evolução mensal, ano a ano, por
+    empresa, por cliente/tomador, o que tem a receber e de quem"*."""
+    from app.apps.analisesps import faturamento
+    tudo = {"de": dt.date(2026, 1, 1), "status": "valida"}
+    p = faturamento.painel(tudo)
+    assert [s["ano"] for s in p["anos"]["series"]] == [2026]
+    empresas = {e["nome"]: e for e in p["por_empresa"]}
+    assert empresas["SCP IF"]["bruto"] == Decimal("11000.00")
+    assert empresas["BWS"]["recebido"] == Decimal("4500.00")
+    assert [i["nome"] for i in p["a_receber_tomador"]] == ["PREFEITURA X"]
+    assert sum(i["valor"] for i in p["idade"]) == Decimal("10000.00"), "9.000 + 1.000"
+    with carregado.test_client() as cliente:
+        cliente.post("/analisesps/entrar", data={"senha": SENHA_MESTRE_OPERADOR})
+        tela = cliente.get("/analisesps/faturamento/painel?f=1&de=2026-01-01").get_data(as_text=True)
+    for titulo in ("Evolução mensal", "Ano a ano", "Por empresa", "Por cliente (tomador)",
+                   "A receber — de quem", "A receber — há quanto tempo"):
+        assert titulo in tela, titulo
+    assert tela.count("ver em tabela") == 2 and "data-tip=" in tela
+
+
+def test_RANKING_dobra_o_resto_em_outros(carregado, monkeypatch):
+    from app.apps.analisesps import faturamento
+    monkeypatch.setattr(faturamento, "TOPO_DO_PAINEL", 2)
+    tudo = {"de": dt.date(2026, 1, 1), "status": "todas"}
+    r = faturamento._ranking(tudo, "n.nota_sequencial", "bruto")
+    assert len(r) == 2 and r[-1]["outros"] and r[-1]["nome"] == "Outros (3)"
+    assert sum(i["bruto"] for i in r) == Decimal("18000.00"), "cortar não some com dinheiro"

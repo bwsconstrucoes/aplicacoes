@@ -55,11 +55,13 @@ CAMPOS_DA_OBRA = {
     "scp_cnpj": "CNPJ SCP",
 }
 
-# AS COLUNAS DA LISTA DE NOTAS, que cada pessoa escolhe (09/10/2026 — *"na aba
+# AS COLUNAS DA LISTA DE NOTAS, que cada pessoa escolhe e ordena (09/10/2026 — *"na aba
 # Solicitações você consegue definir quais colunas exibir; quero a mesma coisa
 # para essa de notas (…) de repente se eu quiser que apareça menos"*). A NOTA
 # não entra na lista: é a identidade da linha, e é nela que o duplo clique
-# abre a ficha. Mesma mecânica e mesma guarda da tabela de SPs (`tabela.py`).
+# abre a ficha. A SITUAÇÃO também não: virou etiqueta ao lado do número
+# (10/10/2026 — *"como uma tag ao lado do número da nota"*). Mesma mecânica
+# e mesma guarda da tabela de SPs (`tabela.py`).
 COLUNAS = [
     Coluna("emissao",     "Emissão",              "data",    True),
     Coluna("obra",        "Obra",                 "texto",   True),
@@ -76,7 +78,6 @@ COLUNAS = [
     Coluna("liquido",     "Líquido",              "moeda",   True),
     Coluna("recebido_em", "Recebido em",          "data",    True),
     Coluna("recebido",    "Valor recebido",       "moeda",   True),
-    Coluna("situacao",    "Situação",             "texto",   True),
     Coluna("omie",        "Omie",                 "texto",   True),
     Coluna("arquivos",    "Arquivos",             "link",    True),
     # ao final (09/10/2026: *"colocar os tributos ao final"*)
@@ -800,6 +801,174 @@ def por_periodo(f: dict, agrupar: str = "mes") -> list[dict]:
                       "recebido": r, "a_receber": a})
         atual = _seguinte(atual, agrupar)
     return saida
+
+
+# ---------------------------------------------------------------------------
+# O PAINEL (10/10/2026) — o dono: *"quero subtela de dashboard, para ver gráfico
+# de evolução mensal, evolução do faturamento ano a ano, por empresa, por
+# cliente/tomador (…) graficamente o que tem a receber, e de quem; o que
+# recebeu — aplicando os filtros."* Tudo aqui respeita a barra lateral, com
+# UMA exceção dita na tela: o "ano a ano" ignora as datas de emissão (doze
+# meses não comparam anos).
+# ---------------------------------------------------------------------------
+# Quantos itens nomeados por gráfico de ranking; o resto vira "Outros" — barra
+# demais não se lê, e cortar sem somar esconderia dinheiro.
+TOPO_DO_PAINEL = 10
+ANOS_NO_PAINEL = 5
+# A idade do que está a receber, em dias desde a emissão.
+FAIXAS_DE_IDADE = [(0, 30, "até 30 dias"), (31, 60, "31 a 60"),
+                   (61, 90, "61 a 90"), (91, 180, "91 a 180"),
+                   (181, None, "mais de 180")]
+
+_A_RECEBER = ("coalesce(sum(coalesce(n.valor_liquido, n.valor_total)) "
+              "         FILTER (WHERE n.data_recebimento IS NULL), 0)")
+_RECEBIDO = ("coalesce(sum(n.valor_recebido) "
+             "         FILTER (WHERE n.data_recebimento IS NOT NULL), 0)")
+
+
+def _ranking(f: dict, expressao: str, ordem: str) -> list[dict]:
+    """Faturado, recebido e a receber agrupados por `expressao`, os maiores
+    por `ordem` ("bruto" ou "a_receber"); o resto somado em "Outros"."""
+    from .db import consultar
+    where, params = _where(f)
+    linhas = consultar(
+        f"SELECT {expressao} AS nome, count(*), coalesce(sum(n.valor_total), 0), "
+        f"       {_RECEBIDO}, {_A_RECEBER} "
+        + _JUNTA_OBRA + where + " GROUP BY 1", tuple(params))
+    itens = [{"nome": nome or "(sem nome)", "quantidade": int(q), "bruto": b,
+              "recebido": r, "a_receber": a} for nome, q, b, r, a in linhas]
+    itens = [i for i in itens if i[ordem]]
+    itens.sort(key=lambda i: i[ordem], reverse=True)
+    if len(itens) > TOPO_DO_PAINEL:
+        resto = itens[TOPO_DO_PAINEL - 1:]
+        itens = itens[:TOPO_DO_PAINEL - 1] + [{
+            "nome": f"Outros ({len(resto)})", "outros": True,
+            "quantidade": sum(i["quantidade"] for i in resto),
+            **{k: sum(i[k] for i in resto) for k in ("bruto", "recebido", "a_receber")}}]
+    return itens
+
+
+def ano_a_ano(f: dict) -> dict:
+    """{ano: [12 valores faturados]} dos últimos anos — SEM as datas de emissão
+    do filtro (os outros filtros valem)."""
+    from .db import consultar
+    where, params = _where(f, com_datas=False)
+    linhas = consultar(
+        "SELECT extract(year FROM n.data_emissao)::int, "
+        "       extract(month FROM n.data_emissao)::int, coalesce(sum(n.valor_total), 0) "
+        + _JUNTA_OBRA + where + " AND n.data_emissao IS NOT NULL GROUP BY 1, 2",
+        tuple(params))
+    anos: dict = {}
+    for ano, mes, valor in linhas:
+        anos.setdefault(int(ano), [0] * 12)[int(mes) - 1] = valor
+    recentes = sorted(anos)[-ANOS_NO_PAINEL:]
+    return {a: anos[a] for a in recentes}
+
+
+def a_receber_por_idade(f: dict) -> list[dict]:
+    """O que está a receber, pela idade da nota (dias desde a emissão)."""
+    from .db import consultar
+    from .horario import agora
+    where, params = _where(f)
+    hoje = agora().date()
+    linhas = consultar(
+        "SELECT n.data_emissao, coalesce(n.valor_liquido, n.valor_total, 0) "
+        + _JUNTA_OBRA + where + " AND n.data_recebimento IS NULL "
+        " AND n.data_emissao IS NOT NULL", tuple(params))
+    faixas = [{"rotulo": r, "valor": 0, "quantidade": 0} for _a, _b, r in FAIXAS_DE_IDADE]
+    for emissao, valor in linhas:
+        dias = (hoje - emissao).days
+        for i, (de, ate, _r) in enumerate(FAIXAS_DE_IDADE):
+            if dias >= de and (ate is None or dias <= ate):
+                faixas[i]["valor"] += valor or 0
+                faixas[i]["quantidade"] += 1
+                break
+    return faixas
+
+
+# As cores das séries (paleta validada: CVD e visão normal; as três claras
+# pedem rótulo direto, e o gráfico de anos tem rótulo e tabela). A cor segue o
+# ANO, não a posição: 2026 tem sempre a mesma cor, filtre como filtrar.
+CORES_DAS_SERIES = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4",
+                    "#008300", "#6250d6", "#e34948"]
+MESES_CURTOS = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set",
+                "out", "nov", "dez"]
+
+
+def desenho_dos_anos(anos: dict, largura=1040, altura=260, margem_esq=60,
+                     margem_dir=48, margem_topo=12, margem_base=26) -> dict:
+    """As linhas do ano a ano já em coordenadas do SVG: um ponto por mês, a
+    escala comum a todos os anos (um eixo só) e as linhas de grade."""
+    maior = max([float(v) for valores in anos.values() for v in valores] + [0])
+    if maior <= 0:
+        return {}
+    passo = _passo_redondo(maior / 4)
+    topo = passo * 4 if passo * 4 >= maior else passo * 5
+    util_x = largura - margem_esq - margem_dir
+    util_y = altura - margem_topo - margem_base
+
+    def x(i):
+        return margem_esq + util_x * i / 11
+
+    def y(v):
+        return margem_topo + util_y * (1 - float(v) / topo)
+    series = []
+    for ano, valores in anos.items():
+        # o ano corrente para no último mês com nota (não despenca a zero)
+        ultimo = max((i for i, v in enumerate(valores) if v), default=-1)
+        pontos = [(round(x(i), 1), round(y(v), 1), v) for i, v in enumerate(valores)
+                  if i <= ultimo]
+        series.append({"ano": ano, "cor": CORES_DAS_SERIES[ano % len(CORES_DAS_SERIES)],
+                       "pontos": pontos,
+                       "caminho": " ".join(f"{'M' if k == 0 else 'L'}{px},{py}"
+                                           for k, (px, py, _v) in enumerate(pontos)),
+                       "total": sum(valores)})
+    grade = [{"y": round(y(passo * k), 1), "valor": passo * k}
+             for k in range(0, int(topo / passo) + 1)]
+    meses = [{"x": round(x(i), 1), "rotulo": MESES_CURTOS[i]} for i in range(12)]
+    return {"largura": largura, "altura": altura, "series": series, "grade": grade,
+            "meses": meses, "base_y": round(y(0), 1), "esq": margem_esq,
+            "dir": largura - margem_dir, "faixa": round(util_x / 11, 1)}
+
+
+def _passo_redondo(bruto: float) -> float:
+    """1, 2, 2,5 ou 5 × 10ⁿ — a grade cai em números redondos."""
+    import math
+    if bruto <= 0:
+        return 1
+    base = 10 ** math.floor(math.log10(bruto))
+    for m in (1, 2, 2.5, 5, 10):
+        if bruto <= m * base:
+            return m * base
+    return 10 * base
+
+
+_EMPRESA = "coalesce(nullif(o.dados->>'scp',''), nullif(o.dados->>'empresa',''), '(sem empresa)')"
+
+
+def painel(f: dict) -> dict:
+    """Tudo o que a subtela Painel desenha, já pronto para a tela."""
+    tomador = "coalesce(nullif(n.tomador_nome, ''), '(sem tomador)')"
+
+    def empilhado(itens):
+        # a barra é o líquido: o que já entrou mais o que falta entrar
+        for i in itens:
+            i["total_liquido"] = (i["recebido"] or 0) + (i["a_receber"] or 0)
+        return itens
+    a_receber = _ranking(f, tomador, "a_receber")
+    for i in a_receber:
+        i["valor"] = i["a_receber"]
+    idade = a_receber_por_idade(f)
+    for i in idade:
+        i["nome"] = i["rotulo"]
+    return {
+        "mensal": por_periodo(f, "mes"),
+        "anos": desenho_dos_anos(ano_a_ano(f)),
+        "por_empresa": empilhado(_ranking(f, _EMPRESA, "bruto")),
+        "por_tomador": empilhado(_ranking(f, tomador, "bruto")),
+        "a_receber_tomador": a_receber,
+        "idade": idade if any(i["valor"] for i in idade) else [],
+    }
 
 
 def listar(f: dict, pagina: int = 1) -> list[dict]:

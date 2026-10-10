@@ -2833,3 +2833,48 @@ table.conciliacao tr.com-sp { cursor: pointer; }
 .fat-retencao { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 4px 2px; font-size: 13px; }
 .fat-retencao span { font-weight: 600; min-width: 52px; }
 .fat-retencao select { flex: 1; padding: 4px 6px; border: 1px solid #c8d0da; border-radius: 6px; background: #fff; font-size: 13px; }
+.fat-carga-linha { margin: 0 0 10px; }
+.fat-carga-linha a { margin-left: 8px; }
+.fat-controle p { margin: 0 0 8px; }
+.fat-controle-botoes { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.fat-controle-botoes form { margin: 0; }
+.escolher-colunas .col-mover { border: 1px solid #d5dbe5; background: #fff; border-radius: 4px; font-size: 10px; line-height: 1; padding: 2px 4px; margin-left: 2px; cursor: pointer; color: #4a5568; }
+.escolher-colunas .col-mover:hover { background: #eef2f7; }
+.fat-nota .selo { margin-left: 4px; font-size: 10.5px; }
+/* no Faturamento a lista de colunas é uma fila só: a ordem dela é a da tabela */
+.escolher-colunas input[name="tabela"] ~ .colunas-opcoes { display: flex; flex-direction: column; gap: 2px; max-width: 380px; }
+
+/* Faturamento › Painel (10/10/2026). Azul = faturado/recebido; laranja = a
+   receber (paleta validada — ver o comentário de CORES_DAS_SERIES). */
+.painel-grade { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.painel-grade .cartao { margin: 0; min-width: 0; }
+.painel-largo { grid-column: 1 / -1; }
+@media (max-width: 900px) { .painel-grade { grid-template-columns: 1fr; } }
+.serie-recebido { background: #2a78d6; }
+.serie-receber { background: #eb6834; }
+.painel-legenda { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; font-size: 12.5px; color: var(--tinta-suave, #52514e); margin: 0 0 10px; }
+.painel-legenda .chip { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+.painel-legenda small { color: #8a8f99; }
+.painel-barras { display: flex; flex-direction: column; gap: 6px; }
+.painel-linha { display: grid; grid-template-columns: minmax(90px, 34%) 1fr auto; align-items: center; gap: 8px; font-size: 12.5px; }
+.painel-nome { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #2d3748; }
+.painel-outros { color: #8a8f99; font-style: italic; }
+.painel-trilho { display: flex; gap: 2px; height: 14px; }
+.painel-seg { display: block; height: 100%; min-width: 2px; }
+.painel-seg:first-child { border-radius: 4px 0 0 4px; }
+.painel-seg:last-child { border-radius: 0 4px 4px 0; }
+.painel-seg:only-child { border-radius: 4px; }
+.painel-linha:hover .painel-seg { filter: brightness(0.9); }
+.painel-valor { font-variant-numeric: tabular-nums; color: #2d3748; min-width: 64px; text-align: right; }
+.painel-svg svg { width: 100%; height: auto; display: block; }
+.painel-svg .grade { stroke: #e3e7ee; stroke-width: 1; }
+.painel-svg .grade.base { stroke: #b8c0cc; }
+.painel-svg .eixo { font-size: 11px; fill: #6b7280; }
+.painel-svg .rotulo-serie { font-size: 11.5px; font-weight: 600; fill: #2d3748; }
+.painel-svg .faixa-mes { fill: transparent; }
+.painel-svg .faixa-mes:hover { fill: rgba(42, 120, 214, 0.06); }
+.painel-tabela { margin-top: 10px; font-size: 12.5px; }
+.painel-tabela summary { cursor: pointer; color: var(--tinta-suave, #52514e); }
+.painel-tabela table { margin-top: 6px; }
+.painel-dica { position: fixed; z-index: 50; max-width: 420px; padding: 6px 9px; background: #1f2937; color: #fff; font-size: 12px; border-radius: 6px; pointer-events: none; box-shadow: 0 4px 12px rgba(0,0,0,.15); }
+.painel-svg { max-width: 1040px; }

@@ -24,7 +24,41 @@
 {% include "_faturamento_topo.html" %}
 
 {% from "_faturamento_arquivos.html" import icones_da_nota, selo_omie %}
-{% set ver = colunas|map(attribute='chave')|list %}
+{% macro cabecalho_fat(chave) %}
+  {%- if chave == 'emissao' %}<th>Emissão</th>
+  {%- elif chave == 'obra' %}<th>Obra</th>
+  {%- elif chave == 'empresa' %}<th>Empresa</th>
+  {%- elif chave == 'tomador' %}<th>Tomador</th>
+  {%- elif chave == 'medicao' %}<th>Medição</th>
+  {%- elif chave == 'periodo_ini' %}<th title="Início do período da medição">Início med.</th>
+  {%- elif chave == 'periodo_fim' %}<th title="Fim do período da medição">Fim med.</th>
+  {%- elif chave == 'valor' %}<th class="direita">Valor</th>
+  {%- elif chave == 'liquido' %}<th class="direita">Líquido</th>
+  {%- elif chave == 'recebido_em' %}<th>Recebido em</th>
+  {%- elif chave == 'recebido' %}<th class="direita">Recebido</th>
+  {%- elif chave == 'omie' %}<th title="Os tributos da nota batem com o título no Omie?">Omie</th>
+  {%- elif chave == 'arquivos' %}<th>Arquivos</th>
+  {%- elif chave == 'tributos' %}<th class="direita">PIS</th><th class="direita">COFINS</th><th class="direita">IR</th><th class="direita">CSLL</th><th class="direita">INSS</th><th class="direita">ISS</th>
+  {%- endif %}
+{% endmacro %}
+{% macro celula_fat(chave, n) %}
+  {%- if chave == 'emissao' %}<td>{{ n.data_emissao|data_br }}</td>
+  {%- elif chave == 'obra' %}<td>{{ n.obra }}</td>
+  {%- elif chave == 'empresa' %}<td>{{ n.empresa }}{% if n.e_scp %} <small class="selo neutro">SCP</small>{% endif %}</td>
+  {%- elif chave == 'tomador' %}<td class="fat-tomador" title="{{ n.tomador }}">{{ n.tomador }}</td>
+  {%- elif chave == 'medicao' %}<td>{{ n.medicao }}</td>
+  {%- elif chave == 'periodo_ini' %}<td>{{ n.periodo_ini|data_br if n.periodo_ini else '' }}</td>
+  {%- elif chave == 'periodo_fim' %}<td>{{ n.periodo_fim|data_br if n.periodo_fim else '' }}</td>
+  {%- elif chave == 'valor' %}<td class="direita"><b>{{ n.valor_total|moeda }}</b></td>
+  {%- elif chave == 'liquido' %}<td class="direita">{{ n.valor_liquido|moeda }}</td>
+  {%- elif chave == 'recebido_em' %}<td>{{ n.data_recebimento|data_br if n.data_recebimento else '' }}</td>
+  {%- elif chave == 'recebido' %}<td class="direita">{{ n.valor_recebido|moeda if n.data_recebimento else '' }}</td>
+  {%- elif chave == 'omie' %}<td>{{ selo_omie(n) }}</td>
+  {%- elif chave == 'arquivos' %}<td class="fat-arquivos">{{ icones_da_nota(n.links) }}</td>
+  {%- elif chave == 'tributos' %}{% for t in n.tributos %}<td class="direita {{ 'fat-nao-retido' if t.retem == 'N' }}"
+      title="{{ t.nome }}{% if t.retem == 'S' %} retido{% elif t.retem == 'N' %} não retido{% endif %}">{{ t.valor|moeda if t.valor is not none else '—' }}</td>{% endfor %}
+  {%- endif %}
+{% endmacro %}
 <div class="cartao fat-planilha-cartao">
   <div class="cartao-cab">
     <h3>Notas <small>{{ resumo.quantidade }} · R$ {{ resumo.bruto|moeda }}</small></h3>
@@ -35,70 +69,39 @@
   {% if not notas %}
     <p class="cartao-dica">Nenhuma nota com estes filtros{% if not carregado_em %} — as notas ainda não vieram da planilha{% elif total_no_banco %} — há {{ total_no_banco }} nota(s) no total; sem mexer na barra, a tela mostra só os últimos doze meses{% endif %}.</p>
   {% else %}
-    {# Quantas colunas vêm ANTES do Valor e entre ele e o Líquido: é o que
-       mantém os totais do rodapé debaixo das colunas certas. #}
-    {% set antes_do_valor = ['emissao','obra','empresa','tomador','medicao','periodo_ini','periodo_fim']|select('in', ver)|list|length %}
+    {# A ORDEM das colunas é a de cada pessoa (10/10/2026 — *"talvez reordenar
+       elas"*): cabeçalho, célula e rodapé saem do mesmo laço, então nunca se
+       desalinham. #}
     <div class="tabela-rolagem fat-planilha">
       <table class="tabela-fat">
         <thead><tr>
           <th>Nota</th>
-          {% if 'emissao' in ver %}<th>Emissão</th>{% endif %}
-          {% if 'obra' in ver %}<th>Obra</th>{% endif %}
-          {% if 'empresa' in ver %}<th>Empresa</th>{% endif %}
-          {% if 'tomador' in ver %}<th>Tomador</th>{% endif %}
-          {% if 'medicao' in ver %}<th>Medição</th>{% endif %}
-          {% if 'periodo_ini' in ver %}<th title="Início do período da medição">Início med.</th>{% endif %}
-          {% if 'periodo_fim' in ver %}<th title="Fim do período da medição">Fim med.</th>{% endif %}
-          {% if 'valor' in ver %}<th class="direita">Valor</th>{% endif %}
-          {% if 'liquido' in ver %}<th class="direita">Líquido</th>{% endif %}
-          {% if 'recebido_em' in ver %}<th>Recebido em</th>{% endif %}
-          {% if 'recebido' in ver %}<th class="direita">Recebido</th>{% endif %}
-          {% if 'situacao' in ver %}<th>Situação</th>{% endif %}
-          {% if 'omie' in ver %}<th title="Os tributos da nota batem com o título no Omie?">Omie</th>{% endif %}
-          {% if 'arquivos' in ver %}<th>Arquivos</th>{% endif %}
-          {# os tributos ao final (09/10/2026) #}
-          {% if 'tributos' in ver %}<th class="direita">PIS</th><th class="direita">COFINS</th><th class="direita">IR</th>
-            <th class="direita">CSLL</th><th class="direita">INSS</th><th class="direita">ISS</th>{% endif %}
+          {% for c in colunas %}{{ cabecalho_fat(c.chave) }}{% endfor %}
         </tr></thead>
         <tbody>
           {% for n in notas %}
             <tr class="fat-linha" data-nota="{{ url_for('analisesps.faturamento_nota', numero=n.chave) }}"
                 title="Duplo clique abre a nota {{ n.sequencial or n.numero }}">
-              <td><b>{{ n.sequencial or n.numero }}</b>{% if n.numero_repetido %}
+              <td class="fat-nota"><b>{{ n.sequencial or n.numero }}</b>
+                {#- A SITUAÇÃO como etiqueta ao lado do número (10/10/2026). -#}
+                {% if n.status != 'valida' %}<span class="selo cancelado">{{ n.status }}</span>
+                {% elif n.data_recebimento %}<span class="selo pago">recebida</span>
+                {% else %}<span class="selo neutro">a receber</span>{% endif %}
+                {%- if n.numero_repetido %}
                 <small class="selo neutro" title="Outra nota (de outra data, obra ou valor) usa o mesmo número">nº repetido</small>{% endif %}</td>
-              {% if 'emissao' in ver %}<td>{{ n.data_emissao|data_br }}</td>{% endif %}
-              {% if 'obra' in ver %}<td>{{ n.obra }}</td>{% endif %}
-              {% if 'empresa' in ver %}<td>{{ n.empresa }}{% if n.e_scp %} <small class="selo neutro">SCP</small>{% endif %}</td>{% endif %}
-              {% if 'tomador' in ver %}<td class="fat-tomador" title="{{ n.tomador }}">{{ n.tomador }}</td>{% endif %}
-              {% if 'medicao' in ver %}<td>{{ n.medicao }}</td>{% endif %}
-              {% if 'periodo_ini' in ver %}<td>{{ n.periodo_ini|data_br if n.periodo_ini else '' }}</td>{% endif %}
-              {% if 'periodo_fim' in ver %}<td>{{ n.periodo_fim|data_br if n.periodo_fim else '' }}</td>{% endif %}
-              {% if 'valor' in ver %}<td class="direita"><b>{{ n.valor_total|moeda }}</b></td>{% endif %}
-              {% if 'liquido' in ver %}<td class="direita">{{ n.valor_liquido|moeda }}</td>{% endif %}
-              {% if 'recebido_em' in ver %}<td>{{ n.data_recebimento|data_br if n.data_recebimento else '' }}</td>{% endif %}
-              {% if 'recebido' in ver %}<td class="direita">{{ n.valor_recebido|moeda if n.data_recebimento else '' }}</td>{% endif %}
-              {% if 'situacao' in ver %}<td>{% if n.status != 'valida' %}<span class="selo cancelado">{{ n.status }}</span>
-                  {% elif not n.data_recebimento %}<span class="cartao-dica">a receber</span>
-                  {% else %}<span class="selo pago">recebida</span>{% endif %}</td>{% endif %}
-              {% if 'omie' in ver %}<td>{{ selo_omie(n) }}</td>{% endif %}
-              {% if 'arquivos' in ver %}<td class="fat-arquivos">{{ icones_da_nota(n.links) }}</td>{% endif %}
-              {% if 'tributos' in ver %}{% for t in n.tributos %}
-                <td class="direita {{ 'fat-nao-retido' if t.retem == 'N' }}"
-                    title="{{ t.nome }}{% if t.retem == 'S' %} retido{% elif t.retem == 'N' %} não retido{% endif %}">
-                  {{ t.valor|moeda if t.valor is not none else '—' }}</td>
-              {% endfor %}{% endif %}
+              {% for c in colunas %}{{ celula_fat(c.chave, n) }}{% endfor %}
             </tr>
           {% endfor %}
         </tbody>
         <tfoot><tr>
-          <td colspan="{{ 1 + antes_do_valor }}"><b>Total do filtro</b> ({{ resumo.quantidade }} nota(s))</td>
-          {% if 'valor' in ver %}<td class="direita"><b>{{ resumo.bruto|moeda }}</b></td>{% endif %}
-          {% if 'liquido' in ver %}<td class="direita"><b>{{ resumo.liquido|moeda }}</b></td>{% endif %}
-          {% if 'recebido_em' in ver %}<td></td>{% endif %}
-          {% if 'recebido' in ver %}<td class="direita"><b>{{ resumo.recebido|moeda }}</b></td>{% endif %}
-          {% set depois = ['situacao','omie','arquivos']|select('in', ver)|list|length %}
-          {% if depois %}<td colspan="{{ depois }}"></td>{% endif %}
-          {% if 'tributos' in ver %}<td colspan="6"></td>{% endif %}
+          <td><b>Total</b> ({{ resumo.quantidade }})</td>
+          {% for c in colunas %}
+            {% if c.chave == 'valor' %}<td class="direita"><b>{{ resumo.bruto|moeda }}</b></td>
+            {% elif c.chave == 'liquido' %}<td class="direita"><b>{{ resumo.liquido|moeda }}</b></td>
+            {% elif c.chave == 'recebido' %}<td class="direita"><b>{{ resumo.recebido|moeda }}</b></td>
+            {% elif c.chave == 'tributos' %}<td colspan="6"></td>
+            {% else %}<td></td>{% endif %}
+          {% endfor %}
         </tr></tfoot>
       </table>
     </div>

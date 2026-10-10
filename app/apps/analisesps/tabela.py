@@ -83,7 +83,7 @@ PADRAO = [c.chave for c in DEFINICOES if c.padrao]
 PREFERENCIA = "colunas_tabela"
 
 
-def escolhidas(guardado, definicoes=None) -> list:
+def escolhidas(guardado, definicoes=None, na_ordem_guardada=False) -> list:
     """As colunas que esta pessoa vê, na ordem fixa da tabela.
 
     `guardado` é o que veio das preferências — pode ser lixo, de uma versão
@@ -132,6 +132,15 @@ def escolhidas(guardado, definicoes=None) -> list:
 
     # A ORDEM é a da definição, nunca a da escolha: a tabela tem de ficar
     # sempre com a mesma cara, senão cada pessoa lê num lugar diferente.
+    #
+    # EXCEÇÃO, a pedido (10/10/2026 — Faturamento: *"não sei se pode talvez
+    # reordenar elas"*): com `na_ordem_guardada`, vale a ordem que a pessoa
+    # deixou; coluna nova (que ela ainda não ordenou) entra no fim.
+    if na_ordem_guardada:
+        ordem = [str(c) for c in guardado if str(c) in marcadas]
+        ordem = list(dict.fromkeys(ordem))
+        resto = [c.chave for c in definicoes if c.chave in marcadas and c.chave not in ordem]
+        return [por_chave[c] for c in ordem + resto]
     return [c for c in definicoes if c.chave in marcadas]
 
 

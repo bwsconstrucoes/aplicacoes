@@ -96,6 +96,7 @@ TODAS_AS_TELAS = [
     ("GET", "/analisesps/calendario/dia"),
     ("GET", "/analisesps/faturamento"),
     ("GET", "/analisesps/faturamento/periodos"),
+    ("GET", "/analisesps/faturamento/painel"),
     ("POST", "/analisesps/faturamento/atualizar"),
     ("POST", "/analisesps/faturamento/importar"),
     ("GET", "/analisesps/faturamento/nota/123"),

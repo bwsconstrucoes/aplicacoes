@@ -1,0 +1,197 @@
+{% extends "analisesps_base.html" %}
+{% block titulo %}Faturamento — painel — Análise de SPs{% endblock %}
+{% block filtros %}{% if pronto %}{% include "analisesps_faturamento_filtros.html" %}{% endif %}{% endblock %}
+
+{% block conteudo %}
+{# ---------------------------------------------------------------------------
+   FATURAMENTO › PAINEL (10/10/2026). O dono: *"subtela de dashboard, para ver
+   gráfico de evolução mensal, evolução do faturamento ano a ano, por empresa,
+   por cliente/tomador (…) graficamente o que tem a receber, e de quem; o que
+   recebeu — aplicando os filtros (…) às vezes preciso visualizar a informação
+   mais consolidada."*
+
+   Os números saem de `faturamento.painel` com os filtros da barra. Cada
+   gráfico tem a sua tabela ("ver em tabela") e passa o valor no mouse. Uma cor
+   por papel: azul = faturado/recebido, laranja = a receber.
+--------------------------------------------------------------------------- #}
+{% if not pronto %}
+  <div class="aviso atencao">
+    <b>A tela de Faturamento ainda não está pronta neste banco.</b> Aperte
+    "Aplicar atualizações do banco" em Configurações.
+  </div>
+{% else %}
+{% include "_faturamento_topo.html" %}
+
+{# Barras horizontais: recebido (azul) + a receber (laranja), ou uma série só. #}
+{% macro barras(itens, empilhado, maior, vazio) %}
+  {% if not itens or not maior %}<p class="cartao-dica">{{ vazio }}</p>{% else %}
+  <div class="painel-barras">
+    {% for i in itens %}
+      {% if empilhado %}
+        {% set total = (i.recebido or 0) + (i.a_receber or 0) %}
+        <div class="painel-linha" data-tip="{{ i.nome }} — faturado R$ {{ i.bruto|moeda }} · recebido R$ {{ i.recebido|moeda }} · a receber R$ {{ i.a_receber|moeda }} · {{ i.quantidade }} nota(s)">
+          <span class="painel-nome {{ 'painel-outros' if i.outros }}" title="{{ i.nome }}">{{ i.nome }}</span>
+          <span class="painel-trilho">
+            {% if i.recebido %}<span class="painel-seg serie-recebido" style="width: {{ '%.2f'|format(100 * i.recebido / maior) }}%"></span>{% endif %}
+            {% if i.a_receber %}<span class="painel-seg serie-receber" style="width: {{ '%.2f'|format(100 * i.a_receber / maior) }}%"></span>{% endif %}
+          </span>
+          <span class="painel-valor">{{ total|moeda_curta }}</span>
+        </div>
+      {% else %}
+        <div class="painel-linha" data-tip="{{ i.nome }} — R$ {{ i.valor|moeda }}{% if i.quantidade is defined %} · {{ i.quantidade }} nota(s){% endif %}">
+          <span class="painel-nome {{ 'painel-outros' if i.outros }}" title="{{ i.nome }}">{{ i.nome }}</span>
+          <span class="painel-trilho">
+            {% if i.valor %}<span class="painel-seg serie-receber" style="width: {{ '%.2f'|format(100 * i.valor / maior) }}%"></span>{% endif %}
+          </span>
+          <span class="painel-valor">{{ i.valor|moeda_curta if i.valor else '—' }}</span>
+        </div>
+      {% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
+{% endmacro %}
+
+{% macro legenda_empilhada() %}
+  <div class="painel-legenda">
+    <span><i class="chip serie-recebido"></i>Recebido</span>
+    <span><i class="chip serie-receber"></i>A receber</span>
+    <small>a barra é o líquido: o que já entrou mais o que falta entrar</small>
+  </div>
+{% endmacro %}
+
+<div class="kpis">
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Faturado no filtro</div>
+    <div class="kpi-valor">{{ resumo.bruto|moeda }}</div>
+    <div class="kpi-sub">{{ resumo.quantidade }} nota(s)</div>
+  </div>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Recebido</div>
+    <div class="kpi-valor">{{ resumo.recebido|moeda }}</div>
+  </div>
+  <div class="kpi estatico laranja">
+    <div class="kpi-rotulo">A receber</div>
+    <div class="kpi-valor">{{ resumo.a_receber|moeda }}</div>
+    <div class="kpi-sub">{{ resumo.abertas }} nota(s) — pelo líquido previsto</div>
+  </div>
+</div>
+
+<div class="painel-grade">
+
+  {# 1. EVOLUÇÃO MENSAL — uma série, colunas. #}
+  <div class="cartao painel-largo">
+    <div class="cartao-cab"><h3>Evolução mensal <small>faturado por mês de emissão</small></h3></div>
+    {% set meses = painel.mensal %}
+    {% if not meses %}<p class="cartao-dica">Nenhuma nota com estes filtros.</p>{% else %}
+      {% set maior = meses|map(attribute='bruto')|max %}
+      <div class="fat-grafico" role="img"
+           aria-label="Faturado por mês: {% for p in meses %}{{ p.rotulo }} {{ p.bruto|moeda }}{{ '; ' if not loop.last }}{% endfor %}">
+        {% for p in meses %}
+          {% set pct = ((100 * p.bruto / maior) if maior else 0)|float %}
+          <div class="fat-mes-col" data-tip="{{ p.rotulo }} — faturado R$ {{ p.bruto|moeda }} · recebido R$ {{ p.recebido|moeda }} · a receber R$ {{ p.a_receber|moeda }} · {{ p.quantidade }} nota(s)">
+            <div class="fat-valor">{{ p.bruto|moeda_curta if p.bruto and (meses|length <= 18 or loop.last or p.bruto == maior) else '' }}</div>
+            <div class="fat-trilho"><div class="fat-coluna" style="height: {{ '%.1f'|format(pct) }}%"></div></div>
+            <div class="fat-mes">{{ p.rotulo if meses|length <= 18 or loop.index0 % 3 == 0 else '' }}</div>
+          </div>
+        {% endfor %}
+      </div>
+      <details class="painel-tabela"><summary>ver em tabela</summary>
+        <table class="tabela-fat"><thead><tr><th>Mês</th><th class="direita">Notas</th><th class="direita">Faturado</th><th class="direita">Recebido</th><th class="direita">A receber</th></tr></thead>
+          <tbody>{% for p in meses %}<tr><td>{{ p.rotulo }}</td><td class="direita">{{ p.quantidade }}</td><td class="direita">{{ p.bruto|moeda }}</td><td class="direita">{{ p.recebido|moeda }}</td><td class="direita">{{ p.a_receber|moeda }}</td></tr>{% endfor %}</tbody></table>
+      </details>
+    {% endif %}
+  </div>
+
+  {# 2. ANO A ANO — uma linha por ano, mesmo eixo. #}
+  <div class="cartao painel-largo">
+    <div class="cartao-cab"><h3>Ano a ano <small>faturado por mês — todos os anos, com os outros filtros</small></h3></div>
+    {% set g = painel.anos %}
+    {% if not g %}<p class="cartao-dica">Nenhuma nota com estes filtros.</p>{% else %}
+      <div class="painel-legenda">
+        {% for serie in g.series %}<span><i class="chip" style="background: {{ serie.cor }}"></i>{{ serie.ano }} <small>{{ serie.total|moeda_curta }}</small></span>{% endfor %}
+      </div>
+      <div class="painel-svg">
+        <svg viewBox="0 0 {{ g.largura }} {{ g.altura }}" role="img"
+             aria-label="Faturado por mês, ano a ano: {% for serie in g.series %}{{ serie.ano }} total {{ serie.total|moeda }}{{ '; ' if not loop.last }}{% endfor %}">
+          {% for linha in g.grade %}
+            <line x1="{{ g.esq }}" x2="{{ g.dir }}" y1="{{ linha.y }}" y2="{{ linha.y }}" class="grade{{ ' base' if loop.first }}"/>
+            <text x="{{ g.esq - 6 }}" y="{{ linha.y + 4 }}" class="eixo" text-anchor="end">{{ linha.valor|moeda_curta if linha.valor else '0' }}</text>
+          {% endfor %}
+          {% for m in g.meses %}<text x="{{ m.x }}" y="{{ g.altura - 6 }}" class="eixo" text-anchor="middle">{{ m.rotulo }}</text>{% endfor %}
+          {% for serie in g.series %}
+            <path d="{{ serie.caminho }}" fill="none" stroke="{{ serie.cor }}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+            {% if serie.pontos %}{% set ult = serie.pontos[-1] %}
+              <circle cx="{{ ult[0] }}" cy="{{ ult[1] }}" r="4" fill="{{ serie.cor }}" stroke="#fff" stroke-width="2"/>
+              <text x="{{ ult[0] + 7 }}" y="{{ ult[1] + 4 }}" class="rotulo-serie">{{ serie.ano }}</text>
+            {% endif %}
+          {% endfor %}
+          {# a faixa de cada mês: o mouse mostra todos os anos daquele mês #}
+          {% for m in g.meses %}{% set i = loop.index0 %}
+            <rect x="{{ m.x - g.faixa / 2 }}" y="0" width="{{ g.faixa }}" height="{{ g.base_y }}" class="faixa-mes"
+                  data-tip="{{ m.rotulo }} — {% for serie in g.series %}{{ serie.ano }}: R$ {{ serie.pontos[i][2]|moeda if serie.pontos|length > i else '—' }}{{ ' · ' if not loop.last }}{% endfor %}"/>
+          {% endfor %}
+        </svg>
+      </div>
+      <details class="painel-tabela"><summary>ver em tabela</summary>
+        <table class="tabela-fat"><thead><tr><th>Mês</th>{% for serie in g.series %}<th class="direita">{{ serie.ano }}</th>{% endfor %}</tr></thead>
+          <tbody>{% for m in g.meses %}{% set i = loop.index0 %}<tr><td>{{ m.rotulo }}</td>{% for serie in g.series %}<td class="direita">{{ serie.pontos[i][2]|moeda if serie.pontos|length > i else '—' }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+          <tfoot><tr><td><b>Total</b></td>{% for serie in g.series %}<td class="direita"><b>{{ serie.total|moeda }}</b></td>{% endfor %}</tr></tfoot></table>
+      </details>
+    {% endif %}
+  </div>
+
+  {# 3 e 4. POR EMPRESA e POR TOMADOR — recebido + a receber. #}
+  <div class="cartao">
+    <div class="cartao-cab"><h3>Por empresa <small>SCP quando houver</small></h3></div>
+    {{ legenda_empilhada() }}
+    {% set lista = painel.por_empresa %}
+    {% set maior = lista|map(attribute='total_liquido')|max if lista else 0 %}
+    {{ barras(lista, True, maior, "Nenhuma nota com estes filtros.") }}
+  </div>
+
+  <div class="cartao">
+    <div class="cartao-cab"><h3>Por cliente (tomador) <small>os maiores em faturado</small></h3></div>
+    {{ legenda_empilhada() }}
+    {% set lista = painel.por_tomador %}
+    {% set maior = lista|map(attribute='total_liquido')|max if lista else 0 %}
+    {{ barras(lista, True, maior, "Nenhuma nota com estes filtros.") }}
+  </div>
+
+  {# 5 e 6. O QUE TEM A RECEBER — de quem e há quanto tempo. #}
+  <div class="cartao">
+    <div class="cartao-cab"><h3>A receber — de quem <small>pelo líquido previsto</small></h3></div>
+    {% set lista = painel.a_receber_tomador %}
+    {% set maior = lista|map(attribute='valor')|max if lista else 0 %}
+    {{ barras(lista, False, maior, "Nada a receber com estes filtros.") }}
+  </div>
+
+  <div class="cartao">
+    <div class="cartao-cab"><h3>A receber — há quanto tempo <small>dias desde a emissão</small></h3></div>
+    {% set lista = painel.idade %}
+    {% set maior = lista|map(attribute='valor')|max if lista else 0 %}
+    {{ barras(lista, False, maior, "Nada a receber com estes filtros.") }}
+  </div>
+</div>
+
+<div class="painel-dica" id="painel-dica" role="tooltip" hidden></div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  // O valor no passar do mouse, para toda marca com data-tip.
+  const dica = document.getElementById("painel-dica");
+  if (!dica) return;
+  document.addEventListener("mousemove", e => {
+    const alvo = e.target.closest("[data-tip]");
+    if (!alvo) { dica.hidden = true; return; }
+    dica.textContent = alvo.dataset.tip;
+    dica.hidden = false;
+    const x = Math.min(e.clientX + 14, window.innerWidth - dica.offsetWidth - 8);
+    dica.style.left = x + "px";
+    dica.style.top = (e.clientY + 16) + "px";
+  });
+})();
+</script>
+{% endblock %}
