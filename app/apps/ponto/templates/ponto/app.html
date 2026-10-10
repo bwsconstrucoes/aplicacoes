@@ -139,6 +139,11 @@
   /* As ações do dia são ÍCONES (08/10/2026: "dois textos gigantes (…) ícones
      sugestivos pra economizar tela"); a legenda fica uma vez só, no topo. */
   .acoes-dia { display:flex; gap:6px; flex:none; align-self:center; }
+  /* a classe dobrada vence o "label {display:block}" e o "input {width:100%}" do formulário do ponto da obra */
+  label.linha-ajuste.linha-ajuste { display:flex; gap:10px; align-items:center; color:var(--tinta); margin:6px 0; font-size:16px; }
+  .linha-ajuste.linha-ajuste input[type=checkbox] { width:26px; height:26px; flex:none; margin:0; }
+  .linha-ajuste.linha-ajuste span { flex:1; }
+  .linha-ajuste.linha-ajuste input.hora { width:96px; flex:none; text-align:center; font-size:20px; font-weight:700; padding:8px; margin:0; }
   .icone-dia { width:42px; height:42px; border-radius:12px; border:1px solid var(--borda); background:#fff;
                font-size:20px; line-height:1; padding:0; }
   .icone-dia:active { background:var(--fundo); }
@@ -945,6 +950,36 @@ function semEscala(x) {
   const resto = nomes.slice(Math.min(x.batidas.length, nomes.length - 1));
   return resto.length ? resto : ["Batida"];
 }
+// As linhas "o que faltou" de um dia: os horários da escala já postos, para marcar
+// (10/10/2026: "tem que buscar do cadastro (…) se os pontos que a pessoa bate são
+// 7, meio-dia, 13 e 17 horas"), e a hora DIGITADA — nada da roleta do relógio, que
+// "é muito lento para selecionar a hora".
+function linhasDoAjuste(x) {
+  const linha = (rotulo, hora, marcada, i) => `<label class="linha-ajuste">
+      <input type="checkbox" data-i="${i}" ${marcada ? "checked" : ""}>
+      <span>${esc(rotulo)}</span>
+      <input class="hora" data-hora="${i}" inputmode="numeric" maxlength="5" placeholder="00:00" value="${esc(hora || "")}"></label>`;
+  return x.faltando.length ? x.faltando.map((f, i) => linha(f.rotulo, f.sugestao, true, i)).join("")
+    : semEscala(x).map((rotulo, i) => linha(rotulo, "", i === 0, i)).join("");
+}
+document.addEventListener("input", ev => {
+  if (!ev.target.classList || !ev.target.classList.contains("hora")) return;
+  const d = soDigitos(ev.target.value).slice(0, 4);
+  ev.target.value = d.length > 2 ? `${d.slice(0, 2)}:${d.slice(2)}` : d;
+});
+// Os horários marcados, em ISO. Levanta Error com a frase para a pessoa.
+function horariosMarcados(caixa, x) {
+  const marcados = [...caixa.querySelectorAll("[data-i]")].filter(c => c.checked)
+    .map(c => caixa.querySelector(`[data-hora="${c.dataset.i}"]`).value.trim());
+  if (!marcados.length) throw new Error("Marque o que faltou e confira o horário.");
+  const ruim = marcados.find(h => !/^([01]\d|2[0-3]):[0-5]\d$/.test(h));
+  if (ruim !== undefined) throw new Error(`Horário “${ruim || "vazio"}” não está certo — use hora:minuto, como 07:00.`);
+  // turno da noite: horário antes da primeira batida prevista é da madrugada seguinte
+  const primeira = x.previstas.length ? x.previstas[0].hora : null;
+  const atravessa = x.previstas.some((p, i) => i && p.hora < x.previstas[i - 1].hora);
+  const proximo = (() => { const d = new Date(x.data + "T12:00:00"); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10); })();
+  return marcados.map(h => `${atravessa && primeira && h < primeira ? proximo : x.data}T${h}:00`);
+}
 // `alvo`: outra pessoa, na consulta da obra (08/10/2026) — o pedido sai em nome
 // de quem está logado, para a obra do alcance dele.
 function abrirCorrecao(x, alvo) {
@@ -953,14 +988,7 @@ function abrirCorrecao(x, alvo) {
   const daBatida = x.batidas[0] && x.batidas[0].obra;
   const obraDoDia = alvo ? (obras.some(o => o.codigo === daBatida) ? daBatida : (obras[0] && obras[0].codigo))
                          : (daBatida || EU.obra_principal);
-  const linhas = x.faltando.length
-    ? x.faltando.map((f, i) => `<label style="display:flex;gap:10px;align-items:center;color:var(--tinta)">
-        <input type="checkbox" data-i="${i}" checked style="width:auto">
-        <span style="flex:1">${esc(f.rotulo)}</span>
-        <input type="time" data-hora="${i}" value="${esc(f.sugestao)}" style="width:130px"></label>`).join("")
-    : semEscala(x).map((rotulo, i) => `<label style="display:flex;gap:10px;align-items:center;color:var(--tinta)">
-        <input type="checkbox" data-i="${i}" ${i === 0 ? "checked" : ""} style="width:auto">
-        <span style="flex:1">${esc(rotulo)}</span><input type="time" data-hora="${i}" style="width:130px"></label>`).join("");
+  const linhas = linhasDoAjuste(x);
   $("dlg-corpo").innerHTML = `
     <h2 style="margin:0 0 6px">Corrigir ${dataBR(x.data)}${alvo ? ` — ${esc(alvo.nome)}` : ""}</h2>
     <p class="pequeno">Já batido: ${x.batidas.length ? x.batidas.map(b => esc(b.hora)).join(", ") : "nada"}.
@@ -976,17 +1004,13 @@ function abrirCorrecao(x, alvo) {
     <textarea id="c-desc" placeholder="Ex.: o celular descarregou depois do almoço"></textarea>
     <p class="pequeno">${alvo ? "O pedido sai em seu nome e vai para validação." : "A administração da obra confere e aprova."}
       Aprovado, a batida entra no ponto marcada como ajustada.</p>
+    <div id="c-msg" class="aviso erro oculto"></div>
     <button class="btn" type="button" id="c-enviar">Enviar o pedido</button>`;
   $("dlg").showModal();
+  const erro = t => { $("c-msg").textContent = t; $("c-msg").classList.remove("oculto"); };
   $("c-enviar").onclick = async () => {
-    const marcados = [...$("c-linhas").querySelectorAll("[data-i]")].filter(c => c.checked)
-      .map(c => $("c-linhas").querySelector(`[data-hora="${c.dataset.i}"]`).value).filter(Boolean);
-    if (!marcados.length) return aviso("Marque o que faltou e confira o horário.", "erro");
-    // turno da noite: horário antes da primeira batida prevista é da madrugada seguinte
-    const primeira = x.previstas.length ? x.previstas[0].hora : null;
-    const atravessa = x.previstas.some((p, i) => i && p.hora < x.previstas[i - 1].hora);
-    const proximo = (() => { const d = new Date(x.data + "T12:00:00"); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10); })();
-    const horarios = marcados.map(h => `${atravessa && primeira && h < primeira ? proximo : x.data}T${h}:00`);
+    let horarios;
+    try { horarios = horariosMarcados($("c-linhas"), x); } catch (e) { return erro(e.message); }
     $("c-enviar").disabled = true;
     try {
       const corpo = {horarios, motivo: $("c-motivo").value, descricao: $("c-desc").value, obra: $("c-obra").value};
@@ -998,7 +1022,7 @@ function abrirCorrecao(x, alvo) {
       (alvo ? alvo.depois : carregarMes)();
     } catch (e) {
       $("c-enviar").disabled = false;
-      aviso(e.message, "erro"); $("dlg").close();
+      erro(e.message);
     }
   };
 }
@@ -1058,13 +1082,33 @@ function camposDePedido(px, t, dia) {
       <label>Observação</label><textarea id="${px}-descricao"></textarea>`,
   }[t];
 }
-function escolherDocumento(pronto) {
+// O documento: UM botão, que abre as opções do próprio celular — câmera, fotos ou
+// arquivo (10/10/2026: no iPhone, "escolher arquivo" já oferece fototeca, tirar
+// foto ou escolher arquivo; dois botões eram dois caminhos para a mesma coisa).
+// A foto do celular é reduzida antes de subir (a de 12 MP passa de 4 MB).
+function escolherDocumento(pronto, falhou) {
   const f = $("arquivo-doc"); f.value = "";
+  const erro = falhou || (t => aviso(t, "erro"));
   f.onchange = () => {
     const arq = f.files && f.files[0]; if (!arq) return;
-    if (arq.size > 10 * 1024 * 1024) return aviso("O arquivo passa de 10 MB.", "erro");
+    if (arq.size > 25 * 1024 * 1024) return erro("O arquivo passa de 25 MB.");
     const leitor = new FileReader();
-    leitor.onload = () => pronto(leitor.result, arq.name);
+    leitor.onload = () => {
+      if (!String(arq.type).startsWith("image/")) {
+        if (arq.size > 10 * 1024 * 1024) return erro("O arquivo passa de 10 MB.");
+        return pronto(leitor.result, arq.name);
+      }
+      const img = new Image();
+      img.onload = () => {
+        const lado = 1800, k = Math.min(1, lado / Math.max(img.width, img.height));
+        const c = document.createElement("canvas");
+        c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+        c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+        pronto(c.toDataURL("image/jpeg", 0.85), arq.name.replace(/\.[^.]+$/, "") + ".jpg");
+      };
+      img.onerror = () => pronto(leitor.result, arq.name);
+      img.src = leitor.result;
+    };
     leitor.readAsDataURL(arq);
   };
   f.click();
@@ -1546,8 +1590,8 @@ function abrirFormularioDoTablet(d, tipo) {
       <p id="tf-licenca-info" style="margin:6px 0 0; font-size:15px"></p>
       <label>Primeiro dia</label><input type="date" id="tf-inicio" value="${hoje}">
       <label>Último dia</label><input type="date" id="tf-fim" value="${hoje}">`,
-    AJUSTE_BATIDA: `<label>Dia</label><input type="date" id="tf-inicio" value="${hoje}">
-      <label>Horário que faltou</label><input type="time" id="tf-hora">
+    AJUSTE_BATIDA: `<label>Dia</label><input type="date" id="tf-inicio" value="${d.dia_ajuste || hoje}" max="${hoje}">
+      <div id="tf-dia" class="pequeno" style="margin-top:8px">Carregando o dia…</div>
       <label>Motivo</label><select id="tf-motivo">${MOTIVOS_AJUSTE.map(m => `<option value="${m[0]}">${esc(m[1])}</option>`).join("")}</select>`,
     COMPENSACAO: `<label>Dia em que vai trabalhar (ou trabalhou)</label><input type="date" id="tf-trabalhado">
       <label>Dia da folga no lugar</label><input type="date" id="tf-inicio">`,
@@ -1563,8 +1607,7 @@ function abrirFormularioDoTablet(d, tipo) {
     <textarea id="tf-descricao" rows="2"></textarea>
     ${temDoc ? `<label>Documento</label>
       <div class="linha" style="margin-top:6px">
-        <button type="button" class="secundario" id="tf-fotografar">📷 Fotografar com a câmera</button>
-        <button type="button" class="secundario" id="tf-arquivo">Escolher arquivo</button></div>
+        <button type="button" class="secundario" id="tf-arquivo">📎 Anexar o documento — foto ou arquivo</button></div>
       <p id="tf-doc-nome" style="margin:6px 0 0; font-size:15px">Nenhum documento ainda.</p>
       <img id="tf-doc-previa" class="foto-doc oculto" alt="documento">` : ""}
     <div id="tf-msg" style="margin-top:10px; font-weight:700"></div>
@@ -1582,21 +1625,29 @@ function abrirFormularioDoTablet(d, tipo) {
     if (base64.startsWith("data:image")) { img.src = base64; img.classList.remove("oculto"); } else img.classList.add("oculto");
   };
   if (temDoc) {
-    $("tf-fotografar").addEventListener("click", () => {
-      const foto = fotoDoVideo();
-      if (!foto) return ($("tf-msg").textContent = "A câmera não está ligada — escolha um arquivo.");
-      guardar(foto, "foto do documento");
-    });
-    $("tf-arquivo").addEventListener("click", () => {
-      const a = $("arquivo-doc"); a.value = "";
-      a.onchange = () => {
-        const arq = a.files && a.files[0]; if (!arq) return;
-        if (arq.size > 10 * 1024 * 1024) return ($("tf-msg").textContent = "O arquivo passa de 10 MB.");
-        const leitor = new FileReader(); leitor.onload = () => guardar(leitor.result, arq.name); leitor.readAsDataURL(arq);
-      };
-      a.click();
-    });
+    $("tf-arquivo").addEventListener("click", () =>
+      escolherDocumento(guardar, t => ($("tf-msg").textContent = t)));
   }
+  // O ajuste abre o dia da pessoa: o que já bateu, o que a escala esperava, e os
+  // horários que faltam já postos — para marcar um, dois, ou o dia inteiro.
+  let DIA = null;
+  const carregarDia = async () => {
+    const caixa = $("tf-dia"); if (!caixa) return;
+    DIA = null; caixa.textContent = "Carregando o dia…";
+    try {
+      const r = await chamar("/ponto/app/api/tablet/dia", {bilhete: d.bilhete, data: $("tf-inicio").value});
+      const x = r.dia;
+      if (r.competencia_fechada) { caixa.textContent = "Esse mês já foi fechado para a folha — fale com o DP."; return; }
+      if (x.ocorrencia) { caixa.textContent = `Esse dia já está justificado (${x.ocorrencia.rotulo}).`; return; }
+      DIA = x;
+      caixa.innerHTML = `<p style="margin:4px 0">Já batido: <b>${x.batidas.length ? x.batidas.map(b => esc(b.hora)).join(", ") : "nada"}</b>.
+          ${x.previstas.length ? `Escala: ${x.previstas.map(p => esc(p.hora)).join(", ")}.` : "Sem escala cadastrada."}
+          ${x.pendentes.some(p => p.tipo === "AJUSTE_BATIDA") ? `<br>⏳ Já pedido, esperando validação: ${x.pendentes.filter(p => p.hora).map(p => esc(p.hora)).join(", ")}.` : ""}</p>
+        <p style="margin:8px 0 2px; font-weight:700">O que faltou? Marque e confira o horário.</p>
+        <div id="tf-linhas">${linhasDoAjuste(x)}</div>`;
+    } catch (e) { caixa.textContent = e.message; }
+  };
+  if (tipo === "AJUSTE_BATIDA") { $("tf-inicio").addEventListener("change", carregarDia); carregarDia(); }
   const fechar = () => { f.classList.add("oculto"); f.innerHTML = ""; TB.ocupado = false; };
   $("tf-cancelar").addEventListener("click", fechar);
   $("tf-enviar").addEventListener("click", async () => {
@@ -1605,10 +1656,12 @@ function abrirFormularioDoTablet(d, tipo) {
     if (tipo === "ATESTADO") {
       const dias = Math.max(1, parseInt(v("tf-dias") || "1", 10));
       Object.assign(corpo, {data_inicio: v("tf-inicio"), data_fim: somarDiasISO(v("tf-inicio"), dias - 1)});
-      if (!doc) return ($("tf-msg").textContent = "Fotografe o atestado ou escolha o arquivo.");
+      if (!doc) return ($("tf-msg").textContent = "Anexe o atestado — foto ou arquivo.");
     } else if (tipo === "AJUSTE_BATIDA") {
-      if (!v("tf-hora")) return ($("tf-msg").textContent = "Diga o horário que faltou.");
-      Object.assign(corpo, {data_inicio: v("tf-inicio"), horario: `${v("tf-inicio")}T${v("tf-hora")}:00`, motivo: v("tf-motivo")});
+      if (!DIA) return ($("tf-msg").textContent = "Escolha um dia em que dá para pedir ajuste.");
+      try { corpo.horarios = horariosMarcados($("tf-linhas"), DIA); } catch (e) { return ($("tf-msg").textContent = e.message); }
+      Object.assign(corpo, {motivo: v("tf-motivo"),
+                            obra: (DIA.batidas[0] && DIA.batidas[0].obra) || $("t-obra").value || ""});
     } else if (tipo === "COMPENSACAO") {
       Object.assign(corpo, {data_inicio: v("tf-inicio"), dia_trabalhado: v("tf-trabalhado")});
     } else {
@@ -1618,11 +1671,24 @@ function abrirFormularioDoTablet(d, tipo) {
     if (doc) { corpo.documento_base64 = doc.base64; corpo.documento_nome = doc.nome; }
     $("tf-enviar").disabled = true;
     try {
+      if (tipo === "AJUSTE_BATIDA") {
+        // Um dia de cada vez, e mais de um dia na mesma identificação: entregue o
+        // primeiro, a tela oferece o próximo.
+        const r = await chamar("/ponto/app/api/tablet/ajuste-do-dia", corpo);
+        $("tf-msg").innerHTML = `<div class="aviso ok">Pedido entregue: ${r.quantidade} batida(s) de ${esc(dataBR(DIA.data))}, para validação.</div>
+          <div class="linha"><button type="button" class="principal" id="tf-outro">Pedir outro dia</button>
+          <button type="button" class="secundario" id="tf-terminar">Terminar</button></div>`;
+        $("tf-enviar").classList.add("oculto");
+        // o outro dia abre no dia anterior (o caso comum: dois dias seguidos)
+        $("tf-outro").onclick = () => abrirFormularioDoTablet({...d, dia_ajuste: somarDiasISO(DIA.data, -1)}, "AJUSTE_BATIDA");
+        $("tf-terminar").onclick = fechar;
+        return;
+      }
       const r = await chamar("/ponto/app/api/tablet/pedido", corpo);
       fechar();
+      // Entregue, a tela continua no modo de entrega para a próxima pessoa; sair
+      // dele é pelo "‹ Início" (que pede o PIN de quem entrou).
       cobrir("ok", `<h2>Pedido entregue</h2><p>${esc(r.pedido.rotulo)} nº ${esc(r.pedido.id)} — vai para validação.</p>`, 4000);
-      // Entregue, o aparelho volta para a tela inicial (a próxima pessoa pode querer bater).
-      setTimeout(() => { if (TB.pedido && !$("tela-tablet").classList.contains("oculto")) { pararTablet(); abrirMenu(); } }, 4000);
     } catch (e) { $("tf-msg").textContent = e.message; $("tf-enviar").disabled = false; }
   });
 }

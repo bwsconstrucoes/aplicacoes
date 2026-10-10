@@ -41,6 +41,13 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1o. **NO RAMO, ainda não publicado (10/10/2026, noite)**: documento com um botão
+   só, o "esqueci de bater" no ponto da obra abrindo o dia com os horários da
+   escala e a hora digitada, e a **migração 010** (licenças da lei atualizadas).
+   Ao publicar: apertar "Aplicar atualizações do ponto" no mesmo momento. Sem a
+   010, nada quebra — só a lista de licenças fica com o pré-natal antigo.
+   **Janeiro de 2027: subir a licença-paternidade de 5 para 10 dias** em
+   ERP › Ponto › Configuração › Jornada e licenças (Lei 15.371/2026).
 1n. **PUBLICADO em 10/10/2026, segunda leva** (com o "pode" do dono, sem
    migração nova): no ponto da obra todo mundo entra primeiro (CPF e PIN), a
    consulta não depende da localização, a batida não desloga e sair dela pede o
@@ -118,6 +125,45 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 10/10/2026 (noite) — Documento com um botão, ajuste de batida sem roleta, e as licenças conferidas na lei
+
+O dono: *"no iPhone, escolher arquivo já oferece fototeca, tirar foto ou escolher
+arquivo (…) é melhor deixar só esse botão"*; e o ajuste de quem esqueceu de
+bater: *"vai ter que colocar um por um (…) o horário rola para cima e para
+baixo, muito lento (…) tem que buscar do cadastro (7, meio-dia, 13, 17; sexta
+16)"*. Depois: *"da onde você tirou esses tipos de licença? (…) é da lei? A
+gente tem como editar, adicionar, remover?"*
+
+- **Documento: um botão só** ("📎 Anexar o documento — foto ou arquivo"), que
+  abre as opções do próprio celular (câmera, fotos, arquivo). O "Fotografar com
+  a câmera" do ponto da obra saiu. A foto é reduzida no aparelho (lado maior
+  1800 px, JPEG) antes de subir — a de 12 MP passava do limite; imagem aceita
+  até 25 MB na escolha, PDF até 10 MB.
+- **O ajuste abre o dia.** No ponto da obra, escolhido o dia, a tela traz o
+  que a pessoa já bateu, a escala e **uma linha por horário que falta, já
+  marcada e com o horário da escala** (sexta com 16:00). Desmarca o que não
+  quer, corrige o que for diferente. A hora é **digitada** (teclado de
+  números; "1705" vira 17:05), nada de roleta. Vários horários de um dia num
+  envio só (intercalado também), e depois **"Pedir outro dia"**, que abre no
+  dia anterior, sem se identificar de novo. Sem escala, aparecem as linhas em
+  branco (entrada, saídas e voltas). Rotas novas: `/app/api/tablet/dia` e
+  `/app/api/tablet/ajuste-do-dia` (o mesmo bilhete de 10 min do pedido).
+  O "Corrigir" do celular e da consulta usa as mesmas linhas, e o erro de
+  horário aparece dentro da janela, sem fechá-la.
+- Pedido entregue no ponto da obra **não volta mais sozinho para a tela
+  inicial**: continua no modo de entrega para a próxima pessoa.
+- **Licenças: a lista é a da lei** (CLT art. 473 e leis próprias, migração
+  006), editável em ERP › Ponto › Configuração › Jornada e licenças: "ajustar"
+  (dias, vezes por ano, documento, obrigatório, situação) e "+ Licença da
+  convenção". Remover é pôr em "Desligada" — não apaga, para os pedidos antigos
+  manterem o nome. Na conferência de hoje, dois itens estavam atrás da lei, e a
+  **010** os corrige (só se ninguém os ajustou pela tela): pré-natal do pai de
+  2 para **até 6 consultas ou exames** (Lei 14.457/2022); paternidade continua
+  5 dias em 2026, com a base legal dizendo a escala da Lei 15.371/2026 (10 em
+  2027, 15 em 2028, 20 em 2029) — **subir em janeiro de 2027 pela tela**.
+  Fica de fora: o inciso IX do art. 473 (representante sindical em reunião
+  internacional), raro demais para estar na lista.
 
 ## 10/10/2026 (tarde) — No ponto da obra, todo mundo entra primeiro
 
