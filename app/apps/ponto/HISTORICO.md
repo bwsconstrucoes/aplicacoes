@@ -41,6 +41,12 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1m. **PUBLICADO em 10/10/2026** (com o "pode" do dono, sem migração nova): o
+   ponto da obra como aparelho (consulta pelo CPF sem PIN, QR por WhatsApp na
+   tela inicial, sem caixa de obra, opções que não mudam com quem entrou) e o
+   aplicativo que não se registra só por abrir. Confirmar com o dono: as obras
+   que vão usar o ponto da obra já têm coordenada na coluna AM? O risco da
+   consulta só pelo CPF ficou aceito, ou quer a data de nascimento junto?
 1l. **PUBLICADO em 09/10/2026, terceira leva** (com o "pode" do dono, sem
    migração nova): o ponto da obra só pela localização (sem caixa de obra; sem
    localização ou fora da área, não bate), o celular da pessoa explicando sem
