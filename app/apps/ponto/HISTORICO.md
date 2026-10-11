@@ -41,6 +41,10 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1q. **PUBLICADO em 10/10/2026** (com o "pode" do dono, `main` em `1042e5f`, sem migração): fora da obra, o aviso não cita
+   mais a obra mais perto nem a distância; no ERP, a pessoa responsável por um
+   ponto da obra aparece como "faz pedidos pelo celular"; e a marcação de pedidos
+   pelo celular também na janela do aparelho, refletindo a da pessoa. Sem migração.
 1p. **PUBLICADO em 10/10/2026, noite, segunda leva** (com o "pode" do dono, `main` em
    `d6308fb`): no ponto da
    obra, o "Bater ponto" da tela inicial fica desligado fora da obra (com a
@@ -171,6 +175,28 @@ batendo".
   Hoje, não tem batida, não acontece nada — a impressão que dá é que tem um
   bug"*): o "Hoje" de baixo é a aba da tela, não um botão do dia. Agora ela
   aparece selecionada (faixa azul em cima, fundo) e não reage ao toque.
+- **Fora da obra, o aviso não cita a obra mais perto** (o dono, depois de
+  publicado: *"às vezes a pessoa não tem nada a ver com aquela obra — está sendo
+  sugerida uma obra só porque está mais ou menos perto"*). Diz só que a
+  localização não confere com nenhuma obra cadastrada — no ponto da obra, no
+  celular da pessoa e na recusa do servidor quando ninguém escolheu obra. Quando
+  a PESSOA escolhe a obra (celular, batida fora da obra), a recusa continua
+  dizendo a distância daquela obra: foi ela que a apontou.
+- **Onde se libera o pedido pelo celular** (o dono: *"não vi na configuração do
+  telefone para permitir ou não a inclusão de atestados"*): é por PESSOA, não
+  por aparelho — ERP › Ponto › Pessoas › a pessoa › "Acesso no aplicativo" ›
+  "Pedidos pelo próprio celular" (desde 08/10). O ponto da obra sempre recebe
+  pedidos de quem bate nele (decisão de 06/10). Como desde hoje o responsável
+  por um ponto da obra pede o próprio com ou sem a marcação, o cartão "Acesso no
+  aplicativo" e a janela dizem isso (`responsavel_ponto_obra` no
+  `/erp/api/ponto/pessoas/<id>`) — senão a marcação "Não" pareceria mentir.
+- **A mesma marcação na janela do aparelho** (o dono: *"facilitaria se ficasse
+  no cadastro do telefone, ou também, e uma coisa refletisse na outra"*). Em
+  ERP › Ponto › Configuração › aparelhos, "Aprovar"/"Alterar" ganhou "Atestados
+  e pedidos do responsável pelo próprio celular". Não é um dado novo: lê e grava
+  a marcação da PESSOA responsável (`colaborador_config.pede_no_celular`), então
+  mudar numa tela muda na outra. Só é enviada se foi mexida — trocar o
+  responsável do aparelho não leva a marcação do anterior para o novo.
 
 ## 10/10/2026 (noite) — Documento com um botão, ajuste de batida sem roleta, e as licenças conferidas na lei
 

@@ -359,6 +359,8 @@ def ponto_api_pessoa(colaborador_id: int):
         aparelhos = db.todos(conn, """SELECT id, descricao, perfil, status, ultimo_uso_em
                                         FROM ponto.dispositivos WHERE colaborador_id = :c
                                        ORDER BY id DESC""", c=colaborador_id)
+        from .core import papeis
+        responsavel = papeis.responsavel_por_ponto_da_obra(conn, p)
     j = cadastros.colaborador_para_json({**p, "obras_adicionais": adicionais})
     j["escalas"] = [{"escala_id": h["escala_id"], "escala": h["escala_nome"], "tipo": h["escala_tipo"],
                      "desde": h["vigencia_inicio"].isoformat(),
@@ -366,6 +368,9 @@ def ponto_api_pessoa(colaborador_id: int):
                      "por": h["definido_por"]} for h in historico]
     j["aparelhos"] = [{**a, "ultimo_uso_em": horario.texto(a["ultimo_uso_em"])} for a in aparelhos]
     j["acordo_banco"] = bool(p.get("acordo_documento_id"))
+    # Responsável por um ponto da obra pede o próprio pelo celular com ou sem a
+    # marcação (10/10/2026) — a tela diz isso, para a marcação não parecer mentir.
+    j["responsavel_ponto_obra"] = responsavel
     j["funcao"] = p.get("funcao")
     j["tem_telefone"] = bool(envios.telefone_valido(p.get("telefone")))
     with db.conexao() as conn:
@@ -1622,6 +1627,16 @@ def ponto_api_dispositivo_aprovar(dispositivo_id: int):
                                  aprovado_por=quem.nome, colaborador_id=colaborador_id,
                                  descricao=d.get("descricao"), autorizados=autorizados, obras=obras,
                                  valido_ate=d.get("valido_ate"))
+        if "pede_no_celular" in d:
+            # A marcação "faz pedidos pelo celular" é da PESSOA (Pessoas › Acesso no
+            # aplicativo); a tela do aparelho grava no mesmo lugar, para uma refletir
+            # a outra (10/10/2026: "facilitaria se ficasse no cadastro do telefone,
+            # ou também, e uma coisa refletisse na outra").
+            from .core import papeis
+            _exigir_pessoa(conn, quem, colaborador_id)
+            papeis.definir(conn, colaborador_id, pede_no_celular=bool(d["pede_no_celular"]))
+            logger.info("Ponto: pedidos pelo celular de %s = %s, pela tela do aparelho %s (por %s)",
+                        colaborador_id, bool(d["pede_no_celular"]), dispositivo_id, quem.nome)
     return _ok(dispositivo=dispositivos.para_json(a), substituidos=len(a.get("substituidos") or []))
 
 
@@ -1635,6 +1650,8 @@ def ponto_api_dispositivo(dispositivo_id: int):
         a = dispositivos.para_json(dispositivos.detalhado(conn, dispositivo_id))
         a["autorizados"] = [{"nome": p["nome"], "cpf": p["cpf"]}
                             for p in dispositivos.autorizados_detalhados(conn, dispositivo_id)]
+        dono = cadastros.colaborador_por_id(conn, a["dono"]["id"]) if a.get("dono") else None
+        a["dono_pede_no_celular"] = bool(dono and dono.get("pede_no_celular"))
     return _ok(dispositivo=a)
 
 

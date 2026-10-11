@@ -50,6 +50,13 @@ class TestDecidirLugar:
         obra, recusa, _ = _lugar(-3.7600, -38.5270, enviada=A)
         assert obra is None and recusa.startswith("fora da área da obra") and "obra A" in recusa
 
+    def test_fora_sem_obra_escolhida_nao_cita_a_mais_perto(self):
+        # 10/10/2026: "às vezes a pessoa não tem nada a ver com aquela obra"
+        for no_tablet in (True, False):
+            obra, recusa, _ = _lugar(-3.7600, -38.5270, no_tablet=no_tablet)
+            assert obra is None and "não confere com nenhuma obra cadastrada" in recusa
+            assert "obra A" not in recusa and "obra B" not in recusa and " km" not in recusa
+
     def test_obra_que_analisa_aceita_fora(self):
         obra, recusa, analise = _lugar(-3.7600, -38.5270, enviada=A, modo="ANALISAR")
         assert obra is A and recusa is None
