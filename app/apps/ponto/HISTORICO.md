@@ -41,7 +41,7 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
-1t. **NO RAMO, ainda não publicado (13/10/2026, noite)**: a RONDA SURPRESA dos
+1t. **PUBLICADO em 13/10/2026, noite** (com o "pode" do dono, `main` em `42037b6`) — a RONDA SURPRESA dos
    vigias noturnos, com a **migração 011** — apertar "Aplicar atualizações do
    ponto" ao publicar. Sem ela, nada quebra: a marcação de vigia recusa ("aplique
    a 011") e a tela Rondas pede a atualização. Depois de publicar: marcar os
