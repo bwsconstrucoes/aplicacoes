@@ -41,7 +41,7 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
-1s. **NO RAMO, ainda não publicado (13/10/2026)** — junto com a 1r: a batida de
+1s. **PUBLICADO em 13/10/2026** (com o "pode" do dono, `main` em `a137aaf`, sem migração) — junto com a 1r: a batida de
    outra pessoa no ponto da obra ia para o nome de quem estava logado (CORRIGIDO;
    ver a seção de 13/10 — as batidas erradas que já existem na produção precisam
    ser conferidas pelo dono); documento em PDF dava "foto ilegível"; aparelho
@@ -49,7 +49,7 @@ junto com o `README.md` e o `PLANO.md`.
    batidas sem escala; hora futura no ajuste de hoje. Sem migração.
    **Em aberto com o dono:** bater sem internet (guardar no celular e mandar
    depois) — não existe hoje; é decisão dele (ver a seção de 13/10).
-1r. **NO RAMO, ainda não publicado (12/10/2026)**: ajuste de VÁRIOS DIAS num pedido
+1r. **PUBLICADO em 13/10/2026** (junto com a 1s): ajuste de VÁRIOS DIAS num pedido
    só (Meu mês, consulta, Pedidos e ponto da obra); o dia de hoje e o feriado sem
    horário cadastrado passam a abrir para correção; feriado não espera mais as
    batidas da escala. Sem migração.
