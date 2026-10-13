@@ -37,7 +37,7 @@ GRAVIDADE = {
     "FALTA": "ATENCAO", "BATIDA_FALTANDO": "ATENCAO", "ATRASO": "INFO",
     "SAIDA_ANTECIPADA": "INFO", "EXTRA_ACIMA_DE_2H": "ATENCAO", "INTERVALO_CURTO": "ATENCAO",
     "INTERJORNADA_CURTA": "ATENCAO", "TRABALHO_EM_DESCANSO": "INFO", "TRABALHO_EM_FERIADO": "INFO",
-    "BATIDA_EM_DIA_ABONADO": "ATENCAO", "SEM_ESCALA": "INFO",
+    "BATIDA_EM_DIA_ABONADO": "ATENCAO", "SEM_ESCALA": "INFO", "BATIDA_REPETIDA": "INFO",
     "FALTAS_SEGUIDAS": "URGENTE", "ATRASO_RECORRENTE": "ATENCAO",
     "FORA_DA_CERCA_REPETIDO": "ATENCAO", "DOIS_LUGARES": "URGENTE",
     "PEDIDO_PARADO": "ATENCAO", "BATIDA_EM_ANALISE_PARADA": "ATENCAO",
@@ -54,6 +54,7 @@ ROTULO = {
     "INTERJORNADA_CURTA": "Menos de 11 h de descanso", "TRABALHO_EM_DESCANSO": "Trabalho em dia de descanso",
     "TRABALHO_EM_FERIADO": "Trabalho em feriado", "BATIDA_EM_DIA_ABONADO": "Bateu ponto em dia abonado",
     "SEM_ESCALA": "Sem escala cadastrada", "FALTAS_SEGUIDAS": "Faltas seguidas",
+    "BATIDA_REPETIDA": "Batida repetida (menos de 10 min da anterior — contada uma vez)",
     "ATRASO_RECORRENTE": "Atraso que se repete", "FORA_DA_CERCA_REPETIDO": "Fora da cerca várias vezes",
     "DOIS_LUGARES": "Dois lugares ao mesmo tempo", "PEDIDO_PARADO": "Pedido esperando decisão",
     "BATIDA_EM_ANALISE_PARADA": "Batida em análise esperando", "APARELHO_PENDENTE": "Aparelho esperando aprovação",
@@ -70,7 +71,7 @@ ROTULO = {
 # Os que nascem do cálculo de UM dia — podem ser resolvidos sozinhos.
 DO_DIA = {"FALTA", "BATIDA_FALTANDO", "ATRASO", "SAIDA_ANTECIPADA", "EXTRA_ACIMA_DE_2H",
           "INTERVALO_CURTO", "INTERJORNADA_CURTA", "TRABALHO_EM_DESCANSO", "TRABALHO_EM_FERIADO",
-          "BATIDA_EM_DIA_ABONADO"}
+          "BATIDA_EM_DIA_ABONADO", "BATIDA_REPETIDA"}
 
 JANELA_DIAS = 7            # alertas de dia: só a última semana (sem enxurrada de histórico)
 JANELA_PADRAO = 28         # padrões: as últimas 4 semanas

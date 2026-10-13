@@ -58,9 +58,12 @@ def test_escala_padrao_faz_a_falta_aparecer(app, mundo, banco):
     with banco.connect() as conn:
         conn.execute(text("DELETE FROM ponto.colaborador_escalas WHERE colaborador_id = :j"), {"j": mundo["joao"]})
         conn.commit()
+    from app.apps.ponto.core import feriados
     ontem = horario.hoje() - dt.timedelta(days=1)
-    while ontem.weekday() > 3:                      # um dia de segunda a quinta da escala de 44 h
-        ontem -= dt.timedelta(days=1)
+    with db.conexao() as conn:                      # um dia de segunda a quinta da escala de 44 h,
+        cal = feriados.Calendario(conn, ontem - dt.timedelta(days=10), ontem)   # que não seja feriado
+        while ontem.weekday() > 3 or cal.feriado(ontem, mundo["obra_a"]):
+            ontem -= dt.timedelta(days=1)
     with db.conexao() as conn:
         assert espelho.montar(conn, mundo["joao"], ontem, ontem)["dias"][0]["situacao"] == "SEM_ESCALA"
     dp = como(app, mundo["dp"])

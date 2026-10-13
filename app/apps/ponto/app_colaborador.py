@@ -34,7 +34,7 @@ import os
 from flask import Response, g, jsonify, render_template, request, send_from_directory, session
 
 from . import auth, db, horario
-from .core import (banco, cadastros, competencias, dispositivos, envios, espelho, forma_de_bater,
+from .core import (apuracao, banco, cadastros, competencias, dispositivos, envios, espelho, forma_de_bater,
                    fotos, marcacoes, acesso, ocorrencias, papeis, qr, recusas)
 from .core.ocorrencias import Quem
 from .erros import ErroDeValidacao, NaoAutenticado, NaoEncontrado, Recusada
@@ -85,6 +85,40 @@ def _dar_nome_ao_aparelho(conn, aparelho, pessoa: dict) -> None:
                       "WHERE id = :id AND status = 'PENDENTE'",
                 d=f"Celular de {pessoa['nome']} (CPF final {pessoa['cpf'][-3:]})"[:200], c=pessoa["id"],
                 id=aparelho["id"])
+
+
+def _aparelhos_para_oferecer(conn, aparelho, pessoa: dict) -> list[dict]:
+    """Navegador novo (ou aba anônima) de quem já tem aparelho liberado: a tela
+    pergunta "é este mesmo celular?" (13/10/2026) — dispositivos.mudar_de_navegador."""
+    if aparelho and aparelho["status"] == "APROVADO":
+        return []
+    return [{"id": x["id"], "descricao": x.get("descricao") or "", "perfil": x["perfil"],
+             "ultimo_uso": horario.texto(x["ultimo_uso_em"]) if x.get("ultimo_uso_em") else None}
+            for x in dispositivos.aparelhos_da_pessoa(conn, pessoa["id"])]
+
+
+MUDANCAS_DE_NAVEGADOR_POR_HORA = 5
+
+
+@bp.route("/app/api/aparelho/usar-este", methods=["POST"])
+@auth.exige_colaborador
+def app_api_aparelho_usar_este():
+    """"Este navegador é o meu celular (ou o ponto da obra) de sempre": a liberação
+    vem para cá e o navegador de antes para de valer. Só o responsável pelo
+    aparelho, logado; poucas vezes por hora."""
+    pid = _eu()
+    if not auth.dentro_do_limite("mudar-navegador", str(pid), MUDANCAS_DE_NAVEGADOR_POR_HORA):
+        return jsonify({"ok": False, "erro": "muitas trocas de navegador seguidas; tente mais tarde"}), 429
+    d = _corpo()
+    try:
+        aparelho_id = int(d.get("dispositivo_id") or 0)
+    except (TypeError, ValueError):
+        raise ErroDeValidacao("diga qual aparelho", campo="dispositivo_id")
+    with db.conexao() as conn:
+        token = dispositivos.mudar_de_navegador(conn, aparelho_id, colaborador_id=pid,
+                                               novo_uuid=request.headers.get("X-Device-UUID") or "",
+                                               ip=auth.ip_de_quem_chama())
+    return _ok(token=token)
 
 
 def _aparelho_que_chama(conn):
@@ -168,8 +202,9 @@ def app_api_pin():
         a = _aparelho_que_chama(conn)
         if not (a and a["status"] == "APROVADO" and a["perfil"] != "INDIVIDUAL"):
             _dar_nome_ao_aparelho(conn, a, pessoa)
+        seus = _aparelhos_para_oferecer(conn, a, pessoa)
     _abrir_sessao(pessoa)
-    return _ok(nome=pessoa["nome"])
+    return _ok(nome=pessoa["nome"], aparelhos_seus=seus)
 
 
 @bp.route("/app/api/entrar", methods=["POST"])
@@ -194,8 +229,9 @@ def app_api_entrar():
             raise Recusada("este é o ponto da obra — só o responsável por ele (ou o administrativo da obra) "
                            "entra aqui")
         _dar_nome_ao_aparelho(conn, a, pessoa)
+        seus = _aparelhos_para_oferecer(conn, a, pessoa)
     _abrir_sessao(pessoa)
-    return _ok(nome=pessoa["nome"])
+    return _ok(nome=pessoa["nome"], aparelhos_seus=seus)
 
 
 @bp.route("/app/api/confirmar-pin", methods=["POST"])
@@ -332,16 +368,12 @@ def app_api_bater():
     d = _corpo()
     identificacao = None
     with db.conexao() as conn:
-        if g.get("ponto_via") == "colaborador":
-            p = cadastros.colaborador_por_id(conn, _eu())
-            if not p:
-                raise NaoAutenticado("entre com o seu CPF e PIN")
-            recusa = forma_de_bater.recusa_no_celular(p, forma_de_bater.em_vigor(conn))
-            if recusa:
-                _recusar_em_separado("celular próprio sem exceção cadastrada", cpf=p["cpf"], obra=d.get("obra"))
-                raise Recusada(recusa)
-            cpf, identificacao = p["cpf"], "SESSAO"
-        elif d.get("bilhete"):
+        # O BILHETE VEM PRIMEIRO (achado do dono, 13/10/2026: "bati o ponto de outra
+        # pessoa no ponto da obra, diz que bateu, mas não aparece no espelho"). Desde
+        # 10/10 o ponto da obra tem alguém logado (o responsável), e a sessão dele
+        # passava na frente: a batida de quem se identificou ia para o nome de quem
+        # entrou. O bilhete é de uma pessoa e deste aparelho — é ele que diz quem bate.
+        if d.get("bilhete"):
             aparelho = _aparelho_da_obra(conn)
             if qr.bilhete_de_pedido(d["bilhete"]):
                 raise Recusada("esta identificação é de pedido — para bater, identifique-se de novo")
@@ -350,6 +382,19 @@ def app_api_bater():
             if not p:
                 raise ErroDeValidacao("identifique-se de novo", campo="bilhete")
             cpf = p["cpf"]
+        elif g.get("ponto_via") == "colaborador":
+            # No ponto da obra, ninguém bate pela sessão: lá a pessoa se identifica.
+            a = _aparelho_que_chama(conn)
+            if a and a.get("status") == "APROVADO" and a.get("perfil") != "INDIVIDUAL":
+                raise Recusada("no ponto da obra, quem bate se identifica (QR Code ou CPF) na tela de batida")
+            p = cadastros.colaborador_por_id(conn, _eu())
+            if not p:
+                raise NaoAutenticado("entre com o seu CPF e PIN")
+            recusa = forma_de_bater.recusa_no_celular(p, forma_de_bater.em_vigor(conn))
+            if recusa:
+                _recusar_em_separado("celular próprio sem exceção cadastrada", cpf=p["cpf"], obra=d.get("obra"))
+                raise Recusada(recusa)
+            cpf, identificacao = p["cpf"], "SESSAO"
         else:
             cpf = d.get("cpf")
         marcacao, repetida = marcacoes.registrar(
@@ -448,9 +493,20 @@ def app_api_tablet_identificar():
         bilhete = qr.emitir_bilhete(int(pessoa["id"]), int(aparelho["id"]), identificacao,
                                     para_pedido=bool(d.get("para_pedido")))
         dispositivos.marcar_uso(conn, aparelho["id"])
+        # A última batida da pessoa, se foi há pouco: a tela pergunta "bater de novo?"
+        # antes de registrar outra (13/10/2026 — a batida repetida). Não bloqueia.
+        ultima = db.um(conn, """SELECT timestamp_servidor FROM ponto.marcacoes
+                                 WHERE colaborador_id = :c AND status <> 'REJEITADA'
+                                 ORDER BY timestamp_servidor DESC LIMIT 1""", c=pessoa["id"])
+        recente = None
+        if ultima:
+            minutos = (horario.agora() - ultima["timestamp_servidor"]).total_seconds() / 60
+            if 0 <= minutos < apuracao.BATIDA_REPETIDA_MIN:
+                recente = {"hora": horario.para_local(ultima["timestamp_servidor"]).strftime("%H:%M"),
+                           "ha_minutos": int(minutos)}
     partes = pessoa["nome"].split()
     return _ok(bilhete=bilhete, nome=pessoa["nome"], primeiro_nome=partes[0].title() if partes else "",
-               funcao=pessoa.get("funcao"), identificacao=identificacao,
+               funcao=pessoa.get("funcao"), identificacao=identificacao, batida_recente=recente,
                validade_segundos=qr.BILHETE_PEDIDO_S if d.get("para_pedido") else qr.BILHETE_VALIDADE_S,
                tem_banco=pessoa.get("regime_banco") not in (None, "SEM_BANCO"))
 

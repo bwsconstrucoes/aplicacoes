@@ -66,7 +66,10 @@ LADO_MAIOR_PX = 800
 QUALIDADE_JPEG = 80
 TENTATIVAS_NA_HORA = 3
 
-_PREFIXO_DATA_URL = re.compile(r"^data:image/[a-zA-Z0-9.+-]+;base64,", re.IGNORECASE)
+# Qualquer "data:…;base64," — não só o de imagem: o PDF vem como
+# data:application/pdf, e celular que não diz o tipo manda application/octet-stream
+# (13/10/2026: "ao enviar via arquivo uma foto ou um PDF, dá erro foto em base64 ilegível").
+_PREFIXO_DATA_URL = re.compile(r"^data:[^,;]*(;[^,;]*)*;base64,", re.IGNORECASE)
 
 
 # ---------------------------------------------------------------------------
@@ -87,18 +90,21 @@ def drive_configurado() -> bool:
 # ---------------------------------------------------------------------------
 # Preparo (puro: sem banco, sem rede)
 # ---------------------------------------------------------------------------
-def decodificar_base64(texto: str) -> bytes:
-    """Aceita com ou sem o prefixo `data:image/...;base64,`."""
+def decodificar_base64(texto: str, *, o_que: str = "foto", campo: str = "foto_base64",
+                       maximo: int = MAX_RECEBIDO_BYTES) -> bytes:
+    """Aceita com ou sem o prefixo `data:...;base64,`. `o_que` é como a frase de
+    erro chama a coisa ("foto", "documento")."""
     limpo = _PREFIXO_DATA_URL.sub("", (texto or "").strip())
     limpo = re.sub(r"\s+", "", limpo)
     if not limpo:
-        raise ErroDeValidacao("foto vazia", campo="foto_base64")
-    if len(limpo) * 3 // 4 > MAX_RECEBIDO_BYTES:
-        raise ErroDeValidacao("foto maior que o limite de 8 MB", campo="foto_base64")
+        raise ErroDeValidacao(f"{o_que} vazio" if o_que == "documento" else f"{o_que} vazia", campo=campo)
+    if len(limpo) * 3 // 4 > maximo:
+        raise ErroDeValidacao(f"{o_que} maior que o limite de {maximo // (1024 * 1024)} MB", campo=campo)
     try:
         return base64.b64decode(limpo, validate=True)
     except Exception as e:  # noqa: BLE001
-        raise ErroDeValidacao("foto em base64 ilegível", campo="foto_base64") from e
+        raise ErroDeValidacao(f"não deu para ler o {o_que} — tente anexar de novo" if o_que == "documento"
+                              else f"{o_que} em base64 ilegível", campo=campo) from e
 
 
 def sinais(imagem) -> tuple[int, int, str]:

@@ -398,6 +398,7 @@ const ROTULO_ALERTA = { FALTA: "falta", BATIDA_FALTANDO: "batida faltando", ATRA
   SAIDA_ANTECIPADA: "saída antecipada", EXTRA_ACIMA_DE_2H: "extra acima de 2 h",
   INTERVALO_CURTO: "intervalo curto", INTERJORNADA_CURTA: "menos de 11 h de descanso",
   TRABALHO_EM_DESCANSO: "trabalho em dia de descanso", TRABALHO_EM_FERIADO: "trabalho em feriado",
+  BATIDA_REPETIDA: "batida repetida (contada uma vez)",
   BATIDA_EM_DIA_ABONADO: "bateu em dia abonado", SEM_ESCALA: "sem escala cadastrada" };
 const SITUACAO = { OK: ["ok", "Certo"], FALTA: ["falta", "Falta"], ABONADO: ["ok", "Abonado"],
   INCOMPLETO: ["ambar", "Batida faltando"], DESCANSO: ["", "Descanso"], SEM_ESCALA: ["", "Sem escala"],
@@ -524,11 +525,49 @@ async function iniciar() {
   }
 }
 
+// --- "este é o mesmo aparelho?" (13/10/2026) -----------------------------------
+// "Quando abre em novo navegador ou aba anônima, ele entende que é um novo
+// celular." Uma página não reconhece o celular de um navegador para o outro: cada
+// um guarda a sua identidade, e a aba anônima a apaga ao fechar. Então quem já tem
+// aparelho liberado, ao entrar num navegador desconhecido, responde "é este" — e a
+// liberação vem para cá, sem aprovação nova. O "Não" fica lembrado neste navegador.
+const ROTULO_PERFIL = {INDIVIDUAL: "celular pessoal", COMPARTILHADO: "ponto da obra", LISTA: "ponto de equipe"};
+function oferecerEsteNavegador(lista) {
+  const lembrado = id => { try { return localStorage.getItem(`ponto_nao_e_${id}`) === "1"; } catch (e) { return false; } };
+  lista = (lista || []).filter(a => !lembrado(a.id));
+  if (!lista.length) return Promise.resolve(false);
+  return new Promise(resolve => {
+    $("dlg-corpo").innerHTML = `<h2 style="margin:0 0 6px">Este é o mesmo aparelho?</h2>
+      <p class="pequeno">Você já tem ${lista.length === 1 ? "um aparelho liberado" : "aparelhos liberados"}, e este navegador
+        não foi reconhecido — acontece em navegador novo, depois de limpar os dados do navegador, ou em aba anônima.</p>
+      ${lista.map(a => `<button class="btn" type="button" data-ap="${a.id}" style="margin-top:8px">Sim, é ${esc(a.descricao || ROTULO_PERFIL[a.perfil] || "o aparelho")}
+          <small style="display:block; font-weight:400">${esc(ROTULO_PERFIL[a.perfil] || "")}${a.ultimo_uso ? ` · último uso ${esc(a.ultimo_uso)}` : ""}</small></button>`).join("")}
+      <button class="btn sec" type="button" id="ne-nao" style="margin-top:8px">Não, é outro aparelho</button>
+      <p class="pequeno">Com o “Sim”, a liberação passa para este navegador, e o de antes para de valer. A aba anônima
+        apaga tudo ao fechar: para o dia a dia, use o navegador normal.</p>
+      <div id="ne-msg" class="aviso erro oculto"></div>`;
+    let feito = false;
+    const fim = v => { feito = true; $("dlg").close(); resolve(v); };
+    $("dlg-corpo").querySelectorAll("[data-ap]").forEach(b => b.addEventListener("click", async () => {
+      try {
+        const r = await chamar("/ponto/app/api/aparelho/usar-este", {dispositivo_id: +b.dataset.ap});
+        localStorage.setItem("ponto_device_token", r.token);
+        await estadoDoAparelho();
+        fim(true);
+      } catch (e) { $("ne-msg").textContent = e.message; $("ne-msg").classList.remove("oculto"); }
+    }));
+    $("ne-nao").onclick = () => { lista.forEach(a => { try { localStorage.setItem(`ponto_nao_e_${a.id}`, "1"); } catch (e) {} }); fim(false); };
+    $("dlg").addEventListener("close", () => { if (!feito) resolve(false); }, {once: true});
+    $("dlg").showModal();
+  });
+}
+
 // --- entrar / PIN ----------------------------------------------------------
 $("btn-entrar").addEventListener("click", async () => {
   try {
-    await chamar("/ponto/app/api/entrar", {cpf: soDigitos($("e-cpf").value), pin: soDigitos($("e-pin").value)});
+    const entrou = await chamar("/ponto/app/api/entrar", {cpf: soDigitos($("e-cpf").value), pin: soDigitos($("e-pin").value)});
     $("e-pin").value = ""; aviso("");
+    if (await oferecerEsteNavegador(entrou.aparelhos_seus)) aviso("Pronto: este navegador passou a ser o seu aparelho liberado.", "ok");
     EU = await chamar("/ponto/app/api/eu");
     if (ehDaObra()) vigiarVoltaAoInicio();
     const destino = DESTINO; DESTINO = null;
@@ -585,9 +624,10 @@ $("btn-codigo").addEventListener("click", async () => {
 $("btn-criar-pin").addEventListener("click", async () => {
   if ($("p-pin").value !== $("p-pin2").value) return aviso("Os dois PINs não são iguais.", "erro");
   try {
-    await chamar("/ponto/app/api/pin", {cpf: soDigitos($("p-cpf").value), codigo: soDigitos($("p-codigo").value),
-                                        pin: soDigitos($("p-pin").value)});
+    const entrou = await chamar("/ponto/app/api/pin", {cpf: soDigitos($("p-cpf").value), codigo: soDigitos($("p-codigo").value),
+                                                       pin: soDigitos($("p-pin").value)});
     aviso("PIN criado. Pronto!", "ok");
+    await oferecerEsteNavegador(entrou.aparelhos_seus);
     EU = await chamar("/ponto/app/api/eu");
     abrirMenu();
   } catch (e) { aviso(e.message, "erro"); }
@@ -734,6 +774,13 @@ function pedirJustificativa() {
 
 async function bater({obra, comFoto}) {
   const botao = $("btn-bater");
+  // Bateu há menos de 10 minutos? Pergunta antes (13/10/2026) — não bloqueia.
+  const ultima = EU && EU.hoje && EU.hoje.batidas.length ? EU.hoje.batidas[EU.hoje.batidas.length - 1].hora : null;
+  if (ultima) {
+    const [, agoraF] = agoraEmFortaleza(), mins = s => +s.slice(0, 2) * 60 + +s.slice(3, 5);
+    const ha = mins(agoraF) - mins(ultima);
+    if (ha >= 0 && ha < 10 && !window.confirm(`Você já bateu às ${ultima} (há ${ha < 1 ? "menos de 1" : ha} min). Bater de novo?`)) return;
+  }
   botao.disabled = true;
   try {
     let justificativa = null;
@@ -964,9 +1011,23 @@ function podeCorrigirDia(x, mes) {
 // dia, com o nome de cada uma (09/10/2026: "só está aparecendo batida 1 e batida
 // 2. Mas não são quatro batidas?"). Na obra de só entrada e saída, duas.
 const NOMES_DAS_BATIDAS = ["Entrada", "Saída para o intervalo", "Volta do intervalo", "Saída"];
+// Qual batida cada horário já batido É, sem escala: a mais perto do horário de
+// costume da empresa (7, 11, 12 e 17 h — o dono, 10/10/2026). Antes, a primeira
+// batida do dia era sempre a "Entrada" (13/10/2026: "batida às 13:19 — seria a
+// terceira —, o sistema entendeu que era a primeira e não deixou pedir as de antes").
+// É só para dar NOME às linhas: o horário quem digita é a pessoa.
+const COSTUME_MIN = [420, 660, 720, 1020];
 function semEscala(x) {
   const nomes = x.so_entrada_e_saida ? ["Entrada", "Saída"] : NOMES_DAS_BATIDAS;
-  const resto = nomes.slice(Math.min(x.batidas.length, nomes.length - 1));
+  const ref = x.so_entrada_e_saida ? [COSTUME_MIN[0], COSTUME_MIN[3]] : COSTUME_MIN;
+  let livres = nomes.map((_, i) => i);
+  for (const b of x.batidas) {
+    if (!livres.length) break;
+    const [hh, mm] = String(b.hora).split(":").map(Number), m = hh * 60 + mm;
+    const i = livres.reduce((melhor, j) => Math.abs(ref[j] - m) < Math.abs(ref[melhor] - m) ? j : melhor, livres[0]);
+    livres = livres.filter(j => j !== i);
+  }
+  const resto = livres.map(i => nomes[i]);
   return resto.length ? resto : ["Batida"];
 }
 // As linhas "o que faltou" de um dia: os horários da escala já postos, para marcar
@@ -994,6 +1055,12 @@ function horariosMarcados(caixa, x, vazioOk = false) {
   if (!marcados.length) throw new Error("Marque o que faltou e confira o horário.");
   const ruim = marcados.find(h => !/^([01]\d|2[0-3]):[0-5]\d$/.test(h));
   if (ruim !== undefined) throw new Error(`Horário “${ruim || "vazio"}” não está certo — use hora:minuto, como 07:00.`);
+  // Hoje, nada depois de agora (13/10/2026: "não permitir ajuste posterior à data e
+  // hora atual"). A hora é a de Fortaleza, a do ponto — o servidor confere de novo.
+  const [hojeF, agoraF] = agoraEmFortaleza();
+  const futuro = x.data === hojeF ? marcados.find(h => h > agoraF) : undefined;
+  if (x.data > hojeF) throw new Error("Esse dia ainda não chegou.");
+  if (futuro) throw new Error(`${futuro} ainda não chegou — agora são ${agoraF}.`);
   // turno da noite: horário antes da primeira batida prevista é da madrugada seguinte
   const primeira = x.previstas.length ? x.previstas[0].hora : null;
   const atravessa = x.previstas.some((p, i) => i && p.hora < x.previstas[i - 1].hora);
@@ -1127,6 +1194,12 @@ function abrirCorrecaoDeVarios(itens, alvo) {
       (alvo ? alvo.depois : carregarMes)();
     } catch (e) { $("v-enviar").disabled = false; erro(e.message); }
   };
+}
+function agoraEmFortaleza() {
+  try {
+    const d = new Date(), z = {timeZone: "America/Fortaleza"};
+    return [d.toLocaleDateString("sv-SE", z), d.toLocaleTimeString("pt-BR", {...z, hour: "2-digit", minute: "2-digit", hour12: false})];
+  } catch (e) { const d = new Date(); return [hojeISO(), `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`]; }
 }
 // `alvo`: outra pessoa, na consulta da obra (08/10/2026) — o pedido sai em nome
 // de quem está logado, para a obra do alcance dele.
@@ -1660,6 +1733,20 @@ async function identificar(quem) {
     d = await chamar("/ponto/app/api/tablet/identificar", {...quem, obra: $("t-obra").value});
   } catch (e) {
     return cobrir("erro", `<h2>${quem.qr ? "QR Code não aceito" : "Não identificado"}</h2><p>${esc(e.message)}</p>`, 3500);
+  }
+  // Bateu há pouco? Pergunta antes de registrar outra (13/10/2026: "e se eu bater
+  // duas vezes o ponto de entrada?"). Não bloqueia — o ponto não pode impedir
+  // marcação —, e no cálculo a repetida conta uma vez só (apuracao.sem_repetidas).
+  if (d.batida_recente) {
+    const de_novo = await new Promise(ok => {
+      cobrir("ambar", `<h2>${esc(d.primeiro_nome)}, você já bateu às ${esc(d.batida_recente.hora)}</h2>
+        <p>Foi há ${d.batida_recente.ha_minutos < 1 ? "menos de 1 minuto" : `${d.batida_recente.ha_minutos} min`}. Bater de novo?</p>
+        <div class="linha"><button type="button" id="t-de-novo">Bater de novo</button>
+        <button type="button" id="t-ja-batido">Não, já está batido</button></div>`);
+      $("t-de-novo").onclick = () => ok(true); $("t-ja-batido").onclick = () => ok(false);
+      setTimeout(() => ok(false), 15000);
+    });
+    if (!de_novo) return descobrir();
   }
   // A confirmação: nome e função, e 2 segundos para olhar para a câmera.
   let cancelado = false, n = TB.fluxo ? 2 : 0;

@@ -239,3 +239,81 @@ def test_pedidos_pelo_celular_marcados_no_aparelho_refletem_na_pessoa(app, mundo
     assert dp.get(f"/erp/api/ponto/dispositivos/{ap}").get_json()["dispositivo"]["dono_pede_no_celular"] is False
     assert dp.post(f"/erp/api/ponto/dispositivos/{ap}/aprovar", json=aprovar).status_code == 200
     assert dp.get(f"/erp/api/ponto/pessoas/{mundo['joao']}").get_json()["pessoa"]["pede_no_celular"] is False
+
+
+def test_ponto_da_obra_com_alguem_logado_grava_a_batida_de_quem_se_identificou(app, mundo, monkeypatch):
+    """13/10/2026: "bati o ponto de outra pessoa no ponto da obra, diz que bateu, mas
+    não aparece no espelho" — a sessão de quem entrou passava na frente do bilhete."""
+    for cpf in (CPF_JOAO, CPF_MARIA):
+        _entrar_no_app(app, cpf, monkeypatch)
+    dp = como(app, mundo["dp"])
+    t, h = _aparelho(app, "ponto-da-obra-com-responsavel-logado")
+    ap = _id_do_aparelho(dp, "ponto-da-obra-com-responsavel-logado")
+    assert dp.post(f"/erp/api/ponto/dispositivos/{ap}/aprovar",
+                   json={"perfil": "COMPARTILHADO", "obras": ["PG-A"], "cpf": CPF_MARIA}).status_code == 200
+    assert t.post("/ponto/app/api/entrar", json={"cpf": CPF_MARIA, "pin": "481927"}, headers=h).status_code == 200
+    ident = t.post("/ponto/app/api/tablet/identificar", json={"cpf": CPF_JOAO, "obra": "PG-A"}, headers=h).get_json()
+    r = t.post("/ponto/app/api/bater", headers=h, json={
+        "bilhete": ident["bilhete"], "obra": "PG-A", "foto_base64": _png(),
+        "latitude": OBRA_A[0], "longitude": OBRA_A[1], "precisao": 10})
+    assert r.status_code == 201, r.get_json()
+    assert r.get_json()["comprovante"]["empregado"].startswith("João")
+    joao = dp.get(f"/erp/api/ponto/espelho/{mundo['joao']}").get_json()
+    maria = dp.get(f"/erp/api/ponto/espelho/{mundo['maria']}").get_json()
+    assert sum(len(d["batidas"]) for d in joao["dias"]) == 1
+    assert sum(len(d["batidas"]) for d in maria["dias"]) == 0
+    # sem identificação, a sessão de quem entrou não bate no ponto da obra
+    sem = t.post("/ponto/app/api/bater", headers=h, json={"obra": "PG-A", "latitude": OBRA_A[0],
+                                                         "longitude": OBRA_A[1]})
+    assert sem.status_code == 403 and "se identifica" in sem.get_json()["erro"]
+
+
+def test_mesmo_celular_em_outro_navegador_leva_a_liberacao(app, mundo, monkeypatch):
+    """13/10/2026: "quando abre em novo navegador ou aba anônima, ele entende que é
+    um novo celular" — quem já tem aparelho liberado diz "é este", e a liberação vem."""
+    _entrar_no_app(app, CPF_JOAO, monkeypatch)
+    _entrar_no_app(app, CPF_MARIA, monkeypatch)
+    dp = como(app, mundo["dp"])
+    velho, hv = _aparelho(app, "navegador-antigo-do-joao-0123456")
+    ap = _id_do_aparelho(dp, "navegador-antigo-do-joao-0123456")
+    assert dp.post(f"/erp/api/ponto/dispositivos/{ap}/aprovar",
+                   json={"perfil": "INDIVIDUAL", "cpf": CPF_JOAO, "valido_ate": "NAO_EXPIRA"}).status_code == 200
+    assert dp.get(f"/erp/api/ponto/dispositivos/{ap}").get_json()["dispositivo"]["valido_ate"] is None
+    assert velho.get("/ponto/app/api/aparelho", headers=hv).get_json()["aparelho"]["status"] == "APROVADO"
+    # navegador novo, sem nada guardado: ao entrar, a resposta oferece o aparelho
+    novo = app.test_client()
+    hn = {"X-Device-UUID": "navegador-novo-do-joao-0123456789"}
+    r = novo.post("/ponto/app/api/entrar", json={"cpf": CPF_JOAO, "pin": "481927"}, headers=hn).get_json()
+    assert [a["id"] for a in r["aparelhos_seus"]] == [ap]
+    # a Maria não leva o aparelho do João
+    outra = app.test_client()
+    outra.post("/ponto/app/api/entrar", json={"cpf": CPF_MARIA, "pin": "481927"},
+               headers={"X-Device-UUID": "navegador-da-maria-0123456789ab"})
+    assert outra.post("/ponto/app/api/aparelho/usar-este", json={"dispositivo_id": ap},
+                      headers={"X-Device-UUID": "navegador-da-maria-0123456789ab"}).status_code == 404
+    # o João leva: o novo vale, o velho para na hora
+    t = novo.post("/ponto/app/api/aparelho/usar-este", json={"dispositivo_id": ap}, headers=hn)
+    assert t.status_code == 200, t.get_json()
+    hn["X-Device-Token"] = t.get_json()["token"]
+    a = novo.get("/ponto/app/api/aparelho", headers=hn).get_json()["aparelho"]
+    assert a["status"] == "APROVADO" and a["perfil"] == "INDIVIDUAL" and a["vencimento"] is None
+    assert velho.get("/ponto/app/api/aparelho", headers=hv).get_json()["aparelho"] is None
+    # já liberado aqui: a entrada não oferece de novo
+    r2 = novo.post("/ponto/app/api/entrar", json={"cpf": CPF_JOAO, "pin": "481927"}, headers=hn).get_json()
+    assert r2["aparelhos_seus"] == []
+
+
+def test_identificar_avisa_batida_de_ha_pouco(app, mundo, monkeypatch):
+    """A batida repetida (13/10/2026): o ponto da obra pergunta "bater de novo?"."""
+    _entrar_no_app(app, CPF_MARIA, monkeypatch)
+    dp = como(app, mundo["dp"])
+    t, h = _aparelho(app, "ponto-da-obra-batida-repetida-0123")
+    ap = _id_do_aparelho(dp, "ponto-da-obra-batida-repetida-0123")
+    assert dp.post(f"/erp/api/ponto/dispositivos/{ap}/aprovar",
+                   json={"perfil": "COMPARTILHADO", "obras": ["PG-A"], "cpf": CPF_MARIA}).status_code == 200
+    ident = t.post("/ponto/app/api/tablet/identificar", json={"cpf": CPF_JOAO, "obra": "PG-A"}, headers=h).get_json()
+    assert ident["batida_recente"] is None
+    assert t.post("/ponto/app/api/bater", headers=h, json={"bilhete": ident["bilhete"], "obra": "PG-A",
+                  "foto_base64": _png(), "latitude": OBRA_A[0], "longitude": OBRA_A[1]}).status_code == 201
+    de_novo = t.post("/ponto/app/api/tablet/identificar", json={"cpf": CPF_JOAO, "obra": "PG-A"}, headers=h).get_json()
+    assert de_novo["batida_recente"] and de_novo["batida_recente"]["ha_minutos"] == 0

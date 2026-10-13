@@ -198,6 +198,54 @@ def registrar(conn: Connection, *, device_uuid: str, descricao: str = "",
     return linha, token
 
 
+def aparelhos_da_pessoa(conn: Connection, colaborador_id: int) -> list[dict]:
+    """Os aparelhos aprovados e dentro da validade de que a pessoa é responsável —
+    para oferecer "este navegador é desse mesmo celular?" (13/10/2026)."""
+    from ..horario import hoje as _hoje
+    saida = []
+    for d in db.todos(conn, """SELECT * FROM ponto.dispositivos
+                                WHERE colaborador_id = :c AND status = 'APROVADO' ORDER BY id""",
+                      c=int(colaborador_id)):
+        if d.get("valido_ate") and d["valido_ate"] < _hoje():
+            continue
+        saida.append(d)
+    return saida
+
+
+def mudar_de_navegador(conn: Connection, dispositivo_id: int, *, colaborador_id: int,
+                       novo_uuid: str, ip: str = "") -> str:
+    """A liberação do aparelho passa para ESTE navegador (13/10/2026: "quando abre
+    em novo navegador ou aba anônima, ele entende que é um novo celular").
+
+    Uma página da internet não reconhece o celular de um navegador para o outro:
+    cada um guarda a sua identidade, e a aba anônima a apaga ao fechar. Então quem
+    é RESPONSÁVEL pelo aparelho, logado com CPF e PIN, diz "é este" — a liberação
+    (tipo, obras, grupo, validade) vem para cá, sem aprovação nova, e o navegador
+    de antes para de valer na hora (o token dele deixa de existir). Devolve o
+    token novo. O registro pendente que este navegador tenha criado sai do caminho
+    (bloqueado, com o motivo)."""
+    uuid = validar_uuid(novo_uuid)
+    alvo = por_id(conn, dispositivo_id)
+    if not alvo or alvo.get("colaborador_id") != int(colaborador_id) or alvo["status"] != "APROVADO":
+        raise NaoEncontrado("aparelho não encontrado")
+    if alvo["device_uuid"] == uuid:
+        raise ErroDeValidacao("este navegador já é esse aparelho")
+    aqui = por_uuid(conn, uuid)
+    if aqui and aqui["status"] == "APROVADO":
+        raise ErroDeValidacao("este navegador já é outro aparelho liberado — bloqueie-o antes, em Configuração")
+    if aqui:
+        db.executar(conn, """UPDATE ponto.dispositivos SET device_uuid = :novo, status = 'BLOQUEADO',
+                                    bloqueado_em = now(), motivo_bloqueio = :m WHERE id = :id""",
+                    novo=f"trocado-{aqui['id']}-{uuid}"[:200], id=aqui["id"],
+                    m=f"o navegador passou a ser o aparelho nº {alvo['id']}")
+    token = auth.gerar_token()
+    db.executar(conn, """UPDATE ponto.dispositivos SET device_uuid = :u, token_hash = :h, ultimo_uso_em = now()
+                          WHERE id = :id""", u=uuid, h=auth.hash_token(token), id=alvo["id"])
+    logger.info("Ponto: aparelho %s (%s) mudou de navegador — antes %s, agora %s (pessoa %s, %s)",
+                alvo["id"], alvo["perfil"], alvo["device_uuid"], uuid, colaborador_id, ip or "?")
+    return token
+
+
 def autenticar(conn: Connection, device_uuid: str, token: str | None) -> dict:
     """O aparelho pelo uuid, com o token conferido. Levanta NaoEncontrado para
     uuid desconhecido ou token errado — a mesma resposta nos dois casos, para
@@ -210,7 +258,8 @@ def autenticar(conn: Connection, device_uuid: str, token: str | None) -> dict:
 
 
 GRUPO_DIAS_PADRAO, GRUPO_DIAS_MAXIMO = 15, 90
-APARELHO_DIAS = 90              # todo aparelho se renova a cada 90 dias (06/10/2026)
+APARELHO_DIAS = 90              # todo aparelho se renova a cada 90 dias (06/10/2026)…
+NAO_EXPIRA = "NAO_EXPIRA"       # … a não ser que se escolha "não expira" (13/10/2026)
 AVISO_DIAS = 15                 # o aviso de "vai parar em X dias" começa aqui
 AVISO_DIAS_GRUPO = 3            # … no de grupo (que nasce com 15 dias), só perto do fim
 
@@ -228,6 +277,13 @@ def validade_do_grupo(valido_ate, hoje=None, *, perfil: str = "LISTA"):
     if hoje is None:
         from ..horario import hoje as _hoje
         hoje = _hoje()
+    if str(valido_ate or "").upper() == NAO_EXPIRA:
+        # "Não expira" (13/10/2026: "em liberado até, colocar opção de não expira").
+        # O ponto de equipe continua passageiro (decisão de 06/10/2026).
+        if perfil == "LISTA":
+            raise ErroDeValidacao("o ponto de equipe é passageiro: vale no máximo "
+                                  f"{GRUPO_DIAS_MAXIMO} dias — escolha uma data", campo="valido_ate")
+        return None
     if valido_ate in (None, ""):
         return hoje + _dt.timedelta(days=GRUPO_DIAS_PADRAO if perfil == "LISTA" else APARELHO_DIAS)
     try:

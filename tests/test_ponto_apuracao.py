@@ -153,3 +153,12 @@ def test_so_entrada_e_saida_espera_duas_marcas():
     previstas = ajustes.marcas_previstas(OBRA.periodos(SEGUNDA))
     assert [p["rotulo"] for p in ajustes.so_entrada_e_saida(previstas)] == ["Entrada", "Saída"]
     assert [p["hora"] for p in ajustes.so_entrada_e_saida(previstas)] == ["07:00", "17:00"]
+
+
+def test_batida_repetida_conta_uma_vez_e_avisa():
+    # 13/10/2026: "e se eu bater duas vezes o ponto de entrada, como será o tratamento?"
+    assert ap.sem_repetidas([420, 425, 660, 720, 1020]) == ([420, 660, 720, 1020], 1)
+    assert ap.sem_repetidas([420, 430]) == ([420, 430], 0)            # 10 min já é outra batida
+    r = ap.apurar_dia(SEGUNDA, OBRA, b(SEGUNDA, "07:00", "07:05", "11:00", "12:00", "17:00"))
+    assert r.situacao == "OK" and r.trabalhado == 9 * 60 and "BATIDA_REPETIDA" in r.alertas
+    assert r.batidas == 5                                             # o registro guarda as cinco

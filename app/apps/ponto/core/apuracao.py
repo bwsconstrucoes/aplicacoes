@@ -127,6 +127,25 @@ def _noturnos(inicio: int, fim: int) -> int:
 # ---------------------------------------------------------------------------
 # O dia
 # ---------------------------------------------------------------------------
+BATIDA_REPETIDA_MIN = 10   # duas batidas a menos que isto são a mesma, para o cálculo
+
+
+def sem_repetidas(marcas: list[int], janela: int = BATIDA_REPETIDA_MIN) -> tuple[list[int], int]:
+    """PURA. A batida a menos de `janela` minutos da anterior conta como a MESMA no
+    cálculo (13/10/2026: "e se eu bater duas vezes o ponto de entrada, como será o
+    tratamento?"). Sem isto, a entrada repetida das 07:05 virava a saída para o
+    intervalo e o dia inteiro saía errado. A marcação continua no registro — o
+    ponto eletrônico não pode impedir nem apagar marcação (Portaria 671); só o
+    cálculo a desconsidera, e o dia ganha o aviso BATIDA_REPETIDA. Devolve
+    (marcas que contam, quantas ficaram de fora)."""
+    contam: list[int] = []
+    for m in sorted(marcas):
+        if contam and m - contam[-1] < janela:
+            continue
+        contam.append(m)
+    return contam, len(marcas) - len(contam)
+
+
 def completar_pre_assinalado(marcas: list[int], periodos: list[tuple[int, int]]) -> list[int]:
     """PURA. Na obra de intervalo PRÉ-ASSINALADO (CLT art. 74, § 2º; migração 009
     — pedido do dono, 09/10/2026: "por convenção, só é para bater o ponto de
@@ -148,7 +167,9 @@ def apurar_dia(dia: dt.date, escala: Optional[Escala], batidas: list[dt.datetime
     """Apura um dia. `batidas` são as marcações VÁLIDAS (ou ajustadas) cuja
     `data_referencia` é este dia, com fuso."""
     r = Dia(data=dia, feriado=feriado, batidas=len(batidas))
-    marcas = sorted(minutos_desde(dia, b) for b in batidas)
+    marcas, repetidas = sem_repetidas([minutos_desde(dia, b) for b in batidas])
+    if repetidas:
+        r.alertas.append("BATIDA_REPETIDA")
     periodos = [] if (escala is None or feriado) else escala.periodos(dia)
     if intervalo_pre_assinalado:
         marcas = completar_pre_assinalado(marcas, periodos)

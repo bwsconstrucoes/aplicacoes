@@ -46,7 +46,7 @@ def _tipo_pelo_conteudo(dados: bytes) -> str | None:
 def preparar(conteudo_base64: str, nome_original: str = "") -> tuple[bytes, str]:
     """Decodifica e confere o tipo pelo CONTEÚDO, não pelo nome (nome mente).
     Foto é reduzida como as da batida, para o atestado fotografado não pesar 8 MB."""
-    bruto = fotos.decodificar_base64(conteudo_base64)
+    bruto = fotos.decodificar_base64(conteudo_base64, o_que="documento", campo="documento", maximo=MAX_BYTES)
     if len(bruto) > MAX_BYTES:
         raise ErroDeValidacao("documento maior que 10 MB", campo="documento")
     tipo = _tipo_pelo_conteudo(bruto)

@@ -41,6 +41,14 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1s. **NO RAMO, ainda não publicado (13/10/2026)** — junto com a 1r: a batida de
+   outra pessoa no ponto da obra ia para o nome de quem estava logado (CORRIGIDO;
+   ver a seção de 13/10 — as batidas erradas que já existem na produção precisam
+   ser conferidas pelo dono); documento em PDF dava "foto ilegível"; aparelho
+   "não expira"; mesmo celular em outro navegador; batida repetida; nomes das
+   batidas sem escala; hora futura no ajuste de hoje. Sem migração.
+   **Em aberto com o dono:** bater sem internet (guardar no celular e mandar
+   depois) — não existe hoje; é decisão dele (ver a seção de 13/10).
 1r. **NO RAMO, ainda não publicado (12/10/2026)**: ajuste de VÁRIOS DIAS num pedido
    só (Meu mês, consulta, Pedidos e ponto da obra); o dia de hoje e o feriado sem
    horário cadastrado passam a abrir para correção; feriado não espera mais as
@@ -141,6 +149,59 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 13/10/2026 — Sete achados do teste do dono
+
+1. **A batida de outra pessoa no ponto da obra ia para quem estava logado**
+   (*"bati o ponto de outra pessoa, diz que bateu, mas não aparece no
+   espelho"*). Desde 10/10 o ponto da obra exige que o responsável entre com CPF
+   e PIN — e o `/app/api/bater` olhava a SESSÃO antes do bilhete: a batida de
+   quem se identificou (QR/CPF) era gravada no nome de quem entrou (se esse
+   pudesse bater no próprio celular; senão era recusada). Agora o bilhete vem
+   primeiro, e no ponto da obra a sessão sozinha não bate. Teste que reproduz o
+   caso. **Na produção**, entre 10/10 e a publicação desta correção, as batidas
+   feitas no ponto da obra com alguém logado ficaram no nome de quem estava
+   logado (marcações com `identificacao = 'SESSAO'` em aparelho COMPARTILHADO).
+   Não se apaga marcação (Portaria 671): o caminho é o DP tratar no espelho e a
+   pessoa certa pedir o ajuste. Confirmar com o dono se foram só testes.
+2. **"Foto em base64 ilegível" ao anexar PDF ou foto:** o servidor só tirava o
+   prefixo `data:image/…` — o PDF (`data:application/pdf`) e a foto que o celular
+   entrega sem tipo não passavam. `fotos.decodificar_base64` aceita qualquer
+   `data:…;base64,`, e a frase do documento fala em documento.
+3. **Ajuste depois de agora:** o "corrigir" de hoje recusa, na tela, horário
+   depois da hora atual de Fortaleza ("23:58 ainda não chegou — agora são
+   13:59"); o servidor já recusava.
+4. **A primeira batida às 13:19 era sempre a "Entrada":** sem escala, os nomes
+   das linhas do ajuste saíam da POSIÇÃO. Agora cada batida feita ocupa o nome
+   mais perto do horário de costume (7, 11, 12, 17 h): com só 13:19, o ajuste
+   oferece Entrada, Saída para o intervalo e Saída.
+5. **"Liberado até": opção "não expira"** (celular pessoal e ponto da obra; o
+   de equipe continua passageiro). Gravado como validade vazia — o sistema já
+   tratava vazio como "não vence". Na aprovação e na renovação.
+6. **Navegador novo / aba anônima = "celular novo":** uma página não reconhece o
+   celular de um navegador para o outro (cada um guarda a sua identidade; a
+   anônima apaga ao fechar). Agora, ao entrar com CPF e PIN num navegador
+   desconhecido, quem é responsável por aparelho liberado vê "Este é o mesmo
+   aparelho?" — com o "Sim", a liberação passa para este navegador
+   (`dispositivos.mudar_de_navegador`) sem aprovação nova, e o de antes para de
+   valer; o "Não" fica lembrado ali. No máximo 5 trocas por hora por pessoa.
+   Risco aceito por mim, dito ao dono: quem tem o CPF e o PIN do responsável
+   pode levar a liberação para outro celular (a batida continua com foto e
+   localização, e o celular antigo para na hora).
+7. **Batida repetida** (*"não deveria haver limite? e se eu bater duas vezes a
+   entrada?"*). Bloquear não pode — o ponto eletrônico não pode impedir marcação
+   (Portaria 671). Então: a batida a menos de 10 min da anterior é guardada, mas
+   conta UMA vez no cálculo (`apuracao.sem_repetidas`) e o dia ganha o aviso
+   "Batida repetida"; e antes de registrar, o ponto da obra e o celular
+   perguntam "você já bateu às 07:00 — bater de novo?". Antes, a entrada
+   repetida virava a saída para o intervalo e o dia inteiro saía errado.
+- **Sem internet** (pergunta do dono): hoje não se bate sem internet — a tela diz
+  "Sem internet agora", e o caminho é o ajuste com o motivo "Sem internet ou sem
+  sinal na obra". Guardar a batida no celular e mandar depois é possível, mas a
+  hora viria do relógio do celular (que se muda à mão): iria sempre para
+  conferência. Decisão do dono.
+- Dois testes antigos quebravam no dia seguinte a feriado em dia de semana
+  (escolhiam "ontem" como dia de falta): pulam feriado agora.
 
 ## 12/10/2026 — Ajuste de vários dias de uma vez, e o feriado que não abria
 
