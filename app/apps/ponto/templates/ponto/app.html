@@ -143,6 +143,10 @@
      sugestivos pra economizar tela"); a legenda fica uma vez só, no topo. */
   .acoes-dia { display:flex; gap:6px; flex:none; align-self:center; }
   /* a classe dobrada vence o "label {display:block}" e o "input {width:100%}" do formulário do ponto da obra */
+  .bloco-dia { border:1px solid var(--borda); border-radius:12px; padding:8px 10px; margin:8px 0; background:#fff; }
+  .bloco-dia.fora { color:var(--suave); background:transparent; border-style:dashed; font-size:14px; }
+  .bloco-dia .bloco-cab, .bloco-dia summary { font-size:14px; color:var(--suave); margin-bottom:2px; cursor:pointer; }
+  .bloco-dia .bloco-cab b, .bloco-dia summary b { color:var(--tinta); font-size:16px; text-transform:capitalize; }
   label.linha-ajuste.linha-ajuste { display:flex; gap:10px; align-items:center; color:var(--tinta); margin:6px 0; font-size:16px; }
   .linha-ajuste.linha-ajuste input[type=checkbox] { width:26px; height:26px; flex:none; margin:0; }
   .linha-ajuste.linha-ajuste span { flex:1; }
@@ -277,6 +281,7 @@
       <h2 id="ps-mes" style="margin-top:12px"></h2>
       <div id="ps-resumo"></div>
       <button class="btn" id="ps-novo" type="button">Lançar atestado, licença ou compensação</button>
+      <button class="btn sec" id="ps-varios" type="button">✏️ Corrigir vários dias</button>
     </div>
     <div class="cartao"><div id="ps-dias"></div></div>
   </section>
@@ -329,6 +334,7 @@
       </div>
       <h2 id="mes-titulo" style="margin-top:12px">Meu mês</h2>
       <div id="mes-resumo"></div>
+      <button class="btn sec oculto" id="mes-varios" type="button">✏️ Corrigir vários dias</button>
     </div>
     <div class="cartao"><div id="mes-dias"></div></div>
   </section>
@@ -924,6 +930,7 @@ async function carregarMes() {
     $("mes-dias").innerHTML = diasDoMes(d, {corrigir: x => podeCorrigir(x, d),
                                            lancar: x => !!(EU && EU.pede_no_celular) && podeLancarNoDia(x, d)});
     MES_DADOS = d;
+    $("mes-varios").classList.toggle("oculto", !(EU && EU.pede_no_celular) || !!d.competencia_fechada);
     ligarDias("mes-dias", d, x => abrirCorrecao(x), x => irParaPedido(x.data));
   } catch (e) { if (e.status === 401) return mostrar("entrar"); aviso(e.message, "erro"); }
 }
@@ -947,8 +954,10 @@ function podeLancarNoDia(x, mes) {
 function podeCorrigirDia(x, mes) {
   if (mes.competencia_fechada || x.ocorrencia || x.situacao === "FUTURO") return false;
   if (x.faltando && x.faltando.length) return true;
-  // sem escala cadastrada não dá para saber o que falta: deixa pedir no dia de falta ou incompleto
-  return !x.previstas.length && ["FALTA", "INCOMPLETO", "SEM_ESCALA"].includes(x.situacao)
+  // Sem horário previsto não dá para saber o que falta: deixa pedir no dia de falta,
+  // incompleto, sem escala — e no FERIADO e na FOLGA (12/10/2026: "é para permitir a
+  // batida num feriado porque a pessoa pode trabalhar, extra"), inclusive hoje.
+  return !x.previstas.length && ["FALTA", "INCOMPLETO", "SEM_ESCALA", "DESCANSO", "EM_ANDAMENTO"].includes(x.situacao)
     && x.batidas.length < (x.so_entrada_e_saida ? 2 : 4);
 }
 // Sem escala, o dia não diz o que falta: oferece as batidas que ainda cabem no
@@ -964,13 +973,13 @@ function semEscala(x) {
 // (10/10/2026: "tem que buscar do cadastro (…) se os pontos que a pessoa bate são
 // 7, meio-dia, 13 e 17 horas"), e a hora DIGITADA — nada da roleta do relógio, que
 // "é muito lento para selecionar a hora".
-function linhasDoAjuste(x) {
+function linhasDoAjuste(x, varios = false) {
   const linha = (rotulo, hora, marcada, i) => `<label class="linha-ajuste">
       <input type="checkbox" data-i="${i}" ${marcada ? "checked" : ""}>
       <span>${esc(rotulo)}</span>
       <input class="hora" data-hora="${i}" inputmode="numeric" maxlength="5" placeholder="00:00" value="${esc(hora || "")}"></label>`;
   return x.faltando.length ? x.faltando.map((f, i) => linha(f.rotulo, f.sugestao, true, i)).join("")
-    : semEscala(x).map((rotulo, i) => linha(rotulo, "", i === 0, i)).join("");
+    : semEscala(x).map((rotulo, i) => linha(rotulo, "", !varios && i === 0, i)).join("");
 }
 document.addEventListener("input", ev => {
   if (!ev.target.classList || !ev.target.classList.contains("hora")) return;
@@ -978,9 +987,10 @@ document.addEventListener("input", ev => {
   ev.target.value = d.length > 2 ? `${d.slice(0, 2)}:${d.slice(2)}` : d;
 });
 // Os horários marcados, em ISO. Levanta Error com a frase para a pessoa.
-function horariosMarcados(caixa, x) {
+function horariosMarcados(caixa, x, vazioOk = false) {
   const marcados = [...caixa.querySelectorAll("[data-i]")].filter(c => c.checked)
     .map(c => caixa.querySelector(`[data-hora="${c.dataset.i}"]`).value.trim());
+  if (!marcados.length && vazioOk) return [];
   if (!marcados.length) throw new Error("Marque o que faltou e confira o horário.");
   const ruim = marcados.find(h => !/^([01]\d|2[0-3]):[0-5]\d$/.test(h));
   if (ruim !== undefined) throw new Error(`Horário “${ruim || "vazio"}” não está certo — use hora:minuto, como 07:00.`);
@@ -989,6 +999,134 @@ function horariosMarcados(caixa, x) {
   const atravessa = x.previstas.some((p, i) => i && p.hora < x.previstas[i - 1].hora);
   const proximo = (() => { const d = new Date(x.data + "T12:00:00"); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10); })();
   return marcados.map(h => `${atravessa && primeira && h < primeira ? proximo : x.data}T${h}:00`);
+}
+// VÁRIOS DIAS DE UMA VEZ (12/10/2026: "corrigir o ponto do dia 5 ao dia 9 — não tem
+// como eu fazer isso"). Um bloco por dia, com os horários da escala já marcados; o
+// dia que não cabe ajuste aparece dizendo por quê; folga e feriado vêm fechados
+// (toque para abrir, se trabalhou). Tudo vai num pedido só — ou entra tudo, ou nada.
+// `itens`: [{x: o dia, fechada: mês fechado?}]. Devolve a função que lê os horários.
+const diaCurto = iso => `${new Date(iso + "T12:00:00").toLocaleDateString("pt-BR", {weekday: "short"}).replace(".", "")} ${dataBR(iso).slice(0, 5)}`;
+function porQueNaoAjusta(x, fechada) {
+  if (fechada) return "mês fechado para a folha";
+  if (x.ocorrencia) return `justificado (${x.ocorrencia.rotulo.toLowerCase()})`;
+  if (x.situacao === "FUTURO") return "ainda não chegou";
+  if (x.situacao === "FORA_DO_CONTRATO") return "fora do contrato";
+  return x.batidas.length ? `completo (${x.batidas.map(b => b.hora).join(", ")})` : "nada a ajustar";
+}
+function montarDias(caixa, itens) {
+  const varios = itens.length > 1;
+  const pode = ({x, fechada}) => podeCorrigirDia(x, {competencia_fechada: fechada});
+  const ja = x => (x.batidas.length ? `já batido: ${x.batidas.map(b => esc(b.hora)).join(", ")}` : "nada batido")
+    + (x.pendentes.some(p => p.tipo === "AJUSTE_BATIDA") ? " · ⏳ já tem pedido esperando" : "");
+  const bloco = it => {
+    const x = it.x;
+    if (!pode(it)) return `<div class="bloco-dia fora"><b>${esc(diaCurto(x.data))}</b> <span>— ${esc(porQueNaoAjusta(x, it.fechada))}</span></div>`;
+    const folga = varios && !x.previstas.length && ["DESCANSO", "EM_ANDAMENTO"].includes(x.situacao);
+    const cab = `<b>${esc(diaCurto(x.data))}</b> <span>${x.feriado ? `feriado (${esc(x.feriado)}) · ` : folga ? "folga · " : ""}${ja(x)}</span>`;
+    return folga
+      ? `<details class="bloco-dia" data-dia="${x.data}"><summary>${cab} — trabalhou? toque para marcar</summary>${linhasDoAjuste(x, true)}</details>`
+      : `<div class="bloco-dia" data-dia="${x.data}"><div class="bloco-cab">${cab}</div>${linhasDoAjuste(x, varios)}</div>`;
+  };
+  const abertos = itens.filter(pode);
+  caixa.innerHTML = itens.map(bloco).join("")
+    + (varios && abertos.length > 1 ? `<button class="link" type="button" data-repetir>Repetir os horários do primeiro dia nos outros</button>` : "");
+  const mapa = Object.fromEntries(itens.map(it => [it.x.data, it.x]));
+  const rep = caixa.querySelector("[data-repetir]");
+  if (rep) rep.addEventListener("click", () => {
+    const blocos = [...caixa.querySelectorAll("div.bloco-dia[data-dia]")];
+    const modelo = blocos.find(b => [...b.querySelectorAll("[data-i]")].some(c => c.checked));
+    if (!modelo) return;
+    const marca = [...modelo.querySelectorAll("[data-i]")].map(c => [c.checked, modelo.querySelector(`[data-hora="${c.dataset.i}"]`).value]);
+    blocos.filter(b => b !== modelo).forEach(b => b.querySelectorAll("[data-i]").forEach((c, i) => {
+      if (!marca[i]) return;
+      c.checked = marca[i][0];
+      const h = b.querySelector(`[data-hora="${c.dataset.i}"]`);
+      if (marca[i][1]) h.value = marca[i][1];
+    }));
+  });
+  return {
+    algum: abertos.length > 0,
+    obra: () => { for (const it of itens) if (it.x.batidas[0] && it.x.batidas[0].obra) return it.x.batidas[0].obra; return ""; },
+    horarios: () => {
+      const todos = [];
+      for (const b of caixa.querySelectorAll("[data-dia]")) {
+        try { todos.push(...horariosMarcados(b, mapa[b.dataset.dia], varios)); }
+        catch (e) { throw new Error(varios ? `${diaCurto(b.dataset.dia)}: ${e.message}` : e.message); }
+      }
+      if (!todos.length) throw new Error("Marque o que faltou e confira o horário.");
+      return todos;
+    },
+  };
+}
+// Os dias de uma faixa, dos meses que ela pega. `url(competencia)` é a rota do mês.
+async function diasDaFaixa(de, ate, url) {
+  if (!de || !ate || ate < de) throw new Error("Diga o primeiro e o último dia (o último não pode ser antes do primeiro).");
+  if ((new Date(ate + "T12:00:00") - new Date(de + "T12:00:00")) / 864e5 + 1 > 31) throw new Error("No máximo 31 dias de uma vez.");
+  const meses = [...new Set([de.slice(0, 7), ate.slice(0, 7)])];
+  const itens = [];
+  for (const m of meses) {
+    const d = await chamar(await url(m));
+    d.dias.filter(x => x.data >= de && x.data <= ate).forEach(x => itens.push({x, fechada: !!d.competencia_fechada}));
+  }
+  return itens;
+}
+// A janela de vários dias, no Meu mês (alvo nulo) e na consulta (alvo = a pessoa).
+async function corrigirVariosDias(alvo, de0, ate0) {
+  const ontem = somarDiasISO(hojeISO(), -1);
+  $("dlg-corpo").innerHTML = `<h2 style="margin:0 0 6px">Corrigir vários dias${alvo ? ` — ${esc(alvo.nome)}` : ""}</h2>
+    <p class="pequeno">Escolha a faixa: cada dia abre com o que já foi batido e os horários que faltam, já marcados.</p>
+    <div class="linha"><div style="flex:1"><label for="v-de">Do dia</label><input type="date" id="v-de" value="${de0 || somarDiasISO(ontem, -4)}" max="${hojeISO()}"></div>
+      <div style="flex:1"><label for="v-ate">Até o dia</label><input type="date" id="v-ate" value="${ate0 || ontem}" max="${hojeISO()}"></div></div>
+    <div id="v-msg" class="aviso erro oculto"></div>
+    <button class="btn" type="button" id="v-abrir">Abrir os dias</button>`;
+  $("dlg").showModal();
+  $("v-abrir").onclick = async () => {
+    const msg = t => { $("v-msg").textContent = t; $("v-msg").classList.remove("oculto"); };
+    let itens;
+    try {
+      const l = alvo ? await onde() : null;
+      itens = await diasDaFaixa($("v-de").value, $("v-ate").value,
+        m => alvo ? comLocal(`/ponto/app/api/equipe/${alvo.id}/mes?competencia=${m}`, l) : `/ponto/app/api/mes?competencia=${m}`);
+    } catch (e) { return msg(e.message); }
+    if (!itens.length) return msg("Nenhum dia nessa faixa.");
+    abrirCorrecaoDeVarios(itens, alvo);
+  };
+}
+function abrirCorrecaoDeVarios(itens, alvo) {
+  const obras = alvo ? (alvo.obras || []) : ((EU && EU.obras) || []);
+  $("dlg-corpo").innerHTML = `
+    <h2 style="margin:0 0 6px">Corrigir ${esc(dataBR(itens[0].x.data).slice(0, 5))} a ${esc(dataBR(itens[itens.length - 1].x.data))}${alvo ? ` — ${esc(alvo.nome)}` : ""}</h2>
+    <p style="margin:6px 0 4px"><b>O que faltou?</b> Desmarque o que foi batido e confira os horários.</p>
+    <div id="v-dias"></div>
+    <label for="v-motivo">Por quê?</label>
+    <select id="v-motivo">${MOTIVOS_AJUSTE.map(([v, t]) => `<option value="${v}">${esc(t)}</option>`).join("")}</select>
+    <label for="v-obra">Obra</label>
+    <select id="v-obra"></select>
+    <label for="v-desc">Conte em poucas palavras</label>
+    <textarea id="v-desc" placeholder="Ex.: o celular quebrou e fiquei a semana sem bater"></textarea>
+    <p class="pequeno">Vai tudo num pedido só, para validação — se um dia tiver problema, nada entra e a tela diz qual.</p>
+    <div id="v-msg" class="aviso erro oculto"></div>
+    <button class="btn" type="button" id="v-enviar">Enviar o pedido</button>`;
+  if (!$("dlg").open) $("dlg").showModal();
+  const dias = montarDias($("v-dias"), itens);
+  const obraDoDia = dias.obra() || (alvo ? (obras[0] && obras[0].codigo) : EU.obra_principal);
+  $("v-obra").innerHTML = obras.length ? obras.map(o => `<option value="${esc(o.codigo)}" ${o.codigo === obraDoDia ? "selected" : ""}>${esc(rotuloObra(o))}</option>`).join("")
+                                       : `<option value="">a obra do cadastro</option>`;
+  const erro = t => { $("v-msg").textContent = t; $("v-msg").classList.remove("oculto"); };
+  if (!dias.algum) { $("v-enviar").disabled = true; erro("Nenhum dia dessa faixa tem o que ajustar."); }
+  $("v-enviar").onclick = async () => {
+    let horarios;
+    try { horarios = dias.horarios(); } catch (e) { return erro(e.message); }
+    $("v-enviar").disabled = true;
+    try {
+      const corpo = {horarios, motivo: $("v-motivo").value, descricao: $("v-desc").value, obra: $("v-obra").value};
+      if (alvo) Object.assign(corpo, localNoCorpo(await onde()));
+      const r = await chamar(alvo ? `/ponto/app/api/equipe/${alvo.id}/ajuste-do-dia` : "/ponto/app/api/pedidos/ajuste-do-dia", corpo);
+      $("dlg").close();
+      aviso(`Pedido enviado${alvo ? ` para ${alvo.nome}` : ""}: ${r.quantidade} batida(s) para validação.`, "ok");
+      (alvo ? alvo.depois : carregarMes)();
+    } catch (e) { $("v-enviar").disabled = false; erro(e.message); }
+  };
 }
 // `alvo`: outra pessoa, na consulta da obra (08/10/2026) — o pedido sai em nome
 // de quem está logado, para a obra do alcance dele.
@@ -1074,8 +1212,10 @@ function camposDePedido(px, t, dia) {
       <label>Foto ou PDF do atestado</label><button class="btn sec" type="button" id="${px}-doc">Escolher foto ou arquivo</button>
       <p class="pequeno" id="${px}-doc-nome">Nenhum arquivo escolhido.</p>
       <p class="pequeno">Só o DP vê o atestado.</p>`,
-    AJUSTE_BATIDA: `<label>Que dia?</label><input type="date" id="${px}-inicio" value="${d0}">
-      <p class="pequeno">O dia abre com o que já foi batido e o que falta — você marca só o que esqueceu.</p>
+    AJUSTE_BATIDA: `<label>Que dia?</label><input type="date" id="${px}-inicio" value="${d0}" max="${hojeISO()}">
+      <label>Até o dia (se foram vários dias)</label><input type="date" id="${px}-ate" max="${hojeISO()}">
+      <p class="pequeno">O dia abre com o que já foi batido e o que falta — você marca só o que esqueceu.
+        Vários dias: cada um abre com os horários da escala já marcados.</p>
       <button class="btn sec" type="button" id="${px}-abrir-dia">Abrir o dia</button>`,
     COMPENSACAO: `<label>Dia em que vai trabalhar (ou trabalhou)</label><input type="date" id="${px}-trabalhado">
       <label>Dia da folga no lugar</label><input type="date" id="${px}-inicio" value="${dia || ""}">
@@ -1154,6 +1294,13 @@ function montarCamposPedido() {
   $("btn-pedir").classList.toggle("oculto", t === "AJUSTE_BATIDA");
   if (t === "AJUSTE_BATIDA") $("pc-abrir-dia").addEventListener("click", async () => {
     const dia = $("pc-inicio").value; if (!dia) return;
+    const ate = $("pc-ate").value;
+    if (ate && ate !== dia) {
+      try {
+        const itens = await diasDaFaixa(dia, ate, m => `/ponto/app/api/mes?competencia=${m}`);
+        return abrirCorrecaoDeVarios(itens, null);
+      } catch (e) { return aviso(e.message, "erro"); }
+    }
     try {
       const m = await chamar(`/ponto/app/api/mes?competencia=${dia.slice(0, 7)}`);
       const x = m.dias.find(z => z.data === dia);
@@ -1582,6 +1729,7 @@ function abrirFormularioDoTablet(d, tipo) {
       <label>Primeiro dia</label><input type="date" id="tf-inicio" value="${hoje}">
       <label>Último dia</label><input type="date" id="tf-fim" value="${hoje}">`,
     AJUSTE_BATIDA: `<label>Dia</label><input type="date" id="tf-inicio" value="${d.dia_ajuste || hoje}" max="${hoje}">
+      <label>Até o dia (se foram vários dias)</label><input type="date" id="tf-ate" max="${hoje}">
       <div id="tf-dia" class="pequeno" style="margin-top:8px">Carregando o dia…</div>
       <label>Motivo</label><select id="tf-motivo">${MOTIVOS_AJUSTE.map(m => `<option value="${m[0]}">${esc(m[1])}</option>`).join("")}</select>`,
     COMPENSACAO: `<label>Dia em que vai trabalhar (ou trabalhou)</label><input type="date" id="tf-trabalhado">
@@ -1621,24 +1769,34 @@ function abrirFormularioDoTablet(d, tipo) {
   }
   // O ajuste abre o dia da pessoa: o que já bateu, o que a escala esperava, e os
   // horários que faltam já postos — para marcar um, dois, ou o dia inteiro.
-  let DIA = null;
+  // Vários dias (12/10/2026): com o "até", um bloco por dia, num pedido só.
+  let DIA = null, DIAS = null;
   const carregarDia = async () => {
     const caixa = $("tf-dia"); if (!caixa) return;
-    DIA = null; caixa.textContent = "Carregando o dia…";
+    DIA = DIAS = null; caixa.textContent = "Carregando…";
     try {
-      const r = await chamar("/ponto/app/api/tablet/dia", {bilhete: d.bilhete, data: $("tf-inicio").value});
+      const ate = $("tf-ate").value && $("tf-ate").value !== $("tf-inicio").value ? $("tf-ate").value : null;
+      const r = await chamar("/ponto/app/api/tablet/dia", {bilhete: d.bilhete, data: $("tf-inicio").value, ...(ate ? {ate} : {})});
       const x = r.dia;
-      if (r.competencia_fechada) { caixa.textContent = "Esse mês já foi fechado para a folha — fale com o DP."; return; }
-      if (x.ocorrencia) { caixa.textContent = `Esse dia já está justificado (${x.ocorrencia.rotulo}).`; return; }
-      DIA = x;
-      caixa.innerHTML = `<p style="margin:4px 0">Já batido: <b>${x.batidas.length ? x.batidas.map(b => esc(b.hora)).join(", ") : "nada"}</b>.
-          ${x.previstas.length ? `Escala: ${x.previstas.map(p => esc(p.hora)).join(", ")}.` : "Sem escala cadastrada."}
-          ${x.pendentes.some(p => p.tipo === "AJUSTE_BATIDA") ? `<br>⏳ Já pedido, esperando validação: ${x.pendentes.filter(p => p.hora).map(p => esc(p.hora)).join(", ")}.` : ""}</p>
-        <p style="margin:8px 0 2px; font-weight:700">O que faltou? Marque e confira o horário.</p>
-        <div id="tf-linhas">${linhasDoAjuste(x)}</div>`;
+      if (!ate) {
+        if (r.competencia_fechada) { caixa.textContent = "Esse mês já foi fechado para a folha — fale com o DP."; return; }
+        if (x.ocorrencia) { caixa.textContent = `Esse dia já está justificado (${x.ocorrencia.rotulo}).`; return; }
+        DIA = x;
+        caixa.innerHTML = `<p style="margin:4px 0">Já batido: <b>${x.batidas.length ? x.batidas.map(b => esc(b.hora)).join(", ") : "nada"}</b>.
+            ${x.previstas.length ? `Escala: ${x.previstas.map(p => esc(p.hora)).join(", ")}.` : x.feriado ? `Feriado (${esc(x.feriado)}).` : "Sem horário previsto."}
+            ${x.pendentes.some(p => p.tipo === "AJUSTE_BATIDA") ? `<br>⏳ Já pedido, esperando validação: ${x.pendentes.filter(p => p.hora).map(p => esc(p.hora)).join(", ")}.` : ""}</p>
+          <p style="margin:8px 0 2px; font-weight:700">O que faltou? Marque e confira o horário.</p>
+          <div id="tf-linhas">${linhasDoAjuste(x)}</div>`;
+        return;
+      }
+      caixa.innerHTML = `<p style="margin:8px 0 2px; font-weight:700">O que faltou? Desmarque o que foi batido e confira os horários.</p><div id="tf-varios"></div>`;
+      DIAS = montarDias($("tf-varios"), r.dias.map(z => ({x: z, fechada: z.competencia_fechada})));
+      DIA = r.dias[0];
     } catch (e) { caixa.textContent = e.message; }
   };
-  if (tipo === "AJUSTE_BATIDA") { $("tf-inicio").addEventListener("change", carregarDia); carregarDia(); }
+  if (tipo === "AJUSTE_BATIDA") {
+    $("tf-inicio").addEventListener("change", carregarDia); $("tf-ate").addEventListener("change", carregarDia); carregarDia();
+  }
   const fechar = () => { f.classList.add("oculto"); f.innerHTML = ""; TB.ocupado = false; };
   $("tf-cancelar").addEventListener("click", fechar);
   $("tf-enviar").addEventListener("click", async () => {
@@ -1650,9 +1808,10 @@ function abrirFormularioDoTablet(d, tipo) {
       if (!doc) return ($("tf-msg").textContent = "Anexe o atestado — foto ou arquivo.");
     } else if (tipo === "AJUSTE_BATIDA") {
       if (!DIA) return ($("tf-msg").textContent = "Escolha um dia em que dá para pedir ajuste.");
-      try { corpo.horarios = horariosMarcados($("tf-linhas"), DIA); } catch (e) { return ($("tf-msg").textContent = e.message); }
+      try { corpo.horarios = DIAS ? DIAS.horarios() : horariosMarcados($("tf-linhas"), DIA); }
+      catch (e) { return ($("tf-msg").textContent = e.message); }
       Object.assign(corpo, {motivo: v("tf-motivo"),
-                            obra: (DIA.batidas[0] && DIA.batidas[0].obra) || $("t-obra").value || ""});
+                            obra: (DIAS ? DIAS.obra() : (DIA.batidas[0] && DIA.batidas[0].obra)) || $("t-obra").value || ""});
     } else if (tipo === "COMPENSACAO") {
       Object.assign(corpo, {data_inicio: v("tf-inicio"), dia_trabalhado: v("tf-trabalhado")});
     } else {
@@ -1666,7 +1825,8 @@ function abrirFormularioDoTablet(d, tipo) {
         // Um dia de cada vez, e mais de um dia na mesma identificação: entregue o
         // primeiro, a tela oferece o próximo.
         const r = await chamar("/ponto/app/api/tablet/ajuste-do-dia", corpo);
-        $("tf-msg").innerHTML = `<div class="aviso ok">Pedido entregue: ${r.quantidade} batida(s) de ${esc(dataBR(DIA.data))}, para validação.</div>
+        const de = DIAS ? `${esc(dataBR(corpo.horarios[0].slice(0, 10)).slice(0, 5))} a ${esc(dataBR(corpo.horarios[corpo.horarios.length - 1].slice(0, 10)))}` : esc(dataBR(DIA.data));
+        $("tf-msg").innerHTML = `<div class="aviso ok">Pedido entregue: ${r.quantidade} batida(s) de ${de}, para validação.</div>
           <div class="linha"><button type="button" class="principal" id="tf-outro">Pedir outro dia</button>
           <button type="button" class="secundario" id="tf-terminar">Terminar</button></div>`;
         $("tf-enviar").classList.add("oculto");
@@ -1934,6 +2094,7 @@ async function carregarPessoaDaObra() {
   $("ps-mes").textContent = nomeMes(d.competencia) + (d.competencia_fechada ? " (fechado)" : "");
   $("ps-resumo").innerHTML = resumoDoMes(d.resumo, true);
   $("ps-novo").classList.toggle("oculto", !d.pode_pedir || d.competencia_fechada);
+  $("ps-varios").classList.toggle("oculto", !d.pode_pedir || d.competencia_fechada);
   $("ps-dias").innerHTML = diasDoMes(d, {corrigir: x => d.pode_pedir && podeCorrigirDia(x, d),
                                          lancar: x => d.pode_pedir && podeLancarNoDia(x, d)});
   ligarDias("ps-dias", d, x => abrirCorrecao(x, alvoAtual()), x => abrirPedidoPara(alvoAtual(), x.data));
@@ -1942,6 +2103,8 @@ $("ps-voltar").addEventListener("click", () => (EQ.pelo_aparelho ? abrirMenu() :
 $("ps-ant").addEventListener("click", () => { EQ.mesAlvo = somarMes(EQ.mesAlvo, -1); carregarPessoaDaObra(); });
 $("ps-prox").addEventListener("click", () => { EQ.mesAlvo = somarMes(EQ.mesAlvo, 1); carregarPessoaDaObra(); });
 $("ps-novo").addEventListener("click", () => abrirPedidoPara(alvoAtual(), null));
+$("ps-varios").addEventListener("click", () => corrigirVariosDias(alvoAtual()));
+$("mes-varios").addEventListener("click", () => corrigirVariosDias(null));
 
 // O pedido POR OUTRA PESSOA (atestado, licença, compensação, folga do banco). O
 // ajuste de batida é pelo "Corrigir este dia", que mostra o que falta.

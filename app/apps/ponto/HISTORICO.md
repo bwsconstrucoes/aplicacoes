@@ -41,6 +41,10 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1r. **NO RAMO, ainda não publicado (12/10/2026)**: ajuste de VÁRIOS DIAS num pedido
+   só (Meu mês, consulta, Pedidos e ponto da obra); o dia de hoje e o feriado sem
+   horário cadastrado passam a abrir para correção; feriado não espera mais as
+   batidas da escala. Sem migração.
 1q. **PUBLICADO em 10/10/2026** (com o "pode" do dono, `main` em `1042e5f`, sem migração): fora da obra, o aviso não cita
    mais a obra mais perto nem a distância; no ERP, a pessoa responsável por um
    ponto da obra aparece como "faz pedidos pelo celular"; e a marcação de pedidos
@@ -137,6 +141,43 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 12/10/2026 — Ajuste de vários dias de uma vez, e o feriado que não abria
+
+O dono, no feriado: *"hoje é 12 de outubro, feriado (…) tentei abrir o dia do
+ponto e ele não abriu (…) é para permitir a batida num feriado, porque a pessoa
+pode trabalhar, extra"*; e *"eu tinha comentado de um ajuste de uma faixa de dias
+— não tem como eu corrigir o ponto do dia 5 ao dia 9"* (o pedido de 10/10 dizia
+"dois horários de um dia, intercalado, ou dois dias", e só o "Pedir outro dia" do
+ponto da obra tinha sido feito).
+
+- **Por que não abria:** não era o feriado, era o HOJE sem horário cadastrado.
+  Sem escala (o dono ainda não tinha configurado), o dia de hoje sem batida é
+  "em andamento", e a regra do ✏️ (`podeCorrigirDia`) só aceitava falta,
+  incompleto e sem escala. Agora aceita também o dia em andamento e o de
+  descanso/feriado, quando não há horário previsto — quem trabalhou digita.
+- **Feriado não espera batida** (`espelho.py`): as `previstas` do feriado ficam
+  vazias. Antes, com escala, o feriado vinha com 07:00…17:00 marcados como
+  "faltou" — e o ajuste de vários dias pediria o feriado inteiro.
+- **Vários dias num pedido só.** No Meu mês e na consulta, botão "✏️ Corrigir
+  vários dias" (do dia / até o dia, no máximo 31); em Pedidos › Esqueci de bater,
+  o campo "Até o dia"; no ponto da obra, o mesmo "Até o dia" no formulário. Um
+  bloco por dia com os horários da escala já marcados; o dia que não cabe ajuste
+  diz por quê (completo, justificado, mês fechado); folga e feriado vêm fechados
+  ("trabalhou? toque para marcar"). "Repetir os horários do primeiro dia nos
+  outros" serve a quem não tem escala. Vai tudo num pedido só, na mesma
+  transação: um dia com problema, nada entra, e a frase começa pelo dia
+  ("06/10: já existe batida às 07:00…").
+- Servidor: `criar_ajuste_do_dia` limita por DIA (6 horários) e no máximo 31
+  dias (`MAX_DIAS_DE_AJUSTE`); `/app/api/tablet/dia` aceita `ate` e devolve
+  `dias` (cada um com `competencia_fechada`).
+- Efeito na tela, de propósito: o ✏️ passa a aparecer também nos dias de
+  descanso e feriados passados (o 🗓️ já aparecia).
+- **A pergunta do dono — "o horário padrão vai funcionar quando eu
+  configurar?":** sim. Com escala na pessoa (Pessoas › Trocar escala) ou a
+  escala padrão (Configuração › Jornada e licenças), o ajuste abre com os
+  horários dela marcados; o ensaio de hoje, com escala 7–11/12–17 e sexta até
+  16h, trouxe exatamente isso. Sem escala, as linhas vêm em branco.
 
 ## 10/10/2026 (noite, segunda) — Fora da obra, nem entra na batida; e sair dela sem PIN
 

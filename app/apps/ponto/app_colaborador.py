@@ -508,9 +508,18 @@ def app_api_tablet_dia():
         dia = _data(d.get("data"), "data")
         if dia > horario.hoje():
             raise ErroDeValidacao("esse dia ainda não chegou", campo="data")
-        x = espelho.montar(conn, int(pessoa["id"]), dia, dia)["dias"][0]
-        fechada = competencias.esta_fechada(conn, dia)
-    return _ok(dia=x, competencia_fechada=fechada)
+        # Vários dias de uma vez (12/10/2026: "corrigir o ponto do dia 5 ao dia 9"):
+        # `ate` é o último dia da faixa, no máximo 31 dias e nunca depois de hoje.
+        ate = _data(d.get("ate"), "ate") if d.get("ate") else dia
+        if ate < dia:
+            raise ErroDeValidacao("o último dia é antes do primeiro", campo="ate")
+        ate = min(ate, horario.hoje())
+        if (ate - dia).days + 1 > ocorrencias.MAX_DIAS_DE_AJUSTE:
+            raise ErroDeValidacao(f"no máximo {ocorrencias.MAX_DIAS_DE_AJUSTE} dias de uma vez", campo="ate")
+        dias = espelho.montar(conn, int(pessoa["id"]), dia, ate)["dias"]
+        for x in dias:
+            x["competencia_fechada"] = competencias.esta_fechada(conn, dt.date.fromisoformat(x["data"]))
+    return _ok(dia=dias[0], dias=dias, competencia_fechada=dias[0]["competencia_fechada"])
 
 
 @bp.route("/app/api/tablet/ajuste-do-dia", methods=["POST"])

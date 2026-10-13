@@ -52,6 +52,7 @@ STATUS_DA_ETAPA = {SUPERVISOR: "AGUARDANDO_SUPERVISOR", DP: "AGUARDANDO_DP"}
 SAUDE = ("ATESTADO", "AFASTAMENTO")
 # O que o próprio colaborador pode pedir pelo celular. Férias e abono nascem no DP.
 PEDIDOS_DO_APP = ("ATESTADO", "AJUSTE_BATIDA", "COMPENSACAO", "FOLGA_BANCO", "LICENCA")
+MAX_DIAS_DE_AJUSTE = 31    # dias diferentes num pedido de ajuste só
 RECUSA_PEDIDO_NO_CELULAR = ("atestado, licença, ajuste e compensação são entregues no ponto da obra "
                             "ou com o administrativo da obra")
 # Onde o pedido nasce fora do ERP: o próprio celular (APP), o ponto da obra com a
@@ -136,12 +137,28 @@ def criar_ajuste_do_dia(conn: Connection, quem: Quem, dados: dict, *, origem: st
     horarios = dados.get("horarios") or []
     if not isinstance(horarios, list) or not horarios:
         raise ErroDeValidacao("marque ao menos um horário que faltou", campo="horarios")
-    if len(horarios) > ajustes.MAX_SEM_ESCALA:
-        raise ErroDeValidacao("horários demais num pedido só", campo="horarios")
+    # Vários dias de uma vez (12/10/2026: "corrigir o ponto do dia 5 ao dia 9"): o
+    # limite é por DIA de trabalho, e o pedido inteiro cabe num mês.
+    por_dia: dict[str, int] = {}
+    for h in horarios:
+        chave = str(h)[:10]
+        por_dia[chave] = por_dia.get(chave, 0) + 1
+    if len(por_dia) > MAX_DIAS_DE_AJUSTE:
+        raise ErroDeValidacao(f"no máximo {MAX_DIAS_DE_AJUSTE} dias num pedido só", campo="horarios")
+    if max(por_dia.values()) > ajustes.MAX_SEM_ESCALA:
+        raise ErroDeValidacao("horários demais num dia só", campo="horarios")
+    varios_dias = len(por_dia) > 1
     criados = []
     for h in sorted(str(x) for x in horarios):
-        criados.append(criar(conn, quem, {**dados, "tipo": "AJUSTE_BATIDA", "horario": h,
-                                          "data_inicio": str(h)[:10]}, origem=origem))
+        try:
+            criados.append(criar(conn, quem, {**dados, "tipo": "AJUSTE_BATIDA", "horario": h,
+                                              "data_inicio": str(h)[:10]}, origem=origem))
+        except ErroDeValidacao as e:
+            if not varios_dias:
+                raise
+            # Em vários dias, a frase diz DE QUAL dia — e nada entra (mesma transação).
+            dia = f"{h[8:10]}/{h[5:7]}"
+            raise ErroDeValidacao(f"{dia}: {e.mensagem}", **e.detalhes) from e
     return criados
 
 

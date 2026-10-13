@@ -456,11 +456,15 @@ def test_banco_de_horas_exige_acordo_e_soma_extra_e_folga(app, mundo):
 # ---------------------------------------------------------------------------
 def test_alertas_de_falta_e_resolucao_sozinha(app, mundo):
     from app.apps.ponto import db
-    from app.apps.ponto.core import alertas
+    from app.apps.ponto.core import alertas, feriados
     ontem = dt.date.today() - dt.timedelta(days=1)
     alvo = ontem
-    while alvo.weekday() > 4:
-        alvo -= dt.timedelta(days=1)
+    # O último dia útil que não é feriado: feriado não dá falta (o teste quebrava
+    # no dia seguinte a um feriado em dia de semana — achado em 13/10/2026).
+    with db.conexao() as conn:
+        cal = feriados.Calendario(conn, ontem - dt.timedelta(days=10), ontem)
+        while alvo.weekday() > 4 or cal.feriado(alvo, mundo["obra_a"]):
+            alvo -= dt.timedelta(days=1)
     with db.conexao() as conn:
         r = alertas.gerar(conn, ate=ontem)
     assert r["alertas"].get("FALTA", 0) >= 1

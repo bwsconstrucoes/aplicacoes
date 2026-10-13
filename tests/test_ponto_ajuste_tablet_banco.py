@@ -73,3 +73,47 @@ def test_ajuste_no_ponto_da_obra_abre_o_dia_e_pede_varios_horarios(app, mundo, b
     # sem identificação válida, nada
     assert tab.post("/ponto/app/api/tablet/dia", json={"bilhete": "x", "data": seg.isoformat()},
                     headers=h).status_code in (400, 401, 403)
+
+
+def test_ajuste_de_varios_dias_num_pedido_so_e_no_feriado(app, mundo, banco, monkeypatch):
+    """12/10/2026: "corrigir o ponto do dia 5 ao dia 9 — não tem como eu fazer isso";
+    e "é para permitir a batida num feriado, porque a pessoa pode trabalhar"."""
+    from tests.test_ponto_gestao_banco import _entrar_no_app
+    seg = _segunda_passada()
+    ter, qua, qui = dia_util(seg, 1), dia_util(seg, 2), dia_util(seg, 3)
+    with banco.connect() as conn:                       # quinta: feriado da obra, só para o teste
+        conn.execute(text("INSERT INTO ponto.feriados (data, nome, abrangencia) VALUES (:d, 'Feriado de teste', "
+                          "'NACIONAL') ON CONFLICT DO NOTHING"), {"d": qui})
+        conn.commit()
+    cel = _entrar_no_app(app, CPF_JOAO, monkeypatch, excecao=True)
+    # segunda a quarta sem nada batido: entrada e saída de cada dia, num pedido só
+    horarios = [f"{d}T{h}:00" for d in (seg, ter, qua) for h in ("07:00", "17:00")]
+    r = cel.post("/ponto/app/api/pedidos/ajuste-do-dia",
+                 json={"horarios": horarios, "motivo": "CELULAR", "descricao": "celular quebrou", "obra": "PG-A"})
+    assert r.status_code == 201, r.get_json()
+    assert r.get_json()["quantidade"] == 6
+    # um dia com problema: nada entra, e a frase diz qual dia
+    ruim = cel.post("/ponto/app/api/pedidos/ajuste-do-dia", json={
+        "horarios": [f"{seg}T12:00:00", f"{ter}T12:00:00", f"{ter}T07:10:00"], "motivo": "ESQUECI", "obra": "PG-A"})
+    assert ruim.status_code == 400 and ruim.get_json()["erro"].startswith(f"{ter:%d/%m}:")
+    with banco.connect() as conn:
+        assert conn.execute(text("SELECT count(*) FROM ponto.ocorrencias WHERE tipo = 'AJUSTE_BATIDA'")).scalar() == 6
+    # o feriado: dia sem horário previsto, mas quem trabalhou pede o ajuste
+    mes = cel.get(f"/ponto/app/api/mes?competencia={qui:%Y-%m}").get_json()
+    dia_qui = next(d for d in mes["dias"] if d["data"] == qui.isoformat())
+    assert dia_qui["feriado"] and dia_qui["previstas"] == [] and dia_qui["situacao"] == "DESCANSO"
+    f = cel.post("/ponto/app/api/pedidos/ajuste-do-dia", json={
+        "horarios": [f"{qui}T08:00:00", f"{qui}T12:00:00"], "motivo": "ESQUECI", "descricao": "trabalhei no feriado",
+        "obra": "PG-A"})
+    assert f.status_code == 201, f.get_json()
+
+    # no ponto da obra: a faixa volta um dia por vez
+    tab, h = _tablet_da_obra(app, mundo, "tablet-varios-dias-0123456789ab")
+    b = tab.post("/ponto/app/api/tablet/identificar", json={"cpf": CPF_JOAO, "para_pedido": True},
+                 headers=h).get_json()["bilhete"]
+    faixa = tab.post("/ponto/app/api/tablet/dia", json={"bilhete": b, "data": seg.isoformat(), "ate": qui.isoformat()},
+                     headers=h).get_json()
+    assert [x["data"] for x in faixa["dias"]] == [d.isoformat() for d in (seg, ter, qua, qui)]
+    assert all(x["competencia_fechada"] in (True, False) for x in faixa["dias"])
+    assert tab.post("/ponto/app/api/tablet/dia", json={"bilhete": b, "data": qua.isoformat(), "ate": seg.isoformat()},
+                    headers=h).status_code == 400

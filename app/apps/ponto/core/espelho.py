@@ -144,6 +144,11 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
         # O que a escala espera e o que falta — é isto que o "Meu mês" mostra
         # no "corrigir este dia", em vez de um formulário em branco (ajustes.py).
         previstas = ajustes.marcas_previstas(escala.periodos(dia)) if escala is not None else []
+        if nome_feriado:
+            # Feriado não espera batida (12/10/2026): sem isto, o "corrigir" do feriado
+            # vinha com os horários da escala marcados como "faltou", e o ajuste de
+            # vários dias pedia o feriado inteiro. Quem trabalhou digita os horários.
+            previstas = []
         if so_duas:
             previstas = ajustes.so_entrada_e_saida(previstas)
         faltando = []
