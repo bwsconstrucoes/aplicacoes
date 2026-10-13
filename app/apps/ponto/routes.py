@@ -25,10 +25,27 @@ bp = Blueprint("ponto", __name__, url_prefix="/ponto", template_folder="template
 bp.before_request(auth.exigir_credencial)
 
 
+@bp.record_once
+def _ligar_relogio_das_rondas(_estado):
+    """O relógio das rondas surpresa nasce com o serviço (core/rondas.py): de
+    madrugada ninguém usa o sistema para acordá-lo. A linha separada só fala com
+    o banco segundos depois — sem DATABASE_URL, nem liga."""
+    try:
+        from .core import rondas
+        rondas.garantir_relogio()
+    except Exception:  # noqa: BLE001 — o relógio nunca impede o serviço de subir
+        logger.warning("Ponto: o relógio das rondas não ligou", exc_info=True)
+
+
 @bp.before_request
 def _rotina_do_dia():
     """A primeira requisição do ponto depois das 6h dispara a rotina do dia
     (alertas + resumo por WhatsApp) numa linha separada — ver core/rotina.py."""
+    try:
+        from .core import rondas
+        rondas.garantir_relogio()
+    except Exception:  # noqa: BLE001
+        logger.warning("Ponto: o relógio das rondas não ligou", exc_info=True)
     try:
         from .core import rotina
         rotina.disparar_se_preciso()

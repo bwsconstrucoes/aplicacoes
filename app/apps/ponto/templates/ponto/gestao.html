@@ -15,7 +15,7 @@
   "ponto_hoje": "Hoje", "ponto_espelho": "Espelho", "ponto_pendencias": "Validações",
   "ponto_mosaico": "Mosaico", "ponto_pessoas": "Pessoas", "ponto_banco": "Banco de horas", "ponto_alertas": "Alertas",
   "ponto_config": "Configuração"}.get(aba_ponto, "Ponto") }} — ERP BWS{% endblock %}
-{% block classe_corpo %}{% if aba_ponto in ("ponto_pendencias", "ponto_mosaico", "ponto_banco", "ponto_config") %}sem-filtros{% endif %}{% endblock %}
+{% block classe_corpo %}{% if aba_ponto in ("ponto_pendencias", "ponto_mosaico", "ponto_banco", "ponto_config", "ponto_rondas") %}sem-filtros{% endif %}{% endblock %}
 
 {# =========================================================================
    BARRA DA ESQUERDA (filtros)
@@ -465,6 +465,25 @@
   {% endif %}
   <div id="a-enviado"></div>
 </div>
+
+{% elif aba_ponto == "ponto_rondas" %}
+{# ----------------------------------------------------------------- RONDAS #}
+<h2>Rondas dos vigias <small id="r-sub"></small></h2>
+<div id="mensagem"></div>
+<div class="cartao">
+  <div class="cartao-dica" style="margin-top:0">A ronda surpresa do vigia noturno: na entrada dele, o sistema sorteia
+    as rondas do turno; na hora de cada uma, manda um WhatsApp com o link, e ele tem poucos minutos para tirar a
+    foto e mandar a localização. Ronda perdida avisa na hora os telefones do resumo diário. Quem é vigia se marca em
+    Pessoas › Acesso no aplicativo (ou na janela do aparelho dele). A ronda não é batida de ponto: não entra na conta
+    das horas.</div>
+  <div class="barra-acoes" style="align-items:flex-end">
+    <div class="campo" style="max-width:220px"><label for="r-dia">Noite que começou em</label>
+      <input type="date" id="r-dia"></div>
+    <button class="btn secundario" type="button" id="r-ant">‹ Noite anterior</button>
+    <button class="btn secundario" type="button" id="r-prox">Próxima ›</button>
+  </div>
+</div>
+<div class="cartao"><div class="tabela-rolagem"><div id="r-lista">carregando…</div></div></div>
 
 {% elif aba_ponto == "ponto_config" %}
 {# ----------------------------------------------------------- CONFIGURAÇÃO #}
@@ -945,6 +964,9 @@ async function aprovarAparelho(a, depois) {
   // Os pedidos pelo celular são da PESSOA responsável: a mesma marcação de
   // Pessoas › Acesso no aplicativo (10/10/2026: "uma coisa refletisse na outra").
   const pedeAntes = a.dono_pede_no_celular ? "1" : "0";
+  // O vigia noturno (13/10/2026: "na tela de liberação do aparelho, informar que
+  // aquela pessoa se trata de um vigia, e que vai ter ronda"). Também é da PESSOA.
+  const vigiaAntes = a.dono_faz_ronda ? "1" : "0";
   let valores = {perfil: jaAprovado ? a.perfil : (a.dono ? "INDIVIDUAL" : "COMPARTILHADO"),
                  cpf: a.dono && a.dono.cpf ? documento(a.dono.cpf) : "",
                  autorizados: grupoAtual.join(", "),
@@ -952,13 +974,16 @@ async function aprovarAparelho(a, depois) {
                  // "Não expira" (13/10/2026): aparelho já aprovado sem data é o que não vence
                  validade: jaAprovado && !a.valido_ate && a.perfil !== "LISTA" ? "NAO_EXPIRA"
                          : a.valido_ate && a.valido_ate >= hojeISO() ? "DATA" : "PADRAO",
-                 obras: jaAprovado && a.obras ? a.obras : "", descricao: a.descricao || "", pede: pedeAntes};
+                 obras: jaAprovado && a.obras ? a.obras : "", descricao: a.descricao || "", pede: pedeAntes, vigia: vigiaAntes};
   let erro = "";
   for (;;) {
     const r = await perguntar({
       titulo: jaAprovado ? (a.status === "BLOQUEADO" ? "Reativar aparelho" : "Alterar aparelho") : "Aprovar aparelho",
       aviso: `${erro ? `<div class="aviso erro" style="margin:0 0 8px">${escapar(erro)}</div>` : ""}
         Aparelho: <b>${escapar(a.descricao || "sem nome")}</b> — código <b class="dados">${escapar(a.codigo || "?")}</b>.
+        ${a.dono_faz_ronda ? `<div class="aviso ambar" style="margin:6px 0">🔦 <b>${escapar(a.dono ? a.dono.nome : "O responsável")} é vigia noturno</b>:
+          em cada turno recebe 4 rondas surpresa por WhatsApp, e registra cada uma (foto e localização) neste celular.
+          Libere o celular que ele vai levar na ronda.</div>` : ""}
         ${jaAprovado ? "" : `<b>Confira o código na tela do aparelho antes de aprovar</b>: “sem nome” pode ser o celular de
         qualquer pessoa que abriu o endereço, e aprovado como ponto da obra ele bateria por todo mundo.`}
         <br><b>Celular pessoal:</b> só o responsável bate nele. <b>Ponto da obra:</b> todos da obra batem; só o
@@ -987,6 +1012,9 @@ async function aprovarAparelho(a, depois) {
                                        {valor: "1", rotulo: "Sim — atestado, licença e ajuste pelo celular"}],
          dica: "A mesma marcação do cadastro da pessoa (Pessoas › Acesso no aplicativo): mudar aqui muda lá. "
              + "No ponto da obra, o responsável já pede o próprio; no ponto de equipe, vale também para pedir pelo grupo."},
+        {nome: "vigia", rotulo: "O responsável é vigia noturno (ronda surpresa)?", tipo: "select", largura: 3,
+         valor: valores.vigia, opcoes: [{valor: "0", rotulo: "Não"}, {valor: "1", rotulo: "Sim — 4 rondas surpresa por WhatsApp em cada turno"}],
+         dica: "Também é do cadastro da pessoa: mudar aqui muda em Pessoas › Acesso no aplicativo."},
       ],
       textoOk: jaAprovado ? "Salvar" : "Aprovar aparelho",
     });
@@ -1002,7 +1030,8 @@ async function aprovarAparelho(a, depois) {
         valido_ate: r.validade === "NAO_EXPIRA" ? "NAO_EXPIRA" : r.validade === "DATA" ? r.valido_ate : null,
         obras: listaDeTexto(r.obras), descricao: r.descricao,
         // só quando mudou: trocar o responsável não leva a marcação do anterior para o novo
-        ...(r.pede !== pedeAntes ? {pede_no_celular: r.pede === "1"} : {})});
+        ...(r.pede !== pedeAntes ? {pede_no_celular: r.pede === "1"} : {}),
+        ...(r.vigia !== vigiaAntes ? {faz_ronda: r.vigia === "1"} : {})});
       aviso("mensagem", (jaAprovado ? "Aparelho alterado." : "Aparelho aprovado. Ele já pode bater ponto.")
         + (resp.substituidos ? " O celular que essa pessoa usava antes foi bloqueado: vale um celular por pessoa." : ""), "ok");
       if (depois) await depois();
@@ -1195,6 +1224,14 @@ async function carregarEspelho() {
   } catch (e) { semPessoa(); falhou(e); }
 }
 
+// As rondas surpresa do vigia no dia do espelho (13/10/2026): só aparecem — não
+// entram na conta. A hora da ronda agendada não aparece (é surpresa até sair).
+const ICONE_RONDA_ESP = {FEITA: "✅", ATRASADA: "⏱", PERDIDA: "❌", ENVIADA: "⏳", AGENDADA: "🕒", CANCELADA: "➖", NAO_ENVIADA: "⚠️"};
+function rondaNoEspelho(r) {
+  const onde = r.distancia_metros == null ? "" : r.dentro_da_cerca ? ", na obra" : `, a ${Math.round(r.distancia_metros)} m da obra`;
+  return `<span class="chip" title="${escapar(`${r.numero}ª ronda — ${r.rotulo}${r.hora ? `, saiu às ${r.hora}` : ""}${r.feita ? `, feita às ${r.feita}` : ""}${onde}`)}"
+    style="${r.status === "PERDIDA" ? "color:var(--vermelho); font-weight:700" : ""}">${ICONE_RONDA_ESP[r.status] || ""} ${escapar(r.feita || r.hora || r.rotulo)}</span>`;
+}
 function desenharEspelho() {
   const p = ESP.pessoa, r = ESP.resumo;
   els("e-titulo").childNodes[0].textContent = `${p.nome} `;
@@ -1242,7 +1279,8 @@ function desenharEspelho() {
       <td class="dados"><b>${ddmm(d.data)}</b><small>${escapar(d.dia_semana)}</small></td>
       <td>${d.escala ? escapar(d.escala) : `<span class="suave">—</span>`}
         ${d.feriado ? `<small>Feriado: ${escapar(d.feriado)}</small>` : ""}</td>
-      <td>${d.batidas.length ? d.batidas.map(b => chipBatida(b, true)).join("") : `<span class="suave">—</span>`}</td>
+      <td>${d.batidas.length ? d.batidas.map(b => chipBatida(b, true)).join("") : `<span class="suave">—</span>`}
+        ${(d.rondas || []).length ? `<div style="margin-top:4px"><small class="suave">🔦 rondas:</small> ${d.rondas.map(rondaNoEspelho).join(" ")}</div>` : ""}</td>
       <td class="dados">${hmCelula(d.previsto)}</td>
       <td class="dados">${hmCelula(d.trabalhado)}</td>
       <td class="dados" ${d.extra ? `style="color:var(--verde); font-weight:700"` : ""}>${hmCelula(d.extra)}</td>
@@ -2197,13 +2235,14 @@ async function abrirPessoa(id) {
         <div class="kpi estatico"><div class="kpi-rotulo">Jornada</div>
           <div class="kpi-valor" style="font-size:16px">${escapar(rotuloJornada(p.tipo_jornada))}</div>
           <div class="kpi-sub">${p.ativo_no_ponto ? "bate ponto" : "não bate ponto"}</div></div>
-        <div class="kpi estatico ${p.bate_no_celular || p.pede_no_celular || p.administrativo_obra || p.responsavel_ponto_obra ? "ambar" : ""}"><div class="kpi-rotulo">Acesso no aplicativo</div>
-          <div class="kpi-valor" style="font-size:16px">${p.administrativo_obra ? "Administrativo de obra"
+        <div class="kpi estatico ${p.bate_no_celular || p.pede_no_celular || p.administrativo_obra || p.responsavel_ponto_obra || p.faz_ronda ? "ambar" : ""}"><div class="kpi-rotulo">Acesso no aplicativo</div>
+          <div class="kpi-valor" style="font-size:16px">${p.faz_ronda ? "🔦 Vigia noturno" : p.administrativo_obra ? "Administrativo de obra"
             : p.bate_no_celular ? "Obra e celular próprio" : "Aparelho da obra"}</div>
           <div class="kpi-sub">${[p.bate_no_celular ? "bate no celular" : "",
             p.pede_no_celular || p.administrativo_obra ? "faz pedidos pelo celular"
               : p.responsavel_ponto_obra ? "faz pedidos pelo celular (responsável por ponto da obra)" : "",
-            p.administrativo_obra ? "consulta a obra em que está" : ""].filter(Boolean).join(" · ") || "o padrão"}</div></div>
+            p.administrativo_obra ? "consulta a obra em que está" : "",
+            p.faz_ronda ? "ronda surpresa por WhatsApp" : ""].filter(Boolean).join(" · ") || "o padrão"}</div></div>
         <div class="kpi estatico roxo"><div class="kpi-rotulo">Banco de horas</div>
           <div class="kpi-valor" style="font-size:16px">${escapar(rotuloRegime(p.regime_banco))}</div>
           <div class="kpi-sub">${p.banco_inicio ? `desde ${dataBR(p.banco_inicio)}` : ""}
@@ -2409,13 +2448,16 @@ async function formaDeBater(p) {
        largura: 3, opcoes: simNao("Faz pedidos para si pelo celular (exceção)", "Não — entrega no ponto da obra (padrão)")},
       {nome: "adm", rotulo: "Administrativo de obra", tipo: "select", valor: p.administrativo_obra ? "1" : "0",
        largura: 3, opcoes: simNao("Sim — consulta e pede pelas pessoas da obra em que está", "Não (padrão)")},
+      {nome: "vigia", rotulo: "Vigia noturno — ronda surpresa", tipo: "select", valor: p.faz_ronda ? "1" : "0",
+       largura: 3, opcoes: simNao("Sim — 4 rondas surpresa por WhatsApp em cada turno", "Não (padrão)"),
+       dica: "Na entrada dele (à tarde ou à noite), o sistema sorteia as rondas do turno; sem entrada, não há ronda. A saída cancela as que faltam."},
     ],
     textoOk: "Salvar",
   });
   if (!r) return;
   try {
     await postar(`/erp/api/ponto/pessoas/${p.id}/forma-de-bater`, {bate_no_celular: r.forma === "1",
-      pede_no_celular: r.pede === "1", administrativo_obra: r.adm === "1"});
+      pede_no_celular: r.pede === "1", administrativo_obra: r.adm === "1", faz_ronda: r.vigia === "1"});
     await abrirPessoa(p.id);
     aviso("pe-msg", "Acesso no aplicativo salvo.", "ok");
     if (typeof carregarExcecoes === "function") carregarExcecoes();
@@ -2736,6 +2778,60 @@ if (els("a-gerar")) els("a-gerar").addEventListener("click", gerarAlertas);
 if (els("a-enviar")) els("a-enviar").addEventListener("click", enviarResumo);
 carregarAlertas();
 carregarResumo();
+
+{% elif aba_ponto == "ponto_rondas" %}
+// ============================================================== RONDAS
+// Pedido do dono, 13/10/2026: "vai existir uma tela própria para as rondas?" —
+// sim: uma noite por vez, um vigia por linha, com a entrada, a saída e cada ronda
+// (a hora em que saiu, se foi feita, a distância da obra e a foto).
+const ICONE_RONDA = {FEITA: "✅", ATRASADA: "⏱", PERDIDA: "❌", ENVIADA: "⏳", AGENDADA: "🕒", CANCELADA: "➖", NAO_ENVIADA: "⚠️"};
+function chipRonda(r, comFoto) {
+  const onde = r.distancia_metros == null ? "" : r.dentro_da_cerca ? " · na obra" : ` · a ${Math.round(r.distancia_metros)} m da obra`;
+  const dica = `${r.numero}ª ronda — ${r.rotulo}${r.hora ? `, saiu às ${r.hora}` : ""}${r.feita ? `, feita às ${r.feita}` : ""}${onde}${r.motivo ? ` (${r.motivo})` : ""}`;
+  const cor = r.status === "PERDIDA" ? "color:var(--vermelho); font-weight:700"
+            : (r.status === "FEITA" || r.status === "ATRASADA") && r.dentro_da_cerca === false ? "color:var(--laranja, #b45309); font-weight:700" : "";
+  const texto = `${ICONE_RONDA[r.status] || ""} ${r.feita || r.hora || r.rotulo}`;
+  return comFoto && r.foto_id
+    ? `<button class="chip" type="button" data-foto-ronda="${r.id}" title="${escapar(dica)}" style="${cor}">${escapar(texto)}</button>`
+    : `<span class="chip" title="${escapar(dica)}" style="${cor}">${escapar(texto)}</span>`;
+}
+let R_DIA = null;
+async function carregarRondas() {
+  const alvo = els("r-lista");
+  if (!R_DIA) R_DIA = new URLSearchParams(location.search).get("dia") || somarDias(hojeISO(), -1);
+  els("r-dia").value = R_DIA;
+  alvo.textContent = "carregando…";
+  let d;
+  try { d = await api(`/erp/api/ponto/rondas?dia=${encodeURIComponent(R_DIA)}`); }
+  catch (e) { alvo.innerHTML = `<div class="aviso erro">${escapar(e.message)}</div>`; return; }
+  if (!d.disponivel) { alvo.innerHTML = `<p class="suave">Aplique as atualizações do ponto (migração 011) em Configuração para ligar as rondas.</p>`; return; }
+  els("r-sub").textContent = `· noite de ${dataBR(d.dia)} · ${d.por_turno} rondas por turno, ${d.prazo_min} min para responder`;
+  if (!d.turnos.length) {
+    alvo.innerHTML = `<p class="suave">${d.vigias ? "Nenhum vigia bateu a entrada nesta noite — sem entrada, não há ronda." : "Ninguém está marcado como vigia: marque em Pessoas › Acesso no aplicativo."}</p>`;
+    return;
+  }
+  alvo.innerHTML = `<table><thead><tr><th>Vigia</th><th>Obra</th><th>Entrada</th><th>Saída</th><th>Rondas</th><th>Resultado</th></tr></thead><tbody>
+    ${d.turnos.map(t => `<tr>
+      <td><b>${escapar(t.nome)}</b></td>
+      <td>${escapar(t.obra || "—")}<small>${escapar(t.obra_nome || "")}</small></td>
+      <td class="dados">${escapar(t.entrada)}</td>
+      <td class="dados">${t.saida ? escapar(t.saida) : `<span class="suave">—</span>`}</td>
+      <td>${t.rondas.map(r => chipRonda(r, true)).join(" ")}</td>
+      <td>${t.perdidas ? `<span class="selo vermelho">${t.perdidas} perdida(s)</span>` : ""}
+          <span class="selo ${t.feitas === t.rondas.filter(r => r.status !== "CANCELADA").length ? "verde" : ""}">${t.feitas} de ${t.rondas.filter(r => r.status !== "CANCELADA").length} feitas</span></td>
+    </tr>`).join("")}</tbody></table>
+    <p class="cartao-dica">✅ feita · ⏱ feita com atraso · ❌ perdida · ⏳ esperando o vigia · 🕒 agendada · ⚠️ não saiu (sem telefone ou WhatsApp fora) ·
+      ➖ cancelada pela saída. Toque numa ronda feita para ver a foto.</p>`;
+  alvo.querySelectorAll("[data-foto-ronda]").forEach(b => b.addEventListener("click", () => verFotoDaRonda(+b.dataset.fotoRonda, b.title)));
+}
+function verFotoDaRonda(id, legenda) {
+  perguntar({titulo: "Foto da ronda", aviso: `${escapar(legenda)}<br><img src="/erp/api/ponto/rondas/${id}/foto" alt="foto da ronda"
+    style="max-width:100%; max-height:60vh; margin-top:8px; border-radius:8px">`, campos: [], textoOk: "Fechar"});
+}
+els("r-dia").addEventListener("change", ev => { R_DIA = ev.target.value; carregarRondas(); });
+els("r-ant").addEventListener("click", () => { R_DIA = somarDias(R_DIA, -1); carregarRondas(); });
+els("r-prox").addEventListener("click", () => { R_DIA = somarDias(R_DIA, 1); carregarRondas(); });
+carregarRondas();
 
 {% elif aba_ponto == "ponto_config" %}
 // ===========================================================================

@@ -594,6 +594,32 @@ def app_api_tablet_ajuste_do_dia():
     return _ok(pedidos=[{"id": o["id"]} for o in criados], quantidade=len(criados)), 201
 
 
+# ---------------------------------------------------------------------------
+# A ronda surpresa do vigia noturno (13/10/2026, core/rondas.py): o link do
+# WhatsApp abre o app; o vigia entra (CPF e PIN, se ainda não entrou), tira a
+# foto e manda a localização. Só a própria pessoa registra a ronda dela.
+# ---------------------------------------------------------------------------
+@bp.route("/app/api/ronda")
+@auth.exige_colaborador
+def app_api_ronda():
+    from .core import rondas
+    with db.conexao() as conn:
+        return _ok(ronda=rondas.da_vez(conn, request.args.get("token", ""), _eu()))
+
+
+@bp.route("/app/api/ronda", methods=["POST"])
+@auth.exige_colaborador
+def app_api_ronda_registrar():
+    from .core import rondas
+    d = _corpo()
+    with db.conexao() as conn:
+        r = rondas.registrar(conn, str(d.get("token") or ""), _eu(), latitude=d.get("latitude"),
+                             longitude=d.get("longitude"), precisao=d.get("precisao"),
+                             foto_base64=d.get("foto_base64") or "")
+    fotos.disparar_envio()
+    return _ok(**r), 201
+
+
 @bp.route("/app/api/licencas")
 @auth.exige_colaborador_ou_aparelho
 def app_api_licencas():

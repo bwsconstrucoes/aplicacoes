@@ -498,6 +498,11 @@ def registrar(conn: Connection, *, cpf, obra, origem: str = "PWA",
                     f=foto_id, id=linha["id"])
     if aparelho:
         dispositivos.marcar_uso(conn, aparelho["id"])
+    # O vigia noturno: a entrada sorteia as rondas surpresa do turno, a saída
+    # cancela as que faltam (core/rondas.py, 13/10/2026). Nunca derruba a batida.
+    from . import rondas
+    rondas.ao_bater(conn, pessoa, {"id": linha["id"], "timestamp_servidor": momento, "data_referencia": data_ref,
+                                   "obra_id": obra_ok["id"], "status": status})
 
     logger.info("Ponto: batida NSR %d — cpf %s, obra %s, %s em %s (%s)%s",
                 nsr, recusas.mascarar_cpf(cpf_ok), obra_ok["codigo"], origem_ok,

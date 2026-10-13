@@ -62,6 +62,7 @@ ABAS = [
     ("ponto_pessoas", "Pessoas", "erp.ponto_pagina_pessoas"),
     ("ponto_banco", "Banco de horas", "erp.ponto_pagina_banco"),
     ("ponto_alertas", "Alertas", "erp.ponto_pagina_alertas"),
+    ("ponto_rondas", "Rondas", "erp.ponto_pagina_rondas"),
     ("ponto_config", "Configuração", "erp.ponto_pagina_configuracao"),
 ]
 MODULO = {
@@ -246,6 +247,13 @@ def ponto_pagina_banco():
 @permissao("ver_ponto")
 def ponto_pagina_alertas():
     return _pagina("ponto_alertas")
+
+
+@bp.route("/erp/ponto/rondas")
+@login_obrigatorio
+@permissao("ver_ponto")
+def ponto_pagina_rondas():
+    return _pagina("ponto_rondas")
 
 
 @bp.route("/erp/ponto/configuracao")
@@ -769,6 +777,9 @@ def ponto_api_pessoa_forma_de_bater(colaborador_id: int):
         _exigir_pessoa(conn, quem, colaborador_id)
         if "bate_no_celular" in d:
             forma_de_bater.definir(conn, colaborador_id, bool(d.get("bate_no_celular")), quem.nome)
+        if "faz_ronda" in d:
+            from .core import rondas
+            rondas.definir_vigia(conn, colaborador_id, bool(d["faz_ronda"]))
         if "pede_no_celular" in d or "administrativo_obra" in d:
             papeis.definir(conn, colaborador_id,
                            pede_no_celular=(bool(d["pede_no_celular"]) if "pede_no_celular" in d else None),
@@ -965,6 +976,45 @@ def ponto_api_miniatura(marcacao_id: int):
         try:
             dados = fotos.miniatura(conn, m["foto_id"])
         except Exception:  # noqa: BLE001 — expurgada, Drive fora do ar
+            return jsonify({"ok": False, "erro": "foto não disponível"}), 404
+    return Response(dados, mimetype="image/jpeg", headers={"Cache-Control": "private, max-age=86400"})
+
+
+@bp.route("/erp/api/ponto/rondas")
+@login_obrigatorio
+@permissao("ver_ponto")
+@_api
+def ponto_api_rondas():
+    """Os turnos dos vigias que começaram no dia (a noite do dia para o dia
+    seguinte), com a entrada, a saída e as rondas surpresa — recortado pelas obras
+    de quem consulta."""
+    from .core import rondas
+    quem = _quem()
+    try:
+        dia = dt.date.fromisoformat(request.args.get("dia") or "")
+    except ValueError:
+        dia = horario.hoje() - dt.timedelta(days=1)
+    with db.conexao() as conn:
+        if not rondas.disponivel(conn):
+            return _ok(dia=dia.isoformat(), turnos=[], disponivel=False)
+        turnos = rondas.da_noite(conn, dia, quem.obras)
+        vigias = db.um(conn, "SELECT count(*) AS n FROM ponto.colaborador_config WHERE faz_ronda")["n"]
+    return _ok(dia=dia.isoformat(), turnos=turnos, disponivel=True, vigias=int(vigias),
+               prazo_min=rondas.PRAZO_MIN, por_turno=rondas.QUANTAS)
+
+
+@bp.route("/erp/api/ponto/rondas/<int:ronda_id>/foto")
+@login_obrigatorio
+@permissao("ver_ponto")
+def ponto_api_ronda_foto(ronda_id: int):
+    quem = _quem()
+    with db.conexao() as conn:
+        r = db.um(conn, "SELECT obra_id, foto_id FROM ponto.rondas WHERE id = :id", id=ronda_id)
+        if not r or not r["foto_id"] or not quem.alcanca_obra(r["obra_id"]):
+            return jsonify({"ok": False, "erro": "não encontrado"}), 404
+        try:
+            dados = fotos.miniatura(conn, r["foto_id"])
+        except Exception:  # noqa: BLE001 — Drive fora do ar
             return jsonify({"ok": False, "erro": "foto não disponível"}), 404
     return Response(dados, mimetype="image/jpeg", headers={"Cache-Control": "private, max-age=86400"})
 
@@ -1637,6 +1687,11 @@ def ponto_api_dispositivo_aprovar(dispositivo_id: int):
             papeis.definir(conn, colaborador_id, pede_no_celular=bool(d["pede_no_celular"]))
             logger.info("Ponto: pedidos pelo celular de %s = %s, pela tela do aparelho %s (por %s)",
                         colaborador_id, bool(d["pede_no_celular"]), dispositivo_id, quem.nome)
+        if "faz_ronda" in d:
+            # O vigia noturno (ronda surpresa, 13/10/2026): também é da PESSOA.
+            from .core import rondas
+            _exigir_pessoa(conn, quem, colaborador_id)
+            rondas.definir_vigia(conn, colaborador_id, bool(d["faz_ronda"]))
     return _ok(dispositivo=dispositivos.para_json(a), substituidos=len(a.get("substituidos") or []))
 
 
@@ -1652,6 +1707,7 @@ def ponto_api_dispositivo(dispositivo_id: int):
                             for p in dispositivos.autorizados_detalhados(conn, dispositivo_id)]
         dono = cadastros.colaborador_por_id(conn, a["dono"]["id"]) if a.get("dono") else None
         a["dono_pede_no_celular"] = bool(dono and dono.get("pede_no_celular"))
+        a["dono_faz_ronda"] = bool(dono and dono.get("faz_ronda"))
     return _ok(dispositivo=a)
 
 

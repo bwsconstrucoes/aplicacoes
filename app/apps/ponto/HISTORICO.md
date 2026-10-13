@@ -41,6 +41,14 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1t. **NO RAMO, ainda não publicado (13/10/2026, noite)**: a RONDA SURPRESA dos
+   vigias noturnos, com a **migração 011** — apertar "Aplicar atualizações do
+   ponto" ao publicar. Sem ela, nada quebra: a marcação de vigia recusa ("aplique
+   a 011") e a tela Rondas pede a atualização. Depois de publicar: marcar os
+   vigias (Pessoas › Acesso no aplicativo), conferir em ERP › Mensagens que
+   "Ronda surpresa do vigia" e "Aviso de ronda perdida" estão em "Só WhatsApp" e
+   a chave geral do WhatsApp ligada, e ter telefones em Configuração › Resumo
+   diário (é para eles que vai o aviso de ronda perdida).
 1s. **PUBLICADO em 13/10/2026** (com o "pode" do dono, `main` em `a137aaf`, sem migração) — junto com a 1r: a batida de
    outra pessoa no ponto da obra ia para o nome de quem estava logado (CORRIGIDO;
    ver a seção de 13/10 — as batidas erradas que já existem na produção precisam
@@ -149,6 +157,55 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 13/10/2026 (noite) — A ronda surpresa dos vigias noturnos
+
+O dono: *"os vigias batem a entrada e a saída; nada garante que fiquem na obra o
+tempo todo (…) vamos fazer a ronda surpresa pelo WhatsApp: entrada, saída e quatro
+rondas surpresa. Só para os vigias noturnos, vinculado ao cadastro. Na tela de
+liberação do aparelho, informar que a pessoa é vigia e que vai ter ronda. O vigia
+começa por volta das 17–18 h e sai no outro dia de manhã, folga 36 h — não pode
+receber ronda num dia que não esteja trabalhando; se não bater a entrada (pode
+faltar), também não tem ronda."* E: *"vai ter uma tela própria para as rondas, ou
+dentro do espelho?"* — as duas.
+
+- **A ronda não é batida de ponto** (`ponto.rondas`, migração 011): não tem NSR
+  nem entra na conta das horas; é registro de presença com foto, localização e
+  hora. Motivo: a batida é da jornada (Portaria 671) — a ronda das 2 h viraria
+  "saída" e desarrumaria o dia.
+- **Quem é vigia:** marcação da PESSOA (`colaborador_config.faz_ronda`), em
+  Pessoas › Acesso no aplicativo e, refletindo a mesma, na janela do aparelho —
+  que também AVISA, em destaque, quando o responsável é vigia.
+- **Quando nasce:** na ENTRADA do vigia (`rondas.ao_bater`, chamada no fim de
+  `marcacoes.registrar`): a primeira batida dele entre 15 h e 23 h, sem turno
+  aberto. Sem entrada — folga ou falta — nada é agendado. Batida de manhã sem
+  turno aberto não abre turno (era a saída de um turno esquecido).
+- **Os horários:** 4 por turno, sorteados — o turno (12 h, ou o da escala) sem a
+  primeira e a última hora é dividido em 4 partes, e cada ronda cai no miolo
+  sorteado da sua parte (espaçadas, imprevisíveis).
+- **Na hora:** WhatsApp ao vigia com o link (`/ponto/app?ronda=…`); ele entra
+  com CPF e PIN (se ainda não entrou), tem **10 min**, tira a foto e manda a
+  localização — sem as duas, não vale. Feita até 30 min depois do prazo fica
+  "atrasada"; sem nada, **perdida**, e sai na hora um WhatsApp para os telefones
+  do resumo diário. A saída (passada a primeira meia hora) cancela as que
+  faltam; turno sem saída se fecha em 16 h.
+- **O relógio:** o serviço não tem agendador e de madrugada ninguém o acorda.
+  Uma linha separada (`rondas.garantir_relogio`) roda a cada 30 s; nasce com o
+  serviço (`bp.record_once`) e é conferida a cada requisição do ponto. Reiniciou
+  o serviço, ela volta; ronda que passou meia hora da hora com o serviço fora vira
+  "não enviada" (não se manda surpresa atrasada). Não liga nos testes nem sem
+  `DATABASE_URL`. Conferido no ensaio: com o servidor de pé, ela agiu sozinha.
+- **Onde se vê:** aba nova **ERP › Ponto › Rondas** (uma noite por vez, um vigia
+  por linha: entrada, saída, cada ronda com hora, resultado, distância da obra e a
+  foto); no espelho, as rondas do dia embaixo das batidas; no "Meu ponto" do
+  vigia, as que já saíram (a próxima continua surpresa — a hora da agendada não
+  aparece para ninguém fora da tela Rondas).
+- **WhatsApp:** dois tipos novos na mensageria (`ponto.ronda`,
+  `ponto.ronda_perdida`), "Só WhatsApp" — os primeiros que saem de madrugada de
+  propósito; poucos por noite, fora da fila com ritmo do QR.
+- **Fica de fora, para decidir:** a conferência do rosto (AWS) na foto da ronda
+  (custo por foto); placas de QR Code nos pontos da obra (provar que andou pela
+  obra); o número de rondas e o prazo ajustáveis na tela (hoje fixos: 4 e 10 min).
 
 ## 13/10/2026 — Sete achados do teste do dono
 

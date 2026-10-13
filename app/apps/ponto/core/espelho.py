@@ -91,6 +91,10 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
 
     vigencias = escalas.EscalasDaPessoa(conn, colaborador_id)
     calendario = feriados.Calendario(conn, inicio, fim)
+    # As rondas surpresa do vigia noturno (13/10/2026): ficam no dia da entrada do
+    # turno. Não entram na conta da jornada — só aparecem.
+    from . import rondas as _rondas
+    rondas_do_periodo = _rondas.da_pessoa(conn, colaborador_id, inicio, fim)
     admissao, demissao = pessoa.get("admissao"), pessoa.get("demissao")
 
     dias, anterior_ultima = [], None
@@ -168,6 +172,7 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
             "dia_semana": escalas.DIAS[dia.weekday()],
             "escala": vigencia["nome"] if vigencia else None,
             "feriado": nome_feriado,
+            "rondas": rondas_do_periodo.get(dia.isoformat(), []),
             "previsto": r.previsto, "trabalhado": r.trabalhado, "extra": r.extra,
             "debito": r.debito, "atraso": r.atraso, "saida_antecipada": r.saida_antecipada,
             "intervalo": r.intervalo, "noturno": r.noturno_reduzido,

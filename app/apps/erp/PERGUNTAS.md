@@ -298,6 +298,22 @@ dizer "tem batida"; presença, horas e faltas são regra da fase 3.
   mesmo lugar não conta)
 - Algum tablet teve fila rápida demais (5 ou mais pessoas com menos de 10 s entre
   uma e outra)? 🔒 ⚠️ (é convite a abrir o mosaico, não prova de fraude)
+
+**Ronda surpresa dos vigias noturnos (migração 011 do ponto, 13/10/2026):**
+
+- O vigia Fulano fez as rondas ontem à noite? Quantas de quantas? 🔒 ⚠️ ("ontem à
+  noite" = o turno que COMEÇOU ontem, à tarde ou à noite, e terminou hoje de manhã;
+  a ronda fica no dia da entrada)
+- Quem perdeu ronda esta semana? Em que obra, a que horas? 🔒
+- A ronda do Fulano foi feita na obra, ou longe? A quantos metros? 🔒 ⚠️ ("na
+  obra" = dentro da cerca da obra do turno; a distância é a do GPS do celular)
+- Quem está marcado como vigia (faz ronda)? 🔒
+- Quantas rondas não saíram por falta de telefone ou WhatsApp fora? 🔒
+- Por que o vigia não recebeu ronda na noite X? (sem entrada batida não há ronda —
+  folga, falta, ou entrada fora da faixa das 15h às 23h)
+- **Ainda não responde:** "o vigia ficou na obra a noite toda?" — a ronda prova
+  presença em 4 momentos sorteados, não o tempo todo. O sistema deve dizer isso, e
+  não "sim".
 - Algum tablet recebeu muitos CPFs que não são de ninguém? 🔒
 - Quem tentou bater ponto fora da área da obra esta semana? A quantos metros?
   🔒 ⚠️ ("fora da área" = fora da cerca de TODAS as obras ativas com

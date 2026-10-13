@@ -36,7 +36,8 @@ _SQL_COLABORADOR = """
            o.codigo AS obra_codigo, o.nome AS obra_nome, {funcao} AS funcao,
            {no_registro} AS no_registro, {fase} AS fase_registro,
            {bate_no_celular} AS bate_no_celular,
-           {pede_no_celular} AS pede_no_celular, {administrativo_obra} AS administrativo_obra
+           {pede_no_celular} AS pede_no_celular, {administrativo_obra} AS administrativo_obra,
+           {faz_ronda} AS faz_ronda
       FROM public.colaboradores c
       {join}
       LEFT JOIN ponto.colaborador_config pc ON pc.colaborador_id = c.id
@@ -67,7 +68,7 @@ def _sql_colaborador(conn: Connection) -> str:
             else "NULL::boolean")
     # Os papéis no aplicativo (migração 008, core/papeis.py): sem a coluna, FALSO.
     papeis = {c: (f"COALESCE(pc.{c}, FALSE)" if db.tem_coluna(conn, "colaborador_config", c) else "FALSE")
-              for c in ("pede_no_celular", "administrativo_obra")}
+              for c in ("pede_no_celular", "administrativo_obra", "faz_ronda")}
     return _SQL_COLABORADOR.format(**trechos, bate_no_celular=bate, **papeis)
 
 
@@ -336,6 +337,7 @@ def colaborador_para_json(c: dict) -> dict:
         "bate_no_celular": c.get("bate_no_celular"),
         "pede_no_celular": bool(c.get("pede_no_celular")),
         "administrativo_obra": bool(c.get("administrativo_obra")),
+        "faz_ronda": bool(c.get("faz_ronda")),
         "regime_banco": c.get("regime_banco", "SEM_BANCO"),
         "banco_inicio": c["banco_inicio"].isoformat() if c.get("banco_inicio") else None,
     }

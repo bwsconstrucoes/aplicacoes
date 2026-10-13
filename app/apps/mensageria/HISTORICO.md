@@ -293,6 +293,12 @@ Isso se faz **em fases, cada uma segura sozinha, sem mexer em pasta**:
 
 ## Decisões registradas
 
+- **13/10/2026 — dois tipos novos no catálogo, do ponto (chat do Ponto):**
+  `ponto.ronda` ("Ronda surpresa do vigia") e `ponto.ronda_perdida` ("Aviso de
+  ronda perdida"), os dois nascendo "Só WhatsApp". São os primeiros que saem de
+  MADRUGADA de propósito — a ronda surpresa do vigia noturno; poucas por noite,
+  fora da fila com ritmo do QR. Só a linha do catálogo foi mexida aqui.
+
 - **05/10/2026 — A área ganhou memória antes de ganhar código.** Mesma regra
   da emissão de NFS-e (21/09/2026): área sem `README.md`/`HISTORICO.md` não
   entra na tabela do `CLAUDE.md` apontando para arquivos que não existem. A

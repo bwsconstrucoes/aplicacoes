@@ -70,6 +70,11 @@ CATALOGO: list[dict] = [
      "politica": WHATSAPP, "descricao": "Aviso ao encarregado quando a batida ficou sem foto."},
     {"chave": "ponto.resumo_dia", "nome": "Resumo diário do ponto", "modulo": "Ponto", "politica": WHATSAPP,
      "descricao": "O resumo do dia (quem bateu, quem faltou) para os telefones configurados no ponto."},
+    # A ronda surpresa dos vigias noturnos (13/10/2026) — sai de madrugada, de propósito
+    {"chave": "ponto.ronda", "nome": "Ronda surpresa do vigia", "modulo": "Ponto", "politica": WHATSAPP,
+     "descricao": "O link para o vigia noturno registrar a ronda (foto e localização) em 10 minutos."},
+    {"chave": "ponto.ronda_perdida", "nome": "Aviso de ronda perdida", "modulo": "Ponto", "politica": WHATSAPP,
+     "descricao": "Avisa os telefones do resumo do ponto, na hora, quando o vigia não registra a ronda."},
     # ERP
     {"chave": "erp.titulo_pago", "nome": "Título pago, com comprovante", "modulo": "ERP", "politica": TELEGRAM,
      "descricao": "Avisa quem lançou e os interessados quando o título é pago; o comprovante vai junto."},
