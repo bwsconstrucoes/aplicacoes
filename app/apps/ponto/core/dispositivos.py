@@ -170,6 +170,7 @@ def para_json(d: dict) -> dict:
         "aprovado_por": d.get("aprovado_por"), "aprovado_em": texto(d.get("aprovado_em")),
         "bloqueado_em": texto(d.get("bloqueado_em")), "motivo_bloqueio": d.get("motivo_bloqueio"),
         "ultimo_uso_em": texto(d.get("ultimo_uso_em")), "criado_em": texto(d.get("criado_em")),
+        "arquivado": bool(d.get("arquivado_em")),
     }
 
 
@@ -196,6 +197,44 @@ def registrar(conn: Connection, *, device_uuid: str, descricao: str = "",
          ua=(user_agent or "")[:300], ip=(ip or "")[:64])
     logger.info("Ponto: aparelho %s registrado como PENDENTE (%s)", uuid, ip or "?")
     return linha, token
+
+
+def excluir_ou_arquivar(conn: Connection, dispositivo_id: int, *, por: str) -> str:
+    """Tira o aparelho da lista (13/10/2026: "não tem como excluir aparelhos? fica
+    poluído"). SEM batida nenhuma (pendente que nunca foi aprovado, navegador
+    trocado, teste), sai de vez. COM batida, não pode sumir — cada batida guarda o
+    aparelho que a registrou (a identificação do coletor, Portaria 671): fica
+    ARQUIVADO, bloqueado e fora da lista. Devolve 'EXCLUIDO' ou 'ARQUIVADO'."""
+    d = por_id(conn, dispositivo_id)
+    batidas = db.um(conn, "SELECT count(*) AS n FROM ponto.marcacoes WHERE dispositivo_id = :id",
+                    id=dispositivo_id)["n"]
+    if not batidas:
+        db.executar(conn, "DELETE FROM ponto.dispositivos WHERE id = :id", id=dispositivo_id)
+        logger.info("Ponto: aparelho %s (%s) EXCLUÍDO por %s — não tinha batida", dispositivo_id,
+                    d["device_uuid"], por)
+        return "EXCLUIDO"
+    if not db.tem_coluna(conn, "dispositivos", "arquivado_em"):
+        raise ErroDeValidacao("aplique as atualizações do ponto (migração 011) para arquivar aparelho com batidas")
+    db.executar(conn, """
+        UPDATE ponto.dispositivos SET arquivado_em = now(),
+               status = CASE WHEN status = 'BLOQUEADO' THEN status ELSE 'BLOQUEADO' END,
+               bloqueado_em = COALESCE(bloqueado_em, now()),
+               motivo_bloqueio = COALESCE(motivo_bloqueio, :m)
+         WHERE id = :id""", id=dispositivo_id, m=f"arquivado por {por.strip()[:80]}")
+    logger.info("Ponto: aparelho %s ARQUIVADO por %s — tem %s batida(s)", dispositivo_id, por, batidas)
+    return "ARQUIVADO"
+
+
+def desarquivar(conn: Connection, dispositivo_id: int) -> None:
+    """Volta para a lista, ainda bloqueado — para usar de novo, "Reativar"."""
+    por_id(conn, dispositivo_id)
+    db.executar(conn, "UPDATE ponto.dispositivos SET arquivado_em = NULL WHERE id = :id", id=dispositivo_id)
+
+
+def batidas_por_aparelho(conn: Connection) -> dict[int, int]:
+    return {int(l["dispositivo_id"]): int(l["n"]) for l in db.todos(conn, """
+        SELECT dispositivo_id, count(*) AS n FROM ponto.marcacoes
+         WHERE dispositivo_id IS NOT NULL GROUP BY dispositivo_id""")}
 
 
 def aparelhos_da_pessoa(conn: Connection, colaborador_id: int) -> list[dict]:

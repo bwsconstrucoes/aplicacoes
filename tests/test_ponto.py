@@ -165,10 +165,11 @@ class TestDecisao:
         status, motivos = self.decidir(diferenca_relogio_s=-301)
         assert status == "EM_ANALISE" and "relógio" in motivos[0]
 
-    def test_pessoa_afastada_e_obra_fora_da_lista_acumulam_motivos(self):
+    def test_pessoa_afastada_vai_para_analise_e_a_obra_do_cadastro_nao_interfere(self):
+        # 13/10/2026: a obra do cadastro não trava nem manda para conferência
         status, motivos = self.decidir(situacao_pessoa="AFASTADO", obra_na_lista_da_pessoa=False)
-        assert status == "EM_ANALISE"
-        assert motivos == ["pessoa afastada no cadastro", "obra fora da lista da pessoa"]
+        assert status == "EM_ANALISE" and motivos == ["pessoa afastada no cadastro"]
+        assert self.decidir(obra_na_lista_da_pessoa=False)[0] == "VALIDA"
 
     def test_hash_encadeado_muda_com_qualquer_campo(self):
         m = dt.datetime(2026, 10, 3, 11, 0, tzinfo=dt.timezone.utc)

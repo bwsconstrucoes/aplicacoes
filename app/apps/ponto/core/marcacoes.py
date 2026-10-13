@@ -27,7 +27,7 @@ DUAS FAMÍLIAS DE PROBLEMA, DOIS DESTINOS — e a diferença é jurídica, não 
     alguém lançar o ajuste.
 
   - **RELÓGIO E CADASTRO** (relógio do aparelho muito diferente do servidor,
-    pessoa afastada no cadastro, obra fora da lista da pessoa, sem foto no
+    pessoa afastada no cadastro, sem foto no
     tablet): a batida é ACEITA e marcada EM_ANALISE, com o motivo. Quem decide
     é gente, na tela de pendências.
 
@@ -98,8 +98,12 @@ def decidir(*, origem: str, dentro_da_cerca: Optional[bool], motivo_cerca: Optio
         motivos.append({"FORA_DO_REGISTRO": "pessoa fora do Registro de Colaboradores",
                         "AFASTADO": "pessoa afastada no cadastro"}.get(
             situacao_pessoa, f"pessoa {situacao_pessoa.lower()} no cadastro"))
-    if not obra_na_lista_da_pessoa:
-        motivos.append("obra fora da lista da pessoa")
+    # A obra do cadastro NÃO interfere (decisão do dono, 13/10/2026: "se ele é
+    # colaborador ativo, é para bater ponto — tem que bater em uma obra; o que não
+    # pode é quem está desligado, passou do último dia ou não está ativo"). A obra
+    # da batida é a da localização; "fora da lista da pessoa" deixou de ser motivo
+    # de conferência. O parâmetro fica, para quem chama não quebrar.
+    del obra_na_lista_da_pessoa
     return ("VALIDA" if not motivos else "EM_ANALISE"), motivos
 
 

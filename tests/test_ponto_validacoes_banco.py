@@ -31,8 +31,10 @@ def test_a_lista_junta_tudo_filtra_e_diz_quem_valida(app, mundo, monkeypatch):
         bater_via_chave(app, CPF_JOAO, local(seg, *h))
     cel = _entrar_no_app(app, CPF_JOAO, monkeypatch, excecao=True)
     pedido = _pedir_ajuste(cel, seg, "17:00")
-    with db.conexao() as conn:                     # Maria (obra B, sem coordenada): batida em conferência
-        m, _ = marcacoes.registrar(conn, cpf=CPF_MARIA, obra="PG-A", origem="IDFACE", via_chave=True)
+    with db.conexao() as conn:                     # Maria, relógio do aparelho 1 h atrás: batida em conferência
+        m, _ = marcacoes.registrar(conn, cpf=CPF_MARIA, obra="PG-A", origem="IDFACE", via_chave=True,
+                                   timestamp_dispositivo=(dt.datetime.now(dt.timezone.utc)
+                                                          - dt.timedelta(hours=1)).isoformat())
     assert m["status"] == "EM_ANALISE"
 
     dp, sup, fin = como(app, mundo["dp"]), como(app, mundo["sup"]), como(app, mundo["fin"])

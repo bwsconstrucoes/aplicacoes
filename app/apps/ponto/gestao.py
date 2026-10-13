@@ -1635,7 +1635,30 @@ def ponto_api_competencia_reabrir(competencia: str):
 def ponto_api_dispositivos():
     with db.conexao() as conn:
         lista = dispositivos.listar(conn, request.args.get("status") or None)
-    return _ok(dispositivos=[dispositivos.para_json(d) for d in lista])
+        batidas = dispositivos.batidas_por_aparelho(conn)
+    return _ok(dispositivos=[{**dispositivos.para_json(d), "batidas": batidas.get(int(d["id"]), 0)} for d in lista])
+
+
+@bp.route("/erp/api/ponto/dispositivos/<int:dispositivo_id>/excluir", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar_ponto")
+@_api
+def ponto_api_dispositivo_excluir(dispositivo_id: int):
+    """Sem batida, sai de vez; com batida, fica arquivado (dispositivos.excluir_ou_arquivar)."""
+    quem = _quem()
+    with db.conexao() as conn:
+        feito = dispositivos.excluir_ou_arquivar(conn, dispositivo_id, por=quem.nome)
+    return _ok(feito=feito)
+
+
+@bp.route("/erp/api/ponto/dispositivos/<int:dispositivo_id>/desarquivar", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar_ponto")
+@_api
+def ponto_api_dispositivo_desarquivar(dispositivo_id: int):
+    with db.conexao() as conn:
+        dispositivos.desarquivar(conn, dispositivo_id)
+    return _ok()
 
 
 @bp.route("/erp/api/ponto/dispositivos/<int:dispositivo_id>/aprovar", methods=["POST"])

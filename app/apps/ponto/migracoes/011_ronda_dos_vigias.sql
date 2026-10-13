@@ -45,3 +45,12 @@ CREATE TABLE IF NOT EXISTS ponto.rondas (
 CREATE INDEX IF NOT EXISTS ix_rondas_fila ON ponto.rondas (status, agendada_para);
 CREATE INDEX IF NOT EXISTS ix_rondas_pessoa ON ponto.rondas (colaborador_id, data_referencia);
 CREATE UNIQUE INDEX IF NOT EXISTS ux_rondas_token ON ponto.rondas (token_hash) WHERE token_hash IS NOT NULL;
+
+-- ---------------------------------------------------------------------------
+-- O APARELHO ARQUIVADO (pedido do dono, 13/10/2026: "não tem como excluir
+-- aparelhos? fica poluído com o tempo"). Aparelho SEM batida se exclui de vez;
+-- o que tem batida não pode sumir — cada batida guarda o aparelho que a registrou
+-- (a identificação do coletor, Portaria 671) —, então é ARQUIVADO: bloqueado e
+-- fora da lista, mas guardado.
+-- ---------------------------------------------------------------------------
+ALTER TABLE ponto.dispositivos ADD COLUMN IF NOT EXISTS arquivado_em TIMESTAMPTZ;

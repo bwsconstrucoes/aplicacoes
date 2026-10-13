@@ -328,11 +328,43 @@ def app_api_eu():
         no_celular = forma_de_bater.pode_no_celular(p, forma_de_bater.em_vigor(conn))
         pede = papeis.pede_pelo_proprio_celular(conn, p)
         administrativo = papeis.e_administrativo(conn, p)
+        # Para ESCOLHER a obra (sem localização, ou fora da cerca, explicando): as do
+        # cadastro; sem nenhuma, todas as ativas — a obra do cadastro não trava
+        # ninguém (13/10/2026).
+        para_escolher = obras or [{**cadastros.obra_para_json(o),
+                                   "fora_da_cerca": marcacoes.modo_fora_da_cerca(conn, int(o["id"]))}
+                                  for o in cadastros.listar_obras(conn)]
     return _ok(nome=p["nome"], primeiro_nome=p["nome"].split(" ")[0], bate_no_celular=no_celular,
                pede_no_celular=pede, administrativo=administrativo,
                cpf_final=p["cpf"][-3:], obra_principal=p.get("obra_codigo"),
-               obras=obras, hoje=esp["dias"][0], pedidos_pendentes=len(pedidos),
+               obras=obras, obras_para_escolher=para_escolher, hoje=esp["dias"][0], pedidos_pendentes=len(pedidos),
                banco=({"saldo": saldo["saldo"], "regime": saldo["regime_rotulo"]} if saldo else None))
+
+
+@bp.route("/app/api/obra-aqui")
+@auth.exige_colaborador
+def app_api_obra_aqui():
+    """A obra ATIVA em cuja cerca a pessoa está agora, entre TODAS — não só as do
+    cadastro dela (13/10/2026: "aparece 'nenhuma obra sua tem localização
+    cadastrada', não aparece a lista, e outro celular no mesmo lugar bate
+    normal"). Achada, a tela deixa bater nela; o servidor aceita e manda para
+    conferência só pelo que ela tiver de estranho — a obra do cadastro não conta
+    (decisão do dono, 13/10/2026)."""
+    from .core import geo
+    try:
+        lat, lon = float(request.args.get("lat")), float(request.args.get("lon"))
+    except (TypeError, ValueError):
+        return _ok(obra=None)
+    precisao = request.args.get("precisao")
+    with db.conexao() as conn:
+        candidatas = [o for o in cadastros.listar_obras(conn, so_ativas=True)
+                      if geo.coordenada_valida(o.get("latitude"), o.get("longitude"))]
+        situacao, obra, _ = geo.localizar_obra(lat, lon, float(precisao) if precisao else None, candidatas)
+        if situacao not in (geo.DENTRO, geo.BORDA) or not obra:
+            return _ok(obra=None)
+        return _ok(obra={**cadastros.obra_para_json(obra),
+                         "fora_da_cerca": marcacoes.modo_fora_da_cerca(conn, int(obra["id"]))},
+                   na_borda=situacao == geo.BORDA)
 
 
 @bp.route("/app/api/mes")

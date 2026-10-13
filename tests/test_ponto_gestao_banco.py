@@ -390,8 +390,12 @@ def test_batida_em_analise_validada_e_rejeitada(app, mundo):
     from app.apps.ponto import db
     from app.apps.ponto.core import marcacoes
     with db.conexao() as conn:
-        m1, _ = marcacoes.registrar(conn, cpf=CPF_JOAO, obra="PG-B", origem="IDFACE", via_chave=True)
-    assert m1["status"] == "EM_ANALISE"   # obra fora da lista do João
+        # relógio do aparelho 1 h atrás: conferência (desde 13/10/2026 a obra fora
+        # da lista da pessoa não manda mais para conferência)
+        m1, _ = marcacoes.registrar(conn, cpf=CPF_JOAO, obra="PG-B", origem="IDFACE", via_chave=True,
+                                    timestamp_dispositivo=(dt.datetime.now(dt.timezone.utc)
+                                                           - dt.timedelta(hours=1)).isoformat())
+    assert m1["status"] == "EM_ANALISE"
     sup = como(app, mundo["sup"])
     pend = sup.get("/erp/api/ponto/pendencias").get_json()
     assert all(b["id"] != m1["id"] for b in pend["batidas"])     # é da obra B: fora do alcance dele

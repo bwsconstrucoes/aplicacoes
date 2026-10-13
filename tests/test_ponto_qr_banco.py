@@ -395,7 +395,8 @@ def test_celular_a_obra_e_detectada_e_fora_da_area_nao_bate(app, mundo, banco, m
                                                "precisao": 15}, headers=h)
     assert r.status_code == 201, r.get_json()
     assert r.get_json()["comprovante"]["local"].startswith("PG-B")
-    assert "fora da lista da pessoa" in r.get_json()["motivo_analise"]     # B não é obra do João
+    # B não é obra do João — e a obra do cadastro não interfere (13/10/2026)
+    assert "fora da lista da pessoa" not in (r.get_json()["motivo_analise"] or "")
 
     # longe das duas: recusada, com a distância
     longe = cel.post("/ponto/app/api/bater", json={"obra": "PG-A", "latitude": -3.80, "longitude": -38.5270},

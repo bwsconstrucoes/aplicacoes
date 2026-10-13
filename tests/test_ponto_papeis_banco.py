@@ -317,3 +317,57 @@ def test_identificar_avisa_batida_de_ha_pouco(app, mundo, monkeypatch):
                   "foto_base64": _png(), "latitude": OBRA_A[0], "longitude": OBRA_A[1]}).status_code == 201
     de_novo = t.post("/ponto/app/api/tablet/identificar", json={"cpf": CPF_JOAO, "obra": "PG-A"}, headers=h).get_json()
     assert de_novo["batida_recente"] and de_novo["batida_recente"]["ha_minutos"] == 0
+
+
+def test_celular_de_quem_nao_tem_obra_no_cadastro_acha_a_obra_em_que_esta(app, mundo, banco, monkeypatch):
+    """13/10/2026: "aparece 'nenhuma obra sua tem localização cadastrada, escolha a
+    obra abaixo', não aparece a lista — e outro celular no mesmo lugar bate normal"."""
+    from sqlalchemy import text
+    with banco.connect() as conn:
+        conn.execute(text("UPDATE colaboradores SET obra_id = NULL WHERE id = :j"), {"j": mundo["joao"]})
+        conn.commit()
+    _entrar_no_app(app, CPF_JOAO, monkeypatch, excecao=True)          # o PIN, e a exceção de bater no celular
+    dp = como(app, mundo["dp"])
+    cel, h = _aparelho(app, "celular-do-joao-sem-obra-0123456789")
+    ap = _id_do_aparelho(dp, "celular-do-joao-sem-obra-0123456789")
+    assert dp.post(f"/erp/api/ponto/dispositivos/{ap}/aprovar",
+                   json={"perfil": "INDIVIDUAL", "cpf": CPF_JOAO}).status_code == 200
+    assert cel.post("/ponto/app/api/entrar", json={"cpf": CPF_JOAO, "pin": "481927"}, headers=h).status_code == 200
+    assert cel.get("/ponto/app/api/eu", headers=h).get_json()["obras"] == []
+    aqui = cel.get(f"/ponto/app/api/obra-aqui?{NA_OBRA_A}", headers=h).get_json()
+    assert aqui["obra"]["codigo"] == "PG-A"
+    assert cel.get("/ponto/app/api/obra-aqui?lat=-3.90&lon=-38.40&precisao=10", headers=h).get_json()["obra"] is None
+    r = cel.post("/ponto/app/api/bater", headers=h, json={"obra": "PG-A", "latitude": OBRA_A[0],
+                                                          "longitude": OBRA_A[1], "precisao": 10, "foto_base64": _png()})
+    assert r.status_code == 201, r.get_json()
+    assert "fora da lista da pessoa" not in (r.get_json().get("motivo_analise") or "")   # a obra do cadastro não conta
+    assert len(cel.get("/ponto/app/api/eu", headers=h).get_json()["obras_para_escolher"]) >= 2   # sem obra: todas as ativas
+
+
+def test_aparelho_sem_batida_se_exclui_e_com_batida_se_arquiva(app, mundo, monkeypatch):
+    """13/10/2026: "não tem como excluir aparelhos daqui? fica poluído com o tempo"."""
+    for cpf in (CPF_JOAO, CPF_MARIA):
+        _entrar_no_app(app, cpf, monkeypatch)
+    dp = como(app, mundo["dp"])
+    _aparelho(app, "aba-anonima-lixo-0123456789abcd")
+    lixo = _id_do_aparelho(dp, "aba-anonima-lixo-0123456789abcd")
+    r = dp.post(f"/erp/api/ponto/dispositivos/{lixo}/excluir", json={})
+    assert r.status_code == 200 and r.get_json()["feito"] == "EXCLUIDO"
+    assert all(a["id"] != lixo for a in dp.get("/erp/api/ponto/dispositivos").get_json()["dispositivos"])
+    # o ponto da obra que já registrou batida: arquivado, bloqueado, guardado
+    t, h = _aparelho(app, "ponto-da-obra-com-batida-0123456")
+    ap = _id_do_aparelho(dp, "ponto-da-obra-com-batida-0123456")
+    assert dp.post(f"/erp/api/ponto/dispositivos/{ap}/aprovar",
+                   json={"perfil": "COMPARTILHADO", "obras": ["PG-A"], "cpf": CPF_MARIA}).status_code == 200
+    ident = t.post("/ponto/app/api/tablet/identificar", json={"cpf": CPF_JOAO, "obra": "PG-A"}, headers=h).get_json()
+    assert t.post("/ponto/app/api/bater", headers=h, json={"bilhete": ident["bilhete"], "obra": "PG-A",
+                  "foto_base64": _png(), "latitude": OBRA_A[0], "longitude": OBRA_A[1]}).status_code == 201
+    a = next(x for x in dp.get("/erp/api/ponto/dispositivos").get_json()["dispositivos"] if x["id"] == ap)
+    assert a["batidas"] == 1 and a["arquivado"] is False
+    r = dp.post(f"/erp/api/ponto/dispositivos/{ap}/excluir", json={})
+    assert r.get_json()["feito"] == "ARQUIVADO"
+    a = next(x for x in dp.get("/erp/api/ponto/dispositivos").get_json()["dispositivos"] if x["id"] == ap)
+    assert a["arquivado"] is True and a["status"] == "BLOQUEADO"
+    assert dp.post(f"/erp/api/ponto/dispositivos/{ap}/desarquivar", json={}).status_code == 200
+    a = next(x for x in dp.get("/erp/api/ponto/dispositivos").get_json()["dispositivos"] if x["id"] == ap)
+    assert a["arquivado"] is False and a["status"] == "BLOQUEADO"

@@ -49,6 +49,9 @@ junto com o `README.md` e o `PLANO.md`.
    "Ronda surpresa do vigia" e "Aviso de ronda perdida" estão em "Só WhatsApp" e
    a chave geral do WhatsApp ligada, e ter telefones em Configuração › Resumo
    diário (é para eles que vai o aviso de ronda perdida).
+   Vão juntos (ver a seção "13/10 (noite) — A obra do cadastro não trava"): a
+   obra do cadastro deixou de interferir na batida, e a tela de aparelhos ganhou
+   busca, filtros e excluir/arquivar (a coluna `arquivado_em` está na mesma 011).
 1s. **PUBLICADO em 13/10/2026** (com o "pode" do dono, `main` em `a137aaf`, sem migração) — junto com a 1r: a batida de
    outra pessoa no ponto da obra ia para o nome de quem estava logado (CORRIGIDO;
    ver a seção de 13/10 — as batidas erradas que já existem na produção precisam
@@ -157,6 +160,34 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 13/10/2026 (noite) — A obra do cadastro não trava; aparelhos com busca, filtro e excluir
+
+- **O celular pessoal que não batia** (*"aparece 'nenhuma obra sua tem
+  localização cadastrada, escolha a obra abaixo', não aparece a lista — e outro
+  celular no mesmo lugar bate normal"*): a lista de obras do celular é a do
+  CADASTRO da pessoa (principal + extras); sem nenhuma obra ativa ligada, a
+  lista vinha vazia e a mensagem mentia. **Decisão do dono, na mesma hora:**
+  *"se o cadastro não tiver obra ativa, isso não é para interferir. Se é
+  colaborador ativo, é para bater ponto — tem que bater em uma obra, tendo
+  geolocalização ou não. O que não pode é quem passou do último dia, está
+  desligado ou não está ativo."* Então:
+  - a obra da batida é a da LOCALIZAÇÃO, entre todas as obras ativas
+    (`/app/api/obra-aqui`, quando a cerca não é de obra do cadastro);
+  - "obra fora da lista da pessoa" DEIXOU de mandar para conferência
+    (`marcacoes.decidir`) — vale para o celular e para o ponto da obra;
+  - sem localização, a lista para escolher é a das obras do cadastro, e, sem
+    nenhuma, TODAS as ativas (`obras_para_escolher` no `/app/api/eu`);
+  - o que trava continua: desligado, inativo no ponto, antes da admissão ou
+    depois da saída (já era assim). Afastado continua indo para conferência —
+    confirmar com o dono se "não ativo" inclui o afastado.
+- **Tela de aparelhos** (*"a lista vai aumentar — filtrar e buscar por pessoa,
+  por situação; não tem como excluir? fica poluído"*): busca (nome, CPF, nome do
+  aparelho, código), filtro de situação (esperando, liberados, vencendo,
+  bloqueados, arquivados) e de tipo; pendentes primeiro. **Excluir:** aparelho
+  SEM batida sai de vez; COM batida é ARQUIVADO (bloqueado e fora da lista,
+  guardado) — cada batida guarda o aparelho que a registrou, e a Portaria 671
+  pede a identificação do coletor. "Desarquivar" devolve à lista, bloqueado.
 
 ## 13/10/2026 (noite) — A ronda surpresa dos vigias noturnos
 

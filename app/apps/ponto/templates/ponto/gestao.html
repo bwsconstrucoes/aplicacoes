@@ -602,8 +602,32 @@
 
 {% if pode.configurar_ponto %}
 <div class="cartao" data-secao-card="aparelhos">
-  <div class="cartao-cab"><h3>Aparelhos</h3><small>todos os celulares do ponto</small></div>
+  <div class="cartao-cab"><h3>Aparelhos</h3><small id="c-ap-conta">todos os celulares do ponto</small></div>
+  <div class="barra-acoes" style="align-items:flex-end; flex-wrap:wrap">
+    <div class="campo" style="flex:2; min-width:220px"><label for="c-ap-busca">Buscar</label>
+      <input id="c-ap-busca" data-sem-mascara placeholder="nome, CPF, nome do aparelho ou código"></div>
+    <div class="campo" style="flex:1; min-width:180px"><label for="c-ap-situacao">Situação</label>
+      <select id="c-ap-situacao" data-sem-busca>
+        <option value="">Todos (menos os arquivados)</option>
+        <option value="PENDENTE">Esperando aprovação</option>
+        <option value="APROVADO">Liberados</option>
+        <option value="VENCENDO">Liberação vencida ou vencendo</option>
+        <option value="BLOQUEADO">Bloqueados</option>
+        <option value="ARQUIVADO">Arquivados</option>
+      </select></div>
+    <div class="campo" style="flex:1; min-width:160px"><label for="c-ap-tipo">Tipo</label>
+      <select id="c-ap-tipo" data-sem-busca>
+        <option value="">Todos</option>
+        <option value="INDIVIDUAL">Celular pessoal</option>
+        <option value="COMPARTILHADO">Ponto da obra</option>
+        <option value="LISTA">Ponto de equipe</option>
+      </select></div>
+  </div>
   <div class="tabela-rolagem" style="max-height:none"><div id="c-aparelhos">carregando…</div></div>
+  <div class="cartao-dica">Aparelho <b>sem nenhuma batida</b> (pedido que nunca foi aprovado, navegador trocado,
+    teste) se <b>exclui</b> de vez. O que <b>tem batida</b> não pode sumir — cada batida guarda o aparelho que a
+    registrou (a Portaria 671 pede a identificação do aparelho) —, então ele é <b>arquivado</b>: bloqueado e fora da
+    lista, mas guardado (filtro “Arquivados”).</div>
 </div>
 {% endif %}
 
@@ -3176,13 +3200,44 @@ async function reabrirMes(comp) {
 }
 
 // ------------------------------------------------------------ 5. aparelhos
+// Filtros e busca da lista de aparelhos (13/10/2026: "a lista vai aumentar —
+// filtrar e buscar por pessoa, por situação"). Tudo na tela, sobre a lista carregada.
+let APARELHOS = [];
+const semAcentoAp = t => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+function filtrarAparelhos(lista) {
+  const termo = semAcentoAp(els("c-ap-busca").value.trim()), so = soDigitos(els("c-ap-busca").value);
+  const sit = els("c-ap-situacao").value, tipo = els("c-ap-tipo").value;
+  const limite = somarDias(hojeISO(), 15);
+  return lista.filter(a => {
+    if (sit === "ARQUIVADO" ? !a.arquivado : a.arquivado) return false;
+    if (sit && sit !== "ARQUIVADO") {
+      if (sit === "VENCENDO") { if (!(a.status === "APROVADO" && a.valido_ate && a.valido_ate <= limite)) return false; }
+      else if (a.status !== sit) return false;
+    }
+    if (tipo && (a.status === "PENDENTE" || a.perfil !== tipo)) return false;
+    if (!termo) return true;
+    const texto = semAcentoAp([a.descricao, a.codigo, a.dono && a.dono.nome, a.obras].join(" "));
+    return texto.includes(termo) || (so.length >= 3 && a.dono && soDigitos(a.dono.cpf).includes(so));
+  });
+}
 async function carregarAparelhos() {
   if (!PODE_CONFIGURAR) return;
-  let lista;
   try {
-    lista = (await api("/erp/api/ponto/dispositivos")).dispositivos;
+    APARELHOS = (await api("/erp/api/ponto/dispositivos")).dispositivos;
   } catch (e) { erroNoCartao("c-aparelhos", e); return; }
-  els("c-aparelhos").innerHTML = lista.length ? `<table><thead><tr><th class="sem-ordem">Aparelho</th>
+  // pendentes primeiro (são os que pedem ação), depois por nome
+  const ordem = {PENDENTE: 0, APROVADO: 1, BLOQUEADO: 2};
+  APARELHOS.sort((x, y) => (ordem[x.status] ?? 3) - (ordem[y.status] ?? 3)
+    || semAcentoAp((x.dono && x.dono.nome) || x.descricao).localeCompare(semAcentoAp((y.dono && y.dono.nome) || y.descricao)));
+  desenharAparelhos();
+}
+function desenharAparelhos() {
+  const todos = APARELHOS, lista = filtrarAparelhos(todos);
+  els("c-ap-conta").textContent = `${lista.length} de ${todos.filter(a => !a.arquivado).length} aparelho(s)`
+    + (todos.some(a => a.arquivado) ? ` · ${todos.filter(a => a.arquivado).length} arquivado(s)` : "");
+  els("c-aparelhos").innerHTML = !todos.length
+    ? `<div class="cartao-dica">Nenhum aparelho registrado ainda. O primeiro aparece quando alguém abrir o app do colaborador.</div>`
+    : !lista.length ? `<div class="cartao-dica">Nenhum aparelho com esse filtro.</div>` : `<table><thead><tr><th class="sem-ordem">Aparelho</th>
       <th class="sem-ordem">Situação</th><th class="sem-ordem">Uso</th><th class="sem-ordem">Dono / grupo</th>
       <th class="sem-ordem">Obras</th><th class="sem-ordem">Último uso</th><th class="sem-ordem"></th></tr></thead><tbody>
     ${lista.map(a => `<tr>
@@ -3198,10 +3253,32 @@ async function carregarAparelhos() {
       <td><div class="acoes">${a.status === "PENDENTE" ? `<button class="btn" type="button" data-aprovar-ap="${a.id}">Aprovar</button>`
           : `<button class="btn secundario" type="button" data-aprovar-ap="${a.id}">${a.status === "BLOQUEADO" ? "Reativar" : "Alterar"}</button>`}
         ${a.status === "APROVADO" ? `<button class="link-btn" type="button" data-renovar-ap="${a.id}">renovar</button>` : ""}
-        ${a.status !== "BLOQUEADO" ? `<button class="link-btn" type="button" data-bloquear-ap="${a.id}">bloquear</button>` : ""}</div></td>
-    </tr>`).join("")}</tbody></table>`
-    : `<div class="cartao-dica">Nenhum aparelho registrado ainda. O primeiro aparece quando alguém abrir o app do colaborador.</div>`;
+        ${a.status !== "BLOQUEADO" ? `<button class="link-btn" type="button" data-bloquear-ap="${a.id}">bloquear</button>` : ""}
+        ${a.arquivado ? `<button class="link-btn" type="button" data-desarquivar-ap="${a.id}">desarquivar</button>`
+          : `<button class="link-btn" type="button" data-excluir-ap="${a.id}" title="${a.batidas ? `${a.batidas} batida(s): fica guardado, fora da lista` : "sem batida: sai de vez"}">${a.batidas ? "arquivar" : "excluir"}</button>`}</div>
+        <small>${a.batidas ? `${a.batidas} batida(s)` : "nenhuma batida"}</small></td>
+    </tr>`).join("")}</tbody></table>`;
   const achar = id => lista.find(a => a.id === Number(id));
+  els("c-aparelhos").querySelectorAll("[data-excluir-ap]").forEach(b => b.addEventListener("click", async () => {
+    const a = achar(b.dataset.excluirAp);
+    const nome = escapar(a.descricao || (a.dono && a.dono.nome) || "sem nome");
+    const ok = await perguntar({titulo: a.batidas ? "Arquivar aparelho" : "Excluir aparelho",
+      aviso: a.batidas ? `<b>${nome}</b> tem ${a.batidas} batida(s): ele não pode sumir (cada batida guarda o aparelho que
+        a registrou). Vai ser <b>bloqueado</b> e sair da lista — fica no filtro “Arquivados”.`
+        : `<b>${nome}</b> não tem nenhuma batida: sai de vez da lista. Se o celular abrir o ponto de novo, volta como aparelho novo, esperando aprovação.`,
+      campos: [], textoOk: a.batidas ? "Arquivar" : "Excluir"});
+    if (!ok) return;
+    try {
+      const r = await postar(`/erp/api/ponto/dispositivos/${a.id}/excluir`, {});
+      aviso("mensagem", r.feito === "EXCLUIDO" ? "Aparelho excluído." : "Aparelho arquivado (bloqueado e fora da lista).", "ok");
+      carregarAparelhos();
+    } catch (e) { falhou(e); }
+  }));
+  els("c-aparelhos").querySelectorAll("[data-desarquivar-ap]").forEach(b => b.addEventListener("click", async () => {
+    try { await postar(`/erp/api/ponto/dispositivos/${b.dataset.desarquivarAp}/desarquivar`, {});
+          aviso("mensagem", "Aparelho de volta à lista — continua bloqueado; para usar, “Reativar”.", "ok"); carregarAparelhos(); }
+    catch (e) { falhou(e); }
+  }));
   els("c-aparelhos").querySelectorAll("[data-aprovar-ap]").forEach(b =>
     b.addEventListener("click", () => aprovarAparelho(achar(b.dataset.aprovarAp), carregarAparelhos)));
   els("c-aparelhos").querySelectorAll("[data-renovar-ap]").forEach(b =>
@@ -3209,6 +3286,11 @@ async function carregarAparelhos() {
   els("c-aparelhos").querySelectorAll("[data-bloquear-ap]").forEach(b =>
     b.addEventListener("click", () => bloquearAparelho(achar(b.dataset.bloquearAp), carregarAparelhos)));
 }
+
+["c-ap-busca", "c-ap-situacao", "c-ap-tipo"].forEach(id => {
+  const el = els(id);
+  if (el) el.addEventListener(id === "c-ap-busca" ? "input" : "change", desenharAparelhos);
+});
 
 // ------------------------------------------------------- 6. resumo diário
 function desenharResumoDiario() {

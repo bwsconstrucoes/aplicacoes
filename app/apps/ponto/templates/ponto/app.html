@@ -751,7 +751,9 @@ function mostrarLocal(l) {
   // E (09/10/2026, mais tarde) SEM localização também: "o individual pode
   // permitir (…) que você bata sem a localização ou fora da localização,
   // contanto que você selecione a obra e ainda assim justifique".
-  const aceita = () => (OBRAS || []);
+  // Sem obra no cadastro, a escolha é entre todas as obras ativas (13/10/2026: a obra
+  // do cadastro não trava ninguém).
+  const aceita = () => ((OBRAS || []).length ? OBRAS : ((EU && EU.obras_para_escolher) || []));
   const escolha = lista => {
     const mostrar = !!(lista && lista.length);
     $("i-escolha").classList.toggle("oculto", !mostrar);
@@ -778,16 +780,51 @@ function mostrarLocal(l) {
     $("i-obra").value = medidas[0].o.codigo; escolha(null);
   } else if (medidas.length) {
     // Sem citar a obra mais perto (10/10/2026): ela pode não ter nada a ver com a pessoa.
+    obraAquiPeloServidor(l);
     const lista = aceita(false);
     caixa.className = "aviso erro";
     caixa.textContent = "⚠️ Você NÃO está em obra: a sua localização não confere com nenhuma obra cadastrada."
       + (medidas[0].d > 100000 ? " Confira se a localização do celular está certa." : "")
       + " Se precisar bater mesmo assim, escolha a obra abaixo e explique o motivo: a batida vai para a conferência da administração da obra e só vale depois de validada.";
     escolha(lista);
-  } else {
+  } else if ((OBRAS || []).length) {
+    obraAquiPeloServidor(l);
     caixa.className = "aviso info"; caixa.textContent = "📍 Nenhuma obra sua tem localização cadastrada: escolha a obra abaixo.";
     escolha(aceita(false));
+  } else {
+    // Nenhuma obra no cadastro (13/10/2026: a mensagem dizia "escolha a obra abaixo"
+    // e não havia lista). Procura a obra em que a pessoa está, entre todas.
+    obraAquiPeloServidor(l);
+    caixa.className = "aviso info";
+    caixa.textContent = "📍 Procurando a obra em que você está…";
+    escolha(aceita(false));
   }
+}
+// A obra em que a pessoa está, entre TODAS as obras ativas (o servidor sabe; a tela
+// só conhece as do cadastro dela). Achou: pode bater nela, e a batida vai para
+// conferência, porque não é obra do cadastro.
+let OBRA_AQUI_VEZ = 0;
+async function obraAquiPeloServidor(l) {
+  const vez = ++OBRA_AQUI_VEZ;
+  let r = null;
+  try { r = await chamar(`/ponto/app/api/obra-aqui?lat=${l.latitude}&lon=${l.longitude}&precisao=${l.precisao ?? ""}`); } catch (e) { r = null; }
+  if (vez !== OBRA_AQUI_VEZ) return;
+  const caixa = $("i-local");
+  if (!r || !r.obra) {
+    if (!(OBRAS || []).length) {
+      caixa.className = "aviso erro";
+      caixa.textContent = "⚠️ Você NÃO está em obra: a sua localização não confere com nenhuma obra cadastrada. Se precisar bater mesmo assim, escolha a obra abaixo e explique o motivo: a batida vai para a conferência da administração da obra e só vale depois de validada.";
+    }
+    return;
+  }
+  preencherObras($("i-obra"), [r.obra], r.obra.codigo);
+  $("i-obra").value = r.obra.codigo;
+  $("i-escolha").classList.add("oculto");
+  LOCAL_BLOQUEIA = false;
+  $("btn-bater").disabled = $("btn-sem-foto").disabled = !PODE_BATER;
+  caixa.className = r.na_borda ? "aviso ambar" : "aviso ok";
+  caixa.textContent = r.na_borda ? `📍 Você está na borda da obra ${rotuloObra(r.obra)}. Pode bater; a batida vai para conferência. Se puder, chegue mais perto.`
+                                 : `📍 Você está na obra ${rotuloObra(r.obra)}.`;
 }
 
 // --- foto ------------------------------------------------------------------
