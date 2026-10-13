@@ -2532,3 +2532,63 @@ function resumoDoComplemento(c) {
     botao.textContent = aberto ? "Fechar filtros ▴" : (ativos ? "Mais filtros ▾ (em uso)" : "Mais filtros ▾");
   });
 })();
+
+// --- Ver anexo e comprovante numa janela (10/10/2026) ------------------------
+// O dono: *"sempre remetem ao download, sendo que muitas vezes deseja-se apenas
+// dar uma olhada rápida (…) num modal; daí, se quiser, clicamos para download.
+// No Pipefy é assim."* Todo link com `data-previa` abre aqui. Drive: a página
+// de pré-visualização do próprio Drive. Dropbox e Pipefy: o servidor entrega
+// "para ver" (`previa_arquivo.py`). O resto abre em outra aba, como antes.
+// Ctrl+clique continua abrindo/baixando direto.
+(function () {
+  const urlVer = document.body.dataset.urlArquivoVer;
+  if (!urlVer) return;
+  const DRIVE = /drive\.google\.com\/(?:file\/d\/([\w-]+)|open\?id=([\w-]+)|uc\?[^ ]*id=([\w-]+))/;
+  const PELO_SERVIDOR = /^https?:\/\/([^/]+\.)?(dropbox\.com|dropboxusercontent\.com|pipefy\.com|amazonaws\.com)(\/|$)/i;
+  let dlg = null;
+
+  function janela() {
+    if (dlg) return dlg;
+    dlg = document.createElement("dialog");
+    dlg.className = "dialogo-previa";
+    dlg.innerHTML = '<div class="previa-cab"><b class="previa-titulo"></b><span class="previa-botoes">' +
+      '<a class="btn secundario previa-baixar" target="_blank" rel="noopener">Baixar</a>' +
+      '<a class="btn secundario previa-aba" target="_blank" rel="noopener">Abrir em outra aba</a>' +
+      '<button type="button" class="btn previa-fechar">Fechar</button></span></div>' +
+      '<iframe class="previa-moldura" title="Pré-visualização"></iframe>';
+    document.body.appendChild(dlg);
+    dlg.querySelector(".previa-fechar").addEventListener("click", () => dlg.close());
+    dlg.addEventListener("click", e => { if (e.target === dlg) dlg.close(); });
+    dlg.addEventListener("close", () => { dlg.querySelector("iframe").src = "about:blank"; });
+    return dlg;
+  }
+
+  function linkDeBaixar(url) {
+    if (/dropbox\.com/i.test(url)) {
+      return /[?&]dl=0/.test(url) ? url.replace(/([?&])dl=0/, "$1dl=1")
+           : (/[?&](dl|raw)=1/.test(url) ? url : url + (url.includes("?") ? "&" : "?") + "dl=1");
+    }
+    const d = url.match(DRIVE);
+    if (d) return "https://drive.google.com/uc?export=download&id=" + (d[1] || d[2] || d[3]);
+    return url;
+  }
+
+  document.addEventListener("click", e => {
+    const a = e.target.closest("a[data-previa]");
+    if (!a || e.ctrlKey || e.metaKey || e.shiftKey || e.button !== 0) return;
+    const url = a.dataset.previa;
+    const d = url.match(DRIVE);
+    let moldura = "";
+    if (d) moldura = "https://drive.google.com/file/d/" + (d[1] || d[2] || d[3]) + "/preview";
+    else if (PELO_SERVIDOR.test(url)) moldura = urlVer + "?u=" + encodeURIComponent(url);
+    if (!moldura) return;                 // serviço desconhecido: abre como antes
+    e.preventDefault();
+    e.stopPropagation();                  // não abre também a ficha (toque no celular)
+    const j = janela();
+    j.querySelector(".previa-titulo").textContent = a.dataset.titulo || a.title || "Arquivo";
+    j.querySelector(".previa-baixar").href = linkDeBaixar(url);
+    j.querySelector(".previa-aba").href = url;
+    j.querySelector("iframe").src = moldura;
+    if (!j.open) j.showModal();
+  }, true);
+})();

@@ -1,0 +1,16 @@
+{# O que a moldura da pré-visualização mostra quando não dá para ver o arquivo
+   aqui (10/10/2026). Página pequena, sem o menu: ela vive DENTRO da janela. #}
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body { margin: 0; font: 14px/1.5 system-ui, sans-serif; color: #1f2937; background: #f6f8fb;
+         display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+  .caixa { max-width: 460px; padding: 22px 24px; background: #fff; border-radius: 10px;
+           border: 1px solid #e3e7ee; text-align: center; }
+  a { color: #1d4f91; font-weight: 600; }
+</style></head>
+<body><div class="caixa">
+  <p>{{ erro }}</p>
+  {% if url %}<p><a href="{{ url }}" target="_blank" rel="noopener">Abrir em outra aba</a></p>{% endif %}
+</div></body></html>
