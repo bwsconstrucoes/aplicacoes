@@ -46,6 +46,9 @@ def test_so_busca_em_endereco_conhecido():
     assert not pa._host_permitido("https://dropbox.com.malicioso.com/a.pdf")
     assert not pa._host_permitido("http://169.254.169.254/latest/meta-data")
     assert not pa._host_permitido("file:///etc/passwd")
+    assert pa._host_permitido("https://storage.googleapis.com/bucket/anexo.pdf")
+    assert not pa._host_permitido("https://arquivos.exemplo.com.br/nota.pdf"), \
+        "fora da lista: a janela abre, mas o servidor não busca"
     assert pa.como_ver("https://drive.google.com/file/d/ABC123/view")["endereco"] \
         == "https://drive.google.com/file/d/ABC123/preview"
     assert pa.como_ver("https://exemplo.com/a.pdf")["modo"] == "aba"
@@ -104,3 +107,21 @@ def test_os_icones_abrem_a_janela(app):
     assert "uc?export=download&amp;id=ANEXO7" in lista, "o href segue sendo o de baixar"
     assert ficha.count("data-previa=") == 2
     assert 'data-url-arquivo-ver="/analisesps/arquivo/ver"' in lista
+
+
+def test_a_tela_de_CODIGOS_traz_anexo_e_comprovante_para_ver_e_baixar(app, monkeypatch):
+    """13/10/2026: *"adicionar o link para download do comprovante e dos
+    anexos (…) onde a gente colocou a categoria e a descrição"*."""
+    from tests.test_analisesps_banco import semear, sp
+    semear([sp("1000000702", forma_pagamento="Boleto", status_pgt="Pagar", valor="10,00",
+               vencimento="10/10/2026", centro_custo="OBRA", tipo_despesa="Material",
+               descricao="Cimento", codigo_barras="34191790010104351004791020150008291070026000",
+               anexo_link="https://drive.google.com/file/d/ANEXO8/view",
+               comprovante="https://www.dropbox.com/s/c/comp8.pdf?dl=0")])
+    with app.test_client() as c:
+        c.post("/analisesps/entrar", data={"senha": SENHA_MESTRE_OPERADOR})
+        tela = c.get("/analisesps/codigos?id=1000000702", follow_redirects=True).get_data(as_text=True)
+    assert "Cimento" in tela and 'class="codigo-arquivos"' in tela
+    assert 'data-previa="https://drive.google.com/file/d/ANEXO8/view"' in tela
+    assert "uc?export=download&amp;id=ANEXO8" in tela, "baixar o anexo"
+    assert "comp8.pdf?dl=1" in tela, "baixar o comprovante"

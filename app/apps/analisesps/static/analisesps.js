@@ -2544,7 +2544,10 @@ function resumoDoComplemento(c) {
   const urlVer = document.body.dataset.urlArquivoVer;
   if (!urlVer) return;
   const DRIVE = /drive\.google\.com\/(?:file\/d\/([\w-]+)|open\?id=([\w-]+)|uc\?[^ ]*id=([\w-]+))/;
-  const PELO_SERVIDOR = /^https?:\/\/([^/]+\.)?(dropbox\.com|dropboxusercontent\.com|pipefy\.com|amazonaws\.com)(\/|$)/i;
+  // Os endereços que o servidor busca — a mesma lista de `previa_arquivo.HOSTS`.
+  const PELO_SERVIDOR = /^https?:\/\/([^/]+\.)?(dropbox\.com|dropboxusercontent\.com|pipefy\.com|amazonaws\.com|storage\.googleapis\.com)(\/|$)/i;
+  // Documento, planilha ou apresentação do Google: a pré-visualização dele.
+  const DOCS = /docs\.google\.com\/(document|spreadsheets|presentation)\/d\/([\w-]+)/;
   let dlg = null;
 
   function janela() {
@@ -2559,7 +2562,11 @@ function resumoDoComplemento(c) {
     document.body.appendChild(dlg);
     dlg.querySelector(".previa-fechar").addEventListener("click", () => dlg.close());
     dlg.addEventListener("click", e => { if (e.target === dlg) dlg.close(); });
-    dlg.addEventListener("close", () => { dlg.querySelector("iframe").src = "about:blank"; });
+    dlg.addEventListener("close", () => {
+      const q = dlg.querySelector("iframe");
+      q.removeAttribute("srcdoc");
+      q.src = "about:blank";
+    });
     return dlg;
   }
 
@@ -2577,18 +2584,36 @@ function resumoDoComplemento(c) {
     const a = e.target.closest("a[data-previa]");
     if (!a || e.ctrlKey || e.metaKey || e.shiftKey || e.button !== 0) return;
     const url = a.dataset.previa;
+    if (!/^https?:\/\//i.test(url)) return;   // não é link: abre como antes
     const d = url.match(DRIVE);
+    const doc = url.match(DOCS);
     let moldura = "";
     if (d) moldura = "https://drive.google.com/file/d/" + (d[1] || d[2] || d[3]) + "/preview";
+    else if (doc) moldura = "https://docs.google.com/" + doc[1] + "/d/" + doc[2] + "/preview";
     else if (PELO_SERVIDOR.test(url)) moldura = urlVer + "?u=" + encodeURIComponent(url);
-    if (!moldura) return;                 // serviço desconhecido: abre como antes
+    // 13/10/2026 — o dono: *"que seja padrão, para anexos e para comprovante"*.
+    // A JANELA ABRE SEMPRE. Endereço fora da lista (o servidor não busca em
+    // qualquer lugar da internet, por segurança) mostra de onde é o arquivo e
+    // os botões — em vez de cair no download sem perguntar.
     e.preventDefault();
     e.stopPropagation();                  // não abre também a ficha (toque no celular)
     const j = janela();
     j.querySelector(".previa-titulo").textContent = a.dataset.titulo || a.title || "Arquivo";
     j.querySelector(".previa-baixar").href = linkDeBaixar(url);
     j.querySelector(".previa-aba").href = url;
-    j.querySelector("iframe").src = moldura;
+    const quadro = j.querySelector("iframe");
+    if (moldura) {
+      quadro.removeAttribute("srcdoc");
+      quadro.src = moldura;
+    } else {
+      let host = "";
+      try { host = new URL(url).hostname; } catch (err) { host = url; }
+      quadro.removeAttribute("src");
+      quadro.srcdoc = '<div style="font:14px system-ui,sans-serif;color:#1f2937;padding:40px;text-align:center">' +
+        "Este arquivo está em <b>" + host.replace(/[<>&"]/g, "") + "</b>, um endereço que não abre aqui " +
+        "dentro.<br>Use <b>Abrir em outra aba</b> ou <b>Baixar</b>, acima.<br><br>" +
+        '<small style="color:#6b7280">Se os anexos costumam vir deste endereço, avise — ele pode entrar na lista.</small></div>';
+    }
     if (!j.open) j.showModal();
   }, true);
 })();

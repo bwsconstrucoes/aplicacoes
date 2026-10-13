@@ -12228,6 +12228,25 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 223 — A janela de ver vale sempre; anexo e comprovante na tela de códigos (13/10/2026)
+
+- *"Quando abro a SP e clico no anexo, ele pergunta se quero baixar (…) eu
+  queria que fosse aberto um modal (…) que seja padrão, para anexos e para
+  comprovante."* O link de endereço fora da lista da leva 222 caía no
+  download antigo. Agora **a janela abre sempre**: Drive e Google Docs pela
+  pré-visualização deles; Dropbox, Pipefy, Amazon e o armazenamento do Google
+  pelo servidor; qualquer outro endereço mostra de onde é o arquivo, com
+  Baixar e Abrir em outra aba.
+- **Decisão (segurança):** o servidor continua buscando só nos endereços da
+  lista. Buscar em qualquer endereço da internet foi recusado pela trava de
+  segurança deste ambiente — e com razão: deixaria o servidor alcançar a rede
+  interna. Endereço novo que os anexos usarem entra na lista (a janela mostra
+  qual é; é só avisar).
+- *"Adicionar o link para download do comprovante e dos anexos (…) onde a
+  gente colocou a categoria e a descrição."* Na tela de códigos (QR/boleto),
+  abaixo da categoria e da descrição: "📎 Anexo: ver · baixar" e "🧾
+  Comprovante: ver · baixar".
+
 #### Leva 222 — Ver anexo e comprovante numa janela, sem baixar (10/10/2026)
 
 - *"Os anexos e comprovantes sempre remetem ao download, sendo que muitas vezes

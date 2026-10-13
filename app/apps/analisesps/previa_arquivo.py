@@ -30,7 +30,9 @@ from urllib.parse import urlparse
 TETO_BYTES = 25 * 1024 * 1024
 SEGUNDOS = 30
 # O fim do nome do servidor; "dropbox.com" cobre www.dropbox.com.
-HOSTS = ("dropbox.com", "dropboxusercontent.com", "pipefy.com", "amazonaws.com")
+# 13/10/2026: + o armazenamento do Google, onde também podem estar anexos.
+HOSTS = ("dropbox.com", "dropboxusercontent.com", "pipefy.com", "amazonaws.com",
+         "storage.googleapis.com")
 # O que um navegador mostra sozinho numa moldura.
 TIPOS_QUE_SE_VEEM = ("application/pdf", "image/", "text/plain")
 
@@ -104,7 +106,7 @@ def buscar(url: str, sessao=None):
         resp.close()
         raise ErroDaPrevia("Arquivo grande demais para ver aqui — use \"Baixar\".")
     nome = _nome_do_arquivo(resp.headers.get("Content-Disposition", ""), url)
-    if not tipo or tipo == "application/octet-stream":
+    if not tipo or tipo in ("application/octet-stream", "binary/octet-stream"):
         tipo = _tipo_pelo_nome(nome)
     if not any(tipo.startswith(t) for t in TIPOS_QUE_SE_VEEM):
         resp.close()

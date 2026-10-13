@@ -53,6 +53,28 @@
           {% if b.sp.tipo_despesa and b.sp.descricao %} · {% endif %}{{ b.sp.descricao }}
         </p>
       {% endif %}
+      {# 13/10/2026, pedido do dono: o anexo e o comprovante aqui também — "ver"
+         abre a janela de pré-visualização; "baixar" baixa direto. #}
+      {% if b.sp %}
+        {% set anexos = b.sp.anexo_link|links_celula %}
+        {% set comps = b.sp.comprovante|links_celula %}
+        {% if anexos or comps %}
+          <p class="codigo-arquivos">
+            {% for u in anexos %}
+              <span>📎 Anexo{% if anexos|length > 1 %} {{ loop.index }}{% endif %}:
+                <a href="{{ u }}" target="_blank" rel="noopener" data-previa="{{ u }}"
+                   data-titulo="Anexo da SP {{ b.id }}">ver</a> ·
+                <a href="{{ u|baixar }}" target="_blank" rel="noopener">baixar</a></span>
+            {% endfor %}
+            {% for u in comps %}
+              <span>🧾 Comprovante{% if comps|length > 1 %} {{ loop.index }}{% endif %}:
+                <a href="{{ u }}" target="_blank" rel="noopener" data-previa="{{ u }}"
+                   data-titulo="Comprovante da SP {{ b.id }}">ver</a> ·
+                <a href="{{ u|baixar }}" target="_blank" rel="noopener">baixar</a></span>
+            {% endfor %}
+          </p>
+        {% endif %}
+      {% endif %}
     </div>
 
     {% if b.erro %}
