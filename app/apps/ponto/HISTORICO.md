@@ -199,7 +199,12 @@ junto com o `README.md` e o `PLANO.md`.
   "Sem internet agora", e o caminho é o ajuste com o motivo "Sem internet ou sem
   sinal na obra". Guardar a batida no celular e mandar depois é possível, mas a
   hora viria do relógio do celular (que se muda à mão): iria sempre para
-  conferência. Decisão do dono.
+  conferência. Decisão do dono. O que a Portaria 671 diz (pesquisado em
+  13/10/2026, FAQ do MTE de 31/08/2023 e resumos de fornecedores — o texto do
+  Anexo IX não foi lido direto): a marcação off-line NÃO é obrigatória no REP-P;
+  onde existe (Anexo IX, itens 4 e 5), o coletor guarda e manda no primeiro
+  momento em que voltar a se conectar, e o registro leva a hora da marcação e a
+  hora da gravação, separadas.
 - Dois testes antigos quebravam no dia seguinte a feriado em dia de semana
   (escolhiam "ontem" como dia de falta): pulam feriado agora.
 
