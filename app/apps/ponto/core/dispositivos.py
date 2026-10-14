@@ -177,6 +177,25 @@ def para_json(d: dict) -> dict:
 # ---------------------------------------------------------------------------
 # Escrita
 # ---------------------------------------------------------------------------
+# O PEDIDO DE APROVAÇÃO feito por alguém que entrou com CPF e PIN (14/10/2026).
+# Fica na descrição — sem coluna nova, sem migração —, e é o que põe o aparelho na
+# fila de Validações mesmo quando a pessoa não está liberada para bater no celular
+# (o tipo, quem aprova escolhe: pode ser o tablet da obra que ela trouxe).
+PREFIXO_PEDIDO = "Pedido por "
+
+
+def foi_pedido(aparelho: Optional[dict]) -> bool:
+    return bool(aparelho) and str(aparelho.get("descricao") or "").startswith(PREFIXO_PEDIDO)
+
+
+def marcar_pedido(conn: Connection, dispositivo_id: int, pessoa: dict) -> None:
+    db.executar(conn, "UPDATE ponto.dispositivos SET descricao = :d, colaborador_id = :c "
+                      "WHERE id = :id AND status = 'PENDENTE'",
+                d=f"{PREFIXO_PEDIDO}{pessoa['nome']} (CPF final {pessoa['cpf'][-3:]})"[:200],
+                c=pessoa["id"], id=dispositivo_id)
+    logger.info("Ponto: aparelho %s pedido por %s", dispositivo_id, pessoa["id"])
+
+
 def registrar(conn: Connection, *, device_uuid: str, descricao: str = "",
               user_agent: str = "", ip: str = "") -> tuple[dict, Optional[str]]:
     """Registra o aparelho como PENDENTE e devolve (aparelho, token).

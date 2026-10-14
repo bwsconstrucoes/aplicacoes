@@ -171,7 +171,8 @@ def listar(conn: Connection, quem: Quem, *, obra_id: Optional[int] = None, de=No
              WHERE perfil = 'INDIVIDUAL' AND status = 'APROVADO' AND colaborador_id IS NOT NULL
              ORDER BY colaborador_id, aprovado_em DESC NULLS LAST""")}
         for a in dispositivos.listar(conn, "PENDENTE"):
-            if excecoes is not None and a.get("colaborador_id") and int(a["colaborador_id"]) not in excecoes:
+            if (excecoes is not None and a.get("colaborador_id") and int(a["colaborador_id"]) not in excecoes
+                    and not dispositivos.foi_pedido(a)):      # o pedido explícito entra sempre
                 continue
             j = dispositivos.para_json(a)
             antigo = aprovados.get(int(a["colaborador_id"])) if a.get("colaborador_id") else None

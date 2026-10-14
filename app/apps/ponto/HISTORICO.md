@@ -164,16 +164,28 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
-## 14/10/2026 (tarde) — "Este aparelho vai bater ponto?" no lugar de "ponto da obra"
+## 14/10/2026 (tarde) — "Este aparelho vai bater ponto?" só depois do CPF e PIN
 
-- O dono: a frase da tela de entrada ("Este aparelho vai ser o ponto da obra?
-  Pedir a aprovação") estava específica demais — *"quem vai dizer se é da obra
-  ou é o celular é quem vai aprovar, não quem está pedindo"*. Virou "Este
-  aparelho vai bater ponto? Pedir a aprovação"; o pedido entra como "Aparelho a
-  aprovar", e o TIPO (celular pessoal, ponto da obra, de equipe) e o responsável
-  se escolhem na aprovação, como a janela de aprovar já permitia.
-- Primeiro fiz uma pergunta "de quem é este aparelho?" para quem pede — ele não
-  quis: desfeita antes de publicar.
+- O dono, sobre a frase da tela de entrada ("Este aparelho vai ser o ponto da
+  obra? Pedir a aprovação"): era específica demais — *"quem vai dizer se é da
+  obra ou é o celular é quem vai aprovar, não quem está pedindo"* — e não podia
+  aparecer sem login: *"antes de tudo precisa ser feito o cadastro do telefone e
+  gerado um PIN. Aquilo é a segurança inicial. Depois desse momento é que eu
+  poderia pedir para que o telefone fosse aprovado"*.
+- **Agora:** a tela de entrada não pede aprovação de nada. Depois de entrar com
+  CPF e PIN, num navegador que o sistema não conhece, o menu mostra "Este
+  aparelho vai bater ponto? Pedir a aprovação". O pedido entra como "Pedido por
+  NOME (CPF final xxx)", com a pessoa como responsável sugerida, e vai para a
+  fila de Validações mesmo que ela não esteja liberada para bater no celular
+  (pode ser o tablet da obra que ela está configurando). O TIPO e o responsável
+  se escolhem na aprovação.
+- Outra pessoa que entre no aparelho antes da aprovação não troca o nome de quem
+  pediu (`dispositivos.foi_pedido`). Sem coluna nova: o pedido é marcado na
+  descrição ("Pedido por "), para não depender de migração.
+- O registro anônimo (`/ponto/api/dispositivo/registrar`) continua existindo —
+  é ele que dá a credencial ao navegador —, mas a tela só o usa depois do login.
+- Primeiro eu fiz uma pergunta "de quem é este aparelho?" para quem pede; ele não
+  quis (o tipo é de quem aprova). Desfeita antes de publicar.
 
 ## 14/10/2026 (tarde) — A busca de Pessoas diz por que alguém não aparece
 

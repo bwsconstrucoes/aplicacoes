@@ -430,3 +430,45 @@ def test_onde_o_celular_estava_na_batida_e_na_recusa(app, mundo, banco, monkeypa
     with banco.connect() as conn:
         det = conn.execute(text("SELECT detalhes FROM ponto.recusas ORDER BY id DESC LIMIT 1")).scalar()
     assert det["latitude"] == "-3.8" and det["longitude"] == "-38.4"
+
+
+def test_pedir_a_aprovacao_do_aparelho_so_depois_de_entrar(app, mundo, monkeypatch):
+    """14/10/2026: "antes de tudo precisa ser feito o cadastro do telefone e gerado
+    um PIN (…) depois desse momento é que eu poderia pedir para que o telefone fosse
+    aprovado". O pedido leva o nome de quem pediu e entra na fila de Validações —
+    mesmo de quem não está liberado para bater no celular (pode ser o tablet da
+    obra); o tipo é de quem aprova."""
+    from tests.test_ponto_gestao_banco import CPF_JOAO, CPF_MARIA, _entrar_no_app, como
+    from tests.test_ponto_regras_0610_banco import _id_do_aparelho
+    uuid = "pedido-depois-do-pin-0123456789"
+    anonimo = app.test_client()
+    token = anonimo.post("/ponto/api/dispositivo/registrar", json={"device_uuid": uuid}).get_json()["token"]
+    h = {"X-Device-UUID": uuid, "X-Device-Token": token}
+    assert anonimo.post("/ponto/app/api/aparelho/pedir", json={}, headers=h).status_code in (401, 403)
+    dp = como(app, mundo["dp"])
+    def na_fila():
+        itens = dp.get("/erp/api/ponto/validacoes").get_json()["itens"]
+        return [i for i in itens if i["tipo"] == "APARELHO" and i["id"] == _id_do_aparelho(dp, uuid)]
+    cel = _entrar_no_app(app, CPF_JOAO, monkeypatch)        # João: só consulta (não liberado)
+    r = cel.post("/ponto/app/api/aparelho/pedir", json={}, headers=h)
+    assert r.status_code == 200 and r.get_json()["pedido"] is True
+    ap = dp.get(f"/erp/api/ponto/dispositivos/{_id_do_aparelho(dp, uuid)}").get_json()["dispositivo"]
+    assert ap["descricao"].startswith("Pedido por ") and ap["dono"]["nome"].startswith("João")
+    assert len(na_fila()) == 1
+    # outra pessoa que entra nele antes da aprovação não troca quem pediu
+    outra = app.test_client()
+    from app.apps.ponto import db
+    from app.apps.ponto.core import acesso
+    env = []
+    with db.conexao() as conn:
+        acesso.pedir_codigo(conn, CPF_MARIA, enviar=lambda t, m: env.append(m))
+    outra.post("/ponto/app/api/pin", json={"cpf": CPF_MARIA, "codigo": env[-1].split("código é ")[1][:6], "pin": "481927"},
+               headers=h)
+    outra.post("/ponto/app/api/entrar", json={"cpf": CPF_MARIA, "pin": "481927"}, headers=h)
+    ap = dp.get(f"/erp/api/ponto/dispositivos/{_id_do_aparelho(dp, uuid)}").get_json()["dispositivo"]
+    assert ap["dono"]["nome"].startswith("João")
+    # aprovado como ponto da obra: o pedido já não muda nada
+    assert dp.post(f"/erp/api/ponto/dispositivos/{_id_do_aparelho(dp, uuid)}/aprovar",
+                   json={"perfil": "COMPARTILHADO", "cpf": CPF_JOAO, "obras": [mundo["obra_a"]]}).status_code == 200
+    assert cel.post("/ponto/app/api/aparelho/pedir", json={}, headers=h).get_json()["pedido"] is False
+    assert na_fila() == []
