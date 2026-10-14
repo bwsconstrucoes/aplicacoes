@@ -170,3 +170,35 @@ def test_obra_do_registro_casa_pelo_codigo_primario_da_planilha(app, mundo, regi
             assert base_obras.retrato(conn)["usar"] is True
     finally:
         base_obras.esquecer()
+
+
+def test_a_busca_diz_por_que_a_pessoa_nao_aparece(app, mundo, registro, banco):
+    """14/10/2026: "tem uma pessoa em específico que não tá aparecendo em Ponto ›
+    Pessoas". Quem a busca acha e a lista não mostra vem com o motivo."""
+    dp = como(app, mundo["dp"])
+
+    def fora(busca):
+        d = dp.get("/erp/api/ponto/pessoas", query_string={"busca": busca}).get_json()
+        return d["pessoas"], d["fora_da_lista"]
+
+    pessoas, motivos = fora(CPF_NOVO)                    # no Registro, falta no ERP
+    assert pessoas == [] and len(motivos) == 1
+    assert motivos[0]["nome"] == "NOVO DO REGISTRO" and "ainda não tem cadastro no ERP" in motivos[0]["motivo"]
+    _, motivos = fora(f"{CPF_NOVO[:3]}.{CPF_NOVO[3:6]}.{CPF_NOVO[6:9]}-{CPF_NOVO[9:]}")   # com máscara
+    assert len(motivos) == 1
+    _, motivos = fora(CPF_MARIA)                         # a fase do Pipefy diz desligado
+    assert "Fase Atual" in motivos[0]["motivo"] and "Colaboradores Desligados" in motivos[0]["motivo"]
+    with banco.connect() as conn:                        # e pela data de saída
+        conn.execute(text("UPDATE analisesps.colaborador SET fase = 'Colaboradores Ativos', "
+                          "data_saida = CURRENT_DATE - 3 WHERE cpf = :c"), {"c": CPF_MARIA})
+        conn.commit()
+    _, motivos = fora("maria do reg")
+    assert len(motivos) == 1 and "data de saída no Registro de Colaboradores" in motivos[0]["motivo"]
+    _, motivos = fora(CPF_RUIM)
+    assert "CPF não passa" in motivos[0]["motivo"]
+    pessoas, motivos = fora("joão do registro")          # está na lista: nada a explicar
+    assert len(pessoas) == 1 and motivos == []
+    pessoas, motivos = fora(_cpf("314159265"))             # em lugar nenhum
+    assert pessoas == [] and motivos[0]["nome"] is None and "Atualizar cadastro" in motivos[0]["motivo"]
+    _, motivos = fora("jo")                              # busca curta não procura
+    assert motivos == []

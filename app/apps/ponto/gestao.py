@@ -341,6 +341,13 @@ def ponto_api_pessoas():
              ORDER BY ce.colaborador_id, ce.vigencia_inicio DESC""")}
         pins = {r["colaborador_id"] for r in db.todos(
             conn, "SELECT colaborador_id FROM ponto.colaborador_config WHERE pin_hash IS NOT NULL")}
+        # Quem procura alguém que não está na lista fica sabendo por quê. Só para
+        # quem alcança todas as obras: para o preso a obra, dizer o motivo de quem
+        # é de outra obra confirmaria que a pessoa existe.
+        from .core import registro
+        fora_da_lista = (registro.por_que_nao_aparece(
+            conn, busca, {"".join(ch for ch in (p["cpf"] or "") if ch.isdigit()) for p in pessoas})
+            if busca and quem.obras is None else [])
     saida = []
     for p in pessoas:
         j = cadastros.colaborador_para_json(p)
@@ -348,7 +355,7 @@ def ponto_api_pessoas():
         j["tem_pin"] = p["id"] in pins
         j["regime_banco_rotulo"] = banco.ROTULOS.get(j["regime_banco"], j["regime_banco"])
         saida.append(j)
-    return _ok(pessoas=saida, quantidade=len(saida))
+    return _ok(pessoas=saida, quantidade=len(saida), fora_da_lista=fora_da_lista)
 
 
 @bp.route("/erp/api/ponto/pessoas/<int:colaborador_id>")

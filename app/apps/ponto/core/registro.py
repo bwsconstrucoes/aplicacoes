@@ -220,6 +220,89 @@ def cadastrar_faltantes(conn: Connection, por: str) -> dict:
     return {"criados": criados, "cpf_invalido": len(cpf_ruim), "exemplos_cpf_invalido": cpf_ruim[:10]}
 
 
+# ---------------------------------------------------------------------------
+# POR QUE NÃO APARECE (pedido do dono, 14/10/2026: "tem uma pessoa em específico
+# que não tá aparecendo em Ponto › Pessoas"). A lista mostra só quem bate; quem
+# procura alguém que não está nela precisa saber o motivo — e o motivo mora em
+# três lugares (a cópia do Registro, o ERP e a marcação do ponto).
+# ---------------------------------------------------------------------------
+def por_que_nao_aparece(conn: Connection, busca: str, ja_listados: set, limite: int = 10) -> list[dict]:
+    """[{nome, cpf_final, motivo}] de quem casa com a busca e NÃO está em
+    `ja_listados` (os CPFs que a lista já mostrou). A busca é a da tela: CPF
+    (só os dígitos, 11) ou pedaço do nome (3 letras ou mais)."""
+    from app.apps.erp.core.cadastros.validadores import cpf_valido
+    from . import cadastros
+    busca = " ".join(str(busca or "").split()).lower()
+    digitos = "".join(ch for ch in busca if ch.isdigit())
+    if len(digitos) == 11:
+        filtro_r, filtro_c, params = "r.cpf = :cpf", "regexp_replace(c.cpf, '\\D', '', 'g') = :cpf", {"cpf": digitos}
+    elif len(busca) >= 3 and not digitos:
+        filtro_r, filtro_c, params = "lower(r.nome) LIKE :nome", "lower(c.nome) LIKE :nome", {"nome": f"%{busca}%"}
+    else:
+        return []
+    e = estado(conn, fresco=True)
+    do_registro: dict = {}
+    if e["usar"]:
+        for r in db.todos(conn, f"""SELECT r.cpf, btrim(r.nome) AS nome, r.fase, r.data_saida
+                                      FROM analisesps.colaborador r WHERE {filtro_r}
+                                     ORDER BY r.nome LIMIT :lim""", lim=limite * 3, **params):
+            do_registro[r["cpf"]] = r
+    do_erp = {"".join(ch for ch in (c["cpf"] or "") if ch.isdigit()): c for c in db.todos(
+        conn, f"SELECT c.cpf FROM public.colaboradores c WHERE {filtro_c} LIMIT :lim", lim=limite * 3, **params)}
+    if do_registro:             # o nome no ERP pode ser outro: confere pelo CPF de quem o Registro achou
+        for c in db.todos(conn, "SELECT c.cpf FROM public.colaboradores c "
+                                "WHERE regexp_replace(c.cpf, '\\D', '', 'g') = ANY(:cpfs)", cpfs=list(do_registro)):
+            do_erp.setdefault("".join(ch for ch in (c["cpf"] or "") if ch.isdigit()), c)
+    from .. import horario
+    hoje = horario.hoje()
+    saida = []
+    for cpf in sorted(set(do_registro) | set(do_erp), key=lambda x: (do_registro.get(x) or {}).get("nome") or ""):
+        if cpf in ja_listados:
+            continue
+        r = do_registro.get(cpf)
+        if cpf not in do_erp:
+            fase = (r["fase"] or "").lower()
+            if not cpf_valido(cpf):
+                motivo = ("está no Registro de Colaboradores, mas o CPF não passa na conferência dos dígitos — "
+                          "corrija no Pipefy e atualize o cadastro na Análise de SPs")
+            elif r["data_saida"] and r["data_saida"] < hoje:
+                motivo = f"desligada: a data de saída no Registro de Colaboradores é {r['data_saida']:%d/%m/%Y}"
+            elif PEDACO_DESLIGADO in fase:
+                motivo = f"desligada: a Fase Atual no Pipefy diz “{r['fase']}”"
+            else:
+                motivo = ("está no Registro de Colaboradores, mas ainda não tem cadastro no ERP. Em Ponto › "
+                          "Configuração, aperte “Cadastrar no ERP os que faltam” — ou espere até 15 minutos, "
+                          "se a base automática estiver ligada")
+        else:
+            p = cadastros.colaborador_por_cpf(conn, cpf) or {}
+            nome = p.get("nome") or (r or {}).get("nome")
+            if p.get("situacao") == "DESLIGADO":
+                if p.get("demissao") and p["demissao"] < hoje:
+                    motivo = (f"desligada: a data de saída {'no Registro de Colaboradores' if p.get('no_registro') else 'no ERP'}"
+                              f" é {p['demissao']:%d/%m/%Y}")
+                elif p.get("fase_registro") and PEDACO_DESLIGADO in p["fase_registro"].lower():
+                    motivo = f"desligada: a Fase Atual no Pipefy diz “{p['fase_registro']}”"
+                else:
+                    motivo = "desligada no cadastro do ERP"
+            elif not p.get("ativo_no_ponto", True):
+                motivo = "marcada no próprio ponto como “não bate ponto”"
+            else:
+                continue            # ela está na lista; quem procura só não a alcança
+            r = {"nome": nome}
+        saida.append({"nome": r["nome"], "cpf_final": cpf[-4:], "motivo": motivo})
+        if len(saida) >= limite:
+            break
+    if not saida and not do_registro and not do_erp:
+        quando = horario.texto(db.um(conn, "SELECT max(atualizado_em) AS u FROM analisesps.colaborador")["u"]) \
+            if e["usar"] else None
+        saida.append({"nome": None, "cpf_final": None, "motivo": (
+            "não está no cadastro do ERP"
+            + (f" nem na cópia do Registro de Colaboradores (atualizada em {quando}). Se a pessoa entrou na "
+               "planilha depois disso, atualize em Análise de SPs › Colaboradores › “Atualizar cadastro”"
+               if e["usar"] else ""))})
+    return saida
+
+
 def gravar_fonte(conn: Connection, fonte: str, por: str) -> None:
     from ..erros import ErroDeValidacao
     fonte = str(fonte or "").upper()

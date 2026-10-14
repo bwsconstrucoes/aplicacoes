@@ -401,6 +401,7 @@
 <h2>Pessoas no ponto <small id="pe-sub"></small></h2>
 <div id="mensagem"></div>
 <div class="cartao" id="pe-ficha" hidden></div>
+<div class="cartao oculto" id="pe-fora" style="border-left:4px solid var(--ambar)"></div>
 <div class="tabela-wrap">
   <div class="tabela-rolagem"><table>
     <thead><tr><th class="sem-ordem">Nome</th><th class="sem-ordem">CPF</th>
@@ -2214,7 +2215,7 @@ carregarObrasDoMosaico().then(obras => {
 // ===========================================================================
 // PESSOAS — escala, jornada, obras extras e banco de horas de cada pessoa.
 // ===========================================================================
-let PESSOAS = [], ESCALAS = null, ESPERA = null;
+let PESSOAS = [], ESCALAS = null, ESPERA = null, FORA_DA_LISTA = [];
 
 async function carregarPessoas() {
   const p = new URLSearchParams();
@@ -2224,6 +2225,7 @@ async function carregarPessoas() {
   try {
     const d = await api(`/erp/api/ponto/pessoas?${p}`);
     PESSOAS = d.pessoas;
+    FORA_DA_LISTA = d.fora_da_lista || [];
     desenharPessoas();
   } catch (e) { falhou(e); }
 }
@@ -2231,7 +2233,11 @@ async function carregarPessoas() {
 function desenharPessoas() {
   els("pe-sub").textContent = `${PESSOAS.length} pessoa(s)`;
   els("pe-vazio").classList.toggle("oculto", PESSOAS.length > 0);
-  if (!PESSOAS.length) els("pe-vazio").innerHTML = "<b>Ninguém encontrado</b>Mude a busca.";
+  // Quem a busca achou, mas não está na lista — e por quê (14/10/2026).
+  const porQue = FORA_DA_LISTA.map(x => `<li>${x.nome ? `<b>${escapar(x.nome)}</b>${x.cpf_final ? ` (CPF final ${escapar(x.cpf_final)})` : ""}: ` : ""}${escapar(x.motivo)}.</li>`).join("");
+  els("pe-fora").classList.toggle("oculto", !porQue);
+  els("pe-fora").innerHTML = porQue ? `<b>${PESSOAS.length ? "Também casam com a busca, mas não estão na lista" : "Não está na lista"}</b><ul style="margin:6px 0 0 18px; padding:0">${porQue}</ul>` : "";
+  if (!PESSOAS.length) els("pe-vazio").innerHTML = porQue ? "<b>Ninguém na lista</b>Veja o motivo acima." : "<b>Ninguém encontrado</b>Mude a busca.";
   els("pe-corpo").innerHTML = PESSOAS.map(p => `<tr style="cursor:pointer" data-pessoa="${p.id}">
     <td><b>${escapar(p.nome)}</b>${!p.ativo_no_ponto ? `<small>não bate ponto</small>` : ""}
       ${p.situacao && p.situacao !== "ATIVO" ? `<small>${escapar(rotulo(p.situacao))}</small>` : ""}</td>

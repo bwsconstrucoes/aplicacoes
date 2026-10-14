@@ -164,6 +164,25 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 14/10/2026 (tarde) — A busca de Pessoas diz por que alguém não aparece
+
+- O dono: *"tem uma pessoa em específico que não tá aparecendo em Ponto ›
+  Pessoas"* (colou a linha dela do Registro: fase "Cadastro Concluído", sem data
+  de saída à vista). Daqui não se vê o banco de produção, então a resposta ficou
+  no sistema: buscando por CPF (11 dígitos, com ou sem máscara) ou por 3 letras
+  ou mais do nome, quem casa e NÃO está na lista vem num quadro com o motivo —
+  falta cadastro no ERP (com o botão que resolve), desligada pela data de saída
+  ou pela Fase Atual (com a data/fase), CPF que não passa nos dígitos, "não bate
+  ponto" marcado no ponto, ou não está em lugar nenhum (com a data da última
+  cópia do Registro). `registro.por_que_nao_aparece`.
+- Só para quem alcança todas as obras: para o preso a obra, dar o motivo de
+  alguém de outra obra confirmaria que a pessoa existe.
+- Os textos da Configuração diziam que afastado "bate, mas para conferência" —
+  corrigidos para "não batem até voltar" (a decisão da manhã).
+- **Em aberto:** a linha da Karla tem 20/06/2026 e 01/11/2024 lado a lado; não
+  sei qual coluna é cada uma. Se 20/06/2026 for a Data de Saída, ela está
+  desligada desde junho e a busca vai dizer isso.
+
 ## 14/10/2026 — Afastado não bate; onde o celular estava, no mapa
 
 - **Afastado não bate** (o dono: *"o cara está afastado, ele não bate ponto, não

@@ -265,6 +265,7 @@ dizer "tem batida"; presença, horas e faltas são regra da fase 3.
 - Quantos dias o Fulano trabalhou em setembro? ⚠️ (dia com batida, não jornada cumprida)
 - Quais batidas estão em análise, e por quê? (fora da cerca, obra sem coordenada, relógio, pessoa afastada)
 - Quais aparelhos estão pendentes de aprovação?
+- Por que o Fulano não aparece no ponto? 🔒 (a busca de Pessoas responde: falta no ERP, desligado pela data de saída ou pela fase do Pipefy, CPF inválido, "não bate ponto", ou fora da cópia do Registro)
 - Quantas batidas foram recusadas esta semana, e de que aparelho?
 - Qual foi a última batida da Maria? Em que obra?
 - Quais fotos de batida ainda não subiram para o Drive?
