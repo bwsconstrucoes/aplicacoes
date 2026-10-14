@@ -1,13 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-CONCILIAÇÃO › OS "ÚLTIMOS LANÇAMENTOS" DO BRADESCO E ONDE O SALDO NÃO BATE —
+CONCILIAÇÃO › O OFX DO BRADESCO, O SALDO ANTES E DEPOIS, A DATA DE INÍCIO —
 14/10/2026, com banco de verdade.
 
 O dono gerou o extrato de 01 a 05/10 e o arquivo trouxe seis linhas de 13/10
 que ele não pediu; o cabeçalho diz o dia do download (14/10) nos dois campos do
-período, e o saldo vem sem data ("00000000"). Nada as distingue, então o corte é
-só onde a pessoa disser ("Importar só até"). O arquivo daqui reproduz isso com
-valores inventados.
+período, e o saldo vem sem data ("00000000"). O corte manual ("Importar só
+até") e a janela "Onde o saldo não bate" saíram a pedido dele, no mesmo dia
+("não serviu pra nada"). O arquivo daqui reproduz o do Bradesco com valores
+inventados.
 """
 import datetime as dt
 from decimal import Decimal as D
@@ -35,16 +36,11 @@ EXTRATO = [("20261001", "-144.76", "N1012D", "PAGTO ELETRON COBRANCA 1"),
            ("20261013", "-285.74", "N102AB", "CONTA DE TELEFONE")]
 
 
-def test_o_saldo_sem_data_e_do_dia_do_download_e_o_corte_e_onde_a_pessoa_diz(banco_conc):
+def test_o_saldo_sem_data_e_do_dia_do_download(banco_conc):
     from app.apps.analisesps import conciliacao_ofx
     lido = conciliacao_ofx.ler(ofx_bradesco(EXTRATO))
     assert lido.baixado_em == dt.date(2026, 10, 14)
     assert lido.saldo_em == dt.date(2026, 10, 14), "sem DTASOF, vale o dia do download"
-    cortado = conciliacao_ofx.cortar(lido, dt.date(2026, 10, 5))
-    assert len(cortado.lancamentos) == 4 and len(cortado.cortadas) == 2
-    assert cortado.periodo_fim == dt.date(2026, 10, 5)
-    assert cortado.saldo == lido.saldo and cortado.saldo_em == lido.saldo_em
-    assert cortado.transacoes_no_arquivo == 4, "as cortadas não são 'perdidas na leitura'"
 
 
 def _entrar(cliente):
@@ -59,80 +55,28 @@ def _mandar(cliente, rota, conteudo, **campos):
                         content_type="multipart/form-data").get_json()
 
 
-def test_a_IMPORTACAO_so_corta_quando_a_pessoa_pede_e_o_saldo_confere(banco_conc, app):
-    """14/10/2026: nada no arquivo distingue os "últimos lançamentos" — o dono
-    recusou o corte automático. Sem data, entra tudo."""
+def test_a_IMPORTACAO_mostra_o_saldo_da_conta_antes_e_depois_e_confere_com_o_banco(banco_conc, app):
+    """14/10/2026: "na importação do extrato, exibir o novo saldo após a
+    importação dos novos lançamentos"."""
     from app.apps.analisesps import conciliacao
     # saldo de partida que faz o arquivo bater: 488,68 − movimento inteiro
     conta_id = conta_de_teste(saldo_inicial="2.650,67", saldo_inicial_em="2026-09-30")
     with app.test_client() as cliente:
         _entrar(cliente)
-        tudo = _mandar(cliente, "conferir", ofx_bradesco(EXTRATO), conta_id=str(conta_id))
-        assert tudo["ok"] and tudo["ate"] == "" and tudo["novas"] == 6 and tudo["saldo_bate"]
-        assert "ultimos" not in tudo
-
-        d = _mandar(cliente, "conferir", ofx_bradesco(EXTRATO), conta_id=str(conta_id),
-                    ate="2026-10-05")
-        assert d["ate"] == "2026-10-05" and d["cortadas_total"] == 2 and d["novas"] == 4
-        assert d["saldo_em"] == "2026-10-14"
-        assert d["saldo_bate"], d      # as 4 novas + as 2 deixadas de fora
-
+        d = _mandar(cliente, "conferir", ofx_bradesco(EXTRATO), conta_id=str(conta_id))
+        assert d["ok"] and d["novas"] == 6 and d["saldo_bate"]
+        assert d["saldo_conta_antes"] == "2650.67"
+        assert d["saldo_conta_depois"] == "488.68" and d["soma_das_novas"] == "-2161.99"
+        assert "ate" not in d and "cortadas_total" not in d, "o corte manual saiu"
         f = _mandar(cliente, "importar", ofx_bradesco(EXTRATO), conta_id=str(conta_id),
                     ate="2026-10-05")
-        assert f["ok"] and f["gravadas"] == 4
-        assert conciliacao.quantas_na_conta(conta_id) == 4
-
-        # o extrato seguinte traz as duas de 13/10: entram, sem repetir
-        f = _mandar(cliente, "importar", ofx_bradesco(EXTRATO), conta_id=str(conta_id))
-        assert f["gravadas"] == 2 and conciliacao.quantas_na_conta(conta_id) == 6
-        assert f["saldo_bate"]
-
-
-def test_ONDE_O_SALDO_NAO_BATE_acha_o_intervalo_e_a_linha_repetida(banco_conc, app):
-    from app.apps.analisesps import conciliacao, conciliacao_saldo as cs
-    conta_id = conta_de_teste(saldo_inicial="1.000,00", saldo_inicial_em="2026-09-01")
-    for dia, valor, texto in [(2, "-100.00", "A"), (5, "-250.00", "BOLETO X"),
-                              (6, "-250.00", "BOLETO X"),   # a repetida
-                              (10, "500.00", "PIX"), (20, "-50.00", "TARIFA")]:
-        conciliacao.acrescentar_a_mao(conta_id, dt.date(2026, 9, dia), texto, D(valor), quem="T")
-    # O banco: em 03/09 tinha 900 (bate); em 15/09, 1.150 (aqui dá 900: −250)
-    cs.gravar_ponto(conta_id, "03/09/2026", "900,00", "T")
-    cs.gravar_ponto(conta_id, "15/09/2026", "1.150,00", "T")
-    cs.gravar_ponto(conta_id, "30/09/2026", "1.100,00", "T")
-
-    d = cs.diagnostico(conta_id)
-    assert [p["diferenca"] for p in d["pontos"]] == [D("250.00"), D("250.00"), D("0"), D("0")]
-    assert not d["bate_hoje"]
-    [j] = d["janelas"]
-    assert (j["de"], j["ate"]) == (dt.date(2026, 9, 3), dt.date(2026, 9, 15))
-    assert j["mudanca"] == D("250.00")
-    assert {l["data"].day for l in j["mesmo_valor"]} == {5, 6}
-    assert {l["data"].day for l in j["repetidas"]} == {5, 6}
-    assert j["dia_do_meio"] == dt.date(2026, 9, 9)
-
-    with app.test_client() as cliente:
-        _entrar(cliente)
-        r = cliente.get(f"/analisesps/api/conciliacao/saldo/diagnostico?conta_id={conta_id}").get_json()
-        assert r["ok"] and r["janelas"][0]["dia_do_meio"] == "2026-09-09"
-        r = cliente.post("/analisesps/api/conciliacao/saldo/ponto",
-                         json={"conta_id": conta_id, "data": "2026-09-15", "apagar": True}).get_json()
-        assert r["ok"] and len(r["pontos"]) == 3
-        r = cliente.post("/analisesps/api/conciliacao/saldo/ponto",
-                         json={"conta_id": conta_id, "data": "2026-09-09", "saldo": ""}).get_json()
-        assert not r["ok"] and "saldo" in r["erro"]
-        tela = cliente.get(f"/analisesps/conciliacao?conta_id={conta_id}").get_data(as_text=True)
-        assert 'id="btn-onde-saldo"' in tela and 'id="cartao-saldo"' in tela
-
-
-def test_o_SALDO_DO_OFX_importado_vira_ponto(banco_conc):
-    from app.apps.analisesps import conciliacao, conciliacao_ofx, conciliacao_saldo as cs
-    conta_id = conta_de_teste(saldo_inicial="0", saldo_inicial_em="2026-09-30")
-    lido = conciliacao_ofx.cortar(conciliacao_ofx.ler(ofx_bradesco(EXTRATO, saldo="0")),
-                                  dt.date(2026, 10, 5))
-    conciliacao.importar(conta_id, lido, "Bradesco.OFX", "T")
-    [ponto, inicial] = cs.diagnostico(conta_id)["pontos"]
-    assert ponto["data"] == dt.date(2026, 10, 14) and ponto["origem"] == "arquivo"
-    assert inicial["origem"] == "inicial"
+        assert f["gravadas"] == 6, "data de corte mandada é ignorada"
+        assert f["saldo_conta_antes"] == "2650.67" and f["saldo_conta_depois"] == "488.68"
+    assert conciliacao.saldo_da_conta(conta_id) == D("488.68")
+    tela = app.test_client()
+    _entrar(tela)
+    html = tela.get(f"/analisesps/conciliacao?conta_id={conta_id}").get_data(as_text=True)
+    assert "Onde o saldo não bate" not in html and "Importar só até" not in html
 
 
 # ---------------------------------------------------------------------------
@@ -214,7 +158,7 @@ POR_ARQUIVO = [("20261001", "-500.00", "N1", "PAGTO ELETRON COBRANCA 1"),
 
 
 def test_o_INVEST_FACIL_sai_por_padrao_e_o_saldo_do_arquivo_deixa_de_ser_comparado(banco_conc, app):
-    from app.apps.analisesps import conciliacao, conciliacao_saldo as cs
+    from app.apps.analisesps import conciliacao
     conta_id = conta_de_teste(saldo_inicial="10.000,00", saldo_inicial_em="2026-09-30")
     arquivo = ofx_bradesco(POR_ARQUIVO, saldo="0.00")
     with app.test_client() as cliente:
@@ -228,5 +172,33 @@ def test_o_INVEST_FACIL_sai_por_padrao_e_o_saldo_do_arquivo_deixa_de_ser_compara
         f = _mandar(cliente, "importar", arquivo, conta_id=str(conta_id))
         assert f["gravadas"] == 3
     assert conciliacao.saldo_da_conta(conta_id) == D("10500.40")
-    assert all(p["origem"] != "arquivo" for p in cs.diagnostico(conta_id)["pontos"]), \
-        "o saldo 0,00 do arquivo não vira ponto de conferência"
+
+
+def test_EXPORTAR_o_extrato_em_planilha_e_pdf_com_o_filtro_da_tela(banco_conc, app):
+    """14/10/2026: "quero poder exportar o extrato conciliado em pdf ou em
+    planilha". Sai o filtro da tela, todas as páginas, em ordem de data."""
+    import io
+    from openpyxl import load_workbook
+    from app.apps.analisesps import conciliacao
+    conta_id = conta_de_teste(saldo_inicial="1.000,00", saldo_inicial_em="2026-08-31")
+    a = conciliacao.acrescentar_a_mao(conta_id, dt.date(2026, 9, 2), "PRIMEIRA", D("-100.00"), quem="T")
+    conciliacao.acrescentar_a_mao(conta_id, dt.date(2026, 9, 5), "SEGUNDA", D("50.00"), quem="T")
+    conciliacao.acrescentar_a_mao(conta_id, dt.date(2026, 8, 5), "ANTERIOR", D("7.00"), quem="T")
+    conciliacao.marcar([a], True, "MARCELO")
+    with app.test_client() as cliente:
+        _entrar(cliente)
+        tela = cliente.get(f"/analisesps/conciliacao?conta_id={conta_id}").get_data(as_text=True)
+        assert "formato=pdf" in tela and "formato=xlsx" in tela
+        r = cliente.get(f"/analisesps/conciliacao/exportar?formato=xlsx&conta_id={conta_id}")
+        assert r.status_code == 200 and "spreadsheet" in r.mimetype
+        aba = load_workbook(io.BytesIO(r.data)).active
+        linhas = [[c.value for c in l] for l in aba.iter_rows(min_row=5, max_row=6)]
+        assert [l[1] for l in linhas] == ["PRIMEIRA", "SEGUNDA"], "em ordem de data, sem a anterior"
+        assert linhas[0][6] == "Sim" and linhas[0][7] == "MARCELO"
+        assert float(linhas[0][5]) == 900.0 and float(linhas[1][5]) == 950.0
+        so = cliente.get(f"/analisesps/conciliacao/exportar?formato=xlsx&conta_id={conta_id}"
+                         "&situacao=pendentes")
+        aba = load_workbook(io.BytesIO(so.data)).active
+        assert aba.cell(5, 2).value == "SEGUNDA" and aba.cell(6, 2).value is None
+        p = cliente.get(f"/analisesps/conciliacao/exportar?formato=pdf&conta_id={conta_id}")
+        assert p.status_code == 200 and p.data.startswith(b"%PDF")

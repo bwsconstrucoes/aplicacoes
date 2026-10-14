@@ -29,7 +29,7 @@ logger = logging.getLogger("analisesps.conciliacao")
 # Quantas linhas a tela mostra de uma vez. A conciliação se faz olhando uma
 # conta num período — não varrendo 60 mil linhas. 200 desde 02/10/2026, pedido
 # do dono: *"exibir os últimos 200 lançamentos"*.
-POR_PAGINA = 200
+POR_PAGINA = 500
 
 # O teto de linhas de um arquivo só. Um OFX de um ano tem alguns milhares.
 MAX_LINHAS_POR_ARQUIVO = 20000
@@ -437,32 +437,12 @@ def conferir(conta_id: int, lido) -> dict:
     # está aqui com o sinal contrário. Não adota (ver a função), mas avisa.
     sinal_trocado = sinal_trocado_na_planilha(conta_id, [l for _m, l in novas])
 
-    # ⚠️ OS "ÚLTIMOS LANÇAMENTOS" DEIXADOS DE FORA (14/10/2026) continuam
-    # dentro do saldo que o banco declara. Para comparar saldo com saldo, a
-    # conta daqui soma os que ainda NÃO estão aqui — os que já estão, já contam.
-    cortadas = list(getattr(lido, "cortadas", ()) or ())
-    cortadas_fora = Decimal("0")
-    if cortadas and _pronto():
-        marcas_cortadas = marcas_do_arquivo(conta_id, cortadas)
-        lista = [m for m, _l in marcas_cortadas]
-        achadas = set()
-        for i in range(0, len(lista), 500):
-            bloco = lista[i:i + 500]
-            achadas.update(l[0] for l in consultar(
-                "SELECT impressao FROM analisesps.conciliacao_extrato "
-                f" WHERE conta_id = ? AND impressao IN ({','.join(['?'] * len(bloco))})",
-                tuple([conta_id] + bloco)))
-        cortadas_fora = sum((l.valor for m, l in marcas_cortadas if m not in achadas),
-                            Decimal("0"))
-
     aplicacoes = list(getattr(lido, "aplicacoes", ()) or ())
     return {
         "aplicacoes_total": len(aplicacoes),
         "aplicacoes_soma": sum((l.valor for l in aplicacoes), Decimal("0")),
         "anteriores_total": len(anteriores),
         "inicio": inicio,
-        "cortadas": cortadas,
-        "cortadas_fora": cortadas_fora,
         "baixado_em": getattr(lido, "baixado_em", None),
         "sinal_trocado": sinal_trocado,
         "conta_id": conta_id,
@@ -1483,13 +1463,18 @@ def resumo_para_a_tela(conferido: dict, conta_id: int,
     saldo_aqui = saldo_da_conta(conta_id, data_do_saldo)
     # Na conferência (antes de gravar), o daqui é "como ficaria": com as novas.
     # Comparar sem elas dava "não bate" em todo extrato novo.
-    if conferido.get("gravadas") is None:
-        saldo_aqui += sum((l.valor for _m, l in novas), Decimal("0"))
-    # E os últimos lançamentos deixados de fora que ainda não estão aqui: o
-    # saldo do banco já os conta.
-    saldo_aqui += Decimal(str(conferido.get("cortadas_fora") or 0))
+    soma_das_novas = sum((l.valor for _m, l in novas), Decimal("0"))
+    previa = conferido.get("gravadas") is None
+    if previa:
+        saldo_aqui += soma_das_novas
     saldo_banco = conferido.get("saldo")
-    cortadas = list(conferido.get("cortadas") or [])
+    # O SALDO DA CONTA ANTES E DEPOIS DE GRAVAR (14/10/2026) — pedido do dono:
+    # *"na importação do extrato, exibir o novo saldo após a importação dos
+    # novos lançamentos"*. É o saldo da conta inteira (o número do topo da
+    # tela), não o do dia do arquivo.
+    saldo_conta = saldo_da_conta(conta_id)
+    saldo_antes = saldo_conta if previa else saldo_conta - soma_das_novas
+    saldo_depois = saldo_conta + soma_das_novas if previa else saldo_conta
 
     return {
         "conta_id": conta_id,
@@ -1557,13 +1542,13 @@ def resumo_para_a_tela(conferido: dict, conta_id: int,
         "saldo_em": data_do_saldo.isoformat() if data_do_saldo else "",
         "baixado_em": (conferido["baixado_em"].isoformat()
                        if conferido.get("baixado_em") else ""),
-        "cortadas_total": len(cortadas),
+        "saldo_conta_antes": str(saldo_antes),
+        "saldo_conta_depois": str(saldo_depois),
+        "soma_das_novas": str(soma_das_novas),
         "anteriores_total": conferido.get("anteriores_total", 0),
         "aplicacoes_total": conferido.get("aplicacoes_total", 0),
         "aplicacoes_soma": str(conferido.get("aplicacoes_soma") or 0),
         "inicio": (conferido["inicio"].isoformat() if conferido.get("inicio") else ""),
-        "cortadas_soma": str(sum((l.valor for l in cortadas), Decimal("0"))),
-        "cortadas_fora": str(conferido.get("cortadas_fora") or 0),
         "saldo_bate": (saldo_banco is not None
                        and Decimal(str(saldo_banco)) == Decimal(str(saldo_aqui))),
     }

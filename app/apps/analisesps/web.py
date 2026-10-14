@@ -2938,6 +2938,42 @@ def tela_conciliacao():
         nome=auth.nome_atual())
 
 
+@bp.route("/conciliacao/exportar")
+@exige_consulta
+def conciliacao_exportar():
+    """O extrato da tela em PDF ou planilha — mesma conta, mesmo filtro, todas
+    as páginas (14/10/2026). Ver `conciliacao_exportar`."""
+    from . import conciliacao as conc
+    from . import conciliacao_exportar as ce
+    from .horario import agora
+
+    if not conc.estado()["pronto"]:
+        return render_template("analisesps_erro.html", titulo="Conciliação não ligada",
+                               mensagem="Aplique as atualizações do banco primeiro."), 400
+    contas = conc.contas()
+    filtros = _filtros_da_conciliacao(contas)
+    conta = next((c for c in contas if c["id"] == filtros["conta_id"]), None)
+    if not conta:
+        return render_template("analisesps_erro.html", titulo="Escolha a conta",
+                               mensagem="Abra a conta na Conciliação e exporte de lá."), 400
+    formato = "pdf" if request.args.get("formato") == "pdf" else "xlsx"
+    try:
+        lista = ce.linhas(filtros)
+        resumo = conc.resumo(filtros)
+        conteudo = (ce.pdf if formato == "pdf" else ce.xlsx)(conta, filtros, lista, resumo)
+    except Exception as e:  # noqa: BLE001 — a frase vai para a tela
+        logger.exception("Conciliação: falhou exportar o extrato")
+        return render_template("analisesps_erro.html", titulo="Não consegui exportar",
+                               mensagem=str(e)[:300]), 500
+    import re
+    nome_conta = re.sub(r"[^A-Za-z0-9]+", "_", conta.get("nome") or "conta").strip("_")
+    nome = f"extrato_{nome_conta}_{agora().strftime('%Y-%m-%d_%H%M')}.{formato}"
+    tipo = ("application/pdf" if formato == "pdf" else
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    return Response(conteudo, mimetype=tipo,
+                    headers={"Content-Disposition": f'attachment; filename="{nome}"'})
+
+
 @bp.route("/conciliacao/panorama")
 @exige_consulta
 def conciliacao_panorama():
@@ -3001,9 +3037,8 @@ def conciliacao_conferir():
         lido = conciliacao_ofx.ler(arquivo.read())
     except conciliacao_ofx.ErroDoExtrato as e:
         return {"ok": False, "erro": str(e)}
-    # "Importar só até" (14/10/2026): o corte que a pessoa escolhe.
     lido_inteiro = lido
-    lido, cortado_em = _cortar_extrato(lido)
+    lido = _escolhas_do_extrato(lido)
 
     achada = conc.conta_do_extrato(lido.bankid, lido.acctid)
     pedida = request.form.get("conta_id")
@@ -3038,29 +3073,21 @@ def conciliacao_conferir():
     # incluí-las ou tirá-las de novo.
     com_aplicacoes = sum(1 for x in lido_inteiro.lancamentos
                          if conciliacao_ofx.e_aplicacao_automatica(x))
-    return {"ok": True, "ate": cortado_em.isoformat() if cortado_em else "",
-            "aplicacoes_no_arquivo": com_aplicacoes,
+    return {"ok": True, "aplicacoes_no_arquivo": com_aplicacoes,
             "aplicacoes_incluidas": request.form.get("aplicacoes") == "incluir",
             **conc.resumo_para_a_tela(conferido, conta_id, arquivo.filename)}
 
 
-def _cortar_extrato(lido):
-    """(extrato, data do corte ou None). Conferir e gravar passam por aqui com
-    o MESMO formulário, então gravam o que a conferência mostrou.
+def _escolhas_do_extrato(lido):
+    """O extrato como a pessoa escolheu tratá-lo. Conferir e gravar passam por
+    aqui com o MESMO formulário, então gravam o que a conferência mostrou.
 
-    Só corta onde a PESSOA disser (`ate`). Não há corte automático: nada no
-    arquivo do Bradesco distingue os "últimos lançamentos" (14/10/2026)."""
+    As aplicações e resgates automáticos (Invest Fácil) saem por padrão;
+    `aplicacoes=incluir` os mantém (14/10/2026)."""
     from . import conciliacao_ofx
-    from .formatos import para_data
-    # As aplicações e resgates automáticos (Invest Fácil) saem por padrão;
-    # `aplicacoes=incluir` os mantém (14/10/2026).
     if request.form.get("aplicacoes") != "incluir":
         lido = conciliacao_ofx.sem_aplicacoes(lido)
-    ate = para_data((request.form.get("ate") or "").strip())
-    if not ate:
-        return lido, None
-    cortado = conciliacao_ofx.cortar(lido, ate)
-    return cortado, (ate if cortado.cortadas else None)
+    return lido
 
 
 @bp.route("/api/conciliacao/importar", methods=["POST"])
@@ -3087,7 +3114,7 @@ def conciliacao_importar():
         lido = conciliacao_ofx.ler(arquivo.read())
     except conciliacao_ofx.ErroDoExtrato as e:
         return {"ok": False, "erro": str(e)}
-    lido, _cortado_em = _cortar_extrato(lido)
+    lido = _escolhas_do_extrato(lido)
 
     quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
     # Lembrar a conta do arquivo: da próxima vez ele se reconhece sozinho.
@@ -5731,47 +5758,6 @@ def conciliacao_apagar_linhas():
         logger.exception("Conciliação: falhou apagar as linhas marcadas")
         return {"ok": False, "erro": f"Não consegui apagar: {e}"}, 500
     return {"ok": True, "so_contei": False, **feito}
-
-
-@bp.route("/api/conciliacao/saldo/diagnostico")
-@exige_consulta
-def conciliacao_saldo_diagnostico():
-    """Onde o saldo deixa de bater — do presente para o passado (14/10/2026).
-    Só lê. Ver `conciliacao_saldo`."""
-    from . import conciliacao as conc
-    from . import conciliacao_saldo as cs
-    conta_id = str(request.args.get("conta_id") or "")
-    if not conta_id.isdigit() or not conc.estado()["pronto"]:
-        return {"ok": False, "erro": "Escolha a conta."}
-    try:
-        return {"ok": True, **cs.para_a_tela(cs.diagnostico(int(conta_id)))}
-    except Exception as e:  # noqa: BLE001 — a tela precisa da frase
-        logger.exception("Conciliação: falhou o diagnóstico do saldo")
-        return {"ok": False, "erro": f"Não consegui analisar: {e}"}, 500
-
-
-@bp.route("/api/conciliacao/saldo/ponto", methods=["POST"])
-@exige_operador
-def conciliacao_saldo_ponto():
-    """Grava (ou apaga) o saldo do banco no fim de um dia — o ponto de
-    conferência que a pessoa tira do extrato do banco."""
-    from . import conciliacao_saldo as cs
-    dados = request.get_json(silent=True) or {}
-    conta_id = str(dados.get("conta_id") or "")
-    if not conta_id.isdigit():
-        return {"ok": False, "erro": "Escolha a conta."}
-    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
-    try:
-        if dados.get("apagar"):
-            cs.apagar_ponto(int(conta_id), dados.get("data"))
-        else:
-            cs.gravar_ponto(int(conta_id), dados.get("data"), dados.get("saldo"), quem)
-        return {"ok": True, **cs.para_a_tela(cs.diagnostico(int(conta_id)))}
-    except cs.ErroDoSaldo as e:
-        return {"ok": False, "erro": str(e)}
-    except Exception as e:  # noqa: BLE001
-        logger.exception("Conciliação: falhou gravar o saldo do dia")
-        return {"ok": False, "erro": f"Não consegui gravar: {e}"}, 500
 
 
 @bp.route("/api/conciliacao/soltar-presas", methods=["POST"])

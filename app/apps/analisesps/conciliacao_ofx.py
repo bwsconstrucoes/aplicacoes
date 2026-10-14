@@ -60,8 +60,6 @@ class ExtratoLido:
     # lugar do período (25/09/2026). É a data do saldo quando o banco não diz
     # outra (14/10/2026: DTASOF veio "00000000").
     baixado_em: date | None = None
-    # As linhas deixadas de fora por `cortar` ("últimos lançamentos").
-    cortadas: tuple = ()
     # As aplicações e resgates automáticos deixados de fora (Invest Fácil).
     aplicacoes: tuple = ()
 
@@ -165,37 +163,6 @@ def ler(conteudo: bytes) -> ExtratoLido:
         transacoes_no_arquivo=contar_transacoes(conteudo),
         baixado_em=baixado_em,
     )
-
-
-# ---------------------------------------------------------------------------
-# IMPORTAR SÓ ATÉ UMA DATA — 14/10/2026
-#
-# O dono gerou o extrato de 01 a 05/10 e o arquivo do Bradesco trouxe também
-# linhas de 13/10, os "últimos lançamentos", que ele não pediu. NADA NO ARQUIVO
-# AS DISTINGUE: mesmo formato, mesmo tipo de FITID, e o cabeçalho diz o dia do
-# download no lugar do período pedido.
-#
-# Tentei reconhecê-las pelo calendário (bloco perto do download, depois de dias
-# sem nada) e o dono recusou, com razão: *"se não tem nada no arquivo que
-# identifique, não pode utilizar esse recurso"*. Regra que adivinha pode cortar
-# lançamento bom. Fica só o corte que A PESSOA escolhe — ela sabe que período
-# pediu ao banco.
-# ---------------------------------------------------------------------------
-def cortar(lido: ExtratoLido, ate: date) -> ExtratoLido:
-    """O mesmo extrato só até `ate`. O saldo NÃO muda: ele é o do dia do
-    download e continua sendo verdade — quem o compara sabe das cortadas."""
-    from dataclasses import replace
-    ficam = [x for x in lido.lancamentos if not x.data or x.data <= ate]
-    saem = tuple(x for x in lido.lancamentos if x.data and x.data > ate)
-    if not saem:
-        return lido
-    datas = [x.data for x in ficam if x.data]
-    return replace(
-        lido, lancamentos=ficam, cortadas=saem,
-        periodo_ini=min(datas) if datas else lido.periodo_ini,
-        periodo_fim=ate,
-        # o arquivo tinha estas; as cortadas não são "perdidas na leitura"
-        transacoes_no_arquivo=max(0, lido.transacoes_no_arquivo - len(saem)))
 
 
 # ---------------------------------------------------------------------------

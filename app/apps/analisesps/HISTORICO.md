@@ -12228,6 +12228,31 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 230 — Conciliação: menos ferramenta, mais o que se usa (14/10/2026)
+
+- **Saíram, a pedido do dono** (*"não serviu pra nada"*): o "Importar só até /
+  Conferir de novo" da conferência do OFX e a janela "Onde o saldo não bate"
+  (módulo `conciliacao_saldo.py`, rotas e botão). Os saldos digitados nela
+  ficaram em `analisesps.meta` (chaves `conciliacao_saldos_<conta>`), sem uso —
+  inofensivos.
+- **Na conferência do OFX, o saldo da conta antes e depois de gravar**, sempre:
+  *"exibir o novo saldo após a importação dos novos lançamentos"*. Junto, quando
+  o arquivo traz saldo, a comparação com o banco (como antes).
+- **A lista do extrato mostra 500 linhas por página** (eram 200).
+- **A data de início sumia ao editar a conta** — e gravar de novo APAGAVA a
+  data: ela chegava ao formulário como "Wed, 30 Sep 2026 00:00:00 GMT", que o
+  campo de data não entende. Agora vira 30/09/2026. E o "Saldo do banco no fim
+  desse dia" aparece e se formata em reais (2.650,67).
+- **Exportar o extrato em PDF ou planilha** (links "exportar: PDF · planilha"
+  ao lado da contagem de linhas): o filtro da tela, todas as páginas, em ordem
+  de data, com saldo corrido, conciliado sim/não, por quem, observação e OMIE.
+  `conciliacao_exportar.py`; teto de 20 mil linhas. Liberado o `openpyxl` nele
+  no teste de dependências (só escreve; não lê a base de SPs).
+- **A linha com SP ficava alta** (documento, SP, situação, clipe e "sem baixa",
+  cada um numa linha): agora é uma fileira que só quebra quando precisa, a
+  coluna Documento ficou mais larga (190 px, o Histórico cedeu) e "sem baixa"
+  entrou na etiqueta da situação ("Pagar · sem baixa").
+
 #### Leva 229 — O Invest Fácil sai do extrato por padrão (14/10/2026)
 
 - O dono comparou os dois jeitos de tirar o OFX no Bradesco (conta 50024,

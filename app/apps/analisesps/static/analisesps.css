@@ -2124,7 +2124,7 @@ a.kpi:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(11,44,92,
    -------------------------------------------------------------------------- */
 table.conciliacao { table-layout: fixed; width: 100%; }
 table.conciliacao .historico { max-width: none; width: auto; }
-table.conciliacao col.c-historico { width: 34%; }
+table.conciliacao col.c-historico { width: 30%; }
 table.conciliacao col.c-observacao { width: 26%; }
 
 /* --------------------------------------------------------------------------
@@ -2737,6 +2737,14 @@ table.sps.mini th, table.sps.mini td { padding: 4px 8px; }
 /* A SP da saída do extrato (07/10/2026): pequena, para não engordar a linha. */
 table.conciliacao .sp-da-linha { font-size: 11.5px; white-space: nowrap; }
 table.conciliacao td .selo { font-size: 10.5px; }
+/* Documento, SP e etiquetas numa fileira que quebra só quando precisa
+   (14/10/2026: "com as tags a linha tá ficando muito alta"). */
+table.conciliacao col.c-documento { width: 190px; }
+table.conciliacao .doc-e-sp { display: flex; flex-wrap: wrap; align-items: center;
+                              gap: 2px 5px; line-height: 1.25; }
+table.conciliacao .doc-e-sp .selo { padding: 0 6px; line-height: 1.5; }
+table.conciliacao .doc-e-sp .icones-sp,
+table.conciliacao .doc-e-sp a[data-previa] { line-height: 1; }
 
 /* Linha da conciliação com SP identificada: duplo clique abre a ficha (07/10/2026). */
 table.conciliacao tr.com-sp { cursor: pointer; }
