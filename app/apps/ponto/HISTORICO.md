@@ -44,8 +44,10 @@ junto com o `README.md` e o `PLANO.md`.
 1v. **PUBLICADO em 14/10/2026, tarde** (com o "pode" do dono, `main` em `3b32843`, sem migração): o
    pedido de aprovação do aparelho só depois de entrar com CPF e PIN ("Este aparelho vai bater ponto?",
    no menu, com o nome de quem pediu); a busca de Pessoas diz por que alguém não aparece; os textos da
-   Configuração sobre afastado. **Falta o dono:** buscar a Karla (CPF) em Pessoas e dizer o motivo que
-   apareceu; e conferir o quadro "Google Drive e fila de envio" (fotos chegando ao Drive?).
+   Configuração sobre afastado. A Karla: a busca disse "não está no ERP nem na cópia do Registro" — a
+   cópia estava velha; o caminho é "Atualizar cadastro" na Análise de SPs. Se depois disso ela ainda não
+   aparecer, a linha dela está numa aba que a cópia não lê (a cópia lê "Dados Documentos"). **Falta o
+   dono:** conferir o quadro "Google Drive e fila de envio" (fotos chegando ao Drive?).
 1u. **PUBLICADO em 14/10/2026** (com o "pode" do dono, `main` em `e6578f9`): afastado não bate; "ver no
    mapa" na batida (espelho e Validações) e na ronda; a batida recusada guarda o
    lugar. Sem migração.
