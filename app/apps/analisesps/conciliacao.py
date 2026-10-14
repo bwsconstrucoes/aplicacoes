@@ -455,7 +455,10 @@ def conferir(conta_id: int, lido) -> dict:
         cortadas_fora = sum((l.valor for m, l in marcas_cortadas if m not in achadas),
                             Decimal("0"))
 
+    aplicacoes = list(getattr(lido, "aplicacoes", ()) or ())
     return {
+        "aplicacoes_total": len(aplicacoes),
+        "aplicacoes_soma": sum((l.valor for l in aplicacoes), Decimal("0")),
         "anteriores_total": len(anteriores),
         "inicio": inicio,
         "cortadas": cortadas,
@@ -1556,6 +1559,8 @@ def resumo_para_a_tela(conferido: dict, conta_id: int,
                        if conferido.get("baixado_em") else ""),
         "cortadas_total": len(cortadas),
         "anteriores_total": conferido.get("anteriores_total", 0),
+        "aplicacoes_total": conferido.get("aplicacoes_total", 0),
+        "aplicacoes_soma": str(conferido.get("aplicacoes_soma") or 0),
         "inicio": (conferido["inicio"].isoformat() if conferido.get("inicio") else ""),
         "cortadas_soma": str(sum((l.valor for l in cortadas), Decimal("0"))),
         "cortadas_fora": str(conferido.get("cortadas_fora") or 0),

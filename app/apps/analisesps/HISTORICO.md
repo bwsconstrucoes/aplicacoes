@@ -12228,6 +12228,30 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 229 — O Invest Fácil sai do extrato por padrão (14/10/2026)
+
+- O dono comparou os dois jeitos de tirar o OFX no Bradesco (conta 50024,
+  outubro): o da TELA ("por período") só exporta a página que aparece, e pode
+  sair incompleto; o "POR ARQUIVO" sai completo, mas traz "RESGATE INVEST FACIL"
+  e "APLIC.INVEST FACIL" — o banco pondo e tirando dinheiro da aplicação
+  automática —, e o saldo da conta corrente fica perto de zero (0,00 no arquivo
+  dele). *"A gente sempre trabalhou ignorando essas duas rubricas (…) o padrão é
+  não incluí-las, mas me permitir incluir ou não."*
+- **Conferido com os dois arquivos dele:** de 01 a 09/10, tirando as 8 linhas
+  dessas rubricas, os dois formatos têm as MESMAS 468 linhas, com a mesma
+  identidade — importar um e depois o outro não duplica. Única diferença: uma
+  "RENTAB.INVEST FACIL" de R$ 0,40 em 09/10 que só o da tela trouxe. O da tela,
+  neste caso, saiu completo (541 linhas, 01 a 14/10; o pulo de 09 para 13/10 é
+  sábado, domingo e feriado), com saldo de R$ 700.267,01.
+- **Feito:** as duas rubricas saem por padrão na conferência e na gravação, com
+  "Incluir mesmo assim" (e "Deixar de fora" para voltar). A rentabilidade fica.
+- **O saldo desse arquivo é descartado** quando elas saem: é o da conta
+  corrente depois das aplicações, e o que foi aplicado antes do período não
+  está no arquivo para ser somado de volta. A conferência não o compara, e o
+  arquivo não vira ponto no "Onde o saldo não bate". O saldo da conciliação
+  continua vindo da data de início + saldo do fim daquele dia (o da tela do
+  banco, "como se não houvesse aplicação") + os lançamentos.
+
 #### Leva 228 — Configurações › Banco e base › "Espaço no banco" (14/10/2026)
 
 - O dono viu o banco do Render em **73%** e se assustou: *"o que é isso tanto?

@@ -3002,6 +3002,7 @@ def conciliacao_conferir():
     except conciliacao_ofx.ErroDoExtrato as e:
         return {"ok": False, "erro": str(e)}
     # "Importar só até" (14/10/2026): o corte que a pessoa escolhe.
+    lido_inteiro = lido
     lido, cortado_em = _cortar_extrato(lido)
 
     achada = conc.conta_do_extrato(lido.bankid, lido.acctid)
@@ -3033,7 +3034,13 @@ def conciliacao_conferir():
     except conc.ErroDaConciliacao as e:
         return {"ok": False, "erro": str(e)}
 
+    # Quantas aplicações automáticas o arquivo traz — para a tela oferecer
+    # incluí-las ou tirá-las de novo.
+    com_aplicacoes = sum(1 for x in lido_inteiro.lancamentos
+                         if conciliacao_ofx.e_aplicacao_automatica(x))
     return {"ok": True, "ate": cortado_em.isoformat() if cortado_em else "",
+            "aplicacoes_no_arquivo": com_aplicacoes,
+            "aplicacoes_incluidas": request.form.get("aplicacoes") == "incluir",
             **conc.resumo_para_a_tela(conferido, conta_id, arquivo.filename)}
 
 
@@ -3045,6 +3052,10 @@ def _cortar_extrato(lido):
     arquivo do Bradesco distingue os "últimos lançamentos" (14/10/2026)."""
     from . import conciliacao_ofx
     from .formatos import para_data
+    # As aplicações e resgates automáticos (Invest Fácil) saem por padrão;
+    # `aplicacoes=incluir` os mantém (14/10/2026).
+    if request.form.get("aplicacoes") != "incluir":
+        lido = conciliacao_ofx.sem_aplicacoes(lido)
     ate = para_data((request.form.get("ate") or "").strip())
     if not ate:
         return lido, None

@@ -200,3 +200,33 @@ def test_extrato_ANTIGO_baixado_hoje_nao_acusa_como_sobra_o_que_e_depois_dele(ba
     assert d["periodo_fim"] == "2026-10-05"
     assert [l["id"] for l in d["so_aqui"]] == [outra]
     assert d["so_aqui"][0]["dia_vazio"] is False
+
+
+# ---------------------------------------------------------------------------
+# O extrato "por arquivo" do Bradesco traz as aplicações e resgates automáticos
+# do Invest Fácil, e o saldo da conta corrente fica perto de zero (14/10/2026).
+# ---------------------------------------------------------------------------
+POR_ARQUIVO = [("20261001", "-500.00", "N1", "PAGTO ELETRON COBRANCA 1"),
+               ("20261001", "500.00", "N2", "RESGATE INVEST FACIL"),
+               ("20261002", "0.40", "N3", "RENTAB.INVEST FACILCRED*"),
+               ("20261002", "1000.00", "N4", "PIX RECEBIDO"),
+               ("20261002", "-1000.40", "N5", "APLIC.INVEST FACIL")]
+
+
+def test_o_INVEST_FACIL_sai_por_padrao_e_o_saldo_do_arquivo_deixa_de_ser_comparado(banco_conc, app):
+    from app.apps.analisesps import conciliacao, conciliacao_saldo as cs
+    conta_id = conta_de_teste(saldo_inicial="10.000,00", saldo_inicial_em="2026-09-30")
+    arquivo = ofx_bradesco(POR_ARQUIVO, saldo="0.00")
+    with app.test_client() as cliente:
+        _entrar(cliente)
+        d = _mandar(cliente, "conferir", arquivo, conta_id=str(conta_id))
+        assert d["aplicacoes_no_arquivo"] == 2 and d["aplicacoes_total"] == 2
+        assert d["novas"] == 3, "a rentabilidade fica; resgate e aplicação saem"
+        assert d["saldo_banco"] == "", "o saldo da conta corrente (0,00) não é comparado"
+        tudo = _mandar(cliente, "conferir", arquivo, conta_id=str(conta_id), aplicacoes="incluir")
+        assert tudo["novas"] == 5 and tudo["aplicacoes_incluidas"] and tudo["saldo_banco"] == "0.00"
+        f = _mandar(cliente, "importar", arquivo, conta_id=str(conta_id))
+        assert f["gravadas"] == 3
+    assert conciliacao.saldo_da_conta(conta_id) == D("10500.40")
+    assert all(p["origem"] != "arquivo" for p in cs.diagnostico(conta_id)["pontos"]), \
+        "o saldo 0,00 do arquivo não vira ponto de conferência"

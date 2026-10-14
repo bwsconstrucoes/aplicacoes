@@ -1495,11 +1495,16 @@ async function gravarLeva(bons) {
 // distingue. "" = tudo; uma data = só até ela. A MESMA escolha vai na
 // conferência e na gravação.
 let corteNaMao = "";
+// As aplicações e resgates automáticos do Invest Fácil (14/10/2026): saem por
+// padrão; "incluir" as mantém. Vai junto com o corte, nas duas chamadas.
+let aplicacoesNaMao = "";
 function juntarCorte(corpo, corte) {
   if (corte) corpo.append("ate", corte);
+  if (aplicacoesNaMao) corpo.append("aplicacoes", aplicacoesNaMao);
 }
 
 async function conferir(arquivo, contaEscolhida, corte) {
+  if (arquivo !== arquivoNaMao) aplicacoesNaMao = "";   // arquivo novo: volta ao padrão
   arquivoNaMao = arquivo;
   corteNaMao = corte || "";
   saida.innerHTML = '<div class="aviso">Lendo ' + arquivo.name + '…</div>';
@@ -1545,6 +1550,21 @@ function desenharErro(d) {
 function blocoDoCorte(d) {
   const br = x => (x || "").split("-").reverse().join("/");
   let html = '';
+  if (d.aplicacoes_no_arquivo) {
+    if (d.aplicacoes_incluidas) {
+      html += '<div class="aviso" style="margin-bottom:10px">Incluindo as ' +
+        d.aplicacoes_no_arquivo + ' aplicação(ões) e resgate(s) automático(s) do ' +
+        'Invest Fácil, como você pediu. ' +
+        '<button class="btn secundario" id="btn-aplic-tirar">Deixar de fora</button></div>';
+    } else {
+      html += '<div class="aviso atencao" style="margin-bottom:10px"><b>Deixei de fora ' +
+        d.aplicacoes_total + ' aplicação(ões) e resgate(s) automático(s) do Invest ' +
+        'Fácil</b> ("RESGATE INVEST FACIL" e "APLIC.INVEST FACIL"), como a conciliação ' +
+        'sempre trabalhou. A rentabilidade fica. Por isso o saldo deste arquivo não é ' +
+        'comparado: ele é o da conta corrente depois das aplicações. ' +
+        '<button class="btn secundario" id="btn-aplic-incluir">Incluir mesmo assim</button></div>';
+    }
+  }
   if (d.ate && d.cortadas_total) {
     html += '<div class="aviso atencao" style="margin-bottom:10px"><b>Deixei de fora ' +
       d.cortadas_total + ' lançamento(s) depois de ' + br(d.ate) + '</b>, como você pediu ' +
@@ -1561,6 +1581,14 @@ function blocoDoCorte(d) {
 }
 
 function ligarCorte(d) {
+  const incluir = document.getElementById("btn-aplic-incluir");
+  if (incluir) incluir.addEventListener("click", () => {
+    aplicacoesNaMao = "incluir"; conferir(arquivoNaMao, d.conta_id, corteNaMao);
+  });
+  const tirar = document.getElementById("btn-aplic-tirar");
+  if (tirar) tirar.addEventListener("click", () => {
+    aplicacoesNaMao = ""; conferir(arquivoNaMao, d.conta_id, corteNaMao);
+  });
   const nenhum = document.getElementById("btn-corte-nenhum");
   if (nenhum) nenhum.addEventListener("click", () => conferir(arquivoNaMao, d.conta_id, ""));
   const ate = document.getElementById("btn-corte-ate");
