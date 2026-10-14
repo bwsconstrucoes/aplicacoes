@@ -166,16 +166,14 @@ junto com o `README.md` e o `PLANO.md`.
 
 ## 14/10/2026 (tarde) — "Este aparelho vai bater ponto?" no lugar de "ponto da obra"
 
-- O dono: *"a pergunta está muito específica (…) é melhor 'este aparelho vai
-  bater ponto?' (…) porque tem um ponto individual, né?"*. O botão da tela de
-  entrada virou "Este aparelho vai bater ponto? Pedir a aprovação" e pergunta
-  **de quem é**: "É da obra" faz o pedido de antes (aparelho sem dono, para
-  aprovar como ponto da obra); "É o meu celular" manda entrar com CPF e PIN.
-- **Decisão (minha, para não reabrir a fila):** o celular pessoal NÃO vai para
-  aprovação pelo botão — vai só se o cadastro da pessoa estiver liberado ("Bater
-  no próprio celular"), como já era. Sem a liberação, o Meu ponto avisa que o
-  celular não foi para aprovação e que ela peça ao DP. Assim a tela de aparelhos
-  não se enche de celular de quem só consulta (a preocupação dele da manhã).
+- O dono: a frase da tela de entrada ("Este aparelho vai ser o ponto da obra?
+  Pedir a aprovação") estava específica demais — *"quem vai dizer se é da obra
+  ou é o celular é quem vai aprovar, não quem está pedindo"*. Virou "Este
+  aparelho vai bater ponto? Pedir a aprovação"; o pedido entra como "Aparelho a
+  aprovar", e o TIPO (celular pessoal, ponto da obra, de equipe) e o responsável
+  se escolhem na aprovação, como a janela de aprovar já permitia.
+- Primeiro fiz uma pergunta "de quem é este aparelho?" para quem pede — ele não
+  quis: desfeita antes de publicar.
 
 ## 14/10/2026 (tarde) — A busca de Pessoas diz por que alguém não aparece
 
