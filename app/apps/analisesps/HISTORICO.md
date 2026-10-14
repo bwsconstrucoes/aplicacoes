@@ -12259,6 +12259,8 @@ somente Solicitações de uma conta especifica"*.
   arquivo. E a sobra num dia em que o arquivo não traz nada vem com o aviso
   "confira se o extrato cobre este dia antes de excluir" (o arquivo pode ter um
   buraco, como o dos "últimos lançamentos").
+- **Leva 227 publicada em 14/10/2026** (sem migração; suíte inteira verde,
+  main já no ramo).
 - Sobre "informar dois saldos, um no começo e um no fim da faixa": é o que a
   janela "Onde o saldo não bate" faz com dois saldos digitados — respondido ao
   dono, sem código novo.
