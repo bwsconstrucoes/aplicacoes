@@ -12228,6 +12228,43 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 226 — Os "últimos lançamentos" do Bradesco e "Onde o saldo não bate" (14/10/2026)
+
+- O dono gerou o OFX de 01 a 05/10 (conta 50302) e o arquivo trouxe seis linhas
+  de 13/10 que ele não pediu — os "últimos lançamentos" que o Bradesco acrescenta.
+  **Nada no arquivo as distingue** (conferi o arquivo dele): mesmo formato, mesmo
+  FITID, o cabeçalho diz o dia do download (14/10) no lugar do período, e o saldo
+  vem SEM data (`DTASOF 00000000`).
+- **O corte:** reconhecido pelo calendário — um bloco de datas perto do download
+  (até 7 dias) separado do resto por 6 dias ou mais sem nada. **Por padrão fica de
+  fora**, e a conferência mostra as linhas, com "Incluir mesmo assim" e um campo
+  "Importar só até [data]". A mesma escolha vai na conferência e na gravação.
+  Vale também para vários arquivos de uma vez (a tabela avisa quantas ficaram de
+  fora). As cortadas entram quando o extrato daquele período for importado.
+  - Limite dito sem rodeio: conta parada uma semana inteira, com movimento só
+    perto do download, também cai na regra — é para isso que as linhas aparecem
+    e há o "Incluir mesmo assim". Buraco de até 5 dias (feriado emendado) não
+    corta nada.
+- **O saldo do arquivo** passa a ser lido como o saldo do DIA DO DOWNLOAD (quando
+  o banco não diz a data), e a conferência compara "como ficaria depois de
+  gravar" — antes comparava sem as linhas novas e dava "não bate" em quase todo
+  extrato novo. As linhas deixadas de fora que ainda não estão aqui entram na
+  conta, porque o saldo do banco já as inclui.
+- **"Onde o saldo não bate"** (botão no título da Conciliação, também para quem
+  só consulta): cada saldo do banco é um ponto de conferência — o de cada OFX
+  importado, o saldo inicial e os **saldos digitados** do extrato do banco (fim
+  do dia; ficam em `analisesps.meta`, sem migração). Do mais novo para o mais
+  antigo, onde a diferença MUDA está o desencontro; naquele intervalo a janela
+  aponta lançamento do mesmo valor da diferença, repetidos (mesmo dia e valor, ou
+  mesmo texto em até 3 dias), dois que somam a diferença e os que não vieram de
+  extrato — e sugere o dia do meio para o próximo saldo (cada um corta o
+  intervalo pela metade). `conciliacao_saldo.py`.
+- O saldo de um OFX é o da HORA do download; o digitado (fim do dia) é o mais
+  confiável. Dito na própria janela.
+- Não testado com o banco de produção: o diagnóstico depende dos arquivos que
+  ele já importou. O arquivo dele foi usado só para conferir a tela; não entrou
+  no repositório (os testes usam valores inventados).
+
 #### Leva 225 — Excluir as linhas marcadas na Conciliação (14/10/2026)
 
 - *"Adicionar botão de exclusão de lançamentos dentro da conciliação, dos

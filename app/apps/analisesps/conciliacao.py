@@ -410,7 +410,28 @@ def conferir(conta_id: int, lido) -> dict:
     # está aqui com o sinal contrário. Não adota (ver a função), mas avisa.
     sinal_trocado = sinal_trocado_na_planilha(conta_id, [l for _m, l in novas])
 
+    # ⚠️ OS "ÚLTIMOS LANÇAMENTOS" DEIXADOS DE FORA (14/10/2026) continuam
+    # dentro do saldo que o banco declara. Para comparar saldo com saldo, a
+    # conta daqui soma os que ainda NÃO estão aqui — os que já estão, já contam.
+    cortadas = list(getattr(lido, "cortadas", ()) or ())
+    cortadas_fora = Decimal("0")
+    if cortadas and _pronto():
+        marcas_cortadas = marcas_do_arquivo(conta_id, cortadas)
+        lista = [m for m, _l in marcas_cortadas]
+        achadas = set()
+        for i in range(0, len(lista), 500):
+            bloco = lista[i:i + 500]
+            achadas.update(l[0] for l in consultar(
+                "SELECT impressao FROM analisesps.conciliacao_extrato "
+                f" WHERE conta_id = ? AND impressao IN ({','.join(['?'] * len(bloco))})",
+                tuple([conta_id] + bloco)))
+        cortadas_fora = sum((l.valor for m, l in marcas_cortadas if m not in achadas),
+                            Decimal("0"))
+
     return {
+        "cortadas": cortadas,
+        "cortadas_fora": cortadas_fora,
+        "baixado_em": getattr(lido, "baixado_em", None),
         "sinal_trocado": sinal_trocado,
         "conta_id": conta_id,
         "presas": presas,
@@ -1378,8 +1399,19 @@ def resumo_para_a_tela(conferido: dict, conta_id: int,
 
     conta = next((c for c in contas(so_ativas=False)
                   if c["id"] == int(conta_id)), None)
-    saldo_aqui = saldo_da_conta(conta_id, conferido.get("periodo_fim"))
+    # O saldo do banco é do dia que ELE diz (ou do dia do download, quando
+    # não diz — Bradesco); compara-se com o daqui no mesmo dia.
+    data_do_saldo = conferido.get("saldo_em") or conferido.get("periodo_fim")
+    saldo_aqui = saldo_da_conta(conta_id, data_do_saldo)
+    # Na conferência (antes de gravar), o daqui é "como ficaria": com as novas.
+    # Comparar sem elas dava "não bate" em todo extrato novo.
+    if conferido.get("gravadas") is None:
+        saldo_aqui += sum((l.valor for _m, l in novas), Decimal("0"))
+    # E os últimos lançamentos deixados de fora que ainda não estão aqui: o
+    # saldo do banco já os conta.
+    saldo_aqui += Decimal(str(conferido.get("cortadas_fora") or 0))
     saldo_banco = conferido.get("saldo")
+    cortadas = list(conferido.get("cortadas") or [])
 
     return {
         "conta_id": conta_id,
@@ -1438,6 +1470,12 @@ def resumo_para_a_tela(conferido: dict, conta_id: int,
         # extrato está completo — e isso nenhuma contagem de linhas prova.
         "saldo_banco": str(saldo_banco) if saldo_banco is not None else "",
         "saldo_aqui": str(saldo_aqui),
+        "saldo_em": data_do_saldo.isoformat() if data_do_saldo else "",
+        "baixado_em": (conferido["baixado_em"].isoformat()
+                       if conferido.get("baixado_em") else ""),
+        "cortadas_total": len(cortadas),
+        "cortadas_soma": str(sum((l.valor for l in cortadas), Decimal("0"))),
+        "cortadas_fora": str(conferido.get("cortadas_fora") or 0),
         "saldo_bate": (saldo_banco is not None
                        and Decimal(str(saldo_banco)) == Decimal(str(saldo_aqui))),
     }

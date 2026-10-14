@@ -56,6 +56,12 @@ class ExtratoLido:
     # `len(lancamentos)`, é o que denuncia linha perdida na leitura — ver
     # `contar_transacoes` no parser e o incidente de 28/09/2026.
     transacoes_no_arquivo: int = 0
+    # O dia em que o arquivo foi BAIXADO — o Bradesco o escreve no cabeçalho no
+    # lugar do período (25/09/2026). É a data do saldo quando o banco não diz
+    # outra (14/10/2026: DTASOF veio "00000000").
+    baixado_em: date | None = None
+    # As linhas deixadas de fora por `cortar` ("últimos lançamentos").
+    cortadas: tuple = ()
 
 
 def _campo(texto: str, tag: str) -> str:
@@ -113,6 +119,8 @@ def ler(conteudo: bytes) -> ExtratoLido:
 
     ini = _data(_campo(texto, "DTSTART"))
     fim = _data(_campo(texto, "DTEND"))
+    # Cabeçalho com início = fim é o dia do download, não um período.
+    baixado_em = fim if (fim and ini == fim) else None
     datas = [x.data for x in lancamentos]
 
     # ⚠️ O PERÍODO DECLARADO PELO BANCO NÃO MANDA SOZINHO — ele mente.
@@ -140,11 +148,75 @@ def ler(conteudo: bytes) -> ExtratoLido:
         periodo_ini=ini,
         periodo_fim=fim,
         saldo=_decimal(_campo(texto, "BALAMT")),
-        saldo_em=_data(_campo(texto, "DTASOF")),
+        # Sem DTASOF (o Bradesco manda "00000000"), o saldo é o do dia em que
+        # o arquivo foi baixado — ele já conta os "últimos lançamentos".
+        saldo_em=_data(_campo(texto, "DTASOF")) or baixado_em,
         lancamentos=lancamentos,
         impressao=hashlib.sha256(conteudo).hexdigest(),
         transacoes_no_arquivo=contar_transacoes(conteudo),
+        baixado_em=baixado_em,
     )
+
+
+# ---------------------------------------------------------------------------
+# OS "ÚLTIMOS LANÇAMENTOS" QUE O BRADESCO ACRESCENTA — 14/10/2026
+#
+# O dono gerou o extrato de 01 a 05/10 e o arquivo trouxe também seis linhas de
+# 13/10, que ele não pediu: *"essa daí é exatamente as informações de últimos
+# lançamentos"*. NADA NO ARQUIVO AS DISTINGUE — mesmo formato, mesmo tipo de
+# FITID, e o cabeçalho não diz o período pedido (diz o dia do download).
+#
+# O que as denuncia é o CALENDÁRIO: um bloco de datas recentes (perto do dia do
+# download) separado do resto por um buraco de vários dias. Isso também pode
+# acontecer de verdade — conta parada uma semana —, por isso é SUGESTÃO: a tela
+# mostra as linhas e quem importa decide; o corte pode ser em qualquer data.
+# ---------------------------------------------------------------------------
+BURACO_MINIMO_DIAS = 6      # fim de semana com feriado emendado chega a 5 (carnaval)
+RECENTE_DIAS = 7            # o bloco tem de estar perto do download
+
+
+def ultimos_lancamentos(lido: ExtratoLido) -> dict | None:
+    """O bloco do fim que parece "últimos lançamentos", ou None.
+
+    `{"ate": última data do extrato pedido, "a_partir": primeira do bloco,
+    "quantas": n, "soma": Decimal, "linhas": [...]}`."""
+    datas = sorted({x.data for x in lido.lancamentos if x.data})
+    if len(datas) < 2:
+        return None
+    referencia = lido.baixado_em or datas[-1]
+    # O MAIOR buraco entre datas seguidas, desde que o bloco depois dele esteja
+    # perto do download.
+    melhor = None
+    for antes, depois in zip(datas, datas[1:]):
+        buraco = (depois - antes).days
+        if (buraco >= BURACO_MINIMO_DIAS
+                and (referencia - depois).days <= RECENTE_DIAS
+                and (melhor is None or buraco > melhor[2])):
+            melhor = (antes, depois, buraco)
+    if not melhor:
+        return None
+    ate, a_partir, _ = melhor
+    bloco = [x for x in lido.lancamentos if x.data and x.data >= a_partir]
+    return {"ate": ate, "a_partir": a_partir, "quantas": len(bloco),
+            "soma": sum((x.valor for x in bloco), Decimal("0")),
+            "linhas": bloco}
+
+
+def cortar(lido: ExtratoLido, ate: date) -> ExtratoLido:
+    """O mesmo extrato só até `ate`. O saldo NÃO muda: ele é o do dia do
+    download e continua sendo verdade — quem o compara sabe das cortadas."""
+    from dataclasses import replace
+    ficam = [x for x in lido.lancamentos if not x.data or x.data <= ate]
+    saem = tuple(x for x in lido.lancamentos if x.data and x.data > ate)
+    if not saem:
+        return lido
+    datas = [x.data for x in ficam if x.data]
+    return replace(
+        lido, lancamentos=ficam, cortadas=saem,
+        periodo_ini=min(datas) if datas else lido.periodo_ini,
+        periodo_fim=ate,
+        # o arquivo tinha estas; as cortadas não são "perdidas na leitura"
+        transacoes_no_arquivo=max(0, lido.transacoes_no_arquivo - len(saem)))
 
 
 # ---------------------------------------------------------------------------

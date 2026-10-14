@@ -241,7 +241,35 @@
 <h2>Conciliação <small>{{ conta.nome if conta else '' }}</small>
   <a class="btn secundario" style="float:right"
      href="{{ url_for('analisesps.conciliacao_panorama') }}">Panorama de todas as contas</a>
+  {% if conta %}
+    <button class="btn secundario" style="float:right; margin-right:6px"
+            id="btn-onde-saldo">Onde o saldo não bate</button>
+  {% endif %}
 </h2>
+
+{# ONDE O SALDO DEIXA DE BATER — 14/10/2026. Do presente para o passado: cada
+   saldo do banco (o de cada OFX importado, e os digitados do extrato) é um
+   ponto; onde a diferença MUDA de um ponto para o anterior está o erro. Ver
+   `conciliacao_saldo.py`. #}
+{% if conta %}
+<dialog class="dialogo" id="cartao-saldo" style="max-width:920px">
+  <form method="dialog" class="dialogo-fechar"><button class="btn secundario">Fechar</button></form>
+  <h3>Onde o saldo não bate <small>{{ conta.nome }}</small></h3>
+  <p class="cartao-dica">Cada saldo que o banco declarou é um ponto de conferência:
+    o de cada OFX importado e os que você digitar, tirados do extrato do banco.
+    Do mais novo para o mais antigo, onde a diferença <b>muda</b> está o
+    desencontro — e eu aponto os suspeitos daquele intervalo.</p>
+  {% if pode_operar %}
+  <form id="form-saldo-dia" class="linha-form" style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; margin:8px 0">
+    <div><label class="rotulo-campo">Dia</label><input type="date" name="data" required></div>
+    <div><label class="rotulo-campo">Saldo do banco no fim do dia</label>
+      <input name="saldo" placeholder="0,00" required data-sem-mascara></div>
+    <button class="btn">Acrescentar saldo</button>
+  </form>
+  {% endif %}
+  <div id="saida-saldo"><p class="cartao-dica">Carregando…</p></div>
+</dialog>
+{% endif %}
 
 {# O gesto de soltar o arquivo mora na barra lateral; a RESPOSTA aparece aqui,
    onde há largura para a tabela do que vai entrar ser lida. #}
@@ -1389,7 +1417,9 @@ function desenharLeva(ignorados) {
     }
     html += '<tr><td>' + x.nome + '</td><td>' + x.d.conta + '</td><td>' +
       x.d.periodo_ini.split("-").reverse().join("/") + ' a ' +
-      x.d.periodo_fim.split("-").reverse().join("/") + '</td>' +
+      x.d.periodo_fim.split("-").reverse().join("/") +
+      (x.d.cortadas_total ? '<br><small>' + x.d.cortadas_total + ' "último(s) ' +
+        'lançamento(s)" depois disso fica(m) de fora</small>' : '') + '</td>' +
       '<td class="direita">' + (x.d.ja_estavam + x.d.adotaveis) + '</td>' +
       '<td class="direita"><b>' + x.d.novas + '</b></td><td>' +
       (x.d.saldo_banco ? (x.d.saldo_bate ? 'bate' : '⚠️ não bate') : '—') +
@@ -1445,12 +1475,23 @@ async function gravarLeva(bons) {
   location.reload();
 }
 
-async function conferir(arquivo, contaEscolhida) {
+// O corte dos "últimos lançamentos" (14/10/2026): "" = o que o sistema
+// reconhecer; "nenhum" = manter tudo; uma data = importar só até ela. A MESMA
+// escolha vai na conferência e na gravação.
+let corteNaMao = "";
+function juntarCorte(corpo, corte) {
+  if (corte === "nenhum") corpo.append("corte", "nenhum");
+  else if (corte) corpo.append("ate", corte);
+}
+
+async function conferir(arquivo, contaEscolhida, corte) {
   arquivoNaMao = arquivo;
+  corteNaMao = corte || "";
   saida.innerHTML = '<div class="aviso">Lendo ' + arquivo.name + '…</div>';
   const corpo = new FormData();
   corpo.append("extrato", arquivo);
   if (contaEscolhida) corpo.append("conta_id", contaEscolhida);
+  juntarCorte(corpo, corteNaMao);
   let d;
   try {
     const r = await fetch("{{ url_for('analisesps.conciliacao_conferir') }}",
@@ -1485,8 +1526,53 @@ function desenharErro(d) {
   });
 }
 
+// O aviso do corte, no alto da conferência. Nada no arquivo distingue os
+// "últimos lançamentos" — quem decide é quem sabe que período pediu ao banco.
+function blocoDoCorte(d) {
+  const br = x => (x || "").split("-").reverse().join("/");
+  let html = '';
+  if (d.ate && d.cortadas_total) {
+    html += '<div class="aviso atencao" style="margin-bottom:10px"><b>Deixei de fora ' +
+      d.cortadas_total + ' lançamento(s) depois de ' + br(d.ate) + '</b> (somam ' +
+      dinheiro(d.cortadas_soma) + ').';
+    if (d.ultimos && d.ultimos.ate === d.ate) {
+      html += ' Eles vêm de ' + br(d.ultimos.a_partir) + ', separados do resto por ' +
+        'dias sem nada — parecem os "últimos lançamentos" que o Bradesco ' +
+        'acrescenta a todo extrato. Entram quando você importar o extrato daquele período.';
+      html += '<ul style="margin:6px 0">' + d.ultimos.linhas.map(l =>
+        '<li>' + br(l.data) + ' — ' + l.descricao + ' (' + dinheiro(l.valor) + ')</li>').join('') +
+        '</ul>';
+    }
+    html += '<button class="btn secundario" id="btn-corte-nenhum">Incluir mesmo assim</button> ';
+  } else if (d.ultimos && corteNaMao === "nenhum") {
+    html += '<div class="aviso" style="margin-bottom:10px">Incluindo os ' +
+      d.ultimos.quantas + ' lançamento(s) de ' + br(d.ultimos.a_partir) +
+      ' em diante, como você pediu. ' +
+      '<button class="btn secundario" id="btn-corte-auto">Deixar de fora de novo</button> ';
+  } else {
+    html += '<div class="cartao-dica" style="margin:0 0 10px">';
+  }
+  html += '<label class="rotulo">Importar só até <input type="date" id="corte-ate" value="' +
+    (d.ate || "") + '"></label> <button class="btn secundario" id="btn-corte-ate">Conferir de novo</button>' +
+    '</div>';
+  return html;
+}
+
+function ligarCorte(d) {
+  const nenhum = document.getElementById("btn-corte-nenhum");
+  if (nenhum) nenhum.addEventListener("click", () => conferir(arquivoNaMao, d.conta_id, "nenhum"));
+  const auto = document.getElementById("btn-corte-auto");
+  if (auto) auto.addEventListener("click", () => conferir(arquivoNaMao, d.conta_id, ""));
+  const ate = document.getElementById("btn-corte-ate");
+  if (ate) ate.addEventListener("click", () => {
+    const v = document.getElementById("corte-ate").value;
+    conferir(arquivoNaMao, d.conta_id, v || "nenhum");
+  });
+}
+
 function desenharConferencia(d) {
   let html = '<div class="aviso ' + (d.novas ? 'atencao' : 'bom') + '">';
+  html += blocoDoCorte(d);
 
   if (d.arquivo_repetido) {
     html += '<b>Este arquivo já foi trazido</b> em ' +
@@ -1541,10 +1627,18 @@ function desenharConferencia(d) {
   // O saldo do banco contra o daqui: a conferência que vale mais que contar
   // linhas. Se os dois batem, o extrato está completo.
   if (d.saldo_banco) {
-    html += '<br><br>Saldo que o banco declara: <b>' + dinheiro(d.saldo_banco) +
-      '</b> · aqui: <b>' + dinheiro(d.saldo_aqui) + '</b> — ' +
+    html += '<br><br>Saldo que o banco declara' +
+      (d.saldo_em ? ' em ' + d.saldo_em.split("-").reverse().join("/") +
+        (d.saldo_em === d.baixado_em ? ' (dia em que o arquivo foi baixado)' : '') : '') +
+      ': <b>' + dinheiro(d.saldo_banco) +
+      '</b> · aqui, depois de gravar: <b>' + dinheiro(d.saldo_aqui) + '</b>' +
+      (Number(d.cortadas_fora) ? ' <small>(contando os ' + d.cortadas_total +
+        ' deixados de fora, que o saldo do banco já inclui)</small>' : '') + ' — ' +
       (d.saldo_bate ? '<b>bate.</b>'
-                    : '<b>não bate</b> (pode ser extrato faltando antes deste período).');
+                    : '<b>não bate</b>, diferença de ' +
+                      dinheiro(Number(d.saldo_banco) - Number(d.saldo_aqui)) +
+                      ' (pode ser extrato faltando antes ou depois deste período — ' +
+                      'veja "Onde o saldo não bate").');
   }
 
   if (d.amostra.length) {
@@ -1639,6 +1733,7 @@ function desenharConferencia(d) {
   // Soltar as presas e CONFERIR DE NOVO, não gravar: o número que ele viu
   // estava errado, então o certo é refazer a pergunta, não agir sobre a
   // resposta antiga.
+  ligarCorte(d);
   const soltar = document.getElementById("btn-soltar-presas");
   if (soltar) soltar.addEventListener("click", async () => {
     soltar.disabled = true;
@@ -1665,6 +1760,7 @@ function desenharConferencia(d) {
       corpo.append("extrato", arquivoNaMao);
       corpo.append("conta_id", d.conta_id);
       corpo.append("lembrar", "1");
+      juntarCorte(corpo, corteNaMao || d.ate);
       try {
         const r = await fetch("{{ url_for('analisesps.conciliacao_importar') }}",
                               {method: "POST", body: corpo});
@@ -2174,6 +2270,105 @@ if (formColunas) {
     }
   });
 }
+
+// --- onde o saldo não bate (14/10/2026) -----------------------------------
+const btnOndeSaldo = document.getElementById("btn-onde-saldo");
+const saidaSaldo = document.getElementById("saida-saldo");
+const PODE_OPERAR = {{ 'true' if pode_operar else 'false' }};
+
+function desenharSaldo(d) {
+  const br = x => (x || "").split("-").reverse().join("/");
+  const ORIGEM = {mao: " <i>digitada à mão</i>", planilha: " <i>da planilha antiga</i>"};
+  const li = l => '<li>' + br(l.data) + ' — ' + l.descricao + ' (' + dinheiro(l.valor) + ')' +
+    (ORIGEM[l.origem] || '') + '</li>';
+  if (!d.ok) { saidaSaldo.innerHTML = '<div class="aviso erro">' + (d.erro || "não deu certo") + '</div>'; return; }
+  if (!d.pontos.length) {
+    saidaSaldo.innerHTML = '<div class="aviso">Ainda não há saldo do banco para comparar. ' +
+      'Digite acima o saldo de um dia, tirado do extrato do banco.</div>';
+    return;
+  }
+  let html = '';
+  if (d.bate_hoje) {
+    html += '<div class="aviso bom">No ponto mais recente, o saldo <b>bate</b>.' +
+      (d.janelas.length ? ' Houve desencontro no meio do caminho, que se compensou — veja abaixo.' : '') + '</div>';
+  } else {
+    html += '<div class="aviso atencao">No ponto mais recente (' + br(d.pontos[0].data) +
+      ') a diferença é de <b>' + dinheiro(d.pontos[0].diferenca) + '</b> ' +
+      '(banco menos aqui).</div>';
+  }
+  html += '<table class="sps" style="margin-top:8px"><thead><tr><th>Dia</th><th>De onde</th>' +
+    '<th class="direita">Banco</th><th class="direita">Aqui</th><th class="direita">Diferença</th>' +
+    (PODE_OPERAR ? '<th></th>' : '') + '</tr></thead><tbody>';
+  d.pontos.forEach(p => {
+    const dif = Number(p.diferenca);
+    html += '<tr><td>' + br(p.data) + '</td><td>' + p.rotulo + '</td>' +
+      '<td class="direita">' + dinheiro(p.saldo) + '</td><td class="direita">' + dinheiro(p.aqui) + '</td>' +
+      '<td class="direita ' + (dif ? 'ruim' : '') + '">' + (dif ? dinheiro(p.diferenca) : 'bate') + '</td>' +
+      (PODE_OPERAR ? '<td>' + (p.origem === 'digitado'
+        ? '<button class="apagar-linha apagar-saldo" data-data="' + p.data + '" title="apagar este saldo">×</button>' : '') + '</td>' : '') +
+      '</tr>';
+  });
+  html += '</tbody></table>';
+
+  if (!d.janelas.length && !d.bate_hoje) {
+    html += '<p class="cartao-dica">A diferença é a MESMA em todos os pontos: o erro está antes ' +
+      'do ponto mais antigo (ou no saldo inicial). Digite o saldo de um dia mais antigo.</p>';
+  }
+  d.janelas.forEach(j => {
+    html += '<div class="aviso atencao" style="margin-top:12px"><b>Entre ' + br(j.de) + ' e ' +
+      br(j.ate) + ' a diferença mudou ' + dinheiro(j.mudanca) + '</b> (' + j.linhas +
+      ' lançamento(s) aqui nesse intervalo).';
+    if (Number(j.mudanca) > 0) html += ' Aqui falta entrada ou sobra saída desse tamanho.';
+    else html += ' Aqui sobra entrada ou falta saída desse tamanho.';
+    if (j.mesmo_valor.length) html += '<br><b>Lançamento(s) desse valor:</b><ul>' + j.mesmo_valor.map(li).join('') + '</ul>';
+    if (j.repetidas.length) html += '<b>Parecem repetidos</b> (mesmo valor no mesmo dia, ou mesmo texto em até 3 dias):<ul>' + j.repetidas.map(li).join('') + '</ul>';
+    if (j.pares.length) html += '<b>Dois que somam a diferença:</b><ul>' + j.pares.map(p => li(p[0]).replace('</li>', ' + ') + li(p[1]).replace('<li>', '')).join('') + '</ul>';
+    if (j.sem_extrato_total) html += '<b>' + j.sem_extrato_total + ' não vieram de extrato</b> (digitadas ou da planilha):<ul>' + j.sem_extrato.map(li).join('') + '</ul>';
+    if (!j.mesmo_valor.length && !j.repetidas.length && !j.pares.length && !j.sem_extrato_total) {
+      html += '<br>Nenhum suspeito óbvio — pode ser lançamento que FALTA aqui (o extrato daqueles dias não entrou inteiro).';
+    }
+    if (j.dia_do_meio) {
+      html += '<br><b>Para estreitar:</b> digite o saldo do banco no fim de <b>' + br(j.dia_do_meio) +
+        '</b>' + (PODE_OPERAR ? ' <button class="btn secundario usar-dia" data-data="' + j.dia_do_meio + '">usar este dia</button>' : '') +
+        ' — cada saldo corta o intervalo pela metade.';
+    }
+    html += '<br><a href="?conta_id={{ conta.id if conta else 0 }}&situacao=todos&data_ini=' + j.de + '&data_fim=' + j.ate +
+      '">ver os lançamentos desse intervalo</a></div>';
+  });
+  html += '<p class="cartao-dica" style="margin-top:10px">O saldo de um OFX é o da hora em que ' +
+    'ele foi baixado; lançamento daquele mesmo dia que entrou depois aparece como diferença ' +
+    'no último ponto. O saldo digitado (do fim do dia) é o mais confiável.</p>';
+  saidaSaldo.innerHTML = html;
+
+  saidaSaldo.querySelectorAll(".apagar-saldo").forEach(b => b.addEventListener("click", async () => {
+    if (!confirm("Apagar o saldo digitado de " + br(b.dataset.data) + "?")) return;
+    desenharSaldo(await pedir("{{ url_for('analisesps.conciliacao_saldo_ponto') }}",
+      {conta_id: CONTA_ID, data: b.dataset.data, apagar: true}));
+  }));
+  saidaSaldo.querySelectorAll(".usar-dia").forEach(b => b.addEventListener("click", () => {
+    const campo = document.querySelector('#form-saldo-dia [name="data"]');
+    campo.value = b.dataset.data;
+    document.querySelector('#form-saldo-dia [name="saldo"]').focus();
+  }));
+}
+
+if (btnOndeSaldo) btnOndeSaldo.addEventListener("click", async () => {
+  abrir("cartao-saldo");
+  saidaSaldo.innerHTML = '<p class="cartao-dica">Carregando…</p>';
+  try {
+    const r = await fetch("{{ url_for('analisesps.conciliacao_saldo_diagnostico') }}?conta_id=" + CONTA_ID);
+    desenharSaldo(await r.json());
+  } catch (e) { desenharSaldo({ok: false, erro: "falhou: " + e}); }
+});
+const formSaldoDia = document.getElementById("form-saldo-dia");
+if (formSaldoDia) formSaldoDia.addEventListener("submit", async e => {
+  e.preventDefault();
+  const d = await pedir("{{ url_for('analisesps.conciliacao_saldo_ponto') }}", {
+    conta_id: CONTA_ID, data: formSaldoDia.data.value, saldo: formSaldoDia.saldo.value});
+  if (!d.ok) { alert(d.erro || "não gravou"); return; }
+  formSaldoDia.saldo.value = "";
+  desenharSaldo(d);
+});
 
 // --- os dois ajustes, que abrem por cima da tela ----------------------------
 [["btn-abrir-contas", "cartao-contas"],
