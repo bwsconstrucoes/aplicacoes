@@ -12235,16 +12235,18 @@ somente Solicitações de uma conta especifica"*.
   **Nada no arquivo as distingue** (conferi o arquivo dele): mesmo formato, mesmo
   FITID, o cabeçalho diz o dia do download (14/10) no lugar do período, e o saldo
   vem SEM data (`DTASOF 00000000`).
-- **O corte:** reconhecido pelo calendário — um bloco de datas perto do download
-  (até 7 dias) separado do resto por 6 dias ou mais sem nada. **Por padrão fica de
-  fora**, e a conferência mostra as linhas, com "Incluir mesmo assim" e um campo
-  "Importar só até [data]". A mesma escolha vai na conferência e na gravação.
-  Vale também para vários arquivos de uma vez (a tabela avisa quantas ficaram de
-  fora). As cortadas entram quando o extrato daquele período for importado.
-  - Limite dito sem rodeio: conta parada uma semana inteira, com movimento só
-    perto do download, também cai na regra — é para isso que as linhas aparecem
-    e há o "Incluir mesmo assim". Buraco de até 5 dias (feriado emendado) não
-    corta nada.
+- **O corte é só onde a pessoa disser:** campo "Importar só até [data]" na
+  conferência, com "Incluir tudo" para desfazer. A mesma escolha vai na
+  conferência e na gravação; as linhas cortadas entram quando o extrato daquele
+  período for importado.
+  - **Decisão do dono (14/10/2026):** cheguei a fazer o reconhecimento
+    automático pelo calendário (bloco perto do download depois de 6+ dias sem
+    nada, cortado por padrão). Ele recusou: *"se não tem nada no arquivo que
+    identifique, não pode utilizar esse recurso"*. Saiu antes de publicar.
+  - Pista não usada: o FITID do Bradesco cresce em passos parecidos, e entre a
+    última linha de 05/10 e a primeira de 13/10 o salto foi quase o triplo. Um
+    arquivo só, e o FITID do Bradesco já se mostrou instável (setembro) — só
+    vale olhar de novo com mais arquivos.
 - **O saldo do arquivo** passa a ser lido como o saldo do DIA DO DOWNLOAD (quando
   o banco não diz a data), e a conferência compara "como ficaria depois de
   gravar" — antes comparava sem as linhas novas e dava "não bate" em quase todo

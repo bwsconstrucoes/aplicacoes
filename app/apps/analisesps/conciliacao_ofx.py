@@ -159,49 +159,19 @@ def ler(conteudo: bytes) -> ExtratoLido:
 
 
 # ---------------------------------------------------------------------------
-# OS "ÚLTIMOS LANÇAMENTOS" QUE O BRADESCO ACRESCENTA — 14/10/2026
+# IMPORTAR SÓ ATÉ UMA DATA — 14/10/2026
 #
-# O dono gerou o extrato de 01 a 05/10 e o arquivo trouxe também seis linhas de
-# 13/10, que ele não pediu: *"essa daí é exatamente as informações de últimos
-# lançamentos"*. NADA NO ARQUIVO AS DISTINGUE — mesmo formato, mesmo tipo de
-# FITID, e o cabeçalho não diz o período pedido (diz o dia do download).
+# O dono gerou o extrato de 01 a 05/10 e o arquivo do Bradesco trouxe também
+# linhas de 13/10, os "últimos lançamentos", que ele não pediu. NADA NO ARQUIVO
+# AS DISTINGUE: mesmo formato, mesmo tipo de FITID, e o cabeçalho diz o dia do
+# download no lugar do período pedido.
 #
-# O que as denuncia é o CALENDÁRIO: um bloco de datas recentes (perto do dia do
-# download) separado do resto por um buraco de vários dias. Isso também pode
-# acontecer de verdade — conta parada uma semana —, por isso é SUGESTÃO: a tela
-# mostra as linhas e quem importa decide; o corte pode ser em qualquer data.
+# Tentei reconhecê-las pelo calendário (bloco perto do download, depois de dias
+# sem nada) e o dono recusou, com razão: *"se não tem nada no arquivo que
+# identifique, não pode utilizar esse recurso"*. Regra que adivinha pode cortar
+# lançamento bom. Fica só o corte que A PESSOA escolhe — ela sabe que período
+# pediu ao banco.
 # ---------------------------------------------------------------------------
-BURACO_MINIMO_DIAS = 6      # fim de semana com feriado emendado chega a 5 (carnaval)
-RECENTE_DIAS = 7            # o bloco tem de estar perto do download
-
-
-def ultimos_lancamentos(lido: ExtratoLido) -> dict | None:
-    """O bloco do fim que parece "últimos lançamentos", ou None.
-
-    `{"ate": última data do extrato pedido, "a_partir": primeira do bloco,
-    "quantas": n, "soma": Decimal, "linhas": [...]}`."""
-    datas = sorted({x.data for x in lido.lancamentos if x.data})
-    if len(datas) < 2:
-        return None
-    referencia = lido.baixado_em or datas[-1]
-    # O MAIOR buraco entre datas seguidas, desde que o bloco depois dele esteja
-    # perto do download.
-    melhor = None
-    for antes, depois in zip(datas, datas[1:]):
-        buraco = (depois - antes).days
-        if (buraco >= BURACO_MINIMO_DIAS
-                and (referencia - depois).days <= RECENTE_DIAS
-                and (melhor is None or buraco > melhor[2])):
-            melhor = (antes, depois, buraco)
-    if not melhor:
-        return None
-    ate, a_partir, _ = melhor
-    bloco = [x for x in lido.lancamentos if x.data and x.data >= a_partir]
-    return {"ate": ate, "a_partir": a_partir, "quantas": len(bloco),
-            "soma": sum((x.valor for x in bloco), Decimal("0")),
-            "linhas": bloco}
-
-
 def cortar(lido: ExtratoLido, ate: date) -> ExtratoLido:
     """O mesmo extrato só até `ate`. O saldo NÃO muda: ele é o do dia do
     download e continua sendo verdade — quem o compara sabe das cortadas."""

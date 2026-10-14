@@ -5,7 +5,8 @@ CONCILIAÇÃO › OS "ÚLTIMOS LANÇAMENTOS" DO BRADESCO E ONDE O SALDO NÃO BAT
 
 O dono gerou o extrato de 01 a 05/10 e o arquivo trouxe seis linhas de 13/10
 que ele não pediu; o cabeçalho diz o dia do download (14/10) nos dois campos do
-período, e o saldo vem sem data ("00000000"). O arquivo daqui reproduz isso com
+período, e o saldo vem sem data ("00000000"). Nada as distingue, então o corte é
+só onde a pessoa disser ("Importar só até"). O arquivo daqui reproduz isso com
 valores inventados.
 """
 import datetime as dt
@@ -34,30 +35,16 @@ EXTRATO = [("20261001", "-144.76", "N1012D", "PAGTO ELETRON COBRANCA 1"),
            ("20261013", "-285.74", "N102AB", "CONTA DE TELEFONE")]
 
 
-def test_o_BLOCO_DE_13_10_e_reconhecido_e_o_saldo_e_do_dia_do_download(banco_conc):
+def test_o_saldo_sem_data_e_do_dia_do_download_e_o_corte_e_onde_a_pessoa_diz(banco_conc):
     from app.apps.analisesps import conciliacao_ofx
     lido = conciliacao_ofx.ler(ofx_bradesco(EXTRATO))
     assert lido.baixado_em == dt.date(2026, 10, 14)
     assert lido.saldo_em == dt.date(2026, 10, 14), "sem DTASOF, vale o dia do download"
-    bloco = conciliacao_ofx.ultimos_lancamentos(lido)
-    assert bloco["ate"] == dt.date(2026, 10, 5) and bloco["a_partir"] == dt.date(2026, 10, 13)
-    assert bloco["quantas"] == 2 and bloco["soma"] == D("-2117.86")
-
-    cortado = conciliacao_ofx.cortar(lido, bloco["ate"])
+    cortado = conciliacao_ofx.cortar(lido, dt.date(2026, 10, 5))
     assert len(cortado.lancamentos) == 4 and len(cortado.cortadas) == 2
     assert cortado.periodo_fim == dt.date(2026, 10, 5)
     assert cortado.saldo == lido.saldo and cortado.saldo_em == lido.saldo_em
     assert cortado.transacoes_no_arquivo == 4, "as cortadas não são 'perdidas na leitura'"
-
-
-def test_extrato_SEM_buraco_nao_sugere_corte(banco_conc):
-    from app.apps.analisesps import conciliacao_ofx
-    corrido = [("20261009", "-1.00", "A"), ("20261013", "-2.00", "B")]   # sexta → terça (feriado na segunda)
-    lido = conciliacao_ofx.ler(ofx_bradesco(corrido))
-    assert conciliacao_ofx.ultimos_lancamentos(lido) is None
-    # buraco grande, mas LONGE do download: é conta parada, não "últimos"
-    antigo = [("20260901", "-1.00", "A"), ("20260920", "-2.00", "B")]
-    assert conciliacao_ofx.ultimos_lancamentos(conciliacao_ofx.ler(ofx_bradesco(antigo))) is None
 
 
 def _entrar(cliente):
@@ -72,29 +59,31 @@ def _mandar(cliente, rota, conteudo, **campos):
                         content_type="multipart/form-data").get_json()
 
 
-def test_a_IMPORTACAO_deixa_de_fora_por_padrao_e_o_saldo_confere_com_elas(banco_conc, app):
+def test_a_IMPORTACAO_so_corta_quando_a_pessoa_pede_e_o_saldo_confere(banco_conc, app):
+    """14/10/2026: nada no arquivo distingue os "últimos lançamentos" — o dono
+    recusou o corte automático. Sem data, entra tudo."""
     from app.apps.analisesps import conciliacao
     # saldo de partida que faz o arquivo bater: 488,68 − movimento inteiro
     conta_id = conta_de_teste(saldo_inicial="2.650,67", saldo_inicial_em="2026-09-30")
     with app.test_client() as cliente:
         _entrar(cliente)
-        d = _mandar(cliente, "conferir", ofx_bradesco(EXTRATO), conta_id=str(conta_id))
-        assert d["ok"] and d["ate"] == "2026-10-05" and d["cortadas_total"] == 2
-        assert d["ultimos"]["quantas"] == 2 and d["novas"] == 4
+        tudo = _mandar(cliente, "conferir", ofx_bradesco(EXTRATO), conta_id=str(conta_id))
+        assert tudo["ok"] and tudo["ate"] == "" and tudo["novas"] == 6 and tudo["saldo_bate"]
+        assert "ultimos" not in tudo
+
+        d = _mandar(cliente, "conferir", ofx_bradesco(EXTRATO), conta_id=str(conta_id),
+                    ate="2026-10-05")
+        assert d["ate"] == "2026-10-05" and d["cortadas_total"] == 2 and d["novas"] == 4
         assert d["saldo_em"] == "2026-10-14"
         assert d["saldo_bate"], d      # as 4 novas + as 2 deixadas de fora
-        # a pessoa escolhe manter tudo
-        tudo = _mandar(cliente, "conferir", ofx_bradesco(EXTRATO), conta_id=str(conta_id),
-                       corte="nenhum")
-        assert tudo["ate"] == "" and tudo["novas"] == 6 and tudo["saldo_bate"]
 
-        f = _mandar(cliente, "importar", ofx_bradesco(EXTRATO), conta_id=str(conta_id))
+        f = _mandar(cliente, "importar", ofx_bradesco(EXTRATO), conta_id=str(conta_id),
+                    ate="2026-10-05")
         assert f["ok"] and f["gravadas"] == 4
         assert conciliacao.quantas_na_conta(conta_id) == 4
 
-        # o extrato de 06 a 14/10 traz as duas de 13/10: entram, sem repetir
-        f = _mandar(cliente, "importar", ofx_bradesco(EXTRATO[4:]), conta_id=str(conta_id),
-                    corte="nenhum")
+        # o extrato seguinte traz as duas de 13/10: entram, sem repetir
+        f = _mandar(cliente, "importar", ofx_bradesco(EXTRATO), conta_id=str(conta_id))
         assert f["gravadas"] == 2 and conciliacao.quantas_na_conta(conta_id) == 6
         assert f["saldo_bate"]
 

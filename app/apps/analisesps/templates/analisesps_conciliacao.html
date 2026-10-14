@@ -1417,9 +1417,7 @@ function desenharLeva(ignorados) {
     }
     html += '<tr><td>' + x.nome + '</td><td>' + x.d.conta + '</td><td>' +
       x.d.periodo_ini.split("-").reverse().join("/") + ' a ' +
-      x.d.periodo_fim.split("-").reverse().join("/") +
-      (x.d.cortadas_total ? '<br><small>' + x.d.cortadas_total + ' "último(s) ' +
-        'lançamento(s)" depois disso fica(m) de fora</small>' : '') + '</td>' +
+      x.d.periodo_fim.split("-").reverse().join("/") + '</td>' +
       '<td class="direita">' + (x.d.ja_estavam + x.d.adotaveis) + '</td>' +
       '<td class="direita"><b>' + x.d.novas + '</b></td><td>' +
       (x.d.saldo_banco ? (x.d.saldo_bate ? 'bate' : '⚠️ não bate') : '—') +
@@ -1475,13 +1473,13 @@ async function gravarLeva(bons) {
   location.reload();
 }
 
-// O corte dos "últimos lançamentos" (14/10/2026): "" = o que o sistema
-// reconhecer; "nenhum" = manter tudo; uma data = importar só até ela. A MESMA
-// escolha vai na conferência e na gravação.
+// "Importar só até" (14/10/2026): o corte que a PESSOA escolhe — o arquivo do
+// Bradesco traz "últimos lançamentos" que não foram pedidos, e nada nele os
+// distingue. "" = tudo; uma data = só até ela. A MESMA escolha vai na
+// conferência e na gravação.
 let corteNaMao = "";
 function juntarCorte(corpo, corte) {
-  if (corte === "nenhum") corpo.append("corte", "nenhum");
-  else if (corte) corpo.append("ate", corte);
+  if (corte) corpo.append("ate", corte);
 }
 
 async function conferir(arquivo, contaEscolhida, corte) {
@@ -1526,31 +1524,18 @@ function desenharErro(d) {
   });
 }
 
-// O aviso do corte, no alto da conferência. Nada no arquivo distingue os
-// "últimos lançamentos" — quem decide é quem sabe que período pediu ao banco.
+// O corte, no alto da conferência.
 function blocoDoCorte(d) {
   const br = x => (x || "").split("-").reverse().join("/");
   let html = '';
   if (d.ate && d.cortadas_total) {
     html += '<div class="aviso atencao" style="margin-bottom:10px"><b>Deixei de fora ' +
-      d.cortadas_total + ' lançamento(s) depois de ' + br(d.ate) + '</b> (somam ' +
-      dinheiro(d.cortadas_soma) + ').';
-    if (d.ultimos && d.ultimos.ate === d.ate) {
-      html += ' Eles vêm de ' + br(d.ultimos.a_partir) + ', separados do resto por ' +
-        'dias sem nada — parecem os "últimos lançamentos" que o Bradesco ' +
-        'acrescenta a todo extrato. Entram quando você importar o extrato daquele período.';
-      html += '<ul style="margin:6px 0">' + d.ultimos.linhas.map(l =>
-        '<li>' + br(l.data) + ' — ' + l.descricao + ' (' + dinheiro(l.valor) + ')</li>').join('') +
-        '</ul>';
-    }
-    html += '<button class="btn secundario" id="btn-corte-nenhum">Incluir mesmo assim</button> ';
-  } else if (d.ultimos && corteNaMao === "nenhum") {
-    html += '<div class="aviso" style="margin-bottom:10px">Incluindo os ' +
-      d.ultimos.quantas + ' lançamento(s) de ' + br(d.ultimos.a_partir) +
-      ' em diante, como você pediu. ' +
-      '<button class="btn secundario" id="btn-corte-auto">Deixar de fora de novo</button> ';
+      d.cortadas_total + ' lançamento(s) depois de ' + br(d.ate) + '</b>, como você pediu ' +
+      '(somam ' + dinheiro(d.cortadas_soma) + '). Entram quando você importar o extrato ' +
+      'daquele período. <button class="btn secundario" id="btn-corte-nenhum">Incluir tudo</button> ';
   } else {
-    html += '<div class="cartao-dica" style="margin:0 0 10px">';
+    html += '<div class="cartao-dica" style="margin:0 0 10px">O banco pôs no arquivo ' +
+      'lançamentos fora do período que você pediu? ';
   }
   html += '<label class="rotulo">Importar só até <input type="date" id="corte-ate" value="' +
     (d.ate || "") + '"></label> <button class="btn secundario" id="btn-corte-ate">Conferir de novo</button>' +
@@ -1560,13 +1545,10 @@ function blocoDoCorte(d) {
 
 function ligarCorte(d) {
   const nenhum = document.getElementById("btn-corte-nenhum");
-  if (nenhum) nenhum.addEventListener("click", () => conferir(arquivoNaMao, d.conta_id, "nenhum"));
-  const auto = document.getElementById("btn-corte-auto");
-  if (auto) auto.addEventListener("click", () => conferir(arquivoNaMao, d.conta_id, ""));
+  if (nenhum) nenhum.addEventListener("click", () => conferir(arquivoNaMao, d.conta_id, ""));
   const ate = document.getElementById("btn-corte-ate");
   if (ate) ate.addEventListener("click", () => {
-    const v = document.getElementById("corte-ate").value;
-    conferir(arquivoNaMao, d.conta_id, v || "nenhum");
+    conferir(arquivoNaMao, d.conta_id, document.getElementById("corte-ate").value || "");
   });
 }
 
@@ -1760,7 +1742,7 @@ function desenharConferencia(d) {
       corpo.append("extrato", arquivoNaMao);
       corpo.append("conta_id", d.conta_id);
       corpo.append("lembrar", "1");
-      juntarCorte(corpo, corteNaMao || d.ate);
+      juntarCorte(corpo, corteNaMao);
       try {
         const r = await fetch("{{ url_for('analisesps.conciliacao_importar') }}",
                               {method: "POST", body: corpo});

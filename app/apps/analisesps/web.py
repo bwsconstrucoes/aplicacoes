@@ -2986,9 +2986,7 @@ def conciliacao_conferir():
         lido = conciliacao_ofx.ler(arquivo.read())
     except conciliacao_ofx.ErroDoExtrato as e:
         return {"ok": False, "erro": str(e)}
-    # Os "últimos lançamentos" que o Bradesco acrescenta (14/10/2026): a
-    # sugestão sai do arquivo INTEIRO; o corte, só se a tela pedir.
-    ultimos = _ultimos_para_a_tela(conciliacao_ofx.ultimos_lancamentos(lido))
+    # "Importar só até" (14/10/2026): o corte que a pessoa escolhe.
     lido, cortado_em = _cortar_extrato(lido)
 
     achada = conc.conta_do_extrato(lido.bankid, lido.acctid)
@@ -3020,8 +3018,7 @@ def conciliacao_conferir():
     except conc.ErroDaConciliacao as e:
         return {"ok": False, "erro": str(e)}
 
-    return {"ok": True, "ultimos": ultimos,
-            "ate": cortado_em.isoformat() if cortado_em else "",
+    return {"ok": True, "ate": cortado_em.isoformat() if cortado_em else "",
             **conc.resumo_para_a_tela(conferido, conta_id, arquivo.filename)}
 
 
@@ -3029,30 +3026,15 @@ def _cortar_extrato(lido):
     """(extrato, data do corte ou None). Conferir e gravar passam por aqui com
     o MESMO formulário, então gravam o que a conferência mostrou.
 
-    Sem escolha, os "últimos lançamentos" reconhecidos ficam de fora — é o que
-    o dono pediu (14/10/2026). `corte=nenhum` mantém tudo; `ate` corta onde a
-    pessoa disser."""
+    Só corta onde a PESSOA disser (`ate`). Não há corte automático: nada no
+    arquivo do Bradesco distingue os "últimos lançamentos" (14/10/2026)."""
     from . import conciliacao_ofx
     from .formatos import para_data
-    if request.form.get("corte") == "nenhum":
-        return lido, None
     ate = para_data((request.form.get("ate") or "").strip())
-    if not ate:
-        bloco = conciliacao_ofx.ultimos_lancamentos(lido)
-        ate = bloco["ate"] if bloco else None
     if not ate:
         return lido, None
     cortado = conciliacao_ofx.cortar(lido, ate)
     return cortado, (ate if cortado.cortadas else None)
-
-
-def _ultimos_para_a_tela(bloco):
-    if not bloco:
-        return None
-    return {"ate": bloco["ate"].isoformat(), "a_partir": bloco["a_partir"].isoformat(),
-            "quantas": bloco["quantas"], "soma": str(bloco["soma"]),
-            "linhas": [{"data": l.data.isoformat(), "valor": str(l.valor),
-                        "descricao": (l.memo or "")[:120]} for l in bloco["linhas"][:30]]}
 
 
 @bp.route("/api/conciliacao/importar", methods=["POST"])
