@@ -410,11 +410,16 @@ def conferir(conta_id: int, lido) -> dict:
         conteudos = {(l.data, Decimal(l.valor), descricao_da_linha(l).strip(),
                       documento_da_linha(l).strip()) for l in lido.lancamentos}
         so_aqui = []
+        # Os dias em que o ARQUIVO tem alguma linha. Sobra num dia em que o
+        # arquivo não traz nada pode ser sobra mesmo — ou um pedaço que o
+        # banco não pôs no arquivo. A tela marca, para a pessoa olhar antes.
+        dias_do_arquivo = {l.data for l in lido.lancamentos if l.data}
         for linha in linhas:
             if linha[0] in serao_adotadas:
                 continue
             item = dict(zip(["id", "data", "descricao", "valor", "origem",
                              "conciliado", "documento"], linha))
+            item["dia_vazio"] = item["data"] not in dias_do_arquivo
             item["repetida"] = (
                 item["origem"] == "ofx"
                 and (item["data"], Decimal(item["valor"]),
@@ -1515,6 +1520,7 @@ def resumo_para_a_tela(conferido: dict, conta_id: int,
             "valor": str(l.get("valor") or 0),
             "origem": l.get("origem", ""),
             "repetida": bool(l.get("repetida")),
+            "dia_vazio": bool(l.get("dia_vazio")),
             "conciliado": bool(l.get("conciliado")),
         } for l in (conferido.get("so_aqui") or [])[:MAX_SO_AQUI_NA_TELA]],
         "so_aqui_total": len(conferido.get("so_aqui") or []),

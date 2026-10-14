@@ -141,6 +141,13 @@ def ler(conteudo: bytes) -> ExtratoLido:
     if datas:
         ini = min([ini] + datas) if ini else min(datas)
         fim = max([fim] + datas) if fim else max(datas)
+    # ⚠️ MAS O DIA DO DOWNLOAD NÃO É PERÍODO (14/10/2026). Quando o cabeçalho
+    # tem início = fim, é o dia em que o arquivo foi baixado, e esticar a
+    # janela até ele fazia um extrato de setembro baixado em 14/10 acusar como
+    # "está aqui e não vem no extrato" os lançamentos CERTOS de 01 a 14/10 — e
+    # essa lista agora tem caixinha para excluir. Aí vale só o que o arquivo traz.
+    if baixado_em and datas:
+        ini, fim = min(datas), max(datas)
 
     return ExtratoLido(
         bankid=re.sub(r"\D", "", _campo(texto, "BANKID")),

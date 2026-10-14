@@ -181,3 +181,22 @@ def test_o_OFX_nao_traz_o_que_e_anterior_ao_inicio_e_lista_tudo_o_que_sobra(banc
         assert d["novas"] == 5, "o lançamento de 01/10 é do dia do início: fica de fora"
         assert d["so_aqui_total"] == 2 and len(d["so_aqui"]) == 2
         assert all(l["id"] for l in d["so_aqui"]), "cada sobra vem com o número, para excluir"
+
+
+def test_extrato_ANTIGO_baixado_hoje_nao_acusa_como_sobra_o_que_e_depois_dele(banco_conc, app):
+    """14/10/2026 — "lançamentos de outra conta entraram nesta; se eu importar o
+    OFX, vai ter lançamento a mais". A lista de sobras tem de pegar ESSES, e só
+    dentro do que o arquivo cobre: o dia do download não é período."""
+    from app.apps.analisesps import conciliacao
+    conta_id = conta_de_teste(saldo_inicial="0", saldo_inicial_em="2026-09-30")
+    outra = conciliacao.acrescentar_a_mao(conta_id, dt.date(2026, 10, 2), "DE OUTRA CONTA",
+                                          D("-500.00"), quem="T")
+    conciliacao.acrescentar_a_mao(conta_id, dt.date(2026, 10, 10), "CERTO, DEPOIS DO EXTRATO",
+                                  D("-1.00"), quem="T")
+    setembro_a_05 = [l for l in EXTRATO if l[0] <= "20261005"]
+    with app.test_client() as cliente:
+        _entrar(cliente)
+        d = _mandar(cliente, "conferir", ofx_bradesco(setembro_a_05), conta_id=str(conta_id))
+    assert d["periodo_fim"] == "2026-10-05"
+    assert [l["id"] for l in d["so_aqui"]] == [outra]
+    assert d["so_aqui"][0]["dia_vazio"] is False

@@ -1696,9 +1696,11 @@ function desenharConferencia(d) {
     // ⚠️ A LISTA INTEIRA, COM CAIXINHAS (14/10/2026). Antes eram 15 e o total;
     // num extrato de meses, isso escondia exatamente o que se queria achar.
     html += '<br><b>Atenção: ' + d.so_aqui_total + ' linha(s) que estão aqui e ' +
-      'NÃO vêm neste extrato</b>, dentro do mesmo período. Pode ser linha ' +
-      'digitada errada, repetida, ou algo que o banco estornou. Marque as que ' +
-      'sobram e exclua daqui mesmo:' +
+      'NÃO vêm neste extrato</b>, comparando de ' +
+      d.periodo_ini.split("-").reverse().join("/") + ' a ' +
+      d.periodo_fim.split("-").reverse().join("/") + '. Pode ser lançamento de ' +
+      'outra conta, digitado errado, repetido, ou algo que o banco estornou. ' +
+      'Marque as que sobram e exclua daqui mesmo:' +
       '<div class="rolagem-tabela" style="max-height:420px; overflow:auto; margin-top:6px">' +
       '<table class="sps"><thead><tr><th><input type="checkbox" id="so-aqui-todas" ' +
       'title="marcar todas"></th><th>Data</th><th>Histórico</th>' +
@@ -1714,6 +1716,8 @@ function desenharConferencia(d) {
         // ⚠️ A LINHA QUE ESTÁ AQUI A MAIS: o extrato traz a mesma transação
         // menos vezes do que há no banco. Já vem marcada; quem decide é ele.
         (l.repetida ? '<b class="selo risco">parece repetida</b>' : '') +
+        (l.dia_vazio ? ' <small>o arquivo não traz nada deste dia — confira se o ' +
+          'extrato cobre este dia antes de excluir</small>' : '') +
         '</td></tr>';
     });
     html += '</tbody></table></div>';

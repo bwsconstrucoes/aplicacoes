@@ -12250,6 +12250,15 @@ somente Solicitações de uma conta especifica"*.
   extrato. Esta última tem **caixinhas e "Excluir as marcadas…"** (as que
   parecem repetidas já vêm marcadas; mesmas travas de sempre: motivo
   obrigatório, a lançada no OMIE fica) e confere o arquivo de novo depois.
+- **Lançamento de outra conta que entrou nesta** (o caso que o dono levantou):
+  é a lista "está aqui e não vem neste extrato" — agora com caixinhas. Antes de
+  liberar, corrigi uma armadilha: o OFX do Bradesco põe o DIA DO DOWNLOAD no
+  lugar do período, e a comparação se esticava até ele — um extrato de setembro
+  baixado em 14/10 acusaria como sobra os lançamentos CERTOS de 01 a 14/10.
+  Agora, com cabeçalho início = fim, a comparação vai só até a última linha do
+  arquivo. E a sobra num dia em que o arquivo não traz nada vem com o aviso
+  "confira se o extrato cobre este dia antes de excluir" (o arquivo pode ter um
+  buraco, como o dos "últimos lançamentos").
 - Sobre "informar dois saldos, um no começo e um no fim da faixa": é o que a
   janela "Onde o saldo não bate" faz com dois saldos digitados — respondido ao
   dono, sem código novo.

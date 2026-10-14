@@ -101,10 +101,13 @@ def test_o_periodo_DECLARADO_pelo_banco_nao_pode_encolher_o_arquivo():
     mentiroso = EXTRATO.replace("<DTSTART>20260901<DTEND>20260930",
                                 "<DTSTART>20260925<DTEND>20260925")
     lido = conciliacao_ofx.ler(mentiroso.encode("utf-8"))
-    # A união: cobre o que o banco declarou E o que o arquivo de fato traz.
     assert lido.periodo_ini == dt.date(2026, 9, 10), (
         "o período começou depois do lançamento mais antigo do arquivo")
-    assert lido.periodo_fim == dt.date(2026, 9, 25)
+    # ⚠️ E O DIA DO DOWNLOAD NÃO ESTICA O FIM (14/10/2026): esticar fazia os
+    # lançamentos certos até o download aparecerem como sobra — e a lista de
+    # sobras agora tem caixinha para excluir. Vale o que o arquivo traz.
+    assert lido.periodo_fim == max(l.data for l in lido.lancamentos)
+    assert lido.baixado_em == dt.date(2026, 9, 25)
 
 
 def test_o_periodo_declarado_MAIOR_que_o_conteudo_continua_valendo():
