@@ -1000,10 +1000,10 @@ def listar(f: dict, pagina: int = 1) -> list[dict]:
     antes = [desde] if desde else []
     # "Ver o que é anterior ao início" (14/10/2026): as linhas antigas
     # aparecem, mas SEM saldo — o saldo corrido continua começando no início.
-    soma_saldo = "sum(valor)"
+    soma_saldo, do_saldo = "sum(valor)", []
     if desde and f.get("anteriores"):
         corte, antes = " ", []
-        soma_saldo = "sum(CASE WHEN data > '%s'::date THEN valor ELSE 0 END)" % desde.isoformat()
+        soma_saldo, do_saldo = "sum(CASE WHEN data > ? THEN valor ELSE 0 END)", [desde]
 
     # ⚠️ O ESTADO NO OMIE VEM JUNTO, e isto é conserto de 29/09/2026. O dono:
     # *"não fica nenhuma informação na tabela dizendo que aquela tarifa foi
@@ -1026,7 +1026,7 @@ def listar(f: dict, pagina: int = 1) -> list[dict]:
         f"     WHERE conta_id = ?{corte} "
         "  ) t "
         f"{onde} ORDER BY data DESC, id DESC LIMIT ? OFFSET ?",
-        tuple([inicial, int(f.get("conta_id") or 0)] + antes + params
+        tuple([inicial] + do_saldo + [int(f.get("conta_id") or 0)] + antes + params
               + [POR_PAGINA, (pagina - 1) * POR_PAGINA]))
     nomes = ["id", "data", "descricao", "documento", "valor", "conciliado",
              "observacao", "origem", "conciliado_por", "conciliado_em", "saldo",
