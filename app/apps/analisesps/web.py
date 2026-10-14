@@ -1416,6 +1416,30 @@ VALIDADE_DA_CONSULTA = 15 * 60
 # irmã do "Consultar Omie": lista as marcadas, a pessoa escolhe o que vai e
 # para quem, e o WhatsApp DELA abre com a mensagem pronta.
 # ---------------------------------------------------------------------------
+@bp.route("/api/sp/<sp_id>/comprovante", methods=["POST"])
+@exige_operador
+def substituir_comprovante(sp_id):
+    """Troca o comprovante de uma SP (14/10/2026) — ver `substituir_comprovante.py`.
+    Um arquivo (vai para o Dropbox) ou um link colado; o antigo fica no log."""
+    from . import consultas, substituir_comprovante as sc
+    sp_id = str(sp_id).strip()
+    erro = _fora_do_recorte([sp_id])
+    if erro:
+        return erro
+    if not consultas.uma(sp_id):
+        return {"ok": False, "erro": "SP não encontrada."}, 404
+    arquivo = request.files.get("arquivo")
+    try:
+        if arquivo and arquivo.filename:
+            link = sc.subir_arquivo(sp_id, arquivo.read(sc.TETO_BYTES + 1))
+        else:
+            link = sc.link_colado(request.form.get("link"))
+    except sc.ErroDaSubstituicao as e:
+        return {"ok": False, "erro": str(e)}, 400
+    _gravar_valores([(sp_id, "comprovante", link)], "Substituir comprovante")
+    return {"ok": True, "link": link}
+
+
 @bp.route("/api/encaminhar/previa", methods=["POST"])
 @exige_operador
 def encaminhar_previa():

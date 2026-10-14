@@ -461,6 +461,7 @@ TELA_DA_ROTA = {
     "analisesps.omie_marcar_pago": ("solicitacoes",),
     # 10/10/2026: encaminhar pelo WhatsApp, do Lote e das Solicitações.
     "analisesps.encaminhar_previa": ("solicitacoes", "lote"),
+    "analisesps.substituir_comprovante": ("solicitacoes", "lote"),
     # 10/10/2026: ver anexo e comprovante numa janela — em toda tela que os mostra.
     "analisesps.arquivo_ver": ("solicitacoes", "lote", "conciliacao", "calendario",
                                "faturamento", "folha", "comprovantes", "relatorio"),

@@ -105,6 +105,7 @@ TODAS_AS_TELAS = [
     ("POST", "/analisesps/faturamento/nota/123/omie"),
     ("POST", "/analisesps/api/omie/marcar-pago"),
     ("POST", "/analisesps/api/encaminhar/previa"),
+    ("POST", "/analisesps/api/sp/123/comprovante"),
     ("GET", "/analisesps/arquivo/ver"),
     ("POST", "/analisesps/api/encaminhar/mensagem"),
     ("POST", "/analisesps/api/encaminhar/contatos"),

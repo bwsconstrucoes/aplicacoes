@@ -804,7 +804,7 @@ a.kpi { display: block; }
   font-family: var(--fonte-dados); font-size: 24px; font-weight: 800;
   color: var(--azul); white-space: nowrap;
 }
-.ficha-links { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.ficha-links { display: flex; gap: 6px; flex-wrap: wrap; align-items: flex-start; margin-bottom: 12px; }
 /* "Cancelar SP" ficou igual aos outros botoes da fileira: ele so ABRE o
    formulario do Pipefy, nao cancela nada por si. Em vermelho puxava o olho
    para si toda vez que a ficha abria, como se fosse a acao principal. */
@@ -2996,3 +2996,11 @@ table.conciliacao tr.com-sp { cursor: pointer; }
 .previa-moldura { flex: 1; width: 100%; border: 0; background: #f6f8fb; }
 @media (max-width: 760px) { .dialogo-previa { width: 100vw; height: 100dvh; max-width: 100vw; max-height: 100dvh; border-radius: 0; } }
 .codigo-arquivos { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 4px 0 0; font-size: 13px; color: var(--tinta-suave, #52514e); }
+
+/* Substituir o comprovante, na ficha (14/10/2026) */
+.substituir-comprovante { display: inline-block; vertical-align: top; }
+.substituir-comprovante > summary { list-style: none; cursor: pointer; }
+.substituir-comprovante > summary::-webkit-details-marker { display: none; }
+.substituir-comprovante[open] > summary { margin-bottom: 8px; }
+.form-substituir-comprovante { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px;
+  background: #f6f8fb; border: 1px solid var(--borda, #e3e7ee); border-radius: 8px; max-width: 420px; }

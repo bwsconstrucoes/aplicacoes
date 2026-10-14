@@ -2617,3 +2617,35 @@ function resumoDoComplemento(c) {
     if (!j.open) j.showModal();
   }, true);
 })();
+
+// --- Substituir o comprovante, na ficha (14/10/2026) ------------------------
+// Delegado no documento: a ficha também chega dentro da janela (modal).
+document.addEventListener("submit", async e => {
+  const form = e.target.closest("form.form-substituir-comprovante");
+  if (!form) return;
+  e.preventDefault();
+  const msg = form.querySelector(".sc-msg");
+  const dados = new FormData(form);
+  const temArquivo = form.arquivo.files && form.arquivo.files.length;
+  if (!temArquivo && !String(dados.get("link") || "").trim()) {
+    msg.textContent = "Escolha o arquivo ou cole o link.";
+    return;
+  }
+  if (!confirm("Trocar o comprovante desta SP?\n\nO link novo vai para a planilha; o de antes fica registrado no Log.")) return;
+  const botao = form.querySelector("button");
+  botao.disabled = true;
+  msg.textContent = temArquivo ? "Guardando o arquivo no Dropbox…" : "Gravando…";
+  try {
+    const r = await fetch(form.dataset.url, {method: "POST", body: dados});
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.erro || ("HTTP " + r.status));
+    msg.textContent = "Comprovante substituído.";
+    const link = form.closest(".ficha-links").querySelector("a.ficha-comprovante");
+    if (link) { link.href = d.link; link.dataset.previa = d.link; }
+    form.reset();
+  } catch (err) {
+    msg.textContent = "Não deu certo: " + err.message;
+  } finally {
+    botao.disabled = false;
+  }
+});

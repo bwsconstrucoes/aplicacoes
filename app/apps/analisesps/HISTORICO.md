@@ -12228,6 +12228,26 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 224 — Substituir o comprovante de uma SP (14/10/2026)
+
+- *"Teve um comprovante que eu tentei baixar e está em erro. Como a gente
+  poderia fazer para eu poder substituir, caso eu entenda necessário?"*
+- Mandar de novo pela fila de comprovantes NÃO resolveria: o BaixaBradesco
+  reaproveita o link que a SPsBD já tem e ignora o arquivo novo
+  (`baixabradesco/core.py`). Por isso a troca é direta, na **ficha da SP**:
+  "Substituir comprovante" (ou "Pôr comprovante", se não houver), só para quem
+  opera. Duas formas:
+  - **arquivo** (PDF, PNG ou JPG, até 10 MB — o tipo é conferido pelo
+    conteúdo, não pelo nome): sobe para a MESMA pasta do Dropbox do
+    BaixaBradesco, com o número da SP e a data no nome; nunca por cima de outro;
+  - **link colado**, quando o comprovante certo já está em algum lugar.
+- O link novo vai para a coluna AG pelo caminho de toda alteração (banco, fila
+  da planilha, log). **O link antigo fica no Log** — trocar não apaga o que
+  havia. O card do Pipefy NÃO é tocado (decisão minha: não foi pedido; se o
+  dono quiser o arquivo novo também no card, é outro passo).
+- `substituir_comprovante.py`, rota `/api/sp/<id>/comprovante`.
+- Não testado com o Dropbox de verdade (só simulado).
+
 #### Leva 223 — A janela de ver vale sempre; anexo e comprovante na tela de códigos (13/10/2026)
 
 - *"Quando abro a SP e clico no anexo, ele pergunta se quero baixar (…) eu
