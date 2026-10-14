@@ -12228,6 +12228,19 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 225 — Excluir as linhas marcadas na Conciliação (14/10/2026)
+
+- *"Adicionar botão de exclusão de lançamentos dentro da conciliação, dos
+  selecionados. Pode colocar ao lado do Lançar no OMIE."* Botão **"Excluir
+  selecionados…"** na barra, ao lado do Lançar no OMIE, só para quem opera.
+- As travas são as do × de cada linha (26/09/2026), repetidas: primeiro a tela
+  diz quantas saem, quanto somam, quantas estão conciliadas ou com observação;
+  depois pede o **motivo** (obrigatório, um só para todas, vai ao log linha a
+  linha). A linha **já lançada no OMIE fica** — e não segura as outras: a
+  pergunta avisa quantas ficam, e o recado final também. Teto de 500 por vez.
+- `conciliacao.o_que_apagar_as_linhas_leva` / `apagar_linhas`, rota
+  `/api/conciliacao/apagar-linhas`.
+
 #### Leva 224 — Substituir o comprovante de uma SP (14/10/2026)
 
 - *"Teve um comprovante que eu tentei baixar e está em erro. Como a gente

@@ -1256,6 +1256,72 @@ def apagar_linha(linha_id: int, motivo: str = "", quem: str = "") -> dict:
     return {"apagadas": apagadas, "motivo": motivo, **antes}
 
 
+# ---------------------------------------------------------------------------
+# APAGAR VÁRIAS DE UMA VEZ — 14/10/2026, pedido do dono: *"adicionar botão de
+# exclusão de lançamentos dentro da conciliação, dos selecionados. Pode colocar
+# ao lado do Lançar no OMIE"*.
+#
+# É o mesmo apagar de uma linha, repetido — com as MESMAS travas: a lançada no
+# OMIE é recusada (e só ela; as outras seguem), o motivo é obrigatório e vale
+# para todas, e cada linha apagada vai ao log com o motivo, como a avulsa.
+# ---------------------------------------------------------------------------
+MAX_LINHAS_DE_UMA_VEZ = 500
+
+
+def _ids_validos(ids) -> list[int]:
+    saida = []
+    for i in ids or []:
+        texto = str(i).strip()
+        if texto.isdigit() and int(texto) not in saida:
+            saida.append(int(texto))
+    return saida[:MAX_LINHAS_DE_UMA_VEZ]
+
+
+def o_que_apagar_as_linhas_leva(ids) -> dict:
+    """O resumo para a pergunta da tela. NÃO apaga nada."""
+    if not _pronto():
+        return {"pode": False, "erro": "A conciliação ainda não foi ligada."}
+    ids = _ids_validos(ids)
+    if not ids:
+        return {"pode": False, "erro": "Marque as linhas primeiro."}
+    podem, recusadas = [], []
+    for linha_id in ids:
+        info = o_que_apagar_a_linha_leva(linha_id)
+        if info.get("pode"):
+            podem.append(info)
+        else:
+            recusadas.append({"linha_id": linha_id, "descricao": info.get("descricao", ""),
+                              "erro": info.get("erro", "")})
+    total = sum((Decimal(str(i.get("valor") or 0)) for i in podem), Decimal("0"))
+    return {"pode": bool(podem),
+            "erro": "" if podem else "Nenhuma das linhas marcadas pode ser apagada.",
+            "quantas": len(podem), "total": str(total),
+            "conciliadas": sum(1 for i in podem if i.get("conciliado")),
+            "com_observacao": sum(1 for i in podem if i.get("observacao")),
+            "recusadas": recusadas}
+
+
+def apagar_linhas(ids, motivo: str = "", quem: str = "") -> dict:
+    """Apaga as linhas marcadas, uma a uma, pelo `apagar_linha`. A recusada
+    (lançada no OMIE, ou que sumiu no meio) não para as outras: volta na lista
+    `recusadas`, com a frase."""
+    motivo = str(motivo or "").strip()[:300]
+    if not motivo:
+        raise ErroDaConciliacao(
+            "Diga por que estas linhas estão saindo — é o que vai explicar, daqui "
+            "a meses, por que o saldo mudou.")
+    ids = _ids_validos(ids)
+    if not ids:
+        raise ErroDaConciliacao("Marque as linhas primeiro.")
+    apagadas, recusadas = 0, []
+    for linha_id in ids:
+        try:
+            apagadas += apagar_linha(linha_id, motivo, quem).get("apagadas", 0)
+        except ErroDaConciliacao as e:
+            recusadas.append({"linha_id": linha_id, "erro": str(e)})
+    return {"apagadas": apagadas, "recusadas": recusadas, "motivo": motivo}
+
+
 def acrescentar_a_mao(conta_id: int, data, descricao: str, valor,
                       documento: str = "", observacao: str = "",
                       quem: str = "") -> int:

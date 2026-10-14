@@ -390,6 +390,11 @@
                 {% if not omie_pronto %}disabled
                 title="falta aplicar a atualização do banco que liga a parte do OMIE"
                 {% endif %}>Lançar no OMIE…</button>
+        {# APAGAR AS MARCADAS — 14/10/2026, "ao lado do Lançar no OMIE". As
+           travas do × da linha: pergunta antes, motivo obrigatório, e a já
+           lançada no OMIE é recusada pela rota. #}
+        <button class="btn secundario" id="btn-excluir-sel"
+                title="apagar do extrato as linhas marcadas">Excluir selecionados…</button>
       </div>
       <span id="recado-acao" class="cartao-dica" style="margin:0"></span>
     </div>
@@ -1186,6 +1191,58 @@ const btnC = document.getElementById("btn-conciliar");
 if (btnC) btnC.addEventListener("click", () => emLeva(true));
 const btnD = document.getElementById("btn-desmarcar");
 if (btnD) btnD.addEventListener("click", () => emLeva(false));
+
+// --- apagar as marcadas (14/10/2026) ---------------------------------------
+// Mesmo caminho do × da linha: a primeira chamada só conta (quantas, quanto,
+// quais estão conciliadas, quais o OMIE segura); a segunda apaga com o motivo.
+const btnExcluir = document.getElementById("btn-excluir-sel");
+if (btnExcluir) btnExcluir.addEventListener("click", async () => {
+  const ids = selecionadas();
+  if (!ids.length) { recado("Marque as linhas primeiro."); return; }
+  const url = "{{ url_for('analisesps.conciliacao_apagar_linhas') }}";
+  btnExcluir.disabled = true;
+  let d;
+  try { d = await pedir(url, {ids: ids}); }
+  catch (e) { recado("falhou: " + e, "erro"); return; }
+  finally { btnExcluir.disabled = false; }
+  if (!d.ok) { recado(d.erro || "não consegui conferir", "erro"); return; }
+  const recusadas = d.recusadas || [];
+  if (!d.pode) {
+    alert((d.erro || "Nada a apagar.") +
+      (recusadas.length ? "\n\n" + recusadas.map(r => "• " + r.erro).join("\n") : ""));
+    return;
+  }
+  let aviso = "Apagar " + d.quantas + (d.quantas === 1 ? " linha" : " linhas") +
+    " do extrato?\nSomam " + dinheiro(d.total) + ".";
+  if (d.conciliadas) aviso += "\n\nATENÇÃO: " + d.conciliadas +
+    (d.conciliadas === 1 ? " está CONCILIADA." : " estão CONCILIADAS.");
+  if (d.com_observacao) aviso += "\n" + d.com_observacao +
+    (d.com_observacao === 1 ? " tem observação escrita." : " têm observação escrita.");
+  if (recusadas.length) aviso += "\n\n" + recusadas.length +
+    (recusadas.length === 1 ? " linha marcada FICA" : " linhas marcadas FICAM") +
+    " (já lançada no OMIE — desfaça lá primeiro).";
+  aviso += "\n\nO saldo desta tela vai mudar, e isto não tem volta. " +
+    "Se o problema foi a importação inteira, prefira o Desfazer do extrato.";
+  if (!confirm(aviso)) return;
+
+  const motivo = prompt("Por que estas linhas estão saindo? (fica registrado)");
+  if (!motivo || !motivo.trim()) {
+    recado("nada foi apagado — sem motivo, não apago", "");
+    return;
+  }
+  btnExcluir.disabled = true;
+  const f = await pedir(url, {ids: ids, confirmar: true, motivo: motivo});
+  if (!f.ok) {
+    btnExcluir.disabled = false;
+    recado(f.erro || "não consegui apagar", "erro");
+    return;
+  }
+  const ficaram = (f.recusadas || []).length;
+  recado(f.apagadas + (f.apagadas === 1 ? " linha apagada" : " linhas apagadas") +
+    (ficaram ? "; " + ficaram + " ficou(aram) — lançada(s) no OMIE" : "") +
+    ". A tela vai recarregar.", "");
+  setTimeout(() => location.reload(), ficaram ? 3000 : 1200);
+});
 
 // --- a observação, ao sair do campo ----------------------------------------
 document.querySelectorAll(".anotacao").forEach(campo => {

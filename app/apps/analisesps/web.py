@@ -5658,6 +5658,37 @@ def conciliacao_apagar_linha():
     return {"ok": True, "so_contei": False, **feito}
 
 
+@bp.route("/api/conciliacao/apagar-linhas", methods=["POST"])
+@exige_operador
+def conciliacao_apagar_linhas():
+    """Apaga as linhas MARCADAS — pedido do dono em 14/10/2026 ("exclusão dos
+    selecionados, ao lado do Lançar no OMIE").
+
+    As mesmas duas chamadas da avulsa: sem `confirmar`, só diz quantas saem,
+    quanto somam e quais são recusadas (as lançadas no OMIE). A segunda apaga,
+    e exige o motivo — um só, para todas.
+    """
+    from . import conciliacao as conc
+
+    dados = request.get_json(silent=True) or {}
+    ids = dados.get("ids") or []
+    if not isinstance(ids, list):
+        return {"ok": False, "erro": "Marque as linhas primeiro."}
+
+    if not dados.get("confirmar"):
+        return {"ok": True, "so_contei": True, **conc.o_que_apagar_as_linhas_leva(ids)}
+
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        feito = conc.apagar_linhas(ids, dados.get("motivo") or "", quem)
+    except conc.ErroDaConciliacao as e:
+        return {"ok": False, "erro": str(e)}
+    except Exception as e:  # noqa: BLE001 — a tela precisa da frase
+        logger.exception("Conciliação: falhou apagar as linhas marcadas")
+        return {"ok": False, "erro": f"Não consegui apagar: {e}"}, 500
+    return {"ok": True, "so_contei": False, **feito}
+
+
 @bp.route("/api/conciliacao/soltar-presas", methods=["POST"])
 @exige_operador
 def conciliacao_soltar_presas():

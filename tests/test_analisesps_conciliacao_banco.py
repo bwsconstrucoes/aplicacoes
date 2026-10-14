@@ -1663,6 +1663,62 @@ def test_apagar_uma_linha_que_nao_existe_mais_responde_frase_e_nao_estouro(
         conciliacao.apagar_linha(999999, "qualquer", "T")
 
 
+def test_apagar_as_MARCADAS_apaga_as_livres_e_recusa_a_lancada_no_omie(banco_conc):
+    """14/10/2026 — "exclusão dos selecionados, ao lado do Lançar no OMIE". As
+    travas são as da avulsa: a lançada no OMIE fica (e não segura as outras), e
+    o motivo é obrigatório."""
+    from app.apps.analisesps import conciliacao
+    from app.apps.analisesps.db import conexao, consultar_um
+    from decimal import Decimal as D
+
+    conta_id = conta_de_teste()
+    a = conciliacao.acrescentar_a_mao(conta_id, dt.date(2026, 9, 1), "DUP 1", D("-100.00"), quem="T")
+    b = conciliacao.acrescentar_a_mao(conta_id, dt.date(2026, 9, 2), "DUP 2", D("-50.50"), quem="T")
+    c = conciliacao.acrescentar_a_mao(conta_id, dt.date(2026, 9, 3), "NO OMIE", D("-9.00"), quem="T")
+    conciliacao.marcar([a], True, "T")
+    with conexao() as con:
+        con.execute("UPDATE analisesps.conciliacao_extrato SET omie_codigo = 321 WHERE id = ?", (c,))
+        con.commit()
+
+    conta = conciliacao.o_que_apagar_as_linhas_leva([a, b, c, "x"])
+    assert conta["pode"] and conta["quantas"] == 2 and conta["total"] == "-150.50"
+    assert conta["conciliadas"] == 1
+    assert [r["linha_id"] for r in conta["recusadas"]] == [c]
+
+    with pytest.raises(conciliacao.ErroDaConciliacao):
+        conciliacao.apagar_linhas([a, b], "  ", "T")
+    assert consultar_um("SELECT count(*) FROM analisesps.conciliacao_extrato "
+                        " WHERE conta_id = ?", (conta_id,))[0] == 3, "apagou sem motivo"
+
+    feito = conciliacao.apagar_linhas([a, b, c], "duplicadas na importação", "T")
+    assert feito["apagadas"] == 2
+    assert [r["linha_id"] for r in feito["recusadas"]] == [c] and "OMIE" in feito["recusadas"][0]["erro"]
+    restantes = consultar_um("SELECT array_agg(id) FROM analisesps.conciliacao_extrato "
+                             " WHERE conta_id = ?", (conta_id,))[0]
+    assert restantes == [c]
+
+
+def test_a_TELA_tem_o_botao_e_a_rota_conta_antes_de_apagar(banco_conc, app):
+    from app.apps.analisesps import conciliacao
+    from decimal import Decimal as D
+    from tests.test_analisesps_usuarios_banco import SENHA_MESTRE_OPERADOR
+
+    conta_id = conta_de_teste()
+    a = conciliacao.acrescentar_a_mao(conta_id, dt.date(2026, 9, 1), "DUP", D("-10.00"), quem="T")
+    with app.test_client() as cliente:
+        cliente.post("/analisesps/entrar", data={"senha": SENHA_MESTRE_OPERADOR})
+        tela = cliente.get(f"/analisesps/conciliacao?conta_id={conta_id}").get_data(as_text=True)
+        assert 'id="btn-excluir-sel"' in tela
+        r = cliente.post("/analisesps/api/conciliacao/apagar-linhas", json={"ids": [a]}).get_json()
+        assert r["ok"] and r["so_contei"] and r["quantas"] == 1
+        r = cliente.post("/analisesps/api/conciliacao/apagar-linhas",
+                         json={"ids": [a], "confirmar": True}).get_json()
+        assert not r["ok"] and "por que" in r["erro"].lower()
+        r = cliente.post("/analisesps/api/conciliacao/apagar-linhas",
+                         json={"ids": [a], "confirmar": True, "motivo": "teste"}).get_json()
+        assert r["ok"] and r["apagadas"] == 1
+
+
 # ---------------------------------------------------------------------------
 # "ONDE ESTÁ ESSE LANÇAMENTO?" — a busca que ignora todo filtro (29/09/2026)
 #
