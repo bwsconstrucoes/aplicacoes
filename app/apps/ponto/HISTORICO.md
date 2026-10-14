@@ -41,7 +41,7 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
-1u. **NO RAMO, ainda não publicado (14/10/2026)**: afastado não bate; "ver no
+1u. **PUBLICADO em 14/10/2026** (com o "pode" do dono, `main` em `e6578f9`): afastado não bate; "ver no
    mapa" na batida (espelho e Validações) e na ronda; a batida recusada guarda o
    lugar. Sem migração.
 1t. **PUBLICADO em 13/10/2026, noite** (com o "pode" do dono, `main` em `42037b6`) — a RONDA SURPRESA dos
