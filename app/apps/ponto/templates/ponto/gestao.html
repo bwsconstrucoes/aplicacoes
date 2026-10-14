@@ -401,6 +401,7 @@
 <h2>Pessoas no ponto <small id="pe-sub"></small></h2>
 <div id="mensagem"></div>
 <div class="cartao" id="pe-ficha" hidden></div>
+<div class="cartao oculto" id="pe-fora" style="border-left:4px solid var(--ambar)"></div>
 <div class="tabela-wrap">
   <div class="tabela-rolagem"><table>
     <thead><tr><th class="sem-ordem">Nome</th><th class="sem-ordem">CPF</th>
@@ -527,7 +528,7 @@
   <div class="cartao-cab"><h3>Base de pessoas do ponto</h3></div>
   <div class="cartao-dica" style="margin-top:0">Critério igual ao da Análise de SPs: desligado =
     a data de saída já passou (o dia da saída ainda se bate) ou a Fase Atual do Pipefy diz
-    desligado; afastado = a fase diz afastado (bate, mas para conferência); o resto está ativo.
+    desligado; afastado = a fase diz afastado (não bate até voltar); o resto está ativo.
     Antes da data de início (a menor entre início e admissão) e depois da data de saída, a
     batida é recusada.</div>
   <div id="c-registro">carregando…</div>
@@ -793,6 +794,11 @@ const mesBR = comp => comp ? `${comp.slice(5, 7)}/${comp.slice(0, 4)}` : "—";
 // ("2026-10-03T07:58:00-03:00"). Ler o texto, em vez de converter, garante a
 // mesma hora num navegador configurado em outro fuso.
 const quando = iso => iso ? `${dataBR(String(iso).slice(0, 10))} ${String(iso).slice(11, 16)}` : "—";
+// "Ver no mapa" (14/10/2026: "a gente pode checar onde a pessoa estava no momento?"):
+// o ponto em que o celular estava na batida ou na ronda, no Google Maps.
+const linkMapa = (lat, lon, texto = "📍 ver no mapa") => (lat == null || lon == null) ? ""
+  : `<a class="elo" target="_blank" rel="noopener" href="https://www.google.com/maps?q=${encodeURIComponent(lat)},${encodeURIComponent(lon)}"
+       title="Onde o celular estava">${texto}</a>`;
 const distancia = m => (m === null || m === undefined) ? "—"
   : m < 1000 ? `${Math.round(m)} m`
   : `${(m / 1000).toLocaleString("pt-BR", {maximumFractionDigits: 1})} km`;
@@ -1304,6 +1310,8 @@ function desenharEspelho() {
       <td>${d.escala ? escapar(d.escala) : `<span class="suave">—</span>`}
         ${d.feriado ? `<small>Feriado: ${escapar(d.feriado)}</small>` : ""}</td>
       <td>${d.batidas.length ? d.batidas.map(b => chipBatida(b, true)).join("") : `<span class="suave">—</span>`}
+        ${d.batidas.filter(b => b.latitude != null && (b.fora_da_cerca || b.status === "EM_ANALISE")).map(b =>
+          `<div><small>${escapar(b.hora)}: ${b.fora_da_cerca ? `fora da obra${b.distancia_metros != null ? ` (${distancia(b.distancia_metros)})` : ""} · ` : ""}${linkMapa(b.latitude, b.longitude)}</small></div>`).join("")}
         ${(d.rondas || []).length ? `<div style="margin-top:4px"><small class="suave">🔦 rondas:</small> ${d.rondas.map(rondaNoEspelho).join(" ")}</div>` : ""}</td>
       <td class="dados">${hmCelula(d.previsto)}</td>
       <td class="dados">${hmCelula(d.trabalhado)}</td>
@@ -1618,6 +1626,8 @@ function detalheDoItem(i) {
   if (i.cid && PODE_DP) partes.push(`<small>CID ${escapar(i.cid)}</small>`);
   if (i.leitura_ia && PODE_DP) partes.push(`<small>leitura automática feita — confira abaixo</small>`);
   if (i.categoria === "PEDIDO" && i.origem === "APP") partes.push(`<small>pedido pelo celular</small>`);
+  if (i.tipo === "BATIDA_EM_ANALISE" && i.latitude != null)
+    partes.push(`<small>${i.distancia_metros != null ? `a ${escapar(distancia(i.distancia_metros))} da obra · ` : ""}${linkMapa(i.latitude, i.longitude)}</small>`);
   return partes.join("");
 }
 
@@ -2205,7 +2215,7 @@ carregarObrasDoMosaico().then(obras => {
 // ===========================================================================
 // PESSOAS — escala, jornada, obras extras e banco de horas de cada pessoa.
 // ===========================================================================
-let PESSOAS = [], ESCALAS = null, ESPERA = null;
+let PESSOAS = [], ESCALAS = null, ESPERA = null, FORA_DA_LISTA = [];
 
 async function carregarPessoas() {
   const p = new URLSearchParams();
@@ -2215,6 +2225,7 @@ async function carregarPessoas() {
   try {
     const d = await api(`/erp/api/ponto/pessoas?${p}`);
     PESSOAS = d.pessoas;
+    FORA_DA_LISTA = d.fora_da_lista || [];
     desenharPessoas();
   } catch (e) { falhou(e); }
 }
@@ -2222,7 +2233,11 @@ async function carregarPessoas() {
 function desenharPessoas() {
   els("pe-sub").textContent = `${PESSOAS.length} pessoa(s)`;
   els("pe-vazio").classList.toggle("oculto", PESSOAS.length > 0);
-  if (!PESSOAS.length) els("pe-vazio").innerHTML = "<b>Ninguém encontrado</b>Mude a busca.";
+  // Quem a busca achou, mas não está na lista — e por quê (14/10/2026).
+  const porQue = FORA_DA_LISTA.map(x => `<li>${x.nome ? `<b>${escapar(x.nome)}</b>${x.cpf_final ? ` (CPF final ${escapar(x.cpf_final)})` : ""}: ` : ""}${escapar(x.motivo)}.</li>`).join("");
+  els("pe-fora").classList.toggle("oculto", !porQue);
+  els("pe-fora").innerHTML = porQue ? `<b>${PESSOAS.length ? "Também casam com a busca, mas não estão na lista" : "Não está na lista"}</b><ul style="margin:6px 0 0 18px; padding:0">${porQue}</ul>` : "";
+  if (!PESSOAS.length) els("pe-vazio").innerHTML = porQue ? "<b>Ninguém na lista</b>Veja o motivo acima." : "<b>Ninguém encontrado</b>Mude a busca.";
   els("pe-corpo").innerHTML = PESSOAS.map(p => `<tr style="cursor:pointer" data-pessoa="${p.id}">
     <td><b>${escapar(p.nome)}</b>${!p.ativo_no_ponto ? `<small>não bate ponto</small>` : ""}
       ${p.situacao && p.situacao !== "ATIVO" ? `<small>${escapar(rotulo(p.situacao))}</small>` : ""}</td>
@@ -2840,7 +2855,8 @@ async function carregarRondas() {
       <td>${escapar(t.obra || "—")}<small>${escapar(t.obra_nome || "")}</small></td>
       <td class="dados">${escapar(t.entrada)}</td>
       <td class="dados">${t.saida ? escapar(t.saida) : `<span class="suave">—</span>`}</td>
-      <td>${t.rondas.map(r => chipRonda(r, true)).join(" ")}</td>
+      <td>${t.rondas.map(r => chipRonda(r, true)).join(" ")}
+        ${t.rondas.filter(r => r.latitude != null).map(r => `<div><small>${escapar(r.feita || "")}: ${linkMapa(r.latitude, r.longitude)}</small></div>`).join("")}</td>
       <td>${t.perdidas ? `<span class="selo vermelho">${t.perdidas} perdida(s)</span>` : ""}
           <span class="selo ${t.feitas === t.rondas.filter(r => r.status !== "CANCELADA").length ? "verde" : ""}">${t.feitas} de ${t.rondas.filter(r => r.status !== "CANCELADA").length} feitas</span></td>
     </tr>`).join("")}</tbody></table>
@@ -3603,7 +3619,7 @@ function desenharRegistro(d) {
     ${blocoAutomatico(d)}
     <div class="kpis" style="margin-top:10px">
       ${kpi("Ativos no Registro", d.ativos, "verde", `de ${d.total ?? 0} linha(s) na planilha`)}
-      ${kpi("Afastados", d.afastados, "ambar", "batem, mas para conferência")}
+      ${kpi("Afastados", d.afastados, "ambar", "não batem até voltar")}
       ${kpi("Faltam no ERP", d.faltam_no_erp, d.faltam_no_erp ? "vermelho" : "", "ativos no Registro sem cadastro no ERP")}
       ${kpi("Estão só no ERP", d.so_no_erp, d.so_no_erp ? "ambar" : "", "batem para conferência")}
       ${kpi("Sem obra reconhecida", d.ativos_sem_obra_reconhecida, d.ativos_sem_obra_reconhecida ? "ambar" : "",

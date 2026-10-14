@@ -78,8 +78,12 @@ def _dar_nome_ao_aparelho(conn, aparelho, pessoa: dict) -> None:
     """O celular que espera aprovação passa a dizer de quem é, NA ENTRADA com CPF
     e PIN (09/10/2026: "chega aparelho sem nome (…) devíamos aproveitar o
     cadastro, visto que é colocado o CPF"). Só enquanto PENDENTE: aparelho
-    aprovado não muda de dono pelo celular."""
+    aprovado não muda de dono pelo celular. O PEDIDO feito por alguém (botão
+    "Este aparelho vai bater ponto?") guarda quem pediu: outra pessoa que entre
+    nele antes da aprovação não troca o nome."""
     if not aparelho or aparelho.get("status") != "PENDENTE":
+        return
+    if dispositivos.foi_pedido(aparelho):
         return
     db.executar(conn, "UPDATE ponto.dispositivos SET descricao = :d, colaborador_id = :c "
                       "WHERE id = :id AND status = 'PENDENTE'",
@@ -302,6 +306,28 @@ def app_api_aparelho_identificar():
     return _ok(mudou=True)
 
 
+@bp.route("/app/api/aparelho/pedir", methods=["POST"])
+@auth.exige_colaborador
+def app_api_aparelho_pedir():
+    """"Este aparelho vai bater ponto? Pedir a aprovação" — só DEPOIS de entrar
+    com CPF e PIN (14/10/2026, o dono: "antes de tudo precisa ser feito o cadastro
+    do telefone e gerado um PIN. Aquilo é a segurança inicial. Depois desse momento
+    é que eu poderia pedir para que o telefone fosse aprovado"). O pedido leva o
+    nome de quem pediu e entra na fila de Validações; o TIPO (celular pessoal,
+    ponto da obra, de equipe) é de quem aprova."""
+    uuid = request.headers.get("X-Device-UUID", "")
+    token = request.headers.get(auth.CABECALHO_TOKEN, "")
+    with db.conexao() as conn:
+        try:
+            a = dispositivos.autenticar(conn, uuid, token)
+        except Exception:  # noqa: BLE001
+            raise NaoEncontrado("aparelho não encontrado — feche e abra de novo")
+        if a["status"] != "PENDENTE":
+            return _ok(pedido=False, status=a["status"])
+        dispositivos.marcar_pedido(conn, a["id"], cadastros.colaborador_por_id(conn, _eu()))
+    return _ok(pedido=True, status="PENDENTE")
+
+
 # ---------------------------------------------------------------------------
 # Eu, hoje, o mês
 # ---------------------------------------------------------------------------
@@ -508,6 +534,10 @@ def app_api_tablet_identificar():
             identificacao = qr.IDENT_CPF
         if not pessoa or pessoa["situacao"] == "DESLIGADO" or not pessoa["ativo_no_ponto"]:
             raise Recusada("cadastro inativo no ponto — procure a administração da obra")
+        if pessoa["situacao"] == "AFASTADO" and not d.get("para_pedido"):
+            # Na hora da identificação, antes da foto (o servidor recusaria a batida).
+            _recusar_em_separado(marcacoes.AFASTADO_NAO_BATE, cpf=pessoa["cpf"], obra=d.get("obra"))
+            raise Recusada(marcacoes.AFASTADO_NAO_BATE)
         periodo = marcacoes.fora_do_contrato(pessoa, horario.data_referencia(horario.agora(), pessoa["tipo_jornada"]))
         if periodo:
             _recusar_em_separado(periodo, cpf=pessoa["cpf"], obra=d.get("obra"))

@@ -181,7 +181,6 @@
       <button class="link" id="btn-ir-primeiro" type="button">Primeiro acesso ou esqueci o PIN</button>
     </div>
     <p class="pequeno" id="codigo-aparelho" style="text-align:center"></p>
-    <button class="link" id="btn-ser-da-obra" type="button" style="display:block; margin:0 auto">Este aparelho vai ser o ponto da obra? Pedir a aprovação</button>
     <div class="cartao oculto" id="cartao-tablet">
       <h2>Este é o ponto da obra</h2>
       <p class="pequeno">Entre com o seu CPF e PIN — o responsável por este aparelho ou o administrativo da obra. Depois
@@ -251,6 +250,7 @@
     <div id="m-aviso"></div>
     <div class="menu-grade" id="m-opcoes"></div>
     <p class="pequeno" id="m-codigo" style="text-align:center"></p>
+    <button class="link oculto" id="m-pedir-aparelho" type="button" style="display:block; margin:0 auto">Este aparelho vai bater ponto? Pedir a aprovação</button>
     <button class="btn sec oculto" id="m-sair" type="button">Sair</button>
   </section>
 
@@ -501,7 +501,6 @@ async function iniciar() {
   const cod = aparelho().uuid.replace(/[^A-Za-z0-9]/g, "").slice(-6).toUpperCase();
   $("codigo-aparelho").textContent = !APARELHO || APARELHO.status === "APROVADO" ? "" :
     `Código deste aparelho: ${cod} — esperando aprovação. Passe este código a quem aprova.`;
-  $("btn-ser-da-obra").classList.toggle("oculto", !!APARELHO);
   // O link da ronda surpresa do vigia (WhatsApp): entra, se precisar, e abre a ronda.
   if (RONDA_TOKEN) {
     try { EU = await chamar("/ponto/app/api/eu"); } catch (e) { EU = null; }
@@ -670,16 +669,6 @@ async function voltarAoInicio() {
   abrirMenu();
 }
 $("btn-ir-primeiro").addEventListener("click", () => { $("p-cpf").value = $("e-cpf").value; mostrar("primeiro"); });
-$("btn-ser-da-obra").addEventListener("click", async () => {
-  try {
-    await garantirRegistro("Ponto da obra (a aprovar)");
-    await estadoDoAparelho();
-    const cod = aparelho().uuid.replace(/[^A-Za-z0-9]/g, "").slice(-6).toUpperCase();
-    $("codigo-aparelho").textContent = `Código deste aparelho: ${cod} — esperando aprovação. Passe este código a quem aprova.`;
-    $("btn-ser-da-obra").classList.add("oculto");
-    aviso(`Pedido feito. Na aprovação (ERP › Ponto › Validações), confira o código ${cod} e escolha “Ponto da obra”.`, "ok");
-  } catch (e) { aviso(e.message, "erro"); }
-});
 $("btn-voltar-entrar").addEventListener("click", () => mostrar("entrar"));
 $("btn-codigo").addEventListener("click", async () => {
   try {
@@ -2170,8 +2159,24 @@ async function abrirMenu() {
     ? `<div class="aviso info">Você entrou neste aparelho. Fora da tela de batida, ele sai sozinho em 3 minutos sem uso — ou toque em “Sair”.</div>` : "";
   $("m-sair").classList.toggle("oculto", !p);
   const cod = aparelho().uuid.replace(/[^A-Za-z0-9]/g, "").slice(-6).toUpperCase();
-  $("m-codigo").textContent = APARELHO && APARELHO.status === "APROVADO" ? "" : `Código deste aparelho: ${cod}.`;
+  $("m-codigo").textContent = APARELHO && APARELHO.status === "APROVADO" ? ""
+    : APARELHO && APARELHO.status === "PENDENTE" ? `Este aparelho está esperando aprovação — código ${cod}. Passe o código a quem aprova.`
+    : APARELHO ? `Código deste aparelho: ${cod}.` : "";      // sem pedido, não há código a conferir
+  // O pedido de aprovação só existe DEPOIS de entrar com CPF e PIN (14/10/2026):
+  // ele leva o nome de quem pediu. O tipo do aparelho é de quem aprova.
+  $("m-pedir-aparelho").classList.toggle("oculto", !p || !!APARELHO);
 }
+$("m-pedir-aparelho").addEventListener("click", async () => {
+  try {
+    await garantirRegistro("Aparelho a aprovar");
+    await chamar("/ponto/app/api/aparelho/pedir", {});
+    await estadoDoAparelho();
+    const cod = aparelho().uuid.replace(/[^A-Za-z0-9]/g, "").slice(-6).toUpperCase();
+    $("m-pedir-aparelho").classList.add("oculto");
+    $("m-codigo").textContent = `Este aparelho está esperando aprovação — código ${cod}. Passe o código a quem aprova.`;
+    aviso(`Pedido feito, no seu nome. Passe o código ${cod} a quem aprova (ERP › Ponto › Validações).`, "ok");
+  } catch (e) { aviso(e.message, "erro"); }
+});
 // Um CPF, num diálogo — para consultar o ponto de alguém ou mandar o QR dele.
 function perguntarCpf(titulo, explicacao, textoBotao) {
   return new Promise(resolve => {
@@ -2374,7 +2379,7 @@ $("dlg").addEventListener("close", () => clearTimeout(QR_TIMER));
 // O aparelho NÃO se cadastra só por abrir o endereço (10/10/2026: "só o fato de eu
 // abrir uma aba anônima ele já pede para cadastrar o aparelho"). Cadastra-se quando
 // precisa: quem bate no próprio celular, ao entrar; o ponto da obra, no botão
-// "Este aparelho vai ser o ponto da obra" da tela de entrada.
+// "Este aparelho vai bater ponto?", no menu de quem entrou.
 iniciar();
 </script>
 </body>

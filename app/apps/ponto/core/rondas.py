@@ -337,6 +337,7 @@ def para_json(r: dict, *, mostrar_agendada: bool = False) -> dict:
             "hora": horario.para_local(hora).strftime("%H:%M") if hora else None,
             "feita": horario.para_local(r["feita_em"]).strftime("%H:%M") if r.get("feita_em") else None,
             "dentro_da_cerca": r.get("dentro_da_cerca"), "distancia_metros": r.get("distancia_metros"),
+            "latitude": r.get("latitude"), "longitude": r.get("longitude"),
             "foto_id": r.get("foto_id"), "motivo": r.get("motivo")}
 
 

@@ -41,6 +41,14 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1v. **PUBLICADO em 14/10/2026, tarde** (com o "pode" do dono, `main` em `3b32843`, sem migração): o
+   pedido de aprovação do aparelho só depois de entrar com CPF e PIN ("Este aparelho vai bater ponto?",
+   no menu, com o nome de quem pediu); a busca de Pessoas diz por que alguém não aparece; os textos da
+   Configuração sobre afastado. **Falta o dono:** buscar a Karla (CPF) em Pessoas e dizer o motivo que
+   apareceu; e conferir o quadro "Google Drive e fila de envio" (fotos chegando ao Drive?).
+1u. **PUBLICADO em 14/10/2026** (com o "pode" do dono, `main` em `e6578f9`): afastado não bate; "ver no
+   mapa" na batida (espelho e Validações) e na ronda; a batida recusada guarda o
+   lugar. Sem migração.
 1t. **PUBLICADO em 13/10/2026, noite** (com o "pode" do dono, `main` em `42037b6`) — a RONDA SURPRESA dos
    vigias noturnos, com a **migração 011** — apertar "Aplicar atualizações do
    ponto" ao publicar. Sem ela, nada quebra: a marcação de vigia recusa ("aplique
@@ -160,6 +168,67 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 14/10/2026 (tarde) — "Este aparelho vai bater ponto?" só depois do CPF e PIN
+
+- O dono, sobre a frase da tela de entrada ("Este aparelho vai ser o ponto da
+  obra? Pedir a aprovação"): era específica demais — *"quem vai dizer se é da
+  obra ou é o celular é quem vai aprovar, não quem está pedindo"* — e não podia
+  aparecer sem login: *"antes de tudo precisa ser feito o cadastro do telefone e
+  gerado um PIN. Aquilo é a segurança inicial. Depois desse momento é que eu
+  poderia pedir para que o telefone fosse aprovado"*.
+- **Agora:** a tela de entrada não pede aprovação de nada. Depois de entrar com
+  CPF e PIN, num navegador que o sistema não conhece, o menu mostra "Este
+  aparelho vai bater ponto? Pedir a aprovação". O pedido entra como "Pedido por
+  NOME (CPF final xxx)", com a pessoa como responsável sugerida, e vai para a
+  fila de Validações mesmo que ela não esteja liberada para bater no celular
+  (pode ser o tablet da obra que ela está configurando). O TIPO e o responsável
+  se escolhem na aprovação.
+- Outra pessoa que entre no aparelho antes da aprovação não troca o nome de quem
+  pediu (`dispositivos.foi_pedido`). Sem coluna nova: o pedido é marcado na
+  descrição ("Pedido por "), para não depender de migração.
+- O registro anônimo (`/ponto/api/dispositivo/registrar`) continua existindo —
+  é ele que dá a credencial ao navegador —, mas a tela só o usa depois do login.
+- Primeiro eu fiz uma pergunta "de quem é este aparelho?" para quem pede; ele não
+  quis (o tipo é de quem aprova). Desfeita antes de publicar.
+
+## 14/10/2026 (tarde) — A busca de Pessoas diz por que alguém não aparece
+
+- O dono: *"tem uma pessoa em específico que não tá aparecendo em Ponto ›
+  Pessoas"* (colou a linha dela do Registro: fase "Cadastro Concluído", sem data
+  de saída à vista). Daqui não se vê o banco de produção, então a resposta ficou
+  no sistema: buscando por CPF (11 dígitos, com ou sem máscara) ou por 3 letras
+  ou mais do nome, quem casa e NÃO está na lista vem num quadro com o motivo —
+  falta cadastro no ERP (com o botão que resolve), desligada pela data de saída
+  ou pela Fase Atual (com a data/fase), CPF que não passa nos dígitos, "não bate
+  ponto" marcado no ponto, ou não está em lugar nenhum (com a data da última
+  cópia do Registro). `registro.por_que_nao_aparece`.
+- Só para quem alcança todas as obras: para o preso a obra, dar o motivo de
+  alguém de outra obra confirmaria que a pessoa existe.
+- Os textos da Configuração diziam que afastado "bate, mas para conferência" —
+  corrigidos para "não batem até voltar" (a decisão da manhã).
+- **Em aberto:** a linha da Karla tem 20/06/2026 e 01/11/2024 lado a lado; não
+  sei qual coluna é cada uma. Se 20/06/2026 for a Data de Saída, ela está
+  desligada desde junho e a busca vai dizer isso.
+
+## 14/10/2026 — Afastado não bate; onde o celular estava, no mapa
+
+- **Afastado não bate** (o dono: *"o cara está afastado, ele não bate ponto, não
+  está trabalhando, não pode estar trabalhando. Se retornou, a gente altera o
+  cadastro dele"*). Antes ia para conferência; agora a batida é RECUSADA
+  (`marcacoes.AFASTADO_NAO_BATE`), e o ponto da obra já recusa na identificação,
+  antes da foto. Pedido (atestado etc.) ele continua entregando. "Afastado" é a
+  fase do Registro de Colaboradores (ou a situação do ERP).
+- **Onde o celular estava** (*"a geolocalização é coletada? a gente pode checar
+  onde a pessoa estava no momento?"*): a batida aceita sempre guardou as
+  coordenadas, mas nenhuma tela mostrava. Agora: no espelho do ERP, embaixo da
+  batida fora da obra (ou em conferência), "📍 ver no mapa" (Google Maps no
+  ponto) com a distância; o mesmo na Validações e em cada ronda feita na tela
+  Rondas. A batida RECUSADA passou a guardar o lugar também (em
+  `ponto.recusas.detalhes` — latitude e longitude); ainda não há tela que liste
+  as recusas, só o alerta "tentou bater fora da área".
+- O dado é lido só no momento da batida (e da ronda) — o sistema não acompanha
+  ninguém. A consulta do mapa fica com quem já vê o espelho.
 
 ## 13/10/2026 (noite) — A obra do cadastro não trava; aparelhos com busca, filtro e excluir
 

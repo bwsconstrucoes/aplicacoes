@@ -371,3 +371,104 @@ def test_aparelho_sem_batida_se_exclui_e_com_batida_se_arquiva(app, mundo, monke
     assert dp.post(f"/erp/api/ponto/dispositivos/{ap}/desarquivar", json={}).status_code == 200
     a = next(x for x in dp.get("/erp/api/ponto/dispositivos").get_json()["dispositivos"] if x["id"] == ap)
     assert a["arquivado"] is False and a["status"] == "BLOQUEADO"
+
+
+def test_afastado_nao_bate_mas_entrega_pedido(app, mundo, banco, monkeypatch):
+    """14/10/2026: "o cara está afastado, ele não bate ponto (…) se retornou, a gente
+    tem que alterar o cadastro dele"."""
+    from sqlalchemy import text
+    from app.apps.ponto import db
+    from app.apps.ponto.core import marcacoes
+    from app.apps.ponto.erros import Recusada
+    _entrar_no_app(app, CPF_MARIA, monkeypatch)
+    with banco.connect() as conn:
+        conn.execute(text("UPDATE colaboradores SET situacao = 'AFASTADO' WHERE id = :j"), {"j": mundo["joao"]})
+        conn.commit()
+    with pytest.raises(Recusada) as e, db.conexao() as conn:
+        marcacoes.registrar(conn, cpf=CPF_JOAO, obra="PG-A", origem="IDFACE", via_chave=True)
+    assert "afastad" in str(e.value)
+    dp = como(app, mundo["dp"])
+    t, h = _aparelho(app, "ponto-da-obra-afastado-0123456789")
+    ap = _id_do_aparelho(dp, "ponto-da-obra-afastado-0123456789")
+    assert dp.post(f"/erp/api/ponto/dispositivos/{ap}/aprovar",
+                   json={"perfil": "COMPARTILHADO", "obras": ["PG-A"], "cpf": CPF_MARIA}).status_code == 200
+    r = t.post("/ponto/app/api/tablet/identificar", json={"cpf": CPF_JOAO, "obra": "PG-A"}, headers=h)
+    assert r.status_code == 403 and "afastad" in r.get_json()["erro"]
+    # o atestado ele entrega
+    assert t.post("/ponto/app/api/tablet/identificar", json={"cpf": CPF_JOAO, "para_pedido": True},
+                  headers=h).status_code == 200
+    # voltou: o cadastro muda, e ele bate
+    with banco.connect() as conn:
+        conn.execute(text("UPDATE colaboradores SET situacao = 'ATIVO' WHERE id = :j"), {"j": mundo["joao"]})
+        conn.commit()
+    with db.conexao() as conn:
+        m, _ = marcacoes.registrar(conn, cpf=CPF_JOAO, obra="PG-A", origem="IDFACE", via_chave=True)
+    assert m["id"]
+
+
+def test_onde_o_celular_estava_na_batida_e_na_recusa(app, mundo, banco, monkeypatch):
+    """14/10/2026: "a geolocalização é coletada? a gente pode checar onde a pessoa
+    estava no momento?" — no espelho (aceita) e na recusa (agora também)."""
+    from sqlalchemy import text
+    _entrar_no_app(app, CPF_MARIA, monkeypatch)
+    dp = como(app, mundo["dp"])
+    t, h = _aparelho(app, "ponto-da-obra-mapa-0123456789abc")
+    ap = _id_do_aparelho(dp, "ponto-da-obra-mapa-0123456789abc")
+    assert dp.post(f"/erp/api/ponto/dispositivos/{ap}/aprovar",
+                   json={"perfil": "COMPARTILHADO", "obras": ["PG-A"], "cpf": CPF_MARIA}).status_code == 200
+    ident = t.post("/ponto/app/api/tablet/identificar", json={"cpf": CPF_JOAO, "obra": "PG-A"}, headers=h).get_json()
+    assert t.post("/ponto/app/api/bater", headers=h, json={"bilhete": ident["bilhete"], "obra": "PG-A", "foto_base64": _png(),
+                  "latitude": OBRA_A[0], "longitude": OBRA_A[1], "precisao": 12}).status_code == 201
+    esp = dp.get(f"/erp/api/ponto/espelho/{mundo['joao']}").get_json()
+    b = next(x for d in esp["dias"] for x in d["batidas"])
+    assert abs(b["latitude"] - OBRA_A[0]) < 1e-6 and abs(b["longitude"] - OBRA_A[1]) < 1e-6
+    # longe da obra: recusada — e o lugar fica guardado
+    ident = t.post("/ponto/app/api/tablet/identificar", json={"cpf": CPF_JOAO, "obra": "PG-A"}, headers=h).get_json()
+    longe = t.post("/ponto/app/api/bater", headers=h, json={"bilhete": ident["bilhete"], "obra": "PG-A",
+                   "foto_base64": _png(), "latitude": -3.80, "longitude": -38.40, "precisao": 20})
+    assert longe.status_code == 403
+    with banco.connect() as conn:
+        det = conn.execute(text("SELECT detalhes FROM ponto.recusas ORDER BY id DESC LIMIT 1")).scalar()
+    assert det["latitude"] == "-3.8" and det["longitude"] == "-38.4"
+
+
+def test_pedir_a_aprovacao_do_aparelho_so_depois_de_entrar(app, mundo, monkeypatch):
+    """14/10/2026: "antes de tudo precisa ser feito o cadastro do telefone e gerado
+    um PIN (…) depois desse momento é que eu poderia pedir para que o telefone fosse
+    aprovado". O pedido leva o nome de quem pediu e entra na fila de Validações —
+    mesmo de quem não está liberado para bater no celular (pode ser o tablet da
+    obra); o tipo é de quem aprova."""
+    from tests.test_ponto_gestao_banco import CPF_JOAO, CPF_MARIA, _entrar_no_app, como
+    from tests.test_ponto_regras_0610_banco import _id_do_aparelho
+    uuid = "pedido-depois-do-pin-0123456789"
+    anonimo = app.test_client()
+    token = anonimo.post("/ponto/api/dispositivo/registrar", json={"device_uuid": uuid}).get_json()["token"]
+    h = {"X-Device-UUID": uuid, "X-Device-Token": token}
+    assert anonimo.post("/ponto/app/api/aparelho/pedir", json={}, headers=h).status_code in (401, 403)
+    dp = como(app, mundo["dp"])
+    def na_fila():
+        itens = dp.get("/erp/api/ponto/validacoes").get_json()["itens"]
+        return [i for i in itens if i["tipo"] == "APARELHO" and i["id"] == _id_do_aparelho(dp, uuid)]
+    cel = _entrar_no_app(app, CPF_JOAO, monkeypatch)        # João: só consulta (não liberado)
+    r = cel.post("/ponto/app/api/aparelho/pedir", json={}, headers=h)
+    assert r.status_code == 200 and r.get_json()["pedido"] is True
+    ap = dp.get(f"/erp/api/ponto/dispositivos/{_id_do_aparelho(dp, uuid)}").get_json()["dispositivo"]
+    assert ap["descricao"].startswith("Pedido por ") and ap["dono"]["nome"].startswith("João")
+    assert len(na_fila()) == 1
+    # outra pessoa que entra nele antes da aprovação não troca quem pediu
+    outra = app.test_client()
+    from app.apps.ponto import db
+    from app.apps.ponto.core import acesso
+    env = []
+    with db.conexao() as conn:
+        acesso.pedir_codigo(conn, CPF_MARIA, enviar=lambda t, m: env.append(m))
+    outra.post("/ponto/app/api/pin", json={"cpf": CPF_MARIA, "codigo": env[-1].split("código é ")[1][:6], "pin": "481927"},
+               headers=h)
+    outra.post("/ponto/app/api/entrar", json={"cpf": CPF_MARIA, "pin": "481927"}, headers=h)
+    ap = dp.get(f"/erp/api/ponto/dispositivos/{_id_do_aparelho(dp, uuid)}").get_json()["dispositivo"]
+    assert ap["dono"]["nome"].startswith("João")
+    # aprovado como ponto da obra: o pedido já não muda nada
+    assert dp.post(f"/erp/api/ponto/dispositivos/{_id_do_aparelho(dp, uuid)}/aprovar",
+                   json={"perfil": "COMPARTILHADO", "cpf": CPF_JOAO, "obras": [mundo["obra_a"]]}).status_code == 200
+    assert cel.post("/ponto/app/api/aparelho/pedir", json={}, headers=h).get_json()["pedido"] is False
+    assert na_fila() == []
