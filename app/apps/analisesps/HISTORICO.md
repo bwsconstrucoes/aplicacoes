@@ -12230,6 +12230,7 @@ somente Solicitações de uma conta especifica"*.
 
 #### Leva 230 — Conciliação: menos ferramenta, mais o que se usa (14/10/2026)
 
+- **Leva 230 publicada em 14/10/2026** (sem migração; suíte inteira verde).
 - **Saíram, a pedido do dono** (*"não serviu pra nada"*): o "Importar só até /
   Conferir de novo" da conferência do OFX e a janela "Onde o saldo não bate"
   (módulo `conciliacao_saldo.py`, rotas e botão). Os saldos digitados nela
