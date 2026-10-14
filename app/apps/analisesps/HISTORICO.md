@@ -12243,6 +12243,8 @@ somente Solicitações de uma conta especifica"*.
   "RENTAB.INVEST FACIL" de R$ 0,40 em 09/10 que só o da tela trouxe. O da tela,
   neste caso, saiu completo (541 linhas, 01 a 14/10; o pulo de 09 para 13/10 é
   sábado, domingo e feriado), com saldo de R$ 700.267,01.
+- **Levas 228 e 229 publicadas em 14/10/2026** (sem migração; suíte inteira
+  verde).
 - **Feito:** as duas rubricas saem por padrão na conferência e na gravação, com
   "Incluir mesmo assim" (e "Deixar de fora" para voltar). A rentabilidade fica.
 - **O saldo desse arquivo é descartado** quando elas saem: é o da conta
