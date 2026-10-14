@@ -65,7 +65,7 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
     batidas = db.todos(conn, """
         SELECT m.id, m.nsr, m.timestamp_servidor, m.data_referencia, m.obra_id, m.status,
                m.dentro_da_cerca, m.distancia_metros, m.origem, m.foto_id, m.motivo_analise,
-               m.registrado_por, o.codigo AS obra_codigo
+               m.registrado_por, m.latitude, m.longitude, o.codigo AS obra_codigo
           FROM ponto.marcacoes m JOIN public.obras o ON o.id = m.obra_id
          WHERE m.colaborador_id = :c AND m.data_referencia BETWEEN :i AND :f
            AND m.status <> 'REJEITADA'
@@ -197,6 +197,9 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
                 "distancia_metros": (float(b["distancia_metros"])
                                      if b["distancia_metros"] is not None else None),
                 "motivo_analise": b["motivo_analise"], "tem_foto": b["foto_id"] is not None,
+                # onde o celular estava na batida ("ver no mapa", 14/10/2026)
+                "latitude": float(b["latitude"]) if b.get("latitude") is not None else None,
+                "longitude": float(b["longitude"]) if b.get("longitude") is not None else None,
                 "registrado_por": b["registrado_por"],
             } for b in do_dia],
         })

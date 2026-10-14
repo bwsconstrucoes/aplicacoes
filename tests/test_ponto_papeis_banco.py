@@ -371,3 +371,62 @@ def test_aparelho_sem_batida_se_exclui_e_com_batida_se_arquiva(app, mundo, monke
     assert dp.post(f"/erp/api/ponto/dispositivos/{ap}/desarquivar", json={}).status_code == 200
     a = next(x for x in dp.get("/erp/api/ponto/dispositivos").get_json()["dispositivos"] if x["id"] == ap)
     assert a["arquivado"] is False and a["status"] == "BLOQUEADO"
+
+
+def test_afastado_nao_bate_mas_entrega_pedido(app, mundo, banco, monkeypatch):
+    """14/10/2026: "o cara está afastado, ele não bate ponto (…) se retornou, a gente
+    tem que alterar o cadastro dele"."""
+    from sqlalchemy import text
+    from app.apps.ponto import db
+    from app.apps.ponto.core import marcacoes
+    from app.apps.ponto.erros import Recusada
+    _entrar_no_app(app, CPF_MARIA, monkeypatch)
+    with banco.connect() as conn:
+        conn.execute(text("UPDATE colaboradores SET situacao = 'AFASTADO' WHERE id = :j"), {"j": mundo["joao"]})
+        conn.commit()
+    with pytest.raises(Recusada) as e, db.conexao() as conn:
+        marcacoes.registrar(conn, cpf=CPF_JOAO, obra="PG-A", origem="IDFACE", via_chave=True)
+    assert "afastad" in str(e.value)
+    dp = como(app, mundo["dp"])
+    t, h = _aparelho(app, "ponto-da-obra-afastado-0123456789")
+    ap = _id_do_aparelho(dp, "ponto-da-obra-afastado-0123456789")
+    assert dp.post(f"/erp/api/ponto/dispositivos/{ap}/aprovar",
+                   json={"perfil": "COMPARTILHADO", "obras": ["PG-A"], "cpf": CPF_MARIA}).status_code == 200
+    r = t.post("/ponto/app/api/tablet/identificar", json={"cpf": CPF_JOAO, "obra": "PG-A"}, headers=h)
+    assert r.status_code == 403 and "afastad" in r.get_json()["erro"]
+    # o atestado ele entrega
+    assert t.post("/ponto/app/api/tablet/identificar", json={"cpf": CPF_JOAO, "para_pedido": True},
+                  headers=h).status_code == 200
+    # voltou: o cadastro muda, e ele bate
+    with banco.connect() as conn:
+        conn.execute(text("UPDATE colaboradores SET situacao = 'ATIVO' WHERE id = :j"), {"j": mundo["joao"]})
+        conn.commit()
+    with db.conexao() as conn:
+        m, _ = marcacoes.registrar(conn, cpf=CPF_JOAO, obra="PG-A", origem="IDFACE", via_chave=True)
+    assert m["id"]
+
+
+def test_onde_o_celular_estava_na_batida_e_na_recusa(app, mundo, banco, monkeypatch):
+    """14/10/2026: "a geolocalização é coletada? a gente pode checar onde a pessoa
+    estava no momento?" — no espelho (aceita) e na recusa (agora também)."""
+    from sqlalchemy import text
+    _entrar_no_app(app, CPF_MARIA, monkeypatch)
+    dp = como(app, mundo["dp"])
+    t, h = _aparelho(app, "ponto-da-obra-mapa-0123456789abc")
+    ap = _id_do_aparelho(dp, "ponto-da-obra-mapa-0123456789abc")
+    assert dp.post(f"/erp/api/ponto/dispositivos/{ap}/aprovar",
+                   json={"perfil": "COMPARTILHADO", "obras": ["PG-A"], "cpf": CPF_MARIA}).status_code == 200
+    ident = t.post("/ponto/app/api/tablet/identificar", json={"cpf": CPF_JOAO, "obra": "PG-A"}, headers=h).get_json()
+    assert t.post("/ponto/app/api/bater", headers=h, json={"bilhete": ident["bilhete"], "obra": "PG-A", "foto_base64": _png(),
+                  "latitude": OBRA_A[0], "longitude": OBRA_A[1], "precisao": 12}).status_code == 201
+    esp = dp.get(f"/erp/api/ponto/espelho/{mundo['joao']}").get_json()
+    b = next(x for d in esp["dias"] for x in d["batidas"])
+    assert abs(b["latitude"] - OBRA_A[0]) < 1e-6 and abs(b["longitude"] - OBRA_A[1]) < 1e-6
+    # longe da obra: recusada — e o lugar fica guardado
+    ident = t.post("/ponto/app/api/tablet/identificar", json={"cpf": CPF_JOAO, "obra": "PG-A"}, headers=h).get_json()
+    longe = t.post("/ponto/app/api/bater", headers=h, json={"bilhete": ident["bilhete"], "obra": "PG-A",
+                   "foto_base64": _png(), "latitude": -3.80, "longitude": -38.40, "precisao": 20})
+    assert longe.status_code == 403
+    with banco.connect() as conn:
+        det = conn.execute(text("SELECT detalhes FROM ponto.recusas ORDER BY id DESC LIMIT 1")).scalar()
+    assert det["latitude"] == "-3.8" and det["longitude"] == "-38.4"

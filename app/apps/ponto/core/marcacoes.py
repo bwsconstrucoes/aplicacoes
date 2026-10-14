@@ -119,6 +119,9 @@ def fora_do_contrato(pessoa: dict, dia: dt.date) -> Optional[str]:
     return None
 
 
+AFASTADO_NAO_BATE = ("pessoa afastada no cadastro — afastado não bate ponto; se voltou ao trabalho, "
+                     "o RH atualiza o cadastro")
+
 MODOS_FORA_DA_CERCA = ("BLOQUEAR", "ANALISAR")
 
 
@@ -332,6 +335,10 @@ def registrar(conn: Connection, *, cpf, obra, origem: str = "PWA",
     origem_ok = validar_origem(origem)
     contexto = {"device_uuid": device_uuid, "cpf": str(cpf or ""), "obra": obra,
                 "origem": origem_ok, "ip": ip}
+    # A batida RECUSADA também guarda onde o celular estava (pedido do dono,
+    # 14/10/2026: "a gente pode checar onde a pessoa estava no momento?").
+    if latitude not in (None, "") and longitude not in (None, ""):
+        contexto.update(latitude=str(latitude), longitude=str(longitude))
 
     # --- quem chama ---------------------------------------------------------
     if origem_ok == "PWA" and not via_chave:
@@ -362,6 +369,11 @@ def registrar(conn: Connection, *, cpf, obra, origem: str = "PWA",
         _recusar(conn, "pessoa não cadastrada", **contexto)
     if pessoa["situacao"] == "DESLIGADO" or not pessoa["ativo_no_ponto"]:
         _recusar(conn, "pessoa desligada ou inativa no ponto", **contexto)
+    # Afastado não bate (decisão do dono, 14/10/2026: "o cara está afastado, ele não
+    # bate ponto, não pode estar trabalhando. Se retornou, a gente altera o cadastro").
+    # Antes ia para conferência. Pedido (atestado etc.) ele continua fazendo.
+    if pessoa["situacao"] == "AFASTADO":
+        _recusar(conn, AFASTADO_NAO_BATE, **contexto)
 
     # --- período de contrato (pedido do dono, 05/10/2026: "não se pode bater
     # ponto antes da data de início nem depois da data de saída") -------------

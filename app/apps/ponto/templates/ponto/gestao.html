@@ -793,6 +793,11 @@ const mesBR = comp => comp ? `${comp.slice(5, 7)}/${comp.slice(0, 4)}` : "—";
 // ("2026-10-03T07:58:00-03:00"). Ler o texto, em vez de converter, garante a
 // mesma hora num navegador configurado em outro fuso.
 const quando = iso => iso ? `${dataBR(String(iso).slice(0, 10))} ${String(iso).slice(11, 16)}` : "—";
+// "Ver no mapa" (14/10/2026: "a gente pode checar onde a pessoa estava no momento?"):
+// o ponto em que o celular estava na batida ou na ronda, no Google Maps.
+const linkMapa = (lat, lon, texto = "📍 ver no mapa") => (lat == null || lon == null) ? ""
+  : `<a class="elo" target="_blank" rel="noopener" href="https://www.google.com/maps?q=${encodeURIComponent(lat)},${encodeURIComponent(lon)}"
+       title="Onde o celular estava">${texto}</a>`;
 const distancia = m => (m === null || m === undefined) ? "—"
   : m < 1000 ? `${Math.round(m)} m`
   : `${(m / 1000).toLocaleString("pt-BR", {maximumFractionDigits: 1})} km`;
@@ -1304,6 +1309,8 @@ function desenharEspelho() {
       <td>${d.escala ? escapar(d.escala) : `<span class="suave">—</span>`}
         ${d.feriado ? `<small>Feriado: ${escapar(d.feriado)}</small>` : ""}</td>
       <td>${d.batidas.length ? d.batidas.map(b => chipBatida(b, true)).join("") : `<span class="suave">—</span>`}
+        ${d.batidas.filter(b => b.latitude != null && (b.fora_da_cerca || b.status === "EM_ANALISE")).map(b =>
+          `<div><small>${escapar(b.hora)}: ${b.fora_da_cerca ? `fora da obra${b.distancia_metros != null ? ` (${distancia(b.distancia_metros)})` : ""} · ` : ""}${linkMapa(b.latitude, b.longitude)}</small></div>`).join("")}
         ${(d.rondas || []).length ? `<div style="margin-top:4px"><small class="suave">🔦 rondas:</small> ${d.rondas.map(rondaNoEspelho).join(" ")}</div>` : ""}</td>
       <td class="dados">${hmCelula(d.previsto)}</td>
       <td class="dados">${hmCelula(d.trabalhado)}</td>
@@ -1618,6 +1625,8 @@ function detalheDoItem(i) {
   if (i.cid && PODE_DP) partes.push(`<small>CID ${escapar(i.cid)}</small>`);
   if (i.leitura_ia && PODE_DP) partes.push(`<small>leitura automática feita — confira abaixo</small>`);
   if (i.categoria === "PEDIDO" && i.origem === "APP") partes.push(`<small>pedido pelo celular</small>`);
+  if (i.tipo === "BATIDA_EM_ANALISE" && i.latitude != null)
+    partes.push(`<small>${i.distancia_metros != null ? `a ${escapar(distancia(i.distancia_metros))} da obra · ` : ""}${linkMapa(i.latitude, i.longitude)}</small>`);
   return partes.join("");
 }
 
@@ -2840,7 +2849,8 @@ async function carregarRondas() {
       <td>${escapar(t.obra || "—")}<small>${escapar(t.obra_nome || "")}</small></td>
       <td class="dados">${escapar(t.entrada)}</td>
       <td class="dados">${t.saida ? escapar(t.saida) : `<span class="suave">—</span>`}</td>
-      <td>${t.rondas.map(r => chipRonda(r, true)).join(" ")}</td>
+      <td>${t.rondas.map(r => chipRonda(r, true)).join(" ")}
+        ${t.rondas.filter(r => r.latitude != null).map(r => `<div><small>${escapar(r.feita || "")}: ${linkMapa(r.latitude, r.longitude)}</small></div>`).join("")}</td>
       <td>${t.perdidas ? `<span class="selo vermelho">${t.perdidas} perdida(s)</span>` : ""}
           <span class="selo ${t.feitas === t.rondas.filter(r => r.status !== "CANCELADA").length ? "verde" : ""}">${t.feitas} de ${t.rondas.filter(r => r.status !== "CANCELADA").length} feitas</span></td>
     </tr>`).join("")}</tbody></table>

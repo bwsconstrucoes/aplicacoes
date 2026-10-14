@@ -41,6 +41,9 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1u. **NO RAMO, ainda não publicado (14/10/2026)**: afastado não bate; "ver no
+   mapa" na batida (espelho e Validações) e na ronda; a batida recusada guarda o
+   lugar. Sem migração.
 1t. **PUBLICADO em 13/10/2026, noite** (com o "pode" do dono, `main` em `42037b6`) — a RONDA SURPRESA dos
    vigias noturnos, com a **migração 011** — apertar "Aplicar atualizações do
    ponto" ao publicar. Sem ela, nada quebra: a marcação de vigia recusa ("aplique
@@ -160,6 +163,25 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 14/10/2026 — Afastado não bate; onde o celular estava, no mapa
+
+- **Afastado não bate** (o dono: *"o cara está afastado, ele não bate ponto, não
+  está trabalhando, não pode estar trabalhando. Se retornou, a gente altera o
+  cadastro dele"*). Antes ia para conferência; agora a batida é RECUSADA
+  (`marcacoes.AFASTADO_NAO_BATE`), e o ponto da obra já recusa na identificação,
+  antes da foto. Pedido (atestado etc.) ele continua entregando. "Afastado" é a
+  fase do Registro de Colaboradores (ou a situação do ERP).
+- **Onde o celular estava** (*"a geolocalização é coletada? a gente pode checar
+  onde a pessoa estava no momento?"*): a batida aceita sempre guardou as
+  coordenadas, mas nenhuma tela mostrava. Agora: no espelho do ERP, embaixo da
+  batida fora da obra (ou em conferência), "📍 ver no mapa" (Google Maps no
+  ponto) com a distância; o mesmo na Validações e em cada ronda feita na tela
+  Rondas. A batida RECUSADA passou a guardar o lugar também (em
+  `ponto.recusas.detalhes` — latitude e longitude); ainda não há tela que liste
+  as recusas, só o alerta "tentou bater fora da área".
+- O dado é lido só no momento da batida (e da ronda) — o sistema não acompanha
+  ninguém. A consulta do mapa fica com quem já vê o espelho.
 
 ## 13/10/2026 (noite) — A obra do cadastro não trava; aparelhos com busca, filtro e excluir
 

@@ -101,7 +101,8 @@ def listar(conn: Connection, quem: Quem, *, obra_id: Optional[int] = None, de=No
     if quer("BATIDA_EM_ANALISE"):
         regra = validacao.quem_valida_batida(conn)
         sql = """SELECT m.id, m.nsr, m.colaborador_id, m.obra_id, m.timestamp_servidor, m.data_referencia,
-                        m.motivo_analise, m.foto_id, m.criado_em, c.nome, c.cpf, o.codigo AS obra
+                        m.motivo_analise, m.foto_id, m.criado_em, c.nome, c.cpf, o.codigo AS obra,
+                        m.latitude, m.longitude, m.distancia_metros, m.dentro_da_cerca
                    FROM ponto.marcacoes m JOIN public.colaboradores c ON c.id = m.colaborador_id
                    JOIN public.obras o ON o.id = m.obra_id WHERE m.status = 'EM_ANALISE'"""
         params: dict = {}
@@ -127,6 +128,9 @@ def listar(conn: Connection, quem: Quem, *, obra_id: Optional[int] = None, de=No
                 "obra": m["obra"], "obra_id": m["obra_id"], "data": m["data_referencia"].isoformat(),
                 "quando": f"{horario.para_local(m['timestamp_servidor']):%d/%m/%Y às %H:%M}",
                 "detalhe": m["motivo_analise"], "tem_foto": m["foto_id"] is not None,
+                "latitude": float(m["latitude"]) if m.get("latitude") is not None else None,
+                "longitude": float(m["longitude"]) if m.get("longitude") is not None else None,
+                "distancia_metros": float(m["distancia_metros"]) if m.get("distancia_metros") is not None else None,
                 "etapa": validacao.ROTULO_OPCAO[regra], "pode_decidir": bool(pode),
                 "decidir_em": (f"/erp/api/ponto/marcacoes/{m['id']}/decidir-dp" if regra == validacao.DP
                                else f"/erp/api/ponto/marcacoes/{m['id']}/decidir"),
