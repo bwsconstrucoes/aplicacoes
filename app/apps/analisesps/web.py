@@ -2767,7 +2767,10 @@ def _filtros_da_conciliacao(contas_cadastradas: list) -> dict:
             "entrada": numero("entrada"),
             "saida": numero("saida"),
             # Guardados para a tela redesenhar os campos como estavam.
-            "dia": dia, "valor": exato}
+            "dia": dia, "valor": exato,
+            # O que é anterior ao início da conciliação da conta (14/10/2026):
+            # só quando pedido, e não fica guardado de uma visita para outra.
+            "anteriores": request.args.get("anteriores") == "1"}
 
 
 def _omie_ligado() -> bool:
@@ -2889,6 +2892,7 @@ def tela_conciliacao():
     conta = next((c for c in contas if c["id"] == filtros["conta_id"]), None)
     # A SP de cada saída (07/10/2026): valor + conta + data de pagamento ou
     # vencimento próximo. Só leitura; a linha mostra o link do card.
+    anteriores = conc.anteriores_ao_inicio(filtros["conta_id"]) if filtros["conta_id"] else 0
     sps_das_linhas = conc.sps_das_linhas(conta, linhas)
     for l in linhas:
         l["sps"] = sps_das_linhas.get(l["id"], [])
@@ -2905,8 +2909,12 @@ def tela_conciliacao():
         # está escondendo. O filtro fica guardado de uma visita para a outra, e um
         # período de ontem esconde hoje uma linha que está gravada — foi o que fez
         # o dono concluir, em 29/09/2026, que um lançamento "não foi importado".
-        total_da_conta=conc.quantas_na_conta(filtros["conta_id"])
+        # Sem as anteriores ao início: elas têm o aviso delas, e contá-las
+        # aqui faria a tela dizer "o filtro está escondendo" o que não é filtro.
+        total_da_conta=(conc.quantas_na_conta(filtros["conta_id"])
+                        - (0 if filtros["anteriores"] else anteriores))
         if filtros["conta_id"] else 0,
+        anteriores_ao_inicio=anteriores,
         por_pagina=conc.POR_PAGINA,
         tem_proxima=len(linhas) == conc.POR_PAGINA,
         saldo_total=conc.saldo_da_conta(filtros["conta_id"])

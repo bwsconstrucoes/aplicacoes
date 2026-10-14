@@ -575,7 +575,7 @@ def test_o_saldo_avisa_quando_a_conta_nao_tem_saldo_inicial(app_com_dados):
     número soma só o que foi importado, e o que veio antes disso falta."""
     html = como(app_com_dados).get(
         "/analisesps/conciliacao").get_data(as_text=True)
-    assert "sem saldo inicial" in html
+    assert "sem data de início" in html
 
 
 def test_o_historico_quebra_a_linha_em_vez_de_sumir(app_com_dados):
@@ -730,7 +730,7 @@ def test_o_panorama_desenha_a_fita_dos_doze_meses(app_panorama):
 def test_o_panorama_avisa_das_contas_sem_saldo_inicial(app_panorama):
     html = como(app_panorama).get(
         "/analisesps/conciliacao/panorama").get_data(as_text=True)
-    assert "sem saldo inicial" in html
+    assert "sem data de início" in html
 
 
 def test_do_panorama_da_para_ir_direto_ao_que_falta(app_panorama):

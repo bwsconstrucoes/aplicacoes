@@ -12228,6 +12228,32 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 227 — A conciliação vale a partir de um dia; listas inteiras na conferência (14/10/2026)
+
+- *"O sistema de conciliação é novo; de repente eu quero só fazer ele valer do
+  mês de setembro para frente (…) o que está muito para trás não me importa mais
+  (…) acho que é melhor só um único saldo."* **Uma informação só, que já
+  existia:** o "saldo inicial" era o saldo NO FIM de um dia. Ele virou, no
+  cadastro da conta, **"A conciliação vale depois do dia [data]" + "Saldo do
+  banco no fim desse dia"** (mesmos campos, sem migração). O que faltava era o
+  resto obedecer — agora o que é daquele dia ou anterior:
+  - fica **guardado**, mas fora da lista, dos números do topo, do Panorama
+    (contas, pendências, maiores sem conferência, quem conciliou) e da lista
+    "está aqui e não vem no extrato" da conferência;
+  - **não entra** num OFX importado (a conferência diz quantos ficaram de fora);
+  - aparece com **"ver o que é anterior"** na lista, sem saldo na coluna Saldo.
+  - Escolha minha: "anterior" é invisível por padrão, não apagado — se a data
+    voltar para trás, as linhas reaparecem sozinhas. As que um OFX deixou de fora
+    por serem anteriores, essas sim precisam ser importadas de novo.
+- **As listas da conferência do OFX agora vêm inteiras** (até 1.000, numa caixa
+  com rolagem), não mais 15: o que vai entrar e o que está aqui e não vem no
+  extrato. Esta última tem **caixinhas e "Excluir as marcadas…"** (as que
+  parecem repetidas já vêm marcadas; mesmas travas de sempre: motivo
+  obrigatório, a lançada no OMIE fica) e confere o arquivo de novo depois.
+- Sobre "informar dois saldos, um no começo e um no fim da faixa": é o que a
+  janela "Onde o saldo não bate" faz com dois saldos digitados — respondido ao
+  dono, sem código novo.
+
 #### Leva 226 — Os "últimos lançamentos" do Bradesco e "Onde o saldo não bate" (14/10/2026)
 
 - O dono gerou o OFX de 01 a 05/10 (conta 50302) e o arquivo trouxe seis linhas

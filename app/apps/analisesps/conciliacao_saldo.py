@@ -132,7 +132,7 @@ def pontos(conta_id: int) -> list[dict]:
     if inicial_em:
         inicial = Decimal(str(conta.get("saldo_inicial") or 0))
         saida.append({"data": inicial_em, "saldo": inicial, "origem": "inicial",
-                      "rotulo": "saldo inicial da conta", "aqui": inicial,
+                      "rotulo": "início da conciliação", "aqui": inicial,
                       "diferenca": Decimal("0")})
     # Do presente para o passado; no mesmo dia, o digitado antes do arquivo
     # (é o saldo do FIM do dia; o do arquivo é o da hora do download).

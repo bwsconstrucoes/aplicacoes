@@ -133,3 +133,51 @@ def test_o_SALDO_DO_OFX_importado_vira_ponto(banco_conc):
     [ponto, inicial] = cs.diagnostico(conta_id)["pontos"]
     assert ponto["data"] == dt.date(2026, 10, 14) and ponto["origem"] == "arquivo"
     assert inicial["origem"] == "inicial"
+
+
+# ---------------------------------------------------------------------------
+# A conciliação vale a partir de um dia (14/10/2026): "o que está muito para
+# trás não me importa mais (…) uma única informação de saldo".
+# ---------------------------------------------------------------------------
+def test_o_que_e_ANTERIOR_AO_INICIO_fica_guardado_mas_fora_da_lista_e_das_contas(banco_conc, app):
+    from app.apps.analisesps import conciliacao
+    conta_id = conta_de_teste(saldo_inicial="1.000,00", saldo_inicial_em="2026-08-31")
+    velha = conciliacao.acrescentar_a_mao(conta_id, dt.date(2026, 8, 10), "VELHA", D("-70.00"), quem="T")
+    nova = conciliacao.acrescentar_a_mao(conta_id, dt.date(2026, 9, 2), "NOVA", D("-30.00"), quem="T")
+
+    f = {"conta_id": conta_id}
+    assert [l["id"] for l in conciliacao.listar(f)] == [nova]
+    assert conciliacao.resumo(f)["pendentes"] == 1
+    assert conciliacao.saldo_da_conta(conta_id) == D("970.00")
+    assert conciliacao.anteriores_ao_inicio(conta_id) == 1
+    todas = conciliacao.listar(dict(f, anteriores=True))
+    assert {l["id"] for l in todas} == {velha, nova}
+    saldos = {l["id"]: l["saldo"] for l in todas}
+    assert saldos[nova] == D("970.00") and saldos[velha] == D("1000.00"), \
+        "a anterior não mexe no saldo corrido"
+    painel = conciliacao.panorama(2026)
+    [linha] = [c for c in painel["contas"] if c["id"] == conta_id]
+    assert linha["pendentes"] == 1 and linha["pendentes_total"] == 1
+
+    with app.test_client() as cliente:
+        _entrar(cliente)
+        tela = cliente.get(f"/analisesps/conciliacao?conta_id={conta_id}").get_data(as_text=True)
+        assert "ver o que é anterior" in tela and "VELHA" not in tela
+        assert "O filtro está escondendo" not in tela
+        tela = cliente.get(f"/analisesps/conciliacao?conta_id={conta_id}&anteriores=1").get_data(as_text=True)
+        assert "VELHA" in tela
+
+
+def test_o_OFX_nao_traz_o_que_e_anterior_ao_inicio_e_lista_tudo_o_que_sobra(banco_conc, app):
+    from app.apps.analisesps import conciliacao
+    conta_id = conta_de_teste(saldo_inicial="0", saldo_inicial_em="2026-10-01")
+    # duas que o extrato não traz: uma digitada, uma repetida à mão
+    for dia in (2, 2):
+        conciliacao.acrescentar_a_mao(conta_id, dt.date(2026, 10, dia), "SOBRA", D("-9.00"), quem="T")
+    with app.test_client() as cliente:
+        _entrar(cliente)
+        d = _mandar(cliente, "conferir", ofx_bradesco(EXTRATO), conta_id=str(conta_id))
+        assert d["anteriores_total"] == 1 and d["inicio"] == "2026-10-01"
+        assert d["novas"] == 5, "o lançamento de 01/10 é do dia do início: fica de fora"
+        assert d["so_aqui_total"] == 2 and len(d["so_aqui"]) == 2
+        assert all(l["id"] for l in d["so_aqui"]), "cada sobra vem com o número, para excluir"
