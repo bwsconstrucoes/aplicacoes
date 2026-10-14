@@ -12228,6 +12228,29 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 228 — Configurações › Banco e base › "Espaço no banco" (14/10/2026)
+
+- O dono viu o banco do Render em **73%** e se assustou: *"o que é isso tanto?
+  (…) se eu começar a rodar o ERP, não vai dar para nada (…) o combinado é que
+  tudo que seja arquivo, foto, vai para o Google Drive."*
+- **Por que ninguém sabia:** a tela de saúde do ERP mede só o esquema `public`
+  (o ERP). Painel, Análise de SPs, Ponto e Mensageria ficam em esquemas
+  próprios do MESMO banco e não entravam na conta.
+- **O que foi feito:** seção "Espaço no banco" (só o mestre, na aba Banco e
+  base): total, cada área em MB e %, e as 30 maiores tabelas do banco inteiro,
+  com dados / textos grandes / índices / linhas / espaço morto estimado.
+  Só lê o catálogo do Postgres. `espaco_banco.py`.
+- **Ainda não se sabe o culpado** — depende do número de produção, que só ele
+  vê. Suspeitos, pelo código (não confirmados): o espelho do OMIE no Painel; a
+  fila de fotos e documentos do Ponto (ficam no banco até subir ao Drive); os
+  anexos antigos do ERP guardados no banco (migração 010, antes do Drive);
+  históricos que só crescem (log de alterações, execuções, métricas de saúde do
+  ERP); e espaço morto de cargas que apagam e recarregam tabelas inteiras.
+- O que mexer em cada área é com o chat daquela área; aqui só a medida.
+- O disco do Render pode contar também arquivos internos do Postgres (o
+  registro de transações) que não aparecem em tamanho de tabela — se o total
+  daqui for bem menor que os 73% do Render, a diferença está aí.
+
 #### Leva 227 — A conciliação vale a partir de um dia; listas inteiras na conferência (14/10/2026)
 
 - *"O sistema de conciliação é novo; de repente eu quero só fazer ele valer do

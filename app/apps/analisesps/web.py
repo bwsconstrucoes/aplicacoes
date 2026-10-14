@@ -1782,8 +1782,15 @@ def configuracoes():
         except Exception:  # noqa: BLE001 — a tela que conserta não pode cair
             logger.exception("Análise de SPs: não consegui ler o estado do faturamento")
 
+    # Quanto cada área ocupa no banco (14/10/2026) — só o mestre, só na aba
+    # "Banco e base". Lê o catálogo do Postgres; não varre tabela nenhuma.
+    espaco = None
+    if aba == "sistema" and auth.e_mestre():
+        from . import espaco_banco
+        espaco = espaco_banco.medir()
+
     return render_template(
-        "analisesps_config.html",
+        "analisesps_config.html", espaco=espaco,
         aba_config=aba, subtelas_config=SUBTELAS_CONFIG,
         faturamento_cfg=faturamento_cfg, e_mestre=auth.e_mestre(),
         migracoes=migracoes, erro_banco=erro_banco, integracoes=integracoes,
