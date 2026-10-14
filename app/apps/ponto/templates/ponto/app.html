@@ -181,7 +181,7 @@
       <button class="link" id="btn-ir-primeiro" type="button">Primeiro acesso ou esqueci o PIN</button>
     </div>
     <p class="pequeno" id="codigo-aparelho" style="text-align:center"></p>
-    <button class="link" id="btn-ser-da-obra" type="button" style="display:block; margin:0 auto">Este aparelho vai ser o ponto da obra? Pedir a aprovação</button>
+    <button class="link" id="btn-ser-da-obra" type="button" style="display:block; margin:0 auto">Este aparelho vai bater ponto? Pedir a aprovação</button>
     <div class="cartao oculto" id="cartao-tablet">
       <h2>Este é o ponto da obra</h2>
       <p class="pequeno">Entre com o seu CPF e PIN — o responsável por este aparelho ou o administrativo da obra. Depois
@@ -294,6 +294,9 @@
       <div class="aviso info">Você bate o ponto no <b>aparelho da obra</b>: mostre o seu QR Code na câmera
         dele ou digite o CPF. <span id="so-na-obra-pedidos">Atestado, licença e ajuste também são entregues lá (ou pelo
         responsável da obra). Por aqui você vê o seu mês e acompanha os pedidos.</span></div>
+      <div class="aviso ambar oculto" id="so-na-obra-liberar">Este celular <b>não</b> foi para aprovação: no seu cadastro, o
+        seu ponto é batido no aparelho da obra. Se você precisa bater por aqui, peça ao DP para liberar no seu cadastro;
+        depois, é só entrar de novo que o pedido sai.</div>
     </div>
     <div class="cartao" id="cartao-bater">
       <h2 id="ola">Olá</h2>
@@ -670,7 +673,35 @@ async function voltarAoInicio() {
   abrirMenu();
 }
 $("btn-ir-primeiro").addEventListener("click", () => { $("p-cpf").value = $("e-cpf").value; mostrar("primeiro"); });
+// "Este aparelho vai bater ponto?" (14/10/2026: o dono achou "ponto da obra"
+// específico demais — "tem um ponto individual, né?"). Pergunta de quem é: o da
+// obra pede a aprovação aqui; o celular pessoal entra com CPF e PIN, e o pedido
+// sai sozinho se o cadastro da pessoa estiver liberado para bater no celular
+// (sem isso, nada vai para a fila — ela não se enche de celular de consulta).
+function deQuemEOAparelho() {
+  return new Promise(resolve => {
+    $("dlg-corpo").innerHTML = `<h2 style="margin:0 0 6px">De quem é este aparelho?</h2>
+      <button class="btn" type="button" id="dq-obra" style="margin-top:8px">É da obra
+        <small style="display:block; font-weight:400">tablet ou celular da obra: todo mundo bate nele</small></button>
+      <button class="btn" type="button" id="dq-meu" style="margin-top:8px">É o meu celular
+        <small style="display:block; font-weight:400">só eu bato o meu ponto nele</small></button>`;
+    let feito = false;
+    const fim = v => { feito = true; $("dlg").close(); resolve(v); };
+    $("dq-obra").onclick = () => fim("obra");
+    $("dq-meu").onclick = () => fim("meu");
+    $("dlg").addEventListener("close", () => { if (!feito) resolve(null); }, {once: true});
+    $("dlg").showModal();
+  });
+}
 $("btn-ser-da-obra").addEventListener("click", async () => {
+  const dono = await deQuemEOAparelho();
+  if (!dono) return;
+  if (dono === "meu") {
+    try { sessionStorage.setItem("ponto_quer_bater_no_celular", "1"); } catch (e) {}
+    aviso("Entre com o seu CPF e PIN. Se o seu cadastro estiver liberado para bater pelo celular, o pedido de aprovação sai na hora.", "ok");
+    $("e-cpf").focus();
+    return;
+  }
   try {
     await garantirRegistro("Ponto da obra (a aprovar)");
     await estadoDoAparelho();
@@ -952,6 +983,11 @@ async function carregarInicio() {
     ? "Os seus atestados, licenças e ajustes você pede por aqui: na aba Pedidos, ou tocando no dia em Meu mês."
     : "Atestado, licença e ajuste também são entregues lá (ou pelo responsável da obra). Por aqui você vê o seu mês e acompanha os pedidos.";
   $("ola-obra").textContent = `Olá, ${EU.primeiro_nome}`;
+  // Pediu "é o meu celular", mas o cadastro diz que bate no aparelho da obra: o
+  // celular não foi para a fila, e a pessoa fica sabendo o que fazer.
+  let quis = false;
+  try { quis = sessionStorage.getItem("ponto_quer_bater_no_celular") === "1"; sessionStorage.removeItem("ponto_quer_bater_no_celular"); } catch (e) {}
+  $("so-na-obra-liberar").classList.toggle("oculto", !(quis && EU.bate_no_celular === false && !ehDaObra()));
   if (!soNaObra) localizacao().then(l => { LOCAL = l; preencherObras($("i-obra"), OBRAS, $("i-obra").value); mostrarLocal(l); });
 
   // o aparelho
@@ -2374,7 +2410,7 @@ $("dlg").addEventListener("close", () => clearTimeout(QR_TIMER));
 // O aparelho NÃO se cadastra só por abrir o endereço (10/10/2026: "só o fato de eu
 // abrir uma aba anônima ele já pede para cadastrar o aparelho"). Cadastra-se quando
 // precisa: quem bate no próprio celular, ao entrar; o ponto da obra, no botão
-// "Este aparelho vai ser o ponto da obra" da tela de entrada.
+// "Este aparelho vai bater ponto?" (é da obra) da tela de entrada.
 iniciar();
 </script>
 </body>

@@ -164,6 +164,19 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 14/10/2026 (tarde) — "Este aparelho vai bater ponto?" no lugar de "ponto da obra"
+
+- O dono: *"a pergunta está muito específica (…) é melhor 'este aparelho vai
+  bater ponto?' (…) porque tem um ponto individual, né?"*. O botão da tela de
+  entrada virou "Este aparelho vai bater ponto? Pedir a aprovação" e pergunta
+  **de quem é**: "É da obra" faz o pedido de antes (aparelho sem dono, para
+  aprovar como ponto da obra); "É o meu celular" manda entrar com CPF e PIN.
+- **Decisão (minha, para não reabrir a fila):** o celular pessoal NÃO vai para
+  aprovação pelo botão — vai só se o cadastro da pessoa estiver liberado ("Bater
+  no próprio celular"), como já era. Sem a liberação, o Meu ponto avisa que o
+  celular não foi para aprovação e que ela peça ao DP. Assim a tela de aparelhos
+  não se enche de celular de quem só consulta (a preocupação dele da manhã).
+
 ## 14/10/2026 (tarde) — A busca de Pessoas diz por que alguém não aparece
 
 - O dono: *"tem uma pessoa em específico que não tá aparecendo em Ponto ›
