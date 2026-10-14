@@ -12263,6 +12263,8 @@ somente Solicitações de uma conta especifica"*.
   intervalo pela metade). `conciliacao_saldo.py`.
 - O saldo de um OFX é o da HORA do download; o digitado (fim do dia) é o mais
   confiável. Dito na própria janela.
+- **Levas 224 a 226 publicadas em 14/10/2026** (sem migração; suíte inteira
+  verde, com a main já no ramo).
 - Não testado com o banco de produção: o diagnóstico depende dos arquivos que
   ele já importou. O arquivo dele foi usado só para conferir a tela; não entrou
   no repositório (os testes usam valores inventados).
