@@ -709,7 +709,7 @@ def gerencial(ano: int, mes: int) -> dict:
 # gravar nada; o "ok" refaz o fechamento com essa mesma situação e gera — os dois
 # passos juntos, para o arquivo nunca sair de um fechamento antigo.
 # ---------------------------------------------------------------------------
-ORIGENS = ("folha", "diaria", "alimentacao", "transporte", "dc")
+ORIGENS = ("folha", "diaria", "alimentacao", "transporte", "dc", "avulso")
 
 
 def _linhas_do_apropriado(apropriado: dict, verba: str) -> list:
@@ -735,6 +735,21 @@ def _pedido_direto(origem: str, dados: dict) -> dict:
         return {"ano": hoje.year, "mes": hoje.month, "tipo": dc.TIPO, "verba": dc.VERBA,
                 "linhas": dc.linhas_a_pagar(),
                 "rotulo": f"Despesas com colaboradores {hoje.strftime('%d/%m/%Y')}"}
+    if origem == "avulso":
+        # O PAGAMENTO AVULSO (15/10/2026): a lista colada na tela, sem
+        # competência — o mês é o da geração, como na DC.
+        from . import pagamento_avulso as pa
+        from .horario import agora
+        hoje = agora().date()
+        calculado = pa.calcular()
+        if calculado.get("gerado"):
+            raise ErroDoPagamento("esta lista já foi gerada — veja em Arquivos gerados, "
+                                  "ou cole uma nova.")
+        rotulo = "Pagamento avulso " + hoje.strftime("%d/%m/%Y")
+        if calculado.get("descricao"):
+            rotulo += f" — {calculado['descricao']}"
+        return {"ano": hoje.year, "mes": hoje.month, "tipo": pa.TIPO, "verba": pa.VERBA,
+                "linhas": pa.linhas_a_pagar(calculado), "rotulo": rotulo}
     if origem == "folha":
         folha, _apropriado, linhas = linhas_da_previa(int(dados.get("folha_id") or 0))
         return {"ano": folha["ano"], "mes": folha["mes"], "tipo": folha["tipo"],
@@ -776,7 +791,9 @@ def resumo_direto(origem: str, dados: dict, destino: str,
     # trava é o arquivo que a gente gerou"*). Nada impedia gerar o mesmo
     # pagamento duas vezes; agora a janela diz que já foi gerado, e só segue com
     # "gerar mesmo assim" — o caminho limpo é excluir a geração anterior.
-    resumo["ja_gerado"] = [] if origem == "dc" else ja_gerado(origem, pedido)
+    # A DC e o avulso não têm "o mesmo pagamento" de novo: o que já foi gerado
+    # sai da tela (lote guardado) — a trava é essa.
+    resumo["ja_gerado"] = [] if origem in ("dc", "avulso") else ja_gerado(origem, pedido)
     if resumo["ja_gerado"]:
         resumo["pode_gerar"] = False
     return {**pedido, "destino": destino, "lotes": lotes, "resumo": resumo,
@@ -836,6 +853,16 @@ def gerar_direto(origem: str, dados: dict, destino: str, quem: str = "",
                             if a["destino"] not in (ANALISE, RELATORIO, CADASTRO)}
         dc.registrar_lote(analise, pedido["linhas"], destino_da_conta, quem=quem)
         return saida
+    if origem == "avulso":
+        from . import pagamento_avulso as pa
+        saida = gerar(pedido["ano"], pedido["mes"], pedido["tipo"], [pedido["verba"]],
+                      destino, quem=quem, forcar=forcar, destinos=destinos,
+                      relatorio=_relatorio_por_conta(origem, dados, pedido),
+                      linhas=pedido["linhas"], cadastro=True)
+        analise = next((a["id"] for a in saida["arquivos"] if a["destino"] == ANALISE),
+                       None)
+        pa.registrar_lote(analise, pedido["linhas"], quem=quem)
+        return saida
     if origem == "folha":
         folha_gestao.fechar(int(dados.get("folha_id") or 0), quem=quem)
     elif origem == "diaria":
@@ -861,6 +888,10 @@ def _relatorio_por_conta(origem: str, dados: dict, pedido: dict):
             from . import dc
             contas = conta_por_obra()
             montado = dc.montado_do_relatorio(dc.calcular(), so_a_pagar=True)
+        elif origem == "avulso":
+            from . import pagamento_avulso as pa
+            contas = conta_por_obra()
+            montado = pa.montado_do_relatorio(pa.calcular(), so_a_pagar=True)
         elif origem == "folha":
             from . import folha_gestao
             montado = fr.com_contracheques(
@@ -1048,6 +1079,12 @@ def excluir_arquivos(ids, quem: str = "") -> dict:
         dc.apagar_lotes([a["id"] for a in alvos if a["destino"] == ANALISE])
     except Exception:  # noqa: BLE001 — o registro já foi apagado
         logger.exception("Folha: não consegui apagar o lote da DC")
+    # O avulso: idem — a lista volta a poder ser gerada.
+    try:
+        from . import pagamento_avulso as pa
+        pa.apagar_lotes([a["id"] for a in alvos if a["destino"] == ANALISE])
+    except Exception:  # noqa: BLE001 — o registro já foi apagado
+        logger.exception("Folha: não consegui apagar o lote do avulso")
     logger.info("Folha: %d arquivo(s) excluído(s) do registro por %s (%d falha(s) "
                 "no Drive).", len(alvos), quem or "(sem nome)", len(falhas))
     return {"excluidos": len(alvos), "falhas_no_drive": falhas,

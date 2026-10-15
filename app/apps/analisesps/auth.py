@@ -560,6 +560,11 @@ TELA_DA_ROTA = {
     "analisesps.folha_dc_relatorio": ("folha",),
     "analisesps.folha_dc_selecao": ("folha",),
     "analisesps.folha_dc_obra": ("folha",),
+    # O pagamento avulso (15/10/2026): a lista colada, a seleção e a obra.
+    "analisesps.folha_avulso_relatorio": ("folha",),
+    "analisesps.folha_avulso_lista": ("folha",),
+    "analisesps.folha_avulso_selecao": ("folha",),
+    "analisesps.folha_avulso_obra": ("folha",),
     # A ficha da pessoa no modal: cadastro + ponto do mês. É da folha, e mostra
     # dado pessoal — quem não alcança a folha não alcança isto.
     "analisesps.folha_ficha_da_pessoa": ("folha",),

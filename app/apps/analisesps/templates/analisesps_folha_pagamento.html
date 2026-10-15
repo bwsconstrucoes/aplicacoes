@@ -58,14 +58,14 @@
             {#- As SPs lançadas da geração e o título do grupo no lote (10/10/2026). -#}
             {% set sps_da_rodada = [] %}{% for a in r.pagamentos %}{% for sp in a.sps or [] %}{% if sps_da_rodada.append(sp.id) %}{% endif %}{% endfor %}{% endfor %}
             data-sps="{{ sps_da_rodada|join(',') }}"
-            data-titulo="Folha {{ r.competencia }} · {{ "quinzena" if r.tipo == "quinzena" else ("despesas com colaboradores" if r.tipo == "dc" else "fim de mês") }}{% if r.verbas %} · {{ r.verbas }}{% endif %}{% if r.destino %} · {{ r.destino }}{% endif %}"
+            data-titulo="Folha {{ r.competencia }} · {{ "quinzena" if r.tipo == "quinzena" else ("despesas com colaboradores" if r.tipo == "dc" else ("pagamento avulso" if r.tipo == "avulso" else "fim de mês")) }}{% if r.verbas %} · {{ r.verbas }}{% endif %}{% if r.destino %} · {{ r.destino }}{% endif %}"
             data-analise="{{ r.analise.id if r.lancavel else '' }}"
             data-com-card="{{ '1' if r.lancado else '' }}">
           {% if pode_operar %}<td class="marca"><input type="checkbox" class="marca-rodada"
               aria-label="Selecionar a geração de {{ r.competencia }}"></td>{% endif %}
           <td>{{ r.criado_em|momento_br }}</td>
           <td>{{ r.competencia }}
-            <span class="cartao-dica">{{ "quinzena" if r.tipo == "quinzena" else ("despesas com colaboradores" if r.tipo == "dc" else "fim de mês") }}</span></td>
+            <span class="cartao-dica">{{ "quinzena" if r.tipo == "quinzena" else ("despesas com colaboradores" if r.tipo == "dc" else ("pagamento avulso" if r.tipo == "avulso" else "fim de mês")) }}</span></td>
           <td>{{ r.verbas or '—' }}</td>
           <td>{{ r.destino or '—' }}</td>
           <td>
@@ -214,7 +214,7 @@ function desenhaPrevia(d) {
   // Desde 02/10/2026: só a Solicitação de Pagamento, uma por conta, com o
   // rateio múltiplo por obra (o card de Despesa deixou de existir).
   let html = '<p class="cartao-dica">' + escapa(d.competencia) + " · " +
-    (d.tipo === "quinzena" ? "quinzena" : (d.tipo === "dc" ? "despesas com colaboradores" : "fim de mês")) +
+    (d.tipo === "quinzena" ? "quinzena" : (d.tipo === "dc" ? "despesas com colaboradores" : (d.tipo === "avulso" ? "pagamento avulso" : "fim de mês"))) +
     ". Tipo de despesa: " + escapa(d.como_tipo) + ".</p>";
   if (d.ja_lancado && d.so_terminar) {
     html += '<div class="aviso atencao">Este pagamento já foi lançado no Pipefy, mas ' +

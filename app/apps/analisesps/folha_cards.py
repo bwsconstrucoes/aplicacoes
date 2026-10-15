@@ -89,6 +89,9 @@ GRUPOS = {
     # A DC (03/10/2026): o tipo de despesa vem de cada linha (o Record ID do
     # tipo de despesa na aba "Plano Financeiro"), não do grupo.
     ("dc", ""): ("Despesas com Colaboradores", "", ""),
+    # O pagamento avulso (15/10/2026): o tipo de despesa é o escolhido na tela,
+    # guardado no lote da geração — procurado pelo nome, como nas outras.
+    ("avulso", ""): ("Pagamento Avulso", "", ""),
 }
 
 # O que o `geraspbeevale.gs` do dono punha na SP da DC e as outras não têm: o
@@ -605,13 +608,26 @@ def _previa(analise_id: int, ler_pipes: bool = True, contas=None) -> tuple:
             if grupo_dc:
                 grupos.append(grupo_dc)
             continue
-        try:
-            linhas = [l for l in fpg.linhas_para_pagar(ano, mes, tipo, [verba])
-                      if l["valor"] > 0
+        lote_avulso = None
+        if verba == "avulso":
+            # Sem fechamento: as linhas vêm do LOTE guardado na geração — o que
+            # vai para o Pipefy é exatamente o que foi para o arquivo.
+            from . import pagamento_avulso as pa
+            lote_avulso = pa.lote_da_analise(analise["id"])
+            if not lote_avulso:
+                bloqueios.append("o lote deste pagamento avulso não foi encontrado — "
+                                 "exclua a geração e gere de novo.")
+                continue
+            linhas = [l for l in lote_avulso["linhas"] if l["valor"] > 0
                       and " ".join(str(l.get("conta") or "").split()) in escolhidas]
-        except fpg.ErroDoPagamento as e:
-            bloqueios.append(str(e))
-            continue
+        else:
+            try:
+                linhas = [l for l in fpg.linhas_para_pagar(ano, mes, tipo, [verba])
+                          if l["valor"] > 0
+                          and " ".join(str(l.get("conta") or "").split()) in escolhidas]
+            except fpg.ErroDoPagamento as e:
+                bloqueios.append(str(e))
+                continue
         chave = _chave_do_lote(verba, escolhidas, todas_as_contas)
         ja = contas_lancadas(andamento_atual, verba)
         repetidas = [c for c in escolhidas
@@ -625,7 +641,8 @@ def _previa(analise_id: int, ler_pipes: bool = True, contas=None) -> tuple:
             continue
 
         # O tipo de despesa e a categoria do OMIE, pelo nome da verba.
-        descricao_verba = DESCRICAO_DA_VERBA.get(verba, "")
+        descricao_verba = (lote_avulso["tipo_despesa"] if lote_avulso
+                           else DESCRICAO_DA_VERBA.get(verba, ""))
         tipo_sp = achar_tipo(descricao_verba) if descricao_verba else None
         if ler_pipes and not tipo_sp:
             reserva = getattr(achar_tipo, "reserva", None)
@@ -678,6 +695,11 @@ def _previa(analise_id: int, ler_pipes: bool = True, contas=None) -> tuple:
             sp_item["etiquetas"] = rotulo_das_etiquetas(sp_item)
             sp_item["descricao"] = descricao_da_sp(
                 analise["competencia"], tipo, verba, sp_item, analise.get("link") or "")
+            if lote_avulso and lote_avulso.get("descricao"):
+                # O que é o pagamento avulso, logo abaixo da conta de origem.
+                partes = sp_item["descricao"].split("\n", 1)
+                sp_item["descricao"] = "\n".join(
+                    [partes[0], f"Descrição: {lote_avulso['descricao']}"] + partes[1:])
             sps.append(sp_item)
 
         grupos.append({
@@ -894,8 +916,8 @@ def descricao_da_sp(competencia: str, tipo: str, verba: str, sp: dict,
     colocar as obras, colocar valor por obra, colocar os links (…) a
     competência"*)."""
     rotulo_tipo = {"quinzena": "Quinzena (dias 1 a 15)",
-                   "fim_de_mes": "Fim de mês (16 ao último dia)"}.get(
-                       str(tipo or ""), str(tipo or ""))
+                   "fim_de_mes": "Fim de mês (16 ao último dia)",
+                   "avulso": ""}.get(str(tipo or ""), str(tipo or ""))
     destino = geracao.ROTULO_DO_DESTINO.get(sp.get("destino") or "", "")
     linhas = _com_conta_origem(sp.get("conta"), [
         f"{geracao.rotulo_da_verba(verba)} — competência {competencia}",

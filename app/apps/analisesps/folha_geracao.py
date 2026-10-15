@@ -78,6 +78,8 @@ ROTULO_DA_VERBA = {
     "gratificacao": "Gratificação",
     # As solicitações de despesa com colaboradores do Pipefy (03/10/2026).
     "dc": "Despesas com colaboradores",
+    # A lista colada na tela "Pagamento avulso" (15/10/2026).
+    "avulso": "Pagamento avulso",
 }
 
 # ⚠️ O QUE O BEEVALE CHAMA DE "NATUREZA" da verba. É o que autoriza o mesmo CPF a
@@ -522,13 +524,13 @@ def nome_do_arquivo(lote, ano: int, mes: int, tipo: str) -> str:
     aconteceu: está escrito no comentário do script do dono)."""
     partes = [ROTULO_DO_DESTINO.get(lote.get("destino"), "Pagamento"),
               f"{int(mes):02d}-{int(ano)}"]
-    if str(tipo or "") == "dc":
+    if str(tipo or "") in ("dc", "avulso"):
         # A DC não tem competência e pode sair várias vezes no mês: o nome leva
         # o dia e a hora da geração, para um arquivo não se confundir com outro.
         from .horario import agora
         partes[1] = agora().strftime("%d-%m-%Y %Hh%M")
     rotulo_tipo = {"quinzena": "Quinzena", "fim_de_mes": "Fim de mes",
-                   "dc": ""}.get(str(tipo or ""), str(tipo or ""))
+                   "dc": "", "avulso": ""}.get(str(tipo or ""), str(tipo or ""))
     if rotulo_tipo:
         partes.append(rotulo_tipo)
     verbas = [rotulo_da_verba(v) for v in (lote.get("verbas") or [])]
