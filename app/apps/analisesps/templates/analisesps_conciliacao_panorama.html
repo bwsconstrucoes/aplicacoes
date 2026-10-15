@@ -82,10 +82,11 @@
 
 {% if r.sem_saldo_inicial %}
   <div class="aviso atencao">
-    <b>{{ r.sem_saldo_inicial }} conta(s) sem saldo inicial.</b> Nelas o saldo
+    <b>{{ r.sem_saldo_inicial }} conta(s) sem data de início.</b> Nelas o saldo
     mostrado é só a soma do que foi importado — o que a conta tinha antes disso
-    não está aqui, e a diferença aparece sem explicação. O saldo inicial se
-    põe em <b>Contas</b>, na tela da conciliação.
+    não está aqui, e a diferença aparece sem explicação. O dia em que a
+    conciliação começa, com o saldo do banco no fim dele, se põe em
+    <b>Contas</b>, na tela da conciliação.
   </div>
 {% endif %}
 
@@ -134,7 +135,7 @@
           </td>
           <td class="direita">{{ c.saldo|moeda }}
             {% if not c.tem_saldo_inicial %}
-              <br><small class="ruim">sem saldo inicial</small>
+              <br><small class="ruim">sem data de início</small>
             {% endif %}</td>
           <td class="direita">{{ c.movimento|moeda }}</td>
           <td class="direita">

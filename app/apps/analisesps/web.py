@@ -1416,6 +1416,30 @@ VALIDADE_DA_CONSULTA = 15 * 60
 # irmã do "Consultar Omie": lista as marcadas, a pessoa escolhe o que vai e
 # para quem, e o WhatsApp DELA abre com a mensagem pronta.
 # ---------------------------------------------------------------------------
+@bp.route("/api/sp/<sp_id>/comprovante", methods=["POST"])
+@exige_operador
+def substituir_comprovante(sp_id):
+    """Troca o comprovante de uma SP (14/10/2026) — ver `substituir_comprovante.py`.
+    Um arquivo (vai para o Dropbox) ou um link colado; o antigo fica no log."""
+    from . import consultas, substituir_comprovante as sc
+    sp_id = str(sp_id).strip()
+    erro = _fora_do_recorte([sp_id])
+    if erro:
+        return erro
+    if not consultas.uma(sp_id):
+        return {"ok": False, "erro": "SP não encontrada."}, 404
+    arquivo = request.files.get("arquivo")
+    try:
+        if arquivo and arquivo.filename:
+            link = sc.subir_arquivo(sp_id, arquivo.read(sc.TETO_BYTES + 1))
+        else:
+            link = sc.link_colado(request.form.get("link"))
+    except sc.ErroDaSubstituicao as e:
+        return {"ok": False, "erro": str(e)}, 400
+    _gravar_valores([(sp_id, "comprovante", link)], "Substituir comprovante")
+    return {"ok": True, "link": link}
+
+
 @bp.route("/api/encaminhar/previa", methods=["POST"])
 @exige_operador
 def encaminhar_previa():
@@ -1758,8 +1782,15 @@ def configuracoes():
         except Exception:  # noqa: BLE001 — a tela que conserta não pode cair
             logger.exception("Análise de SPs: não consegui ler o estado do faturamento")
 
+    # Quanto cada área ocupa no banco (14/10/2026) — só o mestre, só na aba
+    # "Banco e base". Lê o catálogo do Postgres; não varre tabela nenhuma.
+    espaco = None
+    if aba == "sistema" and auth.e_mestre():
+        from . import espaco_banco
+        espaco = espaco_banco.medir()
+
     return render_template(
-        "analisesps_config.html",
+        "analisesps_config.html", espaco=espaco,
         aba_config=aba, subtelas_config=SUBTELAS_CONFIG,
         faturamento_cfg=faturamento_cfg, e_mestre=auth.e_mestre(),
         migracoes=migracoes, erro_banco=erro_banco, integracoes=integracoes,
@@ -2743,7 +2774,10 @@ def _filtros_da_conciliacao(contas_cadastradas: list) -> dict:
             "entrada": numero("entrada"),
             "saida": numero("saida"),
             # Guardados para a tela redesenhar os campos como estavam.
-            "dia": dia, "valor": exato}
+            "dia": dia, "valor": exato,
+            # O que é anterior ao início da conciliação da conta (14/10/2026):
+            # só quando pedido, e não fica guardado de uma visita para outra.
+            "anteriores": request.args.get("anteriores") == "1"}
 
 
 def _omie_ligado() -> bool:
@@ -2865,6 +2899,7 @@ def tela_conciliacao():
     conta = next((c for c in contas if c["id"] == filtros["conta_id"]), None)
     # A SP de cada saída (07/10/2026): valor + conta + data de pagamento ou
     # vencimento próximo. Só leitura; a linha mostra o link do card.
+    anteriores = conc.anteriores_ao_inicio(filtros["conta_id"]) if filtros["conta_id"] else 0
     sps_das_linhas = conc.sps_das_linhas(conta, linhas)
     for l in linhas:
         l["sps"] = sps_das_linhas.get(l["id"], [])
@@ -2881,8 +2916,12 @@ def tela_conciliacao():
         # está escondendo. O filtro fica guardado de uma visita para a outra, e um
         # período de ontem esconde hoje uma linha que está gravada — foi o que fez
         # o dono concluir, em 29/09/2026, que um lançamento "não foi importado".
-        total_da_conta=conc.quantas_na_conta(filtros["conta_id"])
+        # Sem as anteriores ao início: elas têm o aviso delas, e contá-las
+        # aqui faria a tela dizer "o filtro está escondendo" o que não é filtro.
+        total_da_conta=(conc.quantas_na_conta(filtros["conta_id"])
+                        - (0 if filtros["anteriores"] else anteriores))
         if filtros["conta_id"] else 0,
+        anteriores_ao_inicio=anteriores,
         por_pagina=conc.POR_PAGINA,
         tem_proxima=len(linhas) == conc.POR_PAGINA,
         saldo_total=conc.saldo_da_conta(filtros["conta_id"])
@@ -2897,6 +2936,42 @@ def tela_conciliacao():
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
+
+
+@bp.route("/conciliacao/exportar")
+@exige_consulta
+def conciliacao_exportar():
+    """O extrato da tela em PDF ou planilha — mesma conta, mesmo filtro, todas
+    as páginas (14/10/2026). Ver `conciliacao_exportar`."""
+    from . import conciliacao as conc
+    from . import conciliacao_exportar as ce
+    from .horario import agora
+
+    if not conc.estado()["pronto"]:
+        return render_template("analisesps_erro.html", titulo="Conciliação não ligada",
+                               mensagem="Aplique as atualizações do banco primeiro."), 400
+    contas = conc.contas()
+    filtros = _filtros_da_conciliacao(contas)
+    conta = next((c for c in contas if c["id"] == filtros["conta_id"]), None)
+    if not conta:
+        return render_template("analisesps_erro.html", titulo="Escolha a conta",
+                               mensagem="Abra a conta na Conciliação e exporte de lá."), 400
+    formato = "pdf" if request.args.get("formato") == "pdf" else "xlsx"
+    try:
+        lista = ce.linhas(filtros)
+        resumo = conc.resumo(filtros)
+        conteudo = (ce.pdf if formato == "pdf" else ce.xlsx)(conta, filtros, lista, resumo)
+    except Exception as e:  # noqa: BLE001 — a frase vai para a tela
+        logger.exception("Conciliação: falhou exportar o extrato")
+        return render_template("analisesps_erro.html", titulo="Não consegui exportar",
+                               mensagem=str(e)[:300]), 500
+    import re
+    nome_conta = re.sub(r"[^A-Za-z0-9]+", "_", conta.get("nome") or "conta").strip("_")
+    nome = f"extrato_{nome_conta}_{agora().strftime('%Y-%m-%d_%H%M')}.{formato}"
+    tipo = ("application/pdf" if formato == "pdf" else
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    return Response(conteudo, mimetype=tipo,
+                    headers={"Content-Disposition": f'attachment; filename="{nome}"'})
 
 
 @bp.route("/conciliacao/panorama")
@@ -2962,6 +3037,8 @@ def conciliacao_conferir():
         lido = conciliacao_ofx.ler(arquivo.read())
     except conciliacao_ofx.ErroDoExtrato as e:
         return {"ok": False, "erro": str(e)}
+    lido_inteiro = lido
+    lido = _escolhas_do_extrato(lido)
 
     achada = conc.conta_do_extrato(lido.bankid, lido.acctid)
     pedida = request.form.get("conta_id")
@@ -2992,8 +3069,25 @@ def conciliacao_conferir():
     except conc.ErroDaConciliacao as e:
         return {"ok": False, "erro": str(e)}
 
-    return {"ok": True, **conc.resumo_para_a_tela(conferido, conta_id,
-                                                  arquivo.filename)}
+    # Quantas aplicações automáticas o arquivo traz — para a tela oferecer
+    # incluí-las ou tirá-las de novo.
+    com_aplicacoes = sum(1 for x in lido_inteiro.lancamentos
+                         if conciliacao_ofx.e_aplicacao_automatica(x))
+    return {"ok": True, "aplicacoes_no_arquivo": com_aplicacoes,
+            "aplicacoes_incluidas": request.form.get("aplicacoes") == "incluir",
+            **conc.resumo_para_a_tela(conferido, conta_id, arquivo.filename)}
+
+
+def _escolhas_do_extrato(lido):
+    """O extrato como a pessoa escolheu tratá-lo. Conferir e gravar passam por
+    aqui com o MESMO formulário, então gravam o que a conferência mostrou.
+
+    As aplicações e resgates automáticos (Invest Fácil) saem por padrão;
+    `aplicacoes=incluir` os mantém (14/10/2026)."""
+    from . import conciliacao_ofx
+    if request.form.get("aplicacoes") != "incluir":
+        lido = conciliacao_ofx.sem_aplicacoes(lido)
+    return lido
 
 
 @bp.route("/api/conciliacao/importar", methods=["POST"])
@@ -3020,6 +3114,7 @@ def conciliacao_importar():
         lido = conciliacao_ofx.ler(arquivo.read())
     except conciliacao_ofx.ErroDoExtrato as e:
         return {"ok": False, "erro": str(e)}
+    lido = _escolhas_do_extrato(lido)
 
     quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
     # Lembrar a conta do arquivo: da próxima vez ele se reconhece sozinho.
@@ -5630,6 +5725,37 @@ def conciliacao_apagar_linha():
         return {"ok": False, "erro": str(e)}
     except Exception as e:  # noqa: BLE001 — a tela precisa da frase
         logger.exception("Conciliação: falhou apagar a linha")
+        return {"ok": False, "erro": f"Não consegui apagar: {e}"}, 500
+    return {"ok": True, "so_contei": False, **feito}
+
+
+@bp.route("/api/conciliacao/apagar-linhas", methods=["POST"])
+@exige_operador
+def conciliacao_apagar_linhas():
+    """Apaga as linhas MARCADAS — pedido do dono em 14/10/2026 ("exclusão dos
+    selecionados, ao lado do Lançar no OMIE").
+
+    As mesmas duas chamadas da avulsa: sem `confirmar`, só diz quantas saem,
+    quanto somam e quais são recusadas (as lançadas no OMIE). A segunda apaga,
+    e exige o motivo — um só, para todas.
+    """
+    from . import conciliacao as conc
+
+    dados = request.get_json(silent=True) or {}
+    ids = dados.get("ids") or []
+    if not isinstance(ids, list):
+        return {"ok": False, "erro": "Marque as linhas primeiro."}
+
+    if not dados.get("confirmar"):
+        return {"ok": True, "so_contei": True, **conc.o_que_apagar_as_linhas_leva(ids)}
+
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        feito = conc.apagar_linhas(ids, dados.get("motivo") or "", quem)
+    except conc.ErroDaConciliacao as e:
+        return {"ok": False, "erro": str(e)}
+    except Exception as e:  # noqa: BLE001 — a tela precisa da frase
+        logger.exception("Conciliação: falhou apagar as linhas marcadas")
         return {"ok": False, "erro": f"Não consegui apagar: {e}"}, 500
     return {"ok": True, "so_contei": False, **feito}
 

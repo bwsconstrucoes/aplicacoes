@@ -681,6 +681,60 @@
 </div>
 </section>
 
+{# QUANTO CADA ÁREA OCUPA NO BANCO — 14/10/2026. O dono viu o banco do Render
+   em 73% e perguntou "o que é isso tanto?". A tela de saúde do ERP só mede o
+   espaço do ERP; aqui é o banco inteiro, área por área. Só lê. #}
+{% if espaco %}
+<section class="config-sub" data-sub="sistema"{% if aba_config != "sistema" %} hidden{% endif %}>
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Espaço no banco</h3>
+    <small>{% if not espaco.erro %}{{ espaco.total_mb|moeda }} MB ao todo{% endif %}</small>
+  </div>
+  {% if espaco.erro %}
+    <div class="aviso erro">{{ espaco.erro }}</div>
+  {% else %}
+    <p class="cartao-dica" style="margin:0 0 8px">O banco é um só para todas as áreas.
+      Aqui está quanto cada uma ocupa, e as maiores tabelas. "Espaço morto" é o
+      que foi apagado ou regravado e ainda não foi devolvido — estimativa do banco
+      (hoje, ~{{ espaco.morto_mb|moeda }} MB).</p>
+    <table class="sps" style="max-width:520px">
+      <thead><tr><th>Área</th><th class="direita">MB</th><th class="direita">% do banco</th>
+        <th class="direita">Tabelas</th></tr></thead>
+      <tbody>
+        {% for a in espaco.areas %}
+          <tr><td>{{ a.area }}</td><td class="direita">{{ a.mb|moeda }}</td>
+            <td class="direita">{{ a.por_cento }}%</td><td class="direita">{{ a.tabelas }}</td></tr>
+        {% endfor %}
+        {% if espaco.outros_mb %}
+          <tr><td><small>interno do banco</small></td><td class="direita">{{ espaco.outros_mb|moeda }}</td>
+            <td></td><td></td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+    <div class="rolagem-tabela" style="margin-top:12px">
+    <table class="sps">
+      <thead><tr><th>Área</th><th>Tabela</th><th class="direita">Total MB</th>
+        <th class="direita">Dados</th><th class="direita">Textos grandes</th>
+        <th class="direita">Índices</th><th class="direita">Linhas</th>
+        <th class="direita">Espaço morto</th></tr></thead>
+      <tbody>
+        {% for t in espaco.tabelas %}
+          <tr><td>{{ t.area }}</td><td><code>{{ t.tabela }}</code></td>
+            <td class="direita"><b>{{ t.mb|moeda }}</b></td>
+            <td class="direita">{{ t.dados_mb|moeda }}</td>
+            <td class="direita">{{ t.textos_mb|moeda }}</td>
+            <td class="direita">{{ t.indices_mb|moeda }}</td>
+            <td class="direita">{{ "{:,}".format(t.linhas).replace(",", ".") }}</td>
+            <td class="direita">{% if t.morto_mb %}{{ t.morto_mb|moeda }} MB{% else %}—{% endif %}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  {% endif %}
+</div>
+</section>
+{% endif %}
 <section class="config-sub" data-sub="sistema"{% if aba_config != "sistema" %} hidden{% endif %}>
 <div class="cartao">
   <div class="cartao-cab"><h3>Onde ficam as coisas</h3></div>

@@ -105,6 +105,7 @@ TODAS_AS_TELAS = [
     ("POST", "/analisesps/faturamento/nota/123/omie"),
     ("POST", "/analisesps/api/omie/marcar-pago"),
     ("POST", "/analisesps/api/encaminhar/previa"),
+    ("POST", "/analisesps/api/sp/123/comprovante"),
     ("GET", "/analisesps/arquivo/ver"),
     ("POST", "/analisesps/api/encaminhar/mensagem"),
     ("POST", "/analisesps/api/encaminhar/contatos"),
@@ -128,6 +129,8 @@ TODAS_AS_TELAS = [
     ("POST", "/analisesps/api/conciliacao/desfazer"),
     ("POST", "/analisesps/api/conciliacao/soltar-presas"),
     ("POST", "/analisesps/api/conciliacao/apagar-linha"),
+    ("POST", "/analisesps/api/conciliacao/apagar-linhas"),
+    ("GET",  "/analisesps/conciliacao/exportar"),
     ("GET",  "/analisesps/folha/rateio"),
     # O CADASTRO mostra nome, CPF e o valor dos auxílios de ~3.500 pessoas. É
     # dado pessoal em volume: esta linha é o que garante que a tela não fique

@@ -12228,6 +12228,192 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 230 — Conciliação: menos ferramenta, mais o que se usa (14/10/2026)
+
+- **Leva 230 publicada em 14/10/2026** (sem migração; suíte inteira verde).
+- **Saíram, a pedido do dono** (*"não serviu pra nada"*): o "Importar só até /
+  Conferir de novo" da conferência do OFX e a janela "Onde o saldo não bate"
+  (módulo `conciliacao_saldo.py`, rotas e botão). Os saldos digitados nela
+  ficaram em `analisesps.meta` (chaves `conciliacao_saldos_<conta>`), sem uso —
+  inofensivos.
+- **Na conferência do OFX, o saldo da conta antes e depois de gravar**, sempre:
+  *"exibir o novo saldo após a importação dos novos lançamentos"*. Junto, quando
+  o arquivo traz saldo, a comparação com o banco (como antes).
+- **A lista do extrato mostra 500 linhas por página** (eram 200).
+- **A data de início sumia ao editar a conta** — e gravar de novo APAGAVA a
+  data: ela chegava ao formulário como "Wed, 30 Sep 2026 00:00:00 GMT", que o
+  campo de data não entende. Agora vira 30/09/2026. E o "Saldo do banco no fim
+  desse dia" aparece e se formata em reais (2.650,67).
+- **Exportar o extrato em PDF ou planilha** (links "exportar: PDF · planilha"
+  ao lado da contagem de linhas): o filtro da tela, todas as páginas, em ordem
+  de data, com saldo corrido, conciliado sim/não, por quem, observação e OMIE.
+  `conciliacao_exportar.py`; teto de 20 mil linhas. Liberado o `openpyxl` nele
+  no teste de dependências (só escreve; não lê a base de SPs).
+- **A linha com SP ficava alta** (documento, SP, situação, clipe e "sem baixa",
+  cada um numa linha): agora é uma fileira que só quebra quando precisa, a
+  coluna Documento ficou mais larga (190 px, o Histórico cedeu) e "sem baixa"
+  entrou na etiqueta da situação ("Pagar · sem baixa").
+
+#### Leva 229 — O Invest Fácil sai do extrato por padrão (14/10/2026)
+
+- O dono comparou os dois jeitos de tirar o OFX no Bradesco (conta 50024,
+  outubro): o da TELA ("por período") só exporta a página que aparece, e pode
+  sair incompleto; o "POR ARQUIVO" sai completo, mas traz "RESGATE INVEST FACIL"
+  e "APLIC.INVEST FACIL" — o banco pondo e tirando dinheiro da aplicação
+  automática —, e o saldo da conta corrente fica perto de zero (0,00 no arquivo
+  dele). *"A gente sempre trabalhou ignorando essas duas rubricas (…) o padrão é
+  não incluí-las, mas me permitir incluir ou não."*
+- **Conferido com os dois arquivos dele:** de 01 a 09/10, tirando as 8 linhas
+  dessas rubricas, os dois formatos têm as MESMAS 468 linhas, com a mesma
+  identidade — importar um e depois o outro não duplica. Única diferença: uma
+  "RENTAB.INVEST FACIL" de R$ 0,40 em 09/10 que só o da tela trouxe. O da tela,
+  neste caso, saiu completo (541 linhas, 01 a 14/10; o pulo de 09 para 13/10 é
+  sábado, domingo e feriado), com saldo de R$ 700.267,01.
+- **Levas 228 e 229 publicadas em 14/10/2026** (sem migração; suíte inteira
+  verde).
+- **Feito:** as duas rubricas saem por padrão na conferência e na gravação, com
+  "Incluir mesmo assim" (e "Deixar de fora" para voltar). A rentabilidade fica.
+- **O saldo desse arquivo é descartado** quando elas saem: é o da conta
+  corrente depois das aplicações, e o que foi aplicado antes do período não
+  está no arquivo para ser somado de volta. A conferência não o compara, e o
+  arquivo não vira ponto no "Onde o saldo não bate". O saldo da conciliação
+  continua vindo da data de início + saldo do fim daquele dia (o da tela do
+  banco, "como se não houvesse aplicação") + os lançamentos.
+
+#### Leva 228 — Configurações › Banco e base › "Espaço no banco" (14/10/2026)
+
+- O dono viu o banco do Render em **73%** e se assustou: *"o que é isso tanto?
+  (…) se eu começar a rodar o ERP, não vai dar para nada (…) o combinado é que
+  tudo que seja arquivo, foto, vai para o Google Drive."*
+- **Por que ninguém sabia:** a tela de saúde do ERP mede só o esquema `public`
+  (o ERP). Painel, Análise de SPs, Ponto e Mensageria ficam em esquemas
+  próprios do MESMO banco e não entravam na conta.
+- **O que foi feito:** seção "Espaço no banco" (só o mestre, na aba Banco e
+  base): total, cada área em MB e %, e as 30 maiores tabelas do banco inteiro,
+  com dados / textos grandes / índices / linhas / espaço morto estimado.
+  Só lê o catálogo do Postgres. `espaco_banco.py`.
+- **Ainda não se sabe o culpado** — depende do número de produção, que só ele
+  vê. Suspeitos, pelo código (não confirmados): o espelho do OMIE no Painel; a
+  fila de fotos e documentos do Ponto (ficam no banco até subir ao Drive); os
+  anexos antigos do ERP guardados no banco (migração 010, antes do Drive);
+  históricos que só crescem (log de alterações, execuções, métricas de saúde do
+  ERP); e espaço morto de cargas que apagam e recarregam tabelas inteiras.
+- O que mexer em cada área é com o chat daquela área; aqui só a medida.
+- O disco do Render pode contar também arquivos internos do Postgres (o
+  registro de transações) que não aparecem em tamanho de tabela — se o total
+  daqui for bem menor que os 73% do Render, a diferença está aí.
+
+#### Leva 227 — A conciliação vale a partir de um dia; listas inteiras na conferência (14/10/2026)
+
+- *"O sistema de conciliação é novo; de repente eu quero só fazer ele valer do
+  mês de setembro para frente (…) o que está muito para trás não me importa mais
+  (…) acho que é melhor só um único saldo."* **Uma informação só, que já
+  existia:** o "saldo inicial" era o saldo NO FIM de um dia. Ele virou, no
+  cadastro da conta, **"A conciliação vale depois do dia [data]" + "Saldo do
+  banco no fim desse dia"** (mesmos campos, sem migração). O que faltava era o
+  resto obedecer — agora o que é daquele dia ou anterior:
+  - fica **guardado**, mas fora da lista, dos números do topo, do Panorama
+    (contas, pendências, maiores sem conferência, quem conciliou) e da lista
+    "está aqui e não vem no extrato" da conferência;
+  - **não entra** num OFX importado (a conferência diz quantos ficaram de fora);
+  - aparece com **"ver o que é anterior"** na lista, sem saldo na coluna Saldo.
+  - Escolha minha: "anterior" é invisível por padrão, não apagado — se a data
+    voltar para trás, as linhas reaparecem sozinhas. As que um OFX deixou de fora
+    por serem anteriores, essas sim precisam ser importadas de novo.
+- **As listas da conferência do OFX agora vêm inteiras** (até 1.000, numa caixa
+  com rolagem), não mais 15: o que vai entrar e o que está aqui e não vem no
+  extrato. Esta última tem **caixinhas e "Excluir as marcadas…"** (as que
+  parecem repetidas já vêm marcadas; mesmas travas de sempre: motivo
+  obrigatório, a lançada no OMIE fica) e confere o arquivo de novo depois.
+- **Lançamento de outra conta que entrou nesta** (o caso que o dono levantou):
+  é a lista "está aqui e não vem neste extrato" — agora com caixinhas. Antes de
+  liberar, corrigi uma armadilha: o OFX do Bradesco põe o DIA DO DOWNLOAD no
+  lugar do período, e a comparação se esticava até ele — um extrato de setembro
+  baixado em 14/10 acusaria como sobra os lançamentos CERTOS de 01 a 14/10.
+  Agora, com cabeçalho início = fim, a comparação vai só até a última linha do
+  arquivo. E a sobra num dia em que o arquivo não traz nada vem com o aviso
+  "confira se o extrato cobre este dia antes de excluir" (o arquivo pode ter um
+  buraco, como o dos "últimos lançamentos").
+- **Leva 227 publicada em 14/10/2026** (sem migração; suíte inteira verde,
+  main já no ramo).
+- Sobre "informar dois saldos, um no começo e um no fim da faixa": é o que a
+  janela "Onde o saldo não bate" faz com dois saldos digitados — respondido ao
+  dono, sem código novo.
+
+#### Leva 226 — Os "últimos lançamentos" do Bradesco e "Onde o saldo não bate" (14/10/2026)
+
+- O dono gerou o OFX de 01 a 05/10 (conta 50302) e o arquivo trouxe seis linhas
+  de 13/10 que ele não pediu — os "últimos lançamentos" que o Bradesco acrescenta.
+  **Nada no arquivo as distingue** (conferi o arquivo dele): mesmo formato, mesmo
+  FITID, o cabeçalho diz o dia do download (14/10) no lugar do período, e o saldo
+  vem SEM data (`DTASOF 00000000`).
+- **O corte é só onde a pessoa disser:** campo "Importar só até [data]" na
+  conferência, com "Incluir tudo" para desfazer. A mesma escolha vai na
+  conferência e na gravação; as linhas cortadas entram quando o extrato daquele
+  período for importado.
+  - **Decisão do dono (14/10/2026):** cheguei a fazer o reconhecimento
+    automático pelo calendário (bloco perto do download depois de 6+ dias sem
+    nada, cortado por padrão). Ele recusou: *"se não tem nada no arquivo que
+    identifique, não pode utilizar esse recurso"*. Saiu antes de publicar.
+  - Pista não usada: o FITID do Bradesco cresce em passos parecidos, e entre a
+    última linha de 05/10 e a primeira de 13/10 o salto foi quase o triplo. Um
+    arquivo só, e o FITID do Bradesco já se mostrou instável (setembro) — só
+    vale olhar de novo com mais arquivos.
+- **O saldo do arquivo** passa a ser lido como o saldo do DIA DO DOWNLOAD (quando
+  o banco não diz a data), e a conferência compara "como ficaria depois de
+  gravar" — antes comparava sem as linhas novas e dava "não bate" em quase todo
+  extrato novo. As linhas deixadas de fora que ainda não estão aqui entram na
+  conta, porque o saldo do banco já as inclui.
+- **"Onde o saldo não bate"** (botão no título da Conciliação, também para quem
+  só consulta): cada saldo do banco é um ponto de conferência — o de cada OFX
+  importado, o saldo inicial e os **saldos digitados** do extrato do banco (fim
+  do dia; ficam em `analisesps.meta`, sem migração). Do mais novo para o mais
+  antigo, onde a diferença MUDA está o desencontro; naquele intervalo a janela
+  aponta lançamento do mesmo valor da diferença, repetidos (mesmo dia e valor, ou
+  mesmo texto em até 3 dias), dois que somam a diferença e os que não vieram de
+  extrato — e sugere o dia do meio para o próximo saldo (cada um corta o
+  intervalo pela metade). `conciliacao_saldo.py`.
+- O saldo de um OFX é o da HORA do download; o digitado (fim do dia) é o mais
+  confiável. Dito na própria janela.
+- **Levas 224 a 226 publicadas em 14/10/2026** (sem migração; suíte inteira
+  verde, com a main já no ramo).
+- Não testado com o banco de produção: o diagnóstico depende dos arquivos que
+  ele já importou. O arquivo dele foi usado só para conferir a tela; não entrou
+  no repositório (os testes usam valores inventados).
+
+#### Leva 225 — Excluir as linhas marcadas na Conciliação (14/10/2026)
+
+- *"Adicionar botão de exclusão de lançamentos dentro da conciliação, dos
+  selecionados. Pode colocar ao lado do Lançar no OMIE."* Botão **"Excluir
+  selecionados…"** na barra, ao lado do Lançar no OMIE, só para quem opera.
+- As travas são as do × de cada linha (26/09/2026), repetidas: primeiro a tela
+  diz quantas saem, quanto somam, quantas estão conciliadas ou com observação;
+  depois pede o **motivo** (obrigatório, um só para todas, vai ao log linha a
+  linha). A linha **já lançada no OMIE fica** — e não segura as outras: a
+  pergunta avisa quantas ficam, e o recado final também. Teto de 500 por vez.
+- `conciliacao.o_que_apagar_as_linhas_leva` / `apagar_linhas`, rota
+  `/api/conciliacao/apagar-linhas`.
+
+#### Leva 224 — Substituir o comprovante de uma SP (14/10/2026)
+
+- *"Teve um comprovante que eu tentei baixar e está em erro. Como a gente
+  poderia fazer para eu poder substituir, caso eu entenda necessário?"*
+- Mandar de novo pela fila de comprovantes NÃO resolveria: o BaixaBradesco
+  reaproveita o link que a SPsBD já tem e ignora o arquivo novo
+  (`baixabradesco/core.py`). Por isso a troca é direta, na **ficha da SP**:
+  "Substituir comprovante" (ou "Pôr comprovante", se não houver), só para quem
+  opera. Duas formas:
+  - **arquivo** (PDF, PNG ou JPG, até 10 MB — o tipo é conferido pelo
+    conteúdo, não pelo nome): sobe para a MESMA pasta do Dropbox do
+    BaixaBradesco, com o número da SP e a data no nome; nunca por cima de outro;
+  - **link colado**, quando o comprovante certo já está em algum lugar.
+- O link novo vai para a coluna AG pelo caminho de toda alteração (banco, fila
+  da planilha, log). **O link antigo fica no Log** — trocar não apaga o que
+  havia. O card do Pipefy NÃO é tocado (decisão minha: não foi pedido; se o
+  dono quiser o arquivo novo também no card, é outro passo).
+- `substituir_comprovante.py`, rota `/api/sp/<id>/comprovante`.
+- Não testado com o Dropbox de verdade (só simulado).
+
 #### Leva 223 — A janela de ver vale sempre; anexo e comprovante na tela de códigos (13/10/2026)
 
 - *"Quando abro a SP e clico no anexo, ele pergunta se quero baixar (…) eu

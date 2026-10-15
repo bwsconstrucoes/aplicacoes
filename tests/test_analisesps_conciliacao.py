@@ -101,10 +101,13 @@ def test_o_periodo_DECLARADO_pelo_banco_nao_pode_encolher_o_arquivo():
     mentiroso = EXTRATO.replace("<DTSTART>20260901<DTEND>20260930",
                                 "<DTSTART>20260925<DTEND>20260925")
     lido = conciliacao_ofx.ler(mentiroso.encode("utf-8"))
-    # A união: cobre o que o banco declarou E o que o arquivo de fato traz.
     assert lido.periodo_ini == dt.date(2026, 9, 10), (
         "o período começou depois do lançamento mais antigo do arquivo")
-    assert lido.periodo_fim == dt.date(2026, 9, 25)
+    # ⚠️ E O DIA DO DOWNLOAD NÃO ESTICA O FIM (14/10/2026): esticar fazia os
+    # lançamentos certos até o download aparecerem como sobra — e a lista de
+    # sobras agora tem caixinha para excluir. Vale o que o arquivo traz.
+    assert lido.periodo_fim == max(l.data for l in lido.lancamentos)
+    assert lido.baixado_em == dt.date(2026, 9, 25)
 
 
 def test_o_periodo_declarado_MAIOR_que_o_conteudo_continua_valendo():
@@ -575,7 +578,7 @@ def test_o_saldo_avisa_quando_a_conta_nao_tem_saldo_inicial(app_com_dados):
     número soma só o que foi importado, e o que veio antes disso falta."""
     html = como(app_com_dados).get(
         "/analisesps/conciliacao").get_data(as_text=True)
-    assert "sem saldo inicial" in html
+    assert "sem data de início" in html
 
 
 def test_o_historico_quebra_a_linha_em_vez_de_sumir(app_com_dados):
@@ -730,7 +733,7 @@ def test_o_panorama_desenha_a_fita_dos_doze_meses(app_panorama):
 def test_o_panorama_avisa_das_contas_sem_saldo_inicial(app_panorama):
     html = como(app_panorama).get(
         "/analisesps/conciliacao/panorama").get_data(as_text=True)
-    assert "sem saldo inicial" in html
+    assert "sem data de início" in html
 
 
 def test_do_panorama_da_para_ir_direto_ao_que_falta(app_panorama):

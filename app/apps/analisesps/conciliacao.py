@@ -29,10 +29,14 @@ logger = logging.getLogger("analisesps.conciliacao")
 # Quantas linhas a tela mostra de uma vez. A conciliação se faz olhando uma
 # conta num período — não varrendo 60 mil linhas. 200 desde 02/10/2026, pedido
 # do dono: *"exibir os últimos 200 lançamentos"*.
-POR_PAGINA = 200
+POR_PAGINA = 500
 
 # O teto de linhas de um arquivo só. Um OFX de um ano tem alguns milhares.
 MAX_LINHAS_POR_ARQUIVO = 20000
+# As listas da conferência (o que entra e o que sobra aqui), inteiras até
+# este teto — antes eram 15 linhas (14/10/2026: "você não está vendo o que
+# está colocando").
+MAX_SO_AQUI_NA_TELA = 1000
 
 
 class ErroDaConciliacao(RuntimeError):
@@ -300,6 +304,24 @@ def conferir(conta_id: int, lido) -> dict:
     # primeira vez não encontra nada para fazer.
     refazer_identidades(conta_id)
 
+    # ⚠️ O QUE É ANTERIOR AO INÍCIO DA CONCILIAÇÃO DESTA CONTA NÃO ENTRA
+    # (14/10/2026): a conciliação vale do dia seguinte ao saldo inicial em
+    # diante. Entrar não mudaria o saldo, mas encheria a lista de "novos" que
+    # ninguém vai conferir. A tela diz quantos ficaram de fora.
+    conta_do_inicio = next((c for c in contas(so_ativas=False)
+                            if c["id"] == int(conta_id)), None) or {}
+    inicio = conta_do_inicio.get("saldo_inicial_em")
+    anteriores = [l for l in lido.lancamentos if inicio and l.data and l.data <= inicio]
+    if anteriores:
+        from dataclasses import replace
+        from datetime import timedelta
+        ficam = [l for l in lido.lancamentos if not (l.data and l.data <= inicio)]
+        datas = [l.data for l in ficam if l.data]
+        lido = replace(lido, lancamentos=ficam,
+                       periodo_ini=max(lido.periodo_ini or inicio, inicio + timedelta(days=1))
+                       if datas else lido.periodo_ini,
+                       transacoes_no_arquivo=max(0, lido.transacoes_no_arquivo - len(anteriores)))
+
     # ⚠️ NÃO É UM DICIONÁRIO POR MARCA. Era — e duas linhas iguais caíam na
     # mesma chave, viravam uma, e a diferença era contada como "já estava".
     # `marcas_do_arquivo` numera as repetições, então nunca há duas iguais.
@@ -375,7 +397,7 @@ def conferir(conta_id: int, lido) -> dict:
             "SELECT id, data, descricao, valor, origem, conciliado, documento "
             "  FROM analisesps.conciliacao_extrato "
             " WHERE conta_id = ? AND data >= ? AND data <= ? "
-            "   AND impressao <> ALL(?) "
+            "   AND impressao <> ALL(?) AND " + _so_o_que_vale() +
             " ORDER BY data, id",
             (conta_id, lido.periodo_ini, lido.periodo_fim,
              list(por_impressao) or [""]))
@@ -388,11 +410,16 @@ def conferir(conta_id: int, lido) -> dict:
         conteudos = {(l.data, Decimal(l.valor), descricao_da_linha(l).strip(),
                       documento_da_linha(l).strip()) for l in lido.lancamentos}
         so_aqui = []
+        # Os dias em que o ARQUIVO tem alguma linha. Sobra num dia em que o
+        # arquivo não traz nada pode ser sobra mesmo — ou um pedaço que o
+        # banco não pôs no arquivo. A tela marca, para a pessoa olhar antes.
+        dias_do_arquivo = {l.data for l in lido.lancamentos if l.data}
         for linha in linhas:
             if linha[0] in serao_adotadas:
                 continue
             item = dict(zip(["id", "data", "descricao", "valor", "origem",
                              "conciliado", "documento"], linha))
+            item["dia_vazio"] = item["data"] not in dias_do_arquivo
             item["repetida"] = (
                 item["origem"] == "ofx"
                 and (item["data"], Decimal(item["valor"]),
@@ -410,7 +437,13 @@ def conferir(conta_id: int, lido) -> dict:
     # está aqui com o sinal contrário. Não adota (ver a função), mas avisa.
     sinal_trocado = sinal_trocado_na_planilha(conta_id, [l for _m, l in novas])
 
+    aplicacoes = list(getattr(lido, "aplicacoes", ()) or ())
     return {
+        "aplicacoes_total": len(aplicacoes),
+        "aplicacoes_soma": sum((l.valor for l in aplicacoes), Decimal("0")),
+        "anteriores_total": len(anteriores),
+        "inicio": inicio,
+        "baixado_em": getattr(lido, "baixado_em", None),
         "sinal_trocado": sinal_trocado,
         "conta_id": conta_id,
         "presas": presas,
@@ -828,10 +861,38 @@ SITUACOES = {
 }
 
 
+# ---------------------------------------------------------------------------
+# A CONCILIAÇÃO VALE A PARTIR DE UM DIA — 14/10/2026
+#
+# O dono: *"o sistema de conciliação é novo; de repente eu quero só fazer ele
+# valer do mês de setembro para frente (…) o que está muito para trás não me
+# importa mais (…) melhor uma única informação de saldo."*
+#
+# A informação única já existia: o saldo inicial é o saldo NO FIM de um dia, e
+# o que é daquele dia ou anterior não entra na soma. Faltava o resto da tela
+# obedecer: a lista, os números do topo, o Panorama e a conferência do OFX
+# continuavam mostrando e cobrando o que é anterior. Agora tudo começa no dia
+# seguinte. O que é anterior CONTINUA GUARDADO (nada é apagado) e pode ser
+# visto pela lista, com "ver o que é anterior".
+# ---------------------------------------------------------------------------
+def _so_o_que_vale(alias: str = "") -> str:
+    """Condição SQL: a linha é posterior ao início da conciliação da conta
+    dela. Sem a coluna (migração 020 não aplicada), não filtra nada."""
+    from .db import tem_coluna
+    if not tem_coluna("conciliacao_conta", "saldo_inicial_em"):
+        return "TRUE"
+    a = f"{alias}." if alias else ""
+    return ("NOT EXISTS (SELECT 1 FROM analisesps.conciliacao_conta c0 "
+            f"WHERE c0.id = {a}conta_id AND c0.saldo_inicial_em IS NOT NULL "
+            f"AND {a}data <= c0.saldo_inicial_em)")
+
+
 def _onde(f: dict) -> tuple[str, list]:
     """O filtro da barra, traduzido. Tudo por parâmetro, nunca costurado."""
     onde = ["conta_id = ?"]
     params: list = [int(f.get("conta_id") or 0)]
+    if not f.get("anteriores"):
+        onde.append(_so_o_que_vale())
 
     situacao = f.get("situacao") or "todos"
     if situacao == "pendentes":
@@ -925,6 +986,12 @@ def listar(f: dict, pagina: int = 1) -> list[dict]:
     desde = conta.get("saldo_inicial_em")
     corte = " AND data > ? " if desde else " "
     antes = [desde] if desde else []
+    # "Ver o que é anterior ao início" (14/10/2026): as linhas antigas
+    # aparecem, mas SEM saldo — o saldo corrido continua começando no início.
+    soma_saldo, do_saldo = "sum(valor)", []
+    if desde and f.get("anteriores"):
+        corte, antes = " ", []
+        soma_saldo, do_saldo = "sum(CASE WHEN data > ? THEN valor ELSE 0 END)", [desde]
 
     # ⚠️ O ESTADO NO OMIE VEM JUNTO, e isto é conserto de 29/09/2026. O dono:
     # *"não fica nenhuma informação na tabela dizendo que aquela tarifa foi
@@ -940,14 +1007,14 @@ def listar(f: dict, pagina: int = 1) -> list[dict]:
         "       observacao, origem, conciliado_por, conciliado_em, saldo, "
         "       omie_situacao, omie_codigo, omie_em, omie_por, omie_erro "
         "  FROM ( "
-        "    SELECT e.*, ? + sum(valor) OVER (PARTITION BY conta_id "
+        f"    SELECT e.*, ? + {soma_saldo} OVER (PARTITION BY conta_id "
         "                                     ORDER BY data, id "
         "                                     ROWS UNBOUNDED PRECEDING) AS saldo "
         "      FROM analisesps.conciliacao_extrato e "
         f"     WHERE conta_id = ?{corte} "
         "  ) t "
         f"{onde} ORDER BY data DESC, id DESC LIMIT ? OFFSET ?",
-        tuple([inicial, int(f.get("conta_id") or 0)] + antes + params
+        tuple([inicial] + do_saldo + [int(f.get("conta_id") or 0)] + antes + params
               + [POR_PAGINA, (pagina - 1) * POR_PAGINA]))
     nomes = ["id", "data", "descricao", "documento", "valor", "conciliado",
              "observacao", "origem", "conciliado_por", "conciliado_em", "saldo",
@@ -1041,6 +1108,18 @@ def procurar_em_todas(valor=None, texto: str = "", teto: int = 40) -> list:
              "valor", "origem", "conciliado", "omie_situacao", "omie_codigo",
              "arquivo", "importado_em"]
     return [dict(zip(nomes, linha)) for linha in linhas]
+
+
+def anteriores_ao_inicio(conta_id: int) -> int:
+    """Quantas linhas são do dia do saldo inicial ou de antes — guardadas, mas
+    fora da lista e das contas (14/10/2026)."""
+    if not _pronto():
+        return 0
+    from .db import consultar_um
+    linha = consultar_um(
+        "SELECT count(*) FROM analisesps.conciliacao_extrato e "
+        " WHERE e.conta_id = ? AND NOT " + _so_o_que_vale("e"), (int(conta_id or 0),))
+    return int(linha[0]) if linha else 0
 
 
 def quantas_na_conta(conta_id: int) -> int:
@@ -1256,6 +1335,72 @@ def apagar_linha(linha_id: int, motivo: str = "", quem: str = "") -> dict:
     return {"apagadas": apagadas, "motivo": motivo, **antes}
 
 
+# ---------------------------------------------------------------------------
+# APAGAR VÁRIAS DE UMA VEZ — 14/10/2026, pedido do dono: *"adicionar botão de
+# exclusão de lançamentos dentro da conciliação, dos selecionados. Pode colocar
+# ao lado do Lançar no OMIE"*.
+#
+# É o mesmo apagar de uma linha, repetido — com as MESMAS travas: a lançada no
+# OMIE é recusada (e só ela; as outras seguem), o motivo é obrigatório e vale
+# para todas, e cada linha apagada vai ao log com o motivo, como a avulsa.
+# ---------------------------------------------------------------------------
+MAX_LINHAS_DE_UMA_VEZ = 500
+
+
+def _ids_validos(ids) -> list[int]:
+    saida = []
+    for i in ids or []:
+        texto = str(i).strip()
+        if texto.isdigit() and int(texto) not in saida:
+            saida.append(int(texto))
+    return saida[:MAX_LINHAS_DE_UMA_VEZ]
+
+
+def o_que_apagar_as_linhas_leva(ids) -> dict:
+    """O resumo para a pergunta da tela. NÃO apaga nada."""
+    if not _pronto():
+        return {"pode": False, "erro": "A conciliação ainda não foi ligada."}
+    ids = _ids_validos(ids)
+    if not ids:
+        return {"pode": False, "erro": "Marque as linhas primeiro."}
+    podem, recusadas = [], []
+    for linha_id in ids:
+        info = o_que_apagar_a_linha_leva(linha_id)
+        if info.get("pode"):
+            podem.append(info)
+        else:
+            recusadas.append({"linha_id": linha_id, "descricao": info.get("descricao", ""),
+                              "erro": info.get("erro", "")})
+    total = sum((Decimal(str(i.get("valor") or 0)) for i in podem), Decimal("0"))
+    return {"pode": bool(podem),
+            "erro": "" if podem else "Nenhuma das linhas marcadas pode ser apagada.",
+            "quantas": len(podem), "total": str(total),
+            "conciliadas": sum(1 for i in podem if i.get("conciliado")),
+            "com_observacao": sum(1 for i in podem if i.get("observacao")),
+            "recusadas": recusadas}
+
+
+def apagar_linhas(ids, motivo: str = "", quem: str = "") -> dict:
+    """Apaga as linhas marcadas, uma a uma, pelo `apagar_linha`. A recusada
+    (lançada no OMIE, ou que sumiu no meio) não para as outras: volta na lista
+    `recusadas`, com a frase."""
+    motivo = str(motivo or "").strip()[:300]
+    if not motivo:
+        raise ErroDaConciliacao(
+            "Diga por que estas linhas estão saindo — é o que vai explicar, daqui "
+            "a meses, por que o saldo mudou.")
+    ids = _ids_validos(ids)
+    if not ids:
+        raise ErroDaConciliacao("Marque as linhas primeiro.")
+    apagadas, recusadas = 0, []
+    for linha_id in ids:
+        try:
+            apagadas += apagar_linha(linha_id, motivo, quem).get("apagadas", 0)
+        except ErroDaConciliacao as e:
+            recusadas.append({"linha_id": linha_id, "erro": str(e)})
+    return {"apagadas": apagadas, "recusadas": recusadas, "motivo": motivo}
+
+
 def acrescentar_a_mao(conta_id: int, data, descricao: str, valor,
                       documento: str = "", observacao: str = "",
                       quem: str = "") -> int:
@@ -1308,12 +1453,28 @@ def resumo_para_a_tela(conferido: dict, conta_id: int,
         "data": lanc.data.isoformat(),
         "valor": str(lanc.valor),
         "descricao": (lanc.memo or "")[:120],
-    } for _marca, lanc in novas[:15]]
+    } for _marca, lanc in novas[:MAX_SO_AQUI_NA_TELA]]
 
     conta = next((c for c in contas(so_ativas=False)
                   if c["id"] == int(conta_id)), None)
-    saldo_aqui = saldo_da_conta(conta_id, conferido.get("periodo_fim"))
+    # O saldo do banco é do dia que ELE diz (ou do dia do download, quando
+    # não diz — Bradesco); compara-se com o daqui no mesmo dia.
+    data_do_saldo = conferido.get("saldo_em") or conferido.get("periodo_fim")
+    saldo_aqui = saldo_da_conta(conta_id, data_do_saldo)
+    # Na conferência (antes de gravar), o daqui é "como ficaria": com as novas.
+    # Comparar sem elas dava "não bate" em todo extrato novo.
+    soma_das_novas = sum((l.valor for _m, l in novas), Decimal("0"))
+    previa = conferido.get("gravadas") is None
+    if previa:
+        saldo_aqui += soma_das_novas
     saldo_banco = conferido.get("saldo")
+    # O SALDO DA CONTA ANTES E DEPOIS DE GRAVAR (14/10/2026) — pedido do dono:
+    # *"na importação do extrato, exibir o novo saldo após a importação dos
+    # novos lançamentos"*. É o saldo da conta inteira (o número do topo da
+    # tela), não o do dia do arquivo.
+    saldo_conta = saldo_da_conta(conta_id)
+    saldo_antes = saldo_conta if previa else saldo_conta - soma_das_novas
+    saldo_depois = saldo_conta + soma_das_novas if previa else saldo_conta
 
     return {
         "conta_id": conta_id,
@@ -1337,13 +1498,19 @@ def resumo_para_a_tela(conferido: dict, conta_id: int,
         "gravadas": conferido.get("gravadas"),
         "amostra": amostra,
         "amostra_parcial": len(novas) > len(amostra),
+        # ⚠️ A LISTA INTEIRA, e não mais 15 (14/10/2026). O dono: *"realmente
+        # fica limitado, você não está vendo o que é que está colocando"*. É a
+        # lista do que SOBRA aqui — e a tela deixa marcar e excluir dali.
         "so_aqui": [{
+            "id": l.get("id"),
             "data": l["data"].isoformat() if l.get("data") else "",
             "descricao": (l.get("descricao") or "")[:120],
             "valor": str(l.get("valor") or 0),
             "origem": l.get("origem", ""),
             "repetida": bool(l.get("repetida")),
-        } for l in (conferido.get("so_aqui") or [])[:15]],
+            "dia_vazio": bool(l.get("dia_vazio")),
+            "conciliado": bool(l.get("conciliado")),
+        } for l in (conferido.get("so_aqui") or [])[:MAX_SO_AQUI_NA_TELA]],
         "so_aqui_total": len(conferido.get("so_aqui") or []),
         "repetidas_total": sum(1 for l in (conferido.get("so_aqui") or [])
                                if l.get("repetida")),
@@ -1372,6 +1539,16 @@ def resumo_para_a_tela(conferido: dict, conta_id: int,
         # extrato está completo — e isso nenhuma contagem de linhas prova.
         "saldo_banco": str(saldo_banco) if saldo_banco is not None else "",
         "saldo_aqui": str(saldo_aqui),
+        "saldo_em": data_do_saldo.isoformat() if data_do_saldo else "",
+        "baixado_em": (conferido["baixado_em"].isoformat()
+                       if conferido.get("baixado_em") else ""),
+        "saldo_conta_antes": str(saldo_antes),
+        "saldo_conta_depois": str(saldo_depois),
+        "soma_das_novas": str(soma_das_novas),
+        "anteriores_total": conferido.get("anteriores_total", 0),
+        "aplicacoes_total": conferido.get("aplicacoes_total", 0),
+        "aplicacoes_soma": str(conferido.get("aplicacoes_soma") or 0),
+        "inicio": (conferido["inicio"].isoformat() if conferido.get("inicio") else ""),
         "saldo_bate": (saldo_banco is not None
                        and Decimal(str(saldo_banco)) == Decimal(str(saldo_aqui))),
     }
@@ -1720,7 +1897,7 @@ def panorama(ano: int) -> dict:
             "       coalesce(sum(valor) FILTER (WHERE valor > 0), 0), "
             "       coalesce(sum(valor) FILTER (WHERE valor < 0), 0) "
             "  FROM analisesps.conciliacao_extrato "
-            " WHERE extract(year FROM data) = ? "
+            " WHERE extract(year FROM data) = ? AND " + _so_o_que_vale() +
             " GROUP BY 1, 2", (int(ano),)):
         (conta_id, mes, quantas, soma, pendentes, pendente_valor,
          com_obs, entradas, saidas) = linha
@@ -1742,7 +1919,8 @@ def panorama(ano: int) -> dict:
             "       (SELECT max(e.data) FROM analisesps.conciliacao_extrato e "
             "         WHERE e.conta_id = c.id), "
             "       (SELECT count(*) FROM analisesps.conciliacao_extrato e "
-            "         WHERE e.conta_id = c.id AND NOT e.conciliado) "
+            "         WHERE e.conta_id = c.id AND NOT e.conciliado AND "
+            + _so_o_que_vale("e") + ") "
             "  FROM analisesps.conciliacao_conta c WHERE c.ativa"):
         ultimos[int(linha[0])] = {"importado_em": linha[1],
                                   "ate": linha[2],
@@ -1878,7 +2056,7 @@ def _recado_da_conta(conta: dict, buracos: list, nao_vieram: list,
                 "texto": f"{pendentes} lançamento(s) por conciliar"}
     if not conta.get("saldo_inicial_em"):
         return {"grau": "atencao",
-                "texto": "sem saldo inicial — o saldo pode não bater"}
+                "texto": "sem data de início — o saldo pode não bater"}
     return {"grau": "bom", "texto": "em dia"}
 
 
@@ -2105,7 +2283,8 @@ def panorama_do_ano(ano: int) -> dict:
             "       coalesce(sum(valor) FILTER (WHERE valor < 0), 0), "
             "       count(*) FILTER (WHERE NOT conciliado) "
             "  FROM analisesps.conciliacao_extrato "
-            " WHERE extract(year FROM data) = ? GROUP BY 1 ORDER BY 1",
+            " WHERE extract(year FROM data) = ? AND " + _so_o_que_vale() +
+            " GROUP BY 1 ORDER BY 1",
             (int(ano),)):
         meses.append({"mes": int(linha[0]), "quantidade": int(linha[1] or 0),
                       "entradas": linha[2] or 0, "saidas": linha[3] or 0,
@@ -2119,8 +2298,8 @@ def panorama_do_ano(ano: int) -> dict:
         "       count(*) FILTER (WHERE data < ? - INTERVAL '30 days' "
         "                          AND data >= ? - INTERVAL '90 days'), "
         "       min(data) "
-        "  FROM analisesps.conciliacao_extrato WHERE NOT conciliado",
-        (hoje, hoje, hoje, hoje))
+        "  FROM analisesps.conciliacao_extrato WHERE NOT conciliado AND "
+        + _so_o_que_vale(), (hoje, hoje, hoje, hoje))
 
     # 3) Onde o risco está concentrado: os maiores sem conferência.
     maiores = [{
@@ -2130,7 +2309,7 @@ def panorama_do_ano(ano: int) -> dict:
         "SELECT e.id, c.nome, e.data, e.descricao, e.valor, e.conta_id "
         "  FROM analisesps.conciliacao_extrato e "
         "  JOIN analisesps.conciliacao_conta c ON c.id = e.conta_id "
-        " WHERE NOT e.conciliado "
+        " WHERE NOT e.conciliado AND " + _so_o_que_vale("e") +
         " ORDER BY abs(e.valor) DESC LIMIT 10")]
 
     # 4) Quem fez o trabalho. Conciliação é trabalho de gente.
@@ -2138,7 +2317,7 @@ def panorama_do_ano(ano: int) -> dict:
              "ultima": l[2]} for l in consultar(
         "SELECT conciliado_por, count(*), max(conciliado_em) "
         "  FROM analisesps.conciliacao_extrato "
-        " WHERE conciliado AND extract(year FROM data) = ? "
+        " WHERE conciliado AND extract(year FROM data) = ? AND " + _so_o_que_vale() +
         " GROUP BY 1 ORDER BY 2 DESC LIMIT 8", (int(ano),))]
 
     return {

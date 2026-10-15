@@ -56,6 +56,12 @@ class ExtratoLido:
     # `len(lancamentos)`, é o que denuncia linha perdida na leitura — ver
     # `contar_transacoes` no parser e o incidente de 28/09/2026.
     transacoes_no_arquivo: int = 0
+    # O dia em que o arquivo foi BAIXADO — o Bradesco o escreve no cabeçalho no
+    # lugar do período (25/09/2026). É a data do saldo quando o banco não diz
+    # outra (14/10/2026: DTASOF veio "00000000").
+    baixado_em: date | None = None
+    # As aplicações e resgates automáticos deixados de fora (Invest Fácil).
+    aplicacoes: tuple = ()
 
 
 def _campo(texto: str, tag: str) -> str:
@@ -113,6 +119,8 @@ def ler(conteudo: bytes) -> ExtratoLido:
 
     ini = _data(_campo(texto, "DTSTART"))
     fim = _data(_campo(texto, "DTEND"))
+    # Cabeçalho com início = fim é o dia do download, não um período.
+    baixado_em = fim if (fim and ini == fim) else None
     datas = [x.data for x in lancamentos]
 
     # ⚠️ O PERÍODO DECLARADO PELO BANCO NÃO MANDA SOZINHO — ele mente.
@@ -133,6 +141,13 @@ def ler(conteudo: bytes) -> ExtratoLido:
     if datas:
         ini = min([ini] + datas) if ini else min(datas)
         fim = max([fim] + datas) if fim else max(datas)
+    # ⚠️ MAS O DIA DO DOWNLOAD NÃO É PERÍODO (14/10/2026). Quando o cabeçalho
+    # tem início = fim, é o dia em que o arquivo foi baixado, e esticar a
+    # janela até ele fazia um extrato de setembro baixado em 14/10 acusar como
+    # "está aqui e não vem no extrato" os lançamentos CERTOS de 01 a 14/10 — e
+    # essa lista agora tem caixinha para excluir. Aí vale só o que o arquivo traz.
+    if baixado_em and datas:
+        ini, fim = min(datas), max(datas)
 
     return ExtratoLido(
         bankid=re.sub(r"\D", "", _campo(texto, "BANKID")),
@@ -140,10 +155,13 @@ def ler(conteudo: bytes) -> ExtratoLido:
         periodo_ini=ini,
         periodo_fim=fim,
         saldo=_decimal(_campo(texto, "BALAMT")),
-        saldo_em=_data(_campo(texto, "DTASOF")),
+        # Sem DTASOF (o Bradesco manda "00000000"), o saldo é o do dia em que
+        # o arquivo foi baixado — ele já conta os "últimos lançamentos".
+        saldo_em=_data(_campo(texto, "DTASOF")) or baixado_em,
         lancamentos=lancamentos,
         impressao=hashlib.sha256(conteudo).hexdigest(),
         transacoes_no_arquivo=contar_transacoes(conteudo),
+        baixado_em=baixado_em,
     )
 
 
@@ -250,3 +268,44 @@ def marcas_do_arquivo(conta_id: int, lancamentos: list) -> list:
         vezes[chave] = vezes.get(chave, 0) + 1
         saida.append((impressao_da_linha(conta_id, lanc, vezes[chave]), lanc))
     return saida
+
+
+# ---------------------------------------------------------------------------
+# AS APLICAÇÕES E RESGATES AUTOMÁTICOS (INVEST FÁCIL) — 14/10/2026
+#
+# O dono: o extrato "por arquivo" do Bradesco é o único que sai completo, mas
+# traz duas rubricas que o extrato da tela não traz — "RESGATE INVEST FACIL" e
+# "APLIC.INVEST FACIL", o banco tirando e pondo dinheiro na aplicação
+# automática. Com elas, o saldo da conta corrente fica perto de zero. *"A gente
+# sempre trabalhou ignorando essas duas rubricas (…) o padrão é não incluí-las,
+# mas me permitir incluir ou não."*
+#
+# Conferido com os dois arquivos dele (conta 50024, 01 a 09/10): tirando as 8
+# linhas dessas rubricas, os dois formatos têm EXATAMENTE as mesmas linhas, com
+# a mesma identidade — importar um e depois o outro não duplica nada. A
+# rentabilidade ("RENTAB.INVEST FACIL") aparece nos dois e fica.
+#
+# ⚠️ O SALDO DESSE ARQUIVO NÃO SERVE quando as rubricas saem: ele é o da conta
+# corrente DEPOIS das aplicações (0,00 no arquivo dele), e o que foi aplicado
+# antes do período não está no arquivo para ser somado de volta. A conferência
+# deixa de comparar o saldo nesse caso, e o arquivo não vira ponto de
+# conferência no "Onde o saldo não bate".
+# ---------------------------------------------------------------------------
+RUBRICAS_DE_APLICACAO = re.compile(r"\b(RESGATE|APLIC\.?)\s*INVEST\s*FACIL\b", re.IGNORECASE)
+
+
+def e_aplicacao_automatica(lanc) -> bool:
+    return bool(RUBRICAS_DE_APLICACAO.search(" ".join(
+        str(getattr(lanc, campo, "") or "") for campo in ("memo", "nome"))))
+
+
+def sem_aplicacoes(lido: ExtratoLido) -> ExtratoLido:
+    """O extrato sem as aplicações e resgates automáticos — e sem o saldo,
+    que deixa de ser comparável (ver acima). Sem nenhuma, devolve o mesmo."""
+    from dataclasses import replace
+    saem = tuple(x for x in lido.lancamentos if e_aplicacao_automatica(x))
+    if not saem:
+        return lido
+    ficam = [x for x in lido.lancamentos if not e_aplicacao_automatica(x)]
+    return replace(lido, lancamentos=ficam, aplicacoes=saem, saldo=None,
+                   transacoes_no_arquivo=max(0, lido.transacoes_no_arquivo - len(saem)))

@@ -59,8 +59,25 @@
        {% if anexos_ficha %}data-previa="{{ anexos_ficha[0] }}" data-titulo="Anexo"{% endif %}>Anexo</a>
   {% endif %}
   {% if sp.comprovante and sp.comprovante.startswith('http') %}
-    <a class="btn secundario" href="{{ sp.comprovante }}" target="_blank" rel="noopener"
+    <a class="btn secundario ficha-comprovante" href="{{ sp.comprovante }}" target="_blank" rel="noopener"
        data-previa="{{ (sp.comprovante|links_celula or [sp.comprovante])[0] }}" data-titulo="Comprovante">Comprovante</a>
+  {% endif %}
+  {% if pode_operar %}
+    {# SUBSTITUIR O COMPROVANTE (14/10/2026): arquivo (vai para o Dropbox) ou
+       link colado. O antigo fica no Log. Ver `substituir_comprovante.py`. #}
+    <details class="substituir-comprovante">
+      <summary class="btn secundario">{{ 'Substituir comprovante' if sp.comprovante else 'Pôr comprovante' }}</summary>
+      {# `data-sem-aguarde`: o envio é pelo script, que mostra o andamento. #}
+      <form class="form-substituir-comprovante" data-sem-aguarde="1"
+            data-url="{{ url_for('analisesps.substituir_comprovante', sp_id=sp.id) }}">
+        <label class="rotulo-campo">O arquivo certo (PDF, PNG ou JPG, até 10 MB)</label>
+        <input type="file" name="arquivo" accept="application/pdf,image/png,image/jpeg">
+        <label class="rotulo-campo">… ou cole o link</label>
+        <input type="url" name="link" placeholder="https://" class="campo-largo">
+        <button class="btn" type="submit">Substituir</button>
+        <span class="cartao-dica sc-msg">O comprovante de antes fica registrado no Log.</span>
+      </form>
+    </details>
   {% endif %}
   {% if hook_omie %}
     <a class="btn secundario" href="{{ hook_omie }}?id={{ sp.id }}&acao=consultastatusomie"
