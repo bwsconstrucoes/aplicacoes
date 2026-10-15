@@ -12236,6 +12236,7 @@ somente Solicitações de uma conta especifica"*.
   alertas (…) a dinâmica toda é igual (…) a diferença é a fonte dos dados."*
   Não existia nada parecido: as outras telas pagam um CÁLCULO (folha, auxílio,
   diárias) ou a aba "Data" da DC.
+- **Leva 232 publicada em 15/10/2026** (sem migração; suíte inteira verde).
 - **Nova subtela da Folha, "Pagamento avulso"** (depois da DC), com o molde da
   DC. Um campo para COLAR (direto da planilha, ou digitado): uma linha por
   pagamento, CPF, valor e obra (opcional), em qualquer ordem — tabulação, ponto e
