@@ -219,6 +219,13 @@ junto com o `README.md` e o `PLANO.md`.
   envios, 0 erro, ida e volta ~80 ms, servidor ~40 ms; nada guardado (só a
   estatística de tempo por tela que o ERP já soma de minuto em minuto). A página
   do celular ficou como opção, para medir a internet de uma obra.
+- **Na produção (o dono rodou):** 5 aparelhos, ~6 min — 1.832 certos, 10 com erro
+  (0,5%), servidor ~107 ms (pior 1,1 s), ida e volta ~1,1 s (95%: 2,6 s, pior
+  18,8 s), memória com pico de 32%. A ida e volta é quase toda viagem (5 fotos
+  por segundo saindo da mesma internet); o pior caso e os erros eram a renovação
+  do serviço (`--max-requests 1000`, ~15–20 s sem resposta no Render). Decisão
+  do dono: `--max-requests 5000` (Procfile e Start Command). Repetido com **10
+  aparelhos: zero erros**.
 - ⚠️ A simulação é um pouco MAIS LEVE que a batida (no teste de carga local, a
   batida de verdade levou ~60 ms no servidor e a simulação ~24 ms): por isso a
   sugestão de 1 envio por segundo por celular — 5 celulares = 5 por segundo, umas

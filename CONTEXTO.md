@@ -1464,8 +1464,9 @@ emissão só procurava pelo primário. Detalhe no `HISTORICO.md` da área.
 aparelhos simulados, ~6× o pico de batidas): memória com pico de 32% dos 2 GB, e a renovação
 do serviço — ~15–20 s sem resposta no Render, com as conexões abertas caindo —
 era o único ponto ruim; com 1000 ela cairia uma vez por manhã no pico das
-batidas. **O Start Command do Render sobrescreve o Procfile**: o dono troca lá o
-mesmo texto (até isso, vale 1000). Caminho de volta: 1000 e 100.
+batidas. **O Start Command do Render sobrescreve o Procfile**: o dono trocou lá o
+mesmo texto no mesmo dia, e o teste repetido com 10 aparelhos simulados deu zero
+erros. Caminho de volta: 1000 e 100, nos dois lugares.
 
 ### 22/09/2026 — O serviço reinicia a cada 1000 acessos, não 150 (atravessa áreas)
 

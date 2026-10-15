@@ -270,9 +270,9 @@ de 500 batidas em 10 min), memória com **pico de 32%** dos 2 GB; o único ponto
 renovação do serviço no meio do teste — no Render ele fica ~15–20 s sem
 responder enquanto sobe, e as conexões abertas caem (pior caso de 18,8 s e 0,5%
 de erro). Com 1000, a renovação cairia uma vez por manhã no pico das batidas.
-**O Start Command do Render precisa ser trocado pelo dono** (a armadilha abaixo):
-até ele confirmar, a produção segue com 1000. Se a memória subir, o caminho de
-volta é o texto com 1000 e 100.
+O dono trocou o Start Command do Render no mesmo dia (os dois com 5000) e
+repetiu o teste com **10 aparelhos simulados: zero erros**. Se a memória subir, o
+caminho de volta é o texto com 1000 e 100, nos DOIS lugares.
 
 **A armadilha continua de pé, e é por isso que a nota fica:** o Start Command
 **sobrescreve o Procfile**. Como hoje os dois são iguais, mexer só no Procfile
