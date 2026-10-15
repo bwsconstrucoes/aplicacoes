@@ -247,7 +247,7 @@ Command* das Settings do Render, e ele é **idêntico**, palavra por palavra, ao
 ```
 web: gunicorn app.main:app --timeout 3600 --graceful-timeout 120 --keep-alive 120 \
      --workers 1 --threads 4 --worker-class gthread \
-     --max-requests 1000 --max-requests-jitter 100 --log-level info
+     --max-requests 5000 --max-requests-jitter 500 --log-level info
 ```
 
 Ou seja: a produção roda com **1 worker e 4 threads**, e não com 8 — a suspeita
@@ -262,6 +262,17 @@ métricas de setembro mostraram folga (15–45% dos 2 GB). O `Procfile` e o Star
 Command do Render estão **os dois com 1000** desde 22/09/2026 (o dono colou
 o texto no mesmo dia). Se a memória voltar a subir, o caminho de volta é o mesmo
 texto com 150.
+
+**15/10/2026 — `--max-requests` subiu de 1000 para 5000 (jitter de 100 para
+500).** Decisão do dono, depois do teste de carga do ponto (`app/apps/ponto/
+HISTORICO.md`, 15/10): 5 aparelhos simulados, 5 envios por segundo (~6× o pico
+de 500 batidas em 10 min), memória com **pico de 32%** dos 2 GB; o único ponto ruim foi a
+renovação do serviço no meio do teste — no Render ele fica ~15–20 s sem
+responder enquanto sobe, e as conexões abertas caem (pior caso de 18,8 s e 0,5%
+de erro). Com 1000, a renovação cairia uma vez por manhã no pico das batidas.
+**O Start Command do Render precisa ser trocado pelo dono** (a armadilha abaixo):
+até ele confirmar, a produção segue com 1000. Se a memória subir, o caminho de
+volta é o texto com 1000 e 100.
 
 **A armadilha continua de pé, e é por isso que a nota fica:** o Start Command
 **sobrescreve o Procfile**. Como hoje os dois são iguais, mexer só no Procfile

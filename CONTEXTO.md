@@ -30,8 +30,9 @@
 - **Padrão:** factory pattern via `create_app()` em `app/main.py`
 - **Comando de start (desde 2026-07-14, ajustado p/ conter OOM):**
   ```
-  gunicorn app.main:app --timeout 3600 --graceful-timeout 120 --keep-alive 120 --workers 1 --threads 4 --worker-class gthread --max-requests 150 --max-requests-jitter 40 --log-level info
+  gunicorn app.main:app --timeout 3600 --graceful-timeout 120 --keep-alive 120 --workers 1 --threads 4 --worker-class gthread --max-requests 5000 --max-requests-jitter 500 --log-level info
   ```
+  (150 em julho; 1000 em 22/09/2026; 5000 em 15/10/2026 — `CLAUDE.md` › Gunicorn.)
 - ⚠️ **IMPORTANTE — Start Command vs Procfile:** o campo **Start Command nas
   Settings do Render SOBRESCREVE o Procfile**. Houve um período em que o campo
   estava preenchido com o comando antigo e o Procfile era ignorado (descoberto
@@ -1455,6 +1456,16 @@ Também mudou uma linha de código da área, por causa de um card que não abria
 C. Diários identifica a obra por **dois** códigos (primário e secundário), e a
 emissão só procurava pelo primário. Detalhe no `HISTORICO.md` da área.
 
+
+### 15/10/2026 — O serviço reinicia a cada 5000 acessos, não 1000 (atravessa áreas)
+
+`--max-requests 1000 --max-requests-jitter 100` virou `5000` e `500` no
+`Procfile`, decisão do dono depois do teste de carga do ponto na produção (5
+aparelhos simulados, ~6× o pico de batidas): memória com pico de 32% dos 2 GB, e a renovação
+do serviço — ~15–20 s sem resposta no Render, com as conexões abertas caindo —
+era o único ponto ruim; com 1000 ela cairia uma vez por manhã no pico das
+batidas. **O Start Command do Render sobrescreve o Procfile**: o dono troca lá o
+mesmo texto (até isso, vale 1000). Caminho de volta: 1000 e 100.
 
 ### 22/09/2026 — O serviço reinicia a cada 1000 acessos, não 150 (atravessa áreas)
 
