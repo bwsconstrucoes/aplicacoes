@@ -182,6 +182,20 @@ junto com o `README.md` e o `PLANO.md`.
   partir de outro chat: ler a página pelo endereço e publicar no mesmo endereço.
   **Ao mudar uma tela ou uma regra que o colaborador vê, o manual fica velho** —
   vale conferir a parte correspondente.
+- **No próprio sistema (mesmo dia, pedido do dono: "gerando PDF não ficou legal (…)
+  podemos disponibilizar online? ponto/app/manual.html")**: o manual mora em
+  `static/manual/` (index.html + telas/ + manual-bws-ponto.pdf) e abre sem login em
+  `/ponto/app/manual/` (`/ponto/app/manual` e `/ponto/app/manual.html` levam até lá);
+  o PDF em `/ponto/app/manual.pdf`. Link "📖 Como usar o aplicativo (manual)" na
+  tela de entrada e na tela inicial do app. O PDF ruim tinha causa: o papel A4 tem
+  ~690 px de largura e caía nas regras de CELULAR (fotos numa fila que rola para o
+  lado, cortada no papel). Agora há um formato de papel próprio (`@media print`):
+  cada parte começa numa página, texto em cima e telas lado a lado, sem quebrar um
+  passo no meio, dúvidas abertas. **Como regenerar o PDF** depois de mudar a página:
+  abrir `/ponto/app/manual/` no Chromium (Playwright), `emulateMedia print`, abrir os
+  `<details>` e `page.pdf({format: "A4", printBackground: true})` — sem
+  `loading="lazy"` nas imagens, senão elas saem pretas no PDF (aconteceu).
+  A página no Claude (Artifact) é a mesma, sem o esqueleto HTML.
 - Fotografando as telas, dois textos do aplicativo estavam errados e foram
   corrigidos: a aba Pedidos de quem entrega na obra mandava tocar em "Entregar
   atestado, licença ou pedir ajuste", e o botão no ponto da obra se chama

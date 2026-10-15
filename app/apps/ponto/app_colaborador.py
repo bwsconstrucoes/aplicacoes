@@ -183,6 +183,46 @@ def app_jsqr():
 
 
 # ---------------------------------------------------------------------------
+# O manual do colaborador (15/10/2026, pedido do dono: "podemos disponibilizar
+# online esse manual? ponto/app/manual.html"). Página fixa, sem dado de ninguém —
+# as telas são de um banco de teste, com nomes de exemplo. A fonte é a pasta
+# static/manual; o PDF é impresso dela pelo Chromium (ver HISTORICO, 15/10/2026).
+# ---------------------------------------------------------------------------
+PASTA_MANUAL = os.path.join(PASTA_ESTATICA, "manual")
+
+
+@bp.route("/app/manual/")
+@auth.publica("o manual de uso para os colaboradores; página fixa, sem dado")
+def app_manual():
+    resposta = send_from_directory(PASTA_MANUAL, "index.html", mimetype="text/html")
+    resposta.headers["Cache-Control"] = "no-cache"
+    return resposta
+
+
+@bp.route("/app/manual")
+@bp.route("/app/manual.html")
+@auth.publica("o manual de uso; leva ao endereço com barra, que as imagens usam")
+def app_manual_sem_barra():
+    from flask import redirect
+    return redirect("/ponto/app/manual/", code=301)
+
+
+@bp.route("/app/manual/telas/<nome>")
+@auth.publica("as telas do manual (imagens de um banco de teste)")
+def app_manual_tela(nome: str):
+    resposta = send_from_directory(os.path.join(PASTA_MANUAL, "telas"), nome)
+    resposta.headers["Cache-Control"] = "public, max-age=86400"
+    return resposta
+
+
+@bp.route("/app/manual.pdf")
+@auth.publica("o manual de uso em PDF")
+def app_manual_pdf():
+    return send_from_directory(PASTA_MANUAL, "manual-bws-ponto.pdf", mimetype="application/pdf",
+                               download_name="Manual do BWS Ponto.pdf")
+
+
+# ---------------------------------------------------------------------------
 # Entrar, criar PIN, sair
 # ---------------------------------------------------------------------------
 @bp.route("/app/api/codigo", methods=["POST"])
