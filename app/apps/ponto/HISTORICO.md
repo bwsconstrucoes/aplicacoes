@@ -171,6 +171,24 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 15/10/2026 — Manual do colaborador (com as telas)
+
+- Pedido do dono: um manual de uso para os colaboradores (não para o RH), para os
+  três jeitos de usar — só consulta, bate no próprio celular, ponto da obra —, do
+  primeiro acesso aos pedidos, regras e alertas, com telas.
+- Publicado como página (Artifact, privado do dono, que compartilha):
+  https://claude.ai/artifact/ULFBh1N3Drs3gZmXsgzw4W — 10 partes, 21 telas tiradas
+  do aplicativo de verdade num banco de teste (nomes de exemplo). Para atualizar a
+  partir de outro chat: ler a página pelo endereço e publicar no mesmo endereço.
+  **Ao mudar uma tela ou uma regra que o colaborador vê, o manual fica velho** —
+  vale conferir a parte correspondente.
+- Fotografando as telas, dois textos do aplicativo estavam errados e foram
+  corrigidos: a aba Pedidos de quem entrega na obra mandava tocar em "Entregar
+  atestado, licença ou pedir ajuste", e o botão no ponto da obra se chama
+  "Atestados, afastamentos e ajustes"; e o anexo do celular dizia "Escolher foto
+  ou arquivo" enquanto o do ponto da obra diz "📎 Anexar o documento — foto ou
+  arquivo" (agora igual nos três lugares).
+
 ## 14/10/2026 (tarde) — "Este aparelho vai bater ponto?" só depois do CPF e PIN
 
 - O dono, sobre a frase da tela de entrada ("Este aparelho vai ser o ponto da

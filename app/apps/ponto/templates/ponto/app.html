@@ -343,8 +343,8 @@
   <section id="tela-pedidos" class="oculto">
     <div class="cartao oculto" id="cartao-pedido-na-obra">
       <h2>Atestado, licença, ajuste</h2>
-      <div class="aviso info">São entregues <b>no aparelho da obra</b> (toque em “Entregar atestado, licença ou
-        pedir ajuste” e mostre o seu QR Code) ou pelo <b>responsável da obra</b>. Aqui você acompanha a
+      <div class="aviso info">São entregues <b>no aparelho da obra</b> (toque em “Atestados, afastamentos e
+        ajustes” e mostre o seu QR Code ou digite o CPF) ou pelo <b>responsável da obra</b>. Aqui você acompanha a
         resposta.</div>
     </div>
     <div class="cartao" id="cartao-fazer-pedido">
@@ -1377,7 +1377,7 @@ function camposDePedido(px, t, dia) {
   return {
     ATESTADO: `<label>Primeiro dia de afastamento</label><input type="date" id="${px}-inicio" value="${d0}">
       <label>Quantos dias o médico deu?</label><input type="number" id="${px}-dias" min="1" max="120" value="1">
-      <label>Foto ou PDF do atestado</label><button class="btn sec" type="button" id="${px}-doc">Escolher foto ou arquivo</button>
+      <label>Foto ou PDF do atestado</label><button class="btn sec" type="button" id="${px}-doc">📎 Anexar o documento — foto ou arquivo</button>
       <p class="pequeno" id="${px}-doc-nome">Nenhum arquivo escolhido.</p>
       <p class="pequeno">Só o DP vê o atestado.</p>`,
     AJUSTE_BATIDA: `<label>Que dia?</label><input type="date" id="${px}-inicio" value="${d0}" max="${hojeISO()}">
@@ -1393,7 +1393,7 @@ function camposDePedido(px, t, dia) {
       <label>Primeiro dia</label><input type="date" id="${px}-inicio" value="${d0}">
       <label>Último dia</label><input type="date" id="${px}-fim" value="${d0}">
       <label>Observação</label><textarea id="${px}-descricao" placeholder="Ex.: luto (pai)"></textarea>
-      <label>Documento</label><button class="btn sec" type="button" id="${px}-doc">Escolher foto ou arquivo</button>
+      <label>Documento</label><button class="btn sec" type="button" id="${px}-doc">📎 Anexar o documento — foto ou arquivo</button>
       <p class="pequeno" id="${px}-doc-nome">Nenhum arquivo escolhido.</p>`,
     FOLGA_BANCO: `<label>Dia da folga</label><input type="date" id="${px}-inicio" value="${dia || ""}">
       <label>Último dia (se mais de um)</label><input type="date" id="${px}-fim">
