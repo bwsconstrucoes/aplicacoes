@@ -41,6 +41,11 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1w. **PUBLICADO em 15/10/2026** (com o "pode" do dono, `main` em `7995036`, sem migração): o manual do
+   colaborador no sistema (`/ponto/app/manual/` e `/ponto/app/manual.pdf`, link no app), os textos
+   iguais aos botões (Pedidos na obra, "Anexar o documento") e o erro da AWS em português.
+   **Falta o dono:** dar `rekognition:CompareFaces` ao usuário IAM `bws-ponto-rosto` e rodar a
+   conferência do rosto de novo.
 1v. **PUBLICADO em 14/10/2026, tarde** (com o "pode" do dono, `main` em `3b32843`, sem migração): o
    pedido de aprovação do aparelho só depois de entrar com CPF e PIN ("Este aparelho vai bater ponto?",
    no menu, com o nome de quem pediu); a busca de Pessoas diz por que alguém não aparece; os textos da
