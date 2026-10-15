@@ -386,6 +386,13 @@ terminou com menos páginas do que a API prometeu.
 Tudo isso depende da **migração 037**; antes do botão, a carga continua
 entrando do jeito antigo (apaga antes, não retoma) e diz isso num aviso.
 
+**Desde 15/10/2026 a TELA ABERTA dispara o `ponto_diario` sozinha** — o
+agendador de fora nunca foi configurado, e a tela dizia "Importado em 02/10".
+Quando a base de SPs está fresca e nada roda, a pergunta de 90 em 90 segundos
+dispara o ponto do dia se algum mês dele ainda não entrou inteiro hoje (ou
+parou no meio), no máximo uma vez por hora (`tarefas._ponto_diario_devido`). O
+agendador de fora continua funcionando, se um dia for configurado.
+
 **Ninguém precisa apertar o botão todo dia.** O modo `ponto_diario` traz o mês
 corrente — e, até o dia 10, o anterior também (a mesma régua da competência
 sugerida) — em duas tentativas, a segunda retomando de onde a primeira parou.
