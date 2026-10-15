@@ -1457,6 +1457,29 @@ C. Diários identifica a obra por **dois** códigos (primário e secundário), e
 emissão só procurava pelo primário. Detalhe no `HISTORICO.md` da área.
 
 
+### 15/10/2026, 14:49 — Falta de memória (OOM) no Render: o ponto medido, não é ele (atravessa áreas)
+
+O serviço caiu por memória ("Ran out of memory (used over 2GB)"), e o dono viu
+um pico de **77%** no gráfico num horário SEM batida de ponto (só cadastros).
+- **O ponto foi medido e não acumula:** gunicorn igual ao da produção, 3.000 fotos
+  tratadas seguidas (o trabalho de um dia de batidas) — memória do processo de
+  191 MB para 216 MB, e parou. Com `MALLOC_ARENA_MAX=2`, 188 → 211 MB (sem
+  diferença que justifique mexer).
+- **O que rodava nos 2 minutos antes da queda (log do dono):** Análise de SPs
+  lendo comprovantes ("cota do Google em sicredi_…pdf — nova tentativa"), envio ao
+  Dropbox, `/compilar` (PDF, pelo Make), `/api/processarnovasp/executar`,
+  `/api/validasp/executar`. A Análise de SPs roda suas tarefas em PROCESSO
+  SEPARADO (`tarefas.disparar` → `executar_sync`), que carrega o sistema de novo e
+  soma memória dentro dos MESMOS 2 GB do serviço. Suspeita principal: PDFs e
+  imagens dessas tarefas (e do `pdf_processor`) ao mesmo tempo.
+- **Em aberto, decisão do dono:** subir o plano do Render para 4 GB (o caminho mais
+  rápido, e o ponto começou a valer em 16/10 — uma queda derruba a batida também);
+  e, nos chats da Análise de SPs / pdf_processor, medir o pico de memória de cada
+  tarefa pesada e não deixar duas rodarem juntas.
+- ⚠️ No mesmo log, o `secret` do webhook do chatbot aparece na URL
+  (`/api/chatbot/webhook?secret=…`): fica gravado no log do Render. Levar ao chat
+  da Mensageria — trocar o segredo e passá-lo fora da URL.
+
 ### 15/10/2026 — O serviço reinicia a cada 5000 acessos, não 1000 (atravessa áreas)
 
 `--max-requests 1000 --max-requests-jitter 100` virou `5000` e `500` no
