@@ -197,6 +197,7 @@
       <label for="p-cpf">CPF</label>
       <input id="p-cpf" inputmode="numeric" placeholder="000.000.000-00">
       <button class="btn" id="btn-codigo" type="button">Mandar o código</button>
+      <button class="link" id="btn-ja-tenho" type="button">Já tenho um código (entregue pelo DP)</button>
       <div id="p-passo2" class="oculto">
         <label for="p-codigo">Código que chegou no WhatsApp</label>
         <input id="p-codigo" inputmode="numeric" maxlength="6" autocomplete="one-time-code">
@@ -684,6 +685,12 @@ async function voltarAoInicio() {
 }
 $("btn-ir-primeiro").addEventListener("click", () => { $("p-cpf").value = $("e-cpf").value; mostrar("primeiro"); });
 $("btn-voltar-entrar").addEventListener("click", () => mostrar("entrar"));
+// O código entregue em mãos pelo DP quando o WhatsApp não chega (16/10/2026):
+// abre o passo de digitar o código sem mandar um novo.
+$("btn-ja-tenho").addEventListener("click", () => {
+  if (!cpfValido(soDigitos($("p-cpf").value))) { $("p-cpf").focus(); return aviso("Digite o seu CPF primeiro.", "erro"); }
+  $("p-passo2").classList.remove("oculto"); $("btn-ja-tenho").classList.add("oculto"); $("p-codigo").focus();
+});
 $("btn-codigo").addEventListener("click", async () => {
   try {
     const d = await chamar("/ponto/app/api/codigo", {cpf: soDigitos($("p-cpf").value)});

@@ -2295,7 +2295,8 @@ async function abrirPessoa(id) {
       <div class="barra-acoes">
         ${PODE_TRATAR ? `<button class="btn" type="button" id="pe-escala">Trocar escala</button>
           <button class="btn secundario" type="button" id="pe-jornada">Jornada e obras</button>
-          <button class="btn secundario" type="button" id="pe-forma">Acesso no aplicativo</button>` : ""}
+          <button class="btn secundario" type="button" id="pe-forma">Acesso no aplicativo</button>
+          <button class="btn secundario" type="button" id="pe-codigo">Código não chegou?</button>` : ""}
         ${PODE_DP ? `<button class="btn secundario" type="button" id="pe-banco">Banco de horas</button>` : ""}
         <a class="btn secundario" style="text-decoration:none" href="${linkEspelho(p.id)}">Ver espelho</a>
       </div>
@@ -2322,6 +2323,7 @@ async function abrirPessoa(id) {
     if (els("pe-jornada")) els("pe-jornada").addEventListener("click", () => jornadaEObras(p));
     if (els("pe-banco")) els("pe-banco").addEventListener("click", () => regimeDoBanco(p));
     if (els("pe-forma")) els("pe-forma").addEventListener("click", () => formaDeBater(p));
+    if (els("pe-codigo")) els("pe-codigo").addEventListener("click", () => primeiroAcesso(p));
     desenharQrDaPessoa(p);
     ficha.scrollIntoView({behavior: "smooth", block: "start"});
   } catch (e) { falhou(e); }
@@ -2473,6 +2475,49 @@ async function jornadaEObras(p) {
 // O acesso da pessoa no aplicativo (08/10/2026): o padrão é bater no ponto da
 // obra e, no próprio celular, só ver o próprio ponto. As três marcações são as
 // exceções — cada uma independente (core/papeis.py).
+// "A pessoa não recebe o código. E não chega nada no aparelhos" (16/10/2026): o
+// motivo de verdade, e o código para entregar em mãos quando o WhatsApp não chega.
+const ENVIO_DO_CODIGO = {ENVIADO: ["verde", "enviado ao WhatsApp"], FALHOU: ["vermelho", "o WhatsApp recusou"],
+  DESLIGADO: ["ambar", "desligado na tela Mensagens"], LIMITE: ["ambar", "passou do limite de mensagens"],
+  SEM_DESTINO: ["vermelho", "sem número"], SEM_REGISTRO: ["", "sem registro de envio"]};
+async function primeiroAcesso(p) {
+  let d;
+  try { d = (await api(`/erp/api/ponto/pessoas/${p.id}/acesso`)).acesso; } catch (e) { return falhou(e, "pe-msg"); }
+  const linhas = d.codigos.map(c => {
+    const e = c.envio, [cor, rot] = e ? (ENVIO_DO_CODIGO[e.status] || ["", e.status]) : ["", "—"];
+    return `<li>${escapar(quando(c.pedido_em))} — <b style="${cor ? `color:var(--${cor})` : ""}">${escapar(rot)}</b>
+      ${e && e.para ? ` para ${escapar(e.para)}` : ""}${e && e.detalhe && e.status !== "ENVIADO" ? ` <small>(${escapar(e.detalhe)})</small>` : ""}
+      ${c.usado ? " · <b>usado</b>" : c.vencido ? " · vencido" : " · ainda vale"}</li>`;
+  }).join("");
+  const aviso = `
+    <div><b>Celular que o ponto usa:</b> <span class="dados">${escapar(d.telefone)}</span>
+      <small>— vem do ${escapar(d.origem_telefone)}</small></div>
+    ${d.telefone_no_erp ? `<div class="aviso ambar" style="margin:6px 0">No cadastro do ERP o celular é
+      <span class="dados">${escapar(d.telefone_no_erp)}</span>, mas o ponto usa o do Registro de Colaboradores. Se o
+      certo é o do ERP, corrija no Pipefy (e atualize o cadastro na Análise de SPs).</div>` : ""}
+    <div style="margin-top:4px"><b>PIN:</b> ${d.tem_pin ? `criado em ${escapar(quando(d.pin_criado_em))}` : "ainda não criado"}
+      ${d.pin_bloqueado_ate ? ` · <b style="color:var(--vermelho)">travado até ${escapar(quando(d.pin_bloqueado_ate))}</b> (PIN errado várias vezes)` : ""}</div>
+    ${d.impede.length ? `<div class="aviso erro" style="margin:8px 0"><b>O código não sai porque:</b>
+      <ul style="margin:4px 0 0 18px; padding:0">${d.impede.map(x => `<li>${escapar(x)}</li>`).join("")}</ul></div>` : ""}
+    <div style="margin-top:8px"><b>Últimos códigos pedidos</b>${linhas ? `<ul style="margin:4px 0 0 18px; padding:0">${linhas}</ul>`
+      : `<div class="suave">Nenhum. Se a pessoa diz que pediu, ela não chegou a pedir com este CPF — ou o CPF dela não
+         está no cadastro (procure pelo CPF em Pessoas: a busca diz o motivo).</div>`}</div>
+    <div class="cartao-dica" style="margin-top:10px">Se aparece "enviado ao WhatsApp" e a pessoa não recebeu: confira se o
+      número tem WhatsApp e se a mensagem não caiu em "conversas arquivadas". ${PODE_CONFIGURAR ? `Não resolvendo, gere o código
+      aqui e entregue <b>em mãos</b>, conferindo que é a própria pessoa.` : ""}</div>`;
+  const r = await perguntar({titulo: `Primeiro acesso — ${escapar(p.nome)}`, campos: [], aviso,
+                             textoOk: PODE_CONFIGURAR ? "Gerar código para entregar em mãos" : "Fechar"});
+  if (!r || !PODE_CONFIGURAR) return;
+  try {
+    const g = await postar(`/erp/api/ponto/pessoas/${p.id}/codigo-em-maos`, {});
+    await perguntar({titulo: "Código para entregar em mãos", campos: [], textoOk: "Pronto",
+      aviso: `<div style="font-size:34px; font-weight:800; letter-spacing:6px; text-align:center" class="dados">${escapar(g.codigo)}</div>
+        <p style="text-align:center">Vale <b>${g.validade_min} minutos</b>. Entregue à própria pessoa: no aplicativo, ela toca em
+        “Primeiro acesso ou esqueci o PIN”, digita o CPF, toca em <b>“Já tenho um código (entregue pelo DP)”</b>, digita este
+        código e cria o PIN.</p>`});
+  } catch (e) { falhou(e, "pe-msg"); }
+}
+
 async function formaDeBater(p) {
   const simNao = (sim, nao) => [{valor: "0", rotulo: nao}, {valor: "1", rotulo: sim}];
   const r = await perguntar({

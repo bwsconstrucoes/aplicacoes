@@ -109,6 +109,94 @@ def pedir_codigo(conn: Connection, cpf, *, ip: str = "", enviar=None) -> dict:
     return {"mensagem": RESPOSTA_DO_CODIGO}
 
 
+# ---------------------------------------------------------------------------
+# POR QUE O CÓDIGO NÃO CHEGOU (16/10/2026, o dono: "a pessoa não recebe o código.
+# E não chega nada aqui no aparelhos. Consultei o telefone no cadastro, tá normal.
+# E aí eu não sei o que fazer."). Para quem pede, a resposta é sempre a mesma (não
+# revela se o CPF existe); para o DP, na ficha da pessoa, o motivo de verdade.
+# ---------------------------------------------------------------------------
+def _formatar_telefone(digitos: str) -> str:
+    d = digitos[2:] if digitos.startswith("55") and len(digitos) >= 12 else digitos
+    if len(d) == 11:
+        return f"({d[:2]}) {d[2:7]}-{d[7:]}"
+    if len(d) == 10:
+        return f"({d[:2]}) {d[2:6]}-{d[6:]}"
+    return d or "—"
+
+
+def diagnostico(conn: Connection, colaborador_id: int) -> dict:
+    """Para a ficha da pessoa: o telefone que o ponto usa (e de onde vem), o PIN, o
+    que impede o código de sair, e os últimos códigos com o resultado do envio."""
+    from .. import horario
+    pessoa = cadastros.colaborador_por_id(conn, colaborador_id)
+    if not pessoa:
+        raise ErroDeValidacao("pessoa não encontrada")
+    digitos = re.sub(r"\D", "", pessoa.get("telefone") or "")
+    erp = db.um(conn, "SELECT telefone FROM public.colaboradores WHERE id = :c", c=colaborador_id) or {}
+    do_erp = re.sub(r"\D", "", erp.get("telefone") or "")
+    origem = ("cadastro do ERP" if digitos and digitos == do_erp
+              else "Registro de Colaboradores (Pipefy)" if digitos else "—")
+    impede = []
+    if pessoa["situacao"] == "DESLIGADO":
+        impede.append("a pessoa está DESLIGADA — o código não é enviado")
+    if len(digitos) < 10:
+        impede.append("sem celular com DDD no cadastro — o código não tem para onde ir")
+    elif len(digitos) == 10 or (len(digitos) == 12 and digitos.startswith("55")):
+        impede.append("o celular tem 8 dígitos depois do DDD (falta o 9?) — o WhatsApp pode não achar o número")
+    recentes = db.um(conn, "SELECT count(*) AS n FROM ponto.codigos_acesso WHERE colaborador_id = :c "
+                           "AND criado_em > now() - interval '1 hour'", c=colaborador_id)["n"]
+    if recentes >= CODIGOS_POR_HORA:
+        impede.append(f"já pediu {recentes} códigos na última hora — o próximo só sai depois")
+    cfg = db.um(conn, "SELECT pin_hash, pin_criado_em, pin_bloqueado_ate FROM ponto.colaborador_config "
+                      "WHERE colaborador_id = :c", c=colaborador_id) or {}
+    tem_envios = db.um(conn, """SELECT 1 AS x FROM information_schema.tables
+                                 WHERE table_schema = 'mensageria' AND table_name = 'envios'""") is not None
+    codigos = []
+    for c in db.todos(conn, """SELECT id, criado_em, expira_em, usado_em, tentativas FROM ponto.codigos_acesso
+                                WHERE colaborador_id = :c ORDER BY id DESC LIMIT 5""", c=colaborador_id):
+        envio = None
+        if tem_envios:
+            envio = db.um(conn, """SELECT status, detalhe, destinatario FROM mensageria.envios
+                                    WHERE tipo = 'ponto.codigo_acesso' AND destinatario = :dest
+                                      AND criado_em BETWEEN :a - interval '5 seconds' AND :a + interval '2 minutes'
+                                    ORDER BY criado_em LIMIT 1""", a=c["criado_em"],
+                          dest=(digitos if digitos.startswith("55") else "55" + digitos))
+        codigos.append({
+            "pedido_em": horario.texto(c["criado_em"]),
+            "usado": bool(c["usado_em"]), "vencido": c["expira_em"] < horario.agora(),
+            "envio": (None if not tem_envios else
+                      {"status": envio["status"], "detalhe": envio["detalhe"],
+                       "para": _formatar_telefone(re.sub(r"\D", "", envio["destinatario"] or ""))} if envio
+                      else {"status": "SEM_REGISTRO", "detalhe": "nenhum envio registrado na hora — gerado na tela, "
+                                                                 "ou o envio não chegou a ser tentado", "para": ""}),
+        })
+    return {"telefone": _formatar_telefone(digitos), "origem_telefone": origem,
+            "telefone_no_erp": _formatar_telefone(do_erp) if do_erp and do_erp != digitos else None,
+            "situacao": pessoa["situacao"], "tem_pin": bool(cfg.get("pin_hash")),
+            "pin_criado_em": horario.texto(cfg.get("pin_criado_em")),
+            "pin_bloqueado_ate": horario.texto(cfg.get("pin_bloqueado_ate"))
+            if cfg.get("pin_bloqueado_ate") and cfg["pin_bloqueado_ate"] > horario.agora() else None,
+            "impede": impede, "codigos": codigos}
+
+
+def codigo_em_maos(conn: Connection, colaborador_id: int, por: str) -> str:
+    """O código de primeiro acesso mostrado ao DP, para entregar EM MÃOS (o WhatsApp
+    não chegou). Não precisa de celular; vale o mesmo tempo; fica no registro quem
+    gerou. Pessoa desligada não ganha."""
+    pessoa = cadastros.colaborador_por_id(conn, colaborador_id)
+    if not pessoa:
+        raise ErroDeValidacao("pessoa não encontrada")
+    if pessoa["situacao"] == "DESLIGADO":
+        raise ErroDeValidacao("a pessoa está desligada — não ganha código de acesso")
+    codigo = f"{secrets.randbelow(1_000_000):06d}"
+    db.executar(conn, """
+        INSERT INTO ponto.codigos_acesso (colaborador_id, codigo_hash, expira_em, ip)
+        VALUES (:c, :h, now() + make_interval(mins => :v), :ip)
+    """, c=colaborador_id, h=_hash(codigo), v=CODIGO_VALIDADE_MIN, ip=("em mãos: " + (por or ""))[:64])
+    logger.info("Ponto: código de acesso EM MÃOS para a pessoa %s, gerado por %s", colaborador_id, por)
+    return codigo
+
+
 def criar_pin(conn: Connection, cpf, codigo: str, pin: str) -> dict:
     """Confere o código e grava o PIN. Devolve a pessoa (já entra)."""
     cpf_ok = cadastros.normalizar_cpf(cpf)
@@ -116,18 +204,24 @@ def criar_pin(conn: Connection, cpf, codigo: str, pin: str) -> dict:
     pessoa = cadastros.colaborador_por_cpf(conn, cpf_ok)
     if not pessoa:
         raise NaoAutenticado("código inválido ou vencido")
-    cod = db.um(conn, """
+    # Vale QUALQUER código ainda válido, não só o último (16/10/2026: o código
+    # entregue em mãos pelo DP e um do WhatsApp pedido depois convivem).
+    validos = db.todos(conn, """
         SELECT * FROM ponto.codigos_acesso
          WHERE colaborador_id = :c AND usado_em IS NULL AND expira_em > now()
-           AND tentativas < :t ORDER BY id DESC LIMIT 1
+           AND tentativas < :t ORDER BY id DESC LIMIT 5
     """, c=pessoa["id"], t=CODIGO_TENTATIVAS)
-    if not cod or not _confere(re.sub(r"\D", "", str(codigo or "")), cod["codigo_hash"]):
-        if cod:
+    digitado = re.sub(r"\D", "", str(codigo or ""))
+    acertou = next((v for v in validos if _confere(digitado, v["codigo_hash"])), None)
+    cod = acertou or (validos[0] if validos else None)
+    if not acertou:
+        if validos:
             # Em transação PRÓPRIA: a recusa desfaz a transação de quem chamou,
             # e o erro precisa ficar contado — senão o teto de tentativas não existe.
+            # Conta em TODOS os válidos: chutar contra vários não rende mais tentativas.
             with db.conexao() as separada:
                 db.executar(separada, "UPDATE ponto.codigos_acesso SET tentativas = tentativas + 1 "
-                                      "WHERE id = :id", id=cod["id"])
+                                      "WHERE id = ANY(:ids)", ids=[int(v["id"]) for v in validos])
         raise NaoAutenticado("código inválido ou vencido")
     db.executar(conn, "UPDATE ponto.codigos_acesso SET usado_em = now() WHERE id = :id", id=cod["id"])
     _config(conn, pessoa["id"])

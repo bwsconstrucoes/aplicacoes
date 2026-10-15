@@ -43,7 +43,7 @@ from app.apps.erp.db.database import get_session
 from app.apps.erp.routes import bp, login_obrigatorio, permissao
 
 from . import db, horario, migracoes_runner
-from .core import (alertas, banco, cadastros, competencias, dispositivos, documentos,
+from .core import (acesso, alertas, banco, cadastros, competencias, dispositivos, documentos,
                    envios, escalas, espelho, feriados, fotos, leitura_atestado, mosaico,
                    ocorrencias, painel, parametros, qr, rotina, validacao)
 from .core.ocorrencias import Quem
@@ -1844,6 +1844,34 @@ def ponto_api_fila_enviar():
         d = documentos.enviar_pendentes(conn)
     return _ok(fotos=f, documentos=d)
 
+
+
+@bp.route("/erp/api/ponto/pessoas/<int:colaborador_id>/acesso")
+@login_obrigatorio
+@permissao("tratar_ponto")
+@_api
+def ponto_api_pessoa_acesso(colaborador_id: int):
+    """Por que o código do primeiro acesso não chegou (16/10/2026): o telefone que o
+    ponto usa, o PIN, o que impede o envio e os últimos códigos com o resultado."""
+    quem = _quem()
+    with db.conexao() as conn:
+        _exigir_pessoa(conn, quem, colaborador_id)
+        d = acesso.diagnostico(conn, colaborador_id)
+    return _ok(acesso=d)
+
+
+@bp.route("/erp/api/ponto/pessoas/<int:colaborador_id>/codigo-em-maos", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar_ponto")
+@_api
+def ponto_api_pessoa_codigo_em_maos(colaborador_id: int):
+    """O código de primeiro acesso para ENTREGAR EM MÃOS, quando o WhatsApp não
+    chega. Só quem configura o ponto: o código deixa criar o PIN da pessoa."""
+    quem = _quem()
+    with db.conexao() as conn:
+        _exigir_pessoa(conn, quem, colaborador_id)
+        codigo = acesso.codigo_em_maos(conn, colaborador_id, quem.nome)
+    return _ok(codigo=codigo, validade_min=acesso.CODIGO_VALIDADE_MIN)
 
 
 @bp.route("/erp/api/ponto/teste-carga", methods=["GET", "POST"])

@@ -265,6 +265,7 @@ dizer "tem batida"; presença, horas e faltas são regra da fase 3.
 - Quantos dias o Fulano trabalhou em setembro? ⚠️ (dia com batida, não jornada cumprida)
 - Quais batidas estão em análise, e por quê? (fora da cerca, obra sem coordenada, relógio, pessoa afastada)
 - Quais aparelhos estão pendentes de aprovação?
+- Por que o código do primeiro acesso não chegou para o Fulano? 🔒 (ficha da pessoa › "Código não chegou?": celular usado e de onde vem, o que impede, e o resultado do envio de cada código)
 - Quem pediu a aprovação deste aparelho? (o pedido, desde 14/10/2026, só sai depois de entrar com CPF e PIN, e leva o nome de quem pediu; aparelho "sem nome" é de antes disso)
 - Por que o Fulano não aparece no ponto? 🔒 (a busca de Pessoas responde: falta no ERP, desligado pela data de saída ou pela fase do Pipefy, CPF inválido, "não bate ponto", ou fora da cópia do Registro)
 - Quantas batidas foram recusadas esta semana, e de que aparelho?

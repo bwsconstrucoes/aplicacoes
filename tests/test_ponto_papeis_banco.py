@@ -500,3 +500,69 @@ def test_pedido_de_aparelho_mais_novo_em_cima_com_a_hora(app, mundo, monkeypatch
     itens = [i for i in dp.get("/erp/api/ponto/validacoes").get_json()["itens"] if i["tipo"] == "APARELHO"]
     nomes = [i["pessoa"] or "" for i in itens]
     assert nomes.index(next(n for n in nomes if n.startswith("João"))) < nomes.index(next(n for n in nomes if n.startswith("Maria")))
+
+
+def test_codigo_nao_chegou_diagnostico_e_codigo_em_maos(app, mundo, banco):
+    """16/10/2026: "a pessoa não recebe o código (…) e não chega nada no aparelhos.
+    Consultei o telefone no cadastro, tá normal. E aí eu não sei o que fazer." A
+    ficha diz o motivo; o DP gera o código para entregar em mãos."""
+    from sqlalchemy import text
+    from tests.test_ponto_gestao_banco import CPF_JOAO, como
+    from app.apps.ponto import db
+    from app.apps.ponto.core import acesso
+    dp, sup = como(app, mundo["dp"]), como(app, mundo["sup"])
+    with banco.connect() as conn:
+        conn.execute(text("UPDATE colaboradores SET telefone = '85988887777' WHERE id = :i"), {"i": mundo["joao"]})
+        conn.commit()
+    d = dp.get(f"/erp/api/ponto/pessoas/{mundo['joao']}/acesso").get_json()["acesso"]
+    assert d["telefone"] == "(85) 98888-7777" and d["impede"] == [] and d["codigos"] == [] and d["tem_pin"] is False
+    # o WhatsApp recusou: a ficha mostra
+    with db.conexao() as conn:
+        acesso.pedir_codigo(conn, CPF_JOAO, enviar=lambda t, m: None)
+    with banco.connect() as conn:
+        tem = conn.execute(text("SELECT 1 FROM information_schema.tables WHERE table_schema='mensageria' "
+                                "AND table_name='envios'")).scalar()
+        if tem:
+            conn.execute(text("INSERT INTO mensageria.envios (tipo, canal, destinatario, status, detalhe) VALUES "
+                              "('ponto.codigo_acesso', 'whatsapp', '5585988887777', 'FALHOU', 'número sem WhatsApp')"))
+            conn.commit()
+    d = dp.get(f"/erp/api/ponto/pessoas/{mundo['joao']}/acesso").get_json()["acesso"]
+    assert len(d["codigos"]) == 1 and d["codigos"][0]["usado"] is False
+    if tem:
+        assert d["codigos"][0]["envio"]["status"] == "FALHOU" and "sem WhatsApp" in d["codigos"][0]["envio"]["detalhe"]
+    # o código em mãos — e um do WhatsApp pedido DEPOIS não o derruba
+    assert sup.post(f"/erp/api/ponto/pessoas/{mundo['joao']}/codigo-em-maos", json={}).status_code in (403, 404)
+    g = dp.post(f"/erp/api/ponto/pessoas/{mundo['joao']}/codigo-em-maos", json={}).get_json()
+    assert len(g["codigo"]) == 6 and g["validade_min"] == 15
+    with db.conexao() as conn:
+        acesso.pedir_codigo(conn, CPF_JOAO, enviar=lambda t, m: None)
+    errado = app.test_client().post("/ponto/app/api/pin", json={"cpf": CPF_JOAO, "codigo": "000000", "pin": "481927"})
+    assert errado.status_code == 401
+    certo = app.test_client().post("/ponto/app/api/pin", json={"cpf": CPF_JOAO, "codigo": g["codigo"], "pin": "481927"})
+    assert certo.status_code == 200, certo.get_json()
+    assert dp.get(f"/erp/api/ponto/pessoas/{mundo['joao']}/acesso").get_json()["acesso"]["tem_pin"] is True
+    # celular sem DDD: a ficha diz que o código não sai
+    with banco.connect() as conn:
+        conn.execute(text("UPDATE colaboradores SET telefone = '98887777' WHERE id = :i"), {"i": mundo["joao"]})
+        conn.commit()
+    d = dp.get(f"/erp/api/ponto/pessoas/{mundo['joao']}/acesso").get_json()["acesso"]
+    assert any("DDD" in x for x in d["impede"])
+
+
+def test_pediu_dois_codigos_e_digitou_o_primeiro(app, mundo):
+    """16/10/2026, "código inválido ou vencido": o WhatsApp demorou, a pessoa pediu
+    de novo e digitou o PRIMEIRO que chegou — só o último valia. Agora vale
+    qualquer um ainda no prazo, e cada um uma vez só."""
+    from tests.test_ponto_gestao_banco import CPF_JOAO
+    from app.apps.ponto import db
+    from app.apps.ponto.core import acesso
+    msgs = []
+    for _ in range(2):
+        with db.conexao() as conn:
+            acesso.pedir_codigo(conn, CPF_JOAO, enviar=lambda t, m: msgs.append(m))
+    primeiro, segundo = (m.split("código é ")[1][:6] for m in msgs)
+    c = app.test_client()
+    assert c.post("/ponto/app/api/pin", json={"cpf": CPF_JOAO, "codigo": primeiro, "pin": "481927"}).status_code == 200
+    # usado: não vale de novo
+    assert c.post("/ponto/app/api/pin", json={"cpf": CPF_JOAO, "codigo": primeiro, "pin": "481927"}).status_code == 401
+    assert c.post("/ponto/app/api/pin", json={"cpf": CPF_JOAO, "codigo": segundo, "pin": "135790"}).status_code == 200

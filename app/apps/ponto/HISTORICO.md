@@ -191,6 +191,31 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 16/10/2026 — "O código não chegou" e "código inválido ou vencido"
+
+- O dono: *"a pessoa não recebe o código (…) e não chega nada no aparelhos.
+  Consultei o telefone no cadastro, tá normal. E aí eu não sei o que fazer."* E
+  depois: *"código inválido ou vencido — não sei em qual circunstância aparece."*
+- **Por que não sai, em silêncio** (`acesso.pedir_codigo` responde igual em todos,
+  de propósito): CPF fora do cadastro do ERP, pessoa DESLIGADA, celular sem DDD, 3
+  códigos na última hora — ou o WhatsApp recusou/o tipo está desligado em Mensagens.
+  ⚠️ O celular que o ponto usa vem do **Registro de Colaboradores** quando a pessoa
+  está nele, não do ERP — "o telefone do cadastro está certo" pode ser o do ERP.
+- **Ficha da pessoa › "Código não chegou?"** (`acesso.diagnostico`, quem trata o
+  ponto, no escopo): o celular usado e de onde vem (avisando quando o do ERP é
+  outro), o PIN (criado? travado?), o que impede o envio, e os 5 últimos códigos com
+  o resultado do envio (cruzando `mensageria.envios` pelo número e pela hora).
+- **"Gerar código para entregar em mãos"** (`acesso.codigo_em_maos`, só quem
+  configura o ponto — o código deixa criar o PIN da pessoa): não precisa de celular,
+  vale 15 min, fica no registro quem gerou. No app, "Já tenho um código (entregue
+  pelo DP)" abre o campo sem mandar outro.
+- **"Código inválido ou vencido" — o caso mais comum era nosso:** só o ÚLTIMO código
+  valia; com o WhatsApp demorando, a pessoa pedia de novo e digitava o primeiro.
+  Agora vale qualquer código ainda no prazo (os 5 últimos), uma vez cada; o erro
+  conta tentativa em todos os válidos (chutar contra vários não rende mais chances).
+- Manual: a nota do código em mãos e a linha "Código inválido ou vencido" na tabela
+  de mensagens (página, PDF e a versão no Claude).
+
 ## 16/10/2026 — Os pedidos de aparelho na ordem em que chegam
 
 - O dono, no primeiro dia de pedidos: *"tem alguns que estão demorando mais (…)
