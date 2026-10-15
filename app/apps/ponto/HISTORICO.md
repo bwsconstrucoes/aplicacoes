@@ -41,6 +41,15 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1zb. **PUBLICADO em 15/10/2026, madrugada** (com o "pode" do dono, `main` em `246e8e1`, sem migração):
+   pedidos de aparelho com o mais novo em cima, a hora do pedido e a lista se atualizando sozinha; na
+   ficha da pessoa, "Código não chegou?" (o que impede o envio, o que o WhatsApp respondeu, e — para quem
+   configura — um código entregue em mãos, sem telefone); vale qualquer código ainda no prazo, não só o
+   último pedido; limites por rede maiores para o cadastro em grupo (códigos 100/h, entradas 300/h,
+   aparelhos 120/h); o manual com a nota do código em mãos. **Falta o dono:** subir o teto do WhatsApp da
+   empresa em ERP › Mensagens (sugestão ~150/h e 1000/dia na implantação — o padrão de 40/h segura os
+   códigos em silêncio) e liberar a AWS (a política da organização, SCP, ainda bloqueia a comparação de
+   rosto).
 1za. **PUBLICADO em 15/10/2026** (com o "pode" do dono, sem migração): o `Procfile` com
    `--max-requests 5000 --max-requests-jitter 500`, igual ao Start Command que o dono já tinha trocado no
    Render. **Falta o dono:** olhar o gráfico de memória nas próximas semanas (passando de ~60% e ficando,
