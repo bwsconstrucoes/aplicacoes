@@ -204,6 +204,17 @@ junto com o `README.md` e o `PLANO.md`.
   conta recomeça (e os erros de "conexão caiu" na tela do celular mostram isso).
 - Aqui (3 aparelhos simulados, 1 envio por segundo cada, 1 min): 182 envios, 0
   erro, ida e volta ~37 ms, servidor ~24 ms; nenhuma foto ficou no banco.
+- **O "play" (mesmo dia):** o dono — *"deveria ser algo que eu dê um play no telefone
+  e ele comece e fique disparando dados. Não é pra operar de verdade (…) ou mesmo
+  um script no PC. Nenhum desses dados de teste precisam ficar armazenados."* O
+  quadro "Teste de carga" do ERP ganhou "▶ Começar o teste": o COMPUTADOR de quem
+  configura faz o papel de N aparelhos (1–10, padrão 5) por M minutos (1–15),
+  cada um mandando uma imagem de ~90 KB por segundo
+  (`/erp/api/ponto/teste-carga/simular`, aparelho simulado, mesma `carga.simular`).
+  Liga o teste ao começar e desliga ao terminar. Aqui: 5 aparelhos, 1 min, 300
+  envios, 0 erro, ida e volta ~80 ms, servidor ~40 ms; nada guardado (só a
+  estatística de tempo por tela que o ERP já soma de minuto em minuto). A página
+  do celular ficou como opção, para medir a internet de uma obra.
 - ⚠️ A simulação é um pouco MAIS LEVE que a batida (no teste de carga local, a
   batida de verdade levou ~60 ms no servidor e a simulação ~24 ms): por isso a
   sugestão de 1 envio por segundo por celular — 5 celulares = 5 por segundo, umas

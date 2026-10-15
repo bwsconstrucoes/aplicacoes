@@ -4026,7 +4026,85 @@ async function gravarCerca(linha, botao) {
 }
 
 // ------------------------------------------------------ Teste de carga (15/10/2026)
-// Celulares já aprovados repetem o trabalho de uma batida, sem batida (core/carga.py).
+// O "play" (pedido do dono: "algo que eu dê um play e ele comece e fique
+// disparando dados — não é para operar de verdade"): este computador faz o papel de
+// N aparelhos ao mesmo tempo, cada um mandando uma imagem do tamanho da foto da
+// batida a cada segundo. O servidor faz o trabalho da batida e desfaz a gravação
+// (core/carga.py): nada fica guardado.
+const CARGA = {rodando: false, fim: 0, inicio: 0, ida: [], srv: [], ok: 0, erros: 0, ultimoErro: "", fotos: []};
+
+function cargaImagem(k) {
+  const c = document.createElement("canvas"); c.width = 800; c.height = 600;
+  const g = c.getContext("2d"), h = (k * 47) % 360;
+  const grad = g.createLinearGradient(0, 0, 800, 600);
+  grad.addColorStop(0, `hsl(${h},55%,55%)`); grad.addColorStop(1, `hsl(${(h + 90) % 360},55%,35%)`);
+  g.fillStyle = grad; g.fillRect(0, 0, 800, 600);
+  for (let i = 0; i < 60; i++) {
+    g.fillStyle = `hsla(${Math.floor(Math.random() * 360)},60%,${30 + Math.random() * 50}%,.6)`;
+    g.beginPath(); g.arc(Math.random() * 800, Math.random() * 600, 10 + Math.random() * 60, 0, 6.3); g.fill();
+  }
+  const d = g.getImageData(0, 0, 800, 600), px = d.data;
+  for (let i = 0; i < px.length; i += 4) { const r = (Math.random() - .5) * 26; px[i] += r; px[i + 1] += r; px[i + 2] += r; }
+  g.putImageData(d, 0, 0);
+  return c.toDataURL("image/jpeg", 0.8);         // ~90 KB, como a foto do tablet
+}
+
+function cargaNumeros() {
+  const q = (v, p) => { if (!v.length) return null; const o = [...v].sort((a, b) => a - b); return o[Math.min(o.length - 1, Math.floor(o.length * p))]; };
+  const ms = v => v === null ? "—" : (v >= 1000 ? `${(v / 1000).toFixed(1)} s` : `${Math.round(v)} ms`);
+  const min = (Date.now() - CARGA.inicio) / 60000;
+  const caixa = (rot, valor, sub, cor) => `<div class="kpi estatico ${cor || ""}"><div class="kpi-rotulo">${rot}</div>
+    <div class="kpi-valor" style="font-size:18px">${valor}</div><div class="kpi-sub">${sub || ""}</div></div>`;
+  const alvo = els("c-carga-numeros");
+  if (!alvo) return;
+  alvo.innerHTML = `<div class="kpis">
+      ${caixa("Envios certos", CARGA.ok, min > 0.05 ? `${Math.round((CARGA.ok + CARGA.erros) / min)} por minuto` : "", "verde")}
+      ${caixa("Com erro", CARGA.erros, "", CARGA.erros ? "vermelho" : "")}
+      ${caixa("Ida e volta", ms(q(CARGA.ida, .5)), `95%: ${ms(q(CARGA.ida, .95))} · pior: ${ms(CARGA.ida.length ? Math.max(...CARGA.ida) : null)}`)}
+      ${caixa("No servidor", ms(q(CARGA.srv, .5)), `pior: ${ms(CARGA.srv.length ? Math.max(...CARGA.srv) : null)}`)}
+    </div>
+    ${CARGA.ultimoErro ? `<div class="aviso erro" style="margin-top:8px">Último erro: ${escapar(CARGA.ultimoErro)}</div>` : ""}
+    <p class="suave" style="font-size:13px; margin-top:6px">${CARGA.rodando
+      ? `Rodando — faltam ${Math.max(0, Math.ceil((CARGA.fim - Date.now()) / 1000))} s. Deixe esta tela aberta.`
+      : (CARGA.ok + CARGA.erros ? "Terminou." : "")}</p>`;
+}
+
+async function cargaAparelho(n) {
+  while (CARGA.rodando && Date.now() < CARGA.fim) {
+    const t0 = performance.now();
+    try {
+      const r = await fetch("/erp/api/ponto/teste-carga/simular", {method: "POST", credentials: "same-origin",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({aparelho: n, foto_base64: CARGA.fotos[Math.floor(Math.random() * CARGA.fotos.length)]})});
+      let d = {}; try { d = await r.json(); } catch (e) { d = {ok: false, erro: `resposta inesperada (${r.status})`}; }
+      if (d.ok) { CARGA.ok++; CARGA.ida.push(performance.now() - t0); CARGA.srv.push(d.ms_no_servidor); }
+      else { CARGA.erros++; CARGA.ultimoErro = `${new Date().toLocaleTimeString("pt-BR")} — ${d.erro || r.status}`;
+             if ([401, 403].includes(r.status)) CARGA.rodando = false; }
+    } catch (e) {
+      CARGA.erros++; CARGA.ultimoErro = `${new Date().toLocaleTimeString("pt-BR")} — a conexão caiu (internet ou o servidor se renovando)`;
+    }
+    await new Promise(ok => setTimeout(ok, Math.max(0, 1000 - (performance.now() - t0))));
+  }
+}
+
+async function cargaComecar() {
+  const n = Math.min(10, Math.max(1, parseInt(els("c-carga-n").value, 10) || 5));
+  const minutos = Math.min(15, Math.max(1, parseInt(els("c-carga-min").value, 10) || 5));
+  try { await postar("/erp/api/ponto/teste-carga", {minutos: minutos + 1}); }
+  catch (e) { return aviso("c-carga-msg", e.message, "erro"); }
+  Object.assign(CARGA, {rodando: true, inicio: Date.now(), fim: Date.now() + minutos * 60000, ida: [], srv: [],
+                        ok: 0, erros: 0, ultimoErro: ""});
+  if (!CARGA.fotos.length) CARGA.fotos = Array.from({length: 8}, (_, k) => cargaImagem(k));
+  els("c-carga-play").textContent = "■ Parar"; els("c-carga-play").classList.add("secundario");
+  const relogio = setInterval(cargaNumeros, 1000);
+  await Promise.all(Array.from({length: n}, (_, i) => cargaAparelho(i + 1)));
+  clearInterval(relogio);
+  CARGA.rodando = false;
+  try { await postar("/erp/api/ponto/teste-carga", {desligar: true}); } catch (e) {}
+  await desenharCarga();
+  cargaNumeros();
+}
+
 async function desenharCarga() {
   const alvo = els("c-carga");
   let d;
@@ -4034,34 +4112,30 @@ async function desenharCarga() {
   catch (e) { alvo.innerHTML = `<p class="suave">Só quem configura o ponto usa o teste de carga.</p>`; return; }
   const r = d.resumo || {};
   alvo.innerHTML = `
-    <div class="cartao-dica" style="margin-top:0">Para medir o servidor de verdade: 4 ou 5 celulares <b>já aprovados</b>
-      abrem <b class="dados">${escapar(location.origin + d.endereco)}</b> no mesmo navegador em que batem o ponto e tocam
-      em “Começar”. Cada envio repete o trabalho de uma batida (uma imagem do tamanho da foto, o tratamento e a gravação
-      no banco, que é desfeita) <b>sem registrar ponto</b>. Faça fora do horário de batida, e não publique nem rode carga
-      do painel ou sincronização da Análise de SPs durante o teste.</div>
-    <div class="kpis" style="margin-top:10px">
-      <div class="kpi estatico ${d.ligado ? "verde" : ""}"><div class="kpi-rotulo">Teste</div>
-        <div class="kpi-valor" style="font-size:16px">${d.ligado ? `ligado até ${escapar(d.ate)}` : "desligado"}</div></div>
-      <div class="kpi estatico"><div class="kpi-rotulo">Simulações</div><div class="kpi-valor">${r.simulacoes ?? 0}</div>
-        <div class="kpi-sub">de ${r.aparelhos ?? 0} aparelho(s) · ${r.erros ?? 0} com erro</div></div>
-      <div class="kpi estatico"><div class="kpi-rotulo">No servidor</div>
-        <div class="kpi-valor" style="font-size:16px">${r.ms_medio != null ? `${r.ms_medio} ms em média` : "—"}</div>
-        <div class="kpi-sub">${r.ms_max != null ? `pior: ${r.ms_max} ms` : ""}</div></div>
+    <div class="cartao-dica" style="margin-top:0">Mede o servidor de verdade sem ninguém operar: este computador faz o
+      papel de vários aparelhos ao mesmo tempo, cada um mandando <b>uma imagem do tamanho da foto da batida a cada
+      segundo</b>. O servidor faz o trabalho da batida e desfaz a gravação: <b>nenhuma batida e nenhuma foto ficam
+      guardadas</b>. Faça fora do horário de batida, e não publique nem rode carga do painel ou sincronização da
+      Análise de SPs durante o teste.</div>
+    <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-top:10px">
+      <div class="campo" style="width:150px"><label for="c-carga-n">Aparelhos simulados</label>
+        <input id="c-carga-n" type="number" min="1" max="10" value="5"></div>
+      <div class="campo" style="width:150px"><label for="c-carga-min">Minutos</label>
+        <input id="c-carga-min" type="number" min="1" max="15" value="5"></div>
+      <button class="btn" type="button" id="c-carga-play">▶ Começar o teste</button>
     </div>
-    <p class="suave" style="font-size:13px">Contando desde ${escapar(r.desde || "—")}. Se o serviço se renovar no meio do
-      teste, esta conta recomeça — os números de cada celular ficam na tela dele.</p>
-    <div style="display:flex; gap:8px; flex-wrap:wrap">
-      ${d.ligado ? `<button class="btn secundario" type="button" id="c-carga-desligar">Desligar o teste</button>`
-                 : `<button class="btn" type="button" id="c-carga-ligar">Ligar por 30 minutos</button>`}
-      <button class="btn secundario" type="button" id="c-carga-atualizar">Atualizar os números</button></div>
-    <div id="c-carga-msg" style="margin-top:8px"></div>`;
-  const acao = async corpo => {
-    try { await postar("/erp/api/ponto/teste-carga", corpo); desenharCarga(); }
-    catch (e) { aviso("c-carga-msg", e.message, "erro"); }
-  };
-  if (els("c-carga-ligar")) els("c-carga-ligar").addEventListener("click", () => acao({minutos: 30}));
-  if (els("c-carga-desligar")) els("c-carga-desligar").addEventListener("click", () => acao({desligar: true}));
-  els("c-carga-atualizar").addEventListener("click", () => desenharCarga());
+    <div id="c-carga-msg" style="margin-top:8px"></div>
+    <div id="c-carga-numeros" style="margin-top:10px"></div>
+    <p class="suave" style="font-size:13px">5 aparelhos = 5 envios por segundo, umas 6× o pico de 500 pessoas em
+      10 minutos. Conta do servidor desde ${escapar(r.desde || "—")}: ${r.simulacoes ?? 0} simulação(ões), ${r.erros ?? 0}
+      com erro${r.ms_medio != null ? `, ${r.ms_medio} ms em média (pior ${r.ms_max} ms)` : ""}. Para medir também a
+      internet de uma obra, abra num celular já aprovado <span class="dados">${escapar(location.origin + d.endereco)}</span>.</p>`;
+  els("c-carga-play").addEventListener("click", () => {
+    if (CARGA.rodando) { CARGA.rodando = false; return; }
+    cargaComecar();
+  });
+  if (CARGA.rodando) { els("c-carga-play").textContent = "■ Parar"; els("c-carga-play").classList.add("secundario"); }
+  cargaNumeros();
 }
 
 // ------------------------------------------------------ 12. Drive e fila

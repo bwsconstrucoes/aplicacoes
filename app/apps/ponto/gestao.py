@@ -47,7 +47,7 @@ from .core import (alertas, banco, cadastros, competencias, dispositivos, docume
                    envios, escalas, espelho, feriados, fotos, leitura_atestado, mosaico,
                    ocorrencias, painel, parametros, qr, rotina, validacao)
 from .core.ocorrencias import Quem
-from .erros import ErroDeValidacao, ErroDoPonto, NaoEncontrado
+from .erros import ErroDeValidacao, ErroDoPonto, NaoEncontrado, Recusada
 
 logger = logging.getLogger("ponto.gestao")
 
@@ -1864,6 +1864,23 @@ def ponto_api_teste_carga():
         ate = carga.ligado_ate(conn)
     return _ok(ligado=bool(ate), ate=carga.hora(ate), resumo=carga.resumo(),
                endereco="/ponto/app/teste-carga/")
+
+
+@bp.route("/erp/api/ponto/teste-carga/simular", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar_ponto")
+@_api
+def ponto_api_teste_carga_simular():
+    """Um envio de um aparelho SIMULADO pelo computador de quem configura o ponto
+    (o "play" do quadro Teste de carga). Só com o teste ligado."""
+    from .core import carga
+    d = request.get_json(silent=True) or {}
+    with db.conexao() as conn:
+        if not carga.ligado_ate(conn):
+            raise Recusada("o teste de carga está desligado")
+        resultado = carga.simular(conn, None, d.get("foto_base64") or "",
+                                  rotulo="pc-" + str(d.get("aparelho") or "1")[:10])
+    return _ok(**resultado)
 
 
 _registrar_no_menu()

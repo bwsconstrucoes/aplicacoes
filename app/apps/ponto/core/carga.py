@@ -101,8 +101,13 @@ def resumo() -> dict:
             "ms_medio": round(r["ms_total"] / n, 1) if n else None, "ms_max": round(r["ms_max"], 1) if n else None}
 
 
-def simular(conn: Connection, aparelho: dict, foto_base64: str) -> dict:
-    """O trabalho de uma batida, sem a batida. Devolve o tempo no servidor."""
+def simular(conn: Connection, aparelho: dict | None, foto_base64: str, rotulo: str | None = None) -> dict:
+    """O trabalho de uma batida, sem a batida. Devolve o tempo no servidor.
+    `aparelho` None = um aparelho SIMULADO pelo computador (o "play" do ERP,
+    15/10/2026: "deveria ser algo que eu dê um play e ele comece e fique
+    disparando dados"); as leituras são as mesmas, num aparelho que não existe."""
+    aparelho = aparelho or {"id": -1, "colaborador_id": None}
+    chave = rotulo or str(aparelho["id"])
     inicio = time.perf_counter()
     try:
         foto = fotos.preparar(foto_base64)
@@ -130,5 +135,5 @@ def simular(conn: Connection, aparelho: dict, foto_base64: str) -> dict:
         _resumo["simulacoes"] += 1
         _resumo["ms_total"] += ms
         _resumo["ms_max"] = max(_resumo["ms_max"], ms)
-        _resumo["aparelhos"].add(int(aparelho["id"]))
+        _resumo["aparelhos"].add(chave)
     return {"ms_no_servidor": round(ms, 1), "bytes_da_foto": len(foto.dados)}

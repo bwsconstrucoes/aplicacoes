@@ -58,3 +58,21 @@ def test_simula_a_batida_sem_gravar_nada_e_so_ligado(app, mundo, banco):
 def test_so_quem_configura_o_ponto_liga(app, mundo):
     sup = como(app, mundo["sup"])
     assert sup.post("/erp/api/ponto/teste-carga", json={"minutos": 30}).status_code in (403, 404)
+
+
+def test_o_play_do_computador_simula_aparelhos_sem_gravar(app, mundo, banco):
+    """15/10/2026: "algo que eu dê um play e ele comece e fique disparando dados —
+    não é para operar de verdade". O computador de quem configura faz o papel dos
+    aparelhos; nada fica guardado."""
+    dp = como(app, mundo["dp"])
+    assert dp.post("/erp/api/ponto/teste-carga/simular", json={"foto_base64": _png()}).status_code == 403
+    dp.post("/erp/api/ponto/teste-carga", json={"minutos": 6})
+    antes = _contar(banco)
+    for n in (1, 2, 3, 1):
+        r = dp.post("/erp/api/ponto/teste-carga/simular", json={"aparelho": n, "foto_base64": _png()})
+        assert r.status_code == 200, r.get_json()
+    assert _contar(banco) == antes
+    resumo = dp.get("/erp/api/ponto/teste-carga").get_json()["resumo"]
+    assert resumo["simulacoes"] == 4 and resumo["aparelhos"] == 3
+    sup = como(app, mundo["sup"])
+    assert sup.post("/erp/api/ponto/teste-carga/simular", json={"foto_base64": _png()}).status_code in (403, 404)
