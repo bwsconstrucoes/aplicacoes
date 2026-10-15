@@ -557,6 +557,7 @@ TELA_DA_ROTA = {
     "analisesps.folha_cadastro_planilha": ("folha",),
     # Despesas com colaboradores (03/10/2026): tela, relatório, seleção e obra.
     "analisesps.tela_folha_dc": ("folha",),
+    "analisesps.tela_folha_avulso": ("folha",),
     "analisesps.folha_dc_relatorio": ("folha",),
     "analisesps.folha_dc_selecao": ("folha",),
     "analisesps.folha_dc_obra": ("folha",),
