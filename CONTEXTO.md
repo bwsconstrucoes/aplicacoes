@@ -15,7 +15,7 @@
   - `pdf.bwsconstrucoes.com.br` → rotas de PDF (`/compilar`, `/pdf2texto`)
   - `aplicacoes.bwsconstrucoes.com.br` → app geral (visto nos logs 2026-07)
 - **URL pública padrão Render:** ⚠️ preencher (ex.: `https://aplicacoes-xxx.onrender.com`)
-- **Plano Render:** Pago (serviço não hiberna — confirmado 2026-07). Instância com **2 GB de RAM** (limite que causava OOM, ver §9).
+- **Plano Render:** Pago (serviço não hiberna — confirmado 2026-07). Instância com **4 GB de RAM e 2 CPUs desde 15/10/2026** (antes, 2 GB e 1 CPU — o limite que causava OOM, ver §9).
 - **Service ID Render:** `srv-d167o5qli9vc73cvq83g`
 - **Repositório Git:** `https://github.com/bwsconstrucoes/aplicacoes.git` (branch principal `main`)
 - **Branch deploy automático:** ⚠️ preencher
@@ -256,7 +256,7 @@ removido em 05/10/2026 — ver §9.)
 - Mensagens de erro pra usuário em PT-BR.
 - Logs em PT-BR.
 
-### 3.7 Regras de memória (instância de 2 GB)
+### 3.7 Regras de memória (instância de 4 GB desde 15/10/2026; eram 2 GB)
 
 Padrões obrigatórios pra qualquer código novo (origem: incidente OOM 2026-07):
 
@@ -758,7 +758,7 @@ Pra criar um novo blueprint (ex.: `sync_logs`):
    app.register_blueprint(sync_logs_bp, url_prefix="/api/sync_logs")
    ```
 6. Não precisa mexer em `requirements.txt` se usar só libs já instaladas.
-7. **Seguir as regras de memória do §3.7** (instância tem só 2 GB).
+7. **Seguir as regras de memória do §3.7** (instância de 4 GB desde 15/10/2026 — continua sendo o recurso escasso).
 
 ⚠️ **Isto vale para módulo de integração** (recebe payload, fala com API/planilha,
 devolve JSON). Se o que você quer é uma **área nova do ERP** — Suprimentos,
@@ -785,7 +785,7 @@ Quando eu pedir nova feature ou adaptação:
    linha a adicionar em `main.py`. Não regerar arquivos que não mudaram.
 8. **Lembrar:** plano Render pago → serviço não hiberna. Estado persistente
    entre requests ainda deve ir pra planilha auxiliar ou Postgres externo.
-9. **Memória é o recurso escasso** (2 GB, histórico de OOM — ver §9). Aplicar
+9. **Memória é o recurso escasso** (4 GB desde 15/10/2026, eram 2 GB; histórico de OOM — ver §9). Aplicar
    sempre as regras do §3.7.
 10. **Se o assunto for o ERP, leia antes `app/apps/erp/ROTEIRO.md`.** É o
     backlog vivo do módulo, dividido em entregue / em andamento / fila, com os
@@ -1472,10 +1472,14 @@ um pico de **77%** no gráfico num horário SEM batida de ponto (só cadastros).
   SEPARADO (`tarefas.disparar` → `executar_sync`), que carrega o sistema de novo e
   soma memória dentro dos MESMOS 2 GB do serviço. Suspeita principal: PDFs e
   imagens dessas tarefas (e do `pdf_processor`) ao mesmo tempo.
-- **Em aberto, decisão do dono:** subir o plano do Render para 4 GB (o caminho mais
-  rápido, e o ponto começou a valer em 16/10 — uma queda derruba a batida também);
-  e, nos chats da Análise de SPs / pdf_processor, medir o pico de memória de cada
-  tarefa pesada e não deixar duas rodarem juntas.
+- **Decidido pelo dono no mesmo dia:** o plano do Render subiu para **4 GB e 2 CPUs**
+  (de US$ 25 para 85/mês) — o ponto começa a valer em 16/10, e uma queda derruba a
+  batida também. Pode voltar para 2 GB depois que a causa for tratada na raiz.
+- **Ainda em aberto:** nos chats da Análise de SPs / pdf_processor, medir o pico de
+  memória de cada tarefa pesada e não deixar duas rodarem juntas.
+- **Para o chat do ERP:** a tela de saúde (`erp/core/comum/saude.py › memoria()`)
+  calcula a porcentagem sobre um teto FIXO de 2048 MB — com 4 GB, mostra o dobro do
+  real e o aviso de 80% dispara cedo. Trocar o teto para 4096 (ou ler de variável).
 - ⚠️ No mesmo log, o `secret` do webhook do chatbot aparece na URL
   (`/api/chatbot/webhook?secret=…`): fica gravado no log do Render. Levar ao chat
   da Mensageria — trocar o segredo e passá-lo fora da URL.
