@@ -171,6 +171,20 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 15/10/2026 — A conferência do rosto: a chave da AWS sem permissão
+
+- O dono criou a conta e a chave da AWS. Primeira rodada: "0 conferida(s), 0
+  suspeita(s), 2 virou(aram) foto cadastral — parou: a AWS respondeu com erro:
+  AccessDeniedException (…) user/bws-ponto-rosto is not authorized to per." —
+  a chave funciona (a AWS reconheceu o usuário), mas o usuário IAM não tem a
+  permissão `rekognition:CompareFaces`. As 2 que viraram foto cadastral não
+  passam pela AWS (é a regra de quem não tem foto cadastral).
+- **Pendente com o dono:** no IAM, dar ao usuário `bws-ponto-rosto` uma política
+  com `rekognition:CompareFaces` (Resource "*") e rodar de novo.
+- A tela cortava a frase da AWS em 160 letras ("to per."). Agora os erros comuns
+  viram frase em português com o que fazer (`rosto.explicar_erro_aws`): sem
+  permissão, chave não reconhecida, conta não liberada, AWS pedindo calma.
+
 ## 15/10/2026 — Manual do colaborador (com as telas)
 
 - Pedido do dono: um manual de uso para os colaboradores (não para o RH), para os

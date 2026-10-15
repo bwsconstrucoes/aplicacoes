@@ -220,6 +220,24 @@ def comparar(cliente, cadastral: bytes, batida: bytes, minima: int) -> tuple[str
     return "OUTRA_PESSOA", round(melhor, 2), f"semelhança de {melhor:.0f} % (mínimo {minima} %)"
 
 
+def explicar_erro_aws(e: Exception) -> str:
+    """PURA. O erro da AWS em português, com o que fazer (15/10/2026: a tela
+    mostrava a frase da AWS cortada no meio, "is not authorized to per.")."""
+    texto = f"{type(e).__name__}: {e}"
+    if "AccessDenied" in texto:
+        return ("a chave da AWS não tem permissão para comparar rostos. No IAM da AWS, dê ao usuário "
+                "da chave a permissão rekognition:CompareFaces e rode de novo")
+    if any(c in texto for c in ("UnrecognizedClient", "InvalidSignature", "SignatureDoesNotMatch",
+                                 "InvalidClientTokenId")):
+        return ("a AWS não reconheceu a chave: confira AWS_ACCESS_KEY_ID e AWS_SECRET_ACCESS_KEY "
+                "no Render (a chave pode ter sido apagada ou trocada)")
+    if "SubscriptionRequired" in texto or "OptInRequired" in texto:
+        return "a conta da AWS ainda não está liberada para o Rekognition (cadastro ou cartão pendente)"
+    if "ProvisionedThroughputExceeded" in texto or "Throttling" in texto:
+        return "a AWS pediu para ir mais devagar; a próxima rodada continua sozinha"
+    return f"a AWS respondeu com erro: {str(e)[:300]}"
+
+
 def _pendentes(conn: Connection, cfg: dict, limite: int) -> list[dict]:
     linhas = db.todos(conn, """
         SELECT m.id, m.colaborador_id, m.obra_id, m.foto_id, m.status, m.timestamp_servidor, m.motivo_analise,
@@ -310,7 +328,7 @@ def conferir(conn: Connection, *, cliente=None, limite: int = LOTE) -> dict:
         except Exception as e:  # noqa: BLE001 — a AWS fora: para a rodada, tenta depois
             logger.warning("Ponto: conferência do rosto falhou: %s", e)
             feito["erros"] += 1
-            feito["parou"] = f"a AWS respondeu com erro: {str(e)[:160]}"
+            feito["parou"] = explicar_erro_aws(e)
             break
         _gravar(conn, m["id"], resultado, semelhanca, PRECO_POR_FOTO_USD, detalhe)
         gasto += PRECO_POR_FOTO_USD

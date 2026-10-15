@@ -54,3 +54,20 @@ def test_le_a_resposta_da_aws():
     assert rosto.comparar(_AwsFalsa({"FaceMatches": [], "UnmatchedFaces": [{}]}), b"a", b"b", 90)[0] == "OUTRA_PESSOA"
     assert rosto.comparar(_AwsFalsa({"FaceMatches": [], "UnmatchedFaces": []}), b"a", b"b", 90)[0] == "SEM_ROSTO"
     assert rosto.comparar(_AwsFalsa(erro=InvalidParameterException("no face")), b"a", b"b", 90)[0] == "SEM_ROSTO"
+
+
+def test_erro_da_aws_vira_frase_com_o_que_fazer():
+    """15/10/2026: a tela mostrava "is not authorized to per." — cortada no meio."""
+    from app.apps.ponto.core import rosto
+
+    class AccessDeniedException(Exception):
+        pass
+
+    negado = AccessDeniedException("An error occurred (AccessDeniedException) when calling the CompareFaces "
+                                   "operation: User: arn:aws:iam::1:user/x is not authorized to perform: "
+                                   "rekognition:CompareFaces")
+    assert "rekognition:CompareFaces" in rosto.explicar_erro_aws(negado)
+    assert "IAM" in rosto.explicar_erro_aws(negado)
+    chave = Exception("An error occurred (UnrecognizedClientException) when calling the CompareFaces operation")
+    assert "AWS_ACCESS_KEY_ID" in rosto.explicar_erro_aws(chave)
+    assert rosto.explicar_erro_aws(Exception("outra coisa")).startswith("a AWS respondeu com erro: outra coisa")
