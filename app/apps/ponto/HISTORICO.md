@@ -41,6 +41,10 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1y. **PUBLICADO em 15/10/2026, noite** (com o "pode" do dono, sem migração): o teste de carga de 500
+   pessoas — "fila rápida" a 4 s (a fila real ia 80% para conferência) e a identificação no aparelho da
+   obra tentando de novo quando a conexão cai na renovação do serviço. **Decisão em aberto do dono:**
+   subir o `--max-requests` (hoje 1000; Procfile e Start Command do Render, os dois).
 1x. **PUBLICADO em 15/10/2026, à tarde** (com o "pode" do dono, sem migração): o erro de permissão da
    AWS diz QUEM bloqueou (SCP da organização, limite de permissões, Deny ou falta de política).
    **Falta o dono:** rodar o simulador de políticas do IAM (ou "Conferir agora") e dizer o motivo.
