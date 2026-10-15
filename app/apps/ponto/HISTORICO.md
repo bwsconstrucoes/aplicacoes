@@ -183,6 +183,32 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 15/10/2026 (noite) — O teste de carga NA PRODUÇÃO, com celulares de verdade
+
+- O dono: *"pegar uns 4–5 telefones já cadastrados, que acessem algum endereço e
+  na prática começar a disparar uma simulação de envio do ponto (…) como se fossem
+  as imagens (…) rodando cada um por alguns minutos ao mesmo tempo."*
+- **Não grava batida, de propósito**: batida é registro de ponto (NSR sem furo,
+  que não se apaga — Portaria 671). `core/carga.py` faz o trabalho de uma batida
+  menos o registro: a foto do tamanho da real (o celular gera ~90 KB, 800 px,
+  JPEG 0,8), o tratamento (reduzir, hash, sinais), as leituras, e GRAVA a foto
+  em `ponto.fotos` com os bytes dentro de um SAVEPOINT desfeito. Não faz NSR,
+  marcação, alerta nem Drive (que na batida real é depois da resposta).
+- **Só ligado**: quem configura o ponto liga por até 60 min (Configuração › Geral
+  › "Teste de carga", botão de 30 min); fora disso a rota recusa. Só aparelho
+  APROVADO (qualquer tipo). Página: `/ponto/app/teste-carga/`, aberta no mesmo
+  navegador em que o aparelho bate — usa a identidade dele.
+- Cada celular mostra na tela: envios certos e com erro, KB por foto, ida e volta
+  (mediana, 95%, pior — o que a pessoa sente) e o tempo no servidor. O quadro do
+  ERP soma os aparelhos — na memória do serviço: se ele se renovar no meio, a
+  conta recomeça (e os erros de "conexão caiu" na tela do celular mostram isso).
+- Aqui (3 aparelhos simulados, 1 envio por segundo cada, 1 min): 182 envios, 0
+  erro, ida e volta ~37 ms, servidor ~24 ms; nenhuma foto ficou no banco.
+- ⚠️ A simulação é um pouco MAIS LEVE que a batida (no teste de carga local, a
+  batida de verdade levou ~60 ms no servidor e a simulação ~24 ms): por isso a
+  sugestão de 1 envio por segundo por celular — 5 celulares = 5 por segundo, umas
+  6× o pico real de 500 pessoas em 10 min.
+
 ## 15/10/2026 — Teste de carga: 500 pessoas batendo em 10–15 min
 
 O dono: *"bater o ponto de 500 funcionários num intervalo de 10–15 min vai ser

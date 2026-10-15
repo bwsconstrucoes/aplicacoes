@@ -1845,4 +1845,25 @@ def ponto_api_fila_enviar():
     return _ok(fotos=f, documentos=d)
 
 
+
+@bp.route("/erp/api/ponto/teste-carga", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao("configurar_ponto")
+@_api
+def ponto_api_teste_carga():
+    """O teste de carga na produção (15/10/2026, core/carga.py): ligar por um
+    tempo, desligar e ver o resumo do servidor."""
+    from .core import carga
+    with db.conexao() as conn:
+        if request.method == "POST":
+            d = request.get_json(silent=True) or {}
+            if d.get("desligar"):
+                carga.desligar(conn, _quem().nome)
+            else:
+                carga.ligar(conn, d.get("minutos", 30), _quem().nome)
+        ate = carga.ligado_ate(conn)
+    return _ok(ligado=bool(ate), ate=carga.hora(ate), resumo=carga.resumo(),
+               endereco="/ponto/app/teste-carga/")
+
+
 _registrar_no_menu()

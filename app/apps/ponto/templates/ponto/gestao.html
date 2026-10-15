@@ -690,6 +690,11 @@
 </div>
 
 <div class="cartao" data-secao-card="geral">
+  <div class="cartao-cab"><h3>Teste de carga</h3></div>
+  <div id="c-carga">carregando…</div>
+</div>
+
+<div class="cartao" data-secao-card="geral">
   <div class="cartao-cab"><h3>App do colaborador</h3></div>
   <div class="endereco-app" id="c-app">…</div>
   <div style="margin-top:8px"><button class="btn secundario" id="c-copiar-app" type="button">Copiar o endereço</button></div>
@@ -2899,6 +2904,7 @@ async function carregarConfig() {
   desenharResumoDiario();
   desenharQrEAvisos();
   desenharDrive();
+  desenharCarga();
   els("c-app").textContent = location.origin + (CONFIG.endereco_app || "/ponto/app");
   // A fila de mensagens e o mosaico por obra dependem da atualização 003:
   // esperam a configuração dizer se ela já está aplicada.
@@ -4017,6 +4023,45 @@ async function gravarCerca(linha, botao) {
       ${o.fora_da_cerca === "BLOQUEAR" ? "só com a explicação da pessoa, para conferência" : "aceita sem explicação, para conferência"};
       ${o.so_entrada_e_saida ? "só entrada e saída (o intervalo é o da escala)" : "4 batidas por dia"}.`, "ok");
   } catch (e) { botao.disabled = false; falhou(e, "c-cercas-msg"); }
+}
+
+// ------------------------------------------------------ Teste de carga (15/10/2026)
+// Celulares já aprovados repetem o trabalho de uma batida, sem batida (core/carga.py).
+async function desenharCarga() {
+  const alvo = els("c-carga");
+  let d;
+  try { d = await api("/erp/api/ponto/teste-carga"); }
+  catch (e) { alvo.innerHTML = `<p class="suave">Só quem configura o ponto usa o teste de carga.</p>`; return; }
+  const r = d.resumo || {};
+  alvo.innerHTML = `
+    <div class="cartao-dica" style="margin-top:0">Para medir o servidor de verdade: 4 ou 5 celulares <b>já aprovados</b>
+      abrem <b class="dados">${escapar(location.origin + d.endereco)}</b> no mesmo navegador em que batem o ponto e tocam
+      em “Começar”. Cada envio repete o trabalho de uma batida (uma imagem do tamanho da foto, o tratamento e a gravação
+      no banco, que é desfeita) <b>sem registrar ponto</b>. Faça fora do horário de batida, e não publique nem rode carga
+      do painel ou sincronização da Análise de SPs durante o teste.</div>
+    <div class="kpis" style="margin-top:10px">
+      <div class="kpi estatico ${d.ligado ? "verde" : ""}"><div class="kpi-rotulo">Teste</div>
+        <div class="kpi-valor" style="font-size:16px">${d.ligado ? `ligado até ${escapar(d.ate)}` : "desligado"}</div></div>
+      <div class="kpi estatico"><div class="kpi-rotulo">Simulações</div><div class="kpi-valor">${r.simulacoes ?? 0}</div>
+        <div class="kpi-sub">de ${r.aparelhos ?? 0} aparelho(s) · ${r.erros ?? 0} com erro</div></div>
+      <div class="kpi estatico"><div class="kpi-rotulo">No servidor</div>
+        <div class="kpi-valor" style="font-size:16px">${r.ms_medio != null ? `${r.ms_medio} ms em média` : "—"}</div>
+        <div class="kpi-sub">${r.ms_max != null ? `pior: ${r.ms_max} ms` : ""}</div></div>
+    </div>
+    <p class="suave" style="font-size:13px">Contando desde ${escapar(r.desde || "—")}. Se o serviço se renovar no meio do
+      teste, esta conta recomeça — os números de cada celular ficam na tela dele.</p>
+    <div style="display:flex; gap:8px; flex-wrap:wrap">
+      ${d.ligado ? `<button class="btn secundario" type="button" id="c-carga-desligar">Desligar o teste</button>`
+                 : `<button class="btn" type="button" id="c-carga-ligar">Ligar por 30 minutos</button>`}
+      <button class="btn secundario" type="button" id="c-carga-atualizar">Atualizar os números</button></div>
+    <div id="c-carga-msg" style="margin-top:8px"></div>`;
+  const acao = async corpo => {
+    try { await postar("/erp/api/ponto/teste-carga", corpo); desenharCarga(); }
+    catch (e) { aviso("c-carga-msg", e.message, "erro"); }
+  };
+  if (els("c-carga-ligar")) els("c-carga-ligar").addEventListener("click", () => acao({minutos: 30}));
+  if (els("c-carga-desligar")) els("c-carga-desligar").addEventListener("click", () => acao({desligar: true}));
+  els("c-carga-atualizar").addEventListener("click", () => desenharCarga());
 }
 
 // ------------------------------------------------------ 12. Drive e fila

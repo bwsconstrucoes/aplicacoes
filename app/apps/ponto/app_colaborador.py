@@ -223,6 +223,48 @@ def app_manual_pdf():
 
 
 # ---------------------------------------------------------------------------
+# O teste de carga na produção (15/10/2026) — core/carga.py diz por que ele NÃO
+# grava batida. A página fica aberta; a simulação só responde com o teste ligado
+# por um ADMIN e para aparelho aprovado.
+# ---------------------------------------------------------------------------
+@bp.route("/app/teste-carga/")
+@auth.publica("a página do teste de carga; sem dado — a simulação exige aparelho aprovado e o teste ligado")
+def app_teste_carga():
+    resposta = send_from_directory(PASTA_ESTATICA, "teste-carga.html", mimetype="text/html")
+    resposta.headers["Cache-Control"] = "no-cache"
+    return resposta
+
+
+@bp.route("/app/teste-carga")
+@auth.publica("leva ao endereço com barra")
+def app_teste_carga_sem_barra():
+    from flask import redirect
+    return redirect("/ponto/app/teste-carga/", code=301)
+
+
+@bp.route("/app/api/teste-carga", methods=["GET", "POST"])
+@auth.exige_aparelho
+def app_api_teste_carga():
+    from .core import carga
+    with db.conexao() as conn:
+        try:
+            a = dispositivos.autenticar(conn, request.headers.get("X-Device-UUID", ""),
+                                        request.headers.get(auth.CABECALHO_TOKEN))
+        except Exception:  # noqa: BLE001
+            raise NaoAutenticado("este aparelho não está cadastrado — use um celular ou tablet já aprovado")
+        if a["status"] != "APROVADO":
+            raise Recusada(f"este aparelho está {a['status'].lower()} — use um já aprovado")
+        ate = carga.ligado_ate(conn)
+        if request.method == "GET":
+            return _ok(ligado=bool(ate), ate=carga.hora(ate),
+                       aparelho=a.get("descricao") or a["perfil"])
+        if not ate:
+            raise Recusada("o teste de carga está desligado — um administrador liga em ERP › Ponto › Configuração")
+        resultado = carga.simular(conn, a, (_corpo().get("foto_base64") or ""))
+    return _ok(**resultado)
+
+
+# ---------------------------------------------------------------------------
 # Entrar, criar PIN, sair
 # ---------------------------------------------------------------------------
 @bp.route("/app/api/codigo", methods=["POST"])
