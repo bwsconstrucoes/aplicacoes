@@ -84,7 +84,13 @@ PARADO_DIAS = 2
 BANCO_AVISO_DIAS = 30
 BANCO_NEGATIVO_MIN = -600  # −10 h
 # Sinais de fraude — calibrar no piloto; são convite a olhar, não prova.
-SEQUENCIA_SEGUNDOS = 10    # batidas de pessoas DIFERENTES, no mesmo aparelho, com menos que isto
+# 15/10/2026: era 10 s, e o teste de carga (500 pessoas, fila no ritmo de verdade,
+# ~7 s cada) mandou 80% das batidas legítimas para conferência. No aparelho da
+# obra, uma batida leva no MÍNIMO ~5 s (a contagem de 2 s para a foto + 3 s da
+# confirmação na tela): abaixo de 4 s, não é fila de gente — é o aplicativo burlado.
+# Quem digita o CPF de colega ausente leva o tempo normal e cai na FOTO (rosto,
+# foto repetida, mosaico), não na pressa.
+SEQUENCIA_SEGUNDOS = 4     # batidas de pessoas DIFERENTES, no mesmo aparelho, com menos que isto
 SEQUENCIA_MIN_PESSOAS = 5  # … em fila de pelo menos tantas pessoas
 TENTATIVAS_CPF_MIN = 5     # CPFs que não identificam ninguém, no mesmo tablet, no mesmo dia
 

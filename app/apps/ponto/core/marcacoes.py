@@ -135,7 +135,7 @@ def modo_fora_da_cerca(conn: Connection, obra_id: int) -> str:
     return (linha or {}).get("fora_da_cerca") or "BLOQUEAR"
 
 
-SEQUENCIA_NA_HORA_SEGUNDOS = 10   # o mesmo critério do alerta do dia seguinte (alertas.py)
+SEQUENCIA_NA_HORA_SEGUNDOS = 4    # o mesmo critério do alerta do dia seguinte (alertas.py, 15/10/2026)
 SEQUENCIA_NA_HORA_PESSOAS = 5
 
 

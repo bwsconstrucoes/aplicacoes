@@ -376,7 +376,7 @@ separada logo depois da resposta (antes, 1 a 3 s por pessoa na fila).
 impressão de 256 bits (`dhash`). **Alertas novos**: batida sem foto (e, se ligado,
 aviso por WhatsApp à pessoa no dia seguinte), foto escura ou sem rosto, a mesma foto
 em batidas diferentes (da mesma pessoa em 4 semanas, ou de pessoas diferentes na
-mesma obra e dia), 5+ pessoas em sequência com menos de 10 s no mesmo aparelho, QR
+mesma obra e dia), 5+ pessoas em sequência com menos de 4 s no mesmo aparelho (era 10 s até 15/10/2026), QR
 antigo usado, 5+ CPFs que não são de ninguém no mesmo tablet no dia, mosaico
 obrigatório sem conferência. **São convite a olhar, não prova** — os limiares estão
 no topo de `core/alertas.py` e `core/mosaico.py`, para calibrar no piloto.

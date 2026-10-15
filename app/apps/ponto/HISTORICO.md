@@ -179,6 +179,41 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 15/10/2026 — Teste de carga: 500 pessoas batendo em 10–15 min
+
+O dono: *"bater o ponto de 500 funcionários num intervalo de 10–15 min vai ser
+viável? Fiquei com receio do desempenho."* Medido, não estimado: 500 pessoas e 12
+aparelhos de obra num banco de teste, o serviço com o MESMO comando da produção
+(gunicorn, 1 worker, 4 threads, `--max-requests 1000`) preso a 1 processador,
+cada batida com identificação + foto de ~60 KB (o que o tablet manda).
+
+- **O servidor aguenta com folga.** No limite (12 aparelhos sem pausa): ~30
+  batidas por segundo, cada uma em ~0,2 s. 500 pessoas em 10 min pedem menos de
+  1 por segundo. No ritmo de fila de verdade (~7 s por pessoa): identificar em
+  0,02 s e bater em 0,06 s (p95 0,14 s). Memória do serviço: ~210 MB.
+- **O limite de verdade é o número de aparelhos**: cada um atende ~8 pessoas por
+  minuto (2 s de contagem para a foto + 3 s de confirmação + a pessoa mostrar o
+  QR) — ~75 pessoas em 10 min, ~110 em 15. Obra com 150 pessoas na mesma janela
+  precisa de 2 aparelhos.
+- **Achado 1 — a "fila rápida" mandava a fila legítima para conferência.** A
+  regra de fraude (5+ pessoas com menos de 10 s entre uma e outra no mesmo
+  aparelho → conferência na hora) pegou **192 de 240 batidas (80%)** no ritmo
+  real. O aparelho não deixa bater em menos de ~5 s; o limite virou **4 s**
+  (`alertas.SEQUENCIA_SEGUNDOS`, `marcacoes.SEQUENCIA_NA_HORA_SEGUNDOS`). No
+  ritmo mais rápido possível (5,3 s), **0** em conferência. Quem digita o CPF de
+  colega ausente leva o tempo normal e cai na foto (rosto, foto repetida, mosaico).
+- **Achado 2 — o serviço se renova no meio da fila.** Com `--max-requests 1000`
+  e ~2,5 acessos por batida, a renovação cai dentro do pico das 7h; a conexão que
+  estava aberta cai e aquela identificação respondia "Sem internet agora". O
+  aparelho da obra agora tenta a identificação de novo, uma vez, depois de 1,5 s
+  (`chamarComNovaTentativa` — só a identificação, que não grava nada; a batida
+  não se repete sozinha). Subir o `--max-requests` é decisão do dono (Procfile E
+  Start Command do Render, os dois).
+- As fotos sobem para o Drive DEPOIS, numa linha só (1–3 s cada): 500 fotos
+  levam de 8 a 25 min para esvaziar a fila — a batida não espera por isso.
+- Não medido: a internet de cada obra (cada batida manda ~60 KB, pouco para 4G)
+  e o processador real do Render (o teste usou 1 núcleo deste ambiente).
+
 ## 15/10/2026 — A conferência do rosto: a chave da AWS sem permissão
 
 - O dono criou a conta e a chave da AWS. Primeira rodada: "0 conferida(s), 0

@@ -298,7 +298,7 @@ dizer "tem batida"; presença, horas e faltas são regra da fase 3.
 - Tem foto repetida (a mesma imagem em batidas diferentes)? 🔒 ⚠️ ("repetida" =
   a mesma imagem mandada de novo, não "parecida"; foto nova da mesma pessoa no
   mesmo lugar não conta)
-- Algum tablet teve fila rápida demais (5 ou mais pessoas com menos de 10 s entre
+- Algum tablet teve fila rápida demais (5 ou mais pessoas com menos de 4 s entre
   uma e outra)? 🔒 ⚠️ (é convite a abrir o mosaico, não prova de fraude)
 
 **Ronda surpresa dos vigias noturnos (migração 011 do ponto, 13/10/2026):**
