@@ -12228,27 +12228,25 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
-#### Leva 231 — O ponto do dia passa a vir sozinho (15/10/2026)
+#### Leva 231 — O ponto do dia: agendador na madrugada, decisão do dono (15/10/2026)
 
 - *"O ponto não tá automático"* — a tela dizia "618 colaborador(es) · 19158
   dia(s). Importado em 02/10/2026 às 14:00 por MARCELO". **Causa:** o
-  `ponto_diario` foi feito (30/09) para um agendador de fora (cron-job.org) e
-  configurá-lo ficou pendente com o dono desde então — nunca aconteceu. É o
-  mesmo buraco que a sincronização teve em setembro (sétima leva).
-- **Feito, do mesmo jeito que a sincronização:** a pergunta que a tela aberta faz
-  de 90 em 90 s (`/api/frescor` → `tarefas.manter_fresco`) dispara o
-  `ponto_diario` quando: a base de SPs está fresca (ela tem a vez antes), nada
-  está rodando, há credenciais do Mobponto, algum mês do ponto do dia (o
-  corrente; até o dia 10, também o anterior) ainda não entrou inteiro HOJE ou
-  parou no meio — e a última tentativa tem mais de UMA HORA (meta
-  `ponto_diario_tentado_em`), para um Mobponto fora do ar não levar uma chamada
-  a cada 90 s.
-- **Efeito que a equipe vai sentir:** uma vez por dia, quando a primeira tela
-  abre, o ponto do mês é trazido de novo (alguns minutos, conforme o Mobponto);
-  enquanto isso a sincronização das SPs espera. Publicar no meio mata a carga —
-  ela retoma na hora seguinte.
-- Não testado com o Mobponto de verdade (daqui não há acesso): os testes cobrem
-  a decisão de disparar, não a carga.
+  `ponto_diario` (30/09) depende de um agendador de fora (cron-job.org), e
+  configurá-lo ficou pendente com o dono — nunca aconteceu.
+- Cheguei a fazer o disparo pela tela aberta (como a sincronização). **O dono
+  preferiu o agendador:** *"prefiro o cronjob e configurar na madrugada"*. O
+  disparo pela tela foi DESFEITO antes de publicar (nada foi ao ar).
+- A chamada e o horário recomendado (02:00, 03:00 e 04:00, fuso de Brasília)
+  estão no `README.md`. O segredo é o `ANALISESPS_SECRET` das variáveis do
+  Render — ele copia de lá direto para o cron-job.org; nunca pelo chat.
+
+#### ⚠️ Pendente AGORA (ponto)
+
+| Falta | Depende de |
+|---|---|
+| configurar no cron-job.org as três chamadas da madrugada (passo a passo dado no chat de 15/10) | ele |
+| no dia seguinte, conferir na tela do Ponto se o "Importado em" é da madrugada | ele |
 
 #### Leva 230 — Conciliação: menos ferramenta, mais o que se usa (14/10/2026)
 

@@ -1056,12 +1056,6 @@ def manter_fresco() -> dict:
             return {"disparou": False, "motivo": "já está rodando"}
         minutos = _minutos_desde_a_ultima_sincronizacao()
         if minutos is not None and minutos < MINUTOS_ENTRE_SYNC_DA_TELA:
-            # A base está fresca — a vez é do ponto, se ele estiver devendo.
-            if _ponto_diario_devido():
-                _anotar_tentativa_do_ponto()
-                resultado = disparar("ponto_diario", disparo="tela aberta")
-                return {"disparou": bool(resultado.get("ok")),
-                        "motivo": resultado.get("erro") or "ponto do dia"}
             return {"disparou": False, "motivo": "recente"}
         resultado = disparar("sincronizar", disparo="tela aberta")
         return {"disparou": bool(resultado.get("ok")),
@@ -1069,62 +1063,6 @@ def manter_fresco() -> dict:
     except Exception:  # noqa: BLE001
         logger.exception("Análise de SPs: falhou manter a base fresca")
         return {"disparou": False, "motivo": "falhou"}
-
-
-# ---------------------------------------------------------------------------
-# O PONTO DO DIA SEM AGENDADOR — 15/10/2026
-#
-# O dono: *"o ponto não tá automático"* — a tela dizia "Importado em 02/10/2026
-# por MARCELO". O `ponto_diario` foi feito para um agendador de fora
-# (cron-job.org) que nunca foi configurado — o mesmo buraco que a sincronização
-# teve em setembro, e resolvido do mesmo jeito: a TELA ABERTA dispara.
-#
-# Quando a base está fresca e nada roda, a pergunta de 90 em 90 segundos vê se
-# algum mês do ponto do dia (o corrente; até o dia 10, também o anterior) ainda
-# não entrou inteiro HOJE, ou parou no meio — e dispara o `ponto_diario`, que
-# decide mês a mês (retoma, traz ou pula; `ponto.o_que_fazer_no_automatico`).
-#
-# No máximo UMA TENTATIVA POR HORA: um mês que falha (Mobponto fora do ar) não
-# vira uma chamada a cada 90 segundos em cima de um serviço que já está mal. A
-# sincronização das SPs tem a vez antes; enquanto o ponto roda, ela espera.
-# ---------------------------------------------------------------------------
-CHAVE_PONTO_TENTADO = "ponto_diario_tentado_em"
-MINUTOS_ENTRE_TENTATIVAS_DO_PONTO = 60
-
-
-def _ponto_diario_devido() -> bool:
-    """O ponto do dia está devendo, e a última tentativa já tem uma hora?"""
-    try:
-        from . import ponto as _ponto
-        if not _ponto.configurado():
-            return False
-        from .db import conexao
-        from .horario import agora, para_brasilia
-        from .sincronizacao import _meta_ler
-        with conexao() as conn:
-            ultima = _meta_ler(conn, CHAVE_PONTO_TENTADO)
-        if ultima:
-            import datetime as _dt
-            try:
-                quando = _dt.datetime.fromisoformat(ultima)
-                if (agora() - quando).total_seconds() < MINUTOS_ENTRE_TENTATIVAS_DO_PONTO * 60:
-                    return False
-            except ValueError:
-                pass
-        hoje = para_brasilia(agora()).date()
-        return any(_ponto.o_que_fazer_no_automatico(ano, mes, hoje) != "pular"
-                   for ano, mes in _ponto.meses_do_ponto_diario(hoje))
-    except Exception:  # noqa: BLE001 — de fundo: na dúvida, não dispara
-        logger.exception("Análise de SPs: não consegui ver se o ponto do dia está devendo")
-        return False
-
-
-def _anotar_tentativa_do_ponto() -> None:
-    from .db import conexao
-    from .horario import agora
-    from .sincronizacao import _meta_gravar
-    with conexao() as conn:
-        _meta_gravar(conn, CHAVE_PONTO_TENTADO, agora().isoformat())
 
 
 def disparar(modo: str, disparo: str = "manual") -> dict:

@@ -386,13 +386,6 @@ terminou com menos páginas do que a API prometeu.
 Tudo isso depende da **migração 037**; antes do botão, a carga continua
 entrando do jeito antigo (apaga antes, não retoma) e diz isso num aviso.
 
-**Desde 15/10/2026 a TELA ABERTA dispara o `ponto_diario` sozinha** — o
-agendador de fora nunca foi configurado, e a tela dizia "Importado em 02/10".
-Quando a base de SPs está fresca e nada roda, a pergunta de 90 em 90 segundos
-dispara o ponto do dia se algum mês dele ainda não entrou inteiro hoje (ou
-parou no meio), no máximo uma vez por hora (`tarefas._ponto_diario_devido`). O
-agendador de fora continua funcionando, se um dia for configurado.
-
 **Ninguém precisa apertar o botão todo dia.** O modo `ponto_diario` traz o mês
 corrente — e, até o dia 10, o anterior também (a mesma régua da competência
 sugerida) — em duas tentativas, a segunda retomando de onde a primeira parou.
@@ -404,7 +397,14 @@ Content-Type: application/json
 {"modo": "ponto_diario", "secret": "<ANALISESPS_SECRET>"}
 ```
 
-**De hora em hora** (desde 30/09/2026). Cada chamada, mês a mês: **retoma** a
+**Na madrugada, pelo cron-job.org — decisão do dono em 15/10/2026** (*"prefiro o
+cronjob e configurar na madrugada"*; um disparo pela tela aberta chegou a ser
+feito e foi desfeito antes de publicar). Horário recomendado, fuso
+America/Sao_Paulo: **02:00, 03:00 e 04:00** — a primeira traz, as outras duas
+retomam se algo cair e, se já entrou, pulam. Não publicar nesse horário: a
+publicação reinicia o serviço e corta a carga (a chamada seguinte retoma).
+
+Cada chamada, mês a mês: **retoma** a
 carga que parou no meio, **traz** o mês se ele ainda não entrou hoje, e **pula**
 o que já entrou inteiro hoje — então o mês é refeito uma vez por dia, e uma
 queda é retomada em até uma hora, sem ninguém apertar nada. É o "não mata o
