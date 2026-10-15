@@ -66,8 +66,16 @@ def test_erro_da_aws_vira_frase_com_o_que_fazer():
     negado = AccessDeniedException("An error occurred (AccessDeniedException) when calling the CompareFaces "
                                    "operation: User: arn:aws:iam::1:user/x is not authorized to perform: "
                                    "rekognition:CompareFaces")
-    assert "rekognition:CompareFaces" in rosto.explicar_erro_aws(negado)
-    assert "IAM" in rosto.explicar_erro_aws(negado)
+    assert "usuário x" in rosto.explicar_erro_aws(negado)
+    base = ("An error occurred (AccessDeniedException) when calling the CompareFaces operation: User: "
+            "arn:aws:iam::1:user/bws-ponto-rosto is not authorized to perform: rekognition:CompareFaces ")
+    for fim, esperado in (("with an explicit deny in a service control policy", "SCP"),
+                          ("with an explicit deny in a permissions boundary", "LIMITE DE PERMISSÕES"),
+                          ("with an explicit deny in an identity-based policy", "NEGAR"),
+                          ("because no identity-based policy allows the rekognition:CompareFaces action",
+                           "nenhuma política DESTE usuário")):
+        frase = rosto.explicar_erro_aws(AccessDeniedException(base + fim))
+        assert esperado in frase and "bws-ponto-rosto" in frase, frase
     chave = Exception("An error occurred (UnrecognizedClientException) when calling the CompareFaces operation")
     assert "AWS_ACCESS_KEY_ID" in rosto.explicar_erro_aws(chave)
     assert rosto.explicar_erro_aws(Exception("outra coisa")).startswith("a AWS respondeu com erro: outra coisa")

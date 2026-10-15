@@ -186,6 +186,14 @@ junto com o `README.md` e o `PLANO.md`.
   passam pela AWS (é a regra de quem não tem foto cadastral).
 - **Pendente com o dono:** no IAM, dar ao usuário `bws-ponto-rosto` uma política
   com `rekognition:CompareFaces` (Resource "*") e rodar de novo.
+- **Depois:** o dono mostrou que a política com `rekognition:CompareFaces` (Resource
+  "*") já existia no usuário, pôs uma segunda igual, e a AWS seguiu recusando. Com
+  a permissão dada, o bloqueio vem de outro lugar — SCP da organização (ele mexeu
+  no AWS Organizations para o opt-out de IA), limite de permissões no usuário, um
+  Deny, ou a chave do Render ser de outro usuário. A AWS diz qual no FIM da frase,
+  justamente o pedaço que a tela cortava; a frase em português passou a dizer quem
+  bloqueou e onde mexer. Sugerido ao dono o simulador de políticas do IAM, que
+  responde na hora sem precisar publicar.
 - A tela cortava a frase da AWS em 160 letras ("to per."). Agora os erros comuns
   viram frase em português com o que fazer (`rosto.explicar_erro_aws`): sem
   permissão, chave não reconhecida, conta não liberada, AWS pedindo calma.
