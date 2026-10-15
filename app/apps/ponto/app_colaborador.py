@@ -42,8 +42,14 @@ from .routes import bp
 
 logger = logging.getLogger("ponto.app")
 
-ENTRADAS_POR_HORA_POR_IP = 60
-CODIGOS_POR_HORA_POR_IP = 20
+# Por REDE (IP) e por hora. 16/10/2026, a implantação: "vamos cadastrar umas 40
+# pessoas (…) se houver algum limite, pode dar problema" — no Wi-Fi do escritório
+# todos saem pelo MESMO IP, e 20 códigos por hora travavam o cadastro em grupo.
+# Subiram; quem protege de verdade são as travas POR PESSOA (acesso.py: 3 códigos
+# por hora, 5 tentativas por código, PIN travado depois de 5 erros) e o teto de
+# WhatsApp da empresa (ERP › Mensagens).
+ENTRADAS_POR_HORA_POR_IP = 300
+CODIGOS_POR_HORA_POR_IP = 100
 # Tablet: uma obra de 80 pessoas faz 80 identificações em 15 minutos às 7h; o
 # teto é folgado para isso e baixo para quem quisesse varrer CPFs.
 IDENTIFICACOES_POR_HORA_POR_APARELHO = 400

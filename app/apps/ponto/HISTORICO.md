@@ -213,6 +213,13 @@ junto com o `README.md` e o `PLANO.md`.
   valia; com o WhatsApp demorando, a pessoa pedia de novo e digitava o primeiro.
   Agora vale qualquer código ainda no prazo (os 5 últimos), uma vez cada; o erro
   conta tentativa em todos os válidos (chutar contra vários não rende mais chances).
+- **Limites por REDE subiram** (o cadastro em grupo no Wi-Fi do escritório sai pelo
+  mesmo IP): códigos 20 → 100 por hora, entradas 60 → 300, registro de aparelho 30
+  → 120. As travas por pessoa ficaram iguais.
+- ⚠️ **O teto de WhatsApp da EMPRESA** (ERP › Mensagens, padrão 40 por hora e 200 por
+  dia, somando código, QR, avisos e rondas) corta o código em silêncio quando
+  estoura — status LIMITE no registro, que a ficha "Código não chegou?" mostra como
+  "passou do limite de mensagens". Ajuste com o dono (é da Mensageria).
 - Manual: a nota do código em mãos e a linha "Código inválido ou vencido" na tabela
   de mensagens (página, PDF e a versão no Claude).
 
