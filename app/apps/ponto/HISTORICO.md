@@ -41,6 +41,9 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1x. **PUBLICADO em 15/10/2026, à tarde** (com o "pode" do dono, sem migração): o erro de permissão da
+   AWS diz QUEM bloqueou (SCP da organização, limite de permissões, Deny ou falta de política).
+   **Falta o dono:** rodar o simulador de políticas do IAM (ou "Conferir agora") e dizer o motivo.
 1w. **PUBLICADO em 15/10/2026** (com o "pode" do dono, `main` em `7995036`, sem migração): o manual do
    colaborador no sistema (`/ponto/app/manual/` e `/ponto/app/manual.pdf`, link no app), os textos
    iguais aos botões (Pedidos na obra, "Anexar o documento") e o erro da AWS em português.
