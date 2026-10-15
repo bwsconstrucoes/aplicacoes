@@ -15,7 +15,7 @@
   - `pdf.bwsconstrucoes.com.br` → rotas de PDF (`/compilar`, `/pdf2texto`)
   - `aplicacoes.bwsconstrucoes.com.br` → app geral (visto nos logs 2026-07)
 - **URL pública padrão Render:** ⚠️ preencher (ex.: `https://aplicacoes-xxx.onrender.com`)
-- **Plano Render:** Pago (serviço não hiberna — confirmado 2026-07). Instância com **2 GB de RAM** (limite que causava OOM, ver §9).
+- **Plano Render:** Pago (serviço não hiberna — confirmado 2026-07). Instância com **4 GB de RAM e 2 CPUs desde 15/10/2026** (antes, 2 GB e 1 CPU — o limite que causava OOM, ver §9).
 - **Service ID Render:** `srv-d167o5qli9vc73cvq83g`
 - **Repositório Git:** `https://github.com/bwsconstrucoes/aplicacoes.git` (branch principal `main`)
 - **Branch deploy automático:** ⚠️ preencher
@@ -30,8 +30,9 @@
 - **Padrão:** factory pattern via `create_app()` em `app/main.py`
 - **Comando de start (desde 2026-07-14, ajustado p/ conter OOM):**
   ```
-  gunicorn app.main:app --timeout 3600 --graceful-timeout 120 --keep-alive 120 --workers 1 --threads 4 --worker-class gthread --max-requests 150 --max-requests-jitter 40 --log-level info
+  gunicorn app.main:app --timeout 3600 --graceful-timeout 120 --keep-alive 120 --workers 1 --threads 4 --worker-class gthread --max-requests 5000 --max-requests-jitter 500 --log-level info
   ```
+  (150 em julho; 1000 em 22/09/2026; 5000 em 15/10/2026 — `CLAUDE.md` › Gunicorn.)
 - ⚠️ **IMPORTANTE — Start Command vs Procfile:** o campo **Start Command nas
   Settings do Render SOBRESCREVE o Procfile**. Houve um período em que o campo
   estava preenchido com o comando antigo e o Procfile era ignorado (descoberto
@@ -255,7 +256,7 @@ removido em 05/10/2026 — ver §9.)
 - Mensagens de erro pra usuário em PT-BR.
 - Logs em PT-BR.
 
-### 3.7 Regras de memória (instância de 2 GB)
+### 3.7 Regras de memória (instância de 4 GB desde 15/10/2026; eram 2 GB)
 
 Padrões obrigatórios pra qualquer código novo (origem: incidente OOM 2026-07):
 
@@ -757,7 +758,7 @@ Pra criar um novo blueprint (ex.: `sync_logs`):
    app.register_blueprint(sync_logs_bp, url_prefix="/api/sync_logs")
    ```
 6. Não precisa mexer em `requirements.txt` se usar só libs já instaladas.
-7. **Seguir as regras de memória do §3.7** (instância tem só 2 GB).
+7. **Seguir as regras de memória do §3.7** (instância de 4 GB desde 15/10/2026 — continua sendo o recurso escasso).
 
 ⚠️ **Isto vale para módulo de integração** (recebe payload, fala com API/planilha,
 devolve JSON). Se o que você quer é uma **área nova do ERP** — Suprimentos,
@@ -784,7 +785,7 @@ Quando eu pedir nova feature ou adaptação:
    linha a adicionar em `main.py`. Não regerar arquivos que não mudaram.
 8. **Lembrar:** plano Render pago → serviço não hiberna. Estado persistente
    entre requests ainda deve ir pra planilha auxiliar ou Postgres externo.
-9. **Memória é o recurso escasso** (2 GB, histórico de OOM — ver §9). Aplicar
+9. **Memória é o recurso escasso** (4 GB desde 15/10/2026, eram 2 GB; histórico de OOM — ver §9). Aplicar
    sempre as regras do §3.7.
 10. **Se o assunto for o ERP, leia antes `app/apps/erp/ROTEIRO.md`.** É o
     backlog vivo do módulo, dividido em entregue / em andamento / fila, com os
@@ -1455,6 +1456,44 @@ Também mudou uma linha de código da área, por causa de um card que não abria
 C. Diários identifica a obra por **dois** códigos (primário e secundário), e a
 emissão só procurava pelo primário. Detalhe no `HISTORICO.md` da área.
 
+
+### 15/10/2026, 14:49 — Falta de memória (OOM) no Render: o ponto medido, não é ele (atravessa áreas)
+
+O serviço caiu por memória ("Ran out of memory (used over 2GB)"), e o dono viu
+um pico de **77%** no gráfico num horário SEM batida de ponto (só cadastros).
+- **O ponto foi medido e não acumula:** gunicorn igual ao da produção, 3.000 fotos
+  tratadas seguidas (o trabalho de um dia de batidas) — memória do processo de
+  191 MB para 216 MB, e parou. Com `MALLOC_ARENA_MAX=2`, 188 → 211 MB (sem
+  diferença que justifique mexer).
+- **O que rodava nos 2 minutos antes da queda (log do dono):** Análise de SPs
+  lendo comprovantes ("cota do Google em sicredi_…pdf — nova tentativa"), envio ao
+  Dropbox, `/compilar` (PDF, pelo Make), `/api/processarnovasp/executar`,
+  `/api/validasp/executar`. A Análise de SPs roda suas tarefas em PROCESSO
+  SEPARADO (`tarefas.disparar` → `executar_sync`), que carrega o sistema de novo e
+  soma memória dentro dos MESMOS 2 GB do serviço. Suspeita principal: PDFs e
+  imagens dessas tarefas (e do `pdf_processor`) ao mesmo tempo.
+- **Decidido pelo dono no mesmo dia:** o plano do Render subiu para **4 GB e 2 CPUs**
+  (de US$ 25 para 85/mês) — o ponto começa a valer em 16/10, e uma queda derruba a
+  batida também. Pode voltar para 2 GB depois que a causa for tratada na raiz.
+- **Ainda em aberto:** nos chats da Análise de SPs / pdf_processor, medir o pico de
+  memória de cada tarefa pesada e não deixar duas rodarem juntas.
+- **Para o chat do ERP:** a tela de saúde (`erp/core/comum/saude.py › memoria()`)
+  calcula a porcentagem sobre um teto FIXO de 2048 MB — com 4 GB, mostra o dobro do
+  real e o aviso de 80% dispara cedo. Trocar o teto para 4096 (ou ler de variável).
+- ⚠️ No mesmo log, o `secret` do webhook do chatbot aparece na URL
+  (`/api/chatbot/webhook?secret=…`): fica gravado no log do Render. Levar ao chat
+  da Mensageria — trocar o segredo e passá-lo fora da URL.
+
+### 15/10/2026 — O serviço reinicia a cada 5000 acessos, não 1000 (atravessa áreas)
+
+`--max-requests 1000 --max-requests-jitter 100` virou `5000` e `500` no
+`Procfile`, decisão do dono depois do teste de carga do ponto na produção (5
+aparelhos simulados, ~6× o pico de batidas): memória com pico de 32% dos 2 GB, e a renovação
+do serviço — ~15–20 s sem resposta no Render, com as conexões abertas caindo —
+era o único ponto ruim; com 1000 ela cairia uma vez por manhã no pico das
+batidas. **O Start Command do Render sobrescreve o Procfile**: o dono trocou lá o
+mesmo texto no mesmo dia, e o teste repetido com 10 aparelhos simulados deu zero
+erros. Caminho de volta: 1000 e 100, nos dois lugares.
 
 ### 22/09/2026 — O serviço reinicia a cada 1000 acessos, não 150 (atravessa áreas)
 

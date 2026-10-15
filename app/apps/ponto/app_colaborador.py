@@ -42,8 +42,14 @@ from .routes import bp
 
 logger = logging.getLogger("ponto.app")
 
-ENTRADAS_POR_HORA_POR_IP = 60
-CODIGOS_POR_HORA_POR_IP = 20
+# Por REDE (IP) e por hora. 16/10/2026, a implantação: "vamos cadastrar umas 40
+# pessoas (…) se houver algum limite, pode dar problema" — no Wi-Fi do escritório
+# todos saem pelo MESMO IP, e 20 códigos por hora travavam o cadastro em grupo.
+# Subiram; quem protege de verdade são as travas POR PESSOA (acesso.py: 3 códigos
+# por hora, 5 tentativas por código, PIN travado depois de 5 erros) e o teto de
+# WhatsApp da empresa (ERP › Mensagens).
+ENTRADAS_POR_HORA_POR_IP = 300
+CODIGOS_POR_HORA_POR_IP = 100
 # Tablet: uma obra de 80 pessoas faz 80 identificações em 15 minutos às 7h; o
 # teto é folgado para isso e baixo para quem quisesse varrer CPFs.
 IDENTIFICACOES_POR_HORA_POR_APARELHO = 400
@@ -85,7 +91,7 @@ def _dar_nome_ao_aparelho(conn, aparelho, pessoa: dict) -> None:
         return
     if dispositivos.foi_pedido(aparelho):
         return
-    db.executar(conn, "UPDATE ponto.dispositivos SET descricao = :d, colaborador_id = :c "
+    db.executar(conn, "UPDATE ponto.dispositivos SET descricao = :d, colaborador_id = :c, ultimo_uso_em = now() "
                       "WHERE id = :id AND status = 'PENDENTE'",
                 d=f"Celular de {pessoa['nome']} (CPF final {pessoa['cpf'][-3:]})"[:200], c=pessoa["id"],
                 id=aparelho["id"])
@@ -180,6 +186,88 @@ def app_jsqr():
     resposta = send_from_directory(PASTA_ESTATICA, "jsQR.js", mimetype="application/javascript")
     resposta.headers["Cache-Control"] = "public, max-age=604800"
     return resposta
+
+
+# ---------------------------------------------------------------------------
+# O manual do colaborador (15/10/2026, pedido do dono: "podemos disponibilizar
+# online esse manual? ponto/app/manual.html"). Página fixa, sem dado de ninguém —
+# as telas são de um banco de teste, com nomes de exemplo. A fonte é a pasta
+# static/manual; o PDF é impresso dela pelo Chromium (ver HISTORICO, 15/10/2026).
+# ---------------------------------------------------------------------------
+PASTA_MANUAL = os.path.join(PASTA_ESTATICA, "manual")
+
+
+@bp.route("/app/manual/")
+@auth.publica("o manual de uso para os colaboradores; página fixa, sem dado")
+def app_manual():
+    resposta = send_from_directory(PASTA_MANUAL, "index.html", mimetype="text/html")
+    resposta.headers["Cache-Control"] = "no-cache"
+    return resposta
+
+
+@bp.route("/app/manual")
+@bp.route("/app/manual.html")
+@auth.publica("o manual de uso; leva ao endereço com barra, que as imagens usam")
+def app_manual_sem_barra():
+    from flask import redirect
+    return redirect("/ponto/app/manual/", code=301)
+
+
+@bp.route("/app/manual/telas/<nome>")
+@auth.publica("as telas do manual (imagens de um banco de teste)")
+def app_manual_tela(nome: str):
+    resposta = send_from_directory(os.path.join(PASTA_MANUAL, "telas"), nome)
+    resposta.headers["Cache-Control"] = "public, max-age=86400"
+    return resposta
+
+
+@bp.route("/app/manual.pdf")
+@auth.publica("o manual de uso em PDF")
+def app_manual_pdf():
+    return send_from_directory(PASTA_MANUAL, "manual-bws-ponto.pdf", mimetype="application/pdf",
+                               download_name="Manual do BWS Ponto.pdf")
+
+
+# ---------------------------------------------------------------------------
+# O teste de carga na produção (15/10/2026) — core/carga.py diz por que ele NÃO
+# grava batida. A página fica aberta; a simulação só responde com o teste ligado
+# por um ADMIN e para aparelho aprovado.
+# ---------------------------------------------------------------------------
+@bp.route("/app/teste-carga/")
+@auth.publica("a página do teste de carga; sem dado — a simulação exige aparelho aprovado e o teste ligado")
+def app_teste_carga():
+    resposta = send_from_directory(PASTA_ESTATICA, "teste-carga.html", mimetype="text/html")
+    resposta.headers["Cache-Control"] = "no-cache"
+    return resposta
+
+
+@bp.route("/app/teste-carga")
+@auth.publica("leva ao endereço com barra")
+def app_teste_carga_sem_barra():
+    from flask import redirect
+    return redirect("/ponto/app/teste-carga/", code=301)
+
+
+@bp.route("/app/api/teste-carga", methods=["GET", "POST"])
+@auth.exige_aparelho
+def app_api_teste_carga():
+    from .core import carga
+    with db.conexao() as conn:
+        try:
+            a = dispositivos.autenticar(conn, request.headers.get("X-Device-UUID", ""),
+                                        request.headers.get(auth.CABECALHO_TOKEN))
+        except Exception:  # noqa: BLE001
+            raise NaoAutenticado("este aparelho não está cadastrado — use um celular ou tablet já aprovado")
+        if a["status"] != "APROVADO":
+            raise Recusada(f"este aparelho está {a['status'].lower()} — use um já aprovado")
+        ate = carga.ligado_ate(conn)
+        if request.method == "GET":
+            return _ok(ligado=bool(ate), ate=carga.hora(ate),
+                       aparelho=a.get("descricao") or a["perfil"])
+        if not ate:
+            raise Recusada("o teste de carga está desligado — um administrador liga em ERP › Ponto › Configuração")
+        resultado = carga.simular(conn, a, (_corpo().get("foto_base64") or ""))
+    return _ok(**resultado)
 
 
 # ---------------------------------------------------------------------------

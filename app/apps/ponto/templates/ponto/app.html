@@ -180,6 +180,7 @@
       <button class="btn" id="btn-entrar" type="button">Entrar</button>
       <button class="link" id="btn-ir-primeiro" type="button">Primeiro acesso ou esqueci o PIN</button>
     </div>
+    <p class="pequeno" style="text-align:center"><a href="/ponto/app/manual/">📖 Como usar o aplicativo (manual)</a></p>
     <p class="pequeno" id="codigo-aparelho" style="text-align:center"></p>
     <div class="cartao oculto" id="cartao-tablet">
       <h2>Este é o ponto da obra</h2>
@@ -196,6 +197,7 @@
       <label for="p-cpf">CPF</label>
       <input id="p-cpf" inputmode="numeric" placeholder="000.000.000-00">
       <button class="btn" id="btn-codigo" type="button">Mandar o código</button>
+      <button class="link" id="btn-ja-tenho" type="button">Já tenho um código (entregue pelo DP)</button>
       <div id="p-passo2" class="oculto">
         <label for="p-codigo">Código que chegou no WhatsApp</label>
         <input id="p-codigo" inputmode="numeric" maxlength="6" autocomplete="one-time-code">
@@ -252,6 +254,7 @@
     <p class="pequeno" id="m-codigo" style="text-align:center"></p>
     <button class="link oculto" id="m-pedir-aparelho" type="button" style="display:block; margin:0 auto">Este aparelho vai bater ponto? Pedir a aprovação</button>
     <button class="btn sec oculto" id="m-sair" type="button">Sair</button>
+    <p class="pequeno" style="text-align:center"><a href="/ponto/app/manual/">📖 Como usar o aplicativo (manual)</a></p>
   </section>
 
   <!-- O PONTO DAS PESSOAS DA OBRA -->
@@ -343,8 +346,8 @@
   <section id="tela-pedidos" class="oculto">
     <div class="cartao oculto" id="cartao-pedido-na-obra">
       <h2>Atestado, licença, ajuste</h2>
-      <div class="aviso info">São entregues <b>no aparelho da obra</b> (toque em “Entregar atestado, licença ou
-        pedir ajuste” e mostre o seu QR Code) ou pelo <b>responsável da obra</b>. Aqui você acompanha a
+      <div class="aviso info">São entregues <b>no aparelho da obra</b> (toque em “Atestados, afastamentos e
+        ajustes” e mostre o seu QR Code ou digite o CPF) ou pelo <b>responsável da obra</b>. Aqui você acompanha a
         resposta.</div>
     </div>
     <div class="cartao" id="cartao-fazer-pedido">
@@ -440,6 +443,18 @@ async function chamar(url, corpo, metodo) {
   try { d = await r.json(); } catch (e) { d = {ok: false, erro: "Resposta inesperada do servidor."}; }
   if (!d.ok) { const err = new Error(d.erro || "Não deu certo."); err.status = r.status; throw err; }
   return d;
+}
+// A identificação no aparelho da obra tenta UMA vez de novo quando a conexão cai
+// (15/10/2026, teste de carga: o serviço se renova sozinho a cada ~1.000 acessos e
+// derruba a conexão que estava aberta — às 7h, isso cai no meio da fila). Só a
+// identificação: ela não grava nada, repetir é seguro. A batida, não.
+async function chamarComNovaTentativa(url, corpo) {
+  try { return await chamar(url, corpo); }
+  catch (e) {
+    if (e.status) throw e;                       // o servidor respondeu: não é conexão
+    await new Promise(ok => setTimeout(ok, 1500));
+    return chamar(url, corpo);
+  }
 }
 async function garantirRegistro(descricao) {
   const a = aparelho();
@@ -670,6 +685,12 @@ async function voltarAoInicio() {
 }
 $("btn-ir-primeiro").addEventListener("click", () => { $("p-cpf").value = $("e-cpf").value; mostrar("primeiro"); });
 $("btn-voltar-entrar").addEventListener("click", () => mostrar("entrar"));
+// O código entregue em mãos pelo DP quando o WhatsApp não chega (16/10/2026):
+// abre o passo de digitar o código sem mandar um novo.
+$("btn-ja-tenho").addEventListener("click", () => {
+  if (!cpfValido(soDigitos($("p-cpf").value))) { $("p-cpf").focus(); return aviso("Digite o seu CPF primeiro.", "erro"); }
+  $("p-passo2").classList.remove("oculto"); $("btn-ja-tenho").classList.add("oculto"); $("p-codigo").focus();
+});
 $("btn-codigo").addEventListener("click", async () => {
   try {
     const d = await chamar("/ponto/app/api/codigo", {cpf: soDigitos($("p-cpf").value)});
@@ -1377,7 +1398,7 @@ function camposDePedido(px, t, dia) {
   return {
     ATESTADO: `<label>Primeiro dia de afastamento</label><input type="date" id="${px}-inicio" value="${d0}">
       <label>Quantos dias o médico deu?</label><input type="number" id="${px}-dias" min="1" max="120" value="1">
-      <label>Foto ou PDF do atestado</label><button class="btn sec" type="button" id="${px}-doc">Escolher foto ou arquivo</button>
+      <label>Foto ou PDF do atestado</label><button class="btn sec" type="button" id="${px}-doc">📎 Anexar o documento — foto ou arquivo</button>
       <p class="pequeno" id="${px}-doc-nome">Nenhum arquivo escolhido.</p>
       <p class="pequeno">Só o DP vê o atestado.</p>`,
     AJUSTE_BATIDA: `<label>Que dia?</label><input type="date" id="${px}-inicio" value="${d0}" max="${hojeISO()}">
@@ -1393,7 +1414,7 @@ function camposDePedido(px, t, dia) {
       <label>Primeiro dia</label><input type="date" id="${px}-inicio" value="${d0}">
       <label>Último dia</label><input type="date" id="${px}-fim" value="${d0}">
       <label>Observação</label><textarea id="${px}-descricao" placeholder="Ex.: luto (pai)"></textarea>
-      <label>Documento</label><button class="btn sec" type="button" id="${px}-doc">Escolher foto ou arquivo</button>
+      <label>Documento</label><button class="btn sec" type="button" id="${px}-doc">📎 Anexar o documento — foto ou arquivo</button>
       <p class="pequeno" id="${px}-doc-nome">Nenhum arquivo escolhido.</p>`,
     FOLGA_BANCO: `<label>Dia da folga</label><input type="date" id="${px}-inicio" value="${dia || ""}">
       <label>Último dia (se mais de um)</label><input type="date" id="${px}-fim">
@@ -1825,7 +1846,7 @@ async function identificar(quem) {
   cobrir("", `<p>Identificando…</p>`);
   let d;
   try {
-    d = await chamar("/ponto/app/api/tablet/identificar", {...quem, obra: $("t-obra").value});
+    d = await chamarComNovaTentativa("/ponto/app/api/tablet/identificar", {...quem, obra: $("t-obra").value});
   } catch (e) {
     return cobrir("erro", `<h2>${quem.qr ? "QR Code não aceito" : "Não identificado"}</h2><p>${esc(e.message)}</p>`, 3500);
   }
@@ -1887,7 +1908,7 @@ async function identificarParaPedido(quem) {
   cobrir("", `<p>Identificando…</p>`);
   let d;
   try {
-    d = await chamar("/ponto/app/api/tablet/identificar", {...quem, obra: $("t-obra").value, para_pedido: true});
+    d = await chamarComNovaTentativa("/ponto/app/api/tablet/identificar", {...quem, obra: $("t-obra").value, para_pedido: true});
   } catch (e) {
     return cobrir("erro", `<h2>Não identificado</h2><p>${esc(e.message)}</p>`, 3500);
   }

@@ -41,11 +41,42 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1zb. **PUBLICADO em 15/10/2026, madrugada** (com o "pode" do dono, `main` em `246e8e1`, sem migração):
+   pedidos de aparelho com o mais novo em cima, a hora do pedido e a lista se atualizando sozinha; na
+   ficha da pessoa, "Código não chegou?" (o que impede o envio, o que o WhatsApp respondeu, e — para quem
+   configura — um código entregue em mãos, sem telefone); vale qualquer código ainda no prazo, não só o
+   último pedido; limites por rede maiores para o cadastro em grupo (códigos 100/h, entradas 300/h,
+   aparelhos 120/h); o manual com a nota do código em mãos. **Falta o dono:** subir o teto do WhatsApp da
+   empresa em ERP › Mensagens (sugestão ~150/h e 1000/dia na implantação — o padrão de 40/h segura os
+   códigos em silêncio) e liberar a AWS (a política da organização, SCP, ainda bloqueia a comparação de
+   rosto).
+1za. **PUBLICADO em 15/10/2026** (com o "pode" do dono, sem migração): o `Procfile` com
+   `--max-requests 5000 --max-requests-jitter 500`, igual ao Start Command que o dono já tinha trocado no
+   Render. **Falta o dono:** olhar o gráfico de memória nas próximas semanas (passando de ~60% e ficando,
+   volta para 1000, nos dois lugares).
+1z. **PUBLICADO em 15/10/2026, fim da noite** (com o "pode" do dono, sem migração): o teste de carga
+   com um play no ERP (Configuração › Geral › "Teste de carga": o computador simula N aparelhos, nada
+   fica guardado) e a página opcional no celular (`/ponto/app/teste-carga/`). **Falta o dono:** rodar
+   fora do horário de batida e contar os números (ida e volta, servidor, erros).
+1y. **PUBLICADO em 15/10/2026, noite** (com o "pode" do dono, sem migração): o teste de carga de 500
+   pessoas — "fila rápida" a 4 s (a fila real ia 80% para conferência) e a identificação no aparelho da
+   obra tentando de novo quando a conexão cai na renovação do serviço. **Decisão em aberto do dono:**
+   subir o `--max-requests` (hoje 1000; Procfile e Start Command do Render, os dois).
+1x. **PUBLICADO em 15/10/2026, à tarde** (com o "pode" do dono, sem migração): o erro de permissão da
+   AWS diz QUEM bloqueou (SCP da organização, limite de permissões, Deny ou falta de política).
+   **Falta o dono:** rodar o simulador de políticas do IAM (ou "Conferir agora") e dizer o motivo.
+1w. **PUBLICADO em 15/10/2026** (com o "pode" do dono, `main` em `7995036`, sem migração): o manual do
+   colaborador no sistema (`/ponto/app/manual/` e `/ponto/app/manual.pdf`, link no app), os textos
+   iguais aos botões (Pedidos na obra, "Anexar o documento") e o erro da AWS em português.
+   **Falta o dono:** dar `rekognition:CompareFaces` ao usuário IAM `bws-ponto-rosto` e rodar a
+   conferência do rosto de novo.
 1v. **PUBLICADO em 14/10/2026, tarde** (com o "pode" do dono, `main` em `3b32843`, sem migração): o
    pedido de aprovação do aparelho só depois de entrar com CPF e PIN ("Este aparelho vai bater ponto?",
    no menu, com o nome de quem pediu); a busca de Pessoas diz por que alguém não aparece; os textos da
-   Configuração sobre afastado. **Falta o dono:** buscar a Karla (CPF) em Pessoas e dizer o motivo que
-   apareceu; e conferir o quadro "Google Drive e fila de envio" (fotos chegando ao Drive?).
+   Configuração sobre afastado. A Karla: a busca disse "não está no ERP nem na cópia do Registro" — a
+   cópia estava velha; o caminho é "Atualizar cadastro" na Análise de SPs. Se depois disso ela ainda não
+   aparecer, a linha dela está numa aba que a cópia não lê (a cópia lê "Dados Documentos"). **Falta o
+   dono:** conferir o quadro "Google Drive e fila de envio" (fotos chegando ao Drive?).
 1u. **PUBLICADO em 14/10/2026** (com o "pode" do dono, `main` em `e6578f9`): afastado não bate; "ver no
    mapa" na batida (espelho e Validações) e na ronda; a batida recusada guarda o
    lugar. Sem migração.
@@ -168,6 +199,188 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 16/10/2026 — "O código não chegou" e "código inválido ou vencido"
+
+- O dono: *"a pessoa não recebe o código (…) e não chega nada no aparelhos.
+  Consultei o telefone no cadastro, tá normal. E aí eu não sei o que fazer."* E
+  depois: *"código inválido ou vencido — não sei em qual circunstância aparece."*
+- **Por que não sai, em silêncio** (`acesso.pedir_codigo` responde igual em todos,
+  de propósito): CPF fora do cadastro do ERP, pessoa DESLIGADA, celular sem DDD, 3
+  códigos na última hora — ou o WhatsApp recusou/o tipo está desligado em Mensagens.
+  ⚠️ O celular que o ponto usa vem do **Registro de Colaboradores** quando a pessoa
+  está nele, não do ERP — "o telefone do cadastro está certo" pode ser o do ERP.
+- **Ficha da pessoa › "Código não chegou?"** (`acesso.diagnostico`, quem trata o
+  ponto, no escopo): o celular usado e de onde vem (avisando quando o do ERP é
+  outro), o PIN (criado? travado?), o que impede o envio, e os 5 últimos códigos com
+  o resultado do envio (cruzando `mensageria.envios` pelo número e pela hora).
+- **"Gerar código para entregar em mãos"** (`acesso.codigo_em_maos`, só quem
+  configura o ponto — o código deixa criar o PIN da pessoa): não precisa de celular,
+  vale 15 min, fica no registro quem gerou. No app, "Já tenho um código (entregue
+  pelo DP)" abre o campo sem mandar outro.
+- **"Código inválido ou vencido" — o caso mais comum era nosso:** só o ÚLTIMO código
+  valia; com o WhatsApp demorando, a pessoa pedia de novo e digitava o primeiro.
+  Agora vale qualquer código ainda no prazo (os 5 últimos), uma vez cada; o erro
+  conta tentativa em todos os válidos (chutar contra vários não rende mais chances).
+- **Limites por REDE subiram** (o cadastro em grupo no Wi-Fi do escritório sai pelo
+  mesmo IP): códigos 20 → 100 por hora, entradas 60 → 300, registro de aparelho 30
+  → 120. As travas por pessoa ficaram iguais.
+- ⚠️ **O teto de WhatsApp da EMPRESA** (ERP › Mensagens, padrão 40 por hora e 200 por
+  dia, somando código, QR, avisos e rondas) corta o código em silêncio quando
+  estoura — status LIMITE no registro, que a ficha "Código não chegou?" mostra como
+  "passou do limite de mensagens". Ajuste com o dono (é da Mensageria).
+- Manual: a nota do código em mãos e a linha "Código inválido ou vencido" na tabela
+  de mensagens (página, PDF e a versão no Claude).
+
+## 16/10/2026 — Os pedidos de aparelho na ordem em que chegam
+
+- O dono, no primeiro dia de pedidos: *"tem alguns que estão demorando mais (…)
+  a que informou depois chegou antes da pessoa que informou primeiro."* A tela de
+  aparelhos punha os pendentes em **ordem de nome**: o pedido de quem pediu antes
+  podia estar no meio da lista, parecendo não ter chegado. E a lista só mudava ao
+  recarregar a página.
+- Agora: pendentes com o **mais novo em cima** e a hora do pedido na coluna
+  ("pedido dd/mm hh:mm" — `dispositivos.para_json` › `pedido_em`: o registro do
+  navegador ou a última entrada nele; o pedido feito depois do login atualiza o
+  "último uso"), o mesmo na fila de Validações, e a lista de aparelhos se
+  atualiza sozinha a cada 30 s enquanto está na tela (não com janela aberta).
+- Outras causas de "demora" que não são do sistema, ditas ao dono: a pessoa avisou
+  no grupo antes de tocar em "Pedir a aprovação" (o link fica no fim da tela
+  inicial); o código do WhatsApp do primeiro acesso chegou tarde; quem já está
+  liberado no cadastro só gera o pedido ao abrir o "Meu ponto".
+
+## 15/10/2026 (noite) — O teste de carga NA PRODUÇÃO, com celulares de verdade
+
+- O dono: *"pegar uns 4–5 telefones já cadastrados, que acessem algum endereço e
+  na prática começar a disparar uma simulação de envio do ponto (…) como se fossem
+  as imagens (…) rodando cada um por alguns minutos ao mesmo tempo."*
+- **Não grava batida, de propósito**: batida é registro de ponto (NSR sem furo,
+  que não se apaga — Portaria 671). `core/carga.py` faz o trabalho de uma batida
+  menos o registro: a foto do tamanho da real (o celular gera ~90 KB, 800 px,
+  JPEG 0,8), o tratamento (reduzir, hash, sinais), as leituras, e GRAVA a foto
+  em `ponto.fotos` com os bytes dentro de um SAVEPOINT desfeito. Não faz NSR,
+  marcação, alerta nem Drive (que na batida real é depois da resposta).
+- **Só ligado**: quem configura o ponto liga por até 60 min (Configuração › Geral
+  › "Teste de carga", botão de 30 min); fora disso a rota recusa. Só aparelho
+  APROVADO (qualquer tipo). Página: `/ponto/app/teste-carga/`, aberta no mesmo
+  navegador em que o aparelho bate — usa a identidade dele.
+- Cada celular mostra na tela: envios certos e com erro, KB por foto, ida e volta
+  (mediana, 95%, pior — o que a pessoa sente) e o tempo no servidor. O quadro do
+  ERP soma os aparelhos — na memória do serviço: se ele se renovar no meio, a
+  conta recomeça (e os erros de "conexão caiu" na tela do celular mostram isso).
+- Aqui (3 aparelhos simulados, 1 envio por segundo cada, 1 min): 182 envios, 0
+  erro, ida e volta ~37 ms, servidor ~24 ms; nenhuma foto ficou no banco.
+- **O "play" (mesmo dia):** o dono — *"deveria ser algo que eu dê um play no telefone
+  e ele comece e fique disparando dados. Não é pra operar de verdade (…) ou mesmo
+  um script no PC. Nenhum desses dados de teste precisam ficar armazenados."* O
+  quadro "Teste de carga" do ERP ganhou "▶ Começar o teste": o COMPUTADOR de quem
+  configura faz o papel de N aparelhos (1–10, padrão 5) por M minutos (1–15),
+  cada um mandando uma imagem de ~90 KB por segundo
+  (`/erp/api/ponto/teste-carga/simular`, aparelho simulado, mesma `carga.simular`).
+  Liga o teste ao começar e desliga ao terminar. Aqui: 5 aparelhos, 1 min, 300
+  envios, 0 erro, ida e volta ~80 ms, servidor ~40 ms; nada guardado (só a
+  estatística de tempo por tela que o ERP já soma de minuto em minuto). A página
+  do celular ficou como opção, para medir a internet de uma obra.
+- **Na produção (o dono rodou):** 5 aparelhos, ~6 min — 1.832 certos, 10 com erro
+  (0,5%), servidor ~107 ms (pior 1,1 s), ida e volta ~1,1 s (95%: 2,6 s, pior
+  18,8 s), memória com pico de 32%. A ida e volta é quase toda viagem (5 fotos
+  por segundo saindo da mesma internet); o pior caso e os erros eram a renovação
+  do serviço (`--max-requests 1000`, ~15–20 s sem resposta no Render). Decisão
+  do dono: `--max-requests 5000` (Procfile e Start Command). Repetido com **10
+  aparelhos: zero erros**.
+- ⚠️ A simulação é um pouco MAIS LEVE que a batida (no teste de carga local, a
+  batida de verdade levou ~60 ms no servidor e a simulação ~24 ms): por isso a
+  sugestão de 1 envio por segundo por celular — 5 celulares = 5 por segundo, umas
+  6× o pico real de 500 pessoas em 10 min.
+
+## 15/10/2026 — Teste de carga: 500 pessoas batendo em 10–15 min
+
+O dono: *"bater o ponto de 500 funcionários num intervalo de 10–15 min vai ser
+viável? Fiquei com receio do desempenho."* Medido, não estimado: 500 pessoas e 12
+aparelhos de obra num banco de teste, o serviço com o MESMO comando da produção
+(gunicorn, 1 worker, 4 threads, `--max-requests 1000`) preso a 1 processador,
+cada batida com identificação + foto de ~60 KB (o que o tablet manda).
+
+- **O servidor aguenta com folga.** No limite (12 aparelhos sem pausa): ~30
+  batidas por segundo, cada uma em ~0,2 s. 500 pessoas em 10 min pedem menos de
+  1 por segundo. No ritmo de fila de verdade (~7 s por pessoa): identificar em
+  0,02 s e bater em 0,06 s (p95 0,14 s). Memória do serviço: ~210 MB.
+- **O limite de verdade é o número de aparelhos**: cada um atende ~8 pessoas por
+  minuto (2 s de contagem para a foto + 3 s de confirmação + a pessoa mostrar o
+  QR) — ~75 pessoas em 10 min, ~110 em 15. Obra com 150 pessoas na mesma janela
+  precisa de 2 aparelhos.
+- **Achado 1 — a "fila rápida" mandava a fila legítima para conferência.** A
+  regra de fraude (5+ pessoas com menos de 10 s entre uma e outra no mesmo
+  aparelho → conferência na hora) pegou **192 de 240 batidas (80%)** no ritmo
+  real. O aparelho não deixa bater em menos de ~5 s; o limite virou **4 s**
+  (`alertas.SEQUENCIA_SEGUNDOS`, `marcacoes.SEQUENCIA_NA_HORA_SEGUNDOS`). No
+  ritmo mais rápido possível (5,3 s), **0** em conferência. Quem digita o CPF de
+  colega ausente leva o tempo normal e cai na foto (rosto, foto repetida, mosaico).
+- **Achado 2 — o serviço se renova no meio da fila.** Com `--max-requests 1000`
+  e ~2,5 acessos por batida, a renovação cai dentro do pico das 7h; a conexão que
+  estava aberta cai e aquela identificação respondia "Sem internet agora". O
+  aparelho da obra agora tenta a identificação de novo, uma vez, depois de 1,5 s
+  (`chamarComNovaTentativa` — só a identificação, que não grava nada; a batida
+  não se repete sozinha). Subir o `--max-requests` é decisão do dono (Procfile E
+  Start Command do Render, os dois).
+- As fotos sobem para o Drive DEPOIS, numa linha só (1–3 s cada): 500 fotos
+  levam de 8 a 25 min para esvaziar a fila — a batida não espera por isso.
+- Não medido: a internet de cada obra (cada batida manda ~60 KB, pouco para 4G)
+  e o processador real do Render (o teste usou 1 núcleo deste ambiente).
+
+## 15/10/2026 — A conferência do rosto: a chave da AWS sem permissão
+
+- O dono criou a conta e a chave da AWS. Primeira rodada: "0 conferida(s), 0
+  suspeita(s), 2 virou(aram) foto cadastral — parou: a AWS respondeu com erro:
+  AccessDeniedException (…) user/bws-ponto-rosto is not authorized to per." —
+  a chave funciona (a AWS reconheceu o usuário), mas o usuário IAM não tem a
+  permissão `rekognition:CompareFaces`. As 2 que viraram foto cadastral não
+  passam pela AWS (é a regra de quem não tem foto cadastral).
+- **Pendente com o dono:** no IAM, dar ao usuário `bws-ponto-rosto` uma política
+  com `rekognition:CompareFaces` (Resource "*") e rodar de novo.
+- **Depois:** o dono mostrou que a política com `rekognition:CompareFaces` (Resource
+  "*") já existia no usuário, pôs uma segunda igual, e a AWS seguiu recusando. Com
+  a permissão dada, o bloqueio vem de outro lugar — SCP da organização (ele mexeu
+  no AWS Organizations para o opt-out de IA), limite de permissões no usuário, um
+  Deny, ou a chave do Render ser de outro usuário. A AWS diz qual no FIM da frase,
+  justamente o pedaço que a tela cortava; a frase em português passou a dizer quem
+  bloqueou e onde mexer. Sugerido ao dono o simulador de políticas do IAM, que
+  responde na hora sem precisar publicar.
+- A tela cortava a frase da AWS em 160 letras ("to per."). Agora os erros comuns
+  viram frase em português com o que fazer (`rosto.explicar_erro_aws`): sem
+  permissão, chave não reconhecida, conta não liberada, AWS pedindo calma.
+
+## 15/10/2026 — Manual do colaborador (com as telas)
+
+- Pedido do dono: um manual de uso para os colaboradores (não para o RH), para os
+  três jeitos de usar — só consulta, bate no próprio celular, ponto da obra —, do
+  primeiro acesso aos pedidos, regras e alertas, com telas.
+- Publicado como página (Artifact, privado do dono, que compartilha):
+  https://claude.ai/artifact/ULFBh1N3Drs3gZmXsgzw4W — 10 partes, 21 telas tiradas
+  do aplicativo de verdade num banco de teste (nomes de exemplo). Para atualizar a
+  partir de outro chat: ler a página pelo endereço e publicar no mesmo endereço.
+  **Ao mudar uma tela ou uma regra que o colaborador vê, o manual fica velho** —
+  vale conferir a parte correspondente.
+- **No próprio sistema (mesmo dia, pedido do dono: "gerando PDF não ficou legal (…)
+  podemos disponibilizar online? ponto/app/manual.html")**: o manual mora em
+  `static/manual/` (index.html + telas/ + manual-bws-ponto.pdf) e abre sem login em
+  `/ponto/app/manual/` (`/ponto/app/manual` e `/ponto/app/manual.html` levam até lá);
+  o PDF em `/ponto/app/manual.pdf`. Link "📖 Como usar o aplicativo (manual)" na
+  tela de entrada e na tela inicial do app. O PDF ruim tinha causa: o papel A4 tem
+  ~690 px de largura e caía nas regras de CELULAR (fotos numa fila que rola para o
+  lado, cortada no papel). Agora há um formato de papel próprio (`@media print`):
+  cada parte começa numa página, texto em cima e telas lado a lado, sem quebrar um
+  passo no meio, dúvidas abertas. **Como regenerar o PDF** depois de mudar a página:
+  abrir `/ponto/app/manual/` no Chromium (Playwright), `emulateMedia print`, abrir os
+  `<details>` e `page.pdf({format: "A4", printBackground: true})` — sem
+  `loading="lazy"` nas imagens, senão elas saem pretas no PDF (aconteceu).
+  A página no Claude (Artifact) é a mesma, sem o esqueleto HTML.
+- Fotografando as telas, dois textos do aplicativo estavam errados e foram
+  corrigidos: a aba Pedidos de quem entrega na obra mandava tocar em "Entregar
+  atestado, licença ou pedir ajuste", e o botão no ponto da obra se chama
+  "Atestados, afastamentos e ajustes"; e o anexo do celular dizia "Escolher foto
+  ou arquivo" enquanto o do ponto da obra diz "📎 Anexar o documento — foto ou
+  arquivo" (agora igual nos três lugares).
 
 ## 14/10/2026 (tarde) — "Este aparelho vai bater ponto?" só depois do CPF e PIN
 

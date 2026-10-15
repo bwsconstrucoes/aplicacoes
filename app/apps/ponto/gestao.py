@@ -43,11 +43,11 @@ from app.apps.erp.db.database import get_session
 from app.apps.erp.routes import bp, login_obrigatorio, permissao
 
 from . import db, horario, migracoes_runner
-from .core import (alertas, banco, cadastros, competencias, dispositivos, documentos,
+from .core import (acesso, alertas, banco, cadastros, competencias, dispositivos, documentos,
                    envios, escalas, espelho, feriados, fotos, leitura_atestado, mosaico,
                    ocorrencias, painel, parametros, qr, rotina, validacao)
 from .core.ocorrencias import Quem
-from .erros import ErroDeValidacao, ErroDoPonto, NaoEncontrado
+from .erros import ErroDeValidacao, ErroDoPonto, NaoEncontrado, Recusada
 
 logger = logging.getLogger("ponto.gestao")
 
@@ -1843,6 +1843,72 @@ def ponto_api_fila_enviar():
         f = fotos.enviar_pendentes(conn)
         d = documentos.enviar_pendentes(conn)
     return _ok(fotos=f, documentos=d)
+
+
+
+@bp.route("/erp/api/ponto/pessoas/<int:colaborador_id>/acesso")
+@login_obrigatorio
+@permissao("tratar_ponto")
+@_api
+def ponto_api_pessoa_acesso(colaborador_id: int):
+    """Por que o código do primeiro acesso não chegou (16/10/2026): o telefone que o
+    ponto usa, o PIN, o que impede o envio e os últimos códigos com o resultado."""
+    quem = _quem()
+    with db.conexao() as conn:
+        _exigir_pessoa(conn, quem, colaborador_id)
+        d = acesso.diagnostico(conn, colaborador_id)
+    return _ok(acesso=d)
+
+
+@bp.route("/erp/api/ponto/pessoas/<int:colaborador_id>/codigo-em-maos", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar_ponto")
+@_api
+def ponto_api_pessoa_codigo_em_maos(colaborador_id: int):
+    """O código de primeiro acesso para ENTREGAR EM MÃOS, quando o WhatsApp não
+    chega. Só quem configura o ponto: o código deixa criar o PIN da pessoa."""
+    quem = _quem()
+    with db.conexao() as conn:
+        _exigir_pessoa(conn, quem, colaborador_id)
+        codigo = acesso.codigo_em_maos(conn, colaborador_id, quem.nome)
+    return _ok(codigo=codigo, validade_min=acesso.CODIGO_VALIDADE_MIN)
+
+
+@bp.route("/erp/api/ponto/teste-carga", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao("configurar_ponto")
+@_api
+def ponto_api_teste_carga():
+    """O teste de carga na produção (15/10/2026, core/carga.py): ligar por um
+    tempo, desligar e ver o resumo do servidor."""
+    from .core import carga
+    with db.conexao() as conn:
+        if request.method == "POST":
+            d = request.get_json(silent=True) or {}
+            if d.get("desligar"):
+                carga.desligar(conn, _quem().nome)
+            else:
+                carga.ligar(conn, d.get("minutos", 30), _quem().nome)
+        ate = carga.ligado_ate(conn)
+    return _ok(ligado=bool(ate), ate=carga.hora(ate), resumo=carga.resumo(),
+               endereco="/ponto/app/teste-carga/")
+
+
+@bp.route("/erp/api/ponto/teste-carga/simular", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar_ponto")
+@_api
+def ponto_api_teste_carga_simular():
+    """Um envio de um aparelho SIMULADO pelo computador de quem configura o ponto
+    (o "play" do quadro Teste de carga). Só com o teste ligado."""
+    from .core import carga
+    d = request.get_json(silent=True) or {}
+    with db.conexao() as conn:
+        if not carga.ligado_ate(conn):
+            raise Recusada("o teste de carga está desligado")
+        resultado = carga.simular(conn, None, d.get("foto_base64") or "",
+                                  rotulo="pc-" + str(d.get("aparelho") or "1")[:10])
+    return _ok(**resultado)
 
 
 _registrar_no_menu()

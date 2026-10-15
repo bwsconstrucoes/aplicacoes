@@ -220,6 +220,45 @@ def comparar(cliente, cadastral: bytes, batida: bytes, minima: int) -> tuple[str
     return "OUTRA_PESSOA", round(melhor, 2), f"semelhança de {melhor:.0f} % (mínimo {minima} %)"
 
 
+def explicar_erro_aws(e: Exception) -> str:
+    """PURA. O erro da AWS em português, com o que fazer (15/10/2026: a tela
+    mostrava a frase da AWS cortada no meio, "is not authorized to per.")."""
+    texto = f"{type(e).__name__}: {e}"
+    if "AccessDenied" in texto:
+        # O FIM da frase da AWS diz QUEM bloqueou (15/10/2026: a política com
+        # CompareFaces existia e a AWS seguia recusando — o bloqueio era outro).
+        baixo = texto.lower()
+        usuario = ""
+        if ":user/" in texto:
+            usuario = " (usuário " + texto.split(":user/")[1].split()[0].rstrip(".,") + ")"
+        if "service control polic" in baixo:
+            quem = ("uma regra da ORGANIZAÇÃO da AWS (política de controle de serviço, SCP) bloqueia — veja "
+                    "AWS Organizations › Políticas › Políticas de controle de serviço, e o que está ligado à conta")
+        elif "permissions boundary" in baixo:
+            quem = ("um LIMITE DE PERMISSÕES no usuário bloqueia — IAM › Usuários › o usuário › Permissões › "
+                    "Limite de permissões: remova, ou inclua nele o rekognition:CompareFaces")
+        elif "session polic" in baixo:
+            quem = "uma política de sessão bloqueia (a chave é temporária?) — use a chave fixa do usuário"
+        elif "explicit deny" in baixo:
+            quem = ("uma política com NEGAR (Deny) no usuário ou no grupo dele bloqueia — IAM › o usuário › "
+                    "Permissões, e os grupos dele")
+        elif "no identity-based policy allows" in baixo:
+            quem = ("nenhuma política DESTE usuário permite — confira se a política está nele (e não em outro "
+                    "usuário) e se a chave no Render é a dele; a AWS leva até alguns minutos para valer")
+        else:
+            quem = f"motivo da AWS: {str(e)[-220:]}"
+        return f"a AWS recusou a comparação de rostos{usuario}: {quem}"
+    if any(c in texto for c in ("UnrecognizedClient", "InvalidSignature", "SignatureDoesNotMatch",
+                                 "InvalidClientTokenId")):
+        return ("a AWS não reconheceu a chave: confira AWS_ACCESS_KEY_ID e AWS_SECRET_ACCESS_KEY "
+                "no Render (a chave pode ter sido apagada ou trocada)")
+    if "SubscriptionRequired" in texto or "OptInRequired" in texto:
+        return "a conta da AWS ainda não está liberada para o Rekognition (cadastro ou cartão pendente)"
+    if "ProvisionedThroughputExceeded" in texto or "Throttling" in texto:
+        return "a AWS pediu para ir mais devagar; a próxima rodada continua sozinha"
+    return f"a AWS respondeu com erro: {str(e)[:300]}"
+
+
 def _pendentes(conn: Connection, cfg: dict, limite: int) -> list[dict]:
     linhas = db.todos(conn, """
         SELECT m.id, m.colaborador_id, m.obra_id, m.foto_id, m.status, m.timestamp_servidor, m.motivo_analise,
@@ -310,7 +349,7 @@ def conferir(conn: Connection, *, cliente=None, limite: int = LOTE) -> dict:
         except Exception as e:  # noqa: BLE001 — a AWS fora: para a rodada, tenta depois
             logger.warning("Ponto: conferência do rosto falhou: %s", e)
             feito["erros"] += 1
-            feito["parou"] = f"a AWS respondeu com erro: {str(e)[:160]}"
+            feito["parou"] = explicar_erro_aws(e)
             break
         _gravar(conn, m["id"], resultado, semelhanca, PRECO_POR_FOTO_USD, detalhe)
         gasto += PRECO_POR_FOTO_USD

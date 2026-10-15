@@ -690,6 +690,11 @@
 </div>
 
 <div class="cartao" data-secao-card="geral">
+  <div class="cartao-cab"><h3>Teste de carga</h3></div>
+  <div id="c-carga">carregando…</div>
+</div>
+
+<div class="cartao" data-secao-card="geral">
   <div class="cartao-cab"><h3>App do colaborador</h3></div>
   <div class="endereco-app" id="c-app">…</div>
   <div style="margin-top:8px"><button class="btn secundario" id="c-copiar-app" type="button">Copiar o endereço</button></div>
@@ -2290,7 +2295,8 @@ async function abrirPessoa(id) {
       <div class="barra-acoes">
         ${PODE_TRATAR ? `<button class="btn" type="button" id="pe-escala">Trocar escala</button>
           <button class="btn secundario" type="button" id="pe-jornada">Jornada e obras</button>
-          <button class="btn secundario" type="button" id="pe-forma">Acesso no aplicativo</button>` : ""}
+          <button class="btn secundario" type="button" id="pe-forma">Acesso no aplicativo</button>
+          <button class="btn secundario" type="button" id="pe-codigo">Código não chegou?</button>` : ""}
         ${PODE_DP ? `<button class="btn secundario" type="button" id="pe-banco">Banco de horas</button>` : ""}
         <a class="btn secundario" style="text-decoration:none" href="${linkEspelho(p.id)}">Ver espelho</a>
       </div>
@@ -2317,6 +2323,7 @@ async function abrirPessoa(id) {
     if (els("pe-jornada")) els("pe-jornada").addEventListener("click", () => jornadaEObras(p));
     if (els("pe-banco")) els("pe-banco").addEventListener("click", () => regimeDoBanco(p));
     if (els("pe-forma")) els("pe-forma").addEventListener("click", () => formaDeBater(p));
+    if (els("pe-codigo")) els("pe-codigo").addEventListener("click", () => primeiroAcesso(p));
     desenharQrDaPessoa(p);
     ficha.scrollIntoView({behavior: "smooth", block: "start"});
   } catch (e) { falhou(e); }
@@ -2468,6 +2475,49 @@ async function jornadaEObras(p) {
 // O acesso da pessoa no aplicativo (08/10/2026): o padrão é bater no ponto da
 // obra e, no próprio celular, só ver o próprio ponto. As três marcações são as
 // exceções — cada uma independente (core/papeis.py).
+// "A pessoa não recebe o código. E não chega nada no aparelhos" (16/10/2026): o
+// motivo de verdade, e o código para entregar em mãos quando o WhatsApp não chega.
+const ENVIO_DO_CODIGO = {ENVIADO: ["verde", "enviado ao WhatsApp"], FALHOU: ["vermelho", "o WhatsApp recusou"],
+  DESLIGADO: ["ambar", "desligado na tela Mensagens"], LIMITE: ["ambar", "passou do limite de mensagens"],
+  SEM_DESTINO: ["vermelho", "sem número"], SEM_REGISTRO: ["", "sem registro de envio"]};
+async function primeiroAcesso(p) {
+  let d;
+  try { d = (await api(`/erp/api/ponto/pessoas/${p.id}/acesso`)).acesso; } catch (e) { return falhou(e, "pe-msg"); }
+  const linhas = d.codigos.map(c => {
+    const e = c.envio, [cor, rot] = e ? (ENVIO_DO_CODIGO[e.status] || ["", e.status]) : ["", "—"];
+    return `<li>${escapar(quando(c.pedido_em))} — <b style="${cor ? `color:var(--${cor})` : ""}">${escapar(rot)}</b>
+      ${e && e.para ? ` para ${escapar(e.para)}` : ""}${e && e.detalhe && e.status !== "ENVIADO" ? ` <small>(${escapar(e.detalhe)})</small>` : ""}
+      ${c.usado ? " · <b>usado</b>" : c.vencido ? " · vencido" : " · ainda vale"}</li>`;
+  }).join("");
+  const aviso = `
+    <div><b>Celular que o ponto usa:</b> <span class="dados">${escapar(d.telefone)}</span>
+      <small>— vem do ${escapar(d.origem_telefone)}</small></div>
+    ${d.telefone_no_erp ? `<div class="aviso ambar" style="margin:6px 0">No cadastro do ERP o celular é
+      <span class="dados">${escapar(d.telefone_no_erp)}</span>, mas o ponto usa o do Registro de Colaboradores. Se o
+      certo é o do ERP, corrija no Pipefy (e atualize o cadastro na Análise de SPs).</div>` : ""}
+    <div style="margin-top:4px"><b>PIN:</b> ${d.tem_pin ? `criado em ${escapar(quando(d.pin_criado_em))}` : "ainda não criado"}
+      ${d.pin_bloqueado_ate ? ` · <b style="color:var(--vermelho)">travado até ${escapar(quando(d.pin_bloqueado_ate))}</b> (PIN errado várias vezes)` : ""}</div>
+    ${d.impede.length ? `<div class="aviso erro" style="margin:8px 0"><b>O código não sai porque:</b>
+      <ul style="margin:4px 0 0 18px; padding:0">${d.impede.map(x => `<li>${escapar(x)}</li>`).join("")}</ul></div>` : ""}
+    <div style="margin-top:8px"><b>Últimos códigos pedidos</b>${linhas ? `<ul style="margin:4px 0 0 18px; padding:0">${linhas}</ul>`
+      : `<div class="suave">Nenhum. Se a pessoa diz que pediu, ela não chegou a pedir com este CPF — ou o CPF dela não
+         está no cadastro (procure pelo CPF em Pessoas: a busca diz o motivo).</div>`}</div>
+    <div class="cartao-dica" style="margin-top:10px">Se aparece "enviado ao WhatsApp" e a pessoa não recebeu: confira se o
+      número tem WhatsApp e se a mensagem não caiu em "conversas arquivadas". ${PODE_CONFIGURAR ? `Não resolvendo, gere o código
+      aqui e entregue <b>em mãos</b>, conferindo que é a própria pessoa.` : ""}</div>`;
+  const r = await perguntar({titulo: `Primeiro acesso — ${escapar(p.nome)}`, campos: [], aviso,
+                             textoOk: PODE_CONFIGURAR ? "Gerar código para entregar em mãos" : "Fechar"});
+  if (!r || !PODE_CONFIGURAR) return;
+  try {
+    const g = await postar(`/erp/api/ponto/pessoas/${p.id}/codigo-em-maos`, {});
+    await perguntar({titulo: "Código para entregar em mãos", campos: [], textoOk: "Pronto",
+      aviso: `<div style="font-size:34px; font-weight:800; letter-spacing:6px; text-align:center" class="dados">${escapar(g.codigo)}</div>
+        <p style="text-align:center">Vale <b>${g.validade_min} minutos</b>. Entregue à própria pessoa: no aplicativo, ela toca em
+        “Primeiro acesso ou esqueci o PIN”, digita o CPF, toca em <b>“Já tenho um código (entregue pelo DP)”</b>, digita este
+        código e cria o PIN.</p>`});
+  } catch (e) { falhou(e, "pe-msg"); }
+}
+
 async function formaDeBater(p) {
   const simNao = (sim, nao) => [{valor: "0", rotulo: nao}, {valor: "1", rotulo: sim}];
   const r = await perguntar({
@@ -2899,6 +2949,7 @@ async function carregarConfig() {
   desenharResumoDiario();
   desenharQrEAvisos();
   desenharDrive();
+  desenharCarga();
   els("c-app").textContent = location.origin + (CONFIG.endereco_app || "/ponto/app");
   // A fila de mensagens e o mosaico por obra dependem da atualização 003:
   // esperam a configuração dizer se ela já está aplicada.
@@ -3236,14 +3287,31 @@ function filtrarAparelhos(lista) {
     return texto.includes(termo) || (so.length >= 3 && a.dono && soDigitos(a.dono.cpf).includes(so));
   });
 }
+// A lista se atualiza sozinha a cada 30 s enquanto está na tela (16/10/2026: os
+// pedidos chegavam e só apareciam ao recarregar). Não mexe com janela aberta.
+let RELOGIO_APARELHOS = null;
+function vigiarAparelhos() {
+  if (RELOGIO_APARELHOS) return;
+  RELOGIO_APARELHOS = setInterval(() => {
+    const caixa = els("c-aparelhos");
+    if (document.visibilityState !== "visible" || !caixa || caixa.offsetParent === null) return;
+    if (document.querySelector("dialog[open]")) return;
+    carregarAparelhos();
+  }, 30000);
+}
+
 async function carregarAparelhos() {
   if (!PODE_CONFIGURAR) return;
+  vigiarAparelhos();
   try {
     APARELHOS = (await api("/erp/api/ponto/dispositivos")).dispositivos;
   } catch (e) { erroNoCartao("c-aparelhos", e); return; }
-  // pendentes primeiro (são os que pedem ação), depois por nome
+  // pendentes primeiro (são os que pedem ação), o pedido MAIS NOVO em cima
+  // (16/10/2026: em ordem de nome, o pedido de quem pediu antes ficava no meio
+  // da lista, e parecia não ter chegado); os outros, por nome.
   const ordem = {PENDENTE: 0, APROVADO: 1, BLOQUEADO: 2};
   APARELHOS.sort((x, y) => (ordem[x.status] ?? 3) - (ordem[y.status] ?? 3)
+    || (x.status === "PENDENTE" ? String(y.pedido_em || "").localeCompare(String(x.pedido_em || "")) : 0)
     || semAcentoAp((x.dono && x.dono.nome) || x.descricao).localeCompare(semAcentoAp((y.dono && y.dono.nome) || y.descricao)));
   desenharAparelhos();
 }
@@ -3255,7 +3323,7 @@ function desenharAparelhos() {
     ? `<div class="cartao-dica">Nenhum aparelho registrado ainda. O primeiro aparece quando alguém abrir o app do colaborador.</div>`
     : !lista.length ? `<div class="cartao-dica">Nenhum aparelho com esse filtro.</div>` : `<table><thead><tr><th class="sem-ordem">Aparelho</th>
       <th class="sem-ordem">Situação</th><th class="sem-ordem">Uso</th><th class="sem-ordem">Dono / grupo</th>
-      <th class="sem-ordem">Obras</th><th class="sem-ordem">Último uso</th><th class="sem-ordem"></th></tr></thead><tbody>
+      <th class="sem-ordem">Obras</th><th class="sem-ordem">Último uso / pedido</th><th class="sem-ordem"></th></tr></thead><tbody>
     ${lista.map(a => `<tr>
       <td><b>${escapar(a.descricao || "sem nome")}</b><small>código <span class="dados">${escapar(a.codigo || "?")}</span></small>${a.aprovado_por ? `<small>aprovado por ${escapar(a.aprovado_por)}</small>` : ""}</td>
       <td>${seloAparelho(a.status)}${a.motivo_bloqueio ? `<small>${escapar(a.motivo_bloqueio)}</small>` : ""}</td>
@@ -3265,7 +3333,7 @@ function desenharAparelhos() {
           ${a.valido_ate && a.status === "APROVADO" ? `<small style="${a.valido_ate < hojeISO() ? "color:var(--vermelho); font-weight:700" : ""}">liberado até ${dataBR(a.valido_ate)}</small>`
             : a.status === "APROVADO" ? `<small>não expira</small>` : ""}</td>
       <td class="dados">${a.obras ? escapar(a.obras) : `<span class="suave">todas</span>`}</td>
-      <td class="dados">${escapar(quando(a.ultimo_uso_em))}</td>
+      <td class="dados">${a.status === "PENDENTE" ? `pedido ${escapar(quando(a.pedido_em))}` : escapar(quando(a.ultimo_uso_em))}</td>
       <td><div class="acoes">${a.status === "PENDENTE" ? `<button class="btn" type="button" data-aprovar-ap="${a.id}">Aprovar</button>`
           : `<button class="btn secundario" type="button" data-aprovar-ap="${a.id}">${a.status === "BLOQUEADO" ? "Reativar" : "Alterar"}</button>`}
         ${a.status === "APROVADO" ? `<button class="link-btn" type="button" data-renovar-ap="${a.id}">renovar</button>` : ""}
@@ -4017,6 +4085,119 @@ async function gravarCerca(linha, botao) {
       ${o.fora_da_cerca === "BLOQUEAR" ? "só com a explicação da pessoa, para conferência" : "aceita sem explicação, para conferência"};
       ${o.so_entrada_e_saida ? "só entrada e saída (o intervalo é o da escala)" : "4 batidas por dia"}.`, "ok");
   } catch (e) { botao.disabled = false; falhou(e, "c-cercas-msg"); }
+}
+
+// ------------------------------------------------------ Teste de carga (15/10/2026)
+// O "play" (pedido do dono: "algo que eu dê um play e ele comece e fique
+// disparando dados — não é para operar de verdade"): este computador faz o papel de
+// N aparelhos ao mesmo tempo, cada um mandando uma imagem do tamanho da foto da
+// batida a cada segundo. O servidor faz o trabalho da batida e desfaz a gravação
+// (core/carga.py): nada fica guardado.
+const CARGA = {rodando: false, fim: 0, inicio: 0, ida: [], srv: [], ok: 0, erros: 0, ultimoErro: "", fotos: []};
+
+function cargaImagem(k) {
+  const c = document.createElement("canvas"); c.width = 800; c.height = 600;
+  const g = c.getContext("2d"), h = (k * 47) % 360;
+  const grad = g.createLinearGradient(0, 0, 800, 600);
+  grad.addColorStop(0, `hsl(${h},55%,55%)`); grad.addColorStop(1, `hsl(${(h + 90) % 360},55%,35%)`);
+  g.fillStyle = grad; g.fillRect(0, 0, 800, 600);
+  for (let i = 0; i < 60; i++) {
+    g.fillStyle = `hsla(${Math.floor(Math.random() * 360)},60%,${30 + Math.random() * 50}%,.6)`;
+    g.beginPath(); g.arc(Math.random() * 800, Math.random() * 600, 10 + Math.random() * 60, 0, 6.3); g.fill();
+  }
+  const d = g.getImageData(0, 0, 800, 600), px = d.data;
+  for (let i = 0; i < px.length; i += 4) { const r = (Math.random() - .5) * 26; px[i] += r; px[i + 1] += r; px[i + 2] += r; }
+  g.putImageData(d, 0, 0);
+  return c.toDataURL("image/jpeg", 0.8);         // ~90 KB, como a foto do tablet
+}
+
+function cargaNumeros() {
+  const q = (v, p) => { if (!v.length) return null; const o = [...v].sort((a, b) => a - b); return o[Math.min(o.length - 1, Math.floor(o.length * p))]; };
+  const ms = v => v === null ? "—" : (v >= 1000 ? `${(v / 1000).toFixed(1)} s` : `${Math.round(v)} ms`);
+  const min = (Date.now() - CARGA.inicio) / 60000;
+  const caixa = (rot, valor, sub, cor) => `<div class="kpi estatico ${cor || ""}"><div class="kpi-rotulo">${rot}</div>
+    <div class="kpi-valor" style="font-size:18px">${valor}</div><div class="kpi-sub">${sub || ""}</div></div>`;
+  const alvo = els("c-carga-numeros");
+  if (!alvo) return;
+  alvo.innerHTML = `<div class="kpis">
+      ${caixa("Envios certos", CARGA.ok, min > 0.05 ? `${Math.round((CARGA.ok + CARGA.erros) / min)} por minuto` : "", "verde")}
+      ${caixa("Com erro", CARGA.erros, "", CARGA.erros ? "vermelho" : "")}
+      ${caixa("Ida e volta", ms(q(CARGA.ida, .5)), `95%: ${ms(q(CARGA.ida, .95))} · pior: ${ms(CARGA.ida.length ? Math.max(...CARGA.ida) : null)}`)}
+      ${caixa("No servidor", ms(q(CARGA.srv, .5)), `pior: ${ms(CARGA.srv.length ? Math.max(...CARGA.srv) : null)}`)}
+    </div>
+    ${CARGA.ultimoErro ? `<div class="aviso erro" style="margin-top:8px">Último erro: ${escapar(CARGA.ultimoErro)}</div>` : ""}
+    <p class="suave" style="font-size:13px; margin-top:6px">${CARGA.rodando
+      ? `Rodando — faltam ${Math.max(0, Math.ceil((CARGA.fim - Date.now()) / 1000))} s. Deixe esta tela aberta.`
+      : (CARGA.ok + CARGA.erros ? "Terminou." : "")}</p>`;
+}
+
+async function cargaAparelho(n) {
+  while (CARGA.rodando && Date.now() < CARGA.fim) {
+    const t0 = performance.now();
+    try {
+      const r = await fetch("/erp/api/ponto/teste-carga/simular", {method: "POST", credentials: "same-origin",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({aparelho: n, foto_base64: CARGA.fotos[Math.floor(Math.random() * CARGA.fotos.length)]})});
+      let d = {}; try { d = await r.json(); } catch (e) { d = {ok: false, erro: `resposta inesperada (${r.status})`}; }
+      if (d.ok) { CARGA.ok++; CARGA.ida.push(performance.now() - t0); CARGA.srv.push(d.ms_no_servidor); }
+      else { CARGA.erros++; CARGA.ultimoErro = `${new Date().toLocaleTimeString("pt-BR")} — ${d.erro || r.status}`;
+             if ([401, 403].includes(r.status)) CARGA.rodando = false; }
+    } catch (e) {
+      CARGA.erros++; CARGA.ultimoErro = `${new Date().toLocaleTimeString("pt-BR")} — a conexão caiu (internet ou o servidor se renovando)`;
+    }
+    await new Promise(ok => setTimeout(ok, Math.max(0, 1000 - (performance.now() - t0))));
+  }
+}
+
+async function cargaComecar() {
+  const n = Math.min(10, Math.max(1, parseInt(els("c-carga-n").value, 10) || 5));
+  const minutos = Math.min(15, Math.max(1, parseInt(els("c-carga-min").value, 10) || 5));
+  try { await postar("/erp/api/ponto/teste-carga", {minutos: minutos + 1}); }
+  catch (e) { return aviso("c-carga-msg", e.message, "erro"); }
+  Object.assign(CARGA, {rodando: true, inicio: Date.now(), fim: Date.now() + minutos * 60000, ida: [], srv: [],
+                        ok: 0, erros: 0, ultimoErro: ""});
+  if (!CARGA.fotos.length) CARGA.fotos = Array.from({length: 8}, (_, k) => cargaImagem(k));
+  els("c-carga-play").textContent = "■ Parar"; els("c-carga-play").classList.add("secundario");
+  const relogio = setInterval(cargaNumeros, 1000);
+  await Promise.all(Array.from({length: n}, (_, i) => cargaAparelho(i + 1)));
+  clearInterval(relogio);
+  CARGA.rodando = false;
+  try { await postar("/erp/api/ponto/teste-carga", {desligar: true}); } catch (e) {}
+  await desenharCarga();
+  cargaNumeros();
+}
+
+async function desenharCarga() {
+  const alvo = els("c-carga");
+  let d;
+  try { d = await api("/erp/api/ponto/teste-carga"); }
+  catch (e) { alvo.innerHTML = `<p class="suave">Só quem configura o ponto usa o teste de carga.</p>`; return; }
+  const r = d.resumo || {};
+  alvo.innerHTML = `
+    <div class="cartao-dica" style="margin-top:0">Mede o servidor de verdade sem ninguém operar: este computador faz o
+      papel de vários aparelhos ao mesmo tempo, cada um mandando <b>uma imagem do tamanho da foto da batida a cada
+      segundo</b>. O servidor faz o trabalho da batida e desfaz a gravação: <b>nenhuma batida e nenhuma foto ficam
+      guardadas</b>. Faça fora do horário de batida, e não publique nem rode carga do painel ou sincronização da
+      Análise de SPs durante o teste.</div>
+    <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-top:10px">
+      <div class="campo" style="width:150px"><label for="c-carga-n">Aparelhos simulados</label>
+        <input id="c-carga-n" type="number" min="1" max="10" value="5"></div>
+      <div class="campo" style="width:150px"><label for="c-carga-min">Minutos</label>
+        <input id="c-carga-min" type="number" min="1" max="15" value="5"></div>
+      <button class="btn" type="button" id="c-carga-play">▶ Começar o teste</button>
+    </div>
+    <div id="c-carga-msg" style="margin-top:8px"></div>
+    <div id="c-carga-numeros" style="margin-top:10px"></div>
+    <p class="suave" style="font-size:13px">5 aparelhos = 5 envios por segundo, umas 6× o pico de 500 pessoas em
+      10 minutos. Conta do servidor desde ${escapar(r.desde || "—")}: ${r.simulacoes ?? 0} simulação(ões), ${r.erros ?? 0}
+      com erro${r.ms_medio != null ? `, ${r.ms_medio} ms em média (pior ${r.ms_max} ms)` : ""}. Para medir também a
+      internet de uma obra, abra num celular já aprovado <span class="dados">${escapar(location.origin + d.endereco)}</span>.</p>`;
+  els("c-carga-play").addEventListener("click", () => {
+    if (CARGA.rodando) { CARGA.rodando = false; return; }
+    cargaComecar();
+  });
+  if (CARGA.rodando) { els("c-carga-play").textContent = "■ Parar"; els("c-carga-play").classList.add("secundario"); }
+  cargaNumeros();
 }
 
 // ------------------------------------------------------ 12. Drive e fila

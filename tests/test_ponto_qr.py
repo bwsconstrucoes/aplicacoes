@@ -151,9 +151,16 @@ class TestFraude:
                 + dt.timedelta(seconds=segundos)}
 
     def test_fila_rapida_de_cinco_pessoas(self):
-        batidas = [self._b(p, i * 5) for i, p in enumerate([1, 2, 3, 4, 5])]
+        batidas = [self._b(p, i * 3) for i, p in enumerate([1, 2, 3, 4, 5])]
         assert len(alertas.sequencias_rapidas(batidas)) == 1
         assert alertas.sequencias_rapidas(batidas[:4]) == []
+
+    def test_fila_de_verdade_no_ritmo_do_aparelho_nao_acusa(self):
+        """15/10/2026: a fila das 7h, ~6 a 8 s por pessoa (2 s de contagem para a
+        foto + 3 s de confirmação), ia 80% para conferência com o limite de 10 s."""
+        for passo in (5, 6, 7, 8):
+            batidas = [self._b(p, i * passo) for i, p in enumerate(range(1, 61))]
+            assert alertas.sequencias_rapidas(batidas) == [], passo
 
     def test_fila_com_intervalo_normal_nao_acusa(self):
         batidas = [self._b(p, i * 25) for i, p in enumerate([1, 2, 3, 4, 5, 6])]

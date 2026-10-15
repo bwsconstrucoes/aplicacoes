@@ -54,3 +54,28 @@ def test_le_a_resposta_da_aws():
     assert rosto.comparar(_AwsFalsa({"FaceMatches": [], "UnmatchedFaces": [{}]}), b"a", b"b", 90)[0] == "OUTRA_PESSOA"
     assert rosto.comparar(_AwsFalsa({"FaceMatches": [], "UnmatchedFaces": []}), b"a", b"b", 90)[0] == "SEM_ROSTO"
     assert rosto.comparar(_AwsFalsa(erro=InvalidParameterException("no face")), b"a", b"b", 90)[0] == "SEM_ROSTO"
+
+
+def test_erro_da_aws_vira_frase_com_o_que_fazer():
+    """15/10/2026: a tela mostrava "is not authorized to per." — cortada no meio."""
+    from app.apps.ponto.core import rosto
+
+    class AccessDeniedException(Exception):
+        pass
+
+    negado = AccessDeniedException("An error occurred (AccessDeniedException) when calling the CompareFaces "
+                                   "operation: User: arn:aws:iam::1:user/x is not authorized to perform: "
+                                   "rekognition:CompareFaces")
+    assert "usuário x" in rosto.explicar_erro_aws(negado)
+    base = ("An error occurred (AccessDeniedException) when calling the CompareFaces operation: User: "
+            "arn:aws:iam::1:user/bws-ponto-rosto is not authorized to perform: rekognition:CompareFaces ")
+    for fim, esperado in (("with an explicit deny in a service control policy", "SCP"),
+                          ("with an explicit deny in a permissions boundary", "LIMITE DE PERMISSÕES"),
+                          ("with an explicit deny in an identity-based policy", "NEGAR"),
+                          ("because no identity-based policy allows the rekognition:CompareFaces action",
+                           "nenhuma política DESTE usuário")):
+        frase = rosto.explicar_erro_aws(AccessDeniedException(base + fim))
+        assert esperado in frase and "bws-ponto-rosto" in frase, frase
+    chave = Exception("An error occurred (UnrecognizedClientException) when calling the CompareFaces operation")
+    assert "AWS_ACCESS_KEY_ID" in rosto.explicar_erro_aws(chave)
+    assert rosto.explicar_erro_aws(Exception("outra coisa")).startswith("a AWS respondeu com erro: outra coisa")

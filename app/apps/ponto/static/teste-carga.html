@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Teste de carga do ponto</title>
+<style>
+  /* O teste de carga (15/10/2026): o celular repete o trabalho de uma batida, sem batida. */
+  :root { --fundo:#F3F5F8; --cartao:#fff; --tinta:#17222E; --suave:#566474; --linha:#D9DFE7;
+          --azul:#12385C; --verde:#1D7A3A; --ambar:#9A5B00; --vermelho:#A3261B; }
+  @media (prefers-color-scheme: dark) { :root { --fundo:#0E151D; --cartao:#16212C; --tinta:#E6EBF1;
+          --suave:#9EABB9; --linha:#2A3846; --azul:#8FB6E3; --verde:#6FCF8D; --ambar:#F0B45A; --vermelho:#F08A7E;
+          color-scheme: dark; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--fundo); color:var(--tinta); font:16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width:560px; margin:0 auto; padding:16px max(16px, env(safe-area-inset-right)) 40px max(16px, env(safe-area-inset-left)); display:flex; flex-direction:column; gap:12px; }
+  h1 { font-size:22px; margin:4px 0 0; color:var(--azul); }
+  .cartao { background:var(--cartao); border:1px solid var(--linha); border-radius:12px; padding:14px; display:flex; flex-direction:column; gap:10px; }
+  .aviso { border-radius:10px; padding:10px 12px; font-size:15px; }
+  .aviso.info { background:color-mix(in srgb, var(--azul) 12%, transparent); }
+  .aviso.ok { background:color-mix(in srgb, var(--verde) 15%, transparent); }
+  .aviso.erro { background:color-mix(in srgb, var(--vermelho) 15%, transparent); color:var(--vermelho); }
+  label { font-size:14px; color:var(--suave); display:block; margin-bottom:4px; }
+  input { width:100%; font-size:18px; padding:10px; border:1px solid var(--linha); border-radius:8px; background:var(--cartao); color:var(--tinta); }
+  .linha { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  button { font:700 17px system-ui, sans-serif; border:0; border-radius:10px; padding:14px; background:var(--azul); color:#fff; cursor:pointer; }
+  button:disabled { opacity:.45; cursor:default; }
+  button.parar { background:var(--vermelho); }
+  .numeros { display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; }
+  .num { border:1px solid var(--linha); border-radius:10px; padding:8px; text-align:center; }
+  .num b { display:block; font-size:22px; font-variant-numeric:tabular-nums; }
+  .num span { font-size:12px; color:var(--suave); }
+  .pequeno { font-size:13px; color:var(--suave); }
+  a { color:var(--azul); }
+</style>
+</head>
+<body>
+<main>
+  <a href="/ponto/app" class="pequeno">‹ Voltar ao aplicativo</a>
+  <h1>Teste de carga do ponto</h1>
+  <div class="aviso info">Este celular repete o trabalho de uma batida, com uma imagem do tamanho de uma foto de verdade, sem registrar ponto. Nenhuma batida é gravada.</div>
+  <div id="estado" class="aviso info">Conferindo este aparelho…</div>
+
+  <div class="cartao">
+    <div class="linha">
+      <div><label for="intervalo">Um envio a cada (segundos)</label><input id="intervalo" type="number" min="0.5" max="60" step="0.5" value="2"></div>
+      <div><label for="duracao">Durante (minutos)</label><input id="duracao" type="number" min="1" max="30" step="1" value="3"></div>
+    </div>
+    <button id="comecar" type="button" disabled>Começar</button>
+    <div id="andamento" class="pequeno"></div>
+  </div>
+
+  <div class="cartao">
+    <div class="numeros">
+      <div class="num"><b id="n-ok">0</b><span>envios certos</span></div>
+      <div class="num"><b id="n-erro">0</b><span>com erro</span></div>
+      <div class="num"><b id="n-kb">—</b><span>KB por foto</span></div>
+      <div class="num"><b id="n-med">—</b><span>ida e volta (mediana)</span></div>
+      <div class="num"><b id="n-p95">—</b><span>ida e volta (95%)</span></div>
+      <div class="num"><b id="n-max">—</b><span>ida e volta (pior)</span></div>
+      <div class="num"><b id="n-srv">—</b><span>no servidor (mediana)</span></div>
+      <div class="num"><b id="n-srvmax">—</b><span>no servidor (pior)</span></div>
+      <div class="num"><b id="n-taxa">—</b><span>envios por minuto</span></div>
+    </div>
+    <div id="ultimo-erro" class="aviso erro" hidden></div>
+    <p class="pequeno">“Ida e volta” é o que a pessoa sente: a internet do celular mais o servidor. “No servidor” é só o trabalho dele. Anote os números deste celular ao final.</p>
+  </div>
+</main>
+<script>
+(function () {
+  "use strict";
+  const $ = id => document.getElementById(id);
+  let uuid = "", token = "";
+  try { uuid = localStorage.getItem("ponto_device_uuid") || ""; token = localStorage.getItem("ponto_device_token") || ""; } catch (e) {}
+  const cab = () => ({"Content-Type": "application/json", "X-Device-UUID": uuid, "X-Device-Token": token});
+  const estado = (t, tipo) => { $("estado").className = "aviso " + (tipo || "info"); $("estado").textContent = t; };
+
+  async function conferir() {
+    if (!uuid || !token) {
+      return estado("Este navegador não é um aparelho cadastrado. Abra esta página no mesmo celular (e no mesmo navegador) em que você já bate o ponto ou em que está o ponto da obra.", "erro");
+    }
+    try {
+      const r = await fetch("/ponto/app/api/teste-carga", {headers: cab(), credentials: "same-origin"});
+      const d = await r.json();
+      if (!d.ok) return estado(d.erro || "Este aparelho não pode fazer o teste.", "erro");
+      if (!d.ligado) return estado(`Aparelho: ${d.aparelho}. O teste está DESLIGADO: um administrador liga em ERP › Ponto › Configuração › Teste de carga. Depois, recarregue esta página.`, "erro");
+      estado(`Aparelho: ${d.aparelho}. Teste ligado até ${d.ate}.`, "ok");
+      $("comecar").disabled = false;
+    } catch (e) { estado("Sem internet agora. Recarregue a página.", "erro"); }
+  }
+
+  // Uma imagem do tamanho da foto da batida (~800 px, JPEG 0,8), diferente a cada envio.
+  function imagem() {
+    const c = document.createElement("canvas"); c.width = 800; c.height = 600;
+    const g = c.getContext("2d");
+    const h = Math.floor(Math.random() * 360);
+    const grad = g.createLinearGradient(0, 0, 800, 600);
+    grad.addColorStop(0, `hsl(${h},55%,55%)`); grad.addColorStop(1, `hsl(${(h + 90) % 360},55%,35%)`);
+    g.fillStyle = grad; g.fillRect(0, 0, 800, 600);
+    for (let i = 0; i < 60; i++) {
+      g.fillStyle = `hsla(${Math.floor(Math.random() * 360)},60%,${30 + Math.random() * 50}%,.6)`;
+      g.beginPath(); g.arc(Math.random() * 800, Math.random() * 600, 10 + Math.random() * 60, 0, 6.3); g.fill();
+    }
+    const d = g.getImageData(0, 0, 800, 600), px = d.data;
+    for (let i = 0; i < px.length; i += 4) { const r = (Math.random() - .5) * 26; px[i] += r; px[i + 1] += r; px[i + 2] += r; }
+    g.putImageData(d, 0, 0);
+    g.fillStyle = "#fff"; g.font = "bold 40px sans-serif"; g.fillText(new Date().toLocaleTimeString("pt-BR"), 30, 560);
+    return c.toDataURL("image/jpeg", 0.8);
+  }
+
+  const ida = [], srv = [];
+  let ok = 0, erros = 0, rodando = false, fim = 0, inicio = 0, espera = null;
+  const q = (v, p) => { if (!v.length) return null; const s = [...v].sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(s.length * p))]; };
+  const seg = ms => ms === null ? "—" : (ms >= 1000 ? (ms / 1000).toFixed(1) + " s" : Math.round(ms) + " ms");
+  function mostrar() {
+    $("n-ok").textContent = ok; $("n-erro").textContent = erros;
+    $("n-med").textContent = seg(q(ida, .5)); $("n-p95").textContent = seg(q(ida, .95)); $("n-max").textContent = seg(ida.length ? Math.max(...ida) : null);
+    $("n-srv").textContent = seg(q(srv, .5)); $("n-srvmax").textContent = seg(srv.length ? Math.max(...srv) : null);
+    const min = (Date.now() - inicio) / 60000;
+    $("n-taxa").textContent = min > 0.05 ? ((ok + erros) / min).toFixed(0) : "—";
+  }
+
+  async function enviar() {
+    if (!rodando) return;
+    if (Date.now() >= fim) return parar("Terminou.");
+    const t0 = performance.now();
+    const foto = imagem();
+    $("n-kb").textContent = Math.round(foto.length * 3 / 4 / 1024);
+    const t1 = performance.now();
+    try {
+      const r = await fetch("/ponto/app/api/teste-carga", {method: "POST", headers: cab(), credentials: "same-origin",
+                                                            body: JSON.stringify({foto_base64: foto})});
+      let d = {}; try { d = await r.json(); } catch (e) { d = {ok: false, erro: `resposta inesperada (${r.status})`}; }
+      const t2 = performance.now();
+      if (d.ok) { ok++; ida.push(t2 - t1); srv.push(d.ms_no_servidor); }
+      else { erros++; $("ultimo-erro").hidden = false; $("ultimo-erro").textContent = `${new Date().toLocaleTimeString("pt-BR")}: ${d.erro || r.status}`; if ([400, 401, 403].includes(r.status)) return parar(d.erro); }
+    } catch (e) {
+      erros++; $("ultimo-erro").hidden = false;
+      $("ultimo-erro").textContent = `${new Date().toLocaleTimeString("pt-BR")}: a conexão caiu (internet ou o servidor se renovando)`;
+    }
+    mostrar();
+    const faltam = Math.max(0, Math.ceil((fim - Date.now()) / 1000));
+    $("andamento").textContent = `Rodando — faltam ${Math.floor(faltam / 60)} min ${faltam % 60} s.`;
+    const passo = Math.max(500, (parseFloat($("intervalo").value) || 2) * 1000);
+    espera = setTimeout(enviar, Math.max(0, passo - (performance.now() - t0)));
+  }
+  function parar(motivo) {
+    rodando = false; clearTimeout(espera);
+    $("comecar").textContent = "Começar de novo"; $("comecar").classList.remove("parar");
+    $("andamento").textContent = motivo || "Parado.";
+  }
+  $("comecar").addEventListener("click", () => {
+    if (rodando) return parar("Parado por você.");
+    ida.length = 0; srv.length = 0; ok = 0; erros = 0; $("ultimo-erro").hidden = true;
+    rodando = true; inicio = Date.now(); fim = inicio + (parseFloat($("duracao").value) || 3) * 60000;
+    $("comecar").textContent = "Parar"; $("comecar").classList.add("parar");
+    try { if (navigator.wakeLock) navigator.wakeLock.request("screen").catch(() => {}); } catch (e) {}
+    enviar();
+  });
+  conferir();
+})();
+</script>
+</body>
+</html>

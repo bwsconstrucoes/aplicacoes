@@ -1,0 +1,574 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)} body{margin:0} img{max-width:100%} [hidden]{display:none!important}</style>
+<title>Manual do BWS Ponto</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&display=swap">
+<style>
+/* Layout: uma coluna de leitura; cada passo é texto + a tela do celular ao lado (empilha no celular). */
+:root {
+  --fundo: #f3f5f8;
+  --papel: #ffffff;
+  --tinta: #17222e;
+  --suave: #566474;
+  --linha: #d9dfe7;
+  --marinho: #12355b;      /* o azul do cabeçalho do aplicativo */
+  --marinho-claro: #e6edf6;
+  --verde: #1d7a3a;
+  --verde-claro: #e3f3e8;
+  --ambar: #9a5b00;
+  --ambar-claro: #fdf1dc;
+  --vermelho: #a3261b;
+  --vermelho-claro: #fbe7e4;
+  --f-titulo: "Barlow Semi Condensed", "Arial Narrow", Arial, sans-serif;
+  --f-texto: "Atkinson Hyperlegible", "Segoe UI", Roboto, Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --fundo: #0e151d; --papel: #16212c; --tinta: #e6ebf1; --suave: #9eabb9; --linha: #2a3846;
+  --marinho: #8fb6e3; --marinho-claro: #1b2b3d; --verde: #6fcf8d; --verde-claro: #16301f;
+  --ambar: #f0b45a; --ambar-claro: #33270f; --vermelho: #f08a7e; --vermelho-claro: #3a1a16; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --fundo: #0e151d; --papel: #16212c; --tinta: #e6ebf1; --suave: #9eabb9; --linha: #2a3846;
+  --marinho: #8fb6e3; --marinho-claro: #1b2b3d; --verde: #6fcf8d; --verde-claro: #16301f;
+  --ambar: #f0b45a; --ambar-claro: #33270f; --vermelho: #f08a7e; --vermelho-claro: #3a1a16; color-scheme: dark }
+
+* { box-sizing: border-box; }
+body { background: var(--fundo); color: var(--tinta); font: 17px/1.55 var(--f-texto); }
+.pagina { max-width: 880px; margin: 0 auto; padding-block: 28px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+h1, h2, h3 { font-family: var(--f-titulo); line-height: 1.15; text-wrap: balance; margin: 0; }
+h1 { font-size: 2.4rem; color: var(--marinho); }
+h2 { font-size: 1.75rem; color: var(--marinho); }
+h3 { font-size: 1.3rem; }
+p { margin: 0; }
+a { color: var(--marinho); }
+a:focus-visible, summary:focus-visible { outline: 3px solid var(--marinho); outline-offset: 2px; border-radius: 4px; }
+.rotulo { font: 700 .78rem/1 var(--f-texto); letter-spacing: .08em; text-transform: uppercase; color: var(--suave); }
+.pilha { display: flex; flex-direction: column; gap: 14px; }
+
+/* abertura */
+.abertura { display: grid; gap: 14px; padding-bottom: 26px; border-bottom: 2px solid var(--linha); }
+.abertura .lead { font-size: 1.12rem; max-width: 62ch; }
+.endereco { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; background: var(--papel);
+  border: 1px solid var(--linha); border-radius: 10px; padding: 12px 14px; }
+.barra { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; font-weight: 700; }
+.barra a { text-decoration: none; }
+.endereco code { font: 700 1rem/1.3 ui-monospace, Menlo, Consolas, monospace; color: var(--marinho); word-break: break-all; }
+.endereco button { font: 700 .9rem var(--f-texto); border: 1px solid var(--marinho); color: var(--marinho);
+  background: transparent; border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+
+/* os três jeitos */
+.perfis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 6px; }
+.perfil { display: flex; flex-direction: column; gap: 6px; background: var(--papel); border: 1px solid var(--linha);
+  border-top: 5px solid var(--marinho); border-radius: 10px; padding: 14px; text-decoration: none; color: var(--tinta); }
+.perfil b { font: 700 1.25rem/1.15 var(--f-titulo); color: var(--marinho); }
+.perfil span { color: var(--suave); font-size: .95rem; }
+.perfil em { font-style: normal; font-weight: 700; font-size: .9rem; color: var(--marinho); margin-top: auto; }
+.qual { background: var(--marinho-claro); border-radius: 10px; padding: 14px 16px; }
+
+/* índice */
+.indice { margin-top: 22px; }
+.indice ol { margin: 8px 0 0; padding-left: 1.3em; columns: 2; column-gap: 32px; }
+.indice li { break-inside: avoid; margin-bottom: 4px; }
+
+/* seções */
+section.parte { margin-top: 44px; display: flex; flex-direction: column; gap: 18px; scroll-margin-top: 12px; }
+.parte > header { display: flex; flex-direction: column; gap: 6px; border-left: 6px solid var(--marinho); padding-left: 12px; }
+.parte > header p { color: var(--suave); }
+
+/* um passo: texto + tela */
+.passo { display: grid; grid-template-columns: minmax(0, 1fr) 250px; gap: 20px; align-items: start;
+  background: var(--papel); border: 1px solid var(--linha); border-radius: 12px; padding: 18px; }
+.passo.sem-tela { grid-template-columns: minmax(0, 1fr); }
+.passo .texto { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.passo ol, .passo ul { margin: 0; padding-left: 1.25em; display: flex; flex-direction: column; gap: 5px; }
+.telas { display: flex; flex-direction: column; gap: 14px; }
+figure.tela { margin: 0; display: flex; flex-direction: column; gap: 6px; }
+figure.tela img { width: 100%; height: auto; display: block; border-radius: 18px; border: 6px solid #1b2530;
+  background: #1b2530; box-shadow: 0 2px 10px rgba(10, 25, 45, .18); }
+figure.tela figcaption { font-size: .85rem; color: var(--suave); text-align: center; }
+.botao { display: inline-block; font-weight: 700; background: var(--marinho-claro); color: var(--marinho);
+  border-radius: 6px; padding: 0 6px; white-space: normal; }
+
+/* avisos */
+.nota { border-radius: 10px; padding: 12px 14px; font-size: .97rem; }
+.nota.info { background: var(--marinho-claro); }
+.nota.ok { background: var(--verde-claro); }
+.nota.atencao { background: var(--ambar-claro); }
+.nota.proibido { background: var(--vermelho-claro); }
+.nota b:first-child { display: block; margin-bottom: 2px; }
+
+/* pode / não pode */
+.regras { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.regras > div { background: var(--papel); border: 1px solid var(--linha); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+.regras h3 { font-size: 1.25rem; }
+.regras .sim h3 { color: var(--verde); }
+.regras .nao h3 { color: var(--vermelho); }
+.regras ul { margin: 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: 6px; }
+
+/* mensagens */
+.tabela { overflow-x: auto; background: var(--papel); border: 1px solid var(--linha); border-radius: 12px; }
+table { border-collapse: collapse; width: 100%; min-width: 520px; font-size: .96rem; }
+th, td { text-align: left; vertical-align: top; padding: 10px 12px; border-bottom: 1px solid var(--linha); }
+th { font: 700 .78rem var(--f-texto); letter-spacing: .06em; text-transform: uppercase; color: var(--suave); }
+tr:last-child td { border-bottom: 0; }
+td:first-child { font-weight: 700; width: 42%; }
+
+details.duvida { background: var(--papel); border: 1px solid var(--linha); border-radius: 10px; padding: 12px 14px; }
+details.duvida summary { font-weight: 700; cursor: pointer; }
+details.duvida p { margin-top: 8px; }
+
+.rodape { margin-top: 48px; padding-top: 16px; border-top: 2px solid var(--linha); color: var(--suave); font-size: .92rem; }
+
+@media screen and (max-width: 720px) {
+  .perfis { grid-template-columns: minmax(0, 1fr); }
+  .indice ol { columns: 1; }
+  .passo { grid-template-columns: minmax(0, 1fr); }
+  .telas { flex-direction: row; overflow-x: auto; padding-bottom: 4px; }
+  figure.tela { flex: 0 0 min(240px, 78%); }
+  .regras { grid-template-columns: minmax(0, 1fr); }
+  h1 { font-size: 2rem; }
+}
+
+/* PAPEL (A4): cada parte começa numa página; o texto em cima e as telas lado a lado embaixo. */
+@page { size: A4; margin: 13mm 13mm 15mm; }
+@media print {
+  :root { --fundo: #fff; --papel: #fff; --tinta: #111; --suave: #444; --linha: #c9d1db; --marinho: #12355b;
+    --marinho-claro: #e9eff7; --verde: #1d6b35; --verde-claro: #e6f3ea; --ambar: #8a5200; --ambar-claro: #fbf0dc;
+    --vermelho: #9a2318; --vermelho-claro: #fbe9e6; color-scheme: light; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { font-size: 10.5pt; line-height: 1.45; }
+  .pagina { max-width: none; padding: 0; }
+  .so-tela { display: none !important; }
+  h1 { font-size: 26pt; } h2 { font-size: 17pt; } h3 { font-size: 12.5pt; }
+  section.parte { break-before: page; margin-top: 0; gap: 10px; }
+  .parte > header, h3 { break-after: avoid; }
+  .passo { grid-template-columns: minmax(0, 1fr); break-inside: avoid; padding: 12px 14px; gap: 10px; border-radius: 8px; }
+  .telas { flex-direction: row; gap: 10px; justify-content: flex-start; overflow: visible; }
+  figure.tela { flex: 0 0 46mm; break-inside: avoid; }
+  figure.tela img { border-width: 3px; border-radius: 10px; box-shadow: none; }
+  figure.tela figcaption { font-size: 8pt; }
+  .perfis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .indice ol { columns: 2; }
+  .regras { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .regras > div, .nota, details.duvida, tr { break-inside: avoid; }
+  .tabela { overflow: visible; } table { min-width: 0; font-size: 9.5pt; }
+  a { text-decoration: none; color: inherit; }
+  details.duvida summary { list-style: none; } details.duvida summary::-webkit-details-marker { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+
+<main class="pagina">
+
+<div class="abertura">
+  <div class="barra so-tela"><a href="/ponto/app">‹ Abrir o aplicativo</a><a href="/ponto/app/manual.pdf">Baixar em PDF</a></div>
+  <span class="rotulo">BWS Construções · para os colaboradores</span>
+  <h1>Manual do BWS Ponto</h1>
+  <p class="lead">O BWS Ponto é o aplicativo do ponto eletrônico da empresa. Por ele você cria a sua senha, vê as suas batidas e o seu mês, mostra o seu QR Code para bater na obra e acompanha os seus pedidos (atestado, ajuste, licença). Para algumas pessoas, ele também bate o ponto no próprio celular.</p>
+  <div class="endereco">
+    <span class="rotulo">Endereço</span>
+    <code id="end">https://aplicacoes.bwsconstrucoes.com.br/ponto/app</code>
+    <button type="button" id="copiar" class="so-tela">Copiar</button>
+  </div>
+  <p style="color:var(--suave); font-size:.95rem">Ele abre no navegador do celular (Chrome ou Safari) e não precisa instalar nada da loja. Dica: depois de abrir, use o menu do navegador e escolha <b>“Adicionar à tela inicial”</b>. Ele vira um ícone, como um aplicativo.</p>
+
+  <h2 style="margin-top:10px">Três jeitos de usar</h2>
+  <div class="perfis">
+    <a class="perfil" href="#consulta"><b>Só consulto</b><span>Bato o ponto no aparelho da obra. No meu celular vejo o meu mês e mostro o meu QR Code.</span><em>É a maioria das pessoas →</em></a>
+    <a class="perfil" href="#celular"><b>Bato no meu celular</b><span>A empresa liberou que eu bata o ponto no meu próprio celular, com foto e localização.</span><em>Precisa de liberação →</em></a>
+    <a class="perfil" href="#obra"><b>Cuido do ponto da obra</b><span>Sou o responsável pelo tablet ou celular que fica na obra, onde a equipe bate.</span><em>Responsável da obra →</em></a>
+  </div>
+  <div class="qual"><b>Não sabe qual é o seu?</b> Faça o primeiro acesso e abra <b>Meu ponto</b>. Se aparecer “Você bate o ponto no <b>aparelho da obra</b>”, você é do primeiro grupo. Se aparecer o botão verde <b>“Tirar foto e bater ponto”</b>, você bate no seu celular. Quem decide é a empresa, no seu cadastro. Se achar que está errado, fale com o DP.</div>
+
+  <nav class="indice" aria-label="Conteúdo">
+    <span class="rotulo">Conteúdo</span>
+    <ol>
+      <li><a href="#primeiro">Primeiro acesso: criar o PIN</a></li>
+      <li><a href="#consulta">Só consulto: o que tem no meu celular</a></li>
+      <li><a href="#na-obra">Como bater no aparelho da obra</a></li>
+      <li><a href="#celular">Bater no meu celular</a></li>
+      <li><a href="#pedidos">Pedidos: atestado, ajuste, licença</a></li>
+      <li><a href="#obra">Para o responsável do ponto da obra</a></li>
+      <li><a href="#vigia">Vigia noturno: a ronda</a></li>
+      <li><a href="#regras">O que pode e o que não pode</a></li>
+      <li><a href="#mensagens">Mensagens na tela e o que fazer</a></li>
+      <li><a href="#duvidas">Dúvidas comuns</a></li>
+    </ol>
+  </nav>
+</div>
+
+<!-- 1 -->
+<section class="parte" id="primeiro">
+  <header><span class="rotulo">Para todos</span><h2>1. Primeiro acesso: criar o PIN</h2>
+    <p>O PIN é a sua senha de 6 números. Ele é criado com um código que chega no WhatsApp do telefone que está no seu cadastro da empresa.</p></header>
+  <div class="passo">
+    <div class="texto">
+      <ol>
+        <li>Abra o endereço do aplicativo no seu celular.</li>
+        <li>Toque em <span class="botao">Primeiro acesso ou esqueci o PIN</span>.</li>
+        <li>Digite o seu CPF e toque em <span class="botao">Mandar o código</span>.</li>
+        <li>Chega no seu WhatsApp uma mensagem com um código de 6 números. Digite o código.</li>
+        <li>Escolha o seu PIN (6 números), repita, e toque em <span class="botao">Criar PIN e entrar</span>.</li>
+      </ol>
+      <p>Daí em diante, para entrar é só o <b>CPF e o PIN</b>.</p>
+      <div class="nota atencao"><b>O código não chegou?</b> Ele vai para o telefone do seu cadastro na empresa. Se o seu número mudou, peça ao DP para atualizar. O código vale por 15 minutos. Dá para pedir até 3 códigos por hora. Se não chegar de jeito nenhum, o DP pode gerar um código e entregar <b>em mãos</b>: na tela de criar o PIN, toque em <span class="botao">Já tenho um código (entregue pelo DP)</span>.</div>
+      <div class="nota info"><b>Esqueceu o PIN?</b> Faça o mesmo caminho: <span class="botao">Primeiro acesso ou esqueci o PIN</span>. O PIN novo substitui o antigo.</div>
+      <div class="nota proibido"><b>O PIN é só seu.</b> Não passe para ninguém, nem para o colega ou o encarregado. Depois de 5 PINs errados seguidos, o acesso fica travado por 15 minutos.</div>
+    </div>
+    <div class="telas">
+      <figure class="tela"><img src="telas/01-entrada.jpg" alt="Tela de entrada com CPF e PIN" width="600" height="1298"><figcaption>A tela de entrada</figcaption></figure>
+      <figure class="tela"><img src="telas/02-primeiro-acesso.jpg" alt="Tela de criar o PIN com o código do WhatsApp" width="600" height="1298"><figcaption>Criar o PIN com o código</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="parte" id="consulta">
+  <header><span class="rotulo">Quem só consulta</span><h2>2. Só consulto: o que tem no meu celular</h2>
+    <p>Você bate o ponto no aparelho da obra. O celular serve para acompanhar. Esse acesso <b>não precisa de aprovação</b>: basta o CPF e o PIN.</p></header>
+  <div class="passo">
+    <div class="texto">
+      <h3>A tela inicial</h3>
+      <p>Depois de entrar, você vê as opções. As que aparecem apagadas não são para você. Toque nelas e o aplicativo diz onde aquilo é feito.</p>
+      <ul>
+        <li><b>Meu ponto</b>: o seu dia (as batidas de hoje), o seu mês e os seus pedidos.</li>
+        <li><b>Meu QR Code</b>: o código que você mostra na câmera do aparelho da obra para bater o ponto sem digitar o CPF.</li>
+      </ul>
+      <h3>Meu ponto</h3>
+      <p>Aparece o aviso “Você bate o ponto no aparelho da obra”. Embaixo ficam as batidas de hoje. Toque num horário para ver o comprovante.</p>
+    </div>
+    <div class="telas">
+      <figure class="tela"><img src="telas/03-menu-consulta.jpg" alt="Tela inicial de quem só consulta" width="600" height="1298"><figcaption>A tela inicial</figcaption></figure>
+      <figure class="tela"><img src="telas/04-meuponto-consulta.jpg" alt="Meu ponto de quem bate no aparelho da obra" width="600" height="1298"><figcaption>Meu ponto</figcaption></figure>
+    </div>
+  </div>
+  <div class="passo">
+    <div class="texto">
+      <h3>Meu QR Code</h3>
+      <ol>
+        <li>Toque em <span class="botao">Mostrar meu QR Code</span> (em Meu ponto) ou em <b>Meu QR Code</b> (na tela inicial).</li>
+        <li>Aumente o brilho da tela e mostre o código para a câmera do aparelho da obra.</li>
+      </ol>
+      <div class="nota atencao"><b>Foto ou print do QR não funciona.</b> O código muda a cada 30 segundos, então tem que ser o da tela, na hora.</div>
+      <p>Sem internet no seu celular? Toque em <span class="botao">Receber um QR no WhatsApp</span> e use o que chegar. No aparelho da obra também tem o botão <span class="botao">Esqueci meu QR Code — receber no WhatsApp</span>. E sempre dá para bater digitando o CPF.</p>
+      <h3>Atestados e pedidos</h3>
+      <p>Para quem só consulta, atestado, licença e ajuste são entregues <b>no aparelho da obra</b> (veja a <a href="#na-obra">parte 3</a>) ou com o responsável da obra. Pelo celular você acompanha a resposta em <b>Pedidos</b>.</p>
+    </div>
+    <div class="telas">
+      <figure class="tela"><img src="telas/05-meu-qr.jpg" alt="Meu QR Code na tela" width="600" height="1298"><figcaption>Meu QR Code: muda a cada 30 s</figcaption></figure>
+      <figure class="tela"><img src="telas/06-pedidos-na-obra.jpg" alt="Pedidos de quem entrega na obra" width="600" height="1298"><figcaption>Pedidos: entregues na obra</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="parte" id="na-obra">
+  <header><span class="rotulo">Para todos que batem na obra</span><h2>3. Como bater no aparelho da obra</h2>
+    <p>O aparelho da obra é um tablet ou celular que fica na obra, já aberto na tela de batida. Ele mostra a obra e a hora no alto.</p></header>
+  <div class="passo">
+    <div class="texto">
+      <ol>
+        <li><b>Mostre o seu QR Code</b> na câmera, ou <b>digite o seu CPF</b> no teclado.</li>
+        <li>Aparece o seu nome. <b>Olhe para a câmera</b>: ela tira a sua foto em 2 segundos.</li>
+        <li>Não é você? Toque em <span class="botao">Não sou eu</span> antes da foto.</li>
+        <li>Pronto: aparece <b>“Ponto registrado”</b> com a hora e o número do registro (NSR).</li>
+      </ol>
+      <div class="nota info"><b>Bateu duas vezes sem querer?</b> Se você já bateu há menos de 10 minutos, o aparelho pergunta antes: “você já bateu às 07:02, bater de novo?”. E se bater, a batida repetida conta uma vez só.</div>
+      <div class="nota atencao"><b>O aparelho só bate dentro da obra, com a localização ligada.</b> Se ele estiver fora da obra ou sem localização, aparece “Ponto não registrado”. Avise o responsável da obra.</div>
+    </div>
+    <div class="telas">
+      <figure class="tela"><img src="telas/18-obra-batida.jpg" alt="Tela de batida do aparelho da obra, com câmera e teclado" width="600" height="1384"><figcaption>QR Code na câmera ou CPF no teclado</figcaption></figure>
+      <figure class="tela"><img src="telas/19-obra-olhe-para-camera.jpg" alt="Nome da pessoa e contagem para a foto" width="600" height="1384"><figcaption>Olhe para a câmera</figcaption></figure>
+      <figure class="tela"><img src="telas/20-obra-registrado.jpg" alt="Ponto registrado com hora e NSR" width="600" height="1384"><figcaption>Ponto registrado</figcaption></figure>
+    </div>
+  </div>
+  <div class="passo">
+    <div class="texto">
+      <h3>Entregar atestado, licença ou pedir ajuste no aparelho da obra</h3>
+      <ol>
+        <li>Peça ao responsável da obra para abrir <b>“Atestados, afastamentos e ajustes”</b>.</li>
+        <li>Mostre o seu QR Code ou digite o CPF.</li>
+        <li>Escolha o que vai entregar ou pedir e preencha as datas.</li>
+        <li>Para o atestado, toque em <span class="botao">📎 Anexar o documento — foto ou arquivo</span> e fotografe o papel inteiro, sem cortar.</li>
+        <li>Toque em <span class="botao">Enviar</span>.</li>
+      </ol>
+      <p>O pedido vai para validação. A resposta aparece em <b>Pedidos</b>, no seu celular. O atestado só é visto pelo DP.</p>
+    </div>
+    <div class="telas">
+      <figure class="tela"><img src="telas/21-obra-pedido.jpg" alt="Formulário de atestado no aparelho da obra" width="600" height="1384"><figcaption>Atestado entregue no aparelho da obra</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="parte" id="celular">
+  <header><span class="rotulo">Quem bate no próprio celular</span><h2>4. Bater no meu celular</h2>
+    <p>Só para quem a empresa liberou. O celular precisa ser aprovado uma vez, e o seu ponto é batido com foto e localização.</p></header>
+  <div class="passo">
+    <div class="texto">
+      <h3>Como pedir a liberação do celular</h3>
+      <ol>
+        <li>Tenha o seu PIN criado (<a href="#primeiro">parte 1</a>). <b>Sem entrar com CPF e PIN, não existe pedido de aprovação.</b></li>
+        <li>Entre no aplicativo <b>no celular que você vai usar</b>.</li>
+        <li>Abra <b>Meu ponto</b>. Se a empresa já liberou você no cadastro, o pedido sai sozinho e aparece “Este celular está esperando aprovação” com um <b>código</b>.</li>
+        <li>Se não aparecer, toque em <span class="botao">Este aparelho vai bater ponto? Pedir a aprovação</span>, no fim da tela inicial.</li>
+        <li>Passe o <b>código</b> ao DP ou à administração da obra, que aprovam. Eles conferem o código antes de aprovar.</li>
+      </ol>
+      <p>Enquanto espera, você já vê o seu ponto, mas ainda não bate pelo celular. Depois da aprovação, aparece o botão verde de bater.</p>
+      <div class="nota atencao"><b>Um celular pessoal por pessoa.</b> Aprovar um celular novo desliga o antigo. Trocou de celular? Faça o pedido no novo.</div>
+    </div>
+    <div class="telas">
+      <figure class="tela"><img src="telas/08-esperando-aprovacao.jpg" alt="Aviso de celular esperando aprovação com o código" width="600" height="1298"><figcaption>Esperando aprovação, com o código</figcaption></figure>
+      <figure class="tela"><img src="telas/07-pedido-de-aprovacao-feito.jpg" alt="Pedido de aprovação feito a partir da tela inicial" width="600" height="1298"><figcaption>Pedido feito pela tela inicial</figcaption></figure>
+    </div>
+  </div>
+  <div class="passo">
+    <div class="texto">
+      <h3>Bater o ponto</h3>
+      <ol>
+        <li>Na tela inicial, toque em <span class="botao">Bater o meu ponto</span>.</li>
+        <li>Espere aparecer <b>“📍 Você está na obra …”</b> em verde. A localização precisa estar <b>ligada</b>.</li>
+        <li>Toque em <span class="botao">Tirar foto e bater ponto</span>. A câmera abre: tire uma foto do seu rosto.</li>
+        <li>Aparece o <b>comprovante</b>: data, hora, nome, obra, número do registro (NSR) e código de verificação. Ele fica guardado em <b>Hoje</b>.</li>
+      </ol>
+      <div class="nota info"><b>A câmera não abre?</b> Use <span class="botao">A câmera não abre? Bater sem foto</span>. A batida vale, mas o DP é avisado de que ela foi sem foto. Use só quando a câmera não abrir mesmo.</div>
+    </div>
+    <div class="telas">
+      <figure class="tela"><img src="telas/09-menu-celular.jpg" alt="Tela inicial de quem bate no celular" width="600" height="1298"><figcaption>A tela inicial</figcaption></figure>
+      <figure class="tela"><img src="telas/10-bater-no-celular.jpg" alt="Tela de bater com a localização dentro da obra" width="600" height="1298"><figcaption>Dentro da obra: pode bater</figcaption></figure>
+      <figure class="tela"><img src="telas/11-comprovante.jpg" alt="Comprovante do ponto registrado" width="600" height="1298"><figcaption>O comprovante</figcaption></figure>
+    </div>
+  </div>
+  <div class="passo">
+    <div class="texto">
+      <h3>Fora da obra</h3>
+      <p>Se o celular não encontra você dentro de uma obra, aparece o aviso vermelho e uma lista de obras. Bater assim é exceção, por exemplo quando você foi comprar material ou está num serviço em outro endereço:</p>
+      <ol>
+        <li>Escolha a obra na lista.</li>
+        <li>Toque em <span class="botao">Tirar foto e bater ponto</span>.</li>
+        <li>Explique o motivo, em poucas palavras.</li>
+      </ol>
+      <p>A batida vai para a <b>conferência</b> da administração da obra, com a sua localização, e só vale depois de validada. Em algumas obras, bater fora da área não é aceito: aí o aplicativo não registra.</p>
+      <div class="nota proibido"><b>Sem localização, o ponto não é registrado.</b> Ligue a localização do celular e permita que o site use a localização.</div>
+      <p style="color:var(--suave); font-size:.95rem">A localização é lida só no momento da batida. O aplicativo não acompanha você durante o dia.</p>
+    </div>
+    <div class="telas">
+      <figure class="tela"><img src="telas/15-fora-da-obra.jpg" alt="Aviso de que a pessoa não está em obra, com a lista de obras" width="600" height="1298"><figcaption>Fora da obra: vai para conferência</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="parte" id="pedidos">
+  <header><span class="rotulo">Quem pode pedir pelo celular</span><h2>5. Pedidos: atestado, ajuste, licença</h2>
+    <p>Se a aba <b>Pedidos</b> do seu celular mostra “Fazer um pedido”, você pode pedir por ali. Se mostra “São entregues no aparelho da obra”, entregue na obra (<a href="#na-obra">parte 3</a>).</p></header>
+  <div class="passo">
+    <div class="texto">
+      <h3>O que dá para pedir</h3>
+      <ul>
+        <li><b>Mandar atestado médico</b>: o primeiro dia, quantos dias o médico deu, e a foto ou PDF do atestado. Só o DP vê o atestado.</li>
+        <li><b>Esqueci de bater o ponto</b>: o dia (ou vários dias) e os horários que faltaram, com o motivo.</li>
+        <li><b>Trabalhar num dia no lugar de outro</b>: a compensação combinada com a obra.</li>
+        <li><b>Licença</b>: casamento, luto, paternidade e as outras da lei, com o documento quando houver (certidão, por exemplo).</li>
+        <li><b>Folga do banco de horas</b>: só para quem tem banco de horas.</li>
+      </ul>
+      <h3>Mandar um atestado</h3>
+      <ol>
+        <li>Em <b>Pedidos</b>, escolha <b>Mandar atestado médico</b>.</li>
+        <li>Preencha o primeiro dia e quantos dias o médico deu.</li>
+        <li>Toque em <span class="botao">📎 Anexar o documento — foto ou arquivo</span>: tire a foto do atestado ou escolha o PDF.</li>
+        <li>Toque em <span class="botao">Enviar pedido</span>.</li>
+      </ol>
+    </div>
+    <div class="telas">
+      <figure class="tela"><img src="telas/13-pedido-atestado.jpg" alt="Formulário de atestado médico no celular" width="600" height="1298"><figcaption>Mandar atestado</figcaption></figure>
+    </div>
+  </div>
+  <div class="passo">
+    <div class="texto">
+      <h3>Esqueci de bater o ponto</h3>
+      <ol>
+        <li>Em <b>Pedidos</b>, escolha <b>Esqueci de bater o ponto</b>.</li>
+        <li>Escolha o dia. Se foram vários dias seguidos, preencha também <b>“Até o dia”</b>.</li>
+        <li>Toque em <span class="botao">Abrir o dia</span>. Aparecem os horários da sua escala, já marcados nos que faltam.</li>
+        <li>Desmarque o que você bateu, corrija a hora se precisar e escreva o motivo.</li>
+        <li>Envie. O pedido vai para validação da administração da obra ou do DP.</li>
+      </ol>
+      <p>Também dá para começar pelo <b>Meu mês</b>: no dia, toque no ✏️ para corrigir uma batida que faltou, ou no 📅 para justificar uma ausência. O botão <span class="botao">✏️ Corrigir vários dias</span> abre vários dias de uma vez.</p>
+      <div class="nota atencao"><b>Limites:</b> até 31 dias por pedido. Não dá para pedir um horário que ainda não chegou. Depois que o mês é fechado pelo DP, não dá mais para mudar aquele mês.</div>
+    </div>
+    <div class="telas">
+      <figure class="tela"><img src="telas/14-pedido-esqueci.jpg" alt="Formulário de esqueci de bater o ponto" width="600" height="1298"><figcaption>Esqueci de bater</figcaption></figure>
+      <figure class="tela"><img src="telas/12-meu-mes.jpg" alt="Meu mês com o resumo e os dias" width="600" height="1298"><figcaption>Meu mês: toque no dia para corrigir</figcaption></figure>
+    </div>
+  </div>
+  <div class="passo sem-tela">
+    <div class="texto">
+      <h3>Acompanhar a resposta</h3>
+      <p>Em <b>Pedidos › Meus pedidos</b> cada pedido mostra onde está: <b>Esperando a administração da obra</b>, <b>Esperando o DP</b>, <b>Aprovado</b> ou <b>Negado</b>. O pedido aprovado já aparece corrigido no seu mês.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="parte" id="obra">
+  <header><span class="rotulo">Responsável pelo aparelho da obra</span><h2>6. Para o responsável do ponto da obra</h2>
+    <p>O aparelho da obra é onde a equipe bate. Quem cuida dele é o responsável indicado pela empresa.</p></header>
+  <div class="passo">
+    <div class="texto">
+      <h3>Preparar um aparelho novo</h3>
+      <ol>
+        <li>No tablet ou celular da obra, abra o endereço do aplicativo.</li>
+        <li>Entre com o <b>seu</b> CPF e PIN.</li>
+        <li>No fim da tela inicial, toque em <span class="botao">Este aparelho vai bater ponto? Pedir a aprovação</span>.</li>
+        <li>Anote o <b>código</b> que aparece e passe ao DP. O pedido vai no seu nome, e quem aprova escolhe que ele é o ponto da obra.</li>
+      </ol>
+      <p>Depois de aprovado, a tela de entrada passa a dizer <b>“Este é o ponto da obra”</b>.</p>
+      <h3>As opções do aparelho</h3>
+      <ul>
+        <li><b>Bater ponto</b>: abre a tela de batida para todos. Ela fica aberta o dia todo.</li>
+        <li><b>Atestados, afastamentos e ajustes</b>: a pessoa mostra o QR Code ou digita o CPF e entrega ali.</li>
+        <li><b>Consultar o ponto de uma pessoa</b>: pelo CPF, de quem bate nesta obra.</li>
+        <li><b>Receber o QR Code no WhatsApp</b>: o seu ou o de outra pessoa, pelo CPF.</li>
+        <li><b>Meu ponto</b>: o seu próprio ponto.</li>
+      </ul>
+      <p>Fora da tela de batida, o aparelho sai sozinho em 3 minutos sem uso. Na tela de batida, o <span class="botao">‹ Início</span> volta para as opções.</p>
+    </div>
+    <div class="telas">
+      <figure class="tela"><img src="telas/16-obra-entrada.jpg" alt="Tela de entrada do ponto da obra" width="600" height="1384"><figcaption>A entrada do ponto da obra</figcaption></figure>
+      <figure class="tela"><img src="telas/17-obra-menu.jpg" alt="Opções do ponto da obra depois de entrar" width="600" height="1384"><figcaption>As opções do aparelho</figcaption></figure>
+    </div>
+  </div>
+  <div class="passo sem-tela">
+    <div class="texto">
+      <h3>Cuidados com o aparelho</h3>
+      <ul>
+        <li>Deixe o aparelho <b>na obra</b>, ligado no carregador, com <b>internet</b> e <b>localização ligadas</b>. Fora da área da obra ele não bate.</li>
+        <li>Se aparecer “Procurando a localização…” por muito tempo, toque em <b>Bater ponto</b> de novo: ele procura outra vez.</li>
+        <li>Não apague os dados do navegador e não use aba anônima no aparelho: ele passa a ser um aparelho novo e precisa de outra aprovação.</li>
+        <li>Cada um bate o seu ponto, com o próprio rosto na câmera. O responsável não bate pelos outros.</li>
+        <li>Se o aparelho avisar que a liberação vai vencer, peça a renovação ao DP antes da data.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="parte" id="vigia">
+  <header><span class="rotulo">Só para vigias noturnos</span><h2>7. Vigia noturno: a ronda</h2>
+    <p>Quem é vigia noturno, marcado assim no cadastro, faz a ronda pelo WhatsApp durante o turno.</p></header>
+  <div class="passo sem-tela">
+    <div class="texto">
+      <ol>
+        <li>Bata a <b>entrada</b> normalmente, à tarde ou à noite. As rondas começam só depois da entrada.</li>
+        <li>Durante a noite chegam <b>4 mensagens de ronda</b> no seu WhatsApp, em horários surpresa.</li>
+        <li>Abra o link da mensagem, tire a <b>foto</b> e confirme, com a <b>localização ligada</b>, em até <b>10 minutos</b>.</li>
+        <li>Na <b>saída</b>, as rondas que ainda não chegaram são canceladas.</li>
+      </ol>
+      <div class="nota atencao"><b>Ronda que passa dos 10 minutos fica como perdida</b>, e a administração da obra é avisada na hora. Use o celular que foi liberado para a ronda.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="parte" id="regras">
+  <header><span class="rotulo">Para todos</span><h2>8. O que pode e o que não pode</h2></header>
+  <div class="regras">
+    <div class="sim">
+      <h3>Pode</h3>
+      <ul>
+        <li>Bater no aparelho da obra com o QR Code ou com o CPF.</li>
+        <li>Pedir o QR Code pelo WhatsApp quando estiver sem internet.</li>
+        <li>Pedir ajuste quando esquecer de bater, inclusive de vários dias.</li>
+        <li>Mandar o atestado por foto ou PDF.</li>
+        <li>Bater num feriado ou num dia de folga, se trabalhou.</li>
+        <li>Ver o seu mês e os seus comprovantes a qualquer hora.</li>
+      </ul>
+    </div>
+    <div class="nao">
+      <h3>Não pode</h3>
+      <ul>
+        <li>Bater pelo colega ou deixar alguém bater por você. A foto mostra quem bateu.</li>
+        <li>Usar foto ou print do QR Code.</li>
+        <li>Passar o seu PIN para outra pessoa.</li>
+        <li>Pedir ajuste com um horário que você não trabalhou, ou um horário que ainda não chegou.</li>
+        <li>Bater estando afastado (atestado, licença, INSS) ou depois do último dia de trabalho: o aplicativo recusa. Voltou ao trabalho? O DP atualiza o seu cadastro.</li>
+        <li>Bater fora da obra sem motivo de trabalho.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="parte" id="mensagens">
+  <header><span class="rotulo">Para todos</span><h2>9. Mensagens na tela e o que fazer</h2></header>
+  <div class="tabela">
+    <table>
+      <thead><tr><th>A mensagem</th><th>O que fazer</th></tr></thead>
+      <tbody>
+        <tr><td>Você bate o ponto no aparelho da obra</td><td>Normal para quem só consulta. Bata no aparelho da obra. Se você deveria bater no celular, fale com o DP.</td></tr>
+        <tr><td>Este celular está esperando aprovação (código …)</td><td>Passe o código ao DP ou à administração da obra. Até a aprovação, você só consulta.</td></tr>
+        <tr><td>Este celular não foi reconhecido / Este é o mesmo aparelho?</td><td>Acontece em navegador novo, depois de limpar os dados ou em aba anônima. Se for o mesmo celular, toque em “Sim”: a liberação passa para ele.</td></tr>
+        <tr><td>Você NÃO está em obra</td><td>Confira se você está mesmo na obra e se a localização está ligada. Se precisar bater assim, escolha a obra e explique o motivo.</td></tr>
+        <tr><td>Ponto não registrado — sem localização</td><td>Ligue a localização do aparelho e permita o site usar a localização. Sem ela, o ponto não é registrado.</td></tr>
+        <tr><td>Você já bateu às 07:02. Bater de novo?</td><td>Se você já tinha batido, toque em “Não, já está batido”.</td></tr>
+        <tr><td>Batida enviada para conferência</td><td>A batida foi registrada, mas só vale depois que a administração da obra validar. Acompanhe no seu dia.</td></tr>
+        <tr><td>A liberação deste celular vence em … / venceu</td><td>Peça a renovação ao DP. Depois do vencimento, o celular para de bater.</td></tr>
+        <tr><td>Este celular foi bloqueado</td><td>Fale com o DP.</td></tr>
+        <tr><td>Afastado ou desligado: batida recusada</td><td>O seu cadastro está como afastado ou desligado. Se você voltou ao trabalho, o DP precisa atualizar o cadastro.</td></tr>
+        <tr><td>Código inválido ou vencido</td><td>Confira os 6 números e o CPF. O código vale 15 minutos e serve uma vez só; depois de 5 erros, aquele código trava. Peça outro em “Mandar o código”. Se já criou o PIN, entre com CPF e PIN.</td></tr>
+        <tr><td>Muitas tentativas de PIN</td><td>Espere 15 minutos e tente de novo, ou crie um PIN novo pelo “Primeiro acesso ou esqueci o PIN”.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="parte" id="duvidas">
+  <header><span class="rotulo">Para todos</span><h2>10. Dúvidas comuns</h2></header>
+  <div class="pilha">
+    <details class="duvida"><summary>Preciso cadastrar o meu celular para só olhar o meu ponto?</summary>
+      <p>Não. Para consultar basta o CPF e o PIN, em qualquer celular. Aprovação de aparelho só existe para quem vai bater o ponto nele.</p></details>
+    <details class="duvida"><summary>Troquei de celular. E agora?</summary>
+      <p>Para consultar, é só entrar com CPF e PIN no celular novo. Se você bate no celular, faça o pedido de aprovação no novo (parte 4). Aprovado o novo, o antigo para de bater.</p></details>
+    <details class="duvida"><summary>Limpei os dados do navegador e o celular pediu aprovação de novo.</summary>
+      <p>Limpar os dados do navegador apaga a identificação do aparelho, e ele parece novo. Se aparecer “Este é o mesmo aparelho?”, responda “Sim”. Senão, passe o código novo ao DP. Para mexer só na localização, mude a permissão do site e não apague os dados.</p></details>
+    <details class="duvida"><summary>O aplicativo guarda a minha localização o tempo todo?</summary>
+      <p>Não. A localização é lida só no momento em que você bate o ponto (e na ronda, para o vigia). Fora disso, o aplicativo não sabe onde você está.</p></details>
+    <details class="duvida"><summary>Quem vê o meu atestado?</summary>
+      <p>Só o DP. A administração da obra sabe que você está de atestado, mas não vê o documento.</p></details>
+    <details class="duvida"><summary>Fiquei sem internet na hora de bater.</summary>
+      <p>No aparelho da obra, digite o CPF: o aparelho da obra tem a internet dele. No celular pessoal, sem internet não dá para bater. Bata quando a internet voltar e, se passou da hora, peça o ajuste em “Esqueci de bater o ponto”.</p></details>
+    <details class="duvida"><summary>A batida aparece “em conferência”. Ela vale?</summary>
+      <p>Vale depois que a administração da obra validar. Isso acontece com batida fora da obra, sem localização ou sem foto no aparelho da obra.</p></details>
+  </div>
+</section>
+
+<p class="rodape">Manual do BWS Ponto, versão de outubro de 2026. As telas são de um ambiente de teste, com nomes de exemplo. Dúvida que este manual não respondeu: fale com o DP ou com o responsável da sua obra.</p>
+</main>
+
+<script>
+(function () {
+  var abrir = function () { document.querySelectorAll("details").forEach(function (d) { d.open = true; }); };
+  window.addEventListener("beforeprint", abrir);
+  if (window.matchMedia && matchMedia("print").matches) abrir();
+})();
+(function () {
+  var b = document.getElementById("copiar"), t = document.getElementById("end");
+  b.addEventListener("click", function () {
+    var texto = t.textContent.trim();
+    var ok = function () { b.textContent = "Copiado"; setTimeout(function () { b.textContent = "Copiar"; }, 2000); };
+    var selecionar = function () { var r = document.createRange(); r.selectNodeContents(t); var s = getSelection(); s.removeAllRanges(); s.addRange(r); };
+    try { navigator.clipboard.writeText(texto).then(ok, selecionar); } catch (e) { selecionar(); }
+  });
+})();
+</script>
+
+</html>

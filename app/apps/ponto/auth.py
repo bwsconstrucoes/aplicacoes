@@ -51,7 +51,7 @@ SESSAO_COLABORADOR = "ponto_colaborador_id"
 SESSAO_NOME = "ponto_colaborador_nome"
 
 # Registro de aparelho é a única rota sem credencial; este é o teto por IP.
-REGISTROS_POR_HORA_POR_IP = 30
+REGISTROS_POR_HORA_POR_IP = 120   # era 30: o cadastro em grupo no Wi-Fi do escritório (16/10/2026)
 _registros: dict[str, list[float]] = {}
 
 
