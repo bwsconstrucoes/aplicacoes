@@ -41,6 +41,10 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1za. **PUBLICADO em 15/10/2026** (com o "pode" do dono, sem migração): o `Procfile` com
+   `--max-requests 5000 --max-requests-jitter 500`, igual ao Start Command que o dono já tinha trocado no
+   Render. **Falta o dono:** olhar o gráfico de memória nas próximas semanas (passando de ~60% e ficando,
+   volta para 1000, nos dois lugares).
 1z. **PUBLICADO em 15/10/2026, fim da noite** (com o "pode" do dono, sem migração): o teste de carga
    com um play no ERP (Configuração › Geral › "Teste de carga": o computador simula N aparelhos, nada
    fica guardado) e a página opcional no celular (`/ponto/app/teste-carga/`). **Falta o dono:** rodar
