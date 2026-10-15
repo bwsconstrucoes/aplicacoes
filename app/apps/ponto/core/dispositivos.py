@@ -171,6 +171,11 @@ def para_json(d: dict) -> dict:
         "bloqueado_em": texto(d.get("bloqueado_em")), "motivo_bloqueio": d.get("motivo_bloqueio"),
         "ultimo_uso_em": texto(d.get("ultimo_uso_em")), "criado_em": texto(d.get("criado_em")),
         "arquivado": bool(d.get("arquivado_em")),
+        # Quando o pedido chegou (16/10/2026: "uma pessoa que informou depois chegou
+        # antes"): o registro do navegador ou, se ele já existia, a última entrada
+        # nele (o pedido feito depois do login atualiza o "último uso").
+        "pedido_em": texto(max((x for x in (d.get("criado_em"), d.get("ultimo_uso_em")) if x), default=None))
+                     if d["status"] == "PENDENTE" else None,
     }
 
 
@@ -189,7 +194,7 @@ def foi_pedido(aparelho: Optional[dict]) -> bool:
 
 
 def marcar_pedido(conn: Connection, dispositivo_id: int, pessoa: dict) -> None:
-    db.executar(conn, "UPDATE ponto.dispositivos SET descricao = :d, colaborador_id = :c "
+    db.executar(conn, "UPDATE ponto.dispositivos SET descricao = :d, colaborador_id = :c, ultimo_uso_em = now() "
                       "WHERE id = :id AND status = 'PENDENTE'",
                 d=f"{PREFIXO_PEDIDO}{pessoa['nome']} (CPF final {pessoa['cpf'][-3:]})"[:200],
                 c=pessoa["id"], id=dispositivo_id)

@@ -191,6 +191,23 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 16/10/2026 — Os pedidos de aparelho na ordem em que chegam
+
+- O dono, no primeiro dia de pedidos: *"tem alguns que estão demorando mais (…)
+  a que informou depois chegou antes da pessoa que informou primeiro."* A tela de
+  aparelhos punha os pendentes em **ordem de nome**: o pedido de quem pediu antes
+  podia estar no meio da lista, parecendo não ter chegado. E a lista só mudava ao
+  recarregar a página.
+- Agora: pendentes com o **mais novo em cima** e a hora do pedido na coluna
+  ("pedido dd/mm hh:mm" — `dispositivos.para_json` › `pedido_em`: o registro do
+  navegador ou a última entrada nele; o pedido feito depois do login atualiza o
+  "último uso"), o mesmo na fila de Validações, e a lista de aparelhos se
+  atualiza sozinha a cada 30 s enquanto está na tela (não com janela aberta).
+- Outras causas de "demora" que não são do sistema, ditas ao dono: a pessoa avisou
+  no grupo antes de tocar em "Pedir a aprovação" (o link fica no fim da tela
+  inicial); o código do WhatsApp do primeiro acesso chegou tarde; quem já está
+  liberado no cadastro só gera o pedido ao abrir o "Meu ponto".
+
 ## 15/10/2026 (noite) — O teste de carga NA PRODUÇÃO, com celulares de verdade
 
 - O dono: *"pegar uns 4–5 telefones já cadastrados, que acessem algum endereço e

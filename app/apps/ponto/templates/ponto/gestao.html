@@ -3242,14 +3242,31 @@ function filtrarAparelhos(lista) {
     return texto.includes(termo) || (so.length >= 3 && a.dono && soDigitos(a.dono.cpf).includes(so));
   });
 }
+// A lista se atualiza sozinha a cada 30 s enquanto está na tela (16/10/2026: os
+// pedidos chegavam e só apareciam ao recarregar). Não mexe com janela aberta.
+let RELOGIO_APARELHOS = null;
+function vigiarAparelhos() {
+  if (RELOGIO_APARELHOS) return;
+  RELOGIO_APARELHOS = setInterval(() => {
+    const caixa = els("c-aparelhos");
+    if (document.visibilityState !== "visible" || !caixa || caixa.offsetParent === null) return;
+    if (document.querySelector("dialog[open]")) return;
+    carregarAparelhos();
+  }, 30000);
+}
+
 async function carregarAparelhos() {
   if (!PODE_CONFIGURAR) return;
+  vigiarAparelhos();
   try {
     APARELHOS = (await api("/erp/api/ponto/dispositivos")).dispositivos;
   } catch (e) { erroNoCartao("c-aparelhos", e); return; }
-  // pendentes primeiro (são os que pedem ação), depois por nome
+  // pendentes primeiro (são os que pedem ação), o pedido MAIS NOVO em cima
+  // (16/10/2026: em ordem de nome, o pedido de quem pediu antes ficava no meio
+  // da lista, e parecia não ter chegado); os outros, por nome.
   const ordem = {PENDENTE: 0, APROVADO: 1, BLOQUEADO: 2};
   APARELHOS.sort((x, y) => (ordem[x.status] ?? 3) - (ordem[y.status] ?? 3)
+    || (x.status === "PENDENTE" ? String(y.pedido_em || "").localeCompare(String(x.pedido_em || "")) : 0)
     || semAcentoAp((x.dono && x.dono.nome) || x.descricao).localeCompare(semAcentoAp((y.dono && y.dono.nome) || y.descricao)));
   desenharAparelhos();
 }
@@ -3261,7 +3278,7 @@ function desenharAparelhos() {
     ? `<div class="cartao-dica">Nenhum aparelho registrado ainda. O primeiro aparece quando alguém abrir o app do colaborador.</div>`
     : !lista.length ? `<div class="cartao-dica">Nenhum aparelho com esse filtro.</div>` : `<table><thead><tr><th class="sem-ordem">Aparelho</th>
       <th class="sem-ordem">Situação</th><th class="sem-ordem">Uso</th><th class="sem-ordem">Dono / grupo</th>
-      <th class="sem-ordem">Obras</th><th class="sem-ordem">Último uso</th><th class="sem-ordem"></th></tr></thead><tbody>
+      <th class="sem-ordem">Obras</th><th class="sem-ordem">Último uso / pedido</th><th class="sem-ordem"></th></tr></thead><tbody>
     ${lista.map(a => `<tr>
       <td><b>${escapar(a.descricao || "sem nome")}</b><small>código <span class="dados">${escapar(a.codigo || "?")}</span></small>${a.aprovado_por ? `<small>aprovado por ${escapar(a.aprovado_por)}</small>` : ""}</td>
       <td>${seloAparelho(a.status)}${a.motivo_bloqueio ? `<small>${escapar(a.motivo_bloqueio)}</small>` : ""}</td>
@@ -3271,7 +3288,7 @@ function desenharAparelhos() {
           ${a.valido_ate && a.status === "APROVADO" ? `<small style="${a.valido_ate < hojeISO() ? "color:var(--vermelho); font-weight:700" : ""}">liberado até ${dataBR(a.valido_ate)}</small>`
             : a.status === "APROVADO" ? `<small>não expira</small>` : ""}</td>
       <td class="dados">${a.obras ? escapar(a.obras) : `<span class="suave">todas</span>`}</td>
-      <td class="dados">${escapar(quando(a.ultimo_uso_em))}</td>
+      <td class="dados">${a.status === "PENDENTE" ? `pedido ${escapar(quando(a.pedido_em))}` : escapar(quando(a.ultimo_uso_em))}</td>
       <td><div class="acoes">${a.status === "PENDENTE" ? `<button class="btn" type="button" data-aprovar-ap="${a.id}">Aprovar</button>`
           : `<button class="btn secundario" type="button" data-aprovar-ap="${a.id}">${a.status === "BLOQUEADO" ? "Reativar" : "Alterar"}</button>`}
         ${a.status === "APROVADO" ? `<button class="link-btn" type="button" data-renovar-ap="${a.id}">renovar</button>` : ""}

@@ -85,7 +85,7 @@ def _dar_nome_ao_aparelho(conn, aparelho, pessoa: dict) -> None:
         return
     if dispositivos.foi_pedido(aparelho):
         return
-    db.executar(conn, "UPDATE ponto.dispositivos SET descricao = :d, colaborador_id = :c "
+    db.executar(conn, "UPDATE ponto.dispositivos SET descricao = :d, colaborador_id = :c, ultimo_uso_em = now() "
                       "WHERE id = :id AND status = 'PENDENTE'",
                 d=f"Celular de {pessoa['nome']} (CPF final {pessoa['cpf'][-3:]})"[:200], c=pessoa["id"],
                 id=aparelho["id"])

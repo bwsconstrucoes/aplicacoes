@@ -472,3 +472,31 @@ def test_pedir_a_aprovacao_do_aparelho_so_depois_de_entrar(app, mundo, monkeypat
                    json={"perfil": "COMPARTILHADO", "cpf": CPF_JOAO, "obras": [mundo["obra_a"]]}).status_code == 200
     assert cel.post("/ponto/app/api/aparelho/pedir", json={}, headers=h).get_json()["pedido"] is False
     assert na_fila() == []
+
+
+def test_pedido_de_aparelho_mais_novo_em_cima_com_a_hora(app, mundo, monkeypatch):
+    """16/10/2026: "a que informou depois chegou antes da pessoa que informou
+    primeiro" — a lista estava em ordem de nome. Agora o pedido traz a hora, e o
+    navegador antigo que pede de novo sobe para cima."""
+    from tests.test_ponto_gestao_banco import CPF_JOAO, CPF_MARIA, _entrar_no_app, como
+    from tests.test_ponto_regras_0610_banco import _id_do_aparelho
+    from app.apps.ponto import db
+    def registrar(uuid):
+        c = app.test_client()
+        t = c.post("/ponto/api/dispositivo/registrar", json={"device_uuid": uuid}).get_json()["token"]
+        return {"X-Device-UUID": uuid, "X-Device-Token": t}
+    h_antigo = registrar("navegador-antigo-do-joao-0123456789")
+    h_novo = registrar("navegador-novo-da-maria-0123456789")
+    dp = como(app, mundo["dp"])
+    with db.conexao() as conn:                      # o do João foi registrado há dias
+        db.executar(conn, "UPDATE ponto.dispositivos SET criado_em = now() - interval '3 days' WHERE id = :i",
+                    i=_id_do_aparelho(dp, "navegador-antigo-do-joao-0123456789"))
+    maria = _entrar_no_app(app, CPF_MARIA, monkeypatch)
+    assert maria.post("/ponto/app/api/aparelho/pedir", json={}, headers=h_novo).status_code == 200
+    joao = _entrar_no_app(app, CPF_JOAO, monkeypatch)            # pede DEPOIS, no navegador antigo
+    assert joao.post("/ponto/app/api/aparelho/pedir", json={}, headers=h_antigo).status_code == 200
+    lista = [a for a in dp.get("/erp/api/ponto/dispositivos").get_json()["dispositivos"] if a["status"] == "PENDENTE"]
+    assert all(a["pedido_em"] for a in lista)
+    itens = [i for i in dp.get("/erp/api/ponto/validacoes").get_json()["itens"] if i["tipo"] == "APARELHO"]
+    nomes = [i["pessoa"] or "" for i in itens]
+    assert nomes.index(next(n for n in nomes if n.startswith("João"))) < nomes.index(next(n for n in nomes if n.startswith("Maria")))

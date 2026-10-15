@@ -170,7 +170,10 @@ def listar(conn: Connection, quem: Quem, *, obra_id: Optional[int] = None, de=No
               FROM ponto.dispositivos
              WHERE perfil = 'INDIVIDUAL' AND status = 'APROVADO' AND colaborador_id IS NOT NULL
              ORDER BY colaborador_id, aprovado_em DESC NULLS LAST""")}
-        for a in dispositivos.listar(conn, "PENDENTE"):
+        # o pedido mais novo em cima (16/10/2026), pela hora do pedido, não do nome
+        def _pedido(a):
+            return max((x for x in (a.get("criado_em"), a.get("ultimo_uso_em")) if x), default=a.get("criado_em"))
+        for a in sorted(dispositivos.listar(conn, "PENDENTE"), key=_pedido, reverse=True):
             if (excecoes is not None and a.get("colaborador_id") and int(a["colaborador_id"]) not in excecoes
                     and not dispositivos.foi_pedido(a)):      # o pedido explícito entra sempre
                 continue
@@ -182,14 +185,14 @@ def listar(conn: Connection, quem: Quem, *, obra_id: Optional[int] = None, de=No
                        "bloqueia o anterior") if antigo else ""
             itens.append({
                 "categoria": "APARELHO", "tipo": "APARELHO", "rotulo": ROTULO["APARELHO"], "id": j["id"],
-                "pessoa": (j.get("dono") or {}).get("nome"), "obra": None, "data": None, "quando": j.get("criado_em"),
+                "pessoa": (j.get("dono") or {}).get("nome"), "obra": None, "data": None, "quando": j.get("pedido_em"),
                 "detalhe": (f"{j.get('descricao') or 'aparelho sem nome (ninguém entrou nele com CPF e PIN)'}"
                             f" — código {j.get('codigo')}{troca}"),
                 "troca_de_celular": bool(antigo),
                 "codigo": j.get("codigo"), "descricao": j.get("descricao"), "dono": j.get("dono"),
                 "etapa": "Quem configura o ponto",
                 "pode_decidir": True, "abrir_em": "/erp/ponto/configuracao",
-                "desde": j.get("criado_em"), "dias_esperando": None,
+                "desde": j.get("pedido_em"), "dias_esperando": None,
             })
 
     # --- aparelhos a renovar ou desativar (todos vencem; o de grupo é passageiro) ---
