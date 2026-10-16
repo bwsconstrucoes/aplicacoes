@@ -2180,12 +2180,17 @@ async function abrirMenu() {
     ? `<div class="aviso info">Você entrou neste aparelho. Fora da tela de batida, ele sai sozinho em 3 minutos sem uso — ou toque em “Sair”.</div>` : "";
   $("m-sair").classList.toggle("oculto", !p);
   const cod = aparelho().uuid.replace(/[^A-Za-z0-9]/g, "").slice(-6).toUpperCase();
+  // Aparelho registrado SEM pedido, de quem não é exceção, não entra na fila de
+  // Validações (16/10/2026: "ela coloca o código e não funciona, não tem aparelho
+  // liberado"): ficava esperando uma aprovação que ninguém via. Ele ganha o botão
+  // de pedir, como quem não tem aparelho nenhum.
+  const naFila = !!APARELHO && APARELHO.status === "PENDENTE" && (APARELHO.pedido || !!(EU && EU.bate_no_celular));
   $("m-codigo").textContent = APARELHO && APARELHO.status === "APROVADO" ? ""
-    : APARELHO && APARELHO.status === "PENDENTE" ? `Este aparelho está esperando aprovação — código ${cod}. Passe o código a quem aprova.`
+    : naFila ? `Este aparelho está esperando aprovação — código ${cod}. Passe o código a quem aprova.`
     : APARELHO ? `Código deste aparelho: ${cod}.` : "";      // sem pedido, não há código a conferir
   // O pedido de aprovação só existe DEPOIS de entrar com CPF e PIN (14/10/2026):
   // ele leva o nome de quem pediu. O tipo do aparelho é de quem aprova.
-  $("m-pedir-aparelho").classList.toggle("oculto", !p || !!APARELHO);
+  $("m-pedir-aparelho").classList.toggle("oculto", !p || !(!APARELHO || (APARELHO.status === "PENDENTE" && !naFila)));
 }
 $("m-pedir-aparelho").addEventListener("click", async () => {
   try {

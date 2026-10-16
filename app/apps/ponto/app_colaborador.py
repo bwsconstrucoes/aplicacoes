@@ -373,6 +373,8 @@ def app_api_aparelho():
     return _ok(aparelho={"status": a["status"], "perfil": a["perfil"], "descricao": a["descricao"],
                          "vencimento": dispositivos.vencimento(a) if a["status"] == "APROVADO" else None,
                          "dono": (dono["nome"].split(" ")[0] if dono else None),
+                         # já está na fila de Validações pelo pedido de alguém?
+                         "pedido": dispositivos.foi_pedido(a),
                          "obras": lista_obras})
 
 

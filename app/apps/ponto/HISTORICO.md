@@ -41,6 +41,11 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1zc. **No ramo, esperando o "pode"** (16/10/2026, sem migração): "ela coloca o código e não funciona, não tem
+   aparelho liberado". Dois buracos: (1) navegador registrado SEM o pedido, de quem não é exceção, ficava PENDENTE
+   fora de Validações e o botão "Pedir a aprovação" sumia (já havia aparelho) — agora o botão aparece para ele;
+   (2) o código de quem está "não bate ponto" era aceito e gasto, o PIN criado, e a entrada recusava calada —
+   agora a tela diz o motivo, o código não é gasto, e a ficha ("Código não chegou?") mostra.
 1zb. **PUBLICADO em 15/10/2026, madrugada** (com o "pode" do dono, `main` em `246e8e1`, sem migração):
    pedidos de aparelho com o mais novo em cima, a hora do pedido e a lista se atualizando sozinha; na
    ficha da pessoa, "Código não chegou?" (o que impede o envio, o que o WhatsApp respondeu, e — para quem

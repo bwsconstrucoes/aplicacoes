@@ -30,7 +30,7 @@ import secrets
 from sqlalchemy.engine import Connection
 
 from .. import db, horario
-from ..erros import ErroDeValidacao, NaoAutenticado
+from ..erros import ErroDeValidacao, NaoAutenticado, Recusada
 from . import cadastros, recusas
 
 logger = logging.getLogger("ponto.acesso")
@@ -139,6 +139,8 @@ def diagnostico(conn: Connection, colaborador_id: int) -> dict:
     impede = []
     if pessoa["situacao"] == "DESLIGADO":
         impede.append("a pessoa está DESLIGADA — o código não é enviado")
+    elif not pessoa["ativo_no_ponto"]:
+        impede.append("a pessoa está marcada como “não bate ponto” — o código chega, mas ela não consegue entrar")
     if len(digitos) < 10:
         impede.append("sem celular com DDD no cadastro — o código não tem para onde ir")
     elif len(digitos) == 10 or (len(digitos) == 12 and digitos.startswith("55")):
@@ -223,6 +225,13 @@ def criar_pin(conn: Connection, cpf, codigo: str, pin: str) -> dict:
                 db.executar(separada, "UPDATE ponto.codigos_acesso SET tentativas = tentativas + 1 "
                                       "WHERE id = ANY(:ids)", ids=[int(v["id"]) for v in validos])
         raise NaoAutenticado("código inválido ou vencido")
+    # Código certo, mas a entrada recusaria (16/10/2026: o PIN era criado, a tela
+    # voltava para "entrar" e a pessoa achava que o código não funcionava). Diz o
+    # motivo — ela já provou ser dona do celular — e NÃO gasta o código.
+    if pessoa["situacao"] == "DESLIGADO":
+        raise Recusada("o seu cadastro consta como desligado — fale com o DP")
+    if not pessoa["ativo_no_ponto"]:
+        raise Recusada("o seu cadastro está marcado como “não bate ponto” — fale com o DP")
     db.executar(conn, "UPDATE ponto.codigos_acesso SET usado_em = now() WHERE id = :id", id=cod["id"])
     _config(conn, pessoa["id"])
     db.executar(conn, """
