@@ -12228,6 +12228,20 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 234 — RG, emissão, órgão e UF da planilha de cadastro da SomaPay (16/10/2026)
+
+- *"As informações entre as colunas E e H [RG, data de emissão, órgão emissor,
+  UF] são obrigatórias. No Cadastro de Colaboradores só temos esses dados entre
+  as colunas N e Q."* A carga do cadastro procurava "RG", "Órgão Emissor RG"…;
+  os títulos de verdade são "Documento de Identificação (RG, CNH ou CTPS)",
+  "Órgão Emissor (Documento de e Identificação)" (assim, com o "de e"), "Data de
+  Emissão (Documento de Identificação)" e "UF (Documento de Identificação)". Não
+  achava, e a planilha da SomaPay saía com as quatro vazias. Os quatro nomes
+  entraram primeiro na lista de `COLUNAS_DOCUMENTOS`.
+- **Depende de uma atualização do cadastro depois de publicar** (os documentos
+  ficam guardados na carga). O documento pode ser RG, CNH ou CTPS — vai no campo
+  "RG" da SomaPay como está na planilha.
+
 #### Leva 233 — O cadastro de colaboradores em pista própria (16/10/2026) — MIGRAÇÃO 054
 
 - *"Algo errado na atualização dos colaboradores: Já existe uma atualização em

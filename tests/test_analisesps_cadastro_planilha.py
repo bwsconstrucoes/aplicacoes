@@ -79,3 +79,17 @@ def test_a_tela_oferece_a_PLANILHA_DE_CADASTRO_nas_folhas():
     for tela in ("analisesps_folha_aberta.html", "analisesps_folha_auxilio.html",
                  "analisesps_folha_diaristas.html"):
         assert '_cadastro_planilha.html' in (pasta / tela).read_text(), tela
+
+
+def test_os_DOCUMENTOS_saem_das_colunas_N_a_Q_do_cadastro_com_os_nomes_de_verdade():
+    """16/10/2026: as colunas E a H da planilha da SomaPay (RG, emissão, órgão e
+    UF) são obrigatórias, e no Cadastro de Colaboradores elas se chamam assim."""
+    from app.apps.analisesps import colaboradores
+    cabecalho = ["CPF", "Nome", "Documento de Identificação (RG, CNH ou CTPS)",
+                 "Órgão Emissor (Documento de e Identificação)",
+                 "Data de Emissão (Documento de Identificação)",
+                 "UF (Documento de Identificação)", "UF"]
+    posicoes, _avisos = colaboradores._achar_colunas(cabecalho)
+    assert posicoes["doc_rg"] == 2 and posicoes["doc_rg_orgao"] == 3
+    assert posicoes["doc_rg_emissao"] == 4 and posicoes["doc_rg_uf"] == 5
+    assert posicoes["doc_estado"] == 6, "o UF do endereço continua sendo o outro"
