@@ -8,7 +8,6 @@ from typing import Dict, Any, List, Tuple
 from .utils import as_string, decimal_to_omie, now_baixa_id, money_to_decimal, decimal_to_br
 
 URL_CONTAPAGAR = 'https://app.omie.com.br/api/v1/financas/contapagar/'
-URL_LANCCC = 'https://app.omie.com.br/api/v1/financas/contacorrentelancamentos/'
 
 
 # 🔹 NOVO: mascara credenciais para output
@@ -123,33 +122,6 @@ def build_lancar_pagamento(plan, payload: dict) -> dict:
     }, payload)
 
 
-def build_incluir_lanc_cc(plan, payload: dict, codigo_int: str = '') -> dict:
-    """Lançamento de transferência entre contas (movimentação sem SP)."""
-    rec = plan.receipt
-    banco_origem = plan.banco
-    return {
-        'call': 'IncluirLancCC',
-        'app_key': credentials_from_payload(payload)[0],
-        'app_secret': credentials_from_payload(payload)[1],
-        'param': [{
-            'cCodIntLanc': codigo_int or ('IntCC' + now_baixa_id()),
-            'cabecalho': {
-                'nCodCC': as_string(banco_origem.codigo_omie if banco_origem else ''),
-                'dDtLanc': rec.data_pagamento,
-                'nValorLanc': decimal_to_omie(rec.valor_pago),
-            },
-            'transferencia': {
-                'nCodCCDestino': as_string(rec.conta_destino_raw or ''),
-            },
-            'detalhes': {
-                'cCodCateg': '0.01.01',
-                'cTipo': 'TRA',
-                'cObs': rec.forma_pagamento or 'Transferência de Recursos',
-            },
-        }],
-    }
-
-
 def codigo_integracao(plan) -> str:
     sp = plan.match.sp
     existente = as_string(sp.codigo_integracao_omie if sp else '')
@@ -176,25 +148,6 @@ def execute_omie(body: dict) -> dict:
         return {'ok': False, 'status': 0, 'body': {}, 'raw': str(e)}
 
 
-def execute_omie_lanccc(body: dict) -> dict:
-    try:
-        resp = requests.post(URL_LANCCC, json=body, timeout=30)
-        try:
-            data = resp.json()
-        except Exception:
-            data = {'raw': resp.text}
-
-        fault = as_string(data.get('faultstring') or data.get('faultcode') or '')
-
-        return {
-            'ok': 200 <= resp.status_code < 300 and not fault,
-            'status': resp.status_code,
-            'body': data,
-        }
-    except Exception as e:
-        return {'ok': False, 'status': 0, 'body': {}, 'raw': str(e)}
-
-
 def build_omie_plan(plan, payload: dict) -> List[Dict[str, Any]]:
     """Monta sequência: consultar → alterar (se necessário) → baixar."""
     codigo = codigo_integracao(plan)
@@ -203,106 +156,4 @@ def build_omie_plan(plan, payload: dict) -> List[Dict[str, Any]]:
         {'step': 'consultar',             'request': build_consultar_conta_pagar(codigo, payload)},
         {'step': 'alterar_se_necessario', 'request': build_alterar_conta_pagar(plan, payload)},
         {'step': 'baixar',                'request': build_lancar_pagamento(plan, payload)},
-    ]
-
-# ── Somapay: transferência Bradesco -> Somapay + baixa na conta Somapay ──────
-
-def resolver_conta_somapay(plan) -> dict:
-    """Conta Somapay que recebeu, resolvida a partir da BaseBancos.
-
-    Vem da chave PIX impressa no comprovante (ver find_account_by_pix_key). A
-    regra antiga — "se a conta de débito contém 2541" — foi aposentada em
-    11/09/2026: ela só conhecia duas das três contas Somapay e dependia do
-    número da conta de débito, não de um identificador do destino.
-
-    Sem conta resolvida devolve dicionário vazio, e o core bloqueia a execução.
-    """
-    banco = getattr(plan, 'banco_destino', None)
-    if banco and banco.codigo_omie:
-        return {'nome': banco.descricao or banco.banco, 'codigo_omie': banco.codigo_omie}
-    return {'nome': '', 'codigo_omie': ''}
-
-
-def build_transferencia_somapay(plan, payload: dict) -> dict:
-    """IncluirLancCC: transferência da conta Bradesco (origem) para a conta
-    Somapay correta (destino), conforme a conta de débito do comprovante.
-
-    NOTA: a semântica do Omie é invertida em relação ao nome dos campos —
-    'cabecalho.nCodCC' funciona como conta de DESTINO do lançamento e
-    'transferencia.nCodCCDestino' como conta de ORIGEM do débito.
-    Por isso os valores estão trocados aqui para produzir o resultado correto:
-    débito sai do Bradesco e crédito entra na Somapay.
-    """
-    rec = plan.receipt
-    banco_origem = plan.banco
-    somapay = resolver_conta_somapay(plan)
-    codigo_int = ('CCS' + as_string(plan.match.id))[:20]
-
-    return {
-        'call': 'IncluirLancCC',
-        'app_key': credentials_from_payload(payload)[0],
-        'app_secret': credentials_from_payload(payload)[1],
-        'param': [{
-            'cCodIntLanc': codigo_int,
-            'cabecalho': {
-                'nCodCC': somapay['codigo_omie'],
-                'dDtLanc': rec.data_pagamento,
-                'nValorLanc': decimal_to_omie(rec.valor_pago),
-            },
-            'transferencia': {
-                'nCodCCDestino': as_string(banco_origem.codigo_omie if banco_origem else ''),
-            },
-            'detalhes': {
-                'cCodCateg': '0.01.01',
-                'cTipo': 'TRA',
-                'cObs': f'Transferencia Bradesco -> {somapay["nome"]} - SP {plan.match.id}',
-            },
-        }],
-    }
-
-
-def build_alterar_conta_pagar_somapay(plan, payload: dict) -> dict:
-    """AlterarContaPagar na conta Somapay correta (não Bradesco)."""
-    rec = plan.receipt
-    codigo = codigo_integracao(plan)
-    valor_pago = money_to_decimal(rec.valor_pago)
-    acresc = money_to_decimal(rec.acrescimos) or money_to_decimal('0')
-    valor_doc = valor_pago - acresc if valor_pago is not None else valor_pago
-    somapay = resolver_conta_somapay(plan)
-
-    return omie_body('AlterarContaPagar', {
-        'valor_documento': decimal_to_omie(valor_doc) if valor_doc is not None else decimal_to_omie(rec.valor_pago),
-        'id_conta_corrente': somapay['codigo_omie'],
-        'codigo_lancamento_integracao': codigo,
-    }, payload)
-
-
-def build_lancar_pagamento_somapay(plan, payload: dict) -> dict:
-    """LancarPagamento na conta Somapay correta (não Bradesco)."""
-    rec = plan.receipt
-    somapay = resolver_conta_somapay(plan)
-    return omie_body('LancarPagamento', {
-        'data': rec.data_pagamento,
-        'valor': decimal_to_omie(rec.valor_pago),
-        'juros': decimal_to_omie(rec.acrescimos or '0,00') or '0.00',
-        'codigo_conta_corrente': somapay['codigo_omie'],
-        'codigo_baixa_integracao': now_baixa_id(),
-        'codigo_lancamento_integracao': codigo_integracao(plan),
-        'observacao': f'Baixa via baixabradesco - transferencia Bradesco -> {somapay["nome"]}',
-    }, payload)
-
-
-def build_somapay_plan(plan, payload: dict) -> List[Dict[str, Any]]:
-    """Monta sequência completa Somapay:
-    1. Transferência Bradesco -> Somapay (IncluirLancCC)
-    2. Consultar título na conta Somapay
-    3. Alterar título (se necessário) na conta Somapay
-    4. Baixar pagamento na conta Somapay
-    """
-    codigo = codigo_integracao(plan)
-    return [
-        {'step': 'transferencia_somapay',  'request': build_transferencia_somapay(plan, payload), 'lanccc': True},
-        {'step': 'consultar',              'request': build_consultar_conta_pagar(codigo, payload)},
-        {'step': 'alterar_se_necessario',  'request': build_alterar_conta_pagar_somapay(plan, payload)},
-        {'step': 'baixar',                 'request': build_lancar_pagamento_somapay(plan, payload)},
     ]
