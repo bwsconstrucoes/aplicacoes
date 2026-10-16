@@ -94,7 +94,6 @@ class ExecutionPlan:
     receipt: ExtractedReceipt
     match: MatchResult
     banco: Optional[BankAccount] = None
-    banco_destino: Optional[BankAccount] = None   # conta Somapay que recebeu
     acao: str = 'pendente_validacao'
     pode_executar: bool = False
     motivos_bloqueio: List[str] = field(default_factory=list)

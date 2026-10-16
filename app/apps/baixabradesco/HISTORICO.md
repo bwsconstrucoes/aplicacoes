@@ -1600,3 +1600,67 @@ rodada com a única falha sendo `erpbrasil` ausente neste ambiente, aplicação
 subindo com os 18 blueprints.
 **Não verificado:** nada disso rodou contra a planilha de verdade. O sinal é
 `pendentes_vencidos` cair de 121 para ~5, e essas 5 ganharem motivo escrito.
+
+---
+
+### 16/10/2026 — a Somapay sai inteira
+
+Pedido do dono, em duas mensagens:
+
+> *"O comprovante faz a baixa dentro da regra normal dos outros comprovantes
+> Bradesco. Vamos remover essa regra especial."*
+>
+> *"O comprovante emitido pelo próprio Soma não vai ser mais usado, remova a
+> regra também."*
+
+Antes de mexer eu expliquei os **dois** caminhos e perguntei o que fazer com
+cada um, porque "remover" tinha três leituras com resultados bem diferentes no
+Omie — e uma delas reintroduzia o erro de baixar na conta do Bradesco, corrigido
+em 11/09. Ele escolheu exatamente essa: baixar na conta do Bradesco, pela regra
+comum. É decisão dele e está registrada aqui com o motivo de eu ter perguntado.
+
+**O que saiu do código:**
+
+- o reconhecimento dos dois tipos (`somapay` e `somapay_deposito`) no leitor;
+- as duas estratégias de casamento (`match_somapay`, por valor + Pagar +
+  agendado + quatro Tipos de Despesa; e `match_nome_valor`, por nome do
+  beneficiário + valor) e a lista `SOMAPAY_TIPOS_DESPESA`;
+- o plano próprio do Omie: a transferência (`IncluirLancCC`), e o alterar e o
+  baixar apontados para a conta Somapay;
+- a resolução de conta: pela chave PIX (`find_account_by_pix_key`) e pelo nome
+  do depositante (`find_somapay_account`, `apelido_somapay`);
+- o campo `banco_destino` do plano e o desvio do executor que chamava o
+  endpoint de lançamentos de conta corrente.
+
+**O que isso muda na prática, e é a parte que importa:**
+
+1. **A transferência entre contas não é mais lançada pelo robô.** Se ela
+   precisar aparecer no Omie, vem pela conciliação bancária.
+2. **A baixa passa a acontecer na conta do Bradesco**, a que o comprovante
+   debitou — não mais na Somapay.
+3. **Comprovante emitido pela Somapay, se chegar, não baixa.** Aquele papel não
+   traz a conta da empresa, só a do funcionário; sem conta, o robô deixa
+   pendente de validação em vez de escolher uma. Dito ao dono, e é o
+   comportamento certo: baixar numa conta chutada joga dinheiro na
+   contabilidade errada e ninguém percebe pela tela.
+
+**O que FICOU, de propósito:** os extratores de nome e documento do pagador e a
+chave PIX continuam sendo lidos. Nenhuma regra de baixa depende deles hoje, mas
+alimentam a rota de diagnóstico, e tirá-los seria risco sem ganho. As docstrings
+que diziam "serve para achar a conta Somapay" foram corrigidas, para a próxima
+sessão não se enganar.
+
+**A trava contra o retorno:** `tests/test_baixabradesco_somapay_removido.py`
+substituiu os dois arquivos de teste antigos. Ele falha se alguém reintroduzir
+tipo próprio, estratégia de casamento própria, passo de transferência ou busca
+de conta Somapay — e lê os **dois comprovantes de exemplo**, que continuam no
+repositório, provando que passam pelo caminho comum. É fácil alguém, daqui a
+três meses, criar de novo um atalho "se for Somapay, faz diferente" sem saber
+que ele foi tirado de propósito.
+
+**Verificado:** 11 testes novos no lugar dos antigos, área inteira passando
+(230 testes), suíte completa rodada com a única falha sendo `erpbrasil` ausente
+neste ambiente, aplicação subindo com os 18 blueprints.
+**Não verificado:** nenhum comprovante real passou pelo caminho novo. O primeiro
+comprovante Bradesco → Somapay que chegar vai baixar na conta do Bradesco — é o
+que foi pedido, e vale conferir na primeira vez.

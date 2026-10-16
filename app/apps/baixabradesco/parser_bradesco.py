@@ -8,18 +8,6 @@ from .utils import normalize_text, only_digits, money_to_decimal, decimal_to_br,
 FGTS_CNPJ = '00360305000104'
 BEEVALE_TEXT = 'beevale pagamentos e beneficios'
 
-# Comprovante emitido pela PRÓPRIA Somapay, quando o pagamento saiu direto da
-# conta Somapay (rescisão depositada na conta do funcionário). NÃO confundir com
-# o comprovante Bradesco de transferência para a Somapay, que é outro fluxo e
-# exige lançar a transferência antes da baixa.
-SOMAPAY_INSTITUICAO = 'somapay sociedade de credito direto'
-
-# Comprovante do BRADESCO de transferência para a Somapay. Outro fluxo: aqui o
-# dinheiro apenas mudou de conta, e o Omie precisa receber a transferência ANTES
-# da baixa. Reconhecido pela instituição de destino, não pela palavra 'somapay'
-# solta — ela também aparece no comprovante emitido pela própria Somapay.
-RE_DESTINO_SOMAPAY = re.compile(r'institui[cç][aã]o\s+destino\s*:?\s*somapay', re.I)
-
 # Frases que provam que o pagamento NÃO aconteceu. Comparadas contra o texto já
 # normalizado (minúsculas, sem acento). O Bradesco usa redações diferentes para
 # a mesma coisa — "Operação Não Realizada" no Pix, "Transação Não Realizada" no
@@ -82,11 +70,12 @@ def parse_bradesco_text(filename: str, page: int, text: str, drive_link: str = '
     r.codigo_barras = extract_codigo_barras(text)
     r.identificador = extract_identificador(text)
 
-    if SOMAPAY_INSTITUICAO in norm:
-        r.tipo_comprovante = 'somapay_deposito'
-    elif RE_DESTINO_SOMAPAY.search(normalize_text(text)):
-        r.tipo_comprovante = 'somapay'
-    elif (('cef matriz' in norm or 'caixa economica federal' in norm) and FGTS_CNPJ in digits):
+    # ⚠️ A Somapay NÃO tem mais tratamento próprio — removida em 16/10/2026 a
+    # pedido do dono. Comprovante do Bradesco transferindo para a Somapay passa
+    # a ser lido como qualquer outro comprovante do Bradesco (Pix ou
+    # transferência), e o comprovante emitido pela própria Somapay deixou de ser
+    # usado pela empresa. Ver o HISTORICO.md da área.
+    if (('cef matriz' in norm or 'caixa economica federal' in norm) and FGTS_CNPJ in digits):
         r.tipo_comprovante = 'fgts_rescisorio'
     elif BEEVALE_TEXT in norm:
         r.tipo_comprovante = 'beevale'
@@ -270,8 +259,8 @@ def extract_chave_pix(text: str) -> str:
 def extract_nome_pagador(text: str) -> str:
     """Nome de quem PAGOU.
 
-    No comprovante da Somapay é o "Depositante", e é ele que diz de qual conta
-    Somapay o dinheiro saiu — o papel não traz a conta da empresa.
+    Hoje serve só ao diagnóstico — nenhuma regra de baixa depende dele desde
+    que o tratamento próprio da Somapay saiu (16/10/2026).
     """
     patterns = [
         r'(?:Depositante|Pagador|Empregadora)\s*:?\s*([^\n\r]+)',
@@ -287,10 +276,10 @@ def extract_nome_pagador(text: str) -> str:
 def extract_documento_recebedor(text: str) -> str:
     """CPF/CNPJ de quem RECEBEU.
 
-    O rótulo vem primeiro. Sem isso, a varredura solta pega o primeiro número
-    com cara de documento — e num comprovante Somapay o número do depósito tem
-    14 dígitos, exatamente o tamanho de um CNPJ, então ele era lido como se
-    fosse o documento do beneficiário.
+    ⚠️ O rótulo vem primeiro, e a ordem é load-bearing. Sem isso, a varredura
+    solta pega o primeiro número com cara de documento — já houve comprovante
+    cujo número de depósito tinha 14 dígitos, exatamente o tamanho de um CNPJ, e
+    ele era lido como se fosse o documento do beneficiário.
     """
     rotulados = [
         r'(?:Benefici[aá]rio|Favorecido|Recebedor|Credor)\s*:?[^\n\r]{0,80}?'
@@ -312,8 +301,8 @@ def extract_documento_recebedor(text: str) -> str:
 def extract_documento_pagador(text: str) -> str:
     """CPF/CNPJ de quem PAGOU.
 
-    É o que diz de qual empresa do grupo saiu o dinheiro — e, no comprovante
-    Somapay, é a única pista do papel sobre qual conta Somapay usar.
+    Diz de qual empresa do grupo saiu o dinheiro. Hoje serve só ao
+    diagnóstico — nenhuma regra de baixa depende dele.
     """
     patterns = [
         r'(?:Depositante|Pagador|Empresa|Empregadora)\s*:?[^\n\r]{0,80}?'

@@ -12,9 +12,9 @@ from .utils import b64decode_bytes, fingerprint_bytes, as_string
 from .parser_pdf import extract_pdf_pages, extract_single_page_pdf
 from .parser_bradesco import parse_bradesco_text
 from .parser_sicredi import is_sicredi, parse_sicredi_text
-from .sheets import get_gc, load_spsbd_index, load_spsbd_values, load_spsbd_operacional, load_spsbd_omie_pendente, load_spsagendar, load_base_bancos, find_bank_account, find_somapay_account, find_account_by_pix_key, build_spsbd_updates, execute_spsbd_updates, load_fingerprints_processados, registrar_fingerprint
+from .sheets import get_gc, load_spsbd_index, load_spsbd_values, load_spsbd_operacional, load_spsbd_omie_pendente, load_spsagendar, load_base_bancos, find_bank_account, build_spsbd_updates, execute_spsbd_updates, load_fingerprints_processados, registrar_fingerprint
 from .matcher import match_receipt
-from .omie import build_omie_plan, build_incluir_lanc_cc, build_somapay_plan, execute_omie, execute_omie_lanccc, codigo_integracao
+from .omie import build_omie_plan, execute_omie, codigo_integracao
 from .pipefy import build_get_cards_query, build_update_card_mutation, execute_graphql
 from .zapi import build_whatsapp_messages, send_messages_batch, resolve_zapi_auth, validate_zapi_auth
 from .storage import upload_dropbox_bytes, build_receipt_page_filename, normalize_dropbox_link
@@ -171,19 +171,6 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
 
             banco = find_bank_account(base_bancos, rec.agencia_origem, rec.conta_origem) if base_bancos else None
 
-            # O comprovante emitido pela Somapay não traz a conta da empresa —
-            # só a do funcionário. A conta de baixa vem da BaseBancos, pelo NOME
-            # de quem depositou ('BWS CONSTRUÇÕES' → conta 'Somapay BWS').
-            if banco is None and rec.tipo_comprovante == 'somapay_deposito' and base_bancos:
-                banco = find_somapay_account(base_bancos, rec.nome_pagador)
-
-            # Transferência do Bradesco para a Somapay: a conta que RECEBEU vem
-            # da chave PIX impressa no comprovante. Cada conta da BaseBancos tem
-            # a sua, então não há o que adivinhar.
-            banco_destino = None
-            if rec.tipo_comprovante == 'somapay' and base_bancos:
-                banco_destino = find_account_by_pix_key(base_bancos, rec.chave_pix_destino)
-
             storage_info = {
                 'storage': 'dropbox',
                 'status': 'nao_salvo_sem_match' if match.status != 'localizado' else 'nao_salvo_modo_teste',
@@ -219,7 +206,7 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
 
             rec.drive_link = normalize_dropbox_link(rec.drive_link)
 
-            plan = ExecutionPlan(receipt=rec, match=match, banco=banco, banco_destino=banco_destino)
+            plan = ExecutionPlan(receipt=rec, match=match, banco=banco)
             plan.responses['storage'] = storage_info
 
             if match.metodo == 'omie_pendente':
@@ -229,10 +216,7 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
             else:
                 _decidir_execucao(plan, executar_omie, atualizar_pipefy, atualizar_spsbd, enviar_whatsapp)
 
-            if rec.tipo_comprovante == 'somapay' and plan.match.id and executar_omie:
-                plan.omie_requests = build_somapay_plan(plan, payload)
-            else:
-                plan.omie_requests = build_omie_plan(plan, payload) if plan.match.id and executar_omie else []
+            plan.omie_requests = build_omie_plan(plan, payload) if plan.match.id and executar_omie else []
             plan.pipefy_get_query     = ''                                   # preenchido depois em lote
             plan.pipefy_update_mutation = ''                                 # preenchido depois com dados do get
             plan.sheets_updates       = build_spsbd_updates(plan)           if plan.match.id and atualizar_spsbd else []
@@ -559,33 +543,11 @@ def _decidir_execucao(plan: ExecutionPlan, executar_omie: bool, atualizar_pipefy
     if not rec.data_pagamento:
         faltas.append('data_pagamento')
     if executar_omie and not (plan.banco and plan.banco.codigo_omie):
-        if rec.tipo_comprovante == 'somapay':
-            plan.acao = 'pendente_validacao'
-            plan.motivos_bloqueio.append(
-                'Conta de débito do comprovante não encontrada na BaseBancos.'
-            )
-            return
-        if rec.tipo_comprovante == 'somapay_deposito':
-            plan.acao = 'pendente_validacao'
-            plan.motivos_bloqueio.append(
-                'Conta Somapay não identificada na BaseBancos pelo nome do depositante. '
-                'Confira se existe a linha da conta Somapay correspondente.'
-            )
-            return
         faltas.append('codigo_conta_omie')
 
     if faltas:
         plan.acao = 'pendente_validacao'
         plan.motivos_bloqueio.append('Campos mínimos ausentes: ' + ', '.join(faltas))
-        return
-
-    if rec.tipo_comprovante == 'somapay' and executar_omie and not (
-            plan.banco_destino and plan.banco_destino.codigo_omie):
-        plan.acao = 'pendente_validacao'
-        plan.motivos_bloqueio.append(
-            'Conta Somapay de destino não identificada pela chave PIX do comprovante. '
-            'Confira a coluna Chave PIX da BaseBancos.'
-        )
         return
 
     plan.acao = 'baixar_omie_atualizar_pipefy_sheets'
@@ -646,7 +608,6 @@ def _precisa_alterar(titulo: dict, pedido_alterar: dict) -> bool:
 
 def _executar_sequencia_omie(plan: ExecutionPlan, payload: dict) -> List[dict]:
     """Consulta → Altera (se necessário) → Baixa. Retorna log de cada step.
-    Para Somapay, inclui step inicial de transferência (IncluirLancCC).
     """
     resultados = []
     titulo_consultado: dict = {}
@@ -690,15 +651,6 @@ def _executar_sequencia_omie(plan: ExecutionPlan, payload: dict) -> List[dict]:
                             'pago. Cadastre no Render e reenvie o comprovante.')}]
 
     for req in plan.omie_requests:
-        # Step de transferência usa endpoint diferente (contacorrentelancamentos)
-        if req.get('lanccc'):
-            resp = execute_omie_lanccc(req['request'])
-            resultados.append({'step': req['step'], 'response': resp})
-            if not resp.get('ok'):
-                resultados.append({'step': 'abort_apos_transferencia', 'motivo': 'Falha na transferência Bradesco -> Somapay. Baixa cancelada.'})
-                break
-            continue
-
         # ⚠️ A ALTERAÇÃO SÓ ACONTECE SE ALGO DIVERGE — 16/09/2026.
         #
         # O que o Omie respondeu, pela boca dele, num comprovante do dono:

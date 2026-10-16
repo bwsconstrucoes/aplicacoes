@@ -83,21 +83,6 @@ resolver ganha:
 1. **O número da SP escrito no comprovante** (o campo "Descrição"). É o caminho
    mais confiável. Um cuidado: o QR Code do Pix começa com `000201` e já foi
    confundido com número de SP — números assim são ignorados de propósito.
-2. **Depósito da Somapay** (rescisão paga direto da conta Somapay): pelo **nome
-   de quem recebeu + valor exato**. Esse comprovante é emitido pela própria
-   Somapay e não traz o número da SP nem a conta da empresa.
-   ⚠️ **Por que o nome e não o CPF:** numa SP de rescisão o credor é a
-   **empresa**, e a coluna CPF/CNPJ traz o CNPJ dela — não o do funcionário.
-   Quem identifica a pessoa é o nome escrito na descrição, no formato
-   "TRCT <NOME>". E o valor sozinho não serve: em 09/09/2026 havia **quatro**
-   rescisões de R$ 452,40, de quatro pessoas diferentes.
-3. **Somapay via transferência** (o dinheiro sai do Bradesco para a Somapay):
-   por valor, entre as SPs a pagar e agendadas, e só para despesas de rescisão,
-   férias, gratificação ou participação nos lucros. Empatando, desempata pela
-   conta que foi debitada. ⚠️ O comprovante **não traz o nome do funcionário**,
-   então duas rescisões pendentes de mesmo valor na mesma conta ficam paradas
-   para conferência — e isso acontece de verdade (quatro de R$ 452,40 em
-   09/09/2026).
 4. **BeeVale** (vale-alimentação): por valor, aceitando o valor da SP com 1,5%
    de acréscimo (é a taxa da BeeVale) ou o valor exato.
 5. **FGTS/Caixa**: por valor, entre as SPs a pagar e agendadas; se não achar,
@@ -150,44 +135,36 @@ Quando a distribuição **não** acontece, os comprovantes entram no aviso com a
 explicação do porquê — quantidades diferentes, ou identificador repetido —, e não
 com o motivo técnico do casador.
 
-### Os dois caminhos da Somapay, que não podem ser confundidos
+### A Somapay não tem mais tratamento próprio — removida em 16/10/2026
 
-A folha de pagamento passa pela Somapay de duas formas, e cada uma lança coisa
-diferente no Omie:
+Havia **dois** caminhos com regra própria, e os dois saíram, por decisão do
+dono:
 
-| Situação | O que o Omie recebe |
+| O que era | O que é agora |
 |---|---|
-| O dinheiro **sai do Bradesco** para a Somapay | a transferência entre as contas **e depois** a baixa do título na conta Somapay |
-| O pagamento **já saiu da conta Somapay** (este é o comprovante que a Somapay emite) | **só a baixa** na conta Somapay — não há transferência que tenha acontecido |
+| comprovante do Bradesco transferindo para a Somapay: o robô lançava a **transferência** no Omie e depois baixava na conta Somapay | comprovante comum do Bradesco — baixa na conta que o comprovante debitou, **sem transferência nenhuma** |
+| comprovante emitido pela própria Somapay: casado por nome do beneficiário + valor, baixado na conta Somapay achada pelo nome do depositante | a empresa **parou de usar** esse comprovante |
 
-**Qual conta Somapay recebeu** vem da **chave PIX impressa no comprovante**,
-casada com a coluna Chave PIX da BaseBancos. Cada uma das três contas tem a sua,
-então não há o que adivinhar. Se a chave não estiver cadastrada, o robô não
-escolhe: deixa pendente e diz o motivo.
+As palavras dele: *"o comprovante faz a baixa dentro da regra normal dos outros
+comprovantes Bradesco, vamos remover essa regra especial"* e *"o comprovante
+emitido pelo próprio Soma não vai ser mais usado, remova a regra também"*.
 
-Os dois comprovantes podem chegar para a mesma rescisão, e **os dois dão baixa**.
-Quem chegar primeiro baixa; o segundo encontra o título já pago no Omie e para
-sozinho. O comprovante que fica anexado na SP é o do primeiro que chegou —
-decisão do dono em 11/09/2026, ciente de que costuma ser o do Bradesco e não o
-da Somapay.
+⚠️ **O que mudou no Omie, e é a parte que importa:** a transferência entre
+contas **não é mais lançada** pelo robô, e a baixa passou a acontecer na conta
+do **Bradesco**, não na Somapay. Se a transferência precisar aparecer no Omie,
+ela vem pela conciliação bancária, não daqui.
 
-Lançar a transferência no segundo caso criaria no Omie um dinheiro que não
-andou. Por isso os dois são tipos separados no código.
+⚠️ **Se um comprovante emitido pela Somapay chegar assim mesmo**, ele **não
+baixa**: aquele papel não traz a conta da empresa, só a do funcionário, e sem
+conta o robô deixa pendente de validação em vez de escolher uma. Isso é o
+comportamento desejado — baixar numa conta chutada jogaria o dinheiro na
+contabilidade errada, e ninguém percebe olhando a tela.
 
-**O comprovante emitido pela Somapay não traz a conta da empresa**, só a do
-funcionário que recebeu. A conta em que a baixa é lançada vem da **BaseBancos**,
-pelo **nome do depositante**: "BWS CONSTRUÇÕES" casa com a conta "Somapay BWS".
-A comparação ignora espaços e acentos, então "IFPE SANTA CRUZ" acha
-"Somapay IFPESANTACRUZ".
-
-⚠️ **Não dá para usar o CNPJ aqui.** As três contas Somapay da BaseBancos
-(BWS, INFRADENDE e IFPESANTACRUZ) têm o **mesmo CNPJ** — o da própria Somapay,
-não o da empresa do grupo. Conferido com a planilha real em 11/09/2026.
-
-Se nenhum nome bater, ou mais de um bater, o robô **não escolhe**: deixa o
-comprovante pendente de validação e diz o motivo. Errar entre as três contas
-jogaria o dinheiro na contabilidade errada, e isso ninguém percebe olhando a
-tela.
+**Não reintroduza um atalho "se for Somapay, faz diferente".** Há um arquivo de
+teste inteiro (`test_baixabradesco_somapay_removido.py`) que falha se alguém
+voltar a criar tipo próprio, estratégia de casamento própria ou passo de
+transferência. Os dois comprovantes de exemplo continuam no repositório e são
+lidos lá — é a prova de que passam pelo caminho comum.
 
 ## O que ele escreve quando casa
 
@@ -591,7 +568,7 @@ conta corrente), **Pipefy** (cards), **Dropbox** (arquivo do comprovante),
 | `parser_bradesco.py` | entende o comprovante do Bradesco |
 | `parser_sicredi.py` | entende o comprovante do Sicredi (ver a ressalva abaixo) |
 | `matcher.py` | decide de qual SP é o comprovante |
-| `omie.py` | as chamadas ao Omie, inclusive a transferência da folha Somapay |
+| `omie.py` | as chamadas ao Omie: consultar o título, alterar se preciso, baixar |
 | `pipefy.py` | busca e atualização dos cards |
 | `sheets.py` | leitura e escrita nas planilhas, e o mapa das colunas |
 | `storage.py` | Dropbox |
