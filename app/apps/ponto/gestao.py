@@ -371,9 +371,15 @@ def ponto_api_pessoa(colaborador_id: int):
                                         WHERE co.colaborador_id = :c ORDER BY o.codigo""",
                               c=colaborador_id)
         historico = escalas.historico_da_pessoa(conn, colaborador_id)
-        aparelhos = db.todos(conn, """SELECT id, descricao, perfil, status, ultimo_uso_em
-                                        FROM ponto.dispositivos WHERE colaborador_id = :c
-                                       ORDER BY id DESC""", c=colaborador_id)
+        # O motivo do bloqueio e o arquivado (16/10/2026: "não aparece dentre os
+        # aprovados e está dando bloqueado; já tinha sido aprovado e sumiu"): a ficha
+        # diz o que aconteceu, sem caçar na lista de aparelhos.
+        arquivado = ("arquivado_em" if db.tem_coluna(conn, "dispositivos", "arquivado_em")
+                     else "NULL::timestamptz AS arquivado_em")
+        aparelhos = db.todos(conn, f"""SELECT id, descricao, perfil, status, ultimo_uso_em, motivo_bloqueio,
+                                              bloqueado_em, {arquivado}
+                                         FROM ponto.dispositivos WHERE colaborador_id = :c
+                                        ORDER BY id DESC""", c=colaborador_id)
         from .core import papeis
         responsavel = papeis.responsavel_por_ponto_da_obra(conn, p)
     j = cadastros.colaborador_para_json({**p, "obras_adicionais": adicionais})
@@ -381,7 +387,9 @@ def ponto_api_pessoa(colaborador_id: int):
                      "desde": h["vigencia_inicio"].isoformat(),
                      "ciclo_data_base": h["ciclo_data_base"].isoformat() if h["ciclo_data_base"] else None,
                      "por": h["definido_por"]} for h in historico]
-    j["aparelhos"] = [{**a, "ultimo_uso_em": horario.texto(a["ultimo_uso_em"])} for a in aparelhos]
+    j["aparelhos"] = [{**a, "ultimo_uso_em": horario.texto(a["ultimo_uso_em"]),
+                       "bloqueado_em": horario.texto(a["bloqueado_em"]),
+                       "arquivado_em": horario.texto(a["arquivado_em"])} for a in aparelhos]
     j["acordo_banco"] = bool(p.get("acordo_documento_id"))
     # Responsável por um ponto da obra pede o próprio pelo celular com ou sem a
     # marcação (10/10/2026) — a tela diz isso, para a marcação não parecer mentir.

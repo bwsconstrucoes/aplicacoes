@@ -447,13 +447,16 @@ def app_api_eu():
         # Para ESCOLHER a obra (sem localização, ou fora da cerca, explicando): as do
         # cadastro; sem nenhuma, todas as ativas — a obra do cadastro não trava
         # ninguém (13/10/2026).
+        cadastradas = cadastros.listar_obras(conn)
         para_escolher = obras or [{**cadastros.obra_para_json(o),
                                    "fora_da_cerca": marcacoes.modo_fora_da_cerca(conn, int(o["id"]))}
-                                  for o in cadastros.listar_obras(conn)]
+                                  for o in cadastradas]
     return _ok(nome=p["nome"], primeiro_nome=p["nome"].split(" ")[0], bate_no_celular=no_celular,
                pede_no_celular=pede, administrativo=administrativo,
                cpf_final=p["cpf"][-3:], obra_principal=p.get("obra_codigo"),
                obras=obras, obras_para_escolher=para_escolher, hoje=esp["dias"][0], pedidos_pendentes=len(pedidos),
+               # o pedido de correção escolhe entre TODAS as obras ativas (16/10/2026)
+               obras_cadastradas=[cadastros.obra_para_json(o) for o in cadastradas],
                banco=({"saldo": saldo["saldo"], "regime": saldo["regime_rotulo"]} if saldo else None))
 
 

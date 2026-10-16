@@ -41,6 +41,13 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1ze. **No ramo, esperando o "pode"** (16/10/2026, sem migração). (1) **Correção de ponto em QUALQUER obra
+   cadastrada** — decisão do dono: "não é para ser a obra do cadastro, é para aparecer a relação de obras
+   cadastradas". O aplicativo lista as obras ativas (as da pessoa primeiro) e o servidor deixou de recusar
+   "essa obra não é da pessoa"; quem valida confere. (2) "Celular bloqueado que sumiu dos aprovados": não era
+   defeito achado — os caminhos que bloqueiam são o bloqueio à mão, o "Desativar" de Validações, o
+   **arquivar** (excluir aparelho com batida: fica bloqueado e FORA da lista), aprovar outro celular da mesma
+   pessoa e o desligamento. A ficha da pessoa passou a mostrar o motivo, a data e se foi arquivado.
 1zd. **Batida SEM INTERNET no ponto da obra — PUBLICADA em 16/10/2026, com MIGRAÇÃO 012** (o dono: "pode
    prosseguir e publicar ao final"). **Falta o dono, no momento da publicação:** apertar **"Aplicar
    atualizações do ponto"** (a 012). Antes do botão nada se perde: o tablet guarda e o servidor responde

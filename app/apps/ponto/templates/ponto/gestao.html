@@ -2317,7 +2317,9 @@ async function abrirPessoa(id) {
       ${(p.aparelhos || []).length ? `<table><thead><tr><th class="sem-ordem">Aparelho</th>
           <th class="sem-ordem">Uso</th><th class="sem-ordem">Situação</th><th class="sem-ordem">Último uso</th></tr></thead><tbody>
         ${p.aparelhos.map(a => `<tr><td>${escapar(a.descricao || "sem nome")}</td>
-          <td>${escapar(rotuloPerfil(a.perfil))}</td><td>${seloAparelho(a.status)}</td>
+          <td>${escapar(rotuloPerfil(a.perfil))}</td><td>${seloAparelho(a.status)}${a.arquivado_em
+            ? ` <small>arquivado — em Configuração › Aparelhos, Situação “Arquivados”</small>` : ""}${a.motivo_bloqueio
+            ? `<small style="display:block">${escapar(a.motivo_bloqueio)}${a.bloqueado_em ? ` · ${escapar(quando(a.bloqueado_em))}` : ""}</small>` : ""}</td>
           <td class="dados">${escapar(quando(a.ultimo_uso_em))}</td></tr>`).join("")}</tbody></table>`
         : `<div class="cartao-dica">Nenhum celular registrado em nome desta pessoa. Ela
             pode bater pelo ponto da obra.</div>`}`;

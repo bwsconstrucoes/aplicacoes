@@ -1518,8 +1518,15 @@ async function corrigirVariosDias(alvo, de0, ate0) {
     abrirCorrecaoDeVarios(itens, alvo);
   };
 }
+// As obras do pedido de correção (16/10/2026, o dono: "não é para ser a obra do
+// cadastro, é para aparecer a relação de obras cadastradas"): todas as ativas,
+// com as da pessoa primeiro — ela pode ter trabalhado em outra obra naquele dia.
+function obrasParaCorrecao(dela) {
+  const codigos = new Set((dela || []).map(o => o.codigo));
+  return [...(dela || []), ...((EU && EU.obras_cadastradas) || []).filter(o => !codigos.has(o.codigo))];
+}
 function abrirCorrecaoDeVarios(itens, alvo) {
-  const obras = alvo ? (alvo.obras || []) : ((EU && EU.obras) || []);
+  const obras = obrasParaCorrecao(alvo ? (alvo.obras || []) : ((EU && EU.obras) || []));
   $("dlg-corpo").innerHTML = `
     <h2 style="margin:0 0 6px">Corrigir ${esc(dataBR(itens[0].x.data).slice(0, 5))} a ${esc(dataBR(itens[itens.length - 1].x.data))}${alvo ? ` — ${esc(alvo.nome)}` : ""}</h2>
     <p style="margin:6px 0 4px"><b>O que faltou?</b> Desmarque o que foi batido e confira os horários.</p>
@@ -1564,7 +1571,7 @@ function agoraEmFortaleza() {
 // de quem está logado, para a obra do alcance dele.
 function abrirCorrecao(x, alvo) {
   if (!x) return;
-  const obras = alvo ? (alvo.obras || []) : ((EU && EU.obras) || []);
+  const obras = obrasParaCorrecao(alvo ? (alvo.obras || []) : ((EU && EU.obras) || []));
   const daBatida = x.batidas[0] && x.batidas[0].obra;
   const obraDoDia = alvo ? (obras.some(o => o.codigo === daBatida) ? daBatida : (obras[0] && obras[0].codigo))
                          : (daBatida || EU.obra_principal);

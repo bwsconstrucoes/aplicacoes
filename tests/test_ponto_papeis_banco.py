@@ -620,3 +620,36 @@ def test_codigo_certo_de_quem_nao_bate_ponto_diz_o_motivo_e_nao_gasta(app, mundo
         conn.commit()
     assert app.test_client().post("/ponto/app/api/pin", json={"cpf": CPF_JOAO, "codigo": codigo,
                                                                "pin": "481927"}).status_code == 200
+
+
+def test_correcao_escolhe_entre_todas_as_obras_cadastradas(app, mundo, monkeypatch):
+    """16/10/2026, o dono: "só tem a obra do cadastro. Não é para ser a obra do
+    cadastro, é para aparecer a relação de obras cadastradas". João é da obra A
+    e trabalhou na B: o aplicativo oferece a B, e o pedido entra."""
+    from tests.test_ponto_gestao_banco import CPF_JOAO, _entrar_no_app, como, _segunda_passada
+    cel = _entrar_no_app(app, CPF_JOAO, monkeypatch)
+    eu = cel.get("/ponto/app/api/eu").get_json()
+    assert {o["codigo"] for o in eu["obras"]} == {"PG-A"}
+    assert {"PG-A", "PG-B"} <= {o["codigo"] for o in eu["obras_cadastradas"]}
+    seg = _segunda_passada()
+    r = como(app, mundo["dp"]).post("/erp/api/ponto/ocorrencias", json={
+        "tipo": "AJUSTE_BATIDA", "colaborador_id": mundo["joao"], "data_inicio": seg.isoformat(),
+        "horario": f"{seg.isoformat()}T07:00:00", "obra": "PG-B", "descricao": "trabalhou na obra B nesse dia"})
+    assert r.status_code in (200, 201), r.get_json()
+
+
+def test_a_ficha_diz_por_que_o_celular_foi_bloqueado(app, mundo):
+    """16/10/2026: "não aparece dentre os aprovados e está dando bloqueado; já tinha
+    sido aprovado e sumiu". A ficha da pessoa mostra o motivo e se foi arquivado."""
+    from tests.test_ponto_gestao_banco import CPF_JOAO, como
+    from tests.test_ponto_regras_0610_banco import _id_do_aparelho
+    uuid = "celular-do-joao-bloqueado-0123456789"
+    app.test_client().post("/ponto/api/dispositivo/registrar", json={"device_uuid": uuid})
+    dp = como(app, mundo["dp"])
+    ap = _id_do_aparelho(dp, uuid)
+    assert dp.post(f"/erp/api/ponto/dispositivos/{ap}/aprovar",
+                   json={"perfil": "INDIVIDUAL", "cpf": CPF_JOAO}).status_code == 200
+    assert dp.post(f"/erp/api/ponto/dispositivos/{ap}/bloquear", json={"motivo": "celular perdido"}).status_code == 200
+    a = next(x for x in dp.get(f"/erp/api/ponto/pessoas/{mundo['joao']}").get_json()["pessoa"]["aparelhos"]
+             if x["id"] == ap)
+    assert a["status"] == "BLOQUEADO" and "celular perdido" in a["motivo_bloqueio"] and a["bloqueado_em"]
