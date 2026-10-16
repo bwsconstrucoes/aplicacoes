@@ -397,7 +397,14 @@ Content-Type: application/json
 {"modo": "ponto_diario", "secret": "<ANALISESPS_SECRET>"}
 ```
 
-**De hora em hora** (desde 30/09/2026). Cada chamada, mês a mês: **retoma** a
+**Na madrugada, pelo cron-job.org — decisão do dono em 15/10/2026** (*"prefiro o
+cronjob e configurar na madrugada"*; um disparo pela tela aberta chegou a ser
+feito e foi desfeito antes de publicar). Horário recomendado, fuso
+America/Sao_Paulo: **02:00, 03:00 e 04:00** — a primeira traz, as outras duas
+retomam se algo cair e, se já entrou, pulam. Não publicar nesse horário: a
+publicação reinicia o serviço e corta a carga (a chamada seguinte retoma).
+
+Cada chamada, mês a mês: **retoma** a
 carga que parou no meio, **traz** o mês se ele ainda não entrou hoje, e **pula**
 o que já entrou inteiro hoje — então o mês é refeito uma vez por dia, e uma
 queda é retomada em até uma hora, sem ninguém apertar nada. É o "não mata o

@@ -171,6 +171,8 @@ SUBTELAS_DA_FOLHA = [
     ("diaristas", "Diaristas", "analisesps.tela_folha_diaristas", "paga"),
     # As solicitações de despesa com colaboradores do Pipefy (03/10/2026).
     ("dc", "Despesas com colaboradores", "analisesps.tela_folha_dc", "paga"),
+    # Uma lista de CPF e valor colada na tela (15/10/2026).
+    ("avulso", "Pagamento avulso", "analisesps.tela_folha_avulso", "paga"),
     ("pagamento", "Arquivos gerados", "analisesps.tela_folha_pagamento", "paga"),
 
     # A BASE. Vem depois porque é o que se arruma quando algo não fecha — mas é
@@ -5169,6 +5171,141 @@ def folha_dc_obra():
         return {"ok": False, "erro": str(e)}, 400
     except Exception as e:  # noqa: BLE001
         logger.exception("Folha: falhou trocar a obra da DC")
+        return {"ok": False, "erro": f"Não foi possível salvar: {e}"}, 500
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# PAGAMENTO AVULSO — 15/10/2026. Ver `pagamento_avulso`.
+# ---------------------------------------------------------------------------
+def _avulso_lista(calculado: dict, args) -> dict:
+    """A lista do avulso com os filtros da lateral (os das outras folhas, mais
+    a conta)."""
+    from . import folha_lista
+    pessoas = list((calculado or {}).get("pessoas") or [])
+    contas = folha_lista.marcados(args, "conta")
+    lista = folha_lista.filtrar(pessoas, args, campo_da_obra="obra", escondidas=set())
+    if contas:
+        lista["pessoas"] = [p for p in lista["pessoas"] if (p["conta"] or "(sem conta)") in contas]
+    lista["filtros"].update({"conta": contas})
+    lista["filtrando"] = bool(lista["filtrando"] or contas)
+    lista["opcoes_conta"] = [(c, c) for c in sorted(
+        {p["conta"] or "(sem conta)" for p in pessoas})]
+    return lista
+
+
+@bp.route("/folha/avulso")
+@exige_consulta
+def tela_folha_avulso():
+    """Pagamento avulso: a lista colada (CPF, valor e obra), enriquecida pelo
+    cadastro e pelo ponto, pronta para gerar o BeeVale ou a SomaPay."""
+    from . import folha_pagamento as fpg, pagamento_avulso as pa
+    calculado, erro = None, None
+    try:
+        calculado = pa.calcular()
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+        logger.exception("Folha: não consegui montar o pagamento avulso")
+        erro = f"não foi possível montar a lista: {e}"
+    lista = _avulso_lista(calculado, request.args)
+    try:
+        divisao = (fpg.divisao(pa.linhas_a_pagar(calculado))
+                   if calculado and calculado["quantos_a_pagar"] else {})
+    except Exception:  # noqa: BLE001 — a janela é apoio
+        logger.exception("Folha: não consegui montar a divisão do avulso")
+        divisao = {}
+    agrupamento = request.args.get("agrupar", pa.AGRUPAMENTO_PADRAO)
+    if agrupamento not in {c for c, _ in pa.AGRUPAMENTOS}:
+        agrupamento = pa.AGRUPAMENTO_PADRAO
+    return render_template(
+        "analisesps_folha_avulso.html", aba="folha", subaba="avulso",
+        agrupamento=agrupamento, agrupamentos=pa.AGRUPAMENTOS,
+        grupos_da_lista=pa.agrupar(lista["pessoas"], agrupamento),
+        grupos=subtelas_agrupadas(), resultado=calculado, erro=erro,
+        pessoas=lista["pessoas"], lista=lista, filtrando=lista["filtrando"],
+        divisao=divisao, tipos_de_despesa=list(pa.TIPOS_DE_DESPESA),
+        tipo_padrao=pa.TIPO_PADRAO,
+        fora_do_filtro=_marcados_fora_do_filtro(
+            (calculado or {}).get("pessoas"), lista["pessoas"], chave="chave",
+            vai=lambda p: p.get("pagar") and p.get("valor", 0) > 0 and not p.get("gerada")),
+        obras_c_diarios=_obras_c_diarios(),
+        pode_operar=auth.pode_operar(), pode_gerar=auth.e_mestre(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual())
+
+
+@bp.route("/folha/avulso/relatorio.<formato>")
+@exige_consulta
+def folha_avulso_relatorio(formato: str):
+    """O relatório do avulso — o mesmo das outras folhas, com os filtros da tela."""
+    from . import folha_pagamento as fpg, pagamento_avulso as pa
+    if formato not in ("xlsx", "pdf"):
+        return render_template("analisesps_erro.html", titulo="Não encontrado",
+                               mensagem="Este formato de relatório não existe."), 404
+    try:
+        calculado = pa.calcular()
+        lista = _avulso_lista(calculado, request.args)
+        montado = pa.montado_do_relatorio(calculado, lista["pessoas"], lista["filtros"])
+        return _resposta_do_relatorio(montado, fpg.conta_por_obra(), formato)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou o relatório do avulso")
+        return render_template("analisesps_erro.html", titulo="Relatório do pagamento avulso",
+                               mensagem=f"Não foi possível gerar o relatório: {e}"), 500
+
+
+@bp.route("/api/folha/avulso/lista", methods=["POST"])
+@exige_operador
+def folha_avulso_lista():
+    """Lê o que foi colado e guarda como a lista atual — ou limpa a lista."""
+    from . import pagamento_avulso as pa
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        if dados.get("limpar"):
+            pa.limpar_lista(quem)
+            return {"ok": True}
+        nova = pa.gravar_lista(dados.get("texto") or "", dados.get("descricao") or "",
+                               dados.get("tipo_despesa") or "", quem=quem)
+    except pa.ErroDoAvulso as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou ler a lista do avulso")
+        return {"ok": False, "erro": f"Não foi possível ler a lista: {e}"}, 500
+    return {"ok": True, "linhas": len(nova["linhas"]), "recusadas": nova["recusadas"]}
+
+
+@bp.route("/api/folha/avulso/selecao", methods=["POST"])
+@exige_operador
+def folha_avulso_selecao():
+    """Salva de uma vez quem vai e quem não vai."""
+    from . import pagamento_avulso as pa
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        saida = pa.salvar_selecao(dados.get("decisoes") or [], quem=quem)
+    except pa.ErroDoAvulso as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou salvar a seleção do avulso")
+        return {"ok": False, "erro": f"Não foi possível salvar: {e}"}, 500
+    return {"ok": True, **saida}
+
+
+@bp.route("/api/folha/avulso/obra", methods=["POST"])
+@exige_operador
+def folha_avulso_obra():
+    """A obra que paga uma linha, trocada à mão (vazio = volta à automática)."""
+    from . import pagamento_avulso as pa
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    chave = str(dados.get("chave") or "").strip()
+    if not chave:
+        return {"ok": False, "erro": "Linha não informada."}, 400
+    try:
+        pa.escolher_obra(chave, dados.get("obra") or "", quem=quem)
+    except pa.ErroDoAvulso as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou trocar a obra do avulso")
         return {"ok": False, "erro": f"Não foi possível salvar: {e}"}, 500
     return {"ok": True}
 

@@ -12228,6 +12228,67 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 232 — Pagamento avulso (15/10/2026)
+
+- *"Eu quero poder gerar um arquivo de pagamento, SomaPay ou BeeVale (…)
+  pagamento avulso (…) uma lista com CPF e valor (…) e a obra (…) se eu não
+  determinar, aquela coluninha da obra do ponto, a obra de cadastro (…) aqueles
+  alertas (…) a dinâmica toda é igual (…) a diferença é a fonte dos dados."*
+  Não existia nada parecido: as outras telas pagam um CÁLCULO (folha, auxílio,
+  diárias) ou a aba "Data" da DC.
+- **Leva 232 publicada em 15/10/2026** (sem migração; suíte inteira verde).
+- **Nova subtela da Folha, "Pagamento avulso"** (depois da DC), com o molde da
+  DC. Um campo para COLAR (direto da planilha, ou digitado): uma linha por
+  pagamento, CPF, valor e obra (opcional), em qualquer ordem — tabulação, ponto e
+  vírgula ou espaço. CPF pontuado ou não (com 9/10 dígitos, completa o zero que a
+  planilha comeu, com alerta); valor 1.500,00 · 1500,00 · 1500. Cabeçalho e
+  linha sem CPF/valor ficam de fora, listados com o motivo. Mais uma
+  **descrição** do pagamento e o **tipo de despesa** (Gratificações e Extras,
+  padrão; Salários e Ordenados; Alimentação; Transporte) — vai para a SP do
+  Pipefy e decide a carteira do BeeVale (a tabela do dono).
+- **Cada linha:** nome, função, fase (cadastro); **obra que paga** = a colada;
+  sem ela, a do PONTO (a de mais dias nos últimos 15 dias, régua dos auxílios);
+  sem ponto, a do cadastro — com as colunas "obra do ponto" e "obra do cadastro"
+  ao lado e os botões "usar a do ponto / do cadastro / trocar…". **Alertas:**
+  fora do cadastro (não entra), valor zerado, desligado (vem DESMARCADO — marcar
+  paga mesmo assim), saindo, afastado, desacordo do cadastro, sem ponto no mês,
+  CPF repetido na lista (no arquivo vira uma linha só, somando), obra colada fora
+  da "C. Diários", obra sem conta ou sem código OMIE, obra colada ≠ do ponto.
+- **Gerar** é o caminho de sempre (`_gerar_direto`: destino por conta,
+  prévia .zip, definitivo; relatório PDF, cadastro e análise por conta) e vai
+  para **Arquivos gerados**, de onde a **SP do Pipefy** sai do LOTE guardado na
+  geração (tipo de despesa e categoria do OMIE pelo nome escolhido; a descrição
+  da SP leva "Descrição: …" logo abaixo da Conta Origem). A lista gerada fica
+  travada ("já gerada"); excluir a geração em Arquivos gerados a devolve.
+- **Guardado em `analisesps.meta`, sem migração:** a lista atual (uma só, da
+  equipe) e o lote de cada geração — texto curto (CPF, valor, obra). Os
+  arquivos vão para o Google Drive, como todos os da folha; o banco só guarda o
+  registro (nome, link, total) — confirmado ao dono.
+- `pagamento_avulso.py`; origem `avulso` em `folha_pagamento`; verba e grupo
+  "Pagamento Avulso" em `folha_geracao`/`folha_cards`.
+- Não testado com Drive, BeeVale/SomaPay e Pipefy de verdade (simulados nos
+  testes, como as outras folhas).
+
+#### Leva 231 — O ponto do dia: agendador na madrugada, decisão do dono (15/10/2026)
+
+- *"O ponto não tá automático"* — a tela dizia "618 colaborador(es) · 19158
+  dia(s). Importado em 02/10/2026 às 14:00 por MARCELO". **Causa:** o
+  `ponto_diario` (30/09) depende de um agendador de fora (cron-job.org), e
+  configurá-lo ficou pendente com o dono — nunca aconteceu.
+- Cheguei a fazer o disparo pela tela aberta (como a sincronização). **O dono
+  preferiu o agendador:** *"prefiro o cronjob e configurar na madrugada"*. O
+  disparo pela tela foi DESFEITO antes de publicar (nada foi ao ar).
+- A chamada e o horário recomendado (02:00, 03:00 e 04:00, fuso de Brasília)
+  estão no `README.md`. O segredo é o `ANALISESPS_SECRET` das variáveis do
+  Render — ele copia de lá direto para o cron-job.org; nunca pelo chat.
+
+#### ⚠️ Pendente AGORA (ponto)
+
+| Falta | Depende de |
+|---|---|
+| configurar no cron-job.org as três chamadas da madrugada (passo a passo dado no chat de 15/10) | ele |
+| no dia seguinte, conferir na tela do Ponto se o "Importado em" é da madrugada | ele |
+
 #### Leva 230 — Conciliação: menos ferramenta, mais o que se usa (14/10/2026)
 
 - **Leva 230 publicada em 14/10/2026** (sem migração; suíte inteira verde).

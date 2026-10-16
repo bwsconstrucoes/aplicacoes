@@ -1,0 +1,568 @@
+{% extends "analisesps_base.html" %}
+{% from "_folha_macros.html" import bloco %}
+{% from "_agrupar_macros.html" import cabecalho_do_grupo %}
+{% block titulo %}Pagamento avulso — Análise de SPs{% endblock %}
+
+{# ---------------------------------------------------------------------------
+   PAGAMENTO AVULSO — 15/10/2026, no padrão das outras folhas (o molde é a DC).
+
+   O dono: *"vou colocar uma lista, uma tabela com CPF e valor (…) e a obra (…)
+   a dinâmica toda é igual (…) a diferença basicamente é a fonte dos dados."*
+
+   A fonte é o que se cola no alto. Cada linha ganha o cadastro e o ponto; o que
+   foi gerado fica guardado (lote) e alimenta a SP do Pipefy em Arquivos gerados.
+   --------------------------------------------------------------------------- #}
+
+{% block filtros %}
+{% if resultado and resultado.pessoas %}
+{% set url_tela = url_for('analisesps.tela_folha_avulso') %}
+<div class="cartao lateral-folha">
+  <b class="lateral-titulo">Pagamento</b>
+  <div class="lat-num"><span>A pagar</span>
+    <b>{{ resultado.total|moeda }}</b>
+    <small>{{ resultado.quantos_a_pagar }} de {{ resultado.quantos }} linha(s)</small></div>
+  <p class="cartao-dica lat-estado">
+    Sem fechamento: o arquivo sai das linhas selecionadas agora. Depois de
+    gerado, vai para <b>Arquivos gerados</b>, de onde se lança a SP no Pipefy.
+  </p>
+  <div class="lat-acoes">
+    {% if pode_operar and pode_gerar and not resultado.gerado %}
+      {% set gd_origem = 'avulso' %}
+      {% set gd_dados = {} %}
+      {% set gd_destino = '' %}
+      {% set gd_pagamento = '' %}
+      {% include "_gerar_direto.html" %}
+    {% endif %}
+    {% set dv_titulo = 'pagamento avulso' %}
+    {% include "_divisao_direta.html" %}
+    {% if pode_operar %}{% include "_cadastro_planilha.html" %}{% endif %}
+  </div>
+</div>
+
+{% if resultado.com_problema or resultado.alertas %}
+<div class="cartao lateral-folha">
+  <b class="lateral-titulo">Pendências antes do pagamento</b>
+  {% set fora_do_cadastro = resultado.com_problema|selectattr('impossivel')|list %}
+  {% set sem_conta = resultado.com_problema|rejectattr('impossivel')|list %}
+  {% if fora_do_cadastro %}
+    <a class="lat-critica erro" href="{{ url_tela }}?situacao=falta_dado">
+      <b>{{ fora_do_cadastro|length }} sem cadastro ou sem valor</b>
+      <small>CPF fora do cadastro de colaboradores, ou valor zerado. Não entram no
+        arquivo.</small>
+    </a>
+  {% endif %}
+  {% if sem_conta %}
+    <a class="lat-critica erro" href="{{ url_tela }}?conta=%28sem+conta%29">
+      <b>{{ sem_conta|length }} sem conta de pagamento</b>
+      <small>Sem obra, ou a obra não tem conta na aba "C. Diários". Troque a obra
+        na linha.</small>
+    </a>
+  {% endif %}
+  {% if resultado.alertas %}
+    <div class="lat-critica atencao">
+      <b>{{ resultado.alertas|length }} com alerta</b>
+      <small>Saiu ou está saindo, sem ponto, CPF repetido, obra colada diferente do
+        ponto… O motivo está na linha.</small>
+    </div>
+  {% endif %}
+</div>
+{% endif %}
+
+<form method="get" action="{{ url_tela }}" id="form-filtros" class="lateral-filtros">
+  {% if 'agrupar' in request.args %}<input type="hidden" name="agrupar" value="{{ agrupamento }}">{% endif %}
+  <div class="filtros-cab">
+    <h2>Filtros</h2>
+    <a class="link-btn" href="{{ url_tela }}">Limpar</a>
+  </div>
+  <div class="busca">
+    <span class="lupa">⌕</span>
+    <input type="search" name="q" value="{{ lista.filtros.q }}" autocomplete="off"
+           placeholder="Nome ou CPF…" aria-label="Pesquisar colaborador">
+  </div>
+  {{ bloco('Situação', 'situacao', lista.opcoes_situacao, lista.filtros.situacao) }}
+  {{ bloco('Obra', 'obra', lista.opcoes_obra, lista.filtros.obra) }}
+  {{ bloco('Conta', 'conta', lista.opcoes_conta, lista.filtros.conta) }}
+  <noscript><button class="btn" type="submit" style="width:100%; margin-top:14px">Aplicar filtros</button></noscript>
+</form>
+{% include "analisesps_filtros_aplicam_sozinhos.html" %}
+{% endif %}
+{% endblock %}
+
+{% block conteudo %}
+{% include "analisesps_folha_abas.html" %}
+
+<h2>Pagamento avulso</h2>
+
+{% if erro %}
+  <div class="aviso erro"><b>Não foi possível montar a lista.</b> {{ erro }}</div>
+{% endif %}
+
+{% set atual = resultado.lista if resultado else None %}
+
+{# O CAMPO DE COLAR. Com lista já lida, fica recolhido — abre para trocar. #}
+<details class="cartao" id="cartao-colar" {% if not atual %}open{% endif %}>
+  <summary><b>{% if atual %}Colar outra lista{% else %}Colar a lista{% endif %}</b>
+    <span class="cartao-dica">— uma linha por pagamento: CPF, valor e (se quiser) a obra</span></summary>
+  {% if pode_operar %}
+  <div style="margin-top:10px">
+    <textarea id="avulso-texto" rows="8" style="width:100%; font-family:monospace"
+              placeholder="123.456.789-09	1.500,00	IFSPSAOJOSE&#10;98765432100	250,50&#10;…"
+              aria-label="Lista de CPF, valor e obra">{{ atual.texto if atual else '' }}</textarea>
+    <p class="cartao-dica" style="margin:4px 0 10px">
+      Cole direto da planilha (colunas CPF, Valor e Obra, em qualquer ordem) ou
+      digite separando por espaço ou ponto e vírgula. O valor pode ser 1.500,00,
+      1500,00 ou 1500. <b>Sem obra</b>, vale a do ponto (a de mais dias nos últimos
+      15 dias); sem ponto, a do cadastro — e dá para trocar na linha. A pessoa
+      precisa estar no <a href="{{ url_for('analisesps.tela_colaboradores') }}">cadastro de colaboradores</a>.
+    </p>
+    <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end">
+      <label class="rotulo-campo">Descrição do pagamento
+        <input id="avulso-descricao" class="campo-largo" maxlength="120"
+               value="{{ atual.descricao if atual else '' }}"
+               placeholder="ex.: prêmio de produção setembro"></label>
+      <label class="rotulo-campo">Tipo de despesa
+        <select id="avulso-tipo">
+          {% for t in tipos_de_despesa %}
+            <option value="{{ t }}" {% if (atual.tipo_despesa if atual else tipo_padrao) == t %}selected{% endif %}>{{ t }}</option>
+          {% endfor %}
+        </select></label>
+      <button type="button" class="btn" id="btn-avulso-ler">Ler a lista</button>
+      {% if atual %}<button type="button" class="btn secundario" id="btn-avulso-limpar">Limpar a lista</button>{% endif %}
+      <span class="cartao-dica" id="recado-avulso"></span>
+    </div>
+    <p class="cartao-dica" style="margin:8px 0 0">O <b>tipo de despesa</b> vai para a SP
+      do Pipefy (tipo de despesa e categoria do OMIE) e decide a carteira do BeeVale.</p>
+  </div>
+  {% else %}
+    <p class="cartao-dica">Só quem opera pode colar uma lista.</p>
+  {% endif %}
+</details>
+
+{% if atual %}
+  <p class="cartao-dica" style="margin:8px 0">
+    Lista lida por <b>{{ atual.por or '—' }}</b> em
+    <b>{{ atual.em[8:10] }}/{{ atual.em[5:7] }}/{{ atual.em[0:4] }} às {{ atual.em[11:16] }}</b>
+    · {{ resultado.quantos }} linha(s)
+    {% if resultado.descricao %}· <b>{{ resultado.descricao }}</b>{% endif %}
+    · {{ resultado.tipo_despesa }}
+  </p>
+{% endif %}
+
+{% if resultado and resultado.gerado %}
+  <div class="aviso bom">
+    <b>Esta lista já foi gerada</b> em {{ resultado.gerado.em[8:10] }}/{{ resultado.gerado.em[5:7] }}/{{ resultado.gerado.em[0:4] }}
+    às {{ resultado.gerado.em[11:16] }}{% if resultado.gerado.por %} por {{ resultado.gerado.por }}{% endif %}.
+    Os arquivos e a SP do Pipefy estão em
+    <a href="{{ url_for('analisesps.tela_folha_pagamento', rodada=resultado.gerado.analise_id) }}">Arquivos gerados</a>.
+    Para outro pagamento, cole uma lista nova. (Excluir a geração lá devolve esta
+    lista para gerar de novo.)
+  </div>
+{% endif %}
+
+{% if resultado and resultado.recusadas %}
+  <div class="aviso atencao">
+    <b>{{ resultado.recusadas|length }} linha(s) do que foi colado ficaram de fora:</b>
+    <ul style="margin:6px 0 0">
+      {% for r in resultado.recusadas[:30] %}
+        <li>linha {{ r.linha }}: <code>{{ r.texto }}</code> — {{ r.erro }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+{% endif %}
+{% if resultado and resultado.avisos %}
+  {% for a in resultado.avisos %}<div class="aviso atencao">{{ a }}</div>{% endfor %}
+{% endif %}
+
+{% if resultado and resultado.pessoas %}
+
+<div class="kpis">
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">A pagar</div>
+    <div class="kpi-valor">{{ resultado.total|moeda }}</div>
+  </div>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Linhas selecionadas</div>
+    <div class="kpi-valor">{{ resultado.quantos_a_pagar }}</div>
+  </div>
+  <div class="kpi estatico {{ 'ambar' if resultado.com_problema or resultado.alertas }}">
+    <div class="kpi-rotulo">Pendências e alertas</div>
+    <div class="kpi-valor">{{ resultado.com_problema|length + resultado.alertas|length }}</div>
+  </div>
+</div>
+
+<div class="cab-com-acoes" style="margin-top:24px">
+<h3>
+  Detalhamento
+  <small>
+    {% if filtrando %}{{ pessoas|length }} de {{ resultado.quantos }} · filtrado
+    {% else %}{{ pessoas|length }}{% endif %}
+    · pendências listadas primeiro
+  </small>
+</h3>
+  {% set args_da_tela = request.args.to_dict(flat=false) %}
+  {% set rel_xlsx = url_for('analisesps.folha_avulso_relatorio', formato='xlsx', **args_da_tela) %}
+  {% set rel_pdf = url_for('analisesps.folha_avulso_relatorio', formato='pdf', **args_da_tela) %}
+  {% set rel_contas = (divisao.por_conta|map(attribute='conta')|list) if divisao else [] %}
+  {% include "_relatorio_acoes.html" %}
+</div>
+
+{% set ag_parte = 'barra' %}{% set ag_endpoint = 'analisesps.tela_folha_avulso' %}{% set ag_tabela = 'tabela-avulso' %}
+{% include "_agrupar_lista.html" %}
+
+{% if pode_operar and not resultado.gerado %}
+<p class="cartao-dica" style="margin:0 0 8px">
+  As linhas que atendem aos critérios vêm <b>selecionadas para pagamento</b> (quem
+  já saiu vem desmarcado). Desmarque as que não devem ser pagas e clique em
+  <b>Salvar seleção</b> ao final. Clique na linha para consultar a ficha do colaborador.
+</p>
+{% endif %}
+
+<div class="tabela-wrap">
+  <div class="tabela-rolagem livre">
+    <table class="sps" id="tabela-avulso">
+      <thead>
+        <tr>
+          {% if pode_operar %}
+            <th class="marca"><input type="checkbox" id="marcar-todos"
+                  title="Selecionar ou desmarcar todos os visíveis"
+                  aria-label="Selecionar todos"></th>
+          {% endif %}
+          <th>Colaborador</th><th>Situação</th><th>CPF</th>
+          <th title="A colada; sem ela, a do ponto; sem ponto, a do cadastro — ou a trocada por você">Obra que paga</th>
+          <th title="A obra de mais dias nos últimos 15 dias do ponto">Obra do ponto</th>
+          <th>Obra do cadastro</th>
+          <th>Conta</th>
+          <th class="num">Valor</th>
+        </tr>
+      </thead>
+      {% for g in grupos_da_lista %}
+      <tbody class="grupo-lista">
+        {% if agrupamento %}{{ cabecalho_do_grupo(g, pode_operar, 8) }}{% endif %}
+      {% for p in g.pessoas %}
+        <tr class="{{ 'clicavel' if p.nome }} {{ 'nao-vai' if not p.pagar }} {{ 'linha-alerta' if p.impossivel or not p.conta }}"
+            data-cpf="{{ p.cpf }}" data-nome="{{ p.nome }}" data-chave="{{ p.chave }}"
+            data-valor="{{ p.valor }}">
+          {% if pode_operar %}
+            <td class="marca">
+              <input type="checkbox" class="marca-pessoa"
+                     {% if p.pagar %}checked{% endif %}
+                     {% if p.impossivel or p.gerada %}disabled{% endif %}
+                     aria-label="Selecionar {{ p.nome or p.cpf_bonito }} para pagamento">
+            </td>
+          {% endif %}
+          <td>
+            <b>{{ p.nome or 'fora do cadastro' }}</b>
+            {% if p.cargo %}<br><span class="cartao-dica">{{ p.cargo }}{% if p.tipo_contrato %} · {{ p.tipo_contrato }}{% endif %}</span>{% endif %}
+            {% for motivo in p.motivos %}
+              <br><span class="cartao-dica">⚠ {{ motivo }}</span>
+            {% endfor %}
+          </td>
+          <td>
+            {% if p.gerada %}
+              <span class="selo cancelado">já gerada</span>
+            {% elif p.impossivel %}
+              <span class="selo risco" title="{{ p.motivos|join(' ') }}">dados incompletos</span>
+            {% elif not p.pagar %}
+              <span class="selo cancelado" title="{{ p.motivos|join(' ') }}">não selecionado</span>
+            {% elif p.motivos %}
+              <span class="selo saindo" title="{{ p.motivos|join(' ') }}">atenção</span>
+            {% else %}
+              <span class="selo aprovado">a pagar</span>
+            {% endif %}
+            {% if p.fase %}<br><span class="cartao-dica">{{ p.fase }}</span>{% endif %}
+          </td>
+          <td class="cpf">{{ p.cpf_bonito }}</td>
+          <td>
+            {% if p.obra %}<b>{{ p.obra }}</b>{% else %}<span class="selo risco">sem obra</span>{% endif %}
+            {% if p.rotulo_obra %}<br><span class="cartao-dica">{{ p.rotulo_obra }}</span>{% endif %}
+            {% if pode_operar and not p.gerada %}<br>
+              <button type="button" class="link-btn escolher-obra" data-sugerida="{{ p.obra }}">trocar…</button>
+              {% if p.obra_ponto and p.obra_ponto != p.obra %}<button type="button" class="link-btn usar-obra" data-obra="{{ p.obra_ponto }}">usar a do ponto</button>{% endif %}
+              {% if p.obra_cadastro and p.obra_cadastro != p.obra %}<button type="button" class="link-btn usar-obra" data-obra="{{ p.obra_cadastro }}">usar a do cadastro</button>{% endif %}
+              {% if p.obra_trocada %}<button type="button" class="link-btn usar-obra" data-obra="">voltar à automática</button>{% endif %}
+            {% endif %}
+          </td>
+          <td>{{ p.obra_ponto or '—' }}{% if p.dias_na_obra %}<br><span class="cartao-dica">{{ p.dias_na_obra }} dia(s)</span>{% endif %}</td>
+          <td>{{ p.obra_cadastro or '—' }}</td>
+          <td>{{ p.conta or '—' }}</td>
+          <td class="num valor-final"><b>{{ p.valor|moeda }}</b></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+      {% endfor %}
+      {% if not pessoas %}
+      <tbody><tr><td colspan="9" class="cartao-dica">
+          Nenhuma linha corresponde ao filtro. Ajuste os filtros na lateral.
+      </td></tr></tbody>
+      {% endif %}
+    </table>
+  </div>
+</div>
+
+<h3 style="margin-top:24px">Resumo do que vai ser pago</h3>
+<div class="resumos-dc">
+{% for campo, titulo in [('obra', 'Obra'), ('conta', 'Conta')] %}
+  {% set linhas_resumo = resultado.resumos[campo] %}
+  <div class="tabela-wrap">
+    <div class="tabela-rolagem livre">
+      <table class="sps">
+        <thead><tr><th>{{ titulo }}</th><th class="num">Linhas</th>
+          <th class="num">Pessoas</th><th class="num">Total</th></tr></thead>
+        <tbody>
+        {% for o in linhas_resumo %}
+          <tr><td><b>{{ o.rotulo }}</b></td><td class="num">{{ o.linhas }}</td>
+            <td class="num">{{ o.pessoas }}</td><td class="num">{{ o.total|moeda }}</td></tr>
+        {% else %}
+          <tr><td colspan="4" class="cartao-dica">Nada selecionado para pagamento.</td></tr>
+        {% endfor %}
+        </tbody>
+        {% if linhas_resumo %}
+        <tfoot><tr><th>Total</th><th class="num">{{ resultado.quantos_a_pagar }}</th><th></th>
+          <th class="num">{{ resultado.total|moeda }}</th></tr></tfoot>
+        {% endif %}
+      </table>
+    </div>
+  </div>
+{% endfor %}
+</div>
+<style>
+  .resumos-dc { display:grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap:14px; align-items:start; }
+  .resumos-dc .tabela-wrap { margin:0; }
+</style>
+
+{% if pode_operar and not resultado.gerado %}
+<div class="barra-salvar" id="barra-salvar"
+     data-fora-quantos="{{ fora_do_filtro.quantos if fora_do_filtro else 0 }}"
+     data-fora-total="{{ fora_do_filtro.total if fora_do_filtro else 0 }}">
+  <span class="conta-selecao">
+    Selecionados para pagamento: <span id="quantos-marcados">{{ resultado.quantos_a_pagar }}</span>
+    <span class="total-selecao" id="total-marcado">{{ resultado.total|moeda }}</span>
+  </span>
+  <span class="cartao-dica" id="fora-do-filtro"></span>
+  <span class="cartao-dica" id="recado-selecao"></span>
+  <span class="sobra">
+    <button class="btn secundario" type="button" id="btn-desfazer">Desfazer</button>
+    <button class="btn" type="button" id="btn-salvar-selecao">Salvar seleção</button>
+  </span>
+</div>
+{% endif %}
+
+{% endif %}
+
+{% if pode_operar %}
+<dialog class="dialogo" id="dialogo-obra">
+  <button type="button" class="btn secundario dialogo-fechar"
+          onclick="this.closest('dialog').close()">Fechar</button>
+  <h3>Trocar a obra que paga</h3>
+  <p class="cartao-dica" id="dialogo-obra-quem"></p>
+  {% if obras_c_diarios %}
+    <input type="search" id="dialogo-obra-procura" autocomplete="off" data-sem-busca
+           placeholder="Procurar obra…" aria-label="Procurar obra">
+    <select id="dialogo-obra-lista" size="12" data-sem-busca aria-label="Obras da C. Diários">
+      {% for o in obras_c_diarios %}<option value="{{ o }}">{{ o }}</option>{% endfor %}
+    </select>
+    <p class="cartao-dica">Obras da aba "C. Diários". Clique duas vezes para selecionar.</p>
+  {% else %}
+    <input type="text" id="dialogo-obra-texto" placeholder="código da obra"
+           aria-label="Código da obra">
+  {% endif %}
+  <div class="lat-acoes" style="margin-top:10px">
+    <button type="button" class="btn" id="dialogo-obra-usar">Usar esta obra</button>
+  </div>
+</dialog>
+{% endif %}
+
+{% include "_folha_ficha_js.html" %}
+
+<script>
+// --- colar e ler a lista ----------------------------------------------------
+(function () {
+  const ler = document.getElementById("btn-avulso-ler");
+  const limpar = document.getElementById("btn-avulso-limpar");
+  const recado = document.getElementById("recado-avulso");
+  async function enviar(corpo, botao) {
+    botao.disabled = true;
+    recado.textContent = "Lendo…";
+    try {
+      const r = await fetch("{{ url_for('analisesps.folha_avulso_lista') }}", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(corpo)});
+      const d = await r.json();
+      if (!d.ok) { recado.textContent = d.erro; botao.disabled = false; return; }
+      location.href = "{{ url_for('analisesps.tela_folha_avulso') }}";
+    } catch (e) { recado.textContent = "Não foi possível: " + e; botao.disabled = false; }
+  }
+  if (ler) ler.addEventListener("click", () => {
+    const texto = document.getElementById("avulso-texto").value;
+    if (!texto.trim()) { recado.textContent = "Cole a lista primeiro."; return; }
+    {% if atual and not (resultado and resultado.gerado) %}
+    if (!confirm("Trocar a lista atual por esta? A seleção e as obras trocadas da lista atual se perdem.")) return;
+    {% endif %}
+    enviar({texto: texto, descricao: document.getElementById("avulso-descricao").value,
+            tipo_despesa: document.getElementById("avulso-tipo").value}, ler);
+  });
+  if (limpar) limpar.addEventListener("click", () => {
+    if (!confirm("Limpar a lista colada? (O que já foi gerado continua em Arquivos gerados.)")) return;
+    enviar({limpar: true}, limpar);
+  });
+})();
+
+const tabela = document.getElementById("tabela-avulso");
+const caixas = [...document.querySelectorAll(".marca-pessoa")];
+caixas.forEach(c => { c.checked = c.defaultChecked; });
+const inicial = caixas.map(c => c.checked);
+
+function dinheiro(n) {
+  return n.toLocaleString("pt-BR", {style: "currency", currency: "BRL"});
+}
+
+function atualizar() {
+  let quantos = 0, total = 0, mudou = false;
+  caixas.forEach((caixa, i) => {
+    const linha = caixa.closest("tr");
+    linha.classList.toggle("nao-vai", !caixa.checked);
+    if (caixa.checked) {
+      quantos += 1;
+      total += parseFloat(linha.dataset.valor || "0") || 0;
+    }
+    if (caixa.checked !== inicial[i]) mudou = true;
+  });
+  const q = document.getElementById("quantos-marcados");
+  const t = document.getElementById("total-marcado");
+  const barraSel = document.getElementById("barra-salvar");
+  const foraQ = parseInt((barraSel && barraSel.dataset.foraQuantos) || "0", 10) || 0;
+  const foraT = parseFloat((barraSel && barraSel.dataset.foraTotal) || "0") || 0;
+  quantos += foraQ; total += foraT;
+  const avisoFora = document.getElementById("fora-do-filtro");
+  if (avisoFora) avisoFora.textContent = foraQ
+    ? "inclui " + foraQ + " marcado(s) fora do filtro (" + dinheiro(foraT) + "), que também vão no arquivo"
+    : "";
+  if (q) q.textContent = quantos;
+  if (t) t.textContent = dinheiro(total);
+  const salvar = document.getElementById("btn-salvar-selecao");
+  const desfazer = document.getElementById("btn-desfazer");
+  if (salvar) salvar.disabled = !mudou;
+  if (desfazer) desfazer.hidden = !mudou;
+  const recado = document.getElementById("recado-selecao");
+  if (recado && !mudou) recado.textContent = "";
+}
+caixas.forEach(caixa => caixa.addEventListener("change", atualizar));
+atualizar();
+
+if (tabela) tabela.addEventListener("click", e => {
+  if (e.target.closest(".marca, a, button")) return;
+  const linha = e.target.closest("tr.clicavel");
+  if (linha) abrirFichaDoFuncionario(linha.dataset.cpf);
+});
+
+const marcarTodos = document.getElementById("marcar-todos");
+if (marcarTodos) marcarTodos.addEventListener("change", () => {
+  caixas.forEach(c => { if (!c.disabled) c.checked = marcarTodos.checked; });
+  atualizar();
+});
+
+const desfazer = document.getElementById("btn-desfazer");
+if (desfazer) desfazer.addEventListener("click", () => {
+  caixas.forEach((c, i) => { c.checked = inicial[i]; });
+  atualizar();
+});
+
+const salvar = document.getElementById("btn-salvar-selecao");
+if (salvar) salvar.addEventListener("click", async () => {
+  const decisoes = caixas.map(c => ({chave: c.closest("tr").dataset.chave, pagar: c.checked}));
+  salvar.disabled = true;
+  const recado = document.getElementById("recado-selecao");
+  recado.textContent = "Salvando…";
+  try {
+    const r = await fetch("{{ url_for('analisesps.folha_avulso_selecao') }}", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({decisoes: decisoes})});
+    const d = await r.json();
+    if (!d.ok) {
+      recado.textContent = d.erro;
+      recado.className = "cartao-dica erro";
+      salvar.disabled = false;
+      return;
+    }
+    location.reload();
+  } catch (e) {
+    recado.textContent = "Não foi possível salvar: " + e;
+    salvar.disabled = false;
+  }
+});
+
+function haSelecaoPorSalvar() {
+  if (caixas.some((c, i) => c.checked !== inicial[i])) {
+    alert("Salve a seleção antes: a tela será recarregada.");
+    return true;
+  }
+  return false;
+}
+
+async function gravarObra(chave, obra) {
+  const r = await fetch("{{ url_for('analisesps.folha_avulso_obra') }}", {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({chave: chave, obra: obra})});
+  const d = await r.json();
+  if (!d.ok) { alert(d.erro); return false; }
+  return true;
+}
+
+document.querySelectorAll(".usar-obra").forEach(b => b.addEventListener("click", async () => {
+  if (haSelecaoPorSalvar()) return;
+  b.disabled = true;
+  if (await gravarObra(b.closest("tr").dataset.chave, b.dataset.obra)) location.reload();
+  else b.disabled = false;
+}));
+
+(function () {
+  const dialogo = document.getElementById("dialogo-obra");
+  if (!dialogo) return;
+  const lista = document.getElementById("dialogo-obra-lista");
+  const procura = document.getElementById("dialogo-obra-procura");
+  const texto = document.getElementById("dialogo-obra-texto");
+  const usar = document.getElementById("dialogo-obra-usar");
+  const semAcento = t => (t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase();
+  let chave = "";
+  document.querySelectorAll(".escolher-obra").forEach(b => b.addEventListener("click", () => {
+    if (haSelecaoPorSalvar()) return;
+    const linha = b.closest("tr");
+    chave = linha.dataset.chave;
+    document.getElementById("dialogo-obra-quem").textContent =
+      (linha.dataset.nome || linha.dataset.cpf) + " — o valor desta linha sai da obra selecionada.";
+    if (lista) {
+      procura.value = "";
+      [...lista.options].forEach(o => { o.hidden = false; });
+      lista.value = b.dataset.sugerida || "";
+    }
+    if (texto) texto.value = b.dataset.sugerida || "";
+    usar.disabled = false;
+    dialogo.showModal();
+    (procura || texto).focus();
+  }));
+  if (procura) procura.addEventListener("input", () => {
+    const alvo = semAcento(procura.value.trim());
+    let primeira = null;
+    [...lista.options].forEach(o => {
+      const casa = !alvo || semAcento(o.value).includes(alvo);
+      o.hidden = !casa;
+      if (casa && !primeira) primeira = o;
+    });
+    if (primeira && (!lista.value || lista.selectedOptions[0].hidden)) lista.value = primeira.value;
+  });
+  if (procura) procura.addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); usar.click(); }
+  });
+  if (lista) lista.addEventListener("dblclick", () => usar.click());
+  usar.addEventListener("click", async () => {
+    const obra = ((lista ? lista.value : texto.value) || "").trim().toUpperCase();
+    if (!obra) { alert("Selecione a obra."); return; }
+    usar.disabled = true;
+    if (await gravarObra(chave, obra)) location.reload();
+    else usar.disabled = false;
+  });
+})();
+</script>
+{% set ag_parte = 'script' %}{% set ag_tabela = 'tabela-avulso' %}
+{% include "_agrupar_lista.html" %}
+{% endblock %}
