@@ -12238,6 +12238,9 @@ somente Solicitações de uma conta especifica"*.
   Emissão (Documento de Identificação)" e "UF (Documento de Identificação)". Não
   achava, e a planilha da SomaPay saía com as quatro vazias. Os quatro nomes
   entraram primeiro na lista de `COLUNAS_DOCUMENTOS`.
+- **Levas 233 (migração 054) e 234 publicadas em 16/10/2026** (suíte inteira
+  verde). Falta ele: apertar "Aplicar atualizações do banco" e rodar "Atualizar
+  cadastro" em Colaboradores.
 - **Depende de uma atualização do cadastro depois de publicar** (os documentos
   ficam guardados na carga). O documento pode ser RG, CNH ou CTPS — vai no campo
   "RG" da SomaPay como está na planilha.
