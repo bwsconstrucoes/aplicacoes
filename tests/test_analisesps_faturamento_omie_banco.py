@@ -189,7 +189,7 @@ def test_CONFERIR_TODAS_com_outra_tarefa_rodando_fica_na_fila(app, monkeypatch):
     assert "fila" in r.location and tarefas._pedido_pendente("faturamento_omie")
     monkeypatch.setattr(tarefas, "disparar", lambda modo, disparo="manual": (
         disparos.append(modo) or {"ok": True}))
-    tarefas.encadear_comprovantes("colaboradores")
+    tarefas.encadear_comprovantes("sincronizar")
     assert disparos[-1] == "faturamento_omie"
     assert not tarefas._pedido_pendente("faturamento_omie")
 

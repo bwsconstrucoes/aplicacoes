@@ -183,7 +183,7 @@ def test_ATUALIZAR_com_outra_tarefa_rodando_fica_na_fila_e_comeca_sozinha(app, m
     assert tarefas._pedido_pendente("faturamento")
     monkeypatch.setattr(tarefas, "disparar", lambda modo, disparo="manual": (
         disparos.append(modo) or {"ok": True}))
-    tarefas.encadear_comprovantes("colaboradores")     # a outra terminou
+    tarefas.encadear_comprovantes("sincronizar")     # a outra terminou
     assert disparos[-1] == "faturamento"
     assert not tarefas._pedido_pendente("faturamento"), "o pedido é atendido uma vez só"
 
@@ -206,7 +206,7 @@ def test_IMPORTAR_com_outra_tarefa_rodando_fica_na_fila_e_comeca_sozinha(app, mo
     assert "A importação das notas antigas está na fila" in tela
     monkeypatch.setattr(tarefas, "disparar", lambda modo, disparo="manual": (
         disparos.append(modo) or {"ok": True}))
-    tarefas.encadear_comprovantes("colaboradores")     # a outra terminou
+    tarefas.encadear_comprovantes("sincronizar")     # a outra terminou
     assert disparos[-1] == "faturamento_antigas"
     assert not tarefas._pedido_pendente("faturamento_antigas")
     # a importação já termina trazendo as notas: a carga simples não vem depois

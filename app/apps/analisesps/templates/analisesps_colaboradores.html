@@ -368,9 +368,12 @@ if (btnCadastro) btnCadastro.addEventListener("click", async () => {
       alert(d.erro || "Não foi possível iniciar a atualização.");
       btnCadastro.disabled = false; btnCadastro.textContent = antes; return;
     }
+    // Outra tarefa rodando e o banco sem a 054: o pedido ficou na fila
+    // (16/10/2026) — o acompanhamento abaixo mostra "na fila" até começar.
+    if (d.na_fila) btnCadastro.textContent = "Na fila — começa quando a atual terminar";
     const relogio = setInterval(async () => {
       try {
-        const a = await fetch("{{ url_for('analisesps.andamento') }}");
+        const a = await fetch("{{ url_for('analisesps.andamento', pista='cadastro') }}");
         const e = await a.json();
         if (e.rodando) {
           btnCadastro.textContent = (e.progresso || e.etapa || "Importando…");

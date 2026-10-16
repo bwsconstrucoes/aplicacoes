@@ -12228,6 +12228,31 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 233 — O cadastro de colaboradores em pista própria (16/10/2026) — MIGRAÇÃO 054
+
+- *"Algo errado na atualização dos colaboradores: Já existe uma atualização em
+  andamento (trazendo as SPs alteradas) (…) já tá há muito tempo nisso (…)
+  elas deveriam ser independentes, não?"* Configurações mostrava "trazendo as
+  SPs alteradas — 34400 de 41183".
+- **O que estava acontecendo:** a sincronização de 5 em 5 minutos estava
+  trazendo ~41 mil SPs como "alteradas" — quase a base inteira (o normal são
+  dezenas). O código dela não mudava desde 10/10; a causa provável é a planilha:
+  algo regravou o carimbo (ou a situação do pagamento) de quase todas as linhas
+  de uma vez. Em lotes de 200, isso leva dezenas de minutos, e a marca d'água só
+  avança NO FIM — publicar no meio recomeça do zero. **A conferir com o dono:** se
+  a sincronização seguinte voltar a trazer dezenas de milhares, é defeito na
+  comparação e precisa de investigação (o log do Render diz quantas foram "sem
+  carimbo novo").
+- **Feito:** (1) a atualização dos colaboradores ganhou PISTA PRÓPRIA (migração
+  054 — o índice de "uma viva por pista" passa a ter três pistas: geral,
+  pessoa, cadastro) e roda junto da sincronização; (2) antes do botão da 054,
+  ou com outro cadastro rodando, o pedido vai para a FILA e começa sozinho quando
+  a outra terminar, com "Na fila…" no botão; (3) a frase de "já existe uma
+  atualização" diz em que pé ela está e desde que horas ("trazendo as SPs
+  alteradas — 1200 de 5400, desde 09:12").
+- Não existe atualização completa diária: só a do que mudou (5 em 5 min, com
+  tela aberta) e a carga completa pelo botão — respondido ao dono.
+
 #### Leva 232 — Pagamento avulso (15/10/2026)
 
 - *"Eu quero poder gerar um arquivo de pagamento, SomaPay ou BeeVale (…)

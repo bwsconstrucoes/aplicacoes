@@ -119,6 +119,13 @@ MODOS_DO_PONTO = ("ponto", "ponto_diario")
 # numa pista própria: no máximo uma viva aqui, e uma viva na pista geral.
 MODOS_DA_PESSOA = ("ponto_pessoa", "ponto_lancar")
 
+# ⚠️ A PISTA DO CADASTRO (migração 054, 16/10/2026). O dono, esbarrando na
+# sincronização das SPs ao atualizar os colaboradores: *"elas deveriam ser
+# independentes, não?"* São: planilhas e tabelas diferentes. Antes do botão da
+# 054, o índice antigo ainda deixa UMA viva na pista geral — e o pedido vai para
+# a fila (ver `disparar`).
+MODOS_DO_CADASTRO = ("colaboradores",)
+
 # As etapas de cada modo, na ordem. Servem para a retomada: o que já foi
 # marcado como pronto não roda de novo.
 ETAPAS = {
@@ -152,8 +159,11 @@ def _fila_do_ponto_pronta() -> bool:
 
 
 def pista_do(modo: str) -> str:
-    """"pessoa" para os modos de uma pessoa só; "geral" para o resto."""
-    return "pessoa" if modo in MODOS_DA_PESSOA else "geral"
+    """"pessoa" para os modos de uma pessoa só; "cadastro" para o cadastro de
+    colaboradores; "geral" para o resto."""
+    if modo in MODOS_DA_PESSOA:
+        return "pessoa"
+    return "cadastro" if modo in MODOS_DO_CADASTRO else "geral"
 
 
 def estado(pista: str = "geral") -> dict:
@@ -161,8 +171,11 @@ def estado(pista: str = "geral") -> dict:
 
     `pista`: "geral" (o padrão — o que Configurações e a barra de andamento
     mostram) ou "pessoa" (ver `MODOS_DA_PESSOA`)."""
-    marcas = ",".join(["?"] * len(MODOS_DA_PESSOA))
-    filtro = (f"tipo IN ({marcas})" if pista == "pessoa"
+    fora_da_geral = tuple(MODOS_DA_PESSOA) + tuple(MODOS_DO_CADASTRO)
+    tipos = {"pessoa": tuple(MODOS_DA_PESSOA),
+             "cadastro": tuple(MODOS_DO_CADASTRO)}.get(pista, fora_da_geral)
+    marcas = ",".join(["?"] * len(tipos))
+    filtro = (f"tipo IN ({marcas})" if pista in ("pessoa", "cadastro")
               else f"tipo NOT IN ({marcas})")
     try:
         from .db import consultar_um
@@ -172,7 +185,7 @@ def estado(pista: str = "geral") -> dict:
             "        now() - visto_em < make_interval(secs => ?)) AS viva "
             f"  FROM analisesps.execucoes WHERE fim IS NULL AND {filtro} "
             " ORDER BY inicio DESC LIMIT 1",
-            (SEGUNDOS_ATE_DAR_POR_MORTA,) + tuple(MODOS_DA_PESSOA))
+            (SEGUNDOS_ATE_DAR_POR_MORTA,) + tipos)
     except Exception:      # banco fora do ar, ou migração ainda não aplicada
         return {"rodando": False, "detalhe": None, "interrompida": None}
 
@@ -905,6 +918,13 @@ def encadear_comprovantes(modo: str) -> dict | None:
     except Exception:  # noqa: BLE001 — sem a tabela, ou banco fora: fica para o botão
         logger.exception("Análise de SPs: não consegui encadear os comprovantes")
         return None
+    # O cadastro de colaboradores pedido enquanto outra tarefa rodava
+    # (16/10/2026): vem antes das cargas longas do Faturamento — é rápido, e é
+    # o que a pessoa está esperando na tela.
+    if modo != "colaboradores" and _pedido_pendente("colaboradores", apagar=True):
+        logger.info("Análise de SPs: cadastro de colaboradores pedido durante '%s' — "
+                    "começando agora.", modo)
+        return disparar("colaboradores", disparo="pedida durante outra tarefa")
     # Sem comprovante esperando: a carga do Faturamento pedida enquanto outra
     # tarefa rodava (09/10/2026 — *"cliquei em atualizar e apareceu: já existe
     # uma atualização em andamento"*). Com comprovante, ela vem na volta
@@ -936,6 +956,25 @@ def encadear_comprovantes(modo: str) -> dict | None:
 
 
 CHAVE_PEDIDO = "pedido_pendente_"
+
+
+def o_que_roda(atual: dict) -> str:
+    """"trazendo as SPs alteradas — 1200 de 5400, desde 09:12" — a frase que
+    diz em que pé está a tarefa que ocupa a vez (16/10/2026: *"já tá há muito
+    tempo nisso"* — sem o andamento e a hora, não havia como saber se andava)."""
+    from .horario import para_brasilia
+    d = (atual or {}).get("detalhe") or {}
+    partes = [d.get("etapa") or "começando"]
+    if d.get("progresso"):
+        partes.append(str(d["progresso"]))
+    texto = " — ".join(partes)
+    inicio = para_brasilia(d.get("inicio")) if d.get("inicio") else None
+    return texto + (f", desde {inicio:%H:%M}" if inicio else "")
+
+
+# Os botões que, achando outra tarefa rodando, entram na FILA em vez de recusar
+# (16/10/2026: atualizar os colaboradores esbarrava na sincronização das SPs).
+NA_FILA_QUANDO_OCUPADO = ("colaboradores",)
 
 
 def pedir_depois(modo: str) -> None:
@@ -1074,9 +1113,8 @@ def disparar(modo: str, disparo: str = "manual") -> dict:
 
     atual = estado(pista_do(modo))
     if atual["rodando"]:
-        etapa = (atual["detalhe"] or {}).get("etapa", "começando")
-        return {"ok": False,
-                "erro": f"Já existe uma atualização em andamento ({etapa}). "
+        return {"ok": False, "ocupado": True,
+                "erro": f"Já existe uma atualização em andamento ({o_que_roda(atual)}). "
                         "Espere ela terminar."}
 
     try:
@@ -1089,6 +1127,15 @@ def disparar(modo: str, disparo: str = "manual") -> dict:
         # tela voltou a buscar atualizações de 90 em 90 segundos, com quatro
         # pessoas perguntando quase ao mesmo tempo. Recusar é o certo: a
         # atualização que já começou faz o mesmo trabalho.
+        if ("ux_execucao_viva" in str(e) or "duplicate key" in str(e).lower()) \
+                and modo in MODOS_DO_CADASTRO:
+            # Sem a migração 054, o índice antigo ainda põe o cadastro na pista
+            # geral: esbarrou na sincronização. Vai para a fila (`web`).
+            return {"ok": False, "ocupado": True,
+                    "erro": "Há outra atualização rodando ("
+                            + o_que_roda(estado()) + "). Para o cadastro rodar "
+                            'junto dela, aperte "Aplicar atualizações do banco" em '
+                            "Configurações."}
         if ("ux_execucao_viva" in str(e) or "duplicate key" in str(e).lower()) \
                 and modo in MODOS_DA_PESSOA:
             # Sem a migração 041, o índice antigo ainda deixa UMA viva no
