@@ -41,11 +41,19 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
-1zc. **No ramo, esperando o "pode"** (16/10/2026, sem migração): "ela coloca o código e não funciona, não tem
-   aparelho liberado". Dois buracos: (1) navegador registrado SEM o pedido, de quem não é exceção, ficava PENDENTE
-   fora de Validações e o botão "Pedir a aprovação" sumia (já havia aparelho) — agora o botão aparece para ele;
-   (2) o código de quem está "não bate ponto" era aceito e gasto, o PIN criado, e a entrada recusava calada —
-   agora a tela diz o motivo, o código não é gasto, e a ficha ("Código não chegou?") mostra.
+1zc. **PUBLICADO em 16/10/2026** (com o "pode" do dono, sem migração). Relato: "recebe o código, coloca, mas
+   não dá match" e "o aparelho da pessoa não aparece pra validar"; a mensagem exata era **"aparelho não
+   encontrado — feche e abra de novo"**. O código e o PIN FUNCIONAVAM (os dois códigos "usado"); o que travava
+   era o pedido do aparelho. Causa, reproduzida no navegador: o celular guarda a identidade dele (um número e uma
+   senha) e, se o servidor não a reconhece, o pedido falha PARA SEMPRE — fechar e abrir não muda nada. Dois jeitos
+   de chegar lá: (a) o pedido EXCLUÍDO em Configuração › Aparelhos com o celular ainda lembrando dele; (b) a
+   internet que cai no registro — o servidor cria o pedido e a resposta com a senha não chega. Agora o celular
+   esquece a identidade que o servidor não reconhece e se registra de novo sozinho (testado nos dois casos e com a
+   tela aberta). Junto: o botão "Vai bater o ponto por este celular? Pedir a aprovação" À VISTA no Meu ponto de
+   quem bate na obra (antes só no fim do menu); navegador registrado sem pedido ganha o botão (antes ficava fora
+   de Validações e sem botão); o código certo de quem está "não bate ponto" diz o motivo e não é gasto.
+   **Cuidado que fica:** excluir um pedido em Aparelhos não avisa o celular — ele só se registra de novo quando a
+   pessoa pede outra vez. O registro perdido pela internet sobra como um pedido "sem nome" em Validações: pode excluir.
 1zb. **PUBLICADO em 15/10/2026, madrugada** (com o "pode" do dono, `main` em `246e8e1`, sem migração):
    pedidos de aparelho com o mais novo em cima, a hora do pedido e a lista se atualizando sozinha; na
    ficha da pessoa, "Código não chegou?" (o que impede o envio, o que o WhatsApp respondeu, e — para quem

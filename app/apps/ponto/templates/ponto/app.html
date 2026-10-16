@@ -297,6 +297,7 @@
       <div class="aviso info">Você bate o ponto no <b>aparelho da obra</b>: mostre o seu QR Code na câmera
         dele ou digite o CPF. <span id="so-na-obra-pedidos">Atestado, licença e ajuste também são entregues lá (ou pelo
         responsável da obra). Por aqui você vê o seu mês e acompanha os pedidos.</span></div>
+      <div id="so-na-obra-aparelho"></div>
     </div>
     <div class="cartao" id="cartao-bater">
       <h2 id="ola">Olá</h2>
@@ -456,10 +457,22 @@ async function chamarComNovaTentativa(url, corpo) {
     return chamar(url, corpo);
   }
 }
+// A identidade que o servidor não reconhece mais (16/10/2026: "aparelho não
+// encontrado — feche e abra de novo", e fechar e abrir não resolvia). Dois jeitos
+// de chegar aqui: o pedido EXCLUÍDO em Configuração › Aparelhos com o celular ainda
+// lembrando dele; ou a internet que caiu no registro — o servidor criou o pedido e
+// a resposta com o token nunca chegou. Nos dois, o celular esquece e começa de novo.
+function esquecerAparelho() {
+  try { localStorage.removeItem("ponto_device_uuid"); localStorage.removeItem("ponto_device_token"); } catch (e) {}
+}
 async function garantirRegistro(descricao) {
-  const a = aparelho();
+  let a = aparelho();
   if (a.token) return;
-  const d = await chamar("/ponto/api/dispositivo/registrar", {device_uuid: a.uuid, descricao});
+  let d = await chamar("/ponto/api/dispositivo/registrar", {device_uuid: a.uuid, descricao});
+  if (!d.token) {          // já registrado, e o token se perdeu: este navegador nunca provaria ser ele
+    esquecerAparelho(); a = aparelho();
+    d = await chamar("/ponto/api/dispositivo/registrar", {device_uuid: a.uuid, descricao});
+  }
   if (d.token) localStorage.setItem("ponto_device_token", d.token);
 }
 
@@ -500,7 +513,11 @@ let EU = null, APARELHO = null, OBRAS = [], LOCAL = null, LOCAL_EM = 0, INICIO =
 let PODE_BATER = false, LOCAL_BLOQUEIA = false;
 
 async function estadoDoAparelho() {
-  try { APARELHO = (await chamar("/ponto/app/api/aparelho")).aparelho; } catch (e) { APARELHO = null; }
+  try {
+    APARELHO = (await chamar("/ponto/app/api/aparelho")).aparelho;
+    // O servidor RESPONDEU que não conhece este navegador (não é falta de internet).
+    if (!APARELHO && aparelho().token) esquecerAparelho();
+  } catch (e) { APARELHO = null; }
   return APARELHO;
 }
 
@@ -958,6 +975,17 @@ async function carregarInicio() {
   const soNaObra = EU.bate_no_celular === false || ehDaObra();
   $("cartao-bater").classList.toggle("oculto", soNaObra);
   $("cartao-so-na-obra").classList.toggle("oculto", !soNaObra);
+  // O pedido de aprovação À VISTA, e não só no fim do menu (16/10/2026: "o aparelho
+  // da pessoa não aparece pra validar" — ela entrava e não achava o pedido).
+  const pedidoFeito = APARELHO && APARELHO.status === "PENDENTE" && APARELHO.pedido;
+  const podePedir = !ehDaObra() && (!APARELHO || (APARELHO.status === "PENDENTE" && !APARELHO.pedido));
+  $("so-na-obra-aparelho").innerHTML = ehDaObra() ? ""
+    : pedidoFeito ? `<p class="pequeno">Pedido de aprovação deste celular feito — código <b>${aparelho().uuid.replace(/[^A-Za-z0-9]/g, "").slice(-6).toUpperCase()}</b>. Falta o DP aprovar.</p>`
+    : podePedir ? `<button class="btn sec" type="button" id="btn-pedir-aparelho-meu">Vai bater o ponto por este celular? Pedir a aprovação</button>` : "";
+  if ($("btn-pedir-aparelho-meu")) $("btn-pedir-aparelho-meu").addEventListener("click", async () => {
+    if (await pedirAprovacaoDoAparelho()) $("so-na-obra-aparelho").innerHTML =
+      `<p class="pequeno">Pedido de aprovação deste celular feito. Falta o DP aprovar.</p>`;
+  });
   $("so-na-obra-pedidos").textContent = EU.pede_no_celular
     ? "Os seus atestados, licenças e ajustes você pede por aqui: na aba Pedidos, ou tocando no dia em Meu mês."
     : "Atestado, licença e ajuste também são entregues lá (ou pelo responsável da obra). Por aqui você vê o seu mês e acompanha os pedidos.";
@@ -2192,17 +2220,24 @@ async function abrirMenu() {
   // ele leva o nome de quem pediu. O tipo do aparelho é de quem aprova.
   $("m-pedir-aparelho").classList.toggle("oculto", !p || !(!APARELHO || (APARELHO.status === "PENDENTE" && !naFila)));
 }
-$("m-pedir-aparelho").addEventListener("click", async () => {
+async function pedirAprovacaoDoAparelho() {
   try {
     await garantirRegistro("Aparelho a aprovar");
-    await chamar("/ponto/app/api/aparelho/pedir", {});
+    try { await chamar("/ponto/app/api/aparelho/pedir", {}); }
+    catch (e) {             // excluído com a tela aberta: começa de novo, uma vez
+      if (e.status !== 404) throw e;
+      esquecerAparelho(); await garantirRegistro("Aparelho a aprovar");
+      await chamar("/ponto/app/api/aparelho/pedir", {});
+    }
     await estadoDoAparelho();
     const cod = aparelho().uuid.replace(/[^A-Za-z0-9]/g, "").slice(-6).toUpperCase();
     $("m-pedir-aparelho").classList.add("oculto");
     $("m-codigo").textContent = `Este aparelho está esperando aprovação — código ${cod}. Passe o código a quem aprova.`;
     aviso(`Pedido feito, no seu nome. Passe o código ${cod} a quem aprova (ERP › Ponto › Validações).`, "ok");
-  } catch (e) { aviso(e.message, "erro"); }
-});
+    return true;
+  } catch (e) { aviso(e.message, "erro"); return false; }
+}
+$("m-pedir-aparelho").addEventListener("click", pedirAprovacaoDoAparelho);
 // Um CPF, num diálogo — para consultar o ponto de alguém ou mandar o QR dele.
 function perguntarCpf(titulo, explicacao, textoBotao) {
   return new Promise(resolve => {
