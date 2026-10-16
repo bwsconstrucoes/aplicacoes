@@ -914,7 +914,10 @@ function chipBatida(b, comFoto) {
   if (b.obra) dicas.push(`obra ${b.obra}`);
   if (b.nsr) dicas.push(`NSR ${b.nsr}`);
   if (b.registrado_por) dicas.push(`registrada por ${b.registrado_por}`);
-  const texto = `${escapar(b.hora)}${b.fora_da_cerca ? " ⌖" : ""}${marca ? ` <b>${marca}</b>` : ""}`;
+  // Guardada no ponto da obra sem internet (16/10/2026): a hora é a da batida, e a
+  // chegada ao sistema fica dita.
+  if (b.sem_internet) dicas.push(`feita sem internet${b.recebida_em ? ` — chegou ao sistema em ${b.recebida_em}` : ""}`);
+  const texto = `${escapar(b.hora)}${b.fora_da_cerca ? " ⌖" : ""}${b.sem_internet ? " 📵" : ""}${marca ? ` <b>${marca}</b>` : ""}`;
   if (comFoto && b.tem_foto && b.id) {
     classes.push("com-foto");
     dicas.push("clique para ver a foto");

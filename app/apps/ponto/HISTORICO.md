@@ -41,6 +41,12 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1zd. **Batida SEM INTERNET no ponto da obra — PUBLICADA em 16/10/2026, com MIGRAÇÃO 012** (o dono: "pode
+   prosseguir e publicar ao final"). **Falta o dono, no momento da publicação:** apertar **"Aplicar
+   atualizações do ponto"** (a 012). Antes do botão nada se perde: o tablet guarda e o servidor responde
+   "aplique as atualizações" (503), que ele trata como "tenta depois". **E nos tablets das obras:** abrir o
+   ponto uma vez COM internet depois da publicação (baixa a casca nova e a lista de quem bate ali). Ver a
+   seção de 16/10/2026 abaixo.
 1zc. **PUBLICADO em 16/10/2026** (com o "pode" do dono, sem migração). Relato: "recebe o código, coloca, mas
    não dá match" e "o aparelho da pessoa não aparece pra validar"; a mensagem exata era **"aparelho não
    encontrado — feche e abra de novo"**. O código e o PIN FUNCIONAVAM (os dois códigos "usado"); o que travava
@@ -212,6 +218,86 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 16/10/2026 — A batida sem internet no ponto da obra
+
+O dono: *"imagina que a gente está num local que não tem internet. E aí, como é
+que a gente pode resolver?"*. Discutidos três caminhos (o aplicativo atual sem
+internet, um aplicativo de loja com as mesmas telas, um aplicativo do zero); o
+dono escolheu o primeiro, **só no ponto da obra** ("pode ser em quem bate ponto
+da obra"), e **reconhecer CPF e QR pela lista** ("pode reconhecer por lista"),
+aceitando o risco do CPF (abaixo). Antes, testado no navegador de verdade: o
+que fica guardado sobrevive a fechar a aba e o navegador; some com aba anônima
+e com "limpar dados"; o aplicativo abre sem internet só se já abriu com ela.
+
+**Como ficou** (`core/sem_internet.py`, o `app.html` do tablet, migração 012):
+- **A lista.** Com internet, o tablet baixa de 30 em 30 min a lista de quem
+  costuma bater nele: no de obra, quem tem a obra dele no cadastro + quem bateu
+  nele nos últimos 60 dias (aparelho sem obra NÃO lista a empresa inteira); no
+  de equipe, a lista dele. Só quem bateria agora (sem desligado, afastado,
+  inativo, fora do contrato). Vai o nome, a impressão digital (SHA-256) do CPF
+  com um prefixo, e a do QR do WhatsApp (a mesma que o banco já guarda).
+- **Sem internet** (o navegador diz que caiu, a chamada falha, ou não responde
+  em 8 s — sinal fraco que fica pendurado): CPF e QR do WhatsApp são conferidos
+  na lista. O QR do "Meu ponto" (30 s) **não funciona** sem internet — quem o
+  gera é o servidor. CPF fora da lista **bate** (a Portaria não deixa impedir) e
+  vai para conferência. Foto, GPS e cerca locais de sempre. A batida fica no
+  IndexedDB do navegador ("Ponto guardado — HH:MM") e a faixa "📵 N batidas
+  guardadas" aparece no alto. "Bater de novo?" também sem internet, pela fila.
+- **A hora.** A cada resposta do servidor o tablet anota a hora dele (cabeçalho
+  `Date`, ou a hora exata da lista) e o contador interno (`performance.now`).
+  Sem internet: hora = servidor + tempo contado. Se contador e relógio do tablet
+  discordam em mais de 2 min (relógio mexido, ou o aparelho dormiu e o contador
+  parou) ou se a página recomeçou (o contador zera), a hora **não está
+  comprovada**: a batida vai para conferência com as duas horas no motivo. No
+  servidor (`decidir_hora`): hora no futuro vira a de chegada; hora anterior à
+  última conexão do aparelho vai para conferência.
+- **Duas travas contra hora forjada** (achadas na revisão antes de publicar: quem
+  mexe no tablet aprovado poderia mandar "ontem às 7h" como comprovada): se o
+  aparelho bateu COM internet depois da hora informada (fora de 3 min de folga
+  da reconexão), a guardada devia ter subido ali — conferência; e a que chega
+  mais de 24 h depois vai para conferência de qualquer jeito
+  (`_chegada_suspeita`).
+- **A chegada.** De 30 em 30 s (e quando o navegador avisa que a rede voltou) o
+  tablet manda a fila, a mais antiga primeiro, para `/app/api/tablet/bater-sem-
+  internet`. A batida passa pelo MESMO `marcacoes.registrar` (pessoa, aparelho,
+  cerca, foto, fila rápida), com `agora` = hora da batida. `timestamp_servidor` é
+  a hora da batida (o espelho e o cálculo seguem lendo dela); `recebida_em`, a
+  chegada; o NSR é dado na chegada (ordem do registro — o mesmo princípio da
+  batida incluída por ajuste). `id_no_aparelho` + índice único: mandar de novo
+  devolve a primeira. Recusa de verdade (403/400/404) sai da fila e o motivo fica
+  lembrado no tablet (`ponto_fila_recusadas`); conexão, servidor fora do ar e
+  503 (migração não aplicada) ficam para depois.
+- **Dois ajustes no `registrar` que valem para todos:** a busca de batida
+  repetida e a da fila rápida passaram a olhar SÓ perto da hora da batida (antes,
+  "tudo depois de"), senão a entrada guardada de 3 h atrás virava "repetida" de
+  uma batida de agora. Com internet, nada muda (a hora é agora). E a batida
+  guardada NÃO mexe nas rondas do vigia (chegariam vencidas).
+- **O tablet abre sem internet** direto na batida: o estado do aparelho fica
+  guardado e só a RESPOSTA do servidor o muda; o service worker (v3) usa a
+  casca guardada também quando o servidor responde erro (renovação, 502).
+- Se a conexão cai entre a identificação e o envio, a batida é guardada (o
+  servidor, se tiver registrado e só a resposta se perdeu, devolve a repetida).
+- No espelho do ERP, a batida guardada tem "📵" e a dica diz quando chegou.
+
+**O risco aceito pelo dono:** a impressão digital do CPF protege de olhar
+curioso, não de um técnico com o tablet na mão (CPF tem poucas combinações).
+Por isso a lista leva só quem bate naquele aparelho.
+
+**O que ficou de fora:** o celular de quem bate no próprio aparelho (o dono
+escolheu só o ponto da obra; no iPhone o Safari apaga o guardado depois de ~7
+dias sem uso); pedidos (atestado, ajuste) sem internet; o ERP saber que um tablet
+tem batidas esperando (a fila mora nele — ver PERGUNTAS.md). Não testado: um
+tablet Android de verdade em modo avião (o teste foi no Chromium, com a rede
+cortada pelo navegador); reiniciar o aparelho.
+
+**Testes:** `tests/test_ponto_sem_internet_banco.py` (lista, chegada com a hora
+da batida, não duplicar, conferência por hora e por CPF, hora do futuro, a
+repetida que não pode ser confundida, afastado recusado na chegada, a regra da
+hora). No navegador: tablet aprovado, rede cortada, CPF da lista, CPF fora da
+lista, QR do WhatsApp, QR do Meu ponto recusado, relógio adiantado 1 h na mão,
+navegador fechado e reaberto sem internet, rede de volta — as 5 chegaram, com a
+hora certa, os status certos e a foto.
 
 ## 16/10/2026 — "O código não chegou" e "código inválido ou vencido"
 

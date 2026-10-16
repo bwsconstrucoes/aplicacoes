@@ -2,7 +2,7 @@
 // para ele abrir rápido e aparecer como aplicativo. NUNCA guarda dado: batida,
 // espelho e pedidos vêm sempre do servidor, na hora — um espelho velho na tela
 // seria pior que nenhum.
-const CACHE = "bws-ponto-v2";
+const CACHE = "bws-ponto-v3";
 // O leitor de QR (jsQR, 250 KB) também: o tablet abre a câmera sem baixar de novo.
 const CASCA = ["/ponto/app", "/ponto/app/jsQR.js"];
 
@@ -17,7 +17,10 @@ self.addEventListener("fetch", e => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET" || !CASCA.includes(url.pathname)) return;
   // Rede primeiro; sem rede, a casca guardada (que avisa que está sem internet).
+  // O servidor fora do ar (se renovando, ou a página de erro do Render) conta como
+  // sem rede (16/10/2026, batida sem internet): o ponto da obra abre da casca.
   e.respondWith(fetch(e.request).then(r => {
+    if (!r.ok) return caches.match(e.request).then(guardada => guardada || r);
     const copia = r.clone();
     caches.open(CACHE).then(c => c.put(e.request, copia));
     return r;

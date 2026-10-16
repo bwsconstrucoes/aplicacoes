@@ -385,6 +385,15 @@ no topo de `core/alertas.py` e `core/mosaico.py`, para calibrar no piloto.
 confere se a coluna nova existe (`db.tem_coluna`) antes de usá-la, e o QR do
 WhatsApp responde "ainda não foi ativado — digite o CPF".
 
+## Sem internet no ponto da obra (16/10/2026, migração 012)
+
+O ponto da obra reconhece CPF e QR do WhatsApp pela lista que baixa com
+internet, guarda a batida (foto, GPS, hora) no navegador e manda quando a
+conexão volta; a hora da batida vale se o aparelho conseguir prová-la, senão a
+batida vai para conferência. Desenho, decisões e riscos em
+`core/sem_internet.py` e no `HISTORICO.md` (16/10/2026). Só no ponto da obra;
+o celular pessoal continua precisando de internet.
+
 ## Variáveis de ambiente
 
 | Variável | Para quê |
@@ -413,6 +422,8 @@ WhatsApp responde "ainda não foi ativado — digite o CPF".
 | `GET /ponto/api/recusas?limite=` | chave | as batidas recusadas e o motivo |
 | `GET /ponto/api/admin/migracoes` · `POST /ponto/api/admin/migrar` | chave | estado / aplicar migrações do schema `ponto` |
 | `POST /ponto/api/admin/fotos/enviar-pendentes?limite=50` | chave | leva ao Drive as fotos que ficaram na fila |
+| `GET /ponto/app/api/tablet/lista-sem-internet` | token do ponto da obra aprovado | a lista que ele guarda para reconhecer sem internet: nome + SHA-256 do CPF (`bwsp-cpf|` + CPF) e do QR do WhatsApp, e a hora do servidor |
+| `POST /ponto/app/api/tablet/bater-sem-internet` | token do ponto da obra aprovado | a batida guardada sem internet: `{id, colaborador_id ou cpf, identificacao, momento, hora_comprovada, relogio_aparelho, sincronizado_em, hora_pelo_contador, foto_base64, latitude, longitude, precisao, obra}` → 201; 200 se já tinha chegado (mesmo `id`); 503 sem a migração 012 |
 
 `obra` aceita número, código ou nome exato. CPF com ou sem máscara.
 

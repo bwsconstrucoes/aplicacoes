@@ -62,10 +62,13 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
     hoje = hoje or horario.hoje()
     agora = agora or horario.agora()
 
+    # A batida guardada sem internet (migração 012): o espelho mostra quando chegou.
+    extra = (", m.sem_internet, m.recebida_em" if db.tem_coluna(conn, "marcacoes", "sem_internet")
+             else ", FALSE AS sem_internet, NULL::timestamptz AS recebida_em")
     batidas = db.todos(conn, """
         SELECT m.id, m.nsr, m.timestamp_servidor, m.data_referencia, m.obra_id, m.status,
                m.dentro_da_cerca, m.distancia_metros, m.origem, m.foto_id, m.motivo_analise,
-               m.registrado_por, m.latitude, m.longitude, o.codigo AS obra_codigo
+               m.registrado_por, m.latitude, m.longitude, o.codigo AS obra_codigo""" + extra + """
           FROM ponto.marcacoes m JOIN public.obras o ON o.id = m.obra_id
          WHERE m.colaborador_id = :c AND m.data_referencia BETWEEN :i AND :f
            AND m.status <> 'REJEITADA'
@@ -201,6 +204,8 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
                 "latitude": float(b["latitude"]) if b.get("latitude") is not None else None,
                 "longitude": float(b["longitude"]) if b.get("longitude") is not None else None,
                 "registrado_por": b["registrado_por"],
+                "sem_internet": bool(b.get("sem_internet")),
+                "recebida_em": horario.texto(b.get("recebida_em")) if b.get("sem_internet") else None,
             } for b in do_dia],
         })
 

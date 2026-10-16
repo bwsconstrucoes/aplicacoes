@@ -149,9 +149,10 @@ def sinais_na_hora(conn: Connection, *, foto, aparelho: Optional[dict], pessoa_i
     if aparelho and no_tablet:
         anteriores = db.todos(conn, """
             SELECT colaborador_id, timestamp_servidor FROM ponto.marcacoes
-             WHERE dispositivo_id = :d AND timestamp_servidor > :desde
+             WHERE dispositivo_id = :d AND timestamp_servidor > :desde AND timestamp_servidor < :ate
              ORDER BY timestamp_servidor""", d=aparelho["id"],
-            desde=momento - dt.timedelta(seconds=SEQUENCIA_NA_HORA_SEGUNDOS * SEQUENCIA_NA_HORA_PESSOAS))
+            desde=momento - dt.timedelta(seconds=SEQUENCIA_NA_HORA_SEGUNDOS * SEQUENCIA_NA_HORA_PESSOAS),
+            ate=momento)
         fila = anteriores + [{"colaborador_id": pessoa_id, "timestamp_servidor": momento}]
         from .alertas import sequencias_rapidas
         if any(fila[-1] in f for f in sequencias_rapidas(fila, segundos=SEQUENCIA_NA_HORA_SEGUNDOS,
@@ -303,6 +304,8 @@ def para_json(m: dict) -> dict:
         "marcacao_origem_id": m.get("marcacao_origem_id"),
         "registrado_por": m.get("registrado_por"),
         "identificacao": m.get("identificacao"),
+        "sem_internet": bool(m.get("sem_internet")),
+        "recebida_em": horario.texto(m.get("recebida_em")),
         "hash": m["hash_encadeado"],
     }
 
@@ -326,8 +329,13 @@ def registrar(conn: Connection, *, cpf, obra, origem: str = "PWA",
               registrado_por: str | None = None, ip: str | None = None,
               agora: dt.datetime | None = None,
               identificacao: str | None = None, precisao=None,
-              justificativa: str | None = None) -> tuple[dict, bool]:
+              justificativa: str | None = None,
+              sem_internet: dict | None = None) -> tuple[dict, bool]:
     """Registra a batida. Devolve (marcação, repetida).
+
+    `sem_internet` (core/sem_internet.py): a batida que o ponto da obra guardou
+    sem conexão e mandou depois — `agora` é a hora em que a pessoa bateu, e o
+    dicionário traz `recebida_em`, `id_no_aparelho` e os motivos de conferência.
 
     Levanta ErroDeValidacao (400) para entrada ruim, Recusada (403) para
     problema de identidade — já registrado em `ponto.recusas`."""
@@ -438,9 +446,10 @@ def registrar(conn: Connection, *, cpf, obra, origem: str = "PWA",
 
     # --- repetição ----------------------------------------------------------
     ultima = db.um(conn, _SQL_MARCACAO + """
-        WHERE m.colaborador_id = :c AND m.timestamp_servidor > :desde
+        WHERE m.colaborador_id = :c AND m.timestamp_servidor > :desde AND m.timestamp_servidor < :ate
         ORDER BY m.timestamp_servidor DESC LIMIT 1
-    """, c=pessoa["id"], desde=momento - dt.timedelta(seconds=JANELA_REPETICAO_SEGUNDOS))
+    """, c=pessoa["id"], desde=momento - dt.timedelta(seconds=JANELA_REPETICAO_SEGUNDOS),
+         ate=momento + dt.timedelta(seconds=JANELA_REPETICAO_SEGUNDOS))
     if ultima:
         logger.info("Ponto: batida repetida em %ds de %s — devolvendo NSR %s",
                     JANELA_REPETICAO_SEGUNDOS, recusas.mascarar_cpf(cpf_ok), ultima["nsr"])
@@ -482,6 +491,9 @@ def registrar(conn: Connection, *, cpf, obra, origem: str = "PWA",
     if motivos_na_hora:
         status = "EM_ANALISE"
         motivos.extend(m for m in motivos_na_hora if m not in motivos)
+    if sem_internet and sem_internet.get("motivos"):
+        status = "EM_ANALISE"
+        motivos.extend(m for m in sem_internet["motivos"] if m not in motivos)
 
     # --- NSR e corrente -----------------------------------------------------
     nsr, corrente = _proximo_nsr(conn, int(pessoa["id"]), int(obra_ok["id"]), momento, origem_ok)
@@ -503,6 +515,10 @@ def registrar(conn: Connection, *, cpf, obra, origem: str = "PWA",
     if db.tem_003(conn):
         db.executar(conn, "UPDATE ponto.marcacoes SET identificacao = :i WHERE id = :id",
                     i=identificacao, id=linha["id"])
+    if sem_internet:
+        db.executar(conn, """UPDATE ponto.marcacoes SET sem_internet = TRUE, recebida_em = :r,
+                                    id_no_aparelho = :n WHERE id = :id""",
+                    r=sem_internet["recebida_em"], n=sem_internet["id_no_aparelho"], id=linha["id"])
     if foto:
         # Depois do NSR, para o nome do arquivo carregar o número da batida.
         # Sem subir agora: a foto entra na sala de espera e a rota chama
@@ -516,9 +532,12 @@ def registrar(conn: Connection, *, cpf, obra, origem: str = "PWA",
         dispositivos.marcar_uso(conn, aparelho["id"])
     # O vigia noturno: a entrada sorteia as rondas surpresa do turno, a saída
     # cancela as que faltam (core/rondas.py, 13/10/2026). Nunca derruba a batida.
+    # A batida guardada sem internet não mexe nas rondas: elas são surpresa NA HORA,
+    # e uma entrada que chega horas depois dispararia rondas já vencidas.
     from . import rondas
-    rondas.ao_bater(conn, pessoa, {"id": linha["id"], "timestamp_servidor": momento, "data_referencia": data_ref,
-                                   "obra_id": obra_ok["id"], "status": status})
+    if not sem_internet:
+        rondas.ao_bater(conn, pessoa, {"id": linha["id"], "timestamp_servidor": momento, "data_referencia": data_ref,
+                                       "obra_id": obra_ok["id"], "status": status})
 
     logger.info("Ponto: batida NSR %d — cpf %s, obra %s, %s em %s (%s)%s",
                 nsr, recusas.mascarar_cpf(cpf_ok), obra_ok["codigo"], origem_ok,
