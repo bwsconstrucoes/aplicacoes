@@ -269,6 +269,10 @@ dizer "tem batida"; presença, horas e faltas são regra da fase 3.
 - Quem pediu a aprovação deste aparelho? (o pedido, desde 14/10/2026, só sai depois de entrar com CPF e PIN, e leva o nome de quem pediu; aparelho "sem nome" é de antes disso)
 - Por que o Fulano não aparece no ponto? 🔒 (a busca de Pessoas responde: falta no ERP, desligado pela data de saída ou pela fase do Pipefy, CPF inválido, "não bate ponto", ou fora da cópia do Registro)
 - Quantas batidas foram recusadas esta semana, e de que aparelho?
+- Quais batidas foram feitas sem internet, e quanto tempo demoraram para chegar? 🔒 (`marcacoes.sem_internet`; a hora da batida é `timestamp_servidor`, a chegada é `recebida_em` — desde 16/10/2026, só no ponto da obra)
+- Que obras ficam sem internet com frequência? ⚠️ ("frequência" = dias com batida guardada sem internet no período; depende de o aparelho ter batido nelas)
+- Por que a batida sem internet do Fulano está em conferência? (hora não comprovada — o aparelho reiniciou ou o relógio foi mexido —, ou CPF fora da lista do aparelho; o motivo está na batida)
+- O aparelho da obra X tem batida guardada esperando internet? — **o sistema ainda não sabe**: a fila mora no próprio aparelho e só aparece quando chega. Falta o aparelho avisar quantas guarda quando se conecta.
 - Qual foi a última batida da Maria? Em que obra?
 - Quais fotos de batida ainda não subiram para o Drive?
 - Quantas horas extras a obra X fez no mês? 🔒 ⚠️ ("extra" = o que passou da escala, depois da tolerância de 5/10 min da CLT; o adicional em dinheiro é da folha)

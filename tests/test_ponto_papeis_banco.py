@@ -566,3 +566,57 @@ def test_pediu_dois_codigos_e_digitou_o_primeiro(app, mundo):
     # usado: não vale de novo
     assert c.post("/ponto/app/api/pin", json={"cpf": CPF_JOAO, "codigo": primeiro, "pin": "481927"}).status_code == 401
     assert c.post("/ponto/app/api/pin", json={"cpf": CPF_JOAO, "codigo": segundo, "pin": "135790"}).status_code == 200
+
+
+def test_aparelho_registrado_sem_pedido_ganha_o_botao_de_pedir(app, mundo, monkeypatch):
+    """16/10/2026: "ela coloca o código e não funciona, não tem aparelho liberado
+    ainda". O navegador registrado sem o pedido, de quem não é exceção, ficava
+    PENDENTE fora da fila de Validações — e o botão de pedir sumia porque já
+    havia aparelho. A tela agora sabe que ele não foi pedido."""
+    from tests.test_ponto_gestao_banco import CPF_JOAO, _entrar_no_app, como
+    from tests.test_ponto_regras_0610_banco import _id_do_aparelho
+    uuid = "registrado-sem-pedido-0123456789"
+    c = app.test_client()
+    token = c.post("/ponto/api/dispositivo/registrar", json={"device_uuid": uuid}).get_json()["token"]
+    h = {"X-Device-UUID": uuid, "X-Device-Token": token}
+    dp = como(app, mundo["dp"])
+    def na_fila():
+        itens = dp.get("/erp/api/ponto/validacoes").get_json()["itens"]
+        return [i for i in itens if i["tipo"] == "APARELHO" and i["id"] == _id_do_aparelho(dp, uuid)]
+    cel = _entrar_no_app(app, CPF_JOAO, monkeypatch)
+    cel.post("/ponto/app/api/aparelho/identificar", json={}, headers=h)
+    assert cel.get("/ponto/app/api/aparelho", headers=h).get_json()["aparelho"]["pedido"] is False
+    assert na_fila() == []
+    assert cel.post("/ponto/app/api/aparelho/pedir", json={}, headers=h).get_json()["pedido"] is True
+    assert cel.get("/ponto/app/api/aparelho", headers=h).get_json()["aparelho"]["pedido"] is True
+    assert len(na_fila()) == 1
+
+
+def test_codigo_certo_de_quem_nao_bate_ponto_diz_o_motivo_e_nao_gasta(app, mundo, banco):
+    """16/10/2026: o código era aceito e o PIN criado, mas a entrada recusava quem
+    está marcado "não bate ponto" — a tela voltava para "entrar" e a pessoa achava
+    que o código não funcionava. Agora ela lê o motivo, e a ficha também diz."""
+    from sqlalchemy import text
+    from tests.test_ponto_gestao_banco import CPF_JOAO, como
+    from app.apps.ponto import db
+    from app.apps.ponto.core import acesso
+    with banco.connect() as conn:
+        conn.execute(text("INSERT INTO ponto.colaborador_config (colaborador_id, ativo) VALUES (:c, FALSE) "
+                          "ON CONFLICT (colaborador_id) DO UPDATE SET ativo = FALSE"), {"c": mundo["joao"]})
+        conn.commit()
+    msgs = []
+    with db.conexao() as conn:
+        acesso.pedir_codigo(conn, CPF_JOAO, enviar=lambda t, m: msgs.append(m))
+    codigo = msgs[-1].split("código é ")[1][:6]
+    r = app.test_client().post("/ponto/app/api/pin", json={"cpf": CPF_JOAO, "codigo": codigo, "pin": "481927"})
+    assert r.status_code == 403 and "não bate ponto" in r.get_json()["erro"]
+    dp = como(app, mundo["dp"])
+    d = dp.get(f"/erp/api/ponto/pessoas/{mundo['joao']}/acesso").get_json()["acesso"]
+    assert d["codigos"][0]["usado"] is False and d["tem_pin"] is False
+    assert any("não bate ponto" in x for x in d["impede"])
+    # religado, o mesmo código ainda vale
+    with banco.connect() as conn:
+        conn.execute(text("UPDATE ponto.colaborador_config SET ativo = TRUE WHERE colaborador_id = :c"), {"c": mundo["joao"]})
+        conn.commit()
+    assert app.test_client().post("/ponto/app/api/pin", json={"cpf": CPF_JOAO, "codigo": codigo,
+                                                               "pin": "481927"}).status_code == 200

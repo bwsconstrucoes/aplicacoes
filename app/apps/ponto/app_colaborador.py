@@ -35,7 +35,7 @@ from flask import Response, g, jsonify, render_template, request, send_from_dire
 
 from . import auth, db, horario
 from .core import (apuracao, banco, cadastros, competencias, dispositivos, envios, espelho, forma_de_bater,
-                   fotos, marcacoes, acesso, ocorrencias, papeis, qr, recusas)
+                   fotos, marcacoes, acesso, ocorrencias, papeis, qr, recusas, sem_internet)
 from .core.ocorrencias import Quem
 from .erros import ErroDeValidacao, NaoAutenticado, NaoEncontrado, Recusada
 from .routes import bp
@@ -373,6 +373,8 @@ def app_api_aparelho():
     return _ok(aparelho={"status": a["status"], "perfil": a["perfil"], "descricao": a["descricao"],
                          "vencimento": dispositivos.vencimento(a) if a["status"] == "APROVADO" else None,
                          "dono": (dono["nome"].split(" ")[0] if dono else None),
+                         # já está na fila de Validações pelo pedido de alguém?
+                         "pedido": dispositivos.foi_pedido(a),
                          "obras": lista_obras})
 
 
@@ -656,9 +658,41 @@ def app_api_tablet_identificar():
                            "ha_minutos": int(minutos)}
     partes = pessoa["nome"].split()
     return _ok(bilhete=bilhete, nome=pessoa["nome"], primeiro_nome=partes[0].title() if partes else "",
+               # para guardar a batida se a internet cair entre a identificação e o envio
+               colaborador_id=int(pessoa["id"]),
                funcao=pessoa.get("funcao"), identificacao=identificacao, batida_recente=recente,
                validade_segundos=qr.BILHETE_PEDIDO_S if d.get("para_pedido") else qr.BILHETE_VALIDADE_S,
                tem_banco=pessoa.get("regime_banco") not in (None, "SEM_BANCO"))
+
+
+# ---------------------------------------------------------------------------
+# Sem internet no ponto da obra (16/10/2026, core/sem_internet.py)
+# ---------------------------------------------------------------------------
+@bp.route("/app/api/tablet/lista-sem-internet")
+@auth.exige_aparelho
+def app_api_tablet_lista_sem_internet():
+    """A lista que o ponto da obra guarda para reconhecer CPF e QR sem conexão."""
+    with db.conexao() as conn:
+        aparelho = _aparelho_da_obra(conn)
+        lista = sem_internet.lista_do_aparelho(conn, aparelho)
+    return _ok(**lista)
+
+
+@bp.route("/app/api/tablet/bater-sem-internet", methods=["POST"])
+@auth.exige_aparelho
+def app_api_tablet_bater_sem_internet():
+    """Uma batida que o ponto da obra guardou sem internet e manda agora. Mandar
+    a mesma de novo (a resposta se perdeu) devolve a primeira — não duplica."""
+    d = _corpo()
+    with db.conexao() as conn:
+        aparelho = _aparelho_da_obra(conn)
+        marcacao, ja_existia = sem_internet.registrar(
+            conn, aparelho, d, device_uuid=request.headers.get("X-Device-UUID", ""),
+            device_token=request.headers.get(auth.CABECALHO_TOKEN, ""), ip=auth.ip_de_quem_chama())
+        comprovante = _comprovante(conn, marcacao["id"])
+    fotos.disparar_envio()
+    return _ok(ja_existia=ja_existia, comprovante=comprovante, status=marcacao["status"],
+               motivo_analise=marcacao.get("motivo_analise")), (200 if ja_existia else 201)
 
 
 @bp.route("/app/api/tablet/pedido", methods=["POST"])

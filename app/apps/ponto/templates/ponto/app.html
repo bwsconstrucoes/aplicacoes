@@ -113,6 +113,7 @@
   .kq-cobre.erro { background:rgba(179,38,30,.94); }
   .kq-vencimento { background:#A65B00; color:#fff; text-align:center; font-weight:700; font-size:17px; padding:8px; }
   .kq-vencimento.vencido { background:#B3261E; }
+  .kq-sem-internet { background:#3D4A5C; color:#fff; text-align:center; font-weight:700; font-size:16px; padding:8px; }
   .kq-form { position:fixed; inset:0; z-index:20; overflow:auto; background:#F4F6F9; color:#0A1B2E; padding:18px; }
   .kq-form .caixa { max-width:640px; margin:0 auto; background:#fff; border-radius:14px; padding:18px; }
   .kq-form h2 { margin:0 0 4px; font-size:24px; } .kq-form label { display:block; margin-top:12px; font-weight:700; }
@@ -221,6 +222,7 @@
     </div>
     <div class="kq-obra-info" id="t-obra-info">📍 Procurando a localização…</div>
     <div class="kq-vencimento oculto" id="t-vencimento"></div>
+    <div class="kq-sem-internet oculto" id="t-fila"></div>
     <div class="kq-corpo">
       <div class="kq-camera">
         <video id="t-video" autoplay muted playsinline></video>
@@ -297,6 +299,7 @@
       <div class="aviso info">Você bate o ponto no <b>aparelho da obra</b>: mostre o seu QR Code na câmera
         dele ou digite o CPF. <span id="so-na-obra-pedidos">Atestado, licença e ajuste também são entregues lá (ou pelo
         responsável da obra). Por aqui você vê o seu mês e acompanha os pedidos.</span></div>
+      <div id="so-na-obra-aparelho"></div>
     </div>
     <div class="cartao" id="cartao-bater">
       <h2 id="ola">Olá</h2>
@@ -433,12 +436,20 @@ function cabecalhos(json = true) {
   if (json) h["Content-Type"] = "application/json";
   return h;
 }
-async function chamar(url, corpo, metodo) {
-  let r;
+async function chamar(url, corpo, metodo, espera) {
+  let r, parar = null;
+  // `espera`: quanto esperar a resposta (16/10/2026, batida sem internet). Na obra
+  // com sinal fraco a conexão às vezes não cai — fica pendurada —, e o ponto da obra
+  // precisa desistir e guardar a batida em vez de travar a fila.
+  const controle = espera && window.AbortController ? new AbortController() : null;
+  if (controle) parar = setTimeout(() => controle.abort(), espera);
   try {
     r = await fetch(url, {method: metodo || (corpo ? "POST" : "GET"), headers: cabecalhos(!!corpo),
-                          body: corpo ? JSON.stringify(corpo) : undefined, credentials: "same-origin"});
-  } catch (e) { throw new Error("Sem internet agora. Tente de novo em instantes."); }
+                          body: corpo ? JSON.stringify(corpo) : undefined, credentials: "same-origin",
+                          signal: controle ? controle.signal : undefined});
+  } catch (e) { SEM_REDE = true; throw new Error("Sem internet agora. Tente de novo em instantes."); }
+  finally { clearTimeout(parar); }
+  if (r.status < 500) { SEM_REDE = false; anotarHoraDoServidor(r); }
   let d = {};
   try { d = await r.json(); } catch (e) { d = {ok: false, erro: "Resposta inesperada do servidor."}; }
   if (!d.ok) { const err = new Error(d.erro || "Não deu certo."); err.status = r.status; throw err; }
@@ -448,18 +459,219 @@ async function chamar(url, corpo, metodo) {
 // (15/10/2026, teste de carga: o serviço se renova sozinho a cada ~1.000 acessos e
 // derruba a conexão que estava aberta — às 7h, isso cai no meio da fila). Só a
 // identificação: ela não grava nada, repetir é seguro. A batida, não.
-async function chamarComNovaTentativa(url, corpo) {
-  try { return await chamar(url, corpo); }
+async function chamarComNovaTentativa(url, corpo, espera) {
+  try { return await chamar(url, corpo, undefined, espera); }
   catch (e) {
     if (e.status) throw e;                       // o servidor respondeu: não é conexão
+    if (navigator.onLine === false) throw e;     // sem rede nenhuma: não adianta esperar
     await new Promise(ok => setTimeout(ok, 1500));
-    return chamar(url, corpo);
+    return chamar(url, corpo, undefined, espera);
   }
 }
+
+// --- sem internet no ponto da obra (16/10/2026, core/sem_internet.py) -------------
+// "Imagina que a gente está num local que não tem internet." O ponto da obra
+// reconhece a pessoa pela LISTA que baixou antes (impressões digitais do CPF e do
+// QR do WhatsApp), tira a foto e GUARDA a batida no banco do próprio navegador
+// (IndexedDB: sobrevive a fechar a aba, o navegador e reiniciar o aparelho; some se
+// alguém limpar os dados do navegador). A internet volta, ela sobe sozinha.
+let SEM_REDE = false;
+// Uma falha de conexão (ou o servidor fora do ar, se renovando) — não uma recusa.
+const semConexao = e => !e.status || e.status >= 500;
+
+// A HORA. O relógio do aparelho se muda na mão. A cada resposta do servidor, o
+// aparelho anota a hora certa e um CONTADOR interno que ninguém ajusta
+// (performance.now). Sem internet, a hora é a do servidor mais o tempo contado.
+// Contador e relógio discordando (o relógio foi mexido, ou o aparelho dormiu e o
+// contador parou) ou a página recomeçada (o contador zera): a hora não está
+// comprovada, e a batida vai para conferência com as duas horas.
+let REF_HORA = null;
+function anotarHoraDoServidor(r, exata) {
+  let servidor = exata || null;
+  if (!servidor) {
+    const h = r && r.headers && r.headers.get("Date");
+    const t = h ? Date.parse(h) : NaN;
+    if (isNaN(t)) return;
+    servidor = t + 500;                    // o cabeçalho corta os milissegundos: o meio do segundo
+  }
+  REF_HORA = {servidor, contador: performance.now(), aparelho: Date.now()};
+  try {
+    localStorage.setItem("ponto_desvio_relogio", String(servidor - REF_HORA.aparelho));
+    localStorage.setItem("ponto_sincronizado_em", String(servidor));
+  } catch (e) {}
+}
+const TOLERANCIA_HORA_MS = 2 * 60 * 1000;
+function horaDaBatida() {
+  const relogio = Date.now();
+  if (REF_HORA) {
+    const peloContador = REF_HORA.servidor + (performance.now() - REF_HORA.contador);
+    const peloRelogio = relogio + (REF_HORA.servidor - REF_HORA.aparelho);
+    const comprovada = Math.abs(peloContador - peloRelogio) <= TOLERANCIA_HORA_MS;
+    return {momento: comprovada ? peloContador : peloRelogio, comprovada, relogio, sincronizado: REF_HORA.servidor,
+            pelo_contador: comprovada ? null : peloContador};
+  }
+  let desvio = 0, sincronizado = null;
+  try { desvio = +localStorage.getItem("ponto_desvio_relogio") || 0;
+        sincronizado = +localStorage.getItem("ponto_sincronizado_em") || null; } catch (e) {}
+  return {momento: relogio + desvio, comprovada: false, relogio, sincronizado};
+}
+const isoOuNada = ms => ms ? new Date(ms).toISOString() : null;
+function horaDeFortaleza(ms) {
+  try { return new Date(ms).toLocaleTimeString("pt-BR", {hour: "2-digit", minute: "2-digit", timeZone: "America/Fortaleza"}); }
+  catch (e) { const d = new Date(ms); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; }
+}
+
+// A FILA: as batidas guardadas, no banco do navegador.
+const FILA_BANCO = "bws_ponto", FILA_TABELA = "batidas_sem_internet";
+function abrirFila() {
+  return new Promise((ok, erro) => {
+    if (!window.indexedDB) return erro(new Error("este navegador não guarda batidas"));
+    const r = indexedDB.open(FILA_BANCO, 1);
+    r.onupgradeneeded = () => r.result.createObjectStore(FILA_TABELA, {keyPath: "id"});
+    r.onsuccess = () => ok(r.result); r.onerror = () => erro(r.error);
+  });
+}
+async function naFila(modo, fazer) {
+  const banco = await abrirFila();
+  try {
+    return await new Promise((ok, erro) => {
+      const tx = banco.transaction(FILA_TABELA, modo), loja = tx.objectStore(FILA_TABELA);
+      const q = fazer(loja);
+      tx.oncomplete = () => ok(q && q.result); tx.onerror = () => erro(tx.error); tx.onabort = () => erro(tx.error);
+    });
+  } finally { banco.close(); }
+}
+const filaGuardar = b => naFila("readwrite", l => l.put(b));
+const filaApagar = id => naFila("readwrite", l => l.delete(id));
+const filaTodas = async () => ((await naFila("readonly", l => l.getAll())) || []).sort((a, b) => a.criada - b.criada);
+const novoIdDeBatida = () => (crypto.randomUUID ? crypto.randomUUID()
+  : Date.now().toString(36) + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2));
+
+// A LISTA de quem bate neste aparelho, baixada com internet (de 30 em 30 minutos).
+const LISTA_A_CADA_MS = 30 * 60 * 1000;
+let LISTA_SI = null;
+function listaGuardada() {
+  if (!LISTA_SI) { try { LISTA_SI = JSON.parse(localStorage.getItem("ponto_lista_sem_internet") || "null"); } catch (e) {} }
+  return LISTA_SI;
+}
+async function baixarLista(sempre) {
+  const l = listaGuardada();
+  if (!sempre && l && Date.now() - l.em < LISTA_A_CADA_MS) return;
+  try {
+    const d = await chamar("/ponto/app/api/tablet/lista-sem-internet", undefined, undefined, 15000);
+    LISTA_SI = {em: Date.now(), pessoas: d.pessoas || []};
+    try { localStorage.setItem("ponto_lista_sem_internet", JSON.stringify(LISTA_SI)); } catch (e) {}
+    const exata = Date.parse(d.agora);
+    if (!isNaN(exata)) anotarHoraDoServidor(null, exata);
+  } catch (e) {}
+}
+async function impressao(texto) {
+  const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(texto));
+  return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, "0")).join("");
+}
+// Quem está na frente do aparelho, pela lista. CPF fora dela não é recusado — o
+// ponto não pode impedir a marcação: bate, e vai para conferência.
+async function identificarSemInternet(quem) {
+  const pessoas = (listaGuardada() || {}).pessoas || [];
+  const dados = p => ({colaborador_id: p.id, nome: p.nome, primeiro_nome: p.primeiro_nome, funcao: p.funcao || ""});
+  if (quem.qr) {
+    if (!quem.qr.startsWith("BWSP1.")) throw new Error("Sem internet, o QR do “Meu ponto” não funciona. Use o QR que chegou no WhatsApp ou digite o CPF.");
+    const h = await impressao(quem.qr.trim());
+    const p = pessoas.find(x => (x.q || []).includes(h));
+    if (!p) throw new Error("Sem internet, este QR Code não foi reconhecido. Digite o CPF.");
+    return {...dados(p), identificacao: "QR_WHATSAPP"};
+  }
+  const h = await impressao("bwsp-cpf|" + quem.cpf);
+  const p = pessoas.find(x => x.c === h);
+  if (p) return {...dados(p), identificacao: "CPF"};
+  return {nome: `CPF ${cpfComMascara(quem.cpf)}`, primeiro_nome: "", funcao: "", desconhecido: true,
+          cpf: quem.cpf, identificacao: "CPF_NAO_RECONHECIDO"};
+}
+// A batida repetida, sem internet: a fila deste aparelho diz se a pessoa bateu há pouco.
+async function batidaRecenteNaFila(d) {
+  if (d.desconhecido) return null;
+  let todas = []; try { todas = await filaTodas(); } catch (e) {}
+  const agora = horaDaBatida().momento;
+  const dela = todas.filter(b => b.colaborador_id === d.colaborador_id).map(b => Date.parse(b.momento))
+    .filter(t => agora - t >= 0 && agora - t < 10 * 60 * 1000).sort((a, b) => b - a)[0];
+  return dela ? {hora: horaDeFortaleza(dela), ha_minutos: Math.floor((agora - dela) / 60000)} : null;
+}
+async function guardarSemInternet(d, foto, hora) {
+  const local = TB.local;
+  const b = {id: novoIdDeBatida(), criada: Date.now(), nome: d.nome,
+             colaborador_id: d.desconhecido ? null : d.colaborador_id, cpf: d.desconhecido ? d.cpf : undefined,
+             identificacao: d.identificacao, obra: $("t-obra").value,
+             momento: isoOuNada(hora.momento), hora_comprovada: hora.comprovada,
+             relogio_aparelho: isoOuNada(hora.relogio), sincronizado_em: isoOuNada(hora.sincronizado),
+             hora_pelo_contador: isoOuNada(hora.pelo_contador),
+             foto_base64: foto || undefined};
+  if (local) { b.latitude = local.latitude; b.longitude = local.longitude; b.precisao = local.precisao; }
+  try { await filaGuardar(b); }
+  catch (e) {
+    return cobrir("erro", `<h2>Batida não guardada</h2><p>Sem internet, e o aparelho não conseguiu guardar a batida
+      (${esc(e.message || "memória cheia?")}). Avise o responsável da obra.</p>`, 6000);
+  }
+  const conferencia = d.desconhecido || !hora.comprovada;
+  cobrir(conferencia ? "ambar" : "ok", `<h2>Ponto guardado — ${esc(horaDeFortaleza(hora.momento))}</h2>
+    <p>${esc(d.primeiro_nome || d.nome)} · sem internet: a batida sobe sozinha quando a conexão voltar${
+      d.desconhecido ? ". Este CPF não estava na lista do aparelho: a batida vai para conferência" : ""}.</p>`, conferencia ? 5000 : 3500);
+  mostrarFila();
+}
+// O ENVIO: o mais antigo primeiro. Recusa de verdade (403/400/404) sai da fila, com
+// o motivo lembrado; falta de conexão, servidor fora do ar ou atualização do banco
+// não aplicada (503) deixam para a próxima vez.
+let ENVIANDO_FILA = false;
+async function enviarFila() {
+  if (ENVIANDO_FILA) return;
+  ENVIANDO_FILA = true;
+  try {
+    const todas = await filaTodas();
+    for (const b of todas) {
+      try {
+        await chamar("/ponto/app/api/tablet/bater-sem-internet", b, undefined, 30000);
+        await filaApagar(b.id);
+      } catch (e) {
+        if (semConexao(e) || e.status === 401 || e.status === 429) break;
+        await filaApagar(b.id);
+        try {
+          const r = JSON.parse(localStorage.getItem("ponto_fila_recusadas") || "[]");
+          r.unshift({nome: b.nome, momento: b.momento, motivo: e.message});
+          localStorage.setItem("ponto_fila_recusadas", JSON.stringify(r.slice(0, 20)));
+        } catch (e2) {}
+      }
+    }
+  } catch (e) {} finally { ENVIANDO_FILA = false; mostrarFila(); }
+}
+async function mostrarFila() {
+  const faixa = $("t-fila");
+  if (!faixa) return;
+  let n = 0; try { n = (await filaTodas()).length; } catch (e) {}
+  const sem = SEM_REDE || navigator.onLine === false;
+  faixa.classList.toggle("oculto", !n && !sem);
+  faixa.textContent = n
+    ? `📵 ${n} batida${n > 1 ? "s" : ""} guardada${n > 1 ? "s" : ""} neste aparelho — ${sem ? "sobem sozinhas quando a internet voltar" : "enviando…"}. Não limpe os dados do navegador.`
+    : "📵 Sem internet — o ponto continua batendo: as batidas ficam guardadas e sobem depois.";
+}
+window.addEventListener("online", () => { SEM_REDE = false; enviarFila(); });
+window.addEventListener("offline", () => { SEM_REDE = true; mostrarFila(); });
+// A identidade que o servidor não reconhece mais (16/10/2026: "aparelho não
+// encontrado — feche e abra de novo", e fechar e abrir não resolvia). Dois jeitos
+// de chegar aqui: o pedido EXCLUÍDO em Configuração › Aparelhos com o celular ainda
+// lembrando dele; ou a internet que caiu no registro — o servidor criou o pedido e
+// a resposta com o token nunca chegou. Nos dois, o celular esquece e começa de novo.
+function esquecerAparelho() {
+  try { ["ponto_device_uuid", "ponto_device_token", "ponto_aparelho", "ponto_lista_sem_internet"]
+          .forEach(k => localStorage.removeItem(k)); } catch (e) {}
+  LISTA_SI = null;
+}
 async function garantirRegistro(descricao) {
-  const a = aparelho();
+  let a = aparelho();
   if (a.token) return;
-  const d = await chamar("/ponto/api/dispositivo/registrar", {device_uuid: a.uuid, descricao});
+  let d = await chamar("/ponto/api/dispositivo/registrar", {device_uuid: a.uuid, descricao});
+  if (!d.token) {          // já registrado, e o token se perdeu: este navegador nunca provaria ser ele
+    esquecerAparelho(); a = aparelho();
+    d = await chamar("/ponto/api/dispositivo/registrar", {device_uuid: a.uuid, descricao});
+  }
   if (d.token) localStorage.setItem("ponto_device_token", d.token);
 }
 
@@ -500,7 +712,18 @@ let EU = null, APARELHO = null, OBRAS = [], LOCAL = null, LOCAL_EM = 0, INICIO =
 let PODE_BATER = false, LOCAL_BLOQUEIA = false;
 
 async function estadoDoAparelho() {
-  try { APARELHO = (await chamar("/ponto/app/api/aparelho")).aparelho; } catch (e) { APARELHO = null; }
+  try {
+    APARELHO = (await chamar("/ponto/app/api/aparelho", undefined, undefined, 10000)).aparelho;
+    // O servidor RESPONDEU que não conhece este navegador (não é falta de internet).
+    if (!APARELHO && aparelho().token) esquecerAparelho();
+    try { if (APARELHO) localStorage.setItem("ponto_aparelho", JSON.stringify(APARELHO)); } catch (e) {}
+  } catch (e) {
+    // Sem conexão, o aparelho continua sendo o que era (16/10/2026): o ponto da obra
+    // abre e bate sem internet. Só a resposta do servidor muda o que ele é.
+    if (semConexao(e)) {
+      if (!APARELHO) { try { APARELHO = JSON.parse(localStorage.getItem("ponto_aparelho") || "null"); } catch (e2) { APARELHO = null; } }
+    } else APARELHO = null;
+  }
   return APARELHO;
 }
 
@@ -511,6 +734,13 @@ async function iniciar() {
   // navegador não o apague sozinho (ele ainda some se a pessoa limpar os dados).
   try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {}); } catch (e) {}
   await estadoDoAparelho();
+  // As batidas guardadas sem internet sobem sozinhas; sem rede, de 30 em 30 s o
+  // aparelho pergunta ao servidor se a conexão voltou.
+  setInterval(async () => {
+    if (SEM_REDE && navigator.onLine !== false) await estadoDoAparelho();
+    enviarFila();
+  }, 30000);
+  enviarFila();
   // O código que a gestão confere antes de aprovar este aparelho (Validações ›
   // Aparelho, coluna "código"): é o fim do identificador dele.
   const cod = aparelho().uuid.replace(/[^A-Za-z0-9]/g, "").slice(-6).toUpperCase();
@@ -530,6 +760,8 @@ async function iniciar() {
   $("cartao-tablet").classList.toggle("oculto", !compartilhado);
   if (compartilhado) {
     let ultima = null; try { ultima = localStorage.getItem("ponto_tela"); } catch (e) {}
+    // Sem internet, direto para a batida: ninguém entra com PIN sem o servidor.
+    if (SEM_REDE) return abrirTablet();
     // Só o responsável e o administrativo têm sessão aqui (o servidor recusa os outros).
     try { EU = await chamar("/ponto/app/api/eu"); } catch (e) { EU = null; }
     vigiarVoltaAoInicio();
@@ -958,6 +1190,17 @@ async function carregarInicio() {
   const soNaObra = EU.bate_no_celular === false || ehDaObra();
   $("cartao-bater").classList.toggle("oculto", soNaObra);
   $("cartao-so-na-obra").classList.toggle("oculto", !soNaObra);
+  // O pedido de aprovação À VISTA, e não só no fim do menu (16/10/2026: "o aparelho
+  // da pessoa não aparece pra validar" — ela entrava e não achava o pedido).
+  const pedidoFeito = APARELHO && APARELHO.status === "PENDENTE" && APARELHO.pedido;
+  const podePedir = !ehDaObra() && (!APARELHO || (APARELHO.status === "PENDENTE" && !APARELHO.pedido));
+  $("so-na-obra-aparelho").innerHTML = ehDaObra() ? ""
+    : pedidoFeito ? `<p class="pequeno">Pedido de aprovação deste celular feito — código <b>${aparelho().uuid.replace(/[^A-Za-z0-9]/g, "").slice(-6).toUpperCase()}</b>. Falta o DP aprovar.</p>`
+    : podePedir ? `<button class="btn sec" type="button" id="btn-pedir-aparelho-meu">Vai bater o ponto por este celular? Pedir a aprovação</button>` : "";
+  if ($("btn-pedir-aparelho-meu")) $("btn-pedir-aparelho-meu").addEventListener("click", async () => {
+    if (await pedirAprovacaoDoAparelho()) $("so-na-obra-aparelho").innerHTML =
+      `<p class="pequeno">Pedido de aprovação deste celular feito. Falta o DP aprovar.</p>`;
+  });
   $("so-na-obra-pedidos").textContent = EU.pede_no_celular
     ? "Os seus atestados, licenças e ajustes você pede por aqui: na aba Pedidos, ou tocando no dia em Meu mês."
     : "Atestado, licença e ajuste também são entregues lá (ou pelo responsável da obra). Por aqui você vê o seu mês e acompanha os pedidos.";
@@ -1612,6 +1855,7 @@ async function abrirTablet(opcoes = {}) {
   TB.reLocal = setInterval(() => { if (!TB.obraOk || !TB.local) { TB.localEm = 0; atualizarLocalTablet().then(detectarObraDoTablet); } }, 30000);
   atualizarRelogio(); TB.relogio = setInterval(atualizarRelogio, 1000);
   mostrarVencimentoDoTablet();
+  mostrarFila(); baixarLista(); enviarFila();
   atualizarLocalTablet().then(detectarObraDoTablet);
   // Pulso a cada 5 min: o servidor confere se o aparelho continua aprovado.
   TB.pulso = setInterval(async () => {
@@ -1619,6 +1863,7 @@ async function abrirTablet(opcoes = {}) {
     if (!APARELHO || APARELHO.status !== "APROVADO") { pararTablet(); location.reload(); }
     mostrarVencimentoDoTablet();
     atualizarLocalTablet().then(detectarObraDoTablet);
+    baixarLista();
   }, 5 * 60 * 1000);
   manterTelaAcesa();
   atualizarLocalTablet();
@@ -1845,10 +2090,24 @@ async function identificar(quem) {
   TB.ocupado = true;
   cobrir("", `<p>Identificando…</p>`);
   let d;
-  try {
-    d = await chamarComNovaTentativa("/ponto/app/api/tablet/identificar", {...quem, obra: $("t-obra").value});
-  } catch (e) {
-    return cobrir("erro", `<h2>${quem.qr ? "QR Code não aceito" : "Não identificado"}</h2><p>${esc(e.message)}</p>`, 3500);
+  if (!SEM_REDE && navigator.onLine !== false) {
+    try {
+      d = await chamarComNovaTentativa("/ponto/app/api/tablet/identificar", {...quem, obra: $("t-obra").value}, 8000);
+    } catch (e) {
+      if (!semConexao(e)) return cobrir("erro", `<h2>${quem.qr ? "QR Code não aceito" : "Não identificado"}</h2><p>${esc(e.message)}</p>`, 3500);
+    }
+  }
+  // Sem internet (ou o servidor fora do ar): pela lista deste aparelho.
+  if (!d) {
+    try {
+      d = await identificarSemInternet(quem);
+      d.sem_internet = true;
+      d.batida_recente = await batidaRecenteNaFila(d);
+    } catch (e) {
+      mostrarFila();
+      return cobrir("erro", `<h2>${quem.qr ? "QR Code não aceito" : "Não identificado"}</h2><p>${esc(e.message)}</p>`, 4000);
+    }
+    mostrarFila();
   }
   // Bateu há pouco? Pergunta antes de registrar outra (13/10/2026: "e se eu bater
   // duas vezes o ponto de entrada?"). Não bloqueia — o ponto não pode impedir
@@ -1867,6 +2126,7 @@ async function identificar(quem) {
   // A confirmação: nome e função, e 2 segundos para olhar para a câmera.
   let cancelado = false, n = TB.fluxo ? 2 : 0;
   const tela = () => `<h2>${esc(d.nome)}</h2><p>${esc(d.funcao || "")}</p>
+    ${d.sem_internet ? `<p>📵 Sem internet${d.desconhecido ? " — CPF fora da lista deste aparelho: a batida vai para conferência" : ""}</p>` : ""}
     ${TB.fluxo ? `<p>Olhe para a câmera</p><div class="contagem">${n}</div>` : `<p>Sem câmera: a batida vai sem foto, para conferência.</p>`}
     <button type="button" id="t-nao-sou">Não sou eu</button>`;
   cobrir("", tela());
@@ -1880,13 +2140,15 @@ async function identificar(quem) {
   $("t-cobre").style.background = "";
   if (cancelado) return;
   const foto = fotoDoVideo();
+  const hora = horaDaBatida();
+  if (d.sem_internet) { await guardarSemInternet(d, foto, hora); atualizarLocalTablet(); return; }
   cobrir("", `<h2>${esc(d.primeiro_nome)}</h2><p>Registrando…</p>`);
   try {
     const local = TB.local;
     const corpo = {bilhete: d.bilhete, obra: $("t-obra").value, timestamp_dispositivo: new Date().toISOString(),
                    foto_base64: foto || undefined};
     if (local) { corpo.latitude = local.latitude; corpo.longitude = local.longitude; corpo.precisao = local.precisao; }
-    const r = await chamar("/ponto/app/api/bater", corpo);
+    const r = await chamar("/ponto/app/api/bater", corpo, undefined, 20000);
     const c = r.comprovante;
     if (r.status === "EM_ANALISE") {
       cobrir("ambar", `<h2>Ponto registrado — ${esc(c.hora.slice(0, 5))}</h2><p>${esc(d.primeiro_nome)}, a batida vai para conferência: ${esc(r.motivo_analise || "")}.</p><p>NSR ${esc(c.nsr)}</p>`, 4500);
@@ -1894,6 +2156,9 @@ async function identificar(quem) {
       cobrir("ok", `<h2>${r.repetida ? "Já registrado" : "Ponto registrado"} — ${esc(c.hora.slice(0, 5))}</h2><p>${esc(d.primeiro_nome)} · NSR ${esc(c.nsr)} · código ${esc(c.codigo_de_verificacao)}</p>`, 3000);
     }
   } catch (e) {
+    // A conexão caiu entre a identificação e o envio: guarda, como sem internet. Se
+    // o servidor tiver registrado e só a resposta se perdeu, ele reconhece a repetida.
+    if (semConexao(e) && d.colaborador_id) { await guardarSemInternet(d, foto, hora); atualizarLocalTablet(); return; }
     cobrir("erro", `<h2>Batida não registrada</h2><p>${esc(e.message)}</p>`, 4500);
   }
   atualizarLocalTablet();
@@ -2180,24 +2445,36 @@ async function abrirMenu() {
     ? `<div class="aviso info">Você entrou neste aparelho. Fora da tela de batida, ele sai sozinho em 3 minutos sem uso — ou toque em “Sair”.</div>` : "";
   $("m-sair").classList.toggle("oculto", !p);
   const cod = aparelho().uuid.replace(/[^A-Za-z0-9]/g, "").slice(-6).toUpperCase();
+  // Aparelho registrado SEM pedido, de quem não é exceção, não entra na fila de
+  // Validações (16/10/2026: "ela coloca o código e não funciona, não tem aparelho
+  // liberado"): ficava esperando uma aprovação que ninguém via. Ele ganha o botão
+  // de pedir, como quem não tem aparelho nenhum.
+  const naFila = !!APARELHO && APARELHO.status === "PENDENTE" && (APARELHO.pedido || !!(EU && EU.bate_no_celular));
   $("m-codigo").textContent = APARELHO && APARELHO.status === "APROVADO" ? ""
-    : APARELHO && APARELHO.status === "PENDENTE" ? `Este aparelho está esperando aprovação — código ${cod}. Passe o código a quem aprova.`
+    : naFila ? `Este aparelho está esperando aprovação — código ${cod}. Passe o código a quem aprova.`
     : APARELHO ? `Código deste aparelho: ${cod}.` : "";      // sem pedido, não há código a conferir
   // O pedido de aprovação só existe DEPOIS de entrar com CPF e PIN (14/10/2026):
   // ele leva o nome de quem pediu. O tipo do aparelho é de quem aprova.
-  $("m-pedir-aparelho").classList.toggle("oculto", !p || !!APARELHO);
+  $("m-pedir-aparelho").classList.toggle("oculto", !p || !(!APARELHO || (APARELHO.status === "PENDENTE" && !naFila)));
 }
-$("m-pedir-aparelho").addEventListener("click", async () => {
+async function pedirAprovacaoDoAparelho() {
   try {
     await garantirRegistro("Aparelho a aprovar");
-    await chamar("/ponto/app/api/aparelho/pedir", {});
+    try { await chamar("/ponto/app/api/aparelho/pedir", {}); }
+    catch (e) {             // excluído com a tela aberta: começa de novo, uma vez
+      if (e.status !== 404) throw e;
+      esquecerAparelho(); await garantirRegistro("Aparelho a aprovar");
+      await chamar("/ponto/app/api/aparelho/pedir", {});
+    }
     await estadoDoAparelho();
     const cod = aparelho().uuid.replace(/[^A-Za-z0-9]/g, "").slice(-6).toUpperCase();
     $("m-pedir-aparelho").classList.add("oculto");
     $("m-codigo").textContent = `Este aparelho está esperando aprovação — código ${cod}. Passe o código a quem aprova.`;
     aviso(`Pedido feito, no seu nome. Passe o código ${cod} a quem aprova (ERP › Ponto › Validações).`, "ok");
-  } catch (e) { aviso(e.message, "erro"); }
-});
+    return true;
+  } catch (e) { aviso(e.message, "erro"); return false; }
+}
+$("m-pedir-aparelho").addEventListener("click", pedirAprovacaoDoAparelho);
 // Um CPF, num diálogo — para consultar o ponto de alguém ou mandar o QR dele.
 function perguntarCpf(titulo, explicacao, textoBotao) {
   return new Promise(resolve => {
