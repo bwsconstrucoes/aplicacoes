@@ -498,6 +498,13 @@ def ponto_api_pessoa(colaborador_id: int):
     j["tem_telefone"] = bool(envios.telefone_valido(p.get("telefone")))
     with db.conexao() as conn:
         j["qr"] = qr.situacao_da_pessoa(conn, colaborador_id) if db.tem_003(conn) else None
+        # O nível da conferência do rosto (17/10/2026: "quanto melhor a pessoa, menos se confere").
+        from .core import confianca, rosto
+        j["conferencia_rosto"] = None
+        if confianca.disponivel(conn):
+            d = confianca.config(rosto.ler(conn))
+            j["conferencia_rosto"] = {**confianca.da_pessoa(
+                confianca.historico(conn, [colaborador_id], d).get(colaborador_id), d), "ligada": d["ligada"]}
     return _ok(pessoa=j)
 
 
@@ -1043,6 +1050,21 @@ def ponto_api_vigencia():
         else:
             data = vigencia.inicio(conn)
     return _ok(inicio=data.isoformat())
+
+
+@bp.route("/erp/api/ponto/rosto/pessoas")
+@login_obrigatorio
+@permissao("configurar_ponto")
+@_api
+def ponto_api_rosto_pessoas():
+    """Quem está em cada nível da conferência que se adapta (confianca.py)."""
+    from .core import confianca, rosto
+    with db.conexao() as conn:
+        if not confianca.disponivel(conn):
+            raise ErroDeValidacao("aplique as atualizações do ponto (migração 013) antes")
+        d = confianca.config(rosto.ler(conn))
+        lista = confianca.pessoas(conn, d)
+    return _ok(pessoas=lista, resumo=confianca.resumo(lista), dinamica=d)
 
 
 @bp.route("/erp/api/ponto/rosto/testar", methods=["POST"])

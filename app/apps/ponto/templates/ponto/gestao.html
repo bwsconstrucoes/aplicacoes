@@ -996,6 +996,21 @@ const seloEnvio = s => {
 // "1 pessoa", "3 pessoas" — o número primeiro, a palavra no plural certo.
 const contar = (n, um, varios) => `${Number(n) || 0} ${Number(n) === 1 ? um : varios}`;
 
+// O nível da conferência do rosto que se adapta (confianca.py) — usado na ficha e na Configuração.
+const NIVEL_ROSTO = {OBSERVACAO: ["vermelho", "🔍"], BOA: ["ambar", "👍"], OTIMA: ["ciano", "⭐"], EXEMPLAR: ["verde", "🏅"]};
+function textoNivelRosto(n) {
+  const prox = n.proximo ? `faltam ${contar(n.proximo.faltam, "conferência limpa", "conferências limpas")} para ${n.proximo.rotulo} (${n.proximo.pct} %)` : "o nível mais alto";
+  return `${contar(n.limpas, "conferência limpa seguida", "conferências limpas seguidas")} · ${prox}`
+    + (n.reincidente ? ` · reincidente (${contar(n.falhas_recentes, "falha", "falhas")} recentes)` : "");
+}
+
+function kpiConferenciaRosto(n) {
+  const [cor, icone] = NIVEL_ROSTO[n.codigo] || ["", ""];
+  return `<div class="kpi estatico ${cor}"><div class="kpi-rotulo">Conferência do rosto</div>
+    <div class="kpi-valor" style="font-size:16px">${icone} ${escapar(n.rotulo)} · ${n.ligada ? `${n.pct} %` : "tudo"}</div>
+    <div class="kpi-sub">${escapar(textoNivelRosto(n))}</div></div>`;
+}
+
 // A batida como pílula. `comFoto` liga o clique para abrir a foto (o painel
 // Hoje não recebe o número da batida, então lá ela não abre).
 function chipBatida(b, comFoto) {
@@ -2497,6 +2512,7 @@ async function abrirPessoa(id) {
           <div class="kpi-valor" style="font-size:16px">${escapar(rotuloRegime(p.regime_banco))}</div>
           <div class="kpi-sub">${p.banco_inicio ? `desde ${dataBR(p.banco_inicio)}` : ""}
             ${p.acordo_banco ? " · acordo anexado" : ""}</div></div>
+        ${p.conferencia_rosto ? kpiConferenciaRosto(p.conferencia_rosto) : ""}
       </div>
       <div class="barra-acoes">
         ${PODE_TRATAR ? `<button class="btn" type="button" id="pe-escala">Trocar escala</button>
@@ -4601,7 +4617,8 @@ async function carregarRosto(mensagem, tipo) {
     <label class="interruptor"><input type="checkbox" id="ros-ligado" ${c.ligado ? "checked" : ""}>
       <span><b>Conferir o rosto</b><span class="explica">Roda sozinha a cada 10 minutos, nas batidas com foto dos últimos 3 dias.</span></span></label>
     <div class="kpis" style="margin-top:10px">
-      ${kpi("Gasto do mês", real(mes.custo_usd), "", `${mes.cobradas || 0} foto(s) cobradas · teto ${real(c.teto_mensal_usd)}`)}
+      ${kpi("Gasto do mês", real(mes.custo_usd), "", `${mes.cobradas || 0} foto(s) cobradas · teto ${real(c.teto_mensal_usd)}`
+        + (mes.dispensadas ? ` · ${mes.dispensadas} dispensada(s) pelo nível` : ""))}
       ${kpi("Rostos que não conferem", mes.suspeitas || 0, mes.suspeitas ? "vermelho" : "", "no mês")}
       ${kpi("Estimativa com esta regra", real(est.custo_estimado_usd), "ciano", `${est.entrariam || 0} de ${est.fotos_30_dias || 0} fotos dos últimos 30 dias`)}
       ${kpi("Sem foto cadastral", d.sem_cadastral || 0, d.sem_cadastral ? "ambar" : "", "ganham a da 1ª batida")}
@@ -4622,10 +4639,68 @@ async function carregarRosto(mensagem, tipo) {
       <div style="max-height:160px; overflow:auto; border:1px solid var(--borda); border-radius:8px; padding:6px 10px">
         ${(d.obras || []).map(o => `<label style="display:block"><input type="checkbox" data-ros-obra="${o.id}" ${(c.obras_excluidas || []).includes(o.id) ? "checked" : ""}> ${escapar(rotuloObra(o))}</label>`).join("")
           || `<span class="suave">nenhuma obra ativa</span>`}</div></div>
+    ${blocoConferenciaQueSeAdapta(d)}
     <div style="margin-top:10px"><button class="btn" type="button" id="ros-salvar">Salvar a regra</button></div>
     <div id="c-rosto-msg" style="margin-top:8px"></div>`;
   els("ros-salvar").addEventListener("click", salvarRosto);
+  if (els("ros-din-ver")) els("ros-din-ver").addEventListener("click", verNiveisDaConferencia);
   if (mensagem) aviso("c-rosto-msg", mensagem, tipo || "ok");
+}
+
+// --- A conferência que se adapta à pessoa (17/10/2026: "quanto melhor a pessoa,
+// menos se confere; quanto pior, mais se confere"). O nível vem da sequência de
+// conferências limpas; falhou, volta a conferir tudo.
+function blocoConferenciaQueSeAdapta(d) {
+  if (!d.dinamica_disponivel) {
+    return `<div class="aviso info" style="margin-top:10px">A <b>conferência que se adapta à pessoa</b> precisa da
+      atualização do ponto 013 (botão “Aplicar atualizações do ponto”, em Geral). Até lá, confere tudo o que passa pela regra.</div>`;
+  }
+  const din = d.dinamica, res = d.niveis || {por_nivel: [], reincidentes: 0, pessoas: 0};
+  const rotulos = ["Em observação", "Boa", "Ótima", "Exemplar"];
+  const linhas = rotulos.map((r, i) => `<tr><td><b>${NIVEL_ROSTO[["OBSERVACAO", "BOA", "OTIMA", "EXEMPLAR"][i]][1]} ${r}</b></td>
+      <td>${i === 0 ? "quem começa, ou falhou" : `<input data-sem-mascara data-din-limpas="${i}" value="${escapar(din.limpas[i])}"
+            style="width:70px"> conferências limpas seguidas`}</td>
+      <td>${i === 0 ? "100 %" : `<input data-sem-mascara data-din-pct="${i}" value="${escapar(din.pct[i])}" style="width:56px"> %`}</td>
+      <td class="dados">${(res.por_nivel[i] || {}).pessoas ?? "—"}</td></tr>`).join("");
+  return `<div style="margin-top:14px; border-top:1px solid var(--borda); padding-top:12px">
+    <label class="interruptor"><input type="checkbox" id="ros-din-ligada" ${din.ligada ? "checked" : ""}>
+      <span><b>Conferência que se adapta à pessoa</b><span class="explica">Começa conferindo tudo. Quem acerta seguidas vezes
+        passa a ser conferido por sorteio, cada vez menos; falhou (rosto que não confere, ou foto sem rosto), volta a
+        conferir tudo. Ninguém sai do sorteio.</span></span></label>
+    <table style="margin-top:8px"><thead><tr><th class="sem-ordem">Nível</th><th class="sem-ordem">A partir de</th>
+      <th class="sem-ordem">Confere</th><th class="sem-ordem">Pessoas hoje</th></tr></thead><tbody>${linhas}</tbody></table>
+    <div class="grade-campos" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px; margin-top:10px">
+      <div class="campo"><label for="ros-din-rf">Reincidente: falhas</label><input id="ros-din-rf" data-sem-mascara value="${escapar(din.reincidente_falhas)}"></div>
+      <div class="campo"><label for="ros-din-rd">… em quantos dias</label><input id="ros-din-rd" data-sem-mascara value="${escapar(din.reincidente_dias)}"></div>
+      <div class="campo"><label for="ros-din-g">Conferir pelo menos 1 vez a cada (dias)</label><input id="ros-din-g" data-sem-mascara value="${escapar(din.garantia_dias)}"></div>
+    </div>
+    <div class="cartao-dica">Reincidente precisa do <b>dobro</b> das conferências limpas para descer de nível, e o alerta diz
+      que é reincidência. Rosto que não conferiu, mas o DP aprovou a batida, é falso alarme: não conta como falha.
+      ${res.reincidentes ? `<b>${contar(res.reincidentes, "pessoa reincidente", "pessoas reincidentes")} agora.</b>` : ""}</div>
+    <button class="btn secundario" type="button" id="ros-din-ver" style="margin-top:6px">Ver quem está em cada nível</button>
+    <div id="ros-din-lista" style="margin-top:8px"></div>
+  </div>`;
+}
+
+async function verNiveisDaConferencia() {
+  const alvo = els("ros-din-lista");
+  alvo.innerHTML = "carregando…";
+  try {
+    const r = await api("/erp/api/ponto/rosto/pessoas");
+    if (!r.pessoas.length) { alvo.innerHTML = `<div class="cartao-dica">Ninguém bateu com foto nos últimos 30 dias.</div>`; return; }
+    alvo.innerHTML = `<div class="tabela-rolagem" style="max-height:420px"><table><thead><tr><th>Pessoa</th><th>Obra</th>
+        <th>Nível</th><th class="num">Confere</th><th>Como está</th><th>Última conferência</th></tr></thead><tbody>
+      ${r.pessoas.map(p => { const [cor, icone] = NIVEL_ROSTO[p.codigo] || ["", ""]; return `<tr>
+        <td><button class="link-btn" type="button" data-ros-pessoa="${p.id}">${escapar(p.nome)}</button></td>
+        <td>${escapar(p.obra || "—")}</td>
+        <td><span class="selo ${cor === "verde" ? "aprovado" : cor === "vermelho" ? "bloqueado" : "aguardando"}">${icone} ${escapar(p.rotulo)}</span>
+          ${p.reincidente ? ` <span class="selo bloqueado">reincidente</span>` : ""}</td>
+        <td class="num">${p.pct} %</td><td><small>${escapar(textoNivelRosto(p))}</small></td>
+        <td class="dados">${p.ultima_real ? escapar(quando(p.ultima_real)) : "nunca"}</td></tr>`; }).join("")}
+      </tbody></table></div>`;
+    alvo.querySelectorAll("[data-ros-pessoa]").forEach(b => b.addEventListener("click", () => {
+      location.href = `/erp/ponto/pessoas?pessoa=${b.dataset.rosPessoa}`; }));
+  } catch (e) { falhou(e, "c-rosto-msg"); alvo.innerHTML = ""; }
 }
 
 async function salvarRosto() {
@@ -4642,7 +4717,13 @@ async function salvarRosto() {
       so_primeira_do_dia: els("ros-primeira").checked,
       dias_excluidos: [...document.querySelectorAll("[data-ros-dia]:checked")].map(x => Number(x.dataset.rosDia)),
       obras_excluidas: [...document.querySelectorAll("[data-ros-obra]:checked")].map(x => Number(x.dataset.rosObra)),
-      horarios_excluidos: horarios});
+      horarios_excluidos: horarios,
+      ...(els("ros-din-ligada") ? {dinamica: {
+        ligada: els("ros-din-ligada").checked,
+        limpas: [0, ...[1, 2, 3].map(i => document.querySelector(`[data-din-limpas="${i}"]`).value)],
+        pct: [100, ...[1, 2, 3].map(i => document.querySelector(`[data-din-pct="${i}"]`).value)],
+        reincidente_falhas: els("ros-din-rf").value, reincidente_dias: els("ros-din-rd").value,
+        garantia_dias: els("ros-din-g").value}} : {})});
     await carregarRosto("Regra salva. A estimativa acima já usa a regra nova.");
   } catch (e) { falhou(e, "c-rosto-msg"); }
 }

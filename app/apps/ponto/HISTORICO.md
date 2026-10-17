@@ -41,6 +41,10 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1zj. **No ramo, esperando o "pode" — COM MIGRAÇÃO 013** (17/10/2026) — a **conferência do rosto que se adapta à
+   pessoa** (o dono: "quanto melhor a pessoa, menos se confere; quanto pior, mais se confere"). Ver a seção de
+   17/10/2026 (noite, segunda). **Ao publicar:** apertar "Aplicar atualizações do ponto" (a 013). Antes do botão
+   nada quebra: confere tudo o que passa pela regra, como hoje.
 1zi. **PUBLICADO em 17/10/2026** (junção `71ed2e2`, sem migração), junto com a 1ze–1zh — **O PONTO VALE A PARTIR
    DE 16/10/2026** (o dono: "desconsiderar pra todos os efeitos qualquer lançamento antes disso"). Nada foi
    apagado; o que vem antes some de tudo (ver a seção de 17/10/2026, noite). A data se muda em Configuração ›
@@ -259,6 +263,42 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 17/10/2026 (noite, segunda) — A conferência do rosto que se adapta à pessoa
+
+**Pedido do dono:** *"quanto melhor a pessoa, menos se confere; quanto pior a pessoa, mais
+se confere. (…) A gente começa conferindo tudo e, à medida que for compreendido que
+determinadas pessoas não têm a necessidade de tanta conferência, a gente vai reduzindo.
+Mas se, nas conferências aleatórias, aquela pessoa começar a aparecer de novo, a gente
+volta ela para insistir na conferência."* E perguntou como parametrizar. Feito com os
+números abaixo (escolha minha, ajustáveis na tela), em `core/confianca.py`:
+
+- **Sequência limpa:** quantas conferências seguidas deram "mesma pessoa" desde a última
+  falha. Falha = rosto que não confere ou foto sem rosto. **Rosto que não conferiu e o DP
+  aprovou a batida é falso alarme** (foto cadastral ruim, luz): não conta como falha.
+- **Níveis** (Configuração › Fotos): Em observação **100 %** (quem começa, ou falhou) →
+  Boa **50 %** a partir de 20 limpas → Ótima **25 %** a partir de 60 → Exemplar **10 %** a
+  partir de 150. Piso de 5 %: **ninguém sai do sorteio**.
+- **Falhou, volta a conferir tudo** — inclusive o resto da mesma rodada.
+- **Reincidente** (2 falhas em 60 dias): precisa do DOBRO para descer; o alerta "rosto não
+  confere" passa a dizer "REINCIDENTE: Nª vez em 60 dias".
+- **Garantia:** quem não teve conferência de verdade há 7 dias é conferido na próxima
+  batida, sorteado ou não.
+- **O sorteio é pela batida** (o número dela, embaralhado com um segredo do servidor): a
+  mesma batida dá sempre o mesmo resultado, e ninguém consegue prever qual sai.
+- Só conta o que veio depois do início do ponto (16/10/2026).
+- **Onde se vê:** Configuração › Fotos (a tabela de níveis com quantas pessoas em cada um,
+  e "Ver quem está em cada nível", reincidentes primeiro); a ficha da pessoa ganhou o
+  quadro "Conferência do rosto" (nível, % e quanto falta para o próximo); o "Gasto do
+  mês" diz quantas foram dispensadas pelo nível; a estimativa do mês já usa a chance de
+  cada pessoa.
+- **Migração 013:** a batida não sorteada ganha a linha `DISPENSADA` (custo zero, com o
+  nível e a chance da hora) — senão voltaria a cada rodada. A que a regra exclui (obra,
+  dia, horário) também: antes ela voltava a cada rodada e, com muitas, podia empurrar as
+  batidas novas para fora do lote.
+- **O que ficou de fora, de propósito:** usar o selo da Qualidade (faltas, ajustes) para
+  travar o nível — o cálculo da qualidade é pesado para rodar a cada 10 minutos com 1
+  worker. Se o dono quiser, o caminho é uma foto diária do selo, calculada à noite.
 
 ## 17/10/2026 (noite) — O ponto vale a partir de 16/10/2026; e o teste da AWS
 

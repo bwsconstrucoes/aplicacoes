@@ -493,17 +493,26 @@ def sinais_de_fraude(conn: Connection, vistos: set, inicio: dt.date, fim: dt.dat
     if db.tem_coluna(conn, "conferencias_rosto", "marcacao_id"):
         for r in db.todos(conn, """
             SELECT m.id, m.colaborador_id, m.obra_id, m.data_referencia, m.timestamp_servidor, c.nome,
-                   r.resultado, r.detalhe
+                   r.resultado, r.detalhe,
+                   -- quantas vezes nos 60 dias até esta (confianca.py: falso alarme aprovado não conta)
+                   (SELECT count(*) FROM ponto.conferencias_rosto r2 JOIN ponto.marcacoes m2 ON m2.id = r2.marcacao_id
+                     WHERE m2.colaborador_id = m.colaborador_id AND r2.resultado IN ('OUTRA_PESSOA', 'SEM_ROSTO')
+                       AND NOT (r2.resultado = 'OUTRA_PESSOA' AND m2.status = 'VALIDA')
+                       AND r2.conferido_em <= r.conferido_em
+                       AND r2.conferido_em > r.conferido_em - interval '60 days') AS vezes
               FROM ponto.conferencias_rosto r JOIN ponto.marcacoes m ON m.id = r.marcacao_id
               JOIN public.colaboradores c ON c.id = m.colaborador_id
              WHERE r.resultado IN ('OUTRA_PESSOA', 'SEM_ROSTO') AND m.data_referencia BETWEEN :i AND :f""",
                 i=inicio, f=fim):
+            vezes = int(r.get("vezes") or 0)
             _registrar(conn, vistos, chave=f"ROSTO_NAO_CONFERE:{r['id']}", codigo="ROSTO_NAO_CONFERE",
                        mensagem=(f"{r['nome']}: a foto da batida de "
                                  f"{horario.para_local(r['timestamp_servidor']):%d/%m às %H:%M} "
                                  + ("não confere com a foto cadastral" if r["resultado"] == "OUTRA_PESSOA"
                                     else "não mostra rosto")
-                                 + (f" ({r['detalhe']})" if r["detalhe"] else "") + " — confira no mosaico"),
+                                 + (f" ({r['detalhe']})" if r["detalhe"] else "")
+                                 + (f" — REINCIDENTE: {vezes}ª vez em 60 dias, volta a ser conferido em tudo"
+                                    if vezes >= 2 else "") + " — confira no mosaico"),
                        colaborador_id=r["colaborador_id"], obra_id=r["obra_id"], data=r["data_referencia"])
             contagem["ROSTO_NAO_CONFERE"] += 1
 

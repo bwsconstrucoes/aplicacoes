@@ -128,6 +128,9 @@ def gravar(conn: Connection, novos: dict, por: str) -> dict:
         cfg["horarios_excluidos"] = faixas
     if "regiao" in novos:
         cfg["regiao"] = "".join(ch for ch in str(novos["regiao"]) if ch.isalnum() or ch == "-")[:20] or PADRAO["regiao"]
+    if isinstance(novos.get("dinamica"), dict):
+        from . import confianca
+        cfg["dinamica"] = confianca.validar(novos["dinamica"], cfg.get("dinamica") or {})
     parametros.gravar(conn, PARAMETRO, json.dumps(cfg, ensure_ascii=False), por)
     logger.info("Ponto: conferência do rosto configurada por %s — %s", por, cfg)
     return cfg
@@ -170,11 +173,13 @@ def gasto_do_mes(conn: Connection, hoje: Optional[dt.date] = None) -> dict:
     linha = db.um(conn, """
         SELECT count(*) FILTER (WHERE custo_usd > 0) AS cobradas, coalesce(sum(custo_usd), 0) AS custo,
                count(*) FILTER (WHERE resultado IN ('OUTRA_PESSOA', 'SEM_ROSTO')) AS suspeitas,
-               count(*) AS conferidas
+               count(*) FILTER (WHERE resultado <> 'DISPENSADA') AS conferidas,
+               count(*) FILTER (WHERE resultado = 'DISPENSADA' AND detalhe LIKE 'nível%') AS dispensadas
           FROM ponto.conferencias_rosto
          WHERE (conferido_em AT TIME ZONE 'America/Fortaleza')::date >= :i""", i=inicio)
     return {"conferidas": int(linha["conferidas"]), "cobradas": int(linha["cobradas"]),
-            "custo_usd": float(linha["custo"]), "suspeitas": int(linha["suspeitas"])}
+            "custo_usd": float(linha["custo"]), "suspeitas": int(linha["suspeitas"]),
+            "dispensadas": int(linha["dispensadas"] or 0)}
 
 
 def estimativa(conn: Connection, cfg: dict) -> dict:
@@ -184,10 +189,17 @@ def estimativa(conn: Connection, cfg: dict) -> dict:
                row_number() OVER (PARTITION BY m.colaborador_id, m.data_referencia ORDER BY m.timestamp_servidor) AS ordem
           FROM ponto.marcacoes m
          WHERE m.foto_id IS NOT NULL AND m.timestamp_servidor > now() - interval '30 days'""")
-    entram = sum(1 for l in linhas if entra_na_regra(
+    na_regra = [l for l in linhas if entra_na_regra(
         cfg, obra_id=l["obra_id"], momento_local=horario.para_local(l["timestamp_servidor"]),
-        primeira_do_dia=int(l["ordem"]) == 1))
-    return {"fotos_30_dias": len(linhas), "entrariam": entram,
+        primeira_do_dia=int(l["ordem"]) == 1)]
+    entram = float(len(na_regra))
+    # A conferência que se adapta: cada batida entra com a chance do nível de HOJE da pessoa.
+    from . import confianca
+    d = confianca.config(cfg)
+    if d["ligada"] and confianca.disponivel(conn) and na_regra:
+        hist = confianca.historico(conn, sorted({int(l["colaborador_id"]) for l in na_regra}), d)
+        entram = sum(confianca.da_pessoa(hist.get(int(l["colaborador_id"])), d)["pct"] / 100 for l in na_regra)
+    return {"fotos_30_dias": len(linhas), "entrariam": round(entram),
             "custo_estimado_usd": round(entram * PRECO_POR_FOTO_USD, 2)}
 
 
@@ -359,7 +371,9 @@ def explicar_erro_aws(e: Exception) -> str:
     return f"a AWS respondeu com erro: {str(e)[:300]}"
 
 
-def _pendentes(conn: Connection, cfg: dict, limite: int) -> list[dict]:
+def _pendentes(conn: Connection, cfg: dict, limite: int, fora: Optional[list] = None) -> list[dict]:
+    """As batidas a conferir, na ordem. Em `fora`, se vier, as que a regra exclui
+    (obra, dia, horário) — para ganharem a linha DISPENSADA e não voltarem."""
     linhas = db.todos(conn, """
         SELECT m.id, m.colaborador_id, m.obra_id, m.foto_id, m.status, m.timestamp_servidor, m.motivo_analise,
                m.data_referencia, pc.foto_cadastral_id, fo.luminancia, fo.contraste,
@@ -377,12 +391,22 @@ def _pendentes(conn: Connection, cfg: dict, limite: int) -> list[dict]:
         if entra_na_regra(cfg, obra_id=l["obra_id"], momento_local=horario.para_local(l["timestamp_servidor"]),
                           primeira_do_dia=int(l["antes"]) == 0):
             saida.append(l)
+        elif fora is not None:
+            fora.append(l)
         if len(saida) >= limite:
             break
     return saida
 
 
-def _gravar(conn: Connection, marcacao_id: int, resultado: str, semelhanca, custo: float, detalhe: str) -> None:
+def _gravar(conn: Connection, marcacao_id: int, resultado: str, semelhanca, custo: float, detalhe: str,
+            nivel: Optional[dict] = None) -> None:
+    if nivel is not None:                  # migração 013: o nível da pessoa e a chance na hora
+        db.executar(conn, """
+            INSERT INTO ponto.conferencias_rosto (marcacao_id, resultado, semelhanca, custo_usd, detalhe, nivel, chance)
+            VALUES (:m, :r, :s, :c, :d, :n, :p) ON CONFLICT (marcacao_id) DO NOTHING""",
+                    m=marcacao_id, r=resultado, s=semelhanca, c=custo, d=(detalhe or "")[:300] or None,
+                    n=nivel["codigo"], p=nivel["pct"])
+        return
     db.executar(conn, """
         INSERT INTO ponto.conferencias_rosto (marcacao_id, resultado, semelhanca, custo_usd, detalhe)
         VALUES (:m, :r, :s, :c, :d) ON CONFLICT (marcacao_id) DO NOTHING""",
@@ -393,7 +417,7 @@ def conferir(conn: Connection, *, cliente=None, limite: int = LOTE) -> dict:
     """Uma rodada. Devolve o que fez — e por que parou, se parou."""
     from . import fotos, mosaico
     cfg = ler(conn)
-    feito = {"conferidas": 0, "suspeitas": 0, "viraram_cadastral": 0, "erros": 0, "parou": None}
+    feito = {"conferidas": 0, "suspeitas": 0, "viraram_cadastral": 0, "erros": 0, "dispensadas": 0, "parou": None}
     if not disponivel(conn):
         feito["parou"] = "aplique as atualizações do ponto (migração 007)"
         return feito
@@ -410,7 +434,21 @@ def conferir(conn: Connection, *, cliente=None, limite: int = LOTE) -> dict:
         cliente = _cliente(cfg["regiao"])
     gasto = gasto_do_mes(conn)["custo_usd"]
     cadastrais: dict[int, int] = {}          # a cadastral definida NESTA rodada vale para as seguintes
-    for m in _pendentes(conn, cfg, limite):
+    # A conferência que se adapta à pessoa (confianca.py) — só com a migração 013.
+    from . import confianca
+    dinamica = confianca.config(cfg)
+    adapta = confianca.disponivel(conn)
+    fora: Optional[list] = [] if adapta else None
+    pendentes = _pendentes(conn, cfg, limite, fora)
+    for m in fora or []:
+        _gravar(conn, m["id"], "DISPENSADA", None, 0, "fora da regra (obra, dia ou horário que não confere)",
+                nivel={"codigo": None, "pct": 0})
+    niveis: dict[int, dict] = {}
+    hist: dict[int, dict] = {}
+    if adapta:
+        hist = confianca.historico(conn, sorted({int(m["colaborador_id"]) for m in pendentes}), dinamica)
+    agora = dt.datetime.now(dt.timezone.utc)
+    for m in pendentes:
         cid = int(m["colaborador_id"])
         m["foto_cadastral_id"] = cadastrais.get(cid) or m["foto_cadastral_id"]
         if not m["foto_cadastral_id"]:
@@ -434,6 +472,15 @@ def conferir(conn: Connection, *, cliente=None, limite: int = LOTE) -> dict:
         if m["foto_cadastral_id"] == m["foto_id"]:
             _gravar(conn, m["id"], "VIROU_CADASTRAL", None, 0, "é a própria foto cadastral")
             continue
+        nivel = None
+        if adapta:
+            nivel = niveis.setdefault(cid, confianca.da_pessoa(hist.get(cid), dinamica))
+            h = hist.get(cid) or {}
+            confere, porque = confianca.decidir(nivel, int(m["id"]), h.get("ultima_real"), agora, dinamica)
+            if not confere:
+                _gravar(conn, m["id"], "DISPENSADA", None, 0, porque, nivel=nivel)
+                feito["dispensadas"] += 1
+                continue
         if gasto + PRECO_POR_FOTO_USD > float(cfg["teto_mensal_usd"]):
             feito["parou"] = f"teto do mês atingido (US$ {cfg['teto_mensal_usd']:.2f})"
             break
@@ -451,11 +498,17 @@ def conferir(conn: Connection, *, cliente=None, limite: int = LOTE) -> dict:
             feito["erros"] += 1
             feito["parou"] = explicar_erro_aws(e)
             break
-        _gravar(conn, m["id"], resultado, semelhanca, PRECO_POR_FOTO_USD, detalhe)
+        _gravar(conn, m["id"], resultado, semelhanca, PRECO_POR_FOTO_USD, detalhe, nivel=nivel)
         gasto += PRECO_POR_FOTO_USD
+        if adapta:                         # a garantia de 7 dias conta a partir desta
+            hist.setdefault(cid, {"limpas": 0, "falhas_recentes": 0, "ultima_falha": None})["ultima_real"] = agora
         feito["conferidas"] += 1
         if resultado in ("OUTRA_PESSOA", "SEM_ROSTO"):
             feito["suspeitas"] += 1
+            if adapta:                     # falhou: o resto da rodada já confere tudo dessa pessoa
+                h = hist.setdefault(cid, {"limpas": 0, "falhas_recentes": 0, "ultima_real": agora})
+                h.update(limpas=0, falhas_recentes=h["falhas_recentes"] + 1, ultima_falha=agora)
+                niveis[cid] = confianca.da_pessoa(h, dinamica)
             motivo = ("rosto não confere com a foto cadastral" if resultado == "OUTRA_PESSOA"
                       else "nenhum rosto na foto") + (f" ({detalhe})" if detalhe else "")
             db.executar(conn, """
@@ -507,6 +560,11 @@ def retrato(conn: Connection) -> dict:
     if saida["disponivel"]:
         saida["mes"] = gasto_do_mes(conn)
         saida["estimativa"] = estimativa(conn, cfg)
+        from . import confianca
+        saida["dinamica"] = confianca.config(cfg)
+        saida["dinamica_disponivel"] = confianca.disponivel(conn)
+        if saida["dinamica_disponivel"]:
+            saida["niveis"] = confianca.resumo(confianca.pessoas(conn, saida["dinamica"]))
         saida["sem_cadastral"] = int(db.um(conn, """
             SELECT count(DISTINCT m.colaborador_id) AS n FROM ponto.marcacoes m
               LEFT JOIN ponto.colaborador_config pc ON pc.colaborador_id = m.colaborador_id

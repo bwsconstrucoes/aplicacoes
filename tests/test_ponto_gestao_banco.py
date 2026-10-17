@@ -189,7 +189,7 @@ def test_migracoes_do_ponto_e_feriados_nacionais(banco, mundo):
                      "006_grupo_temporario_e_licencas_da_lei.sql", "007_conferencia_do_rosto.sql",
                      "008_papeis_no_aplicativo.sql", "009_obra_so_entrada_e_saida.sql",
                      "010_licencas_da_lei_atualizadas.sql", "011_ronda_dos_vigias.sql",
-                     "012_batida_sem_internet.sql"]
+                     "012_batida_sem_internet.sql", "013_conferencia_que_se_adapta.sql"]
     assert natal == "Natal"
     assert [s[0] for s in secoes] == ["pon_competencia", "pon_config", "pon_dp", "pon_gestao"]
 

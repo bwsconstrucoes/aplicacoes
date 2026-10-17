@@ -261,6 +261,9 @@ O dia de uma batida é a `data_referencia`, não a hora do relógio: para o vigi
 noturno, batida antes das 10h pertence ao dia anterior. "Trabalhou" aqui quer
 dizer "tem batida"; presença, horas e faltas são regra da fase 3.
 
+- O rosto do Fulano está sendo conferido em todas as batidas? Por quê? 🔒 (o nível da conferência que se adapta, na ficha: Em observação 100 %, Boa 50 %, Ótima 25 %, Exemplar 10 %; quem falhou ou é novo confere tudo — `core/confianca.py`)
+- Quem é reincidente na foto do ponto? 🔒 ⚠️ ("reincidente" = 2 falhas ou mais em 60 dias, com os números da Configuração; rosto que não conferiu e o DP aprovou NÃO é falha)
+- Quantas fotos deixaram de ser conferidas este mês para economizar, e quanto isso poupou? (dispensadas pelo nível × US$ 0,001; "este mês" = mês do calendário)
 - Desde quando o ponto vale? (16/10/2026, ou a data de Ponto › Configuração › "Início do ponto"; o que vem antes foi teste da implantação — fica guardado e não conta em nada: espelho, folha, banco de horas, qualidade, mosaico, alertas)
 - Quantas batidas o Fulano tem em 10/10/2026? ⚠️ (antes do início do ponto a resposta certa é "nenhuma que conte": havia batidas de TESTE, que não entram em resposta nenhuma — o assistente não deve somá-las)
 - Quem bateu ponto hoje na obra X? 🔒
