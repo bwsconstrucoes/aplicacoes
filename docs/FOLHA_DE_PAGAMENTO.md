@@ -1625,7 +1625,7 @@ que antes era só "Col65":
 | `BP` | **valor** do transporte |
 | `BF` | **Valor da Gratificação** |
 | `BH` | **Recebe Parcela Única** — `Sim` = valor inteiro no fim do mês, não metade |
-| `BI` | **a marcação que escolhe BeeVale × SomaPay** (§7.14.3) |
+| `BI` | **Recebe via SP** — quem é pago por SP individual (PJ, pró-labore), corrigido em 17/10/2026; ver a tela Pagamento via SP |
 | `AX` | **Fase Atual** — é onde mora `Colaboradores Desligados` e `Afastados` |
 | `AY` | **Tipo de Contrato** — CLT, PJ, Pró-labore, Estágio, Autônomo Mensalista |
 

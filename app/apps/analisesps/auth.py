@@ -566,6 +566,14 @@ TELA_DA_ROTA = {
     "analisesps.folha_avulso_lista": ("folha",),
     "analisesps.folha_avulso_selecao": ("folha",),
     "analisesps.folha_avulso_obra": ("folha",),
+    # Gratificados e pagamento via SP (17/10/2026): as duas telas, o relatório,
+    # a seleção, a obra e o desconto/acréscimo do período.
+    "analisesps.tela_folha_gratificados": ("folha",),
+    "analisesps.tela_folha_via_sp": ("folha",),
+    "analisesps.folha_gratificados_relatorio": ("folha",),
+    "analisesps.folha_gratificados_selecao": ("folha",),
+    "analisesps.folha_gratificados_obra": ("folha",),
+    "analisesps.folha_gratificados_ajuste": ("folha",),
     # A ficha da pessoa no modal: cadastro + ponto do mês. É da folha, e mostra
     # dado pessoal — quem não alcança a folha não alcança isto.
     "analisesps.folha_ficha_da_pessoa": ("folha",),

@@ -348,6 +348,17 @@ const LEMBRAR = {
                                 valor: valor, acao: rotulo})
         });
         const d = await r.json();
+        // AS PRESAS DO AGENDAR (17/10/2026): uma janela com cada SP e o motivo,
+        // e a opção de agendar só as liberadas — em vez de um alerta corrido.
+        if (!d.ok && d.presas) { janelaDasPresas(d, rotulo, async liberadas => {
+          const r2 = await fetch(barra.dataset.urlAlterar, {
+            method: "POST", headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({ids: liberadas, coluna: botao.dataset.coluna,
+                                  valor: valor, acao: rotulo})});
+          const d2 = await r2.json();
+          if (!d2.ok) { alert("Não deu certo: " + (d2.erro || "erro desconhecido")); return; }
+          location.reload();
+        }); return; }
         if (!d.ok) { alert("Não deu certo: " + (d.erro || "erro desconhecido")); return; }
         if (d.aviso) alert("Alterado aqui, mas o envio para a planilha ficou na fila:\n" + d.aviso);
         const falhou = resumoDoComplemento(d.complemento);
@@ -731,7 +742,8 @@ const LEMBRAR = {
     const ids = idsMarcados();
     if (!ids) return;
     selecaoConsumida();
-    const senha = prompt(`Validar ${ids.length} SP(s) — marca Validação = "Sim".`
+    const senha = prompt(`Validar ${ids.length} SP(s) — marca Validação = "Sim" na `
+                         + `planilha (o card do Pipefy não é alterado).`
                          + `\n\nSenha de validação:`);
     if (senha === null) return;
     btnValidar.disabled = true;
@@ -867,8 +879,9 @@ window.ligarFicha = function (raiz) {
 
   const validar = caixa.querySelector("#ficha-validar");
   if (validar) validar.addEventListener("click", async () => {
-    const senha = prompt(`Validar a SP ${sp} — marca Validação = "Sim" e `
-                         + `destrava o agendamento.\n\nSenha de validação:`);
+    const senha = prompt(`Validar a SP ${sp} — marca Validação = "Sim" na planilha `
+                         + `(o card do Pipefy não é alterado) e destrava o agendamento.`
+                         + `\n\nSenha de validação:`);
     if (senha === null) return;
     validar.disabled = true;
     try {
@@ -2503,6 +2516,46 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
 
 // O "Marcar Pago" também grava data, comprovante e conta lidos do card
 // (08/10/2026). Só incomoda com um alerta quando algo ficou de fora.
+// A JANELA DAS PRESAS DO AGENDAR (17/10/2026). O dono: *"era para ter algum
+// modal de alerta toda vez que a gente fosse tentar colocar agendar (…) alguma
+// coisa que não esteja validado, que não esteja com a chave Pix atualizada"*.
+// Lista cada SP recusada com o motivo; se sobrou alguma liberada, oferece
+// agendar só elas (`agendarLiberadas(ids)`).
+function janelaDasPresas(d, rotulo, agendarLiberadas) {
+  const esc = t => String(t == null ? "" : t).replace(/[&<>"]/g,
+      c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+  const antiga = document.getElementById("dialogo-presas");
+  if (antiga) antiga.remove();
+  const dlg = document.createElement("dialog");
+  dlg.className = "dialogo";
+  dlg.id = "dialogo-presas";
+  const liberadas = d.liberadas || [];
+  dlg.innerHTML =
+    '<h3>🔒 Não dá para "' + esc(rotulo) + '" ' + d.presas.length + " SP(s)</h3>" +
+    '<p class="cartao-dica">Trate cada uma antes: valide (pede a senha de validação), ' +
+    "atualize a chave Pix no card ou ponha a obra. Nada foi gravado.</p>" +
+    '<div class="tabela-rolagem livre" style="max-height:50vh"><table class="sps"><thead><tr>' +
+    "<th>SP</th><th>Motivo</th></tr></thead><tbody>" +
+    d.presas.map(p => "<tr><td><b>" + esc(p.id) + "</b></td><td>" +
+      p.motivos.map(m => '<span class="selo ' + (m.indexOf("valid") >= 0 ? "validar"
+        : (m.indexOf("Pix") >= 0 ? "pix-atualizar" : "atualizar-sp")) + '">' + esc(m) + "</span>")
+        .join(" ") + "</td></tr>").join("") +
+    "</tbody></table></div>" +
+    '<div class="lat-acoes" style="margin-top:12px">' +
+    (liberadas.length ? '<button type="button" class="btn" id="presas-seguir">' + esc(rotulo) +
+      " só as " + liberadas.length + " liberada(s)</button>" : "") +
+    '<button type="button" class="btn secundario" id="presas-fechar">Fechar</button></div>';
+  document.body.appendChild(dlg);
+  dlg.querySelector("#presas-fechar").addEventListener("click", () => dlg.close());
+  const seguir = dlg.querySelector("#presas-seguir");
+  if (seguir) seguir.addEventListener("click", async () => {
+    seguir.disabled = true;
+    try { await agendarLiberadas(liberadas); }
+    catch (e) { alert("Falhou a comunicação com o servidor: " + e); seguir.disabled = false; }
+  });
+  dlg.showModal();
+}
+
 function resumoDoComplemento(c) {
   if (!c) return "";
   const linhas = [];

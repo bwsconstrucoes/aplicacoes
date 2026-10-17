@@ -284,6 +284,35 @@ COLUNAS_DOCUMENTOS = {
 }
 
 
+# ⚠️ OS CAMPOS DA GM — GRATIFICADOS, MENSALISTAS E PAGAMENTO VIA SP (17/10/2026).
+# A QUERY da aba GM que o dono mandou lê, da aba oculta CadastroColaboradores, as
+# colunas P (Recebe Gratificação Mensal), R (Valor do Mês) e T (Recebe via SP) —
+# que no "Dados Documentos" são BE, BG e BI. Os nomes são os da lista do cadastro
+# (docs/FOLHA_DE_PAGAMENTO.md §2.3). Vão no MESMO JSON dos documentos (migração
+# 047), sem migração nova; e, diferente dos documentos, guardam o vazio — "a
+# coluna existe e está em branco" e "a coluna não veio" são coisas diferentes
+# para quem decide se a pessoa entra na lista.
+COLUNAS_DO_PAGAMENTO = {
+    "recebe_gratificacao": ["Recebe Gratificação Mensal", "Recebe Gratificacao Mensal",
+                            "Recebe Gratificação", "Gratificação Mensal"],
+    "valor_mensal": ["Valor do Mês", "Valor do Mes", "Valor Mensal", "Valor do mês"],
+    "recebe_via_sp": ["Recebe via SP", "Recebe Via SP", "Pgt via SP", "Pagamento via SP"],
+    "nome_credor": ["Nome Credor", "Nome do Credor"],
+    "pix_cnpj": ["Pix CNPJ", "CNPJ Pix", "CNPJ do Pix"],
+    "pix_tipo": ["Chave Pix Tipo", "Tipo Chave Pix", "Tipo da Chave Pix", "Tipo de Chave Pix"],
+    "pix_chave": ["Chave Pix", "Chave PIX"],
+}
+# Sem o nome, a posição (a partir de zero) — mas só se o cabeçalho dali tiver a
+# palavra esperada. Posição sem conferência pagaria pela coluna errada no dia em
+# que alguém inserir uma coluna.
+POSICAO_DO_PAGAMENTO = {"recebe_gratificacao": (56, "gratifica"),
+                        "valor_mensal": (58, "valor"),
+                        "recebe_via_sp": (60, "via sp")}
+# ⚠️ A FALTA DELAS NÃO AVISA AQUI, na carga: a lista de avisos do cadastro tem de
+# caber na tela (ver COLUNAS_QUE_AVISAM). Quem avisa é a tela Gratificados, onde a
+# falta muda dinheiro — `gratificados.calcular` diz quais colunas não vieram.
+
+
 # A posição de uma opcional quando o NOME não casa (índice a partir de zero). O
 # valor da diária está na coluna 49 da aba "Dados Documentos" (dono, 02/10/2026).
 POSICAO_CONHECIDA = {"valor_diaria": 48}
@@ -538,6 +567,17 @@ def _achar_colunas(cabecalho: list) -> tuple[dict, list]:
         if i is not None and i not in posicoes.values():
             posicoes["doc_" + campo] = i
 
+    for campo, aceitos in COLUNAS_DO_PAGAMENTO.items():
+        i = achar_coluna(normalizado, aceitos)
+        if i is None and campo in POSICAO_DO_PAGAMENTO:
+            pos, palavra = POSICAO_DO_PAGAMENTO[campo]
+            if pos < len(cabecalho) and palavra in normalizado[pos]:
+                i = pos
+                logger.info('Cadastro: %s lido da coluna %d ("%s").', campo, pos + 1,
+                            cabecalho[pos])
+        if i is not None and i not in posicoes.values():
+            posicoes["pg_" + campo] = i
+
     # O código do Fortes na ficha — a coluna BU de "Dados Documentos" (dono,
     # 03/10/2026), procurada pelo nome e, sem o nome, pela posição.
     i_id = achar_coluna(normalizado, COLUNAS_DO_ID_NA_FICHA)
@@ -572,7 +612,10 @@ def _registro(linha: dict, posicoes: dict) -> dict | None:
         registro["_valor_diaria"] = formatos.para_numero(cru.get("valor_diaria"))
     docs = {c[4:]: str(v or "").strip() for c, v in cru.items()
             if c.startswith("doc_") and str(v or "").strip()}
-    if any(c.startswith("doc_") for c in cru):
+    # Os da GM guardam o vazio também — ver COLUNAS_DO_PAGAMENTO.
+    docs.update({c[3:]: " ".join(str(v or "").split()) for c, v in cru.items()
+                 if c.startswith("pg_")})
+    if any(c.startswith(("doc_", "pg_")) for c in cru):
         registro["_documentos"] = docs
     for campo in CAMPOS[1:]:
         valor = cru.get(campo, "")

@@ -106,9 +106,11 @@
       '<th class="num">Colaboradores</th><th class="num">Total</th><th>Avisos</th>' +
       "</tr></thead><tbody>" +
       [...contas.values()].map(c => "<tr><td><b>" + esc(c.conta || "(sem conta)") + "</b></td><td>" +
+        // O pagamento via SP não vai a banco: cada pessoa vira uma SP.
+        (ORIGEM === "viasp" ? "uma SP por pessoa" :
         '<select class="gd-destino-conta" data-conta="' + esc(c.conta) + '" aria-label="Destino da conta ' +
         esc(c.conta) + '">' + DESTINOS.map(([v, r]) => '<option value="' + v + '"' +
-        (v === c.destino ? " selected" : "") + ">" + r + "</option>").join("") + "</select></td>" +
+        (v === c.destino ? " selected" : "") + ">" + r + "</option>").join("") + "</select>") + "</td>" +
         '<td class="num">' + c.quantos + '</td><td class="num">' + real(c.total) + "</td><td>" +
         (c.criticas.length ? '<span class="ruim">' + c.criticas.map(esc).join("<br>") + "</span>" : "—") +
         "</td></tr>").join("") +
@@ -120,11 +122,16 @@
           ORIGEM + "&ano=" + DADOS.ano + "&mes=" + DADOS.mes +
           '">auditoria (Excel)</a>: quem tem o benefício, quem não vai receber e por quê, e a diferença base × arquivo.</p>'
         : "") +
+      (ORIGEM === "viasp"
+        ? '<p class="cartao-dica"><b>Baixar prévia</b>: a relação de cada conta e a análise, num .zip, ' +
+          "sem gravar nada. <b>Gerar definitivo</b>: grava no Drive a relação de cada conta (pessoa, " +
+          "credor, Pix, valor e rateio), o relatório e a análise. As SPs — uma por pessoa — são " +
+          "lançadas depois, em Arquivos gerados.</p>" :
       '<p class="cartao-dica"><b>Baixar prévia</b>: os arquivos como sairiam agora, num .zip, ' +
       "sem fechar e sem gravar no Drive. <b>Gerar definitivo</b>: " +
-      (ORIGEM === "dc" || ORIGEM === "avulso" ? "com as linhas selecionadas agora (elas saem da lista), gera "
+      (ORIGEM === "dc" || ORIGEM === "avulso" || ORIGEM === "gratificacao" ? "com as linhas selecionadas agora (elas saem da lista), gera "
                        : "refaz o fechamento com a situação atual da tela, gera ") + d.resumo.arquivos + " arquivo(s) de pagamento e o de " +
-      "análise e grava no Drive. Os cards do Pipefy são lançados depois, em Arquivos gerados.</p>";
+      "análise e grava no Drive. Os cards do Pipefy são lançados depois, em Arquivos gerados.</p>");
     corpo.querySelectorAll(".gd-destino-conta").forEach(sel => sel.addEventListener("change", () => {
       escolha[sel.dataset.conta] = sel.value;
       lembrar({[sel.dataset.conta]: sel.value});

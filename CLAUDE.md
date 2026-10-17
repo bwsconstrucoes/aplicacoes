@@ -139,6 +139,7 @@ depender do Claude Code no PC. Cada chat nasce de uma cópia limpa da `main` e
 | BaixaBradesco (baixa de comprovantes) | `app/apps/baixabradesco/` | `README.md`, `HISTORICO.md`, `CONTEXTO.md` §5.9 e §9 | `HISTORICO.md` |
 | Emissão de NFS-e | `app/apps/emissaonf/` | `README.md`, `HISTORICO.md`, `CONTEXTO.md` §9 — e o aviso de risco logo abaixo desta tabela | `HISTORICO.md` |
 | Ponto eletrônico (REP-P) | `app/apps/ponto/` | `README.md`, `HISTORICO.md`, `PLANO.md`, `CONTEXTO.md` §5.13 e §9 | `HISTORICO.md` |
+| ValidaSP (validação de SP, chamada pelo Make) | `app/apps/validasp/` | `README.md`, `HISTORICO.md`, `CONTEXTO.md` §5.7 | `HISTORICO.md` |
 | Mensageria (tela ERP › Mensagens, `notificador.py`, bot Telegram, chatbot WhatsApp) | `app/apps/mensageria/` (código e memória); mais `notificador.py`, `telegram/`, `chatbot/` | `README.md`, `HISTORICO.md` (na pasta `mensageria/`), `CONTEXTO.md` §4.4, §5.8 e §9 | `mensageria/HISTORICO.md` |
 
 **Ao começar** uma sessão numa área: ler os arquivos da linha, conferir a

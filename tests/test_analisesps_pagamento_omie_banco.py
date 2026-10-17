@@ -297,3 +297,57 @@ def test_os_ICONES_de_baixar_aparecem_nas_Solicitacoes(app):
     assert "uc?export=download&amp;id=ANEXO1" in lista
     assert "comp.pdf?dl=1" in lista
     assert lista.count('class="icones-sp"') == 1, "a SP sem anexo nem comprovante não ganha ícone"
+
+
+def test_AGENDAR_SP_NAO_VALIDADA_e_recusado_com_a_lista_para_a_janela(app, monkeypatch):
+    """17/10/2026: *"a gente não pode agendar (…) alguma coisa que não esteja
+    validado (…) era para ter algum modal de alerta (…) colocar a tag também de
+    validar"*. A barra (em lote) não travava a validação — só a ficha."""
+    from tests.test_analisesps_banco import semear, sp
+    from app.apps.analisesps import tarefas
+    monkeypatch.setattr(tarefas, "disparar", lambda *a, **k: {"ok": True})
+    semear([sp("1000000401", forma_pagamento="Boleto", status_pgt="Pagar", valor="10,00",
+               vencimento="10/10/2026", validacao="", centro_custo="CREPEEXU"),
+            sp("1000000402", forma_pagamento="Boleto", status_pgt="Pagar", valor="10,00",
+               vencimento="10/10/2026", validacao="Não", centro_custo="CREPEEXU"),
+            sp("1000000403", forma_pagamento="Boleto", status_pgt="Pagar", valor="10,00",
+               vencimento="10/10/2026", validacao="Sim", centro_custo="CREPEEXU")])
+    ids = ["1000000401", "1000000402", "1000000403"]
+    with app.test_client() as cliente:
+        cliente.post("/analisesps/entrar", data={"senha": SENHA_MESTRE_OPERADOR})
+        r = cliente.post("/analisesps/api/alterar", json={
+            "ids": ids, "coluna": "agendado", "valor": "Agendado"})
+        d = r.get_json()
+        assert r.status_code == 409 and "sem validação" in d["erro"]
+        assert {p["id"] for p in d["presas"]} == {"1000000401", "1000000402"}
+        assert d["presas"][0]["motivos"] == ["não validada"]
+        assert d["liberadas"] == ["1000000403"]
+        assert _sp("1000000403", "agendado") == ("",), "recusa o pedido inteiro"
+        assert cliente.post("/analisesps/api/alterar", json={
+            "ids": d["liberadas"], "coluna": "agendado", "valor": "Agendar"}).get_json()["ok"]
+        lista = cliente.get("/analisesps/solicitacoes?f=1&busca=10000004",
+                            follow_redirects=True).get_data(as_text=True)
+        ficha = cliente.get("/analisesps/sp/1000000402").get_data(as_text=True)
+    linha = lista[lista.index("1000000401"):lista.index("1000000403")]
+    assert 'class="selo validar"' in linha
+    assert 'class="selo validar"' in ficha
+
+
+def test_VALIDAR_so_grava_na_PLANILHA_e_nunca_no_Pipefy(app, monkeypatch):
+    """17/10/2026: *"se estiver aplicando alguma atualização no card do Pipefy
+    (…) não quero mais (…) quero atualizar só a planilha"*."""
+    from tests.test_analisesps_banco import semear, sp
+    from app.apps.analisesps import credenciais, pipefy, tarefas
+    monkeypatch.setattr(tarefas, "disparar", lambda *a, **k: {"ok": True})
+    monkeypatch.setattr(credenciais, "token", lambda nome, padrao="": "segredo-validar")
+    for nome in ("atualizar_campos", "criar_card", "graphql"):
+        monkeypatch.setattr(pipefy, nome, lambda *a, **k: pytest.fail("tocou no Pipefy"))
+    semear([sp("1000000501", status_pgt="Pagar", valor="10,00", vencimento="10/10/2026")])
+    with app.test_client() as cliente:
+        cliente.post("/analisesps/entrar", data={"senha": SENHA_MESTRE_OPERADOR})
+        r = cliente.post("/analisesps/api/validar",
+                         json={"ids": ["1000000501"], "senha": "segredo-validar"})
+        assert r.get_json()["ok"]
+    from app.apps.analisesps.db import consultar
+    assert consultar("SELECT coluna, valor FROM analisesps.fila WHERE sp_id = '1000000501'") \
+        == [("validacao", "Sim")], "vai para a fila da PLANILHA"

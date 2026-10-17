@@ -59,6 +59,7 @@ a folha de pagamento (tela "Folha PGT"; ver docs/FOLHA_DE_PAGAMENTO.md):
   ponto.py                    a carga do ponto do Mobponto, dia por dia
   folha_calendario.py         feriados (nacional × por obra) e férias
   folha_auxilio.py            alimentação e transporte, mês por mês
+  gratificados.py             gratificados e mensalistas (arquivo) e pagamento via SP (uma SP por pessoa)
   folha_vinculo.py            CTPS × diária, dia por dia
   folha_rateio.py             as regras de rateio de quem não bate ponto
   folha_apropriacao.py        ⚠️ a conta pura: de quem é o dinheiro. SEM banco

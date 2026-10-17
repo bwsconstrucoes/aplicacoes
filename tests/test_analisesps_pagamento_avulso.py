@@ -76,10 +76,13 @@ def test_a_lista_COLADA_vira_linhas_com_cadastro_ponto_e_alertas(banco_avulso):
     sem_obra = c[(ATIVO, D("1000.00"))]
     assert sem_obra["obra"] == "CREPEOLINDA" and sem_obra["obra_de_onde"] == "ponto"
     assert sem_obra["obra_cadastro"] == "IFSPSAOJOSE" and sem_obra["conta"] == "50024"
-    assert sem_obra["pagar"] and any("2 vezes" in m for m in sem_obra["motivos"])
+    assert sem_obra["pagar"] and sem_obra["repetido"] and sem_obra["vez"] == 1
+    assert sem_obra["motivos"][0].startswith("REPETIDO: esta pessoa aparece 2 vezes")
     colada = c[(ATIVO, D("300.00"))]
     assert colada["obra"] == "IFSPSAOJOSE" and colada["obra_de_onde"] == "colada"
     assert any("o ponto diz CREPEOLINDA" in m for m in colada["motivos"])
+    assert not colada["pagar"], "a 2ª vez da mesma pessoa vem DESMARCADA (17/10/2026)"
+    assert "Esta vem DESMARCADA" in colada["motivos"][0]
     saiu = c[(SAIU, D("200.00"))]
     assert not saiu["pagar"], "quem já saiu vem desmarcado"
     assert any("desligado" in m for m in saiu["motivos"])
@@ -87,7 +90,9 @@ def test_a_lista_COLADA_vira_linhas_com_cadastro_ponto_e_alertas(banco_avulso):
     fora = c[(FORA, D("50.00"))]
     assert fora["impossivel"] and not fora["pagar"]
     tudo = pa.calcular()
-    assert tudo["total"] == D("1300.00") and tudo["quantos_a_pagar"] == 2
+    assert tudo["total"] == D("1000.00") and tudo["quantos_a_pagar"] == 1
+    [r] = tudo["repetidos"]
+    assert (r["nome"], r["vezes"], r["marcadas"]) == ("ATIVO UM", 2, 1)
 
 
 def test_SELECAO_e_OBRA_trocada_valem_ate_colar_outra_lista(banco_avulso):
@@ -105,14 +110,21 @@ def test_SELECAO_e_OBRA_trocada_valem_ate_colar_outra_lista(banco_avulso):
     assert not _por(pa.calcular())[(SAIU, D("200.00"))]["pagar"], "lista nova, sem ajustes"
 
 
-def _gerar(monkeypatch, destino="beevale"):
+def _marcar_a_repetida():
+    """As duas linhas do mesmo CPF marcadas — pagar duas vezes é decisão."""
+    from app.apps.analisesps import pagamento_avulso as pa
+    c = _por(pa.calcular())
+    pa.salvar_selecao([{"chave": c[(ATIVO, D("300.00"))]["chave"], "pagar": True}])
+
+
+def _gerar(monkeypatch, destino="beevale", forcar=True):
     from app.apps.analisesps import beevale, drive, folha_pagamento as fp
     subidos = []
     monkeypatch.setattr(beevale, "pasta_do_drive", lambda: ("PASTA", "teste"))
     monkeypatch.setattr(drive, "subir_arquivo", lambda conteudo, nome, pasta, **k:
                         subidos.append((nome, k.get("mime"), conteudo))
                         or {"id": f"d{len(subidos)}", "link": f"https://drive/{len(subidos)}"})
-    return fp.gerar_direto("avulso", {}, destino, quem="MARCELO"), subidos
+    return fp.gerar_direto("avulso", {}, destino, quem="MARCELO", forcar=forcar), subidos
 
 
 def test_GERAR_sobe_no_Drive_guarda_o_lote_e_TRAVA_a_lista(banco_avulso, monkeypatch):
@@ -120,6 +132,7 @@ def test_GERAR_sobe_no_Drive_guarda_o_lote_e_TRAVA_a_lista(banco_avulso, monkeyp
     import openpyxl
     from app.apps.analisesps import folha_pagamento as fp, pagamento_avulso as pa
     pa.gravar_lista(COLADO, "prêmio", quem="MARCELO")
+    _marcar_a_repetida()
     saida, subidos = _gerar(monkeypatch)
     pagamento = sorted((a for a in saida["arquivos"] if a["destino"] == "beevale"),
                        key=lambda a: a["conta"])
@@ -150,6 +163,7 @@ def test_a_SP_do_Pipefy_sai_do_LOTE_com_o_tipo_de_despesa_escolhido(banco_avulso
     from tests.test_analisesps_folha_cards import PipefyFalso
     pipe = PipefyFalso(monkeypatch)
     pa.gravar_lista(COLADO, "prêmio de setembro", quem="MARCELO")
+    _marcar_a_repetida()
     saida, _ = _gerar(monkeypatch, destino="somapay")
     analise = next(a["id"] for a in saida["arquivos"] if a["destino"] == fp.ANALISE)
     vista = fcd.previa(analise)
@@ -178,3 +192,30 @@ def test_a_TELA_cola_mostra_e_tem_os_botoes_de_gerar(banco_avulso, app):  # noqa
     assert cliente.get("/analisesps/folha/avulso/relatorio.pdf").data.startswith(b"%PDF")
     r = cliente.post("/analisesps/api/folha/avulso/lista", json={"limpar": True}).get_json()
     assert r["ok"] and "ATIVO UM" not in cliente.get("/analisesps/folha/avulso").get_data(as_text=True)
+
+
+
+def test_a_MESMA_PESSOA_marcada_duas_vezes_TRAVA_a_geracao_sem_confirmacao(banco_avulso,
+                                                                         monkeypatch):
+    """17/10/2026: "duas pessoas foram pagas duplicado e não tinha nenhum alerta (…)
+    o sistema só somou e gerou o arquivo"."""
+    from app.apps.analisesps import folha_pagamento as fp, pagamento_avulso as pa
+    pa.gravar_lista(COLADO, quem="MARCELO")
+    _marcar_a_repetida()
+    resumo = fp.resumo_direto("avulso", {}, "beevale")
+    assert not resumo["resumo"]["pode_gerar"]
+    criticas = [c for l in resumo["lotes"] for c in l["criticas"]]
+    assert any("ATIVO UM está marcado(a) 2 vezes" in c and "R$ 1.300,00" in c
+               for c in criticas), criticas
+    with pytest.raises(fp.ErroDoPagamento):
+        _gerar(monkeypatch, forcar=False)
+    saida, _ = _gerar(monkeypatch, forcar=True)        # "gerar com aviso"
+    assert saida["ok"]
+
+
+def test_a_TELA_mostra_o_quadro_VERMELHO_dos_repetidos(banco_avulso, app):  # noqa: F811
+    cliente = _como_mestre(app)
+    cliente.post("/analisesps/api/folha/avulso/lista", json={"texto": COLADO})
+    tela = cliente.get("/analisesps/folha/avulso").get_data(as_text=True)
+    assert "aparece(m) MAIS DE UMA VEZ" in tela and "REPETIDO 2/2" in tela
+    assert "pessoa(s) repetida(s) na lista" in tela

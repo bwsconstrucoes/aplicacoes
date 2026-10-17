@@ -2,48 +2,35 @@
 """
 validasp/core.py
 Fluxo:
-  1. Atualiza campo Pipefy
+  1. Guarda a validação na fila (fila.py) — ANTES de qualquer mensagem, para
+     ninguém receber "validada" de uma SP cuja marcação pode se perder
   2. Gera e encurta link de anuência
   3. Envia Z-API (responsável, requerente, anuente se existir)
-  4. Retorna response imediatamente
-  5. Em background: tenta atualizar SPsBD com retry 90s+90s,
-     só depois grava FalhaProcessar
+  4. Retorna response imediatamente; o vigia da fila grava o "Sim" na SPsBD
+     (coluna AH), confere lendo de volta e insiste até conseguir
+
+Desde 17/10/2026 o validasp NÃO mexe mais no card do Pipefy — pedido do dono.
 """
 
 import os
 import re
-import json
 import time
 import base64
 import logging
-import threading
 import requests
 from datetime import datetime, timedelta
 from urllib.parse import urlencode
 
-import gspread
-from base64 import b64decode
-from google.oauth2.service_account import Credentials
-
+from . import fila
 from .zapi import enviar_texto, enviar_multiplos
 from ..atualizaspbotao.utils import as_string
 
 logger = logging.getLogger(__name__)
 
-SCOPES = [
-    'https://www.googleapis.com/auth/spreadsheets',
-    'https://www.googleapis.com/auth/drive',
-]
-
 CONFIG = {
     'SECRET':           os.getenv('VALIDASP_SECRET', ''),
-    'SPREADSHEET_ID':   '1lrP1HOvwqyXiVdP2kuTgG7sJjl2QXl0WT4lwkd392DA',
-    'PIPEFY_FIELD_ID':  'valida_o_sp_1',
     'ANUENCIA_WEBHOOK': 'https://hook.us1.make.com/dxn4jftghu92lpdw7hs9mlzr7s7tpx9m',
     'ENCURTADOR_URL':   'https://aplicacoes.bwsconstrucoes.com.br/encurtador/novo',
-    'FALHA_SHEET':      'FalhaProcessar',
-    'SPSBD_DELAY_S':    90,   # segundos entre tentativas
-    'SPSBD_TENTATIVAS': 2,    # número máximo de tentativas
 }
 
 
@@ -109,11 +96,15 @@ def validar_payload(payload: dict):
 
 def executar(payload: dict) -> dict:
     """
-    Executa as seções síncronas e dispara SPsBD em background.
-    Retorna resultado sem esperar o SPsBD.
+    Guarda a validação na fila e manda as mensagens.
+    Retorna sem esperar a planilha — quem grava o "Sim" é o vigia da fila.
     """
     resultado = {'secoes': {}}
     p = _normalizar_payload(payload)  # decodifica campos base64
+
+    # 1. A validação entra na fila antes de qualquer mensagem sair
+    resultado['secoes']['spsbd'] = fila.registrar(as_string(p.get('id')))
+    fila.garantir_vigia()
 
     # Credenciais Z-API do payload
     zapi_config = {
@@ -121,10 +112,6 @@ def executar(payload: dict) -> dict:
         'api_token':    as_string(p.get('zapi_api_token')),
         'client_token': as_string(p.get('zapi_client_token')),
     }
-
-    # 1. Atualiza campo Pipefy
-    resultado['secoes']['pipefy'] = _atualizar_campo_pipefy(p)
-    ok_pipefy = resultado['secoes']['pipefy'].get('ok', False)
 
     # 2. Gera e encurta link de anuência — apenas se anuente existir
     anuente_bloco = p.get('msg_anuente') or {}
@@ -157,69 +144,7 @@ def executar(payload: dict) -> dict:
             'motivo': 'Anuente não informado — mensagem não enviada.'
         }
 
-    # 3c. Envia msg de erro Pipefy se falhou
-    if not ok_pipefy:
-        resultado['secoes']['zapiErroPipefy'] = _enviar_msg_erro_pipefy(
-            p, zapi_config
-        )
-    else:
-        resultado['secoes']['zapiErroPipefy'] = {
-            'ok': True, 'ignorado': True,
-            'motivo': 'Pipefy atualizado com sucesso.'
-        }
-
-    # 4. SPsBD em background — não bloqueia o response
-    resultado['secoes']['spsbd'] = {
-        'ok': True, 'background': True,
-        'motivo': 'Atualização do SPsBD iniciada em background (até 3 min).'
-    }
-    threading.Thread(
-        target=_spsbd_com_retry,
-        args=(p,),
-        daemon=True
-    ).start()
-
     return resultado
-
-
-# ---------------------------------------------------------------------------
-# 1. PIPEFY
-# ---------------------------------------------------------------------------
-
-def _atualizar_campo_pipefy(p: dict) -> dict:
-    token = os.getenv('PIPEFY_API_TOKEN', '')
-    if not token:
-        return {'ok': False, 'ignorado': True, 'motivo': 'PIPEFY_API_TOKEN não configurado'}
-
-    query = """
-    mutation {
-      updateCardField(input: {
-        card_id: "%s"
-        field_id: "%s"
-        new_value: "Sim"
-      }) { success }
-    }
-    """ % (as_string(p.get('id')), CONFIG['PIPEFY_FIELD_ID'])
-
-    try:
-        resp = requests.post(
-            'https://api.pipefy.com/graphql',
-            json={'query': query},
-            headers={
-                'Authorization': f'Bearer {token}',
-                'Content-Type': 'application/json',
-            },
-            timeout=15,
-        )
-        data = resp.json()
-        ok = bool(
-            data.get('data', {})
-                .get('updateCardField', {})
-                .get('success')
-        )
-        return {'ok': ok, 'response': data}
-    except Exception as e:
-        return {'ok': False, 'erro': str(e)}
 
 
 # ---------------------------------------------------------------------------
@@ -309,82 +234,3 @@ def _enviar_msg_anuente(p: dict, short_url: str, zapi_config: dict) -> dict:
     mensagem = mensagem.replace('__link_anuencia__', short_url)
     mensagem = mensagem.replace('__LINK_ANUENCIA__', short_url)  # fallback maiúsculas
     return enviar_texto(tel, mensagem, zapi_config=zapi_config)
-
-
-def _enviar_msg_erro_pipefy(p: dict, zapi_config: dict) -> dict:
-    bloco    = p.get('msg_erro_pipefy') or {}
-    tel      = as_string(bloco.get('telefone', ''))
-    mensagem = _decodificar_b64_inline(as_string(bloco.get('mensagem', '')))
-
-    if not _telefone_valido(tel) or not mensagem:
-        return {'ok': False, 'motivo': 'telefone ou mensagem de erro ausente'}
-
-    return enviar_texto(tel, mensagem, zapi_config=zapi_config)
-
-
-# ---------------------------------------------------------------------------
-# 4. SPSBD EM BACKGROUND — retry com delay de 90s
-# ---------------------------------------------------------------------------
-
-def _spsbd_com_retry(p: dict):
-    """
-    Roda em thread separada.
-    Tenta 2 vezes com intervalo de 90s entre cada tentativa.
-    Se ambas falharem, grava em FalhaProcessar.
-    """
-    id_val     = as_string(p.get('id'))
-    tentativas = CONFIG['SPSBD_TENTATIVAS']
-    delay      = CONFIG['SPSBD_DELAY_S']
-
-    for tentativa in range(1, tentativas + 1):
-        logger.info(f"[SPsBD] Tentativa {tentativa}/{tentativas} para SP {id_val} "
-                    f"(aguardando {delay}s...)")
-        time.sleep(delay)
-
-        try:
-            gc = _get_gc()
-            ss = gc.open_by_key(CONFIG['SPREADSHEET_ID'])
-            sh = ss.worksheet('SPsBD')
-
-            values = sh.col_values(1)
-            row    = None
-            for i in range(len(values) - 1, 0, -1):
-                if as_string(values[i]) == id_val:
-                    row = i + 1
-                    break
-
-            if row:
-                sh.update_cell(row, 34, 'Sim')  # coluna AH = 34
-                logger.info(f"[SPsBD] SP {id_val} atualizada na linha {row} "
-                            f"(tentativa {tentativa}).")
-                return  # sucesso — encerra a thread
-
-            logger.warning(f"[SPsBD] SP {id_val} não encontrada (tentativa {tentativa}).")
-
-        except Exception as e:
-            logger.error(f"[SPsBD] Erro na tentativa {tentativa} para SP {id_val}: {e}")
-
-    # Todas as tentativas falharam — grava em FalhaProcessar
-    logger.warning(f"[SPsBD] SP {id_val} não encontrada após {tentativas} tentativas. "
-                   f"Gravando em FalhaProcessar.")
-    try:
-        gc = _get_gc()
-        ss = gc.open_by_key(CONFIG['SPREADSHEET_ID'])
-        sh = ss.worksheet(CONFIG['FALHA_SHEET'])
-        agora = datetime.now().strftime('%d/%m/%Y %H:%M')
-        sh.append_row([id_val, agora, 'Validar'])
-    except Exception as e:
-        logger.error(f"[SPsBD] Erro ao gravar FalhaProcessar para SP {id_val}: {e}")
-
-
-# ---------------------------------------------------------------------------
-# AUTH GOOGLE
-# ---------------------------------------------------------------------------
-
-def _get_gc():
-    creds_b64 = os.getenv('GOOGLE_CREDENTIALS_BASE64', '')
-    if not creds_b64:
-        raise RuntimeError('GOOGLE_CREDENTIALS_BASE64 não configurado.')
-    creds_dict = json.loads(b64decode(creds_b64).decode('utf-8'))
-    creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
-    return gspread.authorize(creds)

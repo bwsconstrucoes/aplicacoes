@@ -565,7 +565,11 @@ Retorna `response` com HTML pronto pra exibir.
 
 ### 5.7 ValidaSP (`/api/validasp`)
 
-⚠️ Detalhar quando precisar mexer.
+Validação de SP chamada pelo Make: guarda a validação numa fila no banco
+(`validasp.pendencias`, migração 084), manda o link de anuência e os WhatsApps,
+e um vigia dentro do serviço grava `Sim` na coluna AH da SPsBD, conferindo por
+leitura, até conseguir. **Não mexe no Pipefy desde 17/10/2026.** Rotas, fila e
+variáveis em `app/apps/validasp/README.md`; decisões em `HISTORICO.md` ao lado.
 
 ### 5.8 Chatbot (`/api/chatbot`)
 
@@ -797,6 +801,17 @@ Quando eu pedir nova feature ou adaptação:
 ---
 
 ## 9. Histórico de decisões arquiteturais
+
+### 17/10/2026 — ValidaSP: a validação vai para uma fila no banco, e o Pipefy sai (atravessa áreas)
+
+Pedido do dono: parar de mexer no card do Pipefy e **garantir** o "Sim" na
+SPsBD, porque apareciam SPs validadas sem a marcação. A tarefa que gravava
+vivia só na memória do serviço (um reinício a apagava sem rastro) e o plano B
+era escrever no mesmo Google que tinha falhado. Agora a validação entra numa
+tabela do banco do ERP antes da resposta e um vigia insiste até ler o "Sim" de
+volta. Atravessa áreas por um motivo só: a tabela nasce na **migração 084 do
+ERP** (`084_validasp_fila.sql`), aplicada pelo botão. O validasp ganhou
+`README.md` e `HISTORICO.md` e uma linha na tabela de áreas do `CLAUDE.md`.
 
 ### 17/10/2026 — `tests/conftest.py`: o ponto "vale desde 2000" nos testes (atravessa áreas)
 

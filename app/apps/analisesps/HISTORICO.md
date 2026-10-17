@@ -12228,6 +12228,87 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 237 — Validação: só a planilha, trava no Agendar e etiqueta "Validar" (17/10/2026)
+
+- **Levas 235, 236 e 237 publicadas em 17/10/2026** (suíte inteira verde). Sem
+  migração. Falta ele: "Atualizar cadastro" em Colaboradores (traz Recebe via SP,
+  Valor do Mês etc.) e abrir Gratificados e Pagamento via SP.
+
+- *"Se está aplicando alguma atualização no card do Pipefy (…) não quero mais
+  atualizar o card, quero atualizar só a planilha (…) não pode agendar (…) o que
+  não esteja validado, que não esteja com a chave Pix atualizada (…) modal de
+  alerta (…) colocar a tag de validar."*
+- **Conferido:** validar (com a senha) NUNCA tocou o Pipefy — grava no banco e vai
+  pela fila para a coluna AH da planilha. Agora há teste que falha se alguém
+  ligar o Pipefy nesse caminho, e os textos da senha dizem "o card do Pipefy não
+  é alterado". (O "Validação SP = Sim" que a folha põe nas SPs que ELA cria é
+  outra coisa: vai na criação do card, e é o que dispensa os anexos.)
+- **O que faltava:** a trava do Agendar/Agendado por validação só existia no botão
+  da ficha; agendar em lote passava. Agora a trava é no servidor (como as de
+  "Atualizar Pix" e "Atualizar SP"): Validação diferente de "Sim" numa SP a pagar
+  recusa o pedido inteiro, e a tela abre uma JANELA com cada SP presa e o motivo
+  (não validada / chave Pix / sem obra), com "Agendar só as N liberadas".
+- **Etiqueta "Validar"** (vermelha) ao lado do número, junto de "Atualizar Pix",
+  na lista e na ficha. Regra: Validação ≠ "Sim" e a SP não está paga nem
+  cancelada — "Não" também conta.
+
+#### Leva 236 — Gratificados e Pagamento via SP (17/10/2026)
+
+- *"Eu quero criar duas novas telas (…) gratificados (…) e PJ e Pró-labore (…)
+  pagamento via SP (…) um SP por pessoa (…) cada um com o seu rateio (…) desconto
+  ou acréscimo (…) a visão do todo e do que está acontecendo naquela quinzena e na
+  outra."* Fonte: a aba GM da planilha `1Q39sdTbZ4edNthTU3HsCc8ahkBLWfqOcffbBXp3_RI8`
+  (as duas QUERY que ele mandou estão na docstring de `gratificados.py`).
+- **Quem entra** (a QUERY da GM): não desligado E (PJ, Pró-labore, Autônomo
+  Mensalista, Estágio OU "Recebe Gratificação Mensal" = Sim). "Recebe via SP" =
+  Sim vai para a tela **Pagamento via SP**; os demais, para **Gratificados**.
+- **Quanto:** valor do mês = Valor da Gratificação; sem ela, Valor do Mês (os dois
+  diferentes = alerta, vale a gratificação). Sem parcela única: metade na quinzena
+  e o resto no fim (o centavo da divisão vai para o fim). Parcela única: tudo no
+  fim — na quinzena a pessoa aparece "só no fim do mês", acinzentada. Mais o
+  **desconto/acréscimo** da pessoa naquele período, com motivo obrigatório.
+- **Obra:** escolhida na tela (uma, ou dividida em %, vale para todos os meses) >
+  regra do Rateio das obras > ponto > cadastro (marcada "confira"). A conta é a da
+  obra de maior parte.
+- **Gratificados** gera BeeVale/SomaPay como as outras folhas (verba
+  "gratificacao", grupo "Gratificados e Mensalistas" no Pipefy, uma SP por conta).
+  **Via SP** não gera arquivo de banco: grava a relação de cada conta (pessoa,
+  credor, Pix, valor, rateio), o PDF e a análise; em Arquivos gerados, **uma SP por
+  pessoa**, título "Pagamento via SP - NOME", favorecido = credor PJ (Nome Credor +
+  Pix CNPJ) ou a pessoa (Pessoa Física + CPF), rateio múltiplo dela.
+- **A trava é por pessoa:** quem já saiu numa geração do período vem "já gerado"
+  e não entra de novo; excluir a geração devolve.
+- **Sem migração.** Os campos novos do cadastro (Recebe Gratificação Mensal, Valor
+  do Mês, Recebe via SP, Nome Credor, Pix CNPJ, Chave Pix Tipo, Chave Pix) vão no
+  JSON de documentos (047), procurados pelo nome; sem o nome, pela posição BE/BG/BI
+  só se o cabeçalho dali tiver a palavra certa. Ajustes, seleção, obras e lotes
+  ficam em `analisesps.meta`.
+- **Correção de documentação:** a coluna T da aba oculta (BI) é "Recebe via SP" —
+  o §7.14.3 do `docs/FOLHA_DE_PAGAMENTO.md` a tinha lido como "BeeVale × SomaPay".
+- **Não verificado / a confirmar com ele:** (1) os títulos exatos das colunas no
+  cadastro — depois de publicar, rodar "Atualizar cadastro"; a tela avisa se não
+  vierem; (2) a CHAVE PIX vai escrita na descrição da SP — o campo de chave do
+  pipe segue "Aleatória / Atualizar Chave" (só a chave aleatória vai no campo),
+  porque os campos de chave CPF/CNPJ/e-mail do pipe não foram conferidos; (3) se o
+  pipe aceita "Pessoa Física" com o campo de CPF — a prévia bloqueia se a opção
+  não existir, e o Pipefy recusa sem criar nada se faltar campo.
+- **Pendente AGORA:** publicar (com a 235), atualizar o cadastro, abrir as duas
+  telas e conferir quem caiu em cada uma.
+
+#### Leva 235 — Pagamento avulso: a mesma pessoa duas vezes (17/10/2026)
+
+- **Incidente:** *"duas pessoas foram pagas duplicado e não tinha nenhum alerta
+  (…) o sistema só somou e gerou o arquivo"*. Havia só uma frase pequena na
+  linha, e as duas linhas vinham marcadas — o arquivo consolidava somando.
+- **Feito:** (1) quadro VERMELHO no alto da tela com cada pessoa repetida, as
+  linhas e valores e quanto vai ser pago; pendência na lateral e indicador
+  "Pessoas repetidas"; selo "REPETIDO 2/2" na linha. (2) A 1ª vez vem marcada; as
+  SEGUINTES vêm DESMARCADAS — pagar de novo é decisão. (3) Com a mesma pessoa
+  marcada mais de uma vez, a janela de gerar mostra o aviso ("está marcado(a) 2
+  vezes, R$ a + R$ b = R$ c") e o arquivo só sai com "gerar com aviso".
+- Escolha minha: desmarcar a repetida por padrão (em vez de só avisar) — o erro
+  caro é pagar em dobro; se for para pagar as duas, basta marcar.
+
 #### Leva 234 — RG, emissão, órgão e UF da planilha de cadastro da SomaPay (16/10/2026)
 
 - *"As informações entre as colunas E e H [RG, data de emissão, órgão emissor,
