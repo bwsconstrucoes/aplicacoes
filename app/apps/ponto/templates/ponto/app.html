@@ -342,6 +342,7 @@
       <div id="mes-resumo"></div>
       <button class="btn sec oculto" id="mes-varios" type="button">✏️ Corrigir vários dias</button>
     </div>
+    <div class="cartao oculto" id="mes-qualidade"></div>
     <div class="cartao"><div id="mes-dias"></div></div>
   </section>
 
@@ -1338,7 +1339,60 @@ async function carregarMes() {
     MES_DADOS = d;
     $("mes-varios").classList.toggle("oculto", !(EU && EU.pede_no_celular) || !!d.competencia_fechada);
     ligarDias("mes-dias", d, x => abrirCorrecao(x), x => irParaPedido(x.data));
+    carregarMeuPontoEmDia();
   } catch (e) { if (e.status === 401) return mostrar("entrar"); aviso(e.message, "erro"); }
+}
+
+// --- o ponto em dia (17/10/2026, core/qualidade.py) -----------------------------
+// O dono: "todo mundo que entrar no ponto enxergar de forma fácil os problemas
+// seus (…) e até do que está certo". A pessoa vê o dela; quem responde por um
+// ponto da obra vê a equipe (o menu, "Ponto da minha equipe").
+const MEDALHA = {OURO: "🥇", PRATA: "🥈", BRONZE: "🥉", ATENCAO: "⚠️"};
+function blocoDoPontoEmDia(q, titulo) {
+  if (!q.dias_trabalho) return `<h3 style="margin:0 0 4px">${esc(titulo)}</h3><p class="pequeno">Ainda nenhum dia de trabalho neste mês.</p>`;
+  const selo = q.selo ? `${MEDALHA[q.selo.codigo] || ""} ${esc(q.selo.rotulo)} · ${q.pontos} pontos` : "";
+  const problemas = (q.problemas || []).slice(0, 12).map(x => `<li>${esc(dataBR(x.data).slice(0, 5))} — ${esc(x.texto)}</li>`).join("");
+  return `<h3 style="margin:0 0 4px">${esc(titulo)}</h3>
+    <div style="font-size:22px; font-weight:800">${q.indice}% <small style="font-size:14px; font-weight:600">${selo}</small></div>
+    <p class="pequeno">${q.dias_em_dia} de ${q.dias_trabalho} dias de trabalho com todas as batidas na hora${
+      q.fotos_ok != null ? ` · ${q.fotos_ok}% das fotos boas` : ""}.</p>
+    ${q.ajustes ? `<p class="pequeno" ${q.muitos_ajustes ? `style="color:var(--vermelho); font-weight:700"` : ""}>${q.ajustes} pedido(s) de ajuste no mês${
+      q.muitos_ajustes ? ` — acima do limite de ${q.limite_ajustes}: bata na hora para não precisar pedir` : ""}.</p>` : ""}
+    ${problemas ? `<details ${q.indice < 85 ? "open" : ""}><summary class="pequeno" style="cursor:pointer">O que melhorar (${(q.problemas || []).length})</summary>
+        <ul class="pequeno" style="margin:4px 0 0 18px; padding:0">${problemas}</ul></details>`
+      : `<p class="pequeno">✅ Nenhum problema neste mês. Continue assim!</p>`}`;
+}
+async function carregarMeuPontoEmDia() {
+  const caixa = $("mes-qualidade");
+  try {
+    const q = await chamar(`/ponto/app/api/qualidade/meu?competencia=${MES}`);
+    q.limite_ajustes = q.limite_ajustes ?? 3;
+    caixa.innerHTML = blocoDoPontoEmDia(q, "Meu ponto em dia");
+    caixa.classList.remove("oculto");
+  } catch (e) { caixa.classList.add("oculto"); }
+}
+async function abrirQualidadeEquipe(mes) {
+  mes = mes || hojeISO().slice(0, 7);
+  $("dlg-corpo").innerHTML = `<h2 style="margin:0 0 6px">Ponto da minha equipe</h2><p class="pequeno">Calculando o mês…</p>`;
+  if (!$("dlg").open) $("dlg").showModal();
+  let d;
+  try { d = await chamar(`/ponto/app/api/qualidade/equipe?competencia=${mes}`); }
+  catch (e) { $("dlg-corpo").innerHTML = `<h2 style="margin:0 0 6px">Ponto da minha equipe</h2><div class="aviso erro">${esc(e.message)}</div>`; return; }
+  const g = d.geral, [a, m] = mes.split("-");
+  const atencao = [...d.pessoas].sort((x, y) => (x.pontos ?? 101) - (y.pontos ?? 101));
+  $("dlg-corpo").innerHTML = `<h2 style="margin:0 0 6px">Ponto da minha equipe — ${m}/${a}</h2>
+    <p class="pequeno">As pessoas que bateram no aparelho de que você é responsável. Ajude quem está com problema a bater completo e na hora.</p>
+    <div class="aviso info"><b>${g.indice == null ? "—" : `${g.indice}%`}</b> dos dias de trabalho com todas as batidas na hora ·
+      ${g.faltas} falta(s) · ${g.incompletos} dia(s) com batida faltando · ${g.ajustes} ajuste(s) pedidos</div>
+    <div class="linha" style="margin:8px 0"><button class="btn sec" type="button" id="qe-ant">‹ Mês anterior</button></div>
+    ${atencao.length ? atencao.map(p => `<details style="border-top:1px solid #DDE3EA; padding:8px 0">
+        <summary style="cursor:pointer"><b>${esc(p.nome)}</b> — ${p.selo ? `${MEDALHA[p.selo.codigo] || ""} ${p.pontos}` : "sem dia de trabalho"}
+          <small class="pequeno"> · ${p.dias_em_dia}/${p.dias_trabalho} dias em dia${p.muitos_ajustes ? " · ⚠️ muitos ajustes" : ""}</small></summary>
+        ${(p.problemas || []).length ? `<ul class="pequeno" style="margin:4px 0 0 18px; padding:0">${p.problemas.slice(0, 15).map(x =>
+            `<li>${esc(dataBR(x.data).slice(0, 5))} — ${esc(x.texto)}</li>`).join("")}</ul>` : `<p class="pequeno">✅ Nenhum problema.</p>`}
+      </details>`).join("") : `<p class="pequeno">Ninguém bateu no seu aparelho neste mês.</p>`}`;
+  $("qe-ant").onclick = () => { const d0 = new Date(+a, +m - 2, 1);
+    abrirQualidadeEquipe(`${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, "0")}`); };
 }
 
 // --- corrigir um dia --------------------------------------------------------
@@ -2441,6 +2495,9 @@ async function abrirMenu() {
                                acao: () => mostrarMeuQr()});
   }
 
+  // Quem responde por um ponto da obra (ou de equipe) vê o ponto em dia da equipe (17/10/2026).
+  if (pode.qualidade_equipe) ops.push({icone: "🏆", titulo: "Ponto da minha equipe",
+    sub: "quem está batendo completo — e quem precisa de ajuda", acao: () => abrirQualidadeEquipe()});
   $("m-opcoes").innerHTML = ops.map((o, i) => `<button type="button" class="opcao ${o.principal ? "principal" : ""} ${o.desligada ? "desligada" : ""}" data-op="${i}">
       <span class="icone">${o.icone}</span><span>${esc(o.titulo)}<small>${esc(o.sub)}</small></span></button>`).join("");
   $("m-opcoes").querySelectorAll("[data-op]").forEach(b => b.addEventListener("click", () => {

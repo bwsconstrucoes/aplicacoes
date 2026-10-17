@@ -41,6 +41,12 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1zg. **No ramo, esperando o "pode"** (17/10/2026, sem migração), junto com a 1ze e a 1zf — a
+   **QUALIDADE DO PONTO** (`core/qualidade.py`): aba **Qualidade** no ERP (ranking por obra, por responsável
+   pelo ponto da obra e por pessoa, com índice "ponto em dia", fotos boas, faltas, batida faltando, ajustes,
+   pontos e selo 🥇🥈🥉⚠️); no aplicativo, o quadro **"Meu ponto em dia"** em Meu mês e, para quem
+   responde por um ponto da obra ou de equipe, **"🏆 Ponto da minha equipe"** no menu. Limite de ajustes
+   configurável na própria aba (nasce em 3/mês). Ver a seção de 17/10/2026 (tarde).
 1zf. **No ramo, esperando o "pode"** (16–17/10/2026, sem migração), junto com a 1ze — as telas do ERP
    (pedido do dono: "melhorar o sidebar em relação a filtragens e deixar mais padronizado"):
    **Mosaico** com os filtros na barra da esquerda e, por padrão, só as obras COM batida no dia (com
@@ -238,6 +244,47 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 17/10/2026 (tarde) — A qualidade do ponto: ranking, selo e o que cada um vê
+
+O dono respondeu às perguntas da proposta: *"quantos ajustes por mês a pessoa
+vira alerta? Define aí pra mim, pode ser algo configurável"*; quem vê o quê
+depende do acesso — *"se ela apenas visualiza seus dados, vê só o dela; se for o
+acesso de ponto da obra ou de equipe, vai ter uma visão ampla das pessoas
+relacionadas com ele (…) ele é responsável por aquelas pessoas, precisa
+batalhar para que o ponto seja batido por completo"*; e *"ranking e gamificação
+já podem ser colocados agora dentro do ERP, na seção do ponto, para a gente já
+estar entendendo; depois a gente pensa se divulga"*.
+
+**As regras** (`core/qualidade.py`, com o porquê de cada uma no topo do arquivo):
+dia de trabalho = situação Normal, Falta ou Batida faltando no espelho; **dia em
+dia** = com todas as batidas previstas feitas na hora (sem falta, sem batida
+faltando, sem batida incluída por ajuste); **índice** = dias em dia ÷ dias de
+trabalho; **fotos boas** = batidas do aplicativo com foto e sem sinal; **ajustes**
+= pedidos de ajuste de batida no mês (os negados contam); **pontos** = 70% do
+índice + 30% das fotos − 5 por ajuste acima do limite; **selo** Ouro ≥ 95, Prata
+≥ 85, Bronze ≥ 70, Atenção abaixo. Limite de ajustes: **3 por mês** (escolha minha,
+como ele pediu), mudável na aba Qualidade por quem configura o ponto. A obra de
+um dia é a da primeira batida; a falta vai para a obra em que a pessoa mais bateu
+no mês (a do cadastro só para quem não bateu em nenhuma). A equipe de um
+responsável = quem bateu nos aparelhos de obra ou de equipe dele no mês, mais a
+lista do aparelho de equipe.
+
+**Quem vê:** a gestão, na aba Qualidade, as obras que alcança (o supervisor
+preso a obra não vê as outras); a pessoa, o dela (Meu mês); o responsável pelo
+ponto da obra, a equipe (menu "Ponto da minha equipe" — só aparece para quem
+responde por aparelho aprovado). Ranking e selo ficam por ora só para dentro
+(ERP e responsável); divulgar para todos é decisão dele, depois.
+
+**Desempenho:** o cálculo usa o espelho de cada pessoa (o mesmo da exportação
+CSV); com centenas de pessoas, a primeira abertura de "todas as obras" leva
+alguns segundos — recortar por obra é mais rápido. O resultado fica guardado 10
+minutos, e é refeito quando chega batida ou pedido novo.
+
+**Testes:** `tests/test_ponto_qualidade_banco.py` (regras puras do selo e do dia,
+ranking da gestão com limite de ajustes e escopo do supervisor, a pessoa e o
+responsável no aplicativo) e conferido no navegador (aba Qualidade, "Meu ponto
+em dia", "Ponto da minha equipe").
 
 ## 17/10/2026 — Em aberto: dados de teste, WhatsApp e o painel de problemas
 

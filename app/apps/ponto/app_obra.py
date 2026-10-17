@@ -94,6 +94,8 @@ def app_api_inicio():
         bate_no_meu = bool(p) and not da_obra and forma_de_bater.pode_no_celular(p, forma_de_bater.em_vigor(conn))
         pede_o_meu = bool(p) and papeis.pede_pelo_proprio_celular(conn, p)
         administrativo = papeis.e_administrativo(conn, p)
+        from .core import qualidade
+        responde_por_equipe = bool(p) and qualidade.e_responsavel(conn, int(p["id"]))
     # No ponto da obra, "você entrou como" é o papel DA PESSOA aqui — não o do
     # aparelho (10/10/2026: a tela dizia "você entrou como ponto da obra").
     papel_aqui = None
@@ -110,7 +112,9 @@ def app_api_inicio():
               "entregar_aqui": bool(da_obra), "pedir_o_meu": pede_o_meu,
               "consultar": not alc.vazio, "consultar_pelo_cpf": bool(da_obra),
               "pedir_por_outros": bool(alc.pode_pedir and not alc.vazio),
-              "qr_por_cpf": bool(da_obra), "meu_qr": bool(p) and not da_obra},
+              "qr_por_cpf": bool(da_obra), "meu_qr": bool(p) and not da_obra,
+              # o ranking da equipe de quem responde por um ponto da obra (17/10/2026)
+              "qualidade_equipe": responde_por_equipe},
         alcance=_alcance_json(alc))
 
 

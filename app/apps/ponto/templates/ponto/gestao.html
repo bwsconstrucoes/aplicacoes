@@ -14,6 +14,7 @@
 {% block titulo %}Ponto — {{ {
   "ponto_hoje": "Hoje", "ponto_espelho": "Espelho", "ponto_pendencias": "Validações",
   "ponto_mosaico": "Mosaico", "ponto_pessoas": "Pessoas", "ponto_banco": "Banco de horas", "ponto_alertas": "Alertas",
+  "ponto_qualidade": "Qualidade",
   "ponto_config": "Configuração"}.get(aba_ponto, "Ponto") }} — ERP BWS{% endblock %}
 {% block classe_corpo %}{% if aba_ponto in ("ponto_pendencias", "ponto_banco", "ponto_config", "ponto_rondas") %}sem-filtros{% endif %}{% endblock %}
 
@@ -102,6 +103,21 @@
   <div class="cartao-dica" style="margin-top:16px">
     Aparecem só as obras <b>com batida no dia</b>, com quantas pessoas bateram.
     Escolhida a obra, as fotos aparecem na hora — uma linha por pessoa que bateu.
+  </div>
+
+{% elif aba_ponto == "ponto_qualidade" %}
+  <div class="filtros-cab"><h2>Qualidade</h2></div>
+  <div class="campo"><label for="q-mes">Mês</label>
+    <select id="q-mes" data-sem-busca></select></div>
+  <div class="campo" style="margin-top:10px"><label for="q-obra">Obra</label>
+    <select id="q-obra"><option value="">Todas as minhas obras</option></select></div>
+  <button class="btn" id="q-ver" type="button" style="width:100%; margin-top:14px">Ver</button>
+  <div class="cartao-dica" style="margin-top:16px">
+    <b>Dia em dia</b> = dia de trabalho com todas as batidas previstas feitas na
+    hora — sem falta, sem batida faltando e sem batida incluída por ajuste.
+    <b>Pontos</b> = 70% do índice + 30% das fotos boas, menos 5 por ajuste acima
+    do limite do mês. 🥇 95+ · 🥈 85+ · 🥉 70+ · ⚠️ abaixo disso.
+    Nenhum número aqui é palpite: cada um sai de uma regra escrita.
   </div>
 
 {% elif aba_ponto == "ponto_alertas" %}
@@ -500,6 +516,28 @@
   </div>
   {% endif %}
   <div id="a-enviado"></div>
+</div>
+
+{% elif aba_ponto == "ponto_qualidade" %}
+{# ------------------------------------------------------------- QUALIDADE #}
+<h2>Qualidade do ponto <small id="q-sub">quem está batendo direito — e quem precisa de atenção</small></h2>
+<div id="mensagem"></div>
+<div class="kpis" id="q-kpis"></div>
+<div class="cartao">
+  <div class="cartao-cab"><h3>🏆 Ranking das obras</h3><small>a obra de cada dia é a da primeira batida</small></div>
+  <div class="tabela-rolagem"><div id="q-obras">carregando…</div></div>
+</div>
+<div class="cartao">
+  <div class="cartao-cab"><h3>👷 Responsáveis pelo ponto da obra</h3>
+    <small>as pessoas que bateram no aparelho de que cada um é responsável</small></div>
+  <div class="tabela-rolagem"><div id="q-responsaveis">carregando…</div></div>
+</div>
+<div class="cartao">
+  <div class="cartao-cab"><h3>🙋 Pessoas</h3>
+    <div class="acoes"><button class="btn secundario" type="button" id="q-atencao">Precisam de atenção</button>
+      <button class="btn secundario" type="button" id="q-melhores">As melhores</button></div></div>
+  <div class="suave" id="q-limite" style="font-size:13px; margin-bottom:6px"></div>
+  <div class="tabela-rolagem"><div id="q-pessoas">carregando…</div></div>
 </div>
 
 {% elif aba_ponto == "ponto_rondas" %}
@@ -3029,6 +3067,122 @@ if (els("a-gerar")) els("a-gerar").addEventListener("click", gerarAlertas);
 if (els("a-enviar")) els("a-enviar").addEventListener("click", enviarResumo);
 carregarAlertas();
 carregarResumo();
+
+{% elif aba_ponto == "ponto_qualidade" %}
+// ===========================================================================
+// QUALIDADE — o ranking do ponto (17/10/2026, core/qualidade.py). O dono: "o
+// problema é não se levar a sério a batida e querer ficar pedindo ajuste (…)
+// ranking e gamificação já podem ser colocados agora dentro do ERP".
+// ===========================================================================
+let QUAL = null, Q_ORDEM = "atencao";
+const MEDALHA = {OURO: "🥇", PRATA: "🥈", BRONZE: "🥉", ATENCAO: "⚠️"};
+const pct = v => v == null ? `<span class="suave">—</span>` : `${v}%`;
+const seloQ = n => n.selo ? `<span title="${escapar(n.selo.rotulo)}">${MEDALHA[n.selo.codigo] || ""} ${n.pontos}</span>`
+                          : `<span class="suave">—</span>`;
+const doUrlQ = nome => new URLSearchParams(location.search).get(nome);
+
+async function carregarObrasDaQualidade() {
+  const comp = els("q-mes").value, antes = els("q-obra").value;
+  try {
+    const d = await api(`/erp/api/ponto/obras-com-batida?competencia=${encodeURIComponent(comp)}`);
+    els("q-obra").innerHTML = `<option value="">Todas as minhas obras</option>`
+      + d.obras.map(o => `<option value="${o.id}">${escapar(rotuloObra(o))} · ${contar(o.pessoas, "pessoa", "pessoas")}</option>`).join("");
+    if ([...els("q-obra").options].some(o => o.value === antes)) els("q-obra").value = antes;
+  } catch (e) { falhou(e); }
+}
+
+async function carregarQualidade() {
+  const comp = els("q-mes").value, obra = els("q-obra").value;
+  history.replaceState(null, "", `?competencia=${encodeURIComponent(comp)}${obra ? `&obra=${encodeURIComponent(obra)}` : ""}`);
+  ["q-obras", "q-responsaveis", "q-pessoas"].forEach(id => { els(id).innerHTML = "calculando o mês…"; });
+  try {
+    QUAL = await api(`/erp/api/ponto/qualidade?competencia=${encodeURIComponent(comp)}${obra ? `&obra=${encodeURIComponent(obra)}` : ""}`);
+    desenharQualidade();
+  } catch (e) { falhou(e); }
+}
+
+function desenharQualidade() {
+  const g = QUAL.geral;
+  els("q-sub").textContent = `${mesBR(QUAL.competencia)} · ${contar(g.pessoas, "pessoa", "pessoas")} · até ontem`;
+  const kpi = (rot, valor, cor, sub) => `<div class="kpi estatico ${cor}"><div class="kpi-rotulo">${rot}</div>
+    <div class="kpi-valor">${valor}</div><div class="kpi-sub">${sub}</div></div>`;
+  els("q-kpis").innerHTML = [
+    kpi("Ponto em dia", g.indice == null ? "—" : `${g.indice}%`, "verde", `${g.dias_em_dia} de ${g.dias_trabalho} dias de trabalho`),
+    kpi("Fotos boas", g.fotos_ok == null ? "—" : `${g.fotos_ok}%`, "ciano", `${g.sem_foto} sem foto · ${g.foto_com_sinal} com problema`),
+    kpi("Faltas", g.faltas, "vermelho", "dias sem batida e sem justificativa"),
+    kpi("Batida faltando", g.incompletos, "ambar", "dias em que faltou bater alguma"),
+    kpi("Dias com ajuste", g.dias_com_ajuste, "ambar", `${g.ajustes} pedido(s) de ajuste no mês`),
+    kpi("Muitos ajustes", g.muitos_ajustes_pessoas, g.muitos_ajustes_pessoas ? "vermelho" : "", `pessoas acima de ${QUAL.limite_ajustes} no mês`),
+  ].join("");
+  // A posição é número; a medalha é do SELO (pontos), para não confundir as duas.
+  const posicao = i => `<b>${i + 1}º</b>`;
+  els("q-obras").innerHTML = QUAL.por_obra.length ? `<table><thead><tr><th class="sem-ordem"></th><th class="sem-ordem">Obra</th>
+      <th class="sem-ordem dados">Pessoas</th><th class="sem-ordem dados">Em dia</th><th class="sem-ordem dados">Fotos boas</th>
+      <th class="sem-ordem dados">Faltas</th><th class="sem-ordem dados">Batida faltando</th><th class="sem-ordem dados">Com ajuste</th>
+      <th class="sem-ordem dados">Pontos</th></tr></thead><tbody>
+    ${QUAL.por_obra.map((o, i) => `<tr><td>${posicao(i)}</td><td class="dados"><b>${escapar(o.obra)}</b></td>
+      <td class="dados">${o.pessoas}</td><td class="dados">${pct(o.indice)}</td><td class="dados">${pct(o.fotos_ok)}</td>
+      <td class="dados">${o.faltas}</td><td class="dados">${o.incompletos}</td><td class="dados">${o.dias_com_ajuste}</td>
+      <td class="dados">${seloQ(o)}</td></tr>`).join("")}</tbody></table>`
+    : `<div class="cartao-dica">Nenhum dia de trabalho no mês ainda.</div>`;
+  els("q-responsaveis").innerHTML = QUAL.por_responsavel.length ? `<table><thead><tr><th class="sem-ordem"></th>
+      <th class="sem-ordem">Responsável</th><th class="sem-ordem dados">Pessoas</th><th class="sem-ordem dados">Em dia</th>
+      <th class="sem-ordem dados">Fotos boas</th><th class="sem-ordem dados">Faltas</th><th class="sem-ordem dados">Batida faltando</th>
+      <th class="sem-ordem dados">Ajustes</th><th class="sem-ordem dados">Pontos</th></tr></thead><tbody>
+    ${QUAL.por_responsavel.map((r, i) => `<tr><td>${posicao(i)}</td><td><b>${escapar(r.nome)}</b></td>
+      <td class="dados">${r.pessoas}</td><td class="dados">${pct(r.indice)}</td><td class="dados">${pct(r.fotos_ok)}</td>
+      <td class="dados">${r.faltas}</td><td class="dados">${r.incompletos}</td><td class="dados">${r.ajustes}</td>
+      <td class="dados">${seloQ(r)}</td></tr>`).join("")}</tbody></table>`
+    : `<div class="cartao-dica">Ninguém bateu em ponto da obra com responsável neste mês.</div>`;
+  desenharPessoasDaQualidade();
+}
+
+function desenharPessoasDaQualidade() {
+  els("q-atencao").classList.toggle("secundario", Q_ORDEM !== "atencao");
+  els("q-melhores").classList.toggle("secundario", Q_ORDEM !== "melhores");
+  els("q-limite").innerHTML = `Limite de ajustes: <b>${QUAL.limite_ajustes} por mês</b> — acima dele, a pessoa ganha o aviso
+    “muitos ajustes” e perde 5 pontos por ajuste a mais.${PODE_CONFIGURAR ? ` <button class="link-btn" type="button" id="q-mudar-limite">mudar</button>` : ""}`;
+  if (els("q-mudar-limite")) els("q-mudar-limite").onclick = mudarLimite;
+  // "Precisam de atenção": os menores pontos primeiro; quem não teve dia de trabalho, no fim.
+  const lista = Q_ORDEM === "atencao"
+    ? [...QUAL.pessoas].sort((a, b) => (a.pontos ?? 101) - (b.pontos ?? 101)) : [...QUAL.pessoas];
+  els("q-pessoas").innerHTML = lista.length ? `<table><thead><tr><th class="sem-ordem">Pessoa</th><th class="sem-ordem">Obra</th>
+      <th class="sem-ordem dados">Em dia</th><th class="sem-ordem dados">Fotos boas</th><th class="sem-ordem dados">Faltas</th>
+      <th class="sem-ordem dados">Batida faltando</th><th class="sem-ordem dados">Ajustes</th><th class="sem-ordem dados">Pontos</th>
+      <th class="sem-ordem">Problemas</th></tr></thead><tbody>
+    ${lista.slice(0, 200).map(p => `<tr><td><b>${escapar(p.nome)}</b></td><td class="dados">${escapar(p.obra || "—")}</td>
+      <td class="dados">${pct(p.indice)}<small>${p.dias_em_dia} de ${p.dias_trabalho}</small></td><td class="dados">${pct(p.fotos_ok)}</td>
+      <td class="dados">${p.faltas}</td><td class="dados">${p.incompletos}</td>
+      <td class="dados" ${p.muitos_ajustes ? `style="color:var(--vermelho); font-weight:700" title="acima do limite do mês"` : ""}>${p.ajustes}</td>
+      <td class="dados">${seloQ(p)}</td>
+      <td>${p.problemas.length ? `<details><summary style="cursor:pointer">${contar(p.problemas.length, "problema", "problemas")}</summary>
+          ${p.problemas.slice(0, 30).map(x => `<small>${ddmm(x.data)} · ${escapar(x.texto)}</small>`).join("")}</details>`
+        : `<span class="suave">nenhum</span>`}
+        <small><a href="${linkEspelho(p.id, QUAL.competencia)}">ver espelho</a></small></td></tr>`).join("")}</tbody></table>`
+    : `<div class="cartao-dica">Ninguém com dia de trabalho no mês.</div>`;
+}
+
+async function mudarLimite() {
+  const r = await perguntar({titulo: "Limite de ajustes por mês",
+    aviso: "Acima dele, a pessoa ganha o aviso “muitos ajustes” no ranking e perde 5 pontos por ajuste a mais.",
+    campos: [{nome: "limite", rotulo: "Ajustes por mês", tipo: "number", valor: String(QUAL.limite_ajustes), obrigatorio: true}],
+    textoOk: "Gravar"});
+  if (!r) return;
+  try { await postar("/erp/api/ponto/qualidade/limite", {limite: r.limite}); await carregarQualidade(); }
+  catch (e) { falhou(e); }
+}
+
+preencherMeses(els("q-mes"), /^\d{4}-\d{2}$/.test(doUrlQ("competencia") || "") ? doUrlQ("competencia") : mesAtual());
+els("q-ver").addEventListener("click", carregarQualidade);
+els("q-obra").addEventListener("change", carregarQualidade);
+els("q-mes").addEventListener("change", async () => { await carregarObrasDaQualidade(); carregarQualidade(); });
+els("q-atencao").addEventListener("click", () => { Q_ORDEM = "atencao"; desenharPessoasDaQualidade(); });
+els("q-melhores").addEventListener("click", () => { Q_ORDEM = "melhores"; desenharPessoasDaQualidade(); });
+carregarObrasDaQualidade().then(() => {
+  const obra = doUrlQ("obra");
+  if (obra && [...els("q-obra").options].some(o => o.value === obra)) els("q-obra").value = obra;
+  carregarQualidade();
+});
 
 {% elif aba_ponto == "ponto_rondas" %}
 // ============================================================== RONDAS

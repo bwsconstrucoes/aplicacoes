@@ -45,7 +45,7 @@ from app.apps.erp.routes import bp, login_obrigatorio, permissao
 from . import db, horario, migracoes_runner
 from .core import (acesso, alertas, banco, cadastros, competencias, dispositivos, documentos,
                    envios, escalas, espelho, feriados, filtros, fotos, leitura_atestado, mosaico,
-                   ocorrencias, painel, parametros, qr, rotina, validacao)
+                   ocorrencias, painel, parametros, qr, qualidade, rotina, validacao)
 from .core.ocorrencias import Quem
 from .erros import ErroDeValidacao, ErroDoPonto, NaoEncontrado, Recusada
 
@@ -62,6 +62,7 @@ ABAS = [
     ("ponto_pessoas", "Pessoas", "erp.ponto_pagina_pessoas"),
     ("ponto_banco", "Banco de horas", "erp.ponto_pagina_banco"),
     ("ponto_alertas", "Alertas", "erp.ponto_pagina_alertas"),
+    ("ponto_qualidade", "Qualidade", "erp.ponto_pagina_qualidade"),
     ("ponto_rondas", "Rondas", "erp.ponto_pagina_rondas"),
     ("ponto_config", "Configuração", "erp.ponto_pagina_configuracao"),
 ]
@@ -249,6 +250,13 @@ def ponto_pagina_alertas():
     return _pagina("ponto_alertas")
 
 
+@bp.route("/erp/ponto/qualidade")
+@login_obrigatorio
+@permissao("ver_ponto")
+def ponto_pagina_qualidade():
+    return _pagina("ponto_qualidade")
+
+
 @bp.route("/erp/ponto/rondas")
 @login_obrigatorio
 @permissao("ver_ponto")
@@ -338,6 +346,42 @@ def ponto_api_pessoas_com_batida():
     return _ok(obra=cadastros.obra_para_json(o),
                pessoas=[{"id": int(p["id"]), "nome": p["nome"], "batidas": int(p["batidas"]),
                          "ultimo_dia": p["ultimo_dia"].isoformat()} for p in pessoas])
+
+
+# ---------------------------------------------------------------------------
+# Qualidade do ponto: ranking por obra, responsável e pessoa (17/10/2026,
+# core/qualidade.py)
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/ponto/qualidade")
+@login_obrigatorio
+@permissao("ver_ponto")
+@_api
+def ponto_api_qualidade():
+    """O mês de quem a pessoa alcança: os números, os rankings e quem precisa de
+    atenção. `?obra=` recorta em quem bateu naquela obra no mês."""
+    quem = _quem()
+    inicio, fim = _datas_da_competencia(request.args.get("competencia"))
+    with db.conexao() as conn:
+        if request.args.get("obra"):
+            o = _obra_no_alcance(conn, quem, request.args.get("obra"))
+            ids = [int(p["id"]) for p in filtros.pessoas_com_batida(conn, int(o["id"]), inicio, fim)]
+        else:
+            ids = [int(p["id"]) for p in cadastros.listar_colaboradores(conn, so_ativos=True)
+                   if ocorrencias.pessoa_no_alcance(conn, quem, int(p["id"]))]
+        r = qualidade.avaliar(conn, ids, inicio, fim)
+    return _ok(**r, competencia=f"{inicio:%Y-%m}")
+
+
+@bp.route("/erp/api/ponto/qualidade/limite", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar_ponto")
+@_api
+def ponto_api_qualidade_limite():
+    """Quantos ajustes no mês, no máximo, antes do aviso "muitos ajustes"."""
+    quem, d = _quem(), _corpo()
+    with db.conexao() as conn:
+        n = qualidade.gravar_limite(conn, d.get("limite"), quem.nome)
+    return _ok(limite=n)
 
 
 @bp.route("/erp/api/ponto/hoje")

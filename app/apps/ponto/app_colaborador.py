@@ -460,6 +460,46 @@ def app_api_eu():
                banco=({"saldo": saldo["saldo"], "regime": saldo["regime_rotulo"]} if saldo else None))
 
 
+# ---------------------------------------------------------------------------
+# O ponto em dia (17/10/2026, core/qualidade.py): o meu, e o da minha equipe
+# ---------------------------------------------------------------------------
+def _mes_pedido():
+    from .core import competencias
+    inicio = competencias.primeiro_dia(request.args.get("competencia") or horario.hoje())
+    return inicio, competencias.ultimo_dia(inicio)
+
+
+@bp.route("/app/api/qualidade/meu")
+@auth.exige_colaborador
+def app_api_qualidade_meu():
+    """O meu mês: quantos dias em dia, os pontos, o selo e cada problema."""
+    from .core import qualidade
+    inicio, fim = _mes_pedido()
+    with db.conexao() as conn:
+        quem = _quem(conn)
+        r = qualidade.da_pessoa(conn, quem.colaborador_id, inicio, fim)
+    r.pop("_por_obra", None)
+    return _ok(**r, competencia=f"{inicio:%Y-%m}")
+
+
+@bp.route("/app/api/qualidade/equipe")
+@auth.exige_colaborador
+def app_api_qualidade_equipe():
+    """Quem responde por um ponto da obra (ou de equipe) vê as pessoas que batem
+    no aparelho dele — o dono: "ele é responsável por aquelas pessoas, precisa
+    batalhar para que o ponto seja batido por completo"."""
+    from .core import qualidade
+    inicio, fim = _mes_pedido()
+    with db.conexao() as conn:
+        quem = _quem(conn)
+        if not qualidade.e_responsavel(conn, quem.colaborador_id):
+            raise NaoEncontrado("você não responde por um ponto da obra")
+        ids = qualidade.equipe_do_responsavel(conn, quem.colaborador_id, inicio, fim)
+        r = qualidade.avaliar(conn, ids, inicio, fim)
+    return _ok(geral=r["geral"], pessoas=r["pessoas"], limite_ajustes=r["limite_ajustes"],
+               competencia=f"{inicio:%Y-%m}")
+
+
 @bp.route("/app/api/obra-aqui")
 @auth.exige_colaborador
 def app_api_obra_aqui():
