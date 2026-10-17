@@ -5,10 +5,45 @@ import logging
 import base64
 from flask import Blueprint, request, jsonify
 from .core import validar_payload, executar, CONFIG
+from . import fila
 from ..atualizaspbotao.utils import as_string
 
 logger = logging.getLogger(__name__)
 bp = Blueprint('validasp', __name__)
+
+
+@bp.record_once
+def _ligar_vigia(_estado):
+    # Liga na subida do serviço: o que ficou na fila antes de um reinício volta
+    # a andar sem esperar a próxima validação chegar.
+    fila.garantir_vigia()
+
+
+def _secret_ok() -> bool:
+    payload = request.get_json(silent=True) or {}
+    enviado = payload.get('secret') or request.headers.get('X-ValidaSP-Secret', '')
+    return bool(CONFIG['SECRET']) and enviado == CONFIG['SECRET']
+
+
+@bp.route('/fila', methods=['POST'])
+def rota_fila():
+    """Quanto está esperando para ser marcado na SPsBD, e desde quando."""
+    if not _secret_ok():
+        return jsonify({'ok': False, 'erro': 'Secret inválido.'}), 401
+    try:
+        return jsonify({'ok': True, **fila.resumo()}), 200
+    except Exception as e:
+        logger.exception('ValidaSP: erro ao resumir a fila')
+        return jsonify({'ok': False, 'erro': str(e)[:300]}), 500
+
+
+@bp.route('/fila/processar', methods=['POST'])
+def rota_fila_processar():
+    """Anda com a fila agora, sem esperar o vigia (que roda de 30 em 30 s)."""
+    if not _secret_ok():
+        return jsonify({'ok': False, 'erro': 'Secret inválido.'}), 401
+    fila.garantir_vigia()
+    return jsonify(fila.rodada()), 200
 
 
 @bp.route('/executar', methods=['POST'])
@@ -67,10 +102,6 @@ def _html_resultado(payload: dict, resultado: dict) -> str:
 
     secoes = resultado.get('secoes', {})
 
-    # Pipefy
-    ok_pipefy = secoes.get('pipefy', {}).get('ok', False)
-    linha_pip = "✅ Campo de validação atualizado no Pipefy." if ok_pipefy else "⚠️ Não foi possível atualizar o campo de validação no Pipefy."
-
     # Z-API responsável
     ok_resp    = secoes.get('zapiResponsavel', {}).get('ok', False)
     linha_resp = "✅ Notificação enviada ao responsável via WhatsApp." if ok_resp else "⚠️ Falha no envio da notificação ao responsável."
@@ -84,13 +115,15 @@ def _html_resultado(payload: dict, resultado: dict) -> str:
     else:
         linha_anu = ""
 
-    # SPsBD
+    # SPsBD — a fila garante a gravação; aqui só se diz que ela foi guardada
     ok_spsbd    = secoes.get('spsbd', {}).get('ok', False)
-    linha_spsbd = "✅ Base de dados em atualização." if ok_spsbd else "⚠️ Não foi possível atualizar a base de dados."
+    linha_spsbd = ("✅ Validação registrada. A base de dados é marcada automaticamente em instantes."
+                   if ok_spsbd else
+                   "⚠️ A validação NÃO pôde ser registrada. Avise o setor financeiro com o número desta SP.")
 
     # Monta linhas de status
     linhas_status = ""
-    for linha in [linha_pip, linha_resp, linha_anu, linha_spsbd]:
+    for linha in [linha_spsbd, linha_resp, linha_anu]:
         if linha:
             linhas_status += f"""
                 <p style="text-align:center">
