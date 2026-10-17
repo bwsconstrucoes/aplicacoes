@@ -72,6 +72,14 @@ def test_escala_padrao_faz_a_falta_aparecer(app, mundo, banco):
     with db.conexao() as conn:
         d = espelho.montar(conn, mundo["joao"], ontem, ontem)["dias"][0]
         assert d["situacao"] == "FALTA" and "padrão da empresa" in d["escala"]
+    # 16/10/2026: a lista de Pessoas, a ficha e o painel Hoje dizem a padrão, não "sem escala"
+    joao = next(p for p in dp.get("/erp/api/ponto/pessoas").get_json()["pessoas"] if p["id"] == mundo["joao"])
+    assert joao["escala_e_padrao"] is True and joao["escala"]
+    assert dp.get(f"/erp/api/ponto/pessoas/{mundo['joao']}").get_json()["pessoa"]["escala_padrao"]["id"] == mundo["escala"]
+    hoje = dp.get(f"/erp/api/ponto/hoje?data={ontem.isoformat()}").get_json()
+    linha = next(l for l in hoje["pessoas"] if l["colaborador_id"] == mundo["joao"])
+    assert linha["situacao"] != "SEM_ESCALA" and "padrão da empresa" in linha["escala"]
+    with db.conexao() as conn:
         assert escalas.gravar_padrao(conn, None, "teste") is None
 
 

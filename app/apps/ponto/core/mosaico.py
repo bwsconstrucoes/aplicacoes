@@ -102,6 +102,12 @@ def configurar_obra(conn: Connection, obra_id: int, *, obrigatorio: bool,
 # ---------------------------------------------------------------------------
 # Montar
 # ---------------------------------------------------------------------------
+def _vale(conn: Connection) -> dt.date:
+    """O ponto vale a partir de 16/10/2026 (vigencia.py): antes disso, mosaico vazio."""
+    from . import vigencia
+    return vigencia.inicio(conn)
+
+
 def montar(conn: Connection, obra_id: int, data: dt.date) -> dict:
     """O mosaico de uma obra num dia: uma linha por pessoa que bateu lá."""
     batidas = db.todos(conn, """
@@ -114,10 +120,10 @@ def montar(conn: Connection, obra_id: int, data: dt.date) -> dict:
           LEFT JOIN public.funcoes f ON f.id = c.funcao_id
           LEFT JOIN ponto.colaborador_config pc ON pc.colaborador_id = c.id
           LEFT JOIN ponto.fotos fo ON fo.id = m.foto_id
-         WHERE m.obra_id = :o AND m.data_referencia = :d AND m.status <> 'REJEITADA'
-           AND m.origem <> 'MANUAL'
+         WHERE m.obra_id = :o AND m.data_referencia = :d AND m.data_referencia >= :vale
+           AND m.status <> 'REJEITADA' AND m.origem <> 'MANUAL'
          ORDER BY c.nome, m.colaborador_id, m.timestamp_servidor
-    """, o=obra_id, d=data)
+    """, o=obra_id, d=data, vale=_vale(conn))
     pessoas: dict[int, dict] = {}
     for b in batidas:
         p = pessoas.setdefault(b["colaborador_id"], {
@@ -152,8 +158,8 @@ def montar(conn: Connection, obra_id: int, data: dt.date) -> dict:
 def pendentes(conn: Connection, obras: Optional[list[int]] = None) -> list[dict]:
     sql = """SELECT mo.obra_id, mo.data, mo.batidas, mo.avisado_em, o.codigo, o.nome
                FROM ponto.mosaicos mo JOIN public.obras o ON o.id = mo.obra_id
-              WHERE mo.situacao = 'PENDENTE'"""
-    params: dict = {}
+              WHERE mo.situacao = 'PENDENTE' AND mo.data >= :vale"""
+    params: dict = {"vale": _vale(conn)}
     if obras is not None:
         sql += " AND mo.obra_id = ANY(:obras)"
         params["obras"] = list(obras) or [0]

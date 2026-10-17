@@ -620,3 +620,63 @@ def test_codigo_certo_de_quem_nao_bate_ponto_diz_o_motivo_e_nao_gasta(app, mundo
         conn.commit()
     assert app.test_client().post("/ponto/app/api/pin", json={"cpf": CPF_JOAO, "codigo": codigo,
                                                                "pin": "481927"}).status_code == 200
+
+
+def test_correcao_escolhe_entre_todas_as_obras_cadastradas(app, mundo, monkeypatch):
+    """16/10/2026, o dono: "só tem a obra do cadastro. Não é para ser a obra do
+    cadastro, é para aparecer a relação de obras cadastradas". João é da obra A
+    e trabalhou na B: o aplicativo oferece a B, e o pedido entra."""
+    from tests.test_ponto_gestao_banco import CPF_JOAO, _entrar_no_app, como, _segunda_passada
+    cel = _entrar_no_app(app, CPF_JOAO, monkeypatch)
+    eu = cel.get("/ponto/app/api/eu").get_json()
+    assert {o["codigo"] for o in eu["obras"]} == {"PG-A"}
+    assert {"PG-A", "PG-B"} <= {o["codigo"] for o in eu["obras_cadastradas"]}
+    seg = _segunda_passada()
+    r = como(app, mundo["dp"]).post("/erp/api/ponto/ocorrencias", json={
+        "tipo": "AJUSTE_BATIDA", "colaborador_id": mundo["joao"], "data_inicio": seg.isoformat(),
+        "horario": f"{seg.isoformat()}T07:00:00", "obra": "PG-B", "descricao": "trabalhou na obra B nesse dia"})
+    assert r.status_code in (200, 201), r.get_json()
+
+
+def test_a_ficha_diz_por_que_o_celular_foi_bloqueado(app, mundo):
+    """16/10/2026: "não aparece dentre os aprovados e está dando bloqueado; já tinha
+    sido aprovado e sumiu". A ficha da pessoa mostra o motivo e se foi arquivado."""
+    from tests.test_ponto_gestao_banco import CPF_JOAO, como
+    from tests.test_ponto_regras_0610_banco import _id_do_aparelho
+    uuid = "celular-do-joao-bloqueado-0123456789"
+    app.test_client().post("/ponto/api/dispositivo/registrar", json={"device_uuid": uuid})
+    dp = como(app, mundo["dp"])
+    ap = _id_do_aparelho(dp, uuid)
+    assert dp.post(f"/erp/api/ponto/dispositivos/{ap}/aprovar",
+                   json={"perfil": "INDIVIDUAL", "cpf": CPF_JOAO}).status_code == 200
+    assert dp.post(f"/erp/api/ponto/dispositivos/{ap}/bloquear", json={"motivo": "celular perdido"}).status_code == 200
+    a = next(x for x in dp.get(f"/erp/api/ponto/pessoas/{mundo['joao']}").get_json()["pessoa"]["aparelhos"]
+             if x["id"] == ap)
+    assert a["status"] == "BLOQUEADO" and "celular perdido" in a["motivo_bloqueio"] and a["bloqueado_em"]
+
+
+def test_filtros_obras_com_batida_e_quem_bateu(app, mundo, banco):
+    """16/10/2026: "o padrão de exibição deveria ser as obras que têm ponto" e, no
+    espelho, primeiro a obra, depois a lista de quem bateu nela. Quem bateu em duas
+    obras aparece nas duas; o supervisor da obra A não vê a B."""
+    from tests.test_ponto_gestao_banco import CPF_JOAO, CPF_MARIA, como
+    from app.apps.ponto import db, horario
+    from app.apps.ponto.core import marcacoes
+    with db.conexao() as conn:
+        marcacoes.registrar(conn, cpf=CPF_JOAO, obra="PG-A", origem="IDFACE", via_chave=True)
+    with db.conexao() as conn:
+        marcacoes.registrar(conn, cpf=CPF_JOAO, obra="PG-B", origem="IDFACE", via_chave=True,
+                            agora=horario.agora() + dt.timedelta(minutes=5))
+    with db.conexao() as conn:
+        marcacoes.registrar(conn, cpf=CPF_MARIA, obra="PG-B", origem="IDFACE", via_chave=True)
+    hoje = horario.hoje().isoformat()
+    dp, sup = como(app, mundo["dp"]), como(app, mundo["sup"])
+    obras = {o["codigo"]: o for o in dp.get(f"/erp/api/ponto/obras-com-batida?de={hoje}&ate={hoje}").get_json()["obras"]}
+    assert set(obras) == {"PG-A", "PG-B"} and obras["PG-B"]["pessoas"] == 2
+    comp = hoje[:7]
+    na_b = dp.get(f"/erp/api/ponto/pessoas-com-batida?obra={mundo['obra_b']}&competencia={comp}").get_json()["pessoas"]
+    assert {p["id"] for p in na_b} == {mundo["joao"], mundo["maria"]}
+    assert {o["codigo"] for o in sup.get(f"/erp/api/ponto/obras-com-batida?competencia={comp}").get_json()["obras"]} == {"PG-A"}
+    assert sup.get(f"/erp/api/ponto/pessoas-com-batida?obra={mundo['obra_b']}&competencia={comp}").status_code == 404
+    joao = next(p for p in dp.get("/erp/api/ponto/pessoas").get_json()["pessoas"] if p["id"] == mundo["joao"])
+    assert set(joao["obras_batidas"]) == {"PG-A", "PG-B"}

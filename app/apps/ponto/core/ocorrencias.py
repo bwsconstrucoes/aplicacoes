@@ -192,6 +192,12 @@ def criar(conn: Connection, quem: Quem, dados: dict, *, origem: str = "GESTAO") 
         raise ErroDeValidacao("a data final é antes da inicial", campo="data_fim")
     if (fim - inicio).days + 1 > MAX_DIAS:
         raise ErroDeValidacao(f"no máximo {MAX_DIAS} dias por pedido", campo="data_fim")
+    # O ponto vale a partir de 16/10/2026 (vigencia.py): pedido inteiro antes disso não entra.
+    from . import vigencia
+    vale = vigencia.inicio(conn)
+    if fim < vale:
+        raise ErroDeValidacao(f"o ponto vale a partir de {vale:%d/%m/%Y} — antes disso, nada se lança",
+                              campo="data_inicio")
     descricao = str(dados.get("descricao") or "").strip()
     horario_ajuste, obra_id, dia_trabalhado, minutos = None, None, None, None
 
@@ -209,12 +215,10 @@ def criar(conn: Connection, quem: Quem, dados: dict, *, origem: str = "GESTAO") 
                                        or pessoa.get("obra_id"))
         if not obra:
             raise ErroDeValidacao("diga a obra da batida", campo="obra")
-        # O administrativo pede o ajuste na obra em que ele está (a do alcance),
-        # mesmo que ela não seja a do cadastro da pessoa: ela bateu ali.
-        na_obra_do_alcance = (origem in ("RESPONSAVEL", "APARELHO") and quem.obras is not None
-                              and quem.alcanca_obra(obra["id"]))
-        if not na_obra_do_alcance and obra["id"] not in cadastros.obras_da_pessoa(conn, colaborador_id):
-            raise ErroDeValidacao("essa obra não é da pessoa", campo="obra")
+        # QUALQUER obra cadastrada (decisão do dono, 16/10/2026: "não é para ser a obra
+        # do cadastro, é para aparecer a relação de obras cadastradas"): a pessoa pode
+        # ter trabalhado em outra obra naquele dia, e quem valida o pedido confere.
+        # Antes, só as obras do cadastro dela (ou a do alcance de quem pedia).
         obra_id = int(obra["id"])
         motivo = str(dados.get("motivo") or "").strip().upper()
         if motivo:

@@ -20,7 +20,7 @@ from sqlalchemy.engine import Connection
 
 from .. import db
 from ..erros import ErroDeValidacao
-from . import cadastros, marcacoes
+from . import cadastros, marcacoes, vigencia
 
 MAX_DIAS = 62
 MAX_LINHAS = 20_000
@@ -51,6 +51,7 @@ def periodo(data_inicio, data_fim) -> tuple[dt.date, dt.date]:
 def listar(conn: Connection, *, cpf=None, data_inicio=None, data_fim=None, obra=None,
            status=None) -> dict:
     inicio, fim = periodo(data_inicio, data_fim)
+    inicio = max(inicio, vigencia.inicio(conn))       # o de antes do ponto valer não sai (vigencia.py)
     sql = marcacoes._SQL_MARCACAO + " WHERE m.data_referencia BETWEEN :ini AND :fim"
     params: dict = {"ini": inicio, "fim": fim}
     if cpf:

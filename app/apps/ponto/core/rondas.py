@@ -65,6 +65,12 @@ ATRASO_MAX_ENVIO_MIN = 30      # ronda que passou disto sem sair (serviço fora)
 INTERVALO_RELOGIO_S = 30
 
 
+
+def _vale(conn):
+    """O ponto vale a partir de 16/10/2026 (vigencia.py): ronda de antes não aparece."""
+    from . import vigencia
+    return vigencia.inicio(conn)
+
 def disponivel(conn: Connection) -> bool:
     return db.tem_coluna(conn, "rondas", "id") and db.tem_coluna(conn, "colaborador_config", "faz_ronda")
 
@@ -365,7 +371,8 @@ def da_noite(conn: Connection, dia: dt.date, obras: Optional[list[int]] = None) 
           FROM ponto.rondas r JOIN public.colaboradores c ON c.id = r.colaborador_id
           JOIN ponto.marcacoes m ON m.id = r.entrada_id
           LEFT JOIN public.obras o ON o.id = r.obra_id
-         WHERE r.data_referencia = :d ORDER BY c.nome, r.entrada_id, r.numero""", d=dia)
+         WHERE r.data_referencia = :d AND r.data_referencia >= :vale
+         ORDER BY c.nome, r.entrada_id, r.numero""", d=dia, vale=_vale(conn))
     turnos: dict[int, dict] = {}
     for r in linhas:
         if obras is not None and r.get("obra_id") not in obras:

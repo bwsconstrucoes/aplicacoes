@@ -261,6 +261,8 @@ O dia de uma batida é a `data_referencia`, não a hora do relógio: para o vigi
 noturno, batida antes das 10h pertence ao dia anterior. "Trabalhou" aqui quer
 dizer "tem batida"; presença, horas e faltas são regra da fase 3.
 
+- Desde quando o ponto vale? (16/10/2026, ou a data de Ponto › Configuração › "Início do ponto"; o que vem antes foi teste da implantação — fica guardado e não conta em nada: espelho, folha, banco de horas, qualidade, mosaico, alertas)
+- Quantas batidas o Fulano tem em 10/10/2026? ⚠️ (antes do início do ponto a resposta certa é "nenhuma que conte": havia batidas de TESTE, que não entram em resposta nenhuma — o assistente não deve somá-las)
 - Quem bateu ponto hoje na obra X? 🔒
 - Quantos dias o Fulano trabalhou em setembro? ⚠️ (dia com batida, não jornada cumprida)
 - Quais batidas estão em análise, e por quê? (fora da cerca, obra sem coordenada, relógio, pessoa afastada)
@@ -269,6 +271,16 @@ dizer "tem batida"; presença, horas e faltas são regra da fase 3.
 - Quem pediu a aprovação deste aparelho? (o pedido, desde 14/10/2026, só sai depois de entrar com CPF e PIN, e leva o nome de quem pediu; aparelho "sem nome" é de antes disso)
 - Por que o Fulano não aparece no ponto? 🔒 (a busca de Pessoas responde: falta no ERP, desligado pela data de saída ou pela fase do Pipefy, CPF inválido, "não bate ponto", ou fora da cópia do Registro)
 - Quantas batidas foram recusadas esta semana, e de que aparelho?
+- Que obras tiveram batida ontem, e quantas pessoas bateram em cada uma? 🔒 (a pessoa é da obra quando tem batida nela no dia; batida rejeitada não conta)
+- Quem bateu na obra X neste mês? 🔒 ⚠️ ("bateu na obra" = tem batida nela no mês; quem bateu em duas obras aparece nas duas — não é a obra do cadastro)
+- Em que obra o Fulano bateu em cada dia do mês? 🔒 (coluna Obra do espelho)
+- Qual obra bate o ponto mais completo este mês? E a pior? 🔒 ⚠️ ("completo" = dia em dia: todas as batidas previstas na hora, sem ajuste — `core/qualidade.py`; a falta conta na obra em que a pessoa mais bateu)
+- Quem são as pessoas que mais precisam de atenção no ponto? 🔒 (aba Qualidade, "Precisam de atenção": menores pontos)
+- Quem pediu mais ajustes que o limite neste mês? 🔒 (limite configurável, nasce em 3; os negados contam)
+- Como está a equipe do responsável pelo ponto da obra X? 🔒 ⚠️ ("equipe" = quem bateu nos aparelhos dele no mês, não a obra do cadastro)
+- Quantos pontos o Fulano fez no mês, e por quê? 🔒 (70% índice + 30% fotos boas − 5 por ajuste acima do limite)
+- Quem está batendo numa obra diferente da do cadastro? 🔒 (Pessoas, "Batendo em" em destaque; últimos 30 dias)
+- Por que o celular do Fulano está bloqueado, e quem bloqueou? (`dispositivos.motivo_bloqueio` e `bloqueado_em`; "arquivado por X" = excluído da lista com batidas; "trocado por outro celular" = aprovaram outro aparelho dele)
 - Quais batidas foram feitas sem internet, e quanto tempo demoraram para chegar? 🔒 (`marcacoes.sem_internet`; a hora da batida é `timestamp_servidor`, a chegada é `recebida_em` — desde 16/10/2026, só no ponto da obra)
 - Que obras ficam sem internet com frequência? ⚠️ ("frequência" = dias com batida guardada sem internet no período; depende de o aparelho ter batido nelas)
 - Por que a batida sem internet do Fulano está em conferência? (hora não comprovada — o aparelho reiniciou ou o relógio foi mexido —, ou CPF fora da lista do aparelho; o motivo está na batida)

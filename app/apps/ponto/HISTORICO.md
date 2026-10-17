@@ -41,6 +41,45 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1zi. **PUBLICADO em 17/10/2026** (junção `71ed2e2`, sem migração), junto com a 1ze–1zh — **O PONTO VALE A PARTIR
+   DE 16/10/2026** (o dono: "desconsiderar pra todos os efeitos qualquer lançamento antes disso"). Nada foi
+   apagado; o que vem antes some de tudo (ver a seção de 17/10/2026, noite). A data se muda em Configuração ›
+   Geral › "Início do ponto". E o botão **"Testar a AWS"** (Configuração › Fotos), que diz se o bloqueio da
+   organização é de região (troca no próprio ponto) ou do serviço (só na conta que administra a organização).
+   **Pendente com o dono:** a SCP da AWS (o "0 conferida(s) — parou: (…) SCP bloqueia" de 17/10).
+1zh. **PUBLICADO em 17/10/2026 (junção `71ed2e2`)** (17/10/2026, sem migração), junto com a 1ze–1zg — os **avisos na tela
+   inicial do aplicativo** (o dono: "se aparecer alertas, tem que ser algo mais resumido (…) mas poder adentrar
+   alguma área que detalhe melhor"): uma linha com o problema mais recente da pessoa (ou "✅ seu ponto está em
+   dia"), e, para o responsável pelo ponto da obra, outra com a equipe ("ontem, N pessoas com problema"). O
+   toque abre o detalhe: o selo, os números, "o que aconteceu" dia a dia e "como melhorar"; o da equipe abre
+   "ontem" e as pessoas, piores primeiro. Vermelho = falta ou batida esquecida nos últimos 7 dias; âmbar = outro
+   problema; verde = em dia. Telas mostradas ao dono antes de publicar.
+1zg. **PUBLICADO em 17/10/2026 (junção `71ed2e2`)** (17/10/2026, sem migração), junto com a 1ze e a 1zf — a
+   **QUALIDADE DO PONTO** (`core/qualidade.py`): aba **Qualidade** no ERP (ranking por obra, por responsável
+   pelo ponto da obra e por pessoa, com índice "ponto em dia", fotos boas, faltas, batida faltando, ajustes,
+   pontos e selo 🥇🥈🥉⚠️); no aplicativo, o quadro **"Meu ponto em dia"** em Meu mês e, para quem
+   responde por um ponto da obra ou de equipe, **"🏆 Ponto da minha equipe"** no menu. Limite de ajustes
+   configurável na própria aba (nasce em 3/mês). Ver a seção de 17/10/2026 (tarde).
+1zf. **PUBLICADO em 17/10/2026 (junção `71ed2e2`)** (16–17/10/2026, sem migração), junto com a 1ze — as telas do ERP
+   (pedido do dono: "melhorar o sidebar em relação a filtragens e deixar mais padronizado"):
+   **Mosaico** com os filtros na barra da esquerda e, por padrão, só as obras COM batida no dia (com
+   quantas pessoas); escolher a obra já carrega. **Espelho**: mês (MM/AAAA, em qualquer navegador — o
+   campo de mês do Firefox/Safari mostrava 2026-10), obra (as com batida no mês) e só então a pessoa (quem
+   bateu naquela obra no mês; quem bateu em duas aparece nas duas); coluna **Obra** em cada dia, em
+   destaque quando não é a principal, com as horas de cada obra; no impresso, `[CÓDIGO]` ao lado da hora.
+   **Pessoas**: filtros de obra do cadastro, obra em que está batendo (30 dias), função, escala, situação e
+   "sem PIN"; colunas "Batendo em" e "Função". **Escala padrão**: já existia (Configuração › Jornada ›
+   "Escala padrão da empresa") e o espelho já a usava, mas Pessoas, a ficha e o painel Hoje diziam "sem
+   escala" — agora dizem a padrão (o painel Hoje passou a julgar por ela, como o espelho).
+   **Em aberto com o dono:** o WhatsApp que bloqueia (proposta na seção de 17/10). Os dados de teste e o
+   painel de problemas já foram decididos (1zi e 1zg).
+1ze. **PUBLICADO em 17/10/2026 (junção `71ed2e2`)** (16/10/2026, sem migração). (1) **Correção de ponto em QUALQUER obra
+   cadastrada** — decisão do dono: "não é para ser a obra do cadastro, é para aparecer a relação de obras
+   cadastradas". O aplicativo lista as obras ativas (as da pessoa primeiro) e o servidor deixou de recusar
+   "essa obra não é da pessoa"; quem valida confere. (2) "Celular bloqueado que sumiu dos aprovados": não era
+   defeito achado — os caminhos que bloqueiam são o bloqueio à mão, o "Desativar" de Validações, o
+   **arquivar** (excluir aparelho com batida: fica bloqueado e FORA da lista), aprovar outro celular da mesma
+   pessoa e o desligamento. A ficha da pessoa passou a mostrar o motivo, a data e se foi arquivado.
 1zd. **Batida SEM INTERNET no ponto da obra — PUBLICADA em 16/10/2026, com MIGRAÇÃO 012** (o dono: "pode
    prosseguir e publicar ao final"). **Falta o dono, no momento da publicação:** apertar **"Aplicar
    atualizações do ponto"** (a 012). Antes do botão nada se perde: o tablet guarda e o servidor responde
@@ -218,6 +257,126 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 17/10/2026 (noite) — O ponto vale a partir de 16/10/2026; e o teste da AWS
+
+**Decisão do dono:** *"os pontos deverão ser considerados a partir do dia 16/10/2026.
+Desconsiderar pra todos os efeitos qualquer lançamento antes disso."* Isso responde à
+pergunta "apagar os dados de teste até 15/10?" pelo caminho (C) da seção de 17/10:
+**nada é apagado** — a corrente do NSR fica inteira e os comprovantes continuam
+valendo — e o que vem antes é desconsiderado em tudo.
+
+- `core/vigencia.py`: a data mora no parâmetro `ponto.vale_a_partir_de` (sem nada
+  gravado, 16/10/2026), lida no máximo uma vez por minuto. Muda-se em Configuração ›
+  Geral › "Início do ponto" (só quem configura o ponto).
+- **Onde o corte vale:** espelho (o dia aparece como **"Antes do ponto"**, cinza, sem
+  batida, sem falta, sem previsto — e por isso fora do cálculo, do banco de horas e
+  da folha, que saem do espelho), impresso do espelho, filtros (obras e pessoas com
+  batida), Validações, mosaico, alertas, rondas, painel Hoje, qualidade, e a consulta
+  dos sistemas externos (`consultas.listar`, a do Análise de SPs).
+- **O que não aceita mais nada para antes:** pedido de ajuste, correção, atestado e
+  qualquer ocorrência que termine antes do início ("o ponto vale a partir de
+  16/10/2026 — antes disso, nada se lança"); no aplicativo, os botões de corrigir e
+  lançar somem nesses dias.
+- **O que NÃO foi cortado, de propósito:** o arquivo legal das batidas (o registro
+  do REP, com a corrente do NSR) continua com tudo — tirar o começo quebraria a
+  corrente. Cadastros, aparelhos, PINs, QR e escalas também ficam.
+- **Nos testes:** `tests/conftest.py` põe `PONTO_VALE_A_PARTIR_DE=2000-01-01`, senão
+  todo teste com data antiga cairia em "antes do ponto". Registrado no `CONTEXTO.md`.
+
+**A AWS** (o dono, 17/10: "0 conferida(s) — parou: a AWS recusou a comparação de
+rostos (usuário bws-ponto-rosto): uma regra da ORGANIZAÇÃO da AWS (SCP) bloqueia").
+Agora se sabe que não é o usuário: é a organização (ele mexeu no AWS Organizations
+no opt-out de IA, em 15/10). Feito:
+
+- Botão **"Testar a AWS"** em Configuração › Fotos: pergunta à AWS quem é a conta e
+  tenta comparar duas imagens SEM rosto em seis regiões (não gasta o teto, não
+  confere ninguém). Se alguma região passa, oferece "Usar a região X" — resolve sem
+  mexer na AWS. Se todas barram, diz que é na conta que ADMINISTRA a organização, com
+  o passo a passo.
+- A frase do erro passou a separar os dois jeitos de uma SCP barrar: **"não PERMITE"**
+  (a `FullAWSAccess` foi tirada da conta ou da unidade, ou a lista do que pode não tem
+  o Rekognition — religar) e **"NEGAR"** (uma política com Deny pega o Rekognition —
+  tirar a conta dela).
+- Caminho B, se ele não tiver a conta que administra: uma conta da AWS nova, fora da
+  organização, só para o ponto, e as chaves novas no Render (as chaves nunca no chat).
+- **O botão só existe depois de publicar.**
+
+## 17/10/2026 (tarde) — A qualidade do ponto: ranking, selo e o que cada um vê
+
+O dono respondeu às perguntas da proposta: *"quantos ajustes por mês a pessoa
+vira alerta? Define aí pra mim, pode ser algo configurável"*; quem vê o quê
+depende do acesso — *"se ela apenas visualiza seus dados, vê só o dela; se for o
+acesso de ponto da obra ou de equipe, vai ter uma visão ampla das pessoas
+relacionadas com ele (…) ele é responsável por aquelas pessoas, precisa
+batalhar para que o ponto seja batido por completo"*; e *"ranking e gamificação
+já podem ser colocados agora dentro do ERP, na seção do ponto, para a gente já
+estar entendendo; depois a gente pensa se divulga"*.
+
+**As regras** (`core/qualidade.py`, com o porquê de cada uma no topo do arquivo):
+dia de trabalho = situação Normal, Falta ou Batida faltando no espelho; **dia em
+dia** = com todas as batidas previstas feitas na hora (sem falta, sem batida
+faltando, sem batida incluída por ajuste); **índice** = dias em dia ÷ dias de
+trabalho; **fotos boas** = batidas do aplicativo com foto e sem sinal; **ajustes**
+= pedidos de ajuste de batida no mês (os negados contam); **pontos** = 70% do
+índice + 30% das fotos − 5 por ajuste acima do limite; **selo** Ouro ≥ 95, Prata
+≥ 85, Bronze ≥ 70, Atenção abaixo. Limite de ajustes: **3 por mês** (escolha minha,
+como ele pediu), mudável na aba Qualidade por quem configura o ponto. A obra de
+um dia é a da primeira batida; a falta vai para a obra em que a pessoa mais bateu
+no mês (a do cadastro só para quem não bateu em nenhuma). A equipe de um
+responsável = quem bateu nos aparelhos de obra ou de equipe dele no mês, mais a
+lista do aparelho de equipe.
+
+**Quem vê:** a gestão, na aba Qualidade, as obras que alcança (o supervisor
+preso a obra não vê as outras); a pessoa, o dela (Meu mês); o responsável pelo
+ponto da obra, a equipe (menu "Ponto da minha equipe" — só aparece para quem
+responde por aparelho aprovado). Ranking e selo ficam por ora só para dentro
+(ERP e responsável); divulgar para todos é decisão dele, depois.
+
+**Desempenho:** o cálculo usa o espelho de cada pessoa (o mesmo da exportação
+CSV); com centenas de pessoas, a primeira abertura de "todas as obras" leva
+alguns segundos — recortar por obra é mais rápido. O resultado fica guardado 10
+minutos, e é refeito quando chega batida ou pedido novo.
+
+**Testes:** `tests/test_ponto_qualidade_banco.py` (regras puras do selo e do dia,
+ranking da gestão com limite de ajustes e escopo do supervisor, a pessoa e o
+responsável no aplicativo) e conferido no navegador (aba Qualidade, "Meu ponto
+em dia", "Ponto da minha equipe").
+
+## 17/10/2026 — Em aberto: dados de teste, WhatsApp e o painel de problemas
+
+**Apagar os dados de teste até 15/10** (o dono: "toda a informação que a gente
+coletou de 15/10 para trás é de teste; queria excluí-las"). NÃO feito — precisa
+da escolha dele, porque a batida tem número sequencial (NSR) e cada uma é
+encadeada à anterior (`hash_encadeado`; o "código de verificação" do comprovante
+são os 16 primeiros caracteres dele). Apagar as de teste deixa as reais
+começando no número seguinte (ex.: a primeira real seria a 1.137), com a
+corrente presa a uma batida que não existe mais. Caminhos postos para ele:
+(A) apagar e anotar onde a corrente recomeça — os números das reais não mudam,
+os comprovantes já mostrados continuam valendo, mas o AFD começa num número
+alto; (B) apagar e RENUMERAR as reais a partir de 1 — fica limpo, mas muda o NSR
+e o código de verificação das batidas de 16/10 em diante (comprovantes já vistos
+no aplicativo deixam de bater); (C) não apagar: marcar como teste e esconder de
+espelho, mosaico, alertas e relatórios. Antes de qualquer um: confirmar com a
+contabilidade como o AFD deve começar. Sai junto: fotos, pedidos, recusas,
+alertas, rondas e conferências do período; ficam cadastros, aparelhos, PINs, QR,
+escalas e configuração.
+
+**O WhatsApp bloqueia** (o Z-API derruba com volume; ver a mensageria). Proposta:
+no ponto, tirar volume (QR pelo aplicativo em vez do WhatsApp automático; código
+de primeiro acesso em lote, impresso, no dia do cadastro); no médio prazo, a API
+oficial do WhatsApp (Meta) — decisão e trabalho do chat da Mensageria.
+
+**O painel de problemas do ponto** (o dono: "relatório de problemas, de
+inconsistência, apontando pessoa, dia, qual é o problema (…) atacar pessoas que
+são problema (…) o problema é não se levar a sério a batida e querer ficar
+pedindo ajuste"). Proposta, sobre os alertas que já existem (`core/alertas.py`):
+na entrada de cada um, o que é dele — a pessoa vê o próprio mês (dias completos,
+batida faltando, foto sem rosto, ajustes pedidos); o responsável do ponto da
+obra e o encarregado veem a obra; a gestão vê o ranking por obra, responsável e
+pessoa, com um índice de "ponto em dia" e os ajustes pedidos por pessoa (com
+alerta acima de um limite). Esperando o dono decidir limites, quem vê o quê e se
+haverá ranking/gamificação.
 
 ## 16/10/2026 — A batida sem internet no ponto da obra
 

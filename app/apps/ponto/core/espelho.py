@@ -26,6 +26,7 @@ from sqlalchemy.engine import Connection
 from .. import db, horario
 from ..erros import ErroDeValidacao, NaoEncontrado
 from . import ajustes, apuracao, cadastros, escalas, feriados
+from . import vigencia as vigencia_do_ponto
 
 MAX_DIAS = 400
 
@@ -74,9 +75,12 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
            AND m.status <> 'REJEITADA'
          ORDER BY m.timestamp_servidor
     """, c=colaborador_id, i=inicio - dt.timedelta(days=1), f=fim)
+    # O ponto vale a partir de 16/10/2026 (vigencia.py): o que veio antes não entra.
+    vale_desde = vigencia_do_ponto.inicio(conn)
     por_dia: dict[dt.date, list[dict]] = {}
     for b in batidas:
-        por_dia.setdefault(b["data_referencia"], []).append(b)
+        if b["data_referencia"] >= vale_desde:
+            por_dia.setdefault(b["data_referencia"], []).append(b)
 
     ocorrencias = db.todos(conn, """
         SELECT id, tipo, status, data_inicio, data_fim, dia_trabalhado, descricao, minutos, horario
@@ -115,6 +119,8 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
                      and (o["data_inicio"] <= dia <= o["data_fim"] or o["dia_trabalhado"] == dia)]
         compensa = [o for o in ocorrencias if o["status"] == "APROVADA"
                     and o["tipo"] == "COMPENSACAO" and o["dia_trabalhado"] == dia]
+        if dia < vale_desde:                  # antes do ponto valer: nada conta, nada aparece
+            aprovadas, pendentes, compensa = [], [], []
         abono = ABONO_POR_TIPO[aprovadas[0]["tipo"]] if aprovadas else None
 
         so_duas = obra_do_dia in pre_assinaladas
@@ -138,7 +144,9 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
 
         # Dias que não se julgam.
         julgavel = True
-        if (admissao and dia < admissao) or (demissao and dia > demissao):
+        if dia < vale_desde:
+            r.situacao, julgavel = vigencia_do_ponto.SITUACAO_ANTES, False
+        elif (admissao and dia < admissao) or (demissao and dia > demissao):
             r.situacao, julgavel = "FORA_DO_CONTRATO", False
         elif dia > hoje:
             r.situacao, julgavel = "FUTURO", False
@@ -147,10 +155,13 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
         if not julgavel:
             r.falta, r.debito, r.extra = False, 0, 0
             r.alertas = []
+        if dia < vale_desde:
+            r.previsto = r.trabalhado = r.noturno_reduzido = r.atraso = r.saida_antecipada = 0
 
         # O que a escala espera e o que falta — é isto que o "Meu mês" mostra
         # no "corrigir este dia", em vez de um formulário em branco (ajustes.py).
-        previstas = ajustes.marcas_previstas(escala.periodos(dia)) if escala is not None else []
+        previstas = (ajustes.marcas_previstas(escala.periodos(dia))
+                     if escala is not None and dia >= vale_desde else [])
         if nome_feriado:
             # Feriado não espera batida (12/10/2026): sem isto, o "corrigir" do feriado
             # vinha com os horários da escala marcados como "faltou", e o ajuste de
@@ -210,7 +221,7 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
         })
 
     contaveis = [d for d in dias if d["situacao"] not in ("FUTURO", "EM_ANDAMENTO",
-                                                          "FORA_DO_CONTRATO")]
+                                                          "FORA_DO_CONTRATO", vigencia_do_ponto.SITUACAO_ANTES)]
     resumo = {
         "dias": len(contaveis),
         "previsto": sum(d["previsto"] for d in contaveis),

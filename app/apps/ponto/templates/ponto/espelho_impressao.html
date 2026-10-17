@@ -20,7 +20,7 @@
 {%- set SITUACAO = {
   "OK": "Normal", "FALTA": "Falta", "ABONADO": "Abonado", "INCOMPLETO": "Batida faltando",
   "DESCANSO": "Descanso", "SEM_ESCALA": "Sem escala", "COMPENSADO": "Compensado",
-  "FUTURO": "", "EM_ANDAMENTO": "Em andamento", "FORA_DO_CONTRATO": "Fora do contrato"} -%}
+  "FUTURO": "", "EM_ANDAMENTO": "Em andamento", "FORA_DO_CONTRATO": "Fora do contrato", "ANTES_DO_PONTO": "Antes do ponto"} -%}
 {%- set ALERTA = {
   "ATRASO": "atraso", "SAIDA_ANTECIPADA": "saída antecipada", "EXTRA_ACIMA_DE_2H": "extra acima de 2 h",
   "INTERVALO_CURTO": "intervalo curto", "INTERJORNADA_CURTA": "menos de 11 h de descanso",
@@ -128,13 +128,14 @@
     </tr></thead>
     <tbody>
     {% for d in e.dias %}
-      {%- set apagada = d.situacao in ("FUTURO", "EM_ANDAMENTO", "FORA_DO_CONTRATO") -%}
+      {%- set apagada = d.situacao in ("FUTURO", "EM_ANDAMENTO", "FORA_DO_CONTRATO", "ANTES_DO_PONTO") -%}
       <tr class="{{ 'apagada' if apagada else '' }} {{ 'descanso' if d.situacao == 'DESCANSO' or d.feriado else '' }}">
         <td class="hora">{{ d.data[8:10] }}/{{ d.data[5:7] }}</td>
         <td>{{ d.dia_semana[0:3] }}</td>
         <td class="hora">
           {%- for b in d.batidas -%}
             {{ b.hora }}{% if b.status == "AJUSTADA" %} (aj){% elif b.status == "EM_ANALISE" %} (an){% endif %}
+            {%- if b.obra and b.obra != e.pessoa.obra %} <span class="obs">[{{ b.obra }}]</span>{% endif %}
             {%- if not loop.last %} · {% endif -%}
           {%- else -%}—{%- endfor -%}
         </td>
@@ -176,6 +177,7 @@
 
   <div class="legenda">
     <b>Legenda.</b> Horas em h:mm (9h05 = nove horas e cinco minutos).
+    <b>[CÓDIGO]</b> batida em outra obra que não a principal da pessoa ·
     <b>(aj)</b> batida incluída por ajuste aprovado — a original, quando existe, continua guardada.
     <b>(an)</b> batida em análise: entra na conta, mas ainda pode ser rejeitada.
     <b>Extra</b> é o que passou do previsto na escala; <b>débito</b> é atraso e saída antes da hora.
