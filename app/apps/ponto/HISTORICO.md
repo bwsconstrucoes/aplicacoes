@@ -46,7 +46,9 @@ junto com o `README.md` e o `PLANO.md`.
    apagado; o que vem antes some de tudo (ver a seção de 17/10/2026, noite). A data se muda em Configuração ›
    Geral › "Início do ponto". E o botão **"Testar a AWS"** (Configuração › Fotos), que diz se o bloqueio da
    organização é de região (troca no próprio ponto) ou do serviço (só na conta que administra a organização).
-   **Pendente com o dono:** a SCP da AWS (o "0 conferida(s) — parou: (…) SCP bloqueia" de 17/10).
+   **AWS RESOLVIDA em 17/10/2026:** o dono rodou o "Testar a AWS" e era só a REGIÃO — a regra da organização
+   barrava a região configurada e liberava outra; trocada pelo botão "Usar a região X", a conferência do rosto
+   passou a funcionar. Nada mudou na AWS.
 1zh. **PUBLICADO em 17/10/2026 (junção `71ed2e2`)** (17/10/2026, sem migração), junto com a 1ze–1zg — os **avisos na tela
    inicial do aplicativo** (o dono: "se aparecer alertas, tem que ser algo mais resumido (…) mas poder adentrar
    alguma área que detalhe melhor"): uma linha com o problema mais recente da pessoa (ou "✅ seu ponto está em
