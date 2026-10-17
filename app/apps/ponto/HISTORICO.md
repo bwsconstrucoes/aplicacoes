@@ -41,10 +41,10 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
-1zj. **No ramo, esperando o "pode" — COM MIGRAÇÃO 013** (17/10/2026) — a **conferência do rosto que se adapta à
+1zj. **PUBLICADO em 17/10/2026 (junção `8a9d083`) — COM MIGRAÇÃO 013** — a **conferência do rosto que se adapta à
    pessoa** (o dono: "quanto melhor a pessoa, menos se confere; quanto pior, mais se confere"). Ver a seção de
-   17/10/2026 (noite, segunda). **Ao publicar:** apertar "Aplicar atualizações do ponto" (a 013). Antes do botão
-   nada quebra: confere tudo o que passa pela regra, como hoje.
+   17/10/2026 (noite, segunda). **Falta o dono apertar** "Aplicar atualizações do ponto" (a 013), se ainda não
+   apertou. Antes do botão nada quebra: confere tudo o que passa pela regra, como antes.
 1zi. **PUBLICADO em 17/10/2026** (junção `71ed2e2`, sem migração), junto com a 1ze–1zh — **O PONTO VALE A PARTIR
    DE 16/10/2026** (o dono: "desconsiderar pra todos os efeitos qualquer lançamento antes disso"). Nada foi
    apagado; o que vem antes some de tudo (ver a seção de 17/10/2026, noite). A data se muda em Configuração ›
