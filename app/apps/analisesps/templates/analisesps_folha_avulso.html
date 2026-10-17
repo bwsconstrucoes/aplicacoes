@@ -175,7 +175,8 @@
     Confira se é erro ou se é para pagar assim. A 1ª vez vem marcada; as
     repetidas vêm <b>desmarcadas</b> — marque só se for para pagar de novo.
     Marcadas juntas, no arquivo viram um pagamento só, somando.
-    <table class="sps" style="margin-top:8px; background:#fff">
+    <div class="tabela-wrap" style="margin:8px 0 0"><div class="tabela-rolagem livre">
+    <table class="sps" style="background:#fff">
       <thead><tr><th>Colaborador</th><th>CPF</th><th class="num">Vezes</th>
         <th>Linhas da lista (valor)</th><th class="num">Vai ser pago</th></tr></thead>
       <tbody>
@@ -187,6 +188,7 @@
       {% endfor %}
       </tbody>
     </table>
+    </div></div>
   </div>
   <style>.aviso-repetidos { border-left-width:6px; font-size:14px; }</style>
 {% endif %}
