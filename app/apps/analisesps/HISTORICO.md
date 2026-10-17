@@ -12230,6 +12230,10 @@ somente Solicitações de uma conta especifica"*.
 
 #### Leva 237 — Validação: só a planilha, trava no Agendar e etiqueta "Validar" (17/10/2026)
 
+- **Levas 235, 236 e 237 publicadas em 17/10/2026** (suíte inteira verde). Sem
+  migração. Falta ele: "Atualizar cadastro" em Colaboradores (traz Recebe via SP,
+  Valor do Mês etc.) e abrir Gratificados e Pagamento via SP.
+
 - *"Se está aplicando alguma atualização no card do Pipefy (…) não quero mais
   atualizar o card, quero atualizar só a planilha (…) não pode agendar (…) o que
   não esteja validado, que não esteja com a chave Pix atualizada (…) modal de
