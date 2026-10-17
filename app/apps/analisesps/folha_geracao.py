@@ -66,7 +66,10 @@ ROTULO_DO_DESTINO = {BEEVALE: "BeeVale", SOMAPAY: "SomaPay",
                      # O relatório em PDF de cada conta, gerado junto (03/10/2026).
                      "relatorio": "Relatório (PDF)",
                      # A planilha de cadastro de cada conta (07/10/2026).
-                     "cadastro": "Cadastro de colaboradores"}
+                     "cadastro": "Cadastro de colaboradores",
+                     # A relação dos pagamentos via SP de cada conta (17/10/2026):
+                     # não vai a banco nenhum — cada pessoa vira uma SP.
+                     "viasp": "Pagamento via SP"}
 
 # As verbas que geram arquivo. O rótulo é o que aparece na tela e no nome do
 # arquivo; a chave é a que vem da apropriação guardada.
@@ -80,6 +83,8 @@ ROTULO_DA_VERBA = {
     "dc": "Despesas com colaboradores",
     # A lista colada na tela "Pagamento avulso" (15/10/2026).
     "avulso": "Pagamento avulso",
+    # PJ, pró-labore e quem recebe "via SP" — uma SP por pessoa (17/10/2026).
+    "viasp": "Pagamento via SP",
 }
 
 # ⚠️ O QUE O BEEVALE CHAMA DE "NATUREZA" da verba. É o que autoriza o mesmo CPF a

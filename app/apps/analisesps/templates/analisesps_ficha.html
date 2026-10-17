@@ -31,7 +31,8 @@
 
 <div class="ficha-topo">
   <div>
-    <h3>SP {{ sp.id }}</h3>
+    <h3>SP {{ sp.id }}{% if sp|precisa_validar %} <span class="selo validar"
+        title="Esta SP não está validada: o Agendar fica bloqueado até validar.">Validar</span>{% endif %}</h3>
     <div class="ficha-credor">{{ sp.credor }}</div>
   </div>
   <div class="ficha-valor">{{ sp.valor_num|moeda }}</div>

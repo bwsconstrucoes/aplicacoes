@@ -285,6 +285,18 @@ def sem_validacao(validacao, status_pgt="") -> bool:
     return not _normal(status_pgt).startswith(("pago", "cancel"))
 
 
+def precisa_validar(validacao, status_pgt="") -> bool:
+    """A SP ainda vai ser paga e a Validação NÃO é "Sim"? É a etiqueta "Validar"
+    da lista e a trava do Agendar (17/10/2026). O dono: *"a gente não pode
+    agendar (…) alguma coisa que não esteja validado (…) colocar a tag também
+    de validar, para a gente identificar de cara que aquela SP não está
+    validada"*. Diferente de `sem_validacao`, que só olha a célula em branco:
+    aqui "Não" (ou qualquer outra coisa) também pede validação."""
+    if _normal(validacao).startswith("sim"):
+        return False
+    return not _normal(status_pgt).startswith(("pago", "cancel"))
+
+
 def pendencias(forma, info_pgt, centro_custo, codigo_integracao, status_pgt) -> list:
     """
     Lista de pendências de cadastro de um lançamento (para o alerta laranja e

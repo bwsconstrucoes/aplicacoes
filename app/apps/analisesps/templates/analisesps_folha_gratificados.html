@@ -1,0 +1,637 @@
+{% extends "analisesps_base.html" %}
+{% from "_folha_macros.html" import bloco %}
+{% from "_agrupar_macros.html" import cabecalho_do_grupo %}
+{% block titulo %}{{ rotulo_via }} — Análise de SPs{% endblock %}
+
+{# ---------------------------------------------------------------------------
+   GRATIFICADOS E PAGAMENTO VIA SP — 17/10/2026. Uma tela, duas portas (`via`).
+
+   O dono: *"a gente poder adicionar um desconto ou um acréscimo (…) ter a visão
+   do todo e do que está acontecendo naquela quinzena e o que está acontecendo
+   na outra"*. Por isso a tabela mostra as DUAS parcelas de cada pessoa, com a do
+   período escolhido em destaque, e quem não recebe agora continua na lista.
+
+   Gratificados (`gm`) gera o arquivo BeeVale/SomaPay; Pagamento via SP (`sp`)
+   gera a relação e, em Arquivos gerados, UMA SP POR PESSOA.
+   --------------------------------------------------------------------------- #}
+
+{% block filtros %}
+{% set url_tela = url_for(endpoint) %}
+{% set no_periodo_args = {'ano': ano, 'mes': mes, 'periodo': periodo} %}
+{% if resultado and resultado.pessoas %}
+<div class="cartao lateral-folha">
+  <b class="lateral-titulo">Pagamento</b>
+  <div class="lat-num"><span>A pagar — {{ resultado.rotulo_periodo|lower }}</span>
+    <b>{{ resultado.total|moeda }}</b>
+    <small>{{ resultado.quantos_a_pagar }} de {{ resultado.quantos }} pessoa(s)</small></div>
+  <p class="cartao-dica lat-estado">
+    {% if via == 'sp' %}
+      Gera a relação de cada conta. As SPs — <b>uma por pessoa</b>, cada uma com o
+      seu rateio — são lançadas em <b>Arquivos gerados</b>.
+    {% else %}
+      O arquivo sai de quem está selecionado agora. Depois de gerado, vai para
+      <b>Arquivos gerados</b>, de onde se lança a SP no Pipefy.
+    {% endif %}
+  </p>
+  <div class="lat-acoes">
+    {% if pode_operar and pode_gerar %}
+      {% set gd_origem = origem %}
+      {% set gd_dados = no_periodo_args %}
+      {% set gd_destino = '' %}
+      {% set gd_pagamento = '' %}
+      {% include "_gerar_direto.html" %}
+    {% endif %}
+    {% set dv_titulo = rotulo_via|lower %}
+    {% include "_divisao_direta.html" %}
+    {% if pode_operar and via == 'gm' %}{% include "_cadastro_planilha.html" %}{% endif %}
+  </div>
+</div>
+
+{% if resultado.com_problema or resultado.alertas %}
+<div class="cartao lateral-folha">
+  <b class="lateral-titulo">Pendências antes do pagamento</b>
+  {% set sem_valor = resultado.com_problema|selectattr('impossivel')|list %}
+  {% set sem_conta = resultado.com_problema|rejectattr('impossivel')|list %}
+  {% if sem_valor %}
+    <a class="lat-critica erro" href="{{ url_tela }}?ano={{ ano }}&mes={{ mes }}&periodo={{ periodo }}&no_periodo=sem_valor">
+      <b>{{ sem_valor|length }} sem valor no cadastro</b>
+      <small>Sem Valor da Gratificação nem Valor do Mês. Corrija no card do Pipefy e
+        atualize o cadastro.</small>
+    </a>
+  {% endif %}
+  {% if sem_conta %}
+    <a class="lat-critica erro" href="{{ url_tela }}?ano={{ ano }}&mes={{ mes }}&periodo={{ periodo }}&conta=%28sem+conta%29">
+      <b>{{ sem_conta|length }} sem conta de pagamento</b>
+      <small>Sem obra, ou a obra não tem conta na aba "C. Diários". Escolha a obra na
+        linha.</small>
+    </a>
+  {% endif %}
+  {% if resultado.alertas %}
+    <div class="lat-critica atencao">
+      <b>{{ resultado.alertas|length }} com alerta</b>
+      <small>Saindo, afastado, obra do cadastro, dois valores no cadastro, sem chave
+        Pix… O motivo está na linha.</small>
+    </div>
+  {% endif %}
+</div>
+{% endif %}
+
+<form method="get" action="{{ url_tela }}" id="form-filtros" class="lateral-filtros">
+  <input type="hidden" name="ano" value="{{ ano }}">
+  <input type="hidden" name="mes" value="{{ mes }}">
+  <input type="hidden" name="periodo" value="{{ periodo }}">
+  {% if 'agrupar' in request.args %}<input type="hidden" name="agrupar" value="{{ agrupamento }}">{% endif %}
+  <div class="filtros-cab">
+    <h2>Filtros</h2>
+    <a class="link-btn" href="{{ url_tela }}?ano={{ ano }}&mes={{ mes }}&periodo={{ periodo }}">Limpar</a>
+  </div>
+  <div class="busca">
+    <span class="lupa">⌕</span>
+    <input type="search" name="q" value="{{ lista.filtros.q }}" autocomplete="off"
+           placeholder="Nome ou CPF…" aria-label="Pesquisar colaborador">
+  </div>
+  {{ bloco('Neste período', 'no_periodo', lista.opcoes_no_periodo, lista.filtros.no_periodo) }}
+  {{ bloco('Situação', 'situacao', lista.opcoes_situacao, lista.filtros.situacao) }}
+  {{ bloco('Tipo de contrato', 'tipo', lista.opcoes_tipo, lista.filtros.tipo) }}
+  {{ bloco('Obra', 'obra', lista.opcoes_obra, lista.filtros.obra) }}
+  {{ bloco('Conta', 'conta', lista.opcoes_conta, lista.filtros.conta) }}
+  <noscript><button class="btn" type="submit" style="width:100%; margin-top:14px">Aplicar filtros</button></noscript>
+</form>
+{% include "analisesps_filtros_aplicam_sozinhos.html" %}
+{% endif %}
+{% endblock %}
+
+{% block conteudo %}
+{% set url_tela = url_for(endpoint) %}
+{% set no_periodo_args = {'ano': ano, 'mes': mes, 'periodo': periodo} %}
+{% include "analisesps_folha_abas.html" %}
+
+<h2>{{ rotulo_via }}</h2>
+
+<form method="get" action="{{ url_tela }}" class="cartao" id="form-periodo"
+      style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end">
+  <label class="rotulo-campo">Mês
+    <select name="mes" aria-label="Mês">
+      {% for m in range(1, 13) %}<option value="{{ m }}" {% if m == mes %}selected{% endif %}>{{ '%02d'|format(m) }}</option>{% endfor %}
+    </select></label>
+  <label class="rotulo-campo">Ano
+    <select name="ano" aria-label="Ano">
+      {% for a in anos %}<option value="{{ a }}" {% if a == ano %}selected{% endif %}>{{ a }}</option>{% endfor %}
+    </select></label>
+  <label class="rotulo-campo">Pagamento
+    <select name="periodo" aria-label="Pagamento">
+      {% for k, r in periodos %}<option value="{{ k }}" {% if k == periodo %}selected{% endif %}>{{ r }}</option>{% endfor %}
+    </select></label>
+  <button class="btn" type="submit">Abrir</button>
+  <span class="cartao-dica">
+    {% if via == 'sp' %}
+      Quem tem <b>Recebe via SP = Sim</b> no cadastro (PJ, pró-labore…). Cada pessoa vira
+      uma SP no Pipefy, com o seu rateio por obra.
+    {% else %}
+      PJ, pró-labore, autônomo mensalista, estágio e quem tem <b>Recebe Gratificação
+      Mensal = Sim</b> — menos quem é pago via SP{% if resultado and resultado.na_outra_tela %}
+      (<a href="{{ url_for('analisesps.tela_folha_via_sp', ano=ano, mes=mes, periodo=periodo) }}">{{ resultado.na_outra_tela }} pessoa(s) em Pagamento via SP</a>){% endif %}.
+    {% endif %}
+  </span>
+</form>
+
+{% if erro %}
+  <div class="aviso erro"><b>Não foi possível montar a lista.</b> {{ erro }}</div>
+{% endif %}
+{% if resultado and resultado.avisos %}
+  {% for a in resultado.avisos %}<div class="aviso atencao">{{ a }}</div>{% endfor %}
+{% endif %}
+{% if resultado and resultado.gerados %}
+  <div class="aviso bom">
+    <b>{{ resultado.gerados|length }} pessoa(s) já saíram numa geração deste período</b>
+    — vêm marcadas "já gerado" e não entram de novo. Os arquivos estão em
+    <a href="{{ url_for('analisesps.tela_folha_pagamento', ano=ano, mes=mes) }}">Arquivos gerados</a>
+    (excluir a geração lá devolve as pessoas para gerar de novo).
+  </div>
+{% endif %}
+
+{% if resultado and resultado.pessoas %}
+
+<div class="kpis">
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">A pagar — {{ resultado.rotulo_periodo|lower }}</div>
+    <div class="kpi-valor">{{ resultado.total|moeda }}</div>
+  </div>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Selecionados</div>
+    <div class="kpi-valor">{{ resultado.quantos_a_pagar }}</div>
+  </div>
+  {# A VISÃO DO TODO: as duas parcelas do mês, cada uma com o atalho para ela. #}
+  <a class="kpi {{ 'destaque' if periodo == 'quinzena' }}" href="{{ url_tela }}?ano={{ ano }}&mes={{ mes }}&periodo=quinzena">
+    <div class="kpi-rotulo">Quinzena do mês (sem ajustes)</div>
+    <div class="kpi-valor">{{ resultado.total_quinzena|moeda }}</div>
+  </a>
+  <a class="kpi {{ 'destaque' if periodo == 'fim_de_mes' }}" href="{{ url_tela }}?ano={{ ano }}&mes={{ mes }}&periodo=fim_de_mes">
+    <div class="kpi-rotulo">Fim do mês (sem ajustes)</div>
+    <div class="kpi-valor">{{ resultado.total_fim|moeda }}</div>
+  </a>
+  {% if periodo == 'quinzena' and resultado.so_no_fim %}
+  <a class="kpi" href="{{ url_tela }}?ano={{ ano }}&mes={{ mes }}&periodo={{ periodo }}&no_periodo=so_fim">
+    <div class="kpi-rotulo">Só recebem no fim do mês</div>
+    <div class="kpi-valor">{{ resultado.so_no_fim|length }}</div>
+  </a>
+  {% endif %}
+  <div class="kpi estatico {{ 'ambar' if resultado.com_problema or resultado.alertas }}">
+    <div class="kpi-rotulo">Pendências e alertas</div>
+    <div class="kpi-valor">{{ resultado.com_problema|length + resultado.alertas|length }}</div>
+  </div>
+</div>
+
+<div class="cab-com-acoes" style="margin-top:24px">
+<h3>
+  Detalhamento — {{ resultado.competencia }} · {{ resultado.rotulo_periodo }}
+  <small>
+    {% if filtrando %}{{ pessoas|length }} de {{ resultado.quantos }} · filtrado
+    {% else %}{{ pessoas|length }}{% endif %}
+    · pendências listadas primeiro
+  </small>
+</h3>
+  {% set args_da_tela = request.args.to_dict(flat=false) %}
+  {% set _ = args_da_tela.update({'via': via, 'ano': ano, 'mes': mes, 'periodo': periodo}) %}
+  {% set rel_xlsx = url_for('analisesps.folha_gratificados_relatorio', formato='xlsx', **args_da_tela) %}
+  {% set rel_pdf = url_for('analisesps.folha_gratificados_relatorio', formato='pdf', **args_da_tela) %}
+  {% set rel_contas = (divisao.por_conta|map(attribute='conta')|list) if divisao else [] %}
+  {% include "_relatorio_acoes.html" %}
+</div>
+
+{% set ag_parte = 'barra' %}{% set ag_endpoint = endpoint %}{% set ag_tabela = 'tabela-gm' %}
+{% include "_agrupar_lista.html" %}
+
+{% if pode_operar %}
+<p class="cartao-dica" style="margin:0 0 8px">
+  Quem tem valor neste período e conta de pagamento vem <b>selecionado</b> (quem já
+  saiu vem desmarcado). Desmarque quem não deve receber e clique em <b>Salvar
+  seleção</b>. <b>Ajustar</b> lança um desconto (valor negativo) ou acréscimo só neste
+  período. A obra trocada vale para todos os meses. Clique na linha para a ficha.
+</p>
+{% endif %}
+
+{% set colunas = 11 if via == 'sp' else 10 %}
+<div class="tabela-wrap">
+  <div class="tabela-rolagem livre">
+    <table class="sps" id="tabela-gm">
+      <thead>
+        <tr>
+          {% if pode_operar %}
+            <th class="marca"><input type="checkbox" id="marcar-todos"
+                  title="Selecionar ou desmarcar todos os visíveis"
+                  aria-label="Selecionar todos"></th>
+          {% endif %}
+          <th>Colaborador</th><th>Situação</th>
+          <th class="num" title="A gratificação; sem ela, o Valor do Mês">Valor do mês</th>
+          <th class="num {{ 'col-periodo' if periodo == 'quinzena' }}">Quinzena</th>
+          <th class="num {{ 'col-periodo' if periodo == 'fim_de_mes' }}">Fim do mês</th>
+          <th class="num">Desconto / acréscimo</th>
+          <th class="num">A pagar agora</th>
+          <th title="Escolhida por você; sem ela, a regra de rateio; sem regra, o ponto; sem ponto, o cadastro">Obra que paga</th>
+          <th>Conta</th>
+          {% if via == 'sp' %}<th>Favorecido e Pix</th>{% endif %}
+        </tr>
+      </thead>
+      {% for g in grupos_da_lista %}
+      <tbody class="grupo-lista">
+        {% if agrupamento %}{{ cabecalho_do_grupo(g, pode_operar, colunas) }}{% endif %}
+      {% for p in g.pessoas %}
+        <tr class="clicavel {{ 'nao-vai' if not p.pagar }} {{ 'linha-alerta' if p.impossivel or (p.valor > 0 and not p.conta) }} {{ 'fora-do-periodo' if not p.recebe_no_periodo and not p.tem_ajuste }}"
+            data-cpf="{{ p.cpf }}" data-nome="{{ p.nome }}" data-valor="{{ p.valor }}">
+          {% if pode_operar %}
+            <td class="marca">
+              <input type="checkbox" class="marca-pessoa"
+                     {% if p.pagar %}checked{% endif %}
+                     {% if p.impossivel or p.gerada or p.valor <= 0 %}disabled{% endif %}
+                     aria-label="Selecionar {{ p.nome or p.cpf_bonito }} para pagamento">
+            </td>
+          {% endif %}
+          <td>
+            <b>{{ p.nome }}</b> <span class="cartao-dica cpf">{{ p.cpf_bonito }}</span>
+            <br><span class="cartao-dica">{{ p.tipo_contrato or '—' }}{% if p.cargo %} · {{ p.cargo }}{% endif %}</span>
+            {% for motivo in p.motivos %}
+              <br><span class="cartao-dica">⚠ {{ motivo }}</span>
+            {% endfor %}
+          </td>
+          <td>
+            {% if p.gerada %}
+              <span class="selo cancelado">já gerado</span>
+            {% elif p.impossivel %}
+              <span class="selo risco">sem valor</span>
+            {% elif not p.recebe_no_periodo and not p.tem_ajuste %}
+              <span class="selo cancelado" title="Parcela única: recebe tudo no fim do mês">só no fim do mês</span>
+            {% elif not p.pagar %}
+              <span class="selo cancelado">não selecionado</span>
+            {% elif p.motivos %}
+              <span class="selo saindo" title="{{ p.motivos|join(' ') }}">atenção</span>
+            {% else %}
+              <span class="selo aprovado">a pagar</span>
+            {% endif %}
+            {% if p.parcela_unica %}<br><span class="cartao-dica">parcela única</span>{% endif %}
+            {% if p.fase %}<br><span class="cartao-dica">{{ p.fase }}</span>{% endif %}
+          </td>
+          <td class="num">{{ p.valor_mes|moeda }}
+            {% if p.de_onde_valor %}<br><span class="cartao-dica">{{ 'gratificação' if p.de_onde_valor == 'gratificacao' else 'valor do mês' }}</span>{% endif %}</td>
+          <td class="num {{ 'col-periodo' if periodo == 'quinzena' }}">{{ p.valor_quinzena|moeda }}</td>
+          <td class="num {{ 'col-periodo' if periodo == 'fim_de_mes' }}">{{ p.valor_fim|moeda }}</td>
+          <td class="num">
+            {% if p.tem_ajuste %}<b class="{{ 'ruim' if p.ajuste < 0 }}">{{ p.ajuste|moeda }}</b>
+              <br><span class="cartao-dica">{{ p.ajuste_motivo }}</span>{% else %}—{% endif %}
+            {% if pode_operar and not p.gerada %}<br>
+              <button type="button" class="link-btn ajustar" data-valor="{{ p.ajuste if p.tem_ajuste else '' }}"
+                      data-motivo="{{ p.ajuste_motivo }}">{{ 'mudar…' if p.tem_ajuste else 'ajustar…' }}</button>
+            {% endif %}
+          </td>
+          <td class="num valor-final"><b>{{ p.valor|moeda }}</b></td>
+          <td>
+            {% if p.rateio|length > 1 %}
+              {% for x in p.rateio %}<b>{{ x.obra }}</b> <span class="cartao-dica">{{ '%.2f'|format(x.percentual|float) }}% · {{ x.valor|moeda }}</span>{% if not loop.last %}<br>{% endif %}{% endfor %}
+            {% elif p.obra %}<b>{{ p.obra }}</b>
+            {% else %}<span class="selo risco">sem obra</span>{% endif %}
+            {% if p.rotulo_obra %}<br><span class="cartao-dica">{{ p.rotulo_obra }}{% if p.regra %} ({{ p.regra }}){% endif %}</span>{% endif %}
+            {% if p.obra_ponto and p.obra_ponto != p.obra %}<br><span class="cartao-dica">ponto: {{ p.obra_ponto }}{% if p.dias_na_obra %} ({{ p.dias_na_obra }} dia(s)){% endif %}</span>{% endif %}
+            {% if p.obra_cadastro and p.obra_cadastro != p.obra %}<br><span class="cartao-dica">cadastro: {{ p.obra_cadastro }}</span>{% endif %}
+            {% if pode_operar and not p.gerada %}<br>
+              <button type="button" class="link-btn escolher-obra" data-sugerida="{{ p.obra }}">trocar ou dividir…</button>
+              {% if p.obra_escolhida %}<button type="button" class="link-btn usar-obra" data-obra="">voltar à automática</button>{% endif %}
+            {% endif %}
+          </td>
+          <td>{{ p.conta or '—' }}</td>
+          {% if via == 'sp' %}
+          <td>{% set f = p.favorecido %}
+            <b>{{ f.nome }}</b><br><span class="cartao-dica">{{ 'CNPJ' if f.pj else 'CPF' }} {{ f.documento }}</span>
+            <br><span class="cartao-dica">Pix ({{ f.tipo_chave }}): {{ f.chave_pix }}</span></td>
+          {% endif %}
+        </tr>
+      {% endfor %}
+      </tbody>
+      {% endfor %}
+      {% if not pessoas %}
+      <tbody><tr><td colspan="{{ colunas + 1 }}" class="cartao-dica">
+          Ninguém corresponde ao filtro. Ajuste os filtros na lateral.
+      </td></tr></tbody>
+      {% endif %}
+    </table>
+  </div>
+</div>
+<style>
+  #tabela-gm th.col-periodo, #tabela-gm td.col-periodo { background: rgba(37, 99, 235, .08); font-weight: 600; }
+  #tabela-gm tr.fora-do-periodo td { color: #6b7280; }
+  .resumos-gm { display:grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap:14px; align-items:start; }
+  .resumos-gm .tabela-wrap { margin:0; }
+</style>
+
+<h3 style="margin-top:24px">Resumo do que vai ser pago neste período</h3>
+<div class="resumos-gm">
+{% for campo, titulo in [('obra', 'Obra'), ('conta', 'Conta')] %}
+  {% set linhas_resumo = resultado.resumos[campo] %}
+  <div class="tabela-wrap">
+    <div class="tabela-rolagem livre">
+      <table class="sps">
+        <thead><tr><th>{{ titulo }}</th><th class="num">Pessoas</th><th class="num">Total</th></tr></thead>
+        <tbody>
+        {% for o in linhas_resumo %}
+          <tr><td><b>{{ o.rotulo }}</b></td><td class="num">{{ o.pessoas }}</td>
+            <td class="num">{{ o.total|moeda }}</td></tr>
+        {% else %}
+          <tr><td colspan="3" class="cartao-dica">Nada selecionado para pagamento.</td></tr>
+        {% endfor %}
+        </tbody>
+        {% if linhas_resumo %}
+        <tfoot><tr><th>Total</th><th class="num">{{ resultado.quantos_a_pagar }}</th>
+          <th class="num">{{ resultado.total|moeda }}</th></tr></tfoot>
+        {% endif %}
+      </table>
+    </div>
+  </div>
+{% endfor %}
+</div>
+
+{% if pode_operar %}
+<div class="barra-salvar" id="barra-salvar"
+     data-fora-quantos="{{ fora_do_filtro.quantos if fora_do_filtro else 0 }}"
+     data-fora-total="{{ fora_do_filtro.total if fora_do_filtro else 0 }}">
+  <span class="conta-selecao">
+    Selecionados para pagamento: <span id="quantos-marcados">{{ resultado.quantos_a_pagar }}</span>
+    <span class="total-selecao" id="total-marcado">{{ resultado.total|moeda }}</span>
+  </span>
+  <span class="cartao-dica" id="fora-do-filtro"></span>
+  <span class="cartao-dica" id="recado-selecao"></span>
+  <span class="sobra">
+    <button class="btn secundario" type="button" id="btn-desfazer">Desfazer</button>
+    <button class="btn" type="button" id="btn-salvar-selecao">Salvar seleção</button>
+  </span>
+</div>
+{% endif %}
+
+{% elif resultado %}
+  <div class="aviso">Ninguém nesta tela para {{ resultado.competencia }}.
+    {% if via == 'sp' %}Quem recebe via SP é quem tem "Recebe via SP = Sim" no cadastro de colaboradores.{% endif %}</div>
+{% endif %}
+
+{% if pode_operar %}
+<dialog class="dialogo" id="dialogo-ajuste">
+  <button type="button" class="btn secundario dialogo-fechar"
+          onclick="this.closest('dialog').close()">Fechar</button>
+  <h3>Desconto ou acréscimo <small id="ajuste-nome"></small></h3>
+  <p class="cartao-dica">Vale só para {{ '%02d'|format(mes) }}/{{ ano }} —
+    {{ (resultado.rotulo_periodo if resultado else periodo)|lower }}. <b>Valor negativo
+    desconta</b> (ex.: −200,00); positivo acrescenta. Fica registrado com o motivo e vai no
+    relatório{% if via == 'sp' %} e na descrição da SP{% endif %}.</p>
+  <label class="rotulo-campo" for="ajuste-valor">Valor (R$)</label>
+  <input id="ajuste-valor" inputmode="decimal" placeholder="0,00" data-sem-mascara>
+  <label class="rotulo-campo" for="ajuste-motivo" style="margin-top:8px">Motivo</label>
+  <input id="ajuste-motivo" maxlength="300" placeholder="Ex.: adiantamento descontado">
+  <div class="lat-acoes" style="margin-top:12px">
+    <button type="button" class="btn secundario" id="ajuste-tirar" hidden>Tirar o ajuste</button>
+    <button type="button" class="btn" id="ajuste-salvar">Salvar</button>
+  </div>
+</dialog>
+
+<dialog class="dialogo" id="dialogo-obra">
+  <button type="button" class="btn secundario dialogo-fechar"
+          onclick="this.closest('dialog').close()">Fechar</button>
+  <h3>Obra que paga</h3>
+  <p class="cartao-dica" id="dialogo-obra-quem"></p>
+  {% if obras_c_diarios %}
+    <input type="search" id="dialogo-obra-procura" autocomplete="off" data-sem-busca
+           placeholder="Procurar obra…" aria-label="Procurar obra">
+    <select id="dialogo-obra-lista" size="10" data-sem-busca aria-label="Obras da C. Diários">
+      {% for o in obras_c_diarios %}<option value="{{ o }}">{{ o }}</option>{% endfor %}
+    </select>
+    <p class="cartao-dica">Obras da aba "C. Diários". Clique duas vezes para selecionar.</p>
+  {% else %}
+    <input type="text" id="dialogo-obra-texto" placeholder="código da obra"
+           aria-label="Código da obra">
+  {% endif %}
+  <div class="lat-acoes" style="margin-top:10px">
+    <button type="button" class="btn" id="dialogo-obra-usar">Usar esta obra</button>
+  </div>
+  <details style="margin-top:12px" id="dialogo-obra-dividir">
+    <summary style="cursor:pointer"><b>ou dividir entre obras (rateio desta pessoa)</b></summary>
+    <datalist id="obras-para-dividir">
+      {% for o in obras_c_diarios or [] %}<option value="{{ o }}">{% endfor %}
+    </datalist>
+    <div class="tabela-rolagem livre" style="margin-top:6px">
+    <table class="sps"><thead><tr><th>Obra</th><th class="num">%</th></tr></thead>
+      <tbody id="dividir-linhas"></tbody></table></div>
+    <p class="cartao-dica" id="dividir-soma">Soma: 0%</p>
+    <p class="cartao-dica">A conta de pagamento é a da obra de maior percentual.</p>
+    <div class="lat-acoes">
+      <button type="button" class="btn secundario" id="dividir-mais">+ adicionar obra</button>
+      <button type="button" class="btn" id="dividir-usar">Salvar divisão</button>
+    </div>
+  </details>
+</dialog>
+{% endif %}
+
+{% include "_folha_ficha_js.html" %}
+
+<script>
+const PERIODO = {{ no_periodo_args|tojson }};
+const tabela = document.getElementById("tabela-gm");
+const caixas = [...document.querySelectorAll(".marca-pessoa")];
+caixas.forEach(c => { c.checked = c.defaultChecked; });
+const inicial = caixas.map(c => c.checked);
+
+function dinheiro(n) {
+  return n.toLocaleString("pt-BR", {style: "currency", currency: "BRL"});
+}
+async function postar(url, corpo) {
+  const r = await fetch(url, {method: "POST", headers: {"Content-Type": "application/json"},
+                              body: JSON.stringify(Object.assign({}, PERIODO, corpo))});
+  const d = await r.json();
+  if (!d.ok) { alert(d.erro); return false; }
+  return true;
+}
+
+function atualizar() {
+  let quantos = 0, total = 0, mudou = false;
+  caixas.forEach((caixa, i) => {
+    const linha = caixa.closest("tr");
+    linha.classList.toggle("nao-vai", !caixa.checked);
+    if (caixa.checked) { quantos += 1; total += parseFloat(linha.dataset.valor || "0") || 0; }
+    if (caixa.checked !== inicial[i]) mudou = true;
+  });
+  const barraSel = document.getElementById("barra-salvar");
+  const foraQ = parseInt((barraSel && barraSel.dataset.foraQuantos) || "0", 10) || 0;
+  const foraT = parseFloat((barraSel && barraSel.dataset.foraTotal) || "0") || 0;
+  quantos += foraQ; total += foraT;
+  const avisoFora = document.getElementById("fora-do-filtro");
+  if (avisoFora) avisoFora.textContent = foraQ
+    ? "inclui " + foraQ + " marcado(s) fora do filtro (" + dinheiro(foraT) + "), que também vão no pagamento"
+    : "";
+  const q = document.getElementById("quantos-marcados");
+  const t = document.getElementById("total-marcado");
+  if (q) q.textContent = quantos;
+  if (t) t.textContent = dinheiro(total);
+  const salvar = document.getElementById("btn-salvar-selecao");
+  const desfazer = document.getElementById("btn-desfazer");
+  if (salvar) salvar.disabled = !mudou;
+  if (desfazer) desfazer.hidden = !mudou;
+}
+caixas.forEach(caixa => caixa.addEventListener("change", atualizar));
+atualizar();
+
+if (tabela) tabela.addEventListener("click", e => {
+  if (e.target.closest(".marca, a, button")) return;
+  const linha = e.target.closest("tr.clicavel");
+  if (linha) abrirFichaDoFuncionario(linha.dataset.cpf);
+});
+const marcarTodos = document.getElementById("marcar-todos");
+if (marcarTodos) marcarTodos.addEventListener("change", () => {
+  caixas.forEach(c => { if (!c.disabled) c.checked = marcarTodos.checked; });
+  atualizar();
+});
+const desfazer = document.getElementById("btn-desfazer");
+if (desfazer) desfazer.addEventListener("click", () => {
+  caixas.forEach((c, i) => { c.checked = inicial[i]; });
+  atualizar();
+});
+const salvar = document.getElementById("btn-salvar-selecao");
+if (salvar) salvar.addEventListener("click", async () => {
+  const decisoes = caixas.map(c => ({cpf: c.closest("tr").dataset.cpf, pagar: c.checked}));
+  salvar.disabled = true;
+  document.getElementById("recado-selecao").textContent = "Salvando…";
+  if (await postar("{{ url_for('analisesps.folha_gratificados_selecao') }}", {decisoes: decisoes}))
+    location.reload();
+  else salvar.disabled = false;
+});
+function haSelecaoPorSalvar() {
+  if (caixas.some((c, i) => c.checked !== inicial[i])) {
+    alert("Salve a seleção antes: a tela será recarregada.");
+    return true;
+  }
+  return false;
+}
+
+// --- desconto ou acréscimo do período ---------------------------------------
+(function () {
+  const dialogo = document.getElementById("dialogo-ajuste");
+  if (!dialogo) return;
+  let cpf = "";
+  document.querySelectorAll(".ajustar").forEach(b => b.addEventListener("click", () => {
+    if (haSelecaoPorSalvar()) return;
+    const linha = b.closest("tr");
+    cpf = linha.dataset.cpf;
+    document.getElementById("ajuste-nome").textContent = linha.dataset.nome;
+    document.getElementById("ajuste-valor").value =
+      b.dataset.valor ? String(b.dataset.valor).replace(".", ",") : "";
+    document.getElementById("ajuste-motivo").value = b.dataset.motivo || "";
+    document.getElementById("ajuste-tirar").hidden = !b.dataset.valor;
+    dialogo.showModal();
+    document.getElementById("ajuste-valor").focus();
+  }));
+  document.getElementById("ajuste-salvar").addEventListener("click", async () => {
+    const valor = document.getElementById("ajuste-valor").value.trim();
+    const motivo = document.getElementById("ajuste-motivo").value.trim();
+    if (!valor) { alert("Informe o valor."); return; }
+    if (!motivo) { alert("Informe o motivo — ele aparece na linha e no relatório."); return; }
+    if (await postar("{{ url_for('analisesps.folha_gratificados_ajuste') }}",
+                     {cpf: cpf, valor: valor, motivo: motivo})) location.reload();
+  });
+  document.getElementById("ajuste-tirar").addEventListener("click", async () => {
+    if (await postar("{{ url_for('analisesps.folha_gratificados_ajuste') }}",
+                     {cpf: cpf, valor: null})) location.reload();
+  });
+})();
+
+// --- a obra que paga: uma, ou dividida -----------------------------------------
+async function gravarObra(cpf, obra) {
+  return postar("{{ url_for('analisesps.folha_gratificados_obra') }}", {cpf: cpf, obra: obra});
+}
+document.querySelectorAll(".usar-obra").forEach(b => b.addEventListener("click", async () => {
+  if (haSelecaoPorSalvar()) return;
+  b.disabled = true;
+  if (await gravarObra(b.closest("tr").dataset.cpf, b.dataset.obra)) location.reload();
+  else b.disabled = false;
+}));
+(function () {
+  const dialogo = document.getElementById("dialogo-obra");
+  if (!dialogo) return;
+  const lista = document.getElementById("dialogo-obra-lista");
+  const procura = document.getElementById("dialogo-obra-procura");
+  const texto = document.getElementById("dialogo-obra-texto");
+  const usar = document.getElementById("dialogo-obra-usar");
+  const linhasDiv = document.getElementById("dividir-linhas");
+  const somaDiv = document.getElementById("dividir-soma");
+  const semAcento = t => (t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase();
+  let cpf = "";
+  function linhaDiv(obra, pct) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = '<td><input type="text" list="obras-para-dividir" class="div-obra" ' +
+      'aria-label="Obra" style="width:16em"></td>' +
+      '<td class="num"><input type="number" min="0" max="100" step="0.01" class="div-pct" ' +
+      'aria-label="Percentual" style="width:6em"></td>';
+    tr.querySelector(".div-obra").value = obra || "";
+    tr.querySelector(".div-pct").value = pct || "";
+    tr.querySelector(".div-pct").addEventListener("input", somar);
+    linhasDiv.appendChild(tr);
+  }
+  function partesDiv() {
+    return [...linhasDiv.querySelectorAll("tr")].map(tr => ({
+      obra: tr.querySelector(".div-obra").value.trim().toUpperCase(),
+      pct: parseFloat(tr.querySelector(".div-pct").value.replace(",", ".")) || 0
+    })).filter(x => x.obra && x.pct > 0);
+  }
+  function somar() {
+    const soma = partesDiv().reduce((a, x) => a + x.pct, 0);
+    somaDiv.textContent = "Soma: " + soma.toFixed(2).replace(".", ",") + "%" +
+      (Math.abs(soma - 100) > 0.001 ? " — precisa fechar 100%" : "");
+  }
+  document.querySelectorAll(".escolher-obra").forEach(b => b.addEventListener("click", () => {
+    if (haSelecaoPorSalvar()) return;
+    const linha = b.closest("tr");
+    cpf = linha.dataset.cpf;
+    document.getElementById("dialogo-obra-quem").textContent =
+      linha.dataset.nome + " — vale para todos os períodos, até voltar à automática.";
+    if (lista) {
+      procura.value = "";
+      [...lista.options].forEach(o => { o.hidden = false; });
+      lista.value = b.dataset.sugerida || "";
+    }
+    if (texto) texto.value = b.dataset.sugerida || "";
+    linhasDiv.innerHTML = "";
+    linhaDiv(b.dataset.sugerida || "", ""); linhaDiv("", "");
+    somar();
+    usar.disabled = false;
+    dialogo.showModal();
+    (procura || texto).focus();
+  }));
+  if (procura) procura.addEventListener("input", () => {
+    const alvo = semAcento(procura.value.trim());
+    let primeira = null;
+    [...lista.options].forEach(o => {
+      const casa = !alvo || semAcento(o.value).includes(alvo);
+      o.hidden = !casa;
+      if (casa && !primeira) primeira = o;
+    });
+    if (primeira && (!lista.value || lista.selectedOptions[0].hidden)) lista.value = primeira.value;
+  });
+  if (procura) procura.addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); usar.click(); }
+  });
+  if (lista) lista.addEventListener("dblclick", () => usar.click());
+  document.getElementById("dividir-mais").addEventListener("click", () => linhaDiv("", ""));
+  document.getElementById("dividir-usar").addEventListener("click", async () => {
+    const partes = partesDiv();
+    const soma = partes.reduce((a, x) => a + x.pct, 0);
+    if (partes.length < 2) { alert("Informe ao menos duas obras."); return; }
+    if (new Set(partes.map(x => x.obra)).size !== partes.length) { alert("Obra repetida."); return; }
+    if (Math.abs(soma - 100) > 0.001) { alert("Os percentuais precisam somar 100%."); return; }
+    const texto = "RATEIO:" + partes.map(x => x.obra + "=" + x.pct).join(";");
+    if (await gravarObra(cpf, texto)) location.reload();
+  });
+  usar.addEventListener("click", async () => {
+    const obra = ((lista ? lista.value : texto.value) || "").trim().toUpperCase();
+    if (!obra) { alert("Selecione a obra."); return; }
+    usar.disabled = true;
+    if (await gravarObra(cpf, obra)) location.reload();
+    else usar.disabled = false;
+  });
+})();
+</script>
+{% set ag_parte = 'script' %}{% set ag_tabela = 'tabela-gm' %}
+{% include "_agrupar_lista.html" %}
+{% endblock %}

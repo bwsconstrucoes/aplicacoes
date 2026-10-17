@@ -508,6 +508,7 @@ def test_o_modulo_nao_depende_de_pandas_nem_de_streamlit():
     LIBERADO_EM = {"beevale.py": {"openpyxl"},
                    "conciliacao_exportar.py": {"openpyxl"},
                    "folha_auxilio.py": {"openpyxl"},
+                   "gratificados.py": {"openpyxl"},
                    "cadastro_planilha.py": {"openpyxl"},
                    "ferias_fortes.py": {"openpyxl"},
                    "lote_excel.py": {"openpyxl"},
