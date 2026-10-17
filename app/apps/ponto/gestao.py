@@ -44,7 +44,7 @@ from app.apps.erp.routes import bp, login_obrigatorio, permissao
 
 from . import db, horario, migracoes_runner
 from .core import (acesso, alertas, banco, cadastros, competencias, dispositivos, documentos,
-                   envios, escalas, espelho, feriados, fotos, leitura_atestado, mosaico,
+                   envios, escalas, espelho, feriados, filtros, fotos, leitura_atestado, mosaico,
                    ocorrencias, painel, parametros, qr, rotina, validacao)
 from .core.ocorrencias import Quem
 from .erros import ErroDeValidacao, ErroDoPonto, NaoEncontrado, Recusada
@@ -296,6 +296,50 @@ def ponto_api_obras():
     return _ok(obras=[cadastros.obra_para_json(o) for o in obras])
 
 
+def _periodo() -> tuple[dt.date, dt.date]:
+    """`?de=&ate=` (dias) ou `?competencia=AAAA-MM` (o mês inteiro)."""
+    comp = (request.args.get("competencia") or "").strip()
+    if comp:
+        return _datas_da_competencia(comp)
+    hoje = horario.hoje()
+    de = _data(request.args.get("de"), hoje)
+    ate = _data(request.args.get("ate"), de)
+    if ate < de or (ate - de).days > 92:
+        raise ErroDeValidacao("período de até 3 meses", campo="ate")
+    return de, ate
+
+
+@bp.route("/erp/api/ponto/obras-com-batida")
+@login_obrigatorio
+@permissao("ver_ponto")
+@_api
+def ponto_api_obras_com_batida():
+    """As obras que TÊM batida no período (16/10/2026: "o padrão de exibição deveria
+    ser as obras que têm ponto"), com quantas pessoas e batidas."""
+    quem = _quem()
+    de, ate = _periodo()
+    with db.conexao() as conn:
+        obras = filtros.obras_com_batida(conn, de, ate, quem.obras)
+    return _ok(obras=[{**o, "pessoas": int(o["pessoas"]), "batidas": int(o["batidas"])} for o in obras],
+               de=de.isoformat(), ate=ate.isoformat())
+
+
+@bp.route("/erp/api/ponto/pessoas-com-batida")
+@login_obrigatorio
+@permissao("ver_ponto")
+@_api
+def ponto_api_pessoas_com_batida():
+    """Quem bateu na obra no período — no espelho, primeiro a obra, depois a pessoa."""
+    quem = _quem()
+    de, ate = _periodo()
+    with db.conexao() as conn:
+        o = _obra_no_alcance(conn, quem, request.args.get("obra"))
+        pessoas = filtros.pessoas_com_batida(conn, int(o["id"]), de, ate)
+    return _ok(obra=cadastros.obra_para_json(o),
+               pessoas=[{"id": int(p["id"]), "nome": p["nome"], "batidas": int(p["batidas"]),
+                         "ultimo_dia": p["ultimo_dia"].isoformat()} for p in pessoas])
+
+
 @bp.route("/erp/api/ponto/hoje")
 @login_obrigatorio
 @permissao("ver_ponto")
@@ -341,6 +385,12 @@ def ponto_api_pessoas():
              ORDER BY ce.colaborador_id, ce.vigencia_inicio DESC""")}
         pins = {r["colaborador_id"] for r in db.todos(
             conn, "SELECT colaborador_id FROM ponto.colaborador_config WHERE pin_hash IS NOT NULL")}
+        # Onde a pessoa está BATENDO (16/10/2026: "a obra principal deve ser a obra em
+        # que a pessoa está batendo ponto; mas deve ter a obra de cadastro").
+        bateu = filtros.obras_em_que_bateu(conn, 30)
+        # A escala padrão da empresa vale para quem não tem escala própria (o espelho
+        # já julgava por ela); a lista passa a dizer isso, em vez de "sem escala".
+        padrao = escalas.escala_padrao(conn)
         # Quem procura alguém que não está na lista fica sabendo por quê. Só para
         # quem alcança todas as obras: para o preso a obra, dizer o motivo de quem
         # é de outra obra confirmaria que a pessoa existe.
@@ -352,7 +402,11 @@ def ponto_api_pessoas():
     for p in pessoas:
         j = cadastros.colaborador_para_json(p)
         j["escala"] = (vig.get(p["id"]) or {}).get("nome")
+        j["escala_e_padrao"] = not j["escala"] and padrao is not None
+        if j["escala_e_padrao"]:
+            j["escala"] = padrao["nome"]
         j["tem_pin"] = p["id"] in pins
+        j["obras_batidas"] = bateu.get(p["id"], [])
         j["regime_banco_rotulo"] = banco.ROTULOS.get(j["regime_banco"], j["regime_banco"])
         saida.append(j)
     return _ok(pessoas=saida, quantidade=len(saida), fora_da_lista=fora_da_lista)
@@ -371,6 +425,7 @@ def ponto_api_pessoa(colaborador_id: int):
                                         WHERE co.colaborador_id = :c ORDER BY o.codigo""",
                               c=colaborador_id)
         historico = escalas.historico_da_pessoa(conn, colaborador_id)
+        padrao = escalas.escala_padrao(conn)
         # O motivo do bloqueio e o arquivado (16/10/2026: "não aparece dentre os
         # aprovados e está dando bloqueado; já tinha sido aprovado e sumiu"): a ficha
         # diz o que aconteceu, sem caçar na lista de aparelhos.
@@ -387,6 +442,7 @@ def ponto_api_pessoa(colaborador_id: int):
                      "desde": h["vigencia_inicio"].isoformat(),
                      "ciclo_data_base": h["ciclo_data_base"].isoformat() if h["ciclo_data_base"] else None,
                      "por": h["definido_por"]} for h in historico]
+    j["escala_padrao"] = {"id": int(padrao["id"]), "nome": padrao["nome"]} if padrao else None
     j["aparelhos"] = [{**a, "ultimo_uso_em": horario.texto(a["ultimo_uso_em"]),
                        "bloqueado_em": horario.texto(a["bloqueado_em"]),
                        "arquivado_em": horario.texto(a["arquivado_em"])} for a in aparelhos]

@@ -41,6 +41,19 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1zf. **No ramo, esperando o "pode"** (16–17/10/2026, sem migração), junto com a 1ze — as telas do ERP
+   (pedido do dono: "melhorar o sidebar em relação a filtragens e deixar mais padronizado"):
+   **Mosaico** com os filtros na barra da esquerda e, por padrão, só as obras COM batida no dia (com
+   quantas pessoas); escolher a obra já carrega. **Espelho**: mês (MM/AAAA, em qualquer navegador — o
+   campo de mês do Firefox/Safari mostrava 2026-10), obra (as com batida no mês) e só então a pessoa (quem
+   bateu naquela obra no mês; quem bateu em duas aparece nas duas); coluna **Obra** em cada dia, em
+   destaque quando não é a principal, com as horas de cada obra; no impresso, `[CÓDIGO]` ao lado da hora.
+   **Pessoas**: filtros de obra do cadastro, obra em que está batendo (30 dias), função, escala, situação e
+   "sem PIN"; colunas "Batendo em" e "Função". **Escala padrão**: já existia (Configuração › Jornada ›
+   "Escala padrão da empresa") e o espelho já a usava, mas Pessoas, a ficha e o painel Hoje diziam "sem
+   escala" — agora dizem a padrão (o painel Hoje passou a julgar por ela, como o espelho).
+   **Em aberto com o dono:** apagar os dados de teste até 15/10 (ver a seção de 17/10); o WhatsApp que
+   bloqueia; o painel de problemas do ponto (propostas na conversa de 17/10, registradas abaixo).
 1ze. **No ramo, esperando o "pode"** (16/10/2026, sem migração). (1) **Correção de ponto em QUALQUER obra
    cadastrada** — decisão do dono: "não é para ser a obra do cadastro, é para aparecer a relação de obras
    cadastradas". O aplicativo lista as obras ativas (as da pessoa primeiro) e o servidor deixou de recusar
@@ -225,6 +238,41 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 17/10/2026 — Em aberto: dados de teste, WhatsApp e o painel de problemas
+
+**Apagar os dados de teste até 15/10** (o dono: "toda a informação que a gente
+coletou de 15/10 para trás é de teste; queria excluí-las"). NÃO feito — precisa
+da escolha dele, porque a batida tem número sequencial (NSR) e cada uma é
+encadeada à anterior (`hash_encadeado`; o "código de verificação" do comprovante
+são os 16 primeiros caracteres dele). Apagar as de teste deixa as reais
+começando no número seguinte (ex.: a primeira real seria a 1.137), com a
+corrente presa a uma batida que não existe mais. Caminhos postos para ele:
+(A) apagar e anotar onde a corrente recomeça — os números das reais não mudam,
+os comprovantes já mostrados continuam valendo, mas o AFD começa num número
+alto; (B) apagar e RENUMERAR as reais a partir de 1 — fica limpo, mas muda o NSR
+e o código de verificação das batidas de 16/10 em diante (comprovantes já vistos
+no aplicativo deixam de bater); (C) não apagar: marcar como teste e esconder de
+espelho, mosaico, alertas e relatórios. Antes de qualquer um: confirmar com a
+contabilidade como o AFD deve começar. Sai junto: fotos, pedidos, recusas,
+alertas, rondas e conferências do período; ficam cadastros, aparelhos, PINs, QR,
+escalas e configuração.
+
+**O WhatsApp bloqueia** (o Z-API derruba com volume; ver a mensageria). Proposta:
+no ponto, tirar volume (QR pelo aplicativo em vez do WhatsApp automático; código
+de primeiro acesso em lote, impresso, no dia do cadastro); no médio prazo, a API
+oficial do WhatsApp (Meta) — decisão e trabalho do chat da Mensageria.
+
+**O painel de problemas do ponto** (o dono: "relatório de problemas, de
+inconsistência, apontando pessoa, dia, qual é o problema (…) atacar pessoas que
+são problema (…) o problema é não se levar a sério a batida e querer ficar
+pedindo ajuste"). Proposta, sobre os alertas que já existem (`core/alertas.py`):
+na entrada de cada um, o que é dele — a pessoa vê o próprio mês (dias completos,
+batida faltando, foto sem rosto, ajustes pedidos); o responsável do ponto da
+obra e o encarregado veem a obra; a gestão vê o ranking por obra, responsável e
+pessoa, com um índice de "ponto em dia" e os ajustes pedidos por pessoa (com
+alerta acima de um limite). Esperando o dono decidir limites, quem vê o quê e se
+haverá ranking/gamificação.
 
 ## 16/10/2026 — A batida sem internet no ponto da obra
 

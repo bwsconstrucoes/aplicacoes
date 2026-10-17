@@ -653,3 +653,30 @@ def test_a_ficha_diz_por_que_o_celular_foi_bloqueado(app, mundo):
     a = next(x for x in dp.get(f"/erp/api/ponto/pessoas/{mundo['joao']}").get_json()["pessoa"]["aparelhos"]
              if x["id"] == ap)
     assert a["status"] == "BLOQUEADO" and "celular perdido" in a["motivo_bloqueio"] and a["bloqueado_em"]
+
+
+def test_filtros_obras_com_batida_e_quem_bateu(app, mundo, banco):
+    """16/10/2026: "o padrão de exibição deveria ser as obras que têm ponto" e, no
+    espelho, primeiro a obra, depois a lista de quem bateu nela. Quem bateu em duas
+    obras aparece nas duas; o supervisor da obra A não vê a B."""
+    from tests.test_ponto_gestao_banco import CPF_JOAO, CPF_MARIA, como
+    from app.apps.ponto import db, horario
+    from app.apps.ponto.core import marcacoes
+    with db.conexao() as conn:
+        marcacoes.registrar(conn, cpf=CPF_JOAO, obra="PG-A", origem="IDFACE", via_chave=True)
+    with db.conexao() as conn:
+        marcacoes.registrar(conn, cpf=CPF_JOAO, obra="PG-B", origem="IDFACE", via_chave=True,
+                            agora=horario.agora() + dt.timedelta(minutes=5))
+    with db.conexao() as conn:
+        marcacoes.registrar(conn, cpf=CPF_MARIA, obra="PG-B", origem="IDFACE", via_chave=True)
+    hoje = horario.hoje().isoformat()
+    dp, sup = como(app, mundo["dp"]), como(app, mundo["sup"])
+    obras = {o["codigo"]: o for o in dp.get(f"/erp/api/ponto/obras-com-batida?de={hoje}&ate={hoje}").get_json()["obras"]}
+    assert set(obras) == {"PG-A", "PG-B"} and obras["PG-B"]["pessoas"] == 2
+    comp = hoje[:7]
+    na_b = dp.get(f"/erp/api/ponto/pessoas-com-batida?obra={mundo['obra_b']}&competencia={comp}").get_json()["pessoas"]
+    assert {p["id"] for p in na_b} == {mundo["joao"], mundo["maria"]}
+    assert {o["codigo"] for o in sup.get(f"/erp/api/ponto/obras-com-batida?competencia={comp}").get_json()["obras"]} == {"PG-A"}
+    assert sup.get(f"/erp/api/ponto/pessoas-com-batida?obra={mundo['obra_b']}&competencia={comp}").status_code == 404
+    joao = next(p for p in dp.get("/erp/api/ponto/pessoas").get_json()["pessoas"] if p["id"] == mundo["joao"])
+    assert set(joao["obras_batidas"]) == {"PG-A", "PG-B"}

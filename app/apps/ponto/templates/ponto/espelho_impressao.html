@@ -135,6 +135,7 @@
         <td class="hora">
           {%- for b in d.batidas -%}
             {{ b.hora }}{% if b.status == "AJUSTADA" %} (aj){% elif b.status == "EM_ANALISE" %} (an){% endif %}
+            {%- if b.obra and b.obra != e.pessoa.obra %} <span class="obs">[{{ b.obra }}]</span>{% endif %}
             {%- if not loop.last %} · {% endif -%}
           {%- else -%}—{%- endfor -%}
         </td>
@@ -176,6 +177,7 @@
 
   <div class="legenda">
     <b>Legenda.</b> Horas em h:mm (9h05 = nove horas e cinco minutos).
+    <b>[CÓDIGO]</b> batida em outra obra que não a principal da pessoa ·
     <b>(aj)</b> batida incluída por ajuste aprovado — a original, quando existe, continua guardada.
     <b>(an)</b> batida em análise: entra na conta, mas ainda pode ser rejeitada.
     <b>Extra</b> é o que passou do previsto na escala; <b>débito</b> é atraso e saída antes da hora.

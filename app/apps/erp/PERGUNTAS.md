@@ -269,6 +269,10 @@ dizer "tem batida"; presença, horas e faltas são regra da fase 3.
 - Quem pediu a aprovação deste aparelho? (o pedido, desde 14/10/2026, só sai depois de entrar com CPF e PIN, e leva o nome de quem pediu; aparelho "sem nome" é de antes disso)
 - Por que o Fulano não aparece no ponto? 🔒 (a busca de Pessoas responde: falta no ERP, desligado pela data de saída ou pela fase do Pipefy, CPF inválido, "não bate ponto", ou fora da cópia do Registro)
 - Quantas batidas foram recusadas esta semana, e de que aparelho?
+- Que obras tiveram batida ontem, e quantas pessoas bateram em cada uma? 🔒 (a pessoa é da obra quando tem batida nela no dia; batida rejeitada não conta)
+- Quem bateu na obra X neste mês? 🔒 ⚠️ ("bateu na obra" = tem batida nela no mês; quem bateu em duas obras aparece nas duas — não é a obra do cadastro)
+- Em que obra o Fulano bateu em cada dia do mês? 🔒 (coluna Obra do espelho)
+- Quem está batendo numa obra diferente da do cadastro? 🔒 (Pessoas, "Batendo em" em destaque; últimos 30 dias)
 - Por que o celular do Fulano está bloqueado, e quem bloqueou? (`dispositivos.motivo_bloqueio` e `bloqueado_em`; "arquivado por X" = excluído da lista com batidas; "trocado por outro celular" = aprovaram outro aparelho dele)
 - Quais batidas foram feitas sem internet, e quanto tempo demoraram para chegar? 🔒 (`marcacoes.sem_internet`; a hora da batida é `timestamp_servidor`, a chegada é `recebida_em` — desde 16/10/2026, só no ponto da obra)
 - Que obras ficam sem internet com frequência? ⚠️ ("frequência" = dias com batida guardada sem internet no período; depende de o aparelho ter batido nelas)

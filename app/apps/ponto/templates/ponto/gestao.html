@@ -15,7 +15,7 @@
   "ponto_hoje": "Hoje", "ponto_espelho": "Espelho", "ponto_pendencias": "Validações",
   "ponto_mosaico": "Mosaico", "ponto_pessoas": "Pessoas", "ponto_banco": "Banco de horas", "ponto_alertas": "Alertas",
   "ponto_config": "Configuração"}.get(aba_ponto, "Ponto") }} — ERP BWS{% endblock %}
-{% block classe_corpo %}{% if aba_ponto in ("ponto_pendencias", "ponto_mosaico", "ponto_banco", "ponto_config", "ponto_rondas") %}sem-filtros{% endif %}{% endblock %}
+{% block classe_corpo %}{% if aba_ponto in ("ponto_pendencias", "ponto_banco", "ponto_config", "ponto_rondas") %}sem-filtros{% endif %}{% endblock %}
 
 {# =========================================================================
    BARRA DA ESQUERDA (filtros)
@@ -36,10 +36,14 @@
 
 {% elif aba_ponto == "ponto_espelho" %}
   <div class="filtros-cab"><h2>Espelho do mês</h2></div>
-  <div class="campo"><label for="e-pessoa">Pessoa</label>
+  {# Primeiro o mês e a obra, depois a pessoa (16/10/2026): a lista de pessoas é a
+     de quem bateu naquela obra no mês. #}
+  <div class="campo"><label for="e-mes">Mês</label>
+    <select id="e-mes" class="seletor-mes" data-sem-busca></select></div>
+  <div class="campo" style="margin-top:10px"><label for="e-obra">Obra</label>
+    <select id="e-obra"><option value="">carregando…</option></select></div>
+  <div class="campo" style="margin-top:10px"><label for="e-pessoa">Pessoa</label>
     <select id="e-pessoa"><option value="">carregando…</option></select></div>
-  <div class="campo" style="margin-top:10px"><label for="e-mes">Mês</label>
-    <input type="month" id="e-mes"></div>
   <button class="btn" id="e-ver" type="button" style="width:100%; margin-top:14px">Ver espelho</button>
   <button class="btn secundario" id="e-imprimir" type="button" style="width:100%; margin-top:8px"
           title="Abre o espelho em outra aba, pronto para imprimir e assinar">Imprimir</button>
@@ -56,13 +60,48 @@
   <div class="filtros-cab"><h2>Pessoas</h2></div>
   <div class="campo"><label for="pe-busca">Buscar</label>
     <input id="pe-busca" placeholder="nome ou CPF" autocomplete="off" data-sem-mascara></div>
-  <label class="opcao" style="margin-top:10px"><input type="checkbox" id="pe-todos">
+  {# Os filtros do cadastro (16/10/2026: "o sidebar só tem a busca pela pessoa;
+     tem que popular mais esse filtro com informação de cadastro"). As listas se
+     montam com o que existe nas pessoas carregadas. #}
+  <div class="campo" style="margin-top:10px"><label for="pe-f-obra">Obra do cadastro</label>
+    <select id="pe-f-obra"><option value="">Todas</option></select></div>
+  <div class="campo" style="margin-top:10px"><label for="pe-f-bateu">Batendo na obra (30 dias)</label>
+    <select id="pe-f-bateu"><option value="">Todas</option></select></div>
+  <div class="campo" style="margin-top:10px"><label for="pe-f-funcao">Função</label>
+    <select id="pe-f-funcao"><option value="">Todas</option></select></div>
+  <div class="campo" style="margin-top:10px"><label for="pe-f-escala">Escala</label>
+    <select id="pe-f-escala"><option value="">Todas</option></select></div>
+  <div class="campo" style="margin-top:10px"><label for="pe-f-situacao">Situação</label>
+    <select id="pe-f-situacao" data-sem-busca><option value="">Todas</option>
+      <option value="ATIVO">Ativo</option><option value="AFASTADO">Afastado</option>
+      <option value="FORA_DO_REGISTRO">Fora do Registro</option></select></div>
+  <label class="opcao" style="margin-top:10px"><input type="checkbox" id="pe-f-sem-pin">
+    <span class="rotulo">Só quem ainda não tem PIN</span></label>
+  <label class="opcao" style="margin-top:6px"><input type="checkbox" id="pe-todos">
     <span class="rotulo">Incluir quem não bate ponto</span></label>
   <button class="btn" id="pe-ver" type="button" style="width:100%; margin-top:14px">Buscar</button>
+  <button class="link-btn" id="pe-limpar" type="button" style="margin-top:8px">limpar filtros</button>
   <div class="cartao-dica" style="margin-top:16px">
     O cadastro da pessoa (nome, CPF, obra principal) é o do ERP, em
     Colaboradores. Aqui fica só o que é do ponto: escala, jornada, obras
     extras e banco de horas.
+  </div>
+
+{% elif aba_ponto == "ponto_mosaico" %}
+  {# Os filtros na barra da esquerda, como nas outras telas (16/10/2026), e só as
+     obras com batida no dia: "o cadastro de obras é muito grande e fica muita obra
+     sem nada". #}
+  <div class="filtros-cab"><h2>Mosaico</h2>
+    <button class="link-btn" id="m-ontem" type="button">Ontem</button></div>
+  <div class="campo"><label for="m-data">Dia</label><input type="date" id="m-data"></div>
+  <div class="campo" style="margin-top:10px"><label for="m-obra">Obra</label>
+    <select id="m-obra"><option value="">carregando…</option></select></div>
+  <label class="opcao" style="margin-top:8px"><input type="checkbox" id="m-todas">
+    <span class="rotulo">Mostrar também as obras sem batida</span></label>
+  <button class="btn" id="m-ver" type="button" style="width:100%; margin-top:14px">Ver mosaico</button>
+  <div class="cartao-dica" style="margin-top:16px">
+    Aparecem só as obras <b>com batida no dia</b>, com quantas pessoas bateram.
+    Escolhida a obra, as fotos aparecem na hora — uma linha por pessoa que bateu.
   </div>
 
 {% elif aba_ponto == "ponto_alertas" %}
@@ -272,13 +311,13 @@
 <div class="tabela-wrap">
   <div class="tabela-rolagem"><table>
     <thead><tr><th class="sem-ordem">Dia</th><th class="sem-ordem">Escala</th>
-      <th class="sem-ordem">Batidas</th><th class="sem-ordem dados">Previsto</th>
+      <th class="sem-ordem">Batidas</th><th class="sem-ordem">Obra</th><th class="sem-ordem dados">Previsto</th>
       <th class="sem-ordem dados">Trabalhado</th><th class="sem-ordem dados">Extra</th>
       <th class="sem-ordem dados">Débito</th><th class="sem-ordem">Situação</th>
       <th class="sem-ordem">Ocorrência</th>{% if pode.tratar_ponto %}<th class="sem-ordem"></th>{% endif %}
     </tr></thead>
     <tbody id="e-corpo"></tbody></table></div>
-  <div class="vazio" id="e-vazio"><b>Escolha uma pessoa</b>e o mês, na barra da esquerda.</div>
+  <div class="vazio" id="e-vazio"><b>Escolha o mês, a obra e a pessoa</b>na barra da esquerda.</div>
 </div>
 <div class="cartao-dica">
   <span class="chip">07:02</span> batida normal ·
@@ -348,12 +387,6 @@
 <h2>Mosaico de fotos <small id="m-sub">as fotos do dia, lado a lado, por pessoa</small></h2>
 <div id="mensagem"></div>
 <div class="cartao">
-  <div class="mosaico-filtro">
-    <div class="campo"><label for="m-obra">Obra</label>
-      <select id="m-obra"><option value="">carregando…</option></select></div>
-    <div class="campo estreito"><label for="m-data">Dia</label><input type="date" id="m-data"></div>
-    <button class="btn" id="m-ver" type="button">Ver mosaico</button>
-  </div>
   <div id="m-pendentes"></div>
 </div>
 
@@ -380,7 +413,8 @@
   <div class="mosaico-grade" id="m-grade"></div>
 </div>
 <div class="cartao" id="m-vazio">
-  <div class="vazio"><b>Escolha a obra e o dia</b>As fotos aparecem aqui, uma linha por pessoa.</div>
+  <div class="vazio"><b id="m-vazio-titulo">Escolha o dia e a obra, na barra da esquerda</b>
+    <span id="m-vazio-texto">As fotos aparecem aqui, uma linha por pessoa.</span></div>
 </div>
 
 {% if pode.tratar_ponto %}
@@ -406,6 +440,7 @@
   <div class="tabela-rolagem"><table>
     <thead><tr><th class="sem-ordem">Nome</th><th class="sem-ordem">CPF</th>
       <th class="sem-ordem">Obra principal</th><th class="sem-ordem">Obras extras</th>
+      <th class="sem-ordem">Batendo em (30 dias)</th><th class="sem-ordem">Função</th>
       <th class="sem-ordem">Jornada</th><th class="sem-ordem">Escala</th>
       <th class="sem-ordem">Banco de horas</th><th class="sem-ordem">Senha (PIN)</th></tr></thead>
     <tbody id="pe-corpo"></tbody></table></div>
@@ -788,6 +823,19 @@ const isoLocal = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2,
   + `${String(d.getDate()).padStart(2, "0")}`;
 const hojeISO = () => isoLocal(new Date());
 const mesAtual = () => hojeISO().slice(0, 7);
+// O mês como MÊS/ANO em qualquer navegador (16/10/2026: "se escolher mês, está
+// ano-mês; era para ser mês/ano"). O campo de mês do navegador mostra 2026-10 no
+// Firefox e no Safari; este seletor mostra 10/2026 e guarda 2026-10 no valor.
+function preencherMeses(sel, escolhido, meses = 24) {
+  const [a, m] = mesAtual().split("-").map(Number), lista = [];
+  for (let i = 0; i < meses; i++) {
+    const d = new Date(a, m - 1 - i, 1);
+    lista.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+  }
+  if (escolhido && !lista.includes(escolhido)) lista.push(escolhido);
+  sel.innerHTML = lista.map(c => `<option value="${c}">${mesBR(c)}</option>`).join("");
+  sel.value = escolhido || lista[0];
+}
 function somarDias(iso, n) {
   const d = new Date(`${iso}T12:00:00`);
   d.setDate(d.getDate() + n);
@@ -1220,11 +1268,27 @@ function atualizarLinksDoEspelho() {
   els("e-csv").href = `/erp/api/ponto/exportar.csv?competencia=${encodeURIComponent(comp)}`;
 }
 
-async function carregarPessoasDoEspelho() {
+// As obras com batida no mês, e as pessoas: as que bateram na obra escolhida no
+// mês (quem bateu em duas obras aparece nas duas) — ou todas, em "Todas as obras".
+async function carregarObrasDoEspelho() {
+  const comp = els("e-mes").value || mesAtual(), antes = els("e-obra").value;
   try {
-    const d = await api("/erp/api/ponto/pessoas");
-    els("e-pessoa").innerHTML = `<option value="">— escolha a pessoa —</option>`
-      + d.pessoas.map(p => `<option value="${p.id}">${escapar(p.nome)} · ${escapar(documento(p.cpf))}</option>`).join("");
+    const d = await api(`/erp/api/ponto/obras-com-batida?competencia=${encodeURIComponent(comp)}`);
+    els("e-obra").innerHTML = `<option value="">Todas as obras (todas as pessoas)</option>`
+      + d.obras.map(o => `<option value="${o.id}">${escapar(rotuloObra(o))} · ${contar(o.pessoas, "pessoa", "pessoas")}</option>`).join("");
+    if (antes && [...els("e-obra").options].some(o => o.value === antes)) els("e-obra").value = antes;
+  } catch (e) { falhou(e); }
+}
+async function carregarPessoasDoEspelho() {
+  const obra = els("e-obra").value, comp = els("e-mes").value || mesAtual(), antes = els("e-pessoa").value;
+  try {
+    const pessoas = obra
+      ? (await api(`/erp/api/ponto/pessoas-com-batida?obra=${encodeURIComponent(obra)}&competencia=${encodeURIComponent(comp)}`)).pessoas
+      : (await api("/erp/api/ponto/pessoas")).pessoas;
+    els("e-pessoa").innerHTML = `<option value="">— escolha a pessoa${obra ? ` (${contar(pessoas.length, "bateu", "bateram")} na obra)` : ""} —</option>`
+      + pessoas.map(p => `<option value="${p.id}">${escapar(p.nome)}${p.cpf ? ` · ${escapar(documento(p.cpf))}`
+          : ` · ${contar(p.batidas, "batida", "batidas")}`}</option>`).join("");
+    if (antes && [...els("e-pessoa").options].some(o => o.value === antes)) els("e-pessoa").value = antes;
   } catch (e) { falhou(e); }
 }
 
@@ -1269,6 +1333,22 @@ function rondaNoEspelho(r) {
   const onde = r.distancia_metros == null ? "" : r.dentro_da_cerca ? ", na obra" : `, a ${Math.round(r.distancia_metros)} m da obra`;
   return `<span class="chip" title="${escapar(`${r.numero}ª ronda — ${r.rotulo}${r.hora ? `, saiu às ${r.hora}` : ""}${r.feita ? `, feita às ${r.feita}` : ""}${onde}`)}"
     style="${r.status === "PERDIDA" ? "color:var(--vermelho); font-weight:700" : ""}">${ICONE_RONDA_ESP[r.status] || ""} ${escapar(r.feita || r.hora || r.rotulo)}</span>`;
+}
+// A obra de cada dia, à vista (16/10/2026: "eu não sei em qual obra a pessoa bateu
+// o ponto (…) queria bater o olho no espelho e já entender"). Fora da obra
+// principal da pessoa, em destaque; com mais de uma obra no dia, cada uma com as
+// horas que bateu nela.
+function obrasDoDia(d, p) {
+  const porObra = {};
+  d.batidas.forEach(b => { if (b.obra) (porObra[b.obra] = porObra[b.obra] || []).push(b.hora); });
+  const codigos = Object.keys(porObra);
+  if (!codigos.length) return `<span class="suave">—</span>`;
+  return codigos.map(c => {
+    const outra = p.obra && c !== p.obra;
+    return `<div class="dados" title="${escapar(outra ? `fora da obra principal (${p.obra})` : "obra principal")}"
+      style="${outra ? "color:var(--ambar); font-weight:700" : ""}">${escapar(c)}${codigos.length > 1
+        ? `<small>${porObra[c].map(escapar).join(", ")}</small>` : ""}</div>`;
+  }).join("");
 }
 function desenharEspelho() {
   const p = ESP.pessoa, r = ESP.resumo;
@@ -1321,6 +1401,7 @@ function desenharEspelho() {
         ${d.batidas.filter(b => b.latitude != null && (b.fora_da_cerca || b.status === "EM_ANALISE")).map(b =>
           `<div><small>${escapar(b.hora)}: ${b.fora_da_cerca ? `fora da obra${b.distancia_metros != null ? ` (${distancia(b.distancia_metros)})` : ""} · ` : ""}${linkMapa(b.latitude, b.longitude)}</small></div>`).join("")}
         ${(d.rondas || []).length ? `<div style="margin-top:4px"><small class="suave">🔦 rondas:</small> ${d.rondas.map(rondaNoEspelho).join(" ")}</div>` : ""}</td>
+      <td>${obrasDoDia(d, p)}</td>
       <td class="dados">${hmCelula(d.previsto)}</td>
       <td class="dados">${hmCelula(d.trabalhado)}</td>
       <td class="dados" ${d.extra ? `style="color:var(--verde); font-weight:700"` : ""}>${hmCelula(d.extra)}</td>
@@ -1496,11 +1577,14 @@ async function lancarAfastamento() {
   } catch (e) { falhou(e); }
 }
 
-els("e-mes").value = /^\d{4}-\d{2}$/.test(doUrl("competencia") || "") ? doUrl("competencia") : mesAtual();
+preencherMeses(els("e-mes"), /^\d{4}-\d{2}$/.test(doUrl("competencia") || "") ? doUrl("competencia") : mesAtual());
 atualizarLinksDoEspelho();
 els("e-ver").addEventListener("click", carregarEspelho);
 els("e-pessoa").addEventListener("change", carregarEspelho);
-els("e-mes").addEventListener("change", carregarEspelho);
+els("e-obra").addEventListener("change", carregarPessoasDoEspelho);
+els("e-mes").addEventListener("change", async () => {
+  await carregarObrasDoEspelho(); await carregarPessoasDoEspelho(); carregarEspelho();
+});
 els("e-imprimir").addEventListener("click", () => {
   const id = els("e-pessoa").value;
   if (!id) { aviso("mensagem", "Escolha a pessoa antes de imprimir.", "erro"); return; }
@@ -1511,7 +1595,7 @@ if (els("e-btn-ajuste")) els("e-btn-ajuste").addEventListener("click", () => ped
 if (els("e-btn-compensacao")) els("e-btn-compensacao").addEventListener("click", registrarCompensacao);
 if (els("e-btn-afastamento")) els("e-btn-afastamento").addEventListener("click", lancarAfastamento);
 if (els("e-btn-documento")) els("e-btn-documento").addEventListener("click", entregarDocumento);
-carregarPessoasDoEspelho().then(() => {
+carregarObrasDoEspelho().then(carregarPessoasDoEspelho).then(() => {
   const id = doUrl("colaborador_id");
   if (id && /^\d+$/.test(id)) {
     const sel = els("e-pessoa");
@@ -1948,11 +2032,30 @@ const DICA_IDENTIFICACAO = {QR_WHATSAPP: "pelo QR Code recebido no WhatsApp",
   QR_APP: "pelo QR Code do app da pessoa", CPF: "digitou o CPF no ponto da obra",
   SESSAO: "pelo celular da própria pessoa"};
 
+// As obras do seletor: só as que têm batida no dia (16/10/2026), com quantas
+// pessoas bateram; "mostrar também as sem batida" traz o cadastro inteiro.
+let OBRAS_TODAS_MOSAICO = null;
 async function carregarObrasDoMosaico() {
+  const data = els("m-data").value || somarDias(hojeISO(), -1);
+  const antes = els("m-obra").value;
   try {
-    const d = await api("/erp/api/ponto/obras");
-    els("m-obra").innerHTML = `<option value="">— escolha a obra —</option>`
-      + d.obras.map(o => `<option value="${o.id}">${escapar(rotuloObra(o))}</option>`).join("");
+    const d = await api(`/erp/api/ponto/obras-com-batida?de=${encodeURIComponent(data)}&ate=${encodeURIComponent(data)}`);
+    let opcoes = d.obras.map(o => `<option value="${o.id}">${escapar(rotuloObra(o))} · ${contar(o.pessoas, "pessoa", "pessoas")}</option>`);
+    if (els("m-todas").checked) {
+      if (!OBRAS_TODAS_MOSAICO) OBRAS_TODAS_MOSAICO = (await api("/erp/api/ponto/obras")).obras;
+      const com = new Set(d.obras.map(o => String(o.id)));
+      const sem = OBRAS_TODAS_MOSAICO.filter(o => !com.has(String(o.id)));
+      if (sem.length) opcoes.push(`<optgroup label="Sem batida no dia">${sem.map(o =>
+        `<option value="${o.id}">${escapar(rotuloObra(o))}</option>`).join("")}</optgroup>`);
+    }
+    els("m-obra").innerHTML = `<option value="">${d.obras.length ? "— escolha a obra —" : "nenhuma obra com batida no dia"}</option>`
+      + opcoes.join("");
+    if (antes && [...els("m-obra").options].some(o => o.value === antes)) els("m-obra").value = antes;
+    els("m-vazio-titulo").textContent = d.obras.length ? "Escolha a obra, na barra da esquerda"
+                                                       : `Nenhuma batida em ${ddmm(data)}`;
+    els("m-vazio-texto").textContent = d.obras.length
+      ? `${contar(d.obras.length, "obra teve", "obras tiveram")} batida nesse dia. As fotos aparecem aqui, uma linha por pessoa.`
+      : "Escolha outro dia — ou marque “Mostrar também as obras sem batida”.";
     return d.obras;
   } catch (e) { falhou(e); return []; }
 }
@@ -1991,10 +2094,11 @@ function escolherObra(id, rotulo) {
   if (!opcao) {
     opcao = document.createElement("option");
     opcao.value = String(id);
-    opcao.textContent = `obra nº ${id}`;
+    opcao.textContent = rotulo || `obra nº ${id}`;
     sel.appendChild(opcao);
+  } else if (rotulo && opcao.textContent.startsWith("obra nº")) {
+    opcao.textContent = rotulo;          // a da lista mantém a contagem de pessoas
   }
-  if (rotulo) opcao.textContent = rotulo;
   sel.value = String(id);
 }
 
@@ -2210,7 +2314,16 @@ els("m-data").value = /^\d{4}-\d{2}-\d{2}$/.test(doUrl("data") || "") ? doUrl("d
 els("m-data").max = hojeISO();
 els("m-ver").addEventListener("click", carregarMosaico);
 els("m-obra").addEventListener("change", carregarMosaico);
-els("m-data").addEventListener("change", () => { if (els("m-obra").value) carregarMosaico(); });
+// Outro dia: as obras daquele dia; a obra escolhida continua se teve batida nele.
+els("m-data").addEventListener("change", async () => {
+  await carregarObrasDoMosaico();
+  if (els("m-obra").value) carregarMosaico(); else semMosaico();
+});
+els("m-todas").addEventListener("change", carregarObrasDoMosaico);
+els("m-ontem").addEventListener("click", () => {
+  els("m-data").value = somarDias(hojeISO(), -1);
+  els("m-data").dispatchEvent(new Event("change"));
+});
 if (els("m-confirmar")) els("m-confirmar").addEventListener("click", confirmarConferencia);
 carregarPendentesDoMosaico();
 carregarObrasDoMosaico().then(obras => {
@@ -2234,26 +2347,61 @@ async function carregarPessoas() {
     const d = await api(`/erp/api/ponto/pessoas?${p}`);
     PESSOAS = d.pessoas;
     FORA_DA_LISTA = d.fora_da_lista || [];
+    preencherFiltrosDePessoas();
     desenharPessoas();
   } catch (e) { falhou(e); }
 }
 
+// Os filtros da barra: as opções saem das próprias pessoas carregadas, e filtrar
+// é na hora, sem ir ao servidor.
+const SEM_ESCALA_FILTRO = "__sem__";
+function preencherFiltrosDePessoas() {
+  const ordenar = l => [...new Set(l.filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  const montar = (id, valores, extra = "") => {
+    const sel = els(id), antes = sel.value;
+    sel.innerHTML = `<option value="">Todas</option>${extra}` + valores.map(v => `<option value="${escapar(v)}">${escapar(v)}</option>`).join("");
+    if ([...sel.options].some(o => o.value === antes)) sel.value = antes;
+  };
+  montar("pe-f-obra", ordenar(PESSOAS.flatMap(p => [p.obra_principal && p.obra_principal.codigo,
+                                                     ...(p.obras_adicionais || []).map(o => o.codigo)])));
+  montar("pe-f-bateu", ordenar(PESSOAS.flatMap(p => p.obras_batidas || [])));
+  montar("pe-f-funcao", ordenar(PESSOAS.map(p => p.funcao)));
+  montar("pe-f-escala", ordenar(PESSOAS.map(p => p.escala)), `<option value="${SEM_ESCALA_FILTRO}">Sem escala</option>`);
+}
+function pessoasFiltradas() {
+  const f = id => els(id).value;
+  return PESSOAS.filter(p =>
+    (!f("pe-f-obra") || (p.obra_principal && p.obra_principal.codigo === f("pe-f-obra"))
+                     || (p.obras_adicionais || []).some(o => o.codigo === f("pe-f-obra")))
+    && (!f("pe-f-bateu") || (p.obras_batidas || []).includes(f("pe-f-bateu")))
+    && (!f("pe-f-funcao") || p.funcao === f("pe-f-funcao"))
+    && (!f("pe-f-escala") || (f("pe-f-escala") === SEM_ESCALA_FILTRO ? !p.escala : p.escala === f("pe-f-escala")))
+    && (!f("pe-f-situacao") || p.situacao === f("pe-f-situacao"))
+    && (!els("pe-f-sem-pin").checked || !p.tem_pin));
+}
 function desenharPessoas() {
-  els("pe-sub").textContent = `${PESSOAS.length} pessoa(s)`;
-  els("pe-vazio").classList.toggle("oculto", PESSOAS.length > 0);
+  const todas = PESSOAS;
+  const lista = pessoasFiltradas();
+  els("pe-sub").textContent = lista.length === todas.length ? `${todas.length} pessoa(s)` : `${lista.length} de ${todas.length} pessoa(s)`;
+  els("pe-vazio").classList.toggle("oculto", lista.length > 0);
   // Quem a busca achou, mas não está na lista — e por quê (14/10/2026).
   const porQue = FORA_DA_LISTA.map(x => `<li>${x.nome ? `<b>${escapar(x.nome)}</b>${x.cpf_final ? ` (CPF final ${escapar(x.cpf_final)})` : ""}: ` : ""}${escapar(x.motivo)}.</li>`).join("");
   els("pe-fora").classList.toggle("oculto", !porQue);
   els("pe-fora").innerHTML = porQue ? `<b>${PESSOAS.length ? "Também casam com a busca, mas não estão na lista" : "Não está na lista"}</b><ul style="margin:6px 0 0 18px; padding:0">${porQue}</ul>` : "";
-  if (!PESSOAS.length) els("pe-vazio").innerHTML = porQue ? "<b>Ninguém na lista</b>Veja o motivo acima." : "<b>Ninguém encontrado</b>Mude a busca.";
-  els("pe-corpo").innerHTML = PESSOAS.map(p => `<tr style="cursor:pointer" data-pessoa="${p.id}">
+  if (!lista.length) els("pe-vazio").innerHTML = porQue ? "<b>Ninguém na lista</b>Veja o motivo acima."
+    : todas.length ? "<b>Ninguém com esses filtros</b>Mude ou limpe os filtros." : "<b>Ninguém encontrado</b>Mude a busca.";
+  els("pe-corpo").innerHTML = lista.map(p => `<tr style="cursor:pointer" data-pessoa="${p.id}">
     <td><b>${escapar(p.nome)}</b>${!p.ativo_no_ponto ? `<small>não bate ponto</small>` : ""}
       ${p.situacao && p.situacao !== "ATIVO" ? `<small>${escapar(rotulo(p.situacao))}</small>` : ""}</td>
     <td class="dados">${escapar(documento(p.cpf))}</td>
     <td class="dados">${p.obra_principal ? escapar(p.obra_principal.codigo) : `<span class="suave">—</span>`}</td>
     <td class="dados">${(p.obras_adicionais || []).map(o => escapar(o.codigo)).join(", ") || `<span class="suave">—</span>`}</td>
+    <td class="dados">${(p.obras_batidas || []).map(c => `<span style="${p.obra_principal && c !== p.obra_principal.codigo
+        ? "color:var(--ambar); font-weight:700" : ""}">${escapar(c)}</span>`).join(", ") || `<span class="suave">—</span>`}</td>
+    <td>${p.funcao ? escapar(p.funcao) : `<span class="suave">—</span>`}</td>
     <td>${escapar(rotuloJornada(p.tipo_jornada))}</td>
-    <td>${p.escala ? escapar(p.escala) : `<span class="selo aguardando">sem escala</span>`}</td>
+    <td>${p.escala ? `${escapar(p.escala)}${p.escala_e_padrao ? `<small>padrão da empresa</small>` : ""}`
+                   : `<span class="selo aguardando">sem escala</span>`}</td>
     <td>${escapar(p.regime_banco_rotulo || "—")}</td>
     <td>${p.tem_pin ? `<span class="selo aprovado">sim</span>` : `<span class="selo outro">não</span>`}</td>
   </tr>`).join("");
@@ -2277,8 +2425,11 @@ async function abrirPessoa(id) {
           <div class="kpi-sub">${(p.obras_adicionais || []).length
             ? `também: ${(p.obras_adicionais || []).map(o => escapar(o.codigo)).join(", ")}` : "sem obras extras"}</div></div>
         <div class="kpi estatico ciano"><div class="kpi-rotulo">Escala de hoje</div>
-          <div class="kpi-valor" style="font-size:16px">${atual ? escapar(atual.escala) : "sem escala"}</div>
-          <div class="kpi-sub">${atual ? `desde ${dataBR(atual.desde)}` : "o espelho não julga falta sem escala"}</div></div>
+          <div class="kpi-valor" style="font-size:16px">${atual ? escapar(atual.escala)
+            : p.escala_padrao ? escapar(p.escala_padrao.nome) : "sem escala"}</div>
+          <div class="kpi-sub">${atual ? `desde ${dataBR(atual.desde)}`
+            : p.escala_padrao ? "a padrão da empresa — para outra, “Trocar escala”"
+            : "o espelho não julga falta sem escala"}</div></div>
         <div class="kpi estatico"><div class="kpi-rotulo">Jornada</div>
           <div class="kpi-valor" style="font-size:16px">${escapar(rotuloJornada(p.tipo_jornada))}</div>
           <div class="kpi-sub">${p.ativo_no_ponto ? "bate ponto" : "não bate ponto"}</div></div>
@@ -2594,6 +2745,12 @@ async function regimeDoBanco(p) {
 
 els("pe-ver").addEventListener("click", carregarPessoas);
 els("pe-todos").addEventListener("change", carregarPessoas);
+["pe-f-obra", "pe-f-bateu", "pe-f-funcao", "pe-f-escala", "pe-f-situacao", "pe-f-sem-pin"]
+  .forEach(id => els(id).addEventListener("change", desenharPessoas));
+els("pe-limpar").addEventListener("click", () => {
+  ["pe-f-obra", "pe-f-bateu", "pe-f-funcao", "pe-f-escala", "pe-f-situacao"].forEach(id => { els(id).value = ""; });
+  els("pe-f-sem-pin").checked = false; desenharPessoas();
+});
 els("pe-busca").addEventListener("input", () => {
   clearTimeout(ESPERA);
   ESPERA = setTimeout(carregarPessoas, 350);

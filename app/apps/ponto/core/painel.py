@@ -61,13 +61,16 @@ def hoje(conn: Connection, *, dia: Optional[dt.date] = None, obras: Optional[lis
     """, d=dia, ids=ids):
         vigencias[v["colaborador_id"]].append(v)
     calendario = feriados.Calendario(conn, dia, dia)
+    # A escala padrão da empresa, para quem não tem escala própria — a mesma regra
+    # do espelho (`escalas.EscalasDaPessoa`). Antes o painel dizia "sem escala".
+    padrao = escalas.escala_padrao(conn)
 
     linhas, por_obra = [], defaultdict(lambda: defaultdict(int))
     for p in pessoas:
         do_dia = batidas.get(p["id"], [])
         vig = vigencias.get(p["id"], [])
-        atual = vig[-1] if vig else None
-        esc = escalas.para_apuracao(atual, atual["ciclo_data_base"]) if atual else None
+        atual = vig[-1] if vig else padrao
+        esc = escalas.para_apuracao(atual, atual.get("ciclo_data_base")) if atual else None
         periodos = esc.periodos(dia) if esc else []
         obra_do_dia = do_dia[0]["obra_id"] if do_dia else p.get("obra_id")
         nome_feriado = calendario.feriado(dia, obra_do_dia)
@@ -95,7 +98,7 @@ def hoje(conn: Connection, *, dia: Optional[dt.date] = None, obras: Optional[lis
         linhas.append({
             "colaborador_id": p["id"], "nome": p["nome"], "cpf": p["cpf"], "obra": obra_codigo,
             "situacao": situacao, "situacao_rotulo": SITUACOES[situacao],
-            "escala": atual["nome"] if atual else None,
+            "escala": (f"{atual['nome']} (padrão da empresa)" if atual and not vig else atual["nome"] if atual else None),
             "previsto_entrada": (f"{periodos[0][0] // 60:02d}:{periodos[0][0] % 60:02d}"
                                  if periodos else None),
             "batidas": [{"id": b["id"], "tem_foto": b["foto_id"] is not None,
