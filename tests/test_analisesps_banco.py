@@ -7447,7 +7447,7 @@ def test_a_FILA_DE_COMPROVANTES_anda_sozinha_quando_outra_tarefa_termina(
         conn.execute("UPDATE analisesps.comprovantes_lote SET situacao = 'RODANDO', "
                      "  recebido_em = now() - interval '1 hour' WHERE id = ?", (lote_id,))
         conn.commit()
-    tarefas.encadear_comprovantes("colaboradores")
+    tarefas.encadear_comprovantes("sincronizar")
     assert disparos == ["comprovantes", "comprovantes"]
     # Já terminado: não dispara à toa.
     with conexao() as conn:

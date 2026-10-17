@@ -1968,7 +1968,17 @@ def andamento():
     carga. Responde só o essencial — é chamada muitas vezes."""
     from . import tarefas
     from .horario import texto
-    estado = tarefas.estado()
+    # `?pista=cadastro` acompanha a atualização dos colaboradores, que roda na
+    # pista dela (migração 054) — a geral é a da sincronização.
+    pista = request.args.get("pista") if request.args.get("pista") in (
+        "pessoa", "cadastro") else "geral"
+    estado = tarefas.estado(pista)
+    if pista == "cadastro" and not estado["rodando"] and tarefas.estado()["rodando"] \
+            and tarefas._pedido_pendente("colaboradores"):
+        # Na fila, esperando a geral (antes do botão da 054): segue "rodando".
+        estado = {"rodando": True, "interrompida": None,
+                  "detalhe": {"etapa": "na fila — esperando a atualização das SPs",
+                              "progresso": ""}}
     detalhe = estado.get("detalhe") or estado.get("interrompida") or {}
     return {
         "ok": True,
@@ -2064,6 +2074,16 @@ def sincronizar():
         return {"ok": False, "erro": "Não autorizado."}, 403
 
     resultado = tarefas.disparar(modo, disparo=disparo)
+    # Ocupado e é um dos botões que esperam a vez: vai para a fila e começa
+    # sozinho quando a outra terminar (16/10/2026).
+    if (not resultado.get("ok") and resultado.get("ocupado")
+            and modo in tarefas.NA_FILA_QUANDO_OCUPADO):
+        tarefas.pedir_depois(modo)
+        resultado = {"ok": True, "na_fila": True,
+                     "aviso": "Há outra atualização rodando ("
+                              + tarefas.o_que_roda(tarefas.estado())
+                              + "). Este pedido ficou na fila e começa sozinho "
+                                "quando ela terminar."}
 
     # ⚠️ FORMULÁRIO DE VERDADE VOLTA PARA A TELA, e não para um JSON na cara de
     # quem apertou. As telas disparam por `fetch`, mas o botão de retomar a fila

@@ -12228,6 +12228,48 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 234 — RG, emissão, órgão e UF da planilha de cadastro da SomaPay (16/10/2026)
+
+- *"As informações entre as colunas E e H [RG, data de emissão, órgão emissor,
+  UF] são obrigatórias. No Cadastro de Colaboradores só temos esses dados entre
+  as colunas N e Q."* A carga do cadastro procurava "RG", "Órgão Emissor RG"…;
+  os títulos de verdade são "Documento de Identificação (RG, CNH ou CTPS)",
+  "Órgão Emissor (Documento de e Identificação)" (assim, com o "de e"), "Data de
+  Emissão (Documento de Identificação)" e "UF (Documento de Identificação)". Não
+  achava, e a planilha da SomaPay saía com as quatro vazias. Os quatro nomes
+  entraram primeiro na lista de `COLUNAS_DOCUMENTOS`.
+- **Levas 233 (migração 054) e 234 publicadas em 16/10/2026** (suíte inteira
+  verde). Falta ele: apertar "Aplicar atualizações do banco" e rodar "Atualizar
+  cadastro" em Colaboradores.
+- **Depende de uma atualização do cadastro depois de publicar** (os documentos
+  ficam guardados na carga). O documento pode ser RG, CNH ou CTPS — vai no campo
+  "RG" da SomaPay como está na planilha.
+
+#### Leva 233 — O cadastro de colaboradores em pista própria (16/10/2026) — MIGRAÇÃO 054
+
+- *"Algo errado na atualização dos colaboradores: Já existe uma atualização em
+  andamento (trazendo as SPs alteradas) (…) já tá há muito tempo nisso (…)
+  elas deveriam ser independentes, não?"* Configurações mostrava "trazendo as
+  SPs alteradas — 34400 de 41183".
+- **O que estava acontecendo:** a sincronização de 5 em 5 minutos estava
+  trazendo ~41 mil SPs como "alteradas" — quase a base inteira (o normal são
+  dezenas). O código dela não mudava desde 10/10; a causa provável é a planilha:
+  algo regravou o carimbo (ou a situação do pagamento) de quase todas as linhas
+  de uma vez. Em lotes de 200, isso leva dezenas de minutos, e a marca d'água só
+  avança NO FIM — publicar no meio recomeça do zero. **A conferir com o dono:** se
+  a sincronização seguinte voltar a trazer dezenas de milhares, é defeito na
+  comparação e precisa de investigação (o log do Render diz quantas foram "sem
+  carimbo novo").
+- **Feito:** (1) a atualização dos colaboradores ganhou PISTA PRÓPRIA (migração
+  054 — o índice de "uma viva por pista" passa a ter três pistas: geral,
+  pessoa, cadastro) e roda junto da sincronização; (2) antes do botão da 054,
+  ou com outro cadastro rodando, o pedido vai para a FILA e começa sozinho quando
+  a outra terminar, com "Na fila…" no botão; (3) a frase de "já existe uma
+  atualização" diz em que pé ela está e desde que horas ("trazendo as SPs
+  alteradas — 1200 de 5400, desde 09:12").
+- Não existe atualização completa diária: só a do que mudou (5 em 5 min, com
+  tela aberta) e a carga completa pelo botão — respondido ao dono.
+
 #### Leva 232 — Pagamento avulso (15/10/2026)
 
 - *"Eu quero poder gerar um arquivo de pagamento, SomaPay ou BeeVale (…)

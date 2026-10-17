@@ -252,13 +252,25 @@ COLUNAS_OPCIONAIS = {
 # cadastro da SomaPay, que pede RG, órgão, nome da mãe, endereço… Ficam num JSON
 # (`colaborador.documentos`); os nomes são os prováveis e a falta de um deles NÃO
 # avisa na carga — quem avisa é a planilha de cadastro, na hora de gerar.
+#
+# ⚠️ OS NOMES DE VERDADE, das colunas N a Q do Cadastro de Colaboradores (dono,
+# 16/10/2026: *"as informações entre as colunas E e H [da planilha da SomaPay]
+# são obrigatórias; no Cadastro de Colaboradores só temos esses dados entre as
+# colunas N e Q"*). Vêm PRIMEIRO, escritos como estão na planilha — inclusive o
+# "Documento de e Identificação" do órgão emissor. Sem eles, a planilha de
+# cadastro da SomaPay saía com RG, emissão, órgão e UF vazios.
 COLUNAS_DOCUMENTOS = {
-    "rg": ["RG", "Nº RG", "Número do RG", "Numero do RG", "RG Número", "Identidade"],
-    "rg_emissao": ["Data Emissão RG", "Data de Emissão do RG", "Data Emissao RG",
+    "rg": ["Documento de Identificação (RG, CNH ou CTPS)",
+           "RG", "Nº RG", "Número do RG", "Numero do RG", "RG Número", "Identidade"],
+    "rg_emissao": ["Data de Emissão (Documento de Identificação)",
+                   "Data Emissão RG", "Data de Emissão do RG", "Data Emissao RG",
                    "Emissão RG", "Data de Expedição", "Data Expedição RG"],
-    "rg_orgao": ["Órgão Emissor RG", "Órgão Emissor", "Orgao Emissor",
+    "rg_orgao": ["Órgão Emissor (Documento de e Identificação)",
+                 "Órgão Emissor (Documento de Identificação)",
+                 "Órgão Emissor RG", "Órgão Emissor", "Orgao Emissor",
                  "Órgão Expedidor", "Orgao Expedidor"],
-    "rg_uf": ["UF Emissão", "UF Emissão RG", "UF do RG", "UF RG", "UF Emissor"],
+    "rg_uf": ["UF (Documento de Identificação)",
+              "UF Emissão", "UF Emissão RG", "UF do RG", "UF RG", "UF Emissor"],
     "nome_mae": ["Nome da Mãe", "Nome da Mae", "Mãe", "Filiação Mãe"],
     "sexo": ["Sexo", "Gênero", "Genero"],
     "cep": ["CEP"],
