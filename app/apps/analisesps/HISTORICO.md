@@ -12228,6 +12228,20 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 235 — Pagamento avulso: a mesma pessoa duas vezes (17/10/2026)
+
+- **Incidente:** *"duas pessoas foram pagas duplicado e não tinha nenhum alerta
+  (…) o sistema só somou e gerou o arquivo"*. Havia só uma frase pequena na
+  linha, e as duas linhas vinham marcadas — o arquivo consolidava somando.
+- **Feito:** (1) quadro VERMELHO no alto da tela com cada pessoa repetida, as
+  linhas e valores e quanto vai ser pago; pendência na lateral e indicador
+  "Pessoas repetidas"; selo "REPETIDO 2/2" na linha. (2) A 1ª vez vem marcada; as
+  SEGUINTES vêm DESMARCADAS — pagar de novo é decisão. (3) Com a mesma pessoa
+  marcada mais de uma vez, a janela de gerar mostra o aviso ("está marcado(a) 2
+  vezes, R$ a + R$ b = R$ c") e o arquivo só sai com "gerar com aviso".
+- Escolha minha: desmarcar a repetida por padrão (em vez de só avisar) — o erro
+  caro é pagar em dobro; se for para pagar as duas, basta marcar.
+
 #### Leva 234 — RG, emissão, órgão e UF da planilha de cadastro da SomaPay (16/10/2026)
 
 - *"As informações entre as colunas E e H [RG, data de emissão, órgão emissor,

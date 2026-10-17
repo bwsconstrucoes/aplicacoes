@@ -785,6 +785,16 @@ def resumo_direto(origem: str, dados: dict, destino: str,
         [l for l in pedido["linhas"] if l["valor"] > 0], destinos or {}, destino)
     if not lotes:
         raise ErroDoPagamento("nenhum colaborador selecionado para pagamento.")
+    if origem == "avulso":
+        # A mesma pessoa marcada mais de uma vez (17/10/2026): aviso na janela,
+        # e o arquivo só sai com "gerar com aviso".
+        from . import pagamento_avulso as pa
+        repetidas = pa.criticas_de_repetidos(pedido["linhas"])
+        for lote in lotes:
+            frases = repetidas.get(lote.get("conta", ""), [])
+            if frases:
+                lote["criticas"] = list(lote.get("criticas") or []) + frases
+                lote["pode_gerar"] = False
     resumo = geracao.resumo_dos_lotes(lotes)
     # ⚠️ A TRAVA É O ARQUIVO GERADO (dono, 06/10/2026, ao tirar o botão "Fechar":
     # *"só serviria de fechar se fosse para criar um bloqueio, uma trava (…) a

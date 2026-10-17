@@ -280,9 +280,20 @@ def calcular() -> dict:
         base["avisos"].append("Sem ponto carregado neste mês nem no anterior: a obra "
                               "do ponto não aparece, e o alerta \"sem ponto\" não é dado.")
     ajustes = atual.get("ajustes") or {}
-    vezes = {}
+    # ⚠️ A MESMA PESSOA MAIS DE UMA VEZ (17/10/2026). O dono: *"duas pessoas
+    # foram pagas duplicado e não tinha nenhum alerta (…) o sistema só somou e
+    # gerou o arquivo. Isso precisa ser um alerta bem vistoso (…) a gente
+    # entender se é um erro ou se é para ser daquela forma mesmo."* Agora: a 1ª
+    # vez vem marcada, as SEGUINTES vêm DESMARCADAS (pagar em dobro tem de ser
+    # decisão, não descuido), a tela abre com um aviso vermelho no alto, e gerar
+    # com as duas marcadas pede "gerar com aviso".
+    vezes, ordem_da_vez = {}, {}
     for l in linhas:
         vezes[l["cpf"]] = vezes.get(l["cpf"], 0) + 1
+        ordem_da_vez[l["chave"]] = vezes[l["cpf"]]
+    primeira_de = {}
+    for l in linhas:
+        primeira_de.setdefault(l["cpf"], l)
     tipo = base["tipo_despesa"]
     carteira = TIPOS_DE_DESPESA.get(tipo, TIPOS_DE_DESPESA[TIPO_PADRAO])
     gerada = bool(atual.get("gerado"))
@@ -342,9 +353,18 @@ def calcular() -> dict:
                 m.append(ficha["desacordo"])
             if tem_ponto and l["cpf"] not in dias_ponto:
                 m.append("sem ponto no mês.")
-        if vezes.get(l["cpf"], 0) > 1:
-            m.append(f"este CPF aparece {vezes[l['cpf']]} vezes na lista — no arquivo, "
-                     "as linhas dele viram uma, somando.")
+        p["vezes"] = vezes.get(l["cpf"], 0)
+        p["vez"] = ordem_da_vez.get(l["chave"], 1)
+        p["repetido"] = p["vezes"] > 1
+        if p["repetido"]:
+            primeira = primeira_de[l["cpf"]]
+            m.insert(0, f"REPETIDO: esta pessoa aparece {p['vezes']} vezes na lista "
+                        f"(esta é a {p['vez']}ª)."
+                     + ("" if p["vez"] == 1 else
+                        f" A 1ª é a linha {primeira.get('ordem')}, de R$ "
+                        f"{formatos.moeda(Decimal(str(primeira.get('valor') or 0)))}. "
+                        "Esta vem DESMARCADA — marque só se for para pagar de novo.")
+                     + " Marcadas juntas, no arquivo viram um pagamento só, somando.")
         if colada and colada not in contas and not omie.get(folha_cards._chave(colada)):
             m.append(f'a obra colada "{colada}" não está na aba "C. Diários" — confira o código.')
         if not obra:
@@ -356,7 +376,8 @@ def calcular() -> dict:
         if colada and obra_ponto and colada != obra_ponto and de_onde == "colada":
             m.append(f"o ponto diz {obra_ponto} — a obra que paga é a colada ({colada}).")
         desligado = ficha.get("situacao") == colaboradores.SITUACAO_SAIU
-        p["pagar_calculado"] = not p["impossivel"] and bool(p["conta"]) and not desligado
+        p["pagar_calculado"] = (not p["impossivel"] and bool(p["conta"]) and not desligado
+                                and p["vez"] == 1)
         p["pagar"] = (p["pagar_calculado"] if aj.get("pagar") is None
                       else bool(aj["pagar"]) and not p["impossivel"])
         p["ajuste_pagar"] = aj.get("pagar")
@@ -366,6 +387,7 @@ def calcular() -> dict:
                                 p["ordem"] or 0))
     a_pagar = calcular_pessoas_a_pagar({"pessoas": pessoas})
     base["resumos"] = {campo: resumo_por(a_pagar, campo) for campo in ("obra", "conta")}
+    base["repetidos"] = repetidos(pessoas)
     base.update({
         "pessoas": pessoas, "quantos": len(pessoas), "quantos_a_pagar": len(a_pagar),
         "total": sum((p["valor"] for p in a_pagar), Decimal("0.00")),
@@ -374,6 +396,46 @@ def calcular() -> dict:
         "pronto": True,
     })
     return base
+
+
+def repetidos(pessoas) -> list:
+    """`[{cpf, nome, vezes, linhas: [{ordem, valor, pagar}], marcadas, total_marcado}]`
+    — quem aparece mais de uma vez na lista, para o aviso do alto da tela."""
+    grupos: dict = {}
+    for p in pessoas:
+        if p.get("repetido"):
+            grupos.setdefault(p["cpf"], []).append(p)
+    saida = []
+    for cpf, ps in grupos.items():
+        ps = sorted(ps, key=lambda x: x.get("ordem") or 0)
+        marcadas = [x for x in ps if x["pagar"]]
+        saida.append({"cpf": cpf, "cpf_bonito": ps[0]["cpf_bonito"],
+                      "nome": ps[0]["nome"] or ps[0]["cpf_bonito"], "vezes": len(ps),
+                      "linhas": [{"ordem": x.get("ordem"), "valor": x["valor"],
+                                  "pagar": x["pagar"]} for x in ps],
+                      "marcadas": len(marcadas),
+                      "total_marcado": sum((x["valor"] for x in marcadas), Decimal("0.00"))})
+    return sorted(saida, key=lambda r: r["nome"])
+
+
+def criticas_de_repetidos(linhas_a_pagar) -> dict:
+    """`{conta: [frase]}` — a mesma pessoa MARCADA mais de uma vez. Vai para a
+    janela de gerar como aviso: só sai com "gerar com aviso"."""
+    por_cpf: dict = {}
+    for l in linhas_a_pagar:
+        por_cpf.setdefault(l["cpf"], []).append(l)
+    saida: dict = {}
+    for cpf, ls in por_cpf.items():
+        if len(ls) < 2:
+            continue
+        valores = " + ".join(f"R$ {formatos.moeda(l['valor'])}" for l in ls)
+        total = sum((Decimal(str(l["valor"])) for l in ls), Decimal("0.00"))
+        frase = (f"{ls[0]['nome'] or cpf_bonito(cpf)} está marcado(a) {len(ls)} vezes "
+                 f"({valores} = R$ {formatos.moeda(total)}) — confirme que é para pagar "
+                 "assim, ou desmarque a repetida.")
+        for conta in {l["conta"] for l in ls}:
+            saida.setdefault(conta, []).append(frase)
+    return saida
 
 
 AGRUPAMENTOS = [("obra", "Obra"), ("conta", "Conta"), ("", "Sem agrupar")]
