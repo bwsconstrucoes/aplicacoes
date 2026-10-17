@@ -99,6 +99,7 @@
                       remessa cabe no banco. Pedido do dono em 11/09/2026. #}
                    data-conta="{{ l.conta or '' }}">
             {% if not tem_coluna_id %}{{ marca_lote(l.no_lote, true) }}
+              {% if l|precisa_validar %}<span class="selo validar" title="Não validada: o Agendar está bloqueado.">Validar</span>{% endif %}
               {% if l|atualizar_pix %}<span class="selo pix-atualizar" title="Chave Pix 'Atualizar Chave': o Agendar está bloqueado.">Pix</span>{% endif %}{% endif %}
           </td>
 
@@ -112,6 +113,9 @@
                      title="Abrir o card no Pipefy">{{ l.id }}</a>
                 {% else %}{{ l.id }}{% endif %}
                 {{ marca_lote(l.no_lote) }}
+                {# 17/10/2026: não validada — não agenda. #}
+                {% if l|precisa_validar %}<span class="selo validar"
+                     title="Esta SP não está validada (Validação ≠ Sim): valide antes de agendar. O Agendar está bloqueado.">Validar</span>{% endif %}
                 {# 09/10/2026: chave Pix "Atualizar Chave" — não agenda. #}
                 {% if l|atualizar_pix %}<span class="selo pix-atualizar"
                      title="A chave Pix desta SP é 'Atualizar Chave': trate a chave antes de agendar. O Agendar está bloqueado.">Atualizar Pix</span>{% endif %}

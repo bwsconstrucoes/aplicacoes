@@ -12228,6 +12228,26 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 237 — Validação: só a planilha, trava no Agendar e etiqueta "Validar" (17/10/2026)
+
+- *"Se está aplicando alguma atualização no card do Pipefy (…) não quero mais
+  atualizar o card, quero atualizar só a planilha (…) não pode agendar (…) o que
+  não esteja validado, que não esteja com a chave Pix atualizada (…) modal de
+  alerta (…) colocar a tag de validar."*
+- **Conferido:** validar (com a senha) NUNCA tocou o Pipefy — grava no banco e vai
+  pela fila para a coluna AH da planilha. Agora há teste que falha se alguém
+  ligar o Pipefy nesse caminho, e os textos da senha dizem "o card do Pipefy não
+  é alterado". (O "Validação SP = Sim" que a folha põe nas SPs que ELA cria é
+  outra coisa: vai na criação do card, e é o que dispensa os anexos.)
+- **O que faltava:** a trava do Agendar/Agendado por validação só existia no botão
+  da ficha; agendar em lote passava. Agora a trava é no servidor (como as de
+  "Atualizar Pix" e "Atualizar SP"): Validação diferente de "Sim" numa SP a pagar
+  recusa o pedido inteiro, e a tela abre uma JANELA com cada SP presa e o motivo
+  (não validada / chave Pix / sem obra), com "Agendar só as N liberadas".
+- **Etiqueta "Validar"** (vermelha) ao lado do número, junto de "Atualizar Pix",
+  na lista e na ficha. Regra: Validação ≠ "Sim" e a SP não está paga nem
+  cancelada — "Não" também conta.
+
 #### Leva 236 — Gratificados e Pagamento via SP (17/10/2026)
 
 - *"Eu quero criar duas novas telas (…) gratificados (…) e PJ e Pró-labore (…)

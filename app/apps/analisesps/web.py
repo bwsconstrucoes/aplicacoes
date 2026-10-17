@@ -382,6 +382,14 @@ def _filtro_atualizar_sp(linha) -> bool:
     return atualizar_sp(linha.get("centro_custo"), linha.get("status_pgt"))
 
 
+@bp.app_template_filter("precisa_validar")
+def _filtro_precisa_validar(linha) -> bool:
+    """A etiqueta "Validar" (17/10/2026) — `pagamentos.precisa_validar`."""
+    from .pagamentos import precisa_validar
+    linha = linha or {}
+    return precisa_validar(linha.get("validacao"), linha.get("status_pgt"))
+
+
 @bp.app_template_filter("sem_validacao")
 def _filtro_sem_validacao(linha) -> bool:
     from .pagamentos import sem_validacao
@@ -1252,20 +1260,30 @@ def alterar():
     #
     # E A SP SEM OBRA (09/10/2026, "Atualizar SP"): *"sim, é para bloquear
     # também SP sem obra"* — veio incompleta do sistema de compras.
+    #
+    # E A SP NÃO VALIDADA (17/10/2026): *"a gente não pode agendar (…) alguma
+    # coisa que não esteja validado (…) era para ter algum modal de alerta"*.
+    # A ficha já travava no botão; a barra (agendar em lote) não travava nada.
     if coluna == "agendado" and valor.lower() in ("agendar", "agendado"):
-        pix, sem_obra = _sps_presas_no_agendar(ids)
-        if pix or sem_obra:
-            partes = []
-            if pix:
-                partes.append(f"{len(pix)} com a chave Pix \"Atualizar Chave\" ("
-                              + ", ".join(pix[:10]) + ("…" if len(pix) > 10 else "") + ")")
-            if sem_obra:
-                partes.append(f"{len(sem_obra)} sem obra — \"Atualizar SP\" ("
-                              + ", ".join(sem_obra[:10])
-                              + ("…" if len(sem_obra) > 10 else "") + ")")
+        pix, sem_obra, sem_validar = _sps_presas_no_agendar(ids)
+        if pix or sem_obra or sem_validar:
+            def trecho(lista, rotulo):
+                return (f"{len(lista)} {rotulo} (" + ", ".join(lista[:10])
+                        + ("…" if len(lista) > 10 else "") + ")")
+            partes = ([trecho(sem_validar, "sem validação — \"Validar\"")] if sem_validar else []) \
+                + ([trecho(pix, "com a chave Pix \"Atualizar Chave\"")] if pix else []) \
+                + ([trecho(sem_obra, "sem obra — \"Atualizar SP\"")] if sem_obra else [])
+            motivos: dict = {}
+            for lista, rotulo in ((sem_validar, "não validada"),
+                                  (pix, "chave Pix \"Atualizar Chave\""),
+                                  (sem_obra, "sem obra (Atualizar SP)")):
+                for sp_id in lista:
+                    motivos.setdefault(sp_id, []).append(rotulo)
             return {"ok": False, "erro": (
                 "Não dá para agendar: " + "; ".join(partes) + ". Trate essas SPs "
-                "antes (desmarque-as para agendar as outras).")}, 409
+                "antes (desmarque-as para agendar as outras)."),
+                "presas": [{"id": i, "motivos": m} for i, m in motivos.items()],
+                "liberadas": [i for i in ids if i not in motivos]}, 409
 
     resposta = _gravar_alteracao(ids, coluna, valor, acao)
     # MARCAR PAGO GRAVA TAMBÉM A DATA, O COMPROVANTE E A CONTA (08/10/2026),
@@ -1278,18 +1296,19 @@ def alterar():
     return resposta
 
 
-def _sps_presas_no_agendar(ids) -> tuple[list, list]:
+def _sps_presas_no_agendar(ids) -> tuple[list, list, list]:
     """Das SPs pedidas, as que NÃO podem ser agendadas: (chave Pix "Atualizar
-    Chave", sem obra). As regras moram em `pagamentos`."""
+    Chave", sem obra, sem validação). As regras moram em `pagamentos`."""
     from .db import consultar
-    from .pagamentos import atualizar_sp, chave_a_atualizar
+    from .pagamentos import atualizar_sp, chave_a_atualizar, precisa_validar
     marcadores = ", ".join("?" for _ in ids)
     linhas = consultar(
-        "SELECT id, forma_pagamento, info_pgt, centro_custo, status_pgt "
+        "SELECT id, forma_pagamento, info_pgt, centro_custo, status_pgt, validacao "
         f"  FROM analisesps.sps WHERE id IN ({marcadores})", tuple(ids))
-    pix = [str(i) for i, forma, info, _cc, _st in linhas if chave_a_atualizar(forma, info)]
-    sem_obra = [str(i) for i, _f, _i, cc, st in linhas if atualizar_sp(cc, st)]
-    return pix, sem_obra
+    pix = [str(l[0]) for l in linhas if chave_a_atualizar(l[1], l[2])]
+    sem_obra = [str(l[0]) for l in linhas if atualizar_sp(l[3], l[4])]
+    sem_validar = [str(l[0]) for l in linhas if precisa_validar(l[5], l[4])]
+    return pix, sem_obra, sem_validar
 
 
 def _gravar_valores(itens: list, acao: str) -> int:
