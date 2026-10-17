@@ -238,10 +238,15 @@ function desenhaPrevia(d) {
       (g.tipo_sp ? " (Record ID " + escapa(g.tipo_sp) + ")"
                  : ' <b class="ruim">(não encontrado)</b>') +
       " · categoria OMIE " + (g.categoria ? escapa(g.categoria) : '<b class="ruim">ausente</b>') +
-      " · Pix, chave aleatória “Atualizar Chave”</span>";
+      (g.uma_por_pessoa ? " · uma SP por pessoa, favorecido = a pessoa (ou o credor PJ); a chave Pix vai na descrição"
+                        : " · Pix, chave aleatória “Atualizar Chave”") + "</span>";
     g.sps.forEach(s => {
-      html += '<p style="margin:10px 0 4px"><b>Solicitação de Pagamento — conta ' +
+      html += '<p style="margin:10px 0 4px"><b>Solicitação de Pagamento — ' +
+        (s.nome ? escapa(s.nome) + " · " : "") + "conta " +
         escapa(s.conta || "(sem conta)") + "</b> · R$ " + moedaBr(s.valor) +
+        (s.favorecido ? ' · <span class="cartao-dica">favorecido ' + escapa(s.favorecido.nome) +
+          " (" + escapa(s.favorecido.documento) + "), Pix " + escapa(s.favorecido.tipo_chave) +
+          " " + escapa(s.favorecido.chave_pix) + "</span>" : "") +
         (s.destino ? " · " + escapa(s.destino === "somapay" ? "SomaPay" : "BeeVale") : "") +
         (s.etiquetas ? ' · <span class="cartao-dica">etiquetas: ' + escapa(s.etiquetas) + "</span>" : "") +
         '</p><div class="tabela-rolagem livre"><table class="sps"><thead><tr>' +
@@ -401,8 +406,8 @@ criarCards.addEventListener("click", async () => {
       if (!d.ok) { resultado += '<div class="aviso erro">' + escapa(d.erro) + "</div>"; falhou = true; continue; }
       resultado += '<div class="aviso">Solicitações criadas (' + escapa(d.competencia) + "): " +
         d.sps.map(x => '<a href="' + escapa(x.link) + '" target="_blank" ' +
-          'rel="noopener">SP ' + escapa(x.id) + "</a> (conta " + escapa(x.conta) +
-          ")").join(", ") + "</div>";
+          'rel="noopener">SP ' + escapa(x.id) + "</a> (" + (x.nome ? escapa(x.nome) + ", " : "") +
+          "conta " + escapa(x.conta) + ")").join(", ") + "</div>";
       // A DC: os cards de origem movidos para a fase de processados.
       if (d.cards_movidos && d.cards_movidos.length) {
         resultado += '<div class="aviso">' + d.cards_movidos.length +

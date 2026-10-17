@@ -296,9 +296,34 @@ def previa_direta_zip(origem: str, dados: dict, destino: str,
     *"eu queria o botão também de gerar a prévia (…) antes de gerar os arquivos
     definitivos"*, como na folha da contabilidade."""
     pedido = resumo_direto(origem, dados, destino, destinos)
+    if origem == "viasp":
+        return _zip_da_previa_via_sp(pedido)
     return _zip_da_previa(pedido["rotulo"], pedido["ano"], pedido["mes"],
                           pedido["tipo"], pedido["verba"], pedido["lotes"],
                           pedido["resumo"], pedido["linhas"], destino)
+
+
+def _zip_da_previa_via_sp(pedido: dict) -> tuple:
+    """A prévia do pagamento via SP: a relação de cada conta e a análise."""
+    import io
+    import zipfile
+    from . import gratificados as gm
+    memoria = io.BytesIO()
+    ano, mes, tipo = pedido["ano"], pedido["mes"], pedido["tipo"]
+    leia = ["PRÉVIA DO PAGAMENTO VIA SP — NADA FOI GRAVADO NEM LANÇADO", "",
+            f"{pedido['rotulo']}.", "Cada pessoa vira uma SP no Pipefy, lançada depois "
+            "em Arquivos gerados.", ""]
+    with zipfile.ZipFile(memoria, "w", zipfile.ZIP_DEFLATED) as pacote:
+        for lote in pedido["lotes"]:
+            nome = PREFIXO_DA_PREVIA + geracao.nome_do_arquivo(lote, ano, mes, tipo)
+            pacote.writestr(nome, gm.relacao_xlsx(lote["pessoas"]))
+            leia.append(f"- {nome}: {lote['quantos']} pessoa(s), R$ {_br(lote['total'])}")
+        nome_analise = PREFIXO_DA_PREVIA + geracao.nome_do_arquivo(
+            {"destino": ANALISE, "conta": "", "verbas": [pedido["verba"]]}, ano, mes, tipo)
+        pacote.writestr(nome_analise, geracao.analise_xlsx(
+            pedido["lotes"], ano=ano, mes=mes, tipo=tipo, detalhe=pedido["linhas"]))
+        pacote.writestr("LEIA-ME.txt", "\n".join(leia))
+    return memoria.getvalue(), PREFIXO_DA_PREVIA + f"Via SP {int(mes):02d}-{int(ano)}.zip"
 
 
 def _zip_da_previa(rotulo: str, ano, mes, tipo, verba, lotes, resumo, linhas,
@@ -709,7 +734,8 @@ def gerencial(ano: int, mes: int) -> dict:
 # gravar nada; o "ok" refaz o fechamento com essa mesma situação e gera — os dois
 # passos juntos, para o arquivo nunca sair de um fechamento antigo.
 # ---------------------------------------------------------------------------
-ORIGENS = ("folha", "diaria", "alimentacao", "transporte", "dc", "avulso")
+ORIGENS = ("folha", "diaria", "alimentacao", "transporte", "dc", "avulso",
+           "gratificacao", "viasp")
 
 
 def _linhas_do_apropriado(apropriado: dict, verba: str) -> list:
@@ -750,6 +776,22 @@ def _pedido_direto(origem: str, dados: dict) -> dict:
             rotulo += f" — {calculado['descricao']}"
         return {"ano": hoje.year, "mes": hoje.month, "tipo": pa.TIPO, "verba": pa.VERBA,
                 "linhas": pa.linhas_a_pagar(calculado), "rotulo": rotulo}
+    if origem in ("gratificacao", "viasp"):
+        # GRATIFICADOS E PAGAMENTO VIA SP (17/10/2026): o período é quinzena ou fim
+        # do mês, e o que já saiu fica no lote — por pessoa.
+        from . import gratificados as gm
+        periodo = str(dados.get("periodo") or "")
+        via = gm.GM if origem == "gratificacao" else gm.SP
+        try:
+            calculado = gm.calcular(int(dados.get("ano") or 0), int(dados.get("mes") or 0),
+                                    periodo, via)
+        except gm.ErroDosGratificados as e:
+            raise ErroDoPagamento(str(e)) from e
+        return {"ano": calculado["ano"], "mes": calculado["mes"], "tipo": periodo,
+                "verba": calculado["verba"], "periodo": periodo, "calculado": calculado,
+                "linhas": gm.linhas_a_pagar(calculado),
+                "rotulo": f"{calculado['rotulo']} {calculado['competencia']} — "
+                          f"{calculado['rotulo_periodo']}"}
     if origem == "folha":
         folha, _apropriado, linhas = linhas_da_previa(int(dados.get("folha_id") or 0))
         return {"ano": folha["ano"], "mes": folha["mes"], "tipo": folha["tipo"],
@@ -781,8 +823,13 @@ def resumo_direto(origem: str, dados: dict, destino: str,
     `destinos`: o destino de cada conta (`{conta: destino}`); sem ele, todas
     vão para `destino`."""
     pedido = _pedido_direto(origem, dados)
-    lotes = geracao.montar_lotes_por_conta(
-        [l for l in pedido["linhas"] if l["valor"] > 0], destinos or {}, destino)
+    if origem == "viasp":
+        # Sem arquivo de banco: um "lote" por conta, só para o resumo e a análise.
+        from . import gratificados as gm
+        lotes = gm.lotes_via_sp(pedido["calculado"])
+    else:
+        lotes = geracao.montar_lotes_por_conta(
+            [l for l in pedido["linhas"] if l["valor"] > 0], destinos or {}, destino)
     if not lotes:
         raise ErroDoPagamento("nenhum colaborador selecionado para pagamento.")
     if origem == "avulso":
@@ -803,7 +850,10 @@ def resumo_direto(origem: str, dados: dict, destino: str,
     # "gerar mesmo assim" — o caminho limpo é excluir a geração anterior.
     # A DC e o avulso não têm "o mesmo pagamento" de novo: o que já foi gerado
     # sai da tela (lote guardado) — a trava é essa.
-    resumo["ja_gerado"] = [] if origem in ("dc", "avulso") else ja_gerado(origem, pedido)
+    # Nos gratificados e no via SP a trava é POR PESSOA: quem já saiu neste
+    # período vem marcado "já gerado" e não entra de novo.
+    resumo["ja_gerado"] = ([] if origem in ("dc", "avulso", "gratificacao", "viasp")
+                           else ja_gerado(origem, pedido))
     if resumo["ja_gerado"]:
         resumo["pode_gerar"] = False
     return {**pedido, "destino": destino, "lotes": lotes, "resumo": resumo,
@@ -873,6 +923,21 @@ def gerar_direto(origem: str, dados: dict, destino: str, quem: str = "",
                        None)
         pa.registrar_lote(analise, pedido["linhas"], quem=quem)
         return saida
+    if origem in ("gratificacao", "viasp"):
+        from . import gratificados as gm
+        if origem == "viasp":
+            try:
+                return gm.gerar_via_sp(pedido["calculado"], quem=quem, forcar=forcar)
+            except gm.ErroDosGratificados as e:
+                raise ErroDoPagamento(str(e)) from e
+        saida = gerar(pedido["ano"], pedido["mes"], pedido["tipo"], [pedido["verba"]],
+                      destino, quem=quem, forcar=forcar, destinos=destinos,
+                      relatorio=_relatorio_por_conta(origem, dados, pedido),
+                      linhas=pedido["linhas"], cadastro=True)
+        analise = next((a["id"] for a in saida["arquivos"] if a["destino"] == ANALISE),
+                       None)
+        gm.registrar_lote(analise, pedido["calculado"], quem=quem)
+        return saida
     if origem == "folha":
         folha_gestao.fechar(int(dados.get("folha_id") or 0), quem=quem)
     elif origem == "diaria":
@@ -902,6 +967,10 @@ def _relatorio_por_conta(origem: str, dados: dict, pedido: dict):
             from . import pagamento_avulso as pa
             contas = conta_por_obra()
             montado = pa.montado_do_relatorio(pa.calcular(), so_a_pagar=True)
+        elif origem == "gratificacao":
+            from . import gratificados as gm
+            contas = conta_por_obra()
+            montado = gm.montado_do_relatorio(pedido["calculado"], so_a_pagar=True)
         elif origem == "folha":
             from . import folha_gestao
             montado = fr.com_contracheques(
@@ -1095,6 +1164,12 @@ def excluir_arquivos(ids, quem: str = "") -> dict:
         pa.apagar_lotes([a["id"] for a in alvos if a["destino"] == ANALISE])
     except Exception:  # noqa: BLE001 — o registro já foi apagado
         logger.exception("Folha: não consegui apagar o lote do avulso")
+    # Gratificados e via SP: quem estava na geração volta a poder ser gerado.
+    try:
+        from . import gratificados as gm
+        gm.apagar_lotes([a["id"] for a in alvos if a["destino"] == ANALISE])
+    except Exception:  # noqa: BLE001 — o registro já foi apagado
+        logger.exception("Folha: não consegui apagar o lote dos gratificados")
     logger.info("Folha: %d arquivo(s) excluído(s) do registro por %s (%d falha(s) "
                 "no Drive).", len(alvos), quem or "(sem nome)", len(falhas))
     return {"excluidos": len(alvos), "falhas_no_drive": falhas,

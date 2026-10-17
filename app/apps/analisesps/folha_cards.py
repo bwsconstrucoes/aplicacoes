@@ -92,7 +92,11 @@ GRUPOS = {
     # O pagamento avulso (15/10/2026): o tipo de despesa é o escolhido na tela,
     # guardado no lote da geração — procurado pelo nome, como nas outras.
     ("avulso", ""): ("Pagamento Avulso", "", ""),
+    # O pagamento via SP (17/10/2026): UMA SP POR PESSOA, com o título da pessoa
+    # e o rateio dela — ver `_grupo_via_sp`.
+    ("viasp", ""): ("Pagamento via SP", "", ""),
 }
+VERBA_VIA_SP = "viasp"
 
 # O que o `geraspbeevale.gs` do dono punha na SP da DC e as outras não têm: o
 # campo de automação "BeeVale". (A etiqueta dele, 317521565, é a "BeeVale" —
@@ -601,6 +605,13 @@ def _previa(analise_id: int, ler_pipes: bool = True, contas=None) -> tuple:
         except ErroDosCards as e:
             bloqueios.append(str(e))
             continue
+        if verba == VERBA_VIA_SP:
+            grupo_sp = _grupo_via_sp(analise, r, escolhidas, todas_as_contas,
+                                     andamento_atual, achar_tipo, ler_pipes, omie,
+                                     bloqueios, esperado_por_conta, plano, sp)
+            if grupo_sp:
+                grupos.append(grupo_sp)
+            continue
         if verba == "dc":
             grupo_dc = _grupo_da_dc(analise, r, escolhidas, todas_as_contas,
                                     andamento_atual, achar_tipo, ler_pipes, omie,
@@ -609,7 +620,18 @@ def _previa(analise_id: int, ler_pipes: bool = True, contas=None) -> tuple:
                 grupos.append(grupo_dc)
             continue
         lote_avulso = None
-        if verba == "avulso":
+        if verba == "gratificacao":
+            # Os gratificados (17/10/2026): as linhas vêm do lote da geração, como
+            # no avulso — a GM não tem fechamento.
+            from . import gratificados as gm
+            lote_gm = gm.lote_da_analise(analise["id"])
+            if not lote_gm:
+                bloqueios.append("o lote destes gratificados não foi encontrado — "
+                                 "exclua a geração e gere de novo.")
+                continue
+            linhas = [l for l in lote_gm["linhas"] if l["valor"] > 0
+                      and " ".join(str(l.get("conta") or "").split()) in escolhidas]
+        elif verba == "avulso":
             # Sem fechamento: as linhas vêm do LOTE guardado na geração — o que
             # vai para o Pipefy é exatamente o que foi para o arquivo.
             from . import pagamento_avulso as pa
@@ -737,7 +759,9 @@ def _previa(analise_id: int, ler_pipes: bool = True, contas=None) -> tuple:
     andamento = andamento_atual
     if not grupos and not bloqueios:
         bloqueios.append("nenhum valor a lançar nas contas selecionadas.")
-    lancadas = sorted({c for v in r["verbas"] for c in contas_lancadas(andamento, v)})
+    # No via SP a chave é "conta|cpf" (uma SP por pessoa): a conta é o que vem antes.
+    lancadas = sorted({c.split("|")[0] for v in r["verbas"]
+                       for c in contas_lancadas(andamento, v)})
     return {"analise": analise["id"], "competencia": analise["competencia"],
             "contas": todas_as_contas, "escolhidas": escolhidas,
             "contas_lancadas": lancadas,
@@ -746,6 +770,125 @@ def _previa(analise_id: int, ler_pipes: bool = True, contas=None) -> tuple:
             "bloqueios": list(dict.fromkeys(bloqueios)), "avisos": avisos,
             "andamento": andamento, "ja_lancado": _completo(andamento, grupos),
             "arquivos": [a["id"] for a in arquivos]}, sp
+
+
+# ---------------------------------------------------------------------------
+# O PAGAMENTO VIA SP — UMA SP POR PESSOA (17/10/2026)
+#
+# O dono: *"quando for gerar, lançar no Pipefy, cada um vai ter que ser gerado
+# individualizado (…) um SP por pessoa (…) cada um com o seu rateio"*. As pessoas
+# vêm do LOTE da geração (`gratificados.lote_da_analise`). O favorecido é a
+# pessoa — ou o credor, quando o cadastro traz o CNPJ do Pix —, e a chave Pix vai
+# escrita na descrição.
+# ---------------------------------------------------------------------------
+def _sem_acento(texto) -> str:
+    t = unicodedata.normalize("NFD", str(texto or ""))
+    return "".join(c for c in t if unicodedata.category(c) != "Mn").strip().lower()
+
+
+def _grupo_via_sp(analise, r, escolhidas, todas_as_contas, andamento_atual,
+                  achar_tipo, ler_pipes, omie, bloqueios, esperado_por_conta,
+                  plano, sp_pipe):
+    from . import gratificados as gm
+    lote = gm.lote_da_analise(analise["id"])
+    if not lote:
+        bloqueios.append("Pagamento via SP: o lote desta geração não foi encontrado — "
+                         "exclua a geração e gere de novo.")
+        return None
+    chave = _chave_do_lote(VERBA_VIA_SP, escolhidas, todas_as_contas)
+    ja = contas_lancadas(andamento_atual, VERBA_VIA_SP)
+    deste = (andamento_atual.get(chave) or {}).get("sps") or {}
+    descricao_verba = gm.TIPO_DE_DESPESA
+    tipo_sp = achar_tipo(descricao_verba) if descricao_verba else None
+    if ler_pipes and not tipo_sp:
+        bloqueios.append(f'tipo de despesa "{descricao_verba}" sem Record ID na aba "Plano '
+                         'Financeiro" da planilha das SPs (ou com dois ids diferentes).')
+    categoria, erro_categoria = _categoria_da_verba(descricao_verba, plano)
+    if erro_categoria:
+        bloqueios.append(erro_categoria)
+    opcoes = [_sem_acento(o) for o in (((sp_pipe or {}).get("todos") or {}).get(
+        "radio_horizontal_t_tulo") or {}).get("opcoes") or []]
+    sps = []
+    for p in lote.get("pessoas") or []:
+        conta = " ".join(str(p.get("conta") or "").split())
+        if conta not in escolhidas or p["valor"] <= 0:
+            continue
+        chave_sp = f"{conta}|{p['cpf']}"
+        if chave_sp in ja and chave_sp not in deste:
+            bloqueios.append(f"Pagamento via SP: a SP de {p['nome']} já foi lançada em "
+                             "outro lote — desmarque a conta dela.")
+        esperado_por_conta[conta] = esperado_por_conta.get(conta, Decimal("0.00")) + p["valor"]
+        if not conta:
+            bloqueios.append(f"Pagamento via SP: {p['nome']} sem conta de pagamento.")
+        obras = []
+        for x in p.get("rateio") or []:
+            codigo = omie.get(_chave(x["obra"]), "")
+            if not codigo:
+                bloqueios.append(f'a obra "{x["obra"]}" não tem Código Omie na aba "C. Diários".')
+            obras.append({"obra": _chave(x["obra"]), "valor": x["valor"], "omie": codigo})
+        fav = p.get("favorecido") or {}
+        if ler_pipes and not fav.get("pj") and opcoes and "pessoa fisica" not in opcoes:
+            bloqueios.append('o campo "Pessoa Física/Jurídica" da SP não tem a opção '
+                             f'"Pessoa Física" — {p["nome"]} não pode ser lançado(a).')
+        arquivo = next((a for a in r["arquivos"] if a["conta"] == conta), {})
+        sp_item = {"conta": conta, "chave": chave_sp, "cpf": p["cpf"], "nome": p["nome"],
+                   "valor": p["valor"], "pessoas": 1, "destino": "",
+                   "link": arquivo.get("link") or "",
+                   "link_relatorio": ((r.get("relatorios") or {}).get(conta)
+                                      or {}).get("link") or "",
+                   "link_cadastro": "", "obras": obras, "favorecido": fav,
+                   "titulo": f"Pagamento via SP - {p['nome']}",
+                   "rateio": rateio_multiplo(obras, categoria) if obras else ""}
+        sp_item["etiquetas"] = rotulo_das_etiquetas(sp_item)
+        sp_item["descricao"] = descricao_via_sp(analise, lote, p, sp_item)
+        sps.append(sp_item)
+    if not sps:
+        return None
+    return {"verba": VERBA_VIA_SP, "chave": chave,
+            "rotulo_verba": geracao.rotulo_da_verba(VERBA_VIA_SP),
+            "grupo": "Pagamento via SP", "tipo_sp": tipo_sp or "",
+            "tipo_despesa": descricao_verba, "categoria": categoria,
+            "total": sum((x["valor"] for x in sps), Decimal("0.00")),
+            "pessoas": len(sps), "sps": sps, "uma_por_pessoa": True}
+
+
+def descricao_via_sp(analise: dict, lote: dict, p: dict, sp: dict) -> str:
+    """A descrição da SP de UMA pessoa: quem, quanto, de que período, a chave
+    Pix e o rateio por obra."""
+    fav = p.get("favorecido") or {}
+    rotulo_periodo = {"quinzena": "Quinzena (dias 1 a 15)",
+                      "fim_de_mes": "Fim de mês (16 ao último dia)"}.get(
+                          lote.get("periodo") or "", "")
+    linhas = _com_conta_origem(sp.get("conta"), [
+        f"Pagamento via SP — competência {analise['competencia']}",
+        f"Pagamento: {rotulo_periodo}" if rotulo_periodo else "",
+        f"Colaborador: {p['nome']} (CPF {_cpf_bonito(p['cpf'])})",
+        f"Tipo de contrato: {p['tipo_contrato']}" if p.get("tipo_contrato") else "",
+        f"Credor: {fav.get('nome') or p['nome']} ({fav.get('documento') or ''})",
+        f"Chave Pix ({fav.get('tipo_chave') or '—'}): {fav.get('chave_pix') or '—'}",
+        f"Valor do mês: R$ {formatos.moeda(p['valor_mes'])}",
+        f"Valor do período: R$ {formatos.moeda(p['do_periodo'])}",
+        (f"Desconto/acréscimo: R$ {formatos.moeda(p['ajuste'])}"
+         + (f" ({p['ajuste_motivo']})" if p.get("ajuste_motivo") else ""))
+        if p.get("ajuste") else "",
+        f"Valor a pagar: R$ {formatos.moeda(p['valor'])}",
+        "", "Rateio por obra:",
+    ])
+    linhas += [f"- {o['obra']}: R$ {formatos.moeda(o['valor'])}" for o in sp.get("obras") or []]
+    linhas.append("")
+    if sp.get("link"):
+        linhas.append(f"Relação de pagamentos: {sp['link']}")
+    if sp.get("link_relatorio"):
+        linhas.append(f"Relatório (PDF): {sp['link_relatorio']}")
+    if analise.get("link"):
+        linhas.append(f"Planilha de análise: {analise['link']}")
+    return "\n".join([l for i, l in enumerate(linhas)
+                      if l or (i and linhas[i - 1])] + ["", "Gerado pelo Análise de SPs."])
+
+
+def _cpf_bonito(cpf) -> str:
+    from .folha_rateio import cpf_bonito
+    return cpf_bonito(cpf)
 
 
 # ---------------------------------------------------------------------------
@@ -1001,6 +1144,9 @@ def campos_da_sp(grupo: dict, sp: dict, link_analise: str,
     """Os campos da Solicitação de Pagamento, no padrão do script do BeeVale
     (`_createPipefyCard_`), com Pix e chave aleatória "Atualizar Chave"."""
     favorecido = FAVORECIDO.get(sp.get("destino") or "", FAVORECIDO["somapay"])
+    proprio = sp.get("favorecido")
+    if proprio:
+        return _campos_da_sp_individual(grupo, sp, link_analise, agora, proprio)
     campos = [
         ("data", agora.strftime("%d/%m/%Y %H:%M")),
         ("data_de_pagamento", agora.strftime("%d/%m/%Y")),
@@ -1030,6 +1176,45 @@ def campos_da_sp(grupo: dict, sp: dict, link_analise: str,
     ]
     if grupo.get("verba") == "dc" and sp.get("destino") == "beevale":
         campos.append(("automa_o_2", AUTOMACAO_DA_DC))
+    return [{"campo": c, "valor": v} for c, v in campos]
+
+
+def _campos_da_sp_individual(grupo: dict, sp: dict, link_analise: str,
+                             agora: _dt.datetime, fav: dict) -> list:
+    """A SP do pagamento via SP: o mesmo padrão das folhas, com o favorecido sendo
+    a pessoa (ou o credor PJ). ⚠️ A CHAVE PIX VAI ESCRITA NA DESCRIÇÃO e o campo
+    da chave segue o padrão das folhas ("Aleatória" / "Atualizar Chave") — os
+    campos de chave CPF, CNPJ, e-mail e telefone do pipe não foram conferidos; a
+    exceção é a chave aleatória, que vai no próprio campo."""
+    pj = bool(fav.get("pj"))
+    aleatoria = _sem_acento(fav.get("tipo_chave")).startswith("aleat")
+    campos = [
+        ("data", agora.strftime("%d/%m/%Y %H:%M")),
+        ("data_de_pagamento", agora.strftime("%d/%m/%Y")),
+        ("descri_o", sp["descricao"]), ("valor", _valor(sp["valor"])),
+        ("radio_horizontal_t_tulo", "Pessoa Jurídica" if pj else "Pessoa Física"),
+        ("local", fav.get("nome") or sp.get("nome") or ""),
+        ("tipo_de_pagamento", "Pix"),
+        ("rateio_m_ltiplo_entre_centros_de_custo", "Sim"),
+        ("rateio_m_ltiplo", sp["rateio"]),
+        ("a_despesa_gerou_emiss_o_de_nota_fiscal", "Não"),
+        ("tipo", "Aleatória"),
+        ("selecione_o_procedimento", "Solicitar Pagamento"),
+        ("requisi_o_solicitada_por_um_terceiro", "Não"),
+        ("alimenta_o_de_equipe", "Não"),
+        ("colaborador_solicitante", RESPONSAVEL),
+        ("parcelas", "1x Parcela"),
+        ("tipo_de_despesa", sp.get("tipo_sp") or grupo["tipo_sp"]),
+        ("chave_pix_aleat_ria", fav.get("chave_pix") if aleatoria else CHAVE_PIX_A_ATUALIZAR),
+        ("link_planilha_de_an_lise", link_analise),
+        ("valida_o_sp_1", "Sim"), ("lan_amento_via_api", "Sim"),
+        ("etiquetas", etiquetas_da_sp(sp)),
+        ("autoriza_o_dupla", "SIM"), ("anu_ncia_sp", "Sim"),
+    ]
+    if pj:
+        campos += [("cnpj", fav.get("documento") or ""), ("cnpj_1", fav.get("documento") or "")]
+    else:
+        campos += [("cpf", fav.get("documento") or ""), ("cpf_1", fav.get("documento") or "")]
     return [{"campo": c, "valor": v} for c, v in campos]
 
 
@@ -1092,14 +1277,18 @@ def lancar(analise_id: int, quem: str = "", contas=None) -> dict:
         for grupo in vista["grupos"]:
             estado = andamento.setdefault(grupo["chave"], {"sps": {}})
             for sp in grupo["sps"]:
-                feito = (estado["sps"].get(sp["conta"]) or {})
+                # Uma SP por CONTA; no via SP, uma por PESSOA ("conta|cpf").
+                chave_sp = sp.get("chave") or sp["conta"]
+                feito = (estado["sps"].get(chave_sp) or {})
                 if not feito.get("id"):
                     valores = [v for v in campos_da_sp(grupo, sp, vista["link_analise"], agora)
                                if v["campo"] in existentes]
                     na_criacao, depois = _separar(valores, sp_pipe["inicio"])
-                    card = pipefy.criar_card(PIPE_SP, grupo["grupo"], na_criacao)
-                    feito = {"id": card["id"], "link": card["link"], "depois": depois}
-                    estado["sps"][sp["conta"]] = feito
+                    card = pipefy.criar_card(PIPE_SP, sp.get("titulo") or grupo["grupo"],
+                                             na_criacao)
+                    feito = {"id": card["id"], "link": card["link"], "depois": depois,
+                             "conta": sp["conta"]}
+                    estado["sps"][chave_sp] = feito
                     _guardar_andamento(analise_id, andamento)
                     criados.append(f"SP {card['id']}")
                 if not feito.get("completa"):
@@ -1119,15 +1308,19 @@ def lancar(analise_id: int, quem: str = "", contas=None) -> dict:
 
     # Amarra no log: cada arquivo de conta à(s) SP(s) dele; a análise a todas.
     for arquivo in r["arquivos"]:
-        sps = [contas_lancadas(andamento, v).get(arquivo["conta"])
-               for v in (arquivo["verbas"] or "").split("+")]
-        sps = [s for s in sps if s]
+        sps = []
+        for v in (arquivo["verbas"] or "").split("+"):
+            lancadas_v = contas_lancadas(andamento, v)
+            if v == VERBA_VIA_SP:
+                sps += [s for k, s in sorted(lancadas_v.items())
+                        if k.split("|")[0] == " ".join(str(arquivo["conta"] or "").split())]
+            elif lancadas_v.get(arquivo["conta"]):
+                sps.append(lancadas_v[arquivo["conta"]])
         if sps:
-            fpg.registrar_card(arquivo["id"], ",".join(s["id"] for s in sps),
-                               sps[0]["link"])
+            fpg.registrar_card(arquivo["id"], _ids_que_cabem(sps), sps[0]["link"])
     todas = [sp for v in r["verbas"] for sp in contas_lancadas(andamento, v).values()]
     if todas:
-        fpg.registrar_card(analise_id, ",".join(s["id"] for s in todas), todas[0]["link"])
+        fpg.registrar_card(analise_id, _ids_que_cabem(todas), todas[0]["link"])
     logger.info("Folha: %s lançado no Pipefy por %s — %s.",
                 vista["competencia"], quem or "(sem nome)",
                 ", ".join(criados) or "nada novo")
@@ -1140,11 +1333,24 @@ def lancar(analise_id: int, quem: str = "", contas=None) -> dict:
             "avisos": ([f"SP criada, mas o Pipefy recusou mover {'; '.join(movidos['falhas'])}. "
                         "Clique em lançar de novo para terminar."] if movidos["falhas"] else [])
                       + avisos_relatorio,
-            "sps": [{"conta": sp["conta"],
-                     "id": (andamento[g["chave"]]["sps"][sp["conta"]])["id"],
-                     "link": (andamento[g["chave"]]["sps"][sp["conta"]])["link"]}
+            "sps": [{"conta": sp["conta"], "nome": sp.get("nome") or "",
+                     "id": (andamento[g["chave"]]["sps"][sp.get("chave") or sp["conta"]])["id"],
+                     "link": (andamento[g["chave"]]["sps"][sp.get("chave") or sp["conta"]])["link"]}
                     for g in vista["grupos"] for sp in g["sps"]],
             "criados": criados}
+
+
+def _ids_que_cabem(sps, teto: int = 60) -> str:
+    """Os números das SPs, separados por vírgula, até caber no registro do
+    arquivo (60 caracteres). No via SP uma conta pode ter dezenas de SPs; a lista
+    inteira fica no andamento do lançamento."""
+    saida = ""
+    for s in sps:
+        proximo = (saida + "," if saida else "") + str(s["id"])
+        if len(proximo) > teto:
+            break
+        saida = proximo
+    return saida
 
 
 def _relatorio_da_dc_pendente(andamento: dict) -> bool:

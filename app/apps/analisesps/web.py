@@ -173,6 +173,10 @@ SUBTELAS_DA_FOLHA = [
     ("dc", "Despesas com colaboradores", "analisesps.tela_folha_dc", "paga"),
     # Uma lista de CPF e valor colada na tela (15/10/2026).
     ("avulso", "Pagamento avulso", "analisesps.tela_folha_avulso", "paga"),
+    # A GM da planilha (17/10/2026): gratificados e mensalistas no arquivo, e
+    # PJ/pró-labore numa SP por pessoa.
+    ("gratificados", "Gratificados", "analisesps.tela_folha_gratificados", "paga"),
+    ("viasp", "Pagamento via SP", "analisesps.tela_folha_via_sp", "paga"),
     ("pagamento", "Arquivos gerados", "analisesps.tela_folha_pagamento", "paga"),
 
     # A BASE. Vem depois porque é o que se arruma quando algo não fecha — mas é
@@ -5326,6 +5330,195 @@ def folha_avulso_obra():
         return {"ok": False, "erro": str(e)}, 400
     except Exception as e:  # noqa: BLE001
         logger.exception("Folha: falhou trocar a obra do avulso")
+        return {"ok": False, "erro": f"Não foi possível salvar: {e}"}, 500
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# GRATIFICADOS E PAGAMENTO VIA SP — 17/10/2026. Ver `gratificados`.
+# ---------------------------------------------------------------------------
+def _gm_periodo(args) -> tuple:
+    """(ano, mês, período) pedidos na tela; sem eles, o padrão de hoje."""
+    from . import gratificados as gm
+    from .horario import agora
+    ano, mes, periodo = gm.periodo_padrao(agora().date())
+    try:
+        ano = int(args.get("ano") or ano)
+        mes = int(args.get("mes") or mes)
+    except (TypeError, ValueError):
+        pass
+    if not 1 <= mes <= 12 or not 2020 <= ano <= 2100:
+        ano, mes, periodo = gm.periodo_padrao(agora().date())
+    periodo = args.get("periodo") if args.get("periodo") in gm.PERIODOS else periodo
+    return ano, mes, periodo
+
+
+def _gm_lista(calculado: dict, args) -> dict:
+    """A lista com os filtros da lateral: os das outras folhas, mais conta, tipo
+    de contrato e "neste período"."""
+    from . import folha_lista, gratificados as gm
+    pessoas = list((calculado or {}).get("pessoas") or [])
+    contas = folha_lista.marcados(args, "conta")
+    tipos = folha_lista.marcados(args, "tipo")
+    no_periodo = folha_lista.marcados(args, "no_periodo")
+    lista = folha_lista.filtrar(pessoas, args, campo_da_obra="obras", escondidas=set())
+    if contas:
+        lista["pessoas"] = [p for p in lista["pessoas"] if (p["conta"] or "(sem conta)") in contas]
+    if tipos:
+        lista["pessoas"] = [p for p in lista["pessoas"]
+                            if (p["tipo_contrato"] or "(sem tipo)") in tipos]
+    if no_periodo:
+        lista["pessoas"] = [p for p in lista["pessoas"] if p["no_periodo"] in no_periodo]
+    lista["filtros"].update({"conta": contas, "tipo": tipos, "no_periodo": no_periodo})
+    lista["filtrando"] = bool(lista["filtrando"] or contas or tipos or no_periodo)
+    lista["opcoes_conta"] = [(c, c) for c in sorted(
+        {p["conta"] or "(sem conta)" for p in pessoas})]
+    lista["opcoes_tipo"] = [(t, t) for t in sorted(
+        {p["tipo_contrato"] or "(sem tipo)" for p in pessoas})]
+    contagem = {}
+    for p in pessoas:
+        contagem[p["no_periodo"]] = contagem.get(p["no_periodo"], 0) + 1
+    lista["opcoes_no_periodo"] = [(k, f"{r} ({contagem[k]})") for k, r in gm.NO_PERIODO
+                                  if contagem.get(k)]
+    return lista
+
+
+def _tela_gm(via: str, subaba: str, endpoint: str):
+    from . import folha_pagamento as fpg, gratificados as gm
+    ano, mes, periodo = _gm_periodo(request.args)
+    calculado, erro = None, None
+    try:
+        calculado = gm.calcular(ano, mes, periodo, via)
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+        logger.exception("Folha: não consegui montar %s", gm.ROTULO_DA_VIA[via])
+        erro = f"não foi possível montar a lista: {e}"
+    lista = _gm_lista(calculado, request.args)
+    try:
+        divisao = (fpg.divisao(gm.linhas_a_pagar(calculado))
+                   if calculado and calculado["quantos_a_pagar"] else {})
+    except Exception:  # noqa: BLE001 — a janela é apoio
+        logger.exception("Folha: não consegui montar a divisão (%s)", via)
+        divisao = {}
+    agrupamento = request.args.get("agrupar", gm.AGRUPAMENTO_PADRAO)
+    if agrupamento not in {c for c, _ in gm.AGRUPAMENTOS}:
+        agrupamento = gm.AGRUPAMENTO_PADRAO
+    from .horario import agora
+    hoje = agora().date()
+    return render_template(
+        "analisesps_folha_gratificados.html", aba="folha", subaba=subaba,
+        via=via, endpoint=endpoint, rotulo_via=gm.ROTULO_DA_VIA[via],
+        origem=gm.VERBA_DA_VIA[via], ano=ano, mes=mes, periodo=periodo,
+        periodos=[(k, gm.ROTULO_DO_PERIODO[k]) for k in gm.PERIODOS],
+        anos=list(range(hoje.year - 1, hoje.year + 2)),
+        agrupamento=agrupamento, agrupamentos=gm.AGRUPAMENTOS,
+        grupos_da_lista=gm.agrupar(lista["pessoas"], agrupamento),
+        grupos=subtelas_agrupadas(), resultado=calculado, erro=erro,
+        pessoas=lista["pessoas"], lista=lista, filtrando=lista["filtrando"],
+        divisao=divisao,
+        fora_do_filtro=_marcados_fora_do_filtro(
+            (calculado or {}).get("pessoas"), lista["pessoas"],
+            vai=lambda p: p.get("pagar") and p.get("valor", 0) > 0 and not p.get("gerada")),
+        obras_c_diarios=_obras_c_diarios(),
+        pode_operar=auth.pode_operar(), pode_gerar=auth.e_mestre(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual())
+
+
+@bp.route("/folha/gratificados")
+@exige_consulta
+def tela_folha_gratificados():
+    """Gratificados e mensalistas: quem recebe neste período, quanto, de qual
+    obra — e o arquivo BeeVale ou SomaPay."""
+    return _tela_gm("gm", "gratificados", "analisesps.tela_folha_gratificados")
+
+
+@bp.route("/folha/via-sp")
+@exige_consulta
+def tela_folha_via_sp():
+    """Pagamento via SP: PJ, pró-labore e quem recebe "via SP" — uma SP por
+    pessoa no Pipefy, cada uma com o seu rateio."""
+    return _tela_gm("sp", "viasp", "analisesps.tela_folha_via_sp")
+
+
+@bp.route("/folha/gratificados/relatorio.<formato>")
+@exige_consulta
+def folha_gratificados_relatorio(formato: str):
+    """O relatório da tela, com os filtros dela (`via` = gm ou sp)."""
+    from . import folha_pagamento as fpg, gratificados as gm
+    if formato not in ("xlsx", "pdf"):
+        return render_template("analisesps_erro.html", titulo="Não encontrado",
+                               mensagem="Este formato de relatório não existe."), 404
+    via = request.args.get("via") if request.args.get("via") in gm.VIAS else gm.GM
+    try:
+        ano, mes, periodo = _gm_periodo(request.args)
+        calculado = gm.calcular(ano, mes, periodo, via)
+        lista = _gm_lista(calculado, request.args)
+        montado = gm.montado_do_relatorio(calculado, lista["pessoas"], lista["filtros"])
+        return _resposta_do_relatorio(montado, fpg.conta_por_obra(), formato)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou o relatório dos gratificados")
+        return render_template("analisesps_erro.html", titulo="Relatório",
+                               mensagem=f"Não foi possível gerar o relatório: {e}"), 500
+
+
+def _gm_corpo():
+    from . import gratificados as gm
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    periodo = dados.get("periodo") if dados.get("periodo") in gm.PERIODOS else ""
+    try:
+        ano, mes = int(dados.get("ano") or 0), int(dados.get("mes") or 0)
+    except (TypeError, ValueError):
+        ano, mes = 0, 0
+    return dados, quem, ano, mes, periodo
+
+
+@bp.route("/api/folha/gratificados/selecao", methods=["POST"])
+@exige_operador
+def folha_gratificados_selecao():
+    """Salva de uma vez quem recebe e quem não recebe neste período."""
+    from . import gratificados as gm
+    dados, quem, ano, mes, periodo = _gm_corpo()
+    try:
+        saida = gm.salvar_selecao(ano, mes, periodo, dados.get("decisoes") or [], quem=quem)
+    except gm.ErroDosGratificados as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou salvar a seleção dos gratificados")
+        return {"ok": False, "erro": f"Não foi possível salvar: {e}"}, 500
+    return {"ok": True, **saida}
+
+
+@bp.route("/api/folha/gratificados/obra", methods=["POST"])
+@exige_operador
+def folha_gratificados_obra():
+    """A obra (ou a divisão entre obras) de uma pessoa — vale para todos os
+    períodos. Vazio volta à automática."""
+    from . import gratificados as gm
+    dados, quem, _a, _m, _p = _gm_corpo()
+    try:
+        gm.escolher_obra(dados.get("cpf") or "", dados.get("obra") or "", quem=quem)
+    except gm.ErroDosGratificados as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou trocar a obra dos gratificados")
+        return {"ok": False, "erro": f"Não foi possível salvar: {e}"}, 500
+    return {"ok": True}
+
+
+@bp.route("/api/folha/gratificados/ajuste", methods=["POST"])
+@exige_operador
+def folha_gratificados_ajuste():
+    """O desconto ou acréscimo de uma pessoa NESTE período, com o motivo."""
+    from . import gratificados as gm
+    dados, quem, ano, mes, periodo = _gm_corpo()
+    try:
+        gm.ajustar(ano, mes, periodo, dados.get("cpf") or "", dados.get("valor"),
+                   dados.get("motivo") or "", quem=quem)
+    except gm.ErroDosGratificados as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou o ajuste dos gratificados")
         return {"ok": False, "erro": f"Não foi possível salvar: {e}"}, 500
     return {"ok": True}
 
