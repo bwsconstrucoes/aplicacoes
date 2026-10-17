@@ -41,26 +41,26 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
-1zi. **No ramo, esperando o "pode"** (17/10/2026, sem migração), junto com a 1ze–1zh — **O PONTO VALE A PARTIR
+1zi. **PUBLICADO em 17/10/2026** (junção `71ed2e2`, sem migração), junto com a 1ze–1zh — **O PONTO VALE A PARTIR
    DE 16/10/2026** (o dono: "desconsiderar pra todos os efeitos qualquer lançamento antes disso"). Nada foi
    apagado; o que vem antes some de tudo (ver a seção de 17/10/2026, noite). A data se muda em Configuração ›
    Geral › "Início do ponto". E o botão **"Testar a AWS"** (Configuração › Fotos), que diz se o bloqueio da
    organização é de região (troca no próprio ponto) ou do serviço (só na conta que administra a organização).
    **Pendente com o dono:** a SCP da AWS (o "0 conferida(s) — parou: (…) SCP bloqueia" de 17/10).
-1zh. **No ramo, esperando o "pode"** (17/10/2026, sem migração), junto com a 1ze–1zg — os **avisos na tela
+1zh. **PUBLICADO em 17/10/2026 (junção `71ed2e2`)** (17/10/2026, sem migração), junto com a 1ze–1zg — os **avisos na tela
    inicial do aplicativo** (o dono: "se aparecer alertas, tem que ser algo mais resumido (…) mas poder adentrar
    alguma área que detalhe melhor"): uma linha com o problema mais recente da pessoa (ou "✅ seu ponto está em
    dia"), e, para o responsável pelo ponto da obra, outra com a equipe ("ontem, N pessoas com problema"). O
    toque abre o detalhe: o selo, os números, "o que aconteceu" dia a dia e "como melhorar"; o da equipe abre
    "ontem" e as pessoas, piores primeiro. Vermelho = falta ou batida esquecida nos últimos 7 dias; âmbar = outro
    problema; verde = em dia. Telas mostradas ao dono antes de publicar.
-1zg. **No ramo, esperando o "pode"** (17/10/2026, sem migração), junto com a 1ze e a 1zf — a
+1zg. **PUBLICADO em 17/10/2026 (junção `71ed2e2`)** (17/10/2026, sem migração), junto com a 1ze e a 1zf — a
    **QUALIDADE DO PONTO** (`core/qualidade.py`): aba **Qualidade** no ERP (ranking por obra, por responsável
    pelo ponto da obra e por pessoa, com índice "ponto em dia", fotos boas, faltas, batida faltando, ajustes,
    pontos e selo 🥇🥈🥉⚠️); no aplicativo, o quadro **"Meu ponto em dia"** em Meu mês e, para quem
    responde por um ponto da obra ou de equipe, **"🏆 Ponto da minha equipe"** no menu. Limite de ajustes
    configurável na própria aba (nasce em 3/mês). Ver a seção de 17/10/2026 (tarde).
-1zf. **No ramo, esperando o "pode"** (16–17/10/2026, sem migração), junto com a 1ze — as telas do ERP
+1zf. **PUBLICADO em 17/10/2026 (junção `71ed2e2`)** (16–17/10/2026, sem migração), junto com a 1ze — as telas do ERP
    (pedido do dono: "melhorar o sidebar em relação a filtragens e deixar mais padronizado"):
    **Mosaico** com os filtros na barra da esquerda e, por padrão, só as obras COM batida no dia (com
    quantas pessoas); escolher a obra já carrega. **Espelho**: mês (MM/AAAA, em qualquer navegador — o
@@ -73,7 +73,7 @@ junto com o `README.md` e o `PLANO.md`.
    escala" — agora dizem a padrão (o painel Hoje passou a julgar por ela, como o espelho).
    **Em aberto com o dono:** o WhatsApp que bloqueia (proposta na seção de 17/10). Os dados de teste e o
    painel de problemas já foram decididos (1zi e 1zg).
-1ze. **No ramo, esperando o "pode"** (16/10/2026, sem migração). (1) **Correção de ponto em QUALQUER obra
+1ze. **PUBLICADO em 17/10/2026 (junção `71ed2e2`)** (16/10/2026, sem migração). (1) **Correção de ponto em QUALQUER obra
    cadastrada** — decisão do dono: "não é para ser a obra do cadastro, é para aparecer a relação de obras
    cadastradas". O aplicativo lista as obras ativas (as da pessoa primeiro) e o servidor deixou de recusar
    "essa obra não é da pessoa"; quem valida confere. (2) "Celular bloqueado que sumiu dos aprovados": não era
