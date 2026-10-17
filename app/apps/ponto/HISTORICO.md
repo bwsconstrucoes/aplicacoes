@@ -41,6 +41,12 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1zi. **No ramo, esperando o "pode"** (17/10/2026, sem migração), junto com a 1ze–1zh — **O PONTO VALE A PARTIR
+   DE 16/10/2026** (o dono: "desconsiderar pra todos os efeitos qualquer lançamento antes disso"). Nada foi
+   apagado; o que vem antes some de tudo (ver a seção de 17/10/2026, noite). A data se muda em Configuração ›
+   Geral › "Início do ponto". E o botão **"Testar a AWS"** (Configuração › Fotos), que diz se o bloqueio da
+   organização é de região (troca no próprio ponto) ou do serviço (só na conta que administra a organização).
+   **Pendente com o dono:** a SCP da AWS (o "0 conferida(s) — parou: (…) SCP bloqueia" de 17/10).
 1zh. **No ramo, esperando o "pode"** (17/10/2026, sem migração), junto com a 1ze–1zg — os **avisos na tela
    inicial do aplicativo** (o dono: "se aparecer alertas, tem que ser algo mais resumido (…) mas poder adentrar
    alguma área que detalhe melhor"): uma linha com o problema mais recente da pessoa (ou "✅ seu ponto está em
@@ -65,8 +71,8 @@ junto com o `README.md` e o `PLANO.md`.
    "sem PIN"; colunas "Batendo em" e "Função". **Escala padrão**: já existia (Configuração › Jornada ›
    "Escala padrão da empresa") e o espelho já a usava, mas Pessoas, a ficha e o painel Hoje diziam "sem
    escala" — agora dizem a padrão (o painel Hoje passou a julgar por ela, como o espelho).
-   **Em aberto com o dono:** apagar os dados de teste até 15/10 (ver a seção de 17/10); o WhatsApp que
-   bloqueia; o painel de problemas do ponto (propostas na conversa de 17/10, registradas abaixo).
+   **Em aberto com o dono:** o WhatsApp que bloqueia (proposta na seção de 17/10). Os dados de teste e o
+   painel de problemas já foram decididos (1zi e 1zg).
 1ze. **No ramo, esperando o "pode"** (16/10/2026, sem migração). (1) **Correção de ponto em QUALQUER obra
    cadastrada** — decisão do dono: "não é para ser a obra do cadastro, é para aparecer a relação de obras
    cadastradas". O aplicativo lista as obras ativas (as da pessoa primeiro) e o servidor deixou de recusar
@@ -251,6 +257,50 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 17/10/2026 (noite) — O ponto vale a partir de 16/10/2026; e o teste da AWS
+
+**Decisão do dono:** *"os pontos deverão ser considerados a partir do dia 16/10/2026.
+Desconsiderar pra todos os efeitos qualquer lançamento antes disso."* Isso responde à
+pergunta "apagar os dados de teste até 15/10?" pelo caminho (C) da seção de 17/10:
+**nada é apagado** — a corrente do NSR fica inteira e os comprovantes continuam
+valendo — e o que vem antes é desconsiderado em tudo.
+
+- `core/vigencia.py`: a data mora no parâmetro `ponto.vale_a_partir_de` (sem nada
+  gravado, 16/10/2026), lida no máximo uma vez por minuto. Muda-se em Configuração ›
+  Geral › "Início do ponto" (só quem configura o ponto).
+- **Onde o corte vale:** espelho (o dia aparece como **"Antes do ponto"**, cinza, sem
+  batida, sem falta, sem previsto — e por isso fora do cálculo, do banco de horas e
+  da folha, que saem do espelho), impresso do espelho, filtros (obras e pessoas com
+  batida), Validações, mosaico, alertas, rondas, painel Hoje, qualidade, e a consulta
+  dos sistemas externos (`consultas.listar`, a do Análise de SPs).
+- **O que não aceita mais nada para antes:** pedido de ajuste, correção, atestado e
+  qualquer ocorrência que termine antes do início ("o ponto vale a partir de
+  16/10/2026 — antes disso, nada se lança"); no aplicativo, os botões de corrigir e
+  lançar somem nesses dias.
+- **O que NÃO foi cortado, de propósito:** o arquivo legal das batidas (o registro
+  do REP, com a corrente do NSR) continua com tudo — tirar o começo quebraria a
+  corrente. Cadastros, aparelhos, PINs, QR e escalas também ficam.
+- **Nos testes:** `tests/conftest.py` põe `PONTO_VALE_A_PARTIR_DE=2000-01-01`, senão
+  todo teste com data antiga cairia em "antes do ponto". Registrado no `CONTEXTO.md`.
+
+**A AWS** (o dono, 17/10: "0 conferida(s) — parou: a AWS recusou a comparação de
+rostos (usuário bws-ponto-rosto): uma regra da ORGANIZAÇÃO da AWS (SCP) bloqueia").
+Agora se sabe que não é o usuário: é a organização (ele mexeu no AWS Organizations
+no opt-out de IA, em 15/10). Feito:
+
+- Botão **"Testar a AWS"** em Configuração › Fotos: pergunta à AWS quem é a conta e
+  tenta comparar duas imagens SEM rosto em seis regiões (não gasta o teto, não
+  confere ninguém). Se alguma região passa, oferece "Usar a região X" — resolve sem
+  mexer na AWS. Se todas barram, diz que é na conta que ADMINISTRA a organização, com
+  o passo a passo.
+- A frase do erro passou a separar os dois jeitos de uma SCP barrar: **"não PERMITE"**
+  (a `FullAWSAccess` foi tirada da conta ou da unidade, ou a lista do que pode não tem
+  o Rekognition — religar) e **"NEGAR"** (uma política com Deny pega o Rekognition —
+  tirar a conta dela).
+- Caminho B, se ele não tiver a conta que administra: uma conta da AWS nova, fora da
+  organização, só para o ponto, e as chaves novas no Render (as chaves nunca no chat).
+- **O botão só existe depois de publicar.**
 
 ## 17/10/2026 (tarde) — A qualidade do ponto: ranking, selo e o que cada um vê
 

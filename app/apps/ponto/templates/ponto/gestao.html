@@ -580,6 +580,17 @@
 <div id="mensagem"></div>
 
 <div class="cartao" id="c-migracoes" data-secao-card="geral">carregando…</div>
+<div class="cartao" data-secao-card="geral">
+  <div class="cartao-cab"><h3>Início do ponto</h3><small>o que vem antes é desconsiderado</small></div>
+  <div class="cartao-dica" style="margin-top:0">O ponto conta a partir desta data. O que foi batido ou lançado antes
+    (os testes da implantação) <b>não é apagado</b> — fica guardado, mas não aparece nem conta em lugar nenhum:
+    espelho, cálculo, banco de horas, folha, mosaico, Validações, alertas e qualidade.</div>
+  <div class="linha-campos" style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap">
+    <div class="campo"><label for="c-vigencia">O ponto vale a partir de</label><input type="date" id="c-vigencia"></div>
+    {% if pode.configurar_ponto %}<button class="btn" id="c-vigencia-gravar" type="button">Gravar</button>{% endif %}
+  </div>
+  <div id="c-vigencia-msg" style="margin-top:8px"></div>
+</div>
 
 <div class="cartao" data-secao-card="jornada">
   <div class="cartao-cab"><h3>Licenças da lei</h3></div>
@@ -736,7 +747,8 @@
 
 <div class="cartao" data-secao-card="fotos">
   <div class="cartao-cab"><h3>Conferência do rosto (AWS)</h3>
-    <button class="btn secundario" id="c-rosto-rodar" type="button">Conferir agora</button></div>
+    <div class="acoes"><button class="btn secundario" id="c-rosto-testar" type="button">Testar a AWS</button>
+      <button class="btn secundario" id="c-rosto-rodar" type="button">Conferir agora</button></div></div>
   <div class="cartao-dica" style="margin-top:0">A foto de cada batida é comparada com a foto cadastral da pessoa
     pelo Amazon Rekognition. Rosto de outra pessoa ou foto sem rosto → a batida vai para conferência e abre o
     alerta urgente. Quem ainda não tem foto cadastral ganha a da primeira batida (confira no mosaico). O padrão é
@@ -937,8 +949,9 @@ const SITUACAO_DIA = {
   SEM_ESCALA: ["aguardando", "Sem escala"], COMPENSADO: ["pago", "Compensado"],
   FUTURO: ["outro", "A vir"], EM_ANDAMENTO: ["outro", "Hoje (em andamento)"],
   FORA_DO_CONTRATO: ["outro", "Fora do contrato"],
+  ANTES_DO_PONTO: ["outro", "Antes do ponto"],   // o ponto vale a partir de 16/10/2026 (vigencia.py)
 };
-const NAO_CONTA = ["FUTURO", "EM_ANDAMENTO", "FORA_DO_CONTRATO"];
+const NAO_CONTA = ["FUTURO", "EM_ANDAMENTO", "FORA_DO_CONTRATO", "ANTES_DO_PONTO"];
 const JORNADAS = [
   {valor: "PADRAO_4", rotulo: "Padrão (4 batidas)"},
   {valor: "VIGIA_DIURNO_2", rotulo: "Vigia diurno (2 batidas)"},
@@ -1220,6 +1233,7 @@ async function carregarHoje() {
   try {
     HOJE = await api(`/erp/api/ponto/hoje?${p}`);
     desenharHoje();
+    if (HOJE.antes_do_ponto) aviso("mensagem", "Esse dia é antes do início do ponto (16/10/2026): o que foi batido nele foi teste e não conta.", "info");
   } catch (e) { falhou(e); }
 }
 
@@ -1446,7 +1460,7 @@ function desenharEspelho() {
       <td class="dados" ${d.debito ? `style="color:var(--vermelho); font-weight:700"` : ""}>${hmCelula(d.debito)}</td>
       <td><span class="selo ${classe}">${escapar(rot)}</span>${alertas ? `<div>${alertas}</div>` : ""}</td>
       <td>${ocorr || `<span class="suave">—</span>`}</td>
-      ${PODE_TRATAR ? `<td>${podeAjustar && d.situacao !== "FUTURO" && d.situacao !== "FORA_DO_CONTRATO"
+      ${PODE_TRATAR ? `<td>${podeAjustar && !["FUTURO", "FORA_DO_CONTRATO", "ANTES_DO_PONTO"].includes(d.situacao)
         ? `<button class="link-btn" type="button" data-ajuste="${d.data}"
              title="Pedir a inclusão de uma batida que faltou neste dia">ajustar</button>` : ""}</td>` : ""}
     </tr>`;
@@ -4633,6 +4647,45 @@ async function salvarRosto() {
   } catch (e) { falhou(e, "c-rosto-msg"); }
 }
 
+// O teste da AWS (17/10/2026): região por região, e o que fazer.
+const SITUACAO_AWS = {LIBERADA: ["aprovado", "liberada"], SCP: ["bloqueado", "bloqueada pela organização (SCP)"],
+  IAM: ["bloqueado", "bloqueada no usuário"], CHAVE: ["bloqueado", "chave não reconhecida"], OUTRO: ["aguardando", "outro erro"]};
+async function testarAws() {
+  const b = els("c-rosto-testar");
+  b.disabled = true; b.textContent = "Testando…";
+  try {
+    const r = await postar("/erp/api/ponto/rosto/testar");
+    const c = r.conclusao || {};
+    const linhas = Object.entries(r.regioes || {}).map(([reg, v]) => {
+      const [cl, rot] = SITUACAO_AWS[v.situacao] || ["outro", v.situacao];
+      return `<tr><td class="dados">${escapar(reg)}${reg === r.regiao_atual ? " <small>a configurada</small>" : ""}</td>
+        <td><span class="selo ${cl}">${escapar(rot)}</span>${v.detalhe ? `<small>${escapar(v.detalhe)}</small>` : ""}</td></tr>`;
+    }).join("");
+    els("c-rosto-msg").innerHTML = `<div class="aviso ${c.codigo === "OK" ? "ok" : c.codigo === "TROCAR_REGIAO" ? "info" : "alerta"}">
+        <b>${escapar(c.texto || "")}</b>
+        ${r.conta ? `<div style="margin-top:6px; font-size:13px">${r.conta.numero ? `Conta da AWS nº ${escapar(r.conta.numero)}, usuário
+          ${escapar(r.conta.usuario || "")}.` : escapar(r.conta.erro || "")}</div>` : ""}
+        ${c.codigo === "TROCAR_REGIAO" && PODE_CONFIGURAR ? `<button class="btn" type="button" id="c-rosto-usar-regiao" style="margin-top:8px">
+          Usar a região ${escapar(c.regiao)}</button>` : ""}
+        ${c.codigo === "SCP" ? `<ol style="margin:8px 0 0 18px; padding:0; font-size:13.5px">
+          <li>Entre na AWS com a conta que <b>administra a organização</b> (a “conta de gerenciamento”), não na do ponto.</li>
+          <li>AWS Organizations › <b>Políticas</b> › <b>Políticas de controle de serviço</b>.</li>
+          <li>Abra cada política ligada à raiz, à unidade (OU) e à conta nº ${escapar((r.conta || {}).numero || "do ponto")} (aba “Destinos”).</li>
+          <li>Se o detalhe abaixo diz “não PERMITE”: falta a <b>FullAWSAccess</b> ligada à conta (ou à unidade dela) —
+            religue-a; ou, se a organização usa uma lista do que pode, inclua <code>rekognition:CompareFaces</code> nela.</li>
+          <li>Se diz “NEGAR”: procure a política com “Deny” que pega o <code>rekognition</code> (ou as regiões) e tire a
+            conta do ponto dela.</li>
+          <li>Sem acesso à conta que administra? Crie uma conta da AWS nova, fora da organização, só para o ponto, e troque as chaves no Render.</li>
+        </ol>` : ""}</div>
+      ${linhas ? `<table style="margin-top:8px"><thead><tr><th class="sem-ordem">Região</th><th class="sem-ordem">Resultado</th></tr></thead>
+        <tbody>${linhas}</tbody></table>` : ""}`;
+    if (els("c-rosto-usar-regiao")) els("c-rosto-usar-regiao").onclick = async () => {
+      try { await postar("/erp/api/ponto/rosto", {regiao: c.regiao}); await carregarRosto(`Região trocada para ${c.regiao}. Aperte “Conferir agora”.`); }
+      catch (e) { falhou(e, "c-rosto-msg"); }
+    };
+  } catch (e) { falhou(e, "c-rosto-msg"); }
+  b.disabled = false; b.textContent = "Testar a AWS";
+}
 async function rodarRostoAgora() {
   const b = els("c-rosto-rodar");
   b.disabled = true;
@@ -4712,6 +4765,17 @@ els("c-ano").addEventListener("change", carregarFeriados);
 if (els("c-envios-atualizar")) els("c-envios-atualizar").addEventListener("click", carregarEnvios);
 if (els("c-obras-ler")) els("c-obras-ler").addEventListener("click", lerObrasAgora);
 if (els("c-rosto-rodar")) els("c-rosto-rodar").addEventListener("click", rodarRostoAgora);
+if (els("c-rosto-testar")) els("c-rosto-testar").addEventListener("click", testarAws);
+// O início do ponto (17/10/2026, vigencia.py).
+(async () => {
+  try { els("c-vigencia").value = (await api("/erp/api/ponto/vigencia")).inicio; } catch (e) {}
+  if (els("c-vigencia-gravar")) els("c-vigencia-gravar").addEventListener("click", async () => {
+    try {
+      const r = await postar("/erp/api/ponto/vigencia", {inicio: els("c-vigencia").value});
+      aviso("c-vigencia-msg", `Gravado: o ponto vale a partir de ${dataBR(r.inicio)}.`, "ok");
+    } catch (e) { falhou(e, "c-vigencia-msg"); }
+  });
+})();
 if (els("c-nova-escala")) els("c-nova-escala").addEventListener("click", () => abrirEscala(null));
 if (els("c-novo-feriado")) els("c-novo-feriado").addEventListener("click", novoFeriado);
 els("esc-tipo").addEventListener("change", alternarTipoDeEscala);

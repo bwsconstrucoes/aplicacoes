@@ -428,7 +428,7 @@ const ROTULO_ALERTA = { FALTA: "falta", BATIDA_FALTANDO: "batida faltando", ATRA
 const SITUACAO = { OK: ["ok", "Certo"], FALTA: ["falta", "Falta"], ABONADO: ["ok", "Abonado"],
   INCOMPLETO: ["ambar", "Batida faltando"], DESCANSO: ["", "Descanso"], SEM_ESCALA: ["", "Sem escala"],
   COMPENSADO: ["ok", "Compensado"], FUTURO: ["", "—"], EM_ANDAMENTO: ["", "Hoje"],
-  FORA_DO_CONTRATO: ["", "—"] };
+  FORA_DO_CONTRATO: ["", "—"], ANTES_DO_PONTO: ["", "—"] };
 const STATUS_PEDIDO = { AGUARDANDO_SUPERVISOR: ["ambar", "Esperando a administração da obra"],
   AGUARDANDO_DP: ["ambar", "Esperando o DP"], APROVADA: ["ok", "Aprovado"],
   NEGADA: ["falta", "Negado"], CANCELADA: ["", "Cancelado"] };
@@ -1562,10 +1562,10 @@ function podeCorrigir(x, mes) {
   return podeCorrigirDia(x, mes);
 }
 function podeLancarNoDia(x, mes) {
-  return !mes.competencia_fechada && !x.ocorrencia && x.situacao !== "FORA_DO_CONTRATO";
+  return !mes.competencia_fechada && !x.ocorrencia && !["FORA_DO_CONTRATO", "ANTES_DO_PONTO"].includes(x.situacao);
 }
 function podeCorrigirDia(x, mes) {
-  if (mes.competencia_fechada || x.ocorrencia || x.situacao === "FUTURO") return false;
+  if (mes.competencia_fechada || x.ocorrencia || ["FUTURO", "ANTES_DO_PONTO"].includes(x.situacao)) return false;
   if (x.faltando && x.faltando.length) return true;
   // Sem horário previsto não dá para saber o que falta: deixa pedir no dia de falta,
   // incompleto, sem escala — e no FERIADO e na FOLGA (12/10/2026: "é para permitir a
@@ -1644,6 +1644,7 @@ function porQueNaoAjusta(x, fechada) {
   if (x.ocorrencia) return `justificado (${x.ocorrencia.rotulo.toLowerCase()})`;
   if (x.situacao === "FUTURO") return "ainda não chegou";
   if (x.situacao === "FORA_DO_CONTRATO") return "fora do contrato";
+  if (x.situacao === "ANTES_DO_PONTO") return "antes do início do ponto";
   return x.batidas.length ? `completo (${x.batidas.map(b => b.hora).join(", ")})` : "nada a ajustar";
 }
 function montarDias(caixa, itens) {

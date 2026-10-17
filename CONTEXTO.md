@@ -798,6 +798,16 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 17/10/2026 — `tests/conftest.py`: o ponto "vale desde 2000" nos testes (atravessa áreas)
+
+**No ramo `feature/modulo-ponto`, esperando o "pode".** O dono decidiu que o ponto vale
+a partir de 16/10/2026 e que tudo antes é desconsiderado (`app/apps/ponto/core/vigencia.py`,
+registrado em `app/apps/ponto/HISTORICO.md`). Os testes do ponto usam datas antigas; para
+não caírem todos em "antes do ponto", o `conftest.py` ganhou uma linha:
+`PONTO_VALE_A_PARTIR_DE=2000-01-01` (só vale enquanto ninguém grava a data na
+Configuração). Nenhuma outra área lê essa variável. Em produção ela não existe: vale
+16/10/2026, ou o que a Configuração do ponto gravar.
+
 ### 05/10/2026 (noite) — A TELA MENSAGENS: a gestão de por onde cada aviso sai mora no ERP (atravessa áreas)
 
 **Publicado em 05/10/2026** (junção `25cf488`). Migração 083 a aplicar pelo botão.

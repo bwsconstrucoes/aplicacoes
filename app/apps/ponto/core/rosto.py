@@ -220,6 +220,98 @@ def comparar(cliente, cadastral: bytes, batida: bytes, minima: int) -> tuple[str
     return "OUTRA_PESSOA", round(melhor, 2), f"semelhança de {melhor:.0f} % (mínimo {minima} %)"
 
 
+# ---------------------------------------------------------------------------
+# O teste da AWS (17/10/2026: "a AWS recusou (…) uma regra da ORGANIZAÇÃO da AWS
+# (SCP) bloqueia"). Uma SCP costuma bloquear de dois jeitos: proibindo REGIÕES
+# (só deixa usar algumas) ou proibindo SERVIÇOS. O teste pergunta à AWS quem é a
+# conta e tenta a comparação em várias regiões, com duas imagens sem rosto: a AWS
+# responde "não achei rosto" quando DEIXA comparar, e "acesso negado" quando não.
+# ---------------------------------------------------------------------------
+REGIOES_DO_TESTE = ("us-east-1", "us-east-2", "us-west-2", "eu-west-1", "ca-central-1", "ap-northeast-1")
+
+
+def classificar_erro(e: Optional[Exception]) -> str:
+    """PURA. LIBERADA (a AWS deixou comparar), SCP, IAM, CHAVE ou OUTRO."""
+    if e is None:
+        return "LIBERADA"
+    texto = f"{type(e).__name__}: {e}"
+    if "InvalidParameter" in texto or "InvalidImageFormat" in texto:
+        return "LIBERADA"                    # chegou a olhar as imagens: o acesso existe
+    if "AccessDenied" in texto:
+        return "SCP" if "service control polic" in texto.lower() else "IAM"
+    if any(c in texto for c in ("UnrecognizedClient", "InvalidSignature", "SignatureDoesNotMatch", "InvalidClientTokenId")):
+        return "CHAVE"
+    return "OUTRO"
+
+
+def concluir(resultados: dict, regiao_atual: str) -> dict:
+    """PURA. O que fazer, a partir do resultado por região."""
+    liberadas = [r for r, v in resultados.items() if v["situacao"] == "LIBERADA"]
+    if resultados.get(regiao_atual, {}).get("situacao") == "LIBERADA":
+        return {"codigo": "OK", "texto": f"A AWS liberou: a comparação funciona na região {regiao_atual}. "
+                                          "Aperte “Conferir agora”."}
+    if liberadas:
+        return {"codigo": "TROCAR_REGIAO", "regiao": liberadas[0],
+                "texto": f"A regra da organização bloqueia a região {regiao_atual}, mas libera {', '.join(liberadas)}. "
+                         f"Troque a região da conferência para {liberadas[0]} — não precisa mexer na AWS."}
+    situacoes = {v["situacao"] for v in resultados.values()}
+    if situacoes == {"SCP"}:
+        return {"codigo": "SCP", "texto": "A regra da organização (SCP) bloqueia o Rekognition em TODAS as regiões "
+                "testadas: o bloqueio é do serviço, não da região. Precisa ser liberado na conta que ADMINISTRA a "
+                "organização — ou usar uma conta da AWS fora da organização."}
+    if "CHAVE" in situacoes:
+        return {"codigo": "CHAVE", "texto": "A AWS não reconheceu a chave: confira AWS_ACCESS_KEY_ID e "
+                                              "AWS_SECRET_ACCESS_KEY no Render."}
+    if "IAM" in situacoes:
+        return {"codigo": "IAM", "texto": "O bloqueio é no USUÁRIO (IAM), não na organização: a política dele "
+                                            "precisa permitir rekognition:CompareFaces."}
+    return {"codigo": "OUTRO", "texto": "A AWS respondeu com outro erro — veja o detalhe de cada região."}
+
+
+def _imagem_sem_rosto() -> bytes:
+    import io
+    from PIL import Image
+    s = io.BytesIO()
+    Image.new("RGB", (80, 80), (128, 128, 128)).save(s, format="JPEG")
+    return s.getvalue()
+
+
+def testar_aws(conn: Connection) -> dict:
+    """Quem é a conta e, região por região, se a AWS deixa comparar rostos. Duas
+    imagens sem rosto: não confere ninguém e não gasta o teto do mês."""
+    cfg = ler(conn)
+    if not credenciais_ok():
+        return {"conta": None, "regioes": {}, "conclusao": {
+            "codigo": "SEM_CHAVE", "texto": "Faltam AWS_ACCESS_KEY_ID e AWS_SECRET_ACCESS_KEY no Render."}}
+    if not biblioteca_ok():
+        return {"conta": None, "regioes": {}, "conclusao": {"codigo": "SEM_BIBLIOTECA",
+                                                             "texto": "Falta a biblioteca da AWS (boto3) no servidor."}}
+    import boto3
+    from botocore.config import Config
+    rapido = Config(connect_timeout=5, read_timeout=8, retries={"max_attempts": 1})
+    conta = None
+    try:
+        quem = boto3.client("sts", region_name="us-east-1", config=rapido).get_caller_identity()
+        conta = {"numero": quem.get("Account"), "usuario": (quem.get("Arn") or "").split("/")[-1]}
+    except Exception as e:  # noqa: BLE001
+        conta = {"erro": explicar_erro_aws(e)}
+    imagem = _imagem_sem_rosto()
+    resultados = {}
+    for regiao in dict.fromkeys((cfg["regiao"],) + REGIOES_DO_TESTE):
+        erro = None
+        try:
+            boto3.client("rekognition", region_name=regiao, config=rapido).compare_faces(
+                SourceImage={"Bytes": imagem}, TargetImage={"Bytes": imagem}, SimilarityThreshold=0)
+        except Exception as e:  # noqa: BLE001
+            erro = e
+        situacao = classificar_erro(erro)
+        resultados[regiao] = {"situacao": situacao,
+                              "detalhe": "" if situacao == "LIBERADA" else explicar_erro_aws(erro)}
+    logger.info("Ponto: teste da AWS — %s", {r: v["situacao"] for r, v in resultados.items()})
+    return {"conta": conta, "regiao_atual": cfg["regiao"], "regioes": resultados,
+            "conclusao": concluir(resultados, cfg["regiao"])}
+
+
 def explicar_erro_aws(e: Exception) -> str:
     """PURA. O erro da AWS em português, com o que fazer (15/10/2026: a tela
     mostrava a frase da AWS cortada no meio, "is not authorized to per.")."""
@@ -231,9 +323,17 @@ def explicar_erro_aws(e: Exception) -> str:
         usuario = ""
         if ":user/" in texto:
             usuario = " (usuário " + texto.split(":user/")[1].split()[0].rstrip(".,") + ")"
-        if "service control polic" in baixo:
-            quem = ("uma regra da ORGANIZAÇÃO da AWS (política de controle de serviço, SCP) bloqueia — veja "
-                    "AWS Organizations › Políticas › Políticas de controle de serviço, e o que está ligado à conta")
+        if "no service control policy allows" in baixo:
+            # A organização trabalha com LISTA DO QUE PODE e o Rekognition não está nela — o caso típico de
+            # quem tirou a "FullAWSAccess" da conta ou da unidade (OU) ao mexer no Organizations.
+            quem = ("uma regra da ORGANIZAÇÃO da AWS (política de controle de serviço, SCP) não PERMITE o "
+                    "Rekognition: nenhuma política ligada à conta libera. Na conta que administra a organização: "
+                    "AWS Organizations › Políticas › Políticas de controle de serviço — religue a “FullAWSAccess” "
+                    "à conta (e à unidade dela), ou inclua rekognition:CompareFaces na política que lista o que pode")
+        elif "service control polic" in baixo:
+            quem = ("uma regra da ORGANIZAÇÃO da AWS (política de controle de serviço, SCP) bloqueia com NEGAR "
+                    "(Deny) — na conta que administra a organização: AWS Organizations › Políticas › Políticas de "
+                    "controle de serviço, procure a que nega o Rekognition (ou as regiões) e tire a conta dela")
         elif "permissions boundary" in baixo:
             quem = ("um LIMITE DE PERMISSÕES no usuário bloqueia — IAM › Usuários › o usuário › Permissões › "
                     "Limite de permissões: remova, ou inclua nele o rekognition:CompareFaces")

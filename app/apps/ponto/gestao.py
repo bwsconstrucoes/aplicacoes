@@ -1027,6 +1027,36 @@ def ponto_api_rosto_gravar():
     return _ok(**r)
 
 
+@bp.route("/erp/api/ponto/vigencia", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao(GET="ver_ponto", POST="configurar_ponto")
+@_api
+def ponto_api_vigencia():
+    """De quando o ponto vale (17/10/2026: "desconsiderar pra todos os efeitos
+    qualquer lançamento antes de 16/10/2026")."""
+    from .core import vigencia
+    with db.conexao() as conn:
+        if request.method == "POST":
+            quem = _quem()
+            data = vigencia.gravar(conn, _corpo().get("inicio"), quem.nome)
+            logger.info("Ponto: o ponto passa a valer a partir de %s (por %s)", data, quem.nome)
+        else:
+            data = vigencia.inicio(conn)
+    return _ok(inicio=data.isoformat())
+
+
+@bp.route("/erp/api/ponto/rosto/testar", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar_ponto")
+@_api
+def ponto_api_rosto_testar():
+    """Testa o acesso à AWS região por região e diz o que fazer (17/10/2026)."""
+    from .core import rosto
+    with db.conexao() as conn:
+        r = rosto.testar_aws(conn)
+    return _ok(**r)
+
+
 @bp.route("/erp/api/ponto/rosto/rodar", methods=["POST"])
 @login_obrigatorio
 @permissao("configurar_ponto")

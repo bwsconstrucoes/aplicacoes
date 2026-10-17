@@ -587,8 +587,11 @@ def listar(conn: Connection, *, obras: Optional[list[int]] = None, situacao: str
     sql = """SELECT a.*, c.nome AS colaborador, o.codigo AS obra
                FROM ponto.alertas a
                LEFT JOIN public.colaboradores c ON c.id = a.colaborador_id
-               LEFT JOIN public.obras o ON o.id = a.obra_id WHERE 1 = 1"""
-    params: dict = {"lim": max(1, min(int(limite), 2000))}
+               LEFT JOIN public.obras o ON o.id = a.obra_id
+              WHERE (a.data_referencia IS NULL OR a.data_referencia >= :vale)"""
+    # O ponto vale a partir de 16/10/2026 (vigencia.py): alerta de antes não aparece.
+    from . import vigencia
+    params: dict = {"lim": max(1, min(int(limite), 2000)), "vale": vigencia.inicio(conn)}
     if situacao:
         sql += " AND a.situacao = :s"
         params["s"] = situacao

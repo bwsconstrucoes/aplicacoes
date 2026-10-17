@@ -53,6 +53,9 @@ def listar(conn: Connection, quem: Quem, *, obra_id: Optional[int] = None, de=No
            tipos: Optional[list[str]] = None, busca: str = "", so_minhas: bool = False,
            ver_aparelhos: bool = False) -> dict:
     de, ate = _data(de, "de"), _data(ate, "ate")
+    # O ponto vale a partir de 16/10/2026 (vigencia.py): o que é de antes não espera decisão.
+    from . import vigencia
+    de = max(de, vigencia.inicio(conn)) if de else vigencia.inicio(conn)
     tipos = set(t.upper() for t in (tipos or []))
     busca = busca.strip().lower()
     digitos = "".join(ch for ch in busca if ch.isdigit())

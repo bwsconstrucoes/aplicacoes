@@ -29,6 +29,11 @@ def hoje(conn: Connection, *, dia: Optional[dt.date] = None, obras: Optional[lis
          obra_id: Optional[int] = None, agora: Optional[dt.datetime] = None) -> dict:
     dia = dia or horario.hoje()
     agora_local = horario.para_local(agora or horario.agora())
+    # O ponto vale a partir de 16/10/2026 (vigencia.py): o dia de antes não tem painel.
+    from . import vigencia
+    if dia < vigencia.inicio(conn):
+        return {"data": dia.isoformat(), "agora": agora_local.strftime("%H:%M"), "totais": {}, "pessoas": [],
+                "obras": [], "antes_do_ponto": True}
     pessoas = cadastros.listar_colaboradores(conn, so_ativos=True, obra_id=obra_id)
     if obras is not None:
         alcance = set(obras)

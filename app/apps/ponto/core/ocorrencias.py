@@ -192,6 +192,12 @@ def criar(conn: Connection, quem: Quem, dados: dict, *, origem: str = "GESTAO") 
         raise ErroDeValidacao("a data final é antes da inicial", campo="data_fim")
     if (fim - inicio).days + 1 > MAX_DIAS:
         raise ErroDeValidacao(f"no máximo {MAX_DIAS} dias por pedido", campo="data_fim")
+    # O ponto vale a partir de 16/10/2026 (vigencia.py): pedido inteiro antes disso não entra.
+    from . import vigencia
+    vale = vigencia.inicio(conn)
+    if fim < vale:
+        raise ErroDeValidacao(f"o ponto vale a partir de {vale:%d/%m/%Y} — antes disso, nada se lança",
+                              campo="data_inicio")
     descricao = str(dados.get("descricao") or "").strip()
     horario_ajuste, obra_id, dia_trabalhado, minutos = None, None, None, None
 

@@ -21,6 +21,7 @@ from typing import Optional
 from sqlalchemy.engine import Connection
 
 from .. import db
+from . import vigencia
 
 
 def obras_com_batida(conn: Connection, de: dt.date, ate: dt.date,
@@ -28,6 +29,7 @@ def obras_com_batida(conn: Connection, de: dt.date, ate: dt.date,
     """As obras com batida entre `de` e `ate`, com quantas pessoas e batidas.
     `obras` é o alcance de quem pergunta (None = todas)."""
     filtro = "AND m.obra_id = ANY(:obras)" if obras is not None else ""
+    de, ate = vigencia.recortar(conn, de, ate)
     return db.todos(conn, f"""
         SELECT o.id, o.codigo, o.nome, count(DISTINCT m.colaborador_id) AS pessoas, count(*) AS batidas
           FROM ponto.marcacoes m JOIN public.obras o ON o.id = m.obra_id
@@ -38,6 +40,7 @@ def obras_com_batida(conn: Connection, de: dt.date, ate: dt.date,
 
 def pessoas_com_batida(conn: Connection, obra_id: int, de: dt.date, ate: dt.date) -> list[dict]:
     """Quem bateu na obra entre `de` e `ate`, com quantas batidas e o último dia."""
+    de, ate = vigencia.recortar(conn, de, ate)
     return db.todos(conn, """
         SELECT c.id, c.nome, count(*) AS batidas, max(m.data_referencia) AS ultimo_dia
           FROM ponto.marcacoes m JOIN public.colaboradores c ON c.id = m.colaborador_id
@@ -53,7 +56,7 @@ def obras_em_que_bateu(conn: Connection, dias: int = 30) -> dict[int, list[str]]
         SELECT DISTINCT m.colaborador_id, o.codigo
           FROM ponto.marcacoes m JOIN public.obras o ON o.id = m.obra_id
          WHERE m.data_referencia >= (now() AT TIME ZONE 'America/Fortaleza')::date - :n
-           AND m.status <> 'REJEITADA'
-         ORDER BY o.codigo""", n=dias):
+           AND m.data_referencia >= :vale AND m.status <> 'REJEITADA'
+         ORDER BY o.codigo""", n=dias, vale=vigencia.inicio(conn)):
         saida.setdefault(int(l["colaborador_id"]), []).append(l["codigo"])
     return saida

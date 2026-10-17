@@ -202,6 +202,10 @@ def da_pessoa(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.da
               limite: Optional[int] = None) -> dict:
     """Os números e os problemas de UMA pessoa no período."""
     limite = limite_de_ajustes(conn) if limite is None else limite
+    from . import vigencia
+    inicio, fim = vigencia.recortar(conn, inicio, fim)
+    if fim < inicio:                       # o mês inteiro é antes do ponto valer
+        inicio = fim
     esp = espelho.montar(conn, colaborador_id, inicio, fim)
     p = esp["pessoa"]
     av = avaliar_dias(esp["dias"], p.get("obra"))

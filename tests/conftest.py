@@ -30,6 +30,10 @@ from pathlib import Path
 # ela atravessaria os testes, mexendo no banco por fora da transação que cada
 # teste desfaz no fim. Precisa vir ANTES de qualquer import do ERP.
 os.environ.setdefault("ERP_TAREFAS", "0")
+# O ponto desconsidera o que vem antes de 16/10/2026 (decisão do dono, 17/10/2026 —
+# app/apps/ponto/core/vigencia.py). Os testes montam dias da semana passada: aqui o
+# ponto vale desde sempre, e o teste da própria regra grava a data que quer.
+os.environ.setdefault("PONTO_VALE_A_PARTIR_DE", "2000-01-01")
 
 RAIZ = Path(__file__).resolve().parents[1]
 if str(RAIZ) not in sys.path:

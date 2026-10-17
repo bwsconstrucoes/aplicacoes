@@ -261,6 +261,8 @@ O dia de uma batida é a `data_referencia`, não a hora do relógio: para o vigi
 noturno, batida antes das 10h pertence ao dia anterior. "Trabalhou" aqui quer
 dizer "tem batida"; presença, horas e faltas são regra da fase 3.
 
+- Desde quando o ponto vale? (16/10/2026, ou a data de Ponto › Configuração › "Início do ponto"; o que vem antes foi teste da implantação — fica guardado e não conta em nada: espelho, folha, banco de horas, qualidade, mosaico, alertas)
+- Quantas batidas o Fulano tem em 10/10/2026? ⚠️ (antes do início do ponto a resposta certa é "nenhuma que conte": havia batidas de TESTE, que não entram em resposta nenhuma — o assistente não deve somá-las)
 - Quem bateu ponto hoje na obra X? 🔒
 - Quantos dias o Fulano trabalhou em setembro? ⚠️ (dia com batida, não jornada cumprida)
 - Quais batidas estão em análise, e por quê? (fora da cerca, obra sem coordenada, relógio, pessoa afastada)
