@@ -41,6 +41,13 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1zh. **No ramo, esperando o "pode"** (17/10/2026, sem migração), junto com a 1ze–1zg — os **avisos na tela
+   inicial do aplicativo** (o dono: "se aparecer alertas, tem que ser algo mais resumido (…) mas poder adentrar
+   alguma área que detalhe melhor"): uma linha com o problema mais recente da pessoa (ou "✅ seu ponto está em
+   dia"), e, para o responsável pelo ponto da obra, outra com a equipe ("ontem, N pessoas com problema"). O
+   toque abre o detalhe: o selo, os números, "o que aconteceu" dia a dia e "como melhorar"; o da equipe abre
+   "ontem" e as pessoas, piores primeiro. Vermelho = falta ou batida esquecida nos últimos 7 dias; âmbar = outro
+   problema; verde = em dia. Telas mostradas ao dono antes de publicar.
 1zg. **No ramo, esperando o "pode"** (17/10/2026, sem migração), junto com a 1ze e a 1zf — a
    **QUALIDADE DO PONTO** (`core/qualidade.py`): aba **Qualidade** no ERP (ranking por obra, por responsável
    pelo ponto da obra e por pessoa, com índice "ponto em dia", fotos boas, faltas, batida faltando, ajustes,

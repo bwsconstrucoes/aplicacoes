@@ -38,6 +38,23 @@
   .aviso.ok { background:#E3F3E8; color:var(--verde); }
   .aviso.info { background:#E7EDF7; color:var(--azul); }
   .aviso.ambar { background:#FDF1DC; color:var(--ambar); }
+  /* Os avisos do ponto na tela inicial (17/10/2026): curtos; o toque abre o detalhe. */
+  .alerta-ponto { display:flex; gap:10px; align-items:center; width:100%; text-align:left; border:0;
+                  border-radius:14px; padding:12px 14px; margin:8px 0; font:inherit; font-size:15px; cursor:pointer;
+                  border-left:6px solid transparent; }
+  .alerta-ponto b { display:block; font-size:15.5px; }
+  .alerta-ponto small { display:block; font-size:13px; opacity:.85; margin-top:2px; }
+  .alerta-ponto .seta { margin-left:auto; font-size:22px; opacity:.6; }
+  .alerta-ponto.ok { background:#E3F3E8; color:#1D5E32; border-left-color:#1D7A3A; }
+  .alerta-ponto.atencao { background:#FDF1DC; color:#7A4700; border-left-color:#C77700; }
+  .alerta-ponto.ruim { background:#FBE4E1; color:#8E2017; border-left-color:#B3261E; }
+  .qp-numeros { display:grid; grid-template-columns:repeat(2, 1fr); gap:8px; margin:10px 0; }
+  .qp-numeros div { background:#F1F4F8; border-radius:10px; padding:8px 10px; }
+  .qp-numeros b { display:block; font-size:20px; }
+  .qp-numeros small { font-size:12.5px; color:#566474; }
+  .qp-dia { border-top:1px solid #DDE3EA; padding:8px 0; }
+  .qp-dia h4 { margin:0 0 4px; font-size:14px; }
+  .qp-dia li { font-size:14px; margin:2px 0; }
   .chips { display:flex; flex-wrap:wrap; gap:8px; }
   .chip { background:#E7EDF7; color:var(--azul); border-radius:999px; padding:6px 12px; font-weight:700; font-size:15px; border:0; }
   .chip.analise { background:#FDF1DC; color:var(--ambar); }
@@ -252,6 +269,7 @@
       <div id="m-onde" class="pequeno" style="margin-top:6px"></div>
     </div>
     <div id="m-aviso"></div>
+    <div id="m-alertas"></div>
     <div class="menu-grade" id="m-opcoes"></div>
     <p class="pequeno" id="m-codigo" style="text-align:center"></p>
     <button class="link oculto" id="m-pedir-aparelho" type="button" style="display:block; margin:0 auto">Este aparelho vai bater ponto? Pedir a aprovação</button>
@@ -1358,7 +1376,7 @@ function blocoDoPontoEmDia(q, titulo) {
       q.fotos_ok != null ? ` · ${q.fotos_ok}% das fotos boas` : ""}.</p>
     ${q.ajustes ? `<p class="pequeno" ${q.muitos_ajustes ? `style="color:var(--vermelho); font-weight:700"` : ""}>${q.ajustes} pedido(s) de ajuste no mês${
       q.muitos_ajustes ? ` — acima do limite de ${q.limite_ajustes}: bata na hora para não precisar pedir` : ""}.</p>` : ""}
-    ${problemas ? `<details ${q.indice < 85 ? "open" : ""}><summary class="pequeno" style="cursor:pointer">O que melhorar (${(q.problemas || []).length})</summary>
+    ${problemas ? `<details><summary class="pequeno" style="cursor:pointer">O que melhorar (${(q.problemas || []).length})</summary>
         <ul class="pequeno" style="margin:4px 0 0 18px; padding:0">${problemas}</ul></details>`
       : `<p class="pequeno">✅ Nenhum problema neste mês. Continue assim!</p>`}`;
 }
@@ -1367,9 +1385,133 @@ async function carregarMeuPontoEmDia() {
   try {
     const q = await chamar(`/ponto/app/api/qualidade/meu?competencia=${MES}`);
     q.limite_ajustes = q.limite_ajustes ?? 3;
-    caixa.innerHTML = blocoDoPontoEmDia(q, "Meu ponto em dia");
+    caixa.innerHTML = blocoDoPontoEmDia(q, "Meu ponto em dia")
+      + `<button class="btn sec" type="button" id="mes-qualidade-ver" style="margin-top:8px">Ver o detalhe do mês ›</button>`;
+    $("mes-qualidade-ver").onclick = () => abrirMeuPontoEmDia(MES);
     caixa.classList.remove("oculto");
   } catch (e) { caixa.classList.add("oculto"); }
+}
+// --- os avisos e o detalhe (17/10/2026) -------------------------------------------
+// O dono: "se aparecer alertas, tem que ser algo mais resumido (…) mas aí poder
+// adentrar alguma área que detalhe melhor os problemas". Na tela inicial, UMA ou
+// DUAS linhas: o problema mais recente (ou que está tudo certo); o toque abre o
+// detalhe do mês, dia a dia, com o que fazer.
+const ICONE_PROBLEMA = {FALTA: "❌", FALTANDO: "⏰", AJUSTE: "✏️", SEM_FOTO: "📷", FOTO: "📷", FORA: "📍"};
+const COMO_MELHORAR = {
+  FALTA: "Faltou com motivo? Entregue o atestado ou peça o abono — sem isso, o dia conta como falta.",
+  FALTANDO: "Bata todas as batidas na hora: entrada, saída para o intervalo, volta e saída.",
+  AJUSTE: "Cada ajuste é uma batida que não foi feita na hora. Acima do limite do mês, os pontos caem.",
+  SEM_FOTO: "Na batida, olhe para a câmera, com o rosto à vista e boa luz.",
+  FOTO: "Na batida, olhe para a câmera, com o rosto à vista e boa luz.",
+  FORA: "Bata dentro da obra, com a localização do celular ligada.",
+};
+const DIA_CURTO = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+function quandoFoi(iso) {
+  const hoje = hojeISO();
+  if (iso === hoje) return "Hoje";
+  if (iso === somarDiasISO(hoje, -1)) return `Ontem (${dataBR(iso).slice(0, 5)})`;
+  const d = new Date(iso + "T12:00:00");
+  return `${DIA_CURTO[d.getDay()]} ${dataBR(iso).slice(0, 5)}`;
+}
+const seloCurto = q => q.selo ? `${MEDALHA[q.selo.codigo] || ""} ${q.selo.rotulo} · ${q.pontos} pontos` : "";
+let ULTIMA_QUALIDADE = null, ULTIMA_EQUIPE = null;
+function avisoPessoal(q) {
+  if (!q || !q.dias_trabalho) return "";
+  const semana = somarDiasISO(hojeISO(), -7);
+  const recentes = (q.problemas || []).filter(x => x.data >= semana);
+  const n = (q.problemas || []).length;
+  let classe, titulo, sub;
+  if (recentes.length) {
+    classe = recentes.some(x => ["FALTA", "FALTANDO"].includes(x.tipo)) ? "ruim" : "atencao";
+    titulo = `${ICONE_PROBLEMA[recentes[0].tipo] || "⚠️"} ${quandoFoi(recentes[0].data)}: ${recentes[0].texto}`;
+    sub = `${n} problema${n > 1 ? "s" : ""} no mês · ${q.indice}% em dia · ${seloCurto(q)}`;
+  } else if (n) {
+    classe = "atencao";
+    titulo = `Seu ponto: ${q.indice}% em dia este mês`;
+    sub = `${n} problema${n > 1 ? "s" : ""} no mês — nenhum nos últimos 7 dias 👍`;
+  } else {
+    classe = "ok";
+    titulo = "✅ Seu ponto está em dia este mês";
+    sub = `${q.dias_em_dia} de ${q.dias_trabalho} dias completos e na hora · ${seloCurto(q)}`;
+  }
+  if (q.muitos_ajustes) sub += " · ⚠️ muitos ajustes";
+  return `<button type="button" class="alerta-ponto ${classe}" data-aviso="meu"><span><b>${esc(titulo)}</b>
+    <small>${esc(sub)}</small></span><span class="seta">›</span></button>`;
+}
+function avisoDaEquipe(eq) {
+  if (!eq || !(eq.pessoas || []).length) return "";
+  const ontem = somarDiasISO(hojeISO(), -1);
+  const deOntem = eq.pessoas.filter(p => (p.problemas || []).some(x => x.data === ontem));
+  const comProblema = eq.pessoas.filter(p => (p.problemas || []).length);
+  const g = eq.geral;
+  let classe, titulo, sub;
+  if (deOntem.length) {
+    classe = "ruim";
+    titulo = `👷 Ontem, ${deOntem.length} pessoa${deOntem.length > 1 ? "s" : ""} da sua equipe com problema`;
+    sub = `${deOntem.slice(0, 2).map(p => p.nome.split(" ")[0]).join(", ")}${deOntem.length > 2 ? "…" : ""} · equipe ${g.indice ?? "—"}% em dia no mês`;
+  } else if (comProblema.length) {
+    classe = "atencao";
+    titulo = `👷 Sua equipe: ${g.indice ?? "—"}% em dia este mês`;
+    sub = `${comProblema.length} de ${eq.pessoas.length} pessoas com algum problema no mês — ontem, nenhum`;
+  } else {
+    classe = "ok";
+    titulo = "👷 Sua equipe está com o ponto em dia";
+    sub = `${eq.pessoas.length} pessoa${eq.pessoas.length > 1 ? "s" : ""} · nenhum problema no mês`;
+  }
+  return `<button type="button" class="alerta-ponto ${classe}" data-aviso="equipe"><span><b>${esc(titulo)}</b>
+    <small>${esc(sub)}</small></span><span class="seta">›</span></button>`;
+}
+async function mostrarAvisosDoPonto(p, pode) {
+  const caixa = $("m-alertas");
+  caixa.innerHTML = "";
+  if (!p) return;
+  const partes = [];
+  try { ULTIMA_QUALIDADE = await chamar("/ponto/app/api/qualidade/meu"); partes.push(avisoPessoal(ULTIMA_QUALIDADE)); } catch (e) {}
+  if (pode && pode.qualidade_equipe) {
+    try { ULTIMA_EQUIPE = await chamar("/ponto/app/api/qualidade/equipe"); partes.push(avisoDaEquipe(ULTIMA_EQUIPE)); } catch (e) {}
+  }
+  if (TELA_ATUAL !== "menu") return;          // a pessoa já saiu da tela inicial
+  caixa.innerHTML = partes.join("");
+  caixa.querySelectorAll("[data-aviso]").forEach(b => b.addEventListener("click", () =>
+    b.dataset.aviso === "meu" ? abrirMeuPontoEmDia() : abrirQualidadeEquipe()));
+}
+// O detalhe do meu mês: o selo, os números, e dia a dia o que aconteceu — com o que fazer.
+async function abrirMeuPontoEmDia(mes) {
+  mes = mes || hojeISO().slice(0, 7);
+  $("dlg-corpo").innerHTML = `<h2 style="margin:0 0 6px">Meu ponto em dia</h2><p class="pequeno">Calculando o mês…</p>`;
+  if (!$("dlg").open) $("dlg").showModal();
+  let q;
+  try { q = await chamar(`/ponto/app/api/qualidade/meu?competencia=${mes}`); }
+  catch (e) { $("dlg-corpo").innerHTML = `<h2 style="margin:0 0 6px">Meu ponto em dia</h2><div class="aviso erro">${esc(e.message)}</div>`; return; }
+  const [a, m] = mes.split("-");
+  const porDia = {};
+  (q.problemas || []).forEach(x => (porDia[x.data] = porDia[x.data] || []).push(x));
+  const tipos = [...new Set((q.problemas || []).map(x => x.tipo))];
+  const anterior = (() => { const d = new Date(+a, +m - 2, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; })();
+  $("dlg-corpo").innerHTML = `<h2 style="margin:0 0 2px">Meu ponto em dia — ${m}/${a}</h2>
+    ${q.dias_trabalho ? `<div style="font-size:26px; font-weight:800; margin-top:6px">${q.indice}%
+        <small style="font-size:15px; font-weight:700">${esc(seloCurto(q))}</small></div>
+      <p class="pequeno" style="margin-top:0">dos dias de trabalho com todas as batidas na hora</p>
+      <div class="qp-numeros">
+        <div><b>${q.dias_em_dia}/${q.dias_trabalho}</b><small>dias completos e na hora</small></div>
+        <div><b>${q.faltas}</b><small>falta${q.faltas === 1 ? "" : "s"} sem justificativa</small></div>
+        <div><b>${q.incompletos}</b><small>dia${q.incompletos === 1 ? "" : "s"} com batida esquecida</small></div>
+        <div ${q.muitos_ajustes ? `style="background:#FBE4E1"` : ""}><b>${q.ajustes}</b><small>ajuste${q.ajustes === 1 ? "" : "s"} pedido${q.ajustes === 1 ? "" : "s"} (limite ${q.limite_ajustes})</small></div>
+        ${q.fotos_ok != null ? `<div><b>${q.fotos_ok}%</b><small>das fotos boas</small></div>` : ""}
+      </div>
+      ${Object.keys(porDia).length ? `<h3 style="margin:12px 0 4px">O que aconteceu</h3>
+        ${Object.keys(porDia).sort().reverse().map(d => `<div class="qp-dia"><h4>${esc(quandoFoi(d))}</h4><ul style="margin:0 0 0 18px; padding:0">
+          ${porDia[d].map(x => `<li>${ICONE_PROBLEMA[x.tipo] || "•"} ${esc(x.texto)}</li>`).join("")}</ul></div>`).join("")}
+        <h3 style="margin:12px 0 4px">Como melhorar</h3>
+        <ul class="pequeno" style="margin:0 0 0 18px; padding:0">${tipos.map(t => COMO_MELHORAR[t]).filter((v, i, l) => v && l.indexOf(v) === i)
+          .map(t => `<li>${esc(t)}</li>`).join("")}</ul>`
+        : `<div class="aviso ok">✅ Nenhum problema neste mês. Continue assim!</div>`}`
+      : `<p class="pequeno">Ainda nenhum dia de trabalho neste mês.</p>`}
+    <div class="linha" style="margin-top:12px">
+      <button class="btn sec" type="button" id="qp-ant">‹ Mês anterior</button>
+      <button class="btn" type="button" id="qp-mes">Abrir Meu mês</button></div>`;
+  $("qp-ant").onclick = () => abrirMeuPontoEmDia(anterior);
+  $("qp-mes").onclick = () => { $("dlg").close(); MES = mes; mostrar("mes"); carregarMes(); };
 }
 async function abrirQualidadeEquipe(mes) {
   mes = mes || hojeISO().slice(0, 7);
@@ -1380,16 +1522,27 @@ async function abrirQualidadeEquipe(mes) {
   catch (e) { $("dlg-corpo").innerHTML = `<h2 style="margin:0 0 6px">Ponto da minha equipe</h2><div class="aviso erro">${esc(e.message)}</div>`; return; }
   const g = d.geral, [a, m] = mes.split("-");
   const atencao = [...d.pessoas].sort((x, y) => (x.pontos ?? 101) - (y.pontos ?? 101));
+  const ontem = somarDiasISO(hojeISO(), -1);
+  const deOntem = d.pessoas.map(p => ({p, ps: (p.problemas || []).filter(x => x.data === ontem)})).filter(x => x.ps.length);
+  const resumoDaPessoa = p => [p.faltas ? `${p.faltas} falta${p.faltas > 1 ? "s" : ""}` : "",
+    p.incompletos ? `${p.incompletos} dia${p.incompletos > 1 ? "s" : ""} com batida esquecida` : "",
+    p.ajustes ? `${p.ajustes} ajuste${p.ajustes > 1 ? "s" : ""}${p.muitos_ajustes ? " ⚠️" : ""}` : "",
+    (p.sem_foto + p.foto_com_sinal) ? `${p.sem_foto + p.foto_com_sinal} foto${p.sem_foto + p.foto_com_sinal > 1 ? "s" : ""} com problema` : ""]
+    .filter(Boolean).join(" · ") || "nenhum problema";
   $("dlg-corpo").innerHTML = `<h2 style="margin:0 0 6px">Ponto da minha equipe — ${m}/${a}</h2>
     <p class="pequeno">As pessoas que bateram no aparelho de que você é responsável. Ajude quem está com problema a bater completo e na hora.</p>
     <div class="aviso info"><b>${g.indice == null ? "—" : `${g.indice}%`}</b> dos dias de trabalho com todas as batidas na hora ·
       ${g.faltas} falta(s) · ${g.incompletos} dia(s) com batida faltando · ${g.ajustes} ajuste(s) pedidos</div>
+    ${mes === hojeISO().slice(0, 7) ? (deOntem.length ? `<h3 style="margin:10px 0 4px">Ontem (${esc(dataBR(ontem).slice(0, 5))})</h3>
+      <ul style="margin:0 0 0 18px; padding:0">${deOntem.map(x => `<li><b>${esc(x.p.nome)}</b>: ${x.ps.map(y => `${ICONE_PROBLEMA[y.tipo] || ""} ${esc(y.texto)}`).join("; ")}</li>`).join("")}</ul>`
+      : `<div class="aviso ok">✅ Ontem, ninguém da equipe com problema.</div>`) : ""}
+    <h3 style="margin:12px 0 4px">No mês — quem precisa de atenção primeiro</h3>
     <div class="linha" style="margin:8px 0"><button class="btn sec" type="button" id="qe-ant">‹ Mês anterior</button></div>
     ${atencao.length ? atencao.map(p => `<details style="border-top:1px solid #DDE3EA; padding:8px 0">
         <summary style="cursor:pointer"><b>${esc(p.nome)}</b> — ${p.selo ? `${MEDALHA[p.selo.codigo] || ""} ${p.pontos}` : "sem dia de trabalho"}
-          <small class="pequeno"> · ${p.dias_em_dia}/${p.dias_trabalho} dias em dia${p.muitos_ajustes ? " · ⚠️ muitos ajustes" : ""}</small></summary>
+          <small class="pequeno" style="display:block">${p.dias_em_dia}/${p.dias_trabalho} dias em dia · ${esc(resumoDaPessoa(p))}</small></summary>
         ${(p.problemas || []).length ? `<ul class="pequeno" style="margin:4px 0 0 18px; padding:0">${p.problemas.slice(0, 15).map(x =>
-            `<li>${esc(dataBR(x.data).slice(0, 5))} — ${esc(x.texto)}</li>`).join("")}</ul>` : `<p class="pequeno">✅ Nenhum problema.</p>`}
+            `<li>${ICONE_PROBLEMA[x.tipo] || "•"} ${esc(quandoFoi(x.data))} — ${esc(x.texto)}</li>`).join("")}</ul>` : `<p class="pequeno">✅ Nenhum problema.</p>`}
       </details>`).join("") : `<p class="pequeno">Ninguém bateu no seu aparelho neste mês.</p>`}`;
   $("qe-ant").onclick = () => { const d0 = new Date(+a, +m - 2, 1);
     abrirQualidadeEquipe(`${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, "0")}`); };
@@ -2495,6 +2648,7 @@ async function abrirMenu() {
                                acao: () => mostrarMeuQr()});
   }
 
+  mostrarAvisosDoPonto(p, pode);
   // Quem responde por um ponto da obra (ou de equipe) vê o ponto em dia da equipe (17/10/2026).
   if (pode.qualidade_equipe) ops.push({icone: "🏆", titulo: "Ponto da minha equipe",
     sub: "quem está batendo completo — e quem precisa de ajuda", acao: () => abrirQualidadeEquipe()});
