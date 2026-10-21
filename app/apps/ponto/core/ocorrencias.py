@@ -405,6 +405,31 @@ def listar(conn: Connection, quem: Quem, *, status: str | None = None,
 # ---------------------------------------------------------------------------
 # Decidir
 # ---------------------------------------------------------------------------
+def pedido_por(origem: str, solicitado_por: str, colaborador: str = "") -> dict:
+    """PURA. Quem fez o pedido, para a tela (21/10/2026: "na tela de validações não
+    aparece a pessoa que solicitou o ajuste ou encaminhou um atestado"). O texto
+    gravado já diz por onde ("(pelo celular)", "no aparelho X — lançado por Y",
+    "(responsável, pelo aplicativo)"); o do ERP ganha "pelo ERP". `propria` diz se
+    foi a própria pessoa do pedido."""
+    texto = (solicitado_por or "").strip()
+    nome, como = texto, ""
+    if origem == "APP" and texto.endswith(" (pelo celular)"):
+        nome, como = texto[: -len(" (pelo celular)")], "pelo celular"
+    elif origem == "APARELHO" and " — no aparelho " in texto:
+        nome, _, ap = texto.partition(" — no aparelho ")
+        como = f"no aparelho {ap}"
+    elif origem == "APARELHO" and texto.startswith("no aparelho "):
+        # Por outra pessoa, no ponto da obra (app_obra.py): "no aparelho X — lançado por Y".
+        lugar, _, quem_lancou = texto.partition(" — lançado por ")
+        nome, como = (quem_lancou or "ponto da obra"), lugar
+    elif origem == "GESTAO":
+        como = "pelo ERP"
+    elif origem == "API":
+        como = "por integração"
+    propria = bool(colaborador) and nome.strip().lower() == colaborador.strip().lower()
+    return {"nome": nome or "—", "como": como, "propria": propria, "texto": texto}
+
+
 def _etapa_atual(o: dict) -> Optional[str]:
     return {"AGUARDANDO_SUPERVISOR": SUPERVISOR, "AGUARDANDO_DP": DP}.get(o["status"])
 

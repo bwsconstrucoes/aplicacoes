@@ -64,15 +64,18 @@ def listar(conn: Connection, quem: Quem, *, obra_id: Optional[int] = None, de=No
     def quer(tipo: str) -> bool:
         return not tipos or tipo in tipos
 
-    def casa_busca(nome: str, cpf: str = "") -> bool:
-        return not busca or busca in (nome or "").lower() or bool(digitos and digitos in (cpf or ""))
+    def casa_busca(nome: str, cpf: str = "", *outros: str) -> bool:
+        """A pessoa (nome ou CPF) — e, nos pedidos, quem pediu (21/10/2026)."""
+        return (not busca or busca in (nome or "").lower() or bool(digitos and digitos in (cpf or ""))
+                or any(busca in (t or "").lower() for t in outros))
 
     # --- pedidos ---------------------------------------------------------
     obra_codigo = None
     if obra_id is not None:
         obra_codigo = (db.um(conn, "SELECT codigo FROM public.obras WHERE id = :o", o=obra_id) or {}).get("codigo")
     for p in ocorrencias.listar(conn, quem, status="PENDENTES", limite=1000):
-        if not quer(p["tipo"]) or not casa_busca(p["colaborador"], p["cpf"]):
+        por = ocorrencias.pedido_por(p["origem"], p.get("solicitado_por"), p["colaborador"])
+        if not quer(p["tipo"]) or not casa_busca(p["colaborador"], p["cpf"], por["texto"]):
             continue
         if obra_codigo and p["obra"] != obra_codigo:
             continue
@@ -98,6 +101,7 @@ def listar(conn: Connection, quem: Quem, *, obra_id: Optional[int] = None, de=No
             "etapa": ETAPA_ROTULO.get(etapa, etapa), "etapas": [ETAPA_ROTULO[e] for e in p["etapas"]],
             "pode_decidir": p["pode_decidir"], "decidir_em": rota,
             "desde": p["criado_em"], "dias_esperando": _esperando(criado), "origem": p["origem"],
+            "pedido_por": por,
         })
 
     # --- batidas em conferência ------------------------------------------
@@ -156,7 +160,7 @@ def listar(conn: Connection, quem: Quem, *, obra_id: Optional[int] = None, de=No
             })
 
     # --- aparelhos ----------------------------------------------------------
-    if ver_aparelhos and quer("APARELHO") and obra_id is None and not busca:
+    if ver_aparelhos and quer("APARELHO") and obra_id is None:
         # O celular de quem NÃO é exceção não entra na fila: o padrão é só o
         # aparelho da obra bater, e 400 celulares esperando aprovação esconderiam
         # o tablet que precisa dela. Continua em Configuração › Aparelhos.
@@ -181,6 +185,8 @@ def listar(conn: Connection, quem: Quem, *, obra_id: Optional[int] = None, de=No
                     and not dispositivos.foi_pedido(a)):      # o pedido explícito entra sempre
                 continue
             j = dispositivos.para_json(a)
+            if not casa_busca((j.get("dono") or {}).get("nome"), "", j.get("descricao"), j.get("codigo")):
+                continue
             antigo = aprovados.get(int(a["colaborador_id"])) if a.get("colaborador_id") else None
             troca = (f" · já tem um celular aprovado"
                      + (f" desde {horario.para_local(antigo['aprovado_em']):%d/%m/%Y}" if antigo["aprovado_em"] else "")
@@ -196,11 +202,15 @@ def listar(conn: Connection, quem: Quem, *, obra_id: Optional[int] = None, de=No
                 "etapa": "Quem configura o ponto",
                 "pode_decidir": True, "abrir_em": "/erp/ponto/configuracao",
                 "desde": j.get("pedido_em"), "dias_esperando": None,
+                "pedido_por": ({"nome": j["dono"]["nome"], "como": "entrou com CPF e PIN e pediu", "propria": True,
+                                "texto": j["dono"]["nome"]} if (j.get("dono") or {}).get("nome") else None),
             })
 
     # --- aparelhos a renovar ou desativar (todos vencem; o de grupo é passageiro) ---
-    if ver_aparelhos and quer("RENOVAR") and obra_id is None and not busca:
+    if ver_aparelhos and quer("RENOVAR") and obra_id is None:
         for g in dispositivos.aparelhos_a_rever(conn):
+            if not casa_busca(g["dono"], "", g["descricao"], g["codigo"]):
+                continue
             quem_tem = (f"de {g['dono']}" if g["dono"] else
                         f"{g['pessoas']} pessoa(s) no grupo" if g["perfil"] == "LISTA" else "da obra")
             itens.append({

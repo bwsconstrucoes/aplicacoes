@@ -361,8 +361,8 @@
       <select id="v-obra"><option value="">Todas</option></select></div>
     <div class="campo estreito"><label for="v-de">De</label><input type="date" id="v-de"></div>
     <div class="campo estreito"><label for="v-ate">Até</label><input type="date" id="v-ate"></div>
-    <div class="campo"><label for="v-busca">Pessoa</label>
-      <input id="v-busca" placeholder="nome ou CPF" autocomplete="off" data-sem-mascara></div>
+    <div class="campo"><label for="v-busca">Pessoa ou quem pediu</label>
+      <input id="v-busca" placeholder="nome, CPF ou quem pediu" autocomplete="off" data-sem-mascara></div>
   </div>
   <div class="validacoes-tipos">
     <label class="opcao" style="padding:3px 6px"><input type="checkbox" id="v-so-minhas">
@@ -384,7 +384,7 @@
   <div class="validacoes-lista"><table class="validacoes-tabela">
     <thead><tr><th class="sem-ordem" style="width:28px"><input type="checkbox" id="v-todos"
         title="Marcar tudo o que dá para aprovar em lote"></th>
-      <th class="sem-ordem">Tipo</th><th class="sem-ordem">Pessoa</th><th class="sem-ordem">Obra</th>
+      <th class="sem-ordem">Tipo</th><th class="sem-ordem">Pessoa</th><th class="sem-ordem">Pedido por</th><th class="sem-ordem">Obra</th>
       <th class="sem-ordem">Quando</th><th class="sem-ordem">Detalhe</th><th class="sem-ordem">Esperando</th>
       <th class="sem-ordem">Quem valida</th><th class="sem-ordem"></th></tr></thead>
     <tbody id="v-corpo"></tbody></table></div>
@@ -1835,6 +1835,16 @@ function acoesDoItem(i) {
   return `<div class="acoes">${a.join("")}</div>`;
 }
 
+// Quem fez o pedido (21/10/2026: "não aparece a pessoa que solicitou o ajuste da
+// batida ou encaminhou um atestado"). A própria pessoa aparece como tal; quem
+// pediu por ela (responsável da obra, DP pelo ERP) aparece com o nome.
+function pedidoPorTexto(i) {
+  const p = i.pedido_por;
+  if (!p) return `<span class="suave">${i.categoria === "BATIDA" ? "a própria batida" : "—"}</span>`;
+  const como = p.como ? `<small style="display:block">${escapar(p.como)}</small>` : "";
+  return p.propria ? `<span class="suave">a própria pessoa</span>${como}` : `<b>${escapar(p.nome)}</b>${como}`;
+}
+
 function desenharValidacoes() {
   desenharTipos();
   const lista = itensVisiveis();
@@ -1855,13 +1865,14 @@ function desenharValidacoes() {
           title="Marcar para aprovar em lote">` : ""}</td>
       <td data-rotulo="Tipo"><span class="selo ${SELO_CATEGORIA[i.categoria] || "outro"}">${escapar(i.rotulo || TIPOS_VAL[i.tipo] || i.tipo)}</span></td>
       <td data-rotulo="Pessoa">${pessoa}</td>
+      <td data-rotulo="Pedido por">${pedidoPorTexto(i)}</td>
       <td data-rotulo="Obra" class="dados">${escapar(i.obra || "—")}</td>
       <td data-rotulo="Quando" class="dados">${escapar(i.categoria === "APARELHO" ? quando(i.quando) : (i.quando || "—"))}</td>
       <td data-rotulo="Detalhe" class="desc">${detalheDoItem(i)}</td>
       <td data-rotulo="Esperando">${esperandoTexto(i.dias_esperando)}</td>
       <td data-rotulo="Quem valida">${quemValidaTexto(i)}</td>
       <td data-rotulo="">${acoesDoItem(i)}</td></tr>
-      ${i.categoria === "PEDIDO" ? `<tr id="leitura-${i.id}" class="linha-leitura" hidden><td colspan="9"></td></tr>` : ""}`;
+      ${i.categoria === "PEDIDO" ? `<tr id="leitura-${i.id}" class="linha-leitura" hidden><td colspan="10"></td></tr>` : ""}`;
   }).join("");
   const achar = k => (VAL.itens || []).find(i => chaveDoItem(i) === k);
   els("v-corpo").querySelectorAll("[data-acao]").forEach(b => b.addEventListener("click", () => {

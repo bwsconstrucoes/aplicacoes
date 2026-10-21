@@ -96,3 +96,38 @@ def test_trocar_quem_valida_realinha_a_fila(app, mundo, monkeypatch):
     assert passo.get_json()["ocorrencia"]["status"] == "AGUARDANDO_DP"
     fim = dp.post(f"/erp/api/ponto/afastamentos/{pedido['id']}/etapa-dp", json={"aprovar": True})
     assert fim.get_json()["ocorrencia"]["status"] == "APROVADA"
+
+
+def test_a_lista_diz_quem_pediu_e_acha_por_ele(app, mundo, monkeypatch):
+    """21/10/2026: "na tela de validações não aparece a pessoa que solicitou o
+    ajuste da batida ou encaminhou um atestado (…) e ela precisa ser pesquisável"."""
+    seg = _segunda_passada()
+    cel = _entrar_no_app(app, CPF_JOAO, monkeypatch, excecao=True)
+    proprio = _pedir_ajuste(cel, seg, "17:00")
+    dp = como(app, mundo["dp"])
+    r = dp.post("/erp/api/ponto/ocorrencias", json={"tipo": "AJUSTE_BATIDA", "colaborador_id": mundo["joao"],
+                "data_inicio": seg.isoformat(), "horario": f"{seg.isoformat()}T12:00:00", "obra": "PG-A",
+                "descricao": "esqueceu de bater"})
+    assert r.status_code in (200, 201), r.get_json()
+    pelo_erp = r.get_json()["ocorrencia"]["id"]
+    itens = {i["id"]: i for i in dp.get("/erp/api/ponto/validacoes").get_json()["itens"] if i["categoria"] == "PEDIDO"}
+    assert itens[proprio["id"]]["pedido_por"]["propria"] is True
+    assert itens[proprio["id"]]["pedido_por"]["como"] == "pelo celular"
+    quem = itens[pelo_erp]["pedido_por"]
+    assert quem["propria"] is False and quem["como"] == "pelo ERP" and quem["nome"] not in ("", "—")
+    # a busca pelo nome de quem pediu acha o pedido — e só os dele
+    achados = dp.get("/erp/api/ponto/validacoes", query_string={"busca": quem["nome"][:6]}).get_json()["itens"]
+    assert pelo_erp in {i["id"] for i in achados} and proprio["id"] not in {i["id"] for i in achados}
+
+
+def test_quem_pediu_le_o_texto_gravado():
+    from app.apps.ponto.core.ocorrencias import pedido_por
+    assert pedido_por("APP", "Maria Lima (pelo celular)", "Maria Lima") == {
+        "nome": "Maria Lima", "como": "pelo celular", "propria": True, "texto": "Maria Lima (pelo celular)"}
+    tablet = pedido_por("APARELHO", "Maria Lima — no aparelho Tablet AP-01", "Maria Lima")
+    assert tablet["propria"] and tablet["como"] == "no aparelho Tablet AP-01"
+    por_outro = pedido_por("APARELHO", "no aparelho Tablet AP-01 — lançado por Carlos Souza", "Maria Lima")
+    assert por_outro["nome"] == "Carlos Souza" and por_outro["como"] == "no aparelho Tablet AP-01" and not por_outro["propria"]
+    resp = pedido_por("RESPONSAVEL", "Carlos Souza (responsável, pelo aplicativo)", "Maria Lima")
+    assert not resp["propria"] and "Carlos Souza" in resp["nome"]
+    assert pedido_por("GESTAO", "Ana do DP", "Maria Lima")["como"] == "pelo ERP"
