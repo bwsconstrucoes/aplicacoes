@@ -3166,8 +3166,15 @@ def conciliacao_importar():
     if request.form.get("lembrar") == "1":
         conc.lembrar_conta_do_extrato(int(conta_id), lido.bankid, lido.acctid,
                                       quem)
+    # As linhas novas DESMARCADAS na conferência (21/10/2026): ficam de fora.
+    import json as _json
     try:
-        feito = conc.importar(int(conta_id), lido, arquivo.filename, quem)
+        pular = _json.loads(request.form.get("pular") or "[]")
+    except ValueError:
+        pular = []
+    try:
+        feito = conc.importar(int(conta_id), lido, arquivo.filename, quem,
+                              pular=pular if isinstance(pular, list) else [])
     except conc.ErroDaConciliacao as e:
         return {"ok": False, "erro": str(e)}
     return {"ok": True, **conc.resumo_para_a_tela(feito, int(conta_id),
