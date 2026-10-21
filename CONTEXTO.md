@@ -802,6 +802,16 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 21/10/2026 — Incidente: o Render inteiro parou na hora da saída do ponto (atravessa áreas)
+
+Por volta das 17h o aplicativo do ponto — e, segundo o dono, todo o serviço — deixou
+de carregar; o dono reiniciou. Causa provável (detalhe em `app/apps/ponto/HISTORICO.md`,
+item 0a): uma conta pesada (a qualidade do mês da equipe, um espelho por pessoa) rodando
+a CADA abertura do menu do aplicativo, sem guarda que valesse no pico. Com 1 processo e
+4 linhas, uma área pesada trava todas. **Regra que fica, para qualquer área:** tela que
+muita gente abre no mesmo minuto não dispara conta pesada sozinha — a conta roda no
+toque, fica guardada, e no máximo uma por vez.
+
 ### 17/10/2026 — ValidaSP: a validação vai para uma fila no banco, e o Pipefy sai (atravessa áreas)
 
 Pedido do dono: parar de mexer no card do Pipefy e **garantir** o "Sim" na

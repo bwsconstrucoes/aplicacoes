@@ -19,6 +19,18 @@ junto com o `README.md` e o `PLANO.md`.
    voltar a enviar: publicar, aplicar a 083 do ERP, ligar o WhatsApp em
    ERP › Mensagens, e a chave "Enviar e trocar o QR automaticamente" aqui.
 
+0a. **INCIDENTE 21/10/2026, ~17h — o aplicativo do ponto (e o Render inteiro) parou de carregar na hora da
+   saída.** O dono reiniciou o serviço. Causa PROVÁVEL (não confirmada: sem acesso às métricas daqui; pedido ao
+   dono o gráfico de CPU e memória do Render das 16h30 às 17h30): desde 17/10 o menu do aplicativo calculava a
+   qualidade do mês a cada abertura — a da pessoa e, no ponto da obra, a da EQUIPE INTEIRA (um espelho do mês
+   por pessoa) —, e a guarda de 10 minutos caía a cada batida nova. No pico, os aparelhos voltando ao menu
+   refaziam a conta sem parar e tomavam o processo único (1 worker, 4 linhas): todas as áreas do Render
+   travaram juntas. Os registros mostraram respostas em rajadas a cada ~45 s, e nenhum erro. **Conserto
+   (a6a6b3c):** o menu não calcula nada (mostra o último resumo visto e um botão "Como está o meu ponto"); a
+   guarda dura 10 minutos sem cair a cada batida; e **uma conta pesada por vez** — com outra rodando, a
+   segunda ouve "tente em instantes" (503) na hora, no aplicativo e na aba Qualidade do ERP. **A lição, para
+   qualquer área:** nada pesado roda sozinho ao abrir uma tela que centenas de pessoas abrem no mesmo minuto.
+
 1. **Fase 2 e QR/mosaico PUBLICADOS em 04/10/2026** (com o "pode" do dono).
    Falta o dono apertar, se ainda não apertou, **os dois botões de banco**:
    - ERP › Configurações › "Aplicar atualizações do banco" (a **082**, que dá as
