@@ -59,6 +59,10 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1zl. **No ramo, esperando o "pode"** (21/10/2026, sem migração) — o **QUADRO DO PONTO** (aba nova "Quadro", logo
+   depois de Hoje) e a **inclusão de batida em lote**. Ver a seção de 21/10/2026 (noite). Primeiras telas
+   mostradas ao dono; **esperando a opinião dele sobre os filtros** antes de levar a mesma barra para as outras
+   telas (pedido dele: "o que a gente fechar de filtro é para valer para as outras telas").
 1zk. **PUBLICADO em 21/10/2026** (junção `d6ab5eb`, sem migração) — **Validações diz QUEM PEDIU** (o dono: "não
    aparece a pessoa que solicitou o ajuste da batida ou encaminhou um atestado; é importante, e precisa ser
    pesquisável"). Coluna "Pedido por": "a própria pessoa" (pelo celular / no aparelho X) ou o nome de quem pediu
@@ -287,6 +291,57 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 21/10/2026 (noite) — O quadro do ponto e a inclusão em lote
+
+**Pedido do dono**, depois do incidente da saída (muita gente sem a 4ª batida): *"para
+evitar uma enxurrada de pedidos, é melhor que a gestão faça isso em lote (…) uma tela que
+liste as pessoas, um dia ou dias, a pessoa em linha — pessoa, dia e os pontos dela — ou só
+o dia (…) o que é falta e o que não é, quem tem presença e quem não tem (…) só tem uma
+batida, duas, só a primeira (…) quem está 100 %, onde estão os buracos"*, com a barra
+lateral cheia de filtros, e telas mostradas durante a construção.
+
+**O que ficou (`core/quadro.py`, aba Quadro):**
+- **Três visões:** pessoa e dia (as batidas em pílula, o que falta em vermelho com a hora
+  que a escala esperava; dia sem batida nenhuma vira uma frase só); resumo por dia (clicar
+  num número abre as pessoas daquele dia naquela situação); por pessoa (quem tem mais
+  buraco e falta primeiro).
+- **Filtros:** período (atalhos hoje, ontem, esta semana, 7 dias; até 31 dias), pessoa,
+  obra do cadastro, obra em que bateu no período, função, escala, situação no cadastro; e
+  do dia: sem batida, com batida, completo, com batida faltando, falta, justificado, não
+  trabalha, em conferência, com pedido — quantas batidas (0 a 4+) — falta a batida X.
+  Os números do topo contam o recorte inteiro e são clicáveis.
+- **A conta é a do espelho.** O `espelho.montar` ganhou a leitura em bloco (`espelho.Lote`):
+  as mesmas regras, uma leitura para todos. Medido: 413 pessoas, 1 dia em 0,14 s; 7 dias em
+  0,31 s. Há teste conferindo que o quadro e o espelho dizem a mesma coisa dia a dia. Um
+  quadro por vez (a lição do incidente) e nada se calcula ao abrir a tela — só no botão.
+- **"Com batida faltando" é de quem bateu PARTE do dia.** Quem não bateu nada está em "sem
+  batida" (e, sem justificativa, em "falta").
+- **Inclusão em lote:** marca as linhas (ou "marcar todas com batida faltando"), escolhe
+  qual batida (a tela mostra em quantas falta cada uma), a hora (em branco = a da escala
+  de cada um; ou um horário só para todos) e o motivo. Cada inclusão vira um **ajuste da
+  gestão aprovado na hora** por quem pode — o mesmo caminho e as mesmas travas de sempre
+  (competência fechada, horário que já tem batida, pedido repetido, dia com todas as
+  batidas). Vai de 40 em 40, cada uma na sua transação (a trava do NSR nunca fica presa
+  pelo lote), e a tela diz quais não entraram e por quê.
+- **Dia SEM batida nenhuma não aceita inclusão em lote** (seria inventar meio dia: é falta;
+  o dia inteiro se lança pelo espelho, com o motivo).
+- **Não pesa contra a pessoa:** o ajuste em lote leva o subtipo `LOTE_GESTAO`; a batida
+  diz "incluída em lote pela gestão (pedido nº X): motivo"; a qualidade não conta esse
+  ajuste nem tira o dia de "em dia".
+
+**Respostas dadas ao dono na mesma conversa:**
+- *Ajuste de batida que já está certa:* o ponto não deixa — o pedido é feito no dia, com os
+  horários que faltam já marcados, e o servidor recusa horário que já tem batida perto, dia
+  já completo, dia justificado, futuro, antes do ponto, fora do contrato, competência
+  fechada e pedido repetido (`ajustes.conferir_pedido`).
+- *Assinatura do espelho (Portaria 671):* pelo que conheço, a Portaria exige o comprovante de
+  cada batida para o trabalhador (o aplicativo dá) e os registros disponíveis (espelho, AFD),
+  mas **não obriga** a assinatura do espelho. Ela serve como prova em processo trabalhista,
+  e alguma convenção coletiva pode pedir. Pedido ao dono confirmar com o advogado/contador e
+  a convenção da construção; a orientação dele foi: se não for obrigatório, ignorar por ora.
+- *Relatórios (para o sistema e para impressão) e envio da folha de ponto:* "depois a gente
+  pensa" — não feito.
 
 ## 17/10/2026 (noite, segunda) — A conferência do rosto que se adapta à pessoa
 

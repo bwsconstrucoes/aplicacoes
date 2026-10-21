@@ -600,7 +600,8 @@ STATUS_DECIDIVEIS = ("VALIDA", "REJEITADA")
 
 
 def registrar_ajustada(conn: Connection, *, colaborador_id: int, obra_id: int,
-                       momento: dt.datetime, ocorrencia_id: int, aprovado_por: str) -> dict:
+                       momento: dt.datetime, ocorrencia_id: int, aprovado_por: str,
+                       motivo: Optional[str] = None) -> dict:
     """Inclui a batida que a pessoa esqueceu, como AJUSTADA. Ganha NSR próprio
     (o NSR é a ordem do REGISTRO, não do relógio) e a hora é a do pedido."""
     pessoa = cadastros.colaborador_por_id(conn, colaborador_id)
@@ -614,7 +615,7 @@ def registrar_ajustada(conn: Connection, *, colaborador_id: int, obra_id: int,
         VALUES (:nsr, :c, :o, :ts, :dref, 'MANUAL', 'AJUSTADA', :motivo, :hash, :por)
         RETURNING id
     """, nsr=nsr, c=colaborador_id, o=obra_id, ts=momento, dref=data_ref,
-         motivo=f"inclusão pelo pedido de ajuste nº {ocorrencia_id}", hash=corrente,
+         motivo=(motivo or f"inclusão pelo pedido de ajuste nº {ocorrencia_id}")[:500], hash=corrente,
          por=f"ajuste aprovado por {aprovado_por}"[:120])
     logger.info("Ponto: batida AJUSTADA NSR %d incluída (pedido %d, por %s)",
                 nsr, ocorrencia_id, aprovado_por)

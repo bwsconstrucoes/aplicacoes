@@ -35,6 +35,59 @@
     Vendo o dia de hoje, a tela se atualiza sozinha a cada 2 minutos.
   </div>
 
+{% elif aba_ponto == "ponto_quadro" %}
+  {# O quadro do ponto (21/10/2026): os filtros são do cadastro (quem) e do dia
+     (como está o ponto). O que for combinado aqui passa a valer nas outras telas. #}
+  <div class="filtros-cab"><h2>Quadro do ponto</h2>
+    <button class="link-btn" id="qd-limpar" type="button">limpar</button></div>
+  <div class="qd-atalhos">
+    <button class="chip" type="button" data-qd-atalho="hoje">Hoje</button>
+    <button class="chip" type="button" data-qd-atalho="ontem">Ontem</button>
+    <button class="chip" type="button" data-qd-atalho="semana">Esta semana</button>
+    <button class="chip" type="button" data-qd-atalho="7">7 dias</button>
+  </div>
+  <div class="qd-par">
+    <div class="campo"><label for="qd-de">De</label><input type="date" id="qd-de"></div>
+    <div class="campo"><label for="qd-ate">Até</label><input type="date" id="qd-ate"></div>
+  </div>
+  <div class="campo" style="margin-top:10px"><label for="qd-busca">Pessoa</label>
+    <input id="qd-busca" placeholder="nome ou CPF" autocomplete="off" data-sem-mascara></div>
+  <h3 class="qd-grupo">Quem</h3>
+  <div class="campo"><label for="qd-obra-cad">Obra do cadastro</label>
+    <select id="qd-obra-cad"><option value="">Todas</option></select></div>
+  <div class="campo" style="margin-top:8px"><label for="qd-obra-bat">Bateu na obra (no período)</label>
+    <select id="qd-obra-bat"><option value="">Todas</option></select></div>
+  <div class="campo" style="margin-top:8px"><label for="qd-funcao">Função</label>
+    <select id="qd-funcao"><option value="">Todas</option></select></div>
+  <div class="campo" style="margin-top:8px"><label for="qd-escala">Escala</label>
+    <select id="qd-escala"><option value="">Todas</option></select></div>
+  <div class="campo" style="margin-top:8px"><label for="qd-sit-cad">Situação no cadastro</label>
+    <select id="qd-sit-cad" data-sem-busca><option value="">Todas</option>
+      <option value="ATIVO">Ativo</option><option value="AFASTADO">Afastado</option></select></div>
+  <h3 class="qd-grupo">Como está o dia</h3>
+  <div id="qd-situacoes" class="qd-marcas"></div>
+  <h3 class="qd-grupo">Quantas batidas</h3>
+  <div class="qd-marcas qd-linha">
+    <label class="opcao"><input type="checkbox" data-qd-batidas="0"><span class="rotulo">0</span></label>
+    <label class="opcao"><input type="checkbox" data-qd-batidas="1"><span class="rotulo">1</span></label>
+    <label class="opcao"><input type="checkbox" data-qd-batidas="2"><span class="rotulo">2</span></label>
+    <label class="opcao"><input type="checkbox" data-qd-batidas="3"><span class="rotulo">3</span></label>
+    <label class="opcao"><input type="checkbox" data-qd-batidas="4"><span class="rotulo">4 ou mais</span></label>
+  </div>
+  <h3 class="qd-grupo">Falta a batida</h3>
+  <div class="qd-marcas">
+    <label class="opcao"><input type="checkbox" data-qd-faltando="Entrada"><span class="rotulo">Entrada</span></label>
+    <label class="opcao"><input type="checkbox" data-qd-faltando="Saída para o intervalo"><span class="rotulo">Saída para o intervalo</span></label>
+    <label class="opcao"><input type="checkbox" data-qd-faltando="Volta do intervalo"><span class="rotulo">Volta do intervalo</span></label>
+    <label class="opcao"><input type="checkbox" data-qd-faltando="Saída"><span class="rotulo">Saída</span></label>
+  </div>
+  <button class="btn" id="qd-ver" type="button" style="width:100%; margin-top:14px">Montar o quadro</button>
+  <div class="cartao-dica" style="margin-top:14px">
+    A conta é a do <b>espelho</b>: o que aparece aqui é o que o espelho de cada um diz.
+    Até 31 dias de uma vez. Os números do topo contam todas as pessoas do recorte; os
+    filtros do dia só escolhem as linhas.
+  </div>
+
 {% elif aba_ponto == "ponto_espelho" %}
   <div class="filtros-cab"><h2>Espelho do mês</h2></div>
   {# Primeiro o mês e a obra, depois a pessoa (16/10/2026): a lista de pessoas é a
@@ -178,6 +231,20 @@
   .suave { color:var(--tinta-suave); }
   .acoes { display:flex; gap:6px; flex-wrap:wrap; }
   .barra-acoes { display:flex; gap:8px; flex-wrap:wrap; margin:0 0 14px; }
+  /* O quadro do ponto (21/10/2026). */
+  .chip.qd-falta { background:#FDECEA; color:var(--vermelho); border:1px dashed var(--vermelho); }
+  .qd-atalhos { display:flex; flex-wrap:wrap; gap:4px; margin:0 0 8px; }
+  .qd-par { display:grid; grid-template-columns:1fr; gap:6px; }
+  #qd-lote[hidden] { display:none !important; }
+  .qd-kpis .kpis { grid-template-columns:repeat(auto-fit, minmax(135px, 1fr)); }
+  .qd-tabela td.dados, .qd-tabela td:nth-child(3) { white-space:nowrap; }
+  .qd-grupo { font-size:11.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--tinta-suave);
+              margin:16px 0 6px; padding-top:10px; border-top:1px solid var(--borda); }
+  .qd-marcas .opcao { margin:0 0 4px; }
+  .qd-marcas .qtd { color:var(--tinta-suave); font-size:11.5px; margin-left:4px; }
+  .qd-linha { display:flex; flex-wrap:wrap; gap:4px 10px; }
+  .qd-kpis .kpi { cursor:pointer; text-align:left; }
+  .qd-tabela td { vertical-align:top; }
   .leitura-grade { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr));
                    gap:8px 14px; margin:8px 0; }
   .leitura-grade small { display:block; color:var(--tinta-suave); font-size:11px; }
@@ -305,6 +372,31 @@
   <span class="chip ajustada">07:02</span> incluída por ajuste aprovado ·
   <span class="chip fora">07:02 ⌖</span> fora da cerca da obra.
   Clique no nome para abrir o espelho do mês da pessoa.
+</div>
+
+{% elif aba_ponto == "ponto_quadro" %}
+{# ---------------------------------------------------------------- QUADRO #}
+<h2>Quadro do ponto <small id="qd-sub">escolha o período e monte o quadro</small></h2>
+<div id="mensagem"></div>
+<div class="qd-kpis" id="qd-kpis"></div>
+<div class="sub-abas" id="qd-visoes">
+  <button type="button" data-qd-visao="linhas" class="ativa">Pessoa e dia</button>
+  <button type="button" data-qd-visao="dias">Resumo por dia</button>
+  <button type="button" data-qd-visao="pessoas">Por pessoa</button>
+</div>
+<div class="barra-lote" id="qd-lote" hidden>
+  <b id="qd-lote-qtd">0 marcadas</b>
+  {% if pode.tratar_ponto %}<button class="btn" id="qd-incluir" type="button">Incluir a batida que falta…</button>{% endif %}
+  <button class="link-btn" id="qd-desmarcar" type="button">desmarcar</button>
+  <small class="suave">cada inclusão vira um ajuste da gestão, aprovado na hora e registrado com o motivo</small>
+</div>
+<div id="qd-lote-msg"></div>
+<div class="tabela-wrap">
+  <div class="tabela-barra"><span class="resumo" id="qd-resumo"></span><span class="espaco"></span>
+    <button class="link-btn" id="qd-marcar-buracos" type="button" hidden>marcar todas com batida faltando</button></div>
+  <div class="tabela-rolagem" style="max-height:70vh"><div id="qd-tabela">
+    <div class="vazio"><b>Nada montado ainda</b>Escolha o período e os filtros na barra da esquerda e aperte
+      “Montar o quadro”.</div></div></div>
 </div>
 
 {% elif aba_ponto == "ponto_espelho" %}
@@ -1322,6 +1414,251 @@ setInterval(() => {
   if (els("h-data").value === hojeISO() && document.visibilityState === "visible") carregarHoje();
 }, 120000);
 carregarObrasDoHoje().then(carregarHoje);
+
+{% elif aba_ponto == "ponto_quadro" %}
+// ===========================================================================
+// QUADRO DO PONTO (21/10/2026) — pessoa × dia com as batidas e os buracos, e a
+// inclusão em lote. Nada se calcula ao abrir a tela (a lição do incidente da
+// saída): só quando alguém aperta "Montar o quadro".
+// ===========================================================================
+let QD = null, QD_VISAO = "linhas";
+const QD_MARCADAS = new Set();
+const chaveQd = l => `${l.colaborador_id}|${l.data}`;
+const SITUACAO_QD = {SEM_BATIDA: "bloqueado", COM_BATIDA: "pago", COMPLETO: "aprovado", COM_BURACO: "aguardando",
+  FALTA: "bloqueado", JUSTIFICADO: "pago", NAO_TRABALHA: "outro", EM_ANALISE: "aguardando", COM_PEDIDO: "aguardando"};
+const KPIS_QD = [["DIAS", "Pessoa-dias"], ["COM_BATIDA", "Com batida"], ["SEM_BATIDA", "Sem batida"],
+  ["COMPLETO", "Completos"], ["COM_BURACO", "Com batida faltando"], ["FALTA", "Faltas"], ["JUSTIFICADO", "Justificados"]];
+const diaCurto = iso => { const [a, m, d] = iso.split("-"); return `${d}/${m}`; };
+
+function qdFiltros() {
+  const marcadas = sel => [...document.querySelectorAll(sel)].filter(x => x.checked);
+  return {
+    busca: els("qd-busca").value.trim(),
+    obra_cadastro: els("qd-obra-cad").value || null, obra_batida: els("qd-obra-bat").value || null,
+    funcoes: els("qd-funcao").value ? [els("qd-funcao").value] : [],
+    escalas: els("qd-escala").value ? [els("qd-escala").value] : [],
+    situacao_cadastro: els("qd-sit-cad").value || null,
+    situacoes: marcadas("[data-qd-situacao]").map(x => x.dataset.qdSituacao),
+    batidas: marcadas("[data-qd-batidas]").map(x => Number(x.dataset.qdBatidas)),
+    faltando: marcadas("[data-qd-faltando]").map(x => x.dataset.qdFaltando),
+  };
+}
+
+function qdAtalho(qual) {
+  const hoje = hojeISO();
+  const menos = n => { const d = new Date(hoje + "T12:00:00"); d.setDate(d.getDate() - n); return isoLocal(d); };
+  if (qual === "hoje") { els("qd-de").value = els("qd-ate").value = hoje; }
+  else if (qual === "ontem") { els("qd-de").value = els("qd-ate").value = menos(1); }
+  else if (qual === "semana") { const d = new Date(hoje + "T12:00:00"); els("qd-de").value = menos((d.getDay() + 6) % 7); els("qd-ate").value = hoje; }
+  else { els("qd-de").value = menos(Number(qual) - 1); els("qd-ate").value = hoje; }
+}
+
+function qdOpcoes(alvo, lista, rotulo = x => x) {
+  const atual = els(alvo).value;
+  els(alvo).innerHTML = `<option value="">Todas</option>` + lista.map(x => `<option value="${escapar(x)}"
+    ${x === atual ? "selected" : ""}>${escapar(rotulo(x))}</option>`).join("");
+}
+
+async function qdObras() {
+  try {
+    const d = await api("/erp/api/ponto/obras");
+    const op = `<option value="">Todas</option>` + d.obras.map(o => `<option value="${o.id}">${escapar(rotuloObra(o))}</option>`).join("");
+    els("qd-obra-cad").innerHTML = op; els("qd-obra-bat").innerHTML = op;
+  } catch (e) { falhou(e); }
+}
+
+function qdSituacoes(contagem) {
+  const ligadas = new Set([...document.querySelectorAll("[data-qd-situacao]:checked")].map(x => x.dataset.qdSituacao));
+  const lista = (QD && QD.opcoes.situacoes) || [
+    {codigo: "SEM_BATIDA", rotulo: "Sem nenhuma batida"}, {codigo: "COM_BATIDA", rotulo: "Com alguma batida"},
+    {codigo: "COMPLETO", rotulo: "Completo (todas as batidas da escala)"}, {codigo: "COM_BURACO", rotulo: "Com batida faltando"},
+    {codigo: "FALTA", rotulo: "Falta (sem justificativa)"}, {codigo: "JUSTIFICADO", rotulo: "Justificado (atestado, férias, folga…)"},
+    {codigo: "NAO_TRABALHA", rotulo: "Não trabalha (descanso, feriado)"}, {codigo: "EM_ANALISE", rotulo: "Com batida em conferência"},
+    {codigo: "COM_PEDIDO", rotulo: "Com pedido esperando decisão"}];
+  els("qd-situacoes").innerHTML = lista.map(s => `<label class="opcao"><input type="checkbox" data-qd-situacao="${s.codigo}"
+      ${ligadas.has(s.codigo) ? "checked" : ""}><span class="rotulo">${escapar(s.rotulo)}
+      ${contagem ? `<span class="qtd">${contagem[s.codigo] || 0}</span>` : ""}</span></label>`).join("");
+}
+
+async function qdMontar() {
+  if (!els("qd-de").value) qdAtalho("hoje");
+  els("qd-ver").disabled = true; els("qd-ver").textContent = "Montando…";
+  els("qd-resumo").textContent = "montando o quadro…";
+  try {
+    QD = await postar("/erp/api/ponto/quadro", {de: els("qd-de").value, ate: els("qd-ate").value || els("qd-de").value,
+                                               filtros: qdFiltros()});
+    QD_MARCADAS.clear();
+    qdOpcoes("qd-funcao", QD.opcoes.funcoes);
+    qdOpcoes("qd-escala", QD.opcoes.escalas);
+    qdSituacoes(QD.contagem);
+    qdDesenhar();
+    try { localStorage.setItem("ponto_quadro_filtros", JSON.stringify({de: els("qd-de").value, ate: els("qd-ate").value, f: qdFiltros()})); } catch (e) {}
+  } catch (e) { falhou(e); els("qd-resumo").textContent = ""; }
+  finally { els("qd-ver").disabled = false; els("qd-ver").textContent = "Montar o quadro"; }
+}
+
+function qdKpis() {
+  const c = QD.contagem || {};
+  els("qd-kpis").innerHTML = `<div class="kpis">${KPIS_QD.map(([k, r]) => `<button type="button" class="kpi ${
+      {FALTA: "vermelho", SEM_BATIDA: "vermelho", COM_BURACO: "ambar", COMPLETO: "verde"}[k] || ""}"
+      ${k === "DIAS" ? "" : `data-qd-kpi="${k}"`}><div class="kpi-rotulo">${r}</div>
+      <div class="kpi-valor">${c[k] || 0}</div>
+      <div class="kpi-sub">${k === "DIAS" ? `${QD.pessoas_no_recorte} pessoas · ${QD.por_dia.length || 0} dia(s)`
+        : c.DIAS ? `${Math.round(100 * (c[k] || 0) / c.DIAS)}% dos dias` : ""}</div></button>`).join("")}</div>`;
+  els("qd-kpis").querySelectorAll("[data-qd-kpi]").forEach(b => b.addEventListener("click", () => {
+    document.querySelectorAll("[data-qd-situacao]").forEach(x => { x.checked = x.dataset.qdSituacao === b.dataset.qdKpi; });
+    QD_VISAO = "linhas"; qdMontar();
+  }));
+}
+
+function qdBatidas(l) {
+  // Sem batida nenhuma: uma frase só, não os quatro horários em vermelho.
+  if (!l.batidas.length) return l.previstas.length
+    ? `<span class="chip qd-falta" title="a escala esperava ${escapar(l.previstas.map(p => p.hora).join(", "))}">nenhuma batida — esperava ${l.previstas.length}</span>`
+    : `<span class="suave">—</span>`;
+  const feitas = l.batidas.map(b => chipBatida(b)).join("");
+  const faltam = l.faltando.map(f => `<span class="chip qd-falta" title="falta a ${escapar(f.rotulo.toLowerCase())} — a escala esperava ${escapar(f.sugestao)}">${escapar(f.rotulo)} ${escapar(f.sugestao)}</span>`).join("");
+  return feitas + faltam || `<span class="suave">—</span>`;
+}
+
+function qdDesenhar() {
+  els("qd-sub").textContent = QD.de === QD.ate ? dataBR(QD.de) : `de ${dataBR(QD.de)} a ${dataBR(QD.ate)}`;
+  document.querySelectorAll("[data-qd-visao]").forEach(b => b.classList.toggle("ativa", b.dataset.qdVisao === QD_VISAO));
+  qdKpis();
+  const alvo = els("qd-tabela");
+  els("qd-marcar-buracos").hidden = QD_VISAO !== "linhas" || !PODE_TRATAR;
+  if (QD_VISAO === "dias") {
+    els("qd-resumo").innerHTML = `<b>${QD.por_dia.length}</b> dia(s) — clique num número para ver as pessoas`;
+    const n = (d, k) => d[k] ? `<button class="link-btn" type="button" data-qd-dia="${d.data}" data-qd-sit="${k}">${d[k]}</button>` : `<span class="suave">0</span>`;
+    alvo.innerHTML = QD.por_dia.length ? `<table><thead><tr><th>Dia</th><th class="num">Pessoas</th>
+        <th class="num">Com batida</th><th class="num">Sem batida</th><th class="num">Completos</th>
+        <th class="num">Com batida faltando</th><th class="num">Faltas</th><th class="num">Justificados</th></tr></thead><tbody>
+      ${QD.por_dia.map(d => `<tr><td class="dados">${diaCurto(d.data)} <small>${escapar(d.dia_semana)}</small></td>
+        <td class="num">${d.pessoas}</td><td class="num">${n(d, "COM_BATIDA")}</td><td class="num">${n(d, "SEM_BATIDA")}</td>
+        <td class="num">${n(d, "COMPLETO")}</td><td class="num">${n(d, "COM_BURACO")}</td><td class="num">${n(d, "FALTA")}</td>
+        <td class="num">${n(d, "JUSTIFICADO")}</td></tr>`).join("")}</tbody></table>` : `<div class="vazio"><b>Nenhum dia</b>com estes filtros.</div>`;
+    alvo.querySelectorAll("[data-qd-dia]").forEach(b => b.addEventListener("click", () => {
+      els("qd-de").value = els("qd-ate").value = b.dataset.qdDia;
+      document.querySelectorAll("[data-qd-situacao]").forEach(x => { x.checked = x.dataset.qdSituacao === b.dataset.qdSit; });
+      QD_VISAO = "linhas"; qdMontar();
+    }));
+    qdLote(); return;
+  }
+  if (QD_VISAO === "pessoas") {
+    els("qd-resumo").innerHTML = `<b>${QD.por_pessoa.length}</b> pessoa(s) — quem tem mais buraco e falta, primeiro`;
+    alvo.innerHTML = QD.por_pessoa.length ? `<table><thead><tr><th>Pessoa</th><th>Função</th><th>Obra</th>
+        <th class="num">Dias</th><th class="num">Completos</th><th class="num">Com batida faltando</th>
+        <th class="num">Faltas</th><th class="num">Sem batida</th><th class="num">Batidas</th></tr></thead><tbody>
+      ${QD.por_pessoa.map(p => `<tr><td><a class="elo" href="${linkEspelho(p.colaborador_id, QD.de.slice(0, 7))}"><b>${escapar(p.nome)}</b></a></td>
+        <td>${escapar(p.funcao || "—")}</td><td class="dados">${escapar(p.obra_cadastro || "—")}</td>
+        <td class="num">${p.dias}</td><td class="num">${p.contagem.COMPLETO || 0}</td>
+        <td class="num">${p.contagem.COM_BURACO ? `<b style="color:var(--ambar)">${p.contagem.COM_BURACO}</b>` : 0}</td>
+        <td class="num">${p.contagem.FALTA ? `<b style="color:var(--vermelho)">${p.contagem.FALTA}</b>` : 0}</td>
+        <td class="num">${p.contagem.SEM_BATIDA || 0}</td><td class="num">${p.batidas}</td></tr>`).join("")}</tbody></table>`
+      : `<div class="vazio"><b>Ninguém</b>com estes filtros.</div>`;
+    qdLote(); return;
+  }
+  els("qd-resumo").innerHTML = `<b>${QD.total_linhas}</b> linha(s)` + (QD.cortado ? ` · mostrando as primeiras ${QD.linhas.length} — afine os filtros` : "");
+  alvo.innerHTML = QD.linhas.length ? `<table class="qd-tabela"><thead><tr>
+      <th class="sem-ordem" style="width:28px">${PODE_TRATAR ? `<input type="checkbox" id="qd-todas" title="Marcar todas as linhas com batida faltando">` : ""}</th>
+      <th>Pessoa</th><th>Dia</th><th>Batidas</th><th>Situação</th><th>Obra</th><th>Escala</th><th>Observação</th></tr></thead><tbody>
+    ${QD.linhas.map(l => { const k = chaveQd(l); const marcavel = PODE_TRATAR && l.faltando.length && l.batidas.length; return `<tr>
+      <td>${marcavel ? `<input type="checkbox" data-qd-marcar="${escapar(k)}" ${QD_MARCADAS.has(k) ? "checked" : ""}>` : ""}</td>
+      <td><a class="elo" href="${linkEspelho(l.colaborador_id, l.data.slice(0, 7))}"><b>${escapar(l.nome)}</b></a>
+        <small>${escapar(l.funcao || "")}</small></td>
+      <td class="dados">${diaCurto(l.data)} <small>${escapar(l.dia_semana)}</small></td>
+      <td>${qdBatidas(l)}</td>
+      <td><span class="selo ${(SITUACAO_DIA[l.situacao] || ["outro"])[0]}">${escapar(l.situacao_rotulo)}</span></td>
+      <td class="dados">${escapar(l.obra_do_dia || "—")}</td>
+      <td><small style="margin:0">${escapar(l.feriado ? `feriado: ${l.feriado}` : (l.escala || "—"))}</small></td>
+      <td><small style="margin:0">${[l.ocorrencia ? escapar(l.ocorrencia) : "",
+          ...l.pendentes.map(p => `pedido: ${escapar(p.rotulo)}${p.hora ? ` ${escapar(p.hora)}` : ""}`),
+          l.em_analise ? `${l.em_analise} em conferência` : ""].filter(Boolean).join(" · ") || ""}</small></td></tr>`; }).join("")}
+    </tbody></table>` : `<div class="vazio"><b>Nenhuma linha</b>com estes filtros.</div>`;
+  alvo.querySelectorAll("[data-qd-marcar]").forEach(c => c.addEventListener("change", () => {
+    c.checked ? QD_MARCADAS.add(c.dataset.qdMarcar) : QD_MARCADAS.delete(c.dataset.qdMarcar); qdLote(); }));
+  if (els("qd-todas")) els("qd-todas").addEventListener("change", e => qdMarcarTodas(e.target.checked));
+  qdLote();
+}
+
+function qdMarcarTodas(sim) {
+  (QD.linhas || []).filter(l => l.faltando.length && l.batidas.length).forEach(l =>
+    sim ? QD_MARCADAS.add(chaveQd(l)) : QD_MARCADAS.delete(chaveQd(l)));
+  qdDesenhar();
+}
+
+function qdLote() {
+  els("qd-lote").hidden = !QD_MARCADAS.size || QD_VISAO !== "linhas";
+  els("qd-lote-qtd").textContent = contar(QD_MARCADAS.size, "linha marcada", "linhas marcadas");
+}
+
+async function qdIncluir() {
+  const linhas = (QD.linhas || []).filter(l => QD_MARCADAS.has(chaveQd(l)));
+  const rotulos = {};
+  linhas.forEach(l => l.faltando.forEach(f => { rotulos[f.rotulo] = (rotulos[f.rotulo] || 0) + 1; }));
+  const opcoes = Object.entries(rotulos).sort((a, b) => b[1] - a[1]).map(([r, n]) => ({valor: r, rotulo: `${r} — falta em ${n} das ${linhas.length}`}));
+  if (!opcoes.length) { aviso("qd-lote-msg", "Nenhuma das linhas marcadas tem batida faltando.", "info"); return; }
+  const r = await perguntar({titulo: `Incluir a batida que falta — ${contar(linhas.length, "linha", "linhas")}`,
+    aviso: "Cada inclusão vira um ajuste da gestão, aprovado na hora e guardado com o motivo e o seu nome. " +
+           "As travas de sempre continuam: dia com competência fechada, horário que já tem batida e pedido repetido não entram. " +
+           "Não conta contra a pessoa na qualidade.",
+    campos: [
+      {nome: "rotulo", rotulo: "Qual batida", tipo: "select", opcoes, valor: opcoes[0].valor, obrigatorio: true, largura: 6},
+      {nome: "hora", rotulo: "Hora", exemplo: "deixe em branco para usar a da escala de cada um", largura: 6,
+       dica: "Em branco, cada pessoa ganha o horário que a escala dela previa. Ou digite um horário só para todas (ex.: 17:00)."},
+      {nome: "motivo", rotulo: "Motivo", tipo: "textarea", linhas: 3, obrigatorio: true, largura: 6,
+       exemplo: "ex.: falha do sistema em 21/10/2026 — o aplicativo não abriu na hora da saída"}],
+    textoOk: "Incluir"});
+  if (!r) return;
+  if (r.hora && !/^\d{1,2}:\d{2}$/.test(r.hora)) { aviso("qd-lote-msg", "Hora no formato 17:00.", "erro"); return; }
+  const itens = linhas.filter(l => l.faltando.some(f => f.rotulo === r.rotulo)).map(l => ({colaborador_id: l.colaborador_id, data: l.data}));
+  let feitas = 0, aprovadas = 0; const recusas = [];
+  for (let i = 0; i < itens.length; i += 40) {
+    aviso("qd-lote-msg", `Incluindo… ${Math.min(i + 40, itens.length)} de ${itens.length}`, "info");
+    try {
+      const resp = await postar("/erp/api/ponto/quadro/incluir", {itens: itens.slice(i, i + 40), rotulo: r.rotulo, hora: r.hora || null, motivo: r.motivo});
+      feitas += resp.feitas; aprovadas += resp.aprovadas;
+      resp.resultados.filter(x => !x.ok).forEach(x => recusas.push(`${escapar(x.nome || `pessoa nº ${x.colaborador_id}`)} (${diaCurto(x.data)}): ${escapar(x.erro)}`));
+    } catch (e) { recusas.push(escapar(e.message)); break; }
+  }
+  const pendentes = feitas - aprovadas;
+  aviso("qd-lote-msg", `<b>${contar(feitas, "batida incluída", "batidas incluídas")}</b>`
+    + (pendentes ? ` (${pendentes} esperando validação de quem aprova)` : "")
+    + (recusas.length ? ` · ${recusas.length} não entraram:<ul style="margin:6px 0 0 18px">${recusas.slice(0, 30).map(x => `<li>${x}</li>`).join("")}</ul>` : ""),
+    recusas.length ? "alerta" : "ok");
+  QD_MARCADAS.clear(); qdMontar();
+}
+
+document.querySelectorAll("[data-qd-atalho]").forEach(b => b.addEventListener("click", () => { qdAtalho(b.dataset.qdAtalho); qdMontar(); }));
+document.querySelectorAll("[data-qd-visao]").forEach(b => b.addEventListener("click", () => {
+  QD_VISAO = b.dataset.qdVisao; if (QD) qdDesenhar(); }));
+els("qd-ver").addEventListener("click", qdMontar);
+els("qd-busca").addEventListener("keydown", e => { if (e.key === "Enter") qdMontar(); });
+els("qd-desmarcar").addEventListener("click", () => { QD_MARCADAS.clear(); qdDesenhar(); });
+els("qd-marcar-buracos").addEventListener("click", () => qdMarcarTodas(true));
+if (els("qd-incluir")) els("qd-incluir").addEventListener("click", qdIncluir);
+els("qd-limpar").addEventListener("click", () => {
+  document.querySelectorAll("[data-qd-situacao], [data-qd-batidas], [data-qd-faltando]").forEach(x => { x.checked = false; });
+  ["qd-busca", "qd-obra-cad", "qd-obra-bat", "qd-funcao", "qd-escala", "qd-sit-cad"].forEach(id => { els(id).value = ""; });
+  qdAtalho("hoje");
+});
+qdSituacoes(null);
+qdObras().then(() => {
+  // Volta com os últimos filtros deste navegador — mas não monta sozinho.
+  try {
+    const g = JSON.parse(localStorage.getItem("ponto_quadro_filtros") || "null");
+    if (g) {
+      els("qd-de").value = g.de || ""; els("qd-ate").value = g.ate || "";
+      const f = g.f || {};
+      els("qd-busca").value = f.busca || ""; els("qd-obra-cad").value = f.obra_cadastro || "";
+      els("qd-obra-bat").value = f.obra_batida || ""; els("qd-sit-cad").value = f.situacao_cadastro || "";
+      (f.situacoes || []).forEach(c => { const x = document.querySelector(`[data-qd-situacao="${c}"]`); if (x) x.checked = true; });
+      (f.batidas || []).forEach(c => { const x = document.querySelector(`[data-qd-batidas="${c}"]`); if (x) x.checked = true; });
+      (f.faltando || []).forEach(c => { const x = document.querySelector(`[data-qd-faltando="${c}"]`); if (x) x.checked = true; });
+    }
+  } catch (e) {}
+  if (!els("qd-de").value) qdAtalho("hoje");
+});
 
 {% elif aba_ponto == "ponto_espelho" %}
 // ===========================================================================

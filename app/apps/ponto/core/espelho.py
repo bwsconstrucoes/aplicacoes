@@ -50,14 +50,73 @@ def _dias(inicio: dt.date, fim: dt.date):
         atual += dt.timedelta(days=1)
 
 
+class _EscalasCarregadas(escalas.EscalasDaPessoa):
+    """As vigências de uma pessoa, já lidas pelo Lote (sem ir ao banco de novo)."""
+
+    def __init__(self, vigencias: list[dict], padrao):
+        self.vigencias, self.padrao, self._cache = vigencias, padrao, {}
+
+
+class Lote:
+    """O que o espelho lê do banco, para MUITAS pessoas de uma vez (21/10/2026, o
+    quadro do ponto: "o dia de todas as pessoas"). Sem isto, cada pessoa custava
+    uma dezena de consultas; com 500 pessoas, milhares. O cálculo do dia continua
+    o MESMO do espelho — só a leitura muda —, e por isso o quadro e o espelho de
+    cada um nunca divergem. As rondas do vigia não entram (o quadro não as mostra)."""
+
+    def __init__(self, conn: Connection, pessoas: list[dict], inicio: dt.date, fim: dt.date):
+        ids = [int(p["id"]) for p in pessoas]
+        self.pessoas = {int(p["id"]): p for p in pessoas}
+        extra = (", m.sem_internet, m.recebida_em" if db.tem_coluna(conn, "marcacoes", "sem_internet")
+                 else ", FALSE AS sem_internet, NULL::timestamptz AS recebida_em")
+        self.batidas: dict[int, list[dict]] = {}
+        for b in db.todos(conn, """
+            SELECT m.colaborador_id, m.id, m.nsr, m.timestamp_servidor, m.data_referencia, m.obra_id, m.status,
+                   m.dentro_da_cerca, m.distancia_metros, m.origem, m.foto_id, m.motivo_analise,
+                   m.registrado_por, m.latitude, m.longitude, o.codigo AS obra_codigo""" + extra + """
+              FROM ponto.marcacoes m JOIN public.obras o ON o.id = m.obra_id
+             WHERE m.colaborador_id = ANY(:ids) AND m.data_referencia BETWEEN :i AND :f
+               AND m.status <> 'REJEITADA'
+             ORDER BY m.timestamp_servidor""", ids=ids, i=inicio - dt.timedelta(days=1), f=fim):
+            self.batidas.setdefault(int(b["colaborador_id"]), []).append(b)
+        self.ocorrencias: dict[int, list[dict]] = {}
+        for o in db.todos(conn, """
+            SELECT colaborador_id, id, tipo, status, data_inicio, data_fim, dia_trabalhado, descricao, minutos, horario
+              FROM ponto.ocorrencias
+             WHERE colaborador_id = ANY(:ids) AND status NOT IN ('NEGADA', 'CANCELADA')
+               AND ((data_fim >= :i AND data_inicio <= :f) OR (dia_trabalhado BETWEEN :i AND :f))
+             ORDER BY id""", ids=ids, i=inicio, f=fim):
+            self.ocorrencias.setdefault(int(o["colaborador_id"]), []).append(o)
+        self.pre_assinaladas = _pre_assinaladas(conn)
+        padrao = escalas.escala_padrao(conn)
+        vig: dict[int, list[dict]] = {}
+        for v in db.todos(conn, """
+            SELECT ce.colaborador_id AS dono, ce.vigencia_inicio, ce.ciclo_data_base, e.*
+              FROM ponto.colaborador_escalas ce JOIN ponto.escalas e ON e.id = ce.escala_id
+             WHERE ce.colaborador_id = ANY(:ids) ORDER BY ce.vigencia_inicio""", ids=ids):
+            vig.setdefault(int(v.pop("dono")), []).append(v)
+        self.escalas = {cid: _EscalasCarregadas(vig.get(cid, []), padrao) for cid in ids}
+        self.calendario = feriados.Calendario(conn, inicio, fim)
+
+
+def _pre_assinaladas(conn: Connection) -> set[int]:
+    """As obras de intervalo pré-assinalado (só entrada e saída — migração 009)."""
+    return ({int(l["obra_id"]) for l in db.todos(
+        conn, "SELECT obra_id FROM ponto.obra_config WHERE intervalo_pre_assinalado")}
+        if db.tem_coluna(conn, "obra_config", "intervalo_pre_assinalado") else set())
+
+
 def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date, *,
-           hoje: Optional[dt.date] = None, agora: Optional[dt.datetime] = None) -> dict:
-    """O espelho de `inicio` a `fim` (inclusive)."""
+           hoje: Optional[dt.date] = None, agora: Optional[dt.datetime] = None,
+           lote: Optional[Lote] = None) -> dict:
+    """O espelho de `inicio` a `fim` (inclusive). Com `lote`, lê dele (o período do
+    lote tem de cobrir o pedido)."""
     if fim < inicio:
         raise ErroDeValidacao("fim antes do início", campo="fim")
     if (fim - inicio).days + 1 > MAX_DIAS:
         raise ErroDeValidacao(f"período máximo do espelho: {MAX_DIAS} dias", campo="fim")
-    pessoa = cadastros.colaborador_por_id(conn, colaborador_id)
+    pessoa = (lote.pessoas.get(int(colaborador_id)) if lote is not None
+              else cadastros.colaborador_por_id(conn, colaborador_id))
     if not pessoa:
         raise NaoEncontrado("pessoa não encontrada")
     hoje = hoje or horario.hoje()
@@ -66,7 +125,7 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
     # A batida guardada sem internet (migração 012): o espelho mostra quando chegou.
     extra = (", m.sem_internet, m.recebida_em" if db.tem_coluna(conn, "marcacoes", "sem_internet")
              else ", FALSE AS sem_internet, NULL::timestamptz AS recebida_em")
-    batidas = db.todos(conn, """
+    batidas = lote.batidas.get(int(colaborador_id), []) if lote is not None else db.todos(conn, """
         SELECT m.id, m.nsr, m.timestamp_servidor, m.data_referencia, m.obra_id, m.status,
                m.dentro_da_cerca, m.distancia_metros, m.origem, m.foto_id, m.motivo_analise,
                m.registrado_por, m.latitude, m.longitude, o.codigo AS obra_codigo""" + extra + """
@@ -82,26 +141,28 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
         if b["data_referencia"] >= vale_desde:
             por_dia.setdefault(b["data_referencia"], []).append(b)
 
-    ocorrencias = db.todos(conn, """
-        SELECT id, tipo, status, data_inicio, data_fim, dia_trabalhado, descricao, minutos, horario
-          FROM ponto.ocorrencias
-         WHERE colaborador_id = :c AND status NOT IN ('NEGADA', 'CANCELADA')
-           AND ((data_fim >= :i AND data_inicio <= :f)
-                OR (dia_trabalhado BETWEEN :i AND :f))
-         ORDER BY id
-    """, c=colaborador_id, i=inicio, f=fim)
-
-    # As obras de intervalo pré-assinalado (só entrada e saída — migração 009).
-    pre_assinaladas = ({int(l["obra_id"]) for l in db.todos(
-        conn, "SELECT obra_id FROM ponto.obra_config WHERE intervalo_pre_assinalado")}
-        if db.tem_coluna(conn, "obra_config", "intervalo_pre_assinalado") else set())
-
-    vigencias = escalas.EscalasDaPessoa(conn, colaborador_id)
-    calendario = feriados.Calendario(conn, inicio, fim)
-    # As rondas surpresa do vigia noturno (13/10/2026): ficam no dia da entrada do
-    # turno. Não entram na conta da jornada — só aparecem.
-    from . import rondas as _rondas
-    rondas_do_periodo = _rondas.da_pessoa(conn, colaborador_id, inicio, fim)
+    if lote is not None:
+        ocorrencias = lote.ocorrencias.get(int(colaborador_id), [])
+        pre_assinaladas = lote.pre_assinaladas
+        vigencias = lote.escalas[int(colaborador_id)]
+        calendario = lote.calendario
+        rondas_do_periodo: dict = {}
+    else:
+        ocorrencias = db.todos(conn, """
+            SELECT id, tipo, status, data_inicio, data_fim, dia_trabalhado, descricao, minutos, horario
+              FROM ponto.ocorrencias
+             WHERE colaborador_id = :c AND status NOT IN ('NEGADA', 'CANCELADA')
+               AND ((data_fim >= :i AND data_inicio <= :f)
+                    OR (dia_trabalhado BETWEEN :i AND :f))
+             ORDER BY id
+        """, c=colaborador_id, i=inicio, f=fim)
+        pre_assinaladas = _pre_assinaladas(conn)
+        vigencias = escalas.EscalasDaPessoa(conn, colaborador_id)
+        calendario = feriados.Calendario(conn, inicio, fim)
+        # As rondas surpresa do vigia noturno (13/10/2026): ficam no dia da entrada do
+        # turno. Não entram na conta da jornada — só aparecem.
+        from . import rondas as _rondas
+        rondas_do_periodo = _rondas.da_pessoa(conn, colaborador_id, inicio, fim)
     admissao, demissao = pessoa.get("admissao"), pessoa.get("demissao")
 
     dias, anterior_ultima = [], None
@@ -182,7 +243,7 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
         dias.append({
             "data": dia.isoformat(),
             "previstas": [{"hora": p["hora"], "rotulo": p["rotulo"]} for p in previstas],
-            "faltando": [{"rotulo": f["rotulo"], "sugestao": f["sugestao"]} for f in faltando],
+            "faltando": [{"rotulo": f["rotulo"], "sugestao": f["sugestao"], "minuto": f["minuto"]} for f in faltando],
             "dia_semana": escalas.DIAS[dia.weekday()],
             "escala": vigencia["nome"] if vigencia else None,
             "feriado": nome_feriado,

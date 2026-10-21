@@ -59,6 +59,9 @@ RECUSA_PEDIDO_NO_CELULAR = ("atestado, licença, ajuste e compensação são ent
 # pessoa identificada (APARELHO), e o responsável ou administrativo da obra
 # pedindo POR OUTRA PESSOA no aplicativo (RESPONSAVEL, migração 008).
 ORIGENS_DO_APLICATIVO = ("APP", "APARELHO", "RESPONSAVEL")
+# O ajuste que a gestão inclui em lote, no quadro do ponto (quadro.py).
+SUBTIPO_LOTE = "LOTE_GESTAO"
+MOTIVO_LOTE = "incluída em lote pela gestão"
 MAX_DIAS = 120
 
 
@@ -250,6 +253,10 @@ def criar(conn: Connection, quem: Quem, dados: dict, *, origem: str = "GESTAO") 
         subtipo = t["codigo"]
         if not descricao:
             descricao = t["nome"]
+    elif tipo == "AJUSTE_BATIDA" and dados.get("lote") and origem == "GESTAO":
+        # Incluída pela gestão no quadro do ponto (21/10/2026) — falha do sistema, não
+        # da pessoa: não conta contra ela na qualidade (qualidade.py).
+        subtipo = SUBTIPO_LOTE
 
     competencias.exigir_aberta(conn, inicio, fim, dia_trabalhado)
     sobreposta = db.um(conn, """
@@ -327,7 +334,8 @@ def _para_json(o: dict, quem: Quem, etapas: tuple | None = None) -> dict:
     from .espelho import ROTULO_TIPO
     return {
         "id": o["id"], "tipo": o["tipo"],
-        "rotulo": ROTULO_TIPO[o["tipo"]] + (f" — {_NOME_SUBTIPO.get(o['subtipo'], o['subtipo']).split(' (')[0].lower()}"
+        "rotulo": ROTULO_TIPO[o["tipo"]] + (f" — {MOTIVO_LOTE}" if o.get("subtipo") == SUBTIPO_LOTE else
+                                            f" — {_NOME_SUBTIPO.get(o['subtipo'], o['subtipo']).split(' (')[0].lower()}"
                                              if o.get("subtipo") else ""),
         "subtipo": o.get("subtipo"),
         "colaborador_id": o["colaborador_id"], "colaborador": o["colaborador_nome"],
@@ -494,7 +502,9 @@ def _aplicar(conn: Connection, o: dict, quem: Quem) -> None:
     if o["tipo"] == "AJUSTE_BATIDA":
         m = marcacoes.registrar_ajustada(conn, colaborador_id=o["colaborador_id"],
                                          obra_id=o["obra_id"], momento=o["horario"],
-                                         ocorrencia_id=o["id"], aprovado_por=quem.nome)
+                                         ocorrencia_id=o["id"], aprovado_por=quem.nome,
+                                         motivo=(f"{MOTIVO_LOTE} (pedido nº {o['id']}): {(o.get('descricao') or '')[:120]}"
+                                                 if o.get("subtipo") == SUBTIPO_LOTE else None))
         db.executar(conn, "UPDATE ponto.ocorrencias SET marcacao_gerada_id = :m WHERE id = :id",
                     m=m["id"], id=o["id"])
     elif o["tipo"] == "FOLGA_BANCO":

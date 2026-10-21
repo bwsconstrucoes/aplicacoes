@@ -266,6 +266,11 @@ dizer "tem batida"; presença, horas e faltas são regra da fase 3.
 - Quantas fotos deixaram de ser conferidas este mês para economizar, e quanto isso poupou? (dispensadas pelo nível × US$ 0,001; "este mês" = mês do calendário)
 - Quem pediu este ajuste (ou entregou este atestado) do Fulano — foi ele mesmo ou alguém por ele? 🔒 (Validações › "Pedido por": a própria pessoa pelo celular ou no aparelho da obra, o responsável da obra por ela, ou o DP pelo ERP)
 - Quantos pedidos o encarregado X lançou pela equipe este mês? 🔒 ⚠️ ("este mês" = mês do calendário; ainda não há contagem pronta — hoje só a busca de Validações, que mostra só os pendentes)
+- Quem não bateu ponto hoje (ou ontem)? 🔒 ⚠️ (Quadro › "Sem nenhuma batida"; separar de "Falta": dia de descanso, feriado, atestado e férias também não têm batida e NÃO são falta)
+- Quem está sem a batida de saída hoje? 🔒 (Quadro › "Falta a batida: Saída" — só quem bateu parte do dia)
+- Quantas pessoas bateram o ponto completo esta semana, e quantas ficaram com buraco? 🔒 ⚠️ ("completo" = todas as batidas que a escala previa; "esta semana" = de segunda até hoje)
+- Quais batidas foram incluídas em lote pela gestão, por quem e por quê? 🔒 (o pedido de ajuste com "incluída em lote pela gestão": motivo e quem aprovou ficam no pedido e na batida)
+- Em que dia houve mais buraco no ponto este mês? 🔒 ⚠️ (Quadro › Resumo por dia, até 31 dias de uma vez)
 - Desde quando o ponto vale? (16/10/2026, ou a data de Ponto › Configuração › "Início do ponto"; o que vem antes foi teste da implantação — fica guardado e não conta em nada: espelho, folha, banco de horas, qualidade, mosaico, alertas)
 - Quantas batidas o Fulano tem em 10/10/2026? ⚠️ (antes do início do ponto a resposta certa é "nenhuma que conte": havia batidas de TESTE, que não entram em resposta nenhuma — o assistente não deve somá-las)
 - Quem bateu ponto hoje na obra X? 🔒

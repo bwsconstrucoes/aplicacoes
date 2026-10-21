@@ -182,7 +182,9 @@ def avaliar_dias(dias: list[dict], obra_principal: Optional[str]) -> dict:
         o = por_obra[obra]
         t["dias_trabalho"] += 1
         o["dias_trabalho"] += 1
-        ajustadas = [b for b in batidas if b.get("status") == "AJUSTADA"]
+        # A batida incluída em lote pela gestão (falha do sistema) não pesa contra a pessoa.
+        ajustadas = [b for b in batidas if b.get("status") == "AJUSTADA"
+                     and not (b.get("motivo_analise") or "").startswith("incluída em lote")]
         faltando = d.get("faltando") or []
         if d["situacao"] == "FALTA":
             t["faltas"] += 1
@@ -225,6 +227,7 @@ def _ajustes_pedidos(conn: Connection, ids: list[int], inicio: dt.date, fim: dt.
     return {int(l["c"]): int(l["n"]) for l in db.todos(conn, """
         SELECT colaborador_id AS c, count(*) AS n FROM ponto.ocorrencias
          WHERE tipo = 'AJUSTE_BATIDA' AND status <> 'CANCELADA' AND colaborador_id = ANY(:ids)
+           AND subtipo IS DISTINCT FROM 'LOTE_GESTAO'    -- a inclusão em lote da gestão não é da pessoa
            AND data_inicio BETWEEN :i AND :f
          GROUP BY colaborador_id""", ids=ids, i=inicio, f=fim)} if ids else {}
 

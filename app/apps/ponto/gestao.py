@@ -56,6 +56,7 @@ logger = logging.getLogger("ponto.gestao")
 # ---------------------------------------------------------------------------
 ABAS = [
     ("ponto_hoje", "Hoje", "erp.ponto_pagina_hoje"),
+    ("ponto_quadro", "Quadro", "erp.ponto_pagina_quadro"),
     ("ponto_espelho", "Espelho", "erp.ponto_pagina_espelho"),
     ("ponto_pendencias", "Validações", "erp.ponto_pagina_pendencias"),
     ("ponto_mosaico", "Mosaico", "erp.ponto_pagina_mosaico"),
@@ -206,6 +207,13 @@ def _datas_da_competencia(valor) -> tuple[dt.date, dt.date]:
 @permissao("ver_ponto")
 def ponto_pagina_hoje():
     return _pagina("ponto_hoje")
+
+
+@bp.route("/erp/ponto/quadro")
+@login_obrigatorio
+@permissao("ver_ponto")
+def ponto_pagina_quadro():
+    return _pagina("ponto_quadro")
 
 
 @bp.route("/erp/ponto/espelho")
@@ -1035,6 +1043,41 @@ def ponto_api_rosto_gravar():
         rosto.gravar(conn, d, quem.nome)
         r = rosto.retrato(conn)
     return _ok(**r)
+
+
+@bp.route("/erp/api/ponto/quadro", methods=["POST"])
+@login_obrigatorio
+@permissao("ver_ponto")
+@_api
+def ponto_api_quadro():
+    """O quadro do ponto (21/10/2026): pessoa × dia no período, com os filtros do
+    corpo. Só lê — é POST porque os filtros são muitos. Um quadro por vez."""
+    from .core import quadro
+    quem, d = _quem(), _corpo()
+    try:
+        with db.conexao() as conn:
+            r = quadro.montar(conn, quem, d.get("de"), d.get("ate"), d.get("filtros") or {})
+    except quadro.Ocupado as e:
+        return jsonify({"ok": False, "erro": str(e), "ocupado": True}), 503
+    return _ok(**r)
+
+
+@bp.route("/erp/api/ponto/quadro/incluir", methods=["POST"])
+@login_obrigatorio
+@permissao("tratar_ponto")
+@_api
+def ponto_api_quadro_incluir():
+    """Inclui a batida que falta para as linhas marcadas (de 40 em 40). Cada uma
+    vira um ajuste da gestão aprovado na hora por quem pode — o mesmo caminho e
+    as mesmas travas do ajuste de sempre."""
+    from .core import quadro
+    quem, d = _quem(), _corpo()
+    r = quadro.incluir_em_lote(quem, d.get("itens") or [], rotulo=d.get("rotulo"), hora=d.get("hora"),
+                               motivo=d.get("motivo"))
+    logger.info("Ponto: inclusão em lote por %s — %d pedidas, %d feitas", quem.nome, len(r),
+                sum(1 for x in r if x.get("ok")))
+    return _ok(resultados=r, feitas=sum(1 for x in r if x.get("ok")),
+               aprovadas=sum(1 for x in r if x.get("aprovado")))
 
 
 @bp.route("/erp/api/ponto/vigencia", methods=["GET", "POST"])
