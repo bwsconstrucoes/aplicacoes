@@ -561,7 +561,7 @@ def montar(folha_id: int, filtros=None) -> dict:
     periodo = feito["periodo"]
     ajustes = feito["ajustes"]
     dias_por_cpf = feito["dias_por_cpf"]
-    carga = mod_ponto.carga_do_mes(ano, mes)
+    carga = mod_ponto.carga_para_a_folha(ano, mes)       # a base mista (21/10/2026)
 
     # --- o cadastro de quem está nesta folha ------------------------------
     cpfs = [p["cpf"] for p in apropriado["pessoas"] if p.get("cpf")]

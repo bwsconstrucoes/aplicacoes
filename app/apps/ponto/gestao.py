@@ -1160,6 +1160,23 @@ def ponto_api_rosto_pessoas():
     return _ok(pessoas=lista, resumo=confianca.resumo(lista), dinamica=d)
 
 
+@bp.route("/erp/api/ponto/folha", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao(GET="ver_ponto", POST="configurar_ponto")
+@_api
+def ponto_api_folha():
+    """A chave da base mista (21/10/2026): a folha do Análise de SPs passa a ler o
+    ponto daqui do início do ponto em diante (`core/para_folha.py`)."""
+    from .core import para_folha
+    with db.conexao() as conn:
+        if request.method == "POST":
+            quem = _quem()
+            ligado = para_folha.ligar(conn, bool(_corpo().get("ligado")), quem.nome)
+            logger.info("Ponto: a folha do Análise de SPs %s o ponto eletrônico (por %s)",
+                        "passa a ler" if ligado else "deixa de ler", quem.nome)
+        return _ok(ligado=para_folha.ligado(conn), desde=para_folha.corte(conn).isoformat())
+
+
 @bp.route("/erp/api/ponto/rosto/testar", methods=["POST"])
 @login_obrigatorio
 @permissao("configurar_ponto")

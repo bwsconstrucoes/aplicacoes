@@ -274,6 +274,7 @@ dizer "tem batida"; presença, horas e faltas são regra da fase 3.
 - Quais vigias estão sem ronda surpresa ligada, ou sem celular liberado? 🔒 (Quadro › Tipo de pessoa › "Vigia com pendência"; "vigia" = jornada de vigia no ponto ou função com VIGIA no cadastro)
 - Quem bateu ponto no aparelho do Fulano ontem? 🔒 (janela da pessoa › Dia — só para quem responde por ponto da obra ou de equipe)
 - Onde o Fulano estava quando bateu às 7h, e era dentro da obra? 🔒 (janela da pessoa › Dia › Mapa: a obra da batida, a cerca e a distância)
+- De onde vem o ponto que a folha de outubro usa? ⚠️ (base mista: até 15/10/2026 o MobPonto; do início do ponto em diante, o ponto eletrônico — SÓ se a chave "A folha lê o ponto eletrônico" estiver ligada em Ponto › Configuração; desligada, tudo do MobPonto)
 - Desde quando o ponto vale? (16/10/2026, ou a data de Ponto › Configuração › "Início do ponto"; o que vem antes foi teste da implantação — fica guardado e não conta em nada: espelho, folha, banco de horas, qualidade, mosaico, alertas)
 - Quantas batidas o Fulano tem em 10/10/2026? ⚠️ (antes do início do ponto a resposta certa é "nenhuma que conte": havia batidas de TESTE, que não entram em resposta nenhuma — o assistente não deve somá-las)
 - Quem bateu ponto hoje na obra X? 🔒

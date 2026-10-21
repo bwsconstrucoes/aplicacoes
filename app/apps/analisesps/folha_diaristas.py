@@ -59,7 +59,7 @@ def levantar(ano: int, mes: int) -> dict:
 
     carga = None
     try:
-        carga = ponto.carga_do_mes(ano, mes)
+        carga = ponto.carga_para_a_folha(ano, mes)       # a base mista (21/10/2026)
     except Exception:  # noqa: BLE001 — a tela tem de dizer o que houve
         logger.exception("Diaristas: não consegui ler a carga do ponto")
     if not carga:
@@ -70,12 +70,25 @@ def levantar(ano: int, mes: int) -> dict:
     linhas = consultar(
         "SELECT cpf, nome, data FROM analisesps.ponto_dia "
         " WHERE carga_id = ? AND data IS NOT NULL ORDER BY cpf, data",
-        (carga["id"],))
+        (carga["id"],)) if carga.get("id") else []
     dias_por_cpf: dict = {}
     nome_do_ponto: dict = {}
     for cpf, nome, data in linhas:
         dias_por_cpf.setdefault(cpf, []).append(data)
         nome_do_ponto.setdefault(cpf, nome or "")
+    # A base mista (21/10/2026): do início do ponto eletrônico em diante, os dias
+    # dele — só os dias COM batida (dia de diária é dia trabalhado).
+    corte, novos = ponto._ponto_novo(ano, mes)
+    if corte is not None:
+        for cpf in set(dias_por_cpf) | set(novos):
+            antes = [d for d in dias_por_cpf.get(cpf, []) if d < corte]
+            depois = [d["data"] for d in (novos.get(cpf) or {}).get("dias", []) if any(d["marcacoes"])]
+            if antes or depois:
+                dias_por_cpf[cpf] = sorted(antes + depois)
+            else:
+                dias_por_cpf.pop(cpf, None)
+            if cpf in novos:
+                nome_do_ponto.setdefault(cpf, novos[cpf].get("nome") or "")
 
     fichas = colaboradores.muitos_por_cpf(list(dias_por_cpf))
     obras_por_nome = colaboradores.codigos_das_obras()
@@ -557,7 +570,7 @@ def calcular(ano: int, mes: int, qual: str = "quinzena") -> dict:
             "quantos_fora": 0, "valor_fora": Decimal("0.00"), "quantos_incompletos": 0}
     carga = None
     try:
-        carga = ponto.carga_do_mes(ano, mes)
+        carga = ponto.carga_para_a_folha(ano, mes)       # a base mista (21/10/2026)
     except Exception:  # noqa: BLE001
         logger.exception("Diaristas: não consegui ler a carga do ponto")
     if not carga:
@@ -597,9 +610,9 @@ def calcular(ano: int, mes: int, qual: str = "quinzena") -> dict:
     if sem_cadastro:
         # O nome como veio do ponto: é o que permite achar a pessoa no Mobponto.
         from .db import consultar
-        nomes = dict(consultar(
+        nomes = {**ponto.nomes_do_ponto_eletronico(ano, mes), **dict(consultar(
             "SELECT cpf, max(nome) FROM analisesps.ponto_dia "
-            " WHERE carga_id = ? GROUP BY cpf", (carga["id"],)))
+            " WHERE carga_id = ? GROUP BY cpf", (carga["id"],)) if carga.get("id") else [])}
         for s in sem_cadastro:
             s["nome"] = nomes.get(s["cpf"], "")
 

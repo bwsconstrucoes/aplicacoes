@@ -802,6 +802,19 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 21/10/2026 — A base mista do ponto na folha do Análise de SPs (atravessa áreas)
+
+**No ramo `feature/modulo-ponto`, esperando o "pode", e NASCE DESLIGADO.** Pedido do dono
+no chat do ponto: a folha do Análise de SPs lê o MobPonto até 15/10/2026 e o ponto
+eletrônico do ERP do dia 16 em diante. O ponto entrega o dia no formato que a folha já lê
+(`app/apps/ponto/core/para_folha.py`); em `app/apps/analisesps/ponto.py` as funções de
+leitura juntam as duas bases (`juntar_dias`, `carga_para_a_folha`), e `folha_gestao.py` e
+`folha_diaristas.py` passaram a pedir a carga por `carga_para_a_folha`. A chave fica em
+Ponto › Configuração › Geral (parâmetro `folha.le_o_ponto`). O que o chat do Análise de
+SPs precisa saber está no topo do `HISTORICO.md` dele. **Arquivos tocados fora do ponto:**
+`analisesps/ponto.py`, `analisesps/folha_gestao.py`, `analisesps/folha_diaristas.py`,
+`analisesps/HISTORICO.md` (só o aviso).
+
 ### 21/10/2026 — Incidente: o Render inteiro parou na hora da saída do ponto (atravessa áreas)
 
 Por volta das 17h o aplicativo do ponto — e todo o serviço — deixou de carregar; o dono

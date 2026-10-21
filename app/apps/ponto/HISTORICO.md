@@ -59,6 +59,12 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1zn. **No ramo, esperando o "pode"** (21/10/2026, sem migração, **NASCE DESLIGADO**) — a **base mista da folha
+   do Análise de SPs**: MobPonto até 15/10, este ponto do início do ponto em diante (`core/para_folha.py` e o
+   encaixe em `analisesps/ponto.py`). Chave em Configuração › Geral, "A folha lê o ponto eletrônico".
+   **Pendente com o dono:** conferir a ficha de algumas pessoas e o rateio de uma quinzena, com o chat do
+   Análise de SPs, e só então ligar. Decisões de tradução (obra por código, presença, falta, diarista só com
+   batida) no cabeçalho de `para_folha.py`.
 1zm. **No ramo, esperando o "pode"** (21/10/2026, sem migração) — a **tela gerencial integrada**: a JANELA DA
    PESSOA, as ETIQUETAS (vigia, ronda, celular, ponto da obra, equipe), o MAPA DA BATIDA em janela, a visão "Por
    obra" e o **Quadro como primeira aba** (Hoje e Pessoas saíram da barra; os endereços continuam abrindo).

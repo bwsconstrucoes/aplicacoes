@@ -718,6 +718,15 @@
   </div>
   <div id="c-vigencia-msg" style="margin-top:8px"></div>
 </div>
+<div class="cartao" data-secao-card="geral">
+  <div class="cartao-cab"><h3>A folha do Análise de SPs</h3><small>a base mista</small></div>
+  <div class="cartao-dica" style="margin-top:0">Ligado, a folha (rateio por obra, diaristas, alimentação e transporte,
+    a ficha do funcionário) passa a ler <b>este ponto</b> a partir do início do ponto — antes disso continua o MobPonto.
+    Desligado, nada muda na folha. <b>Ligue depois de conferir</b> a ficha de algumas pessoas e o rateio de uma quinzena.</div>
+  <label class="interruptor"><input type="checkbox" id="c-folha-ligado" {% if not pode.configurar_ponto %}disabled{% endif %}>
+    <span><b>A folha lê o ponto eletrônico</b><span class="explica" id="c-folha-desde"></span></span></label>
+  <div id="c-folha-msg" style="margin-top:8px"></div>
+</div>
 
 <div class="cartao" data-secao-card="jornada">
   <div class="cartao-cab"><h3>Licenças da lei</h3></div>
@@ -5536,6 +5545,18 @@ if (els("c-rosto-testar")) els("c-rosto-testar").addEventListener("click", testa
 // O início do ponto (17/10/2026, vigencia.py).
 (async () => {
   try { els("c-vigencia").value = (await api("/erp/api/ponto/vigencia")).inicio; } catch (e) {}
+  try {
+    const f = await api("/erp/api/ponto/folha");
+    els("c-folha-ligado").checked = f.ligado;
+    els("c-folha-desde").textContent = `do dia ${dataBR(f.desde)} em diante; antes, o MobPonto`;
+  } catch (e) {}
+  if (els("c-folha-ligado")) els("c-folha-ligado").addEventListener("change", async e => {
+    try {
+      const f = await postar("/erp/api/ponto/folha", {ligado: e.target.checked});
+      aviso("c-folha-msg", f.ligado ? "Ligado: a folha já lê o ponto eletrônico do início do ponto em diante."
+                                    : "Desligado: a folha voltou a ler só o MobPonto.", "ok");
+    } catch (err) { e.target.checked = !e.target.checked; falhou(err, "c-folha-msg"); }
+  });
   if (els("c-vigencia-gravar")) els("c-vigencia-gravar").addEventListener("click", async () => {
     try {
       const r = await postar("/erp/api/ponto/vigencia", {inicio: els("c-vigencia").value});

@@ -23,6 +23,22 @@ mexer; atualize este ao encerrar a sessão.
 > dela é o `docs/FOLHA_DE_PAGAMENTO.md`. O `README.md` desta pasta tem a lista das
 > subtelas e dos módulos.
 
+> ⚠️ **21/10/2026 — DO CHAT DO PONTO: a BASE MISTA do ponto na folha** (pedido do dono
+> lá: *"até 15 do 10 é MobPonto; do 16 em diante, a base do ponto já vai ser esta"*).
+> O ponto eletrônico (`app/apps/ponto/core/para_folha.py`) entrega o dia NO FORMATO de
+> `_dia_lido`; em `ponto.py` as leituras da folha (`dias_por_cpf`, `dias_de_um_cpf`,
+> `dias_da_pessoa`, `resumo_por_pessoa`) trocam o dia do MobPonto pelo do ponto a partir
+> do início do ponto (16/10/2026), e `folha_gestao`/`folha_diaristas` passaram a usar
+> `carga_para_a_folha` (que, num mês sem carga do MobPonto, devolve uma "carga" do ponto
+> eletrônico, `id` None). **`carga_do_mes` não mudou** (é a do MobPonto, usada na carga).
+> **Nasce DESLIGADO** — Ponto › Configuração › Geral, "A folha lê o ponto eletrônico";
+> desligado, tudo devolve o que devolvia. Para conferir antes de ligar: a obra vem como
+> CÓDIGO (o de/para por código já existe); presença "Presença" em dia com batida (feriado
+> e descanso inclusive), "Falta"/"Falta sem justificativa" na falta, o nome do abono no
+> dia justificado; diarista conta só dia COM batida. **Fora, de propósito:** lançar batida
+> de volta (o "lançar" da ficha ainda escreve no MobPonto). Testes:
+> `tests/test_ponto_para_folha.py`. Registro também em `CONTEXTO.md` §9.
+
 
 Era um programa em Streamlit no computador do dono, lendo uma base local de
 60 MB (59.055 SPs). Virou módulo Flask em `/analisesps`, no serviço que já

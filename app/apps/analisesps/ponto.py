@@ -1206,6 +1206,85 @@ def apagar(carga_id: int, quem: str = "") -> bool:
     return apagou
 
 
+# ===========================================================================
+# A BASE MISTA — o MobPonto até 15/10/2026, o ponto eletrônico do ERP dali em
+# diante (pedido do dono em 21/10/2026, no chat do ponto: "até 15 do 10 é
+# MobPonto; do 16 em diante, a base do ponto já vai ser esta").
+#
+# O ponto eletrônico entrega o dia NO MESMO FORMATO de `_dia_lido`
+# (`app/apps/ponto/core/para_folha.py`); aqui só se TROCA o dia do MobPonto pelo
+# de lá, a partir do início do ponto. Os cálculos da folha não mudam.
+#
+# ⚠️ SÓ COM A CHAVE LIGADA (Ponto › Configuração › Geral, "a folha lê o ponto
+# eletrônico"). Desligada — o padrão —, tudo aqui devolve o que devolvia antes.
+# `carga_do_mes` NÃO muda (ela decide a carga do MobPonto); a leitura da folha usa
+# `carga_para_a_folha`, que, num mês sem carga do MobPonto e coberto pelo ponto,
+# devolve uma "carga" do ponto eletrônico para a tela não dizer "não importado".
+# ===========================================================================
+def _limites_do_mes(ano: int, mes: int):
+    import calendar
+    import datetime as _dt
+    return (_dt.date(int(ano), int(mes), 1),
+            _dt.date(int(ano), int(mes), calendar.monthrange(int(ano), int(mes))[1]))
+
+
+def corte_do_ponto_novo(ano: int, mes: int):
+    """O dia a partir do qual a folha lê o ponto eletrônico neste mês, ou None
+    (chave desligada, ponto indisponível, ou o mês inteiro antes do corte)."""
+    try:
+        from app.apps.ponto import db as banco_do_ponto
+        from app.apps.ponto.core import para_folha
+        with banco_do_ponto.conexao() as conn:
+            if not para_folha.ligado(conn):
+                return None
+            corte = para_folha.corte(conn)
+    except Exception:  # noqa: BLE001 — sem o ponto, a folha segue com o MobPonto
+        logger.warning("Análise de SPs: o ponto eletrônico não respondeu (base mista)", exc_info=True)
+        return None
+    return corte if _limites_do_mes(ano, mes)[1] >= corte else None
+
+
+def _ponto_novo(ano: int, mes: int, cpfs=None) -> tuple:
+    """(corte, {cpf: {"nome", "dias"}}) do ponto eletrônico no mês, ou (None, {})."""
+    corte = corte_do_ponto_novo(ano, mes)
+    if corte is None:
+        return None, {}
+    try:
+        from app.apps.ponto import db as banco_do_ponto
+        from app.apps.ponto.core import para_folha
+        inicio, fim = _limites_do_mes(ano, mes)
+        with banco_do_ponto.conexao() as conn:
+            return corte, para_folha.dias_por_cpf(conn, inicio, fim, cpfs=cpfs)
+    except Exception:  # noqa: BLE001
+        logger.exception("Análise de SPs: não consegui ler o ponto eletrônico (base mista)")
+        return None, {}
+
+
+def juntar_dias(dias_mobponto: list, dias_do_ponto: list, corte) -> list:
+    """PURA. Os dias do MobPonto ANTES do corte e os do ponto eletrônico do corte em diante."""
+    antes = [d for d in (dias_mobponto or []) if d.get("data") is not None and d["data"] < corte]
+    return sorted(antes + [d for d in (dias_do_ponto or []) if d["data"] >= corte], key=lambda d: d["data"])
+
+
+def carga_para_a_folha(ano: int, mes: int) -> dict | None:
+    """A carga que a FOLHA usa: a do MobPonto; num mês coberto pelo ponto
+    eletrônico e sem carga do MobPonto, uma carga do ponto eletrônico."""
+    carga = carga_do_mes(ano, mes)
+    corte = corte_do_ponto_novo(ano, mes)
+    if corte is None:
+        return carga
+    if carga:
+        return {**carga, "ponto_eletronico_desde": corte}
+    from .horario import agora
+    inicio, _ = _limites_do_mes(ano, mes)
+    return {"id": None, "ano": int(ano), "mes": int(mes), "paginas": 0, "paginas_lidas": 0, "pessoas": 0,
+            "dias": 0, "campos_vistos": "", "avisos": "", "carregado_em": agora(),
+            "carregado_por": "ponto eletrônico do ERP", "terminada_em": agora(),
+            "competencia": f"{int(mes):02d}/{int(ano)}", "campos": [], "lista_de_avisos": [],
+            "completa": True, "interrompida": False, "fonte": "PONTO_ELETRONICO",
+            "ponto_eletronico_desde": corte if corte > inicio else inicio}
+
+
 def dias_da_pessoa(cpf: str, ano: int, mes: int) -> dict:
     """O ponto de UMA pessoa no mês: o que veio, dia por dia.
 
@@ -1222,7 +1301,7 @@ def dias_da_pessoa(cpf: str, ano: int, mes: int) -> dict:
     from .folha_rateio import so_digitos
 
     digitos = so_digitos(cpf)
-    carga = carga_do_mes(ano, mes)
+    carga = carga_para_a_folha(ano, mes)
     if not _pronto() or not carga or len(digitos) != 11:
         return {"tem_carga": bool(carga), "dias": [], "campos": [],
                 "carga": carga}
@@ -1231,7 +1310,7 @@ def dias_da_pessoa(cpf: str, ano: int, mes: int) -> dict:
         "SELECT data, matricula, campos, obra, presenca, falta "
         "  FROM analisesps.ponto_dia "
         " WHERE carga_id = ? AND cpf = ? ORDER BY data NULLS LAST",
-        (carga["id"], digitos))
+        (carga["id"], digitos)) if carga.get("id") else []
 
     dias, nomes = [], []
     for data, matricula, bruto, obra, presenca, falta in linhas:
@@ -1259,6 +1338,16 @@ def dias_da_pessoa(cpf: str, ano: int, mes: int) -> dict:
                      "falta": lido["falta"] or falta or "",
                      "total_de_horas": lido["total_de_horas"],
                      "campos": campos})
+    corte, novos = _ponto_novo(ano, mes, cpfs=[digitos])
+    if corte is not None:
+        do_ponto = []
+        for lido in (novos.get(digitos) or {}).get("dias", []):
+            resolvido = _obra_do_dia(lido)
+            do_ponto.append({"data": lido["data"], "matricula": "", "obra": resolvido["obra"] or "",
+                             "empate": resolvido["empate"], "marcacoes": lido["marcacoes"],
+                             "horas": lido["horas"], "presenca": lido["presenca"], "falta": lido["falta"],
+                             "total_de_horas": lido["total_de_horas"], "campos": {}, "fonte": "PONTO"})
+        dias = juntar_dias(dias, do_ponto, corte)
     return {"tem_carga": True, "carga": carga, "dias": dias, "campos": nomes}
 
 
@@ -1384,19 +1473,22 @@ def dias_de_um_cpf(ano: int, mes: int, cpf: str) -> list:
 
     from .db import consultar
 
-    carga = carga_do_mes(ano, mes)
+    carga = carga_para_a_folha(ano, mes)
     if not _pronto() or not carga:
         return []
     saida = []
-    for data, bruto in consultar(
+    for data, bruto in (consultar(
             "SELECT data, campos FROM analisesps.ponto_dia "
             " WHERE carga_id = ? AND cpf = ? AND data IS NOT NULL ORDER BY data",
-            (carga["id"], _cpf_do_ponto(cpf))):
+            (carga["id"], _cpf_do_ponto(cpf))) if carga.get("id") else []):
         try:
             campos = _json.loads(bruto) if bruto else {}
         except Exception:  # noqa: BLE001
             campos = {}
         saida.append(_dia_lido(data, campos))
+    corte, novos = _ponto_novo(ano, mes, cpfs=[_cpf_do_ponto(cpf)])
+    if corte is not None:
+        saida = juntar_dias(saida, (novos.get(_cpf_do_ponto(cpf)) or {}).get("dias", []), corte)
     return saida
 
 
@@ -1414,15 +1506,15 @@ def dias_por_cpf(ano: int, mes: int) -> dict:
 
     from .db import consultar
 
-    carga = carga_do_mes(ano, mes)
+    carga = carga_para_a_folha(ano, mes)
     if not _pronto() or not carga:
         return {}
 
     saida: dict = {}
-    for cpf, data, bruto in consultar(
+    for cpf, data, bruto in (consultar(
             "SELECT cpf, data, campos FROM analisesps.ponto_dia "
             " WHERE carga_id = ? AND data IS NOT NULL ORDER BY cpf, data",
-            (carga["id"],)):
+            (carga["id"],)) if carga.get("id") else []):
         if not cpf:
             continue
         try:
@@ -1430,7 +1522,21 @@ def dias_por_cpf(ano: int, mes: int) -> dict:
         except Exception:  # noqa: BLE001 — JSON torto de um dia não pode
             campos = {}    # derrubar o mês inteiro; o dia fica sem obra e cai
         saida.setdefault(cpf, []).append(_dia_lido(data, campos))
+    corte, novos = _ponto_novo(ano, mes)
+    if corte is not None:                  # a base mista: do corte em diante, o ponto eletrônico
+        for cpf in set(saida) | set(novos):
+            juntos = juntar_dias(saida.get(cpf, []), (novos.get(cpf) or {}).get("dias", []), corte)
+            if juntos:
+                saida[cpf] = juntos
+            else:
+                saida.pop(cpf, None)
     return saida
+
+
+def nomes_do_ponto_eletronico(ano: int, mes: int) -> dict:
+    """{cpf: nome} de quem está no ponto eletrônico no mês (base mista) — {} desligada."""
+    corte, novos = _ponto_novo(ano, mes)
+    return {cpf: v.get("nome") or "" for cpf, v in novos.items()} if corte is not None else {}
 
 
 def resumo_por_pessoa(ano: int, mes: int) -> list:
@@ -1443,12 +1549,12 @@ def resumo_por_pessoa(ano: int, mes: int) -> list:
     from .db import consultar
     from .folha_apropriacao import obra_do_dia
 
-    carga = carga_do_mes(ano, mes)
+    carga = carga_para_a_folha(ano, mes)
     if not _pronto() or not carga:
         return []
-    nomes = dict(consultar(
+    nomes = {**nomes_do_ponto_eletronico(ano, mes), **dict(consultar(
         "SELECT cpf, max(nome) FROM analisesps.ponto_dia "
-        " WHERE carga_id = ? GROUP BY cpf", (carga["id"],)))
+        " WHERE carga_id = ? GROUP BY cpf", (carga["id"],)) if carga.get("id") else [])}
     saida = []
     for cpf, dias in dias_por_cpf(ano, mes).items():
         obras: dict = {}
