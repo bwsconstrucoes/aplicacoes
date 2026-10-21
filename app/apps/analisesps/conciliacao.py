@@ -785,7 +785,7 @@ def _arquivo_ja_veio(impressao: str) -> dict | None:
 
 
 def importar(conta_id: int, lido, nome_arquivo: str = "",
-             quem: str = "") -> dict:
+             quem: str = "", pular=None) -> dict:
     """Grava o que for novo. Reimportar o mesmo extrato não duplica nada.
 
     ⚠️ A GARANTIA NÃO É ESTE CÓDIGO, É O BANCO: existe um índice único por
@@ -797,6 +797,19 @@ def importar(conta_id: int, lido, nome_arquivo: str = "",
     from .conciliacao_ofx import descricao_da_linha, documento_da_linha
 
     conferido = conferir(conta_id, lido)
+    # ⚠️ AS DESMARCADAS NA CONFERÊNCIA NÃO ENTRAM (21/10/2026). O dono: *"queria
+    # que eles estivessem todos pré-selecionados, mas que pudessem ser
+    # desmarcados (…) eventualmente aparece um item que já estava incluso e o
+    # sistema tenta colocar novamente"* — a mesma linha que o banco ora manda
+    # com número de documento, ora sem, e que por isso tem outra identidade.
+    # `pular` são as marcas (identidades) das desmarcadas; a adoção de linha
+    # da planilha não é afetada.
+    pular = {str(m) for m in (pular or []) if str(m or "").strip()}
+    if pular:
+        puladas = [n for n in conferido["novas"] if n[0] in pular]
+        conferido = dict(conferido, novas=[n for n in conferido["novas"]
+                                           if n[0] not in pular],
+                         puladas=len(puladas))
     # A gravação percorre AS DUAS: o que é novo entra, e o que já existe vindo
     # da planilha é adotado. Ver a nota em `conferir`.
     novas = list(conferido["novas"]) + list(conferido.get("para_adotar") or [])
@@ -1436,6 +1449,44 @@ def acrescentar_a_mao(conta_id: int, data, descricao: str, valor,
     return novo
 
 
+def _parecidas_ja_aqui(conta_id: int, lancamentos) -> dict:
+    """`{id(lanc): "frase"}` — a linha nova que tem, nesta conta, outra linha do
+    MESMO dia, MESMO valor e MESMO histórico, só que com outra identidade
+    (21/10/2026). O caso do dono: *"RENTAB.INVEST FACILCRED* 0,01"* no extrato
+    novo sem número de documento, e a mesma linha já aqui com o documento
+    3617438 — o banco ora manda o número, ora não. É só um aviso: a linha
+    continua marcada, e desmarcar é decisão de quem confere."""
+    from .db import consultar
+    from .conciliacao_ofx import descricao_da_linha
+    if not lancamentos or not _pronto():
+        return {}
+    datas = sorted({l.data for l in lancamentos if l.data})
+    if not datas:
+        return {}
+    existentes: dict = {}
+    for data, descricao, valor, documento in consultar(
+            "SELECT data, descricao, valor, documento FROM analisesps.conciliacao_extrato "
+            " WHERE conta_id = ? AND data >= ? AND data <= ?",
+            (int(conta_id), datas[0], datas[-1])):
+        chave = (data, Decimal(str(valor)), _historico_comparavel(descricao))
+        existentes.setdefault(chave, []).append(str(documento or "").strip())
+    saida = {}
+    for l in lancamentos:
+        docs = existentes.get((l.data, Decimal(str(l.valor)),
+                               _historico_comparavel(descricao_da_linha(l))))
+        if docs:
+            com_doc = [d for d in docs if d]
+            saida[id(l)] = ("parece já estar aqui" + (f" (documento {com_doc[0]})"
+                                                      if com_doc else ""))
+    return saida
+
+
+def _historico_comparavel(texto) -> str:
+    """O histórico sem espaços e sem caixa — "RENTAB.INVEST  FACILCRED*" e
+    "rentab.invest facilcred*" são a mesma coisa."""
+    return "".join(str(texto or "").split()).upper()
+
+
 # ---------------------------------------------------------------------------
 # O QUE A TELA MOSTRA DEPOIS DE LER UM ARQUIVO
 # ---------------------------------------------------------------------------
@@ -1449,11 +1500,15 @@ def resumo_para_a_tela(conferido: dict, conta_id: int,
     filtro e paginação.
     """
     novas = list(conferido.get("novas") or [])
+    parecidas = _parecidas_ja_aqui(conta_id, [l for _m, l in novas[:MAX_SO_AQUI_NA_TELA]])
+    # A MARCA vai junto: é por ela que a gravação pula a linha desmarcada.
     amostra = [{
+        "marca": marca,
         "data": lanc.data.isoformat(),
         "valor": str(lanc.valor),
         "descricao": (lanc.memo or "")[:120],
-    } for _marca, lanc in novas[:MAX_SO_AQUI_NA_TELA]]
+        "parecida": parecidas.get(id(lanc)),
+    } for marca, lanc in novas[:MAX_SO_AQUI_NA_TELA]]
 
     conta = next((c for c in contas(so_ativas=False)
                   if c["id"] == int(conta_id)), None)
@@ -1498,6 +1553,9 @@ def resumo_para_a_tela(conferido: dict, conta_id: int,
         "gravadas": conferido.get("gravadas"),
         "amostra": amostra,
         "amostra_parcial": len(novas) > len(amostra),
+        # O dia do saldo comparado com o do banco: desmarcar uma linha até este
+        # dia muda o "aqui, no mesmo dia" — a tela refaz a conta sozinha.
+        "data_do_saldo": data_do_saldo.isoformat() if data_do_saldo else "",
         # ⚠️ A LISTA INTEIRA, e não mais 15 (14/10/2026). O dono: *"realmente
         # fica limitado, você não está vendo o que é que está colocando"*. É a
         # lista do que SOBRA aqui — e a tela deixa marcar e excluir dali.

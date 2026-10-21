@@ -202,3 +202,28 @@ def test_EXPORTAR_o_extrato_em_planilha_e_pdf_com_o_filtro_da_tela(banco_conc, a
         assert aba.cell(5, 2).value == "SEGUNDA" and aba.cell(6, 2).value is None
         p = cliente.get(f"/analisesps/conciliacao/exportar?formato=pdf&conta_id={conta_id}")
         assert p.status_code == 200 and p.data.startswith(b"%PDF")
+
+
+def test_as_NOVAS_vem_marcadas_a_PARECIDA_e_apontada_e_a_DESMARCADA_nao_entra(banco_conc, app):
+    """21/10/2026: "queria que eles estivessem todos pré-selecionados, mas que
+    pudessem ser desmarcados (…) aparece um item que já estava incluso e o
+    sistema tenta colocar novamente" — RENTAB.INVEST FACILCRED* 0,01, que o
+    banco ora manda com documento (3617438), ora sem."""
+    import json
+    from app.apps.analisesps import conciliacao
+    conta_id = conta_de_teste(saldo_inicial="2.650,67", saldo_inicial_em="2026-09-30")
+    conciliacao.acrescentar_a_mao(conta_id, dt.date(2026, 10, 2), "RENTAB.INVEST FACILCRED*",
+                                  "0.02", documento="3617438", quem="MARCELO")
+    with app.test_client() as cliente:
+        _entrar(cliente)
+        d = _mandar(cliente, "conferir", ofx_bradesco(EXTRATO), conta_id=str(conta_id))
+        assert d["novas"] == 6 and all(l["marca"] for l in d["amostra"])
+        [parecida] = [l for l in d["amostra"] if l["parecida"]]
+        assert parecida["descricao"] == "RENTAB.INVEST FACILCRED*"
+        assert "documento 3617438" in parecida["parecida"]
+        assert d["data_do_saldo"] == "2026-10-14"
+        f = _mandar(cliente, "importar", ofx_bradesco(EXTRATO), conta_id=str(conta_id),
+                    pular=json.dumps([parecida["marca"]]))
+        assert f["ok"] and f["gravadas"] == 5, "a desmarcada não entra"
+    # 2.650,67 + 0,02 (a que já estava) + o movimento sem a repetida = o banco
+    assert conciliacao.saldo_da_conta(conta_id) == D("488.68")

@@ -1588,6 +1588,69 @@ function ligarSoAqui(d) {
   });
 }
 
+// O SALDO PROJETADO, refeito a cada caixinha desmarcada (21/10/2026).
+// `fora` são as linhas novas desmarcadas: saem do "depois de gravar" e, se são
+// até o dia do saldo do banco, do "aqui, no mesmo dia".
+function blocoDoSaldo(d, fora) {
+  const somaFora = fora.reduce((a, l) => a + Number(l.valor), 0);
+  const ateODia = fora.filter(l => !d.data_do_saldo || l.data <= d.data_do_saldo)
+                      .reduce((a, l) => a + Number(l.valor), 0);
+  const entram = d.novas - fora.length;
+  const soma = Number(d.soma_das_novas) - somaFora;
+  const depois = Number(d.saldo_conta_depois) - somaFora;
+  let html = 'Saldo da conta agora: <b>' + dinheiro(d.saldo_conta_antes) +
+    '</b> → depois de gravar os ' + entram + ' novo(s): <b>' + dinheiro(depois) + '</b>' +
+    (Math.abs(soma) > 0.001 ? ' (' + (soma > 0 ? '+' : '') + dinheiro(soma) + ')' : '') + '.' +
+    (fora.length ? ' <span class="cartao-dica">(' + fora.length + ' desmarcada(s), ' +
+      dinheiro(somaFora) + ', ficam de fora)</span>' : '');
+  // O saldo do banco contra o daqui: a conferência que vale mais que contar
+  // linhas. Se os dois batem, o extrato está completo.
+  if (d.saldo_banco) {
+    const aqui = Number(d.saldo_aqui) - ateODia;
+    const diferenca = Number(d.saldo_banco) - aqui;
+    html += '<br>Saldo que o banco declara' +
+      (d.saldo_em ? ' em ' + d.saldo_em.split("-").reverse().join("/") +
+        (d.saldo_em === d.baixado_em ? ' (dia em que o arquivo foi baixado)' : '') : '') +
+      ': <b>' + dinheiro(d.saldo_banco) + '</b> · aqui, no mesmo dia, depois de gravar: <b>' +
+      dinheiro(aqui) + '</b> — ' +
+      (Math.abs(diferenca) < 0.005 ? '<b>bate.</b>'
+                    : '<b>não bate</b>, diferença de ' + dinheiro(diferenca) +
+                      ' (pode ser extrato faltando antes ou depois deste período).');
+  }
+  return html;
+}
+
+function desmarcadasDaConferencia(d) {
+  return [...document.querySelectorAll(".nova-marca")].filter(c => !c.checked)
+    .map(c => d.amostra[Number(c.dataset.i)]);
+}
+
+function ligarNovas(d) {
+  const caixas = [...document.querySelectorAll(".nova-marca")];
+  if (!caixas.length) return;
+  const todas = document.getElementById("novas-todas");
+  const refazer = () => {
+    const fora = desmarcadasDaConferencia(d);
+    document.getElementById("bloco-saldo").innerHTML = blocoDoSaldo(d, fora);
+    const q = document.getElementById("quantas-entram");
+    if (q) q.textContent = d.novas - fora.length;
+    if (todas) todas.checked = fora.length === 0;
+    const gravar = document.getElementById("btn-gravar-extrato");
+    if (gravar && !gravar.dataset.gravando) {
+      const entram = d.novas - fora.length;
+      gravar.disabled = !(entram + d.adotaveis);
+      gravar.textContent = entram ? "Gravar " + entram + " lançamento(s)"
+                                  : (d.adotaveis ? "Reconhecer " + d.adotaveis + " linha(s)"
+                                                 : "Nada a gravar");
+    }
+  };
+  caixas.forEach(c => c.addEventListener("change", refazer));
+  if (todas) todas.addEventListener("change", () => {
+    caixas.forEach(c => { c.checked = todas.checked; });
+    refazer();
+  });
+}
+
 function desenharConferencia(d) {
   let html = '<div class="aviso ' + (d.novas ? 'atencao' : 'bom') + '">';
   html += blocoDasEscolhas(d);
@@ -1652,34 +1715,29 @@ function desenharConferencia(d) {
   // ⚠️ O SALDO DA CONTA ANTES E DEPOIS (14/10/2026): *"na importação do
   // extrato, exibir o novo saldo após a importação dos novos lançamentos"*.
   // Sempre aparece — com ou sem saldo no arquivo.
-  html += '<div class="aviso" style="margin:10px 0">Saldo da conta agora: <b>' +
-    dinheiro(d.saldo_conta_antes) + '</b> → depois de gravar os ' + d.novas +
-    ' novo(s): <b>' + dinheiro(d.saldo_conta_depois) + '</b>' +
-    (Number(d.soma_das_novas) ? ' (' + (Number(d.soma_das_novas) > 0 ? '+' : '') +
-      dinheiro(d.soma_das_novas) + ')' : '') + '.';
-  // O saldo do banco contra o daqui: a conferência que vale mais que contar
-  // linhas. Se os dois batem, o extrato está completo.
-  if (d.saldo_banco) {
-    html += '<br>Saldo que o banco declara' +
-      (d.saldo_em ? ' em ' + d.saldo_em.split("-").reverse().join("/") +
-        (d.saldo_em === d.baixado_em ? ' (dia em que o arquivo foi baixado)' : '') : '') +
-      ': <b>' + dinheiro(d.saldo_banco) + '</b> · aqui, no mesmo dia, depois de gravar: <b>' +
-      dinheiro(d.saldo_aqui) + '</b> — ' +
-      (d.saldo_bate ? '<b>bate.</b>'
-                    : '<b>não bate</b>, diferença de ' +
-                      dinheiro(Number(d.saldo_banco) - Number(d.saldo_aqui)) +
-                      ' (pode ser extrato faltando antes ou depois deste período).');
-  }
-  html += '</div>';
+  html += '<div class="aviso" id="bloco-saldo" style="margin:10px 0">' +
+    blocoDoSaldo(d, []) + '</div>';
 
   if (d.amostra.length) {
-    html += '<br><br><b>O que entraria (' + d.novas + '):</b>' +
+    // ⚠️ TODAS MARCADAS, E DESMARCÁVEIS (21/10/2026). O dono: *"eventualmente
+    // aparece um item que já estava incluso e o sistema tenta colocar
+    // novamente"* — o banco ora manda o número do documento, ora não, e a
+    // mesma linha ganha outra identidade. Desmarcar refaz o saldo na hora, e a
+    // desmarcada não é gravada.
+    const parecidas = d.amostra.filter(l => l.parecida).length;
+    html += '<br><br><b>O que entraria (<span id="quantas-entram">' + d.novas + '</span> de ' +
+      d.novas + '):</b>' +
+      (parecidas ? ' <span class="selo risco">' + parecidas + ' parece(m) já estar aqui</span>' : '') +
       '<div class="rolagem-tabela" style="max-height:420px; overflow:auto; margin-top:6px">' +
       '<table class="sps">' +
-      '<thead><tr><th>Data</th><th>Histórico</th><th class="direita">Valor</th></tr></thead><tbody>';
-    d.amostra.forEach(l => {
-      html += '<tr><td>' + l.data.split("-").reverse().join("/") + '</td><td>' +
-        l.descricao + '</td><td class="direita">' + dinheiro(l.valor) + '</td></tr>';
+      '<thead><tr><th><input type="checkbox" id="novas-todas" checked title="marcar ou desmarcar todas"></th>' +
+      '<th>Data</th><th>Histórico</th><th class="direita">Valor</th><th></th></tr></thead><tbody>';
+    d.amostra.forEach((l, i) => {
+      html += '<tr><td><input type="checkbox" class="nova-marca" data-i="' + i + '" checked></td><td>' +
+        l.data.split("-").reverse().join("/") + '</td><td>' +
+        l.descricao + '</td><td class="direita">' + dinheiro(l.valor) + '</td><td>' +
+        (l.parecida ? '<b class="selo risco" title="Mesmo dia, valor e histórico de uma linha que já está nesta conta — confira e desmarque se for a mesma.">' +
+          l.parecida + '</b>' : '') + '</td></tr>';
     });
     html += '</tbody></table></div>';
     if (d.amostra_parcial) html += '<p class="cartao-dica">Mostrando ' + d.amostra.length +
@@ -1790,6 +1848,7 @@ function desenharConferencia(d) {
   // resposta antiga.
   ligarEscolhas(d);
   ligarSoAqui(d);
+  ligarNovas(d);
   const soltar = document.getElementById("btn-soltar-presas");
   if (soltar) soltar.addEventListener("click", async () => {
     soltar.disabled = true;
@@ -1810,12 +1869,17 @@ function desenharConferencia(d) {
   const gravar = document.getElementById("btn-gravar-extrato");
   if (gravar && !gravar.disabled) {
     gravar.addEventListener("click", async () => {
+      const fora = desmarcadasDaConferencia(d);
+      if (fora.length && !confirm(fora.length + " linha(s) desmarcada(s) não serão gravadas (" +
+          dinheiro(fora.reduce((a, l) => a + Number(l.valor), 0)) + "). Confirma?")) return;
       gravar.disabled = true;
+      gravar.dataset.gravando = "1";
       gravar.textContent = "Gravando…";
       const corpo = new FormData();
       corpo.append("extrato", arquivoNaMao);
       corpo.append("conta_id", d.conta_id);
       corpo.append("lembrar", "1");
+      corpo.append("pular", JSON.stringify(fora.map(l => l.marca)));
       juntarEscolhas(corpo);
       try {
         const r = await fetch("{{ url_for('analisesps.conciliacao_importar') }}",

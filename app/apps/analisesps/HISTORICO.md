@@ -12228,6 +12228,23 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 238 — Conciliação: as linhas novas do extrato com caixinha (21/10/2026)
+
+- *"Os itens que serão gravados da lista 'O que entraria' (…) todos
+  pré-selecionados, mas que pudessem ser desmarcados. E a desmarcação afetasse
+  imediatamente a projeção de saldo (…) aparece um item que já estava incluso e o
+  sistema tenta colocar novamente."* Exemplo dele: RENTAB.INVEST FACILCRED* 0,01
+  de 19/10 — no extrato novo sem número de documento, e já na tela com o
+  documento 3617438. O banco ora manda o número, ora não; a identidade da linha
+  muda e ela parece nova.
+- **Feito:** cada linha nova vem marcada; desmarcar refaz na hora o "depois de
+  gravar", a comparação com o saldo do banco e o botão ("Gravar N"); gravar pede
+  confirmação das desmarcadas e as pula (vão pela marca/identidade de cada linha).
+- **Selo "parece já estar aqui (documento X)"** na linha nova que tem, na conta, outra
+  do mesmo dia, valor e histórico. Escolha minha: a parecida continua MARCADA
+  (ele pediu tudo pré-selecionado) — o selo é para achar; se preferir que ela já
+  venha desmarcada, é uma linha.
+
 #### Leva 237 — Validação: só a planilha, trava no Agendar e etiqueta "Validar" (17/10/2026)
 
 - **Levas 235, 236 e 237 publicadas em 17/10/2026** (suíte inteira verde). Sem
