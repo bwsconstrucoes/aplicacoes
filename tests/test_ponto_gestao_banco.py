@@ -35,9 +35,20 @@ def _png() -> str:
     return "data:image/png;base64," + base64.b64encode(s.getvalue()).decode()
 
 
+# Os feriados nacionais fixos (os da migração 002 do ponto). A semana com um deles
+# vira descanso no espelho e quebra o teste por motivo errado — 21/10/2026: a
+# "segunda passada" era 12/10, Nossa Senhora Aparecida.
+_FERIADOS_FIXOS = {(1, 1), (4, 21), (5, 1), (9, 7), (10, 12), (11, 2), (11, 15), (11, 20), (12, 25)}
+
+
 def _segunda_passada() -> dt.date:
+    """A segunda-feira da semana passada — ou a de antes, se a semana tem feriado."""
     hoje = dt.date.today()
-    return hoje - dt.timedelta(days=hoje.weekday() + 7)
+    segunda = hoje - dt.timedelta(days=hoje.weekday() + 7)
+    while any(((segunda + dt.timedelta(days=n)).month, (segunda + dt.timedelta(days=n)).day) in _FERIADOS_FIXOS
+              for n in range(7)):
+        segunda -= dt.timedelta(days=7)
+    return segunda
 
 
 # ---------------------------------------------------------------------------
