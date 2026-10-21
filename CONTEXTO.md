@@ -810,7 +810,7 @@ serviço estava ESPERANDO.** Causa mais provável (detalhe em `app/apps/ponto/HI
 item 0a): o pedido de código de acesso do ponto mandava o WhatsApp dentro da requisição, e
 `notificador.py` espera o Z-API **até 60 s, 3 tentativas** (`_wa_post`). Com o WhatsApp
 falhando, poucos pedidos de código prendiam as 4 linhas do gunicorn e as conexões do banco
-(pool de 5 + 5 para o monorepo inteiro). O ponto já mudou (envio em segundo plano).
+(pool de 5 + 5 para o monorepo inteiro). O ponto já mudou (envio em segundo plano), publicado em 21/10/2026 (`878ec81`).
 
 **Pendente para o chat da Mensageria (decisão do dono):** o `notificador` ainda espera 60 s ×
 3. Qualquer área que o chame DENTRO de uma requisição herda o mesmo risco. Caminhos: tempo

@@ -28,7 +28,7 @@ junto com o `README.md` e o `PLANO.md`.
    e a conexão do banco presas. O WhatsApp vinha falhando; na saída, gente pedindo o código (e pedindo de
    novo, porque não chegava — o registro mostrou o teto de códigos por hora estourado) prendia as **4
    linhas** do serviço e as conexões do banco (10 para o Render inteiro) — e todas as áreas pararam juntas.
-   **Conserto (no ramo):** o código é gravado e a resposta sai na hora; o envio vai para uma fila em segundo
+   **Conserto PUBLICADO em 21/10/2026 à noite (junção `878ec81`):** o código é gravado e a resposta sai na hora; o envio vai para uma fila em segundo
    plano (no máximo 2 ao mesmo tempo, sem conexão do banco presa). E, por precaução (a6a6b3c), o menu do
    aplicativo deixou de calcular a qualidade a cada abertura (era a primeira suspeita: a conta da equipe
    inteira refeita a cada batida), com guarda de 10 minutos e uma conta pesada por vez. **Fora do ponto, e
