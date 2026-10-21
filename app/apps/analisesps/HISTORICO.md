@@ -12230,6 +12230,8 @@ somente Solicitações de uma conta especifica"*.
 
 #### Leva 238 — Conciliação: as linhas novas do extrato com caixinha (21/10/2026)
 
+- **Publicada em 21/10/2026** (suíte inteira verde: 9358 testes). Sem migração.
+
 - *"Os itens que serão gravados da lista 'O que entraria' (…) todos
   pré-selecionados, mas que pudessem ser desmarcados. E a desmarcação afetasse
   imediatamente a projeção de saldo (…) aparece um item que já estava incluso e o
