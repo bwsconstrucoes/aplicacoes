@@ -61,6 +61,52 @@ CACHE_S = 600
 _cache: dict = {}
 _trava = threading.Lock()
 
+# UMA CONTA PESADA POR VEZ (21/10/2026, incidente: na hora da saída o aplicativo
+# não carregou para ninguém). Os aparelhos da obra recalculavam a equipe inteira a
+# cada volta ao menu — um espelho do mês por pessoa —, a guarda caía a cada batida
+# nova, e as contas, todas juntas, tomavam o servidor (1 processo, 4 linhas). Agora:
+# guardado por 10 minutos SEM cair a cada batida, e nunca duas contas ao mesmo
+# tempo — quem chega com outra rodando ouve "tente em instantes", na hora.
+_uma_por_vez = threading.Semaphore(1)
+
+
+class Ocupado(Exception):
+    """Outra conta da qualidade está rodando; esta não espera."""
+
+
+def _guardado(chave):
+    with _trava:
+        g = _cache.get(chave)
+        return g[1] if g and time.time() - g[0] < CACHE_S else None
+
+
+def _guardar(chave, valor):
+    with _trava:
+        if len(_cache) > 2000:             # teto de memória: some o mais velho
+            for k in sorted(_cache, key=lambda k: _cache[k][0])[:500]:
+                _cache.pop(k, None)
+        _cache[chave] = (time.time(), valor)
+
+
+def esquecer() -> None:
+    with _trava:
+        _cache.clear()
+
+
+class _Vez:
+    def __init__(self, esperar: float):
+        self.esperar = esperar
+
+    def __enter__(self):
+        ok = (_uma_por_vez.acquire(timeout=self.esperar) if self.esperar > 0
+              else _uma_por_vez.acquire(blocking=False))
+        if not ok:
+            raise Ocupado("o resumo do ponto está sendo calculado — tente de novo em instantes")
+        return self
+
+    def __exit__(self, *_):
+        _uma_por_vez.release()
+
 
 def limite_de_ajustes(conn: Connection) -> int:
     try:
@@ -215,19 +261,45 @@ def da_pessoa(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.da
             "_por_obra": av["por_obra"], "limite_ajustes": limite}
 
 
-def avaliar(conn: Connection, ids: list[int], inicio: dt.date, fim: dt.date) -> dict:
+def da_pessoa_guardada(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
+                       esperar: float = 0) -> dict:
+    """`da_pessoa` para o aplicativo: guardada por 10 minutos e uma conta por vez
+    (levanta Ocupado se outra estiver rodando e `esperar` acabar)."""
+    chave = ("pessoa", int(colaborador_id), inicio, fim, limite_de_ajustes(conn))
+    feito = _guardado(chave)
+    if feito is not None:
+        return feito
+    with _Vez(esperar):
+        feito = _guardado(chave)
+        if feito is None:
+            feito = da_pessoa(conn, colaborador_id, inicio, fim)
+            _guardar(chave, feito)
+    return feito
+
+
+def avaliar(conn: Connection, ids: list[int], inicio: dt.date, fim: dt.date, esperar: float = 30) -> dict:
     """O ranking de um grupo de pessoas: cada uma, e as somas por obra e por
-    responsável. Guardado por 10 minutos (o mês de centenas de pessoas é pesado)."""
-    # A chave leva a última batida e o último pedido: chegou coisa nova, recalcula.
-    ultimo = db.um(conn, """SELECT (SELECT max(id) FROM ponto.marcacoes) AS m,
-                                   (SELECT max(id) FROM ponto.ocorrencias) AS o""") or {}
-    chave = (inicio, fim, tuple(sorted(set(ids))), ultimo.get("m"), ultimo.get("o"), limite_de_ajustes(conn))
-    with _trava:
-        guardado = _cache.get(chave)
-        if guardado and time.time() - guardado[0] < CACHE_S:
-            return guardado[1]
+    responsável. Guardado por 10 minutos (o mês de centenas de pessoas é pesado) e
+    uma conta por vez — levanta Ocupado se outra rodar além de `esperar` segundos."""
+    # A guarda NÃO cai a cada batida nova (21/10/2026): no pico, isso refazia a
+    # conta a cada segundo. O número tem até 10 minutos de atraso.
+    chave = (inicio, fim, tuple(sorted(set(ids))), limite_de_ajustes(conn))
+    feito = _guardado(chave)
+    if feito is not None:
+        return feito
+    with _Vez(esperar):
+        feito = _guardado(chave)
+        if feito is not None:
+            return feito
+        return _avaliar(conn, ids, inicio, fim, chave)
+
+
+def _avaliar(conn: Connection, ids: list[int], inicio: dt.date, fim: dt.date, chave) -> dict:
     limite = limite_de_ajustes(conn)
-    pessoas = [da_pessoa(conn, cid, inicio, fim, limite) for cid in sorted(set(ids))]
+    pessoas = []
+    for cid in sorted(set(ids)):
+        pessoas.append(da_pessoa(conn, cid, inicio, fim, limite))
+        time.sleep(0.005)                  # cede a vez às batidas entre uma pessoa e outra
     pessoas = [p for p in pessoas if p["dias_trabalho"] or p["batidas_app"]]
     resp = _responsaveis(conn, [p["id"] for p in pessoas], inicio, fim)
 
@@ -276,8 +348,7 @@ def avaliar(conn: Connection, ids: list[int], inicio: dt.date, fim: dt.date) -> 
         "por_obra": sorted(por_obra, key=ordem),
         "por_responsavel": sorted(por_responsavel, key=ordem),
     }
-    with _trava:
-        _cache[chave] = (time.time(), resultado)
+    _guardar(chave, resultado)
     return resultado
 
 

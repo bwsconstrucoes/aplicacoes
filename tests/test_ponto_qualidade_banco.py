@@ -16,6 +16,16 @@ from tests.test_ponto_qr_banco import _foto, _tablet
 pytestmark = pytest.mark.banco
 
 
+@pytest.fixture(autouse=True)
+def _conta_nova():
+    """A guarda da qualidade não cai mais a cada batida (21/10/2026): cada teste
+    começa sem o que o anterior calculou."""
+    from app.apps.ponto.core import qualidade
+    qualidade.esquecer()
+    yield
+    qualidade.esquecer()
+
+
 def _mes_passado():
     from app.apps.ponto import horario
     fim = horario.hoje().replace(day=1) - dt.timedelta(days=1)
@@ -111,3 +121,30 @@ def test_a_pessoa_ve_o_dela_e_o_responsavel_a_equipe(app, mundo, monkeypatch):
     assert eq.status_code == 200, eq.get_json()
     assert mundo["joao"] in {p["id"] for p in eq.get_json()["pessoas"]}
     assert maria.get("/ponto/app/api/inicio").get_json()["pode"]["qualidade_equipe"] is True
+
+
+def test_nunca_duas_contas_pesadas_ao_mesmo_tempo(app, mundo):
+    """21/10/2026, incidente: no pico da saída as contas da qualidade, todas juntas,
+    tomaram o servidor. Com uma rodando, a outra ouve "tente em instantes" na hora."""
+    import time as _t
+    from app.apps.ponto import db, horario
+    from app.apps.ponto.core import qualidade
+    hoje = horario.hoje()
+    assert qualidade._uma_por_vez.acquire(blocking=False)        # outra conta "rodando"
+    try:
+        with db.conexao() as conn:
+            comeco = _t.time()
+            with pytest.raises(qualidade.Ocupado):
+                qualidade.avaliar(conn, [mundo["joao"]], hoje.replace(day=1), hoje, esperar=0)
+            with pytest.raises(qualidade.Ocupado):
+                qualidade.da_pessoa_guardada(conn, mundo["joao"], hoje.replace(day=1), hoje)
+            assert _t.time() - comeco < 2                            # não fica esperando
+    finally:
+        qualidade._uma_por_vez.release()
+    with db.conexao() as conn:                                       # livre: calcula e guarda
+        a = qualidade.da_pessoa_guardada(conn, mundo["joao"], hoje.replace(day=1), hoje)
+        assert qualidade._uma_por_vez.acquire(blocking=False)
+        try:                                                         # guardado: responde mesmo ocupado
+            assert qualidade.da_pessoa_guardada(conn, mundo["joao"], hoje.replace(day=1), hoje) is a
+        finally:
+            qualidade._uma_por_vez.release()

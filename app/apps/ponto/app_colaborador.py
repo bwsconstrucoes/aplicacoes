@@ -475,9 +475,12 @@ def app_api_qualidade_meu():
     """O meu mês: quantos dias em dia, os pontos, o selo e cada problema."""
     from .core import qualidade
     inicio, fim = _mes_pedido()
-    with db.conexao() as conn:
-        quem = _quem(conn)
-        r = qualidade.da_pessoa(conn, quem.colaborador_id, inicio, fim)
+    try:
+        with db.conexao() as conn:
+            quem = _quem(conn)
+            r = dict(qualidade.da_pessoa_guardada(conn, quem.colaborador_id, inicio, fim))
+    except qualidade.Ocupado as e:            # 21/10/2026: nunca duas contas pesadas juntas
+        return jsonify({"ok": False, "erro": str(e), "ocupado": True}), 503
     r.pop("_por_obra", None)
     return _ok(**r, competencia=f"{inicio:%Y-%m}")
 
@@ -490,12 +493,15 @@ def app_api_qualidade_equipe():
     batalhar para que o ponto seja batido por completo"."""
     from .core import qualidade
     inicio, fim = _mes_pedido()
-    with db.conexao() as conn:
-        quem = _quem(conn)
-        if not qualidade.e_responsavel(conn, quem.colaborador_id):
-            raise NaoEncontrado("você não responde por um ponto da obra")
-        ids = qualidade.equipe_do_responsavel(conn, quem.colaborador_id, inicio, fim)
-        r = qualidade.avaliar(conn, ids, inicio, fim)
+    try:
+        with db.conexao() as conn:
+            quem = _quem(conn)
+            if not qualidade.e_responsavel(conn, quem.colaborador_id):
+                raise NaoEncontrado("você não responde por um ponto da obra")
+            ids = qualidade.equipe_do_responsavel(conn, quem.colaborador_id, inicio, fim)
+            r = qualidade.avaliar(conn, ids, inicio, fim, esperar=0)
+    except qualidade.Ocupado as e:            # 21/10/2026: nunca duas contas pesadas juntas
+        return jsonify({"ok": False, "erro": str(e), "ocupado": True}), 503
     return _ok(geral=r["geral"], pessoas=r["pessoas"], limite_ajustes=r["limite_ajustes"],
                competencia=f"{inicio:%Y-%m}")
 

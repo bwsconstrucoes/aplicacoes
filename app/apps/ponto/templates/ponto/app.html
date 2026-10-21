@@ -1461,16 +1461,19 @@ function avisoDaEquipe(eq) {
   return `<button type="button" class="alerta-ponto ${classe}" data-aviso="equipe"><span><b>${esc(titulo)}</b>
     <small>${esc(sub)}</small></span><span class="seta">›</span></button>`;
 }
+// 21/10/2026, incidente: o menu calculava o mês da pessoa (e o da equipe, no ponto
+// da obra) a CADA abertura — no pico da saída, os aparelhos voltando ao menu
+// tomaram o servidor e o aplicativo não carregou para ninguém. O menu NÃO calcula
+// mais nada: mostra o último resumo já visto neste aparelho (se houver) e um
+// botão; a conta só roda quando a pessoa toca.
 async function mostrarAvisosDoPonto(p, pode) {
   const caixa = $("m-alertas");
   caixa.innerHTML = "";
   if (!p) return;
-  const partes = [];
-  try { ULTIMA_QUALIDADE = await chamar("/ponto/app/api/qualidade/meu"); partes.push(avisoPessoal(ULTIMA_QUALIDADE)); } catch (e) {}
-  if (pode && pode.qualidade_equipe) {
-    try { ULTIMA_EQUIPE = await chamar("/ponto/app/api/qualidade/equipe"); partes.push(avisoDaEquipe(ULTIMA_EQUIPE)); } catch (e) {}
-  }
-  if (TELA_ATUAL !== "menu") return;          // a pessoa já saiu da tela inicial
+  const partes = [ULTIMA_QUALIDADE ? avisoPessoal(ULTIMA_QUALIDADE)
+    : `<button type="button" class="alerta-ponto ok" data-aviso="meu"><span><b>📊 Como está o meu ponto este mês</b>
+        <small>toque para ver os dias, os pontos e o selo</small></span><span class="seta">›</span></button>`];
+  if (pode && pode.qualidade_equipe && ULTIMA_EQUIPE) partes.push(avisoDaEquipe(ULTIMA_EQUIPE));
   caixa.innerHTML = partes.join("");
   caixa.querySelectorAll("[data-aviso]").forEach(b => b.addEventListener("click", () =>
     b.dataset.aviso === "meu" ? abrirMeuPontoEmDia() : abrirQualidadeEquipe()));
@@ -1483,6 +1486,7 @@ async function abrirMeuPontoEmDia(mes) {
   let q;
   try { q = await chamar(`/ponto/app/api/qualidade/meu?competencia=${mes}`); }
   catch (e) { $("dlg-corpo").innerHTML = `<h2 style="margin:0 0 6px">Meu ponto em dia</h2><div class="aviso erro">${esc(e.message)}</div>`; return; }
+  if (mes === hojeISO().slice(0, 7)) ULTIMA_QUALIDADE = q;     // o menu mostra este resumo, sem recalcular
   const [a, m] = mes.split("-");
   const porDia = {};
   (q.problemas || []).forEach(x => (porDia[x.data] = porDia[x.data] || []).push(x));
@@ -1520,6 +1524,7 @@ async function abrirQualidadeEquipe(mes) {
   let d;
   try { d = await chamar(`/ponto/app/api/qualidade/equipe?competencia=${mes}`); }
   catch (e) { $("dlg-corpo").innerHTML = `<h2 style="margin:0 0 6px">Ponto da minha equipe</h2><div class="aviso erro">${esc(e.message)}</div>`; return; }
+  if (mes === hojeISO().slice(0, 7)) ULTIMA_EQUIPE = d;
   const g = d.geral, [a, m] = mes.split("-");
   const atencao = [...d.pessoas].sort((x, y) => (x.pontos ?? 101) - (y.pontos ?? 101));
   const ontem = somarDiasISO(hojeISO(), -1);

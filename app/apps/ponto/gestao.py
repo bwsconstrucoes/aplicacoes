@@ -368,7 +368,10 @@ def ponto_api_qualidade():
         else:
             ids = [int(p["id"]) for p in cadastros.listar_colaboradores(conn, so_ativos=True)
                    if ocorrencias.pessoa_no_alcance(conn, quem, int(p["id"]))]
-        r = qualidade.avaliar(conn, ids, inicio, fim)
+        try:
+            r = qualidade.avaliar(conn, ids, inicio, fim, esperar=0)
+        except qualidade.Ocupado as e:        # 21/10/2026: nunca duas contas pesadas juntas
+            return jsonify({"ok": False, "erro": str(e), "ocupado": True}), 503
     return _ok(**r, competencia=f"{inicio:%Y-%m}")
 
 
