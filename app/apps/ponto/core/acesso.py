@@ -26,6 +26,7 @@ import logging
 import os
 import re
 import secrets
+from concurrent.futures import ThreadPoolExecutor
 
 from sqlalchemy.engine import Connection
 
@@ -34,6 +35,24 @@ from ..erros import ErroDeValidacao, NaoAutenticado, Recusada
 from . import cadastros, recusas
 
 logger = logging.getLogger("ponto.acesso")
+
+# O WhatsApp do código sai FORA da requisição (21/10/2026, incidente: na hora da
+# saída o Render inteiro parou). O envio esperava o Z-API até 60 s, 3 vezes, com
+# a requisição e a conexão do banco presas; com o WhatsApp falhando, quatro
+# pedidos de código tomavam as 4 linhas do serviço — de TODAS as áreas. Agora o
+# código é gravado e a resposta sai na hora; o envio vai para esta fila, com no
+# máximo 2 ao mesmo tempo, e nunca segura conexão do banco.
+_fila_do_whatsapp = ThreadPoolExecutor(max_workers=2, thread_name_prefix="ponto-codigo")
+
+
+def _mandar_em_segundo_plano(telefone: str, texto: str) -> None:
+    def trabalho():
+        try:
+            from app.apps.notificador import notificar
+            notificar(telefone=telefone, mensagem=texto, canais=("whatsapp",), finalidade="ponto.codigo_acesso")
+        except Exception:  # noqa: BLE001 — falha de envio não derruba nada
+            logger.exception("Ponto: não consegui mandar o código por WhatsApp")
+    _fila_do_whatsapp.submit(trabalho)
 
 TENTATIVAS_PIN = 5
 BLOQUEIO_MIN = 15
@@ -98,12 +117,12 @@ def pedir_codigo(conn: Connection, cpf, *, ip: str = "", enviar=None) -> dict:
     """, c=pessoa["id"], h=_hash(codigo), v=CODIGO_VALIDADE_MIN, ip=(ip or "")[:64])
     texto = (f"BWS Ponto: seu código é {codigo}. Ele vale {CODIGO_VALIDADE_MIN} minutos. "
              "Não passe este código para ninguém.")
+    destino = telefone if telefone.startswith("55") else "55" + telefone
+    if enviar is None:                     # o de verdade: nunca dentro da requisição
+        _mandar_em_segundo_plano(destino, texto)
+        return {"mensagem": RESPOSTA_DO_CODIGO}
     try:
-        if enviar is None:
-            from app.apps.notificador import notificar
-            enviar = lambda tel, msg: notificar(telefone=tel, mensagem=msg, canais=("whatsapp",),  # noqa: E731
-                                                finalidade="ponto.codigo_acesso")
-        enviar(telefone if telefone.startswith("55") else "55" + telefone, texto)
+        enviar(destino, texto)
     except Exception:  # noqa: BLE001 — falha de envio não revela nada a quem pediu
         logger.exception("Ponto: não consegui mandar o código por WhatsApp")
     return {"mensagem": RESPOSTA_DO_CODIGO}

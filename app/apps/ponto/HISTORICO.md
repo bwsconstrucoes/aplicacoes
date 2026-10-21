@@ -20,16 +20,22 @@ junto com o `README.md` e o `PLANO.md`.
    ERP › Mensagens, e a chave "Enviar e trocar o QR automaticamente" aqui.
 
 0a. **INCIDENTE 21/10/2026, ~17h — o aplicativo do ponto (e o Render inteiro) parou de carregar na hora da
-   saída.** O dono reiniciou o serviço. Causa PROVÁVEL (não confirmada: sem acesso às métricas daqui; pedido ao
-   dono o gráfico de CPU e memória do Render das 16h30 às 17h30): desde 17/10 o menu do aplicativo calculava a
-   qualidade do mês a cada abertura — a da pessoa e, no ponto da obra, a da EQUIPE INTEIRA (um espelho do mês
-   por pessoa) —, e a guarda de 10 minutos caía a cada batida nova. No pico, os aparelhos voltando ao menu
-   refaziam a conta sem parar e tomavam o processo único (1 worker, 4 linhas): todas as áreas do Render
-   travaram juntas. Os registros mostraram respostas em rajadas a cada ~45 s, e nenhum erro. **Conserto
-   (a6a6b3c):** o menu não calcula nada (mostra o último resumo visto e um botão "Como está o meu ponto"); a
-   guarda dura 10 minutos sem cair a cada batida; e **uma conta pesada por vez** — com outra rodando, a
-   segunda ouve "tente em instantes" (503) na hora, no aplicativo e na aba Qualidade do ERP. **A lição, para
-   qualquer área:** nada pesado roda sozinho ao abrir uma tela que centenas de pessoas abrem no mesmo minuto.
+   saída.** O dono reiniciou o serviço. As métricas do Render que ele trouxe: **memória 30 %, CPU 20 %, ~350
+   requisições no pico — NÃO foi excesso de uso**: o serviço estava parado, ESPERANDO. Os registros mostravam
+   respostas em rajadas a cada ~45 s e nenhum erro. **Causa mais provável:** o pedido de código de acesso
+   (`/ponto/app/api/codigo`, "Primeiro acesso ou esqueci o PIN") mandava o WhatsApp DENTRO da requisição, e o
+   `notificador` espera o Z-API até **60 s, 3 tentativas** (mais de 3 minutos no pior caso), com a requisição
+   e a conexão do banco presas. O WhatsApp vinha falhando; na saída, gente pedindo o código (e pedindo de
+   novo, porque não chegava — o registro mostrou o teto de códigos por hora estourado) prendia as **4
+   linhas** do serviço e as conexões do banco (10 para o Render inteiro) — e todas as áreas pararam juntas.
+   **Conserto (no ramo):** o código é gravado e a resposta sai na hora; o envio vai para uma fila em segundo
+   plano (no máximo 2 ao mesmo tempo, sem conexão do banco presa). E, por precaução (a6a6b3c), o menu do
+   aplicativo deixou de calcular a qualidade a cada abertura (era a primeira suspeita: a conta da equipe
+   inteira refeita a cada batida), com guarda de 10 minutos e uma conta pesada por vez. **Fora do ponto, e
+   fica com o chat da Mensageria:** o `notificador.py` com 60 s × 3 é uma armadilha para QUALQUER área que
+   mande WhatsApp dentro de uma requisição (ver `CONTEXTO.md` §9, 21/10/2026). **A lição:** nada que
+   dependa de serviço de fora (WhatsApp, Drive, AWS) roda dentro da requisição de uma tela que muita gente
+   abre no mesmo minuto.
 
 1. **Fase 2 e QR/mosaico PUBLICADOS em 04/10/2026** (com o "pode" do dono).
    Falta o dono apertar, se ainda não apertou, **os dois botões de banco**:

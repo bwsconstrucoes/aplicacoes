@@ -804,13 +804,20 @@ Quando eu pedir nova feature ou adaptação:
 
 ### 21/10/2026 — Incidente: o Render inteiro parou na hora da saída do ponto (atravessa áreas)
 
-Por volta das 17h o aplicativo do ponto — e, segundo o dono, todo o serviço — deixou
-de carregar; o dono reiniciou. Causa provável (detalhe em `app/apps/ponto/HISTORICO.md`,
-item 0a): uma conta pesada (a qualidade do mês da equipe, um espelho por pessoa) rodando
-a CADA abertura do menu do aplicativo, sem guarda que valesse no pico. Com 1 processo e
-4 linhas, uma área pesada trava todas. **Regra que fica, para qualquer área:** tela que
-muita gente abre no mesmo minuto não dispara conta pesada sozinha — a conta roda no
-toque, fica guardada, e no máximo uma por vez.
+Por volta das 17h o aplicativo do ponto — e todo o serviço — deixou de carregar; o dono
+reiniciou. **Memória 30 %, CPU 20 %, ~350 requisições no pico: não foi excesso de uso, o
+serviço estava ESPERANDO.** Causa mais provável (detalhe em `app/apps/ponto/HISTORICO.md`,
+item 0a): o pedido de código de acesso do ponto mandava o WhatsApp dentro da requisição, e
+`notificador.py` espera o Z-API **até 60 s, 3 tentativas** (`_wa_post`). Com o WhatsApp
+falhando, poucos pedidos de código prendiam as 4 linhas do gunicorn e as conexões do banco
+(pool de 5 + 5 para o monorepo inteiro). O ponto já mudou (envio em segundo plano).
+
+**Pendente para o chat da Mensageria (decisão do dono):** o `notificador` ainda espera 60 s ×
+3. Qualquer área que o chame DENTRO de uma requisição herda o mesmo risco. Caminhos: tempo
+de espera curto (5–10 s) para quem chama de dentro de uma tela, ou tudo pela fila em
+segundo plano. **Regra que fica, para qualquer área:** nada que dependa de serviço de fora
+(WhatsApp, Drive, AWS, Pipefy) roda dentro da requisição de uma tela que muita gente abre no
+mesmo minuto — e conta pesada também não.
 
 ### 17/10/2026 — ValidaSP: a validação vai para uma fila no banco, e o Pipefy sai (atravessa áreas)
 
