@@ -271,6 +271,9 @@ dizer "tem batida"; presença, horas e faltas são regra da fase 3.
 - Quantas pessoas bateram o ponto completo esta semana, e quantas ficaram com buraco? 🔒 ⚠️ ("completo" = todas as batidas que a escala previa; "esta semana" = de segunda até hoje)
 - Quais batidas foram incluídas em lote pela gestão, por quem e por quê? 🔒 (o pedido de ajuste com "incluída em lote pela gestão": motivo e quem aprovou ficam no pedido e na batida)
 - Em que dia houve mais buraco no ponto este mês? 🔒 ⚠️ (Quadro › Resumo por dia, até 31 dias de uma vez)
+- Quais vigias estão sem ronda surpresa ligada, ou sem celular liberado? 🔒 (Quadro › Tipo de pessoa › "Vigia com pendência"; "vigia" = jornada de vigia no ponto ou função com VIGIA no cadastro)
+- Quem bateu ponto no aparelho do Fulano ontem? 🔒 (janela da pessoa › Dia — só para quem responde por ponto da obra ou de equipe)
+- Onde o Fulano estava quando bateu às 7h, e era dentro da obra? 🔒 (janela da pessoa › Dia › Mapa: a obra da batida, a cerca e a distância)
 - Desde quando o ponto vale? (16/10/2026, ou a data de Ponto › Configuração › "Início do ponto"; o que vem antes foi teste da implantação — fica guardado e não conta em nada: espelho, folha, banco de horas, qualidade, mosaico, alertas)
 - Quantas batidas o Fulano tem em 10/10/2026? ⚠️ (antes do início do ponto a resposta certa é "nenhuma que conte": havia batidas de TESTE, que não entram em resposta nenhuma — o assistente não deve somá-las)
 - Quem bateu ponto hoje na obra X? 🔒

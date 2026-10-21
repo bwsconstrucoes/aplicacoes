@@ -59,6 +59,10 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1zm. **No ramo, esperando o "pode"** (21/10/2026, sem migração) — a **tela gerencial integrada**: a JANELA DA
+   PESSOA, as ETIQUETAS (vigia, ronda, celular, ponto da obra, equipe), o MAPA DA BATIDA em janela, a visão "Por
+   obra" e o **Quadro como primeira aba** (Hoje e Pessoas saíram da barra; os endereços continuam abrindo).
+   Ver a seção de 21/10/2026 (noite, segunda).
 1zl. **No ramo, esperando o "pode"** (21/10/2026, sem migração) — o **QUADRO DO PONTO** (aba nova "Quadro", logo
    depois de Hoje) e a **inclusão de batida em lote**. Ver a seção de 21/10/2026 (noite). Primeiras telas
    mostradas ao dono; **esperando a opinião dele sobre os filtros** antes de levar a mesma barra para as outras
@@ -291,6 +295,51 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 21/10/2026 (noite, segunda) — Uma tela gerencial: a janela da pessoa, as etiquetas e o mapa
+
+**Pedido do dono:** *"tem muita tela tratando de assuntos parecidos (…) uma tela gerencial
+mais completa, que através dos filtros nos desse as informações, ao invés de ter aquele
+bando de tela (…) sempre o nome, a função, os horários da batida e o local (…) clicar e ver
+a geolocalização no modal, com a obra (…) permitir ajuste individual, compensação (…) dar
+destaque se é vigia, se a ronda está ativa, se o celular está liberado (…) clicar na pessoa
+e ver os pontos do dia, voltar no dia anterior (…) o cadastro com todas as informações, as
+solicitações, se foram atendidas, e a partir daí atender (…) as coisas têm que estar
+integradas e inter-relacionadas"* — a regra de sempre do ERP.
+
+**O que ficou:**
+- **A janela da pessoa** (`core/paineis.py`, rota `/erp/api/ponto/pessoas/<id>/painel`):
+  abre de QUALQUER tela do ponto ao clicar no nome (Quadro, Validações, Pessoas, Qualidade,
+  Hoje). Abas: **Dia** (as batidas com a obra, a situação, se foi dentro da cerca, mapa e
+  foto; navega dia a dia; para quem responde por um ponto da obra ou de equipe, **quem
+  bateu no aparelho dele naquele dia**, cada um clicável); **Mês** (calendário com as
+  horas de cada dia, o que falta e os pedidos esperando; clicar no dia abre o Dia);
+  **Pedidos** (todos, com a situação; aprovar e negar os que esperam quem está olhando;
+  validar e rejeitar as batidas em conferência); **Aparelhos** (bloquear; aprovar leva à
+  Configuração, onde se escolhe o tipo); **Cadastro** (tudo, e os botões que antes só
+  existiam em Pessoas: trocar escala, jornada e obras, acesso no aplicativo, código não
+  chegou, banco de horas). No alto: ajustar o dia, compensação, atestado ou licença,
+  afastamento, espelho e impressão.
+- **As etiquetas** (`core/etiquetas.py`): 🛡️ vigia, 🔦 ronda ativa, ⚠️ vigia sem ronda,
+  📱 celular liberado / esperando aprovação, ⚠️ vigia sem celular liberado, 🏗️ responde por
+  ponto da obra, 👥 ponto de equipe, 🗂️ administrativo da obra, 🔑 sem PIN (este só na
+  janela, para não poluir as listas). No Quadro, ao lado do nome, com o filtro **"Tipo de
+  pessoa"** — inclusive "Vigia com pendência (sem ronda ou sem celular)", o que o dono
+  quer achar fácil ("o correto é os vigias todos com ronda e celular").
+- **O mapa da batida** (`/erp/api/ponto/marcacoes/<id>/local`): janela com o mapa do Google
+  (sem chave), a obra da batida, se foi dentro da cerca e a distância do centro da obra.
+  Abre clicando na batida no Quadro e na janela da pessoa. **Não verificado:** o mapa
+  dentro da janela (o ambiente de teste não acessa o Google).
+- **"Por obra"** no Quadro (a obra do dia = a da primeira batida; sem batida, a do
+  cadastro), com clique para as pessoas daquela obra.
+- **O menu:** o **Quadro é a primeira aba** e a porta de entrada do Ponto; **Hoje e Pessoas
+  saíram da barra** (`ABAS_FORA_DO_MENU`) — os endereços continuam abrindo, e o Quadro
+  aponta para eles (o dia por obra que se atualiza sozinho; o cadastro de quem não bate
+  ponto). Validações continua: é onde se decide em lote e se abre o documento do atestado.
+  Voltar uma aba ao menu é uma linha em `gestao.py`.
+- **Refatorado para servir às duas telas:** as ações do DP (ajuste, compensação, atestado,
+  afastamento) e as do cadastro saíram do bloco de uma tela só para a parte comum, com
+  "o que atualizar depois" como argumento.
 
 ## 21/10/2026 (noite) — O quadro do ponto e a inclusão em lote
 
