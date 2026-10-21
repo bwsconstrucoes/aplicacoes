@@ -31,7 +31,7 @@ from sqlalchemy.engine import Connection
 
 from .. import db, horario
 from ..erros import ErroDeValidacao, NaoEncontrado
-from . import cadastros, espelho, filtros as filtros_do_ponto, vigencia
+from . import cadastros, espelho, etiquetas as etiquetas_da_pessoa, filtros as filtros_do_ponto, vigencia
 from .ocorrencias import Quem
 
 MAX_DIAS = 31
@@ -125,9 +125,10 @@ def passa_no_filtro(d: dict, etiquetas: set[str], f: dict) -> bool:
     return True
 
 
-def _linha(p: dict, d: dict, etiquetas: set[str]) -> dict:
+def _linha(p: dict, d: dict, etiquetas: set[str], marcas: list[dict]) -> dict:
     return {
         "colaborador_id": int(p["id"]), "nome": p["nome"], "cpf": p.get("cpf"), "funcao": p.get("funcao"),
+        "marcas": marcas,
         "obra_cadastro": p.get("obra_codigo"), "data": d["data"], "dia_semana": d["dia_semana"],
         "escala": d.get("escala"), "feriado": d.get("feriado"),
         "situacao": d["situacao"], "situacao_rotulo": SITUACOES_DO_DIA.get(d["situacao"], d["situacao"]),
@@ -180,10 +181,22 @@ def montar(conn: Connection, quem: Quem, de, ate, f: Optional[dict] = None, *, e
         raise Ocupado("o quadro está sendo montado para outra pessoa — tente de novo em instantes")
     try:
         pessoas = _pessoas(conn, quem, f, inicio, fim)
+        # As etiquetas (vigia, ronda, celular, ponto da obra…) — e o filtro "tipo de pessoa".
+        marcas = etiquetas_da_pessoa.das_pessoas(conn, pessoas)
+        contagem_tipos: Counter = Counter()           # antes do filtro: a barra mostra quantos há
+        for p in pessoas:
+            cods = set(marcas.get(int(p["id"]), []))
+            if cods & {"VIGIA_SEM_RONDA", "VIGIA_SEM_CELULAR"}:
+                cods.add("VIGIA_PENDENTE")
+            contagem_tipos.update(cods)
+        tipos = {str(x) for x in (f.get("tipos_pessoa") or [])}
+        if tipos:
+            pessoas = [p for p in pessoas if etiquetas_da_pessoa.casa_com_filtro(marcas.get(int(p["id"]), []), tipos)]
         lote = espelho.Lote(conn, pessoas, inicio, fim) if pessoas else None
         hoje, agora = horario.hoje(), horario.agora()
         escalas_quer = {str(x).strip().lower() for x in (f.get("escalas") or []) if str(x).strip()}
-        linhas, por_dia, por_pessoa = [], {}, {}
+        linhas, por_dia, por_pessoa, por_obra = [], {}, {}, {}
+        obra_quer = str(f.get("obra_do_dia") or "").strip().upper()
         contagem: Counter = Counter()
         funcoes_vistas, escalas_vistas = Counter(), Counter()
         total_linhas = 0
@@ -198,19 +211,28 @@ def montar(conn: Connection, quem: Quem, de, ate, f: Optional[dict] = None, *, e
                     escalas_vistas[d["escala"]] += 1
                 if escalas_quer and (d.get("escala") or "").strip().lower() not in escalas_quer:
                     continue
+                # A obra do dia: a da primeira batida; sem batida, a do cadastro (como em Hoje).
+                obra_dia = next((b["obra"] for b in d["batidas"] if b.get("obra")), None) or p.get("obra_codigo") or "—"
+                if obra_quer and obra_dia.upper() != obra_quer:
+                    continue
                 etq = etiquetas_do_dia(d)
+                ob = por_obra.setdefault(obra_dia, {"obra": obra_dia, "pessoas": set(), "contagem": Counter()})
+                ob["pessoas"].add(int(p["id"]))
+                ob["contagem"].update(etq)
+                ob["contagem"]["DIAS"] += 1
                 contagem.update(etq)
                 contagem["DIAS"] += 1
                 if not passa_no_filtro(d, etq, f):
                     continue
                 total_linhas += 1
-                linha = _linha(p, d, etq)
+                linha = _linha(p, d, etq, etiquetas_da_pessoa.para_json(marcas.get(int(p["id"]), [])))
                 r = por_dia.setdefault(d["data"], Counter())
                 r["pessoas"] += 1
                 r.update(etq)
                 pp = por_pessoa.setdefault(int(p["id"]), {
                     "colaborador_id": int(p["id"]), "nome": p["nome"], "funcao": p.get("funcao"),
-                    "obra_cadastro": p.get("obra_codigo"), "dias": 0, "batidas": 0, "contagem": Counter()})
+                    "obra_cadastro": p.get("obra_codigo"), "dias": 0, "batidas": 0, "contagem": Counter(),
+                    "marcas": linha["marcas"]})
                 pp["dias"] += 1
                 pp["batidas"] += len(linha["batidas"])
                 pp["contagem"].update(etq)
@@ -227,7 +249,12 @@ def montar(conn: Connection, quem: Quem, de, ate, f: Optional[dict] = None, *, e
         "por_pessoa": sorted(({**v, "contagem": dict(v["contagem"])} for v in por_pessoa.values()),
                              key=lambda x: (-(x["contagem"].get("COM_BURACO", 0) + x["contagem"].get("FALTA", 0)),
                                             x["nome"] or "")),
+        "contagem_tipos": dict(contagem_tipos),
+        "por_obra": sorted(({"obra": v["obra"], "pessoas": len(v["pessoas"]), "contagem": dict(v["contagem"])}
+                            for v in por_obra.values()), key=lambda x: x["obra"]),
         "opcoes": {"situacoes": [{"codigo": c, "rotulo": r} for c, r in SITUACOES],
+                   "tipos_pessoa": [{"codigo": c, "rotulo": etiquetas_da_pessoa.ROTULO_FILTRO[c]}
+                                    for c in etiquetas_da_pessoa.FILTRAVEIS],
                    "funcoes": sorted(funcoes_vistas), "escalas": sorted(escalas_vistas)},
     }
 

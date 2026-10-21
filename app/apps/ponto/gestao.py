@@ -55,18 +55,22 @@ logger = logging.getLogger("ponto.gestao")
 # O módulo no menu do ERP
 # ---------------------------------------------------------------------------
 ABAS = [
-    ("ponto_hoje", "Hoje", "erp.ponto_pagina_hoje"),
+    # O Quadro é a porta de entrada (21/10/2026, o dono: "uma tela gerencial mais
+    # completa, que através dos filtros nos desse as informações (…) ao invés de
+    # ter aquele bando de tela"). Hoje e Pessoas saíram da barra — o Quadro (visões
+    # por obra, por pessoa e a janela da pessoa) faz o que elas faziam —, mas os
+    # endereços continuam abrindo (ABAS_FORA_DO_MENU), e o Quadro leva até elas.
     ("ponto_quadro", "Quadro", "erp.ponto_pagina_quadro"),
-    ("ponto_espelho", "Espelho", "erp.ponto_pagina_espelho"),
     ("ponto_pendencias", "Validações", "erp.ponto_pagina_pendencias"),
+    ("ponto_espelho", "Espelho", "erp.ponto_pagina_espelho"),
     ("ponto_mosaico", "Mosaico", "erp.ponto_pagina_mosaico"),
-    ("ponto_pessoas", "Pessoas", "erp.ponto_pagina_pessoas"),
     ("ponto_banco", "Banco de horas", "erp.ponto_pagina_banco"),
     ("ponto_alertas", "Alertas", "erp.ponto_pagina_alertas"),
     ("ponto_qualidade", "Qualidade", "erp.ponto_pagina_qualidade"),
     ("ponto_rondas", "Rondas", "erp.ponto_pagina_rondas"),
     ("ponto_config", "Configuração", "erp.ponto_pagina_configuracao"),
 ]
+ABAS_FORA_DO_MENU = ("ponto_hoje", "ponto_pessoas")
 MODULO = {
     "chave": "ponto", "nome": "Ponto", "sigla": "PON",
     "descricao": "Ponto eletrônico: quem bateu, espelho, pedidos, banco de horas e alertas",
@@ -82,6 +86,7 @@ def _registrar_no_menu() -> None:
     posicao = next((i for i, m in enumerate(R.MODULOS) if m["chave"] == "admin"), len(R.MODULOS))
     R.MODULOS.insert(posicao, MODULO)
     R._MODULO_DA_ABA.update({aba[0]: "ponto" for aba in ABAS})
+    R._MODULO_DA_ABA.update({aba: "ponto" for aba in ABAS_FORA_DO_MENU})
 
 
 # ---------------------------------------------------------------------------
@@ -443,6 +448,8 @@ def ponto_api_pessoas():
         # Onde a pessoa está BATENDO (16/10/2026: "a obra principal deve ser a obra em
         # que a pessoa está batendo ponto; mas deve ter a obra de cadastro").
         bateu = filtros.obras_em_que_bateu(conn, 30)
+        from .core import etiquetas
+        marcas = etiquetas.das_pessoas(conn, pessoas)      # vigia, ronda, celular… (21/10/2026)
         # A escala padrão da empresa vale para quem não tem escala própria (o espelho
         # já julgava por ela); a lista passa a dizer isso, em vez de "sem escala".
         padrao = escalas.escala_padrao(conn)
@@ -462,6 +469,7 @@ def ponto_api_pessoas():
             j["escala"] = padrao["nome"]
         j["tem_pin"] = p["id"] in pins
         j["obras_batidas"] = bateu.get(p["id"], [])
+        j["etiquetas"] = etiquetas.para_json(marcas.get(int(p["id"]), []))
         j["regime_banco_rotulo"] = banco.ROTULOS.get(j["regime_banco"], j["regime_banco"])
         saida.append(j)
     return _ok(pessoas=saida, quantidade=len(saida), fora_da_lista=fora_da_lista)
@@ -472,9 +480,16 @@ def ponto_api_pessoas():
 @permissao("ver_ponto")
 @_api
 def ponto_api_pessoa(colaborador_id: int):
-    quem = _quem()
+    return _ok(pessoa=_ficha(_quem(), colaborador_id))
+
+
+def _ficha(quem: Quem, colaborador_id: int) -> dict:
+    """A ficha da pessoa (cadastro, escalas, aparelhos, QR, etiquetas) — a da tela
+    Pessoas e a do painel da pessoa (21/10/2026)."""
+    from .core import etiquetas
     with db.conexao() as conn:
         p = _exigir_pessoa(conn, quem, colaborador_id)
+        marcas = etiquetas.para_json(etiquetas.das_pessoas(conn, [p]).get(int(p["id"]), []))
         adicionais = db.todos(conn, """SELECT o.id, o.codigo, o.nome FROM ponto.colaborador_obras co
                                          JOIN public.obras o ON o.id = co.obra_id
                                         WHERE co.colaborador_id = :c ORDER BY o.codigo""",
@@ -506,6 +521,7 @@ def ponto_api_pessoa(colaborador_id: int):
     # marcação (10/10/2026) — a tela diz isso, para a marcação não parecer mentir.
     j["responsavel_ponto_obra"] = responsavel
     j["funcao"] = p.get("funcao")
+    j["etiquetas"] = marcas
     j["tem_telefone"] = bool(envios.telefone_valido(p.get("telefone")))
     with db.conexao() as conn:
         j["qr"] = qr.situacao_da_pessoa(conn, colaborador_id) if db.tem_003(conn) else None
@@ -516,7 +532,38 @@ def ponto_api_pessoa(colaborador_id: int):
             d = confianca.config(rosto.ler(conn))
             j["conferencia_rosto"] = {**confianca.da_pessoa(
                 confianca.historico(conn, [colaborador_id], d).get(colaborador_id), d), "ligada": d["ligada"]}
-    return _ok(pessoa=j)
+    return j
+
+
+@bp.route("/erp/api/ponto/pessoas/<int:colaborador_id>/painel")
+@login_obrigatorio
+@permissao("ver_ponto")
+@_api
+def ponto_api_pessoa_painel(colaborador_id: int):
+    """TUDO DA PESSOA NUMA JANELA (21/10/2026, o dono: "clicar na pessoa e visualizar
+    o cadastro dela com todas as informações, os pontos que ela bateu, as
+    solicitações e se foram atendidas (…) as coisas têm que estar integradas").
+    `?data=` o dia mostrado; `?competencia=` o mês."""
+    from .core import paineis
+    quem = _quem()
+    ficha = _ficha(quem, colaborador_id)                 # confere o alcance (404 fora dele)
+    with db.conexao() as conn:
+        r = paineis.da_pessoa(conn, quem, colaborador_id, request.args.get("data"),
+                              request.args.get("competencia"))
+    return _ok(pessoa=ficha, **r)
+
+
+@bp.route("/erp/api/ponto/marcacoes/<int:marcacao_id>/local")
+@login_obrigatorio
+@permissao("ver_ponto")
+@_api
+def ponto_api_marcacao_local(marcacao_id: int):
+    """Onde a pessoa estava na batida, e a obra (21/10/2026: "clicar e ver a
+    geolocalização, no modal, avisando qual é a obra em que ela está")."""
+    from .core import paineis
+    quem = _quem()
+    with db.conexao() as conn:
+        return _ok(**paineis.local_da_batida(conn, quem, marcacao_id))
 
 
 @bp.route("/erp/api/ponto/pessoas/<int:colaborador_id>/qr/enviar", methods=["POST"])

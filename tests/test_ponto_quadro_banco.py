@@ -123,3 +123,39 @@ def test_etiquetas_do_dia_puras():
     assert "COMPLETO" in etiquetas_do_dia(cheio)
     folga = {"batidas": [], "faltando": [], "situacao": "DESCANSO", "previstas": []}
     assert etiquetas_do_dia(folga) == {"SEM_BATIDA", "NAO_TRABALHA"}
+
+
+def test_etiquetas_da_pessoa_puras():
+    from app.apps.ponto.core import etiquetas
+    vigia = {"tipo_jornada": "VIGIA_NOTURNO_2", "faz_ronda": False}
+    assert etiquetas.calcular(vigia, [], True) == ["VIGIA", "VIGIA_SEM_RONDA", "VIGIA_SEM_CELULAR"]
+    certo = {"tipo_jornada": "VIGIA_NOTURNO_2", "faz_ronda": True}
+    assert etiquetas.calcular(certo, [{"perfil": "INDIVIDUAL", "status": "APROVADO"}], True) == ["VIGIA", "RONDA", "CELULAR"]
+    resp = {"tipo_jornada": "PADRAO_4", "administrativo_obra": True}
+    assert etiquetas.calcular(resp, [{"perfil": "COMPARTILHADO", "status": "APROVADO"},
+                                     {"perfil": "INDIVIDUAL", "status": "PENDENTE"}], False) == \
+        ["CELULAR_PENDENTE", "PONTO_OBRA", "ADMINISTRATIVO", "SEM_PIN"]
+    assert etiquetas.casa_com_filtro(["VIGIA", "VIGIA_SEM_RONDA"], {"VIGIA_PENDENTE"})
+    assert not etiquetas.casa_com_filtro(["VIGIA", "RONDA", "CELULAR"], {"VIGIA_PENDENTE"})
+
+
+def test_painel_da_pessoa_e_local_da_batida(app, mundo, banco):
+    from sqlalchemy import text
+    seg = _segunda_passada()
+    m = bater_via_chave(app, CPF_JOAO, local(seg, 7, 0))
+    with banco.connect() as conn:                       # o celular estava a uns 300 m da obra
+        conn.execute(text("UPDATE ponto.marcacoes SET latitude = -3.7300, longitude = -38.5300 WHERE id = :i"),
+                     {"i": m["id"]})
+        conn.commit()
+    dp = como(app, mundo["dp"])
+    r = dp.get(f"/erp/api/ponto/pessoas/{mundo['joao']}/painel?data={seg.isoformat()}").get_json()
+    assert r["pessoa"]["id"] == mundo["joao"] and isinstance(r["pessoa"]["etiquetas"], list)
+    assert [b["hora"] for b in r["dia"]["batidas"]] == ["07:00"] and r["data"] == seg.isoformat()
+    assert r["mes"]["competencia"] == seg.strftime("%Y-%m") and any(d["data"] == seg.isoformat() for d in r["mes"]["dias"])
+    assert "pedidos" in r and "em_conferencia" in r and r["no_aparelho_dela"] == []
+    loc = dp.get(f"/erp/api/ponto/marcacoes/{m['id']}/local").get_json()
+    assert loc["obra"]["codigo"] == "PG-A" and loc["latitude"] == -3.73 and loc["distancia_metros"] > 0
+    # fora do alcance: não encontrada (nunca "sem permissão")
+    assert como(app, mundo["fin"]).get(f"/erp/api/ponto/marcacoes/{m['id']}/local").status_code == 403
+    q = dp.post("/erp/api/ponto/quadro", json={"de": seg.isoformat(), "filtros": {"tipos_pessoa": ["SEM_PIN"]}}).get_json()
+    assert all(any(x["codigo"] == "SEM_PIN" for x in l["marcas"]) for l in q["linhas"])
