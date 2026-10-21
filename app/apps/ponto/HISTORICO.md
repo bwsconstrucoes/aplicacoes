@@ -41,7 +41,7 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
-1zk. **No ramo, esperando o "pode"** (21/10/2026, sem migração) — **Validações diz QUEM PEDIU** (o dono: "não
+1zk. **PUBLICADO em 21/10/2026** (junção `d6ab5eb`, sem migração) — **Validações diz QUEM PEDIU** (o dono: "não
    aparece a pessoa que solicitou o ajuste da batida ou encaminhou um atestado; é importante, e precisa ser
    pesquisável"). Coluna "Pedido por": "a própria pessoa" (pelo celular / no aparelho X) ou o nome de quem pediu
    por ela (responsável no aparelho da obra, DP pelo ERP). A busca "Pessoa ou quem pediu" acha pelo nome de quem
