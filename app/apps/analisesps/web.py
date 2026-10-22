@@ -6468,6 +6468,13 @@ def tela_lote():
             conteudo, quantos = lote.remover_por_status(conteudo, alvo, status)
             rotulo = "paga(s)" if acao == "remover_pagos" else "cancelada(s)"
             aviso = f"{quantos} SP(s) {rotulo} saíram do lote."
+        elif acao == "organizar_conta":
+            # UM GRUPO POR CONTA DE PAGAMENTO, com a conta no título (22/10/2026).
+            montado = lote.montar(conteudo)
+            contas = {i: (l.get("conta") or "") for i, l in montado["linhas"].items()}
+            conteudo, quantos = lote.organizar_por_conta(conteudo, contas)
+            aviso = (f"Lote organizado por conta de pagamento: {quantos} grupo(s)."
+                     if quantos else "O lote está vazio — nada a organizar.")
         elif acao == "remover_duplicados":
             # O mesmo número em dois grupos aparece duas vezes na tela e é
             # somado duas vezes no total. Fica a PRIMEIRA aparição, como o dono
@@ -6481,7 +6488,7 @@ def tela_lote():
         # ações mandam de volta o texto que a tela carregou; sem isto, o
         # "Salvar" apagava em silêncio as SPs que o robô somou nesse meio tempo.
         if acao in ("salvar", "extrair", "trazer_antigo", "remover_pagos",
-                    "remover_cancelados", "remover_duplicados"):
+                    "remover_cancelados", "remover_duplicados", "organizar_conta"):
             from . import telegram_lote
             try:
                 conteudo, voltaram = telegram_lote.manter_chegadas(

@@ -243,6 +243,46 @@ def remover_duplicados(texto: str) -> tuple[str, int]:
     return _limpar(texto, sai)
 
 
+# ---------------------------------------------------------------------------
+# ORGANIZAR POR CONTA DE PAGAMENTO — 22/10/2026
+#
+# O dono: *"no lote, quero um botão que reorganize as SPs de acordo com a conta
+# de pagamento, inclusive colocando a conta de pagamento como headers do lote"*.
+# ---------------------------------------------------------------------------
+PREFIXO_DA_CONTA = "Conta "
+SEM_CONTA = "Sem conta de pagamento"
+NAO_ENCONTRADAS = "Não encontradas na base"
+
+
+def organizar_por_conta(texto: str, conta_por_id: dict) -> tuple[str, int]:
+    """Refaz o lote com UM grupo por conta de pagamento, o título sendo a conta.
+
+    ⚠️ O TÍTULO É "Conta 50024", NUNCA SÓ "50024": uma linha só de números é lida
+    como lista de SPs (`separar_grupos`), e a conta viraria uma SP. As contas vão
+    em ordem alfabética; dentro de cada uma, as SPs na ordem em que estavam. A
+    SP repetida fica uma vez só. Sem conta e não achada na base vão por último,
+    em grupos próprios — nada sai do lote. Os títulos antigos são substituídos.
+
+    Devolve o texto novo e quantos grupos ficaram."""
+    grupos: dict = {}
+    vistos: set = set()
+    for grupo in separar_grupos(texto):
+        for sp in grupo["ids"]:
+            if sp in vistos:
+                continue
+            vistos.add(sp)
+            if sp not in conta_por_id:
+                titulo = NAO_ENCONTRADAS
+            else:
+                conta = " ".join(str(conta_por_id.get(sp) or "").split())
+                titulo = PREFIXO_DA_CONTA + conta if conta else SEM_CONTA
+            grupos.setdefault(titulo, []).append(sp)
+    ordem = sorted((t for t in grupos if t.startswith(PREFIXO_DA_CONTA)), key=str.lower) \
+        + [t for t in (SEM_CONTA, NAO_ENCONTRADAS) if t in grupos]
+    blocos = [t + "\n" + "\n".join(grupos[t]) for t in ordem]
+    return "\n\n".join(blocos), len(blocos)
+
+
 def contar_duplicados(texto: str) -> int:
     """Quantas cópias sobrando existem no lote, sem mexer em nada.
 

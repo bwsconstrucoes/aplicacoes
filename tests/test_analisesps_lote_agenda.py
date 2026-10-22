@@ -596,3 +596,25 @@ def test_marcar_nas_linhas_com_lote_vazio_ainda_preenche_a_chave(monkeypatch):
     lote.marcar_nas_linhas(linhas, "marcelo")
 
     assert linhas[0]["no_lote"] is None
+
+
+def test_ORGANIZAR_POR_CONTA_faz_um_grupo_por_conta_com_a_conta_no_titulo():
+    """22/10/2026: "um botão que reorganize as SPs de acordo com a conta de
+    pagamento, inclusive colocando a conta de pagamento como headers do lote"."""
+    texto = ("WhatsApp\n1000000003\n1000000001\n\nNovo Lote 1\n1000000002 1000000001\n"
+             "1000000004\n9999999999")
+    contas = {"1000000001": "92945-8", "1000000002": "50024", "1000000003": "92945-8",
+              "1000000004": ""}
+    novo, grupos = lote.organizar_por_conta(texto, contas)
+    assert grupos == 4
+    assert novo == ("Conta 50024\n1000000002\n\n"
+                    "Conta 92945-8\n1000000003\n1000000001\n\n"
+                    "Sem conta de pagamento\n1000000004\n\n"
+                    "Não encontradas na base\n9999999999")
+    # O título não é lido como SP (só números viraria SP).
+    lidos = lote.separar_grupos(novo)
+    assert [g["titulo"] for g in lidos][:2] == ["Conta 50024", "Conta 92945-8"]
+    assert sorted(i for g in lidos for i in g["ids"]) == sorted(
+        ["1000000001", "1000000002", "1000000003", "1000000004", "9999999999"]), \
+        "nada sai do lote; a repetida fica uma vez"
+    assert lote.organizar_por_conta("", {}) == ("", 0)

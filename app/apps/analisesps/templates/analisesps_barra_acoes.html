@@ -69,6 +69,13 @@
                   name="acao" value="remover_pagos">Remover pagos</button>
           <button class="btn secundario" type="submit" form="form-lote"
                   name="acao" value="remover_cancelados">Remover cancelados</button>
+          {# ORGANIZAR POR CONTA (22/10/2026): um grupo por conta de pagamento,
+             com a conta no título. Substitui os títulos atuais — por isso pede
+             confirmação. #}
+          <button class="btn secundario" type="submit" form="form-lote"
+                  name="acao" value="organizar_conta"
+                  onclick="return confirm('Reorganizar o lote por conta de pagamento?\n\nCada conta vira um grupo, com a conta no título. Os títulos atuais dos grupos (WhatsApp, Novo Lote…) são substituídos. Nenhuma SP sai do lote.')"
+                  title="Um grupo por conta de pagamento, com a conta no título">Organizar por conta</button>
           {% if duplicados %}
             <button class="btn secundario" type="submit" form="form-lote"
                     name="acao" value="remover_duplicados"
