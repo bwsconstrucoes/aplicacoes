@@ -31,7 +31,7 @@ mexer; atualize este ao encerrar a sessão.
 > do início do ponto (16/10/2026), e `folha_gestao`/`folha_diaristas` passaram a usar
 > `carga_para_a_folha` (que, num mês sem carga do MobPonto, devolve uma "carga" do ponto
 > eletrônico, `id` None). **`carga_do_mes` não mudou** (é a do MobPonto, usada na carga).
-> **Nasce DESLIGADO** — Ponto › Configuração › Geral, "A folha lê o ponto eletrônico";
+> **Publicado em 22/10/2026, DESLIGADO** — Ponto › Configuração › Geral, "A folha lê o ponto eletrônico";
 > desligado, tudo devolve o que devolvia. Para conferir antes de ligar: a obra vem como
 > CÓDIGO (o de/para por código já existe); presença "Presença" em dia com batida (feriado
 > e descanso inclusive), "Falta"/"Falta sem justificativa" na falta, o nome do abono no

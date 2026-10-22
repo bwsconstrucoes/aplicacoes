@@ -59,21 +59,21 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
-1zo. **No ramo, esperando o "pode"** (22/10/2026, sem migração, **peça nova: Leaflet**) — o **MAPA DO QUADRO**
+1zo. **Publicado em 22/10/2026** (com o "pode" do dono) (22/10/2026, sem migração, **peça nova: Leaflet**) — o **MAPA DO QUADRO**
    (Quadro › 🗺️ Mapa): uma bolha por obra, do tamanho de quantas pessoas bateram nela, na cor do quanto o ponto
    está completo. Ver a seção de 22/10/2026. **Não conferido aqui:** o fundo do mapa (ruas, vindo do
    OpenStreetMap) — o ambiente de desenvolvimento não alcança a internet; conferir na primeira abertura.
-1zn. **No ramo, esperando o "pode"** (21/10/2026, sem migração, **NASCE DESLIGADO**) — a **base mista da folha
+1zn. **Publicado em 22/10/2026** (com o "pode" do dono) (21/10/2026, sem migração, **NASCE DESLIGADO**) — a **base mista da folha
    do Análise de SPs**: MobPonto até 15/10, este ponto do início do ponto em diante (`core/para_folha.py` e o
    encaixe em `analisesps/ponto.py`). Chave em Configuração › Geral, "A folha lê o ponto eletrônico".
    **Pendente com o dono:** conferir a ficha de algumas pessoas e o rateio de uma quinzena, com o chat do
    Análise de SPs, e só então ligar. Decisões de tradução (obra por código, presença, falta, diarista só com
    batida) no cabeçalho de `para_folha.py`.
-1zm. **No ramo, esperando o "pode"** (21/10/2026, sem migração) — a **tela gerencial integrada**: a JANELA DA
+1zm. **Publicado em 22/10/2026** (com o "pode" do dono) (21/10/2026, sem migração) — a **tela gerencial integrada**: a JANELA DA
    PESSOA, as ETIQUETAS (vigia, ronda, celular, ponto da obra, equipe), o MAPA DA BATIDA em janela, a visão "Por
    obra" e o **Quadro como primeira aba** (Hoje e Pessoas saíram da barra; os endereços continuam abrindo).
    Ver a seção de 21/10/2026 (noite, segunda).
-1zl. **No ramo, esperando o "pode"** (21/10/2026, sem migração) — o **QUADRO DO PONTO** (aba nova "Quadro", logo
+1zl. **Publicado em 22/10/2026** (com o "pode" do dono) (21/10/2026, sem migração) — o **QUADRO DO PONTO** (aba nova "Quadro", logo
    depois de Hoje) e a **inclusão de batida em lote**. Ver a seção de 21/10/2026 (noite). Primeiras telas
    mostradas ao dono; **esperando a opinião dele sobre os filtros** antes de levar a mesma barra para as outras
    telas (pedido dele: "o que a gente fechar de filtro é para valer para as outras telas").

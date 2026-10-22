@@ -804,7 +804,7 @@ Quando eu pedir nova feature ou adaptação:
 
 ### 22/10/2026 — Peça nova no front-end: Leaflet (mapa), guardada no repositório
 
-**No ramo `feature/modulo-ponto`, esperando o "pode".** O mapa do Quadro do ponto usa o
+**Publicado em 22/10/2026.** O mapa do Quadro do ponto usa o
 **Leaflet 1.9.4** (licença BSD-2), com os arquivos em `app/apps/ponto/static/leaflet/` e
 servidos pela rota `/erp/ponto/leaflet/<arquivo>` (login e `ver_ponto`), carregados só quando
 alguém abre o mapa. Não entrou no `requirements.txt` (é JavaScript, não Python). O fundo do mapa
@@ -814,7 +814,7 @@ estes arquivos em vez de baixar outra cópia.
 
 ### 21/10/2026 — A base mista do ponto na folha do Análise de SPs (atravessa áreas)
 
-**No ramo `feature/modulo-ponto`, esperando o "pode", e NASCE DESLIGADO.** Pedido do dono
+**Publicado em 22/10/2026, DESLIGADO.** Pedido do dono
 no chat do ponto: a folha do Análise de SPs lê o MobPonto até 15/10/2026 e o ponto
 eletrônico do ERP do dia 16 em diante. O ponto entrega o dia no formato que a folha já lê
 (`app/apps/ponto/core/para_folha.py`); em `app/apps/analisesps/ponto.py` as funções de
