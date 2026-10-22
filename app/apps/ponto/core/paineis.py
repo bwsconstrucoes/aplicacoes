@@ -112,8 +112,7 @@ def local_da_batida(conn: Connection, quem: Quem, marcacao_id: int) -> dict:
     """Onde o aparelho estava na batida, a obra da batida (com a cerca) e a distância.
     Fora do alcance de quem pergunta: "não encontrada"."""
     m = db.um(conn, """
-        SELECT m.id, m.colaborador_id, m.obra_id, m.timestamp_servidor, m.latitude, m.longitude,
-               m.distancia_metros, m.dentro_da_cerca, m.status, m.origem, m.registrado_por, c.nome
+        SELECT m.*, c.nome
           FROM ponto.marcacoes m JOIN public.colaboradores c ON c.id = m.colaborador_id
          WHERE m.id = :id""", id=marcacao_id)
     if not m or not quem.alcanca_obra(m["obra_id"]) or not ocorrencias.pessoa_no_alcance(conn, quem, m["colaborador_id"]):
@@ -125,8 +124,69 @@ def local_da_batida(conn: Connection, quem: Quem, marcacao_id: int) -> dict:
     dist = (float(m["distancia_metros"]) if m["distancia_metros"] is not None
             else geo.distancia_metros(lat, lon, obra["latitude"], obra["longitude"])
             if obra and None not in (lat, lon, obra["latitude"], obra["longitude"]) else None)
+    aparelho = _aparelho(conn, m.get("dispositivo_id"))
     return {"id": m["id"], "nome": m["nome"], "colaborador_id": m["colaborador_id"],
             "quando": f"{horario.para_local(m['timestamp_servidor']):%d/%m/%Y às %H:%M}",
+            "data": m["data_referencia"].isoformat(), "nsr": m["nsr"],
             "latitude": lat, "longitude": lon, "obra": obra, "distancia_metros": dist,
             "dentro_da_cerca": m["dentro_da_cerca"], "status": m["status"], "origem": m["origem"],
-            "registrado_por": m["registrado_por"]}
+            "registrado_por": m["registrado_por"], "motivo_analise": m["motivo_analise"],
+            "tem_foto": m["foto_id"] is not None, "sem_internet": bool(m.get("sem_internet")),
+            "recebida_em": horario.texto(m.get("recebida_em")) if m.get("sem_internet") else None,
+            "aparelho": aparelho, "como": _como_foi_feita(m, aparelho),
+            "pedido": _pedido_da_batida(conn, quem, m["id"]),
+            "decisoes": [{"de": d["de_status"], "para": d["para_status"], "motivo": d["motivo"],
+                          "por": d["usuario_nome"], "em": horario.texto(d["criado_em"])}
+                         for d in db.todos(conn, """SELECT * FROM ponto.marcacao_decisoes
+                                                     WHERE marcacao_id = :m ORDER BY id""", m=m["id"])],
+            "decidir": _decidir_a_batida(conn, quem, m),
+            "pode_desconsiderar": bool(quem.dp) and m["status"] != "REJEITADA"}
+
+
+def _aparelho(conn: Connection, dispositivo_id) -> Optional[dict]:
+    if not dispositivo_id:
+        return None
+    d = db.um(conn, """
+        SELECT d.id, d.descricao, d.perfil, d.status, c.nome AS responsavel
+          FROM ponto.dispositivos d LEFT JOIN public.colaboradores c ON c.id = d.colaborador_id
+         WHERE d.id = :id""", id=int(dispositivo_id))
+    return d
+
+
+def _como_foi_feita(m: dict, aparelho: Optional[dict]) -> str:
+    """PURA. Por onde a batida entrou, em português."""
+    if m["origem"] == "MANUAL":
+        return "incluída por ajuste aprovado (não foi batida em aparelho)"
+    if aparelho and aparelho.get("perfil") in ("COMPARTILHADO", "LISTA"):
+        return (f"no ponto da obra — aparelho “{aparelho.get('descricao') or 'sem nome'}”"
+                + (f", de {aparelho['responsavel']}" if aparelho.get("responsavel") else ""))
+    if aparelho:
+        return f"no celular da própria pessoa — “{aparelho.get('descricao') or 'sem nome'}”"
+    return "no aplicativo do ponto"
+
+
+def _pedido_da_batida(conn: Connection, quem: Quem, marcacao_id: int) -> Optional[dict]:
+    """O pedido de ajuste que criou esta batida: quem pediu, quando, por onde e quem aprovou."""
+    o = db.um(conn, "SELECT id FROM ponto.ocorrencias WHERE marcacao_gerada_id = :m ORDER BY id DESC LIMIT 1",
+              m=marcacao_id)
+    return pedido(conn, quem, int(o["id"])) if o else None
+
+
+def pedido(conn: Connection, quem: Quem, ocorrencia_id: int) -> dict:
+    """Um pedido, com quem pediu (texto pronto) e o endereço da decisão."""
+    p = ocorrencias.obter(conn, quem=quem, ocorrencia_id=ocorrencia_id)
+    p["pedido_por"] = ocorrencias.pedido_por(p["origem"], p["solicitado_por"], p["colaborador"])
+    p["decidir_em"] = decidir_em(p) if p.get("pode_decidir") else None
+    return p
+
+
+def _decidir_a_batida(conn: Connection, quem: Quem, m: dict) -> Optional[dict]:
+    """Se a batida está em conferência e quem olha pode decidir, o endereço."""
+    if m["status"] != "EM_ANALISE":
+        return None
+    regra = validacao.quem_valida_batida(conn)
+    pode = (quem.dp if regra == validacao.DP else quem.supervisor) and quem.alcanca_obra(m["obra_id"])
+    if not pode:
+        return None
+    return {"url": (f"/erp/api/ponto/marcacoes/{m['id']}/decidir-dp" if regra == validacao.DP
+                    else f"/erp/api/ponto/marcacoes/{m['id']}/decidir")}

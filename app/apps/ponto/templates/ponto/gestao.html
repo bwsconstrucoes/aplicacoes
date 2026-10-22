@@ -40,6 +40,9 @@
      (como está o ponto). O que for combinado aqui passa a valer nas outras telas. #}
   <div class="filtros-cab"><h2>Quadro do ponto</h2>
     <button class="link-btn" id="qd-limpar" type="button">limpar</button></div>
+  {# No topo e preso ao rolar (22/10/2026, o dono: "o botão montar quadro está muito no final;
+     toda vida tem que rolar o sidebar"). #}
+  <div class="qd-montar-fixo"><button class="btn" id="qd-ver" type="button" style="width:100%">Montar o quadro</button></div>
   <div class="qd-atalhos">
     <button class="chip" type="button" data-qd-atalho="hoje">Hoje</button>
     <button class="chip" type="button" data-qd-atalho="ontem">Ontem</button>
@@ -83,7 +86,6 @@
     <label class="opcao"><input type="checkbox" data-qd-faltando="Volta do intervalo"><span class="rotulo">Volta do intervalo</span></label>
     <label class="opcao"><input type="checkbox" data-qd-faltando="Saída"><span class="rotulo">Saída</span></label>
   </div>
-  <button class="btn" id="qd-ver" type="button" style="width:100%; margin-top:14px">Montar o quadro</button>
   <div class="cartao-dica" style="margin-top:14px">
     <b>Também:</b> <a class="elo" href="/erp/ponto">o dia de hoje por obra</a> (atualiza sozinho) ·
     <a class="elo" href="/erp/ponto/pessoas">o cadastro de todas as pessoas</a> (inclusive quem não bate ponto).
@@ -229,6 +231,15 @@
   .chip.ajustada { background:#fff; border:1px dashed var(--azul-claro); }
   .chip.analise  { background:#FDF1DC; color:var(--ambar); }
   .chip.fora     { border-color:var(--vermelho); color:var(--vermelho); }
+  .chip.fora-previsto { outline:2px dotted #D9822B; outline-offset:-1px; }
+  .chip.pedido   { background:#FFF4D6; color:#8A5A00; border:1px dashed #D9A400; }
+  .chip.desconsiderada { text-decoration:line-through; opacity:.6; }
+  .qd-legenda-batida { font-size:12px; color:var(--tinta-suave); display:flex; flex-wrap:wrap; gap:4px 12px;
+                       align-items:center; padding:6px 12px 2px; }
+  .qd-legenda-batida .chip { margin:0; }
+  .bt-ficha { display:grid; grid-template-columns:max-content 1fr; gap:4px 14px; margin:0 0 10px; font-size:13.5px; }
+  .bt-ficha dt { color:var(--tinta-suave); }
+  .bt-ficha dd { margin:0; }
   .chip.com-foto::after { content:" 📷"; font-size:10px; }
   .alerta-dia { display:inline-block; font-size:11px; font-weight:600; color:var(--ambar);
                 background:#FFF4D6; border-radius:6px; padding:0 6px; margin:3px 4px 0 0; }
@@ -339,6 +350,8 @@
   .validacoes-tipos #v-tipos { display:contents; }
   .chip.ligado { background:var(--azul); color:#fff; }
   .qd-tabela tr.marcada td { background:#FFF8E6; }
+  .qd-montar-fixo { position:sticky; top:-14px; z-index:3; background:var(--branco); padding:6px 0 8px; margin:0 0 6px;
+                    border-bottom:1px solid var(--borda); }
   .qd-marcar { font-size:12.5px; color:var(--tinta-suave); }
   .barra-lote { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin:0 0 12px;
                 padding:10px 12px; background:#FFF4D6; border-radius:var(--raio-p); }
@@ -436,14 +449,26 @@
 <div class="barra-lote" id="qd-lote" hidden>
   <b id="qd-lote-qtd">0 marcadas</b>
   {% if pode.tratar_ponto %}<button class="btn" id="qd-incluir" type="button">Incluir uma batida…</button>
-  <button class="btn secundario" id="qd-dia-inteiro" type="button">Lançar o dia inteiro pela escala…</button>{% endif %}
+  <button class="btn secundario" id="qd-dia-inteiro" type="button">Lançar o dia inteiro pela escala…</button>
+  <button class="btn secundario" id="qd-definir-escala" type="button">Definir a escala…</button>{% endif %}
   {% if pode.aprovar_afastamento %}<button class="btn amarelo" id="qd-abonar" type="button">Abonar a falta…</button>{% endif %}
   <button class="link-btn" id="qd-desmarcar" type="button">desmarcar</button>
   <small class="suave" style="flex-basis:100%">cada ação vale só para as linhas marcadas em que ela cabe — o número no
     botão diz quantas; as outras ficam de fora, com o porquê. Tudo fica registrado com o motivo e o seu nome.</small>
 </div>
 <div id="qd-lote-msg"></div>
+<div id="qd-sem-escala"></div>
 <div class="tabela-wrap">
+  <div class="qd-legenda-batida" id="qd-legenda-batida" hidden>
+    <span class="chip">07:00</span> batida normal
+    <span class="chip ajustada">07:00 <b>✎</b></span> incluída por ajuste
+    <span class="chip analise">07:00 <b>?</b></span> em conferência
+    <span class="chip pedido">⏳ 07:00</span> pedido esperando decisão
+    <span class="chip fora">07:00 ⌖</span> fora da cerca da obra
+    <span class="chip">07:00 📵</span> feita no ponto da obra sem internet (enviada depois)
+    <span class="chip fora-previsto">05:00 <b>⚠</b></span> fora do horário da escala
+    <span class="chip qd-falta">Saída 17:00</span> falta pela escala
+    <span class="suave">· clique na batida ou no pedido para ver tudo e decidir</span></div>
   <div class="tabela-barra"><span class="resumo" id="qd-resumo"></span><span class="espaco"></span>
     <span id="qd-marcar" class="qd-marcar" hidden>marcar:
       <button class="link-btn" type="button" data-qd-marcar-grupo="todas">todas</button> ·
@@ -1244,6 +1269,8 @@ function desenharPainel() {
     decidirNoPainel(b.dataset.dpDecidir, b.dataset.tipo, b.dataset.sim === "1")));
   els("dp-corpo").querySelectorAll("[data-dp-bloquear]").forEach(b => b.addEventListener("click", () =>
     bloquearNoPainel(b.dataset.dpBloquear)));
+  els("dp-corpo").querySelectorAll("[data-dp-aparelho]").forEach(b => b.addEventListener("click", () =>
+    aprovarAparelho((p.aparelhos || []).find(a => String(a.id) === b.dataset.dpAparelho), recarregarPainel)));
   els("dp-corpo").querySelectorAll("[data-dp-cad]").forEach(b => b.addEventListener("click", () =>
     ({escala: trocarEscala, jornada: jornadaEObras, forma: formaDeBater, codigo: primeiroAcesso,
       banco: regimeDoBanco})[b.dataset.dpCad](p)));
@@ -1332,14 +1359,29 @@ function painelPedidos() {
 }
 
 function painelAparelhos() {
-  const ap = PAINEL.pessoa.aparelhos || [];
-  return ap.length ? `<table><thead><tr><th>Aparelho</th><th>Uso</th><th>Situação</th><th>Último uso</th><th></th></tr></thead><tbody>
+  // 22/10/2026, o dono: "aparece o pedido, aí só dá a opção de bloquear. Mas se eu
+  // quiser editar as configurações dele, eu já queria poder fazer a partir daqui".
+  // O mesmo editor de Configuração › Aparelhos (tipo, responsável, obras, validade,
+  // pedidos e ronda) e o acesso no aplicativo da pessoa, sem sair da janela.
+  const p = PAINEL.pessoa, ap = p.aparelhos || [];
+  const etq = (p.etiquetas || []).map(e => e.codigo || e);
+  const vigiaSemRonda = etq.includes("VIGIA_SEM_RONDA");
+  const topo = `${vigiaSemRonda ? `<div class="aviso ambar" style="margin:0 0 10px">🔦 <b>Vigia sem ronda surpresa.</b>
+      A ronda se liga no acesso no aplicativo da pessoa (ou no aparelho, ao alterar).
+      ${PODE_TRATAR ? `<button class="btn" type="button" data-dp-cad="forma" style="margin-left:8px">Ligar a ronda…</button>` : ""}</div>` : ""}
+    ${PODE_TRATAR ? `<div class="barra-acoes" style="margin:0 0 10px"><button class="btn secundario" type="button" data-dp-cad="forma">
+      Acesso no aplicativo (celular, pedidos, ronda)…</button></div>` : ""}`;
+  return topo + (ap.length ? `<table><thead><tr><th>Aparelho</th><th>Uso</th><th>Situação</th><th>Último uso</th><th></th></tr></thead><tbody>
     ${ap.map(a => `<tr><td>${escapar(a.descricao || "sem nome")}</td><td>${escapar(rotuloPerfil(a.perfil))}</td>
       <td>${seloAparelho(a.status)}${a.motivo_bloqueio ? `<small>${escapar(a.motivo_bloqueio)}</small>` : ""}${a.arquivado_em ? `<small>arquivado</small>` : ""}</td>
       <td class="dados">${escapar(quando(a.ultimo_uso_em))}</td>
-      <td>${PODE_CONFIGURAR && a.status === "APROVADO" ? `<button class="btn secundario" type="button" data-dp-bloquear="${a.id}">Bloquear</button>` : ""}
-        ${PODE_CONFIGURAR && a.status === "PENDENTE" ? `<a class="btn secundario" style="text-decoration:none" href="/erp/ponto/configuracao?secao=aparelhos">Aprovar em Aparelhos</a>` : ""}</td></tr>`).join("")}
-    </tbody></table>` : `<div class="vazio"><b>Nenhum aparelho</b>em nome desta pessoa — ela bate no ponto da obra.</div>`;
+      <td>${!PODE_CONFIGURAR || a.arquivado_em ? "" : a.status === "PENDENTE"
+          ? `<button class="btn" type="button" data-dp-aparelho="${a.id}">Aprovar…</button>`
+          : a.status === "BLOQUEADO"
+          ? `<button class="btn secundario" type="button" data-dp-aparelho="${a.id}">Reativar…</button>`
+          : `<button class="btn secundario" type="button" data-dp-aparelho="${a.id}">Alterar…</button>
+             <button class="btn secundario" type="button" data-dp-bloquear="${a.id}">Bloquear</button>`}</td></tr>`).join("")}
+    </tbody></table>` : `<div class="vazio"><b>Nenhum aparelho</b>em nome desta pessoa — ela bate no ponto da obra.</div>`);
 }
 
 function painelCadastro() {
@@ -1391,28 +1433,127 @@ async function bloquearNoPainel(id) {
 // O MAPA DA BATIDA (21/10/2026: "clicar e ver a geolocalização, no modal, avisando
 // qual é a obra em que ela está"). O mapa é o do Google, sem chave: o ponto onde o
 // aparelho estava; embaixo, a obra da batida, a cerca e a distância.
+const STATUS_BATIDA = {VALIDA: ["verde", "vale"], AJUSTADA: ["azul", "incluída por ajuste"],
+  EM_ANALISE: ["ambar", "em conferência"], REJEITADA: ["vermelho", "não conta (rejeitada ou desconsiderada)"]};
+const ETAPA_PEDIDO = {AGUARDANDO_SUPERVISOR: "esperando o responsável da obra", AGUARDANDO_DP: "esperando o DP",
+  APROVADA: "aprovado", NEGADA: "negado", CANCELADA: "cancelado"};
+
+// Depois de decidir numa janela: atualiza o que estiver na tela.
+function depoisDeDecidir() {
+  if (PAINEL && els("dlg-pessoa").open) recarregarPainel();
+  if (typeof QD !== "undefined" && QD && els("qd-tabela")) qdMontar();
+}
+
+function htmlDoPedido(p) {
+  const por = p.pedido_por || {};
+  const linhas = [
+    ["Pedido", `${escapar(p.rotulo)} nº ${p.id}${p.horario ? ` — <b>${escapar(quando(p.horario))}</b>` : ""}`],
+    ["Situação", `<span class="etq ${p.status === "APROVADA" ? "verde" : p.status === "NEGADA" ? "vermelho" : "ambar"}">${escapar(ETAPA_PEDIDO[p.status] || p.status)}</span>`],
+    ["Quem pediu", `${escapar(por.nome || p.solicitado_por || "—")}${por.como ? ` <small style="display:inline">(${escapar(por.como)})</small>` : ""}${por.propria ? ` <span class="etq azul">a própria pessoa</span>` : ""}`],
+    ["Quando pediu", escapar(quando(p.criado_em))],
+    ["Motivo", escapar(p.descricao || "—")],
+  ];
+  if (p.supervisor) linhas.push(["Responsável da obra", `${escapar(p.supervisor)} — ${escapar(quando(p.supervisor_em))}`]);
+  if (p.dp) linhas.push(["DP", `${escapar(p.dp)} — ${escapar(quando(p.dp_em))}`]);
+  if (p.motivo_negativa) linhas.push(["Por que foi negado", escapar(p.motivo_negativa)]);
+  return `<dl class="bt-ficha">${linhas.map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join("")}</dl>`;
+}
+
+async function decidirNaJanela(url, tipo, sim, msg) {
+  let corpo = tipo === "PEDIDO" ? {aprovar: sim, motivo: ""} : {para: sim ? "VALIDA" : "REJEITADA", motivo: ""};
+  if (!sim) {
+    const r = await perguntar({titulo: tipo === "PEDIDO" ? "Negar o pedido" : "Rejeitar a batida",
+      campos: [{nome: "motivo", rotulo: "Por quê", tipo: "textarea", obrigatorio: true, largura: 6,
+                exemplo: "o motivo fica registrado, com o seu nome"}], textoOk: tipo === "PEDIDO" ? "Negar" : "Rejeitar"});
+    if (!r) return false;
+    corpo.motivo = r.motivo;
+  }
+  try { await postar(url, corpo); aviso(msg, "Feito.", "ok"); depoisDeDecidir(); return true; }
+  catch (e) { aviso(msg, escapar(e.message), "erro"); return false; }
+}
+
+// O PEDIDO (22/10/2026): abre do horário pedido no Quadro, ou da observação do dia.
+async function abrirPedido(id) {
+  const dlg = els("dlg-mapa");
+  els("mp-titulo").textContent = "Pedido";
+  els("mp-corpo").innerHTML = "carregando…";
+  if (!dlg.open) dlg.showModal();
+  try {
+    const p = (await api(`/erp/api/ponto/ocorrencias/${encodeURIComponent(id)}`)).pedido;
+    els("mp-titulo").textContent = `${p.colaborador} — ${p.rotulo}`;
+    els("mp-corpo").innerHTML = `<div id="mp-msg"></div>${htmlDoPedido(p)}
+      ${p.decidir_em ? `<div class="barra-acoes"><button class="btn" type="button" id="mp-aprovar">Aprovar</button>
+        <button class="btn perigo" type="button" id="mp-negar">Negar…</button></div>`
+        : p.etapa_atual ? `<div class="aviso info">Esta etapa (${escapar(ETAPA_PEDIDO[p.status] || "")}) não é sua.</div>` : ""}
+      <p style="margin:10px 0 0"><button class="link-btn" type="button" data-abrir-pessoa="${p.colaborador_id}" data-dia="${p.data_inicio}">abrir a pessoa</button></p>`;
+    if (p.decidir_em) {
+      els("mp-aprovar").addEventListener("click", async () => { if (await decidirNaJanela(p.decidir_em, "PEDIDO", true, "mp-msg")) abrirPedido(id); });
+      els("mp-negar").addEventListener("click", async () => { if (await decidirNaJanela(p.decidir_em, "PEDIDO", false, "mp-msg")) abrirPedido(id); });
+    }
+  } catch (e) { els("mp-corpo").innerHTML = `<div class="aviso erro">${escapar(e.message)}</div>`; }
+}
+
+// A BATIDA (21/10/2026 o mapa; 22/10/2026 o resto, o dono: "eu clico nessa batida e não
+// tem informação: quem aprovou, como foi, quando pediu, quem pediu — está muito pobre").
+// Como foi feita, o aparelho, a foto, o pedido que a criou, as decisões, decidir ali
+// mesmo, desconsiderar a errada e, embaixo, o mapa.
 async function abrirMapa(id) {
   const dlg = els("dlg-mapa");
+  els("mp-titulo").textContent = "A batida";
   els("mp-corpo").innerHTML = "carregando…";
   if (!dlg.open) dlg.showModal();
   try {
     const l = await api(`/erp/api/ponto/marcacoes/${encodeURIComponent(id)}/local`);
     els("mp-titulo").textContent = `${l.nome} — ${l.quando}`;
     const o = l.obra || {};
+    const [cor, situacao] = STATUS_BATIDA[l.status] || ["", l.status];
     const dentro = l.dentro_da_cerca === true ? `<span class="etq verde">dentro da cerca da obra</span>`
       : l.dentro_da_cerca === false ? `<span class="etq vermelho">fora da cerca da obra</span>` : "";
-    els("mp-corpo").innerHTML = l.latitude == null
-      ? `<div class="aviso info">Esta batida não tem localização (${escapar(l.origem === "MANUAL" ? "foi incluída por ajuste" : "o aparelho não mandou")}).
-          Obra da batida: <b>${escapar(o.codigo || "—")}</b> ${escapar(o.nome || "")}.</div>`
-      : `<p style="margin:0 0 8px"><b>Obra da batida: ${escapar(o.codigo || "—")}</b> — ${escapar(o.nome || "")}
-          ${o.municipio ? `<small style="display:inline">(${escapar(o.municipio)}${o.uf ? `/${escapar(o.uf)}` : ""})</small>` : ""} ${dentro}
-          ${l.distancia_metros != null ? `<span class="etq azul">a ${escapar(distancia(l.distancia_metros))} do centro da obra (cerca de ${escapar(o.raio_metros || "—")} m)</span>` : ""}</p>
-        <iframe title="Onde a batida foi feita" style="width:100%; height:60vh; border:0; border-radius:8px" loading="lazy"
+    const ficha = [
+      ["Situação", `<span class="etq ${cor}">${escapar(situacao)}</span>${l.motivo_analise ? ` <small style="display:inline">${escapar(l.motivo_analise)}</small>` : ""}`],
+      ["Como foi feita", escapar(l.como)],
+      ["Obra da batida", `<b>${escapar(o.codigo || "—")}</b> ${escapar(o.nome || "")} ${dentro}`],
+      ["Registrada por", escapar(l.registrado_por || "a própria pessoa")],
+    ];
+    if (l.sem_internet) ficha.push(["Sem internet", `feita sem internet; chegou ao sistema em ${escapar(quando(l.recebida_em))}`]);
+    if (l.tem_foto) ficha.push(["Foto", `<button class="link-btn" type="button" data-foto="${l.id}" data-legenda="${escapar(`${l.nome} — ${l.quando}`)}">ver a foto</button>`]);
+    ficha.push(["Registro", `NSR ${escapar(l.nsr)} — nada se apaga; o que não vale fica marcado, com quem e por quê`]);
+    els("mp-corpo").innerHTML = `<div id="mp-msg"></div>
+      <dl class="bt-ficha">${ficha.map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join("")}</dl>
+      ${l.pedido ? `<h4 style="margin:12px 0 6px">O pedido que criou esta batida</h4>${htmlDoPedido(l.pedido)}` : ""}
+      ${l.decisoes.length ? `<h4 style="margin:12px 0 6px">Decisões</h4><ul style="margin:0 0 8px 18px">${l.decisoes.map(d =>
+        `<li>${escapar(quando(d.em))} — <b>${escapar(d.por)}</b>: ${escapar((STATUS_BATIDA[d.de] || [, d.de])[1])} → ${escapar((STATUS_BATIDA[d.para] || [, d.para])[1])}${d.motivo ? ` (${escapar(d.motivo)})` : ""}</li>`).join("")}</ul>` : ""}
+      <div class="barra-acoes">
+        ${l.decidir ? `<button class="btn" type="button" id="mp-validar">Validar a batida</button>
+          <button class="btn perigo" type="button" id="mp-rejeitar">Rejeitar…</button>` : ""}
+        ${l.pode_desconsiderar ? `<button class="btn secundario" type="button" id="mp-desconsiderar">Desconsiderar esta batida…</button>` : ""}
+        <button class="link-btn" type="button" data-abrir-pessoa="${l.colaborador_id}" data-dia="${l.data}">abrir a pessoa</button>
+      </div>
+      ${l.latitude == null
+      ? `<div class="aviso info">Esta batida não tem localização (${escapar(l.origem === "MANUAL" ? "foi incluída por ajuste" : "o aparelho não mandou")}).</div>`
+      : `<p style="margin:10px 0 8px">${l.distancia_metros != null ? `<span class="etq azul">a ${escapar(distancia(l.distancia_metros))} do centro da obra (cerca de ${escapar(o.raio_metros || "—")} m)</span>` : ""}</p>
+        <iframe title="Onde a batida foi feita" style="width:100%; height:50vh; border:0; border-radius:8px" loading="lazy"
           referrerpolicy="no-referrer-when-downgrade"
           src="https://maps.google.com/maps?q=${encodeURIComponent(l.latitude)},${encodeURIComponent(l.longitude)}&z=17&output=embed"></iframe>
         <p style="margin:6px 0 0"><small style="display:inline">O marcador é onde o aparelho estava.
           ${o.latitude != null ? `<a class="elo" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/${o.latitude},${o.longitude}/${l.latitude},${l.longitude}">ver a obra e a batida juntas</a> ·` : ""}
-          ${linkMapa(l.latitude, l.longitude, "abrir no Google Maps")}</small></p>`;
+          ${linkMapa(l.latitude, l.longitude, "abrir no Google Maps")}</small></p>`}`;
+    if (l.decidir) {
+      els("mp-validar").addEventListener("click", async () => { if (await decidirNaJanela(l.decidir.url, "BATIDA", true, "mp-msg")) abrirMapa(id); });
+      els("mp-rejeitar").addEventListener("click", async () => { if (await decidirNaJanela(l.decidir.url, "BATIDA", false, "mp-msg")) abrirMapa(id); });
+    }
+    if (l.pode_desconsiderar) els("mp-desconsiderar").addEventListener("click", async () => {
+      const r = await perguntar({titulo: `Desconsiderar a batida das ${escapar(l.quando.slice(-5))}`,
+        aviso: "A batida deixa de contar no espelho e no cálculo. Nada se apaga (Portaria 671): ela continua no registro, " +
+               "marcada como desconsiderada, com o motivo e o seu nome. Se faltar a batida certa, inclua depois pelo ajuste.",
+        campos: [{nome: "motivo", rotulo: "Por que esta batida não vale", tipo: "textarea", obrigatorio: true, largura: 6,
+                  exemplo: "ex.: bateu às 05:00 por engano, antes de sair de casa — a entrada certa é a das 07:00"}],
+        textoOk: "Desconsiderar"});
+      if (!r) return;
+      try { await postar(`/erp/api/ponto/marcacoes/${l.id}/desconsiderar`, {motivo: r.motivo});
+            depoisDeDecidir(); abrirMapa(id); }
+      catch (e) { aviso("mp-msg", escapar(e.message), "erro"); }
+    });
   } catch (e) { els("mp-corpo").innerHTML = `<div class="aviso erro">${escapar(e.message)}</div>`; }
 }
 
@@ -1420,7 +1561,9 @@ document.addEventListener("click", e => {
   const p = e.target.closest("[data-abrir-pessoa]");
   if (p) { e.preventDefault(); abrirPessoaPainel(Number(p.dataset.abrirPessoa), p.dataset.dia || null, "dia"); return; }
   const m = e.target.closest("[data-mapa-batida]");
-  if (m) { e.preventDefault(); abrirMapa(Number(m.dataset.mapaBatida)); }
+  if (m) { e.preventDefault(); abrirMapa(Number(m.dataset.mapaBatida)); return; }
+  const pd = e.target.closest("[data-pedido]");
+  if (pd) { e.preventDefault(); abrirPedido(Number(pd.dataset.pedido)); }
 });
 
 // O cadastro do ponto da pessoa (escala, jornada e obras, acesso no aplicativo,
@@ -1862,6 +2005,10 @@ function chipBatida(b, comFoto) {
     classes.push("fora");
     dicas.push("fora da cerca da obra" + (b.distancia_metros != null ? ` (${distancia(b.distancia_metros)})` : ""));
   }
+  if (b.fora_do_previsto) {
+    classes.push("fora-previsto"); marca = marca || "⚠";
+    dicas.push("não casa com nenhum horário da escala — confira se é batida errada ou repetida");
+  }
   if (b.obra) dicas.push(`obra ${b.obra}`);
   if (b.nsr) dicas.push(`NSR ${b.nsr}`);
   if (b.registrado_por) dicas.push(`registrada por ${b.registrado_por}`);
@@ -2272,17 +2419,22 @@ function qdKpis() {
 function chipComMapa(b) {
   const h = chipBatida(b);
   return h.replace(/^<span /, `<button type="button" data-mapa-batida="${b.id}" `).replace(/<\/span>$/, "</button>")
-          .replace('title="', 'title="clique para ver onde bateu · ');
+          .replace('title="', 'title="clique para ver os detalhes, o mapa e decidir · ');
 }
 
 function qdBatidas(l) {
   // Sem batida nenhuma: uma frase só, não os quatro horários em vermelho.
-  if (!l.batidas.length) return l.previstas.length
+  if (!l.batidas.length && l.pendentes.some(p => p.tipo === "AJUSTE_BATIDA")) { /* segue: mostra os pedidos */ }
+  else if (!l.batidas.length) return l.previstas.length
     ? `<span class="chip qd-falta" title="a escala esperava ${escapar(l.previstas.map(p => p.hora).join(", "))}">nenhuma batida — esperava ${l.previstas.length}</span>`
     : `<span class="suave">—</span>`;
   const feitas = l.batidas.map(b => chipComMapa(b)).join("");
+  // O pedido de ajuste esperando decisão aparece NO horário pedido (22/10/2026, o dono:
+  // "que a gente já consiga visualizar que aquele horário tem um pedido"); clicar decide.
+  const pedidos = l.pendentes.filter(p => p.tipo === "AJUSTE_BATIDA").map(p => `<button type="button" class="chip pedido"
+    data-pedido="${p.id}" title="pedido de ajuste esperando decisão — clique para ver quem pediu e aprovar ou negar">⏳ ${escapar(p.hora || "?")}</button>`).join("");
   const faltam = l.faltando.map(f => `<span class="chip qd-falta" title="falta a ${escapar(f.rotulo.toLowerCase())} — a escala esperava ${escapar(f.sugestao)}">${escapar(f.rotulo)} ${escapar(f.sugestao)}</span>`).join("");
-  return feitas + faltam || `<span class="suave">—</span>`;
+  return feitas + pedidos + faltam || `<span class="suave">—</span>`;
 }
 
 function qdDesenhar() {
@@ -2293,6 +2445,8 @@ function qdDesenhar() {
   qdKpis();
   const alvo = els("qd-tabela");
   els("qd-marcar").hidden = QD_VISAO !== "linhas" || !PODE_MARCAR;
+  els("qd-legenda-batida").hidden = QD_VISAO !== "linhas";
+  qdAvisoSemEscala();
   if (QD_VISAO === "dias") {
     els("qd-resumo").innerHTML = `<b>${QD.por_dia.length}</b> dia(s) — clique num número para ver as pessoas`;
     const n = (d, k) => d[k] ? `<button class="link-btn" type="button" data-qd-dia="${d.data}" data-qd-sit="${k}">${d[k]}</button>` : `<span class="suave">0</span>`;
@@ -2356,7 +2510,7 @@ function qdDesenhar() {
       <td class="dados">${escapar(l.obra_do_dia || "—")}</td>
       <td><small style="margin:0">${escapar(l.feriado ? `feriado: ${l.feriado}` : (l.escala || "—"))}</small></td>
       <td><small style="margin:0">${[l.ocorrencia ? escapar(l.ocorrencia) : "",
-          ...l.pendentes.map(p => `pedido: ${escapar(p.rotulo)}${p.hora ? ` ${escapar(p.hora)}` : ""}`),
+          ...l.pendentes.map(p => `<button type="button" class="link-btn" data-pedido="${p.id}">pedido: ${escapar(p.rotulo)}${p.hora ? ` ${escapar(p.hora)}` : ""}</button>`),
           l.em_analise ? `${l.em_analise} em conferência` : ""].filter(Boolean).join(" · ") || ""}</small></td></tr>`; }).join("")}
     </tbody></table>` : `<div class="vazio"><b>Nenhuma linha</b>com estes filtros.</div>`;
   alvo.querySelectorAll("[data-qd-marcar]").forEach(c => c.addEventListener("change", () => {
@@ -2511,6 +2665,7 @@ const QD_SERVE = {
   batida: l => l.batidas.length > 0,
   dia: l => !l.batidas.length && l.faltando.length > 0,
   abono: l => l.situacao === "FALTA",
+  escala: () => true,
 };
 const QD_GRUPOS = {
   todas: () => true,
@@ -2532,10 +2687,11 @@ function qdLote() {
   const marcadas = qdMarcadas();
   [["qd-incluir", "batida", "Incluir uma batida", "serve para o dia que já tem alguma batida"],
    ["qd-dia-inteiro", "dia", "Lançar o dia inteiro pela escala", "serve para o dia sem nenhuma batida, com escala"],
+   ["qd-definir-escala", "escala", "Definir a escala", "vale para as pessoas marcadas, a partir da data escolhida"],
    ["qd-abonar", "abono", "Abonar a falta", "serve para o dia de falta"]].forEach(([id, acao, rotulo, dica]) => {
     const b = els(id);
     if (!b) return;
-    const n = marcadas.filter(QD_SERVE[acao]).length;
+    const n = acao === "escala" ? new Set(marcadas.map(l => l.colaborador_id)).size : marcadas.filter(QD_SERVE[acao]).length;
     b.textContent = `${rotulo} (${n})…`;
     b.disabled = !n;
     b.title = n ? `${n} das ${marcadas.length} marcadas — ${dica}` : `nenhuma das marcadas — ${dica}`;
@@ -2563,6 +2719,65 @@ async function qdRodarLote(endereco, itens, corpo, oQue) {
 
 const qdItens = linhas => linhas.map(l => ({colaborador_id: l.colaborador_id, data: l.data}));
 const QD_MOTIVO = {nome: "motivo", rotulo: "Motivo", tipo: "textarea", linhas: 3, obrigatorio: true, largura: 6};
+
+// SEM ESCALA (22/10/2026, o dono: "o pessoal aqui está tudo sem escala; a gente tinha
+// definido uma escala padrão, a Produção — onde eu vinculo?"). Sem escala o sistema não
+// sabe que batidas esperar: não aponta falta nem batida faltando. A escala padrão da
+// empresa vale para todos os que não têm escala própria; a de cada um, aqui em lote.
+function qdAvisoSemEscala() {
+  const sem = new Set((QD.linhas || []).filter(l => l.situacao === "SEM_ESCALA").map(l => l.colaborador_id));
+  els("qd-sem-escala").innerHTML = !sem.size ? "" : `<div class="aviso ambar" style="margin:0 0 10px">
+    <b>${contar(sem.size, "pessoa sem escala", "pessoas sem escala")} neste quadro.</b> Sem escala, o sistema não sabe
+    que batidas esperar — não aponta falta nem batida faltando, e a caixa "lançar o dia inteiro" não tem o que lançar.
+    ${QD.escala_padrao ? `A escala padrão da empresa é <b>${escapar(QD.escala_padrao)}</b>, mas ela só vale para quem não tem escala própria — confira se essas pessoas têm escala com data futura.`
+      : `<b>A escala padrão da empresa não está escolhida.</b> ${PODE_CONFIGURAR ? `Escolha em <a class="elo" href="/erp/ponto/configuracao#jornada">Configuração › Jornada e licenças</a> › “Escala padrão da empresa” (por exemplo, a Produção): ela passa a valer na hora para todos os que não têm escala própria, inclusive nos dias que já passaram.` : "Peça a quem configura o ponto para escolher (Configuração › Jornada e licenças)."}`}
+    ${PODE_TRATAR ? `<br>Para dar uma escala própria a algumas pessoas (o vigia no 12x36, por exemplo): <button class="link-btn" type="button" id="qd-marcar-sem-escala">marcar as sem escala</button> e usar “Definir a escala”.` : ""}</div>`;
+  if (els("qd-marcar-sem-escala")) els("qd-marcar-sem-escala").addEventListener("click", () => {
+    QD_MARCADAS.clear();
+    (QD.linhas || []).filter(l => l.situacao === "SEM_ESCALA").forEach(l => QD_MARCADAS.add(chaveQd(l)));
+    qdDesenhar();
+  });
+}
+
+async function qdEscala() {
+  const pessoas = [...new Map(qdMarcadas().map(l => [l.colaborador_id, l])).values()];
+  if (!pessoas.length) return;
+  let lista;
+  try { lista = (await api("/erp/api/ponto/escalas")).escalas.filter(e => e.ativo); }
+  catch (e) { falhou(e, "qd-lote-msg"); return; }
+  if (!lista.length) { aviso("qd-lote-msg", "Nenhuma escala ativa cadastrada. Cadastre em Configuração › Escalas.", "erro"); return; }
+  const r = await perguntar({titulo: `Definir a escala — ${contar(pessoas.length, "pessoa", "pessoas")}`,
+    aviso: "A escala vale a partir da data escolhida, para cada pessoa marcada. O que veio antes continua calculado pelo que valia " +
+           "(a escala antiga, ou a padrão da empresa). Para valer nos dias já mostrados, escolha a data do primeiro deles.",
+    campos: [
+      {nome: "escala_id", rotulo: "Escala", tipo: "select", largura: 4, obrigatorio: true, valor: String(lista[0].id),
+       opcoes: lista.map(e => ({valor: String(e.id),
+         rotulo: `${escapar(e.nome)} (${e.tipo === "CICLO_12X36" ? "12x36" : `${String(e.horas_semanais).replace(".", ",")} h por semana`})`}))},
+      {nome: "vigencia_inicio", rotulo: "Vale a partir de", tipo: "date", valor: QD.de || hojeISO(), obrigatorio: true, largura: 2}],
+    textoOk: "Continuar"});
+  if (!r) return;
+  const escolhida = lista.find(e => String(e.id) === r.escala_id);
+  let base = null;
+  if (escolhida && escolhida.tipo === "CICLO_12X36") {
+    const c = await perguntar({titulo: "Em que dia o ciclo 12x36 começa?",
+      aviso: "Um dia em que as pessoas marcadas TRABALHAM — o mesmo para todas. Se o grupo se reveza em turmas, defina uma turma de cada vez.",
+      campos: [{nome: "ciclo_data_base", rotulo: "Um dia de trabalho", tipo: "date", valor: r.vigencia_inicio, obrigatorio: true}],
+      textoOk: "Definir"});
+    if (!c) return;
+    base = c.ciclo_data_base;
+  }
+  let feitas = 0; const recusas = [];
+  for (const [i, l] of pessoas.entries()) {
+    aviso("qd-lote-msg", `Definindo… ${i + 1} de ${pessoas.length}`, "info");
+    try { await postar(`/erp/api/ponto/pessoas/${l.colaborador_id}/escala`,
+                       {escala_id: Number(r.escala_id), vigencia_inicio: r.vigencia_inicio, ciclo_data_base: base}); feitas++; }
+    catch (e) { recusas.push(`${escapar(l.nome)}: ${escapar(e.message)}`); }
+  }
+  aviso("qd-lote-msg", `<b>${contar(feitas, "pessoa com a escala nova", "pessoas com a escala nova")}</b> (${escapar(escolhida.nome)}, desde ${dataBR(r.vigencia_inicio)})`
+    + (recusas.length ? ` · ${recusas.length} não entraram:<ul style="margin:6px 0 0 18px">${recusas.slice(0, 30).map(x => `<li>${x}</li>`).join("")}</ul>` : ""),
+    recusas.length ? "alerta" : "ok");
+  QD_MARCADAS.clear(); qdMontar();
+}
 
 async function qdDiaInteiro() {
   const linhas = qdMarcadas().filter(QD_SERVE.dia);
@@ -2636,6 +2851,7 @@ els("qd-desmarcar").addEventListener("click", () => { QD_MARCADAS.clear(); qdDes
 document.querySelectorAll("[data-qd-marcar-grupo]").forEach(b => b.addEventListener("click", () => qdMarcarGrupo(b.dataset.qdMarcarGrupo)));
 if (els("qd-incluir")) els("qd-incluir").addEventListener("click", qdIncluir);
 if (els("qd-dia-inteiro")) els("qd-dia-inteiro").addEventListener("click", qdDiaInteiro);
+if (els("qd-definir-escala")) els("qd-definir-escala").addEventListener("click", qdEscala);
 if (els("qd-abonar")) els("qd-abonar").addEventListener("click", qdAbonar);
 els("qd-limpar").addEventListener("click", () => {
   document.querySelectorAll("[data-qd-situacao], [data-qd-batidas], [data-qd-faltando], [data-qd-tipo]").forEach(x => { x.checked = false; });

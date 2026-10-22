@@ -203,6 +203,70 @@ def test_painel_da_pessoa_e_local_da_batida(app, mundo, banco):
     assert all(any(x["codigo"] == "SEM_PIN" for x in l["marcas"]) for l in q["linhas"])
 
 
+def test_a_batida_errada_o_pedido_no_horario_e_a_janela_da_batida(app, mundo):
+    """22/10/2026, o dono: o pedido aparece no horário e se decide ali; a batida
+    clicada diz como foi feita e quem pediu e aprovou; "o cara bateu 5 horas e depois
+    7 horas (…) isso aqui é errado" — a batida fora da escala é destacada e o DP a
+    desconsidera, com o motivo, sem apagar nada."""
+    seg = _segunda_passada()
+    feitas = [bater_via_chave(app, CPF_JOAO, local(seg, *h)) for h in ((5, 0), (7, 0), (12, 0), (13, 0))]
+    dp, sup = como(app, mundo["dp"]), como(app, mundo["sup"])
+    linha = next(l for l in _quadro(dp, seg)["linhas"] if l["colaborador_id"] == mundo["joao"])
+    assert [b["fora_do_previsto"] for b in linha["batidas"]] == [True, False, False, False]
+    assert "FORA_DO_PREVISTO" in linha["etiquetas"]
+    cinco = feitas[0]["id"]
+    j = dp.get(f"/erp/api/ponto/marcacoes/{cinco}/local").get_json()
+    assert j["como"] and j["pode_desconsiderar"] is True and j["pedido"] is None and j["decisoes"] == []
+    assert sup.get(f"/erp/api/ponto/marcacoes/{cinco}/local").get_json()["pode_desconsiderar"] is False
+    assert sup.post(f"/erp/api/ponto/marcacoes/{cinco}/desconsiderar",
+                    json={"motivo": "bateu por engano antes de sair"}).status_code in (403, 404)
+    assert dp.post(f"/erp/api/ponto/marcacoes/{cinco}/desconsiderar", json={"motivo": "curto"}).status_code == 400
+    assert dp.post(f"/erp/api/ponto/marcacoes/{cinco}/desconsiderar",
+                   json={"motivo": "bateu às 05:00 por engano, antes de sair de casa"}).status_code == 200
+    linha = next(l for l in _quadro(dp, seg)["linhas"] if l["colaborador_id"] == mundo["joao"])
+    assert [b["hora"] for b in linha["batidas"]] == ["07:00", "12:00", "13:00"]
+    j = dp.get(f"/erp/api/ponto/marcacoes/{cinco}/local").get_json()
+    assert j["status"] == "REJEITADA" and j["decisoes"][0]["de"] == "VALIDA" and j["pode_desconsiderar"] is False
+    assert dp.post(f"/erp/api/ponto/marcacoes/{cinco}/desconsiderar",
+                   json={"motivo": "de novo, para ver se recusa"}).status_code == 400
+    # o pedido de ajuste aparece no horário pedido, com o número, e se decide pela janela
+    r = sup.post("/erp/api/ponto/ocorrencias", json={"tipo": "AJUSTE_BATIDA", "colaborador_id": mundo["joao"],
+                                                     "data_inicio": seg.isoformat(),
+                                                     "horario": f"{seg.isoformat()}T17:00:00", "obra": "PG-A",
+                                                     "descricao": "esqueceu de bater a saída"})
+    assert r.status_code == 201, r.get_json()
+    linha = next(l for l in _quadro(dp, seg)["linhas"] if l["colaborador_id"] == mundo["joao"])
+    pend = [p for p in linha["pendentes"] if p["tipo"] == "AJUSTE_BATIDA"]
+    assert pend and pend[0]["hora"] == "17:00" and pend[0]["id"]
+    ped = dp.get(f"/erp/api/ponto/ocorrencias/{pend[0]['id']}").get_json()["pedido"]
+    assert ped["pedido_por"]["como"] == "pelo ERP" and ped["criado_em"]
+    quem_decide = sup if ped["status"] == "AGUARDANDO_SUPERVISOR" else dp
+    url = quem_decide.get(f"/erp/api/ponto/ocorrencias/{pend[0]['id']}").get_json()["pedido"]["decidir_em"]
+    assert url
+    while True:
+        p = dp.get(f"/erp/api/ponto/ocorrencias/{pend[0]['id']}").get_json()["pedido"]
+        if p["status"] == "APROVADA":
+            break
+        cli = sup if p["status"] == "AGUARDANDO_SUPERVISOR" else dp
+        u = cli.get(f"/erp/api/ponto/ocorrencias/{pend[0]['id']}").get_json()["pedido"]["decidir_em"]
+        assert cli.post(u, json={"aprovar": True}).status_code == 200
+    linha = next(l for l in _quadro(dp, seg)["linhas"] if l["colaborador_id"] == mundo["joao"])
+    nova = next(b for b in linha["batidas"] if b["hora"] == "17:00")
+    j = dp.get(f"/erp/api/ponto/marcacoes/{nova['id']}/local").get_json()
+    assert j["status"] == "AJUSTADA" and j["pedido"]["id"] == pend[0]["id"] and "ajuste" in j["como"]
+    assert j["pedido"]["supervisor"] or j["pedido"]["dp"]
+    assert como(app, mundo["fin"]).get(f"/erp/api/ponto/ocorrencias/{pend[0]['id']}").status_code == 403
+
+
+def test_fora_do_previsto_puro():
+    from app.apps.ponto.core.quadro import fora_do_previsto
+    escala = ["07:00", "11:00", "12:00", "17:00"]
+    assert fora_do_previsto(escala, ["05:00", "07:00", "12:00", "13:00"]) == [0]
+    assert fora_do_previsto(escala, ["07:02", "11:00", "12:01", "17:05"]) == []
+    assert fora_do_previsto(["19:00", "07:00"], ["18:55", "06:58"]) == []        # vigia: a saída é de madrugada
+    assert fora_do_previsto([], ["05:00"]) == [] and fora_do_previsto(escala, []) == []
+
+
 def test_o_mapa_conta_quem_bateu_em_cada_obra(app, mundo, banco):
     from sqlalchemy import text
     seg = _segunda_passada()

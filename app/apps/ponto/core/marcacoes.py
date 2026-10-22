@@ -649,3 +649,31 @@ def decidir_em_analise(conn: Connection, marcacao_id: int, *, para: str, motivo:
          n=usuario_nome[:120])
     logger.info("Ponto: batida NSR %s %s por %s", m["nsr"], para_ok, usuario_nome)
     return por_id(conn, marcacao_id)
+
+
+def desconsiderar(conn: Connection, marcacao_id: int, *, motivo: str, usuario_id: int | None,
+                  usuario_nome: str) -> dict:
+    """A gestão desconsidera uma batida errada (22/10/2026, o dono: "o cara bateu 5 horas
+    da manhã e depois 7 horas (…) isso aqui é errado"). Nada se apaga (Portaria 671): a
+    marcação continua no registro, com NSR, hora e hash; só deixa de contar no espelho,
+    e a decisão fica em `marcacao_decisoes`, com quem e por quê."""
+    from . import competencias
+    if len((motivo or "").strip()) < 10:
+        raise ErroDeValidacao("diga por que a batida não vale (ao menos 10 letras)", campo="motivo")
+    m = por_id(conn, marcacao_id)
+    if not m:
+        from ..erros import NaoEncontrado
+        raise NaoEncontrado("batida não encontrada")
+    if m["status"] == "REJEITADA":
+        raise ErroDeValidacao("esta batida já não conta", campo="status")
+    competencias.exigir_aberta(conn, m["data_referencia"])
+    db.executar(conn, "UPDATE ponto.marcacoes SET status = 'REJEITADA' WHERE id = :id", id=marcacao_id)
+    db.executar(conn, """
+        INSERT INTO ponto.marcacao_decisoes (marcacao_id, de_status, para_status, motivo,
+                                             usuario_id, usuario_nome)
+        VALUES (:m, :de, 'REJEITADA', :mot, :u, :n)
+    """, m=marcacao_id, de=m["status"], mot=("desconsiderada: " + motivo.strip())[:500], u=usuario_id,
+         n=usuario_nome[:120])
+    logger.info("Ponto: batida NSR %s (%s) desconsiderada por %s", m["nsr"], m["status"], usuario_nome)
+    return por_id(conn, marcacao_id)
+

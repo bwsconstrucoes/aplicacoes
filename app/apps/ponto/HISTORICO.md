@@ -59,6 +59,15 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1zp. **No ramo, esperando o "pode"** (22/10/2026, sem migração) — o que o dono viu no Quadro em produção:
+   caixa de seleção em TODA linha e quatro ações em lote (incluir uma batida, lançar o dia inteiro pela escala,
+   abonar a falta, definir a escala); o pedido de ajuste NO horário, clicável, com aprovar e negar ali; a
+   JANELA DA BATIDA (como foi feita, aparelho, foto, quem pediu, quem aprovou, decisões) com validar,
+   rejeitar e **desconsiderar a batida errada**; a batida fora do horário da escala em destaque; a legenda;
+   a aba Aparelhos da janela da pessoa com Alterar/Aprovar/Reativar e "Ligar a ronda"; o aviso de "sem
+   escala"; o botão "Montar o quadro" no topo. Ver a seção de 22/10/2026 (tarde).
+   **Pendente com o dono:** escolher a ESCALA PADRÃO DA EMPRESA (Configuração › Jornada e licenças) — na
+   produção ela não está escolhida, e por isso "todo mundo sem escala".
 1zo. **Publicado em 22/10/2026** (com o "pode" do dono) (22/10/2026, sem migração, **peça nova: Leaflet**) — o **MAPA DO QUADRO**
    (Quadro › 🗺️ Mapa): uma bolha por obra, do tamanho de quantas pessoas bateram nela, na cor do quanto o ponto
    está completo. Ver a seção de 22/10/2026. **Não conferido aqui:** o fundo do mapa (ruas, vindo do
@@ -305,6 +314,75 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 22/10/2026 (tarde) — O Quadro em uso: seleção, a janela da batida, a batida errada e a escala
+
+O dono abriu o Quadro em produção, no dia, e mandou seis observações de uma vez:
+
+1. *"Várias pessoas que eu poderia muito bem selecionar para fazer alguma ação, mas a única
+   coisa que tem é 'marcar todas com batida faltando' (…) a seleção individual não está
+   aparecendo."* **Era defeito de desenho:** a caixa só aparecia no dia com batida E com batida
+   faltando PELA ESCALA — e, como na produção quase ninguém tem escala (item 6), quase nenhuma
+   linha tinha caixa. Agora toda linha que se pode tratar tem caixa (menos dia futuro, fora do
+   contrato e antes do ponto), há "marcar: todas · com batida faltando · sem nenhuma batida ·
+   faltas · nenhuma", e a barra mostra QUANTAS das marcadas cada ação alcança — a que não cabe
+   fica de fora com o porquê:
+   - **Incluir uma batida** (dia com alguma batida). Com a hora digitada, vale também para quem
+     não tem a batida prevista na escala (sem escala, horário fora do previsto);
+   - **Lançar o dia inteiro pela escala** (dia sem nenhuma batida): todas as batidas da escala, num
+     pedido aprovado na hora, com o motivo — para quem trabalhou e o ponto falhou. Ou entram todas
+     as do dia, ou nenhuma. **O dia passa a contar como trabalhado na folha** — está escrito na janela;
+   - **Abonar a falta** (só o DP; rota própria com `aprovar_afastamento`): um ABONO por pessoa e
+     dia, com o motivo — chuva, obra parada, equipe liberada. Só no dia que o espelho chama de falta;
+   - **Definir a escala** (pessoas marcadas, a partir de uma data; 12x36 pede o dia-base, o mesmo
+     para todas).
+2. *"Esse pedido de revisão, que a gente já consiga visualizar que aquele horário tem um pedido."*
+   O pedido de ajuste esperando decisão aparece NO horário (⏳ 17:00, tracejado amarelo); os
+   pedidos da observação também ficaram clicáveis. Clicar abre o pedido — quem pediu e por onde,
+   quando, o motivo, cada etapa e quem a aprovou — com **Aprovar** e **Negar** ali, quando a etapa
+   é de quem olha (GET novo `/erp/api/ponto/ocorrencias/<id>`, `ver_ponto`).
+3. *"Eu clico nessa batida e não tem informação: quem aprovou, como foi, quando pediu, quem pediu —
+   está muito pobre (…) gostaria de poder aprovar a partir dessa tela."* A janela do mapa virou a
+   **janela da batida**: situação, como foi feita (celular da pessoa, ponto da obra com o nome do
+   aparelho e o responsável, ou ajuste), registrada por quem, sem internet (e quando chegou), foto,
+   NSR, o PEDIDO que criou a batida ajustada (com quem pediu e quem aprovou), as decisões já tomadas
+   e, em conferência, **Validar** e **Rejeitar** ali; o mapa ficou embaixo. A **legenda** das batidas
+   foi para o alto da tabela — o "celularzinho" (📵) é a batida feita no ponto da obra sem internet,
+   enviada quando o sinal voltou.
+4. *"O cara bateu 5 horas da manhã e depois 7 (…) faltou a última batida (…) isso aqui é errado."*
+   Duas partes. **Ver:** a batida que não casa com nenhum horário da escala (o mesmo casamento que
+   diz o que falta, até 2 h) ganha contorno pontilhado laranja e ⚠, e o dia entra no filtro novo
+   "Com batida fora do horário da escala". **Tratar:** **"Desconsiderar esta batida"**, na janela
+   da batida, só para o DP (`aprovar_afastamento`), com motivo. **Nada se apaga (Portaria 671):** a
+   marcação continua no registro com NSR, hora e hash; passa a REJEITADA (deixa de contar no espelho)
+   e a decisão vai para `marcacao_decisoes`, com de que situação saiu, quem e por quê. Depois, a
+   batida que faltou entra pelo ajuste ou pelo lote. Sem migração: o status REJEITADA já existia.
+   **Decisão minha, para o dono confirmar:** só o DP desconsidera — o encarregado continua só
+   validando ou rejeitando o que está em conferência.
+5. *"Vigia, celular liberado, sem ronda (…) em Aparelhos só dá a opção de bloquear. Se eu quiser
+   editar as configurações dele, queria fazer a partir daqui."* A aba Aparelhos da janela da pessoa
+   abre o MESMO editor de Configuração › Aparelhos (tipo, responsável, obras, validade, pedidos e a
+   ronda do vigia): **Alterar** no aprovado, **Aprovar** no pendente, **Reativar** no bloqueado. Para
+   o vigia sem ronda, um aviso com **"Ligar a ronda…"**, que abre o acesso no aplicativo da pessoa.
+6. *"O pessoal está tudo sem escala. A gente tinha definido uma escala padrão, a Produção. Onde eu
+   vinculo?"* **A escala padrão da empresa existe desde 06/10 (Configuração › Jornada e licenças ›
+   "Escala padrão da empresa"), mas na produção ninguém a escolheu** — e sem ela, quem não tem
+   escala própria não é julgado (nem falta, nem batida faltando). Escolhida, vale na hora para
+   todos os que não têm escala própria, inclusive nos dias que já passaram. O Quadro agora avisa
+   quando há gente sem escala, diz se a padrão está escolhida, leva à Configuração e tem "marcar as
+   sem escala" + "Definir a escala" para dar escala própria a alguns (o vigia no 12x36).
+7. (mensagem seguinte) *"O botão Montar quadro está muito no final; toda vida tem que rolar."* Foi
+   para o topo da barra e fica preso lá ao rolar.
+
+**Defeito achado no ensaio e corrigido antes de sair:** o botão novo "Definir a escala" nasceu com
+o mesmo nome interno do filtro de escala da barra (`qd-escala`) — a barra perdia as opções do
+filtro. Renomeado (`qd-definir-escala`); sem nomes repetidos novos na página.
+
+**Conferido:** testes novos (lote do dia inteiro e do abono; a batida errada; o pedido no horário
+decidido pela janela; a batida ajustada dizendo de que pedido veio; o casamento puro) e os do ponto
+inteiros; no navegador, com dado de ensaio: caixas em todas as linhas, os quatro botões com as
+contagens, a legenda, o aviso de sem escala, a janela da batida, o desconsiderar, o pedido aprovado
+pela janela, a escala em lote, o botão preso no topo e a aba Aparelhos com o editor.
 
 ## 22/10/2026 — O mapa do quadro: onde tem mais gente batendo ponto
 

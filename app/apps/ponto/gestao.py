@@ -43,7 +43,7 @@ from app.apps.erp.db.database import get_session
 from app.apps.erp.routes import bp, login_obrigatorio, permissao
 
 from . import db, horario, migracoes_runner
-from .core import (acesso, alertas, banco, cadastros, competencias, dispositivos, documentos,
+from .core import (acesso, alertas, banco, cadastros, competencias, dispositivos, documentos, marcacoes,
                    envios, escalas, espelho, feriados, filtros, fotos, leitura_atestado, mosaico,
                    ocorrencias, painel, parametros, qr, qualidade, rotina, validacao)
 from .core.ocorrencias import Quem
@@ -564,6 +564,37 @@ def ponto_api_marcacao_local(marcacao_id: int):
     quem = _quem()
     with db.conexao() as conn:
         return _ok(**paineis.local_da_batida(conn, quem, marcacao_id))
+
+
+@bp.route("/erp/api/ponto/ocorrencias/<int:ocorrencia_id>")
+@login_obrigatorio
+@permissao("ver_ponto")
+@_api
+def ponto_api_pedido(ocorrencia_id: int):
+    """Um pedido (ajuste, atestado…), com quem pediu e, se couber, onde decidir —
+    para aprovar direto do Quadro (22/10/2026)."""
+    from .core import paineis
+    quem = _quem()
+    with db.conexao() as conn:
+        return _ok(pedido=paineis.pedido(conn, quem, ocorrencia_id))
+
+
+@bp.route("/erp/api/ponto/marcacoes/<int:marcacao_id>/desconsiderar", methods=["POST"])
+@login_obrigatorio
+@permissao("aprovar_afastamento")
+@_api
+def ponto_api_desconsiderar(marcacao_id: int):
+    """Desconsidera uma batida errada, com o motivo. Nada se apaga (Portaria 671):
+    a marcação fica no registro e deixa de contar no espelho."""
+    quem, d = _quem(), _corpo()
+    with db.conexao() as conn:
+        m = db.um(conn, "SELECT obra_id, colaborador_id FROM ponto.marcacoes WHERE id = :id", id=marcacao_id)
+        if not m or not quem.alcanca_obra(m["obra_id"]) or not ocorrencias.pessoa_no_alcance(
+                conn, quem, m["colaborador_id"]):
+            raise NaoEncontrado("batida não encontrada")
+        marcacoes.desconsiderar(conn, marcacao_id, motivo=d.get("motivo", ""), usuario_id=quem.usuario_id,
+                                usuario_nome=quem.nome)
+    return _ok()
 
 
 @bp.route("/erp/api/ponto/pessoas/<int:colaborador_id>/qr/enviar", methods=["POST"])

@@ -31,7 +31,7 @@ from sqlalchemy.engine import Connection
 
 from .. import db, horario
 from ..erros import ErroDeValidacao, NaoEncontrado
-from . import cadastros, espelho, etiquetas as etiquetas_da_pessoa, filtros as filtros_do_ponto, vigencia
+from . import cadastros, escalas, espelho, etiquetas as etiquetas_da_pessoa, filtros as filtros_do_ponto, vigencia
 from .ocorrencias import Quem
 
 MAX_DIAS = 31
@@ -45,6 +45,7 @@ SITUACOES = (
     ("COM_BURACO", "Com batida faltando"),
     ("FALTA", "Falta (sem justificativa)"),
     ("JUSTIFICADO", "Justificado (atestado, férias, folga…)"),
+    ("FORA_DO_PREVISTO", "Com batida fora do horário da escala"),
     ("NAO_TRABALHA", "Não trabalha (descanso, feriado)"),
     ("EM_ANALISE", "Com batida em conferência"),
     ("COM_PEDIDO", "Com pedido esperando decisão"),
@@ -87,6 +88,35 @@ def periodo(de, ate) -> tuple[dt.date, dt.date]:
 # ---------------------------------------------------------------------------
 # As contas do dia (PURAS)
 # ---------------------------------------------------------------------------
+def _minutos_em_sequencia(horas: list[str]) -> list[int]:
+    """PURA. "HH:MM" em minutos do dia de trabalho; o que "volta" no relógio é da
+    madrugada seguinte (turno da noite)."""
+    saida: list[int] = []
+    for h in horas:
+        m = int(h[:2]) * 60 + int(h[3:5])
+        while saida and m < saida[-1]:
+            m += 1440
+        saida.append(m)
+    return saida
+
+
+def fora_do_previsto(previstas: list[str], batidas: list[str]) -> list[int]:
+    """PURA. As posições das batidas que não casam com nenhum horário da escala
+    (22/10/2026, o dono: "o cara bateu 5 horas da manhã e depois bateu 7 (…) isso
+    aqui é errado"). O casamento é o mesmo que diz o que falta (ajustes.faltantes):
+    cada horário previsto fica com a batida mais perto, até 2 h; a que sobra, sobra."""
+    from . import ajustes
+    if not previstas or not batidas:
+        return []
+    prev, bat = _minutos_em_sequencia(previstas), _minutos_em_sequencia(batidas)
+    livres = list(range(len(bat)))
+    for p in prev:
+        perto = min(livres, key=lambda i: abs(bat[i] - p), default=None)
+        if perto is not None and abs(bat[perto] - p) <= ajustes.CASAR_MIN:
+            livres.remove(perto)
+    return livres
+
+
 def etiquetas_do_dia(d: dict) -> set[str]:
     """PURA. Em quais filtros de "situação do dia" este dia entra (vários)."""
     e = set()
@@ -106,6 +136,9 @@ def etiquetas_do_dia(d: dict) -> set[str]:
         e.add("EM_ANALISE")
     if d.get("pendentes"):
         e.add("COM_PEDIDO")
+    if fora_do_previsto([p["hora"] for p in d.get("previstas") or [] if p.get("hora")],
+                        [b["hora"] for b in batidas if b.get("hora")]):
+        e.add("FORA_DO_PREVISTO")
     return e
 
 
@@ -126,6 +159,8 @@ def passa_no_filtro(d: dict, etiquetas: set[str], f: dict) -> bool:
 
 
 def _linha(p: dict, d: dict, etiquetas: set[str], marcas: list[dict]) -> dict:
+    sobrando = set(fora_do_previsto([x["hora"] for x in d.get("previstas") or []],
+                                    [b["hora"] for b in d["batidas"]]))
     return {
         "colaborador_id": int(p["id"]), "nome": p["nome"], "cpf": p.get("cpf"), "funcao": p.get("funcao"),
         "marcas": marcas,
@@ -134,10 +169,15 @@ def _linha(p: dict, d: dict, etiquetas: set[str], marcas: list[dict]) -> dict:
         "situacao": d["situacao"], "situacao_rotulo": SITUACOES_DO_DIA.get(d["situacao"], d["situacao"]),
         "falta": bool(d.get("falta")), "etiquetas": sorted(etiquetas),
         "batidas": [{"id": b["id"], "hora": b["hora"], "status": b["status"], "obra": b["obra"],
-                     "origem": b["origem"], "sem_internet": b.get("sem_internet")} for b in d["batidas"]],
+                     "origem": b["origem"], "sem_internet": b.get("sem_internet"), "nsr": b.get("nsr"),
+                     "fora_da_cerca": b.get("fora_da_cerca"), "distancia_metros": b.get("distancia_metros"),
+                     "motivo_analise": b.get("motivo_analise"), "registrado_por": b.get("registrado_por"),
+                     "recebida_em": b.get("recebida_em"), "fora_do_previsto": i in sobrando}
+                    for i, b in enumerate(d["batidas"])],
         "previstas": d.get("previstas") or [], "faltando": d.get("faltando") or [],
         "ocorrencia": (d.get("ocorrencia") or {}).get("rotulo"),
-        "pendentes": [{"rotulo": x["rotulo"], "hora": x.get("hora")} for x in d.get("pendentes") or []],
+        "pendentes": [{"id": x["id"], "tipo": x["tipo"], "status": x["status"], "rotulo": x["rotulo"],
+                       "hora": x.get("hora")} for x in d.get("pendentes") or []],
         "em_analise": d.get("em_analise") or 0,
         "obra_do_dia": next((b["obra"] for b in d["batidas"] if b.get("obra")), None) or p.get("obra_codigo"),
     }
@@ -258,6 +298,8 @@ def montar(conn: Connection, quem: Quem, de, ate, f: Optional[dict] = None, *, e
                              "bateram": len(v["bateram"]), "por_dia": dict(v["por_dia"])}
                             for v in por_obra.values()), key=lambda x: x["obra"]),
         "_ids": [int(p["id"]) for p in pessoas],
+        # sem escala o dia não é julgado (nem falta, nem batida faltando): a tela avisa
+        "escala_padrao": (lambda e: e["nome"] if e else None)(escalas.escala_padrao(conn)),
         "opcoes": {"situacoes": [{"codigo": c, "rotulo": r} for c, r in SITUACOES],
                    "tipos_pessoa": [{"codigo": c, "rotulo": etiquetas_da_pessoa.ROTULO_FILTRO[c]}
                                     for c in etiquetas_da_pessoa.FILTRAVEIS],
