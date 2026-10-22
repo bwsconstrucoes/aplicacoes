@@ -531,6 +531,7 @@ def calcular(recarregar: bool = False, mostrar_geradas: bool = False) -> dict:
         p["ajuste_pagar"] = aj.get("pagar")
         pessoas.append(p)
 
+    marcar_repetidos(pessoas)
     pessoas.sort(key=lambda p: (p["pagar"], (p["nome"] or "").lower(), p["card_id"]))
     a_pagar = [p for p in pessoas if p["pagar"] and p["valor"] > 0 and not p["gerada"]]
     sem_carteira = sorted({p["tipo_despesa"] for p in a_pagar if not p.get("carteira_achada")})
@@ -553,9 +554,67 @@ def calcular(recarregar: bool = False, mostrar_geradas: bool = False) -> dict:
         "por_obra": sorted(por_obra.values(), key=lambda o: -o["total"]),
         "com_problema": [p for p in pessoas if p["impossivel"] or not p["conta"]],
         "duplicadas": [p for p in pessoas if p["duplicidade"] and not p["gerada"]],
+        "repetidos": repetidos(pessoas),
         "cards": len({p["card_id"] for p in pessoas}),
     })
     return base
+
+
+# ---------------------------------------------------------------------------
+# A MESMA PESSOA EM MAIS DE UMA LINHA — 22/10/2026
+#
+# O dono: *"preciso destacar pessoas que aparecem na lista mais de uma vez, até
+# pra saber se de repente não seria um pleito duplicado, e ainda um filtro que
+# pudesse filtrar somente essas pessoas pra facilitar análise."* Conta só as
+# linhas PENDENTES (as já geradas, quando aparecem, não entram na conta). É
+# DESTAQUE, não trava: na DC a mesma pessoa pode ter duas solicitações de
+# verdade (diária e alimentação, por exemplo). O alerta mais forte é quando o
+# tipo de despesa E o valor se repetem — a cara de pleito duplicado.
+# ---------------------------------------------------------------------------
+def marcar_repetidos(pessoas) -> None:
+    """Põe em cada linha `vezes`, `repetido`, `mesmo_pleito` e a frase."""
+    pendentes = [p for p in pessoas if not p["gerada"]]
+    por_cpf: dict = {}
+    for p in pendentes:
+        por_cpf.setdefault(p["cpf"], []).append(p)
+    for p in pessoas:
+        p["vezes"], p["repetido"], p["mesmo_pleito"] = 1, False, False
+    for ps in por_cpf.values():
+        if len(ps) < 2:
+            continue
+        for p in ps:
+            outras = [o for o in ps if o is not p]
+            iguais = [o for o in outras if _sem_acento(o["tipo_despesa"]) ==
+                      _sem_acento(p["tipo_despesa"]) and o["valor"] == p["valor"]]
+            p["vezes"], p["repetido"], p["mesmo_pleito"] = len(ps), True, bool(iguais)
+            cards = ", ".join(sorted({str(o["card_id"]) for o in outras}))
+            frase = (f"APARECE {len(ps)} VEZES nesta lista (outro(s) card(s): {cards})")
+            if iguais:
+                frase += (f" — {len(iguais)} com o MESMO tipo de despesa e valor: "
+                          "confira se não é pleito duplicado.")
+            else:
+                frase += " — tipos ou valores diferentes; confira."
+            p["motivos"].insert(0, frase)
+
+
+def repetidos(pessoas) -> list:
+    """`[{cpf, nome, vezes, linhas: [{card_id, tipo, valor, pagar}], total,
+    mesmo_pleito}]` — para o quadro do alto da tela."""
+    grupos: dict = {}
+    for p in pessoas:
+        if p.get("repetido"):
+            grupos.setdefault(p["cpf"], []).append(p)
+    saida = []
+    for cpf, ps in grupos.items():
+        ps = sorted(ps, key=lambda x: str(x["card_id"]))
+        saida.append({"cpf": cpf, "cpf_bonito": ps[0]["cpf_bonito"],
+                      "nome": ps[0]["nome"] or ps[0]["cpf_bonito"], "vezes": len(ps),
+                      "mesmo_pleito": any(x["mesmo_pleito"] for x in ps),
+                      "linhas": [{"card_id": x["card_id"], "link_card": x["link_card"],
+                                  "tipo": x["tipo_despesa"], "valor": x["valor"],
+                                  "pagar": x["pagar"]} for x in ps],
+                      "total": sum((x["valor"] for x in ps if x["pagar"]), Decimal("0.00"))})
+    return sorted(saida, key=lambda r: (not r["mesmo_pleito"], r["nome"]))
 
 
 # A VISÃO AGRUPADA (dono, 03/10/2026: *"seria interessante podermos visualizar

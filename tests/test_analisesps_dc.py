@@ -467,3 +467,49 @@ def test_DC_ja_GERADA_sem_classificacao_lanca_resolvendo_AGORA(banco_dc, monkeyp
     assert not any("Diárias" in b for b in vista["bloqueios"]), vista["bloqueios"]
     sp = vista["grupos"][0]["sps"][0]
     assert sp["tipo_sp"] == "R-SAL" and '"codigo_categoria":"2.03.01"' in sp["rateio"]
+
+
+@pytest.fixture
+def com_repetidos(banco_dc, monkeypatch):
+    """ATIVO em três linhas: duas de Alimentação de 150,00 (cards diferentes) e
+    uma Diária de Viagem."""
+    from app.apps.analisesps import dc
+    mais = [["900300", "03/10/2026", "07/10/2026", "CREPEOLINDA", "Despesas com Alimentação",
+             "", "", "JOAO", "MARIA", "997.133.493-34", "", "150,00", "", "Lanche de novo"],
+            ["900400", "03/10/2026", "07/10/2026", "CREPEOLINDA", "Diárias de Viagem",
+             "", "", "JOAO", "MARIA", "997.133.493-34", "", "80,00", "", "Viagem"]]
+    abas = {dc.ABA_DATA: DATA[:-1] + mais,
+            "Data base BeeVale": [["Plano Financeiro", "Carteira BeeVale"],
+                                  ["Despesas com Alimentação", "Auxílio Alimentação"]]}
+    monkeypatch.setattr(dc, "_ler_aba", lambda nome: abas[nome])
+    dc._cache.clear()
+    return banco_dc
+
+
+def test_a_MESMA_PESSOA_em_mais_de_uma_linha_e_DESTACADA(com_repetidos):
+    """22/10/2026: "destacar pessoas que aparecem na lista mais de uma vez, até
+    pra saber se de repente não seria um pleito duplicado"."""
+    from app.apps.analisesps import dc
+    c = dc.calcular()
+    dele = [p for p in c["pessoas"] if p["cpf"] == ATIVO]
+    assert len(dele) == 3 and all(p["repetido"] and p["vezes"] == 3 for p in dele)
+    alimentacao = [p for p in dele if p["tipo_despesa"] == "Despesas com Alimentação"]
+    assert all(p["mesmo_pleito"] for p in alimentacao)
+    assert all(p["pagar"] for p in dele), "é destaque, não desmarca"
+    assert alimentacao[0]["motivos"][0].startswith("APARECE 3 VEZES")
+    assert not next(p for p in c["pessoas"] if p["cpf"] == OUTRO)["repetido"]
+    [r] = c["repetidos"]
+    assert (r["nome"], r["vezes"], r["mesmo_pleito"]) == ("ATIVO UM", 3, True)
+
+
+def test_o_FILTRO_mostra_so_quem_se_repete(com_repetidos, cliente_mestre):
+    html = cliente_mestre.get("/analisesps/folha/dc?agrupar=").get_data(as_text=True)
+    assert "aparece mais de uma vez (3)" in html and "3× NA LISTA" in html
+    assert "pessoa(s) aparece(m) em MAIS DE UMA LINHA" in html
+    so = cliente_mestre.get("/analisesps/folha/dc?agrupar=&repeticao=repetido"
+                            ).get_data(as_text=True)
+    corpo = so[so.index('id="tabela-dc"'):] if 'id="tabela-dc"' in so else so
+    assert "OUTRO DOIS" not in corpo and "ATIVO UM" in corpo
+    mesmo = cliente_mestre.get("/analisesps/folha/dc?agrupar=&repeticao=mesmo_pleito"
+                               ).get_data(as_text=True)
+    assert "card 900300" in mesmo and "mesmo tipo e valor (2)" in mesmo

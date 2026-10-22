@@ -5108,13 +5108,25 @@ def _dc_lista(calculado: dict, args) -> dict:
     pessoas = list((calculado or {}).get("pessoas") or [])
     tipos = folha_lista.marcados(args, "tipo_despesa")
     contas = folha_lista.marcados(args, "conta")
+    # Só quem aparece mais de uma vez (22/10/2026) — e, dentro deles, só o que
+    # tem cara de pleito duplicado (mesmo tipo e valor).
+    repeticao = folha_lista.marcados(args, "repeticao")
     lista = folha_lista.filtrar(pessoas, args, campo_da_obra="obra", escondidas=set())
     if tipos:
         lista["pessoas"] = [p for p in lista["pessoas"] if p["tipo_despesa"] in tipos]
     if contas:
         lista["pessoas"] = [p for p in lista["pessoas"] if (p["conta"] or "(sem conta)") in contas]
-    lista["filtros"].update({"tipo_despesa": tipos, "conta": contas})
-    lista["filtrando"] = bool(lista["filtrando"] or tipos or contas)
+    if repeticao:
+        lista["pessoas"] = [p for p in lista["pessoas"]
+                            if ("repetido" in repeticao and p.get("repetido"))
+                            or ("mesmo_pleito" in repeticao and p.get("mesmo_pleito"))]
+    lista["filtros"].update({"tipo_despesa": tipos, "conta": contas, "repeticao": repeticao})
+    lista["filtrando"] = bool(lista["filtrando"] or tipos or contas or repeticao)
+    n_rep = sum(1 for p in pessoas if p.get("repetido"))
+    n_mesmo = sum(1 for p in pessoas if p.get("mesmo_pleito"))
+    lista["opcoes_repeticao"] = (
+        ([("repetido", f"aparece mais de uma vez ({n_rep})")] if n_rep else [])
+        + ([("mesmo_pleito", f"mesmo tipo e valor ({n_mesmo})")] if n_mesmo else []))
     lista["opcoes_tipo_despesa"] = [(t, t) for t in sorted(
         {p["tipo_despesa"] for p in pessoas if p["tipo_despesa"]})]
     lista["opcoes_conta"] = [(c, c) for c in sorted(

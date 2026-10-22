@@ -42,9 +42,16 @@
   </div>
 </div>
 
-{% if resultado.com_problema or resultado.duplicadas %}
+{% if resultado.com_problema or resultado.duplicadas or resultado.repetidos %}
 <div class="cartao lateral-folha">
   <b class="lateral-titulo">Pendências antes do pagamento</b>
+  {% if resultado.repetidos %}
+    <a class="lat-critica erro" href="{{ url_tela }}?repeticao=repetido&agrupar=cpf">
+      <b>{{ resultado.repetidos|length }} pessoa(s) em mais de uma linha</b>
+      <small>{{ resultado.repetidos|selectattr('mesmo_pleito')|list|length }} com o mesmo
+        tipo de despesa e valor. Clique para ver só elas, agrupadas por pessoa.</small>
+    </a>
+  {% endif %}
   {% set fora_do_cadastro = resultado.com_problema|selectattr('impossivel')|list %}
   {% set sem_conta = resultado.com_problema|rejectattr('impossivel')|list %}
   {% if fora_do_cadastro %}
@@ -84,6 +91,7 @@
     <input type="search" name="q" value="{{ lista.filtros.q }}" autocomplete="off"
            placeholder="Nome ou CPF…" aria-label="Pesquisar colaborador">
   </div>
+  {{ bloco('Repetição', 'repeticao', lista.opcoes_repeticao, lista.filtros.repeticao) }}
   {{ bloco('Situação', 'situacao', lista.opcoes_situacao, lista.filtros.situacao) }}
   {{ bloco('Tipo de despesa', 'tipo_despesa', lista.opcoes_tipo_despesa, lista.filtros.tipo_despesa) }}
   {{ bloco('Obra', 'obra', lista.opcoes_obra, lista.filtros.obra) }}
@@ -169,7 +177,40 @@
     <div class="kpi-rotulo">Solicitações</div>
     <div class="kpi-valor">{{ resultado.cards }}</div>
   </div>
+  {% if resultado.repetidos %}
+  <a class="kpi vermelho" href="{{ url_for('analisesps.tela_folha_dc', repeticao='repetido', agrupar='cpf') }}">
+    <div class="kpi-rotulo">Pessoas em mais de uma linha</div>
+    <div class="kpi-valor">{{ resultado.repetidos|length }}</div>
+  </a>
+  {% endif %}
 </div>
+
+{# A MESMA PESSOA EM MAIS DE UMA LINHA (22/10/2026): *"destacar pessoas que
+   aparecem na lista mais de uma vez, até pra saber se não seria um pleito
+   duplicado"*. Destaque, não trava: as linhas continuam como estavam. #}
+{% if resultado.repetidos %}
+  <details class="aviso erro aviso-repetidos" {% if resultado.repetidos|selectattr('mesmo_pleito')|list %}open{% endif %}>
+    <summary><b>⚠ {{ resultado.repetidos|length }} pessoa(s) aparece(m) em MAIS DE UMA LINHA</b>
+      {% set mesmos = resultado.repetidos|selectattr('mesmo_pleito')|list %}
+      {% if mesmos %} — <b>{{ mesmos|length }} com o mesmo tipo de despesa e valor</b> (cara de pleito duplicado){% endif %}.
+      <a href="{{ url_for('analisesps.tela_folha_dc', repeticao='repetido', agrupar='cpf') }}">Ver só elas</a></summary>
+    <div class="tabela-wrap" style="margin:8px 0 0"><div class="tabela-rolagem livre">
+    <table class="sps" style="background:#fff">
+      <thead><tr><th>Colaborador</th><th>CPF</th><th class="num">Linhas</th>
+        <th>Solicitações (tipo · valor)</th><th class="num">Marcado para pagar</th></tr></thead>
+      <tbody>
+      {% for r in resultado.repetidos %}
+        <tr><td><b>{{ r.nome }}</b>{% if r.mesmo_pleito %} <span class="selo risco">mesmo tipo e valor</span>{% endif %}</td>
+          <td class="cpf">{{ r.cpf_bonito }}</td><td class="num"><b>{{ r.vezes }}×</b></td>
+          <td>{% for l in r.linhas %}<a href="{{ l.link_card }}" target="_blank" rel="noopener">card {{ l.card_id }}</a>: {{ l.tipo }} · {{ l.valor|moeda }}{% if not l.pagar %} <span class="cartao-dica">(desmarcada)</span>{% endif %}{% if not loop.last %}<br>{% endif %}{% endfor %}</td>
+          <td class="num"><b>{{ r.total|moeda }}</b></td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div></div>
+  </details>
+  <style>.aviso-repetidos { border-left-width:6px; } .aviso-repetidos summary { cursor:pointer; }</style>
+{% endif %}
 
 <div class="cab-com-acoes" style="margin-top:24px">
 <h3>
@@ -228,7 +269,7 @@
       <tbody class="grupo-lista">
         {% if agrupamento %}{{ cabecalho_do_grupo(g, pode_operar, 9) }}{% endif %}
       {% for p in g.pessoas %}
-        <tr class="{{ 'clicavel' if p.nome }} {{ 'nao-vai' if not p.pagar }} {{ 'linha-alerta' if p.impossivel or not p.conta or p.duplicidade }}"
+        <tr class="{{ 'clicavel' if p.nome }} {{ 'nao-vai' if not p.pagar }} {{ 'linha-alerta' if p.impossivel or not p.conta or p.duplicidade or p.repetido }}"
             data-cpf="{{ p.cpf }}" data-nome="{{ p.nome }}" data-chave="{{ p.chave }}"
             data-valor="{{ p.valor }}">
           {% if pode_operar %}
@@ -241,6 +282,7 @@
           {% endif %}
           <td>
             <b>{{ p.nome or 'fora do cadastro' }}</b>
+            {% if p.repetido %} <span class="selo risco" title="Esta pessoa aparece {{ p.vezes }} vezes na lista">{{ p.vezes }}× NA LISTA{% if p.mesmo_pleito %} · mesmo tipo e valor{% endif %}</span>{% endif %}
             {% if p.cargo %}<br><span class="cartao-dica">{{ p.cargo }}{% if p.tipo_contrato %} · {{ p.tipo_contrato }}{% endif %}</span>{% endif %}
             {% for motivo in p.motivos %}
               <br><span class="cartao-dica">⚠ {{ motivo }}</span>
