@@ -1148,14 +1148,31 @@ def ponto_api_quadro_mapa():
 @permissao("tratar_ponto")
 @_api
 def ponto_api_quadro_incluir():
-    """Inclui a batida que falta para as linhas marcadas (de 40 em 40). Cada uma
-    vira um ajuste da gestão aprovado na hora por quem pode — o mesmo caminho e
-    as mesmas travas do ajuste de sempre."""
+    """Inclui batidas para as linhas marcadas (de 40 em 40): uma batida no dia que já
+    tem alguma (`acao` "batida") ou o dia inteiro pela escala no dia sem nenhuma
+    ("dia"). Cada uma vira um ajuste da gestão aprovado na hora por quem pode — o
+    mesmo caminho e as mesmas travas do ajuste de sempre."""
     from .core import quadro
     quem, d = _quem(), _corpo()
     r = quadro.incluir_em_lote(quem, d.get("itens") or [], rotulo=d.get("rotulo"), hora=d.get("hora"),
-                               motivo=d.get("motivo"))
-    logger.info("Ponto: inclusão em lote por %s — %d pedidas, %d feitas", quem.nome, len(r),
+                               motivo=d.get("motivo"), acao=d.get("acao") or "batida")
+    logger.info("Ponto: inclusão em lote (%s) por %s — %d pedidas, %d feitas", d.get("acao") or "batida",
+                quem.nome, len(r), sum(1 for x in r if x.get("ok")))
+    return _ok(resultados=r, feitas=sum(1 for x in r if x.get("ok")),
+               aprovadas=sum(1 for x in r if x.get("aprovado")))
+
+
+@bp.route("/erp/api/ponto/quadro/abonar", methods=["POST"])
+@login_obrigatorio
+@permissao("aprovar_afastamento")
+@_api
+def ponto_api_quadro_abonar():
+    """Abona a falta das linhas marcadas (de 40 em 40): um abono do DP por pessoa e
+    dia, com o motivo — dia de chuva, obra parada, equipe liberada."""
+    from .core import quadro
+    quem, d = _quem(), _corpo()
+    r = quadro.abonar_em_lote(quem, d.get("itens") or [], motivo=d.get("motivo"))
+    logger.info("Ponto: abono em lote por %s — %d pedidos, %d feitos", quem.nome, len(r),
                 sum(1 for x in r if x.get("ok")))
     return _ok(resultados=r, feitas=sum(1 for x in r if x.get("ok")),
                aprovadas=sum(1 for x in r if x.get("aprovado")))

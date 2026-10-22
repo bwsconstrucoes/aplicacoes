@@ -338,6 +338,8 @@
   .validacoes-tipos { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-top:12px; }
   .validacoes-tipos #v-tipos { display:contents; }
   .chip.ligado { background:var(--azul); color:#fff; }
+  .qd-tabela tr.marcada td { background:#FFF8E6; }
+  .qd-marcar { font-size:12.5px; color:var(--tinta-suave); }
   .barra-lote { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin:0 0 12px;
                 padding:10px 12px; background:#FFF4D6; border-radius:var(--raio-p); }
   .validacoes-lista { overflow-x:auto; }
@@ -433,14 +435,22 @@
 </div>
 <div class="barra-lote" id="qd-lote" hidden>
   <b id="qd-lote-qtd">0 marcadas</b>
-  {% if pode.tratar_ponto %}<button class="btn" id="qd-incluir" type="button">Incluir a batida que falta…</button>{% endif %}
+  {% if pode.tratar_ponto %}<button class="btn" id="qd-incluir" type="button">Incluir uma batida…</button>
+  <button class="btn secundario" id="qd-dia-inteiro" type="button">Lançar o dia inteiro pela escala…</button>{% endif %}
+  {% if pode.aprovar_afastamento %}<button class="btn amarelo" id="qd-abonar" type="button">Abonar a falta…</button>{% endif %}
   <button class="link-btn" id="qd-desmarcar" type="button">desmarcar</button>
-  <small class="suave">cada inclusão vira um ajuste da gestão, aprovado na hora e registrado com o motivo</small>
+  <small class="suave" style="flex-basis:100%">cada ação vale só para as linhas marcadas em que ela cabe — o número no
+    botão diz quantas; as outras ficam de fora, com o porquê. Tudo fica registrado com o motivo e o seu nome.</small>
 </div>
 <div id="qd-lote-msg"></div>
 <div class="tabela-wrap">
   <div class="tabela-barra"><span class="resumo" id="qd-resumo"></span><span class="espaco"></span>
-    <button class="link-btn" id="qd-marcar-buracos" type="button" hidden>marcar todas com batida faltando</button></div>
+    <span id="qd-marcar" class="qd-marcar" hidden>marcar:
+      <button class="link-btn" type="button" data-qd-marcar-grupo="todas">todas</button> ·
+      <button class="link-btn" type="button" data-qd-marcar-grupo="buraco">com batida faltando</button> ·
+      <button class="link-btn" type="button" data-qd-marcar-grupo="sem">sem nenhuma batida</button> ·
+      <button class="link-btn" type="button" data-qd-marcar-grupo="falta">faltas</button> ·
+      <button class="link-btn" type="button" data-qd-marcar-grupo="nenhuma">nenhuma</button></span></div>
   <div class="tabela-rolagem" style="max-height:70vh"><div id="qd-tabela">
     <div class="vazio"><b>Nada montado ainda</b>Escolha o período e os filtros na barra da esquerda e aperte
       “Montar o quadro”.</div></div></div>
@@ -2282,7 +2292,7 @@ function qdDesenhar() {
   document.querySelectorAll("[data-qd-visao]").forEach(b => b.classList.toggle("ativa", b.dataset.qdVisao === QD_VISAO));
   qdKpis();
   const alvo = els("qd-tabela");
-  els("qd-marcar-buracos").hidden = QD_VISAO !== "linhas" || !PODE_TRATAR;
+  els("qd-marcar").hidden = QD_VISAO !== "linhas" || !PODE_MARCAR;
   if (QD_VISAO === "dias") {
     els("qd-resumo").innerHTML = `<b>${QD.por_dia.length}</b> dia(s) — clique num número para ver as pessoas`;
     const n = (d, k) => d[k] ? `<button class="link-btn" type="button" data-qd-dia="${d.data}" data-qd-sit="${k}">${d[k]}</button>` : `<span class="suave">0</span>`;
@@ -2333,9 +2343,10 @@ function qdDesenhar() {
   }
   els("qd-resumo").innerHTML = `<b>${QD.total_linhas}</b> linha(s)` + (QD.cortado ? ` · mostrando as primeiras ${QD.linhas.length} — afine os filtros` : "");
   alvo.innerHTML = QD.linhas.length ? `<table class="qd-tabela"><thead><tr>
-      <th class="sem-ordem" style="width:28px">${PODE_TRATAR ? `<input type="checkbox" id="qd-todas" title="Marcar todas as linhas com batida faltando">` : ""}</th>
+      <th class="sem-ordem" style="width:28px">${PODE_MARCAR ? `<input type="checkbox" id="qd-todas" title="Marcar todas as linhas da tela"
+        ${QD.linhas.some(qdMarcavel) && QD.linhas.filter(qdMarcavel).every(l => QD_MARCADAS.has(chaveQd(l))) ? "checked" : ""}>` : ""}</th>
       <th>Pessoa</th><th>Dia</th><th>Batidas</th><th>Situação</th><th>Obra</th><th>Escala</th><th>Observação</th></tr></thead><tbody>
-    ${QD.linhas.map(l => { const k = chaveQd(l); const marcavel = PODE_TRATAR && l.faltando.length && l.batidas.length; return `<tr>
+    ${QD.linhas.map(l => { const k = chaveQd(l); const marcavel = qdMarcavel(l); return `<tr${QD_MARCADAS.has(k) ? ' class="marcada"' : ""}>
       <td>${marcavel ? `<input type="checkbox" data-qd-marcar="${escapar(k)}" ${QD_MARCADAS.has(k) ? "checked" : ""}>` : ""}</td>
       <td>${eloPessoa(l.colaborador_id, l.nome, l.data)} ${marcasHtml(l.marcas, true)}
         <small>${escapar(l.funcao || "")}</small></td>
@@ -2349,8 +2360,9 @@ function qdDesenhar() {
           l.em_analise ? `${l.em_analise} em conferência` : ""].filter(Boolean).join(" · ") || ""}</small></td></tr>`; }).join("")}
     </tbody></table>` : `<div class="vazio"><b>Nenhuma linha</b>com estes filtros.</div>`;
   alvo.querySelectorAll("[data-qd-marcar]").forEach(c => c.addEventListener("change", () => {
-    c.checked ? QD_MARCADAS.add(c.dataset.qdMarcar) : QD_MARCADAS.delete(c.dataset.qdMarcar); qdLote(); }));
-  if (els("qd-todas")) els("qd-todas").addEventListener("change", e => qdMarcarTodas(e.target.checked));
+    c.checked ? QD_MARCADAS.add(c.dataset.qdMarcar) : QD_MARCADAS.delete(c.dataset.qdMarcar);
+    c.closest("tr").classList.toggle("marcada", c.checked); qdLote(); }));
+  if (els("qd-todas")) els("qd-todas").addEventListener("change", e => qdMarcarGrupo(e.target.checked ? "todas" : "nenhuma"));
   qdLote();
 }
 
@@ -2486,52 +2498,125 @@ function qdMapaTocar() {
   passo(); QD_MAPA_TOCANDO = setInterval(passo, 1300);
 }
 
-function qdMarcarTodas(sim) {
-  (QD.linhas || []).filter(l => l.faltando.length && l.batidas.length).forEach(l =>
-    sim ? QD_MARCADAS.add(chaveQd(l)) : QD_MARCADAS.delete(chaveQd(l)));
+// A SELEÇÃO DO QUADRO (22/10/2026, o dono: "várias pessoas aqui que eu poderia muito
+// bem selecionar para fazer alguma ação, mas a seleção individual não está
+// aparecendo"). Antes, a caixa só aparecia no dia com batida E com batida faltando
+// pela escala — quem não tinha escala, quem faltou e quem ainda ia bater ficavam
+// sem caixa. Agora toda linha que se pode tratar tem caixa, e cada ação diz a
+// quantas das marcadas ela serve.
+const QD_SEM_ACAO = ["FUTURO", "FORA_DO_CONTRATO", "ANTES_DO_PONTO"];
+const PODE_MARCAR = PODE_TRATAR || PODE_DP;
+const qdMarcavel = l => PODE_MARCAR && !QD_SEM_ACAO.includes(l.situacao);
+const QD_SERVE = {
+  batida: l => l.batidas.length > 0,
+  dia: l => !l.batidas.length && l.faltando.length > 0,
+  abono: l => l.situacao === "FALTA",
+};
+const QD_GRUPOS = {
+  todas: () => true,
+  buraco: l => l.batidas.length && l.faltando.length,
+  sem: l => !l.batidas.length,
+  falta: l => l.situacao === "FALTA",
+  nenhuma: () => false,
+};
+function qdMarcarGrupo(grupo) {
+  QD_MARCADAS.clear();
+  (QD.linhas || []).filter(l => qdMarcavel(l) && QD_GRUPOS[grupo](l)).forEach(l => QD_MARCADAS.add(chaveQd(l)));
   qdDesenhar();
 }
+const qdMarcadas = () => (QD.linhas || []).filter(l => QD_MARCADAS.has(chaveQd(l)));
 
 function qdLote() {
   els("qd-lote").hidden = !QD_MARCADAS.size || QD_VISAO !== "linhas";
   els("qd-lote-qtd").textContent = contar(QD_MARCADAS.size, "linha marcada", "linhas marcadas");
+  const marcadas = qdMarcadas();
+  [["qd-incluir", "batida", "Incluir uma batida", "serve para o dia que já tem alguma batida"],
+   ["qd-dia-inteiro", "dia", "Lançar o dia inteiro pela escala", "serve para o dia sem nenhuma batida, com escala"],
+   ["qd-abonar", "abono", "Abonar a falta", "serve para o dia de falta"]].forEach(([id, acao, rotulo, dica]) => {
+    const b = els(id);
+    if (!b) return;
+    const n = marcadas.filter(QD_SERVE[acao]).length;
+    b.textContent = `${rotulo} (${n})…`;
+    b.disabled = !n;
+    b.title = n ? `${n} das ${marcadas.length} marcadas — ${dica}` : `nenhuma das marcadas — ${dica}`;
+  });
+}
+
+// Manda o lote de 40 em 40 e diz o que entrou e o que ficou de fora, com o porquê.
+async function qdRodarLote(endereco, itens, corpo, oQue) {
+  let feitas = 0, aprovadas = 0; const recusas = [];
+  for (let i = 0; i < itens.length; i += 40) {
+    aviso("qd-lote-msg", `Lançando… ${Math.min(i + 40, itens.length)} de ${itens.length}`, "info");
+    try {
+      const resp = await postar(endereco, {...corpo, itens: itens.slice(i, i + 40)});
+      feitas += resp.feitas; aprovadas += resp.aprovadas;
+      resp.resultados.filter(x => !x.ok).forEach(x => recusas.push(`${escapar(x.nome || `pessoa nº ${x.colaborador_id}`)} (${diaCurto(x.data)}): ${escapar(x.erro)}`));
+    } catch (e) { recusas.push(escapar(e.message)); break; }
+  }
+  const pendentes = feitas - aprovadas;
+  aviso("qd-lote-msg", `<b>${contar(feitas, ...oQue)}</b>`
+    + (pendentes ? ` (${pendentes} esperando validação de quem aprova)` : "")
+    + (recusas.length ? ` · ${recusas.length} não entraram:<ul style="margin:6px 0 0 18px">${recusas.slice(0, 30).map(x => `<li>${x}</li>`).join("")}</ul>` : ""),
+    recusas.length ? "alerta" : "ok");
+  QD_MARCADAS.clear(); qdMontar();
+}
+
+const qdItens = linhas => linhas.map(l => ({colaborador_id: l.colaborador_id, data: l.data}));
+const QD_MOTIVO = {nome: "motivo", rotulo: "Motivo", tipo: "textarea", linhas: 3, obrigatorio: true, largura: 6};
+
+async function qdDiaInteiro() {
+  const linhas = qdMarcadas().filter(QD_SERVE.dia);
+  if (!linhas.length) return;
+  const r = await perguntar({titulo: `Lançar o dia inteiro pela escala — ${contar(linhas.length, "pessoa-dia", "pessoas-dia")}`,
+    aviso: "Para quem não bateu NADA no dia: entram todas as batidas que a escala de cada um previa, nos horários da escala. " +
+           "Use quando a pessoa trabalhou e o ponto falhou (sistema fora, aparelho quebrado). " +
+           "Cada batida vira um ajuste da gestão, aprovado na hora e guardado com o motivo e o seu nome — e o dia passa a contar como trabalhado na folha.",
+    campos: [{...QD_MOTIVO, exemplo: "ex.: 21/10/2026 — o aplicativo ficou fora do ar das 16h às 18h; a equipe trabalhou o dia todo"}],
+    textoOk: "Lançar"});
+  if (!r) return;
+  await qdRodarLote("/erp/api/ponto/quadro/incluir", qdItens(linhas), {acao: "dia", motivo: r.motivo},
+                    ["dia lançado", "dias lançados"]);
+}
+
+async function qdAbonar() {
+  const linhas = qdMarcadas().filter(QD_SERVE.abono);
+  if (!linhas.length) return;
+  const r = await perguntar({titulo: `Abonar a falta — ${contar(linhas.length, "pessoa-dia", "pessoas-dia")}`,
+    aviso: "A falta deixa de ser falta: o dia fica justificado (abono do DP), sem batida, e NÃO é descontado. " +
+           "Use quando a pessoa não trabalhou por decisão da empresa (chuva, obra parada, equipe liberada). " +
+           "Cada abono é guardado com o motivo e o seu nome.",
+    campos: [{...QD_MOTIVO, exemplo: "ex.: chuva forte em 22/10/2026 — obra AP-01 parada, equipe liberada pelo engenheiro"}],
+    textoOk: "Abonar"});
+  if (!r) return;
+  await qdRodarLote("/erp/api/ponto/quadro/abonar", qdItens(linhas), {motivo: r.motivo}, ["falta abonada", "faltas abonadas"]);
 }
 
 async function qdIncluir() {
-  const linhas = (QD.linhas || []).filter(l => QD_MARCADAS.has(chaveQd(l)));
+  const linhas = qdMarcadas().filter(QD_SERVE.batida);
+  if (!linhas.length) return;
   const rotulos = {};
   linhas.forEach(l => l.faltando.forEach(f => { rotulos[f.rotulo] = (rotulos[f.rotulo] || 0) + 1; }));
   const opcoes = Object.entries(rotulos).sort((a, b) => b[1] - a[1]).map(([r, n]) => ({valor: r, rotulo: `${r} — falta em ${n} das ${linhas.length}`}));
-  if (!opcoes.length) { aviso("qd-lote-msg", "Nenhuma das linhas marcadas tem batida faltando.", "info"); return; }
-  const r = await perguntar({titulo: `Incluir a batida que falta — ${contar(linhas.length, "linha", "linhas")}`,
+  // as quatro de sempre, também, para quem não tem escala ou bateu fora do previsto (aí com a hora digitada)
+  ["Entrada", "Saída para o intervalo", "Volta do intervalo", "Saída"].filter(x => !rotulos[x])
+    .forEach(x => opcoes.push({valor: x, rotulo: `${x} — digite a hora`}));
+  const r = await perguntar({titulo: `Incluir uma batida — ${contar(linhas.length, "linha", "linhas")}`,
     aviso: "Cada inclusão vira um ajuste da gestão, aprovado na hora e guardado com o motivo e o seu nome. " +
            "As travas de sempre continuam: dia com competência fechada, horário que já tem batida e pedido repetido não entram. " +
            "Não conta contra a pessoa na qualidade.",
     campos: [
       {nome: "rotulo", rotulo: "Qual batida", tipo: "select", opcoes, valor: opcoes[0].valor, obrigatorio: true, largura: 6},
       {nome: "hora", rotulo: "Hora", exemplo: "deixe em branco para usar a da escala de cada um", largura: 6,
-       dica: "Em branco, cada pessoa ganha o horário que a escala dela previa. Ou digite um horário só para todas (ex.: 17:00)."},
-      {nome: "motivo", rotulo: "Motivo", tipo: "textarea", linhas: 3, obrigatorio: true, largura: 6,
-       exemplo: "ex.: falha do sistema em 21/10/2026 — o aplicativo não abriu na hora da saída"}],
+       dica: "Em branco, cada pessoa ganha o horário que a escala dela previa. Ou digite um horário só para todas (ex.: 17:00) — obrigatório para quem não tem a batida prevista na escala."},
+      {...QD_MOTIVO, exemplo: "ex.: falha do sistema em 21/10/2026 — o aplicativo não abriu na hora da saída"}],
     textoOk: "Incluir"});
   if (!r) return;
   if (r.hora && !/^\d{1,2}:\d{2}$/.test(r.hora)) { aviso("qd-lote-msg", "Hora no formato 17:00.", "erro"); return; }
-  const itens = linhas.filter(l => l.faltando.some(f => f.rotulo === r.rotulo)).map(l => ({colaborador_id: l.colaborador_id, data: l.data}));
-  let feitas = 0, aprovadas = 0; const recusas = [];
-  for (let i = 0; i < itens.length; i += 40) {
-    aviso("qd-lote-msg", `Incluindo… ${Math.min(i + 40, itens.length)} de ${itens.length}`, "info");
-    try {
-      const resp = await postar("/erp/api/ponto/quadro/incluir", {itens: itens.slice(i, i + 40), rotulo: r.rotulo, hora: r.hora || null, motivo: r.motivo});
-      feitas += resp.feitas; aprovadas += resp.aprovadas;
-      resp.resultados.filter(x => !x.ok).forEach(x => recusas.push(`${escapar(x.nome || `pessoa nº ${x.colaborador_id}`)} (${diaCurto(x.data)}): ${escapar(x.erro)}`));
-    } catch (e) { recusas.push(escapar(e.message)); break; }
-  }
-  const pendentes = feitas - aprovadas;
-  aviso("qd-lote-msg", `<b>${contar(feitas, "batida incluída", "batidas incluídas")}</b>`
-    + (pendentes ? ` (${pendentes} esperando validação de quem aprova)` : "")
-    + (recusas.length ? ` · ${recusas.length} não entraram:<ul style="margin:6px 0 0 18px">${recusas.slice(0, 30).map(x => `<li>${x}</li>`).join("")}</ul>` : ""),
-    recusas.length ? "alerta" : "ok");
-  QD_MARCADAS.clear(); qdMontar();
+  // com a hora digitada vale para todas; sem ela, só para quem a escala diz que falta essa batida
+  const alvo = r.hora ? linhas : linhas.filter(l => l.faltando.some(f => f.rotulo === r.rotulo));
+  if (!alvo.length) { aviso("qd-lote-msg", `Nenhuma das marcadas tem “${escapar(r.rotulo)}” faltando pela escala — digite a hora.`, "info"); return; }
+  await qdRodarLote("/erp/api/ponto/quadro/incluir", qdItens(alvo),
+                    {acao: "batida", rotulo: r.rotulo, hora: r.hora || null, motivo: r.motivo}, ["batida incluída", "batidas incluídas"]);
 }
 
 document.querySelectorAll("[data-qd-atalho]").forEach(b => b.addEventListener("click", () => { qdAtalho(b.dataset.qdAtalho); qdMontar(); }));
@@ -2548,8 +2633,10 @@ document.querySelectorAll("[data-qd-visao]").forEach(b => b.addEventListener("cl
 els("qd-ver").addEventListener("click", qdMontar);
 els("qd-busca").addEventListener("keydown", e => { if (e.key === "Enter") qdMontar(); });
 els("qd-desmarcar").addEventListener("click", () => { QD_MARCADAS.clear(); qdDesenhar(); });
-els("qd-marcar-buracos").addEventListener("click", () => qdMarcarTodas(true));
+document.querySelectorAll("[data-qd-marcar-grupo]").forEach(b => b.addEventListener("click", () => qdMarcarGrupo(b.dataset.qdMarcarGrupo)));
 if (els("qd-incluir")) els("qd-incluir").addEventListener("click", qdIncluir);
+if (els("qd-dia-inteiro")) els("qd-dia-inteiro").addEventListener("click", qdDiaInteiro);
+if (els("qd-abonar")) els("qd-abonar").addEventListener("click", qdAbonar);
 els("qd-limpar").addEventListener("click", () => {
   document.querySelectorAll("[data-qd-situacao], [data-qd-batidas], [data-qd-faltando], [data-qd-tipo]").forEach(x => { x.checked = false; });
   ["qd-busca", "qd-obra-cad", "qd-obra-bat", "qd-funcao", "qd-escala", "qd-sit-cad"].forEach(id => { els(id).value = ""; });

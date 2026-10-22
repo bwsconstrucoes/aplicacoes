@@ -108,6 +108,48 @@ def test_horario_unico_para_todos_e_o_lote_tem_teto(app, mundo):
                    "motivo": "falha do sistema na saída"}).status_code == 400
 
 
+def test_lancar_o_dia_inteiro_e_abonar_a_falta_em_lote(app, mundo):
+    """22/10/2026, o dono: "várias pessoas aqui que eu poderia muito bem selecionar
+    para fazer alguma ação". Além da batida que falta: o dia inteiro pela escala
+    (quem não bateu nada e trabalhou) e o abono da falta (chuva, obra parada)."""
+    seg = _segunda_passada()
+    ter = dia_util(seg, 1)
+    for h in ((7, 0), (11, 0), (12, 0)):
+        bater_via_chave(app, CPF_JOAO, local(seg, *h))
+    dp = como(app, mundo["dp"])
+    motivo = "o aplicativo ficou fora do ar o dia todo; a equipe trabalhou"
+    joao = {"colaborador_id": mundo["joao"], "data": seg.isoformat()}
+    maria = {"colaborador_id": mundo["maria"], "data": seg.isoformat()}
+    # uma batida que a escala não diz faltar só entra com a hora digitada
+    r = dp.post("/erp/api/ponto/quadro/incluir", json={"itens": [joao], "rotulo": "Entrada",
+                "motivo": motivo}).get_json()
+    assert r["resultados"][0]["ok"] is False and "digite a hora" in r["resultados"][0]["erro"]
+    # o dia inteiro: só no dia sem nenhuma batida, com todas as da escala
+    r = dp.post("/erp/api/ponto/quadro/incluir", json={"itens": [joao, maria], "acao": "dia",
+                "motivo": motivo}).get_json()
+    rj, rm = r["resultados"]
+    assert rj["ok"] is False and "já há batida" in rj["erro"]
+    assert rm["ok"] and rm["batidas"] == 4 and rm["aprovado"] is True, rm
+    linha = next(l for l in _quadro(dp, seg)["linhas"] if l["colaborador_id"] == mundo["maria"])
+    assert "COMPLETO" in linha["etiquetas"] and len(linha["batidas"]) == 4
+    assert dp.post("/erp/api/ponto/quadro/incluir", json={"itens": [maria], "acao": "xyz",
+                   "motivo": motivo}).status_code == 400
+    # o abono: só a falta, e só quem lança afastamento
+    falta = {"colaborador_id": mundo["maria"], "data": ter.isoformat()}
+    assert como(app, mundo["sup"]).post("/erp/api/ponto/quadro/abonar", json={
+        "itens": [falta], "motivo": "chuva forte, obra parada"}).status_code in (403, 404)
+    r = dp.post("/erp/api/ponto/quadro/abonar", json={"itens": [falta, joao],
+                "motivo": "chuva forte, obra parada o dia todo"}).get_json()
+    rf, rj = r["resultados"]
+    assert rf["ok"] and rf["aprovado"] is True, rf
+    assert rj["ok"] is False and "não há falta" in rj["erro"]
+    linha = next(l for l in _quadro(dp, ter)["linhas"] if l["colaborador_id"] == mundo["maria"])
+    assert "JUSTIFICADO" in linha["etiquetas"] and linha["situacao"] == "ABONADO"
+    # de novo: já não é falta
+    r = dp.post("/erp/api/ponto/quadro/abonar", json={"itens": [falta], "motivo": "chuva forte, de novo"}).get_json()
+    assert r["feitas"] == 0
+
+
 def test_etiquetas_do_dia_puras():
     from app.apps.ponto.core.quadro import etiquetas_do_dia, passa_no_filtro
     falta = {"batidas": [], "faltando": [{"rotulo": "Entrada"}, {"rotulo": "Saída"}], "situacao": "FALTA",

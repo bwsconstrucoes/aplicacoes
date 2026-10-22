@@ -271,31 +271,33 @@ def montar(conn: Connection, quem: Quem, de, ate, f: Optional[dict] = None, *, e
 MAX_POR_CHAMADA = 40       # a tela manda de 40 em 40 e mostra o andamento
 
 
-def incluir_em_lote(quem: Quem, itens: list[dict], *, rotulo: str, hora: Optional[str], motivo: str) -> list[dict]:
-    """Inclui, para cada {colaborador_id, data}, a batida `rotulo` que falta
-    ("Saída", "Entrada"…). A hora é a da escala de cada um — ou `hora` (HH:MM),
-    se vier. Cada inclusão é um pedido de ajuste da gestão, aprovado na hora por
-    quem pode (o caminho de sempre: competência fechada, batida que já existe e
-    pedido repetido continuam barrados), marcado "em lote" para não contar
-    contra a pessoa na qualidade. Cada uma na sua transação: a trava do NSR
-    nunca fica presa pelo lote inteiro, e uma recusada não desfaz as outras."""
-    from . import ocorrencias
+ACOES_DO_LOTE = ("batida", "dia")
+
+
+def _motivo_do_lote(motivo) -> str:
     motivo = str(motivo or "").strip()
     if len(motivo) < 10:
         raise ErroDeValidacao("diga o motivo (vai no registro de cada batida)", campo="motivo")
-    rotulo = str(rotulo or "").strip()
-    if not rotulo:
-        raise ErroDeValidacao("escolha qual batida incluir", campo="rotulo")
-    if hora:
-        try:
-            hh, mm = (int(x) for x in str(hora).strip().split(":")[:2])
-            assert 0 <= hh < 24 and 0 <= mm < 60
-        except (ValueError, AssertionError):
-            raise ErroDeValidacao("hora no formato HH:MM", campo="hora")
+    return motivo
+
+
+def _conferir_itens(itens) -> None:
     if not itens:
         raise ErroDeValidacao("marque ao menos uma linha", campo="itens")
     if len(itens) > MAX_POR_CHAMADA:
         raise ErroDeValidacao(f"no máximo {MAX_POR_CHAMADA} por vez", campo="itens")
+
+
+def _minuto_de(hora: str) -> int:
+    hh, mm = (int(x) for x in str(hora).strip().split(":")[:2])
+    return hh * 60 + mm
+
+
+def _cada_item(quem: Quem, itens: list[dict], fazer) -> list[dict]:
+    """Roda `fazer(conn, pessoa, dia_do_espelho, data)` item a item, cada um na sua
+    transação: a trava do NSR nunca fica presa pelo lote inteiro, e uma recusada
+    não desfaz as outras. `fazer` devolve o que vai no resultado da linha."""
+    from . import ocorrencias
     saida = []
     for it in itens:
         r = {"colaborador_id": it.get("colaborador_id"), "data": it.get("data")}
@@ -305,31 +307,108 @@ def incluir_em_lote(quem: Quem, itens: list[dict], *, rotulo: str, hora: Optiona
                 pessoa = ocorrencias.exigir_pessoa_no_alcance(conn, quem, cid)
                 r["nome"] = pessoa["nome"]
                 d = espelho.montar(conn, cid, dia, dia)["dias"][0]
-                if not d["batidas"]:
-                    # Sem batida nenhuma é falta (ou folga): incluir só uma batida
-                    # inventaria meio dia. O dia inteiro se lança pelo ajuste do dia.
-                    raise ErroDeValidacao("neste dia não há nenhuma batida — é falta; o dia inteiro se "
-                                          "lança pelo espelho, com o motivo")
-                alvo = next((x for x in d["faltando"] if x["rotulo"].lower() == rotulo.lower()), None)
-                if alvo is None:
-                    raise ErroDeValidacao(f"neste dia não falta a batida “{rotulo}”")
-                minuto = (int(hora.split(":")[0]) * 60 + int(hora.split(":")[1])) if hora else int(alvo["minuto"])
-                if hora and alvo["minuto"] >= 1440 and minuto < 720:
-                    minuto += 1440                  # a saída do vigia é na madrugada do dia seguinte
-                momento = dt.datetime.combine(dia, dt.time(0)) + dt.timedelta(minutes=minuto)
-                obra = next((b["obra"] for b in d["batidas"] if b.get("obra")), None) or pessoa.get("obra_codigo")
-                if not obra:
-                    raise ErroDeValidacao("a pessoa não tem obra no dia nem no cadastro")
-                o = ocorrencias.criar(conn, quem, {
-                    "tipo": "AJUSTE_BATIDA", "colaborador_id": cid, "data_inicio": dia.isoformat(),
-                    "horario": momento.isoformat(timespec="minutes"), "obra": obra,
-                    "descricao": motivo, "aprovar_ja": True, "lote": True}, origem="GESTAO")
-            r.update(ok=True, hora=momento.strftime("%H:%M"), status=o["status"],
-                     aprovado=o["status"] == "APROVADA", pedido_id=o["id"])
+                r.update(ok=True, **fazer(conn, pessoa, d, dia))
         except (ErroDeValidacao, NaoEncontrado) as e:
             r.update(ok=False, erro=str(e))
+        except (KeyError, TypeError, ValueError):
+            r.update(ok=False, erro="linha ilegível")
         saida.append(r)
     return saida
+
+
+def _ajuste_em_lote(conn: Connection, quem: Quem, pessoa: dict, d: dict, dia: dt.date, minuto: int,
+                    motivo: str) -> dict:
+    from . import ocorrencias
+    momento = dt.datetime.combine(dia, dt.time(0)) + dt.timedelta(minutes=minuto)
+    obra = next((b["obra"] for b in d["batidas"] if b.get("obra")), None) or pessoa.get("obra_codigo")
+    if not obra:
+        raise ErroDeValidacao("a pessoa não tem obra no dia nem no cadastro")
+    o = ocorrencias.criar(conn, quem, {
+        "tipo": "AJUSTE_BATIDA", "colaborador_id": int(pessoa["id"]), "data_inicio": dia.isoformat(),
+        "horario": momento.isoformat(timespec="minutes"), "obra": obra,
+        "descricao": motivo, "aprovar_ja": True, "lote": True}, origem="GESTAO")
+    return {"hora": momento.strftime("%H:%M"), "status": o["status"], "aprovado": o["status"] == "APROVADA",
+            "pedido_id": o["id"]}
+
+
+def incluir_em_lote(quem: Quem, itens: list[dict], *, rotulo: str = "", hora: Optional[str] = None,
+                    motivo: str, acao: str = "batida") -> list[dict]:
+    """Inclui batidas para as linhas marcadas no quadro. Cada inclusão é um pedido
+    de ajuste da gestão, aprovado na hora por quem pode (o caminho de sempre:
+    competência fechada, batida que já existe e pedido repetido continuam
+    barrados), marcado "em lote" para não contar contra a pessoa na qualidade.
+
+    `acao`:
+      · "batida" — UMA batida (`rotulo`: "Saída", "Entrada"…) no dia que já tem
+        alguma. A hora é a da escala de cada um — ou `hora` (HH:MM), se vier; com
+        a hora digitada, entra mesmo quando a escala não diz que ela falta (pessoa
+        sem escala, horário fora do previsto);
+      · "dia" — o DIA INTEIRO pela escala, no dia sem nenhuma batida (22/10/2026,
+        o dono: "várias pessoas que eu poderia muito bem selecionar"): todas as
+        batidas que a escala previa, juntas — ou entram todas, ou nenhuma."""
+    acao = str(acao or "batida").strip().lower()
+    if acao not in ACOES_DO_LOTE:
+        raise ErroDeValidacao("ação de lote desconhecida", campo="acao")
+    motivo = _motivo_do_lote(motivo)
+    rotulo = str(rotulo or "").strip()
+    if acao == "batida" and not rotulo:
+        raise ErroDeValidacao("escolha qual batida incluir", campo="rotulo")
+    if hora:
+        try:
+            hh, mm = (int(x) for x in str(hora).strip().split(":")[:2])
+            assert 0 <= hh < 24 and 0 <= mm < 60
+        except (ValueError, AssertionError):
+            raise ErroDeValidacao("hora no formato HH:MM", campo="hora")
+    _conferir_itens(itens)
+
+    def uma_batida(conn, pessoa, d, dia):
+        if not d["batidas"]:
+            # Sem batida nenhuma: uma batida só inventaria meio dia. O dia inteiro
+            # entra pela ação "dia" (pela escala) ou pelo espelho.
+            raise ErroDeValidacao("neste dia não há nenhuma batida — use “lançar o dia inteiro” ou abone a falta")
+        alvo = next((x for x in d["faltando"] if x["rotulo"].lower() == rotulo.lower()), None)
+        if alvo is None and not hora:
+            raise ErroDeValidacao(f"pela escala, neste dia não falta a batida “{rotulo}” — para incluir assim "
+                                  "mesmo, digite a hora")
+        minuto = _minuto_de(hora) if hora else int(alvo["minuto"])
+        if hora and alvo is not None and alvo["minuto"] >= 1440 and minuto < 720:
+            minuto += 1440                  # a saída do vigia é na madrugada do dia seguinte
+        return _ajuste_em_lote(conn, quem, pessoa, d, dia, minuto, motivo)
+
+    def o_dia_inteiro(conn, pessoa, d, dia):
+        if d["batidas"]:
+            raise ErroDeValidacao("neste dia já há batida — use “incluir uma batida” para a que falta")
+        if not d["faltando"]:
+            raise ErroDeValidacao("a escala não prevê batida neste dia (ou o horário ainda não chegou) — "
+                                  "lance pelo espelho, com os horários")
+        feitas = [_ajuste_em_lote(conn, quem, pessoa, d, dia, int(f["minuto"]), motivo) for f in d["faltando"]]
+        return {"hora": " · ".join(x["hora"] for x in feitas), "batidas": len(feitas),
+                "aprovado": all(x["aprovado"] for x in feitas), "status": feitas[-1]["status"]}
+
+    return _cada_item(quem, itens, uma_batida if acao == "batida" else o_dia_inteiro)
+
+
+def abonar_em_lote(quem: Quem, itens: list[dict], *, motivo: str) -> list[dict]:
+    """Abona a FALTA das linhas marcadas (dia de chuva, obra parada, equipe
+    liberada): um ABONO do DP por pessoa e dia, aprovado na hora por quem pode,
+    com o motivo. Só no dia que o espelho chama de falta — dia com batida,
+    descanso, feriado ou já justificado fica de fora, com o porquê."""
+    from . import ocorrencias
+    if not quem.dp:
+        raise ErroDeValidacao("o abono é lançado pelo DP", campo="tipo")
+    motivo = _motivo_do_lote(motivo)
+    _conferir_itens(itens)
+
+    def abonar(conn, pessoa, d, dia):
+        if d["situacao"] != "FALTA":
+            raise ErroDeValidacao(f"neste dia não há falta para abonar "
+                                  f"({SITUACOES_DO_DIA.get(d['situacao'], d['situacao']).lower()})")
+        o = ocorrencias.criar(conn, quem, {
+            "tipo": "ABONO", "colaborador_id": int(pessoa["id"]), "data_inicio": dia.isoformat(),
+            "data_fim": dia.isoformat(), "descricao": motivo, "aprovar_ja": True}, origem="GESTAO")
+        return {"status": o["status"], "aprovado": o["status"] == "APROVADA", "pedido_id": o["id"]}
+
+    return _cada_item(quem, itens, abonar)
 
 
 # ---------------------------------------------------------------------------
