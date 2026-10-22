@@ -159,3 +159,21 @@ def test_painel_da_pessoa_e_local_da_batida(app, mundo, banco):
     assert como(app, mundo["fin"]).get(f"/erp/api/ponto/marcacoes/{m['id']}/local").status_code == 403
     q = dp.post("/erp/api/ponto/quadro", json={"de": seg.isoformat(), "filtros": {"tipos_pessoa": ["SEM_PIN"]}}).get_json()
     assert all(any(x["codigo"] == "SEM_PIN" for x in l["marcas"]) for l in q["linhas"])
+
+
+def test_o_mapa_conta_quem_bateu_em_cada_obra(app, mundo, banco):
+    from sqlalchemy import text
+    seg = _segunda_passada()
+    m = bater_via_chave(app, CPF_JOAO, local(seg, 7, 0))
+    with banco.connect() as conn:
+        conn.execute(text("UPDATE public.obras SET latitude = -3.73, longitude = -38.52 WHERE codigo = 'PG-A'"))
+        conn.execute(text("UPDATE ponto.marcacoes SET latitude = -3.731, longitude = -38.521, dentro_da_cerca = FALSE "
+                          "WHERE id = :i"), {"i": m["id"]})
+        conn.commit()
+    dp = como(app, mundo["dp"])
+    r = dp.post("/erp/api/ponto/quadro/mapa", json={"de": seg.isoformat()}).get_json()
+    pga = next(o for o in r["obras"] if o["codigo"] == "PG-A")
+    assert pga["bateram"] == 1 and pga["latitude"] == -3.73 and pga["por_dia"] == {seg.isoformat(): 1}
+    assert r["pontos"] == [{"lat": -3.731, "lon": -38.521, "fora": True, "obra": "PG-A", "data": seg.isoformat()}]
+    assert "_ids" not in dp.post("/erp/api/ponto/quadro", json={"de": seg.isoformat()}).get_json()
+    assert como(app, mundo["fin"]).post("/erp/api/ponto/quadro/mapa", json={"de": seg.isoformat()}).status_code == 403

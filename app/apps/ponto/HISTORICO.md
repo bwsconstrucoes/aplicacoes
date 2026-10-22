@@ -59,6 +59,10 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1zo. **No ramo, esperando o "pode"** (22/10/2026, sem migração, **peça nova: Leaflet**) — o **MAPA DO QUADRO**
+   (Quadro › 🗺️ Mapa): uma bolha por obra, do tamanho de quantas pessoas bateram nela, na cor do quanto o ponto
+   está completo. Ver a seção de 22/10/2026. **Não conferido aqui:** o fundo do mapa (ruas, vindo do
+   OpenStreetMap) — o ambiente de desenvolvimento não alcança a internet; conferir na primeira abertura.
 1zn. **No ramo, esperando o "pode"** (21/10/2026, sem migração, **NASCE DESLIGADO**) — a **base mista da folha
    do Análise de SPs**: MobPonto até 15/10, este ponto do início do ponto em diante (`core/para_folha.py` e o
    encaixe em `analisesps/ponto.py`). Chave em Configuração › Geral, "A folha lê o ponto eletrônico".
@@ -301,6 +305,55 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 22/10/2026 — O mapa do quadro: onde tem mais gente batendo ponto
+
+**Pedido do dono:** *"Quero um mapa que me permita visualizar geograficamente a qtd de
+funcionários batendo ponto num determinado período ou dia. Pra entender visualmente onde
+tem mais gente. Se tiver alguma ideia pra agregar…"*
+
+**Onde ficou:** uma visão a mais do Quadro (🗺️ Mapa), ao lado de Pessoa e dia, Resumo por
+dia, Por pessoa e Por obra. Usa o MESMO recorte do Quadro — período e todos os filtros da
+barra lateral (função, escala, tipo de pessoa…) — então "onde estão os vigias esta semana"
+é marcar Vigia e abrir o mapa. Nada de tela nova, como ele pediu na véspera.
+
+**O que mostra:**
+- uma **bolha por obra**, no ponto da coordenada do cadastro, com o NÚMERO de pessoas
+  diferentes que bateram ali no período (ou no dia escolhido); tamanho pela raiz do número
+  (uma obra de 100 não esconde as de 5);
+- **cor pelo quanto o ponto está completo** nos dias julgáveis da obra: verde de 90% para
+  cima, âmbar de 70 a 89%, vermelho abaixo, cinza quando ninguém bateu;
+- a **janelinha da obra** no clique: quantas bateram, quantas da obra não bateram nenhuma
+  vez, dias completos, com buraco, faltas, em conferência e o botão **"Ver as pessoas"** (abre
+  Pessoa e dia filtrado na obra);
+- **"Onde tem mais gente"**, a lista ao lado, em ordem; clicar centraliza a obra;
+- **dia a dia**: escolher um dia, ou "▶ dia a dia" para passar os dias do período em
+  sequência (1,3 s cada) — o mapa "se mexe" com a obra que encheu ou esvaziou;
+- **onde cada batida foi feita** (opcional): um ponto por batida, vermelho quando foi FORA
+  da cerca — até 4.000 pontos; acima disso, os mais recentes e um aviso;
+- **obras sem coordenada** listadas embaixo (não dá para pôr no mapa).
+
+**Decisões:**
+- **Peça nova: Leaflet 1.9.4** (biblioteca de mapa, licença BSD, livre), guardada DENTRO do
+  sistema (`app/apps/ponto/static/leaflet/`), servida pelo próprio ERP só para quem vê o
+  ponto. Não depende de site de terceiro para funcionar o código. O **fundo do mapa** (ruas,
+  bairros) vem do **OpenStreetMap**, gratuito e sem chave; se um dia o volume pedir, troca-se o
+  endereço das imagens por um serviço pago sem mexer no resto. Avisado ao dono (regra "não
+  introduzir dependência nova sem avisar").
+- Conta "pessoas que bateram", e não "batidas": 4 batidas da mesma pessoa são 1 pessoa.
+- Uma conta só (o mesmo `quadro.montar`), com a mesma trava de "uma por vez" do Quadro:
+  pedido simultâneo recebe "aguarde" em vez de dobrar o trabalho do servidor.
+- **Defeito achado no ensaio e corrigido:** com o teclado do mapa ligado (padrão da
+  biblioteca), o clique foca o mapa, a tela rola uns pixels e o clique na bolha se perde.
+  Desligado.
+
+**Não conferido:** o fundo do mapa de verdade — no ensaio as imagens do OpenStreetMap foram
+trocadas por um quadrado cinza (o ambiente não alcança a internet). Bolhas, números,
+janelinha, "Ver as pessoas", dia a dia e pontos foram exercitados no navegador, sem erro.
+
+**Ideias deixadas para o dono escolher:** mapa por HORA (quem chegou atrasado, onde);
+esperado × presente por obra (quantos a escala previa e quantos vieram); os vigias da noite
+com as rondas no mapa; quem passou por duas obras no mesmo dia (o trajeto).
 
 ## 21/10/2026 (noite, segunda) — Uma tela gerencial: a janela da pessoa, as etiquetas e o mapa
 

@@ -257,6 +257,17 @@
   .dp-mes .s-INCOMPLETO { background:#FFF4D6; } .dp-mes .s-ABONADO, .dp-mes .s-COMPENSADO { background:#EEF3FB; }
   .dp-mes .s-DESCANSO, .dp-mes .s-FUTURO, .dp-mes .s-ANTES_DO_PONTO, .dp-mes .s-FORA_DO_CONTRATO { background:#F6F7F9; color:var(--tinta-suave); }
   .link-btn.elo-pessoa { padding:0; text-align:left; }
+  /* O mapa do Quadro (21/10/2026). */
+  .qd-mapa-grade { display:grid; grid-template-columns:minmax(0, 1fr) 300px; gap:12px; }
+  @media (max-width: 1000px) { .qd-mapa-grade { grid-template-columns:1fr; } }
+  #qd-mapa { height:68vh; min-height:420px; border-radius:10px; border:1px solid var(--borda); background:#E9EEF3; }
+  .qd-mapa-lado { max-height:68vh; overflow:auto; }
+  .qd-mapa-lado .linha-obra { display:flex; justify-content:space-between; gap:8px; padding:5px 4px;
+                              border-bottom:1px solid var(--borda); cursor:pointer; font-size:13px; }
+  .qd-mapa-lado .linha-obra:hover { background:#F3F6FA; }
+  .qd-mapa-ctl { display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; margin:0 0 8px; font-size:13px; }
+  .qd-bolha-num { background:transparent; border:0; color:#fff; font-weight:800; font-size:12px; line-height:18px; text-align:center; pointer-events:none; text-shadow:0 0 2px rgba(0,0,0,.5); }
+  .qd-legenda span { display:inline-block; width:11px; height:11px; border-radius:50%; vertical-align:-1px; margin:0 4px 0 10px; }
   /* O quadro do ponto (21/10/2026). */
   .chip.qd-falta { background:#FDECEA; color:var(--vermelho); border:1px dashed var(--vermelho); }
   .qd-atalhos { display:flex; flex-wrap:wrap; gap:4px; margin:0 0 8px; }
@@ -418,6 +429,7 @@
   <button type="button" data-qd-visao="dias">Resumo por dia</button>
   <button type="button" data-qd-visao="pessoas">Por pessoa</button>
   <button type="button" data-qd-visao="obras">Por obra</button>
+  <button type="button" data-qd-visao="mapa">🗺️ Mapa</button>
 </div>
 <div class="barra-lote" id="qd-lote" hidden>
   <b id="qd-lote-qtd">0 marcadas</b>
@@ -2288,6 +2300,7 @@ function qdDesenhar() {
     }));
     qdLote(); return;
   }
+  if (QD_VISAO === "mapa") { qdMapa(); qdLote(); return; }
   if (QD_VISAO === "obras") {
     els("qd-resumo").innerHTML = `<b>${QD.por_obra.length}</b> obra(s) — a obra do dia é a da primeira batida; sem batida, a do cadastro. Clique na obra para ver as pessoas`;
     const n = (o, k) => o.contagem[k] || 0;
@@ -2341,6 +2354,138 @@ function qdDesenhar() {
   qdLote();
 }
 
+// ===========================================================================
+// O MAPA DO QUADRO (21/10/2026, o dono: "um mapa que me permita visualizar
+// geograficamente a quantidade de funcionários batendo ponto num período ou dia,
+// para entender visualmente onde tem mais gente"). Uma bolha por obra, do tamanho
+// de quem bateu; a cor diz quanto do ponto está completo. Dia a dia, com "tocar",
+// e, se quiser, o lugar de cada batida (fora da cerca em vermelho). A conta é a do
+// Quadro: os filtros da barra valem aqui. O Leaflet é guardado no próprio serviço.
+// ===========================================================================
+let QD_MAPA = null, QD_MAPA_DADOS = null, QD_MAPA_DIA = "", QD_MAPA_TOCANDO = null;
+let LEAFLET = null;
+function carregarLeaflet() {
+  if (LEAFLET) return LEAFLET;
+  LEAFLET = new Promise((ok, falha) => {
+    const css = document.createElement("link");
+    css.rel = "stylesheet"; css.href = "/erp/ponto/leaflet/leaflet.css";
+    document.head.appendChild(css);
+    const js = document.createElement("script");
+    js.src = "/erp/ponto/leaflet/leaflet.js";
+    js.onload = () => ok(window.L);
+    js.onerror = () => { LEAFLET = null; falha(new Error("não consegui abrir o mapa")); };
+    document.head.appendChild(js);
+  });
+  return LEAFLET;
+}
+const corDaObra = o => {
+  const c = o.contagem || {}, com = c.COM_BATIDA || 0;
+  if (!com) return "#9AA5B1";
+  const parte = (c.COMPLETO || 0) / com;
+  return parte >= .9 ? "#1E7B3A" : parte >= .7 ? "#C98A00" : "#C0392B";
+};
+
+async function qdMapa() {
+  const alvo = els("qd-tabela");
+  els("qd-resumo").innerHTML = "montando o mapa…";
+  alvo.innerHTML = `<div class="qd-mapa-ctl">
+      <label><input type="checkbox" id="qd-mapa-pontos"> mostrar onde cada batida foi feita</label>
+      <span id="qd-mapa-dias"></span>
+      <span class="qd-legenda suave">cor: <span style="background:#1E7B3A"></span>90%+ completo
+        <span style="background:#C98A00"></span>70–89% <span style="background:#C0392B"></span>abaixo de 70%
+        <span style="background:#9AA5B1"></span>ninguém bateu · tamanho = quem bateu</span></div>
+    <div class="qd-mapa-grade"><div id="qd-mapa"></div><div class="qd-mapa-lado" id="qd-mapa-lado"></div></div>
+    <div id="qd-mapa-sem"></div>`;
+  let L;
+  try {
+    [L, QD_MAPA_DADOS] = await Promise.all([carregarLeaflet(),
+      postar("/erp/api/ponto/quadro/mapa", {de: els("qd-de").value, ate: els("qd-ate").value || els("qd-de").value, filtros: qdFiltros()})]);
+  } catch (e) { alvo.innerHTML = `<div class="aviso erro">${escapar(e.message)}</div>`; els("qd-resumo").textContent = ""; return; }
+  const D = QD_MAPA_DADOS;
+  const total = D.obras.reduce((n, o) => n + o.bateram, 0) + D.sem_lugar.reduce((n, o) => n + o.bateram, 0);
+  els("qd-resumo").innerHTML = `<b>${total}</b> pessoa(s) bateram em <b>${D.obras.length + D.sem_lugar.length}</b> obra(s)`
+    + (D.de === D.ate ? ` em ${dataBR(D.de)}` : ` de ${dataBR(D.de)} a ${dataBR(D.ate)}`) + " — clique na bolha para ver as pessoas";
+  if (QD_MAPA) { QD_MAPA.remove(); QD_MAPA = null; }
+  // sem o teclado do mapa: ele foca o mapa no clique, a tela rola uns pixels e o clique na bolha se perde
+  QD_MAPA = L.map("qd-mapa", {zoomControl: true, keyboard: false});
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'}).addTo(QD_MAPA);
+  QD_MAPA._bolhas = L.layerGroup().addTo(QD_MAPA);
+  QD_MAPA._pontos = L.layerGroup();
+  if (D.obras.length) QD_MAPA.fitBounds(L.latLngBounds(D.obras.map(o => [o.latitude, o.longitude])).pad(0.25), {maxZoom: 15});
+  else QD_MAPA.setView([-3.73, -38.52], 11);
+  QD_MAPA_DIA = "";
+  if (D.dias.length > 1) {
+    els("qd-mapa-dias").innerHTML = `<b>Dia:</b> <select id="qd-mapa-dia" data-sem-busca><option value="">todos do período</option>
+      ${D.dias.map(d => `<option value="${d}">${diaCurto(d)}</option>`).join("")}</select>
+      <button class="btn secundario" type="button" id="qd-mapa-tocar">▶ dia a dia</button>`;
+    els("qd-mapa-dia").addEventListener("change", e => { QD_MAPA_DIA = e.target.value; qdMapaDesenhar(); });
+    els("qd-mapa-tocar").addEventListener("click", qdMapaTocar);
+  }
+  els("qd-mapa-pontos").addEventListener("change", qdMapaDesenhar);
+  els("qd-mapa-sem").innerHTML = D.sem_lugar.length ? `<div class="cartao-dica"><b>Obras sem coordenada no cadastro</b> (não aparecem no mapa):
+      ${D.sem_lugar.map(o => `${escapar(o.codigo)} (${o.bateram})`).join(" · ")} — a coordenada se acerta em Configuração › Obras e cerca.</div>` : "";
+  qdMapaDesenhar();
+}
+
+function qdMapaDesenhar() {
+  const D = QD_MAPA_DADOS, L = window.L;
+  if (!D || !QD_MAPA) return;
+  const quantos = o => QD_MAPA_DIA ? (o.por_dia[QD_MAPA_DIA] || 0) : o.bateram;
+  QD_MAPA._bolhas.clearLayers();
+  const lista = [...D.obras].sort((a, b) => quantos(b) - quantos(a));
+  lista.forEach(o => {
+    const n = quantos(o), c = o.contagem || {};
+    const raio = n ? 8 + 5 * Math.sqrt(n) : 6;
+    const bolha = L.circleMarker([o.latitude, o.longitude], {radius: raio, color: "#fff", weight: 2,
+      fillColor: corDaObra(o), fillOpacity: n ? .85 : .35});
+    bolha.bindTooltip(`${escapar(o.codigo)}: ${n}`, {direction: "top"});
+    bolha.bindPopup(`<b>${escapar(o.codigo)}</b> — ${escapar(o.nome || "")}${o.municipio ? `<br><small>${escapar(o.municipio)}</small>` : ""}
+      <div style="margin-top:6px"><b>${n}</b> pessoa(s) bateram${QD_MAPA_DIA ? ` em ${diaCurto(QD_MAPA_DIA)}` : " no período"}
+      ${o.pessoas > o.bateram ? `<br><span style="color:#C0392B">${o.pessoas - o.bateram} da obra sem nenhuma batida no período</span>` : ""}</div>
+      <div style="margin-top:4px; font-size:12px">dias completos ${c.COMPLETO || 0} · com batida faltando ${c.COM_BURACO || 0}
+        · faltas ${c.FALTA || 0} · em conferência ${c.EM_ANALISE || 0}</div>
+      <button class="btn" type="button" style="margin-top:8px" data-qd-mapa-obra="${escapar(o.codigo)}">Ver as pessoas</button>`);
+    bolha.on("popupopen", ev => {
+      const b = ev.popup.getElement().querySelector("[data-qd-mapa-obra]");
+      if (b) b.addEventListener("click", () => { QD_OBRA_DO_DIA = b.dataset.qdMapaObra; QD_VISAO = "linhas"; qdMontar(); });
+    });
+    QD_MAPA._bolhas.addLayer(bolha);
+    // o número vai num marcador à parte: uma camada só tem UMA dica, e a do passar o mouse já está nela
+    if (n) QD_MAPA._bolhas.addLayer(L.marker([o.latitude, o.longitude], {interactive: false, keyboard: false,
+      icon: L.divIcon({className: "qd-bolha-num", html: String(n), iconSize: [40, 18], iconAnchor: [20, 9]})}));
+  });
+  QD_MAPA._pontos.clearLayers();
+  if (els("qd-mapa-pontos").checked) {
+    D.pontos.filter(p => !QD_MAPA_DIA || p.data === QD_MAPA_DIA).forEach(p => QD_MAPA._pontos.addLayer(
+      L.circleMarker([p.lat, p.lon], {radius: 3, weight: 0, fillOpacity: .7, fillColor: p.fora ? "#C0392B" : "#2C5CC5"})
+        .bindTooltip(`${escapar(p.obra)} · ${diaCurto(p.data)}${p.fora ? " · fora da cerca" : ""}`)));
+    QD_MAPA._pontos.addTo(QD_MAPA);
+  } else QD_MAPA.removeLayer(QD_MAPA._pontos);
+  els("qd-mapa-lado").innerHTML = `<h4 style="margin:0 0 6px">Onde tem mais gente${QD_MAPA_DIA ? ` — ${diaCurto(QD_MAPA_DIA)}` : ""}</h4>`
+    + lista.map(o => `<div class="linha-obra" data-qd-ir="${escapar(o.codigo)}"><span><b>${escapar(o.codigo)}</b>
+        <small style="display:block; margin:0">${escapar((o.nome || "").slice(0, 38))}</small></span>
+        <span class="dados"><b>${quantos(o)}</b></span></div>`).join("")
+    + (D.pontos_cortados ? `<p class="cartao-dica">Mostrando as ${D.pontos.length} batidas mais novas.</p>` : "");
+  els("qd-mapa-lado").querySelectorAll("[data-qd-ir]").forEach(x => x.addEventListener("click", () => {
+    const o = D.obras.find(y => y.codigo === x.dataset.qdIr);
+    if (o) QD_MAPA.setView([o.latitude, o.longitude], 16);
+  }));
+}
+
+function qdMapaTocar() {
+  const D = QD_MAPA_DADOS;
+  if (QD_MAPA_TOCANDO) { clearInterval(QD_MAPA_TOCANDO); QD_MAPA_TOCANDO = null; els("qd-mapa-tocar").textContent = "▶ dia a dia"; return; }
+  let i = 0;
+  els("qd-mapa-tocar").textContent = "⏸ parar";
+  const passo = () => {
+    if (!els("qd-mapa-dia") || i >= D.dias.length) { clearInterval(QD_MAPA_TOCANDO); QD_MAPA_TOCANDO = null;
+      if (els("qd-mapa-tocar")) els("qd-mapa-tocar").textContent = "▶ dia a dia"; return; }
+    QD_MAPA_DIA = D.dias[i++]; els("qd-mapa-dia").value = QD_MAPA_DIA; qdMapaDesenhar();
+  };
+  passo(); QD_MAPA_TOCANDO = setInterval(passo, 1300);
+}
+
 function qdMarcarTodas(sim) {
   (QD.linhas || []).filter(l => l.faltando.length && l.batidas.length).forEach(l =>
     sim ? QD_MARCADAS.add(chaveQd(l)) : QD_MARCADAS.delete(chaveQd(l)));
@@ -2391,7 +2536,15 @@ async function qdIncluir() {
 
 document.querySelectorAll("[data-qd-atalho]").forEach(b => b.addEventListener("click", () => { qdAtalho(b.dataset.qdAtalho); qdMontar(); }));
 document.querySelectorAll("[data-qd-visao]").forEach(b => b.addEventListener("click", () => {
-  QD_VISAO = b.dataset.qdVisao; if (QD) qdDesenhar(); }));
+  if (QD_MAPA_TOCANDO) { clearInterval(QD_MAPA_TOCANDO); QD_MAPA_TOCANDO = null; }
+  QD_VISAO = b.dataset.qdVisao;
+  if (QD) qdDesenhar();
+  else if (QD_VISAO === "mapa") {                 // o mapa abre mesmo sem o quadro montado
+    if (!els("qd-de").value) qdAtalho("hoje");
+    document.querySelectorAll("[data-qd-visao]").forEach(x => x.classList.toggle("ativa", x.dataset.qdVisao === "mapa"));
+    qdMapa();
+  }
+}));
 els("qd-ver").addEventListener("click", qdMontar);
 els("qd-busca").addEventListener("keydown", e => { if (e.key === "Enter") qdMontar(); });
 els("qd-desmarcar").addEventListener("click", () => { QD_MARCADAS.clear(); qdDesenhar(); });

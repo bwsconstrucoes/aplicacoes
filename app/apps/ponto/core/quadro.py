@@ -216,8 +216,12 @@ def montar(conn: Connection, quem: Quem, de, ate, f: Optional[dict] = None, *, e
                 if obra_quer and obra_dia.upper() != obra_quer:
                     continue
                 etq = etiquetas_do_dia(d)
-                ob = por_obra.setdefault(obra_dia, {"obra": obra_dia, "pessoas": set(), "contagem": Counter()})
+                ob = por_obra.setdefault(obra_dia, {"obra": obra_dia, "pessoas": set(), "contagem": Counter(),
+                                                    "bateram": set(), "por_dia": Counter()})
                 ob["pessoas"].add(int(p["id"]))
+                if d["batidas"]:                      # o mapa conta quem BATEU (21/10/2026)
+                    ob["bateram"].add(int(p["id"]))
+                    ob["por_dia"][d["data"]] += 1
                 ob["contagem"].update(etq)
                 ob["contagem"]["DIAS"] += 1
                 contagem.update(etq)
@@ -250,8 +254,10 @@ def montar(conn: Connection, quem: Quem, de, ate, f: Optional[dict] = None, *, e
                              key=lambda x: (-(x["contagem"].get("COM_BURACO", 0) + x["contagem"].get("FALTA", 0)),
                                             x["nome"] or "")),
         "contagem_tipos": dict(contagem_tipos),
-        "por_obra": sorted(({"obra": v["obra"], "pessoas": len(v["pessoas"]), "contagem": dict(v["contagem"])}
+        "por_obra": sorted(({"obra": v["obra"], "pessoas": len(v["pessoas"]), "contagem": dict(v["contagem"]),
+                             "bateram": len(v["bateram"]), "por_dia": dict(v["por_dia"])}
                             for v in por_obra.values()), key=lambda x: x["obra"]),
+        "_ids": [int(p["id"]) for p in pessoas],
         "opcoes": {"situacoes": [{"codigo": c, "rotulo": r} for c, r in SITUACOES],
                    "tipos_pessoa": [{"codigo": c, "rotulo": etiquetas_da_pessoa.ROTULO_FILTRO[c]}
                                     for c in etiquetas_da_pessoa.FILTRAVEIS],
@@ -324,3 +330,44 @@ def incluir_em_lote(quem: Quem, itens: list[dict], *, rotulo: str, hora: Optiona
             r.update(ok=False, erro=str(e))
         saida.append(r)
     return saida
+
+
+# ---------------------------------------------------------------------------
+# O mapa
+# ---------------------------------------------------------------------------
+MAX_PONTOS_NO_MAPA = 4000
+
+
+def mapa(conn: Connection, quem: Quem, de, ate, f: Optional[dict] = None) -> dict:
+    """O quadro no mapa (21/10/2026, o dono: "visualizar geograficamente a quantidade
+    de funcionários batendo ponto num período ou dia, para entender onde tem mais
+    gente"). Uma bolha por obra (quem bateu, completos, buracos, faltas, dia a dia)
+    e, se pedido, o ponto de cada batida (fora da cerca em destaque). Os filtros são
+    os do Quadro — a mesma conta, sem divergir."""
+    r = montar(conn, quem, de, ate, f)
+    obras = {o["codigo"]: cadastros.obra_para_json(o) for o in cadastros.listar_obras(conn, so_ativas=False)}
+    com_lugar, sem_lugar = [], []
+    for o in r["por_obra"]:
+        cad = obras.get(o["obra"]) or {}
+        item = {"codigo": o["obra"], "nome": cad.get("nome") or "", "municipio": cad.get("municipio"),
+                "latitude": cad.get("latitude"), "longitude": cad.get("longitude"),
+                "raio_metros": cad.get("raio_metros"), "bateram": o["bateram"], "pessoas": o["pessoas"],
+                "contagem": o["contagem"], "por_dia": o["por_dia"]}
+        (com_lugar if item["latitude"] is not None and item["longitude"] is not None else sem_lugar).append(item)
+    ids = r["_ids"]
+    pontos = db.todos(conn, f"""
+        SELECT m.latitude, m.longitude, m.dentro_da_cerca, o.codigo AS obra, m.data_referencia
+          FROM ponto.marcacoes m JOIN public.obras o ON o.id = m.obra_id
+         WHERE m.data_referencia BETWEEN :i AND :f AND m.status <> 'REJEITADA'
+           AND m.latitude IS NOT NULL AND m.colaborador_id = ANY(:ids)
+           {"AND m.obra_id = ANY(:obras)" if quem.obras is not None else ""}
+         ORDER BY m.id DESC LIMIT :lim""", i=r["de"], f=r["ate"], ids=ids or [0],
+                    obras=list(quem.obras or []), lim=MAX_PONTOS_NO_MAPA) if ids else []
+    return {
+        "de": r["de"], "ate": r["ate"], "pessoas_no_recorte": r["pessoas_no_recorte"], "contagem": r["contagem"],
+        "obras": sorted(com_lugar, key=lambda x: -x["bateram"]), "sem_lugar": sorted(sem_lugar, key=lambda x: -x["bateram"]),
+        "dias": [d["data"] for d in r["por_dia"]],
+        "pontos": [{"lat": float(p["latitude"]), "lon": float(p["longitude"]), "fora": p["dentro_da_cerca"] is False,
+                    "obra": p["obra"], "data": p["data_referencia"].isoformat()} for p in pontos],
+        "pontos_cortados": len(pontos) >= MAX_PONTOS_NO_MAPA,
+    }

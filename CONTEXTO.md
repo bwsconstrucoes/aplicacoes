@@ -802,6 +802,16 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 22/10/2026 — Peça nova no front-end: Leaflet (mapa), guardada no repositório
+
+**No ramo `feature/modulo-ponto`, esperando o "pode".** O mapa do Quadro do ponto usa o
+**Leaflet 1.9.4** (licença BSD-2), com os arquivos em `app/apps/ponto/static/leaflet/` e
+servidos pela rota `/erp/ponto/leaflet/<arquivo>` (login e `ver_ponto`), carregados só quando
+alguém abre o mapa. Não entrou no `requirements.txt` (é JavaScript, não Python). O fundo do mapa
+vem de `tile.openstreetmap.org` (gratuito, sem chave, com limite de uso justo); trocar de
+provedor é mudar um endereço no `gestao.html` do ponto. Se outra área quiser mapa, reusar
+estes arquivos em vez de baixar outra cópia.
+
 ### 21/10/2026 — A base mista do ponto na folha do Análise de SPs (atravessa áreas)
 
 **No ramo `feature/modulo-ponto`, esperando o "pode", e NASCE DESLIGADO.** Pedido do dono

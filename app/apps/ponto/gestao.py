@@ -1106,6 +1106,40 @@ def ponto_api_quadro():
             r = quadro.montar(conn, quem, d.get("de"), d.get("ate"), d.get("filtros") or {})
     except quadro.Ocupado as e:
         return jsonify({"ok": False, "erro": str(e), "ocupado": True}), 503
+    r.pop("_ids", None)
+    return _ok(**r)
+
+
+@bp.route("/erp/ponto/leaflet/<arquivo>")
+@login_obrigatorio
+@permissao("ver_ponto")
+def ponto_leaflet(arquivo: str):
+    """O Leaflet (biblioteca de mapa, BSD-2, 1.9.4) guardado no próprio serviço: o
+    mapa do Quadro não depende de site de fora para abrir — só as imagens do mapa
+    vêm do OpenStreetMap."""
+    from flask import abort, send_from_directory
+    if arquivo not in ("leaflet.js", "leaflet.css"):
+        abort(404)
+    import os
+    pasta = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "leaflet")
+    resp = send_from_directory(pasta, arquivo)
+    resp.headers["Cache-Control"] = "private, max-age=604800"
+    return resp
+
+
+@bp.route("/erp/api/ponto/quadro/mapa", methods=["POST"])
+@login_obrigatorio
+@permissao("ver_ponto")
+@_api
+def ponto_api_quadro_mapa():
+    """O quadro no mapa: uma bolha por obra, do tamanho de quem bateu (21/10/2026)."""
+    from .core import quadro
+    quem, d = _quem(), _corpo()
+    try:
+        with db.conexao() as conn:
+            r = quadro.mapa(conn, quem, d.get("de"), d.get("ate"), d.get("filtros") or {})
+    except quadro.Ocupado as e:
+        return jsonify({"ok": False, "erro": str(e), "ocupado": True}), 503
     return _ok(**r)
 
 
