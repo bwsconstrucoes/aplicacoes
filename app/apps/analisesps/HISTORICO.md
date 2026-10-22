@@ -12246,6 +12246,8 @@ somente Solicitações de uma conta especifica"*.
 
 #### Leva 240 — Lote: organizar por conta de pagamento (22/10/2026)
 
+- **Publicada em 22/10/2026** (suíte inteira verde: 9396 testes). Sem migração.
+
 - *"No lote, quero um botão que reorganize as SPs de acordo com a conta de
   pagamento, inclusive colocando a conta de pagamento como headers do lote."*
 - **Feito:** botão "Organizar por conta" na barra do lote (junto de Remover
