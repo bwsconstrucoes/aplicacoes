@@ -1567,6 +1567,24 @@ def test_remover_duplicados_pela_tela_guarda_a_primeira(app_lote, monkeypatch):
     assert "1 repetição(ões) saíram do lote" in resposta
 
 
+def test_ORGANIZAR_POR_CONTA_pela_tela(app_lote, monkeypatch):
+    """22/10/2026: o botão do lote que refaz os grupos pela conta de pagamento."""
+    from app.apps.analisesps import lote
+    salvos = []
+    monkeypatch.setattr(lote, "ler", lambda pessoa="": {
+        "conteudo": "Grupo\n1", "salvo_por": None, "salvo_em": None})
+    monkeypatch.setattr(lote, "salvar", lambda c, quem="", pessoa="": salvos.append(c))
+    cliente = como(app_lote, SENHA_OPERADOR)
+    assert 'value="organizar_conta"' in cliente.get("/analisesps/lote").get_data(as_text=True)
+    monkeypatch.setattr(lote, "montar", lambda texto: {"linhas": {
+        "1000000001": {"conta": "92945-8"}, "1000000002": {"conta": "50024"}}})
+    resposta = cliente.post("/analisesps/lote", data={
+        "acao": "organizar_conta", "conteudo": "Velho\n1000000001 1000000002"},
+        follow_redirects=True).get_data(as_text=True)
+    assert salvos[-1] == "Conta 50024\n1000000002\n\nConta 92945-8\n1000000001"
+    assert "organizado por conta de pagamento: 2 grupo(s)" in resposta
+
+
 def test_remover_duplicados_sem_duplicado_diz_que_nao_havia(app_lote, monkeypatch):
     """Silêncio depois de apertar um botão faz a pessoa apertar de novo."""
     from app.apps.analisesps import lote

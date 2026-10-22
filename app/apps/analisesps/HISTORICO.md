@@ -12244,6 +12244,39 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 240 — Lote: organizar por conta de pagamento (22/10/2026)
+
+- **Publicada em 22/10/2026** (suíte inteira verde: 9396 testes). Sem migração.
+
+- *"No lote, quero um botão que reorganize as SPs de acordo com a conta de
+  pagamento, inclusive colocando a conta de pagamento como headers do lote."*
+- **Feito:** botão "Organizar por conta" na barra do lote (junto de Remover
+  pagos/cancelados), com confirmação. Refaz o lote com um grupo por conta, título
+  "Conta 92945-8"; contas em ordem alfabética, SPs na ordem em que estavam; a
+  repetida fica uma vez; "Sem conta de pagamento" e "Não encontradas na base" por
+  último. Nenhuma SP sai do lote.
+- **Escolhas minhas:** o título leva a palavra "Conta" na frente porque uma linha
+  só de números é lida como SP (conta 50024 viraria SP); os títulos antigos
+  (WhatsApp, Novo Lote…) são substituídos — sem desfazer, por isso a confirmação.
+  O que chegar depois pelo Telegram volta a cair no grupo WhatsApp, no topo.
+
+#### Leva 239 — DC: a mesma pessoa em mais de uma linha (22/10/2026)
+
+- **Publicada em 22/10/2026** (suíte inteira verde: 9394 testes). Sem migração.
+
+- *"Em despesa com colaboradores, preciso destacar pessoas que aparecem na lista
+  mais de uma vez, até pra saber se não seria um pleito duplicado, e ainda um
+  filtro (…) somente essas pessoas."*
+- **Feito:** selo "N× NA LISTA" na linha (e "mesmo tipo e valor" quando o tipo de
+  despesa e o valor se repetem — a cara de pleito duplicado), frase com os outros
+  cards; quadro vermelho no alto com cada pessoa, os cards (link) e quanto está
+  marcado; pendência na lateral e indicador "Pessoas em mais de uma linha", que
+  abrem a lista filtrada e agrupada por colaborador; filtro "Repetição" na lateral
+  ("aparece mais de uma vez" / "mesmo tipo e valor").
+- **Escolha minha:** é DESTAQUE, não trava nem desmarca (diferente do avulso) —
+  na DC a mesma pessoa pode ter duas solicitações legítimas. Conta só as linhas
+  ainda não geradas.
+
 #### Leva 238 — Conciliação: as linhas novas do extrato com caixinha (21/10/2026)
 
 - **Publicada em 21/10/2026** (suíte inteira verde: 9358 testes). Sem migração.

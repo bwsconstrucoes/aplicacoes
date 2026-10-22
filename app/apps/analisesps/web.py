@@ -5108,13 +5108,25 @@ def _dc_lista(calculado: dict, args) -> dict:
     pessoas = list((calculado or {}).get("pessoas") or [])
     tipos = folha_lista.marcados(args, "tipo_despesa")
     contas = folha_lista.marcados(args, "conta")
+    # Só quem aparece mais de uma vez (22/10/2026) — e, dentro deles, só o que
+    # tem cara de pleito duplicado (mesmo tipo e valor).
+    repeticao = folha_lista.marcados(args, "repeticao")
     lista = folha_lista.filtrar(pessoas, args, campo_da_obra="obra", escondidas=set())
     if tipos:
         lista["pessoas"] = [p for p in lista["pessoas"] if p["tipo_despesa"] in tipos]
     if contas:
         lista["pessoas"] = [p for p in lista["pessoas"] if (p["conta"] or "(sem conta)") in contas]
-    lista["filtros"].update({"tipo_despesa": tipos, "conta": contas})
-    lista["filtrando"] = bool(lista["filtrando"] or tipos or contas)
+    if repeticao:
+        lista["pessoas"] = [p for p in lista["pessoas"]
+                            if ("repetido" in repeticao and p.get("repetido"))
+                            or ("mesmo_pleito" in repeticao and p.get("mesmo_pleito"))]
+    lista["filtros"].update({"tipo_despesa": tipos, "conta": contas, "repeticao": repeticao})
+    lista["filtrando"] = bool(lista["filtrando"] or tipos or contas or repeticao)
+    n_rep = sum(1 for p in pessoas if p.get("repetido"))
+    n_mesmo = sum(1 for p in pessoas if p.get("mesmo_pleito"))
+    lista["opcoes_repeticao"] = (
+        ([("repetido", f"aparece mais de uma vez ({n_rep})")] if n_rep else [])
+        + ([("mesmo_pleito", f"mesmo tipo e valor ({n_mesmo})")] if n_mesmo else []))
     lista["opcoes_tipo_despesa"] = [(t, t) for t in sorted(
         {p["tipo_despesa"] for p in pessoas if p["tipo_despesa"]})]
     lista["opcoes_conta"] = [(c, c) for c in sorted(
@@ -6456,6 +6468,13 @@ def tela_lote():
             conteudo, quantos = lote.remover_por_status(conteudo, alvo, status)
             rotulo = "paga(s)" if acao == "remover_pagos" else "cancelada(s)"
             aviso = f"{quantos} SP(s) {rotulo} saíram do lote."
+        elif acao == "organizar_conta":
+            # UM GRUPO POR CONTA DE PAGAMENTO, com a conta no título (22/10/2026).
+            montado = lote.montar(conteudo)
+            contas = {i: (l.get("conta") or "") for i, l in montado["linhas"].items()}
+            conteudo, quantos = lote.organizar_por_conta(conteudo, contas)
+            aviso = (f"Lote organizado por conta de pagamento: {quantos} grupo(s)."
+                     if quantos else "O lote está vazio — nada a organizar.")
         elif acao == "remover_duplicados":
             # O mesmo número em dois grupos aparece duas vezes na tela e é
             # somado duas vezes no total. Fica a PRIMEIRA aparição, como o dono
@@ -6469,7 +6488,7 @@ def tela_lote():
         # ações mandam de volta o texto que a tela carregou; sem isto, o
         # "Salvar" apagava em silêncio as SPs que o robô somou nesse meio tempo.
         if acao in ("salvar", "extrair", "trazer_antigo", "remover_pagos",
-                    "remover_cancelados", "remover_duplicados"):
+                    "remover_cancelados", "remover_duplicados", "organizar_conta"):
             from . import telegram_lote
             try:
                 conteudo, voltaram = telegram_lote.manter_chegadas(
