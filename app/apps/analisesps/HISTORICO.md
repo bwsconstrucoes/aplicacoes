@@ -12246,6 +12246,8 @@ somente Solicitações de uma conta especifica"*.
 
 #### Leva 239 — DC: a mesma pessoa em mais de uma linha (22/10/2026)
 
+- **Publicada em 22/10/2026** (suíte inteira verde: 9394 testes). Sem migração.
+
 - *"Em despesa com colaboradores, preciso destacar pessoas que aparecem na lista
   mais de uma vez, até pra saber se não seria um pleito duplicado, e ainda um
   filtro (…) somente essas pessoas."*
