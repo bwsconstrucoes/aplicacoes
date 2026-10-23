@@ -59,7 +59,7 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
-1zp. **No ramo, esperando o "pode"** (22/10/2026, sem migração) — o que o dono viu no Quadro em produção:
+1zp. **Publicado em 23/10/2026** (com o "pode" do dono; 22/10/2026, sem migração) — o que o dono viu no Quadro em produção:
    caixa de seleção em TODA linha e quatro ações em lote (incluir uma batida, lançar o dia inteiro pela escala,
    abonar a falta, definir a escala); o pedido de ajuste NO horário, clicável, com aprovar e negar ali; a
    JANELA DA BATIDA (como foi feita, aparelho, foto, quem pediu, quem aprovou, decisões) com validar,
