@@ -164,9 +164,13 @@ def _limpar(texto: str, sai) -> tuple[str, int]:
     ficava, e o lote terminava cheio de cabeçalhos sem nada embaixo — "Pagar
     amanhã" sem uma SP sequer. Pedido do dono em 11/09/2026.
 
-    MAS SÓ QUEM ESVAZIOU AGORA. Um grupo que já estava vazio antes continua:
-    alguém escreveu aquele título de propósito, para encher depois, e apagar o
-    que a pessoa acabou de digitar seria pior do que o cabeçalho sobrando.
+    ⚠️ E DESDE 24/10/2026, TAMBÉM O QUE JÁ ESTAVA VAZIO. Até ali só saía o título
+    que esvaziou NESTA limpeza — o vazio de antes ficava, na ideia de que alguém
+    o escreveu para encher depois. O dono viu o contrário na prática: *"ficar um
+    lote sem nenhum registro (…) tem um header, mas não tem nenhum registro (…)
+    aquele header eu quero que suma (…) automaticamente na hora que eu clicar
+    esses botões"*. Então toda limpeza termina sem título órfão. (Escrever um
+    título vazio de propósito continua possível: o "Salvar" não passa por aqui.)
 
     Vive separado porque as três limpezas (pagas, canceladas, duplicadas) têm
     de tratar o cabeçalho órfão do MESMO jeito. Em três cópias, a terceira
@@ -194,8 +198,7 @@ def _limpar(texto: str, sai) -> tuple[str, int]:
 
     linhas_novas: list = []
     for bloco in blocos:
-        esvaziou_agora = bloco["tinha"] > 0 and not bloco["linhas"]
-        if bloco["titulo"] is not None and not esvaziou_agora:
+        if bloco["titulo"] is not None and bloco["linhas"]:
             linhas_novas.append(bloco["titulo"])
         linhas_novas.extend(bloco["linhas"])
 
@@ -241,6 +244,28 @@ def remover_duplicados(texto: str) -> tuple[str, int]:
         return False
 
     return _limpar(texto, sai)
+
+
+# ---------------------------------------------------------------------------
+# MOVER PARA UM NOVO LOTE — 24/10/2026
+#
+# O dono: *"eu seleciono alguns registros (…) extrair para novo lote (…) eles
+# somem do lote atual e vão para a parte superior (…) é uma forma de
+# reorganizar (…) isso aqui eu quero botar no outro canto"*.
+# ---------------------------------------------------------------------------
+def mover_para_novo_lote(texto: str, ids) -> tuple[str, str, int]:
+    """Tira as SPs pedidas de onde estiverem e as põe num grupo novo NO TOPO
+    ("Novo Lote N"), na ordem em que estavam no lote. O título que esvaziar sai
+    (`_limpar`). SP pedida que não está no lote é ignorada. Devolve o texto
+    novo, o título do grupo criado e quantas SPs mudaram de lugar."""
+    alvos = {str(i).strip() for i in (ids or []) if str(i).strip()}
+    na_ordem = list(dict.fromkeys(sp for g in separar_grupos(texto)
+                                  for sp in g["ids"] if sp in alvos))
+    if not na_ordem:
+        return str(texto or ""), "", 0
+    sem_elas, _ = _limpar(texto, lambda sp: sp in alvos)
+    novo, titulo = acrescentar_grupo(sem_elas, na_ordem)
+    return novo, titulo, len(na_ordem)
 
 
 # ---------------------------------------------------------------------------

@@ -776,6 +776,19 @@ const LEMBRAR = {
     form.submit();
   });
 
+  // --- Mover as marcadas para um novo lote, no topo (24/10/2026) ------------
+  // Usa o mesmo formulário escondido do "Remover do lote", com outra ação.
+  const btnMover = document.getElementById("ba-mover-lote");
+  if (btnMover) btnMover.addEventListener("click", () => {
+    const ids = idsMarcados();
+    if (!ids) return;
+    selecaoConsumida();
+    const form = document.getElementById("form-remover-lote");
+    form.querySelector("input[name=acao]").value = "mover_novo_lote";
+    form.querySelector("input[name=ids]").value = ids.join(",");
+    form.submit();
+  });
+
   // --- Abrir no Pipefy os cards das marcadas -------------------------------
   //
   // Uma aba por card. O navegador bloqueia isso por padrão quando não parte de
