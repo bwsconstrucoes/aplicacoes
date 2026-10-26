@@ -13,7 +13,7 @@
 #}
 {% block titulo %}Ponto — {{ {
   "ponto_hoje": "Hoje", "ponto_espelho": "Espelho", "ponto_pendencias": "Validações",
-  "ponto_mosaico": "Mosaico", "ponto_pessoas": "Pessoas", "ponto_banco": "Banco de horas", "ponto_alertas": "Alertas",
+  "ponto_mosaico": "Mosaico", "ponto_fotos": "Fotos de cadastro", "ponto_pessoas": "Pessoas", "ponto_banco": "Banco de horas", "ponto_alertas": "Alertas",
   "ponto_qualidade": "Qualidade",
   "ponto_config": "Configuração"}.get(aba_ponto, "Ponto") }} — ERP BWS{% endblock %}
 {% block classe_corpo %}{% if aba_ponto in ("ponto_pendencias", "ponto_banco", "ponto_config", "ponto_rondas") %}sem-filtros{% endif %}{% endblock %}
@@ -166,6 +166,19 @@
     Aparecem só as obras <b>com batida no dia</b>, com quantas pessoas bateram.
     Escolhida a obra, as fotos aparecem na hora — uma linha por pessoa que bateu.
   </div>
+
+{% elif aba_ponto == "ponto_fotos" %}
+  {# As fotos de cadastro para regularizar (26/10/2026). #}
+  <div class="filtros-cab"><h2>Fotos de cadastro</h2></div>
+  <div class="campo"><label for="fc-busca">Pessoa</label>
+    <input id="fc-busca" placeholder="nome ou CPF" autocomplete="off" data-sem-mascara></div>
+  <h3 class="qd-grupo">Mostrar</h3>
+  <div id="fc-filtros" class="qd-marcas"></div>
+  <button class="btn" id="fc-ver" type="button" style="width:100%; margin-top:14px">Ver</button>
+  <div class="cartao-dica" style="margin-top:16px">
+    A foto de cadastro nasce sozinha: é a <b>primeira foto boa</b> da pessoa. Se ela for de teste, de outra
+    pessoa ou do chão, as batidas seguintes passam a "não conferir" — é assim que a errada aparece aqui.
+    <br><a class="elo" href="/erp/ponto/mosaico">voltar ao mosaico</a></div>
 
 {% elif aba_ponto == "ponto_qualidade" %}
   <div class="filtros-cab"><h2>Qualidade</h2></div>
@@ -354,6 +367,14 @@
   .chip.ligado { background:var(--azul); color:#fff; }
   .qd-tabela tr.marcada td { background:#FFF8E6; }
   .ep-resumo { display:flex; flex-wrap:wrap; gap:4px; }
+  .fc-pessoa.suspeita { border-left:4px solid var(--vermelho); }
+  .fc-cab { display:flex; flex-wrap:wrap; gap:6px 10px; align-items:center; margin-bottom:8px; }
+  .fc-fotos { display:flex; flex-wrap:wrap; gap:10px; }
+  .fc-fotos figure { margin:0; width:120px; font-size:12px; text-align:center; }
+  .fc-fotos img, .fc-vazia { width:120px; height:150px; object-fit:cover; border-radius:8px; border:1px solid var(--borda); display:block; background:#EEF2F6; }
+  .fc-vazia { display:flex; align-items:center; justify-content:center; color:var(--tinta-suave); }
+  .fc-cadastro img, .fc-cadastro .fc-vazia { border:3px solid var(--azul); }
+  .fc-batida.atual img { outline:3px solid var(--azul); }
   .confronto { margin-top:8px; padding:8px 10px; border-radius:8px; background:#fff; border:1px solid var(--borda); }
   .confronto.ruim { border-color:var(--vermelho); } .confronto.atencao { border-color:var(--ambar); }
   .confronto table { margin-top:6px; font-size:13px; } .confronto td small { display:block; }
@@ -587,9 +608,19 @@
   Aparelho só bate ponto depois de aprovado — aprove apenas o que você reconhece.
 </div>
 
+{% elif aba_ponto == "ponto_fotos" %}
+{# ------------------------------------------------------ FOTOS DE CADASTRO #}
+<h2>Fotos de cadastro <small id="fc-sub">a de cada pessoa, ao lado das últimas batidas</small></h2>
+<div id="mensagem"></div>
+<div class="cartao-dica" style="margin:0 0 10px">Clique numa foto de batida em que o rosto é o certo para fazê-la a
+  <b>foto de cadastro</b>. Se nenhuma serve ainda, <b>tire a foto</b>: a próxima foto boa da pessoa vira a nova.
+  As conferências antigas, feitas com a foto errada, continuam registradas; as próximas batidas já são comparadas com a nova.</div>
+<div id="fc-lista"><div class="vazio"><b>carregando…</b></div></div>
+
 {% elif aba_ponto == "ponto_mosaico" %}
 {# ---------------------------------------------------------------- MOSAICO #}
-<h2>Mosaico de fotos <small id="m-sub">as fotos do dia, lado a lado, por pessoa</small></h2>
+<h2>Mosaico de fotos <small id="m-sub">as fotos do dia, lado a lado, por pessoa</small>
+  <a class="btn secundario" style="margin-left:10px; text-decoration:none; font-size:13px" href="/erp/ponto/fotos-cadastro">📷 Fotos de cadastro</a></h2>
 <div id="mensagem"></div>
 <div class="cartao">
   <div id="m-pendentes"></div>
@@ -3577,6 +3608,68 @@ els("v-lote-limpar").addEventListener("click", () => {
   desenharLote();
 });
 carregarObrasDasValidacoes().then(carregarValidacoes);
+
+{% elif aba_ponto == "ponto_fotos" %}
+// ===========================================================================
+// FOTOS DE CADASTRO — regularizar (26/10/2026, o dono: "a primeira foto foi uma foto
+// de teste (…) ou uma foto do chão (…) como regularizar de forma fácil?").
+// ===========================================================================
+const FC_FILTROS = [["SUSPEITA", "⚠️ Provavelmente errada"], ["AUTOMATICA", "Escolhida sozinha (ninguém conferiu)"],
+                    ["SEM_FOTO", "Sem foto de cadastro"], ["TODAS", "Todas"]];
+const RESULTADO_ROSTO = {MESMA_PESSOA: ["verde", "confere"], OUTRA_PESSOA: ["vermelho", "não confere"],
+  SEM_ROSTO: ["ambar", "sem rosto"], SEM_CADASTRAL: ["outro", "sem cadastro"], VIROU_CADASTRAL: ["azul", "virou cadastro"],
+  ERRO: ["outro", "não conferida"]};
+let FC_FILTRO = "SUSPEITA", FC = null;
+function fcFiltros(contagem) {
+  els("fc-filtros").innerHTML = FC_FILTROS.map(([c, r]) => `<label class="opcao"><input type="radio" name="fc-filtro" value="${c}"
+    ${c === FC_FILTRO ? "checked" : ""}><span class="rotulo">${r} <span class="qtd">${contagem ? (contagem[c] || 0) : ""}</span></span></label>`).join("");
+  document.querySelectorAll('input[name="fc-filtro"]').forEach(x => x.addEventListener("change", () => { FC_FILTRO = x.value; fcCarregar(); }));
+}
+async function fcCarregar() {
+  els("fc-lista").innerHTML = `<div class="vazio"><b>carregando…</b></div>`;
+  try {
+    FC = await api(`/erp/api/ponto/fotos-cadastro?filtro=${encodeURIComponent(FC_FILTRO)}&busca=${encodeURIComponent(els("fc-busca").value.trim())}`);
+  } catch (e) { falhou(e); return; }
+  fcFiltros(FC.contagem);
+  els("fc-sub").textContent = `${contar(FC.pessoas.length, "pessoa", "pessoas")} — ${(FC_FILTROS.find(f => f[0] === FC_FILTRO) || [, ""])[1]}`;
+  els("fc-lista").innerHTML = FC.pessoas.length ? FC.pessoas.map(p => `<div class="cartao fc-pessoa${p.suspeita ? " suspeita" : ""}">
+    <div class="fc-cab">${eloPessoa(p.id, p.nome)} <small style="display:inline">${escapar(p.funcao || "")} · ${escapar(p.obra || "")}</small>
+      ${p.suspeita ? `<span class="etq vermelho">⚠️ provavelmente errada: ${p.outra_pessoa} de ${p.conferidas} batidas não conferiram</span>` : ""}
+      ${p.automatica && !p.suspeita ? `<span class="etq ambar">escolhida sozinha — confira</span>` : ""}</div>
+    <div class="fc-fotos">
+      <figure class="fc-cadastro">${p.tem_foto_cadastral
+        ? `<img loading="lazy" src="/erp/api/ponto/pessoas/${p.id}/foto-cadastral?v=${p.foto_cadastral_id}" alt="foto de cadastro">`
+        : `<div class="fc-vazia">sem foto de cadastro</div>`}
+        <figcaption><b>Foto de cadastro</b>${p.tem_foto_cadastral && PODE_TRATAR
+          ? `<br><button class="link-btn" type="button" data-fc-tirar="${p.id}">tirar esta foto</button>` : ""}</figcaption></figure>
+      ${p.fotos.map(f => { const [cor, rot] = RESULTADO_ROSTO[f.resultado] || ["outro", "ainda não conferida"]; return `<figure class="fc-batida${f.e_a_cadastral ? " atual" : ""}">
+        <img loading="lazy" src="/erp/api/ponto/marcacoes/${f.marcacao_id}/miniatura" alt="foto da batida" data-foto="${f.marcacao_id}"
+          data-legenda="${escapar(`${p.nome} — ${quando(f.quando)}`)}" style="cursor:zoom-in">
+        <figcaption><small style="display:block">${escapar(quando(f.quando))} · ${escapar(f.obra || "")}</small>
+          <span class="etq ${cor}">${rot}${f.semelhanca != null ? ` ${Math.round(f.semelhanca)}%` : ""}</span>
+          ${PODE_TRATAR && !f.e_a_cadastral ? `<br><button class="link-btn" type="button" data-fc-usar="${p.id}" data-marcacao="${f.marcacao_id}">usar como cadastro</button>`
+            : f.e_a_cadastral ? `<br><small style="display:block">é a de cadastro</small>` : ""}</figcaption></figure>`; }).join("")}
+    </div></div>`).join("")
+    : `<div class="vazio"><b>Ninguém aqui.</b>${FC_FILTRO === "SUSPEITA" ? "Nenhuma foto de cadastro parece errada pelas conferências recentes." : ""}</div>`;
+  els("fc-lista").querySelectorAll("[data-fc-usar]").forEach(b => b.addEventListener("click", async () => {
+    try { await postar(`/erp/api/ponto/pessoas/${b.dataset.fcUsar}/foto-cadastral`, {marcacao_id: Number(b.dataset.marcacao)});
+          aviso("mensagem", "Foto de cadastro trocada. As próximas batidas já são comparadas com ela.", "ok"); fcCarregar(); }
+    catch (e) { falhou(e); }
+  }));
+  els("fc-lista").querySelectorAll("[data-fc-tirar]").forEach(b => b.addEventListener("click", async () => {
+    const r = await perguntar({titulo: "Tirar a foto de cadastro",
+      aviso: "A pessoa fica sem foto de cadastro até a próxima batida com foto boa — essa vira a nova, sozinha. Use quando nenhuma das fotos mostradas serve.",
+      campos: [], textoOk: "Tirar a foto"});
+    if (!r) return;
+    try { await postar(`/erp/api/ponto/pessoas/${b.dataset.fcTirar}/foto-cadastral/tirar`);
+          aviso("mensagem", "Foto de cadastro retirada. A próxima foto boa da pessoa vira a nova.", "ok"); fcCarregar(); }
+    catch (e) { falhou(e); }
+  }));
+}
+fcFiltros(null);
+els("fc-ver").addEventListener("click", fcCarregar);
+els("fc-busca").addEventListener("keydown", e => { if (e.key === "Enter") fcCarregar(); });
+fcCarregar();
 
 {% elif aba_ponto == "ponto_mosaico" %}
 // ===========================================================================

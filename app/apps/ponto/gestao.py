@@ -71,7 +71,7 @@ ABAS = [
     ("ponto_rondas", "Rondas", "erp.ponto_pagina_rondas"),
     ("ponto_config", "Configuração", "erp.ponto_pagina_configuracao"),
 ]
-ABAS_FORA_DO_MENU = ("ponto_hoje", "ponto_pessoas")
+ABAS_FORA_DO_MENU = ("ponto_hoje", "ponto_pessoas", "ponto_fotos")
 MODULO = {
     "chave": "ponto", "nome": "Ponto", "sigla": "PON",
     "descricao": "Ponto eletrônico: quem bateu, espelho, pedidos, banco de horas e alertas",
@@ -241,6 +241,13 @@ def ponto_pagina_pendencias():
 @permissao("ver_ponto")
 def ponto_pagina_mosaico():
     return _pagina("ponto_mosaico")
+
+
+@bp.route("/erp/ponto/fotos-cadastro")
+@login_obrigatorio
+@permissao("ver_ponto")
+def ponto_pagina_fotos_cadastro():
+    return _pagina("ponto_fotos")
 
 
 @bp.route("/erp/ponto/pessoas")
@@ -1392,7 +1399,45 @@ def ponto_api_foto_cadastral(colaborador_id: int):
             return jsonify({"ok": False, "erro": "não encontrado"}), 404
         except Exception:  # noqa: BLE001
             return jsonify({"ok": False, "erro": "foto não disponível"}), 404
-    return Response(dados, mimetype="image/jpeg", headers={"Cache-Control": "private, max-age=3600"})
+    # sem guardar no navegador: trocada a foto de cadastro, a tela já mostra a nova
+    return Response(dados, mimetype="image/jpeg", headers={"Cache-Control": "private, no-cache"})
+
+
+@bp.route("/erp/api/ponto/fotos-cadastro")
+@login_obrigatorio
+@permissao("ver_ponto")
+@_api
+def ponto_api_fotos_cadastro():
+    """As fotos de cadastro para regularizar (26/10/2026): a de cada pessoa ao lado das
+    últimas fotos das batidas, e quem provavelmente está com a foto errada."""
+    from .core import fotos_cadastro
+    quem = _quem()
+    with db.conexao() as conn:
+        pessoas = cadastros.listar_colaboradores(conn, so_ativos=True)
+        if quem.obras is not None:
+            alcance = set(quem.obras)
+            pessoas = [p for p in pessoas if p.get("obra_id") in alcance
+                       or any(o["id"] in alcance for o in p["obras_adicionais"])]
+        busca = str(request.args.get("busca") or "").strip().lower()
+        if busca:
+            pessoas = [p for p in pessoas if busca in (p["nome"] or "").lower()
+                       or (busca.isdigit() and busca in (p.get("cpf") or ""))]
+        return _ok(**fotos_cadastro.listar(conn, pessoas, request.args.get("filtro") or "SUSPEITA"))
+
+
+@bp.route("/erp/api/ponto/pessoas/<int:colaborador_id>/foto-cadastral/tirar", methods=["POST"])
+@login_obrigatorio
+@permissao("tratar_ponto")
+@_api
+def ponto_api_tirar_foto_cadastral(colaborador_id: int):
+    """Tira a foto de cadastro errada: a próxima foto boa da pessoa vira a nova."""
+    from .core import fotos_cadastro
+    quem = _quem()
+    with db.conexao() as conn:
+        _exigir_pessoa(conn, quem, colaborador_id)
+        fotos_cadastro.tirar(conn, colaborador_id)
+    logger.info("Ponto: foto de cadastro da pessoa %s retirada por %s", colaborador_id, quem.nome)
+    return _ok()
 
 
 @bp.route("/erp/api/ponto/pessoas/<int:colaborador_id>/foto-cadastral", methods=["POST"])

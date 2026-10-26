@@ -47,3 +47,22 @@ def test_feriado_em_varias_obras_de_uma_vez(app, mundo):
     lista = dp.get("/erp/api/ponto/feriados?ano=2026").get_json()["feriados"]
     assert sorted(f["obra_id"] for f in lista if f["nome"] == "Padroeira") == sorted([mundo["obra_a"], mundo["obra_b"]])
     assert como(app, mundo["sup"]).post("/erp/api/ponto/feriados", json=corpo).status_code == 403
+
+
+def test_fotos_de_cadastro_suspeita_pura():
+    from app.apps.ponto.core.fotos_cadastro import suspeita
+    assert suspeita(["OUTRA_PESSOA", "OUTRA_PESSOA", "MESMA_PESSOA"])
+    assert not suspeita(["OUTRA_PESSOA", "MESMA_PESSOA", "MESMA_PESSOA"])
+    assert not suspeita(["OUTRA_PESSOA", None, "SEM_ROSTO"])                      # uma só não basta
+    assert suspeita(["OUTRA_PESSOA", "SEM_ROSTO", "OUTRA_PESSOA", None, "MESMA_PESSOA"])
+    # depois de trocada a foto, as novas conferem: a suspeita some
+    assert not suspeita(["MESMA_PESSOA", "MESMA_PESSOA", "MESMA_PESSOA", "OUTRA_PESSOA", "OUTRA_PESSOA"])
+
+
+def test_fotos_de_cadastro_tela_e_tirar(app, mundo):
+    dp = como(app, mundo["dp"])
+    r = dp.get("/erp/api/ponto/fotos-cadastro?filtro=TODAS").get_json()
+    assert set(r["contagem"]) == {"SUSPEITA", "AUTOMATICA", "SEM_FOTO", "TODAS"} and isinstance(r["pessoas"], list)
+    assert dp.get("/erp/ponto/fotos-cadastro").status_code == 200
+    assert dp.post(f"/erp/api/ponto/pessoas/{mundo['joao']}/foto-cadastral/tirar").status_code == 404
+    assert como(app, mundo["fin"]).get("/erp/api/ponto/fotos-cadastro").status_code == 403
