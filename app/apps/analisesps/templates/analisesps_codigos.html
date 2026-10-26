@@ -31,6 +31,7 @@
             <input type="checkbox" class="marca" value="{{ b.id }}" checked
                    data-valor="{{ b.sp.valor_num or 0 }}"
                    data-card="{{ b.sp.card_link or '' }}"
+                   data-anexos='{{ (b.sp.anexo_link|links_celula|map("baixar")|list)|tojson }}' 
                    data-forma="{{ b.sp.forma_pagamento or '' }}">
           </label>
           {# O número abre a ficha NO MODAL. Abrir em tela cheia fazia sumir
