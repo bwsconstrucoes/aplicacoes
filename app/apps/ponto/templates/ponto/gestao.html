@@ -354,6 +354,9 @@
   .chip.ligado { background:var(--azul); color:#fff; }
   .qd-tabela tr.marcada td { background:#FFF8E6; }
   .ep-resumo { display:flex; flex-wrap:wrap; gap:4px; }
+  .confronto { margin-top:8px; padding:8px 10px; border-radius:8px; background:#fff; border:1px solid var(--borda); }
+  .confronto.ruim { border-color:var(--vermelho); } .confronto.atencao { border-color:var(--ambar); }
+  .confronto table { margin-top:6px; font-size:13px; } .confronto td small { display:block; }
   .fer-opcoes { display:flex; flex-direction:column; gap:4px; font-size:14px; }
   .fer-lista { max-height:45vh; overflow:auto; border:1px solid var(--borda); border-radius:8px; padding:6px 10px;
                display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:2px 14px; }
@@ -3461,6 +3464,7 @@ async function lerAtestado(i, botao) {
   try {
     const d = await postar(`/erp/api/ponto/afastamentos/${i.id}/ler`);
     i.leitura_ia = d.leitura;
+    i.confronto = d.confronto;
     mostrarLeitura(i);
   } catch (e) { falhou(e); }
   botao.disabled = false;
@@ -3472,7 +3476,7 @@ function mostrarLeitura(i) {
   if (!l || !linha) return;
   const tipo = l.tipo === "DECLARACAO_DE_COMPARECIMENTO" ? "Declaração de comparecimento"
              : l.tipo === "ATESTADO" ? "Atestado" : l.tipo ? "Outro documento" : "—";
-  const diverge = l.data_inicio && i.data && l.data_inicio !== i.data;
+  const c = i.confronto;
   const campos = [
     ["Tipo", tipo], ["Emitido em", dataBR(l.data_emissao)], ["A partir de", dataBR(l.data_inicio)],
     ["Dias de repouso", l.dias_afastamento ?? "—"],
@@ -3487,13 +3491,28 @@ function mostrarLeitura(i) {
     <div class="leitura-grade">${campos.map(([r, v]) =>
       `<div><small>${r}</small><b>${escapar(v)}</b></div>`).join("")}</div>
     ${l.observacao ? `<div><i>${escapar(l.observacao)}</i></div>` : ""}
-    ${diverge ? `<div style="margin-top:6px; color:var(--ambar)"><b>O primeiro dia do documento não
-      bate com o do pedido</b> (pedido: a partir de ${dataBR(i.data)}).</div>` : ""}
+    ${c ? htmlDoConfronto(c) : ""}
     ${i.pode_decidir && i.etapa === "DP"
       ? `<div style="margin-top:8px"><button class="btn secundario" type="button" data-corrigir-lido="${i.id}">Corrigir dados com a leitura</button></div>` : ""}
   </div>`;
   const b = linha.querySelector("[data-corrigir-lido]");
   if (b) b.addEventListener("click", () => corrigirPedido(i, true));
+}
+
+// O CONFRONTO (26/10/2026, o dono: "cruzar o que foi lido pela IA com o que foi lançado
+// — as datas, a quantidade de dias, o nome da pessoa — ver o que bate"). Campo a campo.
+const SITUACAO_CONFRONTO = {BATE: ["verde", "✔ bate"], NAO_BATE: ["vermelho", "✖ não bate"],
+  SO_NO_DOCUMENTO: ["azul", "só no documento"], NAO_LIDO: ["outro", "não lido"]};
+function htmlDoConfronto(c) {
+  const valor = v => v == null || v === "" ? "—" : /^\d{4}-\d{2}-\d{2}$/.test(String(v)) ? dataBR(v) : escapar(v);
+  return `<div class="confronto ${c.nao_batem ? "ruim" : (c.avisos || []).length ? "atencao" : "bom"}">
+    <b>Confronto com o lançado: ${escapar(c.resumo)}</b>
+    <table><thead><tr><th>O quê</th><th>No documento</th><th>Lançado</th><th></th></tr></thead><tbody>
+    ${c.itens.map(x => { const [cor, rot] = SITUACAO_CONFRONTO[x.situacao] || ["outro", x.situacao]; return `<tr>
+      <td>${escapar(x.campo)}</td><td class="dados">${valor(x.lido)}</td><td class="dados">${valor(x.lancado)}</td>
+      <td><span class="etq ${cor}">${rot}</span>${x.nota ? `<small>${escapar(x.nota)}</small>` : ""}</td></tr>`; }).join("")}
+    </tbody></table>
+    ${(c.avisos || []).map(a => `<div style="color:var(--ambar); margin-top:4px">⚠ ${escapar(a)}</div>`).join("")}</div>`;
 }
 
 async function corrigirPedido(i, daLeitura) {

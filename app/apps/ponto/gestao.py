@@ -1705,7 +1705,8 @@ def ponto_api_ler_atestado(ocorrencia_id: int):
     with db.conexao() as conn:
         ocorrencias.obter(conn, ocorrencia_id, quem)
         leitura = leitura_atestado.ler(conn, ocorrencia_id)
-    return _ok(leitura=leitura)
+        pedido = ocorrencias.obter(conn, ocorrencia_id, quem)
+    return _ok(leitura=leitura, confronto=leitura_atestado.confronto(leitura, pedido))
 
 
 @bp.route("/erp/api/ponto/afastamentos/<int:ocorrencia_id>/corrigir", methods=["POST"])
