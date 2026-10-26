@@ -41,6 +41,17 @@ ROTULO_TIPO = {
     "AFASTAMENTO": "Afastamento", "ABONO": "Abono", "AJUSTE_BATIDA": "Ajuste de batida",
     "COMPENSACAO": "Compensação", "FOLGA_BANCO": "Folga do banco de horas",
 }
+# Os abonos com nome próprio (26/10/2026, o dono: "situações de viagem — a pessoa está
+# em viagem pela empresa e aquelas horas vão ser abonadas — e dispensa"). São ABONO
+# (o dia não é descontado nem vira débito no banco); o subtipo diz qual.
+SUBTIPOS_ABONO = {"VIAGEM": "Viagem a serviço", "DISPENSA": "Dispensa pela empresa"}
+
+
+def rotulo_da_ocorrencia(o: dict) -> str:
+    """O nome do dia justificado: o tipo, ou o abono com nome próprio."""
+    if o.get("tipo") == "ABONO" and o.get("subtipo") in SUBTIPOS_ABONO:
+        return SUBTIPOS_ABONO[o["subtipo"]]
+    return ROTULO_TIPO[o["tipo"]]
 
 
 def _dias(inicio: dt.date, fim: dt.date):
@@ -81,7 +92,8 @@ class Lote:
             self.batidas.setdefault(int(b["colaborador_id"]), []).append(b)
         self.ocorrencias: dict[int, list[dict]] = {}
         for o in db.todos(conn, """
-            SELECT colaborador_id, id, tipo, status, data_inicio, data_fim, dia_trabalhado, descricao, minutos, horario
+            SELECT colaborador_id, id, tipo, subtipo, status, data_inicio, data_fim, dia_trabalhado, descricao, minutos,
+                   horario
               FROM ponto.ocorrencias
              WHERE colaborador_id = ANY(:ids) AND status NOT IN ('NEGADA', 'CANCELADA')
                AND ((data_fim >= :i AND data_inicio <= :f) OR (dia_trabalhado BETWEEN :i AND :f))
@@ -149,7 +161,7 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
         rondas_do_periodo: dict = {}
     else:
         ocorrencias = db.todos(conn, """
-            SELECT id, tipo, status, data_inicio, data_fim, dia_trabalhado, descricao, minutos, horario
+            SELECT id, tipo, subtipo, status, data_inicio, data_fim, dia_trabalhado, descricao, minutos, horario
               FROM ponto.ocorrencias
              WHERE colaborador_id = :c AND status NOT IN ('NEGADA', 'CANCELADA')
                AND ((data_fim >= :i AND data_inicio <= :f)
@@ -255,9 +267,10 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
             "alertas": r.alertas,
             "em_analise": sum(1 for b in do_dia if b["status"] == "EM_ANALISE"),
             "ocorrencia": ({"id": aprovadas[0]["id"], "tipo": aprovadas[0]["tipo"],
-                            "rotulo": ROTULO_TIPO[aprovadas[0]["tipo"]]} if aprovadas else None),
+                            "subtipo": aprovadas[0].get("subtipo"),
+                            "rotulo": rotulo_da_ocorrencia(aprovadas[0])} if aprovadas else None),
             "compensacao": ({"id": compensa[0]["id"]} if compensa else None),
-            "pendentes": [{"id": o["id"], "tipo": o["tipo"], "rotulo": ROTULO_TIPO[o["tipo"]],
+            "pendentes": [{"id": o["id"], "tipo": o["tipo"], "rotulo": rotulo_da_ocorrencia(o),
                            "status": o["status"],
                            "hora": (horario.para_local(o["horario"]).strftime("%H:%M")
                                     if o["tipo"] == "AJUSTE_BATIDA" and o.get("horario") else None)}

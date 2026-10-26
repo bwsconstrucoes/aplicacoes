@@ -148,6 +148,14 @@ def test_lancar_o_dia_inteiro_e_abonar_a_falta_em_lote(app, mundo):
     # de novo: já não é falta
     r = dp.post("/erp/api/ponto/quadro/abonar", json={"itens": [falta], "motivo": "chuva forte, de novo"}).get_json()
     assert r["feitas"] == 0
+    # viagem a serviço: um abono com nome próprio (26/10/2026), que o dia mostra
+    qua = dia_util(seg, 2)
+    viagem = {"colaborador_id": mundo["maria"], "data": qua.isoformat()}
+    r = dp.post("/erp/api/ponto/quadro/abonar", json={"itens": [viagem], "subtipo": "VIAGEM",
+                "motivo": "viagem a Sobral para a vistoria da obra"}).get_json()
+    assert r["resultados"][0]["ok"], r
+    linha = next(l for l in _quadro(dp, qua)["linhas"] if l["colaborador_id"] == mundo["maria"])
+    assert linha["situacao"] == "ABONADO" and linha["ocorrencia"] == "Viagem a serviço"
 
 
 def test_etiquetas_do_dia_puras():

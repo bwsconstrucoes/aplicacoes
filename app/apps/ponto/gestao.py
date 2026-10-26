@@ -1202,7 +1202,7 @@ def ponto_api_quadro_abonar():
     dia, com o motivo — dia de chuva, obra parada, equipe liberada."""
     from .core import quadro
     quem, d = _quem(), _corpo()
-    r = quadro.abonar_em_lote(quem, d.get("itens") or [], motivo=d.get("motivo"))
+    r = quadro.abonar_em_lote(quem, d.get("itens") or [], motivo=d.get("motivo"), subtipo=d.get("subtipo") or "")
     logger.info("Ponto: abono em lote por %s — %d pedidos, %d feitos", quem.nome, len(r),
                 sum(1 for x in r if x.get("ok")))
     return _ok(resultados=r, feitas=sum(1 for x in r if x.get("ok")),

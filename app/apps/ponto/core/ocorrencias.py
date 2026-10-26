@@ -245,6 +245,7 @@ def criar(conn: Connection, quem: Quem, dados: dict, *, origem: str = "GESTAO") 
             raise ErroDeValidacao("esta pessoa não tem banco de horas", campo="tipo")
     elif tipo == "ATESTADO" and origem in ORIGENS_DO_APLICATIVO and not dados.get("documento_base64"):
         raise ErroDeValidacao("anexe a foto ou o PDF do atestado", campo="documento")
+    from .espelho import SUBTIPOS_ABONO
     subtipo = None
     if tipo == "LICENCA" and licencas.disponivel(conn):
         # A licença sai da lista da lei (licencas.py): dias, limite e documento conferidos.
@@ -253,6 +254,10 @@ def criar(conn: Connection, quem: Quem, dados: dict, *, origem: str = "GESTAO") 
         subtipo = t["codigo"]
         if not descricao:
             descricao = t["nome"]
+    elif tipo == "ABONO" and str(dados.get("subtipo") or "").upper() in SUBTIPOS_ABONO:
+        subtipo = str(dados["subtipo"]).upper()       # viagem a serviço, dispensa pela empresa
+        if not descricao:
+            descricao = SUBTIPOS_ABONO[subtipo]
     elif tipo == "AJUSTE_BATIDA" and dados.get("lote") and origem == "GESTAO":
         # Incluída pela gestão no quadro do ponto (21/10/2026) — falha do sistema, não
         # da pessoa: não conta contra ela na qualidade (qualidade.py).
@@ -331,10 +336,11 @@ def _nomes_das_licencas(conn: Connection) -> None:
 
 def _para_json(o: dict, quem: Quem, etapas: tuple | None = None) -> dict:
     sigilo = o["tipo"] in SAUDE and not quem.dp and quem.colaborador_id != o["colaborador_id"]
-    from .espelho import ROTULO_TIPO
+    from .espelho import ROTULO_TIPO, SUBTIPOS_ABONO
     return {
         "id": o["id"], "tipo": o["tipo"],
-        "rotulo": ROTULO_TIPO[o["tipo"]] + (f" — {MOTIVO_LOTE}" if o.get("subtipo") == SUBTIPO_LOTE else
+        "rotulo": SUBTIPOS_ABONO[o["subtipo"]] if o["tipo"] == "ABONO" and o.get("subtipo") in SUBTIPOS_ABONO else
+                  ROTULO_TIPO[o["tipo"]] + (f" — {MOTIVO_LOTE}" if o.get("subtipo") == SUBTIPO_LOTE else
                                             f" — {_NOME_SUBTIPO.get(o['subtipo'], o['subtipo']).split(' (')[0].lower()}"
                                              if o.get("subtipo") else ""),
         "subtipo": o.get("subtipo"),

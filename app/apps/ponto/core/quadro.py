@@ -430,7 +430,7 @@ def incluir_em_lote(quem: Quem, itens: list[dict], *, rotulo: str = "", hora: Op
     return _cada_item(quem, itens, uma_batida if acao == "batida" else o_dia_inteiro)
 
 
-def abonar_em_lote(quem: Quem, itens: list[dict], *, motivo: str) -> list[dict]:
+def abonar_em_lote(quem: Quem, itens: list[dict], *, motivo: str, subtipo: str = "") -> list[dict]:
     """Abona a FALTA das linhas marcadas (dia de chuva, obra parada, equipe
     liberada): um ABONO do DP por pessoa e dia, aprovado na hora por quem pode,
     com o motivo. Só no dia que o espelho chama de falta — dia com batida,
@@ -446,8 +446,9 @@ def abonar_em_lote(quem: Quem, itens: list[dict], *, motivo: str) -> list[dict]:
             raise ErroDeValidacao(f"neste dia não há falta para abonar "
                                   f"({SITUACOES_DO_DIA.get(d['situacao'], d['situacao']).lower()})")
         o = ocorrencias.criar(conn, quem, {
-            "tipo": "ABONO", "colaborador_id": int(pessoa["id"]), "data_inicio": dia.isoformat(),
-            "data_fim": dia.isoformat(), "descricao": motivo, "aprovar_ja": True}, origem="GESTAO")
+            "tipo": "ABONO", "subtipo": subtipo or "", "colaborador_id": int(pessoa["id"]),
+            "data_inicio": dia.isoformat(), "data_fim": dia.isoformat(), "descricao": motivo,
+            "aprovar_ja": True}, origem="GESTAO")
         return {"status": o["status"], "aprovado": o["status"] == "APROVADA", "pedido_id": o["id"]}
 
     return _cada_item(quem, itens, abonar)
