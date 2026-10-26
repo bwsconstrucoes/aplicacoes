@@ -253,3 +253,60 @@ class EscalasDaPessoa:
         if chave not in self._cache:
             self._cache[chave] = para_apuracao(atual, atual["ciclo_data_base"])
         return self._cache[chave], atual
+
+
+# ---------------------------------------------------------------------------
+# AS ESCALAS DAS PESSOAS, EM LOTE (26/10/2026, o dono: "eu quero aplicar a escala,
+# selecionar as pessoas e aplicar; a escala dos vigias: selecionar os vigias todos
+# e aplicar (…) e cada funcionário novo já entrasse na escala de produção").
+# O funcionário novo entra pela ESCALA PADRÃO: quem não tem escala própria é
+# julgado por ela, desde o primeiro dia. Aqui se dá escala própria a muitos de uma
+# vez — a mesma `atribuir` de uma pessoa, na mesma transação para todos.
+# ---------------------------------------------------------------------------
+MAX_EM_LOTE = 1000
+
+
+def pessoas_e_escalas(conn: Connection, pessoas: list[dict], hoje: dt.date) -> list[dict]:
+    """Cada pessoa com a escala própria que vale hoje (ou a próxima, se só tem futura)."""
+    ids = [int(p["id"]) for p in pessoas]
+    vig: dict[int, list[dict]] = {}
+    for v in db.todos(conn, """
+        SELECT ce.colaborador_id, ce.vigencia_inicio, e.id, e.nome, e.tipo
+          FROM ponto.colaborador_escalas ce JOIN ponto.escalas e ON e.id = ce.escala_id
+         WHERE ce.colaborador_id = ANY(:ids) ORDER BY ce.vigencia_inicio""", ids=ids):
+        vig.setdefault(int(v["colaborador_id"]), []).append(v)
+    saida = []
+    for p in pessoas:
+        lista = vig.get(int(p["id"]), [])
+        atual = next((v for v in reversed(lista) if v["vigencia_inicio"] <= hoje), None)
+        futura = next((v for v in lista if v["vigencia_inicio"] > hoje), None)
+        saida.append({
+            "id": int(p["id"]), "nome": p["nome"], "cpf": p.get("cpf"), "funcao": p.get("funcao"),
+            "obra": p.get("obra_codigo"), "tipo_jornada": p.get("tipo_jornada"),
+            "escala_id": atual["id"] if atual else None, "escala": atual["nome"] if atual else None,
+            "desde": atual["vigencia_inicio"].isoformat() if atual else None,
+            "proxima": ({"escala": futura["nome"], "desde": futura["vigencia_inicio"].isoformat()} if futura else None),
+        })
+    return saida
+
+
+def aplicar_em_lote(conn: Connection, colaboradores: list[int], escala_id: int, vigencia_inicio,
+                    *, ciclo_data_base=None, por: str = "") -> int:
+    """A escala para todos os `colaboradores`, a partir de `vigencia_inicio` — e só ela
+    dali em diante: troca de escala marcada para DEPOIS dessa data é substituída (senão
+    "aplicar desde o início do ponto" ficaria escondido atrás da troca seguinte). Tudo
+    numa transação: ou todos ficam com a escala, ou nenhum."""
+    ids = sorted({int(c) for c in colaboradores or []})
+    if not ids:
+        raise ErroDeValidacao("marque ao menos uma pessoa", campo="colaboradores")
+    if len(ids) > MAX_EM_LOTE:
+        raise ErroDeValidacao(f"no máximo {MAX_EM_LOTE} pessoas de uma vez", campo="colaboradores")
+    try:
+        inicio = dt.date.fromisoformat(str(vigencia_inicio))
+    except ValueError as e:
+        raise ErroDeValidacao("data de início ilegível (AAAA-MM-DD)", campo="vigencia_inicio") from e
+    for cid in ids:
+        atribuir(conn, cid, int(escala_id or 0), inicio.isoformat(), ciclo_data_base=ciclo_data_base, por=por)
+        db.executar(conn, "DELETE FROM ponto.colaborador_escalas WHERE colaborador_id = :c AND vigencia_inicio > :i",
+                    c=cid, i=inicio)
+    return len(ids)

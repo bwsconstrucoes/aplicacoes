@@ -61,6 +61,25 @@ def gravar(conn: Connection, dados: dict) -> dict:
     return db.um(conn, "SELECT * FROM ponto.feriados WHERE id = :id", id=linha["id"])
 
 
+def gravar_para_obras(conn: Connection, dados: dict, obra_ids: list) -> dict:
+    """O mesmo feriado para VÁRIAS obras de uma vez (26/10/2026, o dono: "a seleção de
+    obras não está funcionando (…) uma forma simples de selecionar múltiplas obras, e
+    também todas"). Um feriado de obra para cada uma; a que já tinha o feriado no dia
+    fica como está. Tudo na mesma transação."""
+    ids = sorted({int(o) for o in obra_ids or [] if str(o).strip()})
+    if not ids:
+        raise ErroDeValidacao("marque ao menos uma obra", campo="obra_ids")
+    feitos, ja_tinham = [], 0
+    for obra_id in ids:
+        try:
+            feitos.append(gravar(conn, {**dados, "abrangencia": "OBRA", "obra_id": obra_id}))
+        except ErroDeValidacao as e:
+            if e.detalhes.get("campo") != "data" or "já está cadastrado" not in str(e):
+                raise
+            ja_tinham += 1
+    return {"criados": len(feitos), "ja_tinham": ja_tinham}
+
+
 def apagar(conn: Connection, feriado_id: int) -> None:
     if not db.executar(conn, "DELETE FROM ponto.feriados WHERE id = :id", id=feriado_id):
         raise NaoEncontrado("feriado não encontrado")

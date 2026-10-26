@@ -1903,6 +1903,47 @@ def ponto_api_escala_padrao():
     return _ok(padrao_id=(e or {}).get("id"))
 
 
+@bp.route("/erp/api/ponto/escalas/pessoas")
+@login_obrigatorio
+@permissao("ver_ponto")
+@_api
+def ponto_api_escalas_das_pessoas():
+    """Quem está em cada escala (26/10/2026): a escala própria de hoje de cada pessoa
+    ativa — sem ela, a pessoa segue a escala padrão da empresa."""
+    quem = _quem()
+    with db.conexao() as conn:
+        pessoas = cadastros.listar_colaboradores(conn, so_ativos=True)
+        if quem.obras is not None:
+            alcance = set(quem.obras)
+            pessoas = [p for p in pessoas if p.get("obra_id") in alcance
+                       or any(o["id"] in alcance for o in p["obras_adicionais"])]
+        lista = escalas.pessoas_e_escalas(conn, pessoas, horario.hoje())
+        padrao = escalas.escala_padrao(conn)
+        from .core import vigencia
+        inicio = vigencia.inicio(conn)
+    return _ok(pessoas=lista, padrao=({"id": int(padrao["id"]), "nome": padrao["nome"]} if padrao else None),
+               inicio_do_ponto=inicio.isoformat())
+
+
+@bp.route("/erp/api/ponto/escalas/aplicar", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar_ponto")
+@_api
+def ponto_api_escalas_aplicar():
+    """A mesma escala para muitas pessoas de uma vez, a partir de uma data."""
+    quem, d = _quem(), _corpo()
+    ids = d.get("colaboradores") or []
+    with db.conexao() as conn:
+        for cid in ids:
+            _exigir_pessoa(conn, quem, int(cid))
+        n = escalas.aplicar_em_lote(conn, ids, int(d.get("escala_id") or 0),
+                                    d.get("vigencia_inicio") or horario.hoje().isoformat(),
+                                    ciclo_data_base=d.get("ciclo_data_base"), por=quem.nome)
+    logger.info("Ponto: escala %s aplicada a %d pessoa(s) desde %s por %s", d.get("escala_id"), n,
+                d.get("vigencia_inicio"), quem.nome)
+    return _ok(aplicadas=n)
+
+
 @bp.route("/erp/api/ponto/escalas", methods=["POST"])
 @login_obrigatorio
 @permissao("configurar_ponto")
@@ -1938,8 +1979,11 @@ def ponto_api_feriados():
 @permissao("configurar_ponto")
 @_api
 def ponto_api_feriado_criar():
+    d = _corpo()
     with db.conexao() as conn:
-        f = feriados.gravar(conn, _corpo())
+        if d.get("obra_ids") is not None:          # várias obras de uma vez
+            return _ok(**feriados.gravar_para_obras(conn, d, d.get("obra_ids"))), 201
+        f = feriados.gravar(conn, d)
     return _ok(feriado={**f, "data": f["data"].isoformat(), "criado_em": None}), 201
 
 

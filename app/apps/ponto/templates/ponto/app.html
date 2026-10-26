@@ -69,6 +69,10 @@
   .dia .data { width:64px; flex:none; font-weight:700; }
   .dia .data small { display:block; color:var(--suave); font-weight:400; font-size:12px; }
   .dia .corpo { flex:1; font-size:14px; }
+  /* O dia de falta salta aos olhos (26/10/2026, o dono: "finalizou o dia, não teve ponto,
+     no dia seguinte já apresenta falta" — e os botões de corrigir e justificar continuam). */
+  .dia.falta { background:#FDF0EE; border-left:4px solid var(--vermelho); padding-left:8px; border-radius:6px; }
+  .dia.falta .selo.falta { font-weight:800; font-size:13px; }
   .selo { display:inline-block; font-size:12px; font-weight:700; padding:2px 8px; border-radius:999px; background:#EDEFF3; color:#6B7690; }
   .selo.falta { background:#FBE6E4; color:var(--vermelho); }
   .selo.ok { background:#E3F3E8; color:var(--verde); }
@@ -1323,7 +1327,8 @@ function diasDoMes(d, regras) {
       regras.lancar(x) ? `<button class="icone-dia" type="button" data-lancar="${x.data}" title="Justificar a ausência"
         aria-label="Justificar a ausência em ${dataBR(x.data)}: atestado, licença, afastamento ou compensação">🗓️</button>` : ""].join("");
     if (acoes) temAcao = true;
-    return `<div class="dia"><div class="data">${dataBR(x.data).slice(0, 5)}<small>${esc(x.dia_semana)}</small></div>
+    const falta = x.situacao === "FALTA" && !x.ocorrencia;
+    return `<div class="dia${falta ? " falta" : ""}"><div class="data">${dataBR(x.data).slice(0, 5)}<small>${esc(x.dia_semana)}</small></div>
       <div class="corpo">
         <div class="chips">${x.batidas.map(b => `<span class="chip ${b.status === "EM_ANALISE" ? "analise" : b.status === "AJUSTADA" ? "ajustada" : ""}">${b.status === "EM_ANALISE" ? "⏳ " : ""}${esc(b.hora)}</span>`).join("")}</div>
         ${x.batidas.some(b => b.status === "EM_ANALISE") ? `<div class="pequeno" style="color:var(--ambar)">⏳ batida em conferência — ainda não validada</div>` : ""}
@@ -1331,6 +1336,8 @@ function diasDoMes(d, regras) {
           ${x.trabalhado ? ` trabalhou ${hm(x.trabalhado)}` : ""}${x.extra ? ` · extra ${hm(x.extra)}` : ""}${x.debito && !x.falta ? ` · a menos ${hm(x.debito)}` : ""}
           ${x.feriado ? ` · ${esc(x.feriado)}` : ""}</div>
         ${alertas ? `<div class="pequeno">${esc(alertas)}</div>` : ""}
+        ${falta ? `<div class="pequeno" style="color:var(--vermelho)">❌ Nenhuma batida neste dia: conta como falta.
+          Trabalhou? Toque em ✏️. Faltou com motivo? Toque em 🗓️.</div>` : ""}
         ${rondasDoDia(x)}
         ${pendentesDoDia(x)}
       </div>${acoes ? `<div class="acoes-dia">${acoes}</div>` : ""}</div>`;

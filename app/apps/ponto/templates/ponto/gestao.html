@@ -244,6 +244,9 @@
   .alerta-dia { display:inline-block; font-size:11px; font-weight:600; color:var(--ambar);
                 background:#FFF4D6; border-radius:6px; padding:0 6px; margin:3px 4px 0 0; }
   tr.apagada td { color:var(--tinta-suave); background:#FAFBFD; }
+  /* o dia de falta em destaque, já no dia seguinte (26/10/2026) */
+  tr.dia-falta td { background:#FDF0EE; }
+  tr.dia-falta td:first-child { box-shadow:inset 4px 0 0 var(--vermelho); }
   tr.apagada .chip { opacity:.7; }
   td small, .cel small { display:block; color:var(--tinta-suave); font-size:11.5px; margin-top:1px; }
   .suave { color:var(--tinta-suave); }
@@ -350,6 +353,11 @@
   .validacoes-tipos #v-tipos { display:contents; }
   .chip.ligado { background:var(--azul); color:#fff; }
   .qd-tabela tr.marcada td { background:#FFF8E6; }
+  .ep-resumo { display:flex; flex-wrap:wrap; gap:4px; }
+  .fer-opcoes { display:flex; flex-direction:column; gap:4px; font-size:14px; }
+  .fer-lista { max-height:45vh; overflow:auto; border:1px solid var(--borda); border-radius:8px; padding:6px 10px;
+               display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:2px 14px; }
+  .fer-obra { display:flex; gap:6px; align-items:baseline; font-size:13.5px; padding:3px 0; cursor:pointer; }
   .qd-montar-fixo { position:sticky; top:-14px; z-index:3; background:var(--branco); padding:6px 0 8px; margin:0 0 6px;
                     border-bottom:1px solid var(--borda); }
   .qd-marcar { font-size:12.5px; color:var(--tinta-suave); }
@@ -746,6 +754,7 @@
   <button type="button" data-secao="obras">Obras e cerca</button>
   <button type="button" data-secao="aparelhos">Aparelhos</button>
   <button type="button" data-secao="fotos">Fotos</button>
+  <button type="button" data-secao="escalas">Escalas</button>
   <button type="button" data-secao="jornada">Jornada e licenças</button>
   <button type="button" data-secao="validacao">Quem valida</button>
   <button type="button" data-secao="mensagens">Mensagens</button>
@@ -837,7 +846,15 @@
   <div id="c-excecoes">carregando…</div>
 </div>
 
-<div class="cartao" data-secao-card="jornada">
+{# AS ESCALAS NUMA SEÇÃO SÓ (26/10/2026, o dono: "como é que eu faço para aplicar a escala
+   padrão para todo mundo? Tem algum local específico?"). A padrão, as escalas e quem está em
+   cada uma, com a ferramenta de aplicar em lote. #}
+<div class="cartao" data-secao-card="escalas">
+  <div class="cartao-cab"><h3>Quem está em cada escala</h3><small id="c-ep-conta"></small></div>
+  <div id="c-escalas-pessoas">carregando…</div>
+</div>
+
+<div class="cartao" data-secao-card="escalas">
   <div class="cartao-cab"><h3>Escalas de trabalho</h3>
     {% if pode.configurar_ponto %}<button class="btn" id="c-nova-escala" type="button">+ Nova escala</button>{% endif %}</div>
   <div id="c-escalas">carregando…</div>
@@ -2730,7 +2747,7 @@ function qdAvisoSemEscala() {
     <b>${contar(sem.size, "pessoa sem escala", "pessoas sem escala")} neste quadro.</b> Sem escala, o sistema não sabe
     que batidas esperar — não aponta falta nem batida faltando, e a caixa "lançar o dia inteiro" não tem o que lançar.
     ${QD.escala_padrao ? `A escala padrão da empresa é <b>${escapar(QD.escala_padrao)}</b>, mas ela só vale para quem não tem escala própria — confira se essas pessoas têm escala com data futura.`
-      : `<b>A escala padrão da empresa não está escolhida.</b> ${PODE_CONFIGURAR ? `Escolha em <a class="elo" href="/erp/ponto/configuracao#jornada">Configuração › Jornada e licenças</a> › “Escala padrão da empresa” (por exemplo, a Produção): ela passa a valer na hora para todos os que não têm escala própria, inclusive nos dias que já passaram.` : "Peça a quem configura o ponto para escolher (Configuração › Jornada e licenças)."}`}
+      : `<b>A escala padrão da empresa não está escolhida.</b> ${PODE_CONFIGURAR ? `Escolha em <a class="elo" href="/erp/ponto/configuracao#escalas">Configuração › Escalas</a> › “Escala padrão da empresa” (por exemplo, a Produção): ela passa a valer na hora para todos os que não têm escala própria, inclusive nos dias que já passaram.` : "Peça a quem configura o ponto para escolher (Configuração › Escalas)."}`}
     ${PODE_TRATAR ? `<br>Para dar uma escala própria a algumas pessoas (o vigia no 12x36, por exemplo): <button class="link-btn" type="button" id="qd-marcar-sem-escala">marcar as sem escala</button> e usar “Definir a escala”.` : ""}</div>`;
   if (els("qd-marcar-sem-escala")) els("qd-marcar-sem-escala").addEventListener("click", () => {
     QD_MARCADAS.clear();
@@ -3016,7 +3033,7 @@ function desenharEspelho() {
         title="${o.status === "AGUARDANDO_DP" ? "espera o DP" : "espera o supervisor"}">${escapar(o.rotulo)} pendente</span>`),
     ].filter(Boolean).join(" ");
     const apagada = NAO_CONTA.includes(d.situacao);
-    return `<tr class="${apagada ? "apagada" : ""}">
+    return `<tr class="${apagada ? "apagada" : d.situacao === "FALTA" && !d.ocorrencia ? "dia-falta" : ""}">
       <td class="dados"><b>${ddmm(d.data)}</b><small>${escapar(d.dia_semana)}</small></td>
       <td>${d.escala ? escapar(d.escala) : `<span class="suave">—</span>`}
         ${d.feriado ? `<small>Feriado: ${escapar(d.feriado)}</small>` : ""}</td>
@@ -4512,6 +4529,121 @@ async function aplicarMigracoes() {
 }
 
 // ------------------------------------------------------------- 2. escalas
+// QUEM ESTÁ EM CADA ESCALA (26/10/2026). Filtrar (os vigias, uma obra, quem está sem
+// escala própria), marcar e aplicar a escala de uma vez. Quem não tem escala própria —
+// e todo funcionário NOVO — segue a escala padrão da empresa, escolhida aqui em cima.
+let EP = null;
+const EP_MARCADAS = new Set();
+async function carregarEscalasDasPessoas() {
+  const alvo = els("c-escalas-pessoas");
+  if (!alvo) return;
+  try { EP = await api("/erp/api/ponto/escalas/pessoas"); }
+  catch (e) { erroNoCartao("c-escalas-pessoas", e); return; }
+  if (!ESCALAS || !ESCALAS.length) { try { ESCALAS = (await api("/erp/api/ponto/escalas")).escalas; } catch (e) { ESCALAS = []; } }
+  const ativas = ESCALAS.filter(e => e.ativo);
+  const conta = {};
+  EP.pessoas.forEach(p => { const k = p.escala || ""; conta[k] = (conta[k] || 0) + 1; });
+  const funcoes = [...new Set(EP.pessoas.map(p => p.funcao).filter(Boolean))].sort();
+  const obras = [...new Set(EP.pessoas.map(p => p.obra).filter(Boolean))].sort();
+  alvo.innerHTML = `
+    <div class="aviso ${EP.padrao ? "info" : "ambar"}" style="margin:0 0 10px">
+      ${EP.padrao ? `<b>Escala padrão da empresa: ${escapar(EP.padrao.nome)}.</b> Quem não tem escala própria — e todo funcionário
+        novo, desde o primeiro dia — é julgado por ela, sem precisar fazer nada.`
+        : `<b>A escala padrão da empresa não está escolhida.</b> Sem ela, quem não tem escala própria não tem o dia julgado:
+          não aparece falta nem batida faltando. Escolha logo abaixo, em “Escalas de trabalho” (ex.: Produção).`}
+      Para os que trabalham em outro horário (vigias, escritório), dê a escala própria aqui: filtre, marque e aplique.</div>
+    <div class="ep-resumo">${Object.entries(conta).sort((a, b) => b[1] - a[1]).map(([k, n]) =>
+      `<button type="button" class="chip" data-ep-escala-filtro="${escapar(k)}">${k ? escapar(k) : `sem escala própria${EP.padrao ? ` → ${escapar(EP.padrao.nome)}` : ""}`}: <b>${n}</b></button>`).join("")}</div>
+    <div class="barra-acoes" style="align-items:flex-end; flex-wrap:wrap; margin-top:8px">
+      <div class="campo" style="flex:2; min-width:200px"><label for="ep-busca">Buscar</label>
+        <input id="ep-busca" data-sem-mascara placeholder="nome ou CPF"></div>
+      <div class="campo" style="flex:1; min-width:160px"><label for="ep-funcao">Função</label>
+        <select id="ep-funcao"><option value="">Todas</option>${funcoes.map(f => `<option>${escapar(f)}</option>`).join("")}</select></div>
+      <div class="campo" style="flex:1; min-width:140px"><label for="ep-obra">Obra</label>
+        <select id="ep-obra"><option value="">Todas</option>${obras.map(o => `<option>${escapar(o)}</option>`).join("")}</select></div>
+      <div class="campo" style="flex:1; min-width:160px"><label for="ep-escala">Escala de hoje</label>
+        <select id="ep-escala" data-sem-busca><option value="*">Todas</option><option value="">Sem escala própria</option>
+          ${ativas.map(e => `<option>${escapar(e.nome)}</option>`).join("")}</select></div>
+      <div class="campo" style="flex:1; min-width:140px"><label for="ep-jornada">Jornada</label>
+        <select id="ep-jornada" data-sem-busca><option value="">Todas</option><option value="VIGIA">Vigia</option><option value="PADRAO">Padrão</option></select></div>
+    </div>
+    ${PODE_CONFIGURAR ? `<div class="barra-lote" id="ep-lote" style="margin-top:8px">
+      <b id="ep-qtd">0 marcadas</b>
+      <select id="ep-nova" data-sem-busca style="padding:6px 8px; border:1px solid var(--borda-forte); border-radius:8px">
+        ${ativas.map(e => `<option value="${e.id}">${escapar(e.nome)} (${e.tipo === "CICLO_12X36" ? "12x36" : `${String(e.horas_semanais).replace(".", ",")} h/semana`})</option>`).join("")}</select>
+      <label style="font-size:13px">a partir de <input type="date" id="ep-desde" value="${EP.inicio_do_ponto}"></label>
+      <button class="btn" type="button" id="ep-aplicar">Aplicar às marcadas</button>
+      <small class="suave" style="flex-basis:100%">A partir de ${dataBR(EP.inicio_do_ponto)} (o início do ponto), a escala nova vale para todo o período do ponto
+        — é o certo na primeira vez. Para uma mudança de horário daqui em diante, escolha a data da mudança: o que veio antes continua pela escala antiga.</small>
+    </div><div id="ep-msg"></div>` : ""}
+    <div class="tabela-rolagem" style="max-height:60vh"><table><thead><tr>
+      <th class="sem-ordem" style="width:28px">${PODE_CONFIGURAR ? `<input type="checkbox" id="ep-todas" title="marcar todas as da lista">` : ""}</th>
+      <th>Pessoa</th><th>Função</th><th>Obra</th><th>Escala de hoje</th></tr></thead><tbody id="ep-linhas"></tbody></table></div>`;
+  ["ep-busca", "ep-funcao", "ep-obra", "ep-escala", "ep-jornada"].forEach(id =>
+    els(id).addEventListener(id === "ep-busca" ? "input" : "change", epDesenhar));
+  alvo.querySelectorAll("[data-ep-escala-filtro]").forEach(b => b.addEventListener("click", () => {
+    els("ep-escala").value = b.dataset.epEscalaFiltro; epDesenhar(); }));
+  if (els("ep-todas")) els("ep-todas").addEventListener("change", e => {
+    epVisiveis().forEach(p => e.target.checked ? EP_MARCADAS.add(p.id) : EP_MARCADAS.delete(p.id)); epDesenhar(); });
+  if (els("ep-aplicar")) els("ep-aplicar").addEventListener("click", epAplicar);
+  els("c-ep-conta").textContent = contar(EP.pessoas.length, "pessoa ativa", "pessoas ativas");
+  epDesenhar();
+}
+
+function epVisiveis() {
+  const busca = els("ep-busca").value.trim().toLowerCase(), dig = busca.replace(/\D/g, "");
+  const f = els("ep-funcao").value, o = els("ep-obra").value, e = els("ep-escala").value, j = els("ep-jornada").value;
+  return EP.pessoas.filter(p => (!busca || (p.nome || "").toLowerCase().includes(busca) || (dig && (p.cpf || "").includes(dig)))
+    && (!f || p.funcao === f) && (!o || p.obra === o) && (e === "*" || (p.escala || "") === e)
+    && (!j || (j === "VIGIA" ? p.tipo_jornada === "VIGIA" : p.tipo_jornada !== "VIGIA")));
+}
+
+function epDesenhar() {
+  const lista = epVisiveis();
+  els("ep-linhas").innerHTML = lista.length ? lista.map(p => `<tr${EP_MARCADAS.has(p.id) ? ' class="marcada"' : ""}>
+    <td>${PODE_CONFIGURAR ? `<input type="checkbox" data-ep-marcar="${p.id}" ${EP_MARCADAS.has(p.id) ? "checked" : ""}>` : ""}</td>
+    <td>${eloPessoa(p.id, p.nome)}</td><td>${escapar(p.funcao || "—")}</td><td class="dados">${escapar(p.obra || "—")}</td>
+    <td>${p.escala ? `<b>${escapar(p.escala)}</b> <small style="display:inline">desde ${dataBR(p.desde)}</small>`
+      : `<span class="suave">sem escala própria${EP.padrao ? ` → segue a ${escapar(EP.padrao.nome)}` : " — o dia não é julgado"}</span>`}
+      ${p.proxima ? `<small>a partir de ${dataBR(p.proxima.desde)}: ${escapar(p.proxima.escala)}</small>` : ""}</td></tr>`).join("")
+    : `<tr><td colspan="5"><div class="vazio"><b>Ninguém</b>com estes filtros.</div></td></tr>`;
+  els("ep-linhas").querySelectorAll("[data-ep-marcar]").forEach(c => c.addEventListener("change", () => {
+    const id = Number(c.dataset.epMarcar); c.checked ? EP_MARCADAS.add(id) : EP_MARCADAS.delete(id);
+    c.closest("tr").classList.toggle("marcada", c.checked); epContar(); }));
+  if (els("ep-todas")) els("ep-todas").checked = lista.length > 0 && lista.every(p => EP_MARCADAS.has(p.id));
+  epContar();
+}
+
+function epContar() {
+  if (!els("ep-qtd")) return;
+  els("ep-qtd").textContent = contar(EP_MARCADAS.size, "pessoa marcada", "pessoas marcadas");
+  els("ep-aplicar").disabled = !EP_MARCADAS.size;
+}
+
+async function epAplicar() {
+  const escala = (ESCALAS || []).find(e => String(e.id) === els("ep-nova").value);
+  if (!escala || !EP_MARCADAS.size) return;
+  const desde = els("ep-desde").value;
+  let base = null;
+  const campos = escala.tipo === "CICLO_12X36"
+    ? [{nome: "base", rotulo: "Um dia em que essas pessoas TRABALHAM (o ciclo 12x36 conta dele)", tipo: "date", valor: desde, obrigatorio: true, largura: 6}] : [];
+  const r = await perguntar({titulo: `Aplicar a escala ${escapar(escala.nome)} — ${contar(EP_MARCADAS.size, "pessoa", "pessoas")}`,
+    aviso: `A partir de <b>${dataBR(desde)}</b>, essas pessoas passam a ser julgadas pela escala <b>${escapar(escala.nome)}</b>
+      (faltas, batidas faltando, horas e extras). O que vier antes dessa data continua pelo que valia;
+      troca de escala já marcada para depois dessa data é substituída por esta.
+      ${escala.tipo === "CICLO_12X36" ? "<br>No 12x36, todas as marcadas trabalham nos mesmos dias. Se a equipe se reveza em turmas, aplique uma turma de cada vez." : ""}`,
+    campos, textoOk: "Aplicar"});
+  if (!r) return;
+  if (escala.tipo === "CICLO_12X36") base = r.base;
+  try {
+    const d = await postar("/erp/api/ponto/escalas/aplicar", {escala_id: escala.id, vigencia_inicio: desde,
+      ciclo_data_base: base, colaboradores: [...EP_MARCADAS]});
+    EP_MARCADAS.clear();
+    await carregarEscalasDasPessoas(); await carregarEscalas();
+    aviso("ep-msg", `${contar(d.aplicadas, "pessoa ficou", "pessoas ficaram")} na escala ${escapar(escala.nome)} desde ${dataBR(desde)}.`, "ok");
+  } catch (e) { falhou(e, "ep-msg"); }
+}
+
 async function carregarEscalas() {
   let resp;
   try {
@@ -4546,6 +4678,7 @@ async function carregarEscalas() {
   els("c-escala-padrao").addEventListener("change", async ev => {
     try {
       await postar("/erp/api/ponto/escalas/padrao", {escala_id: ev.target.value || null});
+      carregarEscalasDasPessoas();
       aviso("c-escala-padrao-msg", ev.target.value ? "Escala padrão gravada: quem não tem escala própria passa a ser julgado por ela."
         : "Sem escala padrão: quem não tem escala própria não tem o dia julgado.", "ok");
     } catch (e) { falhou(e, "c-escala-padrao-msg"); }
@@ -4674,29 +4807,93 @@ async function carregarFeriados() {
     apagarFeriado(lista.find(f => f.id === Number(b.dataset.apagarFeriado)))));
 }
 
+// O FERIADO (26/10/2026, o dono: "na inclusão de feriado está bem ruim a parte de seleção
+// de obras. Não está funcionando (…) uma forma simples e fácil de selecionar múltiplas
+// obras, e também todas"). Antes, a obra era uma lista de uma escolha só, e ela só valia
+// se "Vale para" estivesse em "Só de uma obra" — escolher a obra e esquecer o "Vale
+// para" gravava um feriado NACIONAL. Agora "Vale para" decide o que aparece, e as obras
+// são caixas de marcar, com busca e "marcar todas".
 async function novoFeriado() {
   try { if (!OBRAS) OBRAS = (await api("/erp/api/ponto/obras")).obras; } catch (e) { falhou(e); return; }
-  const r = await perguntar({
-    titulo: "Novo feriado",
-    aviso: "No feriado ninguém leva falta, e quem trabalha tem as horas marcadas como trabalho em feriado.",
-    campos: [
-      {nome: "data", rotulo: "Data", tipo: "date", obrigatorio: true, largura: 1},
-      {nome: "nome", rotulo: "Nome", obrigatorio: true, largura: 2, exemplo: "ex.: Carnaval"},
-      {nome: "abrangencia", rotulo: "Vale para", tipo: "select", valor: "NACIONAL", largura: 1, opcoes: ABRANGENCIAS},
-      {nome: "uf", rotulo: "UF", largura: 1, exemplo: "CE", dica: "Para estadual e municipal."},
-      {nome: "municipio", rotulo: "Município", largura: 1, exemplo: "Fortaleza", dica: "Só para municipal."},
-      {nome: "obra_id", rotulo: "Obra", tipo: "select", valor: "", largura: 3, dica: "Só para \"só de uma obra\".",
-       opcoes: [{valor: "", rotulo: "—"}, ...OBRAS.map(o => ({valor: String(o.id), rotulo: escapar(rotuloObra(o))}))]},
-    ],
-    textoOk: "Cadastrar feriado",
+  let dlg = els("dlg-feriado");
+  if (!dlg) { dlg = document.createElement("dialog"); dlg.id = "dlg-feriado"; dlg.className = "dlg-pessoa"; document.body.appendChild(dlg); }
+  dlg.innerHTML = `<div class="dlg-topo"><h3>Novo feriado</h3>
+      <button class="topo-btn" style="margin-left:auto" type="button" data-fer-fechar>Cancelar</button></div>
+    <div class="dlg-corpo">
+      <div class="aviso info">No feriado ninguém leva falta, e quem trabalha tem as horas marcadas como trabalho em feriado.</div>
+      <div class="form-grade">
+        <div class="campo" style="grid-column:span 2"><label>Data *</label><input type="date" id="fer-data"></div>
+        <div class="campo" style="grid-column:span 4"><label>Nome *</label><input id="fer-nome" placeholder="ex.: Carnaval"></div>
+        <div class="campo" style="grid-column:span 6"><label>Vale para</label>
+          <div class="fer-opcoes">
+            <label><input type="radio" name="fer-abr" value="NACIONAL" checked> Todas as obras (feriado nacional ou da empresa toda)</label>
+            <label><input type="radio" name="fer-abr" value="OBRAS"> Só algumas obras</label>
+            <label><input type="radio" name="fer-abr" value="ESTADUAL"> As obras de um estado</label>
+            <label><input type="radio" name="fer-abr" value="MUNICIPAL"> As obras de um município</label>
+          </div></div>
+        <div class="campo" style="grid-column:span 2" id="fer-uf-c" hidden><label>UF *</label><input id="fer-uf" placeholder="CE" maxlength="2"></div>
+        <div class="campo" style="grid-column:span 4" id="fer-mun-c" hidden><label>Município *</label><input id="fer-mun" placeholder="Fortaleza"></div>
+      </div>
+      <div id="fer-obras-c" hidden>
+        <div class="barra-acoes" style="align-items:center; margin:8px 0">
+          <input id="fer-busca" placeholder="buscar obra (código, nome ou cidade)" data-sem-mascara style="flex:1; min-width:200px">
+          <button class="link-btn" type="button" data-fer-marcar="1">marcar todas as da lista</button>
+          <button class="link-btn" type="button" data-fer-marcar="0">desmarcar</button>
+          <b id="fer-qtd">0 obras marcadas</b></div>
+        <div class="fer-lista" id="fer-lista"></div>
+      </div>
+      <div id="fer-erro"></div>
+      <div style="margin-top:14px; display:flex; gap:8px">
+        <button class="btn" type="button" id="fer-ok">Cadastrar feriado</button>
+        <button class="btn secundario" type="button" data-fer-fechar>Cancelar</button></div>
+    </div>`;
+  const marcadas = new Set();
+  const abr = () => dlg.querySelector('input[name="fer-abr"]:checked').value;
+  const desenharObras = () => {
+    const b = els("fer-busca").value.trim().toLowerCase();
+    const lista = OBRAS.filter(o => !b || `${o.codigo} ${o.nome || ""} ${o.municipio || ""}`.toLowerCase().includes(b));
+    els("fer-lista").innerHTML = lista.map(o => `<label class="fer-obra"><input type="checkbox" data-fer-obra="${o.id}" ${marcadas.has(o.id) ? "checked" : ""}>
+      <b>${escapar(o.codigo)}</b> ${escapar(o.nome || "")}${o.municipio ? ` <small style="display:inline">${escapar(o.municipio)}${o.uf ? `/${escapar(o.uf)}` : ""}</small>` : ""}</label>`).join("")
+      || `<div class="vazio"><b>Nenhuma obra</b>com esta busca.</div>`;
+    els("fer-lista").querySelectorAll("[data-fer-obra]").forEach(c => c.addEventListener("change", () => {
+      c.checked ? marcadas.add(Number(c.dataset.ferObra)) : marcadas.delete(Number(c.dataset.ferObra)); contarObras(); }));
+    contarObras();
+    return lista;
+  };
+  const contarObras = () => { els("fer-qtd").textContent = contar(marcadas.size, "obra marcada", "obras marcadas"); };
+  const mostrar = () => {
+    const a = abr();
+    els("fer-uf-c").hidden = !["ESTADUAL", "MUNICIPAL"].includes(a);
+    els("fer-mun-c").hidden = a !== "MUNICIPAL";
+    els("fer-obras-c").hidden = a !== "OBRAS";
+    if (a === "OBRAS") desenharObras();
+  };
+  dlg.querySelectorAll('input[name="fer-abr"]').forEach(r => r.addEventListener("change", mostrar));
+  els("fer-busca").addEventListener("input", desenharObras);
+  dlg.querySelectorAll("[data-fer-marcar]").forEach(b => b.addEventListener("click", () => {
+    const lista = desenharObras();
+    lista.forEach(o => b.dataset.ferMarcar === "1" ? marcadas.add(o.id) : marcadas.delete(o.id));
+    desenharObras();
+  }));
+  dlg.querySelectorAll("[data-fer-fechar]").forEach(b => b.addEventListener("click", () => dlg.close()));
+  els("fer-ok").addEventListener("click", async () => {
+    const data = els("fer-data").value, nome = els("fer-nome").value.trim(), a = abr();
+    if (!data || !nome) { aviso("fer-erro", "Diga a data e o nome do feriado.", "erro"); return; }
+    if (a === "OBRAS" && !marcadas.size) { aviso("fer-erro", "Marque ao menos uma obra.", "erro"); return; }
+    try {
+      if (a === "OBRAS") {
+        const r = await postar("/erp/api/ponto/feriados", {data, nome, obra_ids: [...marcadas]});
+        aviso("mensagem", `Feriado cadastrado em ${contar(r.criados, "obra", "obras")}` + (r.ja_tinham ? ` (${r.ja_tinham} já tinham esse feriado no dia).` : "."), "ok");
+      } else {
+        await postar("/erp/api/ponto/feriados", {data, nome, abrangencia: a, uf: els("fer-uf").value.trim(), municipio: els("fer-mun").value.trim()});
+        aviso("mensagem", "Feriado cadastrado.", "ok");
+      }
+      dlg.close();
+      if (data.slice(0, 4) !== els("c-ano").value) els("c-ano").value = data.slice(0, 4);
+      await carregarFeriados();
+    } catch (e) { aviso("fer-erro", escapar(e.message), "erro"); }
   });
-  if (!r) return;
-  try {
-    await postar("/erp/api/ponto/feriados", {...r, obra_id: r.obra_id ? Number(r.obra_id) : null});
-    aviso("mensagem", "Feriado cadastrado.", "ok");
-    if (r.data && r.data.slice(0, 4) !== els("c-ano").value) els("c-ano").value = r.data.slice(0, 4);
-    await carregarFeriados();
-  } catch (e) { falhou(e); }
+  dlg.showModal();
 }
 
 async function apagarFeriado(f) {
@@ -5744,7 +5941,7 @@ function anosParaEscolher() {
 }
 
 async function carregarTudoMenosConfig() {
-  await Promise.all([carregarEscalas(), carregarFeriados(), carregarCompetencias(), carregarAparelhos(),
+  await Promise.all([carregarEscalas(), carregarEscalasDasPessoas(), carregarFeriados(), carregarCompetencias(), carregarAparelhos(),
                     carregarCercas(), carregarQuemValida(), carregarRegistro(), carregarObrasBase(),
                     carregarExcecoes(), carregarEnsaio(), carregarLicencas(), carregarRosto()]);
 }
@@ -5930,7 +6127,7 @@ async function rodarRostoAgora() {
 }
 
 // --------------------------------------------- o submenu (06/10/2026)
-const SECOES = ["geral", "pessoas", "obras", "aparelhos", "fotos", "jornada", "validacao", "mensagens", "teste"];
+const SECOES = ["geral", "pessoas", "obras", "aparelhos", "fotos", "escalas", "jornada", "validacao", "mensagens", "teste"];
 function mostrarSecao(secao) {
   if (!SECOES.includes(secao)) secao = "geral";
   document.querySelectorAll("[data-secao-card]").forEach(c => { c.hidden = c.dataset.secaoCard !== secao; });
