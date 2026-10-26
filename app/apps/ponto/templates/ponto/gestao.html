@@ -13,7 +13,7 @@
 #}
 {% block titulo %}Ponto — {{ {
   "ponto_hoje": "Hoje", "ponto_espelho": "Espelho", "ponto_pendencias": "Validações",
-  "ponto_mosaico": "Mosaico", "ponto_fotos": "Fotos de cadastro", "ponto_pessoas": "Pessoas", "ponto_banco": "Banco de horas", "ponto_alertas": "Alertas",
+  "ponto_mosaico": "Mosaico", "ponto_fotos": "Fotos de cadastro", "ponto_pessoas": "Pessoas", "ponto_banco": "Banco de horas", "ponto_relatorios": "Relatórios", "ponto_alertas": "Alertas",
   "ponto_qualidade": "Qualidade",
   "ponto_config": "Configuração"}.get(aba_ponto, "Ponto") }} — ERP BWS{% endblock %}
 {% block classe_corpo %}{% if aba_ponto in ("ponto_pendencias", "ponto_banco", "ponto_config", "ponto_rondas") %}sem-filtros{% endif %}{% endblock %}
@@ -166,6 +166,47 @@
     Aparecem só as obras <b>com batida no dia</b>, com quantas pessoas bateram.
     Escolhida a obra, as fotos aparecem na hora — uma linha por pessoa que bateu.
   </div>
+
+{% elif aba_ponto == "ponto_relatorios" %}
+  {# Os relatórios (26/10/2026, o dono: "a gente não tem nenhum relatório nesse sistema novo"). #}
+  <div class="filtros-cab"><h2>Relatórios</h2>
+    <button class="link-btn" id="rl-limpar" type="button">limpar</button></div>
+  <div class="qd-montar-fixo"><button class="btn" id="rl-ver" type="button" style="width:100%">Montar o relatório</button></div>
+  <div id="rl-tipos" class="fer-opcoes">
+    <label><input type="radio" name="rl-tipo" value="faltas" checked> Faltas</label>
+    <label><input type="radio" name="rl-tipo" value="justificadas"> Ausências justificadas</label>
+    <label><input type="radio" name="rl-tipo" value="extras"> Horas extras</label>
+    <label><input type="radio" name="rl-tipo" value="banco"> Banco de horas</label>
+  </div>
+  <div class="qd-atalhos" style="margin-top:10px">
+    <button class="chip" type="button" data-rl-atalho="mes">Este mês</button>
+    <button class="chip" type="button" data-rl-atalho="passado">Mês passado</button>
+    <button class="chip" type="button" data-rl-atalho="semana">Esta semana</button>
+  </div>
+  <div class="qd-par">
+    <div class="campo"><label for="rl-de">De</label><input type="date" id="rl-de"></div>
+    <div class="campo"><label for="rl-ate">Até</label><input type="date" id="rl-ate"></div>
+  </div>
+  <div class="campo" style="margin-top:10px"><label for="rl-busca">Pessoa</label>
+    <input id="rl-busca" placeholder="nome ou CPF" autocomplete="off" data-sem-mascara></div>
+  <div class="campo" style="margin-top:8px"><label for="rl-obra">Obra do cadastro</label>
+    <select id="rl-obra"><option value="">Todas</option></select></div>
+  <div class="campo" style="margin-top:8px"><label for="rl-funcao">Função</label>
+    <select id="rl-funcao"><option value="">Todas</option></select></div>
+  <div id="rl-tipos-just" hidden>
+    <h3 class="qd-grupo">Tipos de ausência</h3>
+    <div class="qd-marcas">
+      <label class="opcao"><input type="checkbox" data-rl-just="ATESTADO"><span class="rotulo">Atestado médico</span></label>
+      <label class="opcao"><input type="checkbox" data-rl-just="LICENCA"><span class="rotulo">Licenças da lei</span></label>
+      <label class="opcao"><input type="checkbox" data-rl-just="FERIAS"><span class="rotulo">Férias</span></label>
+      <label class="opcao"><input type="checkbox" data-rl-just="AFASTAMENTO"><span class="rotulo">Afastamento (INSS…)</span></label>
+      <label class="opcao"><input type="checkbox" data-rl-just="ABONO"><span class="rotulo">Abonos (viagem, dispensa…)</span></label>
+      <label class="opcao"><input type="checkbox" data-rl-just="FOLGA_BANCO"><span class="rotulo">Folga do banco</span></label>
+      <label class="opcao"><input type="checkbox" data-rl-just="COMPENSACAO"><span class="rotulo">Compensação</span></label>
+    </div><small class="suave">nenhum marcado = todos</small>
+  </div>
+  <div class="cartao-dica" style="margin-top:16px">As contas são as do espelho: o relatório bate com o espelho de
+    cada pessoa e com o Quadro. Até 62 dias de uma vez. O arquivo para a contabilidade vem numa próxima etapa.</div>
 
 {% elif aba_ponto == "ponto_fotos" %}
   {# As fotos de cadastro para regularizar (26/10/2026). #}
@@ -367,6 +408,7 @@
   .chip.ligado { background:var(--azul); color:#fff; }
   .qd-tabela tr.marcada td { background:#FFF8E6; }
   .ep-resumo { display:flex; flex-wrap:wrap; gap:4px; }
+  .rl-tabela td.num, .rl-tabela th.num { text-align:right; }
   .fc-pessoa.suspeita { border-left:4px solid var(--vermelho); }
   .fc-cab { display:flex; flex-wrap:wrap; gap:6px 10px; align-items:center; margin-bottom:8px; }
   .fc-fotos { display:flex; flex-wrap:wrap; gap:10px; }
@@ -607,6 +649,20 @@
   nome de quem rejeitou. Atestado e afastamento: só o DP abre o documento de saúde.
   Aparelho só bate ponto depois de aprovado — aprove apenas o que você reconhece.
 </div>
+
+{% elif aba_ponto == "ponto_relatorios" %}
+{# ------------------------------------------------------------- RELATÓRIOS #}
+<h2 id="rl-titulo">Relatórios <small id="rl-sub">escolha o relatório e o período na barra da esquerda</small></h2>
+<div id="mensagem"></div>
+<div id="rl-kpis"></div>
+<div class="barra-acoes" id="rl-acoes" hidden style="margin:0 0 10px">
+  <div class="sub-abas" id="rl-visoes" style="margin:0"></div>
+  <span class="espaco" style="flex:1"></span>
+  <button class="btn secundario" type="button" id="rl-imprimir">🖨️ Imprimir</button>
+  <button class="btn secundario" type="button" id="rl-csv">⬇️ Baixar planilha</button>
+</div>
+<div class="tabela-wrap"><div class="tabela-rolagem" style="max-height:72vh"><div id="rl-tabela">
+  <div class="vazio"><b>Nada montado ainda</b>Escolha o relatório e o período e aperte “Montar o relatório”.</div></div></div></div>
 
 {% elif aba_ponto == "ponto_fotos" %}
 {# ------------------------------------------------------ FOTOS DE CADASTRO #}
@@ -3609,6 +3665,133 @@ els("v-lote-limpar").addEventListener("click", () => {
 });
 carregarObrasDasValidacoes().then(carregarValidacoes);
 
+{% elif aba_ponto == "ponto_relatorios" %}
+// ===========================================================================
+// RELATÓRIOS (26/10/2026) — faltas, ausências justificadas, horas extras e banco de
+// horas, com as contas do espelho. A tabela da tela é a mesma que vai para a
+// impressão e para a planilha (CSV com ";" e acento, que o Excel abre direto).
+// ===========================================================================
+let RL = null, RL_VISAO = "pessoas";
+const rlTipo = () => document.querySelector('input[name="rl-tipo"]:checked').value;
+function rlAtalho(qual) {
+  const hoje = hojeISO(), d = new Date(hoje + "T12:00:00");
+  if (qual === "mes") { els("rl-de").value = hoje.slice(0, 8) + "01"; els("rl-ate").value = hoje; }
+  else if (qual === "passado") {
+    const ini = new Date(d.getFullYear(), d.getMonth() - 1, 1), fim = new Date(d.getFullYear(), d.getMonth(), 0);
+    els("rl-de").value = isoLocal(ini); els("rl-ate").value = isoLocal(fim);
+  } else { const seg = new Date(d); seg.setDate(d.getDate() - (d.getDay() + 6) % 7); els("rl-de").value = isoLocal(seg); els("rl-ate").value = hoje; }
+}
+async function rlObras() {
+  try {
+    const d = await api("/erp/api/ponto/obras");
+    els("rl-obra").innerHTML = `<option value="">Todas</option>` + d.obras.map(o => `<option value="${o.id}">${escapar(rotuloObra(o))}</option>`).join("");
+  } catch (e) {}
+}
+async function rlMontar() {
+  const b = els("rl-ver"); b.disabled = true; b.textContent = "montando…";
+  els("rl-tabela").innerHTML = `<div class="vazio"><b>Montando…</b>pode levar alguns segundos com muita gente.</div>`;
+  try {
+    RL = await postar("/erp/api/ponto/relatorios", {tipo: rlTipo(), de: els("rl-de").value, ate: els("rl-ate").value,
+      filtros: {busca: els("rl-busca").value.trim(), obra_cadastro: els("rl-obra").value || null,
+                funcoes: els("rl-funcao").value ? [els("rl-funcao").value] : [],
+                tipos_justificados: [...document.querySelectorAll("[data-rl-just]:checked")].map(x => x.dataset.rlJust)}});
+    const atual = els("rl-funcao").value;
+    els("rl-funcao").innerHTML = `<option value="">Todas</option>` + RL.funcoes.map(f => `<option ${f === atual ? "selected" : ""}>${escapar(f)}</option>`).join("");
+    RL_VISAO = {faltas: "pessoas", extras: "pessoas", justificadas: "lista", banco: "lista"}[RL.tipo];
+    rlDesenhar();
+  } catch (e) { els("rl-tabela").innerHTML = `<div class="aviso erro">${escapar(e.message)}</div>`; }
+  finally { b.disabled = false; b.textContent = "Montar o relatório"; }
+}
+const RL_TIPO_DIA = {UTIL: "dia de trabalho", DESCANSO: "descanso", FERIADO: "feriado"};
+const cpfBR = c => documento ? documento(c || "") : (c || "");
+// Cada visão: colunas [título, valor da célula em texto, classe] — a mesma lista desenha a
+// tabela, a impressão e a planilha.
+function rlColunas() {
+  const pessoa = [["Pessoa", l => l.nome], ["CPF", l => cpfBR(l.cpf), "dados"], ["Função", l => l.funcao || ""], ["Obra", l => l.obra || "", "dados"]];
+  if (RL.tipo === "faltas") return RL_VISAO === "pessoas"
+    ? [...pessoa, ["Faltas", l => l.faltas, "num"], ["Horas previstas", l => hm(l.previsto), "num"]]
+    : [...pessoa, ["Dia", l => dataBR(l.data), "dados"], ["", l => l.dia_semana], ["Escala", l => l.escala || ""],
+       ["Previsto", l => hm(l.previsto), "num"], ["Pedido esperando decisão", l => l.pendente || ""]];
+  if (RL.tipo === "extras") return RL_VISAO === "pessoas"
+    ? [...pessoa, ["Dias", l => l.dias, "num"], ["Em dia de trabalho", l => hmCelula(l.util), "num"],
+       ["Em descanso", l => hmCelula(l.descanso), "num"], ["Em feriado", l => hmCelula(l.feriado), "num"],
+       ["Total", l => hm(l.total), "num"], ["Noturno", l => hmCelula(l.noturno), "num"]]
+    : [...pessoa, ["Dia", l => dataBR(l.data), "dados"], ["", l => l.dia_semana], ["Tipo do dia", l => RL_TIPO_DIA[l.tipo_dia] + (l.feriado ? ` (${l.feriado})` : "")],
+       ["Batidas", l => l.batidas.join(" "), "dados"], ["Previsto", l => hm(l.previsto), "num"], ["Trabalhado", l => hm(l.trabalhado), "num"],
+       ["Extra", l => hm(l.extra), "num"], ["Noturno", l => hmCelula(l.noturno), "num"]];
+  if (RL.tipo === "justificadas") return RL_VISAO === "tipos"
+    ? [["Tipo", l => l.rotulo], ["Pedidos", l => l.pedidos, "num"], ["Dias no período", l => l.dias, "num"], ["Pessoas", l => l.pessoas, "num"]]
+    : [...pessoa, ["Tipo", l => l.rotulo], ["De", l => dataBR(l.de), "dados"], ["Até", l => dataBR(l.ate), "dados"],
+       ["Dias no período", l => l.dias, "num"], ...(PODE_DP ? [["CID", l => l.cid || ""]] : []),
+       ["Lançado por", l => l.lancado_por || ""], ["Aprovado por", l => l.aprovado_por || ""]];
+  return [...pessoa, ["Regime", l => l.regime], ["Desde", l => dataBR(l.inicio), "dados"],
+          ["Saldo", l => (l.saldo < 0 ? "-" : "") + hm(Math.abs(l.saldo)), "num"],
+          ["Primeiro vencimento", l => l.vence_primeiro ? `${hm(l.vence_primeiro.minutos)} vence em ${dataBR(l.vence_primeiro.vence_em)}` : ""],
+          ["", l => l.aviso || ""]];
+}
+function rlLinhas() {
+  if (RL.tipo === "justificadas" && RL_VISAO === "tipos") return RL.por_tipo;
+  if (["faltas", "extras"].includes(RL.tipo) && RL_VISAO === "pessoas") return RL.por_pessoa;
+  return RL.linhas;
+}
+function rlDesenhar() {
+  const t = RL.totais || {};
+  els("rl-titulo").innerHTML = `${escapar(RL.titulo)} <small id="rl-sub">${RL.tipo === "banco" ? `saldo até ${dataBR(RL.ate)}` : `de ${dataBR(RL.de)} a ${dataBR(RL.ate)}`}
+    · ${contar(RL.pessoas_no_recorte, "pessoa no recorte", "pessoas no recorte")}</small>`;
+  const k = (r, v, cor = "") => `<div class="kpi estatico ${cor}"><div class="kpi-rotulo">${r}</div><div class="kpi-valor">${v}</div></div>`;
+  els("rl-kpis").innerHTML = `<div class="kpis">${
+    RL.tipo === "faltas" ? k("Faltas", t.faltas, t.faltas ? "vermelho" : "") + k("Pessoas com falta", t.pessoas) + k("Horas previstas nas faltas", hm(t.previsto))
+    : RL.tipo === "extras" ? k("Hora extra total", hm(t.total), "azul") + k("Em dia de trabalho", hm(t.util)) + k("Em descanso", hm(t.descanso)) + k("Em feriado", hm(t.feriado)) + k("Noturno", hm(t.noturno)) + k("Pessoas", t.pessoas)
+    : RL.tipo === "justificadas" ? k("Ausências", t.pedidos) + k("Dias no período", t.dias) + k("Pessoas", t.pessoas)
+    : k("Pessoas com banco", t.pessoas) + k("Saldo positivo", hm(t.positivo), "verde") + k("Saldo negativo", hm(Math.abs(t.negativo)), t.negativo ? "vermelho" : "")}</div>
+    ${RL.tipo !== "banco" && RL.de < RL.vale_desde ? `<div class="cartao-dica">O ponto vale a partir de ${dataBR(RL.vale_desde)}: antes disso não há falta nem hora extra.</div>` : ""}`;
+  const visoes = {faltas: [["pessoas", "Por pessoa"], ["dias", "Dia a dia"]], extras: [["pessoas", "Por pessoa"], ["dias", "Dia a dia"]],
+                  justificadas: [["lista", "Lista"], ["tipos", "Por tipo"]], banco: []}[RL.tipo];
+  els("rl-visoes").innerHTML = visoes.map(([c, r]) => `<button type="button" class="${c === RL_VISAO ? "ativa" : ""}" data-rl-visao="${c}">${r}</button>`).join("");
+  els("rl-visoes").querySelectorAll("[data-rl-visao]").forEach(b => b.addEventListener("click", () => { RL_VISAO = b.dataset.rlVisao; rlDesenhar(); }));
+  els("rl-acoes").hidden = false;
+  const cols = rlColunas(), linhas = rlLinhas();
+  els("rl-tabela").innerHTML = linhas.length ? `<table class="rl-tabela"><thead><tr>${cols.map(c => `<th class="${c[2] || ""}">${escapar(c[0])}</th>`).join("")}</tr></thead>
+    <tbody>${linhas.map(l => `<tr>${cols.map((c, i) => `<td class="${c[2] || ""}">${i === 0 && l.colaborador_id
+      ? eloPessoa(l.colaborador_id, l.nome, l.data || null) : escapar(String(c[1](l) ?? ""))}${i === 0 && l.tem_documento && l.documento_id
+      ? ` <button class="link-btn" type="button" data-documento="${escapar(urlDoDocumento(l.documento_id, l.sigiloso))}" data-legenda="${escapar(`${l.nome} — ${l.rotulo}`)}">📎</button>` : ""}</td>`).join("")}</tr>`).join("")}</tbody></table>`
+    : `<div class="vazio"><b>Nada neste período</b>com estes filtros.</div>`;
+}
+function rlCsv() {
+  const cols = rlColunas(), linhas = rlLinhas();
+  const cel = v => { const t = String(v ?? ""); return /[;"\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+  const texto = [cols.map(c => cel(c[0] || " ")).join(";"), ...linhas.map(l => cols.map(c => cel(c[1](l))).join(";"))].join("\r\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob(["﻿" + texto], {type: "text/csv;charset=utf-8"}));
+  a.download = `ponto-${RL.tipo}-${RL.de}-a-${RL.ate}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+}
+function rlImprimir() {
+  const cols = rlColunas(), linhas = rlLinhas();
+  const w = window.open("", "_blank");
+  if (!w) { aviso("mensagem", "O navegador bloqueou a janela de impressão — libere as janelas deste site.", "erro"); return; }
+  w.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${escapar(RL.titulo)}</title>
+    <style>body{font:12px Arial,sans-serif;margin:16px;color:#111} h1{font-size:16px;margin:0 0 2px} p{margin:0 0 10px;color:#444}
+    table{border-collapse:collapse;width:100%} th,td{border:1px solid #bbb;padding:3px 5px;text-align:left} th{background:#eee}
+    td.num,th.num{text-align:right}</style></head><body>
+    <h1>BWS — ${escapar(RL.titulo)}</h1><p>${RL.tipo === "banco" ? `saldo até ${dataBR(RL.ate)}` : `de ${dataBR(RL.de)} a ${dataBR(RL.ate)}`} · emitido em ${new Date().toLocaleString("pt-BR")}</p>
+    ${els("rl-kpis").querySelector(".kpis") ? `<p>${[...els("rl-kpis").querySelectorAll(".kpi")].map(x => `${escapar(x.querySelector(".kpi-rotulo").textContent)}: <b>${escapar(x.querySelector(".kpi-valor").textContent)}</b>`).join(" · ")}</p>` : ""}
+    <table><thead><tr>${cols.map(c => `<th class="${c[2] || ""}">${escapar(c[0])}</th>`).join("")}</tr></thead>
+    <tbody>${linhas.map(l => `<tr>${cols.map(c => `<td class="${c[2] || ""}">${escapar(String(c[1](l) ?? ""))}</td>`).join("")}</tr>`).join("")}</tbody></table>
+    <script>window.onload = () => window.print();<\/script></body></html>`);
+  w.document.close();
+}
+document.querySelectorAll("[data-rl-atalho]").forEach(b => b.addEventListener("click", () => rlAtalho(b.dataset.rlAtalho)));
+document.querySelectorAll('input[name="rl-tipo"]').forEach(r => r.addEventListener("change", () => {
+  els("rl-tipos-just").hidden = rlTipo() !== "justificadas"; }));
+els("rl-ver").addEventListener("click", rlMontar);
+els("rl-csv").addEventListener("click", rlCsv);
+els("rl-imprimir").addEventListener("click", rlImprimir);
+els("rl-limpar").addEventListener("click", () => { ["rl-busca", "rl-obra", "rl-funcao"].forEach(id => { els(id).value = ""; });
+  document.querySelectorAll("[data-rl-just]").forEach(x => { x.checked = false; }); rlAtalho("mes"); });
+rlAtalho("mes");
+rlObras();
+
 {% elif aba_ponto == "ponto_fotos" %}
 // ===========================================================================
 // FOTOS DE CADASTRO — regularizar (26/10/2026, o dono: "a primeira foto foi uma foto
@@ -4715,8 +4898,13 @@ async function carregarEscalasDasPessoas() {
       ${EP.padrao ? `<b>Escala padrão da empresa: ${escapar(EP.padrao.nome)}.</b> Quem não tem escala própria — e todo funcionário
         novo, desde o primeiro dia — é julgado por ela, sem precisar fazer nada.`
         : `<b>A escala padrão da empresa não está escolhida.</b> Sem ela, quem não tem escala própria não tem o dia julgado:
-          não aparece falta nem batida faltando. Escolha logo abaixo, em “Escalas de trabalho” (ex.: Produção).`}
+          não aparece falta nem batida faltando. Escolha aqui embaixo (ex.: Produção).`}
       Para os que trabalham em outro horário (vigias, escritório), dê a escala própria aqui: filtre, marque e aplique.</div>
+    <div class="campo" style="max-width:520px; margin:0 0 10px"><label for="ep-padrao">Escala padrão da empresa (vale para quem não tem escala própria e para todo funcionário novo)</label>
+      <select id="ep-padrao" data-sem-busca ${PODE_CONFIGURAR ? "" : "disabled"}>
+        <option value="">Nenhuma — sem escala, o dia não é julgado</option>
+        ${ativas.filter(e => e.tipo !== "CICLO_12X36").map(e => `<option value="${e.id}" ${EP.padrao && e.id === EP.padrao.id ? "selected" : ""}>${escapar(e.nome)}</option>`).join("")}
+      </select><div id="ep-padrao-msg"></div></div>
     <div class="ep-resumo">${Object.entries(conta).sort((a, b) => b[1] - a[1]).map(([k, n]) =>
       `<button type="button" class="chip" data-ep-escala-filtro="${escapar(k)}">${k ? escapar(k) : `sem escala própria${EP.padrao ? ` → ${escapar(EP.padrao.nome)}` : ""}`}: <b>${n}</b></button>`).join("")}</div>
     <div class="barra-acoes" style="align-items:flex-end; flex-wrap:wrap; margin-top:8px">
@@ -4751,6 +4939,12 @@ async function carregarEscalasDasPessoas() {
   if (els("ep-todas")) els("ep-todas").addEventListener("change", e => {
     epVisiveis().forEach(p => e.target.checked ? EP_MARCADAS.add(p.id) : EP_MARCADAS.delete(p.id)); epDesenhar(); });
   if (els("ep-aplicar")) els("ep-aplicar").addEventListener("click", epAplicar);
+  els("ep-padrao").addEventListener("change", async ev => {
+    try { await postar("/erp/api/ponto/escalas/padrao", {escala_id: ev.target.value || null});
+          await carregarEscalas(); await carregarEscalasDasPessoas();
+          aviso("ep-padrao-msg", ev.target.value ? "Escala padrão gravada: quem não tem escala própria — e todo funcionário novo — passa a ser julgado por ela, inclusive nos dias que já passaram." : "Sem escala padrão.", "ok"); }
+    catch (e) { falhou(e, "ep-padrao-msg"); }
+  });
   els("c-ep-conta").textContent = contar(EP.pessoas.length, "pessoa ativa", "pessoas ativas");
   epDesenhar();
 }

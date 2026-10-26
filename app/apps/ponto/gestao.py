@@ -66,6 +66,7 @@ ABAS = [
     ("ponto_espelho", "Espelho", "erp.ponto_pagina_espelho"),
     ("ponto_mosaico", "Mosaico", "erp.ponto_pagina_mosaico"),
     ("ponto_banco", "Banco de horas", "erp.ponto_pagina_banco"),
+    ("ponto_relatorios", "Relatórios", "erp.ponto_pagina_relatorios"),
     ("ponto_alertas", "Alertas", "erp.ponto_pagina_alertas"),
     ("ponto_qualidade", "Qualidade", "erp.ponto_pagina_qualidade"),
     ("ponto_rondas", "Rondas", "erp.ponto_pagina_rondas"),
@@ -262,6 +263,13 @@ def ponto_pagina_pessoas():
 @permissao("ver_ponto")
 def ponto_pagina_banco():
     return _pagina("ponto_banco")
+
+
+@bp.route("/erp/ponto/relatorios")
+@login_obrigatorio
+@permissao("ver_ponto")
+def ponto_pagina_relatorios():
+    return _pagina("ponto_relatorios")
 
 
 @bp.route("/erp/ponto/alertas")
@@ -1146,6 +1154,23 @@ def ponto_api_quadro():
     except quadro.Ocupado as e:
         return jsonify({"ok": False, "erro": str(e), "ocupado": True}), 503
     r.pop("_ids", None)
+    return _ok(**r)
+
+
+@bp.route("/erp/api/ponto/relatorios", methods=["POST"])
+@login_obrigatorio
+@permissao("ver_ponto")
+@_api
+def ponto_api_relatorio():
+    """Os relatórios do ponto (26/10/2026): faltas, ausências justificadas, horas
+    extras e banco de horas, com as contas do espelho. Um por vez."""
+    from .core import relatorios
+    quem, d = _quem(), _corpo()
+    try:
+        with db.conexao() as conn:
+            r = relatorios.montar(conn, quem, d.get("tipo"), d.get("de"), d.get("ate"), d.get("filtros") or {})
+    except relatorios.Ocupado as e:
+        return jsonify({"ok": False, "erro": str(e), "ocupado": True}), 503
     return _ok(**r)
 
 

@@ -59,6 +59,14 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1zq. **No ramo, esperando o "pode"** (26/10/2026, sem migração) — a leva das anotações do dono: **Configuração ›
+   Escalas** (a escala padrão no topo, quem está em cada escala, aplicar em lote), a **falta em destaque** no dia
+   seguinte, o **feriado em várias obras**, **Viagem e Dispensa** como abonos, o **documento numa janela**, o
+   **confronto da leitura da IA**, a tela das **fotos de cadastro** e os **Relatórios** (faltas, ausências
+   justificadas, horas extras, banco de horas). Ver a seção de 26/10/2026.
+   **Pendente com o dono:** escolher a escala padrão (Configuração › Escalas) e aplicar a dos vigias e a do
+   escritório; o arquivo .ps da contabilidade (faltas e horas extras) — ele vai mandar o leiaute; o "layout do
+   mês completo resumido" ficou em espera, a pedido dele.
 1zp. **Publicado em 23/10/2026** (com o "pode" do dono; 22/10/2026, sem migração) — o que o dono viu no Quadro em produção:
    caixa de seleção em TODA linha e quatro ações em lote (incluir uma batida, lançar o dia inteiro pela escala,
    abonar a falta, definir a escala); o pedido de ajuste NO horário, clicável, com aprovar e negar ali; a
@@ -314,6 +322,69 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 26/10/2026 — As anotações do dono: escalas, falta, feriado, abonos, documento, IA, fotos e relatórios
+
+O dono mandou uma lista de anotações, operando o sistema. Feitas todas, nesta ordem (a escala
+primeiro porque é dela que depende a falta aparecer):
+
+1. **Escalas** (*"como é que eu faço para aplicar a escala padrão para todo mundo? (…) selecionar
+   os vigias todos e aplicar a escala para eles (…) cada funcionário novo já entrasse na escala de
+   produção"*). A escala padrão existia desde 06/10, escondida em Configuração › Jornada. Agora há
+   a seção **Configuração › Escalas**: a escala padrão NO TOPO (quem não tem escala própria e todo
+   funcionário novo seguem ela, desde o primeiro dia, inclusive nos dias que já passaram), quantos
+   estão em cada escala, e a lista com filtros (função, obra, jornada, escala de hoje) para marcar e
+   **aplicar a escala de uma vez** (rota `/erp/api/ponto/escalas/aplicar`, `configurar_ponto`, numa
+   transação). **Decisão:** "a partir de" substitui as trocas de escala marcadas DEPOIS dessa data —
+   senão aplicar desde o início do ponto ficaria escondido atrás da troca seguinte. A data sugerida
+   é o início do ponto (16/10), o certo na primeira vez.
+2. **Falta no dia seguinte** (*"finalizou o dia, não teve ponto, dia seguinte já apresenta falta (…)
+   não impedir os botões"*). Isso já acontece para quem tem escala — o que faltava era a escala (item
+   1). O dia de falta ficou em destaque (fundo e barra vermelhos) no Meu mês do aplicativo, com a frase
+   "conta como falta — trabalhou? ✏️; faltou com motivo? 🗓️", e no espelho do ERP. Os botões continuam.
+3. **Feriado em várias obras** (*"a seleção de obras não está funcionando"*). **Causa:** a obra era uma
+   lista de uma escolha só e só valia com "Vale para" em "Só de uma obra" — escolher a obra e esquecer o
+   "Vale para" gravava um feriado NACIONAL. Agora "Vale para" decide o que aparece (todas as obras, algumas
+   obras, um estado, um município) e as obras são caixas de marcar, com busca e "marcar todas". Um feriado
+   de obra para cada uma (`feriados.gravar_para_obras`); a que já tinha o feriado no dia fica como está.
+4. **Viagem e Dispensa** (*"a pessoa está em viagem pela empresa e aquelas horas vão ser abonadas (…)
+   dispensa da mesma forma"*). São ABONO com nome próprio (`subtipo` VIAGEM / DISPENSA — sem migração): o
+   dia não é descontado nem vira débito no banco, e aparece como "Viagem a serviço" / "Dispensa pela
+   empresa" no espelho, no Quadro e na folha. Em "Lançar afastamento" e no "Abonar a falta" em lote do
+   Quadro. **Fica para o dono confirmar:** abono não gera hora extra nem conta como hora trabalhada para
+   extra — é o dia "pago sem trabalhar".
+5. **Documento numa janela** (*"os atestados abrem, eles baixam"*). O atestado/documento abre numa janela
+   (foto ou PDF dentro do ERP, com "abrir em outra aba"). O servidor passou a dizer o tipo do arquivo pelo
+   próprio conteúdo (o gravado podia ser genérico, e o navegador baixava) e a mandar o nome sem acento no
+   cabeçalho, com a versão completa ao lado.
+6. **Confronto da IA** (*"cruzar o que foi lido pela IA com o que foi lançado — as datas, a quantidade de
+   dias, o nome da pessoa"*). `leitura_atestado.confronto`: nome da pessoa (o do documento contido no do
+   cadastro, primeiro nome igual), primeiro dia, dias, último dia, CID, CRM e médico — cada um BATE, NÃO
+   BATE, SÓ NO DOCUMENTO ou NÃO LIDO —, e avisos: pouco legível, declaração de comparecimento (abona só o
+   horário), emitido muitos dias depois (data para trás). Aparece em Validações, logo abaixo da leitura.
+7. **Fotos de cadastro** (*"a primeira foto foi uma foto de teste (…) de outra pessoa, ou do chão (…) como
+   regularizar de forma fácil?"*). A foto de cadastro nasce sozinha da primeira foto boa; se for errada, as
+   seguintes "não conferem". Tela nova **Mosaico › 📷 Fotos de cadastro** (`/erp/ponto/fotos-cadastro`): a foto
+   de cadastro ao lado das últimas 6 fotos das batidas, cada uma com o resultado da conferência; o filtro
+   "provavelmente errada" (das últimas 5 conferidas, ao menos 2 e a maioria deram "outra pessoa"),
+   "escolhida sozinha", "sem foto". **Usar como cadastro** num clique, ou **tirar a foto** (a próxima foto
+   boa vira a nova). As conferências antigas continuam registradas. A foto de cadastro deixou de ficar
+   guardada 1 h no navegador (trocada, a tela mostrava a antiga).
+8. **Relatórios** (*"a gente não tem nenhum relatório nesse sistema novo"*). Aba nova **Relatórios**:
+   **faltas** (por pessoa e dia a dia), **ausências justificadas** (atestados, licenças da lei, férias,
+   afastamentos, abonos, folga do banco, compensação — lista e por tipo, CID só para o DP, documento
+   clicável), **horas extras** (em dia de trabalho, em descanso, em feriado, noturno; por pessoa e dia a dia)
+   e **banco de horas** (saldo e primeiro vencimento). Imprimir e baixar planilha (CSV que o Excel abre).
+   **As contas são as do espelho** (`core/relatorios.py` usa o mesmo Lote do Quadro): bate com o espelho de
+   cada um. Entra também quem foi desligado no meio do período, se tem batida ou pedido aprovado. Até 62
+   dias; um relatório por vez. **Fica para depois, combinado:** o arquivo .ps da contabilidade.
+
+**Em espera, a pedido do dono:** o layout do mês completo resumido.
+
+**Conferido:** testes novos (escalas em lote, feriado em várias obras, viagem no lote, tipo do documento,
+confronto, fotos de cadastro, relatórios batendo com o espelho) e os do ponto inteiros; no navegador, com
+dado de ensaio: a seção Escalas (padrão no topo, filtrar, aplicar), o feriado em duas obras, os quatro
+relatórios e a planilha, as fotos de cadastro com a "provavelmente errada", o confronto e o PDF na janela.
 
 ## 22/10/2026 (tarde) — O Quadro em uso: seleção, a janela da batida, a batida errada e a escala
 

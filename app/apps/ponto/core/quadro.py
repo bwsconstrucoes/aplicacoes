@@ -187,7 +187,12 @@ def _linha(p: dict, d: dict, etiquetas: set[str], marcas: list[dict]) -> dict:
 # O quadro
 # ---------------------------------------------------------------------------
 def _pessoas(conn: Connection, quem: Quem, f: dict, inicio: dt.date, fim: dt.date) -> list[dict]:
-    pessoas = cadastros.listar_colaboradores(conn, so_ativos=True)
+    return filtrar_pessoas(conn, quem, cadastros.listar_colaboradores(conn, so_ativos=True), f, inicio, fim)
+
+
+def filtrar_pessoas(conn: Connection, quem: Quem, pessoas: list[dict], f: dict, inicio: dt.date,
+                    fim: dt.date) -> list[dict]:
+    """O recorte de quem pergunta e os filtros de cadastro da barra (o Quadro e os relatórios)."""
     if quem.obras is not None:                  # o mesmo recorte da tela Pessoas
         alcance = set(quem.obras)
         pessoas = [p for p in pessoas if p.get("obra_id") in alcance
