@@ -392,6 +392,10 @@
 <dialog id="dlg-pessoa" class="dlg-pessoa"><div class="dlg-topo"><h3 id="dp-titulo">Pessoa</h3>
   <button class="topo-btn" style="margin-left:auto" type="button" onclick="els('dlg-pessoa').close()">Fechar</button></div>
   <div class="dlg-corpo" id="dp-corpo">carregando…</div></dialog>
+<dialog id="dlg-doc" class="dlg-pessoa"><div class="dlg-topo"><h3 id="doc-titulo">Documento</h3>
+  <a class="topo-btn" id="doc-aba" target="_blank" rel="noopener" style="margin-left:auto; text-decoration:none">abrir em outra aba</a>
+  <button class="topo-btn" type="button" onclick="els('dlg-doc').close()">Fechar</button></div>
+  <div class="dlg-corpo" id="doc-corpo">carregando…</div></dialog>
 <dialog id="dlg-mapa" class="dlg-pessoa"><div class="dlg-topo"><h3 id="mp-titulo">Onde a batida foi feita</h3>
   <button class="topo-btn" style="margin-left:auto" type="button" onclick="els('dlg-mapa').close()">Fechar</button></div>
   <div class="dlg-corpo" id="mp-corpo">carregando…</div></dialog>
@@ -1368,7 +1372,9 @@ function painelPedidos() {
       <td><b>${escapar(x.rotulo)}</b><small>${x.origem === "GESTAO" ? `lançado por ${escapar(x.solicitado_por || "")}` : `pedido por ${escapar(x.solicitado_por || "")}`}</small></td>
       <td class="dados">${dataBR(x.data_inicio)}${x.data_fim !== x.data_inicio ? ` a ${dataBR(x.data_fim)}` : ""}${x.horario ? ` <small>${escapar(String(x.horario).slice(11, 16))}</small>` : ""}</td>
       <td><span class="selo ${c}">${escapar(r)}</span>${x.motivo_negativa ? `<small>${escapar(x.motivo_negativa)}</small>` : ""}
-        ${x.descricao ? `<small>${escapar(x.descricao)}</small>` : ""}</td>
+        ${x.descricao ? `<small>${escapar(x.descricao)}</small>` : ""}
+        ${x.tem_documento && x.documento_id ? `<button class="link-btn" type="button" data-documento="${escapar(urlDoDocumento(x.documento_id, x.sigiloso))}"
+          data-legenda="${escapar(`${x.colaborador || ""} — ${x.rotulo}`)}">📎 ver o documento</button>` : ""}</td>
       <td>${x.decidir_em ? `<button class="btn" type="button" data-dp-decidir="${escapar(x.decidir_em)}" data-tipo="PEDIDO" data-sim="1">Aprovar</button>
         <button class="btn secundario" type="button" data-dp-decidir="${escapar(x.decidir_em)}" data-tipo="PEDIDO" data-sim="0">Negar</button>` : ""}</td></tr>`; }).join("");
   return (conf || ped) ? `<table><thead><tr><th>O quê</th><th>Quando</th><th>Situação</th><th></th></tr></thead>
@@ -1455,6 +1461,40 @@ const STATUS_BATIDA = {VALIDA: ["verde", "vale"], AJUSTADA: ["azul", "incluída 
 const ETAPA_PEDIDO = {AGUARDANDO_SUPERVISOR: "esperando o responsável da obra", AGUARDANDO_DP: "esperando o DP",
   APROVADA: "aprovado", NEGADA: "negado", CANCELADA: "cancelado"};
 
+// O DOCUMENTO NA JANELA (26/10/2026, o dono: "os atestados abrem, eles baixam. O ideal
+// era que abrisse num modal"). Foto e PDF aparecem aqui dentro; outro tipo, o link.
+let DOC_URL = null;
+const urlDoDocumento = (id, sigiloso) => sigiloso ? `/erp/api/ponto/afastamentos/documento/${encodeURIComponent(id)}`
+                                                  : `/erp/api/ponto/documentos/${encodeURIComponent(id)}`;
+async function verDocumento(url, legenda) {
+  const dlg = els("dlg-doc");
+  els("doc-titulo").textContent = legenda || "Documento";
+  els("doc-corpo").innerHTML = "carregando…";
+  els("doc-aba").href = url;
+  if (!dlg.open) dlg.showModal();
+  if (DOC_URL) { URL.revokeObjectURL(DOC_URL); DOC_URL = null; }
+  try {
+    const r = await fetch(url, {credentials: "same-origin"});
+    if (!r.ok) {
+      let erro = "não deu para abrir o documento";
+      try { erro = (await r.json()).erro || erro; } catch (e) {}
+      throw new Error(erro);
+    }
+    const b = await r.blob();
+    DOC_URL = URL.createObjectURL(b);
+    els("doc-corpo").innerHTML = b.type.startsWith("image/")
+      ? `<img src="${DOC_URL}" alt="documento" style="max-width:100%; max-height:78vh; display:block; margin:0 auto; border-radius:6px">`
+      : b.type === "application/pdf"
+      ? `<iframe title="documento" src="${DOC_URL}" style="width:100%; height:78vh; border:0; border-radius:6px"></iframe>`
+      : `<div class="aviso info">Este tipo de arquivo (${escapar(b.type || "desconhecido")}) não abre aqui.
+          <a class="elo" href="${DOC_URL}" download>Baixar o arquivo</a></div>`;
+  } catch (e) { els("doc-corpo").innerHTML = `<div class="aviso erro">${escapar(e.message)}</div>`; }
+}
+document.addEventListener("click", e => {
+  const d = e.target.closest("[data-documento]");
+  if (d) { e.preventDefault(); verDocumento(d.dataset.documento, d.dataset.legenda); }
+});
+
 // Depois de decidir numa janela: atualiza o que estiver na tela.
 function depoisDeDecidir() {
   if (PAINEL && els("dlg-pessoa").open) recarregarPainel();
@@ -1473,6 +1513,10 @@ function htmlDoPedido(p) {
   if (p.supervisor) linhas.push(["Responsável da obra", `${escapar(p.supervisor)} — ${escapar(quando(p.supervisor_em))}`]);
   if (p.dp) linhas.push(["DP", `${escapar(p.dp)} — ${escapar(quando(p.dp_em))}`]);
   if (p.motivo_negativa) linhas.push(["Por que foi negado", escapar(p.motivo_negativa)]);
+  if (p.tem_documento) linhas.push(["Documento", p.documento_id
+    ? `<button class="link-btn" type="button" data-documento="${escapar(urlDoDocumento(p.documento_id, p.sigiloso))}"
+        data-legenda="${escapar(`${p.colaborador} — ${p.rotulo}`)}">ver o documento</button>`
+    : `<span class="suave">guardado — documento de saúde, só o DP abre</span>`]);
   return `<dl class="bt-ficha">${linhas.map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join("")}</dl>`;
 }
 
@@ -3220,8 +3264,8 @@ function acoesDoItem(i) {
       a.push(`<button class="btn secundario" type="button" data-acao="negar" data-item="${k}">Negar</button>`);
     }
     if (i.tem_documento && i.documento_id) {
-      a.push(`<a class="link-btn" target="_blank" rel="noopener"
-        href="/erp/api/ponto/afastamentos/documento/${encodeURIComponent(i.documento_id)}">ver documento</a>`);
+      a.push(`<button class="link-btn" type="button" data-documento="${escapar(urlDoDocumento(i.documento_id, i.sigiloso))}"
+        data-legenda="${escapar(`${i.pessoa || ""} — ${i.rotulo || "documento"}`)}">ver documento</button>`);
     }
     if (PODE_DP && i.sigiloso && i.documento_id) {
       a.push(`<button class="link-btn" type="button" data-acao="ler" data-item="${k}"

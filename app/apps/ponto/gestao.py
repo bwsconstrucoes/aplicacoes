@@ -34,6 +34,7 @@ import datetime as dt
 import io
 import logging
 from functools import wraps
+from typing import Optional
 
 from flask import Response, jsonify, render_template_string, request, session
 from sqlalchemy.exc import ProgrammingError
@@ -1750,9 +1751,28 @@ def _servir_documento(documento_id: int, *, sigiloso_permitido: bool):
         except Exception:  # noqa: BLE001
             logger.exception("Ponto: documento %s não abriu", documento_id)
             return jsonify({"ok": False, "erro": "o Drive não respondeu; tente de novo"}), 503
+    # Abrir na janela, não baixar (26/10/2026, o dono: "os atestados abrem, eles baixam"):
+    # o tipo vem do próprio arquivo quando o gravado é genérico, e o nome vai em ASCII
+    # (um acento no nome derrubava o cabeçalho) com a versão UTF-8 ao lado.
+    mime = _tipo_do_arquivo(dados, mime)
+    from urllib.parse import quote
+    ascii_ = "".join(ch if 32 <= ord(ch) < 127 and ch not in '"\\' else "_" for ch in (nome or "documento"))
     return Response(dados, mimetype=mime,
-                    headers={"Content-Disposition": f'inline; filename="{nome}"',
-                             "Cache-Control": "private, no-store"})
+                    headers={"Content-Disposition": f"inline; filename=\"{ascii_}\"; filename*=UTF-8''{quote(nome or 'documento')}",
+                             "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"})
+
+
+def _tipo_do_arquivo(dados: bytes, gravado: Optional[str]) -> str:
+    """PURA. O tipo pelo começo do arquivo (PDF, JPEG, PNG, WEBP); senão, o gravado."""
+    if dados[:5] == b"%PDF-":
+        return "application/pdf"
+    if dados[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if dados[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if dados[:4] == b"RIFF" and dados[8:12] == b"WEBP":
+        return "image/webp"
+    return gravado or "application/octet-stream"
 
 
 # ---------------------------------------------------------------------------
