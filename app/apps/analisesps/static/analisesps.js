@@ -776,6 +776,77 @@ const LEMBRAR = {
     form.submit();
   });
 
+  // --- Mover as marcadas para um novo lote, no topo (24/10/2026) ------------
+  // Usa o mesmo formulário escondido do "Remover do lote", com outra ação.
+  const btnMover = document.getElementById("ba-mover-lote");
+  if (btnMover) btnMover.addEventListener("click", () => {
+    const ids = idsMarcados();
+    if (!ids) return;
+    selecaoConsumida();
+    const form = document.getElementById("form-remover-lote");
+    form.querySelector("input[name=acao]").value = "mover_novo_lote";
+    form.querySelector("input[name=ids]").value = ids.join(",");
+    form.submit();
+  });
+
+  // --- Baixar os anexos das marcadas (26/10/2026) ---------------------------
+  // O dono: *"selecionar os registros (…) clicar nesse botão e ele vai baixando
+  // tudo (…) melhor baixar separado mesmo, sem compilar"*. Uma janela com os
+  // anexos de cada SP (dá para baixar um a um) e "Baixar todos", que dispara um
+  // arquivo por vez, com um respiro entre eles — o navegador costuma perguntar
+  // uma vez se pode baixar vários arquivos; é só permitir.
+  const btnAnexos = document.getElementById("ba-anexos");
+  if (btnAnexos) btnAnexos.addEventListener("click", () => {
+    const esc = t => String(t == null ? "" : t).replace(/[&<>"]/g,
+        c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+    const itens = marcadas().map(c => {
+      let anexos = [];
+      try { anexos = JSON.parse(c.dataset.anexos || "[]") || []; } catch (e) { anexos = []; }
+      return {sp: c.value, anexos: anexos.filter(u => /^https?:\/\//.test(u))};
+    });
+    if (!itens.length) { alert("Marque ao menos uma SP."); return; }
+    const urls = itens.flatMap(i => i.anexos);
+    const semAnexo = itens.filter(i => !i.anexos.length).map(i => i.sp);
+    const antiga = document.getElementById("dialogo-anexos");
+    if (antiga) antiga.remove();
+    const dlg = document.createElement("dialog");
+    dlg.className = "dialogo";
+    dlg.id = "dialogo-anexos";
+    dlg.innerHTML =
+      "<h3>Baixar anexos — " + urls.length + " arquivo(s) de " + itens.length + " SP(s)</h3>" +
+      (semAnexo.length ? '<p class="cartao-dica">Sem anexo: ' + semAnexo.map(esc).join(", ") + ".</p>" : "") +
+      '<div class="tabela-rolagem livre" style="max-height:50vh"><table class="sps"><thead><tr>' +
+      "<th>SP</th><th>Anexos</th></tr></thead><tbody>" +
+      itens.filter(i => i.anexos.length).map(i => "<tr><td><b>" + esc(i.sp) + "</b></td><td>" +
+        i.anexos.map((u, k) => '<a href="' + esc(u) + '" target="_blank" rel="noopener" ' +
+          'class="anexo-um">anexo ' + (k + 1) + "</a>").join(" · ") + "</td></tr>").join("") +
+      "</tbody></table></div>" +
+      '<p class="cartao-dica" id="anexos-recado">"Baixar todos" baixa um arquivo por vez. Se o ' +
+      "navegador perguntar se pode baixar vários arquivos, permita. Anexo grande do Google " +
+      "Drive pode abrir uma página de confirmação — use o link da linha.</p>" +
+      '<div class="lat-acoes" style="margin-top:10px">' +
+      (urls.length ? '<button type="button" class="btn" id="anexos-todos">Baixar todos (' +
+        urls.length + ")</button>" : "") +
+      '<button type="button" class="btn secundario" id="anexos-fechar">Fechar</button></div>';
+    document.body.appendChild(dlg);
+    dlg.querySelector("#anexos-fechar").addEventListener("click", () => dlg.close());
+    const todos = dlg.querySelector("#anexos-todos");
+    if (todos) todos.addEventListener("click", () => {
+      todos.disabled = true;
+      const recado = dlg.querySelector("#anexos-recado");
+      urls.forEach((u, k) => setTimeout(() => {
+        const quadro = document.createElement("iframe");
+        quadro.style.display = "none";
+        quadro.src = u;
+        document.body.appendChild(quadro);
+        setTimeout(() => quadro.remove(), 60000);
+        recado.textContent = "Baixando " + (k + 1) + " de " + urls.length + "…" +
+          (k + 1 === urls.length ? " pronto. Confira a pasta de downloads." : "");
+      }, k * 900));
+    });
+    dlg.showModal();
+  });
+
   // --- Abrir no Pipefy os cards das marcadas -------------------------------
   //
   // Uma aba por card. O navegador bloqueia isso por padrão quando não parte de

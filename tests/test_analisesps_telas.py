@@ -1567,6 +1567,22 @@ def test_remover_duplicados_pela_tela_guarda_a_primeira(app_lote, monkeypatch):
     assert "1 repetição(ões) saíram do lote" in resposta
 
 
+def test_MOVER_PARA_NOVO_LOTE_pela_tela(app_lote, monkeypatch):
+    """24/10/2026: as marcadas vão para um grupo novo, no topo."""
+    from app.apps.analisesps import lote
+    salvos = []
+    monkeypatch.setattr(lote, "ler", lambda pessoa="": {
+        "conteudo": "Grupo\n1000000001 1000000002", "salvo_por": None, "salvo_em": None})
+    monkeypatch.setattr(lote, "salvar", lambda c, quem="", pessoa="": salvos.append(c))
+    cliente = como(app_lote, SENHA_OPERADOR)
+    assert 'id="ba-mover-lote"' in cliente.get("/analisesps/lote").get_data(as_text=True)
+    resposta = cliente.post("/analisesps/lote", data={
+        "acao": "mover_novo_lote", "ids": "1000000002"},
+        follow_redirects=True).get_data(as_text=True)
+    assert salvos[-1] == "Novo Lote 1\n1000000002\n\nGrupo\n1000000001"
+    assert "1 SP(s) foram para" in resposta
+
+
 def test_ORGANIZAR_POR_CONTA_pela_tela(app_lote, monkeypatch):
     """22/10/2026: o botão do lote que refaz os grupos pela conta de pagamento."""
     from app.apps.analisesps import lote
@@ -3989,13 +4005,13 @@ def test_o_titulo_do_grupo_que_esvaziou_na_limpeza_vai_junto():
     assert "Pagar amanhã" in novo and "111 222" in novo
 
 
-def test_o_grupo_que_JA_estava_vazio_nao_e_apagado():
-    """Alguém escreveu aquele título de propósito, para encher depois. Apagar
-    o que a pessoa acabou de digitar é pior do que o cabeçalho sobrando."""
+def test_o_grupo_que_JA_estava_vazio_tambem_e_apagado():
+    """Regra de 24/10/2026 (o dono): título sem nenhuma SP some ao clicar nos
+    botões de limpeza, esteja vazio de antes ou não."""
     from app.apps.analisesps import lote
     texto = "Para amanhã\n\nJá pago\n333"
     novo, _ = lote.remover_por_status(texto, {"pago"}, {"333": "Pago"})
-    assert "Para amanhã" in novo
+    assert "Para amanhã" not in novo
     assert "Já pago" not in novo
 
 
@@ -4016,9 +4032,10 @@ def test_agir_sobre_a_selecao_apaga_a_memoria_dela():
     from pathlib import Path
     js = Path("app/apps/analisesps/static/analisesps.js").read_text(encoding="utf-8")
     assert "function selecaoConsumida()" in js
-    # As cinco ações que ALTERAM alguma coisa têm de chamar (a quinta, de
-    # 08/10/2026, é o "Marcar Pago" do modal Consultar Omie).
-    assert js.count("selecaoConsumida();") == 5, (
+    # As seis ações que ALTERAM alguma coisa têm de chamar (a quinta, de
+    # 08/10/2026, é o "Marcar Pago" do modal Consultar Omie; a sexta, de
+    # 24/10/2026, o "Mover para novo lote").
+    assert js.count("selecaoConsumida();") == 6, (
         "cada ação que altera precisa apagar a memória da seleção")
 
 

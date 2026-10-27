@@ -351,3 +351,26 @@ def test_VALIDAR_so_grava_na_PLANILHA_e_nunca_no_Pipefy(app, monkeypatch):
     from app.apps.analisesps.db import consultar
     assert consultar("SELECT coluna, valor FROM analisesps.fila WHERE sp_id = '1000000501'") \
         == [("validacao", "Sim")], "vai para a fila da PLANILHA"
+
+
+def test_BAIXAR_ANEXOS_a_lista_leva_os_links_de_baixar_de_cada_SP(app, monkeypatch):
+    """26/10/2026: *"selecionar os registros (…) clicar nesse botão e ele vai
+    baixando tudo (…) melhor baixar separado"*. Cada caixinha leva os anexos da
+    SP já na versão de baixar (Dropbox dl=1, Drive uc?export)."""
+    import html as _html
+    import json
+    import re
+    from tests.test_analisesps_banco import semear, sp
+    semear([sp("1000000601", status_pgt="Pagar", valor="10,00", vencimento="10/10/2026",
+               anexo_link="https://www.dropbox.com/s/abc/nota.pdf?dl=0 "
+                          "https://drive.google.com/file/d/XYZ123/view")])
+    with app.test_client() as cliente:
+        cliente.post("/analisesps/entrar", data={"senha": SENHA_MESTRE_OPERADOR})
+        lista = cliente.get("/analisesps/solicitacoes?f=1&busca=1000000601",
+                            follow_redirects=True).get_data(as_text=True)
+    assert 'id="ba-anexos"' in lista and "Baixar anexos" in lista
+    achado = re.search(r'value="1000000601"[^>]*data-anexos=\'([^\']*)\'', lista)
+    assert achado, "a caixinha da SP não leva os anexos"
+    assert json.loads(_html.unescape(achado.group(1))) == [
+        "https://www.dropbox.com/s/abc/nota.pdf?dl=1",
+        "https://drive.google.com/uc?export=download&id=XYZ123"]

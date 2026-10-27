@@ -12244,6 +12244,38 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 242 — Baixar anexos das SPs marcadas (26/10/2026)
+
+- **Levas 241 e 242 publicadas em 27/10/2026** (suíte inteira verde em 26/10: 9405
+  testes; a main não andou desde então). Sem migração.
+
+- *"A partir da tela de solicitações, baixar vários anexos (…) seleciono os
+  registros, clico nesse botão e ele vai baixando tudo (…) melhor baixar separado,
+  sem compilar."* **Feito:** botão "Baixar anexos" na barra (Solicitações, Lote e
+  Códigos). Abre uma janela com os anexos de cada SP marcada (link por arquivo,
+  já na versão de baixar: Dropbox dl=1, Drive uc?export) e quem não tem anexo; e
+  "Baixar todos", que dispara um arquivo a cada ~1 s, separados.
+- **Limites, ditos na janela:** o navegador pergunta uma vez se pode baixar vários
+  arquivos — é permitir; anexo grande do Drive abre a página de confirmação dele
+  em vez de baixar direto (usar o link da linha); o nome do arquivo é o que o
+  Dropbox/Drive dá, não o número da SP. Juntar num .zip com o número da SP no
+  nome exigiria o servidor buscar os arquivos — fica como opção, se ele quiser.
+
+#### Leva 241 — Lote: mover para novo lote, e título vazio sempre some (24/10/2026)
+
+- *"Eu seleciono alguns registros (…) extrair para novo lote (…) eles somem do lote
+  atual e vão para a parte superior (…) é uma forma de reorganizar."* **Feito:**
+  botão "Mover para novo lote" na barra (junto de "Remover do lote"): as marcadas
+  saem dos grupos onde estão e viram um grupo novo no topo ("Novo Lote N"), na
+  ordem em que estavam; o grupo que esvaziar some. Sem confirmação — só
+  reorganiza a lista.
+- *"Quando a gente clica remover pagos, remover cancelados etc. e fica um lote
+  sem nenhum registro (…) aquele header eu quero que suma."* **A regra mudou:**
+  até aqui só saía o título que esvaziava NAQUELA limpeza; o que já estava vazio
+  ficava (de 11/09, "alguém escreveu para encher depois"). Agora toda limpeza
+  (remover pagos, cancelados, duplicados, remover do lote, mover) tira TODO
+  título sem SP. Escrever um título vazio continua possível pelo Salvar.
+
 #### Leva 240 — Lote: organizar por conta de pagamento (22/10/2026)
 
 - **Publicada em 22/10/2026** (suíte inteira verde: 9396 testes). Sem migração.

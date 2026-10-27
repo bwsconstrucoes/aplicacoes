@@ -6450,6 +6450,15 @@ def tela_lote():
                          "painel por status embaixo não fazem parte dele.")
             else:
                 aviso = "Nenhuma SP marcada."
+        elif acao == "mover_novo_lote":
+            # As marcadas saem de onde estão e vão para um grupo novo no topo
+            # (24/10/2026) — reorganizar sem editar o texto à mão.
+            pedidos = [i.strip() for i in
+                       (request.form.get("ids") or "").split(",") if i.strip()]
+            conteudo = lote.ler(pessoa)["conteudo"]
+            conteudo, titulo, quantos = lote.mover_para_novo_lote(conteudo, pedidos)
+            aviso = (f"{quantos} SP(s) foram para \"{titulo}\", no topo do lote."
+                     if quantos else "Nenhuma das SPs marcadas estava no lote.")
         elif acao == "trazer_antigo":
             antigo_ = lote.lote_de_antes().get("conteudo") or ""
             if antigo_.strip():

@@ -87,6 +87,12 @@
            com os outros, porque é a mesma seleção e o mesmo gesto — e porque
            antes só dava para editar o texto do lote na mão, achando o número
            no meio dos outros. NÃO altera a SP: mexe só na lista. #}
+        {# MOVER PARA NOVO LOTE (24/10/2026): as marcadas saem dos grupos onde
+           estão e vão para um grupo novo no topo. Só reorganiza a lista. #}
+        <button class="btn secundario" id="ba-mover-lote"
+                data-precisa-selecao
+                title="Tira as SPs marcadas dos grupos onde estão e as põe num grupo novo, no topo do lote">
+          Mover para novo lote</button>
         <button class="btn secundario" id="ba-remover-lote"
                 data-precisa-selecao
                 title="Tira as SPs marcadas do lote. Não altera nada na planilha.">
@@ -117,6 +123,8 @@
     {% endif %}
     <button class="btn secundario" id="ba-cards" data-precisa-selecao
             title="Abre no Pipefy o card de cada SP marcada">Abrir cards</button>
+    <button class="btn secundario" id="ba-anexos" data-precisa-selecao
+            title="Baixa os anexos das SPs marcadas, um arquivo de cada vez">Baixar anexos</button>
     {% if pode_operar and tela != 'codigos' %}
       {# 08/10/2026: o status de cada marcada no Omie, e "Marcar Pago" para
          equalizar a SPsBD com o que o Omie e o card dizem. #}

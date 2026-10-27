@@ -152,13 +152,29 @@ def test_remover_duplicados_apaga_o_cabecalho_do_grupo_que_esvaziou():
     assert "Primeiro" in novo and "111" in novo and "222" in novo
 
 
-def test_remover_duplicados_nao_apaga_titulo_que_ja_estava_vazio():
-    """Alguém escreveu aquele título de propósito, para encher depois. Apagar o
-    que a pessoa acabou de digitar seria pior do que o cabeçalho sobrando."""
-    texto = "Cheio\n111\n\nVou encher depois\n\nOutro\n111"
+def test_a_limpeza_apaga_TAMBEM_o_titulo_que_ja_estava_vazio():
+    """24/10/2026 — a regra mudou a pedido do dono: *"tem um header, mas não tem
+    nenhum registro (…) aquele header eu quero que suma (…) automaticamente na
+    hora que eu clicar esses botões"*. Antes, o título já vazio ficava."""
+    texto = "Cheio\n111\n\nVazio de antes\n\nOutro\n111"
     novo, _ = lote.remover_duplicados(texto)
-    assert "Vou encher depois" in novo
-    assert "Outro" not in novo, "esse esvaziou AGORA, tinha de sair"
+    assert "Vazio de antes" not in novo and "Outro" not in novo
+    novo, _ = lote.remover_por_status("Pagos\n111\n\nSem nada\n\nFica\n222",
+                                      {"pago"}, {"111": "Pago", "222": "Pagar"})
+    assert novo == "Fica\n222"
+
+
+def test_MOVER_PARA_NOVO_LOTE_tira_de_onde_estavam_e_poe_no_topo():
+    """24/10/2026: *"eu seleciono alguns registros (…) eles somem do lote atual e
+    vão para a parte superior (…) é uma forma de reorganizar"*."""
+    texto = "WhatsApp\n111 222\n\nNovo Lote 1\n333\n444\n\nOutro\n555"
+    novo, titulo, quantos = lote.mover_para_novo_lote(texto, ["444", "222", "333", "999"])
+    # O "Novo Lote 1" esvaziou e saiu — o novo grupo reaproveita o número.
+    assert (titulo, quantos) == ("Novo Lote 1", 3)
+    grupos = [(g["titulo"], g["ids"]) for g in lote.separar_grupos(novo)]
+    assert grupos == [("Novo Lote 1", ["222", "333", "444"]), ("WhatsApp", ["111"]),
+                      ("Outro", ["555"])], "o grupo que esvaziou some"
+    assert lote.mover_para_novo_lote(texto, ["999"]) == (texto, "", 0)
 
 
 def test_remover_duplicados_conta_copias_e_nao_numeros():
@@ -439,10 +455,10 @@ def test_o_titulo_do_grupo_que_esvaziou_SAI_nos_tres_caminhos():
             f"por {nome}: sumiu o título de um grupo que ainda tem SP")
 
 
-def test_grupo_que_JA_ESTAVA_vazio_continua_nos_tres_caminhos():
-    """⚠️ A trava do outro lado, e ela importa: alguém escreveu aquele título
-    de propósito, para encher depois. Apagar o que a pessoa acabou de digitar
-    seria pior do que o cabeçalho sobrando."""
+def test_grupo_que_JA_ESTAVA_vazio_tambem_sai_nos_caminhos_de_limpeza():
+    """⚠️ A REGRA MUDOU em 24/10/2026, a pedido do dono: *"tem um header, mas não
+    tem nenhum registro (…) aquele header eu quero que suma (…) automaticamente
+    na hora que eu clicar esses botões"*. Antes, o título já vazio ficava."""
     from app.apps.analisesps import lote
 
     texto = "Para a semana que vem\nNovo Lote 1\n1409289353"
@@ -452,8 +468,8 @@ def test_grupo_que_JA_ESTAVA_vazio_continua_nos_tres_caminhos():
         texto, {"pago"}, {"1409289353": "Pago"})
 
     for nome, saida in (("marcação", por_marcacao), ("status", por_status)):
-        assert "Para a semana que vem" in saida, (
-            f"por {nome}: apagou um título vazio que a pessoa tinha escrito")
+        assert "Para a semana que vem" not in saida, (
+            f"por {nome}: o título sem nenhuma SP ficou")
         assert "Novo Lote 1" not in saida, (
             f"por {nome}: o grupo esvaziou agora e o cabeçalho ficou")
 
