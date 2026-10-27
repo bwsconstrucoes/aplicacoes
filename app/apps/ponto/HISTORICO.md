@@ -406,8 +406,8 @@ afastamento — o DP).
   em conferência.
 - A batida que vem mesmo sem rosto ganha uma **segunda tentativa**, com a foto clareada e ampliada (rosto
   pequeno ou escuro).
-- Fotos de cadastro › "Provavelmente errada" passou a pegar também o "sem rosto" em série e a cadastral
-  sem rosto.
+- Fotos de cadastro › "Provavelmente errada" passou a pegar também a cadastral sem rosto e o "sem rosto"
+  em série (3 das últimas 5 conferências). Um "sem rosto" solto continua sendo tratado como foto escura.
 - **Falso alarme:** a batida "sem rosto" que o DP validou não conta mais como falha. Antes, só a "não
   confere" validada deixava de contar, e a pessoa ficava presa "em observação" por fotos com o rosto à
   vista.

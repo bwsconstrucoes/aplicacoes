@@ -57,8 +57,9 @@ def test_a_batida_sem_rosto_ganha_uma_segunda_tentativa_clareada():
 def test_a_foto_de_cadastro_fica_suspeita_com_sem_rosto_em_serie():
     s = fotos_cadastro.suspeita
     assert s([fotos_cadastro.CADASTRAL_SEM_ROSTO, "MESMA_PESSOA"])
-    assert s(["SEM_ROSTO", "SEM_ROSTO", "MESMA_PESSOA"])
-    assert not s(["SEM_ROSTO", "MESMA_PESSOA", "MESMA_PESSOA"])
+    assert s(["SEM_ROSTO", "SEM_ROSTO", "MESMA_PESSOA", "SEM_ROSTO"])
+    assert not s(["SEM_ROSTO", "SEM_ROSTO", "MESMA_PESSOA"])          # dois soltos: foto escura
+    assert not s(["OUTRA_PESSOA", None, "SEM_ROSTO"])
     assert s(["OUTRA_PESSOA", "OUTRA_PESSOA", "MESMA_PESSOA"])
 
 

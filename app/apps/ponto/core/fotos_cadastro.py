@@ -36,16 +36,23 @@ CADASTRAL_SEM_ROSTO = "CADASTRAL_SEM_ROSTO"
 _CONTAM = ("MESMA_PESSOA", "OUTRA_PESSOA", "SEM_ROSTO", CADASTRAL_SEM_ROSTO)
 
 
+SEM_ROSTO_EM_SERIE = 3
+
+
 def suspeita(resultados: list[str]) -> bool:
-    """PURA. A foto de cadastro provavelmente está errada? A última conferência disse que ela
-    não tem rosto; ou, das últimas conferidas (as mais novas primeiro), ao menos 2 deram "outra
-    pessoa" ou "sem rosto" e elas são a maioria (28/10/2026: "sem rosto" em série, com o rosto à
-    vista na batida, era a foto de cadastro sem rosto — a AWS não compara a partir dela)."""
-    olhadas = [r for r in resultados if r in _CONTAM][:OLHAR]
-    if olhadas and olhadas[0] == CADASTRAL_SEM_ROSTO:
+    """PURA. A foto de cadastro provavelmente está errada? (as mais novas primeiro)
+    - a última conferência disse que ela não tem rosto;
+    - das últimas conferidas, ao menos 2 deram "outra pessoa" e elas são a maioria; ou
+    - "sem rosto" em série: 3 das últimas 5 (28/10/2026 — com o rosto à vista na batida, era a foto
+      de cadastro sem rosto: a AWS não compara a partir dela). Um "sem rosto" solto é foto escura."""
+    recentes = [r for r in resultados if r in _CONTAM][:OLHAR]
+    if recentes and recentes[0] == CADASTRAL_SEM_ROSTO:
         return True
-    ruins = sum(1 for r in olhadas if r != "MESMA_PESSOA")
-    return ruins >= 2 and ruins * 2 > len(olhadas)
+    if sum(1 for r in recentes if r == "SEM_ROSTO") >= SEM_ROSTO_EM_SERIE:
+        return True
+    olhadas = [r for r in recentes if r in ("MESMA_PESSOA", "OUTRA_PESSOA")]
+    outras = sum(1 for r in olhadas if r == "OUTRA_PESSOA")
+    return outras >= 2 and outras * 2 > len(olhadas)
 
 
 def _resultado(l: dict) -> Optional[str]:
