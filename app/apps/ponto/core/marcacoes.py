@@ -67,6 +67,8 @@ logger = logging.getLogger("ponto.marcacoes")
 ORIGENS = ("PWA", "IDFACE", "MANUAL")
 IDENTIFICACOES = ("SESSAO", "CPF", "QR_WHATSAPP", "QR_APP", "CHAVE")
 MOTIVO_SEM_FOTO_NO_TABLET = "sem foto no aparelho da obra"
+# A batida da busca pelo nome (27/10/2026): sempre passa pela conferência do rosto (rosto.py).
+IDENTIFICADA_PELO_NOME = "identificada pelo nome no aparelho da obra"
 JANELA_REPETICAO_SEGUNDOS = 60
 TOLERANCIA_RELOGIO_SEGUNDOS = 300
 

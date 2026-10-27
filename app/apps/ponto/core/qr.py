@@ -56,7 +56,10 @@ CONVIVENCIA_DIAS = 3           # o QR antigo ainda vale por até 3 dias depois d
 IDENT_WHATSAPP = "QR_WHATSAPP"
 IDENT_APP = "QR_APP"
 IDENT_CPF = "CPF"
-_CODIGO_IDENT = {IDENT_WHATSAPP: "W", IDENT_APP: "A", IDENT_CPF: "C"}
+# Pela busca do NOME no ponto da obra (27/10/2026): no banco a batida fica como CPF
+# (a lista da migração 003 não tem outra), marcada em `registrado_por`.
+IDENT_NOME = "NOME"
+_CODIGO_IDENT = {IDENT_WHATSAPP: "W", IDENT_APP: "A", IDENT_CPF: "C", IDENT_NOME: "N"}
 _IDENT_DO_CODIGO = {v: k for k, v in _CODIGO_IDENT.items()}
 
 
@@ -266,6 +269,33 @@ def conferir_bilhete(bilhete: str, dispositivo_id: int,
         raise ErroDeValidacao("a identificação venceu — mostre o QR ou digite o CPF de novo",
                               campo="bilhete")
     return int(partes[0]), _IDENT_DO_CODIGO[partes[3]]
+
+
+# A ESCOLHA na busca pelo nome (27/10/2026): cada pessoa que a busca mostrou vem
+# com uma escolha assinada, deste aparelho, que vale ESCOLHA_S. Só ela identifica
+# pelo nome — o número da pessoa sozinho não abre nada (ninguém varre números).
+ESCOLHA_S = 180
+
+
+def emitir_escolha(colaborador_id: int, dispositivo_id: int, agora: Optional[float] = None) -> str:
+    validade = int((agora if agora is not None else time.time()) + ESCOLHA_S)
+    corpo = f"{int(colaborador_id)}.{int(dispositivo_id)}.{validade}"
+    return f"{corpo}.{_assinar('escolha|' + corpo)}"
+
+
+def conferir_escolha(escolha: str, dispositivo_id: int, agora: Optional[float] = None) -> int:
+    """Devolve o colaborador_id. Levanta ErroDeValidacao."""
+    partes = str(escolha or "").strip().split(".")
+    if len(partes) != 4 or not all(p.isdigit() for p in partes[:3]):
+        raise ErroDeValidacao("escolha ilegível — procure o nome de novo", campo="escolha")
+    corpo = ".".join(partes[:3])
+    if not hmac.compare_digest(_assinar("escolha|" + corpo), partes[3]):
+        raise ErroDeValidacao("escolha ilegível — procure o nome de novo", campo="escolha")
+    if int(partes[1]) != int(dispositivo_id):
+        raise ErroDeValidacao("escolha de outro aparelho", campo="escolha")
+    if int(partes[2]) < (agora if agora is not None else time.time()):
+        raise ErroDeValidacao("a escolha venceu — procure o nome de novo", campo="escolha")
+    return int(partes[0])
 
 
 # ---------------------------------------------------------------------------

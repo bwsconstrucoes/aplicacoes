@@ -59,10 +59,12 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1zt. **No ramo, esperando o "pode"** (27/10/2026, noite, sem migração) — o **ponto da obra** com o que o dono
+   aprovou: a **busca pelo nome** (foto pequena, sem CPF, só com o responsável conectado), a **volta para a
+   batida em 5 minutos** (conectado; sair dela depois disso pede o PIN) e o **som e a vibração** da batida.
+   Ver a seção de 27/10/2026 (noite). Vai junto com a 1zs.
 1zs. **No ramo, esperando o "pode"** (27/10/2026, sem migração) — a **declaração de comparecimento**, com a
    escolha do abono na aprovação (o dia todo, só o período, nada). Ver a seção de 27/10/2026 (tarde).
-   **Esperando o dono decidir** (análise mandada, nada feito): busca pelo nome com foto no ponto da obra (LGPD),
-   som e vibração na batida, e os 3 minutos do responsável — ver a mesma seção.
 1zr. **Publicado em 27/10/2026, junto com a 1zq** (com o "pode" do dono: "ao final de tudo, pode publicar"; sem
    migração) — **menos telas e um filtro só**: no menu, só **Quadro, Validações, Relatórios e Configuração**; o
    **filtro de funcionários** igual nas três primeiras, na barra lateral; Alertas, Qualidade, Rondas e Mosaico
@@ -330,6 +332,54 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 27/10/2026 (noite) — O ponto da obra: busca pelo nome, 5 minutos e o som
+
+**As respostas do dono** à análise da tarde: *"busca pelo nome, beleza. Com uma observação, se um
+funcionário novo surgir, ele não vai estar naquela obra (…) Em relação ao tempo, ok, volta para a tela de
+bater e coloca (…) 5 minutos. Quanto ao som, ok. (…) Vai ter Android, vai ter iPhone. Não quero QR Code
+impresso."*
+
+**A busca pelo nome** (`core/busca_nome.py`, rota `/ponto/app/api/obra/buscar-nome`).
+- Para quem esqueceu o CPF e não está com o QR. Botão "🔎 Não sei o CPF — procurar pelo nome" na
+  **tela de bater** (só aparece com alguém conectado) e no **Consultar o ponto de uma pessoa**.
+- 3 letras ou mais; cada palavra digitada é começo de uma palavra do nome ("jos sous"). Até 6
+  pessoas, com a **foto pequena** (a miniatura de cadastro), **primeiro e último nome**, função e obra.
+  **Nunca o CPF.** Cada busca fica no log (aparelho e quem estava conectado).
+- **Quem aparece:** quem é da obra para o aparelho (o mesmo alcance da consulta) — e, pela observação
+  do dono, **quem foi admitido há até 30 dias e quem está sem obra no cadastro**. Se não achar, "Não
+  achou? Procurar em todas as obras" (só na batida; na consulta, a folha continua só de quem é da obra).
+- **Segurança:** a busca devolve, para cada pessoa, uma **escolha assinada** (vale 3 minutos, só neste
+  aparelho) — o número da pessoa sozinho não identifica ninguém. Bater pela escolha exige o responsável
+  (ou o administrativo) **conectado** no aparelho.
+- **A batida** fica gravada como CPF (a lista de identificações da migração 003 não tem outra; sem
+  migração) e marcada em `registrado_por`: "identificada pelo nome no aparelho da obra — <quem estava
+  conectado>". Ela **sempre** passa pela conferência do rosto, fora da regra e do sorteio (`rosto.py`).
+- **Decisão revista:** a regra de 10/10/2026 "a consulta é pelo CPF — nunca uma lista de nomes" deu lugar
+  a esta busca contida, com o aceite do dono. A lista inteira da obra continua não existindo no ponto da
+  obra.
+- Sem internet, a busca não funciona (diz "digite o CPF").
+
+**Os 5 minutos.** Fora da batida, 5 minutos parado (eram 3) e o aparelho **volta para a tela de
+bater, conectado** — antes ele desconectava e caía na entrada, e a fila parava. O "Sair" continua
+desconectando.
+- **Um erro meu na análise, corrigido aqui:** escrevi ao dono que "sair da batida já pede o PIN" —
+  não pedia desde 10/10/2026 (ele tinha tirado). Sem nada, quem passasse pela fila tocaria "‹ Início"
+  e entraria no menu como o responsável. Por isso: **depois da volta sozinha**, sair da batida pede o
+  **PIN de quem estava conectado** (ou "Não sou eu — entrar com outro CPF", que desconecta). Quando o
+  próprio responsável abre a batida e sai dela, continua sem PIN, como ele pediu em 10/10.
+
+**O som e a vibração.** Registrado: um bip curto; foi para conferência: dois bips; não registrou: um
+tom grave e longo (também sem internet: guardada ou não guardada). A vibração acompanha — **só no
+Android**: no iPhone, site não vibra (regra da Apple), e no iPhone com a chave do silencioso o som
+também não toca. O 🔊 no alto da batida desliga o som (fica lembrado no aparelho); a vibração fica. O
+navegador só deixa tocar depois do primeiro toque na tela: um aparelho que reinicia direto na batida
+e só lê QR fica mudo até alguém tocar nele uma vez.
+
+**Testado:** `tests/test_ponto_busca_nome_banco.py` (as partes puras, a escolha, a busca com e sem
+login, o novato e o sem obra, a batida marcada, a consulta pela escolha). No navegador: a busca, a
+batida, o som, a consulta pelo nome, a volta em 5 minutos (com o relógio adiantado) e o PIN para sair.
+Não testado num celular de verdade (o som e a vibração dependem do aparelho).
 
 ## 27/10/2026 (tarde) — A declaração de comparecimento, e o que o ponto da obra pediu
 

@@ -371,12 +371,20 @@ def explicar_erro_aws(e: Exception) -> str:
     return f"a AWS respondeu com erro: {str(e)[:300]}"
 
 
+def _pelo_nome(m: dict) -> bool:
+    """PURA. A batida veio da busca pelo nome no ponto da obra (27/10/2026)? Essa
+    confere SEMPRE — fora da regra e fora do sorteio —, porque quem a identificou
+    foi um nome escolhido na tela, não o QR nem o CPF da pessoa."""
+    from .marcacoes import IDENTIFICADA_PELO_NOME
+    return str(m.get("registrado_por") or "").startswith(IDENTIFICADA_PELO_NOME)
+
+
 def _pendentes(conn: Connection, cfg: dict, limite: int, fora: Optional[list] = None) -> list[dict]:
     """As batidas a conferir, na ordem. Em `fora`, se vier, as que a regra exclui
     (obra, dia, horário) — para ganharem a linha DISPENSADA e não voltarem."""
     linhas = db.todos(conn, """
         SELECT m.id, m.colaborador_id, m.obra_id, m.foto_id, m.status, m.timestamp_servidor, m.motivo_analise,
-               m.data_referencia, pc.foto_cadastral_id, fo.luminancia, fo.contraste,
+               m.data_referencia, m.registrado_por, pc.foto_cadastral_id, fo.luminancia, fo.contraste,
                (SELECT count(*) FROM ponto.marcacoes m2 WHERE m2.colaborador_id = m.colaborador_id
                   AND m2.data_referencia = m.data_referencia AND m2.timestamp_servidor < m.timestamp_servidor) AS antes
           FROM ponto.marcacoes m
@@ -388,8 +396,9 @@ def _pendentes(conn: Connection, cfg: dict, limite: int, fora: Optional[list] = 
          ORDER BY m.timestamp_servidor LIMIT :lim""", d=DIAS_PARA_TRAS, lim=limite * 5)
     saida = []
     for l in linhas:
-        if entra_na_regra(cfg, obra_id=l["obra_id"], momento_local=horario.para_local(l["timestamp_servidor"]),
-                          primeira_do_dia=int(l["antes"]) == 0):
+        if _pelo_nome(l) or entra_na_regra(cfg, obra_id=l["obra_id"],
+                                           momento_local=horario.para_local(l["timestamp_servidor"]),
+                                           primeira_do_dia=int(l["antes"]) == 0):
             saida.append(l)
         elif fora is not None:
             fora.append(l)
@@ -477,7 +486,7 @@ def conferir(conn: Connection, *, cliente=None, limite: int = LOTE) -> dict:
             nivel = niveis.setdefault(cid, confianca.da_pessoa(hist.get(cid), dinamica))
             h = hist.get(cid) or {}
             confere, porque = confianca.decidir(nivel, int(m["id"]), h.get("ultima_real"), agora, dinamica)
-            if not confere:
+            if not confere and not _pelo_nome(m):     # a identificada pelo nome confere sempre
                 _gravar(conn, m["id"], "DISPENSADA", None, 0, porque, nivel=nivel)
                 feito["dispensadas"] += 1
                 continue

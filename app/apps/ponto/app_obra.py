@@ -202,11 +202,51 @@ def app_api_equipe_cpf():
             raise Recusada("muitas consultas neste aparelho; espere alguns minutos")
         if ctx.alcance.vazio:
             raise Recusada(ctx.alcance.sem_alcance or "a consulta vale na obra em que o aparelho está")
-        pessoa = cadastros.colaborador_por_cpf(conn, cadastros.normalizar_cpf(d.get("cpf")))
+        if d.get("escolha") and ctx.aparelho:      # pela busca do nome (27/10/2026)
+            from .core import qr
+            pessoa = cadastros.colaborador_por_id(conn, qr.conferir_escolha(d["escolha"], int(ctx.aparelho["id"])))
+        else:
+            pessoa = cadastros.colaborador_por_cpf(conn, cadastros.normalizar_cpf(d.get("cpf")))
         if not pessoa or not papeis.no_alcance(conn, ctx.alcance, int(pessoa["id"])):
             raise NaoEncontrado("ninguém com esse CPF batendo ponto nesta obra")
         _abrir_consulta(int(pessoa["id"]))
     return _ok(id=int(pessoa["id"]), nome=pessoa["nome"])
+
+
+@bp.route("/app/api/obra/buscar-nome", methods=["POST"])
+@auth.exige_colaborador_ou_aparelho
+def app_api_obra_buscar_nome():
+    """A busca pelo NOME no ponto da obra (27/10/2026, core/busca_nome.py): para quem
+    esqueceu o CPF e não tem o QR. 3 letras ou mais, até 6 pessoas, com a foto pequena,
+    o nome e a função — nunca o CPF. Só no ponto da obra, com o responsável conectado.
+    Cada pessoa vem com uma ESCOLHA assinada, deste aparelho, que serve para bater ou
+    para consultar."""
+    import base64
+    from .core import busca_nome, mosaico, qr
+    d = _corpo()
+    with db.conexao() as conn:
+        ctx = _contexto(conn)
+        if not ctx.pelo_aparelho or not ctx.aparelho:
+            raise Recusada("a busca pelo nome é do ponto da obra")
+        if not auth.dentro_do_limite("buscar_nome", str(ctx.aparelho["id"]), 240):
+            raise Recusada("muitas buscas neste aparelho; espere alguns minutos")
+        todas = bool(d.get("todas"))
+        if not todas and ctx.alcance.vazio:
+            raise Recusada(ctx.alcance.sem_alcance or "a busca vale na obra em que o aparelho está")
+        r = busca_nome.buscar(conn, ctx.alcance, d.get("nome"), todas=todas)
+        pessoas = []
+        for p in r["pessoas"]:
+            foto = None
+            try:
+                foto = "data:image/jpeg;base64," + base64.b64encode(mosaico.foto_cadastral(conn, int(p["id"]))).decode()
+            except Exception:  # noqa: BLE001 — sem foto de cadastro (ou o Drive fora): vai só o nome
+                foto = None
+            pessoas.append({"nome": busca_nome.nome_curto(p["nome"]), "funcao": p.get("funcao"),
+                            "obra": p.get("obra_codigo"), "foto": foto,
+                            "escolha": qr.emitir_escolha(int(p["id"]), int(ctx.aparelho["id"]))})
+        logger.info("Ponto: busca pelo nome no aparelho %s por %s (%s achadas%s)", ctx.aparelho["id"],
+                    ctx.pessoa["nome"], len(pessoas), ", todas as obras" if todas else "")
+    return _ok(pessoas=pessoas, mais=r["mais"], curta=r["curta"], todas=todas)
 
 
 @bp.route("/app/api/equipe/<int:colaborador_id>/mes")

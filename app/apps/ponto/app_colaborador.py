@@ -563,7 +563,7 @@ def app_api_bater():
     só neste aparelho. O CPF solto continua aceito, para o tablet de versão
     anterior que ainda estiver aberto em alguma obra."""
     d = _corpo()
-    identificacao = None
+    identificacao, registrado_por = None, None
     with db.conexao() as conn:
         # O BILHETE VEM PRIMEIRO (achado do dono, 13/10/2026: "bati o ponto de outra
         # pessoa no ponto da obra, diz que bateu, mas não aparece no espelho"). Desde
@@ -579,6 +579,14 @@ def app_api_bater():
             if not p:
                 raise ErroDeValidacao("identifique-se de novo", campo="bilhete")
             cpf = p["cpf"]
+            if identificacao == qr.IDENT_NOME:
+                # No banco, como CPF (a lista da migração 003); a marca vai em `registrado_por`,
+                # e é por ela que a conferência do rosto confere SEMPRE esta batida.
+                responsavel = cadastros.colaborador_por_id(conn, int(session[auth.SESSAO_COLABORADOR])) \
+                    if session.get(auth.SESSAO_COLABORADOR) else None
+                identificacao = qr.IDENT_CPF
+                registrado_por = (marcacoes.IDENTIFICADA_PELO_NOME
+                                  + (f" — {responsavel['nome']}" if responsavel else ""))
         elif g.get("ponto_via") == "colaborador":
             # No ponto da obra, ninguém bate pela sessão: lá a pessoa se identifica.
             a = _aparelho_que_chama(conn)
@@ -595,7 +603,7 @@ def app_api_bater():
         else:
             cpf = d.get("cpf")
         marcacao, repetida = marcacoes.registrar(
-            conn, cpf=cpf, obra=d.get("obra"), origem="PWA",
+            conn, cpf=cpf, obra=d.get("obra"), origem="PWA", registrado_por=registrado_por,
             device_uuid=request.headers.get("X-Device-UUID") or d.get("device_uuid"),
             device_token=request.headers.get(auth.CABECALHO_TOKEN), via_chave=False,
             latitude=d.get("latitude"), longitude=d.get("longitude"), precisao=d.get("precisao"),
@@ -664,6 +672,13 @@ def app_api_tablet_identificar():
                 raise Recusada(lido.problema)
             pessoa = cadastros.colaborador_por_id(conn, lido.colaborador_id)
             identificacao = lido.identificacao
+        elif d.get("escolha"):
+            # Pela busca do NOME (27/10/2026): só com a escolha assinada que a busca deu,
+            # deste aparelho e com o responsável conectado (busca_nome.py).
+            if not session.get(auth.SESSAO_COLABORADOR):
+                raise Recusada("a busca pelo nome é do responsável: entre com CPF e PIN")
+            pessoa = cadastros.colaborador_por_id(conn, qr.conferir_escolha(d["escolha"], int(aparelho["id"])))
+            identificacao = qr.IDENT_NOME
         else:
             cpf = cadastros.normalizar_cpf(d.get("cpf"))
             pessoa = cadastros.colaborador_por_cpf(conn, cpf)
