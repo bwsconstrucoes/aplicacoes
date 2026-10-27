@@ -45,13 +45,17 @@ def test_o_dp_corrige_a_obra_e_a_hora_de_uma_batida_sem_apagar_a_original(app, m
     assert dp.post(url, json={"obra": "PG-A", "motivo": motivo}).status_code == 400
 
 
-def test_espelho_e_pessoas_abrem_o_quadro_com_a_janela_da_pessoa(app, mundo):
+def test_o_espelho_abre_o_quadro_com_a_janela_e_pessoas_tem_a_lista(app, mundo):
     dp = como(app, mundo["dp"])
     r = dp.get(f"/erp/ponto/espelho?colaborador_id={mundo['joao']}&competencia=2026-10")
     assert r.status_code == 302 and "/erp/ponto/quadro" in r.headers["Location"]
     assert f"abrir_pessoa={mundo['joao']}" in r.headers["Location"] and "aba=mes" in r.headers["Location"]
-    r = dp.get(f"/erp/ponto/pessoas?pessoa={mundo['maria']}")
-    assert r.status_code == 302 and "aba=cadastro" in r.headers["Location"]
+    # a tela Pessoas voltou (28/10/2026), com a foto de cadastro de cada um
+    assert dp.get(f"/erp/ponto/pessoas?pessoa={mundo['maria']}").status_code == 200
+    lista = dp.get("/erp/api/ponto/pessoas").get_json()["pessoas"]
+    assert all("tem_foto_cadastral" in p for p in lista)
+    so_a = dp.get(f"/erp/api/ponto/pessoas?obra_cadastro={mundo['obra_a']}").get_json()["pessoas"]
+    assert {p["nome"] for p in so_a} == {"João Obra A"}
     assert dp.get("/erp/ponto/espelho").headers["Location"].endswith("/erp/ponto/quadro")
 
 
@@ -95,3 +99,20 @@ def test_excecoes_uma_linha_por_pessoa_e_o_filtro_com_varias_obras(app, mundo, b
     assert "João Obra A" in so_a and "Maria Obra B" not in so_a
     assert {"João Obra A", "Maria Obra B"} <= as_duas
     assert nomes(obra_cadastro=f"{mundo['obra_a']},{mundo['obra_b']}") == as_duas
+
+
+def test_a_gestao_envia_uma_foto_nova_de_cadastro(app, mundo, banco):
+    from tests.test_ponto_qr_banco import _foto
+    dp, fin = como(app, mundo["dp"]), como(app, mundo["fin"])
+    url = f"/erp/api/ponto/pessoas/{mundo['joao']}/foto-cadastral"
+    assert fin.post(url + "/enviar", json={"foto_base64": _foto()}).status_code == 403
+    assert dp.post(url + "/enviar", json={"foto_base64": "não é foto"}).status_code == 400
+    r = dp.post(url + "/enviar", json={"foto_base64": _foto()})
+    assert r.status_code == 200, r.get_json()
+    with banco.connect() as conn:
+        fid = conn.execute(text("SELECT foto_cadastral_id FROM ponto.colaborador_config WHERE colaborador_id = :c"),
+                           {"c": mundo["joao"]}).scalar()
+    assert fid == r.get_json()["foto_id"]
+    foto = dp.get(url)
+    assert foto.status_code == 200 and foto.mimetype == "image/jpeg"
+    assert dp.get(f"/erp/api/ponto/pessoas/{mundo['joao']}").get_json()["pessoa"]["tem_foto_cadastral"] is True

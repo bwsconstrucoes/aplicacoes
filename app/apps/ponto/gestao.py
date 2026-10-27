@@ -66,6 +66,8 @@ ABAS = [
     # Validações (a fila do que espera decisão), os Relatórios e a Configuração. As outras
     # telas continuam abrindo pelo endereço e pelos atalhos do Quadro e da janela da pessoa.
     ("ponto_quadro", "Quadro", "erp.ponto_pagina_quadro"),
+    # Pessoas voltou ao menu (28/10/2026): a lista com a foto de cadastro de cada um.
+    ("ponto_pessoas", "Pessoas", "erp.ponto_pagina_pessoas"),
     ("ponto_pendencias", "Validações", "erp.ponto_pagina_pendencias"),
     ("ponto_relatorios", "Relatórios", "erp.ponto_pagina_relatorios"),
     ("ponto_config", "Configuração", "erp.ponto_pagina_configuracao"),
@@ -269,7 +271,10 @@ def ponto_pagina_fotos_cadastro():
 @login_obrigatorio
 @permissao("ver_ponto")
 def ponto_pagina_pessoas():
-    return _abrir_na_janela(request.args.get("pessoa"), "cadastro")
+    # Voltou ao menu em 28/10/2026 (o dono: "precisa voltar a tela de pessoas. Preciso ainda ver a
+    # pessoa, ver a foto de cadastro e poder alterar a foto de cadastro"). O endereço antigo com
+    # ?pessoa= abre a janela dela por cima da lista.
+    return _pagina("ponto_pessoas")
 
 
 @bp.route("/erp/ponto/banco")
@@ -468,6 +473,14 @@ def ponto_api_pessoas():
             digitos = "".join(ch for ch in busca if ch.isdigit())
             pessoas = [p for p in pessoas if busca in p["nome"].lower()
                        or (digitos and digitos in p["cpf"])]
+        # O filtro de funcionários da barra (28/10/2026): o mesmo do Quadro; "bateu nas obras"
+        # olha os últimos 30 dias.
+        from .core import filtro_pessoas
+        f = filtro_pessoas.de_argumentos(request.args)
+        if filtro_pessoas.ativo(f):
+            hoje = horario.hoje()
+            pessoas, _ = filtro_pessoas.aplicar(conn, Quem(nome=quem.nome, obras=None), pessoas, f,
+                                                hoje - dt.timedelta(days=30), hoje)
         vig = {v["colaborador_id"]: v for v in db.todos(conn, """
             SELECT DISTINCT ON (ce.colaborador_id) ce.colaborador_id, e.nome
               FROM ponto.colaborador_escalas ce JOIN ponto.escalas e ON e.id = ce.escala_id
@@ -498,6 +511,7 @@ def ponto_api_pessoas():
         if j["escala_e_padrao"]:
             j["escala"] = padrao["nome"]
         j["tem_pin"] = p["id"] in pins
+        j["tem_foto_cadastral"] = bool(p.get("foto_cadastral_id"))
         j["obras_batidas"] = bateu.get(p["id"], [])
         j["etiquetas"] = etiquetas.para_json(marcas.get(int(p["id"]), []))
         j["regime_banco_rotulo"] = banco.ROTULOS.get(j["regime_banco"], j["regime_banco"])
@@ -551,6 +565,7 @@ def _ficha(quem: Quem, colaborador_id: int) -> dict:
     # marcação (10/10/2026) — a tela diz isso, para a marcação não parecer mentir.
     j["responsavel_ponto_obra"] = responsavel
     j["funcao"] = p.get("funcao")
+    j["tem_foto_cadastral"] = bool(p.get("foto_cadastral_id"))
     j["etiquetas"] = marcas
     j["tem_telefone"] = bool(envios.telefone_valido(p.get("telefone")))
     with db.conexao() as conn:
@@ -1588,6 +1603,30 @@ def ponto_api_tirar_foto_cadastral(colaborador_id: int):
         fotos_cadastro.tirar(conn, colaborador_id)
     logger.info("Ponto: foto de cadastro da pessoa %s retirada por %s", colaborador_id, quem.nome)
     return _ok()
+
+
+@bp.route("/erp/api/ponto/pessoas/<int:colaborador_id>/foto-cadastral/enviar", methods=["POST"])
+@login_obrigatorio
+@permissao("tratar_ponto")
+@_api
+def ponto_api_enviar_foto_cadastral(colaborador_id: int):
+    """Uma foto NOVA de cadastro, enviada pela gestão (28/10/2026, o dono: "poder alterar a foto de
+    cadastro"): a tirada pelo RH, de frente. Vai para o Drive como as fotos das batidas."""
+    from .core import fotos
+    quem, d = _quem(), _corpo()
+    foto = fotos.preparar(d.get("foto_base64") or "")
+    with db.conexao() as conn:
+        _exigir_pessoa(conn, quem, colaborador_id)
+        agora = horario.agora()
+        foto_id = fotos.guardar(conn, foto, nome=f"{horario.para_local(agora):%Y-%m-%d_%H%M%S}_colab{colaborador_id}_cadastro.jpg",
+                                momento=agora, subir=False)
+        db.executar(conn, """
+            INSERT INTO ponto.colaborador_config (colaborador_id, foto_cadastral_id) VALUES (:c, :f)
+            ON CONFLICT (colaborador_id) DO UPDATE SET foto_cadastral_id = :f, atualizado_em = now()
+        """, c=colaborador_id, f=foto_id)
+    fotos.disparar_envio()
+    logger.info("Ponto: foto de cadastro da pessoa %s enviada por %s (foto %s)", colaborador_id, quem.nome, foto_id)
+    return _ok(foto_id=foto_id)
 
 
 @bp.route("/erp/api/ponto/pessoas/<int:colaborador_id>/foto-cadastral", methods=["POST"])

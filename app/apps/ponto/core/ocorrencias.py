@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -356,7 +357,7 @@ def criar(conn: Connection, quem: Quem, dados: dict, *, origem: str = "GESTAO") 
 # ---------------------------------------------------------------------------
 _SQL = """
     SELECT oc.*, c.nome AS colaborador_nome, c.cpf, c.obra_id AS obra_principal_id,
-           o.codigo AS obra_codigo, op.codigo AS obra_principal_codigo
+           o.codigo AS obra_codigo, o.nome AS obra_nome, op.codigo AS obra_principal_codigo
       FROM ponto.ocorrencias oc
       JOIN public.colaboradores c ON c.id = oc.colaborador_id
       LEFT JOIN public.obras o ON o.id = oc.obra_id
@@ -386,6 +387,10 @@ def _para_json(o: dict, quem: Quem, etapas: tuple | None = None) -> dict:
         "subtipo": o.get("subtipo"),
         "colaborador_id": o["colaborador_id"], "colaborador": o["colaborador_nome"],
         "cpf": o["cpf"], "obra": o.get("obra_codigo") or o.get("obra_principal_codigo"),
+        # A obra escolhida no pedido, à parte da do cadastro (28/10/2026, o dono: "um ajuste de batida
+        # esperando validação não aparece a obra que foi selecionada").
+        "obra_pedida": ({"codigo": o.get("obra_codigo"), "nome": o.get("obra_nome")} if o.get("obra_codigo") else None),
+        "obra_cadastro": o.get("obra_principal_codigo"),
         "data_inicio": o["data_inicio"].isoformat(), "data_fim": o["data_fim"].isoformat(),
         "dias": (o["data_fim"] - o["data_inicio"]).days + 1,
         "horario": horario.texto(o.get("horario")),
@@ -463,6 +468,20 @@ def listar(conn: Connection, quem: Quem, *, status: str | None = None,
 # ---------------------------------------------------------------------------
 # Decidir
 # ---------------------------------------------------------------------------
+def _no_aparelho(descricao: str, quem: str) -> str:
+    """PURA. "no aparelho …", sem repetir o nome (28/10/2026, o dono: "tá em duplicidade esse texto:
+    pedido por no aparelho Pedido por JORDAO (…) — lançado por JORDAO"). O aparelho que ninguém
+    renomeou guarda o nome do pedido de aprovação, "Pedido por Fulano (CPF final 123)"."""
+    from .dispositivos import PREFIXO_PEDIDO
+    d = (descricao or "").strip()
+    if d.startswith(PREFIXO_PEDIDO):
+        dono = re.sub(r"\s*\(CPF final \d+\)\s*$", "", d[len(PREFIXO_PEDIDO):]).strip()
+        if dono and dono.lower() == (quem or "").strip().lower():
+            return "no próprio aparelho"
+        return f"no aparelho de {dono}" if dono else "no aparelho"
+    return f"no aparelho “{d}”" if d else "no aparelho"
+
+
 def pedido_por(origem: str, solicitado_por: str, colaborador: str = "") -> dict:
     """PURA. Quem fez o pedido, para a tela (21/10/2026: "na tela de validações não
     aparece a pessoa que solicitou o ajuste ou encaminhou um atestado"). O texto
@@ -475,11 +494,12 @@ def pedido_por(origem: str, solicitado_por: str, colaborador: str = "") -> dict:
         nome, como = texto[: -len(" (pelo celular)")], "pelo celular"
     elif origem == "APARELHO" and " — no aparelho " in texto:
         nome, _, ap = texto.partition(" — no aparelho ")
-        como = f"no aparelho {ap}"
+        como = _no_aparelho(ap, nome)
     elif origem == "APARELHO" and texto.startswith("no aparelho "):
         # Por outra pessoa, no ponto da obra (app_obra.py): "no aparelho X — lançado por Y".
         lugar, _, quem_lancou = texto.partition(" — lançado por ")
-        nome, como = (quem_lancou or "ponto da obra"), lugar
+        nome = quem_lancou or "ponto da obra"
+        como = _no_aparelho(lugar[len("no aparelho "):], nome)
     elif origem == "GESTAO":
         como = "pelo ERP"
     elif origem == "API":

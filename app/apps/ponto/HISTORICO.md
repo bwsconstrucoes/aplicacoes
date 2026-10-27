@@ -338,6 +338,24 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 28/10/2026 (tarde) — Pessoas voltou, a foto de cadastro na janela, e o pedido que não dizia a obra
+
+- **Pessoas voltou ao menu** (o dono: *"precisa voltar a tela de pessoas. Preciso ainda ver a pessoa, ver a
+  foto de cadastro e poder alterar a foto de cadastro"*): a lista com a **foto de cadastro** de cada um, o
+  filtro de funcionários na barra (o mesmo do Quadro; "bateu nas obras" olha 30 dias), "com foto / sem foto"
+  e "incluir quem não bate ponto". Clicar abre a janela da pessoa na aba Cadastro.
+- **A foto de cadastro na janela** (aba Cadastro): a foto grande, e **enviar uma foto nova** (novo:
+  `/pessoas/<id>/foto-cadastral/enviar`; no celular, abre a câmera), **escolher entre as fotos das batidas**
+  ou **tirar** (a próxima foto boa vira a nova). A enviada vai para o Drive como as fotos das batidas.
+- **O código de acesso do aplicativo** (o dono: *"em qual tela eu gero o código pro celular de alguém?"*):
+  o botão "Código não chegou?", que ficava na tela Pessoas, virou "🔑 Código de acesso do aplicativo (PIN)",
+  também no alto da janela. Os avisos de escala, jornada, acesso e banco apontavam para a tela que tinha
+  saído e não apareciam; agora aparecem na janela.
+- **O pedido de ajuste mostra a obra escolhida** (o dono: *"não aparece a obra que foi selecionada"*), e a do
+  cadastro quando for outra. O "quem pediu" não repete mais o nome: o aparelho que ninguém renomeou guarda
+  "Pedido por Fulano (CPF final 123)", e a frase virava *"pedido por no aparelho Pedido por JORDAO (…) —
+  lançado por JORDAO"*; agora é "JORDAO, no próprio aparelho" (ou "no aparelho de Fulano").
+
 ## 28/10/2026 — Filtros na barra, o espelho na janela da pessoa, corrigir UMA batida e o "sem rosto"
 
 **Os pedidos do dono** (vários, no mesmo dia): *"os filtros das telas, de maneira geral, devem estar no

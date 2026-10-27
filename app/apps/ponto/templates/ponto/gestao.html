@@ -114,6 +114,20 @@
     filtros do dia só escolhem as linhas.
   </div>
 
+{% elif aba_ponto == "ponto_pessoas" %}
+  {# PESSOAS VOLTOU (28/10/2026, o dono: "precisa voltar a tela de pessoas. Preciso ainda ver a pessoa,
+     ver a foto de cadastro e poder alterar a foto de cadastro"). O mesmo filtro do Quadro. #}
+  <div class="filtros-cab"><h2>Pessoas</h2></div>
+  <button class="btn" id="pe-ver" type="button" style="width:100%; margin:0 0 12px">Buscar</button>
+  {{ filtro_pessoas("pe") }}
+  <div class="campo" style="margin-top:8px"><label>Foto de cadastro</label>
+    <div class="qd-marcas">
+      <label class="opcao"><input type="checkbox" data-pe-foto="COM"><span class="rotulo">Com foto</span></label>
+      <label class="opcao"><input type="checkbox" data-pe-foto="SEM"><span class="rotulo">Sem foto</span></label></div></div>
+  <label class="opcao" style="margin-top:8px"><input type="checkbox" id="pe-todos">
+    <span class="rotulo">Incluir quem não bate ponto</span></label>
+  <div class="cartao-dica" style="margin-top:12px">“Bateu nas obras” olha os últimos 30 dias. Clique na pessoa para
+    ver tudo dela e trocar a foto de cadastro. O cadastro (nome, CPF, obra) é o do ERP.</div>
 {% elif aba_ponto == "ponto_mosaico" %}
   {# Os filtros na barra da esquerda, como nas outras telas (16/10/2026), e só as
      obras com batida no dia: "o cadastro de obras é muito grande e fica muita obra
@@ -402,6 +416,14 @@
   .qd-foto-vazia { display:flex; align-items:center; justify-content:center; color:var(--tinta-suave); font-size:11px; }
   h4.qd-sub { margin:14px 0 6px; }
   .qd-alerta { color:var(--ambar); font-weight:700; } .qd-alerta.urgente { color:var(--vermelho); }
+  .pe-foto { width:44px; height:44px; border-radius:50%; object-fit:cover; display:inline-flex; align-items:center;
+             justify-content:center; background:#EEF1F5; font-size:10px; color:var(--tinta-suave); }
+  .dp-foto-cad { display:flex; gap:14px; align-items:flex-start; margin:0 0 12px; padding:10px; border:1px solid var(--borda); border-radius:10px; }
+  .dp-foto-cad img, .dp-foto-cad .sem { width:120px; height:120px; border-radius:10px; object-fit:cover; flex:none; background:#EEF1F5;
+             display:flex; align-items:center; justify-content:center; color:var(--tinta-suave); font-size:12px; text-align:center; }
+  .dp-fotos-batidas { display:flex; flex-wrap:wrap; gap:10px; margin-top:8px; }
+  .dp-fotos-batidas figure { margin:0; width:120px; text-align:center; font-size:11px; }
+  .dp-fotos-batidas img { width:120px; height:120px; object-fit:cover; border-radius:8px; display:block; cursor:zoom-in; }
   .fp-lista { max-height:190px; overflow:auto; border:1px solid var(--borda); border-radius:8px; padding:4px 8px; margin-top:4px; }
   .fp-lista .opcao { margin:0 0 2px; }
   h3.qd-grupo .fp-limpar { float:right; font-size:11.5px; padding:0 4px; text-transform:none; letter-spacing:0; }
@@ -618,6 +640,19 @@
   As conferências antigas, feitas com a foto errada, continuam registradas; as próximas batidas já são comparadas com a nova.</div>
 <div id="fc-lista"><div class="vazio"><b>carregando…</b></div></div>
 
+{% elif aba_ponto == "ponto_pessoas" %}
+{# ---------------------------------------------------------------- PESSOAS #}
+<h2>Pessoas no ponto <small id="pe-sub"></small></h2>
+<div id="mensagem"></div>
+<div class="cartao oculto" id="pe-fora" style="border-left:4px solid var(--ambar)"></div>
+<div class="tabela-wrap">
+  <div class="tabela-rolagem"><table>
+    <thead><tr><th class="sem-ordem">Foto</th><th class="sem-ordem">Nome</th><th class="sem-ordem">Função</th>
+      <th class="sem-ordem">Obra do cadastro</th><th class="sem-ordem">Batendo em (30 dias)</th>
+      <th class="sem-ordem">Escala</th><th class="sem-ordem">Banco de horas</th><th class="sem-ordem">PIN</th></tr></thead>
+    <tbody id="pe-corpo"></tbody></table></div>
+  <div class="vazio oculto" id="pe-vazio"></div>
+</div>
 {% elif aba_ponto == "ponto_mosaico" %}
 {# ---------------------------------------------------------------- MOSAICO #}
 <h2>Mosaico de fotos <small id="m-sub">as fotos do dia, lado a lado, por pessoa</small>
@@ -1289,6 +1324,7 @@ function desenharPainel() {
   els("dp-corpo").querySelectorAll("[data-dp-ajuste]").forEach(b => b.addEventListener("click", () =>
     pedirAjuste(quem, b.dataset.dpAjuste, recarregarPainel)));
   desenharQrDaPessoa(p);
+  ligarFotoDeCadastro(p);
   els("dp-corpo").querySelectorAll("[data-dp-decidir]").forEach(b => b.addEventListener("click", () =>
     decidirNoPainel(b.dataset.dpDecidir, b.dataset.tipo, b.dataset.sim === "1")));
   els("dp-corpo").querySelectorAll("[data-dp-bloquear]").forEach(b => b.addEventListener("click", () =>
@@ -1441,6 +1477,50 @@ function painelMes() {
       corrigir a obra e a hora; no dia, para ver tudo dele. Em vermelho tracejado, a batida que a escala esperava e não veio.</div>`;
 }
 
+// A foto de cadastro na janela: enviar uma nova, escolher uma das batidas, ou tirar (28/10/2026).
+let FOTO_CAD_VERSAO = Date.now();
+function ligarFotoDeCadastro(p) {
+  const depois = msg => { FOTO_CAD_VERSAO = Date.now(); recarregarPainel(); setTimeout(() => aviso("dp-msg", msg, "ok"), 400);
+                          if (typeof carregarPessoas === "function") carregarPessoas(); };
+  if (els("dp-foto-arquivo")) els("dp-foto-arquivo").addEventListener("change", async ev => {
+    try {
+      const foto = await lerArquivo(ev.target.files[0]);
+      if (!foto) return;
+      await postar(`/erp/api/ponto/pessoas/${p.id}/foto-cadastral/enviar`, {foto_base64: foto});
+      depois("Foto de cadastro trocada. As próximas batidas já são comparadas com ela.");
+    } catch (e) { falhou(e, "dp-msg"); }
+  });
+  if (els("dp-foto-escolher")) els("dp-foto-escolher").addEventListener("click", async () => {
+    const alvo = els("dp-fotos-batidas");
+    alvo.innerHTML = "carregando…";
+    let d;
+    try { d = await api(`/erp/api/ponto/fotos-cadastro?filtro=TODAS&busca=${encodeURIComponent(soDigitos(p.cpf))}`); }
+    catch (e) { alvo.innerHTML = ""; falhou(e, "dp-msg"); return; }
+    const fotos = ((d.pessoas || []).find(x => x.id === p.id) || {}).fotos || [];
+    alvo.innerHTML = fotos.length ? `<div class="dp-fotos-batidas">${fotos.map(f => `<figure>
+        <img alt="" loading="lazy" src="/erp/api/ponto/marcacoes/${f.marcacao_id}/foto" onerror="fotoQuebrada(this)"
+             data-foto="${f.marcacao_id}" data-legenda="${escapar(`${p.nome} — ${f.quando}`)}">
+        <figcaption>${escapar(f.quando)}${f.obra ? ` · ${escapar(f.obra)}` : ""}${f.e_a_cadastral ? "<br><b>é a de cadastro</b>"
+          : `<br><button class="link-btn" type="button" data-usar-foto="${f.marcacao_id}">usar esta</button>`}</figcaption></figure>`).join("")}</div>`
+      : `<small class="suave">Nenhuma batida com foto nos últimos 45 dias.</small>`;
+    alvo.querySelectorAll("[data-usar-foto]").forEach(b => b.addEventListener("click", async () => {
+      try { await postar(`/erp/api/ponto/pessoas/${p.id}/foto-cadastral`, {marcacao_id: Number(b.dataset.usarFoto)});
+            depois("Foto de cadastro trocada pela da batida escolhida."); }
+      catch (e) { falhou(e, "dp-msg"); }
+    }));
+  });
+  if (els("dp-foto-tirar")) els("dp-foto-tirar").addEventListener("click", async () => {
+    const r = await perguntar({titulo: "Tirar a foto de cadastro", campos: [], textoOk: "Tirar",
+      aviso: "A pessoa fica sem foto de cadastro: a próxima batida com foto boa vira a nova, sozinha. Para escolher você mesmo, envie uma foto ou escolha uma das batidas."});
+    if (!r) return;
+    try { await postar(`/erp/api/ponto/pessoas/${p.id}/foto-cadastral/tirar`, {}); depois("Foto de cadastro tirada."); }
+    catch (e) { falhou(e, "dp-msg"); }
+  });
+  const grande = document.querySelector("[data-foto-cad]");
+  if (grande) grande.addEventListener("click", () => verFoto(null, `${p.nome} — foto de cadastro`,
+    `/erp/api/ponto/pessoas/${p.id}/foto-cadastral?v=${FOTO_CAD_VERSAO}`));
+}
+
 // POR QUE A PESSOA ESTÁ NESTE NÍVEL da conferência do rosto (28/10/2026, o dono: "é uma pessoa
 // que está em observação, reincidente. Eu clico em cima dela, pensei que ia me mostrar alguma
 // coisa referente à pessoa (…) não consigo entender por que está em observação").
@@ -1491,7 +1571,9 @@ function painelPedidos() {
   const STATUS = {AGUARDANDO_SUPERVISOR: ["aguardando", "esperando o encarregado"], AGUARDANDO_DP: ["aguardando", "esperando o DP"],
                   APROVADA: ["aprovado", "aprovado"], NEGADA: ["bloqueado", "negado"], CANCELADA: ["outro", "cancelado"]};
   const ped = (P.pedidos || []).map(x => { const [c, r] = STATUS[x.status] || ["outro", x.status]; return `<tr>
-      <td><b>${escapar(x.rotulo)}</b><small>${x.origem === "GESTAO" ? `lançado por ${escapar(x.solicitado_por || "")}` : `pedido por ${escapar(x.solicitado_por || "")}`}</small></td>
+      <td><b>${escapar(x.rotulo)}</b><small>${(() => { const q = x.pedido_por || {};
+        return `${x.origem === "GESTAO" ? "lançado" : "pedido"} por ${q.propria ? "a própria pessoa" : escapar(q.nome || x.solicitado_por || "")}${q.como ? `, ${escapar(q.como)}` : ""}`; })()}
+        ${x.obra_pedida ? ` · obra <b>${escapar(x.obra_pedida.codigo)}</b>` : ""}</small></td>
       <td class="dados">${dataBR(x.data_inicio)}${x.data_fim !== x.data_inicio ? ` a ${dataBR(x.data_fim)}` : ""}${x.horario ? ` <small>${escapar(String(x.horario).slice(11, 16))}</small>` : ""}</td>
       <td><span class="selo ${c}">${escapar(r)}</span>${x.motivo_negativa ? `<small>${escapar(x.motivo_negativa)}</small>` : ""}
         ${x.descricao ? `<small>${escapar(x.descricao)}</small>` : ""}
@@ -1533,7 +1615,20 @@ function painelCadastro() {
   const p = PAINEL.pessoa;
   const esc = (p.escalas || [])[0];
   const linha = (r, v) => `<tr><th style="width:32%; text-align:left">${r}</th><td>${v}</td></tr>`;
-  return `<table>${[
+  // A FOTO DE CADASTRO (28/10/2026, o dono: "ver a foto de cadastro e poder alterar"): é com ela
+  // que a conferência do rosto compara cada batida.
+  const foto = `<div class="dp-foto-cad">
+      ${p.tem_foto_cadastral ? `<img alt="Foto de cadastro" src="/erp/api/ponto/pessoas/${p.id}/foto-cadastral?v=${FOTO_CAD_VERSAO}"
+          onerror="fotoQuebrada(this)" style="cursor:zoom-in" data-foto-cad="${p.id}">` : `<div class="sem">sem foto de cadastro</div>`}
+      <div><b>Foto de cadastro</b>
+        <small>É com ela que a conferência do rosto compara cada batida. Tem de mostrar o rosto de frente, sem boné nem óculos escuros.</small>
+        ${PODE_TRATAR ? `<div class="barra-acoes" style="margin-top:8px">
+          <label class="btn secundario" style="cursor:pointer">📷 Enviar uma foto nova…
+            <input type="file" accept="image/*" capture="user" id="dp-foto-arquivo" hidden></label>
+          <button class="btn secundario" type="button" id="dp-foto-escolher">Escolher entre as fotos das batidas…</button>
+          ${p.tem_foto_cadastral ? `<button class="link-btn" type="button" id="dp-foto-tirar">tirar a foto de cadastro</button>` : ""}</div>` : ""}
+        <div id="dp-fotos-batidas"></div></div></div>`;
+  return foto + `<table>${[
     linha("Situação", escapar(p.situacao || "—")), linha("Função", escapar(p.funcao || "—")),
     linha("Obra principal", escapar(p.obra_principal ? `${p.obra_principal.codigo} — ${p.obra_principal.nome || ""}` : "—")),
     linha("Obras extras", escapar((p.obras_adicionais || []).map(o => o.codigo).join(", ") || "—")),
@@ -1744,7 +1839,11 @@ function htmlDoPedido(p) {
     ["Pedido", `${escapar(p.rotulo)} nº ${p.id}${p.declaracao_periodo ? ` — <b>${escapar(dataBR(p.data_inicio))}, das ${escapar(p.declaracao_periodo)}</b>`
       : p.horario ? ` — <b>${escapar(quando(p.horario))}</b>` : ""}`],
     ["Situação", `<span class="etq ${p.status === "APROVADA" ? "verde" : p.status === "NEGADA" ? "vermelho" : "ambar"}">${escapar(ETAPA_PEDIDO[p.status] || p.status)}</span>`],
-    ["Quem pediu", `${escapar(por.nome || p.solicitado_por || "—")}${por.como ? ` <small style="display:inline">(${escapar(por.como)})</small>` : ""}${por.propria ? ` <span class="etq azul">a própria pessoa</span>` : ""}`],
+    ["Quem pediu", `${escapar(por.nome || p.solicitado_por || "—")}${por.propria ? ` <span class="etq azul">a própria pessoa</span>` : ""}${por.como
+      ? `<small>${escapar(por.como)}</small>` : ""}`],
+    ["Obra", p.obra_pedida ? `<b>${escapar(p.obra_pedida.codigo)}</b> ${escapar(p.obra_pedida.nome || "")}${p.obra_cadastro && p.obra_cadastro !== p.obra_pedida.codigo
+        ? ` <small style="display:inline; color:var(--ambar)">(a do cadastro é ${escapar(p.obra_cadastro)})</small>` : ""}`
+      : `<span class="suave">não escolhida no pedido</span>${p.obra_cadastro ? ` — a do cadastro é <b>${escapar(p.obra_cadastro)}</b>` : ""}`],
     ["Quando pediu", escapar(quando(p.criado_em))],
     ["Motivo", escapar(p.descricao || "—")],
   ];
@@ -3930,6 +4029,57 @@ fcFiltros(null);
 els("fc-ver").addEventListener("click", fcCarregar);
 els("fc-busca").addEventListener("keydown", e => { if (e.key === "Enter") fcCarregar(); });
 fcCarregar();
+
+{% elif aba_ponto == "ponto_pessoas" %}
+// ===========================================================================
+// PESSOAS — a lista, com a foto de cadastro de cada um (voltou em 28/10/2026). Clicar abre
+// a janela da pessoa na aba Cadastro, onde se troca a foto.
+// ===========================================================================
+const FP_PE = new FiltroPessoas("pe", {aoEnter: () => carregarPessoas()});
+let PESSOAS = [], PE_FORA = [];
+async function carregarPessoas() {
+  const q = new URLSearchParams(FP_PE.parametros());
+  const busca = FP_PE.valores().busca;
+  if (busca) q.set("busca", busca);
+  if (els("pe-todos").checked) q.set("todos", "1");
+  els("pe-corpo").innerHTML = `<tr><td colspan="8">carregando…</td></tr>`;
+  try { const d = await api(`/erp/api/ponto/pessoas?${q}`); PESSOAS = d.pessoas; PE_FORA = d.fora_da_lista || []; }
+  catch (e) { falhou(e); return; }
+  desenharPessoas();
+}
+function desenharPessoas() {
+  const fotos = [...document.querySelectorAll("[data-pe-foto]:checked")].map(x => x.dataset.peFoto);
+  const lista = PESSOAS.filter(p => !fotos.length || fotos.includes(p.tem_foto_cadastral ? "COM" : "SEM"));
+  const sem = PESSOAS.filter(p => !p.tem_foto_cadastral).length;
+  els("pe-sub").textContent = `${contar(lista.length, "pessoa", "pessoas")}${sem ? ` · ${sem} sem foto de cadastro` : ""}`;
+  els("pe-fora").classList.toggle("oculto", !PE_FORA.length);
+  els("pe-fora").innerHTML = PE_FORA.length ? `<b>Fora da lista, com essa busca:</b><ul style="margin:6px 0 0 18px">${PE_FORA.map(x =>
+    `<li>${escapar(x.nome)}${x.cpf_final ? ` <small style="display:inline">CPF final ${escapar(x.cpf_final)}</small>` : ""} — ${escapar(x.motivo)}</li>`).join("")}</ul>` : "";
+  els("pe-vazio").classList.toggle("oculto", lista.length > 0);
+  els("pe-vazio").innerHTML = `<b>Ninguém</b>com estes filtros.`;
+  els("pe-corpo").innerHTML = lista.map(p => `<tr style="cursor:pointer" data-pessoa="${p.id}">
+    <td>${p.tem_foto_cadastral ? `<img class="pe-foto" loading="lazy" alt="" src="/erp/api/ponto/pessoas/${p.id}/foto-cadastral"
+        onerror="fotoQuebrada(this)">` : `<span class="pe-foto sem">sem foto</span>`}</td>
+    <td>${eloPessoa(p.id, p.nome)} ${marcasHtml(p.etiquetas, true)}${!p.ativo_no_ponto ? `<small>não bate ponto</small>` : ""}
+      ${p.situacao && p.situacao !== "ATIVO" ? `<small>${escapar(rotulo(p.situacao))}</small>` : ""}</td>
+    <td>${p.funcao ? escapar(p.funcao) : `<span class="suave">—</span>`}</td>
+    <td class="dados">${p.obra_principal ? escapar(p.obra_principal.codigo) : `<span class="suave">—</span>`}</td>
+    <td class="dados">${(p.obras_batidas || []).map(c => `<span style="${p.obra_principal && c !== p.obra_principal.codigo
+        ? "color:var(--ambar); font-weight:700" : ""}">${escapar(c)}</span>`).join(", ") || `<span class="suave">—</span>`}</td>
+    <td>${p.escala ? `${escapar(p.escala)}${p.escala_e_padrao ? `<small>padrão da empresa</small>` : ""}` : `<span class="selo aguardando">sem escala</span>`}</td>
+    <td>${escapar(p.regime_banco_rotulo || "—")}</td>
+    <td>${p.tem_pin ? `<span class="selo aprovado">sim</span>` : `<span class="selo outro">não</span>`}</td></tr>`).join("");
+  els("pe-corpo").querySelectorAll("[data-pessoa]").forEach(tr => tr.addEventListener("click", ev => {
+    if (ev.target.closest("[data-abrir-pessoa]")) return;           // o nome já abre (no Dia)
+    abrirPessoaPainel(Number(tr.dataset.pessoa), null, "cadastro"); }));
+}
+els("pe-ver").addEventListener("click", carregarPessoas);
+els("pe-todos").addEventListener("change", carregarPessoas);
+document.querySelectorAll("[data-pe-foto]").forEach(x => x.addEventListener("change", desenharPessoas));
+FP_PE.carregar().then(carregarPessoas);
+// O endereço antigo (/erp/ponto/pessoas?pessoa=N) abre a pessoa por cima da lista.
+(() => { const id = new URLSearchParams(location.search).get("pessoa");
+  if (id && /^\d+$/.test(id)) abrirPessoaPainel(Number(id), null, "cadastro"); })();
 
 {% elif aba_ponto == "ponto_mosaico" %}
 // ===========================================================================

@@ -94,6 +94,7 @@ def da_pessoa(conn: Connection, quem: Quem, colaborador_id: int, data=None, comp
     pedidos = ocorrencias.listar(conn, quem, colaborador_id=colaborador_id, limite=60)
     for p in pedidos:
         p["decidir_em"] = decidir_em(p) if p.get("pode_decidir") else None
+        p["pedido_por"] = ocorrencias.pedido_por(p.get("origem"), p.get("solicitado_por"), p.get("colaborador"))
     return {
         "data": dia.isoformat(), "dia": d,
         "no_aparelho_dela": _no_aparelho_dela(conn, quem, colaborador_id, dia),

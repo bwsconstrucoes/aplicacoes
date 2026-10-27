@@ -125,9 +125,14 @@ def test_quem_pediu_le_o_texto_gravado():
     assert pedido_por("APP", "Maria Lima (pelo celular)", "Maria Lima") == {
         "nome": "Maria Lima", "como": "pelo celular", "propria": True, "texto": "Maria Lima (pelo celular)"}
     tablet = pedido_por("APARELHO", "Maria Lima — no aparelho Tablet AP-01", "Maria Lima")
-    assert tablet["propria"] and tablet["como"] == "no aparelho Tablet AP-01"
+    assert tablet["propria"] and tablet["como"] == "no aparelho “Tablet AP-01”"
     por_outro = pedido_por("APARELHO", "no aparelho Tablet AP-01 — lançado por Carlos Souza", "Maria Lima")
-    assert por_outro["nome"] == "Carlos Souza" and por_outro["como"] == "no aparelho Tablet AP-01" and not por_outro["propria"]
+    assert por_outro["nome"] == "Carlos Souza" and por_outro["como"] == "no aparelho “Tablet AP-01”" and not por_outro["propria"]
+    # o aparelho com o nome do pedido de aprovação não repete o nome (28/10/2026)
+    jordao = pedido_por("APARELHO", "no aparelho Pedido por JORDAO NUNES (CPF final 400) — lançado por JORDAO NUNES", "Maria")
+    assert jordao["nome"] == "JORDAO NUNES" and jordao["como"] == "no próprio aparelho"
+    outro = pedido_por("APARELHO", "Maria Lima — no aparelho Pedido por CARLOS SOUZA (CPF final 436)", "Maria Lima")
+    assert outro["propria"] and outro["como"] == "no aparelho de CARLOS SOUZA"
     resp = pedido_por("RESPONSAVEL", "Carlos Souza (responsável, pelo aplicativo)", "Maria Lima")
     assert not resp["propria"] and "Carlos Souza" in resp["nome"]
     assert pedido_por("GESTAO", "Ana do DP", "Maria Lima")["como"] == "pelo ERP"
