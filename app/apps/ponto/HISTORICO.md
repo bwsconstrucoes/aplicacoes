@@ -340,6 +340,23 @@ junto com o `README.md` e o `PLANO.md`.
 
 ## 28/10/2026 (tarde) — Pessoas voltou, a foto de cadastro na janela, e o pedido que não dizia a obra
 
+- **O quanto cada ajuste é crível** (`core/credibilidade.py`; o dono: *"a quantidade de solicitações de
+  ajuste ainda é muito alta (…) o sistema sugerir entre ajustes mais críveis e outros que merecem mais
+  atenção (…) um ponto pedido pelo administrativo da obra é mais confiável; uma única batida faltando de
+  quem tem as outras na obra também; problemas com foto, de localização pedem atenção (…) selecionar um
+  bloco grande e validar"*). Cada pedido de ajuste ganha um nível e os motivos, escritos:
+  - **Crível ✅**: nada pede atenção e há um sinal forte — pedido por outra pessoa (o responsável, o
+    administrativo, a gestão) ou só aquela batida faltando num dia em que as outras foram batidas —, e a
+    hora casa com a escala (até 30 min).
+  - **Pede atenção ⚠️**: dia sem batida nenhuma; foto do dia que não conferiu; batida do dia em
+    conferência; tentativa de bater fora da área da obra no dia; obra pedida diferente da das batidas do
+    dia; hora a mais de 1h30 da escala; descanso ou feriado; pedido mais de 7 dias depois; 6 dias ou mais
+    com ajuste em 30 dias; pedido negado nos últimos 30 dias. As batidas em conferência entram aqui.
+  - **Normal ⚪**: o resto (por exemplo, duas batidas faltando, pedidas pela própria pessoa).
+  - Na barra das Validações, "Confiança do ajuste" filtra por nível, e **"Marcar todos os críveis da
+    lista"** marca o bloco para aprovar de uma vez. O grupo do mesmo dia mostra o pior nível dele.
+  - É **sugestão**: só filtra e marca; quem aprova continua sendo uma pessoa, com os motivos à vista. Os
+    limites (30 min, 1h30, 7 dias, 6 dias) estão no começo do arquivo, para afinar com o uso.
 - **Todas as telas voltaram ao menu** (o dono: *"as telas que foram ocultadas precisam voltar"*): Quadro,
   Pessoas, **Espelho** (a tela de antes, com a tabela nova — a mesma da janela da pessoa: a batida que
   falta em vermelho, cada batida abre a janela de decidir e corrigir), Validações, Hoje, Mosaico, Fotos de

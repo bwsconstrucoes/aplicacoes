@@ -19,6 +19,7 @@ do DP.
 from __future__ import annotations
 
 import datetime as dt
+import logging
 from collections import Counter
 from typing import Optional
 
@@ -28,6 +29,8 @@ from .. import db, horario
 from ..erros import ErroDeValidacao
 from . import dispositivos, leitura_atestado, mosaico, ocorrencias, validacao
 from .ocorrencias import Quem
+
+logger = logging.getLogger("ponto.validacoes")
 
 ROTULO = {"BATIDA_EM_ANALISE": "Batida em conferência", "MOSAICO": "Mosaico sem conferência",
           "APARELHO": "Aparelho esperando aprovação", "RENOVAR": "Aparelho a renovar ou desativar"}
@@ -227,10 +230,25 @@ def listar(conn: Connection, quem: Quem, *, obra_id: Optional[int] = None, de=No
                 "pode_decidir": True, "desde": None, "dias_esperando": None,
             })
 
+    # O QUANTO CADA AJUSTE É CRÍVEL (28/10/2026, credibilidade.py): sugestão para ordenar e filtrar
+    # a fila — os críveis se aprovam em bloco, os de atenção se olham com calma.
+    from . import credibilidade
+    try:
+        niveis = credibilidade.avaliar(conn, [i for i in itens if i["categoria"] == "PEDIDO"])
+    except Exception:  # noqa: BLE001 — sem a sugestão, a fila continua como era
+        logger.exception("Ponto: a credibilidade dos ajustes falhou; a fila segue sem ela")
+        niveis = {}
+    for i in itens:
+        if i["categoria"] == "PEDIDO" and i["id"] in niveis:
+            i["credibilidade"] = niveis[i["id"]]
+        elif i["categoria"] == "BATIDA":
+            i["credibilidade"] = {"nivel": credibilidade.ATENCAO, "a_favor": [],
+                                  "atencao": [f"batida em conferência: {i.get('detalhe') or 'motivo não informado'}"]}
     if so_minhas:
         itens = [i for i in itens if i["pode_decidir"]]
     itens.sort(key=lambda i: (i["dias_esperando"] is None, -(i["dias_esperando"] or 0), i.get("data") or ""))
     contagem = Counter(i["tipo"] for i in itens)
     return {"itens": itens, "quantidade": len(itens), "por_tipo": dict(contagem),
+            "por_nivel": dict(Counter((i.get("credibilidade") or {}).get("nivel") or "OUTROS" for i in itens)),
             "minhas": sum(1 for i in itens if i["pode_decidir"]),
             "regra": validacao.ler(conn)}

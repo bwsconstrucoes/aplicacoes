@@ -176,6 +176,12 @@
     <select id="v-obra"><option value="">Todas</option></select></div>
   <h3 class="qd-grupo">O quê</h3>
   <div id="v-tipos" class="v-tipos-lado"></div>
+  {# O QUANTO O AJUSTE É CRÍVEL (28/10/2026, credibilidade.py): os críveis se aprovam em bloco. #}
+  <h3 class="qd-grupo">Confiança do ajuste</h3>
+  <div id="v-niveis" class="qd-marcas"></div>
+  <button class="btn secundario" id="v-marcar-criveis" type="button" style="width:100%; margin-top:6px"
+          title="Marca, na lista que está na tela, todos os críveis que você pode aprovar">✅ Marcar todos os críveis da lista</button>
+  <small class="suave" style="display:block; margin-top:4px">É sugestão do sistema: confira os motivos de cada um antes de aprovar.</small>
   {{ filtro_pessoas("v", com_busca=False) }}
   <div class="cartao-dica" style="margin-top:14px">Com algum filtro de funcionário escolhido, ficam só os
     itens dessas pessoas (o que não é de uma pessoa, como o mosaico da obra, sai da lista).</div>
@@ -3634,7 +3640,38 @@ const FILTRO = {
   // Sem nada no endereço, o padrão sai da primeira carga: ligado para quem
   // decide alguma coisa.
   soMinhas: doUrl("so_minhas") === null ? null : doUrl("so_minhas") === "1",
+  niveis: new Set(),
 };
+// A confiança do ajuste (28/10/2026): o nível, o ícone e a cor. Sem nível (atestado, aparelho…) = "OUTROS".
+const NIVEL_AJUSTE = {CRIVEL: ["✅", "Crível", "verde"], NORMAL: ["⚪", "Normal", "cinza"], ATENCAO: ["⚠️", "Pede atenção", "ambar"],
+                      OUTROS: ["", "Outros pedidos", ""]};
+const nivelDoItem = i => (i.credibilidade && i.credibilidade.nivel) || "OUTROS";
+const ORDEM_NIVEL = ["ATENCAO", "NORMAL", "CRIVEL", "OUTROS"];
+function seloDoNivel(i) {
+  const c = i.credibilidade;
+  if (!c) return "";
+  const [ic, rot, cor] = NIVEL_AJUSTE[c.nivel] || ["", c.nivel, ""];
+  const dica = [...(c.a_favor || []).map(t => `+ ${t}`), ...(c.atencao || []).map(t => `! ${t}`)].join("\n");
+  return `<span class="etq ${cor}" title="${escapar(dica)}" style="margin-top:4px; display:inline-block">${ic} ${escapar(rot)}</span>`;
+}
+function motivosDoNivel(c) {
+  if (!c) return "";
+  return `${(c.atencao || []).map(t => `<small style="color:#8A5A00">⚠️ ${escapar(t)}</small>`).join("")}
+    ${(c.a_favor || []).map(t => `<small style="color:var(--verde)">✔ ${escapar(t)}</small>`).join("")}`;
+}
+function desenharNiveis() {
+  const base = (VAL.itens || []).filter(i => (!FILTRO.soMinhas || i.pode_decidir) && (!FILTRO.tipos.size || FILTRO.tipos.has(i.tipo)));
+  const conta = {};
+  base.forEach(i => { const n = nivelDoItem(i); conta[n] = (conta[n] || 0) + 1; });
+  els("v-niveis").innerHTML = ["CRIVEL", "NORMAL", "ATENCAO", "OUTROS"].filter(n => conta[n] || FILTRO.niveis.has(n)).map(n => {
+    const [ic, rot] = NIVEL_AJUSTE[n];
+    return `<label class="opcao"><input type="checkbox" data-nivel="${n}" ${FILTRO.niveis.has(n) ? "checked" : ""}>
+      <span class="rotulo">${ic} ${escapar(rot)} <span class="qtd">${conta[n] || 0}</span></span></label>`; }).join("")
+    || `<small class="suave">nada na lista</small>`;
+  els("v-niveis").querySelectorAll("[data-nivel]").forEach(c => c.addEventListener("change", () => {
+    c.checked ? FILTRO.niveis.add(c.dataset.nivel) : FILTRO.niveis.delete(c.dataset.nivel);
+    desenharValidacoes(); }));
+}
 const MARCADOS = new Set();
 
 function esperandoTexto(d) {
@@ -3695,7 +3732,8 @@ async function carregarValidacoes() {
 
 function itensVisiveis() {
   return (VAL.itens || []).filter(i => (!FILTRO.soMinhas || i.pode_decidir)
-    && (!FILTRO.tipos.size || FILTRO.tipos.has(i.tipo)));
+    && (!FILTRO.tipos.size || FILTRO.tipos.has(i.tipo))
+    && (!FILTRO.niveis.size || FILTRO.niveis.has(nivelDoItem(i))));
 }
 
 function desenharTipos() {
@@ -3799,16 +3837,20 @@ function linhaDoGrupo(g, ms) {
   const motivos = unicos(ms.map(m => m.detalhe));
   const esperando = Math.max(...ms.map(m => m.dias_esperando || 0));
   const batidas = p0.categoria === "BATIDA";
+  const pior = ms.map(nivelDoItem).sort((a, b) => ORDEM_NIVEL.indexOf(a) - ORDEM_NIVEL.indexOf(b))[0];
+  const atencoes = unicos(ms.flatMap(m => (m.credibilidade && m.credibilidade.atencao) || []));
   return `<tr class="v-grupo">
     <td data-rotulo="">${lote.length ? `<input type="checkbox" data-marcar-grupo="${escapar(g)}" ${todos ? "checked" : ""}
         title="Marcar as ${n} para aprovar em lote">` : ""}</td>
-    <td data-rotulo="Tipo"><span class="selo ${SELO_CATEGORIA[p0.categoria] || "outro"}">${escapar(batidas ? "Batidas em conferência" : (p0.rotulo || "Ajuste de batida"))} × ${n}</span></td>
+    <td data-rotulo="Tipo"><span class="selo ${SELO_CATEGORIA[p0.categoria] || "outro"}">${escapar(batidas ? "Batidas em conferência" : (p0.rotulo || "Ajuste de batida"))} × ${n}</span>
+      ${seloDoNivel({credibilidade: {nivel: pior, a_favor: [], atencao: atencoes}})}</td>
     <td data-rotulo="Pessoa">${eloPessoa(p0.colaborador_id, p0.pessoa, p0.data)}</td>
     <td data-rotulo="Pedido por">${unicos(ms.map(pedidoPorTexto)).join("<br>")}</td>
     <td data-rotulo="Obra" class="dados">${escapar(unicos(ms.map(m => m.obra)).join(", ") || "—")}</td>
     <td data-rotulo="Quando" class="dados"><b>${escapar(dataBR(p0.data))}</b>
       <div>${ms.map(m => `<span class="chip">${escapar(horaDoItem(m) || "?")}</span>`).join("")}</div></td>
-    <td data-rotulo="Detalhe" class="desc">${motivos.length ? motivos.map(escapar).join("<br>") : "—"}</td>
+    <td data-rotulo="Detalhe" class="desc">${motivos.length ? motivos.map(escapar).join("<br>") : "—"}
+      ${atencoes.map(t => `<small style="color:#8A5A00">⚠️ ${escapar(t)}</small>`).join("")}</td>
     <td data-rotulo="Esperando">${esperandoTexto(esperando)}</td>
     <td data-rotulo="Quem valida">${quemValidaTexto(p0)}</td>
     <td data-rotulo=""><div class="acoes">${decide ? `<button class="btn" type="button" data-grupo-acao="aprovar" data-g="${escapar(g)}">${batidas ? "Validar" : "Aprovar"} as ${n}</button>
@@ -3846,6 +3888,7 @@ async function decidirOGrupo(ms, sim) {
 
 function desenharValidacoes() {
   desenharTipos();
+  desenharNiveis();
   const lista = itensVisiveis();
   els("v-so-minhas").checked = !!FILTRO.soMinhas;
   els("v-minhas").textContent = `(${VAL.minhas || 0})`;
@@ -3866,12 +3909,13 @@ function desenharValidacoes() {
     return `<tr data-linha="${k}" ${g ? `class="v-filho" data-grupo="${escapar(g)}" ${GRUPOS_ABERTOS.has(g) ? "" : "hidden"}` : ""}>
       <td data-rotulo="">${emLote(i) ? `<input type="checkbox" data-marcar="${k}" ${MARCADOS.has(chaveDoItem(i)) ? "checked" : ""}
           title="Marcar para aprovar em lote">` : ""}</td>
-      <td data-rotulo="Tipo"><span class="selo ${SELO_CATEGORIA[i.categoria] || "outro"}">${escapar(i.rotulo || TIPOS_VAL[i.tipo] || i.tipo)}</span></td>
+      <td data-rotulo="Tipo"><span class="selo ${SELO_CATEGORIA[i.categoria] || "outro"}">${escapar(i.rotulo || TIPOS_VAL[i.tipo] || i.tipo)}</span>
+        ${seloDoNivel(i)}</td>
       <td data-rotulo="Pessoa">${pessoa}</td>
       <td data-rotulo="Pedido por">${pedidoPorTexto(i)}</td>
       <td data-rotulo="Obra" class="dados">${escapar(i.obra || "—")}</td>
       <td data-rotulo="Quando" class="dados">${escapar(i.categoria === "APARELHO" ? quando(i.quando) : (i.quando || "—"))}</td>
-      <td data-rotulo="Detalhe" class="desc">${detalheDoItem(i)}</td>
+      <td data-rotulo="Detalhe" class="desc">${detalheDoItem(i)}${motivosDoNivel(i.credibilidade)}</td>
       <td data-rotulo="Esperando">${esperandoTexto(i.dias_esperando)}</td>
       <td data-rotulo="Quem valida">${quemValidaTexto(i)}</td>
       <td data-rotulo="">${acoesDoItem(i)}</td></tr>
@@ -4124,9 +4168,17 @@ els("v-so-minhas").addEventListener("change", () => {
 });
 els("v-limpar").addEventListener("click", () => {
   els("v-obra").value = ""; els("v-de").value = ""; els("v-ate").value = ""; els("v-busca").value = "";
-  FILTRO.tipos.clear();
+  FILTRO.tipos.clear(); FILTRO.niveis.clear();
   FP_V.limpar();
   carregarValidacoes();
+});
+// Um bloco grande de uma vez (28/10/2026): todos os críveis da lista na tela, que dá para aprovar em lote.
+els("v-marcar-criveis").addEventListener("click", () => {
+  const criveis = itensVisiveis().filter(i => emLote(i) && nivelDoItem(i) === "CRIVEL");
+  criveis.forEach(i => MARCADOS.add(chaveDoItem(i)));
+  desenharValidacoes();
+  aviso("mensagem", criveis.length ? `${contar(criveis.length, "ajuste crível marcado", "ajustes críveis marcados")} — confira e aperte
+    “Aprovar / validar selecionados”, no alto.` : "Nenhum ajuste crível que você possa aprovar na lista.", criveis.length ? "ok" : "info");
 });
 els("v-todos").addEventListener("change", () => {
   const ligar = els("v-todos").checked;

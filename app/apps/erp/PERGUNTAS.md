@@ -274,6 +274,8 @@ dizer "tem batida"; presença, horas e faltas são regra da fase 3.
 - Quais vigias estão sem ronda surpresa ligada, ou sem celular liberado? 🔒 (Quadro › Tipo de pessoa › "Vigia com pendência"; "vigia" = jornada de vigia no ponto ou função com VIGIA no cadastro)
 - Quantas horas foram abonadas por declaração de comparecimento este mês? 🔒 ⚠️ (Relatórios › Ausências justificadas: "horas abonadas" — só as aprovadas com "só o período"; as de "o dia todo" contam como dia; as de "nada" ficam registradas e não abonam; CID e documento só para o DP)
 - O Fulano entregou declaração e faltou o resto do dia — foi descontado? 🔒 (o dia mostra a declaração e a escolha do DP: "só o período" desconta o resto; "o dia todo" abona; "nada" desconta tudo)
+- Quantos ajustes de batida estão esperando, e quantos são críveis? 🔒 ⚠️ (Validações › Confiança do ajuste; "crível" é a sugestão do sistema, com os motivos — não é aprovação)
+- Por que o ajuste do Fulano está pedindo atenção? 🔒 (os motivos aparecem na linha do pedido: dia sem batida, foto, fora da área, obra diferente, longe da escala, pedido tardio, muitos ajustes, negado recente)
 - Quais batidas foram corrigidas pelo DP (obra ou hora), por quem e por quê? 🔒 (a corrigida é AJUSTADA com `marcacao_origem_id`; a original fica REJEITADA, com "corrigida (X às HH:MM → Y às HH:MM): motivo" em `marcacao_decisoes`)
 - Quantas batidas o Fulano bateu na obra errada este mês? 🔒 ⚠️ ("obra errada" = batidas corrigidas de obra pelo DP; a que ninguém corrigiu não aparece)
 - Por que o Fulano está "em observação" na conferência do rosto? 🔒 (a janela da pessoa › Conferência do rosto: a frase do nível e as últimas conferências)
