@@ -59,11 +59,11 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
-1zt. **No ramo, esperando o "pode"** (27/10/2026, noite, sem migração) — o **ponto da obra** com o que o dono
+1zt. **Publicado em 27/10/2026, junto com a 1zs** (com o "pode" do dono; sem migração) — o **ponto da obra** com o que o dono
    aprovou: a **busca pelo nome** (foto pequena, sem CPF, só com o responsável conectado), a **volta para a
    batida em 5 minutos** (conectado; sair dela depois disso pede o PIN) e o **som e a vibração** da batida.
-   Ver a seção de 27/10/2026 (noite). Vai junto com a 1zs.
-1zs. **No ramo, esperando o "pode"** (27/10/2026, sem migração) — a **declaração de comparecimento**, com a
+   Ver a seção de 27/10/2026 (noite).
+1zs. **Publicado em 27/10/2026, junto com a 1zt** (com o "pode" do dono; sem migração) — a **declaração de comparecimento**, com a
    escolha do abono na aprovação (o dia todo, só o período, nada). Ver a seção de 27/10/2026 (tarde).
 1zr. **Publicado em 27/10/2026, junto com a 1zq** (com o "pode" do dono: "ao final de tudo, pode publicar"; sem
    migração) — **menos telas e um filtro só**: no menu, só **Quadro, Validações, Relatórios e Configuração**; o
