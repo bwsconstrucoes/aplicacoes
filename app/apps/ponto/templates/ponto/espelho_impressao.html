@@ -80,6 +80,10 @@
   .assinaturas small { display: block; color: #5A6883; font-size: 9px; }
   footer { margin-top: 8mm; font-size: 8.4px; color: #5A6883; display: flex; justify-content: space-between;
            gap: 10px; border-top: 1px solid #D9DFEA; padding-top: 4px; }
+  .barra button.voltar { background: #fff; color: #12385C; border: 1px solid #C9D3E3; }
+  /* No celular (o espelho aberto pelo aplicativo, 28/10/2026): a folha A4 inteira, reduzida
+     para caber na largura — sem rolar para o lado. Só na tela; o papel sai em tamanho normal. */
+  @media screen { .folha, .barra { zoom: var(--zoom, 1); } .barra { flex-wrap: wrap; } }
   @media print {
     html, body { background: #fff; }
     .barra { display: none; }
@@ -96,7 +100,10 @@
 </head>
 <body>
 <div class="barra">
-  <button type="button" onclick="window.print()">Imprimir</button>
+  {%- if do_aplicativo %}
+  <button type="button" class="voltar" onclick="history.length > 1 ? history.back() : location.assign('/ponto/app')">‹ Voltar</button>
+  {%- endif %}
+  <button type="button" onclick="window.print()">Imprimir ou salvar em PDF</button>
   <span>Para guardar em PDF, escolha "Salvar como PDF" no lugar da impressora.</span>
 </div>
 
@@ -195,5 +202,14 @@
     <span>Batidas originais preservadas; ajustes aparecem marcados (Portaria 671/2021).</span>
   </footer>
 </div>
+<script>
+  (function () {
+    var largura = 820;
+    if (window.innerWidth < largura) document.documentElement.style.setProperty("--zoom", (window.innerWidth / largura).toFixed(3));
+    {%- if imprimir_ja %}
+    window.addEventListener("load", function () { setTimeout(function () { window.print(); }, 300); });
+    {%- endif %}
+  })();
+</script>
 </body>
 </html>

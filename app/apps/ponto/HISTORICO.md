@@ -59,6 +59,11 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1zw. **No ramo, esperando o "pode" (28/10/2026, noite; sem migração)** — o **espelho do ponto no aplicativo**,
+   como o dono aprovou na prévia: o seu e o de uma pessoa da obra, com o PDF. Ver a seção de 28/10/2026 (noite).
+1zv. **Publicado em 28/10/2026 (tarde)** (com o "pode" do dono; sem migração; `74bff51`) — Pessoas de volta
+   com a foto de cadastro, todas as telas de volta ao menu, as Validações agrupadas por pessoa e dia, a barra
+   fixa, a troca da foto no mosaico e o quanto cada ajuste é crível. Ver a seção de 28/10/2026 (tarde).
 1zu. **Publicado em 28/10/2026** (com o "pode" do dono; sem migração) — as anotações do dono sobre a
    Configuração, o espelho e a conferência do rosto: filtros na barra lateral com várias obras e funções;
    o espelho DENTRO da janela da pessoa (as telas Espelho e Pessoas saíram); corrigir a obra ou a hora de
@@ -337,6 +342,41 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 28/10/2026 (noite) — O espelho do ponto no aplicativo
+
+O dono pediu, antes de fazer, para ver em tela: *"gerar o espelho do ponto das pessoas (…) na parte do
+aplicativo, tanto do meu (…) quanto de outras pessoas também, quando permitido, né, pessoal que tem ponto de
+obra (…) me diz onde é que ficaria"*. A prévia (duas imagens: onde tocar e a tela) foi aprovada com
+*"ok para todas as perguntas"*, o que fechou as quatro escolhas abaixo.
+
+- **Três portas, uma tela só** (`#tela-espelho` no `app.html`):
+  1. no menu inicial, a opção **"📄 Espelho do ponto"** (no celular da pessoa e no "Meu ponto" do ponto da obra);
+  2. no **Meu mês**, o botão "📄 Ver o espelho do mês";
+  3. na folha de uma pessoa da obra (Consultar o ponto › a pessoa), o botão "📄 Espelho do ponto".
+- **A tela**: o cabeçalho (nome, CPF só pelo final, função, obra, escala, empregador, e "mês aberto" quando
+  for o caso), a troca de mês, os seis números (trabalhado, previsto, extra, débito, faltas, abonado) e os
+  dias em três colunas — o dia, as batidas em pares, a situação e as horas. A falta em vermelho com
+  "nenhuma batida"; a batida que a escala esperava e não veio em vermelho tracejado; ✎ na incluída por
+  ajuste; ⏳ na que está em conferência ou no pedido esperando validação. Os dias antes de 16/10/2026 não
+  aparecem (o ponto começa ali).
+- **O PDF é a MESMA folha do DP** (`espelho_impressao.html`), aberta por duas rotas novas do aplicativo:
+  `/ponto/app/espelho/imprimir` (o meu) e `/ponto/app/equipe/<id>/espelho/imprimir` (o de outra pessoa).
+  "Baixar o espelho (PDF)" abre a folha já com o "Imprimir/Salvar como PDF" do celular; "Imprimir" abre a
+  folha. Na folha, o **CPF inteiro** (é a que se assina); na tela, só o final — escolha do dono.
+- **Quem vê o de quem**: o de outra pessoa segue o MESMO alcance da consulta que já existia — o responsável
+  e o administrativo, só de quem é da obra ou bateu nela; no ponto da obra, só da pessoa consultada pelo CPF
+  agora há pouco. Fora disso, "não encontrada", também na folha (uma página, não um texto técnico).
+- **Detalhes de execução, escolhidos sem perguntar:** no aplicativo instalado na tela inicial, a folha abre na
+  MESMA janela (no iPhone, uma janela nova perde o login) e tem "‹ Voltar"; no navegador comum, abre numa
+  aba nova. No celular, a folha A4 é reduzida para caber na largura (o papel sai no tamanho normal). O
+  "Algo errado? Pedir ajuste" volta ao mês, onde cada dia tem o ✏️ e o 🗓️ — e só aparece para quem pode
+  pedir. O toque num dia do espelho (ver a foto), que a prévia citava, ficou de fora: o Meu mês já faz isso.
+- **Testes**: `tests/test_ponto_espelho_app_banco.py` (o CPF pelo final na tela e inteiro na folha; o
+  alcance; a folha fora do alcance). Ensaio no navegador em tamanho de celular, com as três portas, a troca
+  de mês, a folha e a volta.
+- **O que não foi verificado**: a impressão de verdade num celular (o "Salvar como PDF" é do próprio
+  aparelho); no iPhone instalado na tela inicial, o "Imprimir" depende da versão do sistema.
 
 ## 28/10/2026 (tarde) — Pessoas voltou, a foto de cadastro na janela, e o pedido que não dizia a obra
 

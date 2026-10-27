@@ -22,7 +22,7 @@ import logging
 from flask import request, session
 
 from . import auth, db, horario
-from .app_colaborador import _corpo, _ok
+from .app_colaborador import _corpo, _ok, folha_do_espelho, folha_que_nao_abriu, pessoa_do_espelho
 from .core import cadastros, dispositivos, espelho, forma_de_bater, ocorrencias, papeis
 from .core.ocorrencias import Quem
 from .erros import ErroDeValidacao, NaoAutenticado, NaoEncontrado, Recusada
@@ -258,12 +258,29 @@ def app_api_equipe_mes(colaborador_id: int):
         competencia = request.args.get("competencia") or horario.hoje().strftime("%Y-%m")
         alvo = _alvo(conn, ctx, colaborador_id, competencias.primeiro_dia(competencia))
         esp = espelho.do_mes(conn, colaborador_id, competencia)
-    return _ok(pessoa={"id": alvo["id"], "nome": alvo["nome"], "funcao": alvo.get("funcao"),
-                       "obra": alvo.get("obra_codigo"), "cpf_final": alvo["cpf"][-3:],
-                       "tem_banco": alvo.get("regime_banco") not in (None, "SEM_BANCO")},
+    return _ok(pessoa=pessoa_do_espelho(alvo),
                competencia=esp["competencia"], resumo=esp["resumo"], dias=esp["dias"],
                competencia_fechada=esp["competencia_fechada"], pode_pedir=ctx.alcance.pode_pedir,
                obras=list(ctx.alcance.obras.values()), pelo_aparelho=ctx.pelo_aparelho)
+
+
+@bp.route("/app/equipe/<int:colaborador_id>/espelho/imprimir")
+@auth.exige_colaborador_ou_aparelho
+def app_equipe_espelho_imprimir(colaborador_id: int):
+    """O espelho de uma pessoa da obra para imprimir (28/10/2026): o mesmo alcance da
+    consulta — o responsável e o administrativo, só de quem é da obra ou bateu nela;
+    no ponto da obra, só da pessoa consultada pelo CPF agora há pouco."""
+    from .core import competencias
+    from .erros import ErroDoPonto
+    try:
+        with db.conexao() as conn:
+            ctx = _contexto(conn)
+            competencia = request.args.get("competencia") or horario.hoje().strftime("%Y-%m")
+            _alvo(conn, ctx, colaborador_id, competencias.primeiro_dia(competencia))
+            logger.info("Ponto: espelho de %s aberto para imprimir por %s", colaborador_id, ctx.pessoa["nome"])
+            return folha_do_espelho(conn, colaborador_id, ctx.pessoa["nome"])
+    except ErroDoPonto as e:
+        return folha_que_nao_abriu(e)
 
 
 def _quem_por_outro(conn, ctx: _Contexto, alvo_id: int) -> tuple[Quem, str]:

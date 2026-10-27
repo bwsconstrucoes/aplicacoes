@@ -37,7 +37,7 @@ from . import auth, db, horario
 from .core import (apuracao, banco, cadastros, competencias, dispositivos, envios, espelho, forma_de_bater,
                    fotos, marcacoes, acesso, ocorrencias, papeis, qr, recusas, sem_internet)
 from .core.ocorrencias import Quem
-from .erros import ErroDeValidacao, NaoAutenticado, NaoEncontrado, Recusada
+from .erros import ErroDeValidacao, ErroDoPonto, NaoAutenticado, NaoEncontrado, Recusada
 from .routes import bp
 
 logger = logging.getLogger("ponto.app")
@@ -538,8 +538,50 @@ def app_api_mes():
     with db.conexao() as conn:
         quem = _quem(conn)
         esp = espelho.do_mes(conn, quem.colaborador_id, request.args.get("competencia"))
-    return _ok(competencia=esp["competencia"], resumo=esp["resumo"], dias=esp["dias"],
+        eu = cadastros.colaborador_por_id(conn, quem.colaborador_id)
+    return _ok(pessoa=pessoa_do_espelho(eu) if eu else None,
+               competencia=esp["competencia"], resumo=esp["resumo"], dias=esp["dias"],
                competencia_fechada=esp["competencia_fechada"])
+
+
+def pessoa_do_espelho(p: dict) -> dict:
+    """O cabeçalho do espelho no aplicativo (28/10/2026): na tela, o CPF só com o final;
+    o completo vai só na folha para imprimir, que é a que se assina."""
+    return {"id": p["id"], "nome": p["nome"], "funcao": p.get("funcao"), "obra": p.get("obra_codigo"),
+            "obra_nome": p.get("obra_nome"), "cpf_final": (p.get("cpf") or "")[-3:],
+            "tem_banco": p.get("regime_banco") not in (None, "SEM_BANCO")}
+
+
+def folha_do_espelho(conn, colaborador_id: int, gerado_por: str):
+    """A folha do espelho para imprimir ou salvar em PDF — a MESMA que o DP imprime
+    no ERP (templates/ponto/espelho_impressao.html), aberta pelo aplicativo."""
+    esp = espelho.do_mes(conn, colaborador_id, request.args.get("competencia"))
+    return render_template("ponto/espelho_impressao.html", e=esp, do_aplicativo=True,
+                           imprimir_ja=request.args.get("imprimir") == "1",
+                           gerado_em=horario.para_local(horario.agora()).strftime("%d/%m/%Y %H:%M"),
+                           gerado_por=gerado_por)
+
+
+def folha_que_nao_abriu(erro: Exception):
+    """A folha é uma PÁGINA (não um JSON): o erro também volta como página, com o caminho de volta."""
+    from markupsafe import escape
+    status = getattr(erro, "status", 400)
+    return Response(f"""<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Espelho de ponto</title><body style="font-family:Arial,sans-serif;padding:24px;color:#14213A">
+<h2>Não foi possível abrir o espelho</h2><p>{escape(getattr(erro, "mensagem", str(erro)))}.</p>
+<p><a href="/ponto/app">‹ Voltar ao aplicativo</a></p></body>""", status=status, mimetype="text/html")
+
+
+@bp.route("/app/espelho/imprimir")
+@auth.exige_colaborador
+def app_espelho_imprimir():
+    """O meu espelho do mês, para imprimir ou guardar em PDF."""
+    try:
+        with db.conexao() as conn:
+            quem = _quem(conn)
+            return folha_do_espelho(conn, quem.colaborador_id, quem.nome)
+    except ErroDoPonto as e:
+        return folha_que_nao_abriu(e)
 
 
 @bp.route("/app/api/banco")

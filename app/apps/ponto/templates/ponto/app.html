@@ -77,6 +77,24 @@
   .selo.falta { background:#FBE6E4; color:var(--vermelho); }
   .selo.ok { background:#E3F3E8; color:var(--verde); }
   .selo.ambar { background:#FDF1DC; color:var(--ambar); }
+  .selo.azul { background:#E5EEF9; color:#1E5F94; }
+  /* O ESPELHO DO PONTO no aplicativo (28/10/2026): o mesmo do papel, dia a dia em três
+     colunas — o dia, as batidas, a situação e as horas. */
+  .cab-esp { font-size:13px; color:var(--suave); line-height:1.5; }
+  .cab-esp b { color:var(--tinta); }
+  .esp-dias { padding:10px 8px; }
+  .dl { display:grid; grid-template-columns:52px 1fr 118px; gap:8px; padding:9px 6px; border-bottom:1px solid #EEF1F6; align-items:start; }
+  .dl:last-of-type { border-bottom:0; }
+  .dl .dd { font-weight:800; font-size:14px; } .dl .dd small { display:block; font-weight:400; color:var(--suave); font-size:11px; }
+  .dl .db { font-family:ui-monospace,Menlo,monospace; font-size:13px; line-height:1.6; min-width:0; }
+  .dl .db .par { white-space:nowrap; display:block; }
+  .dl .ds { text-align:right; } .dl .ds small { display:block; font-size:11px; color:var(--suave); margin-top:3px; line-height:1.35; }
+  .dl.falta { background:#FDF0EE; box-shadow:inset 3px 0 0 var(--vermelho); border-radius:6px; }
+  .dl.desc { color:#9AA3B5; } .dl.abono { background:#EEF4FB; border-radius:6px; }
+  .dl .f { color:var(--vermelho); border:1px dashed var(--vermelho); border-radius:6px; padding:0 4px; font-size:11.5px; }
+  .dl .aj { color:#5B4B8A; font-weight:700; } .dl .an { color:var(--ambar); font-weight:700; }
+  .dl .pd { color:var(--ambar); border:1px dashed var(--ambar); border-radius:6px; padding:0 4px; font-size:11.5px; }
+  .mini { font-size:11.5px; color:var(--suave); }
   nav.abas { position:fixed; left:0; right:0; bottom:0; background:#fff; border-top:1px solid var(--borda);
              display:flex; padding-bottom:env(safe-area-inset-bottom); }
   nav.abas button { flex:1; background:none; border:0; padding:10px 4px; font-size:13px; color:var(--suave); }
@@ -318,8 +336,28 @@
       <div id="ps-resumo"></div>
       <button class="btn" id="ps-novo" type="button">Lançar atestado, licença ou compensação</button>
       <button class="btn sec" id="ps-varios" type="button">✏️ Corrigir vários dias</button>
+      <button class="btn sec" id="ps-espelho" type="button">📄 Espelho do ponto</button>
     </div>
     <div class="cartao"><div id="ps-dias"></div></div>
+  </section>
+
+  <!-- O ESPELHO DO PONTO (28/10/2026): o meu, ou o de uma pessoa da obra quando permitido -->
+  <section id="tela-espelho" class="oculto">
+    <div class="cartao">
+      <button class="link" id="esp-voltar" type="button">‹ Voltar</button>
+      <h2 id="esp-titulo" style="margin:4px 0 6px">Espelho do ponto</h2>
+      <div class="cab-esp" id="esp-cab"></div>
+      <div class="linha" style="margin-top:6px">
+        <button class="btn sec" id="esp-ant" type="button">‹</button>
+        <button class="btn sec" id="esp-prox" type="button">›</button>
+      </div>
+    </div>
+    <div class="cartao"><div id="esp-numeros"></div></div>
+    <div class="cartao esp-dias"><div id="esp-dias"><p>Carregando…</p></div></div>
+    <button class="btn" id="esp-pdf" type="button">📄 Baixar o espelho (PDF)</button>
+    <button class="btn sec" id="esp-imprimir" type="button">🖨 Imprimir</button>
+    <button class="btn sec oculto" id="esp-pedir" type="button">📝 Algo errado? Pedir ajuste</button>
+    <p class="pequeno" style="text-align:center">É o mesmo espelho que o DP imprime para assinar.</p>
   </section>
 
   <!-- INÍCIO -->
@@ -372,6 +410,7 @@
       <h2 id="mes-titulo" style="margin-top:12px">Meu mês</h2>
       <div id="mes-resumo"></div>
       <button class="btn sec oculto" id="mes-varios" type="button">✏️ Corrigir vários dias</button>
+      <button class="btn sec" id="mes-espelho" type="button">📄 Ver o espelho do mês</button>
     </div>
     <div class="cartao oculto" id="mes-qualidade"></div>
     <div class="cartao"><div id="mes-dias"></div></div>
@@ -712,18 +751,18 @@ async function garantirRegistro(descricao) {
 }
 
 // --- telas -----------------------------------------------------------------
-const TELAS = ["carregando", "entrar", "primeiro", "tablet", "menu", "equipe", "pessoa", "inicio", "mes", "pedidos"];
+const TELAS = ["carregando", "entrar", "primeiro", "tablet", "menu", "equipe", "pessoa", "espelho", "inicio", "mes", "pedidos"];
 function mostrar(tela) {
   if (tela !== "tablet" && typeof pararTablet === "function") pararTablet();
   TELAS.forEach(t => $("tela-" + t).classList.toggle("oculto", t !== tela));
   TELA_ATUAL = tela;
   const meu = ["inicio", "mes", "pedidos"].includes(tela);
-  const logado = meu || ["equipe", "pessoa"].includes(tela) || (tela === "menu" && !!(INICIO && INICIO.pessoa));
+  const logado = meu || ["equipe", "pessoa", "espelho"].includes(tela) || (tela === "menu" && !!(INICIO && INICIO.pessoa));
   $("abas").classList.toggle("oculto", !meu);
   $("btn-sair").classList.toggle("oculto", !logado);
   // "‹ Início" em toda tela, menos na própria tela inicial (08/10/2026: "volto
   // para a tela inicial, e dali eu vou para…").
-  $("btn-inicio").classList.toggle("oculto", !(meu || ["equipe", "pessoa", "primeiro"].includes(tela)
+  $("btn-inicio").classList.toggle("oculto", !(meu || ["equipe", "pessoa", "espelho", "primeiro"].includes(tela)
                                                  || (tela === "entrar" && ehDaObra())));
   document.querySelectorAll("nav.abas button").forEach(b => {
     const aqui = b.dataset.tela === tela;
@@ -2814,6 +2853,8 @@ async function abrirMenu() {
               acao: () => pedirQrPeloCpf()});
     ops.push({icone: "📅", titulo: `Meu ponto — ${p.primeiro_nome}`, sub: "o seu dia, o seu mês e os seus pedidos",
               acao: () => mostrar("inicio")});
+    ops.push({icone: "📄", titulo: "Espelho do ponto", sub: "o seu mês, como sai no papel — baixe em PDF",
+              acao: () => abrirEspelho(null)});
   } else {
     // 1. bater
     if (pode.bater_o_meu) ops.push({icone: "⏱", titulo: "Bater o meu ponto", sub: "com foto e localização", principal: true,
@@ -2833,6 +2874,8 @@ async function abrirMenu() {
       sub: alc.sem_alcance || "", desligada: true});
     // 4. o meu ponto e o meu QR
     if (p) ops.push({icone: "📅", titulo: "Meu ponto", sub: "o seu dia, o seu mês e os seus pedidos", acao: () => mostrar("inicio")});
+    if (p) ops.push({icone: "📄", titulo: "Espelho do ponto", sub: "o seu mês, como sai no papel — baixe em PDF",
+                     acao: () => abrirEspelho(null)});
     if (pode.meu_qr) ops.push({icone: "📲", titulo: "Meu QR Code", sub: "para bater no ponto da obra — ou receber no WhatsApp",
                                acao: () => mostrarMeuQr()});
   }
@@ -3013,6 +3056,125 @@ $("ps-prox").addEventListener("click", () => { EQ.mesAlvo = somarMes(EQ.mesAlvo,
 $("ps-novo").addEventListener("click", () => abrirPedidoPara(alvoAtual(), null));
 $("ps-varios").addEventListener("click", () => corrigirVariosDias(alvoAtual()));
 $("mes-varios").addEventListener("click", () => corrigirVariosDias(null));
+$("ps-espelho").addEventListener("click", () => abrirEspelho(EQ.alvo, EQ.mesAlvo, "pessoa"));
+$("mes-espelho").addEventListener("click", () => abrirEspelho(null, MES, "mes"));
+
+// --- o espelho do ponto (28/10/2026) -------------------------------------------------
+// O dono: "gerar o espelho do ponto das pessoas (…) na parte do aplicativo, tanto do meu
+// (…) quanto de outras pessoas também, quando permitido". O MESMO desenho para os dois; o
+// de outra pessoa segue o alcance da consulta (o responsável e o administrativo, só de
+// quem é da obra ou bateu nela). Na tela, o CPF só com o final; o PDF é a folha que o DP
+// imprime para assinar, com o CPF inteiro.
+const ESP = {alvo: null, mes: null, dados: null, volta: "menu"};
+function abrirEspelho(alvoId, mes, volta) {
+  ESP.alvo = alvoId || null;
+  ESP.mes = mes || hojeISO().slice(0, 7);
+  ESP.volta = volta || "menu";
+  mostrar("espelho");
+  $("titulo").textContent = "Espelho do ponto";
+  // vindo do menu, o "‹ Início" da barra do topo já é a volta
+  $("esp-voltar").classList.toggle("oculto", ESP.volta === "menu");
+  carregarEspelho();
+}
+const hhmm = m => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+function cpfParcial(final) {
+  const f = String(final || "");
+  return f.length === 3 ? `***.***.**${f[0]}-${f.slice(1)}` : "";
+}
+async function carregarEspelho() {
+  $("esp-dias").innerHTML = "<p>Carregando…</p>";
+  let d;
+  try {
+    d = ESP.alvo ? await chamar(comLocal(`/ponto/app/api/equipe/${ESP.alvo}/mes?competencia=${ESP.mes}`, await onde()))
+                 : await chamar(`/ponto/app/api/mes?competencia=${ESP.mes}`);
+  } catch (e) {
+    $("esp-dias").innerHTML = "";
+    if (e.status === 401) return ESP.alvo ? entrarPara("equipe") : mostrar("entrar");
+    return aviso(e.message, "erro");
+  }
+  ESP.dados = d;
+  const p = d.pessoa || {}, r = d.resumo;
+  const escala = [...d.dias].reverse().find(x => x.escala && x.situacao !== "FUTURO");
+  $("esp-titulo").textContent = `Espelho do ponto — ${nomeMes(d.competencia)}` + (d.competencia_fechada ? " (fechado)" : "");
+  $("esp-cab").innerHTML = `<b>${esc(p.nome || "")}</b>${p.cpf_final ? ` · CPF ${cpfParcial(p.cpf_final)}` : ""}<br>
+    ${esc([p.funcao, p.obra ? `obra ${p.obra}${p.obra_nome ? " " + p.obra_nome : ""}` : ""].filter(Boolean).join(" · "))}<br>
+    Escala: ${esc(escala ? escala.escala : "não cadastrada")}<br>Empregador: BWS Construções
+    ${d.competencia_fechada ? "" : `<br><span style="color:var(--ambar)">Mês aberto — os números ainda podem mudar.</span>`}`;
+  $("esp-ant").textContent = `‹ ${nomeMes(somarMes(ESP.mes, -1))}`;
+  $("esp-prox").textContent = `${nomeMes(somarMes(ESP.mes, 1))} ›`;
+  $("esp-prox").disabled = somarMes(ESP.mes, 1) > hojeISO().slice(0, 7);
+  const n = (v, rot, cor) => `<div class="numero"><b${cor ? ` style="color:var(--${cor})"` : ""}>${v}</b><span>${rot}</span></div>`;
+  $("esp-numeros").innerHTML = `<div class="numeros">
+      ${n(hm(r.trabalhado), "trabalhado")}${n(hm(r.previsto), "previsto")}${n(hm(r.extra), "extra", r.extra ? "verde" : "")}
+      ${n(hm(r.debito), "débito", r.debito ? "vermelho" : "")}${n(r.faltas, r.faltas === 1 ? "falta" : "faltas", r.faltas ? "vermelho" : "")}
+      ${n(r.abonados === 1 ? "1 dia" : `${r.abonados} dias`, "abonado")}</div>
+    ${r.sem_escala ? `<p class="pequeno">${ESP.alvo ? "A escala desta pessoa" : "Sua escala"} ainda não foi cadastrada em alguns dias; eles aparecem sem julgamento de falta.</p>` : ""}`;
+  const dias = d.dias.filter(x => !["FUTURO", "FORA_DO_CONTRATO", "ANTES_DO_PONTO"].includes(x.situacao));
+  const antes = d.dias.some(x => x.situacao === "ANTES_DO_PONTO");
+  $("esp-dias").innerHTML = (dias.map(x => linhaDoEspelhoApp(x, p)).join("") || "<p>Nada neste mês ainda.</p>")
+    + `<p class="mini" style="margin:8px 4px 0">✎ incluída por ajuste aprovado · <span class="f" style="color:var(--vermelho); border:1px dashed var(--vermelho); border-radius:6px; padding:0 4px">vermelho</span>
+       a batida que a escala esperava e não veio · ⏳ em conferência ou pedido esperando validação${
+       antes ? " · os dias antes do início do ponto eletrônico não aparecem." : "."}</p>`;
+  const podePedir = !d.competencia_fechada && (ESP.alvo ? !!d.pode_pedir : !!(EU && EU.pede_no_celular !== false));
+  $("esp-pedir").classList.toggle("oculto", !podePedir);
+}
+function linhaDoEspelhoApp(x, p) {
+  const [cls, rot] = SITUACAO[x.situacao] || ["", x.situacao];
+  const falta = x.situacao === "FALTA" && !x.ocorrencia;
+  const abono = !!x.ocorrencia || x.situacao === "ABONADO";
+  const desc = !falta && !abono && !x.batidas.length && (x.situacao === "DESCANSO" || !!x.feriado);
+  const horas = [
+    ...x.batidas.map(b => ({h: b.hora, t: b.status === "AJUSTADA" ? `<span class="aj" title="incluída por ajuste aprovado">${esc(b.hora)} ✎</span>`
+      : b.status === "EM_ANALISE" ? `<span class="an" title="em conferência — ainda não validada">⏳ ${esc(b.hora)}</span>` : esc(b.hora)})),
+    // no dia de falta, "nenhuma batida" diz tudo; nos outros, o horário que a escala esperava
+    ...(falta && !x.batidas.length ? [] : x.faltando)
+      .map(f => ({h: f.sugestao || hhmm(f.minuto), t: `<span class="f">${esc(f.sugestao || hhmm(f.minuto))} faltou</span>`})),
+    ...x.pendentes.filter(o => o.tipo === "AJUSTE_BATIDA" && o.hora)
+      .map(o => ({h: o.hora, t: `<span class="pd" title="ajuste pedido, esperando validação">⏳ ${esc(o.hora)}</span>`}))]
+    .sort((a, b) => a.h.localeCompare(b.h));
+  const pares = [];
+  for (let i = 0; i < horas.length; i += 2) pares.push(`<span class="par">${horas.slice(i, i + 2).map(h => h.t).join(" · ")}</span>`);
+  const batidas = pares.join("") || (falta ? `<span class="f">nenhuma batida</span>` : `<span class="mini">—</span>`);
+  const notas = [];
+  if (x.feriado) notas.push(esc(x.feriado));
+  (x.declaracoes || []).forEach(o => notas.push(esc(o.rotulo)));
+  const ajustadas = x.batidas.filter(b => b.status === "AJUSTADA").map(b => b.hora);
+  if (ajustadas.length) notas.push(`${esc(ajustadas.join(", "))} por ajuste aprovado`);
+  const outras = [...new Set(x.batidas.map(b => b.obra).filter(o => o && o !== p.obra))];
+  if (outras.length) notas.push(`batidas na obra ${esc(outras.join(", "))}`);
+  const alertas = x.alertas.filter(a => !["FALTA", "BATIDA_FALTANDO"].includes(a)).map(a => ROTULO_ALERTA[a] || a);
+  if (alertas.length) notas.push(esc(alertas.join(", ")));
+  const contas = [x.trabalhado ? `trab. <b>${hm(x.trabalhado)}</b>` : "",
+                  x.extra ? `<span style="color:var(--verde)">extra <b>${hm(x.extra)}</b></span>` : "",
+                  x.debito ? `<span style="color:var(--vermelho)">débito <b>${hm(x.debito)}</b></span>` : ""].filter(Boolean).join(" · ");
+  const selo = x.ocorrencia ? `<span class="selo azul">${esc(x.ocorrencia.rotulo)}</span>` : `<span class="selo ${cls}">${esc(rot)}</span>`;
+  return `<div class="dl${falta ? " falta" : abono ? " abono" : desc ? " desc" : ""}">
+    <div class="dd">${dataBR(x.data).slice(0, 5)}<small>${esc(x.dia_semana)}</small></div>
+    <div class="db">${batidas}</div>
+    <div class="ds">${selo}${notas.map(t => `<small>${t}</small>`).join("")}${contas ? `<small>${contas}</small>` : ""}</div></div>`;
+}
+// A folha para imprimir sai do aplicativo. No celular, com o aplicativo instalado na tela
+// inicial, abre na MESMA janela (no iPhone, uma janela nova perde o login); no navegador
+// comum, numa aba nova.
+async function abrirFolhaDoEspelho(imprimirJa) {
+  const q = `competencia=${ESP.mes}${imprimirJa ? "&imprimir=1" : ""}`;
+  const url = ESP.alvo ? comLocal(`/ponto/app/equipe/${ESP.alvo}/espelho/imprimir?${q}`, await onde())
+                       : `/ponto/app/espelho/imprimir?${q}`;
+  const instalado = (window.matchMedia && matchMedia("(display-mode: standalone)").matches) || navigator.standalone;
+  if (instalado || !window.open(url, "_blank")) location.assign(url);
+}
+$("esp-pdf").addEventListener("click", () => abrirFolhaDoEspelho(true));
+$("esp-imprimir").addEventListener("click", () => abrirFolhaDoEspelho(false));
+$("esp-ant").addEventListener("click", () => { ESP.mes = somarMes(ESP.mes, -1); carregarEspelho(); });
+$("esp-prox").addEventListener("click", () => { ESP.mes = somarMes(ESP.mes, 1); carregarEspelho(); });
+function sairDoEspelho() {
+  if (ESP.volta === "pessoa" && ESP.alvo) { EQ.alvo = ESP.alvo; EQ.mesAlvo = ESP.mes; mostrar("pessoa"); return carregarPessoaDaObra(); }
+  if (ESP.volta === "mes") { MES = ESP.mes; return mostrar("mes"); }
+  return abrirMenu();
+}
+$("esp-voltar").addEventListener("click", sairDoEspelho);
+// "Algo errado?": volta ao mês, onde cada dia tem o ✏️ (corrigir) e o 🗓️ (justificar).
+$("esp-pedir").addEventListener("click", () => { if (!ESP.alvo) ESP.volta = "mes"; sairDoEspelho(); });
 
 // O pedido POR OUTRA PESSOA (atestado, licença, compensação, folga do banco). O
 // ajuste de batida é pelo "Corrigir este dia", que mostra o que falta.
