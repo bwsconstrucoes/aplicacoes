@@ -16,12 +16,34 @@
   "ponto_mosaico": "Mosaico", "ponto_fotos": "Fotos de cadastro", "ponto_pessoas": "Pessoas", "ponto_banco": "Banco de horas", "ponto_relatorios": "Relatórios", "ponto_alertas": "Alertas",
   "ponto_qualidade": "Qualidade",
   "ponto_config": "Configuração"}.get(aba_ponto, "Ponto") }} — ERP BWS{% endblock %}
-{% block classe_corpo %}{% if aba_ponto in ("ponto_pendencias", "ponto_banco", "ponto_config", "ponto_rondas") %}sem-filtros{% endif %}{% endblock %}
+{% block classe_corpo %}{% if aba_ponto in ("ponto_banco", "ponto_config", "ponto_rondas") %}sem-filtros{% endif %}{% endblock %}
 
 {# =========================================================================
    BARRA DA ESQUERDA (filtros)
    ========================================================================= #}
 {% block filtros %}
+{# O FILTRO DE FUNCIONÁRIOS (27/10/2026, o dono: "precisa ser facilitado o filtro dos
+   funcionários de uma maneira geral; esses filtros na parte superior não ficam legal").
+   Um bloco só, igual no Quadro, nas Validações e nos Relatórios — o JS é o FiltroPessoas. #}
+{% macro filtro_pessoas(px, com_busca=True, com_bateu=True) %}
+  <h3 class="qd-grupo">Funcionários <button class="link-btn fp-limpar" type="button" id="{{ px }}-fp-limpar">limpar</button></h3>
+  {% if com_busca %}<div class="campo"><label for="{{ px }}-fp-busca">Pessoa</label>
+    <input id="{{ px }}-fp-busca" placeholder="nome ou CPF" autocomplete="off" data-sem-mascara></div>{% endif %}
+  <div class="campo" style="margin-top:8px"><label for="{{ px }}-fp-obra-cad">Obra do cadastro</label>
+    <select id="{{ px }}-fp-obra-cad"><option value="">Todas</option></select></div>
+  {% if com_bateu %}<div class="campo" style="margin-top:8px"><label for="{{ px }}-fp-obra-bat">Bateu na obra (no período)</label>
+    <select id="{{ px }}-fp-obra-bat"><option value="">Todas</option></select></div>{% endif %}
+  <div class="campo" style="margin-top:8px"><label>Funções <span class="qtd" id="{{ px }}-fp-funcoes-qtd"></span></label>
+    <input id="{{ px }}-fp-funcao-busca" placeholder="buscar função" autocomplete="off" data-sem-mascara data-sem-busca>
+    <div class="fp-lista" id="{{ px }}-fp-funcoes"><small class="suave">carregando…</small></div></div>
+  <div class="campo" style="margin-top:8px"><label for="{{ px }}-fp-escala">Escala</label>
+    <select id="{{ px }}-fp-escala" data-sem-busca><option value="">Todas</option></select></div>
+  <div class="campo" style="margin-top:8px"><label for="{{ px }}-fp-sit">Situação no cadastro</label>
+    <select id="{{ px }}-fp-sit" data-sem-busca><option value="">Todas</option>
+      <option value="ATIVO">Ativo</option><option value="AFASTADO">Afastado</option></select></div>
+  <div class="campo" style="margin-top:8px"><label>Tipo de pessoa</label>
+    <div id="{{ px }}-fp-tipos" class="qd-marcas"></div></div>
+{% endmacro %}
 {% if aba_ponto == "ponto_hoje" %}
   <div class="filtros-cab"><h2>Dia</h2>
     <button class="link-btn" id="h-hoje" type="button">Hoje</button></div>
@@ -53,22 +75,7 @@
     <div class="campo"><label for="qd-de">De</label><input type="date" id="qd-de"></div>
     <div class="campo"><label for="qd-ate">Até</label><input type="date" id="qd-ate"></div>
   </div>
-  <div class="campo" style="margin-top:10px"><label for="qd-busca">Pessoa</label>
-    <input id="qd-busca" placeholder="nome ou CPF" autocomplete="off" data-sem-mascara></div>
-  <h3 class="qd-grupo">Quem</h3>
-  <div class="campo"><label for="qd-obra-cad">Obra do cadastro</label>
-    <select id="qd-obra-cad"><option value="">Todas</option></select></div>
-  <div class="campo" style="margin-top:8px"><label for="qd-obra-bat">Bateu na obra (no período)</label>
-    <select id="qd-obra-bat"><option value="">Todas</option></select></div>
-  <div class="campo" style="margin-top:8px"><label for="qd-funcao">Função</label>
-    <select id="qd-funcao"><option value="">Todas</option></select></div>
-  <div class="campo" style="margin-top:8px"><label for="qd-escala">Escala</label>
-    <select id="qd-escala"><option value="">Todas</option></select></div>
-  <div class="campo" style="margin-top:8px"><label for="qd-sit-cad">Situação no cadastro</label>
-    <select id="qd-sit-cad" data-sem-busca><option value="">Todas</option>
-      <option value="ATIVO">Ativo</option><option value="AFASTADO">Afastado</option></select></div>
-  <h3 class="qd-grupo">Tipo de pessoa</h3>
-  <div id="qd-tipos" class="qd-marcas"></div>
+  {{ filtro_pessoas("qd") }}
   <h3 class="qd-grupo">Como está o dia</h3>
   <div id="qd-situacoes" class="qd-marcas"></div>
   <h3 class="qd-grupo">Quantas batidas</h3>
@@ -87,9 +94,17 @@
     <label class="opcao"><input type="checkbox" data-qd-faltando="Saída"><span class="rotulo">Saída</span></label>
   </div>
   <div class="cartao-dica" style="margin-top:14px">
-    <b>Também:</b> <a class="elo" href="/erp/ponto">o dia de hoje por obra</a> (atualiza sozinho) ·
-    <a class="elo" href="/erp/ponto/pessoas">o cadastro de todas as pessoas</a> (inclusive quem não bate ponto).
-    Clique no nome de qualquer pessoa para abrir tudo dela.
+    <b>As outras telas</b> (saíram do menu, continuam abrindo):
+    <a class="elo" href="/erp/ponto">o dia de hoje por obra</a> ·
+    <a class="elo" href="/erp/ponto/pessoas">o cadastro de todas as pessoas</a> ·
+    <a class="elo" href="/erp/ponto/espelho">espelho</a> ·
+    <a class="elo" href="/erp/ponto/mosaico">mosaico por obra</a> ·
+    <a class="elo" href="/erp/ponto/fotos-cadastro">fotos de cadastro</a> ·
+    <a class="elo" href="/erp/ponto/banco">banco de horas</a> ·
+    <a class="elo" href="/erp/ponto/alertas">alertas</a> ·
+    <a class="elo" href="/erp/ponto/qualidade">qualidade (mês)</a> ·
+    <a class="elo" href="/erp/ponto/rondas">rondas (noite)</a>.
+    Clique no nome de qualquer pessoa para abrir tudo dela — o mês, o espelho, os pedidos e os aparelhos.
   </div>
   <div class="cartao-dica" style="margin-top:14px">
     A conta é a do <b>espelho</b>: o que aparece aqui é o que o espelho de cada um diz.
@@ -167,6 +182,27 @@
     Escolhida a obra, as fotos aparecem na hora — uma linha por pessoa que bateu.
   </div>
 
+{% elif aba_ponto == "ponto_pendencias" %}
+  {# Os filtros das Validações na barra (27/10/2026, o dono: "vamos manter a de validações,
+     todavia precisa da filtragem mais ampla no sidebar"). Os mesmos endereços de antes. #}
+  <div class="filtros-cab"><h2>Validações</h2>
+    <button class="link-btn" id="v-limpar" type="button">limpar</button></div>
+  <label class="opcao" style="margin:0 0 8px"><input type="checkbox" id="v-so-minhas">
+    <span class="rotulo">Só o que eu valido <span class="qtd" id="v-minhas"></span></span></label>
+  <div class="campo"><label for="v-busca">Pessoa ou quem pediu</label>
+    <input id="v-busca" placeholder="nome, CPF ou quem pediu" autocomplete="off" data-sem-mascara></div>
+  <div class="qd-par" style="margin-top:8px">
+    <div class="campo"><label for="v-de">De</label><input type="date" id="v-de"></div>
+    <div class="campo"><label for="v-ate">Até</label><input type="date" id="v-ate"></div>
+  </div>
+  <div class="campo" style="margin-top:8px"><label for="v-obra">Obra do pedido ou da batida</label>
+    <select id="v-obra"><option value="">Todas</option></select></div>
+  <h3 class="qd-grupo">O quê</h3>
+  <div id="v-tipos" class="v-tipos-lado"></div>
+  {{ filtro_pessoas("v", com_busca=False) }}
+  <div class="cartao-dica" style="margin-top:14px">Com algum filtro de funcionário escolhido, ficam só os
+    itens dessas pessoas (o que não é de uma pessoa, como o mosaico da obra, sai da lista).</div>
+
 {% elif aba_ponto == "ponto_relatorios" %}
   {# Os relatórios (26/10/2026, o dono: "a gente não tem nenhum relatório nesse sistema novo"). #}
   <div class="filtros-cab"><h2>Relatórios</h2>
@@ -187,12 +223,7 @@
     <div class="campo"><label for="rl-de">De</label><input type="date" id="rl-de"></div>
     <div class="campo"><label for="rl-ate">Até</label><input type="date" id="rl-ate"></div>
   </div>
-  <div class="campo" style="margin-top:10px"><label for="rl-busca">Pessoa</label>
-    <input id="rl-busca" placeholder="nome ou CPF" autocomplete="off" data-sem-mascara></div>
-  <div class="campo" style="margin-top:8px"><label for="rl-obra">Obra do cadastro</label>
-    <select id="rl-obra"><option value="">Todas</option></select></div>
-  <div class="campo" style="margin-top:8px"><label for="rl-funcao">Função</label>
-    <select id="rl-funcao"><option value="">Todas</option></select></div>
+  {{ filtro_pessoas("rl") }}
   <div id="rl-tipos-just" hidden>
     <h3 class="qd-grupo">Tipos de ausência</h3>
     <div class="qd-marcas">
@@ -408,6 +439,18 @@
   .chip.ligado { background:var(--azul); color:#fff; }
   .qd-tabela tr.marcada td { background:#FFF8E6; }
   .ep-resumo { display:flex; flex-wrap:wrap; gap:4px; }
+  .qd-fotos { display:flex; flex-direction:column; gap:8px; }
+  .qd-foto-linha { display:flex; gap:10px; align-items:flex-start; padding:8px; border-bottom:1px solid var(--borda); flex-wrap:wrap; }
+  .qd-foto-quem { width:210px; flex:none; } .qd-foto-quem small { display:block; }
+  .qd-foto-linha figure { margin:0; width:96px; text-align:center; font-size:12px; }
+  .qd-foto-linha img, .qd-foto-vazia { width:96px; height:120px; object-fit:cover; border-radius:8px; border:1px solid var(--borda); display:block; background:#EEF2F6; }
+  .qd-foto-vazia { display:flex; align-items:center; justify-content:center; color:var(--tinta-suave); font-size:11px; }
+  h4.qd-sub { margin:14px 0 6px; }
+  .qd-alerta { color:var(--ambar); font-weight:700; } .qd-alerta.urgente { color:var(--vermelho); }
+  .fp-lista { max-height:190px; overflow:auto; border:1px solid var(--borda); border-radius:8px; padding:4px 8px; margin-top:4px; }
+  .fp-lista .opcao { margin:0 0 2px; }
+  h3.qd-grupo .fp-limpar { float:right; font-size:11.5px; padding:0 4px; text-transform:none; letter-spacing:0; }
+  .v-tipos-lado { display:flex; flex-wrap:wrap; gap:4px; }
   .rl-tabela td.num, .rl-tabela th.num { text-align:right; }
   .fc-pessoa.suspeita { border-left:4px solid var(--vermelho); }
   .fc-cab { display:flex; flex-wrap:wrap; gap:6px 10px; align-items:center; margin-bottom:8px; }
@@ -523,6 +566,9 @@
   <button type="button" data-qd-visao="pessoas">Por pessoa</button>
   <button type="button" data-qd-visao="obras">Por obra</button>
   <button type="button" data-qd-visao="mapa">🗺️ Mapa</button>
+  <button type="button" data-qd-visao="fotos">📷 Fotos</button>
+  <button type="button" data-qd-visao="qualidade">⭐ Qualidade</button>
+  <button type="button" data-qd-visao="rondas">🔦 Rondas</button>
 </div>
 <div class="barra-lote" id="qd-lote" hidden>
   <b id="qd-lote-qtd">0 marcadas</b>
@@ -607,22 +653,6 @@
    antes (ponto_pendencias, /erp/ponto/pendencias): link antigo continua abrindo. #}
 <h2>Validações <small>tudo o que espera uma decisão, numa lista só</small></h2>
 <div id="mensagem"></div>
-<div class="cartao">
-  <div class="validacoes-filtro">
-    <div class="campo"><label for="v-obra">Obra</label>
-      <select id="v-obra"><option value="">Todas</option></select></div>
-    <div class="campo estreito"><label for="v-de">De</label><input type="date" id="v-de"></div>
-    <div class="campo estreito"><label for="v-ate">Até</label><input type="date" id="v-ate"></div>
-    <div class="campo"><label for="v-busca">Pessoa ou quem pediu</label>
-      <input id="v-busca" placeholder="nome, CPF ou quem pediu" autocomplete="off" data-sem-mascara></div>
-  </div>
-  <div class="validacoes-tipos">
-    <label class="opcao" style="padding:3px 6px"><input type="checkbox" id="v-so-minhas">
-      <span>Só o que eu valido <span class="qtd" id="v-minhas"></span></span></label>
-    <span id="v-tipos"></span>
-    <button class="link-btn" id="v-limpar" type="button">limpar filtros</button>
-  </div>
-</div>
 
 <div class="barra-lote" id="v-lote" hidden>
   <button class="btn" id="v-lote-btn" type="button">Aprovar / validar selecionados (0)</button>
@@ -1541,6 +1571,89 @@ async function bloquearNoPainel(id) {
   if (!r) return;
   try { await postar(`/erp/api/ponto/dispositivos/${id}/bloquear`, {motivo: r.motivo}); aviso("dp-msg", "Aparelho bloqueado.", "ok"); recarregarPainel(); }
   catch (e) { aviso("dp-msg", escapar(e.message), "erro"); }
+}
+
+// O FILTRO DE FUNCIONÁRIOS (27/10/2026) — o mesmo bloco da barra em todas as telas
+// (macro `filtro_pessoas`). As opções vêm de um endereço só; `valores()` devolve o
+// filtro no formato que o servidor entende (filtro_pessoas.py).
+class FiltroPessoas {
+  constructor(px, {aoMudar = null, aoEnter = null} = {}) {
+    this.px = px; this.aoMudar = aoMudar; this.funcoes = new Set(); this.opcoes = null;
+    const el = s => els(`${px}-fp-${s}`);
+    this.el = el;
+    if (el("busca") && aoEnter) el("busca").addEventListener("keydown", e => { if (e.key === "Enter") aoEnter(); });
+    if (el("funcao-busca")) el("funcao-busca").addEventListener("input", () => this.desenharFuncoes());
+    ["obra-cad", "obra-bat", "escala", "sit"].forEach(s => { if (el(s)) el(s).addEventListener("change", () => this.mudou()); });
+    if (el("limpar")) el("limpar").addEventListener("click", () => { this.limpar(); this.mudou(); });
+  }
+  mudou() { if (this.aoMudar) this.aoMudar(); }
+  async carregar() {
+    try { this.opcoes = await api("/erp/api/ponto/filtros/pessoas"); }
+    catch (e) { this.el("funcoes").innerHTML = `<small class="suave">${escapar(e.message)}</small>`; return; }
+    const obras = `<option value="">Todas</option>` + this.opcoes.obras.map(o => `<option value="${o.id}">${escapar(rotuloObra(o))}</option>`).join("");
+    ["obra-cad", "obra-bat"].forEach(s => { if (this.el(s)) { const v = this.el(s).value; this.el(s).innerHTML = obras; this.el(s).value = v; } });
+    const ve = this.el("escala").value;
+    this.el("escala").innerHTML = `<option value="">Todas</option>` + this.opcoes.escalas.map(e =>
+      `<option value="${escapar(e.nome)}">${escapar(e.nome)}${e.padrao ? " (padrão da empresa)" : ""}</option>`).join("");
+    this.el("escala").value = ve;
+    this.desenharFuncoes(); this.desenharTipos(null);
+  }
+  desenharFuncoes() {
+    if (!this.opcoes) return;
+    const b = (this.el("funcao-busca").value || "").trim().toLowerCase();
+    const lista = this.opcoes.funcoes.filter(f => !b || f.nome.toLowerCase().includes(b) || this.funcoes.has(f.nome));
+    this.el("funcoes").innerHTML = lista.length ? lista.map(f => `<label class="opcao"><input type="checkbox" data-fp-funcao="${escapar(f.nome)}"
+      ${this.funcoes.has(f.nome) ? "checked" : ""}><span class="rotulo">${escapar(f.nome)} <span class="qtd">${f.pessoas}</span></span></label>`).join("")
+      : `<small class="suave">nenhuma função com “${escapar(b)}”</small>`;
+    this.el("funcoes").querySelectorAll("[data-fp-funcao]").forEach(c => c.addEventListener("change", () => {
+      c.checked ? this.funcoes.add(c.dataset.fpFuncao) : this.funcoes.delete(c.dataset.fpFuncao);
+      this.contarFuncoes(); this.mudou(); }));
+    this.contarFuncoes();
+  }
+  contarFuncoes() { this.el("funcoes-qtd").textContent = this.funcoes.size ? `${this.funcoes.size} marcada(s)` : ""; }
+  // `contagem` vem da montagem (quantos há de cada tipo no recorte); sem ela, a das opções.
+  desenharTipos(contagem) {
+    if (!this.opcoes) return;
+    const ligadas = new Set([...document.querySelectorAll(`#${this.px}-fp-tipos [data-fp-tipo]:checked`)].map(x => x.dataset.fpTipo));
+    this.el("tipos").innerHTML = this.opcoes.tipos.map(t => `<label class="opcao"><input type="checkbox" data-fp-tipo="${t.codigo}"
+      ${ligadas.has(t.codigo) ? "checked" : ""}><span class="rotulo">${escapar(t.rotulo)}
+      <span class="qtd">${contagem ? (contagem[t.codigo] || 0) : t.pessoas}</span></span></label>`).join("");
+    this.el("tipos").querySelectorAll("[data-fp-tipo]").forEach(c => c.addEventListener("change", () => this.mudou()));
+  }
+  valores() {
+    const v = s => this.el(s) ? this.el(s).value : "";
+    return {busca: (v("busca") || "").trim(), obra_cadastro: v("obra-cad") || null, obra_batida: v("obra-bat") || null,
+            funcoes: [...this.funcoes], escalas: v("escala") ? [v("escala")] : [], situacao_cadastro: v("sit") || null,
+            tipos_pessoa: [...document.querySelectorAll(`#${this.px}-fp-tipos [data-fp-tipo]:checked`)].map(x => x.dataset.fpTipo)};
+  }
+  // Para o endereço (GET): as listas separadas por vírgula, só o que foi escolhido.
+  parametros() {
+    const f = this.valores(), p = {};
+    if (f.busca) p.pessoa = f.busca;
+    if (f.obra_cadastro) p.obra_cadastro = f.obra_cadastro;
+    if (f.obra_batida) p.obra_batida = f.obra_batida;
+    if (f.funcoes.length) p.funcoes = f.funcoes.join(",");
+    if (f.escalas.length) p.escalas = f.escalas.join(",");
+    if (f.situacao_cadastro) p.situacao_cadastro = f.situacao_cadastro;
+    if (f.tipos_pessoa.length) p.tipos_pessoa = f.tipos_pessoa.join(",");
+    return p;
+  }
+  preencher(f) {
+    f = f || {};
+    if (this.el("busca")) this.el("busca").value = f.busca || "";
+    if (this.el("obra-cad")) this.el("obra-cad").value = f.obra_cadastro || "";
+    if (this.el("obra-bat")) this.el("obra-bat").value = f.obra_batida || "";
+    this.el("escala").value = (f.escalas || [])[0] || "";
+    this.el("sit").value = f.situacao_cadastro || "";
+    this.funcoes = new Set(f.funcoes || []);
+    this.desenharFuncoes();
+    (f.tipos_pessoa || []).forEach(c => { const x = document.querySelector(`#${this.px}-fp-tipos [data-fp-tipo="${c}"]`); if (x) x.checked = true; });
+  }
+  limpar() {
+    ["busca", "obra-cad", "obra-bat", "escala", "sit", "funcao-busca"].forEach(s => { if (this.el(s)) this.el(s).value = ""; });
+    this.funcoes.clear(); this.desenharFuncoes();
+    document.querySelectorAll(`#${this.px}-fp-tipos [data-fp-tipo]`).forEach(x => { x.checked = false; });
+  }
 }
 
 // O MAPA DA BATIDA (21/10/2026: "clicar e ver a geolocalização, no modal, avisando
@@ -2480,13 +2593,8 @@ const diaCurto = iso => { const [a, m, d] = iso.split("-"); return `${d}/${m}`; 
 function qdFiltros() {
   const marcadas = sel => [...document.querySelectorAll(sel)].filter(x => x.checked);
   return {
-    busca: els("qd-busca").value.trim(),
-    obra_cadastro: els("qd-obra-cad").value || null, obra_batida: els("qd-obra-bat").value || null,
+    ...FP_QD.valores(),
     obra_do_dia: QD_OBRA_DO_DIA || null,
-    funcoes: els("qd-funcao").value ? [els("qd-funcao").value] : [],
-    escalas: els("qd-escala").value ? [els("qd-escala").value] : [],
-    situacao_cadastro: els("qd-sit-cad").value || null,
-    tipos_pessoa: marcadas("[data-qd-tipo]").map(x => x.dataset.qdTipo),
     situacoes: marcadas("[data-qd-situacao]").map(x => x.dataset.qdSituacao),
     batidas: marcadas("[data-qd-batidas]").map(x => Number(x.dataset.qdBatidas)),
     faltando: marcadas("[data-qd-faltando]").map(x => x.dataset.qdFaltando),
@@ -2502,20 +2610,6 @@ function qdAtalho(qual) {
   else { els("qd-de").value = menos(Number(qual) - 1); els("qd-ate").value = hoje; }
 }
 
-function qdOpcoes(alvo, lista, rotulo = x => x) {
-  const atual = els(alvo).value;
-  els(alvo).innerHTML = `<option value="">Todas</option>` + lista.map(x => `<option value="${escapar(x)}"
-    ${x === atual ? "selected" : ""}>${escapar(rotulo(x))}</option>`).join("");
-}
-
-async function qdObras() {
-  try {
-    const d = await api("/erp/api/ponto/obras");
-    const op = `<option value="">Todas</option>` + d.obras.map(o => `<option value="${o.id}">${escapar(rotuloObra(o))}</option>`).join("");
-    els("qd-obra-cad").innerHTML = op; els("qd-obra-bat").innerHTML = op;
-  } catch (e) { falhou(e); }
-}
-
 function qdSituacoes(contagem) {
   const ligadas = new Set([...document.querySelectorAll("[data-qd-situacao]:checked")].map(x => x.dataset.qdSituacao));
   const lista = (QD && QD.opcoes.situacoes) || [
@@ -2523,21 +2617,13 @@ function qdSituacoes(contagem) {
     {codigo: "COMPLETO", rotulo: "Completo (todas as batidas da escala)"}, {codigo: "COM_BURACO", rotulo: "Com batida faltando"},
     {codigo: "FALTA", rotulo: "Falta (sem justificativa)"}, {codigo: "JUSTIFICADO", rotulo: "Justificado (atestado, férias, folga…)"},
     {codigo: "NAO_TRABALHA", rotulo: "Não trabalha (descanso, feriado)"}, {codigo: "EM_ANALISE", rotulo: "Com batida em conferência"},
-    {codigo: "COM_PEDIDO", rotulo: "Com pedido esperando decisão"}];
+    {codigo: "COM_PEDIDO", rotulo: "Com pedido esperando decisão"}, {codigo: "COM_ALERTA", rotulo: "Com alerta aberto"}];
   els("qd-situacoes").innerHTML = lista.map(s => `<label class="opcao"><input type="checkbox" data-qd-situacao="${s.codigo}"
       ${ligadas.has(s.codigo) ? "checked" : ""}><span class="rotulo">${escapar(s.rotulo)}
       ${contagem ? `<span class="qtd">${contagem[s.codigo] || 0}</span>` : ""}</span></label>`).join("");
 }
 
-const TIPOS_QD = [["VIGIA", "🛡️ Vigia"], ["VIGIA_PENDENTE", "⚠️ Vigia com pendência (sem ronda ou sem celular)"],
-  ["RONDA", "🔦 Com ronda ativa"], ["CELULAR", "📱 Celular liberado"], ["CELULAR_PENDENTE", "📱 Celular esperando aprovação"],
-  ["PONTO_OBRA", "🏗️ Responde por ponto da obra"], ["EQUIPE", "👥 Ponto de equipe"], ["ADMINISTRATIVO", "🗂️ Administrativo da obra"],
-  ["SEM_PIN", "🔑 Ainda sem PIN"]];
-function qdTipos(contagem) {
-  const ligadas = new Set([...document.querySelectorAll("[data-qd-tipo]:checked")].map(x => x.dataset.qdTipo));
-  els("qd-tipos").innerHTML = TIPOS_QD.map(([c, r]) => `<label class="opcao"><input type="checkbox" data-qd-tipo="${c}"
-      ${ligadas.has(c) ? "checked" : ""}><span class="rotulo">${escapar(r)}${contagem ? `<span class="qtd">${contagem[c] || 0}</span>` : ""}</span></label>`).join("");
-}
+const FP_QD = new FiltroPessoas("qd", {aoEnter: () => qdMontar()});
 
 async function qdMontar() {
   if (!els("qd-de").value) qdAtalho("hoje");
@@ -2547,10 +2633,8 @@ async function qdMontar() {
     QD = await postar("/erp/api/ponto/quadro", {de: els("qd-de").value, ate: els("qd-ate").value || els("qd-de").value,
                                                filtros: qdFiltros()});
     QD_MARCADAS.clear();
-    qdOpcoes("qd-funcao", QD.opcoes.funcoes);
-    qdOpcoes("qd-escala", QD.opcoes.escalas);
     qdSituacoes(QD.contagem);
-    qdTipos(QD.contagem_tipos);
+    FP_QD.desenharTipos(QD.contagem_tipos);
     qdDesenhar();
     try { localStorage.setItem("ponto_quadro_filtros", JSON.stringify({de: els("qd-de").value, ate: els("qd-ate").value, f: qdFiltros()})); } catch (e) {}
   } catch (e) { falhou(e); els("qd-resumo").textContent = ""; }
@@ -2621,6 +2705,9 @@ function qdDesenhar() {
     qdLote(); return;
   }
   if (QD_VISAO === "mapa") { qdMapa(); qdLote(); return; }
+  if (QD_VISAO === "fotos") { qdFotos(); qdLote(); return; }
+  if (QD_VISAO === "qualidade") { qdQualidade(); qdLote(); return; }
+  if (QD_VISAO === "rondas") { qdRondas(); qdLote(); return; }
   if (QD_VISAO === "obras") {
     els("qd-resumo").innerHTML = `<b>${QD.por_obra.length}</b> obra(s) — a obra do dia é a da primeira batida; sem batida, a do cadastro. Clique na obra para ver as pessoas`;
     const n = (o, k) => o.contagem[k] || 0;
@@ -2667,7 +2754,9 @@ function qdDesenhar() {
       <td><small style="margin:0">${escapar(l.feriado ? `feriado: ${l.feriado}` : (l.escala || "—"))}</small></td>
       <td><small style="margin:0">${[l.ocorrencia ? escapar(l.ocorrencia) : "",
           ...l.pendentes.map(p => `<button type="button" class="link-btn" data-pedido="${p.id}">pedido: ${escapar(p.rotulo)}${p.hora ? ` ${escapar(p.hora)}` : ""}</button>`),
-          l.em_analise ? `${l.em_analise} em conferência` : ""].filter(Boolean).join(" · ") || ""}</small></td></tr>`; }).join("")}
+          l.em_analise ? `${l.em_analise} em conferência` : "",
+          ...(l.alertas || []).map(a => `<button type="button" class="link-btn qd-alerta ${a.gravidade === "URGENTE" ? "urgente" : ""}" data-qd-alerta="${a.id}"
+            title="${escapar(a.mensagem || "")}">⚠ ${escapar(a.rotulo)}</button>`)].filter(Boolean).join(" · ") || ""}</small></td></tr>`; }).join("")}
     </tbody></table>` : `<div class="vazio"><b>Nenhuma linha</b>com estes filtros.</div>`;
   alvo.querySelectorAll("[data-qd-marcar]").forEach(c => c.addEventListener("change", () => {
     c.checked ? QD_MARCADAS.add(c.dataset.qdMarcar) : QD_MARCADAS.delete(c.dataset.qdMarcar);
@@ -2675,6 +2764,108 @@ function qdDesenhar() {
   if (els("qd-todas")) els("qd-todas").addEventListener("change", e => qdMarcarGrupo(e.target.checked ? "todas" : "nenhuma"));
   qdLote();
 }
+
+// ===========================================================================
+// AS VISÕES QUE ERAM TELAS (27/10/2026, o dono: "tem tela demais para pouca
+// utilidade (…) consolidar"). Fotos (o mosaico), Qualidade e Rondas viraram visões
+// do Quadro, com o MESMO filtro de funcionários e o mesmo período; os alertas
+// abertos aparecem na linha do dia e têm o filtro "Com alerta aberto".
+// ===========================================================================
+let QD_EXTRA = {chave: null, dados: null};
+const qdChaveExtra = qual => JSON.stringify([qual, els("qd-de").value, els("qd-ate").value || els("qd-de").value, qdFiltros()]);
+async function qdBuscarExtra(qual, endereco) {
+  const chave = qdChaveExtra(qual);
+  if (QD_EXTRA.chave === chave && QD_EXTRA.dados) return QD_EXTRA.dados;
+  els("qd-tabela").innerHTML = `<div class="vazio"><b>Montando…</b>pode levar alguns segundos com muita gente.</div>`;
+  const d = await postar(endereco, {de: els("qd-de").value, ate: els("qd-ate").value || els("qd-de").value, filtros: qdFiltros()});
+  QD_EXTRA = {chave, dados: d};
+  return d;
+}
+
+// FOTOS — o mosaico dentro do Quadro: a foto de cadastro e as fotos das batidas do dia,
+// lado a lado, por pessoa. Comparar rostos é o que gente faz melhor que máquina.
+const QD_FOTOS_MAX = 150;
+function qdFotos() {
+  const linhas = (QD.linhas || []).filter(l => l.batidas.some(b => b.tem_foto));
+  els("qd-resumo").innerHTML = `<b>${linhas.length}</b> pessoa-dia com foto${linhas.length > QD_FOTOS_MAX ? ` · mostrando ${QD_FOTOS_MAX} — afine os filtros` : ""}
+    · <a class="elo" href="/erp/ponto/fotos-cadastro">📷 fotos de cadastro</a> · <a class="elo" href="/erp/ponto/mosaico">conferir o mosaico de uma obra</a>`;
+  els("qd-tabela").innerHTML = linhas.length ? `<div class="qd-fotos">${linhas.slice(0, QD_FOTOS_MAX).map(l => `<div class="qd-foto-linha">
+      <div class="qd-foto-quem">${eloPessoa(l.colaborador_id, l.nome, l.data)}<small>${diaCurto(l.data)} ${escapar(l.dia_semana)} · ${escapar(l.obra_do_dia || "")}</small>
+        <span class="selo ${(SITUACAO_DIA[l.situacao] || ["outro"])[0]}">${escapar(l.situacao_rotulo)}</span></div>
+      <figure><img loading="lazy" src="/erp/api/ponto/pessoas/${l.colaborador_id}/foto-cadastral" alt="cadastro"
+        onerror="this.replaceWith(Object.assign(document.createElement('div'), {className: 'qd-foto-vazia', textContent: 'sem foto de cadastro'}))">
+        <figcaption><b>cadastro</b></figcaption></figure>
+      ${l.batidas.map(b => b.tem_foto ? `<figure><img loading="lazy" src="/erp/api/ponto/marcacoes/${b.id}/miniatura" alt="batida"
+          data-foto="${b.id}" data-legenda="${escapar(`${l.nome} — ${diaCurto(l.data)} às ${b.hora}`)}" style="cursor:zoom-in">
+          <figcaption>${chipComMapa(b)}</figcaption></figure>` : `<figure><div class="qd-foto-vazia">sem foto</div><figcaption>${chipComMapa(b)}</figcaption></figure>`).join("")}
+    </div>`).join("")}</div>`
+    : `<div class="vazio"><b>Nenhuma batida com foto</b>com estes filtros.</div>`;
+}
+
+// QUALIDADE — o índice, os ajustes, as fotos e a cerca, por obra, por responsável e por pessoa.
+const COR_SELO = {OURO: "verde", PRATA: "azul", BRONZE: "ambar", ATENCAO: "vermelho"};
+async function qdQualidade() {
+  let d;
+  try { d = await qdBuscarExtra("qualidade", "/erp/api/ponto/quadro/qualidade"); }
+  catch (e) { els("qd-tabela").innerHTML = `<div class="aviso ${e.message.includes("tente") ? "info" : "erro"}">${escapar(e.message)}</div>`; return; }
+  if (QD_VISAO !== "qualidade") return;
+  const g = d.geral || {};
+  const pct = v => v == null ? "—" : `${String(v).replace(".", ",")}%`;
+  const selo = x => x.selo ? `<span class="etq ${COR_SELO[x.selo.codigo] || "outro"}">${escapar(x.selo.rotulo)}</span>` : `<span class="suave">—</span>`;
+  const cols = (x, nome) => `<td>${nome}</td><td>${selo(x)}</td><td class="num">${x.pontos ?? "—"}</td><td class="num">${pct(x.indice)}</td>
+    <td class="num">${pct(x.fotos_ok)}</td><td class="num">${x.faltas}</td><td class="num">${x.incompletos}</td><td class="num">${x.ajustes ?? x.dias_com_ajuste}</td>
+    <td class="num">${x.fora_da_cerca}</td>`;
+  const cab = primeira => `<thead><tr><th>${primeira}</th><th>Selo</th><th class="num">Pontos</th><th class="num">Dias em dia</th>
+    <th class="num">Fotos boas</th><th class="num">Faltas</th><th class="num">Batida faltando</th><th class="num">Ajustes</th><th class="num">Fora da cerca</th></tr></thead>`;
+  els("qd-resumo").innerHTML = `Qualidade de ${dataBR(d.inicio)} a ${dataBR(d.fim)} · <b>${g.pessoas || 0}</b> pessoa(s) ·
+    geral ${selo(g)} ${pct(g.indice)} dos dias em dia · <a class="elo" href="/erp/ponto/qualidade">a tela completa (mês, critérios)</a>`;
+  els("qd-tabela").innerHTML = `
+    <h4 class="qd-sub">Por obra</h4><table>${cab("Obra")}<tbody>${(d.por_obra || []).map(x => `<tr>${cols(x, `<b>${escapar(x.obra)}</b> <small style="display:inline">${x.pessoas} pessoa(s)</small>`)}</tr>`).join("")}</tbody></table>
+    <h4 class="qd-sub">Por responsável (ponto da obra e de equipe)</h4><table>${cab("Responsável")}<tbody>${(d.por_responsavel || []).map(x => `<tr>${cols(x, `${eloPessoa(x.id, x.nome)} <small style="display:inline">${x.pessoas} pessoa(s)</small>`)}</tr>`).join("")
+      || `<tr><td colspan="9" class="suave">ninguém bateu em aparelho de obra ou de equipe</td></tr>`}</tbody></table>
+    <h4 class="qd-sub">Por pessoa</h4><table>${cab("Pessoa")}<tbody>${(d.pessoas || []).slice(0, 300).map(x => `<tr>${cols(x, `${eloPessoa(x.id, x.nome)} <small style="display:inline">${escapar(x.obra || "")}</small>${x.muitos_ajustes ? ` <span class="etq vermelho">muitos ajustes</span>` : ""}`)}</tr>`).join("")}</tbody></table>`;
+}
+
+// RONDAS — as noites dos vigias do recorte: a entrada, a saída e cada ronda surpresa.
+const COR_RONDA = {FEITA: "verde", ATRASADA: "ambar", PERDIDA: "vermelho", ENVIADA: "azul", AGENDADA: "outro", CANCELADA: "outro", NAO_ENVIADA: "outro"};
+async function qdRondas() {
+  let d;
+  try { d = await qdBuscarExtra("rondas", "/erp/api/ponto/quadro/rondas"); }
+  catch (e) { els("qd-tabela").innerHTML = `<div class="aviso erro">${escapar(e.message)}</div>`; return; }
+  if (QD_VISAO !== "rondas") return;
+  if (!d.disponivel) { els("qd-tabela").innerHTML = `<div class="vazio"><b>As rondas ainda não estão ligadas</b>neste ponto.</div>`; return; }
+  els("qd-resumo").innerHTML = `<b>${d.turnos.length}</b> turno(s) de vigia de ${dataBR(d.de)} a ${dataBR(d.ate)} (as noites que começaram em cada dia)
+    · <a class="elo" href="/erp/ponto/rondas">a tela completa das rondas</a>`;
+  els("qd-tabela").innerHTML = d.turnos.length ? `<table><thead><tr><th>Vigia</th><th>Noite</th><th>Obra</th><th>Entrada</th><th>Saída</th>
+      <th>Rondas (${d.por_turno} por turno)</th></tr></thead><tbody>${d.turnos.map(t => `<tr>
+      <td>${eloPessoa(t.colaborador_id, t.nome, t.noite)}</td><td class="dados">${diaCurto(t.noite)}</td><td class="dados">${escapar(t.obra || "")}</td>
+      <td class="dados">${escapar(t.entrada || "—")}</td><td class="dados">${escapar(t.saida || "—")}</td>
+      <td>${t.rondas.map(r => `<span class="etq ${COR_RONDA[r.status] || "outro"}" title="${escapar(r.motivo || "")}">${r.numero}ª ${escapar(r.rotulo)}${r.feita ? ` ${escapar(r.feita)}` : r.hora ? ` ${escapar(r.hora)}` : ""}</span>
+        ${r.foto_id ? `<button class="link-btn" type="button" data-foto="r${r.id}" data-foto-url="/erp/api/ponto/rondas/${r.id}/foto" data-legenda="${escapar(`${t.nome} — ${r.numero}ª ronda`)}">📷</button>` : ""}`).join(" ")
+        || `<span class="suave">nenhuma ronda</span>`}</td></tr>`).join("")}</tbody></table>`
+    : `<div class="vazio"><b>Nenhum turno de vigia</b>neste período, com estes filtros. Para ver só os vigias, marque “Vigia” em Tipo de pessoa.</div>`;
+}
+
+// O ALERTA DA LINHA: abre, lê e trata (resolver ou dispensar) sem sair do Quadro.
+async function qdAlerta(id) {
+  const linha = (QD.linhas || []).find(l => (l.alertas || []).some(a => a.id === id));
+  const a = linha && linha.alertas.find(x => x.id === id);
+  if (!a) return;
+  const r = await perguntar({titulo: `Alerta — ${escapar(a.rotulo)}`,
+    aviso: `<b>${escapar(linha.nome)}</b>, ${diaCurto(linha.data)}: ${escapar(a.mensagem || a.rotulo)}`,
+    campos: PODE_TRATAR ? [
+      {nome: "situacao", rotulo: "O que fazer", tipo: "select", valor: "RESOLVIDO", largura: 6, opcoes: [
+        {valor: "RESOLVIDO", rotulo: "Marcar como resolvido"}, {valor: "DISPENSADO", rotulo: "Dispensar (não precisa de ação)"}]},
+      {nome: "nota", rotulo: "Nota", tipo: "textarea", linhas: 2, largura: 6, exemplo: "o que foi feito (obrigatória para dispensar)"}] : [],
+    textoOk: PODE_TRATAR ? "Gravar" : "Fechar"});
+  if (!r || !PODE_TRATAR) return;
+  try { await postar(`/erp/api/ponto/alertas/${id}/tratar`, {situacao: r.situacao, nota: r.nota || ""}); aviso("qd-lote-msg", "Alerta tratado.", "ok"); qdMontar(); }
+  catch (e) { aviso("qd-lote-msg", escapar(e.message), "erro"); }
+}
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-qd-alerta]");
+  if (b) { e.preventDefault(); qdAlerta(Number(b.dataset.qdAlerta)); }
+});
 
 // ===========================================================================
 // O MAPA DO QUADRO (21/10/2026, o dono: "um mapa que me permita visualizar
@@ -3006,7 +3197,6 @@ document.querySelectorAll("[data-qd-visao]").forEach(b => b.addEventListener("cl
   }
 }));
 els("qd-ver").addEventListener("click", qdMontar);
-els("qd-busca").addEventListener("keydown", e => { if (e.key === "Enter") qdMontar(); });
 els("qd-desmarcar").addEventListener("click", () => { QD_MARCADAS.clear(); qdDesenhar(); });
 document.querySelectorAll("[data-qd-marcar-grupo]").forEach(b => b.addEventListener("click", () => qdMarcarGrupo(b.dataset.qdMarcarGrupo)));
 if (els("qd-incluir")) els("qd-incluir").addEventListener("click", qdIncluir);
@@ -3014,26 +3204,23 @@ if (els("qd-dia-inteiro")) els("qd-dia-inteiro").addEventListener("click", qdDia
 if (els("qd-definir-escala")) els("qd-definir-escala").addEventListener("click", qdEscala);
 if (els("qd-abonar")) els("qd-abonar").addEventListener("click", qdAbonar);
 els("qd-limpar").addEventListener("click", () => {
-  document.querySelectorAll("[data-qd-situacao], [data-qd-batidas], [data-qd-faltando], [data-qd-tipo]").forEach(x => { x.checked = false; });
-  ["qd-busca", "qd-obra-cad", "qd-obra-bat", "qd-funcao", "qd-escala", "qd-sit-cad"].forEach(id => { els(id).value = ""; });
+  document.querySelectorAll("[data-qd-situacao], [data-qd-batidas], [data-qd-faltando]").forEach(x => { x.checked = false; });
+  FP_QD.limpar();
   QD_OBRA_DO_DIA = "";
   qdAtalho("hoje");
 });
 qdSituacoes(null);
-qdTipos(null);
-qdObras().then(() => {
+FP_QD.carregar().then(() => {
   // Volta com os últimos filtros deste navegador — mas não monta sozinho.
   try {
     const g = JSON.parse(localStorage.getItem("ponto_quadro_filtros") || "null");
     if (g) {
       els("qd-de").value = g.de || ""; els("qd-ate").value = g.ate || "";
       const f = g.f || {};
-      els("qd-busca").value = f.busca || ""; els("qd-obra-cad").value = f.obra_cadastro || "";
-      els("qd-obra-bat").value = f.obra_batida || ""; els("qd-sit-cad").value = f.situacao_cadastro || "";
+      FP_QD.preencher(f);
       (f.situacoes || []).forEach(c => { const x = document.querySelector(`[data-qd-situacao="${c}"]`); if (x) x.checked = true; });
       (f.batidas || []).forEach(c => { const x = document.querySelector(`[data-qd-batidas="${c}"]`); if (x) x.checked = true; });
       (f.faltando || []).forEach(c => { const x = document.querySelector(`[data-qd-faltando="${c}"]`); if (x) x.checked = true; });
-      (f.tipos_pessoa || []).forEach(c => { const x = document.querySelector(`[data-qd-tipo="${c}"]`); if (x) x.checked = true; });
     }
   } catch (e) {}
   if (!els("qd-de").value) qdAtalho("hoje");
@@ -3296,8 +3483,9 @@ async function carregarObrasDasValidacoes() {
   }
 }
 
+const FP_V = new FiltroPessoas("v", {aoMudar: () => carregarValidacoes()});
 async function carregarValidacoes() {
-  const p = new URLSearchParams();
+  const p = new URLSearchParams(FP_V.parametros());
   if (els("v-obra").value) p.set("obra", els("v-obra").value);
   if (els("v-de").value) p.set("de", els("v-de").value);
   if (els("v-ate").value) p.set("ate", els("v-ate").value);
@@ -3649,6 +3837,7 @@ els("v-so-minhas").addEventListener("change", () => {
 els("v-limpar").addEventListener("click", () => {
   els("v-obra").value = ""; els("v-de").value = ""; els("v-ate").value = ""; els("v-busca").value = "";
   FILTRO.tipos.clear();
+  FP_V.limpar();
   carregarValidacoes();
 });
 els("v-todos").addEventListener("change", () => {
@@ -3663,7 +3852,7 @@ els("v-lote-limpar").addEventListener("click", () => {
   els("v-corpo").querySelectorAll("[data-marcar]").forEach(c => { c.checked = false; });
   desenharLote();
 });
-carregarObrasDasValidacoes().then(carregarValidacoes);
+Promise.all([carregarObrasDasValidacoes(), FP_V.carregar()]).then(carregarValidacoes);
 
 {% elif aba_ponto == "ponto_relatorios" %}
 // ===========================================================================
@@ -3681,22 +3870,14 @@ function rlAtalho(qual) {
     els("rl-de").value = isoLocal(ini); els("rl-ate").value = isoLocal(fim);
   } else { const seg = new Date(d); seg.setDate(d.getDate() - (d.getDay() + 6) % 7); els("rl-de").value = isoLocal(seg); els("rl-ate").value = hoje; }
 }
-async function rlObras() {
-  try {
-    const d = await api("/erp/api/ponto/obras");
-    els("rl-obra").innerHTML = `<option value="">Todas</option>` + d.obras.map(o => `<option value="${o.id}">${escapar(rotuloObra(o))}</option>`).join("");
-  } catch (e) {}
-}
+const FP_RL = new FiltroPessoas("rl", {aoEnter: () => rlMontar()});
 async function rlMontar() {
   const b = els("rl-ver"); b.disabled = true; b.textContent = "montando…";
   els("rl-tabela").innerHTML = `<div class="vazio"><b>Montando…</b>pode levar alguns segundos com muita gente.</div>`;
   try {
     RL = await postar("/erp/api/ponto/relatorios", {tipo: rlTipo(), de: els("rl-de").value, ate: els("rl-ate").value,
-      filtros: {busca: els("rl-busca").value.trim(), obra_cadastro: els("rl-obra").value || null,
-                funcoes: els("rl-funcao").value ? [els("rl-funcao").value] : [],
+      filtros: {...FP_RL.valores(),
                 tipos_justificados: [...document.querySelectorAll("[data-rl-just]:checked")].map(x => x.dataset.rlJust)}});
-    const atual = els("rl-funcao").value;
-    els("rl-funcao").innerHTML = `<option value="">Todas</option>` + RL.funcoes.map(f => `<option ${f === atual ? "selected" : ""}>${escapar(f)}</option>`).join("");
     RL_VISAO = {faltas: "pessoas", extras: "pessoas", justificadas: "lista", banco: "lista"}[RL.tipo];
     rlDesenhar();
   } catch (e) { els("rl-tabela").innerHTML = `<div class="aviso erro">${escapar(e.message)}</div>`; }
@@ -3787,10 +3968,10 @@ document.querySelectorAll('input[name="rl-tipo"]').forEach(r => r.addEventListen
 els("rl-ver").addEventListener("click", rlMontar);
 els("rl-csv").addEventListener("click", rlCsv);
 els("rl-imprimir").addEventListener("click", rlImprimir);
-els("rl-limpar").addEventListener("click", () => { ["rl-busca", "rl-obra", "rl-funcao"].forEach(id => { els(id).value = ""; });
+els("rl-limpar").addEventListener("click", () => { FP_RL.limpar();
   document.querySelectorAll("[data-rl-just]").forEach(x => { x.checked = false; }); rlAtalho("mes"); });
 rlAtalho("mes");
-rlObras();
+FP_RL.carregar();
 
 {% elif aba_ponto == "ponto_fotos" %}
 // ===========================================================================

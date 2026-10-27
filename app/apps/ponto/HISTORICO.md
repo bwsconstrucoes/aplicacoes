@@ -59,7 +59,11 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
-1zq. **No ramo, esperando o "pode"** (26/10/2026, sem migração) — a leva das anotações do dono: **Configuração ›
+1zr. **Publicado em 27/10/2026, junto com a 1zq** (com o "pode" do dono: "ao final de tudo, pode publicar"; sem
+   migração) — **menos telas e um filtro só**: no menu, só **Quadro, Validações, Relatórios e Configuração**; o
+   **filtro de funcionários** igual nas três primeiras, na barra lateral; Alertas, Qualidade, Rondas e Mosaico
+   viraram partes do Quadro. Ver a seção de 27/10/2026.
+1zq. **Publicado em 27/10/2026** (26/10/2026, sem migração) — a leva das anotações do dono: **Configuração ›
    Escalas** (a escala padrão no topo, quem está em cada escala, aplicar em lote), a **falta em destaque** no dia
    seguinte, o **feriado em várias obras**, **Viagem e Dispensa** como abonos, o **documento numa janela**, o
    **confronto da leitura da IA**, a tela das **fotos de cadastro** e os **Relatórios** (faltas, ausências
@@ -322,6 +326,44 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 27/10/2026 — Menos telas, e um filtro de funcionários só, na barra lateral
+
+**Pedido do dono** (depois de eu propor, sem executar, juntar as telas no Quadro): *"Vamos manter a de
+validações, todavia o que eu venho dizendo, precisa da filtragem mais ampla no sidebar. Precisa ser
+facilitado o filtro dos funcionários de uma maneira geral. Esses filtros na parte superior não ficam
+legal."* — e concordou com ficar só Quadro, Validações, Relatórios e Configuração no menu.
+
+**O que mudou:**
+- **O menu do ponto tem 4 telas:** Quadro, Validações, Relatórios, Configuração. As outras (Hoje,
+  Pessoas, Espelho, Mosaico, Fotos de cadastro, Banco de horas, Alertas, Qualidade, Rondas) **continuam
+  abrindo pelo endereço** — os links das mensagens de WhatsApp não quebram — e estão listadas na barra do
+  Quadro ("As outras telas"); a janela da pessoa abre o espelho e o banco dela.
+- **O filtro de funcionários é um bloco só** (`core/filtro_pessoas.py` e o `FiltroPessoas` da tela), igual
+  no Quadro, nas Validações e nos Relatórios: pessoa, obra do cadastro, obra em que bateu no período,
+  **funções — várias de uma vez, com busca e quantas pessoas há em cada**, escala (a padrão marcada),
+  situação no cadastro e tipo de pessoa (vigia, ronda, celular, ponto da obra, equipe…, com a contagem).
+  As opções vêm de um endereço só (`/erp/api/ponto/filtros/pessoas`).
+- **Validações com os filtros na barra lateral** (saíram do topo): "só o que eu valido", pessoa ou quem
+  pediu, período, obra do pedido, os tipos e o bloco de funcionários. Com um filtro de funcionário
+  escolhido, ficam só os itens DESSAS pessoas (o que não é de uma pessoa, como o mosaico da obra, sai).
+- **No Quadro, as telas que saíram do menu viraram partes dele**, com o mesmo filtro e o mesmo período:
+  - **📷 Fotos** — o mosaico: a foto de cadastro e as fotos das batidas, por pessoa e dia (até 150 linhas;
+    a conferência obrigatória do mosaico de uma obra continua na tela do Mosaico, que a Validações abre);
+  - **⭐ Qualidade** — por obra, por responsável e por pessoa, no período do Quadro (a mesma conta da tela
+    Qualidade, que continua para ver o mês e os critérios);
+  - **🔦 Rondas** — as noites dos vigias do recorte (até 14 noites), com cada ronda e a foto;
+  - **Alertas** — o alerta aberto aparece na linha do dia ("⚠ Batida faltando"), clicável para resolver ou
+    dispensar, e a situação nova **"Com alerta aberto"** filtra.
+
+**Decisões:** a escala, no Quadro, continua sendo a de CADA DIA; nas Validações e nos Relatórios, é a que
+vale no fim do período (a própria ou a padrão da empresa). As visões Qualidade e Rondas só calculam quando
+abertas, e a Qualidade respeita "uma conta pesada por vez" (21/10).
+
+**Conferido:** testes novos (o menu, o filtro igual nas telas, o alerta no Quadro, qualidade e rondas do
+recorte) e os do ponto inteiros; no navegador, com dado de ensaio: o menu com 4 telas, duas funções
+marcadas no Quadro, as visões Fotos, Qualidade e Rondas, o alerta aberto e tratado pela janela, a barra das
+Validações e o filtro de função nos Relatórios.
 
 ## 26/10/2026 — As anotações do dono: escalas, falta, feriado, abonos, documento, IA, fotos e relatórios
 

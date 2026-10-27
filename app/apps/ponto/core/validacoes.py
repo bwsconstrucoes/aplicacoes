@@ -196,6 +196,7 @@ def listar(conn: Connection, quem: Quem, *, obra_id: Optional[int] = None, de=No
                        "bloqueia o anterior") if antigo else ""
             itens.append({
                 "categoria": "APARELHO", "tipo": "APARELHO", "rotulo": ROTULO["APARELHO"], "id": j["id"],
+                "colaborador_id": a.get("colaborador_id"),
                 "pessoa": (j.get("dono") or {}).get("nome"), "obra": None, "data": None, "quando": j.get("pedido_em"),
                 "detalhe": (f"{j.get('descricao') or 'aparelho sem nome (ninguém entrou nele com CPF e PIN)'}"
                             f" — código {j.get('codigo')}{troca}"),

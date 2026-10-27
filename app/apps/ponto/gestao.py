@@ -61,18 +61,17 @@ ABAS = [
     # ter aquele bando de tela"). Hoje e Pessoas saíram da barra — o Quadro (visões
     # por obra, por pessoa e a janela da pessoa) faz o que elas faziam —, mas os
     # endereços continuam abrindo (ABAS_FORA_DO_MENU), e o Quadro leva até elas.
+    # 27/10/2026, o dono: "tem tela demais para pouca utilidade (…) consolidar". No menu, só
+    # quatro: o Quadro (com as visões Fotos, Qualidade, Rondas e o filtro de alertas), as
+    # Validações (a fila do que espera decisão), os Relatórios e a Configuração. As outras
+    # telas continuam abrindo pelo endereço e pelos atalhos do Quadro e da janela da pessoa.
     ("ponto_quadro", "Quadro", "erp.ponto_pagina_quadro"),
     ("ponto_pendencias", "Validações", "erp.ponto_pagina_pendencias"),
-    ("ponto_espelho", "Espelho", "erp.ponto_pagina_espelho"),
-    ("ponto_mosaico", "Mosaico", "erp.ponto_pagina_mosaico"),
-    ("ponto_banco", "Banco de horas", "erp.ponto_pagina_banco"),
     ("ponto_relatorios", "Relatórios", "erp.ponto_pagina_relatorios"),
-    ("ponto_alertas", "Alertas", "erp.ponto_pagina_alertas"),
-    ("ponto_qualidade", "Qualidade", "erp.ponto_pagina_qualidade"),
-    ("ponto_rondas", "Rondas", "erp.ponto_pagina_rondas"),
     ("ponto_config", "Configuração", "erp.ponto_pagina_configuracao"),
 ]
-ABAS_FORA_DO_MENU = ("ponto_hoje", "ponto_pessoas", "ponto_fotos")
+ABAS_FORA_DO_MENU = ("ponto_hoje", "ponto_pessoas", "ponto_fotos", "ponto_espelho", "ponto_mosaico",
+                     "ponto_banco", "ponto_alertas", "ponto_qualidade", "ponto_rondas")
 MODULO = {
     "chave": "ponto", "nome": "Ponto", "sigla": "PON",
     "descricao": "Ponto eletrônico: quem bateu, espelho, pedidos, banco de horas e alertas",
@@ -846,12 +845,53 @@ def ponto_api_validacoes():
             if not o or not quem.alcanca_obra(o["id"]):
                 raise NaoEncontrado("obra não encontrada")
             obra_id = int(o["id"])
-        from .core import validacoes as val
+        from .core import filtro_pessoas, validacoes as val
         r = val.listar(conn, quem, obra_id=obra_id, de=a.get("de"), ate=a.get("ate"),
                        tipos=[t for t in (a.get("tipos") or "").split(",") if t],
                        busca=a.get("busca") or "", so_minhas=a.get("so_minhas") in ("1", "true"),
                        ver_aparelhos=bool(quem.extras.get("configurar_ponto")))
+        # O filtro de funcionários da barra (27/10/2026), o mesmo do Quadro: com ele,
+        # ficam só os itens DESSAS pessoas (o que não é de uma pessoa sai).
+        f = filtro_pessoas.de_argumentos(a)
+        if filtro_pessoas.ativo(f):
+            hoje = horario.hoje()
+            pessoas, _ = filtro_pessoas.aplicar(conn, quem, cadastros.listar_colaboradores(conn, so_ativos=False), f,
+                                                hoje - dt.timedelta(days=62), hoje)
+            ids = {int(p["id"]) for p in pessoas}
+            r["itens"] = [i for i in r["itens"] if i.get("colaborador_id") and int(i["colaborador_id"]) in ids]
+            r["quantidade"] = len(r["itens"])
+            r["minhas"] = sum(1 for i in r["itens"] if i["pode_decidir"])
+            from collections import Counter
+            r["por_tipo"] = dict(Counter(i["tipo"] for i in r["itens"]))
     return _ok(**r)
+
+
+@bp.route("/erp/api/ponto/filtros/pessoas")
+@login_obrigatorio
+@permissao("ver_ponto")
+@_api
+def ponto_api_filtro_pessoas_opcoes():
+    """As opções do filtro de funcionários da barra (27/10/2026), iguais em todas as
+    telas: obras, funções (com quantas pessoas), escalas e os tipos de pessoa."""
+    from collections import Counter
+    from .core import etiquetas as etq, filtro_pessoas
+    quem = _quem()
+    hoje = horario.hoje()
+    with db.conexao() as conn:
+        pessoas = filtro_pessoas.do_cadastro(conn, quem, cadastros.listar_colaboradores(conn, so_ativos=True), {}, hoje, hoje)
+        _, tipos, _ = filtro_pessoas.por_tipo(conn, pessoas, {})
+        obras = cadastros.listar_obras(conn, so_ativas=True)
+        lista = escalas.listar(conn, so_ativas=True)
+        padrao = escalas.escala_padrao(conn)
+    if quem.obras is not None:
+        obras = [o for o in obras if o["id"] in quem.obras]
+    funcoes = Counter((p.get("funcao") or "").strip() for p in pessoas if (p.get("funcao") or "").strip())
+    return _ok(obras=[cadastros.obra_para_json(o) for o in obras],
+               funcoes=[{"nome": n, "pessoas": q} for n, q in sorted(funcoes.items())],
+               escalas=[{"nome": e["nome"], "padrao": bool(padrao and e["id"] == padrao["id"])} for e in lista],
+               tipos=[{"codigo": c, "rotulo": f"{etq.ETIQUETAS[c][0] if c in etq.ETIQUETAS else '⚠️'} {etq.ROTULO_FILTRO[c]}",
+                       "pessoas": tipos.get(c, 0)} for c in etq.FILTRAVEIS],
+               pessoas=len(pessoas))
 
 
 @bp.route("/erp/api/ponto/registro")
@@ -1154,6 +1194,36 @@ def ponto_api_quadro():
     except quadro.Ocupado as e:
         return jsonify({"ok": False, "erro": str(e), "ocupado": True}), 503
     r.pop("_ids", None)
+    return _ok(**r)
+
+
+@bp.route("/erp/api/ponto/quadro/qualidade", methods=["POST"])
+@login_obrigatorio
+@permissao("ver_ponto")
+@_api
+def ponto_api_quadro_qualidade():
+    """A qualidade do ponto do recorte do Quadro (27/10/2026: a aba Qualidade virou a
+    visão "Qualidade" do Quadro, com o mesmo filtro e o mesmo período)."""
+    from .core import quadro
+    quem, d = _quem(), _corpo()
+    try:
+        with db.conexao() as conn:
+            r = quadro.qualidade_do_recorte(conn, quem, d.get("de"), d.get("ate"), d.get("filtros") or {})
+    except qualidade.Ocupado as e:
+        return jsonify({"ok": False, "erro": str(e), "ocupado": True}), 503
+    return _ok(**r)
+
+
+@bp.route("/erp/api/ponto/quadro/rondas", methods=["POST"])
+@login_obrigatorio
+@permissao("ver_ponto")
+@_api
+def ponto_api_quadro_rondas():
+    """As rondas dos vigias do recorte do Quadro, noite a noite (até 14 noites)."""
+    from .core import quadro
+    quem, d = _quem(), _corpo()
+    with db.conexao() as conn:
+        r = quadro.rondas_do_recorte(conn, quem, d.get("de"), d.get("ate"), d.get("filtros") or {})
     return _ok(**r)
 
 

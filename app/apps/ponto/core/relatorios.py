@@ -62,7 +62,8 @@ def _pessoas(conn: Connection, quem: Quem, f: dict, inicio: dt.date, fim: dt.dat
          WHERE status = 'APROVADA' AND data_fim >= :i AND data_inicio <= :f""", i=inicio, f=fim)}
     ativas = {int(p["id"]) for p in cadastros.listar_colaboradores(conn, so_ativos=True)}
     pessoas = [p for p in todas if int(p["id"]) in ativas or int(p["id"]) in com_algo]
-    return quadro.filtrar_pessoas(conn, quem, pessoas, f, inicio, fim)
+    from . import filtro_pessoas
+    return filtro_pessoas.aplicar(conn, quem, pessoas, f, inicio, min(fim, horario.hoje()))[0]
 
 
 def _base(p: dict) -> dict:

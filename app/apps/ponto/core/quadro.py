@@ -31,7 +31,7 @@ from sqlalchemy.engine import Connection
 
 from .. import db, horario
 from ..erros import ErroDeValidacao, NaoEncontrado
-from . import cadastros, escalas, espelho, etiquetas as etiquetas_da_pessoa, filtros as filtros_do_ponto, vigencia
+from . import cadastros, escalas, espelho, etiquetas as etiquetas_da_pessoa, vigencia
 from .ocorrencias import Quem
 
 MAX_DIAS = 31
@@ -46,6 +46,7 @@ SITUACOES = (
     ("FALTA", "Falta (sem justificativa)"),
     ("JUSTIFICADO", "Justificado (atestado, férias, folga…)"),
     ("FORA_DO_PREVISTO", "Com batida fora do horário da escala"),
+    ("COM_ALERTA", "Com alerta aberto"),
     ("NAO_TRABALHA", "Não trabalha (descanso, feriado)"),
     ("EM_ANALISE", "Com batida em conferência"),
     ("COM_PEDIDO", "Com pedido esperando decisão"),
@@ -136,6 +137,8 @@ def etiquetas_do_dia(d: dict) -> set[str]:
         e.add("EM_ANALISE")
     if d.get("pendentes"):
         e.add("COM_PEDIDO")
+    if d.get("_alertas"):
+        e.add("COM_ALERTA")
     if fora_do_previsto([p["hora"] for p in d.get("previstas") or [] if p.get("hora")],
                         [b["hora"] for b in batidas if b.get("hora")]):
         e.add("FORA_DO_PREVISTO")
@@ -172,13 +175,14 @@ def _linha(p: dict, d: dict, etiquetas: set[str], marcas: list[dict]) -> dict:
                      "origem": b["origem"], "sem_internet": b.get("sem_internet"), "nsr": b.get("nsr"),
                      "fora_da_cerca": b.get("fora_da_cerca"), "distancia_metros": b.get("distancia_metros"),
                      "motivo_analise": b.get("motivo_analise"), "registrado_por": b.get("registrado_por"),
-                     "recebida_em": b.get("recebida_em"), "fora_do_previsto": i in sobrando}
+                     "recebida_em": b.get("recebida_em"), "fora_do_previsto": i in sobrando,
+                     "tem_foto": bool(b.get("tem_foto"))}
                     for i, b in enumerate(d["batidas"])],
         "previstas": d.get("previstas") or [], "faltando": d.get("faltando") or [],
         "ocorrencia": (d.get("ocorrencia") or {}).get("rotulo"),
         "pendentes": [{"id": x["id"], "tipo": x["tipo"], "status": x["status"], "rotulo": x["rotulo"],
                        "hora": x.get("hora")} for x in d.get("pendentes") or []],
-        "em_analise": d.get("em_analise") or 0,
+        "em_analise": d.get("em_analise") or 0, "alertas": d.get("_alertas") or [],
         "obra_do_dia": next((b["obra"] for b in d["batidas"] if b.get("obra")), None) or p.get("obra_codigo"),
     }
 
@@ -192,28 +196,9 @@ def _pessoas(conn: Connection, quem: Quem, f: dict, inicio: dt.date, fim: dt.dat
 
 def filtrar_pessoas(conn: Connection, quem: Quem, pessoas: list[dict], f: dict, inicio: dt.date,
                     fim: dt.date) -> list[dict]:
-    """O recorte de quem pergunta e os filtros de cadastro da barra (o Quadro e os relatórios)."""
-    if quem.obras is not None:                  # o mesmo recorte da tela Pessoas
-        alcance = set(quem.obras)
-        pessoas = [p for p in pessoas if p.get("obra_id") in alcance
-                   or any(o["id"] in alcance for o in p["obras_adicionais"])]
-    busca = str(f.get("busca") or "").strip().lower()
-    if busca:
-        digitos = "".join(ch for ch in busca if ch.isdigit())
-        pessoas = [p for p in pessoas if busca in (p["nome"] or "").lower()
-                   or (digitos and digitos in (p.get("cpf") or ""))]
-    if f.get("obra_cadastro"):
-        o = int(f["obra_cadastro"])
-        pessoas = [p for p in pessoas if p.get("obra_id") == o or any(x["id"] == o for x in p["obras_adicionais"])]
-    if f.get("obra_batida"):                    # bateu nessa obra no período
-        ids = {int(x["id"]) for x in filtros_do_ponto.pessoas_com_batida(conn, int(f["obra_batida"]), inicio, fim)}
-        pessoas = [p for p in pessoas if int(p["id"]) in ids]
-    funcoes = {str(x).strip().lower() for x in (f.get("funcoes") or []) if str(x).strip()}
-    if funcoes:
-        pessoas = [p for p in pessoas if (p.get("funcao") or "").strip().lower() in funcoes]
-    if f.get("situacao_cadastro"):
-        pessoas = [p for p in pessoas if p.get("situacao") == f["situacao_cadastro"]]
-    return pessoas
+    """O recorte de quem pergunta e os filtros de cadastro da barra (filtro_pessoas.py)."""
+    from . import filtro_pessoas
+    return filtro_pessoas.do_cadastro(conn, quem, pessoas, f, inicio, fim)
 
 
 def montar(conn: Connection, quem: Quem, de, ate, f: Optional[dict] = None, *, esperar: float = 0) -> dict:
@@ -227,17 +212,22 @@ def montar(conn: Connection, quem: Quem, de, ate, f: Optional[dict] = None, *, e
     try:
         pessoas = _pessoas(conn, quem, f, inicio, fim)
         # As etiquetas (vigia, ronda, celular, ponto da obra…) — e o filtro "tipo de pessoa".
-        marcas = etiquetas_da_pessoa.das_pessoas(conn, pessoas)
-        contagem_tipos: Counter = Counter()           # antes do filtro: a barra mostra quantos há
-        for p in pessoas:
-            cods = set(marcas.get(int(p["id"]), []))
-            if cods & {"VIGIA_SEM_RONDA", "VIGIA_SEM_CELULAR"}:
-                cods.add("VIGIA_PENDENTE")
-            contagem_tipos.update(cods)
-        tipos = {str(x) for x in (f.get("tipos_pessoa") or [])}
-        if tipos:
-            pessoas = [p for p in pessoas if etiquetas_da_pessoa.casa_com_filtro(marcas.get(int(p["id"]), []), tipos)]
+        # A escala, aqui, é a de CADA DIA (mais abaixo), não a de hoje.
+        from . import filtro_pessoas
+        pessoas, contagem_tipos, marcas = filtro_pessoas.por_tipo(conn, pessoas, f)
         lote = espelho.Lote(conn, pessoas, inicio, fim) if pessoas else None
+        # Os alertas abertos de cada pessoa e dia (27/10/2026: a aba Alertas saiu do menu;
+        # o alerta aparece na linha e tem o filtro "Com alerta aberto").
+        alertas_abertos: dict = {}
+        if pessoas:
+            from . import alertas as _al
+            for a in db.todos(conn, """
+                SELECT id, codigo, gravidade, mensagem, colaborador_id, data_referencia FROM ponto.alertas
+                 WHERE situacao = 'ABERTO' AND colaborador_id = ANY(:ids) AND data_referencia BETWEEN :i AND :f""",
+                              ids=[int(p["id"]) for p in pessoas], i=inicio, f=fim):
+                alertas_abertos.setdefault((int(a["colaborador_id"]), a["data_referencia"].isoformat()), []).append(
+                    {"id": a["id"], "rotulo": _al.ROTULO.get(a["codigo"], a["codigo"]), "gravidade": a["gravidade"],
+                     "mensagem": a["mensagem"]})
         hoje, agora = horario.hoje(), horario.agora()
         escalas_quer = {str(x).strip().lower() for x in (f.get("escalas") or []) if str(x).strip()}
         linhas, por_dia, por_pessoa, por_obra = [], {}, {}, {}
@@ -260,6 +250,7 @@ def montar(conn: Connection, quem: Quem, de, ate, f: Optional[dict] = None, *, e
                 obra_dia = next((b["obra"] for b in d["batidas"] if b.get("obra")), None) or p.get("obra_codigo") or "—"
                 if obra_quer and obra_dia.upper() != obra_quer:
                     continue
+                d["_alertas"] = alertas_abertos.get((int(p["id"]), d["data"]), [])
                 etq = etiquetas_do_dia(d)
                 ob = por_obra.setdefault(obra_dia, {"obra": obra_dia, "pessoas": set(), "contagem": Counter(),
                                                     "bateram": set(), "por_dia": Counter()})
@@ -457,6 +448,44 @@ def abonar_em_lote(quem: Quem, itens: list[dict], *, motivo: str, subtipo: str =
         return {"status": o["status"], "aprovado": o["status"] == "APROVADA", "pedido_id": o["id"]}
 
     return _cada_item(quem, itens, abonar)
+
+
+# ---------------------------------------------------------------------------
+# A qualidade e as rondas do recorte (27/10/2026: as abas saíram do menu e viraram
+# visões do Quadro — com o MESMO filtro de funcionários e o mesmo período)
+# ---------------------------------------------------------------------------
+MAX_NOITES = 14
+
+
+def pessoas_do_recorte(conn: Connection, quem: Quem, f: dict, inicio: dt.date, fim: dt.date) -> list[dict]:
+    from . import filtro_pessoas
+    return filtro_pessoas.aplicar(conn, quem, cadastros.listar_colaboradores(conn, so_ativos=True), f, inicio, fim)[0]
+
+
+def qualidade_do_recorte(conn: Connection, quem: Quem, de, ate, f: Optional[dict] = None) -> dict:
+    from . import qualidade
+    inicio, fim = periodo(de, ate)
+    ids = [int(p["id"]) for p in pessoas_do_recorte(conn, quem, f or {}, inicio, fim)]
+    return qualidade.avaliar(conn, ids, inicio, fim, esperar=0)
+
+
+def rondas_do_recorte(conn: Connection, quem: Quem, de, ate, f: Optional[dict] = None) -> dict:
+    from . import rondas
+    inicio, fim = periodo(de, ate)
+    if not rondas.disponivel(conn):
+        return {"turnos": [], "disponivel": False}
+    if (fim - inicio).days + 1 > MAX_NOITES:
+        inicio = fim - dt.timedelta(days=MAX_NOITES - 1)
+    ids = {int(p["id"]) for p in pessoas_do_recorte(conn, quem, f or {}, inicio, fim)}
+    turnos = []
+    dia = fim
+    while dia >= inicio:
+        for t in rondas.da_noite(conn, dia, quem.obras):
+            if int(t["colaborador_id"]) in ids:
+                turnos.append({**t, "noite": dia.isoformat()})
+        dia -= dt.timedelta(days=1)
+    return {"turnos": turnos, "disponivel": True, "de": inicio.isoformat(), "ate": fim.isoformat(),
+            "por_turno": rondas.QUANTAS}
 
 
 # ---------------------------------------------------------------------------
