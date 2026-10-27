@@ -1401,8 +1401,7 @@ function diasDoMes(d, regras) {
           ${x.trabalhado ? ` trabalhou ${hm(x.trabalhado)}` : ""}${x.extra ? ` · extra ${hm(x.extra)}` : ""}${x.debito && !x.falta ? ` · a menos ${hm(x.debito)}` : ""}
           ${x.feriado ? ` · ${esc(x.feriado)}` : ""}</div>
         ${alertas ? `<div class="pequeno">${esc(alertas)}</div>` : ""}
-        ${falta ? `<div class="pequeno" style="color:var(--vermelho)">❌ Nenhuma batida neste dia: conta como falta.
-          Trabalhou? Toque em ✏️. Faltou com motivo? Toque em 🗓️.</div>` : ""}
+        ${falta ? `<div class="pequeno" style="color:var(--vermelho)">❌ Nenhuma batida neste dia: conta como falta.</div>` : ""}
         ${rondasDoDia(x)}
         ${pendentesDoDia(x)}
         ${negadosDoDia(x)}
@@ -1800,7 +1799,7 @@ function montarDias(caixa, itens) {
     const folga = varios && !x.previstas.length && ["DESCANSO", "EM_ANDAMENTO"].includes(x.situacao);
     const cab = `<b>${esc(diaCurto(x.data))}</b> <span>${x.feriado ? `feriado (${esc(x.feriado)}) · ` : folga ? "folga · " : ""}${ja(x)}</span>`;
     return folga
-      ? `<details class="bloco-dia" data-dia="${x.data}"><summary>${cab} — trabalhou? toque para marcar</summary>${linhasDoAjuste(x, true)}</details>`
+      ? `<details class="bloco-dia" data-dia="${x.data}"><summary>${cab} — toque para abrir</summary>${linhasDoAjuste(x, true)}</details>`
       : `<div class="bloco-dia" data-dia="${x.data}"><div class="bloco-cab">${cab}</div>${linhasDoAjuste(x, varios)}</div>`;
   };
   const abertos = itens.filter(pode);

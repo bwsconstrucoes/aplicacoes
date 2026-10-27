@@ -347,6 +347,16 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 28/10/2026 (noite, terceira) — O aplicativo não sugere o que responder
+
+O dono, sobre o "❌ Nenhuma batida neste dia: conta como falta. **Trabalhou? Toque em ✏️.** Faltou com
+motivo? Toque em 🗓️." do Meu mês: *"Não quero essa mensagem (…) psicologicamente é um estímulo à
+mentira"*. Saiu a pergunta; o dia diz só o fato ("conta como falta"). Pelo mesmo motivo, no "Corrigir
+vários dias", o dia de folga dizia "trabalhou? toque para marcar" e agora diz "toque para abrir". Os
+botões ✏️ e 🗓️ continuam no dia, com a legenda neutra do topo ("corrigir a batida que faltou ·
+justificar a ausência"). **Regra para texto novo no aplicativo:** dizer o que aconteceu e onde fica cada
+botão — nunca perguntar à pessoa se ela trabalhou, nem sugerir o que ela deve pedir.
+
 ## 28/10/2026 (noite, segunda) — A negativa avisada a quem pediu (migração 014)
 
 O dono perguntou se já existia: *"quando eu nego uma validação, o ideal era que a pessoa recebesse, quem
