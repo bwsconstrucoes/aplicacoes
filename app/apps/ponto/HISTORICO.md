@@ -340,6 +340,22 @@ junto com o `README.md` e o `PLANO.md`.
 
 ## 28/10/2026 (tarde) — Pessoas voltou, a foto de cadastro na janela, e o pedido que não dizia a obra
 
+- **Todas as telas voltaram ao menu** (o dono: *"as telas que foram ocultadas precisam voltar"*): Quadro,
+  Pessoas, **Espelho** (a tela de antes, com a tabela nova — a mesma da janela da pessoa: a batida que
+  falta em vermelho, cada batida abre a janela de decidir e corrigir), Validações, Hoje, Mosaico, Fotos de
+  cadastro, Alertas, Qualidade, Rondas, Banco de horas, Relatórios e Configuração. Com 13, a faixa do
+  menu não cabe inteira: o "Telas ▾" do ERP mostra a lista.
+- **Validações: o mesmo dia da mesma pessoa numa linha só** (o dono: *"alguém pediu as 4 batidas do dia, e
+  aparecem 4 validações. O ideal era aparecer consolidado, mas também ser possível aprovar separadamente ou
+  recusar um turno"*): os ajustes de batida (e as batidas em conferência) da mesma pessoa no mesmo dia
+  viram um grupo — "Ajuste de batida × 4", as horas em ordem, "Aprovar as 4", "Negar as 4…" (um motivo
+  só, gravado em cada uma) e "ver uma a uma", que abre cada pedido com os seus botões. A marcação do lote
+  marca o grupo inteiro.
+- **O alto das Validações fica preso ao rolar** (o dono: *"o botão Validações deveria ficar fixo no topo"*):
+  o título e o "aprovar os selecionados". O menu do ERP já ficava fixo; o que sumia era isso.
+- **Mosaico: trocar a foto de cadastro ali mesmo** (sugestão do dono): "usar no cadastro" embaixo de cada
+  foto de batida (antes só aparecia depois de abrir a foto) e "trocar…" na foto de cadastro, que abre a
+  janela da pessoa para enviar uma foto nova.
 - **Pessoas voltou ao menu** (o dono: *"precisa voltar a tela de pessoas. Preciso ainda ver a pessoa, ver a
   foto de cadastro e poder alterar a foto de cadastro"*): a lista com a **foto de cadastro** de cada um, o
   filtro de funcionários na barra (o mesmo do Quadro; "bateu nas obras" olha 30 dias), "com foto / sem foto"

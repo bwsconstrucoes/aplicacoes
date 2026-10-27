@@ -11,15 +11,14 @@ from tests.test_ponto_gestao_banco import (CPF_JOAO, _schema_ponto2, _segunda_pa
                                            bater_via_chave, como, dia_util, local, mundo)
 
 
-def test_o_menu_tem_quatro_telas_e_as_outras_continuam_abrindo():
+def test_todas_as_telas_estao_no_menu():
+    """28/10/2026, o dono: "as telas que foram ocultadas precisam voltar"."""
     from app.apps.ponto import gestao
-    # Pessoas voltou ao menu em 28/10/2026 ("preciso ainda ver a pessoa, ver a foto de cadastro")
-    assert [a[0] for a in gestao.ABAS] == ["ponto_quadro", "ponto_pessoas", "ponto_pendencias", "ponto_relatorios",
-                                            "ponto_config"]
-    assert {"ponto_mosaico", "ponto_banco", "ponto_alertas", "ponto_qualidade",
-            "ponto_rondas"} <= set(gestao.ABAS_FORA_DO_MENU)
-    # o espelho mora na janela da pessoa (28/10/2026)
-    assert "ponto_espelho" not in gestao.ABAS_FORA_DO_MENU
+    abas = [a[0] for a in gestao.ABAS]
+    assert abas[:4] == ["ponto_quadro", "ponto_pessoas", "ponto_espelho", "ponto_pendencias"]
+    assert {"ponto_hoje", "ponto_mosaico", "ponto_fotos", "ponto_alertas", "ponto_qualidade", "ponto_rondas",
+            "ponto_banco", "ponto_relatorios", "ponto_config"} <= set(abas)
+    assert gestao.ABAS_FORA_DO_MENU == ()
 
 
 def test_filtro_pessoas_ativo_e_argumentos():

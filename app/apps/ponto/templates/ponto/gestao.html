@@ -97,14 +97,6 @@
     <label class="opcao"><input type="checkbox" data-qd-faltando="Saída"><span class="rotulo">Saída</span></label>
   </div>
   <div class="cartao-dica" style="margin-top:14px">
-    <b>As outras telas</b> (saíram do menu, continuam abrindo):
-    <a class="elo" href="/erp/ponto">o dia de hoje por obra</a> ·
-    <a class="elo" href="/erp/ponto/mosaico">mosaico por obra</a> ·
-    <a class="elo" href="/erp/ponto/fotos-cadastro">fotos de cadastro</a> ·
-    <a class="elo" href="/erp/ponto/banco">banco de horas</a> ·
-    <a class="elo" href="/erp/ponto/alertas">alertas</a> ·
-    <a class="elo" href="/erp/ponto/qualidade">qualidade (mês)</a> ·
-    <a class="elo" href="/erp/ponto/rondas">rondas (noite)</a>.
     <b>O espelho e o cadastro de cada pessoa</b> abrem clicando no nome dela, em qualquer tela: o dia, o
     espelho do mês, os pedidos, os aparelhos e o cadastro.
   </div>
@@ -143,6 +135,28 @@
   <div class="cartao-dica" style="margin-top:16px">
     Aparecem só as obras <b>com batida no dia</b>, com quantas pessoas bateram.
     Escolhida a obra, as fotos aparecem na hora — uma linha por pessoa que bateu.
+  </div>
+
+{% elif aba_ponto == "ponto_espelho" %}
+  <div class="filtros-cab"><h2>Espelho do mês</h2></div>
+  {# Primeiro o mês e a obra, depois a pessoa (16/10/2026): a lista de pessoas é a
+     de quem bateu naquela obra no mês. #}
+  <div class="campo"><label for="e-mes">Mês</label>
+    <select id="e-mes" class="seletor-mes" data-sem-busca></select></div>
+  <div class="campo" style="margin-top:10px"><label for="e-obra">Obra</label>
+    <select id="e-obra"><option value="">carregando…</option></select></div>
+  <div class="campo" style="margin-top:10px"><label for="e-pessoa">Pessoa</label>
+    <select id="e-pessoa"><option value="">carregando…</option></select></div>
+  <button class="btn" id="e-ver" type="button" style="width:100%; margin-top:14px">Ver espelho</button>
+  <button class="btn secundario" id="e-imprimir" type="button" style="width:100%; margin-top:8px"
+          title="Abre o espelho em outra aba, pronto para imprimir e assinar">Imprimir</button>
+  <a class="btn secundario" id="e-csv" href="/erp/api/ponto/exportar.csv"
+     style="display:block; text-align:center; text-decoration:none; margin-top:8px"
+     title="Totais do mês de todas as pessoas que você enxerga">Exportar mês (CSV)</a>
+  <div class="cartao-dica" style="margin-top:16px">
+    O CSV traz os <b>totais do mês de todas as pessoas</b> que você enxerga,
+    em horas decimais — é o que vai para a folha. O espelho da tela é de uma
+    pessoa só.
   </div>
 
 {% elif aba_ponto == "ponto_pendencias" %}
@@ -424,6 +438,13 @@
   .dp-fotos-batidas { display:flex; flex-wrap:wrap; gap:10px; margin-top:8px; }
   .dp-fotos-batidas figure { margin:0; width:120px; text-align:center; font-size:11px; }
   .dp-fotos-batidas img { width:120px; height:120px; object-fit:cover; border-radius:8px; display:block; cursor:zoom-in; }
+  tr.v-grupo td { background:#F6F8FB; border-top:2px solid var(--borda); }
+  tr.v-filho td:first-child { box-shadow:inset 3px 0 0 var(--azul-claro); }
+  .v-fixo { position:sticky; top:var(--altura-topo); z-index:15; background:var(--papel); margin:-18px -22px 0; padding:18px 22px 6px; }
+  .v-fixo h2 { margin:0 0 10px; font-size:18px; }
+  .v-fixo h2 small { font-weight:500; color:var(--tinta-suave); font-size:13px; margin-left:8px; }
+  .v-fixo .barra-lote { margin-bottom:6px; }
+  @media (max-width: 720px) { .v-fixo { margin:-14px -12px 0; padding:14px 12px 6px; } }
   .fp-lista { max-height:190px; overflow:auto; border:1px solid var(--borda); border-radius:8px; padding:4px 8px; margin-top:4px; }
   .fp-lista .opcao { margin:0 0 2px; }
   h3.qd-grupo .fp-limpar { float:right; font-size:11.5px; padding:0 4px; text-transform:none; letter-spacing:0; }
@@ -582,21 +603,65 @@
       “Montar o quadro”.</div></div></div>
 </div>
 
+{% elif aba_ponto == "ponto_espelho" %}
+{# --------------------------------------------------------------- ESPELHO #}
+<h2 id="e-titulo">Espelho de ponto <small id="e-sub"></small></h2>
+<div id="mensagem"></div>
+<div id="e-fechado"></div>
+<div class="barra-acoes" id="e-acoes" hidden>
+  {% if pode.tratar_ponto %}
+  <button class="btn" id="e-btn-ajuste" type="button">Pedir ajuste de batida</button>
+  <button class="btn secundario" id="e-btn-compensacao" type="button">Registrar compensação</button>
+  {% endif %}
+  {% if pode.aprovar_afastamento %}
+  <button class="btn amarelo" id="e-btn-afastamento" type="button">Lançar afastamento</button>
+  {% elif pode.tratar_ponto %}
+  <button class="btn amarelo" id="e-btn-documento" type="button">Entregar atestado ou licença</button>
+  {% endif %}
+</div>
+<div class="kpis" id="e-kpis"></div>
+<div class="tabela-wrap">
+  <div class="tabela-rolagem"><table>
+    <thead><tr><th class="sem-ordem">Dia</th>
+      <th class="sem-ordem">Batidas</th><th class="sem-ordem">Obra</th><th class="sem-ordem dados">Previsto</th>
+      <th class="sem-ordem dados">Trabalhado</th><th class="sem-ordem dados">Extra</th>
+      <th class="sem-ordem dados">Débito</th><th class="sem-ordem">Situação</th>
+      <th class="sem-ordem">Observação</th>{% if pode.tratar_ponto %}<th class="sem-ordem"></th>{% endif %}
+    </tr></thead>
+    <tbody id="e-corpo"></tbody></table></div>
+  <div class="vazio" id="e-vazio"><b>Escolha o mês, a obra e a pessoa</b>na barra da esquerda.</div>
+</div>
+<div class="cartao-dica">
+  <span class="chip">07:02</span> batida normal ·
+  <span class="chip analise">07:02 <b>?</b></span> em análise ·
+  <span class="chip ajustada">07:02 <b>✎</b></span> incluída por ajuste aprovado ·
+  <span class="chip fora">07:02 ⌖</span> fora da cerca ·
+  <span class="chip qd-falta">Saída 17:00</span> faltou pela escala. Clique na batida para ver a foto e o mapa,
+  validar a conferência ou corrigir a obra e a hora; no dia, para abrir a pessoa.
+  Horas em h:mm (9h05 = nove horas e cinco minutos). Dia futuro, o dia de hoje
+  e os dias fora do contrato aparecem apagados e não entram nos totais. A batida
+  original nunca é apagada nem mudada: o ajuste entra como uma batida a mais,
+  marcada (Portaria 671/2021).
+</div>
+
 {% elif aba_ponto == "ponto_pendencias" %}
 {# ------------------------------------------------------------ VALIDAÇÕES #}
 {# Pedido do dono, 04/10/2026: tudo o que espera validação numa tela só, em
    lista ("fulano tem ajuste, ciclano tem atestado"), com filtro por obra e
    período e o caminho para os mosaicos. A aba mantém a chave e o endereço de
    antes (ponto_pendencias, /erp/ponto/pendencias): link antigo continua abrindo. #}
+{# O alto da tela fica preso ao rolar (28/10/2026, o dono: "o botão Validações deveria ficar fixo no
+   topo para caso eu role a tela"): o título e o aprovar das marcadas, sempre à mão. #}
+<div class="v-fixo">
 <h2>Validações <small>tudo o que espera uma decisão, numa lista só</small></h2>
 <div id="mensagem"></div>
-
 <div class="barra-lote" id="v-lote" hidden>
   <button class="btn" id="v-lote-btn" type="button">Aprovar / validar selecionados (0)</button>
   <button class="link-btn" id="v-lote-limpar" type="button">desmarcar</button>
   <small class="suave">em lote só se aprova; negar e rejeitar pedem o motivo de cada um</small>
 </div>
 <div id="v-lote-msg"></div>
+</div>
 
 <div class="tabela-wrap">
   <div class="tabela-barra"><span class="resumo" id="v-resumo">carregando…</span></div>
@@ -1481,7 +1546,9 @@ function painelMes() {
 let FOTO_CAD_VERSAO = Date.now();
 function ligarFotoDeCadastro(p) {
   const depois = msg => { FOTO_CAD_VERSAO = Date.now(); recarregarPainel(); setTimeout(() => aviso("dp-msg", msg, "ok"), 400);
-                          if (typeof carregarPessoas === "function") carregarPessoas(); };
+                          if (typeof carregarPessoas === "function") carregarPessoas();
+                          if (typeof carregarMosaico === "function" && typeof VERSAO_CADASTRO !== "undefined") {
+                            VERSAO_CADASTRO[p.id] = FOTO_CAD_VERSAO; carregarMosaico(); } };
   if (els("dp-foto-arquivo")) els("dp-foto-arquivo").addEventListener("change", async ev => {
     try {
       const foto = await lerArquivo(ev.target.files[0]);
@@ -1830,6 +1897,7 @@ async function perguntarAbonoDaDeclaracao(nome, periodo) {
 // Depois de decidir numa janela: atualiza o que estiver na tela.
 function depoisDeDecidir() {
   if (PAINEL && els("dlg-pessoa").open) recarregarPainel();
+  if (typeof carregarEspelho === "function" && els("e-corpo") && els("e-pessoa").value) carregarEspelho();
   if (typeof QD !== "undefined" && QD && els("qd-tabela")) qdMontar();
 }
 
@@ -3402,6 +3470,146 @@ FP_QD.carregar().then(() => {
   if (!els("qd-de").value) qdAtalho("hoje");
 });
 
+{% elif aba_ponto == "ponto_espelho" %}
+// ===========================================================================
+// ESPELHO — o mês de uma pessoa, dia a dia.
+// ===========================================================================
+let ESP = null, OBRAS = null;
+const doUrl = nome => new URLSearchParams(location.search).get(nome);
+
+function atualizarLinksDoEspelho() {
+  const comp = els("e-mes").value || mesAtual();
+  els("e-csv").href = `/erp/api/ponto/exportar.csv?competencia=${encodeURIComponent(comp)}`;
+}
+
+// As obras com batida no mês, e as pessoas: as que bateram na obra escolhida no
+// mês (quem bateu em duas obras aparece nas duas) — ou todas, em "Todas as obras".
+async function carregarObrasDoEspelho() {
+  const comp = els("e-mes").value || mesAtual(), antes = els("e-obra").value;
+  try {
+    const d = await api(`/erp/api/ponto/obras-com-batida?competencia=${encodeURIComponent(comp)}`);
+    els("e-obra").innerHTML = `<option value="">Todas as obras (todas as pessoas)</option>`
+      + d.obras.map(o => `<option value="${o.id}">${escapar(rotuloObra(o))} · ${contar(o.pessoas, "pessoa", "pessoas")}</option>`).join("");
+    if (antes && [...els("e-obra").options].some(o => o.value === antes)) els("e-obra").value = antes;
+  } catch (e) { falhou(e); }
+}
+async function carregarPessoasDoEspelho() {
+  const obra = els("e-obra").value, comp = els("e-mes").value || mesAtual(), antes = els("e-pessoa").value;
+  try {
+    const pessoas = obra
+      ? (await api(`/erp/api/ponto/pessoas-com-batida?obra=${encodeURIComponent(obra)}&competencia=${encodeURIComponent(comp)}`)).pessoas
+      : (await api("/erp/api/ponto/pessoas")).pessoas;
+    els("e-pessoa").innerHTML = `<option value="">— escolha a pessoa${obra ? ` (${contar(pessoas.length, "bateu", "bateram")} na obra)` : ""} —</option>`
+      + pessoas.map(p => `<option value="${p.id}">${escapar(p.nome)}${p.cpf ? ` · ${escapar(documento(p.cpf))}`
+          : ` · ${contar(p.batidas, "batida", "batidas")}`}</option>`).join("");
+    if (antes && [...els("e-pessoa").options].some(o => o.value === antes)) els("e-pessoa").value = antes;
+  } catch (e) { falhou(e); }
+}
+
+function semPessoa() {
+  ESP = null;
+  els("e-titulo").childNodes[0].textContent = "Espelho de ponto ";
+  els("e-sub").textContent = "";
+  els("e-kpis").innerHTML = "";
+  els("e-corpo").innerHTML = "";
+  els("e-fechado").innerHTML = "";
+  els("e-acoes").hidden = true;
+  els("e-vazio").classList.remove("oculto");
+}
+
+async function carregarEspelho() {
+  atualizarLinksDoEspelho();
+  const id = els("e-pessoa").value;
+  const comp = els("e-mes").value || mesAtual();
+  if (!id) { semPessoa(); return; }
+  history.replaceState(null, "", `?colaborador_id=${encodeURIComponent(id)}&competencia=${encodeURIComponent(comp)}`);
+  try {
+    ESP = await api(`/erp/api/ponto/espelho/${encodeURIComponent(id)}?competencia=${encodeURIComponent(comp)}`);
+    // Pessoa que não está na lista (já não bate ponto) ganha a opção, para o
+    // seletor não mostrar um nome e a tabela outro.
+    const sel = els("e-pessoa");
+    let opcao = [...sel.options].find(o => o.value === String(ESP.pessoa.id));
+    if (!opcao) {
+      opcao = document.createElement("option");
+      opcao.value = String(ESP.pessoa.id);
+      sel.appendChild(opcao);
+    }
+    opcao.textContent = `${ESP.pessoa.nome} · ${documento(ESP.pessoa.cpf)}`;
+    sel.value = String(ESP.pessoa.id);
+    desenharEspelho();
+  } catch (e) { semPessoa(); falhou(e); }
+}
+
+function desenharEspelho() {
+  const p = ESP.pessoa, r = ESP.resumo;
+  els("e-titulo").childNodes[0].textContent = `${p.nome} `;
+  els("e-sub").textContent = [documento(p.cpf), p.obra ? `obra ${p.obra}` : "sem obra principal",
+    rotuloJornada(p.tipo_jornada), mesBR(ESP.competencia)].join(" · ");
+  els("e-vazio").classList.add("oculto");
+  els("e-fechado").innerHTML = ESP.competencia_fechada
+    ? `<div class="aviso info"><b>Mês fechado.</b> Os números deste mês estão travados:
+        não dá para pedir ajuste, lançar afastamento nem decidir batida. Para mudar,
+        quem fecha o mês precisa reabrir (Configuração › Fechamento do mês).</div>` : "";
+  els("e-acoes").hidden = ESP.competencia_fechada || !(PODE_TRATAR || PODE_DP);
+
+  const kpi = (rot, valor, cor, sub) => `<div class="kpi estatico ${cor}">
+    <div class="kpi-rotulo">${rot}</div><div class="kpi-valor">${valor}</div>
+    <div class="kpi-sub">${sub}</div></div>`;
+  els("e-kpis").innerHTML = [
+    kpi("Trabalhado", hm(r.trabalhado), "", `em ${r.dias} dia(s) contados`),
+    kpi("Previsto", hm(r.previsto), "", "o que a escala pedia"),
+    kpi("Extra", hm(r.extra), "verde", "acima do previsto"),
+    kpi("Débito", hm(r.debito), "vermelho", "atraso e saída antes da hora"),
+    kpi("Faltas", r.faltas, "vermelho", "dias sem batida e sem justificativa"),
+    kpi("Abonados", r.abonados, "ciano", "atestado, férias, folga aprovada"),
+    kpi("Batida faltando", r.incompletos, "ambar", "dias com batida ímpar"),
+    kpi("Em análise", r.em_analise, "ambar", "batidas esperando decisão"),
+    kpi("Noturno", hm(r.noturno), "roxo", "entre 22h e 5h, já com a hora reduzida"),
+  ].join("");
+
+  // A mesma linha do espelho da janela da pessoa (28/10/2026): a batida abre a janela da batida
+  // (foto, mapa, decidir, corrigir), a que falta pela escala aparece em vermelho.
+  const podeAjustar = PODE_TRATAR && !ESP.competencia_fechada;
+  const antes = ESP.dias.filter(d => d.situacao === "ANTES_DO_PONTO");
+  els("e-corpo").innerHTML = (antes.length ? `<tr class="apagada"><td colspan="${PODE_TRATAR ? 10 : 9}"><small class="suave" style="display:inline">
+      ${ddmm(antes[0].data)} a ${ddmm(antes[antes.length - 1].data)}: antes do início do ponto — não conta</small></td></tr>` : "")
+    + ESP.dias.filter(d => d.situacao !== "ANTES_DO_PONTO").map(d => linhaDoEspelho(d, ESP, podeAjustar)).join("");
+  els("e-corpo").querySelectorAll("[data-dp-ajuste]").forEach(b =>
+    b.addEventListener("click", () => pedirAjuste(ESP && ESP.pessoa, b.dataset.dpAjuste, carregarEspelho)));
+  els("e-corpo").querySelectorAll("[data-dp-dia]").forEach(b =>
+    b.addEventListener("click", () => abrirPessoaPainel(ESP.pessoa.id, b.dataset.dpDia, "dia")));
+}
+
+preencherMeses(els("e-mes"), /^\d{4}-\d{2}$/.test(doUrl("competencia") || "") ? doUrl("competencia") : mesAtual());
+atualizarLinksDoEspelho();
+els("e-ver").addEventListener("click", carregarEspelho);
+els("e-pessoa").addEventListener("change", carregarEspelho);
+els("e-obra").addEventListener("change", carregarPessoasDoEspelho);
+els("e-mes").addEventListener("change", async () => {
+  await carregarObrasDoEspelho(); await carregarPessoasDoEspelho(); carregarEspelho();
+});
+els("e-imprimir").addEventListener("click", () => {
+  const id = els("e-pessoa").value;
+  if (!id) { aviso("mensagem", "Escolha a pessoa antes de imprimir.", "erro"); return; }
+  const comp = els("e-mes").value || mesAtual();
+  window.open(`/erp/ponto/espelho/${encodeURIComponent(id)}/imprimir?competencia=${encodeURIComponent(comp)}`, "_blank");
+});
+if (els("e-btn-ajuste")) els("e-btn-ajuste").addEventListener("click", () => pedirAjuste(ESP && ESP.pessoa, null, carregarEspelho));
+if (els("e-btn-compensacao")) els("e-btn-compensacao").addEventListener("click", () => registrarCompensacao(ESP && ESP.pessoa, carregarEspelho));
+if (els("e-btn-afastamento")) els("e-btn-afastamento").addEventListener("click", () => lancarAfastamento(ESP && ESP.pessoa, carregarEspelho));
+if (els("e-btn-documento")) els("e-btn-documento").addEventListener("click", () => entregarDocumento(ESP && ESP.pessoa, carregarEspelho));
+carregarObrasDoEspelho().then(carregarPessoasDoEspelho).then(() => {
+  const id = doUrl("colaborador_id");
+  if (id && /^\d+$/.test(id)) {
+    const sel = els("e-pessoa");
+    if (![...sel.options].some(o => o.value === id)) {
+      sel.insertAdjacentHTML("beforeend", `<option value="${id}">pessoa nº ${id}</option>`);
+    }
+    sel.value = id;
+    carregarEspelho();
+  }
+});
+
 {% elif aba_ponto == "ponto_pendencias" %}
 // ===========================================================================
 // VALIDAÇÕES — tudo o que espera uma decisão: pedidos, batidas em conferência,
@@ -3574,6 +3782,68 @@ function pedidoPorTexto(i) {
   return p.propria ? `<span class="suave">a própria pessoa</span>${como}` : `<b>${escapar(p.nome)}</b>${como}`;
 }
 
+const GRUPOS_ABERTOS = new Set();
+// Os pedidos de ajuste (e as batidas em conferência) da mesma pessoa no mesmo dia formam um grupo.
+function grupoDoItem(i) {
+  if (!i.colaborador_id || !i.data) return null;
+  if (i.categoria === "PEDIDO" && i.tipo === "AJUSTE_BATIDA") return `AJ|${i.colaborador_id}|${i.data}`;
+  if (i.categoria === "BATIDA") return `BT|${i.colaborador_id}|${i.data}`;
+  return null;
+}
+const horaDoItem = i => { const m = String(i.quando || "").match(/(\d{2}:\d{2})\s*$/); return m ? m[1] : ""; };
+function linhaDoGrupo(g, ms) {
+  const p0 = ms[0], n = ms.length, aberto = GRUPOS_ABERTOS.has(g);
+  const lote = ms.filter(emLote), todos = lote.length > 0 && lote.every(m => MARCADOS.has(chaveDoItem(m)));
+  const decide = ms.every(m => m.pode_decidir);
+  const unicos = xs => [...new Set(xs.filter(Boolean))];
+  const motivos = unicos(ms.map(m => m.detalhe));
+  const esperando = Math.max(...ms.map(m => m.dias_esperando || 0));
+  const batidas = p0.categoria === "BATIDA";
+  return `<tr class="v-grupo">
+    <td data-rotulo="">${lote.length ? `<input type="checkbox" data-marcar-grupo="${escapar(g)}" ${todos ? "checked" : ""}
+        title="Marcar as ${n} para aprovar em lote">` : ""}</td>
+    <td data-rotulo="Tipo"><span class="selo ${SELO_CATEGORIA[p0.categoria] || "outro"}">${escapar(batidas ? "Batidas em conferência" : (p0.rotulo || "Ajuste de batida"))} × ${n}</span></td>
+    <td data-rotulo="Pessoa">${eloPessoa(p0.colaborador_id, p0.pessoa, p0.data)}</td>
+    <td data-rotulo="Pedido por">${unicos(ms.map(pedidoPorTexto)).join("<br>")}</td>
+    <td data-rotulo="Obra" class="dados">${escapar(unicos(ms.map(m => m.obra)).join(", ") || "—")}</td>
+    <td data-rotulo="Quando" class="dados"><b>${escapar(dataBR(p0.data))}</b>
+      <div>${ms.map(m => `<span class="chip">${escapar(horaDoItem(m) || "?")}</span>`).join("")}</div></td>
+    <td data-rotulo="Detalhe" class="desc">${motivos.length ? motivos.map(escapar).join("<br>") : "—"}</td>
+    <td data-rotulo="Esperando">${esperandoTexto(esperando)}</td>
+    <td data-rotulo="Quem valida">${quemValidaTexto(p0)}</td>
+    <td data-rotulo=""><div class="acoes">${decide ? `<button class="btn" type="button" data-grupo-acao="aprovar" data-g="${escapar(g)}">${batidas ? "Validar" : "Aprovar"} as ${n}</button>
+        <button class="btn secundario" type="button" data-grupo-acao="negar" data-g="${escapar(g)}">${batidas ? "Rejeitar" : "Negar"} as ${n}…</button>` : ""}
+      <button class="link-btn" type="button" data-grupo-acao="abrir" data-g="${escapar(g)}">${aberto ? "esconder ▴" : "ver uma a uma ▾"}</button></div></td></tr>`;
+}
+// Aprova (ou nega, com um motivo só) todas as do grupo, uma de cada vez, com o nome de quem decidiu.
+async function decidirOGrupo(ms, sim) {
+  const batidas = ms[0].categoria === "BATIDA", n = ms.length;
+  const horas = ms.map(horaDoItem).filter(Boolean).join(", ");
+  let motivo = "";
+  if (sim) {
+    const r = await perguntar({titulo: `${batidas ? "Validar" : "Aprovar"} as ${n} de ${escapar(ms[0].pessoa)}`,
+      aviso: `${escapar(dataBR(ms[0].data))}: ${escapar(horas)}. Para decidir uma a uma, use “ver uma a uma”.`,
+      campos: [], textoOk: batidas ? "Validar todas" : "Aprovar todas"});
+    if (!r) return;
+  } else {
+    motivo = await pedirMotivo(`${batidas ? "Rejeitar" : "Negar"} as ${n} de ${escapar(ms[0].pessoa)}`,
+      `${escapar(dataBR(ms[0].data))}: ${escapar(horas)}. O mesmo motivo vai em cada uma, com o seu nome.`,
+      `Por que está ${batidas ? "rejeitando" : "negando"}`, "ex.: a pessoa não estava na obra nesse dia");
+    if (motivo === null) return;
+  }
+  let certos = 0;
+  const erros = [];
+  for (const i of ms) {
+    try {
+      await postar(i.decidir_em, i.categoria === "PEDIDO" ? {aprovar: sim, motivo} : {para: sim ? "VALIDA" : "REJEITADA", motivo});
+      certos++;
+    } catch (e) { erros.push(`${escapar(horaDoItem(i) || i.rotulo)}: ${escapar(e.message)}`); }
+  }
+  await carregarValidacoes();
+  aviso("mensagem", `<b>${certos} de ${n} ${sim ? (batidas ? "validada(s)" : "aprovado(s)") : (batidas ? "rejeitada(s)" : "negado(s)")}</b> — ${escapar(ms[0].pessoa)}`
+    + (erros.length ? `<br>${erros.join("<br>")}` : ""), erros.length ? "alerta" : "ok");
+}
+
 function desenharValidacoes() {
   desenharTipos();
   const lista = itensVisiveis();
@@ -3582,14 +3852,18 @@ function desenharValidacoes() {
   els("v-resumo").innerHTML = `<b>${VAL.quantidade || 0}</b> esperando validação · <b>${VAL.minhas || 0}</b> são suas`
     + (lista.length !== (VAL.quantidade || 0) ? ` · mostrando ${lista.length}` : "");
   els("v-vazio").classList.toggle("oculto", lista.length > 0);
-  els("v-corpo").innerHTML = lista.map(i => {
+  // O MESMO DIA DA MESMA PESSOA, NUMA LINHA SÓ (28/10/2026, o dono: "muitas vezes alguém pediu as 4
+  // batidas do dia, e aparecem 4 validações. O ideal era aparecer consolidado, mas também ser possível
+  // aprovar separadamente ou recusar um turno"). O grupo aprova ou nega tudo; "ver uma a uma" abre as
+  // linhas de cada pedido, com os botões de cada uma.
+  const linha = (i, g) => {
     const k = escapar(chaveDoItem(i));
     const pessoa = i.pessoa
       ? (i.colaborador_id
         ? eloPessoa(i.colaborador_id, i.pessoa, i.data)
         : `<b>${escapar(i.pessoa)}</b>`)
       : `<span class="suave">—</span>`;
-    return `<tr data-linha="${k}">
+    return `<tr data-linha="${k}" ${g ? `class="v-filho" data-grupo="${escapar(g)}" ${GRUPOS_ABERTOS.has(g) ? "" : "hidden"}` : ""}>
       <td data-rotulo="">${emLote(i) ? `<input type="checkbox" data-marcar="${k}" ${MARCADOS.has(chaveDoItem(i)) ? "checked" : ""}
           title="Marcar para aprovar em lote">` : ""}</td>
       <td data-rotulo="Tipo"><span class="selo ${SELO_CATEGORIA[i.categoria] || "outro"}">${escapar(i.rotulo || TIPOS_VAL[i.tipo] || i.tipo)}</span></td>
@@ -3602,7 +3876,31 @@ function desenharValidacoes() {
       <td data-rotulo="Quem valida">${quemValidaTexto(i)}</td>
       <td data-rotulo="">${acoesDoItem(i)}</td></tr>
       ${i.categoria === "PEDIDO" ? `<tr id="leitura-${i.id}" class="linha-leitura" hidden><td colspan="10"></td></tr>` : ""}`;
+  };
+  const grupos = new Map();
+  lista.forEach(i => { const g = grupoDoItem(i); if (g) { if (!grupos.has(g)) grupos.set(g, []); grupos.get(g).push(i); } });
+  grupos.forEach(ms => ms.sort((x, y) => horaDoItem(x).localeCompare(horaDoItem(y))));       // na ordem do dia
+  const feitos = new Set();
+  els("v-corpo").innerHTML = lista.map(i => {
+    const g = grupoDoItem(i), membros = g ? grupos.get(g) : null;
+    if (!membros || membros.length < 2) return linha(i);
+    if (feitos.has(g)) return "";
+    feitos.add(g);
+    return linhaDoGrupo(g, membros) + membros.map(m => linha(m, g)).join("");
   }).join("");
+  els("v-corpo").querySelectorAll("[data-grupo-acao]").forEach(b => b.addEventListener("click", () => {
+    const g = b.dataset.g, membros = grupos.get(g) || [];
+    if (b.dataset.grupoAcao === "abrir") {
+      GRUPOS_ABERTOS.has(g) ? GRUPOS_ABERTOS.delete(g) : GRUPOS_ABERTOS.add(g);
+      return desenharValidacoes();
+    }
+    decidirOGrupo(membros, b.dataset.grupoAcao === "aprovar");
+  }));
+  els("v-corpo").querySelectorAll("[data-marcar-grupo]").forEach(c => c.addEventListener("change", () => {
+    (grupos.get(c.dataset.marcarGrupo) || []).filter(emLote).forEach(m =>
+      c.checked ? MARCADOS.add(chaveDoItem(m)) : MARCADOS.delete(chaveDoItem(m)));
+    desenharValidacoes();
+  }));
   const achar = k => (VAL.itens || []).find(i => chaveDoItem(i) === k);
   els("v-corpo").querySelectorAll("[data-acao]").forEach(b => b.addEventListener("click", () => {
     const i = achar(b.dataset.item);
@@ -4228,7 +4526,11 @@ function celulaDoCadastro(p) {
     : `<div class="foto foto-vazia">${PODE_TRATAR
         ? `<span>sem foto de cadastro<span class="so-largo"> — abra uma foto boa e toque em “Usar como
             foto de cadastro”</span></span>` : "sem foto de cadastro"}</div>`;
-  return `<div class="mosaico-cel cadastro">${foto}<div class="mosaico-hora">cadastro</div></div>`;
+  // Trocar a foto de cadastro daqui (28/10/2026, o dono: "poder alterar a foto de cadastro no mosaico"):
+  // a janela da pessoa, aba Cadastro, envia uma foto nova; cada batida tem "usar no cadastro".
+  return `<div class="mosaico-cel cadastro">${foto}<div class="mosaico-hora">cadastro</div>
+    ${PODE_TRATAR ? `<button class="link-btn" type="button" data-abrir-pessoa="${p.colaborador_id}" data-aba="cadastro"
+      title="enviar uma foto nova ou escolher outra">trocar…</button>` : ""}</div>`;
 }
 
 function celulaDaBatida(p, b) {
@@ -4253,7 +4555,9 @@ function celulaDaBatida(p, b) {
     <div class="mosaico-hora" title="${escapar(`NSR ${b.nsr}`)}">${escapar(b.hora)}</div>
     ${selos ? `<div>${selos}</div>` : ""}
     ${sinais.map(s => `<span class="sinal-texto">${escapar(s)}</span>`).join("")}
-    ${marcar}</div>`;
+    ${marcar}
+    ${PODE_TRATAR && b.tem_foto ? `<button class="link-btn" type="button" data-usar-cadastro="${b.id}" data-colaborador="${p.colaborador_id}"
+      title="esta foto passa a ser a de cadastro: é com ela que a conferência do rosto compara">usar no cadastro</button>` : ""}</div>`;
 }
 
 function desenharMosaico() {
@@ -4309,8 +4613,8 @@ function acoesDaFoto(alvo) {
     usarComoFotoDeCadastro(Number(alvo.dataset.colaborador), Number(alvo.dataset.foto)));
 }
 
-async function usarComoFotoDeCadastro(colaboradorId, marcacaoId) {
-  const b = els("foto-usar-cadastro");
+async function usarComoFotoDeCadastro(colaboradorId, marcacaoId, botao) {
+  const b = botao || els("foto-usar-cadastro");
   b.disabled = true;
   try {
     await postar(`/erp/api/ponto/pessoas/${colaboradorId}/foto-cadastral`, {marcacao_id: marcacaoId});
@@ -4318,8 +4622,12 @@ async function usarComoFotoDeCadastro(colaboradorId, marcacaoId) {
     els("dlg-foto").close();
     aviso("mensagem", "Foto de cadastro definida.", "ok");
     await carregarMosaico();
-  } catch (e) { b.disabled = false; falhou(e, "foto-acoes-msg"); }
+  } catch (e) { b.disabled = false; falhou(e, botao ? "mensagem" : "foto-acoes-msg"); }
 }
+document.addEventListener("click", ev => {
+  const b = ev.target.closest("[data-usar-cadastro]");
+  if (b) usarComoFotoDeCadastro(Number(b.dataset.colaborador), Number(b.dataset.usarCadastro), b);
+});
 
 async function confirmarConferencia() {
   if (!MOS) return;

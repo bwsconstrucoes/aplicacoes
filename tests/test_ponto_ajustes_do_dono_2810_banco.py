@@ -47,16 +47,14 @@ def test_o_dp_corrige_a_obra_e_a_hora_de_uma_batida_sem_apagar_a_original(app, m
 
 def test_o_espelho_abre_o_quadro_com_a_janela_e_pessoas_tem_a_lista(app, mundo):
     dp = como(app, mundo["dp"])
-    r = dp.get(f"/erp/ponto/espelho?colaborador_id={mundo['joao']}&competencia=2026-10")
-    assert r.status_code == 302 and "/erp/ponto/quadro" in r.headers["Location"]
-    assert f"abrir_pessoa={mundo['joao']}" in r.headers["Location"] and "aba=mes" in r.headers["Location"]
+    # o Espelho e a Pessoas voltaram como telas (28/10/2026, tarde)
+    assert dp.get(f"/erp/ponto/espelho?colaborador_id={mundo['joao']}&competencia=2026-10").status_code == 200
     # a tela Pessoas voltou (28/10/2026), com a foto de cadastro de cada um
     assert dp.get(f"/erp/ponto/pessoas?pessoa={mundo['maria']}").status_code == 200
     lista = dp.get("/erp/api/ponto/pessoas").get_json()["pessoas"]
     assert all("tem_foto_cadastral" in p for p in lista)
     so_a = dp.get(f"/erp/api/ponto/pessoas?obra_cadastro={mundo['obra_a']}").get_json()["pessoas"]
     assert {p["nome"] for p in so_a} == {"João Obra A"}
-    assert dp.get("/erp/ponto/espelho").headers["Location"].endswith("/erp/ponto/quadro")
 
 
 def test_a_sem_rosto_validada_e_falso_alarme_e_o_nivel_se_explica(app, mundo, banco):

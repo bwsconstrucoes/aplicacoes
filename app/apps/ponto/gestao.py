@@ -56,26 +56,24 @@ logger = logging.getLogger("ponto.gestao")
 # O módulo no menu do ERP
 # ---------------------------------------------------------------------------
 ABAS = [
-    # O Quadro é a porta de entrada (21/10/2026, o dono: "uma tela gerencial mais
-    # completa, que através dos filtros nos desse as informações (…) ao invés de
-    # ter aquele bando de tela"). Hoje e Pessoas saíram da barra — o Quadro (visões
-    # por obra, por pessoa e a janela da pessoa) faz o que elas faziam —, mas os
-    # endereços continuam abrindo (ABAS_FORA_DO_MENU), e o Quadro leva até elas.
-    # 27/10/2026, o dono: "tem tela demais para pouca utilidade (…) consolidar". No menu, só
-    # quatro: o Quadro (com as visões Fotos, Qualidade, Rondas e o filtro de alertas), as
-    # Validações (a fila do que espera decisão), os Relatórios e a Configuração. As outras
-    # telas continuam abrindo pelo endereço e pelos atalhos do Quadro e da janela da pessoa.
+    # 28/10/2026, o dono: "as telas que foram ocultadas precisam voltar". Todas de novo no menu,
+    # na ordem do dia a dia; a janela da pessoa continua abrindo de qualquer uma.
     ("ponto_quadro", "Quadro", "erp.ponto_pagina_quadro"),
-    # Pessoas voltou ao menu (28/10/2026): a lista com a foto de cadastro de cada um.
     ("ponto_pessoas", "Pessoas", "erp.ponto_pagina_pessoas"),
+    ("ponto_espelho", "Espelho", "erp.ponto_pagina_espelho"),
     ("ponto_pendencias", "Validações", "erp.ponto_pagina_pendencias"),
+    ("ponto_hoje", "Hoje", "erp.ponto_pagina_hoje"),
+    ("ponto_mosaico", "Mosaico", "erp.ponto_pagina_mosaico"),
+    ("ponto_fotos", "Fotos de cadastro", "erp.ponto_pagina_fotos_cadastro"),
+    ("ponto_alertas", "Alertas", "erp.ponto_pagina_alertas"),
+    ("ponto_qualidade", "Qualidade", "erp.ponto_pagina_qualidade"),
+    ("ponto_rondas", "Rondas", "erp.ponto_pagina_rondas"),
+    ("ponto_banco", "Banco de horas", "erp.ponto_pagina_banco"),
     ("ponto_relatorios", "Relatórios", "erp.ponto_pagina_relatorios"),
     ("ponto_config", "Configuração", "erp.ponto_pagina_configuracao"),
 ]
-# Espelho e Pessoas saíram de vez (28/10/2026): moram na janela da pessoa, e o endereço
-# antigo abre o Quadro com ela (_abrir_na_janela).
-ABAS_FORA_DO_MENU = ("ponto_hoje", "ponto_fotos", "ponto_mosaico",
-                     "ponto_banco", "ponto_alertas", "ponto_qualidade", "ponto_rondas")
+# Nenhuma tela fora do menu desde 28/10/2026 (todas voltaram).
+ABAS_FORA_DO_MENU: tuple = ()
 MODULO = {
     "chave": "ponto", "nome": "Ponto", "sigla": "PON",
     "descricao": "Ponto eletrônico: quem bateu, espelho, pedidos, banco de horas e alertas",
@@ -226,24 +224,13 @@ def ponto_pagina_quadro():
     return _pagina("ponto_quadro")
 
 
-def _abrir_na_janela(colaborador_id, aba: str, competencia=None):
-    """As telas Espelho e Pessoas saíram (28/10/2026, o dono: "você reduziu as telas, mas
-    só escondeu (…) existe e não existe"): o espelho e o cadastro moram na janela da
-    pessoa. O endereço antigo (um link guardado, a impressão) abre o Quadro com ela."""
-    from flask import redirect, url_for
-    args = {}
-    if str(colaborador_id or "").isdigit():
-        args = {"abrir_pessoa": int(colaborador_id), "aba": aba}
-        if competencia and len(str(competencia)) == 7:
-            args["competencia"] = str(competencia)
-    return redirect(url_for("erp.ponto_pagina_quadro", **args))
-
-
 @bp.route("/erp/ponto/espelho")
 @login_obrigatorio
 @permissao("ver_ponto")
 def ponto_pagina_espelho():
-    return _abrir_na_janela(request.args.get("colaborador_id"), "mes", request.args.get("competencia"))
+    # Voltou ao menu em 28/10/2026 (o dono: "as telas que foram ocultadas precisam voltar"), com a
+    # mesma tabela do espelho da janela da pessoa.
+    return _pagina("ponto_espelho")
 
 
 @bp.route("/erp/ponto/pendencias")
