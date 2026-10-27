@@ -59,7 +59,7 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
-1zu. **No ramo, esperando o "pode"** (28/10/2026, sem migração) — as anotações do dono sobre a
+1zu. **Publicado em 28/10/2026** (com o "pode" do dono; sem migração) — as anotações do dono sobre a
    Configuração, o espelho e a conferência do rosto: filtros na barra lateral com várias obras e funções;
    o espelho DENTRO da janela da pessoa (as telas Espelho e Pessoas saíram); corrigir a obra ou a hora de
    UMA batida; validar a conferência direto do espelho; o "sem rosto" que era a foto de cadastro; e o
