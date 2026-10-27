@@ -59,6 +59,10 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1zs. **No ramo, esperando o "pode"** (27/10/2026, sem migração) — a **declaração de comparecimento**, com a
+   escolha do abono na aprovação (o dia todo, só o período, nada). Ver a seção de 27/10/2026 (tarde).
+   **Esperando o dono decidir** (análise mandada, nada feito): busca pelo nome com foto no ponto da obra (LGPD),
+   som e vibração na batida, e os 3 minutos do responsável — ver a mesma seção.
 1zr. **Publicado em 27/10/2026, junto com a 1zq** (com o "pode" do dono: "ao final de tudo, pode publicar"; sem
    migração) — **menos telas e um filtro só**: no menu, só **Quadro, Validações, Relatórios e Configuração**; o
    **filtro de funcionários** igual nas três primeiras, na barra lateral; Alertas, Qualidade, Rondas e Mosaico
@@ -326,6 +330,40 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 27/10/2026 (tarde) — A declaração de comparecimento, e o que o ponto da obra pediu
+
+**A declaração** (o dono: *"o cara vai no hospital, faz uma consulta rápida, não é dado atestado
+médico, entrega a declaração e falta o resto do dia todinho (…) o DP precisa analisar e decidir se
+vai abonar a totalidade das horas, só o período, ou não vai abonar nada"*).
+- **Tipo novo** "Declaração de comparecimento (consulta, exame)" em todo lugar onde se entrega
+  atestado: no celular, no ponto da obra, no pedido pela equipe e no ERP (entregar e lançar). Leva o
+  **dia e o horário escritos nela** (das/às) e o documento.
+- Guardada como ATESTADO com `subtipo` (sem migração): DECLARACAO enquanto espera; na **aprovação
+  final**, quem aprova é perguntado — **só o período** (o padrão), **o dia todo** ou **nada** — e o
+  subtipo guarda a escolha (DECL_PERIODO, DECL_TOTAL, DECL_NADA). Sem a escolha, o servidor não aprova.
+  Nas etapas de antes (encarregado), não se pergunta. Aprovar em lote não serve para declaração: ela
+  pede a escolha, uma a uma.
+- **No espelho:** "o dia todo" abona como atestado; "só o período" tira os minutos declarados do débito
+  do dia (se cobrir o dia previsto inteiro, abona); "nada" deixa o dia como estava. O dia mostra a
+  declaração (Quadro, observação) e os Relatórios › Ausências justificadas dizem as **horas abonadas**,
+  não dias.
+- Sigilo: é documento de saúde, como o atestado (só o DP abre).
+
+**O que o ponto da obra pediu** (busca pelo nome com foto, som/vibração, os 3 minutos): **análise
+mandada ao dono, nada feito**, a pedido dele ("me questione antes de executar"). Resumo do que propus:
+- Busca pelo NOME (3 letras, até 6 pessoas da obra), com foto pequena e **sem CPF** — mostrar o CPF é
+  PIOR que a foto pela LGPD (é o dado que serve a golpe); a foto, usada também para a conferência do
+  rosto, é dado sensível: mostrar só para identificar, contido, com registro de uso e a batida marcada
+  "identificada pelo nome" (sempre com a conferência do rosto). Botão "Não sei meu CPF" na tela de
+  bater. Validar com o jurídico. Alternativa: crachá com o QR impresso.
+- Som (funciona em Android e iPhone, com o volume ligado) e vibração (só Android — a Apple não deixa
+  site vibrar): sons diferentes para registrado, conferência e recusa; botão para desligar o som.
+- Os 3 minutos: a batida já não sai sozinha; o que trava a fila é sair dela e, em 3 min parado,
+  desconectar e ter de entrar com CPF e PIN de novo. Proposta: em vez de desconectar, **voltar para a
+  tela de bater e continuar conectado** (sair dela já pede o PIN). Mais tempo (10–15 min, ou o turno)
+  deixa o aparelho, fora da batida, aberto para qualquer um da fila consultar o ponto dos colegas e lançar
+  pedidos no nome do responsável.
 
 ## 27/10/2026 — Menos telas, e um filtro de funcionários só, na barra lateral
 

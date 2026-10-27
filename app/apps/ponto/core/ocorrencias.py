@@ -50,6 +50,39 @@ ETAPAS = {
 }
 STATUS_DA_ETAPA = {SUPERVISOR: "AGUARDANDO_SUPERVISOR", DP: "AGUARDANDO_DP"}
 SAUDE = ("ATESTADO", "AFASTAMENTO")
+# A DECLARAÇÃO DE COMPARECIMENTO (27/10/2026, o dono: "a pessoa vai ao hospital, faz uma
+# consulta rápida, não é dado atestado, entrega a declaração e falta o resto do dia (…) o
+# DP precisa analisar e decidir se vai abonar a totalidade das horas, só o período, ou
+# não vai abonar nada"). É um ATESTADO com subtipo: DECLARACAO enquanto espera; na
+# aprovação final, quem aprova escolhe — e o subtipo guarda a escolha. O horário de
+# início vai em `horario` e a duração do período declarado, em `minutos`.
+DECLARACAO = "DECLARACAO"
+DECLARACAO_ABONO = {"TOTAL": "DECL_TOTAL", "PERIODO": "DECL_PERIODO", "NADA": "DECL_NADA"}
+NOME_DECLARACAO = {"DECLARACAO": "Declaração de comparecimento — falta decidir o abono",
+                   "DECL_TOTAL": "Declaração de comparecimento — abonado o dia todo",
+                   "DECL_PERIODO": "Declaração de comparecimento — abonado só o período",
+                   "DECL_NADA": "Declaração de comparecimento — não abonada"}
+
+
+def e_declaracao(o: dict) -> bool:
+    """PURA. O pedido é uma declaração de comparecimento (decidida ou não)?"""
+    return o.get("tipo") == "ATESTADO" and str(o.get("subtipo") or "") in NOME_DECLARACAO
+
+
+def _periodo_declarado(dados: dict, dia: dt.date) -> tuple[dt.datetime, int]:
+    """O início e a duração (minutos) do período escrito na declaração."""
+    def hm(chave, rotulo):
+        try:
+            h, m = (int(x) for x in str(dados.get(chave) or "").strip().split(":")[:2])
+            assert 0 <= h < 24 and 0 <= m < 60
+            return h * 60 + m
+        except (ValueError, AssertionError):
+            raise ErroDeValidacao(f"diga {rotulo} da declaração (HH:MM)", campo=chave)
+    ini, fim = hm("hora_inicio", "a hora de início"), hm("hora_fim", "a hora de fim")
+    if fim <= ini:
+        raise ErroDeValidacao("a hora de fim da declaração é antes da de início", campo="hora_fim")
+    inicio = dt.datetime.combine(dia, dt.time(ini // 60, ini % 60), tzinfo=horario.FUSO)
+    return inicio, fim - ini
 # O que o próprio colaborador pode pedir pelo celular. Férias e abono nascem no DP.
 PEDIDOS_DO_APP = ("ATESTADO", "AJUSTE_BATIDA", "COMPENSACAO", "FOLGA_BANCO", "LICENCA")
 MAX_DIAS_DE_AJUSTE = 31    # dias diferentes num pedido de ajuste só
@@ -167,6 +200,9 @@ def criar_ajuste_do_dia(conn: Connection, quem: Quem, dados: dict, *, origem: st
 
 def criar(conn: Connection, quem: Quem, dados: dict, *, origem: str = "GESTAO") -> dict:
     tipo = str(dados.get("tipo") or "").strip().upper()
+    if tipo == DECLARACAO:                  # a declaração de comparecimento é um atestado com subtipo
+        dados = {**dados, "tipo": "ATESTADO", "subtipo": DECLARACAO}
+        tipo = "ATESTADO"
     if tipo not in ETAPAS:
         raise ErroDeValidacao("tipo de pedido desconhecido", campo="tipo")
     if origem in ORIGENS_DO_APLICATIVO and tipo not in PEDIDOS_DO_APP:
@@ -245,8 +281,11 @@ def criar(conn: Connection, quem: Quem, dados: dict, *, origem: str = "GESTAO") 
             raise ErroDeValidacao("esta pessoa não tem banco de horas", campo="tipo")
     elif tipo == "ATESTADO" and origem in ORIGENS_DO_APLICATIVO and not dados.get("documento_base64"):
         raise ErroDeValidacao("anexe a foto ou o PDF do atestado", campo="documento")
+    if tipo == "ATESTADO" and str(dados.get("subtipo") or "").upper() == DECLARACAO:
+        fim = inicio                         # a declaração é de um dia, com o horário
+        horario_ajuste, minutos = _periodo_declarado(dados, inicio)
     from .espelho import SUBTIPOS_ABONO
-    subtipo = None
+    subtipo = DECLARACAO if tipo == "ATESTADO" and str(dados.get("subtipo") or "").upper() == DECLARACAO else None
     if tipo == "LICENCA" and licencas.disponivel(conn):
         # A licença sai da lista da lei (licencas.py): dias, limite e documento conferidos.
         t = licencas.conferir(conn, colaborador_id=colaborador_id, subtipo=str(dados.get("subtipo") or ""),
@@ -308,7 +347,7 @@ def criar(conn: Connection, quem: Quem, dados: dict, *, origem: str = "GESTAO") 
             etapa = _etapa_atual(atual)
             if etapa is None or not _pode_na_etapa(conn, quem, atual, etapa):
                 break
-            decidir(conn, ocorrencia_id, quem, aprovar=True, motivo="")
+            decidir(conn, ocorrencia_id, quem, aprovar=True, motivo="", abono=dados.get("abono"))
     return obter(conn, ocorrencia_id, quem)
 
 
@@ -340,6 +379,7 @@ def _para_json(o: dict, quem: Quem, etapas: tuple | None = None) -> dict:
     return {
         "id": o["id"], "tipo": o["tipo"],
         "rotulo": SUBTIPOS_ABONO[o["subtipo"]] if o["tipo"] == "ABONO" and o.get("subtipo") in SUBTIPOS_ABONO else
+                  NOME_DECLARACAO[o["subtipo"]] if e_declaracao(o) else
                   ROTULO_TIPO[o["tipo"]] + (f" — {MOTIVO_LOTE}" if o.get("subtipo") == SUBTIPO_LOTE else
                                             f" — {_NOME_SUBTIPO.get(o['subtipo'], o['subtipo']).split(' (')[0].lower()}"
                                              if o.get("subtipo") else ""),
@@ -350,6 +390,10 @@ def _para_json(o: dict, quem: Quem, etapas: tuple | None = None) -> dict:
         "dias": (o["data_fim"] - o["data_inicio"]).days + 1,
         "horario": horario.texto(o.get("horario")),
         "dia_trabalhado": o["dia_trabalhado"].isoformat() if o.get("dia_trabalhado") else None,
+        "minutos": o.get("minutos"), "declaracao": e_declaracao(o),
+        "declaracao_periodo": (f"{horario.para_local(o['horario']):%H:%M} às "
+                               f"{horario.para_local(o['horario']) + dt.timedelta(minutes=int(o['minutos'] or 0)):%H:%M}"
+                               if e_declaracao(o) and o.get("horario") and o.get("minutos") else None),
         "descricao": o["descricao"],
         "cid": None if sigilo else o.get("cid"),
         "medico": None if sigilo else o.get("medico"),
@@ -462,7 +506,7 @@ def _pode_na_etapa(conn: Connection, quem: Quem, o: dict, etapa: str) -> bool:
 
 
 def decidir(conn: Connection, ocorrencia_id: int, quem: Quem, *, aprovar: bool,
-            motivo: str = "") -> dict:
+            motivo: str = "", abono: Optional[str] = None) -> dict:
     o = _bruta(conn, ocorrencia_id)
     if not pessoa_no_alcance(conn, quem, o["colaborador_id"]):
         raise NaoEncontrado("pedido não encontrado")
@@ -492,6 +536,14 @@ def decidir(conn: Connection, ocorrencia_id: int, quem: Quem, *, aprovar: bool,
     else:   # a regra mudou com o pedido na fila: depois do encarregado, só o DP, se houver
         seguinte = DP if etapa == SUPERVISOR and DP in etapas else None
     novo_status = STATUS_DA_ETAPA[seguinte] if seguinte else "APROVADA"
+    if novo_status == "APROVADA" and e_declaracao(o):
+        # Na aprovação final da declaração, quem aprova escolhe o abono.
+        escolha = str(abono or "").strip().upper()
+        if escolha not in DECLARACAO_ABONO:
+            raise ErroDeValidacao("declaração de comparecimento: diga se abona o dia todo, só o período "
+                                  "declarado ou nada", campo="abono")
+        db.executar(conn, "UPDATE ponto.ocorrencias SET subtipo = :s WHERE id = :id",
+                    s=DECLARACAO_ABONO[escolha], id=ocorrencia_id)
     db.executar(conn, f"""
         UPDATE ponto.ocorrencias SET status = :s, {campos[0]} = :u, {campos[1]} = :n,
                {campos[2]} = now(), atualizado_em = now() WHERE id = :id

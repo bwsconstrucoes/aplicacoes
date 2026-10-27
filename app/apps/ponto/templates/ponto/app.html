@@ -381,6 +381,7 @@
       <label for="ped-tipo">O que você precisa?</label>
       <select id="ped-tipo">
         <option value="ATESTADO">Mandar atestado médico</option>
+        <option value="DECLARACAO">Declaração de comparecimento (consulta, exame)</option>
         <option value="AJUSTE_BATIDA">Esqueci de bater o ponto</option>
         <option value="COMPENSACAO">Trabalhar num dia no lugar de outro</option>
         <option value="LICENCA">Licença (casamento, luto, paternidade…)</option>
@@ -1871,6 +1872,14 @@ function camposDePedido(px, t, dia) {
       <label>Foto ou PDF do atestado</label><button class="btn sec" type="button" id="${px}-doc">📎 Anexar o documento — foto ou arquivo</button>
       <p class="pequeno" id="${px}-doc-nome">Nenhum arquivo escolhido.</p>
       <p class="pequeno">Só o DP vê o atestado.</p>`,
+    // A declaração de comparecimento (27/10/2026): o dia e o horário escritos nela. O DP
+    // decide, ao validar, se abona o dia todo, só esse período ou nada.
+    DECLARACAO: `<label>Dia da consulta ou do exame</label><input type="date" id="${px}-inicio" value="${d0}" max="${hojeISO()}">
+      <label>Horário escrito na declaração</label>
+      <div style="display:flex; gap:8px"><input type="time" id="${px}-hora-ini" value="08:00"><input type="time" id="${px}-hora-fim" value="10:00"></div>
+      <label>Foto ou PDF da declaração</label><button class="btn sec" type="button" id="${px}-doc">📎 Anexar o documento — foto ou arquivo</button>
+      <p class="pequeno" id="${px}-doc-nome">Nenhum arquivo escolhido.</p>
+      <p class="pequeno">O DP confere e decide se abona o dia todo, só esse horário ou nada.</p>`,
     AJUSTE_BATIDA: `<label>Que dia?</label><input type="date" id="${px}-inicio" value="${d0}" max="${hojeISO()}">
       <label>Até o dia (se foram vários dias)</label><input type="date" id="${px}-ate" max="${hojeISO()}">
       <p class="pequeno">O dia abre com o que já foi batido e o que falta — você marca só o que esqueceu.
@@ -1935,6 +1944,9 @@ function corpoDoPedido(px, t, doc) {
     const inicio = v("inicio"), dias = Math.max(1, parseInt(v("dias") || "1", 10));
     Object.assign(corpo, {data_inicio: inicio, data_fim: somarDiasISO(inicio, dias - 1)});
     if (!doc) throw new Error("Escolha a foto ou o PDF do atestado.");
+  } else if (t === "DECLARACAO") {
+    Object.assign(corpo, {data_inicio: v("inicio"), hora_inicio: v("hora-ini"), hora_fim: v("hora-fim")});
+    if (!doc) throw new Error("Escolha a foto ou o PDF da declaração.");
   } else if (t === "COMPENSACAO") {
     Object.assign(corpo, {data_inicio: v("inicio"), dia_trabalhado: v("trabalhado")});
   } else {
@@ -2413,12 +2425,17 @@ async function identificarParaPedido(quem) {
 function abrirFormularioDoTablet(d, tipo) {
   const f = $("t-form");
   const hoje = hojeISO();
-  const opcoes = [["ATESTADO", "Atestado médico"], ["LICENCA", "Licença (casamento, luto, paternidade…)"],
+  const opcoes = [["ATESTADO", "Atestado médico"], ["DECLARACAO", "Declaração de comparecimento (consulta, exame)"],
+                  ["LICENCA", "Licença (casamento, luto, paternidade…)"],
                   ["AJUSTE_BATIDA", "Esqueceu de bater (ajuste)"], ["COMPENSACAO", "Compensação (trabalhar num dia no lugar de outro)"]]
     .concat(d.tem_banco ? [["FOLGA_BANCO", "Folga do banco de horas"]] : []);
   const campos = {
     ATESTADO: `<label>Primeiro dia de afastamento</label><input type="date" id="tf-inicio" value="${hoje}">
       <label>Quantos dias o médico deu?</label><input type="number" id="tf-dias" min="1" max="120" value="1">`,
+    DECLARACAO: `<label>Dia da consulta ou do exame</label><input type="date" id="tf-inicio" value="${hoje}" max="${hoje}">
+      <label>Horário escrito na declaração</label>
+      <div class="linha"><input type="time" id="tf-hora-ini" value="08:00"><input type="time" id="tf-hora-fim" value="10:00"></div>
+      <p style="margin:6px 0 0; font-size:15px">O DP decide se abona o dia todo, só esse horário ou nada.</p>`,
     LICENCA: `<label>Tipo de licença</label><select id="tf-subtipo">${opcoesLicenca()}</select>
       <p id="tf-licenca-info" style="margin:6px 0 0; font-size:15px"></p>
       <label>Primeiro dia</label><input type="date" id="tf-inicio" value="${hoje}">
@@ -2431,7 +2448,7 @@ function abrirFormularioDoTablet(d, tipo) {
       <label>Dia da folga no lugar</label><input type="date" id="tf-inicio">`,
     FOLGA_BANCO: `<label>Dia da folga</label><input type="date" id="tf-inicio"><label>Último dia (se mais de um)</label><input type="date" id="tf-fim">`,
   };
-  const temDoc = tipo === "ATESTADO" || tipo === "LICENCA";
+  const temDoc = tipo === "ATESTADO" || tipo === "LICENCA" || tipo === "DECLARACAO";
   f.innerHTML = `<div class="caixa">
     <h2>${esc(d.nome)}</h2><p style="margin:0">${esc(d.funcao || "")}</p>
     <label for="tf-tipo">O que vai entregar ou pedir?</label>
@@ -2501,6 +2518,9 @@ function abrirFormularioDoTablet(d, tipo) {
       const dias = Math.max(1, parseInt(v("tf-dias") || "1", 10));
       Object.assign(corpo, {data_inicio: v("tf-inicio"), data_fim: somarDiasISO(v("tf-inicio"), dias - 1)});
       if (!doc) return ($("tf-msg").textContent = "Anexe o atestado — foto ou arquivo.");
+    } else if (tipo === "DECLARACAO") {
+      Object.assign(corpo, {data_inicio: v("tf-inicio"), hora_inicio: v("tf-hora-ini"), hora_fim: v("tf-hora-fim")});
+      if (!doc) return ($("tf-msg").textContent = "Anexe a declaração — foto ou arquivo.");
     } else if (tipo === "AJUSTE_BATIDA") {
       if (!DIA) return ($("tf-msg").textContent = "Escolha um dia em que dá para pedir ajuste.");
       try { corpo.horarios = DIAS ? DIAS.horarios() : horariosMarcados($("tf-linhas"), DIA); }
@@ -2837,7 +2857,8 @@ $("mes-varios").addEventListener("click", () => corrigirVariosDias(null));
 // ajuste de batida é pelo "Corrigir este dia", que mostra o que falta.
 async function abrirPedidoPara(alvo, dia, tipo = "ATESTADO") {
   if (!LICENCAS.length) await carregarLicencas();
-  const opcoes = [["ATESTADO", "Atestado médico"], ["LICENCA", "Licença (casamento, luto, paternidade…)"],
+  const opcoes = [["ATESTADO", "Atestado médico"], ["DECLARACAO", "Declaração de comparecimento (consulta, exame)"],
+                  ["LICENCA", "Licença (casamento, luto, paternidade…)"],
                   ["COMPENSACAO", "Compensação (trabalhar num dia no lugar de outro)"]]
     .concat(alvo.tem_banco ? [["FOLGA_BANCO", "Folga do banco de horas"]] : []);
   let doc = null;

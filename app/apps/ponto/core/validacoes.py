@@ -98,6 +98,8 @@ def listar(conn: Connection, quem: Quem, *, obra_id: Optional[int] = None, de=No
             "data": p["data_inicio"], "quando": quando, "detalhe": p["descricao"],
             "sigiloso": p["sigiloso"], "tem_documento": p["tem_documento"], "documento_id": p["documento_id"],
             "leitura_ia": p.get("leitura_ia"), "cid": p.get("cid"),
+            "declaracao": p.get("declaracao"), "declaracao_periodo": p.get("declaracao_periodo"),
+            "minutos": p.get("minutos"), "etapa_codigo": etapa, "etapas_codigo": list(p["etapas"]),
             # o que a IA leu × o que foi lançado (26/10/2026); só para quem vê a leitura
             "confronto": (leitura_atestado.confronto(p["leitura_ia"], p) if p.get("leitura_ia") and quem.dp else None),
             "etapa": ETAPA_ROTULO.get(etapa, etapa), "etapas": [ETAPA_ROTULO[e] for e in p["etapas"]],

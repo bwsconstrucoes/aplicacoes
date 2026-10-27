@@ -1772,7 +1772,7 @@ def ponto_api_criar_ocorrencia():
     é a regra de "Quem valida o quê" (atestado: sempre o DP)."""
     quem, d = _quem(), _corpo()
     if str(d.get("tipo") or "").upper() not in ("AJUSTE_BATIDA", "COMPENSACAO", "FOLGA_BANCO",
-                                                "ATESTADO", "LICENCA"):
+                                                "ATESTADO", "LICENCA", "DECLARACAO"):
         raise ErroDeValidacao("férias, afastamento e abono são lançados pelo DP", campo="tipo")
     with db.conexao() as conn:
         o = ocorrencias.criar(conn, quem, d, origem="GESTAO")
@@ -1786,7 +1786,7 @@ def ponto_api_criar_ocorrencia():
 def ponto_api_criar_afastamento():
     """Atestado, licença, férias, afastamento e abono — registrados pelo DP."""
     quem, d = _quem(), _corpo()
-    if str(d.get("tipo") or "").upper() not in ("ATESTADO", "LICENCA", "FERIAS", "AFASTAMENTO", "ABONO"):
+    if str(d.get("tipo") or "").upper() not in ("ATESTADO", "LICENCA", "FERIAS", "AFASTAMENTO", "ABONO", "DECLARACAO"):
         raise ErroDeValidacao("tipo de afastamento desconhecido", campo="tipo")
     with db.conexao() as conn:
         o = ocorrencias.criar(conn, quem, d, origem="GESTAO")
@@ -1804,7 +1804,7 @@ def ponto_api_decidir_supervisor(ocorrencia_id: int):
         if atual["etapa_atual"] != ocorrencias.SUPERVISOR:
             raise ErroDeValidacao("este pedido não está na etapa do supervisor", campo="etapa")
         o = ocorrencias.decidir(conn, ocorrencia_id, quem, aprovar=bool(d.get("aprovar")),
-                                motivo=d.get("motivo", ""))
+                                motivo=d.get("motivo", ""), abono=d.get("abono"))
     return _ok(ocorrencia=o)
 
 
@@ -1819,7 +1819,7 @@ def ponto_api_decidir_dp(ocorrencia_id: int):
         if atual["etapa_atual"] != ocorrencias.DP:
             raise ErroDeValidacao("este pedido não está na etapa do DP", campo="etapa")
         o = ocorrencias.decidir(conn, ocorrencia_id, quem, aprovar=bool(d.get("aprovar")),
-                                motivo=d.get("motivo", ""))
+                                motivo=d.get("motivo", ""), abono=d.get("abono"))
     return _ok(ocorrencia=o)
 
 

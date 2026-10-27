@@ -51,6 +51,9 @@ def rotulo_da_ocorrencia(o: dict) -> str:
     """O nome do dia justificado: o tipo, ou o abono com nome próprio."""
     if o.get("tipo") == "ABONO" and o.get("subtipo") in SUBTIPOS_ABONO:
         return SUBTIPOS_ABONO[o["subtipo"]]
+    from .ocorrencias import NOME_DECLARACAO
+    if o.get("tipo") == "ATESTADO" and o.get("subtipo") in NOME_DECLARACAO:
+        return NOME_DECLARACAO[o["subtipo"]]
     return ROTULO_TIPO[o["tipo"]]
 
 
@@ -188,6 +191,12 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
         nome_feriado = calendario.feriado(dia, obra_do_dia)
         aprovadas = [o for o in ocorrencias if o["status"] == "APROVADA"
                      and o["data_inicio"] <= dia <= o["data_fim"] and o["tipo"] in ABONO_POR_TIPO]
+        # A declaração de comparecimento (27/10/2026): abona o dia todo só se quem aprovou
+        # escolheu "o dia todo"; "só o período" abona os minutos declarados; "nada", nada.
+        declaracoes = [o for o in aprovadas if o["tipo"] == "ATESTADO"
+                       and o.get("subtipo") in ("DECL_PERIODO", "DECL_NADA")]
+        aprovadas = [o for o in aprovadas if o not in declaracoes]
+        abono_parcial = sum(int(o.get("minutos") or 0) for o in declaracoes if o["subtipo"] == "DECL_PERIODO")
         pendentes = [o for o in ocorrencias if o["status"].startswith("AGUARDANDO")
                      and (o["data_inicio"] <= dia <= o["data_fim"] or o["dia_trabalhado"] == dia)]
         compensa = [o for o in ocorrencias if o["status"] == "APROVADA"
@@ -203,6 +212,11 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
         r = apuracao.apurar_dia(dia, escala, [horario.para_local(b["timestamp_servidor"]) for b in do_dia],
                                 feriado=bool(nome_feriado), ocorrencia=abono,
                                 intervalo_pre_assinalado=so_duas)
+        if abono_parcial and not r.abonado:
+            if r.previsto and abono_parcial >= r.previsto:
+                r.situacao, r.abonado, r.falta, r.debito = "ABONADO", True, False, 0
+            elif r.debito:
+                r.debito = max(0, r.debito - abono_parcial)
         if compensa and r.extra:
             # O dia trabalhado no lugar de outro não é extra: ele paga a folga.
             r.extra = 0
@@ -270,6 +284,9 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
                             "subtipo": aprovadas[0].get("subtipo"),
                             "rotulo": rotulo_da_ocorrencia(aprovadas[0])} if aprovadas else None),
             "compensacao": ({"id": compensa[0]["id"]} if compensa else None),
+            # a declaração que abonou só o período, ou nada — o dia continua julgado
+            "declaracoes": [{"id": o["id"], "rotulo": rotulo_da_ocorrencia(o), "subtipo": o["subtipo"],
+                             "minutos": int(o.get("minutos") or 0)} for o in declaracoes],
             "pendentes": [{"id": o["id"], "tipo": o["tipo"], "rotulo": rotulo_da_ocorrencia(o),
                            "status": o["status"],
                            "hora": (horario.para_local(o["horario"]).strftime("%H:%M")

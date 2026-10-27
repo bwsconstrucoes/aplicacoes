@@ -272,6 +272,8 @@ dizer "tem batida"; presença, horas e faltas são regra da fase 3.
 - Quais batidas foram incluídas em lote pela gestão, por quem e por quê? 🔒 (o pedido de ajuste com "incluída em lote pela gestão": motivo e quem aprovou ficam no pedido e na batida)
 - Em que dia houve mais buraco no ponto este mês? 🔒 ⚠️ (Quadro › Resumo por dia, até 31 dias de uma vez)
 - Quais vigias estão sem ronda surpresa ligada, ou sem celular liberado? 🔒 (Quadro › Tipo de pessoa › "Vigia com pendência"; "vigia" = jornada de vigia no ponto ou função com VIGIA no cadastro)
+- Quantas horas foram abonadas por declaração de comparecimento este mês? 🔒 ⚠️ (Relatórios › Ausências justificadas: "horas abonadas" — só as aprovadas com "só o período"; as de "o dia todo" contam como dia; as de "nada" ficam registradas e não abonam; CID e documento só para o DP)
+- O Fulano entregou declaração e faltou o resto do dia — foi descontado? 🔒 (o dia mostra a declaração e a escolha do DP: "só o período" desconta o resto; "o dia todo" abona; "nada" desconta tudo)
 - Quais pedreiros e serventes estão com batida faltando hoje? 🔒 (Quadro › Funções: PEDREIRO e SERVENTE marcadas + "Com batida faltando"; o filtro de funções aceita várias)
 - Que alertas estão abertos da obra X? 🔒 (Quadro › "Com alerta aberto" + obra; só os alertas de uma pessoa e um dia — o alerta da obra inteira fica na tela de Alertas)
 - Qual a qualidade do ponto dos vigias esta semana? 🔒 ⚠️ (Quadro › Tipo de pessoa: Vigia › visão Qualidade; "esta semana" = de segunda até hoje)

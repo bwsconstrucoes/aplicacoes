@@ -118,7 +118,11 @@ def justificadas(conn: Connection, quem: Quem, pessoas: list[dict], inicio: dt.d
         p = por_id[int(o["colaborador_id"])]
         linhas.append({**_base(p), "pedido_id": j["id"], "tipo": j["tipo"], "rotulo": j["rotulo"],
                        "de": j["data_inicio"], "ate": j["data_fim"],
-                       "dias": _dias_no_periodo(o["data_inicio"], o["data_fim"], inicio, fim),
+                       # a declaração que abonou só o período (ou nada) não abona dia: abona horas
+                       "dias": (0 if o.get("subtipo") in ("DECL_PERIODO", "DECL_NADA", "DECLARACAO")
+                                else _dias_no_periodo(o["data_inicio"], o["data_fim"], inicio, fim)),
+                       "horas": int(o.get("minutos") or 0) if o.get("subtipo") == "DECL_PERIODO" else 0,
+                       "periodo": j.get("declaracao_periodo"),
                        "cid": j.get("cid"), "tem_documento": j["tem_documento"], "documento_id": j.get("documento_id"),
                        "sigiloso": j["sigiloso"],
                        "lancado_por": ocorrencias.pedido_por(j["origem"], j["solicitado_por"], j["colaborador"])["nome"],
@@ -129,6 +133,8 @@ def justificadas(conn: Connection, quem: Quem, pessoas: list[dict], inicio: dt.d
         t["pedidos"] += 1
         t["dias"] += l["dias"]
         t["pessoas"].add(l["colaborador_id"])
+    for l in linhas:
+        tipos_vistos[l["rotulo"]]["horas"] = tipos_vistos[l["rotulo"]].get("horas", 0) + l["horas"]
     por_tipo = sorted(({**t, "pessoas": len(t["pessoas"])} for t in tipos_vistos.values()), key=lambda x: -x["dias"])
     return {"linhas": linhas, "por_tipo": por_tipo,
             "totais": {"pedidos": len(linhas), "dias": sum(l["dias"] for l in linhas),

@@ -1554,6 +1554,12 @@ function painelCadastro() {
 
 async function decidirNoPainel(url, tipo, sim) {
   let corpo = tipo === "PEDIDO" ? {aprovar: sim, motivo: ""} : {para: sim ? "VALIDA" : "REJEITADA", motivo: ""};
+  const ped = tipo === "PEDIDO" ? (PAINEL.pedidos || []).find(x => x.decidir_em === url) : null;
+  if (sim && ped && ped.declaracao && aprovacaoFinal(ped.etapa_atual, ped.etapas)) {
+    const abono = await perguntarAbonoDaDeclaracao(ped.colaborador, ped.declaracao_periodo);
+    if (!abono) return;
+    corpo.abono = abono;
+  }
   if (!sim) {
     const r = await perguntar({titulo: tipo === "PEDIDO" ? "Negar o pedido" : "Rejeitar a batida",
       campos: [{nome: "motivo", rotulo: "Por quê", tipo: "textarea", obrigatorio: true, largura: 6,
@@ -1698,6 +1704,23 @@ document.addEventListener("click", e => {
   if (d) { e.preventDefault(); verDocumento(d.dataset.documento, d.dataset.legenda); }
 });
 
+// A DECLARAÇÃO DE COMPARECIMENTO (27/10/2026, o dono: "o DP precisa analisar, avaliar e
+// decidir se vai abonar a totalidade das horas, só o período, ou não vai abonar nada").
+// Na aprovação FINAL, quem aprova escolhe; nas etapas de antes, não se pergunta.
+const OPCOES_ABONO_DECLARACAO = [
+  {valor: "PERIODO", rotulo: "Só o período da declaração (o resto do dia conta como falta ou débito)"},
+  {valor: "TOTAL", rotulo: "O dia todo"},
+  {valor: "NADA", rotulo: "Nada — fica registrada, mas não abona"}];
+const aprovacaoFinal = (etapaAtual, etapas) => !etapas || !etapas.length || etapas[etapas.length - 1] === etapaAtual;
+async function perguntarAbonoDaDeclaracao(nome, periodo) {
+  const r = await perguntar({titulo: `Declaração de comparecimento — ${escapar(nome || "")}`,
+    aviso: `A declaração diz que a pessoa esteve na consulta ou no exame ${periodo ? `<b>das ${escapar(periodo)}</b>` : "no horário escrito nela"}.
+      Ela não é atestado de repouso: decida quanto do dia será abonado.`,
+    campos: [{nome: "abono", rotulo: "Abonar", tipo: "select", valor: "PERIODO", largura: 6, opcoes: OPCOES_ABONO_DECLARACAO}],
+    textoOk: "Aprovar"});
+  return r ? r.abono : null;
+}
+
 // Depois de decidir numa janela: atualiza o que estiver na tela.
 function depoisDeDecidir() {
   if (PAINEL && els("dlg-pessoa").open) recarregarPainel();
@@ -1707,7 +1730,8 @@ function depoisDeDecidir() {
 function htmlDoPedido(p) {
   const por = p.pedido_por || {};
   const linhas = [
-    ["Pedido", `${escapar(p.rotulo)} nº ${p.id}${p.horario ? ` — <b>${escapar(quando(p.horario))}</b>` : ""}`],
+    ["Pedido", `${escapar(p.rotulo)} nº ${p.id}${p.declaracao_periodo ? ` — <b>${escapar(dataBR(p.data_inicio))}, das ${escapar(p.declaracao_periodo)}</b>`
+      : p.horario ? ` — <b>${escapar(quando(p.horario))}</b>` : ""}`],
     ["Situação", `<span class="etq ${p.status === "APROVADA" ? "verde" : p.status === "NEGADA" ? "vermelho" : "ambar"}">${escapar(ETAPA_PEDIDO[p.status] || p.status)}</span>`],
     ["Quem pediu", `${escapar(por.nome || p.solicitado_por || "—")}${por.como ? ` <small style="display:inline">(${escapar(por.como)})</small>` : ""}${por.propria ? ` <span class="etq azul">a própria pessoa</span>` : ""}`],
     ["Quando pediu", escapar(quando(p.criado_em))],
@@ -1723,8 +1747,13 @@ function htmlDoPedido(p) {
   return `<dl class="bt-ficha">${linhas.map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join("")}</dl>`;
 }
 
-async function decidirNaJanela(url, tipo, sim, msg) {
+async function decidirNaJanela(url, tipo, sim, msg, pedido) {
   let corpo = tipo === "PEDIDO" ? {aprovar: sim, motivo: ""} : {para: sim ? "VALIDA" : "REJEITADA", motivo: ""};
+  if (sim && pedido && pedido.declaracao && aprovacaoFinal(pedido.etapa_atual, pedido.etapas)) {
+    const abono = await perguntarAbonoDaDeclaracao(pedido.colaborador, pedido.declaracao_periodo);
+    if (!abono) return false;
+    corpo.abono = abono;
+  }
   if (!sim) {
     const r = await perguntar({titulo: tipo === "PEDIDO" ? "Negar o pedido" : "Rejeitar a batida",
       campos: [{nome: "motivo", rotulo: "Por quê", tipo: "textarea", obrigatorio: true, largura: 6,
@@ -1751,7 +1780,7 @@ async function abrirPedido(id) {
         : p.etapa_atual ? `<div class="aviso info">Esta etapa (${escapar(ETAPA_PEDIDO[p.status] || "")}) não é sua.</div>` : ""}
       <p style="margin:10px 0 0"><button class="link-btn" type="button" data-abrir-pessoa="${p.colaborador_id}" data-dia="${p.data_inicio}">abrir a pessoa</button></p>`;
     if (p.decidir_em) {
-      els("mp-aprovar").addEventListener("click", async () => { if (await decidirNaJanela(p.decidir_em, "PEDIDO", true, "mp-msg")) abrirPedido(id); });
+      els("mp-aprovar").addEventListener("click", async () => { if (await decidirNaJanela(p.decidir_em, "PEDIDO", true, "mp-msg", p)) abrirPedido(id); });
       els("mp-negar").addEventListener("click", async () => { if (await decidirNaJanela(p.decidir_em, "PEDIDO", false, "mp-msg")) abrirPedido(id); });
     }
   } catch (e) { els("mp-corpo").innerHTML = `<div class="aviso erro">${escapar(e.message)}</div>`; }
@@ -2187,10 +2216,13 @@ async function entregarDocumento(p, depois) {
     aviso: `O documento vai para o DP validar. O atestado fica em sigilo: depois de enviado, só o DP abre.`,
     campos: [
       {nome: "tipo", rotulo: "O que é", tipo: "select", valor: "ATESTADO", largura: 3, opcoes: [
-        {valor: "ATESTADO", rotulo: "Atestado médico"}, {valor: "LICENCA", rotulo: "Licença da lei"}]},
+        {valor: "ATESTADO", rotulo: "Atestado médico"}, {valor: "DECLARACAO", rotulo: "Declaração de comparecimento (consulta, exame)"},
+        {valor: "LICENCA", rotulo: "Licença da lei"}]},
       {nome: "subtipo", rotulo: "Tipo de licença", tipo: "select", valor: "", largura: 3, opcoes: opcoesDeLicenca(lic)},
       {nome: "data_inicio", rotulo: "Primeiro dia", tipo: "date", obrigatorio: true, largura: 1},
       {nome: "data_fim", rotulo: "Último dia", tipo: "date", largura: 1, dica: "Vazio = um dia só (na licença, os dias da lei)."},
+      {nome: "hora_inicio", rotulo: "Declaração: das", tipo: "time", largura: 1, dica: "Só na declaração de comparecimento."},
+      {nome: "hora_fim", rotulo: "às", tipo: "time", largura: 1},
       {nome: "descricao", rotulo: "Observação", tipo: "textarea", linhas: 2, largura: 3},
       {nome: "documento", rotulo: "Documento (foto ou PDF)", tipo: "arquivo", largura: 3, obrigatorio: true,
        aceita: ".pdf,.jpg,.jpeg,.png,.webp"},
@@ -2206,6 +2238,7 @@ async function entregarDocumento(p, depois) {
     await postar("/erp/api/ponto/ocorrencias", {
       tipo: r.tipo, subtipo: r.tipo === "LICENCA" ? r.subtipo : "", colaborador_id: p.id,
       data_inicio: r.data_inicio, data_fim: fim || r.data_inicio, descricao: r.descricao,
+      hora_inicio: r.hora_inicio, hora_fim: r.hora_fim,
       documento_base64: conteudo, documento_nome: r.documento ? r.documento.name : ""});
     aviso("mensagem", "Enviado. O pedido aparece em Validações até o DP decidir.", "ok");
     if (depois) await depois();
@@ -2225,6 +2258,7 @@ async function lancarAfastamento(p, depois) {
         {valor: "LICENCA", rotulo: "Licença da lei (casamento, luto, paternidade…)"},
         {valor: "FERIAS", rotulo: "Férias"},
         {valor: "AFASTAMENTO", rotulo: "Afastamento (INSS, acidente, maternidade)"},
+        {valor: "DECLARACAO", rotulo: "Declaração de comparecimento (consulta, exame)"},
         {valor: "VIAGEM", rotulo: "Viagem a serviço (as horas do dia são abonadas)"},
         {valor: "DISPENSA", rotulo: "Dispensa pela empresa (as horas do dia são abonadas)"},
         {valor: "ABONO", rotulo: "Abono (outro motivo)"}]},
@@ -2232,6 +2266,9 @@ async function lancarAfastamento(p, depois) {
       {nome: "data_inicio", rotulo: "Primeiro dia", tipo: "date", obrigatorio: true, largura: 1},
       {nome: "data_fim", rotulo: "Último dia", tipo: "date", largura: 1,
        dica: "Vazio = um dia só."},
+      {nome: "hora_inicio", rotulo: "Declaração: das", tipo: "time", largura: 1, dica: "Só na declaração de comparecimento."},
+      {nome: "hora_fim", rotulo: "às", tipo: "time", largura: 1},
+      {nome: "abono", rotulo: "Declaração: abonar", tipo: "select", valor: "PERIODO", largura: 2, opcoes: OPCOES_ABONO_DECLARACAO},
       {nome: "cid", rotulo: "CID", largura: 1, exemplo: "opcional"},
       {nome: "medico", rotulo: "Médico", largura: 2, exemplo: "opcional"},
       {nome: "crm", rotulo: "CRM", largura: 1, exemplo: "opcional"},
@@ -2251,7 +2288,7 @@ async function lancarAfastamento(p, depois) {
     const abonoComNome = ["VIAGEM", "DISPENSA"].includes(r.tipo);
     await postar("/erp/api/ponto/afastamentos", {
       tipo: abonoComNome ? "ABONO" : r.tipo, subtipo: r.tipo === "LICENCA" ? r.subtipo : abonoComNome ? r.tipo : "",
-      colaborador_id: p.id, data_inicio: r.data_inicio,
+      colaborador_id: p.id, data_inicio: r.data_inicio, hora_inicio: r.hora_inicio, hora_fim: r.hora_fim, abono: r.abono,
       data_fim: fim || r.data_inicio, descricao: r.descricao, cid: r.cid,
       medico: r.medico, crm: r.crm, documento_base64: conteudo,
       documento_nome: r.documento ? r.documento.name : "", aprovar_ja: true});
@@ -2755,6 +2792,7 @@ function qdDesenhar() {
       <td><small style="margin:0">${[l.ocorrencia ? escapar(l.ocorrencia) : "",
           ...l.pendentes.map(p => `<button type="button" class="link-btn" data-pedido="${p.id}">pedido: ${escapar(p.rotulo)}${p.hora ? ` ${escapar(p.hora)}` : ""}</button>`),
           l.em_analise ? `${l.em_analise} em conferência` : "",
+          ...(l.declaracoes || []).map(x => `<button type="button" class="link-btn" data-pedido="${x.id}">${escapar(x.rotulo)}${x.subtipo === "DECL_PERIODO" && x.minutos ? ` (${hm(x.minutos)})` : ""}</button>`),
           ...(l.alertas || []).map(a => `<button type="button" class="link-btn qd-alerta ${a.gravidade === "URGENTE" ? "urgente" : ""}" data-qd-alerta="${a.id}"
             title="${escapar(a.mensagem || "")}">⚠ ${escapar(a.rotulo)}</button>`)].filter(Boolean).join(" · ") || ""}</small></td></tr>`; }).join("")}
     </tbody></table>` : `<div class="vazio"><b>Nenhuma linha</b>com estes filtros.</div>`;
@@ -3673,6 +3711,11 @@ async function decidirItem(i, sim) {
   let corpo;
   if (i.categoria === "PEDIDO") {
     corpo = {aprovar: sim, motivo: ""};
+    if (sim && i.declaracao && aprovacaoFinal(i.etapa_codigo, i.etapas_codigo)) {
+      const abono = await perguntarAbonoDaDeclaracao(i.pessoa, i.declaracao_periodo);
+      if (!abono) return;
+      corpo.abono = abono;
+    }
     if (!sim) {
       const motivo = await pedirMotivo(`Negar: ${escapar(i.rotulo)} de ${escapar(i.pessoa)}`,
         "O motivo fica registrado no pedido, com o seu nome.", "Por que está negando",
@@ -3901,9 +3944,11 @@ function rlColunas() {
        ["Batidas", l => l.batidas.join(" "), "dados"], ["Previsto", l => hm(l.previsto), "num"], ["Trabalhado", l => hm(l.trabalhado), "num"],
        ["Extra", l => hm(l.extra), "num"], ["Noturno", l => hmCelula(l.noturno), "num"]];
   if (RL.tipo === "justificadas") return RL_VISAO === "tipos"
-    ? [["Tipo", l => l.rotulo], ["Pedidos", l => l.pedidos, "num"], ["Dias no período", l => l.dias, "num"], ["Pessoas", l => l.pessoas, "num"]]
+    ? [["Tipo", l => l.rotulo], ["Pedidos", l => l.pedidos, "num"], ["Dias no período", l => l.dias, "num"],
+       ["Horas abonadas (declaração)", l => hmCelula(l.horas), "num"], ["Pessoas", l => l.pessoas, "num"]]
     : [...pessoa, ["Tipo", l => l.rotulo], ["De", l => dataBR(l.de), "dados"], ["Até", l => dataBR(l.ate), "dados"],
-       ["Dias no período", l => l.dias, "num"], ...(PODE_DP ? [["CID", l => l.cid || ""]] : []),
+       ["Dias no período", l => l.dias, "num"], ["Horas abonadas", l => hmCelula(l.horas), "num"],
+       ["Horário", l => l.periodo || ""], ...(PODE_DP ? [["CID", l => l.cid || ""]] : []),
        ["Lançado por", l => l.lancado_por || ""], ["Aprovado por", l => l.aprovado_por || ""]];
   return [...pessoa, ["Regime", l => l.regime], ["Desde", l => dataBR(l.inicio), "dados"],
           ["Saldo", l => (l.saldo < 0 ? "-" : "") + hm(Math.abs(l.saldo)), "num"],
