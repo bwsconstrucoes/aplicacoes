@@ -1258,7 +1258,8 @@ function desenharPainel() {
       <span>${escapar(p.funcao || "sem função no cadastro")}</span>
       <span class="dados">${escapar((p.obra_principal || {}).codigo || "sem obra")}${(p.obra_principal || {}).nome ? ` — ${escapar(p.obra_principal.nome)}` : ""}</span>
       <span class="suave dados">CPF ${escapar(p.cpf || "—")}</span></div>
-    <div>${marcasHtml(p.etiquetas)}</div>
+    <div>${marcasHtml(p.etiquetas)}${PODE_TRATAR ? ` <button class="link-btn" type="button" data-dp-cad="codigo"
+      title="ver se o código chegou pelo WhatsApp, ou gerar um para entregar em mãos">🔑 código de acesso do aplicativo</button>` : ""}</div>
     ${PODE_TRATAR ? `<div class="barra-acoes" style="margin-top:10px">
       <button class="btn" type="button" id="dp-ajuste">Ajustar o dia (incluir batida)</button>
       <button class="btn secundario" type="button" id="dp-compensacao">Compensação</button>
@@ -1549,7 +1550,7 @@ function painelCadastro() {
     <button class="btn secundario" type="button" data-dp-cad="escala">Trocar escala</button>
     <button class="btn secundario" type="button" data-dp-cad="jornada">Jornada e obras</button>
     <button class="btn secundario" type="button" data-dp-cad="forma">Acesso no aplicativo</button>
-    <button class="btn secundario" type="button" data-dp-cad="codigo">Código não chegou?</button>
+    <button class="btn secundario" type="button" data-dp-cad="codigo">🔑 Código de acesso do aplicativo (PIN)…</button>
     ${PODE_DP ? `<button class="btn secundario" type="button" data-dp-cad="banco">Banco de horas</button>` : ""}</div>` : ""}
   <h4 style="margin:16px 0 6px">QR Code</h4><div id="pe-qr"></div>
   <h4 style="margin:16px 0 6px">Histórico de escalas</h4>
@@ -1973,9 +1974,9 @@ async function revogarQr(p) {
 async function trocarEscala(p) {
   try {
     if (!ESCALAS_DO_CADASTRO) ESCALAS_DO_CADASTRO = (await api("/erp/api/ponto/escalas")).escalas.filter(e => e.ativo);
-  } catch (e) { falhou(e, "pe-msg"); return; }
+  } catch (e) { falhou(e, "dp-msg"); return; }
   if (!ESCALAS_DO_CADASTRO.length) {
-    aviso("pe-msg", "Nenhuma escala ativa cadastrada. Cadastre em Configuração › Escalas.", "erro");
+    aviso("dp-msg", "Nenhuma escala ativa cadastrada. Cadastre em Configuração › Escalas.", "erro");
     return;
   }
   const atual = (p.escalas || [])[0];
@@ -2011,9 +2012,9 @@ async function trocarEscala(p) {
     await postar(`/erp/api/ponto/pessoas/${p.id}/escala`, {
       escala_id: Number(r.escala_id), vigencia_inicio: r.vigencia_inicio, ciclo_data_base: base});
     await depoisDoCadastro(p.id);
-    aviso("pe-msg", "Escala trocada.", "ok");
+    aviso("dp-msg", "Escala trocada.", "ok");
     if (typeof carregarPessoas === "function") carregarPessoas();
-  } catch (e) { falhou(e, "pe-msg"); }
+  } catch (e) { falhou(e, "dp-msg"); }
 }
 
 async function jornadaEObras(p) {
@@ -2038,9 +2039,9 @@ async function jornadaEObras(p) {
       tipo_jornada: r.tipo_jornada, obras_adicionais: listaDeTexto(r.obras_adicionais),
       ativo: r.ativo === "1"});
     await depoisDoCadastro(p.id);
-    aviso("pe-msg", "Jornada e obras salvas.", "ok");
+    aviso("dp-msg", "Jornada e obras salvas.", "ok");
     if (typeof carregarPessoas === "function") carregarPessoas();
-  } catch (e) { falhou(e, "pe-msg"); }
+  } catch (e) { falhou(e, "dp-msg"); }
 }
 
 // O acesso da pessoa no aplicativo (08/10/2026): o padrão é bater no ponto da
@@ -2053,7 +2054,7 @@ const ENVIO_DO_CODIGO = {ENVIADO: ["verde", "enviado ao WhatsApp"], FALHOU: ["ve
   SEM_DESTINO: ["vermelho", "sem número"], SEM_REGISTRO: ["", "sem registro de envio"]};
 async function primeiroAcesso(p) {
   let d;
-  try { d = (await api(`/erp/api/ponto/pessoas/${p.id}/acesso`)).acesso; } catch (e) { return falhou(e, "pe-msg"); }
+  try { d = (await api(`/erp/api/ponto/pessoas/${p.id}/acesso`)).acesso; } catch (e) { return falhou(e, "dp-msg"); }
   const linhas = d.codigos.map(c => {
     const e = c.envio, [cor, rot] = e ? (ENVIO_DO_CODIGO[e.status] || ["", e.status]) : ["", "—"];
     return `<li>${escapar(quando(c.pedido_em))} — <b style="${cor ? `color:var(--${cor})` : ""}">${escapar(rot)}</b>
@@ -2086,7 +2087,7 @@ async function primeiroAcesso(p) {
         <p style="text-align:center">Vale <b>${g.validade_min} minutos</b>. Entregue à própria pessoa: no aplicativo, ela toca em
         “Primeiro acesso ou esqueci o PIN”, digita o CPF, toca em <b>“Já tenho um código (entregue pelo DP)”</b>, digita este
         código e cria o PIN.</p>`});
-  } catch (e) { falhou(e, "pe-msg"); }
+  } catch (e) { falhou(e, "dp-msg"); }
 }
 
 async function formaDeBater(p) {
@@ -2119,9 +2120,9 @@ async function formaDeBater(p) {
     await postar(`/erp/api/ponto/pessoas/${p.id}/forma-de-bater`, {bate_no_celular: r.forma === "1",
       pede_no_celular: r.pede === "1", administrativo_obra: r.adm === "1", faz_ronda: r.vigia === "1"});
     await depoisDoCadastro(p.id);
-    aviso("pe-msg", "Acesso no aplicativo salvo.", "ok");
+    aviso("dp-msg", "Acesso no aplicativo salvo.", "ok");
     if (typeof carregarExcecoes === "function") carregarExcecoes();
-  } catch (e) { falhou(e, "pe-msg"); }
+  } catch (e) { falhou(e, "dp-msg"); }
 }
 
 async function regimeDoBanco(p) {
@@ -2143,9 +2144,9 @@ async function regimeDoBanco(p) {
   });
   if (!r) return;
   const precisaAcordo = r.regime_banco === "BANCO_6_MESES" || r.regime_banco === "BANCO_12_MESES";
-  if (precisaAcordo && !r.banco_inicio) { aviso("pe-msg", "Diga a data de início do banco.", "erro"); return; }
+  if (precisaAcordo && !r.banco_inicio) { aviso("dp-msg", "Diga a data de início do banco.", "erro"); return; }
   if (precisaAcordo && !r.acordo && !p.acordo_banco) {
-    aviso("pe-msg", "Banco de 6 ou 12 meses exige o acordo assinado anexado.", "erro"); return;
+    aviso("dp-msg", "Banco de 6 ou 12 meses exige o acordo assinado anexado.", "erro"); return;
   }
   try {
     const conteudo = await lerArquivo(r.acordo);
@@ -2153,9 +2154,9 @@ async function regimeDoBanco(p) {
       regime_banco: r.regime_banco, banco_inicio: r.banco_inicio || null,
       acordo_base64: conteudo, acordo_nome: r.acordo ? r.acordo.name : ""});
     await depoisDoCadastro(p.id);
-    aviso("pe-msg", "Banco de horas salvo.", "ok");
+    aviso("dp-msg", "Banco de horas salvo.", "ok");
     if (typeof carregarPessoas === "function") carregarPessoas();
-  } catch (e) { falhou(e, "pe-msg"); }
+  } catch (e) { falhou(e, "dp-msg"); }
 }
 
 // As ações do DP sobre uma pessoa (ajuste, compensação, atestado, afastamento):
