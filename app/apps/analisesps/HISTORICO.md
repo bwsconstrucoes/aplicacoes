@@ -12246,6 +12246,9 @@ somente Solicitações de uma conta especifica"*.
 
 #### Leva 242 — Baixar anexos das SPs marcadas (26/10/2026)
 
+- **Levas 241 e 242 publicadas em 27/10/2026** (suíte inteira verde em 26/10: 9405
+  testes; a main não andou desde então). Sem migração.
+
 - *"A partir da tela de solicitações, baixar vários anexos (…) seleciono os
   registros, clico nesse botão e ele vai baixando tudo (…) melhor baixar separado,
   sem compilar."* **Feito:** botão "Baixar anexos" na barra (Solicitações, Lote e
