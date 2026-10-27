@@ -155,6 +155,8 @@ def _aparelho(conn: Connection, dispositivo_id) -> Optional[dict]:
 
 def _como_foi_feita(m: dict, aparelho: Optional[dict]) -> str:
     """PURA. Por onde a batida entrou, em português."""
+    if m["origem"] == "MANUAL" and m.get("marcacao_origem_id"):
+        return "corrigida pelo DP no lugar de outra batida (a original continua no registro, sem contar)"
     if m["origem"] == "MANUAL":
         return "incluída por ajuste aprovado (não foi batida em aparelho)"
     if aparelho and aparelho.get("perfil") in ("COMPARTILHADO", "LISTA"):

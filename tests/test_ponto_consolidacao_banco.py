@@ -14,8 +14,10 @@ from tests.test_ponto_gestao_banco import (CPF_JOAO, _schema_ponto2, _segunda_pa
 def test_o_menu_tem_quatro_telas_e_as_outras_continuam_abrindo():
     from app.apps.ponto import gestao
     assert [a[0] for a in gestao.ABAS] == ["ponto_quadro", "ponto_pendencias", "ponto_relatorios", "ponto_config"]
-    assert {"ponto_espelho", "ponto_mosaico", "ponto_banco", "ponto_alertas", "ponto_qualidade",
+    assert {"ponto_mosaico", "ponto_banco", "ponto_alertas", "ponto_qualidade",
             "ponto_rondas"} <= set(gestao.ABAS_FORA_DO_MENU)
+    # o espelho e o cadastro moram na janela da pessoa (28/10/2026)
+    assert not {"ponto_espelho", "ponto_pessoas"} & set(gestao.ABAS_FORA_DO_MENU)
 
 
 def test_filtro_pessoas_ativo_e_argumentos():

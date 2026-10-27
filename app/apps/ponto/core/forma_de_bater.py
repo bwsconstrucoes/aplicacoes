@@ -92,7 +92,20 @@ def excecoes(conn: Connection, obras: Optional[list[int]] = None) -> dict:
              for p in pessoas if p.get("pede_no_celular")]
     administrativos = [{"id": p["id"], "nome": p["nome"], "obra": p.get("obra_codigo")}
                        for p in pessoas if p.get("administrativo_obra")]
-    return {"em_vigor": em_vigor(conn), "celular": celular, "banco": com_banco,
+    # Uma linha por pessoa, com todas as exceções dela (28/10/2026, o dono: "a apresentação disso
+    # aqui tá terrível (…) tem o nome da pessoa, tem que ter a função também").
+    por_pessoa = []
+    for p in pessoas:
+        tem = [c for c, sim in (("CELULAR", p.get("bate_no_celular")),
+                                ("BANCO", p.get("regime_banco") not in (None, "SEM_BANCO")),
+                                ("ADMINISTRATIVO", p.get("administrativo_obra")),
+                                ("PEDE_NO_CELULAR", p.get("pede_no_celular")),
+                                ("RONDA", p.get("faz_ronda"))) if sim]
+        if tem:
+            por_pessoa.append({"id": p["id"], "nome": p["nome"], "funcao": p.get("funcao"), "obra": p.get("obra_codigo"),
+                               "obra_id": p.get("obra_id"), "excecoes": tem,
+                               "regime": banco.ROTULOS.get(p.get("regime_banco"), p.get("regime_banco"))})
+    return {"em_vigor": em_vigor(conn), "celular": celular, "banco": com_banco, "pessoas": por_pessoa,
             "aparelhos_de_lista": [{**l, "pessoas": int(l["pessoas"])} for l in listas],
             "papeis_disponivel": papeis.disponivel(conn), "pedem_no_celular": pedem,
             "administrativos": administrativos}

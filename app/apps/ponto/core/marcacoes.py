@@ -624,6 +624,59 @@ def registrar_ajustada(conn: Connection, *, colaborador_id: int, obra_id: int,
     return por_id(conn, int(linha["id"]))
 
 
+def corrigir(conn: Connection, marcacao_id: int, *, obra: Optional[str], hora: Optional[str], motivo: str,
+             usuario_id: int | None, usuario_nome: str) -> dict:
+    """O DP corrige UMA batida — a obra errada, ou a hora (28/10/2026, o dono: "o cara bateu
+    obra tal, mas é para ser obra tal (…) eu quero editar somente aquele ponto"). A batida
+    original não muda (a obra e a hora estão no hash encadeado; Portaria 671): ela deixa de
+    contar, com o motivo, e no mesmo instante entra a corrigida, AJUSTADA, apontando para ela
+    (`marcacao_origem_id`, o caminho que a migração 001 previu). Devolve a nova."""
+    from . import competencias
+    if len((motivo or "").strip()) < 10:
+        raise ErroDeValidacao("diga por que a batida está sendo corrigida (ao menos 10 letras)", campo="motivo")
+    m = por_id(conn, marcacao_id)
+    if not m:
+        from ..erros import NaoEncontrado
+        raise NaoEncontrado("batida não encontrada")
+    if m["status"] == "REJEITADA":
+        raise ErroDeValidacao("esta batida já não conta — corrija a que vale", campo="status")
+    competencias.exigir_aberta(conn, m["data_referencia"])
+    nova_obra = cadastros.resolver_obra(conn, obra) if obra else None
+    if obra and not nova_obra:
+        raise ErroDeValidacao("obra não encontrada", campo="obra")
+    obra_id = int(nova_obra["id"]) if nova_obra else int(m["obra_id"])
+    local = horario.para_local(m["timestamp_servidor"])
+    momento = m["timestamp_servidor"]
+    if hora:
+        try:
+            h, mi = (int(x) for x in str(hora).strip().split(":")[:2])
+            momento = local.replace(hour=h, minute=mi, second=0, microsecond=0)
+        except (ValueError, TypeError):
+            raise ErroDeValidacao("hora inválida (use HH:MM)", campo="hora")
+    if obra_id == int(m["obra_id"]) and horario.para_local(momento).strftime("%H:%M") == local.strftime("%H:%M"):
+        raise ErroDeValidacao("nada mudou — escolha outra obra ou outra hora", campo="obra")
+    antes = f"{m.get('obra_codigo') or m['obra_id']} às {local:%H:%M}"
+    depois = f"{(nova_obra or {}).get('codigo') or m.get('obra_codigo') or obra_id} às {horario.para_local(momento):%H:%M}"
+    texto = f"corrigida ({antes} → {depois}): {motivo.strip()}"
+    db.executar(conn, "UPDATE ponto.marcacoes SET status = 'REJEITADA' WHERE id = :id", id=marcacao_id)
+    db.executar(conn, """
+        INSERT INTO ponto.marcacao_decisoes (marcacao_id, de_status, para_status, motivo, usuario_id, usuario_nome)
+        VALUES (:m, :de, 'REJEITADA', :mot, :u, :n)
+    """, m=marcacao_id, de=m["status"], mot=texto[:500], u=usuario_id, n=usuario_nome[:120])
+    nsr, corrente = _proximo_nsr(conn, int(m["colaborador_id"]), obra_id, momento, "MANUAL")
+    linha = db.um(conn, """
+        INSERT INTO ponto.marcacoes (nsr, colaborador_id, obra_id, timestamp_servidor, data_referencia, origem,
+            status, motivo_analise, hash_encadeado, registrado_por, marcacao_origem_id)
+        VALUES (:nsr, :c, :o, :ts, :dref, 'MANUAL', 'AJUSTADA', :motivo, :hash, :por, :origem)
+        RETURNING id
+    """, nsr=nsr, c=m["colaborador_id"], o=obra_id, ts=momento, dref=m["data_referencia"],
+         motivo=f"correção da batida NSR {m['nsr']} ({antes} → {depois}): {motivo.strip()}"[:500],
+         hash=corrente, por=f"corrigida por {usuario_nome}"[:120], origem=marcacao_id)
+    logger.info("Ponto: batida NSR %s corrigida por %s (%s → %s), nova NSR %d", m["nsr"], usuario_nome,
+                antes, depois, nsr)
+    return por_id(conn, int(linha["id"]))
+
+
 def decidir_em_analise(conn: Connection, marcacao_id: int, *, para: str, motivo: str,
                        usuario_id: int | None, usuario_nome: str) -> dict:
     """Valida ou rejeita uma batida EM_ANALISE. Rejeitar exige motivo."""

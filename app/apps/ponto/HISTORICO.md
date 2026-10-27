@@ -59,6 +59,11 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1zu. **No ramo, esperando o "pode"** (28/10/2026, sem migração) — as anotações do dono sobre a
+   Configuração, o espelho e a conferência do rosto: filtros na barra lateral com várias obras e funções;
+   o espelho DENTRO da janela da pessoa (as telas Espelho e Pessoas saíram); corrigir a obra ou a hora de
+   UMA batida; validar a conferência direto do espelho; o "sem rosto" que era a foto de cadastro; e o
+   porquê do nível da conferência. Ver a seção de 28/10/2026.
 1zt. **Publicado em 27/10/2026, junto com a 1zs** (com o "pode" do dono; sem migração) — o **ponto da obra** com o que o dono
    aprovou: a **busca pelo nome** (foto pequena, sem CPF, só com o responsável conectado), a **volta para a
    batida em 5 minutos** (conectado; sair dela depois disso pede o PIN) e o **som e a vibração** da batida.
@@ -332,6 +337,98 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 28/10/2026 — Filtros na barra, o espelho na janela da pessoa, corrigir UMA batida e o "sem rosto"
+
+**Os pedidos do dono** (vários, no mesmo dia): *"os filtros das telas, de maneira geral, devem estar no
+sidebar. Para obras é mandatório poder selecionar mais de uma, mesma coisa para funções"*; *"a lista de
+exceções ao padrão, a apresentação tá terrível"*; *"a cerca das obras não tem filtragem nenhuma"*; *"tem o
+nome da pessoa, tem que ter a função também"*; *"o nome de uma pessoa aqui, eu clico, não faz nada"*;
+*"você reduziu as telas, mas talvez só escondeu (…) existe e não existe"*; *"o espelho é algo que a gente
+precisa com alguma frequência ver"*; *"não aparece a falta no espelho"*; *"fotos com rosto dizendo que
+não foi detectado um rosto"*; *"validar a conferência a partir do espelho também"*; *"o cara bateu obra
+tal, mas é para ser obra tal — eu quero editar somente aquele ponto"*.
+
+**O filtro de funcionários com várias obras.** Quadro, Validações e Relatórios: "Obras do cadastro",
+"Bateu nas obras", "Funções" e "Escalas" viraram listas de marcar, cada uma com a sua busca (nada marcado =
+todas). O servidor aceita uma obra, várias (lista) ou "1,2,3" (`filtro_pessoas.ids`).
+
+**A Configuração com barra lateral.** Cada seção com lista tem o seu filtro na barra (`FiltroDaLista`): os
+grupos se montam com o que existe na lista, com quantos há de cada.
+- Pessoas › Exceções: exceção, obras, funções.
+- Escalas › Quem está em cada escala: escala de hoje, obras, funções e jornada. Os filtros de cima do
+  cartão saíram.
+- Obras e cerca: busca de obra, com ou sem coordenada, o que fazer fora da cerca, batidas por dia,
+  barradas na semana.
+- Aparelhos: situação, tipo, obras e função do responsável. Sem situação marcada, os arquivados ficam
+  de fora, como antes.
+- Fotos › Mosaico por obra: obrigatório ou não, responsável.
+- As seções sem lista (Geral, Jornada, Quem valida, Mensagens, Teste) escondem a barra.
+
+**A apresentação.**
+- **Exceções:** uma linha por pessoa, com função, obra e o que foge do padrão (`forma_de_bater.excecoes`
+  ganhou `pessoas`). Os contadores no alto marcam o filtro.
+- **Base de obras:** um quadro só, "O que corrigir na planilha C. Diários" (a coordenada ilegível e os
+  outros avisos, linha a linha). "Sem coordenada" leva à Cerca das obras já filtrada; os status lidos e as
+  obras criadas ficam em "Detalhes da última leitura".
+- **O nome abre a pessoa** em Exceções, Escalas, Aparelhos (o responsável, agora com a função), na lista
+  dos níveis da conferência e no Mosaico.
+
+**O espelho na janela da pessoa; as telas Espelho e Pessoas saíram de vez.**
+- A aba "Mês" da janela virou **"Espelho do mês"**: os números do mês e a tabela dia a dia.
+- **Cada batida abre a janela da batida**: foto, mapa, validar a conferência, corrigir, desconsiderar.
+- O dia que **falta batida** mostra, em vermelho, qual faltou ("Saída 17:00"); o dia sem nenhuma, "nenhuma
+  batida — esperava 4". **Era isso a "falta que não aparecia no espelho":** a falta do dia inteiro sempre
+  esteve lá; a batida que faltava num dia com batidas, não — só "batida faltando".
+- Os dias antes do início do ponto viram uma linha só.
+- O Cadastro da janela ganhou o QR Code e o histórico de escalas, o que só a tela Pessoas tinha.
+- `/erp/ponto/espelho` e `/erp/ponto/pessoas` abrem o Quadro com a janela da pessoa (`?abrir_pessoa=`).
+  A impressão do espelho continua no mesmo endereço.
+- Na aba Dia, toda batida tem "Abrir a batida" ("Decidir a conferência…" se estiver em conferência).
+
+**Corrigir UMA batida** (`marcacoes.corrigir`, rota `/marcacoes/<id>/corrigir`, só quem aprova
+afastamento — o DP).
+- Na janela da batida, "Corrigir a obra ou a hora…": obra certa, hora certa, motivo (10 letras ou mais).
+- A original **não muda**: a obra e a hora estão no hash encadeado (Portaria 671). Ela deixa de contar,
+  com o motivo e quem corrigiu em `marcacao_decisoes` ("PG-A às 07:00 → PG-B às 07:05").
+- No mesmo instante entra a corrigida, AJUSTADA, com NSR próprio e `marcacao_origem_id` apontando para a
+  original — o caminho que a migração 001 já previa. A obra nova também tem de estar no alcance de quem
+  corrige.
+- O "ajustar o dia" (incluir a batida que faltou) continua como estava.
+
+**O "sem rosto" com o rosto à vista — a causa provável.**
+- Quem não tinha foto de cadastro ganhava a primeira batida "boa" como cadastral, e "boa" era só a luz
+  e o contraste, não o rosto.
+- A AWS recusa a comparação quando a foto de **cadastro** não tem rosto. O sistema lia isso como "a
+  batida não tem rosto": se a cadastral veio sem rosto, **todas** as batidas da pessoa davam "sem rosto".
+- **Agora:** nessa recusa, o sistema pergunta à AWS se a cadastral tem rosto (`detect_faces`). Se não
+  tem, grava SEM_CADASTRAL "a foto de CADASTRO não tem um rosto que a AWS reconheça" e não põe a batida
+  em conferência.
+- A batida que vem mesmo sem rosto ganha uma **segunda tentativa**, com a foto clareada e ampliada (rosto
+  pequeno ou escuro).
+- Fotos de cadastro › "Provavelmente errada" passou a pegar também o "sem rosto" em série e a cadastral
+  sem rosto.
+- **Falso alarme:** a batida "sem rosto" que o DP validou não conta mais como falha. Antes, só a "não
+  confere" validada deixava de contar, e a pessoa ficava presa "em observação" por fotos com o rosto à
+  vista.
+- **Custo:** cada pergunta extra à AWS custa o mesmo que uma conferência, só nos casos de falha, e não
+  entra no gasto do mês mostrado. Não testado com a AWS de verdade (não há chave aqui).
+- **As batidas "sem rosto" de antes continuam como estão.** Valide as que têm rosto (botão "Decidir")
+  e troque a foto de cadastro de quem aparece em "Provavelmente errada".
+
+**O porquê do nível da conferência** (`confianca.explicar`, rota `/pessoas/<id>/rosto`).
+- A janela da pessoa ganhou a aba "Conferência do rosto".
+- O nível vem numa frase: por que está nele (a conferência de tal dia deu tal resultado; ou "todo mundo
+  começa assim"; ou reincidente, com quantas falhas), e quanto falta para subir.
+- Embaixo, as últimas 15 conferências: as que contaram como falha e os falsos alarmes, cada uma com a
+  foto e o botão para decidir a batida.
+- Em Configuração › Fotos › "Ver quem está em cada nível", o nome abre essa aba.
+
+**Testado:** `tests/test_ponto_ajustes_do_dono_2810_banco.py` (corrigir, endereço antigo, falso alarme
+e porquê, exceções e várias obras) e `tests/test_ponto_rosto_cadastral.py` (cadastral sem rosto, segunda
+tentativa, suspeita, a frase). No navegador: as seções da Configuração com a barra (marcar duas obras,
+buscar obra), o espelho na janela vindo da Configuração e do endereço antigo, e corrigir uma batida de
+AP-01 para BR-02.
 
 ## 27/10/2026 (noite) — O ponto da obra: busca pelo nome, 5 minutos e o som
 

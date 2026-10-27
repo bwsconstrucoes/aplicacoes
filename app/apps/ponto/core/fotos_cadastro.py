@@ -31,12 +31,27 @@ DIAS = 45
 FILTROS = ("SUSPEITA", "AUTOMATICA", "SEM_FOTO", "TODAS")
 
 
+# A conferência que achou a foto de CADASTRO sem rosto (rosto.CADASTRAL_SEM_ROSTO, 28/10/2026).
+CADASTRAL_SEM_ROSTO = "CADASTRAL_SEM_ROSTO"
+_CONTAM = ("MESMA_PESSOA", "OUTRA_PESSOA", "SEM_ROSTO", CADASTRAL_SEM_ROSTO)
+
+
 def suspeita(resultados: list[str]) -> bool:
-    """PURA. A foto de cadastro provavelmente está errada? Das últimas conferidas (as
-    mais novas primeiro), ao menos 2 deram "outra pessoa" e elas são a maioria."""
-    olhadas = [r for r in resultados if r in ("MESMA_PESSOA", "OUTRA_PESSOA")][:OLHAR]
-    outras = sum(1 for r in olhadas if r == "OUTRA_PESSOA")
-    return outras >= 2 and outras * 2 > len(olhadas)
+    """PURA. A foto de cadastro provavelmente está errada? A última conferência disse que ela
+    não tem rosto; ou, das últimas conferidas (as mais novas primeiro), ao menos 2 deram "outra
+    pessoa" ou "sem rosto" e elas são a maioria (28/10/2026: "sem rosto" em série, com o rosto à
+    vista na batida, era a foto de cadastro sem rosto — a AWS não compara a partir dela)."""
+    olhadas = [r for r in resultados if r in _CONTAM][:OLHAR]
+    if olhadas and olhadas[0] == CADASTRAL_SEM_ROSTO:
+        return True
+    ruins = sum(1 for r in olhadas if r != "MESMA_PESSOA")
+    return ruins >= 2 and ruins * 2 > len(olhadas)
+
+
+def _resultado(l: dict) -> Optional[str]:
+    if l.get("resultado") == "SEM_CADASTRAL" and str(l.get("detalhe") or "").startswith("a foto de CADASTRO não tem"):
+        return CADASTRAL_SEM_ROSTO
+    return l.get("resultado")
 
 
 def listar(conn: Connection, pessoas: list[dict], filtro: str = "SUSPEITA") -> dict:
@@ -59,7 +74,7 @@ def listar(conn: Connection, pessoas: list[dict], filtro: str = "SUSPEITA") -> d
     for l in db.todos(conn, """
         SELECT * FROM (
           SELECT m.id, m.colaborador_id, m.timestamp_servidor, m.foto_id, o.codigo AS obra,
-                 cr.resultado, cr.semelhanca,
+                 cr.resultado, cr.semelhanca, cr.detalhe,
                  row_number() OVER (PARTITION BY m.colaborador_id ORDER BY m.timestamp_servidor DESC) AS n
             FROM ponto.marcacoes m
             JOIN public.obras o ON o.id = m.obra_id
@@ -76,7 +91,7 @@ def listar(conn: Connection, pessoas: list[dict], filtro: str = "SUSPEITA") -> d
         if not lista and not cadastral.get(cid):
             continue                     # nunca bateu com foto: nada a regularizar
         tem = bool(cadastral.get(cid))
-        susp = tem and suspeita([l["resultado"] for l in lista])
+        susp = tem and suspeita([_resultado(l) for l in lista])
         auto = tem and cid in automaticas
         marcas = {"TODAS"} | ({"SUSPEITA"} if susp else set()) | ({"AUTOMATICA"} if auto else set()) \
             | (set() if tem else {"SEM_FOTO"})
@@ -84,14 +99,16 @@ def listar(conn: Connection, pessoas: list[dict], filtro: str = "SUSPEITA") -> d
             contagem[m] += 1
         if filtro not in marcas:
             continue
-        olhadas = [l for l in lista if l["resultado"] in ("MESMA_PESSOA", "OUTRA_PESSOA")][:OLHAR]
+        olhadas = [l for l in lista if _resultado(l) in _CONTAM][:OLHAR]
         saida.append({
             "id": cid, "nome": p["nome"], "funcao": p.get("funcao"), "obra": p.get("obra_codigo"),
             "foto_cadastral_id": cadastral.get(cid), "tem_foto_cadastral": tem,
             "automatica": auto, "suspeita": susp,
             "conferidas": len(olhadas), "outra_pessoa": sum(1 for l in olhadas if l["resultado"] == "OUTRA_PESSOA"),
+            "sem_rosto": sum(1 for l in olhadas if l["resultado"] == "SEM_ROSTO"),
+            "cadastral_sem_rosto": bool(olhadas) and _resultado(olhadas[0]) == CADASTRAL_SEM_ROSTO,
             "fotos": [{"marcacao_id": l["id"], "quando": horario.texto(l["timestamp_servidor"]), "obra": l["obra"],
-                       "resultado": l["resultado"],
+                       "resultado": _resultado(l),
                        "semelhanca": float(l["semelhanca"]) if l["semelhanca"] is not None else None,
                        "e_a_cadastral": l["foto_id"] == cadastral.get(cid)} for l in lista[:ULTIMAS]],
         })

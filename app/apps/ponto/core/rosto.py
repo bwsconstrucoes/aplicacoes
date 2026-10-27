@@ -37,6 +37,7 @@ Avisar os funcionários no termo do ponto é obrigação da empresa — HISTORIC
 from __future__ import annotations
 
 import datetime as dt
+import io
 import json
 import logging
 import os
@@ -211,22 +212,71 @@ def _cliente(regiao: str):
     return boto3.client("rekognition", region_name=regiao)
 
 
+# A foto de CADASTRO sem rosto (28/10/2026, o dono: "algumas fotos têm rosto, mas está dizendo que
+# não foi detectado um rosto, e está claramente correto na hora que a gente abre a foto"). A AWS
+# recusa a comparação quando não acha rosto na foto de ORIGEM — a de cadastro —, e isto era lido
+# como "a batida não tem rosto". A foto de cadastro automática (a primeira batida boa) só olhava a
+# luz, não o rosto: se ela veio sem rosto, TODAS as batidas da pessoa davam "sem rosto".
+CADASTRAL_SEM_ROSTO = "a foto de CADASTRO não tem um rosto que a AWS reconheça — troque a foto de cadastro"
+
+
+def _tem_rosto(cliente, imagem: bytes) -> Optional[bool]:
+    """Há rosto na imagem? None = não deu para saber (a AWS falhou, ou o cliente não pergunta)."""
+    try:
+        return bool((cliente.detect_faces(Image={"Bytes": imagem}) or {}).get("FaceDetails"))
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def realcar(imagem: bytes) -> Optional[bytes]:
+    """PURA (fora a PIL). A foto clareada (contraste automático) e ampliada até 1600 px: rosto
+    pequeno ou escuro, longe da câmera do aparelho da obra, que a AWS não achou de primeira."""
+    try:
+        from PIL import Image, ImageOps
+        img = Image.open(io.BytesIO(imagem))
+        img = ImageOps.exif_transpose(img).convert("RGB")
+        img = ImageOps.autocontrast(img, cutoff=1)
+        lado = max(img.size)
+        if lado < 1600:
+            k = 1600 / lado
+            img = img.resize((int(img.width * k), int(img.height * k)), Image.LANCZOS)
+        saida = io.BytesIO()
+        img.save(saida, format="JPEG", quality=90)
+        return saida.getvalue()
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def comparar(cliente, cadastral: bytes, batida: bytes, minima: int) -> tuple[str, Optional[float], str]:
     """(resultado, semelhança, detalhe). CompareFaces: a cadastral é a origem."""
+    def uma(alvo):
+        return cliente.compare_faces(SourceImage={"Bytes": cadastral}, TargetImage={"Bytes": alvo},
+                                     SimilarityThreshold=0)
     try:
-        r = cliente.compare_faces(SourceImage={"Bytes": cadastral}, TargetImage={"Bytes": batida},
-                                  SimilarityThreshold=0)
+        r = uma(batida)
     except Exception as e:  # noqa: BLE001
         nome = type(e).__name__
         texto = str(e)
         if "InvalidParameterException" in nome or "InvalidParameter" in texto:
-            # A AWS responde assim quando não acha rosto numa das duas fotos.
+            # A AWS responde assim quando não acha rosto na foto de ORIGEM (a de cadastro).
+            if _tem_rosto(cliente, cadastral) is False:
+                return "SEM_CADASTRAL", None, CADASTRAL_SEM_ROSTO
             return "SEM_ROSTO", None, "nenhum rosto encontrado na foto"
         raise
+    if not (r.get("FaceMatches") or []) and not (r.get("UnmatchedFaces") or []):
+        # Nenhum rosto na batida: uma segunda tentativa com a foto clareada e ampliada.
+        melhor_foto = realcar(batida)
+        if melhor_foto:
+            try:
+                r2 = uma(melhor_foto)
+                if (r2.get("FaceMatches") or []) or (r2.get("UnmatchedFaces") or []):
+                    r = r2
+            except Exception:  # noqa: BLE001 — a segunda tentativa é bônus
+                pass
     achados = r.get("FaceMatches") or []
     melhor = max((float(f.get("Similarity") or 0) for f in achados), default=0.0)
     if not achados and not (r.get("UnmatchedFaces") or []):
-        return "SEM_ROSTO", None, "nenhum rosto encontrado na foto"
+        return "SEM_ROSTO", None, "nenhum rosto encontrado na foto da batida, nem clareando a foto"
     if melhor >= minima:
         return "MESMA_PESSOA", round(melhor, 2), ""
     return "OUTRA_PESSOA", round(melhor, 2), f"semelhança de {melhor:.0f} % (mínimo {minima} %)"

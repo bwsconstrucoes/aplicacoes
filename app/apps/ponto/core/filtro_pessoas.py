@@ -23,6 +23,16 @@ from .ocorrencias import Quem
 CAMPOS = ("busca", "obra_cadastro", "obra_batida", "funcoes", "escalas", "situacao_cadastro", "tipos_pessoa")
 
 
+def ids(valor) -> set[int]:
+    """PURA. As obras escolhidas — uma, várias (lista) ou "1,2,3" (28/10/2026, o dono: "para
+    obras é mandatório poder selecionar mais de uma; dezenas de obras, escolher só uma ou
+    todas não tem sentido"). Vazio = nenhuma escolhida."""
+    if valor in (None, "", []):
+        return set()
+    itens = valor if isinstance(valor, (list, tuple, set)) else str(valor).split(",")
+    return {int(x) for x in itens if str(x).strip().isdigit()}
+
+
 def ativo(f: dict) -> bool:
     """PURA. Algum filtro de pessoa foi escolhido?"""
     return any(f.get(c) for c in CAMPOS)
@@ -40,12 +50,13 @@ def do_cadastro(conn: Connection, quem: Quem, pessoas: list[dict], f: dict, inic
         digitos = "".join(ch for ch in busca if ch.isdigit())
         pessoas = [p for p in pessoas if busca in (p["nome"] or "").lower()
                    or (digitos and digitos in (p.get("cpf") or ""))]
-    if f.get("obra_cadastro"):
-        o = int(f["obra_cadastro"])
-        pessoas = [p for p in pessoas if p.get("obra_id") == o or any(x["id"] == o for x in p["obras_adicionais"])]
-    if f.get("obra_batida"):                    # bateu nessa obra no período
-        ids = {int(x["id"]) for x in filtros_do_ponto.pessoas_com_batida(conn, int(f["obra_batida"]), inicio, fim)}
-        pessoas = [p for p in pessoas if int(p["id"]) in ids]
+    obras = ids(f.get("obra_cadastro"))
+    if obras:
+        pessoas = [p for p in pessoas if p.get("obra_id") in obras or any(x["id"] in obras for x in p["obras_adicionais"])]
+    obras = ids(f.get("obra_batida"))
+    if obras:                                   # bateu em alguma dessas obras no período
+        bateram = {int(x["id"]) for o in obras for x in filtros_do_ponto.pessoas_com_batida(conn, o, inicio, fim)}
+        pessoas = [p for p in pessoas if int(p["id"]) in bateram]
     funcoes = {str(x).strip().lower() for x in (f.get("funcoes") or []) if str(x).strip()}
     if funcoes:
         pessoas = [p for p in pessoas if (p.get("funcao") or "").strip().lower() in funcoes]
@@ -93,7 +104,7 @@ def aplicar(conn: Connection, quem: Quem, pessoas: list[dict], f: dict, inicio: 
 def de_argumentos(args) -> dict:
     """PURA. O filtro vindo do endereço (GET): listas separadas por vírgula."""
     lista = lambda k: [x for x in str(args.get(k) or "").split(",") if x.strip()]  # noqa: E731
-    return {"busca": args.get("pessoa") or "", "obra_cadastro": args.get("obra_cadastro") or None,
-            "obra_batida": args.get("obra_batida") or None, "funcoes": lista("funcoes"),
+    return {"busca": args.get("pessoa") or "", "obra_cadastro": lista("obra_cadastro"),
+            "obra_batida": lista("obra_batida"), "funcoes": lista("funcoes"),
             "escalas": lista("escalas"), "situacao_cadastro": args.get("situacao_cadastro") or None,
             "tipos_pessoa": lista("tipos_pessoa")}

@@ -70,7 +70,9 @@ ABAS = [
     ("ponto_relatorios", "Relatórios", "erp.ponto_pagina_relatorios"),
     ("ponto_config", "Configuração", "erp.ponto_pagina_configuracao"),
 ]
-ABAS_FORA_DO_MENU = ("ponto_hoje", "ponto_pessoas", "ponto_fotos", "ponto_espelho", "ponto_mosaico",
+# Espelho e Pessoas saíram de vez (28/10/2026): moram na janela da pessoa, e o endereço
+# antigo abre o Quadro com ela (_abrir_na_janela).
+ABAS_FORA_DO_MENU = ("ponto_hoje", "ponto_fotos", "ponto_mosaico",
                      "ponto_banco", "ponto_alertas", "ponto_qualidade", "ponto_rondas")
 MODULO = {
     "chave": "ponto", "nome": "Ponto", "sigla": "PON",
@@ -222,11 +224,24 @@ def ponto_pagina_quadro():
     return _pagina("ponto_quadro")
 
 
+def _abrir_na_janela(colaborador_id, aba: str, competencia=None):
+    """As telas Espelho e Pessoas saíram (28/10/2026, o dono: "você reduziu as telas, mas
+    só escondeu (…) existe e não existe"): o espelho e o cadastro moram na janela da
+    pessoa. O endereço antigo (um link guardado, a impressão) abre o Quadro com ela."""
+    from flask import redirect, url_for
+    args = {}
+    if str(colaborador_id or "").isdigit():
+        args = {"abrir_pessoa": int(colaborador_id), "aba": aba}
+        if competencia and len(str(competencia)) == 7:
+            args["competencia"] = str(competencia)
+    return redirect(url_for("erp.ponto_pagina_quadro", **args))
+
+
 @bp.route("/erp/ponto/espelho")
 @login_obrigatorio
 @permissao("ver_ponto")
 def ponto_pagina_espelho():
-    return _pagina("ponto_espelho")
+    return _abrir_na_janela(request.args.get("colaborador_id"), "mes", request.args.get("competencia"))
 
 
 @bp.route("/erp/ponto/pendencias")
@@ -254,7 +269,7 @@ def ponto_pagina_fotos_cadastro():
 @login_obrigatorio
 @permissao("ver_ponto")
 def ponto_pagina_pessoas():
-    return _pagina("ponto_pessoas")
+    return _abrir_na_janela(request.args.get("pessoa"), "cadastro")
 
 
 @bp.route("/erp/ponto/banco")
@@ -610,6 +625,29 @@ def ponto_api_desconsiderar(marcacao_id: int):
         marcacoes.desconsiderar(conn, marcacao_id, motivo=d.get("motivo", ""), usuario_id=quem.usuario_id,
                                 usuario_nome=quem.nome)
     return _ok()
+
+
+@bp.route("/erp/api/ponto/marcacoes/<int:marcacao_id>/corrigir", methods=["POST"])
+@login_obrigatorio
+@permissao("aprovar_afastamento")
+@_api
+def ponto_api_corrigir_batida(marcacao_id: int):
+    """Corrige UMA batida — a obra ou a hora (28/10/2026, marcacoes.corrigir): a original
+    deixa de contar, com o motivo, e entra a corrigida apontando para ela."""
+    quem, d = _quem(), _corpo()
+    with db.conexao() as conn:
+        m = db.um(conn, "SELECT obra_id, colaborador_id FROM ponto.marcacoes WHERE id = :id", id=marcacao_id)
+        if not m or not quem.alcanca_obra(m["obra_id"]) or not ocorrencias.pessoa_no_alcance(
+                conn, quem, m["colaborador_id"]):
+            raise NaoEncontrado("batida não encontrada")
+        if d.get("obra"):
+            nova = cadastros.resolver_obra(conn, d["obra"])
+            if not nova or not quem.alcanca_obra(nova["id"]):
+                raise NaoEncontrado("obra não encontrada")
+        nova_batida = marcacoes.corrigir(conn, marcacao_id, obra=d.get("obra"), hora=d.get("hora"),
+                                         motivo=d.get("motivo", ""), usuario_id=quem.usuario_id,
+                                         usuario_nome=quem.nome)
+    return _ok(batida=marcacoes.para_json(nova_batida))
 
 
 @bp.route("/erp/api/ponto/pessoas/<int:colaborador_id>/qr/enviar", methods=["POST"])
@@ -1343,6 +1381,23 @@ def ponto_api_rosto_pessoas():
         d = confianca.config(rosto.ler(conn))
         lista = confianca.pessoas(conn, d)
     return _ok(pessoas=lista, resumo=confianca.resumo(lista), dinamica=d)
+
+
+@bp.route("/erp/api/ponto/pessoas/<int:colaborador_id>/rosto")
+@login_obrigatorio
+@permissao("ver_ponto")
+@_api
+def ponto_api_pessoa_rosto(colaborador_id: int):
+    """Por que a pessoa está neste nível da conferência do rosto (28/10/2026): a frase e as
+    últimas conferências, cada uma levando à batida (foto, validar)."""
+    from .core import confianca, rosto
+    quem = _quem()
+    _ficha(quem, colaborador_id)                          # confere o alcance (404 fora dele)
+    with db.conexao() as conn:
+        if not confianca.disponivel(conn):
+            raise ErroDeValidacao("aplique as atualizações do ponto (migração 013) antes")
+        r = confianca.explicar(conn, colaborador_id, confianca.config(rosto.ler(conn)))
+    return _ok(**r)
 
 
 @bp.route("/erp/api/ponto/folha", methods=["GET", "POST"])

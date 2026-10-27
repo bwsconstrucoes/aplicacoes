@@ -106,7 +106,7 @@ def obras_de(conn: Connection, dispositivo_id: int) -> set[int]:
 
 
 _SQL_DETALHADO = """
-        SELECT d.*, c.nome AS dono_nome, c.cpf AS dono_cpf,
+        SELECT d.*, c.nome AS dono_nome, c.cpf AS dono_cpf, fu.nome AS dono_funcao,
                (SELECT count(*) FROM ponto.dispositivo_autorizados a
                  WHERE a.dispositivo_id = d.id) AS qtd_autorizados,
                (SELECT string_agg(o.codigo, ', ' ORDER BY o.codigo)
@@ -114,6 +114,7 @@ _SQL_DETALHADO = """
                  WHERE dob.dispositivo_id = d.id) AS obras
           FROM ponto.dispositivos d
           LEFT JOIN public.colaboradores c ON c.id = d.colaborador_id
+          LEFT JOIN public.funcoes fu ON fu.id = c.funcao_id
 """
 
 
@@ -163,7 +164,7 @@ def para_json(d: dict) -> dict:
         "descricao": d.get("descricao", ""),
         "perfil": d["perfil"], "status": d["status"],
         "dono": ({"id": d["colaborador_id"], "nome": d.get("dono_nome"),
-                  "cpf": d.get("dono_cpf")} if d.get("colaborador_id") else None),
+                  "cpf": d.get("dono_cpf"), "funcao": d.get("dono_funcao")} if d.get("colaborador_id") else None),
         "qtd_autorizados": int(d.get("qtd_autorizados") or 0),
         "valido_ate": d["valido_ate"].isoformat() if d.get("valido_ate") else None,
         "obras": d.get("obras"),

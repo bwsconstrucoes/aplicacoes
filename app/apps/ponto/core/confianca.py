@@ -149,8 +149,9 @@ def historico(conn: Connection, ids: Optional[list[int]], d: dict) -> dict[int, 
     linhas = db.todos(conn, f"""
         WITH c AS (
             SELECT m.colaborador_id AS cid, r.resultado, r.conferido_em,
-                   (r.resultado IN ('OUTRA_PESSOA', 'SEM_ROSTO')
-                    AND NOT (r.resultado = 'OUTRA_PESSOA' AND m.status = 'VALIDA')) AS falha
+                   -- a batida que o DP validou depois é falso alarme — também a "sem rosto"
+                   -- (28/10/2026: a pessoa ficava "em observação" por fotos com o rosto à vista)
+                   (r.resultado IN ('OUTRA_PESSOA', 'SEM_ROSTO') AND m.status <> 'VALIDA') AS falha
               FROM ponto.conferencias_rosto r JOIN ponto.marcacoes m ON m.id = r.marcacao_id
              WHERE m.data_referencia >= :vale {filtro}
                AND r.resultado IN ('MESMA_PESSOA', 'OUTRA_PESSOA', 'SEM_ROSTO')),
@@ -179,18 +180,76 @@ def pessoas(conn: Connection, d: dict, dias: int = 30) -> list[dict]:
     mais se confere primeiro (reincidentes, depois em observação)."""
     from . import vigencia
     gente = db.todos(conn, """
-        SELECT c.id, c.nome, o.codigo AS obra, count(*) AS batidas
+        SELECT c.id, c.nome, o.codigo AS obra, f.nome AS funcao, count(*) AS batidas
           FROM ponto.marcacoes m JOIN public.colaboradores c ON c.id = m.colaborador_id
           LEFT JOIN public.obras o ON o.id = c.obra_id
+          LEFT JOIN public.funcoes f ON f.id = c.funcao_id
          WHERE m.foto_id IS NOT NULL AND m.timestamp_servidor > now() - make_interval(days => :d)
            AND m.data_referencia >= :vale
-         GROUP BY c.id, c.nome, o.codigo""", d=dias, vale=vigencia.inicio(conn))
+         GROUP BY c.id, c.nome, o.codigo, f.nome""", d=dias, vale=vigencia.inicio(conn))
     hist = historico(conn, [int(g["id"]) for g in gente], d)
-    saida = [{"id": int(g["id"]), "nome": g["nome"], "obra": g["obra"], "batidas": int(g["batidas"]),
+    saida = [{"id": int(g["id"]), "nome": g["nome"], "obra": g["obra"], "funcao": g["funcao"], "batidas": int(g["batidas"]),
               **da_pessoa(hist.get(int(g["id"])), d)} for g in gente]
     ordem = [c for c, _ in NIVEIS]
     saida.sort(key=lambda p: (not p["reincidente"], ordem.index(p["codigo"]), p["nome"] or ""))
     return saida
+
+
+ROTULO_RESULTADO = {"MESMA_PESSOA": "o rosto confere", "OUTRA_PESSOA": "o rosto NÃO confere",
+                    "SEM_ROSTO": "nenhum rosto na foto da batida", "SEM_CADASTRAL": "sem foto de cadastro para comparar",
+                    "VIROU_CADASTRAL": "virou a foto de cadastro", "DISPENSADA": "não sorteada (não conferida)",
+                    "ERRO": "não deu para conferir"}
+
+
+def porque(n: dict, ultima: Optional[dict], d: dict) -> str:
+    """PURA. O nível da pessoa, em uma frase (28/10/2026, o dono: "é uma pessoa que está em
+    observação, reincidente. Eu clico em cima dela (…) e não consigo entender por que está em
+    observação")."""
+    falta = n.get("proximo")
+    subir = (f" Faltam {falta['faltam']} conferência(s) limpa(s) seguidas para subir para {falta['rotulo']}"
+             f" ({falta['pct']} % conferidas).") if falta else " É o nível mais alto."
+    if n["reincidente"]:
+        txt = (f"Reincidente: {n['falhas_recentes']} falha(s) nos últimos {d['reincidente_dias']} dias "
+               f"(o limite é {d['reincidente_falhas']}) — por isso precisa do dobro das conferências limpas para subir.")
+    elif n["codigo"] == "OBSERVACAO" and ultima:
+        txt = (f"Em observação porque a conferência de {ultima['quando']} deu “{ultima['rotulo']}”"
+               f" (batida das {ultima['hora']}). Falhou, volta a conferir todas as batidas.")
+    elif n["codigo"] == "OBSERVACAO":
+        txt = "Em observação porque todo mundo começa assim: as primeiras batidas são todas conferidas."
+    else:
+        txt = f"{n['limpas']} conferência(s) limpa(s) seguidas: confere {n['pct']} % das batidas, por sorteio."
+    if ultima and n["codigo"] == "OBSERVACAO" and ultima.get("resultado") == "SEM_ROSTO":
+        txt += (" Se a foto da batida mostra o rosto, o problema costuma ser a foto de CADASTRO: confira em"
+                " Fotos de cadastro; e valide a batida — batida validada é falso alarme e não conta como falha.")
+    return txt + (subir if n["codigo"] != "EXEMPLAR" else "")
+
+
+def explicar(conn: Connection, colaborador_id: int, d: dict, limite: int = 15) -> dict:
+    """Por que a pessoa está neste nível: o nível, a frase e as últimas conferências."""
+    from .. import horario
+    from . import vigencia
+    nivel_atual = da_pessoa(historico(conn, [int(colaborador_id)], d).get(int(colaborador_id)), d)
+    linhas = db.todos(conn, """
+        SELECT r.marcacao_id, r.resultado, r.semelhanca, r.detalhe, r.conferido_em, r.nivel,
+               m.timestamp_servidor, m.status, m.foto_id IS NOT NULL AS tem_foto, o.codigo AS obra
+          FROM ponto.conferencias_rosto r JOIN ponto.marcacoes m ON m.id = r.marcacao_id
+          JOIN public.obras o ON o.id = m.obra_id
+         WHERE m.colaborador_id = :c AND m.data_referencia >= :vale
+         ORDER BY r.conferido_em DESC LIMIT :lim""", c=int(colaborador_id), vale=vigencia.inicio(conn), lim=limite)
+    conferencias = []
+    for l in linhas:
+        local = horario.para_local(l["timestamp_servidor"])
+        falha = l["resultado"] in ("OUTRA_PESSOA", "SEM_ROSTO") and l["status"] != "VALIDA"
+        conferencias.append({
+            "marcacao_id": int(l["marcacao_id"]), "resultado": l["resultado"],
+            "rotulo": ROTULO_RESULTADO.get(l["resultado"], l["resultado"]),
+            "semelhanca": float(l["semelhanca"]) if l["semelhanca"] is not None else None,
+            "detalhe": l["detalhe"], "quando": local.strftime("%d/%m"), "hora": local.strftime("%H:%M"),
+            "obra": l["obra"], "status": l["status"], "tem_foto": bool(l["tem_foto"]), "falha": falha,
+            "falso_alarme": l["resultado"] in ("OUTRA_PESSOA", "SEM_ROSTO") and l["status"] == "VALIDA"})
+    ultima_falha = next((c for c in conferencias if c["falha"]), None)
+    return {"nivel": nivel_atual, "porque": porque(nivel_atual, ultima_falha, d), "conferencias": conferencias,
+            "dinamica": d}
 
 
 def resumo(lista: list[dict]) -> dict:
