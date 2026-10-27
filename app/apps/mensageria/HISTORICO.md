@@ -36,6 +36,17 @@ no próprio código.
 
 ---
 
+## 28/10/2026 — um tipo novo no catálogo, vindo do chat do Ponto: "Pedido do ponto negado"
+
+Mudança pequena, feita pelo chat do Ponto e registrada aqui porque o catálogo é desta área: a
+linha `ponto.pedido_negado` em `mensageria/core.py` (política "Só WhatsApp", como todo tipo do
+ponto, pela decisão de 05/10/2026). É o aviso à pessoa — e a quem pediu por ela — de que o
+ajuste, atestado ou licença foi negado, com o motivo (`ponto/core/negativas.py`). Sai pela fila
+do ponto, no ritmo dela; a mensageria decide o canal como para os outros tipos. Sem o WhatsApp
+ligado na tela Mensagens, não sai — e o aviso no aplicativo continua valendo. O teste
+`test_a_fila_do_ponto_diz_o_tipo_de_cada_mensagem` passou a conferir também que todo tipo da
+fila do ponto está no catálogo.
+
 ## 08/10/2026 — o robô do Telegram passou a alimentar o lote do Análise de SPs
 
 Mudança feita pelo chat do Análise de SPs, com o "pode" do dono para mexer no

@@ -337,6 +337,12 @@ def criar(conn: Connection, quem: Quem, dados: dict, *, origem: str = "GESTAO") 
     ocorrencia_id = int(linha["id"])
     if subtipo:
         db.executar(conn, "UPDATE ponto.ocorrencias SET subtipo = :s WHERE id = :id", s=subtipo, id=ocorrencia_id)
+    # QUEM PEDIU, como pessoa (migração 014): a própria pessoa (celular ou aparelho da obra) ou
+    # quem pediu por ela no aplicativo — é a quem a negativa também é avisada.
+    solicitante = quem.colaborador_id or quem.extras.get("solicitante_id")
+    if solicitante and db.tem_coluna(conn, "ocorrencias", "solicitado_colaborador_id"):
+        db.executar(conn, "UPDATE ponto.ocorrencias SET solicitado_colaborador_id = :s WHERE id = :id",
+                    s=int(solicitante), id=ocorrencia_id)
     logger.info("Ponto: pedido %d (%s) aberto para colaborador %d por %s", ocorrencia_id, tipo,
                 colaborador_id, quem.nome)
 
@@ -526,7 +532,9 @@ def _pode_na_etapa(conn: Connection, quem: Quem, o: dict, etapa: str) -> bool:
 
 
 def decidir(conn: Connection, ocorrencia_id: int, quem: Quem, *, aprovar: bool,
-            motivo: str = "", abono: Optional[str] = None) -> dict:
+            motivo: str = "", abono: Optional[str] = None, avisar: bool = True) -> dict:
+    """Aprova a etapa ou nega o pedido. Negado, avisa a pessoa e quem pediu por ela
+    (`core/negativas.py`): no aplicativo sempre; pelo WhatsApp se `avisar` (o padrão)."""
     o = _bruta(conn, ocorrencia_id)
     if not pessoa_no_alcance(conn, quem, o["colaborador_id"]):
         raise NaoEncontrado("pedido não encontrado")
@@ -548,7 +556,14 @@ def decidir(conn: Connection, ocorrencia_id: int, quem: Quem, *, aprovar: bool,
              WHERE id = :id
         """, m=motivo.strip()[:500], u=quem.usuario_id, n=quem.nome[:120], id=ocorrencia_id)
         logger.info("Ponto: pedido %d NEGADO por %s", ocorrencia_id, quem.nome)
-        return obter(conn, ocorrencia_id, quem)
+        from . import negativas
+        try:
+            with conn.begin_nested():      # o aviso nunca desfaz a negativa
+                aviso = negativas.registrar(conn, o, avisar_whatsapp=avisar, quem_negou=quem.nome)
+        except Exception:  # noqa: BLE001
+            logger.exception("Ponto: o aviso da negativa do pedido %d falhou", ocorrencia_id)
+            aviso = {"whatsapp": [], "sem_telefone": [], "falhou": True}
+        return {**obter(conn, ocorrencia_id, quem), "aviso_da_negativa": aviso}
 
     etapas = validacao.etapas_do_tipo(conn, o["tipo"])
     if etapa in etapas:

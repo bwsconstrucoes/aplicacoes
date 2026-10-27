@@ -1373,6 +1373,12 @@ function pendentesDoDia(x) {
       <div class="pequeno" style="color:var(--ambar)">Ajuste pedido — esperando validação</div>` : ""}
     ${outros.map(r => `<span class="selo ambar">⏳ ${esc(r)} esperando validação</span>`).join(" ")}</div>`;
 }
+// O pedido NEGADO no dia (28/10/2026): enquanto aquele horário continuar em aberto, o dia diz que
+// foi negado e por quê — senão o ⏳ só sumia, e a pessoa não sabia se tinha dado erro.
+function negadosDoDia(x) {
+  if (!(x.negados || []).length) return "";
+  return `<div class="pequeno" style="color:var(--vermelho); margin-top:4px">❌ Negado: ${esc(resumoDosNegados(x.negados))}</div>`;
+}
 function diasDoMes(d, regras) {
   let temAcao = false;
   const linhas = d.dias.filter(x => x.situacao !== "FUTURO").reverse().map(x => {
@@ -1399,6 +1405,7 @@ function diasDoMes(d, regras) {
           Trabalhou? Toque em ✏️. Faltou com motivo? Toque em 🗓️.</div>` : ""}
         ${rondasDoDia(x)}
         ${pendentesDoDia(x)}
+        ${negadosDoDia(x)}
       </div>${acoes ? `<div class="acoes-dia">${acoes}</div>` : ""}</div>`;
   }).join("");
   if (!linhas) return "<p>Nada neste mês ainda.</p>";
@@ -1540,9 +1547,73 @@ async function mostrarAvisosDoPonto(p, pode) {
     : `<button type="button" class="alerta-ponto ok" data-aviso="meu"><span><b>📊 Como está o meu ponto este mês</b>
         <small>toque para ver os dias, os pontos e o selo</small></span><span class="seta">›</span></button>`];
   if (pode && pode.qualidade_equipe && ULTIMA_EQUIPE) partes.push(avisoDaEquipe(ULTIMA_EQUIPE));
-  caixa.innerHTML = partes.join("");
+  // Os pedidos negados que a pessoa ainda não viu vêm primeiro (28/10/2026) — um aviso por pessoa
+  // e dia: negar as 4 batidas de uma vez não enche a tela de 4 avisos.
+  const grupos = gruposDeNegativas((INICIO && INICIO.negativas) || []);
+  caixa.innerHTML = grupos.map((g, k) => `<button type="button" class="alerta-ponto ruim" data-negativa="${k}">
+      <span><b>❌ ${g.itens.length === 1 ? "Pedido negado" : `${g.itens.length} pedidos negados`}: ${esc(dataBR(g.dia).slice(0, 5))}</b>
+        <small>${g.para_outro ? `o que você pediu para ${esc(g.pessoa)} · ` : ""}${esc(resumoDosNegados(g.itens))}</small></span>
+      <span class="seta">›</span></button>`).join("") + partes.join("");
   caixa.querySelectorAll("[data-aviso]").forEach(b => b.addEventListener("click", () =>
     b.dataset.aviso === "meu" ? abrirMeuPontoEmDia() : abrirQualidadeEquipe()));
+  caixa.querySelectorAll("[data-negativa]").forEach(b => b.addEventListener("click", () =>
+    abrirNegativa(grupos[+b.dataset.negativa], b)));
+}
+function gruposDeNegativas(lista) {
+  const grupos = {};
+  lista.forEach(n => {
+    const k = `${n.pessoa_id}|${n.dia}|${n.para_outro}`;
+    (grupos[k] = grupos[k] || {dia: n.dia, pessoa: n.pessoa, pessoa_id: n.pessoa_id, para_outro: n.para_outro, itens: []}).itens.push(n);
+  });
+  return Object.values(grupos);
+}
+// "Ajuste das 07:00, 11:00 e 17:00 — motivo": o mesmo motivo vai uma vez.
+const listaE = xs => xs.length < 2 ? (xs[0] || "") : `${xs.slice(0, -1).join(", ")} e ${xs[xs.length - 1]}`;
+function resumoDosNegados(itens) {
+  const porMotivo = {};
+  itens.forEach(n => (porMotivo[n.motivo] = porMotivo[n.motivo] || []).push(n));
+  return Object.entries(porMotivo).map(([motivo, ns]) => {
+    const horas = ns.filter(n => n.hora || (n.quando || "").includes(" às ")).map(n => n.hora || n.quando.split(" às ")[1]);
+    const oque = horas.length === ns.length ? `${horas.length === 1 ? "Ajuste das" : "Ajustes das"} ${listaE(horas.sort())}`
+                                            : listaE([...new Set(ns.map(n => n.rotulo))]);
+    return `${oque} — ${motivo}`;
+  }).join(" · ");
+}
+// O PEDIDO NEGADO (28/10/2026, core/negativas.py). O dono: "para a pessoa saber que foi negado,
+// ou então entender que foi pedido errado e precisa ser pedido novamente". Tocar no aviso abre o
+// motivo; fechar a janela (ou "Pedir de novo") faz o aviso sumir para quem tocou.
+function abrirNegativa(g, botao) {
+  if (!g) return;
+  const n = g;
+  const pode = (INICIO && INICIO.pode) || {};
+  const deNovo = n.para_outro ? (pode.pedir_por_outros && !INICIO.da_obra) : pode.pedir_o_meu;
+  const onde = n.para_outro
+    ? (INICIO.da_obra ? "Para pedir de novo, consulte a pessoa pelo CPF e toque no dia." : "Para pedir de novo, abra a pessoa e toque no dia.")
+    : "Se o pedido estava errado, peça de novo" + (deNovo ? " — no dia, pelo ✏️ ou pelo 🗓️." : " no ponto da obra ou com o administrativo da obra.");
+  $("dlg-corpo").innerHTML = `<h2 style="margin:0 0 6px">❌ ${g.itens.length === 1 ? "Pedido negado" : `${g.itens.length} pedidos negados`}</h2>
+    <p style="margin:0 0 6px"><b>${esc(dataBR(g.dia))}</b>${n.para_outro ? ` — o que você pediu para ${esc(n.pessoa)}` : ""}</p>
+    <div class="aviso erro">${esc(resumoDosNegados(g.itens))}</div>
+    <p class="pequeno">${onde}</p>
+    ${deNovo ? `<button class="btn" type="button" id="ng-de-novo">Pedir de novo</button>` : ""}`;
+  if (!$("dlg").open) $("dlg").showModal();
+  let ja = false;
+  const visto = async () => {
+    if (ja) return;
+    ja = true;
+    for (const x of g.itens) {
+      try { await chamar(`/ponto/app/api/negativas/${x.id}/vista`, {}); } catch (e) { /* volta a aparecer na próxima vez */ }
+    }
+    const ids = new Set(g.itens.map(x => x.id));
+    INICIO.negativas = (INICIO.negativas || []).filter(x => !ids.has(x.id));
+    if (botao) botao.remove();
+  };
+  $("dlg").addEventListener("close", visto, {once: true});
+  if (deNovo) $("ng-de-novo").addEventListener("click", async () => {
+    $("dlg").close(); await visto();
+    if (n.para_outro) { EQ.mes = n.dia.slice(0, 7); abrirPessoaDaObra(n.pessoa_id); }
+    else { MES = n.dia.slice(0, 7); mostrar("mes"); }
+    aviso(`Toque no dia ${dataBR(n.dia).slice(0, 5)} para pedir de novo.`, "info");
+  });
 }
 // O detalhe do meu mês: o selo, os números, e dia a dia o que aconteceu — com o que fazer.
 async function abrirMeuPontoEmDia(mes) {
@@ -3144,6 +3215,7 @@ function linhaDoEspelhoApp(x, p) {
   if (outras.length) notas.push(`batidas na obra ${esc(outras.join(", "))}`);
   const alertas = x.alertas.filter(a => !["FALTA", "BATIDA_FALTANDO"].includes(a)).map(a => ROTULO_ALERTA[a] || a);
   if (alertas.length) notas.push(esc(alertas.join(", ")));
+  if ((x.negados || []).length) notas.push(`<span style="color:var(--vermelho)">❌ negado: ${esc(resumoDosNegados(x.negados))}</span>`);
   const contas = [x.trabalhado ? `trab. <b>${hm(x.trabalhado)}</b>` : "",
                   x.extra ? `<span style="color:var(--verde)">extra <b>${hm(x.extra)}</b></span>` : "",
                   x.debito ? `<span style="color:var(--vermelho)">débito <b>${hm(x.debito)}</b></span>` : ""].filter(Boolean).join(" · ");

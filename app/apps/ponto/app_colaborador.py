@@ -539,6 +539,8 @@ def app_api_mes():
         quem = _quem(conn)
         esp = espelho.do_mes(conn, quem.colaborador_id, request.args.get("competencia"))
         eu = cadastros.colaborador_por_id(conn, quem.colaborador_id)
+        from .core import negativas
+        negativas.nos_dias(conn, quem.colaborador_id, esp["dias"])     # o pedido negado aparece no dia
     return _ok(pessoa=pessoa_do_espelho(eu) if eu else None,
                competencia=esp["competencia"], resumo=esp["resumo"], dias=esp["dias"],
                competencia_fechada=esp["competencia_fechada"])

@@ -94,8 +94,10 @@ def app_api_inicio():
         bate_no_meu = bool(p) and not da_obra and forma_de_bater.pode_no_celular(p, forma_de_bater.em_vigor(conn))
         pede_o_meu = bool(p) and papeis.pede_pelo_proprio_celular(conn, p)
         administrativo = papeis.e_administrativo(conn, p)
-        from .core import qualidade
+        from .core import negativas, qualidade
         responde_por_equipe = bool(p) and qualidade.e_responsavel(conn, int(p["id"]))
+        # os pedidos negados que esta pessoa ainda não viu — os dela e os que pediu por outros
+        avisos_de_negativa = negativas.avisos(conn, int(p["id"])) if p else []
     # No ponto da obra, "você entrou como" é o papel DA PESSOA aqui — não o do
     # aparelho (10/10/2026: a tela dizia "você entrou como ponto da obra").
     papel_aqui = None
@@ -115,7 +117,21 @@ def app_api_inicio():
               "qr_por_cpf": bool(da_obra), "meu_qr": bool(p) and not da_obra,
               # o ranking da equipe de quem responde por um ponto da obra (17/10/2026)
               "qualidade_equipe": responde_por_equipe},
-        alcance=_alcance_json(alc))
+        alcance=_alcance_json(alc), negativas=avisos_de_negativa)
+
+
+@bp.route("/app/api/negativas/<int:ocorrencia_id>/vista", methods=["POST"])
+@auth.exige_colaborador_ou_aparelho
+def app_api_negativa_vista(ocorrencia_id: int):
+    """O aviso do pedido negado some para quem tocou nele (28/10/2026)."""
+    from .core import negativas
+    with db.conexao() as conn:
+        p = _logado(conn)
+        if not p:
+            raise NaoAutenticado("entre com o seu CPF e PIN")
+        if not negativas.marcar_visto(conn, int(p["id"]), ocorrencia_id):
+            raise NaoEncontrado("aviso não encontrado")
+    return _ok()
 
 
 # A consulta pelo CPF no ponto da obra: a pessoa é "aberta" pelo CPF e fica
@@ -258,6 +274,8 @@ def app_api_equipe_mes(colaborador_id: int):
         competencia = request.args.get("competencia") or horario.hoje().strftime("%Y-%m")
         alvo = _alvo(conn, ctx, colaborador_id, competencias.primeiro_dia(competencia))
         esp = espelho.do_mes(conn, colaborador_id, competencia)
+        from .core import negativas
+        negativas.nos_dias(conn, colaborador_id, esp["dias"])
     return _ok(pessoa=pessoa_do_espelho(alvo),
                competencia=esp["competencia"], resumo=esp["resumo"], dias=esp["dias"],
                competencia_fechada=esp["competencia_fechada"], pode_pedir=ctx.alcance.pode_pedir,
@@ -293,10 +311,11 @@ def _quem_por_outro(conn, ctx: _Contexto, alvo_id: int) -> tuple[Quem, str]:
         nome_ap = (ctx.aparelho.get("descricao") or "ponto da obra")[:60]
         quem_lanca = f" — lançado por {ctx.pessoa['nome']}" if ctx.pessoa else ""
         return (Quem(nome=f"no aparelho {nome_ap}{quem_lanca}"[:120], pessoas={int(alvo_id)},
-                     obras=list(a.obras)), "APARELHO")
+                     obras=list(a.obras),
+                     extras={"solicitante_id": int(ctx.pessoa["id"])} if ctx.pessoa else {}), "APARELHO")
     rotulo = ROTULO_PAPEL.get(a.papel, "responsável")
     return (Quem(nome=f"{ctx.pessoa['nome']} ({rotulo}, pelo aplicativo)"[:120], pessoas={int(alvo_id)},
-                 obras=list(a.obras)), "RESPONSAVEL")
+                 obras=list(a.obras), extras={"solicitante_id": int(ctx.pessoa["id"])}), "RESPONSAVEL")
 
 
 def _datas_do_pedido(d: dict):

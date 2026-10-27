@@ -59,8 +59,12 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
-1zw. **No ramo, esperando o "pode" (28/10/2026, noite; sem migração)** — o **espelho do ponto no aplicativo**,
-   como o dono aprovou na prévia: o seu e o de uma pessoa da obra, com o PDF. Ver a seção de 28/10/2026 (noite).
+1zw. **No ramo, esperando o "pode" (28/10/2026, noite) — COM A MIGRAÇÃO 014 DO PONTO**: o **espelho do ponto
+   no aplicativo** (o seu e o de uma pessoa da obra, com o PDF) e a **negativa avisada a quem pediu** (aviso no
+   aplicativo, o negado no dia, quem pediu por outra pessoa e o WhatsApp). Ao juntar, apertar **Ponto ›
+   Configuração › "Aplicar atualizações do ponto"** no mesmo momento; sem isso, a negativa funciona como antes
+   (sem aviso) e nada quebra. Para o WhatsApp sair, o WhatsApp precisa estar ligado em ERP › Mensagens. Ver as
+   seções de 28/10/2026 (noite).
 1zv. **Publicado em 28/10/2026 (tarde)** (com o "pode" do dono; sem migração; `74bff51`) — Pessoas de volta
    com a foto de cadastro, todas as telas de volta ao menu, as Validações agrupadas por pessoa e dia, a barra
    fixa, a troca da foto no mosaico e o quanto cada ajuste é crível. Ver a seção de 28/10/2026 (tarde).
@@ -342,6 +346,48 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 28/10/2026 (noite, segunda) — A negativa avisada a quem pediu (migração 014)
+
+O dono perguntou se já existia: *"quando eu nego uma validação, o ideal era que a pessoa recebesse, quem
+solicitou recebesse, a negativa, e a gente ia colocar algum motivo. Para a pessoa saber que foi negado, ou
+então entender que foi pedido errado e precisa ser pedido novamente."* O que havia: o motivo já era
+obrigatório e aparecia na aba Pedidos do aplicativo — só para quem fosse procurar; no Meu mês o ⏳ sumia sem
+explicação; e quem pediu por outra pessoa não tinha onde ver. Ele aprovou as quatro partes propostas, e
+sobre o WhatsApp: *"o padrão é para enviar, mas (…) tem uma opção de não enviar"*.
+
+- **A. O aviso na tela inicial do aplicativo** (`core/negativas.py` › `avisos`, no `/ponto/app/api/inicio`):
+  vermelho, no topo, UM por pessoa e dia ("❌ 4 pedidos negados: 21/10 — Ajustes das 07:00, 11:00, 12:00 e
+  17:00 — <motivo>"). Tocado, abre o motivo e, para quem pode pedir, "Pedir de novo" (leva ao mês, ou à
+  pessoa da obra); fechar a janela faz o aviso sumir para quem tocou (`/ponto/app/api/negativas/<id>/vista`).
+  Aviso de mais de 30 dias não aparece mais; na migração, os negados de mais de 7 dias já entram como vistos
+  (para não cair de uma vez na tela de todo mundo).
+- **B. O negado no dia** (Meu mês, a folha da pessoa da obra e o espelho do aplicativo): "❌ Negado: Ajuste das
+  17:00 — <motivo>", enquanto aquele horário continuar em aberto. Sai sozinho quando a batida aparece perto da
+  hora (30 min) ou há um pedido novo esperando para a mesma hora.
+- **C. Quem pediu** (`ocorrencias.solicitado_colaborador_id`): a própria pessoa, pelo celular ou pelo aparelho
+  da obra, ou quem pediu por ela no aplicativo (o responsável, o administrativo, quem estava conectado no
+  ponto da obra). Vale para os pedidos novos; nos antigos, a migração recupera só o da própria pessoa pelo
+  celular. O pedido lançado pela gestão no ERP não tem "quem pediu" no aplicativo — só a pessoa é avisada.
+- **D. O WhatsApp**, padrão ligado. Ao negar — um pedido, o grupo do dia nas Validações, a janela do pedido ou
+  o painel — o diálogo do motivo ganhou **"Avisar pelo WhatsApp"**, com "Sim" já marcado e "Não enviar o aviso
+  pelo WhatsApp". A escolha fica no pedido (`negativa_whatsapp`). A mensagem vai pela fila do ponto (tipo
+  NEGATIVA, prioridade logo depois do QR pedido e do mosaico), no horário de atendimento (6h–22h), nunca
+  dentro da requisição. Negar as 4 batidas do dia manda **UMA** mensagem por pessoa, com o motivo uma vez: a
+  mensagem espera 1 minuto antes de sair, e cada negado do mesmo dia que chega nesse minuto entra nela. Depois
+  de negar, a tela diz para quem foi o WhatsApp e quem está sem telefone no cadastro.
+- **Uma decisão de leitura, que pode ser trocada:** entendi o "opção de não enviar" como não mandar o
+  WhatsApp. O aviso no aplicativo aparece de qualquer jeito (o motivo já aparecia na aba Pedidos antes).
+- **O tipo novo na mensageria**: `ponto.pedido_negado` ("Pedido do ponto negado") no catálogo da tela
+  Mensagens, registrado também no `mensageria/HISTORICO.md`.
+- **Sem a 014 aplicada**, nada disto liga (as consultas perguntam antes se a coluna existe) e a negativa
+  funciona como antes.
+- **Testes**: `tests/test_ponto_negativa_avisada_banco.py` (a mensagem, a junção do dia, o aviso para a pessoa e
+  para quem pediu, "visto" só para quem tocou, o negado no dia, e o "não enviar"). Ensaio no navegador: negar as
+  4 do dia no ERP, o aviso do administrativo e o da pessoa no aplicativo, o dia no Meu mês.
+- **O que não foi verificado**: a mensagem saindo de verdade pelo WhatsApp (aqui não há Z-API; o teste vê a
+  mensagem na fila). E a negativa dada pela própria tela da janela da pessoa no ERP segue o mesmo caminho, mas
+  não foi ensaiada no navegador.
 
 ## 28/10/2026 (noite) — O espelho do ponto no aplicativo
 

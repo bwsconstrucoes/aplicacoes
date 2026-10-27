@@ -363,4 +363,7 @@ class TestEncaixeNoErp:
 
 def test_a_fila_do_ponto_diz_o_tipo_de_cada_mensagem():
     from app.apps.ponto.core import envios
-    assert envios.FINALIDADE == {"QR": "ponto.qr", "MOSAICO": "ponto.mosaico", "AVISO_FOTO": "ponto.aviso_foto"}
+    assert envios.FINALIDADE == {"QR": "ponto.qr", "MOSAICO": "ponto.mosaico", "AVISO_FOTO": "ponto.aviso_foto",
+                                 "NEGATIVA": "ponto.pedido_negado"}
+    chaves = {t["chave"] for t in core.CATALOGO}
+    assert set(envios.FINALIDADE.values()) <= chaves          # todo tipo da fila aparece na tela Mensagens

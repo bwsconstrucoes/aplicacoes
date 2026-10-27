@@ -1737,14 +1737,20 @@ async function decidirNoPainel(url, tipo, sim) {
     if (!abono) return;
     corpo.abono = abono;
   }
-  if (!sim) {
-    const r = await perguntar({titulo: tipo === "PEDIDO" ? "Negar o pedido" : "Rejeitar a batida",
+  if (!sim && tipo === "PEDIDO") {
+    const r = await pedirMotivo("Negar o pedido", "O motivo fica registrado no pedido, com o seu nome.", "Por quê",
+                                "ex.: a pessoa não estava na obra nesse dia", true);
+    if (r === null) return;
+    corpo.motivo = r.motivo;
+    corpo.avisar = r.avisar;
+  } else if (!sim) {
+    const r = await perguntar({titulo: "Rejeitar a batida",
       campos: [{nome: "motivo", rotulo: "Por quê", tipo: "textarea", obrigatorio: true, largura: 6,
-                exemplo: "o motivo fica registrado, com o seu nome"}], textoOk: tipo === "PEDIDO" ? "Negar" : "Rejeitar"});
+                exemplo: "o motivo fica registrado, com o seu nome"}], textoOk: "Rejeitar"});
     if (!r) return;
     corpo.motivo = r.motivo;
   }
-  try { await postar(url, corpo); aviso("dp-msg", "Feito.", "ok"); recarregarPainel(); }
+  try { const resp = await postar(url, corpo); aviso("dp-msg", "Feito." + textoDoAvisoDaNegativa(resp), "ok"); recarregarPainel(); }
   catch (e) { aviso("dp-msg", escapar(e.message), "erro"); }
 }
 
@@ -1938,14 +1944,20 @@ async function decidirNaJanela(url, tipo, sim, msg, pedido) {
     if (!abono) return false;
     corpo.abono = abono;
   }
-  if (!sim) {
-    const r = await perguntar({titulo: tipo === "PEDIDO" ? "Negar o pedido" : "Rejeitar a batida",
+  if (!sim && tipo === "PEDIDO") {
+    const r = await pedirMotivo("Negar o pedido", "O motivo fica registrado no pedido, com o seu nome.", "Por quê",
+                                "ex.: a pessoa não estava na obra nesse dia", true);
+    if (r === null) return false;
+    corpo.motivo = r.motivo;
+    corpo.avisar = r.avisar;
+  } else if (!sim) {
+    const r = await perguntar({titulo: "Rejeitar a batida",
       campos: [{nome: "motivo", rotulo: "Por quê", tipo: "textarea", obrigatorio: true, largura: 6,
-                exemplo: "o motivo fica registrado, com o seu nome"}], textoOk: tipo === "PEDIDO" ? "Negar" : "Rejeitar"});
+                exemplo: "o motivo fica registrado, com o seu nome"}], textoOk: "Rejeitar"});
     if (!r) return false;
     corpo.motivo = r.motivo;
   }
-  try { await postar(url, corpo); aviso(msg, "Feito.", "ok"); depoisDeDecidir(); return true; }
+  try { const resp = await postar(url, corpo); aviso(msg, "Feito." + textoDoAvisoDaNegativa(resp), "ok"); depoisDeDecidir(); return true; }
   catch (e) { aviso(msg, escapar(e.message), "erro"); return false; }
 }
 
@@ -3861,23 +3873,25 @@ function linhaDoGrupo(g, ms) {
 async function decidirOGrupo(ms, sim) {
   const batidas = ms[0].categoria === "BATIDA", n = ms.length;
   const horas = ms.map(horaDoItem).filter(Boolean).join(", ");
-  let motivo = "";
+  let motivo = "", avisar = true;
   if (sim) {
     const r = await perguntar({titulo: `${batidas ? "Validar" : "Aprovar"} as ${n} de ${escapar(ms[0].pessoa)}`,
       aviso: `${escapar(dataBR(ms[0].data))}: ${escapar(horas)}. Para decidir uma a uma, use “ver uma a uma”.`,
       campos: [], textoOk: batidas ? "Validar todas" : "Aprovar todas"});
     if (!r) return;
   } else {
-    motivo = await pedirMotivo(`${batidas ? "Rejeitar" : "Negar"} as ${n} de ${escapar(ms[0].pessoa)}`,
-      `${escapar(dataBR(ms[0].data))}: ${escapar(horas)}. O mesmo motivo vai em cada uma, com o seu nome.`,
-      `Por que está ${batidas ? "rejeitando" : "negando"}`, "ex.: a pessoa não estava na obra nesse dia");
-    if (motivo === null) return;
+    const r = await pedirMotivo(`${batidas ? "Rejeitar" : "Negar"} as ${n} de ${escapar(ms[0].pessoa)}`,
+      `${escapar(dataBR(ms[0].data))}: ${escapar(horas)}. O mesmo motivo vai em cada uma, com o seu nome.`
+        + (batidas ? "" : " Pelo WhatsApp, vai UMA mensagem com todas."),
+      `Por que está ${batidas ? "rejeitando" : "negando"}`, "ex.: a pessoa não estava na obra nesse dia", !batidas);
+    if (r === null) return;
+    if (batidas) motivo = r; else ({motivo, avisar} = r);
   }
   let certos = 0;
   const erros = [];
   for (const i of ms) {
     try {
-      await postar(i.decidir_em, i.categoria === "PEDIDO" ? {aprovar: sim, motivo} : {para: sim ? "VALIDA" : "REJEITADA", motivo});
+      await postar(i.decidir_em, i.categoria === "PEDIDO" ? {aprovar: sim, motivo, avisar} : {para: sim ? "VALIDA" : "REJEITADA", motivo});
       certos++;
     } catch (e) { erros.push(`${escapar(horaDoItem(i) || i.rotulo)}: ${escapar(e.message)}`); }
   }
@@ -3982,18 +3996,35 @@ function desenharLote() {
 
 // Motivo de negar ou rejeitar: ao menos 5 letras. Curto demais reabre o
 // diálogo com o que já foi escrito.
-async function pedirMotivo(titulo, avisoTexto, rotuloCampo, exemplo) {
-  let motivo = "", falta = "";
+// A NEGATIVA AVISADA (28/10/2026, core/negativas.py): ao negar um PEDIDO, a pessoa — e quem
+// pediu por ela — recebe o motivo pelo WhatsApp, por padrão (o dono: "o padrão é para enviar,
+// mas (…) tem uma opção de não enviar"). No aplicativo, ela vê a negativa de qualquer jeito.
+// Com `comAviso`, devolve {motivo, avisar}; sem, só o motivo.
+async function pedirMotivo(titulo, avisoTexto, rotuloCampo, exemplo, comAviso) {
+  let motivo = "", falta = "", avisar = "SIM";
   for (;;) {
-    const r = await perguntar({titulo, aviso: falta + avisoTexto,
-      campos: [{nome: "motivo", rotulo: rotuloCampo, tipo: "textarea", linhas: 3, largura: 3,
-                obrigatorio: true, valor: escapar(motivo), exemplo}],
-      textoOk: titulo.split(":")[0]});
+    const campos = [{nome: "motivo", rotulo: rotuloCampo, tipo: "textarea", linhas: 3, largura: comAviso ? 6 : 3,
+                     obrigatorio: true, valor: escapar(motivo), exemplo}];
+    if (comAviso) campos.push({nome: "avisar", rotulo: "Avisar pelo WhatsApp", tipo: "select", largura: 6, valor: avisar,
+      opcoes: [{valor: "SIM", rotulo: "Sim — a pessoa (e quem pediu por ela) recebe o motivo"},
+               {valor: "NAO", rotulo: "Não enviar o aviso pelo WhatsApp"}],
+      dica: "No aplicativo do ponto, a negativa e o motivo aparecem de qualquer jeito."});
+    const r = await perguntar({titulo, aviso: falta + avisoTexto, campos, textoOk: titulo.split(":")[0]});
     if (!r) return null;
     motivo = (r.motivo || "").trim();
-    if (motivo.length >= 5) return motivo;
+    avisar = r.avisar || "SIM";
+    if (motivo.length >= 5) return comAviso ? {motivo, avisar: avisar !== "NAO"} : motivo;
     falta = "<b>Escreva ao menos 5 letras.</b><br>";
   }
+}
+// O que a negativa avisou, para quem negou conferir (quem está sem telefone não recebe).
+function textoDoAvisoDaNegativa(r) {
+  const a = r && r.ocorrencia && r.ocorrencia.aviso_da_negativa;
+  if (!a) return "";
+  const partes = [];
+  if (a.whatsapp && a.whatsapp.length) partes.push(`aviso pelo WhatsApp para ${a.whatsapp.map(escapar).join(" e ")}`);
+  if (a.sem_telefone && a.sem_telefone.length) partes.push(`sem telefone no cadastro: ${a.sem_telefone.map(escapar).join(", ")} (vê no aplicativo)`);
+  return partes.length ? ` — ${partes.join("; ")}` : "";
 }
 
 async function decidirItem(i, sim) {
@@ -4006,11 +4037,12 @@ async function decidirItem(i, sim) {
       corpo.abono = abono;
     }
     if (!sim) {
-      const motivo = await pedirMotivo(`Negar: ${escapar(i.rotulo)} de ${escapar(i.pessoa)}`,
+      const r = await pedirMotivo(`Negar: ${escapar(i.rotulo)} de ${escapar(i.pessoa)}`,
         "O motivo fica registrado no pedido, com o seu nome.", "Por que está negando",
-        "ex.: a pessoa não estava na obra nesse dia");
-      if (motivo === null) return;
-      corpo.motivo = motivo;
+        "ex.: a pessoa não estava na obra nesse dia", true);
+      if (r === null) return;
+      corpo.motivo = r.motivo;
+      corpo.avisar = r.avisar;
     }
   } else {
     corpo = {para: sim ? "VALIDA" : "REJEITADA", motivo: ""};
@@ -4024,10 +4056,10 @@ async function decidirItem(i, sim) {
     }
   }
   try {
-    await postar(i.decidir_em, corpo);
+    const resp = await postar(i.decidir_em, corpo);
     const texto = i.categoria === "PEDIDO" ? (sim ? "Pedido aprovado." : "Pedido negado.")
                                           : (sim ? "Batida validada." : "Batida rejeitada.");
-    aviso("mensagem", `${texto} ${escapar(i.pessoa || "")}`, "ok");
+    aviso("mensagem", `${texto} ${escapar(i.pessoa || "")}${textoDoAvisoDaNegativa(resp)}`, "ok");
     await carregarValidacoes();
   } catch (e) { falhou(e); }
 }

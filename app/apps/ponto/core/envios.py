@@ -69,7 +69,7 @@ JANELA_ATENDIMENTO = (dt.time(6, 0), dt.time(22, 0))   # todos os dias
 TENTATIVAS_MAX = 3
 PRESO_MIN = 15          # ENVIANDO há mais que isso = o serviço caiu no meio
 
-PRIORIDADE = {("QR", "PEDIDO"): 1, ("QR", "GESTAO"): 1, ("MOSAICO", ""): 2,
+PRIORIDADE = {("QR", "PEDIDO"): 1, ("QR", "GESTAO"): 1, ("MOSAICO", ""): 2, ("NEGATIVA", ""): 3,
               ("AVISO_FOTO", ""): 5, ("QR", "ROTACAO"): 6, ("QR", "INICIAL"): 7}
 AUTOMATICOS = {("QR", "ROTACAO"), ("QR", "INICIAL"), ("AVISO_FOTO", "")}
 
@@ -286,7 +286,8 @@ def _texto_do_qr(nome: str, motivo: str) -> str:
 
 # O TIPO de cada mensagem na mensageria (tela Mensagens do ERP): é lá que o
 # dono decide se sai por WhatsApp. Pedido dele em 05/10/2026: ponto liberado.
-FINALIDADE = {"QR": "ponto.qr", "MOSAICO": "ponto.mosaico", "AVISO_FOTO": "ponto.aviso_foto"}
+FINALIDADE = {"QR": "ponto.qr", "MOSAICO": "ponto.mosaico", "AVISO_FOTO": "ponto.aviso_foto",
+              "NEGATIVA": "ponto.pedido_negado"}      # a negativa avisada (28/10/2026, core/negativas.py)
 
 
 def _notificar_padrao(**kw) -> dict:

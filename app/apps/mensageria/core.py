@@ -68,6 +68,8 @@ CATALOGO: list[dict] = [
      "descricao": "O link do mosaico de fotos do dia para o responsável pela obra conferir."},
     {"chave": "ponto.aviso_foto", "nome": "Aviso de batida sem foto", "modulo": "Ponto",
      "politica": WHATSAPP, "descricao": "Aviso ao encarregado quando a batida ficou sem foto."},
+    {"chave": "ponto.pedido_negado", "nome": "Pedido do ponto negado", "modulo": "Ponto", "politica": WHATSAPP,
+     "descricao": "Avisa a pessoa (e quem pediu por ela) que o ajuste, atestado ou licença foi negado, com o motivo."},
     {"chave": "ponto.resumo_dia", "nome": "Resumo diário do ponto", "modulo": "Ponto", "politica": WHATSAPP,
      "descricao": "O resumo do dia (quem bateu, quem faltou) para os telefones configurados no ponto."},
     # A ronda surpresa dos vigias noturnos (13/10/2026) — sai de madrugada, de propósito

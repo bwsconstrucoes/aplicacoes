@@ -1874,6 +1874,13 @@ def ponto_api_criar_afastamento():
     return _ok(ocorrencia=o), 201
 
 
+def _acordar_a_fila_se_avisou(o: dict) -> None:
+    """A negativa com WhatsApp entrou na fila: acorda quem envia, já com a transação fechada."""
+    if (o.get("aviso_da_negativa") or {}).get("whatsapp"):
+        from .core import envios
+        envios.enviar_agora()
+
+
 @bp.route("/erp/api/ponto/ocorrencias/<int:ocorrencia_id>/etapa-supervisor", methods=["POST"])
 @login_obrigatorio
 @permissao("tratar_ponto")
@@ -1885,7 +1892,9 @@ def ponto_api_decidir_supervisor(ocorrencia_id: int):
         if atual["etapa_atual"] != ocorrencias.SUPERVISOR:
             raise ErroDeValidacao("este pedido não está na etapa do supervisor", campo="etapa")
         o = ocorrencias.decidir(conn, ocorrencia_id, quem, aprovar=bool(d.get("aprovar")),
-                                motivo=d.get("motivo", ""), abono=d.get("abono"))
+                                motivo=d.get("motivo", ""), abono=d.get("abono"),
+                                avisar=d.get("avisar", True) is not False)
+    _acordar_a_fila_se_avisou(o)
     return _ok(ocorrencia=o)
 
 
@@ -1900,7 +1909,9 @@ def ponto_api_decidir_dp(ocorrencia_id: int):
         if atual["etapa_atual"] != ocorrencias.DP:
             raise ErroDeValidacao("este pedido não está na etapa do DP", campo="etapa")
         o = ocorrencias.decidir(conn, ocorrencia_id, quem, aprovar=bool(d.get("aprovar")),
-                                motivo=d.get("motivo", ""), abono=d.get("abono"))
+                                motivo=d.get("motivo", ""), abono=d.get("abono"),
+                                avisar=d.get("avisar", True) is not False)
+    _acordar_a_fila_se_avisou(o)
     return _ok(ocorrencia=o)
 
 
