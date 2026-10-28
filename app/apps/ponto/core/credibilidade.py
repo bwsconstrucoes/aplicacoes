@@ -59,7 +59,8 @@ def classificar(a_favor: list[tuple[str, bool]], atencao: list[str], *, escala_o
 def sinais(*, pedido_por: dict, origem: str, hora: str, obra: Optional[str], batidas: list[dict],
            pedidos_no_dia: int, previstas: list[str], situacao: str, feriado: Optional[str],
            fotos_ruins: list[str], em_conferencia: list[str], fora_da_area: list[str],
-           dias_depois: int, dias_com_ajuste: int, negados_recentes: int) -> dict:
+           dias_depois: int, dias_com_ajuste: int, negados_recentes: int,
+           obra_suspeita: Optional[list[dict]] = None) -> dict:
     """PURA. Os motivos de um pedido de ajuste e o nível. `codigos`: as categorias dos motivos, para o
     filtro das Validações (`core/motivos.py`)."""
     a_favor: list[tuple[str, bool]] = []
@@ -113,6 +114,9 @@ def sinais(*, pedido_por: dict, origem: str, hora: str, obra: Optional[str], bat
         atento("AJ_EM_CONFERENCIA", f"batida do dia em conferência: {c}")
     for f in fora_da_area:
         atento("AJ_FORA_DA_AREA", f"tentou bater fora da área da obra: {f}")
+    # a obra escolhida à mão que provavelmente está errada (29/10/2026, obra_suspeita.py)
+    for a in obra_suspeita or []:
+        atento("AJ_" + a["codigo"], f"obra pedida: {a['texto']}")
     if dias_depois > PEDIDO_TARDIO_DIAS:
         atento("AJ_TARDIO", f"pedido {dias_depois} dias depois do dia")
     if dias_com_ajuste >= MUITOS_AJUSTES_DIAS:
@@ -176,6 +180,10 @@ def avaliar(conn: Connection, pedidos: list[dict]) -> dict[int, dict]:
           FROM ponto.ocorrencias
          WHERE tipo = 'AJUSTE_BATIDA' AND colaborador_id = ANY(:ids) AND data_inicio >= :d
          GROUP BY colaborador_id""", ids=ids, d=hoje - dt.timedelta(days=30))}
+    # a obra pedida: a pessoa não bate nela, ou ninguém bate nela há dias (29/10/2026)
+    from . import obra_suspeita as os_
+    obras_pessoa = os_.obras_das_pessoas(conn, ids)
+    ultimas = os_.ultimas_das_obras(conn, [p.get("obra") for p in ajustes])
     pedidos_no_dia: dict[tuple, int] = {}
     for p in ajustes:
         k = (int(p["colaborador_id"]), str(p["data"])[:10])
@@ -200,5 +208,8 @@ def avaliar(conn: Connection, pedidos: list[dict]) -> dict[int, dict]:
             previstas=[x["hora"] for x in d.get("previstas") or []], situacao=d.get("situacao") or "",
             feriado=d.get("feriado"), fotos_ruins=fotos.get((cid, dia), []), em_conferencia=em_conf,
             fora_da_area=fora_txt, dias_depois=dias_depois, dias_com_ajuste=int(h.get("dias") or 0),
-            negados_recentes=int(h.get("negados") or 0))
+            negados_recentes=int(h.get("negados") or 0),
+            obra_suspeita=(os_.avisos(obra=str(p["obra"]).strip().upper(), obras_da_pessoa=obras_pessoa.get(cid, {}),
+                                      ultima_da_obra=ultimas.get(str(p["obra"]).strip().upper()), hoje=hoje)
+                           if p.get("obra") else []))
     return saida

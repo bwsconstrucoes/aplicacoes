@@ -120,6 +120,26 @@ def app_api_inicio():
         alcance=_alcance_json(alc), negativas=avisos_de_negativa)
 
 
+@bp.route("/app/api/obra-aviso")
+@auth.exige_colaborador_ou_aparelho
+def app_api_obra_aviso():
+    """A obra escolhida à mão para o ajuste provavelmente está errada? (29/10/2026, obra_suspeita.py)
+    `pessoa`: o pedido por outra pessoa — com o mesmo alcance da consulta. Sem ela, quem está logado."""
+    from .core import obra_suspeita
+    with db.conexao() as conn:
+        alvo_id = request.args.get("pessoa", type=int)
+        if alvo_id:
+            ctx = _contexto(conn)
+            _alvo(conn, ctx, alvo_id)
+        else:
+            p = _logado(conn)
+            if not p:
+                raise NaoAutenticado("entre com o seu CPF e PIN")
+            alvo_id = int(p["id"])
+        avisos = obra_suspeita.da_pessoa(conn, alvo_id, request.args.get("obra"))
+    return _ok(avisos=avisos)
+
+
 @bp.route("/app/api/negativas/<int:ocorrencia_id>/vista", methods=["POST"])
 @auth.exige_colaborador_ou_aparelho
 def app_api_negativa_vista(ocorrencia_id: int):

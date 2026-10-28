@@ -437,7 +437,63 @@ def obter(conn: Connection, ocorrencia_id: int, quem: Quem) -> dict:
     j = _para_json(o, quem, validacao.etapas_do_tipo(conn, o["tipo"]))
     j["pode_decidir"] = (j["etapa_atual"] is not None
                          and _pode_na_etapa(conn, quem, o, j["etapa_atual"]))
+    j["alteracoes"] = alteracoes(conn, ocorrencia_id)
+    # o DP corrige a obra do ajuste que ainda espera decisão (29/10/2026, migração 016)
+    j["pode_trocar_obra"] = bool(quem.dp and o["tipo"] == "AJUSTE_BATIDA" and j["etapa_atual"] is not None
+                                 and db.tem_coluna(conn, "ocorrencia_alteracoes", "campo"))
     return j
+
+
+def alteracoes(conn: Connection, ocorrencia_id: int) -> list[dict]:
+    """O que o DP mudou no pedido antes de decidir (migração 016), do mais antigo ao mais novo."""
+    if not db.tem_coluna(conn, "ocorrencia_alteracoes", "campo"):
+        return []
+    return [{"campo": a["campo"], "de": a["de"], "para": a["para"], "motivo": a["motivo"],
+             "por": a["usuario_nome"], "em": horario.texto(a["criado_em"])}
+            for a in db.todos(conn, "SELECT * FROM ponto.ocorrencia_alteracoes WHERE ocorrencia_id = :id "
+                                    "ORDER BY id", id=ocorrencia_id)]
+
+
+MOTIVO_MINIMO_TROCA = 10
+
+
+def trocar_obra(conn: Connection, ocorrencia_id: int, quem: Quem, *, obra: str, motivo: str) -> dict:
+    """A PESSOA ESCOLHEU A OBRA ERRADA NO AJUSTE (29/10/2026). O DP corrige ANTES de decidir: o pedido
+    ainda não é batida, e a Portaria 671 protege as marcações, não o pedido. O que era, o que ficou,
+    quem, quando e por quê ficam em `ocorrencia_alteracoes`, para sempre. Depois de aprovado, a batida
+    já existe: vale "Corrigir a obra ou a hora" da batida (marcacoes.corrigir)."""
+    if not db.tem_coluna(conn, "ocorrencia_alteracoes", "campo"):
+        raise ErroDeValidacao("aplique as atualizações do ponto (migração 016) para corrigir a obra do pedido")
+    if not quem.dp:
+        raise ErroDeValidacao("só o DP corrige a obra de um pedido", campo="obra")
+    o = _bruta(conn, ocorrencia_id)
+    if not pessoa_no_alcance(conn, quem, o["colaborador_id"]):
+        raise NaoEncontrado("pedido não encontrado")
+    if o["tipo"] != "AJUSTE_BATIDA":
+        raise ErroDeValidacao("só o ajuste de batida tem obra para corrigir", campo="obra")
+    if _etapa_atual(o) is None:
+        raise ErroDeValidacao(f"este pedido já está {o['status'].lower()} — corrija a batida, não o pedido",
+                              campo="status")
+    motivo = " ".join(str(motivo or "").split())
+    if len(motivo) < MOTIVO_MINIMO_TROCA:
+        raise ErroDeValidacao("diga por que a obra está sendo corrigida (ao menos 10 letras)", campo="motivo")
+    nova = cadastros.obra_por_codigo(conn, str(obra or ""))
+    if not nova or nova["status"] != "ATIVA":
+        raise ErroDeValidacao("obra não encontrada ou inativa no ponto", campo="obra")
+    if not quem.alcanca_obra(int(nova["id"])):
+        raise NaoEncontrado("obra não encontrada")
+    if o.get("obra_id") and int(o["obra_id"]) == int(nova["id"]):
+        raise ErroDeValidacao("o pedido já está nesta obra", campo="obra")
+    competencias.exigir_aberta(conn, o["data_inicio"], o["data_fim"], o.get("dia_trabalhado"))
+    de = o.get("obra_codigo") or "(sem obra)"
+    db.executar(conn, "UPDATE ponto.ocorrencias SET obra_id = :o, atualizado_em = now() WHERE id = :id",
+                o=int(nova["id"]), id=ocorrencia_id)
+    db.executar(conn, """
+        INSERT INTO ponto.ocorrencia_alteracoes (ocorrencia_id, campo, de, para, motivo, usuario_id, usuario_nome)
+        VALUES (:id, 'obra', :de, :para, :m, :u, :n)""", id=ocorrencia_id, de=de, para=nova["codigo"],
+                 m=motivo[:500], u=quem.usuario_id, n=quem.nome[:120])
+    logger.info("Ponto: pedido %d — obra corrigida de %s para %s por %s", ocorrencia_id, de, nova["codigo"], quem.nome)
+    return obter(conn, ocorrencia_id, quem)
 
 
 def listar(conn: Connection, quem: Quem, *, status: str | None = None,

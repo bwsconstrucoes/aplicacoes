@@ -629,6 +629,20 @@ def ponto_api_desconsiderar(marcacao_id: int):
     return _ok()
 
 
+@bp.route("/erp/api/ponto/ocorrencias/<int:ocorrencia_id>/obra", methods=["POST"])
+@login_obrigatorio
+@permissao("aprovar_afastamento")
+@_api
+def ponto_api_trocar_obra_do_pedido(ocorrencia_id: int):
+    """O DP corrige a obra de um ajuste que ainda espera decisão (29/10/2026, ocorrencias.trocar_obra):
+    a pessoa escolheu a obra errada. Fica registrado o que era, o que ficou, quem e por quê."""
+    from .core import paineis
+    quem, d = _quem(), _corpo()
+    with db.conexao() as conn:
+        ocorrencias.trocar_obra(conn, ocorrencia_id, quem, obra=d.get("obra"), motivo=d.get("motivo"))
+        return _ok(pedido=paineis.pedido(conn, quem, ocorrencia_id))
+
+
 @bp.route("/erp/api/ponto/marcacoes/<int:marcacao_id>/corrigir", methods=["POST"])
 @login_obrigatorio
 @permissao("aprovar_afastamento")

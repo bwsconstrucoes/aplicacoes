@@ -1939,6 +1939,9 @@ function htmlDoPedido(p) {
   if (p.supervisor) linhas.push(["Responsável da obra", `${escapar(p.supervisor)} — ${escapar(quando(p.supervisor_em))}`]);
   if (p.dp) linhas.push(["DP", `${escapar(p.dp)} — ${escapar(quando(p.dp_em))}`]);
   if (p.motivo_negativa) linhas.push(["Por que foi negado", escapar(p.motivo_negativa)]);
+  // o que o DP mudou antes de decidir (29/10/2026, migração 016): a pessoa pediu uma coisa, e fica escrito
+  (p.alteracoes || []).forEach(a => linhas.push([a.campo === "obra" ? "Obra corrigida pelo DP" : `${escapar(a.campo)} corrigido`,
+    `de <b>${escapar(a.de || "—")}</b> para <b>${escapar(a.para || "—")}</b> — ${escapar(a.por)}, ${escapar(quando(a.em))}<small>${escapar(a.motivo)}</small>`]));
   if (p.tem_documento) linhas.push(["Documento", p.documento_id
     ? `<button class="link-btn" type="button" data-documento="${escapar(urlDoDocumento(p.documento_id, p.sigiloso))}"
         data-legenda="${escapar(`${p.colaborador} — ${p.rotulo}`)}">ver o documento</button>`
@@ -1981,13 +1984,32 @@ async function abrirPedido(id) {
     els("mp-titulo").textContent = `${p.colaborador} — ${p.rotulo}`;
     els("mp-corpo").innerHTML = `<div id="mp-msg"></div>${htmlDoPedido(p)}
       ${p.decidir_em ? `<div class="barra-acoes"><button class="btn" type="button" id="mp-aprovar">Aprovar</button>
-        <button class="btn perigo" type="button" id="mp-negar">Negar…</button></div>`
+        <button class="btn perigo" type="button" id="mp-negar">Negar…</button>
+        ${p.pode_trocar_obra ? `<button class="btn secundario" type="button" id="mp-trocar-obra">Corrigir a obra…</button>` : ""}</div>`
         : p.etapa_atual ? `<div class="aviso info">Esta etapa (${escapar(ETAPA_PEDIDO[p.status] || "")}) não é sua.</div>` : ""}
       <p style="margin:10px 0 0"><button class="link-btn" type="button" data-abrir-pessoa="${p.colaborador_id}" data-dia="${p.data_inicio}">abrir a pessoa</button></p>`;
     if (p.decidir_em) {
       els("mp-aprovar").addEventListener("click", async () => { if (await decidirNaJanela(p.decidir_em, "PEDIDO", true, "mp-msg", p)) abrirPedido(id); });
       els("mp-negar").addEventListener("click", async () => { if (await decidirNaJanela(p.decidir_em, "PEDIDO", false, "mp-msg")) abrirPedido(id); });
     }
+    // A OBRA ERRADA NO PEDIDO (29/10/2026): o DP corrige antes de decidir, com o motivo — o pedido ainda
+    // não é batida; a troca fica registrada no pedido (o que era, o que ficou, quem e por quê).
+    if (p.pode_trocar_obra && els("mp-trocar-obra")) els("mp-trocar-obra").addEventListener("click", async () => {
+      let obras = [];
+      try { obras = await obrasParaEscolher(); } catch (e) { aviso("mp-msg", escapar(e.message), "erro"); return; }
+      const atual = (p.obra_pedida && p.obra_pedida.codigo) || p.obra_cadastro || "";
+      const r = await perguntar({titulo: `Corrigir a obra do pedido nº ${p.id}`,
+        aviso: "O pedido ainda não é batida: dá para corrigir a obra antes de decidir. A troca fica registrada no pedido — " +
+               "a obra que a pessoa escolheu, a nova, o seu nome e o motivo. Depois, aprove ou negue como sempre.",
+        campos: [{nome: "obra", rotulo: "Obra certa", tipo: "select", largura: 6, valor: escapar(atual),
+                  opcoes: obras.map(x => ({valor: escapar(x.codigo), rotulo: escapar(rotuloObra(x))}))},
+                 {nome: "motivo", rotulo: "Por que corrigir", tipo: "textarea", obrigatorio: true, largura: 6,
+                  exemplo: "ex.: escolheu a AP-01 por engano — as batidas dele no dia são todas na BR-02"}],
+        textoOk: "Corrigir a obra"});
+      if (!r) return;
+      try { await postar(`/erp/api/ponto/ocorrencias/${p.id}/obra`, {obra: r.obra, motivo: r.motivo}); depoisDeDecidir(); abrirPedido(id); }
+      catch (e) { aviso("mp-msg", escapar(e.message), "erro"); }
+    });
   } catch (e) { els("mp-corpo").innerHTML = `<div class="aviso erro">${escapar(e.message)}</div>`; }
 }
 

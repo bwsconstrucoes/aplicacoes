@@ -41,6 +41,8 @@ AJUSTE: list[tuple[str, str]] = [
     ("AJ_EM_CONFERENCIA", "Batida do dia em conferência"),
     ("AJ_FORA_DA_AREA", "Tentou bater fora da área"),
     ("AJ_OBRA_DIFERENTE", "Obra diferente da das batidas"),
+    ("AJ_OBRA_ESTRANHA", "Obra em que a pessoa não bate"),
+    ("AJ_OBRA_PARADA", "Obra sem batidas há dias (parada?)"),
     ("AJ_LONGE_DA_ESCALA", "Longe do horário da escala"),
     ("AJ_DESCANSO", "Dia de descanso ou feriado"),
     ("AJ_TARDIO", "Pedido muitos dias depois"),

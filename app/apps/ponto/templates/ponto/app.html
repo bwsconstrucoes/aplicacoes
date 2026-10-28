@@ -1874,6 +1874,36 @@ function obrasParaCorrecao(dela) {
   const codigos = new Set((dela || []).map(o => o.codigo));
   return [...(dela || []), ...((EU && EU.obras_cadastradas) || []).filter(o => !codigos.has(o.codigo))];
 }
+// A OBRA ESCOLHIDA À MÃO (29/10/2026, o dono: "é muito fácil a pessoa selecionar errado"): ao escolher,
+// o sistema avisa se a pessoa não bate nessa obra, ou se ninguém bate nela há dias. É aviso, não
+// bloqueio — com aviso na tela, o primeiro toque em "Enviar" pede a confirmação da obra.
+function vigiarObra(idSelect, idAviso, idEnviar, alvo) {
+  const sel = $(idSelect), caixa = $(idAviso), botao = $(idEnviar);
+  const texto = botao.textContent;
+  let avisos = [], confirmado = false;
+  const conferir = async () => {
+    confirmado = false; botao.textContent = texto; avisos = [];
+    caixa.classList.add("oculto");
+    if (!sel.value) return;
+    try {
+      const url = `/ponto/app/api/obra-aviso?obra=${encodeURIComponent(sel.value)}` + (alvo ? `&pessoa=${alvo.id}` : "");
+      avisos = (await chamar(alvo ? comLocal(url, await onde()) : url)).avisos || [];
+    } catch (e) { avisos = []; }
+    if (!avisos.length) return;
+    caixa.innerHTML = `<b>⚠️ Confira a obra ${esc(sel.value)}:</b><br>${avisos.map(a => esc(a.texto)).join("<br>")}`;
+    caixa.classList.remove("oculto");
+  };
+  sel.addEventListener("change", conferir);
+  conferir();
+  // devolve true quando pode enviar; com aviso, o primeiro toque só pede a confirmação
+  return () => {
+    if (!avisos.length || confirmado) return true;
+    confirmado = true;
+    botao.textContent = `Confirmo a obra ${sel.value} — enviar`;
+    caixa.scrollIntoView({block: "center", behavior: "smooth"});
+    return false;
+  };
+}
 function abrirCorrecaoDeVarios(itens, alvo) {
   const obras = obrasParaCorrecao(alvo ? (alvo.obras || []) : ((EU && EU.obras) || []));
   $("dlg-corpo").innerHTML = `
@@ -1884,6 +1914,7 @@ function abrirCorrecaoDeVarios(itens, alvo) {
     <select id="v-motivo">${MOTIVOS_AJUSTE.map(([v, t]) => `<option value="${v}">${esc(t)}</option>`).join("")}</select>
     <label for="v-obra">Obra</label>
     <select id="v-obra"></select>
+    <div id="v-obra-aviso" class="aviso ambar oculto"></div>
     <label for="v-desc">Conte em poucas palavras</label>
     <textarea id="v-desc" placeholder="Ex.: o celular quebrou e fiquei a semana sem bater"></textarea>
     <p class="pequeno">Vai tudo num pedido só, para validação — se um dia tiver problema, nada entra e a tela diz qual.</p>
@@ -1896,7 +1927,9 @@ function abrirCorrecaoDeVarios(itens, alvo) {
                                        : `<option value="">a obra do cadastro</option>`;
   const erro = t => { $("v-msg").textContent = t; $("v-msg").classList.remove("oculto"); };
   if (!dias.algum) { $("v-enviar").disabled = true; erro("Nenhum dia dessa faixa tem o que ajustar."); }
+  const obraConfirmada = vigiarObra("v-obra", "v-obra-aviso", "v-enviar", alvo);
   $("v-enviar").onclick = async () => {
+    if (!obraConfirmada()) return;
     let horarios;
     try { horarios = dias.horarios(); } catch (e) { return erro(e.message); }
     $("v-enviar").disabled = true;
@@ -1936,6 +1969,7 @@ function abrirCorrecao(x, alvo) {
     <label for="c-obra">Obra</label>
     <select id="c-obra">${obras.length ? obras.map(o => `<option value="${esc(o.codigo)}" ${o.codigo === obraDoDia ? "selected" : ""}>${esc(rotuloObra(o))}</option>`).join("")
                                        : `<option value="">a obra do cadastro</option>`}</select>
+    <div id="c-obra-aviso" class="aviso ambar oculto"></div>
     <label for="c-desc">Conte em poucas palavras</label>
     <textarea id="c-desc" placeholder="Ex.: o celular descarregou depois do almoço"></textarea>
     <p class="pequeno">${alvo ? "O pedido sai em seu nome e vai para validação." : "A administração da obra confere e aprova."}
@@ -1944,7 +1978,9 @@ function abrirCorrecao(x, alvo) {
     <button class="btn" type="button" id="c-enviar">Enviar o pedido</button>`;
   $("dlg").showModal();
   const erro = t => { $("c-msg").textContent = t; $("c-msg").classList.remove("oculto"); };
+  const obraConfirmada = vigiarObra("c-obra", "c-obra-aviso", "c-enviar", alvo);
   $("c-enviar").onclick = async () => {
+    if (!obraConfirmada()) return;
     let horarios;
     try { horarios = horariosMarcados($("c-linhas"), x); } catch (e) { return erro(e.message); }
     $("c-enviar").disabled = true;

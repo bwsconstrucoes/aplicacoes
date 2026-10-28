@@ -61,6 +61,10 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1zx. **No ramo, esperando o "pode" (29/10/2026) — COM A MIGRAÇÃO 016 DO PONTO**: a negativa no espelho do
+   ERP; o WhatsApp da negativa que não saía (a fila dormia antes da mensagem vencer); o **aviso de obra
+   suspeita** no pedido de ajuste; e o **DP corrigindo a obra** do pedido que ainda espera decisão. Ao juntar,
+   apertar "Aplicar atualizações do ponto" (a 016); sem ela, só o botão "Corrigir a obra…" não aparece.
 1zw. **Publicado em 29/10/2026** (com o "pode" do dono; junção `7a18d48`) — **COM AS MIGRAÇÕES 014 E 015 DO PONTO**: o **espelho do
    ponto no aplicativo** (o seu e o de uma pessoa da obra, com o PDF), a **negativa avisada a quem pediu** (aviso
    no aplicativo, o negado no dia, quem pediu por outra pessoa e o WhatsApp), a **UF da obra pela coluna AC da
@@ -350,6 +354,29 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 29/10/2026 (tarde) — A obra errada no ajuste: o aviso, e o DP corrigindo o pedido (migração 016)
+
+O dono: *"é muito fácil a pessoa selecionar errado quando ela vai pedir o ajuste (…) colocar um alerta de
+que se a obra selecionada não for uma obra que a pessoa vem batendo ponto, ou se for uma obra que
+ultimamente está sem batidas (…) E, nessa situação que a pessoa errou a obra, a gente do DP poderia fazer
+essa alteração. Mas baseado na portaria, a gente pode fazer isso?"*
+
+- **O aviso** (`core/obra_suspeita.py`): ao escolher a obra no pedido de ajuste do aplicativo (o próprio, ou o
+  do responsável pela pessoa), aparece um quadro âmbar quando **a pessoa bateu nos últimos 30 dias e nunca
+  nessa obra**, ou quando **ninguém bate na obra há mais de 7 dias** (ou nunca bateu). É aviso, não bloqueio:
+  com aviso na tela, o primeiro toque em "Enviar" vira "Confirmo a obra X — enviar". O aparelho da obra não
+  tem escolha de obra (usa a dele), então lá não aparece. Os mesmos dois sinais entram na **credibilidade**
+  do ajuste nas Validações ("obra em que a pessoa não bate", "obra sem batidas há dias") e no filtro "Motivo".
+- **O DP corrige a obra do pedido** (`ocorrencias.trocar_obra`, rota `/erp/api/ponto/ocorrencias/<id>/obra`,
+  ação `aprovar_afastamento`): na janela do pedido, "Corrigir a obra…", com a obra certa e o motivo (10 letras
+  ou mais). **A resposta sobre a Portaria 671:** pode, **enquanto o pedido espera decisão** — ele ainda não é
+  batida, e a portaria protege as marcações; o que se exige é que fique registrado. A troca vai para
+  `ponto.ocorrencia_alteracoes` (**migração 016**): de que obra, para qual, quem, quando e por quê, e aparece
+  na janela do pedido ("Obra corrigida pelo DP"). Aprovado, a batida entra na obra corrigida. **Pedido já
+  aprovado não se corrige** — a batida existe, e vale "Corrigir a obra ou a hora" da batida (a original fica).
+- **Testes**: `tests/test_ponto_obra_do_pedido_banco.py`. Ensaio no navegador: o aviso no aplicativo (pedido pelo
+  administrativo) e a correção na janela do pedido.
 
 ## 29/10/2026 — A UF da obra pela C. Diários, e o filtro "Motivo" nas Validações (migração 015)
 
