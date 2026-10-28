@@ -59,9 +59,11 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
-1zw. **No ramo, esperando o "pode" (28/10/2026, noite) — COM A MIGRAÇÃO 014 DO PONTO**: o **espelho do ponto
-   no aplicativo** (o seu e o de uma pessoa da obra, com o PDF) e a **negativa avisada a quem pediu** (aviso no
-   aplicativo, o negado no dia, quem pediu por outra pessoa e o WhatsApp). Ao juntar, apertar **Ponto ›
+1zw. **No ramo, esperando o "pode" (28/10/2026, noite) — COM AS MIGRAÇÕES 014 E 015 DO PONTO**: o **espelho do
+   ponto no aplicativo** (o seu e o de uma pessoa da obra, com o PDF), a **negativa avisada a quem pediu** (aviso
+   no aplicativo, o negado no dia, quem pediu por outra pessoa e o WhatsApp), a **UF da obra pela coluna AC da
+   C. Diários** (o feriado estadual) e o **filtro "Motivo" nas Validações**. Depois de apertar o botão, ler a
+   planilha de novo (Base de obras › "Ler a planilha agora") para a UF entrar. Ao juntar, apertar **Ponto ›
    Configuração › "Aplicar atualizações do ponto"** no mesmo momento; sem isso, a negativa funciona como antes
    (sem aviso) e nada quebra. Para o WhatsApp sair, o WhatsApp precisa estar ligado em ERP › Mensagens. Ver as
    seções de 28/10/2026 (noite).
@@ -346,6 +348,42 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 29/10/2026 — A UF da obra pela C. Diários, e o filtro "Motivo" nas Validações (migração 015)
+
+**A UF pela coluna AC.** O dono cadastrou um feriado estadual de PE e perguntou como era o cruzamento com a
+C. Diários. Não havia: o feriado estadual e o municipal procuravam a UF e o município no **cadastro de obras do
+ERP**, em branco em muitas obras — e, sem UF, o feriado não vale e o dia vira falta (no feriado quase ninguém
+bate, então vale a obra do cadastro da pessoa). A decisão dele: *"enquanto a gente não está usando o ERP por
+completo e a gente está usando a C. Diários, vamos utilizar como UF a coluna AC"*.
+- `base_obras.py` lê a coluna **AC pela posição** (como o status, coluna V), aceita a sigla ("PE", "pe") e o nome
+  por extenso ("Pernambuco", com ou sem acento); o que não for UF vira problema na lista da leitura ("UF ilegível
+  na coluna AC"). A UF vai para `ponto.obras_planilha.uf` (**migração 015**).
+- Como a coordenada, **o que está na planilha vence o ERP**; sem planilha, vale o ERP. Escolha minha, para ser
+  coerente: o **município** da planilha (coluna "Município", que já era lida) também passou a vencer o do ERP, para
+  o feriado municipal. O cadastro de obras do ERP **não é alterado** — o ponto só lê a planilha por cima dele.
+- A tela de Feriados mostra quantas obras ativas cada feriado estadual ou municipal alcança (em vermelho quando
+  nenhuma) e avisa as **obras ativas sem UF**, com os códigos, e o que fazer.
+- Depois de publicar: apertar "Aplicar atualizações do ponto" e **ler a planilha de novo** (Base de obras ›
+  "Ler a planilha agora"), senão a UF só entra na próxima leitura automática (de 2 em 2 horas).
+
+**O filtro "Motivo"** (`core/motivos.py`). O dono: *"quando eu boto batida em conferência, a gente tem
+subinformações (…) o rosto que não é localizado, que é de internet, que é porque está fora da área, que é porque
+obra sem coordenada, ou então ficou na borda da obra, ou sem foto no aparelho (…) e nos ajustes (…) dentro desses
+outros já tem essas outras derivações."* Na barra das Validações, um bloco "Motivo" com a contagem de cada um:
+- **Batida em conferência**: rosto não confere; rosto não encontrado; foto escura; foto suspeita no mosaico; sem
+  foto no aparelho; sem internet; fora da área; na borda da cerca; obra sem coordenada; sem localização; relógio
+  do aparelho; fila rápida; situação no cadastro; "a pessoa explicou o motivo"; e "Outro motivo" para o texto que
+  não casar com nenhum (nunca some). O motivo da batida é texto; a categoria sai do começo de cada pedaço.
+- **Ajuste de batida**: os motivos de atenção de `credibilidade.py` (dia sem batida, foto, em conferência, fora da
+  área, obra diferente, longe da escala, descanso/feriado, pedido tardio, muitos ajustes, negado há pouco) e os
+  dois fortes a favor (pedido por outra pessoa, só uma batida faltando). `sinais()` passou a devolver `codigos`.
+- Marcar vários soma (um OU outro); a contagem respeita os outros filtros (tipo, confiança, "só o que eu valido").
+- **Testes**: `tests/test_ponto_motivos.py`, `test_ponto_base_obras.py` (a UF), e
+  `test_a_uf_da_coluna_ac_faz_valer_o_feriado_estadual` com banco. Ensaio no navegador: o filtro e o aviso das
+  obras sem UF.
+- **Não verificado**: a coluna AC da planilha de verdade (aqui não há acesso a ela) — se o cabeçalho ou a posição
+  forem outros, a leitura mostra a coluna lida na tela da Base de obras ("UF … da coluna AC").
 
 ## 28/10/2026 (noite, terceira) — O aplicativo não sugere o que responder
 

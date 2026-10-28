@@ -60,17 +60,26 @@ def sinais(*, pedido_por: dict, origem: str, hora: str, obra: Optional[str], bat
            pedidos_no_dia: int, previstas: list[str], situacao: str, feriado: Optional[str],
            fotos_ruins: list[str], em_conferencia: list[str], fora_da_area: list[str],
            dias_depois: int, dias_com_ajuste: int, negados_recentes: int) -> dict:
-    """PURA. Os motivos de um pedido de ajuste e o nível."""
+    """PURA. Os motivos de um pedido de ajuste e o nível. `codigos`: as categorias dos motivos, para o
+    filtro das Validações (`core/motivos.py`)."""
     a_favor: list[tuple[str, bool]] = []
     atencao: list[str] = []
+    codigos: list[str] = []
+
+    def atento(codigo: str, texto: str) -> None:
+        atencao.append(texto)
+        if codigo not in codigos:
+            codigos.append(codigo)
     if origem in ORIGENS_DE_OUTRA_PESSOA and not pedido_por.get("propria") and pedido_por.get("nome"):
         a_favor.append((f"pedido por {pedido_por['nome']}{', ' + pedido_por['como'] if pedido_por.get('como') else ''}"
                         " — não pela própria pessoa", True))
+        codigos.append("AJ_POR_OUTRO")
     n = len(batidas)
     if n == 0:
-        atencao.append("nenhuma batida no dia — o dia inteiro por ajuste")
+        atento("AJ_DIA_SEM_BATIDA", "nenhuma batida no dia — o dia inteiro por ajuste")
     elif pedidos_no_dia <= 1:
         a_favor.append((f"só esta batida falta: as outras {n} do dia foram batidas", True))
+        codigos.append("AJ_SO_UMA")
     else:
         a_favor.append((f"{n} batida(s) no dia; {pedidos_no_dia} pedidas por ajuste", False))
     obras_do_dia = sorted({b["obra"] for b in batidas if b.get("obra")})
@@ -78,14 +87,14 @@ def sinais(*, pedido_por: dict, origem: str, hora: str, obra: Optional[str], bat
         if obra in obras_do_dia:
             a_favor.append((f"na mesma obra das batidas do dia ({obra})", False))
         else:
-            atencao.append(f"obra pedida ({obra}) diferente da das batidas do dia ({', '.join(obras_do_dia)})")
+            atento("AJ_OBRA_DIFERENTE", f"obra pedida ({obra}) diferente da das batidas do dia ({', '.join(obras_do_dia)})")
     escala_ok: Optional[bool] = None
     m = _minutos(hora)
     prev = [x for x in (_minutos(p) for p in previstas) if x is not None]
     if feriado:
-        atencao.append(f"feriado ({feriado}) — não havia batida prevista")
+        atento("AJ_DESCANSO", f"feriado ({feriado}) — não havia batida prevista")
     elif situacao == "DESCANSO":
-        atencao.append("dia de descanso pela escala — não havia batida prevista")
+        atento("AJ_DESCANSO", "dia de descanso pela escala — não havia batida prevista")
     elif prev and m is not None:
         perto = min(prev, key=lambda x: abs(x - m))
         dif = abs(perto - m)
@@ -95,20 +104,23 @@ def sinais(*, pedido_por: dict, origem: str, hora: str, obra: Optional[str], bat
             a_favor.append((f"no horário da escala ({alvo})", False))
         elif dif > LONGE_DA_ESCALA_MIN:
             escala_ok = False
-            atencao.append(f"longe do horário da escala: pedido {hora}, a escala esperava {alvo}")
+            atento("AJ_LONGE_DA_ESCALA", f"longe do horário da escala: pedido {hora}, a escala esperava {alvo}")
         else:
             escala_ok = False
-    atencao += [f"foto de batida do dia: {f}" for f in fotos_ruins]
-    atencao += [f"batida do dia em conferência: {c}" for c in em_conferencia]
-    atencao += [f"tentou bater fora da área da obra: {f}" for f in fora_da_area]
+    for f in fotos_ruins:
+        atento("AJ_FOTO", f"foto de batida do dia: {f}")
+    for c in em_conferencia:
+        atento("AJ_EM_CONFERENCIA", f"batida do dia em conferência: {c}")
+    for f in fora_da_area:
+        atento("AJ_FORA_DA_AREA", f"tentou bater fora da área da obra: {f}")
     if dias_depois > PEDIDO_TARDIO_DIAS:
-        atencao.append(f"pedido {dias_depois} dias depois do dia")
+        atento("AJ_TARDIO", f"pedido {dias_depois} dias depois do dia")
     if dias_com_ajuste >= MUITOS_AJUSTES_DIAS:
-        atencao.append(f"{dias_com_ajuste} dias com ajuste nos últimos 30 dias")
+        atento("AJ_MUITOS", f"{dias_com_ajuste} dias com ajuste nos últimos 30 dias")
     if negados_recentes:
-        atencao.append(f"{negados_recentes} pedido(s) negado(s) nos últimos 30 dias")
+        atento("AJ_NEGADO", f"{negados_recentes} pedido(s) negado(s) nos últimos 30 dias")
     nivel = classificar(a_favor, atencao, escala_ok=escala_ok)
-    return {"nivel": nivel, "a_favor": [t for t, _ in a_favor], "atencao": atencao}
+    return {"nivel": nivel, "a_favor": [t for t, _ in a_favor], "atencao": atencao, "codigos": codigos}
 
 
 def avaliar(conn: Connection, pedidos: list[dict]) -> dict[int, dict]:

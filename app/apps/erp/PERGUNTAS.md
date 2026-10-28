@@ -276,6 +276,8 @@ dizer "tem batida"; presença, horas e faltas são regra da fase 3.
 - O Fulano entregou declaração e faltou o resto do dia — foi descontado? 🔒 (o dia mostra a declaração e a escolha do DP: "só o período" desconta o resto; "o dia todo" abona; "nada" desconta tudo)
 - Quantos ajustes de batida estão esperando, e quantos são críveis? 🔒 ⚠️ (Validações › Confiança do ajuste; "crível" é a sugestão do sistema, com os motivos — não é aprovação)
 - Por que o ajuste do Fulano está pedindo atenção? 🔒 (os motivos aparecem na linha do pedido: dia sem batida, foto, fora da área, obra diferente, longe da escala, pedido tardio, muitos ajustes, negado recente)
+- O feriado de PE vale para quais obras? Quais obras estão sem UF? (Configuração › Feriados: o número de obras ativas alcançadas e a lista das sem UF; a UF vem da coluna AC da C. Diários e, sem ela, do cadastro do ERP)
+- Quantas batidas estão em conferência por rosto, por internet, por estar fora da área? 🔒 (Validações › Motivo; a categoria sai do texto do motivo — o que não casar é "Outro motivo")
 - Quais pedidos foram negados esta semana, e por quê? 🔒 ⚠️ ("esta semana" = de segunda até hoje; status NEGADA com `motivo_negativa`; a data é a da decisão, `atualizado_em`, não a do dia pedido)
 - O Fulano ficou sabendo que o pedido dele foi negado? 🔒 (WhatsApp: `negativa_whatsapp` diz se quem negou mandou, e a fila `envios` tipo NEGATIVA diz se saiu; no aplicativo: `negativa_vista_em` preenchido = ele tocou no aviso; quem pediu por ele, `negativa_vista_solicitante_em`)
 - Quem pediu este ajuste pelo Fulano? 🔒 (a partir da migração 014 do ponto, `solicitado_colaborador_id`; antes dela, só o nome em `solicitado_por`)

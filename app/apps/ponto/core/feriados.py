@@ -85,6 +85,18 @@ def apagar(conn: Connection, feriado_id: int) -> None:
         raise NaoEncontrado("feriado não encontrado")
 
 
+def alcance(lista: list[dict], obras: list[dict]) -> dict[int, int]:
+    """PURA. Quantas das `obras` (ativas) cada feriado estadual ou municipal alcança: {id: n}."""
+    saida = {}
+    for f in lista:
+        if f["abrangencia"] == "ESTADUAL":
+            saida[f["id"]] = sum(1 for o in obras if _sem_acento(o.get("uf")) == _sem_acento(f["uf"]))
+        elif f["abrangencia"] == "MUNICIPAL":
+            saida[f["id"]] = sum(1 for o in obras if _sem_acento(o.get("uf")) == _sem_acento(f["uf"])
+                                 and _sem_acento(o.get("municipio")) == _sem_acento(f["municipio"]))
+    return saida
+
+
 class Calendario:
     """Os feriados de um período, carregados uma vez, respondendo por obra."""
 
@@ -98,8 +110,13 @@ class Calendario:
         if not obra_id:
             return {}
         if obra_id not in self._obras:
-            self._obras[obra_id] = db.um(self._conn, "SELECT id, uf, municipio FROM public.obras "
-                                                     "WHERE id = :id", id=obra_id) or {}
+            # A UF e o município que valem: os da planilha C. Diários, quando ela é a base de obras
+            # (coluna AC, 28/10/2026); sem ela, os do cadastro do ERP.
+            from . import base_obras
+            t = base_obras.trechos_sql(self._conn)
+            sql = (f"SELECT o.id, {t['uf']} AS uf, {t['municipio']} AS municipio FROM public.obras o {t['join']} "
+                   "WHERE o.id = :id") if t else "SELECT id, uf, municipio FROM public.obras WHERE id = :id"
+            self._obras[obra_id] = db.um(self._conn, sql, id=obra_id) or {}
         return self._obras[obra_id]
 
     def feriado(self, dia: dt.date, obra_id: int | None) -> str | None:

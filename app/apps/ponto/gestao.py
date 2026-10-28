@@ -2224,7 +2224,13 @@ def ponto_api_escala_editar(escala_id: int):
 def ponto_api_feriados():
     with db.conexao() as conn:
         lista = feriados.listar(conn, ano=request.args.get("ano", type=int))
-    return _ok(feriados=[{**f, "data": f["data"].isoformat(), "criado_em": None} for f in lista])
+        # Quantas obras cada feriado estadual ou municipal alcança, e quais obras ativas estão sem UF
+        # (28/10/2026): sem UF, o feriado estadual não vale para a obra e o dia vira falta.
+        obras = cadastros.listar_obras(conn)
+    alcance = feriados.alcance(lista, obras)
+    return _ok(feriados=[{**f, "data": f["data"].isoformat(), "criado_em": None, "obras": alcance.get(f["id"])}
+                         for f in lista],
+               obras_sem_uf=[{"codigo": o["codigo"], "nome": o["nome"]} for o in obras if not (o.get("uf") or "").strip()])
 
 
 @bp.route("/erp/api/ponto/feriados", methods=["POST"])

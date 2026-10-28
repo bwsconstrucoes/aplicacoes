@@ -80,7 +80,7 @@ def _expr(conn: Connection, campo: str) -> str:
 # " WHERE o.id = :id" filtra pelos campos JÁ resolvidos (status e coordenada da
 # planilha C. Diários, quando ela é a base — `base_obras.py`).
 _SQL_OBRA_DENTRO = """
-    SELECT o.id, o.codigo, {nome} AS nome, {status} AS status, o.municipio, o.uf,
+    SELECT o.id, o.codigo, {nome} AS nome, {status} AS status, {municipio} AS municipio, {uf} AS uf,
            {latitude} AS latitude, {longitude} AS longitude,
            {origem_coordenada} AS origem_coordenada, {status_planilha} AS status_planilha,
            COALESCE(oc.raio_metros, :raio_padrao) AS raio_metros,
@@ -94,7 +94,7 @@ _SQL_OBRA_DENTRO = """
 _OBRA_DO_ERP = {"nome": "o.nome", "status": "o.status", "latitude": "o.latitude",
                 "longitude": "o.longitude",
                 "origem_coordenada": "CASE WHEN o.latitude IS NOT NULL THEN 'ERP' END",
-                "status_planilha": "NULL::text", "join": ""}
+                "status_planilha": "NULL::text", "join": "", "uf": "o.uf", "municipio": "o.municipio"}
 
 
 def _sql_obra(conn: Connection) -> str:

@@ -182,6 +182,10 @@
   <button class="btn secundario" id="v-marcar-criveis" type="button" style="width:100%; margin-top:6px"
           title="Marca, na lista que está na tela, todos os críveis que você pode aprovar">✅ Marcar todos os críveis da lista</button>
   <small class="suave" style="display:block; margin-top:4px">É sugestão do sistema: confira os motivos de cada um antes de aprovar.</small>
+  {# O MOTIVO, EM CATEGORIAS (28/10/2026, core/motivos.py): o que mandou a batida para a conferência
+     (rosto, internet, fora da área, borda…) e o que o ajuste tem a favor ou pede de atenção. #}
+  <h3 class="qd-grupo">Motivo</h3>
+  <div id="v-motivos" class="qd-marcas"></div>
   {{ filtro_pessoas("v", com_busca=False) }}
   <div class="cartao-dica" style="margin-top:14px">Com algum filtro de funcionário escolhido, ficam só os
     itens dessas pessoas (o que não é de uma pessoa, como o mosaico da obra, sai da lista).</div>
@@ -3653,6 +3657,7 @@ const FILTRO = {
   // decide alguma coisa.
   soMinhas: doUrl("so_minhas") === null ? null : doUrl("so_minhas") === "1",
   niveis: new Set(),
+  motivos: new Set(),
 };
 // A confiança do ajuste (28/10/2026): o nível, o ícone e a cor. Sem nível (atestado, aparelho…) = "OUTROS".
 const NIVEL_AJUSTE = {CRIVEL: ["✅", "Crível", "verde"], NORMAL: ["⚪", "Normal", "cinza"], ATENCAO: ["⚠️", "Pede atenção", "ambar"],
@@ -3682,6 +3687,26 @@ function desenharNiveis() {
     || `<small class="suave">nada na lista</small>`;
   els("v-niveis").querySelectorAll("[data-nivel]").forEach(c => c.addEventListener("change", () => {
     c.checked ? FILTRO.niveis.add(c.dataset.nivel) : FILTRO.niveis.delete(c.dataset.nivel);
+    desenharValidacoes(); }));
+}
+// O filtro "Motivo" (28/10/2026): a contagem respeita os outros filtros, menos o próprio — o motivo
+// desmarcado continua na lista para ser marcado de novo. Marcar vários soma (um OU outro).
+function desenharMotivos() {
+  const rot = VAL.motivos || {};
+  const base = (VAL.itens || []).filter(i => (!FILTRO.soMinhas || i.pode_decidir)
+    && (!FILTRO.tipos.size || FILTRO.tipos.has(i.tipo)) && (!FILTRO.niveis.size || FILTRO.niveis.has(nivelDoItem(i))));
+  const conta = {};
+  base.forEach(i => (i.motivos || []).forEach(m => { conta[m] = (conta[m] || 0) + 1; }));
+  let grupo = "";
+  const linhas = Object.keys(rot).sort((a, b) => rot[a].ordem - rot[b].ordem).filter(m => conta[m] || FILTRO.motivos.has(m)).map(m => {
+    const cab = rot[m].grupo !== grupo ? `<small class="suave" style="display:block; margin:6px 0 2px; font-weight:700">${escapar(rot[m].grupo)}</small>` : "";
+    grupo = rot[m].grupo;
+    return `${cab}<label class="opcao"><input type="checkbox" data-motivo="${m}" ${FILTRO.motivos.has(m) ? "checked" : ""}>
+      <span class="rotulo">${escapar(rot[m].rotulo)} <span class="qtd">${conta[m] || 0}</span></span></label>`;
+  });
+  els("v-motivos").innerHTML = linhas.join("") || `<small class="suave">nada na lista</small>`;
+  els("v-motivos").querySelectorAll("[data-motivo]").forEach(c => c.addEventListener("change", () => {
+    c.checked ? FILTRO.motivos.add(c.dataset.motivo) : FILTRO.motivos.delete(c.dataset.motivo);
     desenharValidacoes(); }));
 }
 const MARCADOS = new Set();
@@ -3745,7 +3770,8 @@ async function carregarValidacoes() {
 function itensVisiveis() {
   return (VAL.itens || []).filter(i => (!FILTRO.soMinhas || i.pode_decidir)
     && (!FILTRO.tipos.size || FILTRO.tipos.has(i.tipo))
-    && (!FILTRO.niveis.size || FILTRO.niveis.has(nivelDoItem(i))));
+    && (!FILTRO.niveis.size || FILTRO.niveis.has(nivelDoItem(i)))
+    && (!FILTRO.motivos.size || (i.motivos || []).some(m => FILTRO.motivos.has(m))));
 }
 
 function desenharTipos() {
@@ -3903,6 +3929,7 @@ async function decidirOGrupo(ms, sim) {
 function desenharValidacoes() {
   desenharTipos();
   desenharNiveis();
+  desenharMotivos();
   const lista = itensVisiveis();
   els("v-so-minhas").checked = !!FILTRO.soMinhas;
   els("v-minhas").textContent = `(${VAL.minhas || 0})`;
@@ -4200,7 +4227,7 @@ els("v-so-minhas").addEventListener("change", () => {
 });
 els("v-limpar").addEventListener("click", () => {
   els("v-obra").value = ""; els("v-de").value = ""; els("v-ate").value = ""; els("v-busca").value = "";
-  FILTRO.tipos.clear(); FILTRO.niveis.clear();
+  FILTRO.tipos.clear(); FILTRO.niveis.clear(); FILTRO.motivos.clear();
   FP_V.limpar();
   carregarValidacoes();
 });
@@ -5579,19 +5606,29 @@ async function salvarEscala() {
 async function carregarFeriados() {
   const ano = els("c-ano").value;
   let lista;
+  let semUf = [];
   try {
-    lista = (await api(`/erp/api/ponto/feriados?ano=${encodeURIComponent(ano)}`)).feriados;
+    const d = await api(`/erp/api/ponto/feriados?ano=${encodeURIComponent(ano)}`);
+    lista = d.feriados; semUf = d.obras_sem_uf || [];
   } catch (e) { erroNoCartao("c-feriados", e); return; }
-  const onde = f => f.abrangencia === "ESTADUAL" ? escapar(f.uf || "")
-    : f.abrangencia === "MUNICIPAL" ? `${escapar(f.municipio || "")}/${escapar(f.uf || "")}`
+  // Quantas obras o feriado estadual/municipal alcança (28/10/2026): a UF e o município vêm da C. Diários
+  // (UF na coluna AC) e, sem ela, do cadastro do ERP. Obra sem UF não pega o feriado estadual.
+  const alcance = f => f.obras === null || f.obras === undefined ? ""
+    : ` · <span ${f.obras ? "" : `style="color:var(--vermelho)"`}>${f.obras} obra(s) ativa(s)</span>`;
+  const onde = f => f.abrangencia === "ESTADUAL" ? escapar(f.uf || "") + alcance(f)
+    : f.abrangencia === "MUNICIPAL" ? `${escapar(f.municipio || "")}/${escapar(f.uf || "")}` + alcance(f)
     : f.abrangencia === "OBRA" ? escapar(f.obra_codigo || "") : "todas as obras";
-  els("c-feriados").innerHTML = lista.length ? `<table><thead><tr><th class="sem-ordem">Data</th>
+  const avisoSemUf = semUf.length ? `<div class="aviso alerta" style="margin-bottom:8px"><b>⚠️ ${semUf.length} obra(s) ativa(s) sem UF</b>
+      — o feriado estadual e o municipal não valem para elas, e o dia vira falta:
+      ${semUf.slice(0, 12).map(o => escapar(o.codigo)).join(", ")}${semUf.length > 12 ? "…" : ""}.
+      Preencha a UF na coluna AC da C. Diários e leia a planilha de novo (Base de obras › “Ler a planilha agora”).</div>` : "";
+  els("c-feriados").innerHTML = avisoSemUf + (lista.length ? `<table><thead><tr><th class="sem-ordem">Data</th>
       <th class="sem-ordem">Feriado</th><th class="sem-ordem">Vale para</th><th class="sem-ordem">Onde</th><th class="sem-ordem"></th></tr></thead><tbody>
     ${lista.map(f => `<tr><td class="dados">${dataBR(f.data)}</td><td>${escapar(f.nome)}</td>
       <td>${escapar((ABRANGENCIAS.find(a => a.valor === f.abrangencia) || {rotulo: f.abrangencia}).rotulo)}</td>
       <td class="dados">${onde(f)}</td>
       <td>${PODE_CONFIGURAR ? `<button class="link-btn" type="button" data-apagar-feriado="${f.id}">apagar</button>` : ""}</td></tr>`).join("")}
-    </tbody></table>` : `<div class="cartao-dica">Nenhum feriado cadastrado em ${escapar(ano)}.</div>`;
+    </tbody></table>` : `<div class="cartao-dica">Nenhum feriado cadastrado em ${escapar(ano)}.</div>`);
   els("c-feriados").querySelectorAll("[data-apagar-feriado]").forEach(b => b.addEventListener("click", () =>
     apagarFeriado(lista.find(f => f.id === Number(b.dataset.apagarFeriado)))));
 }
@@ -6261,7 +6298,8 @@ function desenharObrasBase(d) {
       ${u.por ? `por ${escapar(u.por)}` : ""}
       ${u.falha ? `<br><span style="color:var(--vermelho)">A última tentativa falhou (${escapar(quando(u.falha_em))}): ${escapar(u.falha)}</span>` : ""}</div>
     ${u.colunas ? `<div class="suave" style="font-size:13px">Status lido da ${colTxt(col.status)}; coordenada da
-      ${colTxt(col.coordenada)}; código da ${colTxt(col.codigo)}; nome da ${colTxt(col.nome)}.</div>` : ""}
+      ${colTxt(col.coordenada)}; código da ${colTxt(col.codigo)}; nome da ${colTxt(col.nome)}${
+      col.uf ? `; UF (para o feriado estadual) da ${colTxt(col.uf)}` : ""}.</div>` : ""}
     <label class="interruptor" style="margin-top:12px"><input type="checkbox" id="c-obras-auto"
         ${d.automatico ? "checked" : ""} ${PODE_CONFIGURAR ? "" : "disabled"}>
       <span><b>Manter a base de obras em dia sozinha</b>

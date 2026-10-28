@@ -194,3 +194,30 @@ def test_um_celular_pessoal_por_pessoa(app, mundo):
     lista = {a["id"]: a for a in dp.get("/erp/api/ponto/dispositivos").get_json()["dispositivos"]}
     assert lista[ids[0]]["status"] == "BLOQUEADO" and "trocado" in lista[ids[0]]["motivo_bloqueio"]
     assert lista[ids[1]]["status"] == "APROVADO"
+
+
+def test_a_uf_da_coluna_ac_faz_valer_o_feriado_estadual(app, mundo, planilha):
+    """28/10/2026, o dono: "enquanto a gente está usando a C. Diários, vamos utilizar como UF a coluna
+    AC". A obra PG-A tem a UF em branco no ERP; com "pe" na coluna AC, o feriado de PE vale para ela."""
+    import datetime as dt
+    from app.apps.ponto import db
+    from app.apps.ponto.core import base_obras, cadastros, feriados
+    aba = _aba()
+    aba[1][base_obras.COL_UF] = "pe"
+    aba[2][base_obras.COL_UF] = "Pernambucco"                  # ilegível: vira problema, não UF
+    dia = dt.date(2026, 11, 3)
+    with db.conexao() as conn:
+        conn.execute(text("UPDATE public.obras SET uf = NULL WHERE codigo = 'PG-A'"))
+        r = base_obras.gravar(conn, base_obras.interpretar(aba), "teste")
+        assert any("UF ilegível" in p["problema"] for p in r["problemas"])
+        a = cadastros.obra_por_codigo(conn, "PG-A")
+        assert a["uf"] == "PE"
+        feriados.gravar(conn, {"data": dia.isoformat(), "nome": "Feriado de PE", "abrangencia": "ESTADUAL", "uf": "PE"})
+        cal = feriados.Calendario(conn, dia, dia)
+        assert cal.feriado(dia, a["id"]) == "Feriado de PE"
+        nova = cadastros.obra_por_codigo(conn, "PG-NOVA")
+        assert cal.feriado(dia, nova["id"]) is None
+    # a tela dos feriados conta as obras alcançadas e lista as ativas sem UF
+    d = como(app, mundo["dp"]).get("/erp/api/ponto/feriados?ano=2026").get_json()
+    f = next(x for x in d["feriados"] if x["nome"] == "Feriado de PE")
+    assert f["obras"] == 1 and "PG-NOVA" in {o["codigo"] for o in d["obras_sem_uf"]}

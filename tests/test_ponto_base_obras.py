@@ -106,3 +106,14 @@ def test_ritmo_da_leitura():
     assert not bo.precisa_ler({"em": "2026-10-05T12:30:00+00:00", "falha_em": "2026-10-05T14:30:00+00:00"},
                               meio_dia)                          # a falha também espera o intervalo
     assert not bo.precisa_ler(None, dt.datetime(2026, 10, 5, 2, 0, tzinfo=utc))   # 23h: fora da janela
+
+
+@pytest.mark.parametrize("texto, uf", [("PE", "PE"), (" pe ", "PE"), ("Pernambuco", "PE"), ("São Paulo", "SP"),
+                                       ("ceará", "CE"), ("", None)])
+def test_ler_uf_aceita_sigla_e_nome(texto, uf):
+    assert bo.ler_uf(texto) == (uf, None)
+
+
+def test_uf_ilegivel_vira_problema():
+    uf, problema = bo.ler_uf("PX")
+    assert uf is None and "UF ilegível" in problema

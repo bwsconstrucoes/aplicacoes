@@ -238,12 +238,16 @@ def listar(conn: Connection, quem: Quem, *, obra_id: Optional[int] = None, de=No
     except Exception:  # noqa: BLE001 — sem a sugestão, a fila continua como era
         logger.exception("Ponto: a credibilidade dos ajustes falhou; a fila segue sem ela")
         niveis = {}
+    # E O MOTIVO DE CADA UM, EM CATEGORIAS (28/10/2026, motivos.py): o filtro "Motivo" da barra.
+    from . import motivos
     for i in itens:
         if i["categoria"] == "PEDIDO" and i["id"] in niveis:
             i["credibilidade"] = niveis[i["id"]]
+            i["motivos"] = list(niveis[i["id"]].get("codigos") or [])
         elif i["categoria"] == "BATIDA":
             i["credibilidade"] = {"nivel": credibilidade.ATENCAO, "a_favor": [],
                                   "atencao": [f"batida em conferência: {i.get('detalhe') or 'motivo não informado'}"]}
+            i["motivos"] = motivos.da_conferencia(i.get("detalhe"))
     if so_minhas:
         itens = [i for i in itens if i["pode_decidir"]]
     itens.sort(key=lambda i: (i["dias_esperando"] is None, -(i["dias_esperando"] or 0), i.get("data") or ""))
@@ -251,4 +255,5 @@ def listar(conn: Connection, quem: Quem, *, obra_id: Optional[int] = None, de=No
     return {"itens": itens, "quantidade": len(itens), "por_tipo": dict(contagem),
             "por_nivel": dict(Counter((i.get("credibilidade") or {}).get("nivel") or "OUTROS" for i in itens)),
             "minhas": sum(1 for i in itens if i["pode_decidir"]),
+            "motivos": motivos.rotulos(),
             "regra": validacao.ler(conn)}

@@ -75,12 +75,36 @@ FAIXA = "A1:AZ3000"
 # nome que ele informou, com a posição AM de reserva.
 COL_STATUS = 21                 # V
 COL_COORDENADA = 38             # AM
+COL_UF = 28                     # AC — a UF da obra (28/10/2026: "vamos utilizar como UF a coluna AC")
 NOMES_COORDENADA = ("Coordenadas Geográficas", "Coordenadas Geograficas", "Coordenadas",
                     "Coordenada", "Localização", "Localizacao")
 NOMES_CODIGO = ("Código Primário", "Codigo Primario")
 NOMES_NOME = ("Nome da Obra", "Obra", "Centro de Custo", "Objeto")
 NOMES_MUNICIPIO = ("Município", "Municipio")
 ENCERRADA_COMECA_COM = ("conclu", "distrat")
+
+# As 27 UFs, e o nome por extenso de cada uma (a planilha pode trazer "Pernambuco" em vez de "PE").
+UFS = {"AC": "ACRE", "AL": "ALAGOAS", "AP": "AMAPA", "AM": "AMAZONAS", "BA": "BAHIA", "CE": "CEARA",
+       "DF": "DISTRITO FEDERAL", "ES": "ESPIRITO SANTO", "GO": "GOIAS", "MA": "MARANHAO", "MT": "MATO GROSSO",
+       "MS": "MATO GROSSO DO SUL", "MG": "MINAS GERAIS", "PA": "PARA", "PB": "PARAIBA", "PR": "PARANA",
+       "PE": "PERNAMBUCO", "PI": "PIAUI", "RJ": "RIO DE JANEIRO", "RN": "RIO GRANDE DO NORTE",
+       "RS": "RIO GRANDE DO SUL", "RO": "RONDONIA", "RR": "RORAIMA", "SC": "SANTA CATARINA", "SP": "SAO PAULO",
+       "SE": "SERGIPE", "TO": "TOCANTINS"}
+
+
+def ler_uf(texto) -> tuple[Optional[str], Optional[str]]:
+    """PURA. A célula da coluna AC → (UF, problema). Aceita a sigla ("PE", "pe") e o nome por extenso,
+    com ou sem acento ("Pernambuco"). Vazia é (None, None); o resto, (None, o porquê)."""
+    bruto = str(texto or "").strip()
+    if not bruto:
+        return None, None
+    t = _sem_acento(bruto).upper().replace(".", "").strip()
+    if t in UFS:
+        return t, None
+    por_nome = {nome: uf for uf, nome in UFS.items()}
+    if t in por_nome:
+        return por_nome[t], None
+    return None, f"UF ilegível na coluna AC: {bruto!r} (use a sigla, como PE)"
 
 CASAS_MINIMAS = 4               # 4 casas ≈ 11 m; menos que isso a cerca erra feio
 # O Brasil, com folga: latitude de +6 a −34, longitude de −28 a −74.
@@ -207,6 +231,7 @@ def interpretar(valores: list[list]) -> dict:
                    "titulo": cel(cabecalho, i_codigo) if i_codigo is not None else cel(cabecalho, 0)},
         "nome": {"letra": _letra(i_nome) if i_nome is not None else None,
                  "titulo": cel(cabecalho, i_nome) if i_nome is not None else None},
+        "uf": {"letra": _letra(COL_UF), "titulo": cel(cabecalho, COL_UF)},
     }
     obras, problemas, vistos = [], [], set()
     for n, linha in enumerate(valores[1:], start=2):
@@ -223,6 +248,7 @@ def interpretar(valores: list[list]) -> dict:
         status = cel(linha, i_status)
         coord_txt = cel(linha, i_coord)
         c = ler_coordenada(coord_txt)
+        uf, problema_uf = ler_uf(cel(linha, COL_UF))
         obra = {
             "linha": n, "codigo": codigo,
             "codigo_secundario": secundario if secundario and secundario.upper() != chave else None,
@@ -230,9 +256,11 @@ def interpretar(valores: list[list]) -> dict:
             "status_planilha": status or None, "encerrada": encerrada(status),
             "latitude": c["latitude"], "longitude": c["longitude"],
             "coordenada_texto": coord_txt or None, "coordenada_problema": c["problema"],
-            "coordenada_aviso": c["aviso"],
+            "coordenada_aviso": c["aviso"], "uf": uf,
         }
         obras.append(obra)
+        if problema_uf and not obra["encerrada"]:
+            problemas.append({"linha": n, "codigo": codigo, "problema": problema_uf})
         if c["problema"] and not obra["encerrada"]:
             problemas.append({"linha": n, "codigo": codigo, "problema": f"coordenada: {c['problema']}"})
     return {"obras": obras, "problemas": problemas, "colunas": colunas}
@@ -277,6 +305,11 @@ def disponivel(conn: Connection) -> bool:
     return db.tem_coluna(conn, "obras_planilha", "obra_id")
 
 
+def tem_uf(conn: Connection) -> bool:
+    """A migração 015 (a UF da coluna AC) já rodou?"""
+    return db.tem_coluna(conn, "obras_planilha", "uf")
+
+
 def gravar(conn: Connection, lido: dict, por: str) -> dict:
     """Refaz a cópia e liga cada obra à linha do ERP (criando a que falta)."""
     from . import cadastros
@@ -300,14 +333,15 @@ def gravar(conn: Connection, lido: dict, por: str) -> dict:
             usados.add(obra_id)
         o["obra_id"] = obra_id
     db.executar(conn, "DELETE FROM ponto.obras_planilha")
+    com_uf = tem_uf(conn)
     for o in lido["obras"]:
-        db.executar(conn, """
+        db.executar(conn, f"""
             INSERT INTO ponto.obras_planilha (codigo, codigo_secundario, nome, municipio, status_planilha,
                    encerrada, latitude, longitude, coordenada_texto, coordenada_problema, coordenada_aviso,
-                   obra_id, linha)
+                   obra_id, linha{", uf" if com_uf else ""})
             VALUES (:codigo, :codigo_secundario, :nome, :municipio, :status_planilha, :encerrada,
                     :latitude, :longitude, :coordenada_texto, :coordenada_problema, :coordenada_aviso,
-                    :obra_id, :linha)""", **{k: o[k] for k in (
+                    :obra_id, :linha{", :uf" if com_uf else ""})""", uf=o.get("uf"), **{k: o[k] for k in (
             "codigo", "codigo_secundario", "nome", "municipio", "status_planilha", "encerrada", "latitude",
             "longitude", "coordenada_texto", "coordenada_problema", "coordenada_aviso", "obra_id", "linha")})
     from .. import horario
@@ -434,6 +468,10 @@ def trechos_sql(conn: Connection) -> Optional[dict]:
         "origem_coordenada": ("CASE WHEN op.latitude IS NOT NULL THEN 'PLANILHA' "
                               "WHEN o.latitude IS NOT NULL THEN 'ERP' END"),
         "status_planilha": "op.status_planilha",
+        # a UF (coluna AC) e o município da planilha vencem os do ERP (28/10/2026) — o feriado
+        # estadual e o municipal (feriados.py) olham estes
+        "uf": "COALESCE(NULLIF(btrim(op.uf), ''), o.uf)" if tem_uf(conn) else "o.uf",
+        "municipio": "COALESCE(NULLIF(btrim(op.municipio), ''), o.municipio)",
     }
 
 
