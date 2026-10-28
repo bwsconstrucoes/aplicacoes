@@ -18,6 +18,8 @@ junto com o `README.md` e o `PLANO.md`.
    mensageria é a segunda cerca (teto da empresa inteira) e o registro. Para
    voltar a enviar: publicar, aplicar a 083 do ERP, ligar o WhatsApp em
    ERP › Mensagens, e a chave "Enviar e trocar o QR automaticamente" aqui.
+   **Atualização de 29/10/2026 (o dono):** o WhatsApp **já está ligado** em ERP › Mensagens desde a
+   ativação dos aparelhos — o trecho acima é a história de 05/10, não o estado de hoje.
 
 0a. **INCIDENTE 21/10/2026, ~17h — o aplicativo do ponto (e o Render inteiro) parou de carregar na hora da
    saída.** O dono reiniciou o serviço. As métricas do Render que ele trouxe: **memória 30 %, CPU 20 %, ~350
