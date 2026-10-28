@@ -450,6 +450,16 @@ def enviar_agora() -> bool:
     return False
 
 
+def enviar_depois(segundos: float) -> None:
+    """Acorda a fila daqui a `segundos` — para a mensagem que foi agendada para logo mais (a negativa
+    espera 1 minuto para juntar os negados do mesmo dia, `negativas.py`). O defeito de 29/10/2026 ("testei
+    agora uma negativa, mas não foi"): `enviar_agora` acordava a fila NA HORA, ela não achava nada para
+    agora e dormia; a mensagem só saía na próxima requisição do aplicativo ou do aparelho da obra."""
+    t = threading.Timer(max(1.0, float(segundos)), enviar_agora)
+    t.daemon = True
+    t.start()
+
+
 # ---------------------------------------------------------------------------
 # Para a tela
 # ---------------------------------------------------------------------------

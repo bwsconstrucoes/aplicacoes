@@ -1877,8 +1877,8 @@ def ponto_api_criar_afastamento():
 def _acordar_a_fila_se_avisou(o: dict) -> None:
     """A negativa com WhatsApp entrou na fila: acorda quem envia, já com a transação fechada."""
     if (o.get("aviso_da_negativa") or {}).get("whatsapp"):
-        from .core import envios
-        envios.enviar_agora()
+        from .core import envios, negativas
+        envios.enviar_depois(negativas.ESPERA_PARA_JUNTAR_S + 5)     # a mensagem espera 1 min para juntar o dia
 
 
 @bp.route("/erp/api/ponto/ocorrencias/<int:ocorrencia_id>/etapa-supervisor", methods=["POST"])

@@ -127,3 +127,14 @@ def test_quem_nega_pode_nao_mandar_o_whatsapp(app, mundo, banco):
     from app.apps.ponto import db
     with db.conexao() as conn:
         assert [a["id"] for a in ng.avisos(conn, mundo["joao"])] == [pid]
+
+
+def test_a_fila_acorda_depois_da_espera_da_negativa(monkeypatch):
+    """O defeito de 29/10/2026: a fila era acordada na hora do clique, não achava a mensagem (agendada
+    para 1 minuto depois) e dormia. Agora ela é acordada de novo, depois da espera."""
+    import threading
+    from app.apps.ponto.core import envios
+    acordou = threading.Event()
+    monkeypatch.setattr(envios, "enviar_agora", lambda: acordou.set() or True)
+    envios.enviar_depois(0.05)
+    assert acordou.wait(3)
