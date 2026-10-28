@@ -59,7 +59,7 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
-1zw. **No ramo, esperando o "pode" (28/10/2026, noite) — COM AS MIGRAÇÕES 014 E 015 DO PONTO**: o **espelho do
+1zw. **Publicado em 29/10/2026** (com o "pode" do dono; junção `7a18d48`) — **COM AS MIGRAÇÕES 014 E 015 DO PONTO**: o **espelho do
    ponto no aplicativo** (o seu e o de uma pessoa da obra, com o PDF), a **negativa avisada a quem pediu** (aviso
    no aplicativo, o negado no dia, quem pediu por outra pessoa e o WhatsApp), a **UF da obra pela coluna AC da
    C. Diários** (o feriado estadual) e o **filtro "Motivo" nas Validações**. Depois de apertar o botão, ler a
