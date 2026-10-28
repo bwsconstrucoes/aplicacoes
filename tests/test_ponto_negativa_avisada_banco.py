@@ -107,6 +107,10 @@ def test_a_pessoa_e_quem_pediu_sao_avisados_no_app_e_numa_mensagem_so(app, mundo
     d = next(x for x in mes["dias"] if x["data"] == dia.isoformat())
     assert {n["hora"] for n in d["negados"]} == {"07:00", "11:00"}
     assert all(n["motivo"] == "não estava na obra nesse dia" for n in d["negados"])
+    # e no espelho do ERP também (29/10/2026)
+    esp = como(app, mundo["dp"]).get(f"/erp/api/ponto/espelho/{mundo['joao']}?competencia={dia:%Y-%m}").get_json()
+    d_erp = next(x for x in esp["dias"] if x["data"] == dia.isoformat())
+    assert {n["hora"] for n in d_erp["negados"]} == {"07:00", "11:00"}
 
 
 @pytest.mark.banco

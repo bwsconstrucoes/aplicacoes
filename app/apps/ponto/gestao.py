@@ -754,6 +754,10 @@ def ponto_api_espelho(colaborador_id: int):
     with db.conexao() as conn:
         _exigir_pessoa(conn, quem, colaborador_id)
         esp = espelho.do_mes(conn, colaborador_id, request.args.get("competencia"))
+        # o pedido NEGADO no dia, como no Meu mês do aplicativo (29/10/2026: "a negativa que aparece em
+        # meu mês não está aparecendo em Espelho do ponto no ERP")
+        from .core import negativas
+        negativas.nos_dias(conn, colaborador_id, esp["dias"])
     return _ok(**esp)
 
 

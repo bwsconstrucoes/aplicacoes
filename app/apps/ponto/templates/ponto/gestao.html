@@ -1503,6 +1503,11 @@ function linhaDoEspelho(d, E, podeAjustar) {
     ...(d.pendentes || []).filter(o => o.tipo !== "AJUSTE_BATIDA").map(o => o.id
       ? `<button type="button" class="selo aguardando" data-pedido="${o.id}" title="clique para ver e decidir">${escapar(o.rotulo)} esperando</button>`
       : `<span class="selo aguardando">${escapar(o.rotulo)} esperando</span>`),
+    // o pedido NEGADO, enquanto aquele horário continuar em aberto (29/10/2026, negativas.py); o clique
+    // abre o pedido, com quem negou e por quê
+    ...(d.negados || []).map(n => `<button type="button" class="selo bloqueado" data-pedido="${n.id}"
+      title="negado: ${escapar(n.motivo)} — clique para ver o pedido">❌ ${n.hora ? `ajuste das ${escapar(n.hora)}` : escapar(n.rotulo)} negado</button>
+      <small style="display:block; color:var(--vermelho)">${escapar(n.motivo)}</small>`),
   ].filter(Boolean).join(" ");
   const apagada = NAO_CONTA.includes(d.situacao);
   const em = (min, cor) => `<td class="dados" ${min && cor ? `style="color:var(--${cor}); font-weight:700"` : ""}>${hmCelula(min)}</td>`;
