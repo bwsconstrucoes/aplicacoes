@@ -27,6 +27,7 @@
      data-url-omie-pago="{{ url_for('analisesps.omie_marcar_pago') }}"
      data-url-enc-previa="{{ url_for('analisesps.encaminhar_previa') }}"
      data-url-enc-mensagem="{{ url_for('analisesps.encaminhar_mensagem') }}"
+     data-url-enc-enviar="{{ url_for('analisesps.encaminhar_enviar') }}"
      data-url-enc-contatos="{{ url_for('analisesps.encaminhar_contatos') }}"
      data-origem="{{ origem }}">
 
@@ -236,7 +237,12 @@
       <span class="cartao-dica" id="enc-resumo"></span>
       <button class="btn secundario" type="button" id="enc-copiar" disabled
               title="Copia a mensagem, para colar onde quiser">Copiar</button>
-      <button class="btn" type="button" id="enc-abrir" disabled>Abrir no WhatsApp</button>
+      {# ENVIAR (29/10/2026): sai pelo WhatsApp da empresa, sem abrir o de quem
+         clica. "Abrir no meu WhatsApp" continua — serve para grupo. #}
+      <button class="btn secundario" type="button" id="enc-abrir" disabled
+              title="Abre o SEU WhatsApp com a mensagem pronta (serve para grupo)">Abrir no meu WhatsApp</button>
+      <button class="btn" type="button" id="enc-enviar" disabled
+              title="Envia agora pelo WhatsApp da empresa para o contato escolhido">Enviar</button>
     </div>
   </dialog>
 {% endif %}

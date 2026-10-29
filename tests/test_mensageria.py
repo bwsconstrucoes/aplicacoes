@@ -165,7 +165,8 @@ def test_todo_tipo_do_catalogo_tem_nome_modulo_e_politica_valida():
     # As finalidades que o código passa existem no catálogo
     for chave in ("ponto.qr", "ponto.codigo_acesso", "ponto.mosaico", "ponto.aviso_foto", "ponto.resumo_dia",
                   "erp.titulo_pago", "erp.encaminhamento", "erp.agente_cobranca", "erp.pergunta_agendada",
-                  "erp.teto_ia", "erp.insumos", "telegram.aviso_cadastro", "mensageria.limite"):
+                  "erp.teto_ia", "erp.insumos", "telegram.aviso_cadastro", "mensageria.limite",
+                  "analisesps.encaminhar"):
         assert chave in chaves
 
 

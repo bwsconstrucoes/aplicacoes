@@ -466,6 +466,7 @@ TELA_DA_ROTA = {
     "analisesps.arquivo_ver": ("solicitacoes", "lote", "conciliacao", "calendario",
                                "faturamento", "folha", "comprovantes", "relatorio"),
     "analisesps.encaminhar_mensagem": ("solicitacoes", "lote"),
+    "analisesps.encaminhar_enviar": ("solicitacoes", "lote"),
     "analisesps.encaminhar_contatos": ("solicitacoes", "lote"),
     "analisesps.sem_risco": ("solicitacoes",),
     "analisesps.validar": ("solicitacoes",),

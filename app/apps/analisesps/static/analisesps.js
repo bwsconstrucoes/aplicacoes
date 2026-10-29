@@ -412,6 +412,7 @@ const LEMBRAR = {
       const lista = itens();
       const vao = lista.filter(i => i.info || i.anexo || i.comprovante).length;
       $("enc-abrir").disabled = $("enc-copiar").disabled = !vao;
+      $("enc-enviar").disabled = !vao || !$("enc-contato").value;
       $("enc-resumo").textContent = vao === lista.length ? "" : `${vao} de ${lista.length} SP(s) vão.`;
       TIPOS.forEach(t => {
         const todas = $("enc-corpo").querySelector(`input[data-todas="${t}"]`);
@@ -444,6 +445,27 @@ const LEMBRAR = {
         $("enc-resumo").textContent = "Não consegui montar a mensagem: " + e.message;
       }
     });
+    // ENVIAR pelo WhatsApp da empresa (29/10/2026) — só com contato escolhido.
+    $("enc-contato").addEventListener("change", conferir);
+    $("enc-enviar").addEventListener("click", async () => {
+      const sel = $("enc-contato");
+      if (!sel.value) { $("enc-resumo").textContent = "Escolha para quem enviar."; return; }
+      const vao = itens().filter(i => i.info || i.anexo || i.comprovante).length;
+      if (!confirm(`Enviar ${vao} SP(s) para ${sel.options[sel.selectedIndex].text} pelo ` +
+                   "WhatsApp da empresa?")) return;
+      const botao = $("enc-enviar");
+      botao.disabled = true;
+      $("enc-resumo").textContent = "Enviando…";
+      try {
+        const campos = [...document.querySelectorAll("#enc-campos input:checked")].map(c => c.value);
+        await postar(barra.dataset.urlEncEnviar, {ids: idsEnc, itens: itens(), campos,
+                                                  telefone: sel.value});
+        $("enc-resumo").textContent = "✔ Enviado para " + sel.options[sel.selectedIndex].text + ".";
+      } catch (e) {
+        $("enc-resumo").textContent = e.message;
+        botao.disabled = false;
+      }
+    });
     $("enc-copiar").addEventListener("click", async () => {
       try {
         const d = await mensagem();
@@ -457,6 +479,7 @@ const LEMBRAR = {
         const d = await postar(barra.dataset.urlEncContatos, {nome, telefone: $("enc-telefone").value});
         const novo = d.contatos.find(c => c.nome === nome);
         pintarContatos(d.contatos, novo ? novo.telefone : undefined);
+        conferir();
         $("enc-nome").value = $("enc-telefone").value = "";
         $("enc-contato-msg").textContent = "Guardado — vale para a equipe toda.";
       } catch (e) { $("enc-contato-msg").textContent = e.message; }
@@ -468,6 +491,7 @@ const LEMBRAR = {
       try {
         const d = await postar(barra.dataset.urlEncContatos, {acao: "remover", telefone: sel.value});
         pintarContatos(d.contatos, "");
+        conferir();
         $("enc-contato-msg").textContent = "Apagado.";
       } catch (e) { $("enc-contato-msg").textContent = e.message; }
     });
@@ -478,7 +502,7 @@ const LEMBRAR = {
       $("enc-sub").textContent = `${ids.length} SP(s)`;
       $("enc-corpo").innerHTML = '<p class="cartao-dica">Carregando…</p>';
       $("enc-rodape").hidden = true;
-      $("enc-abrir").disabled = $("enc-copiar").disabled = true;
+      $("enc-abrir").disabled = $("enc-copiar").disabled = $("enc-enviar").disabled = true;
       $("enc-resumo").textContent = "";
       dlgEnc.showModal();
       try {

@@ -90,6 +90,12 @@ CATALOGO: list[dict] = [
      "descricao": "Aviso aos ADMIN quando o consumo de IA passa de 80% do teto, ou estoura."},
     {"chave": "erp.insumos", "nome": "Avisos de Suprimentos", "modulo": "ERP", "politica": TELEGRAM,
      "descricao": "Avisos do módulo de Suprimentos (insumo, cotação, pedido)."},
+    # Análise de SPs — o "Enviar" da janela Encaminhar (29/10/2026): o dono
+    # pediu para a mensagem SAIR pelo sistema, não abrir o WhatsApp de quem clica.
+    {"chave": "analisesps.encaminhar", "nome": "Encaminhar SP", "modulo": "Análise de SPs",
+     "politica": WHATSAPP,
+     "descricao": "Os dados de SPs (e os links do anexo e do comprovante) mandados a um "
+                  "contato pela janela Encaminhar das Solicitações e do Lote."},
     # Mensageria
     {"chave": "mensageria.limite", "nome": "Aviso de teto do WhatsApp", "modulo": "Mensagens",
      "politica": TELEGRAM,

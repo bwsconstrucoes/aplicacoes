@@ -157,3 +157,36 @@ def test_CELULAR_cartoes_toque_e_sem_pagar(app):
     celular = css[css.index("NO CELULAR (10/10/2026)"):]
     assert '.barra-acoes [data-coluna="status_pgt"]' in celular, "nada de pagar pela barra"
     assert '.principal [data-coluna="status_pgt"]' in celular, "nem pela ficha"
+
+
+def test_ENVIAR_sai_pelo_WhatsApp_da_empresa_sem_abrir_o_de_ninguem(app, monkeypatch):
+    """29/10/2026: *"não é para abrir o WhatsApp (…) é para ter um botão enviar
+    (…) eu quero enviar essas mensagens"*. Passa pela central de mensagens do
+    ERP (tipo analisesps.encaminhar): com o WhatsApp desligado lá, não envia e diz."""
+    from app.apps import notificador
+    semear_duas()
+    enviados = []
+
+    def falso(telefone, mensagem, finalidade=None):
+        enviados.append((telefone, mensagem, finalidade))
+        return {"ok": True, "detalhe": "ok"}
+    monkeypatch.setattr(notificador, "enviar_whatsapp", falso)
+    with app.test_client() as c:
+        c.post("/analisesps/entrar", data={"senha": SENHA_MESTRE_OPERADOR})
+        lista = c.get("/analisesps/solicitacoes?f=1&busca=10000005",
+                      follow_redirects=True).get_data(as_text=True)
+        assert 'id="enc-enviar"' in lista and "Abrir no meu WhatsApp" in lista
+        r = c.post("/analisesps/api/encaminhar/enviar",
+                   json={"ids": ["1000000502"], "campos": ["id"], "telefone": "85988887777"})
+        assert r.get_json()["ok"]
+        assert enviados == [("5585988887777", "*Solicitação de Pagamento*\n*Nº da SP:* 1000000502",
+                             "analisesps.encaminhar")]
+        sem = c.post("/analisesps/api/encaminhar/enviar",
+                     json={"ids": ["1000000502"], "telefone": ""})
+        assert sem.status_code == 400 and "Escolha para quem" in sem.get_json()["erro"]
+        monkeypatch.setattr(notificador, "enviar_whatsapp", lambda *a, **k: {
+            "ok": None, "detalhe": "WhatsApp desligado na tela Mensagens"})
+        desligado = c.post("/analisesps/api/encaminhar/enviar",
+                           json={"ids": ["1000000502"], "telefone": "85988887777"})
+        assert desligado.status_code == 400
+        assert "ERP › Mensagens" in desligado.get_json()["erro"]
