@@ -31,7 +31,7 @@ from sqlalchemy.engine import Connection
 
 from .. import db, horario
 from ..erros import ErroDeValidacao
-from . import banco, cadastros, espelho, ocorrencias, quadro, vigencia
+from . import apuracao, banco, cadastros, espelho, ocorrencias, quadro, vigencia
 from .ocorrencias import Quem
 
 MAX_DIAS = 62
@@ -81,18 +81,30 @@ def _espelhos(conn: Connection, pessoas: list[dict], inicio: dt.date, fim: dt.da
 
 
 def faltas(conn: Connection, pessoas: list[dict], inicio: dt.date, fim: dt.date) -> dict:
+    """A falta do dia inteiro e, desde 29/10/2026, a FALTA PARCIAL (o dia com batida faltando: vale o
+    comprovado, o resto falta — `apuracao.pares_comprovados`). `faltou` = as horas que faltaram."""
     linhas, por_pessoa = [], []
     for p, esp in _espelhos(conn, pessoas, inicio, fim):
-        dias = [d for d in esp["dias"] if d["situacao"] == "FALTA" and not d.get("ocorrencia")]
+        dias = [d for d in esp["dias"] if not d.get("ocorrencia")
+                and (d["situacao"] == "FALTA" or (d["situacao"] in apuracao.SITUACOES_PARCIAIS and d.get("debito")))]
         for d in dias:
+            inteira = d["situacao"] == "FALTA"
             linhas.append({**_base(p), "data": d["data"], "dia_semana": d["dia_semana"], "escala": d.get("escala"),
-                           "previsto": d["previsto"],
+                           "previsto": d["previsto"], "tipo": "Falta" if inteira else "Falta parcial",
+                           "faltou": d["previsto"] if inteira else d.get("debito") or 0,
+                           "batidas": [b["hora"] for b in d.get("batidas") or []],
                            "pendente": ", ".join(x["rotulo"] for x in d.get("pendentes") or [])})
         if dias:
-            por_pessoa.append({**_base(p), "faltas": len(dias), "previsto": sum(d["previsto"] for d in dias)})
-    por_pessoa.sort(key=lambda x: (-x["faltas"], x["nome"]))
+            meus = linhas[-len(dias):]
+            por_pessoa.append({**_base(p), "faltas": sum(1 for x in meus if x["tipo"] == "Falta"),
+                               "parciais": sum(1 for x in meus if x["tipo"] != "Falta"),
+                               "previsto": sum(x["previsto"] for x in meus if x["tipo"] == "Falta"),
+                               "faltou": sum(x["faltou"] for x in meus)})
+    por_pessoa.sort(key=lambda x: (-x["faltas"], -x["parciais"], x["nome"]))
+    inteiras = [x for x in linhas if x["tipo"] == "Falta"]
     return {"linhas": linhas, "por_pessoa": por_pessoa,
-            "totais": {"faltas": len(linhas), "pessoas": len(por_pessoa), "previsto": sum(x["previsto"] for x in linhas)}}
+            "totais": {"faltas": len(inteiras), "parciais": len(linhas) - len(inteiras), "pessoas": len(por_pessoa),
+                       "previsto": sum(x["previsto"] for x in inteiras), "faltou": sum(x["faltou"] for x in linhas)}}
 
 
 def _dias_no_periodo(a: dt.date, b: dt.date, inicio: dt.date, fim: dt.date) -> int:

@@ -34,7 +34,7 @@ from . import banco, cadastros, escalas, espelho, geo
 logger = logging.getLogger("ponto.alertas")
 
 GRAVIDADE = {
-    "FALTA": "ATENCAO", "BATIDA_FALTANDO": "ATENCAO", "ATRASO": "INFO",
+    "FALTA": "ATENCAO", "FALTA_PARCIAL": "ATENCAO", "BATIDA_FALTANDO": "ATENCAO", "ATRASO": "INFO",
     "SAIDA_ANTECIPADA": "INFO", "EXTRA_ACIMA_DE_2H": "ATENCAO", "INTERVALO_CURTO": "ATENCAO",
     "INTERJORNADA_CURTA": "ATENCAO", "TRABALHO_EM_DESCANSO": "INFO", "TRABALHO_EM_FERIADO": "INFO",
     "BATIDA_EM_DIA_ABONADO": "ATENCAO", "SEM_ESCALA": "INFO", "BATIDA_REPETIDA": "INFO",
@@ -48,7 +48,7 @@ GRAVIDADE = {
     "MOSAICO_PENDENTE": "ATENCAO", "BATIDA_RECUSADA_FORA_DA_OBRA": "ATENCAO",
 }
 ROTULO = {
-    "FALTA": "Falta sem justificativa", "BATIDA_FALTANDO": "Batida faltando",
+    "FALTA": "Falta sem justificativa", "FALTA_PARCIAL": "Falta parcial", "BATIDA_FALTANDO": "Batida faltando",
     "ATRASO": "Atraso", "SAIDA_ANTECIPADA": "Saída antecipada",
     "EXTRA_ACIMA_DE_2H": "Extra acima de 2 h", "INTERVALO_CURTO": "Intervalo curto",
     "INTERJORNADA_CURTA": "Menos de 11 h de descanso", "TRABALHO_EM_DESCANSO": "Trabalho em dia de descanso",
@@ -69,7 +69,7 @@ ROTULO = {
     "BATIDA_RECUSADA_FORA_DA_OBRA": "Tentou bater fora da área da obra",
 }
 # Os que nascem do cálculo de UM dia — podem ser resolvidos sozinhos.
-DO_DIA = {"FALTA", "BATIDA_FALTANDO", "ATRASO", "SAIDA_ANTECIPADA", "EXTRA_ACIMA_DE_2H",
+DO_DIA = {"FALTA", "FALTA_PARCIAL", "BATIDA_FALTANDO", "ATRASO", "SAIDA_ANTECIPADA", "EXTRA_ACIMA_DE_2H",
           "INTERVALO_CURTO", "INTERJORNADA_CURTA", "TRABALHO_EM_DESCANSO", "TRABALHO_EM_FERIADO",
           "BATIDA_EM_DIA_ABONADO", "BATIDA_REPETIDA"}
 

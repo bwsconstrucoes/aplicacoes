@@ -61,6 +61,9 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1zz1. **No ramo, esperando o "pode" (29/10/2026, noite, quarta) — SEM MIGRAÇÃO**: a **falta parcial** — o dia com batida
+   faltando (só a manhã, só a tarde, três batidas, uma só) vale o que está comprovado e o resto vira débito. Muda o
+   débito e o banco de horas de dias que já passaram (o espelho é refeito a cada abertura).
 1zz0. **Publicado em 29/10/2026** (com o "pode" do dono, junto com o 1zz e o 1zy) — **SEM MIGRAÇÃO**: **quem a
    planilha diz que não bate ponto sai do ponto** (PJ e pró-labore na coluna AY, a obra ESCRUSSAS na AA, e os
    afastados da AX saem das listas), e **a foto da batida abre em branco** ("Carregando a foto…") em vez de
@@ -367,6 +370,41 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 29/10/2026 (noite, quarta) — A falta parcial: vale o que está comprovado
+
+**A tolerância** ficou como estava (pergunta do dono: *"existe tolerância para esse cálculo de horas extras?"*). Já
+existia: 5 min por batida, 10 min no dia (CLT art. 58, §1º); passou disso conta tudo (Súmula 366). Ofereci olhar só a
+entrada e a saída do dia (o almoço fora da soma); ele respondeu *"vamos manter assim, vamos experimentar"* — as
+quatro batidas continuam na soma.
+
+**A falta parcial** (`apuracao.pares_comprovados`). Até aqui, o dia de 3 batidas ou de 1 batida ficava "Batida
+faltando", **sem débito**, esperando o ajuste; e o dia de só a manhã (ou só a tarde) ficava "Normal", com o débito
+e o aviso de saída antecipada (ou atraso), sem dizer que foi falta. Propus chamar o segundo de falta parcial e
+deixar o primeiro como estava; o dono: *"não, ambos os casos eu quero considerar falta parcial. Por quê? Quem
+garante que ele não saiu, apenas bateu o ponto e foi embora? Então ele tem a obrigação de bater."*
+- **A regra**: vale o que está COMPROVADO. Cada batida vai para a posição da escala mais perto; só conta como
+  trabalhado o período (manhã, tarde) com as duas pontas batidas, e só dentro do horário da escala (a falta parcial
+  não gera extra). O resto do previsto é **débito**. A tolerância de 5 min de cada batida vale (7h03 conta como 7h).
+- Exemplos, na escala 7–11 / 12–17: 7h, 11h, 12h (sem a saída) → 4 h e 5 h de débito; 11h, 12h, 17h (sem a entrada)
+  → 5 h e 4 h de débito; 7h, 12h, 17h (sem a saída do almoço) → 5 h e 4 h de débito; só 7h → 9 h de débito; só a
+  manhã → 5 h de débito; só a tarde → 4 h de débito.
+- **Não é falta parcial**: só a entrada e a saída do dia (sem o almoço) — a pessoa estava no começo e no fim; segue
+  como antes (intervalo curto; na obra de intervalo pré-assinalado, o dia completo). Nem a batida a mais, sem par,
+  num dia já coberto (só o aviso "batida faltando").
+- **Onde aparece**: "Falta parcial" no espelho (ERP, aplicativo e a folha impressa), no Quadro, no relatório de
+  **Faltas** (agora com as colunas Tipo, Batidas e Faltou, e os números "Faltas parciais" e "Horas que faltaram"),
+  nos alertas e na qualidade (conta como o dia com batida faltando: −5 pontos). O ajuste aprovado desfaz: a batida
+  entra e o dia é refeito.
+- **O débito vai para o banco de horas** de quem tem banco, como qualquer débito.
+- ⚠️ **Muda o passado**: o espelho é refeito a cada abertura, então os dias de batida faltando desde 16/10/2026
+  ganham débito na hora. Antes do fechamento da folha, vale o DP olhar o relatório de Faltas e cobrar os ajustes de
+  quem só esqueceu de bater.
+- **Para a folha (Análise de SPs)** nada muda no formato: o dia com batida continua "Presença" (o auxílio do dia
+  segue a regra de lá); as horas trabalhadas passam a ser as comprovadas.
+- O nome antigo "INCOMPLETO" ainda é entendido por quem lê a situação do dia (`apuracao.SITUACOES_PARCIAIS`). A tela
+  "Hoje" (quem bateu hoje) tem a sua própria "Batida faltando", do dia corrente — não mudou.
+- **Testes**: `test_batida_faltando_e_falta_parcial_vale_o_comprovado` em `test_ponto_apuracao.py`.
 
 ## 29/10/2026 (noite, terceira) — Quem a planilha diz que não bate sai do ponto, e a foto que não engana
 

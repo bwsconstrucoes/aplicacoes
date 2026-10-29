@@ -360,7 +360,7 @@
   .dp-mes button.hoje { outline:2px solid var(--azul-claro); }
   .dp-mes button b { display:block; font-family:var(--fonte-dados); }
   .dp-mes .s-OK { background:#F1FAF3; } .dp-mes .s-FALTA { background:#FDECEA; }
-  .dp-mes .s-INCOMPLETO { background:#FFF4D6; } .dp-mes .s-ABONADO, .dp-mes .s-COMPENSADO { background:#EEF3FB; }
+  .dp-mes .s-INCOMPLETO, .dp-mes .s-FALTA_PARCIAL { background:#FFF4D6; } .dp-mes .s-ABONADO, .dp-mes .s-COMPENSADO { background:#EEF3FB; }
   .dp-mes .s-DESCANSO, .dp-mes .s-FUTURO, .dp-mes .s-ANTES_DO_PONTO, .dp-mes .s-FORA_DO_CONTRATO { background:#F6F7F9; color:var(--tinta-suave); }
   .link-btn.elo-pessoa { padding:0; text-align:left; }
   /* O mapa do Quadro (21/10/2026). */
@@ -1277,7 +1277,7 @@ const listaDeTexto = t => String(t || "").split(/[,;\n]+/).map(s => s.trim()).fi
 
 // Os nomes que o cálculo do dia usa, em português.
 const ROTULO_ALERTA_DIA = {
-  FALTA: "falta", BATIDA_FALTANDO: "batida faltando", ATRASO: "atraso",
+  FALTA: "falta", FALTA_PARCIAL: "falta parcial", BATIDA_FALTANDO: "batida faltando", ATRASO: "atraso",
   SAIDA_ANTECIPADA: "saída antecipada", EXTRA_ACIMA_DE_2H: "extra acima de 2 h",
   INTERVALO_CURTO: "intervalo curto", INTERJORNADA_CURTA: "menos de 11 h de descanso",
   TRABALHO_EM_DESCANSO: "trabalho em dia de descanso", TRABALHO_EM_FERIADO: "trabalho em feriado",
@@ -1287,7 +1287,7 @@ const ROTULO_ALERTA_DIA = {
 // A situação do dia no espelho: [classe do selo, rótulo].
 const SITUACAO_DIA = {
   OK: ["aprovado", "Normal"], FALTA: ["bloqueado", "Falta"], ABONADO: ["pago", "Abonado"],
-  INCOMPLETO: ["aguardando", "Batida faltando"], DESCANSO: ["outro", "Descanso"],
+  FALTA_PARCIAL: ["aguardando", "Falta parcial"], INCOMPLETO: ["aguardando", "Batida faltando"], DESCANSO: ["outro", "Descanso"],
   SEM_ESCALA: ["aguardando", "Sem escala"], COMPENSADO: ["pago", "Compensado"],
   FUTURO: ["outro", "A vir"], EM_ANDAMENTO: ["outro", "Hoje (em andamento)"],
   FORA_DO_CONTRATO: ["outro", "Fora do contrato"],
@@ -1517,7 +1517,7 @@ function obrasDoDia(d, p) {
 function linhaDoEspelho(d, E, podeAjustar) {
   const [classe, rot] = SITUACAO_DIA[d.situacao] || ["outro", d.situacao];
   const repete = a => (a === "FALTA" && d.situacao === "FALTA") || (a === "SEM_ESCALA" && d.situacao === "SEM_ESCALA")
-    || (a === "BATIDA_FALTANDO" && d.situacao === "INCOMPLETO");
+    || (a === "BATIDA_FALTANDO" && d.situacao === "INCOMPLETO") || (a === "FALTA_PARCIAL" && d.situacao === "FALTA_PARCIAL");
   const alertas = (d.alertas || []).filter(a => !repete(a))
     .map(a => `<span class="alerta-dia">${escapar(ROTULO_ALERTA_DIA[a] || a)}</span>`).join("");
   const pedidos = (d.pendentes || []).filter(o => o.tipo === "AJUSTE_BATIDA" && o.id).map(o => `<button type="button" class="chip pedido"
@@ -4409,9 +4409,12 @@ const cpfBR = c => documento ? documento(c || "") : (c || "");
 function rlColunas() {
   const pessoa = [["Pessoa", l => l.nome], ["CPF", l => cpfBR(l.cpf), "dados"], ["Função", l => l.funcao || ""], ["Obra", l => l.obra || "", "dados"]];
   if (RL.tipo === "faltas") return RL_VISAO === "pessoas"
-    ? [...pessoa, ["Faltas", l => l.faltas, "num"], ["Horas previstas", l => hm(l.previsto), "num"]]
-    : [...pessoa, ["Dia", l => dataBR(l.data), "dados"], ["", l => l.dia_semana], ["Escala", l => l.escala || ""],
-       ["Previsto", l => hm(l.previsto), "num"], ["Pedido esperando decisão", l => l.pendente || ""]];
+    ? [...pessoa, ["Faltas", l => l.faltas, "num"], ["Faltas parciais", l => l.parciais || 0, "num"],
+       ["Horas que faltaram", l => hm(l.faltou ?? l.previsto), "num"]]
+    : [...pessoa, ["Dia", l => dataBR(l.data), "dados"], ["", l => l.dia_semana], ["Tipo", l => l.tipo || "Falta"],
+       ["Escala", l => l.escala || ""], ["Batidas", l => (l.batidas || []).join(" "), "dados"],
+       ["Previsto", l => hm(l.previsto), "num"], ["Faltou", l => hm(l.faltou ?? l.previsto), "num"],
+       ["Pedido esperando decisão", l => l.pendente || ""]];
   if (RL.tipo === "extras") return RL_VISAO === "pessoas"
     ? [...pessoa, ["Dias", l => l.dias, "num"], ["Em dia de trabalho", l => hmCelula(l.util), "num"],
        ["Em descanso", l => hmCelula(l.descanso), "num"], ["Em feriado", l => hmCelula(l.feriado), "num"],
@@ -4442,7 +4445,8 @@ function rlDesenhar() {
     · ${contar(RL.pessoas_no_recorte, "pessoa no recorte", "pessoas no recorte")}</small>`;
   const k = (r, v, cor = "") => `<div class="kpi estatico ${cor}"><div class="kpi-rotulo">${r}</div><div class="kpi-valor">${v}</div></div>`;
   els("rl-kpis").innerHTML = `<div class="kpis">${
-    RL.tipo === "faltas" ? k("Faltas", t.faltas, t.faltas ? "vermelho" : "") + k("Pessoas com falta", t.pessoas) + k("Horas previstas nas faltas", hm(t.previsto))
+    RL.tipo === "faltas" ? k("Faltas (dia inteiro)", t.faltas, t.faltas ? "vermelho" : "") + k("Faltas parciais", t.parciais || 0, t.parciais ? "ambar" : "")
+      + k("Pessoas com falta", t.pessoas) + k("Horas que faltaram", hm(t.faltou ?? t.previsto))
     : RL.tipo === "extras" ? k("Hora extra total", hm(t.total), "azul") + k("Em dia de trabalho", hm(t.util)) + k("Em descanso", hm(t.descanso)) + k("Em feriado", hm(t.feriado)) + k("Noturno", hm(t.noturno)) + k("Pessoas", t.pessoas)
     : RL.tipo === "justificadas" ? k("Ausências", t.pedidos) + k("Dias no período", t.dias) + k("Pessoas", t.pessoas)
     : k("Pessoas com banco", t.pessoas) + k("Saldo positivo", hm(t.positivo), "verde") + k("Saldo negativo", hm(Math.abs(t.negativo)), t.negativo ? "vermelho" : "")}</div>

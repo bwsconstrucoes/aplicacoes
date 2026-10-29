@@ -251,7 +251,7 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
             r.situacao, julgavel = "FORA_DO_CONTRATO", False
         elif dia > hoje:
             r.situacao, julgavel = "FUTURO", False
-        elif dia == hoje and (not do_dia or r.situacao in ("FALTA", "INCOMPLETO")):
+        elif dia == hoje and (not do_dia or r.situacao in ("FALTA", *apuracao.SITUACOES_PARCIAIS)):
             r.situacao, julgavel = "EM_ANDAMENTO", False
         if not julgavel:
             r.falta, r.debito, r.extra = False, 0, 0
@@ -335,7 +335,8 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
         "debito": sum(d["debito"] for d in contaveis),
         "faltas": sum(1 for d in contaveis if d["falta"]),
         "abonados": sum(1 for d in contaveis if d["abonado"]),
-        "incompletos": sum(1 for d in contaveis if d["situacao"] == "INCOMPLETO"),
+        "incompletos": sum(1 for d in contaveis if d["situacao"] in apuracao.SITUACOES_PARCIAIS),
+        "faltas_parciais": sum(1 for d in contaveis if d["situacao"] in apuracao.SITUACOES_PARCIAIS),
         "noturno": sum(d["noturno"] or 0 for d in contaveis),
         "em_analise": sum(d["em_analise"] for d in dias),
         "atrasos": sum(1 for d in contaveis if "ATRASO" in d["alertas"]),

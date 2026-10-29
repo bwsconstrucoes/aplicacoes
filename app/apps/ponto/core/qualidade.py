@@ -63,7 +63,7 @@ from . import cadastros, espelho, parametros
 
 PARAMETRO_LIMITE = "qualidade.ajustes_limite"
 LIMITE_PADRAO = 3
-DIAS_DE_TRABALHO = ("OK", "FALTA", "INCOMPLETO")
+DIAS_DE_TRABALHO = ("OK", "FALTA", "FALTA_PARCIAL", "INCOMPLETO")
 PESO_INDICE, PESO_FOTOS = 0.7, 0.3
 PENALIDADE_POR_AJUSTE = 5           # por ajuste pedido, desde o primeiro (29/10/2026)
 PENALIDADE_POR_FALTANDO = 5         # por dia com batida faltando — o mesmo do ajuste
@@ -225,11 +225,11 @@ def avaliar_dias(dias: list[dict], obra_principal: Optional[str]) -> dict:
             t["faltas"] += 1
             o["faltas"] += 1
             problemas.append({"data": d["data"], "tipo": "FALTA", "texto": "faltou — sem batida e sem justificativa"})
-        elif d["situacao"] == "INCOMPLETO" or faltando:
+        elif d["situacao"] in ("FALTA_PARCIAL", "INCOMPLETO") or faltando:
             t["incompletos"] += 1
             o["incompletos"] += 1
             quais = ", ".join(f["rotulo"] for f in faltando) or "uma batida"
-            problemas.append({"data": d["data"], "tipo": "FALTANDO", "texto": f"faltou bater: {quais.lower()}"})
+            problemas.append({"data": d["data"], "tipo": "FALTANDO", "texto": f"falta parcial — faltou bater: {quais.lower()}"})
         elif ajustadas:
             t["dias_com_ajuste"] += 1
             o["dias_com_ajuste"] += 1

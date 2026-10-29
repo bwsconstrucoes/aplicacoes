@@ -52,7 +52,7 @@ SITUACOES = (
     ("COM_PEDIDO", "Com pedido esperando decisão"),
 )
 ROTULO_SITUACAO = dict(SITUACOES)
-SITUACOES_DO_DIA = {"OK": "Completo", "FALTA": "Falta", "INCOMPLETO": "Incompleto", "DESCANSO": "Descanso",
+SITUACOES_DO_DIA = {"OK": "Completo", "FALTA": "Falta", "FALTA_PARCIAL": "Falta parcial", "INCOMPLETO": "Incompleto", "DESCANSO": "Descanso",
                     "FERIADO": "Feriado", "ABONADO": "Justificado", "COMPENSADO": "Compensado",
                     "SEM_ESCALA": "Sem escala", "EM_ANDAMENTO": "Em andamento", "FUTURO": "Ainda não chegou",
                     "FORA_DO_CONTRATO": "Fora do contrato", vigencia.SITUACAO_ANTES: "Antes do ponto"}
@@ -129,7 +129,7 @@ def etiquetas_do_dia(d: dict) -> set[str]:
         e.add("JUSTIFICADO")
     elif situacao in ("DESCANSO", "FERIADO") or d.get("feriado"):
         e.add("NAO_TRABALHA")
-    if batidas and (faltando or situacao == "INCOMPLETO"):   # bateu parte do dia
+    if batidas and (faltando or situacao in ("FALTA_PARCIAL", "INCOMPLETO")):   # bateu parte do dia
         e.add("COM_BURACO")
     elif batidas and situacao in ("OK", "EM_ANDAMENTO") and d.get("previstas"):
         e.add("COMPLETO")

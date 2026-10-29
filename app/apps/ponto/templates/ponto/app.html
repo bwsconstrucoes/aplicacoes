@@ -491,14 +491,14 @@ const soDigitos = v => String(v ?? "").replace(/\D/g, "");
 const dataBR = iso => iso ? iso.slice(0, 10).split("-").reverse().join("/") : "—";
 const hm = m => { if (m === null || m === undefined) return "—"; const s = m < 0 ? "-" : ""; m = Math.abs(m);
                   return `${s}${Math.floor(m / 60)}h${String(m % 60).padStart(2, "0")}`; };
-const ROTULO_ALERTA = { FALTA: "falta", BATIDA_FALTANDO: "batida faltando", ATRASO: "atraso",
+const ROTULO_ALERTA = { FALTA: "falta", FALTA_PARCIAL: "falta parcial", BATIDA_FALTANDO: "batida faltando", ATRASO: "atraso",
   SAIDA_ANTECIPADA: "saída antecipada", EXTRA_ACIMA_DE_2H: "extra acima de 2 h",
   INTERVALO_CURTO: "intervalo curto", INTERJORNADA_CURTA: "menos de 11 h de descanso",
   TRABALHO_EM_DESCANSO: "trabalho em dia de descanso", TRABALHO_EM_FERIADO: "trabalho em feriado",
   BATIDA_REPETIDA: "batida repetida (contada uma vez)",
   BATIDA_EM_DIA_ABONADO: "bateu em dia abonado", SEM_ESCALA: "sem escala cadastrada" };
 const SITUACAO = { OK: ["ok", "Certo"], FALTA: ["falta", "Falta"], ABONADO: ["ok", "Abonado"],
-  INCOMPLETO: ["ambar", "Batida faltando"], DESCANSO: ["", "Descanso"], SEM_ESCALA: ["", "Sem escala"],
+  FALTA_PARCIAL: ["ambar", "Falta parcial"], INCOMPLETO: ["ambar", "Batida faltando"], DESCANSO: ["", "Descanso"], SEM_ESCALA: ["", "Sem escala"],
   COMPENSADO: ["ok", "Compensado"], FUTURO: ["", "—"], EM_ANDAMENTO: ["", "Hoje"],
   FORA_DO_CONTRATO: ["", "—"], ANTES_DO_PONTO: ["", "—"] };
 const STATUS_PEDIDO = { AGUARDANDO_SUPERVISOR: ["ambar", "Esperando a administração da obra"],
@@ -1402,7 +1402,7 @@ function diasDoMes(d, regras) {
   let temAcao = false;
   const linhas = d.dias.filter(x => x.situacao !== "FUTURO").reverse().map(x => {
     const [cls, rot] = SITUACAO[x.situacao] || ["", x.situacao];
-    const alertas = x.alertas.filter(a => a !== "FALTA").map(a => ROTULO_ALERTA[a] || a).join(", ");
+    const alertas = x.alertas.filter(a => !["FALTA", "FALTA_PARCIAL"].includes(a)).map(a => ROTULO_ALERTA[a] || a).join(", ");
     const acoes = [
       regras.corrigir(x) ? `<button class="icone-dia" type="button" data-corrigir="${x.data}" title="Corrigir a batida que faltou"
         aria-label="Corrigir ${dataBR(x.data)}: faltou ${esc(x.faltando.map(f => f.rotulo.toLowerCase()).join(", ")) || "batida"}">✏️</button>` : "",
@@ -1730,7 +1730,7 @@ function podeCorrigirDia(x, mes) {
   // Sem horário previsto não dá para saber o que falta: deixa pedir no dia de falta,
   // incompleto, sem escala — e no FERIADO e na FOLGA (12/10/2026: "é para permitir a
   // batida num feriado porque a pessoa pode trabalhar, extra"), inclusive hoje.
-  return !x.previstas.length && ["FALTA", "INCOMPLETO", "SEM_ESCALA", "DESCANSO", "EM_ANDAMENTO"].includes(x.situacao)
+  return !x.previstas.length && ["FALTA", "FALTA_PARCIAL", "INCOMPLETO", "SEM_ESCALA", "DESCANSO", "EM_ANDAMENTO"].includes(x.situacao)
     && x.batidas.length < (x.so_entrada_e_saida ? 2 : 4);
 }
 // Sem escala, o dia não diz o que falta: oferece as batidas que ainda cabem no
@@ -3331,7 +3331,7 @@ function linhaDoEspelhoApp(x, p) {
   if (ajustadas.length) notas.push(`${esc(ajustadas.join(", "))} por ajuste aprovado`);
   const outras = [...new Set(x.batidas.map(b => b.obra).filter(o => o && o !== p.obra))];
   if (outras.length) notas.push(`batidas na obra ${esc(outras.join(", "))}`);
-  const alertas = x.alertas.filter(a => !["FALTA", "BATIDA_FALTANDO"].includes(a)).map(a => ROTULO_ALERTA[a] || a);
+  const alertas = x.alertas.filter(a => !["FALTA", "FALTA_PARCIAL", "BATIDA_FALTANDO"].includes(a)).map(a => ROTULO_ALERTA[a] || a);
   if (alertas.length) notas.push(esc(alertas.join(", ")));
   if ((x.negados || []).length) notas.push(`<span style="color:var(--vermelho)">❌ negado: ${esc(resumoDosNegados(x.negados))}</span>`);
   const contas = [x.trabalhado ? `trab. <b>${hm(x.trabalhado)}</b>` : "",

@@ -301,6 +301,7 @@ dizer "tem batida"; presença, horas e faltas são regra da fase 3.
 - Quais pedreiros e serventes estão com batida faltando hoje? 🔒 (Quadro › Funções: PEDREIRO e SERVENTE marcadas + "Com batida faltando"; o filtro de funções aceita várias)
 - Que alertas estão abertos da obra X? 🔒 (Quadro › "Com alerta aberto" + obra; só os alertas de uma pessoa e um dia — o alerta da obra inteira fica na tela de Alertas)
 - Qual a qualidade do ponto dos vigias esta semana? 🔒 ⚠️ (Quadro › Tipo de pessoa: Vigia › visão Qualidade; "esta semana" = de segunda até hoje)
+- Quantas faltas parciais o Fulano teve, e quantas horas faltaram? 🔒 ⚠️ (Relatórios › Faltas, desde 29/10/2026: "falta parcial" = dia com batida faltando ou só meio período batido; vale o período da escala com as duas pontas batidas, o resto é débito; o ajuste aprovado desfaz — o número muda até o fechamento)
 - Quantas faltas cada um teve em outubro? 🔒 ⚠️ (Relatórios › Faltas: só falta SEM justificativa, pelas contas do espelho; "outubro" = do início do ponto, 16/10, ao fim do mês; quem não tem escala nem segue a padrão não tem falta — não é julgado)
 - Quem teve atestado este mês, e quantos dias? 🔒 ⚠️ (Relatórios › Ausências justificadas › Atestado: só pedidos APROVADOS; "dias" = os que caem no período; CID só para o DP)
 - Quantas horas extras a obra X fez na semana passada? 🔒 ⚠️ (Relatórios › Horas extras com o filtro de obra do CADASTRO — não há ainda extra por obra da batida; separa dia de trabalho, descanso e feriado)

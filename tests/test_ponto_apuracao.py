@@ -81,10 +81,24 @@ def test_sabado_e_feriado_sao_descanso_e_trabalho_neles_e_extra():
     assert not ap.apurar_dia(SEGUNDA, OBRA, [], feriado=True).falta
 
 
-def test_batida_faltando_nao_inventa_extra_nem_debito():
-    r = ap.apurar_dia(SEGUNDA, OBRA, b(SEGUNDA, "07:00", "11:00", "12:00"))
-    assert r.situacao == "INCOMPLETO" and "BATIDA_FALTANDO" in r.alertas
-    assert (r.extra, r.debito) == (0, 0)
+def test_batida_faltando_e_falta_parcial_vale_o_comprovado():
+    """29/10/2026, o dono: "quem garante que ele não saiu, apenas bateu o ponto e foi embora? Ele tem a
+    obrigação de bater." Só conta o período da escala com as duas pontas batidas; o resto é débito."""
+    def dia(*h):
+        r = ap.apurar_dia(SEGUNDA, OBRA, b(SEGUNDA, *h))
+        return r.situacao, r.trabalhado, r.debito, r.extra, "BATIDA_FALTANDO" in r.alertas
+    assert dia("07:00", "11:00", "12:00") == ("FALTA_PARCIAL", 240, 300, 0, True)       # sem a saída
+    assert dia("11:00", "12:00", "17:00") == ("FALTA_PARCIAL", 300, 240, 0, True)       # sem a entrada
+    assert dia("07:00", "12:00", "17:00") == ("FALTA_PARCIAL", 300, 240, 0, True)       # sem a saída do almoço
+    assert dia("07:00") == ("FALTA_PARCIAL", 0, 540, 0, True)                           # uma batida só
+    assert dia("07:00", "11:00") == ("FALTA_PARCIAL", 240, 300, 0, False)               # só a manhã
+    assert dia("12:00", "17:00") == ("FALTA_PARCIAL", 300, 240, 0, False)               # só a tarde
+    assert dia("07:03", "10:58") == ("FALTA_PARCIAL", 240, 300, 0, False)               # com a tolerância
+    # a entrada e a saída do dia, sem o almoço, não é falta parcial: estava no começo e no fim
+    assert dia("07:00", "17:00")[0] == "OK" and dia("07:00", "15:00")[:3] == ("OK", 480, 60)
+    # uma batida a mais, sem par, num dia completo: só o aviso
+    assert dia("07:00", "11:00", "12:00", "17:00", "17:30") == ("OK", 540, 0, 0, True)
+    assert ap.resumo_do_periodo([ap.apurar_dia(SEGUNDA, OBRA, b(SEGUNDA, "07:00"))])["incompletos"] == 1
 
 
 def test_intervalo_curto():
@@ -143,9 +157,10 @@ def test_obra_de_so_entrada_e_saida_desconta_o_intervalo_da_escala():
     quatro = ap.apurar_dia(SEGUNDA, OBRA, b(SEGUNDA, "07:00", "11:30", "12:30", "17:00"), intervalo_pre_assinalado=True)
     assert quatro.intervalo == 60 and quatro.trabalhado == 540
     manha = ap.apurar_dia(SEGUNDA, OBRA, b(SEGUNDA, "07:00", "10:30"), intervalo_pre_assinalado=True)
-    assert manha.trabalhado == 210 and manha.debito == 330
-    # Uma batida só continua incompleta
-    assert ap.apurar_dia(SEGUNDA, OBRA, b(SEGUNDA, "07:00"), intervalo_pre_assinalado=True).situacao == "INCOMPLETO"
+    assert manha.trabalhado == 210 and manha.debito == 330 and manha.situacao == "FALTA_PARCIAL"
+    # Uma batida só é falta parcial (29/10/2026): nada comprovado
+    um = ap.apurar_dia(SEGUNDA, OBRA, b(SEGUNDA, "07:00"), intervalo_pre_assinalado=True)
+    assert um.situacao == "FALTA_PARCIAL" and um.debito == 540
 
 
 def test_so_entrada_e_saida_espera_duas_marcas():

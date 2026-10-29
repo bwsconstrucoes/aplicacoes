@@ -17,6 +17,11 @@ AS REGRAS DA CLT QUE ESTÃO AQUI, cada uma com a fonte:
     limite, conta-se o tempo TODO (Súmula 366 do TST), não só o excesso.
   - **Falta**: dia com jornada prevista, nenhuma batida e nenhuma ocorrência
     que abone.
+  - **Falta parcial** (decisão do dono, 29/10/2026): dia em que faltou batida —
+    só a manhã, só a tarde, três batidas, uma só. *"Quem garante que ele não
+    saiu, apenas bateu o ponto e foi embora? Ele tem a obrigação de bater."* Vale
+    o que está COMPROVADO: só os períodos da escala com as duas pontas batidas
+    contam como trabalhados; o resto é débito. O ajuste aprovado desfaz.
   - **Dia de descanso e feriado**: previsto zero; o que for trabalhado é extra
     em dia de descanso (a tela e a folha decidem o adicional; aqui só se marca).
   - **Intervalo** (art. 71): jornada acima de 6 h pede ao menos 1 h de intervalo;
@@ -47,6 +52,7 @@ from __future__ import annotations
 
 import datetime as dt
 from dataclasses import dataclass, field
+from itertools import combinations
 from typing import Optional
 
 TOLERANCIA_POR_MARCACAO = 5
@@ -56,6 +62,10 @@ INTERJORNADA_MINIMA = 11 * 60
 NOTURNO_INICIO = 22 * 60
 NOTURNO_FIM = 5 * 60
 MINUTOS_HORA_NOTURNA = 52.5
+
+# A falta parcial (29/10/2026) e o nome antigo do dia com batida faltando — quem lê a situação do dia
+# confere as duas, para nada que ainda diga "INCOMPLETO" passar batido.
+SITUACOES_PARCIAIS = ("FALTA_PARCIAL", "INCOMPLETO")
 
 # Ocorrências que abonam o dia: a pessoa não trabalhou e não deve nada.
 ABONADORAS = frozenset({"ATESTADO", "LICENCA", "FERIAS", "FOLGA_COMPENSATORIA",
@@ -95,7 +105,7 @@ class Dia:
     descanso: bool = False
     feriado: bool = False
     batidas: int = 0
-    situacao: str = "OK"            # OK | FALTA | ABONADO | INCOMPLETO | DESCANSO | SEM_ESCALA
+    situacao: str = "OK"            # OK | FALTA | FALTA_PARCIAL | ABONADO | DESCANSO | SEM_ESCALA
     alertas: list = field(default_factory=list)
 
 
@@ -161,6 +171,51 @@ def completar_pre_assinalado(marcas: list[int], periodos: list[tuple[int, int]])
     return marcas
 
 
+def pares_comprovados(marcas: list[int], periodos: list[tuple[int, int]]) -> Optional[list[tuple[int, int]]]:
+    """PURA. A FALTA PARCIAL (29/10/2026): os pares (entrada, saída) que as batidas COMPROVAM, ou None
+    quando o dia não é de falta parcial (as batidas cobrem do começo ao fim previsto).
+
+    - Número ímpar de batidas, menos que as previstas: cada batida vai para a posição prevista mais
+      perto (na ordem); só conta o período da escala com as duas pontas batidas. Ex.: 11h, 12h, 17h
+      numa escala 7–11 / 12–17 comprova só a tarde (a entrada das 7h não foi batida).
+    - Número par, menos que as previstas: os pares em sequência, como sempre — mas, se a primeira
+      batida não está na entrada do dia ou a última não está na saída (só a manhã, só a tarde), é
+      falta parcial. Só a entrada e a saída (sem o almoço) NÃO é: a pessoa estava no começo e no fim.
+    - Número ímpar, igual ou maior que as previstas: os pares em sequência; a última fica sem par."""
+    esperadas = [m for p in periodos for m in p]
+    k, n = len(marcas), len(esperadas)
+    if not k or not n:
+        return None
+    if k % 2 == 0 and k >= n:
+        return None
+    pares_em_sequencia = [(marcas[i], marcas[i + 1]) for i in range(0, k - 1, 2)]
+    if k >= n:
+        return pares_em_sequencia
+    melhor = min(combinations(range(n), k),
+                 key=lambda idx: sum(abs(marcas[i] - esperadas[j]) for i, j in enumerate(idx)))
+    if k % 2 == 1:
+        pos = dict(zip(melhor, marcas))
+        return [(pos[2 * p], pos[2 * p + 1]) for p in range(len(periodos)) if 2 * p in pos and 2 * p + 1 in pos]
+    if melhor[0] == 0 and melhor[-1] == n - 1:
+        return None
+    return pares_em_sequencia
+
+
+def _comprovado(pares: list[tuple[int, int]], periodos: list[tuple[int, int]]) -> int:
+    """PURA. O tempo dos pares DENTRO dos períodos da escala (a falta parcial não ganha extra), com a
+    tolerância de 5 min de cada batida (art. 58, §1º) puxando-a para o horário previsto."""
+    esperadas = [m for p in periodos for m in p]
+
+    def puxa(m):
+        perto = min(esperadas, key=lambda e: abs(e - m))
+        return perto if abs(perto - m) <= TOLERANCIA_POR_MARCACAO else m
+    total = 0
+    for e, s in pares:
+        e, s = puxa(e), puxa(s)
+        total += sum(max(0, min(s, ps) - max(e, pe)) for pe, ps in periodos)
+    return total
+
+
 def apurar_dia(dia: dt.date, escala: Optional[Escala], batidas: list[dt.datetime], *,
                feriado: bool = False, ocorrencia: Optional[str] = None,
                intervalo_pre_assinalado: bool = False) -> Dia:
@@ -214,12 +269,18 @@ def apurar_dia(dia: dt.date, escala: Optional[Escala], batidas: list[dt.datetime
             r.alertas.append("BATIDA_FALTANDO")
         return r
 
-    # --- dia de trabalho: tolerância, atraso, extra ------------------------
-    if incompleto:
-        r.situacao = "INCOMPLETO"
-        r.alertas.append("BATIDA_FALTANDO")
-        # Sem par, não dá para dizer quanto trabalhou: não se lança extra nem
-        # débito. Quem resolve é o ajuste, não o cálculo.
+    # --- dia de trabalho: falta parcial, tolerância, atraso, extra ----------
+    # Até 29/10/2026 o dia com batida faltando ficava "INCOMPLETO", sem débito, esperando o ajuste; o
+    # dono mudou: vale o comprovado, o resto é falta parcial (ver `pares_comprovados`).
+    pares_ok = pares_comprovados(marcas, periodos)
+    if pares_ok is not None:
+        r.trabalhado = _comprovado(pares_ok, periodos)
+        r.debito = max(0, r.previsto - r.trabalhado)
+        if r.debito:
+            r.situacao = "FALTA_PARCIAL"
+            r.alertas.append("FALTA_PARCIAL")
+        if incompleto:              # uma batida a mais, sem par, num dia já coberto: só o aviso
+            r.alertas.append("BATIDA_FALTANDO")
         return r
 
     esperadas = [m for p in periodos for m in p]
@@ -275,7 +336,7 @@ def resumo_do_periodo(dias: list[Dia]) -> dict:
         "debito": sum(d.debito for d in dias),
         "faltas": sum(1 for d in dias if d.falta),
         "abonados": sum(1 for d in dias if d.abonado),
-        "incompletos": sum(1 for d in dias if d.situacao == "INCOMPLETO"),
+        "incompletos": sum(1 for d in dias if d.situacao in SITUACOES_PARCIAIS),
         "noturno_reduzido": sum(d.noturno_reduzido for d in dias),
         "alertas": sorted({a for d in dias for a in d.alertas}),
     }
