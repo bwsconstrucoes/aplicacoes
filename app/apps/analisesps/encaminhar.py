@@ -11,7 +11,16 @@ valor, tipo de despesa, centro de custo, credor, CPF/CNPJ, responsável, forma
 de pagamento — e, a depender da forma, a numeração do boleto ou a chave Pix
 (…) por padrão manda tudo; desmarca o que não quer mandar."*
 
-COMO SAI: pelo WhatsApp DE QUEM CLICA. A tela monta a mensagem e abre o
+⚠️ DESDE 29/10/2026 HÁ O "ENVIAR", e ele é o caminho principal. O dono: *"não é
+para abrir o WhatsApp (…) é para ter um botão enviar (…) eu quero enviar essas
+mensagens."* A mensagem sai pelo WhatsApp DA EMPRESA (Z-API), pela central de
+mensagens do ERP (`notificador`, tipo "analisesps.encaminhar"): respeita a chave
+geral do WhatsApp e o teto por hora/dia da tela ERP › Mensagens, e fica no
+registro de lá. Com o WhatsApp desligado lá, NÃO envia — e a janela diz isso.
+O que vem abaixo ("pelo WhatsApp de quem clica") continua valendo para o
+"Abrir no meu WhatsApp", que serve para grupo e para conferir antes.
+
+COMO SAI (o caminho de antes): pelo WhatsApp DE QUEM CLICA. A tela monta a mensagem e abre o
 WhatsApp (o app, ou o WhatsApp Web) já com o texto na conversa do contato
 escolhido — a pessoa só confere e aperta enviar. Anexo e comprovante vão como
 LINK dentro da mensagem (o de baixar, quando o serviço tem um).
@@ -233,6 +242,36 @@ def remover_contato(telefone) -> dict:
     tel = telefone_normalizado(telefone) or re.sub(r"\D", "", str(telefone or ""))
     _gravar([c for c in listar_contatos() if c.get("telefone") != tel])
     return {"ok": True, "contatos": listar_contatos()}
+
+
+FINALIDADE = "analisesps.encaminhar"
+
+
+def enviar(telefone, texto, quem: str = "") -> dict:
+    """Manda a mensagem pelo WhatsApp da empresa. `{ok, erro}`; `ok` só quando
+    o envio foi aceito. Nunca levanta."""
+    tel = telefone_normalizado(telefone)
+    if not tel:
+        return {"ok": False, "erro": "Escolha para quem enviar (um contato da lista)."}
+    if not str(texto or "").strip():
+        return {"ok": False, "erro": "Nada marcado para mandar."}
+    try:
+        from app.apps.notificador import enviar_whatsapp
+        r = enviar_whatsapp(tel, texto, finalidade=FINALIDADE) or {}
+    except Exception as e:  # noqa: BLE001 — a janela diz o que houve
+        logger.exception("Encaminhar: falhou o envio pelo WhatsApp")
+        return {"ok": False, "erro": f"O envio falhou: {e}"}
+    if r.get("ok"):
+        logger.info("Encaminhar: %s enviou SP(s) para %s pelo WhatsApp da empresa.",
+                    quem or "?", tel[-4:])
+        return {"ok": True}
+    detalhe = str(r.get("detalhe") or r.get("erro") or "")
+    if r.get("ok") is None:
+        return {"ok": False, "erro": (
+            "Não enviado: o WhatsApp da empresa não está liberado para este envio — "
+            f"{detalhe or 'canal desligado'}. Ligue em ERP › Mensagens (a chave geral "
+            "do WhatsApp e o tipo \"Encaminhar SP\"), ou use \"Abrir no meu WhatsApp\".")}
+    return {"ok": False, "erro": f"O WhatsApp recusou o envio: {detalhe or 'sem detalhe'}."}
 
 
 def link_whatsapp(telefone, texto) -> str:

@@ -36,6 +36,16 @@ no próprio código.
 
 ---
 
+## 29/10/2026 — um tipo novo no catálogo, vindo do chat do Análise de SPs: "Encaminhar SP"
+
+- O dono pediu que a janela Encaminhar (Solicitações e Lote) ENVIE a mensagem, em
+  vez de abrir o WhatsApp de quem clica. O envio passa pelo `notificador` com a
+  finalidade `analisesps.encaminhar` (módulo "Análise de SPs", política
+  **Só WhatsApp**): obedece à chave geral do WhatsApp e ao teto da tela, e fica no
+  registro. Com a chave geral desligada, NÃO sai — a janela manda ligar aqui.
+- Só a linha no `CATALOGO` (`core.py`) e o teste do catálogo; nada mais desta área
+  mudou. Detalhes: `app/apps/analisesps/HISTORICO.md`, leva 243.
+
 ## 28/10/2026 — um tipo novo no catálogo, vindo do chat do Ponto: "Pedido do ponto negado"
 
 Mudança pequena, feita pelo chat do Ponto e registrada aqui porque o catálogo é desta área: a

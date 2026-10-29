@@ -12244,6 +12244,23 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 243 — Encaminhar: o botão ENVIAR (29/10/2026)
+
+- *"Tem um botão abrir no WhatsApp. Eu não entendi. (…) É para ter um botão
+  enviar. Eu não quero abrir o WhatsApp, eu quero enviar essas mensagens."*
+- **Feito:** botão "Enviar" na janela Encaminhar: manda a mesma mensagem do
+  "Copiar" ao contato escolhido, pelo WhatsApp DA EMPRESA (Z-API), via a central
+  de mensagens do ERP — tipo novo "Encaminhar SP" (`analisesps.encaminhar`,
+  política Só WhatsApp). Pede confirmação; precisa de um contato da lista.
+  "Abrir no meu WhatsApp" ficou como secundário (serve para grupo).
+- **Decisão que isto reverte:** em 10/10 a escolha foi NÃO usar o robô — o número
+  é o mesmo dos avisos do ponto e do ERP, já teve bloqueio por volume, e mandar
+  documento a fornecedor é escrever em nome da empresa. O dono pediu o envio; o
+  que segura o risco é a central: chave geral do WhatsApp, teto por hora/dia e
+  registro. **Com a chave geral desligada na tela ERP › Mensagens, NÃO envia** — a
+  janela diz isso. Anexo e comprovante vão como LINK dentro do texto (como antes),
+  não como arquivo.
+
 #### Leva 242 — Baixar anexos das SPs marcadas (26/10/2026)
 
 - **Levas 241 e 242 publicadas em 27/10/2026** (suíte inteira verde em 26/10: 9405

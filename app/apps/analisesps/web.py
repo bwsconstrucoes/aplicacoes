@@ -1506,6 +1506,21 @@ def encaminhar_mensagem():
             "link": encaminhar.link_whatsapp(dados.get("telefone"), texto)}
 
 
+@bp.route("/api/encaminhar/enviar", methods=["POST"])
+@exige_operador
+def encaminhar_enviar():
+    """ENVIA a mensagem pelo WhatsApp da empresa (29/10/2026) — a mesma montagem
+    do "Copiar", sem abrir o WhatsApp de ninguém. Ver `encaminhar.enviar`."""
+    from . import encaminhar
+    resposta = encaminhar_mensagem()
+    if isinstance(resposta, tuple) or not resposta.get("ok"):
+        return resposta
+    dados = request.get_json(silent=True) or {}
+    r = encaminhar.enviar(dados.get("telefone"), resposta["texto"],
+                          quem=auth.nome_atual() or "")
+    return r if r.get("ok") else (r, 400)
+
+
 @bp.route("/api/encaminhar/contatos", methods=["POST"])
 @exige_operador
 def encaminhar_contatos():

@@ -108,6 +108,7 @@ TODAS_AS_TELAS = [
     ("POST", "/analisesps/api/sp/123/comprovante"),
     ("GET", "/analisesps/arquivo/ver"),
     ("POST", "/analisesps/api/encaminhar/mensagem"),
+    ("POST", "/analisesps/api/encaminhar/enviar"),
     ("POST", "/analisesps/api/encaminhar/contatos"),
     ("GET", "/analisesps/relatorio"),
     ("GET", "/analisesps/calendario"),
