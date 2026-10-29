@@ -61,6 +61,10 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1zy. **No ramo, esperando o "pode" (29/10/2026, noite) — COM A MIGRAÇÃO 017 DO PONTO**: a seção **Licenças e
+   abonos** na Configuração (ver, cadastrar, excluir, e se cada tipo abona as horas) e a **barra de filtros que
+   abre e fecha** (Validações, e o bloco Funcionários em todas as telas). Ao juntar, apertar "Aplicar
+   atualizações do ponto" (a 017); sem ela, os abonos continuam os dois de sempre e toda licença abona.
 1zx. **Publicado em 29/10/2026** (com o "pode" do dono; junção `155f040`) — **COM A MIGRAÇÃO 016 DO PONTO**: a negativa no espelho do
    ERP; o WhatsApp da negativa que não saía (a fila dormia antes da mensagem vencer); o **aviso de obra
    suspeita** no pedido de ajuste; e o **DP corrigindo a obra** do pedido que ainda espera decisão. Ao juntar,
@@ -354,6 +358,37 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 29/10/2026 (noite) — Licenças e abonos numa tela, e a barra de filtros que abre e fecha (migração 017)
+
+**Os tipos de ausência** (`core/tipos_ausencia.py`). O dono: *"tem as licenças e afastamentos por lei, e tem as
+demais (…) mas não tem nenhum canto no sistema que a gente possa visualizar e até cadastrar novas (…) eu tenho que
+sempre estar pedindo por aqui (…) e mesmo excluir alguma. E tem que poder configurar se abona ou não abona horas."*
+As licenças da lei já tinham quadro, mas escondido no fim de "Jornada"; os abonos (viagem, dispensa) eram fixos
+no código.
+- Configuração ganhou a seção **Licenças e abonos** ("Jornada e licenças" virou "Jornada e feriados"), com dois
+  quadros: as **licenças da lei** (como antes, mais a coluna "Abona as horas?" e "excluir") e os **abonos da
+  empresa** (`ponto.tipos_abono`, **migração 017**, com viagem e dispensa já cadastrados): "+ Novo abono",
+  ajustar, excluir. O "Lançar afastamento" e o "Abonar a falta" do Quadro passam a listar os abonos de lá.
+- **Abona as horas?** "Sim": o dia não é descontado (como era). "Não": o dia aparece justificado, com o nome, mas
+  as horas são descontadas — a mesma regra que o dono aprovou para a declaração de comparecimento com "nada"
+  (27/10/2026). No relatório de ausências justificadas, o tipo que não abona não conta dia abonado.
+- **Excluir**: o tipo nunca usado sai de vez; o já usado em pedido é **desligado** (sai das listas; os pedidos
+  antigos mantêm o nome).
+- Só o DP (`aprovar_afastamento`) cadastra, ajusta e exclui. Abono desconhecido ou desligado é recusado no pedido.
+- **Os testes** limpam as tabelas do ponto entre um e outro, menos as de catálogo: `tipos_abono` entrou nessa
+  exceção (como `tipos_licenca`), e o teste novo devolve o catálogo como estava.
+
+**A barra de filtros que abre e fecha.** O dono: *"o filtro está muito extenso, você tem que ficar rolando o
+sidebar. Dá uma olhadinha como está o filtro lá da Análise de SPs: a gente clica, expande e seleciona (…) e tem que
+ser pesquisável."* Cada lista virou um bloco que abre com um clique (o mesmo estilo dos filtros do ERP, `.filtro`
+do erp.css), com o número de marcados no cabeçalho — fechado, dá para ver o que está valendo — e que abre sozinho
+na primeira vez se já vier algo marcado. Nas Validações: "O quê", "Confiança do ajuste" e "Motivo" (com busca);
+a pessoa, as datas e a obra continuam à vista no topo. No bloco **Funcionários** (Quadro, Validações, Relatórios):
+obras do cadastro, bateu nas obras, funções e escalas (todas com busca), situação e tipo de pessoa.
+- **Testes**: `tests/test_ponto_tipos_ausencia_banco.py`. Ensaio no navegador: a barra (abrir, buscar, marcar, o
+  número no cabeçalho, fechar) e a seção nova (cadastrar um abono que não abona).
+- **Não verificado no navegador**: o "Lançar afastamento" com a lista nova de abonos (coberto pela rota no teste).
 
 ## 29/10/2026 (tarde) — A obra errada no ajuste: o aviso, e o DP corrigindo o pedido (migração 016)
 

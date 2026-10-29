@@ -28,10 +28,20 @@
 {# Uma lista de marcar, com busca (28/10/2026, o dono: "para obras é mandatório poder selecionar
    mais de uma, mesma coisa para funções e o que mais precisar — dezenas de obras ou funções,
    escolher somente uma ou todas não tem sentido"). Nada marcado = todas. #}
+{# O BLOCO QUE ABRE E FECHA (29/10/2026, o dono: "o filtro está muito extenso (…) você tem que ficar rolando
+   o sidebar. Dá uma olhadinha como está o filtro lá da Análise de SPs: a gente clica, expande e seleciona").
+   O estilo é o do ERP (.filtro, erp.css); o número no cabeçalho diz quantos estão marcados — com o bloco
+   fechado, dá para ver o que está valendo. Abre sozinho, na primeira vez, se já vier algo marcado. #}
+{% macro bloco(id, titulo) %}
+  <div class="filtro" id="{{ id }}"><button class="filtro-cab" type="button"><span>{{ titulo }}</span>
+      <span class="filtro-badge" id="{{ id }}-n" hidden></span><span class="seta">▾</span></button>
+    <div class="filtro-cont">{{ caller() }}</div></div>
+{% endmacro %}
 {% macro lista_marcavel(px, chave, rotulo, busca) %}
-  <div class="campo" style="margin-top:8px"><label>{{ rotulo }} <span class="qtd" id="{{ px }}-fp-{{ chave }}-qtd"></span></label>
-    <input id="{{ px }}-fp-{{ chave }}-busca" placeholder="{{ busca }}" autocomplete="off" data-sem-mascara data-sem-busca>
-    <div class="fp-lista" id="{{ px }}-fp-{{ chave }}"><small class="suave">carregando…</small></div></div>
+  {% call bloco(px ~ "-fp-" ~ chave ~ "-bloco", rotulo) %}
+    <input id="{{ px }}-fp-{{ chave }}-busca" placeholder="{{ busca }}" autocomplete="off" data-sem-mascara data-sem-busca style="width:100%">
+    <div class="fp-lista" id="{{ px }}-fp-{{ chave }}"><small class="suave">carregando…</small></div>
+  {% endcall %}
 {% endmacro %}
 {% macro filtro_pessoas(px, com_busca=True, com_bateu=True, com_escala=True, com_situacao=True, com_tipos=True) %}
   <h3 class="qd-grupo">Funcionários <button class="link-btn fp-limpar" type="button" id="{{ px }}-fp-limpar">limpar</button></h3>
@@ -41,11 +51,11 @@
   {% if com_bateu %}{{ lista_marcavel(px, "obra-bat", "Bateu nas obras (no período)", "buscar obra") }}{% endif %}
   {{ lista_marcavel(px, "funcoes", "Funções", "buscar função") }}
   {% if com_escala %}{{ lista_marcavel(px, "escalas", "Escalas", "buscar escala") }}{% endif %}
-  {% if com_situacao %}<div class="campo" style="margin-top:8px"><label for="{{ px }}-fp-sit">Situação no cadastro</label>
-    <select id="{{ px }}-fp-sit" data-sem-busca><option value="">Todas</option>
-      <option value="ATIVO">Ativo</option><option value="AFASTADO">Afastado</option></select></div>{% endif %}
-  {% if com_tipos %}<div class="campo" style="margin-top:8px"><label>Tipo de pessoa</label>
-    <div id="{{ px }}-fp-tipos" class="qd-marcas"></div></div>{% endif %}
+  {% if com_situacao %}{% call bloco(px ~ "-fp-sit-bloco", "Situação no cadastro") %}
+    <select id="{{ px }}-fp-sit" data-sem-busca aria-label="Situação no cadastro"><option value="">Todas</option>
+      <option value="ATIVO">Ativo</option><option value="AFASTADO">Afastado</option></select>{% endcall %}{% endif %}
+  {% if com_tipos %}{% call bloco(px ~ "-fp-tipos-bloco", "Tipo de pessoa") %}
+    <div id="{{ px }}-fp-tipos" class="qd-marcas"></div>{% endcall %}{% endif %}
 {% endmacro %}
 {% if aba_ponto == "ponto_hoje" %}
   <div class="filtros-cab"><h2>Dia</h2>
@@ -174,18 +184,21 @@
   </div>
   <div class="campo" style="margin-top:8px"><label for="v-obra">Obra do pedido ou da batida</label>
     <select id="v-obra"><option value="">Todas</option></select></div>
-  <h3 class="qd-grupo">O quê</h3>
-  <div id="v-tipos" class="v-tipos-lado"></div>
+  <div style="margin-top:10px"></div>
+  {% call bloco("v-tipos-bloco", "O quê") %}<div id="v-tipos" class="v-tipos-lado"></div>{% endcall %}
   {# O QUANTO O AJUSTE É CRÍVEL (28/10/2026, credibilidade.py): os críveis se aprovam em bloco. #}
-  <h3 class="qd-grupo">Confiança do ajuste</h3>
-  <div id="v-niveis" class="qd-marcas"></div>
-  <button class="btn secundario" id="v-marcar-criveis" type="button" style="width:100%; margin-top:6px"
-          title="Marca, na lista que está na tela, todos os críveis que você pode aprovar">✅ Marcar todos os críveis da lista</button>
-  <small class="suave" style="display:block; margin-top:4px">É sugestão do sistema: confira os motivos de cada um antes de aprovar.</small>
+  {% call bloco("v-niveis-bloco", "Confiança do ajuste") %}
+    <div id="v-niveis" class="qd-marcas"></div>
+    <button class="btn secundario" id="v-marcar-criveis" type="button" style="width:100%; margin-top:6px"
+            title="Marca, na lista que está na tela, todos os críveis que você pode aprovar">✅ Marcar todos os críveis da lista</button>
+    <small class="suave" style="display:block; margin-top:4px">É sugestão do sistema: confira os motivos de cada um antes de aprovar.</small>
+  {% endcall %}
   {# O MOTIVO, EM CATEGORIAS (28/10/2026, core/motivos.py): o que mandou a batida para a conferência
      (rosto, internet, fora da área, borda…) e o que o ajuste tem a favor ou pede de atenção. #}
-  <h3 class="qd-grupo">Motivo</h3>
-  <div id="v-motivos" class="qd-marcas"></div>
+  {% call bloco("v-motivos-bloco", "Motivo") %}
+    <input id="v-motivos-busca" placeholder="buscar motivo" autocomplete="off" data-sem-mascara data-sem-busca style="width:100%">
+    <div id="v-motivos" class="qd-marcas" style="margin-top:4px"></div>
+  {% endcall %}
   {{ filtro_pessoas("v", com_busca=False) }}
   <div class="cartao-dica" style="margin-top:14px">Com algum filtro de funcionário escolhido, ficam só os
     itens dessas pessoas (o que não é de uma pessoa, como o mosaico da obra, sai da lista).</div>
@@ -887,7 +900,8 @@
   <button type="button" data-secao="aparelhos">Aparelhos</button>
   <button type="button" data-secao="fotos">Fotos</button>
   <button type="button" data-secao="escalas">Escalas</button>
-  <button type="button" data-secao="jornada">Jornada e licenças</button>
+  <button type="button" data-secao="jornada">Jornada e feriados</button>
+  <button type="button" data-secao="ausencias">Licenças e abonos</button>
   <button type="button" data-secao="validacao">Quem valida</button>
   <button type="button" data-secao="mensagens">Mensagens</button>
   <button type="button" data-secao="teste">Teste</button>
@@ -916,12 +930,26 @@
   <div id="c-folha-msg" style="margin-top:8px"></div>
 </div>
 
-<div class="cartao" data-secao-card="jornada">
+{# OS TIPOS DE AUSÊNCIA NUMA SEÇÃO SÓ (29/10/2026, o dono: "não tem nenhum canto no sistema que a gente
+   possa visualizar e até cadastrar novas (…) e mesmo excluir alguma (…) configurar se abona ou não abona
+   horas"). Antes, as licenças ficavam no fim de "Jornada"; os abonos da empresa, fixos no código. #}
+<div class="cartao" data-secao-card="ausencias">
   <div class="cartao-cab"><h3>Licenças da lei</h3></div>
   <div class="cartao-dica" style="margin-top:0">As licenças que a lei garante (CLT art. 473 e leis próprias), para
     escolher no pedido em vez de escrever: o último dia sai dos dias da lei, o documento exigido aparece, e o
     sistema confere o limite por ano. A convenção coletiva pode dar mais — ajuste os dias aqui.</div>
   <div class="tabela-rolagem"><div id="c-licencas">carregando…</div></div>
+</div>
+
+<div class="cartao" data-secao-card="ausencias">
+  <div class="cartao-cab"><h3>Abonos da empresa</h3></div>
+  <div class="cartao-dica" style="margin-top:0">As justificativas que não são da lei — viagem a serviço, dispensa
+    pela empresa e as que vocês criarem. Aparecem no "Lançar afastamento" e no "Abonar a falta" do Quadro.</div>
+  <div class="tabela-rolagem"><div id="c-abonos">carregando…</div></div>
+  <div class="cartao-dica"><b>Abona as horas?</b> "Sim": o dia não é descontado. "Não": o dia aparece justificado,
+    com o nome, mas as horas são descontadas (como a declaração de comparecimento com "nada"). <b>Excluir</b>: o
+    tipo que nunca foi usado sai de vez; o que já foi usado em algum pedido é só desligado — some das listas, e os
+    pedidos antigos continuam com o nome.</div>
 </div>
 
 <div class="cartao" data-secao-card="validacao">
@@ -1774,6 +1802,17 @@ async function bloquearNoPainel(id) {
 // O FILTRO DE FUNCIONÁRIOS (27/10/2026) — o mesmo bloco da barra em todas as telas
 // (macro `filtro_pessoas`). As opções vêm de um endereço só; `valores()` devolve o
 // filtro no formato que o servidor entende (filtro_pessoas.py).
+// O bloco da barra que abre e fecha (macro `bloco`): o clique no cabeçalho, e o número de marcados.
+document.addEventListener("click", e => {
+  const cab = e.target.closest("aside .filtro-cab");
+  if (cab && cab.closest(".filtro")) cab.closest(".filtro").classList.toggle("aberto");
+});
+function marcarBloco(id, n) {
+  const b = els(id), q = els(`${id}-n`);
+  if (!b || !q) return;
+  q.textContent = n || ""; q.hidden = !n;
+  if (n && !b.dataset.abriu) { b.classList.add("aberto"); b.dataset.abriu = "1"; }   // só na primeira vez
+}
 class FiltroPessoas {
   constructor(px, {aoMudar = null, aoEnter = null} = {}) {
     this.px = px; this.aoMudar = aoMudar; this.opcoes = null;
@@ -1783,7 +1822,7 @@ class FiltroPessoas {
     if (el("busca") && aoEnter) el("busca").addEventListener("keydown", e => { if (e.key === "Enter") aoEnter(); });
     if (el("busca") && !aoEnter) el("busca").addEventListener("input", () => { clearTimeout(this.espera); this.espera = setTimeout(() => this.mudou(), 300); });
     Object.keys(this.marcados).forEach(k => { if (el(`${k}-busca`)) el(`${k}-busca`).addEventListener("input", () => this.desenharLista(k)); });
-    if (el("sit")) el("sit").addEventListener("change", () => this.mudou());
+    if (el("sit")) el("sit").addEventListener("change", () => { this.contarExtras(); this.mudou(); });
     if (el("limpar")) el("limpar").addEventListener("click", () => { this.limpar(); this.mudou(); });
   }
   get funcoes() { return this.marcados.funcoes; }
@@ -1814,7 +1853,11 @@ class FiltroPessoas {
       this.contar(k); this.mudou(); }));
     this.contar(k);
   }
-  contar(k) { const q = this.el(`${k}-qtd`); if (q) q.textContent = this.marcados[k].size ? `${this.marcados[k].size} marcada(s)` : ""; }
+  contar(k) { marcarBloco(`${this.px}-fp-${k}-bloco`, this.marcados[k].size); }
+  contarExtras() {
+    marcarBloco(`${this.px}-fp-sit-bloco`, this.el("sit") && this.el("sit").value ? 1 : 0);
+    marcarBloco(`${this.px}-fp-tipos-bloco`, document.querySelectorAll(`#${this.px}-fp-tipos [data-fp-tipo]:checked`).length);
+  }
   // `contagem` vem da montagem (quantos há de cada tipo no recorte); sem ela, a das opções.
   desenharTipos(contagem) {
     if (!this.opcoes || !this.el("tipos")) return;
@@ -1822,7 +1865,8 @@ class FiltroPessoas {
     this.el("tipos").innerHTML = this.opcoes.tipos.map(t => `<label class="opcao"><input type="checkbox" data-fp-tipo="${t.codigo}"
       ${ligadas.has(t.codigo) ? "checked" : ""}><span class="rotulo">${escapar(t.rotulo)}
       <span class="qtd">${contagem ? (contagem[t.codigo] || 0) : t.pessoas}</span></span></label>`).join("");
-    this.el("tipos").querySelectorAll("[data-fp-tipo]").forEach(c => c.addEventListener("change", () => this.mudou()));
+    this.el("tipos").querySelectorAll("[data-fp-tipo]").forEach(c => c.addEventListener("change", () => { this.contarExtras(); this.mudou(); }));
+    this.contarExtras();
   }
   valores() {
     const v = s => this.el(s) ? this.el(s).value : "";
@@ -2446,6 +2490,15 @@ async function registrarCompensacao(p, depois) {
 
 // As licenças da lei (06/10/2026), para escolher o tipo em vez de escrever.
 let LICENCAS_LEI = null, OBRAS_PARA_ESCOLHER = null;
+// Os abonos da empresa (29/10/2026): os da Configuração › Licenças e abonos, não mais fixos aqui.
+let ABONOS_EMPRESA = null;
+async function abonosDaEmpresa() {
+  if (ABONOS_EMPRESA === null) {
+    try { ABONOS_EMPRESA = (await api("/erp/api/ponto/abonos")).abonos || []; } catch (e) { ABONOS_EMPRESA = []; }
+  }
+  return ABONOS_EMPRESA;
+}
+const rotuloDoAbono = a => `${a.nome} (${a.abona ? "as horas do dia são abonadas" : "o dia é justificado, mas as horas são descontadas"})`;
 async function licencasDaLei() {
   if (LICENCAS_LEI === null) {
     try { LICENCAS_LEI = (await api("/erp/api/ponto/licencas")).licencas || []; } catch (e) { LICENCAS_LEI = []; }
@@ -2497,6 +2550,7 @@ async function entregarDocumento(p, depois) {
 async function lancarAfastamento(p, depois) {
   if (!p) return;
   const lic = await licencasDaLei();
+  const abonos = await abonosDaEmpresa();
   const r = await perguntar({
     titulo: `Lançar afastamento — ${escapar(p.nome)}`,
     aviso: `Lançado por você, já entra aprovado e abona os dias. O documento de
@@ -2508,8 +2562,7 @@ async function lancarAfastamento(p, depois) {
         {valor: "FERIAS", rotulo: "Férias"},
         {valor: "AFASTAMENTO", rotulo: "Afastamento (INSS, acidente, maternidade)"},
         {valor: "DECLARACAO", rotulo: "Declaração de comparecimento (consulta, exame)"},
-        {valor: "VIAGEM", rotulo: "Viagem a serviço (as horas do dia são abonadas)"},
-        {valor: "DISPENSA", rotulo: "Dispensa pela empresa (as horas do dia são abonadas)"},
+        ...abonos.map(a => ({valor: `AB:${escapar(a.codigo)}`, rotulo: escapar(rotuloDoAbono(a))})),
         {valor: "ABONO", rotulo: "Abono (outro motivo)"}]},
       {nome: "subtipo", rotulo: "Tipo de licença", tipo: "select", valor: "", largura: 3, opcoes: opcoesDeLicenca(lic)},
       {nome: "data_inicio", rotulo: "Primeiro dia", tipo: "date", obrigatorio: true, largura: 1},
@@ -2533,10 +2586,10 @@ async function lancarAfastamento(p, depois) {
     let fim = r.data_fim;
     const l = lic.find(x => x.codigo === r.subtipo);
     if (!fim && r.tipo === "LICENCA" && l && l.dias) fim = somarDias(r.data_inicio, l.dias - 1);
-    // Viagem e dispensa são abonos com nome próprio (26/10/2026): o dia não é descontado.
-    const abonoComNome = ["VIAGEM", "DISPENSA"].includes(r.tipo);
+    // Os abonos com nome próprio (viagem, dispensa e os da Configuração): tipo ABONO com o código.
+    const abonoComNome = r.tipo.startsWith("AB:");
     await postar("/erp/api/ponto/afastamentos", {
-      tipo: abonoComNome ? "ABONO" : r.tipo, subtipo: r.tipo === "LICENCA" ? r.subtipo : abonoComNome ? r.tipo : "",
+      tipo: abonoComNome ? "ABONO" : r.tipo, subtipo: r.tipo === "LICENCA" ? r.subtipo : abonoComNome ? r.tipo.slice(3) : "",
       colaborador_id: p.id, data_inicio: r.data_inicio, hora_inicio: r.hora_inicio, hora_fim: r.hora_fim, abono: r.abono,
       data_fim: fim || r.data_inicio, descricao: r.descricao, cid: r.cid,
       medico: r.medico, crm: r.crm, documento_base64: conteudo,
@@ -3436,13 +3489,14 @@ async function qdDiaInteiro() {
 async function qdAbonar() {
   const linhas = qdMarcadas().filter(QD_SERVE.abono);
   if (!linhas.length) return;
+  const abonos = await abonosDaEmpresa();
   const r = await perguntar({titulo: `Abonar a falta — ${contar(linhas.length, "pessoa-dia", "pessoas-dia")}`,
     aviso: "A falta deixa de ser falta: o dia fica justificado (abono do DP), sem batida, e NÃO é descontado. " +
            "Use quando a pessoa não trabalhou por decisão da empresa (chuva, obra parada, equipe liberada). " +
            "Cada abono é guardado com o motivo e o seu nome.",
-    campos: [{nome: "subtipo", rotulo: "Por quê", tipo: "select", valor: "DISPENSA", largura: 6, opcoes: [
-                {valor: "DISPENSA", rotulo: "Dispensa pela empresa (chuva, obra parada, equipe liberada)"},
-                {valor: "VIAGEM", rotulo: "Viagem a serviço"}, {valor: "", rotulo: "Outro motivo"}]},
+    campos: [{nome: "subtipo", rotulo: "Por quê", tipo: "select", valor: abonos.some(a => a.codigo === "DISPENSA") ? "DISPENSA" : "", largura: 6, opcoes: [
+                ...abonos.map(a => ({valor: escapar(a.codigo), rotulo: escapar(rotuloDoAbono(a))})),
+                {valor: "", rotulo: "Outro motivo (abona as horas)"}]},
              {...QD_MOTIVO, exemplo: "ex.: chuva forte em 22/10/2026 — obra AP-01 parada, equipe liberada pelo engenheiro"}],
     textoOk: "Abonar"});
   if (!r) return;
@@ -3712,12 +3766,28 @@ function desenharNiveis() {
     return `<label class="opcao"><input type="checkbox" data-nivel="${n}" ${FILTRO.niveis.has(n) ? "checked" : ""}>
       <span class="rotulo">${ic} ${escapar(rot)} <span class="qtd">${conta[n] || 0}</span></span></label>`; }).join("")
     || `<small class="suave">nada na lista</small>`;
+  marcarBloco("v-niveis-bloco", FILTRO.niveis.size);
   els("v-niveis").querySelectorAll("[data-nivel]").forEach(c => c.addEventListener("change", () => {
     c.checked ? FILTRO.niveis.add(c.dataset.nivel) : FILTRO.niveis.delete(c.dataset.nivel);
     desenharValidacoes(); }));
 }
 // O filtro "Motivo" (28/10/2026): a contagem respeita os outros filtros, menos o próprio — o motivo
 // desmarcado continua na lista para ser marcado de novo. Marcar vários soma (um OU outro).
+// A busca dentro do bloco "Motivo": esconde as opções que não têm o texto (as marcadas ficam sempre).
+function filtrarMotivos() {
+  const t = semAcentoV((els("v-motivos-busca") || {}).value || "");
+  let cab = null, algum = false;
+  const fecharGrupo = () => { if (cab) cab.style.display = algum ? "block" : "none"; };
+  [...els("v-motivos").children].forEach(n => {
+    if (n.tagName === "SMALL") { fecharGrupo(); cab = n; algum = false; return; }
+    if (!n.matches("label.opcao")) return;
+    const ve = !t || n.querySelector("input").checked || semAcentoV(n.textContent).includes(t);
+    n.style.display = ve ? "" : "none";
+    algum = algum || ve;
+  });
+  fecharGrupo();
+}
+const semAcentoV = x => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
 function desenharMotivos() {
   const rot = VAL.motivos || {};
   const base = (VAL.itens || []).filter(i => (!FILTRO.soMinhas || i.pode_decidir)
@@ -3732,6 +3802,8 @@ function desenharMotivos() {
       <span class="rotulo">${escapar(rot[m].rotulo)} <span class="qtd">${conta[m] || 0}</span></span></label>`;
   });
   els("v-motivos").innerHTML = linhas.join("") || `<small class="suave">nada na lista</small>`;
+  filtrarMotivos();
+  marcarBloco("v-motivos-bloco", FILTRO.motivos.size);
   els("v-motivos").querySelectorAll("[data-motivo]").forEach(c => c.addEventListener("change", () => {
     c.checked ? FILTRO.motivos.add(c.dataset.motivo) : FILTRO.motivos.delete(c.dataset.motivo);
     desenharValidacoes(); }));
@@ -3810,6 +3882,7 @@ function desenharTipos() {
   const tipos = Object.keys(TIPOS_VAL).filter(t => conta[t] || FILTRO.tipos.has(t));
   els("v-tipos").innerHTML = tipos.map(t => `<button type="button" class="chip ${FILTRO.tipos.has(t) ? "ligado" : ""}"
       data-tipo="${t}" aria-pressed="${FILTRO.tipos.has(t)}">${escapar(TIPOS_VAL[t])} <b>${conta[t] || 0}</b></button>`).join("");
+  marcarBloco("v-tipos-bloco", FILTRO.tipos.size);
   els("v-tipos").querySelectorAll("[data-tipo]").forEach(b => b.addEventListener("click", () => {
     const t = b.dataset.tipo;
     if (FILTRO.tipos.has(t)) FILTRO.tipos.delete(t); else FILTRO.tipos.add(t);
@@ -4252,6 +4325,7 @@ els("v-so-minhas").addEventListener("change", () => {
   guardarFiltrosNoEndereco();
   desenharValidacoes();
 });
+if (els("v-motivos-busca")) els("v-motivos-busca").addEventListener("input", filtrarMotivos);
 els("v-limpar").addEventListener("click", () => {
   els("v-obra").value = ""; els("v-de").value = ""; els("v-ate").value = ""; els("v-busca").value = "";
   FILTRO.tipos.clear(); FILTRO.niveis.clear(); FILTRO.motivos.clear();
@@ -6816,7 +6890,7 @@ function anosParaEscolher() {
 async function carregarTudoMenosConfig() {
   await Promise.all([carregarEscalas(), carregarEscalasDasPessoas(), carregarFeriados(), carregarCompetencias(), carregarAparelhos(),
                     carregarCercas(), carregarQuemValida(), carregarRegistro(), carregarObrasBase(),
-                    carregarExcecoes(), carregarEnsaio(), carregarLicencas(), carregarRosto()]);
+                    carregarExcecoes(), carregarEnsaio(), carregarLicencas(), carregarAbonos(), carregarRosto()]);
 }
 
 // --------------------------------------------- conferência do rosto (06/10/2026)
@@ -7100,7 +7174,7 @@ const FC_FOTOS = new FiltroDaLista("cff", {busca: "código ou nome da obra", dim
 const FILTROS_CONFIG = {pessoas: FC_PESSOAS, escalas: FC_ESCALAS, obras: FC_OBRAS, aparelhos: FC_APARELHOS, fotos: FC_FOTOS};
 const TITULO_SECAO = {pessoas: "Pessoas", escalas: "Escalas", obras: "Obras e cerca", aparelhos: "Aparelhos", fotos: "Fotos"};
 
-const SECOES = ["geral", "pessoas", "obras", "aparelhos", "fotos", "escalas", "jornada", "validacao", "mensagens", "teste"];
+const SECOES = ["geral", "pessoas", "obras", "aparelhos", "fotos", "escalas", "jornada", "ausencias", "validacao", "mensagens", "teste"];
 function mostrarSecao(secao) {
   if (!SECOES.includes(secao)) secao = "geral";
   document.querySelectorAll("[data-secao-card]").forEach(c => { c.hidden = c.dataset.secaoCard !== secao; });
@@ -7127,17 +7201,80 @@ async function carregarLicencas() {
   const lista = d.licencas || [];
   alvo.innerHTML = `<table><thead><tr><th class="sem-ordem">Licença</th><th class="sem-ordem">Base legal</th>
       <th class="sem-ordem direita">Dias</th><th class="sem-ordem direita">Vezes em 12 meses</th>
-      <th class="sem-ordem">Documento</th><th class="sem-ordem">Situação</th><th class="sem-ordem"></th></tr></thead><tbody>
+      <th class="sem-ordem">Documento</th><th class="sem-ordem">Abona as horas?</th><th class="sem-ordem">Situação</th><th class="sem-ordem"></th></tr></thead><tbody>
     ${lista.map(l => `<tr><td><b>${escapar(l.nome)}</b></td><td>${escapar(l.base_legal || "—")}</td>
       <td class="dados direita">${l.dias ?? "o do documento"}</td><td class="dados direita">${l.limite_ano ?? "—"}</td>
       <td>${l.exige_documento ? escapar(l.documento) : `<span class="suave">opcional</span>`}</td>
+      <td>${l.abona ? `<span class="selo aprovado">sim</span>` : `<span class="selo bloqueado">não — desconta</span>`}</td>
       <td>${l.ativo ? `<span class="selo aprovado">em uso</span>` : `<span class="selo outro">desligada</span>`}</td>
-      <td>${PODE_DP ? `<button class="link-btn" type="button" data-licenca="${escapar(l.codigo)}">ajustar</button>` : ""}</td></tr>`).join("")}
+      <td>${PODE_DP ? `<button class="link-btn" type="button" data-licenca="${escapar(l.codigo)}">ajustar</button>
+        <button class="link-btn" type="button" data-excluir-tipo="LICENCA" data-codigo="${escapar(l.codigo)}" data-nome="${escapar(l.nome)}">excluir</button>` : ""}</td></tr>`).join("")}
     </tbody></table>
     ${PODE_DP ? `<div style="margin-top:8px"><button class="btn secundario" type="button" id="c-licenca-nova">+ Licença da convenção</button></div>` : ""}`;
   alvo.querySelectorAll("[data-licenca]").forEach(b => b.addEventListener("click", () =>
     ajustarLicenca(lista.find(l => l.codigo === b.dataset.licenca))));
   if (els("c-licenca-nova")) els("c-licenca-nova").addEventListener("click", () => ajustarLicenca(null));
+  ligarExcluirTipo(alvo, carregarLicencas);
+}
+
+// ------------------------------------------- abonos da empresa (29/10/2026, tipos_ausencia.py)
+async function carregarAbonos() {
+  const alvo = els("c-abonos");
+  if (!alvo) return;
+  let d;
+  try { d = await api("/erp/api/ponto/abonos?todas=1"); } catch (e) { erroNoCartao("c-abonos", e); return; }
+  if (!d.disponivel) { alvo.innerHTML = `<div class="aviso alerta">Aplique as atualizações do ponto para cadastrar abonos.</div>`; return; }
+  const lista = d.abonos || [];
+  alvo.innerHTML = `<table><thead><tr><th class="sem-ordem">Abono</th><th class="sem-ordem">Abona as horas?</th>
+      <th class="sem-ordem">Documento</th><th class="sem-ordem">Situação</th><th class="sem-ordem"></th></tr></thead><tbody>
+    ${lista.map(a => `<tr><td><b>${escapar(a.nome)}</b></td>
+      <td>${a.abona ? `<span class="selo aprovado">sim</span>` : `<span class="selo bloqueado">não — desconta</span>`}</td>
+      <td>${a.exige_documento ? "obrigatório" : `<span class="suave">opcional</span>`}</td>
+      <td>${a.ativo ? `<span class="selo aprovado">em uso</span>` : `<span class="selo outro">desligado</span>`}</td>
+      <td>${PODE_DP ? `<button class="link-btn" type="button" data-abono="${escapar(a.codigo)}">ajustar</button>
+        <button class="link-btn" type="button" data-excluir-tipo="ABONO" data-codigo="${escapar(a.codigo)}" data-nome="${escapar(a.nome)}">excluir</button>` : ""}</td></tr>`).join("")
+      || `<tr><td colspan="5" class="suave">Nenhum abono cadastrado.</td></tr>`}
+    </tbody></table>
+    ${PODE_DP ? `<div style="margin-top:8px"><button class="btn secundario" type="button" id="c-abono-novo">+ Novo abono</button></div>` : ""}`;
+  alvo.querySelectorAll("[data-abono]").forEach(b => b.addEventListener("click", () =>
+    ajustarAbono(lista.find(a => a.codigo === b.dataset.abono))));
+  if (els("c-abono-novo")) els("c-abono-novo").addEventListener("click", () => ajustarAbono(null));
+  ligarExcluirTipo(alvo, carregarAbonos);
+}
+async function ajustarAbono(a) {
+  const sim = v => [{valor: "1", rotulo: "Sim"}, {valor: "0", rotulo: "Não"}];
+  const r = await perguntar({titulo: a ? `Ajustar — ${escapar(a.nome)}` : "Novo abono da empresa",
+    aviso: "\"Abona as horas\" = o dia não é descontado. Se não abona, o dia aparece justificado, mas as horas são descontadas.",
+    campos: [
+      {nome: "nome", rotulo: "Nome", valor: a ? escapar(a.nome) : "", largura: 6, obrigatorio: !a, exemplo: "ex.: Treinamento externo"},
+      {nome: "abona", rotulo: "Abona as horas?", tipo: "select", valor: !a || a.abona ? "1" : "0", largura: 2,
+       opcoes: [{valor: "1", rotulo: "Sim — o dia não é descontado"}, {valor: "0", rotulo: "Não — desconta as horas"}]},
+      {nome: "exige_documento", rotulo: "Documento obrigatório?", tipo: "select", valor: a && a.exige_documento ? "1" : "0", largura: 2, opcoes: sim()},
+      {nome: "ativo", rotulo: "Situação", tipo: "select", valor: !a || a.ativo ? "1" : "0", largura: 2,
+       opcoes: [{valor: "1", rotulo: "Em uso"}, {valor: "0", rotulo: "Desligado"}]},
+    ], textoOk: "Salvar"});
+  if (!r) return;
+  try {
+    await postar(`/erp/api/ponto/abonos/${encodeURIComponent(a ? a.codigo : "novo")}`, {
+      nome: r.nome, abona: r.abona === "1", exige_documento: r.exige_documento === "1", ativo: r.ativo === "1"});
+    ABONOS_EMPRESA = null;
+    aviso("mensagem", "Abono salvo.", "ok");
+    carregarAbonos();
+  } catch (e) { falhou(e); }
+}
+function ligarExcluirTipo(alvo, depois) {
+  alvo.querySelectorAll("[data-excluir-tipo]").forEach(b => b.addEventListener("click", async () => {
+    const r = await perguntar({titulo: `Excluir — ${escapar(b.dataset.nome)}`,
+      aviso: "Se nunca foi usado, sai de vez. Se já foi usado em algum pedido, é só desligado: some das listas de " +
+             "escolha, e os pedidos antigos continuam com o nome.", campos: [], textoOk: "Excluir"});
+    if (!r) return;
+    try {
+      const d = await postar(`/erp/api/ponto/tipos-ausencia/${b.dataset.excluirTipo}/${encodeURIComponent(b.dataset.codigo)}/excluir`, {});
+      ABONOS_EMPRESA = null; LICENCAS_LEI = null;
+      aviso("mensagem", d.resultado === "EXCLUIDO" ? "Excluído." : "Já tinha sido usado em pedido: foi desligado (sai das listas).", "ok");
+      depois();
+    } catch (e) { falhou(e); }
+  }));
 }
 
 async function ajustarLicenca(l) {
@@ -7154,13 +7291,16 @@ async function ajustarLicenca(l) {
        largura: 1, opcoes: [{valor: "1", rotulo: "Sim"}, {valor: "0", rotulo: "Não"}]},
       {nome: "ativo", rotulo: "Situação", tipo: "select", valor: !l || l.ativo ? "1" : "0", largura: 1,
        opcoes: [{valor: "1", rotulo: "Em uso"}, {valor: "0", rotulo: "Desligada"}]},
+      {nome: "abona", rotulo: "Abona as horas?", tipo: "select", valor: !l || l.abona !== false ? "1" : "0", largura: 2,
+       opcoes: [{valor: "1", rotulo: "Sim — o dia não é descontado"}, {valor: "0", rotulo: "Não — desconta as horas"}]},
     ], textoOk: "Salvar"});
   if (!r) return;
   const codigo = l ? l.codigo : r.codigo;
   try {
     await postar(`/erp/api/ponto/licencas/${encodeURIComponent(codigo)}`, {
       nome: r.nome, base_legal: r.base_legal, dias: r.dias, limite_ano: r.limite_ano, documento: r.documento,
-      exige_documento: r.exige_documento === "1", ativo: r.ativo === "1"});
+      exige_documento: r.exige_documento === "1", ativo: r.ativo === "1", abona: r.abona === "1"});
+    LICENCAS_LEI = null;
     aviso("mensagem", "Licença salva.", "ok");
     carregarLicencas();
   } catch (e) { falhou(e); }

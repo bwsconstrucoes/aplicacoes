@@ -47,6 +47,14 @@ ROTULO_TIPO = {
 SUBTIPOS_ABONO = {"VIAGEM": "Viagem a serviço", "DISPENSA": "Dispensa pela empresa"}
 
 
+def _nao_abonam(conn: Connection) -> set:
+    from . import tipos_ausencia
+    try:
+        return tipos_ausencia.nao_abonam(conn)
+    except Exception:  # noqa: BLE001 — sem a lista, tudo abona, como antes da 017
+        return set()
+
+
 def rotulo_da_ocorrencia(o: dict) -> str:
     """O nome do dia justificado: o tipo, ou o abono com nome próprio."""
     if o.get("tipo") == "ABONO" and o.get("subtipo") in SUBTIPOS_ABONO:
@@ -103,6 +111,7 @@ class Lote:
              ORDER BY id""", ids=ids, i=inicio, f=fim):
             self.ocorrencias.setdefault(int(o["colaborador_id"]), []).append(o)
         self.pre_assinaladas = _pre_assinaladas(conn)
+        self.nao_abonam = _nao_abonam(conn)
         padrao = escalas.escala_padrao(conn)
         vig: dict[int, list[dict]] = {}
         for v in db.todos(conn, """
@@ -159,6 +168,7 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
     if lote is not None:
         ocorrencias = lote.ocorrencias.get(int(colaborador_id), [])
         pre_assinaladas = lote.pre_assinaladas
+        nao_abonam = lote.nao_abonam
         vigencias = lote.escalas[int(colaborador_id)]
         calendario = lote.calendario
         rondas_do_periodo: dict = {}
@@ -172,6 +182,7 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
              ORDER BY id
         """, c=colaborador_id, i=inicio, f=fim)
         pre_assinaladas = _pre_assinaladas(conn)
+        nao_abonam = _nao_abonam(conn)
         vigencias = escalas.EscalasDaPessoa(conn, colaborador_id)
         calendario = feriados.Calendario(conn, inicio, fim)
         # As rondas surpresa do vigia noturno (13/10/2026): ficam no dia da entrada do
@@ -193,8 +204,11 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
                      and o["data_inicio"] <= dia <= o["data_fim"] and o["tipo"] in ABONO_POR_TIPO]
         # A declaração de comparecimento (27/10/2026): abona o dia todo só se quem aprovou
         # escolheu "o dia todo"; "só o período" abona os minutos declarados; "nada", nada.
-        declaracoes = [o for o in aprovadas if o["tipo"] == "ATESTADO"
-                       and o.get("subtipo") in ("DECL_PERIODO", "DECL_NADA")]
+        declaracoes = [o for o in aprovadas if (o["tipo"] == "ATESTADO"
+                       and o.get("subtipo") in ("DECL_PERIODO", "DECL_NADA"))
+                       # a licença ou o abono que a Configuração diz que NÃO abona (29/10/2026): o dia
+                       # fica justificado, mas as horas são descontadas — como a declaração com "nada"
+                       or (o["tipo"], o.get("subtipo")) in nao_abonam]
         aprovadas = [o for o in aprovadas if o not in declaracoes]
         abono_parcial = sum(int(o.get("minutos") or 0) for o in declaracoes if o["subtipo"] == "DECL_PERIODO")
         pendentes = [o for o in ocorrencias if o["status"].startswith("AGUARDANDO")
