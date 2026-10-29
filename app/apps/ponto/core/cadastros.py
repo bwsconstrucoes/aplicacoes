@@ -31,7 +31,7 @@ _SQL_COLABORADOR = """
            pc.centro_custo, pc.foto_cadastral_id,
            COALESCE(pc.regime_banco, 'SEM_BANCO') AS regime_banco, pc.banco_inicio,
            pc.acordo_documento_id,
-           COALESCE(pc.ativo, TRUE) AS ativo_no_ponto,
+           (COALESCE(pc.ativo, TRUE) AND ({nao_bate}) IS NULL) AS ativo_no_ponto, {nao_bate} AS nao_bate_motivo,
            (pc.colaborador_id IS NOT NULL) AS tem_config,
            o.codigo AS obra_codigo, o.nome AS obra_nome, {funcao} AS funcao,
            {no_registro} AS no_registro, {fase} AS fase_registro,
@@ -48,7 +48,8 @@ _SQL_COLABORADOR = """
 # os mesmos campos vêm de lá quando a pessoa está nele.
 _DO_ERP = {"nome": "c.nome", "obra_id": "c.obra_id", "situacao": "c.situacao",
            "admissao": "c.admissao", "demissao": "c.demissao", "telefone": "c.telefone",
-           "funcao": "f.nome", "no_registro": "NULL::boolean", "fase": "NULL::text", "join": ""}
+           "funcao": "f.nome", "no_registro": "NULL::boolean", "fase": "NULL::text", "join": "",
+           "nao_bate": "NULL::text"}
 
 
 def _trechos_colaborador(conn: Connection) -> dict:
@@ -156,7 +157,10 @@ def listar_colaboradores(conn: Connection, *, so_ativos: bool = True,
     sql = _sql_colaborador(conn) + " WHERE 1 = 1"
     params: dict = {"jornada_padrao": JORNADA_PADRAO}
     if so_ativos:
-        sql += f" AND ({_expr(conn, 'situacao')}) <> 'DESLIGADO' AND COALESCE(pc.ativo, TRUE)"
+        # fora das listas: o desligado, o afastado (29/10/2026: "esse pessoal é para sair") e quem não bate
+        # ponto — marcado à mão ou pela planilha (registro.nao_bate_sql)
+        sql += (f" AND ({_expr(conn, 'situacao')}) NOT IN ('DESLIGADO', 'AFASTADO') AND COALESCE(pc.ativo, TRUE)"
+                f" AND ({_expr(conn, 'nao_bate')}) IS NULL")
     if obra_id is not None:
         sql += (f" AND (({_expr(conn, 'obra_id')}) = :obra_id OR EXISTS (SELECT 1 FROM ponto.colaborador_obras co"
                 " WHERE co.colaborador_id = c.id AND co.obra_id = :obra_id))")
@@ -332,6 +336,7 @@ def colaborador_para_json(c: dict) -> dict:
         "obras_adicionais": c.get("obras_adicionais", []),
         "tipo_jornada": c["tipo_jornada"], "centro_custo": c.get("centro_custo"),
         "situacao": c["situacao"], "ativo_no_ponto": bool(c["ativo_no_ponto"]),
+        "nao_bate_motivo": c.get("nao_bate_motivo"),
         "funcao": c.get("funcao"), "no_registro": c.get("no_registro"),
         "fase_registro": c.get("fase_registro"),
         "bate_no_celular": c.get("bate_no_celular"),

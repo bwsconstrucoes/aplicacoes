@@ -46,7 +46,17 @@ def test_regras_puras_do_selo_e_do_dia():
     assert pontos_e_selo(None, None, 0, 3) == (None, None)
     assert pontos_e_selo(100, 100, 0, 3)[1]["codigo"] == "OURO"
     assert pontos_e_selo(100, None, 0, 3)[0] == 100                      # sem foto do aplicativo: só o índice
-    assert pontos_e_selo(90, 90, 5, 3) == (80, {"codigo": "BRONZE", "rotulo": "Bronze"})   # 2 ajustes a mais: −10
+    # 29/10/2026: todo ajuste tira 5 (desde o primeiro), e cada dia com batida faltando também
+    assert pontos_e_selo(90, 90, 1, 3) == (85, {"codigo": "PRATA", "rotulo": "Prata"})
+    assert pontos_e_selo(90, 90, 5, 3) == (65, {"codigo": "ATENCAO", "rotulo": "Atenção"})
+    assert pontos_e_selo(90, 90, 0, 3, incompletos=1) == pontos_e_selo(90, 90, 1, 3)  # o buraco custa o mesmo
+    from app.apps.ponto.core.qualidade import ordem_das_pessoas, pontos_da_obra
+    assert pontos_da_obra([(100, 1), (60, 19)]) == 62                     # a pessoa de 1 dia quase não pesa
+    assert pontos_da_obra([(None, 5)]) is None
+    a = {"pontos": 90, "ajustes": 0, "incompletos": 1, "faltas": 0, "dias_trabalho": 20, "entra_no_ranking": True}
+    b = {"pontos": 90, "ajustes": 1, "incompletos": 0, "faltas": 0, "dias_trabalho": 20, "entra_no_ranking": True}
+    c = {"pontos": 100, "ajustes": 0, "incompletos": 0, "faltas": 0, "dias_trabalho": 3, "entra_no_ranking": False}
+    assert sorted([c, b, a], key=ordem_das_pessoas) == [a, b, c]           # empate: menos ajustes; c tem 3 dias
     dias = [
         {"data": "2026-10-05", "situacao": "OK", "faltando": [], "batidas": [
             {"hora": "07:00", "obra": "A", "status": "VALIDA", "origem": "PWA", "tem_foto": True}]},

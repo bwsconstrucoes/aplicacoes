@@ -25,7 +25,7 @@ LONGE = "lat=-3.80&lon=-38.40&precisao=10"
 def _limpar_ponto(conn):
     tabelas = [r[0] for r in conn.execute(text(
         "SELECT tablename FROM pg_tables WHERE schemaname = 'ponto' "
-        "AND tablename NOT IN ('_migracoes', 'feriados', 'tipos_licenca')"))]
+        "AND tablename NOT IN ('_migracoes', 'feriados', 'tipos_licenca', 'tipos_abono')"))]
     conn.execute(text("TRUNCATE " + ", ".join(f'ponto."{t}"' for t in tabelas) + " RESTART IDENTITY CASCADE"))
 
 

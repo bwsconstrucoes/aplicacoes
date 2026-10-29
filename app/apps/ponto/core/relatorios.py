@@ -109,6 +109,8 @@ def justificadas(conn: Connection, quem: Quem, pessoas: list[dict], inicio: dt.d
     quer = [t for t in (tipos or []) if t in TIPOS_JUSTIFICADOS] or list(TIPOS_JUSTIFICADOS)
     por_id = {int(p["id"]): p for p in pessoas}
     ocorrencias._nomes_das_licencas(conn)
+    from . import tipos_ausencia
+    nao_abonam = tipos_ausencia.nao_abonam(conn)      # o tipo que não abona não conta dia abonado
     linhas = []
     for o in db.todos(conn, ocorrencias._SQL + """
          WHERE oc.colaborador_id = ANY(:ids) AND oc.status = 'APROVADA' AND oc.tipo = ANY(:tipos)
@@ -120,6 +122,7 @@ def justificadas(conn: Connection, quem: Quem, pessoas: list[dict], inicio: dt.d
                        "de": j["data_inicio"], "ate": j["data_fim"],
                        # a declaração que abonou só o período (ou nada) não abona dia: abona horas
                        "dias": (0 if o.get("subtipo") in ("DECL_PERIODO", "DECL_NADA", "DECLARACAO")
+                                or (o["tipo"], o.get("subtipo")) in nao_abonam
                                 else _dias_no_periodo(o["data_inicio"], o["data_fim"], inicio, fim)),
                        "horas": int(o.get("minutos") or 0) if o.get("subtipo") == "DECL_PERIODO" else 0,
                        "periodo": j.get("declaracao_periodo"),

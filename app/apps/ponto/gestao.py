@@ -1209,6 +1209,49 @@ def ponto_api_licenca_gravar(codigo: str):
     return _ok(licenca=t)
 
 
+@bp.route("/erp/api/ponto/abonos")
+@login_obrigatorio
+@permissao("ver_ponto")
+@_api
+def ponto_api_abonos():
+    """Os abonos da empresa (viagem a serviço, dispensa…), para escolher no lançamento e ajustar na
+    Configuração (29/10/2026, tipos_ausencia.py)."""
+    from .core import tipos_ausencia
+    with db.conexao() as conn:
+        return _ok(abonos=tipos_ausencia.listar_abonos(conn, so_ativos=request.args.get("todas") not in ("1", "true")),
+                   disponivel=tipos_ausencia.disponivel(conn))
+
+
+@bp.route("/erp/api/ponto/abonos/<codigo>", methods=["POST"])
+@login_obrigatorio
+@permissao("aprovar_afastamento")
+@_api
+def ponto_api_abono_gravar(codigo: str):
+    """O DP cadastra ou ajusta um abono da empresa — o nome, se abona as horas, se está em uso. `codigo`
+    "novo": o código sai do nome."""
+    from .core import tipos_ausencia
+    quem, d = _quem(), _corpo()
+    with db.conexao() as conn:
+        a = tipos_ausencia.gravar_abono(conn, "" if codigo == "novo" else codigo, d, quem.nome)
+    logger.info("Ponto: abono %s ajustado por %s — %s", a["codigo"], quem.nome, a)
+    return _ok(abono=a)
+
+
+@bp.route("/erp/api/ponto/tipos-ausencia/<grupo>/<codigo>/excluir", methods=["POST"])
+@login_obrigatorio
+@permissao("aprovar_afastamento")
+@_api
+def ponto_api_tipo_ausencia_excluir(grupo: str, codigo: str):
+    """Exclui uma licença ou um abono (29/10/2026). Já usado em algum pedido: só desliga — os pedidos
+    antigos continuam com o nome certo."""
+    from .core import tipos_ausencia
+    quem = _quem()
+    with db.conexao() as conn:
+        resultado = tipos_ausencia.excluir(conn, grupo, codigo, quem.nome)
+    logger.info("Ponto: tipo %s/%s %s por %s", grupo, codigo, resultado.lower(), quem.nome)
+    return _ok(resultado=resultado)
+
+
 @bp.route("/erp/api/ponto/rosto")
 @login_obrigatorio
 @permissao("configurar_ponto")

@@ -61,7 +61,20 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
-1zx. **No ramo, esperando o "pode" (29/10/2026) — COM A MIGRAÇÃO 016 DO PONTO**: a negativa no espelho do
+1zz0. **Publicado em 29/10/2026** (com o "pode" do dono, junto com o 1zz e o 1zy) — **SEM MIGRAÇÃO**: **quem a
+   planilha diz que não bate ponto sai do ponto** (PJ e pró-labore na coluna AY, a obra ESCRUSSAS na AA, e os
+   afastados da AX saem das listas), e **a foto da batida abre em branco** ("Carregando a foto…") em vez de
+   mostrar a anterior.
+1zz. **Publicado em 29/10/2026** (com o "pode" do dono) — **SEM MIGRAÇÃO NOVA**: a **conta da qualidade
+   com o ajuste como métrica principal** (todo ajuste tira 5 pontos, e todo dia com batida faltando também), o
+   **ranking no aplicativo** (obras com 10 funcionários ou mais, os 25 primeiros funcionários com 10 dias ou mais,
+   guardado e refeito de 2 em 2 horas) e o **espelho de um período escolhido** no aplicativo. Vai junto com o
+   1zy (que tem a 017).
+1zy. **Publicado em 29/10/2026** (com o "pode" do dono) — **COM A MIGRAÇÃO 017 DO PONTO**: a seção **Licenças e
+   abonos** na Configuração (ver, cadastrar, excluir, e se cada tipo abona as horas) e a **barra de filtros que
+   abre e fecha** (Validações, e o bloco Funcionários em todas as telas). Ao juntar, apertar "Aplicar
+   atualizações do ponto" (a 017); sem ela, os abonos continuam os dois de sempre e toda licença abona.
+1zx. **Publicado em 29/10/2026** (com o "pode" do dono; junção `155f040`) — **COM A MIGRAÇÃO 016 DO PONTO**: a negativa no espelho do
    ERP; o WhatsApp da negativa que não saía (a fila dormia antes da mensagem vencer); o **aviso de obra
    suspeita** no pedido de ajuste; e o **DP corrigindo a obra** do pedido que ainda espera decisão. Ao juntar,
    apertar "Aplicar atualizações do ponto" (a 016); sem ela, só o botão "Corrigir a obra…" não aparece.
@@ -354,6 +367,118 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 29/10/2026 (noite, terceira) — Quem a planilha diz que não bate sai do ponto, e a foto que não engana
+
+**Quem não bate ponto, pela planilha** (`registro.nao_bate_sql`). O dono: *"como ainda estamos usando a planilha de
+colaboradores como base, tem algumas pessoas que têm categorização de não bater ponto: na coluna AY, quem é PJ e
+Pró-labore; na coluna AA, quem está na obra ESCRUSSAS; e na coluna AX, quem está como Colaboradores Afastados. Esse
+pessoal é para sair, eles não batem ponto."*
+- As três colunas já vinham na cópia que a Análise de SPs guarda (`analisesps.colaborador`): AX é a **Fase Atual**
+  (`fase`), AY o **Tipo de Contrato** (`tipo_contrato` — a aba oculta da planilha mostra a mesma ordem: I = Fase,
+  J = Tipo de Contrato) e AA a **obra** (`obra_codigo`; o extenso, `obra_cadastro`, também é olhado, porque não deu
+  para confirmar de qual das duas a AA é). **Nada mudou na área da Análise de SPs.**
+- **PJ, pró-labore e ESCRUSSAS** ficam como **"não bate ponto"** — o mesmo efeito da marcação à mão: somem do
+  Quadro, das Validações, dos relatórios, do ranking e do aplicativo, e a batida é recusada com o motivo. A
+  comparação ignora acento, espaço e pontuação ("Pró-labore" = "PRO LABORE"; "ESC RUSSAS" = "ESCRUSSAS").
+  **A planilha manda**: marcar "bate ponto" à mão não vence — a janela da pessoa diz isso. Mudou na planilha,
+  muda no ponto na próxima cópia (de 2 em 2 horas).
+- **Os afastados** já não batiam (14/10/2026); agora **saem também das listas** (Quadro, Validações, relatórios,
+  ranking, lista de envio). **Escolha minha, para não desfazer a decisão de 14/10/2026** ("pedido ele continua
+  fazendo"): o afastado **continua entrando no aplicativo**, para mandar atestado e ver o mês. Quando a fase volta
+  a "ativo" na planilha, ele volta sozinho.
+- **Efeito colateral, dito**: quem foi afastado no meio do mês some do Quadro também nos dias em que trabalhou
+  antes do afastamento. O espelho dele continua abrindo pela busca de Pessoas (que diz "afastada: a Fase Atual
+  diz…") e pela janela da pessoa.
+- A busca de Pessoas explica quem não aparece por esses motivos; a Configuração › Base de pessoas ganhou o número
+  "Não batem pela planilha".
+- **Testes**: `test_a_planilha_tira_do_ponto_pj_pro_labore_escrussas_e_afastado` em `test_ponto_registro_banco.py`.
+
+**A foto da batida.** O dono: *"na hora que o modal abre, ele exibe a última foto que a gente abriu (…) você acaba
+achando que é uma foto, e na verdade depois ele carrega a outra (…) ficar carregando até exibir a foto correta."*
+A janela da foto (Espelho, Validações, Mosaico, Fotos, janela da pessoa — é uma só) agora tira a foto anterior antes
+de abrir, mostra **"Carregando a foto…"** e só mostra a foto nova quando ela terminou de chegar; se a de um clique
+anterior chegar atrasada, é ignorada. Conferido no navegador com uma foto que demora 1,5 s.
+
+## 29/10/2026 (noite, segunda) — O ajuste vira a métrica principal, o ranking no aplicativo, e o espelho de um período
+
+**A conta da qualidade** (`core/qualidade.py`). O dono perguntou como os pontos eram gerados e disse: *"ajustes é
+fundamental (…) quanto mais ajuste, pior (…) tem que ser essa a métrica principal. A gente não quer que o pessoal
+faça ajuste, quer que eles batam corretamente."* Até aqui só o ajuste **acima do limite** (3 por mês) tirava ponto —
+quem pedia 3 ajustes não perdia nada. Agora:
+- **pontos = 70% do índice de dias em dia + 30% das fotos boas − 5 por ajuste pedido (desde o primeiro) − 5 por dia
+  com batida faltando**. Os negados continuam contando. O limite configurável só decide o aviso "muitos ajustes".
+- **Por que o dia com batida faltando também tira 5** (escolha minha): sem isso, deixar o buraco sem pedir ajuste
+  sairia mais barato que pedir — e o buraco é pior para a folha. Ele já pesa no índice (o dia não está "em dia");
+  os 5 a mais igualam ao custo do ajuste.
+- **Os pontos da obra** passam a ser a **média dos pontos das pessoas**, pesada pelos dias de cada uma na obra.
+  Antes a obra só olhava os dias em dia — os ajustes nem entravam, e uma obra de uma pessoa só podia ficar em
+  primeiro. O mesmo para a equipe do responsável e para o número geral (somar as penalidades da equipe inteira
+  zeraria qualquer equipe grande).
+- **Desempate**: menos ajustes, depois menos batidas faltando, menos faltas, mais dias de trabalho.
+- **Efeito que ele vai sentir**: os pontos de todo mundo caem um pouco de uma vez (quem pedia 1 a 3 ajustes perde
+  5 a 15). Não é piora do ponto — é a régua nova.
+
+**O ranking** (`core/ranking.py`). *"Premiar as melhores obras (…) que tenham pelo menos 10 funcionários (…)
+dentro do app (…) tanto das obras quanto dos funcionários (…) demora para calcular (…) cache? (…) 25 primeiros."*
+Quem vê: *"quem bate ponto de obra"* — fiz assim: **todo mundo que entra no aplicativo** (menu "🏆 Ranking do
+ponto", no menu pessoal e no do ponto da obra).
+- **Obras**: só ganham posição as com **10 funcionários ou mais** no mês; as menores aparecem abaixo, sem posição,
+  com o asterisco explicando. **Funcionários**: os **25 primeiros** entre quem tem **10 dias de trabalho ou mais**
+  (as faltas contam como dia de trabalho previsto). Do funcionário aparecem só o primeiro e o último nome, a função
+  e a obra em que mais trabalhou — nunca o CPF. Cada pessoa vê a própria posição; quem ainda não entra vê quantos
+  dias tem. A posição dos outros não sai do servidor.
+- **Mês atual e mês passado**, em duas abas.
+- **Guardado, não calculado na hora**: a conta passa pelo espelho de todo mundo que bateu no mês, e é pesada. Ela
+  roda separada, **de 2 em 2 horas das 6h às 20h** (o mês passado, uma vez por dia — ajuste aprovado tarde ainda
+  muda o mês), acordada pelas próprias requisições do ponto, como a rotina do dia e a fila do WhatsApp. O resultado
+  fica em `ponto.parametros` ("ranking.AAAA-MM") — por isso **não precisou de migração**. A tela mostra a hora da
+  última conta; se ainda não houver conta, ela dispara uma e diz para voltar em alguns minutos.
+- Na aba **Qualidade** do ERP, a lista de obras dá posição só às que entram no ranking, com a mesma nota.
+
+**O espelho de um período, no aplicativo.** *"Hoje podemos baixar espelho PDF e imprimir a folha do mês no app.
+Preciso permitir uma seleção de um período também."* Aprovada a sugestão: ao tocar "Baixar PDF" ou "Imprimir",
+abre uma janela com **"O mês"** (como antes) ou **"Um período"** (de… até…, **até 62 dias**). A folha diz
+"dd/mm/aaaa a dd/mm/aaaa" no título e "Totais do período". Vale para o seu espelho e para o de uma pessoa da obra.
+
+- **Testes**: `tests/test_ponto_ranking_banco.py` (quem entra, os 25, a posição, o prazo da conta, o aplicativo lendo
+  o guardado e sem a posição dos outros) e os novos casos de `test_ponto_qualidade_banco.py` e
+  `test_ponto_espelho_app_banco.py`. Ensaio no navegador: a tela do ranking e a folha de um período.
+- **Não verificado com dado de verdade**: os dados de teste não têm obra com 10 pessoas nem gente com 10 dias, então
+  as listas saíram vazias (com as mensagens certas). A primeira conta de verdade acontece na produção, depois de
+  publicar — vale o dono abrir a tela no dia seguinte e conferir se a ordem faz sentido.
+- **Ficou de fora**: divulgar o ranking fora do aplicativo (mural, WhatsApp) e prêmio — decisão dele.
+
+## 29/10/2026 (noite) — Licenças e abonos numa tela, e a barra de filtros que abre e fecha (migração 017)
+
+**Os tipos de ausência** (`core/tipos_ausencia.py`). O dono: *"tem as licenças e afastamentos por lei, e tem as
+demais (…) mas não tem nenhum canto no sistema que a gente possa visualizar e até cadastrar novas (…) eu tenho que
+sempre estar pedindo por aqui (…) e mesmo excluir alguma. E tem que poder configurar se abona ou não abona horas."*
+As licenças da lei já tinham quadro, mas escondido no fim de "Jornada"; os abonos (viagem, dispensa) eram fixos
+no código.
+- Configuração ganhou a seção **Licenças e abonos** ("Jornada e licenças" virou "Jornada e feriados"), com dois
+  quadros: as **licenças da lei** (como antes, mais a coluna "Abona as horas?" e "excluir") e os **abonos da
+  empresa** (`ponto.tipos_abono`, **migração 017**, com viagem e dispensa já cadastrados): "+ Novo abono",
+  ajustar, excluir. O "Lançar afastamento" e o "Abonar a falta" do Quadro passam a listar os abonos de lá.
+- **Abona as horas?** "Sim": o dia não é descontado (como era). "Não": o dia aparece justificado, com o nome, mas
+  as horas são descontadas — a mesma regra que o dono aprovou para a declaração de comparecimento com "nada"
+  (27/10/2026). No relatório de ausências justificadas, o tipo que não abona não conta dia abonado.
+- **Excluir**: o tipo nunca usado sai de vez; o já usado em pedido é **desligado** (sai das listas; os pedidos
+  antigos mantêm o nome).
+- Só o DP (`aprovar_afastamento`) cadastra, ajusta e exclui. Abono desconhecido ou desligado é recusado no pedido.
+- **Os testes** limpam as tabelas do ponto entre um e outro, menos as de catálogo: `tipos_abono` entrou nessa
+  exceção (como `tipos_licenca`), e o teste novo devolve o catálogo como estava.
+
+**A barra de filtros que abre e fecha.** O dono: *"o filtro está muito extenso, você tem que ficar rolando o
+sidebar. Dá uma olhadinha como está o filtro lá da Análise de SPs: a gente clica, expande e seleciona (…) e tem que
+ser pesquisável."* Cada lista virou um bloco que abre com um clique (o mesmo estilo dos filtros do ERP, `.filtro`
+do erp.css), com o número de marcados no cabeçalho — fechado, dá para ver o que está valendo — e que abre sozinho
+na primeira vez se já vier algo marcado. Nas Validações: "O quê", "Confiança do ajuste" e "Motivo" (com busca);
+a pessoa, as datas e a obra continuam à vista no topo. No bloco **Funcionários** (Quadro, Validações, Relatórios):
+obras do cadastro, bateu nas obras, funções e escalas (todas com busca), situação e tipo de pessoa.
+- **Testes**: `tests/test_ponto_tipos_ausencia_banco.py`. Ensaio no navegador: a barra (abrir, buscar, marcar, o
+  número no cabeçalho, fechar) e a seção nova (cadastrar um abono que não abona).
+- **Não verificado no navegador**: o "Lançar afastamento" com a lista nova de abonos (coberto pela rota no teste).
 
 ## 29/10/2026 (tarde) — A obra errada no ajuste: o aviso, e o DP corrigindo o pedido (migração 016)
 

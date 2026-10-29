@@ -294,10 +294,15 @@ def criar(conn: Connection, quem: Quem, dados: dict, *, origem: str = "GESTAO") 
         subtipo = t["codigo"]
         if not descricao:
             descricao = t["nome"]
-    elif tipo == "ABONO" and str(dados.get("subtipo") or "").upper() in SUBTIPOS_ABONO:
-        subtipo = str(dados["subtipo"]).upper()       # viagem a serviço, dispensa pela empresa
+    elif tipo == "ABONO" and str(dados.get("subtipo") or "").strip():
+        # o abono com nome próprio: viagem a serviço, dispensa… — os da Configuração (tipos_ausencia.py)
+        from . import tipos_ausencia
+        tipos_ausencia.recarregar(conn)
+        subtipo = str(dados["subtipo"]).strip().upper()
+        if not tipos_ausencia.abono_valido(conn, subtipo):
+            raise ErroDeValidacao("escolha o abono na lista", campo="subtipo")
         if not descricao:
-            descricao = SUBTIPOS_ABONO[subtipo]
+            descricao = SUBTIPOS_ABONO.get(subtipo, subtipo)
     elif tipo == "AJUSTE_BATIDA" and dados.get("lote") and origem == "GESTAO":
         # Incluída pela gestão no quadro do ponto (21/10/2026) — falha do sistema, não
         # da pessoa: não conta contra ela na qualidade (qualidade.py).

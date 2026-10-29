@@ -31,6 +31,8 @@
                    "VIGIA_NOTURNO_2": "Vigia noturno (2 batidas)"} -%}
 {%- set comp = e.competencia|string -%}
 {%- set mes_ano = comp[5:7] ~ "/" ~ comp[0:4] -%}
+{#- o período livre (29/10/2026): o título diz o período, não o mês -#}
+{%- if e.periodo -%}{%- set mes_ano = e.inicio[8:10] ~ "/" ~ e.inicio[5:7] ~ "/" ~ e.inicio[0:4] ~ " a " ~ e.fim[8:10] ~ "/" ~ e.fim[5:7] ~ "/" ~ e.fim[0:4] -%}{%- endif -%}
 {%- set cpf = (e.pessoa.cpf or "")|string -%}
 {%- set r = e.resumo -%}
 <!doctype html>
@@ -163,7 +165,7 @@
       </tr>
     {% endfor %}
       <tr class="total">
-        <td colspan="3">Totais do mês ({{ r.dias }} dia(s) contados)</td>
+        <td colspan="3">Totais {{ "do período" if e.periodo else "do mês" }} ({{ r.dias }} dia(s) contados)</td>
         <td class="n">{{ hm(r.previsto) }}</td>
         <td class="n">{{ hm(r.trabalhado) }}</td>
         <td class="n">{{ hm(r.extra) }}</td>

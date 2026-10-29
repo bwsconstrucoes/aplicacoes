@@ -17,6 +17,7 @@ permissão" — para o número de outra pessoa não confirmar que ela existe.
 """
 from __future__ import annotations
 
+import datetime as dt
 import logging
 
 from flask import request, session
@@ -118,6 +119,27 @@ def app_api_inicio():
               # o ranking da equipe de quem responde por um ponto da obra (17/10/2026)
               "qualidade_equipe": responde_por_equipe},
         alcance=_alcance_json(alc), negativas=avisos_de_negativa)
+
+
+@bp.route("/app/api/ranking")
+@auth.exige_colaborador_ou_aparelho
+def app_api_ranking():
+    """O ranking do ponto (29/10/2026, ranking.py): as obras e os 25 primeiros funcionários, e a posição de
+    quem está vendo. Lê a conta GUARDADA — abre na hora; a conta é refeita de 2 em 2 horas."""
+    from .core import ranking
+    mes = request.args.get("mes") or "atual"
+    hoje = horario.hoje()
+    comp = f"{hoje:%Y-%m}" if mes != "anterior" else f"{(hoje.replace(day=1) - dt.timedelta(days=1)):%Y-%m}"
+    with db.conexao() as conn:
+        p = _logado(conn)
+        if not p:
+            raise NaoAutenticado("entre com o seu CPF e PIN")
+        dados = ranking.ler(conn, comp)
+    if not dados:
+        ranking.disparar_se_preciso()
+        return _ok(pronto=False, competencia=comp, na_janela=ranking.na_janela())
+    eu = (dados.get("posicoes") or {}).get(str(p["id"]))
+    return _ok(pronto=True, **{k: v for k, v in dados.items() if k != "posicoes"}, eu=eu)
 
 
 @bp.route("/app/api/obra-aviso")
@@ -313,8 +335,10 @@ def app_equipe_espelho_imprimir(colaborador_id: int):
     try:
         with db.conexao() as conn:
             ctx = _contexto(conn)
+            from .app_colaborador import periodo_pedido
+            periodo = periodo_pedido()
             competencia = request.args.get("competencia") or horario.hoje().strftime("%Y-%m")
-            _alvo(conn, ctx, colaborador_id, competencias.primeiro_dia(competencia))
+            _alvo(conn, ctx, colaborador_id, *(periodo or (competencias.primeiro_dia(competencia),)))
             logger.info("Ponto: espelho de %s aberto para imprimir por %s", colaborador_id, ctx.pessoa["nome"])
             return folha_do_espelho(conn, colaborador_id, ctx.pessoa["nome"])
     except ErroDoPonto as e:

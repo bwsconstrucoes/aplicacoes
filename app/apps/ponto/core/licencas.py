@@ -42,7 +42,9 @@ def listar(conn: Connection, *, so_ativos: bool = True) -> list[dict]:
 def para_json(l: dict) -> dict:
     return {"codigo": l["codigo"], "nome": l["nome"], "base_legal": l["base_legal"], "dias": l["dias"],
             "limite_ano": l["limite_ano"], "exige_documento": bool(l["exige_documento"]),
-            "documento": l["documento"], "ativo": bool(l["ativo"])}
+            "documento": l["documento"], "ativo": bool(l["ativo"]),
+            # abona as horas? (29/10/2026, migração 017; antes dela, toda licença abonava)
+            "abona": bool(l.get("abona", True))}
 
 
 def obter(conn: Connection, codigo: str) -> Optional[dict]:
@@ -109,4 +111,7 @@ def gravar(conn: Connection, codigo: str, dados: dict, por: str) -> dict:
     """, c=codigo, n=nome, b=str(dados.get("base_legal") or "")[:200], d=inteiro("dias", 1, 365),
          l=inteiro("limite_ano", 1, 50), e=bool(dados.get("exige_documento")),
          doc=str(dados.get("documento") or "")[:200], a=bool(dados.get("ativo", True)), p=por[:120])
+    if "abona" in dados and db.tem_coluna(conn, "tipos_licenca", "abona"):
+        db.executar(conn, "UPDATE ponto.tipos_licenca SET abona = :a WHERE codigo = :c",
+                    a=bool(dados.get("abona")), c=codigo)
     return para_json(obter(conn, codigo))

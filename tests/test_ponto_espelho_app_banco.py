@@ -51,3 +51,15 @@ def test_o_espelho_de_outra_pessoa_segue_o_alcance_da_consulta(app, mundo, carlo
     joao = _entrar_no_app(app, CPF_JOAO, monkeypatch)
     assert joao.get(f"{url}?{NA_OBRA_A}").status_code == 404
     assert CPF_CARLOS not in folha.get_data(as_text=True)
+
+
+def test_a_folha_de_um_periodo_escolhido(app, mundo, monkeypatch):
+    """29/10/2026: além do mês, um período de até 62 dias (o corte da folha, de 21 a 20)."""
+    c = _entrar_no_app(app, CPF_JOAO, monkeypatch)
+    folha = c.get("/ponto/app/espelho/imprimir?de=2026-09-21&ate=2026-10-20")
+    html = folha.get_data(as_text=True)
+    assert folha.status_code == 200 and "21/09/2026 a 20/10/2026" in html and "Totais do período" in html
+    longe = c.get("/ponto/app/espelho/imprimir?de=2026-07-01&ate=2026-10-20")
+    assert longe.status_code == 400 and "62 dias" in longe.get_data(as_text=True)
+    invertido = c.get("/ponto/app/espelho/imprimir?de=2026-10-20&ate=2026-10-01")
+    assert invertido.status_code == 400 and "antes do primeiro" in invertido.get_data(as_text=True)

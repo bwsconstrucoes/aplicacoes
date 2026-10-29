@@ -134,7 +134,50 @@ def trechos_sql(conn: Connection) -> Optional[dict]:
         "demissao": "COALESCE(r.data_saida, c.demissao)",
         "no_registro": "(r.cpf IS NOT NULL)",
         "fase": "r.fase",
+        "nao_bate": nao_bate_sql(col),
     }
+
+
+# ---------------------------------------------------------------------------
+# QUEM NÃO BATE PONTO PELA PLANILHA (29/10/2026). O dono: *"como ainda estamos usando
+# a planilha de colaboradores como base, tem algumas pessoas que têm categorização de
+# não bater ponto: na coluna AY, quem é PJ e Pró-labore; na coluna AA, quem está na
+# obra ESCRUSSAS; e na coluna AX, quem está como Colaboradores Afastados. Esse
+# pessoal é para sair, eles não batem ponto."*
+#   · AY é o "Tipo de Contrato" (`tipo_contrato`) e AA a obra (`obra_codigo`; o
+#     extenso, `obra_cadastro`, também é olhado). Quem cai aqui fica como "não bate
+#     ponto" — o mesmo efeito da marcação feita à mão: sai das listas, não entra no
+#     aplicativo, a batida é recusada. A planilha manda: desmarcar à mão não vence.
+#   · AX é a "Fase Atual": o AFASTADO já não batia (14/10/2026); agora também sai
+#     das listas (`listar_colaboradores`), mas continua entrando no aplicativo para
+#     mandar o atestado — a decisão de 14/10/2026 ("pedido ele continua fazendo").
+# Comparados sem acento, sem espaço e sem pontuação: "Pró-labore", "PRO LABORE" e
+# "Prolabore" são o mesmo; "ESC RUSSAS" e "ESCRUSSAS" também.
+# ---------------------------------------------------------------------------
+TIPOS_SEM_PONTO = ("pj", "prolabore")
+OBRAS_SEM_PONTO = ("ESCRUSSAS",)
+
+
+def _sem_acento_sql(expr: str) -> str:
+    return (f"regexp_replace(lower(translate(coalesce({expr}, ''), 'ÁÀÂÃÉÊÍÓÔÕÚÇáàâãéêíóôõúç', "
+            f"'aaaaeeiooouCaaaaeeiooouc')), '[^a-z0-9]', '', 'g')")
+
+
+def nao_bate_sql(col: set) -> str:
+    """O MOTIVO (texto) de a planilha dizer que a pessoa não bate ponto, ou NULL."""
+    casos = []
+    if "tipo_contrato" in col:
+        casos.append(f"WHEN {_sem_acento_sql('r.tipo_contrato')} IN ({', '.join(repr(t) for t in TIPOS_SEM_PONTO)}) "
+                     "THEN 'o tipo de contrato na planilha é “' || btrim(r.tipo_contrato) || '” — PJ e pró-labore "
+                     "não batem ponto'")
+    obras = ", ".join(repr(o.lower()) for o in OBRAS_SEM_PONTO)
+    for c in ("obra_codigo", "obra_cadastro"):
+        if c in col:
+            casos.append(f"WHEN {_sem_acento_sql('r.' + c)} IN ({obras}) "
+                         f"THEN 'a obra na planilha é “' || btrim(r.{c}) || '” — quem está nela não bate ponto'")
+    if not casos:
+        return "NULL::text"
+    return "CASE WHEN r.cpf IS NULL THEN NULL " + " ".join(casos) + " ELSE NULL END"
 
 
 # ---------------------------------------------------------------------------
@@ -157,6 +200,7 @@ def retrato(conn: Connection) -> dict:
                count(*) FILTER (WHERE {ativos}) AS ativos,
                count(*) FILTER (WHERE {ativos} AND lower(coalesce(r.fase, '')) LIKE '%{PEDACO_AFASTADO}%') AS afastados,
                count(*) FILTER (WHERE {ativos} AND c.id IS NULL) AS faltam_no_erp,
+               count(*) FILTER (WHERE {ativos} AND ({nao_bate_sql(col)}) IS NOT NULL) AS nao_batem,
                max(r.atualizado_em) AS atualizado_em
           FROM analisesps.colaborador r
           LEFT JOIN public.colaboradores c ON regexp_replace(c.cpf, '\\D', '', 'g') = r.cpf
@@ -178,6 +222,7 @@ def retrato(conn: Connection) -> dict:
     return {"disponivel": True, "fonte": e["fonte"], "usando": e["usar"],
             "total": int(linha["total"]), "ativos": int(linha["ativos"]),
             "afastados": int(linha["afastados"]), "faltam_no_erp": int(linha["faltam_no_erp"]),
+            "nao_batem_pela_planilha": int(linha["nao_batem"]),
             "so_no_erp": int(so_erp), "ativos_sem_obra_reconhecida": int(sem_obra),
             "atualizado_em": horario.texto(linha["atualizado_em"])}
 
@@ -284,8 +329,13 @@ def por_que_nao_aparece(conn: Connection, busca: str, ja_listados: set, limite: 
                     motivo = f"desligada: a Fase Atual no Pipefy diz “{p['fase_registro']}”"
                 else:
                     motivo = "desligada no cadastro do ERP"
+            elif p.get("nao_bate_motivo"):
+                motivo = f"não bate ponto: {p['nao_bate_motivo']}"
             elif not p.get("ativo_no_ponto", True):
                 motivo = "marcada no próprio ponto como “não bate ponto”"
+            elif p.get("situacao") == "AFASTADO":
+                motivo = (f"afastada: a Fase Atual no Pipefy diz “{p['fase_registro']}”" if p.get("fase_registro")
+                          else "afastada no cadastro do ERP") + " — afastado não bate ponto e sai das listas"
             else:
                 continue            # ela está na lista; quem procura só não a alcança
             r = {"nome": nome}
