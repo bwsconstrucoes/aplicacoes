@@ -40,10 +40,40 @@ def test_o_arquivo_ps_do_fortes():
         fe.linha_ps("000001", "006", dt.date(2025, 5, 1), 0)
 
 
+def test_o_percentual_da_hora_extra_por_estado_e_obra():
+    from app.apps.ponto.core import hora_extra as he
+    assert he.tipo_do_dia(dt.date(2026, 11, 2), "Finados") == "feriado"            # o feriado vence a segunda
+    assert [he.tipo_do_dia(dt.date(2026, 11, d), None) for d in (6, 7, 8)] == ["semana", "sabado", "domingo"]
+    cfg = {"padrao": dict(he.PADRAO), "uf": {"SP": {**he.PADRAO, "semana": 60}},
+           "obra": {"AP-01": {**he.PADRAO, "semana": 70, "sabado": 100}}}
+    assert he.regra_de(cfg, "AP-01", "SP")[1] == "obra AP-01"                     # a obra vence o estado
+    assert he.percentual_do_dia(cfg, dt.date(2026, 11, 6), None, "AP-01", "SP") == 70
+    assert he.percentual_do_dia(cfg, dt.date(2026, 11, 6), None, "BR-09", "SP") == 60
+    assert he.percentual_do_dia(cfg, dt.date(2026, 11, 6), None, "BR-09", "CE") == 50
+    assert fe.evento_da_hora_extra({"data": "2026-11-07"}, cfg, "AP-01", None) == "003"   # sábado da AP-01: 100%
+    assert fe.evento_da_hora_extra({"data": "2026-11-06"}, cfg, "AP-01", None) == "004"
+
+
+def test_as_horas_extras_para_a_supervisao_por_obra():
+    f = {"anterior": {"de": "2026-10-26"}, "corrente": {"ate": "2026-11-25"},
+         "he_dias": [{"colaborador_id": 1, "nome": "ANA", "obra_do_dia": "AP-01", "obra_nome": "Escola", "data": "2026-10-27",
+                      "minutos": 90},
+                     {"colaborador_id": 1, "nome": "ANA", "obra_do_dia": "BR-02", "obra_nome": "", "data": "2026-11-03",
+                      "minutos": 60},
+                     {"colaborador_id": 2, "nome": "BIA", "obra_do_dia": "AP-01", "obra_nome": "Escola", "data": "2026-10-27",
+                      "minutos": 30}]}
+    s = fe.supervisao(f)
+    assert s["dias"][0] == "2026-10-26" and s["dias"][-1] == "2026-11-25" and len(s["dias"]) == 31
+    assert [g["obra"] for g in s["obras"]] == ["AP-01", "BR-02"]                     # quem bateu em duas, nas duas
+    ap = s["obras"][0]
+    assert ap["total"] == 120 and ap["por_dia"] == {"2026-10-27": 120} and [p["nome"] for p in ap["pessoas"]] == ["ANA", "BIA"]
+    assert s["total"] == 180
+
+
 def test_as_regras_do_dia():
     assert fe.evento_da_hora_extra({"data": "2026-11-01"}) == "003"           # domingo
     assert fe.evento_da_hora_extra({"data": "2026-11-02", "feriado": "Finados"}) == "003"
-    assert fe.evento_da_hora_extra({"data": "2026-11-07"}) == "006"           # sábado: 50%
+    assert fe.evento_da_hora_extra({"data": "2026-11-07"}) == "006"           # sábado: 50% (o padrão)
     assert fe.falta_do_dia({"situacao": "FALTA", "previsto": 540})["tipo"] == "INTEGRAL"
     assert fe.falta_do_dia({"situacao": "FALTA_PARCIAL", "debito": 300}) == {"tipo": "PARCIAL", "rotulo": "Falta parcial",
                                                                             "minutos": 300}
@@ -82,6 +112,12 @@ def test_o_fechamento_separa_o_inteiro_do_quebrado(app, mundo, banco, banco_anal
     for h, m in ((7, 0), (11, 0)):
         bater_via_chave(app, CPF_JOAO, local(seguinte, h, m))
     dp, sup = como(app, mundo["dp"]), como(app, mundo["sup"])
+    # a obra PG-A paga 70% na semana (regra por obra); só quem configura o ponto mexe
+    regra = {"escopo": "OBRA", "chave": "pg-a", "semana": 70, "sabado": 100, "domingo": 100, "feriado": 100}
+    assert sup.post("/erp/api/ponto/hora-extra/percentuais", json=regra).status_code == 403
+    assert dp.post("/erp/api/ponto/hora-extra/percentuais", json={**regra, "semana": 55}).status_code == 400
+    r = dp.post("/erp/api/ponto/hora-extra/percentuais", json=regra)
+    assert r.status_code == 200 and any(x["rotulo"] == "Obra PG-A" and x["semana"] == 70 for x in r.get_json()["regras"])
     corpo = {"competencia": f"{dia:%Y-%m}"}
     assert sup.post("/erp/api/ponto/fechamento", json=corpo).status_code == 403     # é do DP
     r = dp.post("/erp/api/ponto/fechamento", json=corpo)
@@ -91,13 +127,21 @@ def test_o_fechamento_separa_o_inteiro_do_quebrado(app, mundo, banco, banco_anal
     assert [x["data"] for x in joao("cor_faltas_parciais") if x["tipo"] == "Falta parcial"] == [seguinte.isoformat()]
     assert next(x for x in joao("cor_faltas_parciais") if x["data"] == seguinte.isoformat())["minutos"] == 300
     he = joao("cor_extras_integrais")
-    assert [(x["evento"], x["horas"]) for x in he] == [("006", 2)]
+    assert [(x["evento"], x["horas"]) for x in he] == [("004", 2)]                 # 70%: a regra da obra
     assert [x["minutos"] for x in joao("cor_extras_quebradas")] == [30]
     integrais = joao("cor_faltas_integrais")
     assert all(x["id_fortes"] == "000123" for x in integrais)
     assert len([l for l in f["ps_faltas"] if l[1:7] == "000123"]) == len(integrais)
     fim = dt.date.fromisoformat(f["corrente"]["ate"])
-    assert f"3000123006{fim:%d%m%Y}0002" in f["ps_extras"]
+    assert f"3000123004{fim:%d%m%Y}0002" in f["ps_extras"]
+    # para a supervisão: a hora extra do dia, na obra em que foi feita
+    assert [(x["obra_do_dia"], x["data"], x["minutos"]) for x in f["he_dias"] if x["cpf"] == CPF_JOAO] == \
+        [("PG-A", dia.isoformat(), 150)]
+    sup_xlsx = dp.post("/erp/api/ponto/fechamento/arquivo", json={**corpo, "arquivo": "supervisao"})
+    from openpyxl import load_workbook as _lw
+    ws = _lw(io.BytesIO(sup_xlsx.data))["Horas extras por obra"]
+    assert ws.page_setup.orientation == "landscape"
+    assert any(str(c.value or "").startswith("Obra PG-A") for c in ws["A"])
     # a Maria não tem ID Fortes: fica fora do .ps e aparece na conferência (se tiver falta)
     if any(x["nome"] == "Maria Obra B" for x in f["cor_faltas_integrais"]):
         assert any("ID Fortes ausente" in x["aviso"] for x in f["conferencia"] if x["nome"] == "Maria Obra B")

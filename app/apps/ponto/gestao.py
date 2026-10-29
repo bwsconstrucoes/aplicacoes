@@ -1367,6 +1367,27 @@ def ponto_api_relatorio():
     return _ok(**r)
 
 
+# O PERCENTUAL DA HORA EXTRA POR ESTADO OU OBRA (29/10/2026, core/hora_extra.py): o evento do .ps do Fortes.
+@bp.route("/erp/api/ponto/hora-extra/percentuais", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao(GET="ver_ponto", POST="configurar_ponto")
+@_api
+def ponto_api_hora_extra_percentuais():
+    from .core import hora_extra
+    quem, d = _quem(), (_corpo() if request.method == "POST" else {})
+    with db.conexao() as conn:
+        if request.method == "POST":
+            if d.get("excluir"):
+                cfg = hora_extra.excluir(conn, d.get("escopo"), d.get("chave"), quem.nome)
+            else:
+                cfg = hora_extra.gravar(conn, d.get("escopo"), d.get("chave"), d, quem.nome)
+            _FECHAMENTO_GUARDADO.clear()
+        else:
+            cfg = hora_extra.ler(conn)
+        ufs = sorted({o.get("uf") for o in cadastros.listar_obras(conn, so_ativas=False) if o.get("uf")})
+    return _ok(**hora_extra.para_json(cfg), ufs_das_obras=ufs)
+
+
 # O FECHAMENTO DA FOLHA PARA A CONTABILIDADE (29/10/2026, core/fechamento.py): o mês anterior em planilha, o
 # corrente em .ps (o inteiro) e planilha (o quebrado). A conta é guardada 2 min: quem baixa o geral e logo os dois
 # .ps não espera três vezes.

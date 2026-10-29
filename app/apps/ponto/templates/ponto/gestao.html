@@ -1056,6 +1056,18 @@
     obras daquela UF; municipal, para as obras daquele município.</div>
 </div>
 
+{# O PERCENTUAL DA HORA EXTRA (29/10/2026, core/hora_extra.py): por estado ou por obra, para o .ps do Fortes. #}
+<div class="cartao" data-secao-card="jornada">
+  <div class="cartao-cab"><h3>Percentual da hora extra</h3>
+    {% if pode.configurar_ponto %}<div style="display:flex; gap:8px">
+      <button class="btn secundario" id="c-he-uf" type="button">+ Regra por estado</button>
+      <button class="btn secundario" id="c-he-obra" type="button">+ Regra por obra</button></div>{% endif %}</div>
+  <div id="c-he">carregando…</div>
+  <div class="cartao-dica">Vale para o fechamento da folha (os arquivos .ps do Fortes): a hora extra de cada dia vai
+    pela obra em que a pessoa bateu — primeiro a regra da obra, depois a do estado (a UF da obra, da C. Diários),
+    senão a padrão da empresa. O feriado vence o dia da semana. O Fortes tem evento para 50%, 60%, 70% e 100%.</div>
+</div>
+
 <div class="cartao" data-secao-card="jornada">
   <div class="cartao-cab"><h3>Fechamento do mês</h3>
     <small>os últimos 12 meses</small></div>
@@ -4456,6 +4468,47 @@ function fechFolhaPadrao() {
   if (d.getDate() > 25) d.setMonth(d.getMonth() + 1, 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
+// AS HORAS EXTRAS PARA A SUPERVISÃO (29/10/2026): um calendário por obra, do dia 26 ao 25, em paisagem — cada
+// obra numa folha, para mandar a cada encarregado a dele. A obra é a do dia (onde a pessoa bateu).
+function fechImprimirSupervisao() {
+  const de = new Date(RL.anterior.de + "T12:00:00"), ate = new Date(RL.corrente.ate + "T12:00:00");
+  const dias = [];
+  for (let d = new Date(de); d <= ate; d.setDate(d.getDate() + 1)) dias.push(isoLocal(d));
+  const grupos = {};
+  (RL.he_dias || []).forEach(x => {
+    const g = grupos[x.obra_do_dia] ||= {obra: x.obra_do_dia, nome: x.obra_nome, pessoas: {}, porDia: {}, total: 0};
+    const p = g.pessoas[x.colaborador_id] ||= {nome: x.nome, funcao: x.funcao || "", banco: x.banco, dias: {}, total: 0};
+    p.dias[x.data] = (p.dias[x.data] || 0) + x.minutos; p.total += x.minutos;
+    g.porDia[x.data] = (g.porDia[x.data] || 0) + x.minutos; g.total += x.minutos;
+  });
+  const w = window.open("", "_blank");
+  if (!w) { aviso("mensagem", "O navegador bloqueou a janela de impressão — libere as janelas deste site.", "erro"); return; }
+  const fds = iso => [0, 6].includes(new Date(iso + "T12:00:00").getDay());
+  const c = m => m ? hm(m) : "";
+  const obras = Object.values(grupos).sort((a, b) => (a.obra || "~").localeCompare(b.obra || "~"));
+  w.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Horas extras por obra — ${escapar(RL.titulo)}</title>
+    <style>@page{size:A4 landscape;margin:8mm} body{font:10px Arial,sans-serif;color:#111;margin:0}
+    h1{font-size:14px;margin:0 0 2px} h2{font-size:12px;margin:0 0 4px} p{margin:0 0 6px;color:#444}
+    .obra{page-break-after:always} .obra:last-child{page-break-after:auto}
+    table{border-collapse:collapse;width:100%;table-layout:fixed} th,td{border:1px solid #999;padding:2px 2px;text-align:center;overflow:hidden;white-space:nowrap}
+    th.nome,td.nome{text-align:left;width:150px} th.func,td.func{text-align:left;width:80px;font-size:9px} th.tot,td.tot{width:42px;font-weight:bold}
+    th{background:#e8eef6;font-size:9px} .fds{background:#f3f3f3} tfoot td{font-weight:bold;background:#f6f6f6}
+    .assina{margin-top:14px;display:flex;gap:40px} .assina div{border-top:1px solid #555;padding-top:2px;width:260px}</style></head><body>
+    ${obras.length ? obras.map(g => `<div class="obra">
+      <h1>BWS — Horas extras para conferência da supervisão</h1>
+      <h2>Obra ${escapar(g.obra || "sem obra")}${g.nome ? ` — ${escapar(g.nome)}` : ""}</h2>
+      <p>${escapar(RL.titulo)} · de ${dataBR(RL.anterior.de)} a ${dataBR(RL.corrente.ate)} · horas extras de cada dia (h:mm) na obra em que a pessoa
+        bateu · (banco) = vai para o banco de horas · emitido em ${new Date().toLocaleString("pt-BR")}</p>
+      <table><thead><tr><th class="nome">Funcionário</th><th class="func">Função</th>${dias.map(d => `<th class="${fds(d) ? "fds" : ""}">${d.slice(8)}<br>${d.slice(5, 7)}</th>`).join("")}<th class="tot">Total</th></tr></thead>
+      <tbody>${Object.values(g.pessoas).sort((a, b) => a.nome.localeCompare(b.nome)).map(p => `<tr><td class="nome">${escapar(p.nome)}${p.banco ? " (banco)" : ""}</td>
+        <td class="func">${escapar(p.funcao)}</td>${dias.map(d => `<td class="${fds(d) ? "fds" : ""}">${c(p.dias[d])}</td>`).join("")}<td class="tot">${hm(p.total)}</td></tr>`).join("")}</tbody>
+      <tfoot><tr><td class="nome">Total da obra</td><td class="func"></td>${dias.map(d => `<td class="${fds(d) ? "fds" : ""}">${c(g.porDia[d])}</td>`).join("")}<td class="tot">${hm(g.total)}</td></tr></tfoot></table>
+      <div class="assina"><div>Conferido por (encarregado / supervisor)</div><div>Data</div></div></div>`).join("")
+      : `<h1>BWS — Horas extras para conferência da supervisão</h1><p>Nenhuma hora extra neste período.</p>`}
+    <script>window.onload = () => window.print();<\/script></body></html>`);
+  w.document.close();
+}
+
 async function fechBaixar(arquivo) {
   try {
     const resp = await fetch("/erp/api/ponto/fechamento/arquivo", {method: "POST", headers: {"Content-Type": "application/json"},
@@ -4504,7 +4557,7 @@ function rlColunas() {
     const falta = [...p, ["Dia", l => dataBR(l.data), "dados"], ["", l => l.dia_semana || ""], ["Tipo", l => l.tipo],
       ["Horas que faltaram", l => hm(l.minutos), "num"], ["Batidas", l => l.batidas || "", "dados"]];
     return {ant_faltas: falta, cor_faltas_integrais: falta, cor_faltas_parciais: falta,
-      ant_extras: [...p, ["HE 50%", l => hm(l.he50), "num"], ["HE 100%", l => hm(l.he100), "num"], ["Total", l => hm(l.minutos), "num"]],
+      ant_extras: [...p, ...[50, 60, 70, 100].map(x => [`HE ${x}%`, l => hm(l["he" + x] || 0), "num"]), ["Total", l => hm(l.minutos), "num"]],
       ant_extras_dias: [...p, ["Dia", l => dataBR(l.data), "dados"], ["", l => l.dia_semana || ""], ["Evento", l => l.rotulo],
                         ["Horas", l => hm(l.minutos), "num"], ["Feriado", l => l.feriado || ""]],
       cor_extras_integrais: [...p, ["Evento", l => l.rotulo], ["Data no arquivo", l => dataBR(l.data), "dados"],
@@ -4567,9 +4620,16 @@ function rlDesenhar() {
         <button class="btn secundario" type="button" data-fech-baixar="ps_faltas">📄 .ps de faltas (${t.ps_faltas})</button>
         <button class="btn secundario" type="button" data-fech-baixar="ps_extras">📄 .ps de horas extras (${t.ps_extras})</button>
         <button class="btn secundario" type="button" data-fech-baixar="parte">⬇️ Só esta aba (Excel)</button></div>
+      <div class="barra-acoes" style="margin:0 0 8px">
+        <b style="align-self:center">Para a supervisão conferir:</b>
+        <button class="btn secundario" type="button" id="fech-sup-imprimir">📋 Horas extras por obra — imprimir (paisagem)</button>
+        <button class="btn secundario" type="button" data-fech-baixar="supervisao">📋 Horas extras por obra (Excel)</button></div>
       ${RL.vale_desde > RL.anterior.de ? `<div class="cartao-dica">O ponto vale a partir de ${dataBR(RL.vale_desde)}: antes disso não há falta nem hora extra.</div>` : ""}
-      <div class="cartao-dica">Hora extra: domingo e feriado = 100%; os outros dias = 50%. Quem tem banco de horas fica fora das horas extras e das
-        faltas parciais (vão para o banco). Sem ID Fortes, a pessoa não entra no .ps — ela aparece na aba Conferência.</div>`;
+      <div class="cartao-dica">Percentual da hora extra (Configuração › Jornada e feriados): ${(RL.regras_hora_extra || []).map(r =>
+        `<b>${escapar(r.rotulo)}</b> semana ${r.semana}% · sáb ${r.sabado}% · dom ${r.domingo}% · feriado ${r.feriado}%`).join("; ")}.
+        Quem tem banco de horas fica fora das horas extras e das faltas parciais (vão para o banco). Sem ID Fortes, a pessoa não
+        entra no .ps — ela aparece na aba Conferência.</div>`;
+    els("fech-sup-imprimir").addEventListener("click", fechImprimirSupervisao);
     els("rl-kpis").querySelectorAll("[data-fech-baixar]").forEach(b => b.addEventListener("click", () =>
       fechBaixar(b.dataset.fechBaixar === "parte" ? RL_VISAO : b.dataset.fechBaixar)));
     els("rl-visoes").innerHTML = FECH_PARTES.map(([c, r]) => `<button type="button" class="${c === RL_VISAO ? "ativa" : ""}" data-rl-visao="${c}">${r} <small style="display:inline">${(RL[c] || []).length}</small></button>`).join("");
@@ -5902,6 +5962,49 @@ async function salvarEscala() {
 }
 
 // ------------------------------------------------------------ 3. feriados
+// O PERCENTUAL DA HORA EXTRA (29/10/2026): o padrão da empresa, por estado e por obra.
+let HE_CFG = null;
+async function carregarPercentuaisHE() {
+  if (!els("c-he")) return;
+  try { HE_CFG = await api("/erp/api/ponto/hora-extra/percentuais"); }
+  catch (e) { erroNoCartao("c-he", e); return; }
+  const tipos = HE_CFG.tipos;
+  els("c-he").innerHTML = `<table><thead><tr><th class="sem-ordem">Vale para</th>${tipos.map(t => `<th class="sem-ordem num">${escapar(t.rotulo)}</th>`).join("")}
+      ${PODE_CONFIGURAR ? `<th class="sem-ordem"></th>` : ""}</tr></thead><tbody>
+    ${HE_CFG.regras.map((r, i) => `<tr><td><b>${escapar(r.rotulo)}</b></td>${tipos.map(t => `<td class="num">${r[t.codigo]}%</td>`).join("")}
+      ${PODE_CONFIGURAR ? `<td style="white-space:nowrap"><button class="link-btn" type="button" data-he-editar="${i}">ajustar</button>
+        ${r.escopo !== "PADRAO" ? ` · <button class="link-btn" type="button" data-he-excluir="${i}">excluir</button>` : ""}</td>` : ""}</tr>`).join("")}
+    </tbody></table>
+    ${HE_CFG.ufs_das_obras.length ? `<small class="suave">Estados das obras: ${escapar(HE_CFG.ufs_das_obras.join(", "))}.</small>` : ""}`;
+  els("c-he").querySelectorAll("[data-he-editar]").forEach(b => b.addEventListener("click", () => editarRegraHE(HE_CFG.regras[+b.dataset.heEditar])));
+  els("c-he").querySelectorAll("[data-he-excluir]").forEach(b => b.addEventListener("click", async () => {
+    const r = HE_CFG.regras[+b.dataset.heExcluir];
+    if (!await perguntar({titulo: `Excluir a regra — ${escapar(r.rotulo)}`, campos: [], textoOk: "Excluir",
+                          aviso: "Os dias dessa regra passam a seguir a do estado (se for obra) ou a padrão da empresa."})) return;
+    try { await postar("/erp/api/ponto/hora-extra/percentuais", {escopo: r.escopo, chave: r.chave, excluir: true}); carregarPercentuaisHE(); }
+    catch (e) { falhou(e); }
+  }));
+}
+async function editarRegraHE(regra, escopo) {
+  escopo = regra ? regra.escopo : escopo;
+  const opcoes = HE_CFG.percentuais.map(p => ({valor: String(p), rotulo: `${p}%`}));
+  const padrao = HE_CFG.regras[0];
+  const campos = [
+    ...(escopo === "PADRAO" || regra ? [] : [escopo === "UF"
+      ? {nome: "chave", rotulo: "Estado (UF)", tipo: "select", obrigatorio: true, largura: 6,
+         opcoes: [...new Set([...HE_CFG.ufs_das_obras, "CE", "PE", "SP"])].sort().map(u => ({valor: u, rotulo: u}))}
+      : {nome: "chave", rotulo: "Código da obra", obrigatorio: true, largura: 6, exemplo: "ex.: AP-01"}]),
+    ...HE_CFG.tipos.map(t => ({nome: t.codigo, rotulo: t.rotulo, tipo: "select", largura: 3, opcoes,
+                               valor: String((regra || padrao)[t.codigo])}))];
+  const r = await perguntar({titulo: regra ? `Percentual da hora extra — ${escapar(regra.rotulo)}`
+      : escopo === "UF" ? "Nova regra por estado" : "Nova regra por obra", campos, textoOk: "Salvar"});
+  if (!r) return;
+  try { await postar("/erp/api/ponto/hora-extra/percentuais", {escopo, chave: regra ? regra.chave : r.chave, ...r}); carregarPercentuaisHE(); }
+  catch (e) { falhou(e); }
+}
+if (els("c-he-uf")) els("c-he-uf").addEventListener("click", () => editarRegraHE(null, "UF"));
+if (els("c-he-obra")) els("c-he-obra").addEventListener("click", () => editarRegraHE(null, "OBRA"));
+
 async function carregarFeriados() {
   const ano = els("c-ano").value;
   let lista;
@@ -7089,7 +7192,8 @@ function anosParaEscolher() {
 async function carregarTudoMenosConfig() {
   await Promise.all([carregarEscalas(), carregarEscalasDasPessoas(), carregarFeriados(), carregarCompetencias(), carregarAparelhos(),
                     carregarCercas(), carregarQuemValida(), carregarRegistro(), carregarObrasBase(),
-                    carregarExcecoes(), carregarEnsaio(), carregarLicencas(), carregarAbonos(), carregarRosto()]);
+                    carregarExcecoes(), carregarEnsaio(), carregarLicencas(), carregarAbonos(), carregarRosto(),
+                    carregarPercentuaisHE()]);
 }
 
 // --------------------------------------------- conferência do rosto (06/10/2026)

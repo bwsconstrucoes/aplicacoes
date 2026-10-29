@@ -61,6 +61,10 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1zz4. **No ramo, esperando o "pode" (29/10/2026, noite, sexta, segunda parte) — SEM MIGRAÇÃO**: as **horas extras para
+   a supervisão conferir** (calendário por obra, 26 a 25, em paisagem — imprimir ou Excel) e o **percentual da hora
+   extra por estado ou por obra** (Configuração › Jornada e feriados), que decide o evento do .ps. Vai junto com o
+   1zz3. Antes de gerar o primeiro .ps de verdade: cadastrar os percentuais de PE, SP e CE.
 1zz3. **No ramo, esperando o "pode" (29/10/2026, noite, sexta) — SEM MIGRAÇÃO NOVA**: o **fechamento da folha para a
    contabilidade** (Relatórios › "📦 Fechamento da folha"): o mês anterior (26 ao fim) em planilha; o corrente (1 a 25)
    nos dois arquivos .ps do Fortes (faltas e horas extras inteiras) e em planilha (faltas parciais e horas
@@ -380,6 +384,38 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 29/10/2026 (noite, sexta, segunda parte) — As horas extras para a supervisão, e o percentual por estado ou obra
+
+**As horas extras para a supervisão conferir** (`fechamento.supervisao`). O dono: *"quando a gente faz esse
+fechamento de horas extras, a gente sempre encaminha o relatório para os encarregados e supervisores de obra (…)
+para saber se tem coerência aquela quantidade de horas extras de cada funcionário (…) visualmente é uma espécie de
+calendário, cada coluna do dia (…) do dia 26 em diante (…) agrupado por obra (…) em cada dia a quantidade de horas
+extras e um totalizador ao final (…) em paisagem, para caber tudo."*
+- No Fechamento da folha, dois botões: **"📋 Horas extras por obra — imprimir (paisagem)"** (uma folha por obra, para
+  mandar a cada encarregado a dele, com espaço para "conferido por" e data) e a mesma coisa em **Excel**.
+- **Nome**: "Horas extras para conferência da supervisão" (escolha minha).
+- O período é o da **folha inteira** (26 a 25). Fim de semana sombreado. A obra é **a do dia** (onde a pessoa bateu):
+  quem trabalhou em duas obras aparece nas duas, cada uma com os seus dias.
+- Entra **toda** hora extra, inclusive a de quem tem banco de horas (marcada "(banco)" — vai para o banco, não para a
+  folha): a supervisão confere a coerência do que foi feito.
+
+**O percentual da hora extra, por estado ou por obra** (`core/hora_extra.py`). O dono: *"tem a hora de 70%, de 100%
+(…) isso varia em função de quê? Atualmente a gente tem obra em Pernambuco, em São Paulo e no Ceará (…) colocar a
+UF, ou mesmo especificamente uma obra, e a gente definir qual é o percentual de hora extra no domingo, no sábado e no
+feriado (…) a hora extra da semana é tantos por cento."*
+- Configuração › **Jornada e feriados** › **"Percentual da hora extra"**: o **padrão da empresa** e as regras **por
+  estado** e **por obra**, cada uma com **semana, sábado, domingo e feriado**. Escolhe-se entre **50%, 60%, 70% e
+  100%** — os que o Fortes tem evento (006, 005, 004, 003).
+- **A ordem**: a regra da obra vence a do estado, que vence a padrão. O feriado vence o dia da semana. O estado é a UF
+  da obra (coluna AC da C. Diários). O dia vai pela obra em que a pessoa bateu.
+- **O padrão nasce como estava**: 50% de segunda a sábado, 100% no domingo e no feriado. **Até alguém cadastrar PE, SP e
+  CE, tudo sai pelo padrão** — é a primeira coisa a fazer antes de gerar o .ps de verdade.
+- No mês anterior, o total de horas extras de cada pessoa sai separado nas quatro colunas (50, 60, 70, 100%).
+- Guardado em `ponto.parametros` ("hora_extra.percentuais") — sem migração. Só quem configura o ponto mexe.
+- **Testes**: `test_o_percentual_da_hora_extra_por_estado_e_obra`, `test_as_horas_extras_para_a_supervisao_por_obra`
+  e o fechamento de verdade com a regra da obra (70% → evento 004 no .ps). Ensaio no navegador: cadastrar a regra da
+  obra e imprimir as horas extras por obra.
+
 ## 29/10/2026 (noite, sexta) — O fechamento da folha para a contabilidade, com os arquivos .ps do Fortes
 
 O dono mandou o documento `prompt_geracao_ps.md` (o formato do .ps de importação de eventos do Fortes RH / AC
@@ -404,8 +440,8 @@ arquivo as faltas integrais ou as horas integrais (…) meia falta do dia não c
 **As contas são as do espelho** (a mesma régua do Quadro e dos relatórios, com a falta parcial desta noite).
 
 **Escolhas minhas, a confirmar com o dono** (estão também no Resumo do Excel):
-1. **Percentual da hora extra**: domingo e feriado = **100% (003)**; os outros dias, sábado incluído = **50% (006)**.
-   O Fortes tem também 60% (005) e 70% (004), mas não foi dito quando usá-los (convenção? acima de 2 h?).
+1. **Percentual da hora extra**: ~~domingo e feriado = 100%, os outros dias = 50%~~ — virou configuração por estado e
+   por obra na mesma noite (ver a seção seguinte).
 2. **Hora extra no .ps do mês corrente**: o **total do período** de cada pessoa e percentual, com a **data do dia
    25** — o inteiro no arquivo, os minutos na planilha de quebradas. Há a opção "dia a dia" na tela (aí cada dia
    rende o seu inteiro e o seu quebrado — mais minutos para lançar à mão).

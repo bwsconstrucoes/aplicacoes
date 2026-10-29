@@ -23,8 +23,8 @@ sem justificativa; falta parcial = o dia com batida faltando ou só meio períod
 faltou, e vai junto das parciais, marcado. Hora extra = a do espelho.
 
 ESCOLHAS DESTA PRIMEIRA VERSÃO (a confirmar com o dono — estão no HISTORICO):
-  · o percentual da hora extra: domingo e feriado = 100% (evento 003); os outros dias = 50% (006). Os
-    eventos de 60% e 70% (005 e 004) existem no Fortes, mas a regra de quando usá-los não foi dita;
+  · o percentual da hora extra vem da Configuração (`hora_extra.py`): por obra, por estado ou o padrão da
+    empresa, para semana, sábado, domingo e feriado — o dia vai pela obra em que a pessoa bateu nele;
   · a hora extra do mês corrente vai no .ps como o TOTAL do período por pessoa e percentual, com a data
     do último dia (25): o inteiro vai no arquivo, os minutos que sobram vão na planilha de horas quebradas
     (com `por_dia=True`, a conta é feita dia a dia);
@@ -51,7 +51,7 @@ from sqlalchemy.engine import Connection
 
 from .. import db, horario
 from ..erros import ErroDeValidacao
-from . import apuracao, competencias, parametros, relatorios, vigencia
+from . import apuracao, competencias, hora_extra, parametros, relatorios, vigencia
 from .ocorrencias import Quem
 
 logger = logging.getLogger("ponto.fechamento")
@@ -95,10 +95,17 @@ def periodos(competencia, corte: int = CORTE_PADRAO) -> dict:
 # ---------------------------------------------------------------------------
 # Regras puras
 # ---------------------------------------------------------------------------
-def evento_da_hora_extra(d: dict) -> str:
-    """PURA. Domingo e feriado: 100%; os outros dias: 50% (escolha a confirmar — ver o topo)."""
-    data = dt.date.fromisoformat(d["data"])
-    return EVENTO_HE_100 if (d.get("feriado") or data.weekday() == 6) else EVENTO_HE_50
+def obra_do_dia(d: dict, da_pessoa: Optional[str]) -> Optional[str]:
+    """PURA. A obra em que a pessoa bateu no dia (a da primeira batida); sem batida, a do cadastro."""
+    return next((b.get("obra") for b in d.get("batidas") or [] if b.get("obra")), None) or da_pessoa
+
+
+def evento_da_hora_extra(d: dict, cfg: Optional[dict] = None, obra: Optional[str] = None,
+                         uf: Optional[str] = None) -> str:
+    """PURA. O evento do Fortes pelo percentual da regra (da obra, do estado ou o padrão — `hora_extra`)."""
+    cfg = cfg or {"padrao": dict(hora_extra.PADRAO), "uf": {}, "obra": {}}
+    pct = hora_extra.percentual_do_dia(cfg, dt.date.fromisoformat(d["data"]), d.get("feriado"), obra, uf)
+    return hora_extra.EVENTO_DO_PERCENTUAL[pct]
 
 
 def tem_banco(p: dict) -> bool:
@@ -178,9 +185,13 @@ def montar(conn: Connection, quem: Quem, competencia, filtros: Optional[dict] = 
     finally:
         relatorios._uma_por_vez.release()
     fortes = _ids_fortes(conn, [_so_digitos(p.get("cpf")) for p in pessoas])
+    cfg = hora_extra.ler(conn)
+    from . import cadastros
+    obras = {str(o["codigo"]).upper(): o for o in cadastros.listar_obras(conn, so_ativas=False) if o.get("codigo")}
 
     r = {k: [] for k in ("ant_faltas", "ant_extras", "ant_extras_dias", "cor_faltas_integrais",
-                         "cor_faltas_parciais", "cor_extras_integrais", "cor_extras_quebradas", "conferencia")}
+                         "cor_faltas_parciais", "cor_extras_integrais", "cor_extras_quebradas", "conferencia",
+                         "he_dias")}
     ps_faltas, ps_extras = defaultdict(int), defaultdict(int)
     for p, esp in espelhos:
         base = relatorios._base(p)
@@ -215,9 +226,18 @@ def montar(conn: Connection, quem: Quem, competencia, filtros: Optional[dict] = 
                         ps_faltas[(idf, EVENTO_FALTA, dia)] += 1
                 else:
                     r["cor_faltas_parciais"].append(linha)
+            if d.get("extra"):
+                # para a supervisão conferir (29/10/2026): toda hora extra do dia, na obra em que foi feita —
+                # inclusive a de quem tem banco de horas (marcada)
+                ob = obra_do_dia(d, p.get("obra_codigo"))
+                ob_up = str(ob).upper() if ob else None
+                ev_sup = evento_da_hora_extra(d, cfg, ob_up, (obras.get(ob_up) or {}).get("uf"))
+                r["he_dias"].append({**base, "data": d["data"], "obra_do_dia": ob_up or "",
+                                     "obra_nome": (obras.get(ob_up) or {}).get("nome") or "",
+                                     "minutos": d["extra"], "evento": ev_sup, "banco": banco_de_horas})
             if d.get("extra") and not banco_de_horas:
                 teve_algo = True
-                ev = evento_da_hora_extra(d)
+                ev = ev_sup
                 if anterior:
                     he_ant[ev] += d["extra"]
                     r["ant_extras_dias"].append({**base, "data": d["data"], "dia_semana": d.get("dia_semana"),
@@ -226,7 +246,8 @@ def montar(conn: Connection, quem: Quem, competencia, filtros: Optional[dict] = 
                 else:
                     he_cor[(ev, dia if por_dia else cf)] += d["extra"]
         if he_ant:
-            r["ant_extras"].append({**base, "he50": he_ant.get(EVENTO_HE_50, 0), "he100": he_ant.get(EVENTO_HE_100, 0),
+            r["ant_extras"].append({**base, **{f"he{pct}": he_ant.get(cod, 0) for pct, cod in
+                                               hora_extra.EVENTO_DO_PERCENTUAL.items()},
                                     "minutos": sum(he_ant.values())})
         for (ev, data), minutos in sorted(he_cor.items()):
             inteiras, resto = divmod(minutos, 60)
@@ -257,6 +278,7 @@ def montar(conn: Connection, quem: Quem, competencia, filtros: Optional[dict] = 
         "anterior": {"de": ai.isoformat(), "ate": af.isoformat()},
         "corrente": {"de": ci.isoformat(), "ate": cf.isoformat()},
         "vale_desde": vale.isoformat(), "pessoas": len(pessoas), "gerado_em": horario.texto(horario.agora()),
+        "regras_hora_extra": hora_extra.para_json(cfg)["regras"],
         **r, "ps_faltas": linhas_faltas, "ps_extras": linhas_extras,
         "totais": {
             "ant_faltas_integrais": sum(1 for x in r["ant_faltas"] if x["tipo"] == "Falta integral"),
@@ -298,7 +320,7 @@ def _partes(f: dict) -> list[tuple[str, str, str, list]]:
     return [
         ("ant_faltas", "Ant - Faltas", f"Mês anterior ({pa}) — faltas integrais e parciais", falta),
         ("ant_extras", "Ant - Horas extras", f"Mês anterior ({pa}) — total de horas extras por pessoa",
-         [*pessoa, ("HE 50%", lambda x: hhmm(x["he50"])), ("HE 100%", lambda x: hhmm(x["he100"])),
+         [*pessoa, *[(f"HE {pct}%", (lambda k: lambda x: hhmm(x.get(k)))(f"he{pct}")) for pct in hora_extra.PERCENTUAIS],
           ("Total", lambda x: hhmm(x["minutos"])), ("Total (decimal)", lambda x: _horas(x["minutos"]))]),
         ("ant_extras_dias", "Ant - HE por dia", f"Mês anterior ({pa}) — horas extras dia a dia (para conferir)",
          [*pessoa, ("Data", lambda x: _br(x["data"])), ("Dia", lambda x: x.get("dia_semana") or ""),
@@ -355,7 +377,9 @@ def excel(f: dict, so: Optional[str] = None) -> bytes:
             ("", ""),
             ("Para conferir (aba Conferência)", t["conferencia"]),
             ("", ""),
-            ("Regras desta versão", "domingo e feriado = HE 100% (003); os outros dias = HE 50% (006)"),
+            *[("Percentual da hora extra" if i == 0 else "",
+               f"{x['rotulo']}: semana {x['semana']}% · sábado {x['sabado']}% · domingo {x['domingo']}% · feriado {x['feriado']}%")
+              for i, x in enumerate(f.get("regras_hora_extra") or [])],
             ("", "a hora extra do mês corrente vai no .ps " + ("dia a dia" if f.get("por_dia") else
                                                                  "como o total do período, com a data do dia " + _br(cor["ate"]))),
             ("", "quem tem banco de horas: horas extras e faltas parciais vão para o banco"),
@@ -388,10 +412,90 @@ def excel(f: dict, so: Optional[str] = None) -> bytes:
     return saida.getvalue()
 
 
+# ---------------------------------------------------------------------------
+# AS HORAS EXTRAS PARA A SUPERVISÃO CONFERIR (29/10/2026). O dono: *"a gente sempre encaminha o relatório para
+# os encarregados e supervisores de obra (…) para saber se tem coerência aquela quantidade de horas extras de
+# cada funcionário (…) visualmente é uma espécie de calendário, cada coluna do dia (…) agrupado por obra (…) em
+# cada dia a quantidade de horas extras e um totalizador ao final (…) em paisagem, para caber tudo."*
+# O período é o da folha inteira (26 a 25); a obra é a do dia (onde a pessoa bateu), então quem trabalhou em
+# duas obras aparece nas duas, cada uma com os seus dias.
+# ---------------------------------------------------------------------------
+def supervisao(f: dict) -> dict:
+    """PURA. {dias: [iso], obras: [{obra, nome, pessoas: [{…, dias: {iso: min}, total}], por_dia, total}]}."""
+    de, ate = dt.date.fromisoformat(f["anterior"]["de"]), dt.date.fromisoformat(f["corrente"]["ate"])
+    dias = [(de + dt.timedelta(days=i)).isoformat() for i in range((ate - de).days + 1)]
+    grupos: dict = {}
+    for x in f.get("he_dias") or []:
+        g = grupos.setdefault(x["obra_do_dia"] or "", {"obra": x["obra_do_dia"] or "", "nome": x.get("obra_nome") or "",
+                                                       "pessoas": {}, "por_dia": defaultdict(int), "total": 0})
+        p = g["pessoas"].setdefault(x["colaborador_id"], {"nome": x["nome"], "funcao": x.get("funcao") or "",
+                                                          "cpf": x.get("cpf"), "banco": x.get("banco"),
+                                                          "dias": defaultdict(int), "total": 0})
+        p["dias"][x["data"]] += x["minutos"]
+        p["total"] += x["minutos"]
+        g["por_dia"][x["data"]] += x["minutos"]
+        g["total"] += x["minutos"]
+    obras = []
+    for g in sorted(grupos.values(), key=lambda g: (not g["obra"], g["obra"])):
+        obras.append({**g, "pessoas": sorted(({**p, "dias": dict(p["dias"])} for p in g["pessoas"].values()),
+                                              key=lambda p: p["nome"]),
+                      "por_dia": dict(g["por_dia"])})
+    return {"dias": dias, "obras": obras, "total": sum(g["total"] for g in obras)}
+
+
+def excel_supervisao(f: dict) -> bytes:
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+    s = supervisao(f)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Horas extras por obra"
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.fitToWidth, ws.page_setup.fitToHeight = 1, 0
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    negrito, cab, obra_fill = Font(bold=True), PatternFill("solid", fgColor="E8EEF6"), PatternFill("solid", fgColor="D9E2F0")
+    comp = f["competencia"]
+    ws.append([f"Horas extras para conferência da supervisão — folha de {comp[5:]}/{comp[:4]} "
+               f"({_br(s['dias'][0])} a {_br(s['dias'][-1])})"])
+    ws["A1"].font = Font(bold=True, size=13)
+    ws.append([f"Gerado em {f['gerado_em']}. Em cada dia, as horas extras daquele dia (h:mm), na obra em que a pessoa "
+               "bateu o ponto. (banco) = a pessoa tem banco de horas: a hora extra vai para o banco, não para a folha."])
+    dias_cab = [dt.date.fromisoformat(d).strftime("%d/%m") for d in s["dias"]]
+    for g in s["obras"]:
+        ws.append([])
+        ws.append([f"Obra {g['obra'] or 'sem obra'}" + (f" — {g['nome']}" if g["nome"] else "")])
+        linha = ws.max_row
+        for cel in ws[linha]:
+            cel.font, cel.fill = Font(bold=True, size=12), obra_fill
+        ws.append(["Funcionário", "Função", *dias_cab, "Total"])
+        for cel in ws[ws.max_row]:
+            cel.font, cel.fill = negrito, cab
+            cel.alignment = Alignment(horizontal="center")
+        for p in g["pessoas"]:
+            ws.append([p["nome"] + (" (banco)" if p.get("banco") else ""), p["funcao"],
+                       *[hhmm(p["dias"][d]) if p["dias"].get(d) else "" for d in s["dias"]], hhmm(p["total"])])
+        ws.append(["Total da obra", "", *[hhmm(g["por_dia"][d]) if g["por_dia"].get(d) else "" for d in s["dias"]],
+                   hhmm(g["total"])])
+        for cel in ws[ws.max_row]:
+            cel.font = negrito
+    if not s["obras"]:
+        ws.append(["Nenhuma hora extra neste período."])
+    ws.column_dimensions["A"].width = 34
+    ws.column_dimensions["B"].width = 18
+    for i in range(len(s["dias"]) + 1):
+        ws.column_dimensions[get_column_letter(3 + i)].width = 6.5
+    ws.column_dimensions[get_column_letter(3 + len(s["dias"]))].width = 8
+    saida = io.BytesIO()
+    wb.save(saida)
+    return saida.getvalue()
+
+
 def nome_do_arquivo(f: dict, qual: str) -> str:
     comp = f["competencia"].replace("-", "")
     return {"geral": f"fechamento_folha_{comp}.xlsx", "ps_faltas": f"faltas_{comp}.ps",
-            "ps_extras": f"horas_extras_{comp}.ps", "zip": f"fechamento_folha_{comp}.zip"}.get(
+            "ps_extras": f"horas_extras_{comp}.ps", "zip": f"fechamento_folha_{comp}.zip",
+            "supervisao": f"horas_extras_para_supervisao_{comp}.xlsx"}.get(
         qual, f"fechamento_{comp}_{qual}.xlsx")
 
 
@@ -400,6 +504,8 @@ def arquivo(f: dict, qual: str) -> tuple[bytes, str, str]:
     xlsx = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     if qual == "geral":
         return excel(f), nome_do_arquivo(f, qual), xlsx
+    if qual == "supervisao":
+        return excel_supervisao(f), nome_do_arquivo(f, qual), xlsx
     if qual in ("ps_faltas", "ps_extras"):
         return arquivo_ps(f[qual]), nome_do_arquivo(f, qual), "text/plain"
     if qual == "zip":
