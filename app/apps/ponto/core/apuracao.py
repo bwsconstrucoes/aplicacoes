@@ -72,19 +72,56 @@ ABONADORAS = frozenset({"ATESTADO", "LICENCA", "FERIAS", "FOLGA_COMPENSATORIA",
                         "ABONO", "AFASTAMENTO"})
 
 
+# O CICLO 12x36 AUTOMÁTICO (30/10/2026, o dono: "essa questão do dia em que o ciclo começa, eu acho que
+# acaba atrapalhando (…) isso poderia ser considerado de forma automática"). Quais dias são de trabalho
+# sai das batidas: nos últimos 30 dias, a paridade (dia sim, dia não) em que a pessoa mais trabalhou.
+JANELA_CICLO_AUTOMATICO = 30
+
+
+def dia_do_ciclo(trabalhados: tuple, dia: dt.date, data_base: Optional[dt.date] = None) -> Optional[bool]:
+    """PURA. O `dia` é de trabalho no 12x36? `trabalhados` = dias com batida, em ordem.
+    - Nos 30 dias ANTES dele, conta-se em quantos a pessoa trabalhou na mesma paridade do `dia`
+      (diferença par) e em quantos na outra; ganha a maioria. Empate: vale o mais antigo da janela (o
+      ciclo que já vinha — uma noite a mais no começo não vira o ciclo). O
+      próprio `dia` não vota — por isso a noite trabalhada fora do ciclo é extra, não vira o ciclo.
+    - Sem batida na janela: a paridade do último dia trabalhado, por mais antigo que seja.
+    - Nunca trabalhou: o dia informado ao dar a escala, se houver; senão, o primeiro dia com batida
+      abre o ciclo (antes dele, nada é previsto — None)."""
+    de = dia - dt.timedelta(days=JANELA_CICLO_AUTOMATICO)
+    janela = [w for w in trabalhados if de <= w < dia]
+    if janela:
+        mesma = sum(1 for w in janela if (dia - w).days % 2 == 0)
+        outra = len(janela) - mesma
+        if mesma != outra:
+            return mesma > outra
+        return (dia - janela[0]).days % 2 == 0
+    antes = [w for w in trabalhados if w < dia]
+    if antes:
+        return (dia - antes[-1]).days % 2 == 0
+    if data_base:
+        return (dia - data_base).days % 2 == 0
+    return True if dia in trabalhados else None
+
+
 @dataclass(frozen=True)
 class Escala:
     tipo: str                                         # SEMANAL | CICLO_12X36
     semana: dict = field(default_factory=dict)        # {0: [(420, 660), (720, 1020)], ...}
     periodo_ciclo: tuple = ()                         # (420, 1140) para 7h–19h
     data_base: Optional[dt.date] = None               # primeiro dia trabalhado do ciclo
+    # O ciclo automático: os dias com batida da pessoa. None = ciclo fixo pela `data_base`.
+    trabalhados: Optional[tuple] = None
 
     def periodos(self, dia: dt.date) -> list[tuple[int, int]]:
         """Os períodos previstos para o dia (vazio = descanso)."""
         if self.tipo == "CICLO_12X36":
-            if not self.data_base or not self.periodo_ciclo:
+            if not self.periodo_ciclo:
                 return []
-            return [tuple(self.periodo_ciclo)] if (dia - self.data_base).days % 2 == 0 else []
+            if self.trabalhados is not None:
+                trabalha = dia_do_ciclo(self.trabalhados, dia, self.data_base)
+            else:
+                trabalha = bool(self.data_base) and (dia - self.data_base).days % 2 == 0
+            return [tuple(self.periodo_ciclo)] if trabalha else []
         return [tuple(p) for p in self.semana.get(dia.weekday(), [])]
 
 

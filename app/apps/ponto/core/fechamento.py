@@ -284,6 +284,12 @@ def montar(conn: Connection, quem: Quem, competencia, filtros: Optional[dict] = 
                 r["conferencia"].append({**base, "aviso": f"folga compensatória em {_br(d['data'])} ainda a cumprir — "
                                                              f"o dia trabalhado é {_br(d['compensacao_a_cumprir'])}; "
                                                              "se não for cumprido, a folga vira falta"})
+            if "FORA_DO_CICLO" in (d.get("alertas") or []):
+                # o 12x36 automático (30/10/2026): a noite fora do ciclo pede a decisão do DP
+                r["conferencia"].append({**base, "aviso": f"trabalhou em {_br(d['data'])}, noite de folga do ciclo 12x36 — "
+                                                             "troca de plantão: lance a compensação (a folga e o dia "
+                                                             "trabalhado); extra: deixe como está; o ciclo mudou: dê a "
+                                                             "escala de novo a partir desse dia"})
             f = falta_do_dia(d)
             # o atraso pequeno (até a mesma tolerância da hora extra) não entra (30/10/2026)
             atraso_pequeno = bool(f and f["tipo"] == "ATRASO" and minima and f["minutos"] <= minima)

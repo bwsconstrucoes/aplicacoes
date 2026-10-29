@@ -30,6 +30,33 @@ def test_quando_a_escala_e_do_turno_da_noite():
     assert not escalas.turno_da_noite(None, seg)
 
 
+def test_o_ciclo_12x36_sai_das_batidas():
+    """30/10/2026, o dono: "essa questão do dia em que o ciclo começa (…) poderia ser considerado de forma
+    automática." """
+    from app.apps.ponto.core.apuracao import dia_do_ciclo
+    d0 = dt.date(2026, 10, 1)
+    dias = lambda *ns: tuple(d0 + dt.timedelta(days=n) for n in ns)
+    noites = dias(0, 2, 4, 6, 8)
+    assert dia_do_ciclo(noites, d0 + dt.timedelta(days=10)) is True        # a próxima do ciclo
+    assert dia_do_ciclo(noites, d0 + dt.timedelta(days=9)) is False        # folga
+    # a noite a mais, fora do ciclo, não vira o ciclo: continua folga (é extra)
+    assert dia_do_ciclo(noites + dias(9), d0 + dt.timedelta(days=9)) is False
+    assert dia_do_ciclo(noites + dias(9), d0 + dt.timedelta(days=10)) is True
+    # a troca de turma: passado o tempo, a maioria muda e o ciclo acompanha
+    trocado = noites + dias(*range(11, 40, 2))
+    assert dia_do_ciclo(trocado, d0 + dt.timedelta(days=41)) is True
+    # empate: vale o ciclo que já vinha (a mais antiga da janela)
+    assert dia_do_ciclo(dias(0, 3), d0 + dt.timedelta(days=4)) is True
+    assert dia_do_ciclo(dias(0, 3), d0 + dt.timedelta(days=5)) is False
+    # sem batida nos 30 dias: a paridade da última noite trabalhada
+    assert dia_do_ciclo(dias(0), d0 + dt.timedelta(days=60)) is True
+    assert dia_do_ciclo(dias(0), d0 + dt.timedelta(days=61)) is False
+    # nunca trabalhou: o dia informado, se houver; senão nada previsto até a primeira batida
+    assert dia_do_ciclo((), d0, data_base=d0 - dt.timedelta(days=2)) is True
+    assert dia_do_ciclo((), d0) is None
+    assert dia_do_ciclo(dias(0), d0) is True
+
+
 @pytest.mark.banco
 def test_a_saida_da_madrugada_fica_no_dia_da_entrada(app, mundo):
     """O dono: "o dia que ele inicia de tarde (…) é o horário de entrada dele. E no dia seguinte, é de saída." """
@@ -55,8 +82,7 @@ def test_a_saida_da_madrugada_fica_no_dia_da_entrada(app, mundo):
     with db.conexao() as conn:
         noite = escalas.gravar(conn, {"nome": "Vigia noturno 12x36", "tipo": "CICLO_12X36",
                                       "ciclo_entrada": "17:00", "ciclo_saida": "06:00"})
-        escalas.atribuir(conn, mundo["joao"], noite["id"], seg.isoformat(), ciclo_data_base=seg.isoformat(),
-                         por="teste")
+        escalas.atribuir(conn, mundo["joao"], noite["id"], seg.isoformat(), por="teste")   # sem dia do ciclo
     assert dias() == [seg, seg]
     # a batida nova já nasce no dia certo
     bater_via_chave(app, CPF_JOAO, local(qua, 17))
@@ -66,6 +92,12 @@ def test_a_saida_da_madrugada_fica_no_dia_da_entrada(app, mundo):
     d = next(x for x in esp["dias"] if x["data"] == seg.isoformat())
     assert d["trabalhado"] == 13 * 60 and d["situacao"] == "OK", d
     assert "INTERVALO_CURTO" not in d["alertas"]
+    # o ciclo veio das batidas: a terça é folga, a sexta (noite sim, noite não) é falta
+    situacao = {x["data"]: x["situacao"] for x in esp["dias"]}
+    sex = seg + dt.timedelta(days=4)
+    assert situacao[ter.isoformat()] == "DESCANSO" and situacao[qua.isoformat()] == "OK"
+    if sex.month == seg.month:
+        assert situacao[sex.isoformat()] == "FALTA", situacao
 
     # a migração 021 acerta o que ficou gravado no dia errado antes do código novo
     with db.conexao() as conn:
@@ -81,3 +113,13 @@ def test_a_saida_da_madrugada_fica_no_dia_da_entrada(app, mundo):
     with db.conexao() as conn:
         escalas.atribuir(conn, mundo["joao"], mundo["escala"], seg.isoformat(), por="teste")
     assert dias() == [seg, ter, qua, qui]
+
+    # a noite trabalhada fora do ciclo: o sistema critica e o DP decide (troca ou extra)
+    with db.conexao() as conn:
+        escalas.atribuir(conn, mundo["joao"], noite["id"], seg.isoformat(), por="teste")
+    bater_via_chave(app, CPF_JOAO, local(ter, 17))
+    bater_via_chave(app, CPF_JOAO, local(qua, 6))
+    esp = dp.get(f"/erp/api/ponto/espelho/{mundo['joao']}?competencia={seg:%Y-%m}").get_json()
+    d = {x["data"]: x for x in esp["dias"]}
+    assert "FORA_DO_CICLO" in d[ter.isoformat()]["alertas"] and d[ter.isoformat()]["extra"] == 13 * 60
+    assert "FORA_DO_CICLO" not in d[qua.isoformat()]["alertas"] and d[qua.isoformat()]["situacao"] == "OK"

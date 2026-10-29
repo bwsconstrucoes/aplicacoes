@@ -82,8 +82,8 @@ def _dias(inicio: dt.date, fim: dt.date):
 class _EscalasCarregadas(escalas.EscalasDaPessoa):
     """As vigências de uma pessoa, já lidas pelo Lote (sem ir ao banco de novo)."""
 
-    def __init__(self, vigencias: list[dict], padrao):
-        self.vigencias, self.padrao, self._cache = vigencias, padrao, {}
+    def __init__(self, vigencias: list[dict], padrao, trabalhados: tuple = ()):
+        self.vigencias, self.padrao, self._cache, self._trabalhados = vigencias, padrao, {}, trabalhados
 
 
 class Lote:
@@ -128,7 +128,9 @@ class Lote:
               FROM ponto.colaborador_escalas ce JOIN ponto.escalas e ON e.id = ce.escala_id
              WHERE ce.colaborador_id = ANY(:ids) ORDER BY ce.vigencia_inicio""", ids=ids):
             vig.setdefault(int(v.pop("dono")), []).append(v)
-        self.escalas = {cid: _EscalasCarregadas(vig.get(cid, []), padrao) for cid in ids}
+        ciclo = [cid for cid, vs in vig.items() if any(v["tipo"] == "CICLO_12X36" for v in vs)]
+        trab = escalas.dias_trabalhados(conn, ciclo)
+        self.escalas = {cid: _EscalasCarregadas(vig.get(cid, []), padrao, trab.get(cid, ())) for cid in ids}
         self.calendario = feriados.Calendario(conn, inicio, fim)
 
 
@@ -348,6 +350,12 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
             r.alertas = [a for a in r.alertas if a not in ("TRABALHO_EM_DESCANSO",
                                                            "TRABALHO_EM_FERIADO")]
             r.situacao = "COMPENSADO"
+        # O 12x36 automático (30/10/2026, o dono: "deixe tentar de forma automática, e se tiver alguma
+        # anormalidade, o sistema critica e pede para o DP decidir"): a noite trabalhada fora do ciclo
+        # que as batidas mostram é troca de plantão ou extra — quem sabe é o DP.
+        if (escala is not None and escala.tipo == "CICLO_12X36" and escala.trabalhados is not None
+                and "TRABALHO_EM_DESCANSO" in r.alertas):
+            r.alertas.append("FORA_DO_CICLO")
         # A hora extra negada na conferência (29/10/2026, migração 019): não entra em conta nenhuma.
         negada = he_negadas.get((int(colaborador_id), dia))
         extra_negada = 0

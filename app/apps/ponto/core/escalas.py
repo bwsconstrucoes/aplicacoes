@@ -74,13 +74,15 @@ def validar_semana(semana) -> dict[str, list[list[str]]]:
     return saida
 
 
-def para_apuracao(escala: dict, data_base: Optional[dt.date] = None) -> apuracao.Escala:
-    """A escala do banco → o objeto que o cálculo do dia entende."""
+def para_apuracao(escala: dict, data_base: Optional[dt.date] = None,
+                  trabalhados: Optional[tuple] = None) -> apuracao.Escala:
+    """A escala do banco → o objeto que o cálculo do dia entende. No 12x36, com os
+    dias trabalhados da pessoa, o ciclo é o automático (`apuracao.dia_do_ciclo`)."""
     if escala["tipo"] == "CICLO_12X36":
         return apuracao.Escala(
             tipo="CICLO_12X36",
             periodo_ciclo=_periodo(escala["ciclo_entrada"], escala["ciclo_saida"], "ciclo"),
-            data_base=data_base)
+            data_base=data_base, trabalhados=trabalhados)
     semana = escala["semana"] if isinstance(escala["semana"], dict) else json.loads(escala["semana"] or "{}")
     return apuracao.Escala(tipo="SEMANAL", semana={
         int(d): [_periodo(p[0], p[1], "semana") for p in periodos]
@@ -171,10 +173,12 @@ def atribuir(conn: Connection, colaborador_id: int, escala_id: int, vigencia_ini
         inicio = dt.date.fromisoformat(str(vigencia_inicio))
     except ValueError as e:
         raise ErroDeValidacao("data de início ilegível (AAAA-MM-DD)", campo="vigencia_inicio") from e
+    # O 12x36 descobre o ciclo pelas batidas (30/10/2026); o dia informado, se vier, só vale
+    # enquanto a pessoa ainda não tem batida nenhuma.
     base = None
-    if escala["tipo"] == "CICLO_12X36":
+    if escala["tipo"] == "CICLO_12X36" and ciclo_data_base:
         try:
-            base = dt.date.fromisoformat(str(ciclo_data_base or vigencia_inicio))
+            base = dt.date.fromisoformat(str(ciclo_data_base))
         except ValueError as e:
             raise ErroDeValidacao("data-base do ciclo ilegível", campo="ciclo_data_base") from e
     db.executar(conn, """
@@ -232,6 +236,7 @@ class EscalasDaPessoa:
     """As vigências de uma pessoa, carregadas UMA vez para um período inteiro."""
 
     def __init__(self, conn: Connection, colaborador_id: int):
+        self._conn, self._colaborador_id, self._trabalhados = conn, colaborador_id, None
         self.vigencias = db.todos(conn, """
             SELECT ce.vigencia_inicio, ce.ciclo_data_base, e.*
               FROM ponto.colaborador_escalas ce JOIN ponto.escalas e ON e.id = ce.escala_id
@@ -256,8 +261,31 @@ class EscalasDaPessoa:
                                             "vigencia_inicio": None, "ciclo_data_base": None}
         chave = (atual["id"], atual["vigencia_inicio"])
         if chave not in self._cache:
-            self._cache[chave] = para_apuracao(atual, atual["ciclo_data_base"])
+            self._cache[chave] = para_apuracao(
+                atual, atual["ciclo_data_base"],
+                # só os dias desta vigência: dar a escala de novo a partir de um dia recomeça o ciclo
+                tuple(w for w in self.trabalhados() if w >= atual["vigencia_inicio"])
+                if atual["tipo"] == "CICLO_12X36" else None)
         return self._cache[chave], atual
+
+    def trabalhados(self) -> tuple:
+        """Os dias com batida da pessoa (para o ciclo 12x36 automático), lidos uma vez."""
+        if self._trabalhados is None:
+            self._trabalhados = dias_trabalhados(self._conn, [self._colaborador_id]).get(self._colaborador_id, ())
+        return self._trabalhados
+
+
+def dias_trabalhados(conn: Connection, ids: list[int]) -> dict[int, tuple]:
+    """{pessoa: (dias com batida válida, em ordem)} — o que o ciclo 12x36 automático lê."""
+    if not ids:
+        return {}
+    saida: dict[int, list] = {}
+    for r in db.todos(conn, """
+            SELECT DISTINCT colaborador_id, data_referencia FROM ponto.marcacoes
+             WHERE colaborador_id = ANY(:ids) AND status <> 'REJEITADA'
+             ORDER BY colaborador_id, data_referencia""", ids=[int(i) for i in ids]):
+        saida.setdefault(int(r["colaborador_id"]), []).append(r["data_referencia"])
+    return {k: tuple(v) for k, v in saida.items()}
 
 
 # ---------------------------------------------------------------------------

@@ -66,6 +66,8 @@ junto com o `README.md` e o `PLANO.md`.
    fica no dia da entrada, sem marcar "vigia noturno" na jornada; a 021 acerta as batidas já gravadas no dia errado. Vai
    junto com 1zz7 a 1zz10. Ao juntar, apertar "Aplicar atualizações do ponto" (a 020 e a 021); sem a 021, as batidas
    novas já nascem certas, mas as antigas dos vigias continuam partidas.
+   **No mesmo lote: o ciclo 12x36 automático** — o sistema não pede mais "um dia de trabalho"; descobre pelas batidas
+   quais noites são de trabalho e critica a noite fora do ciclo para o DP decidir.
 1zz10. **No ramo, esperando o "pode" (30/10/2026, noite) — SEM MIGRAÇÃO**: no calendário de horas extras, **as horas a
    menos aparecem em vermelho** (as extras em azul), e a opção **"Abater os atrasos e as saídas antecipadas das horas
    extras"** (desligada de início); a tolerância do 1zz9 vale também para o atraso. Vai junto com 1zz7 a 1zz9.
@@ -407,6 +409,32 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 30/10/2026 (noite, terceira) — O ciclo 12x36 automático, e a noite fora do ciclo para o DP decidir
+
+O dono: *"essa questão do dia em que o ciclo começa, eu acho que acaba atrapalhando. Na minha visão, isso poderia ser
+considerado de forma automática."* E logo depois: *"pode deixar tentar de forma automática, e se de repente tiver alguma
+anormalidade, aí o sistema criticar e pedir para o DP decidir."*
+- **A regra** (`apuracao.dia_do_ciclo`, pura): o dia é de trabalho se, nos **30 dias antes dele**, a pessoa trabalhou
+  mais vezes na mesma paridade (dia sim, dia não) do que na outra. Empate: vale a mais antiga da janela — o ciclo que já
+  vinha (uma noite a mais no começo não vira o ciclo). O próprio dia não vota: por isso a noite trabalhada fora do ciclo
+  é **extra**, não muda o ciclo. Sem batida nos 30 dias: a paridade da última noite trabalhada. Nunca trabalhou: o dia
+  informado ao dar a escala, se houver (os já cadastrados, como o "16" do dono, ficam só para isso); senão, nada é
+  previsto até a primeira batida — e ela abre o ciclo.
+- **Só conta o que é da vigência**: dar a escala de novo a partir de um dia recomeça o ciclo dali. É o remédio quando a
+  turma muda de vez (sem isso, a maioria leva ~15 dias para virar).
+- **A anormalidade, para o DP**: a noite trabalhada fora do ciclo ganha o alerta **"Noite fora do ciclo 12x36 — troca de
+  plantão ou extra? O DP decide"** (`FORA_DO_CICLO`, atenção) e entra na aba **Conferência do fechamento**, dizendo o
+  que fazer: troca de plantão = lançar a compensação (a folga e o dia trabalhado); extra = deixar; o ciclo mudou = dar a
+  escala de novo a partir desse dia. A noite de trabalho sem batida já aparece como falta.
+- **Telas**: as três perguntas do "dia de trabalho" saíram (trocar escala na janela da pessoa, definir em lote no Quadro,
+  aplicar na tela de escalas); a coluna "Início do ciclo" do histórico de escalas saiu; o texto da escala 12x36 diz que o
+  ciclo vem das batidas. A API continua aceitando o dia (quem mandar, vale como ponto de partida antes da 1ª batida).
+- **Onde o cálculo lê**: espelho (e o Lote do quadro/relatórios/fechamento), painel do dia, rondas — os dias trabalhados
+  são lidos de uma vez por pessoa (`escalas.dias_trabalhados`).
+- **Testes**: a regra pura (próxima do ciclo, folga, noite a mais que não vira o ciclo, troca de turma que vira com o
+  tempo, empate, sem batida na janela, nunca trabalhou) e, com banco, o 12x36 sem dia informado: terça folga, sexta
+  falta, e a noite de terça trabalhada com o alerta e 13 h de extra.
 
 ## 30/10/2026 (noite, segunda) — O turno da noite pela escala (migração 021)
 

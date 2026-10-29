@@ -69,13 +69,17 @@ def hoje(conn: Connection, *, dia: Optional[dt.date] = None, obras: Optional[lis
     # A escala padrão da empresa, para quem não tem escala própria — a mesma regra
     # do espelho (`escalas.EscalasDaPessoa`). Antes o painel dizia "sem escala".
     padrao = escalas.escala_padrao(conn)
+    trab = escalas.dias_trabalhados(conn, [c for c, vs in vigencias.items() if vs and vs[-1]["tipo"] == "CICLO_12X36"])
 
     linhas, por_obra = [], defaultdict(lambda: defaultdict(int))
     for p in pessoas:
         do_dia = batidas.get(p["id"], [])
         vig = vigencias.get(p["id"], [])
         atual = vig[-1] if vig else padrao
-        esc = escalas.para_apuracao(atual, atual.get("ciclo_data_base")) if atual else None
+        esc = (escalas.para_apuracao(atual, atual.get("ciclo_data_base"),
+                                     tuple(w for w in trab.get(p["id"], ()) if w >= atual["vigencia_inicio"])
+                                     if atual["tipo"] == "CICLO_12X36" else None)
+               if atual else None)
         periodos = esc.periodos(dia) if esc else []
         obra_do_dia = do_dia[0]["obra_id"] if do_dia else p.get("obra_id")
         nome_feriado = calendario.feriado(dia, obra_do_dia)

@@ -1208,9 +1208,9 @@
         <div class="campo"><label for="esc-ciclo-entrada">Entra *</label><input type="time" id="esc-ciclo-entrada"></div>
         <div class="campo"><label for="esc-ciclo-saida">Sai *</label><input type="time" id="esc-ciclo-saida"></div>
       </div>
-      <div class="cartao-dica">A pessoa trabalha um dia e folga o seguinte. O
-        dia em que o ciclo começa é dito ao dar a escala a cada pessoa (em
-        Pessoas), porque metade da equipe começa num dia e metade no outro.</div>
+      <div class="cartao-dica">A pessoa trabalha um dia e folga o seguinte. Quais dias são de
+        trabalho o sistema descobre sozinho, pelas batidas de cada pessoa. Saída menor que a
+        entrada é no dia seguinte (turno da noite).</div>
     </div>
     <div class="form-grade" style="margin-top:12px">
       <div class="campo" style="grid-column:span 2"><label for="esc-desc">Descrição</label>
@@ -1328,6 +1328,7 @@ const ROTULO_ALERTA_DIA = {
   SAIDA_ANTECIPADA: "saída antecipada", EXTRA_ACIMA_DE_2H: "extra acima de 2 h",
   INTERVALO_CURTO: "intervalo curto", INTERJORNADA_CURTA: "menos de 11 h de descanso",
   TRABALHO_EM_DESCANSO: "trabalho em dia de descanso", TRABALHO_EM_FERIADO: "trabalho em feriado",
+  FORA_DO_CICLO: "noite fora do ciclo 12x36 (o DP confere)",
   BATIDA_REPETIDA: "batida repetida (menos de 10 min da anterior — contada uma vez)",
   BATIDA_EM_DIA_ABONADO: "bateu em dia abonado", SEM_ESCALA: "sem escala",
 };
@@ -1819,9 +1820,9 @@ function painelCadastro() {
   <h4 style="margin:16px 0 6px">QR Code</h4><div id="pe-qr"></div>
   <h4 style="margin:16px 0 6px">Histórico de escalas</h4>
   ${(p.escalas || []).length ? `<table><thead><tr><th class="sem-ordem">Desde</th><th class="sem-ordem">Escala</th>
-      <th class="sem-ordem">Início do ciclo 12x36</th><th class="sem-ordem">Definida por</th></tr></thead><tbody>
+      <th class="sem-ordem">Definida por</th></tr></thead><tbody>
     ${p.escalas.map(h => `<tr><td class="dados">${dataBR(h.desde)}</td><td>${escapar(h.escala)}</td>
-      <td class="dados">${h.ciclo_data_base ? dataBR(h.ciclo_data_base) : "—"}</td><td>${escapar(h.por || "—")}</td></tr>`).join("")}</tbody></table>`
+      <td>${escapar(h.por || "—")}</td></tr>`).join("")}</tbody></table>`
     : `<div class="cartao-dica" style="margin-top:0">Nenhuma escala própria${p.escala_padrao ? ` — vale a padrão da empresa (${escapar(p.escala_padrao.nome)})` : " — e não há escala padrão: o espelho não aponta falta nem atraso"}.</div>`}`;
 }
 
@@ -2329,20 +2330,7 @@ async function trocarEscala(p) {
   });
   if (!r) return;
   const escolhida = ESCALAS_DO_CADASTRO.find(e => String(e.id) === r.escala_id);
-  let base = null;
-  if (escolhida && escolhida.tipo === "CICLO_12X36") {
-    const c = await perguntar({
-      titulo: "Um dia em que a pessoa trabalha",
-      aviso: "No 12x36 o sistema precisa saber quais dias são de trabalho e quais são de folga: a partir deste dia ele conta " +
-        "trabalha, folga, trabalha… No turno da noite, é o dia em que ela ENTRA (à tarde) — a saída da manhã seguinte já fica " +
-        "nesse mesmo dia. Dia errado aqui troca tudo: a noite trabalhada vira extra e a de folga vira falta.",
-      campos: [{nome: "ciclo_data_base", rotulo: "Um dia de trabalho", tipo: "date",
-                valor: r.vigencia_inicio, obrigatorio: true, largura: 1}],
-      textoOk: "Trocar escala",
-    });
-    if (!c) return;
-    base = c.ciclo_data_base;
-  }
+  const base = null;    // o 12x36 descobre o ciclo pelas batidas (30/10/2026)
   try {
     await postar(`/erp/api/ponto/pessoas/${p.id}/escala`, {
       escala_id: Number(r.escala_id), vigencia_inicio: r.vigencia_inicio, ciclo_data_base: base});
@@ -3590,16 +3578,7 @@ async function qdEscala() {
     textoOk: "Continuar"});
   if (!r) return;
   const escolhida = lista.find(e => String(e.id) === r.escala_id);
-  let base = null;
-  if (escolhida && escolhida.tipo === "CICLO_12X36") {
-    const c = await perguntar({titulo: "Um dia em que as pessoas trabalham",
-      aviso: "Um dia em que as pessoas marcadas TRABALHAM — o mesmo para todas (no turno da noite, o dia em que ENTRAM, à tarde). " +
-        "Se o grupo se reveza em turmas, defina uma turma de cada vez.",
-      campos: [{nome: "ciclo_data_base", rotulo: "Um dia de trabalho", tipo: "date", valor: r.vigencia_inicio, obrigatorio: true}],
-      textoOk: "Definir"});
-    if (!c) return;
-    base = c.ciclo_data_base;
-  }
+  const base = null;    // o 12x36 descobre o ciclo pelas batidas (30/10/2026)
   let feitas = 0; const recusas = [];
   for (const [i, l] of pessoas.entries()) {
     aviso("qd-lote-msg", `Definindo… ${i + 1} de ${pessoas.length}`, "info");
@@ -5987,16 +5966,14 @@ async function epAplicar() {
   if (!escala || !EP_MARCADAS.size) return;
   const desde = els("ep-desde").value;
   let base = null;
-  const campos = escala.tipo === "CICLO_12X36"
-    ? [{nome: "base", rotulo: "Um dia em que essas pessoas TRABALHAM (no turno da noite, o dia em que entram); o 12x36 conta dele", tipo: "date", valor: desde, obrigatorio: true, largura: 6}] : [];
+  const campos = [];
   const r = await perguntar({titulo: `Aplicar a escala ${escapar(escala.nome)} — ${contar(EP_MARCADAS.size, "pessoa", "pessoas")}`,
     aviso: `A partir de <b>${dataBR(desde)}</b>, essas pessoas passam a ser julgadas pela escala <b>${escapar(escala.nome)}</b>
       (faltas, batidas faltando, horas e extras). O que vier antes dessa data continua pelo que valia;
       troca de escala já marcada para depois dessa data é substituída por esta.
-      ${escala.tipo === "CICLO_12X36" ? "<br>No 12x36, todas as marcadas trabalham nos mesmos dias. Se a equipe se reveza em turmas, aplique uma turma de cada vez." : ""}`,
+      ${escala.tipo === "CICLO_12X36" ? "<br>No 12x36, quais dias são de trabalho e quais são de folga o sistema descobre sozinho, pelas batidas de cada pessoa." : ""}`,
     campos, textoOk: "Aplicar"});
   if (!r) return;
-  if (escala.tipo === "CICLO_12X36") base = r.base;
   try {
     const d = await postar("/erp/api/ponto/escalas/aplicar", {escala_id: escala.id, vigencia_inicio: desde,
       ciclo_data_base: base, colaboradores: [...EP_MARCADAS]});
