@@ -220,7 +220,11 @@
     <div class="campo"><label for="rl-he-min">Desconsiderar a hora extra do dia de até (minutos)</label>
       <input type="number" id="rl-he-min" min="0" max="120" step="1" placeholder="0 = tudo entra">
       <small class="suave">Ex.: 10 — o dia com 1, 8 ou 10 min de extra não entra no fechamento (fica marcado no calendário).
-        A escolha fica guardada; mude e monte de novo para refazer.</small></div>
+        A escolha fica guardada; mude e monte de novo para refazer. Vale também para o atraso pequeno.</small></div>
+    <label class="opcao" style="margin-top:6px"><input type="checkbox" id="rl-he-abater">
+      <span class="rotulo">Abater os atrasos e as saídas antecipadas das horas extras</span></label>
+    <small class="suave">Ligado: quem tem 1 h de extra e 30 min de atraso no período fica com 30 min de extra (o atraso
+      abatido sai da planilha de atrasos). A falta parcial e a falta inteira não são abatidas.</small>
     <div class="cartao-dica" id="rl-fech-periodos" style="margin-top:8px"></div>
   </div>{% endif %}
   <div id="rl-periodo">
@@ -380,7 +384,9 @@
   .he-grade td.he-cel:hover, .he-grade td.he-dia:hover { background:#EAF1FB; } .he-grade td.he-dia { cursor:pointer; }
   .he-grade td.marcada { outline:2px solid #2563EB; outline-offset:-2px; background:#E8F0FE; }
   .he-grade td.negada { text-decoration:line-through; color:#B91C1C; }
-  .he-grade td.he-pequena { color:#9CA3AF; font-size:11px; } .dp-mes .s-ABONADO, .dp-mes .s-COMPENSADO { background:#EEF3FB; }
+  .he-grade td.he-pequena { color:#9CA3AF; font-size:11px; }
+  .he-grade td.he-cel:not(.negada), .he-grade .he-pos { color:#1D4ED8; }
+  .he-grade .he-neg, .he-grade td.he-neg { color:#B91C1C; } .dp-mes .s-ABONADO, .dp-mes .s-COMPENSADO { background:#EEF3FB; }
   .dp-mes .s-DESCANSO, .dp-mes .s-FUTURO, .dp-mes .s-ANTES_DO_PONTO, .dp-mes .s-FORA_DO_CONTRATO { background:#F6F7F9; color:var(--tinta-suave); }
   .link-btn.elo-pessoa { padding:0; text-align:left; }
   /* O mapa do Quadro (21/10/2026). */
@@ -4534,18 +4540,40 @@ function fechGrupos() {
   const dias = [];
   for (let d = new Date(de); d <= ate; d.setDate(d.getDate() + 1)) dias.push(isoLocal(d));
   const grupos = {};
-  (RL.he_dias || []).forEach(x => {
-    const g = grupos[x.obra_do_dia] ||= {obra: x.obra_do_dia, nome: x.obra_nome, pessoas: {}, porDia: {}, total: 0};
+  const pessoaDe = x => {
+    const g = grupos[x.obra_do_dia] ||= {obra: x.obra_do_dia, nome: x.obra_nome, pessoas: {}, porDia: {}, total: 0, atrasos: 0};
     const p = g.pessoas[x.colaborador_id] ||= {id: x.colaborador_id, nome: x.nome, funcao: x.funcao || "", banco: x.banco,
-                                               dias: {}, negadas: {}, total: 0, primeiro: x.data};
+                                               dias: {}, negadas: {}, negativos: {}, total: 0, atrasos: 0, primeiro: x.data};
+    if (x.data < p.primeiro) p.primeiro = x.data;
+    return [g, p];
+  };
+  // as horas a menos (30/10/2026), em vermelho: o atraso soma em "atrasos" (e sai do saldo, com o abatimento ligado)
+  (RL.neg_dias || []).forEach(x => {
+    const [g, p] = pessoaDe(x);
+    p.negativos[x.data] = x;
+    if (x.tipo === "ATRASO" && !x.desconsiderada) { p.atrasos += x.minutos; g.atrasos += x.minutos; }
+  });
+  (RL.he_dias || []).forEach(x => {
+    const [g, p] = pessoaDe(x);
     if (x.negada) { p.negadas[x.data] = x; return; }
     if (x.desconsiderada) { (p.pequenas ||= {})[x.data] = x; return; }
     p.dias[x.data] = (p.dias[x.data] || 0) + x.minutos; p.total += x.minutos;
     g.porDia[x.data] = (g.porDia[x.data] || 0) + x.minutos; g.total += x.minutos;
   });
   const obras = Object.values(grupos).sort((a, b) => (a.obra || "~").localeCompare(b.obra || "~"));
-  obras.forEach(g => { g.lista = Object.values(g.pessoas).sort((a, b) => a.nome.localeCompare(b.nome)); });
+  obras.forEach(g => {
+    g.lista = Object.values(g.pessoas).sort((a, b) => a.nome.localeCompare(b.nome));
+    g.lista.forEach(p => { p.saldo = p.total - (RL.abater && !p.banco ? p.atrasos : 0); });
+    g.saldo = g.lista.reduce((s, p) => s + p.saldo, 0);
+  });
   return {dias, obras};
+}
+// uma célula de hora a menos: vermelha; "falta" no dia inteiro; entre parênteses a pequena (desconsiderada)
+const hmSinal = m => (m < 0 ? "-" : "") + hm(Math.abs(m));
+function celulaNegativa(n) {
+  if (n.tipo === "INTEGRAL") return {texto: "falta", classe: "he-neg", dica: "falta (o dia inteiro)"};
+  if (n.desconsiderada) return {texto: `(-${hm(n.minutos)})`, classe: "he-pequena", dica: `-${hm(n.minutos)} — até ${RL.he_minima} min: desconsiderado`};
+  return {texto: `-${hm(n.minutos)}`, classe: "he-neg", dica: `${n.rotulo}: ${hm(n.minutos)} a menos`};
 }
 const FECH_MARC = new Set();
 let FECH_MODO_NEGAR = false;           // desligado: clicar no dia abre o espelho; ligado: marca a hora para negar
@@ -4562,10 +4590,10 @@ function fechGradeSupervisao() {
         : "Clique no dia da pessoa (ou no nome) para abrir o espelho do ponto dela. Para negar horas, ligue “Marcar horas para negar”."}
         A hora negada fica riscada e sai de todas as contas (fechamento, relatórios, banco).</small></div>
     ${obras.length ? obras.map(g => `<h3 style="margin:14px 0 4px">Obra ${escapar(g.obra || "sem obra")}${g.nome ? ` — ${escapar(g.nome)}` : ""}
-        <small class="suave">${contar(g.lista.length, "pessoa", "pessoas")} · total ${hm(g.total)}</small></h3>
+        <small class="suave">${contar(g.lista.length, "pessoa", "pessoas")} · extras ${hm(g.total)}${g.atrasos ? ` · atrasos -${hm(g.atrasos)}` : ""}${RL.abater ? ` · saldo ${hmSinal(g.saldo)}` : ""}</small></h3>
       <div class="tabela-rolagem" style="max-height:none"><table class="he-grade"><thead><tr><th class="sem-ordem he-nome">Funcionário</th>
         ${dias.map(d => `<th class="sem-ordem ${fds(d) ? "fds" : ""}">${d.slice(8)}<br><small style="display:inline">${d.slice(5, 7)}</small></th>`).join("")}
-        <th class="sem-ordem">Total</th></tr></thead><tbody>
+        <th class="sem-ordem">Extras</th><th class="sem-ordem">Atrasos</th>${RL.abater ? `<th class="sem-ordem">Saldo</th>` : ""}</tr></thead><tbody>
       ${g.lista.map(p => `<tr><td class="he-nome">${eloPessoa(p.id, p.nome, p.primeiro)}${p.banco ? ` <small style="display:inline">(banco)</small>` : ""}
           <small>${escapar(p.funcao)}</small></td>
         ${dias.map(d => { const k = `${p.id}|${d}`, ng = p.negadas[d], m = p.dias[d], pq = (p.pequenas || {})[d];
@@ -4574,13 +4602,18 @@ function fechGradeSupervisao() {
           const abre = `data-abrir-pessoa="${p.id}" data-dia="${d}" data-aba="mes" data-competencia="${d.slice(0, 7)}"`;
           if (pq && !m && !ng) return `<td class="he-dia he-pequena ${fds(d) ? "fds" : ""}" ${abre}
             title="${escapar(`${hm(pq.minutos)} — até ${RL.he_minima} min: desconsiderada`)}">(${hm(pq.minutos)})</td>`;
+          const neg = p.negativos[d];
+          if (neg && !m && !ng && !pq) { const c = celulaNegativa(neg);
+            return `<td class="he-dia ${c.classe} ${fds(d) ? "fds" : ""}" ${abre} title="${escapar(c.dica)}">${c.texto}</td>`; }
           if (!m && !ng) return `<td class="he-dia ${fds(d) ? "fds" : ""}" ${abre} title="abrir o espelho de ${dataBR(d)}"></td>`;
           return `<td class="he-cel ${fds(d) ? "fds" : ""} ${ng ? "negada" : ""} ${FECH_MARC.has(k) ? "marcada" : ""}" data-he="${k}" ${abre}
             data-min="${ng ? ng.minutos : m}" title="${ng ? escapar(`negada: ${ng.negada_motivo || ""} (${ng.negada_por || ""})`)
               : FECH_MODO_NEGAR ? "clique para marcar" : `abrir o espelho de ${dataBR(d)}`}">${hm(ng ? ng.minutos : m)}</td>`; }).join("")}
-        <td class="num"><b>${hm(p.total)}</b></td></tr>`).join("")}
+        <td class="num he-pos"><b>${hm(p.total)}</b></td><td class="num he-neg">${p.atrasos ? `-${hm(p.atrasos)}` : ""}</td>
+        ${RL.abater ? `<td class="num"><b class="${p.saldo < 0 ? "he-neg" : "he-pos"}">${hmSinal(p.saldo)}</b></td>` : ""}</tr>`).join("")}
       </tbody><tfoot><tr><td class="he-nome"><b>Total da obra</b></td>${dias.map(d => `<td class="${fds(d) ? "fds" : ""}"><b>${g.porDia[d] ? hm(g.porDia[d]) : ""}</b></td>`).join("")}
-        <td class="num"><b>${hm(g.total)}</b></td></tr></tfoot></table></div>`).join("")
+        <td class="num he-pos"><b>${hm(g.total)}</b></td><td class="num he-neg"><b>${g.atrasos ? `-${hm(g.atrasos)}` : ""}</b></td>
+        ${RL.abater ? `<td class="num"><b>${hmSinal(g.saldo)}</b></td>` : ""}</tr></tfoot></table></div>`).join("")
       : `<div class="vazio"><b>Nenhuma hora extra</b>neste fechamento.</div>`}`;
 }
 function fechLigarGrade() {
@@ -4639,12 +4672,14 @@ function fechImprimirSupervisao() {
       <h1>BWS — Horas extras para conferência da supervisão</h1>
       <h2>Obra ${escapar(g.obra || "sem obra")}${g.nome ? ` — ${escapar(g.nome)}` : ""}</h2>
       <p>${escapar(RL.titulo)} · de ${dataBR(RL.anterior.de)} a ${dataBR(RL.corrente.ate)} · horas extras de cada dia (h:mm) na obra em que a pessoa
-        bateu · (banco) = vai para o banco de horas · <s>riscada</s> = negada na conferência${RL.he_minima ? ` · (entre parênteses) = até ${RL.he_minima} min, desconsiderada` : ""} — as duas fora do total · emitido em ${new Date().toLocaleString("pt-BR")}</p>
-      <table><thead><tr><th class="nome">Funcionário</th><th class="func">Função</th>${dias.map(d => `<th class="${fds(d) ? "fds" : ""}">${d.slice(8)}<br>${d.slice(5, 7)}</th>`).join("")}<th class="tot">Total</th></tr></thead>
+        bateu · (banco) = vai para o banco de horas · <s>riscada</s> = negada na conferência${RL.he_minima ? ` · (entre parênteses) = até ${RL.he_minima} min, desconsiderada` : ""} — as duas fora do total · <span style="color:#1d4ed8">azul</span> = hora extra, <span style="color:#b91c1c">vermelho</span> = horas a menos${RL.abater ? " (o saldo abate os atrasos)" : ""} · emitido em ${new Date().toLocaleString("pt-BR")}</p>
+      <table><thead><tr><th class="nome">Funcionário</th><th class="func">Função</th>${dias.map(d => `<th class="${fds(d) ? "fds" : ""}">${d.slice(8)}<br>${d.slice(5, 7)}</th>`).join("")}<th class="tot">Extras</th><th class="tot">Atrasos</th>${RL.abater ? `<th class="tot">Saldo</th>` : ""}</tr></thead>
       <tbody>${g.lista.map(p => `<tr><td class="nome">${escapar(p.nome)}${p.banco ? " (banco)" : ""}</td>
         <td class="func">${escapar(p.funcao)}</td>${dias.map(d => `<td class="${fds(d) ? "fds" : ""}">${p.negadas[d] ? `<s style="color:#b00">${hm(p.negadas[d].minutos)}</s>`
-          : (p.pequenas || {})[d] && !p.dias[d] ? `<span style="color:#999">(${hm(p.pequenas[d].minutos)})</span>` : c(p.dias[d])}</td>`).join("")}<td class="tot">${hm(p.total)}</td></tr>`).join("")}</tbody>
-      <tfoot><tr><td class="nome">Total da obra</td><td class="func"></td>${dias.map(d => `<td class="${fds(d) ? "fds" : ""}">${c(g.porDia[d])}</td>`).join("")}<td class="tot">${hm(g.total)}</td></tr></tfoot></table>
+          : (p.pequenas || {})[d] && !p.dias[d] ? `<span style="color:#999">(${hm(p.pequenas[d].minutos)})</span>`
+          : p.dias[d] ? `<span style="color:#1d4ed8">${hm(p.dias[d])}</span>`
+          : p.negativos[d] ? (n => `<span style="color:${n.desconsiderada ? "#999" : "#b91c1c"}">${escapar(celulaNegativa(n).texto)}</span>`)(p.negativos[d]) : ""}</td>`).join("")}<td class="tot" style="color:#1d4ed8">${hm(p.total)}</td><td class="tot" style="color:#b91c1c">${p.atrasos ? `-${hm(p.atrasos)}` : ""}</td>${RL.abater ? `<td class="tot">${hmSinal(p.saldo)}</td>` : ""}</tr>`).join("")}</tbody>
+      <tfoot><tr><td class="nome">Total da obra</td><td class="func"></td>${dias.map(d => `<td class="${fds(d) ? "fds" : ""}">${c(g.porDia[d])}</td>`).join("")}<td class="tot">${hm(g.total)}</td><td class="tot">${g.atrasos ? `-${hm(g.atrasos)}` : ""}</td>${RL.abater ? `<td class="tot">${hmSinal(g.saldo)}</td>` : ""}</tr></tfoot></table>
       <div class="assina"><div>Conferido por (encarregado / supervisor)</div><div>Data</div></div></div>`).join("")
       : `<h1>BWS — Horas extras para conferência da supervisão</h1><p>Nenhuma hora extra neste período.</p>`}
     <script>window.onload = () => window.print();<\/script></body></html>`);
@@ -4654,7 +4689,8 @@ function fechImprimirSupervisao() {
 async function fechBaixar(arquivo) {
   try {
     const resp = await fetch("/erp/api/ponto/fechamento/arquivo", {method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({competencia: RL.competencia, por_dia: RL.por_dia, arquivo, filtros: RL._filtros, he_minima: RL.he_minima})});
+      body: JSON.stringify({competencia: RL.competencia, por_dia: RL.por_dia, arquivo, filtros: RL._filtros, he_minima: RL.he_minima,
+                            abater: RL.abater ? "1" : "0"})});
     if (!resp.ok) { let m = "não deu para gerar o arquivo"; try { m = (await resp.json()).erro || m; } catch (e) { /* */ } throw new Error(m); }
     const nome = ((resp.headers.get("Content-Disposition") || "").match(/filename="([^"]+)"/) || [])[1] || "fechamento";
     const a = document.createElement("a");
@@ -4670,8 +4706,10 @@ async function rlMontar() {
     try {
       const filtros = {...FP_RL.valores()};
       RL = await postar("/erp/api/ponto/fechamento", {competencia: els("rl-comp").value, filtros,
-                                                      he_minima: els("rl-he-min").value});
+                                                      he_minima: els("rl-he-min").value,
+                                                      ...(els("rl-he-abater").dataset.mudou ? {abater: els("rl-he-abater").checked ? "1" : "0"} : {})});
       els("rl-he-min").value = RL.he_minima || 0;
+      els("rl-he-abater").checked = !!RL.abater; delete els("rl-he-abater").dataset.mudou;
       RL.tipo = "fechamento"; RL._filtros = filtros;
       if (!FECH_PARTES.some(([c]) => c === RL_VISAO)) RL_VISAO = "supervisao";
       RL.titulo = `Fechamento da folha de ${RL.competencia.slice(5)}/${RL.competencia.slice(0, 4)}`;
@@ -4761,7 +4799,9 @@ function rlDesenhar() {
         ${k("HE inteiras (.ps)", `${t.cor_extras_horas} h`, "azul")}
         ${k("HE quebradas", hm(t.cor_extras_quebradas_minutos))}
         ${k("Para conferir", t.conferencia, t.conferencia ? "ambar" : "verde")}
-        ${RL.he_minima ? k(`HE de até ${RL.he_minima} min desconsideradas`, `${t.he_desconsideradas_dias} dia(s) · ${hm(t.he_desconsideradas_minutos)}`) : ""}</div>
+        ${RL.he_minima ? k(`HE de até ${RL.he_minima} min desconsideradas`, `${t.he_desconsideradas_dias} dia(s) · ${hm(t.he_desconsideradas_minutos)}`) : ""}
+        ${RL.he_minima && t.atrasos_desconsiderados_dias ? k(`Atrasos de até ${RL.he_minima} min desconsiderados`, `${t.atrasos_desconsiderados_dias} dia(s) · ${hm(t.atrasos_desconsiderados_minutos)}`) : ""}
+        ${RL.abater ? k("Atrasos abatidos das horas extras", hm(t.abatido_minutos || 0), "azul") : ""}</div>
       <div class="barra-acoes" style="margin:8px 0">
         <button class="btn" type="button" data-fech-baixar="zip">⬇️ Os 3 arquivos (zip)</button>
         <button class="btn secundario" type="button" data-fech-baixar="geral">📊 Relatório geral (Excel)</button>
@@ -4839,6 +4879,7 @@ document.querySelectorAll('input[name="rl-tipo"]').forEach(r => r.addEventListen
   els("rl-tipos-just").hidden = rlTipo() !== "justificadas";
   if (els("rl-fech")) { els("rl-fech").hidden = rlTipo() !== "fechamento"; els("rl-periodo").hidden = rlTipo() === "fechamento"; } }));
 if (els("rl-comp")) { els("rl-comp").value = fechFolhaPadrao(); fechPeriodos(); els("rl-comp").addEventListener("change", fechPeriodos); }
+if (els("rl-he-abater")) els("rl-he-abater").addEventListener("change", e => { e.target.dataset.mudou = "1"; });
 els("rl-ver").addEventListener("click", rlMontar);
 els("rl-csv").addEventListener("click", rlCsv);
 els("rl-imprimir").addEventListener("click", rlImprimir);

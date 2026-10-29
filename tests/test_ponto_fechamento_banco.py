@@ -70,6 +70,27 @@ def test_as_horas_extras_para_a_supervisao_por_obra():
     assert s["total"] == 180
 
 
+def test_os_atrasos_abatidos_das_horas_extras():
+    """30/10/2026, o dono: "o cara tem meia hora negativa e tem uma hora de extra, aí ele vai ficar só com meia hora"."""
+    pool = {"006": 60, "003": 120}
+    linhas = [{"minutos": 30}, {"minutos": 50}]
+    assert fe.abater(pool, linhas) == 80
+    assert pool == {"003": 100} and [x["minutos"] for x in linhas] == [0, 0]   # primeiro da de menor percentual
+    pool = {("006", "2026-11-25"): 20}
+    linhas = [{"minutos": 45}]
+    assert fe.abater(pool, linhas) == 20 and pool == {} and linhas[0]["minutos"] == 25   # o que sobra fica atraso
+    # no calendário: a hora a menos aparece, o atraso soma em "atrasos" e, ligado o abatimento, sai do saldo
+    f = {"anterior": {"de": "2026-10-26"}, "corrente": {"ate": "2026-11-25"}, "abater": True,
+         "he_dias": [{"colaborador_id": 1, "nome": "ANA", "obra_do_dia": "AP-01", "data": "2026-10-27", "minutos": 60}],
+         "neg_dias": [{"colaborador_id": 1, "nome": "ANA", "obra_do_dia": "AP-01", "data": "2026-10-28", "minutos": 30,
+                       "tipo": "ATRASO"},
+                      {"colaborador_id": 1, "nome": "ANA", "obra_do_dia": "AP-01", "data": "2026-10-29", "minutos": 300,
+                       "tipo": "PARCIAL"}]}
+    p = fe.supervisao(f)["obras"][0]["pessoas"][0]
+    assert (p["total"], p["atrasos"], p["saldo"]) == (60, 30, 30) and set(p["negativos"]) == {"2026-10-28", "2026-10-29"}
+    assert fe.supervisao({**f, "abater": False})["obras"][0]["pessoas"][0]["saldo"] == 60
+
+
 def test_as_regras_do_dia():
     assert fe.evento_da_hora_extra({"data": "2026-11-01"}) == "003"           # domingo
     assert fe.evento_da_hora_extra({"data": "2026-11-02", "feriado": "Finados"}) == "003"
@@ -159,6 +180,15 @@ def test_o_fechamento_separa_o_inteiro_do_quebrado(app, mundo, banco, banco_anal
                                            json={**corpo, "arquivo": "cor_extras_quebradas"}).data))
     assert uma.sheetnames == ["HE quebradas"]
     assert dp.post("/erp/api/ponto/fechamento/arquivo", json={**corpo, "arquivo": "outro"}).status_code == 400
+
+    # as horas a menos no calendário (30/10/2026): a falta parcial do dia seguinte aparece, em vermelho
+    assert [(x["data"], x["tipo"], x["minutos"]) for x in f["neg_dias"] if x["cpf"] == CPF_JOAO and x["data"] == seguinte.isoformat()] \
+        == [(seguinte.isoformat(), "PARCIAL", 300)]
+    fa = dp.post("/erp/api/ponto/fechamento", json={**corpo, "abater": "1"}).get_json()
+    assert fa["abater"] is True and dp.post("/erp/api/ponto/fechamento", json=corpo).get_json()["abater"] is True
+    # a falta parcial não é abatida: as 2 h de extra continuam
+    assert [(x["evento"], x["horas"]) for x in fa["cor_extras_integrais"] if x["cpf"] == CPF_JOAO] == [("004", 2)]
+    assert dp.post("/erp/api/ponto/fechamento", json={**corpo, "abater": "0"}).get_json()["abater"] is False
 
     # a hora extra pequena DESCONSIDERADA (30/10/2026): o dia com até N minutos de extra não entra; a escolha fica
     # guardada até mudar

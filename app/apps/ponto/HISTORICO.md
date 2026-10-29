@@ -61,6 +61,9 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1zz10. **No ramo, esperando o "pode" (30/10/2026, noite) — SEM MIGRAÇÃO**: no calendário de horas extras, **as horas a
+   menos aparecem em vermelho** (as extras em azul), e a opção **"Abater os atrasos e as saídas antecipadas das horas
+   extras"** (desligada de início); a tolerância do 1zz9 vale também para o atraso. Vai junto com 1zz7 a 1zz9.
 1zz9. **No ramo, esperando o "pode" (30/10/2026, tarde, segunda) — SEM MIGRAÇÃO**: no fechamento, **desconsiderar a
    hora extra do dia de até N minutos** (escolhido na tela, guardado). Vai junto com 1zz7 e 1zz8.
 1zz8. **No ramo, esperando o "pode" (30/10/2026, tarde) — COM A MIGRAÇÃO 020 DO PONTO**: a **declaração de
@@ -399,6 +402,32 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 30/10/2026 (noite) — As horas a menos no calendário, e abater os atrasos das extras
+
+O dono: *"nesse calendário aqui de hora extra (…) é tudo hora positiva. Mas eu acredito que tenha pessoas com horas
+negativas (…) colocar de azul as horas positivas, de vermelho as horas negativas. E, da mesma forma da tolerância, a gente
+poder considerar ou não considerar as horas negativas (…) o cara tem meia hora negativa e tem uma hora de extra, aí ele
+vai ficar só com meia hora de extra."*
+- **Antes**: o calendário só mostrava a hora extra; o dia com horas a menos não aparecia, e nada era abatido.
+- **Agora**, no calendário (tela, papel e Excel): extra em **azul**, hora a menos em **vermelho** (atraso, saída
+  antecipada e falta parcial com as horas; a falta do dia inteiro escrita "falta"). Por pessoa, as colunas **Extras,
+  Atrasos** e, com o abatimento ligado, **Saldo**.
+- **"Abater os atrasos e as saídas antecipadas das horas extras"** (caixa na barra do Fechamento, guardada em
+  `ponto.parametros`, "fechamento.abater_negativas"; desligada de início). Ligada, o atraso do período sai das horas extras
+  do MESMO período (mês anterior com mês anterior, corrente com corrente), e o atraso abatido deixa de ir para a planilha de
+  faltas parciais — senão seria descontado duas vezes.
+- **Escolhas feitas (o dono pode mudar)**:
+  - abate-se **só "Atraso ou saída antecipada"**. A falta parcial (batida que falta) e a falta inteira **não** são
+    abatidas: vão para o desconto como antes, porque não há como provar que ele estava lá;
+  - abate-se primeiro a hora extra de **percentual menor** (50% antes de 100%) — a mais barata para a empresa sai primeiro;
+  - quem é do banco de horas não abate (o banco já faz essa conta).
+- **A tolerância** do 1zz9 vale também para o atraso: o dia com atraso de até N minutos fica de fora (entre parênteses,
+  em cinza), não é abatido nem descontado.
+- ⚠️ **Risco, dito ao dono**: compensar atraso de um dia com extra de outro é, na prática, um banco de horas; sem acordo
+  (individual ou coletivo) a fiscalização e a Justiça podem não aceitar, e a hora extra abatida pode ser cobrada depois.
+- **Testes**: o abatimento puro (menor percentual primeiro, o que sobra), o saldo da supervisão, e o fechamento de verdade
+  com a falta parcial no calendário, a escolha guardada e a falta parcial que não é abatida.
 
 ## 30/10/2026 (tarde, segunda) — A hora extra pequena, desconsiderada no fechamento
 
