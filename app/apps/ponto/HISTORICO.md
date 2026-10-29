@@ -61,20 +61,20 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
-1zz4. **No ramo, esperando o "pode" (29/10/2026, noite, sexta, segunda parte) — SEM MIGRAÇÃO**: as **horas extras para
+1zz4. **Publicado em 29/10/2026** (com o "pode" do dono, junto com 1zz1 a 1zz3) — **SEM MIGRAÇÃO**: as **horas extras para
    a supervisão conferir** (calendário por obra, 26 a 25, em paisagem — imprimir ou Excel) e o **percentual da hora
    extra por estado ou por obra** (Configuração › Jornada e feriados), que decide o evento do .ps. Vai junto com o
    1zz3. Antes de gerar o primeiro .ps de verdade: cadastrar os percentuais de PE, SP e CE.
-1zz3. **No ramo, esperando o "pode" (29/10/2026, noite, sexta) — SEM MIGRAÇÃO NOVA**: o **fechamento da folha para a
+1zz3. **Publicado em 29/10/2026** (com o "pode" do dono) — **SEM MIGRAÇÃO NOVA**: o **fechamento da folha para a
    contabilidade** (Relatórios › "📦 Fechamento da folha"): o mês anterior (26 ao fim) em planilha; o corrente (1 a 25)
    nos dois arquivos .ps do Fortes (faltas e horas extras inteiras) e em planilha (faltas parciais e horas
    quebradas); tudo num Excel com uma aba por parte, ou os três arquivos num zip. **Antes de usar na folha de
    verdade: importar um .ps de teste no Fortes** (ver "O que confirmar" na seção do dia).
-1zz2. **No ramo, esperando o "pode" (29/10/2026, noite, quinta) — COM A MIGRAÇÃO 018 DO PONTO**: **"não bate ponto"
+1zz2. **Publicado em 29/10/2026** (com o "pode" do dono) — **COM A MIGRAÇÃO 018 DO PONTO**: **"não bate ponto"
    à vista** na janela da pessoa e **em lote** na tela Pessoas, com o motivo, quem marcou e quando. Vai junto com o
    1zz1. Ao juntar, apertar "Aplicar atualizações do ponto" (a 018); sem ela, a marcação funciona, mas o motivo não
    fica guardado.
-1zz1. **No ramo, esperando o "pode" (29/10/2026, noite, quarta) — SEM MIGRAÇÃO**: a **falta parcial** — o dia com batida
+1zz1. **Publicado em 29/10/2026** (com o "pode" do dono) — **SEM MIGRAÇÃO**: a **falta parcial** — o dia com batida
    faltando (só a manhã, só a tarde, três batidas, uma só) vale o que está comprovado e o resto vira débito. Muda o
    débito e o banco de horas de dias que já passaram (o espelho é refeito a cada abertura).
 1zz0. **Publicado em 29/10/2026** (com o "pode" do dono, junto com o 1zz e o 1zy) — **SEM MIGRAÇÃO**: **quem a
