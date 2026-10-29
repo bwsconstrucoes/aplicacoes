@@ -61,6 +61,10 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1zz8. **No ramo, esperando o "pode" (30/10/2026, tarde) — COM A MIGRAÇÃO 020 DO PONTO**: a **declaração de
+   comparecimento abonada por uma quantidade de horas** (e o "só o período" contando só o que cai dentro do expediente),
+   e **clicar no dia do calendário de horas extras abre o espelho** da pessoa. Vai junto com o 1zz7. Ao juntar, apertar
+   "Aplicar atualizações do ponto" (a 020); sem ela, só a opção "uma quantidade de horas" não funciona.
 1zz7. **No ramo, esperando o "pode" (30/10/2026) — SEM MIGRAÇÃO**: a **compensação conferida** — passado o dia
    trabalhado, a folga só fica abonada no que ele rendeu; o resto vira falta (automático, decisão do dono); quem bate no
    dia da folga tem as horas contadas; e a compensação ainda a cumprir aparece na Conferência do fechamento.
@@ -393,6 +397,27 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 30/10/2026 (tarde) — A declaração por quantidade de horas, e o calendário que abre o espelho (migração 020)
+
+**A declaração de comparecimento.** O dono: *"a declaração fala de um determinado horário, 6h20 às 9h45. A gente
+precisa ter a opção de aprovar na totalidade, ou o período, ou uma determinada quantidade de horas — para a pessoa ficar
+devendo ou levar falta. Da forma que está, acho que se eu aprovar, fica valendo o dia inteiro."* A aprovação já pedia
+"o dia todo / só o período / nada" (27/10/2026); faltava a quantidade — e havia um erro no "só o período".
+- Nova opção na aprovação (e no "Lançar afastamento" do DP): **"Uma quantidade de horas"**, com o campo "quantas horas"
+  (ex.: 2:30). Guardada em `ocorrencias.abono_minutos` (**migração 020**) — `minutos` continua sendo o período escrito
+  na declaração. O dia mostra "Declaração de comparecimento — 2h00 abonadas".
+- **O "só o período" abona só o que cai DENTRO do expediente** (achado no exemplo dele): a declaração das 6h20 às 9h45,
+  numa escala que começa às 7h, abona **2h45**, não 3h25 — o que veio antes do expediente não era hora devida. Antes
+  abonava o período inteiro, e podia sobrar abono para cobrir atraso de outra hora do dia.
+- **Testes**: `test_a_declaracao_abona_o_periodo_dentro_do_expediente_ou_uma_quantidade_de_horas` (chegou às 10h: devia
+  3 h; o período abona 2h45 e sobram 15 min; 2 h abonadas deixam 1 h; zero horas é recusado).
+
+**O calendário de horas extras abre o espelho.** O dono: *"no calendário (…) eu queria poder clicar no dia da pessoa e
+visualizar o espelho do ponto, porque fica mais fácil de entender a situação."*
+- Clicar em **qualquer dia** da pessoa (com hora extra ou não) abre a janela dela na aba **Espelho do mês**, no mês
+  daquele dia. Para negar horas, liga-se a caixa **"Marcar horas para negar"** — aí o clique marca, em vez de abrir (os
+  dois cliques no mesmo lugar se confundiriam). Ensaio no navegador: os dois modos.
 
 ## 30/10/2026 — A compensação conferida: a folga só vale se o dia trabalhado pagar
 

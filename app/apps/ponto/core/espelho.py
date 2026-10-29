@@ -64,6 +64,9 @@ def rotulo_da_ocorrencia(o: dict) -> str:
     if o.get("tipo") == "ABONO" and o.get("subtipo") in SUBTIPOS_ABONO:
         return SUBTIPOS_ABONO[o["subtipo"]]
     from .ocorrencias import NOME_DECLARACAO
+    if o.get("tipo") == "ATESTADO" and o.get("subtipo") == "DECL_HORAS" and o.get("abono_minutos"):
+        m = int(o["abono_minutos"])
+        return f"Declaração de comparecimento — {m // 60}h{m % 60:02d} abonadas"
     if o.get("tipo") == "ATESTADO" and o.get("subtipo") in NOME_DECLARACAO:
         return NOME_DECLARACAO[o["subtipo"]]
     return ROTULO_TIPO[o["tipo"]]
@@ -108,7 +111,7 @@ class Lote:
         self.ocorrencias: dict[int, list[dict]] = {}
         for o in db.todos(conn, """
             SELECT colaborador_id, id, tipo, subtipo, status, data_inicio, data_fim, dia_trabalhado, descricao, minutos,
-                   horario
+                   horario, """ + _col_abono(conn) + """
               FROM ponto.ocorrencias
              WHERE colaborador_id = ANY(:ids) AND status NOT IN ('NEGADA', 'CANCELADA')
                AND ((data_fim >= :i AND data_inicio <= :f) OR (dia_trabalhado BETWEEN :i AND :f))
@@ -127,6 +130,27 @@ class Lote:
             vig.setdefault(int(v.pop("dono")), []).append(v)
         self.escalas = {cid: _EscalasCarregadas(vig.get(cid, []), padrao) for cid in ids}
         self.calendario = feriados.Calendario(conn, inicio, fim)
+
+
+def _col_abono(conn: Connection) -> str:
+    """A quantidade de horas abonada da declaração (migração 020): sem a coluna, vazio."""
+    return "abono_minutos" if db.tem_coluna(conn, "ocorrencias", "abono_minutos") else "NULL::integer AS abono_minutos"
+
+
+def _abono_da_declaracao(o: dict, escala, dia: dt.date) -> int:
+    """PURA. Os minutos que a declaração abona no dia. "Só o período" (30/10/2026): só a parte do período escrito
+    que cai DENTRO da jornada — a declaração das 6h20 às 9h45, numa escala que começa às 7h, abona 2h45, não 3h25
+    (o que veio antes do expediente não era hora devida). "Uma quantidade de horas": o que quem aprovou disse."""
+    if o.get("subtipo") == "DECL_HORAS":
+        return int(o.get("abono_minutos") or 0)
+    if o.get("subtipo") != "DECL_PERIODO":
+        return 0
+    minutos = int(o.get("minutos") or 0)
+    if not o.get("horario") or escala is None:
+        return minutos
+    ini = apuracao.minutos_desde(dia, horario.para_local(o["horario"]))
+    fim = ini + minutos
+    return sum(max(0, min(fim, s) - max(ini, e)) for e, s in escala.periodos(dia))
 
 
 def _minutos_previstos(escala, dia: dt.date) -> int:
@@ -204,7 +228,8 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
         rondas_do_periodo: dict = {}
     else:
         ocorrencias = db.todos(conn, """
-            SELECT id, tipo, subtipo, status, data_inicio, data_fim, dia_trabalhado, descricao, minutos, horario
+            SELECT id, tipo, subtipo, status, data_inicio, data_fim, dia_trabalhado, descricao, minutos, horario,
+                   """ + _col_abono(conn) + """
               FROM ponto.ocorrencias
              WHERE colaborador_id = :c AND status NOT IN ('NEGADA', 'CANCELADA')
                AND ((data_fim >= :i AND data_inicio <= :f)
@@ -270,7 +295,7 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
                                       f"{o['dia_trabalhado']:%d/%m}) — {coberto_min // 60}h{coberto_min % 60:02d} cobertas",
                                       "subtipo": "COMPENSACAO_NAO_CUMPRIDA", "minutos": coberto_min}
         declaracoes = [o for o in aprovadas if (o["tipo"] == "ATESTADO"
-                       and o.get("subtipo") in ("DECL_PERIODO", "DECL_NADA"))
+                       and o.get("subtipo") in ("DECL_PERIODO", "DECL_HORAS", "DECL_NADA"))
                        # a licença ou o abono que a Configuração diz que NÃO abona (29/10/2026): o dia
                        # fica justificado, mas as horas são descontadas — como a declaração com "nada"
                        or (o["tipo"], o.get("subtipo")) in nao_abonam
@@ -278,8 +303,9 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
                        # período e o resto do período a gente quer abonar"): abona os minutos dele
                        or (o["tipo"] == "ABONO" and int(o.get("minutos") or 0) > 0)]
         aprovadas = [o for o in aprovadas if o not in declaracoes]
-        abono_parcial = sum(int(o.get("minutos") or 0) for o in declaracoes
-                            if o["subtipo"] == "DECL_PERIODO"
+        abono_parcial = sum((_abono_da_declaracao(o, escala, dia) if o["tipo"] == "ATESTADO" else int(o.get("minutos") or 0))
+                            for o in declaracoes
+                            if o["tipo"] == "ATESTADO"
                             or (o["tipo"] == "ABONO" and (o["tipo"], o.get("subtipo")) not in nao_abonam))
         if compensacao_falhou:
             abono_parcial += compensacao_falhou["minutos"]                  # o que o dia trabalhado cobriu

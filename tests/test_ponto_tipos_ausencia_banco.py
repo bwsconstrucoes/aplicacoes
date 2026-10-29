@@ -152,3 +152,35 @@ def test_a_compensacao_conferida(app, mundo):
         bater_via_chave(app, CPF_JOAO, local(qui, h, 0))
     d = _dia(dp, mundo["joao"], qui)
     assert d["extra"] == 240 and "TRABALHOU_NA_FOLGA" in d["alertas"]
+
+
+def test_a_declaracao_abona_o_periodo_dentro_do_expediente_ou_uma_quantidade_de_horas(app, mundo):
+    """30/10/2026, o dono: "a declaração fala de 6h20 às 9h45 (…) aprovar na totalidade, ou o período, ou uma
+    determinada quantidade de horas — para a pessoa ficar devendo ou levar falta." """
+    from tests.test_ponto_gestao_banco import CPF_JOAO, bater_via_chave, local
+    dp = como(app, mundo["dp"])
+    seg = _segunda_passada()
+    ter, qua = seg + dt.timedelta(days=1), seg + dt.timedelta(days=2)
+    for dia in (ter, qua):                       # chegou às 10h, depois da consulta: trabalhou 6 h de 9
+        for h in (10, 11, 12, 17):
+            bater_via_chave(app, CPF_JOAO, local(dia, h, 0))
+
+    def declarar(dia, abono):
+        r = dp.post("/erp/api/ponto/afastamentos", json={
+            "tipo": "DECLARACAO", "colaborador_id": mundo["joao"], "data_inicio": dia.isoformat(),
+            "hora_inicio": "06:20", "hora_fim": "09:45", "abono": abono, "descricao": "consulta",
+            "aprovar_ja": True, "documento_base64": _png()})
+        assert r.status_code == 201, r.get_json()
+        return r.get_json()["ocorrencia"]
+
+    assert _dia(dp, mundo["joao"], ter)["debito"] == 180
+    declarar(ter, "PERIODO")                     # só a parte dentro do expediente: 7h às 9h45 = 2h45
+    assert _dia(dp, mundo["joao"], ter)["debito"] == 15
+    o = declarar(qua, "HORAS:120")               # quem aprovou decidiu abonar 2 h
+    assert "2h00 abonadas" in o["rotulo"]
+    d = _dia(dp, mundo["joao"], qua)
+    assert d["debito"] == 60 and any("2h00" in x["rotulo"] for x in d["declaracoes"])
+    assert dp.post("/erp/api/ponto/afastamentos", json={
+        "tipo": "DECLARACAO", "colaborador_id": mundo["joao"], "data_inicio": (seg + dt.timedelta(days=3)).isoformat(),
+        "hora_inicio": "06:20", "hora_fim": "09:45", "abono": "HORAS:0", "descricao": "consulta", "aprovar_ja": True,
+        "documento_base64": _png()}).status_code == 400

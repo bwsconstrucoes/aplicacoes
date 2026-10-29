@@ -143,10 +143,11 @@ def justificadas(conn: Connection, quem: Quem, pessoas: list[dict], inicio: dt.d
         linhas.append({**_base(p), "pedido_id": j["id"], "tipo": j["tipo"], "rotulo": j["rotulo"],
                        "de": j["data_inicio"], "ate": j["data_fim"],
                        # a declaração que abonou só o período (ou nada) não abona dia: abona horas
-                       "dias": (0 if o.get("subtipo") in ("DECL_PERIODO", "DECL_NADA", "DECLARACAO")
+                       "dias": (0 if o.get("subtipo") in ("DECL_PERIODO", "DECL_HORAS", "DECL_NADA", "DECLARACAO")
                                 or (o["tipo"], o.get("subtipo")) in nao_abonam
                                 else _dias_no_periodo(o["data_inicio"], o["data_fim"], inicio, fim)),
-                       "horas": int(o.get("minutos") or 0) if o.get("subtipo") == "DECL_PERIODO" else 0,
+                       "horas": (int(o.get("minutos") or 0) if o.get("subtipo") == "DECL_PERIODO"
+                                 else int(o.get("abono_minutos") or 0) if o.get("subtipo") == "DECL_HORAS" else 0),
                        "periodo": j.get("declaracao_periodo"),
                        "cid": j.get("cid"), "tem_documento": j["tem_documento"], "documento_id": j.get("documento_id"),
                        "sigiloso": j["sigiloso"],

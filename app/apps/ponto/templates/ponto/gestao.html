@@ -373,7 +373,7 @@
   .he-grade .he-nome { text-align:left; position:sticky; left:0; background:var(--fundo, #fff); min-width:190px; z-index:1; }
   .he-grade .he-nome small { display:block; } .he-grade .fds { background:#F3F4F6; }
   .he-grade td.he-cel { cursor:pointer; font-family:var(--fonte-dados); }
-  .he-grade td.he-cel:hover { background:#EAF1FB; }
+  .he-grade td.he-cel:hover, .he-grade td.he-dia:hover { background:#EAF1FB; } .he-grade td.he-dia { cursor:pointer; }
   .he-grade td.marcada { outline:2px solid #2563EB; outline-offset:-2px; background:#E8F0FE; }
   .he-grade td.negada { text-decoration:line-through; color:#B91C1C; } .dp-mes .s-ABONADO, .dp-mes .s-COMPENSADO { background:#EEF3FB; }
   .dp-mes .s-DESCANSO, .dp-mes .s-FUTURO, .dp-mes .s-ANTES_DO_PONTO, .dp-mes .s-FORA_DO_CONTRATO { background:#F6F7F9; color:var(--tinta-suave); }
@@ -1994,17 +1994,31 @@ document.addEventListener("click", e => {
 // decidir se vai abonar a totalidade das horas, só o período, ou não vai abonar nada").
 // Na aprovação FINAL, quem aprova escolhe; nas etapas de antes, não se pergunta.
 const OPCOES_ABONO_DECLARACAO = [
-  {valor: "PERIODO", rotulo: "Só o período da declaração (o resto do dia conta como falta ou débito)"},
+  {valor: "PERIODO", rotulo: "Só o período da declaração, dentro do expediente (o resto conta como falta ou débito)"},
+  {valor: "HORAS", rotulo: "Uma quantidade de horas (escreva quantas)"},
   {valor: "TOTAL", rotulo: "O dia todo"},
   {valor: "NADA", rotulo: "Nada — fica registrada, mas não abona"}];
+// "HORAS" vira "HORAS:<minutos>" para o servidor (30/10/2026); hh:mm ou só as horas.
+function abonoDaDeclaracao(abono, horas) {
+  if (abono !== "HORAS") return abono;
+  const m = String(horas || "").trim().match(/^(\d{1,2})(?:[:h](\d{1,2}))?$/);
+  if (!m) throw new Error("Escreva quantas horas abonar, ex.: 2:30");
+  const min = parseInt(m[1], 10) * 60 + parseInt(m[2] || "0", 10);
+  if (!min) throw new Error("Escreva quantas horas abonar, ex.: 2:30");
+  return `HORAS:${min}`;
+}
 const aprovacaoFinal = (etapaAtual, etapas) => !etapas || !etapas.length || etapas[etapas.length - 1] === etapaAtual;
 async function perguntarAbonoDaDeclaracao(nome, periodo) {
   const r = await perguntar({titulo: `Declaração de comparecimento — ${escapar(nome || "")}`,
     aviso: `A declaração diz que a pessoa esteve na consulta ou no exame ${periodo ? `<b>das ${escapar(periodo)}</b>` : "no horário escrito nela"}.
       Ela não é atestado de repouso: decida quanto do dia será abonado.`,
-    campos: [{nome: "abono", rotulo: "Abonar", tipo: "select", valor: "PERIODO", largura: 6, opcoes: OPCOES_ABONO_DECLARACAO}],
+    campos: [{nome: "abono", rotulo: "Abonar", tipo: "select", valor: "PERIODO", largura: 4, opcoes: OPCOES_ABONO_DECLARACAO},
+             {nome: "horas", rotulo: "Quantas horas", largura: 2, exemplo: "ex.: 2:30",
+              dica: "Só na opção “uma quantidade de horas”."}],
     textoOk: "Aprovar"});
-  return r ? r.abono : null;
+  if (!r) return null;
+  try { return abonoDaDeclaracao(r.abono, r.horas); }
+  catch (e) { aviso("mensagem", e.message, "erro"); return null; }
 }
 
 // Depois de decidir numa janela: atualiza o que estiver na tela.
@@ -2666,6 +2680,7 @@ async function lancarAfastamento(p, depois) {
       {nome: "hora_inicio", rotulo: "Declaração: das", tipo: "time", largura: 1, dica: "Só na declaração de comparecimento."},
       {nome: "hora_fim", rotulo: "às", tipo: "time", largura: 1},
       {nome: "abono", rotulo: "Declaração: abonar", tipo: "select", valor: "PERIODO", largura: 2, opcoes: OPCOES_ABONO_DECLARACAO},
+      {nome: "abono_horas", rotulo: "Declaração: quantas horas", largura: 1, exemplo: "ex.: 2:30"},
       {nome: "cid", rotulo: "CID", largura: 1, exemplo: "opcional"},
       {nome: "medico", rotulo: "Médico", largura: 2, exemplo: "opcional"},
       {nome: "crm", rotulo: "CRM", largura: 1, exemplo: "opcional"},
@@ -2685,7 +2700,8 @@ async function lancarAfastamento(p, depois) {
     const abonoComNome = r.tipo.startsWith("AB:");
     await postar("/erp/api/ponto/afastamentos", {
       tipo: abonoComNome ? "ABONO" : r.tipo, subtipo: r.tipo === "LICENCA" ? r.subtipo : abonoComNome ? r.tipo.slice(3) : "",
-      colaborador_id: p.id, data_inicio: r.data_inicio, hora_inicio: r.hora_inicio, hora_fim: r.hora_fim, abono: r.abono,
+      colaborador_id: p.id, data_inicio: r.data_inicio, hora_inicio: r.hora_inicio, hora_fim: r.hora_fim,
+      abono: r.tipo === "DECLARACAO" ? abonoDaDeclaracao(r.abono, r.abono_horas) : r.abono,
       data_fim: fim || r.data_inicio, descricao: r.descricao, cid: r.cid,
       medico: r.medico, crm: r.crm, documento_base64: conteudo,
       documento_nome: r.documento ? r.documento.name : "", aprovar_ja: true});
@@ -4526,14 +4542,18 @@ function fechGrupos() {
   return {dias, obras};
 }
 const FECH_MARC = new Set();
+let FECH_MODO_NEGAR = false;           // desligado: clicar no dia abre o espelho; ligado: marca a hora para negar
 function fechGradeSupervisao() {
   const {dias, obras} = fechGrupos();
   const fds = iso => [0, 6].includes(new Date(iso + "T12:00:00").getDay());
   return `<div class="barra-lote" style="margin:0 0 8px">
+      <label class="opcao" style="margin:0"><input type="checkbox" id="fech-he-modo" ${FECH_MODO_NEGAR ? "checked" : ""}>
+        <span class="rotulo"><b>Marcar horas para negar</b></span></label>
       <b id="fech-he-qtd">${contar(FECH_MARC.size, "hora marcada", "horas marcadas")}</b>
       <button class="btn secundario" type="button" id="fech-he-negar">🚫 Negar as horas marcadas…</button>
       <button class="btn secundario" type="button" id="fech-he-voltar">↩️ Voltar a contar as marcadas</button>
-      <small class="suave">Clique nas horas para marcar (uma ou várias). Clique no nome para abrir o espelho da pessoa.
+      <small class="suave">${FECH_MODO_NEGAR ? "Clique nas horas para marcar (uma ou várias); desligue a caixa para voltar a abrir o espelho."
+        : "Clique no dia da pessoa (ou no nome) para abrir o espelho do ponto dela. Para negar horas, ligue “Marcar horas para negar”."}
         A hora negada fica riscada e sai de todas as contas (fechamento, relatórios, banco).</small></div>
     ${obras.length ? obras.map(g => `<h3 style="margin:14px 0 4px">Obra ${escapar(g.obra || "sem obra")}${g.nome ? ` — ${escapar(g.nome)}` : ""}
         <small class="suave">${contar(g.lista.length, "pessoa", "pessoas")} · total ${hm(g.total)}</small></h3>
@@ -4543,16 +4563,23 @@ function fechGradeSupervisao() {
       ${g.lista.map(p => `<tr><td class="he-nome">${eloPessoa(p.id, p.nome, p.primeiro)}${p.banco ? ` <small style="display:inline">(banco)</small>` : ""}
           <small>${escapar(p.funcao)}</small></td>
         ${dias.map(d => { const k = `${p.id}|${d}`, ng = p.negadas[d], m = p.dias[d];
-          if (!m && !ng) return `<td class="${fds(d) ? "fds" : ""}"></td>`;
-          return `<td class="he-cel ${fds(d) ? "fds" : ""} ${ng ? "negada" : ""} ${FECH_MARC.has(k) ? "marcada" : ""}" data-he="${k}"
-            data-min="${ng ? ng.minutos : m}" title="${ng ? escapar(`negada: ${ng.negada_motivo || ""} (${ng.negada_por || ""})`) : "clique para marcar"}">${hm(ng ? ng.minutos : m)}</td>`; }).join("")}
+          // todo dia abre o espelho da pessoa naquele mês (30/10/2026, o dono: "clicar no dia da pessoa e
+          // visualizar o espelho do ponto"); a hora extra, com o modo ligado, se marca para negar
+          const abre = `data-abrir-pessoa="${p.id}" data-dia="${d}" data-aba="mes" data-competencia="${d.slice(0, 7)}"`;
+          if (!m && !ng) return `<td class="he-dia ${fds(d) ? "fds" : ""}" ${abre} title="abrir o espelho de ${dataBR(d)}"></td>`;
+          return `<td class="he-cel ${fds(d) ? "fds" : ""} ${ng ? "negada" : ""} ${FECH_MARC.has(k) ? "marcada" : ""}" data-he="${k}" ${abre}
+            data-min="${ng ? ng.minutos : m}" title="${ng ? escapar(`negada: ${ng.negada_motivo || ""} (${ng.negada_por || ""})`)
+              : FECH_MODO_NEGAR ? "clique para marcar" : `abrir o espelho de ${dataBR(d)}`}">${hm(ng ? ng.minutos : m)}</td>`; }).join("")}
         <td class="num"><b>${hm(p.total)}</b></td></tr>`).join("")}
       </tbody><tfoot><tr><td class="he-nome"><b>Total da obra</b></td>${dias.map(d => `<td class="${fds(d) ? "fds" : ""}"><b>${g.porDia[d] ? hm(g.porDia[d]) : ""}</b></td>`).join("")}
         <td class="num"><b>${hm(g.total)}</b></td></tr></tfoot></table></div>`).join("")
       : `<div class="vazio"><b>Nenhuma hora extra</b>neste fechamento.</div>`}`;
 }
 function fechLigarGrade() {
-  els("rl-tabela").querySelectorAll("[data-he]").forEach(c => c.addEventListener("click", () => {
+  els("fech-he-modo").addEventListener("change", e => { FECH_MODO_NEGAR = e.target.checked; rlDesenhar(); });
+  els("rl-tabela").querySelectorAll("[data-he]").forEach(c => c.addEventListener("click", ev => {
+    if (!FECH_MODO_NEGAR) return;                      // segue para o clique geral, que abre o espelho
+    ev.stopPropagation();
     const k = c.dataset.he; FECH_MARC.has(k) ? FECH_MARC.delete(k) : FECH_MARC.add(k);
     c.classList.toggle("marcada", FECH_MARC.has(k));
     els("fech-he-qtd").textContent = contar(FECH_MARC.size, "hora marcada", "horas marcadas");
@@ -4562,7 +4589,7 @@ function fechLigarGrade() {
       return {colaborador_id: Number(id), data, minutos: Number(c.dataset.min)}; });
   els("fech-he-negar").addEventListener("click", async () => {
     const lista = itens(false);
-    if (!lista.length) return aviso("mensagem", "Marque, no calendário, as horas extras que não devem entrar.", "erro");
+    if (!lista.length) return aviso("mensagem", "Ligue “Marcar horas para negar” e marque, no calendário, as horas extras que não devem entrar.", "erro");
     const r = await perguntar({titulo: `Negar ${contar(lista.length, "hora extra", "horas extras")}`,
       aviso: "A hora extra desses dias sai de todas as contas: fechamento, arquivo .ps, relatórios e banco de horas. " +
              "As batidas não mudam. Fica registrado o motivo, quem negou e quando — e dá para voltar a contar.",

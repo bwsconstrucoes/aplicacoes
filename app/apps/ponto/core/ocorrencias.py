@@ -58,10 +58,13 @@ SAUDE = ("ATESTADO", "AFASTAMENTO")
 # aprovação final, quem aprova escolhe — e o subtipo guarda a escolha. O horário de
 # início vai em `horario` e a duração do período declarado, em `minutos`.
 DECLARACAO = "DECLARACAO"
-DECLARACAO_ABONO = {"TOTAL": "DECL_TOTAL", "PERIODO": "DECL_PERIODO", "NADA": "DECL_NADA"}
+# "HORAS" (30/10/2026, o dono: "ou uma determinada quantidade de horas"): quem aprova diz quantas; vão em
+# `abono_minutos` (migração 020), e `minutos` continua sendo o período escrito na declaração.
+DECLARACAO_ABONO = {"TOTAL": "DECL_TOTAL", "PERIODO": "DECL_PERIODO", "NADA": "DECL_NADA", "HORAS": "DECL_HORAS"}
 NOME_DECLARACAO = {"DECLARACAO": "Declaração de comparecimento — falta decidir o abono",
                    "DECL_TOTAL": "Declaração de comparecimento — abonado o dia todo",
                    "DECL_PERIODO": "Declaração de comparecimento — abonado só o período",
+                   "DECL_HORAS": "Declaração de comparecimento — abonada uma quantidade de horas",
                    "DECL_NADA": "Declaração de comparecimento — não abonada"}
 
 
@@ -405,7 +408,9 @@ def _para_json(o: dict, quem: Quem, etapas: tuple | None = None) -> dict:
     return {
         "id": o["id"], "tipo": o["tipo"],
         "rotulo": SUBTIPOS_ABONO[o["subtipo"]] if o["tipo"] == "ABONO" and o.get("subtipo") in SUBTIPOS_ABONO else
-                  NOME_DECLARACAO[o["subtipo"]] if e_declaracao(o) else
+                  (f"Declaração de comparecimento — {int(o['abono_minutos']) // 60}h{int(o['abono_minutos']) % 60:02d} abonadas"
+                   if o.get("subtipo") == "DECL_HORAS" and o.get("abono_minutos") else NOME_DECLARACAO[o["subtipo"]])
+                  if e_declaracao(o) else
                   ROTULO_TIPO[o["tipo"]] + (f" — {MOTIVO_LOTE}" if o.get("subtipo") == SUBTIPO_LOTE else
                                             f" — {_NOME_SUBTIPO.get(o['subtipo'], o['subtipo']).split(' (')[0].lower()}"
                                              if o.get("subtipo") else ""),
@@ -649,11 +654,24 @@ def decidir(conn: Connection, ocorrencia_id: int, quem: Quem, *, aprovar: bool,
     if novo_status == "APROVADA" and e_declaracao(o):
         # Na aprovação final da declaração, quem aprova escolhe o abono.
         escolha = str(abono or "").strip().upper()
+        horas = None
+        if escolha.startswith("HORAS"):            # "HORAS:150" — 150 minutos
+            try:
+                horas = int(escolha.split(":", 1)[1])
+            except (IndexError, ValueError):
+                horas = None
+            if not horas or not 0 < horas <= 24 * 60:
+                raise ErroDeValidacao("diga quantas horas da declaração são abonadas (ex.: 2:30)", campo="abono")
+            if not db.tem_coluna(conn, "ocorrencias", "abono_minutos"):
+                raise ErroDeValidacao("aplique as atualizações do ponto (migração 020) antes", campo="abono")
+            escolha = "HORAS"
         if escolha not in DECLARACAO_ABONO:
             raise ErroDeValidacao("declaração de comparecimento: diga se abona o dia todo, só o período "
-                                  "declarado ou nada", campo="abono")
+                                  "declarado, uma quantidade de horas ou nada", campo="abono")
         db.executar(conn, "UPDATE ponto.ocorrencias SET subtipo = :s WHERE id = :id",
                     s=DECLARACAO_ABONO[escolha], id=ocorrencia_id)
+        if horas:
+            db.executar(conn, "UPDATE ponto.ocorrencias SET abono_minutos = :m WHERE id = :id", m=horas, id=ocorrencia_id)
     db.executar(conn, f"""
         UPDATE ponto.ocorrencias SET status = :s, {campos[0]} = :u, {campos[1]} = :n,
                {campos[2]} = now(), atualizado_em = now() WHERE id = :id
