@@ -61,7 +61,7 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
-1zx. **No ramo, esperando o "pode" (29/10/2026) — COM A MIGRAÇÃO 016 DO PONTO**: a negativa no espelho do
+1zx. **Publicado em 29/10/2026** (com o "pode" do dono; junção `155f040`) — **COM A MIGRAÇÃO 016 DO PONTO**: a negativa no espelho do
    ERP; o WhatsApp da negativa que não saía (a fila dormia antes da mensagem vencer); o **aviso de obra
    suspeita** no pedido de ajuste; e o **DP corrigindo a obra** do pedido que ainda espera decisão. Ao juntar,
    apertar "Aplicar atualizações do ponto" (a 016); sem ela, só o botão "Corrigir a obra…" não aparece.
