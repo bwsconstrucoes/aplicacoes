@@ -735,9 +735,15 @@
 <h2>Pessoas no ponto <small id="pe-sub"></small></h2>
 <div id="mensagem"></div>
 <div class="cartao oculto" id="pe-fora" style="border-left:4px solid var(--ambar)"></div>
+{% if pode.tratar_ponto %}<div class="barra-lote" id="pe-lote" style="margin:0 0 8px">
+  <b id="pe-qtd">0 marcadas</b>
+  <button class="btn secundario" type="button" id="pe-nao-bate" disabled>🚫 Não bate ponto…</button>
+  <button class="btn secundario" type="button" id="pe-volta" disabled>✅ Voltar a bater ponto…</button>
+  <small class="suave">Marque as pessoas na lista. Para achar quem já não bate, ligue “Incluir quem não bate ponto” na barra ao lado.</small>
+</div>{% endif %}
 <div class="tabela-wrap">
   <div class="tabela-rolagem"><table>
-    <thead><tr><th class="sem-ordem">Foto</th><th class="sem-ordem">Nome</th><th class="sem-ordem">Função</th>
+    <thead><tr>{% if pode.tratar_ponto %}<th class="sem-ordem" style="width:28px"><input type="checkbox" id="pe-todas" title="marcar todas da lista"></th>{% endif %}<th class="sem-ordem">Foto</th><th class="sem-ordem">Nome</th><th class="sem-ordem">Função</th>
       <th class="sem-ordem">Obra do cadastro</th><th class="sem-ordem">Batendo em (30 dias)</th>
       <th class="sem-ordem">Escala</th><th class="sem-ordem">Banco de horas</th><th class="sem-ordem">PIN</th></tr></thead>
     <tbody id="pe-corpo"></tbody></table></div>
@@ -1438,7 +1444,7 @@ function desenharPainel() {
     aprovarAparelho((p.aparelhos || []).find(a => String(a.id) === b.dataset.dpAparelho), recarregarPainel)));
   els("dp-corpo").querySelectorAll("[data-dp-cad]").forEach(b => b.addEventListener("click", () =>
     ({escala: trocarEscala, jornada: jornadaEObras, forma: formaDeBater, codigo: primeiroAcesso,
-      banco: regimeDoBanco})[b.dataset.dpCad](p)));
+      banco: regimeDoBanco, naoBate: q => marcarBatePonto([q.id], !q.ativo_no_ponto, q.nome)})[b.dataset.dpCad](p)));
   els("dp-corpo").querySelectorAll("[data-foto]").forEach(b => b.addEventListener("click", () =>
     verFoto(b.dataset.foto, b.dataset.legenda)));
 }
@@ -1741,7 +1747,12 @@ function painelCadastro() {
           ${p.tem_foto_cadastral ? `<button class="link-btn" type="button" id="dp-foto-tirar">tirar a foto de cadastro</button>` : ""}</div>` : ""}
         <div id="dp-fotos-batidas"></div></div></div>`;
   return foto + `<table>${[
-    linha("Situação", escapar(p.situacao || "—")), linha("Função", escapar(p.funcao || "—")),
+    linha("Situação", escapar(p.situacao || "—")),
+    linha("Bate ponto?", p.ativo_no_ponto ? "Sim"
+      : p.nao_bate_motivo ? `<b style="color:var(--vermelho)">Não</b> — pela planilha de colaboradores: ${escapar(p.nao_bate_motivo)}`
+      : `<b style="color:var(--vermelho)">Não</b>${p.marcado_nao_bate && p.marcado_nao_bate.motivo ? ` — ${escapar(p.marcado_nao_bate.motivo)}
+          <small style="display:inline" class="suave">(${escapar([p.marcado_nao_bate.por, p.marcado_nao_bate.em ? quando(p.marcado_nao_bate.em) : ""].filter(Boolean).join(", "))})</small>` : " — marcada no ponto"}`),
+    linha("Função", escapar(p.funcao || "—")),
     linha("Obra principal", escapar(p.obra_principal ? `${p.obra_principal.codigo} — ${p.obra_principal.nome || ""}` : "—")),
     linha("Obras extras", escapar((p.obras_adicionais || []).map(o => o.codigo).join(", ") || "—")),
     linha("Jornada", escapar(rotuloJornada(p.tipo_jornada))),
@@ -1756,6 +1767,9 @@ function painelCadastro() {
   ${PODE_TRATAR ? `<div class="barra-acoes" style="margin-top:10px">
     <button class="btn secundario" type="button" data-dp-cad="escala">Trocar escala</button>
     <button class="btn secundario" type="button" data-dp-cad="jornada">Jornada e obras</button>
+    ${p.nao_bate_motivo ? "" : p.ativo_no_ponto
+      ? `<button class="btn secundario" type="button" data-dp-cad="naoBate">🚫 Não bate ponto…</button>`
+      : `<button class="btn secundario" type="button" data-dp-cad="naoBate">✅ Voltar a bater ponto…</button>`}
     <button class="btn secundario" type="button" data-dp-cad="forma">Acesso no aplicativo</button>
     <button class="btn secundario" type="button" data-dp-cad="codigo">🔑 Código de acesso do aplicativo (PIN)…</button>
     ${PODE_DP ? `<button class="btn secundario" type="button" data-dp-cad="banco">Banco de horas</button>` : ""}</div>` : ""}
@@ -2279,6 +2293,30 @@ async function trocarEscala(p) {
   } catch (e) { falhou(e, "dp-msg"); }
 }
 
+// "NÃO BATE PONTO" (29/10/2026, o dono: "selecionar pessoas e dentro do cadastro dela dizer que aquela
+// pessoa não bate ponto"): na janela da pessoa e, em lote, na tela Pessoas. Com o motivo — quem procurar a
+// pessoa depois precisa saber por que ela sumiu do Quadro, dos relatórios e do aplicativo.
+async function marcarBatePonto(ids, bate, nome) {
+  const quem = ids.length === 1 && nome ? escapar(nome) : contar(ids.length, "pessoa", "pessoas");
+  const r = await perguntar({
+    titulo: bate ? `Voltar a bater ponto — ${quem}` : `Não bate ponto — ${quem}`,
+    aviso: bate ? "Volta para o Quadro, os relatórios e o aplicativo, e o dia volta a ser julgado pela escala (falta, batida faltando) daqui em diante e nos dias que já passaram."
+      : "Some do Quadro, das Validações, dos relatórios, do ranking e do aplicativo (não consegue entrar nem bater). Os dias dela deixam de ser julgados. As batidas que já existem ficam guardadas.",
+    campos: bate ? [] : [{nome: "motivo", rotulo: "Por que não bate ponto?", tipo: "textarea", linhas: 2, obrigatorio: true, largura: 6,
+                          exemplo: "ex.: diretor; trabalha em home office; estagiário sem controle de jornada"}],
+    textoOk: bate ? "Voltar a bater" : "Marcar"});
+  if (!r) return false;
+  try {
+    const d = await postar("/erp/api/ponto/pessoas/bate-ponto", {colaboradores: ids, bate, motivo: r.motivo || ""});
+    aviso(els("dp-msg") && ids.length === 1 ? "dp-msg" : "mensagem",
+          bate ? `${contar(d.marcadas, "pessoa voltou", "pessoas voltaram")} a bater ponto.`
+               : `${contar(d.marcadas, "pessoa marcada", "pessoas marcadas")} como “não bate ponto”.`, "ok");
+    if (ids.length === 1 && els("dp-msg")) await depoisDoCadastro(ids[0]);
+    if (typeof carregarPessoas === "function") carregarPessoas();
+    return true;
+  } catch (e) { falhou(e, els("dp-msg") && ids.length === 1 ? "dp-msg" : "mensagem"); return false; }
+}
+
 async function jornadaEObras(p) {
   const r = await perguntar({
     titulo: `Jornada e obras — ${escapar(p.nome)}`,
@@ -2290,18 +2328,13 @@ async function jornadaEObras(p) {
        valor: escapar((p.obras_adicionais || []).map(o => o.codigo).join(", ")),
        exemplo: "códigos separados por vírgula",
        dica: "Obras onde a pessoa também pode bater ponto. A obra principal é a do cadastro do ERP."},
-      {nome: "ativo", rotulo: "Bate ponto?", tipo: "select", valor: p.ativo_no_ponto ? "1" : "0", largura: 3,
-       opcoes: [{valor: "1", rotulo: "Sim"}, {valor: "0", rotulo: "Não (some do painel e dos alertas)"}],
-       dica: p.nao_bate_motivo ? `A planilha de colaboradores diz que não bate: ${escapar(p.nao_bate_motivo)}. ` +
-             "Enquanto a planilha disser isso, vale a planilha." : ""},
     ],
     textoOk: "Salvar",
   });
   if (!r) return;
   try {
     await postar(`/erp/api/ponto/pessoas/${p.id}/ponto`, {
-      tipo_jornada: r.tipo_jornada, obras_adicionais: listaDeTexto(r.obras_adicionais),
-      ativo: r.ativo === "1"});
+      tipo_jornada: r.tipo_jornada, obras_adicionais: listaDeTexto(r.obras_adicionais)});
     await depoisDoCadastro(p.id);
     aviso("dp-msg", "Jornada e obras salvas.", "ok");
     if (typeof carregarPessoas === "function") carregarPessoas();
@@ -4570,12 +4603,25 @@ fcCarregar();
 // ===========================================================================
 const FP_PE = new FiltroPessoas("pe", {aoEnter: () => carregarPessoas()});
 let PESSOAS = [], PE_FORA = [];
+const PE_MARCADAS = new Set();
+function peContar() {
+  if (!els("pe-qtd")) return;
+  els("pe-qtd").textContent = contar(PE_MARCADAS.size, "pessoa marcada", "pessoas marcadas");
+  const marcadas = PESSOAS.filter(p => PE_MARCADAS.has(p.id));
+  // a planilha manda em quem ela tira do ponto: essas não se marcam aqui
+  els("pe-nao-bate").disabled = !marcadas.some(p => p.ativo_no_ponto);
+  els("pe-volta").disabled = !marcadas.some(p => !p.ativo_no_ponto && !p.nao_bate_motivo);
+}
+async function peMarcarBate(bate) {
+  const ids = PESSOAS.filter(p => PE_MARCADAS.has(p.id) && (bate ? !p.ativo_no_ponto && !p.nao_bate_motivo : p.ativo_no_ponto)).map(p => p.id);
+  if (ids.length && await marcarBatePonto(ids, bate)) PE_MARCADAS.clear();
+}
 async function carregarPessoas() {
   const q = new URLSearchParams(FP_PE.parametros());
   const busca = FP_PE.valores().busca;
   if (busca) q.set("busca", busca);
   if (els("pe-todos").checked) q.set("todos", "1");
-  els("pe-corpo").innerHTML = `<tr><td colspan="8">carregando…</td></tr>`;
+  els("pe-corpo").innerHTML = `<tr><td colspan="9">carregando…</td></tr>`;
   try { const d = await api(`/erp/api/ponto/pessoas?${q}`); PESSOAS = d.pessoas; PE_FORA = d.fora_da_lista || []; }
   catch (e) { falhou(e); return; }
   desenharPessoas();
@@ -4590,7 +4636,9 @@ function desenharPessoas() {
     `<li>${escapar(x.nome)}${x.cpf_final ? ` <small style="display:inline">CPF final ${escapar(x.cpf_final)}</small>` : ""} — ${escapar(x.motivo)}</li>`).join("")}</ul>` : "";
   els("pe-vazio").classList.toggle("oculto", lista.length > 0);
   els("pe-vazio").innerHTML = `<b>Ninguém</b>com estes filtros.`;
-  els("pe-corpo").innerHTML = lista.map(p => `<tr style="cursor:pointer" data-pessoa="${p.id}">
+  els("pe-corpo").innerHTML = lista.map(p => `<tr style="cursor:pointer" data-pessoa="${p.id}"${PE_MARCADAS.has(p.id) ? ' class="marcada"' : ""}>
+    ${els("pe-lote") ? `<td><input type="checkbox" data-pe-marcar="${p.id}" ${PE_MARCADAS.has(p.id) ? "checked" : ""}
+        ${p.nao_bate_motivo ? 'disabled title="a planilha de colaboradores diz que não bate — vale a planilha"' : ""}></td>` : ""}
     <td>${p.tem_foto_cadastral ? `<img class="pe-foto" loading="lazy" alt="" src="/erp/api/ponto/pessoas/${p.id}/foto-cadastral"
         onerror="fotoQuebrada(this)">` : `<span class="pe-foto sem">sem foto</span>`}</td>
     <td>${eloPessoa(p.id, p.nome)} ${marcasHtml(p.etiquetas, true)}${!p.ativo_no_ponto ? `<small title="${escapar(p.nao_bate_motivo || "marcada no ponto")}">não bate ponto</small>` : ""}
@@ -4602,11 +4650,25 @@ function desenharPessoas() {
     <td>${p.escala ? `${escapar(p.escala)}${p.escala_e_padrao ? `<small>padrão da empresa</small>` : ""}` : `<span class="selo aguardando">sem escala</span>`}</td>
     <td>${escapar(p.regime_banco_rotulo || "—")}</td>
     <td>${p.tem_pin ? `<span class="selo aprovado">sim</span>` : `<span class="selo outro">não</span>`}</td></tr>`).join("");
+  els("pe-corpo").querySelectorAll("[data-pe-marcar]").forEach(c => c.addEventListener("change", () => {
+    const id = Number(c.dataset.peMarcar); c.checked ? PE_MARCADAS.add(id) : PE_MARCADAS.delete(id);
+    c.closest("tr").classList.toggle("marcada", c.checked); peContar(); }));
+  if (els("pe-todas")) els("pe-todas").checked = lista.length > 0 && lista.every(p => PE_MARCADAS.has(p.id));
+  peContar();
   els("pe-corpo").querySelectorAll("[data-pessoa]").forEach(tr => tr.addEventListener("click", ev => {
-    if (ev.target.closest("[data-abrir-pessoa]")) return;           // o nome já abre (no Dia)
+    if (ev.target.closest("[data-abrir-pessoa], [data-pe-marcar]")) return;           // o nome já abre (no Dia)
     abrirPessoaPainel(Number(tr.dataset.pessoa), null, "cadastro"); }));
 }
 els("pe-ver").addEventListener("click", carregarPessoas);
+if (els("pe-lote")) {
+  els("pe-todas").addEventListener("change", e => {
+    const fotos = [...document.querySelectorAll("[data-pe-foto]:checked")].map(x => x.dataset.peFoto);
+    PESSOAS.filter(p => !p.nao_bate_motivo && (!fotos.length || fotos.includes(p.tem_foto_cadastral ? "COM" : "SEM")))
+      .forEach(p => e.target.checked ? PE_MARCADAS.add(p.id) : PE_MARCADAS.delete(p.id));
+    desenharPessoas(); });
+  els("pe-nao-bate").addEventListener("click", () => peMarcarBate(false));
+  els("pe-volta").addEventListener("click", () => peMarcarBate(true));
+}
 els("pe-todos").addEventListener("change", carregarPessoas);
 document.querySelectorAll("[data-pe-foto]").forEach(x => x.addEventListener("change", desenharPessoas));
 FP_PE.carregar().then(carregarPessoas);

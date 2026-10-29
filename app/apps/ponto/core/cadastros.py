@@ -37,7 +37,7 @@ _SQL_COLABORADOR = """
            {no_registro} AS no_registro, {fase} AS fase_registro,
            {bate_no_celular} AS bate_no_celular,
            {pede_no_celular} AS pede_no_celular, {administrativo_obra} AS administrativo_obra,
-           {faz_ronda} AS faz_ronda
+           {faz_ronda} AS faz_ronda, {inativo}
       FROM public.colaboradores c
       {join}
       LEFT JOIN ponto.colaborador_config pc ON pc.colaborador_id = c.id
@@ -70,7 +70,10 @@ def _sql_colaborador(conn: Connection) -> str:
     # Os papéis no aplicativo (migração 008, core/papeis.py): sem a coluna, FALSO.
     papeis = {c: (f"COALESCE(pc.{c}, FALSE)" if db.tem_coluna(conn, "colaborador_config", c) else "FALSE")
               for c in ("pede_no_celular", "administrativo_obra", "faz_ronda")}
-    return _SQL_COLABORADOR.format(**trechos, bate_no_celular=bate, **papeis)
+    # O porquê do "não bate ponto" marcado à mão (migração 018): sem a coluna, vazio.
+    inativo = ("pc.inativo_motivo, pc.inativo_por, pc.inativo_em" if db.tem_coluna(conn, "colaborador_config", "inativo_motivo")
+               else "NULL::text AS inativo_motivo, NULL::text AS inativo_por, NULL::timestamptz AS inativo_em")
+    return _SQL_COLABORADOR.format(**trechos, bate_no_celular=bate, inativo=inativo, **papeis)
 
 
 def _expr(conn: Connection, campo: str) -> str:
@@ -196,6 +199,24 @@ def gravar_config_colaborador(conn: Connection, colaborador_id: int, *,
             atualizado_em = now()
     """, id=colaborador_id, jornada=jornada, padrao=JORNADA_PADRAO,
          cc=(centro_custo or None), ativo=ativo)
+
+
+MOTIVO_MINIMO = 5
+
+
+def marcar_bate_ponto(conn: Connection, colaborador_id: int, bate: bool, motivo: str, por: str) -> None:
+    """"Não bate ponto" (ou de volta), com o motivo, quem e quando (29/10/2026, migração 018). Quem a
+    planilha tira do ponto (`registro.nao_bate_sql`) continua fora: a planilha manda."""
+    motivo = " ".join(str(motivo or "").split())
+    if not bate and len(motivo) < MOTIVO_MINIMO:
+        raise ErroDeValidacao("diga por que a pessoa não bate ponto", campo="motivo")
+    gravar_config_colaborador(conn, colaborador_id, ativo=bool(bate))
+    if db.tem_coluna(conn, "colaborador_config", "inativo_motivo"):
+        db.executar(conn, """
+            UPDATE ponto.colaborador_config
+               SET inativo_motivo = :m, inativo_por = :p, inativo_em = CASE WHEN :b THEN NULL ELSE now() END
+             WHERE colaborador_id = :id""", id=colaborador_id, b=bool(bate),
+                    m=(None if bate else motivo[:300]), p=(None if bate else por[:120]))
 
 
 def definir_obras_adicionais(conn: Connection, colaborador_id: int,
@@ -337,6 +358,10 @@ def colaborador_para_json(c: dict) -> dict:
         "tipo_jornada": c["tipo_jornada"], "centro_custo": c.get("centro_custo"),
         "situacao": c["situacao"], "ativo_no_ponto": bool(c["ativo_no_ponto"]),
         "nao_bate_motivo": c.get("nao_bate_motivo"),
+        "marcado_nao_bate": ({"motivo": c.get("inativo_motivo"), "por": c.get("inativo_por"),
+                              "em": c["inativo_em"].isoformat() if c.get("inativo_em") else None}
+                             if c.get("tem_config") and c.get("ativo_no_ponto") is False and not c.get("nao_bate_motivo")
+                             else None),
         "funcao": c.get("funcao"), "no_registro": c.get("no_registro"),
         "fase_registro": c.get("fase_registro"),
         "bate_no_celular": c.get("bate_no_celular"),

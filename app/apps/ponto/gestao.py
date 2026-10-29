@@ -740,6 +740,28 @@ def ponto_api_pessoa_ponto(colaborador_id: int):
     return _ok()
 
 
+@bp.route("/erp/api/ponto/pessoas/bate-ponto", methods=["POST"])
+@login_obrigatorio
+@permissao("tratar_ponto")
+@_api
+def ponto_api_pessoas_bate_ponto():
+    """"Não bate ponto" — ou de volta — para uma pessoa ou várias de uma vez (29/10/2026), com o motivo.
+    Cada uma passa pelo escopo de quem marca: a de fora do alcance responde "não encontrada"."""
+    quem, d = _quem(), _corpo()
+    ids = [int(x) for x in (d.get("colaboradores") or []) if str(x).isdigit()]
+    if not ids:
+        raise ErroDeValidacao("marque ao menos uma pessoa", campo="colaboradores")
+    bate = bool(d.get("bate"))
+    with db.conexao() as conn:
+        for i in ids:
+            _exigir_pessoa(conn, quem, i)
+        for i in ids:
+            cadastros.marcar_bate_ponto(conn, i, bate, d.get("motivo") or "", quem.nome)
+    logger.info("Ponto: %d pessoa(s) marcadas como %s por %s", len(ids), "batendo ponto" if bate else "não bate ponto",
+                quem.nome)
+    return _ok(marcadas=len(ids))
+
+
 @bp.route("/erp/api/ponto/pessoas/<int:colaborador_id>/banco", methods=["POST"])
 @login_obrigatorio
 @permissao("aprovar_afastamento")

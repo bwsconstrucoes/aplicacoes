@@ -61,6 +61,10 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1zz2. **No ramo, esperando o "pode" (29/10/2026, noite, quinta) — COM A MIGRAÇÃO 018 DO PONTO**: **"não bate ponto"
+   à vista** na janela da pessoa e **em lote** na tela Pessoas, com o motivo, quem marcou e quando. Vai junto com o
+   1zz1. Ao juntar, apertar "Aplicar atualizações do ponto" (a 018); sem ela, a marcação funciona, mas o motivo não
+   fica guardado.
 1zz1. **No ramo, esperando o "pode" (29/10/2026, noite, quarta) — SEM MIGRAÇÃO**: a **falta parcial** — o dia com batida
    faltando (só a manhã, só a tarde, três batidas, uma só) vale o que está comprovado e o resto vira débito. Muda o
    débito e o banco de horas de dias que já passaram (o espelho é refeito a cada abertura).
@@ -370,6 +374,24 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 29/10/2026 (noite, quinta) — "Não bate ponto" na janela da pessoa e em lote (migração 018)
+
+O dono, antes de publicar a falta parcial: *"eu queria poder selecionar pessoas e dentro do cadastro dela dizer que
+aquela pessoa não bate ponto. Como é que eu posso fazer?"* A marcação existia (`colaborador_config.ativo`), mas
+escondida num campo do diálogo "Jornada e obras" — e sem guardar por quê.
+- **Na janela da pessoa** (aba Cadastro): a linha **"Bate ponto?"** diz Sim, ou Não com o motivo, quem marcou e
+  quando (ou "pela planilha de colaboradores: …", quando é a planilha que tira). E o botão **"🚫 Não bate ponto…"**
+  (ou **"✅ Voltar a bater ponto…"**). O campo saiu do "Jornada e obras" — uma porta só.
+- **Em lote, na tela Pessoas**: caixa de marcar em cada linha, "marcar todas" e os dois botões na barra de cima.
+  Quem já não bate aparece ligando "Incluir quem não bate ponto". Quem a planilha tira do ponto não se marca (a
+  planilha manda).
+- **O motivo é obrigatório** para tirar do ponto; vai para a busca de Pessoas ("marcada no próprio ponto como não
+  bate ponto — <motivo> (por <quem>)"). Guardado em `colaborador_config.inativo_motivo/_por/_em` (**migração 018**).
+- Só quem trata o ponto (`tratar_ponto`) marca, e cada pessoa passa pelo escopo de quem marca: o supervisor preso a
+  uma obra não alcança quem é de outra (responde "não encontrada", e ninguém da lista muda).
+- **Testes**: `tests/test_ponto_nao_bate_banco.py`. Ensaio no navegador: marcar duas pessoas em lote, o motivo, a
+  linha da janela da pessoa e o "voltar a bater".
 
 ## 29/10/2026 (noite, quarta) — A falta parcial: vale o que está comprovado
 

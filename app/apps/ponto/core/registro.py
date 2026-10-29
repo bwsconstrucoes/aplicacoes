@@ -332,7 +332,9 @@ def por_que_nao_aparece(conn: Connection, busca: str, ja_listados: set, limite: 
             elif p.get("nao_bate_motivo"):
                 motivo = f"não bate ponto: {p['nao_bate_motivo']}"
             elif not p.get("ativo_no_ponto", True):
-                motivo = "marcada no próprio ponto como “não bate ponto”"
+                motivo = "marcada no próprio ponto como “não bate ponto”" + (
+                    f" — {p['inativo_motivo']}" + (f" (por {p['inativo_por']})" if p.get("inativo_por") else "")
+                    if p.get("inativo_motivo") else "")
             elif p.get("situacao") == "AFASTADO":
                 motivo = (f"afastada: a Fase Atual no Pipefy diz “{p['fase_registro']}”" if p.get("fase_registro")
                           else "afastada no cadastro do ERP") + " — afastado não bate ponto e sai das listas"

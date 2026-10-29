@@ -331,6 +331,7 @@ dizer "tem batida"; presença, horas e faltas são regra da fase 3.
 - Por que o código do primeiro acesso não chegou para o Fulano? 🔒 (ficha da pessoa › "Código não chegou?": celular usado e de onde vem, o que impede, e o resultado do envio de cada código)
 - Quem pediu a aprovação deste aparelho? (o pedido, desde 14/10/2026, só sai depois de entrar com CPF e PIN, e leva o nome de quem pediu; aparelho "sem nome" é de antes disso)
 - Por que o Fulano não aparece no ponto? 🔒 (a busca de Pessoas responde: falta no ERP, desligado pela data de saída ou pela fase do Pipefy, CPF inválido, "não bate ponto", ou fora da cópia do Registro)
+- Quem foi marcado como "não bate ponto", por quem e por quê? 🔒 (Pessoas, com "Incluir quem não bate ponto"; a janela da pessoa diz o motivo, quem marcou e quando — desde 29/10/2026, migração 018; antes disso a marcação não guardava o porquê; ❌ ainda não há uma lista só dos marcados com o motivo ao lado)
 - Quem não bate ponto por ser PJ, pró-labore ou da obra ESCRUSSAS? 🔒 (desde 29/10/2026, pela planilha de colaboradores: colunas AY "Tipo de Contrato" e AA "obra"; Configuração › Base de pessoas dá o número, a busca de Pessoas dá o motivo de cada um; ❌ ainda não há uma lista com os nomes)
 - Quantos afastados há hoje, e eles batem ponto? (Configuração › Base de pessoas, "Afastados" = Fase Atual da planilha, coluna AX; não batem e não aparecem nas listas, mas entram no aplicativo para mandar atestado)
 - Quantas batidas foram recusadas esta semana, e de que aparelho?
