@@ -12246,6 +12246,14 @@ somente Solicitações de uma conta especifica"*.
 
 #### Leva 244 — Base mista do ponto: conferida, e o ajuste no Mobponto travado depois de 15/10 (29/10/2026)
 
+- **Levas 243 e 244 publicadas em 29/10/2026.** Suíte inteira: 9510 verdes e 1
+  falha — a rota nova `encaminhar_enviar` sem classificação em `auth.TELA_DA_ROTA`;
+  corrigida e os arquivos de rota/acesso/encaminhar rodados de novo, verdes. Um
+  teste de acesso (porta de emergência) falhou uma vez numa rodada parcial e
+  passou nas três seguintes — não foi mexido. Sem migração. Falta ele: ligar
+  "Encaminhar SP" e a chave geral do WhatsApp em ERP › Mensagens, e a chave "a
+  folha lê o ponto eletrônico" em Ponto › Configuração › Geral.
+
 - Pergunta do dono: *"A base do ponto vamos usar o Mobponto até 15/10/2026; do dia
   16/10/2026 em diante, o ponto do ERP. A leitura já está compatível?"*
 - **Conferido:** a base mista existe desde 21/10/2026 (feita pelo chat do ponto,
