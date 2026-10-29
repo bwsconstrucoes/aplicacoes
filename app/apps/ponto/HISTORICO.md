@@ -61,23 +61,23 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
-1zz11. **No ramo, esperando o "pode" (30/10/2026, noite, segunda) — COM A MIGRAÇÃO 021 DO PONTO**: o **turno da
+1zz11. **Publicado em 30/10/2026** (com o "pode" do dono, junto com 1zz7 a 1zz11; feito em 30/10/2026, noite, segunda) — COM A MIGRAÇÃO 021 DO PONTO**: o **turno da
    noite pela escala** — com a escala que passa da meia-noite (o 12x36 das 17h às 6h dos vigias), a saída da madrugada
    fica no dia da entrada, sem marcar "vigia noturno" na jornada; a 021 acerta as batidas já gravadas no dia errado. Vai
    junto com 1zz7 a 1zz10. Ao juntar, apertar "Aplicar atualizações do ponto" (a 020 e a 021); sem a 021, as batidas
    novas já nascem certas, mas as antigas dos vigias continuam partidas.
    **No mesmo lote: o ciclo 12x36 automático** — o sistema não pede mais "um dia de trabalho"; descobre pelas batidas
    quais noites são de trabalho e critica a noite fora do ciclo para o DP decidir.
-1zz10. **No ramo, esperando o "pode" (30/10/2026, noite) — SEM MIGRAÇÃO**: no calendário de horas extras, **as horas a
+1zz10. **Publicado em 30/10/2026** (com o "pode" do dono, junto com 1zz7 a 1zz11; feito em 30/10/2026, noite) — SEM MIGRAÇÃO**: no calendário de horas extras, **as horas a
    menos aparecem em vermelho** (as extras em azul), e a opção **"Abater os atrasos e as saídas antecipadas das horas
    extras"** (desligada de início); a tolerância do 1zz9 vale também para o atraso. Vai junto com 1zz7 a 1zz9.
-1zz9. **No ramo, esperando o "pode" (30/10/2026, tarde, segunda) — SEM MIGRAÇÃO**: no fechamento, **desconsiderar a
+1zz9. **Publicado em 30/10/2026** (com o "pode" do dono, junto com 1zz7 a 1zz11; feito em 30/10/2026, tarde, segunda) — SEM MIGRAÇÃO**: no fechamento, **desconsiderar a
    hora extra do dia de até N minutos** (escolhido na tela, guardado). Vai junto com 1zz7 e 1zz8.
-1zz8. **No ramo, esperando o "pode" (30/10/2026, tarde) — COM A MIGRAÇÃO 020 DO PONTO**: a **declaração de
+1zz8. **Publicado em 30/10/2026** (com o "pode" do dono, junto com 1zz7 a 1zz11; feito em 30/10/2026, tarde) — COM A MIGRAÇÃO 020 DO PONTO**: a **declaração de
    comparecimento abonada por uma quantidade de horas** (e o "só o período" contando só o que cai dentro do expediente),
    e **clicar no dia do calendário de horas extras abre o espelho** da pessoa. Vai junto com o 1zz7. Ao juntar, apertar
    "Aplicar atualizações do ponto" (a 020); sem ela, só a opção "uma quantidade de horas" não funciona.
-1zz7. **No ramo, esperando o "pode" (30/10/2026) — SEM MIGRAÇÃO**: a **compensação conferida** — passado o dia
+1zz7. **Publicado em 30/10/2026** (com o "pode" do dono, junto com 1zz7 a 1zz11; feito em 30/10/2026) — SEM MIGRAÇÃO**: a **compensação conferida** — passado o dia
    trabalhado, a folga só fica abonada no que ele rendeu; o resto vira falta (automático, decisão do dono); quem bate no
    dia da folga tem as horas contadas; e a compensação ainda a cumprir aparece na Conferência do fechamento.
 1zz6. **Publicado em 29/10/2026** (com o "pode" do dono, junto com o 1zz5) — **COM A MIGRAÇÃO 019 DO PONTO**: o **abono da falta
