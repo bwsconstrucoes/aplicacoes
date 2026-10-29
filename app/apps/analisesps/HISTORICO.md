@@ -12244,6 +12244,25 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 244 — Base mista do ponto: conferida, e o ajuste no Mobponto travado depois de 15/10 (29/10/2026)
+
+- Pergunta do dono: *"A base do ponto vamos usar o Mobponto até 15/10/2026; do dia
+  16/10/2026 em diante, o ponto do ERP. A leitura já está compatível?"*
+- **Conferido:** a base mista existe desde 21/10/2026 (feita pelo chat do ponto,
+  `app/apps/ponto/core/para_folha.py` + `ponto.carga_para_a_folha`/`juntar_dias`).
+  Todas as telas da folha leem por ela: folha da contabilidade (rateio por obra),
+  diaristas, alimentação e transporte, a obra do ponto do avulso e dos
+  gratificados, e a ficha do funcionário. O corte é o início do ponto
+  (`vigencia.PADRAO` = 16/10/2026).
+- ⚠️ **SÓ VALE COM A CHAVE LIGADA:** Ponto › Configuração › Geral, "a folha lê o
+  ponto eletrônico" (`folha.le_o_ponto`). Nasce DESLIGADA — desligada, a folha lê
+  só o Mobponto, inclusive depois do dia 16. É o dono quem liga.
+- **O furo achado e fechado:** o "lançar batidas" da tela Ponto (`ponto_edicao`)
+  grava no MOBPONTO. Para dias de 16/10 em diante isso não mudaria a folha (que
+  lê o ponto do ERP) — e ninguém perceberia. Agora é recusado, com a frase
+  "de 16/10/2026 em diante a folha lê o ponto eletrônico do ERP — ajuste lá".
+- A importação do Mobponto de outubro continua necessária, para os dias 1 a 15.
+
 #### Leva 243 — Encaminhar: o botão ENVIAR (29/10/2026)
 
 - *"Tem um botão abrir no WhatsApp. Eu não entendi. (…) É para ter um botão

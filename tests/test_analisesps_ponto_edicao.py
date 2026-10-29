@@ -595,3 +595,20 @@ def test_o_PLANO_funciona_FORA_da_folha_pelo_mes_para_quem_esta_no_cadastro(
     fora = cliente.post("/analisesps/api/folha/ponto/plano", json={
         "ano": 2026, "mes": 9, "cpf": "52998224725", "de": "2026-09-14", "obra": "A"})
     assert fora.status_code == 404
+
+
+def test_do_INICIO_DO_PONTO_ELETRONICO_em_diante_nao_se_lanca_no_Mobponto(monkeypatch):
+    """29/10/2026 — a base mista: até 15/10 a folha lê o Mobponto; de 16/10 em
+    diante, o ponto do ERP. Batida lançada no Mobponto para o dia 16 em diante
+    não mudaria a folha — então é recusada, dizendo onde ajustar."""
+    from app.apps.analisesps import ponto, ponto_edicao
+    monkeypatch.setattr(ponto, "corte_do_ponto_novo", lambda a, m: dt.date(2026, 10, 16))
+    with pytest.raises(ponto_edicao.ErroDaEdicao) as erro:
+        ponto_edicao.plano_da_pessoa(2026, 10, "99713349334", "2026-10-14", "2026-10-17",
+                                     "CREPEOLINDA")
+    assert "ponto eletrônico do ERP" in str(erro.value) and "15/10/2026" in str(erro.value)
+    # Antes do corte, segue o caminho de sempre.
+    monkeypatch.setattr(ponto, "dias_de_um_cpf", lambda a, m, c: [])
+    monkeypatch.setattr(ponto_edicao, "_feriados_e_ferias", lambda *a, **k: ([], []))
+    ponto_edicao.plano_da_pessoa(2026, 10, "99713349334", "2026-10-13", "2026-10-15",
+                                 "CREPEOLINDA")

@@ -355,6 +355,16 @@ def plano_da_pessoa(ano: int, mes: int, cpf: str, de, ate, obra: str,
             (ate.year, ate.month) != (int(ano), int(mes)):
         raise ErroDaEdicao(f"o período deve estar contido em {int(mes):02d}/{int(ano)}, "
                            "competência do ponto desta folha.")
+    # ⚠️ A BASE MISTA (29/10/2026): do início do ponto eletrônico em diante
+    # (16/10/2026), a folha lê o ponto do ERP, não o Mobponto. Lançar batida no
+    # Mobponto para esses dias não mudaria a folha — e ninguém perceberia. O
+    # ajuste desses dias é feito no ponto do ERP.
+    corte = ponto.corte_do_ponto_novo(ano, mes)
+    if corte is not None and ate >= corte:
+        raise ErroDaEdicao(
+            f"de {corte.strftime('%d/%m/%Y')} em diante a folha lê o ponto eletrônico do ERP, "
+            "não o Mobponto — ajuste essas batidas no ponto do ERP. Aqui, só dias até "
+            f"{(corte - dt.timedelta(days=1)).strftime('%d/%m/%Y')}.")
     dias = ponto.dias_de_um_cpf(ano, mes, cpf)
     feriados, ferias = _feriados_e_ferias(cpf, de, ate, obra)
     return planejar(dias, de, ate, feriados, ferias, hora_avulsa)
