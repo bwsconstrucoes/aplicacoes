@@ -160,6 +160,22 @@ def test_o_fechamento_separa_o_inteiro_do_quebrado(app, mundo, banco, banco_anal
     assert uma.sheetnames == ["HE quebradas"]
     assert dp.post("/erp/api/ponto/fechamento/arquivo", json={**corpo, "arquivo": "outro"}).status_code == 400
 
+    # a hora extra pequena DESCONSIDERADA (30/10/2026): o dia com até N minutos de extra não entra; a escolha fica
+    # guardada até mudar
+    pequeno = dia - dt.timedelta(days=7)                # uma semana antes: 8 min de extra no dia
+    if pequeno.month == dia.month:
+        for h, m in ((7, 0), (11, 0), (12, 0), (17, 8)):
+            bater_via_chave(app, CPF_JOAO, local(pequeno, h, m))
+        fp = dp.post("/erp/api/ponto/fechamento", json={**corpo, "he_minima": 10}).get_json()
+        assert fp["he_minima"] == 10
+        assert [(x["data"], x["desconsiderada"]) for x in fp["he_dias"] if x["cpf"] == CPF_JOAO] == \
+            [(pequeno.isoformat(), True), (dia.isoformat(), False)]
+        assert [x["minutos"] for x in fp["cor_extras_quebradas"] if x["cpf"] == CPF_JOAO] == [30]   # os 8 min não entram
+        assert fp["totais"]["he_desconsideradas_dias"] == 1 and fp["totais"]["he_desconsideradas_minutos"] == 8
+        assert dp.post("/erp/api/ponto/fechamento", json=corpo).get_json()["he_minima"] == 10       # guardada
+    assert dp.post("/erp/api/ponto/fechamento", json={**corpo, "he_minima": 500}).status_code == 400
+    assert dp.post("/erp/api/ponto/fechamento", json={**corpo, "he_minima": 0}).get_json()["he_minima"] == 0
+
     # NEGAR a hora extra do dia na conferência (29/10/2026, migração 019): sai de todas as contas
     item = {"colaborador_id": mundo["joao"], "data": dia.isoformat(), "minutos": 150}
     assert sup.post("/erp/api/ponto/horas-extras/negar", json={"itens": [item], "motivo": "não autorizada"}).status_code == 403
@@ -168,9 +184,10 @@ def test_o_fechamento_separa_o_inteiro_do_quebrado(app, mundo, banco, banco_anal
     assert r.status_code == 200 and r.get_json()["alteradas"] == 1
     f2 = dp.post("/erp/api/ponto/fechamento", json=corpo).get_json()
     assert not [x for x in f2["cor_extras_integrais"] if x["cpf"] == CPF_JOAO]
-    neg = [x for x in f2["he_dias"] if x["cpf"] == CPF_JOAO]
+    neg = [x for x in f2["he_dias"] if x["cpf"] == CPF_JOAO and x["data"] == dia.isoformat()]
     assert [(x["negada"], x["minutos"]) for x in neg] == [(True, 150)] and "engenheiro" in neg[0]["negada_motivo"]
-    assert all(p["total"] == 0 and p["negadas"] for g in fe.supervisao(f2)["obras"] for p in g["pessoas"]
+    assert all(dia.isoformat() in p["negadas"] and dia.isoformat() not in p["dias"]
+               for g in fe.supervisao(f2)["obras"] for p in g["pessoas"]
                if p["cpf"] == CPF_JOAO)                         # no calendário, aparece, mas fora da soma
     esp = dp.get(f"/erp/api/ponto/espelho/{mundo['joao']}?competencia={dia:%Y-%m}").get_json()
     d_esp = next(x for x in esp["dias"] if x["data"] == dia.isoformat())
@@ -178,7 +195,7 @@ def test_o_fechamento_separa_o_inteiro_do_quebrado(app, mundo, banco, banco_anal
     # e volta a contar
     assert dp.post("/erp/api/ponto/horas-extras/negar", json={"itens": [item], "voltar": True}).get_json()["alteradas"] == 1
     f3 = dp.post("/erp/api/ponto/fechamento", json=corpo).get_json()
-    assert [(x["evento"], x["horas"]) for x in f3["cor_extras_integrais"] if x["cpf"] == CPF_JOAO] == [("004", 2)]
+    assert [(x["evento"], x["horas"]) for x in f3["cor_extras_integrais"] if x["cpf"] == CPF_JOAO][:1] == [("004", 2)]
 
     # SÓ CTPS entra nas contas de horas (29/10/2026): o prestador de serviço sai do fechamento e dos relatórios
     with banco.connect() as conn:

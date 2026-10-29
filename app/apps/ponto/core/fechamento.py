@@ -57,6 +57,11 @@ from .ocorrencias import Quem
 logger = logging.getLogger("ponto.fechamento")
 
 PARAMETRO_CORTE = "fechamento.dia_corte"
+# A HORA EXTRA PEQUENA DESCONSIDERADA (30/10/2026, o dono: "às vezes tem muitos dias com 2 minutos, 1 minuto, oito
+# minutos, até 12 minutos (…) eu queria poder decidir se isso vai entrar ou não"): a hora extra do dia de até N
+# minutos não entra no fechamento. Escolhida na tela do fechamento (e guardada para a próxima vez); 0 = tudo entra.
+PARAMETRO_HE_MINIMA = "fechamento.he_minima"
+HE_MINIMA_MAXIMA = 120
 CORTE_PADRAO = 25
 
 EVENTO_FALTA = "001"
@@ -74,6 +79,23 @@ FIM_DE_LINHA_PS = "\r\n"
 # ---------------------------------------------------------------------------
 # Os períodos
 # ---------------------------------------------------------------------------
+def he_minima(conn: Connection, pedida=None, por: str = "") -> int:
+    """Os minutos de hora extra do dia que não entram. Com `pedida`, grava como a nova escolha."""
+    if pedida is not None and str(pedida).strip() != "":
+        try:
+            n = int(pedida)
+        except (TypeError, ValueError):
+            raise ErroDeValidacao("minutos da hora extra desconsiderada ilegíveis", campo="he_minima") from None
+        if not 0 <= n <= HE_MINIMA_MAXIMA:
+            raise ErroDeValidacao(f"de 0 a {HE_MINIMA_MAXIMA} minutos", campo="he_minima")
+        parametros.gravar(conn, PARAMETRO_HE_MINIMA, str(n), por)
+        return n
+    try:
+        return max(0, int(parametros.ler(conn, PARAMETRO_HE_MINIMA, "0") or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
 def dia_de_corte(conn: Connection) -> int:
     try:
         n = int(parametros.ler(conn, PARAMETRO_CORTE, str(CORTE_PADRAO)) or CORTE_PADRAO)
@@ -171,8 +193,10 @@ def _so_digitos(cpf) -> str:
     return "".join(ch for ch in str(cpf or "") if ch.isdigit())
 
 
-def montar(conn: Connection, quem: Quem, competencia, filtros: Optional[dict] = None, *, por_dia: bool = False) -> dict:
+def montar(conn: Connection, quem: Quem, competencia, filtros: Optional[dict] = None, *, por_dia: bool = False,
+           minima: Optional[int] = None) -> dict:
     corte = dia_de_corte(conn)
+    minima = he_minima(conn) if minima is None else int(minima)
     per = periodos(competencia, corte)
     (ai, af), (ci, cf) = per["anterior"], per["corrente"]
     vale = vigencia.inicio(conn)
@@ -195,6 +219,7 @@ def montar(conn: Connection, quem: Quem, competencia, filtros: Optional[dict] = 
                          "cor_faltas_parciais", "cor_extras_integrais", "cor_extras_quebradas", "conferencia",
                          "he_dias")}
     ps_faltas, ps_extras = defaultdict(int), defaultdict(int)
+    pequenas: list[int] = []
     for p, esp in espelhos:
         base = relatorios._base(p)
         cpf = _so_digitos(p.get("cpf"))
@@ -248,9 +273,12 @@ def montar(conn: Connection, quem: Quem, competencia, filtros: Optional[dict] = 
                                      "obra_nome": (obras.get(ob_up) or {}).get("nome") or "",
                                      "minutos": d.get("extra") or d.get("extra_negada") or 0, "evento": ev_sup,
                                      "banco": banco_de_horas, "negada": bool(not d.get("extra") and negada),
+                                     "desconsiderada": bool(d.get("extra") and d["extra"] <= minima),
                                      "negada_motivo": (negada or {}).get("motivo"),
                                      "negada_por": (negada or {}).get("por")})
-            if d.get("extra") and not banco_de_horas:
+            if d.get("extra") and d["extra"] <= minima and not banco_de_horas:
+                pequenas.append(d["extra"])          # a hora extra pequena desconsiderada: fora das contas
+            elif d.get("extra") and not banco_de_horas:
                 teve_algo = True
                 ev = ev_sup
                 if anterior:
@@ -293,7 +321,7 @@ def montar(conn: Connection, quem: Quem, competencia, filtros: Optional[dict] = 
         "anterior": {"de": ai.isoformat(), "ate": af.isoformat()},
         "corrente": {"de": ci.isoformat(), "ate": cf.isoformat()},
         "vale_desde": vale.isoformat(), "pessoas": len(pessoas), "gerado_em": horario.texto(horario.agora()),
-        "regras_hora_extra": hora_extra.para_json(cfg)["regras"],
+        "regras_hora_extra": hora_extra.para_json(cfg)["regras"], "he_minima": minima,
         **r, "ps_faltas": linhas_faltas, "ps_extras": linhas_extras,
         "totais": {
             "ant_faltas_integrais": sum(1 for x in r["ant_faltas"] if x["tipo"] == "Falta integral"),
@@ -305,6 +333,7 @@ def montar(conn: Connection, quem: Quem, competencia, filtros: Optional[dict] = 
             "cor_extras_quebradas_minutos": sum(x["minutos"] for x in r["cor_extras_quebradas"]),
             "ps_faltas": len(linhas_faltas), "ps_extras": len(linhas_extras),
             "conferencia": len(r["conferencia"]),
+            "he_desconsideradas_dias": len(pequenas), "he_desconsideradas_minutos": sum(pequenas),
         },
     }
 
@@ -389,6 +418,9 @@ def excel(f: dict, so: Optional[str] = None) -> bytes:
             ("Horas extras inteiras (arquivo .ps de horas extras)", t["cor_extras_horas"]),
             ("Linhas no .ps de horas extras", t["ps_extras"]),
             ("Horas extras quebradas (planilha)", hhmm(t["cor_extras_quebradas_minutos"])),
+            (f"Hora extra do dia de até {f.get('he_minima') or 0} min, desconsiderada",
+             f"{t.get('he_desconsideradas_dias', 0)} dia(s), {hhmm(t.get('he_desconsideradas_minutos', 0))}"
+             if f.get("he_minima") else "nenhuma (tudo entra)"),
             ("", ""),
             ("Para conferir (aba Conferência)", t["conferencia"]),
             ("", ""),
@@ -445,9 +477,13 @@ def supervisao(f: dict) -> dict:
                                                        "pessoas": {}, "por_dia": defaultdict(int), "total": 0})
         p = g["pessoas"].setdefault(x["colaborador_id"], {"nome": x["nome"], "funcao": x.get("funcao") or "",
                                                           "cpf": x.get("cpf"), "banco": x.get("banco"),
-                                                          "dias": defaultdict(int), "negadas": {}, "total": 0})
+                                                          "dias": defaultdict(int), "negadas": {}, "pequenas": {},
+                                                          "total": 0})
         if x.get("negada"):                 # negada na conferência: aparece, mas fora da soma
             p["negadas"][x["data"]] = x["minutos"]
+            continue
+        if x.get("desconsiderada"):         # pequena demais (até a tolerância escolhida): idem
+            p["pequenas"][x["data"]] = x["minutos"]
             continue
         p["dias"][x["data"]] += x["minutos"]
         p["total"] += x["minutos"]
@@ -478,7 +514,9 @@ def excel_supervisao(f: dict) -> bytes:
                f"({_br(s['dias'][0])} a {_br(s['dias'][-1])})"])
     ws["A1"].font = Font(bold=True, size=13)
     ws.append([f"Gerado em {f['gerado_em']}. Em cada dia, as horas extras daquele dia (h:mm), na obra em que a pessoa "
-               "bateu o ponto. (banco) = a pessoa tem banco de horas: a hora extra vai para o banco, não para a folha."])
+               "bateu o ponto. (banco) = a pessoa tem banco de horas: a hora extra vai para o banco, não para a folha. "
+               + (f"Entre parênteses = até {f['he_minima']} min, desconsiderada. " if f.get("he_minima") else "")
+               + "\"negada\" = negada na conferência. As duas ficam fora do total."])
     dias_cab = [dt.date.fromisoformat(d).strftime("%d/%m") for d in s["dias"]]
     for g in s["obras"]:
         ws.append([])
@@ -493,7 +531,8 @@ def excel_supervisao(f: dict) -> bytes:
         for p in g["pessoas"]:
             ws.append([p["nome"] + (" (banco)" if p.get("banco") else ""), p["funcao"],
                        *[hhmm(p["dias"][d]) if p["dias"].get(d) else
-                         (f"negada {hhmm(p['negadas'][d])}" if p["negadas"].get(d) else "") for d in s["dias"]],
+                         (f"negada {hhmm(p['negadas'][d])}" if p["negadas"].get(d) else
+                          f"({hhmm(p['pequenas'][d])})" if p["pequenas"].get(d) else "") for d in s["dias"]],
                        hhmm(p["total"])])
         ws.append(["Total da obra", "", *[hhmm(g["por_dia"][d]) if g["por_dia"].get(d) else "" for d in s["dias"]],
                    hhmm(g["total"])])

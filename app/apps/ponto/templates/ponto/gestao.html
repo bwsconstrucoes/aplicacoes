@@ -217,6 +217,10 @@
   </div>
   {% if pode.aprovar_afastamento %}<div id="rl-fech" hidden style="margin-top:10px">
     <div class="campo"><label for="rl-comp">Folha do mês</label><input type="month" id="rl-comp"></div>
+    <div class="campo"><label for="rl-he-min">Desconsiderar a hora extra do dia de até (minutos)</label>
+      <input type="number" id="rl-he-min" min="0" max="120" step="1" placeholder="0 = tudo entra">
+      <small class="suave">Ex.: 10 — o dia com 1, 8 ou 10 min de extra não entra no fechamento (fica marcado no calendário).
+        A escolha fica guardada; mude e monte de novo para refazer.</small></div>
     <div class="cartao-dica" id="rl-fech-periodos" style="margin-top:8px"></div>
   </div>{% endif %}
   <div id="rl-periodo">
@@ -375,7 +379,8 @@
   .he-grade td.he-cel { cursor:pointer; font-family:var(--fonte-dados); }
   .he-grade td.he-cel:hover, .he-grade td.he-dia:hover { background:#EAF1FB; } .he-grade td.he-dia { cursor:pointer; }
   .he-grade td.marcada { outline:2px solid #2563EB; outline-offset:-2px; background:#E8F0FE; }
-  .he-grade td.negada { text-decoration:line-through; color:#B91C1C; } .dp-mes .s-ABONADO, .dp-mes .s-COMPENSADO { background:#EEF3FB; }
+  .he-grade td.negada { text-decoration:line-through; color:#B91C1C; }
+  .he-grade td.he-pequena { color:#9CA3AF; font-size:11px; } .dp-mes .s-ABONADO, .dp-mes .s-COMPENSADO { background:#EEF3FB; }
   .dp-mes .s-DESCANSO, .dp-mes .s-FUTURO, .dp-mes .s-ANTES_DO_PONTO, .dp-mes .s-FORA_DO_CONTRATO { background:#F6F7F9; color:var(--tinta-suave); }
   .link-btn.elo-pessoa { padding:0; text-align:left; }
   /* O mapa do Quadro (21/10/2026). */
@@ -4534,6 +4539,7 @@ function fechGrupos() {
     const p = g.pessoas[x.colaborador_id] ||= {id: x.colaborador_id, nome: x.nome, funcao: x.funcao || "", banco: x.banco,
                                                dias: {}, negadas: {}, total: 0, primeiro: x.data};
     if (x.negada) { p.negadas[x.data] = x; return; }
+    if (x.desconsiderada) { (p.pequenas ||= {})[x.data] = x; return; }
     p.dias[x.data] = (p.dias[x.data] || 0) + x.minutos; p.total += x.minutos;
     g.porDia[x.data] = (g.porDia[x.data] || 0) + x.minutos; g.total += x.minutos;
   });
@@ -4562,10 +4568,12 @@ function fechGradeSupervisao() {
         <th class="sem-ordem">Total</th></tr></thead><tbody>
       ${g.lista.map(p => `<tr><td class="he-nome">${eloPessoa(p.id, p.nome, p.primeiro)}${p.banco ? ` <small style="display:inline">(banco)</small>` : ""}
           <small>${escapar(p.funcao)}</small></td>
-        ${dias.map(d => { const k = `${p.id}|${d}`, ng = p.negadas[d], m = p.dias[d];
+        ${dias.map(d => { const k = `${p.id}|${d}`, ng = p.negadas[d], m = p.dias[d], pq = (p.pequenas || {})[d];
           // todo dia abre o espelho da pessoa naquele mês (30/10/2026, o dono: "clicar no dia da pessoa e
           // visualizar o espelho do ponto"); a hora extra, com o modo ligado, se marca para negar
           const abre = `data-abrir-pessoa="${p.id}" data-dia="${d}" data-aba="mes" data-competencia="${d.slice(0, 7)}"`;
+          if (pq && !m && !ng) return `<td class="he-dia he-pequena ${fds(d) ? "fds" : ""}" ${abre}
+            title="${escapar(`${hm(pq.minutos)} — até ${RL.he_minima} min: desconsiderada`)}">(${hm(pq.minutos)})</td>`;
           if (!m && !ng) return `<td class="he-dia ${fds(d) ? "fds" : ""}" ${abre} title="abrir o espelho de ${dataBR(d)}"></td>`;
           return `<td class="he-cel ${fds(d) ? "fds" : ""} ${ng ? "negada" : ""} ${FECH_MARC.has(k) ? "marcada" : ""}" data-he="${k}" ${abre}
             data-min="${ng ? ng.minutos : m}" title="${ng ? escapar(`negada: ${ng.negada_motivo || ""} (${ng.negada_por || ""})`)
@@ -4631,10 +4639,11 @@ function fechImprimirSupervisao() {
       <h1>BWS — Horas extras para conferência da supervisão</h1>
       <h2>Obra ${escapar(g.obra || "sem obra")}${g.nome ? ` — ${escapar(g.nome)}` : ""}</h2>
       <p>${escapar(RL.titulo)} · de ${dataBR(RL.anterior.de)} a ${dataBR(RL.corrente.ate)} · horas extras de cada dia (h:mm) na obra em que a pessoa
-        bateu · (banco) = vai para o banco de horas · <s>riscada</s> = negada na conferência, fora do total · emitido em ${new Date().toLocaleString("pt-BR")}</p>
+        bateu · (banco) = vai para o banco de horas · <s>riscada</s> = negada na conferência${RL.he_minima ? ` · (entre parênteses) = até ${RL.he_minima} min, desconsiderada` : ""} — as duas fora do total · emitido em ${new Date().toLocaleString("pt-BR")}</p>
       <table><thead><tr><th class="nome">Funcionário</th><th class="func">Função</th>${dias.map(d => `<th class="${fds(d) ? "fds" : ""}">${d.slice(8)}<br>${d.slice(5, 7)}</th>`).join("")}<th class="tot">Total</th></tr></thead>
       <tbody>${g.lista.map(p => `<tr><td class="nome">${escapar(p.nome)}${p.banco ? " (banco)" : ""}</td>
-        <td class="func">${escapar(p.funcao)}</td>${dias.map(d => `<td class="${fds(d) ? "fds" : ""}">${p.negadas[d] ? `<s style="color:#b00">${hm(p.negadas[d].minutos)}</s>` : c(p.dias[d])}</td>`).join("")}<td class="tot">${hm(p.total)}</td></tr>`).join("")}</tbody>
+        <td class="func">${escapar(p.funcao)}</td>${dias.map(d => `<td class="${fds(d) ? "fds" : ""}">${p.negadas[d] ? `<s style="color:#b00">${hm(p.negadas[d].minutos)}</s>`
+          : (p.pequenas || {})[d] && !p.dias[d] ? `<span style="color:#999">(${hm(p.pequenas[d].minutos)})</span>` : c(p.dias[d])}</td>`).join("")}<td class="tot">${hm(p.total)}</td></tr>`).join("")}</tbody>
       <tfoot><tr><td class="nome">Total da obra</td><td class="func"></td>${dias.map(d => `<td class="${fds(d) ? "fds" : ""}">${c(g.porDia[d])}</td>`).join("")}<td class="tot">${hm(g.total)}</td></tr></tfoot></table>
       <div class="assina"><div>Conferido por (encarregado / supervisor)</div><div>Data</div></div></div>`).join("")
       : `<h1>BWS — Horas extras para conferência da supervisão</h1><p>Nenhuma hora extra neste período.</p>`}
@@ -4645,7 +4654,7 @@ function fechImprimirSupervisao() {
 async function fechBaixar(arquivo) {
   try {
     const resp = await fetch("/erp/api/ponto/fechamento/arquivo", {method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({competencia: RL.competencia, por_dia: RL.por_dia, arquivo, filtros: RL._filtros})});
+      body: JSON.stringify({competencia: RL.competencia, por_dia: RL.por_dia, arquivo, filtros: RL._filtros, he_minima: RL.he_minima})});
     if (!resp.ok) { let m = "não deu para gerar o arquivo"; try { m = (await resp.json()).erro || m; } catch (e) { /* */ } throw new Error(m); }
     const nome = ((resp.headers.get("Content-Disposition") || "").match(/filename="([^"]+)"/) || [])[1] || "fechamento";
     const a = document.createElement("a");
@@ -4660,7 +4669,9 @@ async function rlMontar() {
     els("rl-tabela").innerHTML = `<div class="vazio"><b>Montando o fechamento…</b>passa pelo espelho de todo mundo — pode levar alguns segundos.</div>`;
     try {
       const filtros = {...FP_RL.valores()};
-      RL = await postar("/erp/api/ponto/fechamento", {competencia: els("rl-comp").value, filtros});
+      RL = await postar("/erp/api/ponto/fechamento", {competencia: els("rl-comp").value, filtros,
+                                                      he_minima: els("rl-he-min").value});
+      els("rl-he-min").value = RL.he_minima || 0;
       RL.tipo = "fechamento"; RL._filtros = filtros;
       if (!FECH_PARTES.some(([c]) => c === RL_VISAO)) RL_VISAO = "supervisao";
       RL.titulo = `Fechamento da folha de ${RL.competencia.slice(5)}/${RL.competencia.slice(0, 4)}`;
@@ -4749,7 +4760,8 @@ function rlDesenhar() {
         ${k("Faltas parciais", t.cor_faltas_parciais, t.cor_faltas_parciais ? "ambar" : "")}
         ${k("HE inteiras (.ps)", `${t.cor_extras_horas} h`, "azul")}
         ${k("HE quebradas", hm(t.cor_extras_quebradas_minutos))}
-        ${k("Para conferir", t.conferencia, t.conferencia ? "ambar" : "verde")}</div>
+        ${k("Para conferir", t.conferencia, t.conferencia ? "ambar" : "verde")}
+        ${RL.he_minima ? k(`HE de até ${RL.he_minima} min desconsideradas`, `${t.he_desconsideradas_dias} dia(s) · ${hm(t.he_desconsideradas_minutos)}`) : ""}</div>
       <div class="barra-acoes" style="margin:8px 0">
         <button class="btn" type="button" data-fech-baixar="zip">⬇️ Os 3 arquivos (zip)</button>
         <button class="btn secundario" type="button" data-fech-baixar="geral">📊 Relatório geral (Excel)</button>

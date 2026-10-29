@@ -61,6 +61,8 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1zz9. **No ramo, esperando o "pode" (30/10/2026, tarde, segunda) — SEM MIGRAÇÃO**: no fechamento, **desconsiderar a
+   hora extra do dia de até N minutos** (escolhido na tela, guardado). Vai junto com 1zz7 e 1zz8.
 1zz8. **No ramo, esperando o "pode" (30/10/2026, tarde) — COM A MIGRAÇÃO 020 DO PONTO**: a **declaração de
    comparecimento abonada por uma quantidade de horas** (e o "só o período" contando só o que cai dentro do expediente),
    e **clicar no dia do calendário de horas extras abre o espelho** da pessoa. Vai junto com o 1zz7. Ao juntar, apertar
@@ -397,6 +399,24 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 30/10/2026 (tarde, segunda) — A hora extra pequena, desconsiderada no fechamento
+
+O dono: *"eu queria poder ter uma tolerância desses minutos para contabilizar hora extra (…) na hora de gerar o
+relatório, ou depois de gerar (…) diferença de 10 minutos, desconsiderar e não pagar extra (…) às vezes tem muitos dias
+com 2 minutos, 1 minuto, oito minutos, até 12 minutos, e eu queria poder decidir se isso vai entrar ou não."*
+- No Fechamento da folha, o campo **"Desconsiderar a hora extra do dia de até (minutos)"**. O dia com hora extra até esse
+  número não entra em nada do fechamento (o .ps, as quebradas, o mês anterior). **Mudou o número, monte de novo**: o
+  fechamento é refeito na hora. A escolha fica guardada (`ponto.parametros`, "fechamento.he_minima"); 0 = tudo entra;
+  até 120 min.
+- O calendário de horas extras (tela, papel e Excel) mostra o dia desconsiderado **entre parênteses, em cinza**, fora do
+  total; o Resumo e os números do topo dizem quantos dias e quantos minutos ficaram de fora.
+- **Só o fechamento**: o espelho e os relatórios continuam mostrando a hora extra do dia como ela é (é a conta do ponto;
+  a tolerância da lei — 5 min por batida, 10 no dia — já vale lá).
+- ⚠️ **Risco, dito ao dono**: acima da tolerância da lei (10 min no dia), a hora extra é devida; desconsiderar 12 min é
+  decisão da empresa, com o risco de cobrança depois.
+- **Testes**: o fechamento de verdade com um dia de 8 min de extra e a tolerância de 10 (fica de fora, os 30 min das
+  quebradas continuam), a escolha guardada e o limite de 120.
 
 ## 30/10/2026 (tarde) — A declaração por quantidade de horas, e o calendário que abre o espelho (migração 020)
 
