@@ -61,6 +61,11 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1zz. **No ramo, esperando o "pode" (29/10/2026, noite, segunda) — SEM MIGRAÇÃO NOVA**: a **conta da qualidade
+   com o ajuste como métrica principal** (todo ajuste tira 5 pontos, e todo dia com batida faltando também), o
+   **ranking no aplicativo** (obras com 10 funcionários ou mais, os 25 primeiros funcionários com 10 dias ou mais,
+   guardado e refeito de 2 em 2 horas) e o **espelho de um período escolhido** no aplicativo. Vai junto com o
+   1zy (que tem a 017).
 1zy. **No ramo, esperando o "pode" (29/10/2026, noite) — COM A MIGRAÇÃO 017 DO PONTO**: a seção **Licenças e
    abonos** na Configuração (ver, cadastrar, excluir, e se cada tipo abona as horas) e a **barra de filtros que
    abre e fecha** (Validações, e o bloco Funcionários em todas as telas). Ao juntar, apertar "Aplicar
@@ -358,6 +363,55 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 29/10/2026 (noite, segunda) — O ajuste vira a métrica principal, o ranking no aplicativo, e o espelho de um período
+
+**A conta da qualidade** (`core/qualidade.py`). O dono perguntou como os pontos eram gerados e disse: *"ajustes é
+fundamental (…) quanto mais ajuste, pior (…) tem que ser essa a métrica principal. A gente não quer que o pessoal
+faça ajuste, quer que eles batam corretamente."* Até aqui só o ajuste **acima do limite** (3 por mês) tirava ponto —
+quem pedia 3 ajustes não perdia nada. Agora:
+- **pontos = 70% do índice de dias em dia + 30% das fotos boas − 5 por ajuste pedido (desde o primeiro) − 5 por dia
+  com batida faltando**. Os negados continuam contando. O limite configurável só decide o aviso "muitos ajustes".
+- **Por que o dia com batida faltando também tira 5** (escolha minha): sem isso, deixar o buraco sem pedir ajuste
+  sairia mais barato que pedir — e o buraco é pior para a folha. Ele já pesa no índice (o dia não está "em dia");
+  os 5 a mais igualam ao custo do ajuste.
+- **Os pontos da obra** passam a ser a **média dos pontos das pessoas**, pesada pelos dias de cada uma na obra.
+  Antes a obra só olhava os dias em dia — os ajustes nem entravam, e uma obra de uma pessoa só podia ficar em
+  primeiro. O mesmo para a equipe do responsável e para o número geral (somar as penalidades da equipe inteira
+  zeraria qualquer equipe grande).
+- **Desempate**: menos ajustes, depois menos batidas faltando, menos faltas, mais dias de trabalho.
+- **Efeito que ele vai sentir**: os pontos de todo mundo caem um pouco de uma vez (quem pedia 1 a 3 ajustes perde
+  5 a 15). Não é piora do ponto — é a régua nova.
+
+**O ranking** (`core/ranking.py`). *"Premiar as melhores obras (…) que tenham pelo menos 10 funcionários (…)
+dentro do app (…) tanto das obras quanto dos funcionários (…) demora para calcular (…) cache? (…) 25 primeiros."*
+Quem vê: *"quem bate ponto de obra"* — fiz assim: **todo mundo que entra no aplicativo** (menu "🏆 Ranking do
+ponto", no menu pessoal e no do ponto da obra).
+- **Obras**: só ganham posição as com **10 funcionários ou mais** no mês; as menores aparecem abaixo, sem posição,
+  com o asterisco explicando. **Funcionários**: os **25 primeiros** entre quem tem **10 dias de trabalho ou mais**
+  (as faltas contam como dia de trabalho previsto). Do funcionário aparecem só o primeiro e o último nome, a função
+  e a obra em que mais trabalhou — nunca o CPF. Cada pessoa vê a própria posição; quem ainda não entra vê quantos
+  dias tem. A posição dos outros não sai do servidor.
+- **Mês atual e mês passado**, em duas abas.
+- **Guardado, não calculado na hora**: a conta passa pelo espelho de todo mundo que bateu no mês, e é pesada. Ela
+  roda separada, **de 2 em 2 horas das 6h às 20h** (o mês passado, uma vez por dia — ajuste aprovado tarde ainda
+  muda o mês), acordada pelas próprias requisições do ponto, como a rotina do dia e a fila do WhatsApp. O resultado
+  fica em `ponto.parametros` ("ranking.AAAA-MM") — por isso **não precisou de migração**. A tela mostra a hora da
+  última conta; se ainda não houver conta, ela dispara uma e diz para voltar em alguns minutos.
+- Na aba **Qualidade** do ERP, a lista de obras dá posição só às que entram no ranking, com a mesma nota.
+
+**O espelho de um período, no aplicativo.** *"Hoje podemos baixar espelho PDF e imprimir a folha do mês no app.
+Preciso permitir uma seleção de um período também."* Aprovada a sugestão: ao tocar "Baixar PDF" ou "Imprimir",
+abre uma janela com **"O mês"** (como antes) ou **"Um período"** (de… até…, **até 62 dias**). A folha diz
+"dd/mm/aaaa a dd/mm/aaaa" no título e "Totais do período". Vale para o seu espelho e para o de uma pessoa da obra.
+
+- **Testes**: `tests/test_ponto_ranking_banco.py` (quem entra, os 25, a posição, o prazo da conta, o aplicativo lendo
+  o guardado e sem a posição dos outros) e os novos casos de `test_ponto_qualidade_banco.py` e
+  `test_ponto_espelho_app_banco.py`. Ensaio no navegador: a tela do ranking e a folha de um período.
+- **Não verificado com dado de verdade**: os dados de teste não têm obra com 10 pessoas nem gente com 10 dias, então
+  as listas saíram vazias (com as mensagens certas). A primeira conta de verdade acontece na produção, depois de
+  publicar — vale o dono abrir a tela no dia seguinte e conferir se a ordem faz sentido.
+- **Ficou de fora**: divulgar o ranking fora do aplicativo (mural, WhatsApp) e prêmio — decisão dele.
 
 ## 29/10/2026 (noite) — Licenças e abonos numa tela, e a barra de filtros que abre e fecha (migração 017)
 

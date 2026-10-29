@@ -57,6 +57,11 @@ def _rotina_do_dia():
     except Exception:  # noqa: BLE001 — a fila de mensagens também não
         logger.warning("Ponto: a fila de envios não disparou", exc_info=True)
     try:
+        from .core import ranking
+        ranking.disparar_se_preciso()        # o ranking guardado, de 2 em 2 horas (29/10/2026)
+    except Exception:  # noqa: BLE001 — o ranking também não
+        logger.warning("Ponto: o ranking não disparou", exc_info=True)
+    try:
         from .core import registro
         registro.manter_em_dia()
     except Exception:  # noqa: BLE001 — nem a base de pessoas

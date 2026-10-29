@@ -341,6 +341,25 @@
     <div class="cartao"><div id="ps-dias"></div></div>
   </section>
 
+  <!-- O RANKING DO PONTO (29/10/2026): as melhores obras e os 25 melhores funcionários do mês -->
+  <section id="tela-ranking" class="oculto">
+    <div class="cartao">
+      <h2 id="rk-titulo" style="margin:0 0 6px">🏆 Ranking do ponto</h2>
+      <div class="linha">
+        <button class="btn" id="rk-atual" type="button">Este mês</button>
+        <button class="btn sec" id="rk-anterior" type="button">Mês passado</button>
+      </div>
+      <div class="linha" style="margin-top:8px">
+        <button class="btn" id="rk-aba-obras" type="button">Obras</button>
+        <button class="btn sec" id="rk-aba-pessoas" type="button">Funcionários</button>
+      </div>
+      <p class="pequeno" id="rk-quando" style="margin:8px 0 0"></p>
+      <div id="rk-eu"></div>
+    </div>
+    <div class="cartao"><div id="rk-lista"><p>Carregando…</p></div></div>
+    <p class="pequeno" id="rk-nota" style="margin:0 4px 12px"></p>
+  </section>
+
   <!-- O ESPELHO DO PONTO (28/10/2026): o meu, ou o de uma pessoa da obra quando permitido -->
   <section id="tela-espelho" class="oculto">
     <div class="cartao">
@@ -751,18 +770,18 @@ async function garantirRegistro(descricao) {
 }
 
 // --- telas -----------------------------------------------------------------
-const TELAS = ["carregando", "entrar", "primeiro", "tablet", "menu", "equipe", "pessoa", "espelho", "inicio", "mes", "pedidos"];
+const TELAS = ["carregando", "entrar", "primeiro", "tablet", "menu", "equipe", "pessoa", "espelho", "ranking", "inicio", "mes", "pedidos"];
 function mostrar(tela) {
   if (tela !== "tablet" && typeof pararTablet === "function") pararTablet();
   TELAS.forEach(t => $("tela-" + t).classList.toggle("oculto", t !== tela));
   TELA_ATUAL = tela;
   const meu = ["inicio", "mes", "pedidos"].includes(tela);
-  const logado = meu || ["equipe", "pessoa", "espelho"].includes(tela) || (tela === "menu" && !!(INICIO && INICIO.pessoa));
+  const logado = meu || ["equipe", "pessoa", "espelho", "ranking"].includes(tela) || (tela === "menu" && !!(INICIO && INICIO.pessoa));
   $("abas").classList.toggle("oculto", !meu);
   $("btn-sair").classList.toggle("oculto", !logado);
   // "‹ Início" em toda tela, menos na própria tela inicial (08/10/2026: "volto
   // para a tela inicial, e dali eu vou para…").
-  $("btn-inicio").classList.toggle("oculto", !(meu || ["equipe", "pessoa", "espelho", "primeiro"].includes(tela)
+  $("btn-inicio").classList.toggle("oculto", !(meu || ["equipe", "pessoa", "espelho", "ranking", "primeiro"].includes(tela)
                                                  || (tela === "entrar" && ehDaObra())));
   document.querySelectorAll("nav.abas button").forEach(b => {
     const aqui = b.dataset.tela === tela;
@@ -2961,6 +2980,8 @@ async function abrirMenu() {
               acao: () => mostrar("inicio")});
     ops.push({icone: "📄", titulo: "Espelho do ponto", sub: "o seu mês, como sai no papel — baixe em PDF",
               acao: () => abrirEspelho(null)});
+    ops.push({icone: "🏆", titulo: "Ranking do ponto", sub: "as melhores obras e os melhores funcionários do mês",
+              acao: () => abrirRanking()});
   } else {
     // 1. bater
     if (pode.bater_o_meu) ops.push({icone: "⏱", titulo: "Bater o meu ponto", sub: "com foto e localização", principal: true,
@@ -2982,6 +3003,8 @@ async function abrirMenu() {
     if (p) ops.push({icone: "📅", titulo: "Meu ponto", sub: "o seu dia, o seu mês e os seus pedidos", acao: () => mostrar("inicio")});
     if (p) ops.push({icone: "📄", titulo: "Espelho do ponto", sub: "o seu mês, como sai no papel — baixe em PDF",
                      acao: () => abrirEspelho(null)});
+    if (p) ops.push({icone: "🏆", titulo: "Ranking do ponto", sub: "as melhores obras e os melhores funcionários do mês",
+                     acao: () => abrirRanking()});
     if (pode.meu_qr) ops.push({icone: "📲", titulo: "Meu QR Code", sub: "para bater no ponto da obra — ou receber no WhatsApp",
                                acao: () => mostrarMeuQr()});
   }
@@ -3165,6 +3188,66 @@ $("mes-varios").addEventListener("click", () => corrigirVariosDias(null));
 $("ps-espelho").addEventListener("click", () => abrirEspelho(EQ.alvo, EQ.mesAlvo, "pessoa"));
 $("mes-espelho").addEventListener("click", () => abrirEspelho(null, MES, "mes"));
 
+// --- o ranking do ponto (29/10/2026, core/ranking.py) --------------------------------
+// O dono: "eu quero premiar as melhores obras (…) que tenham pelo menos 10 funcionários (…) e o ranking dos
+// funcionários, os 25 primeiros (…) quanto menos ajuste, quem vai ficar na frente". A conta é guardada e
+// refeita de 2 em 2 horas: a tela abre na hora, com a hora da última conta.
+const RK = {mes: "atual", aba: "obras", dados: null};
+function abrirRanking() {
+  mostrar("ranking");
+  $("titulo").textContent = "Ranking do ponto";
+  carregarRanking();
+}
+async function carregarRanking() {
+  $("rk-lista").innerHTML = "<p>Carregando…</p>";
+  ["atual", "anterior"].forEach(m => $(`rk-${m}`).className = `btn${RK.mes === m ? "" : " sec"}`);
+  ["obras", "pessoas"].forEach(a => $(`rk-aba-${a}`).className = `btn${RK.aba === a ? "" : " sec"}`);
+  try { RK.dados = await chamar(`/ponto/app/api/ranking?mes=${RK.mes}`); }
+  catch (e) { if (e.status === 401) return mostrar("entrar"); $("rk-lista").innerHTML = ""; return aviso(e.message, "erro"); }
+  desenharRanking();
+}
+const medalha = n => n === 1 ? "🥇" : n === 2 ? "🥈" : n === 3 ? "🥉" : `${n}º`;
+function desenharRanking() {
+  const d = RK.dados;
+  $("rk-titulo").textContent = `🏆 Ranking do ponto — ${nomeMes(d.competencia)}`;
+  if (!d.pronto) {
+    $("rk-quando").textContent = ""; $("rk-eu").innerHTML = ""; $("rk-nota").textContent = "";
+    $("rk-lista").innerHTML = d.na_janela
+      ? `<p>O ranking deste mês ainda está sendo calculado. Volte em alguns minutos.</p>`
+      : `<p>O ranking deste mês ainda não foi calculado. A conta roda das 6h às 20h.</p>`;
+    return;
+  }
+  const quando = new Date(d.calculado_em);
+  $("rk-quando").textContent = `Atualizado em ${quando.toLocaleDateString("pt-BR")} às ${quando.toLocaleTimeString("pt-BR", {hour: "2-digit", minute: "2-digit"})} — a conta é refeita de 2 em 2 horas.`;
+  const eu = d.eu;
+  $("rk-eu").innerHTML = !eu ? "" : eu.posicao
+    ? `<div class="aviso ok" style="margin-top:8px"><b>Você: ${eu.posicao}º lugar</b> de ${d.total_no_ranking} — ${eu.pontos} pontos</div>`
+    : `<div class="aviso info" style="margin-top:8px">Você ainda não entra no ranking deste mês: ${esc(eu.por_que)}${eu.dias != null ? ` (você tem ${eu.dias})` : ""}.</div>`;
+  const ponto = (v, s) => `<div style="text-align:right"><b style="font-size:20px">${v ?? "—"}</b><small style="display:block" class="pequeno">${esc(s ? s.rotulo : "")}</small></div>`;
+  if (RK.aba === "obras") {
+    const entram = d.obras.filter(o => o.entra), fora = d.obras.length - entram.length;
+    $("rk-lista").innerHTML = entram.map(o => `<div class="dia" style="align-items:center">
+        <div class="data" style="width:44px; font-size:20px">${medalha(o.posicao)}</div>
+        <div class="corpo"><b>${esc(o.obra)}</b> ${esc(o.nome || "")}<div class="pequeno">${o.pessoas} funcionários · ${o.ajustes} ajuste(s) no mês</div></div>
+        ${ponto(o.pontos, o.selo)}</div>`).join("") || "<p>Nenhuma obra com 10 funcionários ou mais neste mês.</p>";
+    $("rk-nota").textContent = `* Entram no ranking as obras com ${d.minimos.pessoas_obra} funcionários ou mais no mês`
+      + (fora ? ` (${fora} obra(s) com menos ficaram de fora).` : ".")
+      + " Os pontos da obra são a média dos pontos de quem trabalhou nela.";
+  } else {
+    $("rk-lista").innerHTML = d.pessoas.map(p => `<div class="dia" style="align-items:center">
+        <div class="data" style="width:44px; font-size:20px">${medalha(p.posicao)}</div>
+        <div class="corpo"><b>${esc(p.nome)}</b><div class="pequeno">${esc([p.funcao, p.obra].filter(Boolean).join(" · "))}
+          · ${p.ajustes ? `${p.ajustes} ajuste(s)` : "nenhum ajuste"}</div></div>
+        ${ponto(p.pontos, p.selo)}</div>`).join("") || "<p>Ninguém entra no ranking ainda neste mês.</p>";
+    $("rk-nota").textContent = `* Os ${d.top} primeiros, entre quem tem ${d.minimos.dias_pessoa} dias de trabalho ou mais no mês. `
+      + "Cada ajuste pedido tira 5 pontos, e cada dia com batida faltando também: bata na hora para não precisar pedir.";
+  }
+}
+$("rk-atual").addEventListener("click", () => { RK.mes = "atual"; carregarRanking(); });
+$("rk-anterior").addEventListener("click", () => { RK.mes = "anterior"; carregarRanking(); });
+$("rk-aba-obras").addEventListener("click", () => { RK.aba = "obras"; ["obras", "pessoas"].forEach(a => $(`rk-aba-${a}`).className = `btn${RK.aba === a ? "" : " sec"}`); if (RK.dados) desenharRanking(); });
+$("rk-aba-pessoas").addEventListener("click", () => { RK.aba = "pessoas"; ["obras", "pessoas"].forEach(a => $(`rk-aba-${a}`).className = `btn${RK.aba === a ? "" : " sec"}`); if (RK.dados) desenharRanking(); });
+
 // --- o espelho do ponto (28/10/2026) -------------------------------------------------
 // O dono: "gerar o espelho do ponto das pessoas (…) na parte do aplicativo, tanto do meu
 // (…) quanto de outras pessoas também, quando permitido". O MESMO desenho para os dois; o
@@ -3263,8 +3346,34 @@ function linhaDoEspelhoApp(x, p) {
 // A folha para imprimir sai do aplicativo. No celular, com o aplicativo instalado na tela
 // inicial, abre na MESMA janela (no iPhone, uma janela nova perde o login); no navegador
 // comum, numa aba nova.
-async function abrirFolhaDoEspelho(imprimirJa) {
-  const q = `competencia=${ESP.mes}${imprimirJa ? "&imprimir=1" : ""}`;
+// O PERÍODO (29/10/2026, o dono: "preciso permitir uma seleção de um período também"): o mês, ou de/até
+// (até 62 dias — o corte da folha, de 21 a 20, cabe). A folha sai com os dias e os totais do período.
+function abrirFolhaDoEspelho(imprimirJa) {
+  const [a, m] = ESP.mes.split("-").map(Number);
+  const ultimo = `${ESP.mes}-${String(new Date(a, m, 0).getDate()).padStart(2, "0")}`;
+  $("dlg-corpo").innerHTML = `<h2 style="margin:0 0 8px">${imprimirJa ? "Baixar o espelho (PDF)" : "Imprimir o espelho"}</h2>
+    <button class="btn" type="button" id="fl-mes">O mês ${esc(nomeMes(ESP.mes))}</button>
+    <p class="pequeno" style="margin:16px 0 4px"><b>Ou outro período</b>, de até 62 dias — por exemplo, o corte da folha:</p>
+    <div class="linha">
+      <div><label for="fl-de">De</label><input type="date" id="fl-de" value="${ESP.mes}-01"></div>
+      <div><label for="fl-ate">Até</label><input type="date" id="fl-ate" value="${ultimo}"></div>
+    </div>
+    <div id="fl-msg" class="aviso erro oculto"></div>
+    <button class="btn sec" type="button" id="fl-periodo">Abrir o período</button>`;
+  if (!$("dlg").open) $("dlg").showModal();
+  $("fl-mes").onclick = () => { $("dlg").close(); abrirFolhaComo(`competencia=${ESP.mes}`, imprimirJa); };
+  $("fl-periodo").onclick = () => {
+    const de = $("fl-de").value, ate = $("fl-ate").value;
+    const erro = t => { $("fl-msg").textContent = t; $("fl-msg").classList.remove("oculto"); };
+    if (!de || !ate) return erro("Escolha o primeiro e o último dia.");
+    if (ate < de) return erro("O último dia vem antes do primeiro.");
+    if ((new Date(ate) - new Date(de)) / 86400000 + 1 > 62) return erro("O período vai até 62 dias.");
+    $("dlg").close();
+    abrirFolhaComo(`de=${de}&ate=${ate}`, imprimirJa);
+  };
+}
+async function abrirFolhaComo(periodo, imprimirJa) {
+  const q = `${periodo}${imprimirJa ? "&imprimir=1" : ""}`;
   const url = ESP.alvo ? comLocal(`/ponto/app/equipe/${ESP.alvo}/espelho/imprimir?${q}`, await onde())
                        : `/ponto/app/espelho/imprimir?${q}`;
   const instalado = (window.matchMedia && matchMedia("(display-mode: standalone)").matches) || navigator.standalone;

@@ -22,8 +22,19 @@ AS REGRAS (escritas aqui, testadas — nada é palpite):
     3 — decisão deixada ao sistema pelo dono: "define aí pra mim, pode ser algo
     configurável"), a pessoa ganha o aviso "muitos ajustes".
   · PONTOS (0 a 100) = 70% do índice + 30% das fotos ok (sem batida do aplicativo,
-    só o índice), menos 5 por ajuste acima do limite. SELO: Ouro ≥ 95, Prata ≥ 85,
-    Bronze ≥ 70; abaixo disso, "Atenção".
+    só o índice), MENOS 5 POR AJUSTE PEDIDO — desde o primeiro — e menos 5 por dia com
+    batida faltando. SELO: Ouro ≥ 95, Prata ≥ 85, Bronze ≥ 70; abaixo disso, "Atenção".
+    O AJUSTE É A MÉTRICA PRINCIPAL (o dono, 29/10/2026: "quanto mais ajuste, pior (…) tem
+    que ser essa a métrica principal. A gente não quer que o pessoal faça ajuste, quer que
+    eles batam corretamente"). Até 29/10/2026 só o ajuste ACIMA do limite tirava ponto. O
+    dia com batida faltando custa o mesmo que o ajuste: senão, deixar o buraco sem pedir
+    ajuste sairia mais barato que pedir — e o buraco é pior para a folha. No desempate, à
+    frente quem tem menos ajustes, depois menos batidas faltando, menos faltas e mais dias.
+  · O RANKING (29/10/2026): funcionário entra com 10 dias de trabalho ou mais no período;
+    obra, com 10 funcionários ou mais. Os pontos da OBRA são a média dos pontos das pessoas
+    que trabalharam nela, pesada pelos dias de cada uma na obra — assim os ajustes e as
+    fotos contam para a obra (antes, a obra só via os dias em dia, e uma obra de uma pessoa
+    só ficava em primeiro).
 
 QUEM VÊ O QUÊ (o dono, 17/10/2026): a pessoa que só consulta vê o dela; quem é
 RESPONSÁVEL por um ponto da obra (ou de equipe) vê as pessoas que batem no
@@ -54,7 +65,10 @@ PARAMETRO_LIMITE = "qualidade.ajustes_limite"
 LIMITE_PADRAO = 3
 DIAS_DE_TRABALHO = ("OK", "FALTA", "INCOMPLETO")
 PESO_INDICE, PESO_FOTOS = 0.7, 0.3
-PENALIDADE_POR_AJUSTE = 5
+PENALIDADE_POR_AJUSTE = 5           # por ajuste pedido, desde o primeiro (29/10/2026)
+PENALIDADE_POR_FALTANDO = 5         # por dia com batida faltando — o mesmo do ajuste
+MINIMO_DIAS_PESSOA = 10             # para o funcionário entrar no ranking
+MINIMO_PESSOAS_OBRA = 10            # para a obra entrar no ranking
 SELOS = ((95, "OURO", "Ouro"), (85, "PRATA", "Prata"), (70, "BRONZE", "Bronze"), (0, "ATENCAO", "Atenção"))
 CACHE_S = 600
 
@@ -137,15 +151,36 @@ def _pct(parte: int, todo: int) -> Optional[int]:
     return round(100 * parte / todo) if todo else None
 
 
-def pontos_e_selo(indice: Optional[int], fotos: Optional[int], ajustes: int, limite: int):
-    """PURA. Os pontos (0–100) e o selo — None quando não houve dia de trabalho."""
+def pontos_e_selo(indice: Optional[int], fotos: Optional[int], ajustes: int, limite: int, incompletos: int = 0):
+    """PURA. Os pontos (0–100) e o selo — None quando não houve dia de trabalho. `limite` só decide o aviso
+    "muitos ajustes" (`_numeros`); todo ajuste tira ponto."""
     if indice is None:
         return None, None
     base = indice if fotos is None else PESO_INDICE * indice + PESO_FOTOS * fotos
-    base -= PENALIDADE_POR_AJUSTE * max(0, ajustes - limite)
+    base -= PENALIDADE_POR_AJUSTE * max(0, ajustes) + PENALIDADE_POR_FALTANDO * max(0, incompletos)
     pontos = max(0, min(100, round(base)))
+    return pontos, selo(pontos)
+
+
+def selo(pontos: Optional[int]) -> Optional[dict]:
+    if pontos is None:
+        return None
     codigo, rotulo = next((c, r) for minimo, c, r in SELOS if pontos >= minimo)
-    return pontos, {"codigo": codigo, "rotulo": rotulo}
+    return {"codigo": codigo, "rotulo": rotulo}
+
+
+def ordem_das_pessoas(p: dict) -> tuple:
+    """PURA. O ranking dos funcionários: quem entra primeiro; mais pontos; menos ajustes; menos batidas
+    faltando; menos faltas; mais dias de trabalho."""
+    return (not p.get("entra_no_ranking", True), p["pontos"] is None, -(p["pontos"] or 0), p.get("ajustes", 0),
+            p.get("incompletos", 0), p.get("faltas", 0), -(p.get("dias_trabalho") or 0), p.get("nome") or "")
+
+
+def pontos_da_obra(gente: list[tuple[Optional[int], int]]) -> Optional[int]:
+    """PURA. A média dos pontos das pessoas da obra, pesada pelos dias de cada uma nela: [(pontos, dias)]."""
+    validos = [(p, d) for p, d in gente if p is not None and d > 0]
+    total = sum(d for _, d in validos)
+    return round(sum(p * d for p, d in validos) / total) if total else None
 
 
 def avaliar_dias(dias: list[dict], obra_principal: Optional[str]) -> dict:
@@ -210,14 +245,14 @@ def avaliar_dias(dias: list[dict], obra_principal: Optional[str]) -> dict:
 def _numeros(t: dict, ajustes: int, limite: int) -> dict:
     indice = _pct(t.get("dias_em_dia", 0), t.get("dias_trabalho", 0))
     fotos = _pct(t.get("fotos_ok", 0), t.get("batidas_app", 0))
-    pontos, selo = pontos_e_selo(indice, fotos, ajustes, limite)
+    pontos, o_selo = pontos_e_selo(indice, fotos, ajustes, limite, t.get("incompletos", 0))
     return {"dias_trabalho": t.get("dias_trabalho", 0), "dias_em_dia": t.get("dias_em_dia", 0),
             "faltas": t.get("faltas", 0), "incompletos": t.get("incompletos", 0),
             "dias_com_ajuste": t.get("dias_com_ajuste", 0), "sem_foto": t.get("sem_foto", 0),
             "foto_com_sinal": t.get("foto_com_sinal", 0), "fora_da_cerca": t.get("fora_da_cerca", 0),
             "batidas_app": t.get("batidas_app", 0), "ajustes": ajustes,
             "muitos_ajustes": ajustes > limite, "indice": indice, "fotos_ok": fotos,
-            "pontos": pontos, "selo": selo}
+            "pontos": pontos, "selo": o_selo}
 
 
 # ---------------------------------------------------------------------------
@@ -316,7 +351,13 @@ def _avaliar(conn: Connection, ids: list[int], inicio: dt.date, fim: dt.date, ch
     por_obra = []
     for codigo, n in obras.items():
         num = _numeros(n, 0, limite)
-        por_obra.append({"obra": codigo, "pessoas": len(gente_da_obra[codigo]), **num})
+        # os pontos da obra: a média das pessoas, pesada pelos dias de cada uma nela (29/10/2026)
+        num["pontos"] = pontos_da_obra([(p["pontos"], p["_por_obra"].get(codigo, {}).get("dias_trabalho", 0))
+                                        for p in pessoas if p["id"] in gente_da_obra[codigo]])
+        num["selo"] = selo(num["pontos"])
+        num["ajustes"] = sum(p["ajustes"] for p in pessoas if p["id"] in gente_da_obra[codigo])
+        por_obra.append({"obra": codigo, "pessoas": len(gente_da_obra[codigo]), **num,
+                         "entra_no_ranking": len(gente_da_obra[codigo]) >= MINIMO_PESSOAS_OBRA})
 
     equipes: dict = defaultdict(list)
     for p in pessoas:
@@ -332,22 +373,34 @@ def _avaliar(conn: Connection, ids: list[int], inicio: dt.date, fim: dt.date, ch
             soma["fotos_ok"] += round((p["fotos_ok"] or 0) * p["batidas_app"] / 100) if p["batidas_app"] else 0
         quem = cadastros.colaborador_por_id(conn, r) or {"nome": f"pessoa nº {r}"}
         num = _numeros(soma, sum(p["ajustes"] for p in gente), limite * len(gente))
+        # a equipe, como a obra: a média dos pontos das pessoas, pesada pelos dias (29/10/2026) — com todo
+        # ajuste tirando ponto, a soma das penalidades da equipe inteira zeraria qualquer equipe grande
+        num["pontos"] = pontos_da_obra([(p["pontos"], p["dias_trabalho"] or 0) for p in gente])
+        num["selo"] = selo(num["pontos"])
         por_responsavel.append({"id": r, "nome": quem["nome"], "pessoas": len(gente), **num})
 
     for p in pessoas:
-        p.pop("_por_obra", None)
-    ordem = lambda x: (x["pontos"] is None, -(x["pontos"] or 0), x.get("nome") or x.get("obra") or "")  # noqa: E731
+        # a obra da pessoa no ranking: a em que ela mais trabalhou no período
+        por = p.pop("_por_obra", None) or {}
+        p["obra_do_periodo"] = max(por, key=lambda c: por[c].get("dias_trabalho", 0)) if por else p.get("obra")
+        p["entra_no_ranking"] = (p["dias_trabalho"] or 0) >= MINIMO_DIAS_PESSOA
+    ordem = lambda x: (not x.get("entra_no_ranking", True), x["pontos"] is None, -(x["pontos"] or 0),  # noqa: E731
+                       x.get("nome") or x.get("obra") or "")
     total = defaultdict(int)
     for p in pessoas:
         for k in ("dias_trabalho", "dias_em_dia", "faltas", "incompletos", "dias_com_ajuste", "sem_foto",
                   "foto_com_sinal", "fora_da_cerca", "batidas_app"):
             total[k] += p[k]
         total["fotos_ok"] += round((p["fotos_ok"] or 0) * p["batidas_app"] / 100) if p["batidas_app"] else 0
+    geral = _numeros(total, sum(p["ajustes"] for p in pessoas), limite * max(len(pessoas), 1))
+    geral["pontos"] = pontos_da_obra([(p["pontos"], p["dias_trabalho"] or 0) for p in pessoas])
+    geral["selo"] = selo(geral["pontos"])
     resultado = {
         "inicio": inicio.isoformat(), "fim": fim.isoformat(), "limite_ajustes": limite,
-        "geral": {**_numeros(total, sum(p["ajustes"] for p in pessoas), limite * max(len(pessoas), 1)),
+        "geral": {**geral,
                   "pessoas": len(pessoas), "muitos_ajustes_pessoas": sum(1 for p in pessoas if p["muitos_ajustes"])},
-        "pessoas": sorted(pessoas, key=ordem),
+        "pessoas": sorted(pessoas, key=ordem_das_pessoas),
+        "minimos": {"dias_pessoa": MINIMO_DIAS_PESSOA, "pessoas_obra": MINIMO_PESSOAS_OBRA},
         "por_obra": sorted(por_obra, key=ordem),
         "por_responsavel": sorted(por_responsavel, key=ordem),
     }

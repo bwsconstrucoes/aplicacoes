@@ -262,8 +262,9 @@
   <div class="cartao-dica" style="margin-top:16px">
     <b>Dia em dia</b> = dia de trabalho com todas as batidas previstas feitas na
     hora — sem falta, sem batida faltando e sem batida incluída por ajuste.
-    <b>Pontos</b> = 70% do índice + 30% das fotos boas, menos 5 por ajuste acima
-    do limite do mês. 🥇 95+ · 🥈 85+ · 🥉 70+ · ⚠️ abaixo disso.
+    <b>Pontos</b> = 70% do índice + 30% das fotos boas, <b>menos 5 por ajuste pedido</b>
+    (desde o primeiro) e menos 5 por dia com batida faltando. 🥇 95+ · 🥈 85+ · 🥉 70+ · ⚠️ abaixo disso.
+    No ranking, a pessoa entra com 10 dias de trabalho ou mais; a obra, com 10 funcionários ou mais.
     Nenhum número aqui é palpite: cada um sai de uma regra escrita.
   </div>
 
@@ -5241,10 +5242,16 @@ function desenharQualidade() {
       <th class="sem-ordem dados">Pessoas</th><th class="sem-ordem dados">Em dia</th><th class="sem-ordem dados">Fotos boas</th>
       <th class="sem-ordem dados">Faltas</th><th class="sem-ordem dados">Batida faltando</th><th class="sem-ordem dados">Com ajuste</th>
       <th class="sem-ordem dados">Pontos</th></tr></thead><tbody>
-    ${QUAL.por_obra.map((o, i) => `<tr><td>${posicao(i)}</td><td class="dados"><b>${escapar(o.obra)}</b></td>
+    ${(() => { let n = 0; return QUAL.por_obra.map(o => {
+      // só entra no ranking a obra com 10 funcionários ou mais (29/10/2026); as outras ficam embaixo, sem posição
+      const entra = o.entra_no_ranking !== false;
+      return `<tr ${entra ? "" : `class="suave" title="fora do ranking: menos de ${(QUAL.minimos || {}).pessoas_obra || 10} funcionários"`}>
+      <td>${entra ? posicao(n++) : "—"}</td><td class="dados"><b>${escapar(o.obra)}</b></td>
       <td class="dados">${o.pessoas}</td><td class="dados">${pct(o.indice)}</td><td class="dados">${pct(o.fotos_ok)}</td>
       <td class="dados">${o.faltas}</td><td class="dados">${o.incompletos}</td><td class="dados">${o.dias_com_ajuste}</td>
-      <td class="dados">${seloQ(o)}</td></tr>`).join("")}</tbody></table>`
+      <td class="dados">${seloQ(o)}</td></tr>`; }).join(""); })()}</tbody></table>
+    <small class="suave">* Entram no ranking as obras com ${(QUAL.minimos || {}).pessoas_obra || 10} funcionários ou mais no período;
+      as outras aparecem embaixo, sem posição. Os pontos da obra são a média dos pontos de quem trabalhou nela.</small>`
     : `<div class="cartao-dica">Nenhum dia de trabalho no mês ainda.</div>`;
   els("q-responsaveis").innerHTML = QUAL.por_responsavel.length ? `<table><thead><tr><th class="sem-ordem"></th>
       <th class="sem-ordem">Responsável</th><th class="sem-ordem dados">Pessoas</th><th class="sem-ordem dados">Em dia</th>
@@ -5262,7 +5269,7 @@ function desenharPessoasDaQualidade() {
   els("q-atencao").classList.toggle("secundario", Q_ORDEM !== "atencao");
   els("q-melhores").classList.toggle("secundario", Q_ORDEM !== "melhores");
   els("q-limite").innerHTML = `Limite de ajustes: <b>${QUAL.limite_ajustes} por mês</b> — acima dele, a pessoa ganha o aviso
-    “muitos ajustes” e perde 5 pontos por ajuste a mais.${PODE_CONFIGURAR ? ` <button class="link-btn" type="button" id="q-mudar-limite">mudar</button>` : ""}`;
+    “muitos ajustes”. Todo ajuste tira 5 pontos, desde o primeiro.${PODE_CONFIGURAR ? ` <button class="link-btn" type="button" id="q-mudar-limite">mudar</button>` : ""}`;
   if (els("q-mudar-limite")) els("q-mudar-limite").onclick = mudarLimite;
   // "Precisam de atenção": os menores pontos primeiro; quem não teve dia de trabalho, no fim.
   const lista = Q_ORDEM === "atencao"
@@ -5285,7 +5292,7 @@ function desenharPessoasDaQualidade() {
 
 async function mudarLimite() {
   const r = await perguntar({titulo: "Limite de ajustes por mês",
-    aviso: "Acima dele, a pessoa ganha o aviso “muitos ajustes” no ranking e perde 5 pontos por ajuste a mais.",
+    aviso: "Acima dele, a pessoa ganha o aviso “muitos ajustes” no ranking. Os pontos caem 5 por ajuste desde o primeiro, com ou sem limite.",
     campos: [{nome: "limite", rotulo: "Ajustes por mês", tipo: "number", valor: String(QUAL.limite_ajustes), obrigatorio: true}],
     textoOk: "Gravar"});
   if (!r) return;

@@ -554,10 +554,39 @@ def pessoa_do_espelho(p: dict) -> dict:
             "tem_banco": p.get("regime_banco") not in (None, "SEM_BANCO")}
 
 
+PERIODO_MAXIMO_DIAS = 62
+
+
+def periodo_pedido() -> tuple[dt.date, dt.date] | None:
+    """O período livre da folha (29/10/2026, o dono: "preciso permitir uma seleção de um período também"):
+    `de` e `ate` no endereço, até 62 dias — o corte da folha (21 a 20) cabe. Sem eles, None (o mês)."""
+    de, ate = request.args.get("de"), request.args.get("ate")
+    if not de and not ate:
+        return None
+    try:
+        inicio, fim = dt.date.fromisoformat(str(de)), dt.date.fromisoformat(str(ate))
+    except ValueError as e:
+        raise ErroDeValidacao("período ilegível — escolha o primeiro e o último dia") from e
+    if fim < inicio:
+        raise ErroDeValidacao("o último dia vem antes do primeiro")
+    if (fim - inicio).days + 1 > PERIODO_MAXIMO_DIAS:
+        raise ErroDeValidacao(f"o período vai até {PERIODO_MAXIMO_DIAS} dias")
+    return inicio, fim
+
+
 def folha_do_espelho(conn, colaborador_id: int, gerado_por: str):
     """A folha do espelho para imprimir ou salvar em PDF — a MESMA que o DP imprime
-    no ERP (templates/ponto/espelho_impressao.html), aberta pelo aplicativo."""
-    esp = espelho.do_mes(conn, colaborador_id, request.args.get("competencia"))
+    no ERP (templates/ponto/espelho_impressao.html), aberta pelo aplicativo. Com `de` e
+    `ate`, a do período escolhido (os dias e os totais dele)."""
+    periodo = periodo_pedido()
+    if periodo:
+        esp = espelho.montar(conn, colaborador_id, *periodo)
+        esp["competencia"] = f"{periodo[0]:%Y-%m}"
+        esp["competencia_fechada"] = (competencias.esta_fechada(conn, competencias.primeiro_dia(periodo[0]))
+                                      and competencias.esta_fechada(conn, competencias.primeiro_dia(periodo[1])))
+        esp["periodo"] = True
+    else:
+        esp = espelho.do_mes(conn, colaborador_id, request.args.get("competencia"))
     return render_template("ponto/espelho_impressao.html", e=esp, do_aplicativo=True,
                            imprimir_ja=request.args.get("imprimir") == "1",
                            gerado_em=horario.para_local(horario.agora()).strftime("%d/%m/%Y %H:%M"),
