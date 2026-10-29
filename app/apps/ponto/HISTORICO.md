@@ -61,11 +61,11 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
-1zz6. **No ramo, esperando o "pode" (29/10/2026, madrugada) — COM A MIGRAÇÃO 019 DO PONTO**: o **abono da falta
+1zz6. **Publicado em 29/10/2026** (com o "pode" do dono, junto com o 1zz5) — **COM A MIGRAÇÃO 019 DO PONTO**: o **abono da falta
    parcial** no Quadro (só as horas que faltaram), as **horas extras por obra na tela** do fechamento com **negar a
    hora extra** de um dia (e voltar a contar), e **só CTPS nas contas de horas** (a coluna "Tipo" da planilha). Vai
    junto com o 1zz5. Ao juntar, apertar "Aplicar atualizações do ponto" (a 019); sem ela, só o "negar" não funciona.
-1zz5. **No ramo, esperando o "pode" (29/10/2026, noite, última) — SEM MIGRAÇÃO**: o **abono pedido como os outros
+1zz5. **Publicado em 29/10/2026** (com o "pode" do dono) — **SEM MIGRAÇÃO**: o **abono pedido como os outros
    pedidos** — no aplicativo ("O que vai entregar ou pedir?", o pedido por outra pessoa, o Meu ponto) e no ERP
    (janela da pessoa › "Pedir abono"); vai para a validação ("Quem valida o quê" › Abono, nasce no DP).
 1zz4. **Publicado em 29/10/2026** (com o "pode" do dono, junto com 1zz1 a 1zz3) — **SEM MIGRAÇÃO**: as **horas extras para
