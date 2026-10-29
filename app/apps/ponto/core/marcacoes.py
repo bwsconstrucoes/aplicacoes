@@ -378,7 +378,8 @@ def registrar(conn: Connection, *, cpf, obra, origem: str = "PWA",
     if not pessoa:
         _recusar(conn, "pessoa não cadastrada", **contexto)
     if pessoa["situacao"] == "DESLIGADO" or not pessoa["ativo_no_ponto"]:
-        _recusar(conn, "pessoa desligada ou inativa no ponto", **contexto)
+        _recusar(conn, (f"não bate ponto: {pessoa['nao_bate_motivo']}" if pessoa.get("nao_bate_motivo")
+                        else "pessoa desligada ou inativa no ponto"), **contexto)
     # Afastado não bate (decisão do dono, 14/10/2026: "o cara está afastado, ele não
     # bate ponto, não pode estar trabalhando. Se retornou, a gente altera o cadastro").
     # Antes ia para conferência. Pedido (atestado etc.) ele continua fazendo.

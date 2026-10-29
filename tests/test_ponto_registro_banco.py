@@ -202,3 +202,53 @@ def test_a_busca_diz_por_que_a_pessoa_nao_aparece(app, mundo, registro, banco):
     assert pessoas == [] and motivos[0]["nome"] is None and "Atualizar cadastro" in motivos[0]["motivo"]
     _, motivos = fora("jo")                              # busca curta não procura
     assert motivos == []
+
+
+def test_a_planilha_tira_do_ponto_pj_pro_labore_escrussas_e_afastado(app, mundo, registro, banco):
+    """29/10/2026: "na coluna AY, quem é PJ e Pró-labore; na coluna AA, quem está na obra ESCRUSSAS; e na
+    coluna AX, quem está como Colaboradores Afastados. Esse pessoal é para sair, eles não batem ponto." """
+    from app.apps.ponto import db
+    from app.apps.ponto.core import cadastros, marcacoes, registro as reg
+    from app.apps.ponto.erros import Recusada
+    dp = como(app, mundo["dp"])
+
+    def lista():
+        with db.conexao() as conn:
+            return {p["nome"] for p in cadastros.listar_colaboradores(conn, so_ativos=True)}
+
+    assert "JOÃO DO REGISTRO" in lista()
+    for campo, valor, pedaco in (("tipo_contrato", "Pró-labore", "pró-labore"), ("tipo_contrato", "PJ", "PJ"),
+                                 ("obra_codigo", "ESC RUSSAS", "ESC RUSSAS")):
+        with banco.connect() as conn:
+            conn.execute(text("UPDATE analisesps.colaborador SET tipo_contrato = '', obra_codigo = 'PG-B' "
+                              "WHERE cpf = :c"), {"c": CPF_JOAO})
+            conn.execute(text(f"UPDATE analisesps.colaborador SET {campo} = :v WHERE cpf = :c"),
+                         {"v": valor, "c": CPF_JOAO})
+            conn.commit()
+        reg.esquecer()
+        with db.conexao() as conn:
+            j = cadastros.colaborador_por_cpf(conn, CPF_JOAO)
+        assert j["ativo_no_ponto"] is False and pedaco in j["nao_bate_motivo"], (valor, j["nao_bate_motivo"])
+        assert "JOÃO DO REGISTRO" not in lista()
+    with pytest.raises(Recusada, match="não bate ponto"):
+        with db.conexao() as conn:
+            marcacoes.registrar(conn, cpf=CPF_JOAO, obra="PG-B", origem="IDFACE", via_chave=True)
+    d = dp.get("/erp/api/ponto/pessoas", query_string={"busca": "joão do registro"}).get_json()
+    assert d["pessoas"] == [] and "ESC RUSSAS" in d["fora_da_lista"][0]["motivo"]
+    assert dp.get("/erp/api/ponto/registro").get_json()["nao_batem_pela_planilha"] == 1
+    # o afastado (Fase Atual) sai das listas, mas continua sendo alguém no ponto (o atestado ele manda)
+    with banco.connect() as conn:
+        conn.execute(text("UPDATE analisesps.colaborador SET tipo_contrato = 'CLT', obra_codigo = 'PG-B', "
+                          "fase = 'Colaboradores Afastados' WHERE cpf = :c"), {"c": CPF_JOAO})
+        conn.commit()
+    with db.conexao() as conn:
+        j = cadastros.colaborador_por_cpf(conn, CPF_JOAO)
+    assert j["situacao"] == "AFASTADO" and j["ativo_no_ponto"] is True and "JOÃO DO REGISTRO" not in lista()
+    d = dp.get("/erp/api/ponto/pessoas", query_string={"busca": "joão do registro"}).get_json()
+    assert "Colaboradores Afastados" in d["fora_da_lista"][0]["motivo"]
+    # de volta ao trabalho, na planilha: volta sozinho
+    with banco.connect() as conn:
+        conn.execute(text("UPDATE analisesps.colaborador SET fase = 'Colaboradores Ativos' WHERE cpf = :c"),
+                     {"c": CPF_JOAO})
+        conn.commit()
+    assert "JOÃO DO REGISTRO" in lista()

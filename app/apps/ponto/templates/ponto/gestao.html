@@ -537,6 +537,7 @@
           onclick="els('dlg-foto').close()">Fechar</button></div>
   <div class="dlg-corpo" style="text-align:center">
     <div id="foto-erro"></div>
+    <div id="foto-carregando" class="suave" style="padding:60px 0" hidden>Carregando a foto…</div>
     <img id="foto-img" alt="Foto tirada na hora da batida"
          style="max-width:100%; max-height:66vh; border-radius:8px">
     <div id="foto-acoes"></div>
@@ -2290,7 +2291,9 @@ async function jornadaEObras(p) {
        exemplo: "códigos separados por vírgula",
        dica: "Obras onde a pessoa também pode bater ponto. A obra principal é a do cadastro do ERP."},
       {nome: "ativo", rotulo: "Bate ponto?", tipo: "select", valor: p.ativo_no_ponto ? "1" : "0", largura: 3,
-       opcoes: [{valor: "1", rotulo: "Sim"}, {valor: "0", rotulo: "Não (some do painel e dos alertas)"}]},
+       opcoes: [{valor: "1", rotulo: "Sim"}, {valor: "0", rotulo: "Não (some do painel e dos alertas)"}],
+       dica: p.nao_bate_motivo ? `A planilha de colaboradores diz que não bate: ${escapar(p.nao_bate_motivo)}. ` +
+             "Enquanto a planilha disser isso, vale a planilha." : ""},
     ],
     textoOk: "Salvar",
   });
@@ -2647,13 +2650,28 @@ function verFoto(marcacaoId, legenda, url) {
   els("foto-legenda").textContent = legenda || "Foto da batida";
   els("foto-erro").innerHTML = "";
   els("foto-acoes").innerHTML = "";
-  img.hidden = false;
+  // A janela abre VAZIA, dizendo que está carregando (29/10/2026, o dono: "na hora que o modal abre, ele
+  // exibe a última foto que a gente abriu (…) ficar carregando até exibir a foto correta"): a foto anterior
+  // é tirada antes, e a nova só aparece quando terminou de chegar.
+  const pedida = url || `/erp/api/ponto/marcacoes/${encodeURIComponent(marcacaoId)}/foto`;
+  img.onload = img.onerror = null;
+  img.removeAttribute("src");
+  img.hidden = true;
+  els("foto-carregando").hidden = false;
+  img.onload = () => {
+    if (img.dataset.pedida !== pedida) return;          // chegou a de um clique anterior: ignora
+    els("foto-carregando").hidden = true;
+    img.hidden = false;
+  };
   img.onerror = () => {
+    if (img.dataset.pedida !== pedida) return;
     img.hidden = true;
+    els("foto-carregando").hidden = true;
     els("foto-erro").innerHTML = `<div class="aviso erro">A foto não abriu. Ela pode
       ainda estar na fila de envio ao Drive — tente de novo daqui a pouco.</div>`;
   };
-  img.src = url || `/erp/api/ponto/marcacoes/${encodeURIComponent(marcacaoId)}/foto`;
+  img.dataset.pedida = pedida;
+  img.src = pedida;
   els("dlg-foto").showModal();
 }
 document.addEventListener("click", ev => {
@@ -4571,7 +4589,7 @@ function desenharPessoas() {
   els("pe-corpo").innerHTML = lista.map(p => `<tr style="cursor:pointer" data-pessoa="${p.id}">
     <td>${p.tem_foto_cadastral ? `<img class="pe-foto" loading="lazy" alt="" src="/erp/api/ponto/pessoas/${p.id}/foto-cadastral"
         onerror="fotoQuebrada(this)">` : `<span class="pe-foto sem">sem foto</span>`}</td>
-    <td>${eloPessoa(p.id, p.nome)} ${marcasHtml(p.etiquetas, true)}${!p.ativo_no_ponto ? `<small>não bate ponto</small>` : ""}
+    <td>${eloPessoa(p.id, p.nome)} ${marcasHtml(p.etiquetas, true)}${!p.ativo_no_ponto ? `<small title="${escapar(p.nao_bate_motivo || "marcada no ponto")}">não bate ponto</small>` : ""}
       ${p.situacao && p.situacao !== "ATIVO" ? `<small>${escapar(rotulo(p.situacao))}</small>` : ""}</td>
     <td>${p.funcao ? escapar(p.funcao) : `<span class="suave">—</span>`}</td>
     <td class="dados">${p.obra_principal ? escapar(p.obra_principal.codigo) : `<span class="suave">—</span>`}</td>
@@ -6308,6 +6326,7 @@ function desenharRegistro(d) {
     <div class="kpis" style="margin-top:10px">
       ${kpi("Ativos no Registro", d.ativos, "verde", `de ${d.total ?? 0} linha(s) na planilha`)}
       ${kpi("Afastados", d.afastados, "ambar", "não batem até voltar")}
+      ${kpi("Não batem pela planilha", d.nao_batem_pela_planilha, "", "PJ, pró-labore e a obra ESCRUSSAS")}
       ${kpi("Faltam no ERP", d.faltam_no_erp, d.faltam_no_erp ? "vermelho" : "", "ativos no Registro sem cadastro no ERP")}
       ${kpi("Estão só no ERP", d.so_no_erp, d.so_no_erp ? "ambar" : "", "batem para conferência")}
       ${kpi("Sem obra reconhecida", d.ativos_sem_obra_reconhecida, d.ativos_sem_obra_reconhecida ? "ambar" : "",

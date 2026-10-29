@@ -61,6 +61,10 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1zz0. **No ramo, para publicar com o "pode" que o dono já deu (29/10/2026, noite, terceira) — SEM MIGRAÇÃO**: **quem a
+   planilha diz que não bate ponto sai do ponto** (PJ e pró-labore na coluna AY, a obra ESCRUSSAS na AA, e os
+   afastados da AX saem das listas), e **a foto da batida abre em branco** ("Carregando a foto…") em vez de
+   mostrar a anterior.
 1zz. **No ramo, esperando o "pode" (29/10/2026, noite, segunda) — SEM MIGRAÇÃO NOVA**: a **conta da qualidade
    com o ajuste como métrica principal** (todo ajuste tira 5 pontos, e todo dia com batida faltando também), o
    **ranking no aplicativo** (obras com 10 funcionários ou mais, os 25 primeiros funcionários com 10 dias ou mais,
@@ -363,6 +367,38 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 29/10/2026 (noite, terceira) — Quem a planilha diz que não bate sai do ponto, e a foto que não engana
+
+**Quem não bate ponto, pela planilha** (`registro.nao_bate_sql`). O dono: *"como ainda estamos usando a planilha de
+colaboradores como base, tem algumas pessoas que têm categorização de não bater ponto: na coluna AY, quem é PJ e
+Pró-labore; na coluna AA, quem está na obra ESCRUSSAS; e na coluna AX, quem está como Colaboradores Afastados. Esse
+pessoal é para sair, eles não batem ponto."*
+- As três colunas já vinham na cópia que a Análise de SPs guarda (`analisesps.colaborador`): AX é a **Fase Atual**
+  (`fase`), AY o **Tipo de Contrato** (`tipo_contrato` — a aba oculta da planilha mostra a mesma ordem: I = Fase,
+  J = Tipo de Contrato) e AA a **obra** (`obra_codigo`; o extenso, `obra_cadastro`, também é olhado, porque não deu
+  para confirmar de qual das duas a AA é). **Nada mudou na área da Análise de SPs.**
+- **PJ, pró-labore e ESCRUSSAS** ficam como **"não bate ponto"** — o mesmo efeito da marcação à mão: somem do
+  Quadro, das Validações, dos relatórios, do ranking e do aplicativo, e a batida é recusada com o motivo. A
+  comparação ignora acento, espaço e pontuação ("Pró-labore" = "PRO LABORE"; "ESC RUSSAS" = "ESCRUSSAS").
+  **A planilha manda**: marcar "bate ponto" à mão não vence — a janela da pessoa diz isso. Mudou na planilha,
+  muda no ponto na próxima cópia (de 2 em 2 horas).
+- **Os afastados** já não batiam (14/10/2026); agora **saem também das listas** (Quadro, Validações, relatórios,
+  ranking, lista de envio). **Escolha minha, para não desfazer a decisão de 14/10/2026** ("pedido ele continua
+  fazendo"): o afastado **continua entrando no aplicativo**, para mandar atestado e ver o mês. Quando a fase volta
+  a "ativo" na planilha, ele volta sozinho.
+- **Efeito colateral, dito**: quem foi afastado no meio do mês some do Quadro também nos dias em que trabalhou
+  antes do afastamento. O espelho dele continua abrindo pela busca de Pessoas (que diz "afastada: a Fase Atual
+  diz…") e pela janela da pessoa.
+- A busca de Pessoas explica quem não aparece por esses motivos; a Configuração › Base de pessoas ganhou o número
+  "Não batem pela planilha".
+- **Testes**: `test_a_planilha_tira_do_ponto_pj_pro_labore_escrussas_e_afastado` em `test_ponto_registro_banco.py`.
+
+**A foto da batida.** O dono: *"na hora que o modal abre, ele exibe a última foto que a gente abriu (…) você acaba
+achando que é uma foto, e na verdade depois ele carrega a outra (…) ficar carregando até exibir a foto correta."*
+A janela da foto (Espelho, Validações, Mosaico, Fotos, janela da pessoa — é uma só) agora tira a foto anterior antes
+de abrir, mostra **"Carregando a foto…"** e só mostra a foto nova quando ela terminou de chegar; se a de um clique
+anterior chegar atrasada, é ignorada. Conferido no navegador com uma foto que demora 1,5 s.
 
 ## 29/10/2026 (noite, segunda) — O ajuste vira a métrica principal, o ranking no aplicativo, e o espelho de um período
 
