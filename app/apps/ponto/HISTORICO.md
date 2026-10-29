@@ -443,8 +443,9 @@ arquivo as faltas integrais ou as horas integrais (…) meia falta do dia não c
 1. **Percentual da hora extra**: ~~domingo e feriado = 100%, os outros dias = 50%~~ — virou configuração por estado e
    por obra na mesma noite (ver a seção seguinte).
 2. **Hora extra no .ps do mês corrente**: o **total do período** de cada pessoa e percentual, com a **data do dia
-   25** — o inteiro no arquivo, os minutos na planilha de quebradas. Há a opção "dia a dia" na tela (aí cada dia
-   rende o seu inteiro e o seu quebrado — mais minutos para lançar à mão).
+   25** — o inteiro no arquivo, os minutos na planilha de quebradas. **Confirmado pelo dono** (29/10/2026): *"para
+   hora extra, não vai precisar por dia. Basta que seja tantas horas a tantos por cento."* A opção "dia a dia" saiu
+   da tela (continua no código, `montar(por_dia=True)`, se um dia for preciso).
 3. **Quem tem banco de horas** fica fora das horas extras e das faltas parciais (vão para o banco); a falta do dia
    inteiro entra.
 4. O **ID Fortes** vem do cadastro da Análise de SPs (`analisesps.colaborador.id_fortes`, a aba "ID Fortes" da

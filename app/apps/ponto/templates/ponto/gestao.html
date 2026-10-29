@@ -217,10 +217,6 @@
   </div>
   {% if pode.aprovar_afastamento %}<div id="rl-fech" hidden style="margin-top:10px">
     <div class="campo"><label for="rl-comp">Folha do mês</label><input type="month" id="rl-comp"></div>
-    <div class="campo"><label for="rl-he-por">Hora extra no arquivo .ps</label>
-      <select id="rl-he-por" data-sem-busca>
-        <option value="">o total do período, por pessoa (data do dia 25)</option>
-        <option value="dia">dia a dia</option></select></div>
     <div class="cartao-dica" id="rl-fech-periodos" style="margin-top:8px"></div>
   </div>{% endif %}
   <div id="rl-periodo">
@@ -4527,7 +4523,7 @@ async function rlMontar() {
     els("rl-tabela").innerHTML = `<div class="vazio"><b>Montando o fechamento…</b>passa pelo espelho de todo mundo — pode levar alguns segundos.</div>`;
     try {
       const filtros = {...FP_RL.valores()};
-      RL = await postar("/erp/api/ponto/fechamento", {competencia: els("rl-comp").value, por_dia: els("rl-he-por").value === "dia", filtros});
+      RL = await postar("/erp/api/ponto/fechamento", {competencia: els("rl-comp").value, filtros});
       RL.tipo = "fechamento"; RL._filtros = filtros; RL_VISAO = "cor_faltas_integrais";
       RL.titulo = `Fechamento da folha de ${RL.competencia.slice(5)}/${RL.competencia.slice(0, 4)}`;
       RL.de = RL.anterior.de; RL.ate = RL.corrente.ate;
