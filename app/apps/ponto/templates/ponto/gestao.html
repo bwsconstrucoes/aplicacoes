@@ -4811,12 +4811,7 @@ function rlDesenhar() {
       <div class="barra-acoes" style="margin:0 0 8px">
         <b style="align-self:center">Para a supervisão conferir:</b>
         <button class="btn secundario" type="button" id="fech-sup-imprimir">📋 Horas extras por obra — imprimir (paisagem)</button>
-        <button class="btn secundario" type="button" data-fech-baixar="supervisao">📋 Horas extras por obra (Excel)</button></div>
-      ${RL.vale_desde > RL.anterior.de ? `<div class="cartao-dica">O ponto vale a partir de ${dataBR(RL.vale_desde)}: antes disso não há falta nem hora extra.</div>` : ""}
-      <div class="cartao-dica">Percentual da hora extra (Configuração › Jornada e feriados): ${(RL.regras_hora_extra || []).map(r =>
-        `<b>${escapar(r.rotulo)}</b> semana ${r.semana}% · sáb ${r.sabado}% · dom ${r.domingo}% · feriado ${r.feriado}%`).join("; ")}.
-        Quem tem banco de horas fica fora das horas extras e das faltas parciais (vão para o banco). Sem ID Fortes, a pessoa não
-        entra no .ps — ela aparece na aba Conferência.</div>`;
+        <button class="btn secundario" type="button" data-fech-baixar="supervisao">📋 Horas extras por obra (Excel)</button></div>`;
     els("fech-sup-imprimir").addEventListener("click", fechImprimirSupervisao);
     els("rl-kpis").querySelectorAll("[data-fech-baixar]").forEach(b => b.addEventListener("click", () =>
       fechBaixar(b.dataset.fechBaixar === "parte" ? RL_VISAO : b.dataset.fechBaixar)));
@@ -4836,8 +4831,7 @@ function rlDesenhar() {
       + k("Pessoas com falta", t.pessoas) + k("Horas que faltaram", hm(t.faltou ?? t.previsto))
     : RL.tipo === "extras" ? k("Hora extra total", hm(t.total), "azul") + k("Em dia de trabalho", hm(t.util)) + k("Em descanso", hm(t.descanso)) + k("Em feriado", hm(t.feriado)) + k("Noturno", hm(t.noturno)) + k("Pessoas", t.pessoas)
     : RL.tipo === "justificadas" ? k("Ausências", t.pedidos) + k("Dias no período", t.dias) + k("Pessoas", t.pessoas)
-    : k("Pessoas com banco", t.pessoas) + k("Saldo positivo", hm(t.positivo), "verde") + k("Saldo negativo", hm(Math.abs(t.negativo)), t.negativo ? "vermelho" : "")}</div>
-    ${RL.tipo !== "banco" && RL.de < RL.vale_desde ? `<div class="cartao-dica">O ponto vale a partir de ${dataBR(RL.vale_desde)}: antes disso não há falta nem hora extra.</div>` : ""}`;
+    : k("Pessoas com banco", t.pessoas) + k("Saldo positivo", hm(t.positivo), "verde") + k("Saldo negativo", hm(Math.abs(t.negativo)), t.negativo ? "vermelho" : "")}</div>`;
   const visoes = {faltas: [["pessoas", "Por pessoa"], ["dias", "Dia a dia"]], extras: [["pessoas", "Por pessoa"], ["dias", "Dia a dia"]],
                   justificadas: [["lista", "Lista"], ["tipos", "Por tipo"]], banco: []}[RL.tipo];
   els("rl-visoes").innerHTML = visoes.map(([c, r]) => `<button type="button" class="${c === RL_VISAO ? "ativa" : ""}" data-rl-visao="${c}">${r}</button>`).join("");
