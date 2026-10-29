@@ -61,6 +61,11 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1zz11. **No ramo, esperando o "pode" (30/10/2026, noite, segunda) — COM A MIGRAÇÃO 021 DO PONTO**: o **turno da
+   noite pela escala** — com a escala que passa da meia-noite (o 12x36 das 17h às 6h dos vigias), a saída da madrugada
+   fica no dia da entrada, sem marcar "vigia noturno" na jornada; a 021 acerta as batidas já gravadas no dia errado. Vai
+   junto com 1zz7 a 1zz10. Ao juntar, apertar "Aplicar atualizações do ponto" (a 020 e a 021); sem a 021, as batidas
+   novas já nascem certas, mas as antigas dos vigias continuam partidas.
 1zz10. **No ramo, esperando o "pode" (30/10/2026, noite) — SEM MIGRAÇÃO**: no calendário de horas extras, **as horas a
    menos aparecem em vermelho** (as extras em azul), e a opção **"Abater os atrasos e as saídas antecipadas das horas
    extras"** (desligada de início); a tolerância do 1zz9 vale também para o atraso. Vai junto com 1zz7 a 1zz9.
@@ -402,6 +407,32 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 30/10/2026 (noite, segunda) — O turno da noite pela escala (migração 021)
+
+O dono, sobre os vigias: *"a escala está cadastrada, o pessoal está vinculado (…) a escala das pessoas está essa vigia
+noturna 12x36, então deveria estar funcionando (…) se eu já estou dizendo que é vigia noturno, o dia que ele inicia de
+tarde (…) é para ser considerado o horário de entrada dele. E amanhã, no dia seguinte, é de saída."*
+- **O defeito**: o dia de trabalho da batida (`data_referencia`) é gravado na hora em que ela entra, e só a jornada
+  "Vigia noturno (2 batidas)" — escondida no botão "Jornada e obras" da janela da pessoa, que o dono não achou — levava a
+  batida antes das 10h para o dia anterior. Com a escala 12x36 17h–6h e a jornada padrão, a saída das 6h caía no dia
+  seguinte: o turno partia em dois (falta parcial num dia, batida solta no outro).
+- **Agora a escala decide** (`escalas.dia_de_trabalho`, usado na batida, no ajuste incluído, no pedido de ajuste e no
+  aviso de fora do contrato): batida antes das 10h vai para a véspera se a escala da véspera passa da meia-noite —
+  12x36 da noite sempre (até na noite de folga do ciclo, para a noite trabalhada fora do ciclo ficar inteira); semanal
+  se o turno daquele dia passa, ou se todos os turnos da escala são de noite. A jornada "vigia noturno" continua valendo.
+- **Dar ou trocar a escala, ou mudar o horário dela, refaz o dia das batidas** de quem está nela, desde a vigência
+  (`realinhar_dias`). Só o dia de trabalho muda: hora, obra e o hash encadeado ficam (o hash não inclui o dia —
+  Portaria 671). Mês fechado não é tocado.
+- **A migração 021** faz o mesmo, uma vez, para o que já estava gravado no dia errado (mesma regra, em SQL).
+- **O "dia de trabalho" do 12x36** (o que confundiu o dono) continua sendo pedido, porque é ele que diz quais noites são
+  de trabalho e quais de folga — noite sem batida no dia de trabalho é falta; noite trabalhada no de folga é extra. O
+  texto agora explica isso e diz que, no turno da noite, é o dia em que a pessoa ENTRA.
+- De passagem: o filtro "Jornada" da Configuração nunca achava vigia (comparava com "VIGIA", e o valor é
+  "VIGIA_NOTURNO_2"/"VIGIA_DIURNO_2"). Corrigido.
+- **Testes**: a regra pura (12x36 de noite e de dia, semanal com uma noite, semanal só de noite) e, com banco, o turno
+  17h–6h: a saída antiga volta para a véspera ao dar a escala, a nova já nasce certa, o espelho dá 13 h OK sem alerta de
+  intervalo, a 021 acerta o gravado errado, e voltar à escala do dia desfaz.
 
 ## 30/10/2026 (noite) — As horas a menos no calendário, e abater os atrasos das extras
 

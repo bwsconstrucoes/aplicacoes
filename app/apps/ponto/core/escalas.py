@@ -19,7 +19,7 @@ from typing import Optional
 
 from sqlalchemy.engine import Connection
 
-from .. import db
+from .. import db, horario
 from ..erros import ErroDeValidacao, NaoEncontrado
 from . import apuracao
 
@@ -150,6 +150,10 @@ def gravar(conn: Connection, dados: dict, escala_id: int | None = None) -> dict:
                    ciclo_entrada = :e, ciclo_saida = :s, descricao = :d, ativo = :a,
                    atualizado_em = now() WHERE id = :id
         """, id=escala_id, **params)
+        # Horário mudou (ex.: virou turno da noite): o dia das batidas de quem está nela é refeito.
+        for v in db.todos(conn, "SELECT colaborador_id, min(vigencia_inicio) AS desde FROM ponto.colaborador_escalas "
+                                "WHERE escala_id = :id GROUP BY colaborador_id", id=escala_id):
+            realinhar_dias(conn, int(v["colaborador_id"]), v["desde"])
         return obter(conn, escala_id)
     linha = db.um(conn, """
         INSERT INTO ponto.escalas (nome, tipo, semana, ciclo_entrada, ciclo_saida, descricao, ativo)
@@ -180,6 +184,7 @@ def atribuir(conn: Connection, colaborador_id: int, escala_id: int, vigencia_ini
         ON CONFLICT (colaborador_id, vigencia_inicio) DO UPDATE
            SET escala_id = :e, ciclo_data_base = :b, definido_por = :p, criado_em = now()
     """, c=colaborador_id, e=escala_id, i=inicio, b=base, p=(por or "")[:120])
+    realinhar_dias(conn, colaborador_id, inicio)
 
 
 def historico_da_pessoa(conn: Connection, colaborador_id: int) -> list[dict]:
@@ -253,6 +258,73 @@ class EscalasDaPessoa:
         if chave not in self._cache:
             self._cache[chave] = para_apuracao(atual, atual["ciclo_data_base"])
         return self._cache[chave], atual
+
+
+# ---------------------------------------------------------------------------
+# O TURNO DA NOITE (30/10/2026, o dono: "se eu já estou dizendo que é vigia
+# noturno, o dia que ele inicia de tarde (…) é para ser considerado o horário de
+# entrada dele. E amanhã, no dia seguinte, é de saída"). Antes, só a marcação
+# "vigia noturno" na jornada da pessoa levava a batida da madrugada para o dia
+# anterior; com a escala 17h–6h e a jornada padrão, a saída das 6h caía no dia
+# seguinte e o turno se partia em dois (falta parcial num dia, batida solta no
+# outro). Agora a ESCALA decide: se o turno dela passa da meia-noite, a batida
+# antes das 10h é do dia em que o turno começou.
+# ---------------------------------------------------------------------------
+def _vira(periodos) -> bool:
+    return any(s > 1440 for _, s in periodos)
+
+
+def turno_da_noite(escala: Optional[apuracao.Escala], dia_anterior: dt.date) -> bool:
+    """PURA. A batida da manhã seguinte a `dia_anterior` ainda é do turno dele?
+    12x36 que passa da meia-noite: sempre (mesmo que o ciclo diga folga — a
+    noite trabalhada fora do ciclo continua inteira num dia só). Semanal: se o
+    turno daquele dia passa da meia-noite, ou se TODOS os turnos da escala passam
+    (a escala só de noite, com uma noite a mais trabalhada)."""
+    if escala is None:
+        return False
+    if escala.tipo == "CICLO_12X36":
+        return bool(escala.periodo_ciclo) and escala.periodo_ciclo[1] > 1440
+    if _vira(escala.semana.get(dia_anterior.weekday(), [])):
+        return True
+    todos = [p for ps in escala.semana.values() for p in ps]
+    return bool(todos) and all(s > 1440 for _, s in todos)
+
+
+def dia_de_trabalho(conn: Connection, pessoa: dict, momento: dt.datetime,
+                    escalas_da_pessoa: Optional["EscalasDaPessoa"] = None) -> dt.date:
+    """O dia de trabalho a que a batida pertence: a jornada "vigia noturno" OU a
+    escala com turno da noite levam a batida antes das 10h para o dia anterior."""
+    local = horario.para_local(momento)
+    if pessoa.get("tipo_jornada") == "VIGIA_NOTURNO_2" or local.hour >= horario.HORA_DE_CORTE_NOTURNO:
+        return horario.data_referencia(momento, pessoa.get("tipo_jornada") or "")
+    anterior = local.date() - dt.timedelta(days=1)
+    esc, _ = (escalas_da_pessoa or EscalasDaPessoa(conn, int(pessoa["id"]))).no_dia(anterior)
+    return anterior if turno_da_noite(esc, anterior) else local.date()
+
+
+def realinhar_dias(conn: Connection, colaborador_id: int, desde: dt.date) -> int:
+    """Refaz o dia de trabalho das batidas da pessoa a partir de `desde` (a
+    véspera, para pegar a saída da madrugada), depois de a escala mudar. Só o
+    `data_referencia` muda — a hora, a obra e o hash encadeado ficam como estão
+    (Portaria 671). Mês fechado não é tocado. Devolve quantas batidas mudaram."""
+    from . import cadastros, competencias
+    pessoa = cadastros.colaborador_por_id(conn, colaborador_id)
+    if not pessoa:
+        return 0
+    vigencias = EscalasDaPessoa(conn, colaborador_id)
+    mudou = 0
+    for m in db.todos(conn, """
+            SELECT id, timestamp_servidor, data_referencia FROM ponto.marcacoes
+             WHERE colaborador_id = :c AND data_referencia >= :d
+        """, c=colaborador_id, d=desde - dt.timedelta(days=1)):
+        novo = dia_de_trabalho(conn, pessoa, m["timestamp_servidor"], vigencias)
+        if novo == m["data_referencia"]:
+            continue
+        if competencias.esta_fechada(conn, novo) or competencias.esta_fechada(conn, m["data_referencia"]):
+            continue
+        db.executar(conn, "UPDATE ponto.marcacoes SET data_referencia = :d WHERE id = :id", d=novo, id=m["id"])
+        mudou += 1
+    return mudou
 
 
 # ---------------------------------------------------------------------------

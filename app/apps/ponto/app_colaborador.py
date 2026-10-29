@@ -34,7 +34,7 @@ import os
 from flask import Response, g, jsonify, render_template, request, send_from_directory, session
 
 from . import auth, db, horario
-from .core import (apuracao, banco, cadastros, competencias, dispositivos, envios, espelho, forma_de_bater,
+from .core import (apuracao, banco, cadastros, competencias, dispositivos, envios, escalas, espelho, forma_de_bater,
                    fotos, marcacoes, acesso, ocorrencias, papeis, qr, recusas, sem_internet)
 from .core.ocorrencias import Quem
 from .erros import ErroDeValidacao, ErroDoPonto, NaoAutenticado, NaoEncontrado, Recusada
@@ -765,7 +765,7 @@ def app_api_tablet_identificar():
             # Na hora da identificação, antes da foto (o servidor recusaria a batida).
             _recusar_em_separado(marcacoes.AFASTADO_NAO_BATE, cpf=pessoa["cpf"], obra=d.get("obra"))
             raise Recusada(marcacoes.AFASTADO_NAO_BATE)
-        periodo = marcacoes.fora_do_contrato(pessoa, horario.data_referencia(horario.agora(), pessoa["tipo_jornada"]))
+        periodo = marcacoes.fora_do_contrato(pessoa, escalas.dia_de_trabalho(conn, pessoa, horario.agora()))
         if periodo:
             _recusar_em_separado(periodo, cpf=pessoa["cpf"], obra=d.get("obra"))
             raise Recusada(periodo)

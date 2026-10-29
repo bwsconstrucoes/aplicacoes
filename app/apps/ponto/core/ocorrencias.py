@@ -277,7 +277,7 @@ def criar(conn: Connection, quem: Quem, dados: dict, *, origem: str = "GESTAO") 
             descricao = f"[{ajustes.MOTIVOS[motivo]}] {descricao}".strip()
         if len(descricao) < 10:
             raise ErroDeValidacao("explique o que aconteceu (ao menos 10 letras)", campo="descricao")
-        inicio = fim = horario.data_referencia(horario_ajuste, pessoa["tipo_jornada"])
+        inicio = fim = escalas.dia_de_trabalho(conn, pessoa, horario_ajuste)
         _conferir_ajuste(conn, colaborador_id, inicio, horario_ajuste)
     elif tipo == "COMPENSACAO":
         dia_trabalhado = _data(dados.get("dia_trabalhado"), "dia_trabalhado")

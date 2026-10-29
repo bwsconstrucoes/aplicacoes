@@ -60,7 +60,7 @@ from sqlalchemy.engine import Connection
 
 from .. import db, horario
 from ..erros import ErroDeValidacao, Recusada
-from . import cadastros, dispositivos, fotos, geo, recusas
+from . import cadastros, dispositivos, escalas, fotos, geo, recusas
 
 logger = logging.getLogger("ponto.marcacoes")
 
@@ -388,7 +388,7 @@ def registrar(conn: Connection, *, cpf, obra, origem: str = "PWA",
 
     # --- período de contrato (pedido do dono, 05/10/2026: "não se pode bater
     # ponto antes da data de início nem depois da data de saída") -------------
-    motivo_periodo = fora_do_contrato(pessoa, horario.data_referencia(momento, pessoa["tipo_jornada"]))
+    motivo_periodo = fora_do_contrato(pessoa, escalas.dia_de_trabalho(conn, pessoa, momento))
     if motivo_periodo:
         _recusar(conn, motivo_periodo, **contexto)
 
@@ -479,7 +479,7 @@ def registrar(conn: Connection, *, cpf, obra, origem: str = "PWA",
         identificacao = "CHAVE" if via_chave else ("CPF" if no_tablet else "SESSAO")
     if identificacao not in IDENTIFICACOES:
         raise ErroDeValidacao("identificação desconhecida", campo="identificacao")
-    data_ref = horario.data_referencia(momento, pessoa["tipo_jornada"])
+    data_ref = escalas.dia_de_trabalho(conn, pessoa, momento)
 
     # --- foto: valida e reduz ANTES de gravar (foto ilegível é 400 limpo) ----
     foto = fotos.preparar(foto_base64) if foto_base64 else None
@@ -610,7 +610,7 @@ def registrar_ajustada(conn: Connection, *, colaborador_id: int, obra_id: int,
     pessoa = cadastros.colaborador_por_id(conn, colaborador_id)
     if not pessoa:
         raise ErroDeValidacao("pessoa não cadastrada", campo="colaborador_id")
-    data_ref = horario.data_referencia(momento, pessoa["tipo_jornada"])
+    data_ref = escalas.dia_de_trabalho(conn, pessoa, momento)
     nsr, corrente = _proximo_nsr(conn, colaborador_id, obra_id, momento, "MANUAL")
     linha = db.um(conn, """
         INSERT INTO ponto.marcacoes (nsr, colaborador_id, obra_id, timestamp_servidor,

@@ -2332,8 +2332,10 @@ async function trocarEscala(p) {
   let base = null;
   if (escolhida && escolhida.tipo === "CICLO_12X36") {
     const c = await perguntar({
-      titulo: "Em que dia o ciclo 12x36 começa?",
-      aviso: "Diga um dia em que a pessoa TRABALHA. A partir dele o sistema conta: trabalha, folga, trabalha…",
+      titulo: "Um dia em que a pessoa trabalha",
+      aviso: "No 12x36 o sistema precisa saber quais dias são de trabalho e quais são de folga: a partir deste dia ele conta " +
+        "trabalha, folga, trabalha… No turno da noite, é o dia em que ela ENTRA (à tarde) — a saída da manhã seguinte já fica " +
+        "nesse mesmo dia. Dia errado aqui troca tudo: a noite trabalhada vira extra e a de folga vira falta.",
       campos: [{nome: "ciclo_data_base", rotulo: "Um dia de trabalho", tipo: "date",
                 valor: r.vigencia_inicio, obrigatorio: true, largura: 1}],
       textoOk: "Trocar escala",
@@ -2380,7 +2382,7 @@ async function jornadaEObras(p) {
     campos: [
       {nome: "tipo_jornada", rotulo: "Jornada", tipo: "select", valor: p.tipo_jornada, largura: 3,
        opcoes: JORNADAS,
-       dica: "Vigia noturno: a batida antes das 10h da manhã conta para o dia em que o turno começou."},
+       dica: "Com a escala da noite (saída de manhã), a batida antes das 10h já conta para o dia em que o turno começou — não precisa marcar aqui."},
       {nome: "obras_adicionais", rotulo: "Obras extras (além da principal)", largura: 3,
        valor: escapar((p.obras_adicionais || []).map(o => o.codigo).join(", ")),
        exemplo: "códigos separados por vírgula",
@@ -3590,8 +3592,9 @@ async function qdEscala() {
   const escolhida = lista.find(e => String(e.id) === r.escala_id);
   let base = null;
   if (escolhida && escolhida.tipo === "CICLO_12X36") {
-    const c = await perguntar({titulo: "Em que dia o ciclo 12x36 começa?",
-      aviso: "Um dia em que as pessoas marcadas TRABALHAM — o mesmo para todas. Se o grupo se reveza em turmas, defina uma turma de cada vez.",
+    const c = await perguntar({titulo: "Um dia em que as pessoas trabalham",
+      aviso: "Um dia em que as pessoas marcadas TRABALHAM — o mesmo para todas (no turno da noite, o dia em que ENTRAM, à tarde). " +
+        "Se o grupo se reveza em turmas, defina uma turma de cada vez.",
       campos: [{nome: "ciclo_data_base", rotulo: "Um dia de trabalho", tipo: "date", valor: r.vigencia_inicio, obrigatorio: true}],
       textoOk: "Definir"});
     if (!c) return;
@@ -5985,7 +5988,7 @@ async function epAplicar() {
   const desde = els("ep-desde").value;
   let base = null;
   const campos = escala.tipo === "CICLO_12X36"
-    ? [{nome: "base", rotulo: "Um dia em que essas pessoas TRABALHAM (o ciclo 12x36 conta dele)", tipo: "date", valor: desde, obrigatorio: true, largura: 6}] : [];
+    ? [{nome: "base", rotulo: "Um dia em que essas pessoas TRABALHAM (no turno da noite, o dia em que entram); o 12x36 conta dele", tipo: "date", valor: desde, obrigatorio: true, largura: 6}] : [];
   const r = await perguntar({titulo: `Aplicar a escala ${escapar(escala.nome)} — ${contar(EP_MARCADAS.size, "pessoa", "pessoas")}`,
     aviso: `A partir de <b>${dataBR(desde)}</b>, essas pessoas passam a ser julgadas pela escala <b>${escapar(escala.nome)}</b>
       (faltas, batidas faltando, horas e extras). O que vier antes dessa data continua pelo que valia;
@@ -7638,7 +7641,7 @@ const FC_ESCALAS = new FiltroDaLista("cfe", {busca: "nome ou CPF", dims: [
   {chave: "escala", rotulo: "Escala de hoje", de: p => p.escala || "", vazio: "sem escala própria (segue a padrão)"},
   {chave: "obra", rotulo: "Obras", de: p => p.obra, vazio: "sem obra", comBusca: true},
   {chave: "funcao", rotulo: "Funções", de: p => p.funcao, vazio: "sem função", comBusca: true},
-  {chave: "jornada", rotulo: "Jornada", de: p => p.tipo_jornada === "VIGIA" ? "VIGIA" : "PADRAO", rotular: v => v === "VIGIA" ? "Vigia" : "Padrão"}]},
+  {chave: "jornada", rotulo: "Jornada", de: p => String(p.tipo_jornada || "").startsWith("VIGIA") ? "VIGIA" : "PADRAO", rotular: v => v === "VIGIA" ? "Vigia" : "Padrão"}]},
   () => epDesenhar());
 const FC_OBRAS = new FiltroDaLista("cfo", {busca: "código ou nome da obra", dims: [
   {chave: "coord", rotulo: "Coordenada", de: o => o.tem_coordenada ? "SIM" : "NAO",
