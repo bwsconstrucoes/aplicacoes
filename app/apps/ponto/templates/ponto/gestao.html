@@ -213,7 +213,17 @@
     <label><input type="radio" name="rl-tipo" value="justificadas"> Ausências justificadas</label>
     <label><input type="radio" name="rl-tipo" value="extras"> Horas extras</label>
     <label><input type="radio" name="rl-tipo" value="banco"> Banco de horas</label>
+    {% if pode.aprovar_afastamento %}<label><input type="radio" name="rl-tipo" value="fechamento"> 📦 Fechamento da folha (contabilidade)</label>{% endif %}
   </div>
+  {% if pode.aprovar_afastamento %}<div id="rl-fech" hidden style="margin-top:10px">
+    <div class="campo"><label for="rl-comp">Folha do mês</label><input type="month" id="rl-comp"></div>
+    <div class="campo"><label for="rl-he-por">Hora extra no arquivo .ps</label>
+      <select id="rl-he-por" data-sem-busca>
+        <option value="">o total do período, por pessoa (data do dia 25)</option>
+        <option value="dia">dia a dia</option></select></div>
+    <div class="cartao-dica" id="rl-fech-periodos" style="margin-top:8px"></div>
+  </div>{% endif %}
+  <div id="rl-periodo">
   <div class="qd-atalhos" style="margin-top:10px">
     <button class="chip" type="button" data-rl-atalho="mes">Este mês</button>
     <button class="chip" type="button" data-rl-atalho="passado">Mês passado</button>
@@ -222,6 +232,7 @@
   <div class="qd-par">
     <div class="campo"><label for="rl-de">De</label><input type="date" id="rl-de"></div>
     <div class="campo"><label for="rl-ate">Até</label><input type="date" id="rl-ate"></div>
+  </div>
   </div>
   {{ filtro_pessoas("rl") }}
   <div id="rl-tipos-just" hidden>
@@ -237,7 +248,8 @@
     </div><small class="suave">nenhum marcado = todos</small>
   </div>
   <div class="cartao-dica" style="margin-top:16px">As contas são as do espelho: o relatório bate com o espelho de
-    cada pessoa e com o Quadro. Até 62 dias de uma vez. O arquivo para a contabilidade vem numa próxima etapa.</div>
+    cada pessoa e com o Quadro. Até 62 dias de uma vez. O que vai para a contabilidade (as planilhas e os arquivos
+    .ps do Fortes) é o “Fechamento da folha”.</div>
 
 {% elif aba_ponto == "ponto_fotos" %}
   {# As fotos de cadastro para regularizar (26/10/2026). #}
@@ -4423,8 +4435,54 @@ function rlAtalho(qual) {
   } else { const seg = new Date(d); seg.setDate(d.getDate() - (d.getDay() + 6) % 7); els("rl-de").value = isoLocal(seg); els("rl-ate").value = hoje; }
 }
 const FP_RL = new FiltroPessoas("rl", {aoEnter: () => rlMontar()});
+// O FECHAMENTO DA FOLHA (29/10/2026, core/fechamento.py): do dia 26 do mês anterior ao 25 do mês da folha.
+// O mês anterior vai em planilha; o corrente, no .ps (o inteiro) e em planilha (o quebrado).
+const FECH_PARTES = [["ant_faltas", "Mês anterior · faltas"], ["ant_extras", "Mês anterior · horas extras"],
+  ["ant_extras_dias", "Mês anterior · HE por dia"], ["cor_faltas_integrais", "Faltas integrais (.ps)"],
+  ["cor_faltas_parciais", "Faltas parciais"], ["cor_extras_integrais", "HE integrais (.ps)"],
+  ["cor_extras_quebradas", "HE quebradas"], ["conferencia", "⚠️ Conferência"]];
+function fechPeriodos() {
+  const v = els("rl-comp") && els("rl-comp").value;
+  if (!v) return;
+  const [a, m] = v.split("-").map(Number), corte = (RL && RL.corte) || 25;
+  const fimAnt = new Date(a, m - 1, 0);
+  els("rl-fech-periodos").innerHTML = `<b>Mês anterior</b>: ${corte + 1}/${String(fimAnt.getMonth() + 1).padStart(2, "0")} a
+    ${fimAnt.getDate()}/${String(fimAnt.getMonth() + 1).padStart(2, "0")} — vai em planilha.<br>
+    <b>Mês corrente</b>: 01 a ${corte}/${String(m).padStart(2, "0")} — o inteiro vai nos arquivos .ps, o quebrado em planilha.`;
+}
+function fechFolhaPadrao() {
+  // a folha do mês em que se está; depois do dia de corte, a do mês seguinte
+  const d = new Date(hojeISO() + "T12:00:00");
+  if (d.getDate() > 25) d.setMonth(d.getMonth() + 1, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+async function fechBaixar(arquivo) {
+  try {
+    const resp = await fetch("/erp/api/ponto/fechamento/arquivo", {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({competencia: RL.competencia, por_dia: RL.por_dia, arquivo, filtros: RL._filtros})});
+    if (!resp.ok) { let m = "não deu para gerar o arquivo"; try { m = (await resp.json()).erro || m; } catch (e) { /* */ } throw new Error(m); }
+    const nome = ((resp.headers.get("Content-Disposition") || "").match(/filename="([^"]+)"/) || [])[1] || "fechamento";
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(await resp.blob()); a.download = nome;
+    document.body.appendChild(a); a.click(); a.remove();
+  } catch (e) { aviso("mensagem", e.message, "erro"); }
+}
+
 async function rlMontar() {
   const b = els("rl-ver"); b.disabled = true; b.textContent = "montando…";
+  if (rlTipo() === "fechamento") {
+    els("rl-tabela").innerHTML = `<div class="vazio"><b>Montando o fechamento…</b>passa pelo espelho de todo mundo — pode levar alguns segundos.</div>`;
+    try {
+      const filtros = {...FP_RL.valores()};
+      RL = await postar("/erp/api/ponto/fechamento", {competencia: els("rl-comp").value, por_dia: els("rl-he-por").value === "dia", filtros});
+      RL.tipo = "fechamento"; RL._filtros = filtros; RL_VISAO = "cor_faltas_integrais";
+      RL.titulo = `Fechamento da folha de ${RL.competencia.slice(5)}/${RL.competencia.slice(0, 4)}`;
+      RL.de = RL.anterior.de; RL.ate = RL.corrente.ate;
+      rlDesenhar();
+    } catch (e) { els("rl-tabela").innerHTML = `<div class="aviso erro">${escapar(e.message)}</div>`; }
+    finally { b.disabled = false; b.textContent = "Montar o relatório"; }
+    return;
+  }
   els("rl-tabela").innerHTML = `<div class="vazio"><b>Montando…</b>pode levar alguns segundos com muita gente.</div>`;
   try {
     RL = await postar("/erp/api/ponto/relatorios", {tipo: rlTipo(), de: els("rl-de").value, ate: els("rl-ate").value,
@@ -4441,6 +4499,20 @@ const cpfBR = c => documento ? documento(c || "") : (c || "");
 // tabela, a impressão e a planilha.
 function rlColunas() {
   const pessoa = [["Pessoa", l => l.nome], ["CPF", l => cpfBR(l.cpf), "dados"], ["Função", l => l.funcao || ""], ["Obra", l => l.obra || "", "dados"]];
+  if (RL.tipo === "fechamento") {
+    const p = [...pessoa, ["ID Fortes", l => l.id_fortes || "—", "dados"]];
+    const falta = [...p, ["Dia", l => dataBR(l.data), "dados"], ["", l => l.dia_semana || ""], ["Tipo", l => l.tipo],
+      ["Horas que faltaram", l => hm(l.minutos), "num"], ["Batidas", l => l.batidas || "", "dados"]];
+    return {ant_faltas: falta, cor_faltas_integrais: falta, cor_faltas_parciais: falta,
+      ant_extras: [...p, ["HE 50%", l => hm(l.he50), "num"], ["HE 100%", l => hm(l.he100), "num"], ["Total", l => hm(l.minutos), "num"]],
+      ant_extras_dias: [...p, ["Dia", l => dataBR(l.data), "dados"], ["", l => l.dia_semana || ""], ["Evento", l => l.rotulo],
+                        ["Horas", l => hm(l.minutos), "num"], ["Feriado", l => l.feriado || ""]],
+      cor_extras_integrais: [...p, ["Evento", l => l.rotulo], ["Data no arquivo", l => dataBR(l.data), "dados"],
+                             ["Horas inteiras", l => l.horas, "num"], ["Total do período", l => hm(l.minutos_total), "num"]],
+      cor_extras_quebradas: [...p, ["Evento", l => l.rotulo], ["Data", l => dataBR(l.data), "dados"],
+                             ["Minutos", l => l.minutos, "num"], ["Total do período", l => hm(l.minutos_total), "num"]],
+      conferencia: [...p, ["Aviso", l => l.aviso]]}[RL_VISAO];
+  }
   if (RL.tipo === "faltas") return RL_VISAO === "pessoas"
     ? [...pessoa, ["Faltas", l => l.faltas, "num"], ["Faltas parciais", l => l.parciais || 0, "num"],
        ["Horas que faltaram", l => hm(l.faltou ?? l.previsto), "num"]]
@@ -4468,6 +4540,7 @@ function rlColunas() {
           ["", l => l.aviso || ""]];
 }
 function rlLinhas() {
+  if (RL.tipo === "fechamento") return RL[RL_VISAO] || [];
   if (RL.tipo === "justificadas" && RL_VISAO === "tipos") return RL.por_tipo;
   if (["faltas", "extras"].includes(RL.tipo) && RL_VISAO === "pessoas") return RL.por_pessoa;
   return RL.linhas;
@@ -4477,6 +4550,38 @@ function rlDesenhar() {
   els("rl-titulo").innerHTML = `${escapar(RL.titulo)} <small id="rl-sub">${RL.tipo === "banco" ? `saldo até ${dataBR(RL.ate)}` : `de ${dataBR(RL.de)} a ${dataBR(RL.ate)}`}
     · ${contar(RL.pessoas_no_recorte, "pessoa no recorte", "pessoas no recorte")}</small>`;
   const k = (r, v, cor = "") => `<div class="kpi estatico ${cor}"><div class="kpi-rotulo">${r}</div><div class="kpi-valor">${v}</div></div>`;
+  if (RL.tipo === "fechamento") {
+    const ant = `${dataBR(RL.anterior.de)} a ${dataBR(RL.anterior.ate)}`, cor = `${dataBR(RL.corrente.de)} a ${dataBR(RL.corrente.ate)}`;
+    els("rl-titulo").innerHTML = `${escapar(RL.titulo)} <small id="rl-sub">mês anterior ${ant} · mês corrente ${cor} · ${contar(RL.pessoas, "pessoa", "pessoas")}</small>`;
+    els("rl-kpis").innerHTML = `<div class="kpis">
+        ${k("Mês anterior · faltas", `${t.ant_faltas_integrais} + ${t.ant_faltas_parciais} parc.`)}
+        ${k("Mês anterior · horas extras", hm(t.ant_extras_minutos))}
+        ${k("Faltas integrais (.ps)", t.cor_faltas_integrais, t.cor_faltas_integrais ? "vermelho" : "")}
+        ${k("Faltas parciais", t.cor_faltas_parciais, t.cor_faltas_parciais ? "ambar" : "")}
+        ${k("HE inteiras (.ps)", `${t.cor_extras_horas} h`, "azul")}
+        ${k("HE quebradas", hm(t.cor_extras_quebradas_minutos))}
+        ${k("Para conferir", t.conferencia, t.conferencia ? "ambar" : "verde")}</div>
+      <div class="barra-acoes" style="margin:8px 0">
+        <button class="btn" type="button" data-fech-baixar="zip">⬇️ Os 3 arquivos (zip)</button>
+        <button class="btn secundario" type="button" data-fech-baixar="geral">📊 Relatório geral (Excel)</button>
+        <button class="btn secundario" type="button" data-fech-baixar="ps_faltas">📄 .ps de faltas (${t.ps_faltas})</button>
+        <button class="btn secundario" type="button" data-fech-baixar="ps_extras">📄 .ps de horas extras (${t.ps_extras})</button>
+        <button class="btn secundario" type="button" data-fech-baixar="parte">⬇️ Só esta aba (Excel)</button></div>
+      ${RL.vale_desde > RL.anterior.de ? `<div class="cartao-dica">O ponto vale a partir de ${dataBR(RL.vale_desde)}: antes disso não há falta nem hora extra.</div>` : ""}
+      <div class="cartao-dica">Hora extra: domingo e feriado = 100%; os outros dias = 50%. Quem tem banco de horas fica fora das horas extras e das
+        faltas parciais (vão para o banco). Sem ID Fortes, a pessoa não entra no .ps — ela aparece na aba Conferência.</div>`;
+    els("rl-kpis").querySelectorAll("[data-fech-baixar]").forEach(b => b.addEventListener("click", () =>
+      fechBaixar(b.dataset.fechBaixar === "parte" ? RL_VISAO : b.dataset.fechBaixar)));
+    els("rl-visoes").innerHTML = FECH_PARTES.map(([c, r]) => `<button type="button" class="${c === RL_VISAO ? "ativa" : ""}" data-rl-visao="${c}">${r} <small style="display:inline">${(RL[c] || []).length}</small></button>`).join("");
+    els("rl-visoes").querySelectorAll("[data-rl-visao]").forEach(b => b.addEventListener("click", () => { RL_VISAO = b.dataset.rlVisao; rlDesenhar(); }));
+    els("rl-acoes").hidden = false;
+    const cols = rlColunas(), linhas = rlLinhas();
+    els("rl-tabela").innerHTML = linhas.length ? `<table class="rl-tabela"><thead><tr>${cols.map(c => `<th class="${c[2] || ""}">${escapar(c[0])}</th>`).join("")}</tr></thead>
+      <tbody>${linhas.map(l => `<tr>${cols.map((c, i) => `<td class="${c[2] || ""}">${i === 0 && l.colaborador_id
+        ? eloPessoa(l.colaborador_id, l.nome, l.data || null) : escapar(String(c[1](l) ?? ""))}</td>`).join("")}</tr>`).join("")}</tbody></table>`
+      : `<div class="vazio"><b>Nada nesta parte</b>neste fechamento.</div>`;
+    return;
+  }
   els("rl-kpis").innerHTML = `<div class="kpis">${
     RL.tipo === "faltas" ? k("Faltas (dia inteiro)", t.faltas, t.faltas ? "vermelho" : "") + k("Faltas parciais", t.parciais || 0, t.parciais ? "ambar" : "")
       + k("Pessoas com falta", t.pessoas) + k("Horas que faltaram", hm(t.faltou ?? t.previsto))
@@ -4522,7 +4627,9 @@ function rlImprimir() {
 }
 document.querySelectorAll("[data-rl-atalho]").forEach(b => b.addEventListener("click", () => rlAtalho(b.dataset.rlAtalho)));
 document.querySelectorAll('input[name="rl-tipo"]').forEach(r => r.addEventListener("change", () => {
-  els("rl-tipos-just").hidden = rlTipo() !== "justificadas"; }));
+  els("rl-tipos-just").hidden = rlTipo() !== "justificadas";
+  if (els("rl-fech")) { els("rl-fech").hidden = rlTipo() !== "fechamento"; els("rl-periodo").hidden = rlTipo() === "fechamento"; } }));
+if (els("rl-comp")) { els("rl-comp").value = fechFolhaPadrao(); fechPeriodos(); els("rl-comp").addEventListener("change", fechPeriodos); }
 els("rl-ver").addEventListener("click", rlMontar);
 els("rl-csv").addEventListener("click", rlCsv);
 els("rl-imprimir").addEventListener("click", rlImprimir);

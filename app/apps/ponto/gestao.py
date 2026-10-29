@@ -1367,6 +1367,64 @@ def ponto_api_relatorio():
     return _ok(**r)
 
 
+# O FECHAMENTO DA FOLHA PARA A CONTABILIDADE (29/10/2026, core/fechamento.py): o mês anterior em planilha, o
+# corrente em .ps (o inteiro) e planilha (o quebrado). A conta é guardada 2 min: quem baixa o geral e logo os dois
+# .ps não espera três vezes.
+_FECHAMENTO_GUARDADO: dict = {}
+
+
+def _fechamento(conn, quem, d: dict) -> dict:
+    import json
+    import time
+    from .core import fechamento
+    chave = (str(d.get("competencia") or ""), bool(d.get("por_dia")), quem.nome,
+             json.dumps(d.get("filtros") or {}, sort_keys=True, default=str))
+    guardado = _FECHAMENTO_GUARDADO.get(chave)
+    if guardado and time.time() - guardado[0] < 120 and not d.get("refazer"):
+        return guardado[1]
+    f = fechamento.montar(conn, quem, d.get("competencia"), d.get("filtros") or {}, por_dia=bool(d.get("por_dia")))
+    _FECHAMENTO_GUARDADO.clear()
+    _FECHAMENTO_GUARDADO[chave] = (time.time(), f)
+    return f
+
+
+@bp.route("/erp/api/ponto/fechamento", methods=["POST"])
+@login_obrigatorio
+@permissao("aprovar_afastamento")
+@_api
+def ponto_api_fechamento():
+    """O que vai para a contabilidade, para ver antes de baixar (contagens, a conferência e cada parte)."""
+    from .core import relatorios
+    quem, d = _quem(), _corpo()
+    try:
+        with db.conexao() as conn:
+            f = _fechamento(conn, quem, {**d, "refazer": True})
+    except relatorios.Ocupado as e:
+        return jsonify({"ok": False, "erro": str(e), "ocupado": True}), 503
+    return _ok(**f)
+
+
+@bp.route("/erp/api/ponto/fechamento/arquivo", methods=["POST"])
+@login_obrigatorio
+@permissao("aprovar_afastamento")
+def ponto_api_fechamento_arquivo():
+    """Um arquivo do fechamento: `geral` (o Excel com todas as abas), `ps_faltas`, `ps_extras`, uma parte em
+    Excel, ou `zip` (os três juntos)."""
+    from .core import fechamento, relatorios
+    quem, d = _quem(), _corpo()
+    try:
+        with db.conexao() as conn:
+            f = _fechamento(conn, quem, d)
+        conteudo, nome, tipo = fechamento.arquivo(f, str(d.get("arquivo") or ""))
+    except relatorios.Ocupado as e:
+        return jsonify({"ok": False, "erro": str(e), "ocupado": True}), 503
+    except ErroDoPonto as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    logger.info("Ponto: fechamento %s baixado por %s (%s)", f["competencia"], quem.nome, nome)
+    return Response(conteudo, mimetype=tipo, headers={"Content-Disposition": f'attachment; filename="{nome}"',
+                                                       "Cache-Control": "no-store"})
+
+
 @bp.route("/erp/ponto/leaflet/<arquivo>")
 @login_obrigatorio
 @permissao("ver_ponto")

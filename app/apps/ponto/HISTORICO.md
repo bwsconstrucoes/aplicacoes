@@ -61,6 +61,11 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1zz3. **No ramo, esperando o "pode" (29/10/2026, noite, sexta) — SEM MIGRAÇÃO NOVA**: o **fechamento da folha para a
+   contabilidade** (Relatórios › "📦 Fechamento da folha"): o mês anterior (26 ao fim) em planilha; o corrente (1 a 25)
+   nos dois arquivos .ps do Fortes (faltas e horas extras inteiras) e em planilha (faltas parciais e horas
+   quebradas); tudo num Excel com uma aba por parte, ou os três arquivos num zip. **Antes de usar na folha de
+   verdade: importar um .ps de teste no Fortes** (ver "O que confirmar" na seção do dia).
 1zz2. **No ramo, esperando o "pode" (29/10/2026, noite, quinta) — COM A MIGRAÇÃO 018 DO PONTO**: **"não bate ponto"
    à vista** na janela da pessoa e **em lote** na tela Pessoas, com o motivo, quem marcou e quando. Vai junto com o
    1zz1. Ao juntar, apertar "Aplicar atualizações do ponto" (a 018); sem ela, a marcação funciona, mas o motivo não
@@ -374,6 +379,54 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 29/10/2026 (noite, sexta) — O fechamento da folha para a contabilidade, com os arquivos .ps do Fortes
+
+O dono mandou o documento `prompt_geracao_ps.md` (o formato do .ps de importação de eventos do Fortes RH / AC
+Pessoal) e explicou o fechamento: *"o fechamento da folha é feito do dia 26 do mês anterior ao dia 25 do mês
+corrente (…) esse período final pode necessitar algum ajuste de ponto, então a gente deixa esses dias para não ter
+perigo de dar errado, e ter tempo de mandar com antecedência para a contabilidade."* E por que separar: *"o sistema
+eu não consigo mais lançar as faltas do mês anterior via arquivo, nem horas extras (…) e eu só consigo lançar via
+arquivo as faltas integrais ou as horas integrais (…) meia falta do dia não consigo lançar, meia hora também não."*
+
+**O que sai** (`core/fechamento.py`; Relatórios › "📦 Fechamento da folha (contabilidade)", só o DP —
+`aprovar_afastamento`). Escolhe-se a **folha do mês** (ex.: 11/2026) e o sistema separa:
+- **Mês anterior** (26/10 a 31/10), em planilha: as **faltas** (integrais e parciais, com as horas que faltaram) e
+  as **horas extras** (o total de cada pessoa, separado em 50% e 100%, mais uma aba dia a dia para conferir).
+- **Mês corrente** (01/11 a 25/11): as **faltas integrais** no `.ps` de faltas (evento 001, uma linha por dia); as
+  **horas extras inteiras** no `.ps` de horas extras; e em planilha as **faltas parciais** (com atrasos e saídas
+  antecipadas além da tolerância, marcados) e as **horas quebradas** (os minutos que sobram).
+- Uma aba **Conferência**: quem ficou fora do .ps por falta de ID Fortes, quem tem banco de horas, quem está
+  afastado no cadastro.
+- **Os arquivos**: o **relatório geral** (Excel, uma aba por parte, com o Resumo na frente), os **dois .ps**, cada
+  aba sozinha em Excel, ou **os três num zip** — *"para a gente poder encaminhar em três arquivos"*.
+
+**As contas são as do espelho** (a mesma régua do Quadro e dos relatórios, com a falta parcial desta noite).
+
+**Escolhas minhas, a confirmar com o dono** (estão também no Resumo do Excel):
+1. **Percentual da hora extra**: domingo e feriado = **100% (003)**; os outros dias, sábado incluído = **50% (006)**.
+   O Fortes tem também 60% (005) e 70% (004), mas não foi dito quando usá-los (convenção? acima de 2 h?).
+2. **Hora extra no .ps do mês corrente**: o **total do período** de cada pessoa e percentual, com a **data do dia
+   25** — o inteiro no arquivo, os minutos na planilha de quebradas. Há a opção "dia a dia" na tela (aí cada dia
+   rende o seu inteiro e o seu quebrado — mais minutos para lançar à mão).
+3. **Quem tem banco de horas** fica fora das horas extras e das faltas parciais (vão para o banco); a falta do dia
+   inteiro entra.
+4. O **ID Fortes** vem do cadastro da Análise de SPs (`analisesps.colaborador.id_fortes`, a aba "ID Fortes" da
+   planilha). Sem ele, a pessoa não entra no .ps e aparece na Conferência; com mais de 6 dígitos, também (não se
+   trunca calado).
+5. **Afastado no cadastro** com falta no período vai para a Conferência: o dia pode ser do afastamento, sem a licença
+   lançada.
+
+**O que confirmar antes de usar na folha de verdade** (o próprio documento do dono avisa — o .ps é posicional):
+o espaçamento do cabeçalho, os zeros do rodapé (o modelo do documento tem um caractere a mais que o exemplo; usei o
+exemplo) e se a quantidade de horas é inteira pura (`0012` = 12 h). O caminho: importar no Fortes um .ps gerado
+aqui, de um mês de teste, e comparar com um .ps que já foi aceito. Os três ficam em constantes no topo do
+`fechamento.py`, para trocar num lugar só.
+
+- **Testes**: `tests/test_ponto_fechamento_banco.py` (os períodos, o exemplo do documento linha por linha, as regras
+  do dia, e o fechamento de verdade: 2h30 de extra viram 2 h no .ps e 30 min nas quebradas; a falta parcial; o ID
+  Fortes; o Excel com as abas; o zip). Ensaio no navegador: montar a folha de 11/2026 e baixar o zip.
+- **Ficou de fora**: o adicional noturno, o DSR e o 60%/70% — não foram pedidos.
 
 ## 29/10/2026 (noite, quinta) — "Não bate ponto" na janela da pessoa e em lote (migração 018)
 
