@@ -61,16 +61,16 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
-1zz0. **No ramo, para publicar com o "pode" que o dono já deu (29/10/2026, noite, terceira) — SEM MIGRAÇÃO**: **quem a
+1zz0. **Publicado em 29/10/2026** (com o "pode" do dono, junto com o 1zz e o 1zy) — **SEM MIGRAÇÃO**: **quem a
    planilha diz que não bate ponto sai do ponto** (PJ e pró-labore na coluna AY, a obra ESCRUSSAS na AA, e os
    afastados da AX saem das listas), e **a foto da batida abre em branco** ("Carregando a foto…") em vez de
    mostrar a anterior.
-1zz. **No ramo, esperando o "pode" (29/10/2026, noite, segunda) — SEM MIGRAÇÃO NOVA**: a **conta da qualidade
+1zz. **Publicado em 29/10/2026** (com o "pode" do dono) — **SEM MIGRAÇÃO NOVA**: a **conta da qualidade
    com o ajuste como métrica principal** (todo ajuste tira 5 pontos, e todo dia com batida faltando também), o
    **ranking no aplicativo** (obras com 10 funcionários ou mais, os 25 primeiros funcionários com 10 dias ou mais,
    guardado e refeito de 2 em 2 horas) e o **espelho de um período escolhido** no aplicativo. Vai junto com o
    1zy (que tem a 017).
-1zy. **No ramo, esperando o "pode" (29/10/2026, noite) — COM A MIGRAÇÃO 017 DO PONTO**: a seção **Licenças e
+1zy. **Publicado em 29/10/2026** (com o "pode" do dono) — **COM A MIGRAÇÃO 017 DO PONTO**: a seção **Licenças e
    abonos** na Configuração (ver, cadastrar, excluir, e se cada tipo abona as horas) e a **barra de filtros que
    abre e fecha** (Validações, e o bloco Funcionários em todas as telas). Ao juntar, apertar "Aplicar
    atualizações do ponto" (a 017); sem ela, os abonos continuam os dois de sempre e toda licença abona.
