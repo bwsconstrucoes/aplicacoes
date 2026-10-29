@@ -135,6 +135,9 @@ def trechos_sql(conn: Connection) -> Optional[dict]:
         "no_registro": "(r.cpf IS NOT NULL)",
         "fase": "r.fase",
         "nao_bate": nao_bate_sql(col),
+        # a coluna D da planilha, "Tipo" (CTPS ou prestador de serviço): só CTPS entra nas contas de horas
+        # (hora extra, falta, banco) — 29/10/2026, `relatorios.conta_horas`
+        "tipo_cadastro": "r.tipo" if "tipo" in col else "NULL::text",
     }
 
 

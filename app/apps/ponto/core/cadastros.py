@@ -37,7 +37,7 @@ _SQL_COLABORADOR = """
            {no_registro} AS no_registro, {fase} AS fase_registro,
            {bate_no_celular} AS bate_no_celular,
            {pede_no_celular} AS pede_no_celular, {administrativo_obra} AS administrativo_obra,
-           {faz_ronda} AS faz_ronda, {inativo}
+           {faz_ronda} AS faz_ronda, {inativo}, {tipo_cadastro} AS tipo_cadastro
       FROM public.colaboradores c
       {join}
       LEFT JOIN ponto.colaborador_config pc ON pc.colaborador_id = c.id
@@ -49,7 +49,7 @@ _SQL_COLABORADOR = """
 _DO_ERP = {"nome": "c.nome", "obra_id": "c.obra_id", "situacao": "c.situacao",
            "admissao": "c.admissao", "demissao": "c.demissao", "telefone": "c.telefone",
            "funcao": "f.nome", "no_registro": "NULL::boolean", "fase": "NULL::text", "join": "",
-           "nao_bate": "NULL::text"}
+           "nao_bate": "NULL::text", "tipo_cadastro": "NULL::text"}
 
 
 def _trechos_colaborador(conn: Connection) -> dict:
@@ -358,6 +358,7 @@ def colaborador_para_json(c: dict) -> dict:
         "tipo_jornada": c["tipo_jornada"], "centro_custo": c.get("centro_custo"),
         "situacao": c["situacao"], "ativo_no_ponto": bool(c["ativo_no_ponto"]),
         "nao_bate_motivo": c.get("nao_bate_motivo"),
+        "tipo_cadastro": c.get("tipo_cadastro"),
         "marcado_nao_bate": ({"motivo": c.get("inativo_motivo"), "por": c.get("inativo_por"),
                               "em": c["inativo_em"].isoformat() if c.get("inativo_em") else None}
                              if c.get("tem_config") and c.get("ativo_no_ponto") is False and not c.get("nao_bate_motivo")

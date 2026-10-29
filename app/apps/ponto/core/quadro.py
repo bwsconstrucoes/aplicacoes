@@ -170,7 +170,7 @@ def _linha(p: dict, d: dict, etiquetas: set[str], marcas: list[dict]) -> dict:
         "obra_cadastro": p.get("obra_codigo"), "data": d["data"], "dia_semana": d["dia_semana"],
         "escala": d.get("escala"), "feriado": d.get("feriado"),
         "situacao": d["situacao"], "situacao_rotulo": SITUACOES_DO_DIA.get(d["situacao"], d["situacao"]),
-        "falta": bool(d.get("falta")), "etiquetas": sorted(etiquetas),
+        "falta": bool(d.get("falta")), "debito": d.get("debito") or 0, "etiquetas": sorted(etiquetas),
         "batidas": [{"id": b["id"], "hora": b["hora"], "status": b["status"], "obra": b["obra"],
                      "origem": b["origem"], "sem_internet": b.get("sem_internet"), "nsr": b.get("nsr"),
                      "fora_da_cerca": b.get("fora_da_cerca"), "distancia_metros": b.get("distancia_metros"),
@@ -430,8 +430,10 @@ def incluir_em_lote(quem: Quem, itens: list[dict], *, rotulo: str = "", hora: Op
 def abonar_em_lote(quem: Quem, itens: list[dict], *, motivo: str, subtipo: str = "") -> list[dict]:
     """Abona a FALTA das linhas marcadas (dia de chuva, obra parada, equipe
     liberada): um ABONO do DP por pessoa e dia, aprovado na hora por quem pode,
-    com o motivo. Só no dia que o espelho chama de falta — dia com batida,
-    descanso, feriado ou já justificado fica de fora, com o porquê."""
+    com o motivo. A falta do dia inteiro abona o dia; a FALTA PARCIAL (e o dia com
+    horas a menos) abona só as horas que faltaram (29/10/2026, o dono: "aquela pessoa
+    trabalha um período e o resto do período a gente quer abonar") — o que ela
+    trabalhou continua contado. Descanso, feriado ou já justificado fica de fora."""
     from . import ocorrencias
     if not quem.dp:
         raise ErroDeValidacao("o abono é lançado pelo DP", campo="tipo")
@@ -439,13 +441,15 @@ def abonar_em_lote(quem: Quem, itens: list[dict], *, motivo: str, subtipo: str =
     _conferir_itens(itens)
 
     def abonar(conn, pessoa, d, dia):
-        if d["situacao"] != "FALTA":
+        from .apuracao import SITUACOES_PARCIAIS
+        parcial = (d["situacao"] in SITUACOES_PARCIAIS or d["situacao"] == "OK") and (d.get("debito") or 0) > 0
+        if d["situacao"] != "FALTA" and not parcial:
             raise ErroDeValidacao(f"neste dia não há falta para abonar "
                                   f"({SITUACOES_DO_DIA.get(d['situacao'], d['situacao']).lower()})")
         o = ocorrencias.criar(conn, quem, {
             "tipo": "ABONO", "subtipo": subtipo or "", "colaborador_id": int(pessoa["id"]),
             "data_inicio": dia.isoformat(), "data_fim": dia.isoformat(), "descricao": motivo,
-            "aprovar_ja": True}, origem="GESTAO")
+            **({"minutos": d["debito"]} if parcial else {}), "aprovar_ja": True}, origem="GESTAO")
         return {"status": o["status"], "aprovado": o["status"] == "APROVADA", "pedido_id": o["id"]}
 
     return _cada_item(quem, itens, abonar)

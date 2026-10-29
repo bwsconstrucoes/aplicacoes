@@ -159,3 +159,38 @@ def test_o_fechamento_separa_o_inteiro_do_quebrado(app, mundo, banco, banco_anal
                                            json={**corpo, "arquivo": "cor_extras_quebradas"}).data))
     assert uma.sheetnames == ["HE quebradas"]
     assert dp.post("/erp/api/ponto/fechamento/arquivo", json={**corpo, "arquivo": "outro"}).status_code == 400
+
+    # NEGAR a hora extra do dia na conferência (29/10/2026, migração 019): sai de todas as contas
+    item = {"colaborador_id": mundo["joao"], "data": dia.isoformat(), "minutos": 150}
+    assert sup.post("/erp/api/ponto/horas-extras/negar", json={"itens": [item], "motivo": "não autorizada"}).status_code == 403
+    assert dp.post("/erp/api/ponto/horas-extras/negar", json={"itens": [item], "motivo": "curto"}).status_code == 400
+    r = dp.post("/erp/api/ponto/horas-extras/negar", json={"itens": [item], "motivo": "hora extra não autorizada pelo engenheiro"})
+    assert r.status_code == 200 and r.get_json()["alteradas"] == 1
+    f2 = dp.post("/erp/api/ponto/fechamento", json=corpo).get_json()
+    assert not [x for x in f2["cor_extras_integrais"] if x["cpf"] == CPF_JOAO]
+    neg = [x for x in f2["he_dias"] if x["cpf"] == CPF_JOAO]
+    assert [(x["negada"], x["minutos"]) for x in neg] == [(True, 150)] and "engenheiro" in neg[0]["negada_motivo"]
+    assert all(p["total"] == 0 and p["negadas"] for g in fe.supervisao(f2)["obras"] for p in g["pessoas"]
+               if p["cpf"] == CPF_JOAO)                         # no calendário, aparece, mas fora da soma
+    esp = dp.get(f"/erp/api/ponto/espelho/{mundo['joao']}?competencia={dia:%Y-%m}").get_json()
+    d_esp = next(x for x in esp["dias"] if x["data"] == dia.isoformat())
+    assert d_esp["extra"] == 0 and d_esp["extra_negada"] == 150 and "HORA_EXTRA_NEGADA" in d_esp["alertas"]
+    # e volta a contar
+    assert dp.post("/erp/api/ponto/horas-extras/negar", json={"itens": [item], "voltar": True}).get_json()["alteradas"] == 1
+    f3 = dp.post("/erp/api/ponto/fechamento", json=corpo).get_json()
+    assert [(x["evento"], x["horas"]) for x in f3["cor_extras_integrais"] if x["cpf"] == CPF_JOAO] == [("004", 2)]
+
+    # SÓ CTPS entra nas contas de horas (29/10/2026): o prestador de serviço sai do fechamento e dos relatórios
+    with banco.connect() as conn:
+        conn.execute(text("UPDATE analisesps.colaborador SET tipo = 'Prestador de Serviço' WHERE cpf = :c"), {"c": CPF_JOAO})
+        conn.commit()
+    registro.esquecer()
+    from app.apps.ponto import db as _db
+    from app.apps.ponto.core import parametros as _par
+    with _db.conexao() as conn:                          # a base de pessoas é a planilha (o padrão da produção)
+        _par.gravar(conn, registro.PARAMETRO_FONTE, registro.FONTE_REGISTRO, "teste")
+    registro.esquecer()
+    f4 = dp.post("/erp/api/ponto/fechamento", json=corpo).get_json()
+    assert not [x for k in ("he_dias", "cor_faltas_integrais", "cor_faltas_parciais") for x in f4[k] if x["cpf"] == CPF_JOAO]
+    rel = dp.post("/erp/api/ponto/relatorios", json={"tipo": "extras", "de": dia.isoformat(), "ate": dia.isoformat()}).get_json()
+    assert not [x for x in rel["linhas"] if x["cpf"] == CPF_JOAO]

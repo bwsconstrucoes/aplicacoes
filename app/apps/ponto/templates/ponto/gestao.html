@@ -368,7 +368,14 @@
   .dp-mes button.hoje { outline:2px solid var(--azul-claro); }
   .dp-mes button b { display:block; font-family:var(--fonte-dados); }
   .dp-mes .s-OK { background:#F1FAF3; } .dp-mes .s-FALTA { background:#FDECEA; }
-  .dp-mes .s-INCOMPLETO, .dp-mes .s-FALTA_PARCIAL { background:#FFF4D6; } .dp-mes .s-ABONADO, .dp-mes .s-COMPENSADO { background:#EEF3FB; }
+  .dp-mes .s-INCOMPLETO, .dp-mes .s-FALTA_PARCIAL { background:#FFF4D6; }
+  .he-grade { font-size:12px; } .he-grade th, .he-grade td { padding:3px 4px; text-align:center; white-space:nowrap; }
+  .he-grade .he-nome { text-align:left; position:sticky; left:0; background:var(--fundo, #fff); min-width:190px; z-index:1; }
+  .he-grade .he-nome small { display:block; } .he-grade .fds { background:#F3F4F6; }
+  .he-grade td.he-cel { cursor:pointer; font-family:var(--fonte-dados); }
+  .he-grade td.he-cel:hover { background:#EAF1FB; }
+  .he-grade td.marcada { outline:2px solid #2563EB; outline-offset:-2px; background:#E8F0FE; }
+  .he-grade td.negada { text-decoration:line-through; color:#B91C1C; } .dp-mes .s-ABONADO, .dp-mes .s-COMPENSADO { background:#EEF3FB; }
   .dp-mes .s-DESCANSO, .dp-mes .s-FUTURO, .dp-mes .s-ANTES_DO_PONTO, .dp-mes .s-FORA_DO_CONTRATO { background:#F6F7F9; color:var(--tinta-suave); }
   .link-btn.elo-pessoa { padding:0; text-align:left; }
   /* O mapa do Quadro (21/10/2026). */
@@ -1304,6 +1311,7 @@ const listaDeTexto = t => String(t || "").split(/[,;\n]+/).map(s => s.trim()).fi
 // Os nomes que o cálculo do dia usa, em português.
 const ROTULO_ALERTA_DIA = {
   FALTA: "falta", FALTA_PARCIAL: "falta parcial", BATIDA_FALTANDO: "batida faltando", ATRASO: "atraso",
+  HORA_EXTRA_NEGADA: "hora extra negada na conferência",
   SAIDA_ANTECIPADA: "saída antecipada", EXTRA_ACIMA_DE_2H: "extra acima de 2 h",
   INTERVALO_CURTO: "intervalo curto", INTERJORNADA_CURTA: "menos de 11 h de descanso",
   TRABALHO_EM_DESCANSO: "trabalho em dia de descanso", TRABALHO_EM_FERIADO: "trabalho em feriado",
@@ -3457,7 +3465,8 @@ const qdMarcavel = l => PODE_MARCAR && !QD_SEM_ACAO.includes(l.situacao);
 const QD_SERVE = {
   batida: l => l.batidas.length > 0,
   dia: l => !l.batidas.length && l.faltando.length > 0,
-  abono: l => l.situacao === "FALTA",
+  // a falta do dia inteiro, e (29/10/2026) a falta parcial e o dia com horas a menos — aí só as horas que faltaram
+  abono: l => !l.ocorrencia && (l.situacao === "FALTA" || (["FALTA_PARCIAL", "INCOMPLETO", "OK"].includes(l.situacao) && l.debito > 0)),
   escala: () => true,
 };
 const QD_GRUPOS = {
@@ -3481,7 +3490,7 @@ function qdLote() {
   [["qd-incluir", "batida", "Incluir uma batida", "serve para o dia que já tem alguma batida"],
    ["qd-dia-inteiro", "dia", "Lançar o dia inteiro pela escala", "serve para o dia sem nenhuma batida, com escala"],
    ["qd-definir-escala", "escala", "Definir a escala", "vale para as pessoas marcadas, a partir da data escolhida"],
-   ["qd-abonar", "abono", "Abonar a falta", "serve para o dia de falta"]].forEach(([id, acao, rotulo, dica]) => {
+   ["qd-abonar", "abono", "Abonar a falta", "serve para o dia de falta e para a falta parcial (só as horas que faltaram)"]].forEach(([id, acao, rotulo, dica]) => {
     const b = els(id);
     if (!b) return;
     const n = acao === "escala" ? new Set(marcadas.map(l => l.colaborador_id)).size : marcadas.filter(QD_SERVE[acao]).length;
@@ -3591,8 +3600,9 @@ async function qdAbonar() {
   if (!linhas.length) return;
   const abonos = await abonosDaEmpresa();
   const r = await perguntar({titulo: `Abonar a falta — ${contar(linhas.length, "pessoa-dia", "pessoas-dia")}`,
-    aviso: "A falta deixa de ser falta: o dia fica justificado (abono do DP), sem batida, e NÃO é descontado. " +
-           "Use quando a pessoa não trabalhou por decisão da empresa (chuva, obra parada, equipe liberada). " +
+    aviso: "A falta deixa de ser falta e NÃO é descontada. No dia de falta inteira, o dia todo fica justificado; " +
+           "na <b>falta parcial</b> (ou no dia com horas a menos), são abonadas <b>só as horas que faltaram</b> — o que a pessoa " +
+           "trabalhou continua contado. Use quando foi decisão da empresa (chuva, obra parada, equipe liberada). " +
            "Cada abono é guardado com o motivo e o seu nome.",
     campos: [{nome: "subtipo", rotulo: "Por quê", tipo: "select", valor: abonos.some(a => a.codigo === "DISPENSA") ? "DISPENSA" : "", largura: 6, opcoes: [
                 ...abonos.map(a => ({valor: escapar(a.codigo), rotulo: escapar(rotuloDoAbono(a))})),
@@ -4473,7 +4483,7 @@ function rlAtalho(qual) {
 const FP_RL = new FiltroPessoas("rl", {aoEnter: () => rlMontar()});
 // O FECHAMENTO DA FOLHA (29/10/2026, core/fechamento.py): do dia 26 do mês anterior ao 25 do mês da folha.
 // O mês anterior vai em planilha; o corrente, no .ps (o inteiro) e em planilha (o quebrado).
-const FECH_PARTES = [["ant_faltas", "Mês anterior · faltas"], ["ant_extras", "Mês anterior · horas extras"],
+const FECH_PARTES = [["supervisao", "📋 Horas extras por obra"], ["ant_faltas", "Mês anterior · faltas"], ["ant_extras", "Mês anterior · horas extras"],
   ["ant_extras_dias", "Mês anterior · HE por dia"], ["cor_faltas_integrais", "Faltas integrais (.ps)"],
   ["cor_faltas_parciais", "Faltas parciais"], ["cor_extras_integrais", "HE integrais (.ps)"],
   ["cor_extras_quebradas", "HE quebradas"], ["conferencia", "⚠️ Conferência"]];
@@ -4494,22 +4504,92 @@ function fechFolhaPadrao() {
 }
 // AS HORAS EXTRAS PARA A SUPERVISÃO (29/10/2026): um calendário por obra, do dia 26 ao 25, em paisagem — cada
 // obra numa folha, para mandar a cada encarregado a dele. A obra é a do dia (onde a pessoa bateu).
-function fechImprimirSupervisao() {
+// O calendário por obra, o mesmo na tela e no papel: a hora extra negada na conferência aparece riscada e
+// fica fora das somas.
+function fechGrupos() {
   const de = new Date(RL.anterior.de + "T12:00:00"), ate = new Date(RL.corrente.ate + "T12:00:00");
   const dias = [];
   for (let d = new Date(de); d <= ate; d.setDate(d.getDate() + 1)) dias.push(isoLocal(d));
   const grupos = {};
   (RL.he_dias || []).forEach(x => {
     const g = grupos[x.obra_do_dia] ||= {obra: x.obra_do_dia, nome: x.obra_nome, pessoas: {}, porDia: {}, total: 0};
-    const p = g.pessoas[x.colaborador_id] ||= {nome: x.nome, funcao: x.funcao || "", banco: x.banco, dias: {}, total: 0};
+    const p = g.pessoas[x.colaborador_id] ||= {id: x.colaborador_id, nome: x.nome, funcao: x.funcao || "", banco: x.banco,
+                                               dias: {}, negadas: {}, total: 0, primeiro: x.data};
+    if (x.negada) { p.negadas[x.data] = x; return; }
     p.dias[x.data] = (p.dias[x.data] || 0) + x.minutos; p.total += x.minutos;
     g.porDia[x.data] = (g.porDia[x.data] || 0) + x.minutos; g.total += x.minutos;
   });
+  const obras = Object.values(grupos).sort((a, b) => (a.obra || "~").localeCompare(b.obra || "~"));
+  obras.forEach(g => { g.lista = Object.values(g.pessoas).sort((a, b) => a.nome.localeCompare(b.nome)); });
+  return {dias, obras};
+}
+const FECH_MARC = new Set();
+function fechGradeSupervisao() {
+  const {dias, obras} = fechGrupos();
+  const fds = iso => [0, 6].includes(new Date(iso + "T12:00:00").getDay());
+  return `<div class="barra-lote" style="margin:0 0 8px">
+      <b id="fech-he-qtd">${contar(FECH_MARC.size, "hora marcada", "horas marcadas")}</b>
+      <button class="btn secundario" type="button" id="fech-he-negar">🚫 Negar as horas marcadas…</button>
+      <button class="btn secundario" type="button" id="fech-he-voltar">↩️ Voltar a contar as marcadas</button>
+      <small class="suave">Clique nas horas para marcar (uma ou várias). Clique no nome para abrir o espelho da pessoa.
+        A hora negada fica riscada e sai de todas as contas (fechamento, relatórios, banco).</small></div>
+    ${obras.length ? obras.map(g => `<h3 style="margin:14px 0 4px">Obra ${escapar(g.obra || "sem obra")}${g.nome ? ` — ${escapar(g.nome)}` : ""}
+        <small class="suave">${contar(g.lista.length, "pessoa", "pessoas")} · total ${hm(g.total)}</small></h3>
+      <div class="tabela-rolagem" style="max-height:none"><table class="he-grade"><thead><tr><th class="sem-ordem he-nome">Funcionário</th>
+        ${dias.map(d => `<th class="sem-ordem ${fds(d) ? "fds" : ""}">${d.slice(8)}<br><small style="display:inline">${d.slice(5, 7)}</small></th>`).join("")}
+        <th class="sem-ordem">Total</th></tr></thead><tbody>
+      ${g.lista.map(p => `<tr><td class="he-nome">${eloPessoa(p.id, p.nome, p.primeiro)}${p.banco ? ` <small style="display:inline">(banco)</small>` : ""}
+          <small>${escapar(p.funcao)}</small></td>
+        ${dias.map(d => { const k = `${p.id}|${d}`, ng = p.negadas[d], m = p.dias[d];
+          if (!m && !ng) return `<td class="${fds(d) ? "fds" : ""}"></td>`;
+          return `<td class="he-cel ${fds(d) ? "fds" : ""} ${ng ? "negada" : ""} ${FECH_MARC.has(k) ? "marcada" : ""}" data-he="${k}"
+            data-min="${ng ? ng.minutos : m}" title="${ng ? escapar(`negada: ${ng.negada_motivo || ""} (${ng.negada_por || ""})`) : "clique para marcar"}">${hm(ng ? ng.minutos : m)}</td>`; }).join("")}
+        <td class="num"><b>${hm(p.total)}</b></td></tr>`).join("")}
+      </tbody><tfoot><tr><td class="he-nome"><b>Total da obra</b></td>${dias.map(d => `<td class="${fds(d) ? "fds" : ""}"><b>${g.porDia[d] ? hm(g.porDia[d]) : ""}</b></td>`).join("")}
+        <td class="num"><b>${hm(g.total)}</b></td></tr></tfoot></table></div>`).join("")
+      : `<div class="vazio"><b>Nenhuma hora extra</b>neste fechamento.</div>`}`;
+}
+function fechLigarGrade() {
+  els("rl-tabela").querySelectorAll("[data-he]").forEach(c => c.addEventListener("click", () => {
+    const k = c.dataset.he; FECH_MARC.has(k) ? FECH_MARC.delete(k) : FECH_MARC.add(k);
+    c.classList.toggle("marcada", FECH_MARC.has(k));
+    els("fech-he-qtd").textContent = contar(FECH_MARC.size, "hora marcada", "horas marcadas");
+  }));
+  const itens = negadas => [...FECH_MARC].map(k => els("rl-tabela").querySelector(`[data-he="${k}"]`)).filter(c => c &&
+    c.classList.contains("negada") === negadas).map(c => { const [id, data] = c.dataset.he.split("|");
+      return {colaborador_id: Number(id), data, minutos: Number(c.dataset.min)}; });
+  els("fech-he-negar").addEventListener("click", async () => {
+    const lista = itens(false);
+    if (!lista.length) return aviso("mensagem", "Marque, no calendário, as horas extras que não devem entrar.", "erro");
+    const r = await perguntar({titulo: `Negar ${contar(lista.length, "hora extra", "horas extras")}`,
+      aviso: "A hora extra desses dias sai de todas as contas: fechamento, arquivo .ps, relatórios e banco de horas. " +
+             "As batidas não mudam. Fica registrado o motivo, quem negou e quando — e dá para voltar a contar.",
+      campos: [{nome: "motivo", rotulo: "Por que não entra", tipo: "textarea", linhas: 2, obrigatorio: true, largura: 6,
+                exemplo: "ex.: hora extra não autorizada pelo engenheiro da obra"}], textoOk: "Negar"});
+    if (!r) return;
+    try { const d = await postar("/erp/api/ponto/horas-extras/negar", {itens: lista, motivo: r.motivo});
+          FECH_MARC.clear(); aviso("mensagem", `${contar(d.alteradas, "hora extra negada", "horas extras negadas")}. Refazendo o fechamento…`, "ok");
+          rlMontar(); }
+    catch (e) { falhou(e); }
+  });
+  els("fech-he-voltar").addEventListener("click", async () => {
+    const lista = itens(true);
+    if (!lista.length) return aviso("mensagem", "Marque as horas riscadas (negadas) que devem voltar a contar.", "erro");
+    if (!await perguntar({titulo: `Voltar a contar ${contar(lista.length, "hora extra", "horas extras")}`, campos: [], textoOk: "Voltar a contar",
+                          aviso: "Elas voltam para o fechamento, os relatórios e o banco de horas. Fica registrado quem voltou."})) return;
+    try { const d = await postar("/erp/api/ponto/horas-extras/negar", {itens: lista, voltar: true});
+          FECH_MARC.clear(); aviso("mensagem", `${contar(d.alteradas, "hora extra voltou", "horas extras voltaram")} a contar. Refazendo…`, "ok");
+          rlMontar(); }
+    catch (e) { falhou(e); }
+  });
+}
+
+function fechImprimirSupervisao() {
+  const {dias, obras} = fechGrupos();
   const w = window.open("", "_blank");
   if (!w) { aviso("mensagem", "O navegador bloqueou a janela de impressão — libere as janelas deste site.", "erro"); return; }
   const fds = iso => [0, 6].includes(new Date(iso + "T12:00:00").getDay());
   const c = m => m ? hm(m) : "";
-  const obras = Object.values(grupos).sort((a, b) => (a.obra || "~").localeCompare(b.obra || "~"));
   w.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Horas extras por obra — ${escapar(RL.titulo)}</title>
     <style>@page{size:A4 landscape;margin:8mm} body{font:10px Arial,sans-serif;color:#111;margin:0}
     h1{font-size:14px;margin:0 0 2px} h2{font-size:12px;margin:0 0 4px} p{margin:0 0 6px;color:#444}
@@ -4522,10 +4602,10 @@ function fechImprimirSupervisao() {
       <h1>BWS — Horas extras para conferência da supervisão</h1>
       <h2>Obra ${escapar(g.obra || "sem obra")}${g.nome ? ` — ${escapar(g.nome)}` : ""}</h2>
       <p>${escapar(RL.titulo)} · de ${dataBR(RL.anterior.de)} a ${dataBR(RL.corrente.ate)} · horas extras de cada dia (h:mm) na obra em que a pessoa
-        bateu · (banco) = vai para o banco de horas · emitido em ${new Date().toLocaleString("pt-BR")}</p>
+        bateu · (banco) = vai para o banco de horas · <s>riscada</s> = negada na conferência, fora do total · emitido em ${new Date().toLocaleString("pt-BR")}</p>
       <table><thead><tr><th class="nome">Funcionário</th><th class="func">Função</th>${dias.map(d => `<th class="${fds(d) ? "fds" : ""}">${d.slice(8)}<br>${d.slice(5, 7)}</th>`).join("")}<th class="tot">Total</th></tr></thead>
-      <tbody>${Object.values(g.pessoas).sort((a, b) => a.nome.localeCompare(b.nome)).map(p => `<tr><td class="nome">${escapar(p.nome)}${p.banco ? " (banco)" : ""}</td>
-        <td class="func">${escapar(p.funcao)}</td>${dias.map(d => `<td class="${fds(d) ? "fds" : ""}">${c(p.dias[d])}</td>`).join("")}<td class="tot">${hm(p.total)}</td></tr>`).join("")}</tbody>
+      <tbody>${g.lista.map(p => `<tr><td class="nome">${escapar(p.nome)}${p.banco ? " (banco)" : ""}</td>
+        <td class="func">${escapar(p.funcao)}</td>${dias.map(d => `<td class="${fds(d) ? "fds" : ""}">${p.negadas[d] ? `<s style="color:#b00">${hm(p.negadas[d].minutos)}</s>` : c(p.dias[d])}</td>`).join("")}<td class="tot">${hm(p.total)}</td></tr>`).join("")}</tbody>
       <tfoot><tr><td class="nome">Total da obra</td><td class="func"></td>${dias.map(d => `<td class="${fds(d) ? "fds" : ""}">${c(g.porDia[d])}</td>`).join("")}<td class="tot">${hm(g.total)}</td></tr></tfoot></table>
       <div class="assina"><div>Conferido por (encarregado / supervisor)</div><div>Data</div></div></div>`).join("")
       : `<h1>BWS — Horas extras para conferência da supervisão</h1><p>Nenhuma hora extra neste período.</p>`}
@@ -4552,7 +4632,8 @@ async function rlMontar() {
     try {
       const filtros = {...FP_RL.valores()};
       RL = await postar("/erp/api/ponto/fechamento", {competencia: els("rl-comp").value, filtros});
-      RL.tipo = "fechamento"; RL._filtros = filtros; RL_VISAO = "cor_faltas_integrais";
+      RL.tipo = "fechamento"; RL._filtros = filtros;
+      if (!FECH_PARTES.some(([c]) => c === RL_VISAO)) RL_VISAO = "supervisao";
       RL.titulo = `Fechamento da folha de ${RL.competencia.slice(5)}/${RL.competencia.slice(0, 4)}`;
       RL.de = RL.anterior.de; RL.ate = RL.corrente.ate;
       rlDesenhar();
@@ -4588,7 +4669,9 @@ function rlColunas() {
                              ["Horas inteiras", l => l.horas, "num"], ["Total do período", l => hm(l.minutos_total), "num"]],
       cor_extras_quebradas: [...p, ["Evento", l => l.rotulo], ["Data", l => dataBR(l.data), "dados"],
                              ["Minutos", l => l.minutos, "num"], ["Total do período", l => hm(l.minutos_total), "num"]],
-      conferencia: [...p, ["Aviso", l => l.aviso]]}[RL_VISAO];
+      conferencia: [...p, ["Aviso", l => l.aviso]],
+      supervisao: [...p, ["Obra do dia", l => l.obra_do_dia || ""], ["Dia", l => dataBR(l.data), "dados"],
+                   ["Horas extras", l => hm(l.minutos), "num"], ["Negada", l => l.negada ? `sim — ${l.negada_motivo || ""}` : ""]]}[RL_VISAO];
   }
   if (RL.tipo === "faltas") return RL_VISAO === "pessoas"
     ? [...pessoa, ["Faltas", l => l.faltas, "num"], ["Faltas parciais", l => l.parciais || 0, "num"],
@@ -4617,7 +4700,7 @@ function rlColunas() {
           ["", l => l.aviso || ""]];
 }
 function rlLinhas() {
-  if (RL.tipo === "fechamento") return RL[RL_VISAO] || [];
+  if (RL.tipo === "fechamento") return RL[RL_VISAO === "supervisao" ? "he_dias" : RL_VISAO] || [];
   if (RL.tipo === "justificadas" && RL_VISAO === "tipos") return RL.por_tipo;
   if (["faltas", "extras"].includes(RL.tipo) && RL_VISAO === "pessoas") return RL.por_pessoa;
   return RL.linhas;
@@ -4656,9 +4739,10 @@ function rlDesenhar() {
     els("fech-sup-imprimir").addEventListener("click", fechImprimirSupervisao);
     els("rl-kpis").querySelectorAll("[data-fech-baixar]").forEach(b => b.addEventListener("click", () =>
       fechBaixar(b.dataset.fechBaixar === "parte" ? RL_VISAO : b.dataset.fechBaixar)));
-    els("rl-visoes").innerHTML = FECH_PARTES.map(([c, r]) => `<button type="button" class="${c === RL_VISAO ? "ativa" : ""}" data-rl-visao="${c}">${r} <small style="display:inline">${(RL[c] || []).length}</small></button>`).join("");
+    els("rl-visoes").innerHTML = FECH_PARTES.map(([c, r]) => `<button type="button" class="${c === RL_VISAO ? "ativa" : ""}" data-rl-visao="${c}">${r} <small style="display:inline">${(RL[c === "supervisao" ? "he_dias" : c] || []).length}</small></button>`).join("");
     els("rl-visoes").querySelectorAll("[data-rl-visao]").forEach(b => b.addEventListener("click", () => { RL_VISAO = b.dataset.rlVisao; rlDesenhar(); }));
     els("rl-acoes").hidden = false;
+    if (RL_VISAO === "supervisao") { els("rl-tabela").innerHTML = fechGradeSupervisao(); fechLigarGrade(); return; }
     const cols = rlColunas(), linhas = rlLinhas();
     els("rl-tabela").innerHTML = linhas.length ? `<table class="rl-tabela"><thead><tr>${cols.map(c => `<th class="${c[2] || ""}">${escapar(c[0])}</th>`).join("")}</tr></thead>
       <tbody>${linhas.map(l => `<tr>${cols.map((c, i) => `<td class="${c[2] || ""}">${i === 0 && l.colaborador_id

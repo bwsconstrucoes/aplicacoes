@@ -179,7 +179,9 @@ def montar(conn: Connection, quem: Quem, competencia, filtros: Optional[dict] = 
     if not relatorios._uma_por_vez.acquire(blocking=False):
         raise relatorios.Ocupado("outro relatório está sendo montado agora — tente de novo em instantes")
     try:
-        pessoas = [p for p in relatorios._pessoas(conn, quem, filtros or {}, ai, cf) if p.get("ativo_no_ponto", True)]
+        # quem não bate ponto fica fora; e só CTPS entra nas contas de horas (29/10/2026, `relatorios.conta_horas`)
+        pessoas = [p for p in relatorios._pessoas(conn, quem, filtros or {}, ai, cf)
+                   if p.get("ativo_no_ponto", True) and relatorios.conta_horas(p)]
         inicio = max(ai, vale)
         espelhos = list(relatorios._espelhos(conn, pessoas, inicio, cf)) if cf >= inicio else []
     finally:
@@ -199,6 +201,9 @@ def montar(conn: Connection, quem: Quem, competencia, filtros: Optional[dict] = 
         idf, sem_id = id_fortes_ok(fortes.get(cpf))
         base = {**base, "cpf": cpf, "id_fortes": idf or ""}
         banco_de_horas = tem_banco(p)
+        if p.get("no_registro") and not (p.get("tipo_cadastro") or "").strip():
+            r["conferencia"].append({**base, "aviso": "a coluna \"Tipo\" (D) da planilha está vazia — entrou como CTPS; "
+                                                         "confira o cadastro"})
         if p.get("situacao") == "AFASTADO":
             r["conferencia"].append({**base, "aviso": "afastada no cadastro — confira se as faltas não são do "
                                                          "afastamento (lance a licença, se for)"})
@@ -226,15 +231,20 @@ def montar(conn: Connection, quem: Quem, competencia, filtros: Optional[dict] = 
                         ps_faltas[(idf, EVENTO_FALTA, dia)] += 1
                 else:
                     r["cor_faltas_parciais"].append(linha)
-            if d.get("extra"):
+            if d.get("extra") or d.get("extra_negada"):
                 # para a supervisão conferir (29/10/2026): toda hora extra do dia, na obra em que foi feita —
-                # inclusive a de quem tem banco de horas (marcada)
+                # inclusive a de quem tem banco de horas (marcada) e a negada na conferência (marcada, fora
+                # das contas: o espelho já a zerou)
                 ob = obra_do_dia(d, p.get("obra_codigo"))
                 ob_up = str(ob).upper() if ob else None
                 ev_sup = evento_da_hora_extra(d, cfg, ob_up, (obras.get(ob_up) or {}).get("uf"))
+                negada = d.get("he_negada")
                 r["he_dias"].append({**base, "data": d["data"], "obra_do_dia": ob_up or "",
                                      "obra_nome": (obras.get(ob_up) or {}).get("nome") or "",
-                                     "minutos": d["extra"], "evento": ev_sup, "banco": banco_de_horas})
+                                     "minutos": d.get("extra") or d.get("extra_negada") or 0, "evento": ev_sup,
+                                     "banco": banco_de_horas, "negada": bool(not d.get("extra") and negada),
+                                     "negada_motivo": (negada or {}).get("motivo"),
+                                     "negada_por": (negada or {}).get("por")})
             if d.get("extra") and not banco_de_horas:
                 teve_algo = True
                 ev = ev_sup
@@ -430,7 +440,10 @@ def supervisao(f: dict) -> dict:
                                                        "pessoas": {}, "por_dia": defaultdict(int), "total": 0})
         p = g["pessoas"].setdefault(x["colaborador_id"], {"nome": x["nome"], "funcao": x.get("funcao") or "",
                                                           "cpf": x.get("cpf"), "banco": x.get("banco"),
-                                                          "dias": defaultdict(int), "total": 0})
+                                                          "dias": defaultdict(int), "negadas": {}, "total": 0})
+        if x.get("negada"):                 # negada na conferência: aparece, mas fora da soma
+            p["negadas"][x["data"]] = x["minutos"]
+            continue
         p["dias"][x["data"]] += x["minutos"]
         p["total"] += x["minutos"]
         g["por_dia"][x["data"]] += x["minutos"]
@@ -474,7 +487,9 @@ def excel_supervisao(f: dict) -> bytes:
             cel.alignment = Alignment(horizontal="center")
         for p in g["pessoas"]:
             ws.append([p["nome"] + (" (banco)" if p.get("banco") else ""), p["funcao"],
-                       *[hhmm(p["dias"][d]) if p["dias"].get(d) else "" for d in s["dias"]], hhmm(p["total"])])
+                       *[hhmm(p["dias"][d]) if p["dias"].get(d) else
+                         (f"negada {hhmm(p['negadas'][d])}" if p["negadas"].get(d) else "") for d in s["dias"]],
+                       hhmm(p["total"])])
         ws.append(["Total da obra", "", *[hhmm(g["por_dia"][d]) if g["por_dia"].get(d) else "" for d in s["dias"]],
                    hhmm(g["total"])])
         for cel in ws[ws.max_row]:

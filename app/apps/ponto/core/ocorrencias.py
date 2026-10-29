@@ -313,6 +313,15 @@ def criar(conn: Connection, quem: Quem, dados: dict, *, origem: str = "GESTAO") 
         # da pessoa: não conta contra ela na qualidade (qualidade.py).
         subtipo = SUBTIPO_LOTE
 
+    if tipo == "ABONO" and dados.get("minutos"):
+        # o abono SÓ DAS HORAS QUE FALTARAM (29/10/2026, a falta parcial no Quadro): um dia, X minutos
+        try:
+            minutos = int(dados["minutos"])
+        except (TypeError, ValueError):
+            raise ErroDeValidacao("minutos do abono ilegíveis", campo="minutos") from None
+        if not 0 < minutos <= 24 * 60:
+            raise ErroDeValidacao("o abono parcial vai de 1 minuto a 24 horas", campo="minutos")
+        fim = inicio
     competencias.exigir_aberta(conn, inicio, fim, dia_trabalhado)
     sobreposta = db.um(conn, """
         SELECT id, tipo FROM ponto.ocorrencias

@@ -66,6 +66,16 @@ def _pessoas(conn: Connection, quem: Quem, f: dict, inicio: dt.date, fim: dt.dat
     return filtro_pessoas.aplicar(conn, quem, pessoas, f, inicio, min(fim, horario.hoje()))[0]
 
 
+def conta_horas(p: dict) -> bool:
+    """PURA. Só quem é CTPS entra nas contas de horas — falta, hora extra, banco (29/10/2026, o dono: "só entra
+    para efeito de hora o pessoal que na coluna D é CTPS. Demais, que são prestador de serviço, eles não entram
+    no cálculo (…) eles batem ponto, tudo normal"). A coluna D é o "Tipo" da planilha de colaboradores. Vazio
+    (ou sem a planilha) entra — e o fechamento avisa na Conferência —, para um buraco na planilha não sumir
+    com as faltas de ninguém calado."""
+    tipo = " ".join(str(p.get("tipo_cadastro") or "").split()).upper()
+    return not tipo or tipo == "CTPS"
+
+
 def _base(p: dict) -> dict:
     return {"colaborador_id": int(p["id"]), "nome": p["nome"], "cpf": p.get("cpf"), "funcao": p.get("funcao"),
             "obra": p.get("obra_codigo")}
@@ -215,6 +225,8 @@ def montar(conn: Connection, quem: Quem, tipo: str, de, ate, f: Optional[dict] =
         raise Ocupado("outro relatório está sendo montado agora — tente de novo em instantes")
     try:
         pessoas = _pessoas(conn, quem, f, inicio, fim)
+        if tipo in ("faltas", "extras", "banco"):
+            pessoas = [p for p in pessoas if conta_horas(p)]          # só CTPS (29/10/2026)
         if tipo == "faltas":
             corpo = faltas(conn, pessoas, max(inicio, vale), fim) if fim >= vale else faltas(conn, [], inicio, fim)
         elif tipo == "extras":

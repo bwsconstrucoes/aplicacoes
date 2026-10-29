@@ -57,6 +57,10 @@ def _nao_abonam(conn: Connection) -> set:
 
 def rotulo_da_ocorrencia(o: dict) -> str:
     """O nome do dia justificado: o tipo, ou o abono com nome próprio."""
+    if o.get("tipo") == "ABONO" and int(o.get("minutos") or 0) > 0:      # só as horas que faltaram
+        m = int(o["minutos"])
+        nome = SUBTIPOS_ABONO.get(o.get("subtipo") or "", ROTULO_TIPO["ABONO"])
+        return f"{nome} — {m // 60}h{m % 60:02d} abonadas"
     if o.get("tipo") == "ABONO" and o.get("subtipo") in SUBTIPOS_ABONO:
         return SUBTIPOS_ABONO[o["subtipo"]]
     from .ocorrencias import NOME_DECLARACAO
@@ -112,6 +116,8 @@ class Lote:
             self.ocorrencias.setdefault(int(o["colaborador_id"]), []).append(o)
         self.pre_assinaladas = _pre_assinaladas(conn)
         self.nao_abonam = _nao_abonam(conn)
+        from . import he_negada
+        self.he_negadas = he_negada.das_pessoas(conn, ids, inicio, fim)
         padrao = escalas.escala_padrao(conn)
         vig: dict[int, list[dict]] = {}
         for v in db.todos(conn, """
@@ -171,6 +177,7 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
         nao_abonam = lote.nao_abonam
         vigencias = lote.escalas[int(colaborador_id)]
         calendario = lote.calendario
+        he_negadas = lote.he_negadas
         rondas_do_periodo: dict = {}
     else:
         ocorrencias = db.todos(conn, """
@@ -185,6 +192,8 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
         nao_abonam = _nao_abonam(conn)
         vigencias = escalas.EscalasDaPessoa(conn, colaborador_id)
         calendario = feriados.Calendario(conn, inicio, fim)
+        from . import he_negada
+        he_negadas = he_negada.das_pessoas(conn, [int(colaborador_id)], inicio, fim)
         # As rondas surpresa do vigia noturno (13/10/2026): ficam no dia da entrada do
         # turno. Não entram na conta da jornada — só aparecem.
         from . import rondas as _rondas
@@ -208,9 +217,14 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
                        and o.get("subtipo") in ("DECL_PERIODO", "DECL_NADA"))
                        # a licença ou o abono que a Configuração diz que NÃO abona (29/10/2026): o dia
                        # fica justificado, mas as horas são descontadas — como a declaração com "nada"
-                       or (o["tipo"], o.get("subtipo")) in nao_abonam]
+                       or (o["tipo"], o.get("subtipo")) in nao_abonam
+                       # o abono SÓ DAS HORAS QUE FALTARAM (29/10/2026, o Quadro na falta parcial: "trabalha um
+                       # período e o resto do período a gente quer abonar"): abona os minutos dele
+                       or (o["tipo"] == "ABONO" and int(o.get("minutos") or 0) > 0)]
         aprovadas = [o for o in aprovadas if o not in declaracoes]
-        abono_parcial = sum(int(o.get("minutos") or 0) for o in declaracoes if o["subtipo"] == "DECL_PERIODO")
+        abono_parcial = sum(int(o.get("minutos") or 0) for o in declaracoes
+                            if o["subtipo"] == "DECL_PERIODO"
+                            or (o["tipo"] == "ABONO" and (o["tipo"], o.get("subtipo")) not in nao_abonam))
         pendentes = [o for o in ocorrencias if o["status"].startswith("AGUARDANDO")
                      and (o["data_inicio"] <= dia <= o["data_fim"] or o["dia_trabalhado"] == dia)]
         compensa = [o for o in ocorrencias if o["status"] == "APROVADA"
@@ -226,17 +240,28 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
         r = apuracao.apurar_dia(dia, escala, [horario.para_local(b["timestamp_servidor"]) for b in do_dia],
                                 feriado=bool(nome_feriado), ocorrencia=abono,
                                 intervalo_pre_assinalado=so_duas)
+        coberto = False
         if abono_parcial and not r.abonado:
             if r.previsto and abono_parcial >= r.previsto:
                 r.situacao, r.abonado, r.falta, r.debito = "ABONADO", True, False, 0
             elif r.debito:
                 r.debito = max(0, r.debito - abono_parcial)
+                # a falta parcial toda abonada (29/10/2026): o dia fica certo — o que faltou está justificado
+                if not r.debito and r.situacao in apuracao.SITUACOES_PARCIAIS:
+                    r.situacao, coberto = "OK", True
+                    r.alertas = [a for a in r.alertas if a not in ("FALTA_PARCIAL", "BATIDA_FALTANDO")]
         if compensa and r.extra:
             # O dia trabalhado no lugar de outro não é extra: ele paga a folga.
             r.extra = 0
             r.alertas = [a for a in r.alertas if a not in ("TRABALHO_EM_DESCANSO",
                                                            "TRABALHO_EM_FERIADO")]
             r.situacao = "COMPENSADO"
+        # A hora extra negada na conferência (29/10/2026, migração 019): não entra em conta nenhuma.
+        negada = he_negadas.get((int(colaborador_id), dia))
+        extra_negada = 0
+        if negada and r.extra:
+            extra_negada, r.extra = r.extra, 0
+            r.alertas.append("HORA_EXTRA_NEGADA")
         if do_dia and anterior_ultima and escala is not None:
             if apuracao.interjornada_curta(anterior_ultima, do_dia[0]["timestamp_servidor"], escala):
                 r.alertas.append("INTERJORNADA_CURTA")
@@ -271,7 +296,7 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
         if so_duas:
             previstas = ajustes.so_entrada_e_saida(previstas)
         faltando = []
-        if previstas and not aprovadas and (julgavel or dia == hoje):
+        if previstas and not aprovadas and not coberto and (julgavel or dia == hoje):
             # o horário que já tem pedido esperando decisão também não "falta"
             ja_pedidos = [o["horario"] for o in pendentes if o["tipo"] == "AJUSTE_BATIDA" and o["horario"]]
             faltando = ajustes.faltantes(previstas, [
@@ -289,6 +314,9 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
             "feriado": nome_feriado,
             "rondas": rondas_do_periodo.get(dia.isoformat(), []),
             "previsto": r.previsto, "trabalhado": r.trabalhado, "extra": r.extra,
+            "extra_negada": extra_negada if julgavel else 0,
+            "he_negada": ({"motivo": negada["motivo"], "por": negada["negada_por"],
+                           "em": horario.texto(negada["negada_em"])} if negada and extra_negada and julgavel else None),
             "debito": r.debito, "atraso": r.atraso, "saida_antecipada": r.saida_antecipada,
             "intervalo": r.intervalo, "noturno": r.noturno_reduzido,
             "falta": r.falta, "abonado": r.abonado, "situacao": r.situacao,

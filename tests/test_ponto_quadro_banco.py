@@ -138,11 +138,15 @@ def test_lancar_o_dia_inteiro_e_abonar_a_falta_em_lote(app, mundo):
     falta = {"colaborador_id": mundo["maria"], "data": ter.isoformat()}
     assert como(app, mundo["sup"]).post("/erp/api/ponto/quadro/abonar", json={
         "itens": [falta], "motivo": "chuva forte, obra parada"}).status_code in (403, 404)
-    r = dp.post("/erp/api/ponto/quadro/abonar", json={"itens": [falta, joao],
+    r = dp.post("/erp/api/ponto/quadro/abonar", json={"itens": [falta, joao, maria],
                 "motivo": "chuva forte, obra parada o dia todo"}).get_json()
-    rf, rj = r["resultados"]
+    rf, rj, rm = r["resultados"]
     assert rf["ok"] and rf["aprovado"] is True, rf
-    assert rj["ok"] is False and "não há falta" in rj["erro"]
+    # a falta parcial do João (bateu 3 vezes): só as horas que faltaram (29/10/2026)
+    assert rj["ok"] and rj["aprovado"] is True, rj
+    lj = next(l for l in _quadro(dp, seg)["linhas"] if l["colaborador_id"] == mundo["joao"])
+    assert lj["debito"] == 0 and lj["situacao"] == "OK" and any("abonadas" in x["rotulo"] for x in lj["declaracoes"])
+    assert rm["ok"] is False and "não há falta" in rm["erro"]           # o dia completo da Maria
     linha = next(l for l in _quadro(dp, ter)["linhas"] if l["colaborador_id"] == mundo["maria"])
     assert "JUSTIFICADO" in linha["etiquetas"] and linha["situacao"] == "ABONADO"
     # de novo: já não é falta

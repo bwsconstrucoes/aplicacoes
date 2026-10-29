@@ -61,6 +61,10 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1zz6. **No ramo, esperando o "pode" (29/10/2026, madrugada) — COM A MIGRAÇÃO 019 DO PONTO**: o **abono da falta
+   parcial** no Quadro (só as horas que faltaram), as **horas extras por obra na tela** do fechamento com **negar a
+   hora extra** de um dia (e voltar a contar), e **só CTPS nas contas de horas** (a coluna "Tipo" da planilha). Vai
+   junto com o 1zz5. Ao juntar, apertar "Aplicar atualizações do ponto" (a 019); sem ela, só o "negar" não funciona.
 1zz5. **No ramo, esperando o "pode" (29/10/2026, noite, última) — SEM MIGRAÇÃO**: o **abono pedido como os outros
    pedidos** — no aplicativo ("O que vai entregar ou pedir?", o pedido por outra pessoa, o Meu ponto) e no ERP
    (janela da pessoa › "Pedir abono"); vai para a validação ("Quem valida o quê" › Abono, nasce no DP).
@@ -386,6 +390,43 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 29/10/2026 (madrugada) — Abonar a falta parcial, negar a hora extra na conferência, e só CTPS nas horas (migração 019)
+
+**O abono da falta parcial** (Quadro › marcar as linhas › "Abonar a falta"). O dono: *"abonar a falta parcial tem
+sentido. Porque, de repente, aquela pessoa trabalha um período e o resto do período a gente quer abonar."*
+- O botão passa a aceitar, além da falta do dia inteiro, a **falta parcial** e o dia com **horas a menos**: aí abona
+  **só as horas que faltaram** (um ABONO com `minutos` = o débito do dia). O que a pessoa trabalhou continua contado; o
+  dia fica certo, com "<abono> — Xh abonadas" no espelho, e sai do relatório de Faltas e do fechamento.
+- No fechamento, **"Atraso ou saída antecipada" ficou com esse nome** (o dono preferiu manter).
+
+**As horas extras por obra, na tela, e negar uma hora** (Relatórios › Fechamento da folha › "📋 Horas extras por
+obra", a primeira aba). O dono: *"eu quero ter em tela também a possibilidade de visualizar aquilo ali (…) agrupado por
+obra (…) bate o olho, e pode abrir o espelho da pessoa (…) eu preciso poder discordar com alguma hora: selecionar e
+negar que aquela hora daquele dia entre no cálculo."*
+- O mesmo calendário do papel (26 a 25, por obra), na tela: o nome abre a janela da pessoa no dia; **clicar na hora
+  marca**; "🚫 Negar as horas marcadas…" pede o motivo; "↩️ Voltar a contar" desfaz.
+- **A hora negada sai de todas as contas** — o espelho zera o extra do dia e mostra "hora extra negada na
+  conferência"; daí o fechamento, o .ps, os relatórios e o banco de horas não contam. No calendário (tela, papel e
+  Excel) ela aparece **riscada**, fora do total. As batidas não mudam (Portaria 671). Fica guardado o motivo, quem
+  negou e quando, e quem voltou a contar (`ponto.horas_extras_negadas`, **migração 019**). Só o DP.
+- ⚠️ **Risco, dito ao dono**: hora trabalhada é devida mesmo sem autorização; negar aqui tira da folha, mas não tira
+  o direito da pessoa. É decisão dele, e o registro do motivo é o que sustenta a decisão.
+
+**Só CTPS nas contas de horas.** O dono: *"tem um pessoal que é autônomo RPA (…) diarista (…) só entra para efeito
+de hora o pessoal que na coluna D é CTPS. Demais, que são prestador de serviço, eles não entram no cálculo de hora
+extra (…) eles batem ponto, tudo normal."*
+- A coluna é o **"Tipo"** da planilha de colaboradores (CTPS × Prestador de Serviço — a mesma que a Análise de SPs usa
+  para os diaristas, `analisesps.colaborador.tipo`). Quem não é CTPS **bate ponto normalmente** (Quadro, aplicativo,
+  qualidade), mas **fica fora** do fechamento da folha (faltas, horas extras, .ps, horas extras por obra) e dos
+  relatórios de **Faltas, Horas extras e Banco de horas**.
+- **Vazio entra** (como CTPS) e o fechamento avisa na Conferência — para um buraco na planilha não sumir com as faltas
+  de ninguém calado. Escolha minha.
+- Com a base de pessoas no ERP (e não na planilha), não há o tipo: todos entram.
+
+- **Testes**: o fechamento de verdade com a hora negada (some do .ps e do calendário, o espelho mostra, volta a
+  contar) e o prestador de serviço fora; o abono parcial no `test_ponto_quadro_banco.py`. Ensaio no navegador: o
+  calendário na tela, marcar e negar uma hora.
 
 ## 29/10/2026 (noite, última) — O abono pedido por quem faz requisição
 

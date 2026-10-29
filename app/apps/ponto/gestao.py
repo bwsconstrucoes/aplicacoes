@@ -1388,6 +1388,31 @@ def ponto_api_hora_extra_percentuais():
     return _ok(**hora_extra.para_json(cfg), ufs_das_obras=ufs)
 
 
+# A HORA EXTRA NEGADA NA CONFERÊNCIA (29/10/2026, core/he_negada.py, migração 019).
+@bp.route("/erp/api/ponto/horas-extras/negar", methods=["POST"])
+@login_obrigatorio
+@permissao("aprovar_afastamento")
+@_api
+def ponto_api_he_negar():
+    """Nega (ou, com `voltar`, volta a contar) a hora extra de pessoa-dia marcados, com o motivo."""
+    from .core import he_negada
+    quem, d = _quem(), _corpo()
+    itens = d.get("itens") or []
+    with db.conexao() as conn:
+        for x in itens:
+            _exigir_pessoa(conn, quem, int(x.get("colaborador_id") or 0))
+        if d.get("voltar"):
+            n = he_negada.voltar(conn, itens, quem.nome)
+        else:
+            n = he_negada.negar(conn, itens, d.get("motivo") or "", quem.nome,
+                                minutos={f"{x.get('colaborador_id')}:{str(x.get('data'))[:10]}": x.get("minutos")
+                                         for x in itens})
+    _FECHAMENTO_GUARDADO.clear()
+    logger.info("Ponto: %d hora(s) extra(s) %s por %s", n, "de volta à conta" if d.get("voltar") else "negada(s)",
+                quem.nome)
+    return _ok(alteradas=n)
+
+
 # O FECHAMENTO DA FOLHA PARA A CONTABILIDADE (29/10/2026, core/fechamento.py): o mês anterior em planilha, o
 # corrente em .ps (o inteiro) e planilha (o quebrado). A conta é guardada 2 min: quem baixa o geral e logo os dois
 # .ps não espera três vezes.
