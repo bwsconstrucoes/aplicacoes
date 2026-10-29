@@ -50,6 +50,8 @@ CONFIGURAVEIS = {
     "COMPENSACAO": {"rotulo": "Compensação (trabalhar num dia no lugar de outro)", "opcoes": OPCOES},
     "FOLGA_BANCO": {"rotulo": "Folga do banco de horas", "opcoes": OPCOES},
     "LICENCA": {"rotulo": "Licença (casamento, luto, paternidade…)", "opcoes": OPCOES},
+    # 29/10/2026, o dono: o abono "não é pra ser só o DP. É pra ser pros mesmos que podem fazer requisição"
+    "ABONO": {"rotulo": "Abono (viagem a serviço, dispensa…)", "opcoes": OPCOES},
     "BATIDA_EM_ANALISE": {"rotulo": "Batida em conferência (fora do normal, sem foto, borda da cerca…)",
                           "opcoes": (ENCARREGADO, DP)},
 }
@@ -57,7 +59,6 @@ FIXOS = {
     "ATESTADO": "DP — dado de saúde, só o DP vê",
     "AFASTAMENTO": "DP — dado de saúde, só o DP vê",
     "FERIAS": "DP — lançado pelo próprio DP",
-    "ABONO": "DP — lançado pelo próprio DP",
     "MOSAICO": "o responsável escolhido em cada obra (Mosaico de fotos por obra)",
 }
 PADRAO = DP
@@ -79,7 +80,7 @@ def ler(conn: Connection) -> dict[str, str]:
 def etapas_do_tipo(conn: Connection, tipo: str) -> tuple[str, ...]:
     if tipo in CONFIGURAVEIS:
         return _ETAPAS[ler(conn)[tipo]]
-    return ("DP",)                      # ATESTADO, AFASTAMENTO, FERIAS, ABONO
+    return ("DP",)                      # ATESTADO, AFASTAMENTO, FERIAS
 
 
 def quem_valida_batida(conn: Connection) -> str:

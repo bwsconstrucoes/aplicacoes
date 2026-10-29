@@ -2015,8 +2015,8 @@ def ponto_api_criar_ocorrencia():
     é a regra de "Quem valida o quê" (atestado: sempre o DP)."""
     quem, d = _quem(), _corpo()
     if str(d.get("tipo") or "").upper() not in ("AJUSTE_BATIDA", "COMPENSACAO", "FOLGA_BANCO",
-                                                "ATESTADO", "LICENCA", "DECLARACAO"):
-        raise ErroDeValidacao("férias, afastamento e abono são lançados pelo DP", campo="tipo")
+                                                "ATESTADO", "LICENCA", "DECLARACAO", "ABONO"):
+        raise ErroDeValidacao("férias e afastamento são lançados pelo DP", campo="tipo")
     with db.conexao() as conn:
         o = ocorrencias.criar(conn, quem, d, origem="GESTAO")
     return _ok(ocorrencia=o), 201

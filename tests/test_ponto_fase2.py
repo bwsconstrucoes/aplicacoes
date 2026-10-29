@@ -52,7 +52,9 @@ class TestEtapas:
         assert set(espelho.ROTULO_TIPO) == set(ocorrencias.ETAPAS)
 
     def test_ferias_nao_se_pede_pelo_celular(self):
-        assert "FERIAS" not in ocorrencias.PEDIDOS_DO_APP and "ABONO" not in ocorrencias.PEDIDOS_DO_APP
+        # o abono, desde 29/10/2026, se pede como os outros ("não é pra ser só o DP")
+        assert "FERIAS" not in ocorrencias.PEDIDOS_DO_APP and "AFASTAMENTO" not in ocorrencias.PEDIDOS_DO_APP
+        assert "ABONO" in ocorrencias.PEDIDOS_DO_APP
 
     def test_saude_e_sigilosa(self):
         quem = ocorrencias.Quem(nome="Supervisor", supervisor=True, dp=False)

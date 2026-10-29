@@ -453,6 +453,7 @@
         <option value="COMPENSACAO">Trabalhar num dia no lugar de outro</option>
         <option value="LICENCA">Licença (casamento, luto, paternidade…)</option>
         <option value="FOLGA_BANCO">Folga do banco de horas</option>
+        <option value="ABONO">Abono (viagem a serviço, dispensa…)</option>
       </select>
       <div id="ped-campos"></div>
       <button class="btn" id="btn-pedir" type="button">Enviar pedido</button>
@@ -2021,10 +2022,17 @@ function abrirCorrecao(x, alvo) {
 // --- pedidos -------------------------------------------------------------------
 const hojeISO = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
 // --- as licenças da lei (06/10/2026): o tipo sai da lista, o último dia sai dos dias da lei
-let LICENCAS = [];
+let LICENCAS = [], ABONOS = [];
 async function carregarLicencas() {
-  try { LICENCAS = (await chamar("/ponto/app/api/licencas")).licencas || []; } catch (e) { LICENCAS = []; }
+  try { const r = await chamar("/ponto/app/api/licencas"); LICENCAS = r.licencas || []; ABONOS = r.abonos || []; }
+  catch (e) { LICENCAS = []; ABONOS = []; }
   return LICENCAS;
+}
+// O ABONO PEDIDO (29/10/2026, o dono: "não é pra ser só o DP. É pra ser pros mesmos que podem fazer
+// requisição"): viagem a serviço, dispensa e os da Configuração. Vai para a validação, com o motivo.
+function opcoesAbono() {
+  return ABONOS.map(a => `<option value="${esc(a.codigo)}">${esc(a.nome)}</option>`).join("")
+    + `<option value="">Outro motivo</option>`;
 }
 function opcoesLicenca() {
   return LICENCAS.length ? LICENCAS.map(l => `<option value="${esc(l.codigo)}">${esc(l.nome)}</option>`).join("")
@@ -2081,6 +2089,11 @@ function camposDePedido(px, t, dia) {
     FOLGA_BANCO: `<label>Dia da folga</label><input type="date" id="${px}-inicio" value="${dia || ""}">
       <label>Último dia (se mais de um)</label><input type="date" id="${px}-fim">
       <label>Observação</label><textarea id="${px}-descricao"></textarea>`,
+    ABONO: `<label>Que abono?</label><select id="${px}-subtipo">${opcoesAbono()}</select>
+      <label>Primeiro dia</label><input type="date" id="${px}-inicio" value="${d0}">
+      <label>Último dia (se mais de um)</label><input type="date" id="${px}-fim">
+      <label>Motivo</label><textarea id="${px}-descricao" placeholder="Ex.: viagem a Recife para a obra BR-02, a pedido do engenheiro"></textarea>
+      <p class="pequeno">O dia fica justificado se o abono for aprovado na validação.</p>`,
   }[t];
 }
 // O documento: UM botão, que abre as opções do próprio celular — câmera, fotos ou
@@ -2134,7 +2147,7 @@ function corpoDoPedido(px, t, doc) {
     Object.assign(corpo, {data_inicio: v("inicio"), dia_trabalhado: v("trabalhado")});
   } else {
     Object.assign(corpo, {data_inicio: v("inicio"), data_fim: v("fim") || v("inicio")});
-    if (t === "LICENCA") corpo.subtipo = v("subtipo");
+    if (t === "LICENCA" || t === "ABONO") corpo.subtipo = v("subtipo");
   }
   if (doc) { corpo.documento_base64 = doc.base64; corpo.documento_nome = doc.nome; }
   return corpo;
@@ -2748,7 +2761,8 @@ function abrirFormularioDoTablet(d, tipo) {
   const opcoes = [["ATESTADO", "Atestado médico"], ["DECLARACAO", "Declaração de comparecimento (consulta, exame)"],
                   ["LICENCA", "Licença (casamento, luto, paternidade…)"],
                   ["AJUSTE_BATIDA", "Esqueceu de bater (ajuste)"], ["COMPENSACAO", "Compensação (trabalhar num dia no lugar de outro)"]]
-    .concat(d.tem_banco ? [["FOLGA_BANCO", "Folga do banco de horas"]] : []);
+    .concat(d.tem_banco ? [["FOLGA_BANCO", "Folga do banco de horas"]] : [])
+    .concat([["ABONO", "Abono (viagem a serviço, dispensa…)"]]);
   const campos = {
     ATESTADO: `<label>Primeiro dia de afastamento</label><input type="date" id="tf-inicio" value="${hoje}">
       <label>Quantos dias o médico deu?</label><input type="number" id="tf-dias" min="1" max="120" value="1">`,
@@ -2767,6 +2781,9 @@ function abrirFormularioDoTablet(d, tipo) {
     COMPENSACAO: `<label>Dia em que vai trabalhar (ou trabalhou)</label><input type="date" id="tf-trabalhado">
       <label>Dia da folga no lugar</label><input type="date" id="tf-inicio">`,
     FOLGA_BANCO: `<label>Dia da folga</label><input type="date" id="tf-inicio"><label>Último dia (se mais de um)</label><input type="date" id="tf-fim">`,
+    ABONO: `<label>Que abono?</label><select id="tf-subtipo">${opcoesAbono()}</select>
+      <label>Primeiro dia</label><input type="date" id="tf-inicio" value="${hoje}">
+      <label>Último dia (se mais de um)</label><input type="date" id="tf-fim">`,
   };
   const temDoc = tipo === "ATESTADO" || tipo === "LICENCA" || tipo === "DECLARACAO";
   f.innerHTML = `<div class="caixa">
@@ -2774,7 +2791,7 @@ function abrirFormularioDoTablet(d, tipo) {
     <label for="tf-tipo">O que vai entregar ou pedir?</label>
     <select id="tf-tipo">${opcoes.map(o => `<option value="${o[0]}" ${o[0] === tipo ? "selected" : ""}>${esc(o[1])}</option>`).join("")}</select>
     ${campos[tipo]}
-    <label>Observação${tipo === "AJUSTE_BATIDA" || tipo === "COMPENSACAO" ? " (obrigatória)" : ""}</label>
+    <label>${tipo === "ABONO" ? "Motivo (obrigatório)" : `Observação${tipo === "AJUSTE_BATIDA" || tipo === "COMPENSACAO" ? " (obrigatória)" : ""}`}</label>
     <textarea id="tf-descricao" rows="2"></textarea>
     ${temDoc ? `<label>Documento</label>
       <div class="linha" style="margin-top:6px">
@@ -2851,7 +2868,7 @@ function abrirFormularioDoTablet(d, tipo) {
       Object.assign(corpo, {data_inicio: v("tf-inicio"), dia_trabalhado: v("tf-trabalhado")});
     } else {
       Object.assign(corpo, {data_inicio: v("tf-inicio"), data_fim: v("tf-fim") || v("tf-inicio")});
-      if (tipo === "LICENCA") corpo.subtipo = v("tf-subtipo");
+      if (tipo === "LICENCA" || tipo === "ABONO") corpo.subtipo = v("tf-subtipo");
     }
     if (doc) { corpo.documento_base64 = doc.base64; corpo.documento_nome = doc.nome; }
     $("tf-enviar").disabled = true;
@@ -3399,7 +3416,8 @@ async function abrirPedidoPara(alvo, dia, tipo = "ATESTADO") {
   const opcoes = [["ATESTADO", "Atestado médico"], ["DECLARACAO", "Declaração de comparecimento (consulta, exame)"],
                   ["LICENCA", "Licença (casamento, luto, paternidade…)"],
                   ["COMPENSACAO", "Compensação (trabalhar num dia no lugar de outro)"]]
-    .concat(alvo.tem_banco ? [["FOLGA_BANCO", "Folga do banco de horas"]] : []);
+    .concat(alvo.tem_banco ? [["FOLGA_BANCO", "Folga do banco de horas"]] : [])
+    .concat([["ABONO", "Abono (viagem a serviço, dispensa…)"]]);
   let doc = null;
   $("dlg-corpo").innerHTML = `<h2 style="margin:0 0 6px">Pedido para ${esc(alvo.nome)}</h2>
     <label for="dp-tipo">O que vai lançar?</label>

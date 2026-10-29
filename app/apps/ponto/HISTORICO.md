@@ -61,6 +61,9 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1zz5. **No ramo, esperando o "pode" (29/10/2026, noite, última) — SEM MIGRAÇÃO**: o **abono pedido como os outros
+   pedidos** — no aplicativo ("O que vai entregar ou pedir?", o pedido por outra pessoa, o Meu ponto) e no ERP
+   (janela da pessoa › "Pedir abono"); vai para a validação ("Quem valida o quê" › Abono, nasce no DP).
 1zz4. **Publicado em 29/10/2026** (com o "pode" do dono, junto com 1zz1 a 1zz3) — **SEM MIGRAÇÃO**: as **horas extras para
    a supervisão conferir** (calendário por obra, 26 a 25, em paisagem — imprimir ou Excel) e o **percentual da hora
    extra por estado ou por obra** (Configuração › Jornada e feriados), que decide o evento do .ps. Vai junto com o
@@ -383,6 +386,27 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 29/10/2026 (noite, última) — O abono pedido por quem faz requisição
+
+O dono, procurando onde incluir um abono (só existia no "Lançar afastamento" do DP e no "Abonar a falta" do Quadro,
+também do DP): *"não é pra ser só o DP. É pra ser pros mesmos que podem fazer requisição. Entendo que tenha que ser
+uma das opções de 'O que você vai entregar ou pedir?'"* E: *"vai ser em Atestados, afastamentos e ajustes se for pra
+outra pessoa, ou dentro de Meu mês, né isso?"* — sim.
+- **No aplicativo**, a opção **"Abono (viagem a serviço, dispensa…)"** entrou nas três listas de pedido: o ponto da
+  obra ("O que vai entregar ou pedir?"), o pedido **por outra pessoa** ("Atestados, afastamentos e ajustes") e o
+  **Meu ponto** (Pedidos, e o 🗓️ do dia em Meu mês) — este só para quem faz pedidos pelo próprio celular, como os
+  outros pedidos. Escolhe-se o abono (os da Configuração › Licenças e abonos, ou "Outro motivo"), os dias e o
+  **motivo, obrigatório** (10 letras ou mais).
+- **No ERP**, a janela da pessoa ganhou **"Pedir abono"** para quem trata o ponto (o supervisor). O DP continua
+  lançando e aprovando de uma vez pelo "Lançar afastamento".
+- **Vai para a validação**: "Quem valida o quê" ganhou a linha **Abono** (administração da obra, DP, ou os dois —
+  nasce no DP, como era). Férias e afastamento continuam só do DP.
+- **Testes**: `test_o_abono_e_pedido_por_quem_faz_requisicao_e_vai_para_validacao` (o supervisor pede, sem motivo não
+  vai, o DP aprova e o dia fica abonado; férias continua recusada). Ensaio no navegador: "Pedir abono" no ERP e a
+  opção no aplicativo do administrativo da obra.
+- **Proposto e ainda sem resposta do dono**: o "Abonar a falta" do Quadro aceitar falta parcial; abono de só parte do
+  dia ("das… às…"); e o nome "Atraso ou saída antecipada" do fechamento virar "Horas a menos no dia", com o porquê.
 
 ## 29/10/2026 (noite, sexta, segunda parte) — As horas extras para a supervisão, e o percentual por estado ou obra
 

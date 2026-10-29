@@ -944,10 +944,12 @@ def app_api_ronda_registrar():
 @bp.route("/app/api/licencas")
 @auth.exige_colaborador_ou_aparelho
 def app_api_licencas():
-    """A lista das licenças da lei, para o formulário."""
-    from .core import licencas
+    """A lista das licenças da lei e a dos abonos (viagem, dispensa…), para o formulário."""
+    from .core import licencas, tipos_ausencia
     with db.conexao() as conn:
-        return _ok(licencas=licencas.listar(conn))
+        return _ok(licencas=licencas.listar(conn),
+                   abonos=[{"codigo": a["codigo"], "nome": a["nome"], "abona": a["abona"]}
+                           for a in tipos_ausencia.listar_abonos(conn)])
 
 
 @bp.route("/app/api/tablet/esqueci-qr", methods=["POST"])

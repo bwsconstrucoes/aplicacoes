@@ -91,3 +91,24 @@ def test_a_licenca_da_lei_pode_nao_abonar(app, mundo):
 def _png():
     from tests.test_ponto_gestao_banco import _png as png
     return png()
+
+
+def test_o_abono_e_pedido_por_quem_faz_requisicao_e_vai_para_validacao(app, mundo):
+    """29/10/2026, o dono: o abono "não é pra ser só o DP. É pra ser pros mesmos que podem fazer requisição"."""
+    from app.apps.ponto.core import ocorrencias
+    assert "ABONO" in ocorrencias.PEDIDOS_DO_APP                  # o aplicativo também pede
+    dp, sup = como(app, mundo["dp"]), como(app, mundo["sup"])
+    dia = _segunda_passada() + dt.timedelta(days=1)
+    pedido = {"tipo": "ABONO", "subtipo": "VIAGEM", "colaborador_id": mundo["joao"], "data_inicio": dia.isoformat(),
+              "data_fim": dia.isoformat()}
+    assert sup.post("/erp/api/ponto/ocorrencias", json={**pedido, "descricao": "curto"}).status_code == 400
+    r = sup.post("/erp/api/ponto/ocorrencias", json={**pedido, "descricao": "viagem a Recife a pedido do engenheiro"})
+    assert r.status_code == 201, r.get_json()
+    o = r.get_json()["ocorrencia"]
+    assert o["status"] != "APROVADA"                               # o supervisor pede; quem valida decide
+    assert _dia(dp, mundo["joao"], dia)["situacao"] != "ABONADO"
+    assert dp.post(f"/erp/api/ponto/afastamentos/{o['id']}/etapa-dp", json={"aprovar": True}).status_code == 200
+    assert _dia(dp, mundo["joao"], dia)["situacao"] == "ABONADO"
+    # férias e afastamento continuam só do DP
+    ferias = {**pedido, "tipo": "FERIAS", "subtipo": "", "descricao": "férias do joão no mês"}
+    assert sup.post("/erp/api/ponto/ocorrencias", json=ferias).status_code == 400

@@ -1430,6 +1430,7 @@ function desenharPainel() {
       <button class="btn" type="button" id="dp-ajuste">Ajustar o dia (incluir batida)</button>
       <button class="btn secundario" type="button" id="dp-compensacao">Compensação</button>
       <button class="btn secundario" type="button" id="dp-documento">Atestado ou licença</button>
+      <button class="btn secundario" type="button" id="dp-abono">Pedir abono</button>
       ${PODE_DP ? `<button class="btn secundario" type="button" id="dp-afastamento">Lançar afastamento</button>` : ""}
       <a class="btn secundario" style="text-decoration:none" target="_blank"
          href="/erp/ponto/espelho/${p.id}/imprimir?competencia=${P.mes.competencia}">Imprimir o espelho</a></div>` : ""}
@@ -1443,6 +1444,7 @@ function desenharPainel() {
   ligar("dp-ajuste", () => pedirAjuste(quem, P.data, recarregarPainel));
   ligar("dp-compensacao", () => registrarCompensacao(quem, recarregarPainel));
   ligar("dp-documento", () => entregarDocumento(quem, recarregarPainel));
+  ligar("dp-abono", () => pedirAbono(quem, recarregarPainel));
   ligar("dp-afastamento", () => lancarAfastamento(quem, recarregarPainel));
   ligar("dp-ant", () => abrirPessoaPainel(p.id, somarDias(P.data, -1)));
   ligar("dp-prox", () => abrirPessoaPainel(p.id, somarDias(P.data, 1)));
@@ -2600,6 +2602,32 @@ async function entregarDocumento(p, depois) {
       hora_inicio: r.hora_inicio, hora_fim: r.hora_fim,
       documento_base64: conteudo, documento_nome: r.documento ? r.documento.name : ""});
     aviso("mensagem", "Enviado. O pedido aparece em Validações até o DP decidir.", "ok");
+    if (depois) await depois();
+  } catch (e) { falhou(e); }
+}
+
+// O ABONO PEDIDO (29/10/2026, o dono: "não é pra ser só o DP. É pra ser pros mesmos que podem fazer
+// requisição"): quem trata o ponto pede; vai para a validação ("Quem valida o quê" › Abono). O DP, além
+// disso, lança e aprova de uma vez pelo "Lançar afastamento".
+async function pedirAbono(p, depois) {
+  if (!p) return;
+  const abonos = await abonosDaEmpresa();
+  const r = await perguntar({
+    titulo: `Pedir abono — ${escapar(p.nome)}`,
+    aviso: "Vai para a validação. Aprovado, o dia fica justificado (e, se o abono abona as horas, sem desconto).",
+    campos: [
+      {nome: "subtipo", rotulo: "Que abono", tipo: "select", valor: abonos.length ? escapar(abonos[0].codigo) : "", largura: 6,
+       opcoes: [...abonos.map(a => ({valor: escapar(a.codigo), rotulo: escapar(rotuloDoAbono(a))})), {valor: "", rotulo: "Outro motivo"}]},
+      {nome: "data_inicio", rotulo: "Primeiro dia", tipo: "date", obrigatorio: true, largura: 3},
+      {nome: "data_fim", rotulo: "Último dia", tipo: "date", largura: 3, dica: "Vazio = um dia só."},
+      {nome: "descricao", rotulo: "Motivo", tipo: "textarea", linhas: 2, largura: 6, obrigatorio: true,
+       exemplo: "ex.: viagem a Recife para a obra BR-02, a pedido do engenheiro"}],
+    textoOk: "Enviar para validação"});
+  if (!r) return;
+  try {
+    await postar("/erp/api/ponto/ocorrencias", {tipo: "ABONO", subtipo: r.subtipo, colaborador_id: p.id,
+      data_inicio: r.data_inicio, data_fim: r.data_fim || r.data_inicio, descricao: r.descricao});
+    aviso("mensagem", "Abono enviado. Ele aparece em Validações até ser decidido.", "ok");
     if (depois) await depois();
   } catch (e) { falhou(e); }
 }

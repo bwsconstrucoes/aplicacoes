@@ -84,8 +84,10 @@ def _periodo_declarado(dados: dict, dia: dt.date) -> tuple[dt.datetime, int]:
         raise ErroDeValidacao("a hora de fim da declaração é antes da de início", campo="hora_fim")
     inicio = dt.datetime.combine(dia, dt.time(ini // 60, ini % 60), tzinfo=horario.FUSO)
     return inicio, fim - ini
-# O que o próprio colaborador pode pedir pelo celular. Férias e abono nascem no DP.
-PEDIDOS_DO_APP = ("ATESTADO", "AJUSTE_BATIDA", "COMPENSACAO", "FOLGA_BANCO", "LICENCA")
+# O que se pede pelo aplicativo (o próprio celular, o ponto da obra, o responsável). Férias e afastamento
+# nascem no DP; o abono, desde 29/10/2026, é pedido como os outros (o dono: "não é pra ser só o DP. É pra ser
+# pros mesmos que podem fazer requisição") — e vai para a validação.
+PEDIDOS_DO_APP = ("ATESTADO", "AJUSTE_BATIDA", "COMPENSACAO", "FOLGA_BANCO", "LICENCA", "ABONO")
 MAX_DIAS_DE_AJUSTE = 31    # dias diferentes num pedido de ajuste só
 RECUSA_PEDIDO_NO_CELULAR = ("atestado, licença, ajuste e compensação são entregues no ponto da obra "
                             "ou com o administrativo da obra")
@@ -219,9 +221,9 @@ def criar(conn: Connection, quem: Quem, dados: dict, *, origem: str = "GESTAO") 
             raise ErroDeValidacao(RECUSA_PEDIDO_NO_CELULAR, campo="tipo")
     if origem == "GESTAO" and not (quem.supervisor or quem.dp):
         raise ErroDeValidacao("você não pode registrar pedidos de ponto", campo="tipo")
-    # O responsável da obra registra atestado e licença (com o documento) e o DP
-    # valida; férias, afastamento e abono continuam só do DP.
-    if origem == "GESTAO" and tipo in ("FERIAS", "AFASTAMENTO", "ABONO") and not quem.dp:
+    # O responsável da obra registra atestado, licença e abono e quem valida decide; férias e
+    # afastamento continuam só do DP.
+    if origem == "GESTAO" and tipo in ("FERIAS", "AFASTAMENTO") and not quem.dp:
         raise ErroDeValidacao("este tipo é registrado pelo DP", campo="tipo")
     if origem == "GESTAO" and tipo == "ATESTADO" and not quem.dp and not dados.get("documento_base64"):
         raise ErroDeValidacao("anexe a foto ou o PDF do atestado", campo="documento")
@@ -240,6 +242,9 @@ def criar(conn: Connection, quem: Quem, dados: dict, *, origem: str = "GESTAO") 
                               campo="data_inicio")
     descricao = str(dados.get("descricao") or "").strip()
     horario_ajuste, obra_id, dia_trabalhado, minutos = None, None, None, None
+    # O abono pedido (não lançado pelo DP) diz o porquê: quem valida decide por ele.
+    if tipo == "ABONO" and not (origem == "GESTAO" and quem.dp) and len(descricao) < 10:
+        raise ErroDeValidacao("conte o motivo do abono (ao menos 10 letras)", campo="descricao")
 
     if tipo == "AJUSTE_BATIDA":
         fim = inicio
