@@ -1312,6 +1312,8 @@ const listaDeTexto = t => String(t || "").split(/[,;\n]+/).map(s => s.trim()).fi
 const ROTULO_ALERTA_DIA = {
   FALTA: "falta", FALTA_PARCIAL: "falta parcial", BATIDA_FALTANDO: "batida faltando", ATRASO: "atraso",
   HORA_EXTRA_NEGADA: "hora extra negada na conferência",
+  COMPENSACAO_NAO_CUMPRIDA: "compensação não cumprida — a folga virou falta",
+  TRABALHOU_NA_FOLGA: "trabalhou no dia da folga compensatória (as horas contam)",
   SAIDA_ANTECIPADA: "saída antecipada", EXTRA_ACIMA_DE_2H: "extra acima de 2 h",
   INTERVALO_CURTO: "intervalo curto", INTERJORNADA_CURTA: "menos de 11 h de descanso",
   TRABALHO_EM_DESCANSO: "trabalho em dia de descanso", TRABALHO_EM_FERIADO: "trabalho em feriado",

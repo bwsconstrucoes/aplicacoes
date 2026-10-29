@@ -215,6 +215,11 @@ def montar(conn: Connection, quem: Quem, competencia, filtros: Optional[dict] = 
             corrente = ci <= dia <= cf
             if not (anterior or corrente):
                 continue
+            if d.get("compensacao_a_cumprir"):
+                # a folga já está abonada, mas o dia trabalhado ainda não chegou: se não cumprir, vira falta
+                r["conferencia"].append({**base, "aviso": f"folga compensatória em {_br(d['data'])} ainda a cumprir — "
+                                                             f"o dia trabalhado é {_br(d['compensacao_a_cumprir'])}; "
+                                                             "se não for cumprido, a folga vira falta"})
             f = falta_do_dia(d)
             if f and banco_de_horas and f["tipo"] != "INTEGRAL":
                 f = None                     # vai para o banco de horas

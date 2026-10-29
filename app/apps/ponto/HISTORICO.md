@@ -61,6 +61,9 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1zz7. **No ramo, esperando o "pode" (30/10/2026) — SEM MIGRAÇÃO**: a **compensação conferida** — passado o dia
+   trabalhado, a folga só fica abonada no que ele rendeu; o resto vira falta (automático, decisão do dono); quem bate no
+   dia da folga tem as horas contadas; e a compensação ainda a cumprir aparece na Conferência do fechamento.
 1zz6. **Publicado em 29/10/2026** (com o "pode" do dono, junto com o 1zz5) — **COM A MIGRAÇÃO 019 DO PONTO**: o **abono da falta
    parcial** no Quadro (só as horas que faltaram), as **horas extras por obra na tela** do fechamento com **negar a
    hora extra** de um dia (e voltar a contar), e **só CTPS nas contas de horas** (a coluna "Tipo" da planilha). Vai
@@ -390,6 +393,25 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 30/10/2026 — A compensação conferida: a folga só vale se o dia trabalhado pagar
+
+O dono: *"como o sistema trata uma compensação que ainda não aconteceu, e se ela não acontecer?"* Até aqui, aprovada,
+a compensação valia de cara e para sempre: a folga ficava abonada e o dia trabalhado perdia a hora extra — sem conferir
+se o dia trabalhado aconteceu. Dois buracos: **folga antes, trabalho depois, e a pessoa não vem** → folga de graça,
+calada; **trabalho antes, folga depois, e a pessoa trabalha na folga** → trabalha dois dias, recebe por um. Propus
+transformar em falta sozinho ou só avisar; o dono: *"isso, automático"*.
+- **Enquanto o dia trabalhado não passou**, a folga vale (é o combinado), e o dia mostra "a cumprir". O fechamento da
+  folha avisa na **Conferência** ("folga em dd/mm ainda a cumprir — se não for cumprido, a folga vira falta").
+- **Passado o dia trabalhado**, a folga só fica abonada no que ele **rendeu além do previsto** (num dia de descanso,
+  tudo o que trabalhou; num dia de trabalho, só o que passou da escala). Não rendeu nada → a folga vira **falta**;
+  rendeu parte → **falta parcial** do resto. Aviso **"compensação não cumprida — a folga virou falta"** (espelho,
+  Quadro, alertas). Folga de vários dias: o que rendeu cobre os dias em ordem.
+- **Desfazer** é o de sempre: lançar o ajuste do dia trabalhado (se trabalhou e não bateu), ou cancelar/abonar.
+- **Bateu no dia da folga**: as horas contam como hora extra (dia de descanso trabalhado), com o aviso **"trabalhou no
+  dia da folga compensatória"** — antes ficavam escondidas atrás do "bateu em dia abonado".
+- **Testes**: `test_a_compensacao_conferida` (o sábado sem batida → falta; 4 h no sábado → falta parcial de 5 h; o dia
+  trabalhado no futuro → a folga vale e fica a cumprir; bateu na folga → as horas contam).
 
 ## 29/10/2026 (madrugada) — Abonar a falta parcial, negar a hora extra na conferência, e só CTPS nas horas (migração 019)
 

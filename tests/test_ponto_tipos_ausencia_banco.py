@@ -112,3 +112,43 @@ def test_o_abono_e_pedido_por_quem_faz_requisicao_e_vai_para_validacao(app, mund
     # férias e afastamento continuam só do DP
     ferias = {**pedido, "tipo": "FERIAS", "subtipo": "", "descricao": "férias do joão no mês"}
     assert sup.post("/erp/api/ponto/ocorrencias", json=ferias).status_code == 400
+
+
+def test_a_compensacao_conferida(app, mundo):
+    """29/10/2026, o dono: "como o sistema trata uma compensação que ainda não aconteceu, e se ela não
+    acontecer?" — "automático": passado o dia trabalhado, a folga só fica abonada no que ele rendeu."""
+    from tests.test_ponto_gestao_banco import bater_via_chave, local
+    from tests.test_ponto_gestao_banco import CPF_JOAO
+    dp = como(app, mundo["dp"])
+    seg = _segunda_passada()
+    sabado = seg - dt.timedelta(days=2)                    # descanso na escala: tudo o que trabalhar paga a folga
+    ter, qua, qui = (seg + dt.timedelta(days=n) for n in (1, 2, 3))
+    futuro = dt.date.today() + dt.timedelta(days=9)
+
+    def compensar(folga, trabalhado):
+        r = dp.post("/erp/api/ponto/ocorrencias", json={
+            "tipo": "COMPENSACAO", "colaborador_id": mundo["joao"], "data_inicio": folga.isoformat(),
+            "dia_trabalhado": trabalhado.isoformat(), "descricao": "troca de dia combinada", "aprovar_ja": True})
+        assert r.status_code == 201, r.get_json()
+        assert r.get_json()["ocorrencia"]["status"] == "APROVADA"
+
+    # o sábado passou sem batida: a folga da terça vira falta
+    compensar(ter, sabado)
+    d = _dia(dp, mundo["joao"], ter)
+    assert d["situacao"] == "FALTA" and d["debito"] == 540 and "COMPENSACAO_NAO_CUMPRIDA" in d["alertas"]
+    # trabalhou 4 h no sábado: cobrem 4 h da folga; as outras 5 h ficam falta parcial
+    for h in (7, 11):
+        bater_via_chave(app, CPF_JOAO, local(sabado, h, 0))
+    d = _dia(dp, mundo["joao"], ter)
+    assert d["situacao"] == "FALTA_PARCIAL" and d["debito"] == 300
+    assert any("não cumprida" in x["rotulo"] for x in d["declaracoes"])
+    # o dia trabalhado ainda não chegou: a folga vale, e fica "a cumprir"
+    compensar(qua, futuro)
+    d = _dia(dp, mundo["joao"], qua)
+    assert d["situacao"] == "ABONADO" and d["compensacao_a_cumprir"] == futuro.isoformat()
+    # bateu no dia da folga: as horas contam
+    compensar(qui, futuro + dt.timedelta(days=1))
+    for h in (7, 11):
+        bater_via_chave(app, CPF_JOAO, local(qui, h, 0))
+    d = _dia(dp, mundo["joao"], qui)
+    assert d["extra"] == 240 and "TRABALHOU_NA_FOLGA" in d["alertas"]
