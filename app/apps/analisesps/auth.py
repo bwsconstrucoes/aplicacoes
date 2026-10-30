@@ -467,6 +467,9 @@ TELA_DA_ROTA = {
                                "faturamento", "folha", "comprovantes", "relatorio"),
     "analisesps.encaminhar_mensagem": ("solicitacoes", "lote"),
     "analisesps.encaminhar_enviar": ("solicitacoes", "lote"),
+    # Reler só a aba C. Diários (30/10/2026): a conta e o código Omie das obras,
+    # que a folha usa para gerar e lançar.
+    "analisesps.atualizar_c_diarios": ("folha", "conciliacao", "solicitacoes"),
     "analisesps.encaminhar_contatos": ("solicitacoes", "lote"),
     "analisesps.sem_risco": ("solicitacoes",),
     "analisesps.validar": ("solicitacoes",),
