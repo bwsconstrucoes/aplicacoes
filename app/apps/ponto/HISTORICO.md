@@ -418,7 +418,7 @@ do mês, minutos desconsiderados, abater os atrasos, calendário geral) só apar
 tipo marcado ao abrir. Ensaio: a página servida com o "Fechamento" já marcado — antes mostrava o período e escondia os
 minutos; agora, a folha do mês e os minutos. Era antigo (não veio das mudanças do dia), só ficou mais frequente com as
 publicações. Só tela.
-**No ramo, esperando o "pode".**
+**Publicado em 31/10/2026** (com o "pode" do dono) — SEM MIGRAÇÃO.
 
 ## 31/10/2026 (décima quinta) — "Marcar todas" nos filtros de funcionários
 
