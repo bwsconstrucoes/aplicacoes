@@ -1460,7 +1460,11 @@ function desenharPainel() {
   els("dp-corpo").innerHTML = `
     <div class="dp-cab"><h2>${escapar(p.nome)}</h2>
       <span>${escapar(p.funcao || "sem função no cadastro")}</span>
-      <span class="dados">${escapar((p.obra_principal || {}).codigo || "sem obra")}${(p.obra_principal || {}).nome ? ` — ${escapar(p.obra_principal.nome)}` : ""}</span>
+      ${(() => { // a obra é a do ponto (onde mais bateu nos últimos 60 dias); sem batida, a do cadastro (30/10/2026)
+        const o = p.obra_do_ponto || p.obra_principal || {}, cad = (p.obra_principal || {}).codigo;
+        const dica = p.obra_do_ponto ? `onde mais bateu nos últimos 60 dias${cad && cad !== o.codigo ? ` — no cadastro: ${cad}` : (cad ? "" : " — sem obra no cadastro")}`
+          : "a do cadastro (sem batida nos últimos 60 dias)";
+        return `<span class="dados" title="${escapar(dica)}">${escapar(o.codigo || "sem obra")}${o.nome ? ` — ${escapar(o.nome)}` : ""}</span>`; })()}
       <span class="suave dados">CPF ${escapar(p.cpf || "—")}</span></div>
     <div>${marcasHtml(p.etiquetas)}${PODE_TRATAR ? ` <button class="link-btn" type="button" data-dp-cad="codigo"
       title="ver se o código chegou pelo WhatsApp, ou gerar um para entregar em mãos">🔑 código de acesso do aplicativo</button>` : ""}</div>
@@ -3783,7 +3787,7 @@ async function carregarEspelho() {
 function desenharEspelho() {
   const p = ESP.pessoa, r = ESP.resumo;
   els("e-titulo").childNodes[0].textContent = `${p.nome} `;
-  els("e-sub").textContent = [documento(p.cpf), p.obra ? `obra ${p.obra}` : "sem obra principal",
+  els("e-sub").textContent = [documento(p.cpf), p.obra ? `obra ${p.obra}` : "sem obra",
     rotuloJornada(p.tipo_jornada), mesBR(ESP.competencia)].join(" · ");
   els("e-vazio").classList.add("oculto");
   els("e-fechado").innerHTML = ESP.competencia_fechada

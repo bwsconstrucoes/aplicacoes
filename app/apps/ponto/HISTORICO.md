@@ -410,6 +410,22 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 30/10/2026 (madrugada de 31, quarta) — A obra da pessoa é a do ponto
+
+O dono, no espelho de um administrativo que bate todo dia na BWSNE e aparecia "sem obra": *"o sistema precisa inferir do
+próprio ponto qual a obra dessa pessoa. Na falta do ponto que usamos o cadastro."*
+- **Janela da pessoa**: o cabeçalho mostra a obra em que ela mais bateu nos **últimos 60 dias**
+  (`cadastros.obra_pelo_ponto`); sem batida, a do cadastro; ao passar o mouse, de onde veio (e a do cadastro, se diferir).
+- **Espelho** (tela, impressão e o "meu espelho" do aplicativo): a obra do período = a mais batida nele
+  (`cadastros.obra_mais_batida`; empate: a mais recente); sem batida, a do cadastro. O `[CÓDIGO]` da impressão passa a
+  marcar a batida fora dessa obra. O cadastro continua à parte (`obra_cadastro`).
+- **Não mudou**: os filtros "Obras do cadastro" (continuam do cadastro — "Bateu nas obras" já filtra pelo ponto), a obra
+  padrão do pedido de ajuste e o escopo de quem vê quem (o alcance do supervisor continua pelo cadastro e pelas batidas,
+  como era).
+- No mesmo caso, o "saída antecipada" de todo dia: não é defeito — a escala dele termina por volta das 17h30 (sexta,
+  16h30) e ele sai às 17h, entrando às 6h; a hora extra do dia é o saldo (entrou 1h30 antes, saiu 30 min antes). Dito ao
+  dono: se o horário real dele é das 6h às 17h, é dar a ele a escala certa — senão a entrada cedo vira hora extra todo dia.
+
 ## 30/10/2026 (madrugada de 31, terceira) — O ✓ do dia trabalhado no calendário de horas extras
 
 O dono: *"no calendário, só vemos horas + ou -. Nos dias em que não há, mesmo que tenha tido batida, fica vazio. Qual sua

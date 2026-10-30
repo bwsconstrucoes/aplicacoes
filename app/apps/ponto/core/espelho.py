@@ -473,8 +473,11 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
         "atrasos": sum(1 for d in contaveis if "ATRASO" in d["alertas"]),
         "sem_escala": sum(1 for d in contaveis if d["situacao"] == "SEM_ESCALA"),
     }
+    # a obra da pessoa é a do PONTO no período (a em que mais bateu); sem batida, a do cadastro (30/10/2026)
     return {"pessoa": {"id": pessoa["id"], "nome": pessoa["nome"], "cpf": pessoa["cpf"],
-                       "obra_id": pessoa.get("obra_id"), "obra": pessoa.get("obra_codigo"),
+                       "obra_id": pessoa.get("obra_id"),
+                       "obra": cadastros.obra_mais_batida(dias) or pessoa.get("obra_codigo"),
+                       "obra_cadastro": pessoa.get("obra_codigo"),
                        "tipo_jornada": pessoa["tipo_jornada"],
                        "regime_banco": pessoa.get("regime_banco", "SEM_BANCO")},
             "inicio": inicio.isoformat(), "fim": fim.isoformat(),

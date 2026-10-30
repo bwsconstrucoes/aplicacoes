@@ -372,3 +372,33 @@ def colaborador_para_json(c: dict) -> dict:
         "regime_banco": c.get("regime_banco", "SEM_BANCO"),
         "banco_inicio": c["banco_inicio"].isoformat() if c.get("banco_inicio") else None,
     }
+
+
+# A OBRA PELO PONTO (30/10/2026, o dono, vendo "sem obra" no espelho de um administrativo que bate todo dia
+# na BWSNE: "o sistema precisa inferir do próprio ponto qual a obra dessa pessoa. Na falta do ponto que usamos
+# o cadastro"). A obra em que a pessoa mais bateu nos últimos DIAS_OBRA_PELO_PONTO dias.
+DIAS_OBRA_PELO_PONTO = 60
+
+
+def obra_pelo_ponto(conn: Connection, colaborador_id: int, dias: int = DIAS_OBRA_PELO_PONTO) -> Optional[dict]:
+    linha = db.um(conn, """
+        SELECT o.id, o.codigo, o.nome, count(*) AS batidas, max(m.timestamp_servidor) AS ultima
+          FROM ponto.marcacoes m JOIN public.obras o ON o.id = m.obra_id
+         WHERE m.colaborador_id = :c AND m.status <> 'REJEITADA'
+           AND m.data_referencia >= CURRENT_DATE - CAST(:d AS integer)
+         GROUP BY o.id, o.codigo, o.nome
+         ORDER BY count(*) DESC, max(m.timestamp_servidor) DESC LIMIT 1""", c=int(colaborador_id), d=int(dias))
+    return {"id": int(linha["id"]), "codigo": linha["codigo"], "nome": linha["nome"]} if linha else None
+
+
+def obra_mais_batida(dias: list[dict]) -> Optional[str]:
+    """PURA. Dos dias do espelho, a obra em que a pessoa mais bateu (empate: a mais recente)."""
+    conta: dict[str, int] = {}
+    ultima: dict[str, str] = {}
+    for d in dias:
+        for b in d.get("batidas") or []:
+            if b.get("obra"):
+                conta[b["obra"]] = conta.get(b["obra"], 0) + 1
+                ultima[b["obra"]] = d["data"]
+    return max(conta, key=lambda o: (conta[o], ultima[o])) if conta else None
+

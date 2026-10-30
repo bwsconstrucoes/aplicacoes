@@ -564,7 +564,9 @@ def _ficha(quem: Quem, colaborador_id: int) -> dict:
                                         ORDER BY id DESC""", c=colaborador_id)
         from .core import papeis
         responsavel = papeis.responsavel_por_ponto_da_obra(conn, p)
+        obra_ponto = cadastros.obra_pelo_ponto(conn, colaborador_id)
     j = cadastros.colaborador_para_json({**p, "obras_adicionais": adicionais})
+    j["obra_do_ponto"] = obra_ponto        # 30/10/2026: a obra é a do ponto; o cadastro, na falta dele
     j["escalas"] = [{"escala_id": h["escala_id"], "escala": h["escala_nome"], "tipo": h["escala_tipo"],
                      "desde": h["vigencia_inicio"].isoformat(),
                      "ciclo_data_base": h["ciclo_data_base"].isoformat() if h["ciclo_data_base"] else None,
