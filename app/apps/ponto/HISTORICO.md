@@ -433,7 +433,7 @@ em vez de uma tela nova.
 - Teste: a regra separa falta, batida faltando, atraso, atestado, provável erro e pedido esperando (atestado e pedido não
   são problema); os períodos; o administrativo vê a obra; quem não consulta é recusado. Ensaio no celular (as telas foram
   mandadas ao dono).
-**No ramo, esperando o "pode".** SEM MIGRAÇÃO.
+**Publicado em 31/10/2026** (com o "pode" do dono) — SEM MIGRAÇÃO.
 
 ## 31/10/2026 (vigésima segunda) — O resumo dos problemas do ponto para o WhatsApp
 
