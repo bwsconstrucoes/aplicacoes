@@ -1539,7 +1539,7 @@ function desenharPainel() {
     aprovarAparelho((p.aparelhos || []).find(a => String(a.id) === b.dataset.dpAparelho), recarregarPainel)));
   els("dp-corpo").querySelectorAll("[data-dp-cad]").forEach(b => b.addEventListener("click", () =>
     ({escala: trocarEscala, jornada: jornadaEObras, forma: formaDeBater, codigo: primeiroAcesso, alcance: alcanceNoApp,
-      banco: regimeDoBanco, naoBate: q => marcarBatePonto([q.id], !q.ativo_no_ponto, q.nome)})[b.dataset.dpCad](p)));
+      banco: regimeDoBanco, naoBate: q => marcarBatePonto([q.id], !q.ativo_no_ponto, q.nome), excecao: batePorExcecao})[b.dataset.dpCad](p)));
   els("dp-corpo").querySelectorAll("[data-foto]").forEach(b => b.addEventListener("click", () =>
     verFoto(b.dataset.foto, b.dataset.legenda)));
 }
@@ -1852,7 +1852,10 @@ function painelCadastro() {
         <div id="dp-fotos-batidas"></div></div></div>`;
   return foto + `<table>${[
     linha("Situação", escapar(p.situacao || "—")),
-    linha("Bate ponto?", p.ativo_no_ponto ? "Sim"
+    linha("Bate ponto?", p.ativo_no_ponto && p.excecao_planilha
+      ? `<b>Sim, por exceção</b> — a planilha diz: ${escapar(p.excecao_planilha.planilha || "não bate")}; liberado: ${escapar(p.excecao_planilha.motivo || "")}
+          <small style="display:inline" class="suave">(${escapar([p.excecao_planilha.por, p.excecao_planilha.em ? quando(p.excecao_planilha.em) : ""].filter(Boolean).join(", "))})</small>`
+      : p.ativo_no_ponto ? "Sim"
       : p.nao_bate_motivo ? `<b style="color:var(--vermelho)">Não</b> — pela planilha de colaboradores: ${escapar(p.nao_bate_motivo)}`
       : `<b style="color:var(--vermelho)">Não</b>${p.marcado_nao_bate && p.marcado_nao_bate.motivo ? ` — ${escapar(p.marcado_nao_bate.motivo)}
           <small style="display:inline" class="suave">(${escapar([p.marcado_nao_bate.por, p.marcado_nao_bate.em ? quando(p.marcado_nao_bate.em) : ""].filter(Boolean).join(", "))})</small>` : " — marcada no ponto"}`),
@@ -1877,6 +1880,9 @@ function painelCadastro() {
     ${p.nao_bate_motivo ? "" : p.ativo_no_ponto
       ? `<button class="btn secundario" type="button" data-dp-cad="naoBate">🚫 Não bate ponto…</button>`
       : `<button class="btn secundario" type="button" data-dp-cad="naoBate">✅ Voltar a bater ponto…</button>`}
+    ${PODE_DP && (p.planilha_tira || p.excecao_planilha) ? (p.excecao_planilha
+      ? `<button class="btn secundario" type="button" data-dp-cad="excecao">↩️ Tirar a exceção (volta a valer a planilha)…</button>`
+      : `<button class="btn secundario" type="button" data-dp-cad="excecao">✅ Bate ponto por exceção…</button>`) : ""}
     <button class="btn secundario" type="button" data-dp-cad="forma">Acesso no aplicativo</button>
     <button class="btn secundario" type="button" data-dp-cad="alcance">👥 Quem ela alcança no app</button>
     <button class="btn secundario" type="button" data-dp-cad="codigo">🔑 Código de acesso do aplicativo (PIN)…</button>
@@ -2438,6 +2444,29 @@ async function marcarBatePonto(ids, bate, nome) {
     if (typeof carregarPessoas === "function") carregarPessoas();
     return true;
   } catch (e) { falhou(e, els("dp-msg") && ids.length === 1 ? "dp-msg" : "mensagem"); return false; }
+}
+
+// BATE PONTO POR EXCEÇÃO (31/10/2026, migração 025): o DP passa por cima da regra da planilha de colaboradores.
+async function batePorExcecao(p) {
+  const ligar = !p.excecao_planilha;
+  const r = await perguntar({
+    titulo: ligar ? `Bate ponto por exceção — ${escapar(p.nome)}` : `Tirar a exceção — ${escapar(p.nome)}`,
+    aviso: ligar
+      ? `A planilha de colaboradores diz que ${escapar(p.nome.split(" ")[0])} não bate ponto: <b>${escapar(p.planilha_tira || "")}</b>.
+         Com a exceção, passa a bater — entra no Quadro, nas Validações, no aplicativo e no ponto da obra, e os dias passam a
+         ser julgados pela escala. Para as contas da folha (falta, hora extra), vale o tipo da planilha: quem não é CTPS
+         continua fora delas.`
+      : `Volta a valer a planilha: ${escapar(p.nome.split(" ")[0])} deixa de bater ponto. As batidas que já existem ficam guardadas.`,
+    campos: ligar ? [{nome: "motivo", rotulo: "Por que bate ponto fora da regra?", tipo: "textarea", linhas: 2, obrigatorio: true,
+                      largura: 6, exemplo: "ex.: prestador que precisa de controle de jornada na obra X"}] : [],
+    textoOk: ligar ? "Liberar" : "Tirar a exceção"});
+  if (!r) return;
+  try {
+    await postar(`/erp/api/ponto/pessoas/${p.id}/bate-por-excecao`, {ligar, motivo: r.motivo || ""});
+    aviso("dp-msg", ligar ? "Liberada para bater ponto, por exceção." : "Exceção tirada — vale a planilha.", "ok");
+    await depoisDoCadastro(p.id);
+    if (typeof carregarPessoas === "function") carregarPessoas();
+  } catch (e) { falhou(e, "dp-msg"); }
 }
 
 async function jornadaEObras(p) {

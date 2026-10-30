@@ -32,6 +32,7 @@ _SQL_COLABORADOR = """
            COALESCE(pc.regime_banco, 'SEM_BANCO') AS regime_banco, pc.banco_inicio,
            pc.acordo_documento_id,
            (COALESCE(pc.ativo, TRUE) AND ({nao_bate}) IS NULL) AS ativo_no_ponto, {nao_bate} AS nao_bate_motivo,
+           {nao_bate_planilha} AS nao_bate_planilha, {excecao},
            (pc.colaborador_id IS NOT NULL) AS tem_config,
            o.codigo AS obra_codigo, o.nome AS obra_nome, {funcao} AS funcao,
            {no_registro} AS no_registro, {fase} AS fase_registro,
@@ -50,6 +51,8 @@ _DO_ERP = {"nome": "c.nome", "obra_id": "c.obra_id", "situacao": "c.situacao",
            "admissao": "c.admissao", "demissao": "c.demissao", "telefone": "c.telefone",
            "funcao": "f.nome", "no_registro": "NULL::boolean", "fase": "NULL::text", "join": "",
            "nao_bate": "NULL::text", "tipo_cadastro": "NULL::text"}
+_SEM_EXCECAO = ("FALSE AS bate_por_excecao, NULL::text AS excecao_motivo, NULL::text AS excecao_por, "
+                "NULL::timestamptz AS excecao_em")
 
 
 def _trechos_colaborador(conn: Connection) -> dict:
@@ -64,6 +67,14 @@ def _trechos_colaborador(conn: Connection) -> dict:
         # com ele mesmo: "ele tá bloqueando pq meu cadastro é de Prolabore"). Só a pessoa de teste; as horas
         # continuam fora das contas de CTPS (`relatorios.conta_horas`).
         trechos["nao_bate"] = f"CASE WHEN COALESCE(pc.ensaio, FALSE) THEN NULL::text ELSE ({trechos['nao_bate']}) END"
+    # O que a planilha diz, mesmo quando uma exceção passa por cima — a janela da pessoa mostra os dois.
+    trechos["nao_bate_planilha"] = trechos["nao_bate"]
+    # BATE PONTO POR EXCEÇÃO (31/10/2026, migração 025; o dono: "são exatamente as regras da planilha que eu quero
+    # flexibilizar"): marcada pelo DP, passa por cima do PJ, do pró-labore e da obra sem ponto. Não mexe na situação
+    # (o desligado e o afastado continuam fora) nem em "conta horas" (o prestador continua fora das contas da folha).
+    if db.tem_coluna(conn, "colaborador_config", "excecao_planilha"):
+        trechos["nao_bate"] = (f"CASE WHEN COALESCE(pc.excecao_planilha, FALSE) THEN NULL::text "
+                               f"ELSE ({trechos['nao_bate']}) END")
     return trechos
 
 
@@ -77,7 +88,9 @@ def _sql_colaborador(conn: Connection) -> str:
     # O porquê do "não bate ponto" marcado à mão (migração 018): sem a coluna, vazio.
     inativo = ("pc.inativo_motivo, pc.inativo_por, pc.inativo_em" if db.tem_coluna(conn, "colaborador_config", "inativo_motivo")
                else "NULL::text AS inativo_motivo, NULL::text AS inativo_por, NULL::timestamptz AS inativo_em")
-    return _SQL_COLABORADOR.format(**trechos, bate_no_celular=bate, inativo=inativo, **papeis)
+    excecao = ("COALESCE(pc.excecao_planilha, FALSE) AS bate_por_excecao, pc.excecao_motivo, pc.excecao_por, pc.excecao_em"
+               if db.tem_coluna(conn, "colaborador_config", "excecao_planilha") else _SEM_EXCECAO)
+    return _SQL_COLABORADOR.format(**trechos, bate_no_celular=bate, inativo=inativo, excecao=excecao, **papeis)
 
 
 def _expr(conn: Connection, campo: str) -> str:
@@ -223,6 +236,23 @@ def marcar_bate_ponto(conn: Connection, colaborador_id: int, bate: bool, motivo:
                     m=(None if bate else motivo[:300]), p=(None if bate else por[:120]))
 
 
+def marcar_excecao_da_planilha(conn: Connection, colaborador_id: int, ligar: bool, motivo: str, por: str) -> None:
+    """Bate ponto por exceção (migração 025): passa por cima da regra da planilha, com o motivo, quem e quando.
+    Desligar volta a valer a planilha."""
+    if not db.tem_coluna(conn, "colaborador_config", "excecao_planilha"):
+        raise ErroDeValidacao("aplique as atualizações do ponto (migração 025) antes")
+    motivo = " ".join(str(motivo or "").split())
+    if ligar and len(motivo) < MOTIVO_MINIMO:
+        raise ErroDeValidacao("diga por que a pessoa bate ponto fora da regra da planilha", campo="motivo")
+    gravar_config_colaborador(conn, colaborador_id)
+    db.executar(conn, """
+        UPDATE ponto.colaborador_config
+           SET excecao_planilha = :l, excecao_motivo = :m, excecao_por = :p,
+               excecao_em = CASE WHEN :l THEN now() ELSE NULL END, atualizado_em = now()
+         WHERE colaborador_id = :id""", id=int(colaborador_id), l=bool(ligar),
+                m=(motivo[:300] if ligar else None), p=(por[:120] if ligar else None))
+
+
 def definir_obras_adicionais(conn: Connection, colaborador_id: int,
                              obra_ids: list[int]) -> None:
     db.executar(conn, "DELETE FROM ponto.colaborador_obras WHERE colaborador_id = :id",
@@ -362,6 +392,12 @@ def colaborador_para_json(c: dict) -> dict:
         "tipo_jornada": c["tipo_jornada"], "centro_custo": c.get("centro_custo"),
         "situacao": c["situacao"], "ativo_no_ponto": bool(c["ativo_no_ponto"]),
         "nao_bate_motivo": c.get("nao_bate_motivo"),
+        # a exceção à planilha (migração 025): o que a planilha diz e quem liberou
+        "excecao_planilha": ({"planilha": c.get("nao_bate_planilha"), "motivo": c.get("excecao_motivo"),
+                              "por": c.get("excecao_por"),
+                              "em": c["excecao_em"].isoformat() if c.get("excecao_em") else None}
+                             if c.get("bate_por_excecao") else None),
+        "planilha_tira": c.get("nao_bate_planilha") if not c.get("bate_por_excecao") else None,
         "tipo_cadastro": c.get("tipo_cadastro"),
         "marcado_nao_bate": ({"motivo": c.get("inativo_motivo"), "por": c.get("inativo_por"),
                               "em": c["inativo_em"].isoformat() if c.get("inativo_em") else None}

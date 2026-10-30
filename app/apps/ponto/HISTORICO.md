@@ -410,6 +410,25 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 31/10/2026 (décima sétima) — Bate ponto por exceção: passar por cima da planilha (migração 025)
+
+O dono: *"preciso poder ativar alguém pra bater ponto mesmo que fora das regras até então definidas (…) são exatamente
+as regras da planilha que eu quero flexibilizar."* Até aqui valia "a planilha manda" (29/10): PJ, pró-labore e a obra
+ESCRUSSAS ficavam fora do ponto, sem jeito de liberar (só o Modo de teste, que é para teste).
+- **Agora**: janela da pessoa › Cadastro › **"✅ Bate ponto por exceção…"** (só quem aprova afastamento — o DP), com o
+  motivo obrigatório; fica guardado quem liberou e quando. A pessoa entra no Quadro, nas Validações, no aplicativo e no
+  ponto da obra, e os dias passam a ser julgados pela escala. A janela mostra "Sim, por exceção — a planilha diz: …;
+  liberado: …". **"↩️ Tirar a exceção"** volta a valer a planilha (as batidas ficam guardadas).
+- **Continua fora, mesmo com a exceção**: o desligado e o afastado (escolha padrão, dita ao dono: afastamento costuma ser
+  saúde; se ele quiser liberar o afastado também, é mudar aqui).
+- **As contas da folha não mudam**: quem não é CTPS na planilha continua fora de falta e hora extra do fechamento
+  (`relatorios.conta_horas`, decisão de 29/10) — a exceção é para BATER, não para entrar na folha.
+- Gravação: `colaborador_config.excecao_planilha` + motivo/por/em (025). O "não bate" da planilha é anulado por ela, como
+  já era pela pessoa de teste.
+- Teste: sem motivo, recusada; com motivo, a pessoa da obra sem ponto passa a bater e aparece nas listas, e a ficha
+  mostra o que a planilha diz; o supervisor não libera; tirar a exceção a tira do ponto de novo.
+**No ramo, esperando o "pode".** COM A MIGRAÇÃO 025.
+
 ## 31/10/2026 (décima sexta) — Relatórios: as opções do fechamento sumiam ao reabrir a tela
 
 O dono: *"sumiu o botão de definir os minutos e um outro (…) tá aparecendo agora período, antes era a competência."* O

@@ -777,6 +777,24 @@ def ponto_api_pessoa_ponto(colaborador_id: int):
     return _ok()
 
 
+@bp.route("/erp/api/ponto/pessoas/<int:colaborador_id>/bate-por-excecao", methods=["POST"])
+@login_obrigatorio
+@permissao("aprovar_afastamento")
+@_api
+def ponto_api_pessoa_bate_por_excecao(colaborador_id: int):
+    """Bate ponto por exceção (31/10/2026, migração 025): o DP passa por cima da regra da planilha de colaboradores
+    (PJ, pró-labore, obra sem ponto), com o motivo. `ligar: false` volta a valer a planilha."""
+    quem, d = _quem(), _corpo()
+    ligar = bool(d.get("ligar"))
+    with db.conexao() as conn:
+        _exigir_pessoa(conn, quem, colaborador_id)
+        cadastros.marcar_excecao_da_planilha(conn, colaborador_id, ligar, d.get("motivo") or "", quem.nome)
+        p = cadastros.colaborador_por_id(conn, colaborador_id)
+    logger.info("Ponto: bate ponto por exceção %s para a pessoa %s (por %s)", "LIGADO" if ligar else "desligado",
+                colaborador_id, quem.nome)
+    return _ok(ativo_no_ponto=bool(p and p["ativo_no_ponto"]))
+
+
 @bp.route("/erp/api/ponto/pessoas/bate-ponto", methods=["POST"])
 @login_obrigatorio
 @permissao("tratar_ponto")

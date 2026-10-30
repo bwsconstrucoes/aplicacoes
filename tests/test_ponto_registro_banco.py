@@ -249,6 +249,25 @@ def test_a_planilha_tira_do_ponto_pj_pro_labore_escrussas_e_afastado(app, mundo,
         conn.execute(text("UPDATE ponto.colaborador_config SET ensaio = FALSE WHERE colaborador_id = "
                           "(SELECT id FROM colaboradores WHERE cpf = :c)"), {"c": CPF_JOAO})
         conn.commit()
+    # 31/10/2026, migração 025: o DP libera por exceção — passa por cima da planilha (aqui, a obra sem ponto)
+    assert dp.post(f"/erp/api/ponto/pessoas/{j['id']}/bate-por-excecao", json={"ligar": True}).status_code == 400
+    r = dp.post(f"/erp/api/ponto/pessoas/{j['id']}/bate-por-excecao",
+                json={"ligar": True, "motivo": "prestador com controle de jornada"})
+    assert r.status_code == 200 and r.get_json()["ativo_no_ponto"] is True, r.get_json()
+    with db.conexao() as conn:
+        j = cadastros.colaborador_por_cpf(conn, CPF_JOAO)
+    assert j["ativo_no_ponto"] is True and "ESC RUSSAS" in j["nao_bate_planilha"] and "JOÃO DO REGISTRO" in lista()
+    ficha = cadastros.colaborador_para_json(j)
+    assert ficha["excecao_planilha"]["motivo"] == "prestador com controle de jornada" and ficha["planilha_tira"] is None
+    with db.conexao() as conn:
+        marcacoes.registrar(conn, cpf=CPF_JOAO, obra="PG-B", origem="IDFACE", via_chave=True)   # bate
+    # o supervisor (sem "aprovar afastamento") não libera
+    assert como(app, mundo["sup"]).post(f"/erp/api/ponto/pessoas/{j['id']}/bate-por-excecao",
+                                        json={"ligar": False}).status_code in (403, 404)
+    dp.post(f"/erp/api/ponto/pessoas/{j['id']}/bate-por-excecao", json={"ligar": False})
+    with db.conexao() as conn:
+        j = cadastros.colaborador_por_cpf(conn, CPF_JOAO)
+    assert j["ativo_no_ponto"] is False and cadastros.colaborador_para_json(j)["planilha_tira"]
     # o afastado (Fase Atual) sai das listas, mas continua sendo alguém no ponto (o atestado ele manda)
     with banco.connect() as conn:
         conn.execute(text("UPDATE analisesps.colaborador SET tipo_contrato = 'CLT', obra_codigo = 'PG-B', "
