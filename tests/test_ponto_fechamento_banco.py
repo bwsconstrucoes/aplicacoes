@@ -159,6 +159,11 @@ def test_o_fechamento_separa_o_inteiro_do_quebrado(app, mundo, banco, banco_anal
     assert r.status_code == 200, r.get_json()
     f = r.get_json()
     joao = lambda chave: [x for x in f[chave] if x["cpf"] == CPF_JOAO]      # noqa: E731
+    # o resumo do WhatsApp (31/10/2026): a falta parcial diz o que foi batido e quantas faltaram; a noite fora do ciclo
+    # vem numa lista própria
+    parcial = next(x for x in joao("neg_dias") if x["data"] == seguinte.isoformat())
+    assert parcial["tipo"] == "PARCIAL" and parcial["batidas"] == "07:00 11:00" and parcial["faltam"] == 2
+    assert f["fora_ciclo"] == []
     assert [x["data"] for x in joao("cor_faltas_parciais") if x["tipo"] == "Falta parcial"] == [seguinte.isoformat()]
     assert next(x for x in joao("cor_faltas_parciais") if x["data"] == seguinte.isoformat())["minutos"] == 300
     he = joao("cor_extras_integrais")

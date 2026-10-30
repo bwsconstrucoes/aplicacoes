@@ -770,6 +770,27 @@
 </div>
 <div class="tabela-wrap"><div class="tabela-rolagem" style="max-height:72vh"><div id="rl-tabela">
   <div class="vazio"><b>Nada montado ainda</b>Escolha o relatório e o período e aperte “Montar o relatório”.</div></div></div></div>
+{# O RESUMO DOS PROBLEMAS PARA O WHATSAPP (31/10/2026, o dono: "um resumo dos problemas que a gente tem de ponto e que eu
+   queria compartilhar (…) agrupar por obra (…) de repente eu quero ver só falta, de repente falta e falta de batida") #}
+<dialog id="dlg-resumo" class="dlg-pessoa"><div class="dlg-topo"><h3>Resumo dos problemas do ponto — WhatsApp</h3>
+  <button class="topo-btn" style="margin-left:auto" type="button" onclick="els('dlg-resumo').close()">Fechar</button></div>
+  <div class="dlg-corpo">
+    <div id="rs-msg"></div>
+    <div class="qd-marcas" id="rs-tipos" style="margin:0 0 8px">
+      <label class="opcao"><input type="checkbox" data-rs="falta" checked><span class="rotulo">❌ Faltas (o dia inteiro)</span></label>
+      <label class="opcao"><input type="checkbox" data-rs="batida" checked><span class="rotulo">⏱️ Batida faltando / meio período</span></label>
+      <label class="opcao"><input type="checkbox" data-rs="atraso"><span class="rotulo">🐢 Atrasos e saídas antes da hora</span></label>
+      <label class="opcao"><input type="checkbox" data-rs="ciclo"><span class="rotulo">🌙 Vigia: noite fora do ciclo 12x36</span></label>
+      <label class="opcao"><input type="checkbox" data-rs="extra"><span class="rotulo">➕ Horas extras (total por pessoa)</span></label>
+      <label class="opcao"><input type="checkbox" data-rs="so-corrente"><span class="rotulo">Só o mês corrente (sem o 26 a 31 do mês anterior)</span></label></div>
+    <div class="barra-acoes" style="margin:0 0 10px">
+      <button class="btn" type="button" id="rs-copiar">Copiar o texto</button>
+      <a class="btn secundario" id="rs-abrir" target="_blank" rel="noopener" style="text-decoration:none">Abrir no WhatsApp</a></div>
+    <textarea id="rs-texto" rows="22" style="width:100%; font-family:inherit; font-size:14px" data-sem-mascara></textarea>
+    <small class="suave">Sai do fechamento montado na tela, com os mesmos filtros de funcionários (para só os vigias, filtre
+      por função ou escala e monte de novo). Agrupado pela obra do dia (onde a pessoa bateu). O texto pode ser mexido antes
+      de copiar; "Abrir no WhatsApp" abre a conversa para escolher o grupo — nada é enviado sozinho.</small>
+  </div></dialog>
 
 {% elif aba_ponto == "ponto_fotos" %}
 {# ------------------------------------------------------ FOTOS DE CADASTRO #}
@@ -2009,6 +2030,19 @@ class FiltroPessoas {
       <span class="qtd">${contagem ? (contagem[t.codigo] || 0) : t.pessoas}</span></span></label>`).join("");
     this.el("tipos").querySelectorAll("[data-fp-tipo]").forEach(c => c.addEventListener("change", () => { this.contarExtras(); this.mudou(); }));
     this.contarExtras();
+  }
+  // o recorte em palavras, para o cabeçalho de mensagem e impressão (31/10/2026: "funções: VIGIA · obras: AP-01")
+  resumo() {
+    const obra = id => ((this.opcoes && this.opcoes.obras) || []).find(o => String(o.id) === String(id));
+    const cod = ids => [...ids].map(i => (obra(i) || {}).codigo || i).join(", ");
+    const partes = [];
+    if (this.marcados["obra-cad"].size) partes.push(`obras do cadastro: ${cod(this.marcados["obra-cad"])}`);
+    if (this.marcados["obra-bat"].size) partes.push(`bateu nas obras: ${cod(this.marcados["obra-bat"])}`);
+    if (this.marcados.funcoes.size) partes.push(`funções: ${[...this.marcados.funcoes].join(", ")}`);
+    if (this.marcados.escalas.size) partes.push(`escalas: ${[...this.marcados.escalas].join(", ")}`);
+    const busca = this.el("busca") && this.el("busca").value.trim();
+    if (busca) partes.push(`pessoa: ${busca}`);
+    return partes.join(" · ");
   }
   valores() {
     const v = s => this.el(s) ? this.el(s).value : "";
@@ -4884,6 +4918,65 @@ function fechImprimirSupervisao() {
   w.document.close();
 }
 
+// O RESUMO DOS PROBLEMAS (31/10/2026): do fechamento na tela, agrupado pela obra do dia, uma linha por pessoa com os
+// dias. Os tipos se marcam na janela; o texto se refaz a cada marca.
+function fechResumo() {
+  const ligado = k => { const c = document.querySelector(`#rs-tipos [data-rs="${k}"]`); return !!(c && c.checked); };
+  const soCorrente = ligado("so-corrente");
+  const noPeriodo = x => !soCorrente || x.data >= RL.corrente.de;
+  const ddmm = iso => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+  const tipos = [
+    ["falta", "❌ *Faltas*", (RL.neg_dias || []).filter(x => x.tipo === "INTEGRAL")],
+    ["batida", "⏱️ *Batida faltando / meio período*", (RL.neg_dias || []).filter(x => x.tipo === "PARCIAL")],
+    ["atraso", "🐢 *Atrasos e saídas antes da hora*", (RL.neg_dias || []).filter(x => x.tipo === "ATRASO" && !x.desconsiderada)],
+    ["ciclo", "🌙 *Vigia: noite fora do ciclo* (troca ou extra?)", RL.fora_ciclo || []],
+    ["extra", "➕ *Horas extras*", (RL.he_dias || []).filter(x => !x.negada && !x.desconsiderada && x.minutos > 0)],
+  ].filter(([k]) => ligado(k)).map(([k, titulo, lista]) => [k, titulo, lista.filter(noPeriodo)]);
+  const obras = {};
+  tipos.forEach(([k, titulo, lista]) => lista.forEach(x => {
+    const o = obras[x.obra_do_dia || ""] ||= {codigo: x.obra_do_dia || "", nome: x.obra_nome || "", tipos: {}};
+    const t = o.tipos[k] ||= {titulo, pessoas: {}};
+    const p = t.pessoas[x.colaborador_id] ||= {nome: x.nome, funcao: x.funcao || "", dias: [], minutos: 0};
+    p.dias.push(x); p.minutos += x.minutos || 0;
+  }));
+  const de = soCorrente ? RL.corrente.de : RL.anterior.de, ate = RL.corrente.ate;
+  const cab = [`*Ponto — problemas de ${ddmm(de)} a ${ddmm(ate)}* (folha ${RL.competencia.slice(5)}/${RL.competencia.slice(0, 4)})`];
+  const filtros = (FP_RL.resumo && FP_RL.resumo()) || "";
+  if (filtros) cab.push(`_${filtros}_`);
+  const lista = Object.values(obras).sort((a, b) => (a.codigo || "~").localeCompare(b.codigo || "~"));
+  if (!tipos.length) { els("rs-texto").value = "Marque ao menos um tipo de problema."; atualizarLinkDoResumo(); return; }
+  const partes = lista.map(o => {
+    const linhas = [`🏗️ *Obra ${o.codigo || "sem obra"}${o.nome ? ` — ${o.nome}` : ""}*`];
+    tipos.forEach(([k]) => {
+      const t = o.tipos[k]; if (!t) return;
+      const pessoas = Object.values(t.pessoas).sort((a, b) => a.nome.localeCompare(b.nome));
+      linhas.push(`${t.titulo} (${pessoas.length})`);
+      pessoas.forEach(p => {
+        const dias = p.dias.sort((a, b) => a.data.localeCompare(b.data));
+        const detalhe = k === "extra" ? `${hm(p.minutos)} em ${contar(dias.length, "dia", "dias")}`
+          : k === "batida" ? dias.map(x => `${ddmm(x.data)}${x.batidas ? ` (só ${x.batidas})` : ""}`).join(", ")
+          : k === "atraso" ? `${dias.map(x => ddmm(x.data)).join(", ")} — ${hm(p.minutos)} no total`
+          : dias.map(x => ddmm(x.data)).join(", ");
+        linhas.push(`• ${p.nome}${p.funcao ? ` (${p.funcao.toLowerCase()})` : ""}: ${detalhe}`);
+      });
+    });
+    return linhas.join("\n");
+  });
+  const totais = tipos.filter(([, , l]) => l.length).map(([k, titulo, l]) =>
+    `${titulo.replace(/\*/g, "")}: ${new Set(l.map(x => x.colaborador_id)).size} pessoa(s), ${contar(l.length, "dia", "dias")}`);
+  els("rs-texto").value = partes.length
+    ? [...cab, "", ...partes.flatMap(p => [p, ""]), "*Total*", ...totais].join("\n")
+    : [...cab, "", "Nenhum problema desses tipos no período. 👏"].join("\n");
+  atualizarLinkDoResumo();
+}
+function atualizarLinkDoResumo() { els("rs-abrir").href = `https://wa.me/?text=${encodeURIComponent(els("rs-texto").value)}`; }
+document.querySelectorAll("#rs-tipos [data-rs]").forEach(c => c.addEventListener("change", fechResumo));
+if (els("rs-texto")) els("rs-texto").addEventListener("input", atualizarLinkDoResumo);
+if (els("rs-copiar")) els("rs-copiar").addEventListener("click", async () => {
+  try { await navigator.clipboard.writeText(els("rs-texto").value); aviso("rs-msg", "Texto copiado. Cole no grupo do WhatsApp.", "ok"); }
+  catch (e) { els("rs-texto").select(); aviso("rs-msg", "Não deu para copiar sozinho: o texto ficou selecionado, copie com Ctrl+C.", "erro"); }
+});
+
 async function fechBaixar(arquivo) {
   try {
     const resp = await fetch("/erp/api/ponto/fechamento/arquivo", {method: "POST", headers: {"Content-Type": "application/json"},
@@ -5010,8 +5103,10 @@ function rlDesenhar() {
       <div class="barra-acoes" style="margin:0 0 8px">
         <b style="align-self:center">Para a supervisão conferir:</b>
         <button class="btn secundario" type="button" id="fech-sup-imprimir">📋 Horas extras por obra — imprimir (paisagem)</button>
-        <button class="btn secundario" type="button" data-fech-baixar="supervisao">📋 Horas extras por obra (Excel)</button></div>`;
+        <button class="btn secundario" type="button" data-fech-baixar="supervisao">📋 Horas extras por obra (Excel)</button>
+        <button class="btn secundario" type="button" id="fech-resumo">📲 Resumo dos problemas (WhatsApp)</button></div>`;
     els("fech-sup-imprimir").addEventListener("click", fechImprimirSupervisao);
+    els("fech-resumo").addEventListener("click", () => { els("dlg-resumo").showModal(); fechResumo(); });
     els("rl-kpis").querySelectorAll("[data-fech-baixar]").forEach(b => b.addEventListener("click", () =>
       fechBaixar(b.dataset.fechBaixar === "parte" ? RL_VISAO : b.dataset.fechBaixar)));
     els("rl-visoes").innerHTML = FECH_PARTES.map(([c, r]) => `<button type="button" class="${c === RL_VISAO ? "ativa" : ""}" data-rl-visao="${c}">${r} <small style="display:inline">${(RL[c === "supervisao" ? "he_dias" : c] || []).length}</small></button>`).join("");

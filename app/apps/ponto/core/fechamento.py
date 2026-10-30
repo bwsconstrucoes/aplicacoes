@@ -258,7 +258,7 @@ def montar(conn: Connection, quem: Quem, competencia, filtros: Optional[dict] = 
 
     r = {k: [] for k in ("ant_faltas", "ant_extras", "ant_extras_dias", "cor_faltas_integrais",
                          "cor_faltas_parciais", "cor_extras_integrais", "cor_extras_quebradas", "conferencia",
-                         "he_dias", "neg_dias", "abatimentos")}
+                         "he_dias", "neg_dias", "abatimentos", "fora_ciclo")}
     trab_dias: list[dict] = []
     ps_faltas, ps_extras = defaultdict(int), defaultdict(int)
     pequenas: list[int] = []
@@ -289,6 +289,13 @@ def montar(conn: Connection, quem: Quem, competencia, filtros: Optional[dict] = 
                 r["conferencia"].append({**base, "aviso": f"folga compensatória em {_br(d['data'])} ainda a cumprir — "
                                                              f"o dia trabalhado é {_br(d['compensacao_a_cumprir'])}; "
                                                              "se não for cumprido, a folga vira falta"})
+            if "FORA_DO_CICLO" in (d.get("alertas") or []) and not d.get("compensacao"):
+                # para o resumo do WhatsApp (31/10/2026): a noite fora do ciclo, por obra
+                obf = obra_do_dia(d, p.get("obra_codigo"))
+                obf = str(obf).upper() if obf else ""
+                r["fora_ciclo"].append({**base, "data": d["data"], "obra_do_dia": obf,
+                                        "obra_nome": (obras.get(obf) or {}).get("nome") or "",
+                                        "minutos": d.get("extra") or d.get("trabalhado") or 0})
             if "FORA_DO_CICLO" in (d.get("alertas") or []):
                 # o 12x36 automático (30/10/2026): a noite fora do ciclo pede a decisão do DP
                 r["conferencia"].append({**base, "aviso": f"trabalhou em {_br(d['data'])}, noite de folga do ciclo 12x36 — "
@@ -306,7 +313,10 @@ def montar(conn: Connection, quem: Quem, competencia, filtros: Optional[dict] = 
                 r["neg_dias"].append({**base, "data": d["data"], "obra_do_dia": obn,
                                       "obra_nome": (obras.get(obn) or {}).get("nome") or "", "minutos": f["minutos"],
                                       "tipo": f["tipo"], "rotulo": f["rotulo"], "banco": banco_de_horas,
-                                      "desconsiderada": atraso_pequeno})
+                                      "desconsiderada": atraso_pequeno,
+                                      # para o resumo do WhatsApp (31/10/2026): o que foi batido e quantas faltaram
+                                      "batidas": " ".join(b["hora"] for b in d.get("batidas") or []),
+                                      "faltam": len(d.get("faltando") or [])})
             if (d.get("trabalhado") or 0) > 0 and not f and not (d.get("extra") or d.get("extra_negada")):
                 # o dia trabalhado sem hora a mais nem a menos (30/10/2026, o dono: "nos dias em que não há, mesmo
                 # que tenha tido batida, fica vazio"): um ✓ no calendário da supervisão

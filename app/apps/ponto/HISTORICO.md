@@ -410,6 +410,25 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 31/10/2026 (vigésima segunda) — O resumo dos problemas do ponto para o WhatsApp
+
+O dono: *"na tela que tem o calendário, quando a gente gera, eu queria que tivesse um resumozinho para copiar e mandar
+para o WhatsApp (…) quem é que tá com falta (…) quem é que tá faltando batida (…) agrupar por obra (…) de repente eu
+quero ver só falta, de repente falta e falta de batida, ou se tiver outro problema que você sugira (…) um botão que abra
+no modal a mensagem."*
+- Relatórios › Fechamento, montado › **"📲 Resumo dos problemas (WhatsApp)"**: uma janela com os tipos para marcar —
+  ❌ faltas (o dia inteiro), ⏱️ batida faltando / meio período (com o que foi batido: "28/10 (só 07:02)"), e as sugestões
+  🐢 atrasos e saídas antes da hora (o total), 🌙 vigia: noite fora do ciclo 12x36 (troca ou extra?), ➕ horas extras
+  (total por pessoa) — e "só o mês corrente". Faltas e batida faltando vêm marcadas. O texto sai agrupado pela obra do dia
+  (onde a pessoa bateu), uma linha por pessoa com os dias, e um total no fim; o cabeçalho diz o período e os filtros de
+  funcionários (ex.: "funções: VIGIA"). Copiar, ou "Abrir no WhatsApp" (escolhe-se o grupo; nada é enviado sozinho).
+- Sai do fechamento já montado, com os filtros de funcionários da barra — para só os vigias, filtrar e montar de novo.
+  Desconsiderados (atraso pequeno, extra pequena, extra negada) ficam fora. Só tela, mais duas informações no fechamento
+  (`neg_dias` com as batidas e quantas faltaram; a lista `fora_ciclo`).
+- Teste: a falta parcial do fechamento traz as batidas ("07:00 11:00") e quantas faltaram. Ensaio no navegador com falta,
+  batida faltando e atraso, agrupados na obra.
+**No ramo, esperando o "pode".** SEM MIGRAÇÃO.
+
 ## 31/10/2026 (vigésima primeira) — O ajuste no ponto da obra escolhe a obra da batida
 
 O dono: *"tem uma pessoa que tá tentando fazer o ajuste por uma pessoa, mas ela não está na obra, e não consegue
