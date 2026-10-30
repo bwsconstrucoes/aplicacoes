@@ -339,6 +339,7 @@
   button.chip { cursor:pointer; font-weight:600; }
   button.chip:hover { border-color:var(--azul-claro); }
   .chip.ajustada { background:#fff; border:1px dashed var(--azul-claro); }
+  .chip.pre { background:transparent; border:1px dotted #9CA3AF; color:#6B7280; font-style:italic; }
   .chip.analise  { background:#FDF1DC; color:var(--ambar); }
   .chip.fora     { border-color:var(--vermelho); color:var(--vermelho); }
   .chip.fora-previsto { outline:2px dotted #D9822B; outline-offset:-1px; }
@@ -695,6 +696,7 @@
   <span class="chip">07:02</span> batida normal ·
   <span class="chip analise">07:02 <b>?</b></span> em análise ·
   <span class="chip ajustada">07:02 <b>✎</b></span> incluída por ajuste aprovado ·
+  <span class="chip pre">12:00</span> intervalo pré-assinalado (sem batida) ·
   <span class="chip fora">07:02 ⌖</span> fora da cerca ·
   <span class="chip qd-falta">Saída 17:00</span> faltou pela escala. Clique na batida para ver a foto e o mapa,
   validar a conferência ou corrigir a obra e a hora; no dia, para abrir a pessoa.
@@ -1546,6 +1548,8 @@ function painelDia() {
         ${d.previstas.length ? ` · a escala esperava ${escapar(d.previstas.map(x => x.hora).join(", "))}` : ""}</small></div>
     ${d.batidas.length ? `<table><thead><tr><th>Hora</th><th>Obra</th><th>Situação</th><th>Onde</th><th></th></tr></thead>
       <tbody>${linhas}</tbody></table>` : `<div class="vazio"><b>Nenhuma batida neste dia</b>${d.falta ? "É falta sem justificativa." : ""}</div>`}
+    ${(d.pre_assinalado || []).length ? `<p style="margin:10px 0 0">Intervalo pré-assinalado: ${d.pre_assinalado.map(chipPre).join("")}
+      <small class="suave" style="display:inline">considerado pela escala, sem batida (convenção da obra)</small></p>` : ""}
     ${d.faltando.length ? `<p style="margin:10px 0 0">Falta: ${d.faltando.map(f => `<span class="chip qd-falta">${escapar(f.rotulo)} ${escapar(f.sugestao)}</span>`).join("")}</p>` : ""}
     ${(d.pendentes || []).length ? `<p style="margin:8px 0 0">Esperando decisão: ${d.pendentes.map(x => `<span class="etq ambar">${escapar(x.rotulo)}${x.hora ? ` ${escapar(x.hora)}` : ""}</span>`).join("")}</p>` : ""}
     ${d.ocorrencia ? `<p style="margin:8px 0 0"><span class="etq azul">${escapar(d.ocorrencia.rotulo)}</span> neste dia</p>` : ""}
@@ -1620,7 +1624,7 @@ function linhaDoEspelho(d, E, podeAjustar) {
   return `<tr class="${apagada ? "apagada" : d.situacao === "FALTA" && !d.ocorrencia ? "dia-falta" : ""}">
     <td class="dados"><button type="button" class="link-btn" data-dp-dia="${d.data}" title="abrir o dia"><b>${ddmm(d.data)}</b></button>
       <small>${escapar(d.dia_semana)}${d.feriado ? ` · feriado: ${escapar(d.feriado)}` : ""}</small></td>
-    <td>${d.batidas.map(chipComMapa).join("")}${pedidos}${faltam}${!d.batidas.length && !pedidos && !faltam ? `<span class="suave">—</span>` : ""}
+    <td>${comPreAssinalado(d.batidas.map(chipComMapa), d.pre_assinalado)}${pedidos}${faltam}${!d.batidas.length && !pedidos && !faltam ? `<span class="suave">—</span>` : ""}
       ${(d.rondas || []).length ? `<div style="margin-top:4px"><small class="suave" style="display:inline">🔦 rondas:</small> ${d.rondas.map(rondaNoEspelho).join(" ")}</div>` : ""}</td>
     <td>${obrasDoDia(d, E.pessoa)}</td>
     ${em(d.previsto)}${em(d.trabalhado)}${em(d.extra, "verde")}${em(d.debito, "vermelho")}
@@ -2771,6 +2775,16 @@ function chipBatida(b, comFoto) {
   return `<span class="${classes.join(" ")}" title="${escapar(dicas.join(" · "))}">${texto}</span>`;
 }
 
+// O INTERVALO PRÉ-ASSINALADO (31/10/2026, o dono: "teve batida no início e no fim, aparece a batida do intervalo
+// diferenciada"): na obra de só entrada e saída, os horários de almoço que o cálculo considerou — não são batidas.
+const DICA_PRE = "intervalo pré-assinalado (convenção da obra): considerado pela escala, sem batida";
+const chipPre = h => `<span class="chip pre" title="${DICA_PRE}">${escapar(h)}</span>`;
+// as pílulas das batidas com o intervalo pré-assinalado no meio (entre a entrada e a saída)
+function comPreAssinalado(chips, pre) {
+  if (!(pre || []).length || chips.length < 2) return chips.join("");
+  return chips[0] + pre.map(chipPre).join("") + chips.slice(1).join("");
+}
+
 // A batida que abre a janela da batida (detalhes, mapa, decidir) — no Quadro e no espelho.
 function chipComMapa(b) {
   const h = chipBatida(b);
@@ -3166,7 +3180,7 @@ function qdBatidas(l) {
   else if (!l.batidas.length) return l.previstas.length
     ? `<span class="chip qd-falta" title="a escala esperava ${escapar(l.previstas.map(p => p.hora).join(", "))}">nenhuma batida — esperava ${l.previstas.length}</span>`
     : `<span class="suave">—</span>`;
-  const feitas = l.batidas.map(b => chipComMapa(b)).join("");
+  const feitas = comPreAssinalado(l.batidas.map(b => chipComMapa(b)), l.pre_assinalado);
   // O pedido de ajuste esperando decisão aparece NO horário pedido (22/10/2026, o dono:
   // "que a gente já consiga visualizar que aquele horário tem um pedido"); clicar decide.
   const pedidos = l.pendentes.filter(p => p.tipo === "AJUSTE_BATIDA").map(p => `<button type="button" class="chip pedido"

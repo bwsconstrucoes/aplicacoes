@@ -161,6 +161,11 @@ def test_obra_de_so_entrada_e_saida_desconta_o_intervalo_da_escala():
     # Uma batida só é falta parcial (29/10/2026): nada comprovado
     um = ap.apurar_dia(SEGUNDA, OBRA, b(SEGUNDA, "07:00"), intervalo_pre_assinalado=True)
     assert um.situacao == "FALTA_PARCIAL" and um.debito == 540
+    # 31/10/2026: os horários do intervalo considerado, para o espelho mostrar (diferenciados, não são batida)
+    assert ap.intervalo_pre_assinalado(SEGUNDA, OBRA, duas) == [660, 720]
+    assert ap.intervalo_pre_assinalado(SEGUNDA, OBRA, b(SEGUNDA, "07:00", "11:30", "12:30", "17:00")) == []
+    assert ap.intervalo_pre_assinalado(SEGUNDA, OBRA, b(SEGUNDA, "07:00", "10:30")) == []
+    assert ap.intervalo_pre_assinalado(SEGUNDA, OBRA, duas, feriado=True) == []
 
 
 def test_so_entrada_e_saida_espera_duas_marcas():

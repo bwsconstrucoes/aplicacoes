@@ -38,6 +38,8 @@ def test_obra_de_so_entrada_e_saida_nao_gera_pendencia(app, mundo):
     assert depois["situacao"] == "OK" and depois["extra"] == 0 and depois["trabalhado"] == 540
     assert depois["faltando"] == [] and [p["rotulo"] for p in depois["previstas"]] == ["Entrada", "Saída"]
     assert depois["so_entrada_e_saida"] is True and depois["alertas"] == []
+    assert depois["pre_assinalado"] == ["11:00", "12:00"] and antes["pre_assinalado"] == []   # mostrado, não gravado
+    assert [x["hora"] for x in depois["batidas"]] == ["07:00", "17:00"]
 
 
 def test_ajuste_pedido_aparece_no_dia_com_o_horario(app, mundo, monkeypatch):

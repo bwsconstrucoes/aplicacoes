@@ -343,6 +343,9 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
         r = apuracao.apurar_dia(dia, escala, [horario.para_local(b["timestamp_servidor"]) for b in do_dia],
                                 feriado=bool(nome_feriado), ocorrencia=abono,
                                 intervalo_pre_assinalado=so_duas)
+        pre_assinalado = (apuracao.intervalo_pre_assinalado(
+            dia, escala, [horario.para_local(b["timestamp_servidor"]) for b in do_dia], bool(nome_feriado))
+            if so_duas else [])
         coberto = False
         if abono_parcial and not r.abonado:
             if r.previsto and abono_parcial >= r.previsto:
@@ -456,6 +459,8 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
                                     if o["tipo"] == "AJUSTE_BATIDA" and o.get("horario") else None)}
                           for o in pendentes],
             "so_entrada_e_saida": so_duas,
+            # o intervalo considerado sem batida (pré-assinalado): só mostrado, diferenciado — não é batida
+            "pre_assinalado": [f"{(m // 60) % 24:02d}:{m % 60:02d}" for m in pre_assinalado],
             "batidas": [{
                 "id": b["id"], "nsr": b["nsr"],
                 "hora": horario.para_local(b["timestamp_servidor"]).strftime("%H:%M"),

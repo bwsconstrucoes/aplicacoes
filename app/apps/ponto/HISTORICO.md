@@ -410,6 +410,23 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 31/10/2026 (terceira) — O intervalo pré-assinalado aparece no espelho, diferenciado
+
+O dono, sobre as obras que, por convenção coletiva, só batem a entrada e a saída: *"não quero aplicar batidas. Quero
+pré-configurar essas obras dessa forma. Teve batida no início e no fim, aparece a batida do intervalo diferenciada."*
+- **A configuração já existia** (migração 009, 09/10/2026): Ponto › Configuração › Obras e cerca › coluna "Batidas por
+  dia" → "2 (só entrada e saída)". O cálculo já completava o almoço pela escala (sem falta, sem batida faltando, sem
+  intervalo curto, o almoço não vira extra, e o ranking conta o dia em dia) — mas o espelho só mostrava as duas batidas.
+- **Agora o intervalo considerado aparece**, sem virar batida (nada é gravado — Portaria 671): no dia com a entrada e a
+  saída numa obra assim, os horários do almoço da escala entram entre as duas, **em itálico, com borda pontilhada**
+  ("intervalo pré-assinalado (convenção da obra): considerado pela escala, sem batida"). Na janela da pessoa (Dia e
+  Espelho do mês), no Quadro, no "meu espelho" do aplicativo e na impressão ("(pré-assin.)", com a legenda).
+- Só aparece quando o cálculo de fato completou: quem bateu as quatro, ou saiu antes do almoço, ou feriado — nada.
+  `apuracao.intervalo_pre_assinalado` (pura) e o campo `pre_assinalado` do dia no espelho.
+- Testes: a regra pura (as duas batidas → 11:00 e 12:00; quatro batidas, a manhã só ou feriado → nada) e, com banco, a
+  obra marcada como 2 batidas — o dia mostra o intervalo e as batidas continuam só as duas. Conferido no navegador.
+**No ramo, esperando o "pode"** — SEM MIGRAÇÃO.
+
 ## 31/10/2026 (segunda) — O calendário de horas extras: cabeçalho parado, um clique marca, dois abrem o espelho
 
 O dono: *"como são muitos funcionários, na tela do calendário devemos fixar o cabeçalho com os dias. Outra coisa, como
@@ -422,7 +439,7 @@ espelho se clicar duas vezes."*
   pessoa continua abrindo com um clique.
 - Conferido no navegador: um clique marca sem abrir nada; dois cliques abrem o espelho com a marca intacta; o cabeçalho
   fica no topo da caixa ao rolar.
-**No ramo, esperando o "pode"** — SEM MIGRAÇÃO.
+**Publicado em 31/10/2026** (com o "pode" do dono) — SEM MIGRAÇÃO.
 
 ## 31/10/2026 — O feriado pela obra onde a pessoa trabalha
 
@@ -436,7 +453,7 @@ administrativo) só tinha o nacional — e o dia virava falta.
   o percentual da hora extra) e o quadro passam a usar.
 - **O painel do dia (Hoje)**: sem batida hoje, a obra da última batida dos 60 dias; senão, a do cadastro.
 - Teste: o João, cadastrado na A, bate segunda e terça na B; o feriado da obra B na quarta vale para ele (antes: falta).
-**No ramo, esperando o "pode"** — SEM MIGRAÇÃO.
+**Publicado em 31/10/2026** (com o "pode" do dono) — SEM MIGRAÇÃO.
 
 ## 30/10/2026 (madrugada de 31, quarta) — A obra da pessoa é a do ponto
 

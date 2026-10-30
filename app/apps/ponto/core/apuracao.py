@@ -218,6 +218,18 @@ def sem_batidas_no_meio_da_noite(marcas: list[int], periodos: list[tuple[int, in
     return [marcas[0], marcas[-1]], len(marcas) - 2
 
 
+def intervalo_pre_assinalado(dia: dt.date, escala: Optional["Escala"], batidas: list[dt.datetime],
+                             feriado: bool = False) -> list[int]:
+    """PURA. Os horários de intervalo que o cálculo completou no dia de pré-assinalado (os minutos, em ordem) —
+    para o espelho MOSTRAR, diferenciados, que o almoço foi considerado sem batida (31/10/2026, o dono: "teve batida
+    no início e no fim, aparece a batida do intervalo diferenciada"). Vazio quando nada foi completado."""
+    if escala is None or feriado:
+        return []
+    marcas, _ = sem_repetidas([minutos_desde(dia, b) for b in batidas])
+    completas = completar_pre_assinalado(marcas, escala.periodos(dia))
+    return completas[1:-1] if len(completas) > len(marcas) else []
+
+
 def completar_pre_assinalado(marcas: list[int], periodos: list[tuple[int, int]]) -> list[int]:
     """PURA. Na obra de intervalo PRÉ-ASSINALADO (CLT art. 74, § 2º; migração 009
     — pedido do dono, 09/10/2026: "por convenção, só é para bater o ponto de

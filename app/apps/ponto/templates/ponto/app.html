@@ -92,7 +92,7 @@
   .dl.falta { background:#FDF0EE; box-shadow:inset 3px 0 0 var(--vermelho); border-radius:6px; }
   .dl.desc { color:#9AA3B5; } .dl.abono { background:#EEF4FB; border-radius:6px; }
   .dl .f { color:var(--vermelho); border:1px dashed var(--vermelho); border-radius:6px; padding:0 4px; font-size:11.5px; }
-  .dl .aj { color:#5B4B8A; font-weight:700; } .dl .an { color:var(--ambar); font-weight:700; }
+  .dl .aj { color:#5B4B8A; font-weight:700; } .dl .pre { color:#6B7280; font-style:italic; border-bottom:1px dotted #9CA3AF; } .dl .an { color:var(--ambar); font-weight:700; }
   .dl .pd { color:var(--ambar); border:1px dashed var(--ambar); border-radius:6px; padding:0 4px; font-size:11.5px; }
   .mini { font-size:11.5px; color:var(--suave); }
   nav.abas { position:fixed; left:0; right:0; bottom:0; background:#fff; border-top:1px solid var(--borda);
@@ -3323,7 +3323,7 @@ async function carregarEspelho() {
   const dias = d.dias.filter(x => !["FUTURO", "FORA_DO_CONTRATO", "ANTES_DO_PONTO"].includes(x.situacao));
   const antes = d.dias.some(x => x.situacao === "ANTES_DO_PONTO");
   $("esp-dias").innerHTML = (dias.map(x => linhaDoEspelhoApp(x, p)).join("") || "<p>Nada neste mês ainda.</p>")
-    + `<p class="mini" style="margin:8px 4px 0">✎ incluída por ajuste aprovado · <span class="f" style="color:var(--vermelho); border:1px dashed var(--vermelho); border-radius:6px; padding:0 4px">vermelho</span>
+    + `<p class="mini" style="margin:8px 4px 0">✎ incluída por ajuste aprovado · <i style="color:#6B7280">itálico</i> = intervalo pré-assinalado (sem batida) · <span class="f" style="color:var(--vermelho); border:1px dashed var(--vermelho); border-radius:6px; padding:0 4px">vermelho</span>
        a batida que a escala esperava e não veio · ⏳ em conferência ou pedido esperando validação${
        antes ? " · os dias antes do início do ponto eletrônico não aparecem." : "."}</p>`;
   const podePedir = !d.competencia_fechada && (ESP.alvo ? !!d.pode_pedir : !!(EU && EU.pede_no_celular !== false));
@@ -3340,6 +3340,8 @@ function linhaDoEspelhoApp(x, p) {
     // no dia de falta, "nenhuma batida" diz tudo; nos outros, o horário que a escala esperava
     ...(falta && !x.batidas.length ? [] : x.faltando)
       .map(f => ({h: f.sugestao || hhmm(f.minuto), t: `<span class="f">${esc(f.sugestao || hhmm(f.minuto))} faltou</span>`})),
+    // o intervalo pré-assinalado da obra (31/10/2026): mostrado, diferente — não é batida
+    ...(x.pre_assinalado || []).map(h => ({h, t: `<span class="pre" title="intervalo pré-assinalado: considerado pela escala, sem batida">${esc(h)}</span>`})),
     ...x.pendentes.filter(o => o.tipo === "AJUSTE_BATIDA" && o.hora)
       .map(o => ({h: o.hora, t: `<span class="pd" title="ajuste pedido, esperando validação">⏳ ${esc(o.hora)}</span>`}))]
     .sort((a, b) => a.h.localeCompare(b.h));

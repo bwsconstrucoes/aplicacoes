@@ -179,6 +179,7 @@ def _linha(p: dict, d: dict, etiquetas: set[str], marcas: list[dict]) -> dict:
                      "tem_foto": bool(b.get("tem_foto"))}
                     for i, b in enumerate(d["batidas"])],
         "previstas": d.get("previstas") or [], "faltando": d.get("faltando") or [],
+        "pre_assinalado": d.get("pre_assinalado") or [],
         "ocorrencia": (d.get("ocorrencia") or {}).get("rotulo"),
         "pendentes": [{"id": x["id"], "tipo": x["tipo"], "status": x["status"], "rotulo": x["rotulo"],
                        "hora": x.get("hora")} for x in d.get("pendentes") or []],
