@@ -410,6 +410,31 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 31/10/2026 (vigésima terceira) — O "Ponto da minha equipe" virou o resumo gerencial das obras
+
+O dono: *"esse mesmo resumo do WhatsApp a gente poderia ter para a pessoa que bate os pontos da obra (…) eu gero o resumo
+da minha obra, ou das obras (…) um que está perfeito e um que não está (…) as faltas, os atestados, os dias de cada um
+(…) o que está em erro porque está faltando uma batida, duas, ou o que está provavelmente em erro (…) para orientar as
+pessoas a corrigir."* E, vendo o começo: *"fica melhor já usar a tela que temos"* — o "Ponto da minha equipe" (17/10),
+em vez de uma tela nova.
+- **A tela** (aplicativo › "🏆 Ponto da minha equipe"): período (este mês até ontem · últimos 7 dias · mês anterior);
+  por obra (a do ponto: onde a pessoa mais bateu), quantos estão em dia e quantos com problema; quem tem problema primeiro,
+  cada um com a contagem e os dias: ❌ falta; ⏱️ batida faltando ("faltam 3 batidas — bateu só 07:01, a escala esperava
+  11:00, 12:00, 17:00"); ⚠️ provavelmente errado (batida repetida, batida no meio do turno da noite, noite fora do ciclo
+  12x36, batida sem par em dia de folga); 🐢 atraso; 🩺 atestados e abonos; ⏳ pedidos esperando; 🚫 negados. "Abrir o
+  ponto e corrigir" leva ao ponto da pessoa (quando ela está no alcance da consulta). "✅ Em dia" lista os outros.
+  "Compartilhar (WhatsApp)" manda o texto (no celular, o compartilhar do próprio aparelho). A nota do mês da tela
+  antiga continua em cima, para quem responde por um ponto da obra.
+- **Quem vê**: quem responde por um ponto da obra (as pessoas que bateram no aparelho dele) e, agora, também quem
+  consulta o ponto das pessoas — o administrativo de obra e quem o DP liberou (o alcance da consulta). Com mais de 250
+  pessoas (todas as obras liberadas), escolhe-se a obra antes.
+- `core/resumo_equipe.py` (a regra, pura, e a montagem), rota `/ponto/app/api/equipe/resumo`. A tela antiga do "Ponto da
+  minha equipe" saiu (a nota dela está na nova).
+- Teste: a regra separa falta, batida faltando, atraso, atestado, provável erro e pedido esperando (atestado e pedido não
+  são problema); os períodos; o administrativo vê a obra; quem não consulta é recusado. Ensaio no celular (as telas foram
+  mandadas ao dono).
+**No ramo, esperando o "pode".** SEM MIGRAÇÃO.
+
 ## 31/10/2026 (vigésima segunda) — O resumo dos problemas do ponto para o WhatsApp
 
 O dono: *"na tela que tem o calendário, quando a gente gera, eu queria que tivesse um resumozinho para copiar e mandar

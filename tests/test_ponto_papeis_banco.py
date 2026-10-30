@@ -680,3 +680,52 @@ def test_filtros_obras_com_batida_e_quem_bateu(app, mundo, banco):
     assert sup.get(f"/erp/api/ponto/pessoas-com-batida?obra={mundo['obra_b']}&competencia={comp}").status_code == 404
     joao = next(p for p in dp.get("/erp/api/ponto/pessoas").get_json()["pessoas"] if p["id"] == mundo["joao"])
     assert set(joao["obras_batidas"]) == {"PG-A", "PG-B"}
+
+
+def test_o_ponto_da_minha_equipe_e_o_resumo_das_obras(app, mundo, carlos, monkeypatch):
+    """31/10/2026, o dono: o resumo do ponto das obras no aplicativo — "um que está perfeito e um que não está (…) o
+    que está em erro porque está faltando uma batida (…) para orientar as pessoas a corrigir". O administrativo, de
+    dentro da cerca da obra A, vê a obra A com quem está em dia e quem tem problema; quem não consulta, não vê."""
+    _papeis(app, mundo, carlos, administrativo_obra=True)
+    _bater(CPF_MARIA, "PG-A", 30)                                 # a Maria bateu só uma vez na obra A este mês
+    c = _entrar_no_app(app, CPF_CARLOS, monkeypatch)
+    r = c.get(f"/ponto/app/api/equipe/resumo?{NA_OBRA_A}")
+    assert r.status_code == 200, r.get_json()
+    d = r.get_json()
+    pessoas = {p["nome"]: p for g in d["grupos"] for p in g["pessoas"]}
+    assert {"João Obra A", "Maria Obra B"} <= set(pessoas) and all(p["pode_abrir"] for p in pessoas.values())
+    assert d["periodo"] and d["de"] <= d["ate"]
+    for chave in ("faltas", "batida", "suspeitas", "atrasos", "justificados", "pendentes", "negados", "em_dia"):
+        assert chave in pessoas["João Obra A"]
+    # quem não consulta o ponto de ninguém e não responde por aparelho: recusado
+    j = _entrar_no_app(app, CPF_JOAO, monkeypatch)
+    assert j.get(f"/ponto/app/api/equipe/resumo?{NA_OBRA_A}").status_code in (400, 403)
+
+
+def test_o_resumo_separa_os_problemas_do_dia():
+    from app.apps.ponto.core.resumo_equipe import classificar, periodo
+    dias = [
+        {"data": "2026-10-20", "situacao": "FALTA", "faltando": [{"sugestao": "07:00"}], "batidas": []},
+        {"data": "2026-10-21", "situacao": "FALTA_PARCIAL", "faltando": [{"sugestao": "12:00"}, {"sugestao": "17:00"}],
+         "batidas": [{"hora": "07:02"}, {"hora": "11:00"}]},
+        {"data": "2026-10-22", "situacao": "OK", "debito": 25, "batidas": [{"hora": "07:30"}]},
+        {"data": "2026-10-23", "situacao": "ABONADO", "ocorrencia": {"rotulo": "Atestado médico"}, "batidas": []},
+        {"data": "2026-10-24", "situacao": "OK", "alertas": ["BATIDA_NO_MEIO_DO_TURNO"],
+         "batidas": [{"hora": "17:00"}, {"hora": "22:56"}, {"hora": "04:48"}, {"hora": "07:07"}]},
+        {"data": "2026-10-25", "situacao": "DESCANSO", "alertas": ["BATIDA_FALTANDO"], "batidas": [{"hora": "11:52"}]},
+        {"data": "2026-10-26", "situacao": "OK", "pendentes": [{"rotulo": "Ajuste de batida", "hora": "17:00"}], "batidas": []},
+        {"data": "2026-10-31", "situacao": "FALTA", "batidas": []},          # depois do fim: não conta
+    ]
+    r = classificar(dias, dt.date(2026, 10, 30))
+    assert [x["data"] for x in r["faltas"]] == ["2026-10-20"]
+    assert r["batida"][0]["faltam"] == 2 and r["batida"][0]["batidas"] == ["07:02", "11:00"]
+    assert r["atrasos"] == [{"data": "2026-10-22", "minutos": 25}]
+    assert r["justificados"][0]["rotulo"] == "Atestado médico"
+    assert [x["data"] for x in r["suspeitas"]] == ["2026-10-24", "2026-10-25"]
+    assert len(r["pendentes"]) == 1 and r["problemas"] == 5 and not r["em_dia"]
+    so_atestado = classificar([dias[3], dias[6]], dt.date(2026, 10, 30))
+    assert so_atestado["em_dia"]                     # atestado e pedido esperando não são problema
+    ini, fim, _ = periodo("7dias", dt.date(2026, 10, 31))
+    assert (ini, fim) == (dt.date(2026, 10, 24), dt.date(2026, 10, 30))
+    ini, fim, _ = periodo("anterior", dt.date(2026, 10, 31))
+    assert (ini, fim) == (dt.date(2026, 9, 1), dt.date(2026, 9, 30))
