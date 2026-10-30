@@ -426,7 +426,7 @@ localização das pessoas."* — e pediu as telas do aplicativo também.
   administrativo vê também a obra em que está — isso depende de onde ele está, e a lista não adivinha.
 - Teste: o caso da liberação (023) confere também o que a rota nova devolve. Ensaio no navegador com o João liberado
   para AP-01 e BV-02 (as cinco telas foram mandadas ao dono).
-**No ramo, esperando o "pode".** SEM MIGRAÇÃO.
+**Publicado em 31/10/2026** (com o "pode" do dono) — SEM MIGRAÇÃO.
 
 ## 31/10/2026 (nona) — Liberar obras e pessoas específicas no aplicativo (migração 023)
 
