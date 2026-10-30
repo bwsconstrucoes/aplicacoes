@@ -206,7 +206,7 @@ def avaliar(conn: Connection, pedidos: list[dict]) -> dict[int, dict]:
             origem=p.get("origem") or "", hora=hora, obra=p.get("obra"),
             batidas=d["batidas"], pedidos_no_dia=pedidos_no_dia.get((cid, dia), 1),
             previstas=[x["hora"] for x in d.get("previstas") or []], situacao=d.get("situacao") or "",
-            feriado=d.get("feriado"), fotos_ruins=fotos.get((cid, dia), []), em_conferencia=em_conf,
+            feriado=None if d.get("feriado_compensado") else d.get("feriado"), fotos_ruins=fotos.get((cid, dia), []), em_conferencia=em_conf,
             fora_da_area=fora_txt, dias_depois=dias_depois, dias_com_ajuste=int(h.get("dias") or 0),
             negados_recentes=int(h.get("negados") or 0),
             obra_suspeita=(os_.avisos(obra=str(p["obra"]).strip().upper(), obras_da_pessoa=obras_pessoa.get(cid, {}),

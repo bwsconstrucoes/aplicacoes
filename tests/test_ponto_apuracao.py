@@ -182,3 +182,27 @@ def test_batida_repetida_conta_uma_vez_e_avisa():
     r = ap.apurar_dia(SEGUNDA, OBRA, b(SEGUNDA, "07:00", "07:05", "11:00", "12:00", "17:00"))
     assert r.situacao == "OK" and r.trabalhado == 9 * 60 and "BATIDA_REPETIDA" in r.alertas
     assert r.batidas == 5                                             # o registro guarda as cinco
+
+
+def test_o_feriado_na_noite_do_ciclo_12x36_e_dia_normal():
+    """31/10/2026, o dono, num vigia com 17:05–07:07 no feriado: "tá errado, ele trabalha em escala". Na 12x36 o
+    feriado é compensado na própria escala (CLT art. 59-A, parágrafo único): a noite do ciclo continua prevista e a
+    extra é só o que passa do turno — e não paga o percentual de feriado. Na folga do ciclo, segue tudo extra."""
+    from app.apps.ponto.core import fechamento
+    sex = dt.date(2026, 10, 23)
+    sab = sex + dt.timedelta(days=1)
+    esc = ap.Escala(tipo="CICLO_12X36", periodo_ciclo=(17 * 60, 29 * 60), data_base=sex)
+    noite = [dt.datetime.combine(sex, dt.time(17, 5)), dt.datetime.combine(sab, dt.time(7, 7))]
+    r = ap.apurar_dia(sex, esc, noite, feriado=True)
+    assert (r.previsto, r.trabalhado, r.extra, r.situacao) == (720, 842, 122, "OK") and r.feriado_compensado
+    assert "TRABALHO_EM_FERIADO" not in r.alertas
+    folga = ap.apurar_dia(sab, esc, [dt.datetime.combine(sab, dt.time(17)),
+                                           dt.datetime.combine(sab + dt.timedelta(days=1), dt.time(5))], feriado=True)
+    assert folga.situacao == "DESCANSO" and folga.extra == 720 and not folga.feriado_compensado
+    semanal = ap.Escala(tipo="SEMANAL", semana={4: [(420, 660), (720, 1020)]})
+    assert ap.apurar_dia(sex, semanal, [dt.datetime.combine(sex, dt.time(7)),
+                                              dt.datetime.combine(sex, dt.time(11))], feriado=True).previsto == 0
+    d = {"data": sex.isoformat(), "feriado": "Feriado municipal"}
+    assert fechamento.evento_da_hora_extra(d) != fechamento.evento_da_hora_extra({**d, "feriado_compensado": True})
+    assert fechamento.evento_da_hora_extra({**d, "feriado_compensado": True}) == \
+        fechamento.evento_da_hora_extra({"data": sex.isoformat()})

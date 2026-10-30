@@ -101,7 +101,7 @@ def hoje(conn: Connection, *, dia: Optional[dt.date] = None, obras: Optional[lis
             situacao = "INCOMPLETO" if (len(do_dia) % 2 and dia < agora_local.date()) else "PRESENTE"
         elif esc is None:
             situacao = "SEM_ESCALA"
-        elif nome_feriado:
+        elif nome_feriado and not (esc.tipo == "CICLO_12X36" and periodos):   # 12x36: feriado compensado (art. 59-A)
             situacao = "FERIADO"
         elif not periodos:
             situacao = "FOLGA"

@@ -411,7 +411,7 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
         # no "corrigir este dia", em vez de um formulário em branco (ajustes.py).
         previstas = (ajustes.marcas_previstas(escala.periodos(dia))
                      if escala is not None and dia >= vale_desde else [])
-        if nome_feriado:
+        if nome_feriado and not r.feriado_compensado:     # a noite do ciclo 12x36 espera (art. 59-A)
             # Feriado não espera batida (12/10/2026): sem isto, o "corrigir" do feriado
             # vinha com os horários da escala marcados como "faltou", e o ajuste de
             # vários dias pedia o feriado inteiro. Quem trabalhou digita os horários.
@@ -436,6 +436,7 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
             "obra_do_dia": codigo_da_obra.get(obra_do_dia),     # a da batida; sem ela, a vizinha (31/10/2026)
             "escala": vigencia["nome"] if vigencia else None,
             "feriado": nome_feriado,
+            "feriado_compensado": r.feriado_compensado,
             "rondas": rondas_do_periodo.get(dia.isoformat(), []),
             "previsto": r.previsto, "trabalhado": r.trabalhado, "extra": r.extra,
             "extra_negada": extra_negada if julgavel else 0,

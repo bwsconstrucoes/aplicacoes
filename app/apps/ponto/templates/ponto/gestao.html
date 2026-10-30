@@ -1552,7 +1552,7 @@ function painelDia() {
       <button class="btn secundario" type="button" id="dp-prox">Próximo dia ›</button>
       <button class="link-btn" type="button" id="dp-hoje">hoje</button>
       <span class="selo ${cl}">${escapar(rot)}</span>
-      <small class="suave" style="margin:0">${escapar(d.dia_semana)} · ${escapar(d.feriado ? `feriado: ${d.feriado}` : (d.escala || "sem escala"))}
+      <small class="suave" style="margin:0">${escapar(d.dia_semana)} · ${escapar(d.feriado ? `feriado: ${d.feriado}${d.feriado_compensado ? " (compensado na 12x36)" : ""}` : (d.escala || "sem escala"))}
         ${d.previstas.length ? ` · a escala esperava ${escapar(d.previstas.map(x => x.hora).join(", "))}` : ""}</small></div>
     ${d.batidas.length ? `<table><thead><tr><th>Hora</th><th>Obra</th><th>Situação</th><th>Onde</th><th></th></tr></thead>
       <tbody>${linhas}</tbody></table>` : `<div class="vazio"><b>Nenhuma batida neste dia</b>${d.falta ? "É falta sem justificativa." : ""}</div>`}
@@ -1632,7 +1632,7 @@ function linhaDoEspelho(d, E, podeAjustar) {
   const em = (min, cor) => `<td class="dados" ${min && cor ? `style="color:var(--${cor}); font-weight:700"` : ""}>${hmCelula(min)}</td>`;
   return `<tr class="${apagada ? "apagada" : d.situacao === "FALTA" && !d.ocorrencia ? "dia-falta" : ""}">
     <td class="dados"><button type="button" class="link-btn" data-dp-dia="${d.data}" title="abrir o dia"><b>${ddmm(d.data)}</b></button>
-      <small>${escapar(d.dia_semana)}${d.feriado ? ` · feriado: ${escapar(d.feriado)}` : ""}</small></td>
+      <small>${escapar(d.dia_semana)}${d.feriado ? ` · feriado: ${escapar(d.feriado)}${d.feriado_compensado ? " (compensado na 12x36)" : ""}` : ""}</small></td>
     <td>${comPreAssinalado(d.batidas.map(chipComMapa), d.pre_assinalado)}${pedidos}${faltam}${!d.batidas.length && !pedidos && !faltam ? `<span class="suave">—</span>` : ""}
       ${(d.rondas || []).length ? `<div style="margin-top:4px"><small class="suave" style="display:inline">🔦 rondas:</small> ${d.rondas.map(rondaNoEspelho).join(" ")}</div>` : ""}</td>
     <td>${obrasDoDia(d, E.pessoa)}</td>

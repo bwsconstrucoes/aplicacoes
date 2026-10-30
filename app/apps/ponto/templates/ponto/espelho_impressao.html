@@ -142,7 +142,7 @@
     <tbody>
     {% for d in e.dias %}
       {%- set apagada = d.situacao in ("FUTURO", "EM_ANDAMENTO", "FORA_DO_CONTRATO", "ANTES_DO_PONTO") -%}
-      <tr class="{{ 'apagada' if apagada else '' }} {{ 'descanso' if d.situacao == 'DESCANSO' or d.feriado else '' }}">
+      <tr class="{{ 'apagada' if apagada else '' }} {{ 'descanso' if d.situacao == 'DESCANSO' or (d.feriado and not d.feriado_compensado) else '' }}">
         <td class="hora">{{ d.data[8:10] }}/{{ d.data[5:7] }}</td>
         <td>{{ d.dia_semana[0:3] }}</td>
         <td class="hora">
@@ -159,7 +159,7 @@
         <td class="n">{{ hmz(d.debito) }}</td>
         <td>
           {{- SITUACAO.get(d.situacao, d.situacao) -}}
-          {%- if d.feriado %} · Feriado: {{ d.feriado }}{% endif -%}
+          {%- if d.feriado %} · Feriado: {{ d.feriado }}{% if d.feriado_compensado %} (compensado na 12x36){% endif %}{% endif -%}
           {%- if d.ocorrencia %} · {{ d.ocorrencia.rotulo }}{% endif -%}
           {%- if d.compensacao %} · trabalhado no lugar de uma folga{% endif -%}
           {%- for o in d.pendentes %} · <span class="obs">{{ o.rotulo }} pendente</span>{% endfor -%}

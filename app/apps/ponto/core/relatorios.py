@@ -169,7 +169,7 @@ def justificadas(conn: Connection, quem: Quem, pessoas: list[dict], inicio: dt.d
 
 def tipo_do_dia(d: dict) -> str:
     """PURA. Dia de trabalho, descanso ou feriado — é o que muda o adicional da hora extra."""
-    if d.get("feriado"):
+    if d.get("feriado") and not d.get("feriado_compensado"):     # 12x36: compensado na escala (art. 59-A)
         return "FERIADO"
     if d.get("situacao") == "DESCANSO" or not d.get("previstas"):
         return "DESCANSO"

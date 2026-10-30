@@ -127,7 +127,7 @@ def etiquetas_do_dia(d: dict) -> set[str]:
         e.add("FALTA")
     elif situacao in ("ABONADO", "COMPENSADO") or d.get("ocorrencia"):
         e.add("JUSTIFICADO")
-    elif situacao in ("DESCANSO", "FERIADO") or d.get("feriado"):
+    elif situacao in ("DESCANSO", "FERIADO") or (d.get("feriado") and not d.get("feriado_compensado")):
         e.add("NAO_TRABALHA")
     if batidas and (faltando or situacao in ("FALTA_PARCIAL", "INCOMPLETO")):   # bateu parte do dia
         e.add("COM_BURACO")

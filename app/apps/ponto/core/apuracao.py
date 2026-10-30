@@ -24,6 +24,10 @@ AS REGRAS DA CLT QUE ESTÃO AQUI, cada uma com a fonte:
     contam como trabalhados; o resto é débito. O ajuste aprovado desfaz.
   - **Dia de descanso e feriado**: previsto zero; o que for trabalhado é extra
     em dia de descanso (a tela e a folha decidem o adicional; aqui só se marca).
+    **Fora a 12x36** (art. 59-A, parágrafo único: os feriados "serão considerados
+    compensados"): o feriado que cai numa noite do ciclo é dia normal de escala —
+    previsto o turno, extra só o que passar dele (31/10/2026, o dono: "tá errado,
+    ele trabalha em escala"). Na folga do ciclo, o feriado trabalhado segue extra.
   - **Intervalo** (art. 71): jornada acima de 6 h pede ao menos 1 h de intervalo;
     entre 4 e 6 h, 15 min. Menos que isso vira alerta.
   - **Limite de extra** (art. 59): mais de 2 h extras no dia vira alerta — fora
@@ -155,6 +159,7 @@ class Dia:
     abonado: bool = False
     descanso: bool = False
     feriado: bool = False
+    feriado_compensado: bool = False      # feriado numa noite do ciclo 12x36: dia normal (art. 59-A)
     batidas: int = 0
     situacao: str = "OK"            # OK | FALTA | FALTA_PARCIAL | ABONADO | DESCANSO | SEM_ESCALA
     alertas: list = field(default_factory=list)
@@ -306,7 +311,11 @@ def apurar_dia(dia: dt.date, escala: Optional[Escala], batidas: list[dt.datetime
     marcas, repetidas = sem_repetidas([minutos_desde(dia, b) for b in batidas])
     if repetidas:
         r.alertas.append("BATIDA_REPETIDA")
-    periodos = [] if (escala is None or feriado) else escala.periodos(dia)
+    periodos = [] if escala is None else escala.periodos(dia)
+    if feriado and periodos and escala.tipo == "CICLO_12X36":
+        r.feriado_compensado = True             # 12x36: o feriado já é compensado na escala (art. 59-A)
+    elif feriado:
+        periodos = []
     marcas, no_meio = sem_batidas_no_meio_da_noite(marcas, periodos, escala)
     if no_meio:
         r.alertas.append("BATIDA_NO_MEIO_DO_TURNO")

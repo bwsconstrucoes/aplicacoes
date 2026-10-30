@@ -410,6 +410,26 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 31/10/2026 (décima segunda) — O feriado na noite do vigia 12x36 não é dia inteiro de extra
+
+O dono, num vigia da obra AREITAIBA com 17:05 · 22:56 · 04:48 · 07:07 no dia 23/10: *"tá considerando como 14hrs
+extra (…) entendi o que é. É pq é feriado, mas tá errado. Ele trabalha em escala."* O feriado zerava o previsto do dia
+para QUALQUER escala, e as 14h02 da noite viravam extra de feriado.
+- **Agora, na 12x36**: o feriado que cai numa noite do ciclo é dia normal de escala — previsto o turno (12h), extra só
+  o que passou dele (2h02 nesse caso), e essa extra vai pelo percentual do dia comum, não o de feriado. Base: CLT art.
+  59-A, parágrafo único (na 12x36 os feriados "serão considerados compensados"). O espelho mostra "feriado: …
+  (compensado na 12x36)".
+- **Fica como era**: o feriado trabalhado na FOLGA do ciclo continua tudo extra (com o alerta de noite fora do ciclo,
+  para o DP decidir); e as escalas semanais seguem com o feriado sem horário previsto.
+- Acompanham a mesma regra: o calendário de horas extras e o fechamento, o relatório de extras (tipo do dia), o Quadro
+  (a noite não aparece como "não trabalha"), o painel de hoje (sem batida na noite do feriado = ausente, não
+  "feriado") e a classificação dos ajustes (o ajuste dessa noite não é "fora do previsto").
+- ⚠️ **A verificar com a contabilidade**: a convenção coletiva pode mandar pagar em dobro o feriado trabalhado na 12x36
+  (era o que a Súmula 444 do TST dizia antes da Reforma de 2017). Se for o caso, a regra volta a ser por convenção.
+- Teste: a noite do feriado na 12x36 (previsto 12h, extra 2h02, evento do dia comum); a folga do ciclo no feriado (tudo
+  extra); a escala semanal no feriado (sem previsto).
+**No ramo, esperando o "pode".** SEM MIGRAÇÃO.
+
 ## 31/10/2026 (décima primeira) — "Todas as obras": o acesso geral no aplicativo
 
 O dono: *"precisa deixar o meu acesso liberado como uma espécie de master, como faço?"* — até aqui, só obra por obra

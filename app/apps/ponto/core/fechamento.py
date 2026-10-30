@@ -164,7 +164,9 @@ def evento_da_hora_extra(d: dict, cfg: Optional[dict] = None, obra: Optional[str
                          uf: Optional[str] = None) -> str:
     """PURA. O evento do Fortes pelo percentual da regra (da obra, do estado ou o padrão — `hora_extra`)."""
     cfg = cfg or {"padrao": dict(hora_extra.PADRAO), "uf": {}, "obra": {}}
-    pct = hora_extra.percentual_do_dia(cfg, dt.date.fromisoformat(d["data"]), d.get("feriado"), obra, uf)
+    # o feriado compensado da 12x36 (art. 59-A) não paga o percentual de feriado: a extra é a do dia comum
+    feriado = None if d.get("feriado_compensado") else d.get("feriado")
+    pct = hora_extra.percentual_do_dia(cfg, dt.date.fromisoformat(d["data"]), feriado, obra, uf)
     return hora_extra.EVENTO_DO_PERCENTUAL[pct]
 
 
