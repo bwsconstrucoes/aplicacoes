@@ -352,7 +352,11 @@ def test_a_documentacao_fiscal_so_e_gravada_quando_muda():
     fonte = Path("app/apps/analisesps/sincronizacao.py").read_text(encoding="utf-8")
     trecho = fonte.split("def sincronizar_apoios")[1].split("\ndef ")[0]
     assert "sp_fiscal.doc_fiscal" in trecho and "IS DISTINCT FROM" in trecho
-    assert "contas_diarios.conta_pagamento" in trecho
+    # As contas da C. Diários moram numa função própria desde 30/10/2026 (o
+    # botão "Atualizar C. Diários" a usa sozinha); a regra é a mesma.
+    assert "_trazer_contas_diarios(avisos)" in trecho
+    contas = fonte.split("def _trazer_contas_diarios")[1].split("\ndef ")[0]
+    assert "contas_diarios.conta_pagamento" in contas and "IS DISTINCT FROM" in contas
 
 
 def test_a_automatica_nao_rele_as_planilhas_de_apoio_a_cada_5_minutos(monkeypatch):
@@ -932,3 +936,41 @@ def test_o_RECORD_ID_nao_entra_nas_categorias_do_rateio(monkeypatch):
         ("obra", "OBRA-1", "5001")])
     saida = sincronizacao.referencias_rateio()
     assert saida["categorias"] == [{"nome": "Material", "codigo": "10"}]
+
+
+def test_ATUALIZAR_SO_A_C_DIARIOS_le_so_ela(monkeypatch):
+    """30/10/2026: *"eu queria poder atualizar somente a C. Diários,
+    isoladamente"*. Lê a conta e o código do Omie das obras — e não toca no
+    Plano Financeiro, na documentação fiscal nem nas notas."""
+    from app.apps.analisesps import db, sincronizacao
+    lidas = []
+    abas = {"C. Diários": [["Código Primário", "Código Omie", "Conta de Pagamento"],
+                           ["OBRA-1", "111", "BRADESCO | 0007011-4 | X"]]}
+
+    def abrir(planilha_id, nome):
+        lidas.append(nome)
+        if nome not in abas:
+            raise RuntimeError(f"WorksheetNotFound: {nome}")
+        return AbaFalsa(abas[nome])
+    monkeypatch.setattr(sincronizacao, "_aba", abrir)
+    monkeypatch.setattr(sincronizacao, "com_retry", lambda f: f())
+    gravado = []
+
+    class ConexaoFalsa:
+        def __enter__(self):
+            return self
+        def __exit__(self, *a):
+            return False
+        def execute(self, sql, params=()):
+            gravado.append((sql, params))
+        def executemany(self, sql, linhas):
+            gravado.append((sql, list(linhas)))
+        def commit(self):
+            pass
+    monkeypatch.setattr(db, "conexao", lambda: ConexaoFalsa())
+    monkeypatch.setattr(sincronizacao, "ler_plano_financeiro",
+                        lambda: (_ for _ in ()).throw(AssertionError("leu o Plano Financeiro")))
+    r = sincronizacao.sincronizar_c_diarios()
+    assert set(lidas) == {"C. Diários"}, lidas
+    assert (r["contas"], r["obras"]) == (1, 1) and r["avisos"] == []
+    assert any(("OBRA-1", "7011-4") in p for _s, p in gravado if isinstance(p, list))

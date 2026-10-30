@@ -1465,6 +1465,24 @@ def substituir_comprovante(sp_id):
     return {"ok": True, "link": link}
 
 
+@bp.route("/api/c-diarios/atualizar", methods=["POST"])
+@exige_operador
+def atualizar_c_diarios():
+    """Relê SÓ a aba "C. Diários" (conta de pagamento e código do Omie de cada
+    obra), na hora — 30/10/2026. Ver `sincronizacao.sincronizar_c_diarios`."""
+    from . import sincronizacao
+    try:
+        r = sincronizacao.sincronizar_c_diarios()
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+        logger.exception("Análise de SPs: falhou atualizar a C. Diários")
+        return {"ok": False, "erro": f"Não foi possível ler a C. Diários: {e}"}, 500
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    logger.info("Análise de SPs: %s atualizou a C. Diários — %s conta(s), %s obra(s).",
+                quem or "?", r["contas"], r["obras"])
+    return {"ok": bool(r["contas"] or r["obras"]), **r,
+            "erro": "; ".join(r["avisos"]) if not (r["contas"] or r["obras"]) else ""}
+
+
 @bp.route("/api/encaminhar/previa", methods=["POST"])
 @exige_operador
 def encaminhar_previa():

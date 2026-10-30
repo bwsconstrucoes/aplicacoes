@@ -12244,6 +12244,19 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 245 — Atualizar só a C. Diários (30/10/2026)
+
+- *"Onde atualizo a C. Diários?"* e, em seguida, *"eu queria poder atualizar
+  somente a C. Diários, isoladamente"*. Antes, ela só era relida junto com as
+  planilhas de apoio (documentação fiscal, notas da Receita e do FSist, agenda,
+  Plano Financeiro) — demorado e pela fila de atualizações.
+- **Feito:** botão "Atualizar C. Diários" em Configurações › Banco e base e em
+  Folha › Arquivos gerados. Relê a aba na hora (sem fila): a conta de pagamento
+  de cada obra (`contas_diarios`) e o código do Omie (`referencias_rateio`,
+  obras). Diz quantas vieram, ou o motivo de não virem.
+- A C. Diários do FATURAMENTO (outra planilha, atributos de empresa/SCP da obra)
+  não entra — é do botão do faturamento.
+
 #### Leva 244 — Base mista do ponto: conferida, e o ajuste no Mobponto travado depois de 15/10 (29/10/2026)
 
 - **Levas 243 e 244 publicadas em 29/10/2026.** Suíte inteira: 9510 verdes e 1

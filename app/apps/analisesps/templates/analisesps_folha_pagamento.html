@@ -6,6 +6,7 @@
 {% include "analisesps_folha_abas.html" %}
 
 <h2>Arquivos gerados</h2>
+{% if pode_operar %}<p style="margin:-4px 0 12px">{% include "_atualizar_c_diarios.html" %}</p>{% endif %}
 
 {% if erro %}
   <div class="aviso erro"><b>Não foi possível carregar a tela.</b> {{ erro }}</div>

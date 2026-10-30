@@ -1,0 +1,30 @@
+{# ATUALIZAR SÓ A C. DIÁRIOS (30/10/2026). O dono: *"eu queria poder atualizar
+   somente a C. Diários, isoladamente"*. Relê a aba na hora (conta de pagamento e
+   código do Omie de cada obra) — sem esperar a atualização do dia. #}
+<button type="button" class="btn secundario" id="btn-c-diarios"
+        title="Relê agora a aba C. Diários da planilha: a conta de pagamento e o código do Omie de cada obra">
+  Atualizar C. Diários</button>
+<span class="cartao-dica" id="recado-c-diarios"></span>
+<script>
+(function () {
+  const botao = document.getElementById("btn-c-diarios");
+  const recado = document.getElementById("recado-c-diarios");
+  if (!botao) return;
+  botao.addEventListener("click", async () => {
+    botao.disabled = true;
+    recado.textContent = "Lendo a C. Diários…";
+    try {
+      const r = await fetch("{{ url_for('analisesps.atualizar_c_diarios') }}", {method: "POST"});
+      const d = await r.json();
+      recado.textContent = d.ok
+        ? "✔ C. Diários atualizada: " + d.contas + " conta(s) e " + d.obras + " obra(s) com código do Omie." +
+          ((d.avisos || []).length ? " Atenção: " + d.avisos.join("; ") : "")
+        : "Não atualizou: " + (d.erro || "erro desconhecido");
+    } catch (e) {
+      recado.textContent = "Não atualizou: " + e;
+    } finally {
+      botao.disabled = false;
+    }
+  });
+})();
+</script>

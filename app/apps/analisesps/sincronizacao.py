@@ -595,6 +595,48 @@ def drenar_fila(anotar=None) -> dict:
 # ---------------------------------------------------------------------------
 # Apoios
 # ---------------------------------------------------------------------------
+def _trazer_contas_diarios(avisos: list) -> int:
+    """A conta de pagamento de cada obra, da aba "C. Diários". Devolve quantas
+    vieram; o motivo de não vir vai em `avisos`. Nunca levanta."""
+    from .db import conexao
+    try:
+        valores = com_retry(_aba(PLANILHA_SPS, "C. Diários").get_all_values)
+        linhas, motivo = _contas_da_aba(valores)
+        if motivo:
+            avisos.append(motivo)
+        if linhas:
+            with conexao() as conn:
+                conn.executemany(
+                    "INSERT INTO analisesps.contas_diarios (codigo, conta_pagamento) "
+                    "VALUES (?, ?) ON CONFLICT (codigo) DO UPDATE SET "
+                    "conta_pagamento = EXCLUDED.conta_pagamento "
+                    " WHERE contas_diarios.conta_pagamento "
+                    "       IS DISTINCT FROM EXCLUDED.conta_pagamento", linhas)
+                conn.commit()
+            return len(linhas)
+        if not motivo:
+            avisos.append('a aba "C. Diários" não trouxe nenhuma conta.')
+    except Exception as e:  # noqa: BLE001 — apoio que falta não derruba a carga
+        logger.exception("Análise de SPs: falhou ler 'C. Diários'")
+        avisos.append(_explicar_aba(PLANILHA_SPS, "C. Diários", e))
+    return 0
+
+
+def sincronizar_c_diarios(anotar=None) -> dict:
+    """SÓ A ABA "C. DIÁRIOS" — a conta de pagamento e o código do Omie de cada
+    obra (30/10/2026). O dono: *"eu queria poder atualizar somente a C. Diários,
+    isoladamente"*. É o que as planilhas de apoio fazem com ela, sem a
+    documentação fiscal, as notas e o resto: duas leituras de uma aba curta,
+    feitas na hora. `{contas, obras, avisos}`."""
+    anotar = anotar or (lambda *a, **k: None)
+    avisos: list[str] = []
+    anotar("trazendo a C. Diários")
+    contas = _trazer_contas_diarios(avisos)
+    r = sincronizar_referencias_rateio(anotar, so_obras=True)
+    return {"contas": contas, "obras": r.get("obras", 0),
+            "avisos": avisos + list(r.get("avisos") or [])}
+
+
 def sincronizar_apoios(anotar=None) -> dict:
     """Traz as duas planilhas de apoio: contas por centro de custo e a
     documentação fiscal por SP.
@@ -622,26 +664,7 @@ def sincronizar_apoios(anotar=None) -> dict:
     avisos: list[str] = []
 
     anotar("trazendo as contas de pagamento")
-    try:
-        valores = com_retry(_aba(PLANILHA_SPS, "C. Diários").get_all_values)
-        linhas, motivo = _contas_da_aba(valores)
-        if motivo:
-            avisos.append(motivo)
-        if linhas:
-            with conexao() as conn:
-                conn.executemany(
-                    "INSERT INTO analisesps.contas_diarios (codigo, conta_pagamento) "
-                    "VALUES (?, ?) ON CONFLICT (codigo) DO UPDATE SET "
-                    "conta_pagamento = EXCLUDED.conta_pagamento "
-                    " WHERE contas_diarios.conta_pagamento "
-                    "       IS DISTINCT FROM EXCLUDED.conta_pagamento", linhas)
-                conn.commit()
-            contas = len(linhas)
-        elif not motivo:
-            avisos.append('a aba "C. Diários" não trouxe nenhuma conta.')
-    except Exception as e:  # noqa: BLE001 — apoio que falta não derruba a carga
-        logger.exception("Análise de SPs: falhou ler 'C. Diários'")
-        avisos.append(_explicar_aba(PLANILHA_SPS, "C. Diários", e))
+    contas = _trazer_contas_diarios(avisos)
 
     anotar("trazendo a documentação fiscal")
     try:
@@ -1308,7 +1331,7 @@ def _letra_da_coluna(numero: int) -> str:
     return letras
 
 
-def sincronizar_referencias_rateio(anotar=None) -> dict:
+def sincronizar_referencias_rateio(anotar=None, so_obras: bool = False) -> dict:
     """Traz as obras (aba 'C. Diários') e as categorias (aba 'Plano Financeiro').
 
     São as listas que a tela de Ratear oferece. Curtas e mudam pouco, mas
@@ -1372,12 +1395,13 @@ def sincronizar_referencias_rateio(anotar=None) -> dict:
     # o cabeçalho de verdade das duas abas. O primeiro de cada par é o que a
     # planilha realmente usa hoje; o segundo ficou por compatibilidade, que era
     # como o original fazia.
-    for tipo, aba_nome, aceitos_nome, aceitos_codigo in (
-            ("obra", "C. Diários",
+    abas = (("obra", "C. Diários",
              ["Código Primário", "Obra"], ["Código Omie", "Codigo Omie", "Código"]),
             ("categoria", "Plano Financeiro",
              ["Plano Financeiro", "Categoria"],
-             ["Código Omie", "Codigo Omie", "Código"])):
+             ["Código Omie", "Codigo Omie", "Código"]))
+    # `so_obras`: só a C. Diários (o botão "Atualizar C. Diários", 30/10/2026).
+    for tipo, aba_nome, aceitos_nome, aceitos_codigo in (abas[:1] if so_obras else abas):
         try:
             linhas, motivo = _ler(aba_nome, aceitos_nome, aceitos_codigo)
             if motivo:
@@ -1406,6 +1430,8 @@ def sincronizar_referencias_rateio(anotar=None) -> dict:
     # O RECORD ID DO PIPEFY de cada linha do Plano Financeiro (03/10/2026): é o
     # registro que vai no campo "Tipo de Despesa" da SP da folha. Guardado com
     # tipo próprio, sem migração; quem lê as categorias do rateio não o vê.
+    if so_obras:
+        return {"obras": obras, "categorias": categorias, "avisos": avisos}
     try:
         plano = ler_plano_financeiro()
         com_id = [(l["nome"], l["record_id"]) for l in plano if l["record_id"]]

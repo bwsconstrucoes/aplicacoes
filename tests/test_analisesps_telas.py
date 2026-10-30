@@ -8513,3 +8513,17 @@ def test_o_qr_mostra_a_CATEGORIA_e_a_DESCRICAO_da_SP(app, monkeypatch):
         "/analisesps/codigos?id=1").get_data(as_text=True)
     trecho = html[html.index('class="codigo-desc"'):]
     assert "Material de Construção" in trecho[:300] and "Cimento CP-II obra 12" in trecho[:300]
+
+
+def test_o_botao_ATUALIZAR_C_DIARIOS_rele_so_a_aba(app, monkeypatch):
+    """30/10/2026: atualizar só a C. Diários, isoladamente, na hora."""
+    from app.apps.analisesps import sincronizacao
+    monkeypatch.setattr(sincronizacao, "sincronizar_c_diarios",
+                        lambda anotar=None: {"contas": 12, "obras": 30, "avisos": []})
+    cliente = _como_mestre(app)
+    r = cliente.post("/analisesps/api/c-diarios/atualizar").get_json()
+    assert r["ok"] and (r["contas"], r["obras"]) == (12, 30)
+    monkeypatch.setattr(sincronizacao, "sincronizar_c_diarios", lambda anotar=None: {
+        "contas": 0, "obras": 0, "avisos": ['não achei a aba "C. Diários"']})
+    r = cliente.post("/analisesps/api/c-diarios/atualizar").get_json()
+    assert not r["ok"] and "C. Diários" in r["erro"]
