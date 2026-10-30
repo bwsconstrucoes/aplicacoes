@@ -427,7 +427,7 @@ essa dificuldade no recebimento da msg."*
 - Não verificado com dado de produção: quantas das queixas são deste caso e quantas são PIN esquecido de verdade. O DP
   passa a ver qual é: "não bate ponto/desligado" na mensagem da pessoa; PINs errados seguidos na janela.
 - Teste: PIN criado, pessoa marcada "não bate" → a mensagem com o motivo; PIN errado → a frase de sempre e o contador.
-**No ramo, esperando o "pode"** — SEM MIGRAÇÃO.
+**Publicado em 31/10/2026** (com o "pode" do dono — "publica agora", só com os testes das áreas mexidas; a suíte inteira rodou depois) — SEM MIGRAÇÃO.
 
 ## 31/10/2026 (quinta) — A pessoa de teste passa por cima do "não bate" da planilha
 
@@ -438,7 +438,7 @@ do ponto) vinha depois e vencia. Agora, para quem é **pessoa de teste**, o "nã
 (`cadastros._trechos_colaborador`). Só ela: os outros Pró-labore continuam fora. As horas dela continuam fora das
 contas de CTPS (relatórios e fechamento só contam CTPS). Teste no caso da planilha (Pró-labore marcado de teste entra;
 desmarcado, sai de novo).
-**No ramo, esperando o "pode"** — SEM MIGRAÇÃO.
+**Publicado em 31/10/2026** (com o "pode" do dono — "publica agora", só com os testes das áreas mexidas; a suíte inteira rodou depois) — SEM MIGRAÇÃO.
 
 ## 31/10/2026 (quarta) — A mensagem que o ponto não mandou aparece na tela Mensagens
 
@@ -459,7 +459,7 @@ tentativa."* O ponto segurava alguns envios ANTES de chamar o WhatsApp, e esses 
   ponto mostra em Configuração › Mensagens).
 - Na Mensageria, só a etiqueta e o filtro "Barrado na origem" (`mensageria/HISTORICO.md`, 31/10/2026).
 - Testes: CPF não achado, teto da hora (o 4º não sai) e sem celular no código de acesso; QR sem celular.
-**No ramo, esperando o "pode"** — SEM MIGRAÇÃO.
+**Publicado em 31/10/2026** (com o "pode" do dono — "publica agora", só com os testes das áreas mexidas; a suíte inteira rodou depois) — SEM MIGRAÇÃO.
 
 ## 31/10/2026 (terceira) — O intervalo pré-assinalado aparece no espelho, diferenciado
 
