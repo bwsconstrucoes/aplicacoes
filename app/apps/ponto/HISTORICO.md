@@ -426,7 +426,7 @@ de hora extra"*.
 - **Risco dito**: no começo de um ciclo novo, o voto passa a olhar o futuro — se a pessoa mudar de paridade nos primeiros
   dias, os dias de antes da mudança podem ser julgados pela paridade nova. É raro e aparece como alerta para o DP.
 - Teste: as noites 16, 18, 19, 21, 23 e 25 → ciclo nos ímpares; com 15 noites ímpares antes, o passado decide.
-**No ramo, esperando o "pode".** SEM MIGRAÇÃO.
+**Publicado em 31/10/2026** (com o "pode" do dono) — SEM MIGRAÇÃO.
 
 ## 31/10/2026 (décima oitava) — Trocar a escala na janela da pessoa não mudava o espelho
 
