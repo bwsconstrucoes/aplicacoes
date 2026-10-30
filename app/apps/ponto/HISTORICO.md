@@ -426,7 +426,7 @@ O dono: *"precisa deixar o meu acesso liberado como uma espécie de master, como
   "Todas as obras" = Sim, ele vê e pede por todo mundo.
 - Teste: o supervisor não libera; o DP libera → todas as obras ativas no alcance, pode pedir; liberar pessoas depois
   não apaga o "todas" e o "todas" não aparece como pessoa liberada; Não tira.
-**No ramo, esperando o "pode".** SEM MIGRAÇÃO.
+**Publicado em 31/10/2026** (com o "pode" do dono) — SEM MIGRAÇÃO.
 
 ## 31/10/2026 (décima) — "Quem ela alcança no app": a lista, no ERP e no aplicativo
 
