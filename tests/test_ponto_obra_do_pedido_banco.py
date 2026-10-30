@@ -21,9 +21,11 @@ def test_os_dois_avisos_da_obra():
     assert [x["codigo"] for x in a] == ["OBRA_ESTRANHA"] and "AP-01, AP-03" in a[0]["texto"]
     a = os_.avisos(obra="AP-01", obras_da_pessoa={"AP-01": 40}, ultima_da_obra=HOJE - dt.timedelta(days=20), hoje=HOJE)
     assert [x["codigo"] for x in a] == ["OBRA_PARADA"] and "há 20 dias" in a[0]["texto"]
-    assert os_.avisos(obra="AP-09", obras_da_pessoa={}, ultima_da_obra=None, hoje=HOJE)[0]["codigo"] == "OBRA_PARADA"
-    # quem não bateu nada no período (pessoa nova) não ganha o aviso de "não bate nesta obra"
-    assert os_.avisos(obra="AP-01", obras_da_pessoa={}, ultima_da_obra=HOJE, hoje=HOJE) == []
+    assert "OBRA_PARADA" in {x["codigo"] for x in os_.avisos(obra="AP-09", obras_da_pessoa={}, ultima_da_obra=None, hoje=HOJE)}
+    # quem não bateu nada no período também ganha o aviso (31/10/2026, o dono: "precisa alertar se for selecionada
+    # obra que a pessoa não tem batida") — antes, a pessoa sem batida nenhuma passava sem aviso
+    a = os_.avisos(obra="AP-01", obras_da_pessoa={}, ultima_da_obra=HOJE, hoje=HOJE)
+    assert [x["codigo"] for x in a] == ["OBRA_ESTRANHA"] and "nem em outra obra" in a[0]["texto"]
     assert os_.avisos(obra="AP-01", obras_da_pessoa={"AP-01": 3}, ultima_da_obra=HOJE - dt.timedelta(days=7),
                       hoje=HOJE) == []
 

@@ -1904,7 +1904,7 @@ function obrasParaCorrecao(dela) {
 // A OBRA ESCOLHIDA À MÃO (29/10/2026, o dono: "é muito fácil a pessoa selecionar errado"): ao escolher,
 // o sistema avisa se a pessoa não bate nessa obra, ou se ninguém bate nela há dias. É aviso, não
 // bloqueio — com aviso na tela, o primeiro toque em "Enviar" pede a confirmação da obra.
-function vigiarObra(idSelect, idAviso, idEnviar, alvo) {
+function vigiarObra(idSelect, idAviso, idEnviar, alvo, bilhete) {
   const sel = $(idSelect), caixa = $(idAviso), botao = $(idEnviar);
   const texto = botao.textContent;
   let avisos = [], confirmado = false;
@@ -1913,7 +1913,9 @@ function vigiarObra(idSelect, idAviso, idEnviar, alvo) {
     caixa.classList.add("oculto");
     if (!sel.value) return;
     try {
-      const url = `/ponto/app/api/obra-aviso?obra=${encodeURIComponent(sel.value)}` + (alvo ? `&pessoa=${alvo.id}` : "");
+      // `bilhete`: a pessoa identificada no ponto da obra (31/10/2026) — o aviso olha as batidas DELA
+      const url = `/ponto/app/api/obra-aviso?obra=${encodeURIComponent(sel.value)}` + (bilhete ? `&bilhete=${encodeURIComponent(bilhete)}`
+        : alvo ? `&pessoa=${alvo.id}` : "");
       avisos = (await chamar(alvo ? comLocal(url, await onde()) : url)).avisos || [];
     } catch (e) { avisos = []; }
     if (!avisos.length) return;
@@ -2855,7 +2857,7 @@ function abrirFormularioDoTablet(d, tipo) {
       if (sel && r.obras) {
         const atual = sel.value || (x.batidas[0] && x.batidas[0].obra) || $("t-obra").value || "";
         sel.innerHTML = r.obras.map(o => `<option value="${esc(o.codigo)}" ${o.codigo === atual ? "selected" : ""}>${esc(rotuloObra(o))}</option>`).join("");
-        if (!TB_OBRA_VIGIADA) TB_OBRA_VIGIADA = vigiarObra("tf-obra", "tf-obra-aviso", "tf-enviar", null);
+        if (!TB_OBRA_VIGIADA) TB_OBRA_VIGIADA = vigiarObra("tf-obra", "tf-obra-aviso", "tf-enviar", null, d.bilhete);
       }
       if (!ate) {
         if (r.competencia_fechada) { caixa.textContent = "Esse mês já foi fechado para a folha — fale com o DP."; return; }

@@ -148,11 +148,16 @@ def app_api_ranking():
 @auth.exige_colaborador_ou_aparelho
 def app_api_obra_aviso():
     """A obra escolhida à mão para o ajuste provavelmente está errada? (29/10/2026, obra_suspeita.py)
-    `pessoa`: o pedido por outra pessoa — com o mesmo alcance da consulta. Sem ela, quem está logado."""
+    `pessoa`: o pedido por outra pessoa — com o mesmo alcance da consulta. `bilhete`: a pessoa identificada no ponto
+    da obra (31/10/2026, o dono: "precisa alertar se for selecionada obra que a pessoa não tem batida"). Sem os dois,
+    quem está logado."""
     from .core import obra_suspeita
     with db.conexao() as conn:
         alvo_id = request.args.get("pessoa", type=int)
-        if alvo_id:
+        if request.args.get("bilhete"):
+            from .app_colaborador import _quem_no_aparelho
+            alvo_id = int(_quem_no_aparelho(conn, {"bilhete": request.args.get("bilhete")})[0]["id"])
+        elif alvo_id:
             ctx = _contexto(conn)
             _alvo(conn, ctx, alvo_id)
         else:

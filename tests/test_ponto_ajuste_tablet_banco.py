@@ -48,6 +48,10 @@ def test_ajuste_no_ponto_da_obra_abre_o_dia_e_pede_varios_horarios(app, mundo, b
     assert r.get_json()["competencia_fechada"] is False
     # todas as obras ativas, para escolher a obra da batida (31/10/2026: quem pede pela pessoa não está na obra dela)
     assert {"PG-A", "PG-B"} <= {o["codigo"] for o in r.get_json()["obras"]}
+    # e o aviso da obra escolhida olha as batidas da pessoa identificada (o bilhete), não as de quem está no aparelho
+    av = tab.get(f"/ponto/app/api/obra-aviso?obra=PG-B&bilhete={b}", headers=h)
+    assert av.status_code == 200, av.get_json()
+    assert "OBRA_ESTRANHA" in {a["codigo"] for a in av.get_json()["avisos"]}
     futuro = tab.post("/ponto/app/api/tablet/dia",
                       json={"bilhete": b, "data": (dt.date.today() + dt.timedelta(days=3)).isoformat()}, headers=h)
     assert futuro.status_code == 400

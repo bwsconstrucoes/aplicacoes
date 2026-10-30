@@ -38,6 +38,11 @@ def avisos(*, obra: str, obras_da_pessoa: dict[str, int], ultima_da_obra: Option
         saida.append({"codigo": "OBRA_ESTRANHA",
                       "texto": f"nos últimos {DIAS_DA_PESSOA} dias, as batidas foram em {', '.join(onde)} — "
                                f"nunca na {obra}"})
+    elif not obras_da_pessoa:
+        # 31/10/2026, o dono: "precisa alertar se for selecionada obra que a pessoa não tem batida" — também quando
+        # ela não tem batida em obra nenhuma (não há com o que comparar, e isso já é de conferir)
+        saida.append({"codigo": "OBRA_ESTRANHA",
+                      "texto": f"nos últimos {DIAS_DA_PESSOA} dias, a pessoa não bateu ponto na {obra} (nem em outra obra)"})
     if ultima_da_obra is None:
         saida.append({"codigo": "OBRA_PARADA", "texto": f"ninguém bateu ponto na obra {obra} até hoje"})
     elif (hoje - ultima_da_obra).days > DIAS_OBRA_PARADA:

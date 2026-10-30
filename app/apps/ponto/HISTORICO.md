@@ -419,7 +419,14 @@ do dia ou, sem elas, para a obra do aparelho.
 - **Agora** o ajuste no ponto da obra tem **"Obra da batida"**, com todas as obras ativas; começa na obra das batidas do
   dia (ou na do aparelho) e avisa, como no celular, quando a obra escolhida parece errada (ninguém bate nela há dias) —
   o primeiro toque em "Enviar" pede a confirmação. O servidor já aceitava qualquer obra cadastrada.
-- Teste: o dia do ponto da obra traz as obras; o ajuste com outra obra fica nela, não na do aparelho.
+- **Os dois avisos**, a pedido do dono (*"precisa alertar se for selecionada obra que a pessoa não tem batida ou se for
+  obra que não tem batidas"*): no ponto da obra o aviso passou a olhar as batidas da PESSOA identificada (o bilhete), não
+  as de quem está no aparelho — "nos últimos 30 dias, as batidas foram em … — nunca na X" — e o da obra parada ("ninguém
+  bate ponto na obra X há N dias"). E, em todo lugar (celular, ponto da obra, a classificação das Validações), a pessoa
+  sem batida NENHUMA nos 30 dias também ganha o aviso ("não bateu ponto na X, nem em outra obra"); antes ela passava sem
+  aviso (a escolha era não incomodar a pessoa nova). Consequência: o ajuste dela aparece como "atenção" nas Validações.
+- Teste: o dia do ponto da obra traz as obras; o ajuste com outra obra fica nela, não na do aparelho; o aviso pelo bilhete
+  acusa a obra em que a pessoa não bate; a pessoa sem batida nenhuma ganha o aviso.
 **No ramo, esperando o "pode".** SEM MIGRAÇÃO.
 
 ## 31/10/2026 (vigésima) — O vigia que muda de paridade, e a saída esticada até o meio-dia (migração 026)
