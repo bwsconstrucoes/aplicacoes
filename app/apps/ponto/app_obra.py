@@ -254,6 +254,48 @@ def app_api_equipe():
     return _ok(alcance=_alcance_json(ctx.alcance), competencia=competencia[:7], pessoas=pessoas)
 
 
+@bp.route("/app/api/equipe/resumo")
+@auth.exige_colaborador_ou_aparelho
+def app_api_equipe_resumo():
+    """O RESUMO GERENCIAL do ponto das obras de quem pede (31/10/2026, core/resumo_equipe.py): por obra, quem está em
+    dia e quem tem problema — faltas, batida faltando, o que está provavelmente errado, atrasos —, com os atestados e
+    os pedidos esperando. Quem aparece: o alcance da consulta (fora do ponto da obra) e quem bateu no aparelho de que
+    a pessoa é responsável. `periodo`: mes (padrão) | 7dias | anterior; `obra`: só uma."""
+    from .core import qualidade, resumo_equipe
+    with db.conexao() as conn:
+        ctx = _contexto(conn)
+        eu = int(ctx.pessoa["id"]) if ctx.pessoa else None
+        if not eu:
+            raise NaoAutenticado("entre com o seu CPF e PIN")
+        inicio, fim, rotulo = resumo_equipe.periodo(request.args.get("periodo"), horario.hoje())
+        obra_aqui, abre = {}, set()
+        if not ctx.pelo_aparelho and not ctx.alcance.vazio:
+            for p in papeis.pessoas_do_alcance(conn, ctx.alcance, f"{fim:%Y-%m}", exceto=eu):
+                obra_aqui[int(p["id"])] = p.get("obra_aqui")
+                abre.add(int(p["id"]))
+        if qualidade.e_responsavel(conn, eu):
+            for i in qualidade.equipe_do_responsavel(conn, eu, inicio, fim):
+                if i != eu:
+                    obra_aqui.setdefault(int(i), None)
+        if not obra_aqui:
+            raise Recusada(ctx.alcance.sem_alcance or "o resumo é de quem responde pelo ponto de uma obra ou consulta o "
+                                                    "ponto das pessoas")
+        obra = (request.args.get("obra") or "").strip().upper()
+        if obra:
+            obra_aqui = {i: o for i, o in obra_aqui.items() if (o or "").upper() == obra or o is None}
+        elif len(obra_aqui) > resumo_equipe.MAX_PESSOAS:
+            contagem: dict = {}
+            for o in obra_aqui.values():
+                contagem[o or ""] = contagem.get(o or "", 0) + 1
+            return _ok(escolher_obra=[{"obra": o, "pessoas": n} for o, n in sorted(contagem.items()) if o],
+                       periodo=rotulo, de=inicio.isoformat(), ate=fim.isoformat())
+        grupos = resumo_equipe.montar(conn, list(obra_aqui), inicio, fim,
+                                      obra_aqui={i: o for i, o in obra_aqui.items() if o}, abre=abre)
+        if obra:
+            grupos = [g for g in grupos if g["obra"].upper() == obra]
+    return _ok(grupos=grupos, periodo=rotulo, de=inicio.isoformat(), ate=fim.isoformat())
+
+
 @bp.route("/app/api/equipe/cpf", methods=["POST"])
 @auth.exige_colaborador_ou_aparelho
 def app_api_equipe_cpf():

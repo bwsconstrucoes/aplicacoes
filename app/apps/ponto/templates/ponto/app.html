@@ -1716,6 +1716,95 @@ async function abrirQualidadeEquipe(mes) {
     abrirQualidadeEquipe(`${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, "0")}`); };
 }
 
+// --- O RESUMO GERENCIAL DO PONTO (31/10/2026, core/resumo_equipe.py) ------
+// O dono: "se eu estou batendo os pontos da obra X, eu gero o resumo da minha obra (…) um que está perfeito e um que
+// não está (…) as faltas, os atestados (…) o que está em erro (…) para orientar as pessoas a corrigir os pontos."
+const RESUMO = {periodo: "mes", obra: "", dados: null};
+const ddmmR = iso => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+function linhasDoResumo(p) {
+  const l = [];
+  p.faltas.forEach(x => l.push([x.data, "❌", "falta (dia inteiro, sem batida)"]));
+  p.batida.forEach(x => l.push([x.data, "⏱️", `falta${x.faltam > 1 ? "m" : ""} ${x.faltam} batida${x.faltam > 1 ? "s" : ""}`
+    + (x.batidas.length ? ` — bateu só ${x.batidas.join(", ")}` : "") + (x.sugestao.length ? ` (a escala esperava ${x.sugestao.join(", ")})` : "")]));
+  p.suspeitas.forEach(x => l.push([x.data, "⚠️", `provavelmente errado: ${x.motivos.join("; ")}${x.batidas.length ? ` — batidas ${x.batidas.join(", ")}` : ""}`]));
+  p.atrasos.forEach(x => l.push([x.data, "🐢", `atraso ou saída antes da hora: ${x.minutos} min`]));
+  p.justificados.forEach(x => l.push([x.data, "🩺", x.rotulo]));
+  p.pendentes.forEach(x => l.push([x.data, "⏳", `${x.rotulo} esperando validação${x.hora ? ` (${x.hora})` : ""}`]));
+  p.negados.forEach(x => l.push([x.data, "🚫", `${x.rotulo} negado${x.motivo ? `: ${x.motivo}` : ""}`]));
+  return l.sort((a, b) => a[0].localeCompare(b[0]));
+}
+function contagemDoResumo(p) {
+  return [p.faltas.length ? `❌ ${p.faltas.length} falta${p.faltas.length > 1 ? "s" : ""}` : "",
+    p.batida.length ? `⏱️ ${p.batida.length} dia${p.batida.length > 1 ? "s" : ""} com batida faltando` : "",
+    p.suspeitas.length ? `⚠️ ${p.suspeitas.length} provável erro` : "",
+    p.atrasos.length ? `🐢 ${p.atrasos.length} atraso${p.atrasos.length > 1 ? "s" : ""}` : "",
+    p.justificados.length ? `🩺 ${p.justificados.length} dia${p.justificados.length > 1 ? "s" : ""} justificado${p.justificados.length > 1 ? "s" : ""}` : "",
+    p.pendentes.length ? `⏳ ${p.pendentes.length} pedido${p.pendentes.length > 1 ? "s" : ""} esperando` : ""].filter(Boolean).join(" · ");
+}
+function textoDoResumo(d) {
+  const t = [`*Resumo do ponto — ${d.periodo}* (${ddmmR(d.de)} a ${ddmmR(d.ate)})`];
+  d.grupos.forEach(g => {
+    t.push("", `🏗️ *Obra ${g.obra || "sem obra"}* — ${g.pessoas.length} pessoa(s), ${g.em_dia} em dia`);
+    g.pessoas.filter(p => !p.em_dia).forEach(p => {
+      t.push(`*${p.nome}*`);
+      linhasDoResumo(p).filter(([, i]) => i !== "⏳").forEach(([dia, i, txt]) => t.push(`${i} ${ddmmR(dia)} ${txt}`));
+    });
+    const ok = g.pessoas.filter(p => p.em_dia);
+    if (ok.length) t.push(`✅ Em dia: ${ok.map(p => p.nome).join(", ")}`);
+  });
+  return t.join("\n");
+}
+async function abrirResumoEquipe(periodo, obra) {
+  if (periodo !== undefined) RESUMO.periodo = periodo;
+  if (obra !== undefined) RESUMO.obra = obra;
+  $("dlg-corpo").innerHTML = `<h2 style="margin:0 0 6px">Resumo do ponto</h2><p class="pequeno">Montando o resumo…</p>`;
+  if (!$("dlg").open) $("dlg").showModal();
+  let d;
+  try {
+    const url = `/ponto/app/api/equipe/resumo?periodo=${RESUMO.periodo}${RESUMO.obra ? `&obra=${encodeURIComponent(RESUMO.obra)}` : ""}`;
+    d = await chamar(comLocal(url, await onde()));
+  } catch (e) { $("dlg-corpo").innerHTML = `<h2 style="margin:0 0 6px">Resumo do ponto</h2><div class="aviso erro">${esc(e.message)}</div>`; return; }
+  RESUMO.dados = d;
+  const periodos = [["mes", "Este mês"], ["7dias", "Últimos 7 dias"], ["anterior", "Mês anterior"]];
+  const cab = `<h2 style="margin:0 0 6px">Resumo do ponto — ${esc(d.periodo)}</h2>
+    <div class="chips" style="margin:0 0 8px">${periodos.map(([v, r]) => `<button type="button" class="chip${v === RESUMO.periodo ? " escolhida" : ""}" data-rs-periodo="${v}">${r}</button>`).join("")}</div>`;
+  if (d.escolher_obra) {
+    $("dlg-corpo").innerHTML = cab + `<p>São muitas pessoas. Escolha a obra:</p><div class="chips">${d.escolher_obra.map(o =>
+      `<button type="button" class="chip" data-rs-obra="${esc(o.obra)}">${esc(o.obra)} · ${o.pessoas}</button>`).join("")}</div>`;
+  } else {
+    const obras = d.grupos.map(g => g.obra).filter(Boolean);
+    const filtroObra = RESUMO.obra || obras.length > 1 ? `<div class="chips" style="margin:0 0 8px">${["", ...(RESUMO.obra && !obras.includes(RESUMO.obra) ? [RESUMO.obra] : obras)].map(o =>
+      `<button type="button" class="chip${o === RESUMO.obra ? " escolhida" : ""}" data-rs-obra="${esc(o)}">${o ? esc(o) : "Todas"}</button>`).join("")}</div>` : "";
+    const corpo = d.grupos.map(g => {
+      const comProblema = g.pessoas.filter(p => !p.em_dia), ok = g.pessoas.filter(p => p.em_dia);
+      return `<h3 style="margin:14px 0 4px">🏗️ Obra ${esc(g.obra || "sem obra")}</h3>
+        <p class="pequeno" style="margin:0 0 6px">${g.pessoas.length} pessoa(s) · <b>${g.em_dia} em dia</b> · ${comProblema.length} com problema</p>
+        ${comProblema.map(p => `<details style="border-top:1px solid #DDE3EA; padding:8px 0">
+          <summary style="cursor:pointer"><b>${esc(p.nome)}</b>${p.funcao ? ` <small class="pequeno">(${esc(p.funcao.toLowerCase())})</small>` : ""}
+            <small class="pequeno" style="display:block">${esc(contagemDoResumo(p))}</small></summary>
+          <ul class="pequeno" style="margin:4px 0 6px 18px; padding:0">${linhasDoResumo(p).map(([dia, i, txt]) =>
+            `<li>${i} <b>${esc(ddmmR(dia))}</b> — ${esc(txt)}</li>`).join("")}</ul>
+          ${p.pode_abrir ? `<button type="button" class="btn sec" data-rs-abrir="${p.id}">Abrir o ponto e corrigir</button>`
+            : `<p class="pequeno">Para corrigir: no ponto da obra, "Atestados e ajustes", com o CPF da pessoa.</p>`}
+        </details>`).join("")}
+        ${ok.length ? `<details style="border-top:1px solid #DDE3EA; padding:8px 0"><summary style="cursor:pointer">✅ <b>Em dia (${ok.length})</b></summary>
+          <ul class="pequeno" style="margin:4px 0 0 18px; padding:0">${ok.map(p => `<li>${esc(p.nome)}${contagemDoResumo(p) ? ` <small>— ${esc(contagemDoResumo(p))}</small>` : ""}</li>`).join("")}</ul></details>` : ""}`;
+    }).join("") || `<p>Ninguém no período.</p>`;
+    $("dlg-corpo").innerHTML = cab + filtroObra + `<div class="linha" style="margin:4px 0 8px">
+        <button type="button" class="btn" id="rs-compartilhar">Compartilhar (WhatsApp)</button></div>` + corpo
+      + `<p class="pequeno" style="margin-top:12px">Os dias até ontem. "Provavelmente errado" é o que o sistema estranhou — confira antes de corrigir.</p>`;
+    $("rs-compartilhar").onclick = async () => {
+      const texto = textoDoResumo(d);
+      try { if (navigator.share) { await navigator.share({text: texto}); return; } } catch (e) { if (e && e.name === "AbortError") return; }
+      window.open(`https://wa.me/?text=${encodeURIComponent(texto)}`, "_blank");
+    };
+  }
+  $("dlg-corpo").querySelectorAll("[data-rs-periodo]").forEach(b => b.onclick = () => abrirResumoEquipe(b.dataset.rsPeriodo));
+  $("dlg-corpo").querySelectorAll("[data-rs-obra]").forEach(b => b.onclick = () => abrirResumoEquipe(undefined, b.dataset.rsObra));
+  $("dlg-corpo").querySelectorAll("[data-rs-abrir]").forEach(b => b.onclick = () => {
+    $("dlg").close(); EQ.modo = "pedido"; EQ.mes = (RESUMO.dados.ate || hojeISO()).slice(0, 7); abrirPessoaDaObra(+b.dataset.rsAbrir); });
+}
+
 // --- corrigir um dia --------------------------------------------------------
 // Pedido do dono, 04/10/2026: no Pipefy "o pessoal errava muito" — pedia dia que
 // já tinha ponto, período com batida no meio, dia já justificado. Aqui não há
@@ -3068,6 +3157,9 @@ async function abrirMenu() {
 
   mostrarAvisosDoPonto(p, pode);
   // Quem responde por um ponto da obra (ou de equipe) vê o ponto em dia da equipe (17/10/2026).
+  // o resumo gerencial das obras (31/10/2026): quem consulta o ponto das pessoas, ou responde por um ponto da obra
+  if (p && ((pode.consultar && !INICIO.da_obra) || pode.qualidade_equipe)) ops.push({icone: "📋", titulo: "Resumo do ponto — minhas obras",
+    sub: "quem está em dia e quem tem falta, batida faltando ou erro — para corrigir", acao: () => abrirResumoEquipe()});
   if (pode.qualidade_equipe) ops.push({icone: "🏆", titulo: "Ponto da minha equipe",
     sub: "quem está batendo completo — e quem precisa de ajuda", acao: () => abrirQualidadeEquipe()});
   $("m-opcoes").innerHTML = ops.map((o, i) => `<button type="button" class="opcao ${o.principal ? "principal" : ""} ${o.desligada ? "desligada" : ""}" data-op="${i}">
