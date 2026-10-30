@@ -422,9 +422,6 @@ próprio ponto qual a obra dessa pessoa. Na falta do ponto que usamos o cadastro
 - **Não mudou**: os filtros "Obras do cadastro" (continuam do cadastro — "Bateu nas obras" já filtra pelo ponto), a obra
   padrão do pedido de ajuste e o escopo de quem vê quem (o alcance do supervisor continua pelo cadastro e pelas batidas,
   como era).
-- No mesmo caso, o "saída antecipada" de todo dia: não é defeito — a escala dele termina por volta das 17h30 (sexta,
-  16h30) e ele sai às 17h, entrando às 6h; a hora extra do dia é o saldo (entrou 1h30 antes, saiu 30 min antes). Dito ao
-  dono: se o horário real dele é das 6h às 17h, é dar a ele a escala certa — senão a entrada cedo vira hora extra todo dia.
 
 ## 30/10/2026 (madrugada de 31, terceira) — O ✓ do dia trabalhado no calendário de horas extras
 
@@ -471,7 +468,7 @@ Na mesma rodada, dois casos do mesmo vigia:
 - **21/10, entrou 16:45 e saiu 07:01 numa escala até 05:00** — a conta já dava 14h16 e 2h16 de extra, mas o espelho
   oferecia "Saída 05:00" para incluir, porque a saída estava a mais de 2 h da escala. Agora o dia completo (batidas em
   número par, ao menos as previstas) não pede batida nenhuma (`ajustes.faltantes`).
-**No ramo, esperando o "pode"** — SEM MIGRAÇÃO (vai junto com a mensagem da qualidade).
+**Publicado em 31/10/2026** (com o "pode" do dono, junto com a mensagem da qualidade, o ✓ e a obra pelo ponto) — SEM MIGRAÇÃO.
 
 ## 30/10/2026 (noite, terceira) — O ciclo 12x36 automático, e a noite fora do ciclo para o DP decidir
 
