@@ -234,7 +234,7 @@ def _so_digitos(cpf) -> str:
 
 
 def montar(conn: Connection, quem: Quem, competencia, filtros: Optional[dict] = None, *, por_dia: bool = False,
-           minima: Optional[int] = None, abate: Optional[bool] = None) -> dict:
+           minima: Optional[int] = None, abate: Optional[bool] = None, calendario_todos: bool = False) -> dict:
     corte = dia_de_corte(conn)
     minima = he_minima(conn) if minima is None else int(minima)
     abate = abater_negativas(conn) if abate is None else bool(abate)
@@ -402,8 +402,11 @@ def montar(conn: Connection, quem: Quem, competencia, filtros: Optional[dict] = 
         r[chave] = [x for x in r[chave] if x["minutos"] > 0]
     # o ✓ do dia trabalhado: só de quem já está no calendário (tem hora a mais ou a menos no período) — o calendário
     # é das horas extras; sem isto, entraria todo mundo que trabalhou
+    # O CALENDÁRIO GERAL (31/10/2026, o dono: "só aparece o que tem hora extra. E se quisermos ver o calendário
+    # geral, com ou sem hora, não tem como"): com `calendario_todos`, entra também quem só trabalhou no horário.
     no_calendario = {x["colaborador_id"] for x in r["he_dias"] + r["neg_dias"]}
-    r["trab_dias"] = [x for x in trab_dias if x["colaborador_id"] in no_calendario]
+    r["trab_dias"] = trab_dias if calendario_todos else [x for x in trab_dias if x["colaborador_id"] in no_calendario]
+    r["calendario_todos"] = bool(calendario_todos)
     linhas_faltas = [linha_ps(i, e, d, q) for (i, e, d), q in sorted(ps_faltas.items(), key=lambda x: (x[0][0], x[0][2]))]
     linhas_extras = [linha_ps(i, e, d, min(q, 9999)) for (i, e, d), q in
                      sorted(ps_extras.items(), key=lambda x: (x[0][0], x[0][2], x[0][1]))]
@@ -607,7 +610,7 @@ def supervisao(f: dict) -> dict:
     # o dia trabalhado sem hora a mais nem a menos (30/10/2026): ✓, só de quem já está no calendário
     no_calendario = {x["colaborador_id"] for x in (f.get("he_dias") or []) + (f.get("neg_dias") or [])}
     for x in f.get("trab_dias") or []:
-        if x["colaborador_id"] in no_calendario:
+        if f.get("calendario_todos") or x["colaborador_id"] in no_calendario:
             pessoa_do_grupo(x)[1]["trabalhou"][x["data"]] = x["minutos"]
     obras = []
     for g in sorted(grupos.values(), key=lambda g: (not g["obra"], g["obra"])):

@@ -1559,13 +1559,14 @@ def _fechamento(conn, quem, d: dict) -> dict:
     from .core import fechamento
     minima = fechamento.he_minima(conn, d.get("he_minima"), quem.nome)       # a escolha da tela fica guardada
     abate = fechamento.abater_negativas(conn, d.get("abater"), quem.nome)
-    chave = (str(d.get("competencia") or ""), bool(d.get("por_dia")), quem.nome, minima, abate,
+    todos = str(d.get("calendario_todos") or "") in ("1", "true", "True")    # o calendário geral (31/10/2026)
+    chave = (str(d.get("competencia") or ""), bool(d.get("por_dia")), quem.nome, minima, abate, todos,
              json.dumps(d.get("filtros") or {}, sort_keys=True, default=str))
     guardado = _FECHAMENTO_GUARDADO.get(chave)
     if guardado and time.time() - guardado[0] < 120 and not d.get("refazer"):
         return guardado[1]
     f = fechamento.montar(conn, quem, d.get("competencia"), d.get("filtros") or {}, por_dia=bool(d.get("por_dia")),
-                          minima=minima, abate=abate)
+                          minima=minima, abate=abate, calendario_todos=todos)
     _FECHAMENTO_GUARDADO.clear()
     _FECHAMENTO_GUARDADO[chave] = (time.time(), f)
     return f

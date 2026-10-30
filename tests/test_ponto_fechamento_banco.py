@@ -95,6 +95,9 @@ def test_os_atrasos_abatidos_das_horas_extras():
     s = fe.supervisao({**f, "trab_dias": trab})
     assert [p["nome"] for p in s["obras"][0]["pessoas"]] == ["ANA"]
     assert s["obras"][0]["pessoas"][0]["trabalhou"] == {"2026-10-30": 540}
+    # 31/10/2026, o calendário geral: ligado, entra também quem só trabalhou no horário (o BETO)
+    s = fe.supervisao({**f, "trab_dias": trab, "calendario_todos": True})
+    assert [p["nome"] for p in s["obras"][0]["pessoas"]] == ["ANA", "BETO"]
     import io
     from openpyxl import load_workbook
     planilha = load_workbook(io.BytesIO(fe.excel_supervisao({**f, "trab_dias": trab, "competencia": "2026-11",

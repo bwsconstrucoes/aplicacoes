@@ -410,6 +410,18 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 31/10/2026 (décima quarta) — O calendário geral no fechamento
+
+O dono: *"na tela de relatório que temos o calendário só aparece o que tem hora extra. E se quisermos ver o calendário
+geral, com ou sem hora, não tem como."*
+- Relatórios › Fechamento da folha › barra: **"Calendário geral: mostrar todo mundo que trabalhou, com ou sem hora
+  extra"**. Ligada, entra no calendário também quem só trabalhou no horário (o ✓ em cada dia trabalhado). Desligada (o
+  padrão), fica como era: só quem teve hora a mais ou a menos. Ligar ou desligar remonta o fechamento; vale também na
+  impressão e no Excel da supervisão. A escolha não fica guardada (volta desligada).
+- Fica de fora, mesmo ligada: quem não trabalhou dia nenhum no período e não tem falta (o afastado o mês todo, as férias).
+- Teste: o calendário da supervisão com a opção (o BETO, que só trabalhou no horário, entra).
+**No ramo, esperando o "pode".** SEM MIGRAÇÃO.
+
 ## 31/10/2026 (décima terceira) — A permuta de plantão como pedido, a sugestão nas Validações (migração 024), e quem não bate ponto
 
 O dono: *"preciso resolver a questão das permutas dos vigias. O ponto continua algumas vezes sem compreender. Então
