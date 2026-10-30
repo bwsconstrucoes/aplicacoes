@@ -334,12 +334,18 @@ def pessoas_do_alcance(conn: Connection, a: Alcance, competencia=None, *, exceto
     fim = competencias.ultimo_dia(inicio)
     obras = sorted(a.obras)
     batidas: dict[int, int] = {}
+    # a obra de cada um, entre as do alcance: a em que mais bateu no mês (31/10/2026: com várias obras liberadas,
+    # a lista misturava todo mundo — agora cada um diz a obra, e a tela filtra por ela)
+    obra_aqui: dict[int, tuple[int, int]] = {}
     if obras:
         for l in db.todos(conn, """
-            SELECT colaborador_id, count(*) AS n FROM ponto.marcacoes
+            SELECT colaborador_id, obra_id, count(*) AS n FROM ponto.marcacoes
              WHERE obra_id = ANY(:o) AND data_referencia BETWEEN :i AND :f AND status <> 'REJEITADA'
-             GROUP BY colaborador_id""", o=obras, i=inicio, f=fim):
-            batidas[int(l["colaborador_id"])] = int(l["n"])
+             GROUP BY colaborador_id, obra_id""", o=obras, i=inicio, f=fim):
+            cid, n = int(l["colaborador_id"]), int(l["n"])
+            batidas[cid] = batidas.get(cid, 0) + n
+            if n > obra_aqui.get(cid, (0, 0))[1]:
+                obra_aqui[cid] = (int(l["obra_id"]), n)
     todas = cadastros.listar_colaboradores(conn, so_ativos=False)
     saida = []
     for p in todas:
@@ -349,8 +355,14 @@ def pessoas_do_alcance(conn: Connection, a: Alcance, competencia=None, *, exceto
         if pid == exceto:
             continue
         if pid in batidas or cadastrado or pid in a.equipe:
+            if pid in obra_aqui:
+                aqui = (a.obras.get(obra_aqui[pid][0]) or {}).get("codigo")
+            elif p.get("obra_id") in a.obras:
+                aqui = a.obras[p["obra_id"]]["codigo"]
+            else:
+                aqui = next((o["codigo"] for o in p.get("obras_adicionais", []) if o["id"] in a.obras), None)
             saida.append({"id": pid, "nome": p["nome"], "funcao": p.get("funcao"),
-                          "obra": p.get("obra_codigo"), "cpf_final": (p.get("cpf") or "")[-3:],
+                          "obra": p.get("obra_codigo"), "obra_aqui": aqui, "cpf_final": (p.get("cpf") or "")[-3:],
                           "batidas_na_obra": batidas.get(pid, 0),
                           "situacao": p["situacao"]})
     saida.sort(key=lambda x: x["nome"])

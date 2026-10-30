@@ -1173,6 +1173,24 @@ def ponto_api_excecoes():
     return _ok(**r)
 
 
+@bp.route("/erp/api/ponto/pessoas/<int:colaborador_id>/alcance-no-app")
+@login_obrigatorio
+@permissao("ver_ponto")
+@_api
+def ponto_api_pessoa_alcance_no_app(colaborador_id: int):
+    """Quem esta pessoa consulta e por quem pede no aplicativo, no mês (31/10/2026, o dono: "uma tela que liste as
+    pessoas sobre as quais aquela pessoa tem gestão de ajuste no app"). Fora do aparelho e sem localização: o que vale
+    no celular dela de qualquer lugar (papel + liberado pelo DP + obras em que bateu na semana, se administrativo)."""
+    from .core import papeis
+    quem = _quem()
+    with db.conexao() as conn:
+        p = _exigir_pessoa(conn, quem, colaborador_id)
+        a = papeis.alcance(conn, cadastros.colaborador_por_id(conn, colaborador_id), None, None)
+        pessoas = papeis.pessoas_do_alcance(conn, a, request.args.get("competencia"), exceto=colaborador_id)
+    return _ok(nome=p["nome"], obras=list(a.obras.values()), de_onde=a.de_onde, pode_pedir=a.pode_pedir,
+               sem_alcance=a.sem_alcance, pessoas=pessoas)
+
+
 @bp.route("/erp/api/ponto/pessoas/<int:colaborador_id>/forma-de-bater", methods=["POST"])
 @login_obrigatorio
 @permissao("tratar_ponto")

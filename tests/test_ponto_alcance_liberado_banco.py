@@ -30,6 +30,10 @@ def test_liberar_obras_e_pessoas_para_alguem(app, mundo):
     assert any("liberada pelo DP" in x for x in a.de_onde)
     with db.conexao() as conn:
         assert papeis.no_alcance(conn, a, mundo["maria"])
+    # a lista de quem ela alcança, no ERP; e a obra de cada um
+    d = dp.get(f"/erp/api/ponto/pessoas/{mundo['joao']}/alcance-no-app").get_json()
+    assert d["pode_pedir"] is True and mundo["maria"] in {x["id"] for x in d["pessoas"]}
+    assert all("obra_aqui" in x for x in d["pessoas"])
     # aparece na ficha
     ficha = dp.get(f"/erp/api/ponto/pessoas/{mundo['joao']}").get_json()["pessoa"]
     assert ficha["liberado"]["obras"][0]["codigo"] == "PG-B"

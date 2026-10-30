@@ -1523,7 +1523,7 @@ function desenharPainel() {
   els("dp-corpo").querySelectorAll("[data-dp-aparelho]").forEach(b => b.addEventListener("click", () =>
     aprovarAparelho((p.aparelhos || []).find(a => String(a.id) === b.dataset.dpAparelho), recarregarPainel)));
   els("dp-corpo").querySelectorAll("[data-dp-cad]").forEach(b => b.addEventListener("click", () =>
-    ({escala: trocarEscala, jornada: jornadaEObras, forma: formaDeBater, codigo: primeiroAcesso,
+    ({escala: trocarEscala, jornada: jornadaEObras, forma: formaDeBater, codigo: primeiroAcesso, alcance: alcanceNoApp,
       banco: regimeDoBanco, naoBate: q => marcarBatePonto([q.id], !q.ativo_no_ponto, q.nome)})[b.dataset.dpCad](p)));
   els("dp-corpo").querySelectorAll("[data-foto]").forEach(b => b.addEventListener("click", () =>
     verFoto(b.dataset.foto, b.dataset.legenda)));
@@ -1862,6 +1862,7 @@ function painelCadastro() {
       ? `<button class="btn secundario" type="button" data-dp-cad="naoBate">🚫 Não bate ponto…</button>`
       : `<button class="btn secundario" type="button" data-dp-cad="naoBate">✅ Voltar a bater ponto…</button>`}
     <button class="btn secundario" type="button" data-dp-cad="forma">Acesso no aplicativo</button>
+    <button class="btn secundario" type="button" data-dp-cad="alcance">👥 Quem ela alcança no app</button>
     <button class="btn secundario" type="button" data-dp-cad="codigo">🔑 Código de acesso do aplicativo (PIN)…</button>
     ${PODE_DP ? `<button class="btn secundario" type="button" data-dp-cad="banco">Banco de horas</button>` : ""}</div>` : ""}
   <h4 style="margin:16px 0 6px">QR Code</h4><div id="pe-qr"></div>
@@ -2480,6 +2481,27 @@ async function primeiroAcesso(p) {
         “Primeiro acesso ou esqueci o PIN”, digita o CPF, toca em <b>“Já tenho um código (entregue pelo DP)”</b>, digita este
         código e cria o PIN.</p>`});
   } catch (e) { falhou(e, "dp-msg"); }
+}
+
+// QUEM ELA ALCANÇA NO APLICATIVO (31/10/2026, o dono: "uma tela que liste as pessoas sobre as quais aquela pessoa
+// tem gestão de ajuste no app. Facilita a localização das pessoas."): o que vale no celular dela, de qualquer lugar.
+async function alcanceNoApp(p) {
+  let d;
+  try { d = await api(`/erp/api/ponto/pessoas/${p.id}/alcance-no-app`); }
+  catch (e) { falhou(e, "dp-msg"); return; }
+  const porObra = {};
+  d.pessoas.forEach(x => { (porObra[x.obra_aqui || "—"] ||= []).push(x); });
+  const corpo = d.pessoas.length ? Object.keys(porObra).sort().map(o => `<h4 style="margin:10px 0 4px">${o === "—" ? "Pessoas liberadas" : `Obra ${escapar(o)}`}
+      <small class="suave" style="display:inline">${contar(porObra[o].length, "pessoa", "pessoas")}</small></h4>
+      ${porObra[o].map(x => `<div style="padding:2px 0">${eloPessoa(x.id, x.nome)} <small class="suave" style="display:inline">${escapar(x.funcao || "")}
+        ${x.batidas_na_obra ? ` · ${x.batidas_na_obra} batida(s) no mês` : " · sem batida no mês"}</small></div>`).join("")}`).join("")
+    : `<p>${escapar(d.sem_alcance || "Ninguém.")}</p>`;
+  await perguntar({titulo: `Quem ${escapar(p.nome.split(" ")[0])} alcança no aplicativo`, campos: [], textoOk: "Fechar",
+    aviso: `${d.de_onde.length ? `<p style="margin:0 0 6px">${escapar(d.de_onde.join(" · "))}.
+        ${d.pode_pedir ? "Consulta e <b>faz pedidos</b> por elas." : "<b>Só consulta</b> — não faz pedidos por elas."}</p>` : ""}
+      <div style="max-height:55vh; overflow:auto">${corpo}</div>
+      <small class="suave">No mês atual, do celular dela, de qualquer lugar. No ponto da obra e dentro da cerca de uma obra,
+        o administrativo vê também a obra em que está.</small>`});
 }
 
 async function formaDeBater(p) {

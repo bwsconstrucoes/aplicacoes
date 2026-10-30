@@ -60,6 +60,7 @@
   .chip.analise { background:#FDF1DC; color:var(--ambar); }
   .chip.ajustada { background:#EDE7F6; color:#5B4B8A; }
   .chip.pedido { background:#fff; color:var(--ambar); border:1px dashed var(--ambar); }
+  .chip.escolhida { background:var(--azul); color:#fff; }
   .numeros { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
   .numero { background:var(--fundo); border-radius:10px; padding:10px; text-align:center; }
   .numero b { display:block; font-size:20px; }
@@ -3164,10 +3165,18 @@ async function abrirEquipe(modo) {
 }
 function desenharEquipe() {
   const termo = semAcento($("eq-busca").value.trim());
-  const lista = EQ.pessoas.filter(p => !termo || semAcento(p.nome).includes(termo));
-  $("eq-lista").innerHTML = lista.map(p => `<button type="button" class="pessoa-linha" data-p="${p.id}">
-      <b>${esc(p.nome)}</b><small>${esc(p.funcao || "")}${p.batidas_na_obra ? ` · ${p.batidas_na_obra} batida(s) aqui` : " · sem batida aqui no mês"}</small></button>`).join("")
-    || `<p>Ninguém ${termo ? "com esse nome" : "neste mês"}.</p>`;
+  // com mais de uma obra no alcance (31/10/2026): a obra de cada um e o filtro por obra
+  const obras = [...new Set(EQ.pessoas.map(p => p.obra_aqui).filter(Boolean))].sort();
+  if (EQ.obra && !obras.includes(EQ.obra)) EQ.obra = "";
+  const chips = obras.length > 1 ? `<div class="chips" style="margin:0 0 10px">
+      ${["", ...obras].map(o => `<button type="button" class="chip${o === (EQ.obra || "") ? " escolhida" : ""}" aria-pressed="${o === (EQ.obra || "")}"
+        data-eq-obra="${esc(o)}">${o ? esc(o) : "Todas"} · ${o ? EQ.pessoas.filter(p => p.obra_aqui === o).length : EQ.pessoas.length}</button>`).join("")}</div>` : "";
+  const lista = EQ.pessoas.filter(p => (!termo || semAcento(p.nome).includes(termo)) && (!EQ.obra || p.obra_aqui === EQ.obra));
+  $("eq-lista").innerHTML = chips + (lista.map(p => `<button type="button" class="pessoa-linha" data-p="${p.id}">
+      <span style="flex:1"><b style="display:block">${esc(p.nome)}</b><small>${[p.funcao, obras.length > 1 && p.obra_aqui ? `obra ${p.obra_aqui}` : "",
+        p.batidas_na_obra ? `${p.batidas_na_obra} batida(s) aqui` : "sem batida aqui no mês"].filter(Boolean).map(esc).join(" · ")}</small></span></button>`).join("")
+    || `<p>Ninguém ${termo ? "com esse nome" : "neste mês"}.</p>`);
+  $("eq-lista").querySelectorAll("[data-eq-obra]").forEach(b => b.addEventListener("click", () => { EQ.obra = b.dataset.eqObra; desenharEquipe(); }));
   $("eq-lista").querySelectorAll("[data-p]").forEach(b => b.addEventListener("click", () => abrirPessoaDaObra(+b.dataset.p)));
 }
 $("eq-busca").addEventListener("input", desenharEquipe);

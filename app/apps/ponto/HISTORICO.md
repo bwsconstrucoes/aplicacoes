@@ -410,6 +410,24 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 31/10/2026 (décima) — "Quem ela alcança no app": a lista, no ERP e no aplicativo
+
+O dono: *"Que tal uma tela que liste as pessoas sobre as quais aquela pessoa tem gestão de ajuste no app? Facilita a
+localização das pessoas."* — e pediu as telas do aplicativo também.
+- **No ERP**: na janela da pessoa › Cadastro, botão **"👥 Quem ela alcança no app"**. Abre a lista, agrupada por obra,
+  de quem ela vê no aplicativo HOJE, de qualquer lugar — com a origem (administrativo de obra, responsável pelo ponto,
+  liberado pelo DP) e se só consulta ou também faz pedidos. Não muda nada: só mostra. Rota
+  `/erp/api/ponto/pessoas/<id>/alcance-no-app` (`ver_ponto`), com a conferência de escopo de sempre.
+- **No aplicativo**: com mais de uma obra no alcance, "Ponto das pessoas" ganha botões por obra ("Todas · 5",
+  "AP-01 · 2", …) e cada linha diz a obra da pessoa, embaixo do nome. Com uma obra só, nada muda.
+- A obra de cada pessoa na lista é a do PONTO (a obra do alcance em que ela mais bateu no mês); sem batida, a do
+  cadastro. É a mesma regra da obra da pessoa no resto do ponto.
+- Limite dito na tela: a lista é do celular dela, de qualquer lugar. No ponto da obra e dentro da cerca de uma obra, o
+  administrativo vê também a obra em que está — isso depende de onde ele está, e a lista não adivinha.
+- Teste: o caso da liberação (023) confere também o que a rota nova devolve. Ensaio no navegador com o João liberado
+  para AP-01 e BV-02 (as cinco telas foram mandadas ao dono).
+**No ramo, esperando o "pode".** SEM MIGRAÇÃO.
+
 ## 31/10/2026 (nona) — Liberar obras e pessoas específicas no aplicativo (migração 023)
 
 O dono: *"tem como eu liberar pessoas que batem ponto pra poder visualizar pontos/fazer ajustes de outras pessoas que
