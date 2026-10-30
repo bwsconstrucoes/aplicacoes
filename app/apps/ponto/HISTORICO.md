@@ -425,7 +425,7 @@ pré-configurar essas obras dessa forma. Teve batida no início e no fim, aparec
   `apuracao.intervalo_pre_assinalado` (pura) e o campo `pre_assinalado` do dia no espelho.
 - Testes: a regra pura (as duas batidas → 11:00 e 12:00; quatro batidas, a manhã só ou feriado → nada) e, com banco, a
   obra marcada como 2 batidas — o dia mostra o intervalo e as batidas continuam só as duas. Conferido no navegador.
-**No ramo, esperando o "pode"** — SEM MIGRAÇÃO.
+**Publicado em 31/10/2026** (com o "pode" do dono) — SEM MIGRAÇÃO.
 
 ## 31/10/2026 (segunda) — O calendário de horas extras: cabeçalho parado, um clique marca, dois abrem o espelho
 
