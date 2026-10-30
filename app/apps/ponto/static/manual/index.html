@@ -63,8 +63,8 @@ a:focus-visible, summary:focus-visible { outline: 3px solid var(--marinho); outl
 .endereco button { font: 700 .9rem var(--f-texto); border: 1px solid var(--marinho); color: var(--marinho);
   background: transparent; border-radius: 8px; padding: 6px 12px; cursor: pointer; }
 
-/* os três jeitos */
-.perfis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 6px; }
+/* os quatro jeitos */
+.perfis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 6px; }
 .perfil { display: flex; flex-direction: column; gap: 6px; background: var(--papel); border: 1px solid var(--linha);
   border-top: 5px solid var(--marinho); border-radius: 10px; padding: 14px; text-decoration: none; color: var(--tinta); }
 .perfil b { font: 700 1.25rem/1.15 var(--f-titulo); color: var(--marinho); }
@@ -126,6 +126,7 @@ details.duvida p { margin-top: 8px; }
 
 .rodape { margin-top: 48px; padding-top: 16px; border-top: 2px solid var(--linha); color: var(--suave); font-size: .92rem; }
 
+@media screen and (max-width: 900px) { .perfis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media screen and (max-width: 720px) {
   .perfis { grid-template-columns: minmax(0, 1fr); }
   .indice ol { columns: 1; }
@@ -149,13 +150,17 @@ details.duvida p { margin-top: 8px; }
   h1 { font-size: 26pt; } h2 { font-size: 17pt; } h3 { font-size: 12.5pt; }
   section.parte { break-before: page; margin-top: 0; gap: 10px; }
   .parte > header, h3 { break-after: avoid; }
-  .passo { grid-template-columns: minmax(0, 1fr); break-inside: avoid; padding: 12px 14px; gap: 10px; border-radius: 8px; }
-  .telas { flex-direction: row; gap: 10px; justify-content: flex-start; overflow: visible; }
+  /* o passo pode quebrar entre o texto e as telas — senão o título da parte fica sozinho numa página */
+  .passo { grid-template-columns: minmax(0, 1fr); padding: 12px 14px; gap: 10px; border-radius: 8px; }
+  .telas { flex-direction: row; gap: 10px; justify-content: flex-start; overflow: visible; break-inside: avoid; }
+  .passo h3, .passo ol, .passo ul { break-inside: avoid; }
   figure.tela { flex: 0 0 46mm; break-inside: avoid; }
   figure.tela img { border-width: 3px; border-radius: 10px; box-shadow: none; }
   figure.tela figcaption { font-size: 8pt; }
-  .perfis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .indice ol { columns: 2; }
+  .perfis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .indice ol { columns: 3; column-gap: 20px; font-size: 9.5pt; }
+  .abertura { gap: 10px; padding-bottom: 14px; }
+  .perfil { padding: 10px; }
   .regras { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .regras > div, .nota, details.duvida, tr { break-inside: avoid; }
   .tabela { overflow: visible; } table { min-width: 0; font-size: 9.5pt; }
@@ -171,7 +176,7 @@ details.duvida p { margin-top: 8px; }
   <div class="barra so-tela"><a href="/ponto/app">‹ Abrir o aplicativo</a><a href="/ponto/app/manual.pdf">Baixar em PDF</a></div>
   <span class="rotulo">BWS Construções · para os colaboradores</span>
   <h1>Manual do BWS Ponto</h1>
-  <p class="lead">O BWS Ponto é o aplicativo do ponto eletrônico da empresa. Por ele você cria a sua senha, vê as suas batidas e o seu mês, mostra o seu QR Code para bater na obra e acompanha os seus pedidos (atestado, ajuste, licença). Para algumas pessoas, ele também bate o ponto no próprio celular.</p>
+  <p class="lead">O BWS Ponto é o aplicativo do ponto eletrônico da empresa. Por ele você cria a sua senha, vê as suas batidas, o seu mês e o seu espelho, mostra o seu QR Code para bater na obra e acompanha os seus pedidos (atestado, ajuste, licença, abono). Para algumas pessoas, ele também bate o ponto no próprio celular. E quem cuida do ponto de uma obra acompanha a equipe por ele.</p>
   <div class="endereco">
     <span class="rotulo">Endereço</span>
     <code id="end">https://aplicacoes.bwsconstrucoes.com.br/ponto/app</code>
@@ -179,13 +184,14 @@ details.duvida p { margin-top: 8px; }
   </div>
   <p style="color:var(--suave); font-size:.95rem">Ele abre no navegador do celular (Chrome ou Safari) e não precisa instalar nada da loja. Dica: depois de abrir, use o menu do navegador e escolha <b>“Adicionar à tela inicial”</b>. Ele vira um ícone, como um aplicativo.</p>
 
-  <h2 style="margin-top:10px">Três jeitos de usar</h2>
+  <h2 style="margin-top:10px">Quatro jeitos de usar</h2>
   <div class="perfis">
-    <a class="perfil" href="#consulta"><b>Só consulto</b><span>Bato o ponto no aparelho da obra. No meu celular vejo o meu mês e mostro o meu QR Code.</span><em>É a maioria das pessoas →</em></a>
+    <a class="perfil" href="#consulta"><b>Só consulto</b><span>Bato o ponto no aparelho da obra. No meu celular vejo o meu mês, o espelho e mostro o meu QR Code.</span><em>É a maioria das pessoas →</em></a>
     <a class="perfil" href="#celular"><b>Bato no meu celular</b><span>A empresa liberou que eu bata o ponto no meu próprio celular, com foto e localização.</span><em>Precisa de liberação →</em></a>
     <a class="perfil" href="#obra"><b>Cuido do ponto da obra</b><span>Sou o responsável pelo tablet ou celular que fica na obra, onde a equipe bate.</span><em>Responsável da obra →</em></a>
+    <a class="perfil" href="#administrativo"><b>Acompanho a equipe</b><span>Sou administrativo de obra, ou o DP me liberou para consultar o ponto e fazer pedidos pelas pessoas.</span><em>Administrativo e liberados →</em></a>
   </div>
-  <div class="qual"><b>Não sabe qual é o seu?</b> Faça o primeiro acesso e abra <b>Meu ponto</b>. Se aparecer “Você bate o ponto no <b>aparelho da obra</b>”, você é do primeiro grupo. Se aparecer o botão verde <b>“Tirar foto e bater ponto”</b>, você bate no seu celular. Quem decide é a empresa, no seu cadastro. Se achar que está errado, fale com o DP.</div>
+  <div class="qual"><b>Não sabe qual é o seu?</b> Faça o primeiro acesso e veja a tela inicial. Se <b>Bater ponto</b> aparece apagado, dizendo que o seu ponto é batido no ponto da obra, você é do primeiro grupo. Se aparece o botão verde <b>“Bater o meu ponto”</b>, você bate no seu celular. Se aparece <b>“Consultar o ponto das pessoas”</b>, você acompanha a equipe. Quem decide é a empresa, no seu cadastro. Se achar que está errado, fale com o DP.</div>
 
   <nav class="indice" aria-label="Conteúdo">
     <span class="rotulo">Conteúdo</span>
@@ -194,9 +200,11 @@ details.duvida p { margin-top: 8px; }
       <li><a href="#consulta">Só consulto: o que tem no meu celular</a></li>
       <li><a href="#na-obra">Como bater no aparelho da obra</a></li>
       <li><a href="#celular">Bater no meu celular</a></li>
-      <li><a href="#pedidos">Pedidos: atestado, ajuste, licença</a></li>
+      <li><a href="#pedidos">Pedidos: atestado, ajuste, abono, licença</a></li>
       <li><a href="#obra">Para o responsável do ponto da obra</a></li>
-      <li><a href="#vigia">Vigia noturno: a ronda</a></li>
+      <li><a href="#administrativo">Administrativo da obra e quem o DP liberou</a></li>
+      <li><a href="#equipe">Ponto da minha equipe</a></li>
+      <li><a href="#vigia">Vigia: 12x36, permuta e ronda</a></li>
       <li><a href="#regras">O que pode e o que não pode</a></li>
       <li><a href="#mensagens">Mensagens na tela e o que fazer</a></li>
       <li><a href="#duvidas">Dúvidas comuns</a></li>
@@ -238,7 +246,10 @@ details.duvida p { margin-top: 8px; }
       <h3>A tela inicial</h3>
       <p>Depois de entrar, você vê as opções. As que aparecem apagadas não são para você. Toque nelas e o aplicativo diz onde aquilo é feito.</p>
       <ul>
+        <li><b>📊 Como está o meu ponto este mês</b>: o resumo do seu mês. Toque para ver os dias, os pontos e o selo.</li>
         <li><b>Meu ponto</b>: o seu dia (as batidas de hoje), o seu mês e os seus pedidos.</li>
+        <li><b>Espelho do ponto</b>: o seu mês como sai no papel. Dá para baixar em PDF (<a href="#espelho">veja abaixo</a>).</li>
+        <li><b>Ranking do ponto</b>: as obras e as pessoas com o ponto mais em dia no mês.</li>
         <li><b>Meu QR Code</b>: o código que você mostra na câmera do aparelho da obra para bater o ponto sem digitar o CPF.</li>
       </ul>
       <h3>Meu ponto</h3>
@@ -260,11 +271,30 @@ details.duvida p { margin-top: 8px; }
       <div class="nota atencao"><b>Foto ou print do QR não funciona.</b> O código muda a cada 30 segundos, então tem que ser o da tela, na hora.</div>
       <p>Sem internet no seu celular? Toque em <span class="botao">Receber um QR no WhatsApp</span> e use o que chegar. No aparelho da obra também tem o botão <span class="botao">Esqueci meu QR Code — receber no WhatsApp</span>. E sempre dá para bater digitando o CPF.</p>
       <h3>Atestados e pedidos</h3>
-      <p>Para quem só consulta, atestado, licença e ajuste são entregues <b>no aparelho da obra</b> (veja a <a href="#na-obra">parte 3</a>) ou com o responsável da obra. Pelo celular você acompanha a resposta em <b>Pedidos</b>.</p>
+      <p>Para quem só consulta, atestado, declaração, licença e ajuste são entregues <b>no aparelho da obra</b> (veja a <a href="#na-obra">parte 3</a>) ou com o administrativo da obra. Pelo celular você acompanha a resposta em <b>Pedidos</b>.</p>
+      <div class="nota atencao"><b>❌ Pedido negado.</b> Quando um pedido seu é negado, aparece um aviso vermelho na tela inicial e chega uma mensagem no seu WhatsApp. Toque no aviso para ver o <b>motivo</b>. Se o pedido estava errado, peça de novo do jeito certo.</div>
     </div>
     <div class="telas">
       <figure class="tela"><img src="telas/05-meu-qr.jpg" alt="Meu QR Code na tela" width="600" height="1298"><figcaption>Meu QR Code: muda a cada 30 s</figcaption></figure>
-      <figure class="tela"><img src="telas/06-pedidos-na-obra.jpg" alt="Pedidos de quem entrega na obra" width="600" height="1298"><figcaption>Pedidos: entregues na obra</figcaption></figure>
+      <figure class="tela"><img src="telas/06-pedidos-na-obra.jpg" alt="Pedidos de quem entrega na obra, com a situação de cada um" width="600" height="1298"><figcaption>Pedidos: entregues na obra</figcaption></figure>
+    </div>
+  </div>
+  <div class="passo" id="espelho">
+    <div class="texto">
+      <h3>Espelho do ponto</h3>
+      <p>É o <b>mesmo espelho que o DP imprime para assinar</b>: dia a dia, com as batidas, as horas trabalhadas, as extras, o débito, as faltas e os dias abonados.</p>
+      <ol>
+        <li>Na tela inicial, toque em <b>Espelho do ponto</b>.</li>
+        <li>Use <span class="botao">‹</span> e <span class="botao">›</span> para trocar de mês.</li>
+        <li>Toque em <span class="botao">📄 Baixar o espelho (PDF)</span> ou em <span class="botao">🖨 Imprimir</span>. Dá para escolher outro período, de até 62 dias — por exemplo, o corte da folha.</li>
+      </ol>
+      <p>Enquanto o mês está aberto, aparece “Mês aberto — os números ainda podem mudar”. Viu algo errado? Peça o ajuste (<a href="#pedidos">parte 5</a>).</p>
+      <h3>Ranking do ponto</h3>
+      <p>Mostra, no mês atual ou no mês passado, as <b>obras</b> e os <b>funcionários</b> com o ponto mais em dia. Entram os 25 primeiros entre quem tem 10 dias de trabalho ou mais no mês; nas obras, as que têm 10 funcionários ou mais. Cada ajuste pedido tira 5 pontos, e cada dia com batida faltando também: <b>bata na hora para não precisar pedir</b>. A conta é refeita de 2 em 2 horas.</p>
+    </div>
+    <div class="telas">
+      <figure class="tela"><img src="telas/22-meu-espelho.jpg" alt="Espelho do ponto do mês com os números e os dias" width="600" height="1298"><figcaption>O espelho do mês</figcaption></figure>
+      <figure class="tela"><img src="telas/23-ranking.jpg" alt="Ranking do ponto com as abas do mês, obras e funcionários" width="600" height="1298"><figcaption>O ranking do ponto</figcaption></figure>
     </div>
   </div>
 </section>
@@ -279,7 +309,7 @@ details.duvida p { margin-top: 8px; }
         <li><b>Mostre o seu QR Code</b> na câmera, ou <b>digite o seu CPF</b> no teclado.</li>
         <li>Aparece o seu nome. <b>Olhe para a câmera</b>: ela tira a sua foto em 2 segundos.</li>
         <li>Não é você? Toque em <span class="botao">Não sou eu</span> antes da foto.</li>
-        <li>Pronto: aparece <b>“Ponto registrado”</b> com a hora e o número do registro (NSR).</li>
+        <li>Pronto: aparece <b>“Ponto registrado”</b> com a hora e o número do registro (NSR). O aparelho dá um <b>som</b> e <b>vibra</b> para confirmar.</li>
       </ol>
       <div class="nota info"><b>Bateu duas vezes sem querer?</b> Se você já bateu há menos de 10 minutos, o aparelho pergunta antes: “você já bateu às 07:02, bater de novo?”. E se bater, a batida repetida conta uma vez só.</div>
       <div class="nota atencao"><b>O aparelho só bate dentro da obra, com a localização ligada.</b> Se ele estiver fora da obra ou sem localização, aparece “Ponto não registrado”. Avise o responsável da obra.</div>
@@ -293,18 +323,36 @@ details.duvida p { margin-top: 8px; }
   </div>
   <div class="passo">
     <div class="texto">
+      <h3>Esqueceu o CPF e está sem o QR Code? Procure pelo nome</h3>
+      <ol>
+        <li>Na tela de batida, toque em <span class="botao">🔎 Não sei o CPF — procurar pelo nome</span>.</li>
+        <li>Digite pelo menos 3 letras do nome.</li>
+        <li>Aparecem até 6 pessoas, com a foto pequena, o nome e a função (nunca o CPF). Toque em você.</li>
+        <li>Daí em diante é igual: olhe para a câmera.</li>
+      </ol>
+      <p>Não achou? Toque em <span class="botao">Não achou? Procurar em todas as obras</span>. Essa opção só aparece quando o responsável do aparelho está conectado.</p>
+    </div>
+    <div class="telas">
+      <figure class="tela"><img src="telas/30-obra-busca-nome.jpg" alt="Busca pelo nome no aparelho da obra, com a foto da pessoa" width="600" height="1384"><figcaption>Bater pelo nome</figcaption></figure>
+    </div>
+  </div>
+  <div class="passo">
+    <div class="texto">
       <h3>Entregar atestado, licença ou pedir ajuste no aparelho da obra</h3>
       <ol>
         <li>Peça ao responsável da obra para abrir <b>“Atestados, afastamentos e ajustes”</b>.</li>
         <li>Mostre o seu QR Code ou digite o CPF.</li>
-        <li>Escolha o que vai entregar ou pedir e preencha as datas.</li>
-        <li>Para o atestado, toque em <span class="botao">📎 Anexar o documento — foto ou arquivo</span> e fotografe o papel inteiro, sem cortar.</li>
+        <li>Escolha o que vai entregar ou pedir: atestado médico, declaração de comparecimento, licença, esqueceu de bater (ajuste), compensação, permuta de plantão (só vigia do 12x36), folga do banco de horas ou abono. Preencha as datas.</li>
+        <li>Para atestado, declaração e licença, toque em <span class="botao">📎 Anexar o documento — foto ou arquivo</span> e fotografe o papel inteiro, sem cortar.</li>
         <li>Toque em <span class="botao">Enviar</span>.</li>
       </ol>
+      <p>No ajuste (“Esqueceu de bater”), o aparelho mostra o que já foi batido no dia e marca o que faltou. Confira os horários, a <b>obra da batida</b> e escreva a observação.</p>
+      <div class="nota atencao"><b>⚠️ Confira a obra.</b> Se a obra escolhida for estranha — você nunca bateu ponto nela nos últimos dias, ou ninguém bate ponto lá — aparece um aviso amarelo, e o botão muda para <span class="botao">Confirmo a obra … — enviar</span>. Troque a obra se estiver errada; se estiver certa, confirme.</div>
       <p>O pedido vai para validação. A resposta aparece em <b>Pedidos</b>, no seu celular. O atestado só é visto pelo DP.</p>
     </div>
     <div class="telas">
       <figure class="tela"><img src="telas/21-obra-pedido.jpg" alt="Formulário de atestado no aparelho da obra" width="600" height="1384"><figcaption>Atestado entregue no aparelho da obra</figcaption></figure>
+      <figure class="tela"><img src="telas/31-obra-ajuste-com-obra.jpg" alt="Pedido de ajuste no aparelho da obra, com a obra da batida" width="600" height="1384"><figcaption>Ajuste: os horários e a obra da batida</figcaption></figure>
     </div>
   </div>
 </section>
@@ -341,6 +389,7 @@ details.duvida p { margin-top: 8px; }
         <li>Aparece o <b>comprovante</b>: data, hora, nome, obra, número do registro (NSR) e código de verificação. Ele fica guardado em <b>Hoje</b>.</li>
       </ol>
       <div class="nota info"><b>A câmera não abre?</b> Use <span class="botao">A câmera não abre? Bater sem foto</span>. A batida vale, mas o DP é avisado de que ela foi sem foto. Use só quando a câmera não abrir mesmo.</div>
+      <p>Na tela inicial ficam também o <b>Espelho do ponto</b>, o <b>Ranking</b> e o <b>Meu QR Code</b>, como para quem só consulta (<a href="#consulta">parte 2</a>).</p>
     </div>
     <div class="telas">
       <figure class="tela"><img src="telas/09-menu-celular.jpg" alt="Tela inicial de quem bate no celular" width="600" height="1298"><figcaption>A tela inicial</figcaption></figure>
@@ -369,17 +418,20 @@ details.duvida p { margin-top: 8px; }
 
 <!-- 5 -->
 <section class="parte" id="pedidos">
-  <header><span class="rotulo">Quem pode pedir pelo celular</span><h2>5. Pedidos: atestado, ajuste, licença</h2>
-    <p>Se a aba <b>Pedidos</b> do seu celular mostra “Fazer um pedido”, você pode pedir por ali. Se mostra “São entregues no aparelho da obra”, entregue na obra (<a href="#na-obra">parte 3</a>).</p></header>
+  <header><span class="rotulo">Quem pode pedir pelo celular</span><h2>5. Pedidos: atestado, ajuste, abono, licença</h2>
+    <p>Se a aba <b>Pedidos</b> do seu celular mostra “Fazer um pedido”, você pode pedir por ali. Se mostra “São entregues no aparelho da obra”, entregue na obra (<a href="#na-obra">parte 3</a>) ou com o administrativo da obra.</p></header>
   <div class="passo">
     <div class="texto">
       <h3>O que dá para pedir</h3>
       <ul>
         <li><b>Mandar atestado médico</b>: o primeiro dia, quantos dias o médico deu, e a foto ou PDF do atestado. Só o DP vê o atestado.</li>
+        <li><b>Declaração de comparecimento</b> (consulta, exame): o dia, o horário escrito na declaração e a foto dela. O DP confere e decide se abona o dia todo, só aquele horário ou nada.</li>
         <li><b>Esqueci de bater o ponto</b>: o dia (ou vários dias) e os horários que faltaram, com o motivo.</li>
-        <li><b>Trabalhar num dia no lugar de outro</b>: a compensação combinada com a obra.</li>
+        <li><b>Trabalhar num dia no lugar de outro</b>: a compensação combinada com a obra — o dia em que vai trabalhar (ou trabalhou) e o dia da folga no lugar.</li>
+        <li><b>Permuta de plantão com um colega</b>: só para vigia do 12x36 (<a href="#vigia">parte 9</a>).</li>
         <li><b>Licença</b>: casamento, luto, paternidade e as outras da lei, com o documento quando houver (certidão, por exemplo).</li>
         <li><b>Folga do banco de horas</b>: só para quem tem banco de horas.</li>
+        <li><b>Abono</b>: viagem a serviço, dispensa e outros motivos combinados. Escreva o motivo (por exemplo: “viagem a Recife para a obra BR-02, a pedido do engenheiro”). O dia fica justificado se o abono for aprovado.</li>
       </ul>
       <h3>Mandar um atestado</h3>
       <ol>
@@ -391,6 +443,8 @@ details.duvida p { margin-top: 8px; }
     </div>
     <div class="telas">
       <figure class="tela"><img src="telas/13-pedido-atestado.jpg" alt="Formulário de atestado médico no celular" width="600" height="1298"><figcaption>Mandar atestado</figcaption></figure>
+      <figure class="tela"><img src="telas/24-pedido-declaracao.jpg" alt="Formulário de declaração de comparecimento" width="600" height="1298"><figcaption>Declaração de comparecimento</figcaption></figure>
+      <figure class="tela"><img src="telas/26-pedido-abono.jpg" alt="Formulário de abono com o tipo e o motivo" width="600" height="1298"><figcaption>Abono: viagem a serviço, dispensa</figcaption></figure>
     </div>
   </div>
   <div class="passo">
@@ -400,7 +454,7 @@ details.duvida p { margin-top: 8px; }
         <li>Em <b>Pedidos</b>, escolha <b>Esqueci de bater o ponto</b>.</li>
         <li>Escolha o dia. Se foram vários dias seguidos, preencha também <b>“Até o dia”</b>.</li>
         <li>Toque em <span class="botao">Abrir o dia</span>. Aparecem os horários da sua escala, já marcados nos que faltam.</li>
-        <li>Desmarque o que você bateu, corrija a hora se precisar e escreva o motivo.</li>
+        <li>Desmarque o que você bateu, corrija a hora se precisar, confira a obra e escreva o motivo.</li>
         <li>Envie. O pedido vai para validação da administração da obra ou do DP.</li>
       </ol>
       <p>Também dá para começar pelo <b>Meu mês</b>: no dia, toque no ✏️ para corrigir uma batida que faltou, ou no 📅 para justificar uma ausência. O botão <span class="botao">✏️ Corrigir vários dias</span> abre vários dias de uma vez.</p>
@@ -414,7 +468,8 @@ details.duvida p { margin-top: 8px; }
   <div class="passo sem-tela">
     <div class="texto">
       <h3>Acompanhar a resposta</h3>
-      <p>Em <b>Pedidos › Meus pedidos</b> cada pedido mostra onde está: <b>Esperando a administração da obra</b>, <b>Esperando o DP</b>, <b>Aprovado</b> ou <b>Negado</b>. O pedido aprovado já aparece corrigido no seu mês.</p>
+      <p>Em <b>Pedidos › Meus pedidos</b> cada pedido mostra onde está: <b>Esperando a administração da obra</b>, <b>Esperando o DP</b>, <b>Aprovado</b> ou <b>Negado</b>. O pedido aprovado já aparece corrigido no seu mês. Enquanto ninguém decidiu, dá para <span class="botao">Cancelar pedido</span>.</p>
+      <div class="nota atencao"><b>❌ Pedido negado.</b> Aparece um aviso vermelho na tela inicial, o dia fica marcado no seu mês e no espelho, e chega uma mensagem no seu WhatsApp com o motivo. Toque no aviso para ler. Se o pedido estava errado, toque em <span class="botao">Pedir de novo</span> e corrija.</div>
     </div>
   </div>
 </section>
@@ -435,13 +490,14 @@ details.duvida p { margin-top: 8px; }
       <p>Depois de aprovado, a tela de entrada passa a dizer <b>“Este é o ponto da obra”</b>.</p>
       <h3>As opções do aparelho</h3>
       <ul>
-        <li><b>Bater ponto</b>: abre a tela de batida para todos. Ela fica aberta o dia todo.</li>
+        <li><b>Bater ponto</b>: abre a tela de batida para todos (QR Code, CPF ou nome). Ela fica aberta o dia todo. Fora da obra, a opção fica apagada e diz o porquê; toque nela para procurar a localização de novo.</li>
         <li><b>Atestados, afastamentos e ajustes</b>: a pessoa mostra o QR Code ou digita o CPF e entrega ali.</li>
         <li><b>Consultar o ponto de uma pessoa</b>: pelo CPF, de quem bate nesta obra.</li>
         <li><b>Receber o QR Code no WhatsApp</b>: o seu ou o de outra pessoa, pelo CPF.</li>
-        <li><b>Meu ponto</b>: o seu próprio ponto.</li>
+        <li><b>Meu ponto</b>, <b>Espelho do ponto</b> e <b>Ranking do ponto</b>: os seus, como no celular.</li>
+        <li><b>🏆 Ponto da minha equipe</b>: quem está em dia e quem precisa corrigir (<a href="#equipe">parte 8</a>).</li>
       </ul>
-      <p>Fora da tela de batida, o aparelho sai sozinho em 3 minutos sem uso. Na tela de batida, o <span class="botao">‹ Início</span> volta para as opções.</p>
+      <p>Fora da tela de batida, o aparelho <b>volta sozinho para a batida em 5 minutos</b> sem uso — e, para sair dela, pede o seu PIN. Na tela de batida, o <span class="botao">‹ Início</span> volta para as opções. O <span class="botao">🔊</span> no alto liga e desliga o som da confirmação.</p>
     </div>
     <div class="telas">
       <figure class="tela"><img src="telas/16-obra-entrada.jpg" alt="Tela de entrada do ponto da obra" width="600" height="1384"><figcaption>A entrada do ponto da obra</figcaption></figure>
@@ -450,14 +506,13 @@ details.duvida p { margin-top: 8px; }
   </div>
   <div class="passo sem-tela">
     <div class="texto">
-      <h3>Ponto da minha equipe</h3>
-      <p>Quem é <b>responsável</b> por um aparelho da obra (ou de equipe) tem, no menu, <span class="botao">🏆 Ponto da minha equipe</span>: as pessoas que batem no seu aparelho, com os pontos de cada uma e os dias com problema. Quem precisa de atenção aparece primeiro — é a sua lista para ajudar a equipe a bater completo e na hora.</p>
       <h3>Cuidados com o aparelho</h3>
       <ul>
         <li>Deixe o aparelho <b>na obra</b>, ligado no carregador, com <b>internet</b> e <b>localização ligadas</b>. Fora da área da obra ele não bate.</li>
         <li>Se aparecer “Procurando a localização…” por muito tempo, toque em <b>Bater ponto</b> de novo: ele procura outra vez.</li>
         <li>Não apague os dados do navegador e não use aba anônima no aparelho: ele passa a ser um aparelho novo e precisa de outra aprovação.</li>
-        <li>Cada um bate o seu ponto, com o próprio rosto na câmera. O responsável não bate pelos outros.</li>
+        <li>Cada um bate o seu ponto, com o próprio rosto na câmera. O responsável não bate pelos outros — quem esqueceu o CPF procura pelo nome.</li>
+        <li>No pedido de ajuste, confira a <b>obra da batida</b>. Se aparecer o aviso amarelo “Confira a obra”, pergunte à pessoa antes de confirmar.</li>
         <li>Se o aparelho avisar que a liberação vai vencer, peça a renovação ao DP antes da data.</li>
         <li><b>Sem internet:</b> o aparelho continua batendo e mostra no alto “📵 N batidas guardadas”. Elas sobem sozinhas quando a internet voltar — <b>com o aplicativo aberto</b>. Fechar o aplicativo, o navegador ou desligar o aparelho não perde nada; <b>limpar os dados do navegador perde</b>. Para funcionar sem internet, o aparelho precisa ter aberto o ponto com internet antes (ele baixa a lista de quem bate ali).</li>
         <li>Se o aparelho reiniciar sem internet, as batidas seguintes vão para conferência: sem o servidor, ele não consegue provar a hora.</li>
@@ -467,11 +522,104 @@ details.duvida p { margin-top: 8px; }
 </section>
 
 <!-- 7 -->
-<section class="parte" id="vigia">
-  <header><span class="rotulo">Só para vigias noturnos</span><h2>7. Vigia noturno: a ronda</h2>
-    <p>Quem é vigia noturno, marcado assim no cadastro, faz a ronda pelo WhatsApp durante o turno.</p></header>
+<section class="parte" id="administrativo">
+  <header><span class="rotulo">Administrativo e liberados pelo DP</span><h2>7. Administrativo da obra e quem o DP liberou</h2>
+    <p>O <b>administrativo de obra</b> (marcado assim no cadastro) e as pessoas que o DP <b>liberou</b> acompanham o ponto dos outros pelo próprio celular: consultam e fazem pedidos por eles. A liberação pode ser para algumas obras, para algumas pessoas ou para todas as obras.</p></header>
+  <div class="passo">
+    <div class="texto">
+      <h3>A tela inicial</h3>
+      <p>No alto aparece como você entrou e de onde é o seu acesso — por exemplo, “administrativo da obra · 📍 AP-01”, ou “📍 12 obras” para quem tem várias.</p>
+      <ul>
+        <li><b>Atestados, afastamentos e ajustes</b>: escolha a pessoa da obra; no dia dela, toque para lançar ou corrigir.</li>
+        <li><b>Consultar o ponto das pessoas</b>: a lista do mês, com busca pelo nome. Aparece quem bateu ponto na obra no mês e quem é da obra pelo cadastro. Com muitas obras, escolha a obra nos botões do alto.</li>
+        <li><b>🏆 Ponto da minha equipe</b>: o resumo de quem precisa corrigir (<a href="#equipe">parte 8</a>).</li>
+      </ul>
+      <div class="nota info"><b>Não bate ponto, mas foi liberado?</b> Você entra com CPF e PIN do mesmo jeito. A tela mostra só o que é dos outros: as opções do seu próprio ponto (bater, Meu ponto, Espelho) não aparecem.</div>
+    </div>
+    <div class="telas">
+      <figure class="tela"><img src="telas/27-menu-administrativo.jpg" alt="Tela inicial do administrativo de obra" width="600" height="1298"><figcaption>A tela inicial do administrativo</figcaption></figure>
+      <figure class="tela"><img src="telas/28-consultar-pessoas.jpg" alt="Lista das pessoas da obra com busca pelo nome" width="600" height="1298"><figcaption>Consultar o ponto das pessoas</figcaption></figure>
+    </div>
+  </div>
   <div class="passo sem-tela">
     <div class="texto">
+      <h3>Fazer um pedido por outra pessoa</h3>
+      <ol>
+        <li>Toque em <b>Atestados, afastamentos e ajustes</b> (ou em <b>Consultar o ponto das pessoas</b>) e escolha a pessoa.</li>
+        <li>No mês dela, toque no dia: ✏️ para corrigir uma batida que faltou, 🗓️ para justificar a ausência (atestado, declaração, licença, abono).</li>
+        <li>No ajuste, confira a <b>obra da batida</b>. Se a pessoa nunca bateu ponto naquela obra, ou se ninguém bate lá, aparece o aviso amarelo e o botão <span class="botao">Confirmo a obra … — enviar</span>.</li>
+        <li>Anexe o documento quando houver e envie. O pedido vai para validação, como os outros.</li>
+      </ol>
+      <p>Se um pedido que <b>você</b> fez por alguém for negado, o aviso vermelho também aparece para você, com o motivo.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="parte" id="equipe">
+  <header><span class="rotulo">Responsável, administrativo e liberados</span><h2>8. Ponto da minha equipe</h2>
+    <p>Um resumo, obra por obra, de quem está em dia e de quem tem falta, batida faltando ou erro — para você orientar as pessoas a corrigir o ponto antes do fechamento.</p></header>
+  <div class="passo">
+    <div class="texto">
+      <ol>
+        <li>Na tela inicial, toque em <span class="botao">🏆 Ponto da minha equipe</span>.</li>
+        <li>Escolha o período: <b>Este mês</b>, <b>Últimos 7 dias</b> ou <b>Mês anterior</b>. Entram só os dias que já passaram (até ontem).</li>
+        <li>Cada obra mostra quantas pessoas, quantas estão em dia e quantas têm problema. Toque no nome para ver os dias.</li>
+        <li>Toque em <span class="botao">Abrir o ponto e corrigir</span> para ir direto ao mês da pessoa e fazer o pedido.</li>
+        <li>Para mandar o resumo no grupo da obra, toque em <span class="botao">Compartilhar (WhatsApp)</span>.</li>
+      </ol>
+      <h3>O que cada sinal quer dizer</h3>
+      <ul>
+        <li>❌ <b>Falta</b>: dia de trabalho sem batida.</li>
+        <li>⏱️ <b>Batida faltando</b>: o dia tem batida, mas falta alguma (por exemplo, bateu a entrada e não a saída).</li>
+        <li>⚠️ <b>Provável erro</b>: algo que o sistema estranhou — batida repetida, batida no meio do turno da noite, noite fora do revezamento 12x36. Confira com a pessoa antes de corrigir.</li>
+        <li>🐢 <b>Atraso</b>: chegou depois ou saiu antes da hora.</li>
+        <li>🩺 <b>Dia justificado</b>: atestado, licença, abono. É só informação.</li>
+        <li>⏳ <b>Pedido esperando</b>: já foi pedido, falta a validação.</li>
+      </ul>
+      <p>Quem só tem informação (atestado, pedido esperando) conta como <b>em dia</b> e fica no fim, em “✅ Em dia”.</p>
+    </div>
+    <div class="telas">
+      <figure class="tela"><img src="telas/29-ponto-da-equipe.jpg" alt="Ponto da minha equipe com o resumo da obra e as pessoas" width="600" height="1298"><figcaption>O resumo da obra</figcaption></figure>
+      <figure class="tela"><img src="telas/29b-ponto-da-equipe-pessoa.jpg" alt="Uma pessoa aberta no resumo, com os dias e o botão de corrigir" width="600" height="1298"><figcaption>Os dias da pessoa e “Abrir o ponto e corrigir”</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="parte" id="vigia">
+  <header><span class="rotulo">Só para vigias</span><h2>9. Vigia: 12x36, permuta e ronda</h2>
+    <p>O vigia que trabalha à noite tem regras próprias para a saída de manhã, para a troca de noite com um colega e, quando marcado no cadastro, para a ronda.</p></header>
+  <div class="passo sem-tela">
+    <div class="texto">
+      <h3>A noite de trabalho</h3>
+      <ul>
+        <li>Bata a <b>entrada</b> à noite e a <b>saída</b> de manhã. A saída da manhã seguinte conta para a noite em que você entrou.</li>
+        <li>A saída conta para a noite anterior quando é batida <b>até as 10h</b>. Precisou ficar mais? Até o <b>meio-dia</b>, a batida ainda fecha o turno que ficou aberto.</li>
+        <li>Não bata no meio da noite: batida no meio do turno aparece como erro para quem acompanha o ponto da obra.</li>
+        <li>No <b>12x36</b> (noite sim, noite não), o sistema acompanha o seu revezamento pelas suas próprias batidas. Você não precisa avisar qual é a sua noite.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="passo">
+    <div class="texto">
+      <h3>Trocou de noite com um colega? Peça a permuta</h3>
+      <p>Quando dois vigias do 12x36 trocam de noite, um pedido só acerta os dois:</p>
+      <ol>
+        <li>Em <b>Pedidos</b> (ou no aparelho da obra), escolha <b>Permuta de plantão com um colega</b>.</li>
+        <li>Digite o <b>CPF do colega</b>.</li>
+        <li>Preencha a <b>noite que você trabalhou no lugar dele</b> e a <b>noite sua que ele trabalhou</b>.</li>
+        <li>Envie. O DP aprova, e as duas pessoas ficam acertadas de uma vez.</li>
+      </ol>
+      <div class="nota info"><b>Só entre vigias da escala 12x36.</b> Sem a permuta, a noite trocada aparece como falta para um e como noite fora do revezamento para o outro.</div>
+    </div>
+    <div class="telas">
+      <figure class="tela"><img src="telas/25-pedido-permuta.jpg" alt="Formulário de permuta de plantão com o CPF do colega e as duas noites" width="600" height="1298"><figcaption>Permuta de plantão</figcaption></figure>
+    </div>
+  </div>
+  <div class="passo sem-tela">
+    <div class="texto">
+      <h3>A ronda (vigia noturno marcado no cadastro)</h3>
       <ol>
         <li>Bata a <b>entrada</b> normalmente, à tarde ou à noite. As rondas começam só depois da entrada.</li>
         <li>Durante a noite chegam <b>4 mensagens de ronda</b> no seu WhatsApp, em horários surpresa.</li>
@@ -483,19 +631,20 @@ details.duvida p { margin-top: 8px; }
   </div>
 </section>
 
-<!-- 8 -->
+<!-- 10 -->
 <section class="parte" id="regras">
-  <header><span class="rotulo">Para todos</span><h2>8. O que pode e o que não pode</h2></header>
+  <header><span class="rotulo">Para todos</span><h2>10. O que pode e o que não pode</h2></header>
   <div class="regras">
     <div class="sim">
       <h3>Pode</h3>
       <ul>
-        <li>Bater no aparelho da obra com o QR Code ou com o CPF.</li>
+        <li>Bater no aparelho da obra com o QR Code, com o CPF ou procurando o seu nome.</li>
         <li>Pedir o QR Code pelo WhatsApp quando estiver sem internet.</li>
         <li>Pedir ajuste quando esquecer de bater, inclusive de vários dias.</li>
-        <li>Mandar o atestado por foto ou PDF.</li>
+        <li>Mandar o atestado ou a declaração por foto ou PDF.</li>
         <li>Bater num feriado ou num dia de folga, se trabalhou.</li>
-        <li>Ver o seu mês e os seus comprovantes a qualquer hora.</li>
+        <li>Ver o seu mês, o seu espelho e os seus comprovantes a qualquer hora.</li>
+        <li>Trocar de noite com outro vigia do 12x36, pedindo a permuta.</li>
       </ul>
     </div>
     <div class="nao">
@@ -510,16 +659,18 @@ details.duvida p { margin-top: 8px; }
       </ul>
     </div>
   </div>
+  <div class="nota atencao"><b>Bata todas as batidas do dia.</b> Quem tem intervalo bate 4 vezes: entrada, saída para o intervalo, volta do intervalo e saída. Cada período só conta com a <b>entrada e a saída dele</b>: uma batida sozinha não prova o horário trabalhado, e o dia pode virar <b>falta parcial</b> até alguém pedir o ajuste.</div>
 </section>
 
-<!-- 9 -->
+<!-- 11 -->
 <section class="parte" id="mensagens">
-  <header><span class="rotulo">Para todos</span><h2>9. Mensagens na tela e o que fazer</h2></header>
+  <header><span class="rotulo">Para todos</span><h2>11. Mensagens na tela e o que fazer</h2></header>
   <div class="tabela">
     <table>
       <thead><tr><th>A mensagem</th><th>O que fazer</th></tr></thead>
       <tbody>
         <tr><td>Você bate o ponto no aparelho da obra</td><td>Normal para quem só consulta. Bata no aparelho da obra. Se você deveria bater no celular, fale com o DP.</td></tr>
+        <tr><td>O seu cadastro está marcado como “não bate ponto” — o PIN está certo; fale com o DP</td><td>O CPF e o PIN estão certos, mas o seu cadastro não está no ponto. Fale com o DP: ele confere o cadastro ou libera o seu acesso.</td></tr>
         <tr><td>Este celular está esperando aprovação (código …)</td><td>Passe o código ao DP ou à administração da obra. Até a aprovação, você só consulta.</td></tr>
         <tr><td>Este celular não foi reconhecido / Este é o mesmo aparelho?</td><td>Acontece em navegador novo, depois de limpar os dados ou em aba anônima. Se for o mesmo celular, toque em “Sim”: a liberação passa para ele.</td></tr>
         <tr><td>Você NÃO está em obra</td><td>Confira se você está mesmo na obra e se a localização está ligada. Se precisar bater assim, escolha a obra e explique o motivo.</td></tr>
@@ -529,6 +680,9 @@ details.duvida p { margin-top: 8px; }
         <tr><td>Sem internet, o QR do “Meu ponto” não funciona</td><td>Use o QR Code que chegou no seu WhatsApp, ou digite o CPF.</td></tr>
         <tr><td>Este CPF não estava na lista do aparelho</td><td>Sem internet, o aparelho só reconhece quem costuma bater ali. A batida é guardada do mesmo jeito e vai para conferência.</td></tr>
         <tr><td>Batida enviada para conferência</td><td>A batida foi registrada, mas só vale depois que a administração da obra validar. Acompanhe no seu dia.</td></tr>
+        <tr><td>⚠️ Confira a obra … / Confirmo a obra … — enviar</td><td>No pedido de ajuste, a obra escolhida é estranha: a pessoa não bateu ponto nela nos últimos dias, ou ninguém bate lá. Troque a obra se estiver errada; se estiver certa, toque em “Confirmo a obra”.</td></tr>
+        <tr><td>❌ Pedido negado</td><td>Toque no aviso para ver o motivo. Se o pedido estava errado, peça de novo: quem pede pelo celular tem o botão “Pedir de novo”; quem entrega na obra, entrega de novo lá.</td></tr>
+        <tr><td>Ninguém entra no ranking ainda neste mês</td><td>Normal no começo do mês: entra no ranking quem tem 10 dias de trabalho ou mais no mês.</td></tr>
         <tr><td>A liberação deste celular vence em … / venceu</td><td>Peça a renovação ao DP. Depois do vencimento, o celular para de bater.</td></tr>
         <tr><td>Este celular foi bloqueado</td><td>Fale com o DP.</td></tr>
         <tr><td>Afastado ou desligado: batida recusada</td><td>O seu cadastro está como afastado ou desligado. Se você voltou ao trabalho, o DP precisa atualizar o cadastro.</td></tr>
@@ -539,9 +693,9 @@ details.duvida p { margin-top: 8px; }
   </div>
 </section>
 
-<!-- 10 -->
+<!-- 12 -->
 <section class="parte" id="duvidas">
-  <header><span class="rotulo">Para todos</span><h2>10. Dúvidas comuns</h2></header>
+  <header><span class="rotulo">Para todos</span><h2>12. Dúvidas comuns</h2></header>
   <div class="pilha">
     <details class="duvida"><summary>Preciso cadastrar o meu celular para só olhar o meu ponto?</summary>
       <p>Não. Para consultar basta o CPF e o PIN, em qualquer celular. Aprovação de aparelho só existe para quem vai bater o ponto nele.</p></details>
@@ -549,6 +703,16 @@ details.duvida p { margin-top: 8px; }
       <p>Para consultar, é só entrar com CPF e PIN no celular novo. Se você bate no celular, faça o pedido de aprovação no novo (parte 4). Aprovado o novo, o antigo para de bater.</p></details>
     <details class="duvida"><summary>Limpei os dados do navegador e o celular pediu aprovação de novo.</summary>
       <p>Limpar os dados do navegador apaga a identificação do aparelho, e ele parece novo. Se aparecer “Este é o mesmo aparelho?”, responda “Sim”. Senão, passe o código novo ao DP. Para mexer só na localização, mude a permissão do site e não apague os dados.</p></details>
+    <details class="duvida"><summary>Como pego o meu espelho para conferir ou assinar?</summary>
+      <p>Na tela inicial, toque em <b>Espelho do ponto</b> e depois em <b>📄 Baixar o espelho (PDF)</b>. Dá para escolher outro período, de até 62 dias. É o mesmo espelho que o DP imprime.</p></details>
+    <details class="duvida"><summary>Meu pedido foi negado. E agora?</summary>
+      <p>Toque no aviso vermelho da tela inicial para ver o motivo (ele também chega no seu WhatsApp). Se o pedido estava errado — dia trocado, horário errado, documento ilegível —, peça de novo do jeito certo. Se não concordar, fale com o DP.</p></details>
+    <details class="duvida"><summary>Como subo no ranking?</summary>
+      <p>Batendo todas as batidas, na hora. Cada ajuste pedido tira 5 pontos, e cada dia com batida faltando também. Entra no ranking quem tem 10 dias de trabalho ou mais no mês; ele mostra os 25 primeiros e é refeito de 2 em 2 horas.</p></details>
+    <details class="duvida"><summary>Sou vigia do 12x36 e troquei de noite com um colega. Como acerto?</summary>
+      <p>Peça a <b>Permuta de plantão</b> (parte 9): o CPF do colega, a noite que você trabalhou no lugar dele e a noite sua que ele trabalhou. Com a aprovação do DP, os dois ficam acertados.</p></details>
+    <details class="duvida"><summary>Não bato ponto, mas preciso acompanhar o ponto de uma equipe.</summary>
+      <p>Peça ao DP para liberar o seu acesso às obras ou às pessoas que você acompanha. Liberado, você entra com CPF e PIN e vê <b>Consultar o ponto das pessoas</b>, os pedidos por elas e o <b>Ponto da minha equipe</b> (partes 7 e 8).</p></details>
     <details class="duvida"><summary>O aplicativo guarda a minha localização o tempo todo?</summary>
       <p>Não. A localização é lida só no momento em que você bate o ponto (e na ronda, para o vigia). Fora disso, o aplicativo não sabe onde você está.</p></details>
     <details class="duvida"><summary>Quem vê o meu atestado?</summary>
@@ -557,10 +721,12 @@ details.duvida p { margin-top: 8px; }
       <p>No aparelho da obra, bata normalmente: sem internet, ele guarda a batida e manda depois (use o CPF ou o QR do WhatsApp). No celular pessoal, sem internet não dá para bater. Bata quando a internet voltar e, se passou da hora, peça o ajuste em “Esqueci de bater o ponto”.</p></details>
     <details class="duvida"><summary>A batida aparece “em conferência”. Ela vale?</summary>
       <p>Vale depois que a administração da obra validar. Isso acontece com batida fora da obra, sem localização ou sem foto no aparelho da obra.</p></details>
+    <details class="duvida"><summary>Por que o meu dia saiu como falta parcial, se eu bati?</summary>
+      <p>Porque falta alguma batida do dia. Cada período (manhã, tarde) só conta com a entrada e a saída dele. Veja o dia no <b>Meu mês</b> e peça o ajuste do horário que faltou.</p></details>
   </div>
 </section>
 
-<p class="rodape">Manual do BWS Ponto, versão de outubro de 2026. As telas são de um ambiente de teste, com nomes de exemplo. Dúvida que este manual não respondeu: fale com o DP ou com o responsável da sua obra.</p>
+<p class="rodape">Manual do BWS Ponto, versão do fim de outubro de 2026. As telas são de um ambiente de teste, com nomes de exemplo. Dúvida que este manual não respondeu: fale com o DP ou com o responsável da sua obra.</p>
 </main>
 
 <script>

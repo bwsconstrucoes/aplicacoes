@@ -410,6 +410,28 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 31/10/2026 (vigésima quarta) — O manual do colaborador atualizado (telas e textos)
+
+O dono: *"gostaria que o manual fosse atualizado com as atuais funcionalidades. telas e textos explicativos."*
+O manual (`static/manual/`, aberto em `/ponto/app/manual/` e `/ponto/app/manual.pdf`) era de 15/10.
+- **Telas:** as 21 antigas fotografadas de novo (o menu mudou) e 11 novas — espelho do ponto, ranking,
+  declaração de comparecimento, permuta, abono, a tela do administrativo, consultar o ponto das pessoas, o Ponto
+  da minha equipe (fechado e com uma pessoa aberta), bater pelo nome e o ajuste com a obra da batida. 32 no
+  total, do aplicativo de verdade num banco de teste (nomes de exemplo).
+- **Textos:** quatro jeitos de usar (entrou "Acompanho a equipe"); 12 partes (eram 10) — novas: "Administrativo
+  da obra e quem o DP liberou" e "Ponto da minha equipe"; a do vigia virou "12x36, permuta e ronda" (saída até
+  10h conta para a noite, até o meio-dia fecha turno aberto; não bater no meio da noite; o revezamento pelas
+  batidas). E: espelho em PDF (até 62 dias), ranking e as regras dele, pedido negado (aviso, WhatsApp, pedir de
+  novo), declaração, abono, permuta, busca pelo nome, som/vibração, os 5 minutos do ponto da obra, o aviso
+  "Confira a obra", as 4 batidas e a falta parcial, mensagens e dúvidas novas.
+- **O PDF** (27 páginas, eram 19): o passo agora PODE quebrar entre o texto e as telas — com passos maiores, o
+  "sem quebrar um passo no meio" de 15/10 deixava o título da parte sozinho numa página. As telas de um passo
+  continuam juntas. O sumário em 3 colunas, para a capa caber numa página.
+- **Fora:** a cópia antiga do manual no Claude (o endereço `claude.ai/artifact/…` de 15/10) NÃO foi atualizada —
+  a que vale é a do sistema, que é a que o aplicativo abre.
+- Como foi feito (para repetir): dados de exemplo semeados no banco de teste, Playwright fotografando o
+  aplicativo a 390 px (escala 2), JPG de 600 px; o PDF pela receita de 15/10.
+
 ## 31/10/2026 (vigésima terceira) — O "Ponto da minha equipe" virou o resumo gerencial das obras
 
 O dono: *"esse mesmo resumo do WhatsApp a gente poderia ter para a pessoa que bate os pontos da obra (…) eu gero o resumo
