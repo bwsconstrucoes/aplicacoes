@@ -187,7 +187,7 @@ def diagnostico(conn: Connection, colaborador_id: int) -> dict:
                            "AND criado_em > now() - interval '1 hour'", c=colaborador_id)["n"]
     if recentes >= CODIGOS_POR_HORA:
         impede.append(f"já pediu {recentes} códigos na última hora — o próximo só sai depois")
-    cfg = db.um(conn, "SELECT pin_hash, pin_criado_em, pin_bloqueado_ate FROM ponto.colaborador_config "
+    cfg = db.um(conn, "SELECT pin_hash, pin_criado_em, pin_bloqueado_ate, pin_falhas FROM ponto.colaborador_config "
                       "WHERE colaborador_id = :c", c=colaborador_id) or {}
     tem_envios = db.um(conn, """SELECT 1 AS x FROM information_schema.tables
                                  WHERE table_schema = 'mensageria' AND table_name = 'envios'""") is not None
@@ -214,6 +214,8 @@ def diagnostico(conn: Connection, colaborador_id: int) -> dict:
             "telefone_no_erp": _formatar_telefone(do_erp) if do_erp and do_erp != digitos else None,
             "situacao": pessoa["situacao"], "tem_pin": bool(cfg.get("pin_hash")),
             "pin_criado_em": horario.texto(cfg.get("pin_criado_em")),
+            # os PINs errados seguidos desde o último acerto (no 5º, bloqueia 15 min e volta a zero)
+            "pin_falhas": int(cfg.get("pin_falhas") or 0),
             "pin_bloqueado_ate": horario.texto(cfg.get("pin_bloqueado_ate"))
             if cfg.get("pin_bloqueado_ate") and cfg["pin_bloqueado_ate"] > horario.agora() else None,
             "impede": impede, "codigos": codigos}
@@ -286,7 +288,7 @@ def entrar(conn: Connection, cpf, pin: str) -> dict:
     cpf_ok = cadastros.normalizar_cpf(cpf)
     pessoa = cadastros.colaborador_por_cpf(conn, cpf_ok)
     generico = NaoAutenticado("CPF ou PIN incorreto")
-    if not pessoa or pessoa["situacao"] == "DESLIGADO" or not pessoa["ativo_no_ponto"]:
+    if not pessoa:
         raise generico
     cfg = _config(conn, pessoa["id"])
     if cfg.get("pin_bloqueado_ate") and cfg["pin_bloqueado_ate"] > horario.agora():
@@ -307,4 +309,11 @@ def entrar(conn: Connection, cpf, pin: str) -> dict:
         raise generico
     db.executar(conn, "UPDATE ponto.colaborador_config SET pin_falhas = 0, pin_bloqueado_ate = NULL "
                       "WHERE colaborador_id = :c", c=pessoa["id"])
+    # PIN CERTO, cadastro fora do ponto (31/10/2026, o dono: "tá muito comum o pessoal dizer que o pin não funciona
+    # mais"). Antes, o desligado, o "não bate ponto" e quem a planilha tira do ponto ouviam "CPF ou PIN incorreto" —
+    # com o PIN certo — e achavam que o PIN tinha parado. Quem acertou o PIN provou ser o dono do CPF: ouve o motivo.
+    if pessoa["situacao"] == "DESLIGADO":
+        raise Recusada("o seu cadastro consta como desligado — o PIN está certo; fale com o DP")
+    if not pessoa["ativo_no_ponto"]:
+        raise Recusada("o seu cadastro está marcado como “não bate ponto” — o PIN está certo; fale com o DP")
     return pessoa

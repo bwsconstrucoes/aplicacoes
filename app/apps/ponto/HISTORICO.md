@@ -410,6 +410,25 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 31/10/2026 (sexta) — "O PIN não funciona mais": o PIN certo de quem está fora do ponto dizia "PIN incorreto"
+
+O dono: *"tá muito comum o pessoal dizer que o pin não funciona mais. acho que tem algum problema nisso. e ainda tem
+essa dificuldade no recebimento da msg."*
+- **O defeito**: `acesso.entrar` recusava com "CPF ou PIN incorreto" ANTES de conferir o PIN quando a pessoa estava
+  desligada, marcada "não bate ponto" ou tirada do ponto pela planilha (PJ, Pró-labore, ESC RUSSAS — desde 29/10). Com o
+  PIN certo, ela ouvia "PIN incorreto" — e o PIN "tinha parado de funcionar". O mesmo acontece se a base de pessoas a
+  marca como desligada por engano (data de saída ou fase do Pipefy).
+- **Agora**: o PIN é conferido primeiro. Errado (ou CPF que não existe): a frase de sempre, que não revela nada. Certo,
+  mas cadastro fora do ponto: **"o seu cadastro está marcado como 'não bate ponto' (ou consta como desligado) — o PIN
+  está certo; fale com o DP"** — quem acertou o PIN provou ser o dono do CPF (como já era no criar PIN, 16/10).
+- **Para o DP**, na janela da pessoa › "🔑 código de acesso": além de "travado até", **quantos PINs errados seguidos**
+  (no 5º, trava 15 min e volta a zero).
+- A dificuldade de receber o código ficou visível na tela Mensagens (a entrega de antes, nesta mesma data).
+- Não verificado com dado de produção: quantas das queixas são deste caso e quantas são PIN esquecido de verdade. O DP
+  passa a ver qual é: "não bate ponto/desligado" na mensagem da pessoa; PINs errados seguidos na janela.
+- Teste: PIN criado, pessoa marcada "não bate" → a mensagem com o motivo; PIN errado → a frase de sempre e o contador.
+**No ramo, esperando o "pode"** — SEM MIGRAÇÃO.
+
 ## 31/10/2026 (quinta) — A pessoa de teste passa por cima do "não bate" da planilha
 
 O dono: *"preciso ter um usuário de teste para o aplicativo do ponto, no caso sou eu. Ele tá bloqueando pq meu
