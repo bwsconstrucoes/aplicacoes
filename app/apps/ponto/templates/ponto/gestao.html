@@ -4636,7 +4636,7 @@ function fechLigarGrade() {
   els("rl-tabela").querySelectorAll("[data-he]").forEach(c => c.addEventListener("click", () => marcar(c)));
   els("rl-tabela").querySelectorAll("[data-abrir-duplo]").forEach(c => c.addEventListener("dblclick", ev => {
     ev.preventDefault();
-    if (c.dataset.he) marcar(c);        // os dois cliques do duplo marcaram e desmarcaram: volta como estava
+    // os dois cliques do duplo já marcaram e desmarcaram a hora: ela fica como estava
     abrirPessoaPainel(Number(c.dataset.abrirDuplo), c.dataset.dia || null, c.dataset.aba || "mes", c.dataset.competencia || null);
   }));
   const itens = negadas => [...FECH_MARC].map(k => els("rl-tabela").querySelector(`[data-he="${k}"]`)).filter(c => c &&

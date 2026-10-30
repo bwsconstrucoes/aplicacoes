@@ -410,6 +410,20 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 31/10/2026 (segunda) — O calendário de horas extras: cabeçalho parado, um clique marca, dois abrem o espelho
+
+O dono: *"como são muitos funcionários, na tela do calendário devemos fixar o cabeçalho com os dias. Outra coisa, como
+quando clicamos no dia abre o espelho, a função de marcar pra negar as horas não tá funcionando. Talvez possamos abrir o
+espelho se clicar duas vezes."*
+- O calendário fica numa caixa com rolagem própria (altura da tela): o cabeçalho dos dias de cada obra fica parado ao
+  rolar, e a coluna dos nomes ao rolar para o lado.
+- **Um clique na hora extra marca/desmarca para negar** (a caixa "Marcar horas para negar" saiu); **dois cliques em
+  qualquer dia abrem o espelho** — os dois cliques do duplo marcam e desmarcam, a hora fica como estava. O nome da
+  pessoa continua abrindo com um clique.
+- Conferido no navegador: um clique marca sem abrir nada; dois cliques abrem o espelho com a marca intacta; o cabeçalho
+  fica no topo da caixa ao rolar.
+**No ramo, esperando o "pode"** — SEM MIGRAÇÃO.
+
 ## 31/10/2026 — O feriado pela obra onde a pessoa trabalha
 
 O dono: *"para efeito de feriado, a obra onde a pessoa está trabalhando funciona né?"* — funcionava só no dia COM
