@@ -427,7 +427,7 @@ no modal a mensagem."*
   (`neg_dias` com as batidas e quantas faltaram; a lista `fora_ciclo`).
 - Teste: a falta parcial do fechamento traz as batidas ("07:00 11:00") e quantas faltaram. Ensaio no navegador com falta,
   batida faltando e atraso, agrupados na obra.
-**No ramo, esperando o "pode".** SEM MIGRAÇÃO.
+**Publicado em 31/10/2026** (com o "pode" do dono) — SEM MIGRAÇÃO.
 
 ## 31/10/2026 (vigésima primeira) — O ajuste no ponto da obra escolhe a obra da batida
 
@@ -446,7 +446,7 @@ do dia ou, sem elas, para a obra do aparelho.
   aviso (a escolha era não incomodar a pessoa nova). Consequência: o ajuste dela aparece como "atenção" nas Validações.
 - Teste: o dia do ponto da obra traz as obras; o ajuste com outra obra fica nela, não na do aparelho; o aviso pelo bilhete
   acusa a obra em que a pessoa não bate; a pessoa sem batida nenhuma ganha o aviso.
-**No ramo, esperando o "pode".** SEM MIGRAÇÃO.
+**Publicado em 31/10/2026** (com o "pode" do dono) — SEM MIGRAÇÃO.
 
 ## 31/10/2026 (vigésima) — O vigia que muda de paridade, e a saída esticada até o meio-dia (migração 026)
 
