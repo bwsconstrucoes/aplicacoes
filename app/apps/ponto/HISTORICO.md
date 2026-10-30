@@ -410,6 +410,18 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 31/10/2026 (vigésima primeira) — O ajuste no ponto da obra escolhe a obra da batida
+
+O dono: *"tem uma pessoa que tá tentando fazer o ajuste por uma pessoa, mas ela não está na obra, e não consegue
+selecionar a obra."* No pedido pelo celular (com login) a obra já se escolhia entre todas as ativas (16/10); no ponto da
+obra (o aparelho compartilhado, a pessoa identificada pelo CPF) não havia o campo: o ajuste ia para a obra das batidas
+do dia ou, sem elas, para a obra do aparelho.
+- **Agora** o ajuste no ponto da obra tem **"Obra da batida"**, com todas as obras ativas; começa na obra das batidas do
+  dia (ou na do aparelho) e avisa, como no celular, quando a obra escolhida parece errada (ninguém bate nela há dias) —
+  o primeiro toque em "Enviar" pede a confirmação. O servidor já aceitava qualquer obra cadastrada.
+- Teste: o dia do ponto da obra traz as obras; o ajuste com outra obra fica nela, não na do aparelho.
+**No ramo, esperando o "pode".** SEM MIGRAÇÃO.
+
 ## 31/10/2026 (vigésima) — O vigia que muda de paridade, e a saída esticada até o meio-dia (migração 026)
 
 O dono, com o espelho de um vigia de CREPEBELEM (12x36): pares de 16 a 20 (16, 18, 20), folga em 21 e 22, ímpares do

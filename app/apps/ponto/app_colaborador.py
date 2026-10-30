@@ -896,7 +896,10 @@ def app_api_tablet_dia():
         dias = espelho.montar(conn, int(pessoa["id"]), dia, ate)["dias"]
         for x in dias:
             x["competencia_fechada"] = competencias.esta_fechada(conn, dt.date.fromisoformat(x["data"]))
-    return _ok(dia=dias[0], dias=dias, competencia_fechada=dias[0]["competencia_fechada"])
+        # todas as obras ativas, para escolher a obra da batida (31/10/2026, o dono: "está tentando fazer o ajuste por
+        # uma pessoa, mas ela não está na obra, e não consegue selecionar a obra") — como no pedido pelo celular
+        obras = [{"codigo": o["codigo"], "nome": o["nome"]} for o in cadastros.listar_obras(conn)]
+    return _ok(dia=dias[0], dias=dias, competencia_fechada=dias[0]["competencia_fechada"], obras=obras)
 
 
 @bp.route("/app/api/tablet/ajuste-do-dia", methods=["POST"])

@@ -46,6 +46,8 @@ def test_ajuste_no_ponto_da_obra_abre_o_dia_e_pede_varios_horarios(app, mundo, b
     assert [p["hora"] for p in x["previstas"]] == ["07:00", "11:00", "12:00", "17:00"]
     assert [f["sugestao"] for f in x["faltando"]] == ["12:00", "17:00"]
     assert r.get_json()["competencia_fechada"] is False
+    # todas as obras ativas, para escolher a obra da batida (31/10/2026: quem pede pela pessoa não está na obra dela)
+    assert {"PG-A", "PG-B"} <= {o["codigo"] for o in r.get_json()["obras"]}
     futuro = tab.post("/ponto/app/api/tablet/dia",
                       json={"bilhete": b, "data": (dt.date.today() + dt.timedelta(days=3)).isoformat()}, headers=h)
     assert futuro.status_code == 400
@@ -63,8 +65,12 @@ def test_ajuste_no_ponto_da_obra_abre_o_dia_e_pede_varios_horarios(app, mundo, b
     # outro dia, na mesma identificação, intercalado (a entrada e a saída)
     q = tab.post("/ponto/app/api/tablet/ajuste-do-dia", headers=h, json={
         "bilhete": b, "horarios": [f"{ter}T07:00:00", f"{ter}T17:00:00"], "motivo": "ESQUECI",
-        "descricao": "celular ficou em casa", "obra_do_aparelho": "PG-A"})
+        "descricao": "celular ficou em casa", "obra_do_aparelho": "PG-A", "obra": "PG-B"})
     assert q.status_code == 201, q.get_json()
+    with banco.connect() as conn:          # a obra escolhida, não a do aparelho
+        assert {r[0] for r in conn.execute(text(
+            "SELECT o.codigo FROM ponto.ocorrencias oc JOIN obras o ON o.id = oc.obra_id "
+            "WHERE oc.tipo = 'AJUSTE_BATIDA' AND oc.data_inicio = :d"), {"d": ter})} == {"PG-B"}
     with banco.connect() as conn:
         origens = conn.execute(text("SELECT origem, count(*) FROM ponto.ocorrencias "
                                     "WHERE tipo = 'AJUSTE_BATIDA' GROUP BY origem")).all()

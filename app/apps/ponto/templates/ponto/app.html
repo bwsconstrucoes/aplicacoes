@@ -2794,6 +2794,8 @@ function abrirFormularioDoTablet(d, tipo) {
     AJUSTE_BATIDA: `<label>Dia</label><input type="date" id="tf-inicio" value="${d.dia_ajuste || hoje}" max="${hoje}">
       <label>Até o dia (se foram vários dias)</label><input type="date" id="tf-ate" max="${hoje}">
       <div id="tf-dia" class="pequeno" style="margin-top:8px">Carregando o dia…</div>
+      <label for="tf-obra">Obra da batida</label><select id="tf-obra"></select>
+      <div id="tf-obra-aviso" class="aviso ambar oculto"></div>
       <label>Motivo</label><select id="tf-motivo">${MOTIVOS_AJUSTE.map(m => `<option value="${m[0]}">${esc(m[1])}</option>`).join("")}</select>`,
     COMPENSACAO: `<label>Dia em que vai trabalhar (ou trabalhou)</label><input type="date" id="tf-trabalhado">
       <label>Dia da folga no lugar</label><input type="date" id="tf-inicio">`,
@@ -2840,7 +2842,7 @@ function abrirFormularioDoTablet(d, tipo) {
   // O ajuste abre o dia da pessoa: o que já bateu, o que a escala esperava, e os
   // horários que faltam já postos — para marcar um, dois, ou o dia inteiro.
   // Vários dias (12/10/2026): com o "até", um bloco por dia, num pedido só.
-  let DIA = null, DIAS = null;
+  let DIA = null, DIAS = null, TB_OBRA_VIGIADA = null;
   const carregarDia = async () => {
     const caixa = $("tf-dia"); if (!caixa) return;
     DIA = DIAS = null; caixa.textContent = "Carregando…";
@@ -2848,6 +2850,13 @@ function abrirFormularioDoTablet(d, tipo) {
       const ate = $("tf-ate").value && $("tf-ate").value !== $("tf-inicio").value ? $("tf-ate").value : null;
       const r = await chamar("/ponto/app/api/tablet/dia", {bilhete: d.bilhete, data: $("tf-inicio").value, ...(ate ? {ate} : {})});
       const x = r.dia;
+      // a obra da batida: qualquer obra ativa (31/10/2026) — começa na das batidas do dia, ou na deste aparelho
+      const sel = $("tf-obra");
+      if (sel && r.obras) {
+        const atual = sel.value || (x.batidas[0] && x.batidas[0].obra) || $("t-obra").value || "";
+        sel.innerHTML = r.obras.map(o => `<option value="${esc(o.codigo)}" ${o.codigo === atual ? "selected" : ""}>${esc(rotuloObra(o))}</option>`).join("");
+        if (!TB_OBRA_VIGIADA) TB_OBRA_VIGIADA = vigiarObra("tf-obra", "tf-obra-aviso", "tf-enviar", null);
+      }
       if (!ate) {
         if (r.competencia_fechada) { caixa.textContent = "Esse mês já foi fechado para a folha — fale com o DP."; return; }
         if (x.ocorrencia) { caixa.textContent = `Esse dia já está justificado (${x.ocorrencia.rotulo}).`; return; }
@@ -2883,8 +2892,9 @@ function abrirFormularioDoTablet(d, tipo) {
       if (!DIA) return ($("tf-msg").textContent = "Escolha um dia em que dá para pedir ajuste.");
       try { corpo.horarios = DIAS ? DIAS.horarios() : horariosMarcados($("tf-linhas"), DIA); }
       catch (e) { return ($("tf-msg").textContent = e.message); }
+      if (TB_OBRA_VIGIADA && !TB_OBRA_VIGIADA()) return;
       Object.assign(corpo, {motivo: v("tf-motivo"),
-                            obra: (DIAS ? DIAS.obra() : (DIA.batidas[0] && DIA.batidas[0].obra)) || $("t-obra").value || ""});
+                            obra: v("tf-obra") || (DIAS ? DIAS.obra() : (DIA.batidas[0] && DIA.batidas[0].obra)) || $("t-obra").value || ""});
     } else if (tipo === "COMPENSACAO") {
       Object.assign(corpo, {data_inicio: v("tf-inicio"), dia_trabalhado: v("tf-trabalhado")});
     } else if (tipo === "PERMUTA") {
