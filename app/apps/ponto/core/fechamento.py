@@ -386,6 +386,15 @@ def montar(conn: Connection, quem: Quem, competencia, filtros: Optional[dict] = 
             r["conferencia"].append({**base, "aviso": f"IGNORADA no arquivo .ps — {sem_id}; lance à mão ou "
                                                          "corrija o ID Fortes na Análise de SPs"})
 
+    # a troca de plantão identificada sozinha (31/10/2026, trocas.py): para o DP confirmar antes de fechar
+    from . import trocas
+    por_id = {int(p["id"]): p for p, _ in espelhos}
+    for t in trocas.detectar({int(p["id"]): esp for p, esp in espelhos}):
+        for eu, outro in ((t["a"], t["b"]), (t["b"], t["a"])):
+            r["conferencia"].append({**relatorios._base(por_id[eu["id"]]),
+                                     "aviso": f"troca de plantão provável com {outro['nome']}: trabalhou a noite de "
+                                              f"{_br(eu['cobriu'])} (do colega) e o colega a de {_br(eu['deixou'])} (dele) "
+                                              "— confirme na janela da pessoa › Espelho do mês"})
     # o atraso todo abatido sai da planilha de atrasos (o que sobrou fica, para descontar)
     for chave in ("ant_faltas", "cor_faltas_parciais"):
         r[chave] = [x for x in r[chave] if x["minutos"] > 0]

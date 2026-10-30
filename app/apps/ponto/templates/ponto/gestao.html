@@ -1506,6 +1506,14 @@ function desenharPainel() {
     abrirPessoaPainel(p.id, b.dataset.dpDia, "dia")));
   els("dp-corpo").querySelectorAll("[data-dp-ajuste]").forEach(b => b.addEventListener("click", () =>
     pedirAjuste(quem, b.dataset.dpAjuste, recarregarPainel)));
+  els("dp-corpo").querySelectorAll("[data-troca-confirmar]").forEach(b => b.addEventListener("click", async () => {
+    if (!await perguntar({titulo: "Confirmar a troca de plantão", campos: [], textoOk: "Confirmar",
+        aviso: "Vira uma compensação para cada um (a folga é a noite que ele deixou; o dia trabalhado, a do colega), " +
+               "já aprovada. As faltas e as horas extras desses dias saem, e o espelho dos dois mostra a troca."})) return;
+    try { await postar("/erp/api/ponto/trocas/confirmar", {colaborador_id: p.id, cobriu: b.dataset.trocaConfirmar});
+          ESP_PAINEL = null; await recarregarPainel(); aviso("dp-msg", "Troca de plantão confirmada para os dois.", "ok"); }
+    catch (e) { aviso("dp-msg", escapar(e.message), "erro"); }
+  }));
   desenharQrDaPessoa(p);
   ligarFotoDeCadastro(p);
   els("dp-corpo").querySelectorAll("[data-dp-decidir]").forEach(b => b.addEventListener("click", () =>
@@ -1609,7 +1617,8 @@ function linhaDoEspelho(d, E, podeAjustar) {
   const ocorr = [
     d.ocorrencia ? `<span class="selo pago">${escapar(d.ocorrencia.rotulo)}</span>` : "",
     ...(d.declaracoes || []).filter(x => !d.ocorrencia || x.id !== d.ocorrencia.id).map(x => `<span class="selo pago">${escapar(x.rotulo)}</span>`),
-    d.compensacao ? `<small>trabalhou no lugar de uma folga</small>` : "",
+    d.compensacao ? `<small>${d.compensacao.rotulo && d.compensacao.rotulo.startsWith("Troca de plantão")
+      ? `🔁 ${escapar(d.compensacao.rotulo)} (trabalhou a noite do colega)` : "trabalhou no lugar de uma folga"}</small>` : "",
     ...(d.pendentes || []).filter(o => o.tipo !== "AJUSTE_BATIDA").map(o => o.id
       ? `<button type="button" class="selo aguardando" data-pedido="${o.id}" title="clique para ver e decidir">${escapar(o.rotulo)} esperando</button>`
       : `<span class="selo aguardando">${escapar(o.rotulo)} esperando</span>`),
@@ -1645,7 +1654,13 @@ function painelMes() {
   const E = E0.dados, r = E.resumo, antes = E.dias.filter(d => d.situacao === "ANTES_DO_PONTO");
   const kpi = (rot, valor, cor, sub) => `<div class="kpi estatico ${cor}" title="${escapar(sub)}"><div class="kpi-rotulo">${rot}</div>
     <div class="kpi-valor" style="font-size:18px">${valor}</div></div>`;
-  return nav + `<div class="kpis" style="margin-bottom:10px">${[
+  // a troca de plantão identificada sozinha (31/10/2026): proposta aqui, o DP confirma
+  const trocasHtml = (E.trocas || []).map(t => { const eu = t.a.id === p.id ? t.a : t.b, outro = t.a.id === p.id ? t.b : t.a;
+    return `<div class="aviso ambar" style="margin:0 0 10px">🔁 <b>Troca de plantão provável com ${escapar(outro.nome)}</b>
+      (obra ${escapar(t.obra || "—")}): ${escapar(p.nome.split(" ")[0])} trabalhou a noite de <b>${ddmm(eu.cobriu)}</b> no lugar
+      do colega, e o colega a de <b>${ddmm(eu.deixou)}</b>. Confirmada, as faltas e as horas extras desses dias saem, para os dois.
+      ${PODE_TRATAR ? `<button class="btn" type="button" style="margin-left:8px" data-troca-confirmar="${escapar(eu.cobriu)}">Confirmar a troca</button>` : ""}</div>`; }).join("");
+  return nav + trocasHtml + `<div class="kpis" style="margin-bottom:10px">${[
       kpi("Trabalhado", hm(r.trabalhado), "", `em ${r.dias} dia(s) contados`),
       kpi("Previsto", hm(r.previsto), "", "o que a escala pedia"),
       kpi("Extra", hm(r.extra), "verde", "acima do previsto"),

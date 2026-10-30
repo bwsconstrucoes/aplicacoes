@@ -69,6 +69,9 @@ def rotulo_da_ocorrencia(o: dict) -> str:
         return f"Declaração de comparecimento — {m // 60}h{m % 60:02d} abonadas"
     if o.get("tipo") == "ATESTADO" and o.get("subtipo") in NOME_DECLARACAO:
         return NOME_DECLARACAO[o["subtipo"]]
+    # a troca de plantão confirmada (31/10/2026, trocas.py): o espelho diz com quem
+    if o.get("tipo") == "COMPENSACAO" and str(o.get("descricao") or "").startswith("Troca de plantão com"):
+        return str(o["descricao"]).split(":")[0]
     return ROTULO_TIPO[o["tipo"]]
 
 
@@ -446,7 +449,7 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
             "ocorrencia": ({"id": aprovadas[0]["id"], "tipo": aprovadas[0]["tipo"],
                             "subtipo": aprovadas[0].get("subtipo"),
                             "rotulo": rotulo_da_ocorrencia(aprovadas[0])} if aprovadas else None),
-            "compensacao": ({"id": compensa[0]["id"]} if compensa else None),
+            "compensacao": ({"id": compensa[0]["id"], "rotulo": rotulo_da_ocorrencia(compensa[0])} if compensa else None),
             # a declaração que abonou só o período, ou nada — o dia continua julgado
             "declaracoes": [{"id": o["id"], "rotulo": rotulo_da_ocorrencia(o), "subtipo": o["subtipo"],
                              "minutos": int(o.get("minutos") or 0)} for o in declaracoes]

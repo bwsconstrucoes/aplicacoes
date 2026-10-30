@@ -822,7 +822,39 @@ def ponto_api_espelho(colaborador_id: int):
         # meu mês não está aparecendo em Espelho do ponto no ERP")
         from .core import negativas
         negativas.nos_dias(conn, colaborador_id, esp["dias"])
+        # a troca de plantão identificada sozinha (31/10/2026, core/trocas.py): proposta, o DP confirma
+        from .core import trocas
+        esp["trocas"] = trocas.da_pessoa(conn, colaborador_id, dt.date.fromisoformat(esp["inicio"]),
+                                         dt.date.fromisoformat(esp["fim"]), esp=esp)
     return _ok(**esp)
+
+
+@bp.route("/erp/api/ponto/trocas/confirmar", methods=["POST"])
+@login_obrigatorio
+@permissao("tratar_ponto")
+@_api
+def ponto_api_confirmar_troca():
+    """Confirma a troca de plantão proposta (31/10/2026): as duas compensações, aprovadas por quem pode (o DP).
+    A troca é refeita aqui, a partir das batidas — só se confirma a que o sistema de fato identificou."""
+    quem, d = _quem(), _corpo()
+    a_id, cobriu = int(d.get("colaborador_id") or 0), str(d.get("cobriu") or "")
+    with db.conexao() as conn:
+        _exigir_pessoa(conn, quem, a_id)
+        try:
+            dia = dt.date.fromisoformat(cobriu)
+        except ValueError as e:
+            raise ErroDeValidacao("dia ilegível", campo="cobriu") from e
+        inicio, fim = competencias.primeiro_dia(dia), competencias.ultimo_dia(competencias.primeiro_dia(dia))
+        from .core import trocas
+        achada = next((t for t in trocas.da_pessoa(conn, a_id, inicio - dt.timedelta(days=trocas.JANELA_DIAS),
+                                                   fim + dt.timedelta(days=trocas.JANELA_DIAS))
+                       if cobriu in (t["a"]["cobriu"], t["b"]["cobriu"])), None)
+        if not achada:
+            raise ErroDeValidacao("essa troca não aparece mais nas batidas — abra o espelho de novo")
+        outro = achada["b"]["id"] if achada["a"]["id"] == a_id else achada["a"]["id"]
+        _exigir_pessoa(conn, quem, outro)
+        feitas = trocas.confirmar(conn, quem, achada)
+    return _ok(troca=achada, ocorrencias=feitas)
 
 
 @bp.route("/erp/api/ponto/exportar.csv")

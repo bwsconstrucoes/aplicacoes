@@ -292,6 +292,18 @@ def dias_trabalhados(conn: Connection, ids: list[int]) -> dict[int, tuple]:
                 OR max(EXTRACT(HOUR FROM timestamp_servidor AT TIME ZONE 'America/Fortaleza')) >= 12
              ORDER BY colaborador_id, data_referencia""", ids=[int(i) for i in ids]):
         saida.setdefault(int(r["colaborador_id"]), []).append(r["data_referencia"])
+    # A TROCA DE PLANTÃO lançada como compensação (31/10/2026, o dono, dois vigias da mesma obra que trocaram a
+    # noite): o dia trabalhado NO LUGAR do outro não vota no ciclo, e a noite que ele deixou (a folga
+    # compensatória) vota como se tivesse sido trabalhada — senão a troca puxa o ciclo da pessoa para o lado errado.
+    trocas = db.todos(conn, """
+            SELECT colaborador_id, data_inicio AS folga, dia_trabalhado FROM ponto.ocorrencias
+             WHERE colaborador_id = ANY(:ids) AND tipo = 'COMPENSACAO' AND status = 'APROVADA'
+               AND dia_trabalhado IS NOT NULL""", ids=[int(i) for i in ids])
+    for t in trocas:
+        dias = set(saida.get(int(t["colaborador_id"]), []))
+        dias.discard(t["dia_trabalhado"])
+        dias.add(t["folga"])
+        saida[int(t["colaborador_id"])] = sorted(dias)
     return {k: tuple(v) for k, v in saida.items()}
 
 

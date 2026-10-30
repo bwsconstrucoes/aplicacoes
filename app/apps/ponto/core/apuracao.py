@@ -84,19 +84,26 @@ def dia_do_ciclo(trabalhados: tuple, dia: dt.date, data_base: Optional[dt.date] 
       (diferença par) e em quantos na outra; ganha a maioria. Empate: vale o mais antigo dos que
       votaram (o ciclo que já vinha — uma noite a mais no começo não vira o ciclo). O próprio `dia`
       não vota — por isso a noite trabalhada fora do ciclo é extra, não vira o ciclo.
-    - Com menos de 2 noites antes (o começo do ponto ou da escala), votam também os 30 dias DEPOIS.
+    - Com menos de 2 noites antes (o começo do ponto ou da escala), ou com empate, votam também os 30 dias DEPOIS.
       (30/10/2026, o vigia que trabalha nos dias ímpares desde 17/10: sem ninguém antes, o dia 16
       caía no "dia de trabalho" informado ao dar a escala e virava falta.)
     - Ninguém votou: a paridade do último dia trabalhado, por mais antigo que seja.
     - Nunca trabalhou: o dia informado ao dar a escala, se houver; senão nada é previsto (None),
       a não ser no próprio dia com batida, que abre o ciclo."""
     janela = dt.timedelta(days=JANELA_CICLO_AUTOMATICO)
-    votos = [w for w in trabalhados if dia - janela <= w < dia]
-    if len(votos) < 2:
-        votos += [w for w in trabalhados if dia < w <= dia + janela]
-    if votos:
+
+    def placar(votos):
         mesma = sum(1 for w in votos if (dia - w).days % 2 == 0)
-        outra = len(votos) - mesma
+        return mesma, len(votos) - mesma
+    votos = [w for w in trabalhados if dia - janela <= w < dia]
+    depois = [w for w in trabalhados if dia < w <= dia + janela]
+    mesma, outra = placar(votos)
+    # Poucos votos antes, ou EMPATE (31/10/2026: o vigia que trocou o plantão e trabalhou duas noites seguidas — 18 e
+    # 19 — empatava e o ciclo virava; a falta caía no 20 e o 21 virava extra): votam também os 30 dias depois.
+    if len(votos) < 2 or mesma == outra:
+        votos = votos + depois
+        mesma, outra = placar(votos)
+    if votos:
         if mesma != outra:
             return mesma > outra
         return (dia - votos[0]).days % 2 == 0

@@ -410,6 +410,32 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 31/10/2026 (oitava) — A troca de plantão identificada sozinha
+
+O dono, no calendário de horas extras, dois vigias da CREPEFLORESTA2: um com 13h57 de extra no dia 17 e falta no 18,
+o outro com falta no 17 e 13h41 no 18 — *"pelo que podemos ver trocaram o plantão. Como podemos resolver isso? (…) O
+ideal é que o sistema identifique de forma automática essa permuta, mas alerte pra validação, e ainda que haja um
+registro no espelho."*
+- **Identificada** (`core/trocas.py`, regra pura `detectar`): na MESMA obra, A trabalhou a noite X fora do ciclo dele
+  (FORA_DO_CICLO) e B faltou nela; e, até 15 dias antes ou depois, B trabalhou a noite Y fora do ciclo e A faltou
+  nela. Só a troca completa; quem só cobriu fica com a extra e a falta, para o DP. Procura só entre quem está numa
+  escala 12x36 e bateu nas mesmas obras (a obra pode ter cem pessoas).
+- **Alertada para validação**: na janela da pessoa › Espelho do mês, o aviso "🔁 Troca de plantão provável com …" e o
+  botão **"Confirmar a troca"** (quem trata o ponto; a aprovação é do DP, como toda compensação); e na aba
+  **Conferência** do fechamento, uma linha para cada um.
+- **Confirmada**: duas compensações aprovadas (rota `/erp/api/ponto/trocas/confirmar`, que REFAZ a detecção — só se
+  confirma o que as batidas mostram), uma de cada: a folga = a noite que ele deixou, o dia trabalhado = a do colega,
+  descrição "Troca de plantão com …". **No espelho**: na noite deixada, "Troca de plantão com …" (abonado); na
+  trabalhada, "🔁 Troca de plantão com … (trabalhou a noite do colega)", sem extra. Confirmada, a proposta some.
+- **O ciclo automático não se perde**: a compensação aprovada vira o voto (`escalas.dias_trabalhados`: a noite
+  trabalhada no lugar do outro sai, a deixada entra); e, antes de confirmar, o EMPATE nas noites anteriores desempata
+  pelas seguintes (`apuracao.dia_do_ciclo` — o Adriano trabalhou o 18 e o 19 seguidos, empatava, e o 20 virava falta
+  e o 21 extra).
+- Não há "não é troca": se não for, é só não confirmar — a extra e a falta continuam, e o DP decide como sempre.
+- Testes: a regra pura (troca completa; só cobriu; outra obra), o desempate dos dois vigias, a compensação virando o
+  voto, e com banco: dois vigias trocando, a proposta no espelho, a confirmação, o espelho dos dois depois.
+**No ramo, esperando o "pode"** — SEM MIGRAÇÃO (vai junto com a 022).
+
 ## 31/10/2026 (sétima) — O primeiro dia da escala do vigia (migração 022)
 
 O dono, num vigia do 12x36 com a escala própria a partir de 16/10 (o começo do ponto): *"acho que tá errado essa

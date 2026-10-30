@@ -63,6 +63,14 @@ def test_o_ciclo_12x36_sai_das_batidas():
     assert dia_do_ciclo(impares, dt.date(2026, 10, 17), base) is True
     assert dia_do_ciclo(impares, dt.date(2026, 10, 18), base) is False
     assert dia_do_ciclo(impares, dt.date(2026, 10, 31), base) is True
+    # a troca de plantão (31/10/2026, os dois vigias da CREPEFLORESTA2): o Adriano, das noites ímpares, trabalhou o
+    # 18 no lugar do colega e o 19 dele — o empate antes do 20 e do 21 desempata pelas noites seguintes
+    adriano = tuple(dt.date(2026, 10, n) for n in (18, 19, 21, 23, 25))
+    assert dia_do_ciclo(adriano, dt.date(2026, 10, 20)) is False          # folga, não falta
+    assert dia_do_ciclo(adriano, dt.date(2026, 10, 21)) is True           # noite dele, não extra
+    adelson = tuple(dt.date(2026, 10, n) for n in (16, 17, 20, 22, 24))
+    assert dia_do_ciclo(adelson, dt.date(2026, 10, 18)) is True           # a noite que ele deixou: falta (ou a troca)
+    assert dia_do_ciclo(adelson, dt.date(2026, 10, 19)) is False
 
 
 @pytest.mark.banco
@@ -215,3 +223,25 @@ def test_o_primeiro_dia_da_escala_do_vigia(app, mundo):
     with db.conexao() as conn:
         conn.execute(text(sql))
     assert dias()[0] == d0 - dt.timedelta(days=1)
+
+
+@pytest.mark.banco
+def test_a_troca_de_plantao_lancada_como_compensacao_vira_o_voto_do_ciclo(app, mundo):
+    """31/10/2026: lançada a troca (compensação: a folga = a noite que ele deixou; o dia trabalhado = a do colega), a
+    noite trabalhada no lugar do outro não vota no ciclo, e a deixada vota."""
+    from app.apps.ponto import db
+    from app.apps.ponto.core import escalas
+    from tests.test_ponto_gestao_banco import CPF_JOAO, bater_via_chave, local
+    dp = como(app, mundo["dp"])
+    d0 = _segunda_passada()
+    d1, d2 = d0 + dt.timedelta(days=1), d0 + dt.timedelta(days=2)
+    bater_via_chave(app, CPF_JOAO, local(d1, 17, 0))
+    bater_via_chave(app, CPF_JOAO, local(d1, 23, 0))
+    with db.conexao() as conn:
+        assert escalas.dias_trabalhados(conn, [mundo["joao"]])[mundo["joao"]] == (d1,)
+    r = dp.post("/erp/api/ponto/ocorrencias", json={
+        "tipo": "COMPENSACAO", "colaborador_id": mundo["joao"], "data_inicio": d2.isoformat(),
+        "dia_trabalhado": d1.isoformat(), "descricao": "troca de plantão com o colega", "aprovar_ja": True})
+    assert r.status_code == 201, r.get_json()
+    with db.conexao() as conn:
+        assert escalas.dias_trabalhados(conn, [mundo["joao"]])[mundo["joao"]] == (d2,)
