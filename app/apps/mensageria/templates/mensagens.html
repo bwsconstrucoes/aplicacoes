@@ -22,7 +22,7 @@
     <select id="f-status" data-sem-busca><option value="">Todas</option>
       <option value="ENVIADO">Enviada</option><option value="FALHOU">Falhou</option>
       <option value="SEM_DESTINO">Sem destinatário</option><option value="DESLIGADO">Tipo desligado</option>
-      <option value="LIMITE">Teto do WhatsApp</option></select></div>
+      <option value="LIMITE">Teto do WhatsApp</option><option value="BARRADO">Barrado na origem</option></select></div>
   <div class="campo" style="margin-top:10px"><label for="f-tipo">Tipo</label>
     <select id="f-tipo" data-sem-busca><option value="">Todos</option></select></div>
   <div class="campo" style="margin-top:10px"><label for="f-busca">Buscar</label>
@@ -100,7 +100,9 @@ const telefoneBonito = t => { const d = (t || "").replace(/\D/g, "");
   if (d.length === 13) return `(${d.slice(2,4)}) ${d.slice(4,5)} ${d.slice(5,9)}-${d.slice(9)}`;
   if (d.length === 12) return `(${d.slice(2,4)}) ${d.slice(4,8)}-${d.slice(8)}`; return t || ""; };
 const SITUACAO = {ENVIADO: ["Enviada", "ok"], FALHOU: ["Falhou", "erro"], SEM_DESTINO: ["Sem destinatário", "alerta"],
-                  DESLIGADO: ["Tipo desligado", "info"], LIMITE: ["Teto do WhatsApp", "alerta"]};
+                  DESLIGADO: ["Tipo desligado", "info"], LIMITE: ["Teto do WhatsApp", "alerta"],
+                  // o módulo que segurou antes do WhatsApp (o ponto: CPF não achado, pessoa desligada, teto de pedidos)
+                  BARRADO: ["Barrado na origem", "alerta"]};
 const CANAL = {telegram: "Telegram", whatsapp: "WhatsApp", "": "—"};
 function etiqueta(status){ const [r, c] = SITUACAO[status] || [status, "info"];
   return `<span class="aviso ${c}" style="display:inline-block; padding:2px 8px; margin:0; font-size:12px">${escapar(r)}</span>`; }

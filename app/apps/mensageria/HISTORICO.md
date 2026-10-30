@@ -36,6 +36,18 @@ no próprio código.
 
 ---
 
+## 31/10/2026 — uma situação nova no registro, vinda do chat do Ponto: "Barrado na origem"
+
+O dono, no chat do Ponto: *"preciso que essas mensagens mesmo que bloqueadas apareçam no mensageria, pq assim tenho
+como resolver a pane e visualizar a tentativa"* (uma pessoa pedia o PIN e não recebia, e o teste da tela Mensagens ia).
+- O **ponto** passou a anotar no registro (`mensageria.envios`, por `notificador._registrar`, `origem = "ponto"`) o que
+  ele mesmo segura antes do WhatsApp: **"Sem destinatário"** (SEM_DESTINO, já existente) quando não há celular com DDD
+  no cadastro; **"Barrado na origem"** (BARRADO, novo) quando o CPF não foi achado, a pessoa está desligada, ou passou
+  do teto de pedidos (código de acesso: 3 por hora; QR: 3 por dia). O detalhe diz o motivo.
+- Aqui, só a tela: a situação "Barrado na origem" no filtro e na etiqueta (`templates/mensagens.html`). Nada mudou na
+  regra, nos tetos nem na política.
+- O que é decidido aqui já era anotado (enviada, falhou, tipo desligado, teto do WhatsApp).
+
 ## 29/10/2026 — um tipo novo no catálogo, vindo do chat do Análise de SPs: "Encaminhar SP"
 
 - O dono pediu que a janela Encaminhar (Solicitações e Lote) ENVIE a mensagem, em

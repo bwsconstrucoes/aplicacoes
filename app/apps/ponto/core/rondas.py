@@ -231,6 +231,9 @@ def rodar(conn_fabrica: Callable, *, agora: Optional[dt.datetime] = None,
             if not telefone:
                 db.executar(conn, "UPDATE ponto.rondas SET status = 'NAO_ENVIADA', motivo = :m WHERE id = :i",
                             m="o vigia não tem telefone válido no cadastro", i=r["id"])
+                envios.registrar_nao_enviado("ponto.ronda", "o vigia não tem celular com DDD no cadastro",
+                                             cpf=(pessoa or {}).get("cpf") or "", texto=f"ronda surpresa de {r['nome']}",
+                                             status=envios.SEM_DESTINO)
                 feito["nao_enviadas"] += 1
                 continue
             # reserva antes de mandar: o link vale a partir de agora

@@ -410,6 +410,27 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 31/10/2026 (quarta) — A mensagem que o ponto não mandou aparece na tela Mensagens
+
+O dono, sobre uma pessoa que pede o PIN e não recebe, com o teste da tela Mensagens funcionando: *"preciso que essas
+mensagens mesmo que bloqueadas apareçam no mensageria, pq assim tenho como resolver a pane e visualizar a
+tentativa."* O ponto segurava alguns envios ANTES de chamar o WhatsApp, e esses não deixavam rastro no registro.
+- **Agora ficam anotados** (ERP › Mensagens, `origem = ponto`, `envios.registrar_nao_enviado`), com o motivo:
+  - **"Sem destinatário"**: sem celular com DDD no cadastro — código de acesso, QR, ronda do vigia, aviso de batida sem
+    foto, pedido negado, mosaico (responsável sem celular);
+  - **"Barrado na origem"** (situação nova na tela da Mensageria): código pedido com CPF que não está no cadastro,
+    pessoa desligada, mais de 3 códigos na hora; QR para pessoa desligada ou "não bate ponto", mais de 3 pedidos de QR
+    no dia, QR cancelado na fila (a pessoa saiu antes do envio);
+  - **"Falhou"**: o envio do código deu erro antes de chegar à mensageria.
+- Quem pede continua recebendo a mesma resposta ("se o CPF estiver cadastrado…") — não revela se o CPF existe; o
+  motivo só aparece para quem vê a tela Mensagens. O CPF digitado fica anotado (é o que mostra o "digitou errado").
+- O que a mensageria já decidia continua como era (enviada, falhou, tipo desligado, teto do WhatsApp).
+- Fora: a fila de QR esperando a janela do horário ou os tetos de hora/dia — não é bloqueio, sai depois (a fila do
+  ponto mostra em Configuração › Mensagens).
+- Na Mensageria, só a etiqueta e o filtro "Barrado na origem" (`mensageria/HISTORICO.md`, 31/10/2026).
+- Testes: CPF não achado, teto da hora (o 4º não sai) e sem celular no código de acesso; QR sem celular.
+**No ramo, esperando o "pode"** — SEM MIGRAÇÃO.
+
 ## 31/10/2026 (terceira) — O intervalo pré-assinalado aparece no espelho, diferenciado
 
 O dono, sobre as obras que, por convenção coletiva, só batem a entrada e a saída: *"não quero aplicar batidas. Quero

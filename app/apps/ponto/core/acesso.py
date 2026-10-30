@@ -50,8 +50,11 @@ def _mandar_em_segundo_plano(telefone: str, texto: str) -> None:
         try:
             from app.apps.notificador import notificar
             notificar(telefone=telefone, mensagem=texto, canais=("whatsapp",), finalidade="ponto.codigo_acesso")
-        except Exception:  # noqa: BLE001 — falha de envio não derruba nada
+        except Exception as e:  # noqa: BLE001 — falha de envio não derruba nada
             logger.exception("Ponto: não consegui mandar o código por WhatsApp")
+            from .envios import registrar_nao_enviado          # a tentativa fica visível na tela Mensagens
+            registrar_nao_enviado("ponto.codigo_acesso", f"erro ao chamar o envio: {str(e)[:200]}",
+                                  telefone=telefone, texto="código de acesso do Meu ponto", status="FALHOU")
     _fila_do_whatsapp.submit(trabalho)
 
 TENTATIVAS_PIN = 5
@@ -102,13 +105,29 @@ def pedir_codigo(conn: Connection, cpf, *, ip: str = "", enviar=None) -> dict:
         raise
     pessoa = cadastros.colaborador_por_cpf(conn, cpf_ok)
     telefone = re.sub(r"\D", "", (pessoa or {}).get("telefone") or "")
+    # o que não sai fica anotado na tela ERP › Mensagens, com o motivo (31/10/2026) — quem pediu continua
+    # recebendo a mesma resposta (não revela se o CPF existe)
+    from .envios import BARRADO, SEM_DESTINO, registrar_nao_enviado
+    assunto = "código de acesso do Meu ponto" + (f" para {pessoa['nome']}" if pessoa else "")
     if not pessoa or pessoa["situacao"] == "DESLIGADO" or len(telefone) < 10:
         logger.info("Ponto: código pedido para cpf %s sem cadastro/telefone", recusas.mascarar_cpf(cpf_ok))
+        if not pessoa:
+            registrar_nao_enviado("ponto.codigo_acesso", "CPF não encontrado no cadastro do ponto (digitado errado, "
+                                  "ou a pessoa não está na base)", cpf=cpf_ok, texto=assunto, status=BARRADO)
+        elif pessoa["situacao"] == "DESLIGADO":
+            registrar_nao_enviado("ponto.codigo_acesso", "pessoa desligada — o código não é enviado",
+                                  telefone=telefone, cpf=cpf_ok, texto=assunto, status=BARRADO)
+        else:
+            registrar_nao_enviado("ponto.codigo_acesso", f"sem celular com DDD no cadastro (está: "
+                                  f"{pessoa.get('telefone') or 'vazio'})", cpf=cpf_ok, texto=assunto, status=SEM_DESTINO)
         return {"mensagem": RESPOSTA_DO_CODIGO}
     recentes = db.um(conn, "SELECT count(*) AS n FROM ponto.codigos_acesso WHERE colaborador_id = :c "
                            "AND criado_em > now() - interval '1 hour'", c=pessoa["id"])["n"]
     if recentes >= CODIGOS_POR_HORA:
         logger.warning("Ponto: teto de códigos por hora para cpf %s", recusas.mascarar_cpf(cpf_ok))
+        registrar_nao_enviado("ponto.codigo_acesso", f"já pediu {recentes} códigos na última hora (o teto é "
+                              f"{CODIGOS_POR_HORA}) — o próximo só sai depois", telefone=telefone, cpf=cpf_ok,
+                              texto=assunto, status=BARRADO)
         return {"mensagem": RESPOSTA_DO_CODIGO}
     codigo = f"{secrets.randbelow(1_000_000):06d}"
     db.executar(conn, """

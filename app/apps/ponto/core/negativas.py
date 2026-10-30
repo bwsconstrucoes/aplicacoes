@@ -146,6 +146,9 @@ def registrar(conn: Connection, o: dict, *, avisar_whatsapp: bool, quem_negou: s
         tel = envios.telefone_valido(dest.get("telefone"))
         if not tel:
             saida["sem_telefone"].append(dest["nome"])
+            envios.registrar_nao_enviado("ponto.pedido_negado", "sem celular com DDD no cadastro",
+                                         cpf=dest.get("cpf") or "", texto=f"aviso de pedido negado para {dest['nome']}",
+                                         status=envios.SEM_DESTINO)
             continue
         _enfileirar_do_dia(conn, o, dest, pessoa, para_quem_pediu, tel, quem_negou)
         saida["whatsapp"].append(dest["nome"])

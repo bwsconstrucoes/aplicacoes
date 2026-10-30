@@ -260,6 +260,9 @@ def preparar_do_dia(conn: Connection, data: dt.date) -> dict:
         abertas += 1
         telefone = envios.telefone_valido(o["telefone"])
         if not telefone:
+            envios.registrar_nao_enviado("ponto.mosaico", "o responsável pelo mosaico não tem celular no cadastro "
+                                         "de usuários do ERP", texto=f"mosaico da obra {o['codigo']} de {data:%d/%m}",
+                                         status=envios.SEM_DESTINO)
             continue
         link = f"{base}/erp/ponto/mosaico?obra={o['id']}&data={data.isoformat()}"
         primeiro = (o["responsavel"] or "").split(" ")[0]
