@@ -410,6 +410,20 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 31/10/2026 — O feriado pela obra onde a pessoa trabalha
+
+O dono: *"para efeito de feriado, a obra onde a pessoa está trabalhando funciona né?"* — funcionava só no dia COM
+batida; no dia do feriado, que quase nunca tem batida, valia a obra do CADASTRO. Quem trabalha numa obra e está
+cadastrado em outra perdia o feriado estadual, municipal ou da obra onde trabalha; quem não tem obra no cadastro (o
+administrativo) só tinha o nacional — e o dia virava falta.
+- **Agora** (espelho, e com ele quadro, relatórios e fechamento): o dia sem batida fica com a obra do **dia com batida
+  mais perto** — o último antes dele; sem nenhum antes, o primeiro depois (`espelho.obra_vizinha`); só sem batida
+  nenhuma no período, a do cadastro. O dia ganha `obra_do_dia`, que o fechamento (a falta no calendário da supervisão,
+  o percentual da hora extra) e o quadro passam a usar.
+- **O painel do dia (Hoje)**: sem batida hoje, a obra da última batida dos 60 dias; senão, a do cadastro.
+- Teste: o João, cadastrado na A, bate segunda e terça na B; o feriado da obra B na quarta vale para ele (antes: falta).
+**No ramo, esperando o "pode"** — SEM MIGRAÇÃO.
+
 ## 30/10/2026 (madrugada de 31, quarta) — A obra da pessoa é a do ponto
 
 O dono, no espelho de um administrativo que bate todo dia na BWSNE e aparecia "sem obra": *"o sistema precisa inferir do

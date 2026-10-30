@@ -79,6 +79,14 @@ def _dias(inicio: dt.date, fim: dt.date):
         atual += dt.timedelta(days=1)
 
 
+def obra_vizinha(dias_com_batida: list[dt.date], por_dia: dict, dia: dt.date) -> Optional[int]:
+    """PURA. A obra do dia com batida mais perto do `dia`: o último antes dele; sem nenhum antes, o primeiro depois."""
+    import bisect
+    i = bisect.bisect_left(dias_com_batida, dia)
+    vizinho = dias_com_batida[i - 1] if i > 0 else (dias_com_batida[i] if i < len(dias_com_batida) else None)
+    return por_dia[vizinho][0]["obra_id"] if vizinho else None
+
+
 class _EscalasCarregadas(escalas.EscalasDaPessoa):
     """As vigências de uma pessoa, já lidas pelo Lote (sem ir ao banco de novo)."""
 
@@ -275,10 +283,19 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
     vespera = por_dia.get(inicio - dt.timedelta(days=1)) or []
     if vespera:
         anterior_ultima = vespera[-1]["timestamp_servidor"]
+    dias_com_batida = sorted(por_dia)
+    codigo_da_obra = {b["obra_id"]: b.get("obra_codigo") for b in batidas}
+    if pessoa.get("obra_id"):
+        codigo_da_obra.setdefault(pessoa["obra_id"], pessoa.get("obra_codigo"))
     for dia in _dias(inicio, fim):
         do_dia = por_dia.get(dia, [])
         escala, vigencia = vigencias.no_dia(dia)
-        obra_do_dia = do_dia[0]["obra_id"] if do_dia else pessoa.get("obra_id")
+        # A obra do dia sem batida — o feriado, a falta (31/10/2026, o dono: "para efeito de feriado, a obra onde a
+        # pessoa está trabalhando funciona?"): a do dia com batida mais perto (antes; senão, depois); só sem
+        # batida nenhuma no período, a do cadastro. Antes era sempre a do cadastro, e quem não tem obra nele
+        # (o administrativo) perdia o feriado estadual e o municipal — o dia virava falta.
+        obra_do_dia = (do_dia[0]["obra_id"] if do_dia
+                       else obra_vizinha(dias_com_batida, por_dia, dia) or pessoa.get("obra_id"))
         nome_feriado = calendario.feriado(dia, obra_do_dia)
         aprovadas = [o for o in ocorrencias if o["status"] == "APROVADA"
                      and o["data_inicio"] <= dia <= o["data_fim"] and o["tipo"] in ABONO_POR_TIPO]
@@ -410,6 +427,7 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
             "previstas": [{"hora": p["hora"], "rotulo": p["rotulo"]} for p in previstas],
             "faltando": [{"rotulo": f["rotulo"], "sugestao": f["sugestao"], "minuto": f["minuto"]} for f in faltando],
             "dia_semana": escalas.DIAS[dia.weekday()],
+            "obra_do_dia": codigo_da_obra.get(obra_do_dia),     # a da batida; sem ela, a vizinha (31/10/2026)
             "escala": vigencia["nome"] if vigencia else None,
             "feriado": nome_feriado,
             "rondas": rondas_do_periodo.get(dia.isoformat(), []),

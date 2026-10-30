@@ -50,6 +50,13 @@ def hoje(conn: Connection, *, dia: Optional[dt.date] = None, obras: Optional[lis
          ORDER BY m.timestamp_servidor
     """, d=dia, ids=ids):
         batidas[b["colaborador_id"]].append(b)
+    # sem batida hoje (o feriado, a falta): a obra da última batida dos 60 dias — a mesma regra do espelho
+    # (31/10/2026); só sem batida nenhuma, a do cadastro
+    ultima_obra = {r["colaborador_id"]: r["obra_id"] for r in db.todos(conn, """
+        SELECT DISTINCT ON (colaborador_id) colaborador_id, obra_id FROM ponto.marcacoes
+         WHERE colaborador_id = ANY(:ids) AND status <> 'REJEITADA'
+           AND data_referencia < :d AND data_referencia >= CAST(:d AS date) - 60
+         ORDER BY colaborador_id, timestamp_servidor DESC""", d=dia, ids=ids)}
     ocorr = defaultdict(list)
     for o in db.todos(conn, """
         SELECT colaborador_id, tipo, status FROM ponto.ocorrencias
@@ -81,7 +88,7 @@ def hoje(conn: Connection, *, dia: Optional[dt.date] = None, obras: Optional[lis
                                      if atual["tipo"] == "CICLO_12X36" else None)
                if atual else None)
         periodos = esc.periodos(dia) if esc else []
-        obra_do_dia = do_dia[0]["obra_id"] if do_dia else p.get("obra_id")
+        obra_do_dia = do_dia[0]["obra_id"] if do_dia else (ultima_obra.get(p["id"]) or p.get("obra_id"))
         nome_feriado = calendario.feriado(dia, obra_do_dia)
         aprovada = next((o for o in ocorr.get(p["id"], []) if o["status"] == "APROVADA"
                          and o["tipo"] in espelho.ABONO_POR_TIPO), None)

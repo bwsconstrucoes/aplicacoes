@@ -154,8 +154,10 @@ def periodos(competencia, corte: int = CORTE_PADRAO) -> dict:
 # Regras puras
 # ---------------------------------------------------------------------------
 def obra_do_dia(d: dict, da_pessoa: Optional[str]) -> Optional[str]:
-    """PURA. A obra em que a pessoa bateu no dia (a da primeira batida); sem batida, a do cadastro."""
-    return next((b.get("obra") for b in d.get("batidas") or [] if b.get("obra")), None) or da_pessoa
+    """PURA. A obra em que a pessoa bateu no dia (a da primeira batida); sem batida, a que o espelho deu ao dia (a
+    do dia com batida mais perto — 31/10/2026); sem nenhuma, a do cadastro."""
+    return (next((b.get("obra") for b in d.get("batidas") or [] if b.get("obra")), None)
+            or d.get("obra_do_dia") or da_pessoa)
 
 
 def evento_da_hora_extra(d: dict, cfg: Optional[dict] = None, obra: Optional[str] = None,

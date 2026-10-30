@@ -184,7 +184,8 @@ def _linha(p: dict, d: dict, etiquetas: set[str], marcas: list[dict]) -> dict:
                        "hora": x.get("hora")} for x in d.get("pendentes") or []],
         "em_analise": d.get("em_analise") or 0, "alertas": d.get("_alertas") or [],
         "declaracoes": d.get("declaracoes") or [],
-        "obra_do_dia": next((b["obra"] for b in d["batidas"] if b.get("obra")), None) or p.get("obra_codigo"),
+        "obra_do_dia": (next((b["obra"] for b in d["batidas"] if b.get("obra")), None) or d.get("obra_do_dia")
+                        or p.get("obra_codigo")),
     }
 
 
