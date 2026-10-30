@@ -84,10 +84,19 @@ JANELA_CICLO_AUTOMATICO = 30
 
 # Quantas noites ANTES do dia bastam para decidir o ciclo sozinhas (sem olhar as seguintes): ~2 semanas de 12x36.
 MIN_VOTOS_ANTES = 6
+# O CICLO PELAS NOITES DE PERTO (31/10/2026, o vigia de CREPEBELEM: pares de 16 a 20, folga em 21 e 22, ímpares do 23
+# em diante — o ciclo do mês inteiro empatava e errava os dois pedaços, cheio de extra e de falta). Primeiro votam as
+# noites a até JANELA_PERTO dias, antes e depois; empate, a noite mais perto decide. Sem nenhuma por perto (atestado,
+# férias), vale a conta de 30 dias, abaixo.
+JANELA_PERTO = 6
 
 
 def dia_do_ciclo(trabalhados: tuple, dia: dt.date, data_base: Optional[dt.date] = None) -> Optional[bool]:
     """PURA. O `dia` é de trabalho no 12x36? `trabalhados` = dias com batida, em ordem.
+    - PRIMEIRO, AS NOITES DE PERTO (31/10/2026): as trabalhadas a até JANELA_PERTO dias, antes e depois (o próprio
+      `dia` não vota); ganha a paridade da maioria; empate: se ele trabalhou no `dia`, é dele; se não, decide a noite
+      mais perto. Acompanha o vigia que muda de
+      paridade no meio do mês (uma folga dupla, uma troca que se firmou). Sem nenhuma noite por perto, a regra abaixo:
     - Nos 30 dias ANTES dele, conta-se em quantos a pessoa trabalhou na mesma paridade do `dia`
       (diferença par) e em quantos na outra; ganha a maioria. Empate: vale o mais antigo dos que
       votaram (o ciclo que já vinha — uma noite a mais no começo não vira o ciclo). O próprio `dia`
@@ -106,6 +115,14 @@ def dia_do_ciclo(trabalhados: tuple, dia: dt.date, data_base: Optional[dt.date] 
     def placar(votos):
         mesma = sum(1 for w in votos if (dia - w).days % 2 == 0)
         return mesma, len(votos) - mesma
+    perto = [w for w in trabalhados if 0 < abs((w - dia).days) <= JANELA_PERTO]
+    if perto:
+        mesma, outra = placar(perto)
+        if mesma != outra:
+            return mesma > outra
+        if dia in trabalhados:          # empate: a noite trabalhada é dele (segunda, terça a mais, quarta: a quarta)
+            return True
+        return (dia - min(perto, key=lambda w: abs((w - dia).days))).days % 2 == 0
     votos = [w for w in trabalhados if dia - janela <= w < dia]
     depois = [w for w in trabalhados if dia < w <= dia + janela]
     mesma, outra = placar(votos)

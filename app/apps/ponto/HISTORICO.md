@@ -410,6 +410,29 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 31/10/2026 (vigésima) — O vigia que muda de paridade, e a saída esticada até o meio-dia (migração 026)
+
+O dono, com o espelho de um vigia de CREPEBELEM (12x36): pares de 16 a 20 (16, 18, 20), folga em 21 e 22, ímpares do
+23 em diante (23, 25, 27, 29) — todas as noites dele como "fora do ciclo" (extra) e falta em 17, 19 e 21. E, no 23, a
+entrada às 15:55 com a saída às 11:52 do dia 24: *"ele realmente só saiu esse horário (…) nesse dia o rapaz precisou
+ficar mais tempo (…) acho que podemos deixar até o meio-dia."*
+- **O ciclo pelas noites de perto** (`apuracao.dia_do_ciclo`, `JANELA_PERTO = 6`): primeiro votam as noites trabalhadas
+  a até 6 dias, antes e depois (o próprio dia não vota). Empate: o dia trabalhado é dele; o não trabalhado vai pela noite
+  mais perto. Sem nenhuma noite por perto (atestado, férias), vale a conta de 30 dias de antes (com o mínimo de 6 votos,
+  décima nona). Um ciclo só para o mês inteiro empatava e errava os dois pedaços. Com a regra nova: este vigia fica com
+  16, 18, 20, 23, 25, 27, 29 e 31 como noites dele, sem falta; o de ESCVARZEA continua certo (ímpares). Mudou o desempate
+  de dois casos antigos do teste (o "vale o mais antigo"), escrito no teste.
+- **A saída esticada** (`escalas.dia_de_trabalho`, `HORA_LIMITE_TURNO_ESTICADO = 12`): entre 10h e o meio-dia, a batida
+  vai para a véspera SÓ se a véspera ficou aberta (número ímpar de batidas, a última a menos de 24 h) e é noite (escala
+  da noite ou jornada de vigia). Sem a trava, o 11:59 de domingo do mesmo vigia (a ENTRADA do turno longo de fim de
+  semana) iria para o sábado. A **026** acerta, uma vez, as batidas já gravadas (mesma regra, em SQL; mês fechado não é
+  tocado). `realinhar_dias` passou a andar na ordem das batidas (a de antes decide a "véspera aberta" da seguinte).
+- **Risco dito**: o vigia que esqueceu a saída da noite e entra num turno de dia antes do meio-dia (entre 10h e 12h) teria
+  essa entrada levada para a véspera — aparece no espelho e o DP corrige.
+- Testes: os dois vigias (pura); a saída das 11:52 fecha o 15:55 da véspera, o 11:59 de domingo fica no domingo; a 026
+  acerta o gravado e só ele.
+**No ramo, esperando o "pode".** COM A MIGRAÇÃO 026.
+
 ## 31/10/2026 (décima nona) — O ciclo do 12x36 com pouca história: o mês inteiro decide
 
 O dono, com o calendário de um vigia de ESCVARZEA (12x36 desde 16/10): noites inteiras de extra nos dias 16, 18, 19 e

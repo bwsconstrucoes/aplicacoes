@@ -337,14 +337,38 @@ def turno_da_noite(escala: Optional[apuracao.Escala], dia_anterior: dt.date) -> 
     return bool(todos) and all(s > 1440 for _, s in todos)
 
 
+# A SAÍDA DO TURNO ESTICADO (31/10/2026, o dono, no vigia que entrou às 15:55 e saiu às 11:52 do dia seguinte: "nesse
+# dia o rapaz precisou ficar mais tempo (…) acho que podemos deixar até o meio-dia"): entre as 10h e o meio-dia, a
+# batida ainda fecha o turno da noite da véspera — mas SÓ se a véspera ficou aberta (entrada sem saída, a menos de
+# 24 h). Sem a trava, o 11:59 de domingo (a ENTRADA do turno longo de fim de semana) iria para o sábado.
+HORA_LIMITE_TURNO_ESTICADO = 12
+
+
+def _vespera_aberta(conn: Connection, colaborador_id: int, anterior: dt.date, momento: dt.datetime) -> bool:
+    """A véspera tem um turno sem saída: número ímpar de batidas, a última a menos de 24 h desta."""
+    linhas = db.todos(conn, """
+        SELECT timestamp_servidor FROM ponto.marcacoes
+         WHERE colaborador_id = :c AND data_referencia = :d AND status <> 'REJEITADA' AND timestamp_servidor < :m
+         ORDER BY timestamp_servidor""", c=int(colaborador_id), d=anterior, m=momento)
+    return len(linhas) % 2 == 1 and momento - linhas[-1]["timestamp_servidor"] <= dt.timedelta(hours=24)
+
+
 def dia_de_trabalho(conn: Connection, pessoa: dict, momento: dt.datetime,
                     escalas_da_pessoa: Optional["EscalasDaPessoa"] = None) -> dt.date:
     """O dia de trabalho a que a batida pertence: a jornada "vigia noturno" OU a
-    escala com turno da noite levam a batida antes das 10h para o dia anterior."""
+    escala com turno da noite levam a batida antes das 10h para o dia anterior — e,
+    até o meio-dia, a que fecha o turno da véspera que ficou aberto."""
     local = horario.para_local(momento)
+    anterior = local.date() - dt.timedelta(days=1)
+    if horario.HORA_DE_CORTE_NOTURNO <= local.hour < HORA_LIMITE_TURNO_ESTICADO and pessoa.get("id"):
+        noite = pessoa.get("tipo_jornada") == "VIGIA_NOTURNO_2"
+        if not noite:
+            vig = escalas_da_pessoa or EscalasDaPessoa(conn, int(pessoa["id"]))
+            noite = turno_da_noite(vig.no_dia(anterior)[0], anterior)
+        if noite and _vespera_aberta(conn, int(pessoa["id"]), anterior, momento):
+            return anterior
     if pessoa.get("tipo_jornada") == "VIGIA_NOTURNO_2" or local.hour >= horario.HORA_DE_CORTE_NOTURNO:
         return horario.data_referencia(momento, pessoa.get("tipo_jornada") or "")
-    anterior = local.date() - dt.timedelta(days=1)
     vig = escalas_da_pessoa or EscalasDaPessoa(conn, int(pessoa["id"]))
     esc, info = vig.no_dia(anterior)
     if not (info and info.get("vigencia_inicio")):
@@ -371,6 +395,7 @@ def realinhar_dias(conn: Connection, colaborador_id: int, desde: dt.date) -> int
     for m in db.todos(conn, """
             SELECT id, timestamp_servidor, data_referencia FROM ponto.marcacoes
              WHERE colaborador_id = :c AND data_referencia >= :d
+             ORDER BY timestamp_servidor
         """, c=colaborador_id, d=desde - dt.timedelta(days=1)):
         novo = dia_de_trabalho(conn, pessoa, m["timestamp_servidor"], vigencias)
         if novo == m["data_referencia"]:

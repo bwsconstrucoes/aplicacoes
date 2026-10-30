@@ -219,3 +219,16 @@ def test_o_ciclo_com_pouca_historia_ouve_o_mes_inteiro():
     # com história longa, o passado decide sozinho (a troca de paridade que se firmou vale)
     longa = tuple(d(x) for x in range(1, 31, 2))                            # ímpares de 1 a 29
     assert dia_do_ciclo(longa, d(30)) is False and dia_do_ciclo(longa, d(31)) is True
+
+
+def test_o_vigia_que_muda_de_paridade_no_meio_do_mes():
+    """31/10/2026, o vigia de CREPEBELEM: pares de 16 a 20, folga em 21 e 22, ímpares do 23 em diante. O ciclo do mês
+    inteiro empatava: as noites dele viravam "fora do ciclo" (extra) e 17, 19 e 21, falta. Pelas noites de perto,
+    cada pedaço fica com a sua paridade."""
+    from app.apps.ponto.core.apuracao import dia_do_ciclo
+    d = lambda n: dt.date(2026, 10, n)                                    # noqa: E731
+    t = tuple(d(x) for x in (16, 18, 20, 23, 25, 27, 29))
+    assert [n for n in range(16, 32) if dia_do_ciclo(t, d(n))] == [16, 18, 20, 23, 25, 27, 29, 31]
+    # sem noite nenhuma por perto (duas semanas de atestado), vale a conta de 30 dias
+    longe = tuple(d(x) for x in (1, 3, 5, 7))
+    assert dia_do_ciclo(longe, d(21)) is True and dia_do_ciclo(longe, d(22)) is False

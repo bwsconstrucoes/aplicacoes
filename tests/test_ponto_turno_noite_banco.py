@@ -45,9 +45,12 @@ def test_o_ciclo_12x36_sai_das_batidas():
     # a troca de turma: passado o tempo, a maioria muda e o ciclo acompanha
     trocado = noites + dias(*range(11, 40, 2))
     assert dia_do_ciclo(trocado, d0 + dt.timedelta(days=41)) is True
-    # empate: vale o ciclo que já vinha (a mais antiga da janela)
-    assert dia_do_ciclo(dias(0, 3), d0 + dt.timedelta(days=4)) is True
-    assert dia_do_ciclo(dias(0, 3), d0 + dt.timedelta(days=5)) is False
+    # empate nas noites de perto (31/10/2026): o dia não trabalhado vai pela noite mais perto (a do dia 3)
+    assert dia_do_ciclo(dias(0, 3), d0 + dt.timedelta(days=4)) is False
+    assert dia_do_ciclo(dias(0, 3), d0 + dt.timedelta(days=5)) is True
+    # … e o dia trabalhado, no empate, é dele (segunda e quarta, com a terça a mais: a quarta é do ciclo)
+    assert dia_do_ciclo(dias(0, 1, 2), d0 + dt.timedelta(days=2)) is True
+    assert dia_do_ciclo(dias(0, 1, 2), d0 + dt.timedelta(days=1)) is False
     # sem batida nos 30 dias: a paridade da última noite trabalhada
     assert dia_do_ciclo(dias(0), d0 + dt.timedelta(days=60)) is True
     assert dia_do_ciclo(dias(0), d0 + dt.timedelta(days=61)) is False
@@ -274,3 +277,41 @@ def test_trocar_a_escala_na_janela_vale_dali_em_diante(app, mundo):
                                                              "WHERE colaborador_id = :c ORDER BY timestamp_servidor",
                                                        c=mundo["joao"])]
     assert vig == [seg] and dias == [ter, ter], (vig, dias)
+
+
+def test_a_saida_esticada_ate_o_meio_dia_fecha_o_turno_da_vespera(app, mundo):
+    """31/10/2026, o dono, no vigia que entrou às 15:55 e saiu às 11:52 do dia seguinte: "nesse dia o rapaz precisou
+    ficar mais tempo (…) podemos deixar até o meio-dia". A saída até o meio-dia fecha o turno da véspera ABERTO; o 11:59
+    de domingo, sem turno aberto na véspera, é a entrada do dia. A migração 026 acerta o que já estava gravado."""
+    from sqlalchemy import text
+    from app.apps.ponto import db
+    from app.apps.ponto.core import escalas
+    from tests.test_ponto_gestao_banco import CPF_JOAO, bater_via_chave, local
+    seg = _segunda_passada()
+    d = [seg + dt.timedelta(days=n) for n in range(5)]
+
+    def dias():
+        with db.conexao() as conn:
+            return [r["data_referencia"] for r in db.todos(
+                conn, "SELECT data_referencia FROM ponto.marcacoes WHERE colaborador_id = :c "
+                      "ORDER BY timestamp_servidor", c=mundo["joao"])]
+    with db.conexao() as conn:
+        db.executar(conn, "DELETE FROM ponto.colaborador_escalas WHERE colaborador_id = :c", c=mundo["joao"])
+        noite = escalas.gravar(conn, {"nome": "Vigia 12x36 esticado", "tipo": "CICLO_12X36",
+                                      "ciclo_entrada": "17:00", "ciclo_saida": "05:00"})
+        escalas.atribuir(conn, mundo["joao"], noite["id"], d[0].isoformat(), por="teste")
+    bater_via_chave(app, CPF_JOAO, local(d[0], 15, 55))
+    bater_via_chave(app, CPF_JOAO, local(d[1], 11, 52))        # a saída esticada: do turno de d0
+    bater_via_chave(app, CPF_JOAO, local(d[2], 11, 59))        # a entrada do turno longo: d1 não ficou aberto
+    bater_via_chave(app, CPF_JOAO, local(d[3], 5, 52))
+    assert dias() == [d[0], d[0], d[2], d[2]]
+    # o que já estava gravado no dia do relógio: a 026 leva a saída esticada para a véspera, e só ela
+    with db.conexao() as conn:
+        conn.execute(text("UPDATE ponto.marcacoes SET data_referencia = (timestamp_servidor AT TIME ZONE "
+                          "'America/Fortaleza')::date WHERE colaborador_id = :c AND EXTRACT(HOUR FROM timestamp_servidor "
+                          "AT TIME ZONE 'America/Fortaleza') BETWEEN 10 AND 11"), {"c": mundo["joao"]})
+    assert dias() == [d[0], d[1], d[2], d[2]]
+    sql = (Path(__file__).resolve().parents[1] / "app/apps/ponto/migracoes/026_turno_esticado.sql").read_text()
+    with db.conexao() as conn:
+        conn.execute(text(sql))
+    assert dias() == [d[0], d[0], d[2], d[2]]
