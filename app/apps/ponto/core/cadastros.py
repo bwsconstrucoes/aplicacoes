@@ -60,6 +60,10 @@ def _trechos_colaborador(conn: Connection) -> dict:
     if db.tem_coluna(conn, "colaborador_config", "ensaio"):
         trechos["situacao"] = (f"CASE WHEN COALESCE(pc.ensaio, FALSE) AND c.situacao = 'ATIVO' THEN 'ATIVO' "
                                f"ELSE ({trechos['situacao']}) END")
+        # … e mesmo que a planilha diga que ela não bate (31/10/2026, o dono, Pró-labore, testando o aplicativo
+        # com ele mesmo: "ele tá bloqueando pq meu cadastro é de Prolabore"). Só a pessoa de teste; as horas
+        # continuam fora das contas de CTPS (`relatorios.conta_horas`).
+        trechos["nao_bate"] = f"CASE WHEN COALESCE(pc.ensaio, FALSE) THEN NULL::text ELSE ({trechos['nao_bate']}) END"
     return trechos
 
 

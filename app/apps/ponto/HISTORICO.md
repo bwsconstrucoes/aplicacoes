@@ -410,6 +410,57 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 31/10/2026 (sexta) — "O PIN não funciona mais": o PIN certo de quem está fora do ponto dizia "PIN incorreto"
+
+O dono: *"tá muito comum o pessoal dizer que o pin não funciona mais. acho que tem algum problema nisso. e ainda tem
+essa dificuldade no recebimento da msg."*
+- **O defeito**: `acesso.entrar` recusava com "CPF ou PIN incorreto" ANTES de conferir o PIN quando a pessoa estava
+  desligada, marcada "não bate ponto" ou tirada do ponto pela planilha (PJ, Pró-labore, ESC RUSSAS — desde 29/10). Com o
+  PIN certo, ela ouvia "PIN incorreto" — e o PIN "tinha parado de funcionar". O mesmo acontece se a base de pessoas a
+  marca como desligada por engano (data de saída ou fase do Pipefy).
+- **Agora**: o PIN é conferido primeiro. Errado (ou CPF que não existe): a frase de sempre, que não revela nada. Certo,
+  mas cadastro fora do ponto: **"o seu cadastro está marcado como 'não bate ponto' (ou consta como desligado) — o PIN
+  está certo; fale com o DP"** — quem acertou o PIN provou ser o dono do CPF (como já era no criar PIN, 16/10).
+- **Para o DP**, na janela da pessoa › "🔑 código de acesso": além de "travado até", **quantos PINs errados seguidos**
+  (no 5º, trava 15 min e volta a zero).
+- A dificuldade de receber o código ficou visível na tela Mensagens (a entrega de antes, nesta mesma data).
+- Não verificado com dado de produção: quantas das queixas são deste caso e quantas são PIN esquecido de verdade. O DP
+  passa a ver qual é: "não bate ponto/desligado" na mensagem da pessoa; PINs errados seguidos na janela.
+- Teste: PIN criado, pessoa marcada "não bate" → a mensagem com o motivo; PIN errado → a frase de sempre e o contador.
+**Publicado em 31/10/2026** (com o "pode" do dono — "publica agora", só com os testes das áreas mexidas; a suíte inteira rodou depois) — SEM MIGRAÇÃO.
+
+## 31/10/2026 (quinta) — A pessoa de teste passa por cima do "não bate" da planilha
+
+O dono: *"preciso ter um usuário de teste para o aplicativo do ponto, no caso sou eu. Ele tá bloqueando pq meu
+cadastro é de Pró-labore."* O Modo de teste (Configuração › Teste, `ensaio.py`, 05/10/2026) já fazia a pessoa de teste
+bater como ativa fora do Registro de Colaboradores — mas a regra de 29/10 (PJ e Pró-labore, ESC RUSSAS: a planilha tira
+do ponto) vinha depois e vencia. Agora, para quem é **pessoa de teste**, o "não bate" da planilha não vale
+(`cadastros._trechos_colaborador`). Só ela: os outros Pró-labore continuam fora. As horas dela continuam fora das
+contas de CTPS (relatórios e fechamento só contam CTPS). Teste no caso da planilha (Pró-labore marcado de teste entra;
+desmarcado, sai de novo).
+**Publicado em 31/10/2026** (com o "pode" do dono — "publica agora", só com os testes das áreas mexidas; a suíte inteira rodou depois) — SEM MIGRAÇÃO.
+
+## 31/10/2026 (quarta) — A mensagem que o ponto não mandou aparece na tela Mensagens
+
+O dono, sobre uma pessoa que pede o PIN e não recebe, com o teste da tela Mensagens funcionando: *"preciso que essas
+mensagens mesmo que bloqueadas apareçam no mensageria, pq assim tenho como resolver a pane e visualizar a
+tentativa."* O ponto segurava alguns envios ANTES de chamar o WhatsApp, e esses não deixavam rastro no registro.
+- **Agora ficam anotados** (ERP › Mensagens, `origem = ponto`, `envios.registrar_nao_enviado`), com o motivo:
+  - **"Sem destinatário"**: sem celular com DDD no cadastro — código de acesso, QR, ronda do vigia, aviso de batida sem
+    foto, pedido negado, mosaico (responsável sem celular);
+  - **"Barrado na origem"** (situação nova na tela da Mensageria): código pedido com CPF que não está no cadastro,
+    pessoa desligada, mais de 3 códigos na hora; QR para pessoa desligada ou "não bate ponto", mais de 3 pedidos de QR
+    no dia, QR cancelado na fila (a pessoa saiu antes do envio);
+  - **"Falhou"**: o envio do código deu erro antes de chegar à mensageria.
+- Quem pede continua recebendo a mesma resposta ("se o CPF estiver cadastrado…") — não revela se o CPF existe; o
+  motivo só aparece para quem vê a tela Mensagens. O CPF digitado fica anotado (é o que mostra o "digitou errado").
+- O que a mensageria já decidia continua como era (enviada, falhou, tipo desligado, teto do WhatsApp).
+- Fora: a fila de QR esperando a janela do horário ou os tetos de hora/dia — não é bloqueio, sai depois (a fila do
+  ponto mostra em Configuração › Mensagens).
+- Na Mensageria, só a etiqueta e o filtro "Barrado na origem" (`mensageria/HISTORICO.md`, 31/10/2026).
+- Testes: CPF não achado, teto da hora (o 4º não sai) e sem celular no código de acesso; QR sem celular.
+**Publicado em 31/10/2026** (com o "pode" do dono — "publica agora", só com os testes das áreas mexidas; a suíte inteira rodou depois) — SEM MIGRAÇÃO.
+
 ## 31/10/2026 (terceira) — O intervalo pré-assinalado aparece no espelho, diferenciado
 
 O dono, sobre as obras que, por convenção coletiva, só batem a entrada e a saída: *"não quero aplicar batidas. Quero

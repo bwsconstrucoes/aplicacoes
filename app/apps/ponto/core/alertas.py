@@ -403,6 +403,11 @@ def sinais_de_fraude(conn: Connection, vistos: set, inicio: dt.date, fim: dt.dat
         if avisar and d == fim:          # o celular da base em uso (Registro ou ERP)
             pessoa = cadastros.colaborador_por_id(conn, r["colaborador_id"])
             telefone = envios.telefone_valido((pessoa or {}).get("telefone"))
+            if not telefone:
+                envios.registrar_nao_enviado("ponto.aviso_foto", "sem celular com DDD no cadastro",
+                                             cpf=(pessoa or {}).get("cpf") or "",
+                                             texto=f"aviso de batida sem foto para {r['nome']} ({d:%d/%m})",
+                                             status=envios.SEM_DESTINO)
         if avisar and d == fim and telefone:
             plural = len(r["horas"]) > 1
             texto = (f"BWS Ponto — {r['nome'].split(' ')[0].title()}, no dia {d:%d/%m} "

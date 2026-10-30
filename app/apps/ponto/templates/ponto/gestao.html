@@ -2442,7 +2442,8 @@ async function primeiroAcesso(p) {
       <span class="dados">${escapar(d.telefone_no_erp)}</span>, mas o ponto usa o do Registro de Colaboradores. Se o
       certo é o do ERP, corrija no Pipefy (e atualize o cadastro na Análise de SPs).</div>` : ""}
     <div style="margin-top:4px"><b>PIN:</b> ${d.tem_pin ? `criado em ${escapar(quando(d.pin_criado_em))}` : "ainda não criado"}
-      ${d.pin_bloqueado_ate ? ` · <b style="color:var(--vermelho)">travado até ${escapar(quando(d.pin_bloqueado_ate))}</b> (PIN errado várias vezes)` : ""}</div>
+      ${d.pin_bloqueado_ate ? ` · <b style="color:var(--vermelho)">travado até ${escapar(quando(d.pin_bloqueado_ate))}</b> (PIN errado várias vezes)` : ""}
+      ${d.pin_falhas ? ` · <b style="color:var(--ambar)">${d.pin_falhas} PIN(s) errado(s) seguidos</b> (no 5º, trava 15 min)` : ""}</div>
     ${d.impede.length ? `<div class="aviso erro" style="margin:8px 0"><b>O código não sai porque:</b>
       <ul style="margin:4px 0 0 18px; padding:0">${d.impede.map(x => `<li>${escapar(x)}</li>`).join("")}</ul></div>` : ""}
     <div style="margin-top:8px"><b>Últimos códigos pedidos</b>${linhas ? `<ul style="margin:4px 0 0 18px; padding:0">${linhas}</ul>`

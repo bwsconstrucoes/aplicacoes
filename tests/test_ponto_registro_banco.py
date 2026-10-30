@@ -236,6 +236,19 @@ def test_a_planilha_tira_do_ponto_pj_pro_labore_escrussas_e_afastado(app, mundo,
     d = dp.get("/erp/api/ponto/pessoas", query_string={"busca": "joão do registro"}).get_json()
     assert d["pessoas"] == [] and "ESC RUSSAS" in d["fora_da_lista"][0]["motivo"]
     assert dp.get("/erp/api/ponto/registro").get_json()["nao_batem_pela_planilha"] == 1
+    # 31/10/2026: a pessoa do modo de teste passa por cima da planilha (o dono é Pró-labore e testa com ele mesmo)
+    with banco.connect() as conn:
+        conn.execute(text("INSERT INTO ponto.colaborador_config (colaborador_id, ensaio) "
+                          "SELECT id, TRUE FROM colaboradores WHERE cpf = :c "
+                          "ON CONFLICT (colaborador_id) DO UPDATE SET ensaio = TRUE"), {"c": CPF_JOAO})
+        conn.commit()
+    with db.conexao() as conn:
+        j = cadastros.colaborador_por_cpf(conn, CPF_JOAO)
+    assert j["ativo_no_ponto"] is True and j["nao_bate_motivo"] is None and "JOÃO DO REGISTRO" in lista()
+    with banco.connect() as conn:
+        conn.execute(text("UPDATE ponto.colaborador_config SET ensaio = FALSE WHERE colaborador_id = "
+                          "(SELECT id FROM colaboradores WHERE cpf = :c)"), {"c": CPF_JOAO})
+        conn.commit()
     # o afastado (Fase Atual) sai das listas, mas continua sendo alguém no ponto (o atestado ele manda)
     with banco.connect() as conn:
         conn.execute(text("UPDATE analisesps.colaborador SET tipo_contrato = 'CLT', obra_codigo = 'PG-B', "

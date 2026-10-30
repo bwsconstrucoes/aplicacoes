@@ -126,6 +126,29 @@ def telefone_valido(bruto) -> Optional[str]:
 
 
 # ---------------------------------------------------------------------------
+# A MENSAGEM QUE O PONTO NÃO MANDOU (31/10/2026, o dono: "preciso que essas mensagens mesmo que bloqueadas
+# apareçam no mensageria, pq assim tenho como resolver a pane e visualizar a tentativa"). O que o ponto barra
+# antes de chegar ao WhatsApp — sem telefone, CPF não achado, pessoa desligada, teto de pedidos — fica anotado
+# no registro da tela ERP › Mensagens, com o motivo. "SEM_DESTINO" quando não há para onde mandar; "BARRADO"
+# quando o próprio ponto segurou. O que passa daqui a mensageria já anota (enviada, falhou, tipo desligado).
+# ---------------------------------------------------------------------------
+SEM_DESTINO, BARRADO = "SEM_DESTINO", "BARRADO"
+
+
+def registrar_nao_enviado(tipo: str, motivo: str, *, telefone: str = "", cpf: str = "", texto: str = "",
+                          status: str = BARRADO) -> None:
+    """Anota na mensageria a tentativa que não saiu. Nunca derruba nada (sem mensageria, só o log)."""
+    logger.info("Ponto: mensagem %s não enviada (%s) — %s", tipo, status, motivo)
+    try:
+        from app.apps import notificador
+        notificador._registrar(notificador._mensageria(), tipo=tipo, canal="whatsapp",
+                               destinatario=re.sub(r"\D", "", telefone or ""), cpf=re.sub(r"\D", "", cpf or ""),
+                               texto=texto, nome_arquivo="", status=status, detalhe=motivo, origem="ponto")
+    except Exception:  # noqa: BLE001
+        logger.warning("Ponto: não consegui anotar na mensageria a mensagem não enviada")
+
+
+# ---------------------------------------------------------------------------
 # Enfileirar
 # ---------------------------------------------------------------------------
 def enfileirar(conn: Connection, *, tipo: str, motivo: str = "", referencia: str, telefone: str,
@@ -150,10 +173,15 @@ def pedir_qr(conn: Connection, colaborador_id: int, *, motivo: str = "PEDIDO",
     um QR esperando na fila, ele passa para a frente — não sai um segundo."""
     momento = agora or horario.agora()
     p = cadastros.colaborador_por_id(conn, colaborador_id)
+    assunto = f"QR Code do ponto ({motivo.lower()}) para {(p or {}).get('nome') or f'pessoa nº {colaborador_id}'}"
     if not p or p["situacao"] == "DESLIGADO" or not p["ativo_no_ponto"]:
+        registrar_nao_enviado("ponto.qr", "pessoa desligada ou marcada como “não bate ponto”",
+                              telefone=(p or {}).get("telefone") or "", cpf=(p or {}).get("cpf") or "", texto=assunto)
         return {"enfileirado": False, "motivo": "pessoa inativa"}
     telefone = telefone_valido(p.get("telefone"))
     if not telefone:
+        registrar_nao_enviado("ponto.qr", f"sem celular com DDD no cadastro (está: {p.get('telefone') or 'vazio'})",
+                              cpf=p.get("cpf") or "", texto=assunto, status=SEM_DESTINO)
         return {"enfileirado": False, "motivo": "sem telefone no cadastro"}
     if motivo == "PEDIDO":
         hoje = db.um(conn, """
@@ -163,6 +191,9 @@ def pedir_qr(conn: Connection, colaborador_id: int, *, motivo: str = "PEDIDO",
         """, c=colaborador_id)["n"]
         if hoje >= PEDIDOS_POR_DIA_POR_PESSOA:
             logger.warning("Ponto: teto de pedidos de QR para a pessoa %s", colaborador_id)
+            registrar_nao_enviado("ponto.qr", f"já pediu {hoje} QR Codes nas últimas 24 h (o teto é "
+                                  f"{PEDIDOS_POR_DIA_POR_PESSOA})", telefone=telefone, cpf=p.get("cpf") or "",
+                                  texto=assunto)
             return {"enfileirado": False, "motivo": "teto de pedidos do dia"}
     adiantado = db.executar(conn, """
         UPDATE ponto.envios SET motivo = :m, prioridade = 1, agendado_para = :ag, pedido_por = :por
@@ -343,6 +374,9 @@ def concluir(conn: Connection, item: dict, ok: bool, resultado: str, token: Opti
         situacao = "CANCELADO" if "cancelado" in resultado else "FALHOU"
         db.executar(conn, "UPDATE ponto.envios SET status = :s, resultado = :r WHERE id = :id",
                     s=situacao, r=resultado, id=item["id"])
+        if situacao == "CANCELADO":       # não chegou a ir ao WhatsApp: a mensageria não viu
+            registrar_nao_enviado(FINALIDADE.get(item["tipo"], "ponto.qr"), resultado, telefone=item.get("telefone") or "",
+                                  texto=(item.get("texto") or f"{item['tipo']} ({item.get('motivo') or ''})")[:300])
         logger.warning("Ponto: envio %s %s — %s", item["id"], situacao.lower(), resultado[:200])
         return situacao
     db.executar(conn, """
