@@ -410,6 +410,24 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 31/10/2026 (décima oitava) — Trocar a escala na janela da pessoa não mudava o espelho
+
+O dono: *"tem alguma possibilidade de eu atualizar um ponto ou trocar uma escala e, quando ver o espelho, não
+atualizar? Tá acontecendo isso."*
+- **A causa (defeito)**: a troca de escala da janela da pessoa só ACRESCENTAVA a nova a partir da data escolhida — uma
+  troca já marcada para DEPOIS dessa data continuava valendo. Dar a escala nova "a partir de 01/10" a quem já tinha uma
+  desde 16/10 (o começo do ponto, a escala em lote de 26/10) não mudava nada do dia 16 em diante. A troca em lote
+  (Configuração › Escalas) já substituía as seguintes; a da janela, não.
+- **Agora** a da janela é a mesma da em lote: vale da data escolhida em diante, a troca marcada depois sai (o diálogo
+  diz isso). E, nas duas, o dia das batidas da noite é refeito DEPOIS de sair a escala antiga (antes, era refeito com a
+  antiga ainda valendo — a saída da madrugada podia ficar no dia errado).
+- **O "atualizar um ponto" não é defeito**: a batida incluída pela janela da pessoa ("Pedir ajuste de batida") é um
+  PEDIDO — aparece no espelho como ⏳ e só conta depois de aprovado nas Validações. A inclusão pelo Quadro (em lote) já
+  entra aprovada. E telas já montadas (Quadro, calendário do fechamento) só mudam ao montar de novo.
+- Teste: a pessoa com a escala do dia desde terça recebe a da noite desde segunda pela janela — fica só a da noite, e a
+  saída das 5h volta para o dia da entrada.
+**No ramo, esperando o "pode".** SEM MIGRAÇÃO.
+
 ## 31/10/2026 (décima sétima) — Bate ponto por exceção: passar por cima da planilha (migração 025)
 
 O dono: *"preciso poder ativar alguém pra bater ponto mesmo que fora das regras até então definidas (…) são exatamente

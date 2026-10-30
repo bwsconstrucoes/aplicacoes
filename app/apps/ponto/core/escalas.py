@@ -434,6 +434,10 @@ def aplicar_em_lote(conn: Connection, colaboradores: list[int], escala_id: int, 
         raise ErroDeValidacao("data de início ilegível (AAAA-MM-DD)", campo="vigencia_inicio") from e
     for cid in ids:
         atribuir(conn, cid, int(escala_id or 0), inicio.isoformat(), ciclo_data_base=ciclo_data_base, por=por)
-        db.executar(conn, "DELETE FROM ponto.colaborador_escalas WHERE colaborador_id = :c AND vigencia_inicio > :i",
-                    c=cid, i=inicio)
+        tiradas = db.executar(conn, "DELETE FROM ponto.colaborador_escalas WHERE colaborador_id = :c "
+                                    "AND vigencia_inicio > :i", c=cid, i=inicio)
+        # o dia das batidas é refeito DEPOIS de sair a escala antiga (31/10/2026, o dono: "troco uma escala e, quando
+        # vejo o espelho, não atualiza"): `atribuir` já tinha refeito com a troca seguinte ainda valendo
+        if tiradas:
+            realinhar_dias(conn, cid, inicio)
     return len(ids)

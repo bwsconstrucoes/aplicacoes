@@ -743,9 +743,12 @@ def ponto_api_pessoa_escala(colaborador_id: int):
     quem, d = _quem(), _corpo()
     with db.conexao() as conn:
         _exigir_pessoa(conn, quem, colaborador_id)
-        escalas.atribuir(conn, colaborador_id, int(d.get("escala_id") or 0),
-                         d.get("vigencia_inicio") or horario.hoje().isoformat(),
-                         ciclo_data_base=d.get("ciclo_data_base"), por=quem.nome)
+        # A TROCA DA JANELA DA PESSOA VALE DALI EM DIANTE, como a em lote (31/10/2026, o dono: "troco uma escala e,
+        # quando vejo o espelho, não atualiza"): antes, uma troca já marcada DEPOIS da data escolhida continuava
+        # valendo — dar a escala nova "a partir de 01/10" a quem tinha uma desde 16/10 não mudava nada no espelho.
+        escalas.aplicar_em_lote(conn, [colaborador_id], int(d.get("escala_id") or 0),
+                                d.get("vigencia_inicio") or horario.hoje().isoformat(),
+                                ciclo_data_base=d.get("ciclo_data_base"), por=quem.nome)
     return _ok()
 
 

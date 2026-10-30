@@ -245,3 +245,32 @@ def test_a_troca_de_plantao_lancada_como_compensacao_vira_o_voto_do_ciclo(app, m
     assert r.status_code == 201, r.get_json()
     with db.conexao() as conn:
         assert escalas.dias_trabalhados(conn, [mundo["joao"]])[mundo["joao"]] == (d2,)
+
+
+def test_trocar_a_escala_na_janela_vale_dali_em_diante(app, mundo):
+    """31/10/2026, o dono: "tem alguma possibilidade de eu trocar uma escala e, quando ver o espelho, não atualizar?"
+    Tinha: a troca marcada DEPOIS da data escolhida continuava valendo. Agora a troca da janela substitui as
+    seguintes (como a em lote), e o dia das batidas da noite é refeito com a escala certa."""
+    from app.apps.ponto import db
+    from app.apps.ponto.core import escalas
+    from tests.test_ponto_gestao_banco import CPF_JOAO, bater_via_chave, local
+    dp = como(app, mundo["dp"])
+    seg = _segunda_passada()
+    ter = seg + dt.timedelta(days=1)
+    with db.conexao() as conn:
+        db.executar(conn, "DELETE FROM ponto.colaborador_escalas WHERE colaborador_id = :c", c=mundo["joao"])
+        escalas.atribuir(conn, mundo["joao"], mundo["escala"], ter.isoformat(), por="teste")      # a do dia, desde terça
+        noite = escalas.gravar(conn, {"nome": "Vigia noite troca janela", "tipo": "CICLO_12X36",
+                                      "ciclo_entrada": "17:00", "ciclo_saida": "05:00"})
+    bater_via_chave(app, CPF_JOAO, local(ter, 17))
+    bater_via_chave(app, CPF_JOAO, local(ter + dt.timedelta(days=1), 5))
+    # a noite, a partir de segunda, pela janela: a de terça (a do dia) sai e a saída das 5h volta para terça
+    r = dp.post(f"/erp/api/ponto/pessoas/{mundo['joao']}/escala",
+                json={"escala_id": noite["id"], "vigencia_inicio": seg.isoformat()})
+    assert r.status_code == 200, r.get_json()
+    with db.conexao() as conn:
+        vig = [v["vigencia_inicio"] for v in escalas.historico_da_pessoa(conn, mundo["joao"])]
+        dias = [m["data_referencia"] for m in db.todos(conn, "SELECT data_referencia FROM ponto.marcacoes "
+                                                             "WHERE colaborador_id = :c ORDER BY timestamp_servidor",
+                                                       c=mundo["joao"])]
+    assert vig == [seg] and dias == [ter, ter], (vig, dias)

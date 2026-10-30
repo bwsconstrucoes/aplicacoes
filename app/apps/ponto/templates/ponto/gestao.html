@@ -2399,7 +2399,7 @@ async function trocarEscala(p) {
   const atualId = atual ? (ESCALAS_DO_CADASTRO.find(e => e.nome === atual.escala) || {}).id : null;
   const r = await perguntar({
     titulo: `Trocar a escala — ${escapar(p.nome)}`,
-    aviso: "A nova escala vale a partir da data escolhida. O que veio antes continua calculado pela escala antiga.",
+    aviso: "A nova escala vale a partir da data escolhida e dali em diante — troca que estivesse marcada para depois dessa data sai. O que veio antes continua calculado pela escala antiga.",
     campos: [
       {nome: "escala_id", rotulo: "Escala", tipo: "select", largura: 3, obrigatorio: true,
        valor: atualId ? String(atualId) : String(ESCALAS_DO_CADASTRO[0].id),
