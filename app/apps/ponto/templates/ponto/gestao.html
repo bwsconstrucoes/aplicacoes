@@ -388,6 +388,12 @@
   .he-grade td.negada { text-decoration:line-through; color:#B91C1C; }
   .he-grade td.he-pequena { color:#9CA3AF; font-size:11px; }
   .he-grade td.he-ok { color:#6B7280; }
+  /* o cabeçalho dos dias fica parado ao rolar (31/10/2026: "como são muitos funcionários") */
+  .he-rolagem { max-height:calc(100vh - 150px); overflow:auto; border:1px solid var(--borda, #E5E7EB); border-radius:8px; padding:0 6px 6px; }
+  .he-rolagem h3 { position:sticky; left:0; }
+  .he-rolagem .he-grade thead th { position:sticky; top:0; z-index:2; background:var(--fundo-cartao, #fff); box-shadow:0 1px 0 var(--borda, #E5E7EB); }
+  .he-rolagem .he-grade thead th.he-nome { z-index:3; }
+  .he-grade td.he-cel, .he-grade td.he-dia { user-select:none; }
   .he-grade td.he-cel:not(.negada), .he-grade .he-pos { color:#1D4ED8; }
   .he-grade .he-neg, .he-grade td.he-neg { color:#B91C1C; } .dp-mes .s-ABONADO, .dp-mes .s-COMPENSADO { background:#EEF3FB; }
   .dp-mes .s-DESCANSO, .dp-mes .s-FUTURO, .dp-mes .s-ANTES_DO_PONTO, .dp-mes .s-FORA_DO_CONTRATO { background:#F6F7F9; color:var(--tinta-suave); }
@@ -4581,22 +4587,18 @@ function celulaNegativa(n) {
   return {texto: `-${hm(n.minutos)}`, classe: "he-neg", dica: `${n.rotulo}: ${hm(n.minutos)} a menos`};
 }
 const FECH_MARC = new Set();
-let FECH_MODO_NEGAR = false;           // desligado: clicar no dia abre o espelho; ligado: marca a hora para negar
 function fechGradeSupervisao() {
   const {dias, obras} = fechGrupos();
   const fds = iso => [0, 6].includes(new Date(iso + "T12:00:00").getDay());
   return `<div class="barra-lote" style="margin:0 0 8px">
-      <label class="opcao" style="margin:0"><input type="checkbox" id="fech-he-modo" ${FECH_MODO_NEGAR ? "checked" : ""}>
-        <span class="rotulo"><b>Marcar horas para negar</b></span></label>
       <b id="fech-he-qtd">${contar(FECH_MARC.size, "hora marcada", "horas marcadas")}</b>
       <button class="btn secundario" type="button" id="fech-he-negar">🚫 Negar as horas marcadas…</button>
       <button class="btn secundario" type="button" id="fech-he-voltar">↩️ Voltar a contar as marcadas</button>
-      <small class="suave">${FECH_MODO_NEGAR ? "Clique nas horas para marcar (uma ou várias); desligue a caixa para voltar a abrir o espelho."
-        : "Clique no dia da pessoa (ou no nome) para abrir o espelho do ponto dela. Para negar horas, ligue “Marcar horas para negar”."}
-        A hora negada fica riscada e sai de todas as contas (fechamento, relatórios, banco).</small></div>
+      <small class="suave">Um clique na hora extra marca (ou desmarca) para negar; dois cliques no dia abrem o espelho.</small></div>
+    <div class="he-rolagem">
     ${obras.length ? obras.map(g => `<h3 style="margin:14px 0 4px">Obra ${escapar(g.obra || "sem obra")}${g.nome ? ` — ${escapar(g.nome)}` : ""}
         <small class="suave">${contar(g.lista.length, "pessoa", "pessoas")} · extras ${hm(g.total)}${g.atrasos ? ` · atrasos -${hm(g.atrasos)}` : ""}${RL.abater ? ` · saldo ${hmSinal(g.saldo)}` : ""}</small></h3>
-      <div class="tabela-rolagem" style="max-height:none"><table class="he-grade"><thead><tr><th class="sem-ordem he-nome">Funcionário</th>
+      <div><table class="he-grade"><thead><tr><th class="sem-ordem he-nome">Funcionário</th>
         ${dias.map(d => `<th class="sem-ordem ${fds(d) ? "fds" : ""}">${d.slice(8)}<br><small style="display:inline">${d.slice(5, 7)}</small></th>`).join("")}
         <th class="sem-ordem">Extras</th><th class="sem-ordem">Atrasos</th>${RL.abater ? `<th class="sem-ordem">Saldo</th>` : ""}</tr></thead><tbody>
       ${g.lista.map(p => `<tr><td class="he-nome">${eloPessoa(p.id, p.nome, p.primeiro)}${p.banco ? ` <small style="display:inline">(banco)</small>` : ""}
@@ -4604,7 +4606,9 @@ function fechGradeSupervisao() {
         ${dias.map(d => { const k = `${p.id}|${d}`, ng = p.negadas[d], m = p.dias[d], pq = (p.pequenas || {})[d];
           // todo dia abre o espelho da pessoa naquele mês (30/10/2026, o dono: "clicar no dia da pessoa e
           // visualizar o espelho do ponto"); a hora extra, com o modo ligado, se marca para negar
-          const abre = `data-abrir-pessoa="${p.id}" data-dia="${d}" data-aba="mes" data-competencia="${d.slice(0, 7)}"`;
+          // 31/10/2026, o dono: o clique que abria o espelho tomava o lugar do marcar para negar — agora um clique
+          // marca a hora extra e DOIS cliques abrem o espelho
+          const abre = `data-abrir-duplo="${p.id}" data-dia="${d}" data-aba="mes" data-competencia="${d.slice(0, 7)}"`;
           if (pq && !m && !ng) return `<td class="he-dia he-pequena ${fds(d) ? "fds" : ""}" ${abre}
             title="${escapar(`${hm(pq.minutos)} — até ${RL.he_minima} min: desconsiderada`)}">(${hm(pq.minutos)})</td>`;
           const neg = p.negativos[d];
@@ -4612,32 +4616,35 @@ function fechGradeSupervisao() {
             return `<td class="he-dia ${c.classe} ${fds(d) ? "fds" : ""}" ${abre} title="${escapar(c.dica)}">${c.texto}</td>`; }
           if (!m && !ng && p.trabalhou[d]) return `<td class="he-dia he-ok ${fds(d) ? "fds" : ""}" ${abre}
             title="${escapar(`trabalhou ${hm(p.trabalhou[d])} — no horário, sem hora a mais nem a menos`)}">✓</td>`;
-          if (!m && !ng) return `<td class="he-dia ${fds(d) ? "fds" : ""}" ${abre} title="abrir o espelho de ${dataBR(d)}"></td>`;
+          if (!m && !ng) return `<td class="he-dia ${fds(d) ? "fds" : ""}" ${abre} title="dois cliques: o espelho de ${dataBR(d)}"></td>`;
           return `<td class="he-cel ${fds(d) ? "fds" : ""} ${ng ? "negada" : ""} ${FECH_MARC.has(k) ? "marcada" : ""}" data-he="${k}" ${abre}
             data-min="${ng ? ng.minutos : m}" title="${ng ? escapar(`negada: ${ng.negada_motivo || ""} (${ng.negada_por || ""})`)
-              : FECH_MODO_NEGAR ? "clique para marcar" : `abrir o espelho de ${dataBR(d)}`}">${hm(ng ? ng.minutos : m)}</td>`; }).join("")}
+              : `um clique: marcar para negar · dois cliques: o espelho de ${dataBR(d)}`}">${hm(ng ? ng.minutos : m)}</td>`; }).join("")}
         <td class="num he-pos"><b>${hm(p.total)}</b></td><td class="num he-neg">${p.atrasos ? `-${hm(p.atrasos)}` : ""}</td>
         ${RL.abater ? `<td class="num"><b class="${p.saldo < 0 ? "he-neg" : "he-pos"}">${hmSinal(p.saldo)}</b></td>` : ""}</tr>`).join("")}
       </tbody><tfoot><tr><td class="he-nome"><b>Total da obra</b></td>${dias.map(d => `<td class="${fds(d) ? "fds" : ""}"><b>${g.porDia[d] ? hm(g.porDia[d]) : ""}</b></td>`).join("")}
         <td class="num he-pos"><b>${hm(g.total)}</b></td><td class="num he-neg"><b>${g.atrasos ? `-${hm(g.atrasos)}` : ""}</b></td>
         ${RL.abater ? `<td class="num"><b>${hmSinal(g.saldo)}</b></td>` : ""}</tr></tfoot></table></div>`).join("")
-      : `<div class="vazio"><b>Nenhuma hora extra</b>neste fechamento.</div>`}`;
+      : `<div class="vazio"><b>Nenhuma hora extra</b>neste fechamento.</div>`}</div>`;
 }
 function fechLigarGrade() {
-  els("fech-he-modo").addEventListener("change", e => { FECH_MODO_NEGAR = e.target.checked; rlDesenhar(); });
-  els("rl-tabela").querySelectorAll("[data-he]").forEach(c => c.addEventListener("click", ev => {
-    if (!FECH_MODO_NEGAR) return;                      // segue para o clique geral, que abre o espelho
-    ev.stopPropagation();
+  const marcar = c => {
     const k = c.dataset.he; FECH_MARC.has(k) ? FECH_MARC.delete(k) : FECH_MARC.add(k);
     c.classList.toggle("marcada", FECH_MARC.has(k));
     els("fech-he-qtd").textContent = contar(FECH_MARC.size, "hora marcada", "horas marcadas");
+  };
+  els("rl-tabela").querySelectorAll("[data-he]").forEach(c => c.addEventListener("click", () => marcar(c)));
+  els("rl-tabela").querySelectorAll("[data-abrir-duplo]").forEach(c => c.addEventListener("dblclick", ev => {
+    ev.preventDefault();
+    if (c.dataset.he) marcar(c);        // os dois cliques do duplo marcaram e desmarcaram: volta como estava
+    abrirPessoaPainel(Number(c.dataset.abrirDuplo), c.dataset.dia || null, c.dataset.aba || "mes", c.dataset.competencia || null);
   }));
   const itens = negadas => [...FECH_MARC].map(k => els("rl-tabela").querySelector(`[data-he="${k}"]`)).filter(c => c &&
     c.classList.contains("negada") === negadas).map(c => { const [id, data] = c.dataset.he.split("|");
       return {colaborador_id: Number(id), data, minutos: Number(c.dataset.min)}; });
   els("fech-he-negar").addEventListener("click", async () => {
     const lista = itens(false);
-    if (!lista.length) return aviso("mensagem", "Ligue “Marcar horas para negar” e marque, no calendário, as horas extras que não devem entrar.", "erro");
+    if (!lista.length) return aviso("mensagem", "Marque no calendário, com um clique, as horas extras que não devem entrar.", "erro");
     const r = await perguntar({titulo: `Negar ${contar(lista.length, "hora extra", "horas extras")}`,
       aviso: "A hora extra desses dias sai de todas as contas: fechamento, arquivo .ps, relatórios e banco de horas. " +
              "As batidas não mudam. Fica registrado o motivo, quem negou e quando — e dá para voltar a contar.",
