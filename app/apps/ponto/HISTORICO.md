@@ -416,7 +416,7 @@ O dono: *"gerar, por exemplo, de todas as funções com exceção de uma. São m
 lista do filtro de funcionários (obras do cadastro, bateu nas obras, funções, escalas) ganhou **"marcar todas"** e
 **"desmarcar todas"** — valem para o que a busca da lista está mostrando. Para "todas menos uma": marcar todas e tirar
 a uma. Vale em Relatórios, Quadro, Validações e Pessoas (é o mesmo filtro). Só tela, sem migração.
-**No ramo, esperando o "pode".**
+**Publicado em 31/10/2026** (com o "pode" do dono) — SEM MIGRAÇÃO.
 
 ## 31/10/2026 (décima quarta) — O calendário geral no fechamento
 
