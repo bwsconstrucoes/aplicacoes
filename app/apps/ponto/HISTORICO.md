@@ -431,7 +431,7 @@ ficar mais tempo (…) acho que podemos deixar até o meio-dia."*
   essa entrada levada para a véspera — aparece no espelho e o DP corrige.
 - Testes: os dois vigias (pura); a saída das 11:52 fecha o 15:55 da véspera, o 11:59 de domingo fica no domingo; a 026
   acerta o gravado e só ele.
-**No ramo, esperando o "pode".** COM A MIGRAÇÃO 026.
+**Publicado em 31/10/2026** (com o "pode" do dono) — COM A MIGRAÇÃO 026 (apertar "Aplicar atualizações do ponto").
 
 ## 31/10/2026 (décima nona) — O ciclo do 12x36 com pouca história: o mês inteiro decide
 
