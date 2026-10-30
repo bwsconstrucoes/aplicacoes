@@ -802,6 +802,17 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 31/10/2026 — A medição da lentidão (`app/lentidao.py`, ligada no `app/main.py`)
+
+**No ramo `feature/modulo-ponto`, esperando o "pode".** O dono: *"lentidão no ERP de maneira geral (…) memória
+ok, CPU ok, mas tá super lento. Às vezes até fica meio parado."* Com 1 processo e 4 linhas de atendimento (§
+Gunicorn do `CLAUDE.md`), memória e CPU baixas com tudo lento é linha ESPERANDO (banco, Google, OMIE, WhatsApp):
+quatro pedidos demorados juntos e o quinto, de qualquer área, fica na fila. O módulo só escreve no log do Render:
+`LENTA: <método> <caminho> — N s` para pedido acima de 3 s (`LENTIDAO_LIMITE_S`), e `AS 4 LINHAS OCUPADAS: …`
+(no máximo a cada 30 s) com o caminho e o tempo de cada linha tomada. Não muda nenhuma tela, não guarda nada,
+não derruba pedido (todo erro dele é engolido). Se `--threads` mudar no Procfile e no Render, mudar
+`LENTIDAO_LINHAS` junto.
+
 ### 22/10/2026 — Peça nova no front-end: Leaflet (mapa), guardada no repositório
 
 **Publicado em 22/10/2026.** O mapa do Quadro do ponto usa o

@@ -82,6 +82,11 @@ def create_app():
     if ponto_bp is not None:
         app.register_blueprint(ponto_bp)
 
+    # A medição da lentidão (31/10/2026, app/lentidao.py): só escreve no log o pedido que passa de 3 s e quando as
+    # 4 linhas de atendimento estão tomadas — nada muda nas telas.
+    from app import lentidao
+    lentidao.ligar(app)
+
     @app.route("/")
     def index():
         return {
