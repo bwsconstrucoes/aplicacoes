@@ -166,3 +166,52 @@ def test_o_dia_completo_nao_pede_batida_mesmo_longe_da_escala():
     assert [f["rotulo"] for f in ajustes.faltantes(prev, [16 * 60 + 45])] == ["Saída"]
     # a repetida (menos de 10 min) não completa o dia
     assert [f["rotulo"] for f in ajustes.faltantes(prev, [17 * 60, 17 * 60 + 3])] == ["Saída"]
+
+
+@pytest.mark.banco
+def test_o_primeiro_dia_da_escala_do_vigia(app, mundo):
+    """31/10/2026, o dono, num vigia do 12x36 com a escala a partir de 16/10: o 07:01 do dia 16 (a saída do turno do
+    dia 15) ficou no 16 — "descanso · batida faltando" — e, votando no ciclo, fez o 18 (folga) virar falta."""
+    from sqlalchemy import text
+    from app.apps.ponto import db
+    from app.apps.ponto.core import escalas
+    from tests.test_ponto_gestao_banco import CPF_JOAO, bater_via_chave, local
+    dp = como(app, mundo["dp"])
+    d0 = _segunda_passada()
+    d = [d0 + dt.timedelta(days=n) for n in range(5)]
+    with db.conexao() as conn:
+        # como o vigia de verdade: sem escala própria antes (vale a padrão, de dia); a da noite começa em d0
+        conn.execute(text("DELETE FROM ponto.colaborador_escalas WHERE colaborador_id = :c"), {"c": mundo["joao"]})
+        noite = escalas.gravar(conn, {"nome": "Vigia 12x36 17h-5h", "tipo": "CICLO_12X36",
+                                      "ciclo_entrada": "17:00", "ciclo_saida": "05:00"})
+        escalas.atribuir(conn, mundo["joao"], noite["id"], d[0].isoformat(), por="teste")
+    bater_via_chave(app, CPF_JOAO, local(d[0], 7, 1))                 # a saída do turno da véspera
+    for entra, sai in ((d[1], d[2]), (d[3], d[4])):
+        bater_via_chave(app, CPF_JOAO, local(entra, 16, 31))
+        bater_via_chave(app, CPF_JOAO, local(sai, 7, 0))
+
+    def dias():
+        with db.conexao() as conn:
+            return [r["data_referencia"] for r in db.todos(
+                conn, "SELECT data_referencia FROM ponto.marcacoes WHERE colaborador_id = :c "
+                      "ORDER BY timestamp_servidor", c=mundo["joao"])]
+    assert dias() == [d0 - dt.timedelta(days=1), d[1], d[1], d[3], d[3]]
+
+    def situacoes():
+        esp = dp.get(f"/erp/api/ponto/espelho/{mundo['joao']}?competencia={d0:%Y-%m}").get_json()
+        return {x["data"]: x for x in esp["dias"]}
+    s = situacoes()
+    if all(x.month == d0.month for x in d):
+        assert s[d[0].isoformat()]["situacao"] == "DESCANSO" and s[d[0].isoformat()]["alertas"] == []
+        assert s[d[2].isoformat()]["situacao"] == "DESCANSO"                       # folga, não falta
+        assert s[d[1].isoformat()]["situacao"] == "OK" and s[d[3].isoformat()]["situacao"] == "OK"
+
+    # o que já estava gravado no dia errado: a 022 acerta; e a batida solta da manhã não vota no ciclo
+    with db.conexao() as conn:
+        conn.execute(text("UPDATE ponto.marcacoes SET data_referencia = data_referencia + 1 WHERE colaborador_id = :c "
+                          "AND data_referencia = :v"), {"c": mundo["joao"], "v": d0 - dt.timedelta(days=1)})
+        assert escalas.dias_trabalhados(conn, [mundo["joao"]])[mundo["joao"]] == (d[1], d[3])
+    sql = (Path(__file__).resolve().parents[1] / "app/apps/ponto/migracoes/022_turno_da_noite_primeiro_dia.sql").read_text()
+    with db.conexao() as conn:
+        conn.execute(text(sql))
+    assert dias()[0] == d0 - dt.timedelta(days=1)

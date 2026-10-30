@@ -410,6 +410,24 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 31/10/2026 (sétima) — O primeiro dia da escala do vigia (migração 022)
+
+O dono, num vigia do 12x36 com a escala própria a partir de 16/10 (o começo do ponto): *"acho que tá errado essa
+interpretação, talvez por conta da saída do dia 16"*. O espelho dava: 16 "descanso · batida faltando" (só o 07:01),
+17 normal, **18 falta**, 19 feriado trabalhado.
+- **O 07:01 do dia 16 é a saída do turno do dia 15.** Ficou no 16 porque, para a véspera (15), sem escala própria,
+  valia a escala PADRÃO (de dia) — e a 021 tinha a mesma regra. Agora (`escalas.dia_de_trabalho`): se a véspera não
+  tem escala própria e a escala própria da noite COMEÇA no dia da batida, a batida da manhã é da véspera. A
+  **migração 022** acerta o que já ficou gravado assim (mesma regra, em SQL; mês fechado não é tocado).
+- **O 18 virou falta por causa do 07:01**: no ciclo automático, o "16" votava como dia trabalhado, empatava com o 17
+  e o empate ficava com o mais antigo. Agora **só vota no ciclo o dia em que a pessoa ENTROU**: duas batidas ou mais,
+  ou alguma a partir do meio-dia (`escalas.dias_trabalhados`). A batida solta da manhã não vota.
+- O 19 (Feriado do Trabalhador da Construção Civil, trabalhado) continua "trabalho em feriado", com as horas em
+  extra — é o certo no 12x36 (o feriado trabalhado é pago em dobro, Súmula 444 do TST).
+- Teste com o caso dele: a escala da noite a partir de d0, sem escala antes; o 07:01 de d0 vai para a véspera, d0 sem
+  aviso, d2 folga (não falta); e a 022 acerta o gravado errado.
+**No ramo, esperando o "pode"** — COM A MIGRAÇÃO 022 (apertar "Aplicar atualizações do ponto" ao publicar).
+
 ## 31/10/2026 (sexta) — "O PIN não funciona mais": o PIN certo de quem está fora do ponto dizia "PIN incorreto"
 
 O dono: *"tá muito comum o pessoal dizer que o pin não funciona mais. acho que tem algum problema nisso. e ainda tem

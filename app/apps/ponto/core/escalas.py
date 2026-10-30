@@ -280,9 +280,16 @@ def dias_trabalhados(conn: Connection, ids: list[int]) -> dict[int, tuple]:
     if not ids:
         return {}
     saida: dict[int, list] = {}
+    # Só o dia em que a pessoa ENTROU vota no ciclo (31/10/2026, o vigia com um 07:01 solto no dia 16 — a saída do
+    # turno da véspera, de antes do ponto valer): o dia com uma batida só, de manhã, não é dia trabalhado — sem
+    # isto, o 16 empatava com o 17 e o 18, folga, virava falta. Conta o dia com duas batidas ou mais, ou com
+    # alguma a partir do meio-dia.
     for r in db.todos(conn, """
-            SELECT DISTINCT colaborador_id, data_referencia FROM ponto.marcacoes
+            SELECT colaborador_id, data_referencia FROM ponto.marcacoes
              WHERE colaborador_id = ANY(:ids) AND status <> 'REJEITADA'
+             GROUP BY colaborador_id, data_referencia
+            HAVING count(*) >= 2
+                OR max(EXTRACT(HOUR FROM timestamp_servidor AT TIME ZONE 'America/Fortaleza')) >= 12
              ORDER BY colaborador_id, data_referencia""", ids=[int(i) for i in ids]):
         saida.setdefault(int(r["colaborador_id"]), []).append(r["data_referencia"])
     return {k: tuple(v) for k, v in saida.items()}
@@ -326,7 +333,15 @@ def dia_de_trabalho(conn: Connection, pessoa: dict, momento: dt.datetime,
     if pessoa.get("tipo_jornada") == "VIGIA_NOTURNO_2" or local.hour >= horario.HORA_DE_CORTE_NOTURNO:
         return horario.data_referencia(momento, pessoa.get("tipo_jornada") or "")
     anterior = local.date() - dt.timedelta(days=1)
-    esc, _ = (escalas_da_pessoa or EscalasDaPessoa(conn, int(pessoa["id"]))).no_dia(anterior)
+    vig = escalas_da_pessoa or EscalasDaPessoa(conn, int(pessoa["id"]))
+    esc, info = vig.no_dia(anterior)
+    if not (info and info.get("vigencia_inicio")):
+        # A véspera é de ANTES da primeira escala própria (31/10/2026: a escala do vigia começou no dia 16, junto
+        # com o ponto, e o 07:01 do dia 16 — a saída do turno do dia 15 — ficou no 16, pela escala padrão de dia).
+        # Se a escala própria começa justamente HOJE e é da noite, a batida da manhã é da véspera.
+        hoje_esc, hoje_info = vig.no_dia(local.date())
+        if hoje_info and hoje_info.get("vigencia_inicio") == local.date():
+            esc = hoje_esc
     return anterior if turno_da_noite(esc, anterior) else local.date()
 
 
