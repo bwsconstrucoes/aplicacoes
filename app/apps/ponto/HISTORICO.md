@@ -431,6 +431,7 @@ O manual (`static/manual/`, aberto em `/ponto/app/manual/` e `/ponto/app/manual.
   a que vale é a do sistema, que é a que o aplicativo abre.
 - Como foi feito (para repetir): dados de exemplo semeados no banco de teste, Playwright fotografando o
   aplicativo a 390 px (escala 2), JPG de 600 px; o PDF pela receita de 15/10.
+**Publicado em 31/10/2026** (com o "pode" do dono) — SEM MIGRAÇÃO.
 
 ## 31/10/2026 (vigésima terceira) — O "Ponto da minha equipe" virou o resumo gerencial das obras
 
