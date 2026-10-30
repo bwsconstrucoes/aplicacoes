@@ -427,7 +427,7 @@ ESCRUSSAS ficavam fora do ponto, sem jeito de liberar (só o Modo de teste, que 
   já era pela pessoa de teste.
 - Teste: sem motivo, recusada; com motivo, a pessoa da obra sem ponto passa a bater e aparece nas listas, e a ficha
   mostra o que a planilha diz; o supervisor não libera; tirar a exceção a tira do ponto de novo.
-**No ramo, esperando o "pode".** COM A MIGRAÇÃO 025.
+**Publicado em 31/10/2026** (com o "pode" do dono) — COM A MIGRAÇÃO 025 (apertar "Aplicar atualizações do ponto").
 
 ## 31/10/2026 (décima sexta) — Relatórios: as opções do fechamento sumiam ao reabrir a tela
 
