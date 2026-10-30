@@ -387,6 +387,17 @@ def ponto_api_pessoas_com_batida():
 # Qualidade do ponto: ranking por obra, responsável e pessoa (17/10/2026,
 # core/qualidade.py)
 # ---------------------------------------------------------------------------
+def _qualidade_do_pedido(conn, quem, inicio, fim) -> dict:
+    """A conta da qualidade de quem a pessoa alcança (ou de quem bateu na `?obra=`)."""
+    if request.args.get("obra"):
+        o = _obra_no_alcance(conn, quem, request.args.get("obra"))
+        ids = [int(p["id"]) for p in filtros.pessoas_com_batida(conn, int(o["id"]), inicio, fim)]
+    else:
+        ids = [int(p["id"]) for p in cadastros.listar_colaboradores(conn, so_ativos=True)
+               if ocorrencias.pessoa_no_alcance(conn, quem, int(p["id"]))]
+    return qualidade.avaliar(conn, ids, inicio, fim, esperar=0)
+
+
 @bp.route("/erp/api/ponto/qualidade")
 @login_obrigatorio
 @permissao("ver_ponto")
@@ -397,17 +408,32 @@ def ponto_api_qualidade():
     quem = _quem()
     inicio, fim = _datas_da_competencia(request.args.get("competencia"))
     with db.conexao() as conn:
-        if request.args.get("obra"):
-            o = _obra_no_alcance(conn, quem, request.args.get("obra"))
-            ids = [int(p["id"]) for p in filtros.pessoas_com_batida(conn, int(o["id"]), inicio, fim)]
-        else:
-            ids = [int(p["id"]) for p in cadastros.listar_colaboradores(conn, so_ativos=True)
-                   if ocorrencias.pessoa_no_alcance(conn, quem, int(p["id"]))]
         try:
-            r = qualidade.avaliar(conn, ids, inicio, fim, esperar=0)
+            r = _qualidade_do_pedido(conn, quem, inicio, fim)
         except qualidade.Ocupado as e:        # 21/10/2026: nunca duas contas pesadas juntas
             return jsonify({"ok": False, "erro": str(e), "ocupado": True}), 503
     return _ok(**r, competencia=f"{inicio:%Y-%m}")
+
+
+@bp.route("/erp/api/ponto/qualidade/mensagem")
+@login_obrigatorio
+@permissao("ver_ponto")
+@_api
+def ponto_api_qualidade_mensagem():
+    """O texto para o WhatsApp (30/10/2026): as 10 melhores obras, os 20 melhores funcionários e como a
+    nota é feita — da mesma conta da tela (guardada 10 min), no alcance de quem pede."""
+    quem = _quem()
+    inicio, fim = _datas_da_competencia(request.args.get("competencia"))
+    with db.conexao() as conn:
+        try:
+            r = _qualidade_do_pedido(conn, quem, inicio, fim)
+        except qualidade.Ocupado as e:
+            return jsonify({"ok": False, "erro": str(e), "ocupado": True}), 503
+        codigos = sorted({o["obra"] for o in r["por_obra"]})
+        nomes = ({o["codigo"]: o["nome"] for o in db.todos(
+            conn, "SELECT codigo, nome FROM public.obras WHERE codigo = ANY(:c)", c=codigos)} if codigos else {})
+    ate = min(fim, horario.hoje() - dt.timedelta(days=1))
+    return _ok(texto=qualidade.mensagem_whatsapp(r, nomes, f"{inicio:%Y-%m}", ate))
 
 
 @bp.route("/erp/api/ponto/qualidade/limite", methods=["POST"])

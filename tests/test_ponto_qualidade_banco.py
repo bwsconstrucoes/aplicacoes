@@ -75,6 +75,31 @@ def test_regras_puras_do_selo_e_do_dia():
     # a falta vai para a obra em que a pessoa mais bateu (A: 2 batidas; B: 1), não a do cadastro
     assert avaliar_dias(dias, "Z")["por_obra"]["A"]["faltas"] == 1
     assert {p["tipo"] for p in av["problemas"]} == {"FALTA", "FALTANDO", "AJUSTE", "SEM_FOTO"}
+    # 30/10/2026: o % de ajustes — das batidas do período, quantas entraram por ajuste
+    assert (t["batidas"], t["batidas_ajustadas"]) == (3, 1)
+    from app.apps.ponto.core.qualidade import _numeros
+    assert _numeros(t, 0, 3)["pct_ajustadas"] == 33
+
+
+def test_a_mensagem_do_whatsapp():
+    """30/10/2026, o dono: "crie uma mensagem para whatsapp da qualidade do ponto. Quero as top 10 obras. Top 20
+    funcionários. Quero ainda um explicativo do cálculo." """
+    from app.apps.ponto.core.qualidade import mensagem_whatsapp
+    obras = [{"obra": f"OB-{n:02d}", "pessoas": 12, "pontos": 100 - n, "selo": {"codigo": "OURO"}, "pct_ajustadas": n,
+              "entra_no_ranking": True} for n in range(12)]
+    obras.insert(0, {"obra": "PEQUENA", "pessoas": 3, "pontos": 100, "entra_no_ranking": False})
+    pessoas = [{"id": n, "nome": f"Fulano de Tal Número{n}", "obra_do_periodo": "OB-01", "pontos": 99 - n, "ajustes": n % 3,
+                "selo": {"codigo": "PRATA"}, "entra_no_ranking": True, "dias_trabalho": 15} for n in range(25)]
+    texto = mensagem_whatsapp({"por_obra": obras, "pessoas": pessoas}, {"OB-00": "Escola Central"}, "2026-10",
+                              dt.date(2026, 10, 29))
+    assert "*🏆 Qualidade do ponto — 10/2026*" in texto and "Até 29/10/2026" in texto
+    assert "1º 🥇 OB-00 — Escola Central: *100* (12 pessoas · 0% de ajustes)" in texto
+    assert "10º" in texto and "OB-09" in texto and "OB-10" not in texto and "PEQUENA" not in texto
+    assert "1º 🥈 Fulano Número0 (OB-01): *99* · nenhum ajuste" in texto     # só o primeiro e o último nome
+    assert "20º" in texto and "Número19" in texto and "Número20" not in texto
+    assert "*Como a nota é calculada*" in texto and "tira 5 pontos" in texto and "% de ajustes" in texto
+    vazio = mensagem_whatsapp({"por_obra": [], "pessoas": []}, {}, "2026-10", dt.date(2026, 10, 29))
+    assert "Nenhuma obra com 10 funcionários" in vazio and "Nenhum funcionário com 10 dias" in vazio
 
 
 def test_ranking_da_gestao_com_limite_de_ajustes(app, mundo):
@@ -111,6 +136,10 @@ def test_ranking_da_gestao_com_limite_de_ajustes(app, mundo):
                 if p["id"] == mundo["joao"])
     assert joao["muitos_ajustes"] is False
     assert dp.post("/erp/api/ponto/qualidade/limite", json={"limite": 99}).status_code == 400
+    assert joao["batidas"] >= 4 and joao["pct_ajustadas"] is not None
+    # a mensagem para o WhatsApp, no alcance de quem pede
+    texto = dp.get(f"/erp/api/ponto/qualidade/mensagem?competencia={comp}").get_json()["texto"]
+    assert "Top 10 obras" in texto and "Como a nota é calculada" in texto
     # a tela abre
     assert dp.get("/erp/ponto/qualidade").status_code == 200
 

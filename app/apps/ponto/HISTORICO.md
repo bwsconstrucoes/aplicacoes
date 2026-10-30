@@ -410,6 +410,23 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 30/10/2026 (madrugada de 31, segunda) — A mensagem da qualidade para o WhatsApp, e o % de ajustes
+
+O dono: *"crie uma mensagem para whatsapp da qualidade do ponto. Quero as top 10 obras. Top 20 funcionários. Quero
+ainda um explicativo do cálculo e quero na tela de qualidade uma coluna com o % de ajustes de batidas do total."*
+- **% de ajustes** = das batidas do mês, quantas entraram por pedido de ajuste (a incluída em lote pela gestão — falha
+  do sistema — não conta, como já não contava nos problemas). Coluna nas tabelas de obras, responsáveis e pessoas (o
+  "x de y" ao passar o mouse) e um número no topo. Conta todas as batidas válidas do período, também as de dia de
+  descanso; a obra de cada batida é a do dia. Não muda a nota: é só para ver.
+- **Mensagem para o WhatsApp**: botão na barra da Qualidade. Abre o texto pronto (`qualidade.mensagem_whatsapp`):
+  título com o mês, as **10 melhores obras** (código, nome, nota, pessoas, % de ajustes) e os **20 melhores
+  funcionários** (só o primeiro e o último nome, a obra, a nota e os ajustes) — só quem ENTRA no ranking, na ordem da
+  tela, no alcance de quem pede —, e **"Como a nota é calculada"**, escrito a partir das próprias constantes da conta
+  (se o peso mudar, o texto muda junto). O texto pode ser mexido; "Copiar" e "Abrir no WhatsApp" (o link do próprio
+  WhatsApp, a pessoa escolhe o grupo). **Nada é enviado sozinho** — escolha feita para não escrever em grupo sem
+  ninguém olhar; o envio automático (todo dia 1º, por exemplo) é um passo a mais, se o dono quiser.
+- Testes: a regra pura do % e a mensagem (top 10/20, quem não entra fica de fora, nome curto, vazio), e a rota com banco.
+
 ## 30/10/2026 (madrugada de 31) — O começo do ciclo automático: as noites seguintes também votam
 
 O dono, mostrando um vigia que trabalha nos dias ímpares desde 17/10: o dia 16 saiu **falta** e o 17 **noite fora do
@@ -428,7 +445,7 @@ Na mesma rodada, dois casos do mesmo vigia:
 - **21/10, entrou 16:45 e saiu 07:01 numa escala até 05:00** — a conta já dava 14h16 e 2h16 de extra, mas o espelho
   oferecia "Saída 05:00" para incluir, porque a saída estava a mais de 2 h da escala. Agora o dia completo (batidas em
   número par, ao menos as previstas) não pede batida nenhuma (`ajustes.faltantes`).
-**No ramo, esperando o "pode"** — SEM MIGRAÇÃO.
+**No ramo, esperando o "pode"** — SEM MIGRAÇÃO (vai junto com a mensagem da qualidade).
 
 ## 30/10/2026 (noite, terceira) — O ciclo 12x36 automático, e a noite fora do ciclo para o DP decidir
 

@@ -211,15 +211,22 @@ def avaliar_dias(dias: list[dict], obra_principal: Optional[str]) -> dict:
             if b.get("fora_da_cerca"):
                 t["fora_da_cerca"] += 1
                 problemas.append({"data": d["data"], "tipo": "FORA", "texto": f"bateu fora da obra às {b['hora']}"})
+        obra = next((b["obra"] for b in batidas if b.get("obra")), None) or da_falta
+        # O % DE AJUSTES (30/10/2026, o dono: "na tela de qualidade uma coluna com o % de ajustes de batidas
+        # do total"): das batidas do período, quantas entraram por ajuste — a incluída em lote pela gestão
+        # (falha do sistema) não conta, como não conta nos problemas.
+        ajustadas = [b for b in batidas if b.get("status") == "AJUSTADA"
+                     and not (b.get("motivo_analise") or "").startswith("incluída em lote")]
+        for chave, n in (("batidas", len(batidas)), ("batidas_ajustadas", len(ajustadas))):
+            t[chave] += n
+            if n:
+                por_obra[obra][chave] += n
         if d.get("situacao") not in DIAS_DE_TRABALHO:
             continue
-        obra = next((b["obra"] for b in batidas if b.get("obra")), None) or da_falta
         o = por_obra[obra]
         t["dias_trabalho"] += 1
         o["dias_trabalho"] += 1
-        # A batida incluída em lote pela gestão (falha do sistema) não pesa contra a pessoa.
-        ajustadas = [b for b in batidas if b.get("status") == "AJUSTADA"
-                     and not (b.get("motivo_analise") or "").startswith("incluída em lote")]
+        # A batida incluída em lote pela gestão (falha do sistema) não pesa contra a pessoa (acima).
         faltando = d.get("faltando") or []
         if d["situacao"] == "FALTA":
             t["faltas"] += 1
@@ -251,6 +258,8 @@ def _numeros(t: dict, ajustes: int, limite: int) -> dict:
             "dias_com_ajuste": t.get("dias_com_ajuste", 0), "sem_foto": t.get("sem_foto", 0),
             "foto_com_sinal": t.get("foto_com_sinal", 0), "fora_da_cerca": t.get("fora_da_cerca", 0),
             "batidas_app": t.get("batidas_app", 0), "ajustes": ajustes,
+            "batidas": t.get("batidas", 0), "batidas_ajustadas": t.get("batidas_ajustadas", 0),
+            "pct_ajustadas": _pct(t.get("batidas_ajustadas", 0), t.get("batidas", 0)),
             "muitos_ajustes": ajustes > limite, "indice": indice, "fotos_ok": fotos,
             "pontos": pontos, "selo": o_selo}
 
@@ -350,6 +359,8 @@ def _avaliar(conn: Connection, ids: list[int], inicio: dt.date, fim: dt.date, ch
             gente_da_obra[codigo].add(p["id"])
     por_obra = []
     for codigo, n in obras.items():
+        if not n.get("dias_trabalho"):      # só batida em dia de descanso: conta no % da pessoa, não faz obra
+            continue
         num = _numeros(n, 0, limite)
         # os pontos da obra: a média das pessoas, pesada pelos dias de cada uma nela (29/10/2026)
         num["pontos"] = pontos_da_obra([(p["pontos"], p["_por_obra"].get(codigo, {}).get("dias_trabalho", 0))
@@ -368,7 +379,7 @@ def _avaliar(conn: Connection, ids: list[int], inicio: dt.date, fim: dt.date, ch
         soma = defaultdict(int)
         for p in gente:
             for k in ("dias_trabalho", "dias_em_dia", "faltas", "incompletos", "dias_com_ajuste",
-                      "sem_foto", "foto_com_sinal", "fora_da_cerca", "batidas_app"):
+                      "sem_foto", "foto_com_sinal", "fora_da_cerca", "batidas_app", "batidas", "batidas_ajustadas"):
                 soma[k] += p[k]
             soma["fotos_ok"] += round((p["fotos_ok"] or 0) * p["batidas_app"] / 100) if p["batidas_app"] else 0
         quem = cadastros.colaborador_por_id(conn, r) or {"nome": f"pessoa nº {r}"}
@@ -389,7 +400,7 @@ def _avaliar(conn: Connection, ids: list[int], inicio: dt.date, fim: dt.date, ch
     total = defaultdict(int)
     for p in pessoas:
         for k in ("dias_trabalho", "dias_em_dia", "faltas", "incompletos", "dias_com_ajuste", "sem_foto",
-                  "foto_com_sinal", "fora_da_cerca", "batidas_app"):
+                  "foto_com_sinal", "fora_da_cerca", "batidas_app", "batidas", "batidas_ajustadas"):
             total[k] += p[k]
         total["fotos_ok"] += round((p["fotos_ok"] or 0) * p["batidas_app"] / 100) if p["batidas_app"] else 0
     geral = _numeros(total, sum(p["ajustes"] for p in pessoas), limite * max(len(pessoas), 1))
@@ -406,6 +417,73 @@ def _avaliar(conn: Connection, ids: list[int], inicio: dt.date, fim: dt.date, ch
     }
     _guardar(chave, resultado)
     return resultado
+
+
+# ---------------------------------------------------------------------------
+# A MENSAGEM PARA O WHATSAPP (30/10/2026, o dono: "crie uma mensagem para whatsapp da qualidade do ponto.
+# Quero as top 10 obras. Top 20 funcionários. Quero ainda um explicativo do cálculo"). Só os que ENTRAM
+# no ranking (as mesmas regras da tela); do funcionário, só o primeiro e o último nome — a mensagem vai
+# para grupo. O texto diz o que é a conta, sem conselho.
+# ---------------------------------------------------------------------------
+TOP_OBRAS_MENSAGEM = 10
+TOP_PESSOAS_MENSAGEM = 20
+_MEDALHA = {"OURO": "🥇", "PRATA": "🥈", "BRONZE": "🥉", "ATENCAO": "⚠️"}
+
+
+def _ajustes_txt(n: dict) -> str:
+    v = n.get("pct_ajustadas")
+    return f"{v}% de ajustes" if v is not None else "sem batidas"
+
+
+def explicacao_do_calculo() -> str:
+    """PURA. Como a nota é feita, em palavras — a mesma conta de `pontos_e_selo` e `pontos_da_obra`."""
+    ouro, prata, bronze = (m for m, _, _ in SELOS[:3])
+    return "\n".join([
+        "*Como a nota é calculada*",
+        f"• A nota vai de 0 a 100. {round(PESO_INDICE * 100)}% dela vem dos *dias em dia* (todas as batidas "
+        f"do dia na hora, sem falta e sem ajuste) e {round(PESO_FOTOS * 100)}% das *fotos boas* (com foto e sem "
+        "problema nela, como foto escura ou sem rosto).",
+        f"• Cada *pedido de ajuste* tira {PENALIDADE_POR_AJUSTE} pontos, desde o primeiro. Cada dia com "
+        f"*batida faltando* tira {PENALIDADE_POR_FALTANDO}.",
+        f"• Selo: 🥇 Ouro a partir de {ouro} · 🥈 Prata a partir de {prata} · 🥉 Bronze a partir de {bronze}.",
+        "• A nota da *obra* é a média das notas de quem trabalhou nela, pesada pelos dias de cada um na obra.",
+        f"• Entram no ranking as obras com {MINIMO_PESSOAS_OBRA} funcionários ou mais e os funcionários com "
+        f"{MINIMO_DIAS_PESSOA} dias de trabalho ou mais.",
+        "• *% de ajustes* = das batidas do mês, quantas entraram por pedido de ajuste.",
+        "• Não contam: dia abonado (atestado, férias, licença), folga, feriado e o dia de hoje.",
+    ])
+
+
+def mensagem_whatsapp(r: dict, nomes_obras: dict[str, str], competencia: str, ate: dt.date) -> str:
+    """PURA. Do resultado de `avaliar` ao texto para colar no WhatsApp — na ordem da tela."""
+    from .busca_nome import nome_curto
+    mes = f"{competencia[5:7]}/{competencia[:4]}"
+    linhas = [f"*🏆 Qualidade do ponto — {mes}*", f"_Até {ate:%d/%m/%Y}_", ""]
+    obras = [o for o in r.get("por_obra") or [] if o.get("entra_no_ranking") and o.get("pontos") is not None]
+    linhas.append(f"*Top {TOP_OBRAS_MENSAGEM} obras*")
+    if obras:
+        for n, o in enumerate(obras[:TOP_OBRAS_MENSAGEM], start=1):
+            nome = nomes_obras.get(o["obra"])
+            rotulo = f"{o['obra']} — {nome}" if nome else o["obra"]
+            linhas.append(f"{n}º {_MEDALHA.get((o.get('selo') or {}).get('codigo'), '')} {rotulo}: *{o['pontos']}* "
+                          f"({o['pessoas']} pessoas · {_ajustes_txt(o)})")
+    else:
+        linhas.append(f"Nenhuma obra com {MINIMO_PESSOAS_OBRA} funcionários ou mais no mês ainda.")
+    linhas += ["", f"*Top {TOP_PESSOAS_MENSAGEM} funcionários*"]
+    pessoas = [p for p in r.get("pessoas") or [] if p.get("entra_no_ranking") and p.get("pontos") is not None]
+    if pessoas:
+        for n, p in enumerate(pessoas[:TOP_PESSOAS_MENSAGEM], start=1):
+            obra = p.get("obra_do_periodo") or p.get("obra")
+            linhas.append(f"{n}º {_MEDALHA.get((p.get('selo') or {}).get('codigo'), '')} {nome_curto(p.get('nome'))}"
+                          f"{f' ({obra})' if obra else ''}: *{p['pontos']}* · {contar_ajustes(p.get('ajustes', 0))}")
+    else:
+        linhas.append(f"Nenhum funcionário com {MINIMO_DIAS_PESSOA} dias de trabalho ou mais no mês ainda.")
+    linhas += ["", explicacao_do_calculo()]
+    return "\n".join(linhas)
+
+
+def contar_ajustes(n: int) -> str:
+    return "nenhum ajuste" if not n else ("1 ajuste" if n == 1 else f"{n} ajustes")
 
 
 def equipe_do_responsavel(conn: Connection, responsavel_id: int, inicio: dt.date, fim: dt.date) -> list[int]:

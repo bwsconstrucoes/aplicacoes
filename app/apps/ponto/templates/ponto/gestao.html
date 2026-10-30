@@ -275,7 +275,9 @@
   <div class="campo" style="margin-top:10px"><label for="q-obra">Obra</label>
     <select id="q-obra"><option value="">Todas as minhas obras</option></select></div>
   <button class="btn" id="q-ver" type="button" style="width:100%; margin-top:14px">Ver</button>
+  <button class="btn secundario" id="q-zap" type="button" style="width:100%; margin-top:8px">📲 Mensagem para o WhatsApp</button>
   <div class="cartao-dica" style="margin-top:16px">
+    <b>% de ajustes</b> = das batidas do mês, quantas entraram por pedido de ajuste.
     <b>Dia em dia</b> = dia de trabalho com todas as batidas previstas feitas na
     hora — sem falta, sem batida faltando e sem batida incluída por ajuste.
     <b>Pontos</b> = 70% do índice + 30% das fotos boas, <b>menos 5 por ajuste pedido</b>
@@ -900,6 +902,18 @@
   <div class="suave" id="q-limite" style="font-size:13px; margin-bottom:6px"></div>
   <div class="tabela-rolagem"><div id="q-pessoas">carregando…</div></div>
 </div>
+<dialog id="dlg-zap" class="dlg-pessoa"><div class="dlg-topo"><h3>Mensagem para o WhatsApp</h3>
+  <button class="topo-btn" style="margin-left:auto" type="button" onclick="els('dlg-zap').close()">Fechar</button></div>
+  <div class="dlg-corpo">
+    <div id="zap-msg"></div>
+    <div class="barra-acoes" style="margin:0 0 10px">
+      <button class="btn" type="button" id="zap-copiar">Copiar o texto</button>
+      <a class="btn secundario" id="zap-abrir" target="_blank" rel="noopener" style="text-decoration:none">Abrir no WhatsApp</a></div>
+    <textarea id="zap-texto" rows="24" style="width:100%; font-family:inherit; font-size:14px" data-sem-mascara></textarea>
+    <small class="suave">As 10 melhores obras e os 20 melhores funcionários do ranking, das obras que você alcança, e como a
+      nota é calculada. O texto pode ser mexido antes de copiar. "Abrir no WhatsApp" abre a conversa para você escolher
+      o grupo — nada é enviado sozinho.</small>
+  </div></dialog>
 
 {% elif aba_ponto == "ponto_rondas" %}
 {# ----------------------------------------------------------------- RONDAS #}
@@ -5620,6 +5634,23 @@ const pct = v => v == null ? `<span class="suave">—</span>` : `${v}%`;
 const seloQ = n => n.selo ? `<span title="${escapar(n.selo.rotulo)}">${MEDALHA[n.selo.codigo] || ""} ${n.pontos}</span>`
                           : `<span class="suave">—</span>`;
 const doUrlQ = nome => new URLSearchParams(location.search).get(nome);
+// O % de ajustes (30/10/2026): das batidas do mês, quantas entraram por ajuste — com o "x de y" ao passar o mouse.
+const pctAjustes = n => n.pct_ajustadas == null ? `<span class="suave">—</span>`
+  : `<span title="${n.batidas_ajustadas} de ${n.batidas} batidas">${n.pct_ajustadas}%</span>`;
+
+// A mensagem para o WhatsApp (30/10/2026): o texto vem pronto do servidor (core/qualidade.py).
+async function mensagemDoWhatsapp() {
+  const comp = els("q-mes").value, obra = els("q-obra").value;
+  els("zap-texto").value = "montando a mensagem…";
+  els("zap-msg").innerHTML = "";
+  els("dlg-zap").showModal();
+  try {
+    const d = await api(`/erp/api/ponto/qualidade/mensagem?competencia=${encodeURIComponent(comp)}${obra ? `&obra=${encodeURIComponent(obra)}` : ""}`);
+    els("zap-texto").value = d.texto;
+    atualizarLinkDoZap();
+  } catch (e) { els("zap-texto").value = ""; falhou(e, "zap-msg"); }
+}
+function atualizarLinkDoZap() { els("zap-abrir").href = `https://wa.me/?text=${encodeURIComponent(els("zap-texto").value)}`; }
 
 async function carregarObrasDaQualidade() {
   const comp = els("q-mes").value, antes = els("q-obra").value;
@@ -5652,6 +5683,8 @@ function desenharQualidade() {
     kpi("Faltas", g.faltas, "vermelho", "dias sem batida e sem justificativa"),
     kpi("Batida faltando", g.incompletos, "ambar", "dias em que faltou bater alguma"),
     kpi("Dias com ajuste", g.dias_com_ajuste, "ambar", `${g.ajustes} pedido(s) de ajuste no mês`),
+    kpi("% de ajustes", g.pct_ajustadas == null ? "—" : `${g.pct_ajustadas}%`, "ambar",
+        `${g.batidas_ajustadas || 0} de ${g.batidas || 0} batidas entraram por ajuste`),
     kpi("Muitos ajustes", g.muitos_ajustes_pessoas, g.muitos_ajustes_pessoas ? "vermelho" : "", `pessoas acima de ${QUAL.limite_ajustes} no mês`),
   ].join("");
   // A posição é número; a medalha é do SELO (pontos), para não confundir as duas.
@@ -5659,6 +5692,7 @@ function desenharQualidade() {
   els("q-obras").innerHTML = QUAL.por_obra.length ? `<table><thead><tr><th class="sem-ordem"></th><th class="sem-ordem">Obra</th>
       <th class="sem-ordem dados">Pessoas</th><th class="sem-ordem dados">Em dia</th><th class="sem-ordem dados">Fotos boas</th>
       <th class="sem-ordem dados">Faltas</th><th class="sem-ordem dados">Batida faltando</th><th class="sem-ordem dados">Com ajuste</th>
+      <th class="sem-ordem dados" title="das batidas do mês, quantas entraram por ajuste">% de ajustes</th>
       <th class="sem-ordem dados">Pontos</th></tr></thead><tbody>
     ${(() => { let n = 0; return QUAL.por_obra.map(o => {
       // só entra no ranking a obra com 10 funcionários ou mais (29/10/2026); as outras ficam embaixo, sem posição
@@ -5667,6 +5701,7 @@ function desenharQualidade() {
       <td>${entra ? posicao(n++) : "—"}</td><td class="dados"><b>${escapar(o.obra)}</b></td>
       <td class="dados">${o.pessoas}</td><td class="dados">${pct(o.indice)}</td><td class="dados">${pct(o.fotos_ok)}</td>
       <td class="dados">${o.faltas}</td><td class="dados">${o.incompletos}</td><td class="dados">${o.dias_com_ajuste}</td>
+      <td class="dados">${pctAjustes(o)}</td>
       <td class="dados">${seloQ(o)}</td></tr>`; }).join(""); })()}</tbody></table>
     <small class="suave">* Entram no ranking as obras com ${(QUAL.minimos || {}).pessoas_obra || 10} funcionários ou mais no período;
       as outras aparecem embaixo, sem posição. Os pontos da obra são a média dos pontos de quem trabalhou nela.</small>`
@@ -5674,10 +5709,12 @@ function desenharQualidade() {
   els("q-responsaveis").innerHTML = QUAL.por_responsavel.length ? `<table><thead><tr><th class="sem-ordem"></th>
       <th class="sem-ordem">Responsável</th><th class="sem-ordem dados">Pessoas</th><th class="sem-ordem dados">Em dia</th>
       <th class="sem-ordem dados">Fotos boas</th><th class="sem-ordem dados">Faltas</th><th class="sem-ordem dados">Batida faltando</th>
-      <th class="sem-ordem dados">Ajustes</th><th class="sem-ordem dados">Pontos</th></tr></thead><tbody>
+      <th class="sem-ordem dados">Ajustes</th><th class="sem-ordem dados" title="das batidas do mês, quantas entraram por ajuste">% de ajustes</th>
+      <th class="sem-ordem dados">Pontos</th></tr></thead><tbody>
     ${QUAL.por_responsavel.map((r, i) => `<tr><td>${posicao(i)}</td><td><b>${escapar(r.nome)}</b></td>
       <td class="dados">${r.pessoas}</td><td class="dados">${pct(r.indice)}</td><td class="dados">${pct(r.fotos_ok)}</td>
       <td class="dados">${r.faltas}</td><td class="dados">${r.incompletos}</td><td class="dados">${r.ajustes}</td>
+      <td class="dados">${pctAjustes(r)}</td>
       <td class="dados">${seloQ(r)}</td></tr>`).join("")}</tbody></table>`
     : `<div class="cartao-dica">Ninguém bateu em ponto da obra com responsável neste mês.</div>`;
   desenharPessoasDaQualidade();
@@ -5694,12 +5731,14 @@ function desenharPessoasDaQualidade() {
     ? [...QUAL.pessoas].sort((a, b) => (a.pontos ?? 101) - (b.pontos ?? 101)) : [...QUAL.pessoas];
   els("q-pessoas").innerHTML = lista.length ? `<table><thead><tr><th class="sem-ordem">Pessoa</th><th class="sem-ordem">Obra</th>
       <th class="sem-ordem dados">Em dia</th><th class="sem-ordem dados">Fotos boas</th><th class="sem-ordem dados">Faltas</th>
-      <th class="sem-ordem dados">Batida faltando</th><th class="sem-ordem dados">Ajustes</th><th class="sem-ordem dados">Pontos</th>
+      <th class="sem-ordem dados">Batida faltando</th><th class="sem-ordem dados">Ajustes</th>
+      <th class="sem-ordem dados" title="das batidas do mês, quantas entraram por ajuste">% de ajustes</th><th class="sem-ordem dados">Pontos</th>
       <th class="sem-ordem">Problemas</th></tr></thead><tbody>
     ${lista.slice(0, 200).map(p => `<tr><td>${eloPessoa(p.id, p.nome)}</td><td class="dados">${escapar(p.obra || "—")}</td>
       <td class="dados">${pct(p.indice)}<small>${p.dias_em_dia} de ${p.dias_trabalho}</small></td><td class="dados">${pct(p.fotos_ok)}</td>
       <td class="dados">${p.faltas}</td><td class="dados">${p.incompletos}</td>
       <td class="dados" ${p.muitos_ajustes ? `style="color:var(--vermelho); font-weight:700" title="acima do limite do mês"` : ""}>${p.ajustes}</td>
+      <td class="dados">${pctAjustes(p)}</td>
       <td class="dados">${seloQ(p)}</td>
       <td>${p.problemas.length ? `<details><summary style="cursor:pointer">${contar(p.problemas.length, "problema", "problemas")}</summary>
           ${p.problemas.slice(0, 30).map(x => `<small>${ddmm(x.data)} · ${escapar(x.texto)}</small>`).join("")}</details>`
@@ -5720,6 +5759,12 @@ async function mudarLimite() {
 
 preencherMeses(els("q-mes"), /^\d{4}-\d{2}$/.test(doUrlQ("competencia") || "") ? doUrlQ("competencia") : mesAtual());
 els("q-ver").addEventListener("click", carregarQualidade);
+els("q-zap").addEventListener("click", mensagemDoWhatsapp);
+els("zap-texto").addEventListener("input", atualizarLinkDoZap);
+els("zap-copiar").addEventListener("click", async () => {
+  try { await navigator.clipboard.writeText(els("zap-texto").value); aviso("zap-msg", "Texto copiado. Cole no grupo do WhatsApp.", "ok"); }
+  catch (e) { els("zap-texto").select(); aviso("zap-msg", "Não deu para copiar sozinho: o texto ficou selecionado, copie com Ctrl+C.", "erro"); }
+});
 els("q-obra").addEventListener("change", carregarQualidade);
 els("q-mes").addEventListener("change", async () => { await carregarObrasDaQualidade(); carregarQualidade(); });
 els("q-atencao").addEventListener("click", () => { Q_ORDEM = "atencao"; desenharPessoasDaQualidade(); });
