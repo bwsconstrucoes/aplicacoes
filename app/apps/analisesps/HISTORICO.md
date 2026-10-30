@@ -12246,6 +12246,9 @@ somente Solicitações de uma conta especifica"*.
 
 #### Leva 245 — Atualizar só a C. Diários (30/10/2026)
 
+- **Publicada em 30/10/2026** (main trazida para o ramo; suíte inteira verde: 9563
+  testes). Sem migração.
+
 - *"Onde atualizo a C. Diários?"* e, em seguida, *"eu queria poder atualizar
   somente a C. Diários, isoladamente"*. Antes, ela só era relida junto com as
   planilhas de apoio (documentação fiscal, notas da Receita e do FSist, agenda,
