@@ -410,6 +410,17 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 31/10/2026 (quinta) — A pessoa de teste passa por cima do "não bate" da planilha
+
+O dono: *"preciso ter um usuário de teste para o aplicativo do ponto, no caso sou eu. Ele tá bloqueando pq meu
+cadastro é de Pró-labore."* O Modo de teste (Configuração › Teste, `ensaio.py`, 05/10/2026) já fazia a pessoa de teste
+bater como ativa fora do Registro de Colaboradores — mas a regra de 29/10 (PJ e Pró-labore, ESC RUSSAS: a planilha tira
+do ponto) vinha depois e vencia. Agora, para quem é **pessoa de teste**, o "não bate" da planilha não vale
+(`cadastros._trechos_colaborador`). Só ela: os outros Pró-labore continuam fora. As horas dela continuam fora das
+contas de CTPS (relatórios e fechamento só contam CTPS). Teste no caso da planilha (Pró-labore marcado de teste entra;
+desmarcado, sai de novo).
+**No ramo, esperando o "pode"** — SEM MIGRAÇÃO.
+
 ## 31/10/2026 (quarta) — A mensagem que o ponto não mandou aparece na tela Mensagens
 
 O dono, sobre uma pessoa que pede o PIN e não recebe, com o teste da tela Mensagens funcionando: *"preciso que essas
