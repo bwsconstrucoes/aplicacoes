@@ -410,6 +410,16 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 31/10/2026 (décima sexta) — Relatórios: as opções do fechamento sumiam ao reabrir a tela
+
+O dono: *"sumiu o botão de definir os minutos e um outro (…) tá aparecendo agora período, antes era a competência."* O
+navegador, ao recarregar a tela, devolve o "Fechamento da folha" marcado sem avisar a troca — e as opções dele (folha
+do mês, minutos desconsiderados, abater os atrasos, calendário geral) só apareciam no clique. Agora a tela aplica o
+tipo marcado ao abrir. Ensaio: a página servida com o "Fechamento" já marcado — antes mostrava o período e escondia os
+minutos; agora, a folha do mês e os minutos. Era antigo (não veio das mudanças do dia), só ficou mais frequente com as
+publicações. Só tela.
+**No ramo, esperando o "pode".**
+
 ## 31/10/2026 (décima quinta) — "Marcar todas" nos filtros de funcionários
 
 O dono: *"gerar, por exemplo, de todas as funções com exceção de uma. São muitas. Precisaria marcar uma a uma."* Cada

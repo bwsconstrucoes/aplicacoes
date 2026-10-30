@@ -5039,9 +5039,16 @@ function rlImprimir() {
   w.document.close();
 }
 document.querySelectorAll("[data-rl-atalho]").forEach(b => b.addEventListener("click", () => rlAtalho(b.dataset.rlAtalho)));
-document.querySelectorAll('input[name="rl-tipo"]').forEach(r => r.addEventListener("change", () => {
+// As opções de cada tipo (as do fechamento: os minutos desconsiderados, o abater, o calendário geral). Também ao
+// abrir a tela (31/10/2026, o dono: "sumiu o botão de definir os minutos e um outro"): o navegador, ao recarregar,
+// devolve o "Fechamento" marcado sem avisar a troca — e as opções dele ficavam escondidas.
+function rlMostrarOpcoes() {
   els("rl-tipos-just").hidden = rlTipo() !== "justificadas";
-  if (els("rl-fech")) { els("rl-fech").hidden = rlTipo() !== "fechamento"; els("rl-periodo").hidden = rlTipo() === "fechamento"; } }));
+  if (els("rl-fech")) { els("rl-fech").hidden = rlTipo() !== "fechamento"; els("rl-periodo").hidden = rlTipo() === "fechamento"; }
+}
+document.querySelectorAll('input[name="rl-tipo"]').forEach(r => r.addEventListener("change", rlMostrarOpcoes));
+rlMostrarOpcoes();
+window.addEventListener("pageshow", rlMostrarOpcoes);
 if (els("rl-comp")) { els("rl-comp").value = fechFolhaPadrao(); fechPeriodos(); els("rl-comp").addEventListener("change", fechPeriodos); }
 if (els("rl-he-abater")) els("rl-he-abater").addEventListener("change", e => { e.target.dataset.mudou = "1"; });
 // o calendário geral: ligar ou desligar remonta, se o fechamento já está na tela
