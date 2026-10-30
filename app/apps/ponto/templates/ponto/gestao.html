@@ -387,6 +387,7 @@
   .he-grade td.marcada { outline:2px solid #2563EB; outline-offset:-2px; background:#E8F0FE; }
   .he-grade td.negada { text-decoration:line-through; color:#B91C1C; }
   .he-grade td.he-pequena { color:#9CA3AF; font-size:11px; }
+  .he-grade td.he-ok { color:#6B7280; }
   .he-grade td.he-cel:not(.negada), .he-grade .he-pos { color:#1D4ED8; }
   .he-grade .he-neg, .he-grade td.he-neg { color:#B91C1C; } .dp-mes .s-ABONADO, .dp-mes .s-COMPENSADO { background:#EEF3FB; }
   .dp-mes .s-DESCANSO, .dp-mes .s-FUTURO, .dp-mes .s-ANTES_DO_PONTO, .dp-mes .s-FORA_DO_CONTRATO { background:#F6F7F9; color:var(--tinta-suave); }
@@ -4540,7 +4541,7 @@ function fechGrupos() {
   const pessoaDe = x => {
     const g = grupos[x.obra_do_dia] ||= {obra: x.obra_do_dia, nome: x.obra_nome, pessoas: {}, porDia: {}, total: 0, atrasos: 0};
     const p = g.pessoas[x.colaborador_id] ||= {id: x.colaborador_id, nome: x.nome, funcao: x.funcao || "", banco: x.banco,
-                                               dias: {}, negadas: {}, negativos: {}, total: 0, atrasos: 0, primeiro: x.data};
+                                               dias: {}, negadas: {}, negativos: {}, trabalhou: {}, total: 0, atrasos: 0, primeiro: x.data};
     if (x.data < p.primeiro) p.primeiro = x.data;
     return [g, p];
   };
@@ -4557,6 +4558,9 @@ function fechGrupos() {
     p.dias[x.data] = (p.dias[x.data] || 0) + x.minutos; p.total += x.minutos;
     g.porDia[x.data] = (g.porDia[x.data] || 0) + x.minutos; g.total += x.minutos;
   });
+  // o dia trabalhado sem hora a mais nem a menos (30/10/2026): ✓ — só de quem já está no calendário
+  const noCalendario = new Set([...(RL.he_dias || []), ...(RL.neg_dias || [])].map(x => x.colaborador_id));
+  (RL.trab_dias || []).forEach(x => { if (noCalendario.has(x.colaborador_id)) pessoaDe(x)[1].trabalhou[x.data] = x.minutos; });
   const obras = Object.values(grupos).sort((a, b) => (a.obra || "~").localeCompare(b.obra || "~"));
   obras.forEach(g => {
     g.lista = Object.values(g.pessoas).sort((a, b) => a.nome.localeCompare(b.nome));
@@ -4602,6 +4606,8 @@ function fechGradeSupervisao() {
           const neg = p.negativos[d];
           if (neg && !m && !ng && !pq) { const c = celulaNegativa(neg);
             return `<td class="he-dia ${c.classe} ${fds(d) ? "fds" : ""}" ${abre} title="${escapar(c.dica)}">${c.texto}</td>`; }
+          if (!m && !ng && p.trabalhou[d]) return `<td class="he-dia he-ok ${fds(d) ? "fds" : ""}" ${abre}
+            title="${escapar(`trabalhou ${hm(p.trabalhou[d])} — no horário, sem hora a mais nem a menos`)}">✓</td>`;
           if (!m && !ng) return `<td class="he-dia ${fds(d) ? "fds" : ""}" ${abre} title="abrir o espelho de ${dataBR(d)}"></td>`;
           return `<td class="he-cel ${fds(d) ? "fds" : ""} ${ng ? "negada" : ""} ${FECH_MARC.has(k) ? "marcada" : ""}" data-he="${k}" ${abre}
             data-min="${ng ? ng.minutos : m}" title="${ng ? escapar(`negada: ${ng.negada_motivo || ""} (${ng.negada_por || ""})`)
@@ -4669,13 +4675,14 @@ function fechImprimirSupervisao() {
       <h1>BWS — Horas extras para conferência da supervisão</h1>
       <h2>Obra ${escapar(g.obra || "sem obra")}${g.nome ? ` — ${escapar(g.nome)}` : ""}</h2>
       <p>${escapar(RL.titulo)} · de ${dataBR(RL.anterior.de)} a ${dataBR(RL.corrente.ate)} · horas extras de cada dia (h:mm) na obra em que a pessoa
-        bateu · (banco) = vai para o banco de horas · <s>riscada</s> = negada na conferência${RL.he_minima ? ` · (entre parênteses) = até ${RL.he_minima} min, desconsiderada` : ""} — as duas fora do total · <span style="color:#1d4ed8">azul</span> = hora extra, <span style="color:#b91c1c">vermelho</span> = horas a menos${RL.abater ? " (o saldo abate os atrasos)" : ""} · emitido em ${new Date().toLocaleString("pt-BR")}</p>
+        bateu · (banco) = vai para o banco de horas · <s>riscada</s> = negada na conferência${RL.he_minima ? ` · (entre parênteses) = até ${RL.he_minima} min, desconsiderada` : ""} — as duas fora do total · <span style="color:#1d4ed8">azul</span> = hora extra, <span style="color:#b91c1c">vermelho</span> = horas a menos${RL.abater ? " (o saldo abate os atrasos)" : ""} · ✓ = trabalhou no horário · emitido em ${new Date().toLocaleString("pt-BR")}</p>
       <table><thead><tr><th class="nome">Funcionário</th><th class="func">Função</th>${dias.map(d => `<th class="${fds(d) ? "fds" : ""}">${d.slice(8)}<br>${d.slice(5, 7)}</th>`).join("")}<th class="tot">Extras</th><th class="tot">Atrasos</th>${RL.abater ? `<th class="tot">Saldo</th>` : ""}</tr></thead>
       <tbody>${g.lista.map(p => `<tr><td class="nome">${escapar(p.nome)}${p.banco ? " (banco)" : ""}</td>
         <td class="func">${escapar(p.funcao)}</td>${dias.map(d => `<td class="${fds(d) ? "fds" : ""}">${p.negadas[d] ? `<s style="color:#b00">${hm(p.negadas[d].minutos)}</s>`
           : (p.pequenas || {})[d] && !p.dias[d] ? `<span style="color:#999">(${hm(p.pequenas[d].minutos)})</span>`
           : p.dias[d] ? `<span style="color:#1d4ed8">${hm(p.dias[d])}</span>`
-          : p.negativos[d] ? (n => `<span style="color:${n.desconsiderada ? "#999" : "#b91c1c"}">${escapar(celulaNegativa(n).texto)}</span>`)(p.negativos[d]) : ""}</td>`).join("")}<td class="tot" style="color:#1d4ed8">${hm(p.total)}</td><td class="tot" style="color:#b91c1c">${p.atrasos ? `-${hm(p.atrasos)}` : ""}</td>${RL.abater ? `<td class="tot">${hmSinal(p.saldo)}</td>` : ""}</tr>`).join("")}</tbody>
+          : p.negativos[d] ? (n => `<span style="color:${n.desconsiderada ? "#999" : "#b91c1c"}">${escapar(celulaNegativa(n).texto)}</span>`)(p.negativos[d])
+          : p.trabalhou[d] ? `<span style="color:#6b7280">✓</span>` : ""}</td>`).join("")}<td class="tot" style="color:#1d4ed8">${hm(p.total)}</td><td class="tot" style="color:#b91c1c">${p.atrasos ? `-${hm(p.atrasos)}` : ""}</td>${RL.abater ? `<td class="tot">${hmSinal(p.saldo)}</td>` : ""}</tr>`).join("")}</tbody>
       <tfoot><tr><td class="nome">Total da obra</td><td class="func"></td>${dias.map(d => `<td class="${fds(d) ? "fds" : ""}">${c(g.porDia[d])}</td>`).join("")}<td class="tot">${hm(g.total)}</td><td class="tot">${g.atrasos ? `-${hm(g.atrasos)}` : ""}</td>${RL.abater ? `<td class="tot">${hmSinal(g.saldo)}</td>` : ""}</tr></tfoot></table>
       <div class="assina"><div>Conferido por (encarregado / supervisor)</div><div>Data</div></div></div>`).join("")
       : `<h1>BWS — Horas extras para conferência da supervisão</h1><p>Nenhuma hora extra neste período.</p>`}

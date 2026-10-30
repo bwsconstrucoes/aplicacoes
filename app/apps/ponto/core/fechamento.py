@@ -255,6 +255,7 @@ def montar(conn: Connection, quem: Quem, competencia, filtros: Optional[dict] = 
     r = {k: [] for k in ("ant_faltas", "ant_extras", "ant_extras_dias", "cor_faltas_integrais",
                          "cor_faltas_parciais", "cor_extras_integrais", "cor_extras_quebradas", "conferencia",
                          "he_dias", "neg_dias", "abatimentos")}
+    trab_dias: list[dict] = []
     ps_faltas, ps_extras = defaultdict(int), defaultdict(int)
     pequenas: list[int] = []
     pequenas_neg: list[int] = []
@@ -302,6 +303,14 @@ def montar(conn: Connection, quem: Quem, competencia, filtros: Optional[dict] = 
                                       "obra_nome": (obras.get(obn) or {}).get("nome") or "", "minutos": f["minutos"],
                                       "tipo": f["tipo"], "rotulo": f["rotulo"], "banco": banco_de_horas,
                                       "desconsiderada": atraso_pequeno})
+            if (d.get("trabalhado") or 0) > 0 and not f and not (d.get("extra") or d.get("extra_negada")):
+                # o dia trabalhado sem hora a mais nem a menos (30/10/2026, o dono: "nos dias em que não há, mesmo
+                # que tenha tido batida, fica vazio"): um ✓ no calendário da supervisão
+                obt = obra_do_dia(d, p.get("obra_codigo"))
+                obt = str(obt).upper() if obt else ""
+                trab_dias.append({**base, "data": d["data"], "obra_do_dia": obt,
+                                  "obra_nome": (obras.get(obt) or {}).get("nome") or "",
+                                  "minutos": d.get("trabalhado") or 0, "banco": banco_de_horas})
             if atraso_pequeno and not banco_de_horas:
                 pequenas_neg.append(f["minutos"])
                 f = None
@@ -378,6 +387,10 @@ def montar(conn: Connection, quem: Quem, competencia, filtros: Optional[dict] = 
     # o atraso todo abatido sai da planilha de atrasos (o que sobrou fica, para descontar)
     for chave in ("ant_faltas", "cor_faltas_parciais"):
         r[chave] = [x for x in r[chave] if x["minutos"] > 0]
+    # o ✓ do dia trabalhado: só de quem já está no calendário (tem hora a mais ou a menos no período) — o calendário
+    # é das horas extras; sem isto, entraria todo mundo que trabalhou
+    no_calendario = {x["colaborador_id"] for x in r["he_dias"] + r["neg_dias"]}
+    r["trab_dias"] = [x for x in trab_dias if x["colaborador_id"] in no_calendario]
     linhas_faltas = [linha_ps(i, e, d, q) for (i, e, d), q in sorted(ps_faltas.items(), key=lambda x: (x[0][0], x[0][2]))]
     linhas_extras = [linha_ps(i, e, d, min(q, 9999)) for (i, e, d), q in
                      sorted(ps_extras.items(), key=lambda x: (x[0][0], x[0][2], x[0][1]))]
@@ -555,7 +568,8 @@ def supervisao(f: dict) -> dict:
                                                        "atrasos": 0})
         return g, g["pessoas"].setdefault(x["colaborador_id"], {
             "nome": x["nome"], "funcao": x.get("funcao") or "", "cpf": x.get("cpf"), "banco": x.get("banco"),
-            "dias": defaultdict(int), "negadas": {}, "pequenas": {}, "negativos": {}, "total": 0, "atrasos": 0})
+            "dias": defaultdict(int), "negadas": {}, "pequenas": {}, "negativos": {}, "trabalhou": {}, "total": 0,
+            "atrasos": 0})
 
     # as horas a menos (30/10/2026): em vermelho no calendário; o atraso (dia completo com horas a menos) soma em
     # "atrasos" e, com o abatimento ligado, sai do saldo; falta parcial e falta inteira só aparecem
@@ -577,6 +591,11 @@ def supervisao(f: dict) -> dict:
         p["total"] += x["minutos"]
         g["por_dia"][x["data"]] += x["minutos"]
         g["total"] += x["minutos"]
+    # o dia trabalhado sem hora a mais nem a menos (30/10/2026): ✓, só de quem já está no calendário
+    no_calendario = {x["colaborador_id"] for x in (f.get("he_dias") or []) + (f.get("neg_dias") or [])}
+    for x in f.get("trab_dias") or []:
+        if x["colaborador_id"] in no_calendario:
+            pessoa_do_grupo(x)[1]["trabalhou"][x["data"]] = x["minutos"]
     obras = []
     for g in sorted(grupos.values(), key=lambda g: (not g["obra"], g["obra"])):
         obras.append({**g, "pessoas": sorted(({**p, "dias": dict(p["dias"])} for p in g["pessoas"].values()),
@@ -601,6 +620,7 @@ def excel_supervisao(f: dict) -> bytes:
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     negrito, cab, obra_fill = Font(bold=True), PatternFill("solid", fgColor="E8EEF6"), PatternFill("solid", fgColor="D9E2F0")
     azul, vermelho, cinza = Font(color="1D4ED8"), Font(color="B91C1C"), Font(color="9CA3AF")
+    trabalhou = Font(color="6B7280")
     comp = f["competencia"]
     ws.append([f"Horas extras para conferência da supervisão — folha de {comp[5:]}/{comp[:4]} "
                f"({_br(s['dias'][0])} a {_br(s['dias'][-1])})"])
@@ -609,7 +629,8 @@ def excel_supervisao(f: dict) -> bytes:
                "bateu o ponto. (banco) = a pessoa tem banco de horas: a hora extra vai para o banco, não para a folha. "
                + (f"Entre parênteses = até {f['he_minima']} min, desconsiderada. " if f.get("he_minima") else "")
                + "\"negada\" = negada na conferência. As duas ficam fora do total. Em vermelho, as horas a menos "
-               "(atraso ou saída antecipada; \"falta\" = o dia inteiro). "
+               "(atraso ou saída antecipada; \"falta\" = o dia inteiro). ✓ = trabalhou no horário, sem hora a mais "
+               "nem a menos. "
                + ("O saldo é a hora extra menos os atrasos (o abatimento está ligado)." if f.get("abater")
                   else "Os atrasos não são abatidos das horas extras (o abatimento está desligado).")])
     dias_cab = [dt.date.fromisoformat(d).strftime("%d/%m") for d in s["dias"]]
@@ -637,6 +658,8 @@ def excel_supervisao(f: dict) -> bytes:
                     celulas.append("falta" if ng["tipo"] == "INTEGRAL" else
                                    (f"(-{hhmm(ng['minutos'])})" if ng.get("desconsiderada") else f"-{hhmm(ng['minutos'])}"))
                     fontes.append(cinza if ng.get("desconsiderada") else vermelho)
+                elif p["trabalhou"].get(d):
+                    celulas.append("✓"); fontes.append(trabalhou)
                 else:
                     celulas.append(""); fontes.append(None)
             ws.append([p["nome"] + (" (banco)" if p.get("banco") else ""), p["funcao"], *celulas,

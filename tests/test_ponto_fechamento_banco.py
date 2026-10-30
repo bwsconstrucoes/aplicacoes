@@ -89,6 +89,17 @@ def test_os_atrasos_abatidos_das_horas_extras():
     p = fe.supervisao(f)["obras"][0]["pessoas"][0]
     assert (p["total"], p["atrasos"], p["saldo"]) == (60, 30, 30) and set(p["negativos"]) == {"2026-10-28", "2026-10-29"}
     assert fe.supervisao({**f, "abater": False})["obras"][0]["pessoas"][0]["saldo"] == 60
+    # 30/10/2026: o dia trabalhado sem hora a mais nem a menos ganha o ✓ — só de quem já está no calendário
+    trab = [{"colaborador_id": 1, "nome": "ANA", "obra_do_dia": "AP-01", "data": "2026-10-30", "minutos": 540},
+            {"colaborador_id": 2, "nome": "BETO", "obra_do_dia": "AP-01", "data": "2026-10-30", "minutos": 540}]
+    s = fe.supervisao({**f, "trab_dias": trab})
+    assert [p["nome"] for p in s["obras"][0]["pessoas"]] == ["ANA"]
+    assert s["obras"][0]["pessoas"][0]["trabalhou"] == {"2026-10-30": 540}
+    import io
+    from openpyxl import load_workbook
+    planilha = load_workbook(io.BytesIO(fe.excel_supervisao({**f, "trab_dias": trab, "competencia": "2026-11",
+                                                               "gerado_em": "hoje"}))).active
+    assert "✓" in {v for linha in planilha.iter_rows(values_only=True) for v in linha}
 
 
 def test_as_regras_do_dia():

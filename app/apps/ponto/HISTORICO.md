@@ -410,6 +410,16 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 30/10/2026 (madrugada de 31, terceira) — O ✓ do dia trabalhado no calendário de horas extras
+
+O dono: *"no calendário, só vemos horas + ou -. Nos dias em que não há, mesmo que tenha tido batida, fica vazio. Qual sua
+sugestão pra diferenciar aquele dia como um dia em que o colaborador trabalhou?"* — sugerido e feito: **✓ cinza** no dia
+trabalhado sem hora a mais nem a menos (ao passar o mouse, as horas do dia). Fica: azul = extra, vermelho = a menos ou
+falta, ✓ = trabalhou no horário, vazio = não trabalhou (folga, descanso, sem escala). Na tela, no papel (com a legenda) e
+no Excel da supervisão. **Só de quem já está no calendário** (tem hora a mais ou a menos no período): o calendário é das
+horas extras — com o ✓ de todo mundo, entraria a empresa inteira (`fechamento.trab_dias`). Se o dono quiser todo mundo,
+é tirar esse filtro.
+
 ## 30/10/2026 (madrugada de 31, segunda) — A mensagem da qualidade para o WhatsApp, e o % de ajustes
 
 O dono: *"crie uma mensagem para whatsapp da qualidade do ponto. Quero as top 10 obras. Top 20 funcionários. Quero
