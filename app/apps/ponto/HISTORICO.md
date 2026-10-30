@@ -427,7 +427,7 @@ específica fixa e pessoa específica, não.
 - Os pedidos que ela fizer seguem a validação de sempre (o supervisor, o DP) — liberar não aprova nada.
 - Teste: sem papel, nada; liberadas a obra B e a Maria → o alcance tem as duas e pode pedir; o supervisor da obra A não
   libera a B; CPF inexistente recusado; lista vazia tira.
-**No ramo, esperando o "pode"** — COM A MIGRAÇÃO 023 (apertar "Aplicar atualizações do ponto" ao publicar).
+**Publicado em 31/10/2026** (com o "pode" do dono) — COM A MIGRAÇÃO 023 (apertar "Aplicar atualizações do ponto").
 
 ## 31/10/2026 (oitava) — A troca de plantão identificada sozinha
 
@@ -453,7 +453,7 @@ registro no espelho."*
 - Não há "não é troca": se não for, é só não confirmar — a extra e a falta continuam, e o DP decide como sempre.
 - Testes: a regra pura (troca completa; só cobriu; outra obra), o desempate dos dois vigias, a compensação virando o
   voto, e com banco: dois vigias trocando, a proposta no espelho, a confirmação, o espelho dos dois depois.
-**No ramo, esperando o "pode"** — SEM MIGRAÇÃO (vai junto com a 022).
+**Publicado em 31/10/2026** (com o "pode" do dono) — SEM MIGRAÇÃO (foi junto com a 022).
 
 ## 31/10/2026 (sétima) — O primeiro dia da escala do vigia (migração 022)
 
@@ -471,7 +471,7 @@ interpretação, talvez por conta da saída do dia 16"*. O espelho dava: 16 "des
   extra — é o certo no 12x36 (o feriado trabalhado é pago em dobro, Súmula 444 do TST).
 - Teste com o caso dele: a escala da noite a partir de d0, sem escala antes; o 07:01 de d0 vai para a véspera, d0 sem
   aviso, d2 folga (não falta); e a 022 acerta o gravado errado.
-**No ramo, esperando o "pode"** — COM A MIGRAÇÃO 022 (apertar "Aplicar atualizações do ponto" ao publicar).
+**Publicado em 31/10/2026** (com o "pode" do dono) — COM A MIGRAÇÃO 022 (apertar "Aplicar atualizações do ponto").
 
 ## 31/10/2026 (sexta) — "O PIN não funciona mais": o PIN certo de quem está fora do ponto dizia "PIN incorreto"
 
