@@ -27,7 +27,7 @@ from sqlalchemy.engine import Connection
 from .. import db
 
 JANELA_DIAS = 15
-PREFIXO = "Troca de plantão com"
+PREFIXO = "Troca de plantão com"         # a de antes da migração 024; depois, "Permuta com" (ocorrencias.PERMUTA)
 
 
 def _dias(esp: dict) -> tuple[dict, dict]:
@@ -35,6 +35,8 @@ def _dias(esp: dict) -> tuple[dict, dict]:
     fora, falta = {}, {}
     for d in esp.get("dias") or []:
         obra = d.get("obra_do_dia")
+        if any(p.get("tipo") == "COMPENSACAO" for p in d.get("pendentes") or []):
+            continue                     # já tem permuta (ou compensação) pedida esperando decisão
         if "FORA_DO_CICLO" in (d.get("alertas") or []) and not d.get("compensacao"):
             fora[d["data"]] = obra
         elif d.get("situacao") == "FALTA" and not d.get("ocorrencia"):
@@ -115,12 +117,59 @@ def de_pessoas(conn: Connection, ids: list[int], inicio: dt.date, fim: dt.date,
     return detectar(espelhos)
 
 
+# AS SUGESTÕES NAS VALIDAÇÕES (31/10/2026, o dono: "de repente na tela de validação já aparece alguma espécie de
+# sugestão do sistema?"): as trocas completas de todos os vigias do 12x36 nos últimos DIAS_SUGESTAO dias. A conta
+# monta o espelho de cada vigia — fica guardada GUARDA_S segundos (a tela de Validações abre muitas vezes), e
+# `esquecer()` a apaga quando uma permuta é aplicada.
+DIAS_SUGESTAO = 35
+GUARDA_S = 600
+_guardadas: dict = {}
+
+
+def esquecer() -> None:
+    _guardadas.clear()
+
+
+def sugeridas(conn: Connection, obras: Optional[list[int]] = None, hoje: Optional[dt.date] = None) -> list[dict]:
+    """As permutas que as batidas mostram e ninguém lançou, de quem está no 12x36 (só nas `obras`, se vier)."""
+    import time
+    from .. import horario
+    hoje = hoje or horario.hoje()
+    chave = (tuple(sorted(obras)) if obras is not None else None, hoje)
+    guardada = _guardadas.get(chave)
+    if guardada and time.monotonic() - guardada[0] < GUARDA_S:
+        return guardada[1]
+    inicio, fim = hoje - dt.timedelta(days=DIAS_SUGESTAO), hoje - dt.timedelta(days=1)
+    ids = sorted({int(r["colaborador_id"]) for r in db.todos(conn, """
+        SELECT DISTINCT m.colaborador_id FROM ponto.marcacoes m
+         WHERE m.data_referencia BETWEEN :i AND :f AND m.status <> 'REJEITADA'
+           AND (CAST(:o AS BIGINT[]) IS NULL OR m.obra_id = ANY(:o))
+           AND EXISTS (SELECT 1 FROM ponto.colaborador_escalas ce JOIN ponto.escalas e ON e.id = ce.escala_id
+                        WHERE ce.colaborador_id = m.colaborador_id AND e.tipo = 'CICLO_12X36')""",
+                                                       i=inicio, f=fim, o=list(obras) if obras is not None else None)})
+    achadas = de_pessoas(conn, ids, inicio, fim) if len(ids) >= 2 else []
+    _guardadas.clear()
+    _guardadas[chave] = (time.monotonic(), achadas)
+    return achadas
+
+
 def confirmar(conn: Connection, quem, troca: dict) -> list[dict]:
-    """A troca confirmada pelo DP: as duas compensações, aprovadas. Devolve as ocorrências."""
+    """A troca confirmada pelo DP: as duas compensações, aprovadas. Devolve as ocorrências. Com a migração 024, é
+    uma PERMUTA (31/10/2026) — a mesma do pedido lançado à mão: um pedido, e o lado do colega entra junto."""
     from . import ocorrencias
     a, b = troca["a"], troca["b"]
     if not (a.get("cobriu") and a.get("deixou") and b.get("id")):
         raise ValueError("troca incompleta")
+    if db.tem_coluna(conn, "ocorrencias", "colega_id"):
+        feita = ocorrencias.criar(conn, quem, {
+            "tipo": ocorrencias.PERMUTA, "colaborador_id": int(a["id"]), "colega_id": int(b["id"]),
+            "data_inicio": a["deixou"], "dia_trabalhado": a["cobriu"],
+            "descricao": "identificada pelo sistema nas batidas", "aprovar_ja": True}, origem="GESTAO")
+        outro = db.um(conn, """SELECT id FROM ponto.ocorrencias WHERE colaborador_id = :c AND subtipo = :s
+                                  AND data_inicio = :i AND dia_trabalhado = :t AND status = 'APROVADA'""",
+                      c=int(b["id"]), s=ocorrencias.PERMUTA, i=dt.date.fromisoformat(a["cobriu"]),
+                      t=dt.date.fromisoformat(a["deixou"]))
+        return [feita] + ([ocorrencias.obter(conn, int(outro["id"]), quem)] if outro else [])
     feitas = []
     for eu, outro in ((a, b), (b, a)):
         feitas.append(ocorrencias.criar(conn, quem, {

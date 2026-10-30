@@ -70,7 +70,7 @@ def rotulo_da_ocorrencia(o: dict) -> str:
     if o.get("tipo") == "ATESTADO" and o.get("subtipo") in NOME_DECLARACAO:
         return NOME_DECLARACAO[o["subtipo"]]
     # a troca de plantão confirmada (31/10/2026, trocas.py): o espelho diz com quem
-    if o.get("tipo") == "COMPENSACAO" and str(o.get("descricao") or "").startswith("Troca de plantão com"):
+    if o.get("tipo") == "COMPENSACAO" and str(o.get("descricao") or "").startswith(("Troca de plantão com", "Permuta com")):
         return str(o["descricao"]).split(":")[0]
     return ROTULO_TIPO[o["tipo"]]
 

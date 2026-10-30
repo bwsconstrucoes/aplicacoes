@@ -410,6 +410,45 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 31/10/2026 (décima terceira) — A permuta de plantão como pedido, a sugestão nas Validações (migração 024), e quem não bate ponto
+
+O dono: *"preciso resolver a questão das permutas dos vigias. O ponto continua algumas vezes sem compreender. Então
+acho que preciso lançar um tipo de ajuste chamado de permuta, que valerá somente pra vigias (…) e ainda gostaria que o
+DP visualizasse isso e pudesse aplicar (…) de repente na tela de validação já aparece alguma espécie de sugestão do
+sistema? Outra coisa (…) uma coisa são as pessoas que batem ponto, outra coisa são as pessoas do cadastro. Pode ser que
+eu precise de uma pessoa do cadastro que não bata ponto, mas que eu libere pra fazer algo relacionado ao ponto, e não
+tá aparecendo. Acho que em Pessoas deveria ter filtro pra exibir todos, ou os que batem ponto, ou os que não batem."*
+
+**A permuta (migração 024 — apertar "Aplicar atualizações do ponto")**
+- Pedido novo **"Permuta de plantão"**: o CPF do colega, a noite que trabalhou no lugar dele e a noite sua que o colega
+  trabalhou. **Só entre duas pessoas na escala 12x36 nas duas noites** — fora disso, recusa dizendo quem não está na
+  escala e em que dia. Lança-se no ERP (janela da pessoa › "🔁 Permuta (vigia)"), no aplicativo ("Atestados e pedidos",
+  e no pedido pela pessoa da obra) e no ponto da obra.
+- Vai para a fila das Validações como qualquer pedido (passa por quem valida compensação). **Aprovada, o lado do colega
+  entra aprovado na hora**: as duas faltas e as duas horas extras saem, o ciclo automático não se perde, e o espelho
+  de cada um mostra "Permuta com …". Se o colega tinha pedido a mesma permuta pelo lado dele, é esse pedido que fica
+  aprovado; pedir a mesma troca pelos dois lados é recusado ("já foi pedida pelo lado do colega").
+- Gravação: COMPENSAÇÃO com subtipo PERMUTA e o colega em `colega_id` (coluna nova da 024). A troca que o sistema
+  identificava (30/10, `trocas.py`) passou a gravar do mesmo jeito; as de antes continuam "Troca de plantão com …".
+- **A sugestão nas Validações**: no alto da tela, "Permutas que o sistema identificou nas batidas" — as trocas completas
+  de vigias do 12x36 nos últimos 35 dias que ninguém lançou, cada uma com **"Aplicar a permuta"** (quem trata o ponto).
+  Não é aplicada sozinha: se foi hora extra mesmo, é só não aplicar. Carrega depois da lista (monta o espelho de cada
+  vigia) e fica guardada 10 minutos; aplicar apaga a guarda. Pedido de permuta já esperando tira a sugestão.
+
+**Quem não bate ponto**
+- Pessoas › barra › **"Quem aparece"**: quem bate ponto (o padrão) · quem não bate ponto (do cadastro, fora o
+  desligado — inclui o afastado) · todos do cadastro (inclusive desligados, como era o "Incluir quem não bate ponto").
+- **Entrar no aplicativo sem bater ponto**: quem está marcado "não bate ponto" e o DP liberou (obras, pessoas, todas as
+  obras) ou marcou administrativo de obra agora entra — para consultar e pedir pelos outros. Bater continua recusado; o
+  menu dele não mostra "Bater ponto", "Meu ponto", "Espelho", "Meu QR Code" nem "Como está o meu ponto". Sem liberação,
+  a recusa continua com o motivo. O diagnóstico do código de acesso diz isso.
+
+- Testes: permuta sem 12x36 recusada; consigo mesmo, recusada; lançada, sai da sugestão; o colega não repete; aprovada,
+  o lado do colega aprovado com as datas espelhadas e os dois espelhos com "Permuta com …"; a sugestão acha a troca;
+  quem não bate e foi liberado entra; o filtro de Pessoas nas três opções. Ensaio no navegador (Validações com a
+  sugestão e o aplicar; o diálogo do ERP; Pessoas; o pedido no aplicativo).
+**No ramo, esperando o "pode".** COM A MIGRAÇÃO 024.
+
 ## 31/10/2026 (décima segunda) — O feriado na noite do vigia 12x36 não é dia inteiro de extra
 
 O dono, num vigia da obra AREITAIBA com 17:05 · 22:56 · 04:48 · 07:07 no dia 23/10: *"tá considerando como 14hrs

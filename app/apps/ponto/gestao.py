@@ -476,8 +476,14 @@ def ponto_api_pessoas():
     quem = _quem()
     busca = (request.args.get("busca") or "").strip().lower()
     with db.conexao() as conn:
-        pessoas = cadastros.listar_colaboradores(
-            conn, so_ativos=request.args.get("todos") not in ("1", "true"))
+        # quem aparece (31/10/2026, o dono: "uma coisa são as pessoas que batem ponto, outra coisa são as pessoas do
+        # cadastro (…) deveria ter filtro pra exibir todos, ou os que batem ponto, ou os que não batem"):
+        # SIM (padrão) = quem bate; NAO = quem está no cadastro e não bate (fora o desligado); TODOS = o cadastro todo
+        bate = (request.args.get("bate") or ("TODOS" if request.args.get("todos") in ("1", "true") else "SIM")).upper()
+        pessoas = cadastros.listar_colaboradores(conn, so_ativos=bate == "SIM")
+        if bate == "NAO":
+            batem = {int(p["id"]) for p in cadastros.listar_colaboradores(conn, so_ativos=True)}
+            pessoas = [p for p in pessoas if int(p["id"]) not in batem and p.get("situacao") != "DESLIGADO"]
         if quem.obras is not None:
             alcance = set(quem.obras)
             pessoas = [p for p in pessoas if p.get("obra_id") in alcance
@@ -857,7 +863,22 @@ def ponto_api_confirmar_troca():
         outro = achada["b"]["id"] if achada["a"]["id"] == a_id else achada["a"]["id"]
         _exigir_pessoa(conn, quem, outro)
         feitas = trocas.confirmar(conn, quem, achada)
+    trocas.esquecer()
     return _ok(troca=achada, ocorrencias=feitas)
+
+
+@bp.route("/erp/api/ponto/trocas/sugeridas")
+@login_obrigatorio
+@permissao("ver_ponto")
+@_api
+def ponto_api_trocas_sugeridas():
+    """As permutas que o sistema identificou nas batidas dos vigias do 12x36 e ninguém lançou (31/10/2026): a tela de
+    Validações mostra, e quem trata o ponto aplica com um clique (`/trocas/confirmar`)."""
+    from .core import trocas
+    quem = _quem()
+    with db.conexao() as conn:
+        achadas = trocas.sugeridas(conn, quem.obras)
+    return _ok(permutas=achadas, dias=trocas.DIAS_SUGESTAO)
 
 
 @bp.route("/erp/api/ponto/exportar.csv")
@@ -2155,7 +2176,7 @@ def ponto_api_criar_ocorrencia():
     licença com o documento — registrados pelo responsável da obra; quem valida
     é a regra de "Quem valida o quê" (atestado: sempre o DP)."""
     quem, d = _quem(), _corpo()
-    if str(d.get("tipo") or "").upper() not in ("AJUSTE_BATIDA", "COMPENSACAO", "FOLGA_BANCO",
+    if str(d.get("tipo") or "").upper() not in ("AJUSTE_BATIDA", "COMPENSACAO", "PERMUTA", "FOLGA_BANCO",
                                                 "ATESTADO", "LICENCA", "DECLARACAO", "ABONO"):
         raise ErroDeValidacao("férias e afastamento são lançados pelo DP", campo="tipo")
     with db.conexao() as conn:

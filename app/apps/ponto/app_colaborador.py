@@ -74,7 +74,7 @@ def _eu() -> int:
 
 def _quem(conn) -> Quem:
     p = cadastros.colaborador_por_id(conn, _eu())
-    if not p or p["situacao"] == "DESLIGADO" or not p["ativo_no_ponto"]:
+    if not papeis.entra_no_app(conn, p):
         session.pop(auth.SESSAO_COLABORADOR, None)
         raise NaoAutenticado("entre com o seu CPF e PIN")
     return Quem(nome=f"{p['nome']} (pelo celular)", colaborador_id=p["id"])

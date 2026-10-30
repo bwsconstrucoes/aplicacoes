@@ -53,7 +53,7 @@ def _logado(conn):
     if not cid:
         return None
     p = cadastros.colaborador_por_id(conn, int(cid))
-    if not p or p["situacao"] == "DESLIGADO" or not p["ativo_no_ponto"]:
+    if not papeis.entra_no_app(conn, p):
         session.pop(auth.SESSAO_COLABORADOR, None)
         return None
     return p
@@ -109,13 +109,15 @@ def app_api_inicio():
             papel_aqui = "administrativo da obra"
     return _ok(
         pessoa=({"nome": p["nome"], "primeiro_nome": p["nome"].split(" ")[0],
-                 "administrativo": administrativo, "papel_aqui": papel_aqui} if p else None),
+                 "administrativo": administrativo, "papel_aqui": papel_aqui,
+                 # quem não bate ponto e entra pela liberação (31/10/2026): sem "bater", "meu ponto" e "meu QR"
+                 "bate_ponto": bool(p.get("ativo_no_ponto"))} if p else None),
         da_obra=bool(da_obra), perfil=(a or {}).get("perfil"),
         pode={"bater_aqui": bool(da_obra), "bater_o_meu": bate_no_meu,
               "entregar_aqui": bool(da_obra), "pedir_o_meu": pede_o_meu,
               "consultar": not alc.vazio, "consultar_pelo_cpf": bool(da_obra),
               "pedir_por_outros": bool(alc.pode_pedir and not alc.vazio),
-              "qr_por_cpf": bool(da_obra), "meu_qr": bool(p) and not da_obra,
+              "qr_por_cpf": bool(da_obra), "meu_qr": bool(p) and not da_obra and bool(p.get("ativo_no_ponto")),
               # o ranking da equipe de quem responde por um ponto da obra (17/10/2026)
               "qualidade_equipe": responde_por_equipe},
         alcance=_alcance_json(alc), negativas=avisos_de_negativa)

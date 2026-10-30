@@ -452,6 +452,7 @@
         <option value="DECLARACAO">Declaração de comparecimento (consulta, exame)</option>
         <option value="AJUSTE_BATIDA">Esqueci de bater o ponto</option>
         <option value="COMPENSACAO">Trabalhar num dia no lugar de outro</option>
+        <option value="PERMUTA">Permuta de plantão com um colega (só vigia do 12x36)</option>
         <option value="LICENCA">Licença (casamento, luto, paternidade…)</option>
         <option value="FOLGA_BANCO">Folga do banco de horas</option>
         <option value="ABONO">Abono (viagem a serviço, dispensa…)</option>
@@ -1568,7 +1569,7 @@ async function mostrarAvisosDoPonto(p, pode) {
   const caixa = $("m-alertas");
   caixa.innerHTML = "";
   if (!p) return;
-  const partes = [ULTIMA_QUALIDADE ? avisoPessoal(ULTIMA_QUALIDADE)
+  const partes = p.bate_ponto === false ? [] : [ULTIMA_QUALIDADE ? avisoPessoal(ULTIMA_QUALIDADE)
     : `<button type="button" class="alerta-ponto ok" data-aviso="meu"><span><b>📊 Como está o meu ponto este mês</b>
         <small>toque para ver os dias, os pontos e o selo</small></span><span class="seta">›</span></button>`];
   if (pode && pode.qualidade_equipe && ULTIMA_EQUIPE) partes.push(avisoDaEquipe(ULTIMA_EQUIPE));
@@ -2085,6 +2086,12 @@ function camposDePedido(px, t, dia) {
     COMPENSACAO: `<label>Dia em que vai trabalhar (ou trabalhou)</label><input type="date" id="${px}-trabalhado">
       <label>Dia da folga no lugar</label><input type="date" id="${px}-inicio" value="${dia || ""}">
       <label>Motivo</label><textarea id="${px}-descricao"></textarea>`,
+    // a permuta de plantão (31/10/2026): só vigia do 12x36; aprovada, o lado do colega entra junto
+    PERMUTA: `<label>CPF do colega da permuta</label><input inputmode="numeric" id="${px}-colega" placeholder="só os números">
+      <label>Noite que trabalhou no lugar do colega</label><input type="date" id="${px}-trabalhado" max="${hojeISO()}">
+      <label>Noite sua que o colega trabalhou</label><input type="date" id="${px}-inicio" value="${dia || ""}" max="${hojeISO()}">
+      <label>Observação (se quiser)</label><textarea id="${px}-descricao"></textarea>
+      <p class="pequeno">Só entre vigias da escala 12x36. O DP aprova, e as duas pessoas ficam acertadas de uma vez.</p>`,
     LICENCA: `<label>Tipo de licença</label><select id="${px}-subtipo">${opcoesLicenca()}</select>
       <p class="pequeno" id="${px}-licenca-info"></p>
       <label>Primeiro dia</label><input type="date" id="${px}-inicio" value="${d0}">
@@ -2151,6 +2158,9 @@ function corpoDoPedido(px, t, doc) {
     if (!doc) throw new Error("Escolha a foto ou o PDF da declaração.");
   } else if (t === "COMPENSACAO") {
     Object.assign(corpo, {data_inicio: v("inicio"), dia_trabalhado: v("trabalhado")});
+  } else if (t === "PERMUTA") {
+    if (!v("colega") || !v("inicio") || !v("trabalhado")) throw new Error("Diga o CPF do colega e as duas noites.");
+    Object.assign(corpo, {data_inicio: v("inicio"), dia_trabalhado: v("trabalhado"), colega_cpf: v("colega")});
   } else {
     Object.assign(corpo, {data_inicio: v("inicio"), data_fim: v("fim") || v("inicio")});
     if (t === "LICENCA" || t === "ABONO") corpo.subtipo = v("subtipo");
@@ -2766,7 +2776,8 @@ function abrirFormularioDoTablet(d, tipo) {
   const hoje = hojeISO();
   const opcoes = [["ATESTADO", "Atestado médico"], ["DECLARACAO", "Declaração de comparecimento (consulta, exame)"],
                   ["LICENCA", "Licença (casamento, luto, paternidade…)"],
-                  ["AJUSTE_BATIDA", "Esqueceu de bater (ajuste)"], ["COMPENSACAO", "Compensação (trabalhar num dia no lugar de outro)"]]
+                  ["AJUSTE_BATIDA", "Esqueceu de bater (ajuste)"], ["COMPENSACAO", "Compensação (trabalhar num dia no lugar de outro)"],
+                  ["PERMUTA", "Permuta de plantão com um colega (só vigia do 12x36)"]]
     .concat(d.tem_banco ? [["FOLGA_BANCO", "Folga do banco de horas"]] : [])
     .concat([["ABONO", "Abono (viagem a serviço, dispensa…)"]]);
   const campos = {
@@ -2786,6 +2797,10 @@ function abrirFormularioDoTablet(d, tipo) {
       <label>Motivo</label><select id="tf-motivo">${MOTIVOS_AJUSTE.map(m => `<option value="${m[0]}">${esc(m[1])}</option>`).join("")}</select>`,
     COMPENSACAO: `<label>Dia em que vai trabalhar (ou trabalhou)</label><input type="date" id="tf-trabalhado">
       <label>Dia da folga no lugar</label><input type="date" id="tf-inicio">`,
+    PERMUTA: `<label>CPF do colega da permuta</label><input inputmode="numeric" id="tf-colega" placeholder="só os números">
+      <label>Noite que trabalhou no lugar do colega</label><input type="date" id="tf-trabalhado" max="${hoje}">
+      <label>Noite dele que o colega trabalhou</label><input type="date" id="tf-inicio" max="${hoje}">
+      <p style="margin:6px 0 0; font-size:15px">Só entre vigias da escala 12x36. O DP aprova, e os dois ficam acertados de uma vez.</p>`,
     FOLGA_BANCO: `<label>Dia da folga</label><input type="date" id="tf-inicio"><label>Último dia (se mais de um)</label><input type="date" id="tf-fim">`,
     ABONO: `<label>Que abono?</label><select id="tf-subtipo">${opcoesAbono()}</select>
       <label>Primeiro dia</label><input type="date" id="tf-inicio" value="${hoje}">
@@ -2872,6 +2887,9 @@ function abrirFormularioDoTablet(d, tipo) {
                             obra: (DIAS ? DIAS.obra() : (DIA.batidas[0] && DIA.batidas[0].obra)) || $("t-obra").value || ""});
     } else if (tipo === "COMPENSACAO") {
       Object.assign(corpo, {data_inicio: v("tf-inicio"), dia_trabalhado: v("tf-trabalhado")});
+    } else if (tipo === "PERMUTA") {
+      if (!v("tf-colega") || !v("tf-inicio") || !v("tf-trabalhado")) return ($("tf-msg").textContent = "Diga o CPF do colega e as duas noites.");
+      Object.assign(corpo, {data_inicio: v("tf-inicio"), dia_trabalhado: v("tf-trabalhado"), colega_cpf: v("tf-colega")});
     } else {
       Object.assign(corpo, {data_inicio: v("tf-inicio"), data_fim: v("tf-fim") || v("tf-inicio")});
       if (tipo === "LICENCA" || tipo === "ABONO") corpo.subtipo = v("tf-subtipo");
@@ -3009,15 +3027,17 @@ async function abrirMenu() {
               acao: () => abrirRanking()});
   } else {
     // 1. bater
-    if (pode.bater_o_meu) ops.push({icone: "⏱", titulo: "Bater o meu ponto", sub: "com foto e localização", principal: true,
+    // quem não bate ponto e entra pela liberação do DP (31/10/2026): só o que é dos outros
+    const bate = !p || p.bate_ponto !== false;
+    if (pode.bater_o_meu && bate) ops.push({icone: "⏱", titulo: "Bater o meu ponto", sub: "com foto e localização", principal: true,
                                     acao: () => mostrar("inicio")});
-    else if (p) ops.push({icone: "⏱", titulo: "Bater ponto", sub: "o seu ponto é batido no ponto da obra (QR Code ou CPF)", desligada: true});
+    else if (p && bate) ops.push({icone: "⏱", titulo: "Bater ponto", sub: "o seu ponto é batido no ponto da obra (QR Code ou CPF)", desligada: true});
     // 2. atestados e pedidos
     if (pode.pedir_por_outros) ops.push({icone: "📝", titulo: "Atestados, afastamentos e ajustes",
       sub: "escolha a pessoa da obra; no dia, toque para lançar ou corrigir", acao: () => abrirEquipe("pedido")});
     else if (pode.pedir_o_meu) ops.push({icone: "📝", titulo: "Atestados e pedidos",
       sub: "os seus: atestado, licença, ajuste, compensação", acao: () => mostrar("pedidos")});
-    else if (p) ops.push({icone: "📝", titulo: "Atestados e pedidos",
+    else if (p && bate) ops.push({icone: "📝", titulo: "Atestados e pedidos",
       sub: "entregue no ponto da obra ou com o administrativo da obra", desligada: true});
     // 3. consultar o ponto das pessoas (o administrativo)
     if (pode.consultar) ops.push({icone: "👥", titulo: "Consultar o ponto das pessoas", sub: alc.de_onde.join(" · "),
@@ -3025,8 +3045,8 @@ async function abrirMenu() {
     else if (p && (p.administrativo || alc.papel)) ops.push({icone: "👥", titulo: "Consultar o ponto das pessoas",
       sub: alc.sem_alcance || "", desligada: true});
     // 4. o meu ponto e o meu QR
-    if (p) ops.push({icone: "📅", titulo: "Meu ponto", sub: "o seu dia, o seu mês e os seus pedidos", acao: () => mostrar("inicio")});
-    if (p) ops.push({icone: "📄", titulo: "Espelho do ponto", sub: "o seu mês, como sai no papel — baixe em PDF",
+    if (p && bate) ops.push({icone: "📅", titulo: "Meu ponto", sub: "o seu dia, o seu mês e os seus pedidos", acao: () => mostrar("inicio")});
+    if (p && bate) ops.push({icone: "📄", titulo: "Espelho do ponto", sub: "o seu mês, como sai no papel — baixe em PDF",
                      acao: () => abrirEspelho(null)});
     if (p) ops.push({icone: "🏆", titulo: "Ranking do ponto", sub: "as melhores obras e os melhores funcionários do mês",
                      acao: () => abrirRanking()});
@@ -3439,7 +3459,8 @@ async function abrirPedidoPara(alvo, dia, tipo = "ATESTADO") {
   if (!LICENCAS.length) await carregarLicencas();
   const opcoes = [["ATESTADO", "Atestado médico"], ["DECLARACAO", "Declaração de comparecimento (consulta, exame)"],
                   ["LICENCA", "Licença (casamento, luto, paternidade…)"],
-                  ["COMPENSACAO", "Compensação (trabalhar num dia no lugar de outro)"]]
+                  ["COMPENSACAO", "Compensação (trabalhar num dia no lugar de outro)"],
+                  ["PERMUTA", "Permuta de plantão com um colega (só vigia do 12x36)"]]
     .concat(alvo.tem_banco ? [["FOLGA_BANCO", "Folga do banco de horas"]] : [])
     .concat([["ABONO", "Abono (viagem a serviço, dispensa…)"]]);
   let doc = null;

@@ -98,6 +98,13 @@ RECUSA_PEDIDO_NO_CELULAR = ("atestado, licença, ajuste e compensação são ent
 # pessoa identificada (APARELHO), e o responsável ou administrativo da obra
 # pedindo POR OUTRA PESSOA no aplicativo (RESPONSAVEL, migração 008).
 ORIGENS_DO_APLICATIVO = ("APP", "APARELHO", "RESPONSAVEL")
+# A PERMUTA DE PLANTÃO DOS VIGIAS (31/10/2026, migração 024; o dono: "preciso lançar um tipo de ajuste chamado de
+# permuta, que valerá somente pra vigias"). Pede-se como tipo PERMUTA; grava-se como COMPENSAÇÃO com subtipo PERMUTA
+# e o colega em `colega_id`: a folga (`data_inicio`) é a noite que a pessoa DEIXOU para o colega; o dia trabalhado,
+# a noite do colega que ela COBRIU. Só entre duas pessoas na escala 12x36 nas duas noites. Aprovada, o outro lado
+# (a do colega, espelhada) entra aprovado na hora (`_aplicar`) — e as duas tiram a falta e a extra.
+PERMUTA = "PERMUTA"
+PREFIXO_PERMUTA = "Permuta com"
 # O ajuste que a gestão inclui em lote, no quadro do ponto (quadro.py).
 SUBTIPO_LOTE = "LOTE_GESTAO"
 MOTIVO_LOTE = "incluída em lote pela gestão"
@@ -209,6 +216,10 @@ def criar(conn: Connection, quem: Quem, dados: dict, *, origem: str = "GESTAO") 
     if tipo == DECLARACAO:                  # a declaração de comparecimento é um atestado com subtipo
         dados = {**dados, "tipo": "ATESTADO", "subtipo": DECLARACAO}
         tipo = "ATESTADO"
+    permuta = tipo == PERMUTA               # a permuta é uma compensação com subtipo e colega
+    if permuta:
+        tipo = "COMPENSACAO"
+        dados = {**dados, "tipo": tipo}
     if tipo not in ETAPAS:
         raise ErroDeValidacao("tipo de pedido desconhecido", campo="tipo")
     if origem in ORIGENS_DO_APLICATIVO and tipo not in PEDIDOS_DO_APP:
@@ -283,6 +294,11 @@ def criar(conn: Connection, quem: Quem, dados: dict, *, origem: str = "GESTAO") 
         dia_trabalhado = _data(dados.get("dia_trabalhado"), "dia_trabalhado")
         if dia_trabalhado == inicio:
             raise ErroDeValidacao("o dia trabalhado e o dia de folga são o mesmo", campo="dia_trabalhado")
+        if permuta:
+            fim = inicio
+            colega, descricao = _conferir_permuta(conn, quem, pessoa, dados.get("colega_id") or dados.get("colega_cpf")
+                                                  or dados.get("colega"), deixou=inicio, cobriu=dia_trabalhado,
+                                                  texto=descricao, origem=origem)
         if len(descricao) < 5:
             raise ErroDeValidacao("descreva a compensação", campo="descricao")
     elif tipo == "FOLGA_BANCO":
@@ -357,6 +373,9 @@ def criar(conn: Connection, quem: Quem, dados: dict, *, origem: str = "GESTAO") 
          doc=documento_id, st=STATUS_DA_ETAPA[etapas[0]], orig=origem,
          por=quem.nome[:120], uid=quem.usuario_id)
     ocorrencia_id = int(linha["id"])
+    if permuta:
+        subtipo = PERMUTA
+        db.executar(conn, "UPDATE ponto.ocorrencias SET colega_id = :c WHERE id = :id", c=int(colega["id"]), id=ocorrencia_id)
     if subtipo:
         db.executar(conn, "UPDATE ponto.ocorrencias SET subtipo = :s WHERE id = :id", s=subtipo, id=ocorrencia_id)
     # QUEM PEDIU, como pessoa (migração 014): a própria pessoa (celular ou aparelho da obra) ou
@@ -378,6 +397,78 @@ def criar(conn: Connection, quem: Quem, dados: dict, *, origem: str = "GESTAO") 
                 break
             decidir(conn, ocorrencia_id, quem, aprovar=True, motivo="", abono=dados.get("abono"))
     return obter(conn, ocorrencia_id, quem)
+
+
+def _e_12x36(conn: Connection, colaborador_id: int, dia: dt.date) -> bool:
+    esc, _ = escalas.EscalasDaPessoa(conn, colaborador_id).no_dia(dia)
+    return esc is not None and esc.tipo == "CICLO_12X36"
+
+
+def _conferir_permuta(conn: Connection, quem: Quem, pessoa: dict, ref_colega, *, deixou: dt.date, cobriu: dt.date,
+                      texto: str, origem: str) -> tuple[dict, str]:
+    """A permuta pedida: o colega existe e não é a própria pessoa, os dois estão na 12x36 nas duas noites, e o colega
+    ainda não pediu a mesma troca. Devolve (o colega, a descrição que o espelho mostra)."""
+    if not db.tem_coluna(conn, "ocorrencias", "colega_id"):
+        raise ErroDeValidacao("aplique as atualizações do ponto (migração 024) antes de lançar permuta", campo="tipo")
+    ref = str(ref_colega or "").strip()
+    if not ref:
+        raise ErroDeValidacao("diga com quem foi a permuta", campo="colega")
+    digitos = re.sub(r"\D", "", ref)
+    colega = (cadastros.colaborador_por_cpf(conn, digitos) if len(digitos) == 11 else
+              cadastros.colaborador_por_id(conn, int(digitos)) if digitos else None)
+    if not colega or colega.get("situacao") == "DESLIGADO":
+        raise ErroDeValidacao("colega da permuta não encontrado no ponto", campo="colega")
+    if int(colega["id"]) == int(pessoa["id"]):
+        raise ErroDeValidacao("a permuta é com outra pessoa", campo="colega")
+    if origem == "GESTAO":
+        exigir_pessoa_no_alcance(conn, quem, int(colega["id"]))
+    for p in (pessoa, colega):
+        for dia in (deixou, cobriu):
+            if not _e_12x36(conn, int(p["id"]), dia):
+                raise ErroDeValidacao(f"a permuta é só para vigia na escala 12x36 — {p['nome']} não está nessa escala "
+                                      f"em {dia:%d/%m/%Y}", campo="colega")
+    ja = db.um(conn, """
+        SELECT id FROM ponto.ocorrencias
+         WHERE colaborador_id = :c AND tipo = 'COMPENSACAO' AND subtipo = :s AND data_inicio = :i AND dia_trabalhado = :t
+           AND status NOT IN ('NEGADA', 'CANCELADA') LIMIT 1""", c=int(colega["id"]), s=PERMUTA, i=cobriu, t=deixou)
+    if ja:
+        raise ErroDeValidacao(f"esta permuta já foi pedida pelo lado do colega (pedido nº {ja['id']})", campo="colega")
+    descricao = (f"{PREFIXO_PERMUTA} {colega['nome']}: trabalhou a noite de {cobriu:%d/%m} no lugar do colega, "
+                 f"que trabalhou a de {deixou:%d/%m}")
+    texto = (texto or "").strip()
+    return colega, (f"{descricao} — {texto}" if texto else descricao)
+
+
+def _aplicar_permuta(conn: Connection, o: dict, quem: Quem) -> None:
+    """A permuta aprovada: o lado do colega entra aprovado — a folga dele é a noite que ela cobriu, o dia trabalhado,
+    a que ela deixou. Se o colega já tinha pedido a mesma permuta, é esse pedido que fica aprovado."""
+    colega_id = o.get("colega_id")
+    if not colega_id:
+        return
+    outro = db.um(conn, """
+        SELECT id, status FROM ponto.ocorrencias
+         WHERE colaborador_id = :c AND tipo = 'COMPENSACAO' AND subtipo = :s AND data_inicio = :i AND dia_trabalhado = :t
+           AND status NOT IN ('NEGADA', 'CANCELADA') LIMIT 1""",
+                  c=int(colega_id), s=PERMUTA, i=o["dia_trabalhado"], t=o["data_inicio"])
+    if outro and outro["status"] == "APROVADA":
+        return
+    if outro:
+        db.executar(conn, """UPDATE ponto.ocorrencias SET status = 'APROVADA', dp_usuario_id = :u, dp_nome = :n,
+                                    dp_em = now(), atualizado_em = now() WHERE id = :id""",
+                    u=quem.usuario_id, n=quem.nome[:120], id=int(outro["id"]))
+        return
+    nome = (db.um(conn, "SELECT nome FROM public.colaboradores WHERE id = :c", c=int(o["colaborador_id"])) or {}).get("nome", "")
+    descricao = (f"{PREFIXO_PERMUTA} {nome}: trabalhou a noite de {o['data_inicio']:%d/%m} no lugar do colega, "
+                 f"que trabalhou a de {o['dia_trabalhado']:%d/%m}")
+    linha = db.um(conn, """
+        INSERT INTO ponto.ocorrencias (colaborador_id, tipo, data_inicio, data_fim, dia_trabalhado, descricao, status,
+                                       origem, solicitado_por, solicitado_usuario_id, dp_usuario_id, dp_nome, dp_em)
+        VALUES (:c, 'COMPENSACAO', :i, :i, :t, :d, 'APROVADA', 'GESTAO', :por, :u, :u, :n, now())
+        RETURNING id""", c=int(colega_id), i=o["dia_trabalhado"], t=o["data_inicio"], d=descricao[:1000],
+                  por=f"permuta nº {o['id']} — {quem.nome}"[:120], u=quem.usuario_id, n=quem.nome[:120])
+    db.executar(conn, "UPDATE ponto.ocorrencias SET subtipo = :s, colega_id = :c WHERE id = :id",
+                s=PERMUTA, c=int(o["colaborador_id"]), id=int(linha["id"]))
+    logger.info("Ponto: permuta %d aprovada — o lado do colega %s entrou como pedido %d", o["id"], colega_id, linha["id"])
 
 
 # ---------------------------------------------------------------------------
@@ -407,7 +498,8 @@ def _para_json(o: dict, quem: Quem, etapas: tuple | None = None) -> dict:
     from .espelho import ROTULO_TIPO, SUBTIPOS_ABONO
     return {
         "id": o["id"], "tipo": o["tipo"],
-        "rotulo": SUBTIPOS_ABONO[o["subtipo"]] if o["tipo"] == "ABONO" and o.get("subtipo") in SUBTIPOS_ABONO else
+        "rotulo": "Permuta de plantão" if o.get("subtipo") == PERMUTA else
+                  SUBTIPOS_ABONO[o["subtipo"]] if o["tipo"] == "ABONO" and o.get("subtipo") in SUBTIPOS_ABONO else
                   (f"Declaração de comparecimento — {int(o['abono_minutos']) // 60}h{int(o['abono_minutos']) % 60:02d} abonadas"
                    if o.get("subtipo") == "DECL_HORAS" and o.get("abono_minutos") else NOME_DECLARACAO[o["subtipo"]])
                   if e_declaracao(o) else
@@ -415,6 +507,7 @@ def _para_json(o: dict, quem: Quem, etapas: tuple | None = None) -> dict:
                                             f" — {_NOME_SUBTIPO.get(o['subtipo'], o['subtipo']).split(' (')[0].lower()}"
                                              if o.get("subtipo") else ""),
         "subtipo": o.get("subtipo"),
+        "colega_id": o.get("colega_id"),
         "colaborador_id": o["colaborador_id"], "colaborador": o["colaborador_nome"],
         "cpf": o["cpf"], "obra": o.get("obra_codigo") or o.get("obra_principal_codigo"),
         # A obra escolhida no pedido, à parte da do cadastro (28/10/2026, o dono: "um ajuste de batida
@@ -685,7 +778,9 @@ def decidir(conn: Connection, ocorrencia_id: int, quem: Quem, *, aprovar: bool,
 
 def _aplicar(conn: Connection, o: dict, quem: Quem) -> None:
     """O que muda no mundo quando o pedido termina aprovado."""
-    if o["tipo"] == "AJUSTE_BATIDA":
+    if o["tipo"] == "COMPENSACAO" and o.get("subtipo") == PERMUTA:
+        _aplicar_permuta(conn, o, quem)
+    elif o["tipo"] == "AJUSTE_BATIDA":
         m = marcacoes.registrar_ajustada(conn, colaborador_id=o["colaborador_id"],
                                          obra_id=o["obra_id"], momento=o["horario"],
                                          ocorrencia_id=o["id"], aprovado_por=quem.nome,

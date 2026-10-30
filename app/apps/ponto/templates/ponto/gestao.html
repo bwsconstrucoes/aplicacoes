@@ -126,8 +126,11 @@
     <div class="qd-marcas">
       <label class="opcao"><input type="checkbox" data-pe-foto="COM"><span class="rotulo">Com foto</span></label>
       <label class="opcao"><input type="checkbox" data-pe-foto="SEM"><span class="rotulo">Sem foto</span></label></div></div>
-  <label class="opcao" style="margin-top:8px"><input type="checkbox" id="pe-todos">
-    <span class="rotulo">Incluir quem não bate ponto</span></label>
+  <div class="campo" style="margin-top:8px"><label for="pe-bate">Quem aparece</label>
+    <select id="pe-bate" data-sem-busca>
+      <option value="SIM">Quem bate ponto</option>
+      <option value="NAO">Quem não bate ponto (do cadastro)</option>
+      <option value="TODOS">Todos do cadastro (inclusive desligados)</option></select></div>
   <div class="cartao-dica" style="margin-top:12px">“Bateu nas obras” olha os últimos 30 dias. Clique na pessoa para
     ver tudo dela e trocar a foto de cadastro. O cadastro (nome, CPF, obra) é o do ERP.</div>
 {% elif aba_ponto == "ponto_mosaico" %}
@@ -724,6 +727,8 @@
 </div>
 <div id="v-lote-msg"></div>
 </div>
+{# as permutas que o sistema achou nas batidas (31/10/2026): sugestão, quem trata o ponto aplica #}
+<div id="v-permutas" class="oculto"></div>
 
 <div class="tabela-wrap">
   <div class="tabela-barra"><span class="resumo" id="v-resumo">carregando…</span></div>
@@ -776,7 +781,7 @@
   <b id="pe-qtd">0 marcadas</b>
   <button class="btn secundario" type="button" id="pe-nao-bate" disabled>🚫 Não bate ponto…</button>
   <button class="btn secundario" type="button" id="pe-volta" disabled>✅ Voltar a bater ponto…</button>
-  <small class="suave">Marque as pessoas na lista. Para achar quem já não bate, ligue “Incluir quem não bate ponto” na barra ao lado.</small>
+  <small class="suave">Marque as pessoas na lista. Para achar quem já não bate, escolha “Quem não bate ponto” em “Quem aparece”, na barra ao lado.</small>
 </div>{% endif %}
 <div class="tabela-wrap">
   <div class="tabela-rolagem"><table>
@@ -1479,6 +1484,7 @@ function desenharPainel() {
     ${PODE_TRATAR ? `<div class="barra-acoes" style="margin-top:10px">
       <button class="btn" type="button" id="dp-ajuste">Ajustar o dia (incluir batida)</button>
       <button class="btn secundario" type="button" id="dp-compensacao">Compensação</button>
+      <button class="btn secundario" type="button" id="dp-permuta" title="troca de plantão entre dois vigias do 12x36">🔁 Permuta (vigia)</button>
       <button class="btn secundario" type="button" id="dp-documento">Atestado ou licença</button>
       <button class="btn secundario" type="button" id="dp-abono">Pedir abono</button>
       ${PODE_DP ? `<button class="btn secundario" type="button" id="dp-afastamento">Lançar afastamento</button>` : ""}
@@ -1493,6 +1499,7 @@ function desenharPainel() {
   const ligar = (id, fn) => { if (els(id)) els(id).addEventListener("click", fn); };
   ligar("dp-ajuste", () => pedirAjuste(quem, P.data, recarregarPainel));
   ligar("dp-compensacao", () => registrarCompensacao(quem, recarregarPainel));
+  ligar("dp-permuta", () => registrarPermuta(quem, recarregarPainel));
   ligar("dp-documento", () => entregarDocumento(quem, recarregarPainel));
   ligar("dp-abono", () => pedirAbono(quem, recarregarPainel));
   ligar("dp-afastamento", () => lancarAfastamento(quem, recarregarPainel));
@@ -1511,7 +1518,7 @@ function desenharPainel() {
         aviso: "Vira uma compensação para cada um (a folga é a noite que ele deixou; o dia trabalhado, a do colega), " +
                "já aprovada. As faltas e as horas extras desses dias saem, e o espelho dos dois mostra a troca."})) return;
     try { await postar("/erp/api/ponto/trocas/confirmar", {colaborador_id: p.id, cobriu: b.dataset.trocaConfirmar});
-          ESP_PAINEL = null; await recarregarPainel(); aviso("dp-msg", "Troca de plantão confirmada para os dois.", "ok"); }
+          ESP_PAINEL = null; await recarregarPainel(); aviso("dp-msg", "Permuta aplicada para os dois.", "ok"); }
     catch (e) { aviso("dp-msg", escapar(e.message), "erro"); }
   }));
   desenharQrDaPessoa(p);
@@ -1617,7 +1624,7 @@ function linhaDoEspelho(d, E, podeAjustar) {
   const ocorr = [
     d.ocorrencia ? `<span class="selo pago">${escapar(d.ocorrencia.rotulo)}</span>` : "",
     ...(d.declaracoes || []).filter(x => !d.ocorrencia || x.id !== d.ocorrencia.id).map(x => `<span class="selo pago">${escapar(x.rotulo)}</span>`),
-    d.compensacao ? `<small>${d.compensacao.rotulo && d.compensacao.rotulo.startsWith("Troca de plantão")
+    d.compensacao ? `<small>${d.compensacao.rotulo && /^(Troca de plantão|Permuta) com/.test(d.compensacao.rotulo)
       ? `🔁 ${escapar(d.compensacao.rotulo)} (trabalhou a noite do colega)` : "trabalhou no lugar de uma folga"}</small>` : "",
     ...(d.pendentes || []).filter(o => o.tipo !== "AJUSTE_BATIDA").map(o => o.id
       ? `<button type="button" class="selo aguardando" data-pedido="${o.id}" title="clique para ver e decidir">${escapar(o.rotulo)} esperando</button>`
@@ -1656,10 +1663,10 @@ function painelMes() {
     <div class="kpi-valor" style="font-size:18px">${valor}</div></div>`;
   // a troca de plantão identificada sozinha (31/10/2026): proposta aqui, o DP confirma
   const trocasHtml = (E.trocas || []).map(t => { const eu = t.a.id === p.id ? t.a : t.b, outro = t.a.id === p.id ? t.b : t.a;
-    return `<div class="aviso ambar" style="margin:0 0 10px">🔁 <b>Troca de plantão provável com ${escapar(outro.nome)}</b>
+    return `<div class="aviso ambar" style="margin:0 0 10px">🔁 <b>Permuta provável com ${escapar(outro.nome)}</b>
       (obra ${escapar(t.obra || "—")}): ${escapar(p.nome.split(" ")[0])} trabalhou a noite de <b>${ddmm(eu.cobriu)}</b> no lugar
       do colega, e o colega a de <b>${ddmm(eu.deixou)}</b>. Confirmada, as faltas e as horas extras desses dias saem, para os dois.
-      ${PODE_TRATAR ? `<button class="btn" type="button" style="margin-left:8px" data-troca-confirmar="${escapar(eu.cobriu)}">Confirmar a troca</button>` : ""}</div>`; }).join("");
+      ${PODE_TRATAR ? `<button class="btn" type="button" style="margin-left:8px" data-troca-confirmar="${escapar(eu.cobriu)}">Aplicar a permuta</button>` : ""}</div>`; }).join("");
   return nav + trocasHtml + `<div class="kpis" style="margin-bottom:10px">${[
       kpi("Trabalhado", hm(r.trabalhado), "", `em ${r.dias} dia(s) contados`),
       kpi("Previsto", hm(r.previsto), "", "o que a escala pedia"),
@@ -2652,6 +2659,33 @@ async function registrarCompensacao(p, depois) {
       tipo: "COMPENSACAO", colaborador_id: p.id, data_inicio: r.data_inicio,
       dia_trabalhado: r.dia_trabalhado, descricao: r.descricao});
     aviso("mensagem", "Compensação registrada. Ela segue para o supervisor e depois para o DP.", "ok");
+    if (depois) await depois();
+  } catch (e) { falhou(e); }
+}
+
+// A PERMUTA DE PLANTÃO (31/10/2026, migração 024): só entre vigias do 12x36. Um pedido; aprovado, o lado do
+// colega entra junto, e o espelho dos dois diz "Permuta com …".
+async function registrarPermuta(p, depois) {
+  if (!p) return;
+  const r = await perguntar({
+    titulo: `Permuta de plantão — ${escapar(p.nome)}`,
+    aviso: `Só para vigia na escala 12x36: ${escapar(p.nome.split(" ")[0])} trabalhou a noite de um colega, e o colega a
+      dele. Aprovada, as duas pessoas ficam acertadas de uma vez — a falta e a hora extra dessas noites saem, e o espelho
+      de cada uma mostra "Permuta com …".`,
+    campos: [
+      {nome: "cpf", rotulo: "CPF do colega da permuta", obrigatorio: true, largura: 2},
+      {nome: "dia_trabalhado", rotulo: "Noite que trabalhou no lugar do colega", tipo: "date", obrigatorio: true, largura: 1},
+      {nome: "data_inicio", rotulo: "Noite dele que o colega trabalhou", tipo: "date", obrigatorio: true, largura: 1},
+      {nome: "descricao", rotulo: "Observação (opcional)", tipo: "textarea", largura: 4},
+    ],
+    textoOk: "Registrar a permuta",
+  });
+  if (!r) return;
+  try {
+    await postar("/erp/api/ponto/ocorrencias", {
+      tipo: "PERMUTA", colaborador_id: p.id, colega_cpf: r.cpf, data_inicio: r.data_inicio,
+      dia_trabalhado: r.dia_trabalhado, descricao: r.descricao || ""});
+    aviso("mensagem", "Permuta registrada. Ela aparece em Validações até ser decidida.", "ok");
     if (depois) await depois();
   } catch (e) { falhou(e); }
 }
@@ -4065,6 +4099,37 @@ async function carregarObrasDasValidacoes() {
 }
 
 const FP_V = new FiltroPessoas("v", {aoMudar: () => carregarValidacoes()});
+// AS PERMUTAS SUGERIDAS (31/10/2026, o dono: "na tela de validação já aparece alguma espécie de sugestão do
+// sistema?"): as trocas de plantão completas que as batidas dos vigias do 12x36 mostram e ninguém lançou. Carrega à
+// parte, depois da lista — a conta monta o espelho de cada vigia, e a lista não espera por ela.
+async function carregarPermutasSugeridas() {
+  const caixa = els("v-permutas");
+  if (!caixa) return;
+  let d;
+  try { d = await api("/erp/api/ponto/trocas/sugeridas"); } catch (e) { caixa.classList.add("oculto"); return; }
+  const lista = d.permutas || [];
+  caixa.classList.toggle("oculto", !lista.length);
+  if (!lista.length) { caixa.innerHTML = ""; return; }
+  caixa.innerHTML = `<div class="aviso ambar" style="margin:0 0 12px">🔁 <b>Permutas que o sistema identificou nas batidas</b>
+    <small style="display:inline">(vigias do 12x36, últimos ${d.dias} dias — ninguém lançou)</small>
+    <ul style="margin:8px 0 0 18px">${lista.map(t => `<li style="margin:4px 0">
+      ${eloPessoa(t.a.id, t.a.nome, t.a.cobriu)} trabalhou a noite de <b>${ddmm(t.a.cobriu)}</b> no lugar de
+      ${eloPessoa(t.b.id, t.b.nome, t.b.cobriu)}, que trabalhou a de <b>${ddmm(t.b.cobriu)}</b>
+      <small style="display:inline">· obra ${escapar(t.obra || "—")}</small>
+      ${PODE_TRATAR ? `<button class="btn" type="button" style="margin-left:8px; padding:3px 10px"
+          data-permuta-aplicar="${t.a.id}" data-cobriu="${escapar(t.a.cobriu)}">Aplicar a permuta</button>` : ""}</li>`).join("")}</ul>
+    <small>Aplicada, a falta e a hora extra dessas noites saem para os dois, e o espelho de cada um mostra "Permuta com …".
+      Se não for permuta (foi hora extra mesmo), é só não aplicar.</small></div>`;
+  caixa.querySelectorAll("[data-permuta-aplicar]").forEach(b => b.addEventListener("click", async () => {
+    b.disabled = true;
+    try {
+      await postar("/erp/api/ponto/trocas/confirmar", {colaborador_id: +b.dataset.permutaAplicar, cobriu: b.dataset.cobriu});
+      aviso("mensagem", "Permuta aplicada para os dois.", "ok");
+      carregarPermutasSugeridas();
+    } catch (e) { b.disabled = false; falhou(e); }
+  }));
+}
+
 async function carregarValidacoes() {
   const p = new URLSearchParams(FP_V.parametros());
   if (els("v-obra").value) p.set("obra", els("v-obra").value);
@@ -4079,6 +4144,7 @@ async function carregarValidacoes() {
     guardarFiltrosNoEndereco();
     desenharValidacoes();
   } catch (e) { falhou(e); }
+  carregarPermutasSugeridas();
 }
 
 function itensVisiveis() {
@@ -5054,7 +5120,7 @@ async function carregarPessoas() {
   const q = new URLSearchParams(FP_PE.parametros());
   const busca = FP_PE.valores().busca;
   if (busca) q.set("busca", busca);
-  if (els("pe-todos").checked) q.set("todos", "1");
+  q.set("bate", els("pe-bate").value);
   els("pe-corpo").innerHTML = `<tr><td colspan="9">carregando…</td></tr>`;
   try { const d = await api(`/erp/api/ponto/pessoas?${q}`); PESSOAS = d.pessoas; PE_FORA = d.fora_da_lista || []; }
   catch (e) { falhou(e); return; }
@@ -5103,7 +5169,7 @@ if (els("pe-lote")) {
   els("pe-nao-bate").addEventListener("click", () => peMarcarBate(false));
   els("pe-volta").addEventListener("click", () => peMarcarBate(true));
 }
-els("pe-todos").addEventListener("change", carregarPessoas);
+els("pe-bate").addEventListener("change", carregarPessoas);
 document.querySelectorAll("[data-pe-foto]").forEach(x => x.addEventListener("change", desenharPessoas));
 FP_PE.carregar().then(carregarPessoas);
 // O endereço antigo (/erp/ponto/pessoas?pessoa=N) abre a pessoa por cima da lista.

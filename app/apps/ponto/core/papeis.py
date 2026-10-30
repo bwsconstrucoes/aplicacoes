@@ -74,6 +74,21 @@ def e_administrativo(conn: Connection, pessoa: Optional[dict]) -> bool:
     return bool(pessoa) and disponivel(conn) and bool(pessoa.get("administrativo_obra"))
 
 
+def entra_no_app(conn: Connection, pessoa: Optional[dict]) -> bool:
+    """Quem entra no aplicativo (31/10/2026, o dono: "pode ser que eu precise de uma pessoa do cadastro que não bata
+    ponto, mas que eu libere pra fazer algo relacionado ao ponto"): quem bate ponto; e quem NÃO bate, mas foi marcado
+    administrativo de obra ou recebeu liberação do DP (obras, pessoas ou todas as obras). Entra para consultar e
+    pedir pelos outros — bater, não: a batida continua recusada para quem não bate ponto (`marcacoes`)."""
+    if not pessoa or pessoa.get("situacao") == "DESLIGADO":
+        return False
+    if pessoa.get("ativo_no_ponto"):
+        return True
+    if e_administrativo(conn, pessoa):
+        return True
+    lib = liberado_de(conn, int(pessoa["id"]))
+    return bool(lib["obras"] or lib["pessoas"] or lib["todas_obras"])
+
+
 def pede_pelo_proprio_celular(conn: Connection, pessoa: dict) -> bool:
     """A pessoa faz pedido para SI no "Meu ponto"? Quem tem a marcação, o
     administrativo de obra — e o responsável por um ponto da obra (10/10/2026:
