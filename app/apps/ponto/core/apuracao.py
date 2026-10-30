@@ -82,13 +82,20 @@ ABONADORAS = frozenset({"ATESTADO", "LICENCA", "FERIAS", "FOLGA_COMPENSATORIA",
 JANELA_CICLO_AUTOMATICO = 30
 
 
+# Quantas noites ANTES do dia bastam para decidir o ciclo sozinhas (sem olhar as seguintes): ~2 semanas de 12x36.
+MIN_VOTOS_ANTES = 6
+
+
 def dia_do_ciclo(trabalhados: tuple, dia: dt.date, data_base: Optional[dt.date] = None) -> Optional[bool]:
     """PURA. O `dia` é de trabalho no 12x36? `trabalhados` = dias com batida, em ordem.
     - Nos 30 dias ANTES dele, conta-se em quantos a pessoa trabalhou na mesma paridade do `dia`
       (diferença par) e em quantos na outra; ganha a maioria. Empate: vale o mais antigo dos que
       votaram (o ciclo que já vinha — uma noite a mais no começo não vira o ciclo). O próprio `dia`
       não vota — por isso a noite trabalhada fora do ciclo é extra, não vira o ciclo.
-    - Com menos de 2 noites antes (o começo do ponto ou da escala), ou com empate, votam também os 30 dias DEPOIS.
+    - Com menos de MIN_VOTOS_ANTES noites antes (o começo do ponto ou da escala — umas duas semanas de 12x36), ou com
+      empate, votam também os 30 dias DEPOIS. (31/10/2026, o vigia de ESCVARZEA: as duas primeiras noites foram 16 e 18,
+      duas pares — e, com só 2 votos bastando, o ciclo virou par: 19 e 21 viraram extra inteira e o 20, falta, quando
+      ele é dos ímpares — 19, 21, 23, 25. Com pouca história, o mês inteiro decide.)
       (30/10/2026, o vigia que trabalha nos dias ímpares desde 17/10: sem ninguém antes, o dia 16
       caía no "dia de trabalho" informado ao dar a escala e virava falta.)
     - Ninguém votou: a paridade do último dia trabalhado, por mais antigo que seja.
@@ -104,7 +111,7 @@ def dia_do_ciclo(trabalhados: tuple, dia: dt.date, data_base: Optional[dt.date] 
     mesma, outra = placar(votos)
     # Poucos votos antes, ou EMPATE (31/10/2026: o vigia que trocou o plantão e trabalhou duas noites seguidas — 18 e
     # 19 — empatava e o ciclo virava; a falta caía no 20 e o 21 virava extra): votam também os 30 dias depois.
-    if len(votos) < 2 or mesma == outra:
+    if len(votos) < MIN_VOTOS_ANTES or mesma == outra:
         votos = votos + depois
         mesma, outra = placar(votos)
     if votos:

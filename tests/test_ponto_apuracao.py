@@ -206,3 +206,16 @@ def test_o_feriado_na_noite_do_ciclo_12x36_e_dia_normal():
     assert fechamento.evento_da_hora_extra(d) != fechamento.evento_da_hora_extra({**d, "feriado_compensado": True})
     assert fechamento.evento_da_hora_extra({**d, "feriado_compensado": True}) == \
         fechamento.evento_da_hora_extra({"data": sex.isoformat()})
+
+
+def test_o_ciclo_com_pouca_historia_ouve_o_mes_inteiro():
+    """31/10/2026, o vigia de ESCVARZEA: as duas primeiras noites (16 e 18, pares) bastavam para o ciclo virar par —
+    19 e 21 viravam extra inteira e o 20, falta. Ele é dos ímpares (19, 21, 23, 25): com menos de MIN_VOTOS_ANTES noites
+    antes do dia, as seguintes votam também."""
+    from app.apps.ponto.core.apuracao import dia_do_ciclo
+    d = lambda n: dt.date(2026, 10, n)                                    # noqa: E731
+    t = tuple(d(x) for x in (16, 18, 19, 21, 23, 25))
+    assert [n for n in range(16, 26) if dia_do_ciclo(t, d(n))] == [17, 19, 21, 23, 25]
+    # com história longa, o passado decide sozinho (a troca de paridade que se firmou vale)
+    longa = tuple(d(x) for x in range(1, 31, 2))                            # ímpares de 1 a 29
+    assert dia_do_ciclo(longa, d(30)) is False and dia_do_ciclo(longa, d(31)) is True

@@ -410,6 +410,24 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 31/10/2026 (décima nona) — O ciclo do 12x36 com pouca história: o mês inteiro decide
+
+O dono, com o calendário de um vigia de ESCVARZEA (12x36 desde 16/10): noites inteiras de extra nos dias 16, 18, 19 e
+21, falta nos dias 17 e 20, e normal do 23 em diante — *"continua algo errado, tem vigia que (…) fica dando um monte
+de hora extra"*.
+- **A causa**: o ciclo automático (`apuracao.dia_do_ciclo`) decidia pelas noites dos 30 dias ANTES do dia, e bastavam 2.
+  As duas primeiras do vigia foram 16 e 18 (pares) — o ciclo virou par, e 19 e 21 (dele, ímpares) viraram folga
+  trabalhada; o 20, falta. Só com mais história (do 23 em diante) acertava. Ele trabalha nos ímpares: 19, 21, 23, 25
+  (4 votos) contra 16 e 18 (2).
+- **Agora** (`MIN_VOTOS_ANTES = 6`, umas duas semanas de 12x36): com menos de 6 noites antes do dia, as noites dos 30
+  dias seguintes votam também. No caso dele: os ímpares são o ciclo; 16 e 18 ficam como "noite fora do ciclo" (o DP
+  decide se foi extra ou permuta) e o 17, falta. Com história longa, o passado continua decidindo sozinho (uma troca de
+  paridade que se firmou vale).
+- **Risco dito**: no começo de um ciclo novo, o voto passa a olhar o futuro — se a pessoa mudar de paridade nos primeiros
+  dias, os dias de antes da mudança podem ser julgados pela paridade nova. É raro e aparece como alerta para o DP.
+- Teste: as noites 16, 18, 19, 21, 23 e 25 → ciclo nos ímpares; com 15 noites ímpares antes, o passado decide.
+**No ramo, esperando o "pode".** SEM MIGRAÇÃO.
+
 ## 31/10/2026 (décima oitava) — Trocar a escala na janela da pessoa não mudava o espelho
 
 O dono: *"tem alguma possibilidade de eu atualizar um ponto ou trocar uma escala e, quando ver o espelho, não
