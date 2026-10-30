@@ -410,6 +410,25 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 31/10/2026 (nona) — Liberar obras e pessoas específicas no aplicativo (migração 023)
+
+O dono: *"tem como eu liberar pessoas que batem ponto pra poder visualizar pontos/fazer ajustes de outras pessoas que
+estão em obras específicas ou ainda de pessoas específicas, mesmo que não sejam elas que batem o ponto dessas
+pessoas?"* — em parte já dava (o administrativo de obra: a obra em que está e as em que bateu na semana); obra
+específica fixa e pessoa específica, não.
+- **Agora**: na janela da pessoa › Cadastro › "Acesso no aplicativo", dois campos: **Obras liberadas** (códigos) e
+  **Pessoas liberadas** (CPFs). Liberada, ela consulta e faz pedidos (atestado, ajuste, compensação…) por quem bateu
+  ponto ou é cadastrado nessas obras, e por essas pessoas — em qualquer aparelho, além do que o papel já dava. Na tela
+  inicial do aplicativo, "Consultar o ponto das pessoas" e "Atestados, afastamentos e ajustes" passam a aparecer, com
+  "liberada pelo DP: obra X" / "N pessoa(s) liberada(s) pelo DP"; ela entra como "liberado pelo DP".
+- Tabela `ponto.alcance_liberado` (uma linha por obra ou pessoa, com quem liberou e quando); `papeis.alcance` soma;
+  a rota é a mesma do "Acesso no aplicativo" (`tratar_ponto`), e só se libera obra e pessoa que quem libera alcança.
+  Lista vazia tira. O cadastro mostra "liberado nas obras … · liberado para N pessoa(s)".
+- Os pedidos que ela fizer seguem a validação de sempre (o supervisor, o DP) — liberar não aprova nada.
+- Teste: sem papel, nada; liberadas a obra B e a Maria → o alcance tem as duas e pode pedir; o supervisor da obra A não
+  libera a B; CPF inexistente recusado; lista vazia tira.
+**No ramo, esperando o "pode"** — COM A MIGRAÇÃO 023 (apertar "Aplicar atualizações do ponto" ao publicar).
+
 ## 31/10/2026 (oitava) — A troca de plantão identificada sozinha
 
 O dono, no calendário de horas extras, dois vigias da CREPEFLORESTA2: um com 13h57 de extra no dia 17 e falta no 18,

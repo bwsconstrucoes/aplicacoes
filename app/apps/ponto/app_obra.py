@@ -33,7 +33,7 @@ logger = logging.getLogger("ponto.app_obra")
 
 ROTULO_PAPEL = {"ADMINISTRATIVO": "administrativo da obra", "RESPONSAVEL_OBRA": "responsável pelo ponto da obra",
                 "RESPONSAVEL_EQUIPE": "responsável pelo ponto de equipe", "APARELHO_OBRA": "ponto da obra",
-                "APARELHO_EQUIPE": "ponto de equipe"}
+                "APARELHO_EQUIPE": "ponto de equipe", "LIBERADO": "liberado pelo DP"}
 
 
 def _aparelho(conn):

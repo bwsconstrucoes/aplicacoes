@@ -1849,7 +1849,9 @@ function painelCadastro() {
     linha("Banco de horas", escapar(rotuloRegime(p.regime_banco))),
     linha("No aplicativo", escapar([p.bate_no_celular ? "bate no celular" : "bate no ponto da obra",
       p.pede_no_celular ? "faz pedidos pelo celular" : "", p.administrativo_obra ? "administrativo da obra" : "",
-      p.faz_ronda ? "ronda surpresa ligada" : ""].filter(Boolean).join(" · "))),
+      p.faz_ronda ? "ronda surpresa ligada" : "",
+      ((p.liberado || {}).obras || []).length ? `liberado nas obras ${p.liberado.obras.map(o => o.codigo).join(", ")}` : "",
+      ((p.liberado || {}).pessoas || []).length ? `liberado para ${p.liberado.pessoas.length} pessoa(s)` : ""].filter(Boolean).join(" · "))),
     linha("Telefone", p.tem_telefone ? "válido para o WhatsApp" : `<span style="color:var(--vermelho)">sem telefone válido</span>`),
     linha("Conferência do rosto", p.conferencia_rosto ? escapar(`${p.conferencia_rosto.rotulo} · ${p.conferencia_rosto.pct} %`) : "—"),
   ].join("")}</table>
@@ -2482,6 +2484,7 @@ async function primeiroAcesso(p) {
 
 async function formaDeBater(p) {
   const simNao = (sim, nao) => [{valor: "0", rotulo: nao}, {valor: "1", rotulo: sim}];
+  const lista = t => String(t || "").split(/[,;\n]+/).map(x => x.trim()).filter(Boolean);
   const r = await perguntar({
     titulo: `Acesso no aplicativo — ${escapar(p.nome)}`,
     aviso: `O padrão: bate <b>só no ponto da obra</b> (QR Code ou CPF) e, no próprio celular, <b>vê o próprio
@@ -2502,13 +2505,22 @@ async function formaDeBater(p) {
       {nome: "vigia", rotulo: "Vigia noturno — ronda surpresa", tipo: "select", valor: p.faz_ronda ? "1" : "0",
        largura: 3, opcoes: simNao("Sim — 4 rondas surpresa por WhatsApp em cada turno", "Não (padrão)"),
        dica: "Na entrada dele (à tarde ou à noite), o sistema sorteia as rondas do turno; sem entrada, não há ronda. A saída cancela as que faltam."},
+      // 31/10/2026, o dono: "liberar pessoas (…) pra poder visualizar pontos/fazer ajustes de outras pessoas que estão
+      // em obras específicas ou ainda de pessoas específicas, mesmo que não sejam elas que batem o ponto dessas pessoas"
+      {nome: "lib_obras", rotulo: "Obras liberadas — consulta e pede por quem é delas", largura: 6,
+       valor: escapar(((p.liberado || {}).obras || []).map(o => o.codigo).join(", ")), exemplo: "códigos separados por vírgula",
+       dica: "Em qualquer aparelho, além do que o papel já dá. Vê quem bateu ponto ou é cadastrado nelas."},
+      {nome: "lib_pessoas", rotulo: "Pessoas liberadas — consulta e pede por elas", largura: 6,
+       valor: escapar(((p.liberado || {}).pessoas || []).map(x => x.cpf).join(", ")), exemplo: "CPFs separados por vírgula",
+       dica: ((p.liberado || {}).pessoas || []).length ? `Hoje: ${escapar(p.liberado.pessoas.map(x => x.nome).join(", "))}` : "Qualquer obra em que elas estejam."},
     ],
     textoOk: "Salvar",
   });
   if (!r) return;
   try {
     await postar(`/erp/api/ponto/pessoas/${p.id}/forma-de-bater`, {bate_no_celular: r.forma === "1",
-      pede_no_celular: r.pede === "1", administrativo_obra: r.adm === "1", faz_ronda: r.vigia === "1"});
+      pede_no_celular: r.pede === "1", administrativo_obra: r.adm === "1", faz_ronda: r.vigia === "1",
+      liberado_obras: lista(r.lib_obras), liberado_pessoas: lista(r.lib_pessoas)});
     await depoisDoCadastro(p.id);
     aviso("dp-msg", "Acesso no aplicativo salvo.", "ok");
     if (typeof carregarExcecoes === "function") carregarExcecoes();

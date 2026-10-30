@@ -132,6 +132,49 @@ class Alcance:
         return not self.obras and not self.equipe
 
 
+# ---------------------------------------------------------------------------
+# O ALCANCE LIBERADO PELO DP (31/10/2026, migração 023): obras e pessoas específicas que uma pessoa passa a
+# consultar e por quem pede no aplicativo, além do que o papel dela já dá — "mesmo que não sejam elas que batem o
+# ponto dessas pessoas".
+# ---------------------------------------------------------------------------
+def liberado_disponivel(conn: Connection) -> bool:
+    return db.tem_coluna(conn, "alcance_liberado", "obra_id")
+
+
+def liberado_de(conn: Connection, colaborador_id: int) -> dict:
+    """{"obras": [{id, codigo, nome}], "pessoas": [{id, nome, cpf}]} — o que o DP liberou para a pessoa."""
+    if not liberado_disponivel(conn):
+        return {"obras": [], "pessoas": []}
+    obras = db.todos(conn, """SELECT o.id, o.codigo, o.nome FROM ponto.alcance_liberado l
+                                JOIN public.obras o ON o.id = l.obra_id
+                               WHERE l.colaborador_id = :c ORDER BY o.codigo""", c=int(colaborador_id))
+    pessoas = db.todos(conn, """SELECT c.id, c.nome, c.cpf FROM ponto.alcance_liberado l
+                                  JOIN public.colaboradores c ON c.id = l.alvo_id
+                                 WHERE l.colaborador_id = :c ORDER BY c.nome""", c=int(colaborador_id))
+    return {"obras": [_curta(o) for o in obras],
+            "pessoas": [{"id": int(x["id"]), "nome": x["nome"], "cpf": x["cpf"]} for x in pessoas]}
+
+
+def definir_liberado(conn: Connection, colaborador_id: int, *, obras: Optional[list[int]] = None,
+                     pessoas: Optional[list[int]] = None, por: str = "") -> dict:
+    """Troca o que está liberado (a lista que vier substitui a anterior; None deixa como está)."""
+    from ..erros import ErroDeValidacao
+    if not liberado_disponivel(conn):
+        raise ErroDeValidacao("aplique as atualizações do ponto (migração 023) antes de liberar obras ou pessoas")
+    cid = int(colaborador_id)
+    if obras is not None:
+        db.executar(conn, "DELETE FROM ponto.alcance_liberado WHERE colaborador_id = :c AND obra_id IS NOT NULL", c=cid)
+        for o in sorted(set(int(x) for x in obras)):
+            db.executar(conn, "INSERT INTO ponto.alcance_liberado (colaborador_id, obra_id, liberado_por) "
+                              "VALUES (:c, :o, :p)", c=cid, o=o, p=(por or "")[:120])
+    if pessoas is not None:
+        db.executar(conn, "DELETE FROM ponto.alcance_liberado WHERE colaborador_id = :c AND alvo_id IS NOT NULL", c=cid)
+        for a in sorted(set(int(x) for x in pessoas) - {cid}):
+            db.executar(conn, "INSERT INTO ponto.alcance_liberado (colaborador_id, alvo_id, liberado_por) "
+                              "VALUES (:c, :a, :p)", c=cid, a=a, p=(por or "")[:120])
+    return liberado_de(conn, cid)
+
+
 def aparelho_valendo(a: Optional[dict]) -> bool:
     if not a or a.get("status") != "APROVADO":
         return False
@@ -204,7 +247,21 @@ def alcance(conn: Connection, pessoa: Optional[dict], aparelho: Optional[dict],
         if r.equipe:
             r.de_onde.append(f"a equipe deste aparelho ({len(r.equipe)} pessoa(s))")
 
-    r.pode_pedir = bool(admin or (meu and aparelho["perfil"] == "COMPARTILHADO")
+    # 4. O que o DP liberou para ela (migração 023): obras e pessoas específicas, em qualquer aparelho.
+    lib = liberado_de(conn, pessoa["id"])
+    for o in lib["obras"]:
+        if o["id"] not in r.obras:
+            r.obras[o["id"]] = o
+            r.de_onde.append(f"liberada pelo DP: obra {o['codigo']}")
+    extra = {x["id"] for x in lib["pessoas"]} - r.equipe - {pessoa["id"]}
+    if extra:
+        r.equipe |= extra
+        r.de_onde.append(f"{len(extra)} pessoa(s) liberada(s) pelo DP")
+    liberado = bool(lib["obras"] or lib["pessoas"])
+    if liberado and not r.papel:
+        r.papel = "LIBERADO"
+
+    r.pode_pedir = bool(admin or liberado or (meu and aparelho["perfil"] == "COMPARTILHADO")
                         or (meu and aparelho["perfil"] == "LISTA" and _marcado_para_pedir(conn, pessoa)))
     if r.vazio:
         if admin:

@@ -565,8 +565,11 @@ def _ficha(quem: Quem, colaborador_id: int) -> dict:
         from .core import papeis
         responsavel = papeis.responsavel_por_ponto_da_obra(conn, p)
         obra_ponto = cadastros.obra_pelo_ponto(conn, colaborador_id)
+        from .core import papeis as _papeis
+        liberado = _papeis.liberado_de(conn, colaborador_id)
     j = cadastros.colaborador_para_json({**p, "obras_adicionais": adicionais})
     j["obra_do_ponto"] = obra_ponto        # 30/10/2026: a obra é a do ponto; o cadastro, na falta dele
+    j["liberado"] = liberado               # 31/10/2026: o que o DP liberou para ela no aplicativo (migração 023)
     j["escalas"] = [{"escala_id": h["escala_id"], "escala": h["escala_nome"], "tipo": h["escala_tipo"],
                      "desde": h["vigencia_inicio"].isoformat(),
                      "ciclo_data_base": h["ciclo_data_base"].isoformat() if h["ciclo_data_base"] else None,
@@ -1193,9 +1196,34 @@ def ponto_api_pessoa_forma_de_bater(colaborador_id: int):
                            administrativo_obra=(bool(d["administrativo_obra"]) if "administrativo_obra" in d else None))
             logger.info("Ponto: papéis da pessoa %s no aplicativo — pedidos %s, administrativo %s (por %s)",
                         colaborador_id, d.get("pede_no_celular"), d.get("administrativo_obra"), quem.nome)
+        # o alcance liberado pelo DP (31/10/2026, migração 023): obras e pessoas específicas
+        if "liberado_obras" in d or "liberado_pessoas" in d:
+            obras_ids = None
+            if "liberado_obras" in d:
+                obras_ids = []
+                for ref in d.get("liberado_obras") or []:
+                    o = cadastros.resolver_obra(conn, ref)
+                    if not o:
+                        raise ErroDeValidacao(f"obra não cadastrada: {ref}", campo="liberado_obras")
+                    if not quem.alcanca_obra(o["id"]):
+                        raise ErroDeValidacao(f"a obra {o['codigo']} não está no seu alcance", campo="liberado_obras")
+                    obras_ids.append(int(o["id"]))
+            pessoas_ids = None
+            if "liberado_pessoas" in d:
+                pessoas_ids = []
+                for ref in d.get("liberado_pessoas") or []:
+                    alvo = cadastros.colaborador_por_cpf(conn, ref) if any(ch.isdigit() for ch in str(ref)) else None
+                    if not alvo:
+                        raise ErroDeValidacao(f"CPF não encontrado no ponto: {ref}", campo="liberado_pessoas")
+                    _exigir_pessoa(conn, quem, int(alvo["id"]))
+                    pessoas_ids.append(int(alvo["id"]))
+            papeis.definir_liberado(conn, colaborador_id, obras=obras_ids, pessoas=pessoas_ids, por=quem.nome)
+            logger.info("Ponto: alcance liberado para a pessoa %s — obras %s, pessoas %s (por %s)",
+                        colaborador_id, obras_ids, pessoas_ids, quem.nome)
         p = cadastros.colaborador_por_id(conn, colaborador_id)
+        lib = papeis.liberado_de(conn, colaborador_id)
     return _ok(bate_no_celular=bool(p.get("bate_no_celular")), pede_no_celular=bool(p.get("pede_no_celular")),
-               administrativo_obra=bool(p.get("administrativo_obra")))
+               administrativo_obra=bool(p.get("administrativo_obra")), liberado=lib)
 
 
 @bp.route("/erp/api/ponto/ensaio")
