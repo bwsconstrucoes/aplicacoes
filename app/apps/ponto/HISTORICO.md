@@ -426,7 +426,7 @@ atualizar? Tá acontecendo isso."*
   entra aprovada. E telas já montadas (Quadro, calendário do fechamento) só mudam ao montar de novo.
 - Teste: a pessoa com a escala do dia desde terça recebe a da noite desde segunda pela janela — fica só a da noite, e a
   saída das 5h volta para o dia da entrada.
-**No ramo, esperando o "pode".** SEM MIGRAÇÃO.
+**Publicado em 31/10/2026** (com o "pode" do dono) — SEM MIGRAÇÃO.
 
 ## 31/10/2026 (décima sétima) — Bate ponto por exceção: passar por cima da planilha (migração 025)
 
