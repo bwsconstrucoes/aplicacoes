@@ -420,7 +420,7 @@ geral, com ou sem hora, não tem como."*
   impressão e no Excel da supervisão. A escolha não fica guardada (volta desligada).
 - Fica de fora, mesmo ligada: quem não trabalhou dia nenhum no período e não tem falta (o afastado o mês todo, as férias).
 - Teste: o calendário da supervisão com a opção (o BETO, que só trabalhou no horário, entra).
-**No ramo, esperando o "pode".** SEM MIGRAÇÃO.
+**Publicado em 31/10/2026** (com o "pode" do dono) — SEM MIGRAÇÃO.
 
 ## 31/10/2026 (décima terceira) — A permuta de plantão como pedido, a sugestão nas Validações (migração 024), e quem não bate ponto
 
@@ -459,7 +459,7 @@ tá aparecendo. Acho que em Pessoas deveria ter filtro pra exibir todos, ou os q
   o lado do colega aprovado com as datas espelhadas e os dois espelhos com "Permuta com …"; a sugestão acha a troca;
   quem não bate e foi liberado entra; o filtro de Pessoas nas três opções. Ensaio no navegador (Validações com a
   sugestão e o aplicar; o diálogo do ERP; Pessoas; o pedido no aplicativo).
-**No ramo, esperando o "pode".** COM A MIGRAÇÃO 024.
+**Publicado em 31/10/2026** (com o "pode" do dono) — COM A MIGRAÇÃO 024 (apertar "Aplicar atualizações do ponto").
 
 ## 31/10/2026 (décima segunda) — O feriado na noite do vigia 12x36 não é dia inteiro de extra
 
@@ -479,7 +479,7 @@ para QUALQUER escala, e as 14h02 da noite viravam extra de feriado.
   (era o que a Súmula 444 do TST dizia antes da Reforma de 2017). Se for o caso, a regra volta a ser por convenção.
 - Teste: a noite do feriado na 12x36 (previsto 12h, extra 2h02, evento do dia comum); a folga do ciclo no feriado (tudo
   extra); a escala semanal no feriado (sem previsto).
-**No ramo, esperando o "pode".** SEM MIGRAÇÃO.
+**Publicado em 31/10/2026** (com o "pode" do dono) — SEM MIGRAÇÃO.
 
 ## 31/10/2026 (décima primeira) — "Todas as obras": o acesso geral no aplicativo
 
