@@ -2976,6 +2976,8 @@ async function abrirMenu() {
   const papel = INICIO.da_obra ? (p && p.papel_aqui) : alc.papel_rotulo;
   if (p && papel) linha.push(`você entrou como ${papel}`);
   if (lugar) linha.push(lugar.curto);
+  // muitas obras (a liberação de todas): a linha diz quantas, não o nome de cada uma
+  else if (alc.obras.length > 3) linha.push(`📍 ${alc.obras.length} obras`);
   else if (alc.obras.length) linha.push("📍 " + alc.obras.map(rotuloObra).join(", "));
   $("m-onde").textContent = linha.join(" · ");
 
@@ -3168,15 +3170,21 @@ function desenharEquipe() {
   // com mais de uma obra no alcance (31/10/2026): a obra de cada um e o filtro por obra
   const obras = [...new Set(EQ.pessoas.map(p => p.obra_aqui).filter(Boolean))].sort();
   if (EQ.obra && !obras.includes(EQ.obra)) EQ.obra = "";
-  const chips = obras.length > 1 ? `<div class="chips" style="margin:0 0 10px">
+  const qtd = o => o ? EQ.pessoas.filter(p => p.obra_aqui === o).length : EQ.pessoas.length;
+  // muitas obras (a liberação de todas as obras): uma lista de escolher no lugar dos botões
+  const chips = obras.length > 8 ? `<label for="eq-obra-sel">Obra</label><select id="eq-obra-sel" style="margin:0 0 10px">
+      ${["", ...obras].map(o => `<option value="${esc(o)}"${o === (EQ.obra || "") ? " selected" : ""}>${o ? esc(o) : "Todas"} · ${qtd(o)}</option>`).join("")}</select>`
+    : obras.length > 1 ? `<div class="chips" style="margin:0 0 10px">
       ${["", ...obras].map(o => `<button type="button" class="chip${o === (EQ.obra || "") ? " escolhida" : ""}" aria-pressed="${o === (EQ.obra || "")}"
-        data-eq-obra="${esc(o)}">${o ? esc(o) : "Todas"} · ${o ? EQ.pessoas.filter(p => p.obra_aqui === o).length : EQ.pessoas.length}</button>`).join("")}</div>` : "";
+        data-eq-obra="${esc(o)}">${o ? esc(o) : "Todas"} · ${qtd(o)}</button>`).join("")}</div>` : "";
   const lista = EQ.pessoas.filter(p => (!termo || semAcento(p.nome).includes(termo)) && (!EQ.obra || p.obra_aqui === EQ.obra));
   $("eq-lista").innerHTML = chips + (lista.map(p => `<button type="button" class="pessoa-linha" data-p="${p.id}">
       <span style="flex:1"><b style="display:block">${esc(p.nome)}</b><small>${[p.funcao, obras.length > 1 && p.obra_aqui ? `obra ${p.obra_aqui}` : "",
         p.batidas_na_obra ? `${p.batidas_na_obra} batida(s) aqui` : "sem batida aqui no mês"].filter(Boolean).map(esc).join(" · ")}</small></span></button>`).join("")
     || `<p>Ninguém ${termo ? "com esse nome" : "neste mês"}.</p>`);
   $("eq-lista").querySelectorAll("[data-eq-obra]").forEach(b => b.addEventListener("click", () => { EQ.obra = b.dataset.eqObra; desenharEquipe(); }));
+  const sel = $("eq-obra-sel");
+  if (sel) sel.addEventListener("change", () => { EQ.obra = sel.value; desenharEquipe(); });
   $("eq-lista").querySelectorAll("[data-p]").forEach(b => b.addEventListener("click", () => abrirPessoaDaObra(+b.dataset.p)));
 }
 $("eq-busca").addEventListener("input", desenharEquipe);

@@ -1850,6 +1850,7 @@ function painelCadastro() {
     linha("No aplicativo", escapar([p.bate_no_celular ? "bate no celular" : "bate no ponto da obra",
       p.pede_no_celular ? "faz pedidos pelo celular" : "", p.administrativo_obra ? "administrativo da obra" : "",
       p.faz_ronda ? "ronda surpresa ligada" : "",
+      (p.liberado || {}).todas_obras ? "liberado em todas as obras" : "",
       ((p.liberado || {}).obras || []).length ? `liberado nas obras ${p.liberado.obras.map(o => o.codigo).join(", ")}` : "",
       ((p.liberado || {}).pessoas || []).length ? `liberado para ${p.liberado.pessoas.length} pessoa(s)` : ""].filter(Boolean).join(" · "))),
     linha("Telefone", p.tem_telefone ? "válido para o WhatsApp" : `<span style="color:var(--vermelho)">sem telefone válido</span>`),
@@ -2529,6 +2530,9 @@ async function formaDeBater(p) {
        dica: "Na entrada dele (à tarde ou à noite), o sistema sorteia as rondas do turno; sem entrada, não há ronda. A saída cancela as que faltam."},
       // 31/10/2026, o dono: "liberar pessoas (…) pra poder visualizar pontos/fazer ajustes de outras pessoas que estão
       // em obras específicas ou ainda de pessoas específicas, mesmo que não sejam elas que batem o ponto dessas pessoas"
+      {nome: "lib_todas", rotulo: "Todas as obras (acesso geral)", tipo: "select", valor: (p.liberado || {}).todas_obras ? "1" : "0",
+       largura: 6, opcoes: simNao("Sim — consulta e pede por qualquer pessoa, de qualquer obra ativa", "Não (padrão)"),
+       dica: "Vale também para obra cadastrada depois. Com Sim, as obras liberadas abaixo não fazem diferença."},
       {nome: "lib_obras", rotulo: "Obras liberadas — consulta e pede por quem é delas", largura: 6,
        valor: escapar(((p.liberado || {}).obras || []).map(o => o.codigo).join(", ")), exemplo: "códigos separados por vírgula",
        dica: "Em qualquer aparelho, além do que o papel já dá. Vê quem bateu ponto ou é cadastrado nelas."},
@@ -2542,7 +2546,7 @@ async function formaDeBater(p) {
   try {
     await postar(`/erp/api/ponto/pessoas/${p.id}/forma-de-bater`, {bate_no_celular: r.forma === "1",
       pede_no_celular: r.pede === "1", administrativo_obra: r.adm === "1", faz_ronda: r.vigia === "1",
-      liberado_obras: lista(r.lib_obras), liberado_pessoas: lista(r.lib_pessoas)});
+      liberado_obras: lista(r.lib_obras), liberado_pessoas: lista(r.lib_pessoas), liberado_todas_obras: r.lib_todas === "1"});
     await depoisDoCadastro(p.id);
     aviso("dp-msg", "Acesso no aplicativo salvo.", "ok");
     if (typeof carregarExcecoes === "function") carregarExcecoes();

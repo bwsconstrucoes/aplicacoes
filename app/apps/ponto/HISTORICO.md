@@ -410,6 +410,24 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 31/10/2026 (décima primeira) — "Todas as obras": o acesso geral no aplicativo
+
+O dono: *"precisa deixar o meu acesso liberado como uma espécie de master, como faço?"* — até aqui, só obra por obra
+(digitando o código de cada uma, e obra nova ficava de fora).
+- **Agora**: janela da pessoa › Cadastro › "Acesso no aplicativo" › **"Todas as obras (acesso geral)" = Sim**. Ela
+  consulta e faz pedidos por qualquer pessoa de qualquer obra ATIVA, inclusive obra cadastrada depois. No aplicativo
+  aparece "liberada pelo DP: todas as obras"; a linha do início diz "📍 N obras" (com mais de 3) em vez do nome de
+  cada uma; em "Ponto das pessoas", com mais de 8 obras, o filtro vira uma lista de escolher no lugar dos botões.
+- **Só quem alcança todas as obras no ERP libera "todas"** (o DP; o supervisor preso a obra recebe recusa).
+- Gravação: a linha da 023 da pessoa liberada PARA ELA MESMA (liberar a si mesma como pessoa não existe, então não se
+  confunde) — **SEM MIGRAÇÃO NOVA**, com quem liberou e quando, como as outras liberações.
+- Os pedidos que ela fizer seguem a validação de sempre: liberar não aprova nada.
+- **Para o dono usar no próprio cadastro (Pró-labore)**: o Modo de teste já deixa ele entrar no aplicativo; com
+  "Todas as obras" = Sim, ele vê e pede por todo mundo.
+- Teste: o supervisor não libera; o DP libera → todas as obras ativas no alcance, pode pedir; liberar pessoas depois
+  não apaga o "todas" e o "todas" não aparece como pessoa liberada; Não tira.
+**No ramo, esperando o "pode".** SEM MIGRAÇÃO.
+
 ## 31/10/2026 (décima) — "Quem ela alcança no app": a lista, no ERP e no aplicativo
 
 O dono: *"Que tal uma tela que liste as pessoas sobre as quais aquela pessoa tem gestão de ajuste no app? Facilita a

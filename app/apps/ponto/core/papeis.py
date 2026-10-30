@@ -141,22 +141,30 @@ def liberado_disponivel(conn: Connection) -> bool:
     return db.tem_coluna(conn, "alcance_liberado", "obra_id")
 
 
+# TODAS AS OBRAS (31/10/2026, o dono: "precisa deixar o meu acesso liberado como uma espécie de master"): a linha
+# da pessoa liberada PARA ELA MESMA. Liberar a si mesma como pessoa não existe (`definir_liberado` tira), então a
+# linha não se confunde com nada — e reaproveita a tabela da 023, com quem liberou e quando, sem migração nova.
+# Vale para toda obra ATIVA, inclusive a que for cadastrada depois.
+
+
 def liberado_de(conn: Connection, colaborador_id: int) -> dict:
     """{"obras": [{id, codigo, nome}], "pessoas": [{id, nome, cpf}]} — o que o DP liberou para a pessoa."""
     if not liberado_disponivel(conn):
-        return {"obras": [], "pessoas": []}
+        return {"obras": [], "pessoas": [], "todas_obras": False}
     obras = db.todos(conn, """SELECT o.id, o.codigo, o.nome FROM ponto.alcance_liberado l
                                 JOIN public.obras o ON o.id = l.obra_id
                                WHERE l.colaborador_id = :c ORDER BY o.codigo""", c=int(colaborador_id))
     pessoas = db.todos(conn, """SELECT c.id, c.nome, c.cpf FROM ponto.alcance_liberado l
                                   JOIN public.colaboradores c ON c.id = l.alvo_id
                                  WHERE l.colaborador_id = :c ORDER BY c.nome""", c=int(colaborador_id))
-    return {"obras": [_curta(o) for o in obras],
-            "pessoas": [{"id": int(x["id"]), "nome": x["nome"], "cpf": x["cpf"]} for x in pessoas]}
+    todas = any(int(x["id"]) == int(colaborador_id) for x in pessoas)
+    return {"obras": [_curta(o) for o in obras], "todas_obras": todas,
+            "pessoas": [{"id": int(x["id"]), "nome": x["nome"], "cpf": x["cpf"]} for x in pessoas
+                        if int(x["id"]) != int(colaborador_id)]}
 
 
 def definir_liberado(conn: Connection, colaborador_id: int, *, obras: Optional[list[int]] = None,
-                     pessoas: Optional[list[int]] = None, por: str = "") -> dict:
+                     pessoas: Optional[list[int]] = None, todas_obras: Optional[bool] = None, por: str = "") -> dict:
     """Troca o que está liberado (a lista que vier substitui a anterior; None deixa como está)."""
     from ..erros import ErroDeValidacao
     if not liberado_disponivel(conn):
@@ -168,10 +176,16 @@ def definir_liberado(conn: Connection, colaborador_id: int, *, obras: Optional[l
             db.executar(conn, "INSERT INTO ponto.alcance_liberado (colaborador_id, obra_id, liberado_por) "
                               "VALUES (:c, :o, :p)", c=cid, o=o, p=(por or "")[:120])
     if pessoas is not None:
-        db.executar(conn, "DELETE FROM ponto.alcance_liberado WHERE colaborador_id = :c AND alvo_id IS NOT NULL", c=cid)
+        db.executar(conn, "DELETE FROM ponto.alcance_liberado WHERE colaborador_id = :c AND alvo_id IS NOT NULL "
+                          "AND alvo_id <> :c", c=cid)
         for a in sorted(set(int(x) for x in pessoas) - {cid}):
             db.executar(conn, "INSERT INTO ponto.alcance_liberado (colaborador_id, alvo_id, liberado_por) "
                               "VALUES (:c, :a, :p)", c=cid, a=a, p=(por or "")[:120])
+    if todas_obras is not None:
+        db.executar(conn, "DELETE FROM ponto.alcance_liberado WHERE colaborador_id = :c AND alvo_id = :c", c=cid)
+        if todas_obras:
+            db.executar(conn, "INSERT INTO ponto.alcance_liberado (colaborador_id, alvo_id, liberado_por) "
+                              "VALUES (:c, :c, :p)", c=cid, p=(por or "")[:120])
     return liberado_de(conn, cid)
 
 
@@ -249,7 +263,11 @@ def alcance(conn: Connection, pessoa: Optional[dict], aparelho: Optional[dict],
 
     # 4. O que o DP liberou para ela (migração 023): obras e pessoas específicas, em qualquer aparelho.
     lib = liberado_de(conn, pessoa["id"])
-    for o in lib["obras"]:
+    if lib["todas_obras"]:
+        for o in cadastros.listar_obras(conn, so_ativas=True):
+            r.obras.setdefault(int(o["id"]), _curta(o))
+        r.de_onde.append("liberada pelo DP: todas as obras")
+    for o in [] if lib["todas_obras"] else lib["obras"]:
         if o["id"] not in r.obras:
             r.obras[o["id"]] = o
             r.de_onde.append(f"liberada pelo DP: obra {o['codigo']}")
@@ -257,7 +275,7 @@ def alcance(conn: Connection, pessoa: Optional[dict], aparelho: Optional[dict],
     if extra:
         r.equipe |= extra
         r.de_onde.append(f"{len(extra)} pessoa(s) liberada(s) pelo DP")
-    liberado = bool(lib["obras"] or lib["pessoas"])
+    liberado = bool(lib["obras"] or lib["pessoas"] or lib["todas_obras"])
     if liberado and not r.papel:
         r.papel = "LIBERADO"
 

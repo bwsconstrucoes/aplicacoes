@@ -1215,7 +1215,13 @@ def ponto_api_pessoa_forma_de_bater(colaborador_id: int):
             logger.info("Ponto: papéis da pessoa %s no aplicativo — pedidos %s, administrativo %s (por %s)",
                         colaborador_id, d.get("pede_no_celular"), d.get("administrativo_obra"), quem.nome)
         # o alcance liberado pelo DP (31/10/2026, migração 023): obras e pessoas específicas
-        if "liberado_obras" in d or "liberado_pessoas" in d:
+        if "liberado_obras" in d or "liberado_pessoas" in d or "liberado_todas_obras" in d:
+            todas = None
+            if "liberado_todas_obras" in d:
+                todas = bool(d.get("liberado_todas_obras"))
+                if todas and quem.obras is not None:
+                    raise ErroDeValidacao("só quem alcança todas as obras no ERP libera todas as obras",
+                                          campo="liberado_todas_obras")
             obras_ids = None
             if "liberado_obras" in d:
                 obras_ids = []
@@ -1235,9 +1241,10 @@ def ponto_api_pessoa_forma_de_bater(colaborador_id: int):
                         raise ErroDeValidacao(f"CPF não encontrado no ponto: {ref}", campo="liberado_pessoas")
                     _exigir_pessoa(conn, quem, int(alvo["id"]))
                     pessoas_ids.append(int(alvo["id"]))
-            papeis.definir_liberado(conn, colaborador_id, obras=obras_ids, pessoas=pessoas_ids, por=quem.nome)
-            logger.info("Ponto: alcance liberado para a pessoa %s — obras %s, pessoas %s (por %s)",
-                        colaborador_id, obras_ids, pessoas_ids, quem.nome)
+            papeis.definir_liberado(conn, colaborador_id, obras=obras_ids, pessoas=pessoas_ids, todas_obras=todas,
+                                    por=quem.nome)
+            logger.info("Ponto: alcance liberado para a pessoa %s — todas as obras %s, obras %s, pessoas %s (por %s)",
+                        colaborador_id, todas, obras_ids, pessoas_ids, quem.nome)
         p = cadastros.colaborador_por_id(conn, colaborador_id)
         lib = papeis.liberado_de(conn, colaborador_id)
     return _ok(bate_no_celular=bool(p.get("bate_no_celular")), pede_no_celular=bool(p.get("pede_no_celular")),

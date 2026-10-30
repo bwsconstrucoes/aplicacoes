@@ -46,3 +46,37 @@ def test_liberar_obras_e_pessoas_para_alguem(app, mundo):
     # tirar: lista vazia
     dp.post(f"/erp/api/ponto/pessoas/{mundo['joao']}/forma-de-bater", json={"liberado_obras": [], "liberado_pessoas": []})
     assert alcance().vazio
+
+
+def test_liberar_todas_as_obras(app, mundo):
+    """O acesso geral (31/10/2026, o dono: "uma espécie de master"): todas as obras ativas, inclusive as de depois;
+    só quem alcança todas no ERP libera; não se confunde com as pessoas liberadas; tirar volta ao vazio."""
+    from app.apps.ponto import db
+    from app.apps.ponto.core import cadastros, papeis
+    dp, sup = como(app, mundo["dp"]), como(app, mundo["sup"])
+
+    def alcance():
+        with db.conexao() as conn:
+            return papeis.alcance(conn, cadastros.colaborador_por_id(conn, mundo["joao"]), None, None)
+    assert sup.post(f"/erp/api/ponto/pessoas/{mundo['joao']}/forma-de-bater",
+                    json={"liberado_todas_obras": True}).status_code in (400, 403, 404)
+    assert alcance().vazio
+    r = dp.post(f"/erp/api/ponto/pessoas/{mundo['joao']}/forma-de-bater", json={"liberado_todas_obras": True})
+    assert r.status_code == 200, r.get_json()
+    lib = r.get_json()["liberado"]
+    assert lib["todas_obras"] is True and lib["pessoas"] == [] and lib["obras"] == []
+    a = alcance()
+    with db.conexao() as conn:
+        ativas = {int(o["id"]) for o in cadastros.listar_obras(conn, so_ativas=True)}
+        assert papeis.no_alcance(conn, a, mundo["maria"])
+    assert ativas and ativas <= set(a.obras) and a.pode_pedir and a.papel == "LIBERADO"
+    assert a.de_onde.count("liberada pelo DP: todas as obras") == 1
+    # liberar pessoas depois não apaga o "todas"; e o "todas" não vira pessoa liberada
+    r = dp.post(f"/erp/api/ponto/pessoas/{mundo['joao']}/forma-de-bater", json={"liberado_pessoas": [CPF_MARIA]})
+    lib = r.get_json()["liberado"]
+    assert lib["todas_obras"] is True and [x["id"] for x in lib["pessoas"]] == [mundo["maria"]]
+    ficha = dp.get(f"/erp/api/ponto/pessoas/{mundo['joao']}").get_json()["pessoa"]
+    assert ficha["liberado"]["todas_obras"] is True
+    dp.post(f"/erp/api/ponto/pessoas/{mundo['joao']}/forma-de-bater",
+            json={"liberado_todas_obras": False, "liberado_pessoas": []})
+    assert alcance().vazio
