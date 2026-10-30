@@ -410,6 +410,14 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 31/10/2026 (décima quinta) — "Marcar todas" nos filtros de funcionários
+
+O dono: *"gerar, por exemplo, de todas as funções com exceção de uma. São muitas. Precisaria marcar uma a uma."* Cada
+lista do filtro de funcionários (obras do cadastro, bateu nas obras, funções, escalas) ganhou **"marcar todas"** e
+**"desmarcar todas"** — valem para o que a busca da lista está mostrando. Para "todas menos uma": marcar todas e tirar
+a uma. Vale em Relatórios, Quadro, Validações e Pessoas (é o mesmo filtro). Só tela, sem migração.
+**No ramo, esperando o "pode".**
+
 ## 31/10/2026 (décima quarta) — O calendário geral no fechamento
 
 O dono: *"na tela de relatório que temos o calendário só aparece o que tem hora extra. E se quisermos ver o calendário

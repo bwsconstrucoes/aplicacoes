@@ -40,6 +40,11 @@
 {% macro lista_marcavel(px, chave, rotulo, busca) %}
   {% call bloco(px ~ "-fp-" ~ chave ~ "-bloco", rotulo) %}
     <input id="{{ px }}-fp-{{ chave }}-busca" placeholder="{{ busca }}" autocomplete="off" data-sem-mascara data-sem-busca style="width:100%">
+    {# marcar todas e tirar uma (31/10/2026, o dono: "todas as funções com exceção de uma. São muitas") — vale
+       para o que a busca está mostrando #}
+    <div class="fp-acoes" style="display:flex; gap:12px; margin:4px 0 2px">
+      <button class="link-btn" type="button" id="{{ px }}-fp-{{ chave }}-todas">marcar todas</button>
+      <button class="link-btn" type="button" id="{{ px }}-fp-{{ chave }}-nenhuma">desmarcar todas</button></div>
     <div class="fp-lista" id="{{ px }}-fp-{{ chave }}"><small class="suave">carregando…</small></div>
   {% endcall %}
 {% endmacro %}
@@ -1941,6 +1946,14 @@ class FiltroPessoas {
     if (el("busca") && aoEnter) el("busca").addEventListener("keydown", e => { if (e.key === "Enter") aoEnter(); });
     if (el("busca") && !aoEnter) el("busca").addEventListener("input", () => { clearTimeout(this.espera); this.espera = setTimeout(() => this.mudou(), 300); });
     Object.keys(this.marcados).forEach(k => { if (el(`${k}-busca`)) el(`${k}-busca`).addEventListener("input", () => this.desenharLista(k)); });
+    // marcar todas (as que a busca mostra) e desmarcar todas — para "todas menos uma"
+    Object.keys(this.marcados).forEach(k => {
+      if (el(`${k}-todas`)) el(`${k}-todas`).addEventListener("click", () => {
+        this.visiveis(k).forEach(i => this.marcados[k].add(i.valor)); this.desenharLista(k); this.mudou(); });
+      if (el(`${k}-nenhuma`)) el(`${k}-nenhuma`).addEventListener("click", () => {
+        const vis = new Set(this.visiveis(k).map(i => i.valor));
+        [...this.marcados[k]].forEach(v => { if (vis.has(v)) this.marcados[k].delete(v); }); this.desenharLista(k); this.mudou(); });
+    });
     if (el("sit")) el("sit").addEventListener("change", () => { this.contarExtras(); this.mudou(); });
     if (el("limpar")) el("limpar").addEventListener("click", () => { this.limpar(); this.mudou(); });
   }
@@ -1957,6 +1970,10 @@ class FiltroPessoas {
     if (k === "funcoes") return this.opcoes.funcoes.map(f => ({valor: f.nome, rotulo: f.nome, qtd: f.pessoas}));
     if (k === "escalas") return this.opcoes.escalas.map(e => ({valor: e.nome, rotulo: `${e.nome}${e.padrao ? " (padrão da empresa)" : ""}`}));
     return this.opcoes.obras.map(o => ({valor: String(o.id), rotulo: rotuloObra(o)}));
+  }
+  visiveis(k) {          // os itens que a busca da lista está mostrando
+    const b = ((this.el(`${k}-busca`) || {}).value || "").trim().toLowerCase();
+    return this.itens(k).filter(i => !b || i.rotulo.toLowerCase().includes(b));
   }
   desenharLista(k) {
     const caixa = this.el(k);
