@@ -131,3 +131,38 @@ def test_a_saida_da_madrugada_fica_no_dia_da_entrada(app, mundo):
     d = {x["data"]: x for x in esp["dias"]}
     assert "FORA_DO_CICLO" in d[ter.isoformat()]["alertas"] and d[ter.isoformat()]["extra"] == 13 * 60
     assert "FORA_DO_CICLO" not in d[qua.isoformat()]["alertas"] and d[qua.isoformat()]["situacao"] == "OK"
+
+
+def test_a_batida_no_meio_do_turno_da_noite_nao_e_saida():
+    """30/10/2026, o dono, num vigia com 17:05, 22:56, 04:48 e 07:07: "imagino que essas batidas tenham sido
+    erro (…) não tem como o vigia sair e voltar." """
+    from app.apps.ponto import horario
+    from app.apps.ponto.core import apuracao
+    sex = dt.date(2026, 10, 23)
+    noite = apuracao.Escala(tipo="CICLO_12X36", periodo_ciclo=(17 * 60, 29 * 60), data_base=sex)
+
+    def em(d, h, m):
+        return dt.datetime(d.year, d.month, d.day, h, m, tzinfo=horario.FUSO)
+    sab = sex + dt.timedelta(days=1)
+    batidas = [em(sex, 17, 5), em(sex, 22, 56), em(sab, 4, 48), em(sab, 7, 7)]
+    r = apuracao.apurar_dia(sex, noite, batidas)
+    assert r.trabalhado == 14 * 60 + 2 and r.debito == 0 and r.situacao == "OK", r
+    assert "BATIDA_NO_MEIO_DO_TURNO" in r.alertas
+    # a noite de folga do ciclo, trabalhada: o mesmo
+    r = apuracao.apurar_dia(sab, noite, [em(sab, 17, 0), em(sab, 23, 0), em(sab + dt.timedelta(days=1), 5, 0)])
+    assert r.trabalhado == 12 * 60 and "BATIDA_NO_MEIO_DO_TURNO" in r.alertas
+    # o turno do dia, com almoço, continua contando a saída e a volta
+    dia = apuracao.Escala(tipo="SEMANAL", semana={4: [(420, 660), (720, 1020)]})
+    r = apuracao.apurar_dia(sex, dia, [em(sex, 7, 0), em(sex, 11, 0), em(sex, 12, 0), em(sex, 17, 0)])
+    assert r.trabalhado == 9 * 60 and "BATIDA_NO_MEIO_DO_TURNO" not in r.alertas
+
+
+def test_o_dia_completo_nao_pede_batida_mesmo_longe_da_escala():
+    """O vigia de 21/10: entrou 16:45 e saiu 07:01 numa escala até 05:00 — a saída estava batida, e o espelho
+    oferecia "Saída 05:00" para incluir."""
+    from app.apps.ponto.core import ajustes
+    prev = ajustes.marcas_previstas([(17 * 60, 29 * 60)])
+    assert ajustes.faltantes(prev, [16 * 60 + 45, 31 * 60 + 1]) == []
+    assert [f["rotulo"] for f in ajustes.faltantes(prev, [16 * 60 + 45])] == ["Saída"]
+    # a repetida (menos de 10 min) não completa o dia
+    assert [f["rotulo"] for f in ajustes.faltantes(prev, [17 * 60, 17 * 60 + 3])] == ["Saída"]

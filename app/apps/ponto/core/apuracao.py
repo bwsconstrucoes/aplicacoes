@@ -200,6 +200,24 @@ def sem_repetidas(marcas: list[int], janela: int = BATIDA_REPETIDA_MIN) -> tuple
     return contam, len(marcas) - len(contam)
 
 
+def sem_batidas_no_meio_da_noite(marcas: list[int], periodos: list[tuple[int, int]],
+                                 escala: Optional["Escala"]) -> tuple[list[int], int]:
+    """PURA. O TURNO DA NOITE SEM INTERVALO (30/10/2026, o dono, num vigia com 17:05, 22:56, 04:48 e 07:07:
+    "imagino que essas batidas tenham sido erro (…) não tem como o vigia sair e voltar"). No turno de um
+    período só que passa da meia-noite, a batida do meio não é saída: o turno vai da primeira à última, e o
+    dia ganha o aviso BATIDA_NO_MEIO_DO_TURNO. A marcação continua no registro (Portaria 671) — só o
+    cálculo não a usa. Vale também na noite de folga do 12x36 trabalhada. Devolve (marcas, quantas saíram)."""
+    if len(marcas) <= 2 or escala is None:
+        return marcas, 0
+    if periodos:
+        noite = len(periodos) == 1 and periodos[0][1] > 1440
+    else:
+        noite = escala.tipo == "CICLO_12X36" and bool(escala.periodo_ciclo) and escala.periodo_ciclo[1] > 1440
+    if not noite:
+        return marcas, 0
+    return [marcas[0], marcas[-1]], len(marcas) - 2
+
+
 def completar_pre_assinalado(marcas: list[int], periodos: list[tuple[int, int]]) -> list[int]:
     """PURA. Na obra de intervalo PRÉ-ASSINALADO (CLT art. 74, § 2º; migração 009
     — pedido do dono, 09/10/2026: "por convenção, só é para bater o ponto de
@@ -270,6 +288,9 @@ def apurar_dia(dia: dt.date, escala: Optional[Escala], batidas: list[dt.datetime
     if repetidas:
         r.alertas.append("BATIDA_REPETIDA")
     periodos = [] if (escala is None or feriado) else escala.periodos(dia)
+    marcas, no_meio = sem_batidas_no_meio_da_noite(marcas, periodos, escala)
+    if no_meio:
+        r.alertas.append("BATIDA_NO_MEIO_DO_TURNO")
     if intervalo_pre_assinalado:
         marcas = completar_pre_assinalado(marcas, periodos)
     r.previsto = sum(max(0, s - e) for e, s in periodos)

@@ -417,6 +417,17 @@ ciclo**. Causa: no começo do ponto não havia noite trabalhada ANTES para votar
 informado ao dar a escala (o "16"), que passava por cima das batidas. Agora, com menos de 2 noites nos 30 dias antes,
 votam também as dos 30 dias depois; e o dia informado só vale para quem não tem batida nenhuma. É cálculo, não dado
 gravado: o espelho do vigia se corrige sozinho, sem botão. Teste com o caso dele (16 folga, 17 e 31 trabalho).
+
+Na mesma rodada, dois casos do mesmo vigia:
+- **23/10, com 17:05, 22:56, 04:48 e 07:07** — o dono: *"imagino que essas batidas tenham sido erro (…) não tem como o
+  vigia sair e voltar"*. Antes, a conta fazia dois pares (saiu às 22:56, voltou às 04:48): 8h10 e 3h50 de falta. Agora,
+  no turno de um período só que passa da meia-noite (também na noite de folga do 12x36), a batida do meio não é saída:
+  vale da primeira à última, e o dia ganha o aviso **"Batida no meio do turno da noite — não contou como saída"**. A
+  marcação continua no registro (Portaria 671). ⚠️ Escolha: se um vigia sair de verdade e voltar, a noite é paga
+  inteira — o aviso e as rondas da noite (ronda perdida) são o que mostra isso ao DP.
+- **21/10, entrou 16:45 e saiu 07:01 numa escala até 05:00** — a conta já dava 14h16 e 2h16 de extra, mas o espelho
+  oferecia "Saída 05:00" para incluir, porque a saída estava a mais de 2 h da escala. Agora o dia completo (batidas em
+  número par, ao menos as previstas) não pede batida nenhuma (`ajustes.faltantes`).
 **No ramo, esperando o "pode"** — SEM MIGRAÇÃO.
 
 ## 30/10/2026 (noite, terceira) — O ciclo 12x36 automático, e a noite fora do ciclo para o DP decidir

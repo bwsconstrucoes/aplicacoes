@@ -37,7 +37,7 @@ GRAVIDADE = {
     "FALTA": "ATENCAO", "FALTA_PARCIAL": "ATENCAO", "BATIDA_FALTANDO": "ATENCAO",
     "COMPENSACAO_NAO_CUMPRIDA": "ATENCAO", "TRABALHOU_NA_FOLGA": "ATENCAO", "ATRASO": "INFO",
     "SAIDA_ANTECIPADA": "INFO", "EXTRA_ACIMA_DE_2H": "ATENCAO", "INTERVALO_CURTO": "ATENCAO",
-    "INTERJORNADA_CURTA": "ATENCAO", "TRABALHO_EM_DESCANSO": "INFO", "FORA_DO_CICLO": "ATENCAO", "TRABALHO_EM_FERIADO": "INFO",
+    "INTERJORNADA_CURTA": "ATENCAO", "TRABALHO_EM_DESCANSO": "INFO", "FORA_DO_CICLO": "ATENCAO", "BATIDA_NO_MEIO_DO_TURNO": "ATENCAO", "TRABALHO_EM_FERIADO": "INFO",
     "BATIDA_EM_DIA_ABONADO": "ATENCAO", "SEM_ESCALA": "INFO", "BATIDA_REPETIDA": "INFO",
     "FALTAS_SEGUIDAS": "URGENTE", "ATRASO_RECORRENTE": "ATENCAO",
     "FORA_DA_CERCA_REPETIDO": "ATENCAO", "DOIS_LUGARES": "URGENTE",
@@ -56,6 +56,7 @@ ROTULO = {
     "EXTRA_ACIMA_DE_2H": "Extra acima de 2 h", "INTERVALO_CURTO": "Intervalo curto",
     "INTERJORNADA_CURTA": "Menos de 11 h de descanso", "TRABALHO_EM_DESCANSO": "Trabalho em dia de descanso",
     "FORA_DO_CICLO": "Noite fora do ciclo 12x36 — troca de plantão ou extra? O DP decide",
+    "BATIDA_NO_MEIO_DO_TURNO": "Batida no meio do turno da noite — não contou como saída",
     "TRABALHO_EM_FERIADO": "Trabalho em feriado", "BATIDA_EM_DIA_ABONADO": "Bateu ponto em dia abonado",
     "SEM_ESCALA": "Sem escala cadastrada", "FALTAS_SEGUIDAS": "Faltas seguidas",
     "BATIDA_REPETIDA": "Batida repetida (menos de 10 min da anterior — contada uma vez)",
@@ -74,7 +75,7 @@ ROTULO = {
 }
 # Os que nascem do cálculo de UM dia — podem ser resolvidos sozinhos.
 DO_DIA = {"FALTA", "FALTA_PARCIAL", "BATIDA_FALTANDO", "COMPENSACAO_NAO_CUMPRIDA", "TRABALHOU_NA_FOLGA", "ATRASO", "SAIDA_ANTECIPADA", "EXTRA_ACIMA_DE_2H",
-          "INTERVALO_CURTO", "INTERJORNADA_CURTA", "TRABALHO_EM_DESCANSO", "TRABALHO_EM_FERIADO", "FORA_DO_CICLO",
+          "INTERVALO_CURTO", "INTERJORNADA_CURTA", "TRABALHO_EM_DESCANSO", "TRABALHO_EM_FERIADO", "FORA_DO_CICLO", "BATIDA_NO_MEIO_DO_TURNO",
           "BATIDA_EM_DIA_ABONADO", "BATIDA_REPETIDA"}
 
 JANELA_DIAS = 7            # alertas de dia: só a última semana (sem enxurrada de histórico)

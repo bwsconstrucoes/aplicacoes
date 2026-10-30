@@ -80,7 +80,15 @@ def so_entrada_e_saida(previstas: list[dict]) -> list[dict]:
 
 def faltantes(previstas: list[dict], batidas_min: list[int], *, casar_min: int = CASAR_MIN) -> list[dict]:
     """PURA. Quais horários previstos não têm batida perto. Cada batida casa com
-    um previsto só (o mais perto), e só a até `casar_min` minutos."""
+    um previsto só (o mais perto), e só a até `casar_min` minutos.
+    Dia completo — batidas em número par, ao menos tantas quanto as previstas (a repetida a menos de
+    10 min conta uma vez) — não tem horário faltando, por mais longe da escala que estejam: a conta do
+    dia já usa todas em sequência (30/10/2026: o vigia que saiu 7h01 numa escala até 5h ganhava um
+    "Saída 05:00" para incluir, com a saída batida)."""
+    from .apuracao import sem_repetidas
+    contam, _ = sem_repetidas(list(batidas_min))
+    if previstas and len(contam) >= len(previstas) and len(contam) % 2 == 0:
+        return []
     livres = sorted(batidas_min)
     faltam = []
     for p in previstas:
