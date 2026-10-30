@@ -55,6 +55,14 @@ def test_o_ciclo_12x36_sai_das_batidas():
     assert dia_do_ciclo((), d0, data_base=d0 - dt.timedelta(days=2)) is True
     assert dia_do_ciclo((), d0) is None
     assert dia_do_ciclo(dias(0), d0) is True
+    # o começo do ponto (30/10/2026, o vigia dos dias ímpares desde 17/10, com "16" informado ao dar a
+    # escala): sem noite antes, votam as noites seguintes — e o dia informado não passa por cima delas
+    impares = tuple(dt.date(2026, 10, n) for n in (17, 19, 21, 23, 25, 27, 29))
+    base = dt.date(2026, 10, 16)
+    assert dia_do_ciclo(impares, dt.date(2026, 10, 16), base) is False
+    assert dia_do_ciclo(impares, dt.date(2026, 10, 17), base) is True
+    assert dia_do_ciclo(impares, dt.date(2026, 10, 18), base) is False
+    assert dia_do_ciclo(impares, dt.date(2026, 10, 31), base) is True
 
 
 @pytest.mark.banco

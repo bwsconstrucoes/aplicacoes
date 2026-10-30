@@ -81,26 +81,33 @@ JANELA_CICLO_AUTOMATICO = 30
 def dia_do_ciclo(trabalhados: tuple, dia: dt.date, data_base: Optional[dt.date] = None) -> Optional[bool]:
     """PURA. O `dia` é de trabalho no 12x36? `trabalhados` = dias com batida, em ordem.
     - Nos 30 dias ANTES dele, conta-se em quantos a pessoa trabalhou na mesma paridade do `dia`
-      (diferença par) e em quantos na outra; ganha a maioria. Empate: vale o mais antigo da janela (o
-      ciclo que já vinha — uma noite a mais no começo não vira o ciclo). O
-      próprio `dia` não vota — por isso a noite trabalhada fora do ciclo é extra, não vira o ciclo.
-    - Sem batida na janela: a paridade do último dia trabalhado, por mais antigo que seja.
-    - Nunca trabalhou: o dia informado ao dar a escala, se houver; senão, o primeiro dia com batida
-      abre o ciclo (antes dele, nada é previsto — None)."""
-    de = dia - dt.timedelta(days=JANELA_CICLO_AUTOMATICO)
-    janela = [w for w in trabalhados if de <= w < dia]
-    if janela:
-        mesma = sum(1 for w in janela if (dia - w).days % 2 == 0)
-        outra = len(janela) - mesma
+      (diferença par) e em quantos na outra; ganha a maioria. Empate: vale o mais antigo dos que
+      votaram (o ciclo que já vinha — uma noite a mais no começo não vira o ciclo). O próprio `dia`
+      não vota — por isso a noite trabalhada fora do ciclo é extra, não vira o ciclo.
+    - Com menos de 2 noites antes (o começo do ponto ou da escala), votam também os 30 dias DEPOIS.
+      (30/10/2026, o vigia que trabalha nos dias ímpares desde 17/10: sem ninguém antes, o dia 16
+      caía no "dia de trabalho" informado ao dar a escala e virava falta.)
+    - Ninguém votou: a paridade do último dia trabalhado, por mais antigo que seja.
+    - Nunca trabalhou: o dia informado ao dar a escala, se houver; senão nada é previsto (None),
+      a não ser no próprio dia com batida, que abre o ciclo."""
+    janela = dt.timedelta(days=JANELA_CICLO_AUTOMATICO)
+    votos = [w for w in trabalhados if dia - janela <= w < dia]
+    if len(votos) < 2:
+        votos += [w for w in trabalhados if dia < w <= dia + janela]
+    if votos:
+        mesma = sum(1 for w in votos if (dia - w).days % 2 == 0)
+        outra = len(votos) - mesma
         if mesma != outra:
             return mesma > outra
-        return (dia - janela[0]).days % 2 == 0
+        return (dia - votos[0]).days % 2 == 0
     antes = [w for w in trabalhados if w < dia]
     if antes:
         return (dia - antes[-1]).days % 2 == 0
+    if dia in trabalhados:
+        return True
     if data_base:
         return (dia - data_base).days % 2 == 0
-    return True if dia in trabalhados else None
+    return None
 
 
 @dataclass(frozen=True)

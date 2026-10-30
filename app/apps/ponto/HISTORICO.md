@@ -410,6 +410,15 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 30/10/2026 (madrugada de 31) — O começo do ciclo automático: as noites seguintes também votam
+
+O dono, mostrando um vigia que trabalha nos dias ímpares desde 17/10: o dia 16 saiu **falta** e o 17 **noite fora do
+ciclo**. Causa: no começo do ponto não havia noite trabalhada ANTES para votar, e a regra caía no "dia de trabalho"
+informado ao dar a escala (o "16"), que passava por cima das batidas. Agora, com menos de 2 noites nos 30 dias antes,
+votam também as dos 30 dias depois; e o dia informado só vale para quem não tem batida nenhuma. É cálculo, não dado
+gravado: o espelho do vigia se corrige sozinho, sem botão. Teste com o caso dele (16 folga, 17 e 31 trabalho).
+**No ramo, esperando o "pode"** — SEM MIGRAÇÃO.
+
 ## 30/10/2026 (noite, terceira) — O ciclo 12x36 automático, e a noite fora do ciclo para o DP decidir
 
 O dono: *"essa questão do dia em que o ciclo começa, eu acho que acaba atrapalhando. Na minha visão, isso poderia ser
