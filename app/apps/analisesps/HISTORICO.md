@@ -12244,6 +12244,38 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 246 — O "Atualizar" só traz a SPsBD; ponto e apoios em pistas próprias (31/10/2026) — MIGRAÇÃO 055
+
+- *"Existe o botão atualizar no topo à direita. Ele atualiza o quê? Acho que
+  deveria atualizar apenas a SPsBD. E como estão as outras atualizações? Tem
+  agendamento? (…) preciso que seja atualizado somente SPsBD e ele dá: Já existe
+  uma atualização em andamento (buscando notas na Receita — … CTE, lote 1, desde
+  16:12)."*
+- **Como era:** o "Atualizar" (e a tela aberta, de 5 em 5 min) rodava
+  "sincronizar" = devolver alterações + SPs alteradas + PLANILHAS DE APOIO (de
+  hora em hora: C. Diários, documentação fiscal, agenda, listas do rateio,
+  notas da Receita e do FSist). A busca na Receita pode levar muitos minutos —
+  e tudo (também o ponto do mês e o faturamento) corria na MESMA pista: uma
+  viva por vez. Era isso que barrava a SPsBD.
+- **Como ficou:**
+  - "Atualizar" (topo) e a tela aberta = SÓ as SPs (devolver alterações + trazer
+    as alteradas). Rápido.
+  - As planilhas de apoio saem sozinhas de hora em hora (`apoios_se_preciso`,
+    chamado pela tela aberta e pelo agendador), na pista "apoios". O botão em
+    Configurações continua, para forçar.
+  - Pistas (migração 055): geral (SPs: sincronizar, carga inicial, fila,
+    comprovantes) · apoios (apoios, Receita, ciência, fiscal, IA, faturamento) ·
+    ponto (ponto do mês e o diário) · cadastro (colaboradores) · pessoa (ponto de
+    uma pessoa). Uma viva por pista; uma pista não segura a outra.
+  - Configurações mostra o que roda nas outras pistas; as telas fiscais, do
+    faturamento e do ponto acompanham a pista delas.
+- **Antes do botão da 055:** o ponto e os apoios ainda dividem a pista com as SPs
+  (o índice da 054); o pedido recusado diz para apertar o botão.
+- **Agendamento (respondido ao dono):** não há agendador interno. A tela aberta
+  dispara a atualização das SPs a cada 5 min (e os apoios de hora em hora); o
+  cron-job.org pode chamar `/api/sincronizar` (SPs e, se passou a hora, apoios) e
+  o `ponto_diario` de madrugada — se ele configurou (instrução dada em outubro).
+
 #### Leva 245 — Atualizar só a C. Diários (30/10/2026)
 
 - **Publicada em 30/10/2026** (main trazida para o ramo; suíte inteira verde: 9563
