@@ -410,6 +410,40 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 31/10/2026 (vigésima sexta) — Uma tela só de Pessoas; e o "Ver mosaico" que não fazia nada
+
+**Pessoas.** O dono: *"essas pessoas [que não batem ponto] ficam sumidas completamente, eu não vejo ela em canto
+nenhum (…) não compreendo bem a diferença de Configuração › Pessoas para Pessoas (…) está em duplicidade (…) existe
+o padrão de exibição, as que batem ponto, beleza. Mas se eu quiser visualizar gente que está desligada, isso,
+aquilo (…) ele está como uma pessoa que não bate ponto, mas eu quero que ele possa visualizar o aplicativo de ponto.
+Aí eu não tenho gestão sobre isso, fica tudo travado."*
+- **Uma tela só: Ponto › Pessoas.** Em cima da lista, botões com a contagem: ✅ Bate ponto (o padrão) · 🚫 Não
+  bate ponto · 🩺 Afastados · 👋 Desligados · Todos do cadastro. A contagem segue a busca e os filtros: buscando um
+  nome que está em outro grupo, o botão daquele grupo mostra "1" — e a lista vazia diz "Mas há: Desligados (1)",
+  com o clique que leva lá. A regra do grupo é `cadastros.categoria_no_ponto` (pura): desligado e afastado primeiro
+  (do cadastro ou da planilha), depois quem não bate (pela planilha ou marcado no ponto), o resto bate.
+- **Colunas novas:** "No ponto" (o grupo e o porquê: "pela planilha de colaboradores: PJ", "marcado no ponto:
+  <motivo>", "por exceção") e "Foge do padrão" (celular, pedidos pelo celular, administrativo, **liberado pelo DP**,
+  ronda, banco, exceção à planilha — `cadastros.excecoes_da_pessoa`). Na barra, o filtro "Foge do padrão".
+- **Configuração › Pessoas deixou de existir.** O cartão "Base de pessoas do ponto" (de onde vem o cadastro) foi
+  para Configuração › Geral; o de "Exceções ao padrão" virou o filtro de Pessoas, e a parte dos aparelhos de lista
+  ficou em Configuração › Aparelhos. O endereço antigo (`#pessoas`) leva para Ponto › Pessoas. A lista de
+  exceções antiga só via quem bate ponto — quem não bate e foi liberado ficava de fora; agora aparece.
+- **A ficha diz "Entra no aplicativo?"** (Cadastro): Sim (vê o próprio ponto, e acompanha outros se for
+  administrativo ou liberado) · Sim, só para acompanhar os outros (não bate, mas é administrativo ou liberado) ·
+  Não — com os dois caminhos em botão: "liberar no aplicativo…" (acompanhar a equipe) e "voltar a bater ponto…" /
+  "liberar para bater ponto (exceção à planilha)…" (ver o próprio ponto). A regra é a do servidor
+  (`papeis.entra_no_app`).
+
+**Mosaico.** O dono: *"eu clico Ver mosaico, nada acontece."* O botão só agia com uma obra escolhida na lista; sem
+obra, não fazia nada e não avisava. Agora, sem obra, as obras com batida no dia aparecem no meio da tela, um botão
+por obra (com quantas pessoas) — um clique abre o mosaico dela. Na abertura da tela também.
+
+Testes: a regra dos grupos e das exceções (pura); a lista com grupo, contagem e o LIBERADO de quem não bate; o
+padrão continua sendo quem bate. Ensaio no navegador: os grupos, a ficha de quem não bate, a Configuração sem a
+aba Pessoas (e o `#pessoas` antigo levando para a tela), o Mosaico sem obra e o clique numa obra. Suíte inteira.
+**Publicado em 31/10/2026** (com o "pode" do dono) — SEM MIGRAÇÃO.
+
 ## 31/10/2026 (vigésima quinta) — Do "Ponto da minha equipe" para a pessoa, e o voltar volta para a equipe
 
 O dono: *"quando eu entro em alguém para corrigir o ponto e boto voltar, o botão é 'voltar à lista', e ele volta para a

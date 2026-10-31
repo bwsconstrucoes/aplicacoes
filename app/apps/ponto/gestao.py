@@ -476,14 +476,15 @@ def ponto_api_pessoas():
     quem = _quem()
     busca = (request.args.get("busca") or "").strip().lower()
     with db.conexao() as conn:
-        # quem aparece (31/10/2026, o dono: "uma coisa são as pessoas que batem ponto, outra coisa são as pessoas do
-        # cadastro (…) deveria ter filtro pra exibir todos, ou os que batem ponto, ou os que não batem"):
-        # SIM (padrão) = quem bate; NAO = quem está no cadastro e não bate (fora o desligado); TODOS = o cadastro todo
-        bate = (request.args.get("bate") or ("TODOS" if request.args.get("todos") in ("1", "true") else "SIM")).upper()
-        pessoas = cadastros.listar_colaboradores(conn, so_ativos=bate == "SIM")
-        if bate == "NAO":
-            batem = {int(p["id"]) for p in cadastros.listar_colaboradores(conn, so_ativos=True)}
-            pessoas = [p for p in pessoas if int(p["id"]) not in batem and p.get("situacao") != "DESLIGADO"]
+        # Quem aparece (31/10/2026; desde a tarde, uma tela só de Pessoas), uma tela só de Pessoas: o cadastro TODO, cada um num grupo
+        # (`cadastros.categoria_no_ponto`) — bate, não bate, afastado, desligado —, com a contagem de cada grupo
+        # para a busca e os filtros de agora. `grupo` escolhe o que aparece; `bate` (SIM/NAO/TODOS) é o nome antigo.
+        antigo = {"SIM": "BATE", "NAO": "NAO_BATE", "TODOS": "TODOS"}
+        grupo = (request.args.get("grupo") or antigo.get((request.args.get("bate") or "").upper())
+                 or ("TODOS" if request.args.get("todos") in ("1", "true") else "BATE")).upper()
+        if grupo not in cadastros.CATEGORIAS + ("TODOS",):
+            grupo = "BATE"
+        pessoas = cadastros.listar_colaboradores(conn, so_ativos=False)
         if quem.obras is not None:
             alcance = set(quem.obras)
             pessoas = [p for p in pessoas if p.get("obra_id") in alcance
@@ -500,6 +501,15 @@ def ponto_api_pessoas():
             hoje = horario.hoje()
             pessoas, _ = filtro_pessoas.aplicar(conn, Quem(nome=quem.nome, obras=None), pessoas, f,
                                                 hoje - dt.timedelta(days=30), hoje)
+        categoria = {int(p["id"]): cadastros.categoria_no_ponto(p) for p in pessoas}
+        contagem = {c: 0 for c in cadastros.CATEGORIAS}
+        for c, _ in categoria.values():
+            contagem[c] += 1
+        contagem["TODOS"] = len(pessoas)
+        if grupo != "TODOS":
+            pessoas = [p for p in pessoas if categoria[int(p["id"])][0] == grupo]
+        from .core import papeis
+        liberados = papeis.com_liberacao(conn)
         vig = {v["colaborador_id"]: v for v in db.todos(conn, """
             SELECT DISTINCT ON (ce.colaborador_id) ce.colaborador_id, e.nome
               FROM ponto.colaborador_escalas ce JOIN ponto.escalas e ON e.id = ce.escala_id
@@ -534,8 +544,10 @@ def ponto_api_pessoas():
         j["obras_batidas"] = bateu.get(p["id"], [])
         j["etiquetas"] = etiquetas.para_json(marcas.get(int(p["id"]), []))
         j["regime_banco_rotulo"] = banco.ROTULOS.get(j["regime_banco"], j["regime_banco"])
+        j["grupo"], j["grupo_motivo"] = categoria[int(p["id"])]
+        j["excecoes"] = cadastros.excecoes_da_pessoa(p, int(p["id"]) in liberados)
         saida.append(j)
-    return _ok(pessoas=saida, quantidade=len(saida), fora_da_lista=fora_da_lista)
+    return _ok(pessoas=saida, quantidade=len(saida), fora_da_lista=fora_da_lista, grupo=grupo, contagem=contagem)
 
 
 @bp.route("/erp/api/ponto/pessoas/<int:colaborador_id>")

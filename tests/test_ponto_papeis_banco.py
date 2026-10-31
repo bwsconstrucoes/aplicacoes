@@ -729,3 +729,21 @@ def test_o_resumo_separa_os_problemas_do_dia():
     assert (ini, fim) == (dt.date(2026, 10, 24), dt.date(2026, 10, 30))
     ini, fim, _ = periodo("anterior", dt.date(2026, 10, 31))
     assert (ini, fim) == (dt.date(2026, 9, 1), dt.date(2026, 9, 30))
+
+
+def test_categoria_no_ponto_e_excecoes_da_pessoa():
+    """PURA (31/10/2026): o grupo da pessoa na tela de Pessoas e o que foge do padrão."""
+    from app.apps.ponto.core.cadastros import categoria_no_ponto, excecoes_da_pessoa
+    assert categoria_no_ponto({"situacao": "DESLIGADO", "ativo_no_ponto": True})[0] == "DESLIGADO"
+    assert categoria_no_ponto({"situacao": "AFASTADO", "ativo_no_ponto": False})[0] == "AFASTADO"
+    g, m = categoria_no_ponto({"situacao": "ATIVO", "ativo_no_ponto": False, "nao_bate_motivo": "PJ"})
+    assert g == "NAO_BATE" and "planilha" in m and "PJ" in m
+    g, m = categoria_no_ponto({"situacao": "ATIVO", "ativo_no_ponto": False, "inativo_motivo": "escritório"})
+    assert g == "NAO_BATE" and "marcado no ponto: escritório" == m
+    g, m = categoria_no_ponto({"situacao": "ATIVO", "ativo_no_ponto": True, "bate_por_excecao": True,
+                               "nao_bate_planilha": "PJ"})
+    assert g == "BATE" and "exceção" in m
+    assert categoria_no_ponto({"situacao": "ATIVO", "ativo_no_ponto": True}) == ("BATE", "")
+    assert excecoes_da_pessoa({"regime_banco": "SEM_BANCO"}) == []
+    assert excecoes_da_pessoa({"administrativo_obra": True, "regime_banco": "BANCO_6M", "bate_no_celular": True},
+                              liberado=True) == ["CELULAR", "ADMINISTRATIVO", "LIBERADO", "BANCO"]

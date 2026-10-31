@@ -68,3 +68,25 @@ def test_quem_nao_bate_ponto_mas_foi_liberado_entra_no_aplicativo(app, mundo):
     ids = lambda bate: {x["id"] for x in dp.get(f"/erp/api/ponto/pessoas?bate={bate}").get_json()["pessoas"]}  # noqa: E731
     assert mundo["joao"] in ids("NAO") and mundo["joao"] not in ids("SIM") and mundo["joao"] in ids("TODOS")
     assert mundo["maria"] in ids("SIM") and mundo["maria"] not in ids("NAO")
+
+
+def test_pessoas_numa_tela_so_grupos_contagem_e_excecoes(app, mundo):
+    """31/10/2026, o dono: "essas pessoas ficam sumidas completamente (…) o padrão são as que batem ponto, mas se eu
+    quiser visualizar gente que está desligada, isso, aquilo". O cadastro todo, cada um num grupo, com a contagem de
+    cada grupo; quem não bate e foi liberado aparece em "não bate" com a exceção LIBERADO."""
+    from app.apps.ponto import db
+    from app.apps.ponto.core import cadastros
+    from tests.test_ponto_gestao_banco import como
+    with db.conexao() as conn:
+        cadastros.marcar_bate_ponto(conn, mundo["joao"], False, "só ajuda o DP", "teste")
+    dp = como(app, mundo["dp"])
+    assert dp.post(f"/erp/api/ponto/pessoas/{mundo['joao']}/forma-de-bater",
+                   json={"liberado_obras": ["PG-B"]}).status_code == 200
+    d = dp.get("/erp/api/ponto/pessoas?grupo=NAO_BATE").get_json()
+    joao = next(x for x in d["pessoas"] if x["id"] == mundo["joao"])
+    assert joao["grupo"] == "NAO_BATE" and "só ajuda o DP" in joao["grupo_motivo"] and "LIBERADO" in joao["excecoes"]
+    assert d["contagem"]["NAO_BATE"] >= 1 and d["contagem"]["TODOS"] >= d["contagem"]["BATE"] + 1
+    assert all(x["grupo"] == "NAO_BATE" for x in d["pessoas"])
+    padrao = dp.get("/erp/api/ponto/pessoas").get_json()                     # o padrão: quem bate
+    assert padrao["grupo"] == "BATE" and mundo["joao"] not in {x["id"] for x in padrao["pessoas"]}
+    assert mundo["maria"] in {x["id"] for x in padrao["pessoas"]}
