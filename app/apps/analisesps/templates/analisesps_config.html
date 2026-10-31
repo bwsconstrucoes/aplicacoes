@@ -313,6 +313,15 @@
       </div>
     {% endif %}
   </div>
+  {# AS OUTRAS PISTAS (31/10/2026): o ponto do mês, as planilhas de apoio com a
+     Receita e o cadastro correm à parte e não seguram a atualização das SPs. #}
+  {% for rotulo, e in outras_pistas or [] %}
+    {% if e.rodando %}
+      <p class="cartao-dica" style="margin:4px 0"><b>{{ rotulo }}:</b> rodando à parte —
+        {{ e.detalhe.etapa }}{% if e.detalhe.progresso %} ({{ e.detalhe.progresso }}){% endif %}.
+        Não segura a atualização das SPs.</p>
+    {% endif %}
+  {% endfor %}
 
   {% if pode_operar %}
     {# SÓ O QUE É CARGA DA BASE FICA AQUI.

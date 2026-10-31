@@ -228,7 +228,7 @@ if (btnPonto) btnPonto.addEventListener("click", async () => {
     dizPonto("Importação em andamento. É possível fechar a página; o processamento continua no servidor.");
     const relogio = setInterval(async () => {
       try {
-        const a = await fetch("{{ url_for('analisesps.andamento') }}");
+        const a = await fetch("{{ url_for('analisesps.andamento', pista='ponto') }}");
         const e = await a.json();
         if (e.rodando) {
           dizPonto(e.progresso || e.etapa || "Importando…");
@@ -248,7 +248,7 @@ if (btnPonto) btnPonto.addEventListener("click", async () => {
 (function acompanharSozinho() {
   const relogio = setInterval(async () => {
     try {
-      const a = await fetch("{{ url_for('analisesps.andamento') }}");
+      const a = await fetch("{{ url_for('analisesps.andamento', pista='ponto') }}");
       const e = await a.json();
       const alvo = document.getElementById("andando-etapa");
       if (e.rodando) {

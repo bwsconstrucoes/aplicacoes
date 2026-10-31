@@ -323,7 +323,7 @@ def test_a_tela_de_configuracoes_monta_mesmo_com_o_banco_fora(app, monkeypatch):
     monkeypatch.setattr(migracoes_runner, "listar_estado",
                         lambda: (_ for _ in ()).throw(RuntimeError("banco fora")))
     monkeypatch.setattr(tarefas, "estado",
-                        lambda: {"rodando": False, "detalhe": None,
+                        lambda pista="geral": {"rodando": False, "detalhe": None,
                                  "interrompida": None})
     resposta = como(app, SENHA_OPERADOR).get("/analisesps/configuracoes")
     assert resposta.status_code == 200
@@ -334,7 +334,7 @@ def test_a_tela_de_configuracoes_mostra_carga_em_andamento(app, monkeypatch):
     from app.apps.analisesps import migracoes_runner, tarefas
     monkeypatch.setattr(migracoes_runner, "listar_estado",
                         lambda: {"aplicadas": [], "pendentes": []})
-    monkeypatch.setattr(tarefas, "estado", lambda: {
+    monkeypatch.setattr(tarefas, "estado", lambda pista="geral": {
         "rodando": True, "interrompida": None,
         "detalhe": {"etapa": "trazendo as SPs da planilha",
                     "progresso": "20000 de 59055", "visto_em": None}})
@@ -353,7 +353,7 @@ def test_carga_interrompida_aparece_como_interrompida(app, monkeypatch):
     from app.apps.analisesps import migracoes_runner, tarefas
     monkeypatch.setattr(migracoes_runner, "listar_estado",
                         lambda: {"aplicadas": [], "pendentes": []})
-    monkeypatch.setattr(tarefas, "estado", lambda: {
+    monkeypatch.setattr(tarefas, "estado", lambda pista="geral": {
         "rodando": False, "detalhe": None,
         "interrompida": {"etapa": "trazendo as SPs da planilha",
                          "progresso": "20000 de 59055", "visto_em": None}})
@@ -6972,7 +6972,7 @@ def test_a_tela_do_ponto_DIZ_que_esta_carregando_ao_abrir(app, monkeypatch):
     monkeypatch.setattr(_ponto, "_pronto", lambda: True)
     monkeypatch.setattr(_ponto, "configurado", lambda: True)
     monkeypatch.setattr(_ponto, "cargas", lambda *a, **k: [])
-    monkeypatch.setattr(tarefas, "estado", lambda: {
+    monkeypatch.setattr(tarefas, "estado", lambda pista="geral": {
         "rodando": True, "detalhe": {"etapa": "ponto",
                                      "progresso": "página 3 de 12"}})
 
@@ -6991,7 +6991,7 @@ def test_a_tela_do_ponto_avisa_quando_a_carga_foi_INTERROMPIDA(app, monkeypatch)
     monkeypatch.setattr(_ponto, "_pronto", lambda: True)
     monkeypatch.setattr(_ponto, "configurado", lambda: True)
     monkeypatch.setattr(_ponto, "cargas", lambda *a, **k: [])
-    monkeypatch.setattr(tarefas, "estado", lambda: {
+    monkeypatch.setattr(tarefas, "estado", lambda pista="geral": {
         "rodando": False, "interrompida": {"etapa": "ponto"}, "detalhe": {}})
 
     html = _como_mestre(app).get(
@@ -7173,7 +7173,7 @@ def test_a_tela_do_ponto_MOSTRA_a_ultima_tentativa_que_falhou(app, monkeypatch):
     monkeypatch.setattr(_ponto, "_pronto", lambda: True)
     monkeypatch.setattr(_ponto, "configurado", lambda: True)
     monkeypatch.setattr(_ponto, "cargas", lambda *a, **k: [])
-    monkeypatch.setattr(tarefas, "estado", lambda: {
+    monkeypatch.setattr(tarefas, "estado", lambda pista="geral": {
         "rodando": False, "detalhe": None, "interrompida": None})
     monkeypatch.setattr(tarefas, "ultima_do_tipo", lambda tipo: {
         "tipo": "ponto", "disparo": "MARCELO",
@@ -7202,7 +7202,7 @@ def test_a_tela_do_ponto_mostra_a_ultima_que_DEU_CERTO_mas_veio_vazia(
     monkeypatch.setattr(_ponto, "_pronto", lambda: True)
     monkeypatch.setattr(_ponto, "configurado", lambda: True)
     monkeypatch.setattr(_ponto, "cargas", lambda *a, **k: [])
-    monkeypatch.setattr(tarefas, "estado", lambda: {
+    monkeypatch.setattr(tarefas, "estado", lambda pista="geral": {
         "rodando": False, "detalhe": None, "interrompida": None})
     monkeypatch.setattr(tarefas, "ultima_do_tipo", lambda tipo: {
         "tipo": "ponto", "disparo": "MARCELO",

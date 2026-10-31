@@ -1866,6 +1866,11 @@ def configuracoes():
         aviso=request.args.get("aviso") or None,
         base=consultas.base_carregada(),
         andamento=tarefas.estado(),
+        # As outras pistas que estão rodando agora (31/10/2026): o ponto do mês,
+        # as planilhas de apoio e a Receita não seguram mais as SPs.
+        outras_pistas=[(rotulo, tarefas.estado(p)) for p, rotulo in (
+            ("apoios", "Planilhas de apoio, Receita e fiscal"), ("ponto", "Ponto do mês"),
+            ("cadastro", "Cadastro de colaboradores"))],
         ultima=tarefas.ultima_concluida() if not erro_banco else None,
         modos=tarefas.MODOS, modos_da_base=tarefas.MODOS_DA_BASE,
         versao=os.getenv("RENDER_GIT_COMMIT", "")[:8] or "desenvolvimento",
@@ -2027,7 +2032,7 @@ def andamento():
     # `?pista=cadastro` acompanha a atualização dos colaboradores, que roda na
     # pista dela (migração 054) — a geral é a da sincronização.
     pista = request.args.get("pista") if request.args.get("pista") in (
-        "pessoa", "cadastro") else "geral"
+        "pessoa", "cadastro", "ponto", "apoios") else "geral"
     estado = tarefas.estado(pista)
     if pista == "cadastro" and not estado["rodando"] and tarefas.estado()["rodando"] \
             and tarefas._pedido_pendente("colaboradores"):
@@ -2130,6 +2135,10 @@ def sincronizar():
         return {"ok": False, "erro": "Não autorizado."}, 403
 
     resultado = tarefas.disparar(modo, disparo=disparo)
+    # O agendador também mantém as planilhas de apoio (de hora em hora, na pista
+    # delas) — desde 31/10/2026 elas não vêm mais dentro da sincronização.
+    if disparo == "agendador" and modo == "sincronizar":
+        tarefas.apoios_se_preciso("agendador")
     # Ocupado e é um dos botões que esperam a vez: vai para a fila e começa
     # sozinho quando a outra terminar (16/10/2026).
     if (not resultado.get("ok") and resultado.get("ocupado")
@@ -2433,7 +2442,7 @@ def _estado_do_faturamento() -> dict:
     atualizar e conferir no Omie (10/10/2026: *"importar notas antigas e
     atualizar da planilha não deveria ficar aqui; deixa em Configurações"*)."""
     from . import faturamento, tarefas
-    andamento = tarefas.estado()
+    andamento = tarefas.estado("apoios")   # a pista do faturamento (055, 31/10/2026)
     tipo = (andamento.get("detalhe") or {}).get("tipo") if andamento.get("rodando") else ""
     rodando = tipo in ("faturamento", "faturamento_antigas")
     return {"carregado_em": faturamento.carregado_em(),
@@ -4533,7 +4542,7 @@ def tela_folha_ponto():
     andando = {"rodando": False}
     ultima = None
     try:
-        estado = tarefas.estado()
+        estado = tarefas.estado("ponto")   # a pista do ponto (055, 31/10/2026)
         detalhe = estado.get("detalhe") or {}
         andando = {"rodando": bool(estado.get("rodando")),
                    "etapa": detalhe.get("etapa") or "",
@@ -7397,7 +7406,7 @@ def tela_fiscal():
             primeira_linha=(pagina - 1) * fiscal.NOTAS_POR_PAGINA + 1,
             ultima_linha=ultima, tem_proxima=ultima < total, args=request.args,
             painel_notas=painel_notas, categorias=fiscal.CATEGORIAS,
-            andamento=tarefas.estado(), acoes=ACOES_FISCAIS,
+            andamento=tarefas.estado("apoios"), acoes=ACOES_FISCAIS,
             ultimas=tarefas.ultimas_por_tipo(tarefas.MODOS_FISCAIS),
             aviso=request.args.get("aviso") or None,
             pode_operar=auth.pode_operar(),
@@ -7461,7 +7470,7 @@ def tela_fiscal():
         rotulos_fiscais=consultas.ROTULOS_FISCAIS,
         grupos_de_recorte=consultas.GRUPOS_DE_RECORTE,
         frases_do_recorte=consultas.FRASE_DO_RECORTE,
-        andamento=tarefas.estado(), acoes=ACOES_FISCAIS,
+        andamento=tarefas.estado("apoios"), acoes=ACOES_FISCAIS,
         ultimas=tarefas.ultimas_por_tipo(tarefas.MODOS_FISCAIS),
         aviso=request.args.get("aviso") or None,
         pode_operar=auth.pode_operar(),

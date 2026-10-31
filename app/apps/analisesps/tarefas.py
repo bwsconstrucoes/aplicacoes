@@ -49,9 +49,15 @@ SEGUNDOS_ENTRE_BATIMENTOS = 10
 SEGUNDOS_ATE_DAR_POR_MORTA = 180
 
 MODOS = {
-    "sincronizar": "Atualização do dia — traz o que mudou na planilha",
+    # ⚠️ SÓ AS SPs DESDE 31/10/2026 (o botão "Atualizar" do topo e a tela aberta).
+    # O dono: *"existe o botão atualizar no topo à direita. Ele atualiza o quê?
+    # Acho que ele deveria atualizar apenas a SPsBD."* As planilhas de apoio
+    # (com a busca na Receita) saíram daqui — rodam sozinhas, de hora em hora, na
+    # pista delas (`apoios_se_preciso`).
+    "sincronizar": "Atualizar as SPs — traz da SPsBD o que mudou e devolve as alterações pendentes",
     "carga_inicial": "Primeira carga — traz a planilha inteira (demorado)",
-    "apoios": "Só as planilhas de apoio (contas e documentação fiscal)",
+    "apoios": "Planilhas de apoio — C. Diários, documentação fiscal, agenda, listas do "
+              "rateio e as notas da Receita e do FSist",
     "fila": "Só devolver para a planilha as alterações pendentes",
     "comprovantes": "Dar baixa nos comprovantes arrastados para a tela",
     # O cadastro vem do Pipefy pela planilha "Registro de Colaboradores". Este
@@ -126,11 +132,22 @@ MODOS_DA_PESSOA = ("ponto_pessoa", "ponto_lancar")
 # a fila (ver `disparar`).
 MODOS_DO_CADASTRO = ("colaboradores",)
 
+# ⚠️ AS PISTAS DO PONTO E DOS APOIOS (migração 055, 31/10/2026). O dono, preso
+# atrás de uma busca na Receita: *"agora preciso que seja atualizado somente
+# SPsBD e ele dá essa mensagem: Já existe uma atualização em andamento (buscando
+# notas na Receita…)"*. O ponto do mês (dezenas de páginas do Mobponto) e as
+# planilhas de apoio com a Receita e o fiscal (minutos) correm cada um na sua
+# pista; a GERAL fica para as SPs (sincronizar, carga, fila, comprovantes).
+MODOS_DOS_APOIOS = ("apoios", "notas_receita", "notas_ciencia", "fiscal", "fiscal_ia",
+                    "faturamento", "faturamento_antigas", "faturamento_omie",
+                    "faturamento_completar")
+PISTAS = ("geral", "pessoa", "cadastro", "ponto", "apoios")
+
 # As etapas de cada modo, na ordem. Servem para a retomada: o que já foi
 # marcado como pronto não roda de novo.
 ETAPAS = {
     "carga_inicial": ["carga", "apoios", "fila"],
-    "sincronizar": ["fila", "delta", "apoios"],
+    "sincronizar": ["fila", "delta"],
     "apoios": ["apoios"],
     "fila": ["fila"],
     "comprovantes": ["comprovantes"],
@@ -160,10 +177,20 @@ def _fila_do_ponto_pronta() -> bool:
 
 def pista_do(modo: str) -> str:
     """"pessoa" para os modos de uma pessoa só; "cadastro" para o cadastro de
-    colaboradores; "geral" para o resto."""
+    colaboradores; "ponto" para o ponto do mês; "apoios" para as planilhas de
+    apoio, a Receita, o fiscal e o faturamento; "geral" (as SPs) para o resto.
+    ⚠️ Tem de concordar com o índice da migração 055."""
     if modo in MODOS_DA_PESSOA:
         return "pessoa"
-    return "cadastro" if modo in MODOS_DO_CADASTRO else "geral"
+    if modo in MODOS_DO_CADASTRO:
+        return "cadastro"
+    if modo in MODOS_DO_PONTO:
+        return "ponto"
+    return "apoios" if modo in MODOS_DOS_APOIOS else "geral"
+
+
+def _modos_da_pista(pista: str) -> tuple:
+    return tuple(m for m in MODOS if pista_do(m) == pista)
 
 
 def estado(pista: str = "geral") -> dict:
@@ -171,12 +198,14 @@ def estado(pista: str = "geral") -> dict:
 
     `pista`: "geral" (o padrão — o que Configurações e a barra de andamento
     mostram) ou "pessoa" (ver `MODOS_DA_PESSOA`)."""
-    fora_da_geral = tuple(MODOS_DA_PESSOA) + tuple(MODOS_DO_CADASTRO)
-    tipos = {"pessoa": tuple(MODOS_DA_PESSOA),
-             "cadastro": tuple(MODOS_DO_CADASTRO)}.get(pista, fora_da_geral)
-    marcas = ",".join(["?"] * len(tipos))
-    filtro = (f"tipo IN ({marcas})" if pista in ("pessoa", "cadastro")
-              else f"tipo NOT IN ({marcas})")
+    if pista in PISTAS and pista != "geral":
+        tipos = _modos_da_pista(pista)
+        filtro = f"tipo IN ({','.join(['?'] * len(tipos))})"
+    else:
+        # A geral: tudo o que não é de outra pista (inclusive tipo antigo que
+        # o código não conhece mais — fica visível, não some).
+        tipos = tuple(m for m in MODOS if pista_do(m) != "geral")
+        filtro = f"tipo NOT IN ({','.join(['?'] * len(tipos))})"
     try:
         from .db import consultar_um
         linha = consultar_um(
@@ -380,7 +409,7 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
             linha = cur.fetchone()
             cur.close()
         quem_disparou = str((linha or [""])[0] or "")
-        automatica = quem_disparou == "tela aberta"
+        automatica = quem_disparou in ("tela aberta", "agendador")
     except Exception:  # noqa: BLE001 — na dúvida, trata como pedido de gente
         logger.exception("Análise de SPs: não consegui saber quem disparou")
         quem_disparou = ""
@@ -898,9 +927,16 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
 # chegou lote novo enquanto ela rodava.
 # ---------------------------------------------------------------------------
 def encadear_comprovantes(modo: str) -> dict | None:
-    """Começa a baixa dos comprovantes que ficaram esperando. Nunca levanta."""
-    if pista_do(modo) != "geral":
+    """Começa a baixa dos comprovantes que ficaram esperando. Nunca levanta.
+
+    Desde 31/10/2026 (as pistas da 055) o faturamento pedido durante outra
+    tarefa é atendido quando a PISTA DOS APOIOS fica livre — ao fim de uma
+    tarefa da geral ou dos apoios."""
+    pista = pista_do(modo)
+    if pista not in ("geral", "apoios"):
         return None
+    if pista == "apoios":
+        return _encadear_faturamento(modo)
     try:
         from .db import consultar_um
         from .comprovantes import MINUTOS_PARA_ABANDONADO
@@ -925,6 +961,17 @@ def encadear_comprovantes(modo: str) -> dict | None:
         logger.info("Análise de SPs: cadastro de colaboradores pedido durante '%s' — "
                     "começando agora.", modo)
         return disparar("colaboradores", disparo="pedida durante outra tarefa")
+    return _encadear_faturamento(modo)
+
+
+def _encadear_faturamento(modo: str) -> dict | None:
+    """As cargas do faturamento pedidas enquanto outra tarefa rodava — só com a
+    pista dos apoios livre (senão o pedido seria apagado e o disparo, recusado)."""
+    try:
+        if estado("apoios")["rodando"]:
+            return None
+    except Exception:  # noqa: BLE001
+        return None
     # Sem comprovante esperando: a carga do Faturamento pedida enquanto outra
     # tarefa rodava (09/10/2026 — *"cliquei em atualizar e apareceu: já existe
     # uma atualização em andamento"*). Com comprovante, ela vem na volta
@@ -1091,6 +1138,8 @@ def manter_fresco() -> dict:
     Nunca levanta: é chamado de fundo, e uma falha aqui não pode aparecer na
     cara de quem só estava olhando a lista."""
     try:
+        # As planilhas de apoio, de hora em hora, na pista delas (31/10/2026).
+        apoios_se_preciso("tela aberta")
         if estado()["rodando"]:
             return {"disparou": False, "motivo": "já está rodando"}
         minutos = _minutos_desde_a_ultima_sincronizacao()
@@ -1102,6 +1151,20 @@ def manter_fresco() -> dict:
     except Exception:  # noqa: BLE001
         logger.exception("Análise de SPs: falhou manter a base fresca")
         return {"disparou": False, "motivo": "falhou"}
+
+
+def apoios_se_preciso(disparo: str = "tela aberta") -> dict:
+    """As planilhas de apoio, sozinhas, quando passou a hora (31/10/2026). Antes
+    elas iam dentro da sincronização das SPs; agora têm a pista delas e não
+    seguram as SPs. Nunca levanta."""
+    try:
+        if estado("apoios")["rodando"] or _apoios_recentes():
+            return {"disparou": False}
+        r = disparar("apoios", disparo=disparo)
+        return {"disparou": bool(r.get("ok"))}
+    except Exception:  # noqa: BLE001
+        logger.exception("Análise de SPs: falhou disparar as planilhas de apoio")
+        return {"disparou": False}
 
 
 def disparar(modo: str, disparo: str = "manual") -> dict:
@@ -1145,6 +1208,14 @@ def disparar(modo: str, disparo: str = "manual") -> dict:
                             'atualizado para rodar as duas juntas: aperte '
                             '"Aplicar atualizações do banco" em Configurações. '
                             "Até lá, espere a outra terminar."}
+        if ("ux_execucao_viva" in str(e) or "duplicate key" in str(e).lower()) \
+                and pista_do(modo) in ("ponto", "apoios"):
+            # Sem a migração 055, o ponto e os apoios ainda dividem a pista
+            # geral com as SPs (31/10/2026).
+            return {"ok": False, "ocupado": True,
+                    "erro": "Há outra atualização rodando (" + o_que_roda(estado())
+                            + '). Para as duas rodarem juntas, aperte "Aplicar '
+                            'atualizações do banco" em Configurações.'}
         if "ux_execucao_viva" in str(e) or "duplicate key" in str(e).lower():
             logger.info("Análise de SPs: pedido de atualização recusado — "
                         "outra começou no mesmo instante.")
