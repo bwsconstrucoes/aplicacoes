@@ -7318,6 +7318,34 @@ function desenharObrasBase(d) {
       ${kpi("Ativas no ERP fora da planilha", d.ativas_no_erp_fora_da_planilha, d.ativas_no_erp_fora_da_planilha ? "ambar" : "",
             "não aparecem no ponto")}
     </div>
+    {# O AVISO DE COLUNA TROCADA (31/10/2026). Em vermelho e no meio da tela,
+       porque o defeito que ele cobre é silencioso: coluna errada faz TODA obra
+       passar por ativa, concluída inclusive, e a lista continua plausível. #}
+    ${u.alerta_status ? `<div class="aviso erro" style="margin-top:10px">
+      <b>Confira a coluna do status na planilha.</b> ${escapar(u.alerta_status)}</div>` : ""}
+    {# ENCERRAR NO ERP AS QUE A PLANILHA JÁ CONCLUIU. Lista nominal antes do
+       clique: o botão muda dado de produção do ERP, e a planilha é editada por
+       gente que não está pensando no ERP. #}
+    ${(d.encerrar_no_erp_total || 0) ? `<div class="cartao" style="margin-top:12px; box-shadow:none;
+        border:1px solid var(--borda)">
+      <b>${d.encerrar_no_erp_total} obra(s) a planilha diz concluída e o ERP ainda tem como ativa</b>
+      <div class="suave" style="font-size:13px; margin-top:4px">Elas já NÃO aparecem no ponto. Mas continuam
+        na lista de obras do ERP, nos filtros e nas somas, porque o ERP não sabe o que a planilha
+        decidiu. Encerrar aqui grava a fase e tira da lista — e fica no histórico de cada obra,
+        com o texto da planilha, para desfazer na mão se alguma linha estiver errada.</div>
+      <table style="margin-top:8px"><thead><tr><th class="sem-ordem">Obra</th>
+        <th class="sem-ordem">Diz a planilha</th><th class="sem-ordem">Fase hoje</th>
+        <th class="sem-ordem">Fase que fica</th></tr></thead>
+        <tbody>${(d.encerrar_no_erp || []).map(o => `<tr>
+          <td>${escapar(o.codigo)} <small class="suave">${escapar(o.nome || "")}</small></td>
+          <td>${escapar(o.status_planilha || "")}</td>
+          <td class="dados">${escapar(o.fase_hoje || "")}</td>
+          <td class="dados">${escapar(o.fase_nova || "")}</td></tr>`).join("")}</tbody></table>
+      ${d.encerrar_no_erp_total > (d.encerrar_no_erp || []).length
+        ? `<div class="suave" style="font-size:13px">… e mais ${d.encerrar_no_erp_total - (d.encerrar_no_erp || []).length}.</div>` : ""}
+      ${PODE_CONFIGURAR ? `<div style="margin-top:10px"><button class="btn" id="c-obras-encerrar">Encerrar
+        estas ${d.encerrar_no_erp_total} obra(s) no ERP</button></div>` : ""}
+    </div>` : ""}
     ${PODE_CONFIGURAR ? `<div class="campo" style="margin-top:12px; max-width:420px">
       <label for="c-obras-fonte">Base de obras que o ponto usa</label>
       <select id="c-obras-fonte" data-sem-busca>${["PLANILHA", "ERP"].map(f =>
@@ -7339,6 +7367,25 @@ function desenharObrasBase(d) {
   if (PODE_CONFIGURAR) els("c-obras-auto").addEventListener("change", ligarObrasAutomatico);
   if (els("c-obras-sem-coord")) els("c-obras-sem-coord").addEventListener("click", () => {
     FC_OBRAS.marcar("coord", "NAO"); els("c-cercas").scrollIntoView({behavior: "smooth", block: "start"}); });
+  if (els("c-obras-encerrar")) els("c-obras-encerrar").addEventListener("click", encerrarObrasNoErp);
+}
+
+async function encerrarObrasNoErp() {
+  const b = els("c-obras-encerrar");
+  // A confirmação diz O QUE vai mudar e QUANTAS, não um "tem certeza?" que
+  // ninguém lê. Muda dado do ERP, então vale a frase inteira.
+  if (!confirm(b.textContent.trim() + "?\n\nElas saem da lista de obras do ERP e ganham a fase "
+      + "que a planilha diz. Fica tudo no histórico de cada obra.")) return;
+  b.disabled = true; b.textContent = "Encerrando…";
+  try {
+    const d = await postar("/erp/api/ponto/obras-base/encerrar-no-erp");
+    const r = d.resultado || {};
+    await carregarObrasBase(`${r.encerradas || 0} obra(s) encerrada(s) no ERP.`
+      + ((r.obras || []).length ? ` ${r.obras.slice(0, 8).join(" · ")}` : ""), "ok");
+  } catch (e) {
+    b.disabled = false;
+    aviso("c-obras-msg", e.message, "erro");
+  }
 }
 
 async function lerObrasAgora() {

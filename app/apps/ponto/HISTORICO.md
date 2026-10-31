@@ -5,6 +5,43 @@ junto com o `README.md` e o `PLANO.md`.
 
 ## Pendente AGORA
 
+0z. **A OBRA CONCLUÍDA NA C. DIÁRIOS (31/10/2026, ramo não publicado).** O dono:
+   *"a gente está utilizando atualmente a planilha C.diários como base de obras
+   (…) tem obras que a fase está concluída. E essa informação nós temos na
+   C.diários. Eu não queria exibir essas obras aqui. Tem como importar somente
+   as que não estão concluídas?"*
+
+   **O filtro já existia desde 05/10 — e duas coisas o furavam.**
+
+   1. **O status era lido pela POSIÇÃO (coluna V), não pelo nome do cabeçalho.**
+      Numa planilha que gente edita, basta inserir uma coluna antes da V para o
+      status virar outra coisa; e aí NENHUMA obra é reconhecida como concluída
+      (status que não começa por "Conclu" conta como ativa). O sistema não
+      quebra: ele passa a mostrar obra encerrada como se estivesse em
+      andamento, **calado**. Agora a coluna é achada pelo nome (Status, Status
+      da Obra, Fase, Fase da Obra, Situação, Etapa — do específico ao
+      genérico), com a V de reserva; e a tela acusa em vermelho quando a coluna
+      lida não parece ser a do status (maioria das linhas sem status, ou zero
+      obra concluída na planilha inteira).
+   2. **O ERP não ficava sabendo.** A leitura CRIA no ERP a obra que falta, e
+      ela nasce `status = 'ATIVA'`. Quando a planilha conclui a obra, ela
+      desaparece do ponto mas **continua na lista de obras do ERP, nos filtros
+      e nas somas, para sempre**. Agora a Configuração › Base de obras mostra a
+      lista nominal dessas obras com um botão **"Encerrar estas N obras no
+      ERP"**: grava `status = ENCERRADA` e a fase correspondente (Concluída,
+      Concluída com dívida, Distratada), com o texto exato da planilha no
+      histórico de cada obra.
+
+   **POR QUE O SEGUNDO É BOTÃO E NÃO AUTOMÁTICO** — e isso é decisão, não
+   preguiça: encerrar obra no ERP muda dado de produção em várias telas
+   (agenda, medições, custo), e a C. Diários é editada por gente que não está
+   pensando no ERP. Uma linha trocada por engano encerraria obra com contrato
+   correndo, calada. Então o sistema mostra o que vai fazer, nominalmente, e
+   espera o clique. Desfazer é na mão, com a trilha do ERP na frente (ela
+   guarda a fase anterior e o texto da planilha).
+
+   **Nada a apertar no banco:** sem migração.
+
 0. **O WhatsApp do ponto passou a ser decidido em ERP › Mensagens (05/10/2026,
    chat da Mensageria, ramo não publicado).** Por que "não chegou nada" no teste
    do dono: a fila conferia o token do Z-API por um nome de variável que não

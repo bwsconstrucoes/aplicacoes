@@ -221,3 +221,70 @@ def test_a_uf_da_coluna_ac_faz_valer_o_feriado_estadual(app, mundo, planilha):
     d = como(app, mundo["dp"]).get("/erp/api/ponto/feriados?ano=2026").get_json()
     f = next(x for x in d["feriados"] if x["nome"] == "Feriado de PE")
     assert f["obras"] == 1 and "PG-NOVA" in {o["codigo"] for o in d["obras_sem_uf"]}
+
+# ---------------------------------------------------------------------------
+# A OBRA CONCLUÍDA NA PLANILHA TAMBÉM SAI DO ERP (31/10/2026)
+#
+# Dono: *"tem obras que a fase está concluída (…) eu não queria exibir essas
+# obras aqui"*. No ponto já não apareciam. No ERP, a obra que a leitura criou
+# nascia ATIVA e ficava ativa para sempre — a planilha concluía e o ERP não
+# ficava sabendo.
+# ---------------------------------------------------------------------------
+def test_a_obra_concluida_na_planilha_aparece_na_fila_de_encerrar_no_erp(app, mundo, planilha):
+    from app.apps.ponto import db
+    from app.apps.ponto.core import base_obras
+    _ler()
+    with db.conexao() as conn:
+        fila = base_obras.encerradas_ativas_no_erp(conn)
+    # PG-C existe no ERP como ATIVA e a planilha diz "Distratada". PG-VELHA
+    # ("Concluída") nem foi criada no ERP — e por isso NÃO entra na fila.
+    assert [o["codigo"] for o in fila] == ["PG-C"]
+    assert fila[0]["status_planilha"] == "Distratada"
+
+
+def test_o_botao_encerra_no_erp_e_a_obra_sai_das_listas(app, mundo, planilha):
+    from app.apps.ponto import db
+    _ler()
+    dp = como(app, mundo["dp"])
+
+    t = dp.get("/erp/api/ponto/obras-base").get_json()
+    assert t["encerrar_no_erp_total"] == 1
+    assert t["encerrar_no_erp"][0]["fase_nova"] == "DISTRATADA"
+
+    r = dp.post("/erp/api/ponto/obras-base/encerrar-no-erp")
+    assert r.status_code == 200, r.get_data(as_text=True)[:200]
+    assert r.get_json()["resultado"]["encerradas"] == 1
+
+    with db.conexao() as conn:
+        o = db.um(conn, "SELECT status, fase FROM public.obras WHERE codigo = 'PG-C'")
+        assert (o["status"], o["fase"]) == ("ENCERRADA", "DISTRATADA")
+    # A fila esvazia — apertar duas vezes não é erro, só não faz nada.
+    assert dp.get("/erp/api/ponto/obras-base").get_json()["encerrar_no_erp_total"] == 0
+    assert dp.post("/erp/api/ponto/obras-base/encerrar-no-erp").get_json()[
+        "resultado"]["encerradas"] == 0
+
+
+def test_encerrar_fica_na_trilha_do_erp_com_o_texto_da_planilha(app, mundo, planilha):
+    """É o que permite desfazer na mão quando a linha da planilha está errada."""
+    from app.apps.ponto import db
+    _ler()
+    como(app, mundo["dp"]).post("/erp/api/ponto/obras-base/encerrar-no-erp")
+    with db.conexao() as conn:
+        ev = db.um(conn, """
+            SELECT e.detalhe FROM public.eventos e JOIN public.obras o ON o.id = e.entidade_id
+             WHERE e.entidade_tipo = 'obra' AND e.acao = 'ENCERRADA' AND o.codigo = 'PG-C'""")
+        fases = db.um(conn, """
+            SELECT f.fase, f.observacao FROM public.obra_fases f JOIN public.obras o ON o.id = f.obra_id
+             WHERE o.codigo = 'PG-C'""")
+    assert ev and ev["detalhe"]["status_planilha"] == "Distratada"
+    assert ev["detalhe"]["origem"] == "PONTO_C_DIARIOS" and ev["detalhe"]["fase_anterior"]
+    assert fases["fase"] == "DISTRATADA" and "C. Diários" in fases["observacao"]
+
+
+def test_quem_nao_configura_o_ponto_nao_encerra_obra_no_erp(app, mundo, planilha):
+    """Muda dado de produção do ERP — não é coisa de supervisor de obra."""
+    from app.apps.ponto import db
+    _ler()
+    assert como(app, mundo["sup"]).post("/erp/api/ponto/obras-base/encerrar-no-erp").status_code == 403
+    with db.conexao() as conn:
+        assert db.um(conn, "SELECT status FROM public.obras WHERE codigo = 'PG-C'")["status"] == "ATIVA"

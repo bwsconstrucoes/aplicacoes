@@ -471,6 +471,16 @@ dizer "tem batida"; presença, horas e faltas são regra da fase 3.
   (a tela da Base de obras lista, com a linha da planilha e o motivo)
 - A coordenada da obra X veio da planilha ou do ERP?
 - Quando a C. Diários foi lida pela última vez? Deu erro?
+- De que coluna da planilha o status está sendo lido? Ela parece ser a certa?
+  (31/10/2026 — a coluna é achada pelo NOME do cabeçalho, com a V de reserva, e
+  a tela acusa quando a maioria das linhas vem sem status ou quando nenhuma obra
+  aparece como concluída: os dois sinais de "o status mudou de coluna")
+- Quais obras a planilha diz concluída e o ERP ainda tem como ativa? 🔒
+  (31/10/2026 — a lista nominal fica na Base de obras, com o botão que encerra
+  no ERP. Elas JÁ não aparecem no ponto; a pergunta é sobre o ERP)
+- Quem encerrou esta obra, e por quê? ⚠️ (obra encerrada pelo botão da Base de
+  obras tem na trilha a origem `PONTO_C_DIARIOS`, o texto exato da planilha e a
+  fase anterior — é o que permite desfazer quando a linha estava errada)
 - Quem pode bater no próprio celular? Quem tem banco de horas? Em que aparelho
   alguém bate por outros? 🔒 (o padrão não se cadastra: a resposta é a lista de
   EXCEÇÕES; quem não está nela bate só no aparelho da obra e não tem banco)

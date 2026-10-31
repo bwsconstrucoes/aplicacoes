@@ -83,7 +83,7 @@ def test_interpretar_a_aba():
     assert por["X9"]["codigo_secundario"] is None and por["X9"]["latitude"] is None
     problemas = {(p["codigo"], p["problema"].split(" ")[0]) for p in r["problemas"]}
     assert ("X9", "coordenada:") in problemas and ("ESCFOR1", "código") in problemas
-    assert r["colunas"]["status"] == {"letra": "V", "titulo": "Status"}
+    assert r["colunas"]["status"] == {"letra": "V", "titulo": "Status", "por_nome": True}
     assert r["colunas"]["coordenada"] == {"letra": "AM", "titulo": "Coordenadas Geográficas"}
 
 
@@ -117,3 +117,109 @@ def test_ler_uf_aceita_sigla_e_nome(texto, uf):
 def test_uf_ilegivel_vira_problema():
     uf, problema = bo.ler_uf("PX")
     assert uf is None and "UF ilegível" in problema
+
+# ---------------------------------------------------------------------------
+# O STATUS PELO NOME DO CABEÇALHO (31/10/2026)
+#
+# Pedido do dono: *"tem obras que a fase está concluída (…) tem como importar
+# somente as que não estão concluídas?"*. O filtro existia, mas lia a coluna V
+# pela POSIÇÃO — e numa planilha que gente edita, basta inserir uma coluna
+# antes dela para o status virar outra coisa. Aí NADA é reconhecido como
+# concluído, e obra encerrada volta a aparecer. Calado.
+# ---------------------------------------------------------------------------
+def _aba_de(cabecalhos, linhas):
+    largura = max(len(cabecalhos), *(len(l) for l in linhas)) if linhas else len(cabecalhos)
+    encher = lambda l: list(l) + [""] * (largura - len(l))     # noqa: E731
+    return [encher(cabecalhos)] + [encher(l) for l in linhas]
+
+
+def test_o_status_e_achado_pelo_nome_mesmo_fora_da_coluna_V():
+    """O caso que levou ao pedido: o status saiu da V e ficou na D."""
+    lido = bo.interpretar(_aba_de(
+        ["Código", "Código Primário", "Centro de Custo", "Status da Obra"],
+        [["A-1", "OBR-1", "Obra em andamento", "Em andamento"],
+         ["A-2", "OBR-2", "Obra pronta", "Concluída"],
+         ["A-3", "OBR-3", "Obra rompida", "Distratada"]]))
+
+    assert lido["colunas"]["status"] == {"letra": "D", "titulo": "Status da Obra", "por_nome": True}
+    assert {o["codigo"]: o["encerrada"] for o in lido["obras"]} == {
+        "OBR-1": False, "OBR-2": True, "OBR-3": True}
+    assert lido["alerta_status"] is None
+
+
+@pytest.mark.parametrize("titulo", ["Status", "Fase", "Fase da Obra", "Situação", "Situacao", "Etapa"])
+def test_os_nomes_que_valem_como_status(titulo):
+    lido = bo.interpretar(_aba_de(["Código", titulo],
+                               [["A-1", "Concluída"], ["A-2", "Em andamento"]]))
+    assert lido["colunas"]["status"]["por_nome"] is True
+    assert [o["encerrada"] for o in lido["obras"]] == [True, False]
+
+
+def test_sem_coluna_com_nome_a_posicao_V_continua_valendo():
+    """Quem não tem cabeçalho reconhecível cai na coluna V, como antes — a
+    planilha de hoje é assim, e trocar isso de uma vez quebraria a leitura."""
+    linha = [""] * 22
+    linha[0], linha[21] = "A-1", "Concluída"
+    outra = [""] * 22
+    outra[0], outra[21] = "A-2", "Em andamento"
+    lido = bo.interpretar([[""] * 22, linha, outra])
+
+    assert lido["colunas"]["status"]["letra"] == "V"
+    assert lido["colunas"]["status"]["por_nome"] is False
+    assert [o["encerrada"] for o in lido["obras"]] == [True, False]
+
+
+def test_status_especifico_ganha_do_genericos():
+    """Planilha com "Status" (do contrato) e "Status da Obra" — vale a da obra."""
+    lido = bo.interpretar(_aba_de(["Código", "Status", "Status da Obra"],
+                               [["A-1", "Assinado", "Concluída"]]))
+    assert lido["colunas"]["status"]["titulo"] == "Status da Obra"
+    assert lido["obras"][0]["encerrada"] is True
+
+
+# ---------------------------------------------------------------------------
+# O ALERTA: "esta coluna não parece ser a do status"
+# ---------------------------------------------------------------------------
+def test_coluna_errada_e_acusada_quando_a_maioria_vem_sem_status():
+    lido = bo.interpretar(_aba_de(["Código", "Nome da Obra", "Engenheiro"],
+                               [["A-1", "Obra 1", ""], ["A-2", "Obra 2", ""],
+                                ["A-3", "Obra 3", ""], ["A-4", "Obra 4", "Concluída"]]))
+    assert lido["alerta_status"] and "SEM status" in lido["alerta_status"]
+
+
+def test_nenhuma_obra_concluida_tambem_e_acusado():
+    """Numa base de obras de anos, zero concluída é sinal de coluna errada —
+    e o aviso diz as duas possibilidades, sem afirmar a errada."""
+    lido = bo.interpretar(_aba_de(["Código", "Status"],
+                               [["A-1", "Em andamento"], ["A-2", "Em execução"]]))
+    assert lido["alerta_status"] and "Nenhuma obra concluída" in lido["alerta_status"]
+
+
+def test_planilha_saudavel_nao_alerta_nada():
+    lido = bo.interpretar(_aba_de(["Código", "Status"],
+                               [["A-1", "Em andamento"], ["A-2", "Concluída"]]))
+    assert lido["alerta_status"] is None
+
+
+def test_o_alerta_diz_que_a_coluna_veio_pela_posicao():
+    """Quando não há cabeçalho de status, o aviso precisa dizer isso — senão o
+    dono procura o erro na planilha sem saber que o sistema chutou a coluna."""
+    linha = [""] * 22
+    linha[0] = "A-1"
+    lido = bo.interpretar([[""] * 22, linha])
+    assert "achada pela posição" in (lido["alerta_status"] or "")
+
+
+# ---------------------------------------------------------------------------
+# O status da planilha → a fase do ERP
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("status, fase", [
+    ("Concluída", "CONCLUIDA"),
+    ("concluida", "CONCLUIDA"),
+    ("Concluída com Dívida", "CONCLUIDA_COM_DIVIDA"),
+    ("Concluida com divida", "CONCLUIDA_COM_DIVIDA"),
+    ("Distratada", "DISTRATADA"),
+    ("distratado", "DISTRATADA"),
+])
+def test_a_fase_que_fica_no_erp(status, fase):
+    assert bo.fase_no_erp(status) == fase

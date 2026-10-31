@@ -78,6 +78,21 @@ def _limpar(banco):
         conn.execute(text("DELETE FROM ponto.feriados WHERE abrangencia <> 'NACIONAL'"))
         conn.execute(text("DELETE FROM usuario_obras WHERE usuario_id IN "
                           "(SELECT id FROM usuarios WHERE email LIKE '%@ponto.teste')"))
+        # A TRILHA DO ERP SAI PRIMEIRO (31/10/2026): desde que o ponto passou a
+        # encerrar obra no ERP, há `eventos` e `obra_fases` apontando para a
+        # obra PG-% e para o operador de teste. Sem apagar aqui, a limpeza
+        # estoura em violação de chave estrangeira — e o teste que falha é o
+        # SEGUINTE, não o que escreveu.
+        conn.execute(text("DELETE FROM obra_fases WHERE obra_id IN "
+                          "(SELECT id FROM obras WHERE codigo LIKE 'PG-%')"))
+        # `eventos` é append-only por GATILHO em produção, de propósito — a
+        # trilha não se apaga. Aqui a limpeza precisa apagar, e a chave é a
+        # mesma do `conftest.py`: `session_replication_role = replica` desliga
+        # os gatilhos (e as chaves estrangeiras) só nesta transação.
+        conn.execute(text("SET LOCAL session_replication_role = replica"))
+        conn.execute(text("DELETE FROM eventos WHERE (entidade_tipo = 'obra' AND entidade_id IN "
+                          "(SELECT id FROM obras WHERE codigo LIKE 'PG-%')) "
+                          "OR usuario_id IN (SELECT id FROM usuarios WHERE email LIKE '%@ponto.teste')"))
         conn.execute(text("DELETE FROM usuarios WHERE email LIKE '%@ponto.teste'"))
         conn.execute(text("DELETE FROM colaboradores WHERE cpf IN (:a, :b)"),
                      {"a": CPF_JOAO, "b": CPF_MARIA})
