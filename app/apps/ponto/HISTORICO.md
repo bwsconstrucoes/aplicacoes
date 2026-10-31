@@ -410,6 +410,15 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 31/10/2026 (vigésima quinta) — Do "Ponto da minha equipe" para a pessoa, e o voltar volta para a equipe
+
+O dono: *"quando eu entro em alguém para corrigir o ponto e boto voltar, o botão é 'voltar à lista', e ele volta para a
+lista dos funcionários, não para a lista das pessoas da obra que eu estava vendo."* Agora, quem abriu a pessoa pelo
+"Abrir o ponto e corrigir" do resumo vê "‹ Voltar ao ponto da equipe": o resumo abre de novo (mesmo período e obra),
+com a mesma pessoa aberta e à vista, por cima da tela inicial. Pela lista de "Consultar o ponto das pessoas", o voltar
+continua indo para a lista. Ensaio no navegador (os dois caminhos) e os testes da tela.
+**No ramo, esperando o "pode".**
+
 ## 31/10/2026 (vigésima quarta) — O manual do colaborador atualizado (telas e textos)
 
 O dono: *"gostaria que o manual fosse atualizado com as atuais funcionalidades. telas e textos explicativos."*

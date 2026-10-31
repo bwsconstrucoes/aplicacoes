@@ -1688,7 +1688,7 @@ async function abrirQualidadeEquipe(mes) {
 // --- O RESUMO GERENCIAL DO PONTO (31/10/2026, core/resumo_equipe.py) ------
 // O dono: "se eu estou batendo os pontos da obra X, eu gero o resumo da minha obra (…) um que está perfeito e um que
 // não está (…) as faltas, os atestados (…) o que está em erro (…) para orientar as pessoas a corrigir os pontos."
-const RESUMO = {periodo: "mes", obra: "", dados: null};
+const RESUMO = {periodo: "mes", obra: "", dados: null, aberto: null};  // aberto: a pessoa de onde se foi corrigir
 const ddmmR = iso => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 function linhasDoResumo(p) {
   const l = [];
@@ -1762,7 +1762,7 @@ async function abrirResumoEquipe(periodo, obra) {
       const comProblema = g.pessoas.filter(p => !p.em_dia), ok = g.pessoas.filter(p => p.em_dia);
       return `<h3 style="margin:14px 0 4px">🏗️ Obra ${esc(g.obra || "sem obra")}</h3>
         <p class="pequeno" style="margin:0 0 6px">${g.pessoas.length} pessoa(s) · <b>${g.em_dia} em dia</b> · ${comProblema.length} com problema</p>
-        ${comProblema.map(p => `<details style="border-top:1px solid #DDE3EA; padding:8px 0">
+        ${comProblema.map(p => `<details data-rs-pessoa="${p.id}" style="border-top:1px solid #DDE3EA; padding:8px 0">
           <summary style="cursor:pointer"><b>${esc(p.nome)}</b>${p.funcao ? ` <small class="pequeno">(${esc(p.funcao.toLowerCase())})</small>` : ""}${RESUMO.selo[p.id] ? ` <small>${esc(RESUMO.selo[p.id])}</small>` : ""}
             <small class="pequeno" style="display:block">${esc(contagemDoResumo(p))}</small></summary>
           <ul class="pequeno" style="margin:4px 0 6px 18px; padding:0">${linhasDoResumo(p).map(([dia, i, txt]) =>
@@ -1785,7 +1785,13 @@ async function abrirResumoEquipe(periodo, obra) {
   $("dlg-corpo").querySelectorAll("[data-rs-periodo]").forEach(b => b.onclick = () => abrirResumoEquipe(b.dataset.rsPeriodo));
   $("dlg-corpo").querySelectorAll("[data-rs-obra]").forEach(b => b.onclick = () => abrirResumoEquipe(undefined, b.dataset.rsObra));
   $("dlg-corpo").querySelectorAll("[data-rs-abrir]").forEach(b => b.onclick = () => {
-    $("dlg").close(); EQ.modo = "pedido"; EQ.mes = (RESUMO.dados.ate || hojeISO()).slice(0, 7); abrirPessoaDaObra(+b.dataset.rsAbrir); });
+    RESUMO.aberto = +b.dataset.rsAbrir;
+    $("dlg").close(); EQ.modo = "pedido"; EQ.mes = (RESUMO.dados.ate || hojeISO()).slice(0, 7);
+    abrirPessoaDaObra(RESUMO.aberto, "resumo"); });
+  // de volta da pessoa (31/10/2026, o dono: "voltar para a lista da equipe"): a mesma pessoa aberta, à vista
+  const aberta = RESUMO.aberto && $("dlg-corpo").querySelector(`[data-rs-pessoa="${RESUMO.aberto}"]`);
+  RESUMO.aberto = null;
+  if (aberta) { aberta.open = true; aberta.scrollIntoView({block: "center"}); }
 }
 
 // --- corrigir um dia --------------------------------------------------------
@@ -3297,8 +3303,9 @@ $("eq-busca").addEventListener("input", desenharEquipe);
 $("eq-ant").addEventListener("click", () => { EQ.mes = somarMes(EQ.mes, -1); abrirEquipe(); });
 $("eq-prox").addEventListener("click", () => { EQ.mes = somarMes(EQ.mes, 1); abrirEquipe(); });
 
-async function abrirPessoaDaObra(id) {
-  EQ.alvo = id; EQ.mesAlvo = EQ.mes;
+// `volta`: "resumo" quando se veio do Ponto da minha equipe — o voltar leva de novo para lá
+async function abrirPessoaDaObra(id, volta = null) {
+  EQ.alvo = id; EQ.mesAlvo = EQ.mes; EQ.volta = volta;
   mostrar("pessoa");
   $("ps-dias").innerHTML = "<p>Carregando…</p>";
   await carregarPessoaDaObra();
@@ -3312,7 +3319,7 @@ async function carregarPessoaDaObra() {
   catch (e) { if (e.status === 401) return entrarPara("equipe"); $("ps-dias").innerHTML = ""; return aviso(e.message, "erro"); }
   EQ.dados = d;
   EQ.pelo_aparelho = !!d.pelo_aparelho;
-  $("ps-voltar").textContent = EQ.pelo_aparelho ? "‹ Início" : "‹ Voltar à lista";
+  $("ps-voltar").textContent = EQ.volta === "resumo" ? "‹ Voltar ao ponto da equipe" : EQ.pelo_aparelho ? "‹ Início" : "‹ Voltar à lista";
   $("ps-nome").textContent = d.pessoa.nome;
   $("ps-info").textContent = [d.pessoa.funcao, d.pessoa.obra ? `obra ${d.pessoa.obra}` : "", `CPF final ${d.pessoa.cpf_final}`]
     .filter(Boolean).join(" · ");
@@ -3324,7 +3331,11 @@ async function carregarPessoaDaObra() {
                                          lancar: x => d.pode_pedir && podeLancarNoDia(x, d)});
   ligarDias("ps-dias", d, x => abrirCorrecao(x, alvoAtual()), x => abrirPedidoPara(alvoAtual(), x.data));
 }
-$("ps-voltar").addEventListener("click", () => (EQ.pelo_aparelho ? abrirMenu() : abrirEquipe()));
+$("ps-voltar").addEventListener("click", () => {
+  // o resumo abre por cima da tela inicial, como quando foi aberto da primeira vez
+  if (EQ.volta === "resumo") { RESUMO.aberto = EQ.alvo; abrirMenu(); return abrirResumoEquipe(); }
+  return EQ.pelo_aparelho ? abrirMenu() : abrirEquipe();
+});
 $("ps-ant").addEventListener("click", () => { EQ.mesAlvo = somarMes(EQ.mesAlvo, -1); carregarPessoaDaObra(); });
 $("ps-prox").addEventListener("click", () => { EQ.mesAlvo = somarMes(EQ.mesAlvo, 1); carregarPessoaDaObra(); });
 $("ps-novo").addEventListener("click", () => abrirPedidoPara(alvoAtual(), null));
