@@ -417,7 +417,7 @@ lista dos funcionários, não para a lista das pessoas da obra que eu estava ven
 "Abrir o ponto e corrigir" do resumo vê "‹ Voltar ao ponto da equipe": o resumo abre de novo (mesmo período e obra),
 com a mesma pessoa aberta e à vista, por cima da tela inicial. Pela lista de "Consultar o ponto das pessoas", o voltar
 continua indo para a lista. Ensaio no navegador (os dois caminhos) e os testes da tela.
-**No ramo, esperando o "pode".**
+**Publicado em 31/10/2026** (com o "pode" do dono) — SEM MIGRAÇÃO.
 
 ## 31/10/2026 (vigésima quarta) — O manual do colaborador atualizado (telas e textos)
 
