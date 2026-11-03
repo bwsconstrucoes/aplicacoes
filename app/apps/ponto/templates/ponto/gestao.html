@@ -131,13 +131,11 @@
     <div class="qd-marcas">
       <label class="opcao"><input type="checkbox" data-pe-foto="COM"><span class="rotulo">Com foto</span></label>
       <label class="opcao"><input type="checkbox" data-pe-foto="SEM"><span class="rotulo">Sem foto</span></label></div></div>
-  <div class="campo" style="margin-top:8px"><label for="pe-bate">Quem aparece</label>
-    <select id="pe-bate" data-sem-busca>
-      <option value="SIM">Quem bate ponto</option>
-      <option value="NAO">Quem não bate ponto (do cadastro)</option>
-      <option value="TODOS">Todos do cadastro (inclusive desligados)</option></select></div>
-  <div class="cartao-dica" style="margin-top:12px">“Bateu nas obras” olha os últimos 30 dias. Clique na pessoa para
-    ver tudo dela e trocar a foto de cadastro. O cadastro (nome, CPF, obra) é o do ERP.</div>
+  <div class="campo" style="margin-top:8px"><label>Foge do padrão</label>
+    <div class="qd-marcas" id="pe-excecoes"></div></div>
+  <div class="cartao-dica" style="margin-top:12px">Quem aparece (bate ponto, não bate, afastados, desligados) se
+    escolhe nos botões em cima da lista. “Bateu nas obras” olha os últimos 30 dias. Clique na pessoa para ver tudo
+    dela: foto, escala, se bate ponto, o acesso no aplicativo. O cadastro (nome, CPF, obra) é o do ERP.</div>
 {% elif aba_ponto == "ponto_mosaico" %}
   {# Os filtros na barra da esquerda, como nas outras telas (16/10/2026), e só as
      obras com batida no dia: "o cadastro de obras é muito grande e fica muita obra
@@ -805,18 +803,19 @@
 {# ---------------------------------------------------------------- PESSOAS #}
 <h2>Pessoas no ponto <small id="pe-sub"></small></h2>
 <div id="mensagem"></div>
+<div class="chips" id="pe-grupos" style="display:flex; flex-wrap:wrap; gap:6px; margin:0 0 10px"></div>
 <div class="cartao oculto" id="pe-fora" style="border-left:4px solid var(--ambar)"></div>
 {% if pode.tratar_ponto %}<div class="barra-lote" id="pe-lote" style="margin:0 0 8px">
   <b id="pe-qtd">0 marcadas</b>
   <button class="btn secundario" type="button" id="pe-nao-bate" disabled>🚫 Não bate ponto…</button>
   <button class="btn secundario" type="button" id="pe-volta" disabled>✅ Voltar a bater ponto…</button>
-  <small class="suave">Marque as pessoas na lista. Para achar quem já não bate, escolha “Quem não bate ponto” em “Quem aparece”, na barra ao lado.</small>
+  <small class="suave">Marque as pessoas na lista. Quem já não bate está no botão “Não bate ponto”, em cima da lista.</small>
 </div>{% endif %}
 <div class="tabela-wrap">
   <div class="tabela-rolagem"><table>
     <thead><tr>{% if pode.tratar_ponto %}<th class="sem-ordem" style="width:28px"><input type="checkbox" id="pe-todas" title="marcar todas da lista"></th>{% endif %}<th class="sem-ordem">Foto</th><th class="sem-ordem">Nome</th><th class="sem-ordem">Função</th>
       <th class="sem-ordem">Obra do cadastro</th><th class="sem-ordem">Batendo em (30 dias)</th>
-      <th class="sem-ordem">Escala</th><th class="sem-ordem">Banco de horas</th><th class="sem-ordem">PIN</th></tr></thead>
+      <th class="sem-ordem">Escala</th><th class="sem-ordem">No ponto</th><th class="sem-ordem">Foge do padrão</th><th class="sem-ordem">PIN</th></tr></thead>
     <tbody id="pe-corpo"></tbody></table></div>
   <div class="vazio oculto" id="pe-vazio"></div>
 </div>
@@ -854,6 +853,7 @@
 <div class="cartao" id="m-vazio">
   <div class="vazio"><b id="m-vazio-titulo">Escolha o dia e a obra, na barra da esquerda</b>
     <span id="m-vazio-texto">As fotos aparecem aqui, uma linha por pessoa.</span></div>
+  <div id="m-vazio-obras" class="mosaico-pendentes" style="justify-content:center; margin-top:4px"></div>
 </div>
 
 {% if pode.tratar_ponto %}
@@ -986,7 +986,6 @@
    fica no endereço (#aparelhos), para voltar nela e mandar o link. #}
 <nav class="sub-abas" id="c-secoes" aria-label="Seções da configuração">
   <button type="button" data-secao="geral">Geral</button>
-  <button type="button" data-secao="pessoas">Pessoas</button>
   <button type="button" data-secao="obras">Obras e cerca</button>
   <button type="button" data-secao="aparelhos">Aparelhos</button>
   <button type="button" data-secao="fotos">Fotos</button>
@@ -1051,9 +1050,14 @@
   <div id="c-quem-valida">carregando…</div>
 </div>
 
-<div class="cartao" data-secao-card="pessoas">
-  <div class="cartao-cab"><h3>Base de pessoas do ponto</h3></div>
-  <div class="cartao-dica" style="margin-top:0">Critério igual ao da Análise de SPs: desligado =
+{# UMA TELA SÓ DE PESSOAS (31/10/2026, o dono: "por que é que tem duas pessoas de configuração? (…) está em
+   duplicidade"): a lista, a ficha e as exceções de cada um ficam em Ponto › Pessoas; aqui, na Geral, só de onde o
+   cadastro vem. #}
+<div class="cartao" data-secao-card="geral">
+  <div class="cartao-cab"><h3>Base de pessoas do ponto</h3><small>de onde vem o cadastro</small></div>
+  <div class="cartao-dica" style="margin-top:0">A lista das pessoas, a ficha de cada uma e o que foge do padrão
+    (celular, administrativo, liberado, banco) ficam em <a class="elo" href="/erp/ponto/pessoas">Ponto › Pessoas</a>.
+    Critério igual ao da Análise de SPs: desligado =
     a data de saída já passou (o dia da saída ainda se bate) ou a Fase Atual do Pipefy diz
     desligado; afastado = a fase diz afastado (não bate até voltar); o resto está ativo.
     Antes da data de início (a menor entre início e admissão) e depois da data de saída, a
@@ -1088,12 +1092,11 @@
 </div>
 {% endif %}
 
-<div class="cartao" data-secao-card="pessoas">
-  <div class="cartao-cab"><h3>Exceções ao padrão</h3></div>
-  <div class="cartao-dica" style="margin-top:0">O padrão vale para todos e não se cadastra: <b>só o
-    aparelho da obra bate</b> e <b>ninguém tem banco de horas</b>. Aqui aparecem só as exceções, para
-    conferir de olho. Celular próprio e banco se marcam em Pessoas (na ficha da pessoa); o aparelho em
-    que alguém bate por outros (de lista) se cadastra na aprovação do aparelho.</div>
+<div class="cartao" data-secao-card="aparelhos">
+  <div class="cartao-cab"><h3>Aparelhos em que alguém bate por outros</h3></div>
+  <div class="cartao-dica" style="margin-top:0">O aparelho de lista se cadastra na aprovação do aparelho. As
+    pessoas que fogem do padrão (bate no celular, administrativo, liberado, banco…) estão em
+    <a class="elo" href="/erp/ponto/pessoas">Ponto › Pessoas</a>, no filtro “Foge do padrão”.</div>
   <div id="c-excecoes">carregando…</div>
 </div>
 
@@ -1880,6 +1883,7 @@ function painelCadastro() {
       : p.nao_bate_motivo ? `<b style="color:var(--vermelho)">Não</b> — pela planilha de colaboradores: ${escapar(p.nao_bate_motivo)}`
       : `<b style="color:var(--vermelho)">Não</b>${p.marcado_nao_bate && p.marcado_nao_bate.motivo ? ` — ${escapar(p.marcado_nao_bate.motivo)}
           <small style="display:inline" class="suave">(${escapar([p.marcado_nao_bate.por, p.marcado_nao_bate.em ? quando(p.marcado_nao_bate.em) : ""].filter(Boolean).join(", "))})</small>` : " — marcada no ponto"}`),
+    linha("Entra no aplicativo?", entraNoAplicativo(p)),
     linha("Função", escapar(p.funcao || "—")),
     linha("Obra principal", escapar(p.obra_principal ? `${p.obra_principal.codigo} — ${p.obra_principal.nome || ""}` : "—")),
     linha("Obras extras", escapar((p.obras_adicionais || []).map(o => o.codigo).join(", ") || "—")),
@@ -2481,6 +2485,28 @@ async function marcarBatePonto(ids, bate, nome) {
 }
 
 // BATE PONTO POR EXCEÇÃO (31/10/2026, migração 025): o DP passa por cima da regra da planilha de colaboradores.
+// ENTRA NO APLICATIVO? (31/10/2026, o dono: "ele está como uma pessoa que não bate ponto, mas eu quero que ele
+// possa visualizar o aplicativo de ponto. Aí eu não tenho gestão sobre isso, fica tudo travado"). A mesma regra do
+// servidor (`papeis.entra_no_app`): quem bate entra; quem não bate entra se for administrativo de obra ou liberado
+// pelo DP — para acompanhar os outros. E diz, com o botão, o caminho para mudar.
+function entraNoAplicativo(p) {
+  const lib = p.liberado || {};
+  const liberado = !!(lib.todas_obras || (lib.obras || []).length || (lib.pessoas || []).length);
+  const acompanha = p.administrativo_obra || liberado;
+  const botao = (cad, texto) => PODE_TRATAR ? ` <button class="link-btn" type="button" data-dp-cad="${cad}">${texto}</button>` : "";
+  if (p.situacao === "DESLIGADO") return `<b style="color:var(--vermelho)">Não</b> — desligado no cadastro.`;
+  if (p.ativo_no_ponto) return `<b>Sim</b> — vê o próprio ponto${acompanha ? " e acompanha outras pessoas"
+    + (p.administrativo_obra ? " (administrativo de obra)" : " (liberado pelo DP)") : ""}.`;
+  if (acompanha) return `<b>Sim, para acompanhar outras pessoas</b> — ${p.administrativo_obra ? "administrativo de obra" : "liberado pelo DP"};
+    como não bate ponto, não vê ponto próprio.${botao("alcance", "ver quem alcança")}`;
+  const bater = p.nao_bate_motivo
+    ? (PODE_DP && p.planilha_tira ? botao("excecao", "liberar para bater ponto (exceção à planilha)…") : "")
+    : botao("naoBate", "voltar a bater ponto…");
+  return `<b style="color:var(--vermelho)">Não</b> — quem não bate ponto só entra para acompanhar outras pessoas
+    (administrativo de obra ou liberado pelo DP).<br>Para entrar e acompanhar a equipe:${botao("forma", "liberar no aplicativo…")}
+    ${bater ? `<br>Para bater e ver o próprio ponto:${bater}` : ""}`;
+}
+
 async function batePorExcecao(p) {
   const ligar = !p.excecao_planilha;
   const r = await perguntar({
@@ -5257,6 +5283,32 @@ fcCarregar();
 // ===========================================================================
 const FP_PE = new FiltroPessoas("pe", {aoEnter: () => carregarPessoas()});
 let PESSOAS = [], PE_FORA = [];
+// UMA TELA SÓ DE PESSOAS (31/10/2026, o dono: "essas pessoas ficam sumidas completamente (…) o padrão de exibição
+// são as que batem ponto, beleza. Mas se eu quiser visualizar gente que está desligada, isso, aquilo"). O cadastro
+// todo, em grupos, com a contagem de cada um para a busca e os filtros de agora; o padrão é quem bate.
+const PE_GRUPOS = [["BATE", "✅ Bate ponto"], ["NAO_BATE", "🚫 Não bate ponto"], ["AFASTADO", "🩺 Afastados"],
+                   ["DESLIGADO", "👋 Desligados"], ["TODOS", "Todos do cadastro"]];
+const PE_ROTULO_GRUPO = {BATE: "Bate", NAO_BATE: "Não bate", AFASTADO: "Afastado", DESLIGADO: "Desligado"};
+const PE_COR_GRUPO = {BATE: "verde", NAO_BATE: "vermelho", AFASTADO: "ambar", DESLIGADO: "cinza"};
+// o que foge do padrão (antes, um cartão da Configuração › Pessoas)
+const PE_EXCECOES = {CELULAR: "Bate no próprio celular", PEDE_NO_CELULAR: "Faz pedidos pelo celular",
+  ADMINISTRATIVO: "Administrativo de obra", LIBERADO: "Liberado pelo DP no aplicativo", RONDA: "Vigia com ronda surpresa",
+  BANCO: "Tem banco de horas", EXCECAO_PLANILHA: "Bate por exceção à planilha"};
+const PE_COR_EXC = {CELULAR: "ambar", PEDE_NO_CELULAR: "cinza", ADMINISTRATIVO: "verde", LIBERADO: "verde",
+  RONDA: "cinza", BANCO: "cinza", EXCECAO_PLANILHA: "ambar"};
+let PE_GRUPO = (() => { const g = new URLSearchParams(location.search).get("grupo");
+  return PE_GRUPOS.some(([v]) => v === g) ? g : "BATE"; })();
+let PE_CONTAGEM = {};
+els("pe-excecoes").innerHTML = Object.entries(PE_EXCECOES).map(([c, r]) =>
+  `<label class="opcao"><input type="checkbox" data-pe-exc="${c}"><span class="rotulo">${escapar(r)} <span class="qtd" data-pe-exc-qtd="${c}"></span></span></label>`).join("");
+function peGrupos() {
+  els("pe-grupos").innerHTML = PE_GRUPOS.map(([v, r]) => `<button type="button" class="btn ${v === PE_GRUPO ? "" : "secundario"}"
+      data-pe-grupo="${v}" style="padding:6px 12px">${r} <b>${PE_CONTAGEM[v] ?? ""}</b></button>`).join("");
+  els("pe-grupos").querySelectorAll("[data-pe-grupo]").forEach(b => b.addEventListener("click", () => {
+    PE_GRUPO = b.dataset.peGrupo; PE_MARCADAS.clear();
+    try { const u = new URL(location.href); u.searchParams.set("grupo", PE_GRUPO); history.replaceState(null, "", u); } catch (e) {}
+    carregarPessoas(); }));
+}
 const PE_MARCADAS = new Set();
 function peContar() {
   if (!els("pe-qtd")) return;
@@ -5274,35 +5326,48 @@ async function carregarPessoas() {
   const q = new URLSearchParams(FP_PE.parametros());
   const busca = FP_PE.valores().busca;
   if (busca) q.set("busca", busca);
-  q.set("bate", els("pe-bate").value);
-  els("pe-corpo").innerHTML = `<tr><td colspan="9">carregando…</td></tr>`;
-  try { const d = await api(`/erp/api/ponto/pessoas?${q}`); PESSOAS = d.pessoas; PE_FORA = d.fora_da_lista || []; }
+  q.set("grupo", PE_GRUPO);
+  els("pe-corpo").innerHTML = `<tr><td colspan="10">carregando…</td></tr>`;
+  try { const d = await api(`/erp/api/ponto/pessoas?${q}`); PESSOAS = d.pessoas; PE_FORA = d.fora_da_lista || []; PE_CONTAGEM = d.contagem || {}; }
   catch (e) { falhou(e); return; }
+  peGrupos();
   desenharPessoas();
 }
 function desenharPessoas() {
   const fotos = [...document.querySelectorAll("[data-pe-foto]:checked")].map(x => x.dataset.peFoto);
-  const lista = PESSOAS.filter(p => !fotos.length || fotos.includes(p.tem_foto_cadastral ? "COM" : "SEM"));
+  const exc = [...document.querySelectorAll("[data-pe-exc]:checked")].map(x => x.dataset.peExc);
+  const lista = PESSOAS.filter(p => (!fotos.length || fotos.includes(p.tem_foto_cadastral ? "COM" : "SEM"))
+                                 && (!exc.length || exc.some(c => (p.excecoes || []).includes(c))));
   const sem = PESSOAS.filter(p => !p.tem_foto_cadastral).length;
+  document.querySelectorAll("[data-pe-exc-qtd]").forEach(x => {
+    const n = PESSOAS.filter(p => (p.excecoes || []).includes(x.dataset.peExcQtd)).length; x.textContent = n || ""; });
   els("pe-sub").textContent = `${contar(lista.length, "pessoa", "pessoas")}${sem ? ` · ${sem} sem foto de cadastro` : ""}`;
   els("pe-fora").classList.toggle("oculto", !PE_FORA.length);
   els("pe-fora").innerHTML = PE_FORA.length ? `<b>Fora da lista, com essa busca:</b><ul style="margin:6px 0 0 18px">${PE_FORA.map(x =>
     `<li>${escapar(x.nome)}${x.cpf_final ? ` <small style="display:inline">CPF final ${escapar(x.cpf_final)}</small>` : ""} — ${escapar(x.motivo)}</li>`).join("")}</ul>` : "";
   els("pe-vazio").classList.toggle("oculto", lista.length > 0);
-  els("pe-vazio").innerHTML = `<b>Ninguém</b>com estes filtros.`;
+  // ninguém aqui, mas a busca acha gente em outro grupo: diz onde (e um clique leva lá)
+  const outros = PE_GRUPOS.filter(([v]) => v !== PE_GRUPO && v !== "TODOS" && PE_CONTAGEM[v]);
+  els("pe-vazio").innerHTML = `<b>Ninguém</b>com estes filtros${PE_GRUPO !== "TODOS" ? ` em “${PE_GRUPOS.find(([v]) => v === PE_GRUPO)[1]}”` : ""}.
+    ${outros.length ? `<div style="margin-top:8px">Mas há: ${outros.map(([v, r]) =>
+      `<button type="button" class="link-btn" data-pe-ir="${v}">${r} (${PE_CONTAGEM[v]})</button>`).join(" · ")}</div>` : ""}`;
+  els("pe-vazio").querySelectorAll("[data-pe-ir]").forEach(b => b.addEventListener("click", () =>
+    els("pe-grupos").querySelector(`[data-pe-grupo="${b.dataset.peIr}"]`).click()));
   els("pe-corpo").innerHTML = lista.map(p => `<tr style="cursor:pointer" data-pessoa="${p.id}"${PE_MARCADAS.has(p.id) ? ' class="marcada"' : ""}>
     ${els("pe-lote") ? `<td><input type="checkbox" data-pe-marcar="${p.id}" ${PE_MARCADAS.has(p.id) ? "checked" : ""}
         ${p.nao_bate_motivo ? 'disabled title="a planilha de colaboradores diz que não bate — vale a planilha"' : ""}></td>` : ""}
     <td>${p.tem_foto_cadastral ? `<img class="pe-foto" loading="lazy" alt="" src="/erp/api/ponto/pessoas/${p.id}/foto-cadastral"
         onerror="fotoQuebrada(this)">` : `<span class="pe-foto sem">sem foto</span>`}</td>
-    <td>${eloPessoa(p.id, p.nome)} ${marcasHtml(p.etiquetas, true)}${!p.ativo_no_ponto ? `<small title="${escapar(p.nao_bate_motivo || "marcada no ponto")}">não bate ponto</small>` : ""}
-      ${p.situacao && p.situacao !== "ATIVO" ? `<small>${escapar(rotulo(p.situacao))}</small>` : ""}</td>
+    <td>${eloPessoa(p.id, p.nome)} ${marcasHtml(p.etiquetas, true)}</td>
     <td>${p.funcao ? escapar(p.funcao) : `<span class="suave">—</span>`}</td>
     <td class="dados">${p.obra_principal ? escapar(p.obra_principal.codigo) : `<span class="suave">—</span>`}</td>
     <td class="dados">${(p.obras_batidas || []).map(c => `<span style="${p.obra_principal && c !== p.obra_principal.codigo
         ? "color:var(--ambar); font-weight:700" : ""}">${escapar(c)}</span>`).join(", ") || `<span class="suave">—</span>`}</td>
     <td>${p.escala ? `${escapar(p.escala)}${p.escala_e_padrao ? `<small>padrão da empresa</small>` : ""}` : `<span class="selo aguardando">sem escala</span>`}</td>
-    <td>${escapar(p.regime_banco_rotulo || "—")}</td>
+    <td><span class="etq ${PE_COR_GRUPO[p.grupo] || ""}">${escapar(PE_ROTULO_GRUPO[p.grupo] || p.grupo || "—")}</span>
+      ${p.grupo_motivo ? `<small style="display:block">${escapar(p.grupo_motivo)}</small>` : ""}</td>
+    <td>${(p.excecoes || []).map(c => `<span class="etq ${PE_COR_EXC[c] || ""}" style="margin:1px 2px 1px 0">${escapar(PE_EXCECOES[c] || c)}${c === "BANCO"
+        ? ` — ${escapar(p.regime_banco_rotulo || "")}` : ""}</span>`).join("") || `<span class="suave">padrão</span>`}</td>
     <td>${p.tem_pin ? `<span class="selo aprovado">sim</span>` : `<span class="selo outro">não</span>`}</td></tr>`).join("");
   els("pe-corpo").querySelectorAll("[data-pe-marcar]").forEach(c => c.addEventListener("change", () => {
     const id = Number(c.dataset.peMarcar); c.checked ? PE_MARCADAS.add(id) : PE_MARCADAS.delete(id);
@@ -5317,14 +5382,15 @@ els("pe-ver").addEventListener("click", carregarPessoas);
 if (els("pe-lote")) {
   els("pe-todas").addEventListener("change", e => {
     const fotos = [...document.querySelectorAll("[data-pe-foto]:checked")].map(x => x.dataset.peFoto);
-    PESSOAS.filter(p => !p.nao_bate_motivo && (!fotos.length || fotos.includes(p.tem_foto_cadastral ? "COM" : "SEM")))
+    const exc = [...document.querySelectorAll("[data-pe-exc]:checked")].map(x => x.dataset.peExc);
+    PESSOAS.filter(p => !p.nao_bate_motivo && (!fotos.length || fotos.includes(p.tem_foto_cadastral ? "COM" : "SEM"))
+                        && (!exc.length || exc.some(c => (p.excecoes || []).includes(c))))
       .forEach(p => e.target.checked ? PE_MARCADAS.add(p.id) : PE_MARCADAS.delete(p.id));
     desenharPessoas(); });
   els("pe-nao-bate").addEventListener("click", () => peMarcarBate(false));
   els("pe-volta").addEventListener("click", () => peMarcarBate(true));
 }
-els("pe-bate").addEventListener("change", carregarPessoas);
-document.querySelectorAll("[data-pe-foto]").forEach(x => x.addEventListener("change", desenharPessoas));
+document.querySelectorAll("[data-pe-foto], [data-pe-exc]").forEach(x => x.addEventListener("change", desenharPessoas));
 FP_PE.carregar().then(carregarPessoas);
 // O endereço antigo (/erp/ponto/pessoas?pessoa=N) abre a pessoa por cima da lista.
 (() => { const id = new URLSearchParams(location.search).get("pessoa");
@@ -5349,7 +5415,7 @@ const DICA_IDENTIFICACAO = {QR_WHATSAPP: "pelo QR Code recebido no WhatsApp",
 
 // As obras do seletor: só as que têm batida no dia (16/10/2026), com quantas
 // pessoas bateram; "mostrar também as sem batida" traz o cadastro inteiro.
-let OBRAS_TODAS_MOSAICO = null;
+let OBRAS_TODAS_MOSAICO = null, OBRAS_DO_DIA_MOSAICO = [];
 async function carregarObrasDoMosaico() {
   const data = els("m-data").value || somarDias(hojeISO(), -1);
   const antes = els("m-obra").value;
@@ -5363,6 +5429,7 @@ async function carregarObrasDoMosaico() {
       if (sem.length) opcoes.push(`<optgroup label="Sem batida no dia">${sem.map(o =>
         `<option value="${o.id}">${escapar(rotuloObra(o))}</option>`).join("")}</optgroup>`);
     }
+    OBRAS_DO_DIA_MOSAICO = d.obras;
     els("m-obra").innerHTML = `<option value="">${d.obras.length ? "— escolha a obra —" : "nenhuma obra com batida no dia"}</option>`
       + opcoes.join("");
     if (antes && [...els("m-obra").options].some(o => o.value === antes)) els("m-obra").value = antes;
@@ -5421,6 +5488,15 @@ function semMosaico() {
   MOS = null;
   els("m-painel").hidden = true;
   els("m-vazio").hidden = false;
+  // "Ver mosaico" sem obra escolhida não fazia nada (31/10/2026, o dono: "eu clico ver mosaico, nada acontece"):
+  // agora as obras do dia aparecem aqui, uma por botão — um clique abre o mosaico dela.
+  const alvo = els("m-vazio-obras");
+  if (alvo) {
+    alvo.innerHTML = OBRAS_DO_DIA_MOSAICO.map(o => `<button type="button" class="chip" data-m-abrir="${o.id}">
+      ${escapar(rotuloObra(o))} · ${contar(o.pessoas, "pessoa", "pessoas")}</button>`).join("");
+    alvo.querySelectorAll("[data-m-abrir]").forEach(b => b.addEventListener("click", () => {
+      escolherObra(b.dataset.mAbrir); carregarMosaico(); }));
+  }
   if (els("m-conferir")) els("m-conferir").hidden = true;
 }
 
@@ -5637,7 +5713,14 @@ async function confirmarConferencia() {
 
 els("m-data").value = /^\d{4}-\d{2}-\d{2}$/.test(doUrl("data") || "") ? doUrl("data") : somarDias(hojeISO(), -1);
 els("m-data").max = hojeISO();
-els("m-ver").addEventListener("click", carregarMosaico);
+els("m-ver").addEventListener("click", async () => {
+  if (els("m-obra").value) return carregarMosaico();
+  // sem obra: a lista das obras do dia, no meio da tela, e o aviso em destaque
+  await carregarObrasDoMosaico();
+  semMosaico();
+  els("m-vazio-titulo").textContent = OBRAS_DO_DIA_MOSAICO.length ? "Escolha a obra" : els("m-vazio-titulo").textContent;
+  els("m-vazio").scrollIntoView({block: "start", behavior: "smooth"});
+});
 els("m-obra").addEventListener("change", carregarMosaico);
 // Outro dia: as obras daquele dia; a obra escolhida continua se teve batida nele.
 els("m-data").addEventListener("change", async () => {
@@ -5655,6 +5738,7 @@ carregarObrasDoMosaico().then(obras => {
   const pedida = doUrl("obra");
   if (pedida && /^\d+$/.test(pedida)) { escolherObra(pedida); carregarMosaico(); }
   else if (obras.length === 1) { escolherObra(obras[0].id); carregarMosaico(); }
+  else semMosaico();                       // as obras do dia, já à vista para clicar
 });
 
 {% elif aba_ponto == "ponto_banco" %}
@@ -7430,32 +7514,18 @@ async function carregarExcecoes() {
   const alvo = els("c-excecoes");
   if (!alvo) return;
   try { EXC = await api("/erp/api/ponto/excecoes"); } catch (e) { erroNoCartao("c-excecoes", e); return; }
-  FC_PESSOAS.dados(EXC.pessoas || []);
   desenharExcecoes();
 }
-// Uma linha por pessoa, com a função e todas as exceções dela (28/10/2026, o dono: "a apresentação
-// disso aqui tá terrível (…) tem o nome da pessoa, tem que ter a função também"); o nome abre a pessoa.
+// Desde 31/10/2026 (uma tela só de Pessoas), o cartão mostra só os aparelhos de lista; as pessoas que fogem do
+// padrão estão em Pessoas, no filtro "Foge do padrão".
 function desenharExcecoes() {
   const alvo = els("c-excecoes"), d = EXC;
   if (!alvo || !d) return;
-  const todas = d.pessoas || [], lista = todas.filter(p => FC_PESSOAS.aceita(p, x => [x.nome]));
-  const tipos = Object.keys(ROTULO_EXCECAO).filter(c => d.papeis_disponivel || !["ADMINISTRATIVO", "PEDE_NO_CELULAR"].includes(c));
   alvo.innerHTML = `${d.em_vigor ? "" : `<div class="aviso alerta" style="margin:0 0 10px">A regra “só o aparelho da obra
       bate” passa a valer quando as atualizações do ponto forem aplicadas (migração 004). Até lá, celular aprovado bate.</div>`}
-    <div class="ep-resumo">${tipos.map(c => `<button type="button" class="chip" data-exc="${c}" title="mostrar só estas">
-      ${escapar(ROTULO_EXCECAO[c])}: <b>${todas.filter(p => p.excecoes.includes(c)).length}</b></button>`).join("")}</div>
-    ${lista.length ? `<div class="tabela-rolagem" style="max-height:60vh; margin-top:8px"><table><thead><tr>
-        <th>Pessoa</th><th>Função</th><th>Obra</th><th>Foge do padrão em</th></tr></thead><tbody>
-      ${lista.map(p => `<tr><td>${eloPessoa(p.id, p.nome)}</td><td>${escapar(p.funcao || "—")}</td>
-        <td class="dados">${escapar(p.obra || "—")}</td>
-        <td>${p.excecoes.map(c => `<span class="etq ${COR_EXCECAO[c] || ""}">${escapar(ROTULO_EXCECAO[c] || c)}${c === "BANCO" && p.regime
-          ? ` — ${escapar(p.regime)}` : ""}</span>`).join(" ")}</td></tr>`).join("")}</tbody></table></div>`
-      : `<div class="vazio"><b>${todas.length ? "Ninguém com estes filtros" : "Nenhuma exceção"}</b>${todas.length ? "" : "todos seguem o padrão."}</div>`}
-    <h4 style="margin:16px 0 6px">Aparelhos em que alguém bate por outros (${d.aparelhos_de_lista.length})</h4>
     ${d.aparelhos_de_lista.length ? `<table><thead><tr><th>Aparelho</th><th>Pessoas no grupo</th><th>Situação</th></tr></thead><tbody>
       ${d.aparelhos_de_lista.map(a => `<tr><td>${escapar(a.descricao || "sem nome")}</td><td class="dados">${a.pessoas}</td>
         <td>${seloAparelho(a.status)}</td></tr>`).join("")}</tbody></table>` : `<span class="suave">nenhum</span>`}`;
-  alvo.querySelectorAll("[data-exc]").forEach(b => b.addEventListener("click", () => FC_PESSOAS.marcar("excecao", b.dataset.exc)));
 }
 
 // --------------------------------------------- 11. cerca das obras
@@ -7951,9 +8021,6 @@ class FiltroDaLista {
     return this.dims.every(d => { const m = this.marcados[d.chave]; return !m.size || this.valoresDe(d, item).some(v => m.has(v)); });
   }
 }
-const ROTULO_EXCECAO = {CELULAR: "Bate no próprio celular", BANCO: "Tem banco de horas", ADMINISTRATIVO: "Administrativo de obra",
-                        PEDE_NO_CELULAR: "Faz pedidos pelo celular", RONDA: "Vigia com ronda surpresa"};
-const COR_EXCECAO = {CELULAR: "ambar", BANCO: "azul", ADMINISTRATIVO: "verde", PEDE_NO_CELULAR: "ciano", RONDA: "cinza"};
 const ROTULO_SIT_AP = {PENDENTE: "Esperando aprovação", APROVADO: "Liberados", VENCENDO: "Liberação vencida ou vencendo",
                        BLOQUEADO: "Bloqueados", ARQUIVADO: "Arquivados"};
 const ORDEM_SIT_AP = ["PENDENTE", "APROVADO", "VENCENDO", "BLOQUEADO", "ARQUIVADO"];
@@ -7962,10 +8029,6 @@ function situacaoDoAparelho(a) {
   if (a.status === "APROVADO" && a.valido_ate && a.valido_ate <= somarDias(hojeISO(), 15)) return "VENCENDO";
   return a.status;
 }
-const FC_PESSOAS = new FiltroDaLista("cfp", {busca: "nome", dims: [
-  {chave: "excecao", rotulo: "Exceção", de: p => p.excecoes, rotular: v => ROTULO_EXCECAO[v] || v},
-  {chave: "obra", rotulo: "Obras", de: p => p.obra, vazio: "sem obra", comBusca: true},
-  {chave: "funcao", rotulo: "Funções", de: p => p.funcao, vazio: "sem função", comBusca: true}]}, () => desenharExcecoes());
 const FC_ESCALAS = new FiltroDaLista("cfe", {busca: "nome ou CPF", dims: [
   {chave: "escala", rotulo: "Escala de hoje", de: p => p.escala || "", vazio: "sem escala própria (segue a padrão)"},
   {chave: "obra", rotulo: "Obras", de: p => p.obra, vazio: "sem obra", comBusca: true},
@@ -7990,10 +8053,10 @@ const FC_APARELHOS = new FiltroDaLista("cfa", {busca: "nome, CPF, aparelho ou c�
 const FC_FOTOS = new FiltroDaLista("cff", {busca: "código ou nome da obra", dims: [
   {chave: "obrig", rotulo: "Mosaico", de: o => o.obrigatorio ? "SIM" : "NAO", rotular: v => v === "SIM" ? "Obrigatório" : "Opcional"},
   {chave: "resp", rotulo: "Responsável", de: o => o.responsavel || "", vazio: "ninguém", comBusca: true}]}, () => desenharMosaicoDasObras());
-const FILTROS_CONFIG = {pessoas: FC_PESSOAS, escalas: FC_ESCALAS, obras: FC_OBRAS, aparelhos: FC_APARELHOS, fotos: FC_FOTOS};
-const TITULO_SECAO = {pessoas: "Pessoas", escalas: "Escalas", obras: "Obras e cerca", aparelhos: "Aparelhos", fotos: "Fotos"};
+const FILTROS_CONFIG = {escalas: FC_ESCALAS, obras: FC_OBRAS, aparelhos: FC_APARELHOS, fotos: FC_FOTOS};
+const TITULO_SECAO = {escalas: "Escalas", obras: "Obras e cerca", aparelhos: "Aparelhos", fotos: "Fotos"};
 
-const SECOES = ["geral", "pessoas", "obras", "aparelhos", "fotos", "escalas", "jornada", "ausencias", "validacao", "mensagens", "teste"];
+const SECOES = ["geral", "obras", "aparelhos", "fotos", "escalas", "jornada", "ausencias", "validacao", "mensagens", "teste"];
 function mostrarSecao(secao) {
   if (!SECOES.includes(secao)) secao = "geral";
   document.querySelectorAll("[data-secao-card]").forEach(c => { c.hidden = c.dataset.secaoCard !== secao; });
@@ -8008,7 +8071,9 @@ function mostrarSecao(secao) {
   try { history.replaceState(null, "", `#${secao}`); } catch (e) {}
 }
 document.querySelectorAll("#c-secoes [data-secao]").forEach(b => b.addEventListener("click", () => mostrarSecao(b.dataset.secao)));
-mostrarSecao((location.hash || "").slice(1));
+// o endereço antigo da seção Pessoas leva à tela de Pessoas (31/10/2026: uma tela só)
+if (location.hash === "#pessoas") location.replace("/erp/ponto/pessoas");
+else mostrarSecao((location.hash || "").slice(1));
 
 // --------------------------------------------- licenças da lei (06/10/2026)
 async function carregarLicencas() {

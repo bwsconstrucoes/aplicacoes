@@ -178,6 +178,13 @@ def liberado_de(conn: Connection, colaborador_id: int) -> dict:
                         if int(x["id"]) != int(colaborador_id)]}
 
 
+def com_liberacao(conn: Connection) -> set[int]:
+    """Quem tem alguma liberação do DP (obras, pessoas ou todas as obras) — de uma vez, para a lista de Pessoas."""
+    if not liberado_disponivel(conn):
+        return set()
+    return {int(r["colaborador_id"]) for r in db.todos(conn, "SELECT DISTINCT colaborador_id FROM ponto.alcance_liberado")}
+
+
 def definir_liberado(conn: Connection, colaborador_id: int, *, obras: Optional[list[int]] = None,
                      pessoas: Optional[list[int]] = None, todas_obras: Optional[bool] = None, por: str = "") -> dict:
     """Troca o que está liberado (a lista que vier substitui a anterior; None deixa como está)."""

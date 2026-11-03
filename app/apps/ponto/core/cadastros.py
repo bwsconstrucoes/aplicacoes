@@ -383,6 +383,47 @@ def obra_para_json(o: dict) -> dict:
     }
 
 
+# QUEM APARECE EM PESSOAS (31/10/2026, o dono: "essas pessoas ficam sumidas completamente (…) existe o padrão de
+# exibição, as que batem ponto, beleza. Mas se eu quiser visualizar outras situações de pessoas, gente que está
+# desligada, gente que está isso, está aquilo"). Cada pessoa do cadastro cai num grupo só, nesta ordem.
+CATEGORIAS = ("BATE", "NAO_BATE", "AFASTADO", "DESLIGADO")
+ROTULOS_CATEGORIA = {"BATE": "Bate ponto", "NAO_BATE": "Não bate ponto", "AFASTADO": "Afastado",
+                     "DESLIGADO": "Desligado"}
+
+
+def categoria_no_ponto(c: dict) -> tuple[str, str]:
+    """PURA. O grupo da pessoa e o porquê, em português: desligado e afastado primeiro (vêm do cadastro ou da
+    planilha), depois quem não bate (pela planilha ou marcado no ponto), e o resto bate."""
+    situacao = (c.get("situacao") or "").upper()
+    if situacao == "DESLIGADO":
+        return "DESLIGADO", "desligado no cadastro"
+    if situacao == "AFASTADO":
+        return "AFASTADO", "afastado — não bate até voltar"
+    if not c.get("ativo_no_ponto"):
+        if c.get("nao_bate_motivo"):
+            return "NAO_BATE", f"pela planilha de colaboradores: {c['nao_bate_motivo']}"
+        motivo = c.get("inativo_motivo")
+        return "NAO_BATE", f"marcado no ponto: {motivo}" if motivo else "marcado no ponto"
+    if c.get("bate_por_excecao"):
+        return "BATE", f"por exceção (a planilha diz: {c.get('nao_bate_planilha') or 'não bate'})"
+    return "BATE", ""
+
+
+def excecoes_da_pessoa(c: dict, liberado: bool = False) -> list[str]:
+    """PURA. O que foge do padrão para a pessoa (o padrão: bate só no ponto da obra, entrega pedidos lá, sem banco
+    de horas). Os códigos são os do cartão de exceções, mais LIBERADO (o DP liberou obras, pessoas ou todas) e
+    EXCECAO_PLANILHA (bate apesar da planilha)."""
+    return [codigo for codigo, sim in (
+        ("CELULAR", c.get("bate_no_celular")),
+        ("PEDE_NO_CELULAR", c.get("pede_no_celular")),
+        ("ADMINISTRATIVO", c.get("administrativo_obra")),
+        ("LIBERADO", liberado),
+        ("RONDA", c.get("faz_ronda")),
+        ("BANCO", c.get("regime_banco") not in (None, "SEM_BANCO")),
+        ("EXCECAO_PLANILHA", c.get("bate_por_excecao")),
+    ) if sim]
+
+
 def colaborador_para_json(c: dict) -> dict:
     return {
         "id": c["id"], "cpf": c["cpf"], "nome": c["nome"], "matricula": c.get("matricula"),
