@@ -13654,6 +13654,11 @@ Mesma regra do ERP e do painel.
 
 ## Incidentes
 
+- **03/11 — o sistema inteiro parado até o reset manual no Render.** Não foi o Análise de
+  SPs: na renovação automática do servidor, um pedido em curso (de qualquer área) prendia o
+  processo antigo, e o novo só subiria depois de até 1 h. Corrigido no ramo com o
+  `gunicorn.conf.py` da raiz (prazo de 30 s para sair) — `CONTEXTO.md` §9, 03/11/2026.
+  Publicado junto da leva 246, quando o dono der o "pode".
 - **02/09 — import silencioso quebrado** (`f687e66`): o `bradesco.py`
   importava `pagamentos` pelo nome curto dentro de um try/except; a falha não
   aparecia e o boleto de 47 dígitos nunca casava com a SP.

@@ -290,6 +290,10 @@ partida do serviço a cada ~150 acessos — tem espaço para ser afrouxado. É
 decisão do dono, e o jeito seguro é subir o valor (1000, por exemplo) e vigiar
 a memória, não remover a rede de proteção.
 
+**03/11/2026 — `gunicorn.conf.py` na raiz.** Não troca nenhum parâmetro do comando: só põe prazo de 30 s
+para o worker sair na renovação (antes, um pedido preso segurava o sistema fora do ar até o `--timeout 3600`).
+Ver `CONTEXTO.md` §9, 03/11/2026. Não apagar sem ler o motivo.
+
 - `--workers 1` é obrigatório e não está em discussão: há estado em memória por
   processo (sessão do `chatbot`), que quebra com mais de um worker.
 

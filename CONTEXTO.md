@@ -802,6 +802,22 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 03/11/2026 — Prazo para o worker sair na renovação (`gunicorn.conf.py`, na raiz)
+
+**No ramo `claude/analisesps-work-fhjiru`, não publicado.** O dono: *"só voltou depois que eu resetei no
+render"*. O log mostrava `Autorestarting worker after current request.` → `Worker exiting` e nenhum
+`Booting worker` depois. Causa, reproduzida com o gunicorn 26.2: na renovação do `--max-requests`, o
+worker espera o `--graceful-timeout` (120 s) e encerra, mas o Python, ao sair, espera TODA thread de
+trabalho terminar — inclusive a de um pedido que ainda está rodando. Com `--workers 1`, o mestre só sobe o
+substituto quando o antigo morre, e quem o mata é o `--timeout 3600`: até uma hora fora do ar.
+O `gunicorn.conf.py` (lido sozinho pelo gunicorn da pasta onde ele inicia, sem mexer no Procfile nem no
+Start Command do Render) acrescenta o gancho `worker_exit`: se o processo não sair em 30 s, escreve no log
+`saída forçada. Threads presas: …` com onde cada thread estava, e força a saída. Custo aceito: o pedido que
+ainda estiver rodando depois dos 120 s + 30 s é cortado (ele já seria abandonado pelo gunicorn; a diferença
+é que o resto do sistema não fica junto com ele). O gancho não faz nada quando é chamado no processo mestre.
+Testes em `tests/test_gunicorn_conf.py`. Se a linha `saída forçada` aparecer no log, a pilha logo abaixo diz
+qual rota prendeu — é por ela que se ataca a causa de fundo.
+
 ### 31/10/2026 — A medição da lentidão (`app/lentidao.py`, ligada no `app/main.py`)
 
 **Publicado em 31/10/2026** (com o "pode" do dono). O dono: *"lentidão no ERP de maneira geral (…) memória
