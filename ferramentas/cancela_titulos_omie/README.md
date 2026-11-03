@@ -38,6 +38,13 @@ e estão no relatório.
 
 Para só consultar sem nem ser perguntado: `SIMULAR=sim` no `.env`.
 
+## Pasta no Dropbox / OneDrive
+
+Pode. O `executar.bat` instala o Python do programa **fora** da pasta, em
+`%LOCALAPPDATA%\BWS\cancela_titulos_omie\venv` — dentro do Dropbox a sincronização trava os arquivos
+no meio da instalação (aconteceu em 03/11/2026: `WinError 32 … sendo usado por outro processo`).
+Se uma instalação não terminar, a próxima execução apaga e refaz do zero.
+
 ## Cuidado com o Omie (limite de consultas)
 
 - Pausa fixa entre chamadas (`PAUSA_ENTRE_CHAMADAS`, padrão 1,5 s).
