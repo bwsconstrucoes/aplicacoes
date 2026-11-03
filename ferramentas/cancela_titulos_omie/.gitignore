@@ -3,3 +3,4 @@
 relatorios/
 entrada/*
 !entrada/LEIA-ME.txt
+cache/

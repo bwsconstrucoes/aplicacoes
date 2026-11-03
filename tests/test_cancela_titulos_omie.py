@@ -129,34 +129,71 @@ def _preparar(m, tmp_path, monkeypatch, respostas, resposta_sim="SIM"):
     return sessao
 
 
+def _pagina(pagina, total, titulos):
+    return Resp(200, {"pagina": pagina, "total_de_paginas": total,
+                      "conta_pagar_cadastro": titulos})
+
+
 def test_execucao_completa(m, tmp_path, monkeypatch):
     entrada = tmp_path / "entrada"
     entrada.mkdir()
     (entrada / "LEIA-ME.txt").write_text("instruções 999\n", encoding="utf-8")
     (entrada / "a.csv").write_text("card\n1\n2\n3\n", encoding="utf-8")
-    (entrada / "b.txt").write_text("4\n5\n1\n", encoding="utf-8")
+    (entrada / "b.txt").write_text("4\n5\n6\n1\n", encoding="utf-8")
     sessao = _preparar(m, tmp_path, monkeypatch, [
-        Resp(200, {"codigo_lancamento_omie": 11, "status_titulo": "A VENCER"}),   # 1 consulta
-        Resp(200, {"codigo_lancamento_omie": 22, "status_titulo": "CANCELADO"}),  # 2
-        Resp(500, {"faultstring": "Lançamento não cadastrado"}),                  # 3
-        Resp(200, {"codigo_lancamento_omie": 44, "status_titulo": "PAGO"}),       # 4
-        Resp(400, {"faultstring": "Erro desconhecido X"}),                        # 5: erro na consulta
+        _pagina(1, 2, [
+            {"codigo_lancamento_omie": 11, "codigo_lancamento_integracao": "Int1", "status_titulo": "A VENCER"},
+            {"codigo_lancamento_omie": 22, "codigo_lancamento_integracao": "INT2", "status_titulo": "CANCELADO"},
+            {"codigo_lancamento_omie": 99, "codigo_lancamento_integracao": "OUTRO", "status_titulo": "A VENCER"},
+        ]),
+        _pagina(2, 2, [
+            {"codigo_lancamento_omie": 44, "codigo_lancamento_integracao": "Int4", "status_titulo": "PAGO"},
+            {"codigo_lancamento_omie": 55, "codigo_lancamento_integracao": "Int5", "status_titulo": "ATRASADO"},
+        ]),
         Resp(200, {"codigo_status": "0", "descricao_status": "Cancelado"}),       # cancela 1
         Resp(200, {"codigo_lancamento_omie": 11, "status_titulo": "CANCELADO"}),  # confere 1
+        Resp(500, {"faultstring": "Título incluído em remessa de pagamento. Não é permitido cancelar."}),  # cancela 5
+        Resp(200, {"codigo_lancamento_omie": 55, "status_titulo": "ATRASADO"}),   # confere 5 após recusa
     ])
     assert m.main() == 0
     assert not sessao.respostas
-    cancelamento = sessao.corpos[5]
-    assert '"CancelarContaPagar"' in cancelamento and '"codigo_lancamento_omie": 11' in cancelamento
+    # Nenhuma consulta de card ausente: só a lista, os cancelamentos e as conferências.
+    chamadas = [c.split('"call": "')[1].split('"')[0] for c in sessao.corpos]
+    assert chamadas == ["ListarContasPagar", "ListarContasPagar", "CancelarContaPagar",
+                        "ConsultarContaPagar", "CancelarContaPagar", "ConsultarContaPagar"]
+    assert '"codigo_lancamento_omie": 11' in sessao.corpos[2]
     res = {l["Card Pipefy"]: l["Resultado"] for l in m._ESTADO["linhas"]}
     assert res == {"1": "CANCELADO AGORA", "2": "JÁ ESTAVA CANCELADO",
-                   "3": "NÃO EXISTE NO OMIE", "4": "PAGO / COM BAIXA", "5": "NÃO PROCESSADO"}
+                   "3": "NÃO EXISTE NO OMIE", "4": "PAGO / COM BAIXA", "5": "FALHOU",
+                   "6": "NÃO EXISTE NO OMIE"}
     assert len(os.listdir(tmp_path / "relatorios")) == 1
     # Na entrada sobra só a lista de pendentes (e o LEIA-ME); os lidos foram para processados.
     sobra = sorted(n for n in os.listdir(entrada) if n != "processados")
     assert sobra[0] == "LEIA-ME.txt" and sobra[1].startswith("pendentes_") and len(sobra) == 2
     assert (entrada / sobra[1]).read_text(encoding="utf-8").split() == ["5"]
     assert len(os.listdir(entrada / "processados")) == 2
+    # A lista guardada já sabe do cancelamento.
+    assert m.ler_cache()["titulos"]["INT1"]["status_titulo"] == "CANCELADO"
+
+
+def test_baixa_interrompida_continua_da_pagina(m, tmp_path, monkeypatch):
+    omie = m.Omie("k", "s", pausa=0)
+    omie.sessao = SessaoFalsa([
+        _pagina(1, 3, [{"codigo_lancamento_integracao": "Int1", "status_titulo": "A VENCER"}]),
+        Resp(400, {"faultstring": "Erro qualquer"}),
+    ])
+    with pytest.raises(m.ErroOmie):
+        m.baixar_titulos(omie, "Int", 12)
+    omie.sessao = SessaoFalsa([
+        _pagina(2, 3, [{"codigo_lancamento_integracao": "Int2", "status_titulo": "A VENCER"}]),
+        _pagina(3, 3, []),
+    ])
+    cache = m.baixar_titulos(omie, "Int", 12)
+    assert '"pagina": 2' in omie.sessao.corpos[0]
+    assert set(cache["titulos"]) == {"INT1", "INT2"} and cache["completo"]
+    # Rodada seguinte dentro da validade: nem chama o Omie.
+    omie.sessao = SessaoFalsa([])
+    assert m.baixar_titulos(omie, "Int", 12)["titulos"].keys() == {"INT1", "INT2"}
 
 
 def test_segunda_rodada_le_so_os_pendentes(m, tmp_path, monkeypatch):
@@ -164,7 +201,8 @@ def test_segunda_rodada_le_so_os_pendentes(m, tmp_path, monkeypatch):
     entrada.mkdir()
     (entrada / "pendentes_x.txt").write_text("5\n", encoding="utf-8")
     sessao = _preparar(m, tmp_path, monkeypatch, [
-        Resp(200, {"codigo_lancamento_omie": 55, "status_titulo": "CANCELADO"})])
+        _pagina(1, 1, [{"codigo_lancamento_omie": 55, "codigo_lancamento_integracao": "Int5",
+                        "status_titulo": "CANCELADO"}])])
     assert m.main() == 0
     assert [l["Card Pipefy"] for l in m._ESTADO["linhas"]] == ["5"]
     assert [n for n in os.listdir(entrada) if n != "processados"] == []
@@ -175,7 +213,24 @@ def test_simulacao_nao_mexe_na_entrada(m, tmp_path, monkeypatch):
     entrada.mkdir()
     (entrada / "a.txt").write_text("1\n", encoding="utf-8")
     sessao = _preparar(m, tmp_path, monkeypatch, [
-        Resp(200, {"codigo_lancamento_omie": 11, "status_titulo": "A VENCER"})], resposta_sim="")
+        _pagina(1, 1, [{"codigo_lancamento_omie": 11, "codigo_lancamento_integracao": "Int1",
+                        "status_titulo": "A VENCER"}])], resposta_sim="")
     assert m.main() == 0
     assert m._ESTADO["linhas"][0]["Resultado"] == "SERIA CANCELADO (simulação)"
     assert os.listdir(entrada) == ["a.txt"]
+
+
+def test_lista_velha_reconfere_antes_de_cancelar(m, tmp_path, monkeypatch):
+    import time as _t
+    entrada = tmp_path / "entrada"
+    entrada.mkdir()
+    (entrada / "a.txt").write_text("1\n", encoding="utf-8")
+    duas_horas = _t.time() - 7200
+    m.gravar_cache({"prefixo": "Int", "inicio": duas_horas, "fim": duas_horas, "completo": True,
+                    "proxima_pagina": 2, "total_paginas": 1,
+                    "titulos": {"INT1": {"codigo_lancamento_omie": 11, "status_titulo": "ATRASADO"}}})
+    sessao = _preparar(m, tmp_path, monkeypatch, [
+        Resp(200, {"codigo_lancamento_omie": 11, "status_titulo": "PAGO"})])   # foi pago depois
+    assert m.main() == 0
+    assert '"ConsultarContaPagar"' in sessao.corpos[0] and len(sessao.corpos) == 1
+    assert m._ESTADO["linhas"][0]["Resultado"] == "PAGO / COM BAIXA"

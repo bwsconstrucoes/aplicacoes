@@ -5,8 +5,10 @@ Cancela no Omie os títulos (contas a pagar) de cards do Pipefy já cancelados.
 Roda no PC, fora do sistema web. Fluxo:
 
   1. Lê a planilha com os números dos cards (uma coluna, um por linha).
-  2. Para cada card, consulta no Omie a conta a pagar de código de integração
-     "Int" + número do card (o mesmo que o processarnovasp grava na criação).
+  2. Baixa do Omie a lista inteira de contas a pagar (páginas de 500) e procura
+     nela o código de integração "Int" + número do card (o mesmo que o
+     processarnovasp grava na criação). NÃO consulta card por card: card sem
+     título volta como erro, e erro em série faz o Omie bloquear a chave.
   3. Classifica: não existe / já cancelado / pago ou com baixa / em aberto.
   4. Mostra o resumo e pede confirmação ("SIM") antes de cancelar qualquer coisa.
   5. Cancela só os que estão EM ABERTO e sem nenhum pagamento, e confere
@@ -15,7 +17,7 @@ Roda no PC, fora do sistema web. Fluxo:
 
 Nada é excluído: só consulta e cancelamento.
 
-Cuidado com o Omie: ele bloqueia quem consulta demais. Por isso há uma pausa
+Cuidado com o Omie: ele bloqueia quem consulta demais e quem acumula erros. Por isso há uma pausa
 fixa entre as chamadas, e quando o Omie manda esperar ("tente novamente em N
 segundos", HTTP 425/429, "consumo redundante") o programa espera o tempo pedido
 — com contagem regressiva na tela — antes de tentar de novo a MESMA consulta.
@@ -304,8 +306,89 @@ class Omie:
         return self.chamar("ConsultarContaPagar",
                            {"codigo_lancamento_integracao": codigo_integracao})
 
+    def listar_pagina(self, pagina, por_pagina=500):
+        return self.chamar("ListarContasPagar",
+                           {"pagina": pagina, "registros_por_pagina": por_pagina})
+
     def cancelar(self, codigo_omie, metodo):
         return self.chamar(metodo, {"codigo_lancamento_omie": int(codigo_omie)})
+
+
+# ---------------------------------------------------------------------------
+# A lista de contas a pagar, baixada de uma vez
+# ---------------------------------------------------------------------------
+# POR QUE NÃO CONSULTAR UM POR UM (03/11/2026). A primeira versão consultava cada
+# card com ConsultarContaPagar. Card sem título no Omie volta como ERRO ("não
+# cadastrado"), e depois de 12 erros seguidos o Omie bloqueou a chave por 30
+# minutos ("API bloqueada por consumo indevido. Tente novamente em 1799
+# segundos") — e a chave é a mesma do sistema da empresa. Com 4.755 cards, a
+# maioria sem título, isso se repetiria a cada dezena.
+#
+# Agora a lista inteira de contas a pagar vem em páginas de 500: toda chamada dá
+# certo, nenhuma devolve erro, e um card ausente é só um código que não está na
+# lista. A lista fica guardada em cache/ — se a baixa for interrompida, continua
+# da página onde parou; e numa nova rodada dentro da validade, nem baixa de novo.
+CAMPOS_GUARDADOS = ("codigo_lancamento_omie", "codigo_lancamento_integracao",
+                    "status_titulo", "valor_documento", "data_vencimento",
+                    "codigo_cliente_fornecedor") + CAMPOS_DE_PAGAMENTO
+
+
+def _caminho_cache():
+    return os.path.join(PASTA, "cache", "contas_pagar_omie.json")
+
+
+def gravar_cache(cache):
+    caminho = _caminho_cache()
+    os.makedirs(os.path.dirname(caminho), exist_ok=True)
+    tmp = caminho + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(cache, f, ensure_ascii=False)
+    os.replace(tmp, caminho)
+
+
+def ler_cache():
+    try:
+        with open(_caminho_cache(), "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+def baixar_titulos(omie, prefixo, validade_horas):
+    """Devolve o cache com {"titulos": {CÓDIGO EM MAIÚSCULAS: título}, "fim": ...}.
+    Guarda só os títulos cujo código de integração começa com o prefixo."""
+    agora = time.time()
+    cache = ler_cache()
+    if (cache and cache.get("prefixo", "").upper() == prefixo.upper()
+            and agora - cache.get("inicio", 0) < validade_horas * 3600):
+        if cache.get("completo"):
+            idade = int((agora - cache["fim"]) / 60)
+            print(f"   Usando a lista já baixada há {idade} min "
+                  f"({len(cache['titulos'])} títulos com código {prefixo}...).")
+            return cache
+        print(f"   Continuando a baixa da página {cache['proxima_pagina']}.")
+    else:
+        cache = {"prefixo": prefixo, "inicio": agora, "fim": None, "completo": False,
+                 "proxima_pagina": 1, "total_paginas": None, "titulos": {}}
+    prefixo_maiusculo = prefixo.upper()
+    pagina = cache["proxima_pagina"]
+    while True:
+        dados = omie.listar_pagina(pagina)
+        total = int(dados.get("total_de_paginas") or 1)
+        for r in dados.get("conta_pagar_cadastro") or []:
+            codigo = str(r.get("codigo_lancamento_integracao") or "").strip().upper()
+            if codigo.startswith(prefixo_maiusculo):
+                cache["titulos"][codigo] = {k: r.get(k) for k in CAMPOS_GUARDADOS if k in r}
+        cache["proxima_pagina"], cache["total_paginas"] = pagina + 1, total
+        if pagina >= total:
+            cache["completo"], cache["fim"] = True, time.time()
+        gravar_cache(cache)
+        print(f"\r   Página {pagina}/{total} — {len(cache['titulos'])} títulos com código "
+              f"{prefixo}... até agora   ", end="", flush=True)
+        if cache["completo"]:
+            print()
+            return cache
+        pagina += 1
 
 
 # ---------------------------------------------------------------------------
@@ -436,28 +519,33 @@ def main():
                 teto_espera=_numero("TETO_ESPERA_SEGUNDOS", 3600))
 
     # ---------- 1. Consulta ----------
-    print(f"\n[1/3] Consultando {len(ids)} título(s) no Omie (pausa de {omie.pausa:g} s entre consultas)...")
-    linhas, titulos = _ESTADO["linhas"], {}
-    for n, card in enumerate(ids, 1):
+    print(f"\n[1/3] Baixando a lista de contas a pagar do Omie (páginas de 500)...")
+    validade = _numero("VALIDADE_LISTA_HORAS", 12)
+    try:
+        cache = baixar_titulos(omie, prefixo, validade)
+    except ErroOmie as e:
+        print(f"\n\nERRO: o Omie não deixou terminar a baixa da lista: {e.texto[:300]}")
+        print("Nada foi cancelado. Rode de novo mais tarde: a baixa continua de onde parou.")
+        return 1
+    titulos_omie = cache["titulos"]
+    _ESTADO["cache"] = cache
+    baixada_em = datetime.fromtimestamp(cache["fim"]).strftime("%d/%m/%Y %H:%M")
+
+    linhas = _ESTADO["linhas"]
+    for card in ids:
         codigo = f"{prefixo}{card}"
         l = {"Card Pipefy": card, "Código de integração": codigo, "Código Omie": "",
              "Fornecedor": "", "Valor": "", "Vencimento": "",
              "Situação no Omie (antes)": "", "Resultado": "", "Detalhe": ""}
         linhas.append(l)
-        print(f"  {n:>4}/{len(ids)}  {codigo:<16}", end=" ", flush=True)
-        try:
-            t = omie.consultar(codigo)
-        except ErroOmie as e:
-            if e.nao_existe:
-                l["Resultado"] = "NÃO EXISTE NO OMIE"
-                l["Detalhe"] = "Título não encontrado (provavelmente excluído). " + e.texto[:200]
-            else:
-                l["Resultado"] = "NÃO PROCESSADO"
-                l["Detalhe"] = "Erro na consulta: " + e.texto[:300]
-            print("→", l["Resultado"])
+        t = titulos_omie.get(codigo.upper())
+        if t is None:
+            l["Resultado"] = "NÃO EXISTE NO OMIE"
+            l["Detalhe"] = (f"Não está nas contas a pagar do Omie (lista baixada em "
+                            f"{baixada_em}). Provavelmente excluído.")
             continue
         l["Código Omie"] = t.get("codigo_lancamento_omie", "")
-        l["Fornecedor"] = t.get("nome_fornecedor") or t.get("codigo_cliente_fornecedor", "")
+        l["Fornecedor"] = t.get("codigo_cliente_fornecedor", "")
         l["Valor"] = t.get("valor_documento", "")
         l["Vencimento"] = t.get("data_vencimento", "")
         l["Situação no Omie (antes)"] = str(t.get("status_titulo") or "")
@@ -465,14 +553,12 @@ def main():
         l["Detalhe"] = motivo
         if pode:
             l["Resultado"] = "A CANCELAR"
-            titulos[card] = t
         elif situacao == "JÁ CANCELADO":
             l["Resultado"] = "JÁ ESTAVA CANCELADO"
         elif situacao in ("PAGO", "COM PAGAMENTO"):
             l["Resultado"] = "PAGO / COM BAIXA"
         else:
             l["Resultado"] = "REVISAR"
-        print("→", l["Resultado"], f"({l['Situação no Omie (antes)']})")
 
     a_cancelar = [l for l in linhas if l["Resultado"] == "A CANCELAR"]
     print(f"\nResumo da consulta: {len(a_cancelar)} em aberto para cancelar, "
@@ -493,7 +579,7 @@ def main():
     else:
         # ---------- 3. Cancelamento ----------
         print(f"\n[3/3] Cancelando {len(a_cancelar)} título(s)...")
-        mesmo_erro, ultimo_erro, parar = 0, "", ""
+        mesmo_erro, ultimo_erro, parar, conferidos = 0, "", "", 0
         for n, l in enumerate(a_cancelar, 1):
             print(f"  {n:>4}/{len(a_cancelar)}  {l['Código de integração']:<16}", end=" ", flush=True)
             if parar:
@@ -501,13 +587,32 @@ def main():
                 l["Detalhe"] = "Cancelamentos interrompidos: " + parar
                 print("→ pulado")
                 continue
+            # Lista baixada há mais de uma hora: o título pode ter sido pago
+            # desde então. Confere antes (título que existe responde sem erro).
+            if time.time() - cache["fim"] > 3600:
+                try:
+                    agora_t = omie.consultar(l["Código de integração"])
+                    situacao, pode, motivo = classificar(agora_t)
+                except ErroOmie as e:
+                    pode, situacao, motivo = False, "REVISAR", "Não deu para reconferir: " + e.texto[:200]
+                if not pode:
+                    l["Resultado"] = ("JÁ ESTAVA CANCELADO" if situacao == "JÁ CANCELADO"
+                                      else "PAGO / COM BAIXA" if situacao in ("PAGO", "COM PAGAMENTO")
+                                      else "REVISAR")
+                    l["Detalhe"] = "Mudou desde a lista: " + motivo
+                    print("→", l["Resultado"])
+                    continue
             try:
-                omie.cancelar(l["Código Omie"], metodo)
+                resposta = omie.cancelar(l["Código Omie"], metodo)
+                codigo_status = str((resposta or {}).get("codigo_status", "0")).strip()
+                if codigo_status not in ("", "0"):
+                    raise ErroOmie(str(resposta.get("descricao_status") or resposta))
             except ErroOmie as e:
                 # Pode ter cancelado mesmo assim (resposta perdida na rede): confere.
                 try:
                     depois = omie.consultar(l["Código de integração"])
                     if str(depois.get("status_titulo") or "").upper() in STATUS_CANCELADO:
+                        _marcar_cancelado_no_cache(cache, l["Código de integração"])
                         l["Resultado"] = "CANCELADO AGORA"
                         l["Detalhe"] = "Cancelado (confirmado na consulta seguinte)."
                         print("→ CANCELADO")
@@ -524,13 +629,25 @@ def main():
                     parar = ("o Omie recusou várias vezes com o mesmo erro, ou não reconheceu o "
                              f"comando '{metodo}'. Último erro: {e.texto[:200]}")
                 continue
-            # Confere
+            # Os primeiros são conferidos com uma consulta: prova que o comando faz
+            # o que se espera. Depois disso, vale a confirmação do próprio Omie —
+            # conferir todos dobraria o número de chamadas.
+            conferidos += 1
+            if conferidos > CONFERIR_OS_PRIMEIROS:
+                status = "CANCELADO"
+                l["Resultado"] = "CANCELADO AGORA"
+                l["Detalhe"] = "Cancelado (o Omie confirmou o pedido)."
+                _marcar_cancelado_no_cache(cache, l["Código de integração"])
+                mesmo_erro = 0
+                print("→", l["Resultado"])
+                continue
             try:
                 depois = omie.consultar(l["Código de integração"])
                 status = str(depois.get("status_titulo") or "").upper()
             except ErroOmie as e:
                 status = f"(não deu para conferir: {e.texto[:100]})"
             if status in STATUS_CANCELADO:
+                _marcar_cancelado_no_cache(cache, l["Código de integração"])
                 l["Resultado"] = "CANCELADO AGORA"
                 l["Detalhe"] = "Cancelado e conferido no Omie."
             else:
@@ -550,6 +667,17 @@ def main():
     print(f"  Relatório: {caminho}")
     _avisar_pendentes(*fechar_entrada(linhas, arquivos, mover, simular), simular)
     return 0
+
+
+CONFERIR_OS_PRIMEIROS = 5
+
+
+def _marcar_cancelado_no_cache(cache, codigo):
+    """A lista guardada passa a saber do cancelamento: a próxima rodada não tenta de novo."""
+    t = cache["titulos"].get(codigo.upper())
+    if t is not None:
+        t["status_titulo"] = "CANCELADO"
+        gravar_cache(cache)
 
 
 def _avisar_pendentes(caminho, pendentes, simulacao):

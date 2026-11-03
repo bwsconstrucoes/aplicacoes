@@ -6,8 +6,9 @@ Programa de PC (fora do sistema web — não roda no Render, não mexe em nenhum
 
 1. Lê a planilha com os números dos cards cancelados no Pipefy (**primeira coluna**, um por linha;
    cabeçalho e linhas com texto são ignorados; número repetido conta uma vez).
-2. Consulta no Omie a **conta a pagar** de código de integração `Int` + número do card
-   (o mesmo que o `processarnovasp` grava ao criar o título).
+2. Baixa do Omie a **lista inteira de contas a pagar** (páginas de 500) e procura nela o código de
+   integração `Int` + número do card (o mesmo que o `processarnovasp` grava ao criar o título).
+   Não consulta card por card — ver "Por que baixar a lista" abaixo.
 3. Separa:
    - **não existe no Omie** → nada a fazer (foi excluído);
    - **já estava cancelado** → nada a fazer;
@@ -44,6 +45,19 @@ Pode. O `executar.bat` instala o Python do programa **fora** da pasta, em
 `%LOCALAPPDATA%\BWS\cancela_titulos_omie\venv` — dentro do Dropbox a sincronização trava os arquivos
 no meio da instalação (aconteceu em 03/11/2026: `WinError 32 … sendo usado por outro processo`).
 Se uma instalação não terminar, a próxima execução apaga e refaz do zero.
+
+## Por que baixar a lista (e não consultar card por card)
+
+Em 03/11/2026, na primeira rodada real (4.755 cards), a versão que consultava um por um levou bloqueio de 30
+minutos depois de 14 consultas: card sem título no Omie volta como **erro** ("não cadastrado"), e erro em
+série o Omie pune com *"API bloqueada por consumo indevido. Tente novamente em 1799 segundos"*. A chave
+bloqueada é a mesma do sistema da empresa (painel, BaixaBradesco, criação de títulos).
+
+Baixando a lista, toda chamada dá certo e card ausente é só um código que não aparece nela. São ~240
+páginas para ~120 mil títulos, uma vez só: a lista fica em `cache/contas_pagar_omie.json` e vale por
+`VALIDADE_LISTA_HORAS` (12 h). Interrompida, a baixa continua da página onde parou. Se a lista tiver mais de
+1 h na hora de cancelar, cada título é reconsultado antes (título que existe responde sem erro). Os 5
+primeiros cancelamentos são conferidos com uma consulta; os demais valem pela confirmação do Omie.
 
 ## Cuidado com o Omie (limite de consultas)
 

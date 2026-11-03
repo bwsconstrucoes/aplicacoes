@@ -17,6 +17,8 @@ PREFIXO_INTEGRACAO=Int
 PAUSA_ENTRE_CHAMADAS=1.5
 # Maior espera aceita quando o Omie manda aguardar (segundos). Acima disso, o título fica "não processado".
 TETO_ESPERA_SEGUNDOS=3600
+# Por quantas horas a lista de contas a pagar baixada do Omie vale (pasta cache).
+VALIDADE_LISTA_HORAS=12
 # SIMULAR=sim só consulta e faz o relatório, sem cancelar nada.
 SIMULAR=nao
 # Nome do comando de cancelamento na API do Omie.

@@ -812,6 +812,11 @@ propósito — tem de rodar sozinho no PC —, mas copia as lições dele (esper
 repetir erro definitivo). Só cancela situação em aberto conhecida (A VENCER, ATRASADO, VENCE HOJE) e sem valor
 pago; o resto vai para revisão. Pede "SIM" antes de cancelar. Não confirmado: o nome `CancelarContaPagar`
 (configurável no `.env`). Testes em `tests/test_cancela_titulos_omie.py`.
+**Mesmo dia, primeira rodada real (4.755 cards):** consultar card por card levou bloqueio de 30 min da
+chave do Omie depois de 14 consultas — card sem título volta como ERRO, e erro em série é "consumo
+indevido". A chave é a da empresa, então o bloqueio vale para o sistema todo. Trocado por baixar a lista
+inteira de contas a pagar (`ListarContasPagar`, 500 por página, guardada em `cache/` e retomável) e cruzar
+no PC. **Lição para qualquer área:** contra o Omie, nunca consultar em série registros que podem não existir.
 
 ### 03/11/2026 — Prazo para o worker sair na renovação (`gunicorn.conf.py`, na raiz)
 
