@@ -472,12 +472,16 @@ dizer "tem batida"; presença, horas e faltas são regra da fase 3.
 - A coordenada da obra X veio da planilha ou do ERP?
 - Quando a C. Diários foi lida pela última vez? Deu erro?
 - De que coluna da planilha o status está sendo lido? Ela parece ser a certa?
-  (31/10/2026 — a coluna é achada pelo NOME do cabeçalho, com a V de reserva, e
-  a tela acusa quando a maioria das linhas vem sem status ou quando nenhuma obra
-  aparece como concluída: os dois sinais de "o status mudou de coluna")
+  (03/11/2026 — a coluna **V** manda, porque é a que o dono declarou; o nome do
+  cabeçalho é a rede de segurança e a tela avisa quando o status mudou de lugar,
+  quando a maioria das linhas vem sem status, ou quando nenhuma obra aparece
+  como concluída na planilha inteira)
 - Quais obras a planilha diz concluída e o ERP ainda tem como ativa? 🔒
-  (31/10/2026 — a lista nominal fica na Base de obras, com o botão que encerra
-  no ERP. Elas JÁ não aparecem no ponto; a pergunta é sobre o ERP)
+  (03/11/2026 — normalmente NENHUMA: a leitura da planilha encerra no ERP
+  sozinha. A lista nominal e o botão ficam na Base de obras para o que concluiu
+  antes de isto virar automático)
+- Quantas obras foram encerradas no ERP na última leitura da planilha? Quais?
+  (fica nos "Detalhes da última leitura", na Base de obras)
 - Quem encerrou esta obra, e por quê? ⚠️ (obra encerrada pelo botão da Base de
   obras tem na trilha a origem `PONTO_C_DIARIOS`, o texto exato da planilha e a
   fase anterior — é o que permite desfazer quando a linha estava errada)

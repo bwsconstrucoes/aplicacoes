@@ -78,13 +78,25 @@ COL_COORDENADA = 38             # AM
 COL_UF = 28                     # AC — a UF da obra (28/10/2026: "vamos utilizar como UF a coluna AC")
 NOMES_COORDENADA = ("Coordenadas Geográficas", "Coordenadas Geograficas", "Coordenadas",
                     "Coordenada", "Localização", "Localizacao")
-# O STATUS É PROCURADO PELO NOME DO CABEÇALHO, com a coluna V de reserva
-# (31/10/2026). Antes era SÓ a posição V, porque o dono disse "coluna V" — e
-# isso é uma bomba de efeito retardado numa planilha que gente edita: basta
-# alguém inserir uma coluna antes da V para o status virar outra coisa, e aí
-# NENHUMA obra é reconhecida como concluída (status que não começa por
-# "Conclu" conta como ativa). O sistema não quebra: ele passa a mostrar obra
-# encerrada como se estivesse em andamento, calado.
+# A COLUNA DO STATUS: a V MANDA, e o nome do cabeçalho é a rede de segurança
+# (03/11/2026). O dono confirmou: *"a coluna que indica a fase da obra é a V. E
+# o status é 'Concluída'"*. Então a V é a verdade — e trocá-la por uma coluna
+# achada pelo nome seria PIORAR o que está certo, porque a planilha tem outras
+# colunas de "status" (de contrato, de medição) que roubariam o lugar.
+#
+# Mas a posição sozinha é uma bomba de efeito retardado numa planilha que gente
+# edita: basta inserir uma coluna antes da V para o status virar outra coisa, e
+# aí NENHUMA obra é reconhecida como concluída (o que não começa por "Conclu"
+# conta como ativa). O sistema não quebraria — passaria a mostrar obra encerrada
+# como se estivesse em andamento, calado.
+#
+# A regra que resolve os dois lados, em ordem:
+#   1. a V, quando o cabeçalho DELA é um nome de status reconhecido — o caso de
+#      hoje, e o que o dono declarou;
+#   2. se o cabeçalho da V não confirma e existe outra coluna com nome de
+#      status, vale ELA, e a tela diz que o status mudou de lugar;
+#   3. nenhuma das duas coisas: vale a V mesmo, e a tela avisa que não deu para
+#      confirmar.
 # Do nome mais específico ao mais genérico — "Status da Obra" ganha de "Status".
 NOMES_STATUS = ("Status da Obra", "Status Obra", "Fase da Obra", "Fase Obra",
                 "Situação da Obra", "Situacao da Obra", "Etapa da Obra",
@@ -219,6 +231,24 @@ def _achar(cabecalho_norm: list[str], nomes) -> Optional[int]:
     return None
 
 
+def _coluna_do_status(cabecalho_norm: list[str]) -> tuple[int, bool, Optional[str]]:
+    """Qual coluna tem o status da obra. (PURA, 03/11/2026.)
+
+    Devolve (índice, o cabeçalho confirma?, de que coluna ele saiu da V para cá).
+    A ordem está explicada em NOMES_STATUS: a V manda quando o cabeçalho dela é
+    um nome de status; se não for e houver outra coluna com nome de status, vale
+    ela; não havendo nenhuma das duas coisas, vale a V e a tela avisa.
+    """
+    alvos = {_sem_acento(n) for n in NOMES_STATUS}
+    na_v = COL_STATUS < len(cabecalho_norm) and cabecalho_norm[COL_STATUS] in alvos
+    if na_v:
+        return COL_STATUS, True, None
+    pelo_nome = _achar(cabecalho_norm, NOMES_STATUS)
+    if pelo_nome is not None:
+        return pelo_nome, True, _letra(COL_STATUS)
+    return COL_STATUS, False, None
+
+
 def interpretar(valores: list[list]) -> dict:
     """Linhas da aba → {'obras': [...], 'problemas': [...], 'colunas': {...}}."""
     if not valores:
@@ -230,16 +260,14 @@ def interpretar(valores: list[list]) -> dict:
     i_mun = _achar(norm, NOMES_MUNICIPIO)
     i_coord = _achar(norm, NOMES_COORDENADA)
     i_coord = COL_COORDENADA if i_coord is None else i_coord
-    i_status = _achar(norm, NOMES_STATUS)
-    status_por_nome = i_status is not None
-    i_status = COL_STATUS if i_status is None else i_status
+    i_status, status_confere, status_mudou_de_lugar = _coluna_do_status(norm)
 
     def cel(linha, i):
         return str(linha[i]).strip() if i is not None and i < len(linha) and linha[i] is not None else ""
 
     colunas = {
         "status": {"letra": _letra(i_status), "titulo": cel(cabecalho, i_status),
-                   "por_nome": status_por_nome},
+                   "confere": status_confere, "mudou_de_lugar": status_mudou_de_lugar},
         "coordenada": {"letra": _letra(i_coord), "titulo": cel(cabecalho, i_coord)},
         "codigo": {"letra": _letra(i_codigo) if i_codigo is not None else "A",
                    "titulo": cel(cabecalho, i_codigo) if i_codigo is not None else cel(cabecalho, 0)},
@@ -286,9 +314,11 @@ def _alerta_do_status(obras: list[dict], coluna: dict) -> Optional[str]:
 
     Existe porque o modo de falhar aqui é SILENCIOSO e caro: a coluna errada faz
     toda obra passar por ativa — concluída inclusive —, e ninguém desconfia,
-    porque a tela mostra uma lista plausível. Dois sinais bastam, e nenhum
-    depende de saber a lista completa de status que a planilha usa:
+    porque a tela mostra uma lista plausível. Três sinais, e nenhum depende de
+    saber a lista completa de status que a planilha usa:
 
+      · o status saiu da coluna V (alguém inseriu coluna) — o sistema seguiu o
+        cabeçalho, e o dono precisa saber que a planilha mudou de forma;
       · a maioria das linhas sem status nenhum — coluna de outra coisa, ou vazia;
       · nenhuma obra concluída em toda a planilha — numa base de obras de anos,
         isso não acontece.
@@ -301,8 +331,10 @@ def _alerta_do_status(obras: list[dict], coluna: dict) -> Optional[str]:
     onde = f"coluna {coluna.get('letra') or '?'}"
     titulo = (coluna.get("titulo") or "").strip()
     onde += f' (“{titulo}”)' if titulo else " (sem título)"
-    if not coluna.get("por_nome"):
-        onde += " — achada pela posição, porque nenhuma coluna se chama Status ou Fase"
+    if coluna.get("mudou_de_lugar"):
+        return (f"O status saiu da coluna {coluna['mudou_de_lugar']} e agora está na {onde} — "
+                "o sistema achou pelo cabeçalho e seguiu com ela. Se isso não era "
+                "esperado, alguém inseriu ou moveu colunas na planilha.")
     sem = sum(1 for o in obras if not o["status_planilha"])
     if sem * 2 > len(obras):
         return (f"{sem} das {len(obras)} obras estão SEM status na {onde}. "
@@ -313,6 +345,10 @@ def _alerta_do_status(obras: list[dict], coluna: dict) -> Optional[str]:
                 f"entre {len(obras)} obras. Ou a planilha realmente não tem nenhuma, "
                 "ou o status está em outra coluna — e aí obra encerrada está "
                 "aparecendo no ponto como se estivesse em andamento.")
+    if not coluna.get("confere"):
+        return (f"O status foi lido da {onde}, mas nenhuma coluna da planilha se chama "
+                "Status ou Fase — não deu para confirmar que é a coluna certa. "
+                "Confira as obras escondidas abaixo.")
     return None
 
 
@@ -394,12 +430,27 @@ def gravar(conn: Connection, lido: dict, por: str) -> dict:
                     :obra_id, :linha{", :uf" if com_uf else ""})""", uf=o.get("uf"), **{k: o[k] for k in (
             "codigo", "codigo_secundario", "nome", "municipio", "status_planilha", "encerrada", "latitude",
             "longitude", "coordenada_texto", "coordenada_problema", "coordenada_aviso", "obra_id", "linha")})
+    # A OBRA CONCLUÍDA NA PLANILHA É ENCERRADA NO ERP NA MESMA LEITURA
+    # (03/11/2026). O dono, quando perguntei se isto devia ser botão ou
+    # automático: *"enquanto estivermos lendo a planilha, automático"*. Era
+    # botão por cautela minha; a decisão é dele e o motivo é bom — enquanto a
+    # C. Diários for a base, quem manda na obra é ela, e exigir um clique
+    # significava a lista do ERP ficar errada entre as leituras.
+    #
+    # Fica DENTRO da mesma transação da leitura de propósito: ou a cópia e o
+    # encerramento valem juntos, ou nenhum dos dois. O botão continua existindo
+    # para o que sobrar (a tela só o mostra quando sobra algo), e cada
+    # encerramento deixa na trilha do ERP o texto exato da planilha e a fase
+    # anterior — é o que permite desfazer uma linha errada.
+    encerrou = encerrar_no_erp(conn, por)
     from .. import horario
     resultado = {
         "em": horario.agora().isoformat(), "por": por, "ok": True,
         "lidas": len(lido["obras"]), "ativas": sum(1 for o in lido["obras"] if not o["encerrada"]),
         "encerradas": sum(1 for o in lido["obras"] if o["encerrada"]),
         "criadas_no_erp": criadas[:50], "quantidade_criadas": len(criadas),
+        "encerradas_no_erp": encerrou["obras"][:50],
+        "quantidade_encerradas_no_erp": encerrou["encerradas"],
         "problemas": problemas[:80], "quantidade_problemas": len(problemas), "colunas": lido["colunas"],
         # O aviso de "esta coluna não parece ser a do status" viaja na leitura e
         # aparece em vermelho na tela — ver `_alerta_do_status`.
@@ -407,8 +458,9 @@ def gravar(conn: Connection, lido: dict, por: str) -> dict:
     }
     parametros.gravar(conn, PARAMETRO_ULTIMA, json.dumps(resultado, ensure_ascii=False, default=str), por)
     esquecer()
-    logger.info("Ponto: C. Diários lida por %s — %d obras (%d ativas, %d criadas no ERP, %d problemas)",
-                por, resultado["lidas"], resultado["ativas"], len(criadas), len(problemas))
+    logger.info("Ponto: C. Diários lida por %s — %d obras (%d ativas, %d criadas e %d encerradas "
+                "no ERP, %d problemas)", por, resultado["lidas"], resultado["ativas"], len(criadas),
+                encerrou["encerradas"], len(problemas))
     return resultado
 
 

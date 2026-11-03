@@ -223,28 +223,71 @@ def test_a_uf_da_coluna_ac_faz_valer_o_feriado_estadual(app, mundo, planilha):
     assert f["obras"] == 1 and "PG-NOVA" in {o["codigo"] for o in d["obras_sem_uf"]}
 
 # ---------------------------------------------------------------------------
-# A OBRA CONCLUÍDA NA PLANILHA TAMBÉM SAI DO ERP (31/10/2026)
+# A OBRA CONCLUÍDA NA PLANILHA TAMBÉM SAI DO ERP (31/10/2026; automático em
+# 03/11/2026)
 #
 # Dono: *"tem obras que a fase está concluída (…) eu não queria exibir essas
 # obras aqui"*. No ponto já não apareciam. No ERP, a obra que a leitura criou
 # nascia ATIVA e ficava ativa para sempre — a planilha concluía e o ERP não
-# ficava sabendo.
+# ficava sabendo. Nasceu como botão, por cautela minha; o dono decidiu:
+# *"enquanto estivermos lendo a planilha, automático"*. O botão continua para o
+# que ficou concluído ANTES disso.
 # ---------------------------------------------------------------------------
-def test_a_obra_concluida_na_planilha_aparece_na_fila_de_encerrar_no_erp(app, mundo, planilha):
+def test_a_leitura_encerra_no_erp_sozinha(app, mundo, planilha):
+    """O que o dono pediu: a própria leitura fecha no ERP o que a planilha
+    concluiu, sem ninguém clicar."""
+    from app.apps.ponto import db
+
+    r = _ler()
+
+    # PG-C existe no ERP como ATIVA e a planilha diz "Distratada".
+    assert r["quantidade_encerradas_no_erp"] == 1
+    assert "PG-C" in r["encerradas_no_erp"][0]
+    with db.conexao() as conn:
+        o = db.um(conn, "SELECT status, fase FROM public.obras WHERE codigo = 'PG-C'")
+    assert (o["status"], o["fase"]) == ("ENCERRADA", "DISTRATADA")
+
+
+def test_ler_de_novo_nao_encerra_nada_a_mais(app, mundo, planilha):
+    """A leitura roda de 2 em 2 horas: ela não pode ficar reescrevendo obra que
+    já está encerrada, nem sujar a trilha com evento repetido."""
+    from app.apps.ponto import db
+    _ler()
+
+    assert _ler()["quantidade_encerradas_no_erp"] == 0
+    with db.conexao() as conn:
+        n = db.um(conn, """
+            SELECT count(*) AS n FROM public.eventos e JOIN public.obras o ON o.id = e.entidade_id
+             WHERE e.acao = 'ENCERRADA' AND o.codigo = 'PG-C'""")["n"]
+    assert n == 1
+
+
+def test_a_obra_do_erp_fora_da_planilha_nao_e_encerrada(app, mundo, planilha):
+    """PG-B está no ERP e NÃO está na planilha. Ela sai do ponto (a planilha é
+    a base), mas encerrá-la no ERP seria o sistema decidindo sobre uma obra que
+    a planilha nem menciona."""
+    from app.apps.ponto import db
+    _ler()
+    with db.conexao() as conn:
+        assert db.um(conn, "SELECT status FROM public.obras WHERE codigo = 'PG-B'")["status"] == "ATIVA"
+
+
+def test_a_fila_do_botao_fica_vazia_depois_da_leitura(app, mundo, planilha):
     from app.apps.ponto import db
     from app.apps.ponto.core import base_obras
     _ler()
     with db.conexao() as conn:
-        fila = base_obras.encerradas_ativas_no_erp(conn)
-    # PG-C existe no ERP como ATIVA e a planilha diz "Distratada". PG-VELHA
-    # ("Concluída") nem foi criada no ERP — e por isso NÃO entra na fila.
-    assert [o["codigo"] for o in fila] == ["PG-C"]
-    assert fila[0]["status_planilha"] == "Distratada"
+        assert base_obras.encerradas_ativas_no_erp(conn) == []
 
 
-def test_o_botao_encerra_no_erp_e_a_obra_sai_das_listas(app, mundo, planilha):
+def test_o_botao_resolve_o_que_concluiu_antes_do_automatico(app, mundo, planilha):
+    """O caso real do dia da mudança: obra já concluída na planilha e ativa no
+    ERP desde antes. Simulo reabrindo a obra no ERP depois da leitura."""
     from app.apps.ponto import db
+    from app.apps.ponto.core import base_obras
     _ler()
+    with db.conexao() as conn:          # volta a ATIVA, como estava antes
+        db.executar(conn, "UPDATE public.obras SET status = 'ATIVA' WHERE codigo = 'PG-C'")
     dp = como(app, mundo["dp"])
 
     t = dp.get("/erp/api/ponto/obras-base").get_json()
@@ -254,12 +297,9 @@ def test_o_botao_encerra_no_erp_e_a_obra_sai_das_listas(app, mundo, planilha):
     r = dp.post("/erp/api/ponto/obras-base/encerrar-no-erp")
     assert r.status_code == 200, r.get_data(as_text=True)[:200]
     assert r.get_json()["resultado"]["encerradas"] == 1
-
     with db.conexao() as conn:
-        o = db.um(conn, "SELECT status, fase FROM public.obras WHERE codigo = 'PG-C'")
-        assert (o["status"], o["fase"]) == ("ENCERRADA", "DISTRATADA")
-    # A fila esvazia — apertar duas vezes não é erro, só não faz nada.
-    assert dp.get("/erp/api/ponto/obras-base").get_json()["encerrar_no_erp_total"] == 0
+        assert db.um(conn, "SELECT status FROM public.obras WHERE codigo = 'PG-C'")["status"] == "ENCERRADA"
+    # Apertar duas vezes não é erro, só não faz nada.
     assert dp.post("/erp/api/ponto/obras-base/encerrar-no-erp").get_json()[
         "resultado"]["encerradas"] == 0
 
@@ -268,7 +308,6 @@ def test_encerrar_fica_na_trilha_do_erp_com_o_texto_da_planilha(app, mundo, plan
     """É o que permite desfazer na mão quando a linha da planilha está errada."""
     from app.apps.ponto import db
     _ler()
-    como(app, mundo["dp"]).post("/erp/api/ponto/obras-base/encerrar-no-erp")
     with db.conexao() as conn:
         ev = db.um(conn, """
             SELECT e.detalhe FROM public.eventos e JOIN public.obras o ON o.id = e.entidade_id
@@ -282,9 +321,13 @@ def test_encerrar_fica_na_trilha_do_erp_com_o_texto_da_planilha(app, mundo, plan
 
 
 def test_quem_nao_configura_o_ponto_nao_encerra_obra_no_erp(app, mundo, planilha):
-    """Muda dado de produção do ERP — não é coisa de supervisor de obra."""
+    """O botão muda dado de produção do ERP — não é coisa de supervisor de obra.
+    (A leitura automática não passa por aqui: ela é do próprio sistema.)"""
     from app.apps.ponto import db
     _ler()
+    with db.conexao() as conn:
+        db.executar(conn, "UPDATE public.obras SET status = 'ATIVA' WHERE codigo = 'PG-C'")
+
     assert como(app, mundo["sup"]).post("/erp/api/ponto/obras-base/encerrar-no-erp").status_code == 403
     with db.conexao() as conn:
         assert db.um(conn, "SELECT status FROM public.obras WHERE codigo = 'PG-C'")["status"] == "ATIVA"
