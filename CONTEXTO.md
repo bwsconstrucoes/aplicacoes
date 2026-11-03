@@ -804,7 +804,7 @@ Quando eu pedir nova feature ou adaptação:
 
 ### 03/11/2026 — Prazo para o worker sair na renovação (`gunicorn.conf.py`, na raiz)
 
-**No ramo `claude/analisesps-work-fhjiru`, não publicado.** O dono: *"só voltou depois que eu resetei no
+**Publicado em 03/11/2026** (com o "pode" do dono). O dono: *"só voltou depois que eu resetei no
 render"*. O log mostrava `Autorestarting worker after current request.` → `Worker exiting` e nenhum
 `Booting worker` depois. Causa, reproduzida com o gunicorn 26.2: na renovação do `--max-requests`, o
 worker espera o `--graceful-timeout` (120 s) e encerra, mas o Python, ao sair, espera TODA thread de

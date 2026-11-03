@@ -12246,6 +12246,10 @@ somente Solicitações de uma conta especifica"*.
 
 #### Leva 246 — O "Atualizar" só traz a SPsBD; ponto e apoios em pistas próprias (31/10/2026) — MIGRAÇÃO 055
 
+> **Publicado em 03/11/2026.** Pendente AGORA: o dono apertar "Aplicar atualizações do
+> banco" em Configurações (migração 055) — sem ela, ponto e apoios recusam disparar com o
+> aviso de apertar o botão.
+
 - *"Existe o botão atualizar no topo à direita. Ele atualiza o quê? Acho que
   deveria atualizar apenas a SPsBD. E como estão as outras atualizações? Tem
   agendamento? (…) preciso que seja atualizado somente SPsBD e ele dá: Já existe
@@ -13658,7 +13662,8 @@ Mesma regra do ERP e do painel.
   SPs: na renovação automática do servidor, um pedido em curso (de qualquer área) prendia o
   processo antigo, e o novo só subiria depois de até 1 h. Corrigido no ramo com o
   `gunicorn.conf.py` da raiz (prazo de 30 s para sair) — `CONTEXTO.md` §9, 03/11/2026.
-  Publicado junto da leva 246, quando o dono der o "pode".
+  **Publicado em 03/11/2026** junto da leva 246 e do conserto da procura dentro dos
+  filtros (Solicitações e fiscal: digitar no "Procurar…" recarregava a tela).
 - **02/09 — import silencioso quebrado** (`f687e66`): o `bradesco.py`
   importava `pagamentos` pelo nome curto dentro de um try/except; a falha não
   aparecia e o boleto de 47 dígitos nunca casava com a SP.
