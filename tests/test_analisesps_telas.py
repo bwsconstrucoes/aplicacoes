@@ -1816,17 +1816,30 @@ def test_a_procura_ignora_acento_e_maiuscula(app):
     assert "toLowerCase()" in conteudo
 
 
-def test_a_procura_nao_aplica_o_filtro_sozinha(app):
+@pytest.mark.parametrize("arquivo", [
+    "analisesps_filtros.html", "analisesps_filtros_fiscal.html",
+    "analisesps_filtros_aplicam_sozinhos.html", "analisesps_faturamento_filtros.html",
+])
+def test_a_procura_nao_aplica_o_filtro_sozinha(app, arquivo):
     """O campo procura DENTRO do bloco: filtra as caixas já carregadas, sem ir
-    ao servidor. Digitar nele não pode disparar a consulta nem mandar o
-    formulário — senão cada letra viraria uma ida ao banco."""
+    ao servidor. Digitar nele não pode mandar o formulário.
+
+    ⚠️ 03/11/2026, o dono: "ela aparece rapidamente e some como se desse um
+    refresh no filtro. não dá tempo de clicar." O campo de procura também é
+    `type=search`, e o envio automático da barra (feito para a busca principal)
+    o pegava: 0,9 s depois de digitar a tela recarregava e a procura se perdia.
+    O teste antigo só conferia que o Enter era barrado e deixou passar isso. A
+    conferência no navegador (digitar "creche" → zero envios; marcar a caixa →
+    um envio) foi feita à mão; aqui fica a regra que a garante: o envio
+    automático ignora o campo de procura, ou o campo segura o evento."""
     conteudo = (Path(__file__).resolve().parents[1] / "app" / "apps"
-                / "analisesps" / "templates"
-                / "analisesps_filtros.html").read_text(encoding="utf-8")
-    # O envio automático só olha os campos do filtro, e o de procura tem
-    # classe própria e barra o Enter.
-    assert "stopPropagation()" in conteudo
-    assert 'class="procura-opcao"' in conteudo
+                / "analisesps" / "templates" / arquivo).read_text(encoding="utf-8")
+    assert 'class="procura-opcao"' in conteudo or ".procura-opcao" in conteudo
+    ignora = 'e.target.matches(".procura-opcao")) return' in conteudo
+    i = conteudo.index('campo.addEventListener("input"')
+    segura = "e.stopPropagation()" in conteudo[i:i + 120]
+    assert ignora or segura, (
+        f"{arquivo}: digitar na procura do bloco recarrega a tela")
 
 
 # ---------------------------------------------------------------------------
