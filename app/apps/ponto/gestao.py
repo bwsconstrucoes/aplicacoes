@@ -1200,6 +1200,30 @@ def ponto_api_obras_base_fonte():
     return _ok(**r)
 
 
+@bp.route("/erp/api/ponto/obras-base/encerrar-no-erp", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar_ponto")
+@_api
+def ponto_api_obras_base_encerrar_no_erp():
+    """Encerra NO ERP as obras que a C. Diários diz concluída ou distratada.
+
+    Pedido do dono, 31/10/2026. No ponto elas já não apareciam; no ERP ficavam
+    ATIVA para sempre, porque a leitura cria a obra lá e nunca a fecha.
+
+    É `configurar_ponto` e não `configurar` do ERP por um motivo que vale dizer:
+    quem cuida da base de obras do ponto é quem vai apertar isto, e o dado que
+    muda (fase e status da obra) tem a trilha do ERP guardando o texto exato da
+    planilha, a fase anterior e quem mandou — então um clique errado se desfaz
+    na mão, com o histórico na frente.
+    """
+    from .core import base_obras
+    quem = _quem()
+    with db.conexao() as conn:
+        r = base_obras.encerrar_no_erp(conn, quem.nome, quem.usuario_id)
+        retrato = base_obras.retrato(conn)
+    return _ok(resultado=r, retrato=retrato)
+
+
 @bp.route("/erp/api/ponto/obras-base/automatico", methods=["POST"])
 @login_obrigatorio
 @permissao("configurar_ponto")

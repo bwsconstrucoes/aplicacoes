@@ -5,6 +5,70 @@ junto com o `README.md` e o `PLANO.md`.
 
 ## Pendente AGORA
 
+0z. **A OBRA CONCLUÍDA NA C. DIÁRIOS (31/10/2026, ramo não publicado).** O dono:
+   *"a gente está utilizando atualmente a planilha C.diários como base de obras
+   (…) tem obras que a fase está concluída. E essa informação nós temos na
+   C.diários. Eu não queria exibir essas obras aqui. Tem como importar somente
+   as que não estão concluídas?"*
+
+   **O filtro já existia desde 05/10 — e duas coisas o furavam.**
+
+   1. **O status era lido pela POSIÇÃO (coluna V), e só por ela.** Numa planilha
+      que gente edita, basta inserir uma coluna antes da V para o status virar
+      outra coisa; e aí NENHUMA obra é reconhecida como concluída (status que
+      não começa por "Conclu" conta como ativa). O sistema não quebra: ele passa
+      a mostrar obra encerrada como se estivesse em andamento, **calado**.
+
+      **A regra que ficou (03/11/2026), depois de o dono confirmar *"a coluna
+      que indica a fase da obra é a V. E o status é 'Concluída'"*:** a **V
+      manda**, e o nome do cabeçalho é a rede de segurança. Em ordem — (a) a V,
+      quando o cabeçalho dela é um nome de status reconhecido (Status, Status da
+      Obra, Fase, Fase da Obra, Situação, Etapa); (b) se o cabeçalho da V não
+      confirma e existe outra coluna com nome de status, vale ela, e a tela diz
+      que o status **mudou de lugar**; (c) nenhuma das duas, vale a V mesmo, e a
+      tela diz que não deu para confirmar.
+
+      **A primeira versão desta mudança invertia a ordem — procurava pelo nome
+      ANTES da V — e isso era pior**, porque a planilha tem outras colunas de
+      "status" (de contrato, de medição) que roubariam o lugar e passariam a
+      decidir quais obras aparecem no ponto. Vale como regra geral: quando o
+      dono declara onde o dado está, a declaração dele é a verdade, e a
+      heurística serve para AVISAR que a verdade mudou, não para substituí-la.
+
+      A tela também acusa em vermelho quando a maioria das linhas vem sem status
+      ou quando nenhuma obra aparece como concluída na planilha inteira.
+   2. **O ERP não ficava sabendo.** A leitura CRIA no ERP a obra que falta, e
+      ela nasce `status = 'ATIVA'`. Quando a planilha conclui a obra, ela
+      desaparece do ponto mas **continua na lista de obras do ERP, nos filtros
+      e nas somas, para sempre**. Agora **a própria leitura encerra no ERP** o
+      que a planilha concluiu: grava `status = ENCERRADA` e a fase
+      correspondente (Concluída, Concluída com dívida, Distratada), com o texto
+      exato da planilha no histórico de cada obra.
+
+   **ISTO NASCEU COMO BOTÃO E O DONO TROCOU PARA AUTOMÁTICO.** Eu fiz botão por
+   cautela: encerrar obra no ERP muda dado de produção em várias telas (agenda,
+   medições, custo), e a C. Diários é editada por gente que não está pensando no
+   ERP — uma linha trocada por engano encerraria obra com contrato correndo.
+   Perguntei, e ele decidiu: *"enquanto estivermos lendo a planilha,
+   automático"*. O motivo dele é melhor que a minha cautela: **enquanto a
+   C. Diários for a base de obras, quem manda na obra é ela**, e exigir um
+   clique significava a lista do ERP ficar errada entre as leituras (de 2 em 2
+   horas). A rede de proteção que fica: cada encerramento deixa na trilha do ERP
+   a fase anterior e o texto exato da planilha, então uma linha errada se
+   desfaz na mão com o histórico na frente.
+
+   **O botão continua existindo**, e a tela só o mostra quando sobra algo: serve
+   para a obra que já estava concluída na planilha ANTES de isto virar
+   automático, e para qualquer caso que a leitura não pegue. Ele é
+   `configurar_ponto` — a leitura automática não passa por permissão nenhuma,
+   porque é o próprio sistema.
+
+   **Obra do ERP que NÃO está na planilha não é encerrada**, de propósito: ela
+   já sai do ponto (a planilha é a base), e encerrá-la no ERP seria o sistema
+   decidindo sobre obra que a planilha nem menciona.
+
+   **Nada a apertar no banco:** sem migração.
+
 0. **O WhatsApp do ponto passou a ser decidido em ERP › Mensagens (05/10/2026,
    chat da Mensageria, ramo não publicado).** Por que "não chegou nada" no teste
    do dono: a fila conferia o token do Z-API por um nome de variável que não

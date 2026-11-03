@@ -78,6 +78,29 @@ COL_COORDENADA = 38             # AM
 COL_UF = 28                     # AC — a UF da obra (28/10/2026: "vamos utilizar como UF a coluna AC")
 NOMES_COORDENADA = ("Coordenadas Geográficas", "Coordenadas Geograficas", "Coordenadas",
                     "Coordenada", "Localização", "Localizacao")
+# A COLUNA DO STATUS: a V MANDA, e o nome do cabeçalho é a rede de segurança
+# (03/11/2026). O dono confirmou: *"a coluna que indica a fase da obra é a V. E
+# o status é 'Concluída'"*. Então a V é a verdade — e trocá-la por uma coluna
+# achada pelo nome seria PIORAR o que está certo, porque a planilha tem outras
+# colunas de "status" (de contrato, de medição) que roubariam o lugar.
+#
+# Mas a posição sozinha é uma bomba de efeito retardado numa planilha que gente
+# edita: basta inserir uma coluna antes da V para o status virar outra coisa, e
+# aí NENHUMA obra é reconhecida como concluída (o que não começa por "Conclu"
+# conta como ativa). O sistema não quebraria — passaria a mostrar obra encerrada
+# como se estivesse em andamento, calado.
+#
+# A regra que resolve os dois lados, em ordem:
+#   1. a V, quando o cabeçalho DELA é um nome de status reconhecido — o caso de
+#      hoje, e o que o dono declarou;
+#   2. se o cabeçalho da V não confirma e existe outra coluna com nome de
+#      status, vale ELA, e a tela diz que o status mudou de lugar;
+#   3. nenhuma das duas coisas: vale a V mesmo, e a tela avisa que não deu para
+#      confirmar.
+# Do nome mais específico ao mais genérico — "Status da Obra" ganha de "Status".
+NOMES_STATUS = ("Status da Obra", "Status Obra", "Fase da Obra", "Fase Obra",
+                "Situação da Obra", "Situacao da Obra", "Etapa da Obra",
+                "Status", "Fase", "Situação", "Situacao", "Etapa")
 NOMES_CODIGO = ("Código Primário", "Codigo Primario")
 NOMES_NOME = ("Nome da Obra", "Obra", "Centro de Custo", "Objeto")
 NOMES_MUNICIPIO = ("Município", "Municipio")
@@ -208,6 +231,24 @@ def _achar(cabecalho_norm: list[str], nomes) -> Optional[int]:
     return None
 
 
+def _coluna_do_status(cabecalho_norm: list[str]) -> tuple[int, bool, Optional[str]]:
+    """Qual coluna tem o status da obra. (PURA, 03/11/2026.)
+
+    Devolve (índice, o cabeçalho confirma?, de que coluna ele saiu da V para cá).
+    A ordem está explicada em NOMES_STATUS: a V manda quando o cabeçalho dela é
+    um nome de status; se não for e houver outra coluna com nome de status, vale
+    ela; não havendo nenhuma das duas coisas, vale a V e a tela avisa.
+    """
+    alvos = {_sem_acento(n) for n in NOMES_STATUS}
+    na_v = COL_STATUS < len(cabecalho_norm) and cabecalho_norm[COL_STATUS] in alvos
+    if na_v:
+        return COL_STATUS, True, None
+    pelo_nome = _achar(cabecalho_norm, NOMES_STATUS)
+    if pelo_nome is not None:
+        return pelo_nome, True, _letra(COL_STATUS)
+    return COL_STATUS, False, None
+
+
 def interpretar(valores: list[list]) -> dict:
     """Linhas da aba → {'obras': [...], 'problemas': [...], 'colunas': {...}}."""
     if not valores:
@@ -219,13 +260,14 @@ def interpretar(valores: list[list]) -> dict:
     i_mun = _achar(norm, NOMES_MUNICIPIO)
     i_coord = _achar(norm, NOMES_COORDENADA)
     i_coord = COL_COORDENADA if i_coord is None else i_coord
-    i_status = COL_STATUS
+    i_status, status_confere, status_mudou_de_lugar = _coluna_do_status(norm)
 
     def cel(linha, i):
         return str(linha[i]).strip() if i is not None and i < len(linha) and linha[i] is not None else ""
 
     colunas = {
-        "status": {"letra": _letra(i_status), "titulo": cel(cabecalho, i_status)},
+        "status": {"letra": _letra(i_status), "titulo": cel(cabecalho, i_status),
+                   "confere": status_confere, "mudou_de_lugar": status_mudou_de_lugar},
         "coordenada": {"letra": _letra(i_coord), "titulo": cel(cabecalho, i_coord)},
         "codigo": {"letra": _letra(i_codigo) if i_codigo is not None else "A",
                    "titulo": cel(cabecalho, i_codigo) if i_codigo is not None else cel(cabecalho, 0)},
@@ -263,7 +305,51 @@ def interpretar(valores: list[list]) -> dict:
             problemas.append({"linha": n, "codigo": codigo, "problema": problema_uf})
         if c["problema"] and not obra["encerrada"]:
             problemas.append({"linha": n, "codigo": codigo, "problema": f"coordenada: {c['problema']}"})
-    return {"obras": obras, "problemas": problemas, "colunas": colunas}
+    return {"obras": obras, "problemas": problemas, "colunas": colunas,
+            "alerta_status": _alerta_do_status(obras, colunas["status"])}
+
+
+def _alerta_do_status(obras: list[dict], coluna: dict) -> Optional[str]:
+    """A coluna lida é mesmo a do status? (PURA, 31/10/2026.)
+
+    Existe porque o modo de falhar aqui é SILENCIOSO e caro: a coluna errada faz
+    toda obra passar por ativa — concluída inclusive —, e ninguém desconfia,
+    porque a tela mostra uma lista plausível. Três sinais, e nenhum depende de
+    saber a lista completa de status que a planilha usa:
+
+      · o status saiu da coluna V (alguém inseriu coluna) — o sistema seguiu o
+        cabeçalho, e o dono precisa saber que a planilha mudou de forma;
+      · a maioria das linhas sem status nenhum — coluna de outra coisa, ou vazia;
+      · nenhuma obra concluída em toda a planilha — numa base de obras de anos,
+        isso não acontece.
+
+    O alerta não bloqueia: a leitura vale, e a tela conta o que viu. Dado que
+    parece certo e está errado é pior que dado que avisa.
+    """
+    if not obras:
+        return None
+    onde = f"coluna {coluna.get('letra') or '?'}"
+    titulo = (coluna.get("titulo") or "").strip()
+    onde += f' (“{titulo}”)' if titulo else " (sem título)"
+    if coluna.get("mudou_de_lugar"):
+        return (f"O status saiu da coluna {coluna['mudou_de_lugar']} e agora está na {onde} — "
+                "o sistema achou pelo cabeçalho e seguiu com ela. Se isso não era "
+                "esperado, alguém inseriu ou moveu colunas na planilha.")
+    sem = sum(1 for o in obras if not o["status_planilha"])
+    if sem * 2 > len(obras):
+        return (f"{sem} das {len(obras)} obras estão SEM status na {onde}. "
+                "Se o status mudou de coluna, nenhuma obra concluída vai ser escondida — "
+                "confira o cabeçalho na planilha.")
+    if not any(o["encerrada"] for o in obras):
+        return (f"Nenhuma obra concluída ou distratada encontrada na {onde}, "
+                f"entre {len(obras)} obras. Ou a planilha realmente não tem nenhuma, "
+                "ou o status está em outra coluna — e aí obra encerrada está "
+                "aparecendo no ponto como se estivesse em andamento.")
+    if not coluna.get("confere"):
+        return (f"O status foi lido da {onde}, mas nenhuma coluna da planilha se chama "
+                "Status ou Fase — não deu para confirmar que é a coluna certa. "
+                "Confira as obras escondidas abaixo.")
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -344,18 +430,37 @@ def gravar(conn: Connection, lido: dict, por: str) -> dict:
                     :obra_id, :linha{", :uf" if com_uf else ""})""", uf=o.get("uf"), **{k: o[k] for k in (
             "codigo", "codigo_secundario", "nome", "municipio", "status_planilha", "encerrada", "latitude",
             "longitude", "coordenada_texto", "coordenada_problema", "coordenada_aviso", "obra_id", "linha")})
+    # A OBRA CONCLUÍDA NA PLANILHA É ENCERRADA NO ERP NA MESMA LEITURA
+    # (03/11/2026). O dono, quando perguntei se isto devia ser botão ou
+    # automático: *"enquanto estivermos lendo a planilha, automático"*. Era
+    # botão por cautela minha; a decisão é dele e o motivo é bom — enquanto a
+    # C. Diários for a base, quem manda na obra é ela, e exigir um clique
+    # significava a lista do ERP ficar errada entre as leituras.
+    #
+    # Fica DENTRO da mesma transação da leitura de propósito: ou a cópia e o
+    # encerramento valem juntos, ou nenhum dos dois. O botão continua existindo
+    # para o que sobrar (a tela só o mostra quando sobra algo), e cada
+    # encerramento deixa na trilha do ERP o texto exato da planilha e a fase
+    # anterior — é o que permite desfazer uma linha errada.
+    encerrou = encerrar_no_erp(conn, por)
     from .. import horario
     resultado = {
         "em": horario.agora().isoformat(), "por": por, "ok": True,
         "lidas": len(lido["obras"]), "ativas": sum(1 for o in lido["obras"] if not o["encerrada"]),
         "encerradas": sum(1 for o in lido["obras"] if o["encerrada"]),
         "criadas_no_erp": criadas[:50], "quantidade_criadas": len(criadas),
+        "encerradas_no_erp": encerrou["obras"][:50],
+        "quantidade_encerradas_no_erp": encerrou["encerradas"],
         "problemas": problemas[:80], "quantidade_problemas": len(problemas), "colunas": lido["colunas"],
+        # O aviso de "esta coluna não parece ser a do status" viaja na leitura e
+        # aparece em vermelho na tela — ver `_alerta_do_status`.
+        "alerta_status": lido.get("alerta_status"),
     }
     parametros.gravar(conn, PARAMETRO_ULTIMA, json.dumps(resultado, ensure_ascii=False, default=str), por)
     esquecer()
-    logger.info("Ponto: C. Diários lida por %s — %d obras (%d ativas, %d criadas no ERP, %d problemas)",
-                por, resultado["lidas"], resultado["ativas"], len(criadas), len(problemas))
+    logger.info("Ponto: C. Diários lida por %s — %d obras (%d ativas, %d criadas e %d encerradas "
+                "no ERP, %d problemas)", por, resultado["lidas"], resultado["ativas"], len(criadas),
+                encerrou["encerradas"], len(problemas))
     return resultado
 
 
@@ -451,7 +556,101 @@ def retrato(conn: Connection) -> dict:
     saida["status_vistos"] = db.todos(conn, """
         SELECT coalesce(status_planilha, '(vazio)') AS status, encerrada, count(*) AS n
           FROM ponto.obras_planilha GROUP BY 1, 2 ORDER BY 3 DESC""")
+    # As que a planilha concluiu e o ERP ainda tem como ATIVA — a lista nominal
+    # que o botão "Encerrar no ERP" vai mexer. Nominal de propósito: o dono
+    # confere o que vai acontecer antes de clicar.
+    pendentes = encerradas_ativas_no_erp(conn)
+    saida["encerrar_no_erp"] = [
+        {"codigo": o["codigo"], "nome": o["nome"], "status_planilha": o["status_planilha"],
+         "fase_hoje": o["fase"], "fase_nova": fase_no_erp(o["status_planilha"])}
+        for o in pendentes[:200]]
+    saida["encerrar_no_erp_total"] = len(pendentes)
     return saida
+
+
+# ---------------------------------------------------------------------------
+# A OBRA CONCLUÍDA NA PLANILHA TAMBÉM SAI DO ERP — por um botão (31/10/2026)
+#
+# Dono: *"tem obras que a fase está concluída (…) eu não queria exibir essas
+# obras aqui. Tem como importar somente as que não estão concluídas?"*
+#
+# No PONTO elas já não apareciam: a leitura esconde o que está "Conclu…" ou
+# "Distrat…". O que ficava torto é o OUTRO lado: obra que a leitura criou no ERP
+# nasce `status = 'ATIVA'`, e quando a planilha conclui ela, o ERP não fica
+# sabendo. Resultado: ela continua na lista de obras do ERP, nos filtros, nas
+# somas — para sempre.
+#
+# POR QUE É BOTÃO E NÃO AUTOMÁTICO: encerrar obra no ERP muda dado de produção
+# em várias telas (agenda, medições, custo), e a planilha é editada por gente
+# que não está pensando no ERP. Uma linha trocada por engano encerraria obra com
+# contrato correndo, calada. Então o sistema MOSTRA o que vai fazer, com a lista
+# nominal, e espera o clique.
+#
+# FASE e STATUS são coisas diferentes no ERP: `fase` é o andamento (CONCLUIDA,
+# DISTRATADA…) e `status` é se a obra ainda está na casa (ATIVA/ENCERRADA). O
+# botão grava as duas, porque é a fase que o dono lê na tela e o status que
+# tira a obra das listas.
+# ---------------------------------------------------------------------------
+# O status da planilha → a fase do ERP. O que não casar vira CONCLUIDA, que é o
+# caso de longe mais comum; o texto original fica na trilha de qualquer jeito.
+FASE_DO_STATUS = (
+    ("conclu", "divida", "CONCLUIDA_COM_DIVIDA"),      # "Concluída com Dívida"
+    ("distrat", None, "DISTRATADA"),
+    ("conclu", None, "CONCLUIDA"),
+)
+
+
+def fase_no_erp(status) -> str:
+    """PURA. O texto da coluna de status → a fase correspondente no ERP."""
+    s = _sem_acento(status)
+    for comeco, tambem, fase in FASE_DO_STATUS:
+        if s.startswith(comeco) and (tambem is None or tambem in s):
+            return fase
+    return "CONCLUIDA"
+
+
+def encerradas_ativas_no_erp(conn: Connection) -> list[dict]:
+    """Obras que a planilha diz concluída e que no ERP continuam ATIVA."""
+    if not disponivel(conn):
+        return []
+    return db.todos(conn, """
+        SELECT o.id, o.codigo, o.nome, o.fase, op.status_planilha
+          FROM ponto.obras_planilha op
+          JOIN public.obras o ON o.id = op.obra_id
+         WHERE op.encerrada AND o.status = 'ATIVA'
+         ORDER BY o.codigo""")
+
+
+def encerrar_no_erp(conn: Connection, por: str, usuario_id: Optional[int] = None) -> dict:
+    """Encerra no ERP as obras que a planilha diz concluída. Só pelo botão."""
+    import json as _json
+    alvos = encerradas_ativas_no_erp(conn)
+    for o in alvos:
+        fase = fase_no_erp(o["status_planilha"])
+        db.executar(conn, """
+            UPDATE public.obras
+               SET status = 'ENCERRADA', fase = :fase, fase_desde = CURRENT_DATE,
+                   data_conclusao = COALESCE(data_conclusao, CURRENT_DATE),
+                   atualizado_em = now()
+             WHERE id = :id""", id=o["id"], fase=fase)
+        db.executar(conn, """
+            INSERT INTO public.obra_fases (obra_id, fase, observacao, usuario_id)
+            VALUES (:id, :fase, :obs, :uid)""",
+            id=o["id"], fase=fase, uid=usuario_id,
+            obs=f'Encerrada pela base de obras do ponto (C. Diários): "{o["status_planilha"]}"')
+        # A trilha do ERP, com o texto exato da planilha: é o que permite
+        # desfazer na mão se a linha estava errada.
+        db.executar(conn, """
+            INSERT INTO public.eventos (entidade_tipo, entidade_id, usuario_id, acao, detalhe)
+            VALUES ('obra', :id, :uid, 'ENCERRADA', CAST(:detalhe AS jsonb))""",
+            id=o["id"], uid=usuario_id,
+            detalhe=_json.dumps({"origem": "PONTO_C_DIARIOS", "por": por,
+                                 "status_planilha": o["status_planilha"],
+                                 "fase_anterior": o["fase"], "fase": fase},
+                                ensure_ascii=False))
+    logger.info("Ponto: %d obra(s) encerradas no ERP pela C. Diários, por %s", len(alvos), por)
+    return {"encerradas": len(alvos),
+            "obras": [f'{o["codigo"]} — {o["nome"]} ({o["status_planilha"]})' for o in alvos]}
 
 
 def trechos_sql(conn: Connection) -> Optional[dict]:

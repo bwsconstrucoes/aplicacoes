@@ -49,13 +49,26 @@ def test_o_que_pede_atencao():
 
 
 @pytest.mark.banco
-def test_as_validacoes_trazem_o_nivel_de_cada_ajuste(app, mundo):
+def test_as_validacoes_trazem_o_nivel_de_cada_ajuste(app, mundo, banco):
     import datetime as dt
     from app.apps.ponto import horario
+    from tests.test_ponto_gestao_banco import dias_de_trabalho_antes
     hoje = horario.hoje()
-    # a segunda mais recente que já passou (no máximo 7 dias atrás: pedido tardio é atenção)
-    seg = hoje - dt.timedelta(days=hoje.weekday() or 7)
-    ter = seg - dt.timedelta(days=3)                 # a sexta anterior: o dia sem batida
+    # ⚠️ FERIADO CONTA (03/11/2026): este teste pegava "a segunda mais recente"
+    # pelo dia da semana e quebrou no dia seguinte a Finados — em feriado não há
+    # jornada prevista, então o ajuste fica longe da escala e vira ATENÇÃO em
+    # vez de CRÍVEL. Agora pede dias de TRABALHO (sem feriado).
+    # O dia do ajuste crível precisa ter batidas e ser recente (pedido tardio é
+    # atenção: no máximo 7 dias atrás).
+    # SEGUNDA A QUINTA, e isto não é detalhe: a escala de teste é 44h, com saída
+    # às 17:00 de segunda a quinta e às 16:00 na SEXTA. O ajuste do teste é às
+    # 17:00, e numa sexta ele cairia "no meio do caminho" (nem perto, nem longe
+    # da escala) — NORMAL em vez de CRÍVEL, falhando por motivo errado.
+    uteis = dias_de_trabalho_antes(banco, hoje, quantos=4, dias_da_semana=(0, 1, 2, 3))
+    if len(uteis) < 2 or (hoje - uteis[-1]).days > 7:
+        pytest.skip("não há dia de trabalho de segunda a quinta na última semana")
+    seg = uteis[-1]                                  # o dia de trabalho mais recente
+    ter = uteis[0]                                   # um dia de trabalho anterior: o dia sem batida
     for h in ((7, 0), (11, 0), (12, 0)):
         bater_via_chave(app, CPF_JOAO, local(seg, *h))
     dp = como(app, mundo["dp"])
