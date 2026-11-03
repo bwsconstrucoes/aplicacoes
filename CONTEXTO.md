@@ -802,6 +802,17 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 03/11/2026 — Pasta `ferramentas/`: programa de PC que cancela no Omie títulos de cards cancelados
+
+Pedido do dono: ler uma planilha com números de cards cancelados no Pipefy, consultar no Omie a conta a pagar
+`Int<card>` e cancelar (nunca excluir) a que estiver em aberto sem pagamento, com relatório no fim. É um
+programa de PC (`ferramentas/cancela_titulos_omie/`, `executar.bat` + `.env` próprio), **fora do app web**:
+não é importado pelo `app/main.py` e não vai para o Render. Não reaproveita o `omie_client` do painel de
+propósito — tem de rodar sozinho no PC —, mas copia as lições dele (esperar o tempo que o Omie pede, não
+repetir erro definitivo). Só cancela situação em aberto conhecida (A VENCER, ATRASADO, VENCE HOJE) e sem valor
+pago; o resto vai para revisão. Pede "SIM" antes de cancelar. Não confirmado: o nome `CancelarContaPagar`
+(configurável no `.env`). Testes em `tests/test_cancela_titulos_omie.py`.
+
 ### 03/11/2026 — Prazo para o worker sair na renovação (`gunicorn.conf.py`, na raiz)
 
 **Publicado em 03/11/2026** (com o "pode" do dono). O dono: *"só voltou depois que eu resetei no

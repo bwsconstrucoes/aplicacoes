@@ -1,0 +1,5 @@
+.env
+.venv/
+relatorios/
+entrada/*
+!entrada/LEIA-ME.txt

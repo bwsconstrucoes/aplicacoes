@@ -1,0 +1,3 @@
+Coloque aqui a planilha (.xlsx ou .csv) com os numeros dos cards do Pipefy
+na PRIMEIRA coluna, um por linha. Cabecalho pode existir; e ignorado.
+O programa usa o arquivo mais recente desta pasta.

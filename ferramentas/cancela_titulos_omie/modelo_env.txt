@@ -1,0 +1,23 @@
+# O executar.bat copia este arquivo para ".env" (na mesma pasta) e preencha.
+# O .env NUNCA vai para o GitHub nem para o chat.
+
+# --- Omie (obrigatório) ---
+OMIE_KEY=
+OMIE_SECRET=
+
+# --- Pipefy (não é usado por enquanto: os IDs vêm da planilha) ---
+PIPEFY_TOKEN=
+
+# --- Opcionais (os valores abaixo já são o padrão) ---
+# Planilha: se vazio, usa o arquivo mais recente da pasta "entrada".
+ARQUIVO_PLANILHA=
+# Código de integração = prefixo + número do card (ex.: Int123456).
+PREFIXO_INTEGRACAO=Int
+# Segundos entre uma chamada e outra ao Omie. Aumente se ele reclamar muito.
+PAUSA_ENTRE_CHAMADAS=1.5
+# Maior espera aceita quando o Omie manda aguardar (segundos). Acima disso, o título fica "não processado".
+TETO_ESPERA_SEGUNDOS=3600
+# SIMULAR=sim só consulta e faz o relatório, sem cancelar nada.
+SIMULAR=nao
+# Nome do comando de cancelamento na API do Omie.
+OMIE_METODO_CANCELAR=CancelarContaPagar
