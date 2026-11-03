@@ -73,12 +73,16 @@ primeiros cancelamentos são conferidos com uma consulta; os demais valem pela c
   cancelamentos restantes (sem martelar o Omie).
 - Se a resposta do cancelamento se perder, ele consulta antes de dar como falha.
 
-## Ponto não confirmado
+## ⚠️ O Omie NÃO tem comando de API para cancelar conta a pagar (confirmado em 03/11/2026)
 
-O nome do comando de cancelamento (`CancelarContaPagar`, com `codigo_lancamento_omie`) não pôde ser
-conferido na documentação do Omie a partir daqui (o site da API não abre do ambiente de desenvolvimento).
-Se o Omie disser que o método não existe, o programa para no primeiro e o relatório mostra a frase dele;
-o nome se troca no `.env` (`OMIE_METODO_CANCELAR`), sem mexer no código. **Recomendado: a primeira rodada
-real com uma planilha de 1 ou 2 cards.**
+Na primeira rodada real o Omie respondeu `Method "CancelarContaPagar" not exists`. As bibliotecas geradas da
+definição oficial da API listam, para `financas/contapagar`, só: Incluir, Alterar, Excluir, Consultar, Listar,
+Upsert, LancarPagamento e CancelarPagamento (este desfaz uma BAIXA, não cancela o título). Cancelar o título
+existe só na tela do Omie. Contas a RECEBER têm `CancelarContaReceber`; contas a pagar, não.
+
+Resultado da rodada: 4.755 cards → 64 em aberto (não cancelados), 36 já cancelados, 4.646 inexistentes,
+9 pagos/para revisar. Os 64 estão no relatório e em `entrada/pendentes_*.txt`. O que fazer com eles
+(cancelar à mão na tela do Omie, ou excluir pela API com `ExcluirContaPagar`) é decisão do dono — ele pediu
+explicitamente para NÃO excluir, porque a exclusão dá trabalho no painel.
 
 Testes: `tests/test_cancela_titulos_omie.py` (Omie dublado).

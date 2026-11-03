@@ -245,3 +245,12 @@ def test_lista_guardada_fora_da_pasta_e_falha_ao_gravar_nao_derruba(m, tmp_path,
         raise PermissionError("Acesso negado")
     monkeypatch.setattr(m.os, "replace", trava)
     assert m.gravar_cache({"titulos": {}}) is False
+
+
+def test_comando_inexistente_nao_repete(m):
+    omie = m.Omie("k", "s", pausa=0)
+    omie.sessao = SessaoFalsa([Resp(500, {"status": "error",
+                                          "message": 'Method "CancelarContaPagar" not exists'})])
+    with pytest.raises(m.ErroOmie):
+        omie.cancelar(11, "CancelarContaPagar")
+    assert len(omie.sessao.corpos) == 1

@@ -50,6 +50,9 @@ CAMPOS_DE_PAGAMENTO = ("valor_pago", "valor_baixado", "valor_recebido",
 FRASES_NAO_EXISTE = ("nao cadastrad", "não cadastrad", "nao encontrad",
                      "não encontrad", "nao existe", "não existe", "inexistente")
 FRASES_DEFINITIVAS = FRASES_NAO_EXISTE + (
+    # 03/11/2026: 'Method "CancelarContaPagar" not exists' foi repetido 6 vezes
+    # por não estar aqui. Comando que não existe não passa a existir repetindo.
+    "not exists", "not exist", "method \"", "metodo inexistente",
     "periodo contabil", "período contábil", "bloqueado por integra",
     "nao e permitido", "não é permitido", "nao pode ser", "não pode ser",
 )
