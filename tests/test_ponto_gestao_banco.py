@@ -202,6 +202,48 @@ def dia_util(segunda: dt.date, n: int) -> dt.date:
 
 
 # ---------------------------------------------------------------------------
+# DIA DE TRABALHO DE VERDADE — e por que este helper existe (03/11/2026)
+#
+# Três testes quebraram todos no mesmo dia, e nenhum deles tinha defeito: eles
+# escolhiam "o último dia útil" só pelo dia da semana, e em 03/11/2026 o último
+# dia útil era 02/11 — FINADOS. Bater ponto em feriado muda tudo: a hora extra
+# vira 100%, o dia não entra nos previstos, o ranking não conta.
+#
+# A armadilha é sazonal, e é o pior tipo: a suíte fica verde por semanas e
+# vermelha exatamente no dia seguinte a um feriado — longe de quem mexeu, e sem
+# relação com o que mudou. Por isso o critério mora AQUI, num lugar só.
+#
+# Lê os feriados NACIONAIS do próprio ponto (a tabela que as migrações semeiam),
+# em vez de uma lista escrita à mão: feriado novo cadastrado passa a ser
+# respeitado sem ninguém lembrar deste arquivo.
+# ---------------------------------------------------------------------------
+def feriados_nacionais(banco, inicio: dt.date, fim: dt.date) -> set:
+    with banco.connect() as conn:
+        return {l[0] for l in conn.execute(text(
+            "SELECT data FROM ponto.feriados WHERE abrangencia = 'NACIONAL' "
+            "AND data BETWEEN :i AND :f"), {"i": inicio, "f": fim})}
+
+
+def dias_de_trabalho_antes(banco, de: dt.date, quantos: int = 1, *,
+                           dias_da_semana=(0, 1, 2, 3, 4), limite: int = 60) -> list:
+    """Os `quantos` últimos dias de trabalho ANTES de `de`, do mais antigo para
+    o mais novo: dia da semana permitido e que não seja feriado nacional.
+
+    `dias_da_semana` existe porque alguns testes precisam de dias SEGUIDOS de
+    trabalho (o fechamento mede um dia e o seguinte), e aí sexta não serve.
+    """
+    feriados = feriados_nacionais(banco, de - dt.timedelta(days=limite), de)
+    achados, d = [], de - dt.timedelta(days=1)
+    for _ in range(limite):
+        if d.weekday() in dias_da_semana and d not in feriados:
+            achados.append(d)
+            if len(achados) == quantos:
+                return list(reversed(achados))
+        d -= dt.timedelta(days=1)
+    return list(reversed(achados))
+
+
+# ---------------------------------------------------------------------------
 # Estrutura
 # ---------------------------------------------------------------------------
 def test_migracoes_do_ponto_e_feriados_nacionais(banco, mundo):

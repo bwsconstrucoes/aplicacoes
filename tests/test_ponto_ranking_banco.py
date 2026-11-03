@@ -40,15 +40,21 @@ def test_so_refaz_depois_do_prazo():
 
 
 @pytest.mark.banco
-def test_o_aplicativo_le_o_ranking_guardado(app, mundo, monkeypatch):
+def test_o_aplicativo_le_o_ranking_guardado(app, mundo, monkeypatch, banco):
     from app.apps.ponto import db, horario
-    from tests.test_ponto_gestao_banco import bater_via_chave, local
-    ontem = horario.hoje() - dt.timedelta(days=1)
+    from tests.test_ponto_gestao_banco import bater_via_chave, dias_de_trabalho_antes, local
+    # ⚠️ FERIADO CONTA (03/11/2026): o teste usava "ontem" e quebrou no dia
+    # seguinte a Finados — batida em feriado não entra nos dias previstos, então
+    # quem está vendo não aparece no ranking e `eu` vem vazio.
+    uteis = dias_de_trabalho_antes(banco, horario.hoje(), quantos=1)
+    if not uteis:
+        pytest.skip("nenhum dia de trabalho nos últimos 60 dias")
+    ontem = uteis[0]
     bater_via_chave(app, CPF_JOAO, local(ontem, 7, 0))
     c = _entrar_no_app(app, CPF_JOAO, monkeypatch)
     comp = f"{horario.hoje():%Y-%m}"
     if ontem.month != horario.hoje().month:
-        pytest.skip("o primeiro dia do mês: ontem é do mês passado")
+        pytest.skip("o dia de trabalho mais recente é do mês passado")
     assert c.get("/ponto/app/api/ranking").get_json()["pronto"] is False       # ainda sem conta guardada
     with db.conexao() as conn:
         d = ranking.calcular(conn, comp, esperar=5)

@@ -117,22 +117,31 @@ def test_as_regras_do_dia():
     assert fe.falta_do_dia({"situacao": "OK", "debito": 0}) is None
 
 
-def _dia_do_corrente(hoje: dt.date) -> dt.date | None:
-    """Uma segunda a quinta já passada, entre o dia 1 e o 25, depois do início do ponto dos testes."""
-    d = hoje - dt.timedelta(days=1)
-    for _ in range(40):
-        if d.weekday() < 3 and 2 <= d.day <= 24:
+def _dia_do_corrente(banco, hoje: dt.date) -> dt.date | None:
+    """Um dia de trabalho já passado, entre o dia 2 e o 24, cujo SEGUINTE
+    também é dia de trabalho — o teste mede um dia com extra e o seguinte com
+    falta parcial, então os dois precisam valer.
+
+    ⚠️ FERIADO CONTA (03/11/2026): este teste quebrou no dia seguinte a Finados,
+    porque escolhia "segunda a quinta" só pelo dia da semana e caiu em 02/11.
+    Em feriado a extra vira 100% e o dia sai dos previstos. O
+    `dias_de_trabalho_antes` pula feriado nacional; o par de dias seguidos
+    continua sendo exigido aqui.
+    """
+    from tests.test_ponto_gestao_banco import dias_de_trabalho_antes
+    uteis = set(dias_de_trabalho_antes(banco, hoje, quantos=20, dias_da_semana=(0, 1, 2, 3)))
+    for d in sorted(uteis, reverse=True):
+        if 2 <= d.day <= 24 and (d + dt.timedelta(days=1)) in uteis:
             return d
-        d -= dt.timedelta(days=1)
     return None
 
 
 @pytest.mark.banco
 def test_o_fechamento_separa_o_inteiro_do_quebrado(app, mundo, banco, banco_analisesps):
     from app.apps.ponto import horario
-    dia = _dia_do_corrente(horario.hoje())
+    dia = _dia_do_corrente(banco, horario.hoje())
     if not dia:
-        pytest.skip("nenhum dia útil entre 1 e 25 nos últimos 40 dias")
+        pytest.skip("nenhum par de dias de trabalho seguidos entre 2 e 24 nos últimos 60 dias")
     with banco.connect() as conn:                       # o ID Fortes vem do cadastro da Análise de SPs
         conn.execute(text("INSERT INTO analisesps.colaborador (cpf, nome, celular, cargo, fase, obra_codigo, id_fortes) "
                           "VALUES (:c, 'João Obra A', '85999990000', 'Pedreiro', 'Colaboradores Ativos', 'PG-A', '000123')"),
