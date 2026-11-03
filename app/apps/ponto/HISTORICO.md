@@ -474,6 +474,13 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 03/11/2026 — Do Espelho para o cadastro da pessoa
+
+O dono: *"a partir do espelho do ponto eu deveria poder acessar o cadastro da pessoa pra facilitar qualquer ajuste."*
+Ponto › Espelho ganhou, ao lado do nome, o botão "👤 Cadastro da pessoa": abre a ficha na aba Cadastro (escala,
+jornada, se bate ponto, acesso no aplicativo, PIN, banco); ao fechar, o espelho se refaz. Ensaio no navegador e
+suíte inteira. **Publicado em 03/11/2026** (com o "pode" do dono) — SEM MIGRAÇÃO.
+
 ## 31/10/2026 (vigésima sexta) — Uma tela só de Pessoas; e o "Ver mosaico" que não fazia nada
 
 **Pessoas.** O dono: *"essas pessoas [que não batem ponto] ficam sumidas completamente, eu não vejo ela em canto
