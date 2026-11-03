@@ -234,3 +234,14 @@ def test_lista_velha_reconfere_antes_de_cancelar(m, tmp_path, monkeypatch):
     assert m.main() == 0
     assert '"ConsultarContaPagar"' in sessao.corpos[0] and len(sessao.corpos) == 1
     assert m._ESTADO["linhas"][0]["Resultado"] == "PAGO / COM BAIXA"
+
+
+def test_lista_guardada_fora_da_pasta_e_falha_ao_gravar_nao_derruba(m, tmp_path, monkeypatch):
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
+    assert m._caminho_cache().startswith(str(tmp_path / "local"))
+    assert m.gravar_cache({"titulos": {}}) is True
+
+    def trava(*a):
+        raise PermissionError("Acesso negado")
+    monkeypatch.setattr(m.os, "replace", trava)
+    assert m.gravar_cache({"titulos": {}}) is False

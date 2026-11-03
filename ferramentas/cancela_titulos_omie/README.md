@@ -53,9 +53,11 @@ minutos depois de 14 consultas: card sem título no Omie volta como **erro** ("n
 série o Omie pune com *"API bloqueada por consumo indevido. Tente novamente em 1799 segundos"*. A chave
 bloqueada é a mesma do sistema da empresa (painel, BaixaBradesco, criação de títulos).
 
-Baixando a lista, toda chamada dá certo e card ausente é só um código que não aparece nela. São ~240
-páginas para ~120 mil títulos, uma vez só: a lista fica em `cache/contas_pagar_omie.json` e vale por
-`VALIDADE_LISTA_HORAS` (12 h). Interrompida, a baixa continua da página onde parou. Se a lista tiver mais de
+Baixando a lista, toda chamada dá certo e card ausente é só um código que não aparece nela. Na primeira
+rodada o Omie informou **1.205 páginas** — a baixa é longa (a tela mostra quanto falta), mas é feita uma
+vez: a lista fica em `%LOCALAPPDATA%\BWS\cancela_titulos_omie\contas_pagar_omie.json` (fora do Dropbox,
+que travou o arquivo em 03/11/2026) e vale por `VALIDADE_LISTA_HORAS` (12 h). É regravada a cada 25 páginas
+e ao parar; interrompida, a baixa continua de onde parou. Se a lista tiver mais de
 1 h na hora de cancelar, cada título é reconsultado antes (título que existe responde sem erro). Os 5
 primeiros cancelamentos são conferidos com uma consulta; os demais valem pela confirmação do Omie.
 

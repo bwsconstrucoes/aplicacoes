@@ -334,16 +334,40 @@ CAMPOS_GUARDADOS = ("codigo_lancamento_omie", "codigo_lancamento_integracao",
 
 
 def _caminho_cache():
-    return os.path.join(PASTA, "cache", "contas_pagar_omie.json")
+    """A lista guardada fica FORA da pasta do programa, no próprio PC.
+
+    03/11/2026: com a pasta no Dropbox, a sincronização travou o arquivo enquanto
+    ele era regravado ("WinError 5 — Acesso negado"). No Windows vai para
+    %LOCALAPPDATA%\\BWS\\cancela_titulos_omie, o mesmo lugar do ambiente do Python."""
+    base = os.environ.get("LOCALAPPDATA")
+    pasta = (os.path.join(base, "BWS", "cancela_titulos_omie") if base
+             else os.path.join(PASTA, "cache"))
+    return os.path.join(pasta, "contas_pagar_omie.json")
 
 
 def gravar_cache(cache):
+    """Grava a lista guardada. Falhar aqui NUNCA derruba a execução: no pior caso,
+    uma baixa interrompida recomeça do início em vez de continuar."""
     caminho = _caminho_cache()
-    os.makedirs(os.path.dirname(caminho), exist_ok=True)
-    tmp = caminho + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(cache, f, ensure_ascii=False)
-    os.replace(tmp, caminho)
+    try:
+        os.makedirs(os.path.dirname(caminho), exist_ok=True)
+        tmp = caminho + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(cache, f, ensure_ascii=False)
+        for tentativa in range(5):   # antivírus/sincronizador segurando o arquivo
+            try:
+                os.replace(tmp, caminho)
+                return True
+            except PermissionError:
+                time.sleep(0.5 * (tentativa + 1))
+        os.replace(tmp, caminho)
+        return True
+    except OSError as e:
+        print(f"\n   (!) Não consegui guardar a lista no PC ({e}). Sigo sem guardar.")
+        return False
+
+
+GRAVAR_A_CADA_PAGINAS = 25
 
 
 def ler_cache():
@@ -372,23 +396,39 @@ def baixar_titulos(omie, prefixo, validade_horas):
                  "proxima_pagina": 1, "total_paginas": None, "titulos": {}}
     prefixo_maiusculo = prefixo.upper()
     pagina = cache["proxima_pagina"]
-    while True:
-        dados = omie.listar_pagina(pagina)
-        total = int(dados.get("total_de_paginas") or 1)
-        for r in dados.get("conta_pagar_cadastro") or []:
-            codigo = str(r.get("codigo_lancamento_integracao") or "").strip().upper()
-            if codigo.startswith(prefixo_maiusculo):
-                cache["titulos"][codigo] = {k: r.get(k) for k in CAMPOS_GUARDADOS if k in r}
-        cache["proxima_pagina"], cache["total_paginas"] = pagina + 1, total
-        if pagina >= total:
-            cache["completo"], cache["fim"] = True, time.time()
+    comeco, paginas_feitas = time.monotonic(), 0
+    # A lista é regravada a cada 25 páginas, e não a cada página: são mais de
+    # mil páginas, e regravar um arquivo que cresce a cada uma é lento à toa.
+    # Interrompida a baixa (erro, Ctrl+C), o que já veio é gravado no finally.
+    try:
+        while True:
+            dados = omie.listar_pagina(pagina)
+            total = int(dados.get("total_de_paginas") or 1)
+            for r in dados.get("conta_pagar_cadastro") or []:
+                codigo = str(r.get("codigo_lancamento_integracao") or "").strip().upper()
+                if codigo.startswith(prefixo_maiusculo):
+                    cache["titulos"][codigo] = {k: r.get(k) for k in CAMPOS_GUARDADOS if k in r}
+            cache["proxima_pagina"], cache["total_paginas"] = pagina + 1, total
+            paginas_feitas += 1
+            if paginas_feitas == 1:
+                n = len(dados.get("conta_pagar_cadastro") or [])
+                print(f"   O Omie tem {dados.get('total_de_registros', '?')} contas a pagar: "
+                      f"{total} páginas de {n}. A baixa é feita uma vez e fica guardada "
+                      "no PC; se parar, continua de onde parou.")
+            if pagina >= total:
+                cache["completo"], cache["fim"] = True, time.time()
+            elif paginas_feitas % GRAVAR_A_CADA_PAGINAS == 0:
+                gravar_cache(cache)
+            ritmo = (time.monotonic() - comeco) / paginas_feitas
+            falta_min = int(ritmo * (total - pagina) / 60)
+            print(f"\r   Página {pagina}/{total} — {len(cache['titulos'])} títulos com código "
+                  f"{prefixo}... — faltam ~{falta_min} min   ", end="", flush=True)
+            if cache["completo"]:
+                print()
+                return cache
+            pagina += 1
+    finally:
         gravar_cache(cache)
-        print(f"\r   Página {pagina}/{total} — {len(cache['titulos'])} títulos com código "
-              f"{prefixo}... até agora   ", end="", flush=True)
-        if cache["completo"]:
-            print()
-            return cache
-        pagina += 1
 
 
 # ---------------------------------------------------------------------------
