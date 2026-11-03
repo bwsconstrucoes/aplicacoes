@@ -1,3 +1,11 @@
-Coloque aqui a planilha (.xlsx ou .csv) com os numeros dos cards do Pipefy
-na PRIMEIRA coluna, um por linha. Cabecalho pode existir; e ignorado.
-O programa usa o arquivo mais recente desta pasta.
+COMO USAR ESTA PASTA
+
+Cole os numeros dos cards do Pipefy num arquivo .txt aqui dentro (um por
+linha - pode colar a coluna direto do Excel), ou ponha uma planilha .xlsx/.csv
+com os numeros na PRIMEIRA coluna. Pode ter mais de um arquivo: todos sao lidos.
+
+Depois de cada rodada (que nao seja simulacao):
+ - os arquivos lidos vao para a subpasta "processados";
+ - o que deu erro e precisa ser consultado de novo vira "pendentes_<data>.txt"
+   aqui mesmo. Rodar o executar.bat de novo consulta SO esses.
+ - o que ficou resolvido nao volta.

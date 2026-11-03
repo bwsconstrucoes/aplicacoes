@@ -112,30 +112,70 @@ def test_espera_acima_do_teto_nao_trava(m):
     assert m._ESPERAS == []
 
 
-def test_execucao_completa(m, tmp_path, monkeypatch):
-    (tmp_path / "entrada").mkdir()
-    (tmp_path / "entrada" / "c.csv").write_text("card\n1\n2\n3\n4\n", encoding="utf-8")
+def test_lista_colada_no_txt(m, tmp_path):
+    arq = tmp_path / "lista.txt"
+    arq.write_text("Card\tObs\n101\tqualquer\n 102 \nInt103;x\n\n101\n", encoding="utf-8")
+    assert m.ler_ids(str(arq))[0] == ["101", "102", "103"]
+
+
+def _preparar(m, tmp_path, monkeypatch, respostas, resposta_sim="SIM"):
     (tmp_path / ".env").write_text("OMIE_KEY=k\nOMIE_SECRET=s\nPAUSA_ENTRE_CHAMADAS=0\n", encoding="utf-8")
     monkeypatch.setattr(m.sys, "argv", ["x"])
-    monkeypatch.setattr("builtins.input", lambda *_: "SIM")
-    for nome in ("SIMULAR", "ARQUIVO_PLANILHA"):
-        monkeypatch.delenv(nome, raising=False)
+    monkeypatch.setattr("builtins.input", lambda *_: resposta_sim)
     monkeypatch.setenv("SIMULAR", "nao")
     monkeypatch.setenv("ARQUIVO_PLANILHA", "")
-    sessao = SessaoFalsa([
+    sessao = SessaoFalsa(respostas)
+    monkeypatch.setattr(m.requests, "Session", lambda: sessao)
+    return sessao
+
+
+def test_execucao_completa(m, tmp_path, monkeypatch):
+    entrada = tmp_path / "entrada"
+    entrada.mkdir()
+    (entrada / "LEIA-ME.txt").write_text("instruções 999\n", encoding="utf-8")
+    (entrada / "a.csv").write_text("card\n1\n2\n3\n", encoding="utf-8")
+    (entrada / "b.txt").write_text("4\n5\n1\n", encoding="utf-8")
+    sessao = _preparar(m, tmp_path, monkeypatch, [
         Resp(200, {"codigo_lancamento_omie": 11, "status_titulo": "A VENCER"}),   # 1 consulta
         Resp(200, {"codigo_lancamento_omie": 22, "status_titulo": "CANCELADO"}),  # 2
         Resp(500, {"faultstring": "Lançamento não cadastrado"}),                  # 3
         Resp(200, {"codigo_lancamento_omie": 44, "status_titulo": "PAGO"}),       # 4
+        Resp(400, {"faultstring": "Erro desconhecido X"}),                        # 5: erro na consulta
         Resp(200, {"codigo_status": "0", "descricao_status": "Cancelado"}),       # cancela 1
         Resp(200, {"codigo_lancamento_omie": 11, "status_titulo": "CANCELADO"}),  # confere 1
     ])
-    monkeypatch.setattr(m.requests, "Session", lambda: sessao)
     assert m.main() == 0
     assert not sessao.respostas
-    cancelamento = sessao.corpos[4]
+    cancelamento = sessao.corpos[5]
     assert '"CancelarContaPagar"' in cancelamento and '"codigo_lancamento_omie": 11' in cancelamento
     res = {l["Card Pipefy"]: l["Resultado"] for l in m._ESTADO["linhas"]}
     assert res == {"1": "CANCELADO AGORA", "2": "JÁ ESTAVA CANCELADO",
-                   "3": "NÃO EXISTE NO OMIE", "4": "PAGO / COM BAIXA"}
+                   "3": "NÃO EXISTE NO OMIE", "4": "PAGO / COM BAIXA", "5": "NÃO PROCESSADO"}
     assert len(os.listdir(tmp_path / "relatorios")) == 1
+    # Na entrada sobra só a lista de pendentes (e o LEIA-ME); os lidos foram para processados.
+    sobra = sorted(n for n in os.listdir(entrada) if n != "processados")
+    assert sobra[0] == "LEIA-ME.txt" and sobra[1].startswith("pendentes_") and len(sobra) == 2
+    assert (entrada / sobra[1]).read_text(encoding="utf-8").split() == ["5"]
+    assert len(os.listdir(entrada / "processados")) == 2
+
+
+def test_segunda_rodada_le_so_os_pendentes(m, tmp_path, monkeypatch):
+    entrada = tmp_path / "entrada"
+    entrada.mkdir()
+    (entrada / "pendentes_x.txt").write_text("5\n", encoding="utf-8")
+    sessao = _preparar(m, tmp_path, monkeypatch, [
+        Resp(200, {"codigo_lancamento_omie": 55, "status_titulo": "CANCELADO"})])
+    assert m.main() == 0
+    assert [l["Card Pipefy"] for l in m._ESTADO["linhas"]] == ["5"]
+    assert [n for n in os.listdir(entrada) if n != "processados"] == []
+
+
+def test_simulacao_nao_mexe_na_entrada(m, tmp_path, monkeypatch):
+    entrada = tmp_path / "entrada"
+    entrada.mkdir()
+    (entrada / "a.txt").write_text("1\n", encoding="utf-8")
+    sessao = _preparar(m, tmp_path, monkeypatch, [
+        Resp(200, {"codigo_lancamento_omie": 11, "status_titulo": "A VENCER"})], resposta_sim="")
+    assert m.main() == 0
+    assert m._ESTADO["linhas"][0]["Resultado"] == "SERIA CANCELADO (simulação)"
+    assert os.listdir(entrada) == ["a.txt"]

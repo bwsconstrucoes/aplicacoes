@@ -21,7 +21,6 @@ segundos", HTTP 425/429, "consumo redundante") o programa espera o tempo pedido
 — com contagem regressiva na tela — antes de tentar de novo a MESMA consulta.
 Erro definitivo (título não existe, período contábil fechado) não é repetido.
 """
-import csv
 import json
 import os
 import re
@@ -104,7 +103,8 @@ def normalizar_id(valor):
 
 
 def ler_ids(caminho):
-    """Lê os números dos cards da PRIMEIRA coluna da planilha (.xlsx ou .csv/.txt).
+    """Lê os números dos cards: 1ª coluna da planilha .xlsx, ou 1º pedaço de cada
+    linha de um .txt/.csv (lista colada).
 
     Linhas com texto (o cabeçalho, por exemplo) são ignoradas. Número repetido
     entra uma vez só — consultar duas vezes o mesmo título é exatamente o que o
@@ -119,12 +119,12 @@ def ler_ids(caminho):
             valores.append(linha[0] if linha else None)
         wb.close()
     elif ext in (".csv", ".txt"):
-        with open(caminho, "r", encoding="utf-8-sig", newline="") as f:
-            amostra = f.read(2048)
-            f.seek(0)
-            sep = ";" if amostra.count(";") >= amostra.count(",") else ","
-            for linha in csv.reader(f, delimiter=sep):
-                valores.append(linha[0] if linha else None)
+        # Lista colada (do Excel, do Pipefy, de onde for): vale o primeiro pedaço
+        # de cada linha, separado por tab, ponto e vírgula, vírgula ou espaço.
+        with open(caminho, "r", encoding="utf-8-sig", errors="replace") as f:
+            for linha in f:
+                pedacos = [x for x in re.split(r"[\t;,]", linha.strip()) if x.strip()]
+                valores.append(pedacos[0].strip() if pedacos else None)
     else:
         raise ValueError(f"Formato de planilha não reconhecido: {ext}. Use .xlsx ou .csv.")
 
@@ -141,24 +141,63 @@ def ler_ids(caminho):
     return ids, ignorados
 
 
-def achar_planilha(argumento):
-    """O arquivo arrastado para o .bat, o do .env, ou o primeiro .xlsx/.csv da pasta 'entrada'."""
+def achar_planilhas(argumento):
+    """De onde vem a lista, nesta ordem:
+      1. o arquivo arrastado em cima do executar.bat;
+      2. o ARQUIVO_PLANILHA do .env;
+      3. TODOS os .xlsx/.csv/.txt da pasta 'entrada' (juntos, sem repetir card).
+    Devolve (lista de arquivos, se_eles_saem_da_entrada_no_fim)."""
     if argumento and os.path.exists(argumento):
-        return argumento
+        return [argumento], False
     configurado = os.environ.get("ARQUIVO_PLANILHA", "").strip()
     if configurado:
         caminho = configurado if os.path.isabs(configurado) else os.path.join(PASTA, configurado)
         if os.path.exists(caminho):
-            return caminho
+            return [caminho], False
     pasta_entrada = os.path.join(PASTA, "entrada")
-    if os.path.isdir(pasta_entrada):
-        candidatos = sorted(
-            (os.path.join(pasta_entrada, n) for n in os.listdir(pasta_entrada)
-             if n.lower().endswith((".xlsx", ".csv", ".txt")) and not n.startswith("~$")),
-            key=os.path.getmtime, reverse=True)
-        if candidatos:
-            return candidatos[0]
-    return None
+    if not os.path.isdir(pasta_entrada):
+        return [], False
+    arquivos = sorted(
+        os.path.join(pasta_entrada, n) for n in os.listdir(pasta_entrada)
+        if n.lower().endswith((".xlsx", ".csv", ".txt"))
+        and not n.startswith("~$") and n.upper() != "LEIA-ME.TXT"
+        and os.path.isfile(os.path.join(pasta_entrada, n)))
+    return arquivos, True
+
+
+# Resultados que pedem nova tentativa. O resto está RESOLVIDO para o programa:
+# cancelado, já cancelado, não existe — ou depende de gente (pago, revisar).
+RESULTADOS_PENDENTES = ("NÃO PROCESSADO", "FALHOU")
+
+
+def fechar_entrada(linhas, arquivos, mover, simulacao):
+    """Deixa na pasta 'entrada' SÓ o que precisa ser tentado de novo.
+
+    Os arquivos lidos vão para 'entrada/processados' (com data na frente), e os
+    cards pendentes viram 'entrada/pendentes_<data>.txt'. Assim, rodar de novo
+    consulta só os pendentes — o que foi resolvido não volta.
+    Em simulação nada se move: nada foi cancelado, a lista continua valendo."""
+    carimbo = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    pendentes = [l["Card Pipefy"] for l in linhas if l["Resultado"] in RESULTADOS_PENDENTES]
+    if simulacao:
+        return None, pendentes
+    pasta_entrada = os.path.join(PASTA, "entrada")
+    os.makedirs(pasta_entrada, exist_ok=True)
+    if mover:
+        destino = os.path.join(pasta_entrada, "processados")
+        os.makedirs(destino, exist_ok=True)
+        for arq in arquivos:
+            try:
+                os.replace(arq, os.path.join(destino, f"{carimbo}_{os.path.basename(arq)}"))
+            except OSError as e:   # planilha aberta no Excel, por exemplo
+                print(f"   (!) Não consegui mover {os.path.basename(arq)} ({e}). "
+                      "Tire-o da pasta 'entrada' à mão, senão ele será lido de novo.")
+    caminho = None
+    if pendentes:
+        caminho = os.path.join(pasta_entrada, f"pendentes_{carimbo}.txt")
+        with open(caminho, "w", encoding="utf-8", newline="\r\n") as f:
+            f.write("\n".join(pendentes) + "\n")
+    return caminho, pendentes
 
 
 # ---------------------------------------------------------------------------
@@ -356,7 +395,7 @@ def gravar_relatorio(linhas, simulacao):
 # Execução
 # ---------------------------------------------------------------------------
 # Guardado fora do main() para o relatório sair mesmo se a execução for interrompida.
-_ESTADO = {"linhas": [], "simular": True}
+_ESTADO = {"linhas": [], "simular": True, "arquivos": [], "mover": False}
 
 def main():
     carregar_env(os.path.join(PASTA, ".env"))
@@ -374,16 +413,22 @@ def main():
     metodo = os.environ.get("OMIE_METODO_CANCELAR", "CancelarContaPagar").strip() or "CancelarContaPagar"
     simular = os.environ.get("SIMULAR", "").strip().lower() in ("1", "sim", "s", "true", "yes")
 
-    planilha = achar_planilha(sys.argv[1] if len(sys.argv) > 1 else None)
-    if not planilha:
-        print("\nERRO: Não achei a planilha. Coloque o arquivo (.xlsx ou .csv) na pasta"
-              " 'entrada', ou arraste o arquivo em cima do executar.bat.")
+    arquivos, mover = achar_planilhas(sys.argv[1] if len(sys.argv) > 1 else None)
+    if not arquivos:
+        print("\nERRO: Não achei a lista. Cole os números dos cards num arquivo .txt (ou"
+              " ponha a planilha .xlsx/.csv) na pasta 'entrada', ou arraste o arquivo"
+              " em cima do executar.bat.")
         return 1
-    ids, ignorados = ler_ids(planilha)
-    print(f"\nPlanilha: {planilha}")
-    print(f"Cards encontrados: {len(ids)}" + (f"  (linhas ignoradas: {len(ignorados)})" if ignorados else ""))
+    ids, ignorados = [], []
+    for arq in arquivos:
+        lidos, ign = ler_ids(arq)
+        print(f"\nArquivo: {arq}  ->  {len(lidos)} card(s)")
+        ignorados += ign
+        ids += [c for c in lidos if c not in ids]
+    _ESTADO["arquivos"], _ESTADO["mover"], _ESTADO["ids"] = arquivos, mover, ids
+    print(f"Cards para consultar: {len(ids)}" + (f"  (linhas ignoradas: {len(ignorados)})" if ignorados else ""))
     if not ids:
-        print("ERRO: Nenhum número de card na primeira coluna.")
+        print("ERRO: Nenhum número de card encontrado.")
         return 1
 
     omie = Omie(key, secret,
@@ -503,7 +548,18 @@ def main():
         print(f"  {k:<32} {contagem[k]:>5}")
     print(f"\n  Chamadas ao Omie: {omie.chamadas}")
     print(f"  Relatório: {caminho}")
+    _avisar_pendentes(*fechar_entrada(linhas, arquivos, mover, simular), simular)
     return 0
+
+
+def _avisar_pendentes(caminho, pendentes, simulacao):
+    if simulacao:
+        print("\n  Simulação: a lista da pasta 'entrada' ficou como estava.")
+    elif pendentes:
+        print(f"\n  {len(pendentes)} card(s) para tentar de novo, em: {caminho}")
+        print("  Rodando o executar.bat de novo, só eles serão consultados.")
+    else:
+        print("\n  Nenhum pendente: tudo resolvido. A pasta 'entrada' ficou vazia.")
 
 
 if __name__ == "__main__":
@@ -517,6 +573,14 @@ if __name__ == "__main__":
                 l["Resultado"] = "NÃO PROCESSADO"
                 l["Detalhe"] = (l["Detalhe"] + " | Execução interrompida antes deste.").strip(" |")
         if _ESTADO["linhas"]:
+            # Card que nem chegou a ser consultado também é pendente.
+            vistos = {l["Card Pipefy"] for l in _ESTADO["linhas"]}
+            _ESTADO["linhas"] += [{"Card Pipefy": c, "Resultado": "NÃO PROCESSADO",
+                                   "Detalhe": "Execução interrompida antes deste."}
+                                  for c in _ESTADO.get("ids", []) if c not in vistos]
             print("Relatório parcial:", gravar_relatorio(_ESTADO["linhas"], _ESTADO["simular"])[0])
+            _avisar_pendentes(*fechar_entrada(_ESTADO["linhas"], _ESTADO["arquivos"],
+                                              _ESTADO["mover"], _ESTADO["simular"]),
+                              _ESTADO["simular"])
         codigo = 1
     sys.exit(codigo)

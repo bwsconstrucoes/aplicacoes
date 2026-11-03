@@ -23,8 +23,18 @@ Programa de PC (fora do sistema web — não roda no Render, não mexe em nenhum
 1. Ter o Python instalado (python.org, marcar "Add python.exe to PATH").
 2. Copiar esta pasta para o PC e dar dois cliques em `executar.bat`.
    Na primeira vez ele cria o `.env` e abre no Bloco de Notas: preencher `OMIE_KEY` e `OMIE_SECRET`.
-3. Pôr a planilha na pasta `entrada` (vale a mais recente) — ou arrastar o arquivo em cima do `executar.bat`.
+3. Na pasta `entrada`, **colar os números num arquivo `.txt`** (um por linha; a coluna copiada do Excel
+   serve) ou pôr a planilha `.xlsx`/`.csv`. Todos os arquivos da pasta são lidos juntos.
+   (Ou arrastar um arquivo em cima do `executar.bat` — aí ele não é movido.)
 4. Rodar o `executar.bat`.
+
+## O que foi resolvido não volta
+
+Ao fim de uma rodada de verdade (não simulação), os arquivos lidos vão para `entrada/processados/`, e os cards
+que **falharam** ou **não chegaram a ser processados** (Omie pediu espera longa demais, rede caiu, recusa,
+execução interrompida) viram `entrada/pendentes_<data>.txt`. Rodar de novo consulta **só esses**.
+Os demais estão resolvidos: cancelado, já cancelado, não existe — ou pago/revisar, que dependem de olho humano
+e estão no relatório.
 
 Para só consultar sem nem ser perguntado: `SIMULAR=sim` no `.env`.
 
