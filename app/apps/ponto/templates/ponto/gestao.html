@@ -675,7 +675,11 @@
 
 {% elif aba_ponto == "ponto_espelho" %}
 {# --------------------------------------------------------------- ESPELHO #}
-<h2 id="e-titulo">Espelho de ponto <small id="e-sub"></small></h2>
+<h2 id="e-titulo">Espelho de ponto <small id="e-sub"></small>
+  {# 03/11/2026, o dono: "a partir do espelho do ponto eu deveria poder acessar o cadastro da pessoa pra facilitar
+     qualquer ajuste" — a ficha abre por cima, na aba Cadastro; ao fechar, o espelho se refaz #}
+  <button class="btn secundario" id="e-btn-cadastro" type="button" hidden
+          style="margin-left:10px; font-size:13px; vertical-align:middle">👤 Cadastro da pessoa</button></h2>
 <div id="mensagem"></div>
 <div id="e-fechado"></div>
 <div class="barra-acoes" id="e-acoes" hidden>
@@ -3969,6 +3973,7 @@ async function carregarPessoasDoEspelho() {
 
 function semPessoa() {
   ESP = null;
+  els("e-btn-cadastro").hidden = true;
   els("e-titulo").childNodes[0].textContent = "Espelho de ponto ";
   els("e-sub").textContent = "";
   els("e-kpis").innerHTML = "";
@@ -3977,6 +3982,15 @@ function semPessoa() {
   els("e-acoes").hidden = true;
   els("e-vazio").classList.remove("oculto");
 }
+
+// A ficha da pessoa, na aba Cadastro (escala, jornada, se bate ponto, acesso no aplicativo…); fechada, o espelho
+// é refeito — uma escala trocada ali já aparece aqui.
+els("e-btn-cadastro").addEventListener("click", async () => {
+  if (!ESP) return;
+  await abrirPessoaPainel(ESP.pessoa.id, null, "cadastro", ESP.competencia);
+  const dlg = els("dlg-pessoa");
+  if (dlg) dlg.addEventListener("close", () => carregarEspelho(), {once: true});
+});
 
 async function carregarEspelho() {
   atualizarLinksDoEspelho();
@@ -4007,6 +4021,7 @@ function desenharEspelho() {
   els("e-sub").textContent = [documento(p.cpf), p.obra ? `obra ${p.obra}` : "sem obra",
     rotuloJornada(p.tipo_jornada), mesBR(ESP.competencia)].join(" · ");
   els("e-vazio").classList.add("oculto");
+  els("e-btn-cadastro").hidden = false;
   els("e-fechado").innerHTML = ESP.competencia_fechada
     ? `<div class="aviso info"><b>Mês fechado.</b> Os números deste mês estão travados:
         não dá para pedir ajuste, lançar afastamento nem decidir batida. Para mudar,
