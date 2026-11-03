@@ -35,7 +35,16 @@
         title="Esta SP não está validada: o Agendar fica bloqueado até validar.">Validar</span>{% endif %}</h3>
     <div class="ficha-credor">{{ sp.credor }}</div>
   </div>
-  <div class="ficha-valor">{{ sp.valor_num|moeda }}</div>
+  <div class="ficha-topo-dir">
+    <div class="ficha-valor">{{ sp.valor_num|moeda }}</div>
+    {# "ATUALIZAR DA PLANILHA" (03/11/2026): relê só esta linha da SPsBD, na
+       hora. Não confundir com o "Atualizar" lá embaixo, que é o do Omie. #}
+    <button class="btn secundario ficha-da-planilha" type="button"
+            data-url="{{ url_for('analisesps.atualizar_sp_da_planilha', sp_id=sp.id) }}"
+            data-ficha="{{ url_for('analisesps.detalhe', sp_id=sp.id) }}"
+            data-sp="{{ sp.id }}"
+            title="Traz da planilha SPsBD só esta SP, sem esperar a atualização completa">↻ Atualizar da planilha</button>
+  </div>
 </div>
 
 {# A DESCRIÇÃO LOGO NO ALTO: é do que se trata a SP, e é a primeira coisa que

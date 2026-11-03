@@ -516,9 +516,74 @@ def sincronizar_delta(anotar=None) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# 2b. UMA SP só, na hora — o "Atualizar da planilha" da ficha (03/11/2026)
+#
+# O dono: *"às vezes atualizei uma única linha da planilha e queria que ela
+# fosse atualizada no sistema imediatamente sem precisar buscar pela
+# atualização completa."* São duas leituras ao Google (a coluna A, para achar a
+# linha, e a própria linha) em vez da conferência da base inteira.
+#
+# ⚠️ ANTES DE LER, DEVOLVE O QUE ESTÁ NA FILA DESTA SP. Se alguém marcou
+# "Pago" pela tela e a alteração ainda não desceu para a planilha, ler a linha
+# primeiro traria o valor VELHO de volta e apagaria a marcação. A fila desta SP
+# vai antes — o mesmo que a sincronização completa faz (fila, depois delta).
+#
+# Não mexe na marca d'água do delta (`ultimo_carimbo`): a próxima sincronização
+# completa relê esta linha também, o que é inofensivo.
+# ---------------------------------------------------------------------------
+def atualizar_uma_sp(sp_id: str) -> dict:
+    """Traz da SPsBD só a linha desta SP. Devolve o que mudou (rótulos)."""
+    from .db import conexao
+
+    sp_id = str(sp_id or "").strip()
+    if not sp_id:
+        raise ValueError("Número da SP não informado.")
+
+    devolvidas = drenar_fila(sp_id=sp_id).get("gravadas", 0)
+
+    aba = _aba_sps()
+    coluna_ids = com_retry(lambda: aba.col_values(colunas.COLS["id"].idx + 1))
+    numero = next((n for n in range(colunas.PRIMEIRA_LINHA_DADOS, len(coluna_ids) + 1)
+                   if str(coluna_ids[n - 1] or "").strip() == sp_id), None)
+    if numero is None:
+        return {"achada": False, "mudou": [], "devolvidas": devolvidas}
+
+    faixa = f"A{numero}:{colunas.ULTIMA_LETRA}{numero}"
+    blocos = com_retry(lambda: aba.batch_get([faixa]))
+    linha = blocos[0][0] if blocos and blocos[0] else []
+    registro = colunas.linha_para_dicionario(linha)
+    if str(registro.get("id") or "").strip() != sp_id:
+        # A linha mudou de lugar entre as duas leituras (alguém inseriu ou
+        # apagou linha acima). Melhor não gravar do que gravar a SP errada.
+        raise RuntimeError("A planilha mudou durante a leitura; tente de novo.")
+
+    campos = [c.chave for c in colunas.GUARDADAS]
+    with conexao() as conn:
+        cur = conn.execute(
+            "SELECT " + ", ".join(f'"{c}"' for c in campos)
+            + " FROM analisesps.sps WHERE id = ?", (sp_id,))
+        antes = cur.fetchone()
+        cur.close()
+        gravar_registros(conn, [registro])
+        # Hora da base: é o que avisa as outras telas abertas que algo mudou.
+        _anotar_a_base_em_dia(conn)
+        conn.commit()
+
+    if antes is None:
+        mudou = ["(SP nova no sistema)"]
+    else:
+        mudou = [colunas.COLS[c].rotulo for c, velho in zip(campos, antes)
+                 if str(velho if velho is not None else "").strip()
+                 != str(registro.get(c) or "").strip()]
+    logger.info("Análise de SPs: SP %s atualizada da planilha (linha %d) — %s.",
+                sp_id, numero, ", ".join(mudou) or "nada mudou")
+    return {"achada": True, "mudou": mudou, "linha": numero, "devolvidas": devolvidas}
+
+
+# ---------------------------------------------------------------------------
 # 3. A fila de volta para a planilha
 # ---------------------------------------------------------------------------
-def drenar_fila(anotar=None) -> dict:
+def drenar_fila(anotar=None, sp_id: str | None = None) -> dict:
     """Grava na planilha o que está pendente e limpa o que for confirmado.
 
     Só sai da fila o que o Google confirmar. Falha de rede deixa tudo onde
@@ -528,9 +593,11 @@ def drenar_fila(anotar=None) -> dict:
     anotar = anotar or (lambda *a, **k: None)
 
     with conexao() as conn:
+        # `sp_id`: só a fila de uma SP (o "Atualizar da planilha" da ficha).
+        filtro, args = ("WHERE sp_id = ? ", (str(sp_id),)) if sp_id else ("", ())
         cur = conn.execute(
             "SELECT sp_id, coluna, valor FROM analisesps.fila "
-            " ORDER BY criado_em LIMIT 2000")
+            + filtro + " ORDER BY criado_em LIMIT 2000", args)
         pendentes = cur.fetchall()
         cur.close()
 

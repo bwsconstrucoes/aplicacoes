@@ -454,6 +454,8 @@ APOIO = {
 TELA_DA_ROTA = {
     "analisesps.solicitacoes": ("solicitacoes",),
     "analisesps.detalhe": ("solicitacoes",),
+    # 03/11/2026: o "Atualizar da planilha" da ficha — relê só a linha da SP.
+    "analisesps.atualizar_sp_da_planilha": ("solicitacoes",),
     "analisesps.exportar": ("solicitacoes",),
     "analisesps.alterar": ("solicitacoes",),
     "analisesps.enviar_ao_lote": ("solicitacoes",),

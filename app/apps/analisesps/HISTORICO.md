@@ -12244,6 +12244,28 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 247 — "Atualizar da planilha" na ficha: só aquela SP, na hora (03/11/2026)
+
+- *"Às vezes atualizei uma única linha da planilha e queria que ela fosse
+  atualizada no sistema imediatamente sem precisar buscar pela atualização completa.
+  No modal do registro poderia ter um botão pra eu atualizar somente ela."*
+- **O botão:** "↻ Atualizar da planilha", no alto da ficha, debaixo do valor
+  (nome diferente do "Atualizar" lá de baixo, que é o do Omie). Duas leituras ao
+  Google — a coluna A, para achar a linha, e a própria linha — e grava no banco.
+  No modal, refaz SÓ a ficha (a lista por trás não perde rolagem nem marcação) e
+  diz o que mudou ("Mudou: Status Pgt") ou que já estava igual. Vale para
+  qualquer perfil que abre a ficha (não altera dado, só traz o da planilha).
+- **⚠️ A fila desta SP vai ANTES da leitura** (`drenar_fila(sp_id=…)`): alteração
+  feita pela tela que ainda não desceu para a planilha seria desfeita pela leitura.
+- **De fora, de propósito:** SP que não está mais na planilha NÃO é apagada por
+  este botão (a resposta diz que ela sai na próxima atualização completa); a marca
+  d'água do delta não muda (a sincronização completa relê a linha, inofensivo); a
+  linha da lista por trás do modal só muda quando a lista recarrega.
+- Código: `sincronizacao.atualizar_uma_sp`, rota `/api/sp/<id>/da-planilha`
+  (`atualizar_sp_da_planilha`). Testes: `test_analisesps_uma_sp.py` e
+  `test_analisesps_uma_sp_banco.py`. Conferido no navegador (modal → botão →
+  ficha refeita com o dado novo e o aviso).
+
 #### Leva 246 — O "Atualizar" só traz a SPsBD; ponto e apoios em pistas próprias (31/10/2026) — MIGRAÇÃO 055
 
 > **Publicado em 03/11/2026.** Pendente AGORA: o dono apertar "Aplicar atualizações do

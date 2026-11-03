@@ -1465,6 +1465,29 @@ def substituir_comprovante(sp_id):
     return {"ok": True, "link": link}
 
 
+@bp.route("/api/sp/<sp_id>/da-planilha", methods=["POST"])
+@exige_consulta
+def atualizar_sp_da_planilha(sp_id):
+    """"Atualizar da planilha", na ficha (03/11/2026): relê SÓ a linha desta SP
+    na SPsBD — ver `sincronizacao.atualizar_uma_sp`. Qualquer perfil que abre a
+    ficha pode: não muda dado nenhum, só traz o que já está na planilha."""
+    from . import sincronizacao
+    sp_id = str(sp_id).strip()
+    erro = _fora_do_recorte([sp_id])
+    if erro:
+        return erro
+    try:
+        r = sincronizacao.atualizar_uma_sp(sp_id)
+    except Exception as e:  # noqa: BLE001 — a ficha tem de dizer o que houve
+        logger.exception("Análise de SPs: falhou atualizar a SP %s da planilha", sp_id)
+        return {"ok": False, "erro": f"Não foi possível ler a planilha: {e}"}, 500
+    if not r["achada"]:
+        return {"ok": False, "erro": (
+            f"A SP {sp_id} não está na planilha SPsBD. Se ela foi excluída lá, "
+            "sai do sistema na próxima atualização completa.")}, 404
+    return {"ok": True, **r}
+
+
 @bp.route("/api/c-diarios/atualizar", methods=["POST"])
 @exige_operador
 def atualizar_c_diarios():
