@@ -817,6 +817,9 @@ chave do Omie depois de 14 consultas — card sem título volta como ERRO, e err
 indevido". A chave é a da empresa, então o bloqueio vale para o sistema todo. Trocado por baixar a lista
 inteira de contas a pagar (`ListarContasPagar`, 500 por página, guardada em `cache/` e retomável) e cruzar
 no PC. **Lição para qualquer área:** contra o Omie, nunca consultar em série registros que podem não existir.
+**E a API do Omie não cancela conta a pagar** (`Method "CancelarContaPagar" not exists`; só a tela cancela —
+conta a receber tem `CancelarContaReceber`). O dono decidiu excluir (`ExcluirContaPagar`) os 64 em aberto
+encontrados. Se outra área precisar "cancelar título a pagar" por API, a resposta é esta: não existe.
 
 ### 03/11/2026 — Prazo para o worker sair na renovação (`gunicorn.conf.py`, na raiz)
 

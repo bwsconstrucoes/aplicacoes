@@ -150,20 +150,20 @@ def test_execucao_completa(m, tmp_path, monkeypatch):
             {"codigo_lancamento_omie": 44, "codigo_lancamento_integracao": "Int4", "status_titulo": "PAGO"},
             {"codigo_lancamento_omie": 55, "codigo_lancamento_integracao": "Int5", "status_titulo": "ATRASADO"},
         ]),
-        Resp(200, {"codigo_status": "0", "descricao_status": "Cancelado"}),       # cancela 1
-        Resp(200, {"codigo_lancamento_omie": 11, "status_titulo": "CANCELADO"}),  # confere 1
-        Resp(500, {"faultstring": "Título incluído em remessa de pagamento. Não é permitido cancelar."}),  # cancela 5
+        Resp(200, {"codigo_status": "0", "descricao_status": "Excluído"}),        # exclui 1
+        Resp(500, {"faultstring": "ERROR: Lançamento não cadastrado!"}),         # confere 1: sumiu
+        Resp(500, {"faultstring": "Título com baixa. Não é permitido excluir."}),  # exclui 5
         Resp(200, {"codigo_lancamento_omie": 55, "status_titulo": "ATRASADO"}),   # confere 5 após recusa
     ])
     assert m.main() == 0
     assert not sessao.respostas
     # Nenhuma consulta de card ausente: só a lista, os cancelamentos e as conferências.
     chamadas = [c.split('"call": "')[1].split('"')[0] for c in sessao.corpos]
-    assert chamadas == ["ListarContasPagar", "ListarContasPagar", "CancelarContaPagar",
-                        "ConsultarContaPagar", "CancelarContaPagar", "ConsultarContaPagar"]
+    assert chamadas == ["ListarContasPagar", "ListarContasPagar", "ExcluirContaPagar",
+                        "ConsultarContaPagar", "ExcluirContaPagar", "ConsultarContaPagar"]
     assert '"codigo_lancamento_omie": 11' in sessao.corpos[2]
     res = {l["Card Pipefy"]: l["Resultado"] for l in m._ESTADO["linhas"]}
-    assert res == {"1": "CANCELADO AGORA", "2": "JÁ ESTAVA CANCELADO",
+    assert res == {"1": "EXCLUÍDO AGORA", "2": "JÁ ESTAVA CANCELADO",
                    "3": "NÃO EXISTE NO OMIE", "4": "PAGO / COM BAIXA", "5": "FALHOU",
                    "6": "NÃO EXISTE NO OMIE"}
     assert len(os.listdir(tmp_path / "relatorios")) == 1
@@ -172,8 +172,8 @@ def test_execucao_completa(m, tmp_path, monkeypatch):
     assert sobra[0] == "LEIA-ME.txt" and sobra[1].startswith("pendentes_") and len(sobra) == 2
     assert (entrada / sobra[1]).read_text(encoding="utf-8").split() == ["5"]
     assert len(os.listdir(entrada / "processados")) == 2
-    # A lista guardada já sabe do cancelamento.
-    assert m.ler_cache()["titulos"]["INT1"]["status_titulo"] == "CANCELADO"
+    # A lista guardada já sabe da exclusão.
+    assert "INT1" not in m.ler_cache()["titulos"]
 
 
 def test_baixa_interrompida_continua_da_pagina(m, tmp_path, monkeypatch):
@@ -216,7 +216,7 @@ def test_simulacao_nao_mexe_na_entrada(m, tmp_path, monkeypatch):
         _pagina(1, 1, [{"codigo_lancamento_omie": 11, "codigo_lancamento_integracao": "Int1",
                         "status_titulo": "A VENCER"}])], resposta_sim="")
     assert m.main() == 0
-    assert m._ESTADO["linhas"][0]["Resultado"] == "SERIA CANCELADO (simulação)"
+    assert m._ESTADO["linhas"][0]["Resultado"] == "SERIA EXCLUÍDO (simulação)"
     assert os.listdir(entrada) == ["a.txt"]
 
 
@@ -252,5 +252,23 @@ def test_comando_inexistente_nao_repete(m):
     omie.sessao = SessaoFalsa([Resp(500, {"status": "error",
                                           "message": 'Method "CancelarContaPagar" not exists'})])
     with pytest.raises(m.ErroOmie):
-        omie.cancelar(11, "CancelarContaPagar")
+        omie.chamar("CancelarContaPagar", {"codigo_lancamento_omie": 11})
     assert len(omie.sessao.corpos) == 1
+
+
+def test_so_os_primeiros_sao_conferidos(m, tmp_path, monkeypatch):
+    """Conferir exclusão é consulta que volta como erro: só os 5 primeiros."""
+    entrada = tmp_path / "entrada"
+    entrada.mkdir()
+    (entrada / "a.txt").write_text("\n".join(str(i) for i in range(1, 8)) + "\n", encoding="utf-8")
+    titulos = [{"codigo_lancamento_omie": i, "codigo_lancamento_integracao": f"Int{i}",
+                "status_titulo": "A VENCER"} for i in range(1, 8)]
+    respostas = [_pagina(1, 1, titulos)]
+    for i in range(1, 8):
+        respostas.append(Resp(200, {"codigo_status": "0"}))
+        if i <= 5:
+            respostas.append(Resp(500, {"faultstring": "Lançamento não cadastrado"}))
+    sessao = _preparar(m, tmp_path, monkeypatch, respostas)
+    assert m.main() == 0
+    assert not sessao.respostas
+    assert [l["Resultado"] for l in m._ESTADO["linhas"]] == ["EXCLUÍDO AGORA"] * 7

@@ -1,6 +1,9 @@
-# Cancelamento no Omie de títulos de cards cancelados no Pipefy
+# Exclusão no Omie de títulos de cards cancelados no Pipefy
 
 Programa de PC (fora do sistema web — não roda no Render, não mexe em nenhuma outra área).
+
+> **Pedido original: CANCELAR. O programa EXCLUI.** A API do Omie não tem comando de cancelamento para conta a
+> pagar (ver seção ⚠️ abaixo). Em 03/11/2026 o dono decidiu: *"pois vamos excluir"*. A pasta manteve o nome.
 
 ## O que faz
 
@@ -14,9 +17,11 @@ Programa de PC (fora do sistema web — não roda no Render, não mexe em nenhum
    - **já estava cancelado** → nada a fazer;
    - **pago / com baixa** (inclusive parcial) → não cancela, fica para revisão;
    - **situação desconhecida** → não cancela, fica para revisão;
-   - **em aberto e sem pagamento** (A VENCER, ATRASADO, VENCE HOJE) → candidato a cancelar.
-4. Mostra o resumo e **pede para digitar SIM** antes de cancelar. Enter sem SIM = só relatório.
-5. Cancela (nunca exclui) e consulta de novo para conferir.
+   - **em aberto e sem pagamento** (A VENCER, ATRASADO, VENCE HOJE) → candidato a excluir.
+4. Mostra o resumo e **pede para digitar SIM** antes de excluir. Enter sem SIM = só relatório.
+5. Exclui (`ExcluirContaPagar`) só os em aberto e sem pagamento. Já cancelado, pago ou com baixa parcial
+   não é tocado. Os 5 primeiros são conferidos com uma consulta; os demais valem pela confirmação do Omie —
+   conferir exclusão é uma consulta que volta como erro, e erro em série bloqueia a chave.
 6. Grava `relatorios/relatorio_<data>.xlsx` (aba Resumo + aba Detalhe, com cores).
 
 ## Como usar no PC
@@ -58,8 +63,7 @@ rodada o Omie informou **1.205 páginas** — a baixa é longa (a tela mostra qu
 vez: a lista fica em `%LOCALAPPDATA%\BWS\cancela_titulos_omie\contas_pagar_omie.json` (fora do Dropbox,
 que travou o arquivo em 03/11/2026) e vale por `VALIDADE_LISTA_HORAS` (12 h). É regravada a cada 25 páginas
 e ao parar; interrompida, a baixa continua de onde parou. Se a lista tiver mais de
-1 h na hora de cancelar, cada título é reconsultado antes (título que existe responde sem erro). Os 5
-primeiros cancelamentos são conferidos com uma consulta; os demais valem pela confirmação do Omie.
+1 h na hora de excluir, cada título é reconsultado antes (título que existe responde sem erro).
 
 ## Cuidado com o Omie (limite de consultas)
 
@@ -69,9 +73,9 @@ primeiros cancelamentos são conferidos com uma consulta; os demais valem pela c
   "Consumo redundante" espera 65 s. Pedido de espera acima de `TETO_ESPERA_SEGUNDOS` (1 h) não é
   esperado: o título fica como "não processado".
 - Erro definitivo (não cadastrado, período contábil fechado, "não é permitido") **não** é repetido.
-- Três recusas iguais seguidas no cancelamento, ou o Omie não reconhecer o comando, param os
-  cancelamentos restantes (sem martelar o Omie).
-- Se a resposta do cancelamento se perder, ele consulta antes de dar como falha.
+- Três recusas iguais seguidas na exclusão, ou o Omie não reconhecer o comando, param as
+  exclusões restantes (sem martelar o Omie).
+- Se a resposta da exclusão se perder, ele consulta antes de dar como falha.
 
 ## ⚠️ O Omie NÃO tem comando de API para cancelar conta a pagar (confirmado em 03/11/2026)
 
@@ -81,8 +85,7 @@ Upsert, LancarPagamento e CancelarPagamento (este desfaz uma BAIXA, não cancela
 existe só na tela do Omie. Contas a RECEBER têm `CancelarContaReceber`; contas a pagar, não.
 
 Resultado da rodada: 4.755 cards → 64 em aberto (não cancelados), 36 já cancelados, 4.646 inexistentes,
-9 pagos/para revisar. Os 64 estão no relatório e em `entrada/pendentes_*.txt`. O que fazer com eles
-(cancelar à mão na tela do Omie, ou excluir pela API com `ExcluirContaPagar`) é decisão do dono — ele pediu
-explicitamente para NÃO excluir, porque a exclusão dá trabalho no painel.
+9 pagos/para revisar. Os 64 estão no relatório e em `entrada/pendentes_*.txt`. **Decisão do dono, no mesmo dia: excluir**
+(`ExcluirContaPagar`), mesmo sabendo que a exclusão dá trabalho no painel.
 
 Testes: `tests/test_cancela_titulos_omie.py` (Omie dublado).

@@ -2,7 +2,7 @@
 chcp 65001 >nul
 setlocal
 cd /d "%~dp0"
-title Cancelamento de titulos no Omie
+title Exclusao no Omie de titulos de cards cancelados
 set PYTHONDONTWRITEBYTECODE=1
 
 rem O ambiente do Python fica FORA desta pasta, no proprio PC.
