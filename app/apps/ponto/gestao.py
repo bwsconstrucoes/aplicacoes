@@ -578,7 +578,7 @@ def _ficha(quem: Quem, colaborador_id: int) -> dict:
         # diz o que aconteceu, sem caçar na lista de aparelhos.
         arquivado = ("arquivado_em" if db.tem_coluna(conn, "dispositivos", "arquivado_em")
                      else "NULL::timestamptz AS arquivado_em")
-        aparelhos = db.todos(conn, f"""SELECT id, descricao, perfil, status, ultimo_uso_em, motivo_bloqueio,
+        aparelhos = db.todos(conn, f"""SELECT id, device_uuid, descricao, perfil, status, ultimo_uso_em, motivo_bloqueio,
                                               bloqueado_em, {arquivado}
                                          FROM ponto.dispositivos WHERE colaborador_id = :c
                                         ORDER BY id DESC""", c=colaborador_id)
@@ -595,7 +595,9 @@ def _ficha(quem: Quem, colaborador_id: int) -> dict:
                      "ciclo_data_base": h["ciclo_data_base"].isoformat() if h["ciclo_data_base"] else None,
                      "por": h["definido_por"]} for h in historico]
     j["escala_padrao"] = {"id": int(padrao["id"]), "nome": padrao["nome"]} if padrao else None
-    j["aparelhos"] = [{**a, "ultimo_uso_em": horario.texto(a["ultimo_uso_em"]),
+    j["aparelhos"] = [{**{k: v for k, v in a.items() if k != "device_uuid"},
+                       "codigo": dispositivos.codigo_curto(a["device_uuid"]),   # o que o celular mostra (04/11/2026)
+                       "ultimo_uso_em": horario.texto(a["ultimo_uso_em"]),
                        "bloqueado_em": horario.texto(a["bloqueado_em"]),
                        "arquivado_em": horario.texto(a["arquivado_em"])} for a in aparelhos]
     j["acordo_banco"] = bool(p.get("acordo_documento_id"))

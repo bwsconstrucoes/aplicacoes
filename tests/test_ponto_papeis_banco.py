@@ -747,3 +747,32 @@ def test_categoria_no_ponto_e_excecoes_da_pessoa():
     assert excecoes_da_pessoa({"regime_banco": "SEM_BANCO"}) == []
     assert excecoes_da_pessoa({"administrativo_obra": True, "regime_banco": "BANCO_6M", "bate_no_celular": True},
                               liberado=True) == ["CELULAR", "ADMINISTRATIVO", "LIBERADO", "BANCO"]
+
+
+def test_celular_bloqueado_diz_por_que_qual_e_e_leva_a_liberacao_de_volta(app, mundo, monkeypatch):
+    """04/11/2026, o dono: "ele não conseguiu bater, aparece 'este celular foi bloqueado', o cadastro está normal, o
+    celular está aprovado (…) ninguém consegue entender por quê". Era o outro aparelho dele que estava aprovado: o
+    celular bloqueado agora diz o motivo, a data e o código (o mesmo da ficha › Aparelhos), e oferece "é o meu
+    celular de sempre" a qualquer hora, não só ao entrar."""
+    cel = _entrar_no_app(app, CPF_JOAO, monkeypatch)
+    dp = como(app, mundo["dp"])
+    _, ha = _aparelho(app, "icone-da-tela-inicial-do-joao-01")
+    _, hb = _aparelho(app, "navegador-do-celular-do-joao-0123")
+    a, b = _id_do_aparelho(dp, "icone-da-tela-inicial-do-joao-01"), _id_do_aparelho(dp, "navegador-do-celular-do-joao-0123")
+    for ap in (a, b):                                       # aprovar o B bloqueia o A: um celular por pessoa
+        assert dp.post(f"/erp/api/ponto/dispositivos/{ap}/aprovar",
+                       json={"perfil": "INDIVIDUAL", "cpf": CPF_JOAO, "valido_ate": "NAO_EXPIRA"}).status_code == 200
+    est = cel.get("/ponto/app/api/aparelho", headers=ha).get_json()["aparelho"]
+    assert est["status"] == "BLOQUEADO" and "trocado por outro celular" in est["motivo_bloqueio"]
+    assert est["codigo"] == "JOAO01" and est["bloqueado_em"]
+    # a ficha mostra o código de cada aparelho, para o DP achar qual é
+    ficha = dp.get(f"/erp/api/ponto/pessoas/{mundo['joao']}/painel").get_json()["pessoa"]
+    assert {x["codigo"] for x in ficha["aparelhos"]} == {"JOAO01", "AO0123"}
+    assert all("device_uuid" not in x for x in ficha["aparelhos"])
+    # logado no bloqueado: a lista do "é o meu celular de sempre", e a liberação vem
+    lista = cel.get("/ponto/app/api/aparelho/meus-liberados", headers=ha).get_json()["aparelhos"]
+    assert [x["id"] for x in lista] == [b]
+    t = cel.post("/ponto/app/api/aparelho/usar-este", json={"dispositivo_id": b}, headers=ha)
+    assert t.status_code == 200, t.get_json()
+    novo = {**ha, "X-Device-Token": t.get_json()["token"]}
+    assert cel.get("/ponto/app/api/aparelho", headers=novo).get_json()["aparelho"]["status"] == "APROVADO"

@@ -1848,8 +1848,9 @@ function painelAparelhos() {
       ${PODE_TRATAR ? `<button class="btn" type="button" data-dp-cad="forma" style="margin-left:8px">Ligar a ronda…</button>` : ""}</div>` : ""}
     ${PODE_TRATAR ? `<div class="barra-acoes" style="margin:0 0 10px"><button class="btn secundario" type="button" data-dp-cad="forma">
       Acesso no aplicativo (celular, pedidos, ronda)…</button></div>` : ""}`;
-  return topo + (ap.length ? `<table><thead><tr><th>Aparelho</th><th>Uso</th><th>Situação</th><th>Último uso</th><th></th></tr></thead><tbody>
-    ${ap.map(a => `<tr><td>${escapar(a.descricao || "sem nome")}</td><td>${escapar(rotuloPerfil(a.perfil))}</td>
+  return topo + (ap.length ? `<table><thead><tr><th>Aparelho</th><th>Código</th><th>Uso</th><th>Situação</th><th>Último uso</th><th></th></tr></thead><tbody>
+    ${ap.map(a => `<tr><td>${escapar(a.descricao || "sem nome")}</td><td class="dados" title="o código que o celular mostra">${escapar(a.codigo || "—")}</td>
+      <td>${escapar(rotuloPerfil(a.perfil))}</td>
       <td>${seloAparelho(a.status)}${a.motivo_bloqueio ? `<small>${escapar(a.motivo_bloqueio)}</small>` : ""}${a.arquivado_em ? `<small>arquivado</small>` : ""}</td>
       <td class="dados">${escapar(quando(a.ultimo_uso_em))}</td>
       <td>${!PODE_CONFIGURAR || a.arquivado_em ? "" : a.status === "PENDENTE"

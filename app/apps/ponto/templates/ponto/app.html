@@ -947,9 +947,9 @@ async function abrirRonda() {
 // aparelho liberado, ao entrar num navegador desconhecido, responde "é este" — e a
 // liberação vem para cá, sem aprovação nova. O "Não" fica lembrado neste navegador.
 const ROTULO_PERFIL = {INDIVIDUAL: "celular pessoal", COMPARTILHADO: "ponto da obra", LISTA: "ponto de equipe"};
-function oferecerEsteNavegador(lista) {
+function oferecerEsteNavegador(lista, mesmoQueRespondeuNao = false) {
   const lembrado = id => { try { return localStorage.getItem(`ponto_nao_e_${id}`) === "1"; } catch (e) { return false; } };
-  lista = (lista || []).filter(a => !lembrado(a.id));
+  lista = (lista || []).filter(a => mesmoQueRespondeuNao || !lembrado(a.id));
   if (!lista.length) return Promise.resolve(false);
   return new Promise(resolve => {
     $("dlg-corpo").innerHTML = `<h2 style="margin:0 0 6px">Este é o mesmo aparelho?</h2>
@@ -1332,7 +1332,22 @@ async function carregarInicio() {
       <br><small>Se ele já era aprovado: apagar os dados do navegador (ou reinstalar o aplicativo) faz o celular parecer novo — é só pedir a aprovação de novo. Para mexer na localização, mude só a permissão do site, sem apagar os dados.</small></div>`;
     podeBater = false;
   } else if (APARELHO.status === "BLOQUEADO") {
-    avisoAparelho = `<div class="aviso erro">Este celular foi bloqueado para bater ponto. Fale com o DP.</div>`; podeBater = false;
+    // o porquê, o quando e o código (04/11/2026): o DP acha este aparelho na ficha da pessoa › Aparelhos. E quem tem
+    // outro aparelho liberado (outro navegador do mesmo celular, o ícone da tela inicial…) passa a liberação para cá.
+    avisoAparelho = `<div class="aviso erro">Este celular foi bloqueado para bater ponto${APARELHO.bloqueado_em ? ` em ${esc(dataBR(APARELHO.bloqueado_em))} às ${esc(String(APARELHO.bloqueado_em).slice(11, 16))}` : ""}.
+      ${APARELHO.motivo_bloqueio ? `<br><small>Motivo: ${esc(APARELHO.motivo_bloqueio)}</small>` : ""}
+      <br><small>Código deste celular: <b>${esc(APARELHO.codigo || "")}</b> — passe ao DP, que o encontra na sua ficha (Aparelhos).</small>
+      <div id="bloq-outro"></div></div>`; podeBater = false;
+    chamar("/ponto/app/api/aparelho/meus-liberados").then(r => {
+      const lista = (r && r.aparelhos) || [], alvo = $("bloq-outro");
+      if (!alvo || !lista.length) return;
+      alvo.innerHTML = `<p class="pequeno" style="margin:8px 0 4px">Você tem ${lista.length === 1 ? "um aparelho liberado" : "aparelhos liberados"}.
+          Se este é o seu celular de sempre (outro navegador, ou o ícone da tela inicial), a liberação passa para cá:</p>
+        <button class="btn" type="button" id="bloq-usar-este">Este é o meu celular de sempre</button>`;
+      $("bloq-usar-este").onclick = async () => {
+        if (await oferecerEsteNavegador(lista, true)) { aviso("Pronto: este navegador passou a ser o seu aparelho liberado.", "ok"); mostrar("inicio"); }
+      };
+    }).catch(() => {});
   } else if (APARELHO.vencimento && APARELHO.vencimento.vencido) {
     avisoAparelho = `<div class="aviso erro">A liberação deste celular venceu em ${dataBR(APARELHO.vencimento.valido_ate)}: ele parou de bater. Peça a renovação ao RH.</div>`;
     podeBater = false;

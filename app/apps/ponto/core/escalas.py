@@ -378,8 +378,78 @@ def _vespera_aberta(conn: Connection, colaborador_id: int, anterior: dt.date, mo
     return len(linhas) % 2 == 1 and momento - linhas[-1]["timestamp_servidor"] <= dt.timedelta(hours=24)
 
 
+# O PLANTÃO DOBRADO (04/11/2026, o dono: "um vigia dobrou o serviço: bateu a saída no dia 31/10 às 6:01, que é a
+# saída natural da escala, só que continuou trabalhando no dia seguinte e ficou até as 18:00 (…) precisaria entender
+# como extra esse período das 6:01 até as 18:01, porque é um dia de descanso"). A batida da manhã de quem é da noite
+# vai para a véspera; mas, quando a véspera JÁ FECHOU (a saída da manhã já está batida), a batida PEDIDA PARA O DIA
+# SEGUINTE num ajuste é o começo do turno novo — mesmo colado na saída (6:01 e 6:01). A batida do relógio também
+# começa o dia novo, mas só 10 minutos depois da saída (`_plantao_dobrado`: o toque duplo continua a mesma batida).
+SUBTIPO_TURNO_SEGUIDO = "TURNO_SEGUIDO"
+
+
+def _grupos_da_vespera(conn: Connection, colaborador_id: int, vespera: dt.date, ate: dt.datetime,
+                       incluir_ate: bool = False) -> list[list[dt.datetime]]:
+    """As batidas da véspera até `ate`, com o toque duplo (a menos de 10 min da anterior) junto, como no cálculo."""
+    linhas = db.todos(conn, f"""
+        SELECT timestamp_servidor FROM ponto.marcacoes
+         WHERE colaborador_id = :c AND data_referencia = :d AND status <> 'REJEITADA'
+           AND timestamp_servidor {'<=' if incluir_ate else '<'} :m
+         ORDER BY timestamp_servidor""", c=int(colaborador_id), d=vespera, m=ate)
+    janela = dt.timedelta(minutes=apuracao.BATIDA_REPETIDA_MIN)
+    grupos: list[list[dt.datetime]] = []
+    for l in linhas:
+        if grupos and l["timestamp_servidor"] - grupos[-1][-1] < janela:
+            grupos[-1].append(l["timestamp_servidor"])
+        else:
+            grupos.append([l["timestamp_servidor"]])
+    return grupos
+
+
+def turno_seguido(conn: Connection, colaborador_id: int, vespera: dt.date, momento: dt.datetime) -> bool:
+    """A véspera já tem o turno fechado pela saída desta mesma manhã: batidas em número par (o toque duplo conta uma
+    vez), a última no mesmo dia do calendário que `momento` e não depois dele."""
+    grupos = _grupos_da_vespera(conn, colaborador_id, vespera, momento, incluir_ate=True)
+    if len(grupos) < 2 or len(grupos) % 2:
+        return False
+    return horario.para_local(grupos[-1][0]).date() == horario.para_local(momento).date()
+
+
+# O SEGUNDO PONTO DO PLANTÃO DOBRADO (04/11/2026, o dono: "a gente tem que bater outro ponto, né? Depois do 6:01,
+# bater um segundo ponto, para valer como o próximo registro"). A batida de verdade da manhã também começa o dia novo
+# quando a véspera já fechou com a saída DA MANHÃ (a partir das 4h — a batida das 2h no meio do turno não fecha nada)
+# e passaram ao menos 10 minutos dessa saída (o toque duplo na saída continua sendo a mesma batida).
+HORA_MINIMA_DA_SAIDA_DA_MANHA = 4
+
+
+def _plantao_dobrado(conn: Connection, colaborador_id: int, vespera: dt.date, momento: dt.datetime) -> bool:
+    grupos = _grupos_da_vespera(conn, colaborador_id, vespera, momento)
+    if len(grupos) < 2 or len(grupos) % 2:
+        return False
+    saida = horario.para_local(grupos[-1][0])
+    return (saida.date() == horario.para_local(momento).date() and saida.hour >= HORA_MINIMA_DA_SAIDA_DA_MANHA
+            and momento - grupos[-1][-1] >= dt.timedelta(minutes=apuracao.BATIDA_REPETIDA_MIN))
+
+
+def e_plantao_dobrado(conn: Connection, pessoa: dict, momento: dt.datetime,
+                      escalas_da_pessoa: Optional["EscalasDaPessoa"] = None) -> bool:
+    """A batida da manhã que, pela regra da noite, iria para a véspera — mas a véspera já fechou com a saída da manhã:
+    é o segundo ponto do plantão dobrado (ou um toque a mais). Quem bate assim vai para a conferência do DP."""
+    local = horario.para_local(momento)
+    if local.hour >= horario.HORA_DE_CORTE_NOTURNO or not pessoa.get("id"):
+        return False
+    dia = _dia_de_trabalho(conn, pessoa, momento, escalas_da_pessoa)
+    return dia < local.date() and _plantao_dobrado(conn, int(pessoa["id"]), dia, momento)
+
+
 def dia_de_trabalho(conn: Connection, pessoa: dict, momento: dt.datetime,
                     escalas_da_pessoa: Optional["EscalasDaPessoa"] = None) -> dt.date:
+    if e_plantao_dobrado(conn, pessoa, momento, escalas_da_pessoa):
+        return horario.para_local(momento).date()
+    return _dia_de_trabalho(conn, pessoa, momento, escalas_da_pessoa)
+
+
+def _dia_de_trabalho(conn: Connection, pessoa: dict, momento: dt.datetime,
+                     escalas_da_pessoa: Optional["EscalasDaPessoa"] = None) -> dt.date:
     """O dia de trabalho a que a batida pertence: a jornada "vigia noturno" OU a
     escala com turno da noite levam a batida antes das 10h para o dia anterior — e,
     até o meio-dia, a que fecha o turno da véspera que ficou aberto."""
@@ -418,10 +488,15 @@ def realinhar_dias(conn: Connection, colaborador_id: int, desde: dt.date) -> int
     vigencias = EscalasDaPessoa(conn, colaborador_id)
     mudou = 0
     for m in db.todos(conn, """
-            SELECT id, timestamp_servidor, data_referencia FROM ponto.marcacoes
-             WHERE colaborador_id = :c AND data_referencia >= :d
-             ORDER BY timestamp_servidor
-        """, c=colaborador_id, d=desde - dt.timedelta(days=1)):
+            SELECT m.id, m.timestamp_servidor, m.data_referencia,
+                   EXISTS (SELECT 1 FROM ponto.ocorrencias o WHERE o.marcacao_gerada_id = m.id
+                              AND o.subtipo = :ts) AS turno_seguido
+              FROM ponto.marcacoes m
+             WHERE m.colaborador_id = :c AND m.data_referencia >= :d
+             ORDER BY m.timestamp_servidor
+        """, c=colaborador_id, d=desde - dt.timedelta(days=1), ts=SUBTIPO_TURNO_SEGUIDO):
+        if m["turno_seguido"]:            # o dia foi decidido no ajuste do plantão dobrado: fica
+            continue
         novo = dia_de_trabalho(conn, pessoa, m["timestamp_servidor"], vigencias)
         if novo == m["data_referencia"]:
             continue

@@ -256,6 +256,7 @@ def criar(conn: Connection, quem: Quem, dados: dict, *, origem: str = "GESTAO") 
                               campo="data_inicio")
     descricao = str(dados.get("descricao") or "").strip()
     horario_ajuste, obra_id, dia_trabalhado, minutos = None, None, None, None
+    turno_seguido = False
     # O abono pedido (não lançado pelo DP) diz o porquê: quem valida decide por ele.
     if tipo == "ABONO" and not (origem == "GESTAO" and quem.dp) and len(descricao) < 10:
         raise ErroDeValidacao("conte o motivo do abono (ao menos 10 letras)", campo="descricao")
@@ -288,7 +289,13 @@ def criar(conn: Connection, quem: Quem, dados: dict, *, origem: str = "GESTAO") 
             descricao = f"[{ajustes.MOTIVOS[motivo]}] {descricao}".strip()
         if len(descricao) < 10:
             raise ErroDeValidacao("explique o que aconteceu (ao menos 10 letras)", campo="descricao")
+        pedido_para = inicio
         inicio = fim = escalas.dia_de_trabalho(conn, pessoa, horario_ajuste)
+        # o plantão dobrado (04/11/2026, escalas.turno_seguido): a véspera já fechou e o pedido é do dia seguinte
+        if (pedido_para == inicio + dt.timedelta(days=1)
+                and escalas.turno_seguido(conn, colaborador_id, inicio, horario_ajuste)):
+            inicio = fim = pedido_para
+            turno_seguido = True
         _conferir_ajuste(conn, colaborador_id, inicio, horario_ajuste)
     elif tipo == "COMPENSACAO":
         dia_trabalhado = _data(dados.get("dia_trabalhado"), "dia_trabalhado")
@@ -331,6 +338,8 @@ def criar(conn: Connection, quem: Quem, dados: dict, *, origem: str = "GESTAO") 
         # Incluída pela gestão no quadro do ponto (21/10/2026) — falha do sistema, não
         # da pessoa: não conta contra ela na qualidade (qualidade.py).
         subtipo = SUBTIPO_LOTE
+    elif tipo == "AJUSTE_BATIDA" and turno_seguido:
+        subtipo = escalas.SUBTIPO_TURNO_SEGUIDO       # a batida fica no dia pedido, também depois de aprovada
 
     if tipo == "ABONO" and dados.get("minutos"):
         # o abono SÓ DAS HORAS QUE FALTARAM (29/10/2026, a falta parcial no Quadro): um dia, X minutos
@@ -783,6 +792,7 @@ def _aplicar(conn: Connection, o: dict, quem: Quem) -> None:
     elif o["tipo"] == "AJUSTE_BATIDA":
         m = marcacoes.registrar_ajustada(conn, colaborador_id=o["colaborador_id"],
                                          obra_id=o["obra_id"], momento=o["horario"],
+                                         dia=(o["data_inicio"] if o.get("subtipo") == escalas.SUBTIPO_TURNO_SEGUIDO else None),
                                          ocorrencia_id=o["id"], aprovado_por=quem.nome,
                                          motivo=(f"{MOTIVO_LOTE} (pedido nº {o['id']}): {(o.get('descricao') or '')[:120]}"
                                                  if o.get("subtipo") == SUBTIPO_LOTE else None))
