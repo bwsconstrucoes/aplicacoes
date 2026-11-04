@@ -494,7 +494,7 @@ pela IA (…) pra não precisar fazer manual."*
 - Testes: lê só o que espera decisão e tem documento; não relê; falha tenta 2 vezes e desiste; teto estourado não
   lê; nas Validações o DP já vê leitura e confronto. A IA é dublada nos testes — a leitura de verdade é a mesma do
   botão, que já roda em produção.
-**No ramo, esperando o "pode".**
+**Publicado em 04/11/2026** (com o "pode" do dono) — SEM MIGRAÇÃO.
 
 ## 03/11/2026 — Do Espelho para o cadastro da pessoa
 
