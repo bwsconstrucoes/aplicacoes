@@ -474,6 +474,21 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 04/11/2026 (quinta) — O segundo ponto do plantão em 2 minutos; o manual do celular bloqueado
+
+- **2 minutos, não 10.** O dono: *"achei 10 minutos muito tempo entre as batidas. Isso é realmente necessário?"* Não
+  era: os 10 minutos vinham da regra da batida repetida, e o segundo ponto do plantão dobrado já vai para a
+  conferência do DP, que rejeita o toque a mais. Agora o segundo ponto começa o dia novo a partir de
+  `escalas.SEGUNDO_PONTO_MIN` = 2 minutos depois da saída da noite. A regra da batida repetida (10 min, no cálculo
+  do dia e na pergunta "bater de novo?" do ponto da obra) não mudou.
+- **O manual** (parte 4, "Este celular foi bloqueado: como resolver"): por que acontece (outro navegador, ícone ×
+  navegador, aba anônima, dados limpos, iPhone pelo Safari) e os 2 toques — "Este é o meu celular de sempre" e
+  "Sim" —, com as 3 telas; a linha da tabela de mensagens e uma dúvida nova. PDF refeito (28 páginas). O dono
+  recebeu também a imagem e o texto para o WhatsApp.
+- Publicados SEM a janela "Liberar obras no aplicativo" (04/11, quarta), que segue no ramo esperando a decisão do
+  dono — ele tinha pedido só para saber onde se libera.
+**Publicado em 04/11/2026** (com o "pode" do dono) — SEM MIGRAÇÃO.
+
 ## 04/11/2026 (terceira) — O plantão dobrado do vigia; e o celular "bloqueado" que ninguém entendia
 
 **Plantão dobrado.** O dono: *"um vigia dobrou o serviço: bateu a saída no dia 31/10 às 6:01, que é a saída natural
