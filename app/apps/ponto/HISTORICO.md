@@ -505,7 +505,7 @@ separada; outro navegador também. Aprovar um celular pessoal bloqueia o outro d
 - A ficha da pessoa › Aparelhos ganhou a coluna **Código** — o mesmo que o celular mostra —, para o DP saber qual
   é o aparelho na mão da pessoa.
 - Não verificado: qual foi, de fato, o caso do vigia do dia 3 — com o código que o celular dele mostra, a ficha diz.
-**No ramo, esperando o "pode".**
+**Publicado em 04/11/2026** (com o "pode" do dono) — SEM MIGRAÇÃO.
 
 ## 04/11/2026 (segunda) — O ajuste do vigia sem o intervalo
 
