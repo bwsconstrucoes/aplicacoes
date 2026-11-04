@@ -480,6 +480,14 @@ def registrar(conn: Connection, *, cpf, obra, origem: str = "PWA",
     if identificacao not in IDENTIFICACOES:
         raise ErroDeValidacao("identificação desconhecida", campo="identificacao")
     data_ref = escalas.dia_de_trabalho(conn, pessoa, momento)
+    # O SEGUNDO PONTO DEPOIS DA SAÍDA DA NOITE (04/11/2026, o dono: "tem a situação de erro, ele pode bater e bater de
+    # novo, e não bater mais (…) e tem quando houver a segunda batida mais a outra, que a gente pode encarar como
+    # plantão dobrado — o sistema identificaria, mas o DP precisaria validar"): a batida começa o dia novo e vai
+    # para a conferência. Sozinha no dia, não forma par e não dá hora; o DP rejeita o toque a mais ou valida o plantão.
+    if escalas.e_plantao_dobrado(conn, pessoa, momento):
+        status = "EM_ANALISE"
+        motivos.append("possível plantão dobrado: batida depois da saída da noite — confirme se continuou trabalhando "
+                       "(com a saída mais tarde no dia) ou se foi uma batida a mais")
 
     # --- foto: valida e reduz ANTES de gravar (foto ilegível é 400 limpo) ----
     foto = fotos.preparar(foto_base64) if foto_base64 else None
@@ -604,13 +612,14 @@ STATUS_DECIDIVEIS = ("VALIDA", "REJEITADA")
 
 def registrar_ajustada(conn: Connection, *, colaborador_id: int, obra_id: int,
                        momento: dt.datetime, ocorrencia_id: int, aprovado_por: str,
-                       motivo: Optional[str] = None) -> dict:
+                       motivo: Optional[str] = None, dia: Optional[dt.date] = None) -> dict:
     """Inclui a batida que a pessoa esqueceu, como AJUSTADA. Ganha NSR próprio
     (o NSR é a ordem do REGISTRO, não do relógio) e a hora é a do pedido."""
     pessoa = cadastros.colaborador_por_id(conn, colaborador_id)
     if not pessoa:
         raise ErroDeValidacao("pessoa não cadastrada", campo="colaborador_id")
-    data_ref = escalas.dia_de_trabalho(conn, pessoa, momento)
+    # `dia`: o do pedido, quando ele decidiu (o plantão dobrado, escalas.turno_seguido); senão, o da regra
+    data_ref = dia or escalas.dia_de_trabalho(conn, pessoa, momento)
     nsr, corrente = _proximo_nsr(conn, colaborador_id, obra_id, momento, "MANUAL")
     linha = db.um(conn, """
         INSERT INTO ponto.marcacoes (nsr, colaborador_id, obra_id, timestamp_servidor,

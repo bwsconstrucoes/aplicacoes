@@ -107,6 +107,23 @@ def _aparelhos_para_oferecer(conn, aparelho, pessoa: dict) -> list[dict]:
             for x in dispositivos.aparelhos_da_pessoa(conn, pessoa["id"])]
 
 
+@bp.route("/app/api/aparelho/meus-liberados")
+@auth.exige_colaborador
+def app_api_aparelho_meus_liberados():
+    """Os aparelhos liberados de quem está logado — para o celular BLOQUEADO oferecer "este é o meu celular de
+    sempre" a qualquer hora, e não só ao entrar com CPF e PIN (04/11/2026)."""
+    with db.conexao() as conn:
+        pessoa = cadastros.colaborador_por_id(conn, _eu())
+        aparelho = None
+        try:
+            aparelho = dispositivos.autenticar(conn, request.headers.get("X-Device-UUID", ""),
+                                               request.headers.get(auth.CABECALHO_TOKEN, ""))
+        except Exception:  # noqa: BLE001 — sem aparelho reconhecido: a lista sai do mesmo jeito
+            pass
+        lista = _aparelhos_para_oferecer(conn, aparelho, pessoa) if pessoa else []
+    return _ok(aparelhos=lista)
+
+
 MUDANCAS_DE_NAVEGADOR_POR_HORA = 5
 
 
@@ -375,6 +392,11 @@ def app_api_aparelho():
                          "dono": (dono["nome"].split(" ")[0] if dono else None),
                          # já está na fila de Validações pelo pedido de alguém?
                          "pedido": dispositivos.foi_pedido(a),
+                         # o BLOQUEADO diz por quê, quando e qual é (04/11/2026, o dono: "aparece bloqueado, o
+                         # cadastro está normal, o celular está aprovado (…) e ninguém consegue entender por quê")
+                         "codigo": dispositivos.codigo_curto(a["device_uuid"]),
+                         "motivo_bloqueio": a.get("motivo_bloqueio") if a["status"] == "BLOQUEADO" else None,
+                         "bloqueado_em": horario.texto(a.get("bloqueado_em")) if a["status"] == "BLOQUEADO" else None,
                          "obras": lista_obras})
 
 

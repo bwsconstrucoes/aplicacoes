@@ -474,6 +474,50 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 04/11/2026 (terceira) — O plantão dobrado do vigia; e o celular "bloqueado" que ninguém entendia
+
+**Plantão dobrado.** O dono: *"um vigia dobrou o serviço: bateu a saída no dia 31/10 às 6:01, que é a saída natural
+da escala, só que continuou trabalhando até as 18:00 (…) precisaria entender como extra esse período, porque é um dia
+de descanso."* E depois: *"a gente tem que bater outro ponto, depois do 6:01 (…) tem a situação de erro, ele pode
+bater e bater de novo e não bater mais (…) e quando houver a segunda batida mais a outra, o sistema identificaria,
+mas o DP precisaria validar que é um plantão dobrado."* Antes: toda batida da manhã de quem é da noite ia para a
+véspera — o segundo ponto virava a 3ª batida da noite, e o ajuste da entrada das 6:01 era recusado ("já existe batida
+às 06:01", porque também ia para a véspera).
+- **A batida de verdade** (`escalas.e_plantao_dobrado`): antes das 10h, quando a véspera JÁ FECHOU com a saída da
+  manhã (a partir das 4h — a batida das 2h no meio do turno não fecha nada) e passaram 10 minutos ou mais dessa
+  saída (o toque duplo continua sendo a mesma batida), a batida começa o dia novo e vai **para a conferência do DP**
+  (EM_ANALISE, "possível plantão dobrado"). Sozinha no dia não forma par e não dá hora — o DP rejeita o toque a mais;
+  com a saída mais tarde, o dia conta como trabalho no descanso (extra) e o DP valida.
+- **O ajuste** (`escalas.turno_seguido`): a entrada pedida PARA O DIA SEGUINTE, com a véspera fechada, fica no dia
+  pedido — mesmo colada na saída (6:01 e 6:01). Vai pela validação de sempre. O pedido ganha o subtipo
+  `TURNO_SEGUIDO`, e o realinhamento das escalas não devolve a batida para a véspera.
+- Ensaio no banco de teste: 17:00 → 6:01 (noite, 13h01) e 6:01 → 18:01 (descanso: 12h de extra, com os avisos de
+  trabalho no descanso, fora do ciclo e interjornada curta, para o DP decidir).
+
+**Celular bloqueado.** O dono: *"ele bateu dia 1º; dia 3 não conseguiu: 'Este celular foi bloqueado para bater ponto.
+Fale com o DP.' O cadastro está normal, o celular está aprovado (…) e ninguém consegue entender."* A causa mais
+provável: dois aparelhos para o sistema — no iPhone, o ícone da tela inicial e o Safari guardam a identificação
+separada; outro navegador também. Aprovar um celular pessoal bloqueia o outro da mesma pessoa (um por pessoa), e o
+"Este é o mesmo aparelho?" só aparecia ao entrar com CPF e PIN — quem já estava conectado nunca o via.
+- O celular bloqueado diz **quando, por quê e qual é** (o código) e, se a pessoa tem outro aparelho liberado, mostra
+  "Este é o meu celular de sempre": a liberação passa para ele na hora, sem aprovação nova (o mesmo caminho do
+  "mesmo aparelho", que agora vale a qualquer momento — `/app/api/aparelho/meus-liberados`).
+- A ficha da pessoa › Aparelhos ganhou a coluna **Código** — o mesmo que o celular mostra —, para o DP saber qual
+  é o aparelho na mão da pessoa.
+- Não verificado: qual foi, de fato, o caso do vigia do dia 3 — com o código que o celular dele mostra, a ficha diz.
+**Publicado em 04/11/2026** (com o "pode" do dono) — SEM MIGRAÇÃO.
+
+## 04/11/2026 (segunda) — O ajuste do vigia sem o intervalo
+
+O dono: *"alguém tentou fazer um ajuste para um vigia (…) apareceu para ajustar entrada, saída para intervalo e
+volta do intervalo. Não existe, né? Vigia não tem esse intervalo."* A causa: no dia SEM horário previsto (a noite de
+folga do 12x36, por exemplo), o aplicativo oferecia as 4 batidas da obra, e dava nome às batidas pelo costume da
+empresa (7, 11, 12, 17 h) — a saída das 6h do vigia virava "Entrada". Agora o dia diz `so_entrada_e_saida` também
+para o vigia (jornada de vigia, escala 12x36 ou semanal de um período só — `escalas.sem_intervalo`) e traz o
+`turno_de_costume` da escala (17:00–06:00): o ajuste oferece só Entrada e Saída, com o nome certo. O "Incluir
+batida" do Quadro, com só vigias marcados, também. Quem tem escala com intervalo continua como antes.
+**Publicado em 04/11/2026** (com o "pode" do dono) — SEM MIGRAÇÃO.
+
 ## 04/11/2026 — O atestado e a declaração lidos sozinhos pela IA
 
 O dono: *"gostaria que todos os documentos encaminhados, tipo atestado, declarações, já fossem lidos automaticamente
