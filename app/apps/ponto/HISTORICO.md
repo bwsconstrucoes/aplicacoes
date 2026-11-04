@@ -474,6 +474,18 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 04/11/2026 (quarta) — "Liberar obras no aplicativo": uma janela só para isso
+
+O dono: *"ela está como não bate ponto (…) eu não quero nem que ela bata ponto, quero só que ela consiga visualizar as
+pessoas de algumas obras (…) fazer ajuste de ponto de duas obras específicas. Não sei como configura. Está confuso."*
+A liberação de obras já existia (31/10, migração 023), mas no meio do "Acesso no aplicativo" — junto com celular,
+pedidos, administrativo e ronda —, com as obras DIGITADAS por código. Agora a ficha › Cadastro tem o botão
+**"🏗️ Liberar obras no aplicativo…"** (e o "Entra no aplicativo?" de quem não bate aponta para ele): as obras numa
+lista para marcar, com busca, "Todas as obras" à parte, e o que a pessoa passa a fazer escrito em cima (consulta e faz
+ajustes e pedidos pelas pessoas das obras; quem não bate continua sem bater). Diz também se a pessoa já tem PIN
+(a ficha ganhou `tem_pin`). Salvar manda só as obras — o resto do acesso fica como está.
+**No ramo, esperando o "pode".**
+
 ## 04/11/2026 (terceira) — O plantão dobrado do vigia; e o celular "bloqueado" que ninguém entendia
 
 **Plantão dobrado.** O dono: *"um vigia dobrou o serviço: bateu a saída no dia 31/10 às 6:01, que é a saída natural

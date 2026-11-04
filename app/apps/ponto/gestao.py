@@ -573,6 +573,9 @@ def _ficha(quem: Quem, colaborador_id: int) -> dict:
                               c=colaborador_id)
         historico = escalas.historico_da_pessoa(conn, colaborador_id)
         padrao = escalas.escala_padrao(conn)
+        # já criou o PIN? — para quem libera o aplicativo saber se a pessoa já consegue entrar (04/11/2026)
+        tem_pin = bool(db.um(conn, "SELECT 1 FROM ponto.colaborador_config WHERE colaborador_id = :c "
+                                   "AND pin_hash IS NOT NULL", c=colaborador_id))
         # O motivo do bloqueio e o arquivado (16/10/2026: "não aparece dentre os
         # aprovados e está dando bloqueado; já tinha sido aprovado e sumiu"): a ficha
         # diz o que aconteceu, sem caçar na lista de aparelhos.
@@ -590,6 +593,7 @@ def _ficha(quem: Quem, colaborador_id: int) -> dict:
     j = cadastros.colaborador_para_json({**p, "obras_adicionais": adicionais})
     j["obra_do_ponto"] = obra_ponto        # 30/10/2026: a obra é a do ponto; o cadastro, na falta dele
     j["liberado"] = liberado               # 31/10/2026: o que o DP liberou para ela no aplicativo (migração 023)
+    j["tem_pin"] = tem_pin
     j["escalas"] = [{"escala_id": h["escala_id"], "escala": h["escala_nome"], "tipo": h["escala_tipo"],
                      "desde": h["vigencia_inicio"].isoformat(),
                      "ciclo_data_base": h["ciclo_data_base"].isoformat() if h["ciclo_data_base"] else None,

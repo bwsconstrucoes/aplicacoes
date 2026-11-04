@@ -1567,7 +1567,8 @@ function desenharPainel() {
     aprovarAparelho((p.aparelhos || []).find(a => String(a.id) === b.dataset.dpAparelho), recarregarPainel)));
   els("dp-corpo").querySelectorAll("[data-dp-cad]").forEach(b => b.addEventListener("click", () =>
     ({escala: trocarEscala, jornada: jornadaEObras, forma: formaDeBater, codigo: primeiroAcesso, alcance: alcanceNoApp,
-      banco: regimeDoBanco, naoBate: q => marcarBatePonto([q.id], !q.ativo_no_ponto, q.nome), excecao: batePorExcecao})[b.dataset.dpCad](p)));
+      banco: regimeDoBanco, naoBate: q => marcarBatePonto([q.id], !q.ativo_no_ponto, q.nome), excecao: batePorExcecao,
+      obrasApp: liberarObrasNoApp})[b.dataset.dpCad](p)));
   els("dp-corpo").querySelectorAll("[data-foto]").forEach(b => b.addEventListener("click", () =>
     verFoto(b.dataset.foto, b.dataset.legenda)));
 }
@@ -1913,6 +1914,7 @@ function painelCadastro() {
     ${PODE_DP && (p.planilha_tira || p.excecao_planilha) ? (p.excecao_planilha
       ? `<button class="btn secundario" type="button" data-dp-cad="excecao">↩️ Tirar a exceção (volta a valer a planilha)…</button>`
       : `<button class="btn secundario" type="button" data-dp-cad="excecao">✅ Bate ponto por exceção…</button>`) : ""}
+    <button class="btn secundario" type="button" data-dp-cad="obrasApp">🏗️ Liberar obras no aplicativo…</button>
     <button class="btn secundario" type="button" data-dp-cad="forma">Acesso no aplicativo</button>
     <button class="btn secundario" type="button" data-dp-cad="alcance">👥 Quem ela alcança no app</button>
     <button class="btn secundario" type="button" data-dp-cad="codigo">🔑 Código de acesso do aplicativo (PIN)…</button>
@@ -2508,8 +2510,72 @@ function entraNoAplicativo(p) {
     ? (PODE_DP && p.planilha_tira ? botao("excecao", "liberar para bater ponto (exceção à planilha)…") : "")
     : botao("naoBate", "voltar a bater ponto…");
   return `<b style="color:var(--vermelho)">Não</b> — quem não bate ponto só entra para acompanhar outras pessoas
-    (administrativo de obra ou liberado pelo DP).<br>Para entrar e acompanhar a equipe:${botao("forma", "liberar no aplicativo…")}
+    (administrativo de obra ou liberado pelo DP).<br>Para entrar, consultar e fazer ajustes pelas pessoas de algumas obras:${botao("obrasApp", "liberar obras no aplicativo…")}
     ${bater ? `<br>Para bater e ver o próprio ponto:${bater}` : ""}`;
+}
+
+// LIBERAR OBRAS NO APLICATIVO (04/11/2026, o dono: "ela está como não bate ponto (…) eu quero só que ela consiga
+// visualizar as pessoas de algumas obras (…) fazer ajuste de ponto de duas obras específicas. Não está claro, está
+// confuso"). A liberação de obras já existia (migração 023), mas no meio do "Acesso no aplicativo", com as obras
+// digitadas por código. Aqui é uma janela só dela: as obras para marcar, com busca, e o que a pessoa passa a fazer.
+async function liberarObrasNoApp(p) {
+  let obras;
+  try { obras = (await api("/erp/api/ponto/obras")).obras || []; } catch (e) { falhou(e, "dp-msg"); return; }
+  const lib = p.liberado || {};
+  const marcadas = new Set((lib.obras || []).map(o => String(o.id)));
+  let dlg = els("dlg-obras-app");
+  if (!dlg) { dlg = document.createElement("dialog"); dlg.id = "dlg-obras-app"; document.body.appendChild(dlg); }
+  const nome = escapar(p.nome.split(" ")[0]);
+  dlg.innerHTML = `<div class="dlg-topo"><h3>Liberar obras no aplicativo — ${escapar(p.nome)}</h3>
+      <button class="topo-btn" style="margin-left:auto" data-cancelar>Cancelar</button></div>
+    <div class="dlg-corpo">
+      <div class="aviso info">${nome} entra no aplicativo com o CPF e o PIN e, nas obras marcadas, <b>consulta o ponto das
+        pessoas e faz ajustes e pedidos por elas</b> (atestado, ajuste de batida, abono) — os pedidos vão para a validação
+        de sempre. ${p.ativo_no_ponto ? "" : `Como ${nome} não bate ponto, continua sem bater: a liberação é só para acompanhar os outros.`}
+        ${p.tem_pin === false ? `<br><b>${nome} ainda não tem PIN:</b> no primeiro acesso, o código chega no WhatsApp — ou gere em “🔑 Código de acesso do aplicativo”.` : ""}</div>
+      ${PODE_CONFIGURAR ? `<label class="opcao" style="margin:10px 0 6px"><input type="checkbox" id="oa-todas" ${lib.todas_obras ? "checked" : ""}>
+        <span class="rotulo"><b>Todas as obras</b> (acesso geral — vale também para obra cadastrada depois)</span></label>` : ""}
+      <div id="oa-lista-bloco">
+        <input id="oa-busca" placeholder="procurar a obra (código ou nome)" autocomplete="off" data-sem-mascara data-sem-busca
+               style="width:100%; margin:6px 0">
+        <div class="suave" id="oa-conta" style="font-size:13px; margin-bottom:4px"></div>
+        <div id="oa-lista" style="max-height:45vh; overflow:auto; border:1px solid var(--borda); border-radius:8px; padding:6px 10px">
+          ${obras.map(o => `<label class="opcao" data-oa-texto="${escapar(`${o.codigo} ${o.nome || ""}`.toLowerCase())}">
+            <input type="checkbox" data-oa="${o.id}" ${marcadas.has(String(o.id)) ? "checked" : ""}>
+            <span class="rotulo"><b>${escapar(o.codigo)}</b> — ${escapar(o.nome || "")}</span></label>`).join("")}</div>
+      </div>
+      <div id="oa-erro"></div>
+      <div style="margin-top:14px; display:flex; gap:8px">
+        <button class="btn" type="button" data-ok>Salvar</button>
+        <button class="btn secundario" type="button" data-cancelar>Cancelar</button></div>
+    </div>`;
+  const conta = () => {
+    const n = dlg.querySelectorAll("[data-oa]:checked").length, todas = els("oa-todas") && els("oa-todas").checked;
+    els("oa-conta").textContent = todas ? "todas as obras liberadas" : n ? `${n} obra(s) marcada(s)` : "nenhuma obra marcada";
+    els("oa-lista-bloco").style.opacity = todas ? ".45" : "1";
+  };
+  dlg.querySelectorAll("[data-oa]").forEach(c => c.addEventListener("change", conta));
+  if (els("oa-todas")) els("oa-todas").addEventListener("change", conta);
+  els("oa-busca").addEventListener("input", () => {
+    const t = els("oa-busca").value.trim().toLowerCase();
+    dlg.querySelectorAll("[data-oa-texto]").forEach(l => { l.style.display = !t || l.dataset.oaTexto.includes(t) ? "" : "none"; });
+  });
+  conta();
+  dlg.querySelectorAll("[data-cancelar]").forEach(b => b.addEventListener("click", () => dlg.close()));
+  dlg.querySelector("[data-ok]").addEventListener("click", async () => {
+    const ids = [...dlg.querySelectorAll("[data-oa]:checked")].map(c => obras.find(o => String(o.id) === c.dataset.oa).codigo);
+    const corpo = {liberado_obras: ids};
+    if (els("oa-todas")) corpo.liberado_todas_obras = els("oa-todas").checked;
+    try {
+      await postar(`/erp/api/ponto/pessoas/${p.id}/forma-de-bater`, corpo);
+      dlg.close();
+      await depoisDoCadastro(p.id);
+      aviso("dp-msg", corpo.liberado_todas_obras ? `Todas as obras liberadas para ${nome}.` : ids.length
+        ? `Obras liberadas para ${nome}: ${escapar(ids.join(", "))} — no aplicativo, consulta e faz ajustes e pedidos pelas pessoas delas.`
+        : `Liberação de obras tirada de ${nome}.`, "ok");
+    } catch (e) { aviso("oa-erro", escapar(e.message), "erro"); }
+  });
+  dlg.showModal();
 }
 
 async function batePorExcecao(p) {
