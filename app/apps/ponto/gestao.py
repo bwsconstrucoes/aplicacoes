@@ -187,6 +187,8 @@ def _pagina(aba: str):
         from .core import base_obras, rosto
         base_obras.manter_em_dia()
         rosto.manter_em_dia()
+        from .core import leitura_atestado as _leitura
+        _leitura.manter_em_dia()       # o atestado lido sozinho pela IA (04/11/2026)
     except Exception:  # noqa: BLE001
         logger.warning("Ponto: a base de obras não foi conferida", exc_info=True)
     try:
