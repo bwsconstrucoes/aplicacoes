@@ -802,6 +802,17 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 04/11/2026 — Uma base só de feriados: a do ponto (Análise de SPs lê `ponto.feriados`)
+
+**Publicado em 04/11/2026.** Pedido do dono: *"a parte de
+feriados deve vir do ponto. Dessa forma ficaremos somente com uma base de feriados."* A
+folha do Análise de SPs (auxílio alimentação, adicional de feriado dos diaristas, lançar
+batidas) passa a ler `ponto.feriados` com a regra do próprio ponto
+(`ponto/core/feriados.Calendario`), por `analisesps/folha_calendario.FeriadosDoPonto`.
+`analisesps.feriado` fica no banco sem uso (o que o ponto não cobre pode ser levado por
+botão). Mudar a regra de feriado do ponto muda a folha junto — é a intenção. Detalhe nos
+históricos das duas áreas.
+
 ### 03/11/2026 — Prazo para o worker sair na renovação (`gunicorn.conf.py`, na raiz)
 
 **Publicado em 03/11/2026** (com o "pode" do dono). O dono: *"só voltou depois que eu resetei no

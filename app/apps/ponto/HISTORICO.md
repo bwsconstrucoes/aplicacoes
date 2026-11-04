@@ -474,6 +474,20 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 04/11/2026 (quinta) — O segundo ponto do plantão em 2 minutos; o manual do celular bloqueado
+
+- **2 minutos, não 10.** O dono: *"achei 10 minutos muito tempo entre as batidas. Isso é realmente necessário?"* Não
+  era: os 10 minutos vinham da regra da batida repetida, e o segundo ponto do plantão dobrado já vai para a
+  conferência do DP, que rejeita o toque a mais. Agora o segundo ponto começa o dia novo a partir de
+  `escalas.SEGUNDO_PONTO_MIN` = 2 minutos depois da saída da noite. A regra da batida repetida (10 min, no cálculo
+  do dia e na pergunta "bater de novo?" do ponto da obra) não mudou.
+- **O manual** (parte 4, "Este celular foi bloqueado: como resolver"): por que acontece (outro navegador, ícone ×
+  navegador, aba anônima, dados limpos, iPhone pelo Safari) e os 2 toques — "Este é o meu celular de sempre" e
+  "Sim" —, com as 3 telas; a linha da tabela de mensagens e uma dúvida nova. PDF refeito (28 páginas). O dono
+  recebeu também a imagem e o texto para o WhatsApp.
+- Publicados SEM a janela "Liberar obras no aplicativo" (04/11, quarta), que segue no ramo esperando a decisão do
+  dono — ele tinha pedido só para saber onde se libera.
+**Publicado em 04/11/2026** (com o "pode" do dono) — SEM MIGRAÇÃO.
 ## 04/11/2026 (quarta) — "Liberar obras no aplicativo": uma janela só para isso
 
 O dono: *"ela está como não bate ponto (…) eu não quero nem que ela bata ponto, quero só que ela consiga visualizar as
@@ -551,6 +565,23 @@ pela IA (…) pra não precisar fazer manual."*
   lê; nas Validações o DP já vê leitura e confronto. A IA é dublada nos testes — a leitura de verdade é a mesma do
   botão, que já roda em produção.
 **Publicado em 04/11/2026** (com o "pode" do dono) — SEM MIGRAÇÃO.
+
+## 04/11/2026 — DO CHAT DO ANÁLISE DE SPs: a folha passou a ler os feriados DAQUI
+
+O dono, no chat do Análise de SPs: *"a parte de feriados deve vir do ponto. Dessa
+forma ficaremos somente com uma base de feriados."* A tela "Feriados e férias" de
+lá não cadastra mais feriado: o auxílio alimentação e o adicional de feriado dos
+diaristas leem `ponto.feriados` com **a regra deste módulo**
+(`core/feriados.Calendario.feriado` — nacional, estadual pela UF da obra, municipal
+pelo município, de obra). O código está em `analisesps/folha_calendario.py`
+(`FeriadosDoPonto`), que só LÊ e reusa o `Calendario` e o `base_obras.trechos_sql`.
+**Mexer na regra do `Calendario` muda a folha junto** — é de propósito (os dois não
+podem discordar sobre um dia), e os testes da folha cobrem (`tests/_feriados_do_ponto.py`).
+
+Uma escrita, por botão: **"Levar para o ponto"**, na tela de lá, grava aqui (por
+`feriados.gravar`, com as validações daqui) os feriados que tinham sido cadastrados
+na tabela antiga do Análise de SPs e que o ponto não cobre — nacional vira NACIONAL;
+o de obra vira OBRA quando a obra casa (código, código secundário da planilha, nome).
 
 ## 03/11/2026 — Do Espelho para o cadastro da pessoa
 

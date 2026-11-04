@@ -411,8 +411,8 @@ def test_o_plantao_dobrado_vira_extra_no_dia_de_descanso(app, mundo):
 
 def test_o_segundo_ponto_do_plantao_dobrado_comeca_o_dia_novo(app, mundo):
     """04/11/2026, o dono: "a gente tem que bater outro ponto, depois do 6:01, para valer como o próximo registro".
-    A batida 10 minutos ou mais depois da saída da manhã começa o dia; o toque duplo (menos de 10 min) e a batida no
-    meio da noite (antes das 4h) não."""
+    A batida 2 minutos ou mais depois da saída da manhã começa o dia (eram 10; o dono, no mesmo dia: "achei 10 minutos
+    muito tempo"); o toque duplo de segundos e a batida no meio da noite (antes das 4h) não."""
     from app.apps.ponto import db
     from app.apps.ponto.core import escalas
     from tests.test_ponto_gestao_banco import CPF_JOAO, bater_via_chave, local
@@ -429,20 +429,20 @@ def test_o_segundo_ponto_do_plantao_dobrado_comeca_o_dia_novo(app, mundo):
             return [(r["data_referencia"], r["h"]) for r in db.todos(conn, """
                 SELECT data_referencia, to_char(timestamp_servidor AT TIME ZONE 'America/Fortaleza', 'HH24:MI') AS h
                   FROM ponto.marcacoes WHERE colaborador_id = :c ORDER BY timestamp_servidor""", c=mundo["joao"])]
-    for h in ((seg, 17, 0), (ter, 6, 1), (ter, 6, 4), (ter, 6, 15), (ter, 18, 1)):
+    for h in ((seg, 17, 0), (ter, 6, 1), (ter, 6, 2), (ter, 6, 5), (ter, 18, 1)):
         bater_via_chave(app, CPF_JOAO, local(h[0], h[1], h[2]))
-    assert dias() == [(seg, "17:00"), (seg, "06:01"), (seg, "06:04"), (ter, "06:15"), (ter, "18:01")]
+    assert dias() == [(seg, "17:00"), (seg, "06:01"), (seg, "06:02"), (ter, "06:05"), (ter, "18:01")]
     # o segundo ponto vai para a conferência do DP, com o motivo; o resto, não
     with db.conexao() as conn:
         st = {r["h"]: (r["status"], r["motivo_analise"] or "") for r in db.todos(conn, """
             SELECT to_char(timestamp_servidor AT TIME ZONE 'America/Fortaleza', 'HH24:MI') AS h, status, motivo_analise
               FROM ponto.marcacoes WHERE colaborador_id = :c""", c=mundo["joao"])}
-    assert st["06:15"][0] == "EM_ANALISE" and "plantão dobrado" in st["06:15"][1]
-    assert "plantão dobrado" not in st["18:01"][1] and "plantão dobrado" not in st["06:04"][1]
+    assert st["06:05"][0] == "EM_ANALISE" and "plantão dobrado" in st["06:05"][1]
+    assert "plantão dobrado" not in st["18:01"][1] and "plantão dobrado" not in st["06:02"][1]
     # a batida no meio da noite não fecha a noite: a saída das 6h continua dela
     for h in ((qua, 17, 0), (qui, 2, 0), (qui, 6, 0)):
         bater_via_chave(app, CPF_JOAO, local(h[0], h[1], h[2]))
     assert dias()[-3:] == [(qua, "17:00"), (qua, "02:00"), (qua, "06:00")]
     esp = dp.get(f"/erp/api/ponto/espelho/{mundo['joao']}?competencia={ter:%Y-%m}").get_json()
     d = next(x for x in esp["dias"] if x["data"] == ter.isoformat())
-    assert d["trabalhado"] == 11 * 60 + 46 and d["extra"] == 11 * 60 + 46
+    assert d["trabalhado"] == 11 * 60 + 56 and d["extra"] == 11 * 60 + 56

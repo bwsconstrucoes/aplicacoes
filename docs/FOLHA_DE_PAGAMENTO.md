@@ -2247,6 +2247,12 @@ errado sem ninguém saber. A tela busca no cadastro por nome ou CPF e guarda o C
 escondido. A busca devolve **só nome, cargo e se a pessoa saiu**: caixa de sugestão
 não é lugar de mostrar salário nem auxílio.
 
+> ⚠️ **04/11/2026 — os FERIADOS saíram desta tela e vêm do PONTO** (pedido do dono:
+> *"ficaremos somente com uma base de feriados"*). Lá eles são nacionais, estaduais
+> (pela UF da obra), municipais (pelo município da obra) ou de uma obra só — o que
+> resolve o "por município" de 7.23.2 abaixo. As férias continuam aqui. Ver
+> `app/apps/analisesps/HISTORICO.md`, leva 248.
+
 ### 7.23.2 Por OBRA, não por município — e por quê
 
 Ele falou dos dois: *"por obra, porque as obras são em municípios diferentes"*.

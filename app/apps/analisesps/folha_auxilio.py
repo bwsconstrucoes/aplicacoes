@@ -372,10 +372,9 @@ def calcular_pessoa(tipo: str, ficha: dict, inicio, fim,
     # OS DESCONTOS, com a MESMA régua da modalidade.
     if e_alimentacao:
         saida["feriados"] = folha_calendario.dias_de_feriado_no_periodo(
-            # ⚠️ PELO NOME, não pelo código: o feriado por obra é cadastrado na
-            # tela de Feriados, que oferece a lista de obras POR NOME. Passar o
-            # código aqui faria o feriado municipal deixar de descontar, em
-            # silêncio. Se um dia o feriado passar a guardar código, muda aqui.
+            # Os feriados vêm do PONTO desde 04/11/2026 (nacional, estadual,
+            # municipal e de obra). A obra vai pelo NOME do cadastro; o casamento
+            # com a obra do ponto (código, depois nome) é de `FeriadosDoPonto`.
             inicio, fim, saida["obra_nome"], sabado=sabado, sexta=sexta)
     saida["ferias"] = folha_calendario.dias_de_ferias_no_periodo(
         saida["cpf"], inicio, fim, sabado=sabado, sexta=sexta)

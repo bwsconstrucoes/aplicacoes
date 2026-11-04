@@ -12244,6 +12244,73 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 248 — Os feriados vêm do ponto: uma base só (04/11/2026)
+
+> **Publicado em 04/11/2026.**
+
+- *"Em analisesps temos a tela feriados e férias. Só que a parte de feriados deve
+  vir do ponto. Dessa forma ficaremos somente com uma base de feriados."*
+- **Antes eram duas bases:** `analisesps.feriado` (nacional ou por obra, cadastrada
+  aqui) e `ponto.feriados` (nacional, estadual, municipal, de obra). Um municipal só
+  no ponto não descontava o auxílio; um lançado só aqui não tirava a falta do ponto.
+- **Agora a folha lê só o ponto**, com a regra DELE (`FeriadosDoPonto` em
+  `folha_calendario.py`, que reusa `ponto/core/feriados.Calendario`): nacional
+  sempre; estadual pela UF da obra; municipal pelo município; o da obra só nela.
+  Vale para o auxílio alimentação (`dias_de_feriado_no_periodo`), o adicional de
+  feriado dos diaristas (`folha_diaristas._e_feriado`) e o "lançar batidas" da
+  ficha do ponto (`ponto_edicao`, que pula feriado).
+- **A obra daqui é texto; a de lá é linha de `public.obras`.** Casamento: código
+  (o da C. Diários, igual dos dois lados), código secundário da planilha, nome do
+  ERP/planilha e, por último, o nome do cadastro do rateio (`referencias_rateio` →
+  código). Obra que não casa conta só o nacional, e vai para o log ("não casa com
+  nenhuma obra do ponto").
+- **A tela:** sem formulário de feriado; mostra a lista do ponto (data,
+  abrangência, onde, descrição) e o botão "Cadastrar ou excluir feriado no Ponto"
+  (`/erp/ponto/configuracao#jornada`). As rotas de gravar e apagar feriado daqui
+  SAÍRAM.
+- **Os antigos não somem:** `analisesps.feriado` ficou intocada (sem migração) e não
+  conta mais. O que foi cadastrado nela e o ponto não cobre aparece num aviso, com o
+  botão **"Levar para o ponto"** (só Operador) — grava lá pela gravação do ponto; o
+  de obra sem obra no ponto é listado para cadastro à mão. Rodar de novo não duplica.
+- **Ponto fora do ar:** a folha segue sem desconto de feriado (como era com a tabela
+  vazia) e a tela de Feriados mostra o erro em vermelho.
+- A leitura do ponto vale 1 minuto por período (o auxílio pergunta pessoa por pessoa).
+- **Pendente AGORA:** abrir a tela Feriados e férias e, se aparecer o aviso dos
+  feriados antigos, apertar "Levar para o ponto". E a resposta do dono à pergunta abaixo.
+- **De fora, de propósito:** os "feriados locais" da aba **Feriados** da planilha de
+  credenciais (`agenda.gravar_feriados`), usados para empurrar vencimento de
+  pagamento para dia útil. É outra pergunta (dia de banco, não dia de obra) — ficou
+  como pergunta ao dono.
+- Testes: `test_analisesps_folha_calendario.py` (regra por UF/município/obra,
+  casamento de obra, levar ao ponto), `test_analisesps_folha_auxilio.py`,
+  `test_analisesps_folha_diaristas.py`, `test_analisesps_telas.py` — todos gravando o
+  feriado NO PONTO pela fixture `tests/_feriados_do_ponto.py`, que guarda e devolve
+  os nacionais que o ponto semeia (os testes do ponto contam com eles).
+
+#### Leva 247 — "Atualizar da planilha" na ficha: só aquela SP, na hora (03/11/2026)
+
+> **Publicado em 04/11/2026.**
+
+- *"Às vezes atualizei uma única linha da planilha e queria que ela fosse
+  atualizada no sistema imediatamente sem precisar buscar pela atualização completa.
+  No modal do registro poderia ter um botão pra eu atualizar somente ela."*
+- **O botão:** "↻ Atualizar da planilha", no alto da ficha, debaixo do valor
+  (nome diferente do "Atualizar" lá de baixo, que é o do Omie). Duas leituras ao
+  Google — a coluna A, para achar a linha, e a própria linha — e grava no banco.
+  No modal, refaz SÓ a ficha (a lista por trás não perde rolagem nem marcação) e
+  diz o que mudou ("Mudou: Status Pgt") ou que já estava igual. Vale para
+  qualquer perfil que abre a ficha (não altera dado, só traz o da planilha).
+- **⚠️ A fila desta SP vai ANTES da leitura** (`drenar_fila(sp_id=…)`): alteração
+  feita pela tela que ainda não desceu para a planilha seria desfeita pela leitura.
+- **De fora, de propósito:** SP que não está mais na planilha NÃO é apagada por
+  este botão (a resposta diz que ela sai na próxima atualização completa); a marca
+  d'água do delta não muda (a sincronização completa relê a linha, inofensivo); a
+  linha da lista por trás do modal só muda quando a lista recarrega.
+- Código: `sincronizacao.atualizar_uma_sp`, rota `/api/sp/<id>/da-planilha`
+  (`atualizar_sp_da_planilha`). Testes: `test_analisesps_uma_sp.py` e
+  `test_analisesps_uma_sp_banco.py`. Conferido no navegador (modal → botão →
+  ficha refeita com o dado novo e o aviso).
+
 #### Leva 246 — O "Atualizar" só traz a SPsBD; ponto e apoios em pistas próprias (31/10/2026) — MIGRAÇÃO 055
 
 > **Publicado em 03/11/2026.** Pendente AGORA: o dono apertar "Aplicar atualizações do

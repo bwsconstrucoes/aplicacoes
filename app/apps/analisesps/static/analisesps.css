@@ -804,6 +804,10 @@ a.kpi { display: block; }
   font-family: var(--fonte-dados); font-size: 24px; font-weight: 800;
   color: var(--azul); white-space: nowrap;
 }
+/* "Atualizar da planilha" (03/11/2026) — debaixo do valor, discreto. */
+.ficha-topo-dir { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.ficha-da-planilha { padding: 3px 10px; font-size: 12.5px; white-space: nowrap; }
+.ficha-da-planilha-msg { margin-bottom: 10px; }
 .ficha-links { display: flex; gap: 6px; flex-wrap: wrap; align-items: flex-start; margin-bottom: 12px; }
 /* "Cancelar SP" ficou igual aos outros botoes da fileira: ele so ABRE o
    formulario do Pipefy, nao cancela nada por si. Em vermelho puxava o olho

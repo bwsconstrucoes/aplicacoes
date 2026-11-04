@@ -16,6 +16,7 @@ from decimal import Decimal as D
 import pytest
 
 from app.apps.analisesps import folha_diaristas as fd
+from tests._feriados_do_ponto import _schema_ponto2, feriados_ponto  # noqa: F401
 
 
 # ---------------------------------------------------------------------------
@@ -142,7 +143,9 @@ def _campos(obra="CREPEOLINDA", presenca="PRESENÇA", horas="08:00"):
 
 
 @pytest.fixture
-def banco_diaristas(banco_analisesps):
+def banco_diaristas(banco_analisesps, feriados_ponto):
+    # Os feriados vêm do PONTO desde 04/11/2026: o 7 de setembro é gravado lá.
+    feriados_ponto.nacional(dt.date(2026, 9, 7), "Independência")
     from app.apps.analisesps.db import conexao
     with conexao() as conn:
         conn.execute("INSERT INTO analisesps.referencias_rateio (tipo, nome, codigo) "
@@ -183,9 +186,6 @@ def banco_diaristas(banco_analisesps):
         conn.executemany(
             "INSERT INTO analisesps.ponto_dia (carga_id, cpf, nome, data, campos) "
             " VALUES (?,?,?,?,?)", [(carga, c, "X", d, j) for c, d, j in dias])
-        conn.execute("INSERT INTO analisesps.feriado (data, abrangencia, obra, descricao) "
-                     " VALUES (?, 'nacional', '', 'Independência')",
-                     (dt.date(2026, 9, 7),))
         conn.commit()
     return banco_analisesps
 
