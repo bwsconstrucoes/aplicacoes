@@ -474,6 +474,27 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 05/11/2026 — O ajuste do plantão dobrado pergunta "entrada ou saída"; as rondas falsas; o aparelho que volta sozinho
+
+- **"Foi a entrada ou a saída?"** O dono, no vigia que dobrou do dia 31 para o 1º (bateu só as 18:01 no descanso):
+  *"apareceu marcado saída, quando, na verdade, foi a entrada do dia 1º"*. No dia do vigia SEM horário previsto e
+  com UMA batida, o aplicativo não tem como saber se ela é a entrada de uma noite (falta a saída da manhã seguinte)
+  ou a saída do plantão dobrado (falta a entrada daquela manhã). A linha do ajuste agora pergunta — "A batida que
+  faltou foi a: entrada (antes das 18:01) / saída (depois das 18:01)" —, e a escolha decide o dia da hora digitada
+  (a saída de madrugada é do dia seguinte). O padrão continua o de antes (o costume da escala). O servidor já
+  punha o 06:01 no dia certo (o `turno_seguido` de 04/11); a mudança é da tela.
+- **As rondas da falsa entrada.** As 18:01 sortearam 4 rondas (o sistema entendeu entrada de noite), todas
+  perdidas. Agora, ao aprovar um ajuste, as rondas abertas por uma batida que passou a ser SAÍDA são canceladas,
+  com o motivo (`rondas.rever_depois_do_ajuste`); as feitas ficam.
+- **O aparelho bloqueado por "desligamento" volta sozinho.** O dono: *"em Pessoas ele está normal, ativo, só que em
+  Aparelhos está 'bloqueado — responsável desligado, aprove de novo com outro responsável'. Claramente uma falha"*.
+  O cadastro disse desligado por um tempo (a data de saída, a fase do Pipefy — ou a pessoa sumiu da base por um
+  momento: quem não é achado é tratado como desligado) e voltou a ativo, mas o bloqueio automático não se desfazia.
+  Agora, a cada 15 minutos, o que o bloqueio automático bloqueou (pelo motivo que ele grava) volta a valer quando a
+  pessoa está ativa de novo — o celular pessoal só se ela não tiver outro aprovado. O bloqueio à mão, a troca de
+  celular e o arquivado não voltam; a lista do aparelho de equipe, retirada no desligamento, também não.
+**No ramo, esperando o "pode".**
+
 ## 04/11/2026 (quinta) — O segundo ponto do plantão em 2 minutos; o manual do celular bloqueado
 
 - **2 minutos, não 10.** O dono: *"achei 10 minutos muito tempo entre as batidas. Isso é realmente necessário?"* Não

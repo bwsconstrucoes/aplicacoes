@@ -1867,11 +1867,28 @@ function semEscala(x) {
 // (10/10/2026: "tem que buscar do cadastro (…) se os pontos que a pessoa bate são
 // 7, meio-dia, 13 e 17 horas"), e a hora DIGITADA — nada da roleta do relógio, que
 // "é muito lento para selecionar a hora".
+// O DIA DO VIGIA COM UMA BATIDA SÓ, SEM HORÁRIO PREVISTO (05/11/2026, o dono: "apareceu marcado saída, quando, na
+// verdade, nessa situação dele, foi a entrada do dia 1º"). A batida das 18:01 pode ser a ENTRADA de uma noite
+// (faltou a saída da manhã seguinte) ou a SAÍDA do plantão dobrado (faltou a entrada daquela manhã) — o sistema não
+// tem como saber. A linha pergunta, e a escolha decide também o dia da hora digitada (a saída de madrugada é do
+// dia seguinte). O padrão é o de sempre (o costume da escala).
+const papelAPerguntar = x => !x.faltando.length && x.so_entrada_e_saida && !x.previstas.length && x.batidas.length === 1;
 function linhasDoAjuste(x, varios = false) {
   const linha = (rotulo, hora, marcada, i) => `<label class="linha-ajuste">
       <input type="checkbox" data-i="${i}" ${marcada ? "checked" : ""}>
       <span>${esc(rotulo)}</span>
       <input class="hora" data-hora="${i}" inputmode="numeric" maxlength="5" placeholder="00:00" value="${esc(hora || "")}"></label>`;
+  if (papelAPerguntar(x)) {
+    const b = x.batidas[0].hora, padrao = semEscala(x)[0] === "Entrada" ? "ENTRADA" : "SAIDA";
+    return `<label class="linha-ajuste"><input type="checkbox" data-i="0" ${varios ? "" : "checked"}>
+        <span>A batida que faltou foi a:<select data-papel="0" style="display:block; margin-top:4px; font-size:14px">
+          <option value="ENTRADA" ${padrao === "ENTRADA" ? "selected" : ""}>entrada (antes das ${esc(b)})</option>
+          <option value="SAIDA" ${padrao === "SAIDA" ? "selected" : ""}>saída (depois das ${esc(b)})</option>
+        </select></span>
+        <input class="hora" data-hora="0" inputmode="numeric" maxlength="5" placeholder="00:00" value=""></label>
+      <p class="pequeno" style="margin:4px 0 0">Plantão dobrado (bateu a saída da noite de manhã e continuou trabalhando): escolha
+        <b>a entrada</b> e digite a hora em que começou.</p>`;
+  }
   return x.faltando.length ? x.faltando.map((f, i) => linha(f.rotulo, f.sugestao, true, i)).join("")
     : semEscala(x).map((rotulo, i) => linha(rotulo, "", !varios && i === 0, i)).join("");
 }
@@ -1898,6 +1915,18 @@ function horariosMarcados(caixa, x, vazioOk = false) {
   const primeira = x.previstas.length ? x.previstas[0].hora : null;
   const atravessa = x.previstas.some((p, i) => i && p.hora < x.previstas[i - 1].hora);
   const proximo = (() => { const d = new Date(x.data + "T12:00:00"); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10); })();
+  // o vigia com uma batida só: a entrada é antes dela, no mesmo dia; a saída é depois — de madrugada, no dia seguinte
+  const papel = caixa.querySelector("[data-papel]");
+  if (papel && papelAPerguntar(x)) {
+    const b = x.batidas[0].hora;
+    return marcados.map(h => {
+      if (papel.value === "ENTRADA") {
+        if (h >= b) throw new Error(`A entrada tem de ser antes da batida das ${b} — ou escolha “saída”.`);
+        return `${x.data}T${h}:00`;
+      }
+      return `${h <= b ? proximo : x.data}T${h}:00`;
+    });
+  }
   return marcados.map(h => `${atravessa && primeira && h < primeira ? proximo : x.data}T${h}:00`);
 }
 // VÁRIOS DIAS DE UMA VEZ (12/10/2026: "corrigir o ponto do dia 5 ao dia 9 — não tem

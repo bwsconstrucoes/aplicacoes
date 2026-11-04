@@ -145,3 +145,42 @@ def test_aparelho_do_vigia_avisa_e_marca(app, mundo, monkeypatch):
                    json={"perfil": "INDIVIDUAL", "cpf": CPF_JOAO, "faz_ronda": True}).status_code == 200
     assert dp.get(f"/erp/api/ponto/dispositivos/{ap}").get_json()["dispositivo"]["dono_faz_ronda"] is True
     assert dp.get(f"/erp/api/ponto/pessoas/{mundo['joao']}").get_json()["pessoa"]["faz_ronda"] is True
+
+
+def test_o_ajuste_do_plantao_dobrado_cancela_as_rondas_da_falsa_entrada(app, mundo, banco):
+    """05/11/2026, o dono: o vigia dobrou o plantão e bateu só as 18:01 no dia de descanso; o sistema entendeu a
+    entrada de uma noite e mandou 4 rondas, todas perdidas. Aprovada a entrada das 6:01, as 18:01 são a saída — as
+    rondas que ela abriu são canceladas (as da noite de verdade ficam)."""
+    from app.apps.ponto import db
+    from app.apps.ponto.core import escalas
+    dp = _vigia(app, mundo, mundo["joao"])
+    seg = _segunda_passada()
+    ter = seg + dt.timedelta(days=1)
+    with db.conexao() as conn:
+        noite = escalas.gravar(conn, {"nome": "Vigia noturno 12x36", "tipo": "CICLO_12X36",
+                                      "ciclo_entrada": "17:00", "ciclo_saida": "06:00"})
+        escalas.atribuir(conn, mundo["joao"], noite["id"], seg.isoformat(), por="teste")
+    bater_via_chave(app, CPF_JOAO, local(seg, 17, 0))
+    bater_via_chave(app, CPF_JOAO, local(ter, 6, 1))
+    bater_via_chave(app, CPF_JOAO, local(ter, 18, 1))           # parece a entrada de uma noite: sorteia rondas
+
+    def rondas_de(dia):
+        with banco.connect() as conn:
+            return [r[0] for r in conn.execute(text("SELECT status FROM ponto.rondas WHERE colaborador_id = :c "
+                                                    "AND data_referencia = :d"), {"c": mundo["joao"], "d": dia})]
+    assert rondas_de(ter) and "CANCELADA" not in rondas_de(ter)
+    antes_seg = rondas_de(seg)
+    r = dp.post("/erp/api/ponto/ocorrencias", json={"tipo": "AJUSTE_BATIDA", "colaborador_id": mundo["joao"],
+                "data_inicio": ter.isoformat(), "horario": f"{ter.isoformat()}T06:01:00", "obra": "PG-A",
+                "descricao": "dobrou o plantão até as 18h"})
+    assert r.status_code == 201, r.get_json()
+    sup = como(app, mundo["sup"])
+    for _ in range(4):
+        p = dp.get(f"/erp/api/ponto/ocorrencias/{r.get_json()['ocorrencia']['id']}").get_json()["pedido"]
+        if p["status"] == "APROVADA":
+            break
+        cli = sup if p["status"] == "AGUARDANDO_SUPERVISOR" else dp
+        assert cli.post(p["decidir_em"], json={"aprovar": True, "motivo": ""}).status_code == 200
+    assert p["status"] == "APROVADA"
+    assert set(rondas_de(ter)) == {"CANCELADA"}
+    assert rondas_de(seg) == antes_seg                          # a noite de verdade não muda
