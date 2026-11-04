@@ -48,122 +48,239 @@ def _pronto() -> bool:
 
 
 # ---------------------------------------------------------------------------
-# FERIADOS
+# FERIADOS — VÊM DO PONTO (04/11/2026)
+#
+# O dono: *"a parte de feriados deve vir do ponto. Dessa forma ficaremos somente
+# com uma base de feriados."* Até aqui eram duas: a tabela `analisesps.feriado`
+# (cadastrada nesta tela, nacional ou por obra) e a `ponto.feriados` (nacional,
+# estadual, municipal ou de obra). Um feriado municipal lançado só no ponto não
+# descontava o auxílio; um lançado só aqui não tirava a falta do ponto.
+#
+# AGORA A FOLHA LÊ SÓ O PONTO, e com A MESMA REGRA dele (`ponto/core/feriados.py`,
+# `Calendario.feriado`): nacional vale sempre; estadual pela UF da obra; municipal
+# pelo município; o de obra, só naquela obra. Reusar a regra, e não reescrevê-la,
+# é o que garante que o ponto e a folha nunca discordem sobre um dia.
+#
+# A OBRA AQUI É TEXTO (o nome do cadastro do rateio, ou o código que vem do ponto);
+# lá é a linha de `public.obras`. O casamento é pelo código (o da C. Diários, o
+# mesmo dos dois lados), pelo código secundário da planilha e, por último, pelo
+# nome. Obra que não casa com nenhuma conta só o feriado nacional — e fica no log.
+#
+# A tabela `analisesps.feriado` NÃO foi apagada: o que foi cadastrado nela e o
+# ponto não tem aparece na tela, com o botão de levar para o ponto
+# (`levar_ao_ponto`). Ela não entra mais em conta nenhuma.
 # ---------------------------------------------------------------------------
-def gravar_feriado(data, abrangencia: str, obra: str = "",
-                   descricao: str = "", quem: str = "") -> int:
-    """Cadastra um feriado. Devolve o id.
+ROTULO_DO_PONTO = {"NACIONAL": "Nacional", "ESTADUAL": "Estadual",
+                   "MUNICIPAL": "Municipal", "OBRA": "Só nesta obra"}
 
-    ⚠️ RECUSA O REPETIDO com frase, em vez de deixar o banco estourar: um 7 de
-    setembro cadastrado duas vezes descontaria dois dias do auxílio de todo
-    mundo."""
-    from .db import conexao
-    if not _pronto():
-        raise ErroDoCalendario(
-            'tabela de feriados não encontrada no banco. Clique em "Aplicar '
-            'atualizações do banco" em Configurações e repita a operação.')
-
-    quando = formatos.para_data(data)
-    if quando is None:
-        raise ErroDoCalendario(
-            f'data inválida: "{data}". Use o formato dia/mês/ano.')
-
-    abrangencia = str(abrangencia or "").strip().lower()
-    if abrangencia not in (NACIONAL, POR_OBRA):
-        raise ErroDoCalendario(
-            "informe se o feriado é nacional ou restrito a uma obra.")
-    obra = " ".join(str(obra or "").split()).upper()
-    if abrangencia == POR_OBRA and not obra:
-        raise ErroDoCalendario("selecione a obra deste feriado.")
-    if abrangencia == NACIONAL:
-        # Feriado nacional COM obra escrita deixaria a consulta ambígua. O banco
-        # também recusa; aqui a frase explica antes.
-        obra = ""
-
-    descricao = " ".join(str(descricao or "").split())[:200]
-
-    if ja_tem_feriado(quando, abrangencia, obra):
-        onde = "nacional" if abrangencia == NACIONAL else f'da obra "{obra}"'
-        raise ErroDoCalendario(
-            f"o feriado {quando.strftime('%d/%m/%Y')} {onde} já está cadastrado.")
-
-    with conexao() as conn:
-        cur = conn.execute(
-            "INSERT INTO analisesps.feriado "
-            "  (data, abrangencia, obra, descricao, criado_por) "
-            " VALUES (?,?,?,?,?) RETURNING id",
-            (quando, abrangencia, obra, descricao, str(quem or "")[:120]))
-        novo = cur.fetchone()[0]
-        cur.close()
-        conn.commit()
-    logger.info("Análise de SPs: feriado %s (%s %s) cadastrado por %s.",
-                quando, abrangencia, obra or "-", quem or "(sem nome)")
-    return novo
+# Quanto tempo a leitura do ponto vale. O auxílio pergunta pessoa por pessoa, com
+# o mesmo período: sem guardar, seriam três consultas por pessoa da folha.
+VALIDADE_DA_LEITURA_S = 60
+_leituras: dict = {}
 
 
-def ja_tem_feriado(data, abrangencia: str, obra: str = "") -> bool:
-    from .db import consultar_um
-    if not _pronto():
-        return False
-    achado = consultar_um(
-        "SELECT 1 FROM analisesps.feriado "
-        " WHERE data = ? AND abrangencia = ? AND obra = ?",
-        (data, abrangencia, obra or ""))
-    return bool(achado)
+def _normal(texto) -> str:
+    from app.apps.ponto.core.feriados import _sem_acento
+    return _sem_acento(texto)
 
 
-def listar_feriados(ano: int | None = None) -> list:
-    """Os feriados, do mais recente para o mais antigo. Filtra por ano."""
-    from .db import consultar
-    if not _pronto():
-        return []
-    if ano:
-        linhas = consultar(
-            "SELECT id, data, abrangencia, obra, descricao, criado_por "
-            "  FROM analisesps.feriado "
-            " WHERE data >= ? AND data <= ? "
-            " ORDER BY data DESC, obra",
-            (dt.date(int(ano), 1, 1), dt.date(int(ano), 12, 31)))
-    else:
-        linhas = consultar(
-            "SELECT id, data, abrangencia, obra, descricao, criado_por "
-            "  FROM analisesps.feriado ORDER BY data DESC, obra")
-    return [{"id": l[0], "data": l[1], "abrangencia": l[2], "obra": l[3],
-             "descricao": l[4], "criado_por": l[5],
-             "rotulo": ROTULO_DA_ABRANGENCIA.get(l[2], l[2])} for l in linhas]
+class FeriadosDoPonto:
+    """Os feriados do ponto num período, respondendo "este dia é feriado nesta
+    obra?" com a regra do próprio ponto. Lê tudo de uma vez (feriados do período
+    e as obras) e depois responde sem ir ao banco."""
+
+    def __init__(self, inicio, fim):
+        from app.apps.ponto import db as banco_do_ponto
+        from app.apps.ponto.core import base_obras, feriados as feriados_do_ponto
+
+        self.inicio, self.fim = inicio, fim
+        self._por_texto: dict[str, int] = {}
+        with banco_do_ponto.conexao() as conn:
+            self._calendario = feriados_do_ponto.Calendario(conn, inicio, fim)
+            t = base_obras.trechos_sql(conn)
+            if t:
+                sql = (f"SELECT o.id, o.codigo, {t['nome']} AS nome, {t['uf']} AS uf, "
+                       f"{t['municipio']} AS municipio, op.codigo AS codigo_planilha, "
+                       f"op.codigo_secundario AS codigo_secundario "
+                       f"FROM public.obras o {t['join']}")
+            else:
+                sql = ("SELECT o.id, o.codigo, o.nome, o.uf, o.municipio, "
+                       "NULL AS codigo_planilha, NULL AS codigo_secundario FROM public.obras o")
+            obras = banco_do_ponto.todos(conn, sql)
+        # O calendário do ponto busca a obra no banco na hora; aqui ela já vem
+        # carregada, e a conexão (que já fechou) nunca é usada.
+        self._calendario._conn = None
+        for o in obras:
+            self._calendario._obras[o["id"]] = {"id": o["id"], "uf": o.get("uf"),
+                                                 "municipio": o.get("municipio")}
+        # O código vence o nome: dois nomes iguais não podem roubar a obra de um código.
+        for campo in ("codigo", "codigo_planilha", "codigo_secundario", "nome"):
+            for o in obras:
+                chave = _normal(o.get(campo))
+                if chave:
+                    self._por_texto.setdefault(chave, o["id"])
+        # O nome do cadastro do rateio (a lista de obras da tela) → o código dele.
+        try:
+            from . import sincronizacao
+            for r in sincronizacao.referencias_rateio().get("obras") or []:
+                obra_id = self._por_texto.get(_normal(r.get("codigo")))
+                if obra_id:
+                    self._por_texto.setdefault(_normal(r.get("nome")), obra_id)
+        except Exception:  # noqa: BLE001 — sem a lista, casa só pelo código e nome do ERP
+            logger.warning("Feriados: não consegui ler a lista de obras do rateio",
+                           exc_info=True)
+        self._avisadas: set = set()
+
+    def obra_id(self, obra) -> int | None:
+        chave = _normal(obra)
+        if not chave:
+            return None
+        achada = self._por_texto.get(chave)
+        if achada is None and chave not in self._avisadas:
+            self._avisadas.add(chave)
+            logger.warning('Feriados: a obra "%s" não casa com nenhuma obra do ponto; '
+                           "conta só o feriado nacional.", obra)
+        return achada
+
+    def feriado(self, dia, obra: str = "") -> str | None:
+        """O nome do feriado que vale neste dia para esta obra, ou None."""
+        if dia < self.inicio or dia > self.fim:
+            return None
+        return self._calendario.feriado(dia, self.obra_id(obra))
 
 
-def apagar_feriado(feriado_id: int, quem: str = "") -> bool:
-    from .db import conexao
-    if not _pronto():
-        return False
-    with conexao() as conn:
-        cur = conn.execute("DELETE FROM analisesps.feriado WHERE id = ?",
-                           (int(feriado_id),))
-        apagou = bool(cur.rowcount and cur.rowcount > 0)
-        cur.close()
-        conn.commit()
-    return apagou
+def feriados_do_ponto(inicio, fim) -> FeriadosDoPonto:
+    """A leitura do período, guardada por um minuto (ver VALIDADE_DA_LEITURA_S)."""
+    import time
+    chave = (inicio, fim)
+    guardada = _leituras.get(chave)
+    if guardada and time.monotonic() - guardada[0] < VALIDADE_DA_LEITURA_S:
+        return guardada[1]
+    lida = FeriadosDoPonto(inicio, fim)
+    if len(_leituras) > 50:
+        _leituras.clear()
+    _leituras[chave] = (time.monotonic(), lida)
+    return lida
+
+
+def esquecer_leituras() -> None:
+    _leituras.clear()
 
 
 def feriados_no_periodo(inicio, fim, obra: str = "") -> list:
     """Os feriados que caem no período, para uma obra (ou só os nacionais).
 
-    ⚠️ O NACIONAL VALE SEMPRE; o da obra só quando a obra é a mesma. Somar os dois
-    sem distinguir descontaria o feriado de Olinda do auxílio de quem trabalha em
-    Sobral."""
+    ⚠️ O NACIONAL VALE SEMPRE; o estadual, o municipal e o da obra, só onde valem.
+    Somar tudo sem distinguir descontaria o feriado de Olinda do auxílio de quem
+    trabalha em Sobral.
+
+    Sem o ponto (fora do ar, migração por aplicar), devolve lista vazia e deixa
+    no log: a folha segue, sem descontar feriado — o mesmo que acontecia antes
+    com a tabela vazia. A tela de Feriados mostra o erro."""
+    try:
+        calendario = feriados_do_ponto(inicio, fim)
+    except Exception:  # noqa: BLE001
+        logger.exception("Feriados: não consegui ler os feriados do ponto")
+        return []
+    saida, dia = [], inicio
+    while dia <= fim:
+        nome = calendario.feriado(dia, obra)
+        if nome:
+            saida.append({"data": dia, "descricao": nome, "obra": obra or ""})
+        dia += dt.timedelta(days=1)
+    return saida
+
+
+def listar_feriados(ano: int | None = None) -> list:
+    """Os feriados do PONTO, para a tela (do mais recente para o mais antigo)."""
+    from app.apps.ponto import db as banco_do_ponto
+    from app.apps.ponto.core import feriados as feriados_do_ponto
+    with banco_do_ponto.conexao() as conn:
+        lista = feriados_do_ponto.listar(conn, ano=ano or None)
+    saida = []
+    for f in sorted(lista, key=lambda x: x["data"], reverse=True):
+        a = f["abrangencia"]
+        if a == "ESTADUAL":
+            onde = f.get("uf") or ""
+        elif a == "MUNICIPAL":
+            onde = f"{f.get('municipio') or ''} / {f.get('uf') or ''}"
+        elif a == "OBRA":
+            onde = f.get("obra_codigo") or ""
+        else:
+            onde = ""
+        saida.append({"data": f["data"], "abrangencia": a,
+                      "rotulo": ROTULO_DO_PONTO.get(a, a), "onde": onde,
+                      "descricao": f.get("nome") or ""})
+    return saida
+
+
+# ---------------------------------------------------------------------------
+# OS FERIADOS ANTIGOS DESTA TELA — o que o ponto ainda não tem
+# ---------------------------------------------------------------------------
+def _antigos() -> list:
     from .db import consultar
     if not _pronto():
         return []
-    obra = " ".join(str(obra or "").split()).upper()
-    linhas = consultar(
-        "SELECT data, abrangencia, obra, descricao FROM analisesps.feriado "
-        " WHERE data >= ? AND data <= ? "
-        "   AND (abrangencia = ? OR (abrangencia = ? AND obra = ?)) "
-        " ORDER BY data",
-        (inicio, fim, NACIONAL, POR_OBRA, obra))
-    return [{"data": l[0], "abrangencia": l[1], "obra": l[2],
-             "descricao": l[3]} for l in linhas]
+    return [{"id": l[0], "data": l[1], "abrangencia": l[2], "obra": l[3] or "",
+             "descricao": l[4] or ""}
+            for l in consultar("SELECT id, data, abrangencia, obra, descricao "
+                               "  FROM analisesps.feriado ORDER BY data")]
+
+
+def antigos_fora_do_ponto() -> list:
+    """Os feriados cadastrados AQUI que o ponto não cobre — eles deixaram de
+    contar. Coberto quer dizer: naquele dia, para aquela obra (ou nacional), o
+    ponto já diz que é feriado, seja pelo nacional, estadual, municipal ou da obra."""
+    antigos = _antigos()
+    if not antigos:
+        return []
+    calendario = FeriadosDoPonto(antigos[0]["data"], antigos[-1]["data"])
+    saida = []
+    for f in antigos:
+        obra = f["obra"] if f["abrangencia"] == POR_OBRA else ""
+        if calendario.feriado(f["data"], obra):
+            continue
+        f["rotulo"] = ROTULO_DA_ABRANGENCIA.get(f["abrangencia"], f["abrangencia"])
+        f["obra_no_ponto"] = bool(calendario.obra_id(obra)) if obra else True
+        saida.append(f)
+    return saida
+
+
+def levar_ao_ponto(quem: str = "") -> dict:
+    """Grava no ponto os feriados antigos que ele não cobre, pela gravação do
+    próprio ponto (as mesmas validações). O de obra só vai quando a obra casa com
+    uma obra do ponto; o que não casa volta na resposta, com o nome da obra."""
+    from app.apps.ponto import db as banco_do_ponto
+    from app.apps.ponto.core import feriados as feriados_do_ponto
+    from app.apps.ponto.erros import ErroDeValidacao
+
+    faltam = antigos_fora_do_ponto()
+    if not faltam:
+        return {"levados": 0, "sem_obra": []}
+    calendario = FeriadosDoPonto(faltam[0]["data"], faltam[-1]["data"])
+    levados, sem_obra = 0, []
+    with banco_do_ponto.conexao() as conn:
+        for f in faltam:
+            dados = {"data": f["data"].isoformat(),
+                     "nome": f["descricao"] or "Feriado"}
+            if f["abrangencia"] == POR_OBRA:
+                obra_id = calendario.obra_id(f["obra"])
+                if not obra_id:
+                    sem_obra.append(f["obra"])
+                    continue
+                dados.update(abrangencia="OBRA", obra_id=obra_id)
+            else:
+                dados["abrangencia"] = "NACIONAL"
+            try:
+                feriados_do_ponto.gravar(conn, dados)
+                levados += 1
+            except ErroDeValidacao as e:
+                if "já está cadastrado" not in str(e):
+                    raise
+    esquecer_leituras()
+    logger.info("Análise de SPs: %s levou %d feriado(s) antigo(s) para o ponto "
+                "(%d sem obra no ponto).", quem or "(sem nome)", levados, len(sem_obra))
+    return {"levados": levados, "sem_obra": sorted(set(sem_obra))}
 
 
 # ---------------------------------------------------------------------------

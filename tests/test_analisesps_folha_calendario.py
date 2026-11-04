@@ -5,8 +5,8 @@ Feriados e férias — 27/09/2026, com banco de verdade.
 ⚠️ POR QUE COM BANCO: tudo o que importa aqui é constraint e `WHERE` de
 sobreposição de datas, e o dublê da suíte ignora os dois.
 
-  - o índice único do feriado é o que impede um 7 de setembro cadastrado duas
-    vezes descontar DOIS dias do auxílio de todo mundo;
+  - os feriados vêm do PONTO desde 04/11/2026 (uma base só) — os testes deles
+    gravam no ponto, pela fixture de `tests/_feriados_do_ponto.py`;
   - o CHECK do período impede férias com o fim antes do início, que daria
     contagem negativa e auxílio a MAIS;
   - e a regra de sobreposição é `inicio <= fim_pedido AND fim >= inicio_pedido`
@@ -16,6 +16,8 @@ import datetime as dt
 import pathlib
 
 import pytest
+
+from tests._feriados_do_ponto import _schema_ponto2, feriados_ponto  # noqa: F401
 
 pytestmark = pytest.mark.banco
 
@@ -42,113 +44,144 @@ LUELIA = "03513441363"
 def test_a_migracao_032_roda_no_postgres(banco_calendario):
     from app.apps.analisesps import folha_calendario as fc
     assert fc._pronto() is True
-    assert fc.listar_feriados() == []
     assert fc.listar_ferias() == []
 
 
 # ---------------------------------------------------------------------------
-# FERIADOS
+# FERIADOS — VÊM DO PONTO (04/11/2026)
+#
+# O dono: *"a parte de feriados deve vir do ponto. Dessa forma ficaremos somente
+# com uma base de feriados."* A regra de qual feriado vale onde é a DO PONTO.
 # ---------------------------------------------------------------------------
-def test_feriado_nacional_e_de_obra_convivem(banco_calendario):
+AGO_INI, AGO_FIM = D(2026, 8, 1), D(2026, 8, 31)     # agosto: sem feriado nacional
+
+
+def test_a_lista_da_tela_e_a_do_ponto(feriados_ponto):
+    from app.apps.analisesps import folha_calendario as fc
+    feriados_ponto.obra("FC-OLINDA", "CRECHE OLINDA", uf="PE", municipio="Olinda")
+    feriados_ponto.nacional(D(2026, 9, 7), "Independência")
+    feriados_ponto.estadual(D(2026, 3, 6), "PE", "Revolução Pernambucana")
+    feriados_ponto.municipal(D(2026, 3, 12), "PE", "Olinda", "Aniversário de Olinda")
+    feriados_ponto.da_obra(D(2026, 8, 14), "FC-OLINDA", "Padroeira da obra")
+
+    lista = fc.listar_feriados(2026)
+    assert [(f["data"], f["rotulo"], f["onde"], f["descricao"]) for f in lista] == [
+        (D(2026, 9, 7), "Nacional", "", "Independência"),
+        (D(2026, 8, 14), "Só nesta obra", "FC-OLINDA", "Padroeira da obra"),
+        (D(2026, 3, 12), "Municipal", "Olinda / PE", "Aniversário de Olinda"),
+        (D(2026, 3, 6), "Estadual", "PE", "Revolução Pernambucana"),
+    ]
+    assert fc.listar_feriados(2025) == []
+
+
+def test_o_nacional_vale_para_todo_mundo(feriados_ponto):
+    from app.apps.analisesps import folha_calendario as fc
+    feriados_ponto.nacional(D(2026, 8, 10))
+    assert len(fc.feriados_no_periodo(AGO_INI, AGO_FIM)) == 1
+    assert len(fc.feriados_no_periodo(AGO_INI, AGO_FIM, "QUALQUER OBRA")) == 1
+
+
+def test_estadual_e_municipal_valem_pela_UF_e_pelo_MUNICIPIO_da_obra(feriados_ponto):
+    """O que a tabela antiga desta tela não tinha: feriado de Olinda vale para
+    toda obra de Olinda, sem cadastrar obra por obra."""
+    from app.apps.analisesps import folha_calendario as fc
+    feriados_ponto.obra("FC-OLINDA", "CRECHE OLINDA", uf="PE", municipio="Olinda")
+    feriados_ponto.obra("FC-RECIFE", "POSTO RECIFE", uf="PE", municipio="Recife")
+    feriados_ponto.obra("FC-SOBRAL", "ESCOLA SOBRAL", uf="CE", municipio="Sobral")
+    feriados_ponto.estadual(D(2026, 8, 6), "PE")
+    feriados_ponto.municipal(D(2026, 8, 12), "PE", "Olinda")
+
+    def dias(obra):
+        return [f["data"] for f in fc.feriados_no_periodo(AGO_INI, AGO_FIM, obra)]
+
+    assert dias("FC-OLINDA") == [D(2026, 8, 6), D(2026, 8, 12)]
+    assert dias("FC-RECIFE") == [D(2026, 8, 6)]
+    assert dias("FC-SOBRAL") == []
+
+
+def test_a_obra_casa_pelo_codigo_e_pelo_NOME_do_cadastro_do_rateio(feriados_ponto):
+    """O auxílio pergunta pelo NOME da obra (o do cadastro); o diarista, pelo
+    CÓDIGO. Os dois têm de achar o mesmo feriado."""
+    from app.apps.analisesps import folha_calendario as fc
+    from app.apps.analisesps.db import conexao
+    feriados_ponto.obra("FC-OLINDA", "Creche de Olinda (ERP)", uf="PE", municipio="Olinda")
+    with conexao() as conn:
+        conn.execute("INSERT INTO analisesps.referencias_rateio (tipo, nome, codigo) "
+                     "VALUES ('obra', 'CREPEOLINDA', 'FC-OLINDA')")
+        conn.commit()
+    feriados_ponto.da_obra(D(2026, 8, 14), "FC-OLINDA")
+    for obra in ("FC-OLINDA", "fc-olinda", "CREPEOLINDA", "Creche de Olinda (ERP)"):
+        fc.esquecer_leituras()
+        assert len(fc.feriados_no_periodo(AGO_INI, AGO_FIM, obra)) == 1, obra
+
+
+def test_obra_que_NAO_casa_conta_so_o_nacional(feriados_ponto):
+    from app.apps.analisesps import folha_calendario as fc
+    feriados_ponto.obra("FC-OLINDA", "CRECHE OLINDA", uf="PE", municipio="Olinda")
+    feriados_ponto.nacional(D(2026, 8, 10))
+    feriados_ponto.municipal(D(2026, 8, 12), "PE", "Olinda")
+    assert [f["data"] for f in fc.feriados_no_periodo(AGO_INI, AGO_FIM, "OBRA FANTASMA")] \
+        == [D(2026, 8, 10)]
+
+
+def test_feriado_fora_do_periodo_nao_entra(feriados_ponto):
+    from app.apps.analisesps import folha_calendario as fc
+    feriados_ponto.nacional(D(2026, 9, 7))
+    assert fc.feriados_no_periodo(AGO_INI, AGO_FIM) == []
+
+
+def test_sem_o_ponto_a_folha_segue_sem_feriado(banco_calendario, monkeypatch):
+    """Ponto fora do ar não derruba o auxílio: segue sem desconto de feriado, e o
+    erro aparece na tela de Feriados."""
     from app.apps.analisesps import folha_calendario as fc
 
-    fc.gravar_feriado("07/09/2026", fc.NACIONAL, descricao="Independência",
-                      quem="MARCELO")
-    fc.gravar_feriado("12/09/2026", fc.POR_OBRA, obra="CREPEOLINDA",
-                      descricao="Aniversário da cidade", quem="MARCELO")
-
-    lista = fc.listar_feriados()
-    assert len(lista) == 2
-    por_data = {f["data"]: f for f in lista}
-    assert por_data[D(2026, 9, 7)]["abrangencia"] == "nacional"
-    assert por_data[D(2026, 9, 7)]["obra"] == ""
-    assert por_data[D(2026, 9, 12)]["obra"] == "CREPEOLINDA"
+    def quebra(*a, **k):
+        raise RuntimeError("ponto fora do ar")
+    monkeypatch.setattr(fc, "FeriadosDoPonto", quebra)
+    fc.esquecer_leituras()
+    assert fc.feriados_no_periodo(AGO_INI, AGO_FIM) == []
 
 
-def test_o_MESMO_feriado_DUAS_vezes_e_recusado_com_frase(banco_calendario):
-    """⚠️ Um 7 de setembro em duplicidade descontaria DOIS dias do auxílio de
-    todo mundo."""
+# ---------------------------------------------------------------------------
+# OS FERIADOS ANTIGOS DESTA TELA → o ponto
+# ---------------------------------------------------------------------------
+def _antigo(data, abrangencia, obra="", descricao=""):
+    from app.apps.analisesps.db import conexao
+    with conexao() as conn:
+        conn.execute("INSERT INTO analisesps.feriado (data, abrangencia, obra, descricao) "
+                     "VALUES (?,?,?,?)", (data, abrangencia, obra, descricao))
+        conn.commit()
+
+
+def test_o_antigo_que_o_ponto_ja_cobre_nao_aparece(feriados_ponto):
     from app.apps.analisesps import folha_calendario as fc
+    feriados_ponto.obra("FC-OLINDA", "CRECHE OLINDA", uf="PE", municipio="Olinda")
+    feriados_ponto.nacional(D(2026, 9, 7))
+    feriados_ponto.municipal(D(2026, 8, 12), "PE", "Olinda")
+    _antigo(D(2026, 9, 7), "nacional")
+    _antigo(D(2026, 8, 12), "obra", "FC-OLINDA")     # coberto pelo municipal
+    _antigo(D(2026, 8, 20), "obra", "FC-OLINDA", "Padroeira")
+    faltam = fc.antigos_fora_do_ponto()
+    assert [(f["data"], f["obra"]) for f in faltam] == [(D(2026, 8, 20), "FC-OLINDA")]
 
-    fc.gravar_feriado("07/09/2026", fc.NACIONAL)
-    with pytest.raises(fc.ErroDoCalendario) as erro:
-        fc.gravar_feriado("07/09/2026", fc.NACIONAL)
-    assert "já está cadastrado" in str(erro.value)
-    assert len(fc.listar_feriados()) == 1
 
-
-def test_o_mesmo_dia_em_DUAS_obras_diferentes_pode(banco_calendario):
-    """Cada município tem o seu — o dia pode coincidir."""
+def test_levar_ao_ponto_grava_la_e_o_auxilio_passa_a_contar(feriados_ponto):
     from app.apps.analisesps import folha_calendario as fc
+    feriados_ponto.obra("FC-OLINDA", "CRECHE OLINDA", uf="PE", municipio="Olinda")
+    _antigo(D(2026, 8, 10), "nacional", descricao="Feriado antigo")
+    _antigo(D(2026, 8, 20), "obra", "FC-OLINDA", "Padroeira")
+    _antigo(D(2026, 8, 21), "obra", "OBRA QUE O PONTO NAO TEM")
+    assert fc.feriados_no_periodo(AGO_INI, AGO_FIM, "FC-OLINDA") == []
 
-    fc.gravar_feriado("12/09/2026", fc.POR_OBRA, obra="CREPEOLINDA")
-    fc.gravar_feriado("12/09/2026", fc.POR_OBRA, obra="CREPEAREIAS")
-    assert len(fc.listar_feriados()) == 2
+    r = fc.levar_ao_ponto(quem="teste")
 
-
-def test_feriado_de_obra_SEM_obra_e_recusado(banco_calendario):
-    from app.apps.analisesps import folha_calendario as fc
-    with pytest.raises(fc.ErroDoCalendario) as erro:
-        fc.gravar_feriado("12/09/2026", fc.POR_OBRA, obra="  ")
-    assert "selecione a obra" in str(erro.value).lower()
-
-
-def test_feriado_nacional_IGNORA_a_obra_que_vier(banco_calendario):
-    """Nacional com obra escrita deixaria a consulta ambígua. O banco também
-    recusa; o código limpa antes para a frase não precisar existir."""
-    from app.apps.analisesps import folha_calendario as fc
-
-    fc.gravar_feriado("07/09/2026", fc.NACIONAL, obra="CREPEOLINDA")
-    assert fc.listar_feriados()[0]["obra"] == ""
-
-
-def test_data_ilegivel_no_feriado_e_recusada(banco_calendario):
-    from app.apps.analisesps import folha_calendario as fc
-    with pytest.raises(fc.ErroDoCalendario) as erro:
-        fc.gravar_feriado("não é data", fc.NACIONAL)
-    assert "dia/mês/ano" in str(erro.value)
-
-
-def test_os_feriados_do_periodo_respeitam_a_OBRA(banco_calendario):
-    """⚠️ O nacional vale sempre; o da obra só na obra dela. Somar os dois sem
-    distinguir descontaria o feriado de Olinda do auxílio de quem trabalha em
-    Sobral."""
-    from app.apps.analisesps import folha_calendario as fc
-
-    fc.gravar_feriado("07/09/2026", fc.NACIONAL)
-    fc.gravar_feriado("12/09/2026", fc.POR_OBRA, obra="CREPEOLINDA")
-    fc.gravar_feriado("20/09/2026", fc.POR_OBRA, obra="CREPEAREIAS")
-
-    em_olinda = fc.feriados_no_periodo(D(2026, 9, 1), D(2026, 9, 30),
-                                       "CREPEOLINDA")
-    assert [f["data"] for f in em_olinda] == [D(2026, 9, 7), D(2026, 9, 12)]
-
-    # Sem obra, só os nacionais.
-    assert [f["data"] for f in
-            fc.feriados_no_periodo(D(2026, 9, 1), D(2026, 9, 30))] == \
-        [D(2026, 9, 7)]
-
-
-def test_feriado_fora_do_periodo_nao_entra(banco_calendario):
-    from app.apps.analisesps import folha_calendario as fc
-    fc.gravar_feriado("07/09/2026", fc.NACIONAL)
-    assert fc.feriados_no_periodo(D(2026, 8, 1), D(2026, 8, 31)) == []
-
-
-def test_apagar_feriado(banco_calendario):
-    from app.apps.analisesps import folha_calendario as fc
-    novo = fc.gravar_feriado("07/09/2026", fc.NACIONAL)
-    assert fc.apagar_feriado(novo) is True
-    assert fc.listar_feriados() == []
-    assert fc.apagar_feriado(99999) is False
-
-
-def test_listar_feriados_filtra_por_ANO(banco_calendario):
-    from app.apps.analisesps import folha_calendario as fc
-    fc.gravar_feriado("07/09/2026", fc.NACIONAL)
-    fc.gravar_feriado("07/09/2025", fc.NACIONAL)
-    assert len(fc.listar_feriados(ano=2026)) == 1
-    assert len(fc.listar_feriados()) == 2
+    assert r == {"levados": 2, "sem_obra": ["OBRA QUE O PONTO NAO TEM"]}
+    assert [f["data"] for f in fc.feriados_no_periodo(AGO_INI, AGO_FIM, "FC-OLINDA")] \
+        == [D(2026, 8, 10), D(2026, 8, 20)]
+    # Rodar de novo não duplica nada no ponto.
+    antes = feriados_ponto.contar()
+    assert fc.levar_ao_ponto()["levados"] == 0
+    assert feriados_ponto.contar() == antes
 
 
 # ---------------------------------------------------------------------------
@@ -301,32 +334,34 @@ def test_quem_nao_tem_ferias_desconta_zero(banco_calendario):
         GERLANIO, D(2026, 9, 1), D(2026, 9, 30)) == 0
 
 
-def test_feriado_no_FIM_DE_SEMANA_nao_desconta_nada(banco_calendario):
+def test_feriado_no_FIM_DE_SEMANA_nao_desconta_nada(feriados_ponto):
     """⚠️ Aquele dia já não contava. É a mesma sutileza que a planilha resolve
     contando os feriados de sexta à parte — aqui sai de graça, porque a conta é
     dia a dia."""
     from app.apps.analisesps import folha_calendario as fc
 
-    fc.gravar_feriado("05/09/2026", fc.NACIONAL)   # sábado
-    fc.gravar_feriado("07/09/2026", fc.NACIONAL)   # segunda
+    feriados_ponto.nacional(D(2026, 9, 5))   # sábado
+    feriados_ponto.nacional(D(2026, 9, 7))   # segunda
     assert fc.dias_de_feriado_no_periodo(D(2026, 9, 1), D(2026, 9, 30)) == 1
 
 
-def test_feriado_na_SEXTA_nao_desconta_de_quem_e_segunda_a_quinta(banco_calendario):
+def test_feriado_na_SEXTA_nao_desconta_de_quem_e_segunda_a_quinta(feriados_ponto):
     """A sexta já não contava para essa modalidade. Descontar seria tirar um dia
     que ninguém ia pagar."""
     from app.apps.analisesps import folha_calendario as fc
 
-    fc.gravar_feriado("11/09/2026", fc.NACIONAL)   # sexta
+    feriados_ponto.nacional(D(2026, 9, 11))   # sexta
     assert fc.dias_de_feriado_no_periodo(D(2026, 9, 1), D(2026, 9, 30)) == 1
     assert fc.dias_de_feriado_no_periodo(
         D(2026, 9, 1), D(2026, 9, 30), sexta=False) == 0
 
 
-def test_feriado_de_obra_desconta_so_na_obra_dele(banco_calendario):
+def test_feriado_de_obra_desconta_so_na_obra_dele(feriados_ponto):
     from app.apps.analisesps import folha_calendario as fc
 
-    fc.gravar_feriado("14/09/2026", fc.POR_OBRA, obra="CREPEOLINDA")
+    feriados_ponto.obra("FC-OLINDA", "CREPEOLINDA")
+    feriados_ponto.obra("FC-AREIAS", "CREPEAREIAS")
+    feriados_ponto.da_obra(D(2026, 9, 14), "FC-OLINDA")
     assert fc.dias_de_feriado_no_periodo(
         D(2026, 9, 1), D(2026, 9, 30), "CREPEOLINDA") == 1
     assert fc.dias_de_feriado_no_periodo(

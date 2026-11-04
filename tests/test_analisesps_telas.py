@@ -5856,36 +5856,60 @@ def test_a_tela_de_ferias_busca_a_pessoa_em_vez_de_pedir_o_CPF(app, monkeypatch)
     assert "Data inicial" in html and "Data final" in html
 
 
-def test_a_obra_do_feriado_so_aparece_quando_e_de_obra(app, monkeypatch):
-    """Campo que fica na tela sem servir faz a pessoa se perguntar se devia
-    preencher."""
-    from app.apps.analisesps import folha_calendario as fc, sincronizacao
+def test_o_feriado_se_cadastra_no_PONTO_e_nao_mais_aqui(app, monkeypatch):
+    """04/11/2026, o dono: *"a parte de feriados deve vir do ponto. Dessa forma
+    ficaremos somente com uma base de feriados."* A tela não grava mais feriado:
+    mostra a lista do ponto e leva até lá."""
+    from app.apps.analisesps import folha_calendario as fc
+
+    monkeypatch.setattr(fc, "_pronto", lambda: True)
+    monkeypatch.setattr(fc, "listar_feriados", lambda *a, **k: [])
+    monkeypatch.setattr(fc, "antigos_fora_do_ponto", lambda: [])
+    monkeypatch.setattr(fc, "listar_ferias", lambda *a, **k: [])
+
+    html = _como_mestre(app).get(
+        "/analisesps/folha/calendario").get_data(as_text=True)
+    assert 'id="btn-gravar-feriado"' not in html
+    assert "apagar-feriado" not in html
+    assert "/erp/ponto/configuracao#jornada" in html
+    assert "Os feriados vêm do <b>Ponto</b>" in html
+    assert 'id="btn-levar-ao-ponto"' not in html, "sem feriado antigo, sem botão"
+
+
+def test_os_feriados_antigos_desta_tela_aparecem_com_o_botao_de_levar(app, monkeypatch):
+    import datetime as dt
+
+    from app.apps.analisesps import folha_calendario as fc
 
     monkeypatch.setattr(fc, "_pronto", lambda: True)
     monkeypatch.setattr(fc, "listar_feriados", lambda *a, **k: [])
     monkeypatch.setattr(fc, "listar_ferias", lambda *a, **k: [])
-    monkeypatch.setattr(sincronizacao, "referencias_rateio",
-                        lambda: {"obras": [{"nome": "CREPEOLINDA", "codigo": "1"}],
-                                 "categorias": []})
+    monkeypatch.setattr(fc, "antigos_fora_do_ponto", lambda: [
+        {"id": 1, "data": dt.date(2026, 8, 20), "abrangencia": "obra",
+         "obra": "CREPEOLINDA", "descricao": "Padroeira", "obra_no_ponto": True},
+        {"id": 2, "data": dt.date(2026, 8, 21), "abrangencia": "obra",
+         "obra": "OBRA SUMIDA", "descricao": "", "obra_no_ponto": False}])
 
     html = _como_mestre(app).get(
         "/analisesps/folha/calendario").get_data(as_text=True)
-    assert 'id="feriado-obra-bloco" hidden' in html
-    assert "CREPEOLINDA" in html, "a lista de obras é a MESMA do rateio"
-    assert "Feriado nacional" in html
+    assert "2 feriado(s) cadastrado(s) nesta tela" in html
+    assert "20/08/2026" in html and "Padroeira" in html
+    assert "a obra não foi achada no ponto" in html
+    assert 'id="btn-levar-ao-ponto"' in html
 
 
-def test_a_lista_de_obras_vazia_explica_o_que_fazer(app, monkeypatch):
-    from app.apps.analisesps import folha_calendario as fc, sincronizacao
+def test_ponto_fora_do_ar_avisa_que_o_auxilio_sai_sem_feriado(app, monkeypatch):
+    from app.apps.analisesps import folha_calendario as fc
 
+    def quebra(*a, **k):
+        raise RuntimeError("ponto fora do ar")
     monkeypatch.setattr(fc, "_pronto", lambda: True)
-    monkeypatch.setattr(fc, "listar_feriados", lambda *a, **k: [])
+    monkeypatch.setattr(fc, "listar_feriados", quebra)
     monkeypatch.setattr(fc, "listar_ferias", lambda *a, **k: [])
-    monkeypatch.setattr(sincronizacao, "referencias_rateio",
-                        lambda: {"obras": [], "categorias": []})
     html = _como_mestre(app).get(
         "/analisesps/folha/calendario").get_data(as_text=True)
-    assert "planilhas de apoio" in html
+    assert "Não foi possível ler os feriados do ponto." in html
+    assert "sem desconto de" in html
 
 
 def test_os_feriados_e_as_ferias_aparecem_na_tela(app, monkeypatch):
@@ -5896,13 +5920,12 @@ def test_os_feriados_e_as_ferias_aparecem_na_tela(app, monkeypatch):
     monkeypatch.setattr(fc, "_pronto", lambda: True)
     monkeypatch.setattr(sincronizacao, "referencias_rateio",
                         lambda: {"obras": [], "categorias": []})
+    monkeypatch.setattr(fc, "antigos_fora_do_ponto", lambda: [])
     monkeypatch.setattr(fc, "listar_feriados", lambda *a, **k: [
-        {"id": 1, "data": dt.date(2026, 9, 7), "abrangencia": "nacional",
-         "obra": "", "descricao": "Independência", "criado_por": "MARCELO",
-         "rotulo": "Nacional"},
-        {"id": 2, "data": dt.date(2026, 9, 12), "abrangencia": "obra",
-         "obra": "CREPEOLINDA", "descricao": "Aniversário", "criado_por": "",
-         "rotulo": "Só nesta obra"}])
+        {"data": dt.date(2026, 9, 7), "abrangencia": "NACIONAL", "rotulo": "Nacional",
+         "onde": "", "descricao": "Independência"},
+        {"data": dt.date(2026, 3, 12), "abrangencia": "MUNICIPAL", "rotulo": "Municipal",
+         "onde": "Olinda / PE", "descricao": "Aniversário"}])
     monkeypatch.setattr(fc, "listar_ferias", lambda *a, **k: [
         {"id": 5, "cpf": "99713349334", "cpf_bonito": "997.133.493-34",
          "nome": "GERLANIO GOMES LIMA", "inicio": dt.date(2026, 9, 1),
@@ -5916,7 +5939,7 @@ def test_os_feriados_e_as_ferias_aparecem_na_tela(app, monkeypatch):
     assert "997.133.493-34" in html
     assert "01/09/2026" in html and "20/09/2026" in html
     assert "Independência" in html
-    assert "CREPEOLINDA" in html
+    assert "Olinda / PE" in html and "municipal" in html
     assert "nacional" in html
 
 

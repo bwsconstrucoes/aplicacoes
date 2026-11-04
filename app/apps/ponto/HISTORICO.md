@@ -474,6 +474,23 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 04/11/2026 — DO CHAT DO ANÁLISE DE SPs: a folha passou a ler os feriados DAQUI
+
+O dono, no chat do Análise de SPs: *"a parte de feriados deve vir do ponto. Dessa
+forma ficaremos somente com uma base de feriados."* A tela "Feriados e férias" de
+lá não cadastra mais feriado: o auxílio alimentação e o adicional de feriado dos
+diaristas leem `ponto.feriados` com **a regra deste módulo**
+(`core/feriados.Calendario.feriado` — nacional, estadual pela UF da obra, municipal
+pelo município, de obra). O código está em `analisesps/folha_calendario.py`
+(`FeriadosDoPonto`), que só LÊ e reusa o `Calendario` e o `base_obras.trechos_sql`.
+**Mexer na regra do `Calendario` muda a folha junto** — é de propósito (os dois não
+podem discordar sobre um dia), e os testes da folha cobrem (`tests/_feriados_do_ponto.py`).
+
+Uma escrita, por botão: **"Levar para o ponto"**, na tela de lá, grava aqui (por
+`feriados.gravar`, com as validações daqui) os feriados que tinham sido cadastrados
+na tabela antiga do Análise de SPs e que o ponto não cobre — nacional vira NACIONAL;
+o de obra vira OBRA quando a obra casa (código, código secundário da planilha, nome).
+
 ## 03/11/2026 — Do Espelho para o cadastro da pessoa
 
 O dono: *"a partir do espelho do ponto eu deveria poder acessar o cadastro da pessoa pra facilitar qualquer ajuste."*

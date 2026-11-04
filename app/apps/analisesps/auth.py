@@ -611,8 +611,8 @@ TELA_DA_ROTA = {
     "analisesps.folha_arquivos_excluir": ("folha",),
     "analisesps.tela_ficha_cadastro_completo": ("folha",),
     # Feriados e férias são lançamento do DP, como trazer a folha e o ponto.
-    "analisesps.folha_feriado_gravar": ("folha",),
-    "analisesps.folha_feriado_apagar": ("folha",),
+    # 04/11/2026: feriado se cadastra no ponto; daqui só se levam os antigos.
+    "analisesps.folha_feriados_levar_ao_ponto": ("folha",),
     "analisesps.folha_ferias_gravar": ("folha",),
     "analisesps.folha_ferias_apagar": ("folha",),
     # A Listagem de Férias do Fortes (05/10/2026).

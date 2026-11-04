@@ -4742,7 +4742,7 @@ def tela_folha_calendario():
     AS DUAS COISAS NUMA TELA SÓ, e é a correção que o dono fez em 27/09/2026
     sobre tela demais: são dois cadastros pequenos que servem ao mesmo cálculo.
     Separá-los daria duas entradas para quem procura a mesma resposta."""
-    from . import folha_calendario as fc, sincronizacao
+    from . import folha_calendario as fc
 
     pronto = fc._pronto()
     procurado = " ".join((request.args.get("q") or "").split())
@@ -4751,28 +4751,29 @@ def tela_folha_calendario():
     except (TypeError, ValueError):
         ano = 0
 
-    feriados, ferias, obras = [], [], []
-    erro = None
+    feriados, ferias, antigos = [], [], []
+    erro = erro_feriados = None
     try:
         if pronto:
-            feriados = fc.listar_feriados(ano or None)
             ferias = fc.listar_ferias(procurado)
     except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
-        logger.exception("Folha: não consegui ler feriados e férias")
+        logger.exception("Folha: não consegui ler as férias")
         erro = str(e)
+    # OS FERIADOS VÊM DO PONTO (04/11/2026). O erro dele tem recado próprio:
+    # sem feriado lido, o auxílio alimentação sai sem desconto de feriado.
     try:
-        # A MESMA LISTA DE OBRAS do rateio e do Ratear. Uma segunda lista
-        # divergiria da primeira no dia em que alguém cadastrasse obra nova.
-        obras = [o["nome"] for o in
-                 (sincronizacao.referencias_rateio().get("obras") or [])]
-    except Exception:  # noqa: BLE001 — a lista é apoio; sem ela dá recado
-        logger.exception("Folha: não consegui ler a lista de obras")
+        feriados = fc.listar_feriados(ano or None)
+        antigos = fc.antigos_fora_do_ponto()
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: não consegui ler os feriados do ponto")
+        erro_feriados = str(e)
 
     from .horario import agora
     return render_template(
         "analisesps_folha_calendario.html", aba="folha", subaba="calendario",
         grupos=subtelas_agrupadas(), pronto=pronto, feriados=feriados,
-        ferias=ferias, obras=obras, procurado=procurado, ano=ano,
+        antigos=antigos, erro_feriados=erro_feriados,
+        ferias=ferias, procurado=procurado, ano=ano,
         ano_padrao=agora().year, erro=erro,
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
@@ -5945,37 +5946,20 @@ def folha_card_lancar():
         return {"ok": False, "erro": f"Não foi possível lançar: {e}"}, 500
 
 
-@bp.route("/api/folha/feriado", methods=["POST"])
+@bp.route("/api/folha/feriados/levar-ao-ponto", methods=["POST"])
 @exige_operador
-def folha_feriado_gravar():
-    """Cadastra um feriado, nacional ou de uma obra."""
+def folha_feriados_levar_ao_ponto():
+    """Leva para o ponto os feriados cadastrados nesta tela que ele não tem
+    (04/11/2026 — os feriados passaram a vir só do ponto). O cadastro e a
+    exclusão de feriado moram no ponto; aqui não se grava mais feriado."""
     from . import folha_calendario as fc
-
-    dados = request.get_json(silent=True) or {}
     quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
     try:
-        novo = fc.gravar_feriado(
-            dados.get("data"), str(dados.get("abrangencia") or ""),
-            obra=str(dados.get("obra") or ""),
-            descricao=str(dados.get("descricao") or ""), quem=quem)
-    except fc.ErroDoCalendario as e:
-        return {"ok": False, "erro": str(e)}, 400
-    except Exception as e:  # noqa: BLE001
-        logger.exception("Folha: falhou gravar o feriado")
-        return {"ok": False, "erro": f"Não foi possível gravar: {e}"}, 500
-    return {"ok": True, "id": novo}
-
-
-@bp.route("/api/folha/feriado/apagar", methods=["POST"])
-@exige_operador
-def folha_feriado_apagar():
-    from . import folha_calendario as fc
-
-    dados = request.get_json(silent=True) or {}
-    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
-    if not fc.apagar_feriado(int(dados.get("id") or 0), quem=quem):
-        return {"ok": False, "erro": "Feriado não encontrado."}, 404
-    return {"ok": True}
+        r = fc.levar_ao_ponto(quem=quem)
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+        logger.exception("Folha: falhou levar os feriados para o ponto")
+        return {"ok": False, "erro": f"Não foi possível gravar no ponto: {e}"}, 500
+    return {"ok": True, **r}
 
 
 @bp.route("/api/folha/ferias", methods=["POST"])
