@@ -474,6 +474,28 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 04/11/2026 — O atestado e a declaração lidos sozinhos pela IA
+
+O dono: *"gostaria que todos os documentos encaminhados, tipo atestado, declarações, já fossem lidos automaticamente
+pela IA (…) pra não precisar fazer manual."*
+- **O que muda:** o atestado e a declaração de comparecimento que chegam com o documento (aplicativo, ponto da obra
+  ou ERP) são lidos sozinhos, em até ~1 minuto, pela MESMA leitura do "ler com IA" (`core/leitura_atestado.py`).
+  Nas Validações, o DP já encontra a leitura e o confronto (o que a IA leu × o que foi lançado) sem apertar nada.
+  A leitura só preenche e mostra — **quem aprova continua sendo o DP** (regra da casa: o que a leitura preenche vai
+  para conferência). O "ler com IA" continua, para ler de novo.
+- **Como roda:** numa linha separada, acordada pelas requisições do ponto (como o rosto e o ranking): no máximo uma
+  rodada por minuto, até 10 documentos por rodada. NUNCA dentro da requisição de quem entrega (a lição de 21/10) e
+  sem conexão do banco aberta enquanto a IA lê. Só pedido **esperando decisão**, dos **últimos 30 dias** (não varre
+  o histórico). Leitura que falha tenta mais uma vez; depois, fica para o botão (até o próximo reinício).
+- **Custo:** a leitura de imagem usa o mesmo modelo de antes (~US$ 0,01 por documento); aparece no painel de IA do
+  ERP como `ponto_atestado_automatico`, separado do manual. **Teto de IA da empresa estourado: a automática para**
+  (a manual segue a regra de sempre). Sem a chave da IA configurada, não roda.
+- Licença (certidão de casamento etc.) NÃO é lida sozinha: a instrução da IA é de atestado e declaração.
+- Testes: lê só o que espera decisão e tem documento; não relê; falha tenta 2 vezes e desiste; teto estourado não
+  lê; nas Validações o DP já vê leitura e confronto. A IA é dublada nos testes — a leitura de verdade é a mesma do
+  botão, que já roda em produção.
+**No ramo, esperando o "pode".**
+
 ## 03/11/2026 — Do Espelho para o cadastro da pessoa
 
 O dono: *"a partir do espelho do ponto eu deveria poder acessar o cadastro da pessoa pra facilitar qualquer ajuste."*

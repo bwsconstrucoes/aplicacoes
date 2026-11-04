@@ -36,30 +36,143 @@ brasileiro (dd/mm/aaaa) viram AAAA-MM-DD. "dias_afastamento" é o número de dia
 de repouso escrito no documento (por extenso ou em número)."""
 
 
-def ler(conn: Connection, ocorrencia_id: int) -> dict:
+def _documento(conn: Connection, ocorrencia_id: int) -> tuple[bytes, str]:
     o = db.um(conn, "SELECT id, tipo, documento_id FROM ponto.ocorrencias WHERE id = :id",
               id=ocorrencia_id)
     if not o or not o["documento_id"]:
         raise ErroDeValidacao("este pedido não tem documento para ler", campo="documento")
     dados, mime, _ = documentos.baixar(conn, o["documento_id"])
+    return dados, mime
+
+
+def _ler_bytes(dados: bytes, mime: str, ocorrencia_id: int, operacao: str = "ponto_atestado") -> dict:
+    """A chamada da IA, SEM conexão do banco aberta (ela pode levar dezenas de segundos)."""
     from app.apps.erp.core.comum.ia_custo import contexto
     from app.apps.erp.core.documentos import leitor
     try:
-        with contexto(operacao="ponto_atestado", referencia=f"ponto.ocorrencia:{ocorrencia_id}"):
+        with contexto(operacao=operacao, referencia=f"ponto.ocorrencia:{ocorrencia_id}"):
             if mime == "application/pdf":
                 texto = leitor._texto_do_pdf(dados)
                 imagens = [] if texto else [(b, "image/png") for b in leitor._paginas_como_png(dados)]
-                resultado = leitor._chamar_ia(texto=texto, imagens=imagens, instrucao=INSTRUCAO)
-            else:
-                b64, media = leitor._preparar_imagem(dados)
-                resultado = leitor._chamar_ia(imagens=[(b64, media)], instrucao=INSTRUCAO)
+                return leitor._chamar_ia(texto=texto, imagens=imagens, instrucao=INSTRUCAO)
+            b64, media = leitor._preparar_imagem(dados)
+            return leitor._chamar_ia(imagens=[(b64, media)], instrucao=INSTRUCAO)
     except leitor.ErroLeitura as e:
         raise ErroDeValidacao(str(e), campo="documento") from e
+
+
+def _gravar(conn: Connection, ocorrencia_id: int, resultado: dict) -> None:
     db.executar(conn, "UPDATE ponto.ocorrencias SET leitura_ia = CAST(:j AS jsonb), "
                       "atualizado_em = now() WHERE id = :id",
                 j=json.dumps(resultado, ensure_ascii=False, default=str), id=ocorrencia_id)
+
+
+def ler(conn: Connection, ocorrencia_id: int) -> dict:
+    dados, mime = _documento(conn, ocorrencia_id)
+    resultado = _ler_bytes(dados, mime, ocorrencia_id)
+    _gravar(conn, ocorrencia_id, resultado)
     logger.info("Ponto: atestado do pedido %d lido pela IA", ocorrencia_id)
     return resultado
+
+
+# ---------------------------------------------------------------------------
+# A LEITURA AUTOMÁTICA (04/11/2026, o dono: "gostaria que todos os documentos encaminhados, tipo atestado,
+# declarações, já fossem lidos automaticamente pela IA (…) pra não precisar fazer manual"). O atestado e a
+# declaração que chegam (aplicativo, ponto da obra, ERP) são lidos sozinhos, numa linha separada — NUNCA dentro
+# da requisição de quem entrega (a lição do incidente de 21/10/2026: serviço de fora dentro da requisição
+# prende o sistema inteiro). A conexão do banco não fica aberta enquanto a IA lê. Só pedido ainda esperando
+# decisão, dos últimos DIAS_PARA_TRAS dias. Teto de IA da empresa estourado: para, e o "ler com IA" continua.
+# A leitura só preenche e mostra o confronto — quem decide continua sendo o DP.
+# ---------------------------------------------------------------------------
+import os as _os
+import threading as _threading
+import time as _time
+
+POR_RODADA = 10
+SEGUNDOS_ENTRE_RODADAS = 60
+DIAS_PARA_TRAS = 30
+TENTATIVAS = 2                       # leitura que falhou tenta mais uma vez; depois, só pelo botão
+
+_rodando = _threading.Lock()
+_ultima_rodada = 0.0
+_falhas: dict[int, int] = {}
+
+
+def pendentes(conn: Connection, limite: int = POR_RODADA) -> list[int]:
+    """Os pedidos com atestado ou declaração anexados, esperando decisão e ainda não lidos."""
+    linhas = db.todos(conn, """
+        SELECT id FROM ponto.ocorrencias
+         WHERE tipo = 'ATESTADO' AND documento_id IS NOT NULL AND leitura_ia IS NULL
+           AND status IN ('AGUARDANDO_SUPERVISOR', 'AGUARDANDO_DP')
+           AND criado_em >= now() - make_interval(days => :d)
+         ORDER BY id LIMIT :n""", d=DIAS_PARA_TRAS, n=int(limite) + len(_falhas))
+    return [int(l["id"]) for l in linhas if _falhas.get(int(l["id"]), 0) < TENTATIVAS][:limite]
+
+
+def _teto_da_empresa_estourou() -> bool:
+    try:
+        from app.apps.erp.core.comum.ia_custo import situacao_teto
+        from app.apps.erp.db.database import get_session
+        with get_session() as s:
+            return situacao_teto(s).get("alerta") == "ESTOUROU"
+    except Exception:  # noqa: BLE001 — sem como conferir o teto, não arrisca gastar
+        logger.warning("Ponto: o teto de IA não pôde ser conferido; a leitura automática espera", exc_info=True)
+        return True
+
+
+def ler_pendentes(limite: int = POR_RODADA) -> dict:
+    """Uma rodada: cada pedido baixa o documento, fecha a conexão, lê e grava. Devolve o que fez."""
+    feito = {"lidos": 0, "falhas": 0}
+    with db.conexao() as conn:
+        ids = pendentes(conn, limite)
+    if not ids or _teto_da_empresa_estourou():
+        return feito
+    for oid in ids:
+        try:
+            with db.conexao() as conn:
+                ainda = db.um(conn, "SELECT 1 FROM ponto.ocorrencias WHERE id = :id AND leitura_ia IS NULL", id=oid)
+                if not ainda:                        # o DP leu pelo botão nesse meio-tempo
+                    continue
+                dados, mime = _documento(conn, oid)
+            resultado = _ler_bytes(dados, mime, oid, operacao="ponto_atestado_automatico")
+            with db.conexao() as conn:
+                db.executar(conn, "UPDATE ponto.ocorrencias SET leitura_ia = CAST(:j AS jsonb), atualizado_em = now() "
+                                  "WHERE id = :id AND leitura_ia IS NULL",
+                            j=json.dumps({**resultado, "automatica": True}, ensure_ascii=False, default=str), id=oid)
+            feito["lidos"] += 1
+            _falhas.pop(oid, None)
+        except Exception:  # noqa: BLE001 — um documento ruim não para os outros
+            _falhas[oid] = _falhas.get(oid, 0) + 1
+            feito["falhas"] += 1
+            logger.warning("Ponto: a leitura automática do pedido %d falhou (tentativa %d)", oid, _falhas[oid],
+                           exc_info=True)
+    if feito["lidos"] or feito["falhas"]:
+        logger.info("Ponto: leitura automática de atestados — %s", feito)
+    return feito
+
+
+def _trabalhar() -> None:
+    try:
+        ler_pendentes()
+    except Exception:  # noqa: BLE001
+        logger.exception("Ponto: a rodada da leitura automática falhou; tenta de novo depois")
+    finally:
+        _rodando.release()
+
+
+def manter_em_dia() -> bool:
+    """Chamada a cada requisição do ponto: no máximo uma rodada por minuto, uma de cada vez."""
+    global _ultima_rodada
+    if _os.environ.get("PYTEST_CURRENT_TEST") or not _os.getenv("OPENAI_API_KEY", "").strip():
+        return False
+    agora = _time.time()
+    if agora - _ultima_rodada < SEGUNDOS_ENTRE_RODADAS:
+        return False
+    _ultima_rodada = agora
+    if not _rodando.acquire(blocking=False):
+        return False
+    _threading.Thread(target=_trabalhar, name="ponto-leitura-atestado", daemon=True).start()
+    return True
 
 
 # ---------------------------------------------------------------------------
