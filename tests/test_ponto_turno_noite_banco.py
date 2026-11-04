@@ -315,3 +315,36 @@ def test_a_saida_esticada_ate_o_meio_dia_fecha_o_turno_da_vespera(app, mundo):
     with db.conexao() as conn:
         conn.execute(text(sql))
     assert dias() == [d[0], d[0], d[2], d[2]]
+
+
+def test_o_vigia_nao_tem_intervalo_no_ajuste():
+    """PURA (04/11/2026, o dono: "vigia não tem esse intervalo. Então não deveria aparecer essa opção para o ajuste
+    deles"): o 12x36 e a semanal de um período só são turno corrido; a de dois períodos, não. E o costume do turno
+    é o da escala — no vigia da noite, a batida das 6h é a saída."""
+    from app.apps.ponto.core import apuracao, escalas
+    noite = apuracao.Escala(tipo="CICLO_12X36", periodo_ciclo=(17 * 60, 30 * 60))
+    assert escalas.sem_intervalo(noite) and escalas.turno_de_costume(noite) == ["17:00", "06:00"]
+    so_noite = apuracao.Escala(tipo="SEMANAL", semana={0: [(18 * 60, 30 * 60)], 2: [(18 * 60, 30 * 60)]})
+    assert escalas.sem_intervalo(so_noite) and escalas.turno_de_costume(so_noite) == ["18:00", "06:00"]
+    obra = apuracao.Escala(tipo="SEMANAL", semana={0: [(420, 660), (720, 1020)]})
+    assert not escalas.sem_intervalo(obra) and escalas.turno_de_costume(obra) == []
+    assert not escalas.sem_intervalo(None)
+
+
+def test_a_noite_de_folga_do_vigia_pede_so_entrada_e_saida(app, mundo):
+    """A noite fora do ciclo (sem horário previsto) é onde o aplicativo oferecia as 4 batidas da obra."""
+    from app.apps.ponto import db
+    from app.apps.ponto.core import escalas
+    dp = como(app, mundo["dp"])
+    seg = _segunda_passada()
+    with db.conexao() as conn:
+        noite = escalas.gravar(conn, {"nome": "Vigia noturno 12x36", "tipo": "CICLO_12X36",
+                                      "ciclo_entrada": "17:00", "ciclo_saida": "06:00"})
+        escalas.atribuir(conn, mundo["joao"], noite["id"], seg.isoformat(), por="teste")
+    esp = dp.get(f"/erp/api/ponto/espelho/{mundo['joao']}?competencia={seg:%Y-%m}").get_json()
+    d = next(x for x in esp["dias"] if x["data"] == seg.isoformat())
+    assert d["so_entrada_e_saida"] is True and d["turno_de_costume"] == ["17:00", "06:00"]
+    # a pessoa da obra, de escala com intervalo, continua com as 4
+    esp = dp.get(f"/erp/api/ponto/espelho/{mundo['maria']}?competencia={seg:%Y-%m}").get_json()
+    d = next(x for x in esp["dias"] if x["data"] == seg.isoformat())
+    assert d["so_entrada_e_saida"] is False and d["turno_de_costume"] == []

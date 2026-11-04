@@ -1829,14 +1829,20 @@ const NOMES_DAS_BATIDAS = ["Entrada", "Saída para o intervalo", "Volta do inter
 // terceira —, o sistema entendeu que era a primeira e não deixou pedir as de antes").
 // É só para dar NOME às linhas: o horário quem digita é a pessoa.
 const COSTUME_MIN = [420, 660, 720, 1020];
+// O vigia (04/11/2026): só entrada e saída, e o costume é o da escala dele — na noite, a batida das 6h é a saída.
+const minutoDe = h => { const [hh, mm] = String(h).split(":").map(Number); return hh * 60 + mm; };
+const distanciaNoRelogio = (a, b) => { const d = Math.abs(a - b) % 1440; return Math.min(d, 1440 - d); };
 function semEscala(x) {
   const nomes = x.so_entrada_e_saida ? ["Entrada", "Saída"] : NOMES_DAS_BATIDAS;
-  const ref = x.so_entrada_e_saida ? [COSTUME_MIN[0], COSTUME_MIN[3]] : COSTUME_MIN;
+  const ref = x.so_entrada_e_saida ? ((x.turno_de_costume || []).length === 2 ? x.turno_de_costume.map(minutoDe)
+                                      : [COSTUME_MIN[0], COSTUME_MIN[3]]) : COSTUME_MIN;
   let livres = nomes.map((_, i) => i);
   for (const b of x.batidas) {
     if (!livres.length) break;
-    const [hh, mm] = String(b.hora).split(":").map(Number), m = hh * 60 + mm;
-    const i = livres.reduce((melhor, j) => Math.abs(ref[j] - m) < Math.abs(ref[melhor] - m) ? j : melhor, livres[0]);
+    const m = minutoDe(b.hora);
+    // a volta do relógio só para o turno do vigia (a noite passa da meia-noite); o resto, como sempre foi
+    const dist = x.so_entrada_e_saida && (x.turno_de_costume || []).length === 2 ? distanciaNoRelogio : (r, v) => Math.abs(r - v);
+    const i = livres.reduce((melhor, j) => dist(ref[j], m) < dist(ref[melhor], m) ? j : melhor, livres[0]);
     livres = livres.filter(j => j !== i);
   }
   const resto = livres.map(i => nomes[i]);

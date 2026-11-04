@@ -474,6 +474,17 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 04/11/2026 (segunda) — O ajuste do vigia sem o intervalo
+
+O dono: *"alguém tentou fazer um ajuste para um vigia (…) apareceu para ajustar entrada, saída para intervalo e
+volta do intervalo. Não existe, né? Vigia não tem esse intervalo."* A causa: no dia SEM horário previsto (a noite de
+folga do 12x36, por exemplo), o aplicativo oferecia as 4 batidas da obra, e dava nome às batidas pelo costume da
+empresa (7, 11, 12, 17 h) — a saída das 6h do vigia virava "Entrada". Agora o dia diz `so_entrada_e_saida` também
+para o vigia (jornada de vigia, escala 12x36 ou semanal de um período só — `escalas.sem_intervalo`) e traz o
+`turno_de_costume` da escala (17:00–06:00): o ajuste oferece só Entrada e Saída, com o nome certo. O "Incluir
+batida" do Quadro, com só vigias marcados, também. Quem tem escala com intervalo continua como antes.
+**No ramo, esperando o "pode".**
+
 ## 04/11/2026 — O atestado e a declaração lidos sozinhos pela IA
 
 O dono: *"gostaria que todos os documentos encaminhados, tipo atestado, declarações, já fossem lidos automaticamente

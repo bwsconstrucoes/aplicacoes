@@ -3873,7 +3873,9 @@ async function qdIncluir() {
   linhas.forEach(l => l.faltando.forEach(f => { rotulos[f.rotulo] = (rotulos[f.rotulo] || 0) + 1; }));
   const opcoes = Object.entries(rotulos).sort((a, b) => b[1] - a[1]).map(([r, n]) => ({valor: r, rotulo: `${r} — falta em ${n} das ${linhas.length}`}));
   // as quatro de sempre, também, para quem não tem escala ou bateu fora do previsto (aí com a hora digitada)
-  ["Entrada", "Saída para o intervalo", "Volta do intervalo", "Saída"].filter(x => !rotulos[x])
+  // só vigias marcados (turno corrido, 04/11/2026): sem as do intervalo
+  (linhas.every(l => l.so_entrada_e_saida) ? ["Entrada", "Saída"] : ["Entrada", "Saída para o intervalo", "Volta do intervalo", "Saída"])
+    .filter(x => !rotulos[x])
     .forEach(x => opcoes.push({valor: x, rotulo: `${x} — digite a hora`}));
   const r = await perguntar({titulo: `Incluir uma batida — ${contar(linhas.length, "linha", "linhas")}`,
     aviso: "Cada inclusão vira um ajuste da gestão, aprovado na hora e guardado com o motivo e o seu nome. " +

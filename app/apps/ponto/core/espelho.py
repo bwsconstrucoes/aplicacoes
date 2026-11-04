@@ -462,7 +462,11 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
                            "hora": (horario.para_local(o["horario"]).strftime("%H:%M")
                                     if o["tipo"] == "AJUSTE_BATIDA" and o.get("horario") else None)}
                           for o in pendentes],
-            "so_entrada_e_saida": so_duas,
+            # só entrada e saída no ajuste: a obra de intervalo pré-assinalado, e o vigia (a jornada, o 12x36, a
+            # escala de turno corrido) — também no dia sem horário previsto, como a noite de folga (04/11/2026)
+            "so_entrada_e_saida": bool(so_duas or str(pessoa.get("tipo_jornada") or "").startswith("VIGIA")
+                                       or escalas.sem_intervalo(escala)),
+            "turno_de_costume": escalas.turno_de_costume(escala),
             # o intervalo considerado sem batida (pré-assinalado): só mostrado, diferenciado — não é batida
             "pre_assinalado": [f"{(m // 60) % 24:02d}:{m % 60:02d}" for m in pre_assinalado],
             "batidas": [{

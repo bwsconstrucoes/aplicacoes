@@ -321,6 +321,31 @@ def _vira(periodos) -> bool:
     return any(s > 1440 for _, s in periodos)
 
 
+def sem_intervalo(escala: Optional[apuracao.Escala]) -> bool:
+    """PURA. A escala é de turno corrido — só entrada e saída, sem intervalo batido: o 12x36 e a semanal em que todo
+    dia de trabalho tem um período só (o vigia). 04/11/2026, o dono: "vigia não tem esse intervalo. Então não
+    deveria aparecer essa opção para o ajuste deles" — o pedido de ajuste do dia sem horário previsto oferecia
+    entrada, saída para o intervalo e volta do intervalo."""
+    if escala is None:
+        return False
+    if escala.tipo == "CICLO_12X36":
+        return True
+    dias = [ps for ps in escala.semana.values() if ps]
+    return bool(dias) and all(len(ps) == 1 for ps in dias)
+
+
+def turno_de_costume(escala: Optional[apuracao.Escala]) -> list[str]:
+    """PURA. A entrada e a saída de costume da escala de turno corrido ("HH:MM"), para dar nome às batidas do dia
+    sem horário previsto (a noite de folga do 12x36): no vigia da noite, a batida das 6h é a SAÍDA, não a entrada."""
+    if not sem_intervalo(escala):
+        return []
+    periodo = (escala.periodo_ciclo if escala.tipo == "CICLO_12X36"
+               else next((ps[0] for ps in escala.semana.values() if ps), None))
+    if not periodo:
+        return []
+    return [f"{(m // 60) % 24:02d}:{m % 60:02d}" for m in periodo]
+
+
 def turno_da_noite(escala: Optional[apuracao.Escala], dia_anterior: dt.date) -> bool:
     """PURA. A batida da manhã seguinte a `dia_anterior` ainda é do turno dele?
     12x36 que passa da meia-noite: sempre (mesmo que o ciclo diga folga — a
