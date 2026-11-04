@@ -804,7 +804,7 @@ Quando eu pedir nova feature ou adaptação:
 
 ### 04/11/2026 — Uma base só de feriados: a do ponto (Análise de SPs lê `ponto.feriados`)
 
-**No ramo `claude/analisesps-work-fhjiru`, não publicado.** Pedido do dono: *"a parte de
+**Publicado em 04/11/2026.** Pedido do dono: *"a parte de
 feriados deve vir do ponto. Dessa forma ficaremos somente com uma base de feriados."* A
 folha do Análise de SPs (auxílio alimentação, adicional de feriado dos diaristas, lançar
 batidas) passa a ler `ponto.feriados` com a regra do próprio ponto

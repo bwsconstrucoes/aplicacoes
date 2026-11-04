@@ -12246,6 +12246,8 @@ somente Solicitações de uma conta especifica"*.
 
 #### Leva 248 — Os feriados vêm do ponto: uma base só (04/11/2026)
 
+> **Publicado em 04/11/2026.**
+
 - *"Em analisesps temos a tela feriados e férias. Só que a parte de feriados deve
   vir do ponto. Dessa forma ficaremos somente com uma base de feriados."*
 - **Antes eram duas bases:** `analisesps.feriado` (nacional ou por obra, cadastrada
@@ -12273,6 +12275,8 @@ somente Solicitações de uma conta especifica"*.
 - **Ponto fora do ar:** a folha segue sem desconto de feriado (como era com a tabela
   vazia) e a tela de Feriados mostra o erro em vermelho.
 - A leitura do ponto vale 1 minuto por período (o auxílio pergunta pessoa por pessoa).
+- **Pendente AGORA:** abrir a tela Feriados e férias e, se aparecer o aviso dos
+  feriados antigos, apertar "Levar para o ponto". E a resposta do dono à pergunta abaixo.
 - **De fora, de propósito:** os "feriados locais" da aba **Feriados** da planilha de
   credenciais (`agenda.gravar_feriados`), usados para empurrar vencimento de
   pagamento para dia útil. É outra pergunta (dia de banco, não dia de obra) — ficou
@@ -12284,6 +12288,8 @@ somente Solicitações de uma conta especifica"*.
   os nacionais que o ponto semeia (os testes do ponto contam com eles).
 
 #### Leva 247 — "Atualizar da planilha" na ficha: só aquela SP, na hora (03/11/2026)
+
+> **Publicado em 04/11/2026.**
 
 - *"Às vezes atualizei uma única linha da planilha e queria que ela fosse
   atualizada no sistema imediatamente sem precisar buscar pela atualização completa.
