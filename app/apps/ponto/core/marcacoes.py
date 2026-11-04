@@ -631,6 +631,11 @@ def registrar_ajustada(conn: Connection, *, colaborador_id: int, obra_id: int,
          por=f"ajuste aprovado por {aprovado_por}"[:120])
     logger.info("Ponto: batida AJUSTADA NSR %d incluída (pedido %d, por %s)",
                 nsr, ocorrencia_id, aprovado_por)
+    from . import rondas                       # a "entrada" que sorteou rondas pode ter virado saída (05/11/2026)
+    canceladas = rondas.rever_depois_do_ajuste(conn, colaborador_id, data_ref)
+    if canceladas:
+        logger.info("Ponto: %d ronda(s) cancelada(s) — a batida que as abriu era a saída (pedido %d)",
+                    canceladas, ocorrencia_id)
     return por_id(conn, int(linha["id"]))
 
 
