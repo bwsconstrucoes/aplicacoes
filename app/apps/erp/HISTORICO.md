@@ -21,6 +21,23 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### 👥 O CADASTRO DE PESSOAS VAI PARA DENTRO DO ERP — levantamento feito, implementação NÃO começou (04/11/2026)
+
+O dono: *"a gente ainda está usando o Pipefy, e puxando uma planilha (…) isso
+está gerando muito conflito (…) é importante a gente colocar logo o cadastro das
+pessoas dentro do ERP e começar a trabalhar nele."*
+
+**O diagnóstico inteiro está em `CADASTRO_DE_PESSOAS.md`, nesta pasta** — as
+três cópias que brigam, o que o ERP já tem, os campos e os fluxos que faltam, a
+ordem proposta em cinco fases e o risco de dado pessoal. **Ler de lá, não
+refazer.**
+
+**O que trava, e é do dono:** a estrutura dos dois pipes do Pipefy e o blueprint
+do cenário do Make (ele ofereceu colar), mais quatro decisões listadas no
+arquivo. Criar campo antes de ver os pipes é garantir migração refeita — 48 das
+78 colunas da planilha nunca foram mapeadas.
+
+
 ### ✉️ A TELA MENSAGENS ENTROU NO ERP (05/10/2026) — feita pelo chat da Mensageria
 
 Mesmo encaixe do ponto: as rotas moram em `app/apps/mensageria/gestao.py` e se
