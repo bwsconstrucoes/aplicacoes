@@ -73,4 +73,40 @@ def aplicar(conn: Connection) -> dict:
                  WHERE colaborador_id = :c AND tipo = 'QR' AND status = 'PENDENTE'""", c=cid)
     if feito["pessoas"]:
         logger.info("Ponto: acesso fechado de %d pessoa(s) desligada(s) — %s", feito["pessoas"], feito)
+    feito["reativados"] = reativar_quem_voltou(conn)
     return feito
+
+
+# QUEM VOLTOU A ESTAR ATIVO GANHA OS APARELHOS DE VOLTA (05/11/2026, o dono: "vejo ele em Pessoas normal, como bate
+# ponto, situação ativo, só que em aparelhos está bloqueado, 'responsável desligado — aprove de novo com outro
+# responsável'. Está claramente uma falha"). O cadastro dizia desligado por um tempo (a data de saída, a fase do
+# Pipefy) e voltou a ativo — mas o bloqueio automático não se desfazia. Agora o que ESTA rotina bloqueou (pelo motivo
+# que ela mesma grava) volta a valer quando a pessoa deixa de estar desligada: o celular pessoal, se ela não tem outro
+# aprovado (um por pessoa), e o ponto da obra ou de equipe de que ela é responsável. O bloqueio à mão, a troca de
+# celular e o arquivado não voltam sozinhos. A lista de quem batia num aparelho de equipe (retirada no desligamento)
+# não volta: refaz-se na aprovação.
+MOTIVOS_AUTOMATICOS = ("pessoa desligada (bloqueio automático)",
+                       "responsável desligado — aprove de novo com outro responsável")
+
+
+def reativar_quem_voltou(conn: Connection) -> int:
+    arquivado = "AND arquivado_em IS NULL" if db.tem_coluna(conn, "dispositivos", "arquivado_em") else ""
+    linhas = db.todos(conn, f"""
+        SELECT id, colaborador_id, perfil FROM ponto.dispositivos
+         WHERE status = 'BLOQUEADO' AND motivo_bloqueio = ANY(:m) AND colaborador_id IS NOT NULL {arquivado}
+         ORDER BY id DESC""", m=list(MOTIVOS_AUTOMATICOS))
+    voltou = 0
+    for d in linhas:
+        p = cadastros.colaborador_por_id(conn, int(d["colaborador_id"]))
+        if not p or p["situacao"] == "DESLIGADO":
+            continue
+        if d["perfil"] == "INDIVIDUAL" and db.um(conn, """
+                SELECT 1 FROM ponto.dispositivos WHERE colaborador_id = :c AND perfil = 'INDIVIDUAL'
+                   AND status = 'APROVADO'""", c=int(d["colaborador_id"])):
+            continue                         # ela já tem outro celular aprovado: vale um por pessoa
+        voltou += db.executar(conn, """
+            UPDATE ponto.dispositivos SET status = 'APROVADO', bloqueado_em = NULL, motivo_bloqueio = NULL
+             WHERE id = :id AND status = 'BLOQUEADO'""", id=int(d["id"]))
+        logger.info("Ponto: aparelho %s reativado — a pessoa %s voltou a estar ativa no cadastro",
+                    d["id"], d["colaborador_id"])
+    return voltou

@@ -202,6 +202,35 @@ def marcar_pesos(cenario_id, nivel: str, chaves, pct) -> int:
     return quantos
 
 
+def marcar_pesos_da_arvore(cenario_id, itens) -> int:
+    """A árvore inteira de uma vez: [(nível, chave, percentual digitado)].
+
+    05/11/2026, o dono, nos Parâmetros: *"da forma que tá, um pouquinho
+    complicado de lançar um a um"*. A montagem salvava linha por linha (um
+    "ok" em cada). Agora a pessoa digita o grupo, abre, ajusta as categorias
+    que quiser e salva tudo num clique. Só grava o que MUDOU: reescrever as
+    linhas intocadas não muda nada, mas apagaria a diferença entre "deixei
+    em branco" e "não mexi" se um dia ela importar."""
+    atuais = pesos(cenario_id)
+    mudou = 0
+    for nivel, chave, pct in itens:
+        if nivel not in NIVEIS or not (chave or "").strip():
+            continue
+        novo = "" if pct is None else str(pct).strip()
+        atual = (atuais.get(nivel) or {}).get(chave.strip())
+        if novo == "" and atual is None:
+            continue
+        if novo != "" and atual is not None:
+            try:
+                if abs(_limpar(novo) - float(atual)) < 0.0001:
+                    continue
+            except (TypeError, ValueError):
+                pass
+        marcar_peso(cenario_id, nivel, chave, novo)
+        mudou += 1
+    return mudou
+
+
 def salvar_participacao(cenario_id, socio_id, pct, obra: str = "") -> None:
     with conexao() as conn:
         conn.execute(

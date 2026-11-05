@@ -383,7 +383,7 @@ def _vespera_aberta(conn: Connection, colaborador_id: int, anterior: dt.date, mo
 # como extra esse período das 6:01 até as 18:01, porque é um dia de descanso"). A batida da manhã de quem é da noite
 # vai para a véspera; mas, quando a véspera JÁ FECHOU (a saída da manhã já está batida), a batida PEDIDA PARA O DIA
 # SEGUINTE num ajuste é o começo do turno novo — mesmo colado na saída (6:01 e 6:01). A batida do relógio também
-# começa o dia novo, mas só 10 minutos depois da saída (`_plantao_dobrado`: o toque duplo continua a mesma batida).
+# começa o dia novo, a partir de 2 minutos depois da saída (`_plantao_dobrado`: o toque de segundos é a mesma batida).
 SUBTIPO_TURNO_SEGUIDO = "TURNO_SEGUIDO"
 
 
@@ -417,8 +417,11 @@ def turno_seguido(conn: Connection, colaborador_id: int, vespera: dt.date, momen
 # O SEGUNDO PONTO DO PLANTÃO DOBRADO (04/11/2026, o dono: "a gente tem que bater outro ponto, né? Depois do 6:01,
 # bater um segundo ponto, para valer como o próximo registro"). A batida de verdade da manhã também começa o dia novo
 # quando a véspera já fechou com a saída DA MANHÃ (a partir das 4h — a batida das 2h no meio do turno não fecha nada)
-# e passaram ao menos 10 minutos dessa saída (o toque duplo na saída continua sendo a mesma batida).
+# e passaram ao menos SEGUNDO_PONTO_MIN minutos dessa saída (o toque duplo de segundos continua a mesma batida).
+# Eram 10 minutos (os da batida repetida); 04/11/2026, o dono: "achei 10 minutos muito tempo (…) é realmente
+# necessário?" — não é: o segundo ponto vai para a conferência do DP, que rejeita o toque a mais. Ficou em 2.
 HORA_MINIMA_DA_SAIDA_DA_MANHA = 4
+SEGUNDO_PONTO_MIN = 2
 
 
 def _plantao_dobrado(conn: Connection, colaborador_id: int, vespera: dt.date, momento: dt.datetime) -> bool:
@@ -427,7 +430,7 @@ def _plantao_dobrado(conn: Connection, colaborador_id: int, vespera: dt.date, mo
         return False
     saida = horario.para_local(grupos[-1][0])
     return (saida.date() == horario.para_local(momento).date() and saida.hour >= HORA_MINIMA_DA_SAIDA_DA_MANHA
-            and momento - grupos[-1][-1] >= dt.timedelta(minutes=apuracao.BATIDA_REPETIDA_MIN))
+            and momento - grupos[-1][-1] >= dt.timedelta(minutes=SEGUNDO_PONTO_MIN))
 
 
 def e_plantao_dobrado(conn: Connection, pessoa: dict, momento: dt.datetime,

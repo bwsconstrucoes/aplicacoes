@@ -365,6 +365,27 @@ def test_marcar_varios_lancamentos_de_uma_vez(cenario, monkeypatch):
     assert marcados == {"805": 0, "806": 0}
 
 
+def test_a_arvore_inteira_se_salva_num_clique(cenario, monkeypatch):
+    """05/11/2026, o dono: "da forma que tá, um pouquinho complicado de lançar
+    um a um". Grupo com 50%, uma categoria dele com 80%, o resto em branco —
+    um envio só. E só grava o que mudou: apagar o campo desmarca."""
+    from app.apps.painel import cenarios
+    cenarios.marcar_peso(cenario, "categoria", "Equipamento", 10)
+    cliente = _cliente(monkeypatch)
+    cliente.post("/painel/prestacao/montagem", data={
+        "acao": "pesos_da_arvore", "cenario_id": str(cenario),
+        "item_nivel": ["grupo", "categoria", "categoria", "grupo"],
+        "item_chave": ["Administrativas", "Aluguel", "Equipamento", "Patrimônio"],
+        "item_pct": ["50", "80", "", ""]})
+    pesos = cenarios.pesos(cenario)
+    assert pesos["grupo"] == {"Administrativas": 50}
+    assert pesos["categoria"] == {"Aluguel": 80}          # Equipamento desmarcada
+    # a tela: um formulário só, com o botão de salvar tudo e o grupo que abre ali
+    html = cliente.get(f"/painel/prestacao/montagem?cenario={cenario}").get_data(as_text=True)
+    assert 'id="pesos-da-arvore"' in html and "Salvar percentuais" in html
+    assert "data-abre-grupo" in html and 'data-herda-do-grupo' in html
+
+
 def test_quem_esta_preso_a_uma_obra_nao_alcanca_o_cenario(preso, monkeypatch):
     """As duas telas mostram a empresa inteira e configuram a conta de todos.
     Não passam pelo filtro de escopo — então não são de quem está preso.
