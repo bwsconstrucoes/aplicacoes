@@ -12244,6 +12244,23 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 250 — Feriado não é falta: o "Aplicar desconto" que aparecia em feriado (05/11/2026)
+
+- *"Tem feriado cadastrado, mas não tá aparecendo como feriado e tá mandando aplicar
+  desconto, por exemplo em despesas com alimentação. Curiosamente o feriado estadual
+  deu certo e o nacional não."*
+- **Causa:** a lista de ausências (`folha_auxilio.ausencias_do_mes`) lia só o texto do
+  dia do ponto, sem olhar o calendário. Os dias ANTES de 16/10/2026 vêm do MobPonto,
+  que escreve FALTA no feriado que não estava cadastrado lá — o nacional de 12/10
+  (Nossa Senhora Aparecida) virava falta e o "Aplicar desconto" aparecia. O estadual
+  que "deu certo" (19/10, Piauí) é do ponto eletrônico, que já escreve "Feriado".
+  E na alimentação o dia saía descontado DUAS vezes: na base, como feriado, e na
+  proposta de desconto, como falta.
+- **Correção:** dia que é feriado na obra da pessoa (base única, a do ponto) nunca
+  é ausência — nas duas verbas, venha o dia do MobPonto ou do ponto eletrônico.
+- Não verificado com o dado de produção (o diagnóstico é pelo código e pelo padrão
+  que o dono descreveu); o teste reproduz o caso.
+
 #### Leva 249 — Feriados buscados sozinhos pelas obras em andamento (05/11/2026)
 
 - *"Existe alguma base de informação de feriado (…) e eu queria que o sistema
