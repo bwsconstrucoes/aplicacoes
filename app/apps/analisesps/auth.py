@@ -454,6 +454,8 @@ APOIO = {
 TELA_DA_ROTA = {
     "analisesps.solicitacoes": ("solicitacoes",),
     "analisesps.detalhe": ("solicitacoes",),
+    # 03/11/2026: o "Atualizar da planilha" da ficha — relê só a linha da SP.
+    "analisesps.atualizar_sp_da_planilha": ("solicitacoes",),
     "analisesps.exportar": ("solicitacoes",),
     "analisesps.alterar": ("solicitacoes",),
     "analisesps.enviar_ao_lote": ("solicitacoes",),
@@ -609,8 +611,10 @@ TELA_DA_ROTA = {
     "analisesps.folha_arquivos_excluir": ("folha",),
     "analisesps.tela_ficha_cadastro_completo": ("folha",),
     # Feriados e férias são lançamento do DP, como trazer a folha e o ponto.
-    "analisesps.folha_feriado_gravar": ("folha",),
-    "analisesps.folha_feriado_apagar": ("folha",),
+    # 04/11/2026: feriado se cadastra no ponto; daqui só se levam os antigos.
+    "analisesps.folha_feriados_levar_ao_ponto": ("folha",),
+    # 05/11/2026: "Buscar agora" — os feriados das obras em andamento.
+    "analisesps.folha_feriados_buscar": ("folha",),
     "analisesps.folha_ferias_gravar": ("folha",),
     "analisesps.folha_ferias_apagar": ("folha",),
     # A Listagem de Férias do Fortes (05/10/2026).

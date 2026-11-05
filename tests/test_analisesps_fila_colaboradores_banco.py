@@ -70,3 +70,46 @@ def test_as_PISTAS_geral_e_do_cadastro_sao_independentes(app):
         cliente.post("/analisesps/entrar", data={"senha": SENHA_MESTRE_OPERADOR})
         a = cliente.get("/analisesps/api/andamento?pista=cadastro").get_json()
     assert a["rodando"] and a["etapa"] == "lendo a planilha"
+
+
+def test_as_PISTAS_do_PONTO_e_dos_APOIOS_nao_seguram_as_SPs(app, monkeypatch):
+    """31/10/2026 (migração 055): *"agora preciso que seja atualizado somente
+    SPsBD e ele dá essa mensagem: Já existe uma atualização em andamento
+    (buscando notas na Receita…)"*. A Receita (apoios) e o ponto do mês correm
+    em pistas próprias; a geral é das SPs — e o botão Atualizar só traz as SPs."""
+    from app.apps.analisesps import tarefas
+    from app.apps.analisesps.db import conexao
+    assert tarefas.ETAPAS["sincronizar"] == ["fila", "delta"], "o Atualizar é só a SPsBD"
+    for modo, pista in (("notas_receita", "apoios"), ("apoios", "apoios"),
+                        ("faturamento", "apoios"), ("ponto", "ponto"),
+                        ("ponto_diario", "ponto"), ("sincronizar", "geral"),
+                        ("comprovantes", "geral")):
+        assert tarefas.pista_do(modo) == pista, modo
+    with conexao() as conn:
+        conn.execute("INSERT INTO analisesps.execucoes (tipo, disparo, etapa, visto_em) "
+                     " VALUES ('apoios', 'tela aberta', 'buscando notas na Receita', now())")
+        conn.execute("INSERT INTO analisesps.execucoes (tipo, disparo, etapa, visto_em) "
+                     " VALUES ('ponto', 'manual', 'trazendo o ponto', now())")
+        conn.execute("INSERT INTO analisesps.execucoes (tipo, disparo, etapa, visto_em) "
+                     " VALUES ('sincronizar', 'manual', 'trazendo as SPs alteradas', now())")
+        conn.commit()
+    assert tarefas.estado()["detalhe"]["tipo"] == "sincronizar"
+    assert tarefas.estado("apoios")["detalhe"]["tipo"] == "apoios"
+    assert tarefas.estado("ponto")["detalhe"]["tipo"] == "ponto"
+    with pytest.raises(Exception):
+        with conexao() as conn:      # uma viva por pista, continua valendo
+            conn.execute("INSERT INTO analisesps.execucoes (tipo, disparo, visto_em) "
+                         " VALUES ('notas_receita', 'manual', now())")
+            conn.commit()
+
+
+def test_os_APOIOS_saem_sozinhos_de_hora_em_hora_na_pista_deles(app, monkeypatch):
+    from app.apps.analisesps import tarefas
+    disparos = []
+    monkeypatch.setattr(tarefas, "disparar", lambda modo, disparo="manual": (
+        disparos.append((modo, disparo)) or {"ok": True}))
+    monkeypatch.setattr(tarefas, "_apoios_recentes", lambda: False)
+    assert tarefas.apoios_se_preciso("tela aberta")["disparou"]
+    assert disparos == [("apoios", "tela aberta")]
+    monkeypatch.setattr(tarefas, "_apoios_recentes", lambda: True)
+    assert not tarefas.apoios_se_preciso("tela aberta")["disparou"]

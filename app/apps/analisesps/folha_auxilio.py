@@ -372,10 +372,9 @@ def calcular_pessoa(tipo: str, ficha: dict, inicio, fim,
     # OS DESCONTOS, com a MESMA régua da modalidade.
     if e_alimentacao:
         saida["feriados"] = folha_calendario.dias_de_feriado_no_periodo(
-            # ⚠️ PELO NOME, não pelo código: o feriado por obra é cadastrado na
-            # tela de Feriados, que oferece a lista de obras POR NOME. Passar o
-            # código aqui faria o feriado municipal deixar de descontar, em
-            # silêncio. Se um dia o feriado passar a guardar código, muda aqui.
+            # Os feriados vêm do PONTO desde 04/11/2026 (nacional, estadual,
+            # municipal e de obra). A obra vai pelo NOME do cadastro; o casamento
+            # com a obra do ponto (código, depois nome) é de `FeriadosDoPonto`.
             inicio, fim, saida["obra_nome"], sabado=sabado, sexta=sexta)
     saida["ferias"] = folha_calendario.dias_de_ferias_no_periodo(
         saida["cpf"], inicio, fim, sabado=sabado, sexta=sexta)
@@ -455,9 +454,18 @@ def ausencia_do_dia(dia: dict) -> str:
     return texto
 
 
-def ausencias_do_mes(dias, inicio, fim, modo: str) -> list:
+def ausencias_do_mes(dias, inicio, fim, modo: str, feriados=None) -> list:
     """`[{"data", "motivo"}]` — as ausências dentro do período, só nos dias que a
-    modalidade paga (quem é "Segunda à Quinta" não tem a sexta descontada)."""
+    modalidade paga (quem é "Segunda à Quinta" não tem a sexta descontada).
+
+    ⚠️ FERIADO NUNCA É AUSÊNCIA (`feriados`: as datas de feriado da obra, da base
+    única, a do ponto). Achado em 05/11/2026, o dono: *"tem feriado cadastrado, mas
+    não tá aparecendo como feriado e tá mandando aplicar desconto (…) o feriado
+    estadual deu certo e o nacional não."* O dia do MOBPONTO (antes de 16/10/2026)
+    traz o que o MobPonto escreveu — e ele escreve FALTA em feriado que não estava
+    cadastrado LÁ (12/10, Nossa Senhora Aparecida). O do ponto eletrônico já vem
+    "Feriado". Sem esta régua o dia era descontado DUAS vezes na alimentação: na
+    base (como feriado) e de novo como falta."""
     limpo = _sem_acento(modo)
     ultimo_dia_da_semana = 3 if limpo == MODO_SEG_QUI else 4   # seg=0 … sex=4
     saida = []
@@ -466,6 +474,8 @@ def ausencias_do_mes(dias, inicio, fim, modo: str) -> list:
         if not isinstance(data, dt.date) or not (inicio <= data <= fim):
             continue
         if data.weekday() > ultimo_dia_da_semana:
+            continue
+        if feriados and data in feriados:
             continue
         motivo = ausencia_do_dia(dia)
         if motivo:
@@ -513,7 +523,11 @@ def _acrescimos(saida: dict, ajuste: dict, tipo: str, modo: str, inicio, fim,
     ausente vale o mês dividido pelos dias úteis, como no transporte."""
     saida["valor_calculado"] = saida["valor"]
     if ausencias:
-        lista = ausencias_do_mes(ausencias, inicio, fim, modo)
+        # Os feriados da obra da pessoa (a mesma leitura do desconto de feriado, que
+        # fica guardada um minuto): dia de feriado não é falta — ver `ausencias_do_mes`.
+        datas_de_feriado = {f["data"] for f in folha_calendario.feriados_no_periodo(
+            inicio, fim, saida.get("obra_nome") or "")}
+        lista = ausencias_do_mes(ausencias, inicio, fim, modo, feriados=datas_de_feriado)
         saida["ausencias"] = lista
         if lista and saida["valor_unitario"] is not None:
             n = len(lista)

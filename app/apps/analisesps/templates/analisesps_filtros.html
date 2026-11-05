@@ -259,6 +259,10 @@
 
   // Texto e número: espera mais, porque a pessoa ainda está digitando.
   form.addEventListener("input", e => {
+    // A procura DENTRO de um bloco (".procura-opcao") é só para achar a caixa:
+    // se ela também agendasse o envio, a tela se recarregava 0,9 s depois de
+    // digitar e a opção encontrada sumia antes do clique (dono, 03/11/2026).
+    if (e.target.matches(".procura-opcao")) return;
     if (e.target.matches("input[type=search], input[type=text], input[type=number]")) agendar(900);
   });
 

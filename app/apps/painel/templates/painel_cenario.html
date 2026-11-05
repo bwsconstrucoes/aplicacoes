@@ -201,7 +201,21 @@
   </div>
   {% endif %}
 
-  <div class="tabela-rolagem" style="max-height:520px">
+  {# A ÁRVORE INTEIRA NUM FORMULÁRIO SÓ (05/11/2026). O dono: "da forma que
+     tá, um pouquinho complicado de lançar um a um". Digita-se o grupo, abre-se
+     ele ALI MESMO (sem recarregar, para não perder o que já foi digitado),
+     ajustam-se as categorias que fogem do grupo e salva-se tudo num clique. #}
+  <form method="post" id="pesos-da-arvore">
+  <input type="hidden" name="acao" value="pesos_da_arvore">
+  <input type="hidden" name="cenario_id" value="{{ cenario.id }}">
+  <input type="hidden" name="grupo" value="{{ aberto_grupo }}">
+  <input type="hidden" name="categoria" value="{{ aberto_categoria }}">
+  <div class="tabela-barra">
+    <span class="resumo" id="arvore-pendente">Digite os percentuais e salve tudo de uma vez.</span>
+    <span class="espaco"></span>
+    <button class="btn" type="submit">Salvar percentuais</button>
+  </div>
+  <div class="tabela-rolagem" style="max-height:620px">
     <table>
       <thead>
         <tr>
@@ -209,48 +223,43 @@
           <th class="sem-ordem direita">Total</th>
           <th class="sem-ordem direita">Entra</th>
           <th class="sem-ordem direita">Fica de fora</th>
-          <th class="sem-ordem direita">Marcado</th>
-          <th class="sem-ordem direita">Divide</th>
-          <th class="sem-ordem"></th>
+          <th class="sem-ordem direita">Divide hoje</th>
+          <th class="sem-ordem direita">Percentual</th>
         </tr>
       </thead>
       <tbody>
         {% for g in contas %}
-        <tr>
+        {% set n = loop.index %}
+        <tr class="mov-grupo">
           <td class="desc">
-            <a href="{{ url_for('painel.cenario_montagem', cenario=cenario.id,
-                                grupo=('' if aberto_grupo == g.grupo else g.grupo)) }}">
-              {{ '▾' if aberto_grupo == g.grupo else '▸' }} <b>{{ g.grupo }}</b></a>
+            <button type="button" class="link-btn" data-abre-grupo="{{ n }}"
+                    aria-expanded="{{ 'true' if aberto_grupo == g.grupo else 'false' }}">
+              <span class="seta">{{ '▾' if aberto_grupo == g.grupo else '▸' }}</span> <b>{{ g.grupo }}</b></button>
+            <small>{{ g.categorias|length }} categoria{{ '' if g.categorias|length == 1 else 's' }}</small>
             {% if g.excecoes %}<span class="selo neutro" title="lançamentos marcados um a um dentro deste grupo">{{ g.excecoes }} exceção(ões)</span>{% endif %}
           </td>
           <td class="dados direita">{{ brl(g.valor) }}</td>
           <td class="dados direita v-pos">{{ brl(g.entra) }}</td>
           <td class="dados direita">{{ brl(g.fora) }}{% if g.juros %}<br><small>+ {{ brl(g.juros) }} de juros</small>{% endif %}</td>
-          <td class="dados direita">{{ pct(g.pct) }}</td>
           <td class="dados direita"><b>{{ '%.0f'|format(g.pct_efetivo) }}%</b></td>
-          <td>
-            <form method="post" style="display:flex; gap:6px">
-              <input type="hidden" name="acao" value="peso">
-              <input type="hidden" name="cenario_id" value="{{ cenario.id }}">
-              <input type="hidden" name="nivel" value="grupo">
-              <input type="hidden" name="chave" value="{{ g.grupo }}">
-              <input type="hidden" name="grupo" value="{{ aberto_grupo }}">
-              <input type="hidden" name="categoria" value="{{ aberto_categoria }}">
-              <input name="pct" value="{{ '' if g.pct is none else '%.0f'|format(g.pct) }}"
-                     style="width:70px" placeholder="herda" aria-label="Percentual do grupo {{ g.grupo }}">
-              <button class="btn secundario" type="submit">ok</button>
-            </form>
+          <td class="direita">
+            <input type="hidden" name="item_nivel" value="grupo">
+            <input type="hidden" name="item_chave" value="{{ g.grupo }}">
+            <input name="item_pct" value="{{ '' if g.pct is none else '%.0f'|format(g.pct) }}"
+                   data-original="{{ '' if g.pct is none else '%.0f'|format(g.pct) }}"
+                   data-grupo-pct="{{ n }}" inputmode="decimal" data-sem-mascara
+                   style="width:130px" placeholder="{{ '%.0f'|format(cenario.pct_padrao) }} (padrão)"
+                   aria-label="Percentual do grupo {{ g.grupo }}">
           </td>
         </tr>
-
-        {% if aberto_grupo == g.grupo %}
           {% for c in g.categorias %}
-          <tr>
+          <tr class="mov-parte" data-categoria-do-grupo="{{ n }}" {% if aberto_grupo != g.grupo %}hidden{% endif %}>
             <td class="desc" style="padding-left:28px">
+              {{ c.categoria }}
               <a href="{{ url_for('painel.cenario_montagem', cenario=cenario.id,
                                   grupo=g.grupo,
-                                  categoria=('' if aberto_categoria == c.categoria else c.categoria)) }}">
-                {{ '▾' if aberto_categoria == c.categoria else '▸' }} {{ c.categoria }}</a>
+                                  categoria=('' if aberto_categoria == c.categoria else c.categoria)) }}"
+                 title="abrir os lançamentos desta categoria (salve antes o que digitou)"><small>lançamentos ›</small></a>
               {% if c.excecoes %}<span class="selo neutro" title="lançamentos marcados um a um">{{ c.excecoes }} exceção(ões)</span>{% endif %}
             </td>
             <td class="dados direita">{{ brl(c.valor) }}</td>
@@ -259,26 +268,19 @@
             {% else %}
             <td class="dados direita v-pos">{{ brl(c.entra) }}</td>
             <td class="dados direita">{{ brl(c.fora) }}</td>
-            <td class="dados direita">{{ pct(c.pct) }}</td>
             <td class="dados direita">{{ '%.0f'|format(c.pct_efetivo) }}%</td>
-            {% endif %}
-            <td>
-              <form method="post" style="display:flex; gap:6px">
-                <input type="hidden" name="acao" value="peso">
-                <input type="hidden" name="cenario_id" value="{{ cenario.id }}">
-                <input type="hidden" name="nivel" value="categoria">
-                <input type="hidden" name="chave" value="{{ c.categoria }}">
-                <input type="hidden" name="grupo" value="{{ aberto_grupo }}">
-                <input type="hidden" name="categoria" value="{{ aberto_categoria }}">
-                <input name="pct" value="{{ '' if c.pct is none else '%.0f'|format(c.pct) }}"
-                       style="width:70px" placeholder="herda"
-                       aria-label="Percentual da categoria {{ c.categoria }}">
-                <button class="btn secundario" type="submit">ok</button>
-              </form>
+            <td class="direita">
+              <input type="hidden" name="item_nivel" value="categoria">
+              <input type="hidden" name="item_chave" value="{{ c.categoria }}">
+              <input name="item_pct" value="{{ '' if c.pct is none else '%.0f'|format(c.pct) }}"
+                     data-original="{{ '' if c.pct is none else '%.0f'|format(c.pct) }}"
+                     data-herda-do-grupo="{{ n }}" inputmode="decimal" data-sem-mascara
+                     style="width:130px" placeholder="segue o grupo"
+                     aria-label="Percentual da categoria {{ c.categoria }}">
             </td>
+            {% endif %}
           </tr>
           {% endfor %}
-        {% endif %}
         {% endfor %}
       </tbody>
       {% if resumo_matriz %}
@@ -288,12 +290,19 @@
           <td class="dados direita">{{ brl(resumo_matriz.total) }}</td>
           <td class="dados direita v-pos">{{ brl(resumo_matriz.entra) }}</td>
           <td class="dados direita">{{ brl(resumo_matriz.fora) }}{% if resumo_matriz.juros %}<br><small>+ {{ brl(resumo_matriz.juros) }} de juros</small>{% endif %}</td>
-          <td colspan="3"></td>
+          <td colspan="2"></td>
         </tr>
       </tfoot>
       {% endif %}
     </table>
   </div>
+  <div class="tabela-barra" style="border-top:1px solid var(--borda); border-bottom:0">
+    <span class="resumo">Em branco: o grupo segue o padrão do cenário, e a categoria segue o grupo.
+      Zero quer dizer "não divide".</span>
+    <span class="espaco"></span>
+    <button class="btn" type="submit">Salvar percentuais</button>
+  </div>
+  </form>
 </div>
 
 {% if lancamentos %}
@@ -602,4 +611,60 @@
   </form>
 </div>
 {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+// A árvore dos percentuais (05/11/2026): abre o grupo sem recarregar, mostra
+// na categoria o que ela herda do grupo e avisa o que ainda não foi salvo.
+(function () {
+  const form = els("pesos-da-arvore");
+  if (!form) return;
+  const aviso = els("arvore-pendente");
+  let salvando = false;
+
+  form.querySelectorAll("[data-abre-grupo]").forEach(b =>
+    b.addEventListener("click", () => {
+      const aberto = b.getAttribute("aria-expanded") !== "true";
+      b.setAttribute("aria-expanded", aberto ? "true" : "false");
+      b.querySelector(".seta").textContent = aberto ? "▾" : "▸";
+      form.querySelectorAll(`[data-categoria-do-grupo="${b.dataset.abreGrupo}"]`)
+          .forEach(tr => { tr.hidden = !aberto; });
+    }));
+
+  // a categoria em branco mostra o que vai herdar do grupo, já com o digitado
+  const padrao = "{{ '%.0f'|format(cenario.pct_padrao) if cenario else 100 }}";
+  function herancas(n) {
+    const g = form.querySelector(`[data-grupo-pct="${n}"]`);
+    const vale = (g && g.value.trim()) || padrao;
+    form.querySelectorAll(`[data-herda-do-grupo="${n}"]`).forEach(c => {
+      c.placeholder = `segue o grupo (${vale}%)`;
+    });
+  }
+  form.querySelectorAll("[data-grupo-pct]").forEach(g => {
+    herancas(g.dataset.grupoPct);
+    g.addEventListener("input", () => herancas(g.dataset.grupoPct));
+  });
+
+  // o que mudou e ainda não foi salvo fica marcado
+  const campos = [...form.querySelectorAll('input[name="item_pct"]')];
+  function pendentes() {
+    let n = 0;
+    campos.forEach(c => {
+      const mudou = c.value.trim() !== (c.dataset.original || "");
+      c.style.background = mudou ? "#FFF4D6" : "";
+      if (mudou) n++;
+    });
+    aviso.innerHTML = n
+      ? `<b>${n} percentual(is) alterado(s)</b>, ainda não salvo(s).`
+      : "Digite os percentuais e salve tudo de uma vez.";
+    return n;
+  }
+  campos.forEach(c => c.addEventListener("input", pendentes));
+  form.addEventListener("submit", () => { salvando = true; });
+  window.addEventListener("beforeunload", e => {
+    if (!salvando && pendentes()) { e.preventDefault(); e.returnValue = ""; }
+  });
+})();
+</script>
 {% endblock %}

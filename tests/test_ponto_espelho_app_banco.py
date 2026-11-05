@@ -63,3 +63,38 @@ def test_a_folha_de_um_periodo_escolhido(app, mundo, monkeypatch):
     assert longe.status_code == 400 and "62 dias" in longe.get_data(as_text=True)
     invertido = c.get("/ponto/app/espelho/imprimir?de=2026-10-20&ate=2026-10-01")
     assert invertido.status_code == 400 and "antes do primeiro" in invertido.get_data(as_text=True)
+
+
+def test_no_ponto_da_obra_a_folha_de_outra_pessoa_abre_com_o_bilhete(app, mundo, monkeypatch):
+    """05/11/2026 (Weverton, obra ESCADELIA): no ponto da obra, "Baixar o espelho" de um colaborador dava "pessoa não
+    encontrada" — a página aberta para imprimir não leva a identificação do aparelho, então o sistema conferia o
+    alcance PESSOAL de quem entrou, e não o do aparelho. O bilhete, pedido pela chamada do aplicativo, resolve."""
+    from app.apps.ponto.core import qr
+    from tests.test_ponto_regras_0610_banco import _aparelho, _id_do_aparelho
+    _entrar_no_app(app, CPF_MARIA, monkeypatch)                                 # cria o PIN 481927
+    dp = como(app, mundo["dp"])
+    t, h = _aparelho(app, "ponto-da-obra-a-espelho-bilhete-01")
+    ap = _id_do_aparelho(dp, "ponto-da-obra-a-espelho-bilhete-01")
+    assert dp.post(f"/erp/api/ponto/dispositivos/{ap}/aprovar",
+                   json={"perfil": "COMPARTILHADO", "obras": ["PG-A"], "cpf": CPF_MARIA}).status_code == 200
+    assert t.post("/ponto/app/api/entrar", json={"cpf": CPF_MARIA, "pin": "481927"}, headers=h).status_code == 200
+    assert t.post("/ponto/app/api/equipe/cpf", json={"cpf": CPF_JOAO}, headers=h).status_code == 200
+    joao, periodo = mundo["joao"], "competencia=2026-10"
+    url = f"/ponto/app/equipe/{joao}/espelho/imprimir?{periodo}"
+    # o erro do Weverton: a página, sem a identificação do aparelho, não acha a pessoa
+    assert t.get(url).status_code == 404
+    r = t.post(f"/ponto/app/api/equipe/{joao}/espelho/bilhete?{periodo}", json={}, headers=h)
+    assert r.status_code == 200, r.get_json()
+    bilhete = r.get_json()["bilhete"]
+    folha = t.get(f"{url}&bilhete={bilhete}")
+    assert folha.status_code == 200 and "João Obra A" in folha.get_data(as_text=True)
+    # o bilhete vale só para aquela pessoa, aquele período e por pouco tempo
+    assert t.get(f"/ponto/app/equipe/{mundo['maria']}/espelho/imprimir?{periodo}&bilhete={bilhete}").status_code == 404
+    assert t.get(f"/ponto/app/equipe/{joao}/espelho/imprimir?competencia=2026-09&bilhete={bilhete}").status_code == 404
+    vencido = qr.emitir_impressao(joao, mundo["maria"], "2026-10||", agora=0)
+    assert t.get(f"{url}&bilhete={vencido}").status_code == 404
+    # sem ninguém logado, o bilhete sozinho não abre nada
+    assert app.test_client().get(f"{url}&bilhete={bilhete}").status_code == 401
+    # e quem não alcança a pessoa não ganha bilhete: a Maria (obra B) não foi consultada pelo CPF
+    assert t.post(f"/ponto/app/api/equipe/{mundo['maria']}/espelho/bilhete?{periodo}", json={},
+                  headers=h).status_code == 404

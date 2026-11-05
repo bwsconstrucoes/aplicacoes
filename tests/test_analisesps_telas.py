@@ -323,7 +323,7 @@ def test_a_tela_de_configuracoes_monta_mesmo_com_o_banco_fora(app, monkeypatch):
     monkeypatch.setattr(migracoes_runner, "listar_estado",
                         lambda: (_ for _ in ()).throw(RuntimeError("banco fora")))
     monkeypatch.setattr(tarefas, "estado",
-                        lambda: {"rodando": False, "detalhe": None,
+                        lambda pista="geral": {"rodando": False, "detalhe": None,
                                  "interrompida": None})
     resposta = como(app, SENHA_OPERADOR).get("/analisesps/configuracoes")
     assert resposta.status_code == 200
@@ -334,7 +334,7 @@ def test_a_tela_de_configuracoes_mostra_carga_em_andamento(app, monkeypatch):
     from app.apps.analisesps import migracoes_runner, tarefas
     monkeypatch.setattr(migracoes_runner, "listar_estado",
                         lambda: {"aplicadas": [], "pendentes": []})
-    monkeypatch.setattr(tarefas, "estado", lambda: {
+    monkeypatch.setattr(tarefas, "estado", lambda pista="geral": {
         "rodando": True, "interrompida": None,
         "detalhe": {"etapa": "trazendo as SPs da planilha",
                     "progresso": "20000 de 59055", "visto_em": None}})
@@ -353,7 +353,7 @@ def test_carga_interrompida_aparece_como_interrompida(app, monkeypatch):
     from app.apps.analisesps import migracoes_runner, tarefas
     monkeypatch.setattr(migracoes_runner, "listar_estado",
                         lambda: {"aplicadas": [], "pendentes": []})
-    monkeypatch.setattr(tarefas, "estado", lambda: {
+    monkeypatch.setattr(tarefas, "estado", lambda pista="geral": {
         "rodando": False, "detalhe": None,
         "interrompida": {"etapa": "trazendo as SPs da planilha",
                          "progresso": "20000 de 59055", "visto_em": None}})
@@ -1816,17 +1816,30 @@ def test_a_procura_ignora_acento_e_maiuscula(app):
     assert "toLowerCase()" in conteudo
 
 
-def test_a_procura_nao_aplica_o_filtro_sozinha(app):
+@pytest.mark.parametrize("arquivo", [
+    "analisesps_filtros.html", "analisesps_filtros_fiscal.html",
+    "analisesps_filtros_aplicam_sozinhos.html", "analisesps_faturamento_filtros.html",
+])
+def test_a_procura_nao_aplica_o_filtro_sozinha(app, arquivo):
     """O campo procura DENTRO do bloco: filtra as caixas já carregadas, sem ir
-    ao servidor. Digitar nele não pode disparar a consulta nem mandar o
-    formulário — senão cada letra viraria uma ida ao banco."""
+    ao servidor. Digitar nele não pode mandar o formulário.
+
+    ⚠️ 03/11/2026, o dono: "ela aparece rapidamente e some como se desse um
+    refresh no filtro. não dá tempo de clicar." O campo de procura também é
+    `type=search`, e o envio automático da barra (feito para a busca principal)
+    o pegava: 0,9 s depois de digitar a tela recarregava e a procura se perdia.
+    O teste antigo só conferia que o Enter era barrado e deixou passar isso. A
+    conferência no navegador (digitar "creche" → zero envios; marcar a caixa →
+    um envio) foi feita à mão; aqui fica a regra que a garante: o envio
+    automático ignora o campo de procura, ou o campo segura o evento."""
     conteudo = (Path(__file__).resolve().parents[1] / "app" / "apps"
-                / "analisesps" / "templates"
-                / "analisesps_filtros.html").read_text(encoding="utf-8")
-    # O envio automático só olha os campos do filtro, e o de procura tem
-    # classe própria e barra o Enter.
-    assert "stopPropagation()" in conteudo
-    assert 'class="procura-opcao"' in conteudo
+                / "analisesps" / "templates" / arquivo).read_text(encoding="utf-8")
+    assert 'class="procura-opcao"' in conteudo or ".procura-opcao" in conteudo
+    ignora = 'e.target.matches(".procura-opcao")) return' in conteudo
+    i = conteudo.index('campo.addEventListener("input"')
+    segura = "e.stopPropagation()" in conteudo[i:i + 120]
+    assert ignora or segura, (
+        f"{arquivo}: digitar na procura do bloco recarrega a tela")
 
 
 # ---------------------------------------------------------------------------
@@ -5843,36 +5856,93 @@ def test_a_tela_de_ferias_busca_a_pessoa_em_vez_de_pedir_o_CPF(app, monkeypatch)
     assert "Data inicial" in html and "Data final" in html
 
 
-def test_a_obra_do_feriado_so_aparece_quando_e_de_obra(app, monkeypatch):
-    """Campo que fica na tela sem servir faz a pessoa se perguntar se devia
-    preencher."""
-    from app.apps.analisesps import folha_calendario as fc, sincronizacao
+def test_o_feriado_se_cadastra_no_PONTO_e_nao_mais_aqui(app, monkeypatch):
+    """04/11/2026, o dono: *"a parte de feriados deve vir do ponto. Dessa forma
+    ficaremos somente com uma base de feriados."* A tela não grava mais feriado:
+    mostra a lista do ponto e leva até lá."""
+    from app.apps.analisesps import folha_calendario as fc
+
+    monkeypatch.setattr(fc, "_pronto", lambda: True)
+    monkeypatch.setattr(fc, "listar_feriados", lambda *a, **k: [])
+    monkeypatch.setattr(fc, "antigos_fora_do_ponto", lambda: [])
+    monkeypatch.setattr(fc, "listar_ferias", lambda *a, **k: [])
+
+    html = _como_mestre(app).get(
+        "/analisesps/folha/calendario").get_data(as_text=True)
+    assert 'id="btn-gravar-feriado"' not in html
+    assert "apagar-feriado" not in html
+    assert "/erp/ponto/configuracao#jornada" in html
+    assert "Os feriados vêm do <b>Ponto</b>" in html
+    assert 'id="btn-levar-ao-ponto"' not in html, "sem feriado antigo, sem botão"
+
+
+def test_os_feriados_antigos_desta_tela_aparecem_com_o_botao_de_levar(app, monkeypatch):
+    import datetime as dt
+
+    from app.apps.analisesps import folha_calendario as fc
 
     monkeypatch.setattr(fc, "_pronto", lambda: True)
     monkeypatch.setattr(fc, "listar_feriados", lambda *a, **k: [])
     monkeypatch.setattr(fc, "listar_ferias", lambda *a, **k: [])
-    monkeypatch.setattr(sincronizacao, "referencias_rateio",
-                        lambda: {"obras": [{"nome": "CREPEOLINDA", "codigo": "1"}],
-                                 "categorias": []})
+    monkeypatch.setattr(fc, "antigos_fora_do_ponto", lambda: [
+        {"id": 1, "data": dt.date(2026, 8, 20), "abrangencia": "obra",
+         "obra": "CREPEOLINDA", "descricao": "Padroeira", "obra_no_ponto": True},
+        {"id": 2, "data": dt.date(2026, 8, 21), "abrangencia": "obra",
+         "obra": "OBRA SUMIDA", "descricao": "", "obra_no_ponto": False}])
 
     html = _como_mestre(app).get(
         "/analisesps/folha/calendario").get_data(as_text=True)
-    assert 'id="feriado-obra-bloco" hidden' in html
-    assert "CREPEOLINDA" in html, "a lista de obras é a MESMA do rateio"
-    assert "Feriado nacional" in html
+    assert "2 feriado(s) cadastrado(s) nesta tela" in html
+    assert "20/08/2026" in html and "Padroeira" in html
+    assert "a obra não foi achada no ponto" in html
+    assert 'id="btn-levar-ao-ponto"' in html
 
 
-def test_a_lista_de_obras_vazia_explica_o_que_fazer(app, monkeypatch):
-    from app.apps.analisesps import folha_calendario as fc, sincronizacao
+def test_o_quadro_da_busca_automatica_de_feriados(app, monkeypatch):
+    """05/11/2026: o que já foi buscado em cada ano, o que ficou sem feriado e o
+    município que o IBGE não reconhece — é o que o DP precisa conferir à mão."""
+    from app.apps.analisesps import folha_calendario as fc
+    from app.apps.ponto.core import feriados_busca
 
     monkeypatch.setattr(fc, "_pronto", lambda: True)
     monkeypatch.setattr(fc, "listar_feriados", lambda *a, **k: [])
+    monkeypatch.setattr(fc, "antigos_fora_do_ponto", lambda: [])
     monkeypatch.setattr(fc, "listar_ferias", lambda *a, **k: [])
-    monkeypatch.setattr(sincronizacao, "referencias_rateio",
-                        lambda: {"obras": [], "categorias": []})
+    monkeypatch.setattr(feriados_busca, "situacao", lambda conn, hoje: {
+        "anos": {2026: {"ufs": ["CE", "PE"], "municipios": ["OLINDA/PE"],
+                        "sem_feriado": ["Sobral/CE"], "nao_reconhecidos": ["Olindaa/PE"],
+                        "nao_publicado": False, "ultima": "2026-11-05T10:00:00"}},
+        "falta": {}})
+
+    class _Conexao:
+        def __enter__(self):
+            return None
+
+        def __exit__(self, *a):
+            return False
+    from app.apps.ponto import db as banco_do_ponto
+    monkeypatch.setattr(banco_do_ponto, "conexao", lambda: _Conexao())
+
     html = _como_mestre(app).get(
         "/analisesps/folha/calendario").get_data(as_text=True)
-    assert "planilhas de apoio" in html
+    assert "Busca automática de feriados" in html
+    assert "buscado em 05/11/2026" in html and "CE, PE" in html
+    assert "Sobral/CE" in html and "Olindaa/PE" in html
+    assert 'id="btn-buscar-feriados"' in html
+
+
+def test_ponto_fora_do_ar_avisa_que_o_auxilio_sai_sem_feriado(app, monkeypatch):
+    from app.apps.analisesps import folha_calendario as fc
+
+    def quebra(*a, **k):
+        raise RuntimeError("ponto fora do ar")
+    monkeypatch.setattr(fc, "_pronto", lambda: True)
+    monkeypatch.setattr(fc, "listar_feriados", quebra)
+    monkeypatch.setattr(fc, "listar_ferias", lambda *a, **k: [])
+    html = _como_mestre(app).get(
+        "/analisesps/folha/calendario").get_data(as_text=True)
+    assert "Não foi possível ler os feriados do ponto." in html
+    assert "sem desconto de" in html
 
 
 def test_os_feriados_e_as_ferias_aparecem_na_tela(app, monkeypatch):
@@ -5883,13 +5953,12 @@ def test_os_feriados_e_as_ferias_aparecem_na_tela(app, monkeypatch):
     monkeypatch.setattr(fc, "_pronto", lambda: True)
     monkeypatch.setattr(sincronizacao, "referencias_rateio",
                         lambda: {"obras": [], "categorias": []})
+    monkeypatch.setattr(fc, "antigos_fora_do_ponto", lambda: [])
     monkeypatch.setattr(fc, "listar_feriados", lambda *a, **k: [
-        {"id": 1, "data": dt.date(2026, 9, 7), "abrangencia": "nacional",
-         "obra": "", "descricao": "Independência", "criado_por": "MARCELO",
-         "rotulo": "Nacional"},
-        {"id": 2, "data": dt.date(2026, 9, 12), "abrangencia": "obra",
-         "obra": "CREPEOLINDA", "descricao": "Aniversário", "criado_por": "",
-         "rotulo": "Só nesta obra"}])
+        {"data": dt.date(2026, 9, 7), "abrangencia": "NACIONAL", "rotulo": "Nacional",
+         "onde": "", "descricao": "Independência"},
+        {"data": dt.date(2026, 3, 12), "abrangencia": "MUNICIPAL", "rotulo": "Municipal",
+         "onde": "Olinda / PE", "descricao": "Aniversário"}])
     monkeypatch.setattr(fc, "listar_ferias", lambda *a, **k: [
         {"id": 5, "cpf": "99713349334", "cpf_bonito": "997.133.493-34",
          "nome": "GERLANIO GOMES LIMA", "inicio": dt.date(2026, 9, 1),
@@ -5903,7 +5972,7 @@ def test_os_feriados_e_as_ferias_aparecem_na_tela(app, monkeypatch):
     assert "997.133.493-34" in html
     assert "01/09/2026" in html and "20/09/2026" in html
     assert "Independência" in html
-    assert "CREPEOLINDA" in html
+    assert "Olinda / PE" in html and "municipal" in html
     assert "nacional" in html
 
 
@@ -6972,7 +7041,7 @@ def test_a_tela_do_ponto_DIZ_que_esta_carregando_ao_abrir(app, monkeypatch):
     monkeypatch.setattr(_ponto, "_pronto", lambda: True)
     monkeypatch.setattr(_ponto, "configurado", lambda: True)
     monkeypatch.setattr(_ponto, "cargas", lambda *a, **k: [])
-    monkeypatch.setattr(tarefas, "estado", lambda: {
+    monkeypatch.setattr(tarefas, "estado", lambda pista="geral": {
         "rodando": True, "detalhe": {"etapa": "ponto",
                                      "progresso": "página 3 de 12"}})
 
@@ -6991,7 +7060,7 @@ def test_a_tela_do_ponto_avisa_quando_a_carga_foi_INTERROMPIDA(app, monkeypatch)
     monkeypatch.setattr(_ponto, "_pronto", lambda: True)
     monkeypatch.setattr(_ponto, "configurado", lambda: True)
     monkeypatch.setattr(_ponto, "cargas", lambda *a, **k: [])
-    monkeypatch.setattr(tarefas, "estado", lambda: {
+    monkeypatch.setattr(tarefas, "estado", lambda pista="geral": {
         "rodando": False, "interrompida": {"etapa": "ponto"}, "detalhe": {}})
 
     html = _como_mestre(app).get(
@@ -7173,7 +7242,7 @@ def test_a_tela_do_ponto_MOSTRA_a_ultima_tentativa_que_falhou(app, monkeypatch):
     monkeypatch.setattr(_ponto, "_pronto", lambda: True)
     monkeypatch.setattr(_ponto, "configurado", lambda: True)
     monkeypatch.setattr(_ponto, "cargas", lambda *a, **k: [])
-    monkeypatch.setattr(tarefas, "estado", lambda: {
+    monkeypatch.setattr(tarefas, "estado", lambda pista="geral": {
         "rodando": False, "detalhe": None, "interrompida": None})
     monkeypatch.setattr(tarefas, "ultima_do_tipo", lambda tipo: {
         "tipo": "ponto", "disparo": "MARCELO",
@@ -7202,7 +7271,7 @@ def test_a_tela_do_ponto_mostra_a_ultima_que_DEU_CERTO_mas_veio_vazia(
     monkeypatch.setattr(_ponto, "_pronto", lambda: True)
     monkeypatch.setattr(_ponto, "configurado", lambda: True)
     monkeypatch.setattr(_ponto, "cargas", lambda *a, **k: [])
-    monkeypatch.setattr(tarefas, "estado", lambda: {
+    monkeypatch.setattr(tarefas, "estado", lambda pista="geral": {
         "rodando": False, "detalhe": None, "interrompida": None})
     monkeypatch.setattr(tarefas, "ultima_do_tipo", lambda tipo: {
         "tipo": "ponto", "disparo": "MARCELO",

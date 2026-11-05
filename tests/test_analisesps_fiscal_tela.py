@@ -375,7 +375,7 @@ def app_fiscal(monkeypatch):
         "consultado_em": None, "ultimo_recado": "", "documentos": 120,
         "faltam": 30, "em_dia": False}])
     monkeypatch.setattr(tarefas, "estado",
-                        lambda: {"rodando": False, "detalhe": None,
+                        lambda pista="geral": {"rodando": False, "detalhe": None,
                                  "interrompida": None})
     monkeypatch.setattr(preferencias, "ler", lambda pessoa, chave: {})
     monkeypatch.setattr(preferencias, "gravar", lambda pessoa, chave, valor: None)

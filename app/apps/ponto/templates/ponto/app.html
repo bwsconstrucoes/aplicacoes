@@ -947,9 +947,9 @@ async function abrirRonda() {
 // aparelho liberado, ao entrar num navegador desconhecido, responde "é este" — e a
 // liberação vem para cá, sem aprovação nova. O "Não" fica lembrado neste navegador.
 const ROTULO_PERFIL = {INDIVIDUAL: "celular pessoal", COMPARTILHADO: "ponto da obra", LISTA: "ponto de equipe"};
-function oferecerEsteNavegador(lista) {
+function oferecerEsteNavegador(lista, mesmoQueRespondeuNao = false) {
   const lembrado = id => { try { return localStorage.getItem(`ponto_nao_e_${id}`) === "1"; } catch (e) { return false; } };
-  lista = (lista || []).filter(a => !lembrado(a.id));
+  lista = (lista || []).filter(a => mesmoQueRespondeuNao || !lembrado(a.id));
   if (!lista.length) return Promise.resolve(false);
   return new Promise(resolve => {
     $("dlg-corpo").innerHTML = `<h2 style="margin:0 0 6px">Este é o mesmo aparelho?</h2>
@@ -1332,7 +1332,22 @@ async function carregarInicio() {
       <br><small>Se ele já era aprovado: apagar os dados do navegador (ou reinstalar o aplicativo) faz o celular parecer novo — é só pedir a aprovação de novo. Para mexer na localização, mude só a permissão do site, sem apagar os dados.</small></div>`;
     podeBater = false;
   } else if (APARELHO.status === "BLOQUEADO") {
-    avisoAparelho = `<div class="aviso erro">Este celular foi bloqueado para bater ponto. Fale com o DP.</div>`; podeBater = false;
+    // o porquê, o quando e o código (04/11/2026): o DP acha este aparelho na ficha da pessoa › Aparelhos. E quem tem
+    // outro aparelho liberado (outro navegador do mesmo celular, o ícone da tela inicial…) passa a liberação para cá.
+    avisoAparelho = `<div class="aviso erro">Este celular foi bloqueado para bater ponto${APARELHO.bloqueado_em ? ` em ${esc(dataBR(APARELHO.bloqueado_em))} às ${esc(String(APARELHO.bloqueado_em).slice(11, 16))}` : ""}.
+      ${APARELHO.motivo_bloqueio ? `<br><small>Motivo: ${esc(APARELHO.motivo_bloqueio)}</small>` : ""}
+      <br><small>Código deste celular: <b>${esc(APARELHO.codigo || "")}</b> — passe ao DP, que o encontra na sua ficha (Aparelhos).</small>
+      <div id="bloq-outro"></div></div>`; podeBater = false;
+    chamar("/ponto/app/api/aparelho/meus-liberados").then(r => {
+      const lista = (r && r.aparelhos) || [], alvo = $("bloq-outro");
+      if (!alvo || !lista.length) return;
+      alvo.innerHTML = `<p class="pequeno" style="margin:8px 0 4px">Você tem ${lista.length === 1 ? "um aparelho liberado" : "aparelhos liberados"}.
+          Se este é o seu celular de sempre (outro navegador, ou o ícone da tela inicial), a liberação passa para cá:</p>
+        <button class="btn" type="button" id="bloq-usar-este">Este é o meu celular de sempre</button>`;
+      $("bloq-usar-este").onclick = async () => {
+        if (await oferecerEsteNavegador(lista, true)) { aviso("Pronto: este navegador passou a ser o seu aparelho liberado.", "ok"); mostrar("inicio"); }
+      };
+    }).catch(() => {});
   } else if (APARELHO.vencimento && APARELHO.vencimento.vencido) {
     avisoAparelho = `<div class="aviso erro">A liberação deste celular venceu em ${dataBR(APARELHO.vencimento.valido_ate)}: ele parou de bater. Peça a renovação ao RH.</div>`;
     podeBater = false;
@@ -1829,14 +1844,20 @@ const NOMES_DAS_BATIDAS = ["Entrada", "Saída para o intervalo", "Volta do inter
 // terceira —, o sistema entendeu que era a primeira e não deixou pedir as de antes").
 // É só para dar NOME às linhas: o horário quem digita é a pessoa.
 const COSTUME_MIN = [420, 660, 720, 1020];
+// O vigia (04/11/2026): só entrada e saída, e o costume é o da escala dele — na noite, a batida das 6h é a saída.
+const minutoDe = h => { const [hh, mm] = String(h).split(":").map(Number); return hh * 60 + mm; };
+const distanciaNoRelogio = (a, b) => { const d = Math.abs(a - b) % 1440; return Math.min(d, 1440 - d); };
 function semEscala(x) {
   const nomes = x.so_entrada_e_saida ? ["Entrada", "Saída"] : NOMES_DAS_BATIDAS;
-  const ref = x.so_entrada_e_saida ? [COSTUME_MIN[0], COSTUME_MIN[3]] : COSTUME_MIN;
+  const ref = x.so_entrada_e_saida ? ((x.turno_de_costume || []).length === 2 ? x.turno_de_costume.map(minutoDe)
+                                      : [COSTUME_MIN[0], COSTUME_MIN[3]]) : COSTUME_MIN;
   let livres = nomes.map((_, i) => i);
   for (const b of x.batidas) {
     if (!livres.length) break;
-    const [hh, mm] = String(b.hora).split(":").map(Number), m = hh * 60 + mm;
-    const i = livres.reduce((melhor, j) => Math.abs(ref[j] - m) < Math.abs(ref[melhor] - m) ? j : melhor, livres[0]);
+    const m = minutoDe(b.hora);
+    // a volta do relógio só para o turno do vigia (a noite passa da meia-noite); o resto, como sempre foi
+    const dist = x.so_entrada_e_saida && (x.turno_de_costume || []).length === 2 ? distanciaNoRelogio : (r, v) => Math.abs(r - v);
+    const i = livres.reduce((melhor, j) => dist(ref[j], m) < dist(ref[melhor], m) ? j : melhor, livres[0]);
     livres = livres.filter(j => j !== i);
   }
   const resto = livres.map(i => nomes[i]);
@@ -1846,11 +1867,28 @@ function semEscala(x) {
 // (10/10/2026: "tem que buscar do cadastro (…) se os pontos que a pessoa bate são
 // 7, meio-dia, 13 e 17 horas"), e a hora DIGITADA — nada da roleta do relógio, que
 // "é muito lento para selecionar a hora".
+// O DIA DO VIGIA COM UMA BATIDA SÓ, SEM HORÁRIO PREVISTO (05/11/2026, o dono: "apareceu marcado saída, quando, na
+// verdade, nessa situação dele, foi a entrada do dia 1º"). A batida das 18:01 pode ser a ENTRADA de uma noite
+// (faltou a saída da manhã seguinte) ou a SAÍDA do plantão dobrado (faltou a entrada daquela manhã) — o sistema não
+// tem como saber. A linha pergunta, e a escolha decide também o dia da hora digitada (a saída de madrugada é do
+// dia seguinte). O padrão é o de sempre (o costume da escala).
+const papelAPerguntar = x => !x.faltando.length && x.so_entrada_e_saida && !x.previstas.length && x.batidas.length === 1;
 function linhasDoAjuste(x, varios = false) {
   const linha = (rotulo, hora, marcada, i) => `<label class="linha-ajuste">
       <input type="checkbox" data-i="${i}" ${marcada ? "checked" : ""}>
       <span>${esc(rotulo)}</span>
       <input class="hora" data-hora="${i}" inputmode="numeric" maxlength="5" placeholder="00:00" value="${esc(hora || "")}"></label>`;
+  if (papelAPerguntar(x)) {
+    const b = x.batidas[0].hora, padrao = semEscala(x)[0] === "Entrada" ? "ENTRADA" : "SAIDA";
+    return `<label class="linha-ajuste"><input type="checkbox" data-i="0" ${varios ? "" : "checked"}>
+        <span>A batida que faltou foi a:<select data-papel="0" style="display:block; margin-top:4px; font-size:14px">
+          <option value="ENTRADA" ${padrao === "ENTRADA" ? "selected" : ""}>entrada (antes das ${esc(b)})</option>
+          <option value="SAIDA" ${padrao === "SAIDA" ? "selected" : ""}>saída (depois das ${esc(b)})</option>
+        </select></span>
+        <input class="hora" data-hora="0" inputmode="numeric" maxlength="5" placeholder="00:00" value=""></label>
+      <p class="pequeno" style="margin:4px 0 0">Plantão dobrado (bateu a saída da noite de manhã e continuou trabalhando): escolha
+        <b>a entrada</b> e digite a hora em que começou.</p>`;
+  }
   return x.faltando.length ? x.faltando.map((f, i) => linha(f.rotulo, f.sugestao, true, i)).join("")
     : semEscala(x).map((rotulo, i) => linha(rotulo, "", !varios && i === 0, i)).join("");
 }
@@ -1877,6 +1915,18 @@ function horariosMarcados(caixa, x, vazioOk = false) {
   const primeira = x.previstas.length ? x.previstas[0].hora : null;
   const atravessa = x.previstas.some((p, i) => i && p.hora < x.previstas[i - 1].hora);
   const proximo = (() => { const d = new Date(x.data + "T12:00:00"); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10); })();
+  // o vigia com uma batida só: a entrada é antes dela, no mesmo dia; a saída é depois — de madrugada, no dia seguinte
+  const papel = caixa.querySelector("[data-papel]");
+  if (papel && papelAPerguntar(x)) {
+    const b = x.batidas[0].hora;
+    return marcados.map(h => {
+      if (papel.value === "ENTRADA") {
+        if (h >= b) throw new Error(`A entrada tem de ser antes da batida das ${b} — ou escolha “saída”.`);
+        return `${x.data}T${h}:00`;
+      }
+      return `${h <= b ? proximo : x.data}T${h}:00`;
+    });
+  }
   return marcados.map(h => `${atravessa && primeira && h < primeira ? proximo : x.data}T${h}:00`);
 }
 // VÁRIOS DIAS DE UMA VEZ (12/10/2026: "corrigir o ponto do dia 5 ao dia 9 — não tem
@@ -3531,7 +3581,15 @@ function abrirFolhaDoEspelho(imprimirJa) {
   };
 }
 async function abrirFolhaComo(periodo, imprimirJa) {
-  const q = `${periodo}${imprimirJa ? "&imprimir=1" : ""}`;
+  let q = `${periodo}${imprimirJa ? "&imprimir=1" : ""}`;
+  // a folha de OUTRA pessoa: antes, o bilhete de impressão, pedido pela chamada de sempre — a página sozinha não leva
+  // a identificação do aparelho, e no ponto da obra dava "pessoa não encontrada" (05/11/2026)
+  if (ESP.alvo) {
+    try {
+      const r = await chamar(`/ponto/app/api/equipe/${ESP.alvo}/espelho/bilhete?${periodo}`, localNoCorpo(await onde()));
+      q += `&bilhete=${encodeURIComponent(r.bilhete)}`;
+    } catch (e) { return aviso(e.message, "erro"); }
+  }
   const url = ESP.alvo ? comLocal(`/ponto/app/equipe/${ESP.alvo}/espelho/imprimir?${q}`, await onde())
                        : `/ponto/app/espelho/imprimir?${q}`;
   const instalado = (window.matchMedia && matchMedia("(display-mode: standalone)").matches) || navigator.standalone;

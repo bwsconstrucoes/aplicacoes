@@ -350,6 +350,26 @@ def para_json(r: dict, *, mostrar_agendada: bool = False) -> dict:
             "foto_id": r.get("foto_id"), "motivo": r.get("motivo")}
 
 
+def rever_depois_do_ajuste(conn: Connection, colaborador_id: int, dia: dt.date) -> int:
+    """A batida incluída por ajuste pode mostrar que a "entrada" que sorteou as rondas era, na verdade, a SAÍDA
+    (05/11/2026, o dono: o vigia dobrou o plantão — bateu só as 18:01 no dia de descanso, o sistema entendeu entrada
+    de uma noite e mandou 4 rondas, todas perdidas; aprovada a entrada das 6:01, as 18:01 são a saída). As rondas
+    dessa batida que não foram feitas são canceladas, com o motivo; as feitas ficam. Devolve quantas."""
+    if not disponivel(conn):
+        return 0
+    batidas = [int(r["id"]) for r in db.todos(conn, """
+        SELECT id FROM ponto.marcacoes WHERE colaborador_id = :c AND data_referencia = :d AND status <> 'REJEITADA'
+         ORDER BY timestamp_servidor""", c=int(colaborador_id), d=dia)]
+    saidas = [b for i, b in enumerate(batidas) if i % 2 == 1]
+    if not saidas:
+        return 0
+    return db.executar(conn, """
+        UPDATE ponto.rondas SET status = 'CANCELADA',
+               motivo = 'a batida que abriu as rondas era a saída (ajuste aprovado)'
+         WHERE colaborador_id = :c AND entrada_id = ANY(:s)
+           AND status IN ('AGENDADA', 'ENVIADA', 'PERDIDA', 'NAO_ENVIADA')""", c=int(colaborador_id), s=saidas)
+
+
 def da_pessoa(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date) -> dict[str, list[dict]]:
     """{data_referencia ISO: [rondas]} — a hora da ronda AGENDADA não aparece (é
     surpresa até sair: quem consulta o próprio espelho não descobre a próxima)."""

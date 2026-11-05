@@ -249,6 +249,10 @@
     if (e.target.matches("input[type=checkbox], select, input[type=date]")) agendar(500);
   });
   form.addEventListener("input", e => {
+    // A procura DENTRO de um bloco (".procura-opcao") é só para achar a caixa:
+    // se ela também agendasse o envio, a tela se recarregava 0,9 s depois de
+    // digitar e a opção encontrada sumia antes do clique (dono, 03/11/2026).
+    if (e.target.matches(".procura-opcao")) return;
     if (e.target.matches("input[type=search], input[type=text]")) agendar(900);
   });
   form.addEventListener("keydown", e => {

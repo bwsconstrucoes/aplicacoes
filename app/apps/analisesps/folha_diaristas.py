@@ -380,30 +380,22 @@ def quantidade_do_dia(lido: dict, cadastro: dict, vinculo: str,
     return qtd, "sem presença registrada"
 
 
-def _feriados(inicio, fim) -> list:
+def _feriados(inicio, fim):
+    """Os feriados do PONTO no período (04/11/2026 — uma base só de feriados; ver
+    `folha_calendario`). Sem o ponto, nenhum dia é feriado, e fica no log."""
     from . import folha_calendario
-    from .db import consultar
-    if not folha_calendario._pronto():
-        return []
-    return [{"data": l[0], "abrangencia": l[1],
-             "obra": " ".join(str(l[2] or "").split()).upper()}
-            for l in consultar(
-                "SELECT data, abrangencia, obra FROM analisesps.feriado "
-                " WHERE data >= ? AND data <= ?", (inicio, fim))]
+    try:
+        return folha_calendario.feriados_do_ponto(inicio, fim)
+    except Exception:  # noqa: BLE001 — a folha segue sem o adicional de feriado
+        logger.exception("Diaristas: não consegui ler os feriados do ponto")
+        return None
 
 
-def _e_feriado(data, obra: str, feriados: list, codigo_por_nome: dict) -> bool:
-    """O nacional vale sempre; o da obra só na obra — que no ponto é o CÓDIGO e
-    no cadastro de feriados pode ser o NOME."""
-    from . import folha_calendario
-    for f in feriados:
-        if f["data"] != data:
-            continue
-        if f["abrangencia"] == folha_calendario.NACIONAL:
-            return True
-        if obra and (f["obra"] == obra or codigo_por_nome.get(f["obra"]) == obra):
-            return True
-    return False
+def _e_feriado(data, obra: str, feriados, codigo_por_nome: dict) -> bool:
+    """A regra do ponto: o nacional vale sempre; estadual, municipal e o da obra,
+    só onde valem. A obra aqui é o CÓDIGO (o do ponto) — o casamento com a obra do
+    ponto está em `FeriadosDoPonto`. `codigo_por_nome` ficou sem uso."""
+    return bool(feriados and feriados.feriado(data, obra))
 
 
 def adicional_do_dia(data, e_feriado: bool) -> tuple:

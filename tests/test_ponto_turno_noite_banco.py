@@ -315,3 +315,134 @@ def test_a_saida_esticada_ate_o_meio_dia_fecha_o_turno_da_vespera(app, mundo):
     with db.conexao() as conn:
         conn.execute(text(sql))
     assert dias() == [d[0], d[0], d[2], d[2]]
+
+
+def test_o_vigia_nao_tem_intervalo_no_ajuste():
+    """PURA (04/11/2026, o dono: "vigia não tem esse intervalo. Então não deveria aparecer essa opção para o ajuste
+    deles"): o 12x36 e a semanal de um período só são turno corrido; a de dois períodos, não. E o costume do turno
+    é o da escala — no vigia da noite, a batida das 6h é a saída."""
+    from app.apps.ponto.core import apuracao, escalas
+    noite = apuracao.Escala(tipo="CICLO_12X36", periodo_ciclo=(17 * 60, 30 * 60))
+    assert escalas.sem_intervalo(noite) and escalas.turno_de_costume(noite) == ["17:00", "06:00"]
+    so_noite = apuracao.Escala(tipo="SEMANAL", semana={0: [(18 * 60, 30 * 60)], 2: [(18 * 60, 30 * 60)]})
+    assert escalas.sem_intervalo(so_noite) and escalas.turno_de_costume(so_noite) == ["18:00", "06:00"]
+    obra = apuracao.Escala(tipo="SEMANAL", semana={0: [(420, 660), (720, 1020)]})
+    assert not escalas.sem_intervalo(obra) and escalas.turno_de_costume(obra) == []
+    assert not escalas.sem_intervalo(None)
+
+
+def test_a_noite_de_folga_do_vigia_pede_so_entrada_e_saida(app, mundo):
+    """A noite fora do ciclo (sem horário previsto) é onde o aplicativo oferecia as 4 batidas da obra."""
+    from app.apps.ponto import db
+    from app.apps.ponto.core import escalas
+    dp = como(app, mundo["dp"])
+    seg = _segunda_passada()
+    with db.conexao() as conn:
+        noite = escalas.gravar(conn, {"nome": "Vigia noturno 12x36", "tipo": "CICLO_12X36",
+                                      "ciclo_entrada": "17:00", "ciclo_saida": "06:00"})
+        escalas.atribuir(conn, mundo["joao"], noite["id"], seg.isoformat(), por="teste")
+    esp = dp.get(f"/erp/api/ponto/espelho/{mundo['joao']}?competencia={seg:%Y-%m}").get_json()
+    d = next(x for x in esp["dias"] if x["data"] == seg.isoformat())
+    assert d["so_entrada_e_saida"] is True and d["turno_de_costume"] == ["17:00", "06:00"]
+    # a pessoa da obra, de escala com intervalo, continua com as 4
+    esp = dp.get(f"/erp/api/ponto/espelho/{mundo['maria']}?competencia={seg:%Y-%m}").get_json()
+    d = next(x for x in esp["dias"] if x["data"] == seg.isoformat())
+    assert d["so_entrada_e_saida"] is False and d["turno_de_costume"] == []
+
+
+def _aprovar_tudo(dp, sup, oid):
+    for _ in range(4):
+        p = dp.get(f"/erp/api/ponto/ocorrencias/{oid}").get_json()["pedido"]
+        if p["status"] == "APROVADA":
+            return p
+        cli = sup if p["status"] == "AGUARDANDO_SUPERVISOR" else dp
+        assert cli.post(p["decidir_em"], json={"aprovar": True, "motivo": ""}).status_code == 200
+    return p
+
+
+def test_o_plantao_dobrado_vira_extra_no_dia_de_descanso(app, mundo):
+    """04/11/2026, o dono: o vigia bateu a saída às 6:01 (a da escala) e continuou trabalhando até as 18:01 — "a gente
+    precisaria entender como extra esse período (…) porque é um dia de descanso". O ajuste da entrada das 6:01 PEDIDO
+    PARA O DIA SEGUINTE, com a véspera já fechada, fica no dia seguinte (antes ia para a véspera: "já existe batida às
+    06:01"); o realinhamento da escala não o devolve. A saída esquecida da noite continua indo para a noite."""
+    from app.apps.ponto import db
+    from app.apps.ponto.core import escalas
+    from tests.test_ponto_gestao_banco import CPF_JOAO, bater_via_chave, local
+    dp, sup = como(app, mundo["dp"]), como(app, mundo["sup"])
+    seg = _segunda_passada()
+    ter, qua = seg + dt.timedelta(days=1), seg + dt.timedelta(days=2)
+    with db.conexao() as conn:
+        noite = escalas.gravar(conn, {"nome": "Vigia noturno 12x36", "tipo": "CICLO_12X36",
+                                      "ciclo_entrada": "17:00", "ciclo_saida": "06:00"})
+        escalas.atribuir(conn, mundo["joao"], noite["id"], (seg - dt.timedelta(days=6)).isoformat(), por="teste")
+    for d in (seg - dt.timedelta(days=6), seg - dt.timedelta(days=4), seg - dt.timedelta(days=2)):
+        bater_via_chave(app, CPF_JOAO, local(d, 17))
+        bater_via_chave(app, CPF_JOAO, local(d + dt.timedelta(days=1), 6))
+    bater_via_chave(app, CPF_JOAO, local(seg, 17))
+    bater_via_chave(app, CPF_JOAO, local(ter, 6, 1))
+    bater_via_chave(app, CPF_JOAO, local(ter, 18, 1))
+
+    def dia(d):
+        esp = dp.get(f"/erp/api/ponto/espelho/{mundo['joao']}?competencia={d:%Y-%m}").get_json()
+        return next(x for x in esp["dias"] if x["data"] == d.isoformat())
+    r = dp.post("/erp/api/ponto/ocorrencias", json={"tipo": "AJUSTE_BATIDA", "colaborador_id": mundo["joao"],
+                "data_inicio": ter.isoformat(), "horario": f"{ter.isoformat()}T06:01:00", "obra": "PG-A",
+                "descricao": "dobrou o plantão até as 18h"})
+    assert r.status_code == 201, r.get_json()
+    pedido = _aprovar_tudo(dp, sup, r.get_json()["ocorrencia"]["id"])
+    assert pedido["data_inicio"] == ter.isoformat()
+    d = dia(ter)
+    assert [b["hora"] for b in dia(ter)["batidas"]] == ["06:01", "18:01"]
+    assert d["trabalhado"] == 12 * 60 and d["extra"] == 12 * 60 and "TRABALHO_EM_DESCANSO" in d["alertas"]
+    assert dia(seg)["trabalhado"] == 13 * 60 + 1 and dia(seg)["situacao"] == "OK"
+    with db.conexao() as conn:                                   # trocar a escala não devolve a batida para a véspera
+        escalas.realinhar_dias(conn, mundo["joao"], seg)
+    assert [b["hora"] for b in dia(ter)["batidas"]] == ["06:01", "18:01"]
+    # a saída esquecida de uma noite (véspera aberta) continua indo para a noite
+    bater_via_chave(app, CPF_JOAO, local(qua, 17))
+    qui = qua + dt.timedelta(days=1)
+    if qui <= dt.date.today() - dt.timedelta(days=1):
+        r = dp.post("/erp/api/ponto/ocorrencias", json={"tipo": "AJUSTE_BATIDA", "colaborador_id": mundo["joao"],
+                    "data_inicio": qui.isoformat(), "horario": f"{qui.isoformat()}T06:00:00", "obra": "PG-A",
+                    "descricao": "esqueci de bater a saída"})
+        assert r.status_code == 201, r.get_json()
+        assert r.get_json()["ocorrencia"]["data_inicio"] == qua.isoformat()
+
+
+def test_o_segundo_ponto_do_plantao_dobrado_comeca_o_dia_novo(app, mundo):
+    """04/11/2026, o dono: "a gente tem que bater outro ponto, depois do 6:01, para valer como o próximo registro".
+    A batida 2 minutos ou mais depois da saída da manhã começa o dia (eram 10; o dono, no mesmo dia: "achei 10 minutos
+    muito tempo"); o toque duplo de segundos e a batida no meio da noite (antes das 4h) não."""
+    from app.apps.ponto import db
+    from app.apps.ponto.core import escalas
+    from tests.test_ponto_gestao_banco import CPF_JOAO, bater_via_chave, local
+    dp = como(app, mundo["dp"])
+    seg = _segunda_passada()
+    ter, qua, qui = (seg + dt.timedelta(days=n) for n in (1, 2, 3))
+    with db.conexao() as conn:
+        noite = escalas.gravar(conn, {"nome": "Vigia noturno 12x36", "tipo": "CICLO_12X36",
+                                      "ciclo_entrada": "17:00", "ciclo_saida": "06:00"})
+        escalas.atribuir(conn, mundo["joao"], noite["id"], seg.isoformat(), por="teste")
+
+    def dias():
+        with db.conexao() as conn:
+            return [(r["data_referencia"], r["h"]) for r in db.todos(conn, """
+                SELECT data_referencia, to_char(timestamp_servidor AT TIME ZONE 'America/Fortaleza', 'HH24:MI') AS h
+                  FROM ponto.marcacoes WHERE colaborador_id = :c ORDER BY timestamp_servidor""", c=mundo["joao"])]
+    for h in ((seg, 17, 0), (ter, 6, 1), (ter, 6, 2), (ter, 6, 5), (ter, 18, 1)):
+        bater_via_chave(app, CPF_JOAO, local(h[0], h[1], h[2]))
+    assert dias() == [(seg, "17:00"), (seg, "06:01"), (seg, "06:02"), (ter, "06:05"), (ter, "18:01")]
+    # o segundo ponto vai para a conferência do DP, com o motivo; o resto, não
+    with db.conexao() as conn:
+        st = {r["h"]: (r["status"], r["motivo_analise"] or "") for r in db.todos(conn, """
+            SELECT to_char(timestamp_servidor AT TIME ZONE 'America/Fortaleza', 'HH24:MI') AS h, status, motivo_analise
+              FROM ponto.marcacoes WHERE colaborador_id = :c""", c=mundo["joao"])}
+    assert st["06:05"][0] == "EM_ANALISE" and "plantão dobrado" in st["06:05"][1]
+    assert "plantão dobrado" not in st["18:01"][1] and "plantão dobrado" not in st["06:02"][1]
+    # a batida no meio da noite não fecha a noite: a saída das 6h continua dela
+    for h in ((qua, 17, 0), (qui, 2, 0), (qui, 6, 0)):
+        bater_via_chave(app, CPF_JOAO, local(h[0], h[1], h[2]))
+    assert dias()[-3:] == [(qua, "17:00"), (qua, "02:00"), (qua, "06:00")]
+    esp = dp.get(f"/erp/api/ponto/espelho/{mundo['joao']}?competencia={ter:%Y-%m}").get_json()
+    d = next(x for x in esp["dias"] if x["data"] == ter.isoformat())
+    assert d["trabalhado"] == 11 * 60 + 56 and d["extra"] == 11 * 60 + 56

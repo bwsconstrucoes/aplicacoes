@@ -1793,6 +1793,11 @@ def cenario_gravar():
         cenarios.marcar_peso(cenario_id, request.form.get("nivel", ""),
                              request.form.get("chave", ""),
                              request.form.get("pct"))
+    elif acao == "pesos_da_arvore" and cenario_id:
+        # a árvore inteira num clique (05/11/2026): grupo e categorias juntos
+        cenarios.marcar_pesos_da_arvore(cenario_id, zip(
+            request.form.getlist("item_nivel"), request.form.getlist("item_chave"),
+            request.form.getlist("item_pct")))
     elif acao == "peso_em_lote" and cenario_id:
         cenarios.marcar_pesos(cenario_id, request.form.get("nivel", "lancamento"),
                               request.form.getlist("marcado"),

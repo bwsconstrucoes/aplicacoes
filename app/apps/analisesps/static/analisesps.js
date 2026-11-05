@@ -920,6 +920,45 @@ window.ligarFicha = function (raiz) {
     campo.addEventListener("click", () => campo.select());
   });
 
+  // "ATUALIZAR DA PLANILHA" (03/11/2026): relê só esta SP na SPsBD. Fica antes
+  // da caixa de ações porque vale para quem só consulta — essa caixa não
+  // existe para esse perfil, e o retorno logo abaixo pularia este botão.
+  // No modal, recarrega SÓ a ficha (a lista por trás continua como estava,
+  // com a rolagem e a marcação); na página inteira, a página.
+  (raiz || document).querySelectorAll(".ficha-da-planilha").forEach(botao => {
+    if (botao.dataset.ligada) return;
+    botao.dataset.ligada = "1";
+    botao.addEventListener("click", async () => {
+      const original = botao.textContent;
+      botao.disabled = true;
+      botao.textContent = "Lendo a planilha…";
+      let d;
+      try {
+        const r = await fetch(botao.dataset.url, {method: "POST"});
+        d = await r.json();
+      } catch (e) {
+        d = {ok: false, erro: "Falhou a comunicação com o servidor: " + e};
+      }
+      botao.disabled = false;
+      botao.textContent = original;
+      if (!d.ok) { alert("Não deu certo: " + (d.erro || "erro desconhecido")); return; }
+      const msg = d.mudou && d.mudou.length
+          ? "Atualizada da planilha. Mudou: " + d.mudou.join(", ") + "."
+          : "Atualizada: a ficha já estava igual à planilha.";
+      const noModal = botao.closest("#ficha-modal-corpo");
+      if (noModal && window.abrirFicha) {
+        await window.abrirFicha(botao.dataset.ficha, botao.dataset.sp);
+        const aviso = document.createElement("div");
+        aviso.className = "aviso ok ficha-da-planilha-msg";
+        aviso.textContent = msg;
+        noModal.prepend(aviso);
+      } else {
+        alert(msg);
+        location.reload();
+      }
+    });
+  });
+
   const caixa = (raiz || document).querySelector(".ficha-acoes");
   if (!caixa || caixa.dataset.ligada) return;
   caixa.dataset.ligada = "1";

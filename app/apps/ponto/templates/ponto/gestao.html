@@ -675,7 +675,11 @@
 
 {% elif aba_ponto == "ponto_espelho" %}
 {# --------------------------------------------------------------- ESPELHO #}
-<h2 id="e-titulo">Espelho de ponto <small id="e-sub"></small></h2>
+<h2 id="e-titulo">Espelho de ponto <small id="e-sub"></small>
+  {# 03/11/2026, o dono: "a partir do espelho do ponto eu deveria poder acessar o cadastro da pessoa pra facilitar
+     qualquer ajuste" — a ficha abre por cima, na aba Cadastro; ao fechar, o espelho se refaz #}
+  <button class="btn secundario" id="e-btn-cadastro" type="button" hidden
+          style="margin-left:10px; font-size:13px; vertical-align:middle">👤 Cadastro da pessoa</button></h2>
 <div id="mensagem"></div>
 <div id="e-fechado"></div>
 <div class="barra-acoes" id="e-acoes" hidden>
@@ -1844,8 +1848,9 @@ function painelAparelhos() {
       ${PODE_TRATAR ? `<button class="btn" type="button" data-dp-cad="forma" style="margin-left:8px">Ligar a ronda…</button>` : ""}</div>` : ""}
     ${PODE_TRATAR ? `<div class="barra-acoes" style="margin:0 0 10px"><button class="btn secundario" type="button" data-dp-cad="forma">
       Acesso no aplicativo (celular, pedidos, ronda)…</button></div>` : ""}`;
-  return topo + (ap.length ? `<table><thead><tr><th>Aparelho</th><th>Uso</th><th>Situação</th><th>Último uso</th><th></th></tr></thead><tbody>
-    ${ap.map(a => `<tr><td>${escapar(a.descricao || "sem nome")}</td><td>${escapar(rotuloPerfil(a.perfil))}</td>
+  return topo + (ap.length ? `<table><thead><tr><th>Aparelho</th><th>Código</th><th>Uso</th><th>Situação</th><th>Último uso</th><th></th></tr></thead><tbody>
+    ${ap.map(a => `<tr><td>${escapar(a.descricao || "sem nome")}</td><td class="dados" title="o código que o celular mostra">${escapar(a.codigo || "—")}</td>
+      <td>${escapar(rotuloPerfil(a.perfil))}</td>
       <td>${seloAparelho(a.status)}${a.motivo_bloqueio ? `<small>${escapar(a.motivo_bloqueio)}</small>` : ""}${a.arquivado_em ? `<small>arquivado</small>` : ""}</td>
       <td class="dados">${escapar(quando(a.ultimo_uso_em))}</td>
       <td>${!PODE_CONFIGURAR || a.arquivado_em ? "" : a.status === "PENDENTE"
@@ -3869,7 +3874,9 @@ async function qdIncluir() {
   linhas.forEach(l => l.faltando.forEach(f => { rotulos[f.rotulo] = (rotulos[f.rotulo] || 0) + 1; }));
   const opcoes = Object.entries(rotulos).sort((a, b) => b[1] - a[1]).map(([r, n]) => ({valor: r, rotulo: `${r} — falta em ${n} das ${linhas.length}`}));
   // as quatro de sempre, também, para quem não tem escala ou bateu fora do previsto (aí com a hora digitada)
-  ["Entrada", "Saída para o intervalo", "Volta do intervalo", "Saída"].filter(x => !rotulos[x])
+  // só vigias marcados (turno corrido, 04/11/2026): sem as do intervalo
+  (linhas.every(l => l.so_entrada_e_saida) ? ["Entrada", "Saída"] : ["Entrada", "Saída para o intervalo", "Volta do intervalo", "Saída"])
+    .filter(x => !rotulos[x])
     .forEach(x => opcoes.push({valor: x, rotulo: `${x} — digite a hora`}));
   const r = await perguntar({titulo: `Incluir uma batida — ${contar(linhas.length, "linha", "linhas")}`,
     aviso: "Cada inclusão vira um ajuste da gestão, aprovado na hora e guardado com o motivo e o seu nome. " +
@@ -3969,6 +3976,7 @@ async function carregarPessoasDoEspelho() {
 
 function semPessoa() {
   ESP = null;
+  els("e-btn-cadastro").hidden = true;
   els("e-titulo").childNodes[0].textContent = "Espelho de ponto ";
   els("e-sub").textContent = "";
   els("e-kpis").innerHTML = "";
@@ -3977,6 +3985,15 @@ function semPessoa() {
   els("e-acoes").hidden = true;
   els("e-vazio").classList.remove("oculto");
 }
+
+// A ficha da pessoa, na aba Cadastro (escala, jornada, se bate ponto, acesso no aplicativo…); fechada, o espelho
+// é refeito — uma escala trocada ali já aparece aqui.
+els("e-btn-cadastro").addEventListener("click", async () => {
+  if (!ESP) return;
+  await abrirPessoaPainel(ESP.pessoa.id, null, "cadastro", ESP.competencia);
+  const dlg = els("dlg-pessoa");
+  if (dlg) dlg.addEventListener("close", () => carregarEspelho(), {once: true});
+});
 
 async function carregarEspelho() {
   atualizarLinksDoEspelho();
@@ -4007,6 +4024,7 @@ function desenharEspelho() {
   els("e-sub").textContent = [documento(p.cpf), p.obra ? `obra ${p.obra}` : "sem obra",
     rotuloJornada(p.tipo_jornada), mesBR(ESP.competencia)].join(" · ");
   els("e-vazio").classList.add("oculto");
+  els("e-btn-cadastro").hidden = false;
   els("e-fechado").innerHTML = ESP.competencia_fechada
     ? `<div class="aviso info"><b>Mês fechado.</b> Os números deste mês estão travados:
         não dá para pedir ajuste, lançar afastamento nem decidir batida. Para mudar,

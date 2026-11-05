@@ -840,6 +840,44 @@ exceção à decisão de 05/10/2026 ("ponto no WhatsApp, o resto no Telegram"),
 porque quem está na obra não tem Telegram. Registrada no
 `tests/test_mensageria.py` com o motivo.
 
+### 05/11/2026 — Busca automática de feriados numa base pública (`ponto/core/feriados_busca.py`)
+
+**Publicado em 05/11/2026.** Primeira fonte externa de
+feriados: os arquivos JSON da base pública **feriados-brasil** (GitHub
+`joaopbini/feriados-brasil`, MIT), baixados de `raw.githubusercontent.com` com teto de 15 MB
+por arquivo (§3.7). Sem dependência nova (`requests` já existe) e sem credencial. Grava em
+`ponto.feriados` só para UFs e municípios de obras ativas, nunca antes do mês anterior, sem
+sobrescrever e sem recriar o que foi excluído à mão. Disparada pela etapa de apoios do Análise
+de SPs (de hora em hora) e pela leitura da base de obras do ponto. Detalhe no `HISTORICO.md`
+do ponto.
+
+### 04/11/2026 — Uma base só de feriados: a do ponto (Análise de SPs lê `ponto.feriados`)
+
+**Publicado em 04/11/2026.** Pedido do dono: *"a parte de
+feriados deve vir do ponto. Dessa forma ficaremos somente com uma base de feriados."* A
+folha do Análise de SPs (auxílio alimentação, adicional de feriado dos diaristas, lançar
+batidas) passa a ler `ponto.feriados` com a regra do próprio ponto
+(`ponto/core/feriados.Calendario`), por `analisesps/folha_calendario.FeriadosDoPonto`.
+`analisesps.feriado` fica no banco sem uso (o que o ponto não cobre pode ser levado por
+botão). Mudar a regra de feriado do ponto muda a folha junto — é a intenção. Detalhe nos
+históricos das duas áreas.
+
+### 03/11/2026 — Prazo para o worker sair na renovação (`gunicorn.conf.py`, na raiz)
+
+**Publicado em 03/11/2026** (com o "pode" do dono). O dono: *"só voltou depois que eu resetei no
+render"*. O log mostrava `Autorestarting worker after current request.` → `Worker exiting` e nenhum
+`Booting worker` depois. Causa, reproduzida com o gunicorn 26.2: na renovação do `--max-requests`, o
+worker espera o `--graceful-timeout` (120 s) e encerra, mas o Python, ao sair, espera TODA thread de
+trabalho terminar — inclusive a de um pedido que ainda está rodando. Com `--workers 1`, o mestre só sobe o
+substituto quando o antigo morre, e quem o mata é o `--timeout 3600`: até uma hora fora do ar.
+O `gunicorn.conf.py` (lido sozinho pelo gunicorn da pasta onde ele inicia, sem mexer no Procfile nem no
+Start Command do Render) acrescenta o gancho `worker_exit`: se o processo não sair em 30 s, escreve no log
+`saída forçada. Threads presas: …` com onde cada thread estava, e força a saída. Custo aceito: o pedido que
+ainda estiver rodando depois dos 120 s + 30 s é cortado (ele já seria abandonado pelo gunicorn; a diferença
+é que o resto do sistema não fica junto com ele). O gancho não faz nada quando é chamado no processo mestre.
+Testes em `tests/test_gunicorn_conf.py`. Se a linha `saída forçada` aparecer no log, a pilha logo abaixo diz
+qual rota prendeu — é por ela que se ataca a causa de fundo.
+
 ### 31/10/2026 — A medição da lentidão (`app/lentidao.py`, ligada no `app/main.py`)
 
 **Publicado em 31/10/2026** (com o "pode" do dono). O dono: *"lentidão no ERP de maneira geral (…) memória

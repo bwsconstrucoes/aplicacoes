@@ -17,11 +17,13 @@ from decimal import Decimal as D
 
 import pytest
 
+from tests._feriados_do_ponto import _schema_ponto2, feriados_ponto  # noqa: F401
+
 pytestmark = pytest.mark.banco
 
 
 @pytest.fixture
-def banco_auxilio(banco_analisesps):
+def banco_auxilio(feriados_ponto):
     """O schema `analisesps` limpo para este teste.
 
     ⚠️ ERA UM REFAZ-TUDO: `DROP SCHEMA` mais os 36 arquivos de migração, A CADA
@@ -31,7 +33,11 @@ def banco_auxilio(banco_analisesps):
 
     Agora o schema nasce uma vez por sessão e as tabelas são esvaziadas entre os
     testes. O isolamento é o mesmo: tabelas vazias e contadores de `id` zerados.
-    Ver `banco_analisesps` no `conftest.py`."""
+    Ver `banco_analisesps` no `conftest.py`.
+
+    Os feriados vêm do PONTO desde 04/11/2026: a fixture devolve o ajudante que
+    grava feriado lá (`tests/_feriados_do_ponto.py`), com a tabela vazia."""
+    return feriados_ponto
 
 GERLANIO = "99713349334"
 
@@ -130,7 +136,7 @@ def test_o_caminho_INTEIRO_da_conta_vem_na_resposta(banco_auxilio):
 def test_a_ALIMENTACAO_desconta_feriado(banco_auxilio):
     from app.apps.analisesps import folha_auxilio as fx, folha_calendario as fc
 
-    fc.gravar_feriado("07/09/2026", fc.NACIONAL)      # segunda
+    banco_auxilio.nacional(dt.date(2026, 9, 7))      # segunda
     r = fx.calcular_pessoa(fx.ALIMENTACAO, ficha(), INICIO, FIM)
     assert r["feriados"] == 1
     assert r["dias"] == 21
@@ -142,7 +148,7 @@ def test_o_TRANSPORTE_NAO_desconta_feriado(banco_auxilio):
     transporte que era devido, em ~500 pessoas, todo mês."""
     from app.apps.analisesps import folha_auxilio as fx, folha_calendario as fc
 
-    fc.gravar_feriado("07/09/2026", fc.NACIONAL)
+    banco_auxilio.nacional(dt.date(2026, 9, 7))
     r = fx.calcular_pessoa(fx.TRANSPORTE, ficha(), INICIO, FIM)
     assert r["feriados"] == 0, "o transporte não desconta feriado"
     assert r["dias"] == 22
@@ -178,7 +184,9 @@ def test_as_DUAS_verbas_descontam_FERIAS(banco_auxilio):
 def test_o_feriado_da_OBRA_desconta_so_de_quem_e_da_obra(banco_auxilio):
     from app.apps.analisesps import folha_auxilio as fx, folha_calendario as fc
 
-    fc.gravar_feriado("14/09/2026", fc.POR_OBRA, obra="CREPEOLINDA")
+    banco_auxilio.obra("FC-OLINDA", "CREPEOLINDA")
+    banco_auxilio.obra("FC-AREIAS", "CREPEAREIAS")
+    banco_auxilio.da_obra(dt.date(2026, 9, 14), "FC-OLINDA")
     daqui = fx.calcular_pessoa(fx.ALIMENTACAO, ficha(), INICIO, FIM)
     dalhures = fx.calcular_pessoa(fx.ALIMENTACAO,
                                   ficha(obra_cadastro="CREPEAREIAS"),
@@ -192,7 +200,7 @@ def test_o_feriado_na_SEXTA_nao_desconta_de_quem_e_segunda_a_quinta(banco_auxili
     ninguém ia pagar. A régua do desconto é a MESMA da modalidade."""
     from app.apps.analisesps import folha_auxilio as fx, folha_calendario as fc
 
-    fc.gravar_feriado("11/09/2026", fc.NACIONAL)     # sexta
+    banco_auxilio.nacional(dt.date(2026, 9, 11))     # sexta
     seg_qui = fx.calcular_pessoa(
         fx.ALIMENTACAO, ficha(modo_alimentacao="Segunda à Quinta"), INICIO, FIM)
     seg_sex = fx.calcular_pessoa(fx.ALIMENTACAO, ficha(), INICIO, FIM)
@@ -203,7 +211,7 @@ def test_o_feriado_na_SEXTA_nao_desconta_de_quem_e_segunda_a_quinta(banco_auxili
 def test_valor_FECHADO_nao_desconta_dia_nenhum(banco_auxilio):
     from app.apps.analisesps import folha_auxilio as fx, folha_calendario as fc
 
-    fc.gravar_feriado("07/09/2026", fc.NACIONAL)
+    banco_auxilio.nacional(dt.date(2026, 9, 7))
     fc.gravar_ferias(GERLANIO, "01/09/2026", "10/09/2026")
     r = fx.calcular_pessoa(
         fx.ALIMENTACAO,
@@ -785,6 +793,28 @@ def test_as_ausencias_contam_so_nos_dias_da_modalidade():
     dias = [_dia(sexta, "FALTA NÃO JUSTIFICADA"), _dia(segunda, "ATESTADO")]
     assert len(fx.ausencias_do_mes(dias, INICIO, FIM, "Segunda à Sexta")) == 2
     assert len(fx.ausencias_do_mes(dias, INICIO, FIM, "Segunda à Quinta")) == 1
+
+
+def test_FALTA_do_MobPonto_em_FERIADO_nao_vira_desconto(banco_auxilio):
+    """05/11/2026, o dono: *"tem feriado cadastrado, mas não tá aparecendo como
+    feriado e tá mandando aplicar desconto (…) o estadual deu certo e o nacional
+    não."* O MobPonto escreve FALTA no feriado que não estava cadastrado lá; o
+    feriado (do ponto, a base única) manda. Sem isto, a alimentação descontava o
+    dia duas vezes: na base, como feriado, e de novo como falta."""
+    from app.apps.analisesps import folha_auxilio as fx
+    banco_auxilio.nacional(dt.date(2026, 9, 7), "Independência")       # segunda
+    banco_auxilio.obra("FC-OLINDA", "CREPEOLINDA", uf="PE", municipio="Olinda")
+    banco_auxilio.estadual(dt.date(2026, 9, 9), "PE")                    # quarta
+    ponto = [_dia(dt.date(2026, 9, 7), "FALTA NÃO JUSTIFICADA"),
+             _dia(dt.date(2026, 9, 8), "FALTA NÃO JUSTIFICADA"),
+             _dia(dt.date(2026, 9, 9), "FALTA NÃO JUSTIFICADA")]
+    for tipo in (fx.ALIMENTACAO, fx.TRANSPORTE):
+        r = fx.calcular_pessoa(tipo, ficha(), INICIO, FIM, ausencias=ponto)
+        assert [a["data"] for a in r["ausencias"]] == [dt.date(2026, 9, 8)], tipo
+    # Quem é de OUTRA obra (outro estado) tem o 09/09 como falta de verdade.
+    r = fx.calcular_pessoa(fx.ALIMENTACAO, ficha(obra_cadastro="CREPEAREIAS"), INICIO, FIM,
+                           ausencias=ponto)
+    assert [a["data"] for a in r["ausencias"]] == [dt.date(2026, 9, 8), dt.date(2026, 9, 9)]
 
 
 def test_o_desconto_das_ausencias_e_PROPOSTO_e_so_vale_APLICADO(banco_auxilio):

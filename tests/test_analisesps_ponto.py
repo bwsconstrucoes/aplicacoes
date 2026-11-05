@@ -1445,8 +1445,8 @@ def test_o_ponto_de_UMA_PESSOA_corre_junto_com_a_carga_do_mes(banco_ponto, fecha
         r = tarefas.disparar(modo, disparo="teste")
         assert r["ok"], r
     assert iniciados == ["ponto_lancar"]
-    # A barra geral continua mostrando a carga do mês, não o lançamento.
-    assert tarefas.estado()["detalhe"]["tipo"] == "ponto"
+    # A carga do mês tem a pista dela desde 31/10/2026 (migração 055).
+    assert tarefas.estado("ponto")["detalhe"]["tipo"] == "ponto"
     assert tarefas.estado("pessoa")["detalhe"]["tipo"] == "ponto_lancar"
 
 

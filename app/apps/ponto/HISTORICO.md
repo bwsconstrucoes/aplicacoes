@@ -500,6 +500,183 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 05/11/2026 (segunda) — "Baixar o espelho" de um colaborador no ponto da obra dava "pessoa não encontrada"
+
+- **O relato** (Weverton, obra ESCADELIA): *"Ao clicar em Baixar o espelho (PDF) aparece a mensagem: Não foi possível
+  abrir o espelho — pessoa não encontrada. E ao clicar em Imprimir direto também não gera (…) O meu espelho consegui.
+  O erro está acontecendo só com os colaboradores."*
+- **A causa.** A folha para imprimir é uma PÁGINA que o aplicativo abre, não uma chamada dele — e a página não leva a
+  identificação do aparelho (ela vai nos cabeçalhos das chamadas, e uma página aberta não tem como levá-los). Sem
+  ela, o sistema não sabia que era o ponto da obra e conferia o alcance PESSOAL de quem entrou, em vez do alcance do
+  aparelho (a pessoa consultada pelo CPF agora há pouco). O espelho na tela funcionava (é chamada); só a folha caía.
+  O próprio espelho funcionava porque não passa por alcance nenhum. Vinha desde o espelho no aplicativo (28/10).
+- **O conserto.** Antes de abrir a folha de outra pessoa, o aplicativo pede um **bilhete de impressão** pela chamada
+  de sempre (com a identificação do aparelho e o MESMO alcance da consulta). O bilhete é assinado e vale **2 minutos**,
+  só para aquela pessoa, aquele período e quem pediu — e ainda exige alguém logado. A página aberta com o bilhete
+  não confere o alcance de novo: confere a assinatura (`qr.emitir_impressao` / `conferir_impressao`).
+- Teste: `test_no_ponto_da_obra_a_folha_de_outra_pessoa_abre_com_o_bilhete` reproduz o erro (sem bilhete, 404) e
+  confere bilhete de outra pessoa, de outro mês, vencido, sem login e de quem não foi consultado.
+- **Não verificado:** a abertura no celular de verdade (no navegador instalado como aplicativo, ela abre na mesma
+  janela; fora dele, numa aba nova). Uma chamada a mais antes de abrir a aba pode fazer o bloqueador de janelas do
+  navegador barrar a aba — nesse caso o aplicativo já cai para abrir na mesma janela, como antes.
+
+## 05/11/2026 — O ajuste do plantão dobrado pergunta "entrada ou saída"; as rondas falsas; o aparelho que volta sozinho
+
+- **"Foi a entrada ou a saída?"** O dono, no vigia que dobrou do dia 31 para o 1º (bateu só as 18:01 no descanso):
+  *"apareceu marcado saída, quando, na verdade, foi a entrada do dia 1º"*. No dia do vigia SEM horário previsto e
+  com UMA batida, o aplicativo não tem como saber se ela é a entrada de uma noite (falta a saída da manhã seguinte)
+  ou a saída do plantão dobrado (falta a entrada daquela manhã). A linha do ajuste agora pergunta — "A batida que
+  faltou foi a: entrada (antes das 18:01) / saída (depois das 18:01)" —, e a escolha decide o dia da hora digitada
+  (a saída de madrugada é do dia seguinte). O padrão continua o de antes (o costume da escala). O servidor já
+  punha o 06:01 no dia certo (o `turno_seguido` de 04/11); a mudança é da tela.
+- **As rondas da falsa entrada.** As 18:01 sortearam 4 rondas (o sistema entendeu entrada de noite), todas
+  perdidas. Agora, ao aprovar um ajuste, as rondas abertas por uma batida que passou a ser SAÍDA são canceladas,
+  com o motivo (`rondas.rever_depois_do_ajuste`); as feitas ficam.
+- **O aparelho bloqueado por "desligamento" volta sozinho.** O dono: *"em Pessoas ele está normal, ativo, só que em
+  Aparelhos está 'bloqueado — responsável desligado, aprove de novo com outro responsável'. Claramente uma falha"*.
+  O cadastro disse desligado por um tempo (a data de saída, a fase do Pipefy — ou a pessoa sumiu da base por um
+  momento: quem não é achado é tratado como desligado) e voltou a ativo, mas o bloqueio automático não se desfazia.
+  Agora, a cada 15 minutos, o que o bloqueio automático bloqueou (pelo motivo que ele grava) volta a valer quando a
+  pessoa está ativa de novo — o celular pessoal só se ela não tiver outro aprovado. O bloqueio à mão, a troca de
+  celular e o arquivado não voltam; a lista do aparelho de equipe, retirada no desligamento, também não.
+- Perguntado no mesmo dia (vigia com "Devido à insuficiência de memória, não foi possível concluir a operação
+  anterior" ao tirar a foto): é o Android fechando o navegador enquanto a câmera do celular está aberta (o celular
+  pessoal usa a câmera do sistema; o ponto da obra, a câmera dentro da página). A foto dentro da página no celular
+  pessoal resolveria na origem — o dono decidiu NÃO fazer.
+**Publicado em 05/11/2026** (com o "pode" do dono) — SEM MIGRAÇÃO.
+
+## 04/11/2026 (quinta) — O segundo ponto do plantão em 2 minutos; o manual do celular bloqueado
+
+- **2 minutos, não 10.** O dono: *"achei 10 minutos muito tempo entre as batidas. Isso é realmente necessário?"* Não
+  era: os 10 minutos vinham da regra da batida repetida, e o segundo ponto do plantão dobrado já vai para a
+  conferência do DP, que rejeita o toque a mais. Agora o segundo ponto começa o dia novo a partir de
+  `escalas.SEGUNDO_PONTO_MIN` = 2 minutos depois da saída da noite. A regra da batida repetida (10 min, no cálculo
+  do dia e na pergunta "bater de novo?" do ponto da obra) não mudou.
+- **O manual** (parte 4, "Este celular foi bloqueado: como resolver"): por que acontece (outro navegador, ícone ×
+  navegador, aba anônima, dados limpos, iPhone pelo Safari) e os 2 toques — "Este é o meu celular de sempre" e
+  "Sim" —, com as 3 telas; a linha da tabela de mensagens e uma dúvida nova. PDF refeito (28 páginas). O dono
+  recebeu também a imagem e o texto para o WhatsApp.
+- Publicados SEM a janela "Liberar obras no aplicativo" (04/11, quarta), que segue no ramo esperando a decisão do
+  dono — ele tinha pedido só para saber onde se libera.
+**Publicado em 04/11/2026** (com o "pode" do dono) — SEM MIGRAÇÃO.
+
+## 04/11/2026 (terceira) — O plantão dobrado do vigia; e o celular "bloqueado" que ninguém entendia
+
+**Plantão dobrado.** O dono: *"um vigia dobrou o serviço: bateu a saída no dia 31/10 às 6:01, que é a saída natural
+da escala, só que continuou trabalhando até as 18:00 (…) precisaria entender como extra esse período, porque é um dia
+de descanso."* E depois: *"a gente tem que bater outro ponto, depois do 6:01 (…) tem a situação de erro, ele pode
+bater e bater de novo e não bater mais (…) e quando houver a segunda batida mais a outra, o sistema identificaria,
+mas o DP precisaria validar que é um plantão dobrado."* Antes: toda batida da manhã de quem é da noite ia para a
+véspera — o segundo ponto virava a 3ª batida da noite, e o ajuste da entrada das 6:01 era recusado ("já existe batida
+às 06:01", porque também ia para a véspera).
+- **A batida de verdade** (`escalas.e_plantao_dobrado`): antes das 10h, quando a véspera JÁ FECHOU com a saída da
+  manhã (a partir das 4h — a batida das 2h no meio do turno não fecha nada) e passaram 10 minutos ou mais dessa
+  saída (o toque duplo continua sendo a mesma batida), a batida começa o dia novo e vai **para a conferência do DP**
+  (EM_ANALISE, "possível plantão dobrado"). Sozinha no dia não forma par e não dá hora — o DP rejeita o toque a mais;
+  com a saída mais tarde, o dia conta como trabalho no descanso (extra) e o DP valida.
+- **O ajuste** (`escalas.turno_seguido`): a entrada pedida PARA O DIA SEGUINTE, com a véspera fechada, fica no dia
+  pedido — mesmo colada na saída (6:01 e 6:01). Vai pela validação de sempre. O pedido ganha o subtipo
+  `TURNO_SEGUIDO`, e o realinhamento das escalas não devolve a batida para a véspera.
+- Ensaio no banco de teste: 17:00 → 6:01 (noite, 13h01) e 6:01 → 18:01 (descanso: 12h de extra, com os avisos de
+  trabalho no descanso, fora do ciclo e interjornada curta, para o DP decidir).
+
+**Celular bloqueado.** O dono: *"ele bateu dia 1º; dia 3 não conseguiu: 'Este celular foi bloqueado para bater ponto.
+Fale com o DP.' O cadastro está normal, o celular está aprovado (…) e ninguém consegue entender."* A causa mais
+provável: dois aparelhos para o sistema — no iPhone, o ícone da tela inicial e o Safari guardam a identificação
+separada; outro navegador também. Aprovar um celular pessoal bloqueia o outro da mesma pessoa (um por pessoa), e o
+"Este é o mesmo aparelho?" só aparecia ao entrar com CPF e PIN — quem já estava conectado nunca o via.
+- O celular bloqueado diz **quando, por quê e qual é** (o código) e, se a pessoa tem outro aparelho liberado, mostra
+  "Este é o meu celular de sempre": a liberação passa para ele na hora, sem aprovação nova (o mesmo caminho do
+  "mesmo aparelho", que agora vale a qualquer momento — `/app/api/aparelho/meus-liberados`).
+- A ficha da pessoa › Aparelhos ganhou a coluna **Código** — o mesmo que o celular mostra —, para o DP saber qual
+  é o aparelho na mão da pessoa.
+- Não verificado: qual foi, de fato, o caso do vigia do dia 3 — com o código que o celular dele mostra, a ficha diz.
+**Publicado em 04/11/2026** (com o "pode" do dono) — SEM MIGRAÇÃO.
+
+## 04/11/2026 (segunda) — O ajuste do vigia sem o intervalo
+
+O dono: *"alguém tentou fazer um ajuste para um vigia (…) apareceu para ajustar entrada, saída para intervalo e
+volta do intervalo. Não existe, né? Vigia não tem esse intervalo."* A causa: no dia SEM horário previsto (a noite de
+folga do 12x36, por exemplo), o aplicativo oferecia as 4 batidas da obra, e dava nome às batidas pelo costume da
+empresa (7, 11, 12, 17 h) — a saída das 6h do vigia virava "Entrada". Agora o dia diz `so_entrada_e_saida` também
+para o vigia (jornada de vigia, escala 12x36 ou semanal de um período só — `escalas.sem_intervalo`) e traz o
+`turno_de_costume` da escala (17:00–06:00): o ajuste oferece só Entrada e Saída, com o nome certo. O "Incluir
+batida" do Quadro, com só vigias marcados, também. Quem tem escala com intervalo continua como antes.
+**Publicado em 04/11/2026** (com o "pode" do dono) — SEM MIGRAÇÃO.
+
+## 04/11/2026 — O atestado e a declaração lidos sozinhos pela IA
+
+O dono: *"gostaria que todos os documentos encaminhados, tipo atestado, declarações, já fossem lidos automaticamente
+pela IA (…) pra não precisar fazer manual."*
+- **O que muda:** o atestado e a declaração de comparecimento que chegam com o documento (aplicativo, ponto da obra
+  ou ERP) são lidos sozinhos, em até ~1 minuto, pela MESMA leitura do "ler com IA" (`core/leitura_atestado.py`).
+  Nas Validações, o DP já encontra a leitura e o confronto (o que a IA leu × o que foi lançado) sem apertar nada.
+  A leitura só preenche e mostra — **quem aprova continua sendo o DP** (regra da casa: o que a leitura preenche vai
+  para conferência). O "ler com IA" continua, para ler de novo.
+- **Como roda:** numa linha separada, acordada pelas requisições do ponto (como o rosto e o ranking): no máximo uma
+  rodada por minuto, até 10 documentos por rodada. NUNCA dentro da requisição de quem entrega (a lição de 21/10) e
+  sem conexão do banco aberta enquanto a IA lê. Só pedido **esperando decisão**, dos **últimos 30 dias** (não varre
+  o histórico). Leitura que falha tenta mais uma vez; depois, fica para o botão (até o próximo reinício).
+- **Custo:** a leitura de imagem usa o mesmo modelo de antes (~US$ 0,01 por documento); aparece no painel de IA do
+  ERP como `ponto_atestado_automatico`, separado do manual. **Teto de IA da empresa estourado: a automática para**
+  (a manual segue a regra de sempre). Sem a chave da IA configurada, não roda.
+- Licença (certidão de casamento etc.) NÃO é lida sozinha: a instrução da IA é de atestado e declaração.
+- Testes: lê só o que espera decisão e tem documento; não relê; falha tenta 2 vezes e desiste; teto estourado não
+  lê; nas Validações o DP já vê leitura e confronto. A IA é dublada nos testes — a leitura de verdade é a mesma do
+  botão, que já roda em produção.
+**Publicado em 04/11/2026** (com o "pode" do dono) — SEM MIGRAÇÃO.
+
+## 05/11/2026 — DO CHAT DO ANÁLISE DE SPs: a busca automática de feriados (`core/feriados_busca.py`)
+
+O dono: *"checar quais feriados temos a nível nacional, estadual e municipal (…)
+estadual e municipal baseado nas obras que estão em andamento (…) cadastrou-se uma
+obra nova, talvez esse seria o momento do start, além de ser por ano (…) obra
+concluída, não precisaria buscar mais."*
+
+- **Nacional:** calculado aqui, a mesma lista fixa da migração 002 (sem Carnaval,
+  Paixão e Corpus Christi, pelo mesmo motivo de lá). Estende a semente para 2028+.
+- **Estadual e municipal:** da base pública **feriados-brasil** (GitHub
+  `joaopbini/feriados-brasil`, MIT; `raw.githubusercontent.com`), só para as UFs e os
+  municípios (UF + nome, casado pelo código IBGE) das obras ATIVAS
+  (`cadastros.listar_obras`). Conferido com o arquivo real de 2026: 8.545 feriados
+  municipais, 3.837 municípios; Olinda, Fortaleza, Sobral, Teresina presentes.
+- **Quando:** conferência barata de hora em hora (vai junto das planilhas de apoio do
+  Análise de SPs) e logo depois que a base de obras é lida (`base_obras._trabalhar`,
+  uma linha). Só vai à internet com ANO novo ou LUGAR novo. Dezembro inclui o ano
+  seguinte; ano que a base não publicou é retentado em uma semana.
+- **Regras:** o lugar buscado num ano fica anotado (`parametros` › `feriados.busca`) —
+  **feriado excluído à mão não volta**; gravação `ON CONFLICT DO NOTHING` — o cadastrado
+  à mão no mesmo dia/lugar fica; **nada antes do 1º dia do mês anterior** (o passado
+  fechado não muda).
+- **A tela:** o quadro "Busca automática de feriados" e o botão "Buscar agora" estão,
+  por ora, na tela Feriados e férias do **Análise de SPs** (não mexi no `gestao.html`
+  daqui). Município sem feriado na base e município não reconhecido aparecem lá.
+- Testes: `tests/test_ponto_feriados_busca_banco.py` (internet simulada).
+
+## 04/11/2026 — DO CHAT DO ANÁLISE DE SPs: a folha passou a ler os feriados DAQUI
+
+O dono, no chat do Análise de SPs: *"a parte de feriados deve vir do ponto. Dessa
+forma ficaremos somente com uma base de feriados."* A tela "Feriados e férias" de
+lá não cadastra mais feriado: o auxílio alimentação e o adicional de feriado dos
+diaristas leem `ponto.feriados` com **a regra deste módulo**
+(`core/feriados.Calendario.feriado` — nacional, estadual pela UF da obra, municipal
+pelo município, de obra). O código está em `analisesps/folha_calendario.py`
+(`FeriadosDoPonto`), que só LÊ e reusa o `Calendario` e o `base_obras.trechos_sql`.
+**Mexer na regra do `Calendario` muda a folha junto** — é de propósito (os dois não
+podem discordar sobre um dia), e os testes da folha cobrem (`tests/_feriados_do_ponto.py`).
+
+Uma escrita, por botão: **"Levar para o ponto"**, na tela de lá, grava aqui (por
+`feriados.gravar`, com as validações daqui) os feriados que tinham sido cadastrados
+na tabela antiga do Análise de SPs e que o ponto não cobre — nacional vira NACIONAL;
+o de obra vira OBRA quando a obra casa (código, código secundário da planilha, nome).
+
+## 03/11/2026 — Do Espelho para o cadastro da pessoa
+
+O dono: *"a partir do espelho do ponto eu deveria poder acessar o cadastro da pessoa pra facilitar qualquer ajuste."*
+Ponto › Espelho ganhou, ao lado do nome, o botão "👤 Cadastro da pessoa": abre a ficha na aba Cadastro (escala,
+jornada, se bate ponto, acesso no aplicativo, PIN, banco); ao fechar, o espelho se refaz. Ensaio no navegador e
+suíte inteira. **Publicado em 03/11/2026** (com o "pode" do dono) — SEM MIGRAÇÃO.
+
 ## 31/10/2026 (vigésima sexta) — Uma tela só de Pessoas; e o "Ver mosaico" que não fazia nada
 
 **Pessoas.** O dono: *"essas pessoas [que não batem ponto] ficam sumidas completamente, eu não vejo ela em canto

@@ -161,46 +161,77 @@
    ====================================================================== #}
 <h3 style="margin-top:24px">Feriados <small>{{ feriados|length }}</small></h3>
 
-{% if pode_operar %}
+{# OS FERIADOS VÊM DO PONTO (04/11/2026). O dono: *"a parte de feriados deve vir
+   do ponto. Dessa forma ficaremos somente com uma base de feriados."* Cadastrar
+   e excluir é lá; aqui a lista só se mostra, para quem confere o auxílio. #}
 <div class="cartao">
-  <label class="rotulo-campo">Cadastrar feriado</label>
-  <div style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap">
-    <div>
-      <label class="cartao-dica" for="feriado-data">Data</label>
-      <input id="feriado-data" name="data" style="width:130px"
-             placeholder="dd/mm/aaaa">
+  <p class="cartao-dica" style="margin:0">
+    Os feriados vêm do <b>Ponto</b> — a mesma lista que o ponto usa para não marcar
+    falta. Lá eles podem ser nacionais, estaduais (pela UF da obra), municipais (pelo
+    município da obra) ou de uma obra só, e valem do mesmo jeito para o auxílio
+    alimentação e para o adicional de feriado dos diaristas.
+  </p>
+  <a class="btn secundario" style="margin-top:10px" href="/erp/ponto/configuracao#jornada"
+     target="_blank" rel="noopener">Cadastrar ou excluir feriado no Ponto</a>
+</div>
+
+{# A BUSCA AUTOMÁTICA (05/11/2026): nacional calculado; estadual e municipal da base
+   pública, para os lugares das obras em andamento. Ver ponto/core/feriados_busca.py. #}
+{% if busca %}
+<div class="cartao">
+  <label class="rotulo-campo">Busca automática de feriados</label>
+  <p class="cartao-dica" style="margin:0 0 6px">
+    O sistema busca sozinho os feriados <b>nacionais</b>, os <b>estaduais</b> dos estados
+    com obra em andamento e os <b>municipais</b> dos municípios com obra em andamento — no
+    começo de cada ano (o seguinte, a partir de 1º de dezembro) e quando entra obra em
+    estado ou município novo. Feriado excluído no ponto não volta.
+  </p>
+  {% for a, info in busca.anos|dictsort %}
+    <div class="cartao-dica" style="margin:4px 0">
+      <b>{{ a }}:</b>
+      {% if info.ultima %}buscado em {{ info.ultima[8:10] }}/{{ info.ultima[5:7] }}/{{ info.ultima[:4] }}
+        — estados: {{ info.ufs|join(', ') or '—' }}; municípios: {{ info.municipios|length }}
+      {% else %}ainda não buscado{% endif %}
+      {% if info.nao_publicado %} · <i>a base pública ainda não publicou este ano; nova tentativa em uma semana</i>{% endif %}
+      {% if info.sem_feriado %}<br>Sem feriado municipal na base (confira à mão): {{ info.sem_feriado|join(', ') }}{% endif %}
+      {% if info.nao_reconhecidos %}<br><span class="erro">Município não reconhecido (nome diferente do IBGE — corrija o
+        cadastro da obra):</span> {{ info.nao_reconhecidos|join(', ') }}{% endif %}
     </div>
-    <div>
-      <label class="cartao-dica" for="feriado-abrangencia">Abrangência</label>
-      <select id="feriado-abrangencia" style="width:170px">
-        <option value="nacional">Feriado nacional</option>
-        <option value="obra">Feriado da obra</option>
-      </select>
-    </div>
-    {# ⚠️ A OBRA SÓ APARECE quando ela é necessária. Campo que fica na tela sem
-       servir faz a pessoa se perguntar se devia preencher. #}
-    <div id="feriado-obra-bloco" hidden>
-      <label class="cartao-dica" for="feriado-obra">Obra</label>
-      <select id="feriado-obra" style="width:200px">
-        <option value="">Selecione…</option>
-        {% for o in obras %}<option value="{{ o }}">{{ o }}</option>{% endfor %}
-      </select>
-    </div>
-    <div style="flex:1 1 200px; min-width:0">
-      <label class="cartao-dica" for="feriado-descricao">Descrição (opcional)</label>
-      <input id="feriado-descricao" placeholder="Ex.: Independência do Brasil, aniversário do município">
-    </div>
-    <button class="btn" id="btn-gravar-feriado">Gravar</button>
-    <span id="recado-feriado" class="cartao-dica" style="margin:0"></span>
-  </div>
-  {% if not obras %}
-    <p class="cartao-dica" style="margin:8px 0 0">
-      A lista de obras está vazia. Ela é carregada da planilha pelo botão "Só as
-      planilhas de apoio", em Configurações. Sem ela, só é possível cadastrar
-      feriados nacionais.
-    </p>
+  {% endfor %}
+  {% if busca.falta %}
+    <p class="cartao-dica" style="margin:6px 0 0">Falta buscar:
+      {% for a, f in busca.falta|dictsort %}{{ a }} ({% if f.nacional %}nacional, {% endif %}{{ f.ufs|length }} estado(s), {{ f.municipios|length }} município(s)){% if not loop.last %}; {% endif %}{% endfor %}
+      — a busca automática faz isso na próxima hora.</p>
+  {% endif %}
+  {% if pode_operar %}
+    <button class="btn secundario" id="btn-buscar-feriados" type="button" style="margin-top:8px">Buscar agora</button>
+    <span id="recado-buscar" class="cartao-dica" style="margin:0"></span>
   {% endif %}
 </div>
+{% endif %}
+
+{% if erro_feriados %}
+  <div class="aviso erro"><b>Não foi possível ler os feriados do ponto.</b>
+    {{ erro_feriados }} — enquanto isso, o auxílio alimentação sai sem desconto de
+    feriado.</div>
+{% endif %}
+
+{% if antigos %}
+  {# Os feriados cadastrados AQUI antes da troca, e que o ponto não cobre: eles
+     deixaram de contar. Nada some sozinho — quem decide é a pessoa. #}
+  <div class="aviso atencao">
+    <b>{{ antigos|length }} feriado(s) cadastrado(s) nesta tela antes da troca não
+    estão no ponto</b> e por isso deixaram de descontar no auxílio:
+    <ul style="margin:6px 0">
+      {% for f in antigos %}
+        <li>{{ f.data|data_br }} — {{ 'nacional' if f.abrangencia == 'nacional' else 'obra ' ~ f.obra }}{% if f.descricao %} ({{ f.descricao }}){% endif %}{% if not f.obra_no_ponto %} · <i>a obra não foi achada no ponto; cadastre lá à mão</i>{% endif %}</li>
+      {% endfor %}
+    </ul>
+    {% if pode_operar %}
+      <button class="btn" id="btn-levar-ao-ponto" type="button">Levar para o ponto</button>
+      <span id="recado-levar" class="cartao-dica" style="margin:0"></span>
+    {% endif %}
+  </div>
 {% endif %}
 
 {# O ano dos feriados. Mesma correção da busca acima: `.barra-acoes` é a grade de
@@ -226,36 +257,26 @@
 
     <table class="sps">
       <thead>
-        <tr><th>Data</th><th>Abrangência</th><th>Descrição</th>
-          {% if pode_operar %}<th></th>{% endif %}</tr>
+        <tr><th>Data</th><th>Abrangência</th><th>Onde</th><th>Descrição</th></tr>
       </thead>
       <tbody>
       {% for f in feriados %}
         <tr>
           <td>{{ f.data|data_br }}</td>
           <td>
-            {% if f.abrangencia == 'nacional' %}
+            {% if f.abrangencia == 'NACIONAL' %}
               <span class="selo no-lote">nacional</span>
             {% else %}
-              <span class="selo no-lote-de-outro">{{ f.obra }}</span>
+              <span class="selo no-lote-de-outro">{{ f.rotulo|lower }}</span>
             {% endif %}
           </td>
+          <td>{{ f.onde or '—' }}</td>
           <td>{{ f.descricao or '—' }}</td>
-          {% if pode_operar %}
-            <td class="num">
-              <button class="apagar-linha apagar-feriado" title="Excluir este feriado"
-                      data-id="{{ f.id }}"
-                      data-quando="{{ f.data|data_br }}"
-                      data-onde="{{ 'nacional' if f.abrangencia == 'nacional' else f.obra }}"
-                      >&times;</button>
-            </td>
-          {% endif %}
         </tr>
       {% else %}
-        <tr><td colspan="{{ 4 if pode_operar else 3 }}" class="cartao-dica">
-          Nenhum feriado cadastrado{{ ' em ' ~ ano if ano }}.
-          {% if pode_operar %}Cadastre os feriados acima; sem eles, o auxílio
-            alimentação é calculado sobre o mês integral.{% endif %}
+        <tr><td colspan="4" class="cartao-dica">
+          Nenhum feriado no ponto{{ ' em ' ~ ano if ano }}. Sem eles, o auxílio
+          alimentação é calculado sobre o mês integral.
         </td></tr>
       {% endfor %}
       </tbody>
@@ -280,15 +301,6 @@ async function mandar(url, corpo) {
     body: JSON.stringify(corpo)
   });
   return await r.json();
-}
-
-// --- a obra só aparece quando o feriado é de obra ---------------------------
-const abrangencia = document.getElementById("feriado-abrangencia");
-const blocoObra = document.getElementById("feriado-obra-bloco");
-if (abrangencia) {
-  const mostrar = () => { blocoObra.hidden = abrangencia.value !== "obra"; };
-  abrangencia.addEventListener("change", mostrar);
-  mostrar();
 }
 
 // --- procurar a pessoa, para não digitar CPF na mão -------------------------
@@ -370,23 +382,40 @@ if (btnFerias) btnFerias.addEventListener("click", async () => {
   }
 });
 
-// --- gravar o feriado -----------------------------------------------------
-const btnFeriado = document.getElementById("btn-gravar-feriado");
-if (btnFeriado) btnFeriado.addEventListener("click", async () => {
-  btnFeriado.disabled = true;
-  diz("recado-feriado", "Gravando…");
+// --- buscar agora os feriados das obras em andamento (05/11/2026) ----------
+const btnBuscar = document.getElementById("btn-buscar-feriados");
+if (btnBuscar) btnBuscar.addEventListener("click", async () => {
+  btnBuscar.disabled = true;
+  diz("recado-buscar", "Buscando — pode levar até um minuto…");
   try {
-    const d = await mandar("{{ url_for('analisesps.folha_feriado_gravar') }}", {
-      data: document.getElementById("feriado-data").value,
-      abrangencia: abrangencia.value,
-      obra: document.getElementById("feriado-obra").value,
-      descricao: document.getElementById("feriado-descricao").value
-    });
-    if (!d.ok) { diz("recado-feriado", d.erro, "erro"); btnFeriado.disabled = false; return; }
+    const d = await mandar("{{ url_for('analisesps.folha_feriados_buscar') }}", {});
+    if (!d.ok) { diz("recado-buscar", d.erro, "erro"); btnBuscar.disabled = false; return; }
+    alert(d.gravados + " feriado(s) novo(s) gravado(s) no ponto."
+          + (d.avisos && d.avisos.length ? "\n\n" + d.avisos.join("\n") : ""));
     location.reload();
   } catch (e) {
-    diz("recado-feriado", "Não foi possível gravar o feriado: " + e, "erro");
-    btnFeriado.disabled = false;
+    diz("recado-buscar", "Não foi possível buscar: " + e, "erro");
+    btnBuscar.disabled = false;
+  }
+});
+
+// --- levar para o ponto os feriados antigos desta tela (04/11/2026) --------
+const btnLevar = document.getElementById("btn-levar-ao-ponto");
+if (btnLevar) btnLevar.addEventListener("click", async () => {
+  if (!confirm("Gravar no Ponto os feriados listados? Eles passam a valer também "
+               + "para o ponto (o dia deixa de ser falta).")) return;
+  btnLevar.disabled = true;
+  diz("recado-levar", "Gravando no ponto…");
+  try {
+    const d = await mandar("{{ url_for('analisesps.folha_feriados_levar_ao_ponto') }}", {});
+    if (!d.ok) { diz("recado-levar", d.erro, "erro"); btnLevar.disabled = false; return; }
+    if (d.sem_obra && d.sem_obra.length)
+      alert(d.levados + " feriado(s) gravado(s) no ponto. Ficaram de fora, porque a obra "
+            + "não foi achada no ponto: " + d.sem_obra.join(", ") + ". Cadastre esses lá.");
+    location.reload();
+  } catch (e) {
+    diz("recado-levar", "Não foi possível gravar no ponto: " + e, "erro");
+    btnLevar.disabled = false;
   }
 });
 
@@ -397,17 +426,6 @@ document.querySelectorAll(".apagar-ferias").forEach(b =>
                  " (" + b.dataset.periodo + ")?")) return;
     b.disabled = true;
     const d = await mandar("{{ url_for('analisesps.folha_ferias_apagar') }}",
-                           {id: b.dataset.id});
-    if (!d.ok) { alert(d.erro); b.disabled = false; return; }
-    location.reload();
-  }));
-
-document.querySelectorAll(".apagar-feriado").forEach(b =>
-  b.addEventListener("click", async () => {
-    if (!confirm("Excluir o feriado de " + b.dataset.quando +
-                 " (" + b.dataset.onde + ")?")) return;
-    b.disabled = true;
-    const d = await mandar("{{ url_for('analisesps.folha_feriado_apagar') }}",
                            {id: b.dataset.id});
     if (!d.ok) { alert(d.erro); b.disabled = false; return; }
     location.reload();

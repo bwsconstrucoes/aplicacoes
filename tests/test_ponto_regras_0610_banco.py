@@ -284,3 +284,35 @@ def test_conferencia_do_rosto_com_a_aws_de_mentira(app, mundo):
     t = dp.get("/erp/api/ponto/rosto").get_json()
     assert t["mes"]["cobradas"] == 2 and round(t["mes"]["custo_usd"], 3) == 0.002 and t["mes"]["suspeitas"] == 1
     assert t["estimativa"]["fotos_30_dias"] == 4
+
+
+def test_quem_volta_a_ficar_ativo_ganha_o_aparelho_de_volta(app, mundo, banco):
+    """05/11/2026, o dono: "em Pessoas ele está normal, situação ativo, só que em Aparelhos está bloqueado, 'responsável
+    desligado — aprove de novo com outro responsável'. Claramente uma falha". O bloqueio automático do desligamento se
+    desfaz quando o cadastro volta a ativo; o bloqueio à mão, não."""
+    from app.apps.ponto import db
+    from app.apps.ponto.core import desligamentos
+    dp = como(app, mundo["dp"])
+    _aparelho(app, "ponto-da-obra-do-joao-volta-0123")
+    obra = _id_do_aparelho(dp, "ponto-da-obra-do-joao-volta-0123")
+    assert dp.post(f"/erp/api/ponto/dispositivos/{obra}/aprovar",
+                   json={"perfil": "COMPARTILHADO", "cpf": CPF_JOAO, "obras": [mundo["obra_a"]]}).status_code == 200
+    _aparelho(app, "celular-da-maria-bloqueado-a-mao-0")
+    cel = _id_do_aparelho(dp, "celular-da-maria-bloqueado-a-mao-0")
+    assert dp.post(f"/erp/api/ponto/dispositivos/{cel}/aprovar", json={"perfil": "INDIVIDUAL", "cpf": CPF_MARIA}).status_code == 200
+    assert dp.post(f"/erp/api/ponto/dispositivos/{cel}/bloquear", json={"motivo": "celular perdido"}).status_code == 200
+
+    def situacao(quem, sit):
+        with banco.connect() as conn:
+            conn.execute(text("UPDATE colaboradores SET situacao = :s WHERE id = :j"), {"s": sit, "j": quem})
+            conn.commit()
+        with db.conexao() as conn:
+            return desligamentos.aplicar(conn)
+    situacao(mundo["joao"], "DESLIGADO")
+    lista = {a["id"]: a for a in dp.get("/erp/api/ponto/dispositivos").get_json()["dispositivos"]}
+    assert lista[obra]["status"] == "BLOQUEADO" and "responsável desligado" in lista[obra]["motivo_bloqueio"]
+    r = situacao(mundo["joao"], "ATIVO")                       # o cadastro voltou: o aparelho volta sozinho
+    assert r["reativados"] == 1
+    lista = {a["id"]: a for a in dp.get("/erp/api/ponto/dispositivos").get_json()["dispositivos"]}
+    assert lista[obra]["status"] == "APROVADO" and not lista[obra]["motivo_bloqueio"]
+    assert lista[cel]["status"] == "BLOQUEADO" and "perdido" in lista[cel]["motivo_bloqueio"]   # o à mão fica

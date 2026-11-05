@@ -180,6 +180,7 @@ def _linha(p: dict, d: dict, etiquetas: set[str], marcas: list[dict]) -> dict:
                     for i, b in enumerate(d["batidas"])],
         "previstas": d.get("previstas") or [], "faltando": d.get("faltando") or [],
         "pre_assinalado": d.get("pre_assinalado") or [],
+        "so_entrada_e_saida": bool(d.get("so_entrada_e_saida")),       # o vigia: sem intervalo (04/11/2026)
         "ocorrencia": (d.get("ocorrencia") or {}).get("rotulo"),
         "pendentes": [{"id": x["id"], "tipo": x["tipo"], "status": x["status"], "rotulo": x["rotulo"],
                        "hora": x.get("hora")} for x in d.get("pendentes") or []],

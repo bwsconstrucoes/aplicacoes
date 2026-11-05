@@ -1465,6 +1465,29 @@ def substituir_comprovante(sp_id):
     return {"ok": True, "link": link}
 
 
+@bp.route("/api/sp/<sp_id>/da-planilha", methods=["POST"])
+@exige_consulta
+def atualizar_sp_da_planilha(sp_id):
+    """"Atualizar da planilha", na ficha (03/11/2026): relê SÓ a linha desta SP
+    na SPsBD — ver `sincronizacao.atualizar_uma_sp`. Qualquer perfil que abre a
+    ficha pode: não muda dado nenhum, só traz o que já está na planilha."""
+    from . import sincronizacao
+    sp_id = str(sp_id).strip()
+    erro = _fora_do_recorte([sp_id])
+    if erro:
+        return erro
+    try:
+        r = sincronizacao.atualizar_uma_sp(sp_id)
+    except Exception as e:  # noqa: BLE001 — a ficha tem de dizer o que houve
+        logger.exception("Análise de SPs: falhou atualizar a SP %s da planilha", sp_id)
+        return {"ok": False, "erro": f"Não foi possível ler a planilha: {e}"}, 500
+    if not r["achada"]:
+        return {"ok": False, "erro": (
+            f"A SP {sp_id} não está na planilha SPsBD. Se ela foi excluída lá, "
+            "sai do sistema na próxima atualização completa.")}, 404
+    return {"ok": True, **r}
+
+
 @bp.route("/api/c-diarios/atualizar", methods=["POST"])
 @exige_operador
 def atualizar_c_diarios():
@@ -1866,6 +1889,11 @@ def configuracoes():
         aviso=request.args.get("aviso") or None,
         base=consultas.base_carregada(),
         andamento=tarefas.estado(),
+        # As outras pistas que estão rodando agora (31/10/2026): o ponto do mês,
+        # as planilhas de apoio e a Receita não seguram mais as SPs.
+        outras_pistas=[(rotulo, tarefas.estado(p)) for p, rotulo in (
+            ("apoios", "Planilhas de apoio, Receita e fiscal"), ("ponto", "Ponto do mês"),
+            ("cadastro", "Cadastro de colaboradores"))],
         ultima=tarefas.ultima_concluida() if not erro_banco else None,
         modos=tarefas.MODOS, modos_da_base=tarefas.MODOS_DA_BASE,
         versao=os.getenv("RENDER_GIT_COMMIT", "")[:8] or "desenvolvimento",
@@ -2027,7 +2055,7 @@ def andamento():
     # `?pista=cadastro` acompanha a atualização dos colaboradores, que roda na
     # pista dela (migração 054) — a geral é a da sincronização.
     pista = request.args.get("pista") if request.args.get("pista") in (
-        "pessoa", "cadastro") else "geral"
+        "pessoa", "cadastro", "ponto", "apoios") else "geral"
     estado = tarefas.estado(pista)
     if pista == "cadastro" and not estado["rodando"] and tarefas.estado()["rodando"] \
             and tarefas._pedido_pendente("colaboradores"):
@@ -2130,6 +2158,10 @@ def sincronizar():
         return {"ok": False, "erro": "Não autorizado."}, 403
 
     resultado = tarefas.disparar(modo, disparo=disparo)
+    # O agendador também mantém as planilhas de apoio (de hora em hora, na pista
+    # delas) — desde 31/10/2026 elas não vêm mais dentro da sincronização.
+    if disparo == "agendador" and modo == "sincronizar":
+        tarefas.apoios_se_preciso("agendador")
     # Ocupado e é um dos botões que esperam a vez: vai para a fila e começa
     # sozinho quando a outra terminar (16/10/2026).
     if (not resultado.get("ok") and resultado.get("ocupado")
@@ -2433,7 +2465,7 @@ def _estado_do_faturamento() -> dict:
     atualizar e conferir no Omie (10/10/2026: *"importar notas antigas e
     atualizar da planilha não deveria ficar aqui; deixa em Configurações"*)."""
     from . import faturamento, tarefas
-    andamento = tarefas.estado()
+    andamento = tarefas.estado("apoios")   # a pista do faturamento (055, 31/10/2026)
     tipo = (andamento.get("detalhe") or {}).get("tipo") if andamento.get("rodando") else ""
     rodando = tipo in ("faturamento", "faturamento_antigas")
     return {"carregado_em": faturamento.carregado_em(),
@@ -4533,7 +4565,7 @@ def tela_folha_ponto():
     andando = {"rodando": False}
     ultima = None
     try:
-        estado = tarefas.estado()
+        estado = tarefas.estado("ponto")   # a pista do ponto (055, 31/10/2026)
         detalhe = estado.get("detalhe") or {}
         andando = {"rodando": bool(estado.get("rodando")),
                    "etapa": detalhe.get("etapa") or "",
@@ -4710,7 +4742,7 @@ def tela_folha_calendario():
     AS DUAS COISAS NUMA TELA SÓ, e é a correção que o dono fez em 27/09/2026
     sobre tela demais: são dois cadastros pequenos que servem ao mesmo cálculo.
     Separá-los daria duas entradas para quem procura a mesma resposta."""
-    from . import folha_calendario as fc, sincronizacao
+    from . import folha_calendario as fc
 
     pronto = fc._pronto()
     procurado = " ".join((request.args.get("q") or "").split())
@@ -4719,28 +4751,39 @@ def tela_folha_calendario():
     except (TypeError, ValueError):
         ano = 0
 
-    feriados, ferias, obras = [], [], []
-    erro = None
+    feriados, ferias, antigos = [], [], []
+    erro = erro_feriados = None
     try:
         if pronto:
-            feriados = fc.listar_feriados(ano or None)
             ferias = fc.listar_ferias(procurado)
     except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
-        logger.exception("Folha: não consegui ler feriados e férias")
+        logger.exception("Folha: não consegui ler as férias")
         erro = str(e)
+    # OS FERIADOS VÊM DO PONTO (04/11/2026). O erro dele tem recado próprio:
+    # sem feriado lido, o auxílio alimentação sai sem desconto de feriado.
     try:
-        # A MESMA LISTA DE OBRAS do rateio e do Ratear. Uma segunda lista
-        # divergiria da primeira no dia em que alguém cadastrasse obra nova.
-        obras = [o["nome"] for o in
-                 (sincronizacao.referencias_rateio().get("obras") or [])]
-    except Exception:  # noqa: BLE001 — a lista é apoio; sem ela dá recado
-        logger.exception("Folha: não consegui ler a lista de obras")
+        feriados = fc.listar_feriados(ano or None)
+        antigos = fc.antigos_fora_do_ponto()
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: não consegui ler os feriados do ponto")
+        erro_feriados = str(e)
+    # A BUSCA AUTOMÁTICA (05/11/2026): o que já foi buscado em cada ano.
+    busca = None
+    try:
+        from app.apps.ponto import db as banco_do_ponto
+        from app.apps.ponto.core import feriados_busca
+        from .horario import agora as _agora
+        with banco_do_ponto.conexao() as conn:
+            busca = feriados_busca.situacao(conn, _agora().date())
+    except Exception:  # noqa: BLE001 — o quadro é apoio; a lista continua
+        logger.exception("Folha: não consegui ler a situação da busca de feriados")
 
     from .horario import agora
     return render_template(
         "analisesps_folha_calendario.html", aba="folha", subaba="calendario",
         grupos=subtelas_agrupadas(), pronto=pronto, feriados=feriados,
-        ferias=ferias, obras=obras, procurado=procurado, ano=ano,
+        antigos=antigos, erro_feriados=erro_feriados, busca=busca,
+        ferias=ferias, procurado=procurado, ano=ano,
         ano_padrao=agora().year, erro=erro,
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
@@ -5913,37 +5956,42 @@ def folha_card_lancar():
         return {"ok": False, "erro": f"Não foi possível lançar: {e}"}, 500
 
 
-@bp.route("/api/folha/feriado", methods=["POST"])
+@bp.route("/api/folha/feriados/levar-ao-ponto", methods=["POST"])
 @exige_operador
-def folha_feriado_gravar():
-    """Cadastra um feriado, nacional ou de uma obra."""
+def folha_feriados_levar_ao_ponto():
+    """Leva para o ponto os feriados cadastrados nesta tela que ele não tem
+    (04/11/2026 — os feriados passaram a vir só do ponto). O cadastro e a
+    exclusão de feriado moram no ponto; aqui não se grava mais feriado."""
     from . import folha_calendario as fc
-
-    dados = request.get_json(silent=True) or {}
     quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
     try:
-        novo = fc.gravar_feriado(
-            dados.get("data"), str(dados.get("abrangencia") or ""),
-            obra=str(dados.get("obra") or ""),
-            descricao=str(dados.get("descricao") or ""), quem=quem)
-    except fc.ErroDoCalendario as e:
-        return {"ok": False, "erro": str(e)}, 400
-    except Exception as e:  # noqa: BLE001
-        logger.exception("Folha: falhou gravar o feriado")
-        return {"ok": False, "erro": f"Não foi possível gravar: {e}"}, 500
-    return {"ok": True, "id": novo}
+        r = fc.levar_ao_ponto(quem=quem)
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+        logger.exception("Folha: falhou levar os feriados para o ponto")
+        return {"ok": False, "erro": f"Não foi possível gravar no ponto: {e}"}, 500
+    return {"ok": True, **r}
 
 
-@bp.route("/api/folha/feriado/apagar", methods=["POST"])
+@bp.route("/api/folha/feriados/buscar", methods=["POST"])
 @exige_operador
-def folha_feriado_apagar():
+def folha_feriados_buscar():
+    """"Buscar agora" (05/11/2026): busca já os feriados nacional, estaduais e
+    municipais que faltam para as obras em andamento — ver
+    `ponto/core/feriados_busca.py`. A busca automática faz o mesmo sozinha."""
+    from app.apps.ponto import db as banco_do_ponto
+    from app.apps.ponto.core import feriados_busca
     from . import folha_calendario as fc
-
-    dados = request.get_json(silent=True) or {}
+    from .horario import agora
     quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
-    if not fc.apagar_feriado(int(dados.get("id") or 0), quem=quem):
-        return {"ok": False, "erro": "Feriado não encontrado."}, 404
-    return {"ok": True}
+    try:
+        with banco_do_ponto.conexao() as conn:
+            r = feriados_busca.buscar(conn, agora().date(), por=f"{quem} (botão)")
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+        logger.exception("Folha: falhou buscar os feriados")
+        return {"ok": False, "erro": f"Não foi possível buscar os feriados: {e}"}, 500
+    fc.esquecer_leituras()
+    return {"ok": True, "gravados": r["gravados"], "avisos": r["avisos"],
+            "anos": {str(k): v for k, v in r["anos"].items()}}
 
 
 @bp.route("/api/folha/ferias", methods=["POST"])
@@ -7397,7 +7445,7 @@ def tela_fiscal():
             primeira_linha=(pagina - 1) * fiscal.NOTAS_POR_PAGINA + 1,
             ultima_linha=ultima, tem_proxima=ultima < total, args=request.args,
             painel_notas=painel_notas, categorias=fiscal.CATEGORIAS,
-            andamento=tarefas.estado(), acoes=ACOES_FISCAIS,
+            andamento=tarefas.estado("apoios"), acoes=ACOES_FISCAIS,
             ultimas=tarefas.ultimas_por_tipo(tarefas.MODOS_FISCAIS),
             aviso=request.args.get("aviso") or None,
             pode_operar=auth.pode_operar(),
@@ -7461,7 +7509,7 @@ def tela_fiscal():
         rotulos_fiscais=consultas.ROTULOS_FISCAIS,
         grupos_de_recorte=consultas.GRUPOS_DE_RECORTE,
         frases_do_recorte=consultas.FRASE_DO_RECORTE,
-        andamento=tarefas.estado(), acoes=ACOES_FISCAIS,
+        andamento=tarefas.estado("apoios"), acoes=ACOES_FISCAIS,
         ultimas=tarefas.ultimas_por_tipo(tarefas.MODOS_FISCAIS),
         aviso=request.args.get("aviso") or None,
         pode_operar=auth.pode_operar(),
