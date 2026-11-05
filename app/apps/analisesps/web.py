@@ -4767,12 +4767,22 @@ def tela_folha_calendario():
     except Exception as e:  # noqa: BLE001
         logger.exception("Folha: não consegui ler os feriados do ponto")
         erro_feriados = str(e)
+    # A BUSCA AUTOMÁTICA (05/11/2026): o que já foi buscado em cada ano.
+    busca = None
+    try:
+        from app.apps.ponto import db as banco_do_ponto
+        from app.apps.ponto.core import feriados_busca
+        from .horario import agora as _agora
+        with banco_do_ponto.conexao() as conn:
+            busca = feriados_busca.situacao(conn, _agora().date())
+    except Exception:  # noqa: BLE001 — o quadro é apoio; a lista continua
+        logger.exception("Folha: não consegui ler a situação da busca de feriados")
 
     from .horario import agora
     return render_template(
         "analisesps_folha_calendario.html", aba="folha", subaba="calendario",
         grupos=subtelas_agrupadas(), pronto=pronto, feriados=feriados,
-        antigos=antigos, erro_feriados=erro_feriados,
+        antigos=antigos, erro_feriados=erro_feriados, busca=busca,
         ferias=ferias, procurado=procurado, ano=ano,
         ano_padrao=agora().year, erro=erro,
         pode_operar=auth.pode_operar(),
@@ -5960,6 +5970,28 @@ def folha_feriados_levar_ao_ponto():
         logger.exception("Folha: falhou levar os feriados para o ponto")
         return {"ok": False, "erro": f"Não foi possível gravar no ponto: {e}"}, 500
     return {"ok": True, **r}
+
+
+@bp.route("/api/folha/feriados/buscar", methods=["POST"])
+@exige_operador
+def folha_feriados_buscar():
+    """"Buscar agora" (05/11/2026): busca já os feriados nacional, estaduais e
+    municipais que faltam para as obras em andamento — ver
+    `ponto/core/feriados_busca.py`. A busca automática faz o mesmo sozinha."""
+    from app.apps.ponto import db as banco_do_ponto
+    from app.apps.ponto.core import feriados_busca
+    from . import folha_calendario as fc
+    from .horario import agora
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        with banco_do_ponto.conexao() as conn:
+            r = feriados_busca.buscar(conn, agora().date(), por=f"{quem} (botão)")
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+        logger.exception("Folha: falhou buscar os feriados")
+        return {"ok": False, "erro": f"Não foi possível buscar os feriados: {e}"}, 500
+    fc.esquecer_leituras()
+    return {"ok": True, "gravados": r["gravados"], "avisos": r["avisos"],
+            "anos": {str(k): v for k, v in r["anos"].items()}}
 
 
 @bp.route("/api/folha/ferias", methods=["POST"])

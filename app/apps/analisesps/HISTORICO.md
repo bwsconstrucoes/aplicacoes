@@ -12244,6 +12244,23 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 249 — Feriados buscados sozinhos pelas obras em andamento (05/11/2026)
+
+- *"Existe alguma base de informação de feriado (…) e eu queria que o sistema
+  buscasse (…) nacional, estadual e municipal (…) baseado nas obras em andamento.
+  Cadastrou-se uma obra nova, talvez esse seria o momento do start, além de ser por
+  ano."* O código mora no ponto (`ponto/core/feriados_busca.py`), porque a base de
+  feriados é a dele — ver o `HISTORICO.md` do ponto, 05/11/2026, com as regras.
+- Aqui: a etapa de apoios (`tarefas.py`) confere os feriados de hora em hora; a tela
+  Feriados e férias ganhou o quadro "Busca automática de feriados" e o botão "Buscar
+  agora" (rota `folha_feriados_buscar`, Operador).
+- Fonte: base pública feriados-brasil no GitHub (gratuita). APIs pagas com fonte
+  oficial por município existem (feriadosapi.com, muhbianco) — decisão do dono, se a
+  qualidade da gratuita não bastar.
+- **A pergunta da leva 248 explicada ao dono** (05/11): a aba "Feriados" da planilha
+  de credenciais serve só para a AGENDA DE PAGAMENTOS — vencimento que cai em feriado
+  vai para o próximo dia útil. Aguardando a decisão dele.
+
 #### Leva 248 — Os feriados vêm do ponto: uma base só (04/11/2026)
 
 > **Publicado em 04/11/2026.**

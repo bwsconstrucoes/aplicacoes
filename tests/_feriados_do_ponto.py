@@ -75,6 +75,8 @@ def feriados_ponto(_schema_ponto2, banco, banco_analisesps):
         guardados = [dict(r._mapping) for r in conn.execute(text("SELECT * FROM ponto.feriados"))]
         conn.execute(text("DELETE FROM ponto.feriados"))
         conn.execute(text("DELETE FROM obras WHERE codigo LIKE 'FC-%'"))
+        # O que a busca automática já buscou (feriados_busca.py), para cada teste começar do zero.
+        conn.execute(text("DELETE FROM ponto.parametros WHERE chave = 'feriados.busca'"))
         conn.commit()
     base_obras.esquecer()
     folha_calendario.esquecer_leituras()
@@ -83,6 +85,7 @@ def feriados_ponto(_schema_ponto2, banco, banco_analisesps):
     with banco.connect() as conn:
         conn.execute(text("DELETE FROM ponto.feriados"))
         conn.execute(text("DELETE FROM obras WHERE codigo LIKE 'FC-%'"))
+        conn.execute(text("DELETE FROM ponto.parametros WHERE chave = 'feriados.busca'"))
         for linha in guardados:
             colunas = ", ".join(linha)
             conn.execute(text(f"INSERT INTO ponto.feriados ({colunas}) VALUES "
