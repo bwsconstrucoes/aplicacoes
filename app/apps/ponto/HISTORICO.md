@@ -474,6 +474,26 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 05/11/2026 (segunda) — "Baixar o espelho" de um colaborador no ponto da obra dava "pessoa não encontrada"
+
+- **O relato** (Weverton, obra ESCADELIA): *"Ao clicar em Baixar o espelho (PDF) aparece a mensagem: Não foi possível
+  abrir o espelho — pessoa não encontrada. E ao clicar em Imprimir direto também não gera (…) O meu espelho consegui.
+  O erro está acontecendo só com os colaboradores."*
+- **A causa.** A folha para imprimir é uma PÁGINA que o aplicativo abre, não uma chamada dele — e a página não leva a
+  identificação do aparelho (ela vai nos cabeçalhos das chamadas, e uma página aberta não tem como levá-los). Sem
+  ela, o sistema não sabia que era o ponto da obra e conferia o alcance PESSOAL de quem entrou, em vez do alcance do
+  aparelho (a pessoa consultada pelo CPF agora há pouco). O espelho na tela funcionava (é chamada); só a folha caía.
+  O próprio espelho funcionava porque não passa por alcance nenhum. Vinha desde o espelho no aplicativo (28/10).
+- **O conserto.** Antes de abrir a folha de outra pessoa, o aplicativo pede um **bilhete de impressão** pela chamada
+  de sempre (com a identificação do aparelho e o MESMO alcance da consulta). O bilhete é assinado e vale **2 minutos**,
+  só para aquela pessoa, aquele período e quem pediu — e ainda exige alguém logado. A página aberta com o bilhete
+  não confere o alcance de novo: confere a assinatura (`qr.emitir_impressao` / `conferir_impressao`).
+- Teste: `test_no_ponto_da_obra_a_folha_de_outra_pessoa_abre_com_o_bilhete` reproduz o erro (sem bilhete, 404) e
+  confere bilhete de outra pessoa, de outro mês, vencido, sem login e de quem não foi consultado.
+- **Não verificado:** a abertura no celular de verdade (no navegador instalado como aplicativo, ela abre na mesma
+  janela; fora dele, numa aba nova). Uma chamada a mais antes de abrir a aba pode fazer o bloqueador de janelas do
+  navegador barrar a aba — nesse caso o aplicativo já cai para abrir na mesma janela, como antes.
+
 ## 05/11/2026 — O ajuste do plantão dobrado pergunta "entrada ou saída"; as rondas falsas; o aparelho que volta sozinho
 
 - **"Foi a entrada ou a saída?"** O dono, no vigia que dobrou do dia 31 para o 1º (bateu só as 18:01 no descanso):

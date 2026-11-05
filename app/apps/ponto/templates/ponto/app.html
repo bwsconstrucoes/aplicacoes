@@ -3581,7 +3581,15 @@ function abrirFolhaDoEspelho(imprimirJa) {
   };
 }
 async function abrirFolhaComo(periodo, imprimirJa) {
-  const q = `${periodo}${imprimirJa ? "&imprimir=1" : ""}`;
+  let q = `${periodo}${imprimirJa ? "&imprimir=1" : ""}`;
+  // a folha de OUTRA pessoa: antes, o bilhete de impressão, pedido pela chamada de sempre — a página sozinha não leva
+  // a identificação do aparelho, e no ponto da obra dava "pessoa não encontrada" (05/11/2026)
+  if (ESP.alvo) {
+    try {
+      const r = await chamar(`/ponto/app/api/equipe/${ESP.alvo}/espelho/bilhete?${periodo}`, localNoCorpo(await onde()));
+      q += `&bilhete=${encodeURIComponent(r.bilhete)}`;
+    } catch (e) { return aviso(e.message, "erro"); }
+  }
   const url = ESP.alvo ? comLocal(`/ponto/app/equipe/${ESP.alvo}/espelho/imprimir?${q}`, await onde())
                        : `/ponto/app/espelho/imprimir?${q}`;
   const instalado = (window.matchMedia && matchMedia("(display-mode: standalone)").matches) || navigator.standalone;
