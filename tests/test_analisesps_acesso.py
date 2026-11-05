@@ -214,6 +214,7 @@ TODAS_AS_TELAS = [
     ("GET", "/analisesps/folha/pessoa/99713349334/cadastro"),
     ("GET",  "/analisesps/api/folha/procurar-pessoa"),
     ("POST", "/analisesps/api/folha/feriados/levar-ao-ponto"),
+    ("POST", "/analisesps/api/folha/feriados/buscar"),
     ("POST", "/analisesps/api/folha/ferias"),
     ("POST", "/analisesps/api/folha/ferias/apagar"),
     ("POST", "/analisesps/api/folha/ferias/importar"),

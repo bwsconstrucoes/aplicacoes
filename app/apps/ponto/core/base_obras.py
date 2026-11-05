@@ -740,6 +740,10 @@ def _trabalhar() -> None:
             if not precisa_ler(ultima_leitura(conn), horario.agora()):
                 return
         atualizar("o próprio ponto (base de obras em dia)")
+        # Obra nova em estado ou município novo: é a hora de buscar os feriados de lá
+        # (05/11/2026, ver feriados_busca.py). Não levanta.
+        from . import feriados_busca
+        feriados_busca.buscar_se_preciso("base de obras lida", sempre=True)
     except Exception:  # noqa: BLE001
         logger.exception("Ponto: manter a base de obras em dia falhou; tenta de novo depois")
     finally:
