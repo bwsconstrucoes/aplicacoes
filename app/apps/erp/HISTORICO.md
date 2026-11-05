@@ -160,6 +160,68 @@ Colaboradores, Desligados); e o destino dos cinco tipos de pedido que hoje são
 manuais.
 
 
+### 🧭 A TELA DE COLABORADORES VIROU FERRAMENTA DE GESTÃO (05/11/2026)
+
+Ele abriu a tela que eu havia entregado e cortou, com razão:
+
+> *"para gestão, não está legal. (…) o que é que o DP tem que fazer em relação
+> aos colaboradores? Onde é que a gente vai tratar isso? (…) no pipe, como tem
+> as fases, a gente tem subdivisões lá que a gente sabe o que é que tem que
+> fazer, o que é que tem que cuidar, o que é que está pendente. E aqui, dessa
+> forma, não tem. O filtros não, praticamente não tem nada. Super pobre."*
+
+**O que mudou:**
+
+1. **Filtro lateral, o padrão do ERP** (ele: *"eu já tinha falado que isso é
+   para ser padrão para todo o ERP"*). Etapa do cadastro, situação, vínculo,
+   obra, cargo, convenção, forma de pagamento — e um bloco "o que está
+   pendente" com falta de dado, falta de papel, pedido na contabilidade,
+   documento na obra, ativo sem obra e sem forma de pagamento.
+2. **Painéis de pendência que SÃO filtros.** Número solto não serve: o valor
+   está em ir de "12 sem papel" para as 12 pessoas em um clique. A conta de
+   cada painel é feita sobre o recorte dos outros filtros, mas ANTES do painel
+   escolhido — senão clicar num zeraria a conta dos outros.
+3. **A etapa aparece na linha**, com a conta ao lado de cada etapa no filtro.
+   É o quadro do Pipefy virado lista: a pergunta "quem está parado e onde" tem
+   resposta sem abrir ficha nenhuma.
+4. **As pendências aparecem na própria linha** (quantos dados, quantos papéis,
+   quantos pedidos), com o detalhe no `title` — o DP vê o que fazer sem clicar.
+
+**A FICHA DA PESSOA VIROU QUATRO ABAS** (Resumo · Ponto e espelho · Pagamentos ·
+Documentos), porque ele cobrou: *"o cadastro da pessoa é para bater com o
+cadastro ponto, é para ser tudo integrado (…) preciso ver a folha de ponto, ver
+espelho, poder exportar os espelhos, poder ver histórico de pagamentos (…) você
+aqui está restringindo muita informação."*
+
+⚠️ **O PONTO NÃO É REIMPLEMENTADO AQUI.** A aba chama a API do próprio módulo
+(`/erp/api/ponto/espelho/<id>`) e o botão de exportar abre a tela de impressão
+dele. Duas contas de ponto divergiriam no primeiro mês, e aí ninguém saberia
+qual é a certa. A aba só aparece para quem tem `ver_ponto`.
+
+**DOIS DEFEITOS MEUS, e os dois valem registro:**
+
+1. **Texto branco em fundo branco.** Eu usei a classe das abas da BARRA AZUL
+   (`topo-aba`, texto branco) dentro de uma janela branca. Ele viu na hora:
+   *"está branco, aí a gente quase não consegue visualizar. Está quase
+   apagado."* A classe certa para fundo claro é `subaba`, que passou a servir
+   para `<button>` também — antes só estava pensada para `<a>`.
+2. **`rollback` que jogava fora o trabalho de quem chamou.** A contagem de
+   pendências do DP é protegida (as tabelas podem não existir antes do botão do
+   banco), e eu desfazia a sessão inteira no erro — uma tela abrindo
+   desfaria uma transação em curso. Agora cada contagem roda no seu ponto de
+   retorno. **Regra geral: `except` em consulta de apoio usa `begin_nested`,
+   nunca `s.rollback()`.**
+
+**CARGOS E CONVENÇÕES SAIU DO MENU.** Ele: *"foi dado muito destaque a uma tela
+dessa. Isso aqui é para estar dentro de uma espécie de configurações."* Está em
+**Configurações › Cargos e convenções**, pelo mesmo motivo que Empresas saiu do
+topo em 10/09/2026: é tabela que se mexe quando sai dissídio, não trabalho de
+todo dia.
+
+**DESPESAS COM COLABORADOR ficou como está, por decisão dele:** *"isso aqui a
+gente não vai mexer agora, que isso aqui a gente vai migrar a parte de folha de
+pagamento para cá. Ela vai englobar tudo que já tem no Análise de SPs."*
+
 ### 🤝 O CICLO DP ↔ CONTABILIDADE, E O AGENTE (05/11/2026)
 
 **A metodologia inteira está em `AGENTE_DP.md`, nesta pasta.** Ler lá antes de

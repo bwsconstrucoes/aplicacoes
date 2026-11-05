@@ -267,6 +267,12 @@ a { color: var(--azul-claro); }
 .subaba {
   padding: 8px 14px; font-size: 13px; font-weight: 600; color: var(--tinta-suave);
   text-decoration: none; border-bottom: 2px solid transparent; border-radius: 6px 6px 0 0;
+  /* SERVE PARA <a> E PARA <button> (05/11/2026). A faixa de abas dentro de uma
+     janela é montada na hora, com botão — e sem estas três linhas o botão vinha
+     com a borda e o fundo cinza do navegador. A armadilha que custou isto: usar
+     a classe `topo-aba`, que é da BARRA AZUL (texto branco), dentro de uma
+     janela BRANCA — branco no branco, invisível. */
+  background: none; border: 0; cursor: pointer; font-family: inherit;
 }
 .subaba:hover { background: #F2F5FA; color: var(--tinta); }
 .subaba.ativa { color: var(--azul); border-bottom-color: var(--azul); background: #F2F5FA; }

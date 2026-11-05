@@ -152,10 +152,16 @@ MODULOS = [
         "abas": [
             ("dc", "Despesas com colaborador", "erp.pagina_dc"),
             ("colaboradores", "Colaboradores", "erp.pagina_colaboradores"),
-            # Cargos e convenções (05/11/2026): a sub-base do cadastro. Aba
-            # própria porque o piso salarial muda por dissídio para TODA a
-            # gente de um cargo — é manutenção de tabela, não de pessoa.
-            ("cargos", "Cargos e convenções", "erp.pagina_cargos"),
+            # CARGOS E CONVENCOES NAO E ABA (05/11/2026). Eu havia dado a ela
+            # uma aba no topo, e o dono cortou: *"Cargos e convencoes, eu acho
+            # que foi dado muito destaque a uma tela dessa. Isso aqui e para
+            # estar dentro de uma especie de configuracoes."*
+            #
+            # Ele esta certo, e ha precedente: EMPRESAS saiu do topo pelo mesmo
+            # motivo, em 10/09/2026. E tabela que se mexe quando sai dissidio,
+            # nao trabalho de todo dia — e aba no topo e para o que se abre
+            # todo dia. A tela continua a mesma, alcancada por
+            # Configuracoes > Cargos e convencoes.
             # A fila de pedidos administrativos (05/11/2026): o segundo pipe do
             # Pipefy. Os pedidos de PONTO já vivem no módulo do ponto.
             ("dp_solicitacoes", "Solicitações ao DP", "erp.pagina_dp_solicitacoes"),
@@ -900,7 +906,12 @@ def pagina_cargos():
     SALARIAL de todos os cargos — a tabela de remuneração da empresa. Quem
     lança despesa de colaborador não precisa dela.
     """
-    return render_template("erp_cargos.html", **_contexto("cargos"))
+    # `_contexto("config")`: desde 05/11/2026 esta tela pertence a
+    # Configurações (o dono: *"isso aqui é para estar dentro de uma espécie de
+    # configurações"*), e é a aba de Configurações que tem de ficar acesa lá
+    # em cima — mesmo arranjo de Empresas.
+    return render_template("erp_cargos.html", sub_aba="cargos",
+                           **_contexto("config"))
 
 
 @bp.route("/erp/conciliacao")
