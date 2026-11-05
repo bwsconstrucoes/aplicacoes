@@ -21,7 +21,7 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
-### ⚠️ MIGRAÇÕES 085 a 090 — apertar "Aplicar atualizações do banco"
+### ⚠️ MIGRAÇÕES 085 a 091 — apertar "Aplicar atualizações do banco"
 
 Entraram em 05/11/2026 com o cadastro de pessoas. **Sem elas a tela de
 Colaboradores e a de Cargos respondem erro**, porque as colunas e as tabelas não
@@ -35,8 +35,10 @@ no lugar.
 - **088** a fila de solicitações do DP (11 tipos, checklist e trilha), e as
   ações `solicitar_dp` (abrir, de quem está na obra) e `atender_dp` (o DP);
 - **089** as ETAPAS do cadastro, com a trilha de quem moveu o quê e quando;
-- **090** os pedidos formais à contabilidade e as sete rotinas do agente de DP
-  — **todas semeadas DESLIGADAS**, e a ação `pedir_contabilidade`.
+- **090** os pedidos formais à contabilidade e as rotinas do agente de DP
+  — **todas semeadas DESLIGADAS**, e a ação `pedir_contabilidade`;
+- **091** a leitura da CAIXA DE ENTRADA (o agente recebendo e-mail), as
+  DEVOLUÇÕES da obra e o autor-colaborador da solicitação (o portal).
 
 Depois de apertar o botão do banco, apertar **uma vez** "Instalar o catálogo de
 tipos", na tela do Arquivo: ele traz os seis tipos de documento novos (os quatro
@@ -195,10 +197,46 @@ ERP **pede, cobra e confere o retorno** (migração 090) → conclui.
   relator): são regra de negócio e conta de calendário. O agente começa útil e
   burro, e fica inteligente depois.
 
-**O PONTO CEGO, dito agora:** o ERP **não lê caixa de entrada de e-mail**. Ele
-manda (é como as cotações saem), não recebe. Então quem joga o anexo do retorno
-na ficha é o DP, e o agente confere dali para a frente. Fechar isso exige uma
-conta de e-mail dedicada e uma credencial nova — decisão dele, e não foi tomada.
+**O PONTO CEGO FOI FECHADO NO MESMO DIA, e eu estava errado sobre o custo.** Eu
+havia registrado que o ERP não lê caixa de entrada e que fechar isso exigiria
+credencial nova. Ele derrubou: *"Que agente é esse que depende de uma
+intervenção humana? Aí não é agente. (…) o ERP precisa estar fazendo a leitura
+das caixas de entrada, baixando anexo de forma completamente autônoma."*
+
+E o custo que eu apontei não existia: **`imaplib` e `email` são da biblioteca
+padrão** (nenhuma dependência nova) e a senha da caixa fica **cifrada no banco**,
+configurada na tela — a mesma mecânica da senha de SMTP das empresas, sem envvar
+nova e sem deploy para ligar.
+
+**A leitura casa a resposta com o pedido em três tentativas:** o `Message-ID`
+que o ERP gerou ao enviar (o certo), a marca `[CT-00001]` no assunto (quando o
+cabeçalho não volta) e o CPF no texto (só com UM pedido aberto da pessoa). Com
+dois, **não escolhe** — anexar a rescisão no pedido de férias é pior que não
+anexar, e a mensagem fica "sem dono" com o motivo escrito.
+
+**OS CANAIS, decididos por ele:** contabilidade por **e-mail** nos dois
+sentidos; administrativo de obra por **WhatsApp** (avisar e cobrar); e a
+**devolução de documento pelo SISTEMA, nunca por WhatsApp** — *"foto de
+documento em conversa não é arquivo"*. Os dois tipos novos da mensageria
+(`erp.dp_devolucao`, `erp.dp_pedido`) nascem no WhatsApp, que é exceção à regra
+de 05/10/2026 e está registrada no teste da mensageria com o motivo: quem está
+na obra não tem Telegram.
+
+**O PORTAL JÁ EXISTE, E É O APLICATIVO DO PONTO.** Ele perguntou como ficaria o
+permissionamento entre ERP, portal e ponto — e a resposta é que não há portal
+novo. São TRÊS mundos de acesso que não se misturam: o ERP (e-mail e senha,
+perfil → ações → seções), o portal (CPF + PIN do app do ponto, papéis do ponto)
+e o aparelho (token do dispositivo). O ERP **lê a sessão** que o app do ponto
+abriu — os dois rodam no mesmo processo e dividem o cookie — e **não
+reimplementa nenhuma regra de alcance**: quais obras a pessoa alcança e quem
+pode pedir por outros vêm de `ponto/core/papeis.py`. Duas regras de alcance que
+divergem seria o pior dos mundos.
+
+⚠️ **O QUE FALTA PARA O PORTAL APARECER:** as rotas estão prontas
+(`/erp/portal/api/...`), mas **a tela dele mora no aplicativo do ponto**, que é
+outra área. O chat do ponto precisa acrescentar três telas — "Pedidos ao DP",
+"Novo pedido" e "A devolver". Está escrito o que cada uma consome na §6-ter do
+`AGENTE_DP.md`. Nenhuma precisa de regra nova.
 
 **O limite do agente está NO CÓDIGO, não só no documento** (`ROTINAS[...]
 ["nao_analisa"]`, e um teste que exige a frase): ele não desliga, não admite,

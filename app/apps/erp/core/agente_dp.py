@@ -105,6 +105,21 @@ ROTINAS: dict[str, dict[str, Any]] = {
         "usa_ia": False,
         "padrao": {"nao_cobrar_fim_de_semana": True},
     },
+    "caixa": {
+        "nome": "Leitura da caixa de entrada",
+        "quando": "a cada rodada do agente",
+        "analisa": "as mensagens não lidas da caixa: casa cada uma com o "
+                   "pedido que a originou (pelo In-Reply-To, pelo número no "
+                   "assunto ou pelo CPF), baixa os anexos e arquiva no Drive "
+                   "com o tipo que o pedido esperava",
+        "nao_analisa": "o CONTEÚDO do documento — isso é a rotina de "
+                       "conferência. E não apaga mensagem, não responde "
+                       "sozinho e não arquiva anexo em pedido que não casou "
+                       "com certeza: anexar a rescisão no pedido de férias é "
+                       "pior que não anexar",
+        "usa_ia": False,
+        "padrao": {"teto_por_rodada": 40},
+    },
     "conferencia": {
         "nome": "Conferente do retorno da contabilidade",
         "quando": "quando um documento é anexado a um pedido",
@@ -268,6 +283,10 @@ def aplicar_sugestao(s: Session, sugestao_id: int,
 
     if acao == "cobrar_pedido":
         feito = svc_ct.cobrar(s, int(g["alvo_id"]), usuario, pelo_agente=True)
+    elif acao == "cobrar_devolucao":
+        from app.apps.erp.core import portal as svc_portal
+        feito = svc_portal.cobrar_devolucao(s, int(g["alvo_id"]), usuario,
+                                            pelo_agente=True)
     elif acao == "abrir_pedido":
         feito = svc_ct.abrir(s, {"template": dados.get("template"),
                                  "colaborador_id": g["alvo_id"],
@@ -396,6 +415,48 @@ def _abaixo_do_piso(s: Session, c: Colaborador, salario: Any) -> str:
 
 
 # ===========================================================================
+# R8 · CAIXA DE ENTRADA — o conserto do ponto cego
+#
+# O dono: *"Que agente é esse que depende de uma intervenção humana? Aí não é
+# agente. (…) o ERP precisa estar fazendo a leitura das caixas de entrada,
+# baixando anexo de forma completamente autônoma para saber o que fazer."*
+#
+# A mecânica está em `core/comum/email_entrada.py`. Aqui fica só o liga/desliga
+# e a diferença entre SUGERE e FAZ:
+#   · SUGERE → lê a caixa SEM GRAVAR e mostra o que faria, mensagem por
+#              mensagem. Nenhum pedido é tocado, nenhum anexo é arquivado, e a
+#              mensagem continua não lida no servidor;
+#   · FAZ    → arquiva, entrega o retorno ao pedido e marca como lida.
+# ===========================================================================
+def rodar_caixa(s: Session, usuario: Optional[Usuario] = None) -> dict[str, Any]:
+    from app.apps.erp.core.comum import email_entrada
+
+    m = modo(s, "caixa")
+    if m == "DESLIGADA":
+        return {"modo": m, "olhou": 0}
+    try:
+        r = email_entrada.rodada(s, usuario, gravar=(m == "FAZ"))
+    except (ErroValidacao, email_entrada.ErroDeLeitura) as e:
+        # Caixa fora do ar NÃO derruba a rodada do agente: a cobrança e o vigia
+        # continuam valendo, e o motivo fica escrito para a tela mostrar.
+        logger.warning("ERP/agente: a caixa de entrada não respondeu — %s", e)
+        return {"modo": m, "olhou": 0, "erro": str(e)}
+    _carimbar(s, "caixa")
+    # MENSAGEM SEM DONO VIRA SUGESTÃO, para alguém resolver à mão: "não achei de
+    # quem é" é informação; silêncio não é.
+    for mens in r.get("mensagens", []):
+        if mens["situacao"] == "SEM_DONO":
+            sugerir(s, rotina="caixa", alvo_tipo="email",
+                    alvo_id=abs(hash(mens["assunto"])) % 2_000_000_000,
+                    acao="email_sem_dono",
+                    explicacao=(f"chegou um e-mail de {mens['de']} "
+                                f"(“{mens['assunto']}”) e eu não achei a que "
+                                f"pedido ele responde: {mens['motivo']}"),
+                    dados={"anexos": mens["anexos"]})
+    return {"modo": m, **r}
+
+
+# ===========================================================================
 # R4 · COBRANÇA — a rotina diária, determinística
 # ===========================================================================
 def rodar_cobranca(s: Session, usuario: Optional[Usuario] = None,
@@ -437,9 +498,29 @@ def rodar_cobranca(s: Session, usuario: Optional[Usuario] = None,
                        dados={"numero": p["numero"],
                               "dias_atraso": p["dias_atraso"]}):
                 sugeriu += 1
+    # AS DEVOLUÇÕES DA OBRA entram na mesma rotina, por canal diferente: a
+    # contabilidade é cobrada por e-mail, a obra por WhatsApp. É a divisão que
+    # ele definiu, e ter uma rotina só evita dois cobradores com dois critérios
+    # de prazo.
+    from app.apps.erp.core import portal as svc_portal
+    devolucoes = svc_portal.devolucoes_abertas(s, atrasadas=True)
+    for d in devolucoes:
+        texto = (f"a devolução {d['numero']} ({d['o_que']}) da obra "
+                 f"{d['obra'] or '—'} venceu há {d['dias_atraso']} dia(s)")
+        if m == "FAZ":
+            try:
+                svc_portal.cobrar_devolucao(s, d["id"], usuario, pelo_agente=True)
+                cobrou += 1
+            except ErroValidacao as e:
+                logger.warning("ERP/agente: não cobrei a devolução %s — %s",
+                               d["numero"], e)
+        elif sugerir(s, rotina="cobranca", alvo_tipo="dp_devolucao",
+                     alvo_id=d["id"], acao="cobrar_devolucao",
+                     explicacao=texto, dados={"numero": d["numero"]}):
+            sugeriu += 1
     _carimbar(s, "cobranca")
-    return {"modo": m, "olhou": len(vencidos), "cobrou": cobrou,
-            "sugeriu": sugeriu}
+    return {"modo": m, "olhou": len(vencidos) + len(devolucoes),
+            "cobrou": cobrou, "sugeriu": sugeriu}
 
 
 # ===========================================================================
@@ -510,6 +591,19 @@ def vigia(s: Session, *, hoje: Optional[date] = None) -> list[dict[str, Any]]:
                       "documentação rescisória arquivada"),
             "o_que_fazer": "cobrar a documentação rescisória"})
 
+    # Devolução que a obra não mandou: o documento está num envelope em cima de
+    # uma mesa, e o processo parado por causa disso.
+    from app.apps.erp.core import portal as svc_portal
+    for d in svc_portal.devolucoes_abertas(s, atrasadas=True):
+        achados.append({
+            "tipo": "devolucao_atrasada",
+            "colaborador_id": d.get("colaborador_id") or 0,
+            "quem": d.get("pessoa") or d["numero"],
+            "o_que": (f"{d['numero']} ({d['o_que']}) está com a obra "
+                      f"{d.get('obra') or '—'} há {d['dias_atraso']} dia(s) "
+                      "além do prazo"),
+            "o_que_fazer": "cobrar a obra pelo WhatsApp"})
+
     # Pessoa ativa sem obra: não entra em rateio nem em lista de obra nenhuma.
     for linha in s.execute(text("""
         SELECT id, nome FROM colaboradores
@@ -566,7 +660,13 @@ def rodar(s: Session, usuario: Optional[Usuario] = None) -> dict[str, Any]:
     mesma função: ela já é segura para rodar duas vezes (a sugestão não
     duplica, a cobrança respeita o teto e o prazo).
     """
-    feito: dict[str, Any] = {"cobranca": rodar_cobranca(s, usuario)}
+    feito: dict[str, Any] = {}
+    # A CAIXA VEM PRIMEIRO, de propósito: o retorno que chegou hoje tem de ser
+    # casado ANTES de a cobrança olhar os prazos — senão o agente cobra um
+    # pedido que já foi respondido, e cobrar quem já respondeu queima a
+    # relação com a contabilidade.
+    feito["caixa"] = rodar_caixa(s, usuario)
+    feito["cobranca"] = rodar_cobranca(s, usuario)
     if modo(s, "vigia") != "DESLIGADA":
         achados = vigia(s)
         quantos = 0

@@ -67,7 +67,7 @@ e 5 são de gente; o 3 é do DP apertando um botão (ou do agente, quando ligado
 
 ---
 
-## 3. AS SETE ROTINAS
+## 3. AS OITO ROTINAS
 
 Cada uma liga e desliga **sozinha**, tem parâmetros próprios e **nasce
 desligada**. Cada uma tem três modos:
@@ -155,6 +155,19 @@ registra **o que se espera de volta** (tipo de documento e prazo).
 cobrar pedido que já teve retorno mas está esperando conferência — a bola está
 com a gente nesse caso, e cobrar quem já respondeu queima a relação.
 
+### R8 · Caixa de entrada (construída em 05/11/2026)
+
+**Quando:** a cada rodada do agente.
+
+**O que faz:** lê as mensagens não lidas, casa cada uma com o pedido que a
+originou, baixa os anexos e arquiva no Drive com o tipo esperado. Detalhe inteiro
+na §6. **Não usa IA:** casar resposta com pedido é cabeçalho de e-mail e
+expressão regular.
+
+**Ela vem ANTES da cobrança na rodada**, de propósito: o retorno que chegou hoje
+tem de ser casado antes de a cobrança olhar os prazos — senão o agente cobra um
+pedido que já foi respondido, e cobrar quem já respondeu queima a relação.
+
 ### R5 · Conferente do retorno
 
 **Quando:** um documento é anexado a um pedido (pelo DP, ou pela leitura da
@@ -241,25 +254,144 @@ ligar o agente sem medo:
 
 ---
 
-## 6. O PONTO CEGO, dito agora e não quando doer
+## 6. A CAIXA DE ENTRADA — resolvido, e eu estava errado
 
-**O ERP não lê caixa de entrada de e-mail.** Ele manda e-mail (é como as
-cotações saem para os fornecedores), mas não recebe.
+Eu havia registrado aqui um "ponto cego": o ERP manda e-mail mas não recebe, e
+alguém do DP teria de jogar o anexo na ficha. Ele derrubou isso no mesmo dia:
 
-Isso significa que o passo 5 — a contabilidade responder com o documento — hoje
-depende de **alguém do DP jogar o anexo na ficha**. O agente confere e finaliza
-dali para a frente; o que ele não faz é pescar o anexo do e-mail.
+> *"Isso é fundamental. Que agente é esse que depende de uma intervenção
+> humana? Aí não é agente. Todo e-mail que chegar, vou ter que jogar os anexos?
+> Não tem sentido nenhum. Então o ERP precisa estar fazendo a leitura das caixas
+> de entrada, baixando anexo de forma completamente autônoma para saber o que
+> fazer."*
 
-Dois caminhos, e a escolha é dele:
+Ele está certo, e o custo que eu tinha apontado não existia: **`imaplib` e
+`email` são da biblioteca padrão do Python** — nenhuma biblioteca nova entra. E
+a credencial **não é variável de ambiente**: a senha fica cifrada no banco (a
+mesma mecânica da senha de SMTP das empresas) e é configurada na tela, então
+ligar não pede deploy.
 
-| Caminho | O que custa | O que ganha |
+### Como a resposta é casada com o pedido, em três tentativas
+
+| Tentativa | O que usa | Por que nesta ordem |
 |---|---|---|
-| **O DP joga o anexo** (o de agora) | um gesto por retorno | zero risco, zero configuração |
-| **O ERP lê a caixa** (IMAP de uma conta dedicada) | uma credencial nova e uma conta de e-mail só para isso | o ciclo fecha sem gesto nenhum |
+| 1 | `In-Reply-To` / `References` contra o `Message-ID` que o ERP gerou ao enviar | é o casamento certo: não depende de ninguém manter nada intacto |
+| 2 | a marca `[CT-00001]` no assunto | o cliente de e-mail do outro lado às vezes não devolve o cabeçalho |
+| 3 | o CPF no assunto ou no corpo | só vale com **um** pedido aberto para aquela pessoa |
 
-Eu **não** criei a leitura de caixa: ela precisa de credencial, e credencial
-nova é decisão dele. O desenho já está preparado para receber o documento de
-qualquer uma das duas origens.
+**Com mais de um pedido aberto da mesma pessoa, ele NÃO escolhe.** Anexar a
+rescisão no pedido de férias é pior que não anexar: a mensagem fica como "sem
+dono", com o motivo escrito, e vira uma linha na tela para alguém resolver.
+
+### O que ela faz com o que acha
+
+Baixa os anexos, **arquiva no Google Drive com o tipo que o pedido esperava** (o
+tipo vem do pedido, não do nome do arquivo: "doc1.pdf" não diz nada) e entrega o
+retorno ao pedido, que segue para a conferência.
+
+**O que ela nunca faz:** apagar mensagem, responder sozinha, arquivar anexo em
+pedido que não casou com certeza, e arquivar assinatura de imagem, ícone de
+rodapé ou logotipo — que vêm como anexo em todo e-mail corporativo e encheriam
+o Drive de lixo com cara de documento.
+
+**Resposta de texto sem anexo não fecha nada.** "Estamos providenciando" é
+registrado na trilha do pedido e o prazo continua correndo — tratar isso como
+retorno fecharia o ciclo cedo, e é o tipo de erro que só aparece quando alguém
+precisa do documento.
+
+### O limite que fica
+
+Mensagem sem anexo e sem casamento é **uma linha na tela com o motivo**, não um
+palpite. É aqui que a ampliação que ele pediu acontece: *"cada situação, a gente
+vai determinar certinho o que é esperado, que tipo de informação é esperada, o
+que vai ser analisado"*. Cada situação nova é uma entrada em `TEMPLATES` —
+documento esperado, prazo e campos a conferir — e a caixa passa a saber lidar
+com ela sem código novo.
+
+---
+
+## 6-bis. OS CANAIS, decididos por ele em 05/11/2026
+
+| Com quem | Canal | Por quê |
+|---|---|---|
+| **Contabilidade** | e-mail, nos dois sentidos | é como o trabalho dela já acontece, e e-mail tem anexo e rastro |
+| **Administrativo de obra** | **WhatsApp**, para avisar e cobrar | *"a interação entre os requisitores de informação vai ser feita via WhatsApp, que é o pessoal administrativo de obra"*. A obra não tem Telegram |
+| **Devolução de documento pela obra** | **o sistema, nunca o WhatsApp** | *"essa devolução não pode ser via WhatsApp. Tem que ser via sistema."* Foto de documento em conversa não é arquivo: é foto perdida num celular, sem tipo, sem dono e sem prazo |
+
+**O fluxo que ele desenhou em voz alta, e que está construído:**
+
+```
+contabilidade devolve o TRCT  →  ERP arquiva (caixa de entrada)
+                              →  DP abre uma DEVOLUÇÃO para a obra, com prazo
+                              →  WhatsApp AVISA a obra (e cobra, se vencer)
+                              →  a obra colhe as assinaturas
+                              →  devolve o arquivo PELO PORTAL
+                              →  arquivado no cadastro da pessoa, com tipo
+```
+
+---
+
+## 6-ter. O PORTAL — ele já existe, e é o aplicativo do ponto
+
+> *"lembrando que a gente tem que ter um portal, né, de acesso. Semelhante ao
+> que a gente tem no Pipe (…) o administrativo de obra não vai ter esse mesmo
+> acesso. Ele precisa só entrar e preencher alguns dados, fazer uma requisição e
+> encaminhar por lá. (…) atualmente a gente já tem um acesso via ponto. (…) Aí
+> como é que fica o permissionamento do ERP e esse acesso ao portal e esse
+> acesso ao ponto? Já começa a complicar um pouquinho."*
+
+**Não há portal novo, e isso é a resposta.** O aplicativo do ponto
+(`/ponto/app`) já é um portal de gente de obra, com login próprio (CPF + PIN),
+papéis e recorte por obra. Um segundo portal com um terceiro login seria a
+quarta porta da mesma casa — e quem usa é a mesma pessoa, no mesmo celular, no
+mesmo dia.
+
+### Os três mundos de acesso, e o que cada um responde
+
+| Mundo | Quem entra | Como | O que decide |
+|---|---|---|---|
+| **ERP** | quem opera o escritório | e-mail e senha | perfil → ações → seções |
+| **Portal** (app do ponto) | gente de obra | CPF + PIN | papéis do ponto + a obra onde está |
+| **Aparelho** | o celular da obra | token do dispositivo | bate ponto por todos, sem login |
+
+**Eles não se misturam, e nada do ERP é concedido pelo portal.** O portal faz
+TRÊS coisas: abrir requisição ao DP, acompanhar o que abriu, e devolver
+documento. Ele não vê título, não vê salário de ninguém e não abre tela do ERP.
+
+### Como a ponte funciona, sem complicar o permissionamento
+
+Os dois módulos rodam no MESMO processo e dividem o mesmo cookie de sessão.
+Então o ERP **lê a sessão que o aplicativo do ponto já abriu** — e com ela
+descobre quem é a pessoa. Quem não passou pelo CPF+PIN não tem a chave na
+sessão, e o portal responde "entre pelo aplicativo".
+
+**As regras de alcance NÃO são reimplementadas**, e é isso que evita a
+complicação que ele temia:
+
+- **quais obras a pessoa alcança** → a regra do ponto (a obra do cadastro mais
+  as obras em que ela bateu ponto nos últimos dias, que é o que vale no
+  computador, sem localização);
+- **quem pode pedir POR OUTROS** → a MESMA marcação do ponto
+  (`administrativo_obra`). Não invento uma segunda: duas marcações para a mesma
+  autoridade divergiriam no primeiro mês, e aí a pessoa pede no ponto e não
+  pede no portal sem ninguém entender por quê.
+
+Por mim mesmo, qualquer um abre pedido. Por outro, só o administrativo de obra,
+e só de quem está numa obra que ele alcança — e fora disso a pessoa do outro
+**não existe** (404), nunca "sem permissão".
+
+### O que falta para o portal aparecer na tela
+
+As rotas estão prontas (`/erp/portal/api/...`). **A tela dele mora no aplicativo
+do ponto**, que é outra área deste repositório — e eu não mexo em outra área. O
+que o chat do ponto precisa acrescentar são **três telas** no aplicativo:
+
+1. **Pedidos ao DP** — a lista do que eu abri, lendo `/erp/portal/api/inicio`;
+2. **Novo pedido** — os tipos vêm no mesmo endereço, com os campos de cada um;
+3. **A devolver** — a lista de pendências e o envio do arquivo em
+   `/erp/portal/api/devolucoes/<id>`.
+
+Nenhuma delas precisa de regra nova: o alcance e o papel já são os do ponto.
 
 ---
 
@@ -276,10 +408,10 @@ qualquer uma das duas origens.
    entender um documento livre — e por isso é a última, e a que nasce em modo
    *sugere*.
 
-**O que isso quer dizer na prática: CINCO DAS SETE ROTINAS não dependem de IA
-nenhuma.** Triagem, despacho, cobrança, vigia e relator são regra de negócio
-escrita e conta de prazo. Só duas precisam entender documento livre: a leitura
-(R2) e a conferência do retorno (R5).
+**O que isso quer dizer na prática: SEIS DAS OITO ROTINAS não dependem de IA
+nenhuma.** Triagem, despacho, cobrança, caixa de entrada, vigia e relator são
+regra de negócio, cabeçalho de e-mail e conta de prazo. Só duas precisam
+entender documento livre: a leitura (R2) e a conferência do retorno (R5).
 
 O agente começa útil e burro, e fica inteligente depois — em vez de nascer
 inteligente e errado. E se a parte de IA nunca ficar boa, as cinco primeiras

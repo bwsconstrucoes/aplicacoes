@@ -230,7 +230,8 @@ def _linha(rotulo: str, valor: Any) -> str:
 
 
 def montar_mensagem(s: Session, template: str, c: Colaborador,
-                    dados: Optional[dict[str, Any]] = None) -> tuple[str, str]:
+                    dados: Optional[dict[str, Any]] = None,
+                    *, numero: str = "") -> tuple[str, str]:
     """(assunto, corpo). Em português, com os dados que a contabilidade precisa.
 
     O corpo é texto simples de propósito: ele vai ser lido, respondido e às
@@ -317,7 +318,11 @@ def montar_mensagem(s: Session, template: str, c: Colaborador,
                       + [x for x in cabeca if x]
                       + ["", _linha("Observação", d.get("observacao"))]
                       + ["", "Mensagem gerada pelo ERP da BWS Construções."])
-    assunto = f"{regra['nome']} — {c.nome} ({c.cpf})"
+    # O NÚMERO VAI NO ASSUNTO, ENTRE COLCHETES, e isto não é enfeite: é por ele
+    # que a resposta da contabilidade é casada com o pedido quando o cliente de
+    # e-mail dela não devolve o In-Reply-To. Formato fixo `[CT-00001]`, porque
+    # quem vai procurar é uma expressão regular, não uma pessoa.
+    assunto = f"[{numero}] {regra['nome']} — {c.nome} ({c.cpf})"
     return assunto, "\n".join([l for l in corpo.split("\n")]).replace("\n\n\n", "\n\n")
 
 
@@ -365,8 +370,8 @@ def abrir(s: Session, dados: dict[str, Any], usuario: Optional[Usuario],
 
     pedido = {k: v for k, v in (dados.get("dados") or {}).items()
               if v not in (None, "")}
-    assunto, corpo = montar_mensagem(s, template, c, pedido)
     numero = proximo_numero(s)
+    assunto, corpo = montar_mensagem(s, template, c, pedido, numero=numero)
     linha = s.execute(text("""
         INSERT INTO dp_pedidos (numero, template, situacao, colaborador_id,
                                 solicitacao_id, empresa_id, assunto, corpo,
@@ -430,8 +435,10 @@ def enviar(s: Session, pedido_id: int, usuario: Optional[Usuario], *,
         prazo = dias_uteis_depois(date.today(), regra["prazo"])
         s.execute(text("""
             UPDATE dp_pedidos SET situacao = 'ENVIADO', para = :para,
-                   prazo = :prazo, atualizado_em = now() WHERE id = :id"""),
-            {"para": destinos, "prazo": prazo, "id": pedido_id})
+                   prazo = :prazo, message_id = COALESCE(:mid, message_id),
+                   atualizado_em = now() WHERE id = :id"""),
+            {"para": destinos, "prazo": prazo, "id": pedido_id,
+             "mid": registro.message_id})
         _evento(s, pedido_id, "ENVIADO",
                 f"e-mail enviado para {', '.join(destinos)}; "
                 f"retorno esperado até {prazo:%d/%m/%Y}",

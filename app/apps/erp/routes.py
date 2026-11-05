@@ -10933,6 +10933,197 @@ def api_cargos_importar():
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
+# ---------------------------------------------------------------------------
+# O PORTAL DA OBRA — autenticado pela sessão do APLICATIVO DO PONTO
+#
+# Não há login novo e não há permissão do ERP concedida aqui. Quem não passou
+# pelo CPF+PIN do aplicativo do ponto não tem a chave na sessão, e o portal
+# responde "entre pelo aplicativo". Detalhe em `core/portal.py`.
+#
+# `permissao_publica` com o motivo escrito é como o guard do ERP exige declarar
+# rota que não usa o login do ERP — e a conferência de quem é acontece dentro,
+# na primeira linha de cada função.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/portal/api/inicio")
+@permissao_publica("portal da obra: quem entra é colaborador pelo app do ponto")
+def api_portal_inicio():
+    from app.apps.erp.core import portal as svc_portal
+    try:
+        # A CONFERÊNCIA VEM ANTES DO BANCO: recusar quem não entrou não pode
+        # custar uma conexão. Rota pública que abre conexão antes de saber quem
+        # é vira porta de esgotar o pool com requisição anônima.
+        svc_portal.id_na_sessao()
+        with get_session() as s:
+            eu = svc_portal.quem_esta(s)
+            return jsonify({
+                "ok": True,
+                "nome": eu["nome"],
+                "administrativo": svc_portal.e_administrativo_de_obra(
+                    s, eu["pessoa"]),
+                "obras": svc_portal.obras_que_alcanca(s, eu["pessoa"]),
+                "tipos": svc_portal.tipos(s),
+                "pedidos": svc_portal.meus_pedidos(s),
+                "devolucoes": svc_portal.minhas_devolucoes(s)})
+    except svc_portal.SemAcesso as e:
+        return jsonify({"ok": False, "erro": str(e)}), 401
+
+
+@bp.route("/erp/portal/api/pedidos", methods=["POST"])
+@permissao_publica("portal da obra: abrir requisição ao DP")
+def api_portal_abrir():
+    from app.apps.erp.core import portal as svc_portal
+    try:
+        svc_portal.id_na_sessao()
+        with get_session() as s:
+            r = svc_portal.abrir(s, request.get_json(silent=True) or {})
+            s.commit()
+            return jsonify({"ok": True, **r})
+    except svc_portal.SemAcesso as e:
+        return jsonify({"ok": False, "erro": str(e)}), 401
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP: falha ao abrir pedido pelo portal")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/portal/api/devolucoes/<int:devolucao_id>", methods=["POST"])
+@permissao_publica("portal da obra: devolver documento assinado")
+def api_portal_devolver(devolucao_id: int):
+    """A obra devolve o documento assinado. É o "tem que ser via sistema"."""
+    from app.apps.erp.core import portal as svc_portal
+    try:
+        svc_portal.id_na_sessao()
+    except svc_portal.SemAcesso as e:
+        return jsonify({"ok": False, "erro": str(e)}), 401
+    arquivo = request.files.get("arquivo")
+    if arquivo is None:
+        return jsonify({"ok": False, "erro": "Escolha o arquivo."}), 400
+    try:
+        with get_session() as s:
+            r = svc_portal.devolver(s, devolucao_id, arquivo.read(),
+                                    arquivo.filename or "documento")
+            s.commit()
+            return jsonify({"ok": True, **r})
+    except svc_portal.SemAcesso as e:
+        return jsonify({"ok": False, "erro": str(e)}), 401
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP: falha ao devolver documento pelo portal")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# O LADO DO DP: as devoluções e a caixa de entrada
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/dp/devolucoes", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao(GET="ver_pessoal", POST="pedir_contabilidade")
+def api_dp_devolucoes():
+    from app.apps.erp.core import portal as svc_portal
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            if request.method == "GET":
+                return jsonify({"ok": True, "devolucoes": svc_portal.devolucoes_abertas(
+                    s, atrasadas=request.args.get("atrasadas") == "1")})
+            r = svc_portal.abrir_devolucao(
+                s, request.get_json(silent=True) or {}, usuario)
+            s.commit()
+            return jsonify({"ok": True, **r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP: falha nas devoluções da obra")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/dp/devolucoes/<int:devolucao_id>/cobrar", methods=["POST"])
+@login_obrigatorio
+@permissao("pedir_contabilidade")
+def api_dp_devolucao_cobrar(devolucao_id: int):
+    from app.apps.erp.core import portal as svc_portal
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            r = svc_portal.cobrar_devolucao(s, devolucao_id, usuario)
+            s.commit()
+            return jsonify({"ok": True, **r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP: falha ao cobrar a devolução")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/dp/caixa", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao(GET="ver_pessoal", POST="configurar")
+def api_dp_caixa():
+    """A caixa de entrada que o agente lê. A SENHA nunca sai na resposta."""
+    from app.apps.erp.core.comum import email_entrada
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            if request.method == "GET":
+                from sqlalchemy import text as _text
+                lidas = s.execute(_text("""
+                    SELECT message_id, de, assunto, situacao, motivo, anexos,
+                           arquivados, processado_em, pedido_id
+                      FROM email_entrada_mensagens
+                     ORDER BY processado_em DESC LIMIT 100""")).mappings().all()
+                return jsonify({
+                    "ok": True,
+                    "config": email_entrada.configuracao(s),
+                    "mensagens": [{**{k: (str(v) if k == "processado_em" else v)
+                                      for k, v in dict(l).items()}}
+                                  for l in lidas]})
+            r = email_entrada.configurar(
+                s, request.get_json(silent=True) or {}, usuario)
+            s.commit()
+            return jsonify({"ok": True, "config": r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha na caixa de entrada")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/dp/caixa/<acao>", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_dp_caixa_acao(acao: str):
+    """testar · ler (uma rodada agora) · conferir (uma rodada SEM gravar)."""
+    from app.apps.erp.core.comum import email_entrada
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            if acao == "testar":
+                r = email_entrada.testar(s)
+            elif acao in ("ler", "conferir"):
+                r = email_entrada.rodada(s, usuario, gravar=(acao == "ler"))
+            else:
+                return jsonify({"ok": False, "erro": "Ação desconhecida."}), 400
+            s.commit()
+            return jsonify({"ok": True, **r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except email_entrada.ErroDeLeitura as e:
+        return jsonify({"ok": False, "erro": str(e)}), 502
+    except Exception as e:
+        logger.exception("ERP: falha ao ler a caixa de entrada")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
 @bp.route("/erp/dp/contabilidade")
 @login_obrigatorio
 @permissao("ver_pessoal")

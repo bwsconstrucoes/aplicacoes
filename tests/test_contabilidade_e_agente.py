@@ -66,12 +66,20 @@ def test_toda_rotina_do_agente_diz_o_que_nao_analisa():
         assert "usa_ia" in r
 
 
-def test_cinco_das_sete_rotinas_nao_usam_ia():
+def test_seis_das_oito_rotinas_nao_usam_ia():
     """É o desenho: o agente começa útil e burro. Se a parte de IA nunca ficar
     boa, o pedido esquecido — o custo que mais dói — já está resolvido por
-    conta de calendário."""
+    conta de calendário.
+
+    A LEITURA DA CAIXA entrou em 05/11/2026 e **não usa IA**: casar resposta com
+    pedido é cabeçalho de e-mail e expressão regular, e baixar anexo é
+    biblioteca padrão. Quem precisa de IA é só entender o CONTEÚDO do
+    documento (a rotina de conferência) e ler documento de identidade."""
     sem_ia = [k for k, v in ag.ROTINAS.items() if not v["usa_ia"]]
-    assert set(sem_ia) == {"triagem", "despacho", "cobranca", "vigia", "relatorio"}
+    assert set(sem_ia) == {"triagem", "despacho", "cobranca", "caixa",
+                           "vigia", "relatorio"}
+    assert {k for k, v in ag.ROTINAS.items() if v["usa_ia"]} == {
+        "leitura", "conferencia"}
 
 
 # ===========================================================================

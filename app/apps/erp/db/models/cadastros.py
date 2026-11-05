@@ -1484,6 +1484,11 @@ class EnvioEmail(Base):
     copia: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False,
                                              default=list)
     responder_para: Mapped[Optional[str]] = mapped_column(Text)
+    # O Message-ID que ESTE envio gerou. A resposta do outro lado traz este
+    # valor em In-Reply-To/References — é por ele que a leitura da caixa de
+    # entrada casa a resposta com o que a originou, sem depender de ninguém
+    # manter o assunto intacto ao responder.
+    message_id: Mapped[Optional[str]] = mapped_column(Text)
     assunto: Mapped[str] = mapped_column(Text, nullable=False)
     corpo: Mapped[str] = mapped_column(Text, nullable=False)
     anexos: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)

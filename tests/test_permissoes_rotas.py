@@ -139,10 +139,41 @@ def test_o_conjunto_de_rotas_publicas_e_pequeno_e_conhecido():
     banco**: uma é a ficha do ícone, a outra é código de navegador. O teste
     `tests/test_pwa.py` monta o ERP SEM banco configurado só para provar isso
     — se alguém puser uma consulta ali dentro, aquele arquivo quebra.
+
+    AS TRÊS DO PORTAL entraram em 05/11/2026, com o portal da obra. Elas não
+    usam o login do ERP **porque quem entra não tem login do ERP** — é o
+    administrativo de obra, e o dono foi explícito: *"o administrativo de obra
+    não vai ter esse mesmo acesso. Ele precisa só entrar e preencher alguns
+    dados, fazer uma requisição."*
+
+    **Públicas não quer dizer abertas.** A primeira linha de cada uma chama
+    `portal.quem_esta`, que exige a sessão do APLICATIVO DO PONTO (CPF + PIN) e
+    responde 401 sem ela. O teste logo abaixo prova as três recusas sem sessão.
+    Nenhuma delas aceita número de registro sem conferir o alcance de obra da
+    pessoa, e nenhuma concede ação do ERP.
     """
     assert set(routes._ENDPOINTS_PUBLICOS) == {
         "erp.pagina_login", "erp.sair", "erp.health", "erp.api_agente_rodar",
-        "erp.api_comprovantes_lote", "erp.manifesto_pwa", "erp.service_worker"}
+        "erp.api_comprovantes_lote", "erp.manifesto_pwa", "erp.service_worker",
+        "erp.api_portal_inicio", "erp.api_portal_abrir",
+        "erp.api_portal_devolver"}
+
+
+def test_o_portal_recusa_sem_a_sessao_do_aplicativo_do_ponto(app):
+    """As três rotas do portal não usam o login do ERP, então elas têm de se
+    defender sozinhas — e a defesa é a sessão do aplicativo do ponto.
+
+    Sem ela, 401 com a frase que diz o que fazer ("entre pelo aplicativo"), e
+    nunca um erro técnico nem uma tela de login do ERP: quem está do outro lado
+    é gente de obra no celular."""
+    with app.test_client() as c:
+        for metodo, url in (("get", "/erp/portal/api/inicio"),
+                            ("post", "/erp/portal/api/pedidos"),
+                            ("post", "/erp/portal/api/devolucoes/1")):
+            r = getattr(c, metodo)(url, json={})
+            assert r.status_code in (400, 401), f"{url} não se defendeu"
+            if r.status_code == 401:
+                assert "aplicativo" in (r.get_json() or {}).get("erro", "").lower()
 
 
 def test_a_porta_dos_comprovantes_recusa_sem_segredo_e_com_segredo_errado(app, monkeypatch):

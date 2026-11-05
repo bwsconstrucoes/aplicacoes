@@ -9,6 +9,8 @@
   <div class="tabela-barra" style="padding:0">
     <button class="topo-aba ativa" data-painel="pedidos">Pedidos</button>
     <button class="topo-aba" data-painel="agente">O agente</button>
+    <button class="topo-aba" data-painel="devolucoes">A devolver pela obra</button>
+    <button class="topo-aba" data-painel="caixa">Caixa de entrada</button>
     <button class="topo-aba" data-painel="sugestoes">O que o agente sugere</button>
     <select id="f-situacao" style="min-width:170px">
       <option value="ABERTOS">só os abertos</option>
@@ -35,6 +37,8 @@
 </div>
 
 <div id="painel-agente" class="oculto"></div>
+<div id="painel-devolucoes" class="oculto"></div>
+<div id="painel-caixa" class="oculto"></div>
 <div id="painel-sugestoes" class="oculto"></div>
 
 <dialog id="dlg"><div class="dlg-topo"><h3 id="dlg-titulo">—</h3>
@@ -373,12 +377,192 @@ async function rodarAgora(){
   } catch(e){ aviso("mensagem", e.message, "erro"); }
 }
 
+// ---------------------------------------------------------------------------
+// A DEVOLVER PELA OBRA — o documento que foi para assinar e tem de voltar
+// Decisão dele: o WhatsApp AVISA e COBRA; o arquivo volta pelo PORTAL.
+// ---------------------------------------------------------------------------
+let DEVOLUCOES = [];
+
+async function carregarDevolucoes(){
+  try {
+    const d = await api("/erp/api/dp/devolucoes");
+    DEVOLUCOES = d.devolucoes;
+    pintarDevolucoes();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+function pintarDevolucoes(){
+  const atrasadas = DEVOLUCOES.filter(d => d.atrasada);
+  els("painel-devolucoes").innerHTML = `
+    <div class="cartao-dica">Documento que o DP mandou para a obra fazer algo e
+      devolver — colher assinatura, por exemplo. O <b>WhatsApp avisa e cobra</b>;
+      o arquivo volta <b>pelo portal</b> (aplicativo do ponto), com tipo e dono.
+      Foto de documento em conversa não é arquivo.
+      ${PODE_PEDIR ? `<div style="margin-top:8px">
+        <button class="btn secundario" id="dv-nova">+ Pedir devolução</button></div>` : ""}</div>
+    ${atrasadas.length ? `<div class="aviso alerta" style="margin-top:10px">
+      <b>${atrasadas.length} devolução(ões) atrasada(s).</b></div>` : ""}
+    ${DEVOLUCOES.length ? `<div class="tabela-wrap" style="margin-top:10px">
+      <div class="tabela-rolagem"><table>
+      <thead><tr><th>Nº</th><th>O que</th><th>Pessoa</th><th>Obra</th>
+        <th>Documento</th><th>Prazo</th><th>Cobranças</th><th></th></tr></thead>
+      <tbody>${DEVOLUCOES.map(d => `<tr>
+        <td>${escapar(d.numero)}</td><td class="desc">${escapar(d.o_que)}</td>
+        <td>${escapar(d.pessoa || "—")}</td><td>${escapar(d.obra || "—")}</td>
+        <td class="desc">${escapar(d.documento_esperado)}</td>
+        <td>${d.prazo ? dataBR(d.prazo) : "—"}
+          ${d.atrasada ? `<br><small class="aviso-texto">há ${d.dias_atraso} dia(s)</small>` : ""}</td>
+        <td class="direita">${d.cobrancas}</td>
+        <td>${PODE_PEDIR ? `<button class="link-btn" data-cobrar="${d.id}">Cobrar</button>` : ""}</td>
+        </tr>`).join("")}</tbody></table></div></div>`
+      : `<div class="vazio">Nada esperando a obra.</div>`}`;
+  if (els("dv-nova")) els("dv-nova").addEventListener("click", novaDevolucao);
+  els("painel-devolucoes").querySelectorAll("[data-cobrar]").forEach(b =>
+    b.addEventListener("click", () => cobrarDevolucao(+b.dataset.cobrar)));
+}
+
+async function novaDevolucao(){
+  const r = await perguntar({
+    titulo: "Pedir devolução à obra",
+    aviso: "A obra recebe um aviso por WhatsApp e devolve o documento pelo "
+         + "portal. Diga qual documento tem de voltar — é o que faz ele ser "
+         + "achável depois.",
+    textoOk: "Abrir a pendência",
+    campos: [
+      {nome: "colaborador_id", rotulo: "Pessoa", tipo: "select-busca",
+       fonte: "/erp/api/colaboradores"},
+      {nome: "o_que", rotulo: "O que a obra tem de fazer", tipo: "textarea"},
+      {nome: "documento_esperado", rotulo: "Documento que volta", tipo: "select",
+       opcoes: [
+         {valor: "RESCISAO", rotulo: "Termo de rescisão"},
+         {valor: "CONTRATO-TRABALHO", rotulo: "Contrato de trabalho"},
+         {valor: "FICHA-REGISTRO", rotulo: "Ficha de registro"},
+         {valor: "ALTERACAO-CONTRATO", rotulo: "Alteração de contrato"},
+         {valor: "AVISO-FERIAS", rotulo: "Aviso e recibo de férias"},
+         {valor: "EPI-FICHA", rotulo: "Ficha de entrega de EPI"},
+         {valor: "DOC-PESSOA-OUTRO", rotulo: "Outro documento da pessoa"}]},
+      {nome: "dias", rotulo: "Prazo (dias)", valor: "5"}]});
+  if (!r) return;
+  try {
+    const d = await api("/erp/api/dp/devolucoes",
+                        {method: "POST", body: JSON.stringify(r)});
+    aviso("mensagem", `Pendência ${d.numero} aberta. Use "Cobrar" para avisar a obra.`, "ok");
+    carregarDevolucoes();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+async function cobrarDevolucao(id){
+  try {
+    const r = await api(`/erp/api/dp/devolucoes/${id}/cobrar`, {method: "POST"});
+    aviso("mensagem", `Avisei ${r.avisados} de ${r.telefones} telefone(s) da obra.`, "ok");
+    carregarDevolucoes();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+// ---------------------------------------------------------------------------
+// A CAIXA DE ENTRADA — o ERP lendo e-mail, não só mandando
+// ---------------------------------------------------------------------------
+let CAIXA = {config: {}, mensagens: []};
+
+async function carregarCaixa(){
+  try {
+    CAIXA = await api("/erp/api/dp/caixa");
+    pintarCaixa();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+function pintarCaixa(){
+  const c = CAIXA.config || {};
+  els("painel-caixa").innerHTML = `
+    <div class="cartao-dica">É daqui que o agente lê o retorno da contabilidade:
+      ele casa cada resposta com o pedido que a originou, baixa os anexos e
+      arquiva no Drive com o tipo esperado — <b>sem ninguém jogar anexo</b>.
+      ${c.usavel ? "" : `<br><b>Falta configurar</b> servidor, usuário e senha.`}</div>
+    <div class="kpis" style="margin-top:10px">
+      <div class="kpi estatico ${c.usavel ? "verde" : "ambar"}">
+        <div class="kpi-rotulo">Configuração</div>
+        <div class="kpi-valor" style="font-size:16px">${c.usavel ? "pronta" : "incompleta"}</div>
+        <div class="kpi-sub">${escapar(c.usuario || "sem usuário")}</div></div>
+      <div class="kpi estatico"><div class="kpi-rotulo">Servidor</div>
+        <div class="kpi-valor" style="font-size:16px">${escapar(c.servidor || "—")}</div>
+        <div class="kpi-sub">porta ${c.porta || "—"} · pasta ${escapar(c.pasta || "INBOX")}</div></div>
+      <div class="kpi estatico"><div class="kpi-rotulo">Mensagens lidas</div>
+        <div class="kpi-valor">${(CAIXA.mensagens || []).length}</div></div>
+    </div>
+    ${PODE_PEDIR ? `<div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap">
+      <button class="btn secundario" id="cx-config">Configurar a caixa</button>
+      <button class="btn secundario" id="cx-testar">Testar a conexão</button>
+      <button class="btn secundario" id="cx-conferir">Ler sem gravar</button>
+      <button class="btn" id="cx-ler">Ler agora</button></div>` : ""}
+    <div id="cx-msg" style="margin-top:10px"></div>
+    ${(CAIXA.mensagens || []).length ? `<div class="tabela-wrap" style="margin-top:10px">
+      <div class="tabela-rolagem"><table>
+      <thead><tr><th>Quando</th><th>De</th><th>Assunto</th><th>Anexos</th>
+        <th>Situação</th><th>Observação</th></tr></thead><tbody>
+      ${CAIXA.mensagens.map(m => `<tr>
+        <td style="white-space:nowrap">${dataBR(m.processado_em)}</td>
+        <td class="desc">${escapar(m.de || "—")}</td>
+        <td class="desc">${escapar(m.assunto || "—")}</td>
+        <td class="direita">${m.arquivados}/${m.anexos}</td>
+        <td><span class="etiqueta ${m.situacao === "CASADA" ? "verde"
+            : m.situacao === "SEM_DONO" ? "ambar" : ""}">${escapar(m.situacao)}</span></td>
+        <td class="desc">${escapar(m.motivo || "")}</td></tr>`).join("")}
+      </tbody></table></div></div>` : ""}`;
+  const liga = (id, fn) => { if (els(id)) els(id).addEventListener("click", fn); };
+  liga("cx-config", configurarCaixa);
+  liga("cx-testar", () => acaoCaixa("testar"));
+  liga("cx-conferir", () => acaoCaixa("conferir"));
+  liga("cx-ler", () => acaoCaixa("ler"));
+}
+
+async function configurarCaixa(){
+  const c = CAIXA.config || {};
+  const r = await perguntar({
+    titulo: "A caixa de entrada que o agente lê",
+    aviso: "Use uma conta só para isto. Em conta Google, a senha é uma "
+         + "\"senha de aplicativo\" — a senha normal não entra por IMAP. "
+         + "A senha é guardada cifrada e nunca aparece na tela.",
+    textoOk: "Salvar",
+    campos: [
+      {nome: "servidor", rotulo: "Servidor IMAP", valor: c.servidor || "imap.gmail.com"},
+      {nome: "porta", rotulo: "Porta", valor: String(c.porta || 993)},
+      {nome: "usuario", rotulo: "Usuário (e-mail)", valor: c.usuario || ""},
+      {nome: "senha", rotulo: c.tem_senha ? "Senha (deixe vazio para manter)" : "Senha",
+       tipo: "password"},
+      {nome: "pasta", rotulo: "Pasta", valor: c.pasta || "INBOX"}]});
+  if (!r) return;
+  try {
+    const d = await api("/erp/api/dp/caixa",
+                        {method: "POST", body: JSON.stringify(r)});
+    aviso("mensagem", d.config.aviso || "Caixa configurada.",
+          d.config.aviso ? "alerta" : "ok");
+    carregarCaixa();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+async function acaoCaixa(qual){
+  try {
+    const r = await api(`/erp/api/dp/caixa/${qual}`, {method: "POST"});
+    if (qual === "testar") {
+      aviso("cx-msg", `Conectou. ${r.nao_lidas} mensagem(ns) não lida(s).`, "ok");
+    } else {
+      aviso("cx-msg", `${r.olhou} mensagem(ns) olhada(s): ${r.casadas} casada(s), `
+        + `${r.sem_dono} sem dono, ${r.arquivados} anexo(s) arquivado(s).`
+        + (qual === "conferir" ? " Nada foi gravado — é só a conferência." : ""),
+        "ok");
+      carregarCaixa();
+    }
+  } catch(e){ aviso("cx-msg", e.message, "erro"); }
+}
+
 document.querySelectorAll("[data-painel]").forEach(b =>
   b.addEventListener("click", () => {
     document.querySelectorAll("[data-painel]").forEach(x =>
       x.classList.toggle("ativa", x === b));
-    ["pedidos", "agente", "sugestoes"].forEach(p =>
+    ["pedidos", "agente", "devolucoes", "caixa", "sugestoes"].forEach(p =>
       els("painel-" + p).classList.toggle("oculto", p !== b.dataset.painel));
+    if (b.dataset.painel === "devolucoes") carregarDevolucoes();
+    if (b.dataset.painel === "caixa") carregarCaixa();
   }));
 els("f-situacao").addEventListener("change", carregar);
 if (els("btn-novo")) els("btn-novo").addEventListener("click", novoPedido);
