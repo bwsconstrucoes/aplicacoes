@@ -9,6 +9,10 @@ do que muda e do que sai está em `../CADASTRO_DE_PESSOAS.md`.
   com tipo, obrigatoriedade e as listas de opções.
 - `pipe_solicitacoes_dp.txt` — pipe 301514316, 80.992 cards: idem, com os 106
   campos do formulário e os 28 tipos de solicitação.
+- `cenarios_do_make.md` — o que os quatro cenários do Make faziam: a planilha
+  que cada um escrevia, as 74 colunas do contrato da folha, a pasta do Dropbox
+  onde os anexos ficavam e os sistemas de fora que eles tocavam (MobPonto,
+  Z-API, Telegram).
 
 **Por que ficam versionados:** o Pipefy vai ser desligado. Quando ele morrer,
 esta é a única descrição do que o DP coletava — e vai ser consultada toda vez

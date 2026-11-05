@@ -25,6 +25,9 @@ qualquer linha dessa área.
 | O que importar | **Só quem está ATIVO**, com a documentação. Os ~2.960 desligados **ficam na planilha como base morta.** Daí em diante, cadastro novo nasce no ERP. |
 | Portal | Um ambiente com três áreas: **Colaboradores**, **Solicitações do DP** e **Ponto** — como o Pipefy fazia. |
 | Sub-bases que o cadastro usa | cargo, município, naturalidade, obra (já existe no ERP), e a pessoa **responsável pela requisição**. |
+| A aba "Dados Documentos" | **A base de colaboradores do ERP toma o lugar dela** (05/11/2026, dele: *"Dados Documentos não será substituída pela base de dados dos colaboradores do ERP?"* — sim). Quem precisar daquele dado passa a ler o ERP. |
+| Onde os papéis ficam | **Google Drive, sempre.** Dele, no mesmo dia: *"todo documento, anexo, pdf, imagem que for ser salvo dos cadastros dos colaboradores, lembrar de salvar no Google Drive."* É o que o Arquivo do ERP já faz — e é uma troca de lugar, porque o Pipefy guardava no **Dropbox**. |
+| Riscos e EPI do cargo | **Estão vazios de verdade** (05/11/2026, dele: *"o que foi vazio na tabela de cargos é pq tá vazio mesmo"*). Não há o que importar; os campos existem no ERP para serem preenchidos daqui para a frente. |
 
 ---
 
@@ -86,6 +89,37 @@ cadastro, e então — conforme o tipo — **baixa o anexo e sobe para o Dropbox
 documento (**CloudConvert**), manda documento por **Telegram**, escreve a chave
 Pix na planilha (colunas 73 e 74), calcula parcela de desconto em folha numa aba
 `RateioDescFolha`, atualiza uma aba `Relatório`, e grava log.
+
+### 2b-bis. `DP - Cadastro de Colaboradores - Card Movido` (chegou em 05/11/2026)
+
+**190 módulos.** É o maior dos cenários do cadastro, e é ele quem **cria a linha
+nova** na aba "Dados Documentos" — a lacuna que faltava. O que ele faz, por
+ordem de importância para o ERP:
+
+1. **Cria a linha** na aba "Dados Documentos" (50 colunas no nascimento) e
+   depois **atualiza as 74**. ✔ **Nada de novo no mapa de campos:** as colunas
+   que ele escreve são as mesmas do cenário do Botão. O de-para da seção 4 está
+   completo, e a importação das pessoas não precisa de retrabalho.
+2. **Arquiva os seis anexos no DROPBOX**, numa pasta por pessoa:
+   `/BWS DP/FUNCIONÁRIOS/<Nome Completo>`, mais `/BWS DP/DOCUMENTOS/CRACHÁS`.
+   → **É uma troca de lugar, não de função:** o Arquivo do ERP guarda no
+   **Google Drive**, privado, com a credencial que já existe. O passivo de
+   papéis que está no Dropbox é assunto à parte (ver seção 8).
+3. **Cadastra e inativa a pessoa no MobPonto**
+   (`mobponto.com.br/ponto/api/endpoint.php`), e manda e-mail ao DP pedindo a
+   inativação à mão quando a API não resolve.
+4. **Avisa por WhatsApp (Z-API) e por Telegram** — e o Telegram é o nosso
+   (`aplicacoes.bwsconstrucoes.com.br/telegram/enviar`).
+5. **Escreve outra planilha**, "Planilha de Cadastro de Funcionários" (20
+   colunas: identificação, endereço, telefone e tipo de contrato), e marca o CPF
+   numa célula da aba "Dados Gerais" — as duas servem para **gerar documento
+   modelo**, que é justamente o uso que o dono disse não servir mais.
+6. **No cancelamento**, apaga o registro da tabela, o arquivo do Dropbox, o card
+   e a linha da planilha.
+
+**O que isto deixa em aberto, e é dele:** quem cadastra a pessoa no **MobPonto**
+quando o Pipefy morrer. O ponto do ERP é REP-P e tem cadastro próprio; o
+MobPonto ainda aparece no Análise de SPs.
 
 ### 2c. `DP - SDP - Card Concluído`
 
@@ -187,8 +221,15 @@ solicitação ×.
 **Documentos anexos (6 obrigatórios + 2 opcionais):** documento de identificação,
 CTPS página da foto, CTPS página das informações, CPF, comprovante de endereço,
 foto do colaborador, certidão/RG dos dependentes, documentos diversos, **ASO**.
-→ O catálogo do ERP já prevê todos, menos **foto do colaborador** (o ponto tem
-foto cadastral — conferir se é a mesma) e **comprovante de endereço**.
+→ ✔ **RESOLVIDO em 05/11/2026:** o catálogo ganhou os quatro que faltavam —
+*Comprovante de endereço (colaborador)*, *Foto do colaborador*, *Certidão ou RG
+de dependente* e *Outro documento do colaborador*, todos com dono PESSOA e
+sigilo PESSOAL. O comprovante de endereço existia só como documento da EMPRESA,
+e a foto não existia. **Eles entram quando alguém apertar o botão do
+catálogo** — "Instalar o catálogo de tipos", na tela do Arquivo, ou "Instalar
+tipos de documento", em Configurações. O catálogo mora no banco e é editável
+pela tela; apertar de novo cria o que falta e nunca apaga.
+**E todos são guardados no Google Drive**, privados, como o resto do Arquivo.
 
 **As listas de opções que vêm prontas do pipe** (reusar, não inventar):
 escolaridade (8), estado civil (5), órgão emissor (SSP/DETRAN/MTE/ME), UF (27),
@@ -371,19 +412,27 @@ o vínculo que acabara de nascer, e abriria um segundo**. Corrigido.
 
 **AINDA FALTA, e nada disso trava o que está sendo construído:**
 
-1. **O cenário `DP - Cadastro de Colaboradores - Card Movido`** — o dono disse
-   que é ele quem grava o cadastro novo na planilha. Depois do mapa das 74
-   colunas, ele deixou de ser indispensável: serve para **conferir** se a
-   criação escreve algo que a atualização não escreve.
+1. ✔ **RESOLVIDO em 05/11/2026 — o cenário `Card Movido` chegou.** Lido inteiro
+   (seção 2b-bis): ele **não escreve nenhuma coluna** que a atualização não
+   escreva, então o mapa das 74 está completo e a importação não precisa de
+   retrabalho. O que ele revelou de novo foi o **Dropbox** como lugar dos
+   papéis, o **MobPonto**, e duas planilhas de geração de documento.
 2. **O cenário de atualização** que ele mencionou (*"um cenário que existe no
    make é um de atualização, mas acho que não interfere aqui"*) — o arquivo que
    veio foi o do **Botão**, não esse. Provavelmente é o mesmo; vale confirmar.
-3. **As planilhas de folha que CONTINUAM vivas**: ele disse *"o ERP passa a
-   alimentar as planilhas de transporte, GM e diaristas"*. Se a aba "Dados
-   Documentos" morreu, **de onde essas planilhas vão ler?** Elas liam dela. É a
-   pergunta que decide a fase 5 — e a Análise de SPs, que copia
-   `analisesps.colaborador` daquela aba, também depende da resposta.
-4. **A tabela *Cargos* do Pipefy** — a planilha exportada resolveu o cadastro,
-   mas se a tabela tiver Riscos e EPI preenchidos (a exportação veio com as
-   colunas vazias), vale trazer.
+3. **As planilhas de folha que CONTINUAM vivas** — meio respondido em
+   05/11/2026. A aba "Dados Documentos" **é substituída pela base de
+   colaboradores do ERP**, decisão dele. Falta só o COMO: as planilhas de
+   transporte, GM e diaristas, e a cópia `analisesps.colaborador` que a folha
+   usa, passam a ler do ERP de que jeito — o ERP escrevendo nelas (como o Make
+   fazia), ou elas puxando do ERP? São dois trabalhos diferentes, e a escolha é
+   dele.
+
+3-bis. **O passivo de papéis no Dropbox.** Os anexos dos ~575 ativos estão em
+   `/BWS DP/FUNCIONÁRIOS/<Nome>`, no Dropbox. A regra passa a ser Google Drive.
+   Trazer o que já existe é um trabalho próprio — dá para fazer, e é decisão
+   dele se vale.
+4. ✔ **RESOLVIDO em 05/11/2026 — Riscos e EPI estão vazios de verdade.** Dele:
+   *"o que foi vazio na tabela de cargos é pq tá vazio mesmo."* Não há o que
+   trazer; os campos existem no ERP para serem preenchidos daqui para a frente.
 5. **Os cinco tipos manuais**: viram pedido no ERP ou saem de vez?

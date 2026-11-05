@@ -102,6 +102,15 @@ CATALOGO: tuple[tuple[Any, ...], ...] = (
     ("EPI-FICHA", "Ficha de entrega de EPI", "PESSOA", "PESSOA", False, None, False, "PESSOAL"),
     ("CERTIFICADO-NR", "Certificado de NR", "PESSOA", "PESSOA", True, 45, False, "PESSOAL"),
     ("CONTRATO-SOCIO", "Documentos de sócio", "PESSOA", "PESSOA", False, None, False, "PESSOAL"),
+    # OS QUATRO QUE O PIPEFY PEDIA E O ERP NÃO TINHA (05/11/2026). O pipe de
+    # cadastro exige seis anexos para admitir, e dois deles não existiam aqui —
+    # o comprovante de endereço só existia como documento da EMPRESA, e a foto
+    # não existia de jeito nenhum. Sem eles, o cadastro do DP vinha para o ERP
+    # e os papéis ficavam no Dropbox do Pipefy, onde ninguém mais procura.
+    ("COMPROVANTE-ENDERECO-PESSOA", "Comprovante de endereço (colaborador)", "PESSOA", "PESSOA", False, None, False, "PESSOAL"),
+    ("FOTO-COLABORADOR", "Foto do colaborador", "PESSOA", "PESSOA", False, None, False, "PESSOAL"),
+    ("DOC-DEPENDENTE", "Certidão ou RG de dependente", "PESSOA", "PESSOA", False, None, False, "PESSOAL"),
+    ("DOC-PESSOA-OUTRO", "Outro documento do colaborador", "PESSOA", "PESSOA", False, None, False, "PESSOAL"),
     # ---- financeiro e parceiros
     ("NOTA-FISCAL", "Nota fiscal", "FINANCEIRO", "LANCAMENTO", False, None, False, "ABERTO"),
     ("COMPROVANTE", "Comprovante de pagamento", "FINANCEIRO", "LANCAMENTO", False, None, False, "RESTRITO"),

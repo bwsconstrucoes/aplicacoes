@@ -83,6 +83,36 @@ ver. Detalhe na seção 7a do `CADASTRO_DE_PESSOAS.md`.
    do DP) não o achava e **abriria um segundo vínculo**. Regra geral: nesta
    sessão, objeto novo que vai ser LIDO na mesma transação precisa de `flush`.
 
+**AS DECISÕES DELE DE 05/11/2026, que fecham três perguntas:**
+
+1. **A aba "Dados Documentos" é substituída pela base de colaboradores do ERP**
+   (*"Dados Documentos não será substituída pela base de dados dos
+   colaboradores do ERP?"* — sim). Quem precisar daquele dado passa a ler o ERP.
+   **O que ainda falta é o COMO:** as planilhas de transporte, GM e diaristas, e
+   a cópia `analisesps.colaborador` que a folha usa, vão **ler do ERP** ou o
+   **ERP vai escrever nelas**? São dois trabalhos diferentes.
+2. **Todo papel do cadastro vai para o GOOGLE DRIVE** (*"todo documento, anexo,
+   pdf, imagem que for ser salvo dos cadastros dos colaboradores, lembrar de
+   salvar no Google Drive"*). É o que o Arquivo do ERP já faz — privado, com
+   `GOOGLE_CREDENTIALS_BASE64`. **É uma troca de lugar:** o Pipefy guardava no
+   **Dropbox**, em `/BWS DP/FUNCIONÁRIOS/<Nome>`. Esse passivo é trabalho à
+   parte. E o catálogo ganhou os quatro tipos que faltavam (comprovante de
+   endereço do colaborador, foto, documento de dependente e outro documento da
+   pessoa) — entram apertando "Instalar o catálogo de tipos".
+3. **Riscos e EPI do cargo estão vazios de verdade** (*"o que foi vazio na
+   tabela de cargos é pq tá vazio mesmo"*). Não há o que importar.
+
+**O cenário `Card Movido` chegou e foi lido** (190 módulos, o maior deles): ele
+**não escreve nenhuma coluna** que a atualização não escreva, então o mapa das
+74 está completo e a importação não precisou de retrabalho. O que ele revelou de
+novo está em `referencia_pipefy/cenarios_do_make.md`: o Dropbox como lugar dos
+papéis, o **MobPonto** (cadastro e inativação por API, com e-mail ao DP quando
+falha) e duas planilhas que só serviam para gerar documento.
+
+⚠️ **Pergunta aberta que não é desta área:** quem cadastra a pessoa no
+**MobPonto** quando o Pipefy morrer. O ponto do ERP é REP-P e tem cadastro
+próprio; o MobPonto ainda aparece no Análise de SPs.
+
 **O que ainda falta saber** (seção 8 do arquivo): os outros até 6 cenários do
 Make — em especial o que ESCREVE a linha nova na aba "Dados Documentos", porque
 nenhum dos três que vieram escreve; o conteúdo das tabelas do Pipefy (Cargos,
