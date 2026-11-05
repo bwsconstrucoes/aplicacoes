@@ -314,6 +314,8 @@
 </p>
 {% endif %}
 
+{# As etiquetas "nas outras folhas" de cada pessoa (05/11/2026). #}
+{% with ano=ano, mes=mes, tela=tipo %}{% include "_outras_folhas.html" %}{% endwith %}
 <div class="tabela-wrap">
 
   <div class="tabela-rolagem livre">

@@ -1338,6 +1338,7 @@ def dias_da_pessoa(cpf: str, ano: int, mes: int) -> dict:
                      "falta": lido["falta"] or falta or "",
                      "total_de_horas": lido["total_de_horas"],
                      "campos": campos})
+    _feriado_nacional_por_cima(dias, ano, mes)
     corte, novos = _ponto_novo(ano, mes, cpfs=[digitos])
     if corte is not None:
         do_ponto = []
@@ -1392,6 +1393,41 @@ def _dia_lido(data, campos) -> dict:
         "total_de_horas": str(campos.get(CAMPO_TOTAL_DE_HORAS) or "").strip(),
         "dia_da_semana": str(campos.get(CAMPO_DIA_DA_SEMANA) or "").strip(),
     }
+
+
+def _feriado_nacional_por_cima(dias: list, ano: int, mes: int) -> list:
+    """Dia do MOBPONTO marcado como FALTA, sem batida, num FERIADO NACIONAL passa a
+    ser lido como "Feriado" (05/11/2026).
+
+    O dono: *"esse feriado não foi aplicado no MobPonto (…) aí está vindo como
+    falta. Você consegue, mesmo sendo MobPonto, forçar a entender que é feriado,
+    mesmo não tendo no MobPonto essa informação?"* O 12/10/2026 (Nossa Senhora
+    Aparecida) não estava cadastrado no MobPonto, e ele escreveu FALTA para todo
+    mundo. A base de feriados é a do ponto (`folha_calendario`); o MobPonto não
+    manda nela.
+
+    SÓ O NACIONAL, aqui: o dia sem batida não tem obra, e o estadual e o municipal
+    dependem da obra. Nos auxílios, que conhecem a obra da pessoa, os três já valem
+    (`folha_auxilio.ausencias_do_mes`). Atestado, abono e qualquer outro texto que
+    não seja falta ficam como vieram. Sem o ponto, nada muda."""
+    if not dias:
+        return dias
+    from . import folha_calendario
+    inicio, fim = _limites_do_mes(ano, mes)
+    nacionais = {f["data"]: f["descricao"]
+                 for f in folha_calendario.feriados_no_periodo(inicio, fim, "")}
+    if not nacionais:
+        return dias
+    for d in dias:
+        nome = nacionais.get(d.get("data"))
+        if not nome or any(m for m in (d.get("marcacoes") or [])):
+            continue
+        texto = " ".join(f"{d.get('presenca') or ''} {d.get('falta') or ''}".split()).lower()
+        if "falta" not in texto:
+            continue
+        d["presenca"], d["falta"] = "Feriado", ""
+        d["feriado_forcado"] = nome
+    return dias
 
 
 def _obra_do_dia(lido) -> dict:
@@ -1486,6 +1522,7 @@ def dias_de_um_cpf(ano: int, mes: int, cpf: str) -> list:
         except Exception:  # noqa: BLE001
             campos = {}
         saida.append(_dia_lido(data, campos))
+    _feriado_nacional_por_cima(saida, ano, mes)
     corte, novos = _ponto_novo(ano, mes, cpfs=[_cpf_do_ponto(cpf)])
     if corte is not None:
         saida = juntar_dias(saida, (novos.get(_cpf_do_ponto(cpf)) or {}).get("dias", []), corte)
@@ -1522,6 +1559,10 @@ def dias_por_cpf(ano: int, mes: int) -> dict:
         except Exception:  # noqa: BLE001 — JSON torto de um dia não pode
             campos = {}    # derrubar o mês inteiro; o dia fica sem obra e cai
         saida.setdefault(cpf, []).append(_dia_lido(data, campos))
+    if saida:
+        # Uma leitura de feriados para o mês todo, não uma por pessoa.
+        todos = [d for dias in saida.values() for d in dias]
+        _feriado_nacional_por_cima(todos, ano, mes)
     corte, novos = _ponto_novo(ano, mes)
     if corte is not None:                  # a base mista: do corte em diante, o ponto eletrônico
         for cpf in set(saida) | set(novos):
