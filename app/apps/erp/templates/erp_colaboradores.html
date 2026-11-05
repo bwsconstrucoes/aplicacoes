@@ -856,6 +856,18 @@ async function importarPessoas(gravar){
         ${r.divergencias.map(x => `<tr><td>${x.linha}</td><td>${escapar(x.nome)}</td>
           <td class="desc">${x.o_que.map(escapar).join("<br>")}</td></tr>`).join("")}
         </tbody></table></div></div>` : ""}
+      ${(r.so_no_erp || []).length ? `<div style="margin-top:10px"><b>Está no ERP
+        e NÃO está na planilha (${r.so_no_erp.length})</b> — pode ser gente
+        admitida aqui depois da exportação, ou gente que saiu na planilha e
+        continua ativa no ERP. <b>Nada foi mexido:</b> desligar alguém porque
+        faltou numa planilha seria pior que a diferença.
+        <div class="tabela-rolagem" style="max-height:220px"><table>
+        <thead><tr><th>Nome</th><th>CPF</th><th>Matrícula</th>
+        <th>Admissão</th></tr></thead><tbody>
+        ${r.so_no_erp.map(x => `<tr><td>${escapar(x.nome)}</td>
+          <td>${documento(x.cpf)}</td><td>${escapar(x.matricula || "—")}</td>
+          <td>${x.admissao ? dataBR(x.admissao) : "—"}</td></tr>`).join("")}
+        </tbody></table></div></div>` : ""}
       ${r.cargos_novos.length ? `<div class="aviso" style="margin-top:10px">
         <b>Cargos que vão ser criados (${r.cargos_novos.length}):</b>
         ${r.cargos_novos.map(escapar).join(" · ")}<br>

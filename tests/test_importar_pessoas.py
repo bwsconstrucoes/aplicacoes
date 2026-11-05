@@ -432,3 +432,96 @@ def test_cabecalho_escrito_de_outro_jeito_nao_devolve_planilha_vazia(
                      gravar=False, usuario=dono)
     assert "coluna do CPF" in str(e.value)
     assert "documento" in str(e.value).lower()
+
+
+# ===========================================================================
+# A CONFERÊNCIA LADO A LADO — o que sustenta o período em paralelo
+#
+# Decisão do dono, 05/11/2026: *"precisamos antes de desativar essa leitura da
+# planilha deixar a parte cadastral de colaboradores do ERP toda funcionando e
+# testada (…) ficaremos com os dados em paralelo por alguns dias."*
+# ===========================================================================
+@banco_
+def test_a_conferencia_cobre_o_que_a_folha_le(sessao_real, dono, cenario):
+    """Nome e salário não bastam: a folha lê cargo, obra, diária, auxílios e
+    tipo de contrato, e é aí que a diferença custa dinheiro."""
+    from app.apps.erp.core.cadastros import cargos as svc_cargos
+    from app.apps.erp.core.cadastros import pessoas as svc
+    from app.apps.erp.db.models.cadastros import Obra
+    outro = Obra(codigo="IMP-99", nome="Outra obra", status="ATIVA")
+    sessao_real.add(outro)
+    carpinteiro = svc_cargos.achar_ou_criar_cargo(sessao_real, "CARPINTEIRO")
+    sessao_real.flush()
+    svc.salvar(sessao_real, {
+        "cpf": CPF_A, "nome": "Maria da Silva Souza", "cargo_id": carpinteiro.id,
+        "obra_id": outro.id, "salario": "1.900,00", "valor_diaria": "120,00",
+        "aux_transporte": "180,00", "tipo_contrato": "PJ",
+        "admissao": "2026-01-10"}, dono)
+    r = imp.importar(sessao_real, planilha(
+        linha(CPF_A, "Maria da Silva Souza")), gravar=False, usuario=dono)
+    o_que = " | ".join(r["divergencias"][0]["o_que"])
+    assert "cargo" in o_que and "CARPINTEIRO" in o_que and "PEDREIRO" in o_que
+    assert "obra" in o_que and "IMP-99" in o_que
+    assert "salário" in o_que
+    assert "auxílio-transporte" in o_que
+    assert "tipo de contrato" in o_que
+    assert "data de admissão" in o_que
+
+
+@banco_
+def test_a_lista_fechada_e_comparada_pelo_valor_traduzido(sessao_real, dono, cenario):
+    """Sem traduzir, "CLT (tempo Indeterminado)" contra "CLT_INDETERMINADO"
+    acusaria divergência em TODO MUNDO — e um relatório que acusa todo mundo
+    não é conferência, é ruído."""
+    from app.apps.erp.core.cadastros import pessoas as svc
+    svc.salvar(sessao_real, {"cpf": CPF_A, "nome": "Maria da Silva Souza",
+                             "tipo_contrato": "CLT_INDETERMINADO",
+                             "categoria_transporte": "VALE_TRANSPORTE"}, dono)
+    r = imp.importar(sessao_real, planilha(
+        linha(CPF_A, "Maria da Silva Souza")), gravar=False, usuario=dono)
+    o_que = " | ".join(r["divergencias"][0]["o_que"]) if r["divergencias"] else ""
+    assert "tipo de contrato" not in o_que
+    assert "categoria do transporte" not in o_que
+
+
+@banco_
+def test_campo_vazio_na_planilha_nao_e_divergencia(sessao_real, dono, cenario):
+    """Ausência não é diferença. Dizer "no ERP tem e na planilha não" para toda
+    coluna que o arquivo não traz faria o relatório ter 500 linhas inúteis."""
+    from app.apps.erp.core.cadastros import pessoas as svc
+    svc.salvar(sessao_real, {"cpf": CPF_A, "nome": "Maria da Silva Souza",
+                             "matricula": "777", "valor_mes": "3.000,00"}, dono)
+    r = imp.importar(sessao_real, planilha(
+        linha(CPF_A, "Maria da Silva Souza", matricula="", salario="")),
+        gravar=False, usuario=dono)
+    o_que = " | ".join(r["divergencias"][0]["o_que"]) if r["divergencias"] else ""
+    assert "matrícula" not in o_que and "777" not in o_que
+    assert "valor do mês" not in o_que
+    # O contrário SIM é diferença, e tem de aparecer: a planilha trouxe cargo e
+    # obra, e o cadastro do ERP está sem.
+    assert "cargo" in o_que and "obra" in o_que
+
+
+@banco_
+def test_a_conferencia_mostra_quem_esta_no_erp_e_nao_esta_na_planilha(
+        sessao_real, dono, cenario):
+    """O outro lado da conferência, e é o que o paralelo exige: pode ser gente
+    admitida no ERP depois da exportação (certo) ou gente que saiu na planilha e
+    continua ativa aqui (errado, e a folha pagaria). A lista DIZ; não resolve —
+    desligar alguém por ausência num arquivo velho seria pior."""
+    from app.apps.erp.core.cadastros import pessoas as svc
+    svc.salvar(sessao_real, {"cpf": CPF_B, "nome": "Entrou Direto No ERP"}, dono)
+    r = imp.importar(sessao_real, planilha(
+        linha(CPF_A, "Maria da Silva Souza")), gravar=False, usuario=dono)
+    assert [x["cpf"] for x in r["so_no_erp"]] == [CPF_B]
+
+
+@banco_
+def test_quem_esta_desligado_no_erp_nao_entra_na_lista_de_so_no_erp(
+        sessao_real, dono, cenario):
+    from app.apps.erp.core.cadastros import pessoas as svc
+    svc.salvar(sessao_real, {"cpf": CPF_B, "nome": "Saiu Mes Passado",
+                             "demissao": "2026-10-31"}, dono)
+    r = imp.importar(sessao_real, planilha(
+        linha(CPF_A, "Maria da Silva Souza")), gravar=False, usuario=dono)
+    assert r["so_no_erp"] == []

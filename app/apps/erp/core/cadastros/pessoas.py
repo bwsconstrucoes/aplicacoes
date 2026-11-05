@@ -777,3 +777,112 @@ def o_que_falta(c: Colaborador) -> list[str]:
         if not getattr(c, campo, None):
             falta.append(rotulo)
     return falta
+
+
+# ---------------------------------------------------------------------------
+# A LEITURA PARA A FOLHA — o ERP passa a ser a fonte
+#
+# Decisão do dono em 05/11/2026: *"o analisesps na parte de Folha de PGT, ele
+# fará a leitura das informações e ponto a partir do ERP pra poder montar os
+# dados de pgt. A ideia é essa. E em breve vamos migrar todas essas telas de
+# pagamento de colaboradores para o ERP tb, pq o analisesps tb será
+# desativado. Estamos num processo de migração entre omie, planilha, pipefy,
+# analisesps para ERP."*
+#
+# Ou seja: o ERP **não escreve em planilha nenhuma**. Quem precisa do cadastro
+# LÊ daqui. Esta função é esse contrato, e os nomes dos campos são de propósito
+# os mesmos da tabela `analisesps.colaborador` — que é a cópia que a folha usa
+# hoje, montada da aba "Dados Documentos". Assim, trocar a leitura da planilha
+# por esta chamada é trocar a origem, não reescrever a folha.
+#
+# POR QUE FUNÇÃO E NÃO ROTA HTTP: os dois módulos rodam no MESMO processo e no
+# mesmo banco. Uma rota obrigaria a inventar um segredo novo (o `CLAUDE.md`
+# proíbe envvar nova para credencial) e a pagar uma volta de rede dentro da
+# própria máquina. A rota existe também, mas para a TELA — conferência e
+# exportação por quem opera.
+#
+# TRÊS CAMPOS QUE EU NÃO ADIVINHO, e a razão de não adivinhar está escrita:
+#   · `tipo` (coluna AU da planilha) — mando `vinculo` e `pagamento`, as duas
+#     coisas que ele pode significar, e quem monta a folha escolhe;
+#   · `paga_por_beevale` — a planilha marcava "Sim" = BeeVale, senão SomaPay;
+#     o ERP guarda "recebe via SP", que não é a mesma pergunta. Vai como está;
+#   · `fase` — o ERP não tem fase de card; vai a `situacao`, que é o
+#     equivalente ("ATIVO" / "DESLIGADO").
+# ---------------------------------------------------------------------------
+def para_folha(s: Session, *, so_ativos: bool = True,
+               obra_id: Optional[int] = None) -> list[dict[str, Any]]:
+    """O cadastro de quem recebe, na forma que a folha lê. Só leitura."""
+    from app.apps.erp.db.models.cadastros import Funcao, Obra
+
+    def dinheiro(v: Any) -> Optional[float]:
+        return float(v) if v is not None else None
+
+    def dia(v: Any) -> Optional[str]:
+        return v.isoformat() if v else None
+
+    cargos = {c.id: c.nome for c in s.scalars(select(Cargo)).all()}
+    funcoes = {f.id: f.nome for f in s.scalars(select(Funcao)).all()}
+    convencoes = {c.id: c.nome for c in s.scalars(select(Convencao)).all()}
+    obras = {o.id: (o.codigo, o.nome) for o in s.scalars(select(Obra)).all()}
+    dependentes: dict[int, int] = {}
+    for d in s.scalars(select(ColaboradorDependente).where(
+            ColaboradorDependente.salario_familia.is_(True))).all():
+        dependentes[d.colaborador_id] = dependentes.get(d.colaborador_id, 0) + 1
+
+    saida = []
+    for c in s.scalars(select(Colaborador)).all():
+        ativo = (c.situacao or "ATIVO").upper() == "ATIVO" and c.demissao is None
+        if so_ativos and not ativo:
+            continue
+        if obra_id and c.obra_id != obra_id:
+            continue
+        codigo_obra, nome_obra = obras.get(c.obra_id or 0, ("", ""))
+        saida.append({
+            "cpf": c.cpf, "nome": c.nome,
+            "matricula": c.matricula or "", "celular": c.telefone or "",
+            # O número do card do Pipefy, enquanto ele existir: é o que liga
+            # esta pessoa ao histórico que ficou lá.
+            "card_pipefy": c.ref_pipefy or "",
+            "id_fortes": c.id_fortes or "",
+            "cargo": cargos.get(c.cargo_id or 0) or funcoes.get(c.funcao_id or 0, ""),
+            "convencao": convencoes.get(c.convencao_id or 0, ""),
+            "convencao_categoria": c.convencao_categoria or "",
+            "obra_codigo": codigo_obra, "obra_cadastro": codigo_obra,
+            "obra_nome": nome_obra,
+            # As duas respostas possíveis para a coluna "Tipo", sem escolher.
+            "vinculo": c.vinculo or "CTPS",
+            "pagamento": "MENSALISTA" if c.mensalista else "DIARISTA",
+            "tipo_contrato": TIPO_CONTRATO_ROTULOS.get(c.tipo_contrato or "",
+                                                       c.tipo_contrato or ""),
+            "fase": (c.situacao or "ATIVO").upper(),
+            "salario": dinheiro(c.salario),
+            "valor_diaria": dinheiro(c.valor_diaria),
+            "valor_mes": dinheiro(c.valor_mes),
+            "valor_alimentacao": dinheiro(c.aux_alimentacao),
+            "modo_alimentacao": CATEGORIA_ALIMENTACAO_ROTULOS.get(
+                c.categoria_alimentacao or "", c.categoria_alimentacao or ""),
+            "valor_transporte": dinheiro(c.aux_transporte),
+            # "Cartão" quer dizer que NÃO se paga em dinheiro — a folha precisa
+            # desta palavra inteira, e foi ela a origem de pagamento em dobro.
+            "modo_transporte": CATEGORIA_TRANSPORTE_ROTULOS.get(
+                c.categoria_transporte or "", c.categoria_transporte or ""),
+            "valor_gratificacao": dinheiro(c.valor_gratificacao),
+            "parcela_unica": "Sim" if c.parcela_unica else "",
+            "recebe_via_sp": "Sim" if c.recebe_via_sp else "",
+            "cesta_basica_extra": "Sim" if c.cesta_basica_extra else "",
+            "vale_refeicao": "Sim" if c.vale_refeicao else "",
+            "adicional_transferencia": "Sim" if c.adicional_transferencia else "",
+            "observacao_auxilio": c.observacao_auxilio or "",
+            "salario_familia": dependentes.get(c.id, 0),
+            "pix_tipo": c.pix_tipo or "", "pix_chave": c.pix_chave or "",
+            "pis": c.pis or "",
+            "data_nascimento": dia(c.data_nascimento),
+            "data_inicio": dia(c.data_inicio),
+            "data_admissao": dia(c.admissao),
+            "aviso_previo": dia(c.aviso_previo),
+            "ultimo_dia": dia(c.ultimo_dia),
+            "data_saida": dia(c.demissao),
+            "ativo": ativo,
+        })
+    saida.sort(key=lambda x: _sem_acento(x["nome"]))
+    return saida

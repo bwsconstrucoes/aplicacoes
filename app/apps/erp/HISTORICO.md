@@ -102,6 +102,37 @@ ver. Detalhe na seção 7a do `CADASTRO_DE_PESSOAS.md`.
 3. **Riscos e EPI do cargo estão vazios de verdade** (*"o que foi vazio na
    tabela de cargos é pq tá vazio mesmo"*). Não há o que importar.
 
+**O SENTIDO DA LEITURA FICOU DECIDIDO (05/11/2026), e ele encurta o trabalho:**
+*"o analisesps na parte de Folha de PGT, ele fará a leitura das informações e
+ponto a partir do ERP pra poder montar os dados de pgt. (…) em breve vamos
+migrar todas essas telas de pagamento de colaboradores para o ERP tb, pq o
+analisesps tb será desativado. Estamos num processo de migração entre omie,
+planilha, pipefy, analisesps para ERP."*
+
+→ **O ERP não escreve em planilha nenhuma.** Quem precisa do cadastro **lê
+daqui**. A fase de "inverter o sentido" foi CANCELADA, e no lugar dela entraram
+duas peças:
+
+1. **`pessoas.para_folha()`** — o cadastro de quem recebe, com os nomes de campo
+   **da tabela `analisesps.colaborador`**, para trocar a ORIGEM sem reescrever a
+   folha. É função e não rota HTTP porque os dois módulos rodam no mesmo
+   processo e no mesmo banco: rota exigiria segredo novo (proibido pelo
+   `CLAUDE.md`) e uma volta de rede dentro da máquina. A rota
+   `/erp/api/colaboradores/para-folha` existe para a TELA, com
+   `editar_colaboradores` — ela carrega salário, PIS e chave Pix.
+   **Para o chat do Análise de SPs:** é só trocar quem alimenta
+   `analisesps.colaborador`. Não mexi em nada daquela área.
+2. **A conferência lado a lado**, para o período em paralelo que ele pediu
+   (*"ficaremos com os dados em paralelo por alguns dias"*). Rodar a importação
+   em "Conferir sem gravar" com a planilha do dia mostra os dois lados: o que
+   divergiu em quem existe nos dois (tudo o que a folha lê — auxílios, diária,
+   cargo, obra, datas, não só nome e salário) e **quem está no ERP e não está na
+   planilha**. Nada é mexido, e ninguém é desligado por faltar num arquivo.
+
+⚠️ **ORDEM QUE ELE DEFINIU, e não pode ser invertida:** a leitura da planilha só
+é desligada **depois** de o cadastro do ERP estar rodando e testado com gente de
+verdade dentro. Até lá, os dois mundos vivos.
+
 **O cenário `Card Movido` chegou e foi lido** (190 módulos, o maior deles): ele
 **não escreve nenhuma coluna** que a atualização não escreva, então o mapa das
 74 está completo e a importação não precisou de retrabalho. O que ele revelou de

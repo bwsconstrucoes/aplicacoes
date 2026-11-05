@@ -493,3 +493,92 @@ def test_papel_arquivado_sai_da_lista_e_papel_excluido_volta_para_ela(
     sessao_real.delete(d)
     sessao_real.flush()
     assert "foto do colaborador" in svc.documentos_que_faltam(sessao_real, c.id)
+
+
+# ---------------------------------------------------------------------------
+# A LEITURA PARA A FOLHA (05/11/2026) — o ERP como fonte
+#
+# Dele: *"o analisesps na parte de Folha de PGT, ele fará a leitura das
+# informações e ponto a partir do ERP pra poder montar os dados de pgt."*
+# Os nomes dos campos são de propósito os mesmos da tabela
+# `analisesps.colaborador`, para trocar a ORIGEM sem reescrever a folha.
+# ---------------------------------------------------------------------------
+CAMPOS_QUE_A_FOLHA_LE = (
+    "cpf", "nome", "matricula", "celular", "cargo", "tipo_contrato", "fase",
+    "convencao", "obra_codigo", "obra_cadastro", "valor_alimentacao",
+    "modo_alimentacao", "valor_transporte", "modo_transporte",
+    "valor_gratificacao", "parcela_unica", "aviso_previo", "ultimo_dia",
+    "data_saida", "observacao_auxilio", "data_inicio", "data_admissao",
+    "data_nascimento", "card_pipefy",
+)
+
+
+@banco_
+def test_a_leitura_para_a_folha_traz_todos_os_campos_que_ela_le(sessao_real, dono):
+    """TRAVA: campo que a folha lê e esta função não manda apareceria como
+    vazio na folha — e folha com auxílio vazio é alguém sem receber."""
+    from app.apps.erp.core.cadastros import cargos as svc_cargos
+    from app.apps.erp.core.cadastros import pessoas as svc
+    from app.apps.erp.db.models.cadastros import Obra
+    obra = Obra(codigo="FOLHA-01", nome="Obra da folha", status="ATIVA")
+    sessao_real.add(obra)
+    cargo = svc_cargos.achar_ou_criar_cargo(sessao_real, "PEDREIRO")
+    conv = svc_cargos.achar_ou_criar_convencao(sessao_real, "CE-Fortaleza")
+    sessao_real.flush()
+    svc.salvar(sessao_real, {
+        "cpf": CPF_A, "nome": "Quem Entra Na Folha", "matricula": "4455",
+        "telefone": "85999990000", "cargo_id": cargo.id, "convencao_id": conv.id,
+        "obra_id": obra.id, "tipo_contrato": "CLT_INDETERMINADO",
+        "salario": "2.100,00", "aux_alimentacao": "300,00",
+        "categoria_alimentacao": "SEG_SEX", "aux_transporte": "180,00",
+        "categoria_transporte": "CARTAO", "mensalista": True,
+        "admissao": "2026-03-01"}, dono)
+    linhas = svc.para_folha(sessao_real)
+    eu = next(x for x in linhas if x["cpf"] == CPF_A)
+    for campo in CAMPOS_QUE_A_FOLHA_LE:
+        assert campo in eu, f"a folha lê “{campo}” e a leitura não manda"
+    assert eu["cargo"] == "PEDREIRO"
+    assert eu["obra_codigo"] == "FOLHA-01"
+    assert eu["tipo_contrato"] == "CLT (tempo indeterminado)"
+    assert eu["modo_alimentacao"] == "Segunda à sexta"
+    assert eu["valor_transporte"] == 180.0
+    assert eu["pagamento"] == "MENSALISTA"
+    assert eu["fase"] == "ATIVO" and eu["ativo"] is True
+
+
+@banco_
+def test_a_palavra_cartao_chega_inteira_na_folha(sessao_real, dono):
+    """"Cartão" no transporte quer dizer que NÃO se paga em dinheiro. Foi a
+    origem de pagamento em dobro — a folha precisa da palavra, não do código."""
+    from app.apps.erp.core.cadastros import pessoas as svc
+    svc.salvar(sessao_real, {"cpf": CPF_A, "nome": "Recebe No Cartao",
+                             "categoria_transporte": "CARTAO"}, dono)
+    eu = next(x for x in svc.para_folha(sessao_real) if x["cpf"] == CPF_A)
+    assert "não paga em dinheiro" in eu["modo_transporte"]
+
+
+@banco_
+def test_desligado_fica_fora_da_folha_por_padrao(sessao_real, dono):
+    """Quem saiu não entra em pagamento novo."""
+    from app.apps.erp.core.cadastros import pessoas as svc
+    svc.salvar(sessao_real, {"cpf": CPF_A, "nome": "Esta Trabalhando"}, dono)
+    svc.salvar(sessao_real, {"cpf": CPF_B, "nome": "Saiu Em Outubro",
+                             "demissao": "2026-10-31"}, dono)
+    ativos = {x["cpf"] for x in svc.para_folha(sessao_real)}
+    assert CPF_A in ativos and CPF_B not in ativos
+    todos = {x["cpf"] for x in svc.para_folha(sessao_real, so_ativos=False)}
+    assert CPF_B in todos
+
+
+@banco_
+def test_a_folha_conta_os_dependentes_de_salario_familia(sessao_real, dono):
+    """Salário-família e dependente de IR são marcas DIFERENTES: a folha pede a
+    primeira, e contar as duas juntas pagaria a mais."""
+    from app.apps.erp.core.cadastros import pessoas as svc
+    c = svc.salvar(sessao_real, {"cpf": CPF_A, "nome": "Tem Dois Filhos"}, dono)
+    svc.salvar_dependente(sessao_real, c.id, {
+        "nome": "Filho Um", "parentesco": "FILHO", "salario_familia": True}, dono)
+    svc.salvar_dependente(sessao_real, c.id, {
+        "nome": "Filho Dois", "parentesco": "FILHO", "dependente_ir": True}, dono)
+    eu = next(x for x in svc.para_folha(sessao_real) if x["cpf"] == CPF_A)
+    assert eu["salario_familia"] == 1

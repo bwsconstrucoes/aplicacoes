@@ -25,6 +25,9 @@ qualquer linha dessa área.
 | O que importar | **Só quem está ATIVO**, com a documentação. Os ~2.960 desligados **ficam na planilha como base morta.** Daí em diante, cadastro novo nasce no ERP. |
 | Portal | Um ambiente com três áreas: **Colaboradores**, **Solicitações do DP** e **Ponto** — como o Pipefy fazia. |
 | Sub-bases que o cadastro usa | cargo, município, naturalidade, obra (já existe no ERP), e a pessoa **responsável pela requisição**. |
+| O SENTIDO da leitura | **Quem precisa LÊ do ERP; o ERP não escreve em planilha nenhuma** (05/11/2026, dele: *"o analisesps na parte de Folha de PGT, ele fará a leitura das informações e ponto a partir do ERP pra poder montar os dados de pgt"*). Isso **encurta a fase 5**: não há planilha para alimentar. |
+| O destino do Análise de SPs | **Será desativado.** *"em breve vamos migrar todas essas telas de pagamento de colaboradores para o ERP tb"* — estamos num processo de migração de OMIE, planilha, Pipefy e Análise de SPs **para o ERP**. |
+| Quando desligar a planilha | **Depois, não antes.** *"precisamos antes de desativar essa leitura da planilha deixar a parte cadastral de colaboradores do ERP toda funcionando e testada antes de migrar definitivo. Então ficaremos com os dados em paralelo por alguns dias."* |
 | A aba "Dados Documentos" | **A base de colaboradores do ERP toma o lugar dela** (05/11/2026, dele: *"Dados Documentos não será substituída pela base de dados dos colaboradores do ERP?"* — sim). Quem precisar daquele dado passa a ler o ERP. |
 | Onde os papéis ficam | **Google Drive, sempre.** Dele, no mesmo dia: *"todo documento, anexo, pdf, imagem que for ser salvo dos cadastros dos colaboradores, lembrar de salvar no Google Drive."* É o que o Arquivo do ERP já faz — e é uma troca de lugar, porque o Pipefy guardava no **Dropbox**. |
 | Riscos e EPI do cargo | **Estão vazios de verdade** (05/11/2026, dele: *"o que foi vazio na tabela de cargos é pq tá vazio mesmo"*). Não há o que importar; os campos existem no ERP para serem preenchidos daqui para a frente. |
@@ -284,9 +287,15 @@ VT, Veículo, Motocicleta, Bicicleta, Cartão), meio de transporte (4), chave Pi
    reusando a máquina de aprovação que o ponto já tem.
 4. **Vínculo com história** — readmissão, prestador → CTPS, histórico de cargo,
    de salário e de obra.
-5. **Inverter o sentido** — o ERP passa a escrever nas planilhas de transporte,
-   GM e diaristas (hoje é o Make quem escreve, nas colunas 64–69 e 73–74). Só
-   depois disso o Pipefy e os cenários morrem.
+5. ~~**Inverter o sentido**~~ — **CANCELADA em 05/11/2026, e isso é uma boa
+   notícia:** o ERP **não vai escrever em planilha nenhuma**. Quem precisa do
+   cadastro **lê do ERP**. ✔ A leitura está construída (seção 7b).
+6. **O período em paralelo** — os dois mundos vivos por alguns dias, com a
+   conferência lado a lado dizendo onde eles divergem (seção 7c). Só depois
+   disso a leitura da planilha é desligada.
+7. **As telas de pagamento vêm para o ERP** e o Análise de SPs é desativado.
+   É a fase seguinte, e ela é grande — fica para quando o cadastro estiver
+   rodando com gente de verdade dentro.
 
 ---
 
@@ -390,6 +399,60 @@ chamava `salvar` e em seguida `vinculo_aberto` na mesma transação — o
 atendimento de um pré-cadastro na fila do DP faz exatamente isso — **não achava
 o vínculo que acabara de nascer, e abriria um segundo**. Corrigido.
 
+### 7b. A LEITURA PARA A FOLHA — o ERP como fonte (fase 5, construída)
+
+`pessoas.para_folha()` devolve o cadastro de quem recebe **na forma que a folha
+já lê**: os nomes dos campos são de propósito **os mesmos da tabela
+`analisesps.colaborador`**, que é a cópia montada da aba "Dados Documentos".
+Trocar a leitura da planilha por esta chamada é trocar a **origem**, não
+reescrever a folha.
+
+**Por que função e não rota HTTP:** os dois módulos rodam no MESMO processo e no
+mesmo banco. Uma rota obrigaria a inventar um segredo novo — o `CLAUDE.md`
+proíbe envvar nova para credencial — e a pagar uma volta de rede dentro da
+própria máquina. Existe rota também (`/erp/api/colaboradores/para-folha`,
+exigindo `editar_colaboradores` porque carrega salário, PIS e chave Pix), mas
+ela é para a **tela**: conferir e exportar por quem opera.
+
+**Três campos que eu NÃO adivinhei, e a razão está no código:**
+
+| Campo da planilha | O que mando, e por quê |
+|---|---|
+| `tipo` (coluna AU) | **as duas coisas que pode significar**: `vinculo` (CTPS/PRESTADOR) e `pagamento` (DIARISTA/MENSALISTA). Quem monta a folha escolhe. |
+| `paga_por_beevale` | mando `recebe_via_sp`, que é o que o ERP guarda. **Não é a mesma pergunta** — "Sim = BeeVale, senão SomaPay" é regra da planilha, e inventá-la aqui erraria o pagamento de alguém. |
+| `fase` | mando `situacao` (ATIVO/DESLIGADO). O ERP não tem fase de card, e `situacao` é o equivalente. |
+
+⚠️ **A palavra "Cartão" chega inteira** no modo de transporte ("Cartão (não paga
+em dinheiro)"). Foi ela a origem de pagamento em dobro, e mandar o código seco
+`CARTAO` deixaria a folha tratar como mais um valor a pagar.
+
+**Para o chat do Análise de SPs:** é só trocar quem alimenta
+`analisesps.colaborador` — em vez de ler a planilha, chamar
+`app.apps.erp.core.cadastros.pessoas.para_folha(s)` com uma sessão do ERP. O
+dicionário já vem com as chaves daquela tabela. **Não mexi em nada do Análise de
+SPs** — é outra área.
+
+### 7c. A CONFERÊNCIA LADO A LADO — o que sustenta o período em paralelo
+
+Nos dias em que os dois mundos ficarem vivos, rodar a importação em modo
+**"Conferir sem gravar"** com a planilha do dia é o relatório de diferenças. Ela
+mostra os **dois lados**:
+
+- **o que está diferente em quem existe nos dois** — e não só nome e salário: a
+  comparação cobre matrícula, telefone, salário, diária, valor do mês, os dois
+  auxílios, gratificação, vínculo, tipo de contrato, categorias de alimentação e
+  transporte, cargo, obra e as três datas. É o que a folha lê, que é onde a
+  diferença custa dinheiro;
+- **quem está no ERP e NÃO está na planilha** — pode ser gente admitida aqui
+  depois da exportação (certo) ou gente que saiu na planilha e continua ativa
+  aqui (errado, e a folha pagaria).
+
+**Nada é mexido pela conferência.** Campo vazio na planilha não conta como
+diferença — ausência não é divergência, e tratar como tal faria o relatório ter
+500 linhas inúteis. A lista fechada é comparada pelo valor **traduzido**, senão
+"CLT (tempo Indeterminado)" contra `CLT_INDETERMINADO` acusaria divergência em
+todo mundo. E ninguém é desligado por ter faltado numa planilha.
+
 ---
 
 ## 8. O QUE AINDA FALTA SABER
@@ -420,13 +483,11 @@ o vínculo que acabara de nascer, e abriria um segundo**. Corrigido.
 2. **O cenário de atualização** que ele mencionou (*"um cenário que existe no
    make é um de atualização, mas acho que não interfere aqui"*) — o arquivo que
    veio foi o do **Botão**, não esse. Provavelmente é o mesmo; vale confirmar.
-3. **As planilhas de folha que CONTINUAM vivas** — meio respondido em
-   05/11/2026. A aba "Dados Documentos" **é substituída pela base de
-   colaboradores do ERP**, decisão dele. Falta só o COMO: as planilhas de
-   transporte, GM e diaristas, e a cópia `analisesps.colaborador` que a folha
-   usa, passam a ler do ERP de que jeito — o ERP escrevendo nelas (como o Make
-   fazia), ou elas puxando do ERP? São dois trabalhos diferentes, e a escolha é
-   dele.
+3. ✔ **RESOLVIDO em 05/11/2026 — elas LEEM do ERP.** *"o analisesps na parte
+   de Folha de PGT, ele fará a leitura das informações e ponto a partir do ERP
+   pra poder montar os dados de pgt."* O ERP não escreve em planilha nenhuma, e
+   a leitura está construída (seção 7b). O que falta é **trabalho do chat do
+   Análise de SPs**: trocar quem alimenta `analisesps.colaborador`.
 
 3-bis. **O passivo de papéis no Dropbox.** Os anexos dos ~575 ativos estão em
    `/BWS DP/FUNCIONÁRIOS/<Nome>`, no Dropbox. A regra passa a ser Google Drive.

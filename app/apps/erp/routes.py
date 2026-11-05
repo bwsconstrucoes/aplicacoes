@@ -10928,6 +10928,28 @@ def api_cargos_importar():
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
+@bp.route("/erp/api/colaboradores/para-folha")
+@login_obrigatorio
+@permissao("editar_colaboradores")
+def api_colaboradores_para_folha():
+    """O cadastro na forma que a FOLHA lê — o ERP como fonte.
+
+    Decisão do dono (05/11/2026): o Análise de SPs passa a LER daqui em vez de
+    ler a planilha, e nada é escrito em planilha nenhuma. Esta rota é para a
+    TELA — conferir e exportar durante o período em paralelo. Quem monta a
+    folha dentro do monorepo chama `pessoas.para_folha()` direto: mesmo
+    processo, mesmo banco, nenhum segredo novo e nenhuma volta de rede.
+
+    Exige `editar_colaboradores` porque carrega salário, PIS e chave Pix.
+    """
+    from app.apps.erp.core.cadastros import pessoas as svc_pessoas
+    with get_session() as s:
+        return jsonify({"ok": True, "colaboradores": svc_pessoas.para_folha(
+            s, so_ativos=request.args.get("todos") != "1",
+            obra_id=(int(request.args["obra_id"])
+                     if request.args.get("obra_id") else None))})
+
+
 @bp.route("/erp/api/colaboradores/importar", methods=["POST"])
 @login_obrigatorio
 @permissao("configurar")

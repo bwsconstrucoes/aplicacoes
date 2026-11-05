@@ -292,9 +292,10 @@ def importar(s: Session, conteudo: bytes, *, gravar: bool,
         "colunas_nao_reconhecidas": nao_reconhecidas,
         "criadas": 0, "ja_existiam": 0, "fora": 0, "dependentes": 0,
         "divergencias": [], "rejeitadas": [], "avisos": [],
-        "cargos_novos": [], "obras_nao_achadas": [],
+        "cargos_novos": [], "obras_nao_achadas": [], "so_no_erp": [],
     }
     vistos: set[str] = set()
+    vistos_no_erp: set[int] = set()
     cargos_novos: set[str] = set()
     obras_faltando: set[str] = set()
     # O PIS É ÚNICO NO BANCO (índice da migração 086), e a planilha do Pipefy
@@ -314,7 +315,7 @@ def importar(s: Session, conteudo: bytes, *, gravar: bool,
             # por um motivo que não é o delas.
             with s.begin_nested():
                 _uma(s, linha, n, achadas, rel, vistos, cargos_novos,
-                     obras_faltando, pis_de,
+                     obras_faltando, pis_de, vistos_no_erp,
                      gravar=gravar, so_ativos=so_ativos, usuario=usuario)
         except ErroValidacao as e:
             rel["rejeitadas"].append({
@@ -327,6 +328,19 @@ def importar(s: Session, conteudo: bytes, *, gravar: bool,
                 "nome": _v(linha, achadas, "nome"),
                 "motivo": f"erro inesperado: {e}"})
 
+    # O OUTRO LADO DA CONFERÊNCIA, e ele é o que o período em paralelo exige:
+    # quem está ATIVO no ERP e NÃO apareceu na planilha. Pode ser gente admitida
+    # no ERP depois da exportação (certo), ou gente que saiu na planilha e
+    # continua ativa aqui (errado, e a folha pagaria). Só a lista deixa ver a
+    # diferença — e ela é dita, não resolvida: apagar por ausência numa planilha
+    # seria desligar gente por um arquivo velho.
+    rel["so_no_erp"] = [
+        {"id": c.id, "cpf": c.cpf, "nome": c.nome, "matricula": c.matricula or "",
+         "admissao": c.admissao.isoformat() if c.admissao else None}
+        for c in s.scalars(select(Colaborador)).all()
+        if c.id not in vistos_no_erp and c.demissao is None
+        and (c.situacao or "ATIVO").upper() == "ATIVO"][:200]
+
     rel["cargos_novos"] = sorted(cargos_novos)
     rel["obras_nao_achadas"] = sorted(obras_faltando)
     rel["avisos"] = rel["avisos"][:200]
@@ -338,10 +352,116 @@ def importar(s: Session, conteudo: bytes, *, gravar: bool,
     return rel
 
 
+# ---------------------------------------------------------------------------
+# A CONFERÊNCIA LADO A LADO — é ela que sustenta o período em paralelo
+#
+# Decisão do dono em 05/11/2026: *"precisamos antes de desativar essa leitura
+# da planilha deixar a parte cadastral de colaboradores do ERP toda funcionando
+# e testada (…) ficaremos com os dados em paralelo por alguns dias."*
+#
+# Nesses dias, rodar a importação em modo CONFERIR (sem gravar) com a planilha
+# do dia vira o relatório de diferenças: o que mudou de um lado e não do outro.
+# Por isso a comparação não pode ser só de nome e salário — tem de cobrir
+# exatamente o que a FOLHA lê, que é onde a diferença custa dinheiro.
+# ---------------------------------------------------------------------------
+def _so_digitos_dinheiro(bruto: Any) -> str:
+    """"2.100,00", "2100", "R$ 2.100,00" e Decimal("2100.00") comparáveis."""
+    d = re.sub(r"[^\d]", "", str(bruto or ""))
+    return d.lstrip("0") or ""
+
+
+def _divergencias(s: Session, ja: Colaborador, linha: dict[str, str],
+                  achadas: dict[str, str], nome: str) -> list[str]:
+    """O que está diferente entre a planilha e o cadastro do ERP. NÃO MUDA NADA.
+
+    Campo vazio na planilha não é divergência — é ausência. Dizer "no ERP tem
+    cargo e na planilha não" para toda coluna que o arquivo não traz faria o
+    relatório ter 500 linhas e nenhuma informação.
+    """
+    def val(campo: str) -> str:
+        return _v(linha, achadas, campo)
+
+    div: list[str] = []
+
+    def comparar(rotulo: str, da_planilha: str, do_erp: Any) -> None:
+        if not da_planilha:
+            return
+        aqui = "" if do_erp in (None, "") else str(do_erp)
+        if _simples(da_planilha) != _simples(aqui):
+            div.append(f"{rotulo}: no ERP “{aqui or '—'}”, na planilha “{da_planilha}”")
+
+    def comparar_dinheiro(rotulo: str, da_planilha: str, do_erp: Any) -> None:
+        if not da_planilha:
+            return
+        if _so_digitos_dinheiro(da_planilha) != _so_digitos_dinheiro(
+                f"{do_erp:.2f}" if do_erp is not None else ""):
+            div.append(f"{rotulo}: no ERP {do_erp if do_erp is not None else '—'}, "
+                       f"na planilha {da_planilha}")
+
+    if nome and svc._sem_acento(nome) != svc._sem_acento(ja.nome):
+        div.append(f"nome: no ERP “{ja.nome}”, na planilha “{nome}”")
+    comparar("matrícula", val("matricula"), ja.matricula)
+    comparar("telefone", re.sub(r"\D", "", val("telefone")),
+             re.sub(r"\D", "", ja.telefone or ""))
+
+    # O dinheiro, que é onde a diferença dói.
+    comparar_dinheiro("salário", val("salario"), ja.salario)
+    comparar_dinheiro("valor da diária", val("valor_diaria"), ja.valor_diaria)
+    comparar_dinheiro("valor do mês", val("valor_mes"), ja.valor_mes)
+    comparar_dinheiro("auxílio-alimentação", val("aux_alimentacao"), ja.aux_alimentacao)
+    comparar_dinheiro("auxílio-transporte", val("aux_transporte"), ja.aux_transporte)
+    comparar_dinheiro("gratificação", val("valor_gratificacao"), ja.valor_gratificacao)
+
+    # As listas: comparadas pelo VALOR traduzido, senão "CLT (tempo
+    # Indeterminado)" contra "CLT_INDETERMINADO" acusaria divergência em todo
+    # mundo.
+    for campo, rotulo in (("vinculo", "vínculo"), ("tipo_contrato", "tipo de contrato"),
+                          ("categoria_alimentacao", "categoria da alimentação"),
+                          ("categoria_transporte", "categoria do transporte")):
+        bruto = val(campo)
+        if bruto:
+            comparar(rotulo, _traduzir(campo, bruto) or bruto, getattr(ja, campo, None))
+
+    # Cargo e obra pelo nome, porque é assim que a planilha os escreve.
+    if val("cargo"):
+        cargo = s.get(Cargo, ja.cargo_id) if ja.cargo_id else None
+        de_la, daqui = (svc_cargos.normalizar_nome(val("cargo")),
+                        svc_cargos.normalizar_nome(cargo.nome) if cargo else "")
+        if de_la != daqui:
+            div.append(f"cargo: no ERP “{cargo.nome if cargo else '—'}”, "
+                       f"na planilha “{val('cargo')}”")
+    if val("obra"):
+        obra = s.get(Obra, ja.obra_id) if ja.obra_id else None
+        alvo = _simples(val("obra"))
+        if not obra or alvo not in (_simples(obra.codigo), _simples(obra.nome)):
+            div.append(f"obra: no ERP “{obra.codigo if obra else '—'}”, "
+                       f"na planilha “{val('obra')}”")
+
+    # As datas, comparadas como data e não como texto — "01/03/2026" e
+    # "2026-03-01" são a mesma coisa.
+    for campo, rotulo in (("admissao", "data de admissão"),
+                          ("data_inicio", "data de início"),
+                          ("demissao", "data de saída")):
+        bruto = val(campo)
+        if not bruto:
+            continue
+        try:
+            da_planilha = svc._data(bruto, campo)
+        except ErroValidacao:
+            div.append(f"{rotulo}: a planilha trouxe “{bruto}”, que não é data")
+            continue
+        if da_planilha != getattr(ja, campo, None):
+            aqui = getattr(ja, campo, None)
+            div.append(f"{rotulo}: no ERP {aqui.strftime('%d/%m/%Y') if aqui else '—'}, "
+                       f"na planilha {da_planilha.strftime('%d/%m/%Y')}")
+    return div
+
+
 def _uma(s: Session, linha: dict[str, str], n: int, achadas: dict[str, str],
          rel: dict[str, Any], vistos: set[str], cargos_novos: set[str],
-         obras_faltando: set[str], pis_de: dict[str, str], *, gravar: bool,
-         so_ativos: bool, usuario: Optional[Usuario]) -> None:
+         obras_faltando: set[str], pis_de: dict[str, str],
+         vistos_no_erp: set[int], *, gravar: bool, so_ativos: bool,
+         usuario: Optional[Usuario]) -> None:
     """Uma linha da planilha. Levanta ErroValidacao quando a linha não serve."""
     from app.apps.erp.core.cadastros.validadores import cpf_valido
 
@@ -370,17 +490,8 @@ def _uma(s: Session, linha: dict[str, str], n: int, achadas: dict[str, str],
     ja = s.scalars(select(Colaborador).where(Colaborador.cpf == cpf)).first()
     if ja is not None:
         rel["ja_existiam"] += 1
-        div = []
-        if nome and svc._sem_acento(nome) != svc._sem_acento(ja.nome):
-            div.append(f"nome: no ERP “{ja.nome}”, na planilha “{nome}”")
-        if val("matricula") and (ja.matricula or "") != val("matricula"):
-            div.append(f"matrícula: no ERP “{ja.matricula or '—'}”, "
-                       f"na planilha “{val('matricula')}”")
-        if val("salario") and ja.salario is not None:
-            da_planilha = re.sub(r"[^\d]", "", val("salario"))
-            do_erp = re.sub(r"[^\d]", "", f"{ja.salario:.2f}")
-            if da_planilha and da_planilha != do_erp:
-                div.append(f"salário: no ERP {ja.salario}, na planilha {val('salario')}")
+        vistos_no_erp.add(ja.id)
+        div = _divergencias(s, ja, linha, achadas, nome)
         if div:
             rel["divergencias"].append({"linha": n, "cpf": cpf, "nome": ja.nome,
                                         "o_que": div})
