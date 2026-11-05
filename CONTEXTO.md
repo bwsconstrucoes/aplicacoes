@@ -804,7 +804,7 @@ Quando eu pedir nova feature ou adaptação:
 
 ### 05/11/2026 — Busca automática de feriados numa base pública (`ponto/core/feriados_busca.py`)
 
-**No ramo `claude/analisesps-work-fhjiru`, não publicado.** Primeira fonte externa de
+**Publicado em 05/11/2026.** Primeira fonte externa de
 feriados: os arquivos JSON da base pública **feriados-brasil** (GitHub
 `joaopbini/feriados-brasil`, MIT), baixados de `raw.githubusercontent.com` com teto de 15 MB
 por arquivo (§3.7). Sem dependência nova (`requests` já existe) e sem credencial. Grava em

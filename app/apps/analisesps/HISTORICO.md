@@ -12246,6 +12246,8 @@ somente Solicitações de uma conta especifica"*.
 
 #### Leva 250 — Feriado não é falta: o "Aplicar desconto" que aparecia em feriado (05/11/2026)
 
+> **Publicado em 05/11/2026.**
+
 - *"Tem feriado cadastrado, mas não tá aparecendo como feriado e tá mandando aplicar
   desconto, por exemplo em despesas com alimentação. Curiosamente o feriado estadual
   deu certo e o nacional não."*
@@ -12262,6 +12264,8 @@ somente Solicitações de uma conta especifica"*.
   que o dono descreveu); o teste reproduz o caso.
 
 #### Leva 249 — Feriados buscados sozinhos pelas obras em andamento (05/11/2026)
+
+> **Publicado em 05/11/2026.**
 
 - *"Existe alguma base de informação de feriado (…) e eu queria que o sistema
   buscasse (…) nacional, estadual e municipal (…) baseado nas obras em andamento.
