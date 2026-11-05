@@ -493,6 +493,7 @@ junto com o `README.md` e o `PLANO.md`.
 - **Não verificado:** a abertura no celular de verdade (no navegador instalado como aplicativo, ela abre na mesma
   janela; fora dele, numa aba nova). Uma chamada a mais antes de abrir a aba pode fazer o bloqueador de janelas do
   navegador barrar a aba — nesse caso o aplicativo já cai para abrir na mesma janela, como antes.
+**Publicado em 05/11/2026** (com o "pode" do dono) — SEM MIGRAÇÃO. Falta o Weverton confirmar no celular.
 
 ## 05/11/2026 — O ajuste do plantão dobrado pergunta "entrada ou saída"; as rondas falsas; o aparelho que volta sozinho
 
