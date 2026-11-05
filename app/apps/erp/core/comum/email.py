@@ -30,7 +30,7 @@ import logging
 import smtplib
 import ssl
 from email.message import EmailMessage
-from email.utils import formataddr, parseaddr
+from email.utils import formataddr, make_msgid, parseaddr
 from typing import Any, Optional
 
 from sqlalchemy.orm import Session
@@ -146,6 +146,13 @@ def _montar(empresa: Empresa, para: list[str], assunto: str, corpo: str,
     if resposta:
         msg["Reply-To"] = resposta
     msg["Subject"] = assunto
+    # O MESSAGE-ID É NOSSO, E ISSO IMPORTA: a resposta traz este valor em
+    # In-Reply-To/References, e é por ele que a leitura da caixa de entrada casa
+    # a resposta com o pedido que a originou — sem depender de ninguém manter o
+    # assunto intacto ao responder. Sem gerar aqui, cada servidor de saída
+    # inventa o seu e nós não ficamos sabendo qual foi.
+    msg["Message-ID"] = make_msgid(domain=(parseaddr(msg["From"])[1]
+                                           .split("@")[-1] or None))
     msg.set_content(corpo)
     for anexo in anexos or []:
         conteudo = anexo.get("conteudo")
@@ -246,6 +253,8 @@ def enviar(s: Session, *, empresa: Empresa, para: list[str], assunto: str,
     try:
         msg = _montar(empresa, para, _texto(assunto), corpo, copia,
                       responder_para, anexos)
+        # Guardado no registro para quem chamou poder casar a resposta depois.
+        registro.message_id = msg["Message-ID"]
         _entregar(dona, msg, para + copia)
         logger.info("ERP/e-mail: %s %s enviado para %s pela empresa %s",
                     entidade_tipo, entidade_id, para, empresa.id)

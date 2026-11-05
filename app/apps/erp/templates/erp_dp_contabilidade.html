@@ -1,0 +1,572 @@
+{% extends "erp_base.html" %}
+{% block titulo %}Contabilidade e agente — ERP BWS{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+{% block conteudo %}
+<h2>Contabilidade e agente <small>o que o DP pede para fora, e quem cobra o retorno</small></h2>
+<div id="mensagem"></div>
+
+<div class="cartao">
+  <div class="tabela-barra" style="padding:0">
+    <button class="topo-aba ativa" data-painel="pedidos">Pedidos</button>
+    <button class="topo-aba" data-painel="agente">O agente</button>
+    <button class="topo-aba" data-painel="devolucoes">A devolver pela obra</button>
+    <button class="topo-aba" data-painel="caixa">Caixa de entrada</button>
+    <button class="topo-aba" data-painel="sugestoes">O que o agente sugere</button>
+    <select id="f-situacao" style="min-width:170px">
+      <option value="ABERTOS">só os abertos</option>
+      <option value="">todos</option>
+      <option value="DIVERGENTE">com divergência</option>
+      <option value="CONCLUIDO">concluídos</option>
+    </select>
+    <span class="espaco"></span>
+    <span id="exportar" style="display:flex; gap:6px"></span>
+    {% if pode.pedir_contabilidade %}
+    <button class="btn secundario" id="btn-rodar">Rodar o agente agora</button>
+    <button class="btn amarelo" id="btn-novo">+ Pedido</button>
+    {% endif %}
+  </div>
+</div>
+
+<div id="painel-pedidos">
+  <div class="kpis" id="kpis" style="margin-bottom:12px"></div>
+  <div class="tabela-wrap"><div class="tabela-rolagem">
+    <table><thead><tr><th>Nº</th><th>Pedido</th><th>Pessoa</th><th>Obra</th>
+      <th>Espera de volta</th><th>Prazo</th><th>Cobranças</th><th>Situação</th>
+      </tr></thead><tbody id="corpo"></tbody></table>
+  </div><div class="vazio oculto" id="vazio"></div></div>
+</div>
+
+<div id="painel-agente" class="oculto"></div>
+<div id="painel-devolucoes" class="oculto"></div>
+<div id="painel-caixa" class="oculto"></div>
+<div id="painel-sugestoes" class="oculto"></div>
+
+<dialog id="dlg"><div class="dlg-topo"><h3 id="dlg-titulo">—</h3>
+  <button class="topo-btn" style="margin-left:auto" onclick="els('dlg').close()">Fechar</button></div>
+  <div class="dlg-corpo" id="dlg-corpo"></div></dialog>
+{% endblock %}
+{% block scripts %}
+<script>
+// Quem PEDE à contabilidade é o DP (ADMIN, diretor financeiro, DP). Quem está
+// na obra ACOMPANHA o pedido da gente dela — e é isso que acaba com o
+// "e aí, saiu?" por WhatsApp.
+const PODE_PEDIR = {{ 'true' if pode.pedir_contabilidade else 'false' }};
+let PEDIDOS = [], TEMPLATES = [], EMAILS = [], ROTINAS = [], SUGESTOES = [], MODOS = [];
+
+const COR_SITUACAO = {
+  RASCUNHO: "", ENVIADO: "ciano", COBRADO: "ambar", RESPONDIDO: "ciano",
+  DIVERGENTE: "vermelho", CONCLUIDO: "verde", CANCELADO: "",
+};
+
+async function carregar(){
+  try {
+    const q = els("f-situacao") ? els("f-situacao").value : "ABERTOS";
+    const d = await api(`/erp/api/dp/pedidos?situacao=${encodeURIComponent(q)}`);
+    PEDIDOS = d.pedidos; TEMPLATES = d.templates; EMAILS = d.emails || [];
+    pintar();
+    const a = await api("/erp/api/dp/agente");
+    ROTINAS = a.rotinas; SUGESTOES = a.sugestoes; MODOS = a.modos;
+    pintarAgente(); pintarSugestoes();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+function pintar(){
+  const atrasados = PEDIDOS.filter(p => p.atrasado);
+  const divergentes = PEDIDOS.filter(p => p.situacao === "DIVERGENTE");
+  const esperando = PEDIDOS.filter(p => ["ENVIADO","COBRADO"].includes(p.situacao));
+  els("kpis").innerHTML = `
+    <div class="kpi estatico"><div class="kpi-rotulo">Esperando retorno</div>
+      <div class="kpi-valor">${esperando.length}</div></div>
+    <div class="kpi estatico ${atrasados.length ? "ambar" : ""}">
+      <div class="kpi-rotulo">Atrasados</div>
+      <div class="kpi-valor">${atrasados.length}</div>
+      <div class="kpi-sub">passaram do prazo</div></div>
+    <div class="kpi estatico ${divergentes.length ? "vermelho" : ""}">
+      <div class="kpi-rotulo">Com divergência</div>
+      <div class="kpi-valor">${divergentes.length}</div>
+      <div class="kpi-sub">o documento não bate com o cadastro</div></div>
+    <div class="kpi estatico"><div class="kpi-rotulo">Rascunhos</div>
+      <div class="kpi-valor">${PEDIDOS.filter(p=>p.situacao==="RASCUNHO").length}</div>
+      <div class="kpi-sub">montados e não enviados</div></div>`;
+  const corpo = els("corpo");
+  corpo.innerHTML = PEDIDOS.map(p => `
+    <tr data-p="${p.id}" style="cursor:pointer">
+      <td>${escapar(p.numero)}</td>
+      <td class="desc">${escapar(p.template_nome)}</td>
+      <td>${escapar(p.colaborador_nome || "—")}</td>
+      <td>${escapar(p.obra || "—")}</td>
+      <td class="desc">${escapar(p.documento_esperado || "—")}</td>
+      <td>${p.prazo ? dataBR(p.prazo) : "—"}
+        ${p.atrasado ? `<br><small class="aviso-texto">há ${p.dias_atraso} dia(s)</small>` : ""}</td>
+      <td class="direita">${p.cobrancas}</td>
+      <td><span class="etiqueta ${COR_SITUACAO[p.situacao] || ""}">${escapar(p.situacao)}</span></td>
+    </tr>`).join("");
+  els("vazio").classList.toggle("oculto", PEDIDOS.length > 0);
+  if (!PEDIDOS.length) els("vazio").textContent =
+    "Nenhum pedido à contabilidade. É daqui que sai a admissão, a rescisão e a alteração de contrato.";
+  corpo.querySelectorAll("[data-p]").forEach(tr =>
+    tr.addEventListener("click", () => abrirPedido(+tr.dataset.p)));
+}
+
+// ---------------------------------------------------------------------------
+// O PEDIDO ABERTO: o texto que saiu, a trilha, e o que dá para fazer agora
+// ---------------------------------------------------------------------------
+async function abrirPedido(id){
+  try {
+    const {pedido: p} = await api(`/erp/api/dp/pedidos/${id}`);
+    els("dlg-titulo").textContent = `${p.numero} — ${p.template_nome}`;
+    const div = p.divergencias || [];
+    els("dlg-corpo").innerHTML = `
+      <div class="kpis">
+        <div class="kpi estatico"><div class="kpi-rotulo">Pessoa</div>
+          <div class="kpi-valor" style="font-size:16px">${escapar(p.colaborador_nome || "—")}</div>
+          <div class="kpi-sub">${documento(p.colaborador_cpf || "")}</div></div>
+        <div class="kpi estatico"><div class="kpi-rotulo">Situação</div>
+          <div class="kpi-valor" style="font-size:16px">${escapar(p.situacao)}</div></div>
+        <div class="kpi estatico"><div class="kpi-rotulo">Espera de volta</div>
+          <div class="kpi-valor" style="font-size:16px">${escapar(p.documento_esperado_nome || "—")}</div>
+          <div class="kpi-sub">${p.prazo ? "prazo " + dataBR(p.prazo) : "sem prazo ainda"}</div></div>
+        <div class="kpi estatico"><div class="kpi-rotulo">Cobranças</div>
+          <div class="kpi-valor">${p.cobrancas}</div></div>
+      </div>
+      ${div.length ? `<div class="aviso erro" style="margin-top:10px">
+        <b>O documento que voltou não bate com o cadastro.</b> Nada foi concluído —
+        concluir assim carimbaria como certo um documento errado.
+        <table style="margin-top:6px"><thead><tr><th>Campo</th><th>No ERP</th>
+        <th>No documento</th></tr></thead><tbody>
+        ${div.map(x => `<tr><td>${escapar(x.campo)}</td><td>${escapar(x.no_erp)}</td>
+          <td>${escapar(x.no_documento)}</td></tr>`).join("")}
+        </tbody></table></div>` : ""}
+      <div style="margin-top:12px"><b>O que foi mandado</b>
+        <div class="cartao-dica" style="white-space:pre-wrap; max-height:260px;
+          overflow:auto">${escapar(p.assunto)}\n\n${escapar(p.corpo)}</div>
+        <small>O texto fica guardado como foi enviado: o modelo muda com o tempo,
+        e o pedido de março tem de continuar mostrando o texto de março.</small></div>
+      ${(p.eventos || []).length ? `<div style="margin-top:12px"><b>O que aconteceu</b>
+        <div class="tabela-rolagem" style="max-height:240px"><table><tbody>
+        ${p.eventos.map(e => `<tr><td style="white-space:nowrap">${dataBR(e.quando)}</td>
+          <td><b>${escapar(e.tipo)}</b></td><td class="desc">${escapar(e.texto)}</td>
+          <td>${e.pelo_agente ? "<small>pelo agente</small>"
+                              : escapar(e.quem || "—")}</td></tr>`).join("")}
+        </tbody></table></div></div>` : ""}
+      ${PODE_PEDIR ? `<div style="margin-top:14px; display:flex; gap:8px; flex-wrap:wrap">
+        ${p.situacao === "RASCUNHO"
+          ? `<button class="btn" id="p-enviar">Enviar à contabilidade</button>` : ""}
+        ${["ENVIADO","COBRADO"].includes(p.situacao)
+          ? `<button class="btn secundario" id="p-cobrar">Cobrar o retorno</button>
+             <button class="btn secundario" id="p-receber">Registrar o retorno</button>` : ""}
+        ${p.situacao === "DIVERGENTE"
+          ? `<button class="btn secundario" id="p-aceitar">Aceitar a divergência</button>` : ""}
+        ${["RESPONDIDO"].includes(p.situacao)
+          ? `<button class="btn" id="p-concluir">Concluir o procedimento</button>` : ""}
+        ${!["CONCLUIDO","CANCELADO"].includes(p.situacao)
+          ? `<button class="btn vermelho" id="p-cancelar">Cancelar</button>` : ""}
+      </div>` : ""}
+      <div id="p-msg" style="margin-top:10px"></div>`;
+    const liga = (qual, fn) => { if (els(qual)) els(qual).addEventListener("click", fn); };
+    liga("p-enviar", () => acao(id, "enviar", {},
+      `Vai sair um e-mail para ${(p.para && p.para.length ? p.para : EMAILS).join(", ") || "(sem destinatário)"}.`));
+    liga("p-cobrar", () => acao(id, "cobrar", {}, "Vai sair uma cobrança por e-mail."));
+    liga("p-receber", () => registrarRetorno(id, p));
+    liga("p-concluir", () => acao(id, "concluir", {},
+      "Fecha o pedido e, quando o modelo manda, move a etapa do cadastro."));
+    liga("p-aceitar", () => comMotivo(id, "aceitar-divergencia",
+      "Por que a divergência está aceita?"));
+    liga("p-cancelar", () => comMotivo(id, "cancelar", "Por que está cancelando?"));
+    els("dlg").showModal();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+async function acao(id, qual, corpo, explicacao){
+  if (explicacao && !await perguntar({titulo: "Confirmar", textoOk: "Pode",
+      aviso: explicacao, campos: []})) return;
+  try {
+    const r = await api(`/erp/api/dp/pedidos/${id}/${qual}`,
+                        {method: "POST", body: JSON.stringify(corpo || {})});
+    els("dlg").close();
+    aviso("mensagem", r.erro ? `O e-mail não saiu: ${r.erro}` : "Feito.",
+          r.erro ? "erro" : "ok");
+    carregar();
+  } catch(e){ aviso("p-msg", e.message, "erro"); }
+}
+
+async function comMotivo(id, qual, titulo){
+  const r = await perguntar({titulo, textoOk: "Confirmar", campos: [
+    {nome: "motivo", rotulo: "Motivo", tipo: "textarea"}]});
+  if (!r) return;
+  acao(id, qual, {motivo: r.motivo}, "");
+}
+
+// O RETORNO: quem registra é gente, porque o ERP não lê caixa de entrada de
+// e-mail. Os campos lidos do documento alimentam a conferência — vazio quer
+// dizer "não conferi", e a tela diz isso em vez de fingir que conferiu.
+async function registrarRetorno(id, p){
+  const conferir = (TEMPLATES.find(t => t.chave === p.template) || {}).conferir || [];
+  const r = await perguntar({
+    titulo: `Retorno de ${p.numero}`,
+    aviso: `A contabilidade devolveu o documento (${p.documento_esperado_nome}). `
+         + `Digite o que está escrito NELE — é o que permite conferir contra o `
+         + `cadastro. O que ficar em branco não é conferido.`,
+    textoOk: "Registrar o retorno",
+    campos: conferir.map(c => ({nome: c, rotulo: ROTULO_CONFERIR[c] || c}))});
+  if (!r) return;
+  const lido = {};
+  Object.entries(r).forEach(([k, v]) => { if (v) lido[k] = v; });
+  acao(id, "receber", {lido}, "");
+}
+
+const ROTULO_CONFERIR = {
+  nome: "Nome no documento", cpf: "CPF no documento", cargo: "Cargo no documento",
+  salario: "Salário no documento", admissao: "Data de admissão no documento",
+  data_saida: "Data de saída no documento",
+};
+
+// ---------------------------------------------------------------------------
+// O AGENTE: as sete rotinas, cada uma com liga/desliga
+// ---------------------------------------------------------------------------
+function pintarAgente(){
+  const ligadas = ROTINAS.filter(r => r.modo !== "DESLIGADA").length;
+  els("painel-agente").innerHTML = `
+    <div class="cartao-dica"><b>O agente nasce desligado</b>, e cada rotina liga
+      sozinha. O modo <b>Sugere</b> é o do meio: ele analisa e escreve o que
+      faria, para você aprovar com um clique — dá para ligar sem medo e ver se
+      ele acerta por uma semana. <b>${ligadas} de ${ROTINAS.length}</b> rotinas
+      ligadas agora.</div>
+    <div class="tabela-wrap" style="margin-top:10px"><div class="tabela-rolagem">
+    <table><thead><tr><th>Rotina</th><th>Quando roda</th><th>O que analisa</th>
+      <th>O que NÃO analisa</th><th>Usa IA</th><th>Modo</th><th>Rodou</th>
+      </tr></thead><tbody>
+    ${ROTINAS.map(r => `<tr>
+      <td><b>${escapar(r.nome)}</b></td>
+      <td class="desc">${escapar(r.quando)}</td>
+      <td class="desc">${escapar(r.analisa)}</td>
+      <td class="desc">${escapar(r.nao_analisa)}</td>
+      <td>${r.usa_ia ? "sim" : "não"}</td>
+      <td>${PODE_PEDIR
+        ? `<select data-rotina="${r.chave}">${MODOS.map(m =>
+            `<option value="${m}" ${m === r.modo ? "selected" : ""}>${m}</option>`).join("")}</select>`
+        : escapar(r.modo)}</td>
+      <td>${r.rodou_em ? dataBR(r.rodou_em) : "—"}</td></tr>`).join("")}
+    </tbody></table></div></div>`;
+  els("painel-agente").querySelectorAll("[data-rotina]").forEach(sel =>
+    sel.addEventListener("change", () => trocarModo(sel.dataset.rotina, sel.value)));
+}
+
+async function trocarModo(rotina, modo){
+  try {
+    await api("/erp/api/dp/agente", {method: "POST",
+      body: JSON.stringify({rotina, modo})});
+    aviso("mensagem", `Rotina “${rotina}” agora está em ${modo}.`, "ok");
+    carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+function pintarSugestoes(){
+  els("painel-sugestoes").innerHTML = !SUGESTOES.length
+    ? `<div class="vazio">Nada sugerido. Com as rotinas em <b>Sugere</b>, o que o
+        agente faria aparece aqui para você aprovar ou recusar.</div>`
+    : `<div class="tabela-wrap"><div class="tabela-rolagem">
+      <table><thead><tr><th>Quando</th><th>Rotina</th><th>O que ele faria</th>
+        <th></th></tr></thead><tbody>
+      ${SUGESTOES.map(g => `<tr>
+        <td style="white-space:nowrap">${dataBR(g.criado_em)}</td>
+        <td>${escapar(g.rotina_nome)}</td>
+        <td class="desc">${escapar(g.explicacao)}
+          ${(g.dados && g.dados.o_que_fazer)
+            ? `<br><small>${escapar(g.dados.o_que_fazer)}</small>` : ""}</td>
+        <td>${PODE_PEDIR ? `<button class="link-btn" data-aplicar="${g.id}">Aplicar</button>
+             · <button class="link-btn" data-recusar="${g.id}">Recusar</button>` : ""}</td>
+        </tr>`).join("")}
+      </tbody></table></div></div>`;
+  els("painel-sugestoes").querySelectorAll("[data-aplicar]").forEach(b =>
+    b.addEventListener("click", () => decidirSugestao(+b.dataset.aplicar, "aplicar")));
+  els("painel-sugestoes").querySelectorAll("[data-recusar]").forEach(b =>
+    b.addEventListener("click", () => decidirSugestao(+b.dataset.recusar, "recusar")));
+}
+
+async function decidirSugestao(id, qual){
+  let corpo = {};
+  if (qual === "recusar") {
+    const r = await perguntar({titulo: "Recusar a sugestão", textoOk: "Recusar",
+      campos: [{nome: "motivo", rotulo: "Por quê? (ajuda a ajustar o agente)"}]});
+    if (!r) return;
+    corpo = {motivo: r.motivo};
+  }
+  try {
+    await api(`/erp/api/dp/agente/sugestoes/${id}/${qual}`,
+              {method: "POST", body: JSON.stringify(corpo)});
+    aviso("mensagem", qual === "aplicar" ? "Aplicado." : "Recusado.", "ok");
+    carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+// ---------------------------------------------------------------------------
+// Pedido novo
+// ---------------------------------------------------------------------------
+async function novoPedido(){
+  const t = await perguntar({
+    titulo: "Pedido à contabilidade",
+    aviso: "Escolha o que está pedindo — cada modelo diz o que espera de volta "
+         + "e em quantos dias.",
+    textoOk: "Continuar",
+    campos: [{nome: "template", rotulo: "O que está pedindo", tipo: "select",
+              opcoes: TEMPLATES.map(x => ({valor: x.chave,
+                rotulo: `${x.nome} — espera ${x.espera}, prazo ${x.prazo} dia(s)`}))}]});
+  if (!t) return;
+  const regra = TEMPLATES.find(x => x.chave === t.template) || {};
+  const extra = (CAMPOS_DO_TEMPLATE[t.template] || []);
+  const r = await perguntar({
+    titulo: regra.nome || "Pedido",
+    aviso: `${regra.explicacao || ""}. O pedido é montado com os dados do `
+         + `cadastro — se faltar algo que a contabilidade precisa, ele avisa `
+         + `antes de deixar enviar.`,
+    textoOk: "Montar o pedido",
+    campos: [{nome: "colaborador_id", rotulo: "Pessoa", tipo: "select-busca",
+              fonte: "/erp/api/colaboradores"}].concat(extra)});
+  if (!r) return;
+  const dados = {};
+  extra.forEach(c => { if (r[c.nome]) dados[c.nome] = r[c.nome]; });
+  try {
+    const d = await api("/erp/api/dp/pedidos", {method: "POST",
+      body: JSON.stringify({template: t.template,
+        colaborador_id: r.colaborador_id, dados})});
+    aviso("mensagem", `Pedido ${d.numero} montado. Abra para ver o texto e enviar.`, "ok");
+    carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+// Os campos que são DO PEDIDO, não do cadastro. O resto vem do cadastro — é o
+// que evita redigitar o que o ERP já sabe.
+const CAMPOS_DO_TEMPLATE = {
+  ALTERACAO_CARGO: [
+    {nome: "cargo_novo", rotulo: "Cargo novo"},
+    {nome: "salario_novo", rotulo: "Salário novo"},
+    {nome: "vigencia", rotulo: "A partir de", tipo: "date"},
+    {nome: "motivo", rotulo: "Motivo"}],
+  FERIAS: [
+    {nome: "inicio", rotulo: "Início das férias", tipo: "date"},
+    {nome: "dias", rotulo: "Dias"},
+    {nome: "abono", rotulo: "Abono pecuniário (1/3)?"},
+    {nome: "adiantamento_13", rotulo: "Adiantar o 13º?"}],
+  DEPENDENTE: [
+    {nome: "dependente_nome", rotulo: "Nome do dependente"},
+    {nome: "dependente_nascimento", rotulo: "Nascimento", tipo: "date"},
+    {nome: "dependente_cpf", rotulo: "CPF do dependente"},
+    {nome: "parentesco", rotulo: "Parentesco"},
+    {nome: "salario_familia", rotulo: "Salário-família?"},
+    {nome: "dependente_ir", rotulo: "Dependente de IR?"}],
+  CONJUGE: [
+    {nome: "conjuge_nome", rotulo: "Nome do cônjuge"},
+    {nome: "conjuge_nascimento", rotulo: "Nascimento", tipo: "date"},
+    {nome: "conjuge_cpf", rotulo: "CPF do cônjuge"}],
+  DESLIGAMENTO: [
+    {nome: "forma_desligamento", rotulo: "Forma do desligamento"},
+    {nome: "faltas", rotulo: "Faltas a descontar"}],
+  CANCELAMENTO_DESLIGAMENTO: [
+    {nome: "comunicado_em", rotulo: "Desligamento comunicado em", tipo: "date"},
+    {nome: "motivo", rotulo: "Motivo do cancelamento"}],
+  ASSINATURA_CTPS: [],
+};
+
+async function rodarAgora(){
+  try {
+    const r = await api("/erp/api/dp/agente/rodar", {method: "POST"});
+    aviso("mensagem", r.aviso || ("Agente rodou: "
+      + JSON.stringify(r.cobranca || {})), r.aviso ? "info" : "ok");
+    carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+// ---------------------------------------------------------------------------
+// A DEVOLVER PELA OBRA — o documento que foi para assinar e tem de voltar
+// Decisão dele: o WhatsApp AVISA e COBRA; o arquivo volta pelo PORTAL.
+// ---------------------------------------------------------------------------
+let DEVOLUCOES = [];
+
+async function carregarDevolucoes(){
+  try {
+    const d = await api("/erp/api/dp/devolucoes");
+    DEVOLUCOES = d.devolucoes;
+    pintarDevolucoes();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+function pintarDevolucoes(){
+  const atrasadas = DEVOLUCOES.filter(d => d.atrasada);
+  els("painel-devolucoes").innerHTML = `
+    <div class="cartao-dica">Documento que o DP mandou para a obra fazer algo e
+      devolver — colher assinatura, por exemplo. O <b>WhatsApp avisa e cobra</b>;
+      o arquivo volta <b>pelo portal</b> (aplicativo do ponto), com tipo e dono.
+      Foto de documento em conversa não é arquivo.
+      ${PODE_PEDIR ? `<div style="margin-top:8px">
+        <button class="btn secundario" id="dv-nova">+ Pedir devolução</button></div>` : ""}</div>
+    ${atrasadas.length ? `<div class="aviso alerta" style="margin-top:10px">
+      <b>${atrasadas.length} devolução(ões) atrasada(s).</b></div>` : ""}
+    ${DEVOLUCOES.length ? `<div class="tabela-wrap" style="margin-top:10px">
+      <div class="tabela-rolagem"><table>
+      <thead><tr><th>Nº</th><th>O que</th><th>Pessoa</th><th>Obra</th>
+        <th>Documento</th><th>Prazo</th><th>Cobranças</th><th></th></tr></thead>
+      <tbody>${DEVOLUCOES.map(d => `<tr>
+        <td>${escapar(d.numero)}</td><td class="desc">${escapar(d.o_que)}</td>
+        <td>${escapar(d.pessoa || "—")}</td><td>${escapar(d.obra || "—")}</td>
+        <td class="desc">${escapar(d.documento_esperado)}</td>
+        <td>${d.prazo ? dataBR(d.prazo) : "—"}
+          ${d.atrasada ? `<br><small class="aviso-texto">há ${d.dias_atraso} dia(s)</small>` : ""}</td>
+        <td class="direita">${d.cobrancas}</td>
+        <td>${PODE_PEDIR ? `<button class="link-btn" data-cobrar="${d.id}">Cobrar</button>` : ""}</td>
+        </tr>`).join("")}</tbody></table></div></div>`
+      : `<div class="vazio">Nada esperando a obra.</div>`}`;
+  if (els("dv-nova")) els("dv-nova").addEventListener("click", novaDevolucao);
+  els("painel-devolucoes").querySelectorAll("[data-cobrar]").forEach(b =>
+    b.addEventListener("click", () => cobrarDevolucao(+b.dataset.cobrar)));
+}
+
+async function novaDevolucao(){
+  const r = await perguntar({
+    titulo: "Pedir devolução à obra",
+    aviso: "A obra recebe um aviso por WhatsApp e devolve o documento pelo "
+         + "portal. Diga qual documento tem de voltar — é o que faz ele ser "
+         + "achável depois.",
+    textoOk: "Abrir a pendência",
+    campos: [
+      {nome: "colaborador_id", rotulo: "Pessoa", tipo: "select-busca",
+       fonte: "/erp/api/colaboradores"},
+      {nome: "o_que", rotulo: "O que a obra tem de fazer", tipo: "textarea"},
+      {nome: "documento_esperado", rotulo: "Documento que volta", tipo: "select",
+       opcoes: [
+         {valor: "RESCISAO", rotulo: "Termo de rescisão"},
+         {valor: "CONTRATO-TRABALHO", rotulo: "Contrato de trabalho"},
+         {valor: "FICHA-REGISTRO", rotulo: "Ficha de registro"},
+         {valor: "ALTERACAO-CONTRATO", rotulo: "Alteração de contrato"},
+         {valor: "AVISO-FERIAS", rotulo: "Aviso e recibo de férias"},
+         {valor: "EPI-FICHA", rotulo: "Ficha de entrega de EPI"},
+         {valor: "DOC-PESSOA-OUTRO", rotulo: "Outro documento da pessoa"}]},
+      {nome: "dias", rotulo: "Prazo (dias)", valor: "5"}]});
+  if (!r) return;
+  try {
+    const d = await api("/erp/api/dp/devolucoes",
+                        {method: "POST", body: JSON.stringify(r)});
+    aviso("mensagem", `Pendência ${d.numero} aberta. Use "Cobrar" para avisar a obra.`, "ok");
+    carregarDevolucoes();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+async function cobrarDevolucao(id){
+  try {
+    const r = await api(`/erp/api/dp/devolucoes/${id}/cobrar`, {method: "POST"});
+    aviso("mensagem", `Avisei ${r.avisados} de ${r.telefones} telefone(s) da obra.`, "ok");
+    carregarDevolucoes();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+// ---------------------------------------------------------------------------
+// A CAIXA DE ENTRADA — o ERP lendo e-mail, não só mandando
+// ---------------------------------------------------------------------------
+let CAIXA = {config: {}, mensagens: []};
+
+async function carregarCaixa(){
+  try {
+    CAIXA = await api("/erp/api/dp/caixa");
+    pintarCaixa();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+function pintarCaixa(){
+  const c = CAIXA.config || {};
+  els("painel-caixa").innerHTML = `
+    <div class="cartao-dica">É daqui que o agente lê o retorno da contabilidade:
+      ele casa cada resposta com o pedido que a originou, baixa os anexos e
+      arquiva no Drive com o tipo esperado — <b>sem ninguém jogar anexo</b>.
+      ${c.usavel ? "" : `<br><b>Falta configurar</b> servidor, usuário e senha.`}</div>
+    <div class="kpis" style="margin-top:10px">
+      <div class="kpi estatico ${c.usavel ? "verde" : "ambar"}">
+        <div class="kpi-rotulo">Configuração</div>
+        <div class="kpi-valor" style="font-size:16px">${c.usavel ? "pronta" : "incompleta"}</div>
+        <div class="kpi-sub">${escapar(c.usuario || "sem usuário")}</div></div>
+      <div class="kpi estatico"><div class="kpi-rotulo">Servidor</div>
+        <div class="kpi-valor" style="font-size:16px">${escapar(c.servidor || "—")}</div>
+        <div class="kpi-sub">porta ${c.porta || "—"} · pasta ${escapar(c.pasta || "INBOX")}</div></div>
+      <div class="kpi estatico"><div class="kpi-rotulo">Mensagens lidas</div>
+        <div class="kpi-valor">${(CAIXA.mensagens || []).length}</div></div>
+    </div>
+    ${PODE_PEDIR ? `<div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap">
+      <button class="btn secundario" id="cx-config">Configurar a caixa</button>
+      <button class="btn secundario" id="cx-testar">Testar a conexão</button>
+      <button class="btn secundario" id="cx-conferir">Ler sem gravar</button>
+      <button class="btn" id="cx-ler">Ler agora</button></div>` : ""}
+    <div id="cx-msg" style="margin-top:10px"></div>
+    ${(CAIXA.mensagens || []).length ? `<div class="tabela-wrap" style="margin-top:10px">
+      <div class="tabela-rolagem"><table>
+      <thead><tr><th>Quando</th><th>De</th><th>Assunto</th><th>Anexos</th>
+        <th>Situação</th><th>Observação</th></tr></thead><tbody>
+      ${CAIXA.mensagens.map(m => `<tr>
+        <td style="white-space:nowrap">${dataBR(m.processado_em)}</td>
+        <td class="desc">${escapar(m.de || "—")}</td>
+        <td class="desc">${escapar(m.assunto || "—")}</td>
+        <td class="direita">${m.arquivados}/${m.anexos}</td>
+        <td><span class="etiqueta ${m.situacao === "CASADA" ? "verde"
+            : m.situacao === "SEM_DONO" ? "ambar" : ""}">${escapar(m.situacao)}</span></td>
+        <td class="desc">${escapar(m.motivo || "")}</td></tr>`).join("")}
+      </tbody></table></div></div>` : ""}`;
+  const liga = (id, fn) => { if (els(id)) els(id).addEventListener("click", fn); };
+  liga("cx-config", configurarCaixa);
+  liga("cx-testar", () => acaoCaixa("testar"));
+  liga("cx-conferir", () => acaoCaixa("conferir"));
+  liga("cx-ler", () => acaoCaixa("ler"));
+}
+
+async function configurarCaixa(){
+  const c = CAIXA.config || {};
+  const r = await perguntar({
+    titulo: "A caixa de entrada que o agente lê",
+    aviso: "Use uma conta só para isto. Em conta Google, a senha é uma "
+         + "\"senha de aplicativo\" — a senha normal não entra por IMAP. "
+         + "A senha é guardada cifrada e nunca aparece na tela.",
+    textoOk: "Salvar",
+    campos: [
+      {nome: "servidor", rotulo: "Servidor IMAP", valor: c.servidor || "imap.gmail.com"},
+      {nome: "porta", rotulo: "Porta", valor: String(c.porta || 993)},
+      {nome: "usuario", rotulo: "Usuário (e-mail)", valor: c.usuario || ""},
+      {nome: "senha", rotulo: c.tem_senha ? "Senha (deixe vazio para manter)" : "Senha",
+       tipo: "password"},
+      {nome: "pasta", rotulo: "Pasta", valor: c.pasta || "INBOX"}]});
+  if (!r) return;
+  try {
+    const d = await api("/erp/api/dp/caixa",
+                        {method: "POST", body: JSON.stringify(r)});
+    aviso("mensagem", d.config.aviso || "Caixa configurada.",
+          d.config.aviso ? "alerta" : "ok");
+    carregarCaixa();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+async function acaoCaixa(qual){
+  try {
+    const r = await api(`/erp/api/dp/caixa/${qual}`, {method: "POST"});
+    if (qual === "testar") {
+      aviso("cx-msg", `Conectou. ${r.nao_lidas} mensagem(ns) não lida(s).`, "ok");
+    } else {
+      aviso("cx-msg", `${r.olhou} mensagem(ns) olhada(s): ${r.casadas} casada(s), `
+        + `${r.sem_dono} sem dono, ${r.arquivados} anexo(s) arquivado(s).`
+        + (qual === "conferir" ? " Nada foi gravado — é só a conferência." : ""),
+        "ok");
+      carregarCaixa();
+    }
+  } catch(e){ aviso("cx-msg", e.message, "erro"); }
+}
+
+document.querySelectorAll("[data-painel]").forEach(b =>
+  b.addEventListener("click", () => {
+    document.querySelectorAll("[data-painel]").forEach(x =>
+      x.classList.toggle("ativa", x === b));
+    ["pedidos", "agente", "devolucoes", "caixa", "sugestoes"].forEach(p =>
+      els("painel-" + p).classList.toggle("oculto", p !== b.dataset.painel));
+    if (b.dataset.painel === "devolucoes") carregarDevolucoes();
+    if (b.dataset.painel === "caixa") carregarCaixa();
+  }));
+els("f-situacao").addEventListener("change", carregar);
+if (els("btn-novo")) els("btn-novo").addEventListener("click", novoPedido);
+if (els("btn-rodar")) els("btn-rodar").addEventListener("click", rodarAgora);
+carregar();
+</script>
+{% endblock %}

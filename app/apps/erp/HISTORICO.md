@@ -21,6 +21,229 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚠️ MIGRAÇÕES 085 a 091 — apertar "Aplicar atualizações do banco"
+
+Entraram em 05/11/2026 com o cadastro de pessoas. **Sem elas a tela de
+Colaboradores e a de Cargos respondem erro**, porque as colunas e as tabelas não
+existem. Nada do que já estava em produção quebra: `funcao_id`, `valor_diaria` e
+os auxílios continuam onde estavam, e o cargo novo entra AO LADO da função, não
+no lugar.
+
+- **085** cargos, convenções, o cruzamento e o histórico do piso;
+- **086** os ~55 campos de admissão no cadastro da pessoa;
+- **087** dependentes, vínculos com começo e fim, alterações de salário/cargo;
+- **088** a fila de solicitações do DP (11 tipos, checklist e trilha), e as
+  ações `solicitar_dp` (abrir, de quem está na obra) e `atender_dp` (o DP);
+- **089** as ETAPAS do cadastro, com a trilha de quem moveu o quê e quando;
+- **090** os pedidos formais à contabilidade e as rotinas do agente de DP
+  — **todas semeadas DESLIGADAS**, e a ação `pedir_contabilidade`;
+- **091** a leitura da CAIXA DE ENTRADA (o agente recebendo e-mail), as
+  DEVOLUÇÕES da obra e o autor-colaborador da solicitação (o portal).
+
+Depois de apertar o botão do banco, apertar **uma vez** "Instalar o catálogo de
+tipos", na tela do Arquivo: ele traz os seis tipos de documento novos (os quatro
+de pessoa e os dois que a contabilidade devolve).
+
+### 👥 O CADASTRO DE PESSOAS VAI PARA DENTRO DO ERP — em construção (04 e 05/11/2026)
+
+O dono: *"a gente ainda está usando o Pipefy, e puxando uma planilha (…) isso
+está gerando muito conflito (…) é importante a gente colocar logo o cadastro das
+pessoas dentro do ERP e começar a trabalhar nele."*
+
+**O apurado inteiro está em `CADASTRO_DE_PESSOAS.md`, nesta pasta** — e desde
+04/11/2026 ele já inclui a leitura dos DOIS PIPES e de TRÊS CENÁRIOS DO MAKE que
+o dono enviou: o que está morto, as gambiarras que o ERP resolve de graça, o
+cadastro campo por campo, os 28 tipos de solicitação com o destino de cada um, e
+as decisões que ele já tomou. **Ler de lá, não refazer.** Os campos dos pipes
+ficam versionados em `referencia_pipefy/`, porque o Pipefy vai morrer e depois
+disso não haverá outra descrição do que o DP coletava.
+
+**As decisões dele, para não serem perguntadas de novo:** Pipefy e planilha
+MORREM (e até lá o ERP passa a ALIMENTAR as planilhas de transporte/GM/diaristas
+— o sentido inverte); todos os pedidos vão para o DP; colaborador e prestador
+são UM cadastro só, mantendo CTPS/Prestador e o tipo de contrato como campos; e
+importa-se **só quem está ativo** (~575 pessoas, não 3.664 — os 2.960 desligados
+ficam na planilha como base morta).
+
+**O QUE JÁ ESTÁ CONSTRUÍDO (05/11/2026), e nada aplicado ao banco ainda:**
+migrações **085 a 088**; `core/cadastros/cargos.py` e `pessoas.py`; os
+importadores `cargos_planilha.py` (rodado de verdade: 135 linhas → 62 cargos ×
+13 convenções) e `pessoas_planilha.py`; a fila do DP com 13 tipos
+(`core/pessoal_solicitacoes.py`); a ficha em seis abas, a tela de cargos e a de
+solicitações. **129 testes novos.**
+
+**A IMPORTAÇÃO DAS PESSOAS espera só o arquivo** (Pessoal › Colaboradores ›
+"Importar do Pipefy"). Ela confere antes de gravar, reconhece a coluna pelo
+nome nos três formatos (rótulo do pipe, aba "Dados Documentos", nome do ERP),
+**não sobrescreve quem já está no ERP** — lista o que divergiu — e mostra as
+colunas que não reconheceu, porque silêncio aí seria perder dado sem ninguém
+ver. Detalhe na seção 7a do `CADASTRO_DE_PESSOAS.md`.
+
+**Dois defeitos achados fazendo, que valem para quem mexer nesta área:**
+
+1. **O PIS repetido da planilha.** O PIS é único no banco (migração 086) e a
+   planilha do Pipefy repete — digitado à mão por anos. Sem conferir antes, o
+   banco estourava no meio e **todas as linhas seguintes falhavam em cascata**.
+   Agora cada linha tem ponto de retorno próprio e o repetido é recusado com o
+   nome do outro cadastro.
+2. **`autoflush=False` esconde o que acabou de ser criado.** `salvar()` criava o
+   primeiro vínculo com `s.add` e não dava `flush`; quem chamasse
+   `vinculo_aberto()` na mesma transação (o atendimento de pré-cadastro na fila
+   do DP) não o achava e **abriria um segundo vínculo**. Regra geral: nesta
+   sessão, objeto novo que vai ser LIDO na mesma transação precisa de `flush`.
+
+**AS DECISÕES DELE DE 05/11/2026, que fecham três perguntas:**
+
+1. **A aba "Dados Documentos" é substituída pela base de colaboradores do ERP**
+   (*"Dados Documentos não será substituída pela base de dados dos
+   colaboradores do ERP?"* — sim). Quem precisar daquele dado passa a ler o ERP.
+   **O que ainda falta é o COMO:** as planilhas de transporte, GM e diaristas, e
+   a cópia `analisesps.colaborador` que a folha usa, vão **ler do ERP** ou o
+   **ERP vai escrever nelas**? São dois trabalhos diferentes.
+2. **Todo papel do cadastro vai para o GOOGLE DRIVE** (*"todo documento, anexo,
+   pdf, imagem que for ser salvo dos cadastros dos colaboradores, lembrar de
+   salvar no Google Drive"*). É o que o Arquivo do ERP já faz — privado, com
+   `GOOGLE_CREDENTIALS_BASE64`. **É uma troca de lugar:** o Pipefy guardava no
+   **Dropbox**, em `/BWS DP/FUNCIONÁRIOS/<Nome>`. Esse passivo é trabalho à
+   parte. E o catálogo ganhou os quatro tipos que faltavam (comprovante de
+   endereço do colaborador, foto, documento de dependente e outro documento da
+   pessoa) — entram apertando "Instalar o catálogo de tipos".
+3. **Riscos e EPI do cargo estão vazios de verdade** (*"o que foi vazio na
+   tabela de cargos é pq tá vazio mesmo"*). Não há o que importar.
+
+**O SENTIDO DA LEITURA FICOU DECIDIDO (05/11/2026), e ele encurta o trabalho:**
+*"o analisesps na parte de Folha de PGT, ele fará a leitura das informações e
+ponto a partir do ERP pra poder montar os dados de pgt. (…) em breve vamos
+migrar todas essas telas de pagamento de colaboradores para o ERP tb, pq o
+analisesps tb será desativado. Estamos num processo de migração entre omie,
+planilha, pipefy, analisesps para ERP."*
+
+→ **O ERP não escreve em planilha nenhuma.** Quem precisa do cadastro **lê
+daqui**. A fase de "inverter o sentido" foi CANCELADA, e no lugar dela entraram
+duas peças:
+
+1. **`pessoas.para_folha()`** — o cadastro de quem recebe, com os nomes de campo
+   **da tabela `analisesps.colaborador`**, para trocar a ORIGEM sem reescrever a
+   folha. É função e não rota HTTP porque os dois módulos rodam no mesmo
+   processo e no mesmo banco: rota exigiria segredo novo (proibido pelo
+   `CLAUDE.md`) e uma volta de rede dentro da máquina. A rota
+   `/erp/api/colaboradores/para-folha` existe para a TELA, com
+   `editar_colaboradores` — ela carrega salário, PIS e chave Pix.
+   **Para o chat do Análise de SPs:** é só trocar quem alimenta
+   `analisesps.colaborador`. Não mexi em nada daquela área.
+2. **A conferência lado a lado**, para o período em paralelo que ele pediu
+   (*"ficaremos com os dados em paralelo por alguns dias"*). Rodar a importação
+   em "Conferir sem gravar" com a planilha do dia mostra os dois lados: o que
+   divergiu em quem existe nos dois (tudo o que a folha lê — auxílios, diária,
+   cargo, obra, datas, não só nome e salário) e **quem está no ERP e não está na
+   planilha**. Nada é mexido, e ninguém é desligado por faltar num arquivo.
+
+⚠️ **ORDEM QUE ELE DEFINIU, e não pode ser invertida:** a leitura da planilha só
+é desligada **depois** de o cadastro do ERP estar rodando e testado com gente de
+verdade dentro. Até lá, os dois mundos vivos.
+
+**O cenário `Card Movido` chegou e foi lido** (190 módulos, o maior deles): ele
+**não escreve nenhuma coluna** que a atualização não escreva, então o mapa das
+74 está completo e a importação não precisou de retrabalho. O que ele revelou de
+novo está em `referencia_pipefy/cenarios_do_make.md`: o Dropbox como lugar dos
+papéis, o **MobPonto** (cadastro e inativação por API, com e-mail ao DP quando
+falha) e duas planilhas que só serviam para gerar documento.
+
+⚠️ **Pergunta aberta que não é desta área:** quem cadastra a pessoa no
+**MobPonto** quando o Pipefy morrer. O ponto do ERP é REP-P e tem cadastro
+próprio; o MobPonto ainda aparece no Análise de SPs.
+
+**O que ainda falta saber** (seção 8 do arquivo): os outros até 6 cenários do
+Make — em especial o que ESCREVE a linha nova na aba "Dados Documentos", porque
+nenhum dos três que vieram escreve; o conteúdo das tabelas do Pipefy (Cargos,
+Colaboradores, Desligados); e o destino dos cinco tipos de pedido que hoje são
+manuais.
+
+
+### 🤝 O CICLO DP ↔ CONTABILIDADE, E O AGENTE (05/11/2026)
+
+**A metodologia inteira está em `AGENTE_DP.md`, nesta pasta.** Ler lá antes de
+mexer: este resumo não substitui o desenho.
+
+O dono explicou o fluxo que o Pipefy fazia e pediu *"vá além em relação ao
+agente de DP. O que ele deveria fazer? Quais rotinas ele deveria cuidar? Quais
+interações entre DP, Contabilidade e os administrativos de obra que fazem as
+requisições ele deveria fazer, e como?"*
+
+**O FLUXO, agora dentro do ERP:** a obra pede (fila do DP, migração 088) → o DP
+confere e completa o que está nos documentos → **o cadastro BIFURCA pelo
+vínculo** (migração 089): prestador resolve no DP (PJ gera contrato a assinar;
+diarista e autônomo mensalista concluem ali), CTPS vai para a contabilidade → o
+ERP **pede, cobra e confere o retorno** (migração 090) → conclui.
+
+**O QUE ESTÁ CONSTRUÍDO:**
+
+- **sete templates de pedido à contabilidade** — assinatura de CTPS (admissão),
+  alteração de cargo, férias, dependente, cônjuge, desligamento e cancelamento
+  de desligamento. Cada um com o que **espera de volta** (tipo do catálogo), o
+  **prazo em dias úteis**, o teto de cobranças e **a lista de campos que têm de
+  bater** no documento que voltar. A *documentação rescisória* não é template:
+  ela é o RETORNO do desligamento, e foi ele quem disse por quê;
+- **o texto do e-mail é guardado, não recalculado** — o modelo muda com o tempo,
+  e o pedido de março tem de continuar mostrando o texto de março. É o que
+  permite discutir com a contabilidade o que foi pedido;
+- **retorno que não bate NÃO conclui**: abre divergência com o de/para campo por
+  campo. Para fechar, ou o cadastro é corrigido, ou alguém aceita a divergência
+  **com motivo escrito**. Carimbar como certo um documento errado é justamente o
+  problema que ninguém pega hoje;
+- **as sete rotinas do agente**, cada uma com três modos (DESLIGADA / SUGERE /
+  FAZ) e parâmetros próprios. **Todas nascem desligadas** — pedido dele.
+  **CINCO das sete não usam IA nenhuma** (triagem, despacho, cobrança, vigia,
+  relator): são regra de negócio e conta de calendário. O agente começa útil e
+  burro, e fica inteligente depois.
+
+**O PONTO CEGO FOI FECHADO NO MESMO DIA, e eu estava errado sobre o custo.** Eu
+havia registrado que o ERP não lê caixa de entrada e que fechar isso exigiria
+credencial nova. Ele derrubou: *"Que agente é esse que depende de uma
+intervenção humana? Aí não é agente. (…) o ERP precisa estar fazendo a leitura
+das caixas de entrada, baixando anexo de forma completamente autônoma."*
+
+E o custo que eu apontei não existia: **`imaplib` e `email` são da biblioteca
+padrão** (nenhuma dependência nova) e a senha da caixa fica **cifrada no banco**,
+configurada na tela — a mesma mecânica da senha de SMTP das empresas, sem envvar
+nova e sem deploy para ligar.
+
+**A leitura casa a resposta com o pedido em três tentativas:** o `Message-ID`
+que o ERP gerou ao enviar (o certo), a marca `[CT-00001]` no assunto (quando o
+cabeçalho não volta) e o CPF no texto (só com UM pedido aberto da pessoa). Com
+dois, **não escolhe** — anexar a rescisão no pedido de férias é pior que não
+anexar, e a mensagem fica "sem dono" com o motivo escrito.
+
+**OS CANAIS, decididos por ele:** contabilidade por **e-mail** nos dois
+sentidos; administrativo de obra por **WhatsApp** (avisar e cobrar); e a
+**devolução de documento pelo SISTEMA, nunca por WhatsApp** — *"foto de
+documento em conversa não é arquivo"*. Os dois tipos novos da mensageria
+(`erp.dp_devolucao`, `erp.dp_pedido`) nascem no WhatsApp, que é exceção à regra
+de 05/10/2026 e está registrada no teste da mensageria com o motivo: quem está
+na obra não tem Telegram.
+
+**O PORTAL JÁ EXISTE, E É O APLICATIVO DO PONTO.** Ele perguntou como ficaria o
+permissionamento entre ERP, portal e ponto — e a resposta é que não há portal
+novo. São TRÊS mundos de acesso que não se misturam: o ERP (e-mail e senha,
+perfil → ações → seções), o portal (CPF + PIN do app do ponto, papéis do ponto)
+e o aparelho (token do dispositivo). O ERP **lê a sessão** que o app do ponto
+abriu — os dois rodam no mesmo processo e dividem o cookie — e **não
+reimplementa nenhuma regra de alcance**: quais obras a pessoa alcança e quem
+pode pedir por outros vêm de `ponto/core/papeis.py`. Duas regras de alcance que
+divergem seria o pior dos mundos.
+
+⚠️ **O QUE FALTA PARA O PORTAL APARECER:** as rotas estão prontas
+(`/erp/portal/api/...`), mas **a tela dele mora no aplicativo do ponto**, que é
+outra área. O chat do ponto precisa acrescentar três telas — "Pedidos ao DP",
+"Novo pedido" e "A devolver". Está escrito o que cada uma consome na §6-ter do
+`AGENTE_DP.md`. Nenhuma precisa de regra nova.
+
+**O limite do agente está NO CÓDIGO, não só no documento** (`ROTINAS[...]
+["nao_analisa"]`, e um teste que exige a frase): ele não desliga, não admite,
+não muda salário nem cargo por conta própria; não manda e-mail sem pedido
+registrado com autor humano; não conclui com divergência; não sobrescreve o que
+alguém digitou; e tudo o que faz fica marcado como dele.
+
 ### ✉️ A TELA MENSAGENS ENTROU NO ERP (05/10/2026) — feita pelo chat da Mensageria
 
 Mesmo encaixe do ponto: as rotas moram em `app/apps/mensageria/gestao.py` e se

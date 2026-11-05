@@ -802,6 +802,44 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 05/11/2026 — O ERP passa a RECEBER e-mail, e o portal da obra é o app do ponto
+
+**Em ramo, não publicado.** Duas decisões do dono que atravessam áreas, no dia
+em que ele desenhou o ciclo DP ↔ contabilidade (detalhe em
+`app/apps/erp/AGENTE_DP.md`).
+
+**1. O ERP lê caixa de entrada** (`app/apps/erp/core/comum/email_entrada.py`).
+Ele: *"Que agente é esse que depende de uma intervenção humana? Aí não é
+agente."* Usa `imaplib` e `email`, da **biblioteca padrão** — nenhuma
+dependência nova — e a senha da caixa fica **cifrada na tabela `parametros`**
+(mesma mecânica da senha de SMTP das empresas, `core/comum/segredos.py`):
+**nenhuma envvar nova para credencial**, como manda o `CLAUDE.md`. O módulo de
+e-mail passou a **gerar o próprio `Message-ID`** (coluna nova em
+`envios_email`), porque é por ele que a resposta é casada com o que a originou.
+Tetos para não derrubar o monorepo: 25 MB por anexo e 40 mensagens por rodada.
+
+**2. O PORTAL DA OBRA É O APLICATIVO DO PONTO** (`app/apps/erp/core/portal.py`).
+Ele perguntou como ficaria o permissionamento entre ERP, portal e ponto. Não há
+portal novo: o ERP **lê a sessão do app do ponto** (os dois blueprints rodam no
+mesmo processo e dividem o cookie) e **não reimplementa regra de alcance** —
+quais obras a pessoa alcança e quem pode pedir por outros vêm de
+`app/apps/ponto/core/papeis.py`. São três mundos de acesso que não se misturam:
+ERP (sessão + perfil), portal (CPF+PIN do ponto) e aparelho (token).
+
+⚠️ **Três rotas públicas novas** (`erp.api_portal_inicio`,
+`erp.api_portal_abrir`, `erp.api_portal_devolver`), declaradas em
+`_ENDPOINTS_PUBLICOS` e provadas no `tests/test_permissoes_rotas.py`: públicas
+porque quem entra não tem login do ERP, e **não abertas** — a primeira linha de
+cada uma exige a sessão do ponto e responde 401 sem ela, **antes de abrir
+conexão de banco** (rota pública que abre conexão antes de saber quem é vira
+porta de esgotar o pool).
+
+⚠️ **Dois tipos novos no catálogo da mensageria** (`app/apps/mensageria/
+core.py`): `erp.dp_devolucao` e `erp.dp_pedido`, e eles nascem **no WhatsApp** —
+exceção à decisão de 05/10/2026 ("ponto no WhatsApp, o resto no Telegram"),
+porque quem está na obra não tem Telegram. Registrada no
+`tests/test_mensageria.py` com o motivo.
+
 ### 05/11/2026 — Busca automática de feriados numa base pública (`ponto/core/feriados_busca.py`)
 
 **Publicado em 05/11/2026.** Primeira fonte externa de
