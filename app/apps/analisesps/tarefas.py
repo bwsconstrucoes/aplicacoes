@@ -842,6 +842,21 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                                          "notas do FSist")
                         n = {"novas": 0, "mudaram": 0, "ja_tinha": 0,
                              "avisos": [f"notas do FSist: {e}"]}
+                    # OS FERIADOS DAS OBRAS EM ANDAMENTO (05/11/2026) — nacional,
+                    # estadual e municipal, gravados no PONTO, que é a base única
+                    # de feriados. Só vai à internet quando há ano ou lugar novo;
+                    # ver `ponto/core/feriados_busca.py`. Nunca derruba o apoio.
+                    try:
+                        from app.apps.ponto.core import feriados_busca
+                        anotar("conferindo os feriados das obras")
+                        fb = feriados_busca.buscar_se_preciso(
+                            "planilhas de apoio do Análise de SPs")
+                        if fb and fb.get("gravados"):
+                            recado_receita[0] = ((recado_receita[0] + " · ")
+                                                 if recado_receita[0] else "") + \
+                                f"feriados: {fb['gravados']} novo(s) no ponto"
+                    except Exception:  # noqa: BLE001
+                        logger.exception("Análise de SPs: falhou conferir os feriados")
                     _marcar_apoios_feitos()
                     # O QUE VEIO, E O QUE NÃO VEIO, VAI PARA A MENSAGEM DA
                     # EXECUÇÃO — que é o que a tela de Configurações mostra.

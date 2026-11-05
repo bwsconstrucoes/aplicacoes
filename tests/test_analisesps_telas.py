@@ -5898,6 +5898,39 @@ def test_os_feriados_antigos_desta_tela_aparecem_com_o_botao_de_levar(app, monke
     assert 'id="btn-levar-ao-ponto"' in html
 
 
+def test_o_quadro_da_busca_automatica_de_feriados(app, monkeypatch):
+    """05/11/2026: o que já foi buscado em cada ano, o que ficou sem feriado e o
+    município que o IBGE não reconhece — é o que o DP precisa conferir à mão."""
+    from app.apps.analisesps import folha_calendario as fc
+    from app.apps.ponto.core import feriados_busca
+
+    monkeypatch.setattr(fc, "_pronto", lambda: True)
+    monkeypatch.setattr(fc, "listar_feriados", lambda *a, **k: [])
+    monkeypatch.setattr(fc, "antigos_fora_do_ponto", lambda: [])
+    monkeypatch.setattr(fc, "listar_ferias", lambda *a, **k: [])
+    monkeypatch.setattr(feriados_busca, "situacao", lambda conn, hoje: {
+        "anos": {2026: {"ufs": ["CE", "PE"], "municipios": ["OLINDA/PE"],
+                        "sem_feriado": ["Sobral/CE"], "nao_reconhecidos": ["Olindaa/PE"],
+                        "nao_publicado": False, "ultima": "2026-11-05T10:00:00"}},
+        "falta": {}})
+
+    class _Conexao:
+        def __enter__(self):
+            return None
+
+        def __exit__(self, *a):
+            return False
+    from app.apps.ponto import db as banco_do_ponto
+    monkeypatch.setattr(banco_do_ponto, "conexao", lambda: _Conexao())
+
+    html = _como_mestre(app).get(
+        "/analisesps/folha/calendario").get_data(as_text=True)
+    assert "Busca automática de feriados" in html
+    assert "buscado em 05/11/2026" in html and "CE, PE" in html
+    assert "Sobral/CE" in html and "Olindaa/PE" in html
+    assert 'id="btn-buscar-feriados"' in html
+
+
 def test_ponto_fora_do_ar_avisa_que_o_auxilio_sai_sem_feriado(app, monkeypatch):
     from app.apps.analisesps import folha_calendario as fc
 

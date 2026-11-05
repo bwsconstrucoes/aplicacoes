@@ -611,6 +611,33 @@ pela IA (…) pra não precisar fazer manual."*
   botão, que já roda em produção.
 **Publicado em 04/11/2026** (com o "pode" do dono) — SEM MIGRAÇÃO.
 
+## 05/11/2026 — DO CHAT DO ANÁLISE DE SPs: a busca automática de feriados (`core/feriados_busca.py`)
+
+O dono: *"checar quais feriados temos a nível nacional, estadual e municipal (…)
+estadual e municipal baseado nas obras que estão em andamento (…) cadastrou-se uma
+obra nova, talvez esse seria o momento do start, além de ser por ano (…) obra
+concluída, não precisaria buscar mais."*
+
+- **Nacional:** calculado aqui, a mesma lista fixa da migração 002 (sem Carnaval,
+  Paixão e Corpus Christi, pelo mesmo motivo de lá). Estende a semente para 2028+.
+- **Estadual e municipal:** da base pública **feriados-brasil** (GitHub
+  `joaopbini/feriados-brasil`, MIT; `raw.githubusercontent.com`), só para as UFs e os
+  municípios (UF + nome, casado pelo código IBGE) das obras ATIVAS
+  (`cadastros.listar_obras`). Conferido com o arquivo real de 2026: 8.545 feriados
+  municipais, 3.837 municípios; Olinda, Fortaleza, Sobral, Teresina presentes.
+- **Quando:** conferência barata de hora em hora (vai junto das planilhas de apoio do
+  Análise de SPs) e logo depois que a base de obras é lida (`base_obras._trabalhar`,
+  uma linha). Só vai à internet com ANO novo ou LUGAR novo. Dezembro inclui o ano
+  seguinte; ano que a base não publicou é retentado em uma semana.
+- **Regras:** o lugar buscado num ano fica anotado (`parametros` › `feriados.busca`) —
+  **feriado excluído à mão não volta**; gravação `ON CONFLICT DO NOTHING` — o cadastrado
+  à mão no mesmo dia/lugar fica; **nada antes do 1º dia do mês anterior** (o passado
+  fechado não muda).
+- **A tela:** o quadro "Busca automática de feriados" e o botão "Buscar agora" estão,
+  por ora, na tela Feriados e férias do **Análise de SPs** (não mexi no `gestao.html`
+  daqui). Município sem feriado na base e município não reconhecido aparecem lá.
+- Testes: `tests/test_ponto_feriados_busca_banco.py` (internet simulada).
+
 ## 04/11/2026 — DO CHAT DO ANÁLISE DE SPs: a folha passou a ler os feriados DAQUI
 
 O dono, no chat do Análise de SPs: *"a parte de feriados deve vir do ponto. Dessa

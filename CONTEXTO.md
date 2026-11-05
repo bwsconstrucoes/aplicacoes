@@ -802,6 +802,17 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 05/11/2026 — Busca automática de feriados numa base pública (`ponto/core/feriados_busca.py`)
+
+**Publicado em 05/11/2026.** Primeira fonte externa de
+feriados: os arquivos JSON da base pública **feriados-brasil** (GitHub
+`joaopbini/feriados-brasil`, MIT), baixados de `raw.githubusercontent.com` com teto de 15 MB
+por arquivo (§3.7). Sem dependência nova (`requests` já existe) e sem credencial. Grava em
+`ponto.feriados` só para UFs e municípios de obras ativas, nunca antes do mês anterior, sem
+sobrescrever e sem recriar o que foi excluído à mão. Disparada pela etapa de apoios do Análise
+de SPs (de hora em hora) e pela leitura da base de obras do ponto. Detalhe no `HISTORICO.md`
+do ponto.
+
 ### 04/11/2026 — Uma base só de feriados: a do ponto (Análise de SPs lê `ponto.feriados`)
 
 **Publicado em 04/11/2026.** Pedido do dono: *"a parte de
