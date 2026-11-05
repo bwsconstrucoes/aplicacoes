@@ -31,7 +31,9 @@ no lugar.
 
 - **085** cargos, convenções, o cruzamento e o histórico do piso;
 - **086** os ~55 campos de admissão no cadastro da pessoa;
-- **087** dependentes, vínculos com começo e fim, alterações de salário/cargo.
+- **087** dependentes, vínculos com começo e fim, alterações de salário/cargo;
+- **088** a fila de solicitações do DP (13 tipos, checklist e trilha), e as
+  ações `solicitar_dp` (abrir, de quem está na obra) e `atender_dp` (o DP).
 
 ### 👥 O CADASTRO DE PESSOAS VAI PARA DENTRO DO ERP — em construção (04 e 05/11/2026)
 

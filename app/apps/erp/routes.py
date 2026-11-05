@@ -156,6 +156,9 @@ MODULOS = [
             # própria porque o piso salarial muda por dissídio para TODA a
             # gente de um cargo — é manutenção de tabela, não de pessoa.
             ("cargos", "Cargos e convenções", "erp.pagina_cargos"),
+            # A fila de pedidos administrativos (05/11/2026): o segundo pipe do
+            # Pipefy. Os pedidos de PONTO já vivem no módulo do ponto.
+            ("dp_solicitacoes", "Solicitações ao DP", "erp.pagina_dp_solicitacoes"),
         ],
     },
     {
@@ -225,7 +228,10 @@ ACOES_NA_TELA = ("administrar_insumos", "administrar_fornecedores", "comprar",
                  # desliga, readmite e registra alteração salarial. Mesmo motivo
                  # da linha acima: sem ela a tela abre de leitura e ninguém
                  # descobre por quê.
-                 "editar_colaboradores")
+                 "editar_colaboradores",
+                 # A fila do DP (05/11/2026): a tela esconde Atender e Recusar
+                 # de quem só pode abrir pedido.
+                 "atender_dp")
 
 # aba → módulo a que pertence
 _MODULO_DA_ABA = {aba[0]: m["chave"] for m in MODULOS for aba in m["abas"]}
@@ -10697,6 +10703,113 @@ def api_colaborador_vinculo(colaborador_id: int, acao: str):
 # ---------------------------------------------------------------------------
 # CARGOS E CONVENÇÕES — e o piso com histórico
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# A FILA DE SOLICITAÇÕES DO DP (migração 088, 05/11/2026)
+#
+# O segundo pipe do Pipefy, dentro do ERP. Duas ações: `solicitar_dp` abre e
+# acompanha (quem está na obra); `atender_dp` atende e recusa (o DP) — decisão
+# do dono: *"todos os pedidos vão para o DP, e quem tiver perfil do DP que vai
+# aprovar."*
+# ---------------------------------------------------------------------------
+@bp.route("/erp/dp/solicitacoes")
+@login_obrigatorio
+@permissao("solicitar_dp")
+def pagina_dp_solicitacoes():
+    return render_template("erp_dp_solicitacoes.html",
+                           **_contexto("dp_solicitacoes"))
+
+
+@bp.route("/erp/api/dp/solicitacoes", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao(GET="solicitar_dp", POST="solicitar_dp")
+def api_dp_solicitacoes():
+    """A fila, e abrir pedido novo.
+
+    Quem é preso a obra vê o que é da obra dele mais o que ele mesmo abriu — o
+    pré-cadastro não tem obra ligada até ser atendido, e sem a segunda parte
+    quem pediu não acompanharia o próprio pedido.
+    """
+    from app.apps.erp.core import pessoal_solicitacoes as svc
+    from app.apps.erp.core.auth.permissoes import obras_do_usuario
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            if request.method == "GET":
+                return jsonify({"ok": True, **svc.listar(
+                    s, situacao=request.args.get("situacao", ""),
+                    tipo=request.args.get("tipo", ""),
+                    colaborador_id=request.args.get("colaborador_id", type=int),
+                    obra_ids=obras_do_usuario(s, usuario),
+                    usuario_id=usuario.id if usuario else None)})
+            p = svc.abrir(s, request.get_json(silent=True) or {}, usuario)
+            s.commit()
+            return jsonify({"ok": True, "solicitacao": p}), 201
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP/DP: falha na fila de solicitações")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/dp/solicitacoes/<int:solicitacao_id>")
+@login_obrigatorio
+@permissao("solicitar_dp")
+def api_dp_solicitacao(solicitacao_id: int):
+    from app.apps.erp.core import pessoal_solicitacoes as svc
+    from app.apps.erp.core.auth.permissoes import exigir_solicitacao_dp_no_escopo
+    try:
+        with get_session() as s:
+            exigir_solicitacao_dp_no_escopo(s, _usuario_logado(s), solicitacao_id)
+            return jsonify({"ok": True, "solicitacao": svc.ler(s, solicitacao_id)})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
+
+
+@bp.route("/erp/api/dp/solicitacoes/<int:solicitacao_id>/<acao>", methods=["POST"])
+@login_obrigatorio
+@permissao("solicitar_dp")
+def api_dp_solicitacao_acao(solicitacao_id: int, acao: str):
+    """Atender, recusar, cancelar e marcar item do checklist.
+
+    ⚠️ A PERMISSÃO DA ROTA É A MAIS FRACA (`solicitar_dp`), porque CANCELAR é de
+    quem abriu. Atender e recusar exigem `atender_dp` por dentro — e isto é a
+    exceção que o CLAUDE.md permite: duas ações diferentes na mesma rota, com a
+    conferência explícita abaixo. A alternativa seria duas rotas para o mesmo
+    objeto, e aí o escopo teria de ser conferido duas vezes.
+    """
+    from app.apps.erp.core import pessoal_solicitacoes as svc
+    from app.apps.erp.core.auth.permissoes import exigir_solicitacao_dp_no_escopo, pode
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            exigir_solicitacao_dp_no_escopo(s, usuario, solicitacao_id)
+            if acao in ("atender", "recusar", "item") and not pode(usuario, "atender_dp"):
+                return jsonify({"ok": False, "erro":
+                                "Só o DP atende solicitação. Você pode abrir e "
+                                "acompanhar o que abriu."}), 403
+            if acao == "atender":
+                p = svc.atender(s, solicitacao_id, d, usuario)
+            elif acao == "recusar":
+                p = svc.recusar(s, solicitacao_id, d, usuario)
+            elif acao == "cancelar":
+                p = svc.cancelar(s, solicitacao_id, d, usuario)
+            elif acao == "item":
+                p = svc.marcar_item(s, solicitacao_id, int(d.get("item_id") or 0),
+                                    bool(d.get("feito")), usuario)
+            else:
+                raise ErroNaoEncontrado(f"Ação desconhecida: {acao}")
+            s.commit()
+        return jsonify({"ok": True, "solicitacao": p})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP/DP: falha na ação %s da solicitação", acao)
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
 @bp.route("/erp/api/cargos")
 @login_obrigatorio
 @permissao("editar_colaboradores")

@@ -1145,6 +1145,77 @@ O que ainda **não** responde:
   registrada como evento no histórico da obra, mas não existe consulta que leia
   o histórico; hoje só dá para abrir obra por obra.
 
+## 3q-bis. O CADASTRO DE PESSOAS dentro do ERP (05/11/2026)
+
+O cadastro saiu do Pipefy. Isto é o que passa a ser possível perguntar — e a
+maior parte **nunca foi respondível**, porque o dado vivia numa planilha de 78
+colunas sem histórico.
+
+**Sobre quem está cadastrado:**
+
+- OK **Quem está sem PIS, sem CTPS ou sem endereço completo?** (é a lista "o que
+  falta para admitir", calculada por pessoa; prestador não é cobrado de PIS nem
+  de CTPS)
+- OK **Quantas pessoas ativas temos, por vínculo e por tipo de contrato?** 🔒
+  (escopo por obra) ⚠️ ("ativo" = situação ATIVA e sem demissão já passada)
+- OK **Quem tem dependente no salário-família? Quantos dependentes no total?**
+  ⚠️ (salário-família e dependente de IR são marcas DIFERENTES — a resposta
+  precisa dizer qual das duas foi usada)
+- OK **Quem usa transporte coletivo para chegar à obra?** (o campo existe para
+  dimensionar o vale)
+- OK **Quem recebe transporte como "Cartão"?** ⚠️ (palavra decisiva: "Cartão"
+  quer dizer que NÃO se paga em dinheiro — somar o valor dessas pessoas no
+  pagamento é pagar duas vezes)
+
+**Sobre cargo, convenção e salário — tudo novo:**
+
+- OK **Qual o piso de PEDREIRO em cada convenção?** (o mesmo cargo tem 11 pisos
+  diferentes na base de hoje)
+- OK **Quem ganha ABAIXO do piso da convenção dele?** ⚠️ (depende da data: o
+  piso de 2025 não é o de 2026, e a resposta tem de usar o piso **vigente na
+  data** — é para isso que o histórico existe)
+- OK **Qual era o piso deste cargo em março do ano passado?** (confere a folha
+  de um mês fechado)
+- OK **Quem mudou de salário este ano, de quanto para quanto e por quê?**
+  (mérito, promoção, dissídio, enquadramento ou correção)
+- OK **Quem mudou de cargo e continuou com o mesmo salário?**
+- OK **Quais convenções têm data-base neste mês?** (é quando o piso muda, e hoje
+  ninguém é avisado)
+- FALTA **"Quanto a folha sobe se o dissídio de CE-Fortaleza der 5%?"** — a
+  conta é possível com o que existe, mas não há função escrita.
+
+**Sobre a história da pessoa — nada disso o Pipefy guardava:**
+
+- OK **Quantas vezes esta pessoa já trabalhou aqui?** (cada passagem é um
+  vínculo, e a readmissão aponta para a anterior)
+- OK **Quem foi readmitido este ano?**
+- OK **Quem era prestador e virou CTPS? Em que data?** ⚠️ (o período de
+  prestador continua valendo para o INSS — a resposta tem de dar as duas datas,
+  não só a atual)
+- OK **Quem saiu, quando e como?** (a pedido, fim de experiência, aviso
+  trabalhado ou indenizado)
+- OK **Quem está com aviso prévio correndo?**
+
+⚠️ **Palavra ambígua: "admissão".** Três datas convivem no cadastro, e elas
+divergem de propósito: **data de início** (quando a pessoa começou a trabalhar),
+**data de admissão** (o que vai na carteira) e a **admissão do vínculo atual**
+(que muda na readmissão e na troca de prestador para CTPS). Pergunta com
+"admissão" solta deve dizer qual.
+
+⚠️ **Palavra ambígua: "salário".** São três coisas: o **piso** da convenção (o
+mínimo do cargo), o **salário da pessoa** (que pode ser maior) e o **valor do
+mês** / **valor da diária** (como ela recebe). Somar os três é inventar número.
+
+⚠️ **Palavra ambígua: "cargo".** O cargo é um (PEDREIRO); a **categoria**
+(PROFISSIONAL, QUALIFICADO, SERVENTE) é o nível DENTRO da convenção e é ela que
+fixa o piso. Duas pessoas no mesmo cargo em convenções diferentes têm pisos
+diferentes — e isso é certo, não erro.
+
+🔒 **Tudo o que é dado pessoal** (endereço, RG, PIS, filiação, dependentes,
+salário) só responde para quem tem `editar_colaboradores` — hoje ADMIN, diretor
+financeiro e DP. Quem tem apenas `ver_pessoal` recebe nome, obra, função e
+situação, que é o que já via.
+
 ## 3o-bis. Documento corrigido e documento excluído (23/09/2026)
 
 Pedido do dono, olhando os documentos de uma obra: *"caso eu adicione um

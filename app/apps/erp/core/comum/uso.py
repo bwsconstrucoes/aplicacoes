@@ -85,6 +85,9 @@ POR_ENTIDADE: dict[str, str] = {
     "locacao_conferencia": "locacao",
     "despesa_colaborador": "pessoal",
     "colaborador": "cadastro",
+    # O cruzamento cargo × convenção (migração 085): mexer no piso é manutenção
+    # de TABELA, não de pessoa — por isso cadastro, e não pessoal.
+    "cargo_convencao": "cadastro",
     "fornecedor": "cadastro",
     "fornecedor_conta": "cadastro",
     "obra": "cadastro",
@@ -165,6 +168,7 @@ NOME_DA_ENTIDADE: dict[str, str] = {
     "contrato_locacao": "contrato de locação",
     "locacao_conferencia": "conferência de locação",
     "despesa_colaborador": "despesa de colaborador", "colaborador": "colaborador",
+    "cargo_convencao": "cargo na convenção",
     "fornecedor": "fornecedor", "fornecedor_conta": "conta do fornecedor",
     "obra": "obra", "insumo": "insumo", "insumo_categoria": "categoria de insumo",
     "empresa": "empresa", "conta_bancaria": "conta bancária",

@@ -259,6 +259,21 @@ pendentes):
 | **085** | `cargos`, `convencoes` e o cruzamento `cargo_convencao`, com o piso em **histórico de vigência** |
 | **086** | os campos de admissão no cadastro da pessoa, lidos do mapa das 74 colunas |
 | **087** | dependentes **sem teto**, vínculos com começo e fim, alterações de salário e cargo com motivo |
+| **088** | a **fila de solicitações do DP** — os 13 tipos administrativos, com checklist e trilha |
+
+**A FILA DO DP (migração 088)** é o segundo pipe dentro do ERP, com **13 tipos**:
+desligamento, readmissão, prestador→CTPS, alteração de cargo/salário, atualização
+de dados, dependente, ajuda de custo, vale-transporte, desconto em folha, 2ª via
+de cartão, pré-cadastro, documentação e "outra solicitação". **Uma etapa só, no
+DP**, como ele decidiu. Cada tipo traz o **checklist** do pipe (o de desligamento
+CTPS tem os onze passos originais).
+
+**A diferença que importa:** no Pipefy, atender era **mover o card** — e alguém,
+depois, mexia no cadastro à mão ou por um cenário do Make; o pedido dizia uma
+coisa e o cadastro ficava outra. Aqui **atender EXECUTA**, na mesma transação,
+usando as mesmas funções da tela: readmissão readmite, desligamento desliga,
+pré-cadastro cria a pessoa. Pedido que não pode ser executado é **recusado com o
+motivo**, nunca atendido pela metade.
 
 **Código:** `core/cadastros/cargos.py` (normalização e piso),
 `core/cadastros/pessoas.py` (cadastro, duplicado, readmissão, troca de vínculo,
@@ -274,7 +289,14 @@ convenções**, 132 cruzamentos, 131 pisos abertos no histórico.
 1. **Meu, na normalização:** colapsar só espaço repetido deixava "MT- Mato
    Grosso" e "MT-Mato Grosso" como duas convenções (deu 15 onde devia dar 13).
    O espaço ao redor do hífen também colapsa agora — no código e no índice.
-2. **Meu, de sigilo, pego pela trava do repositório:** a rota do histórico de
+2. **Meu, no filtro de escopo da fila:** a consulta tinha o parâmetro "ou foi
+   você quem abriu" e **nunca o preenchia** — estourava para quem é preso a
+   obra. Os testes pegaram antes da tela.
+3. **Meu, na ordem da trilha:** em Postgres `now()` é o **início da transação**,
+   então dois eventos do mesmo pedido têm timestamp idêntico e a ordem fica
+   indefinida — o histórico mostrava "atendida" antes de "aberta". Agora ordena
+   por `criado_em, id`.
+4. **Meu, de sigilo, pego pela trava do repositório:** a rota do histórico de
    piso ficou aberta a `ver_pessoal`, que alcança supervisor de obra e PARCEIRO
    — ou seja, a tabela salarial da empresa ia para fora. Agora cargo **com
    piso** exige `editar_colaboradores`, e a rota de opções manda a lista de

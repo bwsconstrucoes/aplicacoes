@@ -133,6 +133,14 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
     "lancar_dc":       {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
                         P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA, P.DEPARTAMENTO_PESSOAL},
     "editar_colaboradores": {P.ADMIN, P.DIRETOR_FINANCEIRO, P.DEPARTAMENTO_PESSOAL},
+    # A FILA DE SOLICITAÇÕES DO DP (05/11/2026). Duas ações, e a divisão vem do
+    # pipe que ela substitui: lá o formulário perguntava "requisição solicitada
+    # por um terceiro?" porque o encarregado abre pedido para a equipe dele.
+    # Abrir é de quem está na obra; ATENDER é do DP — decisão do dono: "todos os
+    # pedidos vão para o DP, e quem tiver perfil do DP que vai aprovar".
+    "solicitar_dp":    {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
+                        P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA, P.DEPARTAMENTO_PESSOAL},
+    "atender_dp":      {P.ADMIN, P.DIRETOR_FINANCEIRO, P.DEPARTAMENTO_PESSOAL},
     # Suprimentos. Não existe cargo de "comprador" no ERP, e não vai existir:
     # pela decisão de 04/09/2026, quem compra e quem autoriza pedido ganham a
     # ação MARCADA no cadastro, uma pessoa de cada vez. O padrão abaixo é
@@ -315,6 +323,8 @@ ACAO_ROTULOS = {
     "ver_pessoal":          "Ver despesas de colaborador",
     "lancar_dc":            "Lançar despesa de colaborador",
     "editar_colaboradores": "Cadastrar e editar colaboradores",
+    "solicitar_dp":         "Abrir solicitação ao DP",
+    "atender_dp":           "Atender solicitação do DP",
     "ver_suprimentos":      "Ver as telas de Suprimentos",
     "solicitar_suprimento": "Pedir material para a obra",
     "comprar":              "Cotar e fechar pedido de compra",
@@ -1042,6 +1052,35 @@ def exigir_anexo_no_escopo(s: Session, usuario: Usuario, anexo_id: int):
     except ErroNaoEncontrado:
         raise ErroNaoEncontrado("Anexo não encontrado.")
     return a
+
+
+def exigir_solicitacao_dp_no_escopo(s: Session, usuario: Usuario,
+                                    solicitacao_id: int):
+    """A solicitação ao DP é da OBRA dela — mais a de quem a abriu.
+
+    A segunda parte não é cortesia: o **pré-cadastro** não tem obra ligada até
+    ser atendido (a pessoa ainda não existe), e sem isso o encarregado que
+    pediu não conseguiria acompanhar o próprio pedido.
+
+    Fora do escopo responde "não encontrado", nunca "sem permissão": os números
+    são sequenciais (SDP-000001…), e dizer "sem permissão" para um que existe
+    confirmaria a existência dele — varrer os números mapearia a fila do DP sem
+    abrir um pedido.
+    """
+    from sqlalchemy import text as _text
+
+    linha = s.execute(_text("""SELECT obra_id, solicitante_id FROM dp_solicitacoes
+                                WHERE id = :s"""), {"s": solicitacao_id}).first()
+    if linha is None:
+        raise ErroNaoEncontrado("Solicitação não encontrada.")
+    obra_id, solicitante_id = linha[0], linha[1]
+    if usuario is not None and solicitante_id == usuario.id:
+        return                      # quem abriu acompanha sempre
+    alcance = obras_do_usuario(s, usuario)
+    if alcance is None:
+        return                      # enxerga todas as obras
+    if obra_id is None or int(obra_id) not in set(alcance):
+        raise ErroNaoEncontrado("Solicitação não encontrada.")
 
 
 def exigir_tarefa_no_escopo(s: Session, usuario: Usuario, tarefa_id: int):
