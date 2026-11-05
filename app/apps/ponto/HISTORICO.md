@@ -493,7 +493,11 @@ junto com o `README.md` e o `PLANO.md`.
   Agora, a cada 15 minutos, o que o bloqueio automático bloqueou (pelo motivo que ele grava) volta a valer quando a
   pessoa está ativa de novo — o celular pessoal só se ela não tiver outro aprovado. O bloqueio à mão, a troca de
   celular e o arquivado não voltam; a lista do aparelho de equipe, retirada no desligamento, também não.
-**No ramo, esperando o "pode".**
+- Perguntado no mesmo dia (vigia com "Devido à insuficiência de memória, não foi possível concluir a operação
+  anterior" ao tirar a foto): é o Android fechando o navegador enquanto a câmera do celular está aberta (o celular
+  pessoal usa a câmera do sistema; o ponto da obra, a câmera dentro da página). A foto dentro da página no celular
+  pessoal resolveria na origem — o dono decidiu NÃO fazer.
+**Publicado em 05/11/2026** (com o "pode" do dono) — SEM MIGRAÇÃO.
 
 ## 04/11/2026 (quinta) — O segundo ponto do plantão em 2 minutos; o manual do celular bloqueado
 
