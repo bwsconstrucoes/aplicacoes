@@ -474,6 +474,28 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 05/11/2026 (terceira) — Os espelhos da equipe num PDF só
+
+- **O pedido.** Depois de o espelho de um colaborador voltar a abrir, o dono: *"o que a gente precisaria também era
+  gerar o espelho da equipe (…) a pessoa tem 40 pessoas que emitem a folha e fazer isso um por um"*.
+- **Onde ficou.** No "Ponto da minha equipe" do aplicativo, ao lado do "Compartilhar (WhatsApp)": **📄 Espelhos da
+  equipe (PDF)**. Pergunta o mês (ou um período de até 62 dias, como na folha de uma pessoa) e abre um arquivo com
+  uma folha por pessoa, em ordem de nome — a MESMA folha da pessoa sozinha e a do DP no ERP.
+- **Quem entra:** as MESMAS pessoas do resumo da equipe (o conjunto virou uma função só, `_pessoas_da_equipe`, para
+  os dois nunca divergirem) — o alcance da consulta (fora do ponto da obra) e quem bateu no aparelho de que a pessoa é
+  responsável; a própria pessoa fica de fora. Com uma obra escolhida no resumo, só ela (pela mesma regra que agrupa o
+  resumo). Até **150 folhas** por vez; acima disso, pede a obra.
+- **Por que um bilhete com as pessoas dentro:** pelo mesmo motivo do conserto da manhã — a página aberta não leva a
+  identificação do aparelho. Quem entra é decidido na chamada do aplicativo; a página só confere a assinatura (2
+  minutos, quem pediu, o período).
+- **Decidido sem perguntar** (o dono pode mudar): ficou só no resumo da equipe — não na lista "Ponto das pessoas" nem
+  no ERP; no ponto da obra, vale o mesmo que o resumo (o responsável pelo aparelho vê quem bateu nele; o
+  administrativo logado no ponto da obra, que lá só consulta pelo CPF, não tem a lista).
+- Testes: `test_os_espelhos_da_equipe_num_arquivo_so` e `test_o_bilhete_da_equipe_nao_aceita_pessoas_trocadas`. O
+  PDF de duas pessoas saiu com duas páginas, uma por pessoa (conferido gerando o PDF no navegador).
+- **Não verificado:** um PDF de 40 folhas num celular de verdade (o navegador do celular pode demorar para montar o
+  arquivo).
+
 ## 05/11/2026 (segunda) — "Baixar o espelho" de um colaborador no ponto da obra dava "pessoa não encontrada"
 
 - **O relato** (Weverton, obra ESCADELIA): *"Ao clicar em Baixar o espelho (PDF) aparece a mensagem: Não foi possível

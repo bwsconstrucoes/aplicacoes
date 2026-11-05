@@ -23,7 +23,7 @@ import logging
 from flask import request, session
 
 from . import auth, db, horario
-from .app_colaborador import _corpo, _ok, folha_do_espelho, folha_que_nao_abriu, pessoa_do_espelho
+from .app_colaborador import _corpo, _ok, folha_do_espelho, folha_que_nao_abriu, folhas_da_equipe, pessoa_do_espelho
 from .core import cadastros, dispositivos, espelho, forma_de_bater, ocorrencias, papeis
 from .core.ocorrencias import Quem
 from .erros import ErroDeValidacao, NaoAutenticado, NaoEncontrado, Recusada
@@ -254,6 +254,26 @@ def app_api_equipe():
     return _ok(alcance=_alcance_json(ctx.alcance), competencia=competencia[:7], pessoas=pessoas)
 
 
+def _pessoas_da_equipe(conn, ctx: _Contexto, inicio, fim) -> tuple[dict, set]:
+    """Quem é da equipe de quem pede, no período: {id: obra em que aparece (ou None)} e os ids que ele abre daqui.
+    O MESMO conjunto para o resumo da equipe e para as folhas da equipe (05/11/2026)."""
+    from .core import qualidade
+    eu = int(ctx.pessoa["id"])
+    obra_aqui, abre = {}, set()
+    if not ctx.pelo_aparelho and not ctx.alcance.vazio:
+        for p in papeis.pessoas_do_alcance(conn, ctx.alcance, f"{fim:%Y-%m}", exceto=eu):
+            obra_aqui[int(p["id"])] = p.get("obra_aqui")
+            abre.add(int(p["id"]))
+    if qualidade.e_responsavel(conn, eu):
+        for i in qualidade.equipe_do_responsavel(conn, eu, inicio, fim):
+            if i != eu:
+                obra_aqui.setdefault(int(i), None)
+    if not obra_aqui:
+        raise Recusada(ctx.alcance.sem_alcance or "o resumo é de quem responde pelo ponto de uma obra ou consulta o "
+                                                "ponto das pessoas")
+    return obra_aqui, abre
+
+
 @bp.route("/app/api/equipe/resumo")
 @auth.exige_colaborador_ou_aparelho
 def app_api_equipe_resumo():
@@ -268,18 +288,7 @@ def app_api_equipe_resumo():
         if not eu:
             raise NaoAutenticado("entre com o seu CPF e PIN")
         inicio, fim, rotulo = resumo_equipe.periodo(request.args.get("periodo"), horario.hoje())
-        obra_aqui, abre = {}, set()
-        if not ctx.pelo_aparelho and not ctx.alcance.vazio:
-            for p in papeis.pessoas_do_alcance(conn, ctx.alcance, f"{fim:%Y-%m}", exceto=eu):
-                obra_aqui[int(p["id"])] = p.get("obra_aqui")
-                abre.add(int(p["id"]))
-        if qualidade.e_responsavel(conn, eu):
-            for i in qualidade.equipe_do_responsavel(conn, eu, inicio, fim):
-                if i != eu:
-                    obra_aqui.setdefault(int(i), None)
-        if not obra_aqui:
-            raise Recusada(ctx.alcance.sem_alcance or "o resumo é de quem responde pelo ponto de uma obra ou consulta o "
-                                                    "ponto das pessoas")
+        obra_aqui, abre = _pessoas_da_equipe(conn, ctx, inicio, fim)
         obra = (request.args.get("obra") or "").strip().upper()
         if obra:
             obra_aqui = {i: o for i, o in obra_aqui.items() if (o or "").upper() == obra or o is None}
@@ -391,6 +400,72 @@ def app_api_equipe_espelho_bilhete(colaborador_id: int):
         competencia = request.args.get("competencia") or horario.hoje().strftime("%Y-%m")
         _alvo(conn, ctx, colaborador_id, *(periodo or (competencias.primeiro_dia(competencia),)))
     return _ok(bilhete=qr.emitir_impressao(colaborador_id, int(ctx.pessoa["id"]), _periodo_da_folha()))
+
+
+# Até quantas folhas num arquivo só: acima disso, escolhe-se a obra (o celular sofre para montar um PDF enorme).
+MAX_FOLHAS_DA_EQUIPE = 150
+
+
+@bp.route("/app/api/equipe/espelhos/bilhete", methods=["POST"])
+@auth.exige_colaborador_ou_aparelho
+def app_api_equipe_espelhos_bilhete():
+    """O bilhete das folhas da EQUIPE (05/11/2026, o dono: "a pessoa tem 40 pessoas que emitem a folha e fazer isso
+    um por um"): as pessoas do resumo da equipe no período pedido — `obra` para só uma —, decididas aqui, pela
+    chamada do aplicativo, que leva a identificação do aparelho. A página das folhas só confere a assinatura."""
+    from .core import cadastros as cad, competencias, qr
+    from .app_colaborador import periodo_pedido
+    with db.conexao() as conn:
+        ctx = _contexto(conn)
+        if not ctx.pessoa:
+            raise NaoAutenticado("entre com o seu CPF e PIN")
+        periodo = periodo_pedido()
+        if periodo:
+            inicio, fim = periodo
+        else:
+            inicio = competencias.primeiro_dia(request.args.get("competencia") or horario.hoje())
+            fim = competencias.ultimo_dia(inicio)
+        obra_aqui, _ = _pessoas_da_equipe(conn, ctx, inicio, fim)
+        obra = (request.args.get("obra") or "").strip().upper()
+        if obra:
+            # quem veio pelo aparelho de que a pessoa é responsável não traz a obra: vale a em que mais bateu no
+            # período, ou a do cadastro — a MESMA regra que agrupa o resumo da equipe (resumo_equipe.montar)
+            sem_obra = [p for p in (cad.colaborador_por_id(conn, i) for i, o in obra_aqui.items() if o is None) if p]
+            if sem_obra:
+                lote = espelho.Lote(conn, sem_obra, inicio, fim)
+                for p in sem_obra:
+                    dias = espelho.montar(conn, int(p["id"]), inicio, fim, lote=lote)["dias"]
+                    obra_aqui[int(p["id"])] = cad.obra_mais_batida(dias) or p.get("obra_codigo") or ""
+            ids = [i for i, o in obra_aqui.items() if (o or "").upper() == obra]
+        else:
+            ids = list(obra_aqui)
+        if not ids:
+            raise NaoEncontrado("ninguém da equipe nessa obra no período")
+        if len(ids) > MAX_FOLHAS_DA_EQUIPE:
+            raise Recusada(f"são {len(ids)} pessoas — escolha uma obra (até {MAX_FOLHAS_DA_EQUIPE} folhas por vez)")
+        logger.info("Ponto: folhas da equipe (%d pessoas, obra %s) pedidas por %s", len(ids), obra or "todas",
+                    ctx.pessoa["nome"])
+    return _ok(pessoas=len(ids), bilhete=qr.emitir_impressao_equipe(sorted(ids), int(ctx.pessoa["id"]),
+                                                                    _periodo_da_folha()))
+
+
+@bp.route("/app/equipe/espelhos/imprimir")
+@auth.exige_colaborador_ou_aparelho
+def app_equipe_espelhos_imprimir():
+    """As folhas da equipe num arquivo só, com o bilhete pedido pelo aplicativo (acima)."""
+    from .core import qr
+    from .erros import ErroDoPonto
+    try:
+        with db.conexao() as conn:
+            quem = _logado(conn)
+            if not quem:
+                raise NaoAutenticado("entre com o seu CPF e PIN")
+            ids = qr.conferir_impressao_equipe(request.args.get("bilhete"), int(quem["id"]), _periodo_da_folha())
+            if ids is None:
+                raise NaoEncontrado("o pedido de impressão venceu — toque de novo em Espelhos da equipe")
+            logger.info("Ponto: folhas da equipe (%d) abertas por %s", len(ids), quem["nome"])
+            return folhas_da_equipe(conn, ids, quem["nome"])
+    except ErroDoPonto as e:
+        return folha_que_nao_abriu(e)
 
 
 @bp.route("/app/equipe/<int:colaborador_id>/espelho/imprimir")

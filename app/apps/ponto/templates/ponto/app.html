@@ -1789,8 +1789,10 @@ async function abrirResumoEquipe(periodo, obra) {
           <ul class="pequeno" style="margin:4px 0 0 18px; padding:0">${ok.map(p => `<li>${esc(p.nome)}${contagemDoResumo(p) ? ` <small>— ${esc(contagemDoResumo(p))}</small>` : ""}</li>`).join("")}</ul></details>` : ""}`;
     }).join("") || `<p>Ninguém no período.</p>`;
     $("dlg-corpo").innerHTML = cab + filtroObra + `<div class="linha" style="margin:4px 0 8px">
-        <button type="button" class="btn" id="rs-compartilhar">Compartilhar (WhatsApp)</button></div>` + corpo
+        <button type="button" class="btn" id="rs-compartilhar">Compartilhar (WhatsApp)</button>
+        <button type="button" class="btn sec" id="rs-espelhos">📄 Espelhos da equipe (PDF)</button></div>` + corpo
       + `<p class="pequeno" style="margin-top:12px">Os dias até ontem. "Provavelmente errado" é o que o sistema estranhou — confira antes de corrigir.</p>`;
+    $("rs-espelhos").onclick = () => abrirFolhasDaEquipe(d);
     $("rs-compartilhar").onclick = async () => {
       const texto = textoDoResumo(d);
       try { if (navigator.share) { await navigator.share({text: texto}); return; } } catch (e) { if (e && e.name === "AbortError") return; }
@@ -3579,6 +3581,51 @@ function abrirFolhaDoEspelho(imprimirJa) {
     $("dlg").close();
     abrirFolhaComo(`de=${de}&ate=${ate}`, imprimirJa);
   };
+}
+// OS ESPELHOS DA EQUIPE num PDF só (05/11/2026, o dono: "a pessoa tem 40 pessoas que emitem a folha e fazer isso um
+// por um"): as pessoas do resumo (com a obra escolhida nele), uma folha por pessoa. O servidor decide quem entra e
+// devolve um bilhete; a página das folhas só o confere (ela sozinha não leva a identificação do aparelho).
+function abrirFolhasDaEquipe(d) {
+  const mes = (d && d.ate ? d.ate : hojeISO()).slice(0, 7);
+  const [a, m] = mes.split("-").map(Number);
+  const ultimo = `${mes}-${String(new Date(a, m, 0).getDate()).padStart(2, "0")}`;
+  const obra = RESUMO.obra || "";
+  $("dlg-corpo").innerHTML = `<h2 style="margin:0 0 8px">Espelhos da equipe (PDF)</h2>
+    <p class="pequeno" style="margin:0 0 10px">Um arquivo só, com uma folha por pessoa${obra ? ` da obra <b>${esc(obra)}</b>` : " de todas as obras do resumo"}.
+      ${obra ? "" : "Para só uma obra, escolha a obra no resumo antes."}</p>
+    <button class="btn" type="button" id="fe-mes">O mês ${esc(nomeMes(mes))}</button>
+    <p class="pequeno" style="margin:16px 0 4px"><b>Ou outro período</b>, de até 62 dias — por exemplo, o corte da folha:</p>
+    <div class="linha">
+      <div><label for="fe-de">De</label><input type="date" id="fe-de" value="${mes}-01"></div>
+      <div><label for="fe-ate">Até</label><input type="date" id="fe-ate" value="${ultimo}"></div>
+    </div>
+    <div id="fe-msg" class="aviso erro oculto"></div>
+    <button class="btn sec" type="button" id="fe-periodo">Abrir o período</button>
+    <button class="link" type="button" id="fe-voltar" style="display:block; margin:12px auto 0">‹ Voltar ao resumo</button>`;
+  if (!$("dlg").open) $("dlg").showModal();
+  const erro = t => { $("fe-msg").textContent = t; $("fe-msg").classList.remove("oculto"); };
+  const abrir = async periodo => {
+    erro("Montando as folhas…"); $("fe-msg").classList.replace("erro", "info");
+    let r;
+    try {
+      r = await chamar(`/ponto/app/api/equipe/espelhos/bilhete?${periodo}${obra ? `&obra=${encodeURIComponent(obra)}` : ""}`,
+                       localNoCorpo(await onde()));
+    } catch (e) { $("fe-msg").classList.replace("info", "erro"); return erro(e.message); }
+    $("dlg").close();
+    const url = `/ponto/app/equipe/espelhos/imprimir?${periodo}&bilhete=${encodeURIComponent(r.bilhete)}`;
+    const instalado = (window.matchMedia && matchMedia("(display-mode: standalone)").matches) || navigator.standalone;
+    if (instalado || !window.open(url, "_blank")) location.assign(url);
+  };
+  $("fe-mes").onclick = () => abrir(`competencia=${mes}`);
+  $("fe-periodo").onclick = () => {
+    const de = $("fe-de").value, ate = $("fe-ate").value;
+    $("fe-msg").classList.replace("info", "erro");
+    if (!de || !ate) return erro("Escolha o primeiro e o último dia.");
+    if (ate < de) return erro("O último dia vem antes do primeiro.");
+    if ((new Date(ate) - new Date(de)) / 86400000 + 1 > 62) return erro("O período vai até 62 dias.");
+    abrir(`de=${de}&ate=${ate}`);
+  };
+  $("fe-voltar").onclick = () => abrirResumoEquipe();
 }
 async function abrirFolhaComo(periodo, imprimirJa) {
   let q = `${periodo}${imprimirJa ? "&imprimir=1" : ""}`;
