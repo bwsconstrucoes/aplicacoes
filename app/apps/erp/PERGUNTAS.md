@@ -1211,6 +1211,28 @@ mês** / **valor da diária** (como ela recebe). Somar os três é inventar núm
 fixa o piso. Duas pessoas no mesmo cargo em convenções diferentes têm pisos
 diferentes — e isso é certo, não erro.
 
+**Sobre a folha lendo do ERP (05/11/2026):**
+
+- OK **Quem entra no pagamento deste mês, com cargo, obra, salário, diária,
+  auxílios e as datas?** 🔒 (é a leitura que a folha passa a usar; desligado
+  fica fora por padrão)
+- OK **Quem recebe transporte como "Cartão"?** ⚠️ (a palavra chega inteira —
+  "não paga em dinheiro" — porque tratar como valor foi o que pagou em dobro)
+- OK **Quantos dependentes de salário-família esta pessoa tem?** ⚠️ (é a marca
+  de salário-família, não a de dependente de IR — contar as duas pagaria a mais)
+- OK **O que está diferente entre a planilha e o ERP, hoje?** (a conferência da
+  importação, sem gravar, nos dias em que os dois mundos ficam vivos)
+- OK **Quem está ativo no ERP e não está na planilha?** (pode ser admissão nova
+  aqui, ou gente que saiu lá e continua ativa aqui — a segunda a folha pagaria)
+- FALTA **"Qual o total da folha deste mês pelo cadastro do ERP?"** — a soma
+  depende do ponto e das regras de cada auxílio, que hoje moram no Análise de
+  SPs. Vem quando as telas de pagamento migrarem.
+
+⚠️ **Palavra ambígua: "tipo" do colaborador.** A planilha tinha uma coluna
+"Tipo" que pode significar **o vínculo** (CTPS ou prestador) ou **a forma de
+pagamento** (diarista ou mensalista). A leitura manda as duas coisas separadas,
+de propósito — quem monta a folha escolhe, e a resposta tem de dizer qual usou.
+
 **Sobre os papéis da admissão (05/11/2026):**
 
 - OK **Quem está sem o comprovante de endereço, sem a foto ou sem o ASO?** 🔒
