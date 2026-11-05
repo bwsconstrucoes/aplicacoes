@@ -370,6 +370,12 @@ def salvar(s: Session, dados: dict[str, Any], usuario: Usuario) -> Colaborador:
             convencao_id=c.convencao_id, obra_id=c.obra_id, salario=c.salario,
             matricula=c.matricula, admissao=c.admissao or c.data_inicio,
             demissao=c.demissao, usuario_id=usuario.id if usuario else None))
+        # O FLUSH AQUI NÃO É ENFEITE: a sessão do ERP é `autoflush=False`, então
+        # objeto pendente não aparece em consulta. Sem isto, quem chama `salvar`
+        # e em seguida `vinculo_aberto` na MESMA transação — o atendimento de um
+        # pré-cadastro na fila do DP faz exatamente isso — não acharia o vínculo
+        # que acabou de nascer, e abriria um segundo.
+        s.flush()
 
     registrar_evento(s, "colaborador", c.id, "CRIADO" if novo else "ALTERADO",
                      {"nome": c.nome, "cpf": c.cpf, "antes": antes},

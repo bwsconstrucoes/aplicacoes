@@ -14,6 +14,9 @@
     <span class="espaco"></span>
     <span id="exportar" style="display:flex; gap:6px"></span>
     <button class="btn secundario" id="btn-funcao">+ Função</button>
+    {% if pode.configurar %}
+    <button class="btn secundario" id="btn-importar">Importar do Pipefy</button>
+    {% endif %}
     <button class="btn amarelo" id="btn-novo">+ Colaborador</button>
   </div>
 </div>
@@ -36,6 +39,7 @@ const PODE_ARQUIVAR = {{ 'true' if pode.arquivar and ve_pessoal else 'false' }};
    COMPLETO — endereço, RG, PIS, filiação e dependentes — e quem desliga,
    readmite e registra alteração salarial. #}
 const PODE_EDITAR = {{ 'true' if pode.editar_colaboradores else 'false' }};
+const PODE_IMPORTAR = {{ 'true' if pode.configurar else 'false' }};
 let COL = [], OBRAS = [], FUNCOES = [];
 async function carregar(){
   try {
@@ -761,7 +765,127 @@ async function abrirAlteracao(){
   if (r) acaoDoVinculo("alteracao", r);
 }
 
+// ---------------------------------------------------------------------------
+// IMPORTAR AS PESSOAS DO PIPEFY / DA PLANILHA DO DP
+// Decisão do dono (04/11/2026): só os ATIVOS entram; os ~2.960 desligados ficam
+// na planilha como base morta. Quem já está no ERP NÃO é sobrescrito — a
+// planilha mostra o que divergiu e a decisão fica com quem olha.
+// ---------------------------------------------------------------------------
+function abrirImportacaoDePessoas(){
+  els("dlg-titulo").textContent = "Importar as pessoas do Pipefy";
+  els("dlg-corpo").innerHTML = `
+    <div class="cartao-dica">Serve o relatório exportado do pipe <b>CADASTRO
+      COLABORADORES</b> ou a planilha do DP — o sistema reconhece as colunas pelo
+      nome, dos dois jeitos, e diz quais não reconheceu. <b>Só entram os ativos.</b>
+      Quem já está no ERP não é sobrescrito: a conferência lista o que está
+      diferente e você decide.</div>
+    <div class="form-grade">
+      <div class="campo" style="grid-column:span 3"><label>Planilha (.xlsx ou .csv)</label>
+        <input type="file" id="imp-arq" accept=".xlsx,.csv"></div>
+      <div class="campo"><label class="opcao"><input type="checkbox" id="imp-todos">
+        <span class="rotulo">Trazer também os desligados</span></label></div>
+    </div>
+    <div style="margin-top:12px; display:flex; gap:8px">
+      <button class="btn secundario" id="imp-conferir">Conferir sem gravar</button>
+      <button class="btn" id="imp-gravar" disabled>Gravar</button>
+    </div>
+    <div id="imp-msg" style="margin-top:10px"></div>
+    <div id="imp-rel"></div>`;
+  els("imp-conferir").addEventListener("click", () => importarPessoas(false));
+  els("imp-gravar").addEventListener("click", () => importarPessoas(true));
+  els("dlg").showModal();
+}
+
+async function importarPessoas(gravar){
+  const arq = els("imp-arq").files[0];
+  if (!arq) { aviso("imp-msg", "Escolha a planilha.", "erro"); return; }
+  const b = els(gravar ? "imp-gravar" : "imp-conferir");
+  b.disabled = true;
+  try {
+    const fd = new FormData();
+    fd.append("arquivo", arq);
+    fd.append("gravar", gravar ? "1" : "0");
+    fd.append("so_ativos", els("imp-todos").checked ? "0" : "1");
+    const {relatorio: r} = await api("/erp/api/colaboradores/importar",
+                                     {method: "POST", body: fd});
+    const lidas = Object.entries(r.colunas_lidas || {});
+    els("imp-rel").innerHTML = `
+      <div class="kpis" style="margin-top:10px">
+        <div class="kpi estatico"><div class="kpi-rotulo">Linhas lidas</div>
+          <div class="kpi-valor">${r.linhas}</div></div>
+        <div class="kpi estatico verde"><div class="kpi-rotulo">${gravar ? "Entraram" : "Entram"}</div>
+          <div class="kpi-valor">${r.criadas}</div>
+          <div class="kpi-sub">${r.dependentes} dependente(s)</div></div>
+        <div class="kpi estatico ciano"><div class="kpi-rotulo">Já estavam no ERP</div>
+          <div class="kpi-valor">${r.ja_existiam}</div>
+          <div class="kpi-sub">não foram sobrescritas</div></div>
+        <div class="kpi estatico"><div class="kpi-rotulo">Fora</div>
+          <div class="kpi-valor">${r.fora}</div>
+          <div class="kpi-sub">desligadas ou canceladas</div></div>
+        <div class="kpi estatico ${r.avisos.length ? "ambar" : ""}">
+          <div class="kpi-rotulo">Avisos</div><div class="kpi-valor">${r.avisos.length}</div></div>
+        <div class="kpi estatico ${r.rejeitadas.length ? "vermelho" : ""}">
+          <div class="kpi-rotulo">Recusadas</div>
+          <div class="kpi-valor">${r.rejeitadas.length}</div></div>
+      </div>
+      ${r.colunas_nao_reconhecidas.length ? `<div class="aviso" style="margin-top:10px">
+        <b>Colunas que eu não reconheci (${r.colunas_nao_reconhecidas.length})</b> —
+        o dado delas NÃO entrou:<br>
+        ${r.colunas_nao_reconhecidas.map(escapar).join(" · ")}</div>` : ""}
+      ${r.rejeitadas.length ? `<div style="margin-top:10px"><b>Linhas recusadas</b>
+        <div class="tabela-rolagem" style="max-height:220px"><table>
+        <thead><tr><th>Linha</th><th>Quem</th><th>Por quê</th></tr></thead><tbody>
+        ${r.rejeitadas.map(x => `<tr><td>${x.linha}</td>
+          <td>${escapar(x.nome || x.cpf || "—")}</td>
+          <td class="desc">${escapar(x.motivo)}</td></tr>`).join("")}
+        </tbody></table></div></div>` : ""}
+      ${r.divergencias.length ? `<div style="margin-top:10px"><b>Quem já está no ERP
+        com dado diferente (${r.divergencias.length})</b> — nada foi mudado:
+        <div class="tabela-rolagem" style="max-height:260px"><table>
+        <thead><tr><th>Linha</th><th>Quem</th><th>O que está diferente</th></tr></thead><tbody>
+        ${r.divergencias.map(x => `<tr><td>${x.linha}</td><td>${escapar(x.nome)}</td>
+          <td class="desc">${x.o_que.map(escapar).join("<br>")}</td></tr>`).join("")}
+        </tbody></table></div></div>` : ""}
+      ${r.cargos_novos.length ? `<div class="aviso" style="margin-top:10px">
+        <b>Cargos que vão ser criados (${r.cargos_novos.length}):</b>
+        ${r.cargos_novos.map(escapar).join(" · ")}<br>
+        <small>Se algum for erro de digitação, conserte na planilha antes de gravar —
+        cargo criado aparece para todo mundo depois.</small></div>` : ""}
+      ${r.obras_nao_achadas.length ? `<div class="aviso" style="margin-top:10px">
+        <b>Obras que não existem no ERP (${r.obras_nao_achadas.length}):</b>
+        ${r.obras_nao_achadas.map(escapar).join(" · ")}<br>
+        <small>Quem estava nelas entra sem obra.</small></div>` : ""}
+      ${r.avisos.length ? `<div style="margin-top:10px"><b>O que conferir
+        (${r.avisos.length})</b>
+        <div class="tabela-rolagem" style="max-height:300px"><table><tbody>
+        ${r.avisos.map(a => `<tr><td class="desc">${escapar(a)}</td></tr>`).join("")}
+        </tbody></table></div></div>` : ""}
+      ${lidas.length ? `<details style="margin-top:10px"><summary>De-para das
+        ${lidas.length} colunas reconhecidas</summary>
+        <div class="tabela-rolagem" style="max-height:260px"><table>
+        <thead><tr><th>Coluna da planilha</th><th>Campo do cadastro</th></tr></thead><tbody>
+        ${lidas.map(([campo, col]) => `<tr><td>${escapar(col)}</td>
+          <td class="desc">${escapar(campo)}</td></tr>`).join("")}
+        </tbody></table></div>
+        ${(r.colunas_ignoradas || []).length ? `<div style="margin-top:8px">
+          <b>Ignoradas de propósito:</b><br>
+          ${r.colunas_ignoradas.map(escapar).join("<br>")}</div>` : ""}
+        </details>` : ""}`;
+    if (gravar) {
+      aviso("imp-msg", `Gravado: ${r.criadas} pessoa(s) e ${r.dependentes} dependente(s). `
+        + `${r.ja_existiam} já estavam no ERP e não foram mexidas.`, "ok");
+      carregar();
+    } else {
+      aviso("imp-msg", "Nada foi gravado — é só a conferência. Se estiver certo, "
+        + "aperte Gravar.", "info");
+      els("imp-gravar").disabled = false;
+    }
+  } catch(e){ aviso("imp-msg", e.message, "erro"); }
+  b.disabled = false;
+}
+
 els("btn-novo").addEventListener("click", ()=>formulario(null));
+if (els("btn-importar")) els("btn-importar").addEventListener("click", abrirImportacaoDePessoas);
 els("btn-funcao").addEventListener("click", async () => {
   const r = await perguntar({titulo:"Nova função",
     campos:[{nome:"nome", rotulo:"Nome da função", obrigatorio:true, largura:2,

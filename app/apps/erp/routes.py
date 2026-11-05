@@ -10928,6 +10928,38 @@ def api_cargos_importar():
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
+@bp.route("/erp/api/colaboradores/importar", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_colaboradores_importar():
+    """As pessoas que estão no Pipefy / na planilha do DP, para dentro do ERP.
+
+    `gravar=0` simula e devolve o relatório sem tocar no banco — é o botão
+    "conferir" da tela. `so_ativos=0` traz também os desligados, que por decisão
+    do dono (04/11/2026) ficam de fora por padrão.
+    """
+    from app.apps.erp.core.importadores import pessoas_planilha
+    arquivo = request.files.get("arquivo")
+    if arquivo is None:
+        return jsonify({"ok": False, "erro": "Envie a planilha."}), 400
+    gravar = request.form.get("gravar") == "1"
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            r = pessoas_planilha.importar(
+                s, arquivo.read(), gravar=gravar,
+                so_ativos=request.form.get("so_ativos", "1") != "0",
+                usuario=usuario)
+            # Na simulação nada é escrito, e o rollback é a garantia disso.
+            s.commit() if gravar else s.rollback()
+        return jsonify({"ok": True, "relatorio": r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao importar a planilha de pessoas")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
 @bp.route("/erp/api/colaboradores/<int:colaborador_id>/historico")
 @login_obrigatorio
 @permissao("ver_pessoal")

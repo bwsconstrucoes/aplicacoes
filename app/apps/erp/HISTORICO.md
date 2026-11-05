@@ -56,7 +56,34 @@ são UM cadastro só, mantendo CTPS/Prestador e o tipo de contrato como campos; 
 importa-se **só quem está ativo** (~575 pessoas, não 3.664 — os 2.960 desligados
 ficam na planilha como base morta).
 
-**O que ainda falta saber** (seção 7 do arquivo): os outros até 6 cenários do
+**O QUE JÁ ESTÁ CONSTRUÍDO (05/11/2026), e nada aplicado ao banco ainda:**
+migrações **085 a 088**; `core/cadastros/cargos.py` e `pessoas.py`; os
+importadores `cargos_planilha.py` (rodado de verdade: 135 linhas → 62 cargos ×
+13 convenções) e `pessoas_planilha.py`; a fila do DP com 13 tipos
+(`core/pessoal_solicitacoes.py`); a ficha em seis abas, a tela de cargos e a de
+solicitações. **129 testes novos.**
+
+**A IMPORTAÇÃO DAS PESSOAS espera só o arquivo** (Pessoal › Colaboradores ›
+"Importar do Pipefy"). Ela confere antes de gravar, reconhece a coluna pelo
+nome nos três formatos (rótulo do pipe, aba "Dados Documentos", nome do ERP),
+**não sobrescreve quem já está no ERP** — lista o que divergiu — e mostra as
+colunas que não reconheceu, porque silêncio aí seria perder dado sem ninguém
+ver. Detalhe na seção 7a do `CADASTRO_DE_PESSOAS.md`.
+
+**Dois defeitos achados fazendo, que valem para quem mexer nesta área:**
+
+1. **O PIS repetido da planilha.** O PIS é único no banco (migração 086) e a
+   planilha do Pipefy repete — digitado à mão por anos. Sem conferir antes, o
+   banco estourava no meio e **todas as linhas seguintes falhavam em cascata**.
+   Agora cada linha tem ponto de retorno próprio e o repetido é recusado com o
+   nome do outro cadastro.
+2. **`autoflush=False` esconde o que acabou de ser criado.** `salvar()` criava o
+   primeiro vínculo com `s.add` e não dava `flush`; quem chamasse
+   `vinculo_aberto()` na mesma transação (o atendimento de pré-cadastro na fila
+   do DP) não o achava e **abriria um segundo vínculo**. Regra geral: nesta
+   sessão, objeto novo que vai ser LIDO na mesma transação precisa de `flush`.
+
+**O que ainda falta saber** (seção 8 do arquivo): os outros até 6 cenários do
 Make — em especial o que ESCREVE a linha nova na aba "Dados Documentos", porque
 nenhum dos três que vieram escreve; o conteúdo das tabelas do Pipefy (Cargos,
 Colaboradores, Desligados); e o destino dos cinco tipos de pedido que hoje são

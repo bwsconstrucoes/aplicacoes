@@ -1211,6 +1211,34 @@ mês** / **valor da diária** (como ela recebe). Somar os três é inventar núm
 fixa o piso. Duas pessoas no mesmo cargo em convenções diferentes têm pisos
 diferentes — e isso é certo, não erro.
 
+**Sobre a importação da planilha do Pipefy (05/11/2026):**
+
+- OK **Quantas pessoas entraram na última importação, e quantas já existiam?**
+  (o relatório fica na tela no momento da importação)
+- OK **Quem está na planilha com dado diferente do que está no ERP?** (a
+  conferência lista a divergência de nome, matrícula e salário; nada é
+  sobrescrito)
+- OK **Que cargos a importação vai criar?** (aparecem na conferência ANTES de
+  gravar, para erro de digitação ser consertado na planilha)
+- OK **Que obras da planilha não existem no ERP?** (quem estava nelas entra sem
+  obra, e o relatório diz quem)
+- FALTA **"Quais das 575 pessoas ativas do Pipefy ainda NÃO estão no ERP?"** — a
+  resposta só existe depois da importação; hoje a comparação é feita por ela, e
+  não há tela que a mostre depois.
+- FALTA **"Quem entrou pela importação e quem foi cadastrado na tela?"** — não
+  há marca de origem no cadastro da pessoa. Se isso virar necessário para
+  auditoria, é uma coluna nova.
+
+⚠️ **Palavra ambígua: "importar".** São duas coisas diferentes: a **planilha de
+cargos** (que cria cargo, convenção e piso) e a **planilha de pessoas** (que
+cria gente). A de cargos tem de rodar primeiro, senão a pessoa entra sem piso —
+e a importação avisa isso linha por linha.
+
+⚠️ **O PIS repetido.** A planilha do Pipefy tem PIS digitado à mão, e repetido.
+A importação **recusa** a segunda pessoa com o mesmo PIS e diz de quem é o
+outro cadastro — ela não escolhe qual está certo, porque adivinhar aqui erra o
+FGTS de alguém.
+
 🔒 **Tudo o que é dado pessoal** (endereço, RG, PIS, filiação, dependentes,
 salário) só responde para quem tem `editar_colaboradores` — hoje ADMIN, diretor
 financeiro e DP. Quem tem apenas `ver_pessoal` recebe nome, obra, função e

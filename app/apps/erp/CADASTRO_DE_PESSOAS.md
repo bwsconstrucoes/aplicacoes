@@ -238,6 +238,7 @@ VT, Veículo, Motocicleta, Bicicleta, Cartão), meio de transporte (4), chave Pi
    com CBO, município/naturalidade).
 2. **Importar os ~575 ativos** da planilha, com a documentação. Relatório do que
    não casou. *(Os desligados ficam na planilha, por decisão dele.)*
+   ✔ **A importação está construída (seção 7a); falta o arquivo.**
 3. **O portal de solicitações** — a fila de pedidos da seção 5, toda no DP,
    reusando a máquina de aprovação que o ponto já tem.
 4. **Vínculo com história** — readmissão, prestador → CTPS, histórico de cargo,
@@ -309,6 +310,44 @@ número), `ALMOXARIFADO` onde era ALMOXARIFE, `PEDEEIRO` onde era PEDREIRO,
 cargos com dois salários na mesma convenção, salário por extenso digitado com
 erro ("mil quinhetoss"), e as colunas Riscos e EPI existindo com **zero** linhas
 preenchidas.
+
+### 7a. A IMPORTAÇÃO DAS PESSOAS (fase 2) — construída, esperando o arquivo
+
+A importação já existe e roda: **Pessoal › Colaboradores › "Importar do
+Pipefy"**. Falta só o arquivo com os ~575 ativos, que é o dono quem exporta.
+
+**Ela reconhece a coluna pelo NOME, dos três jeitos**: o rótulo do pipe ("Nome
+Completo", "Nº Identidade"), o cabeçalho da aba "Dados Documentos" e o nome do
+próprio ERP. Ignora acento, caixa e espaço. Por isso serve tanto o relatório
+exportado do Pipefy quanto a planilha do DP, sem ninguém renomear nada.
+
+**As quatro garantias que ela dá, e por que cada uma existe:**
+
+| Garantia | Por quê |
+|---|---|
+| **Confere antes de gravar** | A conferência mostra quantas entram, quem já existe, que cargo vai ser criado, que obra não existe e cada aviso com o número da linha. Nada é escrito. |
+| **Quem já está no ERP NÃO é sobrescrito** | O DP corrige nome e matrícula na tela; a planilha do Pipefy ainda tem o antigo. A importação **lista o que divergiu** e a decisão fica com quem olha. O contrário seria perder trabalho feito sem ninguém ver. |
+| **Coluna não reconhecida APARECE no relatório** | Coluna ignorada *de propósito* (jornada, salário por extenso, número do card) vem com o motivo escrito. Coluna que o sistema não conhece vem numa lista à parte, porque o dado dela não entrou. |
+| **Uma linha ruim não derruba as outras** | Cada pessoa entra no seu próprio ponto de retorno. |
+
+**Valor fora da lista não é chutado.** "Amigado" em estado civil vira aviso e o
+campo fica vazio — gravar "Solteiro" em quem é casado seria pior que vazio.
+
+**O cônjuge e os cinco filhos** que o pipe guardava em campos soltos viram
+dependentes de verdade, sem teto.
+
+**Defeito achado fazendo, e ele é de produção:** o PIS é único no banco (índice
+da migração 086) e **a planilha do Pipefy repete PIS** — foi digitado à mão por
+anos. Sem conferir antes, o banco estourava no meio da importação e **todas as
+linhas seguintes falhavam em cascata**, por um motivo que não era o delas. Agora
+o PIS repetido é recusado com o nome do outro cadastro, e cada linha tem seu
+ponto de retorno.
+
+**Segundo defeito, este do cadastro e não da importação:** a sessão do ERP é
+`autoflush=False`, então objeto recém-criado não aparece em consulta. Quem
+chamava `salvar` e em seguida `vinculo_aberto` na mesma transação — o
+atendimento de um pré-cadastro na fila do DP faz exatamente isso — **não achava
+o vínculo que acabara de nascer, e abriria um segundo**. Corrigido.
 
 ---
 
