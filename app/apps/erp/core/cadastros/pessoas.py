@@ -163,6 +163,12 @@ def opcoes() -> dict[str, Any]:
         "parentescos": par(PARENTESCOS, PARENTESCO_ROTULOS),
         "formas_desligamento": par(FORMAS_DESLIGAMENTO, FORMA_DESLIGAMENTO_ROTULOS),
         "motivos_alteracao": par(MOTIVOS_ALTERACAO, MOTIVO_ALTERACAO_ROTULOS),
+        # AS ETAPAS VÃO JUNTO (05/11/2026) porque a tela de gestão filtra e
+        # conta por elas, e a frase do que fazer é o que torna a etapa útil —
+        # etapa sem a frase é só um código na tela.
+        "etapas": [{"valor": e, "rotulo": ETAPA_ROTULOS[e],
+                    "o_que_fazer": ETAPA_O_QUE_FAZER.get(e, ""),
+                    "aberta": e in ETAPAS_ABERTAS} for e in ETAPAS],
     }
 
 

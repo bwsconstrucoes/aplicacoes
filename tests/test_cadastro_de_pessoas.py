@@ -582,3 +582,92 @@ def test_a_folha_conta_os_dependentes_de_salario_familia(sessao_real, dono):
         "nome": "Filho Dois", "parentesco": "FILHO", "dependente_ir": True}, dono)
     eu = next(x for x in svc.para_folha(sessao_real) if x["cpf"] == CPF_A)
     assert eu["salario_familia"] == 1
+
+
+# ---------------------------------------------------------------------------
+# A LISTAGEM COMO FERRAMENTA DE GESTÃO (05/11/2026)
+#
+# O dono, olhando a tela: *"para gestão, não está legal. (…) o que é que o DP
+# tem que fazer em relação aos colaboradores? (…) no pipe, como tem as fases, a
+# gente tem subdivisões lá que a gente sabe o que é que tem que fazer, o que é
+# que tem que cuidar, o que é que está pendente. E aqui, dessa forma, não tem.
+# O filtros não, praticamente não tem nada. Super pobre."*
+# ---------------------------------------------------------------------------
+CAMPOS_DA_GESTAO = ("etapa", "vinculo", "cargo", "cargo_id", "convencao",
+                    "convencao_id", "falta", "falta_documento",
+                    "pedidos_abertos", "devolucoes_abertas", "salario")
+
+
+@banco_
+def test_a_listagem_traz_o_que_a_gestao_filtra(sessao_real, dono):
+    """TRAVA: campo que a tela filtra e a listagem não manda vira filtro que
+    não filtra — e o DP volta a não saber o que está pendente."""
+    from app.apps.erp.core import pessoal
+    from app.apps.erp.core.cadastros import pessoas as svc
+    svc.salvar(sessao_real, {"cpf": CPF_A, "nome": "Alguem Na Lista"}, dono)
+    linhas = pessoal.listar_colaboradores(sessao_real, ativos=False)
+    eu = next(x for x in linhas if x["cpf"] == CPF_A)
+    for campo in CAMPOS_DA_GESTAO:
+        assert campo in eu, f"a tela filtra por “{campo}” e a lista não manda"
+
+
+@banco_
+def test_a_listagem_diz_a_etapa_e_o_que_falta_de_cada_um(sessao_real, dono):
+    from app.apps.erp.core import pessoal
+    from app.apps.erp.core.cadastros import pessoas as svc
+    svc.salvar(sessao_real, {"cpf": CPF_A, "nome": "Chegou Agora"}, dono)
+    svc.salvar(sessao_real, {"cpf": CPF_B, "nome": "Ja Esta Pronto",
+                             "etapa": "CONCLUIDO"}, dono)
+    por_cpf = {x["cpf"]: x for x in
+               pessoal.listar_colaboradores(sessao_real, ativos=False)}
+    assert por_cpf[CPF_A]["etapa"] == "CADASTRO_INICIAL"
+    assert por_cpf[CPF_B]["etapa"] == "CONCLUIDO"
+    # Os dois têm cadastro pela metade, e a lista diz isso sem ninguém abrir a
+    # ficha — é o que o quadro do Pipefy dava ao olhar a coluna do card.
+    assert por_cpf[CPF_A]["falta"] and por_cpf[CPF_A]["falta_documento"]
+
+
+@banco_
+def test_a_listagem_conta_o_pedido_aberto_na_contabilidade(sessao_real, dono):
+    """É uma das pendências que o painel da tela mostra."""
+    from app.apps.erp.core import contabilidade as ct
+    from app.apps.erp.core import pessoal
+    from app.apps.erp.core.cadastros import cargos as svc_cargos
+    from app.apps.erp.core.cadastros import pessoas as svc
+    from app.apps.erp.db.models.cadastros import Empresa, Obra
+    obra = Obra(codigo="GES-01", nome="Obra da gestao", status="ATIVA")
+    emp = Empresa(razao_social="BWS LTDA", cnpj="00079526000109", nome_fantasia="BWS")
+    sessao_real.add_all([obra, emp])
+    cargo = svc_cargos.achar_ou_criar_cargo(sessao_real, "PEDREIRO")
+    sessao_real.flush()
+    c = svc.salvar(sessao_real, {
+        "cpf": CPF_A, "nome": "Com Pedido Aberto", "data_nascimento": "1990-01-01",
+        "pis": "123.45678.90-0", "cargo_id": cargo.id, "obra_id": obra.id,
+        "empresa_id": emp.id, "salario": "2.000,00", "admissao": "2026-11-01",
+        "etapa": "CONCLUIDO"}, dono)
+    ct.abrir(sessao_real, {"template": "ASSINATURA_CTPS",
+                           "colaborador_id": c.id}, dono)
+    eu = next(x for x in pessoal.listar_colaboradores(sessao_real, ativos=False)
+              if x["cpf"] == CPF_A)
+    assert eu["pedidos_abertos"] == 1
+
+
+@banco_
+def test_a_listagem_nao_quebra_se_as_tabelas_novas_nao_existirem(sessao_real, dono,
+                                                                 monkeypatch):
+    """O código sobe para o Render ANTES de alguém apertar o botão do banco. Se
+    a listagem quebrasse por causa de uma tabela que ainda não existe, a tela de
+    Colaboradores morreria junto com uma migração pendente."""
+    from sqlalchemy import text
+
+    from app.apps.erp.core import pessoal
+    from app.apps.erp.core.cadastros import pessoas as svc
+    svc.salvar(sessao_real, {"cpf": CPF_A, "nome": "Sobrevive Sem Tabela"}, dono)
+    sessao_real.execute(text("ALTER TABLE dp_pedidos RENAME TO dp_pedidos_guardada"))
+    linhas = pessoal.listar_colaboradores(sessao_real, ativos=False)
+    eu = next(x for x in linhas if x["cpf"] == CPF_A)
+    assert eu["pedidos_abertos"] == 0, "sem a tabela, a conta é zero, não erro"
+    # E O TRABALHO DE QUEM CHAMOU CONTINUA DE PÉ — era aqui o defeito: o
+    # `rollback` da consulta que falhava desfazia o cadastro criado acima.
+    assert eu["nome"] == "Sobrevive Sem Tabela"
+    sessao_real.execute(text("ALTER TABLE dp_pedidos_guardada RENAME TO dp_pedidos"))
