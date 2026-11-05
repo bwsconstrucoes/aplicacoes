@@ -159,6 +159,8 @@ MODULOS = [
             # A fila de pedidos administrativos (05/11/2026): o segundo pipe do
             # Pipefy. Os pedidos de PONTO já vivem no módulo do ponto.
             ("dp_solicitacoes", "Solicitações ao DP", "erp.pagina_dp_solicitacoes"),
+            ("dp_contabilidade", "Contabilidade e agente",
+             "erp.pagina_dp_contabilidade"),
         ],
     },
     {
@@ -200,7 +202,10 @@ MODULOS = [
 # Ações que as telas consultam para esconder botão que a pessoa não pode usar.
 # Repetir a lista aqui é de propósito: `_contexto` roda em TODA página, e
 # perguntar por 20 ações a cada carregamento seria desperdício.
-ACOES_NA_TELA = ("administrar_insumos", "administrar_fornecedores", "comprar",
+ACOES_NA_TELA = (
+                 # Pedir à contabilidade: decide se a tela mostra o botão de
+                 # enviar, cobrar e conferir o retorno.
+                 "pedir_contabilidade","administrar_insumos", "administrar_fornecedores", "comprar",
                  "autorizar_pedido", "solicitar_suprimento", "configurar",
                  "cruzar_notas", "arquivar", "receber", "emitir_nota",
                  "tratar_agenda", "aprovar",
@@ -10925,6 +10930,256 @@ def api_cargos_importar():
         return jsonify({"ok": False, "erro": str(e)}), 400
     except Exception as e:
         logger.exception("ERP: falha ao importar a planilha de cargos")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/dp/contabilidade")
+@login_obrigatorio
+@permissao("ver_pessoal")
+def pagina_dp_contabilidade():
+    return render_template("erp_dp_contabilidade.html",
+                           **_contexto("dp_contabilidade"))
+
+
+@bp.route("/erp/api/dp/pedidos", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao(GET="ver_pessoal", POST="pedir_contabilidade")
+def api_dp_pedidos():
+    """A fila de pedidos à contabilidade, e a abertura de um pedido novo.
+
+    Quem é preso a obra VÊ o pedido que nasceu da requisição da obra dele — e é
+    isso que acaba com o "e aí, saiu?" por WhatsApp. Pedir é do DP.
+    """
+    from app.apps.erp.core import contabilidade as svc_ct
+    from app.apps.erp.core.auth.permissoes import obras_do_usuario
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            if request.method == "GET":
+                permitidas = obras_do_usuario(s, usuario)
+                return jsonify({
+                    "ok": True,
+                    "pedidos": svc_ct.listar(
+                        s, situacao=request.args.get("situacao", ""),
+                        atrasados=request.args.get("atrasados") == "1",
+                        colaborador_id=request.args.get("colaborador_id", type=int),
+                        obra_ids=list(permitidas) if permitidas is not None else None),
+                    "templates": svc_ct.templates_para_tela(),
+                    "emails": svc_ct.endereco_padrao(s)})
+            r = svc_ct.abrir(s, request.get_json(silent=True) or {}, usuario)
+            s.commit()
+            return jsonify({"ok": True, **r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP: falha nos pedidos à contabilidade")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/dp/pedidos/<int:pedido_id>")
+@login_obrigatorio
+@permissao("ver_pessoal")
+def api_dp_pedido(pedido_id: int):
+    from app.apps.erp.core import contabilidade as svc_ct
+    from app.apps.erp.core.auth.permissoes import exigir_pedido_contabilidade_no_escopo
+    with get_session() as s:
+        usuario = _usuario_logado(s)
+        exigir_pedido_contabilidade_no_escopo(s, usuario, pedido_id)
+        return jsonify({"ok": True, "pedido": svc_ct.ler(s, pedido_id)})
+
+
+@bp.route("/erp/api/dp/pedidos/<int:pedido_id>/<acao>", methods=["POST"])
+@login_obrigatorio
+@permissao("pedir_contabilidade")
+def api_dp_pedido_acao(pedido_id: int, acao: str):
+    """enviar · cobrar · receber · concluir · aceitar-divergencia · cancelar."""
+    from app.apps.erp.core import contabilidade as svc_ct
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            if acao == "enviar":
+                r = svc_ct.enviar(s, pedido_id, usuario, para=d.get("para"))
+            elif acao == "cobrar":
+                r = svc_ct.cobrar(s, pedido_id, usuario)
+            elif acao == "receber":
+                r = svc_ct.receber(s, pedido_id, usuario,
+                                   documento_id=d.get("documento_id"),
+                                   lido=d.get("lido") or {})
+            elif acao == "concluir":
+                r = svc_ct.concluir(s, pedido_id, usuario,
+                                    motivo=str(d.get("motivo") or ""))
+            elif acao == "aceitar-divergencia":
+                r = svc_ct.aceitar_divergencia(s, pedido_id, usuario,
+                                               motivo=str(d.get("motivo") or ""))
+            elif acao == "cancelar":
+                r = svc_ct.cancelar(s, pedido_id, usuario,
+                                    motivo=str(d.get("motivo") or ""))
+            else:
+                return jsonify({"ok": False, "erro": "Ação desconhecida."}), 400
+            s.commit()
+            return jsonify({"ok": True, **r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP: falha na ação do pedido à contabilidade")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/dp/agente", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao(GET="ver_pessoal", POST="pedir_contabilidade")
+def api_dp_agente():
+    """O estado das sete rotinas, e ligar/desligar cada uma.
+
+    Todas nascem DESLIGADAS, e é pedido dele: *"a gente não vai começar com ele
+    ativo."* O modo SUGERE é o do meio — o agente escreve o que faria e alguém
+    aprova com um clique.
+    """
+    from app.apps.erp.core import agente_dp as svc_ag
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            if request.method == "GET":
+                return jsonify({"ok": True,
+                                "rotinas": svc_ag.configuracao(s),
+                                "sugestoes": svc_ag.sugestoes(s),
+                                "modos": list(svc_ag.MODOS)})
+            d = request.get_json(silent=True) or {}
+            r = svc_ag.definir(s, str(d.get("rotina") or ""),
+                               modo_novo=str(d.get("modo") or ""),
+                               params=d.get("parametros") or {},
+                               usuario=usuario)
+            s.commit()
+            return jsonify({"ok": True, **r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha na configuração do agente de DP")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/dp/agente/rodar", methods=["POST"])
+@login_obrigatorio
+@permissao("pedir_contabilidade")
+def api_dp_agente_rodar():
+    """Roda agora o que está ligado. Nada ligado, nada feito — e diz isso."""
+    from app.apps.erp.core import agente_dp as svc_ag
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            r = svc_ag.rodar(s, usuario)
+            s.commit()
+            return jsonify({"ok": True, **r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao rodar o agente de DP")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/dp/agente/sugestoes/<int:sugestao_id>/<acao>", methods=["POST"])
+@login_obrigatorio
+@permissao("pedir_contabilidade")
+def api_dp_agente_sugestao(sugestao_id: int, acao: str):
+    """aplicar · recusar — é o clique que o modo SUGERE existe para pedir."""
+    from app.apps.erp.core import agente_dp as svc_ag
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            if acao == "aplicar":
+                r = svc_ag.aplicar_sugestao(s, sugestao_id, usuario)
+            elif acao == "recusar":
+                r = svc_ag.recusar_sugestao(s, sugestao_id, usuario,
+                                            motivo=str(d.get("motivo") or ""))
+            else:
+                return jsonify({"ok": False, "erro": "Ação desconhecida."}), 400
+            s.commit()
+            return jsonify({"ok": True, **r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP: falha na sugestão do agente")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/dp/triagem/<int:solicitacao_id>")
+@login_obrigatorio
+@permissao("atender_dp")
+def api_dp_triagem(solicitacao_id: int):
+    """O que a triagem aponta nesta solicitação. Só leitura, roda desligada."""
+    from app.apps.erp.core import agente_dp as svc_ag
+    from app.apps.erp.core.auth.permissoes import exigir_solicitacao_dp_no_escopo
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            exigir_solicitacao_dp_no_escopo(s, usuario, solicitacao_id)
+            return jsonify({"ok": True, **svc_ag.triagem(s, solicitacao_id)})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/colaboradores/fila")
+@login_obrigatorio
+@permissao("ver_pessoal")
+def api_colaboradores_fila():
+    """Quem está parado em cada etapa do cadastro, e há quantos dias.
+
+    É o quadro do Pipefy virado lista. O recorte por obra é o mesmo da listagem
+    de colaboradores — quem responde por uma obra vê a fila dela.
+    """
+    from app.apps.erp.core.auth.permissoes import obras_do_usuario
+    from app.apps.erp.core.cadastros import pessoas as svc_pessoas
+    with get_session() as s:
+        usuario = _usuario_logado(s)
+        permitidas = obras_do_usuario(s, usuario)
+        return jsonify({
+            "ok": True,
+            "fila": svc_pessoas.fila_do_cadastro(
+                s, etapa=request.args.get("etapa", ""),
+                obra_ids=list(permitidas) if permitidas is not None else None),
+            "etapas": [{"valor": e, "rotulo": svc_pessoas.ETAPA_ROTULOS[e],
+                        "o_que_fazer": svc_pessoas.ETAPA_O_QUE_FAZER.get(e, ""),
+                        "aberta": e in svc_pessoas.ETAPAS_ABERTAS}
+                       for e in svc_pessoas.ETAPAS]})
+
+
+@bp.route("/erp/api/colaboradores/<int:colaborador_id>/etapa", methods=["POST"])
+@login_obrigatorio
+@permissao("editar_colaboradores")
+def api_colaborador_etapa(colaborador_id: int):
+    """Move o cadastro de etapa, ou conclui a conferência do DP.
+
+    `acao=conferido` deixa o SISTEMA decidir para onde vai, pelo vínculo — é
+    regra, não escolha, e deixar escolher à mão foi o que no Pipefy fez
+    prestador cair na fila da contabilidade e esperar um e-mail que nunca saía.
+    """
+    from app.apps.erp.core.cadastros import pessoas as svc_pessoas
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            if d.get("acao") == "conferido":
+                r = svc_pessoas.concluir_conferencia(s, colaborador_id, usuario)
+                s.commit()
+                return jsonify({"ok": True, **r})
+            c = svc_pessoas.mover_etapa(
+                s, colaborador_id, d.get("etapa", ""), usuario,
+                motivo=str(d.get("motivo") or ""))
+            s.commit()
+            return jsonify({"ok": True, "etapa": c.etapa,
+                            "rotulo": svc_pessoas.ETAPA_ROTULOS.get(c.etapa, c.etapa)})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao mover a etapa do cadastro")
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 

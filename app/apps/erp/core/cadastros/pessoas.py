@@ -32,7 +32,7 @@ from __future__ import annotations
 import logging
 import re
 import unicodedata
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Optional
 
@@ -42,7 +42,7 @@ from sqlalchemy.orm import Session
 from app.apps.erp.core.comum.auditoria import ErroValidacao, registrar_evento
 from app.apps.erp.db.models.cadastros import (
     Cargo, Colaborador, ColaboradorAlteracao, ColaboradorDependente,
-    ColaboradorVinculo, Convencao, Usuario,
+    ColaboradorEtapa, ColaboradorVinculo, Convencao, Usuario,
 )
 
 logger = logging.getLogger(__name__)
@@ -53,6 +53,10 @@ logger = logging.getLogger(__name__)
 VINCULOS = ("CTPS", "PRESTADOR")
 VINCULO_ROTULOS = {"CTPS": "Carteira assinada (CTPS)",
                    "PRESTADOR": "Prestador de serviço"}
+# Como a PLANILHA escreve o mesmo dado (coluna D "Tipo de Cadastro" e coluna Z
+# "Tipo" são a mesma coisa, confirmado por ele em 05/11/2026). A folha compara
+# texto, então a palavra tem de chegar igual à que ela já lia.
+VINCULO_PLANILHA = {"CTPS": "CTPS", "PRESTADOR": "Prestador de Serviço"}
 TIPOS_CONTRATO = (
     "CLT_DETERMINADO", "CLT_INDETERMINADO", "PJ", "AUTONOMO_RPA",
     "AUTONOMO_MENSALISTA", "JOVEM_APRENDIZ", "ESTAGIO", "TEMPORARIO", "PRO_LABORE",
@@ -99,6 +103,12 @@ CATEGORIA_ALIMENTACAO_ROTULOS = {
 }
 CATEGORIAS_TRANSPORTE = ("DIARIO", "MENSAL", "SEG_E_SEX", "VALE_TRANSPORTE",
                          "DIARIO_E_VT", "VEICULO", "MOTOCICLETA", "BICICLETA", "CARTAO")
+# O QUE SAIU DE USO, e por que não sai do código (05/11/2026, dele: *"isso aqui
+# a gente nem utiliza mais, cartão no transporte"*): apagar o valor deixaria sem
+# explicação a ficha de quem foi cadastrado com ele, e a folha de um mês fechado
+# passaria a ler vazio onde havia dado. Então ele continua existindo e some
+# apenas das caixinhas de cadastro NOVO.
+CATEGORIAS_TRANSPORTE_FORA_DE_USO = ("CARTAO",)
 CATEGORIA_TRANSPORTE_ROTULOS = {
     "DIARIO": "Diário", "MENSAL": "Mensal", "SEG_E_SEX": "Segunda e sexta",
     "VALE_TRANSPORTE": "Vale-transporte", "DIARIO_E_VT": "Diário e vale-transporte",
@@ -145,7 +155,10 @@ def opcoes() -> dict[str, Any]:
         "ufs": [{"valor": u, "rotulo": u} for u in UFS],
         "contratos_experiencia": [{"valor": c, "rotulo": c} for c in CONTRATOS_EXPERIENCIA],
         "categorias_alimentacao": par(CATEGORIAS_ALIMENTACAO, CATEGORIA_ALIMENTACAO_ROTULOS),
-        "categorias_transporte": par(CATEGORIAS_TRANSPORTE, CATEGORIA_TRANSPORTE_ROTULOS),
+        "categorias_transporte": [
+            {"valor": c, "rotulo": CATEGORIA_TRANSPORTE_ROTULOS.get(c, c),
+             "em_uso": c not in CATEGORIAS_TRANSPORTE_FORA_DE_USO}
+            for c in CATEGORIAS_TRANSPORTE],
         "meios_transporte": par(MEIOS_TRANSPORTE, MEIO_TRANSPORTE_ROTULOS),
         "parentescos": par(PARENTESCOS, PARENTESCO_ROTULOS),
         "formas_desligamento": par(FORMAS_DESLIGAMENTO, FORMA_DESLIGAMENTO_ROTULOS),
@@ -357,6 +370,19 @@ def salvar(s: Session, dados: dict[str, Any], usuario: Usuario) -> Colaborador:
     # maioria, e deixar nulo faria a folha ter de adivinhar.
     if novo and not c.vinculo:
         c.vinculo = "CTPS"
+    # CADASTRO NOVO NASCE NA PRIMEIRA ETAPA, e tem de ser assim: é o formulário
+    # inicial chegando, que ainda não foi conferido por ninguém. A IMPORTAÇÃO
+    # passa `etapa="CONCLUIDO"` de propósito — aquelas 575 pessoas já trabalham
+    # e já recebem, e colocá-las em conferência criaria no primeiro dia uma fila
+    # de trabalho falsa com a empresa inteira dentro.
+    if "etapa" in dados:
+        pedida = str(dados["etapa"] or "").strip().upper()
+        if pedida and pedida not in ETAPAS:
+            raise ErroValidacao("Etapa desconhecida.")
+        if pedida:
+            c.etapa = pedida
+    elif novo:
+        c.etapa = "CADASTRO_INICIAL"
 
     s.flush()
 
@@ -375,6 +401,13 @@ def salvar(s: Session, dados: dict[str, Any], usuario: Usuario) -> Colaborador:
         # e em seguida `vinculo_aberto` na MESMA transação — o atendimento de um
         # pré-cadastro na fila do DP faz exatamente isso — não acharia o vínculo
         # que acabou de nascer, e abriria um segundo.
+        s.flush()
+
+    if novo:
+        s.add(ColaboradorEtapa(
+            colaborador_id=c.id, de=None, para=c.etapa or "CADASTRO_INICIAL",
+            motivo="cadastro criado",
+            usuario_id=usuario.id if usuario else None, automatico=True))
         s.flush()
 
     registrar_evento(s, "colaborador", c.id, "CRIADO" if novo else "ALTERADO",
@@ -463,6 +496,16 @@ def desligar(s: Session, colaborador_id: int, dados: dict[str, Any],
         v.aviso_previo, v.ultimo_dia = c.aviso_previo, c.ultimo_dia
         v.motivo = (str(dados.get("motivo") or "").strip() or None)
     s.flush()
+    # A ETAPA ANDA COM A SITUAÇÃO aqui, porque desligar encerra o trabalho sobre
+    # este cadastro — e deixar a etapa para trás faria a pessoa continuar na
+    # fila do DP depois de sair da empresa.
+    if (c.etapa or "").upper() != "DESLIGADO":
+        c.etapa = "DESLIGADO"
+        s.add(ColaboradorEtapa(
+            colaborador_id=c.id, de=None, para="DESLIGADO",
+            motivo="desligamento lançado", automatico=True,
+            usuario_id=usuario.id if usuario else None))
+        s.flush()
     registrar_evento(s, "colaborador", c.id, "DESLIGADO",
                      {"data_saida": str(saida), "forma": forma,
                       "motivo": dados.get("motivo")}, usuario.id if usuario else None)
@@ -524,6 +567,16 @@ def readmitir(s: Session, colaborador_id: int, dados: dict[str, Any],
     c.salario = novo.salario
     if novo.matricula:
         c.matricula = novo.matricula
+    s.flush()
+    # READMISSÃO VOLTA PARA A CONFERÊNCIA, não direto para concluído: o endereço
+    # muda, o documento vence, a convenção da obra nova pode ser outra. Era
+    # exatamente isto que o "Checklist Readmissão" do Pipefy cobrava à mão.
+    de = (c.etapa or "").upper()
+    c.etapa = "EM_CONFERENCIA"
+    s.add(ColaboradorEtapa(
+        colaborador_id=c.id, de=de or None, para="EM_CONFERENCIA",
+        motivo="readmissão: conferir o cadastro antes de concluir",
+        automatico=True, usuario_id=usuario.id if usuario else None))
     s.flush()
     registrar_evento(s, "colaborador", c.id, "READMITIDO",
                      {"admissao": str(admissao), "vinculo": novo.vinculo,
@@ -801,13 +854,18 @@ def o_que_falta(c: Colaborador) -> list[str]:
 # própria máquina. A rota existe também, mas para a TELA — conferência e
 # exportação por quem opera.
 #
-# TRÊS CAMPOS QUE EU NÃO ADIVINHO, e a razão de não adivinhar está escrita:
-#   · `tipo` (coluna AU da planilha) — mando `vinculo` e `pagamento`, as duas
-#     coisas que ele pode significar, e quem monta a folha escolhe;
-#   · `paga_por_beevale` — a planilha marcava "Sim" = BeeVale, senão SomaPay;
-#     o ERP guarda "recebe via SP", que não é a mesma pergunta. Vai como está;
-#   · `fase` — o ERP não tem fase de card; vai a `situacao`, que é o
-#     equivalente ("ATIVO" / "DESLIGADO").
+# AS TRÊS DÚVIDAS DE 05/11/2026, RESPONDIDAS POR ELE NO MESMO DIA:
+#
+#   · `tipo` (coluna Z) **é o vínculo**: só tem CTPS e Prestador de Serviço, e é
+#     o MESMO dado da coluna D ("Tipo de Cadastro"). Quem faz a subvariação é a
+#     coluna AY, "Tipo de Contrato". Então `tipo` sai do vínculo, e não há
+#     escolha a fazer. `pagamento` (diarista/mensalista) continua indo porque é
+#     outra pergunta — e a folha usa as duas;
+#   · `paga_por_beevale` **morreu como regra**: *"não é mais regra, visto que em
+#     analisesps podemos gerar somapay ou beevale pra tudo."* Não mando;
+#   · `fase` **tem significado, e é direcionamento**: ela diz o que falta fazer
+#     naquele cadastro. No ERP isso virou a ETAPA do cadastro, e é ela que vai
+#     no campo — não mais a situação crua.
 # ---------------------------------------------------------------------------
 def para_folha(s: Session, *, so_ativos: bool = True,
                obra_id: Optional[int] = None) -> list[dict[str, Any]]:
@@ -849,7 +907,9 @@ def para_folha(s: Session, *, so_ativos: bool = True,
             "convencao_categoria": c.convencao_categoria or "",
             "obra_codigo": codigo_obra, "obra_cadastro": codigo_obra,
             "obra_nome": nome_obra,
-            # As duas respostas possíveis para a coluna "Tipo", sem escolher.
+            # "Tipo" é o vínculo, e só tem dois valores. A subvariação é o
+            # tipo de contrato, logo abaixo.
+            "tipo": VINCULO_PLANILHA.get(c.vinculo or "CTPS", "CTPS"),
             "vinculo": c.vinculo or "CTPS",
             "pagamento": "MENSALISTA" if c.mensalista else "DIARISTA",
             "tipo_contrato": TIPO_CONTRATO_ROTULOS.get(c.tipo_contrato or "",
@@ -885,4 +945,213 @@ def para_folha(s: Session, *, so_ativos: bool = True,
             "ativo": ativo,
         })
     saida.sort(key=lambda x: _sem_acento(x["nome"]))
+    return saida
+
+
+# ===========================================================================
+# AS ETAPAS DO CADASTRO — "o que falta fazer nesta pessoa"
+#
+# O dono, em 05/11/2026, explicando para que serviam as fases do card:
+#
+# > *"a parte de fase do card ela serve de direcionamento pra entender o que
+# > precisa ser feito em relação àquele cadastro. (…) Nós temos o formulário
+# > inicial, aí tudo vai para a fase inicial (…) ali o DP analisa as
+# > informações, verifica a coerência, e termina de preencher alguns dados que
+# > estão dentro dos documentos (…) Agora, isso a gente quer que seja feito via
+# > IA, através da leitura dos documentos. Ou seja, a gente vai colocar o mínimo
+# > possível de campos. Só os campos que não vão ter dentro de documentos — por
+# > exemplo, qual vai ser o cargo, qual é a obra, qual é a empresa."*
+#
+# E a bifurcação, com as palavras dele:
+#
+# > *"dependendo se é prestador de serviço, ou se é CTPS, a gente dá um
+# > determinado procedimento. Se o cara é prestador de serviço, aquele vínculo
+# > de cadastro, ele se resolve apenas internamente no DP da empresa. Se for um
+# > PJ (…) tem que fazer um contrato para assinar; se for um diarista, morre por
+# > aí; se for um autônomo mensalista, também morre por ali (…) esses cadastros
+# > finalizados, a gente já joga eles para cadastro concluído. Aí, quem é
+# > carteira assinada, CTPS, a gente precisa fazer contato com a contabilidade
+# > para ela fazer o registro formal no eSocial."*
+#
+# ETAPA ≠ SITUAÇÃO, e confundir as duas foi o defeito do Pipefy: `situacao`
+# responde "esta pessoa está na empresa?" e manda na folha; `etapa` responde "o
+# que falta fazer neste cadastro?" e manda na fila de trabalho do DP.
+# ===========================================================================
+ETAPAS = ("CADASTRO_INICIAL", "EM_CONFERENCIA", "CONTRATO_A_ASSINAR",
+          "NA_CONTABILIDADE", "CONCLUIDO", "AFASTADO", "DESLIGADO", "CANCELADO")
+ETAPA_ROTULOS = {
+    "CADASTRO_INICIAL": "Cadastro inicial",
+    "EM_CONFERENCIA": "Em conferência do DP",
+    "CONTRATO_A_ASSINAR": "Contrato a assinar",
+    "NA_CONTABILIDADE": "Na contabilidade",
+    "CONCLUIDO": "Cadastro concluído",
+    "AFASTADO": "Afastado",
+    "DESLIGADO": "Desligado",
+    "CANCELADO": "Cadastro cancelado",
+}
+# O DIRECIONAMENTO: é para isto que a etapa existe. A tela mostra esta frase,
+# não o código da etapa — quem abre a fila precisa saber o que FAZER.
+ETAPA_O_QUE_FAZER = {
+    "CADASTRO_INICIAL": "O DP ainda não olhou. Conferir a coerência e jogar os "
+                        "documentos para a leitura preencher o resto.",
+    "EM_CONFERENCIA": "Conferir o que a leitura preencheu e completar o que "
+                      "falta — depois disto o caminho se separa por vínculo.",
+    "CONTRATO_A_ASSINAR": "Gerar o contrato do PJ, colher a assinatura e "
+                          "arquivar.",
+    "NA_CONTABILIDADE": "A contabilidade está fazendo o registro no eSocial. "
+                        "O ERP cobra o retorno.",
+    "CONCLUIDO": "Nada pendente.",
+    "AFASTADO": "Acompanhar o afastamento; a pessoa continua cadastrada.",
+    "DESLIGADO": "Pessoa fora da folha.",
+    "CANCELADO": "Cadastro abandonado antes de virar gente na empresa.",
+}
+# PARA ONDE DÁ PARA IR DE CADA LUGAR. Existe para impedir o salto que o quadro
+# do Pipefy permitia arrastando o card: cadastro saindo de "inicial" direto
+# para "concluído" sem ninguém conferir documento nenhum.
+ETAPAS_SEGUINTES = {
+    "CADASTRO_INICIAL": ("EM_CONFERENCIA", "CANCELADO"),
+    "EM_CONFERENCIA": ("CONTRATO_A_ASSINAR", "NA_CONTABILIDADE", "CONCLUIDO",
+                       "CANCELADO"),
+    "CONTRATO_A_ASSINAR": ("CONCLUIDO", "CANCELADO"),
+    "NA_CONTABILIDADE": ("CONCLUIDO", "CANCELADO"),
+    # De concluído dá para ir para afastamento e desligamento — e VOLTAR de
+    # afastado, que é o que o pipe não deixava e obrigava a criar card novo.
+    "CONCLUIDO": ("AFASTADO", "DESLIGADO", "EM_CONFERENCIA"),
+    "AFASTADO": ("CONCLUIDO", "DESLIGADO"),
+    # Readmissão não é mudança de etapa: é vínculo novo (ver `readmitir`), e ela
+    # recoloca a pessoa em conferência.
+    "DESLIGADO": ("EM_CONFERENCIA",),
+    "CANCELADO": ("EM_CONFERENCIA",),
+}
+# As etapas em que o cadastro está PARADO esperando alguém — a fila do DP.
+ETAPAS_ABERTAS = ("CADASTRO_INICIAL", "EM_CONFERENCIA", "CONTRATO_A_ASSINAR",
+                  "NA_CONTABILIDADE")
+# Os tipos de contrato de prestador que "morrem no DP", com as palavras dele.
+CONTRATOS_QUE_EXIGEM_ASSINATURA = ("PJ",)
+
+
+def caminho_depois_da_conferencia(c: Colaborador) -> tuple[str, str]:
+    """Para onde este cadastro vai quando o DP termina a conferência.
+
+    Devolve (etapa, por quê) — o "por quê" vai para a trilha e para a tela,
+    porque a pessoa que opera precisa entender a bifurcação sem decorá-la.
+    """
+    vinculo = (c.vinculo or "CTPS").upper()
+    if vinculo == "PRESTADOR":
+        if (c.tipo_contrato or "") in CONTRATOS_QUE_EXIGEM_ASSINATURA:
+            return ("CONTRATO_A_ASSINAR",
+                    "prestador PJ: precisa de contrato assinado antes de "
+                    "concluir")
+        return ("CONCLUIDO",
+                "prestador que não é PJ: o vínculo se resolve dentro do DP, "
+                "sem contabilidade")
+    return ("NA_CONTABILIDADE",
+            "carteira assinada: a contabilidade faz o registro formal no "
+            "eSocial")
+
+
+def mover_etapa(s: Session, colaborador_id: int, para: str,
+                usuario: Optional[Usuario], *, motivo: str = "",
+                automatico: bool = False) -> Colaborador:
+    """Move o cadastro de etapa, guardando de onde veio.
+
+    Recusa o salto que a lista de etapas seguintes não prevê — é o que impede
+    cadastro pular a conferência dos documentos.
+    """
+    c = s.get(Colaborador, colaborador_id)
+    if c is None:
+        raise ErroValidacao("Colaborador não encontrado.")
+    para = (para or "").strip().upper()
+    if para not in ETAPAS:
+        raise ErroValidacao("Etapa desconhecida.")
+    de = (c.etapa or "CONCLUIDO").upper()
+    if para == de:
+        return c
+    if para not in ETAPAS_SEGUINTES.get(de, ()):
+        raise ErroValidacao(
+            f"De “{ETAPA_ROTULOS.get(de, de)}” não dá para ir direto para "
+            f"“{ETAPA_ROTULOS.get(para, para)}”. "
+            f"Os caminhos daqui são: "
+            + ", ".join(ETAPA_ROTULOS.get(x, x)
+                        for x in ETAPAS_SEGUINTES.get(de, ())) + ".")
+    c.etapa = para
+    s.add(ColaboradorEtapa(colaborador_id=c.id, de=de, para=para,
+                           motivo=motivo or None,
+                           usuario_id=usuario.id if usuario else None,
+                           automatico=automatico))
+    registrar_evento(s, "colaborador", c.id, "ETAPA_MUDOU",
+                     {"de": de, "para": para, "motivo": motivo,
+                      "automatico": automatico},
+                     usuario.id if usuario else None)
+    s.flush()
+    return c
+
+
+def concluir_conferencia(s: Session, colaborador_id: int,
+                         usuario: Optional[Usuario]) -> dict[str, Any]:
+    """O DP terminou de conferir: o sistema decide para onde vai, pelo vínculo.
+
+    A decisão é AUTOMÁTICA de propósito — ela é regra, não escolha, e deixar
+    alguém escolher à mão foi o que no Pipefy fez prestador cair na fila da
+    contabilidade e ficar lá esperando um e-mail que nunca ia sair.
+
+    O que falta para admitir NÃO impede a conferência: o DP termina de olhar e o
+    cadastro segue, com a pendência escrita. Travar aqui faria o cadastro ficar
+    parado esperando um papel que a própria contabilidade vai pedir.
+    """
+    c = s.get(Colaborador, colaborador_id)
+    if c is None:
+        raise ErroValidacao("Colaborador não encontrado.")
+    if (c.etapa or "").upper() not in ("CADASTRO_INICIAL", "EM_CONFERENCIA"):
+        raise ErroValidacao(
+            "Este cadastro não está em conferência — está em "
+            f"“{ETAPA_ROTULOS.get(c.etapa or '', c.etapa or '')}”.")
+    if (c.etapa or "").upper() == "CADASTRO_INICIAL":
+        mover_etapa(s, c.id, "EM_CONFERENCIA", usuario,
+                    motivo="o DP começou a conferir", automatico=True)
+    para, porque = caminho_depois_da_conferencia(c)
+    mover_etapa(s, c.id, para, usuario, motivo=porque, automatico=True)
+    return {"etapa": para, "rotulo": ETAPA_ROTULOS[para], "porque": porque,
+            "falta": o_que_falta(c),
+            "falta_documento": documentos_que_faltam(s, c.id, c.vinculo)}
+
+
+def fila_do_cadastro(s: Session, *, etapa: str = "",
+                     obra_ids: Optional[list[int]] = None) -> list[dict[str, Any]]:
+    """Quem está parado, em que etapa e há quantos dias.
+
+    É o quadro do Pipefy virado lista. O "há quantos dias" vem da trilha, e é a
+    pergunta que o quadro respondia de graça só por ser um quadro.
+    """
+    from app.apps.erp.db.models.cadastros import Obra
+
+    alvo = (etapa or "").strip().upper()
+    obras = {o.id: o.codigo for o in s.scalars(select(Obra)).all()}
+    desde: dict[int, Any] = {}
+    for m in s.scalars(select(ColaboradorEtapa).order_by(
+            ColaboradorEtapa.criado_em, ColaboradorEtapa.id)).all():
+        desde[m.colaborador_id] = m.criado_em
+    hoje = datetime.now(timezone.utc)
+    saida = []
+    for c in s.scalars(select(Colaborador)).all():
+        etapa_dela = (c.etapa or "CONCLUIDO").upper()
+        if alvo:
+            if etapa_dela != alvo:
+                continue
+        elif etapa_dela not in ETAPAS_ABERTAS:
+            continue
+        if obra_ids is not None and c.obra_id not in obra_ids:
+            continue
+        entrou = desde.get(c.id)
+        saida.append({
+            "id": c.id, "nome": c.nome, "cpf": c.cpf,
+            "obra": obras.get(c.obra_id or 0, ""),
+            "vinculo": c.vinculo or "CTPS",
+            "etapa": etapa_dela, "etapa_rotulo": ETAPA_ROTULOS.get(etapa_dela, etapa_dela),
+            "o_que_fazer": ETAPA_O_QUE_FAZER.get(etapa_dela, ""),
+            "desde": entrou.isoformat() if entrou else None,
+            "dias_parado": (hoje - entrou).days if entrou else None,
+            "falta": o_que_falta(c),
+        })
+    saida.sort(key=lambda x: (-(x["dias_parado"] or 0), _sem_acento(x["nome"])))
     return saida

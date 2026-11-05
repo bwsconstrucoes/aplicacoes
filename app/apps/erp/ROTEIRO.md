@@ -47,6 +47,17 @@
 
 ## Em andamento
 
+- [ ] **O CADASTRO DE PESSOAS DENTRO DO ERP** — migrações 085 a 090, não
+      publicadas. Desenho em `CADASTRO_DE_PESSOAS.md`; o agente de DP em
+      `AGENTE_DP.md`. **Pronto:** cargo e convenção com piso em histórico, o
+      cadastro completo da pessoa, dependentes, vínculo com história, a fila de
+      pedidos do DP, a importação da planilha (com conferência lado a lado), as
+      etapas com a bifurcação CTPS × prestador, os sete pedidos formais à
+      contabilidade com prazo e cobrança, e as sete rotinas do agente
+      (**desligadas**). **Falta:** o arquivo com as ~575 pessoas ativas; o chat
+      do Análise de SPs trocar a origem da folha (ver seção 7b do
+      `CADASTRO_DE_PESSOAS.md`); e, se ele quiser, o ERP ler a caixa de entrada
+      do e-mail para fechar o ciclo sem gesto humano.
 - [x] **Leitura ampla de documentos** — `a2da83c` — foto de celular, PDF ruim, múltiplas
       páginas, todos os tipos (NFe, NFSe de qualquer município, CT-e, recibo,
       RPA, guia DARF/GPS/FGTS/DAE, fatura de concessionária, boleto, contrato,

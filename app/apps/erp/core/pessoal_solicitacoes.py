@@ -136,14 +136,6 @@ TIPOS: dict[str, dict[str, Any]] = {
         "checklist": ("Conferir a autorização do colaborador",
                       "Lançar no sistema de pagamento"),
     },
-    "SEGUNDA_VIA_CARTAO": {
-        "nome": "2ª via de cartão",
-        "explicacao": "pagamento ou vale-transporte, com custo descontado",
-        "exige_pessoa": True, "executa": None,
-        "campos": ("qual_cartao", "observacao"),
-        "checklist": ("Solicitação do cartão", "Encaminhamento do cartão",
-                      "Lançar o desconto do custo"),
-    },
     "PRE_CADASTRO": {
         "nome": "Pré-cadastro de colaborador",
         "explicacao": "a obra manda o nome e o CPF; o DP completa",
@@ -153,13 +145,6 @@ TIPOS: dict[str, dict[str, Any]] = {
         "checklist": ("Receber a documentação", "Completar o cadastro",
                       "Conferir o que falta para admitir"),
     },
-    "DOCUMENTACAO": {
-        "nome": "Documentação (admissão ou rescisão)",
-        "explicacao": "cobrar e guardar o que falta",
-        "exige_pessoa": True, "executa": None,
-        "campos": ("qual_documentacao", "observacao"),
-        "checklist": ("Receber os documentos", "Arquivar no cadastro da pessoa"),
-    },
     "DIVERSOS": {
         "nome": "Outra solicitação",
         "explicacao": "o que não cabe nos tipos acima",
@@ -168,6 +153,19 @@ TIPOS: dict[str, dict[str, Any]] = {
         "checklist": (),
     },
 }
+
+# OS DOIS TIPOS QUE SAÍRAM, em 05/11/2026, e por quê — para ninguém recriá-los
+# achando que foi esquecimento. O dono: *"esse negócio de pedido manual, segunda
+# via do cartão, documentação diversa, aqui acho que não tem necessidade."*
+#
+#   · **2ª via de cartão** — era recado manual com aviso de custo. Sai.
+#   · **Documentação (admissão ou rescisão)** — a cobrança de documento passou a
+#     ter dono de verdade: a ficha da pessoa diz quais papéis faltam, e o pedido
+#     à contabilidade cobra o retorno dela. Pedido solto não era rastreio, era
+#     lembrete.
+#
+# "Outra solicitação" FICOU, e foi decisão minha: é a única porta para o caso
+# incomum, e ela não custa nada. Se ele quiser fechar também, é uma linha.
 
 SITUACOES = ("ABERTA", "EM_ANALISE", "ATENDIDA", "RECUSADA", "CANCELADA")
 ABERTAS = ("ABERTA", "EM_ANALISE")

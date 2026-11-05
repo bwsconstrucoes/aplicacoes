@@ -1211,6 +1211,36 @@ mês** / **valor da diária** (como ela recebe). Somar os três é inventar núm
 fixa o piso. Duas pessoas no mesmo cargo em convenções diferentes têm pisos
 diferentes — e isso é certo, não erro.
 
+**Sobre as etapas do cadastro e a contabilidade (05/11/2026):**
+
+- OK **Quais cadastros estão parados, em que etapa e há quantos dias?** 🔒
+  (escopo por obra) — é o quadro do Pipefy virado lista
+- OK **Quem está esperando a contabilidade?** (etapa *Na contabilidade*)
+- OK **Que pedidos à contabilidade estão atrasados, e há quantos dias?**
+- OK **Que retornos da contabilidade vieram com dado diferente do cadastro?**
+  (a divergência, campo por campo — ninguém conclui até alguém olhar)
+- OK **Quem foi admitido e ainda não tem ficha de registro?** ⚠️ (quer dizer
+  que o cadastro está concluído aqui dentro e a pessoa pode não existir no
+  eSocial — é o pior dos silêncios)
+- OK **Quem saiu e não tem documentação rescisória arquivada?**
+- OK **Quantas cobranças já foram mandadas neste pedido, e por quem?** (a
+  trilha separa o que foi gente do que foi o agente)
+- OK **Que rotinas do agente estão ligadas, e em que modo?**
+- FALTA **"Quanto tempo a contabilidade leva, em média, para cada tipo de
+  pedido?"** — os dados existem (pedido, envio, retorno), a conta não está
+  escrita. É o número que daria para negociar prazo com eles.
+- FALTA **"Este pedido já foi respondido no e-mail?"** — o ERP não lê caixa de
+  entrada. Quem registra o retorno é o DP.
+
+⚠️ **Palavra ambígua: "etapa" × "situação".** `situação` responde "esta pessoa
+está na empresa?" e manda na folha; `etapa` responde "o que falta fazer neste
+cadastro?" e manda na fila do DP. Pergunta com "status" solta tem de dizer qual
+— e confundir as duas foi exatamente o defeito do Pipefy.
+
+⚠️ **Palavra ambígua: "concluído".** *Cadastro* concluído é a etapa (não falta
+mais nada a fazer). *Pedido* concluído é o retorno da contabilidade conferido e
+arquivado. Dá para ter cadastro concluído com pedido aberto, e o contrário.
+
 **Sobre a folha lendo do ERP (05/11/2026):**
 
 - OK **Quem entra no pagamento deste mês, com cargo, obra, salário, diária,

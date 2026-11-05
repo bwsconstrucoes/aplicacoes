@@ -111,6 +111,12 @@ CATALOGO: tuple[tuple[Any, ...], ...] = (
     ("FOTO-COLABORADOR", "Foto do colaborador", "PESSOA", "PESSOA", False, None, False, "PESSOAL"),
     ("DOC-DEPENDENTE", "Certidão ou RG de dependente", "PESSOA", "PESSOA", False, None, False, "PESSOAL"),
     ("DOC-PESSOA-OUTRO", "Outro documento do colaborador", "PESSOA", "PESSOA", False, None, False, "PESSOAL"),
+    # OS DOIS QUE A CONTABILIDADE DEVOLVE (05/11/2026). Cada pedido formal
+    # espera um documento de volta, e sem um tipo para ele o retorno seria
+    # arquivado como "outro" — e "outro" não responde "a ficha de registro
+    # desta admissão chegou?".
+    ("AVISO-FERIAS", "Aviso e recibo de férias", "PESSOA", "PESSOA", False, None, False, "PESSOAL"),
+    ("ALTERACAO-CONTRATO", "Alteração de contrato de trabalho", "PESSOA", "PESSOA", False, None, False, "PESSOAL"),
     # ---- financeiro e parceiros
     ("NOTA-FISCAL", "Nota fiscal", "FINANCEIRO", "LANCAMENTO", False, None, False, "ABERTO"),
     ("COMPROVANTE", "Comprovante de pagamento", "FINANCEIRO", "LANCAMENTO", False, None, False, "RESTRITO"),

@@ -497,7 +497,11 @@ def _uma(s: Session, linha: dict[str, str], n: int, achadas: dict[str, str],
                                         "o_que": div})
         return
 
-    dados: dict[str, Any] = {"cpf": cpf, "nome": nome}
+    # QUEM VEM DA PLANILHA JÁ TRABALHA: nasce com o cadastro CONCLUÍDO. Se
+    # entrassem em conferência, o primeiro dia do ERP teria uma fila de trabalho
+    # falsa com a empresa inteira dentro — 575 pessoas para "conferir" que já
+    # estão recebendo há anos.
+    dados: dict[str, Any] = {"cpf": cpf, "nome": nome, "etapa": "CONCLUIDO"}
 
     # 1. O que vai direto, sem tradução.
     for campo in ("data_nascimento", "nome_mae", "nome_pai", "naturalidade",

@@ -453,6 +453,86 @@ diferença — ausência não é divergência, e tratar como tal faria o relató
 "CLT (tempo Indeterminado)" contra `CLT_INDETERMINADO` acusaria divergência em
 todo mundo. E ninguém é desligado por ter faltado numa planilha.
 
+### 7d. AS ETAPAS E O CICLO COM A CONTABILIDADE (05/11/2026)
+
+**O desenho do agente está em `AGENTE_DP.md`.** O que entrou no cadastro:
+
+**As fases do card viraram ETAPAS** (migração 089), porque ele explicou que elas
+não eram enfeite: *"a parte de fase do card ela serve de direcionamento pra
+entender o que precisa ser feito em relação àquele cadastro."*
+
+```
+formulário inicial → CADASTRO INICIAL → EM CONFERÊNCIA DO DP
+                                              │
+                        ┌─────────────────────┴──────────────────────┐
+                   PRESTADOR                                       CTPS
+                        │                                            │
+              ┌─────────┴─────────┐                        NA CONTABILIDADE
+            PJ                 resto                    (registro no eSocial)
+              │                   │                              │
+     CONTRATO A ASSINAR      CONCLUÍDO  ◄─────────────────── CONCLUÍDO
+              │                                      (quando a ficha volta)
+          CONCLUÍDO
+```
+
+**A bifurcação é AUTOMÁTICA**, e isso é regra e não escolha: deixar escolher à
+mão foi o que no Pipefy fez prestador cair na fila da contabilidade e ficar lá
+esperando um e-mail que nunca ia sair.
+
+**ETAPA ≠ SITUAÇÃO**, e confundir as duas era o defeito: `situacao` responde
+"esta pessoa está na empresa?" e manda na folha; `etapa` responde "o que falta
+fazer neste cadastro?" e manda na fila do DP.
+
+**Quem vem da importação nasce CONCLUÍDO.** As 575 pessoas já trabalham e já
+recebem; em conferência, elas criariam no primeiro dia uma fila de trabalho
+falsa com a empresa inteira dentro.
+
+**Não dá para pular a conferência:** de *Cadastro inicial* não existe caminho
+para *Concluído*. Era o salto que o quadro do Pipefy permitia arrastando o card.
+
+**Os sete pedidos formais à contabilidade** (migração 090), cada um com o que
+espera de volta, o prazo em dias úteis, o teto de cobranças e a lista de campos
+que têm de bater no documento:
+
+| Pedido | Espera de volta | Prazo |
+|---|---|---|
+| Assinatura de CTPS (admissão) | ficha de registro | 2 dias úteis |
+| Alteração de cargo e salário | alteração de contrato | 3 |
+| Solicitação de férias | aviso e recibo de férias | 3 |
+| Cadastro de dependente | alteração de contrato | 3 |
+| Cadastro de cônjuge | alteração de contrato | 3 |
+| Desligamento | **documentação rescisória** | 5 |
+| Cancelamento de desligamento | alteração de contrato | 1 |
+
+A *documentação rescisória* **não é um pedido separado** — ele disse por quê:
+*"isso aqui fica dentro do processo de demissão."* Ela é o retorno esperado do
+desligamento, e por isso o desligamento só fecha quando ela chega.
+
+**Retorno que não bate não conclui.** A conferência compara o documento com o
+cadastro campo por campo e abre divergência com o de/para. Para fechar, ou o
+cadastro é corrigido, ou alguém aceita a divergência **com motivo escrito**.
+
+### 7e. AS CORREÇÕES DO QUE EU TINHA ASSUMIDO ERRADO
+
+Ele corrigiu três coisas em 05/11/2026, e elas estão aplicadas:
+
+1. **A coluna "Tipo" é o VÍNCULO** — só CTPS e Prestador de Serviço, e é o mesmo
+   dado da coluna "Tipo de Cadastro". Quem faz a subvariação é o **tipo de
+   contrato**. Não havia escolha a fazer, e a leitura da folha manda o valor
+   certo.
+2. **"Paga por BeeVale" morreu como regra** — *"em analisesps podemos gerar
+   somapay ou beevale pra tudo."* Não vai no contrato da folha.
+3. **"Cartão" no transporte saiu de uso** — continua existindo no código (quem
+   foi cadastrado com ele tem de continuar explicável, e a folha de um mês
+   fechado não pode passar a ler vazio), mas **some das caixinhas de cadastro
+   novo**.
+
+E dois tipos saíram da fila do DP, a pedido dele: **2ª via de cartão** e
+**documentação (admissão/rescisão)**. A segunda ganhou dono de verdade: a ficha
+diz quais papéis faltam, e o pedido à contabilidade cobra o retorno dela. *"Outra
+solicitação" ficou* — decisão minha: é a única porta para o caso incomum, e não
+custa nada. Se ele quiser fechar também, é uma linha.
+
 ---
 
 ## 8. O QUE AINDA FALTA SABER
@@ -496,4 +576,7 @@ todo mundo. E ninguém é desligado por ter faltado numa planilha.
 4. ✔ **RESOLVIDO em 05/11/2026 — Riscos e EPI estão vazios de verdade.** Dele:
    *"o que foi vazio na tabela de cargos é pq tá vazio mesmo."* Não há o que
    trazer; os campos existem no ERP para serem preenchidos daqui para a frente.
-5. **Os cinco tipos manuais**: viram pedido no ERP ou saem de vez?
+5. ✔ **RESOLVIDO em 05/11/2026 — saem.** *"esse negócio de pedido manual,
+   segunda via do cartão, documentação diversa, aqui acho que não tem
+   necessidade."* E o **MobPonto não existe mais** (*"Mob. não tem mais"*), o
+   que fecha a pergunta de quem cadastraria lá depois do Pipefy.

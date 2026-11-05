@@ -21,7 +21,7 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
-### ⚠️ MIGRAÇÕES 085, 086 e 087 — apertar "Aplicar atualizações do banco"
+### ⚠️ MIGRAÇÕES 085 a 090 — apertar "Aplicar atualizações do banco"
 
 Entraram em 05/11/2026 com o cadastro de pessoas. **Sem elas a tela de
 Colaboradores e a de Cargos respondem erro**, porque as colunas e as tabelas não
@@ -32,8 +32,15 @@ no lugar.
 - **085** cargos, convenções, o cruzamento e o histórico do piso;
 - **086** os ~55 campos de admissão no cadastro da pessoa;
 - **087** dependentes, vínculos com começo e fim, alterações de salário/cargo;
-- **088** a fila de solicitações do DP (13 tipos, checklist e trilha), e as
-  ações `solicitar_dp` (abrir, de quem está na obra) e `atender_dp` (o DP).
+- **088** a fila de solicitações do DP (11 tipos, checklist e trilha), e as
+  ações `solicitar_dp` (abrir, de quem está na obra) e `atender_dp` (o DP);
+- **089** as ETAPAS do cadastro, com a trilha de quem moveu o quê e quando;
+- **090** os pedidos formais à contabilidade e as sete rotinas do agente de DP
+  — **todas semeadas DESLIGADAS**, e a ação `pedir_contabilidade`.
+
+Depois de apertar o botão do banco, apertar **uma vez** "Instalar o catálogo de
+tipos", na tela do Arquivo: ele traz os seis tipos de documento novos (os quatro
+de pessoa e os dois que a contabilidade devolve).
 
 ### 👥 O CADASTRO DE PESSOAS VAI PARA DENTRO DO ERP — em construção (04 e 05/11/2026)
 
@@ -150,6 +157,54 @@ nenhum dos três que vieram escreve; o conteúdo das tabelas do Pipefy (Cargos,
 Colaboradores, Desligados); e o destino dos cinco tipos de pedido que hoje são
 manuais.
 
+
+### 🤝 O CICLO DP ↔ CONTABILIDADE, E O AGENTE (05/11/2026)
+
+**A metodologia inteira está em `AGENTE_DP.md`, nesta pasta.** Ler lá antes de
+mexer: este resumo não substitui o desenho.
+
+O dono explicou o fluxo que o Pipefy fazia e pediu *"vá além em relação ao
+agente de DP. O que ele deveria fazer? Quais rotinas ele deveria cuidar? Quais
+interações entre DP, Contabilidade e os administrativos de obra que fazem as
+requisições ele deveria fazer, e como?"*
+
+**O FLUXO, agora dentro do ERP:** a obra pede (fila do DP, migração 088) → o DP
+confere e completa o que está nos documentos → **o cadastro BIFURCA pelo
+vínculo** (migração 089): prestador resolve no DP (PJ gera contrato a assinar;
+diarista e autônomo mensalista concluem ali), CTPS vai para a contabilidade → o
+ERP **pede, cobra e confere o retorno** (migração 090) → conclui.
+
+**O QUE ESTÁ CONSTRUÍDO:**
+
+- **sete templates de pedido à contabilidade** — assinatura de CTPS (admissão),
+  alteração de cargo, férias, dependente, cônjuge, desligamento e cancelamento
+  de desligamento. Cada um com o que **espera de volta** (tipo do catálogo), o
+  **prazo em dias úteis**, o teto de cobranças e **a lista de campos que têm de
+  bater** no documento que voltar. A *documentação rescisória* não é template:
+  ela é o RETORNO do desligamento, e foi ele quem disse por quê;
+- **o texto do e-mail é guardado, não recalculado** — o modelo muda com o tempo,
+  e o pedido de março tem de continuar mostrando o texto de março. É o que
+  permite discutir com a contabilidade o que foi pedido;
+- **retorno que não bate NÃO conclui**: abre divergência com o de/para campo por
+  campo. Para fechar, ou o cadastro é corrigido, ou alguém aceita a divergência
+  **com motivo escrito**. Carimbar como certo um documento errado é justamente o
+  problema que ninguém pega hoje;
+- **as sete rotinas do agente**, cada uma com três modos (DESLIGADA / SUGERE /
+  FAZ) e parâmetros próprios. **Todas nascem desligadas** — pedido dele.
+  **CINCO das sete não usam IA nenhuma** (triagem, despacho, cobrança, vigia,
+  relator): são regra de negócio e conta de calendário. O agente começa útil e
+  burro, e fica inteligente depois.
+
+**O PONTO CEGO, dito agora:** o ERP **não lê caixa de entrada de e-mail**. Ele
+manda (é como as cotações saem), não recebe. Então quem joga o anexo do retorno
+na ficha é o DP, e o agente confere dali para a frente. Fechar isso exige uma
+conta de e-mail dedicada e uma credencial nova — decisão dele, e não foi tomada.
+
+**O limite do agente está NO CÓDIGO, não só no documento** (`ROTINAS[...]
+["nao_analisa"]`, e um teste que exige a frase): ele não desliga, não admite,
+não muda salário nem cargo por conta própria; não manda e-mail sem pedido
+registrado com autor humano; não conclui com divergência; não sobrescreve o que
+alguém digitou; e tudo o que faz fica marcado como dele.
 
 ### ✉️ A TELA MENSAGENS ENTROU NO ERP (05/10/2026) — feita pelo chat da Mensageria
 

@@ -1295,6 +1295,10 @@ class Colaborador(Base):
     conta: Mapped[Optional[str]] = mapped_column(Text)
     telefone: Mapped[Optional[str]] = mapped_column(Text)
     situacao: Mapped[str] = mapped_column(Text, nullable=False, default="ATIVO")
+    # ETAPA ≠ SITUAÇÃO, e confundir as duas foi o defeito do Pipefy. `situacao`
+    # responde "esta pessoa está na empresa?" e manda na folha; `etapa` responde
+    # "o que falta fazer neste cadastro?" e manda na fila de trabalho do DP.
+    etapa: Mapped[str] = mapped_column(Text, nullable=False, default="CONCLUIDO")
     ref_pipefy: Mapped[Optional[str]] = mapped_column(Text)
     observacoes: Mapped[Optional[str]] = mapped_column(Text)
 
@@ -1782,6 +1786,30 @@ class ColaboradorVinculo(Base):
         BigInteger, ForeignKey("colaborador_vinculos.id"))
     usuario_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ColaboradorEtapa(Base):
+    """Uma mudança de etapa do cadastro: de onde para onde, quando e por quem.
+
+    Sem ela, "este cadastro está há quanto tempo parado?" não tem resposta — e
+    era essa a pergunta que o quadro do Pipefy respondia de graça, só por ser um
+    quadro. É o que se perde ao trocar quadro por tela, e o que esta tabela
+    devolve.
+    """
+    __tablename__ = "colaborador_etapas"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    colaborador_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("colaboradores.id"), nullable=False)
+    de: Mapped[Optional[str]] = mapped_column(Text)
+    para: Mapped[str] = mapped_column(Text, nullable=False)
+    motivo: Mapped[Optional[str]] = mapped_column(Text)
+    # NULL quando foi o sistema (a bifurcação automática pelo vínculo). A tela
+    # precisa poder dizer "automático" em vez de inventar um nome.
+    usuario_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    automatico: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    criado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
 
 
 class ColaboradorAlteracao(Base):
