@@ -711,6 +711,11 @@ def ficha(s: Session, colaborador_id: int) -> dict[str, Any]:
     # O QUE FALTA PARA ADMITIR: a lista que o DP persegue, calculada aqui para a
     # tela e a Agenda dizerem a mesma coisa.
     dados["falta"] = o_que_falta(c)
+    # OS PAPÉIS, separados dos campos: campo em branco é digitação que falta;
+    # papel em branco é documento que ninguém pediu à pessoa. São duas conversas
+    # diferentes, e misturá-las faria a ficha dizer "falta CTPS" tanto para o
+    # número quanto para a imagem dela.
+    dados["falta_documento"] = documentos_que_faltam(s, c.id, c.vinculo)
     return dados
 
 
@@ -722,6 +727,39 @@ CAMPOS_OBRIGATORIOS_CTPS = (
     ("cep", "CEP"), ("telefone", "telefone"), ("cargo_id", "cargo"),
     ("obra_id", "obra"), ("admissao", "data de admissão"), ("salario", "salário"),
 )
+
+
+# OS SEIS PAPÉIS QUE O PIPE EXIGIA PARA ADMITIR, com o tipo do catálogo do
+# Arquivo. Os quatro primeiros são de todo mundo; CTPS só de quem é CTPS.
+#
+# Por que isto existe: no Pipefy, o anexo era campo obrigatório do formulário —
+# e os papéis iam para uma pasta do Dropbox por pessoa. No ERP eles vão para o
+# Google Drive, pelo Arquivo, e a obrigatoriedade virou ESTA LISTA: o cadastro
+# salva sem os papéis (senão ninguém consegue começar), mas a ficha diz, em
+# letras, o que falta para a pessoa ser admitida de verdade.
+DOCUMENTOS_DA_ADMISSAO = (
+    ("DOC-IDENTIDADE", "documento de identificação (RG, CNH ou CPF)", False),
+    ("COMPROVANTE-ENDERECO-PESSOA", "comprovante de endereço", False),
+    ("FOTO-COLABORADOR", "foto do colaborador", False),
+    ("ASO", "ASO (atestado de saúde ocupacional)", False),
+    ("CTPS", "carteira de trabalho", True),
+)
+
+
+def documentos_que_faltam(s: Session, colaborador_id: int,
+                          vinculo: Optional[str] = None) -> list[str]:
+    """Quais dos papéis da admissão esta pessoa ainda não tem no Arquivo.
+
+    Documento excluído some da lista de verdade (o Arquivo apaga o registro,
+    não desativa), então ele volta a ser cobrado — que é o certo: se o papel foi
+    excluído por estar errado, ele tem de ser pedido de novo.
+    """
+    from app.apps.erp.db.models.financeiro import Documento
+    tem = {d.tipo_codigo for d in s.scalars(select(Documento).where(
+        Documento.colaborador_id == colaborador_id)).all()}
+    so_ctps = (vinculo or "CTPS").upper() != "PRESTADOR"
+    return [rotulo for codigo, rotulo, exige_ctps in DOCUMENTOS_DA_ADMISSAO
+            if codigo not in tem and (so_ctps or not exige_ctps)]
 
 
 def o_que_falta(c: Colaborador) -> list[str]:

@@ -369,9 +369,19 @@ function pintarOQueFalta(){
   const alvo = els("c-falta");
   if (!alvo) return;
   const falta = (FICHA && FICHA.falta) || [];
-  alvo.innerHTML = !FICHA || !FICHA.id ? "" : falta.length
+  // PAPEL QUE FALTA É OUTRA CONVERSA: campo em branco é digitação; documento em
+  // branco é papel que ninguém pediu à pessoa. Os dois avisos ficam separados
+  // para o DP saber se o próximo passo é digitar ou cobrar o papel.
+  const papeis = (FICHA && FICHA.falta_documento) || [];
+  alvo.innerHTML = !FICHA || !FICHA.id ? "" : (falta.length
     ? `<div class="aviso alerta"><b>Falta para admitir:</b> ${falta.map(escapar).join(", ")}.</div>`
-    : `<div class="aviso ok">Cadastro completo.</div>`;
+    : `<div class="aviso ok">Cadastro completo.</div>`)
+    + (papeis.length
+    ? `<div class="aviso alerta" style="margin-top:6px"><b>Papéis que faltam
+       no Arquivo:</b> ${papeis.map(escapar).join(", ")}.
+       <small>Jogue cada um no bloco de documentos da ficha — eles ficam
+       guardados no Google Drive, só para quem pode ver dado pessoal.</small></div>`
+    : "");
 }
 
 function painelDaFicha(){

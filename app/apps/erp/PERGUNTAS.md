@@ -1211,6 +1211,20 @@ mês** / **valor da diária** (como ela recebe). Somar os três é inventar núm
 fixa o piso. Duas pessoas no mesmo cargo em convenções diferentes têm pisos
 diferentes — e isso é certo, não erro.
 
+**Sobre os papéis da admissão (05/11/2026):**
+
+- OK **Quem está sem o comprovante de endereço, sem a foto ou sem o ASO?** 🔒
+  (a ficha lista os papéis que faltam, lendo o Arquivo; prestador não é cobrado
+  de CTPS)
+- OK **Esta pessoa tem todos os documentos de admissão arquivados?** 🔒
+- FALTA **"Quantas pessoas da obra X estão sem ASO?"** — a conta existe por
+  pessoa, não há tela que a mostre por obra.
+
+⚠️ **Palavra ambígua: "falta CTPS".** São duas coisas: o **número** da carteira
+(campo do cadastro) e a **imagem** dela (papel no Arquivo). A ficha mostra as
+duas listas separadas de propósito — uma é digitação que falta, a outra é papel
+que ninguém pediu à pessoa.
+
 **Sobre a importação da planilha do Pipefy (05/11/2026):**
 
 - OK **Quantas pessoas entraram na última importação, e quantas já existiam?**

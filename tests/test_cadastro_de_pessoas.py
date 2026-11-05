@@ -437,3 +437,59 @@ def test_demissao_lancada_desliga_mesmo_sem_trocar_a_caixinha(sessao_real, dono)
                                  "situacao": "ATIVO"}, dono)
     sessao_real.flush()
     assert c.situacao == "DESLIGADO"
+
+
+# ---------------------------------------------------------------------------
+# OS PAPÉIS DA ADMISSÃO (05/11/2026)
+# ---------------------------------------------------------------------------
+@banco_
+def test_a_ficha_diz_quais_papeis_faltam_no_arquivo(sessao_real, dono):
+    """O pipe exigia seis anexos para admitir, e o anexo era campo obrigatório
+    do formulário. No ERP o cadastro salva sem os papéis — senão ninguém
+    consegue começar — e a ficha diz, em letras, o que falta. Pedido do dono em
+    05/11/2026: *"todo documento, anexo, pdf, imagem (…) salvar no Google
+    Drive"* — é o Arquivo quem guarda, e é dele que esta lista lê."""
+    from app.apps.erp.core.cadastros import pessoas as svc
+    c = svc.salvar(sessao_real, {"cpf": CPF_A, "nome": "Quem Falta Papel"}, dono)
+    falta = svc.documentos_que_faltam(sessao_real, c.id, "CTPS")
+    assert "comprovante de endereço" in falta
+    assert "foto do colaborador" in falta
+    assert "carteira de trabalho" in falta
+
+
+@banco_
+def test_prestador_nao_e_cobrado_de_ctps_nem_no_papel(sessao_real, dono):
+    """A mesma regra dos campos: exigir CTPS de prestador foi o que levou a
+    gente a preencher campo com "0" no pipe."""
+    from app.apps.erp.core.cadastros import pessoas as svc
+    c = svc.salvar(sessao_real, {"cpf": CPF_A, "nome": "Prestador De Servico",
+                                 "vinculo": "PRESTADOR"}, dono)
+    falta = svc.documentos_que_faltam(sessao_real, c.id, "PRESTADOR")
+    assert "carteira de trabalho" not in falta
+    assert "comprovante de endereço" in falta
+
+
+@banco_
+def test_papel_arquivado_sai_da_lista_e_papel_excluido_volta_para_ela(
+        sessao_real, dono):
+    """O Arquivo APAGA o registro ao excluir (não desativa), então o papel
+    excluído volta a ser cobrado — que é o certo: se foi excluído por estar
+    errado, tem de ser pedido de novo."""
+    from app.apps.erp.core.arquivo import catalogo
+    from app.apps.erp.core.cadastros import pessoas as svc
+    from app.apps.erp.db.models.financeiro import Anexo, Documento
+    catalogo.aplicar(sessao_real)
+    c = svc.salvar(sessao_real, {"cpf": CPF_A, "nome": "Com Papel No Drive"}, dono)
+    a = Anexo(entidade_tipo="colaborador", entidade_id=c.id,
+              nome_arquivo="foto.jpg", guardado_em="DRIVE", drive_file_id="x",
+              mime_type="image/jpeg", hash_sha256="a" * 64, tamanho_bytes=10)
+    sessao_real.add(a)
+    sessao_real.flush()
+    d = Documento(tipo_codigo="FOTO-COLABORADOR", anexo_id=a.id,
+                  nome_padronizado="foto do colaborador", colaborador_id=c.id)
+    sessao_real.add(d)
+    sessao_real.flush()
+    assert "foto do colaborador" not in svc.documentos_que_faltam(sessao_real, c.id)
+    sessao_real.delete(d)
+    sessao_real.flush()
+    assert "foto do colaborador" in svc.documentos_que_faltam(sessao_real, c.id)
