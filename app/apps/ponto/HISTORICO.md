@@ -5,6 +5,32 @@ junto com o `README.md` e o `PLANO.md`.
 
 ## Pendente AGORA
 
+0y. **O CADASTRO DE PESSOAS VAI PARA DENTRO DO ERP — levantamento feito,
+   implementação NÃO começou (04/11/2026).** O dono: *"essa parte de cadastro de
+   colaboradores, a gente ainda está usando o Pipefy, e puxando uma planilha
+   (…) isso está gerando muito conflito (…) é importante a gente colocar logo o
+   cadastro das pessoas dentro do ERP"*.
+
+   **O diagnóstico está escrito em `app/apps/erp/CADASTRO_DE_PESSOAS.md`** — ler
+   de lá, não refazer. Em uma linha: hoje a mesma pessoa existe em quatro
+   lugares (Pipefy, planilha, a cópia `analisesps.colaborador` e o cadastro do
+   ERP), **o ponto lê a cópia e pendura na do ERP**, e a cópia só atualiza
+   quando alguém aperta o botão na Análise de SPs. Daí o conflito: quem é
+   cadastrado hoje no Pipefy bate ponto e cai em conferência até o botão ser
+   apertado.
+
+   **O que trava a implementação, e é dele:** a estrutura dos dois pipes
+   (*Cadastro de Colaboradores* e *Solicitação do DP*) e o blueprint do cenário
+   do Make — ele ofereceu colar. **48 das 78 colunas da aba "Dados Documentos"
+   nunca foram mapeadas por ninguém**, então criar campo antes de ver os pipes
+   é garantir migração refeita. Mais quatro decisões dele, listadas no arquivo
+   (a planilha continua existindo? o Pipefy roda em paralelo ou corta? quem
+   aprova cada pedido? colaborador e prestador viram um cadastro só?).
+
+   **Quando isso andar, o ponto muda num lugar só:** a chave *Base de pessoas*
+   na Configuração passa de "Registro de Colaboradores" para "ERP". Ela já
+   existe e já funciona — é a Fase 5 do arquivo.
+
 0z. **A OBRA CONCLUÍDA NA C. DIÁRIOS (31/10/2026, ramo não publicado).** O dono:
    *"a gente está utilizando atualmente a planilha C.diários como base de obras
    (…) tem obras que a fase está concluída. E essa informação nós temos na
@@ -473,6 +499,26 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 05/11/2026 (segunda) — "Baixar o espelho" de um colaborador no ponto da obra dava "pessoa não encontrada"
+
+- **O relato** (Weverton, obra ESCADELIA): *"Ao clicar em Baixar o espelho (PDF) aparece a mensagem: Não foi possível
+  abrir o espelho — pessoa não encontrada. E ao clicar em Imprimir direto também não gera (…) O meu espelho consegui.
+  O erro está acontecendo só com os colaboradores."*
+- **A causa.** A folha para imprimir é uma PÁGINA que o aplicativo abre, não uma chamada dele — e a página não leva a
+  identificação do aparelho (ela vai nos cabeçalhos das chamadas, e uma página aberta não tem como levá-los). Sem
+  ela, o sistema não sabia que era o ponto da obra e conferia o alcance PESSOAL de quem entrou, em vez do alcance do
+  aparelho (a pessoa consultada pelo CPF agora há pouco). O espelho na tela funcionava (é chamada); só a folha caía.
+  O próprio espelho funcionava porque não passa por alcance nenhum. Vinha desde o espelho no aplicativo (28/10).
+- **O conserto.** Antes de abrir a folha de outra pessoa, o aplicativo pede um **bilhete de impressão** pela chamada
+  de sempre (com a identificação do aparelho e o MESMO alcance da consulta). O bilhete é assinado e vale **2 minutos**,
+  só para aquela pessoa, aquele período e quem pediu — e ainda exige alguém logado. A página aberta com o bilhete
+  não confere o alcance de novo: confere a assinatura (`qr.emitir_impressao` / `conferir_impressao`).
+- Teste: `test_no_ponto_da_obra_a_folha_de_outra_pessoa_abre_com_o_bilhete` reproduz o erro (sem bilhete, 404) e
+  confere bilhete de outra pessoa, de outro mês, vencido, sem login e de quem não foi consultado.
+- **Não verificado:** a abertura no celular de verdade (no navegador instalado como aplicativo, ela abre na mesma
+  janela; fora dele, numa aba nova). Uma chamada a mais antes de abrir a aba pode fazer o bloqueador de janelas do
+  navegador barrar a aba — nesse caso o aplicativo já cai para abrir na mesma janela, como antes.
 
 ## 05/11/2026 — O ajuste do plantão dobrado pergunta "entrada ou saída"; as rondas falsas; o aparelho que volta sozinho
 
