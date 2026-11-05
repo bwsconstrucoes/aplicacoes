@@ -7,6 +7,8 @@
   "Imprimir", e ele some na impressão.
 
   Contexto: `e` (o dicionário de `espelho.do_mes`), `gerado_em`, `gerado_por`.
+  Ou `folhas` (05/11/2026, os espelhos da EQUIPE num arquivo só): uma lista de `e`,
+  cada um na sua página.
   As horas vêm em MINUTOS; a macro `hm` é a mesma regra do `hm()` da tela
   (545 → 9h05; negativo com sinal; vazio vira traço).
 #}
@@ -33,6 +35,7 @@
   "BATIDA_EM_DIA_ABONADO": "bateu em dia abonado"} -%}
 {%- set JORNADA = {"PADRAO_4": "Padrão (4 batidas)", "VIGIA_DIURNO_2": "Vigia diurno (2 batidas)",
                    "VIGIA_NOTURNO_2": "Vigia noturno (2 batidas)"} -%}
+{%- if folhas %}{%- set e = folhas[0] -%}{%- endif -%}
 {%- set comp = e.competencia|string -%}
 {%- set mes_ano = comp[5:7] ~ "/" ~ comp[0:4] -%}
 {#- o período livre (29/10/2026): o título diz o período, não o mês -#}
@@ -44,7 +47,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Espelho de ponto — {{ mes_ano }} — {{ e.pessoa.nome }}</title>
+<title>{% if folhas %}Espelhos de ponto — {{ mes_ano }} — {{ folhas|length }} pessoa(s){% else %}Espelho de ponto — {{ mes_ano }} — {{ e.pessoa.nome }}{% endif %}</title>
 <style>
   @page { size: A4 portrait; margin: 11mm 10mm 12mm; }
   * { box-sizing: border-box; }
@@ -95,6 +98,7 @@
     .barra { display: none; }
     .folha { width: auto; min-height: 0; margin: 0; padding: 0; box-shadow: none; }
     tr { break-inside: avoid; }
+    .folha + .folha { break-before: page; }
     th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     tr.total td, tr.descanso td { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   }
@@ -110,8 +114,15 @@
   <button type="button" class="voltar" onclick="history.length > 1 ? history.back() : location.assign('/ponto/app')">‹ Voltar</button>
   {%- endif %}
   <button type="button" onclick="window.print()">Imprimir ou salvar em PDF</button>
-  <span>Para guardar em PDF, escolha "Salvar como PDF" no lugar da impressora.</span>
+  <span>Para guardar em PDF, escolha "Salvar como PDF" no lugar da impressora.
+    {%- if folhas %} São {{ folhas|length }} folha(s), uma por pessoa.{% endif %}</span>
 </div>
+{%- for e in (folhas or [e]) %}
+{%- set comp = e.competencia|string -%}
+{%- set mes_ano = comp[5:7] ~ "/" ~ comp[0:4] -%}
+{%- if e.periodo -%}{%- set mes_ano = e.inicio[8:10] ~ "/" ~ e.inicio[5:7] ~ "/" ~ e.inicio[0:4] ~ " a " ~ e.fim[8:10] ~ "/" ~ e.fim[5:7] ~ "/" ~ e.fim[0:4] -%}{%- endif -%}
+{%- set cpf = (e.pessoa.cpf or "")|string -%}
+{%- set r = e.resumo %}
 
 <div class="folha">
   <header>
@@ -210,6 +221,7 @@
     <span>Batidas originais preservadas; ajustes aparecem marcados (Portaria 671/2021).</span>
   </footer>
 </div>
+{%- endfor %}
 <script>
   (function () {
     var largura = 820;

@@ -323,6 +323,30 @@ def conferir_impressao(bilhete: str, colaborador_id: int, quem_id: int, periodo:
             and int(partes[2]) >= (agora if agora is not None else time.time()))
 
 
+def emitir_impressao_equipe(ids: list[int], quem_id: int, periodo: str, agora: Optional[float] = None) -> str:
+    """O bilhete das folhas da EQUIPE (05/11/2026): as pessoas vão no próprio bilhete, decididas pela chamada do
+    aplicativo (o mesmo alcance do resumo da equipe); a página só confere a assinatura."""
+    validade = int((agora if agora is not None else time.time()) + IMPRESSAO_S)
+    corpo = f"{int(quem_id)}.{validade}.{'-'.join(str(int(i)) for i in ids)}"
+    return f"{corpo}.{_assinar('equipe|' + corpo + '|' + str(periodo))}"
+
+
+def conferir_impressao_equipe(bilhete: str, quem_id: int, periodo: str,
+                              agora: Optional[float] = None) -> Optional[list[int]]:
+    """As pessoas do bilhete, se ele confere (assinatura, quem pediu, período e prazo); senão None."""
+    partes = str(bilhete or "").strip().split(".")
+    if len(partes) != 4 or not partes[0].isdigit() or not partes[1].isdigit():
+        return None
+    ids = partes[2].split("-") if partes[2] else []
+    if not ids or not all(i.isdigit() for i in ids):
+        return None
+    corpo = ".".join(partes[:3])
+    if not (hmac.compare_digest(_assinar("equipe|" + corpo + "|" + str(periodo)), partes[3])
+            and int(partes[0]) == int(quem_id) and int(partes[1]) >= (agora if agora is not None else time.time())):
+        return None
+    return [int(i) for i in ids]
+
+
 # ---------------------------------------------------------------------------
 # A imagem
 # ---------------------------------------------------------------------------
