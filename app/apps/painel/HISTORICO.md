@@ -2475,6 +2475,31 @@ explicaria "nada aparece". NÃO verificado com o título real (falta o número).
   Página a página, anotando em `config` (`releitura_titulos_pagina`); um corte
   retoma de uma página antes. Não mexe na marca da atualização do dia.
 
+## Percentual por grupo, a categoria afinando — 05/11/2026
+
+O dono, em Parâmetros › Regras de rateio: *"eu queria que tivesse os grupos, e
+ao lado eu já pudesse definir o percentual. Se expandir o grupo, aí eu afino a
+categoria (…) não um a um, senão complica muito."*
+
+**Isso já existia** — é a montagem do cenário (`/painel/prestacao/montagem`,
+22/09/2026): grupo com percentual, categoria em branco segue o grupo, e dá até
+para descer ao lançamento. O que atrapalhava era a operação: cada linha tinha o
+seu "ok", e abrir um grupo recarregava a página (perdendo o que tinha sido
+digitado e não salvo).
+
+- A árvore inteira virou **um formulário só**, com "Salvar percentuais" em
+  cima e embaixo; só o que mudou é gravado (`cenarios.marcar_pesos_da_arvore`).
+  Campo apagado desmarca (vazio ≠ zero, como antes).
+- O grupo **abre ali mesmo**, sem recarregar; a categoria em branco mostra o
+  que vai herdar ("segue o grupo (50%)"), já com o que acabou de ser digitado.
+- O que foi alterado e não salvo fica amarelo, a barra conta quantos, e sair
+  da página avisa.
+- Em Parâmetros › Regras, um aviso leva à montagem.
+
+**Decisão que continua com o dono:** a Prestação de Contas antiga roda pelas
+REGRAS; o cenário tem o resultado próprio. Aposentar as regras é dele, depois
+de conferir que o cenário bate.
+
 ## Reler os pagamentos de um ano, de alguns ou de todos — 07/10/2026
 
 O dono, vendo a releitura retomada em "2025 (11 de 12 anos, 10 já feitos

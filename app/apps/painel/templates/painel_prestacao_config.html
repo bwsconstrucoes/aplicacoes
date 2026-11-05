@@ -158,6 +158,16 @@
 
 {# ============================ REGRAS ============================ #}
 {% if aba == 'regras' %}
+{# 05/11/2026, o dono: "eu queria que tivesse os grupos e ao lado eu já pudesse
+   definir o percentual; se expandir o grupo, afino a categoria". Isso existe
+   na montagem do cenário — o aviso leva até lá. #}
+<div class="aviso info">
+  <b>Quer dar o percentual por GRUPO e ajustar só algumas categorias?</b> É a
+  <a href="{{ url_for('painel.cenario_montagem') }}">montagem do cenário</a>:
+  os grupos com o percentual ao lado, que abrem para as categorias; a categoria
+  em branco segue o grupo, e tudo se salva num clique. As regras abaixo são o
+  jeito antigo, uma por uma — e são elas que a Prestação de Contas antiga usa.
+</div>
 <div class="aviso info">
   Uma regra diz <b>que parte do custo administrativo se divide entre as obras</b>,
   em que percentual e em que período. O que nenhuma regra pegar fica 100% no
