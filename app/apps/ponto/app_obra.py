@@ -373,19 +373,49 @@ def app_api_equipe_mes(colaborador_id: int):
                obras=list(ctx.alcance.obras.values()), pelo_aparelho=ctx.pelo_aparelho)
 
 
+def _periodo_da_folha() -> str:
+    """O período pedido, como vai no bilhete de impressão (o mês ou o de–até)."""
+    return "|".join(str(request.args.get(k) or "") for k in ("competencia", "de", "ate"))
+
+
+@bp.route("/app/api/equipe/<int:colaborador_id>/espelho/bilhete", methods=["POST"])
+@auth.exige_colaborador_ou_aparelho
+def app_api_equipe_espelho_bilhete(colaborador_id: int):
+    """O bilhete para abrir a folha de outra pessoa (05/11/2026, `qr.emitir_impressao`): pedido pela chamada do
+    aplicativo — que leva a identificação do aparelho —, com o MESMO alcance da consulta."""
+    from .core import competencias, qr
+    from .app_colaborador import periodo_pedido
+    with db.conexao() as conn:
+        ctx = _contexto(conn)
+        periodo = periodo_pedido()
+        competencia = request.args.get("competencia") or horario.hoje().strftime("%Y-%m")
+        _alvo(conn, ctx, colaborador_id, *(periodo or (competencias.primeiro_dia(competencia),)))
+    return _ok(bilhete=qr.emitir_impressao(colaborador_id, int(ctx.pessoa["id"]), _periodo_da_folha()))
+
+
 @bp.route("/app/equipe/<int:colaborador_id>/espelho/imprimir")
 @auth.exige_colaborador_ou_aparelho
 def app_equipe_espelho_imprimir(colaborador_id: int):
     """O espelho de uma pessoa da obra para imprimir (28/10/2026): o mesmo alcance da
     consulta — o responsável e o administrativo, só de quem é da obra ou bateu nela;
-    no ponto da obra, só da pessoa consultada pelo CPF agora há pouco."""
-    from .core import competencias
+    no ponto da obra, só da pessoa consultada pelo CPF agora há pouco. Desde 05/11/2026, com o `bilhete` pedido pelo
+    aplicativo: a página não leva a identificação do aparelho, e sem ela o ponto da obra não achava a pessoa."""
+    from .core import competencias, qr
     from .erros import ErroDoPonto
     try:
         with db.conexao() as conn:
-            ctx = _contexto(conn)
             from .app_colaborador import periodo_pedido
             periodo = periodo_pedido()
+            bilhete = request.args.get("bilhete")
+            if bilhete:
+                quem = _logado(conn)
+                if not quem:
+                    raise NaoAutenticado("entre com o seu CPF e PIN")
+                if not qr.conferir_impressao(bilhete, colaborador_id, int(quem["id"]), _periodo_da_folha()):
+                    raise NaoEncontrado("o pedido de impressão venceu — toque de novo em Baixar o espelho")
+                logger.info("Ponto: espelho de %s aberto para imprimir por %s (bilhete)", colaborador_id, quem["nome"])
+                return folha_do_espelho(conn, colaborador_id, quem["nome"])
+            ctx = _contexto(conn)
             competencia = request.args.get("competencia") or horario.hoje().strftime("%Y-%m")
             _alvo(conn, ctx, colaborador_id, *(periodo or (competencias.primeiro_dia(competencia),)))
             logger.info("Ponto: espelho de %s aberto para imprimir por %s", colaborador_id, ctx.pessoa["nome"])

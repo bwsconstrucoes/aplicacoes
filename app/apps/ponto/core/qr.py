@@ -298,6 +298,31 @@ def conferir_escolha(escolha: str, dispositivo_id: int, agora: Optional[float] =
     return int(partes[0])
 
 
+# A IMPRESSÃO DO ESPELHO DE OUTRA PESSOA (05/11/2026, o Weverton, da ESCADELIA: "ao clicar em Baixar o espelho (PDF)
+# aparece 'pessoa não encontrada' (…) o meu espelho eu consegui"). A folha abre como PÁGINA, e a página não leva a
+# identificação do aparelho (vai só nas chamadas do aplicativo): no ponto da obra, a folha não sabia de que aparelho
+# vinha e não achava a pessoa. Agora o aplicativo pede, pela chamada de sempre, um bilhete para imprimir — desta
+# pessoa, deste período, para quem está logado —, que a página aceita por IMPRESSAO_S.
+IMPRESSAO_S = 120
+
+
+def emitir_impressao(colaborador_id: int, quem_id: int, periodo: str, agora: Optional[float] = None) -> str:
+    validade = int((agora if agora is not None else time.time()) + IMPRESSAO_S)
+    corpo = f"{int(colaborador_id)}.{int(quem_id)}.{validade}"
+    return f"{corpo}.{_assinar('impressao|' + corpo + '|' + str(periodo))}"
+
+
+def conferir_impressao(bilhete: str, colaborador_id: int, quem_id: int, periodo: str,
+                       agora: Optional[float] = None) -> bool:
+    partes = str(bilhete or "").strip().split(".")
+    if len(partes) != 4 or not all(p.isdigit() for p in partes[:3]):
+        return False
+    corpo = ".".join(partes[:3])
+    return (hmac.compare_digest(_assinar("impressao|" + corpo + "|" + str(periodo)), partes[3])
+            and int(partes[0]) == int(colaborador_id) and int(partes[1]) == int(quem_id)
+            and int(partes[2]) >= (agora if agora is not None else time.time()))
+
+
 # ---------------------------------------------------------------------------
 # A imagem
 # ---------------------------------------------------------------------------
