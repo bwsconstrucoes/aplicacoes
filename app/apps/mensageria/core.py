@@ -90,6 +90,19 @@ CATALOGO: list[dict] = [
      "descricao": "Aviso aos ADMIN quando o consumo de IA passa de 80% do teto, ou estoura."},
     {"chave": "erp.insumos", "nome": "Avisos de Suprimentos", "modulo": "ERP", "politica": TELEGRAM,
      "descricao": "Avisos do módulo de Suprimentos (insumo, cotação, pedido)."},
+    # O DP falando com a OBRA (05/11/2026). Decisão do dono sobre os canais:
+    # *"a interação entre os requisitores de informação vai ser feita via
+    # WhatsApp, né, que é o pessoal administrativo de obra"* — WhatsApp porque é
+    # onde a obra está. Mas o ARQUIVO volta pelo portal, nunca pela conversa:
+    # foto de documento em WhatsApp não é arquivo, é foto perdida num celular.
+    {"chave": "erp.dp_devolucao", "nome": "Documento a devolver (DP)", "modulo": "ERP",
+     "politica": WHATSAPP,
+     "descricao": "Avisa e cobra a obra quando um documento foi mandado para ela "
+                  "assinar e tem de voltar pelo portal (rescisão, contrato, ficha)."},
+    {"chave": "erp.dp_pedido", "nome": "Resposta de pedido ao DP", "modulo": "ERP",
+     "politica": WHATSAPP,
+     "descricao": "Avisa quem abriu a requisição no portal quando o DP atende, "
+                  "recusa ou pede mais informação."},
     # Análise de SPs — o "Enviar" da janela Encaminhar (29/10/2026): o dono
     # pediu para a mensagem SAIR pelo sistema, não abrir o WhatsApp de quem clica.
     {"chave": "analisesps.encaminhar", "nome": "Encaminhar SP", "modulo": "Análise de SPs",

@@ -5,6 +5,32 @@ junto com o `README.md` e o `PLANO.md`.
 
 ## Pendente AGORA
 
+0y. **O CADASTRO DE PESSOAS VAI PARA DENTRO DO ERP — levantamento feito,
+   implementação NÃO começou (04/11/2026).** O dono: *"essa parte de cadastro de
+   colaboradores, a gente ainda está usando o Pipefy, e puxando uma planilha
+   (…) isso está gerando muito conflito (…) é importante a gente colocar logo o
+   cadastro das pessoas dentro do ERP"*.
+
+   **O diagnóstico está escrito em `app/apps/erp/CADASTRO_DE_PESSOAS.md`** — ler
+   de lá, não refazer. Em uma linha: hoje a mesma pessoa existe em quatro
+   lugares (Pipefy, planilha, a cópia `analisesps.colaborador` e o cadastro do
+   ERP), **o ponto lê a cópia e pendura na do ERP**, e a cópia só atualiza
+   quando alguém aperta o botão na Análise de SPs. Daí o conflito: quem é
+   cadastrado hoje no Pipefy bate ponto e cai em conferência até o botão ser
+   apertado.
+
+   **O que trava a implementação, e é dele:** a estrutura dos dois pipes
+   (*Cadastro de Colaboradores* e *Solicitação do DP*) e o blueprint do cenário
+   do Make — ele ofereceu colar. **48 das 78 colunas da aba "Dados Documentos"
+   nunca foram mapeadas por ninguém**, então criar campo antes de ver os pipes
+   é garantir migração refeita. Mais quatro decisões dele, listadas no arquivo
+   (a planilha continua existindo? o Pipefy roda em paralelo ou corta? quem
+   aprova cada pedido? colaborador e prestador viram um cadastro só?).
+
+   **Quando isso andar, o ponto muda num lugar só:** a chave *Base de pessoas*
+   na Configuração passa de "Registro de Colaboradores" para "ERP". Ela já
+   existe e já funciona — é a Fase 5 do arquivo.
+
 0z. **A OBRA CONCLUÍDA NA C. DIÁRIOS (31/10/2026, ramo não publicado).** O dono:
    *"a gente está utilizando atualmente a planilha C.diários como base de obras
    (…) tem obras que a fase está concluída. E essa informação nós temos na

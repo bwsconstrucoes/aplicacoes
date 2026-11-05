@@ -1,0 +1,216 @@
+##############################################################################
+PIPE: CADASTRO COLABORADORES | cards: 3664 | criado: 2020-11-22
+##############################################################################
+
+## FASES
+  [1.0] Cadastro Inicial — 2 card(s) | campos próprios: 44
+  [2.0] Cadastros Adicionais — 100 card(s) | campos próprios: 8
+  [2.5] Cadastro Concluído — 462 card(s) (DONE) | campos próprios: 18
+  [4.5] Solicitações DP — 108 card(s) | campos próprios: 19
+  [6.5] Colaboradores Desligados — 2960 card(s) (DONE) | campos próprios: 3
+  [8.5] Cadastro Cancelado — 20 card(s) (DONE) | campos próprios: 0
+  [10.5] Colaboradores Afastados — 12 card(s) | campos próprios: 2
+
+## ETIQUETAS
+  - CTPS
+  - Prestador de Serviço
+  - Cadastro Antigo
+  - Vínculo
+  - PJ
+  - Aguardar
+  - Corrigir Admissão
+  - Consórcio
+
+## FORMULÁRIO DE ABERTURA — 51 campos
+  [radio_horizontal]* Tipo de Documentação para Cadastro  <tipo_de_documenta_o_para_cadastro>
+      opções: ['Prestador de Serviço', 'CTPS']
+  [select]* Empresa para Registro  <empresa_para_registro>
+      opções: ['00.079.526/0001-09 - BWS', '38.240.209/0001-03 - LC', '04.895.340/0001-89 - RVV']
+  [select]* CNPJ para Admissão  <cnpj_para_admiss_o>
+      opções: ['00.079.526/0001-09 - MATRIZ/CE', '50.422.792/0001-09 - INFRADENDE', '20.198.694/0001-20 - C3']
+  [radio_horizontal]* Tipo de CTPS  <tipo_de_ctps>
+      opções: ['Física', 'Digital']
+  [radio_horizontal]* Este é o Primeiro Emprego do Colaborador?  <primeiro_emprego>
+      opções: ['Sim', 'Não']
+  [short_text]* Nome Completo  <nome_completo>
+  [date]* Data de Nascimento  <data_de_nascimento>
+  [select]* Sexo  <sexo>
+      opções: ['Masculino', 'Feminino']
+  [connector]* Naturalidade  <naturalidade>
+  [select]* UF (Naturalidade)  <select_t_tulo>
+      opções: ['CE', 'AL', 'BA', 'MA', 'PB', 'PE', 'PI', 'RN', 'SE', 'AC', 'AM', 'AP', 'DF', 'ES', 'GO', 'MG', 'MS', 'MT', 'PA', 'PR', 'RJ', 'RO', 'RR', 'RS', 'SC', 'SP', 'TO']
+  [select]* Escolaridade  <escolaridade>
+      opções: ['Não Alfabetizado', 'Educação Infantil', 'Ensino Fundamental', 'Ensino Médio', 'Ensino Superior', 'Pós-graduação', 'Mestrado', 'Doutorado']
+  [select]* Estado Civil  <estado_civil>
+      opções: ['Solteiro (a)', 'Casado (a)', 'Divorciado (a)', 'Viúvo (a)', 'União Estável']
+  [number]* Nº Identidade  <n_identidade>
+  [cpf]* CPF  <cpf>
+  [short_text]* Endereço (Logradouro)  <endere_o_rua>
+  [number]* Número  <n_mero2>
+  [short_text]* Bairro  <bairro>
+  [connector]* Município  <munic_pio>
+  [select]* UF (Endereço)  <uf_endere_o>
+      opções: ['CE', 'AL', 'BA', 'MA', 'PB', 'PE', 'PI', 'RN', 'SE', 'AC', 'AM', 'AP', 'DF', 'ES', 'GO', 'MG', 'MS', 'MT', 'PA', 'PR', 'RJ', 'RO', 'RR', 'RS', 'SC', 'SP', 'TO']
+  [short_text]* CEP  <cep>
+  [phone]* Telefone  <phone_t_tulo>
+  [radio_horizontal]* Chave Pix  <chave_pix>
+      opções: ['E-mail', 'Telefone', 'CPF', 'CNPJ', 'Aleatória']
+  [phone]* Chave Pix Telefone  <chave_pix_telefone>
+  [email]* Chave Pix Email  <chave_pix_email>
+  [cpf]* Chave Pix CPF  <chave_pix_cpf>
+  [cnpj]* Chave Pix CNPJ  <chave_pix_cnpj>
+  [short_text]* Chave Pix Aleatória  <chave_pix_aleat_ria>
+  [connector]* Código da Obra  <c_digo_da_obra>
+  [connector]* Função  <fun_o>
+  [short_text] Alguma observação em relação à função?  <obser>
+  [radio_horizontal]* Pagamento  <pagamento>
+      opções: ['Diarista', 'Mensalista']
+  [currency]* Valor da Diária  <valor_da_di_ria>
+  [currency]* Valor do Mês  <valor_do_m_s>
+  [date]* Data de Início  <data_de_in_cio>
+  [number]* Nº CTPS  <ctps>
+  [number]* Nº PIS  <pis>
+  [attachment]* Documento de Identificação (RG, CNH ou CTPS)  <anexo_ctps_rg_cpf_comprovante_de_endere_o>
+  [attachment]* CTPS (Página com a Foto do Colaborador)  <carteira_de_trabalho>
+  [attachment]* CTPS (Página com as Informações do Colaborador)  <ctps_p_gina_com_as_informa_es_do_colaborador>
+  [attachment]* CPF (Cadastro de Pessoa Física)  <attachment_t_tulo>
+  [attachment]* Comprovante de Endereço ou Declaração  <ctps_1>
+  [attachment]* Foto do Colaborador  <foto>
+  [radio_horizontal]* Solicitar Salário Família?  <desejar_solicitar_sal_rio_fam_lia>
+      opções: ['Sim', 'Não']
+  [attachment] Anexo (Certidão de Nascimento, RG dos Dependentes ou Certidão de Casamento)  <certid_o_de_nascimento_dos_dependentes>
+  [select]* Meio de Transporte para chegar à Obra?  <utiliza_meio_de_transporte_para_obra>
+      opções: ['Nenhum', 'Transporte Coletivo', 'Moto', 'Bicicleta']
+  [attachment] Documentos Diversos  <documentos_diversos>
+  [radio_horizontal]* Requisição Solicitada por um Terceiro?  <requisi_o_solicitada_por_um_terceiro>
+      opções: ['Sim', 'Não']
+  [connector]* Requerente  <requerente>
+  [connector]* Responsável pela Solicitação  <respons_vel_pela_solicita_o>
+  [id] .  <n_registro>
+  [label_select] Etiqueta  <etiqueta>
+
+## CAMPOS DAS FASES
+  --- fase [1.0] Cadastro Inicial
+    [statement] Statement-18b53671-508a-4948-9797-49283ec318dc  <statement_18b53671_508a_4948_9797_49283ec318dc>
+    [checklist_vertical]* Preencher Código da Obra  <preencher_c_digo_da_obra>
+    [checklist_horizontal]* Checklist Readmissão  <checklist_readmiss_o>
+        opções: ['Atualizar Data de Admissão', 'Confirmar se campo "Função"="Cargo"', 'Confirmar campo "Código da Obra"', 'Confirmar campo "Data de Início"', 'Atualizar campo "Matrícula"', 'Atualizar campo "Tipo de Contrato"']
+    [date]* Data de Admissão  <data_de_admiss_o>
+    [select]* Tipo de Contrato  <tipo_de_contrato>
+        opções: ['CLT (tempo determinado)', 'CLT (tempo Indeterminado)', 'PJ', 'Autônomo (RPA)', 'Autônomo Mensalista', 'Jovem aprendiz', 'Estágio', 'Temporário', 'Pró-labore']
+    [short_text] Razão Social  <raz_o_social>
+    [cnpj] CNPJ  <cnpj>
+    [short_text]* Matrícula  <matr_cula>
+    [short_text]* Nome da Mãe  <nome_da_m_e>
+    [short_text]* Nome do Pai  <nome_do_pai>
+    [select]* Órgão Emissor (Documento de Identificação)  <rg_o_emissor_documento_de_identifica_o>
+        opções: ['SSP', 'DETRAN', 'MTE', 'ME']
+    [date]* Data de Emissão (Documento de Identificação)  <data_de_emiss_o_documento_de_identifica_o>
+    [select]* UF (Documento de Identificação)  <uf_documento_de_identifica_o>
+        opções: ['CE', 'AL', 'BA', 'MA', 'PB', 'PE', 'PI', 'RN', 'SE', 'AC', 'AM', 'AP', 'DF', 'ES', 'GO', 'MG', 'MS', 'MT', 'PA', 'PR', 'RJ', 'RO', 'RR', 'RS', 'SC', 'SP', 'TO']
+    [number]* Série (CTPS)  <s_rie_ctps>
+    [date]* Data de Emissão (CTPS)  <data_de_emiss_o_ctps>
+    [select]* UF (CTPS)  <uf_ctps>
+        opções: ['CE', 'AL', 'BA', 'MA', 'PB', 'PE', 'PI', 'RN', 'SE', 'AC', 'AM', 'AP', 'DF', 'ES', 'GO', 'MG', 'MS', 'MT', 'PA', 'PR', 'RJ', 'RO', 'RR', 'RS', 'SC', 'SP', 'TO']
+    [connector]* Cargo  <cargo>
+    [short_text] Cargo [ ]  <cargo_1>
+    [short_text] Convenção  <conven_o>
+    [select]* Jornada de Trabalho  <jornada_de_trabalho>
+        opções: ['Entr.: 07:00h / Interv. 12:00h às 13:00h / Saída: 17:00h', 'Entr.: 18:00h / Saída 06:00h / Escala 12x36']
+    [select]* Contrato de Experiência  <contrato_de_experi_ncia>
+        opções: ['45 dias, prorrogável por mais 45 dias', '30 dias, prorrogável por mais 60 dias', '60 dias, prorrogável por mais 30 dias', '30 dias, prorrogável por mais 30 dias', 'Sem Contrato de Experiência']
+    [short_text] Salário Extenso  <sal_rio_extenso>
+    [currency] Salário  <sal_rio>
+    [long_text]* Objeto Obra [ ]  <objeto_obra>
+    [short_text] Código CBO  <c_digo_cbo>
+    [short_text] Nome do Cônjuge  <c_njuge>
+    [date] Data de Nascimento do Cônjuge  <data_de_nascimento_do_c_njuge>
+    [cpf] CPF do Cônjuge  <cpf_do_c_njuge>
+    [select] Quantidade de Dependentes  <quantidade_de_dependentes>
+        opções: ['Filho 1', 'Filho 2', 'Filho 3', 'Filho 4', 'Filho 5']
+    [short_text]* Nome Filho 1  <nome_filho_1>
+    [date]* Data de Nascimento Filho 1  <data_de_nascimento_filho_1>
+    [short_text]* Nome Filho 2  <nome_filho_2>
+    [date]* Data de Nascimento Filho 2  <data_de_nascimento_filho_2>
+    [short_text]* Nome Filho 3  <filho_3>
+    [date]* Data de Nascimento Filho 3  <data_de_nascimento_filho_3>
+    [short_text]* Nome Filho 4  <filho_4>
+    [short_text]* Data de Nascimento Filho 4  <data_de_nascimento_filho_4>
+    [short_text]* Nome Filho 5  <nome_filho_5>
+    [date]* Data de Nascimento Filho 5  <data_de_nascimento_filho_5>
+    [short_text] Nome Completo (corrigido)  <nome_completo_corrigido>
+    [id] ID do Card  <id_do_card>
+    [number] Table Record ID  <table_record_id>
+    [number] Table Record ID Desligado  <table_record_id_desligado>
+    [checklist_vertical] Cancelar Registro  <cancelar_registro>
+        opções: ['Cancelar', 'Cancelar Readmissão']
+  --- fase [2.0] Cadastros Adicionais
+    [id] ID  <id_2>
+    [statement] Statement-9a6c90ec-4534-45ea-a233-472f3e979b8b  <statement_9a6c90ec_4534_45ea_a233_472f3e979b8b>
+    [checklist_horizontal] Procedimentos Adicionais CTPS  <cadastro_adicionais>
+        opções: ['Cadastro Somapay', 'Cadastro Mobponto', 'Email Contabilidade', 'Impressões (CT, Reg., EPI, Vale, Crachá)', 'Colagem Etiqueta', 'Malote Físico/Digital', 'Criar Pasta Física', 'Malote de Retorno', 'Arquivar Documentos']
+    [checklist_horizontal] Procedimentos Adicionais Prestador de Serviço  <procedimentos_adicionais_prestador_de_servi_o>
+        opções: ['Cadastro Somapay', 'Cadasto Mobponto']
+    [checklist_horizontal]* Readmissão de Colaborador  <readmiss_o_de_colaborador>
+        opções: ['Apagar Data de Demissão do Mobponto']
+    [checklist_vertical]* Concluir Checklist CTPS  <concluir_checklist_1>
+    [checklist_vertical]* Concluir Checklist Prestador de Serviço  <concluir_checklist_prestador_de_servi_o_1>
+    [attachment] ASO  <aso>
+  --- fase [2.5] Cadastro Concluído
+    [statement] Statement-40f85a49-9274-46ce-b3c4-ee0dfa08fac5  <statement_40f85a49_9274_46ce_b3c4_ee0dfa08fac5>
+    [id] ID  <id>
+    [checklist_vertical] Cesta Básica Extra  <cesta_b_sica_extra>
+        opções: ['Sim', 'Não']
+    [checklist_vertical] Recebe Gratificação Mensal  <recebe_gratifica_o>
+        opções: ['Sim']
+    [currency] Valor da Gratificação  <valor_da_gratifica_o>
+    [checklist_vertical] Recebe Parcela Única  <recebe_parcela_nica>
+        opções: ['Sim']
+    [checklist_vertical] Recebe via SP  <recebe_via_sp>
+        opções: ['Sim']
+    [checklist_vertical] Diversos  <diversos>
+        opções: ['Adicional de Transferência', 'Vale Refeição']
+    [statement] Statement-3fb33d08-3ba9-47cd-abca-d02688083e1c  <statement_3fb33d08_3ba9_47cd_abca_d02688083e1c>
+    [connector] Obra  <obra>
+    [select] Categoria Auxílio Alimentação  <categoria_aux_lio_alimenta_o>
+        opções: ['Segunda à Quinta', 'Segunda à Sexta', 'Mensal', 'Mês']
+    [currency] Valor (Auxílio Alimentação)  <valor_aux_lio_alimenta_o>
+    [select] Categoria Auxílio Transporte  <categoria_aux_lio_transporte>
+        opções: ['Diário', 'Mensal', 'Segunda e Sexta', 'Vale Transporte', 'Diário e Vale Transporte', 'Veículo', 'Motocicleta', 'Bicicleta', 'Cartão']
+    [currency] Valor (Auxílio Transporte)  <valor_aux_lio_transporte>
+    [long_text] Observação (Ajuda de Custo)  <observa_o>
+    [statement] Statement-03a63648-e3fd-499d-a88a-ec603e0aa40f  <statement_03a63648_e3fd_499d_a88a_ec603e0aa40f>
+    [statement] Statement-c5e624df-a7f3-44ee-8db8-189e922dcbd8  <statement_c5e624df_a7f3_44ee_8db8_189e922dcbd8>
+    [connector] Obra (C. Diários)  <obra_c_di_rios>
+  --- fase [4.5] Solicitações DP
+    [statement] Statement-f0a16470-2799-4327-a4a4-465d95feadfd  <statement_f0a16470_2799_4327_a4a4_465d95feadfd>
+    [statement] Statement-f6a0d486-d89a-4684-a70b-efabddbc0c12  <statement_f6a0d486_d89a_4684_a70b_efabddbc0c12>
+    [statement] Statement-d4680fd4-011f-4bdf-ba05-622845aa7946  <statement_d4680fd4_011f_4bdf_ba05_622845aa7946>
+    [select] Tipo de Solicitação  <tipo_de_desligamento>
+        opções: ['Desligamento de Colaborador', 'Desligamento de Prestador de Serviço', 'Readmissão de Colaborador', 'Admissão de Prestador de Serviço', 'Novo Cadastro']
+    [long_text] Descreva as Informações a serem atualizadas  <descreva_as_informa_es_a_serem_atualizadas>
+    [select] Forma de Desligamento  <forma_de_desligamento>
+        opções: ['À Pedido do Colaborador', 'Encerramento de Contrato de Experiência', 'Demissão com Aviso Trabalhado', 'Demissão com Aviso Indenizado']
+    [date] Data do Aviso Prévio  <data_do_aviso_pr_vio>
+    [date] Último dia Trabalhado  <ltimo_dia_trabalhado>
+    [date] Data de Saída  <data_de_sa_da>
+    [number] Quantidade de Faltas à Descontar  <quantidade_de_faltas_descontar>
+    [long_text] Observações:  <observa_es>
+    [checklist_vertical] Checklist Desligamento de Prestador de Serviço  <checklist_desligamento_de_prestador_de_servi_o>
+        opções: ['Desativação no Sistema de Ponto', 'Desativação no Somapay']
+    [connector] Código da Obra Readmissão  <c_digo_da_obra_readmiss_o>
+    [checklist_horizontal] Checklist Desligamento de Colaborador CTPS  <checklist_desligamento_de_colaborador_ctps>
+        opções: ['Solic. de Aviso Prévio ou Encer. de CT', 'Lançamento de Faltas', 'Recebimento de Documentação Rescisória', 'Lançar DC do TRCT', 'Lançar SP da GRRF', 'Impressão de TRCT', 'Impressão de Folha de Ponto', 'Malote Físico/Digital', 'Pagamento do TRCT', 'Desativação Somapay (pós-pagamento)', 'Desativação no Sistema de Ponto']
+    [checklist_vertical] Procedimentos Adicionais CTPS  <procedimentos_adicionais_ctps>
+    [checklist_vertical] Procedimentos Adicionais Prestador de Serviço  <procedimentos_adicionais_prestador_de_servi_o_1>
+    [long_text] Registros de Solicitações DP (Atualização Automática)  <registros_de_solicita_es>
+    [checklist_vertical]* Concluir Checklist Prestador de Serviço  <concluir_checklist_prestador_de_servi_o>
+    [checklist_vertical]* Concluir Checklist Desligamento de Colaborador CTPS  <concluir_checklist_desligamento_de_colaborador>
+  --- fase [6.5] Colaboradores Desligados
+    [id] ID  <id_1>
+    [statement] Statement-1ae08cb7-d521-4743-81ff-2863a2b97a2d  <statement_1ae08cb7_d521_4743_81ff_2863a2b97a2d>
+    [statement] Statement-49d61b0d-dd3f-447c-930f-7127e3f9461c  <statement_49d61b0d_dd3f_447c_930f_7127e3f9461c>
+  --- fase [10.5] Colaboradores Afastados
+    [statement] Statement-565a87b9-d339-4488-9fc8-c67e5f3ddb7b  <statement_565a87b9_d339_4488_9fc8_c67e5f3ddb7b>
+    [statement] Statement-ebffb10e-f0a3-4614-af29-82032f13102b  <statement_ebffb10e_f0a3_4614_af29_82032f13102b>
+
