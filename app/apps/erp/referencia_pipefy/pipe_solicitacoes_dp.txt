@@ -1,0 +1,167 @@
+##############################################################################
+PIPE: SOLICITAÇÕES DP | cards: 80992 | criado: 2021-01-06
+##############################################################################
+
+## FASES
+  [1.0] Caixa de entrada — 247 card(s) | campos próprios: 3
+  [1.125] Atestado Médico — 0 card(s) | campos próprios: 0
+  [1.1875] BH/Compensação/Folga — 0 card(s) | campos próprios: 0
+  [1.25] Ajuste de Pontos e Faltas — 0 card(s) | campos próprios: 0
+  [1.375] Aguardando Documentação — 2030 card(s) | campos próprios: 0
+  [1.5] Sob Análise — 49 card(s) | campos próprios: 0
+  [2.0] Fazendo — 4 card(s) | campos próprios: 6
+  [3.0] Concluído — 22010 card(s) (DONE) | campos próprios: 0
+  [4.0] MobPonto — 54940 card(s) (DONE) | campos próprios: 0
+  [5.0] Cancelar — 1712 card(s) (DONE) | campos próprios: 0
+
+## ETIQUETAS
+  - Luélia
+  - Rafael
+
+## FORMULÁRIO DE ABERTURA — 106 campos
+  [select]* Tipo de Solicitação  <tipo_de_solicita_o>
+      opções: ['Foto Relógio de Ponto', 'Ajuste de Ponto e Faltas', 'Encaminhamento de Atestado Médico', 'Pedido de Afastamento ou Licença', 'Solicitação de Férias', 'Desligamento de Colaborador', 'Desligamento de Prestador de Serviço', 'Admissão de Prestador de Serviço', 'Readmissão de Colaborador', 'Solicitação de Cadastro de Dependente', 'Solicitação de Vale Transporte', 'Solicitação de Ajuda de Custo', 'Solicitação de Alteração de Cargo', 'Solicitações Diversas', 'Cartão Somapay 2ª Via', 'Cartão Vale Transporte 2ª Via', 'Atualização de Dados Cadastrais', 'Atualização de Telefone', 'Atualizar Chave Pix', 'Lançar Desconto em Folha', 'Gerar Crachá (DP)', 'Planilhas de Cadastro (DP)', 'Contrato, Etiqueta, Termos (DP)', 'Cancelar Solicitação de Desligamento', 'Documentação Admissão', 'Documentação Rescisão', 'Pré-Cadastro de Colaborador', 'Relatório de DCs']
+  [short_text]* Nome do Colaborador  <nome_do_colaborador>
+  [cpf]* CPF do Colaborador  <cpf_do_colaborador>
+  [radio_horizontal]* Solicitação  <solicita_o>
+      opções: ['Solicitar ou Atualizar', 'Cancelar']
+  [connector]* CPF Colaborador (somente números)  <cpf_somente_n_meros>
+  [radio_horizontal]* Conceder Vale Transporte?  <conceder_vale_transporte>
+      opções: ['Sim', 'Não']
+  [radio_horizontal]* Cancelar Solicitação de Desligamento?  <cancelar_solicita_o_de_desligamento>
+      opções: ['Sim', 'Não']
+  [radio_horizontal]* Tipo de Readmissão  <tipo_de_readmiss_o1>
+      opções: ['Prestador de Serviço', 'CTPS']
+  [select]* CNPJ para Admissão  <cnpj_para_admiss_o>
+      opções: ['00.079.526/0001-09 - MATRIZ/CE', '50.422.792/0001-09 - INFRADENDE', '20.198.694/0001-20 - C3']
+  [date]* Data de Início  <data_de_in_cio>
+  [date]* Data de Término  <data_de_t_rmino>
+  [long_text]* Descreva as Informações a serem atualizadas:  <descreva_as_informa_es_a_serem_atualizadas>
+  [attachment]* Documento de Identificação (Certidão de Nascimento ou RG)  <documento_de_identifica_o_certid_o_de_nascimento_ou_rg>
+  [select]* Motivo  <motivo>
+      opções: ['Falta não Justificada (Período Integral)', 'Falta não Justificada (Manhã)', 'Falta não Justificada (Tarde)', 'Serviço Externo', 'Falta de Equipamento', 'Esquecimento', 'Problema Técnico', 'Compensação', 'Viagem à Serviço', 'Abono de Falta pela Gestão', 'Ponto Facultativo', 'Declaração de Comparecimento', 'Declaração DETRAN', 'Doação de Sangue', 'Serviços Prestado à Justiça Eleitoral', 'Banco de Horas', 'Folga', 'Falta Justificada', 'Não Trabalha (Manhã)', 'Não Trabalha (Tarde)']
+  [date] Data  <data>
+  [phone] Telefone  <telefone>
+  [attachment]* Anexo Atestado ou Declaração  <anexo_atestado>
+  [select]* Selecione o Tipo de Licença/Afastamento  <selecione_o_tipo_de_licen_a_afastamento>
+      opções: ['Licença Paternidade (5 dias úteis)', 'Licença Maternidade (120 dias)', 'Licença Casamento (3 dias)', 'Licença Falecimento (2 dias úteis)', 'Afastamento por Doença', 'Afastamento por Acidente de Trabalho']
+  [short_text]* Nome do Dependente  <nome_do_dependente>
+  [select]* Parentesco  <parentesco>
+      opções: ['Filho', 'Cônjuge']
+  [date]* Data de Nascimento do Dependente  <data_de_nascimento>
+  [select]* Parente em 1º Grau  <parente>
+      opções: ['Pai ou Mãe', 'Filho', 'Avô ou Avó', 'Irmãos', 'Cônjuge']
+  [long_text] Descreva sua Solicitação:  <descreca_sua_solicita_o>
+  [select]* Forma de Desligamento  <forma_de_desligamento>
+      opções: ['À Pedido do Colaborador', 'Encerramento de Contrato de Experiência', 'Demissão com Aviso Trabalhado', 'Demissão com Aviso Indenizado']
+  [date] Data não Trabalhada  <dia_n_o_trabalhado>
+  [date] Data de Compensação  <data_de_compensa_o>
+  [date]* Data de Saída  <data_de_sa_da>
+  [date]* Data do Aviso Prévio  <data_do_aviso_pr_vio>
+  [attachment]* Anexo (Carta de Solicitação)  <anexo_carta_de_solicita_o>
+  [statement] O valor de produção da 2ª via do cartão será descontado do colaborador ao custo de  R$ 9,90.  <o_valor_do_cart_o_ser_descontado_da_conta_somapay_do_colaborador_custo_r_10_00>
+  [select]* Tipo de Ajuste ou Lançamento  <tipo_de_ajuste>
+      opções: ['Dia Específico (Ponto Padrão)', 'Dia Específico (Informar Horário)', 'Período Específico (Ponto Padrão)']
+  [statement] O valor de produção da 2ª via do cartão será descontado do colaborador ao custo de  R$ 10,80.  <o_valor_do_cart_o_ser_descontado_do_colaborador_ao_custo_de_r_10_80>
+  [select]* Tipo de Lançamento  <tipo_de_lan_amento>
+      opções: ['Dia Específico', 'Período Específico']
+  [date]* Data Inicial  <data_inicial>
+  [date]* Data Final  <data_final>
+  [date] Data de Ajuste (1º Dia)  <data_de_ajuste>
+  [time] Horário de Entrada (1º Dia)  <hor_rio_de_entrada>
+  [time] Saída Almoço (1º Dia)  <sa_da_almo_o>
+  [time] Retorno Almoço (1º Dia)  <retorno_almo_o>
+  [time] Horário de Saída (1º Dia)  <hor_rio_de_sa_da>
+  [date] Data de Ajuste (2º Dia)  <data_2_dia>
+  [time] Horário de Entrada (2º Dia)  <hor_rio_de_entrada_2_dia>
+  [time] Horário de Saída (2º Dia)  <hor_rio_de_sa_da_2_dia>
+  [time] Saída Almoço (2º Dia)  <sa_da_almo_o_2_dia>
+  [time] Retorno Almoço (2º Dia)  <retorno_almo_o_2_dia>
+  [date] Data de Ajuste (3º Dia)  <data_de_ajuste_3_dia>
+  [time] Horário de Entrada (3º Dia)  <hor_rio_de_entrada_3_dia>
+  [time] Saída Almoço (3º Dia)  <sa_da_almo_o_3_dia>
+  [time] Retorno Almoço (3º Dia)  <retorno_almo_o_3_dia>
+  [time] Horário de Saída (3º Dia)  <hor_rio_de_sa_da_3_dia>
+  [connector]* Obra  <obra>
+  [select] Categoria Auxílio Alimentação  <categoria_aux_lio_alimenta_o>
+      opções: ['Segunda à Quinta', 'Segunda à Sexta', 'Mensal', 'Mês']
+  [currency] Valor (Auxílio Alimentação)  <valor_aux_lio_alimenta_o>
+  [select] Categoria Auxílio Transporte  <categoria_aux_lio_transporte>
+      opções: ['Diário', 'Mensal', 'Segunda e Sexta', 'Vale Transporte', 'Diário e Vale Transporte', 'Veículo', 'Motocicleta', 'Bicicleta']
+  [currency] Valor (Auxílio Transporte)  <valor_aux_lio_transporte>
+  [long_text] Observações:  <observa_es>
+  [connector]* Cargo Pleiteado  <cargo_pleiteado>
+  [connector]* Cargo Deferido  <cargo_deferido>
+  [currency]* Salário  <sal_rio>
+  [long_text]* Justificativa de Alteração do Cargo  <jusitificativa_de_altera_o>
+  [short_text]* Nome do Cônjuge  <nome_do_c_njuge>
+  [date]* Data de Nascimento do Cônjuge  <data_de_nascimento_do_c_njuge>
+  [cpf]* CPF do Cônjuge  <cpf_do_c_njuge>
+  [short_text]* Código CID ou Descrição da Doença  <c_digo_cid_ou_descri_o_da_doen_a>
+  [statement] Anexar Certidão de Nascimento ou Declaração de Nascido Vivo e Requerimento do INSS  <anexar_certid_o_de_nascimento_ou_declara_o_de_nascido_vivo>
+  [statement] Anexar Certidão de Casamento  <anexar_certid_o_de_casamento>
+  [statement] Anexar Atestado de Óbito  <anexar_atestado_de_bito>
+  [statement] Anexar Atestado com afastamento superior a 15 dias ou Requerimento do INSS  <atestado_com_afastamento_superior_a_15_dias_ou_requerimento_do_inss>
+  [statement] Anexar CAT, Atestado superior a 15 dias e Laudo Médico (opcional)  <anexar_cat_atestado_superior_a_15_dias_e_laudo_m_dico_opcional>
+  [statement] Anexar Atestado de Óbito e Documento de Identificação do Pai ou Mãe para comprovar o parentesco  <anexo_atestado_de_bito_e_documento_de_identifica_o_do_pai_ou_m_e_para_comprovar_o_parentesco>
+  [attachment]* Anexo Documentação  <anexo_documenta_o>
+  [checklist_vertical]* Documentos anexados  <documentos_anexados>
+      opções: ['RG', 'CPF', 'Comprovante de Endereço', 'Foto']
+  [short_text] Nome  <nome_de_colaborador>
+  [cpf] CPF  <cpf>
+  [connector]* CPF Colaborador Desligado (somente números)  <cpf_colaborador_desligado_somente_n_meros>
+  [short_text]* Nome para Readmissão  <nome_para_readmiss_o>
+  [date]* Data de Ajuste  <data_da_altera_o>
+  [cpf]* CPF para Readmissão  <cpf_para_readmiss_o>
+  [time] Horário de Entrada  <hor_rio_de_entrada_1>
+  [time] Saída Almoço  <sa_da_almo_o_1>
+  [time] Retorno Almoço  <retorno_almo_o_1>
+  [time] Horário de Saída  <hor_rio_de_sa_da_1>
+  [id] Nº SDP  <field>
+  [number]* Nº CTPS  <n_ctps>
+  [number]* Nº PIS  <n_pis>
+  [attachment]* CTPS (Página com a Foto do Colaborador)  <ctps_p_gina_com_a_foto_do_colaborador>
+  [attachment]* CTPS (Página com as Informações do Colaborador)  <ctps_p_gina_com_as_informa_es_do_colaborador>
+  [radio_horizontal]* Solicitar Salário Família?  <solicitar_sal_rio_fam_lia>
+      opções: ['Sim', 'Não']
+  [attachment]* Anexo (Certidão de Nascimento, RG dos Dependentes ou Certidão de Casamento)  <anexo_certid_o_de_nascimento_rg_dos_dependentes_ou_certid_o_de_casamento>
+  [short_text] Observações  <observa_es_1>
+  [connector]* Código da Obra  <c_digo_da_obra>
+  [currency]* Valor Total do Desconto  <valor_tota_do_desconto>
+  [number] Quantidade de Parcelas  <quantidade_de_parcelas>
+  [radio_horizontal]* Chave Pix  <chave_pix>
+      opções: ['E-mail', 'Telefone', 'CPF', 'Aleatória']
+  [email]* Chave Pix Email  <chave_pix_email>
+  [phone]* Chave Pix Telefone  <chave_pix_telefone>
+  [cpf]* Chave Pix CPF  <chave_pix_cpf>
+  [short_text]* Chave Pix Aleatória  <chave_pix_aleat_ria>
+  [radio_horizontal]* Requisição Solicitada por um Terceiro?  <requisi_o_solicitada_por_um_terceiro>
+      opções: ['Sim', 'Não']
+  [connector]* Requerente  <requerente>
+  [connector]* Responsável pela Solicitação  <respons_vel_pela_solicita_o>
+  [label_select] Seleção de etiqueta título  <sele_o_de_etiqueta_t_tulo>
+  [checklist_vertical]* Você não possui autorização para esta solicitação  <voc_n_o_possui_autoriza_o_para_esta_solicita_o>
+  [radio_horizontal] Criar Novo Card Via Automação  <criar_novo_card_via_automa_o>
+      opções: ['Sim']
+  [long_text] Colaborador 1 - Ausência  <colaborador_1>
+  [radio_horizontal]* Colaborador 1 - Ajuste  <ajuste_colaborador_1>
+      opções: ['Inserir Falta', 'Ajustar Ponto', 'Ignorar']
+
+## CAMPOS DAS FASES
+  --- fase [1.0] Caixa de entrada
+    [id] ID  <id>
+    [connector]* Cadastro Colaboradores Conexão  <cadastro_colaboradores_conex_o>
+    [currency] Valor da Parcela  <valor_da_parcela_1>
+  --- fase [2.0] Fazendo
+    [radio_horizontal]* A solicitação foi atendida?  <a_solicita_o_foi_atendida>
+        opções: ['Sim', 'Não']
+    [short_text]* Por quê?  <porque>
+    [checklist_vertical]* Ajuste de Ponto  <checklist>
+        opções: ['Atualizado Registro no Sistema de Ponto']
+    [checklist_vertical]* Atestado Médico, Licenças e Afastamentos  <atestado_m_dico_licen_as_e_afastamentos>
+        opções: ['Atualizado o Registro no Sistema de Ponto']
+    [checklist_vertical]* Solicitação de Vale Transporte  <solicita_o_de_vale_transporte>
+        opções: ['Cadastro no Sistema de Transporte', 'Encaminhamento do Cartão']
+    [checklist_vertical]* Solicitação de 2ª Via de Cartão  <solicita_o_de_2_via_de_cart_o>
+        opções: ['Solicitação do Cartão', 'Encaminhamento do Cartão']
+

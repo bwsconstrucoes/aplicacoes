@@ -1,197 +1,262 @@
-# O cadastro de pessoas vai para dentro do ERP — levantamento
+# O cadastro de pessoas vai para dentro do ERP
 
-Escrito em 04/11/2026, a pedido do dono:
+Levantamento de 04/11/2026, com o **apurado dos dois pipes do Pipefy e de três
+cenários do Make** que o dono enviou no mesmo dia. Ler antes de escrever
+qualquer linha dessa área.
 
-> *"Essa parte de cadastro de colaboradores, a gente ainda está usando o Pipefy,
-> e puxando uma planilha (…) não estamos utilizando o cadastro do ERP. Mas eu
-> vejo que isso está gerando muito conflito. E eu estou vendo que é importante a
-> gente colocar logo o cadastro das pessoas dentro do ERP e começar a trabalhar
-> nele. (…) me diga, o que é que nós já temos, o que é que a gente precisa para
-> terminar de implementar essa parte cadastral."*
-
-Este arquivo é o levantamento, não a implementação. Ele existe para a sessão
-seguinte (de qualquer área) não refazer o diagnóstico — e para o dono conferir
-se eu entendi o que ele tem hoje.
-
----
-
-## 1. Por que dá conflito: hoje são TRÊS cadastros da mesma pessoa
-
-| Onde | O que é | Quem escreve | Quando atualiza |
-|---|---|---|---|
-| **Pipefy** — pipes *Cadastro de Colaboradores* e *Solicitação do DP* | onde o DP trabalha de verdade; um cenário do Make leva os dados para a planilha | o DP, pelo formulário do pipe | na hora |
-| **Planilha "Registro de Colaboradores"**, aba *Dados Documentos* (~3.500 linhas × 78 colunas) | o espelho do Pipefy; alimenta as folhas de alimentação, transporte, GM e diaristas | o Make | a cada movimento do pipe |
-| **`analisesps.colaborador`** (cópia no banco, ~30 das 78 colunas) | a cópia que a Análise de SPs guarda para não ler a planilha a cada pergunta | o botão **"Atualizar cadastro"**, apertado à mão | **só quando alguém aperta** |
-| **`colaboradores`** (cadastro do ERP) | a identidade: é nela que batida, escala, pedido, despesa e título se penduram | a tela de Colaboradores do ERP e um botão do ponto | na hora |
-
-**O ponto LÊ a terceira e PENDURA na quarta.** É isso que produz o conflito que
-ele está sentindo, e ele tem três caras:
-
-1. **Pessoa cadastrada hoje no Pipefy não aparece no ponto** até alguém apertar
-   "Atualizar cadastro" na Análise de SPs. Até lá, ela bate e a batida vai para
-   conferência ("fora do Registro de Colaboradores").
-2. **Pessoa que o ponto criou no ERP não existe no Pipefy** — o botão
-   "Cadastrar no ERP os que faltam" só anda num sentido.
-3. **Dois lugares para a mesma correção.** Trocar a obra, o cargo ou o celular
-   no ERP não troca no Pipefy, e vice-versa. Quem está certo depende de qual
-   tela a pessoa abriu.
-
-**Nenhum dos quatro tem o cadastro completo.** O do ERP é enxuto de propósito
-(*"o suficiente para pagar e para criticar o que se paga"*); a cópia da Análise
-de SPs deixa 48 colunas de fora de propósito (custo de memória e dado pessoal
-que não serve àquele módulo). O cadastro COMPLETO só existe no Pipefy e na
-planilha.
+> *"Essa parte de cadastro de colaboradores, a gente ainda está usando o Pipefy
+> (…) isso está gerando muito conflito (…) é importante a gente colocar logo o
+> cadastro das pessoas dentro do ERP."*
+>
+> E, ao mandar os arquivos: *"tem muita gambiarra, tem muita puxadinho, tanto
+> nos cenários quanto no pipe (…) tem muita coisa dos cenários do Make que nem
+> está mais em uso. (…) Fazer um apurado geral. (…) Antes de construir tudo, eu
+> acho que tem muita coisa que poderia melhorar."*
 
 ---
 
-## 2. O que o ERP JÁ tem (e não precisa ser refeito)
+## 0. AS DECISÕES DELE — já tomadas, não perguntar de novo
 
-**Do cadastro da pessoa:**
-nome, CPF (único e validado), matrícula, função, obra principal, regime
-(CLT/PJ/…), situação, admissão, demissão, valor da diária, auxílio-alimentação,
-auxílio-transporte, chave Pix com tipo, banco/agência/conta, telefone,
-observações, referência do card do Pipefy. Mais obras adicionais pelo ponto.
-
-**Dos documentos da pessoa** — já funciona o padrão *um cadastro, uma porta*: o
-documento entra DENTRO do formulário, a IA lê, preenche os campos e o arquivo
-fica guardado no cadastro que ele criou. O catálogo já prevê: RG/CNH/CPF,
-carteira de trabalho, ficha de registro, contrato de trabalho, ASO (com aviso
-30 dias antes do vencimento), ficha de EPI, certificado de NR (aviso 45 dias),
-termo de rescisão. Tudo marcado como **PESSOAL** — só quem tem acesso a dado de
-pessoa vê.
-
-**Dos pedidos que o ponto já absorveu** (e que o dono já tirou do pipe de
-Solicitação do DP): atestado, declaração de comparecimento, licença, férias,
-afastamento, abono, ajuste de batida, compensação e folga do banco de horas —
-com caminho de aprovação **configurável pela tela** (encarregado, DP, ou os
-dois), sigilo de saúde (só o DP vê CID, médico e o papel do atestado) e trilha
-de quem aprovou cada etapa.
-
-**Do desligamento:** quem é desligado perde o acesso ao ponto sozinho (celular
-bloqueado, QR cancelado, saída dos aparelhos de grupo), a cada 15 minutos.
-
-**Da estrutura:** trilha de auditoria em tudo, perfis e permissões ajustáveis
-pessoa a pessoa, documento com validade e aviso de vencimento, e a Agenda que
-cobra o que está vencendo.
+| Assunto | Decisão (04/11/2026) |
+|---|---|
+| Pipefy e planilha | **Morrem.** Enquanto não morrem, **o ERP passa a ALIMENTAR** as planilhas de transporte, GM e diaristas — o sentido se inverte. |
+| Quem aprova | **Todos os pedidos vão para o DP.** Quem tiver perfil de DP aprova. |
+| Colaborador x prestador | **Um cadastro só: todo mundo é colaborador.** Mantém-se a distinção **CTPS / Prestador de Serviço** e o **tipo de contrato** (CLT determinado/indeterminado, PJ, Autônomo RPA, etc.) como campos. |
+| O que importar | **Só quem está ATIVO**, com a documentação. Os ~2.960 desligados **ficam na planilha como base morta.** Daí em diante, cadastro novo nasce no ERP. |
+| Portal | Um ambiente com três áreas: **Colaboradores**, **Solicitações do DP** e **Ponto** — como o Pipefy fazia. |
+| Sub-bases que o cadastro usa | cargo, município, naturalidade, obra (já existe no ERP), e a pessoa **responsável pela requisição**. |
 
 ---
 
-## 3. O que FALTA — separado em "falta o campo" e "falta o caminho"
+## 1. O TAMANHO DA COISA, em números
 
-### 3a. Campos que o Pipefy coleta e o ERP não guarda
-
-O cadastro do ERP não tem onde pôr:
-
-- **Identificação:** data de nascimento, nome da mãe, sexo, RG (número, órgão
-  emissor, UF e data de emissão), PIS/NIS, CTPS (número e série), título de
-  eleitor, reservista, nacionalidade, naturalidade.
-- **Endereço:** CEP, logradouro, número, complemento, bairro, cidade, UF.
-- **Contato:** e-mail pessoal (hoje só telefone).
-- **Pessoal:** estado civil, escolaridade.
-- **Dependentes:** **não existe tabela nenhuma.** É o que o pipe chama de
-  "cadastrar um dependente", e sem isso não há salário-família nem IR.
-- **Vale-transporte com as variações:** hoje é um valor só. A planilha tem
-  *categoria/modalidade* (Mês, Mensal, Seg-Qui, Seg-Sex, Cartão — e "Cartão"
-  significa que não paga em dinheiro). O mesmo vale para a alimentação.
-- **Convenção coletiva**, tipo de contrato e "tipo" (as colunas que a Análise de
-  SPs já lê da planilha mas o ERP não guarda).
-- **Gratificação mensal** (recebe? valor?), parcela única, paga por BeeVale,
-  recebe via SP, nome do credor — hoje isso vive só na planilha e a folha lê de
-  lá.
-- **ID Fortes** (o código da pessoa no sistema de folha) — a Análise de SPs já
-  guarda na cópia dela; o ERP não.
-
-⚠️ **48 das 78 colunas da aba nunca foram mapeadas por ninguém.** A Análise de
-SPs lê ~30 porque são as que a folha usa. O que existe nas outras 48 só o Pipefy
-sabe — **e é por isso que eu preciso da estrutura dos dois pipes antes de criar
-campo**, senão a lista acima nasce incompleta e a migração tem de ser refeita.
-
-### 3b. Caminhos (fluxos) que não existem no ERP
-
-O segundo pipe (*Solicitação do DP*) é uma **fila de pedidos com aprovação**. O
-ERP tem essa máquina para o ponto, e **não tem** para o administrativo. Falta:
-
-| Pedido do pipe | Existe hoje? | O que falta |
+| | Pipe CADASTRO COLABORADORES | Pipe SOLICITAÇÕES DP |
 |---|---|---|
-| Cadastro de novo funcionário | parcialmente | a tela existe, mas sem os campos de 3a e **sem fila de aprovação** — hoje quem cadastra, cadastra |
-| **Readmissão** de colaborador | **não** | achar o desligado pela base, trazer o cadastro de volta e **guardar os dois vínculos** (não sobrescrever o primeiro) |
-| **Admissão de prestador → CLT** | **não** | o campo `regime` existe, mas trocá-lo apaga a história; falta registrar que a pessoa foi prestador de tal data a tal data |
-| Alteração de cargo | parcialmente | muda-se o campo, mas **sem histórico de cargo** e sem aprovação |
-| Atualização de dados (telefone, Pix, endereço) | parcialmente | muda-se, mas sem fila: o pipe hoje faz o DP conferir antes |
-| Solicitação de férias | **sim, no ponto** | nada — já absorvido |
-| Atestado / compensação / declaração | **sim, no ponto** | nada — já absorvido |
-| Solicitação de desligamento | **não** (só o efeito) | o pedido em si, com aprovação, aviso prévio, último dia e o que dispara no ponto |
-| Cancelamento de um pedido | **não** | poder cancelar pedido já aberto, com motivo |
-| Ajuda de custo | **não** | o pedido; o valor já existe como "observação de auxílio" na planilha |
-| Vale-transporte | **não** | o pedido e as variações de modalidade |
-| Cadastrar dependente | **não** | a tabela e o pedido |
+| criado em | 22/11/2020 | 06/01/2021 |
+| cards | **3.664** | **80.992** |
+| campos no formulário de abertura | **51** | **106** |
+| campos nas fases | 94 | 9 |
+| fases | 7 | 10 |
+| etiquetas | 8 | 2 |
+| webhooks para o Make | 3 | **6** |
 
-### 3c. Duas coisas que ele pediu com todas as letras
+**Cards por fase (cadastro):** Cadastro Inicial 2 · Cadastros Adicionais 100 ·
+Cadastro Concluído 462 · Solicitações DP 108 · **Colaboradores Desligados
+2.960** · Cadastro Cancelado 20 · Colaboradores Afastados 12.
 
-1. **"O ERP também tem que alertar se o cadastro já existe"** — hoje o ERP só
-   **recusa** no salvar (o CPF é único), o que é tarde: a pessoa já digitou
-   tudo. Falta avisar **enquanto se digita o CPF ou o nome**, dizendo quem é,
-   em que situação está e — se for alguém desligado — oferecer **readmissão** em
-   vez de cadastro novo. O pipe já faz isso e é por isso que ele citou.
-2. **"Colaborador e prestador de serviço (…) na prática é a mesma coisa, acho
-   que não é necessário"** — concordo, e isso simplifica: **um cadastro só**,
-   com o regime como campo (e o histórico de vínculo de 3b). Preciso do "pode"
-   dele para tratar os dois pipes/fases como um cadastro.
+> **Logo: os ATIVOS são ~462 + 100 + 12 ≈ 575 pessoas**, não 3.664. A decisão de
+> importar só os ativos reduz o trabalho por **6**.
 
----
+**Cards por fase (solicitações):** Caixa de entrada 247 · Aguardando
+Documentação 2.030 · Sob Análise 49 · Fazendo 4 · **Concluído 22.010** ·
+**MobPonto 54.940** · Cancelar 1.712. As fases *Atestado Médico*,
+*BH/Compensação/Folga* e *Ajuste de Pontos e Faltas* têm **0 cards** — já estão
+mortas (o ponto do ERP absorveu).
 
-## 4. O que eu preciso do dono para começar (ele ofereceu)
-
-1. **O blueprint do cenário do Make** (ele disse que pode colar). É o que mostra
-   o que o cenário faz hoje campo por campo — e o que vai ter de ser desligado
-   quando o ERP assumir, para não ficarem os dois escrevendo na planilha.
-2. **A estrutura dos DOIS pipes**: os campos de cada formulário (nome, tipo,
-   obrigatório, lista de opções) e as **fases**. Exportação, print ou lista
-   escrita — qualquer formato serve. Sem isso, a lista de campos de 3a nasce
-   incompleta.
-3. **Quatro decisões que só ele toma:**
-   - a planilha "Registro de Colaboradores" **continua existindo** depois que o
-     ERP assumir? (ela alimenta a folha de alimentação, transporte, GM e
-     diaristas, e a Análise de SPs lê dela — se ela morrer, isso muda de lugar;
-     se ela ficar, o ERP passa a ser quem a ALIMENTA, invertendo o sentido);
-   - o **Pipefy roda em paralelo** por um tempo (as duas pontas abertas, com
-     risco de divergir) ou **corta numa data**?
-   - **quem aprova cada tipo** de pedido administrativo (hoje o do ponto é
-     configurável pela tela; o administrativo pode seguir o mesmo desenho);
-   - **"colaborador" e "prestador de serviço" viram um cadastro só?** (ele já
-     disse que na prática é a mesma coisa — falta o "pode").
+⚠️ **O material está INCOMPLETO, e isto é importante:** os dois pipes têm **9
+webhooks** apontando para o Make, e o dono mandou **3 cenários**. Faltam até 6.
+Em particular, **nenhum dos três cenários ESCREVE o cadastro inicial na aba
+"Dados Documentos"** — eles só leem para detectar duplicado. **Quem escreve a
+linha nova da planilha está num cenário que não veio.**
 
 ---
 
-## 5. Ordem proposta (cada fase entrega algo utilizável)
+## 2. O QUE OS CENÁRIOS DO MAKE FAZEM HOJE
 
-Pensada para o DP poder trabalhar no ERP o quanto antes, sem esperar o conjunto.
+### 2a. `DP - Cadastro de Colaboradores - Novo Card`
 
-- **Fase 1 — o cadastro completo.** Os campos de 3a, com os documentos
-  preenchendo o que der (o padrão *um cadastro, uma porta* já existe), o alerta
-  de duplicado ao digitar e a tabela de dependentes. **Depende dos pipes.**
-- **Fase 2 — trazer o que já existe.** Importar da planilha/cópia o que ela tem
-  das pessoas de hoje, para o ERP não nascer vazio, com relatório do que não
-  casou. Sem isso, a Fase 1 vira digitação de 3.500 linhas.
-- **Fase 3 — a fila de pedidos administrativos.** A máquina de aprovação que o
-  ponto já tem, aplicada aos pedidos de 3b, com os tipos que o pipe tem hoje.
-- **Fase 4 — vínculo com história.** Readmissão, prestador → CLT, histórico de
-  cargo e de obra. É o que impede o cadastro de mentir sobre o passado.
-- **Fase 5 — desligar a ponte.** O ponto passa a ler o cadastro do ERP (a chave
-  já existe: *Base de pessoas* na Configuração, hoje em "Registro"), e o
-  cenário do Make é desligado ou invertido. **Só depois de 1 a 4, e com o dono
-  escolhendo a data.**
+1. Card novo no pipe →
+2. **procura o CPF na aba "Dados Documentos"**;
+3. **se NÃO existe:** atualiza campos no Pipefy, avisa por **WhatsApp (Z-API)**
+   ou **Telegram** (dois caminhos paralelos, um por rota), baixa a foto do
+   colaborador e **cadastra no MobPonto** — com duas tentativas de desempate
+   quando o CPF "está sendo utilizado por outro" ou falta `cpf_responsavel`;
+4. **se JÁ existe:** manda e-mail, avisa por WhatsApp/Telegram e **APAGA o card**;
+5. grava uma linha de log numa planilha de Log.
 
-**O que NÃO muda:** a identidade continua sendo a linha de `colaboradores` do
-ERP — é nela que batida, escala, pedido, despesa e título já se penduram. Nada
-do que existe hoje precisa ser migrado de lugar.
+→ **É daqui que vem o "o ERP também tem que alertar se o cadastro já existe".**
+Hoje o aviso chega **depois** de a pessoa preencher 51 campos, e a punição é o
+card ser apagado.
+
+### 2b. `DP - SDP - Novo Card` (o maior: 21 roteadores)
+
+Trata, por tipo de solicitação: atualiza CPF/nome no card, liga o card ao
+cadastro, e então — conforme o tipo — **baixa o anexo e sobe para o Dropbox**
+(15 módulos de upload), pega arquivo do **Google Drive** (10 módulos), converte
+documento (**CloudConvert**), manda documento por **Telegram**, escreve a chave
+Pix na planilha (colunas 73 e 74), calcula parcela de desconto em folha numa aba
+`RateioDescFolha`, atualiza uma aba `Relatório`, e grava log.
+
+### 2c. `DP - SDP - Card Concluído`
+
+Ao concluir o card: **17 atualizações de campo no Pipefy**, cria/apaga registro
+nas **tabelas do Pipefy** (Colaboradores / Colaboradores Desligados), e escreve
+na aba "Dados Documentos":
+
+| Colunas | O que grava | Em que pedido |
+|---|---|---|
+| 3, 23, 53–55 | tipo de readmissão, data de início, limpa 3 colunas | Readmissão |
+| 64–69 | categoria e valor do **auxílio-alimentação**, categoria e valor do **auxílio-transporte**, observação da ajuda de custo, obra | Ajuda de custo, VT, admissão de prestador |
+| 73–74 | tipo e valor da **chave Pix** | Atualizar Pix |
+
+E acrescenta linha numa planilha separada, **"Alterações de Frequência"**, com
+nome, CPF, tipo, motivo, CID, datas e os horários de até **3 dias** de ajuste —
+que é o que alimentava o ponto antigo.
 
 ---
 
-## 6. Risco que precisa ficar escrito
+## 3. O QUE ESTÁ MORTO OU MORRENDO (o "apurado" que ele pediu)
 
-**O dado pessoal sai da planilha e entra no banco do ERP.** Endereço, RG, nome
-da mãe, PIS e dependentes de ~3.500 pessoas passam a viver num sistema com tela
-na internet. O catálogo de documentos já trata isso como PESSOAL, e os perfis já
-recortam quem vê o quê — mas a Fase 1 é o momento de conferir **quem vê o
-cadastro completo** e de registrar essa decisão, não depois.
+| O que | Situação | Por quê |
+|---|---|---|
+| **MobPonto** (3 chamadas de API no cenário de cadastro) | **MORTO** | o ponto do ERP substituiu. A fase "MobPonto" do pipe tem 54.940 cards: é arquivo morto. |
+| Aba **"Alterações de Frequência"** | **MORTA** | alimentava o MobPonto. O ponto do ERP tem ocorrência de verdade, com aprovação. |
+| Fases *Atestado Médico*, *BH/Compensação/Folga*, *Ajuste de Pontos e Faltas* | **MORTAS** | 0 cards. Absorvidas pelo ponto. |
+| Campos de **ajuste de ponto em 3 dias fixos** (20 campos: data/entrada/saída/almoço × 3) | **MORTO** | o ponto do ERP ajusta por período, sem teto de 3 dias. |
+| **Dropbox** (15 uploads) | **A SUBSTITUIR** | o ERP já arquiva documento com catálogo, validade, sigilo e aviso de vencimento. |
+| **CloudConvert**, **Telegram SendDocument** | **A SUBSTITUIR** | o ERP gera PDF e tem bot próprio. |
+| Tipos **sem automação nenhuma** no Make: *Foto Relógio de Ponto*, *Solicitações Diversas*, *Cartão Somapay 2ª Via*, *Cartão VT 2ª Via*, *Documentação Admissão* | **MANUAL HOJE** | o card é só um recado; alguém faz à mão. Decidir um por um se vira pedido no ERP ou sai. |
+| **Z-API + Telegram em rotas paralelas** para o mesmo aviso | **DUPLICADO** | a mensageria do ERP já decide o canal por tipo de mensagem, num lugar só. |
+
+### 3b. As gambiarras do pipe que o ERP RESOLVE sem esforço
+
+Vale listar porque cada uma delas é trabalho que **não** precisa ser refeito:
+
+1. **Chave Pix em 6 campos** (tipo + um campo por tipo: e-mail, telefone, CPF,
+   CNPJ, aleatória) — limitação do Pipefy. O ERP já tem **um** campo de tipo e
+   **um** de valor, com máscara pelo nome do campo.
+2. **Dependentes em 11 campos fixos** ("Quantidade de Dependentes" com opções
+   *Filho 1*…*Filho 5*, mais Nome e Data de cada) — teto de 5 filhos e nenhum
+   dependente que não seja filho ou cônjuge. O ERP resolve com **uma tabela**.
+3. **Quatro campos para a mesma obra**: *Código da Obra*, *Obra*, *Obra (C.
+   Diários)*, *Código da Obra Readmissão*. No ERP a obra é **uma**.
+4. **"Cargo" (conector) + "Cargo [ ]" (texto)** — o texto é cópia do conector só
+   para a planilha conseguir ler. Some.
+5. **"Nome Completo" + "Nome Completo (corrigido)"** — o segundo existe porque o
+   primeiro não podia ser editado depois. No ERP, edita-se com trilha.
+6. **"Table Record ID", "Table Record ID Desligado", "ID do Card", "Criar Novo
+   Card Via Automação"** — identificadores técnicos dentro do formulário, que a
+   pessoa vê. Somem.
+7. **"Você não possui autorização para esta solicitação"** como *checklist* —
+   permissão feita na mão. O ERP tem perfis de verdade.
+8. **"Salário Extenso"** digitado à mão — o ERP gera do valor.
+9. **Jornada de Trabalho** como texto de duas opções fixas — o ponto do ERP tem
+   escalas de verdade (44h, 12x36, com saída diferente na sexta).
+10. **"Colaborador 1 - Ausência" / "Colaborador 1 - Ajuste"** — começo de uma
+    lista que nunca escalou para 2, 3, 4.
+
+---
+
+## 4. O CADASTRO, CAMPO POR CAMPO — o que o ERP precisa ganhar
+
+O pipe de cadastro coleta isto (× = o ERP **não** tem onde guardar):
+
+**Identificação:** nome completo ×(tem), data de nascimento ×, sexo ×,
+naturalidade (município) ×, UF da naturalidade ×, escolaridade ×, estado civil
+×, nº identidade ×, órgão emissor ×, data de emissão ×, UF do documento ×, CPF
+(tem), nome da mãe ×, **nome do pai** ×, nº CTPS ×, série da CTPS ×, data de
+emissão da CTPS ×, UF da CTPS ×, nº PIS ×, tipo de CTPS (física/digital) ×,
+primeiro emprego? ×.
+
+**Endereço:** logradouro ×, número ×, bairro ×, município ×, UF ×, CEP ×.
+
+**Contato:** telefone (tem).
+
+**Pagamento:** tipo de chave Pix (tem), valor da chave (tem), pagamento
+diarista/mensalista ×, valor da diária (tem), valor do mês ×, salário ×,
+salário por extenso ×(gerado).
+
+**Vínculo:** empresa para registro ×, CNPJ para admissão ×, tipo de documentação
+(CTPS/Prestador) ×, tipo de contrato ×, matrícula (tem), cargo ×(só `funcoes`),
+código CBO ×, convenção ×, jornada ×(escala do ponto), contrato de experiência
+×, data de início (tem como admissão), data de admissão (tem), objeto da obra
+×(tem na obra), obra (tem).
+
+**Família:** nome/nascimento/CPF do cônjuge ×, dependentes ×, solicitar
+salário-família? ×.
+
+**Benefícios:** categoria e valor do auxílio-alimentação ×(só valor), categoria e
+valor do auxílio-transporte ×(só valor), meio de transporte para a obra ×,
+gratificação mensal (recebe/valor) ×, parcela única ×, recebe via SP ×, cesta
+básica extra ×, adicional de transferência ×, vale-refeição ×, observação da
+ajuda de custo ×.
+
+**Requisição:** requisição feita por terceiro? ×, requerente ×, responsável pela
+solicitação ×.
+
+**Documentos anexos (6 obrigatórios + 2 opcionais):** documento de identificação,
+CTPS página da foto, CTPS página das informações, CPF, comprovante de endereço,
+foto do colaborador, certidão/RG dos dependentes, documentos diversos, **ASO**.
+→ O catálogo do ERP já prevê todos, menos **foto do colaborador** (o ponto tem
+foto cadastral — conferir se é a mesma) e **comprovante de endereço**.
+
+**As listas de opções que vêm prontas do pipe** (reusar, não inventar):
+escolaridade (8), estado civil (5), órgão emissor (SSP/DETRAN/MTE/ME), UF (27),
+tipo de contrato (9: CLT determinado, CLT indeterminado, PJ, Autônomo RPA,
+Autônomo Mensalista, Jovem aprendiz, Estágio, Temporário, Pró-labore), contrato
+de experiência (5), categoria de alimentação (4: Seg-Qui, Seg-Sex, Mensal, Mês),
+categoria de transporte (9: Diário, Mensal, Seg e Sex, Vale Transporte, Diário e
+VT, Veículo, Motocicleta, Bicicleta, Cartão), meio de transporte (4), chave Pix
+(5), empresa (3 CNPJs), CNPJ de admissão (3).
+
+---
+
+## 5. OS 28 TIPOS DE SOLICITAÇÃO — para onde cada um vai
+
+| Tipo no pipe | Onde fica no ERP |
+|---|---|
+| Encaminhamento de Atestado Médico | **já existe** (ponto) |
+| Pedido de Afastamento ou Licença | **já existe** (ponto) |
+| Solicitação de Férias | **já existe** (ponto) |
+| Ajuste de Ponto e Faltas | **já existe** (ponto) |
+| Foto Relógio de Ponto | **já existe** (o ponto tira foto na batida) |
+| Desligamento de Colaborador / de Prestador | **criar** — um só, com forma de desligamento, aviso prévio, último dia, data de saída, faltas a descontar, checklist |
+| Cancelar Solicitação de Desligamento | **criar** (cancelar pedido, com motivo) |
+| Readmissão de Colaborador | **criar** — achar o desligado e trazer de volta, sem apagar o vínculo anterior |
+| Admissão de Prestador de Serviço | **criar** — é a troca de vínculo (prestador → CTPS) |
+| Pré-Cadastro de Colaborador | **criar** (cadastro em duas etapas, como o pipe faz) |
+| Solicitação de Cadastro de Dependente | **criar** + tabela de dependentes |
+| Solicitação de Vale Transporte | **criar** (com as 9 categorias) |
+| Solicitação de Ajuda de Custo | **criar** |
+| Solicitação de Alteração de Cargo | **criar** (cargo pleiteado, deferido, salário, justificativa) |
+| Atualização de Dados Cadastrais / de Telefone / Chave Pix | **criar** — um pedido só, "atualizar dado", com o que muda |
+| Lançar Desconto em Folha | **criar** (valor total e parcelas — o cálculo está numa aba de planilha hoje) |
+| Documentação Admissão / Rescisão | **criar** (ou resolver com o Arquivo, que já guarda documento por pessoa) |
+| Gerar Crachá (DP) | **decidir** — hoje é geração de arquivo |
+| Planilhas de Cadastro (DP) / Contrato, Etiqueta, Termos (DP) | **decidir** — hoje gera documento a partir do cadastro |
+| Relatório de DCs | **já existe** parecido (despesa de colaborador no ERP) |
+| Cartão Somapay 2ª Via / Cartão VT 2ª Via | **decidir** — hoje é recado manual com aviso de custo |
+| Solicitações Diversas | **criar** (o "outros", com texto livre) |
+
+---
+
+## 6. ORDEM PROPOSTA
+
+1. **O cadastro completo** — os campos da seção 4, as listas de opções do pipe,
+   a tabela de dependentes, o alerta de duplicado **ao digitar o CPF** (com
+   oferta de readmissão quando a pessoa está desligada) e as sub-bases (cargo
+   com CBO, município/naturalidade).
+2. **Importar os ~575 ativos** da planilha, com a documentação. Relatório do que
+   não casou. *(Os desligados ficam na planilha, por decisão dele.)*
+3. **O portal de solicitações** — a fila de pedidos da seção 5, toda no DP,
+   reusando a máquina de aprovação que o ponto já tem.
+4. **Vínculo com história** — readmissão, prestador → CTPS, histórico de cargo,
+   de salário e de obra.
+5. **Inverter o sentido** — o ERP passa a escrever nas planilhas de transporte,
+   GM e diaristas (hoje é o Make quem escreve, nas colunas 64–69 e 73–74). Só
+   depois disso o Pipefy e os cenários morrem.
+
+---
+
+## 7. O QUE AINDA FALTA SABER
+
+1. **Os outros até 6 cenários do Make** — em especial o que ESCREVE a linha nova
+   na aba "Dados Documentos". Sem ele, não sei o caminho completo do cadastro
+   novo até a folha.
+2. **As tabelas do Pipefy** (*Cargos*, *Colaboradores*, *Colaboradores
+   Desligados*) — o conteúdo delas, para o cadastro de cargo nascer preenchido.
+3. **Quais abas da planilha a folha realmente lê** hoje, e com que nome de
+   coluna — é o contrato que o ERP vai ter de honrar na fase 5. A Análise de SPs
+   já lê ~30 colunas e conhece os nomes; as outras 48 continuam sem mapa.
+4. **Os cinco tipos manuais** (Foto Relógio, Diversas, 2ª via de cartão,
+   Documentação Admissão): viram pedido no ERP ou saem?

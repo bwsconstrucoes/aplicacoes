@@ -27,15 +27,26 @@ O dono: *"a gente ainda está usando o Pipefy, e puxando uma planilha (…) isso
 está gerando muito conflito (…) é importante a gente colocar logo o cadastro das
 pessoas dentro do ERP e começar a trabalhar nele."*
 
-**O diagnóstico inteiro está em `CADASTRO_DE_PESSOAS.md`, nesta pasta** — as
-três cópias que brigam, o que o ERP já tem, os campos e os fluxos que faltam, a
-ordem proposta em cinco fases e o risco de dado pessoal. **Ler de lá, não
-refazer.**
+**O apurado inteiro está em `CADASTRO_DE_PESSOAS.md`, nesta pasta** — e desde
+04/11/2026 ele já inclui a leitura dos DOIS PIPES e de TRÊS CENÁRIOS DO MAKE que
+o dono enviou: o que está morto, as gambiarras que o ERP resolve de graça, o
+cadastro campo por campo, os 28 tipos de solicitação com o destino de cada um, e
+as decisões que ele já tomou. **Ler de lá, não refazer.** Os campos dos pipes
+ficam versionados em `referencia_pipefy/`, porque o Pipefy vai morrer e depois
+disso não haverá outra descrição do que o DP coletava.
 
-**O que trava, e é do dono:** a estrutura dos dois pipes do Pipefy e o blueprint
-do cenário do Make (ele ofereceu colar), mais quatro decisões listadas no
-arquivo. Criar campo antes de ver os pipes é garantir migração refeita — 48 das
-78 colunas da planilha nunca foram mapeadas.
+**As decisões dele, para não serem perguntadas de novo:** Pipefy e planilha
+MORREM (e até lá o ERP passa a ALIMENTAR as planilhas de transporte/GM/diaristas
+— o sentido inverte); todos os pedidos vão para o DP; colaborador e prestador
+são UM cadastro só, mantendo CTPS/Prestador e o tipo de contrato como campos; e
+importa-se **só quem está ativo** (~575 pessoas, não 3.664 — os 2.960 desligados
+ficam na planilha como base morta).
+
+**O que ainda falta saber** (seção 7 do arquivo): os outros até 6 cenários do
+Make — em especial o que ESCREVE a linha nova na aba "Dados Documentos", porque
+nenhum dos três que vieram escreve; o conteúdo das tabelas do Pipefy (Cargos,
+Colaboradores, Desligados); e o destino dos cinco tipos de pedido que hoje são
+manuais.
 
 
 ### ✉️ A TELA MENSAGENS ENTROU NO ERP (05/10/2026) — feita pelo chat da Mensageria
