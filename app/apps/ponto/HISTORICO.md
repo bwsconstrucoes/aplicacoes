@@ -521,6 +521,7 @@ junto com o `README.md` e o `PLANO.md`.
   PDF de duas pessoas saiu com duas páginas, uma por pessoa (conferido gerando o PDF no navegador).
 - **Não verificado:** um PDF de 40 folhas num celular de verdade (o navegador do celular pode demorar para montar o
   arquivo).
+**Publicado em 05/11/2026** (com o "pode" do dono) — SEM MIGRAÇÃO.
 
 ## 05/11/2026 (segunda) — "Baixar o espelho" de um colaborador no ponto da obra dava "pessoa não encontrada"
 
