@@ -12244,6 +12244,22 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 251 — O MobPonto "forçado" a entender o feriado nacional (05/11/2026)
+
+- O dono confirmou o diagnóstico da leva 250 com o dado na mão: *"Dia 12/10/2026 é
+  feriado (…) depois do dia 16, que é o ponto que vem do ERP, o feriado está sendo
+  aplicado. O que não está é o da quinzena anterior, do MobPonto (…) Você consegue,
+  mesmo sendo MobPonto, forçar a entender que é feriado?"*
+- A leva 250 já tirava o feriado da lista de ausências dos AUXÍLIOS. Esta vai à fonte:
+  na LEITURA do MobPonto (`ponto._feriado_nacional_por_cima`, chamado por
+  `dias_por_cpf`, `dias_de_um_cpf` e `dias_da_pessoa`), o dia sem batida marcado como
+  falta num feriado NACIONAL do ponto passa a ser "Feriado" — em todas as telas da
+  folha (resumo do ponto, gestão, ficha do mês da pessoa), não só nos auxílios. O dia
+  ganha `feriado_forcado` com o nome do feriado.
+- Só o nacional nesta camada (dia sem batida não tem obra); estadual e municipal
+  continuam valendo nos auxílios, que sabem a obra da pessoa. Atestado, abono e quem
+  trabalhou no feriado ficam como vieram. Testes: `test_analisesps_ponto_feriado_mobponto.py`.
+
 #### Leva 250 — Feriado não é falta: o "Aplicar desconto" que aparecia em feriado (05/11/2026)
 
 > **Publicado em 05/11/2026.**
