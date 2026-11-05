@@ -257,6 +257,8 @@
 </p>
 {% endif %}
 
+{# As etiquetas "nas outras folhas" de cada pessoa (05/11/2026). #}
+{% with ano=cruzado[0], mes=cruzado[1], tela="avulso" %}{% include "_outras_folhas.html" %}{% endwith %}
 <div class="tabela-wrap">
   <div class="tabela-rolagem livre">
     <table class="sps" id="tabela-avulso">

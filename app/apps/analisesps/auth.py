@@ -615,6 +615,8 @@ TELA_DA_ROTA = {
     "analisesps.folha_feriados_levar_ao_ponto": ("folha",),
     # 05/11/2026: "Buscar agora" — os feriados das obras em andamento.
     "analisesps.folha_feriados_buscar": ("folha",),
+    # 05/11/2026: as etiquetas "nas outras folhas" de cada pessoa.
+    "analisesps.folha_outras_folhas": ("folha",),
     "analisesps.folha_ferias_gravar": ("folha",),
     "analisesps.folha_ferias_apagar": ("folha",),
     # A Listagem de Férias do Fortes (05/10/2026).
