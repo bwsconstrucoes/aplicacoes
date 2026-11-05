@@ -262,7 +262,15 @@ def _cnpj(bruto: str) -> str:
 def importar(s: Session, conteudo: bytes, *, gravar: bool,
              so_ativos: bool = True,
              usuario: Optional[Usuario] = None) -> dict[str, Any]:
-    linhas = ler_tabela(conteudo, colunas_esperadas=("CPF", "Nome Completo"))
+    # DUAS TENTATIVAS, de propósito. Na primeira, o cabeçalho é a linha que
+    # TRAZ a coluna do CPF — planilha de gente tem título, logotipo e filtro em
+    # cima da tabela, e a aba certa não é sempre a primeira. Se nenhuma linha
+    # tiver "CPF" escrito assim, cai no jeito antigo: primeira aba, primeira
+    # linha. Sem a segunda tentativa, um cabeçalho escrito "C.P.F." devolveria
+    # "a planilha veio vazia", que é a pior mensagem possível — não diz nada.
+    linhas = ler_tabela(conteudo, colunas_esperadas=("CPF",))
+    if not linhas or "cpf" not in _achar_colunas(linhas[0])[0]:
+        linhas = ler_tabela(conteudo) or linhas
     if not linhas:
         raise ErroValidacao("A planilha veio vazia.")
     achadas, sobraram = _achar_colunas(linhas[0])

@@ -398,3 +398,37 @@ def test_pis_que_ja_esta_em_outra_pessoa_do_erp_e_recusado(sessao_real, dono, ce
                      gravar=True, usuario=dono)
     assert r["criadas"] == 0
     assert "Jose Pereira Lima" in r["rejeitadas"][0]["motivo"]
+
+
+@banco_
+def test_planilha_excel_com_titulo_em_cima_da_tabela(sessao_real, dono, cenario):
+    """Planilha de gente tem título, logotipo e painel de filtro em cima da
+    tabela. Tomar a primeira linha como cabeçalho leria colunas chamadas
+    "Relatório de Colaboradores" e "" — e a importação inteira se perderia."""
+    import io
+
+    from openpyxl import Workbook
+    pasta = Workbook()
+    aba = pasta.active
+    aba.append(["RELATÓRIO DE COLABORADORES ATIVOS", None, None])
+    aba.append([None, None, None])
+    aba.append(["CPF", "Nome Completo", "Cargo"])
+    aba.append([CPF_A, "Maria da Silva Souza", "PEDREIRO"])
+    buf = io.BytesIO()
+    pasta.save(buf)
+    r = imp.importar(sessao_real, buf.getvalue(), gravar=True, usuario=dono)
+    assert r["criadas"] == 1 and r["rejeitadas"] == []
+
+
+@banco_
+def test_cabecalho_escrito_de_outro_jeito_nao_devolve_planilha_vazia(
+        sessao_real, dono, cenario):
+    """"A planilha veio vazia" é a pior mensagem possível: não diz nada. Quando
+    o cabeçalho não traz "CPF" escrito assim, a leitura cai no jeito antigo
+    (primeira aba, primeira linha) e o erro passa a DIZER o que leu."""
+    from app.apps.erp.core.comum.auditoria import ErroValidacao
+    with pytest.raises(ErroValidacao) as e:
+        imp.importar(sessao_real, "Documento;Nome\n123;Joao\n".encode("utf-8"),
+                     gravar=False, usuario=dono)
+    assert "coluna do CPF" in str(e.value)
+    assert "documento" in str(e.value).lower()
