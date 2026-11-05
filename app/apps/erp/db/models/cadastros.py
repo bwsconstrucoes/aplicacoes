@@ -1200,6 +1200,78 @@ class Funcao(Base):
     ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
 
+# ---------------------------------------------------------------------------
+# CARGO, CONVENÇÃO COLETIVA E O PISO (migração 085)
+#
+# Separados porque a planilha do Pipefy os juntava num texto só
+# ("PEDREIRO (CE-Fortaleza)") — 135 linhas para 63 cargos. Ver
+# `CADASTRO_DE_PESSOAS.md` e `core/cadastros/cargos.py`.
+# ---------------------------------------------------------------------------
+class Cargo(Base):
+    """O que a pessoa faz. Um por nome, com o CBO só em dígitos."""
+    __tablename__ = "cargos"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    nome: Mapped[str] = mapped_column(Text, nullable=False)
+    cbo: Mapped[Optional[str]] = mapped_column(Text)
+    descricao: Mapped[Optional[str]] = mapped_column(Text)
+    riscos: Mapped[Optional[str]] = mapped_column(Text)
+    epis: Mapped[Optional[str]] = mapped_column(Text)
+    ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    atualizado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Convencao(Base):
+    """O acordo coletivo que fixa o piso. "CE-Fortaleza", "Sem Convenção"."""
+    __tablename__ = "convencoes"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    nome: Mapped[str] = mapped_column(Text, nullable=False)
+    uf: Mapped[Optional[str]] = mapped_column(Text)
+    mes_data_base: Mapped[Optional[int]] = mapped_column(SmallInteger)
+    sindicato: Mapped[Optional[str]] = mapped_column(Text)
+    observacoes: Mapped[Optional[str]] = mapped_column(Text)
+    ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    atualizado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class CargoConvencao(Base):
+    """O cruzamento: o piso e a categoria deste cargo nesta convenção."""
+    __tablename__ = "cargo_convencao"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    cargo_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("cargos.id"), nullable=False)
+    convencao_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("convencoes.id"), nullable=False)
+    categoria: Mapped[Optional[str]] = mapped_column(Text)
+    salario_piso: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+    valor_diaria: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+    ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    ref_pipefy: Mapped[Optional[str]] = mapped_column(Text)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    atualizado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    cargo: Mapped[Cargo] = relationship()
+    convencao: Mapped[Convencao] = relationship()
+
+
+class CargoConvencaoSalario(Base):
+    """O histórico do piso. `vigencia_fim` nulo = é o piso de hoje."""
+    __tablename__ = "cargo_convencao_salarios"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    cargo_convencao_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("cargo_convencao.id"), nullable=False)
+    salario_piso: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    valor_diaria: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+    vigencia_inicio: Mapped[date] = mapped_column(Date, nullable=False)
+    vigencia_fim: Mapped[Optional[date]] = mapped_column(Date)
+    motivo: Mapped[Optional[str]] = mapped_column(Text)
+    usuario_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class Colaborador(Base):
     """Cadastro enxuto: o suficiente para pagar e para criticar o que se paga."""
     __tablename__ = "colaboradores"
@@ -1225,6 +1297,68 @@ class Colaborador(Base):
     situacao: Mapped[str] = mapped_column(Text, nullable=False, default="ATIVO")
     ref_pipefy: Mapped[Optional[str]] = mapped_column(Text)
     observacoes: Mapped[Optional[str]] = mapped_column(Text)
+
+    # ---- O CADASTRO COMPLETO (migrações 085 e 086). De onde vem cada campo:
+    # o cenário do Make "Cadastro de Colaboradores - Botão" escrevia as 74
+    # colunas da aba "Dados Documentos" a partir destes campos do pipe.
+    cargo_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("cargos.id"))
+    convencao_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("convencoes.id"))
+    data_nascimento: Mapped[Optional[date]] = mapped_column(Date)
+    sexo: Mapped[Optional[str]] = mapped_column(Text)
+    nome_mae: Mapped[Optional[str]] = mapped_column(Text)
+    nome_pai: Mapped[Optional[str]] = mapped_column(Text)
+    estado_civil: Mapped[Optional[str]] = mapped_column(Text)
+    escolaridade: Mapped[Optional[str]] = mapped_column(Text)
+    naturalidade: Mapped[Optional[str]] = mapped_column(Text)
+    naturalidade_uf: Mapped[Optional[str]] = mapped_column(Text)
+    rg: Mapped[Optional[str]] = mapped_column(Text)
+    rg_orgao: Mapped[Optional[str]] = mapped_column(Text)
+    rg_uf: Mapped[Optional[str]] = mapped_column(Text)
+    rg_emissao: Mapped[Optional[date]] = mapped_column(Date)
+    pis: Mapped[Optional[str]] = mapped_column(Text)
+    ctps_numero: Mapped[Optional[str]] = mapped_column(Text)
+    ctps_serie: Mapped[Optional[str]] = mapped_column(Text)
+    ctps_uf: Mapped[Optional[str]] = mapped_column(Text)
+    ctps_emissao: Mapped[Optional[date]] = mapped_column(Date)
+    ctps_digital: Mapped[Optional[bool]] = mapped_column(Boolean)
+    primeiro_emprego: Mapped[Optional[bool]] = mapped_column(Boolean)
+    cep: Mapped[Optional[str]] = mapped_column(Text)
+    logradouro: Mapped[Optional[str]] = mapped_column(Text)
+    numero_endereco: Mapped[Optional[str]] = mapped_column(Text)
+    complemento: Mapped[Optional[str]] = mapped_column(Text)
+    bairro: Mapped[Optional[str]] = mapped_column(Text)
+    municipio: Mapped[Optional[str]] = mapped_column(Text)
+    uf: Mapped[Optional[str]] = mapped_column(Text)
+    email: Mapped[Optional[str]] = mapped_column(Text)
+    vinculo: Mapped[Optional[str]] = mapped_column(Text)
+    tipo_contrato: Mapped[Optional[str]] = mapped_column(Text)
+    empresa_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("empresas.id"))
+    cnpj_admissao: Mapped[Optional[str]] = mapped_column(Text)
+    razao_social_pj: Mapped[Optional[str]] = mapped_column(Text)
+    cnpj_pj: Mapped[Optional[str]] = mapped_column(Text)
+    contrato_experiencia: Mapped[Optional[str]] = mapped_column(Text)
+    data_inicio: Mapped[Optional[date]] = mapped_column(Date)
+    salario: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+    mensalista: Mapped[Optional[bool]] = mapped_column(Boolean)
+    valor_mes: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+    categoria_alimentacao: Mapped[Optional[str]] = mapped_column(Text)
+    categoria_transporte: Mapped[Optional[str]] = mapped_column(Text)
+    meio_transporte: Mapped[Optional[str]] = mapped_column(Text)
+    recebe_gratificacao: Mapped[Optional[bool]] = mapped_column(Boolean)
+    valor_gratificacao: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+    parcela_unica: Mapped[Optional[bool]] = mapped_column(Boolean)
+    recebe_via_sp: Mapped[Optional[bool]] = mapped_column(Boolean)
+    cesta_basica_extra: Mapped[Optional[bool]] = mapped_column(Boolean)
+    vale_refeicao: Mapped[Optional[bool]] = mapped_column(Boolean)
+    adicional_transferencia: Mapped[Optional[bool]] = mapped_column(Boolean)
+    observacao_auxilio: Mapped[Optional[str]] = mapped_column(Text)
+    solicitar_salario_familia: Mapped[Optional[bool]] = mapped_column(Boolean)
+    requerente: Mapped[Optional[str]] = mapped_column(Text)
+    responsavel_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    id_fortes: Mapped[Optional[str]] = mapped_column(Text)
+    convencao_categoria: Mapped[Optional[str]] = mapped_column(Text)
+    aviso_previo: Mapped[Optional[date]] = mapped_column(Date)
+    ultimo_dia: Mapped[Optional[date]] = mapped_column(Date)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     atualizado_em: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now())
@@ -1596,3 +1730,84 @@ class ProcessoOficio(Base):
     criado_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
     criado_em: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now())
+
+
+# ---------------------------------------------------------------------------
+# DEPENDENTES E A HISTÓRIA DA PESSOA (migração 087)
+#
+# O Pipefy guardava dependente em 11 campos fixos (teto de 5 filhos) e não
+# guardava história nenhuma: readmitir sobrescrevia a admissão anterior, e
+# trocar prestador por CTPS apagava o período de prestador.
+# ---------------------------------------------------------------------------
+class ColaboradorDependente(Base):
+    __tablename__ = "colaborador_dependentes"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    colaborador_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("colaboradores.id"), nullable=False)
+    nome: Mapped[str] = mapped_column(Text, nullable=False)
+    parentesco: Mapped[str] = mapped_column(Text, nullable=False)
+    data_nascimento: Mapped[Optional[date]] = mapped_column(Date)
+    cpf: Mapped[Optional[str]] = mapped_column(Text)
+    salario_familia: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    dependente_ir: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    observacoes: Mapped[Optional[str]] = mapped_column(Text)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    atualizado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ColaboradorVinculo(Base):
+    """Cada passagem da pessoa pela empresa. `demissao` nulo = é a de hoje."""
+    __tablename__ = "colaborador_vinculos"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    colaborador_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("colaboradores.id"), nullable=False)
+    vinculo: Mapped[str] = mapped_column(Text, nullable=False)
+    tipo_contrato: Mapped[Optional[str]] = mapped_column(Text)
+    empresa_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("empresas.id"))
+    cnpj_admissao: Mapped[Optional[str]] = mapped_column(Text)
+    cargo_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("cargos.id"))
+    convencao_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("convencoes.id"))
+    obra_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("obras.id"))
+    salario: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+    matricula: Mapped[Optional[str]] = mapped_column(Text)
+    admissao: Mapped[date] = mapped_column(Date, nullable=False)
+    demissao: Mapped[Optional[date]] = mapped_column(Date)
+    aviso_previo: Mapped[Optional[date]] = mapped_column(Date)
+    ultimo_dia: Mapped[Optional[date]] = mapped_column(Date)
+    forma_desligamento: Mapped[Optional[str]] = mapped_column(Text)
+    motivo: Mapped[Optional[str]] = mapped_column(Text)
+    vinculo_anterior_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("colaborador_vinculos.id"))
+    usuario_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ColaboradorAlteracao(Base):
+    """Alteração de salário, cargo, obra ou convenção DESTA pessoa.
+
+    Diferente do histórico de piso (`CargoConvencaoSalario`): lá é o mínimo que
+    a convenção manda; aqui é o que esta pessoa recebe, e por quê.
+    """
+    __tablename__ = "colaborador_alteracoes"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    colaborador_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("colaboradores.id"), nullable=False)
+    vinculo_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("colaborador_vinculos.id"))
+    tipo: Mapped[str] = mapped_column(Text, nullable=False)
+    vigencia: Mapped[date] = mapped_column(Date, nullable=False)
+    cargo_de_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("cargos.id"))
+    cargo_para_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("cargos.id"))
+    convencao_de_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("convencoes.id"))
+    convencao_para_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("convencoes.id"))
+    obra_de_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("obras.id"))
+    obra_para_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("obras.id"))
+    salario_de: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+    salario_para: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+    motivo: Mapped[Optional[str]] = mapped_column(Text)
+    justificativa: Mapped[Optional[str]] = mapped_column(Text)
+    usuario_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
