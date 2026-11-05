@@ -21,7 +21,19 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
-### 👥 O CADASTRO DE PESSOAS VAI PARA DENTRO DO ERP — levantamento feito, implementação NÃO começou (04/11/2026)
+### ⚠️ MIGRAÇÕES 085, 086 e 087 — apertar "Aplicar atualizações do banco"
+
+Entraram em 05/11/2026 com o cadastro de pessoas. **Sem elas a tela de
+Colaboradores e a de Cargos respondem erro**, porque as colunas e as tabelas não
+existem. Nada do que já estava em produção quebra: `funcao_id`, `valor_diaria` e
+os auxílios continuam onde estavam, e o cargo novo entra AO LADO da função, não
+no lugar.
+
+- **085** cargos, convenções, o cruzamento e o histórico do piso;
+- **086** os ~55 campos de admissão no cadastro da pessoa;
+- **087** dependentes, vínculos com começo e fim, alterações de salário/cargo.
+
+### 👥 O CADASTRO DE PESSOAS VAI PARA DENTRO DO ERP — em construção (04 e 05/11/2026)
 
 O dono: *"a gente ainda está usando o Pipefy, e puxando uma planilha (…) isso
 está gerando muito conflito (…) é importante a gente colocar logo o cadastro das

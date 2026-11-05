@@ -248,15 +248,81 @@ VT, Veículo, Motocicleta, Bicicleta, Cartão), meio de transporte (4), chave Pi
 
 ---
 
-## 7. O QUE AINDA FALTA SABER
+## 7. O QUE JÁ FOI CONSTRUÍDO (05/11/2026)
 
-1. **Os outros até 6 cenários do Make** — em especial o que ESCREVE a linha nova
-   na aba "Dados Documentos". Sem ele, não sei o caminho completo do cadastro
-   novo até a folha.
-2. **As tabelas do Pipefy** (*Cargos*, *Colaboradores*, *Colaboradores
-   Desligados*) — o conteúdo delas, para o cadastro de cargo nascer preenchido.
-3. **Quais abas da planilha a folha realmente lê** hoje, e com que nome de
-   coluna — é o contrato que o ERP vai ter de honrar na fase 5. A Análise de SPs
-   já lê ~30 colunas e conhece os nomes; as outras 48 continuam sem mapa.
-4. **Os cinco tipos manuais** (Foto Relógio, Diversas, 2ª via de cartão,
-   Documentação Admissão): viram pedido no ERP ou saem?
+O dono: *"pode começar, mas não precisa ficar preso à fase 1. Entre no looping de
+produção."* Feito até aqui, **nada aplicado ao banco** (os botões continuam
+pendentes):
+
+| Migração | O que entrega |
+|---|---|
+| **085** | `cargos`, `convencoes` e o cruzamento `cargo_convencao`, com o piso em **histórico de vigência** |
+| **086** | os campos de admissão no cadastro da pessoa, lidos do mapa das 74 colunas |
+| **087** | dependentes **sem teto**, vínculos com começo e fim, alterações de salário e cargo com motivo |
+
+**Código:** `core/cadastros/cargos.py` (normalização e piso),
+`core/cadastros/pessoas.py` (cadastro, duplicado, readmissão, troca de vínculo,
+alteração), `core/importadores/cargos_planilha.py`, as rotas no `routes.py`, a
+ficha em abas no `erp_colaboradores.html` e a tela nova `erp_cargos.html`
+(aba Pessoal › Cargos e convenções).
+
+**A planilha de cargos rodada de verdade:** 135 linhas → **62 cargos × 13
+convenções**, 132 cruzamentos, 131 pisos abertos no histórico.
+
+**Dois defeitos achados fazendo:**
+
+1. **Meu, na normalização:** colapsar só espaço repetido deixava "MT- Mato
+   Grosso" e "MT-Mato Grosso" como duas convenções (deu 15 onde devia dar 13).
+   O espaço ao redor do hífen também colapsa agora — no código e no índice.
+2. **Meu, de sigilo, pego pela trava do repositório:** a rota do histórico de
+   piso ficou aberta a `ver_pessoal`, que alcança supervisor de obra e PARCEIRO
+   — ou seja, a tabela salarial da empresa ia para fora. Agora cargo **com
+   piso** exige `editar_colaboradores`, e a rota de opções manda a lista de
+   cargos **sem** salário.
+
+**O que a planilha de cargos tem de errado, e que virou aviso na importação:**
+CBO em cinco formatos (24 linhas com `715505.0`, que o Sheets converteu em
+número), `ALMOXARIFADO` onde era ALMOXARIFE, `PEDEEIRO` onde era PEDREIRO,
+`AUXILIAR DE ELETRICISTA` com o campo Cargo dizendo só `ELETRICISTA`, dois
+cargos com dois salários na mesma convenção, salário por extenso digitado com
+erro ("mil quinhetoss"), e as colunas Riscos e EPI existindo com **zero** linhas
+preenchidas.
+
+---
+
+## 8. O QUE AINDA FALTA SABER
+
+**RESOLVIDO em 05/11/2026** (o dono mandou o cenário do Botão e respondeu):
+
+- ✔ **O mapa das 74 colunas existe.** O cenário `Cadastro de Colaboradores -
+  Botão`, na ação `atualizarcadastro`, escreve a linha inteira da aba "Dados
+  Documentos" a partir dos campos do pipe. É o contrato que a folha lê, e está
+  transcrito na seção 4.
+- ✔ **A aba "Dados Documentos" não serve mais.** O dono: *"só servia pra gerar um
+  documento modelo, não nos serve mais."* Isso **encurta a fase 5**: não há
+  planilha para o ERP alimentar nesse caminho.
+- ✔ **Os cinco tipos manuais** são: *Foto Relógio de Ponto* (o ponto do ERP já
+  tira foto na batida), *Solicitações Diversas*, *Cartão Somapay 2ª Via*,
+  *Cartão Vale Transporte 2ª Via* e *Documentação Admissão*. Nenhum deles tem
+  rota em cenário nenhum do Make — o card é um recado e alguém faz à mão.
+- ✔ **Cargo e convenção são distintos**, e a planilha de cargos foi importada
+  (seção 7).
+
+**AINDA FALTA, e nada disso trava o que está sendo construído:**
+
+1. **O cenário `DP - Cadastro de Colaboradores - Card Movido`** — o dono disse
+   que é ele quem grava o cadastro novo na planilha. Depois do mapa das 74
+   colunas, ele deixou de ser indispensável: serve para **conferir** se a
+   criação escreve algo que a atualização não escreve.
+2. **O cenário de atualização** que ele mencionou (*"um cenário que existe no
+   make é um de atualização, mas acho que não interfere aqui"*) — o arquivo que
+   veio foi o do **Botão**, não esse. Provavelmente é o mesmo; vale confirmar.
+3. **As planilhas de folha que CONTINUAM vivas**: ele disse *"o ERP passa a
+   alimentar as planilhas de transporte, GM e diaristas"*. Se a aba "Dados
+   Documentos" morreu, **de onde essas planilhas vão ler?** Elas liam dela. É a
+   pergunta que decide a fase 5 — e a Análise de SPs, que copia
+   `analisesps.colaborador` daquela aba, também depende da resposta.
+4. **A tabela *Cargos* do Pipefy** — a planilha exportada resolveu o cadastro,
+   mas se a tabela tiver Riscos e EPI preenchidos (a exportação veio com as
+   colunas vazias), vale trazer.
+5. **Os cinco tipos manuais**: viram pedido no ERP ou saem de vez?

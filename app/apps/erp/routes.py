@@ -152,6 +152,10 @@ MODULOS = [
         "abas": [
             ("dc", "Despesas com colaborador", "erp.pagina_dc"),
             ("colaboradores", "Colaboradores", "erp.pagina_colaboradores"),
+            # Cargos e convenções (05/11/2026): a sub-base do cadastro. Aba
+            # própria porque o piso salarial muda por dissídio para TODA a
+            # gente de um cargo — é manutenção de tabela, não de pessoa.
+            ("cargos", "Cargos e convenções", "erp.pagina_cargos"),
         ],
     },
     {
@@ -215,7 +219,13 @@ ACOES_NA_TELA = ("administrar_insumos", "administrar_fornecedores", "comprar",
                  # Sem esta linha `pode.tocar_processo` chega indefinido ao
                  # template — e indefinido é falso, então a tela abriria só de
                  # leitura para todo mundo, sem erro nenhum para denunciar.
-                 "tocar_processo")
+                 "tocar_processo",
+                 # Cadastro de pessoas (05/11/2026): decide quem vê o cadastro
+                 # COMPLETO (endereço, RG, PIS, filiação, dependentes) e quem
+                 # desliga, readmite e registra alteração salarial. Mesmo motivo
+                 # da linha acima: sem ela a tela abre de leitura e ninguém
+                 # descobre por quê.
+                 "editar_colaboradores")
 
 # aba → módulo a que pertence
 _MODULO_DA_ABA = {aba[0]: m["chave"] for m in MODULOS for aba in m["abas"]}
@@ -867,6 +877,19 @@ def pagina_colaboradores():
         ve_pessoal = "PESSOAL" in sigilos_visiveis(_usuario_logado(_s))
     return render_template("erp_colaboradores.html", ve_pessoal=ve_pessoal,
                            **_contexto("colaboradores"))
+
+
+@bp.route("/erp/cargos")
+@login_obrigatorio
+@permissao("editar_colaboradores")
+def pagina_cargos():
+    """A tabela de cargos, convenções e pisos.
+
+    É `editar_colaboradores` e não `ver_pessoal` porque a tela mostra o PISO
+    SALARIAL de todos os cargos — a tabela de remuneração da empresa. Quem
+    lança despesa de colaborador não precisa dela.
+    """
+    return render_template("erp_cargos.html", **_contexto("cargos"))
 
 
 @bp.route("/erp/conciliacao")
@@ -10724,6 +10747,44 @@ def api_cargos_historico(cargo_convencao_id: int):
     with get_session() as s:
         return jsonify({"ok": True,
                         "historico": svc.historico_do_piso(s, cargo_convencao_id)})
+
+
+@bp.route("/erp/api/cargos/novo", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_cargos_novo():
+    """Cadastra o cargo numa convenção — criando os dois se não existirem.
+
+    A tela pede o NOME, não o id: quem está cadastrando o primeiro pedreiro não
+    deveria ter de cadastrar o cargo, depois a convenção, depois cruzar os dois.
+    A normalização cuida de não criar cargo repetido por caixa ou acento.
+    """
+    from app.apps.erp.core.cadastros import cargos as svc
+    from app.apps.erp.core.comum.auditoria import registrar_evento
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            cargo = svc.achar_ou_criar_cargo(s, d.get("cargo"), cbo=d.get("cbo"))
+            conv = svc.achar_ou_criar_convencao(s, d.get("convencao"))
+            cc = svc.cruzamento(s, cargo.id, conv.id, criar=True)
+            cc.categoria = svc.normalizar_categoria(d.get("categoria"))
+            if str(d.get("salario") or "").strip():
+                svc.definir_piso(s, cc.id, salario=d["salario"],
+                                 vigencia=_data_ou_nada(d.get("vigencia")),
+                                 valor_diaria=d.get("valor_diaria"),
+                                 motivo=d.get("motivo") or "cadastro pela tela",
+                                 usuario=usuario)
+            registrar_evento(s, "cargo_convencao", cc.id, "CRIADO",
+                             {"cargo": cargo.nome, "convencao": conv.nome},
+                             usuario.id)
+            s.commit()
+        return jsonify({"ok": True, "cargo_convencao_id": cc.id})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao cadastrar cargo na convenção")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
 @bp.route("/erp/api/cargos/importar", methods=["POST"])
