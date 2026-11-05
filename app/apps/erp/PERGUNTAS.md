@@ -1150,6 +1150,171 @@ O que ainda **não** responde:
   registrada como evento no histórico da obra, mas não existe consulta que leia
   o histórico; hoje só dá para abrir obra por obra.
 
+## 3q-bis. O CADASTRO DE PESSOAS dentro do ERP (05/11/2026)
+
+O cadastro saiu do Pipefy. Isto é o que passa a ser possível perguntar — e a
+maior parte **nunca foi respondível**, porque o dado vivia numa planilha de 78
+colunas sem histórico.
+
+**Sobre quem está cadastrado:**
+
+- OK **Quem está sem PIS, sem CTPS ou sem endereço completo?** (é a lista "o que
+  falta para admitir", calculada por pessoa; prestador não é cobrado de PIS nem
+  de CTPS)
+- OK **Quantas pessoas ativas temos, por vínculo e por tipo de contrato?** 🔒
+  (escopo por obra) ⚠️ ("ativo" = situação ATIVA e sem demissão já passada)
+- OK **Quem tem dependente no salário-família? Quantos dependentes no total?**
+  ⚠️ (salário-família e dependente de IR são marcas DIFERENTES — a resposta
+  precisa dizer qual das duas foi usada)
+- OK **Quem usa transporte coletivo para chegar à obra?** (o campo existe para
+  dimensionar o vale)
+- OK **Quem recebe transporte como "Cartão"?** ⚠️ (palavra decisiva: "Cartão"
+  quer dizer que NÃO se paga em dinheiro — somar o valor dessas pessoas no
+  pagamento é pagar duas vezes)
+
+**Sobre cargo, convenção e salário — tudo novo:**
+
+- OK **Qual o piso de PEDREIRO em cada convenção?** (o mesmo cargo tem 11 pisos
+  diferentes na base de hoje)
+- OK **Quem ganha ABAIXO do piso da convenção dele?** ⚠️ (depende da data: o
+  piso de 2025 não é o de 2026, e a resposta tem de usar o piso **vigente na
+  data** — é para isso que o histórico existe)
+- OK **Qual era o piso deste cargo em março do ano passado?** (confere a folha
+  de um mês fechado)
+- OK **Quem mudou de salário este ano, de quanto para quanto e por quê?**
+  (mérito, promoção, dissídio, enquadramento ou correção)
+- OK **Quem mudou de cargo e continuou com o mesmo salário?**
+- OK **Quais convenções têm data-base neste mês?** (é quando o piso muda, e hoje
+  ninguém é avisado)
+- FALTA **"Quanto a folha sobe se o dissídio de CE-Fortaleza der 5%?"** — a
+  conta é possível com o que existe, mas não há função escrita.
+
+**Sobre a história da pessoa — nada disso o Pipefy guardava:**
+
+- OK **Quantas vezes esta pessoa já trabalhou aqui?** (cada passagem é um
+  vínculo, e a readmissão aponta para a anterior)
+- OK **Quem foi readmitido este ano?**
+- OK **Quem era prestador e virou CTPS? Em que data?** ⚠️ (o período de
+  prestador continua valendo para o INSS — a resposta tem de dar as duas datas,
+  não só a atual)
+- OK **Quem saiu, quando e como?** (a pedido, fim de experiência, aviso
+  trabalhado ou indenizado)
+- OK **Quem está com aviso prévio correndo?**
+
+⚠️ **Palavra ambígua: "admissão".** Três datas convivem no cadastro, e elas
+divergem de propósito: **data de início** (quando a pessoa começou a trabalhar),
+**data de admissão** (o que vai na carteira) e a **admissão do vínculo atual**
+(que muda na readmissão e na troca de prestador para CTPS). Pergunta com
+"admissão" solta deve dizer qual.
+
+⚠️ **Palavra ambígua: "salário".** São três coisas: o **piso** da convenção (o
+mínimo do cargo), o **salário da pessoa** (que pode ser maior) e o **valor do
+mês** / **valor da diária** (como ela recebe). Somar os três é inventar número.
+
+⚠️ **Palavra ambígua: "cargo".** O cargo é um (PEDREIRO); a **categoria**
+(PROFISSIONAL, QUALIFICADO, SERVENTE) é o nível DENTRO da convenção e é ela que
+fixa o piso. Duas pessoas no mesmo cargo em convenções diferentes têm pisos
+diferentes — e isso é certo, não erro.
+
+**Sobre as etapas do cadastro e a contabilidade (05/11/2026):**
+
+- OK **Quais cadastros estão parados, em que etapa e há quantos dias?** 🔒
+  (escopo por obra) — é o quadro do Pipefy virado lista
+- OK **Quem está esperando a contabilidade?** (etapa *Na contabilidade*)
+- OK **Que pedidos à contabilidade estão atrasados, e há quantos dias?**
+- OK **Que retornos da contabilidade vieram com dado diferente do cadastro?**
+  (a divergência, campo por campo — ninguém conclui até alguém olhar)
+- OK **Quem foi admitido e ainda não tem ficha de registro?** ⚠️ (quer dizer
+  que o cadastro está concluído aqui dentro e a pessoa pode não existir no
+  eSocial — é o pior dos silêncios)
+- OK **Quem saiu e não tem documentação rescisória arquivada?**
+- OK **Quantas cobranças já foram mandadas neste pedido, e por quem?** (a
+  trilha separa o que foi gente do que foi o agente)
+- OK **Que rotinas do agente estão ligadas, e em que modo?**
+- FALTA **"Quanto tempo a contabilidade leva, em média, para cada tipo de
+  pedido?"** — os dados existem (pedido, envio, retorno), a conta não está
+  escrita. É o número que daria para negociar prazo com eles.
+- FALTA **"Este pedido já foi respondido no e-mail?"** — o ERP não lê caixa de
+  entrada. Quem registra o retorno é o DP.
+
+⚠️ **Palavra ambígua: "etapa" × "situação".** `situação` responde "esta pessoa
+está na empresa?" e manda na folha; `etapa` responde "o que falta fazer neste
+cadastro?" e manda na fila do DP. Pergunta com "status" solta tem de dizer qual
+— e confundir as duas foi exatamente o defeito do Pipefy.
+
+⚠️ **Palavra ambígua: "concluído".** *Cadastro* concluído é a etapa (não falta
+mais nada a fazer). *Pedido* concluído é o retorno da contabilidade conferido e
+arquivado. Dá para ter cadastro concluído com pedido aberto, e o contrário.
+
+**Sobre a folha lendo do ERP (05/11/2026):**
+
+- OK **Quem entra no pagamento deste mês, com cargo, obra, salário, diária,
+  auxílios e as datas?** 🔒 (é a leitura que a folha passa a usar; desligado
+  fica fora por padrão)
+- OK **Quem recebe transporte como "Cartão"?** ⚠️ (a palavra chega inteira —
+  "não paga em dinheiro" — porque tratar como valor foi o que pagou em dobro)
+- OK **Quantos dependentes de salário-família esta pessoa tem?** ⚠️ (é a marca
+  de salário-família, não a de dependente de IR — contar as duas pagaria a mais)
+- OK **O que está diferente entre a planilha e o ERP, hoje?** (a conferência da
+  importação, sem gravar, nos dias em que os dois mundos ficam vivos)
+- OK **Quem está ativo no ERP e não está na planilha?** (pode ser admissão nova
+  aqui, ou gente que saiu lá e continua ativa aqui — a segunda a folha pagaria)
+- FALTA **"Qual o total da folha deste mês pelo cadastro do ERP?"** — a soma
+  depende do ponto e das regras de cada auxílio, que hoje moram no Análise de
+  SPs. Vem quando as telas de pagamento migrarem.
+
+⚠️ **Palavra ambígua: "tipo" do colaborador.** A planilha tinha uma coluna
+"Tipo" que pode significar **o vínculo** (CTPS ou prestador) ou **a forma de
+pagamento** (diarista ou mensalista). A leitura manda as duas coisas separadas,
+de propósito — quem monta a folha escolhe, e a resposta tem de dizer qual usou.
+
+**Sobre os papéis da admissão (05/11/2026):**
+
+- OK **Quem está sem o comprovante de endereço, sem a foto ou sem o ASO?** 🔒
+  (a ficha lista os papéis que faltam, lendo o Arquivo; prestador não é cobrado
+  de CTPS)
+- OK **Esta pessoa tem todos os documentos de admissão arquivados?** 🔒
+- FALTA **"Quantas pessoas da obra X estão sem ASO?"** — a conta existe por
+  pessoa, não há tela que a mostre por obra.
+
+⚠️ **Palavra ambígua: "falta CTPS".** São duas coisas: o **número** da carteira
+(campo do cadastro) e a **imagem** dela (papel no Arquivo). A ficha mostra as
+duas listas separadas de propósito — uma é digitação que falta, a outra é papel
+que ninguém pediu à pessoa.
+
+**Sobre a importação da planilha do Pipefy (05/11/2026):**
+
+- OK **Quantas pessoas entraram na última importação, e quantas já existiam?**
+  (o relatório fica na tela no momento da importação)
+- OK **Quem está na planilha com dado diferente do que está no ERP?** (a
+  conferência lista a divergência de nome, matrícula e salário; nada é
+  sobrescrito)
+- OK **Que cargos a importação vai criar?** (aparecem na conferência ANTES de
+  gravar, para erro de digitação ser consertado na planilha)
+- OK **Que obras da planilha não existem no ERP?** (quem estava nelas entra sem
+  obra, e o relatório diz quem)
+- FALTA **"Quais das 575 pessoas ativas do Pipefy ainda NÃO estão no ERP?"** — a
+  resposta só existe depois da importação; hoje a comparação é feita por ela, e
+  não há tela que a mostre depois.
+- FALTA **"Quem entrou pela importação e quem foi cadastrado na tela?"** — não
+  há marca de origem no cadastro da pessoa. Se isso virar necessário para
+  auditoria, é uma coluna nova.
+
+⚠️ **Palavra ambígua: "importar".** São duas coisas diferentes: a **planilha de
+cargos** (que cria cargo, convenção e piso) e a **planilha de pessoas** (que
+cria gente). A de cargos tem de rodar primeiro, senão a pessoa entra sem piso —
+e a importação avisa isso linha por linha.
+
+⚠️ **O PIS repetido.** A planilha do Pipefy tem PIS digitado à mão, e repetido.
+A importação **recusa** a segunda pessoa com o mesmo PIS e diz de quem é o
+outro cadastro — ela não escolhe qual está certo, porque adivinhar aqui erra o
+FGTS de alguém.
+
+🔒 **Tudo o que é dado pessoal** (endereço, RG, PIS, filiação, dependentes,
+salário) só responde para quem tem `editar_colaboradores` — hoje ADMIN, diretor
+financeiro e DP. Quem tem apenas `ver_pessoal` recebe nome, obra, função e
+situação, que é o que já via.
+
 ## 3o-bis. Documento corrigido e documento excluído (23/09/2026)
 
 Pedido do dono, olhando os documentos de uma obra: *"caso eu adicione um

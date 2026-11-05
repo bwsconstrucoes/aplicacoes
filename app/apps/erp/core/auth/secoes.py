@@ -158,6 +158,20 @@ SECOES: list[dict[str, Any]] = [
     {"chave": "pes_colaboradores", "area": "Pessoal", "nome": "Colaboradores",
      "explicacao": "o cadastro das pessoas da obra",
      "ler": ["ver_pessoal"], "editar": ["editar_colaboradores"]},
+    # LER = abrir pedido e acompanhar o que abriu; EDITAR = atender e recusar.
+    # É a divisão que o pipe fazia na mão, com um checklist chamado "você não
+    # possui autorização para esta solicitação".
+    {"chave": "pes_solicitacoes", "area": "Pessoal", "nome": "Solicitações ao DP",
+     "explicacao": "desligamento, readmissão, dependente, ajuda de custo, VT",
+     "ler": ["solicitar_dp"], "editar": ["atender_dp"]},
+    # LER = acompanhar o pedido que nasceu da requisição da obra — é o que
+    # acaba com o "e aí, saiu?" por WhatsApp. EDITAR = pedir, cobrar, conferir o
+    # retorno e ligar as rotinas do agente.
+    {"chave": "pes_contabilidade", "area": "Pessoal",
+     "nome": "Contabilidade e agente",
+     "explicacao": "pedidos formais à contabilidade, cobrança de prazo e as "
+                   "rotinas do agente de DP",
+     "ler": ["ver_pessoal"], "editar": ["pedir_contabilidade"]},
     # --------------------------------------------------------- Suprimentos
     {"chave": "sup_solicitar", "area": "Suprimentos", "nome": "Solicitações de material",
      "explicacao": "pedir material para a obra",

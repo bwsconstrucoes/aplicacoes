@@ -1,0 +1,265 @@
+{% extends "erp_base.html" %}
+{% block titulo %}Cargos e convenções — ERP BWS{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+{% block conteudo %}
+<h2>Cargos e convenções <small>o cargo é um; o piso é do cruzamento com a convenção</small></h2>
+<div id="mensagem"></div>
+
+{# POR QUE ESTA TELA EXISTE, dito para quem abre pela primeira vez. A planilha
+   que ela substitui juntava as duas coisas num texto ("PEDREIRO (CE-Fortaleza)")
+   e tinha 135 linhas para 63 cargos. #}
+<div class="cartao-dica" style="margin-bottom:12px">
+  <b>Cargo</b> é o que a pessoa faz — PEDREIRO, e tem um CBO.
+  <b>Convenção</b> é o acordo que fixa o piso — CE-Fortaleza, BA-Sobradinho.
+  O <b>piso</b> é do cruzamento dos dois: PEDREIRO em CE-Fortaleza não ganha o
+  mesmo que em MA-Imperatriz. E o piso tem <b>histórico</b>, porque convenção tem
+  data-base: a folha de um mês passado confere com o piso que valia naquele mês.
+</div>
+
+<div class="cartao">
+  <div class="tabela-barra" style="padding:0">
+    <input id="busca" placeholder="cargo, convenção ou CBO…" style="padding:7px 10px;
+      border:1px solid var(--borda-forte); border-radius:8px; min-width:260px">
+    <select id="f-convencao" style="min-width:190px"><option value="">todas as convenções</option></select>
+    <label class="opcao" style="margin:0"><input type="checkbox" id="f-todos">
+      <span class="rotulo">Incluir inativos</span></label>
+    <span class="espaco"></span>
+    <span id="exportar" style="display:flex; gap:6px"></span>
+    <button class="btn secundario" id="btn-importar">Importar a planilha</button>
+    <button class="btn amarelo" id="btn-novo">+ Cargo na convenção</button>
+  </div>
+</div>
+
+<div class="kpis" id="kpis" style="margin-bottom:12px"></div>
+
+<div class="tabela-wrap"><div class="tabela-rolagem">
+  <table><thead><tr><th>Cargo</th><th>CBO</th><th>Convenção</th><th>Categoria</th>
+    <th class="direita">Piso</th><th class="direita">Diária</th><th></th></tr></thead>
+    <tbody id="corpo"></tbody></table>
+</div><div class="vazio oculto" id="vazio"></div></div>
+
+<dialog id="dlg"><div class="dlg-topo"><h3 id="dlg-titulo">—</h3>
+  <button class="topo-btn" style="margin-left:auto" onclick="els('dlg').close()">Fechar</button></div>
+  <div class="dlg-corpo" id="dlg-corpo"></div></dialog>
+{% endblock %}
+{% block scripts %}
+<script>
+let DADOS = {cruzamentos: [], cargos: [], convencoes: [], categorias: []};
+
+async function carregar(){
+  try {
+    DADOS = await api(`/erp/api/cargos${els("f-todos").checked ? "?todos=1" : ""}`);
+  } catch(e){ aviso("mensagem", e.message, "erro"); return; }
+  const sel = els("f-convencao"), antes = sel.value;
+  sel.innerHTML = `<option value="">todas as convenções</option>`
+    + DADOS.convencoes.map(c => `<option value="${c.id}">${escapar(c.nome)}</option>`).join("");
+  sel.value = antes;
+  desenhar();
+}
+
+function visiveis(){
+  const b = (els("busca").value || "").toLowerCase().trim();
+  const conv = els("f-convencao").value;
+  return (DADOS.cruzamentos || []).filter(x => {
+    if (conv && String(x.convencao_id) !== conv) return false;
+    if (b && !`${x.cargo} ${x.convencao} ${x.cbo} ${x.categoria}`.toLowerCase().includes(b)) return false;
+    return true;
+  });
+}
+
+function desenhar(){
+  const l = visiveis();
+  const semPiso = l.filter(x => !x.salario_piso).length;
+  els("kpis").innerHTML = `
+    <div class="kpi estatico"><div class="kpi-rotulo">Cargos</div>
+      <div class="kpi-valor">${DADOS.cargos.length}</div>
+      <div class="kpi-sub">nomes distintos</div></div>
+    <div class="kpi estatico ciano"><div class="kpi-rotulo">Convenções</div>
+      <div class="kpi-valor">${DADOS.convencoes.length}</div></div>
+    <div class="kpi estatico"><div class="kpi-rotulo">Cruzamentos</div>
+      <div class="kpi-valor">${l.length}</div>
+      <div class="kpi-sub">cargo × convenção</div></div>
+    <div class="kpi estatico ${semPiso ? "ambar" : ""}"><div class="kpi-rotulo">Sem piso</div>
+      <div class="kpi-valor">${semPiso}</div>
+      <div class="kpi-sub">a folha não confere</div></div>`;
+  els("vazio").classList.toggle("oculto", l.length > 0);
+  if (!l.length) els("vazio").innerHTML =
+    "<b>Nenhum cargo nestes filtros</b>Importe a planilha ou cadastre o primeiro.";
+  els("corpo").innerHTML = l.map(x => `<tr>
+    <td><b>${escapar(x.cargo)}</b>${x.ativo ? "" : "<small>inativo</small>"}</td>
+    <td class="dados">${escapar(x.cbo || "—")}</td>
+    <td>${escapar(x.convencao)}</td>
+    <td>${escapar(x.categoria || "—")}</td>
+    <td class="direita dados">${x.salario_piso ? numero(x.salario_piso)
+      : "<span class='selo bloqueado'>falta</span>"}</td>
+    <td class="direita dados">${x.valor_diaria ? numero(x.valor_diaria) : "—"}</td>
+    <td style="white-space:nowrap">
+      <button class="btn secundario" data-piso="${x.id}">Mudar o piso</button>
+      <button class="link-btn" data-hist="${x.id}">Histórico</button></td>
+  </tr>`).join("");
+  els("corpo").querySelectorAll("[data-piso]").forEach(b =>
+    b.addEventListener("click", () => mudarPiso(+b.dataset.piso)));
+  els("corpo").querySelectorAll("[data-hist]").forEach(b =>
+    b.addEventListener("click", () => verHistorico(+b.dataset.hist)));
+}
+
+function doId(id){ return (DADOS.cruzamentos || []).find(x => x.id === id) || {}; }
+
+async function mudarPiso(id){
+  const x = doId(id);
+  const r = await perguntar({
+    titulo: `Piso de ${x.cargo} — ${x.convencao}`,
+    aviso: x.salario_piso
+      ? `Hoje o piso é ${moeda(x.salario_piso)}. O valor novo ABRE uma linha no `
+        + "histórico e fecha a anterior na data que você informar — o piso antigo "
+        + "continua valendo para os meses já fechados."
+      : "Este cruzamento ainda não tem piso. Sem ele, a folha não tem com o que conferir.",
+    textoOk: "Gravar o piso",
+    campos: [
+      {nome: "salario", rotulo: "Piso salarial", obrigatorio: true, exemplo: "2.230,00"},
+      {nome: "vigencia", rotulo: "A partir de", tipo: "date"},
+      {nome: "valor_diaria", rotulo: "Valor da diária", exemplo: "180,00"},
+      {nome: "motivo", rotulo: "Motivo", largura: 6, exemplo: "dissídio 2026"},
+    ]});
+  if (!r) return;
+  try {
+    await api("/erp/api/cargos/piso", {method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({cargo_convencao_id: id, ...r})});
+    aviso("mensagem", `Piso de ${x.cargo} (${x.convencao}) atualizado.`, "ok");
+    carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+async function verHistorico(id){
+  const x = doId(id);
+  let h = [];
+  try { h = (await api(`/erp/api/cargos/${id}/historico`)).historico; }
+  catch(e){ aviso("mensagem", e.message, "erro"); return; }
+  els("dlg-titulo").textContent = `${x.cargo} — ${x.convencao}`;
+  els("dlg-corpo").innerHTML = `
+    <div class="cartao-dica">Cada linha é o piso que valia num período. É o que
+      permite conferir a folha de um mês antigo com o piso daquele mês.</div>
+    <table><thead><tr><th>De</th><th>Até</th><th class="direita">Piso</th>
+      <th class="direita">Diária</th><th>Motivo</th></tr></thead>
+      <tbody>${h.map(l => `<tr>
+        <td class="dados">${dataBR(l.vigencia_inicio)}</td>
+        <td class="dados">${l.vigente ? "<span class='selo aprovado'>vigente</span>"
+                                      : dataBR(l.vigencia_fim)}</td>
+        <td class="direita dados">${numero(l.salario_piso)}</td>
+        <td class="direita dados">${l.valor_diaria ? numero(l.valor_diaria) : "—"}</td>
+        <td><small>${escapar(l.motivo || "")}</small></td></tr>`).join("")
+        || `<tr><td colspan="5" class="cartao-dica">Nenhum piso registrado.</td></tr>`}
+      </tbody></table>`;
+  els("dlg").showModal();
+}
+
+async function novoCruzamento(){
+  const r = await perguntar({
+    titulo: "Cargo numa convenção",
+    aviso: "Se o cargo ou a convenção ainda não existem, basta escrever o nome: "
+         + "eles são criados junto.",
+    textoOk: "Cadastrar",
+    campos: [
+      {nome: "cargo", rotulo: "Cargo", obrigatorio: true, largura: 3, exemplo: "PEDREIRO"},
+      {nome: "cbo", rotulo: "CBO", largura: 3, exemplo: "7152-10",
+       dica: "Pode colar com ou sem o traço — o sistema guarda só os dígitos."},
+      {nome: "convencao", rotulo: "Convenção", obrigatorio: true, largura: 3,
+       exemplo: "CE-Fortaleza"},
+      {nome: "categoria", rotulo: "Categoria na convenção", tipo: "select", largura: 3,
+       opcoes: [{valor: "", rotulo: "—"}].concat(
+         (DADOS.categorias || []).map(c => ({valor: c, rotulo: c})))},
+      {nome: "salario", rotulo: "Piso salarial", largura: 3, exemplo: "2.230,00"},
+      {nome: "valor_diaria", rotulo: "Valor da diária", largura: 3, exemplo: "180,00"},
+    ]});
+  if (!r) return;
+  try {
+    await api("/erp/api/cargos/novo", {method: "POST",
+      headers: {"Content-Type": "application/json"}, body: JSON.stringify(r)});
+    aviso("mensagem", `${r.cargo} cadastrado em ${r.convencao}.`, "ok");
+    carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+// A IMPORTAÇÃO SIMULA ANTES. Cadastro base roda uma vez e todo mundo vê depois:
+// o relatório mostra o que vai acontecer, com os avisos, e só então grava.
+function abrirImportacao(){
+  els("dlg-titulo").textContent = "Importar a planilha de cargos";
+  els("dlg-corpo").innerHTML = `
+    <div class="cartao-dica">A planilha exportada do Pipefy ("Cargo e Convenção").
+      O sistema <b>separa</b> cargo de convenção, junta as grafias diferentes da mesma
+      convenção e conserta o CBO. O que ele <b>não</b> adivinha — nome com erro de
+      digitação e cargo com dois salários — vira aviso para você decidir.</div>
+    <div class="form-grade">
+      <div class="campo" style="grid-column:span 3"><label>Planilha (.xlsx ou .csv)</label>
+        <input type="file" id="imp-arq" accept=".xlsx,.csv"></div>
+      <div class="campo"><label>Vigência dos pisos</label>
+        <input type="date" id="imp-vig"></div>
+    </div>
+    <div style="margin-top:12px; display:flex; gap:8px">
+      <button class="btn secundario" id="imp-conferir">Conferir sem gravar</button>
+      <button class="btn" id="imp-gravar" disabled>Gravar</button>
+    </div>
+    <div id="imp-msg" style="margin-top:10px"></div>
+    <div id="imp-rel"></div>`;
+  els("imp-conferir").addEventListener("click", () => importar(false));
+  els("imp-gravar").addEventListener("click", () => importar(true));
+  els("dlg").showModal();
+}
+
+async function importar(gravar){
+  const arq = els("imp-arq").files[0];
+  if (!arq) { aviso("imp-msg", "Escolha a planilha.", "erro"); return; }
+  const b = els(gravar ? "imp-gravar" : "imp-conferir");
+  b.disabled = true;
+  try {
+    const fd = new FormData();
+    fd.append("arquivo", arq);
+    fd.append("gravar", gravar ? "1" : "0");
+    if (els("imp-vig").value) fd.append("vigencia", els("imp-vig").value);
+    const {relatorio: r} = await api("/erp/api/cargos/importar", {method: "POST", body: fd});
+    els("imp-rel").innerHTML = `
+      <div class="kpis" style="margin-top:10px">
+        <div class="kpi estatico"><div class="kpi-rotulo">Linhas lidas</div>
+          <div class="kpi-valor">${r.linhas}</div></div>
+        <div class="kpi estatico verde"><div class="kpi-rotulo">Cargos</div>
+          <div class="kpi-valor">${r.cargos_distintos}</div></div>
+        <div class="kpi estatico ciano"><div class="kpi-rotulo">Convenções</div>
+          <div class="kpi-valor">${r.convencoes_distintas}</div></div>
+        <div class="kpi estatico"><div class="kpi-rotulo">Cruzamentos</div>
+          <div class="kpi-valor">${r.cruzamentos}</div></div>
+        <div class="kpi estatico ${r.avisos.length ? "ambar" : ""}">
+          <div class="kpi-rotulo">Avisos</div><div class="kpi-valor">${r.avisos.length}</div>
+          <div class="kpi-sub">para você conferir</div></div>
+        <div class="kpi estatico ${r.erros.length ? "vermelho" : ""}">
+          <div class="kpi-rotulo">Erros</div><div class="kpi-valor">${r.erros.length}</div></div>
+      </div>
+      ${r.erros.length ? `<div class="aviso erro" style="margin-top:10px">
+        <b>Linhas que não entram:</b><br>${r.erros.map(escapar).join("<br>")}</div>` : ""}
+      ${r.avisos.length ? `<div style="margin-top:10px"><b>O que conferir na planilha
+        (${r.avisos.length})</b>
+        <div class="tabela-rolagem" style="max-height:300px"><table><tbody>
+        ${r.avisos.map(a => `<tr><td class="desc">${escapar(a)}</td></tr>`).join("")}
+        </tbody></table></div></div>` : ""}`;
+    if (gravar) {
+      aviso("imp-msg", `Gravado: ${r.cruzamentos_novos} cruzamento(s) novo(s), `
+        + `${r.cruzamentos_atualizados} atualizado(s), ${r.pisos_abertos} piso(s) no histórico.`, "ok");
+      carregar();
+    } else {
+      aviso("imp-msg", "Nada foi gravado — é só a conferência. Se estiver certo, "
+        + "aperte Gravar.", "info");
+      els("imp-gravar").disabled = false;
+    }
+  } catch(e){ aviso("imp-msg", e.message, "erro"); }
+  b.disabled = false;
+}
+
+els("btn-novo").addEventListener("click", novoCruzamento);
+els("btn-importar").addEventListener("click", abrirImportacao);
+els("busca").addEventListener("input", desenhar);
+els("f-convencao").addEventListener("change", desenhar);
+els("f-todos").addEventListener("change", carregar);
+carregar();
+botoesDeExportar("exportar");
+</script>
+{% endblock %}
