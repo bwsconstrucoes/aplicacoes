@@ -12246,6 +12246,8 @@ somente Solicitações de uma conta especifica"*.
 
 #### Leva 252 — As outras folhas da pessoa: etiquetas cruzadas nas telas da folha (05/11/2026)
 
+> **Publicado em 05/11/2026.**
+
 - *"Eu preciso fazer conversar as folhas de pagamento (…) enxergar dentro de despesa
   colaboradores uma informaçãozinha (…) quanto recebeu na folha da contabilidade,
   com alimentação, transporte, gratificados (…) isso vale para todos (…) o que vai
@@ -12282,6 +12284,8 @@ somente Solicitações de uma conta especifica"*.
   contabilidade, rota, e as seis fontes com banco de verdade).
 
 #### Leva 251 — O MobPonto "forçado" a entender o feriado nacional (05/11/2026)
+
+> **Publicado em 05/11/2026.**
 
 - O dono confirmou o diagnóstico da leva 250 com o dado na mão: *"Dia 12/10/2026 é
   feriado (…) depois do dia 16, que é o ponto que vem do ERP, o feriado está sendo
