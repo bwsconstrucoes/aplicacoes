@@ -146,7 +146,13 @@ def test_o_conjunto_de_rotas_publicas_e_pequeno_e_conhecido():
     não vai ter esse mesmo acesso. Ele precisa só entrar e preencher alguns
     dados, fazer uma requisição."*
 
-    **Públicas não quer dizer abertas.** A primeira linha de cada uma chama
+    `pagina_portal` é a TELA do portal (06/11/2026), e ela é pública de
+    propósito: é HTML sem dado nenhum dentro. Quem conferir quem é são as três
+    rotas de API que ela chama — e é isso que faz a página abrir no celular com
+    a sessão vencida e DIZER "entre pelo aplicativo", em vez de devolver um erro
+    técnico a quem está na obra.
+
+    **Públicas não quer dizer abertas.** A primeira linha de cada API chama
     `portal.quem_esta`, que exige a sessão do APLICATIVO DO PONTO (CPF + PIN) e
     responde 401 sem ela. O teste logo abaixo prova as três recusas sem sessão.
     Nenhuma delas aceita número de registro sem conferir o alcance de obra da
@@ -156,7 +162,7 @@ def test_o_conjunto_de_rotas_publicas_e_pequeno_e_conhecido():
         "erp.pagina_login", "erp.sair", "erp.health", "erp.api_agente_rodar",
         "erp.api_comprovantes_lote", "erp.manifesto_pwa", "erp.service_worker",
         "erp.api_portal_inicio", "erp.api_portal_abrir",
-        "erp.api_portal_devolver"}
+        "erp.api_portal_devolver", "erp.pagina_portal"}
 
 
 def test_o_portal_recusa_sem_a_sessao_do_aplicativo_do_ponto(app):

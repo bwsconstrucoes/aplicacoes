@@ -338,3 +338,85 @@ def test_cobrar_conta_a_cobranca_e_muda_a_situacao(sessao_real, dono, pessoa,
     minha = next(x for x in svc_portal.devolucoes_abertas(sessao_real)
                  if x["numero"] == r["numero"])
     assert minha["situacao"] == "COBRADA" and minha["cobrancas"] == 1
+
+
+@banco_
+def test_a_tela_do_portal_abre_sem_sessao_e_diz_o_que_fazer(sessao_real, app_real):
+    """A PÁGINA é pública e não traz dado nenhum: quem confere são as APIs. É
+    isso que faz ela abrir no celular com a sessão vencida e DIZER "entre pelo
+    aplicativo" — em vez de devolver erro técnico a quem está na obra."""
+    with app_real.test_client() as c:
+        r = c.get("/erp/portal")
+        assert r.status_code == 200
+        corpo = r.get_data(as_text=True)
+        assert "aplicativo do ponto" in corpo
+        assert "/ponto/app" in corpo
+
+
+@banco_
+def test_o_portal_so_deixa_pedir_por_quem_esta_ao_alcance(sessao_real, dono, pessoa):
+    """Quem não é administrativo de obra só pede por si mesmo — e não é
+    desconfiança: pedir pelo colega sem responder pela obra dele não existe no
+    processo."""
+    from app.apps.erp.core import portal as svc_portal
+    import app.apps.erp.core.portal as mod
+    monkey = {"eu": {"colaborador_id": pessoa.id, "nome": pessoa.nome,
+                     "cpf": pessoa.cpf, "obra_id": pessoa.obra_id,
+                     "pessoa": pessoa}}
+    original_quem, original_adm = mod.quem_esta, mod.e_administrativo_de_obra
+    mod.quem_esta = lambda s: monkey["eu"]
+    mod.e_administrativo_de_obra = lambda s, p: False
+    try:
+        lista = svc_portal.pessoas_ao_alcance(sessao_real)
+        assert [x["id"] for x in lista] == [pessoa.id]
+    finally:
+        mod.quem_esta, mod.e_administrativo_de_obra = original_quem, original_adm
+
+
+# ---------------------------------------------------------------------------
+# UM CADASTRO SÓ: as marcações do ponto dentro da ficha do ERP (06/11/2026)
+#
+# O dono: *"tem cadastro da pessoa, tem cadastro no ponto. Tem a tela de
+# visualizar pessoas num lado, no outro. Não deveria ser assim, né? A gente tem
+# que falar a mesma linguagem nos dois lados."*
+# ---------------------------------------------------------------------------
+@banco_
+def test_as_marcacoes_do_ponto_nunca_derrubam_a_ficha(sessao_real, dono, pessoa):
+    """Travar a ficha da pessoa porque o ponto não respondeu seria trocar um
+    problema pequeno por um grande. Sem o ponto no ar, a resposta diz o motivo
+    em português e a ficha abre igual."""
+    from app.apps.erp.core import portal as svc_portal
+    r = svc_portal.marcacoes_do_ponto(sessao_real, pessoa.id)
+    assert "disponivel" in r
+    if not r["disponivel"]:
+        assert len(r["motivo"]) > 10, "indisponível sem motivo escrito não serve"
+
+
+@banco_
+def test_o_ponto_dentro_de_pessoal_e_um_modulo_so(sessao_real):
+    """O menu junta as duas áreas, e as abas do ponto reapontam para Pessoal —
+    senão a tela do ponto abriria com o menu do Financeiro aceso."""
+    from app.apps.erp import routes as R
+    chaves = [m["chave"] for m in R.MODULOS]
+    assert "ponto" not in chaves, "o módulo Ponto tinha de ter sido absorvido"
+    pessoal = next(m for m in R.MODULOS if m["chave"] == "pessoal")
+    abas = [a[0] for a in pessoal["abas"]]
+    assert "colaboradores" in abas and "ponto_quadro" in abas
+    # A ORDEM é pelo dia a dia: o cadastro primeiro, o quadro do ponto em
+    # seguida — não a despesa, que era o que ficava na frente ao juntar na
+    # ordem de origem.
+    assert abas[0] == "colaboradores" and abas[1] == "ponto_quadro"
+    assert R._MODULO_DA_ABA.get("ponto_espelho") == "pessoal"
+    # E nenhuma aba ficou apontando para um módulo que não existe mais.
+    assert "ponto" not in set(R._MODULO_DA_ABA.values())
+
+
+@banco_
+def test_as_duas_telas_de_pessoas_ficam_com_nomes_diferentes(sessao_real):
+    """A tela de pessoas do ponto continua existindo (é de outra área e tem uso
+    próprio, a foto de cadastro), mas o nome passa a dizer QUAL das duas é."""
+    from app.apps.erp import routes as R
+    pessoal = next(m for m in R.MODULOS if m["chave"] == "pessoal")
+    nomes = {a[0]: a[1] for a in pessoal["abas"]}
+    assert nomes["ponto_pessoas"] == "Pessoas no ponto"
+    assert nomes["colaboradores"] == "Colaboradores"

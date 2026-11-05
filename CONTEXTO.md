@@ -802,6 +802,37 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 06/11/2026 — O Ponto passa a morar dentro de Pessoal (menu e cadastro)
+
+**Em ramo, não publicado.** Decisão do dono: *"a gente tem lá pessoal e tem
+ponto (…) tem cadastro da pessoa, tem cadastro no ponto (…) a gente tem que
+falar a mesma linguagem nos dois lados, afinal é a mesma empresa, é o mesmo
+ERP."*
+
+**Atravessa áreas, mas NÃO toca em arquivo de outra área.** A junção vive em
+`_juntar_ponto_com_pessoal()`, no fim de `app/apps/erp/routes.py`: as 13 abas do
+módulo "ponto" passam para "pessoal" (17 no total, ordenadas pelo dia a dia) e o
+mapa aba → módulo reaponta. O ponto continua se registrando como antes
+(`ponto/gestao.py`, `_registrar_no_menu`); quem reorganiza a lista é o ERP,
+porque o menu é dele. Protegida por `try`: se o ponto não carregar, o ERP sobe
+igual, com os dois módulos separados.
+
+**E a ficha da pessoa no ERP passa a ler e gravar as marcações do ponto**
+(`erp/core/portal.py`: `marcacoes_do_ponto`, `definir_marcacoes_do_ponto`),
+chamando `ponto/core/papeis.definir` e `ponto/core/acesso.diagnostico` — nunca a
+tabela `ponto.colaborador_config` por fora. Se a regra do ponto mudar, muda num
+lugar só.
+
+⚠️ **Uma rota pública nova**, `erp.pagina_portal` (`/erp/portal`): a TELA do
+portal da obra, servida pelo ERP. É HTML sem dado dentro; quem confere quem é
+são as três rotas de API do portal. Declarada em `_ENDPOINTS_PUBLICOS` e provada
+em `tests/test_permissoes_rotas.py`.
+
+⚠️ **`tests/test_telas_javascript.py` passou a separar dois tipos de tela:** a
+que herda do `erp_base.html` (não pode redeclarar `els`, `dataBR`…) e a
+**página solta** (tem de declarar os próprios ajudantes). O portal é a primeira
+página solta do ERP.
+
 ### 05/11/2026 — O ERP passa a RECEBER e-mail, e o portal da obra é o app do ponto
 
 **Em ramo, não publicado.** Duas decisões do dono que atravessam áreas, no dia

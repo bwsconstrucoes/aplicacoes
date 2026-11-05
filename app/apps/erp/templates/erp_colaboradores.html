@@ -444,8 +444,10 @@ async function pintarPontoDaPessoa(alvo){
       <a class="btn secundario" target="_blank" href="/erp/ponto/espelho">
         Abrir a tela do Ponto</a>
     </div>
+    <div id="fp-marcacoes"></div>
     <div id="fp-ponto-corpo"><div class="cartao-dica">Carregando o ponto…</div></div>`;
   els("fp-comp").addEventListener("change", () => pintarPontoDaPessoa(alvo));
+  pintarMarcacoesDoPonto();
   try {
     const e = await api(`/erp/api/ponto/espelho/${FICHA_ID}`
       + (comp ? `?competencia=${comp}` : ""));
@@ -476,6 +478,77 @@ async function pintarPontoDaPessoa(alvo){
   } catch(e){
     els("fp-ponto-corpo").innerHTML = `<div class="aviso alerta">
       Não consegui trazer o ponto desta pessoa: ${escapar(e.message)}</div>`;
+  }
+}
+
+// AS MARCAÇÕES DO PONTO, DENTRO DA FICHA DO ERP — é o fim dos dois cadastros.
+// A regra é do ponto: esta tela só mostra e manda marcar; quem valida e grava é
+// o módulo dele.
+async function pintarMarcacoesDoPonto(){
+  const alvo = els("fp-marcacoes");
+  if (!alvo) return;
+  try {
+    const {ponto: p} = await api(`/erp/api/colaboradores/${FICHA_ID}/ponto`);
+    if (!p.disponivel) {
+      alvo.innerHTML = `<div class="aviso" style="margin:8px 0">
+        <b>As marcações do ponto não estão disponíveis:</b> ${escapar(p.motivo||"")}</div>`;
+      return;
+    }
+    const a = p.acesso || {};
+    alvo.innerHTML = `
+      <div class="cartao" style="box-shadow:none; border:1px solid var(--borda);
+           border-left:4px solid var(--ciano); margin:8px 0">
+        <b>Cadastro no ponto</b>
+        <div class="cartao-dica">É o MESMO cadastro: estas marcações são as do
+          módulo do ponto, mostradas e alteradas aqui para você não precisar
+          abrir outra tela da mesma pessoa.</div>
+        <div class="form-grade" style="margin-top:8px">
+          <div class="campo"><label>Bate ponto</label>
+            <div class="dados" style="padding:6px 0">${p.bate_ponto ? "sim" : "não"}</div></div>
+          <div class="campo"><label>Entra no aplicativo</label>
+            <div class="dados" style="padding:6px 0">${p.entra_no_app ? "sim" : "não"}</div></div>
+          <div class="campo"><label>Responsável pelo ponto da obra</label>
+            <div class="dados" style="padding:6px 0">${
+              p.responsavel_pelo_ponto ? "sim" : "não"}</div></div>
+          <div class="campo"><label>Acesso ao aplicativo</label>
+            <div class="dados" style="padding:6px 0">${
+              a.tem_pin ? "PIN criado" : "sem PIN ainda"}
+              ${a.telefone ? `<small>${escapar(a.telefone)}
+                 (${escapar(a.origem_do_telefone||"")})</small>` : ""}</div></div>
+        </div>
+        ${(a.impede||[]).length ? `<div class="aviso alerta" style="margin-top:6px">
+          <b>O que impede o acesso:</b> ${a.impede.map(escapar).join("; ")}.</div>` : ""}
+        <div style="margin-top:8px; display:flex; gap:14px; flex-wrap:wrap">
+          <label class="opcao"><input type="checkbox" id="fp-adm"
+            ${p.administrativo_obra ? "checked" : ""} ${PODE_EDITAR ? "" : "disabled"}>
+            <span class="rotulo">É administrativo de obra
+              <small>consulta e pede pelas pessoas da obra, e usa o portal</small></span></label>
+          <label class="opcao"><input type="checkbox" id="fp-celular"
+            ${p.pede_no_celular ? "checked" : ""} ${PODE_EDITAR ? "" : "disabled"}>
+            <span class="rotulo">Pede pelo próprio celular
+              <small>atestado, ajuste e afastamento sem passar pela obra</small></span></label>
+        </div>
+        <div id="fp-marc-msg"></div>
+      </div>`;
+    if (PODE_EDITAR) {
+      ["fp-adm", "fp-celular"].forEach(id =>
+        els(id).addEventListener("change", salvarMarcacoesDoPonto));
+    }
+  } catch(e){
+    alvo.innerHTML = `<div class="aviso alerta" style="margin:8px 0">
+      Não consegui ler as marcações do ponto: ${escapar(e.message)}</div>`;
+  }
+}
+
+async function salvarMarcacoesDoPonto(){
+  try {
+    await api(`/erp/api/colaboradores/${FICHA_ID}/ponto`, {method: "POST",
+      body: JSON.stringify({administrativo_obra: els("fp-adm").checked,
+                            pede_no_celular: els("fp-celular").checked})});
+    aviso("fp-marc-msg", "Marcação salva no ponto.", "ok");
+  } catch(e){
+    aviso("fp-marc-msg", e.message, "erro");
+    pintarMarcacoesDoPonto();
   }
 }
 

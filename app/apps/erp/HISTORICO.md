@@ -160,6 +160,63 @@ Colaboradores, Desligados); e o destino dos cinco tipos de pedido que hoje são
 manuais.
 
 
+### 🔗 O PONTO PASSOU A MORAR DENTRO DE PESSOAL (06/11/2026)
+
+> *"a gente tem lá pessoal e tem ponto. Eu tô achando que já seria o momento de
+> integrar isso aí. (…) tem cadastro da pessoa, tem cadastro no ponto. Tem a
+> tela de visualizar pessoas num lado, no outro. Não deveria ser assim, né? A
+> gente tem que falar a mesma linguagem nos dois lados, afinal é a mesma
+> empresa, é o mesmo ERP."*
+
+**O MENU** — `_juntar_ponto_com_pessoal()`, no fim do `routes.py`. As 13 abas do
+ponto passam para a área **Pessoal** (17 no total), e a ordem é **pelo dia a
+dia**, não pela origem: Colaboradores, Quadro, Validações, Espelho, Hoje,
+Solicitações ao DP, Contabilidade, Despesas, e o resto atrás. Juntar na ordem
+de origem poria "Despesas com colaborador" na frente do Quadro.
+
+⚠️ **POR QUE ISSO VIVE NO ARQUIVO DO ERP e não no do ponto:** o menu é do ERP.
+O ponto se registra inserindo o módulo dele na lista (`ponto/gestao.py`,
+`_registrar_no_menu`); quem decide como a lista se organiza é o `routes.py`.
+Assim a junção **não tocou em nenhum arquivo da área do ponto** — e se o ponto
+não carregar, a função não faz nada e o ERP sobe igual. Nenhuma rota mudou,
+nenhuma permissão mudou: as telas do ponto continuam no mesmo endereço, só
+acendem "Pessoal" lá em cima.
+
+**A aba "Pessoas" do ponto virou "Pessoas no ponto"** — é a tela que ele apontou
+como duplicada. Ela continua existindo (é de outra área e tem uso próprio: a
+foto de cadastro), mas o nome passa a dizer qual das duas é.
+
+**O FIM DOS DOIS CADASTROS, que é a parte que importa:** a ficha da pessoa no
+ERP passa a **ler e gravar as marcações do ponto** — bate ponto, entra no
+aplicativo, é administrativo de obra, pede pelo próprio celular, tem PIN, e o
+que impede o acesso. Tudo pelas funções do PRÓPRIO ponto (`papeis.definir`,
+`acesso.diagnostico`), nunca pela tabela dele por fora: se a regra do ponto
+mudar, muda num lugar só. Ponto fora do ar devolve o motivo em português e a
+ficha abre igual — travar a ficha porque o ponto não respondeu seria trocar um
+problema pequeno por um grande.
+
+### 🚪 O PORTAL DA OBRA GANHOU TELA, E ELA É DO ERP (06/11/2026)
+
+Eu havia deixado a tela do portal pendente do chat do ponto. **Não precisava.**
+Ela é uma página só (`/erp/portal`), que **não usa o `erp_base.html`** — quem
+abre é gente de obra no celular, sem login do ERP, e o `erp_base` traria o menu
+de 17 telas e a sessão do ERP, nada disso existe ali.
+
+Faz as três coisas: **devolver documento** (primeiro na tela, porque é o que tem
+prazo), **abrir pedido** (os tipos e os campos vêm da API, nunca duplicados no
+JavaScript) e **acompanhar** o que a pessoa abriu. Sem a sessão do aplicativo do
+ponto, mostra "entre pelo aplicativo" com o link — nunca erro técnico.
+
+⚠️ **A trava das telas aprendeu uma coisa nova:** `test_telas_javascript.py`
+exigia que nenhuma tela redeclarasse os ajudantes da base (`els`, `dataBR`), o
+que é certo para quem herda do `erp_base`. A página solta é o contrário: ela
+**precisa** declarar os próprios. O teste agora separa as duas, e cobra de cada
+uma a regra dela.
+
+**O que ainda falta e é do chat do ponto:** um link para `/erp/portal` dentro do
+aplicativo. Sem ele o portal funciona (a pessoa pode salvar o endereço), mas com
+o link ela chega lá sem saber o endereço.
+
 ### 🧭 A TELA DE COLABORADORES VIROU FERRAMENTA DE GESTÃO (05/11/2026)
 
 Ele abriu a tela que eu havia entregado e cortou, com razão:

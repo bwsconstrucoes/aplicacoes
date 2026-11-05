@@ -116,7 +116,42 @@ def _declarados(codigo: str) -> set[str]:
 
 
 NOMES_DA_BASE = set().union(*(_declarados(_sem_jinja(b)) for b in _blocos(BASE)))
-TELAS = sorted(p for p in TEMPLATES.glob("erp_*.html") if p != BASE)
+
+
+def _estende_a_base(p: Path) -> bool:
+    """A tela herda do `erp_base.html`?
+
+    QUASE TODAS herdam, e para elas as travas deste arquivo valem. A exceção é
+    a PÁGINA SOLTA: o portal da obra (06/11/2026) é HTML inteiro, sem o menu e
+    sem a sessão do ERP, porque quem o abre é gente de obra sem login do ERP.
+    Nela não há base nenhuma para chocar — e exigir os ajudantes da base seria
+    exigir um arquivo que ela não carrega.
+    """
+    return "{% extends" in p.read_text(encoding="utf-8")[:400]
+
+
+TELAS = sorted(p for p in TEMPLATES.glob("erp_*.html")
+               if p != BASE and _estende_a_base(p))
+SOLTAS = sorted(p for p in TEMPLATES.glob("erp_*.html")
+                if p != BASE and not _estende_a_base(p))
+
+
+@pytest.mark.parametrize("tela", SOLTAS, ids=lambda p: p.name)
+def test_a_pagina_solta_traz_os_proprios_ajudantes(tela: Path):
+    """Página que não herda a base tem de declarar o que usa.
+
+    É o outro lado da moeda: a tela que herda não pode REDECLARAR `els`; a que
+    não herda é obrigada a DECLARAR. Sem isto, a página solta abriria com
+    "els is not defined" no console e em branco na tela — e quem a abre é gente
+    de obra no celular, que não vai abrir console nenhum.
+    """
+    codigo = "\n".join(_sem_jinja(b) for b in _blocos(tela))
+    declarados = _declarados(codigo)
+    for usado in ("els", "esc"):
+        if usado + "(" in codigo:
+            assert usado in declarados, (
+                f"{tela.name} usa `{usado}(` e não declara — a página abre em "
+                f"branco, porque ela não carrega os ajudantes da base.")
 
 
 def test_a_base_declara_os_ajudantes_que_as_telas_usam():

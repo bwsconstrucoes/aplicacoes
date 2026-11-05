@@ -1,30 +1,80 @@
 {% extends "erp_base.html" %}
 {% block titulo %}Solicitações ao DP — ERP BWS{% endblock %}
-{% block classe_corpo %}sem-filtros{% endblock %}
+
+{# FILTRO LATERAL, o padrão do ERP. Entrou em 06/11/2026, depois de ele cobrar
+   de novo: *"elas não têm filtragem no sidebar. Ou seja, a gente tem que,
+   conforme vinha conversando, tem que manter o padrão. Já alertei isso várias
+   vezes."* Ele está certo, e a cobrança foi minha culpa duas vezes: esta tela e
+   a de Contabilidade nasceram com barra em cima, fora do padrão. #}
+{% block filtros %}
+  <div class="filtros-cab">
+    <h2>Filtros</h2>
+    <button class="link-btn" id="btn-limpar">Limpar</button>
+  </div>
+  <div class="busca">
+    <span class="lupa">⌕</span>
+    <input id="f-busca" type="search" placeholder="número, pessoa, obra…">
+  </div>
+
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Situação</span>
+      <span class="seta">▾</span></button>
+    <div class="filtro-cont">
+      <label class="opcao"><input type="radio" name="sit" value="ABERTAS" checked>
+        <span class="rotulo">Só as abertas</span></label>
+      <label class="opcao"><input type="radio" name="sit" value="">
+        <span class="rotulo">Todas</span></label>
+      <label class="opcao"><input type="radio" name="sit" value="ATENDIDA">
+        <span class="rotulo">Atendidas</span></label>
+      <label class="opcao"><input type="radio" name="sit" value="RECUSADA">
+        <span class="rotulo">Recusadas</span></label>
+      <label class="opcao"><input type="radio" name="sit" value="CANCELADA">
+        <span class="rotulo">Canceladas</span></label>
+    </div>
+  </div>
+
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Tipo de pedido</span>
+      <span class="seta">▾</span></button>
+    <div class="filtro-cont" id="f-tipos"></div>
+  </div>
+
+  <div class="filtro">
+    <button class="filtro-cab" type="button"><span>O que está pendente</span>
+      <span class="seta">▾</span></button>
+    <div class="filtro-cont">
+      <label class="opcao"><input type="checkbox" id="f-sem-checklist">
+        <span class="rotulo">Checklist não começado</span></label>
+      <label class="opcao"><input type="checkbox" id="f-checklist-meio">
+        <span class="rotulo">Checklist pela metade</span></label>
+      <label class="opcao"><input type="checkbox" id="f-parada">
+        <span class="rotulo">Aberta há mais de 3 dias</span></label>
+    </div>
+  </div>
+
+  <div class="campo"><label>Obra</label><select id="f-obra"></select></div>
+  <div class="campo"><label>Quem pediu</label><select id="f-quem"></select></div>
+
+  <button class="btn amarelo" id="btn-nova" style="width:100%; margin-top:12px">
+    + Solicitação</button>
+{% endblock %}
+
 {% block conteudo %}
 <h2>Solicitações ao DP <small>o que a obra pede e o DP resolve</small></h2>
 <div id="mensagem"></div>
 
-<div class="cartao">
-  <div class="tabela-barra" style="padding:0">
-    <input id="busca" placeholder="número, pessoa ou obra…" style="padding:7px 10px;
-      border:1px solid var(--borda-forte); border-radius:8px; min-width:240px">
-    <select id="f-situacao" style="min-width:150px">
-      <option value="ABERTAS">só as abertas</option>
-      <option value="">todas</option>
-    </select>
-    <select id="f-tipo" style="min-width:210px"><option value="">todos os tipos</option></select>
-    <span class="espaco"></span>
-    <span id="exportar" style="display:flex; gap:6px"></span>
-    <button class="btn amarelo" id="btn-nova">+ Solicitação</button>
-  </div>
-</div>
-
 <div class="kpis" id="kpis" style="margin-bottom:12px"></div>
 
-<div class="tabela-wrap"><div class="tabela-rolagem">
+<div class="tabela-wrap">
+  <div class="tabela-barra">
+    <span id="resumo-lista" class="desc"></span>
+    <span class="espaco"></span>
+    <span id="exportar" style="display:flex; gap:6px"></span>
+  </div>
+  <div class="tabela-rolagem">
   <table><thead><tr><th>Nº</th><th>Tipo</th><th>Pessoa</th><th>Obra</th>
-    <th>Pediu</th><th>Quando</th><th>Checklist</th><th>Situação</th></tr></thead>
+    <th>Pediu</th><th>Quando</th><th>Parada</th><th>Checklist</th>
+    <th>Situação</th></tr></thead>
     <tbody id="corpo"></tbody></table>
 </div><div class="vazio oculto" id="vazio"></div></div>
 
@@ -40,23 +90,81 @@ const PODE_ATENDER = {{ 'true' if pode.atender_dp else 'false' }};
 let DADOS = {solicitacoes: [], tipos: [], indicadores: {}};
 let ABERTA = null;
 
+// A SITUAÇÃO é o único filtro que volta ao banco (a API recorta por ela). Todos
+// os outros recortam em memória: a lista já está aqui, e ir ao banco a cada
+// clique faria a tela piscar.
+function situacaoEscolhida(){
+  const r = document.querySelector("input[name=sit]:checked");
+  return r ? r.value : "ABERTAS";
+}
+
 async function carregar(){
   const q = new URLSearchParams();
-  if (els("f-situacao").value) q.set("situacao", els("f-situacao").value);
-  if (els("f-tipo").value) q.set("tipo", els("f-tipo").value);
+  const sit = situacaoEscolhida();
+  // "Atendidas", "Recusadas" e "Canceladas" vêm da lista inteira e são
+  // recortadas aqui — a API só conhece "abertas" e "todas".
+  if (sit === "ABERTAS") q.set("situacao", "ABERTAS");
   try { DADOS = await api(`/erp/api/dp/solicitacoes?${q}`); }
   catch(e){ aviso("mensagem", e.message, "erro"); return; }
-  const sel = els("f-tipo"), antes = sel.value;
-  sel.innerHTML = `<option value="">todos os tipos</option>`
-    + DADOS.tipos.map(t => `<option value="${t.valor}">${escapar(t.rotulo)}</option>`).join("");
-  sel.value = antes;
+  montarFiltrosLaterais();
   desenhar();
 }
 
+function montarFiltrosLaterais(){
+  // O TIPO vira lista de marcar, não caixinha: são onze tipos, e marcar dois ao
+  // mesmo tempo ("desligamento e readmissão") é o que o DP faz de verdade.
+  const marcados = new Set([...document.querySelectorAll("input[name=tipo]:checked")]
+    .map(i => i.value));
+  els("f-tipos").innerHTML = (DADOS.tipos || []).map(t => `
+    <label class="opcao"><input type="checkbox" name="tipo" value="${t.valor}"
+      ${marcados.has(t.valor) ? "checked" : ""}>
+      <span class="rotulo">${escapar(t.rotulo)}
+        <small data-conta-tipo="${t.valor}"></small></span></label>`).join("");
+  els("f-tipos").querySelectorAll("input[name=tipo]").forEach(i =>
+    i.addEventListener("change", desenhar));
+
+  const obras = [...new Set((DADOS.solicitacoes || [])
+    .map(x => x.obra).filter(Boolean))].sort();
+  const antesObra = els("f-obra").value;
+  els("f-obra").innerHTML = `<option value="">todas</option>`
+    + obras.map(o => `<option value="${escapar(o)}">${escapar(o)}</option>`).join("");
+  els("f-obra").value = antesObra;
+
+  const quem = [...new Set((DADOS.solicitacoes || [])
+    .map(x => x.solicitante).filter(Boolean))].sort();
+  const antesQuem = els("f-quem").value;
+  els("f-quem").innerHTML = `<option value="">qualquer um</option>`
+    + quem.map(q => `<option value="${escapar(q)}">${escapar(q)}</option>`).join("");
+  els("f-quem").value = antesQuem;
+}
+
+function diasAberta(x){
+  if (!x.criado_em) return 0;
+  return Math.floor((Date.now() - new Date(x.criado_em).getTime()) / 86400000);
+}
+
 function visiveis(){
-  const b = (els("busca").value || "").toLowerCase().trim();
-  return (DADOS.solicitacoes || []).filter(x => !b
-    || `${x.numero} ${x.pessoa} ${x.obra} ${x.tipo_rotulo}`.toLowerCase().includes(b));
+  const b = (els("f-busca").value || "").toLowerCase().trim();
+  const sit = situacaoEscolhida();
+  const tipos = new Set([...document.querySelectorAll("input[name=tipo]:checked")]
+    .map(i => i.value));
+  const obra = els("f-obra").value, quem = els("f-quem").value;
+  const ABERTAS = ["ABERTA", "EM_ANALISE"];
+  return (DADOS.solicitacoes || []).filter(x => {
+    if (b && !`${x.numero} ${x.pessoa||""} ${x.obra||""} ${x.tipo_rotulo}`
+              .toLowerCase().includes(b)) return false;
+    if (sit === "ABERTAS" && !ABERTAS.includes(x.situacao)) return false;
+    if (sit && sit !== "ABERTAS" && x.situacao !== sit) return false;
+    if (tipos.size && !tipos.has(x.tipo)) return false;
+    if (obra && x.obra !== obra) return false;
+    if (quem && x.solicitante !== quem) return false;
+    if (els("f-sem-checklist").checked && !(x.total_itens && !x.feitos)) return false;
+    if (els("f-checklist-meio").checked
+        && !(x.total_itens && x.feitos && x.feitos < x.total_itens)) return false;
+    if (els("f-parada").checked
+        && !(ABERTAS.includes(x.situacao) && diasAberta(x) > 3)) return false;
+    return true;
+  });
 }
 
 function desenhar(){
@@ -72,9 +180,18 @@ function desenhar(){
       <div class="kpi-valor">${i.atendidas || 0}</div></div>
     <div class="kpi estatico"><div class="kpi-rotulo">Recusadas</div>
       <div class="kpi-valor">${i.recusadas || 0}</div></div>`;
+  // A conta de cada tipo, dentro do filtro lateral.
+  els("f-tipos").querySelectorAll("[data-conta-tipo]").forEach(s => {
+    const n = l.filter(x => x.tipo === s.dataset.contaTipo).length;
+    s.textContent = n ? ` · ${n}` : "";
+  });
+  els("resumo-lista").textContent =
+    l.length === (DADOS.solicitacoes || []).length
+      ? `${l.length} pedido(s)`
+      : `${l.length} de ${(DADOS.solicitacoes || []).length} pedido(s)`;
   els("vazio").classList.toggle("oculto", l.length > 0);
   if (!l.length) els("vazio").innerHTML =
-    "<b>Nenhuma solicitação</b>Abra a primeira pelo botão acima.";
+    "<b>Nada neste recorte</b>Troque o filtro ao lado, ou use Limpar.";
   els("corpo").innerHTML = l.map(x => `<tr data-s="${x.id}" style="cursor:pointer">
     <td class="dados">${escapar(x.numero)}</td>
     <td><b>${escapar(x.tipo_rotulo)}</b></td>
@@ -82,6 +199,10 @@ function desenhar(){
     <td class="dados">${escapar(x.obra || "—")}</td>
     <td><small>${escapar(x.solicitante)}</small></td>
     <td class="dados">${dataBR(x.criado_em.slice(0, 10))}</td>
+    <td class="dados">${["ABERTA","EM_ANALISE"].includes(x.situacao)
+      ? (diasAberta(x) > 3 ? `<b class="aviso-texto">${diasAberta(x)} dias</b>`
+                           : `${diasAberta(x)} dia(s)`)
+      : "—"}</td>
     <td class="dados">${x.total_itens ? `${x.feitos}/${x.total_itens}` : "—"}</td>
     <td><span class="selo ${x.situacao === "ATENDIDA" ? "aprovado"
       : x.situacao === "RECUSADA" || x.situacao === "CANCELADA" ? "bloqueado"
@@ -311,8 +432,26 @@ async function novaSolicitacao(){
 }
 
 els("btn-nova").addEventListener("click", novaSolicitacao);
-els("busca").addEventListener("input", desenhar);
-["f-situacao", "f-tipo"].forEach(i => els(i).addEventListener("change", carregar));
+els("f-busca").addEventListener("input", desenhar);
+document.querySelectorAll("input[name=sit]").forEach(i =>
+  i.addEventListener("change", carregar));
+["f-obra", "f-quem"].forEach(i => els(i).addEventListener("change", desenhar));
+["f-sem-checklist", "f-checklist-meio", "f-parada"].forEach(i =>
+  els(i).addEventListener("change", desenhar));
+
+els("btn-limpar").addEventListener("click", () => {
+  els("f-busca").value = "";
+  ["f-obra", "f-quem"].forEach(i => els(i).value = "");
+  ["f-sem-checklist", "f-checklist-meio", "f-parada"].forEach(i =>
+    els(i).checked = false);
+  document.querySelectorAll("input[name=tipo]").forEach(i => i.checked = false);
+  document.querySelector("input[name=sit][value=ABERTAS]").checked = true;
+  carregar();
+});
+
+// As gavetas do filtro lateral abrem e fecham, como no resto do ERP.
+document.querySelectorAll(".filtro-cab").forEach(b =>
+  b.addEventListener("click", () => b.parentElement.classList.toggle("aberto")));
 carregar();
 botoesDeExportar("exportar");
 </script>

@@ -10955,6 +10955,24 @@ def api_cargos_importar():
 # rota que não usa o login do ERP — e a conferência de quem é acontece dentro,
 # na primeira linha de cada função.
 # ---------------------------------------------------------------------------
+@bp.route("/erp/portal")
+@permissao_publica("portal da obra: página própria, sem o menu nem o login do ERP")
+def pagina_portal():
+    """A TELA do portal, servida pelo próprio ERP.
+
+    Eu havia deixado isto pendente do chat do ponto, e não precisava: a página
+    é uma só, não usa o `erp_base.html` (que traria o menu de 18 telas e a
+    sessão do ERP, nada disso existe aqui) e se defende sozinha — sem a sessão
+    do aplicativo do ponto, ela mostra "entre pelo aplicativo" com o link, em
+    vez de um erro técnico.
+
+    Não confere nada aqui de propósito: quem confere são as três rotas de API
+    que a página chama, e elas respondem 401 antes de tocar no banco. Assim a
+    página abre no celular mesmo com a sessão vencida, e DIZ o que fazer.
+    """
+    return render_template("erp_portal.html")
+
+
 @bp.route("/erp/portal/api/inicio")
 @permissao_publica("portal da obra: quem entra é colaborador pelo app do ponto")
 def api_portal_inicio():
@@ -10973,6 +10991,8 @@ def api_portal_inicio():
                     s, eu["pessoa"]),
                 "obras": svc_portal.obras_que_alcanca(s, eu["pessoa"]),
                 "tipos": svc_portal.tipos(s),
+                "pessoas": svc_portal.pessoas_ao_alcance(s),
+                "obras_lista": svc_portal.obras_para_escolher(s),
                 "pedidos": svc_portal.meus_pedidos(s),
                 "devolucoes": svc_portal.minhas_devolucoes(s)})
     except svc_portal.SemAcesso as e:
@@ -11328,6 +11348,43 @@ def api_dp_triagem(solicitacao_id: int):
         return jsonify({"ok": False, "erro": str(e)}), 400
 
 
+@bp.route("/erp/api/colaboradores/<int:colaborador_id>/ponto",
+          methods=["GET", "POST"])
+@login_obrigatorio
+@permissao(GET="ver_pessoal", POST="editar_colaboradores")
+def api_colaborador_marcacoes_do_ponto(colaborador_id: int):
+    """As marcações do PONTO desta pessoa, dentro da ficha do ERP.
+
+    Um cadastro só (06/11/2026, dele: *"tem cadastro da pessoa, tem cadastro no
+    ponto (…) a gente tem que falar a mesma linguagem nos dois lados, afinal é
+    a mesma empresa, é o mesmo ERP"*). A leitura e a gravação chamam as funções
+    do próprio ponto — a regra é dele.
+    """
+    from app.apps.erp.core import portal as svc_portal
+    from app.apps.erp.core.auth.permissoes import exigir_colaborador_no_escopo
+    try:
+        with get_session() as s:
+            # `ver_pessoal` alcança supervisor de obra e administrativo de obra,
+            # que são presos a obra — então o número da pessoa tem de passar
+            # pelo escopo. Fora dele responde "não encontrado", nunca "sem
+            # permissão": varrer os números mapearia a equipe inteira.
+            exigir_colaborador_no_escopo(s, _usuario_logado(s), colaborador_id)
+            if request.method == "GET":
+                return jsonify({"ok": True, "ponto": svc_portal.marcacoes_do_ponto(
+                    s, colaborador_id)})
+            r = svc_portal.definir_marcacoes_do_ponto(
+                s, colaborador_id, request.get_json(silent=True) or {})
+            s.commit()
+            return jsonify({"ok": True, "ponto": r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
+    except Exception as e:
+        logger.exception("ERP: falha nas marcações do ponto")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
 @bp.route("/erp/api/colaboradores/fila")
 @login_obrigatorio
 @permissao("ver_pessoal")
@@ -11557,6 +11614,69 @@ try:
     from app.apps.ponto import gestao as _gestao_do_ponto  # noqa: F401,E402
 except Exception:  # noqa: BLE001
     logger.exception("ERP: a gestão do ponto não carregou; o ERP segue sem ela")
+
+
+def _juntar_ponto_com_pessoal() -> None:
+    """O PONTO PASSA A MORAR DENTRO DE PESSOAL (06/11/2026).
+
+    Pedido do dono, olhando os dois módulos lado a lado:
+
+    > *"a gente tem lá pessoal e tem ponto. Eu tô achando que já seria o momento
+    > de integrar isso aí. (…) tem cadastro da pessoa, tem cadastro no ponto.
+    > Tem a tela de visualizar pessoas num lado, no outro. Não deveria ser
+    > assim, né? A gente tem que falar a mesma linguagem nos dois lados, afinal
+    > é a mesma empresa, é o mesmo ERP."*
+
+    POR QUE AQUI E NÃO NO MÓDULO DO PONTO: o menu é do ERP. O ponto se registra
+    inserindo o módulo dele na lista; quem decide como a lista se organiza é
+    este arquivo. Assim a junção não mexe em nenhum arquivo da área do ponto —
+    e se o ponto não carregar, esta função não faz nada e o ERP sobe igual.
+
+    O QUE ELA FAZ, e só isto: move as abas do módulo "ponto" para o fim das
+    abas de "pessoal", apaga o módulo que ficou vazio e reaponta o mapa de
+    aba → módulo. Nenhuma rota muda, nenhuma permissão muda, nenhuma tela do
+    ponto é tocada: as telas dele continuam existindo no mesmo endereço, só
+    passam a acender a aba "Pessoal" lá em cima em vez de "Ponto".
+    """
+    pessoal = next((m for m in MODULOS if m["chave"] == "pessoal"), None)
+    ponto = next((m for m in MODULOS if m["chave"] == "ponto"), None)
+    if pessoal is None or ponto is None:
+        return
+    # A ORDEM É PELO DIA A DIA, não pela origem. Juntar e deixar as quatro do
+    # ERP na frente das treze do ponto poria "Despesas com colaborador" antes do
+    # "Quadro" do ponto — e quem abre esta área de manhã abre o quadro e o
+    # cadastro, não a despesa. A lista abaixo é a ordem desejada; o que não
+    # estiver nela entra depois, na ordem em que já estava.
+    ORDEM = ("colaboradores", "ponto_quadro", "ponto_pendencias", "ponto_espelho",
+             "ponto_hoje", "dp_solicitacoes", "dp_contabilidade", "dc",
+             "ponto_banco", "ponto_alertas")
+    juntas = list(pessoal["abas"]) + list(ponto["abas"])
+    # "PESSOAS" do ponto virou "Pessoas no ponto" (06/11/2026). É a tela que ele
+    # apontou como duplicada: *"tem a tela de visualizar pessoas num lado, no
+    # outro."* Ela continua existindo — é de outra área e tem uso próprio (a
+    # foto de cadastro) — mas o nome passa a dizer QUAL das duas é, em vez de
+    # duas abas "Pessoas"/"Colaboradores" sem diferença visível.
+    juntas = [(c, "Pessoas no ponto" if c == "ponto_pessoas" else n, r)
+              for c, n, r in juntas]
+    pessoal["abas"] = (
+        [a for chave in ORDEM for a in juntas if a[0] == chave]
+        + [a for a in juntas if a[0] not in ORDEM])
+    pessoal["descricao"] = ("Cadastro das pessoas, ponto eletrônico, pedidos ao "
+                            "DP e despesas com colaboradores")
+    MODULOS.remove(ponto)
+    _MODULO_DA_ABA.update({chave: "pessoal" for chave, _, _ in ponto["abas"]})
+    # As abas do ponto que não estão no menu (hoje nenhuma) também precisam
+    # reapontar, senão a tela delas abriria com o menu do Financeiro aceso.
+    for chave, valor in list(_MODULO_DA_ABA.items()):
+        if valor == "ponto":
+            _MODULO_DA_ABA[chave] = "pessoal"
+
+
+try:
+    _juntar_ponto_com_pessoal()
+except Exception:  # noqa: BLE001
+    logger.exception("ERP: não consegui juntar o Ponto com Pessoal; os dois "
+                     "módulos seguem separados no menu")
 
 # MENSAGERIA (05/10/2026) — a tela "Mensagens" (por onde cada aviso sai, teto
 # do WhatsApp, registro) entra do mesmo jeito: rotas em

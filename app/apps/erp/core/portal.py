@@ -504,3 +504,130 @@ def _telefones_da_obra(s: Session, devolucao_id: int) -> list[str]:
     if not alvos and linha["telefone"]:
         alvos.append(linha["telefone"])
     return [t for t in dict.fromkeys(alvos) if t]
+
+
+def pessoas_ao_alcance(s: Session) -> list[dict[str, Any]]:
+    """Por quem esta pessoa pode abrir pedido.
+
+    Para o administrativo de obra, a gente das obras que ele alcança. Para
+    qualquer outro, só ele mesmo — e isso não é restrição por desconfiança: é
+    que pedir pelo colega sem responder pela obra dele não existe no processo.
+    """
+    eu = quem_esta(s)
+    if not e_administrativo_de_obra(s, eu["pessoa"]):
+        return [{"id": eu["colaborador_id"], "nome": eu["nome"]}]
+    obras = obras_que_alcanca(s, eu["pessoa"])
+    if not obras:
+        return [{"id": eu["colaborador_id"], "nome": eu["nome"]}]
+    linhas = s.execute(text("""
+        SELECT id, nome FROM colaboradores
+         WHERE obra_id = ANY(:obras) AND situacao = 'ATIVO'
+         ORDER BY nome LIMIT 500"""), {"obras": obras}).mappings().all()
+    return [{"id": l["id"], "nome": l["nome"]} for l in linhas]
+
+
+def obras_para_escolher(s: Session) -> list[dict[str, Any]]:
+    """As obras que aparecem na caixinha do pedido — só as que ela alcança."""
+    eu = quem_esta(s)
+    obras = obras_que_alcanca(s, eu["pessoa"])
+    if not obras:
+        return []
+    linhas = s.execute(text("""
+        SELECT id, codigo, nome FROM obras WHERE id = ANY(:obras)
+         ORDER BY codigo"""), {"obras": obras}).mappings().all()
+    return [{"id": l["id"], "codigo": l["codigo"], "nome": l["nome"]} for l in linhas]
+
+
+# ---------------------------------------------------------------------------
+# UM CADASTRO SÓ: as marcações do PONTO dentro da ficha do ERP
+#
+# O dono, em 06/11/2026: *"tem cadastro da pessoa, tem cadastro no ponto. Tem a
+# tela de visualizar pessoas num lado, no outro. Não deveria ser assim, né? A
+# gente tem que falar a mesma linguagem nos dois lados, afinal é a mesma
+# empresa, é o mesmo ERP."*
+#
+# Então a ficha do ERP passa a LER e ESCREVER as marcações do ponto — chamando
+# as funções do próprio ponto, nunca a tabela dele por fora. Se a regra do
+# ponto mudar, muda num lugar só; e se o módulo do ponto não estiver no ar, a
+# ficha diz isso em vez de mostrar marcação errada.
+# ---------------------------------------------------------------------------
+def marcacoes_do_ponto(s: Session, colaborador_id: int) -> dict[str, Any]:
+    """O que o PONTO sabe desta pessoa, para a ficha mostrar junto.
+
+    Nunca levanta: ponto fora do ar devolve `disponivel: False` e a ficha mostra
+    o aviso. Travar a ficha da pessoa porque o ponto não respondeu seria trocar
+    um problema pequeno por um grande.
+    """
+    try:
+        from app.apps.ponto import db as ponto_db
+        from app.apps.ponto.core import acesso, cadastros, papeis
+    except Exception as e:                              # noqa: BLE001
+        return {"disponivel": False, "motivo": f"o módulo do ponto não carregou: {e}"}
+    try:
+        with ponto_db.conexao() as conn:
+            if not papeis.disponivel(conn):
+                return {"disponivel": False,
+                        "motivo": "as atualizações do ponto ainda não foram aplicadas"}
+            pessoa = cadastros.colaborador_por_id(conn, colaborador_id)
+            if not pessoa:
+                return {"disponivel": False,
+                        "motivo": "esta pessoa ainda não aparece no ponto"}
+            saida = {
+                "disponivel": True,
+                "bate_ponto": bool(pessoa.get("ativo_no_ponto")),
+                "entra_no_app": bool(papeis.entra_no_app(conn, pessoa)),
+                "administrativo_obra": bool(papeis.e_administrativo(conn, pessoa)),
+                "pede_no_celular": bool(papeis.pede_pelo_proprio_celular(conn, pessoa)),
+                "responsavel_pelo_ponto": bool(
+                    papeis.responsavel_por_ponto_da_obra(conn, pessoa)),
+            }
+            try:
+                d = acesso.diagnostico(conn, colaborador_id)
+                saida["acesso"] = {
+                    "telefone": d.get("telefone", ""),
+                    "origem_do_telefone": d.get("origem", ""),
+                    "tem_pin": bool(d.get("tem_pin")),
+                    "impede": list(d.get("impede") or []),
+                }
+            except Exception:                           # noqa: BLE001
+                saida["acesso"] = None
+            return saida
+    except Exception as e:                              # noqa: BLE001
+        logger.warning("ERP/ficha: não li as marcações do ponto — %s", e)
+        return {"disponivel": False, "motivo": f"o ponto não respondeu: {e}"}
+
+
+def definir_marcacoes_do_ponto(s: Session, colaborador_id: int,
+                               dados: dict[str, Any]) -> dict[str, Any]:
+    """Grava as marcações do ponto a partir da ficha do ERP.
+
+    Chama `papeis.definir` do próprio ponto — a regra, a validação e a tabela
+    são dele. O ERP só passa o que a pessoa marcou na tela.
+    """
+    from app.apps.erp.core.comum.auditoria import registrar_evento
+
+    try:
+        from app.apps.ponto import db as ponto_db
+        from app.apps.ponto.core import papeis
+    except Exception as e:                              # noqa: BLE001
+        raise ErroValidacao(f"O módulo do ponto não está no ar: {e}") from e
+
+    def tri(chave: str):
+        """None quando a tela não mandou o campo — é o que faz `definir` manter
+        o valor que já estava, em vez de zerar o que ninguém mexeu."""
+        if chave not in dados:
+            return None
+        return bool(dados[chave])
+
+    with ponto_db.conexao() as conn:
+        try:
+            papeis.definir(conn, colaborador_id,
+                           pede_no_celular=tri("pede_no_celular"),
+                           administrativo_obra=tri("administrativo_obra"))
+        except Exception as e:                          # noqa: BLE001
+            raise ErroValidacao(str(e)) from e
+    registrar_evento(s, "colaborador", colaborador_id, "MARCACOES_DO_PONTO",
+                     {k: dados.get(k) for k in
+                      ("pede_no_celular", "administrativo_obra")}, None)
+    s.flush()
+    return marcacoes_do_ponto(s, colaborador_id)
