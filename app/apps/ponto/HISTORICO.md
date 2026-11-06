@@ -527,7 +527,7 @@ WhatsApp, por enquanto não**.
 - Testes: `test_ponto_assinatura_folha_banco.py` (mês aberto recusa; PIN errado recusa; assinada; o PDF abre no ERP; a
   recusa; reaberto e mudado, substituída e de volta à lista; a pendência por obra; o PDF e o lacre). E a tela no
   navegador, do menu até "✅ assinou".
-**COM A MIGRAÇÃO 027** — ao publicar, apertar "Aplicar atualizações do ponto".
+**Publicado em 06/11/2026** (com o "pode" do dono, junto com a tolerância de 10 min e o AFD/AEJ) — **COM A MIGRAÇÃO 027** (apertar "Aplicar atualizações do ponto").
 
 ## 06/11/2026 (sexta, terceira parte) — A revisão da Portaria 671: a tolerância de 10 min, o AFD e o AEJ
 
@@ -556,6 +556,7 @@ gerar o AFD e o AEJ; a assinatura da folha na tela (abaixo, quando feita).
   responsabilidade são com o advogado/contabilidade: sem o número do INPI, o sistema não gera os arquivos.
 - Teste `test_ponto_arquivos_fiscais_banco.py` (o CRC do exemplo da Portaria; o tamanho de cada campo; a corrente do
   hash; o trailer; a assinatura; no AEJ, E/S/D e as contagens).
+**Publicado em 06/11/2026** (com o "pode" do dono). Pendente: o nº do INPI e o .p7s.
 
 ## 06/11/2026 (sexta, segunda parte) — O alerta com o que é preciso para decidir ali mesmo
 
