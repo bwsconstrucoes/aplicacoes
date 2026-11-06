@@ -317,6 +317,9 @@
       <option value="ATENCAO">Atenção</option>
       <option value="INFO">Para saber</option>
     </select></div>
+  {# 06/11/2026, o dono: "o tipo de alerta deveria estar no sidebar, nos filtros, para filtrar qual vamos tratar" #}
+  <div class="campo" style="margin-top:10px"><label for="a-tipo">Tipo de alerta</label>
+    <select id="a-tipo" data-sem-busca><option value="">Todos os tipos</option></select></div>
   <button class="btn" id="a-ver" type="button" style="width:100%; margin-top:14px">Ver</button>
   <div class="cartao-dica" style="margin-top:16px">
     <b>Alerta não é palpite.</b> Cada um sai de uma <b>regra escrita</b> (da CLT
@@ -505,6 +508,9 @@
   .dp-foto-cad img, .dp-foto-cad .sem { width:120px; height:120px; border-radius:10px; object-fit:cover; flex:none; background:#EEF1F5;
              display:flex; align-items:center; justify-content:center; color:var(--tinta-suave); font-size:12px; text-align:center; }
   .dp-fotos-batidas { display:flex; flex-wrap:wrap; gap:10px; margin-top:8px; }
+  .a-fotos { display:flex; flex-wrap:wrap; gap:10px; margin:8px 0 4px; }
+  .a-fotos figure { margin:0; width:110px; font-size:11px; text-align:center; }
+  .a-fotos img, .a-fotos .foto-vazia { width:110px; height:110px; object-fit:cover; border-radius:8px; display:block; cursor:zoom-in; }
   .rosto-mini { width:56px; height:56px; object-fit:cover; border-radius:6px; display:block; cursor:zoom-in; }
   .dp-fotos-batidas figure { margin:0; width:120px; text-align:center; font-size:11px; }
   .dp-fotos-batidas img { width:120px; height:120px; object-fit:cover; border-radius:8px; display:block; cursor:zoom-in; }
@@ -6056,10 +6062,17 @@ async function carregarAlertas() {
   const p = new URLSearchParams();
   p.set("situacao", els("a-situacao").value);
   if (els("a-gravidade").value) p.set("gravidade", els("a-gravidade").value);
+  if (els("a-tipo").value) p.set("tipo", els("a-tipo").value);
   try {
     const d = await api(`/erp/api/ponto/alertas?${p}`);
     ALERTAS = d.alertas;
     ROTULOS = d.rotulos || {};
+    // o filtro por tipo, com quantos há de cada um (com a situação e a gravidade escolhidas)
+    const escolhido = els("a-tipo").value, tipos = d.tipos || [];
+    els("a-tipo").innerHTML = `<option value="">Todos os tipos (${tipos.reduce((n, t) => n + t.n, 0)})</option>` +
+      tipos.map(t => `<option value="${escapar(t.codigo)}">${escapar(t.rotulo)} (${t.n})</option>`).join("") +
+      (escolhido && !tipos.some(t => t.codigo === escolhido) ? `<option value="${escapar(escolhido)}">${escapar(ROTULOS[escolhido] || escolhido)} (0)</option>` : "");
+    els("a-tipo").value = escolhido;
     desenharAlertas();
   } catch (e) { falhou(e); }
 }
@@ -6085,6 +6098,16 @@ function desenharAlertas() {
           ? eloEspelho(a.colaborador_id, (a.data_referencia || hojeISO()).slice(0, 7), "abrir espelho") : "";
         // o rosto que não confere (06/11/2026, o dono: "olha como é longo o caminho"): direto na conferência do rosto,
         // com a foto de cadastro e as das batidas lado a lado — e o trocar ali mesmo
+        // AS FOTOS NA PRÓPRIA LINHA (06/11/2026, o dono: "era para aparecer aqui: essa foto está igual a essa outra")
+        const fotosDoAlerta = (a.fotos || []).length ? `<div class="a-fotos">${a.fotos.map(f => `<figure>
+            <img alt="" loading="lazy" src="/erp/api/ponto/marcacoes/${f.marcacao_id}/foto" onerror="fotoQuebrada(this)"
+                 data-foto="${f.marcacao_id}" data-legenda="${escapar(`${a.colaborador || ""} — ${f.rotulo}`)}">
+            <figcaption>${escapar(f.rotulo)}<br><button class="link-btn" type="button" data-mapa-batida="${f.marcacao_id}">abrir a batida</button>
+              ${a.codigo === "ROSTO_NAO_CONFERE" && PODE_TRATAR ? `<br><button class="link-btn" type="button"
+                data-a-usar-foto="${f.marcacao_id}" data-pessoa="${escapar(a.colaborador_id)}">⭐ usar como foto de cadastro</button>` : ""}</figcaption></figure>`).join("")}
+            ${a.codigo === "ROSTO_NAO_CONFERE" && a.colaborador_id ? `<figure><img alt="" loading="lazy"
+                src="/erp/api/ponto/pessoas/${escapar(a.colaborador_id)}/foto-cadastral?v=${FOTO_CAD_ALERTA}" onerror="fotoQuebrada(this)"
+                style="cursor:default"><figcaption>a foto de cadastro<br>(é com ela que comparou)</figcaption></figure>` : ""}</div>` : "";
         const rosto = a.codigo === "ROSTO_NAO_CONFERE" && a.colaborador_id
           ? `<button type="button" class="link-btn elo" data-abrir-pessoa="${escapar(a.colaborador_id)}" data-aba="rosto">conferir o rosto e a foto de cadastro</button>` : "";
         // Mosaico pendente e sequência rápida no mesmo aparelho se resolvem
@@ -6093,7 +6116,7 @@ function desenharAlertas() {
           ? `<a class="elo" href="/erp/ponto/mosaico?obra=${encodeURIComponent(a.obra_id)}&data=${encodeURIComponent(a.data_referencia)}">Abrir mosaico</a>` : "";
         return `<tr>
           <td><b>${escapar(a.rotulo || ROTULOS[a.codigo] || a.codigo)}</b></td>
-          <td class="desc">${escapar(a.mensagem)}${[rosto, nome, mosaico].filter(Boolean).map(x => `<small>${x}</small>`).join("")}</td>
+          <td class="desc">${escapar(a.mensagem)}${fotosDoAlerta}${[rosto, nome, mosaico].filter(Boolean).map(x => `<small>${x}</small>`).join("")}</td>
           <td class="dados">${escapar(a.obra || "—")}</td>
           <td class="dados">${a.data_referencia ? dataBR(a.data_referencia) : "—"}</td>
           <td><span class="selo ${c}">${escapar(t)}</span>
@@ -6179,6 +6202,26 @@ async function enviarResumo() {
 els("a-ver").addEventListener("click", carregarAlertas);
 els("a-situacao").addEventListener("change", carregarAlertas);
 els("a-gravidade").addEventListener("change", carregarAlertas);
+els("a-tipo").addEventListener("change", carregarAlertas);
+// "⭐ usar como foto de cadastro" direto no alerta do rosto: a foto da batida vira a de cadastro, e o alerta, resolvido
+let FOTO_CAD_ALERTA = Date.now();
+els("a-grupos").addEventListener("click", async ev => {
+  const b = ev.target.closest("[data-a-usar-foto]");
+  if (!b) return;
+  const alerta = ALERTAS.find(x => String(x.colaborador_id) === b.dataset.pessoa && (x.fotos || []).some(f => String(f.marcacao_id) === b.dataset.aUsarFoto));
+  const r = await perguntar({titulo: "Usar como foto de cadastro", campos: [], textoOk: "Usar esta foto",
+    aviso: "A foto desta batida passa a ser a de cadastro: as próximas batidas são comparadas com ela. Use só se o rosto " +
+           "está de frente e é mesmo da pessoa. O alerta fica resolvido; a batida, se estava em conferência, continua lá para validar."});
+  if (!r) return;
+  try {
+    await postar(`/erp/api/ponto/pessoas/${b.dataset.pessoa}/foto-cadastral`, {marcacao_id: Number(b.dataset.aUsarFoto)});
+    if (alerta && alerta.situacao === "ABERTO")
+      await postar(`/erp/api/ponto/alertas/${alerta.id}/tratar`, {situacao: "RESOLVIDO", nota: "foto de cadastro trocada pela desta batida"});
+    FOTO_CAD_ALERTA = Date.now();
+    aviso("mensagem", "Foto de cadastro trocada e alerta resolvido.", "ok");
+    await carregarAlertas();
+  } catch (e) { falhou(e); }
+});
 if (els("a-gerar")) els("a-gerar").addEventListener("click", gerarAlertas);
 if (els("a-enviar")) els("a-enviar").addEventListener("click", enviarResumo);
 carregarAlertas();

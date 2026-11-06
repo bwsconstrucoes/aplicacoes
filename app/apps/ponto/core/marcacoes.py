@@ -67,6 +67,9 @@ logger = logging.getLogger("ponto.marcacoes")
 ORIGENS = ("PWA", "IDFACE", "MANUAL")
 IDENTIFICACOES = ("SESSAO", "CPF", "QR_WHATSAPP", "QR_APP", "CHAVE")
 MOTIVO_SEM_FOTO_NO_TABLET = "sem foto no aparelho da obra"
+# 06/11/2026: a câmera do ponto da obra travou (a imagem parou) — o aparelho a religou e ela continuou parada; a
+# batida vai sem foto, e não com a imagem de quem bateu antes (era o "a mesma foto de outra pessoa" dos alertas).
+MOTIVO_CAMERA_TRAVADA = "a câmera do aparelho da obra travou — batida sem foto"
 # A batida da busca pelo nome (27/10/2026): sempre passa pela conferência do rosto (rosto.py).
 IDENTIFICADA_PELO_NOME = "identificada pelo nome no aparelho da obra"
 JANELA_REPETICAO_SEGUNDOS = 60
@@ -332,7 +335,7 @@ def registrar(conn: Connection, *, cpf, obra, origem: str = "PWA",
               agora: dt.datetime | None = None,
               identificacao: str | None = None, precisao=None,
               justificativa: str | None = None,
-              sem_internet: dict | None = None) -> tuple[dict, bool]:
+              sem_internet: dict | None = None, camera_travada: bool = False) -> tuple[dict, bool]:
     """Registra a batida. Devolve (marcação, repetida).
 
     `sem_internet` (core/sem_internet.py): a batida que o ponto da obra guardou
@@ -472,6 +475,8 @@ def registrar(conn: Connection, *, cpf, obra, origem: str = "PWA",
         sem_foto_no_tablet=(no_tablet and origem_ok == "PWA" and not foto_base64))
     # A obra escolhida na lista (não detectada) vem com a explicação da pessoa:
     # a batida não é a regular, e quem confere precisa saber por quê.
+    if camera_travada and not foto_base64 and MOTIVO_SEM_FOTO_NO_TABLET in motivos:
+        motivos[motivos.index(MOTIVO_SEM_FOTO_NO_TABLET)] = MOTIVO_CAMERA_TRAVADA
     justificativa_ok = " ".join(str(justificativa or "").split())[:300]
     if status == "EM_ANALISE" and justificativa_ok:
         motivos.append(f"justificativa da pessoa: {justificativa_ok}")

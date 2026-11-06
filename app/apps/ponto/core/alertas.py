@@ -44,7 +44,7 @@ GRAVIDADE = {
     "PEDIDO_PARADO": "ATENCAO", "BATIDA_EM_ANALISE_PARADA": "ATENCAO",
     "APARELHO_PENDENTE": "INFO", "APARELHO_VENCENDO": "ATENCAO", "BANCO_VENCENDO": "ATENCAO", "BANCO_NEGATIVO": "ATENCAO",
     # Sinais de fraude e de foto (migração 003)
-    "SEM_FOTO": "ATENCAO", "FOTO_ESCURA": "ATENCAO", "FOTO_REPETIDA": "URGENTE",
+    "SEM_FOTO": "ATENCAO", "FOTO_ESCURA": "ATENCAO", "FOTO_REPETIDA": "URGENTE", "CAMERA_TRAVADA": "ATENCAO",
     "SEQUENCIA_RAPIDA": "ATENCAO", "ROSTO_NAO_CONFERE": "URGENTE", "QR_ANTIGO_USADO": "ATENCAO", "TENTATIVAS_DE_CPF": "ATENCAO",
     "MOSAICO_PENDENTE": "ATENCAO", "BATIDA_RECUSADA_FORA_DA_OBRA": "ATENCAO",
 }
@@ -67,6 +67,7 @@ ROTULO = {
     "BANCO_VENCENDO": "Banco de horas vencendo", "BANCO_NEGATIVO": "Banco de horas negativo",
     "SEM_FOTO": "Batida sem foto", "FOTO_ESCURA": "Foto escura ou sem rosto",
     "FOTO_REPETIDA": "A mesma foto em batidas diferentes",
+    "CAMERA_TRAVADA": "Câmera do aparelho travada (a mesma imagem para pessoas diferentes)",
     "SEQUENCIA_RAPIDA": "Muitas pessoas em sequência rápida no mesmo aparelho",
     "ROSTO_NAO_CONFERE": "Rosto não confere com a foto cadastral",
     "QR_ANTIGO_USADO": "QR Code antigo usado", "TENTATIVAS_DE_CPF": "CPFs errados em sequência no tablet",
@@ -128,8 +129,20 @@ def _registrar(conn: Connection, vistos: set, *, chave: str, codigo: str, mensag
         INSERT INTO ponto.alertas (chave, codigo, gravidade, colaborador_id, obra_id,
                                    data_referencia, mensagem)
         VALUES (:k, :c, :g, :p, :o, :d, :m)
-        ON CONFLICT (chave) DO UPDATE SET mensagem = :m
+        ON CONFLICT (chave) DO UPDATE SET mensagem = :m,
+            data_referencia = COALESCE(:d, ponto.alertas.data_referencia)
     """, k=chave, c=codigo, g=GRAVIDADE[codigo], p=colaborador_id, o=obra_id, d=data, m=mensagem)
+
+
+# O ALERTA QUE CRESCE (06/11/2026, o dono: "num determinado dia eu tinha 10 faltas (…) no dia seguinte, de novo porque
+# eu tenho 11. No outro dia, 12 (…) fica infinito. Basta a última, a mais atual"): faltas seguidas, atraso repetido,
+# fora da cerca repetido e banco negativo valem só no mais recente — os anteriores da mesma pessoa saem, ditos.
+def _so_o_mais_recente(conn: Connection, *, codigo: str, prefixo: str, chave_atual: str) -> None:
+    db.executar(conn, """
+        UPDATE ponto.alertas SET situacao = 'RESOLVIDO', tratado_em = now(),
+               tratado_por = 'o próprio sistema (trocado pelo alerta mais recente)'
+         WHERE codigo = :c AND situacao = 'ABERTO' AND chave LIKE :p AND chave <> :k
+    """, c=codigo, p=prefixo.replace("%", "") + "%", k=chave_atual)
 
 
 def gerar(conn: Connection, *, ate: Optional[dt.date] = None,
@@ -165,16 +178,20 @@ def gerar(conn: Connection, *, ate: Optional[dt.date] = None,
                 contagem[codigo] += 1
 
         # --- padrões -----------------------------------------------------
-        seguidas, maior, fim_maior = 0, 0, None
+        seguidas, maior, fim_maior, comeco, comeco_maior = 0, 0, None, None, None
         for d in dias:
             if d["falta"]:
                 seguidas += 1
+                comeco = comeco or d["data"]
                 if seguidas > maior:
-                    maior, fim_maior = seguidas, d["data"]
+                    maior, fim_maior, comeco_maior = seguidas, d["data"], comeco
             elif d["previsto"]:
-                seguidas = 0
+                seguidas, comeco = 0, None
         if maior >= FALTAS_SEGUIDAS_MIN:
-            _registrar(conn, vistos, chave=f"FALTAS_SEGUIDAS:{p['id']}:{fim_maior}",
+            # a chave é o PRIMEIRO dia da sequência: a mesma sequência crescendo atualiza o mesmo alerta
+            chave = f"FALTAS_SEGUIDAS:{p['id']}:{comeco_maior}"
+            _so_o_mais_recente(conn, codigo="FALTAS_SEGUIDAS", prefixo=f"FALTAS_SEGUIDAS:{p['id']}:", chave_atual=chave)
+            _registrar(conn, vistos, chave=chave,
                        codigo="FALTAS_SEGUIDAS",
                        mensagem=f"{p['nome']}: {maior} faltas seguidas até {dt.date.fromisoformat(fim_maior):%d/%m} "
                                 "— confirmar se a pessoa ainda trabalha na obra",
@@ -184,6 +201,8 @@ def gerar(conn: Connection, *, ate: Optional[dt.date] = None,
                           for d in dias if "ATRASO" in d["alertas"])
         for dia_semana, n in atrasos.items():
             if n >= ATRASOS_MESMO_DIA_MIN:
+                _so_o_mais_recente(conn, codigo="ATRASO_RECORRENTE", prefixo=f"ATRASO_RECORRENTE:{p['id']}:{dia_semana}:",
+                                   chave_atual=f"ATRASO_RECORRENTE:{p['id']}:{dia_semana}:{ate:%Y-%W}")
                 _registrar(conn, vistos, chave=f"ATRASO_RECORRENTE:{p['id']}:{dia_semana}:{ate:%Y-%W}",
                            codigo="ATRASO_RECORRENTE",
                            mensagem=f"{p['nome']}: atrasou em {n} {escalas.DIAS[dia_semana]}s "
@@ -192,6 +211,8 @@ def gerar(conn: Connection, *, ate: Optional[dt.date] = None,
                 contagem["ATRASO_RECORRENTE"] += 1
         fora = sorted({d["data"] for d in dias for b in d["batidas"] if b["fora_da_cerca"]})
         if len(fora) >= FORA_DA_CERCA_MIN:
+            _so_o_mais_recente(conn, codigo="FORA_DA_CERCA_REPETIDO", prefixo=f"FORA_DA_CERCA_REPETIDO:{p['id']}:",
+                               chave_atual=f"FORA_DA_CERCA_REPETIDO:{p['id']}:{ate:%Y-%W}")
             _registrar(conn, vistos, chave=f"FORA_DA_CERCA_REPETIDO:{p['id']}:{ate:%Y-%W}",
                        codigo="FORA_DA_CERCA_REPETIDO",
                        mensagem=f"{p['nome']}: bateu fora da cerca em {len(fora)} dias das "
@@ -216,6 +237,8 @@ def gerar(conn: Connection, *, ate: Optional[dt.date] = None,
                                    colaborador_id=p["id"], obra_id=p.get("obra_id"), data=vence)
                         contagem["BANCO_VENCENDO"] += 1
                 if b["saldo"] <= BANCO_NEGATIVO_MIN:
+                    _so_o_mais_recente(conn, codigo="BANCO_NEGATIVO", prefixo=f"BANCO_NEGATIVO:{p['id']}:",
+                                       chave_atual=f"BANCO_NEGATIVO:{p['id']}:{ate:%Y-%m}")
                     _registrar(conn, vistos, chave=f"BANCO_NEGATIVO:{p['id']}:{ate:%Y-%m}",
                                codigo="BANCO_NEGATIVO",
                                mensagem=f"{p['nome']}: banco de horas em {_hhmm(b['saldo'])}",
@@ -441,7 +464,7 @@ def sinais_de_fraude(conn: Connection, vistos: set, inicio: dt.date, fim: dt.dat
     # --- a mesma foto de novo --------------------------------------------------
     linhas = db.todos(conn, f"""
         SELECT m.id AS marcacao_id, m.colaborador_id, m.obra_id, m.data_referencia,
-               m.timestamp_servidor, fo.sha256, fo.dhash, c.nome,
+               m.timestamp_servidor, m.dispositivo_id, fo.sha256, fo.dhash, c.nome,
                (m.data_referencia >= :i) AS nova
           FROM ponto.marcacoes m JOIN ponto.fotos fo ON fo.id = m.foto_id
           JOIN public.colaboradores c ON c.id = m.colaborador_id
@@ -459,6 +482,23 @@ def sinais_de_fraude(conn: Connection, vistos: set, inicio: dt.date, fim: dt.dat
               if p[0]["colaborador_id"] != p[1]["colaborador_id"]]
     for a, b in pares:
         a, b = sorted((a, b), key=lambda x: x["timestamp_servidor"])
+        # PESSOAS DIFERENTES, O MESMO APARELHO (06/11/2026, o dono: "é problema de sistema (…) ficou em cache, sei lá,
+        # e acabou mandando a mesma foto duas vezes"): é a câmera do ponto da obra que travou na imagem de quem bateu
+        # antes — problema do aparelho, não fraude de ninguém. O aplicativo passou a religar a câmera nesse caso.
+        if (a["colaborador_id"] != b["colaborador_id"] and a.get("dispositivo_id")
+                and a.get("dispositivo_id") == b.get("dispositivo_id")):
+            _registrar(conn, vistos, chave=f"CAMERA_TRAVADA:{b['marcacao_id']}:{a['marcacao_id']}",
+                       codigo="CAMERA_TRAVADA",
+                       mensagem=f"{b['nome']}: a foto da batida de {horario.para_local(b['timestamp_servidor']):%d/%m %H:%M} "
+                                f"é a imagem de {a['nome']} ({horario.para_local(a['timestamp_servidor']):%d/%m %H:%M}), "
+                                "no mesmo aparelho — a câmera travou; a batida está sem foto válida, não é fraude da pessoa",
+                       colaborador_id=b["colaborador_id"], obra_id=b["obra_id"], data=b["data_referencia"])
+            db.executar(conn, """UPDATE ponto.alertas SET situacao = 'RESOLVIDO', tratado_em = now(),
+                                        tratado_por = 'o próprio sistema (era a câmera do aparelho travada)'
+                                  WHERE chave = :k AND situacao = 'ABERTO'""",
+                        k=f"FOTO_REPETIDA:{b['marcacao_id']}:{a['marcacao_id']}")
+            contagem["CAMERA_TRAVADA"] += 1
+            continue
         outra = "" if a["colaborador_id"] == b["colaborador_id"] else f" (a outra é de {a['nome']})"
         _registrar(conn, vistos, chave=f"FOTO_REPETIDA:{b['marcacao_id']}:{a['marcacao_id']}",
                    codigo="FOTO_REPETIDA",
@@ -601,8 +641,47 @@ def sinais_de_fraude(conn: Connection, vistos: set, inicio: dt.date, fim: dt.dat
 # ---------------------------------------------------------------------------
 # Leitura e tratamento
 # ---------------------------------------------------------------------------
+# AS FOTOS DO ALERTA (06/11/2026, o dono: "eu não consigo ver daqui da tela do alerta (…) era para aparecer aqui:
+# essa foto está igual a essa outra (…) 500 alertas, como é que eu vou dar 50 cliques para resolver uma pessoa?"):
+# as batidas que o alerta compara saem na própria linha, e a foto de cadastro quando o assunto é o rosto.
+FOTOS_DO_ALERTA = {"FOTO_REPETIDA": ("esta batida", "a mesma foto, antes"),
+                   "CAMERA_TRAVADA": ("esta batida", "a imagem de quem bateu antes"),
+                   "ROSTO_NAO_CONFERE": ("a foto da batida",)}
+
+
+def fotos_do_alerta(codigo: str, chave: str) -> list[dict]:
+    """PURA. As batidas (com o rótulo) que a chave do alerta aponta."""
+    rotulos = FOTOS_DO_ALERTA.get(codigo)
+    if not rotulos:
+        return []
+    ids = str(chave or "").split(":")[1:1 + len(rotulos)]
+    return [{"marcacao_id": int(i), "rotulo": r} for i, r in zip(ids, rotulos) if i.isdigit()]
+
+
+def contar_por_tipo(conn: Connection, *, obras: Optional[list[int]] = None, situacao: str = "ABERTO",
+                    gravidade: Optional[str] = None) -> list[dict]:
+    """Quantos alertas de cada tipo, com os mesmos filtros da lista — para o filtro "Tipo de alerta"."""
+    from . import vigencia
+    sql = """SELECT codigo, count(*) AS n FROM ponto.alertas a
+              WHERE (a.data_referencia IS NULL OR a.data_referencia >= :vale)"""
+    params: dict = {"vale": vigencia.inicio(conn)}
+    if situacao:
+        sql += " AND a.situacao = :s"
+        params["s"] = situacao
+    if gravidade:
+        sql += " AND a.gravidade = :g"
+        params["g"] = gravidade
+    if obras is not None:
+        sql += " AND a.obra_id = ANY(:obras)"
+        params["obras"] = list(obras) or [0]
+    sql += " GROUP BY codigo"
+    linhas = db.todos(conn, sql, **params)
+    return sorted(({"codigo": l["codigo"], "rotulo": ROTULO.get(l["codigo"], l["codigo"]), "n": int(l["n"])}
+                   for l in linhas), key=lambda x: (-x["n"], x["rotulo"]))
+
+
 def listar(conn: Connection, *, obras: Optional[list[int]] = None, situacao: str = "ABERTO",
-           gravidade: Optional[str] = None, limite: int = 500) -> list[dict]:
+           gravidade: Optional[str] = None, limite: int = 500, codigo: Optional[str] = None) -> list[dict]:
     sql = """SELECT a.*, c.nome AS colaborador, o.codigo AS obra
                FROM ponto.alertas a
                LEFT JOIN public.colaboradores c ON c.id = a.colaborador_id
@@ -617,6 +696,9 @@ def listar(conn: Connection, *, obras: Optional[list[int]] = None, situacao: str
     if gravidade:
         sql += " AND a.gravidade = :g"
         params["g"] = gravidade
+    if codigo:
+        sql += " AND a.codigo = :cod"
+        params["cod"] = str(codigo).upper()
     if obras is not None:
         sql += " AND a.obra_id = ANY(:obras)"
         params["obras"] = list(obras) or [0]
@@ -625,6 +707,7 @@ def listar(conn: Connection, *, obras: Optional[list[int]] = None, situacao: str
     saida = []
     for a in db.todos(conn, sql, **params):
         a["rotulo"] = ROTULO.get(a["codigo"], a["codigo"])
+        a["fotos"] = fotos_do_alerta(a["codigo"], a["chave"])
         a["data_referencia"] = a["data_referencia"].isoformat() if a["data_referencia"] else None
         a["criado_em"] = horario.texto(a["criado_em"])
         a["tratado_em"] = horario.texto(a["tratado_em"])
