@@ -452,6 +452,7 @@
         <option value="DECLARACAO">Declaração de comparecimento (consulta, exame)</option>
         <option value="AJUSTE_BATIDA">Esqueci de bater o ponto</option>
         <option value="COMPENSACAO">Trabalhar num dia no lugar de outro</option>
+        <option value="COMPENSACAO_HORAS">Compensação de horas (ficou até mais tarde num dia e sai mais cedo noutro)</option>
         <option value="PERMUTA">Permuta de plantão com um colega (só vigia do 12x36)</option>
         <option value="LICENCA">Licença (casamento, luto, paternidade…)</option>
         <option value="FOLGA_BANCO">Folga do banco de horas</option>
@@ -2218,6 +2219,12 @@ function camposDePedido(px, t, dia) {
     COMPENSACAO: `<label>Dia em que vai trabalhar (ou trabalhou)</label><input type="date" id="${px}-trabalhado">
       <label>Dia da folga no lugar</label><input type="date" id="${px}-inicio" value="${dia || ""}">
       <label>Motivo</label><textarea id="${px}-descricao"></textarea>`,
+    // a compensação de HORAS (06/11/2026): as horas a mais de um dia pagam as a menos de outro — o resto fica
+    COMPENSACAO_HORAS: `<label>Dia das horas a mais (ficou até mais tarde)</label><input type="date" id="${px}-trabalhado">
+      <label>Dia em que sai mais cedo (as horas a menos)</label><input type="date" id="${px}-inicio" value="${dia || ""}">
+      <label>Observação (se quiser)</label><textarea id="${px}-descricao"></textarea>
+      <p class="pequeno">Não precisa dizer quantas horas: o sistema conta pelas batidas. As horas a mais pagam as a menos;
+        o que sobrar continua hora extra, e o que faltar continua devendo.</p>`,
     // a permuta de plantão (31/10/2026): só vigia do 12x36; aprovada, o lado do colega entra junto
     PERMUTA: `<label>CPF do colega da permuta</label><input inputmode="numeric" id="${px}-colega" placeholder="só os números">
       <label>Noite que trabalhou no lugar do colega</label><input type="date" id="${px}-trabalhado" max="${hojeISO()}">
@@ -2288,7 +2295,8 @@ function corpoDoPedido(px, t, doc) {
   } else if (t === "DECLARACAO") {
     Object.assign(corpo, {data_inicio: v("inicio"), hora_inicio: v("hora-ini"), hora_fim: v("hora-fim")});
     if (!doc) throw new Error("Escolha a foto ou o PDF da declaração.");
-  } else if (t === "COMPENSACAO") {
+  } else if (t === "COMPENSACAO" || t === "COMPENSACAO_HORAS") {
+    if (t === "COMPENSACAO_HORAS" && (!v("inicio") || !v("trabalhado"))) throw new Error("Escolha os dois dias.");
     Object.assign(corpo, {data_inicio: v("inicio"), dia_trabalhado: v("trabalhado")});
   } else if (t === "PERMUTA") {
     if (!v("colega") || !v("inicio") || !v("trabalhado")) throw new Error("Diga o CPF do colega e as duas noites.");
@@ -2353,6 +2361,7 @@ async function carregarPedidos() {
     $("pedidos").innerHTML = d.pedidos.map(p => {
       const [cls, rot] = STATUS_PEDIDO[p.status] || ["", p.status];
       const quando = p.tipo === "AJUSTE_BATIDA" ? `${dataBR(p.data_inicio)} às ${esc((p.horario || "").slice(11, 16))}`
+        : p.tipo === "COMPENSACAO" && p.subtipo === "HORAS" ? `horas a mais em ${dataBR(p.dia_trabalhado)} compensam ${dataBR(p.data_inicio)}`
         : p.tipo === "COMPENSACAO" ? `trabalha ${dataBR(p.dia_trabalhado)}, folga ${dataBR(p.data_inicio)}`
         : (p.data_inicio === p.data_fim ? dataBR(p.data_inicio) : `${dataBR(p.data_inicio)} a ${dataBR(p.data_fim)}`);
       const podeCancelar = (p.status === "AGUARDANDO_SUPERVISOR" || p.status === "AGUARDANDO_DP") && !p.supervisor && !p.dp;
@@ -2909,6 +2918,7 @@ function abrirFormularioDoTablet(d, tipo) {
   const opcoes = [["ATESTADO", "Atestado médico"], ["DECLARACAO", "Declaração de comparecimento (consulta, exame)"],
                   ["LICENCA", "Licença (casamento, luto, paternidade…)"],
                   ["AJUSTE_BATIDA", "Esqueceu de bater (ajuste)"], ["COMPENSACAO", "Compensação (trabalhar num dia no lugar de outro)"],
+                  ["COMPENSACAO_HORAS", "Compensação de horas (ficou até mais tarde num dia e sai mais cedo noutro)"],
                   ["PERMUTA", "Permuta de plantão com um colega (só vigia do 12x36)"]]
     .concat(d.tem_banco ? [["FOLGA_BANCO", "Folga do banco de horas"]] : [])
     .concat([["ABONO", "Abono (viagem a serviço, dispensa…)"]]);
@@ -2931,6 +2941,9 @@ function abrirFormularioDoTablet(d, tipo) {
       <label>Motivo</label><select id="tf-motivo">${MOTIVOS_AJUSTE.map(m => `<option value="${m[0]}">${esc(m[1])}</option>`).join("")}</select>`,
     COMPENSACAO: `<label>Dia em que vai trabalhar (ou trabalhou)</label><input type="date" id="tf-trabalhado">
       <label>Dia da folga no lugar</label><input type="date" id="tf-inicio">`,
+    COMPENSACAO_HORAS: `<label>Dia das horas a mais (ficou até mais tarde)</label><input type="date" id="tf-trabalhado">
+      <label>Dia em que sai mais cedo (as horas a menos)</label><input type="date" id="tf-inicio">
+      <p style="margin:6px 0 0; font-size:15px">O sistema conta as horas pelas batidas: as a mais pagam as a menos.</p>`,
     PERMUTA: `<label>CPF do colega da permuta</label><input inputmode="numeric" id="tf-colega" placeholder="só os números">
       <label>Noite que trabalhou no lugar do colega</label><input type="date" id="tf-trabalhado" max="${hoje}">
       <label>Noite dele que o colega trabalhou</label><input type="date" id="tf-inicio" max="${hoje}">
@@ -3027,7 +3040,8 @@ function abrirFormularioDoTablet(d, tipo) {
       if (TB_OBRA_VIGIADA && !TB_OBRA_VIGIADA()) return;
       Object.assign(corpo, {motivo: v("tf-motivo"),
                             obra: v("tf-obra") || (DIAS ? DIAS.obra() : (DIA.batidas[0] && DIA.batidas[0].obra)) || $("t-obra").value || ""});
-    } else if (tipo === "COMPENSACAO") {
+    } else if (tipo === "COMPENSACAO" || tipo === "COMPENSACAO_HORAS") {
+      if (tipo === "COMPENSACAO_HORAS" && (!v("tf-inicio") || !v("tf-trabalhado"))) return ($("tf-msg").textContent = "Escolha os dois dias.");
       Object.assign(corpo, {data_inicio: v("tf-inicio"), dia_trabalhado: v("tf-trabalhado")});
     } else if (tipo === "PERMUTA") {
       if (!v("tf-colega") || !v("tf-inicio") || !v("tf-trabalhado")) return ($("tf-msg").textContent = "Diga o CPF do colega e as duas noites.");
@@ -3662,6 +3676,7 @@ async function abrirPedidoPara(alvo, dia, tipo = "ATESTADO") {
   const opcoes = [["ATESTADO", "Atestado médico"], ["DECLARACAO", "Declaração de comparecimento (consulta, exame)"],
                   ["LICENCA", "Licença (casamento, luto, paternidade…)"],
                   ["COMPENSACAO", "Compensação (trabalhar num dia no lugar de outro)"],
+                  ["COMPENSACAO_HORAS", "Compensação de horas (ficou até mais tarde num dia e sai mais cedo noutro)"],
                   ["PERMUTA", "Permuta de plantão com um colega (só vigia do 12x36)"]]
     .concat(alvo.tem_banco ? [["FOLGA_BANCO", "Folga do banco de horas"]] : [])
     .concat([["ABONO", "Abono (viagem a serviço, dispensa…)"]]);

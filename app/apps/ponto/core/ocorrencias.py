@@ -104,6 +104,8 @@ ORIGENS_DO_APLICATIVO = ("APP", "APARELHO", "RESPONSAVEL")
 # a noite do colega que ela COBRIU. Só entre duas pessoas na escala 12x36 nas duas noites. Aprovada, o outro lado
 # (a do colega, espelhada) entra aprovado na hora (`_aplicar`) — e as duas tiram a falta e a extra.
 PERMUTA = "PERMUTA"
+COMPENSACAO_HORAS = "COMPENSACAO_HORAS"
+DIAS_MAX_COMPENSACAO_HORAS = 31          # a compensação no mês (CLT art. 59, §6º): um dia perto do outro
 PREFIXO_PERMUTA = "Permuta com"
 # O ajuste que a gestão inclui em lote, no quadro do ponto (quadro.py).
 SUBTIPO_LOTE = "LOTE_GESTAO"
@@ -217,6 +219,11 @@ def criar(conn: Connection, quem: Quem, dados: dict, *, origem: str = "GESTAO") 
         dados = {**dados, "tipo": "ATESTADO", "subtipo": DECLARACAO}
         tipo = "ATESTADO"
     permuta = tipo == PERMUTA               # a permuta é uma compensação com subtipo e colega
+    # a compensação de HORAS (06/11/2026) é uma compensação com subtipo: "compensacao_horas" ou o subtipo HORAS
+    horas = tipo == COMPENSACAO_HORAS or (tipo == "COMPENSACAO" and str(dados.get("subtipo") or "").upper() == "HORAS")
+    if horas:
+        tipo = "COMPENSACAO"
+        dados = {**dados, "tipo": tipo}
     if permuta:
         tipo = "COMPENSACAO"
         dados = {**dados, "tipo": tipo}
@@ -301,6 +308,14 @@ def criar(conn: Connection, quem: Quem, dados: dict, *, origem: str = "GESTAO") 
         dia_trabalhado = _data(dados.get("dia_trabalhado"), "dia_trabalhado")
         if dia_trabalhado == inicio:
             raise ErroDeValidacao("o dia trabalhado e o dia de folga são o mesmo", campo="dia_trabalhado")
+        if horas:
+            # a compensação de horas (06/11/2026): as horas a mais de um dia pagam as a menos de outro — um dia cada
+            fim = inicio
+            if abs((dia_trabalhado - inicio).days) > DIAS_MAX_COMPENSACAO_HORAS:
+                raise ErroDeValidacao(f"as horas a mais e o dia mais curto ficam a até {DIAS_MAX_COMPENSACAO_HORAS} "
+                                      "dias um do outro", campo="dia_trabalhado")
+            if not descricao:
+                descricao = f"Horas a mais de {dia_trabalhado:%d/%m} compensam {inicio:%d/%m}"
         if permuta:
             fim = inicio
             colega, descricao = _conferir_permuta(conn, quem, pessoa, dados.get("colega_id") or dados.get("colega_cpf")
@@ -340,6 +355,8 @@ def criar(conn: Connection, quem: Quem, dados: dict, *, origem: str = "GESTAO") 
         subtipo = SUBTIPO_LOTE
     elif tipo == "AJUSTE_BATIDA" and turno_seguido:
         subtipo = escalas.SUBTIPO_TURNO_SEGUIDO       # a batida fica no dia pedido, também depois de aprovada
+    if horas:
+        subtipo = "HORAS"                             # a compensação de horas (06/11/2026, espelho.SUBTIPO_HORAS)
 
     if tipo == "ABONO" and dados.get("minutos"):
         # o abono SÓ DAS HORAS QUE FALTARAM (29/10/2026, a falta parcial no Quadro): um dia, X minutos
@@ -508,6 +525,7 @@ def _para_json(o: dict, quem: Quem, etapas: tuple | None = None) -> dict:
     return {
         "id": o["id"], "tipo": o["tipo"],
         "rotulo": "Permuta de plantão" if o.get("subtipo") == PERMUTA else
+                  "Compensação de horas" if o["tipo"] == "COMPENSACAO" and o.get("subtipo") == "HORAS" else
                   SUBTIPOS_ABONO[o["subtipo"]] if o["tipo"] == "ABONO" and o.get("subtipo") in SUBTIPOS_ABONO else
                   (f"Declaração de comparecimento — {int(o['abono_minutos']) // 60}h{int(o['abono_minutos']) % 60:02d} abonadas"
                    if o.get("subtipo") == "DECL_HORAS" and o.get("abono_minutos") else NOME_DECLARACAO[o["subtipo"]])

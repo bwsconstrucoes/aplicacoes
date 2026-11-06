@@ -500,6 +500,41 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 06/11/2026 (terceira) — A compensação de HORAS; e a crítica da hora extra de quem está devendo
+
+O dono, depois do ensaio da compensação (abaixo): *"é uma compensação, não é de um dia, é de horas (…) como é que
+deve ser feito isso? O sistema prevê isso?"* E: *"quando a gente for fazer um fechamento, gerar relatório de horas
+extras, essa informação tem que ser criticada (…) pode ser que tenha sido esquecido de ser lançado, e aí o DP não
+pode, não deve pagar horas extras quando a pessoa está devendo."*
+
+- **Não previa direito.** A "Compensação" de antes é de DIA: a folga fica abonada inteira, o dia trabalhado perde
+  TODA a hora extra (sobrasse o que sobrasse), e quem trabalha um pedaço da folga ganha essas horas como extra. No caso
+  de meio dia, a conta saía certa por acaso, mas com o rótulo "compensação não cumprida".
+- **A compensação de horas** (`COMPENSACAO` com subtipo `HORAS`, `espelho.SUBTIPO_HORAS`; sem migração — a coluna
+  `subtipo` já existia): o dia das horas a mais (`dia_trabalhado`) e o dia mais curto (`data_inicio`). Cobre o MENOR
+  entre as horas a mais de um e as a menos do outro, pelas batidas — sem digitar horas. O que sobra do dia longo
+  continua hora extra; o que falta no curto continua devendo; o que se trabalha no dia curto conta normalmente. Os dois
+  dias a até 31 dias um do outro (compensação no mês, CLT art. 59, §6º). Antes de o dia das horas a mais passar, o curto
+  fica "a compensar". Não mexe no ciclo do 12x36 nem no painel do dia (o dia curto não é folga).
+- **Onde se lança:** aplicativo (o próprio e por outra pessoa: "Compensação de horas (ficou até mais tarde num dia e
+  sai mais cedo noutro)"), janela da pessoa no ERP ("⏱️ Compensação de horas") — passam pela validação de sempre — e
+  **a turma inteira pelo Quadro**: marcar as linhas do dia mais curto › "Compensar horas…" › o dia das horas a mais.
+  Aprovado na hora, pelo DP (`aprovar_afastamento`); quem não ficou além do horário no outro dia fica de fora, com o
+  motivo.
+- **A crítica:** o Fechamento › Conferência ganha, por pessoa e por pedaço da folha (mês anterior / corrente), "hora
+  extra com horas devendo" quando, depois do abatimento (se ligado), sobram hora extra E horas a menos (atraso, saída
+  antes, falta parcial — a falta do dia inteiro não entra). O relatório de Horas extras, visão por pessoa, ganha a
+  coluna "Devendo no período ⚠️" e o número "Com extra e devendo horas". Quem tem banco de horas fica de fora (lá, uma
+  já compensa a outra).
+- **Escolha que o dono pode mudar:** a crítica AVISA, não segura a extra — o DP decide (lançar a compensação, ligar o
+  abatimento, ou pagar mesmo assim).
+- **Cuidado dito ao dono:** sair às 20h17 e voltar às 7h dá menos de 11 h de descanso (aviso de interjornada curta) —
+  a compensação resolve a hora extra, não isso.
+- Testes: `test_ponto_compensacao_horas_banco.py` (o caso do dono: 3h17 pagam 3h17 da sexta, ficam 13 min; a sobra
+  continua extra; o futuro "a compensar"; longe demais, recusada; a crítica no fechamento e no relatório, que some
+  depois de lançada; a turma pelo Quadro). Telas renderizadas e o JavaScript conferido; **não** abri o diálogo no
+  navegador.
+
 ## 06/11/2026 (segunda) — O manual do vigia; e as horas a mais num dia compensadas no outro
 
 - **Manual, parte 9** ("Vigia: 12x36, plantão dobrado, permuta e ronda"), refeita com o panorama: só duas batidas,

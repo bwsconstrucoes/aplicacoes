@@ -277,6 +277,7 @@ def montar(conn: Connection, quem: Quem, competencia, filtros: Optional[dict] = 
                                                          "afastamento (lance a licença, se for)"})
         he_ant, he_cor = defaultdict(int), defaultdict(int)
         atrasos_ant, atrasos_cor = [], []
+        devendo_ant, devendo_cor = [], []        # atraso, saída antes e falta parcial: as horas que a pessoa deve
         teve_algo = False
         for d in esp["dias"]:
             dia = dt.date.fromisoformat(d["data"])
@@ -337,6 +338,8 @@ def montar(conn: Connection, quem: Quem, competencia, filtros: Optional[dict] = 
                          "batidas": " ".join(b["hora"] for b in d.get("batidas") or [])}
                 if f["tipo"] == "ATRASO":
                     (atrasos_ant if anterior else atrasos_cor).append(linha)
+                if f["tipo"] != "INTEGRAL":
+                    (devendo_ant if anterior else devendo_cor).append(linha)
                 if anterior:
                     r["ant_faltas"].append(linha)
                 elif f["tipo"] == "INTEGRAL":
@@ -377,6 +380,18 @@ def montar(conn: Connection, quem: Quem, competencia, filtros: Optional[dict] = 
                 tirou = abater(pool, linhas_atraso)
                 if tirou:
                     r["abatimentos"].append({**base, "periodo": periodo, "minutos": tirou})
+        # HORA EXTRA DE QUEM ESTÁ DEVENDO HORAS (06/11/2026, o dono: "o DP não pode, não deve pagar horas extras
+        # quando a pessoa está devendo"): no mesmo período, sobrou hora extra E hora a menos (depois do abatimento,
+        # se ligado) — pode ser uma compensação de horas combinada e não lançada.
+        if not banco_de_horas:
+            for nome, pool, devendo in (("mês anterior", he_ant, devendo_ant), ("mês corrente", he_cor, devendo_cor)):
+                extra_min, deve_min = sum(pool.values()), sum(x["minutos"] for x in devendo)
+                if extra_min > 0 and deve_min > 0:
+                    dias = ", ".join(_br(x["data"]) for x in devendo[:4]) + ("…" if len(devendo) > 4 else "")
+                    r["conferencia"].append({**base, "aviso": f"hora extra com horas devendo no {nome}: {hhmm(extra_min)} "
+                                             f"de extra e {hhmm(deve_min)} a menos ({dias}) — se foi combinado "
+                                             "compensar, lance a Compensação de horas antes de pagar a extra",
+                                             "tipo": "EXTRA_COM_DEBITO", "extra": extra_min, "devendo": deve_min})
         if he_ant:
             r["ant_extras"].append({**base, **{f"he{pct}": he_ant.get(cod, 0) for pct, cod in
                                                hora_extra.EVENTO_DO_PERCENTUAL.items()},
