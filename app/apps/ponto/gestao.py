@@ -621,6 +621,9 @@ def _ficha(quem: Quem, colaborador_id: int) -> dict:
             d = confianca.config(rosto.ler(conn))
             j["conferencia_rosto"] = {**confianca.da_pessoa(
                 confianca.historico(conn, [colaborador_id], d).get(colaborador_id), d), "ligada": d["ligada"]}
+        # as folhas assinadas na tela (06/11/2026, migração 027): o PDF de cada mês, para abrir e imprimir
+        from .core import assinaturas
+        j["assinaturas"] = assinaturas.da_pessoa(conn, colaborador_id)
     return j
 
 
@@ -2383,6 +2386,10 @@ def _servir_documento(documento_id: int, *, sigiloso_permitido: bool):
             SELECT colaborador_id FROM ponto.ocorrencias WHERE documento_id = :d
             UNION SELECT colaborador_id FROM ponto.colaborador_config WHERE acordo_documento_id = :d
             LIMIT 1""", d=documento_id)
+        if not dono and db.tem_coluna(conn, "espelho_assinaturas", "documento_id"):
+            # a folha assinada na tela (06/11/2026)
+            dono = db.um(conn, "SELECT colaborador_id FROM ponto.espelho_assinaturas WHERE documento_id = :d LIMIT 1",
+                         d=documento_id)
         if (not f or not dono or (f["sigiloso"] and not sigiloso_permitido)
                 or not ocorrencias.pessoa_no_alcance(conn, quem, dono["colaborador_id"])):
             return jsonify({"ok": False, "erro": "não encontrado"}), 404

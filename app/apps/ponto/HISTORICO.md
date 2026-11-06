@@ -500,6 +500,35 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 06/11/2026 (sexta, quarta parte) — A assinatura da folha na tela (migração 027)
+
+O dono: *"o operador do ponto, com o celular, vai mostrar para a pessoa a folha de ponto, e a pessoa vai assinar (…) essa
+assinatura vai ser arquivada (…) para a gente imprimir posteriormente"*. Decidido com ele: **prazo até o dia 20 do mês
+seguinte**; **quem conduz: o operador do ponto da obra e o administrativo** (normalmente a mesma pessoa); **cópia por
+WhatsApp, por enquanto não**.
+- **No aplicativo** ("✍️ Assinaturas da folha", para quem vê o "Ponto da minha equipe"): a equipe do mês — as MESMAS
+  pessoas do resumo da equipe — com ✍️ falta / ✅ assinou / ⛔ recusou e o prazo. "Assinar" mostra a folha; a PRÓPRIA
+  pessoa digita o PIN dela e assina com o dedo num quadro; "a pessoa não quer assinar" registra o que ela disse.
+- **Só mês FECHADO** se assina (a folha não muda mais). Quem conduz não assina a própria por ali.
+- **O que fica guardado** (`core/assinaturas.py`, tabela `ponto.espelho_assinaturas`): o traço do dedo, a hora do
+  servidor, quem conduziu, o aparelho, o local, o IP e o **lacre** — o SHA-256 da folha como foi mostrada. O PDF (a folha
+  + o "Comprovante de assinatura eletrônica" com o termo, a assinatura e os dados) vai para os documentos do ponto (o
+  Drive), como os atestados. No ERP, a janela da pessoa › Pedidos lista as folhas assinadas com "abrir o PDF".
+- **Reaberto o mês e mudada a folha**, o lacre não bate: a assinatura vira SUBSTITUÍDA (guardada, com o motivo) e a
+  pessoa volta a faltar. A recusa seguida de assinatura também fica guardada.
+- **A pendência**: do dia 10 do mês seguinte em diante, um alerta por obra ("Folhas de ponto sem assinatura": quantas
+  faltam e o prazo, ou "PRAZO VENCIDO"), que sai sozinho quando a obra termina.
+- **Juridicamente** (dito ao dono; a confirmar com o advogado): a assinatura do espelho não é obrigatória no REP-P,
+  mas pesa como prova; a eletrônica vale quando prova quem assinou e que o documento não mudou (Lei 14.063/2020; MP
+  2.200-2/2001, art. 10 §2º) — por isso o PIN da própria pessoa e o lacre. Guarda: 5 anos de cada mês e 2 após o
+  desligamento.
+- Achado no ensaio no navegador (celular simulado): a folha abria sem a localização, e o administrativo (que só alcança
+  a equipe dentro da obra) ouvia "você não está na obra" — corrigido.
+- Testes: `test_ponto_assinatura_folha_banco.py` (mês aberto recusa; PIN errado recusa; assinada; o PDF abre no ERP; a
+  recusa; reaberto e mudado, substituída e de volta à lista; a pendência por obra; o PDF e o lacre). E a tela no
+  navegador, do menu até "✅ assinou".
+**COM A MIGRAÇÃO 027** — ao publicar, apertar "Aplicar atualizações do ponto".
+
 ## 06/11/2026 (sexta, terceira parte) — A revisão da Portaria 671: a tolerância de 10 min, o AFD e o AEJ
 
 O dono pediu uma revisão do ponto contra a Portaria 671 e a CLT (*"listar onde o nosso ponto pode furar e está furando
