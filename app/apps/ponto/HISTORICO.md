@@ -500,6 +500,18 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 06/11/2026 — O panorama do vigia (mensagem para o WhatsApp) e as lacunas que ele mostrou
+
+O dono pediu um panorama das particularidades do vigia (escala, 2 batidas, noite que vira o dia, permuta, plantão
+dobrado, a noite extra, as validações) — *"até para a gente saber se todas as possibilidades foram atendidas"*. A
+mensagem foi escrita a partir do código. **Lacunas achadas, levadas ao dono:**
+- **O vigia de DIA que emenda a noite** (6h–18h e segue até as 6h): a regra da noite só vale para quem tem escala ou
+  jornada da noite — a saída das 6h do dia seguinte iria para o dia seguinte como entrada. Não coberto.
+- **Quem só cobriu o colega** (sem a volta): fica extra para um e falta para o outro; o DP decide à mão.
+- **O vigia que sai no meio da noite e volta**: a noite é paga inteira; só as rondas mostram.
+- **Feriado na noite do ciclo**: dia normal (CLT 59-A) — ainda a confirmar com a contabilidade.
+- ❌ Ainda não há lista só dos plantões dobrados.
+
 ## 05/11/2026 (terceira) — Os espelhos da equipe num PDF só
 
 - **O pedido.** Depois de o espelho de um colaborador voltar a abrir, o dono: *"o que a gente precisaria também era
