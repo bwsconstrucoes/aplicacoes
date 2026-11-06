@@ -500,6 +500,34 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 06/11/2026 (sexta, terceira parte) — A revisão da Portaria 671: a tolerância de 10 min, o AFD e o AEJ
+
+O dono pediu uma revisão do ponto contra a Portaria 671 e a CLT (*"listar onde o nosso ponto pode furar e está furando
+as regras trabalhistas"*), e aprovou a sequência: publicar os alertas; travar a tolerância e o "negar hora extra";
+gerar o AFD e o AEJ; a assinatura da folha na tela (abaixo, quando feita).
+- **Recusado, e dito ao dono com os motivos:** uma "folha para fins trabalhistas" sem o excesso de hora extra, diferente
+  da real. É documento falso (CP art. 299; CLT art. 9º), e o AFD — o registro que a fiscalização pede — o desmente. O
+  caminho legal ficou dito: controlar a extra antes, compensar (a compensação de horas de hoje) ou pagar.
+- **A tolerância da hora extra no fechamento vai até 10 min por dia** (CLT, art. 58 §1º — era até 120). O valor já
+  gravado acima de 10 passa a valer 10 (`fechamento.he_minima`).
+- **"Negar hora extra"**: já pedia motivo; a janela agora diz que é só para o que NÃO foi trabalho (o exemplo antigo
+  era justamente "não autorizada pelo engenheiro" — a extra trabalhada é devida mesmo sem autorização).
+- **AFD e AEJ** (`core/arquivos_fiscais.py`; Configuração › "Arquivos da fiscalização"): o leiaute OFICIAL foi baixado
+  do gov.br (liberado na rede da sessão para isso) e está copiado em `docs/leiaute_afd_portaria_671.txt` e
+  `docs/leiaute_aej_portaria_671.txt`. AFD: cabeçalho "1" com CRC-16/KERMIT, um "7" por marcação ORIGINAL (a incluída
+  por ajuste fica de fora; a rejeitada entra), hash SHA-256 encadeado desde a primeira marcação da empresa, trailer
+  "9" e a linha da assinatura. AEJ: 01, 02 (o REP-P), 03 (vínculos), 04 (horários da escala), 05 (entrada/saída como
+  contaram; "I" a incluída por ajuste com o motivo; "D" a rejeitada e a repetida com o motivo; "P" o intervalo
+  pré-assinalado), 07 (falta não justificada), 08 (o programa), 99. Um arquivo por EMPRESA — a da obra da batida.
+  Os dados do programa (nº do INPI, CNPJ/razão/e-mail do desenvolvedor) ficam na mesma seção.
+- **O que ficou de fora, dito ao dono:** o .p7s da assinatura digital (precisa do certificado ICP-Brasil da empresa);
+  os registros 2, 5 e 6 do AFD (precisariam de NSR próprio na mesma sequência); no AEJ, DSR, folga de feriado e banco
+  de horas. ⚠️ O NSR é uma sequência só — também a batida incluída por ajuste e as das outras empresas usam —, então o
+  AFD de um CNPJ tem saltos de número. ⚠️ O registro do programa no INPI e o atestado técnico/termo de
+  responsabilidade são com o advogado/contabilidade: sem o número do INPI, o sistema não gera os arquivos.
+- Teste `test_ponto_arquivos_fiscais_banco.py` (o CRC do exemplo da Portaria; o tamanho de cada campo; a corrente do
+  hash; o trailer; a assinatura; no AEJ, E/S/D e as contagens).
+
 ## 06/11/2026 (sexta, segunda parte) — O alerta com o que é preciso para decidir ali mesmo
 
 O dono: *"batida faltando em 5/11, mas não diz qual é a batida. E seria interessante poder clicar e já abrir um ajuste

@@ -1018,6 +1018,7 @@
   <button type="button" data-secao="validacao">Quem valida</button>
   <button type="button" data-secao="mensagens">Mensagens</button>
   <button type="button" data-secao="teste">Teste</button>
+  <button type="button" data-secao="fiscal">Arquivos da fiscalização</button>
 </nav>
 <div id="mensagem"></div>
 
@@ -1101,6 +1102,33 @@
 </div>
 
 {% if pode.configurar_ponto %}
+{# OS ARQUIVOS DA FISCALIZAÇÃO (06/11/2026, a revisão da Portaria 671 com o dono): o AFD e o AEJ #}
+<div class="cartao" data-secao-card="fiscal">
+  <div class="cartao-cab"><h3>Arquivos da fiscalização (AFD e AEJ)</h3><small>Portaria 671/2021</small></div>
+  <div class="cartao-dica" style="margin-top:0">Os dois arquivos que o auditor fiscal do trabalho pede.
+    <b>AFD</b>: as marcações originais, como foram batidas (a batida incluída por ajuste não entra). <b>AEJ</b>: o
+    tratamento — entradas e saídas como contaram, as incluídas por ajuste e as desconsideradas com o motivo, os
+    horários da escala e as faltas. Um arquivo por empresa (CNPJ): a empresa da obra em que a pessoa bateu.
+    <br>⚠️ Falta a <b>assinatura digital</b> (o arquivo .p7s, com o certificado ICP-Brasil da empresa): os arquivos saem
+    com a linha que a indica, sem o .p7s.</div>
+  <h4 style="margin:12px 0 6px">O programa (vai no cabeçalho dos dois arquivos)</h4>
+  <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px">
+    <div class="campo"><label for="af-inpi">Número de registro no INPI</label><input id="af-inpi" data-sem-mascara placeholder="até 17 números"></div>
+    <div class="campo"><label for="af-dev-cnpj">CNPJ do desenvolvedor</label><input id="af-dev-cnpj" name="cnpj"></div>
+    <div class="campo"><label for="af-dev-nome">Razão social do desenvolvedor</label><input id="af-dev-nome"></div>
+    <div class="campo"><label for="af-dev-email">E-mail do desenvolvedor</label><input id="af-dev-email" type="email"></div>
+  </div>
+  {% if pode.configurar_ponto %}<button class="btn secundario" id="af-gravar" type="button" style="margin-top:8px">Gravar os dados do programa</button>{% endif %}
+  <h4 style="margin:16px 0 6px">Gerar</h4>
+  <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end">
+    <div class="campo" style="min-width:260px"><label for="af-empresa">Empresa</label><select id="af-empresa" data-sem-busca></select></div>
+    <div class="campo"><label for="af-de">De</label><input type="date" id="af-de"></div>
+    <div class="campo"><label for="af-ate">Até</label><input type="date" id="af-ate"></div>
+    <button class="btn" id="af-afd" type="button">Baixar o AFD</button>
+    <button class="btn secundario" id="af-aej" type="button">Baixar o AEJ</button>
+  </div>
+  <div id="af-msg" style="margin-top:8px"></div>
+</div>
 <div class="cartao" data-secao-card="teste">
   <div class="cartao-cab"><h3>Modo de teste</h3></div>
   <div class="cartao-dica" style="margin-top:0">Para testar o ponto com você mesmo, sem mexer na planilha
@@ -8426,7 +8454,50 @@ const FC_FOTOS = new FiltroDaLista("cff", {busca: "código ou nome da obra", dim
 const FILTROS_CONFIG = {escalas: FC_ESCALAS, obras: FC_OBRAS, aparelhos: FC_APARELHOS, fotos: FC_FOTOS};
 const TITULO_SECAO = {escalas: "Escalas", obras: "Obras e cerca", aparelhos: "Aparelhos", fotos: "Fotos"};
 
-const SECOES = ["geral", "obras", "aparelhos", "fotos", "escalas", "jornada", "ausencias", "validacao", "mensagens", "teste"];
+const SECOES = ["geral", "obras", "aparelhos", "fotos", "escalas", "jornada", "ausencias", "validacao", "mensagens", "teste", "fiscal"];
+// OS ARQUIVOS DA FISCALIZAÇÃO (06/11/2026)
+async function carregarArquivosFiscais() {
+  if (!els("af-empresa")) return;
+  try {
+    const d = await api("/erp/api/ponto/arquivos-fiscais");
+    const c = d.configuracao || {};
+    els("af-inpi").value = c.inpi || ""; els("af-dev-cnpj").value = c.desenvolvedor_cnpj || "";
+    els("af-dev-nome").value = c.desenvolvedor_nome || ""; els("af-dev-email").value = c.desenvolvedor_email || "";
+    els("af-empresa").innerHTML = (d.empresas || []).length
+      ? d.empresas.map(e => `<option value="${e.id}">${escapar(e.razao_social)} — ${escapar(e.cnpj)} (${e.obras} obra(s))</option>`).join("")
+      : `<option value="">nenhuma empresa com obra em que alguém bateu (cadastre a empresa da obra)</option>`;
+    if (!els("af-de").value) {
+      const h = new Date(), ini = new Date(h.getFullYear(), h.getMonth() - 1, 1), fim = new Date(h.getFullYear(), h.getMonth(), 0);
+      const iso = x => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
+      els("af-de").value = iso(ini); els("af-ate").value = iso(fim);
+    }
+  } catch (e) { aviso("af-msg", escapar(e.message), "erro"); }
+}
+async function baixarArquivoFiscal(tipo) {
+  const p = new URLSearchParams({empresa_id: els("af-empresa").value, de: els("af-de").value, ate: els("af-ate").value});
+  if (!p.get("empresa_id")) return aviso("af-msg", "Escolha a empresa.", "erro");
+  aviso("af-msg", `Gerando o ${tipo.toUpperCase()}…`, "info");
+  try {
+    const r = await fetch(`/erp/api/ponto/arquivos-fiscais/${tipo}?${p}`, {credentials: "same-origin"});
+    if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.erro || `erro ${r.status}`); }
+    const nome = (/filename="([^"]+)"/.exec(r.headers.get("Content-Disposition") || "") || [])[1] || `${tipo}.txt`;
+    const url = URL.createObjectURL(await r.blob());
+    const a = document.createElement("a"); a.href = url; a.download = nome; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    aviso("af-msg", `${escapar(nome)} baixado.`, "ok");
+  } catch (e) { aviso("af-msg", escapar(e.message), "erro"); }
+}
+if (els("af-empresa")) {
+  els("af-afd").addEventListener("click", () => baixarArquivoFiscal("afd"));
+  els("af-aej").addEventListener("click", () => baixarArquivoFiscal("aej"));
+  if (els("af-gravar")) els("af-gravar").addEventListener("click", async () => {
+    try { await postar("/erp/api/ponto/arquivos-fiscais", {inpi: els("af-inpi").value, desenvolvedor_cnpj: els("af-dev-cnpj").value,
+                       desenvolvedor_nome: els("af-dev-nome").value, desenvolvedor_email: els("af-dev-email").value});
+          aviso("af-msg", "Dados do programa gravados.", "ok"); }
+    catch (e) { aviso("af-msg", escapar(e.message), "erro"); }
+  });
+  carregarArquivosFiscais();
+}
 function mostrarSecao(secao) {
   if (!SECOES.includes(secao)) secao = "geral";
   document.querySelectorAll("[data-secao-card]").forEach(c => { c.hidden = c.dataset.secaoCard !== secao; });
