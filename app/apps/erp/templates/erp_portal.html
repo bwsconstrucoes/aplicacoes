@@ -46,6 +46,14 @@
   .recado.erro { background: #FDECEC; color: #A32020; }
   .recado.ok { background: #E8F6EE; color: #1C6B3C; }
   .recado.aviso { background: #FFF6E5; color: #8A5B00; }
+  /* O ESCOLHEDOR DE ARQUIVO do navegador sai em inglês e cortado no celular
+     ("Choose File / No file chosen"). Este rótulo o substitui: em português,
+     e no celular ele abre a câmera direto. */
+  .escolher { flex: 1 1 160px; min-width: 140px; text-align: center;
+         background: #EEF2FA; color: #31507F; border: 1px dashed #C9D3E4;
+         border-radius: 10px; padding: 11px 12px; font-size: 14px;
+         font-weight: 600; cursor: pointer; }
+  .escolher.cheio { background: #E8F6EE; color: #1C6B3C; border-style: solid; }
 </style>
 </head>
 <body>
@@ -140,12 +148,26 @@ function pintarDevolucoes(){
           ${d.prazo ? (d.atrasada ? "venceu em " : "até ") + dataBR(d.prazo) : "sem prazo"}
         </span>
       </div>
-      <input type="file" id="arq-${d.id}" accept=".pdf,.png,.jpg,.jpeg"
-             style="max-width:160px">
+      <label class="escolher" for="arq-${d.id}" id="rot-${d.id}">
+        Escolher arquivo ou tirar foto</label>
+      <input type="file" id="arq-${d.id}" accept=".pdf,.png,.jpg,.jpeg,image/*"
+             capture="environment" style="display:none">
       <button class="btn-portal" data-dev="${d.id}">Enviar</button>
     </div>`).join("");
   els("devolucoes").querySelectorAll("[data-dev]").forEach(b =>
     b.addEventListener("click", () => devolver(+b.dataset.dev, b)));
+  // O NOME DO ARQUIVO aparece no lugar do rótulo: sem isso, quem escolheu a
+  // foto não tem como saber que escolheu, e aperta Enviar duas vezes.
+  l.forEach(d => {
+    const campo = els("arq-" + d.id);
+    if (!campo) return;
+    campo.addEventListener("change", () => {
+      const rot = els("rot-" + d.id);
+      const nome = campo.files.length ? campo.files[0].name : "";
+      rot.textContent = nome || "Escolher arquivo ou tirar foto";
+      rot.classList.toggle("cheio", !!nome);
+    });
+  });
 }
 
 async function devolver(id, botao){
@@ -179,13 +201,39 @@ const ROTULO = {
   categoria: "Categoria", dependente_nome: "Nome do dependente",
   dependente_nascimento: "Nascimento do dependente", dependente_cpf: "CPF do dependente",
   parentesco: "Parentesco", o_que_muda: "O que muda", primeira_competencia: "A partir do mês",
+  admissao: "Data de admissão", tipo_contrato: "Tipo de contrato",
+  convencao_id: "Convenção coletiva", matricula: "Matrícula",
+  email: "E-mail", pix_tipo: "Tipo da chave Pix", pix_chave: "Chave Pix",
+  cep: "CEP", logradouro: "Rua", numero_endereco: "Número", bairro: "Bairro",
+  municipio: "Cidade", uf: "Estado", data_nascimento: "Data de nascimento",
+  salario_familia: "Pedir salário-família?",
+  dependente_ir: "Conta no imposto de renda?",
+  categoria_alimentacao: "Como paga a alimentação",
+  aux_alimentacao: "Valor da alimentação (R$)",
+  categoria_transporte: "Como paga o transporte",
+  aux_transporte: "Valor do transporte (R$)",
+  conceder: "Conceder ou cancelar?", meio_transporte: "Meio de transporte",
 };
+// CAMPO DE SIM/NÃO É CAIXINHA, não texto livre: senão volta "s", "sim", "SIM"
+// e "pode" para a mesma resposta.
+const SIM_NAO = {
+  salario_familia: ["Sim, pedir", "Não pedir"],
+  dependente_ir: ["Sim, conta", "Não conta"],
+  conceder: ["Conceder", "Cancelar"],
+};
+// CAMPO DE DATA TEM DE ABRIR O CALENDÁRIO DO CELULAR. Data que cai como texto
+// livre volta "12/3", "12-03-26" e "ontem" — e o DP arruma à mão.
 const TIPO_CAMPO = {
   data_inicio: "date", data_saida: "date", aviso_previo: "date", ultimo_dia: "date",
-  vigencia: "date", dependente_nascimento: "date", primeira_competencia: "month",
+  vigencia: "date", dependente_nascimento: "date", data_nascimento: "date",
+  admissao: "date", primeira_competencia: "month",
+  email: "email",
   observacao: "textarea", descricao: "textarea", justificativa: "textarea",
-  o_que_muda: "textarea",
+  o_que_muda: "textarea", motivo: "textarea",
 };
+// Campo de número abre o TECLADO NUMÉRICO no celular, e não o alfabético.
+const SO_NUMERO = /^(faltas_a_descontar|numero_endereco|parcelas)$/;
+const SO_DIGITO = /^(cpf|telefone|cep|matricula)$/;
 
 function pintarFormulario(){
   const tipos = DADOS.tipos || [];
@@ -227,10 +275,30 @@ function pintarCamposDoTipo(){
             <select id="p-${c}" name="${c}">
               <option value="">escolha…</option>
               ${(DADOS.obras_lista || []).map(o =>
-                `<option value="${o.id}">${esc(o.codigo)}</option>`).join("")}
+                `<option value="${o.id}">${esc(o.codigo)} — ${esc(o.nome)}</option>`).join("")}
             </select></label>`;
+        // CAMPO DE LISTA FECHADA VIRA CAIXINHA, nunca texto livre: a obra
+        // digitaria "acordo", "mandado embora" e "pediu pra sair" para a mesma
+        // coisa, e o DP passaria a traduzir à mão o que o sistema já sabe.
+        if (SIM_NAO[c])
+          return `<label class="campo-portal">${esc(rot)}
+            <select id="p-${c}" name="${c}">
+              <option value="">escolha…</option>
+              <option value="1">${esc(SIM_NAO[c][0])}</option>
+              <option value="0">${esc(SIM_NAO[c][1])}</option>
+            </select></label>`;
+        const lista = (DADOS.listas || {})[c];
+        if (lista)
+          return `<label class="campo-portal">${esc(rot)}
+            <select id="p-${c}" name="${c}">
+              <option value="">escolha…</option>
+              ${lista.map(o => `<option value="${esc(o.valor)}">${esc(o.rotulo)}</option>`).join("")}
+            </select></label>`;
+        const modo = SO_NUMERO.test(c) || SO_DIGITO.test(c) ? "numeric"
+                   : (tipo === "text" && /valor|salario|aux_/.test(c)) ? "decimal" : "";
         return `<label class="campo-portal">${esc(rot)}
-          <input id="p-${c}" name="${c}" type="${tipo}"></label>`;
+          <input id="p-${c}" name="${c}" type="${tipo}"
+            ${modo ? `inputmode="${modo}"` : ""}></label>`;
       }).join("");
 }
 

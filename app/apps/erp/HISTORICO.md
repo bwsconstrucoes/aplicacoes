@@ -7434,6 +7434,55 @@ O que só isso mostra: erro de JavaScript que mata a tela inteira, tela que
 carrega em branco, botão que não responde, número formatado errado. Nenhuma
 dessas coisas aparece num teste que só olha o HTML que o servidor mandou.
 
+## 06/11/2026 — AS FOTOS DO PORTAL ACHARAM CINCO DEFEITOS QUE A SUÍTE NÃO VIA
+
+O dono pediu *"quero telas"* do portal da obra. Montei uma maquete que usa o
+**template de verdade** e a **folha de estilo de verdade**, só com o `fetch`
+dublado, e fotografei a 390 px de largura (celular). Olhar a foto achou cinco
+defeitos que nenhum teste pegava, porque todos eram de APARÊNCIA, não de
+lógica:
+
+1. **Campo de lista fechada virando texto livre.** `listas_fechadas()` devolvia
+   a chave `categoria`, mas o campo do formulário se chama
+   `categoria_transporte`. A tela não reclama: desenha uma caixa de texto. Sete
+   campos estavam assim (`tipo_contrato`, `pix_tipo`, `uf`,
+   `categoria_alimentacao`, `categoria_transporte` em dois pedidos,
+   `meio_transporte`). A obra ia digitar "moto", "motinha" e "veículo próprio"
+   para a mesma coisa, e o DP ia traduzir à mão.
+2. **22 campos saindo com o nome do banco** — "aux transporte", "conceder",
+   "categoria transporte" — porque o `ROTULO` só cobria os campos que eu tinha
+   olhado.
+3. **`admissao` e `data_nascimento` caindo como texto**, sem abrir calendário.
+   Data em texto livre volta "12/3", "12-03-26" e "ontem".
+4. **Campo de sim/não como texto livre** (`conceder`, `dependente_ir`,
+   `salario_familia`): voltaria "s", "sim", "SIM" e "pode".
+5. **A situação do pedido chegando na obra como `EM_ANALISE`**, em vez de
+   "Em análise". O portal mandava `sol.situacao` cru.
+
+**O conserto de fundo, e é ele que importa:** `listas_fechadas()` passou a ser
+montada a partir do `DA_LISTA` do próprio cadastro (`cadastros/pessoas.py`),
+com a chave sendo o NOME DO CAMPO. Lista que mudar no cadastro muda no portal
+sozinha, e não há mais duas listas para manter de acordo. Cargo e convenção vêm
+do banco. A opção fora de uso (cartão do transporte) não aparece para quem abre
+pedido novo, mas o cadastro antigo que já a tem continua lendo.
+
+**Cinco travas novas em `tests/test_caixa_e_portal.py`**, porque todos esses
+erros eram silenciosos: campo de lista fechada sem caixinha, lista que é cópia
+em vez da do cadastro, opção fora de uso aparecendo, campo de data sem
+calendário, campo sem rótulo em português, e a situação em código. As travas
+percorrem a lista de campos dos tipos de pedido — não a minha memória.
+
+**O que a foto NÃO prova:** o campo de data apareceu como `mm/dd/yyyy` nas
+fotos. Isso é do navegador do contêiner (o Chromium sem interface ignora o
+idioma na hora de desenhar o campo nativo de data); no celular em português
+sai `dd/mm/aaaa`. Não dá para o site mandar nesse formato — quem manda é o
+aparelho.
+
+**Como refazer as fotos:** o gerador da maquete e o script do Playwright ficam
+no bloco de rascunho da sessão; são 20 linhas cada, e o importante é o método —
+**usar o template de verdade, nunca uma cópia escrita à mão.** Uma maquete
+escrita à mão mostra os defeitos que eu inventei, não os que estão no código.
+
 ## Coisas pequenas que mordem
 
 - `pip install -r requirements-dev.txt` falha com o pip antigo do sistema

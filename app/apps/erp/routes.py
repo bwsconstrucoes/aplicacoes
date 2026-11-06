@@ -10993,6 +10993,7 @@ def api_portal_inicio():
                 "tipos": svc_portal.tipos(s),
                 "pessoas": svc_portal.pessoas_ao_alcance(s),
                 "obras_lista": svc_portal.obras_para_escolher(s),
+                "listas": svc_portal.listas_fechadas(s),
                 "pedidos": svc_portal.meus_pedidos(s),
                 "devolucoes": svc_portal.minhas_devolucoes(s)})
     except svc_portal.SemAcesso as e:

@@ -204,6 +204,65 @@ def tipos(s: Session) -> list[dict[str, Any]]:
     } for k in TIPOS_DO_PORTAL if k in svc_sp.TIPOS]
 
 
+def listas_fechadas(s: Session | None = None) -> dict[str, list[dict[str, str]]]:
+    """As caixinhas do portal, com a chave sendo O NOME DO CAMPO do formulário.
+
+    SEM ISTO O CAMPO VIRA TEXTO LIVRE, e aí a obra digita "acordo", "mandado
+    embora" e "pediu pra sair" para a mesma coisa — e o DP passa a traduzir à
+    mão o que o sistema já sabe.
+
+    A fonte é o `DA_LISTA` do próprio cadastro, não uma cópia: lista que mudar
+    lá muda aqui sozinha. A chave é o nome do campo (`categoria_transporte`),
+    nunca o nome da lista (`categoria`) — errar isso faz o campo voltar a ser
+    texto livre sem ninguém perceber, porque a tela não reclama.
+    """
+    from app.apps.erp.core.cadastros import pessoas as svc
+
+    ROTULOS = {
+        "sexo": svc.SEXO_ROTULOS, "estado_civil": svc.ESTADO_CIVIL_ROTULOS,
+        "escolaridade": svc.ESCOLARIDADE_ROTULOS,
+        "vinculo": svc.VINCULO_ROTULOS, "tipo_contrato": svc.TIPO_CONTRATO_ROTULOS,
+        "categoria_alimentacao": svc.CATEGORIA_ALIMENTACAO_ROTULOS,
+        "categoria_transporte": svc.CATEGORIA_TRANSPORTE_ROTULOS,
+        "meio_transporte": svc.MEIO_TRANSPORTE_ROTULOS,
+    }
+    # FORA DE USO NÃO APARECE para quem está abrindo pedido novo. O cadastro
+    # antigo que já tem "cartão" continua lendo — só não se escolhe de novo.
+    FORA_DE_USO = {"categoria_transporte": set(svc.CATEGORIAS_TRANSPORTE_FORA_DE_USO)}
+
+    def par(campo, chaves, rotulos):
+        fora = FORA_DE_USO.get(campo, set())
+        return [{"valor": c, "rotulo": rotulos.get(c, c)}
+                for c in chaves if c not in fora]
+
+    listas = {campo: par(campo, chaves, ROTULOS.get(campo, {}))
+              for campo, chaves in svc.DA_LISTA.items()}
+    # Estes dois são campos do PEDIDO, não do cadastro, então não estão no
+    # `DA_LISTA` — mas a lista é a mesma do cadastro.
+    listas["forma_desligamento"] = par(
+        "forma_desligamento", svc.FORMAS_DESLIGAMENTO,
+        svc.FORMA_DESLIGAMENTO_ROTULOS)
+    listas["parentesco"] = par("parentesco", svc.PARENTESCOS,
+                               svc.PARENTESCO_ROTULOS)
+    listas["pix_tipo"] = [{"valor": v, "rotulo": r} for v, r in (
+        ("CPF", "CPF"), ("CNPJ", "CNPJ"), ("EMAIL", "E-mail"),
+        ("TELEFONE", "Telefone"), ("ALEATORIA", "Chave aleatória"))]
+
+    # Cargo e convenção vêm do banco: são cadastro, mudam sem código.
+    if s is not None:
+        listas["cargo_id"] = [
+            {"valor": str(l["id"]), "rotulo": l["nome"]}
+            for l in s.execute(text(
+                "SELECT id, nome FROM cargos WHERE ativo IS NOT FALSE"
+                " ORDER BY nome")).mappings().all()]
+        listas["convencao_id"] = [
+            {"valor": str(l["id"]), "rotulo": l["nome"]}
+            for l in s.execute(text(
+                "SELECT id, nome FROM convencoes WHERE ativo IS NOT FALSE"
+                " ORDER BY nome")).mappings().all()]
+    return listas
+
+
 def abrir(s: Session, dados: dict[str, Any]) -> dict[str, Any]:
     """Abre a requisição em nome de quem está no portal.
 
@@ -254,7 +313,11 @@ def meus_pedidos(s: Session) -> list[dict[str, Any]]:
     return [{
         "numero": l["numero"],
         "tipo": svc_sp.TIPOS.get(l["tipo"], {}).get("nome", l["tipo"]),
-        "situacao": l["situacao"], "pessoa": l["pessoa"] or "",
+        # O RÓTULO EM PORTUGUÊS, NÃO O CÓDIGO. Quem olha está na obra, no
+        # celular: "EM_ANALISE" na tela é defeito, não detalhe. E o rótulo é o
+        # MESMO que o DP vê na tela dele — a mesma palavra nos dois lados.
+        "situacao": svc_sp.SITUACAO_ROTULOS.get(l["situacao"], l["situacao"]),
+        "pessoa": l["pessoa"] or "",
         "quando": str(l["criado_em"]), "resposta": l["resposta"] or "",
     } for l in linhas]
 
