@@ -519,6 +519,7 @@ para facilitar a tomada de decisão"*.
 - De passagem: a barra "0 alertas marcados" aparecia sem nada marcado (o CSS vencia o `hidden`).
 - Teste `test_o_alerta_diz_qual_batida_faltou_e_mostra_a_foto_escura`; tela conferida no navegador (a foto escura na
   linha; o pedido de ajuste abrindo com 11:00 já preenchido).
+**Publicado em 06/11/2026** (com o "pode" do dono) — SEM MIGRAÇÃO.
 
 ## 06/11/2026 (sexta) — A ronda depois da saída; as faltas seguidas que ainda repetiam; a obra no resumo
 
