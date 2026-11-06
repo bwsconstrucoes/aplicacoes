@@ -110,21 +110,26 @@ def sortear_horarios(inicio: dt.datetime, duracao: dt.timedelta, rng: random.Ran
     return [h.replace(microsecond=0) for h in saida]
 
 
-def duracao_do_turno(conn: Connection, colaborador_id: int, entrada_local: dt.datetime) -> dt.timedelta:
-    """A duração do turno pela escala (o período que começa perto da entrada); sem
-    escala, 12 h."""
+def fim_do_turno(conn: Connection, colaborador_id: int, entrada_local: dt.datetime) -> dt.datetime:
+    """QUANDO o turno acaba (06/11/2026, o dono: "um vigia recebeu a mensagem da ronda às 7 horas da manhã, num horário
+    que ele já tinha saído"). Antes as rondas se espalhavam por 12 h (ou a duração da escala) A PARTIR DA ENTRADA — quem
+    entrava tarde ganhava ronda depois da hora de sair. Agora o turno acaba na hora da ESCALA daquela noite (17h–6h: às
+    6h, entre quando entrar); sem escala naquele dia (a noite de folga trabalhada, quem não tem escala), 12 h depois da
+    entrada. E nunca termina menos de 2 h depois da entrada (a escala ilegível não zera a noite)."""
+    padrao = entrada_local + dt.timedelta(hours=TURNO_PADRAO_H)
     try:
         from . import escalas
-        esc, _ = escalas.EscalasDaPessoa(conn, colaborador_id).no_dia(entrada_local.date())
-        if esc is not None:
-            periodos = esc.periodos(entrada_local.date())
-            if periodos:
-                ini, fim = periodos[0][0], periodos[-1][1]
-                if fim - ini >= 6 * 60:
-                    return dt.timedelta(minutes=fim - ini)
+        dia = entrada_local.date()
+        esc, _ = escalas.EscalasDaPessoa(conn, colaborador_id).no_dia(dia)
+        periodos = esc.periodos(dia) if esc is not None else []
+        if periodos and periodos[-1][1] - periodos[0][0] >= 6 * 60:
+            meia_noite = entrada_local.replace(hour=0, minute=0, second=0, microsecond=0)
+            fim = meia_noite + dt.timedelta(minutes=periodos[-1][1])
+            if fim - entrada_local >= dt.timedelta(hours=2):
+                return min(fim, entrada_local + dt.timedelta(hours=TURNO_MAX_H))
     except Exception:  # noqa: BLE001 — sem escala legível, o padrão
         pass
-    return dt.timedelta(hours=TURNO_PADRAO_H)
+    return padrao
 
 
 # ---------------------------------------------------------------------------
@@ -162,7 +167,7 @@ def ao_bater(conn: Connection, pessoa: dict, marcacao: dict, *, rng: Optional[ra
         if not (ENTRADA_DE <= local.hour < ENTRADA_ATE):
             return ""                     # de manhã, sem turno aberto: é saída de turno esquecido, não entrada
         rng = rng or random.Random()
-        horarios = sortear_horarios(momento, duracao_do_turno(conn, int(pessoa["id"]), local), rng)
+        horarios = sortear_horarios(momento, fim_do_turno(conn, int(pessoa["id"]), local) - local, rng)
         for i, h in enumerate(horarios, start=1):
             db.executar(conn, """
                 INSERT INTO ponto.rondas (colaborador_id, entrada_id, data_referencia, obra_id, numero, agendada_para)
@@ -225,6 +230,17 @@ def rodar(conn_fabrica: Callable, *, agora: Optional[dt.datetime] = None,
             r = db.um(conn, """SELECT r.*, c.nome FROM ponto.rondas r JOIN public.colaboradores c ON c.id = r.colaborador_id
                                 WHERE r.id = :i AND r.status = 'AGENDADA' FOR UPDATE SKIP LOCKED""", i=linha["id"])
             if not r:
+                continue
+            # 06/11/2026: o vigia já bateu a saída depois da entrada desta ronda (a saída que entrou por ajuste, a do
+            # ponto da obra sem internet que chegou depois, a que não cancelou por erro): a ronda não sai mais
+            saiu = db.um(conn, """
+                SELECT 1 AS x FROM ponto.marcacoes e, ponto.marcacoes s
+                 WHERE e.id = :e AND s.colaborador_id = e.colaborador_id AND s.status <> 'REJEITADA'
+                   AND s.timestamp_servidor > e.timestamp_servidor + make_interval(mins => :rep)
+                   AND s.timestamp_servidor <= :agora LIMIT 1""", e=int(r["entrada_id"]), rep=REPETIDA_MIN, agora=agora)
+            if saiu:
+                db.executar(conn, "UPDATE ponto.rondas SET status = 'CANCELADA', motivo = :m WHERE id = :i",
+                            m="o vigia já tinha batido a saída", i=r["id"])
                 continue
             pessoa = cadastros.colaborador_por_id(conn, int(r["colaborador_id"]))
             telefone = envios.telefone_valido(pessoa.get("telefone")) if pessoa else None

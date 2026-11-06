@@ -184,3 +184,39 @@ def test_o_ajuste_do_plantao_dobrado_cancela_as_rondas_da_falsa_entrada(app, mun
     assert p["status"] == "APROVADA"
     assert set(rondas_de(ter)) == {"CANCELADA"}
     assert rondas_de(seg) == antes_seg                          # a noite de verdade não muda
+
+
+def test_a_ronda_nao_sai_depois_da_hora_de_sair(app, mundo, banco):
+    """06/11/2026, o dono: "um vigia recebeu a mensagem da ronda às 7 horas da manhã, num horário que ele já tinha
+    saído". As rondas ficam dentro do turno da ESCALA (17h–6h), mesmo com a entrada tarde; e a ronda cujo vigia já
+    bateu a saída — que chegou por ajuste, ou do ponto da obra sem internet — não sai mais."""
+    from app.apps.ponto import db
+    from app.apps.ponto.core import rondas
+    dp = _vigia(app, mundo, mundo["joao"])
+    seg = _segunda_passada()
+    ter = dia_util(seg, 1)
+    esc = dp.post("/erp/api/ponto/escalas", json={"nome": "Vigia noite 17-06", "tipo": "SEMANAL",
+                  "semana": {str(d): [["17:00", "06:00"]] for d in range(7)}}).get_json()
+    assert esc.get("ok"), esc
+    eid = esc.get("escala", esc).get("id")
+    r = dp.post(f"/erp/api/ponto/pessoas/{mundo['joao']}/escala",
+                json={"escala_id": eid, "vigencia_inicio": (seg - dt.timedelta(days=7)).isoformat()})
+    assert r.status_code == 200, r.get_json()
+    bater_via_chave(app, CPF_JOAO, local(seg, 20, 0))                    # entrou tarde
+    with db.conexao() as conn:
+        lista = db.todos(conn, "SELECT * FROM ponto.rondas ORDER BY numero")
+    assert len(lista) == 4 and lista[-1]["agendada_para"] <= local(ter, 5, 0)       # a última, 1 h antes das 6h
+    # a saída chegou sem cancelar as rondas (por ajuste, ou do ponto da obra sem internet): a ronda devida não sai
+    import app.apps.ponto.core.rondas as modulo
+    original, modulo.ao_bater = modulo.ao_bater, (lambda *a, **kw: "")
+    try:
+        bater_via_chave(app, CPF_JOAO, local(seg, 23, 0))
+    finally:
+        modulo.ao_bater = original
+    enviados = []
+    r = rondas.rodar(db.conexao, agora=lista[-1]["agendada_para"] + dt.timedelta(seconds=5),
+                     enviar=lambda **kw: enviados.append(kw) or {"whatsapp": {"ok": True}})
+    assert r["enviadas"] == 0 and not [e for e in enviados if e["finalidade"] == "ponto.ronda"]
+    with db.conexao() as conn:
+        motivos = {x["motivo"] for x in db.todos(conn, "SELECT motivo FROM ponto.rondas WHERE status = 'CANCELADA'")}
+    assert "o vigia já tinha batido a saída" in motivos

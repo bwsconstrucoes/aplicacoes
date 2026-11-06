@@ -137,6 +137,21 @@ def _registrar(conn: Connection, vistos: set, *, chave: str, codigo: str, mensag
 # O ALERTA QUE CRESCE (06/11/2026, o dono: "num determinado dia eu tinha 10 faltas (…) no dia seguinte, de novo porque
 # eu tenho 11. No outro dia, 12 (…) fica infinito. Basta a última, a mais atual"): faltas seguidas, atraso repetido,
 # fora da cerca repetido e banco negativo valem só no mais recente — os anteriores da mesma pessoa saem, ditos.
+CRESCEM = ("FALTAS_SEGUIDAS", "FORA_DA_CERCA_REPETIDO", "BANCO_NEGATIVO")
+
+
+def _um_por_pessoa(conn: Connection) -> None:
+    """Os repetidos que já estavam abertos (de antes desta regra, ou da pessoa cuja sequência já terminou): por pessoa e
+    tipo, fica aberto só o mais recente."""
+    db.executar(conn, """
+        UPDATE ponto.alertas a SET situacao = 'RESOLVIDO', tratado_em = now(),
+               tratado_por = 'o próprio sistema (trocado pelo alerta mais recente)'
+         WHERE a.situacao = 'ABERTO' AND a.codigo = ANY(:cods) AND a.colaborador_id IS NOT NULL
+           AND EXISTS (SELECT 1 FROM ponto.alertas b
+                        WHERE b.situacao = 'ABERTO' AND b.codigo = a.codigo AND b.colaborador_id = a.colaborador_id
+                          AND (b.data_referencia, b.id) > (a.data_referencia, a.id))""", cods=list(CRESCEM))
+
+
 def _so_o_mais_recente(conn: Connection, *, codigo: str, prefixo: str, chave_atual: str) -> None:
     db.executar(conn, """
         UPDATE ponto.alertas SET situacao = 'RESOLVIDO', tratado_em = now(),
@@ -188,8 +203,17 @@ def gerar(conn: Connection, *, ate: Optional[dt.date] = None,
             elif d["previsto"]:
                 seguidas, comeco = 0, None
         if maior >= FALTAS_SEGUIDAS_MIN:
-            # a chave é o PRIMEIRO dia da sequência: a mesma sequência crescendo atualiza o mesmo alerta
+            # a chave é o PRIMEIRO dia da sequência: a mesma sequência crescendo atualiza o mesmo alerta. Na falta longa,
+            # a janela de 4 semanas anda e o "primeiro dia" visto anda junto — então, se a pessoa já tem um alerta
+            # aberto cuja sequência encosta nesta (o último dia dele cai dentro dela), é ESSE que se atualiza.
             chave = f"FALTAS_SEGUIDAS:{p['id']}:{comeco_maior}"
+            ja_aberto = db.um(conn, """SELECT chave FROM ponto.alertas
+                                        WHERE codigo = 'FALTAS_SEGUIDAS' AND situacao = 'ABERTO' AND chave LIKE :pre
+                                          AND data_referencia >= CAST(:ini AS date) - 1
+                                        ORDER BY data_referencia DESC LIMIT 1""",
+                              pre=f"FALTAS_SEGUIDAS:{p['id']}:%", ini=comeco_maior)
+            if ja_aberto:
+                chave = ja_aberto["chave"]
             _so_o_mais_recente(conn, codigo="FALTAS_SEGUIDAS", prefixo=f"FALTAS_SEGUIDAS:{p['id']}:", chave_atual=chave)
             _registrar(conn, vistos, chave=chave,
                        codigo="FALTAS_SEGUIDAS",
@@ -245,6 +269,7 @@ def gerar(conn: Connection, *, ate: Optional[dt.date] = None,
                                colaborador_id=p["id"], obra_id=p.get("obra_id"), data=ate)
                     contagem["BANCO_NEGATIVO"] += 1
 
+    _um_por_pessoa(conn)
     contagem.update(_dois_lugares(conn, vistos, inicio_dia, ate))
     contagem.update(_parados(conn, vistos))
     if db.tem_003(conn):
@@ -759,6 +784,21 @@ def tratar_varios(conn: Connection, ids: list, *, situacao: str, nota: str, por:
     return {"feitos": feitos, "fora": fora}
 
 
+def _obra_em_que_bate(conn: Connection, ids: list, dia: dt.date) -> dict:
+    """{colaborador_id: "CÓDIGO — Nome"} da obra em que a pessoa mais bateu nos 30 dias até `dia`."""
+    if not ids:
+        return {}
+    linhas = db.todos(conn, """
+        SELECT DISTINCT ON (m.colaborador_id) m.colaborador_id, o.codigo, o.nome
+          FROM ponto.marcacoes m JOIN public.obras o ON o.id = m.obra_id
+         WHERE m.colaborador_id = ANY(:ids) AND m.status <> 'REJEITADA'
+           AND m.data_referencia BETWEEN CAST(:d AS date) - 30 AND :d
+         GROUP BY m.colaborador_id, o.codigo, o.nome
+         ORDER BY m.colaborador_id, count(*) DESC, max(m.timestamp_servidor) DESC""", ids=[int(i) for i in ids], d=dia)
+    return {l["colaborador_id"]: (f"{l['codigo']} — {l['nome']}" if l.get("nome") and l["nome"] != l["codigo"]
+                                  else l["codigo"]) for l in linhas}
+
+
 def resumo_do_dia(conn: Connection, dia: Optional[dt.date] = None,
                   obras: Optional[list[int]] = None) -> str:
     """O texto que vai por WhatsApp. Números contados aqui, não escritos por IA."""
@@ -791,7 +831,12 @@ def resumo_do_dia(conn: Connection, dia: Optional[dt.date] = None,
         for codigo, n in por_codigo.most_common(8):
             linhas.append(f"  – {ROTULO.get(codigo, codigo)}: {n}")
     if urgentes:
+        # a OBRA em que a pessoa tem batido (06/11/2026, o dono: "tem o nome da pessoa (…) mas não tem a obra. Fica mais
+        # difícil de localizar"): a dos últimos 30 dias; sem batida, a do alerta
+        onde = _obra_em_que_bate(conn, [a["colaborador_id"] for a in urgentes if a.get("colaborador_id")], dia)
         linhas.append("Urgentes:")
-        linhas.extend(f"  ⚠️ {a['mensagem']}" for a in urgentes)
+        for a in urgentes:
+            obra = onde.get(a.get("colaborador_id")) or a.get("obra")
+            linhas.append(f"  ⚠️ {a['mensagem']}" + (f" — obra {obra}" if obra else ""))
     linhas.append("Detalhes no ERP › Ponto.")
     return "\n".join(linhas)
