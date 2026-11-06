@@ -500,6 +500,23 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 06/11/2026 (segunda) — O manual do vigia; e as horas a mais num dia compensadas no outro
+
+- **Manual, parte 9** ("Vigia: 12x36, plantão dobrado, permuta e ronda"), refeita com o panorama: só duas batidas,
+  o toque duplo, a noite que termina no dia seguinte (até 10h; até o meio-dia se ficou aberto), o revezamento
+  automático, o feriado, o plantão dobrado (o segundo ponto 2 minutos depois, a conferência do DP, o ajuste "entrada"
+  se esqueceu), a noite extra, esqueci de bater, a permuta (um pede pelos dois; a sugestão automática; quem só
+  cobriu) e a ronda. **Corrigido de passagem:** o manual dizia que a ronda depois dos 10 minutos ficava perdida — ela
+  vale até meia hora como ATRASADA (`rondas.TOLERANCIA_ATRASO_MIN`). PDF refeito (29 páginas).
+- **A pergunta do dono** (a turma que saiu às 20h30 na quinta e sai ao meio-dia na sexta, as mesmas horas): ensaiado
+  no banco de teste com a escala padrão (seg–qui 9 h, sex 8 h). Sem nada lançado: quinta **3h30 de extra** (entra no
+  relatório de extras e no fechamento) e sexta **4 h de falta parcial**. Com a **Compensação** lançada (folga =
+  sexta, dia trabalhado = quinta): quinta "compensado", extra zero; sexta com **30 min** de débito (as 4 h da tarde
+  menos as 3h30) — a conta certa. Dois achados, levados ao dono, sem mexer: (1) a sexta sai com o rótulo
+  **"Compensação não cumprida — 3h30 cobertas"**, que soa como erro numa compensação de meio dia combinada; (2) a
+  saída às 20h30 e a volta às 7h dão **10h30 de descanso, abaixo das 11 h da lei** (aviso de interjornada curta —
+  independe da compensação). Também: a compensação é lançada uma pessoa por vez; não há em lote.
+
 ## 06/11/2026 — O panorama do vigia (mensagem para o WhatsApp) e as lacunas que ele mostrou
 
 O dono pediu um panorama das particularidades do vigia (escala, 2 batidas, noite que vira o dia, permuta, plantão
