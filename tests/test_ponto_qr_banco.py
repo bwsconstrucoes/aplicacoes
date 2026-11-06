@@ -557,3 +557,29 @@ def test_os_repetidos_que_ja_estavam_abertos_saem_e_o_resumo_diz_a_obra(app, mun
     assert "Urgentes:" in texto and "— obra PG-A" in texto
     linha_maria = next((l for l in texto.splitlines() if "Maria" in l and "⚠️" in l), "")
     assert not linha_maria or "— obra PG-A" in linha_maria        # a obra em que ela bate, não a do cadastro
+
+
+def test_o_alerta_diz_qual_batida_faltou_e_mostra_a_foto_escura(app, mundo, banco):
+    """06/11/2026, o dono: "batida faltando em 5/11, mas não diz qual é a batida (…) na foto escura não aparece qual é a
+    foto de qual batida". O alerta diz o que faltou (com a hora da escala) e as batidas do dia; a foto escura vem na linha."""
+    from app.apps.ponto import db
+    from app.apps.ponto.core import alertas, marcacoes
+    from tests.test_ponto_gestao_banco import bater_via_chave
+    t, h, _ = _tablet(app, mundo)
+    ontem = _hoje() - dt.timedelta(days=1)
+    while ontem.weekday() > 4:
+        ontem -= dt.timedelta(days=1)
+    for hh in (7, 11, 12):
+        bater_via_chave(app, CPF_JOAO, local(ontem, hh, 0))                  # faltou a saída
+    preta = _foto(cor=(0, 0, 0), listras=False)
+    with db.conexao() as conn:
+        escura = marcacoes.registrar(conn, cpf=CPF_MARIA, obra="PG-A", origem="PWA", device_uuid=h["X-Device-UUID"],
+                                     device_token=h["X-Device-Token"], latitude=OBRA_A[0], longitude=OBRA_A[1],
+                                     foto_base64=preta, agora=local(ontem, 8, 0).astimezone(dt.timezone.utc))[0]
+        alertas.gerar(conn, ate=ontem)
+        lista = alertas.listar(conn)
+    faltando = next(a for a in lista if a["codigo"] in ("BATIDA_FALTANDO", "FALTA_PARCIAL")
+                    and a["colaborador_id"] == mundo["joao"] and a["data_referencia"] == ontem.isoformat())
+    assert "faltou: saída" in faltando["mensagem"] and "batidas: 07:00 11:00 12:00" in faltando["mensagem"]
+    foto = next(a for a in lista if a["codigo"] == "FOTO_ESCURA" and a["colaborador_id"] == mundo["maria"])
+    assert [f["marcacao_id"] for f in foto["fotos"]] == [escura["id"]] and "08:00" in foto["fotos"][0]["rotulo"]

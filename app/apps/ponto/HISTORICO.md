@@ -500,6 +500,26 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 06/11/2026 (sexta, segunda parte) — O alerta com o que é preciso para decidir ali mesmo
+
+O dono: *"batida faltando em 5/11, mas não diz qual é a batida. E seria interessante poder clicar e já abrir um ajuste
+(…) na foto escura não aparece qual é a foto de qual batida (…) veja nos outros alertas o que pode ser incluído — tudo
+para facilitar a tomada de decisão"*.
+- **A mensagem diz o que aconteceu** (`alertas._mensagem`): batida faltando e falta parcial dizem QUAL faltou, com a
+  hora que a escala previa ("faltou: saída (17:00)"); todos os alertas de um dia trazem as batidas feitas ("batidas:
+  07:00 11:00 12:00"); trabalho em descanso/feriado/fora do ciclo, as horas trabalhadas. Os já abertos ganham o texto
+  novo na próxima rodada (a mensagem é reescrita).
+- **"➕ incluir a batida que faltou"** na linha (batida faltando, falta parcial, falta): abre o pedido de ajuste com o
+  dia, a HORA prevista da primeira que faltou e "dia seguinte" quando é a saída de madrugada do turno da noite.
+- **"abrir o dia dd/mm"**: a janela da pessoa naquele dia (batidas, fotos, mapa), em todo alerta de um dia.
+- **As fotos na linha** também na foto escura (as batidas escuras do dia, com a hora — `alertas._fotos_escuras`), em
+  "dois lugares ao mesmo tempo" (as duas batidas) e na batida em análise parada.
+- **Para onde ir**: pedido parado e batida em análise parada levam às Validações; aparelho pendente/vencendo, CPFs
+  errados e câmera travada, aos Aparelhos.
+- De passagem: a barra "0 alertas marcados" aparecia sem nada marcado (o CSS vencia o `hidden`).
+- Teste `test_o_alerta_diz_qual_batida_faltou_e_mostra_a_foto_escura`; tela conferida no navegador (a foto escura na
+  linha; o pedido de ajuste abrindo com 11:00 já preenchido).
+
 ## 06/11/2026 (sexta) — A ronda depois da saída; as faltas seguidas que ainda repetiam; a obra no resumo
 
 - **A ronda das 7h para o vigia que já tinha saído.** O dono: *"um vigia recebeu a mensagem da ronda num horário que ele

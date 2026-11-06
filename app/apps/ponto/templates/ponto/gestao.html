@@ -426,7 +426,7 @@
   .chip.qd-falta { background:#FDECEA; color:var(--vermelho); border:1px dashed var(--vermelho); }
   .qd-atalhos { display:flex; flex-wrap:wrap; gap:4px; margin:0 0 8px; }
   .qd-par { display:grid; grid-template-columns:1fr; gap:6px; }
-  #qd-lote[hidden] { display:none !important; }
+  #qd-lote[hidden], .barra-lote[hidden] { display:none !important; }
   .qd-kpis .kpis { grid-template-columns:repeat(auto-fit, minmax(135px, 1fr)); }
   .qd-tabela td.dados, .qd-tabela td:nth-child(3) { white-space:nowrap; }
   .qd-grupo { font-size:11.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--tinta-suave);
@@ -2830,7 +2830,7 @@ async function obrasParaEscolher() {
   return OBRAS_PARA_ESCOLHER;
 }
 
-async function pedirAjuste(p, dia, depois) {
+async function pedirAjuste(p, dia, depois, hora, quando) {
   if (!p) return;
   let obras = [];
   try { obras = await obrasParaEscolher(); } catch (e) { falhou(e); return; }
@@ -2842,8 +2842,8 @@ async function pedirAjuste(p, dia, depois) {
     campos: [
       {nome: "data_inicio", rotulo: "Dia de trabalho", tipo: "date", valor: dia || hojeISO(),
        obrigatorio: true, largura: 1},
-      {nome: "hora", rotulo: "Horário da batida", tipo: "time", obrigatorio: true, largura: 1},
-      {nome: "quando", rotulo: "A batida foi", tipo: "select", valor: "0", largura: 1,
+      {nome: "hora", rotulo: "Horário da batida", tipo: "time", obrigatorio: true, largura: 1, valor: hora || ""},
+      {nome: "quando", rotulo: "A batida foi", tipo: "select", valor: quando || "0", largura: 1,
        opcoes: [{valor: "0", rotulo: "No próprio dia"},
                 {valor: "1", rotulo: "No dia seguinte (turno da noite)"}]},
       {nome: "obra", rotulo: "Obra da batida", tipo: "select", valor: "", largura: 3,
@@ -6123,6 +6123,18 @@ function desenharAlertas() {
             ${a.codigo === "ROSTO_NAO_CONFERE" && a.colaborador_id ? `<figure><img alt="" loading="lazy"
                 src="/erp/api/ponto/pessoas/${escapar(a.colaborador_id)}/foto-cadastral?v=${FOTO_CAD_ALERTA}" onerror="fotoQuebrada(this)"
                 style="cursor:default"><figcaption>a foto de cadastro<br>(é com ela que comparou)</figcaption></figure>` : ""}</div>` : "";
+        // OS ATALHOS PARA DECIDIR DALI (06/11/2026, o dono: "poder clicar na batida faltando e já abrir um ajuste (…)
+        // tudo para facilitar a tomada de decisão"): o dia da pessoa, incluir a batida que faltou, as Validações
+        const dia = a.colaborador_id && a.data_referencia && ALERTA_DE_DIA.has(a.codigo)
+          ? `<button type="button" class="link-btn elo" data-abrir-pessoa="${escapar(a.colaborador_id)}" data-dia="${escapar(a.data_referencia)}"
+               data-aba="dia">abrir o dia ${escapar(ddmm(a.data_referencia))}</button>` : "";
+        const incluir = PODE_TRATAR && a.situacao === "ABERTO" && a.colaborador_id && a.data_referencia
+          && ["BATIDA_FALTANDO", "FALTA_PARCIAL", "FALTA"].includes(a.codigo)
+          ? `<button type="button" class="link-btn elo" data-a-incluir="${a.id}">➕ incluir a batida que faltou</button>` : "";
+        const validar = ["PEDIDO_PARADO", "BATIDA_EM_ANALISE_PARADA"].includes(a.codigo)
+          ? `<a class="elo" href="/erp/ponto/pendencias">ir para as Validações</a>` : "";
+        const aparelho = ["APARELHO_PENDENTE", "APARELHO_VENCENDO", "TENTATIVAS_DE_CPF", "CAMERA_TRAVADA"].includes(a.codigo)
+          ? `<a class="elo" href="/erp/ponto/configuracao#aparelhos">ver os aparelhos</a>` : "";
         const rosto = a.codigo === "ROSTO_NAO_CONFERE" && a.colaborador_id
           ? `<button type="button" class="link-btn elo" data-abrir-pessoa="${escapar(a.colaborador_id)}" data-aba="rosto">conferir o rosto e a foto de cadastro</button>` : "";
         // Mosaico pendente e sequência rápida no mesmo aparelho se resolvem
@@ -6132,7 +6144,7 @@ function desenharAlertas() {
         return `<tr>
           ${PODE_TRATAR ? `<td><input type="checkbox" data-a-marcar="${a.id}" ${A_MARCADOS.has(a.id) ? "checked" : ""} aria-label="marcar este alerta"></td>` : ""}
           <td><b>${escapar(a.rotulo || ROTULOS[a.codigo] || a.codigo)}</b></td>
-          <td class="desc">${escapar(a.mensagem)}${fotosDoAlerta}${[rosto, nome, mosaico].filter(Boolean).map(x => `<small>${x}</small>`).join("")}</td>
+          <td class="desc">${escapar(a.mensagem)}${fotosDoAlerta}${[incluir, rosto, dia, nome, validar, aparelho, mosaico].filter(Boolean).map(x => `<small>${x}</small>`).join("")}</td>
           <td class="dados">${escapar(a.obra || "—")}</td>
           <td class="dados">${a.data_referencia ? dataBR(a.data_referencia) : "—"}</td>
           <td><span class="selo ${c}">${escapar(t)}</span>
@@ -6269,6 +6281,30 @@ els("a-gravidade").addEventListener("change", carregarAlertas);
 els("a-tipo").addEventListener("change", carregarAlertas);
 // "⭐ usar como foto de cadastro" direto no alerta do rosto: a foto da batida vira a de cadastro, e o alerta, resolvido
 let FOTO_CAD_ALERTA = Date.now();
+// os alertas de UM dia da pessoa: o atalho "abrir o dia" leva à janela dela naquele dia
+const ALERTA_DE_DIA = new Set(["FALTA", "FALTA_PARCIAL", "BATIDA_FALTANDO", "COMPENSACAO_NAO_CUMPRIDA", "TRABALHOU_NA_FOLGA",
+  "ATRASO", "SAIDA_ANTECIPADA", "EXTRA_ACIMA_DE_2H", "INTERVALO_CURTO", "INTERJORNADA_CURTA", "TRABALHO_EM_DESCANSO",
+  "TRABALHO_EM_FERIADO", "FORA_DO_CICLO", "BATIDA_NO_MEIO_DO_TURNO", "BATIDA_EM_DIA_ABONADO", "BATIDA_REPETIDA",
+  "SEM_FOTO", "FOTO_ESCURA", "FOTO_REPETIDA", "CAMERA_TRAVADA", "ROSTO_NAO_CONFERE", "QR_ANTIGO_USADO",
+  "BATIDA_RECUSADA_FORA_DA_OBRA", "DOIS_LUGARES", "BATIDA_EM_ANALISE_PARADA"]);
+// "incluir a batida que faltou": o dia da pessoa diz qual faltou e a hora que a escala previa — o pedido já vem com ela
+els("a-grupos").addEventListener("click", async ev => {
+  const b = ev.target.closest("[data-a-incluir]");
+  if (!b) return;
+  const a = ALERTAS.find(x => x.id === Number(b.dataset.aIncluir));
+  if (!a) return;
+  let falta = null, obra = a.obra || "";
+  try {
+    const esp = await api(`/erp/api/ponto/espelho/${a.colaborador_id}?competencia=${a.data_referencia.slice(0, 7)}`);
+    const d = (esp.dias || []).find(x => x.data === a.data_referencia) || {};
+    falta = (d.faltando || [])[0] || null;
+    obra = (esp.pessoa && esp.pessoa.obra) || obra;
+  } catch (e) { /* sem o dia, o pedido abre sem a hora sugerida */ }
+  const hora = falta && falta.sugestao ? String(falta.sugestao).slice(0, 5) : "";
+  // a saída de madrugada do turno da noite é do dia seguinte
+  const quando = falta && falta.minuto != null && falta.minuto >= 1440 ? "1" : "0";
+  await pedirAjuste({id: a.colaborador_id, nome: a.colaborador || "", obra}, a.data_referencia, carregarAlertas, hora, quando);
+});
 els("a-grupos").addEventListener("click", async ev => {
   const b = ev.target.closest("[data-a-usar-foto]");
   if (!b) return;
