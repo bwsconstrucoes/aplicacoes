@@ -534,6 +534,7 @@ pode, não deve pagar horas extras quando a pessoa está devendo."*
   continua extra; o futuro "a compensar"; longe demais, recusada; a crítica no fechamento e no relatório, que some
   depois de lançada; a turma pelo Quadro). Telas renderizadas e o JavaScript conferido; **não** abri o diálogo no
   navegador.
+**Publicado em 06/11/2026** (com o "pode" do dono) — SEM MIGRAÇÃO.
 
 ## 06/11/2026 (segunda) — O manual do vigia; e as horas a mais num dia compensadas no outro
 
@@ -551,6 +552,7 @@ pode, não deve pagar horas extras quando a pessoa está devendo."*
   **"Compensação não cumprida — 3h30 cobertas"**, que soa como erro numa compensação de meio dia combinada; (2) a
   saída às 20h30 e a volta às 7h dão **10h30 de descanso, abaixo das 11 h da lei** (aviso de interjornada curta —
   independe da compensação). Também: a compensação é lançada uma pessoa por vez; não há em lote.
+**Publicado em 06/11/2026** (com o "pode" do dono, junto com a compensação de horas) — SEM MIGRAÇÃO.
 
 ## 06/11/2026 — O panorama do vigia (mensagem para o WhatsApp) e as lacunas que ele mostrou
 
