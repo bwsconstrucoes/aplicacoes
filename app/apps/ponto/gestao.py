@@ -2475,10 +2475,11 @@ def ponto_api_banco_lancar(colaborador_id: int):
 def ponto_api_alertas():
     quem = _quem()
     with db.conexao() as conn:
-        lista = alertas.listar(conn, obras=quem.obras,
-                               situacao=request.args.get("situacao", "ABERTO") or None,
-                               gravidade=request.args.get("gravidade") or None)
-    return _ok(alertas=lista, rotulos=alertas.ROTULO)
+        filtros = {"situacao": request.args.get("situacao", "ABERTO") or None,
+                   "gravidade": request.args.get("gravidade") or None}
+        lista = alertas.listar(conn, obras=quem.obras, codigo=request.args.get("tipo") or None, **filtros)
+        tipos = alertas.contar_por_tipo(conn, obras=quem.obras, **filtros)
+    return _ok(alertas=lista, rotulos=alertas.ROTULO, tipos=tipos)
 
 
 @bp.route("/erp/api/ponto/alertas/gerar", methods=["POST"])

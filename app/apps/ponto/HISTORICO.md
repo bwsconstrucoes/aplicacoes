@@ -500,6 +500,41 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 06/11/2026 (quarta) — Alertas: as fotos na linha, o filtro por tipo, a câmera travada e o alerta que crescia
+
+Quatro pedidos do dono, em sequência, todos na tela de Alertas:
+- **A foto de cadastro se troca na Conferência do rosto.** *"Olha como é longo o caminho (…) eu precisaria resolver
+  daqui mesmo."* A aba "Conferência do rosto" da janela da pessoa (agora sempre presente) mostra em cima a foto de
+  cadastro que vale, com enviar/escolher/tirar; cada conferência ganha a miniatura da batida e "⭐ usar como foto de
+  cadastro". O alerta "Rosto não confere" abre a pessoa direto nessa aba ("conferir o rosto e a foto de cadastro").
+- **"Virou a foto de cadastro" que já não é** (*"ela virou em algum momento, mas não é mais"*): a conferência compara a
+  foto da batida com a de cadastro que vale AGORA — a que virou e foi trocada diz "foi a foto de cadastro — já
+  trocada", e a que vale ganha "⭐ é a foto de cadastro agora" (`confianca.explicar`, `e_a_cadastral`). A dica explica
+  que cada conferência foi feita com a foto que valia na hora da batida.
+- **As fotos na linha do alerta** (*"500 alertas, como é que eu vou dar 50 cliques para resolver uma pessoa?"*): a
+  mesma foto repetida mostra as duas batidas lado a lado; o rosto que não confere mostra a foto da batida e a de
+  cadastro, com "⭐ usar como foto de cadastro" (troca e resolve o alerta) e "abrir a batida" (validar ali)
+  (`alertas.fotos_do_alerta`, pela chave do alerta). E **o filtro "Tipo de alerta"** na barra, com quantos de cada.
+- **A câmera travada — a causa da "mesma foto de outra pessoa".** O dono: *"é problema de sistema (…) ficou em cache
+  e acabou mandando a mesma foto duas vezes."* Era: no ponto da obra a foto sai da imagem AO VIVO da câmera; quando a
+  câmera trava (sem memória, outro aplicativo, o navegador pausou), a imagem fica parada na última pessoa e ia para a
+  seguinte. O aplicativo agora confere antes de cada foto (a câmera ligada, o relógio do vídeo andando na contagem, a
+  imagem idêntica à foto anterior) e, travada, RELIGA a câmera; continuou travada, a batida vai sem foto, com o motivo
+  "a câmera do aparelho da obra travou" (`marcacoes.MOTIVO_CAMERA_TRAVADA`). Nos alertas, a mesma imagem para pessoas
+  DIFERENTES no MESMO aparelho deixa de ser "foto reaproveitada" (urgente, parece fraude) e vira **"Câmera do aparelho
+  travada"** (atenção), e o "foto repetida" daquele par sai resolvido. O celular pessoal não tem o problema (usa a
+  câmera do próprio celular a cada batida, e a anterior é limpa).
+  ⚠️ **Não verificado num aparelho de verdade:** o travamento não foi reproduzido; o religar foi escrito a partir do
+  código. O que vale olhar depois de publicar: se os "câmera travada" aparecem e se somem com o tempo.
+- **O alerta que crescia** (*"10 faltas seguidas (…) no dia seguinte 11, 12, 13 (…) basta a última"*): a chave era o
+  ÚLTIMO dia da sequência, e cada dia nascia um alerta. Agora é o PRIMEIRO dia — a mesma sequência atualiza o mesmo
+  alerta —, e os antigos da mesma pessoa saem resolvidos ("trocado pelo alerta mais recente"). O mesmo para atraso
+  recorrente, fora da cerca repetido e banco negativo, que nasciam de novo a cada semana/mês. Os repetidos que já estão
+  abertos na produção saem na próxima rodada.
+- Testes: `test_a_mesma_imagem_para_pessoas_diferentes_no_mesmo_aparelho_e_camera_travada`,
+  `test_as_faltas_seguidas_ficam_num_alerta_so_o_mais_atual`, `test_a_foto_que_virou_a_de_cadastro_e_depois_foi_trocada_diz_isso`;
+  e as duas telas abertas no navegador com dado de teste (o filtro por tipo, as fotos na linha, a janela na aba do rosto).
+
 ## 06/11/2026 (terceira) — A compensação de HORAS; e a crítica da hora extra de quem está devendo
 
 O dono, depois do ensaio da compensação (abaixo): *"é uma compensação, não é de um dia, é de horas (…) como é que
