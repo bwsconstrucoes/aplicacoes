@@ -617,6 +617,8 @@ TELA_DA_ROTA = {
     "analisesps.folha_feriados_buscar": ("folha",),
     # 05/11/2026: as etiquetas "nas outras folhas" de cada pessoa.
     "analisesps.folha_outras_folhas": ("folha",),
+    # 06/11/2026: acréscimo/desconto por lançamento na DC.
+    "analisesps.folha_dc_extra": ("folha",),
     "analisesps.folha_ferias_gravar": ("folha",),
     "analisesps.folha_ferias_apagar": ("folha",),
     # A Listagem de Férias do Fortes (05/10/2026).

@@ -12244,6 +12244,29 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 253 — DC: relatório detalhado em paisagem e acréscimo/desconto por lançamento (06/11/2026)
+
+- *"O relatório de despesa com colaboradores, nem o PDF, nem o Excel está saindo
+  detalhado (…) colocar o relatório em paisagem (…) não está saindo a descrição (…)
+  adicionar uma coluna de acréscimo e desconto, da mesma forma que tem em
+  alimentação e transporte (…) por funcionário, por lançamento."*
+- **Relatório:** o relatório é o compartilhado das folhas (`folha_relatorio`), que só
+  conhecia "pessoa por pessoa". Ganhou um DETALHAMENTO opcional (`montado["detalhe"]`,
+  células por pessoa em `detalhe_excel`/`detalhe_pdf`) e o modo paisagem
+  (`pdf.Folha(paisagem=True)`, larguras escaladas). Só a DC usa
+  (`dc.DETALHE_DO_RELATORIO`): PDF deitado com card/data/requerente, colaborador,
+  tipo, obra/conta, qtd × diária, calculado, ajuste com motivo, valor e DESCRIÇÃO
+  (até 5 linhas); Excel com a aba "Lançamentos" (todas as colunas, descrição inteira,
+  responsável, vencimento, carteira, situação/SP) no lugar de "Pessoas". As outras
+  folhas não mudaram.
+- **Acréscimo/desconto:** coluna nova na tela, o "± valor" dos auxílios, por
+  LANÇAMENTO (a `chave` da linha). Motivo obrigatório; valor negativo reduz; nunca
+  abaixo de zero (zerado sai do pagamento). Entra no valor da linha — no arquivo, na
+  SP e no relatório. Guardado em `analisesps.meta` › `dc.extras` (sem migração).
+  Rota `folha_dc_extra` (Operador). Lançamento já gerado não se ajusta.
+- Conferido: PDF deitado olhado na imagem; botão clicado no navegador (−30,00 →
+  150,00 vira 120,00, com o motivo); testes em `test_analisesps_dc.py`.
+
 #### Leva 252 — As outras folhas da pessoa: etiquetas cruzadas nas telas da folha (05/11/2026)
 
 > **Publicado em 05/11/2026.**
