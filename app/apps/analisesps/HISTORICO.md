@@ -12248,6 +12248,10 @@ somente Solicitações de uma conta especifica"*.
 
 > **Publicado em 06/11/2026.**
 
+- **Depois (06/11/2026, publicado no mesmo dia):** o "por" do card, no PDF e na tela, é o
+  RESPONSÁVEL (coluna H da aba Data), não o requerente (I) — *"relatório e tela precisam
+  estar alinhados"*. O requerente fica no passar do mouse na tela e numa coluna do Excel.
+
 - *"O relatório de despesa com colaboradores, nem o PDF, nem o Excel está saindo
   detalhado (…) colocar o relatório em paisagem (…) não está saindo a descrição (…)
   adicionar uma coluna de acréscimo e desconto, da mesma forma que tem em

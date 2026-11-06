@@ -310,7 +310,9 @@
           <td>
             <a href="{{ p.link_card }}" target="_blank" rel="noopener">card {{ p.card_id }}</a>
             {% if p.data_solicitacao %}<br><span class="cartao-dica">{{ p.data_solicitacao }}</span>{% endif %}
-            {% if p.requerente %}<br><span class="cartao-dica">por {{ p.requerente }}</span>{% endif %}
+            {# O RESPONSÁVEL (coluna H), como no relatório — dono, 06/11/2026: *"relatório e
+               tela precisam estar alinhados"*. O requerente (coluna I) vai no passar do mouse. #}
+            {% if p.responsavel %}<br><span class="cartao-dica"{% if p.requerente %} title="Requerente: {{ p.requerente }}"{% endif %}>por {{ p.responsavel }}</span>{% endif %}
             {% if p.descricao %}<br><span class="cartao-dica" title="{{ p.descricao }}">{{ p.descricao|truncate(80) }}</span>{% endif %}
           </td>
           <td>{{ p.tipo_despesa or '—' }}

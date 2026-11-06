@@ -870,13 +870,14 @@ def montado_do_relatorio(calculado: dict, pessoas=None, filtros=None,
 
 
 # O DETALHAMENTO DO RELATÓRIO DA DC (06/11/2026) — lançamento por lançamento, com a
-# descrição, o card, as datas, quem pediu e o acréscimo/desconto. Ver
+# descrição, o card, as datas, o RESPONSÁVEL pela solicitação (coluna H; o "por" do
+# PDF — o dono pediu ele, e não o requerente da coluna I) e o acréscimo/desconto. Ver
 # `folha_relatorio.montar` ("detalhe"). O PDF é deitado: as larguras somam 277 mm.
 DETALHE_DO_RELATORIO = {
     "titulo": "Lançamento por lançamento", "aba": "Lançamentos",
     "excel": {
-        "cabecalho": ["Card", "Data da solicitação", "Vencimento", "Requerente",
-                      "Responsável", "Colaborador", "Função", "CPF", "Tipo de despesa",
+        "cabecalho": ["Card", "Data da solicitação", "Vencimento", "Responsável",
+                      "Requerente", "Colaborador", "Função", "CPF", "Tipo de despesa",
                       "Obra", "Conta", "Carteira", "Qtd", "Valor da diária",
                       "Valor calculado", "Acréscimo / desconto", "Motivo do ajuste",
                       "Valor", "Descrição", "Situação"],
@@ -910,7 +911,7 @@ def _celulas_do_relatorio(p: dict) -> tuple:
     situacao = ("já gerada" if p.get("gerada") else "a pagar" if p.get("pagar") else "não selecionada") \
         + (f" · SP {p['sp']['id']}" if p.get("sp") else "")
     excel = [p.get("card_id") or "", p.get("data_solicitacao") or "", p.get("data_vencimento") or "",
-             p.get("requerente") or "", p.get("responsavel") or "",
+             p.get("responsavel") or "", p.get("requerente") or "",
              p.get("nome") or p.get("cpf_bonito") or "", p.get("cargo") or "",
              p.get("cpf_bonito") or "", p.get("tipo_despesa") or "", p.get("obra") or "",
              p.get("conta") or "", p.get("carteira") or "",
@@ -919,7 +920,9 @@ def _celulas_do_relatorio(p: dict) -> tuple:
              p.get("descricao") or "", situacao]
     pdf = [(f"card {p.get('card_id') or '-'}",
             " · ".join(x for x in [p.get("data_solicitacao") or "",
-                                   f"por {p['requerente']}" if p.get("requerente") else ""] if x)),
+                                   # O RESPONSÁVEL (coluna H da aba Data), não o
+                                   # requerente (I) — dono, 06/11/2026.
+                                   f"por {p['responsavel']}" if p.get("responsavel") else ""] if x)),
            (p.get("nome") or p.get("cpf_bonito") or "",
             " · ".join(x for x in [p.get("cargo") or "", p.get("cpf_bonito") or ""] if x)),
            p.get("tipo_despesa") or "-",
