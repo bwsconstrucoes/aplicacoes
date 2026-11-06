@@ -119,6 +119,17 @@ def _mensagem(codigo: str, nome: str, dia: Optional[str], d: dict | None = None)
             extra = f" ({_hhmm(d['extra'])} de extra)"
         elif codigo == "INTERVALO_CURTO":
             extra = f" (intervalo de {d.get('intervalo') or 0} min)"
+        elif codigo in ("TRABALHO_EM_DESCANSO", "TRABALHO_EM_FERIADO", "FORA_DO_CICLO") and d.get("extra"):
+            extra = f" ({_hhmm(d['extra'])} trabalhadas)"
+        # O QUE ACONTECEU NO DIA (06/11/2026, o dono: "batida faltando em 5/11, mas não diz qual é a batida"): qual
+        # batida faltou, com a hora que a escala previa, e as batidas que a pessoa fez
+        faltou = [f["rotulo"].lower() + (f" ({f['sugestao']})" if f.get("sugestao") else "")
+                  for f in (d.get("faltando") or [])]
+        if faltou and codigo in ("BATIDA_FALTANDO", "FALTA_PARCIAL", "FALTA"):
+            extra += " — faltou: " + ", ".join(faltou)
+        horas = [b.get("hora", "")[:5] for b in (d.get("batidas") or []) if b.get("hora")]
+        if codigo != "FALTA" or horas:
+            extra += f" — batidas: {' '.join(horas)}" if horas else " — nenhuma batida"
     return f"{nome}: {ROTULO[codigo].lower()}{quando}{extra}"
 
 
@@ -671,7 +682,9 @@ def sinais_de_fraude(conn: Connection, vistos: set, inicio: dt.date, fim: dt.dat
 # as batidas que o alerta compara saem na própria linha, e a foto de cadastro quando o assunto é o rosto.
 FOTOS_DO_ALERTA = {"FOTO_REPETIDA": ("esta batida", "a mesma foto, antes"),
                    "CAMERA_TRAVADA": ("esta batida", "a imagem de quem bateu antes"),
-                   "ROSTO_NAO_CONFERE": ("a foto da batida",)}
+                   "ROSTO_NAO_CONFERE": ("a foto da batida",),
+                   "DOIS_LUGARES": ("uma batida", "a outra batida"),
+                   "BATIDA_EM_ANALISE_PARADA": ("a batida em análise",)}
 
 
 def fotos_do_alerta(codigo: str, chave: str) -> list[dict]:
@@ -733,11 +746,36 @@ def listar(conn: Connection, *, obras: Optional[list[int]] = None, situacao: str
     for a in db.todos(conn, sql, **params):
         a["rotulo"] = ROTULO.get(a["codigo"], a["codigo"])
         a["fotos"] = fotos_do_alerta(a["codigo"], a["chave"])
+        saida.append(a)
+    _fotos_escuras(conn, [a for a in saida if a["codigo"] == "FOTO_ESCURA"])
+    for a in saida:
         a["data_referencia"] = a["data_referencia"].isoformat() if a["data_referencia"] else None
         a["criado_em"] = horario.texto(a["criado_em"])
         a["tratado_em"] = horario.texto(a["tratado_em"])
-        saida.append(a)
     return saida
+
+
+def _fotos_escuras(conn: Connection, lista: list[dict]) -> None:
+    """A foto escura (06/11/2026, o dono: "não aparece qual é a foto de qual batida (…) pra gente já ver por que tá
+    escura, entender se já pode dispensar"): as batidas do dia daquela pessoa com a foto escura ou lisa."""
+    if not lista:
+        return
+    from . import mosaico
+    pares = {(a["colaborador_id"], a["data_referencia"]) for a in lista if a.get("colaborador_id") and a.get("data_referencia")}
+    if not pares:
+        return
+    linhas = db.todos(conn, f"""
+        SELECT m.id, m.colaborador_id, m.data_referencia, m.timestamp_servidor
+          FROM ponto.marcacoes m JOIN ponto.fotos fo ON fo.id = m.foto_id
+         WHERE m.colaborador_id = ANY(:ids) AND m.data_referencia = ANY(:dias) AND m.status <> 'REJEITADA'
+           AND (fo.luminancia < {mosaico.LIMIAR_ESCURA} OR fo.contraste < {mosaico.LIMIAR_LISA})
+         ORDER BY m.timestamp_servidor""", ids=sorted({p[0] for p in pares}), dias=sorted({p[1] for p in pares}))
+    por = {}
+    for l in linhas:
+        por.setdefault((l["colaborador_id"], l["data_referencia"]), []).append(
+            {"marcacao_id": int(l["id"]), "rotulo": f"batida das {horario.para_local(l['timestamp_servidor']):%H:%M}"})
+    for a in lista:
+        a["fotos"] = por.get((a["colaborador_id"], a["data_referencia"]), [])
 
 
 def tratar(conn: Connection, alerta_id: int, *, situacao: str, nota: str, por: str,
