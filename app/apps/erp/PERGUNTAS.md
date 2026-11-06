@@ -1712,6 +1712,44 @@ não existe, de propósito.
 - FALTA **medição** — ela é numerada dentro do contrato, e ainda não tem número
   único próprio. Para chegar nela, o caminho é o contrato.
 
+## 3x. O documento que cria a pessoa, e o cadastro repetido (06/11/2026)
+
+Perguntas que o bloco de jogar documento DENTRO do cadastro de pessoa nova
+torna possíveis. Escritas como o dono perguntaria.
+
+**Respondidas por código escrito:**
+
+- "Esse RG que eu joguei, de quem é?" — o CPF lido é comparado com a base
+  ANTES de preencher qualquer coisa.
+- "Já tem alguém cadastrado com esse CPF?" — e, se tiver, o sistema para e
+  oferece abrir o cadastro existente em vez de criar o segundo.
+- "O que esse documento conseguiu preencher?" — a tela diz quantos campos
+  foram preenchidos e qual o tipo reconhecido.
+- "Quais papéis ainda faltam no Arquivo desta pessoa?"
+- "O que falta para eu poder admitir?"
+- "Quantas pessoas estão paradas em cada etapa do cadastro?"
+- "Quem está esperando a contabilidade?" — ⚠️ **palavra ambígua**: pode ser
+  *pessoa na etapa* `NA_CONTABILIDADE` ou *pedido aberto esperando resposta*.
+  São números diferentes, e a tela já os separa ("Na contabilidade" é a etapa;
+  "Pedido em aberto" é o pedido). O assistente tem de perguntar qual.
+
+**Dependem de quem pergunta (escopo por obra ou autoria):**
+
+- "Quantas pessoas eu tenho na obra?" — o administrativo de obra vê só a dele.
+- "Quem está com documento a devolver?" — a obra vê a dela; o DP vê todas.
+
+**O sistema AINDA NÃO responde, e o que falta:**
+
+- "Esse documento é legível ou está torto?" — a leitura devolve uma confiança,
+  mas não há número comparável entre documentos. Falta registrar a confiança
+  por leitura para poder perguntar "quais leituras ficaram duvidosas".
+- "Quantas pessoas foram cadastradas por documento e quantas digitadas?" —
+  falta marcar a origem no cadastro. Hoje não dá para medir se o atalho está
+  sendo usado.
+- "Quanto tempo uma pessoa fica em cada etapa?" — a tabela
+  `colaborador_etapas` guarda as passagens, mas não há função que calcule a
+  permanência. É a pergunta que diria onde o cadastro emperra.
+
 ## 4. Como esta lista vira código
 
 Cada pergunta daqui vira uma função em `core/perguntas/respostas.py`, com nome,

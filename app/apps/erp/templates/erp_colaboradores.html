@@ -189,7 +189,11 @@ const PENDENCIAS = [
    conta: l => l.filter(c => (c.falta||[]).length).length},
   {chave: "papel", rotulo: "Falta papel", sub: "documento no Arquivo",
    cor: "ambar", conta: l => l.filter(c => (c.falta_documento||[]).length).length},
-  {chave: "pedido", rotulo: "Na contabilidade", sub: "pedido esperando",
+  // NÃO CHAMAR ISTO DE "NA CONTABILIDADE": o filtro ao lado já usa esse nome
+  // para a ETAPA do cadastro, e os dois contam coisas diferentes — um conta
+  // PESSOAS paradas na etapa, este conta PEDIDOS esperando resposta. Lado a
+  // lado, com o mesmo nome e números diferentes, viram pergunta ao DP.
+  {chave: "pedido", rotulo: "Pedido em aberto", sub: "esperando a contabilidade",
    cor: "", conta: l => l.filter(c => c.pedidos_abertos).length},
   {chave: "devolucao", rotulo: "Na obra", sub: "documento a devolver",
    cor: "vermelho", conta: l => l.filter(c => c.devolucoes_abertas).length},
@@ -576,6 +580,92 @@ function pintarPagamentosDaPessoa(alvo){
       </tbody></table></div>`;
 }
 
+// ---------------------------------------------------------------------------
+// O DOCUMENTO DENTRO DO CADASTRO NOVO — uma porta só
+//
+// Regra do dono, 17/09/2026: *"você abre os campos da empresa normal, mas
+// DENTRO do cadastro a opção de adicionar o Cartão CNPJ (…) isso tem que
+// replicar para todas as outras áreas"*. Aqui a tela chegou a PROMETER o
+// bloco ("jogue o documento no bloco abaixo") sem ter bloco nenhum — o
+// caminho só existia para quem já estava cadastrado.
+//
+// Quem tem o papel joga e confere; quem não tem, digita. Nada é gravado: a
+// leitura só PREENCHE os campos da tela, e a pessoa olha antes de salvar.
+// ---------------------------------------------------------------------------
+function blocoDeDocumentoDaPessoaNova(){
+  return `
+    <div class="cartao" style="box-shadow:none; border:1px solid var(--borda);
+         border-left:4px solid var(--verde); margin-bottom:14px">
+      <b>Tem o documento à mão? Jogue aqui — ele preenche os campos abaixo</b>
+      <div class="cartao-dica">RG, CNH, carteira de trabalho, ficha de registro.
+        O sistema lê e preenche o que der; você confere e corrige antes de
+        gravar. Quem não tem o papel, é só digitar.</div>
+      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+                  margin-top:10px">
+        <input type="file" id="ndoc-arq" accept=".pdf,.png,.jpg,.jpeg,.webp">
+        <input id="ndoc-dica" name="dica"
+               placeholder="ajuda (opcional): 'é a frente do RG'"
+               style="flex:1; min-width:180px; padding:7px 10px;
+                      border:1px solid var(--borda-forte); border-radius:8px;
+                      font-size:13px">
+        <button class="btn" id="btn-ndoc-ler" type="button">Ler o documento</button>
+      </div>
+      <div id="ndoc-leitura"></div>
+    </div>`;
+}
+
+async function lerDocumentoDaPessoaNova(){
+  const arq = els("ndoc-arq").files[0];
+  if (!arq) { aviso("ndoc-leitura", "Escolha o arquivo antes de mandar ler.", "erro"); return; }
+  const b = els("btn-ndoc-ler");
+  b.disabled = true; b.textContent = "Lendo…";
+  els("ndoc-leitura").innerHTML = `<div class="cartao-dica">Lendo o documento…</div>`;
+  try {
+    const fd = new FormData();
+    fd.append("arquivo", arq);
+    if (els("ndoc-dica").value.trim()) fd.append("dica", els("ndoc-dica").value.trim());
+    const r = await api("/erp/api/colaboradores/documento/ler", {method:"POST", body: fd});
+    aplicarLeituraNaPessoaNova(r);
+  } catch(e){
+    els("ndoc-leitura").innerHTML = `<div class="aviso erro">${escapar(e.message)}</div>`;
+  }
+  b.disabled = false; b.textContent = "Ler o documento";
+}
+
+function aplicarLeituraNaPessoaNova(r){
+  const g = r.sugestao || {}, c = r.cadastro || {};
+  // PESSOA QUE JÁ EXISTE É PARADA AQUI. Criar a segunda é o erro que mais
+  // custa depois: dois cadastros, dois pagamentos, dois espelhos de ponto.
+  if (c.ja_existe) {
+    els("ndoc-leitura").innerHTML = `
+      <div class="aviso erro" style="margin-top:12px">
+        ${(c.avisos || []).map(escapar).join("<br>")}
+        <br><button class="btn" type="button" id="ndoc-abrir">Abrir o cadastro
+        de ${escapar(c.ja_existe.nome)}</button></div>`;
+    els("ndoc-abrir").addEventListener("click",
+      () => abrirFichaCompleta(c.ja_existe.id));
+    return;
+  }
+  let postos = 0;
+  (c.campos || []).forEach(x => {
+    const campo = els("c-" + x.campo);
+    if (!campo) return;
+    campo.value = x.valor_id ? String(x.valor_id) : x.valor;
+    campo.dispatchEvent(new Event("input", {bubbles: true}));
+    campo.dispatchEvent(new Event("change", {bubbles: true}));
+    postos++;
+  });
+  els("ndoc-leitura").innerHTML = `
+    <div class="aviso ${postos ? "ok" : "alerta"}" style="margin-top:12px">
+      <b>${escapar(g.tipo_nome || "Tipo não reconhecido")}</b> —
+      ${postos ? `${postos} campo(s) preenchido(s) abaixo. <b>Confira antes de
+        gravar</b>: documento torto e letra apagada acontecem.`
+               : "não deu para aproveitar nada daqui. Digite os campos."}
+      ${(c.avisos || []).map(a => `<br>${escapar(a)}`).join("")}
+      ${g.observacoes ? `<br><i>${escapar(g.observacoes)}</i>` : ""}
+    </div>`;
+}
+
 function pintarDocumentosDaPessoa(alvo){
   alvo.innerHTML = PODE_ARQUIVAR ? `
     <div class="cartao" style="box-shadow:none; border:1px solid var(--borda);
@@ -828,6 +918,11 @@ async function formulario(c){
     }));
   painelDaFicha();
   pintarOQueFalta();
+  // ABRIR A JANELA É PARTE DE MONTAR O FORMULÁRIO. Ficou de fora uma vez, e o
+  // botão "+ Colaborador" passou a não fazer NADA — sem erro no console, sem
+  // nada na tela. Quem chama já pode ter a janela aberta (a ficha, que troca
+  // de pessoa sem fechar), então confere antes.
+  if (!els("dlg").open) els("dlg").showModal();
 }
 
 // O QUE FALTA PARA ADMITIR, no alto e sempre visível. É a lista que o DP
@@ -856,9 +951,7 @@ function painelDaFicha(){
   const alvo = els("c-painel");
   if (ABA_FICHA === 0) {
     alvo.innerHTML = `
-      ${!c.id ? `<div class="cartao-dica">Jogue o documento de identificação no bloco
-        abaixo e ele preenche o que der — depois confira. Quem não tem o papel à mão,
-        digita.</div>` : ""}
+      ${!c.id && PODE_ARQUIVAR ? blocoDeDocumentoDaPessoaNova() : ""}
       <div class="form-grade">
         <div class="campo" style="grid-column:span 3"><label>Nome completo *</label>
           <input id="c-nome" value="${escapar(c.nome || "")}"></div>
@@ -889,6 +982,11 @@ function painelDaFicha(){
         hora de transmitir a folha, semanas depois.</div>`;
     const cpf = els("c-cpf");
     if (cpf && !c.id) cpf.addEventListener("input", conferirCpfDigitando);
+    if (els("btn-ndoc-ler")) {
+      els("btn-ndoc-ler").addEventListener("click", lerDocumentoDaPessoaNova);
+      els("ndoc-arq").addEventListener("change",
+        () => { els("ndoc-leitura").innerHTML = ""; });
+    }
   } else if (ABA_FICHA === 1) {
     alvo.innerHTML = `<div class="form-grade">
       ${campoTexto("CEP", "c-cep", c.cep)}
@@ -1120,7 +1218,6 @@ async function abrirFichaCompleta(id){
   try {
     const r = await api(`/erp/api/colaboradores/${id}/ficha`);
     await formulario(r.colaborador);
-    if (!els("dlg").open) els("dlg").showModal();
   } catch(e){ aviso("mensagem", e.message, "erro"); }
 }
 

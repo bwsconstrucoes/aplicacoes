@@ -7483,6 +7483,71 @@ no bloco de rascunho da sessão; são 20 linhas cada, e o importante é o métod
 **usar o template de verdade, nunca uma cópia escrita à mão.** Uma maquete
 escrita à mão mostra os defeitos que eu inventei, não os que estão no código.
 
+## 06/11/2026 (tarde) — AS TELAS DO CADASTRO, E OS CINCO DEFEITOS QUE ELAS MOSTRARAM
+
+Ele pediu as telas do cadastro de colaborador. Desta vez não foi maquete: subi
+um **banco descartável de verdade** (`erp_olhada` na 5433, schema + as 91
+migrações + 20 pessoas semeadas + um ADMIN), rodei a aplicação na porta 5055 e
+fotografei com o Playwright, logado. É o método que o próprio `HISTORICO.md`
+recomenda, e ele achou cinco coisas que a suíte inteira não via:
+
+1. **O botão "+ Colaborador" NÃO FAZIA NADA.** `formulario()` montava o
+   diálogo inteiro e nunca chamava `showModal()`; só `abrirFichaCompleta`
+   abria. Sem erro no console, sem nada na tela — o botão simplesmente não
+   respondia. Agora quem preenche a janela abre a janela.
+2. **A tela PROMETIA o bloco de jogar documento no cadastro novo e não tinha
+   bloco nenhum.** O caminho só existia para quem já estava cadastrado. Isso
+   feria a regra dele de 17/09 ("uma porta só, o documento entra DENTRO").
+   Construído o que faltava: rota `/erp/api/colaboradores/documento/ler` (irmã
+   das que já existiam para obra nova e empresa nova),
+   `preenchimento.sugerir_para_nova_pessoa()` e o bloco no topo da aba
+   Identificação. **Diferença em relação à pessoa que já existe:** aqui o CPF
+   lido PREENCHE o campo (é o que falta), mas se já houver cadastro com ele a
+   tela para e oferece abrir o existente — é assim que nasce pessoa duplicada.
+3. **"Na contabilidade" aparecia duas vezes com números diferentes:** o painel
+   contava PEDIDOS abertos, o filtro lateral contava PESSOAS na etapa. Lado a
+   lado, 0 e 1. O painel virou "Pedido em aberto / esperando a contabilidade".
+4. **"Choose File / No file chosen" em inglês** em todo o ERP, e cortado no
+   celular. Não dá para traduzir o campo nativo — quem manda é o aparelho. A
+   base agora o envolve num rótulo `.escolher` em português e mostra o nome do
+   arquivo escolhido. **Mora no `erp_base.html` e no `erp.css`**, junto da
+   máscara e da busca: vale para as 18 telas e tela nova nasce certa. O portal
+   deixou de ter a cópia dele.
+5. **Duas janelas mortas** (`erp_agenda.html` e `erp_notas_emitidas.html`):
+   `<dialog id="dlg">` declarado, com botão de fechar, e nunca aberto por
+   ninguém. Removidas.
+
+**E um acabamento:** a busca automática entrava nas 27 UFs (passam do limite de
+12), virando um campo de filtro em cima de um `<select>` órfão, sem rótulo. A
+base agora pula listas em que toda opção tem até 4 letras — sigla se acha de
+olho; o limite existe para lista de NOME (obra, fornecedor, pessoa).
+
+**Três travas novas em `tests/test_telas_javascript.py`**, e duas delas
+acharam sozinhas as janelas mortas:
+
+- tela que declara `<dialog>` precisa chamar `showModal()` nele em algum lugar;
+- função que escreve em `dlg-corpo` precisa abrir a janela ela mesma (separar
+  as duas coisas foi exatamente o defeito do "+ Colaborador": um chamador
+  abria, o outro não);
+- tela que convida a "jogar o documento" precisa ter campo de arquivo.
+
+**O que as fotos NÃO provam:** a leitura do documento na pessoa nova não foi
+exercitada com documento de verdade — não há um RG neste contêiner. O caminho
+é o mesmo que já funciona para obra e para empresa, mas isso é raciocínio, não
+teste.
+
+**Uma fragilidade encontrada de raspão, e deixada em aberto:** o banco aceita
+`colaboradores.etapa` com valor que não existe em `ETAPAS` — descobri porque o
+meu dado semeado gravou `AGUARDANDO_CONTABILIDADE` e a tela mostrou o código
+cru. Pelo sistema isso não acontece (o serviço valida); só por SQL direto. Uma
+trava `CHECK` no banco resolveria, mas é migração nova — perguntei ao dono e
+está esperando resposta.
+
+**Como refazer as fotos** (vale meia hora antes de publicar mudança de tela):
+banco descartável + schema + `migrar.py` + semear + `seed_admin` + aplicação na
+5055 + Playwright logado, ouvindo `pageerror` e `console`. Os scripts ficam no
+bloco de rascunho da sessão.
+
 ## Coisas pequenas que mordem
 
 - `pip install -r requirements-dev.txt` falha com o pip antigo do sistema

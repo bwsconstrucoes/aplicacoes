@@ -266,3 +266,87 @@ def test_a_tela_nao_procura_elemento_que_nao_existe(tela: Path):
         f"{tela.name} procura o(s) elemento(s) {faltando}, que não existe(m) "
         f"em lugar nenhum da página. No navegador `els(...)` devolve nulo e a "
         f"tela quebra — normalmente dentro de um try, sem aviso no console.")
+
+
+# ---------------------------------------------------------------------------
+# BOTÃO QUE NÃO FAZ NADA
+#
+# Esta trava nasceu de um defeito de verdade: o "+ Colaborador" montava o
+# formulário inteiro e NUNCA ABRIA A JANELA. Nenhum erro no console, nenhuma
+# mensagem — o botão simplesmente não respondia. A única coisa que pega isso é
+# olhar a tela, e olhar a tela não roda na suíte. Então a suíte confere o que
+# dá para conferir: toda tela que tem uma janela `<dialog>` precisa abri-la em
+# algum lugar, e a função que a preenche tem de ser a mesma que a abre.
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("tela", TELAS + SOLTAS, ids=lambda p: p.name)
+def test_a_tela_que_tem_janela_sabe_abrir_a_janela(tela: Path):
+    texto = tela.read_text(encoding="utf-8")
+    codigo = "\n".join(_blocos(tela))
+    if "<dialog" not in texto:
+        return
+    # ids de <dialog> declarados nesta tela
+    janelas = set(re.findall(r'<dialog[^>]*\bid="([\w-]+)"', texto))
+    if not janelas:
+        return
+    abertas = set(re.findall(r'els\("([\w-]+)"\)\.showModal\(\)', codigo))
+    abertas |= set(re.findall(r'getElementById\("([\w-]+)"\)\.showModal\(\)',
+                              codigo))
+    nunca_abertas = sorted(janelas - abertas)
+    assert not nunca_abertas, (
+        f"{tela.name} declara a(s) janela(s) {nunca_abertas} e nunca chama "
+        f"showModal() nela(s). No navegador o botão que deveria abri-la não "
+        f"faz nada, e não aparece erro nenhum no console.")
+
+
+@pytest.mark.parametrize("tela", TELAS + SOLTAS, ids=lambda p: p.name)
+def test_quem_preenche_a_janela_tambem_a_abre(tela: Path):
+    """Preencher sem abrir é o defeito exato do "+ Colaborador"."""
+    codigo = "\n".join(_blocos(tela))
+    # as funções que escrevem no corpo de uma janela
+    for m in re.finditer(r"(?:async\s+)?function\s+(\w+)\s*\([^)]*\)\s*\{",
+                         codigo):
+        nome = m.group(1)
+        # o corpo da função, por contagem de chaves
+        i = codigo.index("{", m.start())
+        nivel, j = 0, i
+        while j < len(codigo):
+            if codigo[j] == "{":
+                nivel += 1
+            elif codigo[j] == "}":
+                nivel -= 1
+                if nivel == 0:
+                    break
+            j += 1
+        corpo = codigo[i:j]
+        if 'els("dlg-corpo").innerHTML' not in corpo:
+            continue
+        assert "showModal()" in corpo, (
+            f"{tela.name}: a função {nome}() escreve no corpo da janela mas "
+            f"não a abre. No navegador o botão que chama {nome}() não faz "
+            f"nada, sem erro nenhum no console.")
+
+
+# ---------------------------------------------------------------------------
+# A TELA NÃO PODE PROMETER O QUE NÃO TEM
+#
+# Regra do dono, 17/09/2026: o documento entra DENTRO do formulário, como um
+# bloco no topo. A tela de colaborador chegou a escrever "jogue o documento no
+# bloco abaixo" e NÃO TINHA BLOCO NENHUM — o caminho só existia para quem já
+# estava cadastrado. Promessa sem botão é pior que não prometer: a pessoa
+# procura, não acha, e conclui que o sistema está quebrado.
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("tela", TELAS + SOLTAS, ids=lambda p: p.name)
+def test_a_tela_que_fala_em_jogar_documento_tem_onde_jogar(tela: Path):
+    texto = tela.read_text(encoding="utf-8")
+    if not re.search(r"[Jj]ogue o documento|[Jj]ogue aqui|arraste o documento",
+                     texto):
+        return
+    # um campo de arquivo, escrito no HTML, montado em JavaScript, ou pedido
+    # ao `perguntar()` da base com `tipo: "arquivo"`
+    tem_onde = ('type="file"' in texto or "type='file'" in texto
+                or 'type=\\"file\\"' in texto
+                or re.search(r'tipo:\s*"arquivo"', texto) is not None)
+    assert tem_onde, (
+        f"{tela.name} convida a jogar o documento e não tem campo de arquivo "
+        f"nenhum. A pessoa procura o bloco, não acha, e conclui que o sistema "
+        f"está quebrado.")

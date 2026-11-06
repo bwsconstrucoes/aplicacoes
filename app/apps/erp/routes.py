@@ -7269,6 +7269,55 @@ def api_nova_obra_documento():
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
+@bp.route("/erp/api/colaboradores/documento/ler", methods=["POST"])
+@login_obrigatorio
+@permissao("arquivar")
+def api_nova_pessoa_documento_ler():
+    """Lê o documento e diz que cadastro de pessoa ele criaria. Não grava nada.
+
+    Gêmea da de obra nova e da de empresa nova. Faltava só a de pessoa, e a
+    falta aparecia na tela: o formulário de colaborador novo prometia o bloco
+    de jogar o documento e não tinha bloco nenhum.
+
+    Sem `<int:colaborador_id>` não há objeto a conferir no escopo — a ação
+    `arquivar` decide sozinha quem entra, e nada é gravado aqui.
+    """
+    from app.apps.erp.core.arquivo import leitura, preenchimento
+    from app.apps.erp.core.documentos.leitor import ErroLeitura
+    f = request.files.get("arquivo")
+    if f is None:
+        return jsonify({"ok": False, "erro": "Escolha o arquivo."}), 400
+    # FORA do try: a recusa por teto tem resposta própria (402), e um
+    # `except Exception` a transformaria em 'falha do sistema'.
+    _exigir_saldo_de_ia()
+    try:
+        conteudo = f.read()
+        with get_session() as s:
+            sugestao = leitura.sugerir(
+                s, conteudo, f.filename or "arquivo",
+                dica=(request.form.get("dica") or ""),
+                extracao=preenchimento.instrucao_de_extracao_pessoa(),
+                dono_e_novo=True)
+            sugestao["colaborador_id"] = None
+            sugestao["nome_original"] = f.filename or "arquivo"
+            # O nome do arquivo usa o nome e o CPF da pessoa, que só se sabem
+            # depois que ela existe. Prometer um nome agora seria prometer
+            # errado.
+            sugestao["nome_sugerido"] = ""
+            cadastro = preenchimento.sugerir_para_nova_pessoa(
+                s, sugestao.get("tipo_codigo") or "", sugestao)
+        return jsonify({"ok": True, "sugestao": sugestao, "cadastro": cadastro})
+    except ErroLeitura as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
+    except Exception as e:
+        logger.exception("ERP/pessoal: falha ao ler documento de pessoa nova")
+        return jsonify({"ok": False, "erro": f"Não deu para ler o documento: {e}"}), 500
+
+
 @bp.route("/erp/api/colaboradores/<int:colaborador_id>/documento/ler", methods=["POST"])
 @login_obrigatorio
 @permissao("arquivar")

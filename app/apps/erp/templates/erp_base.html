@@ -402,6 +402,42 @@ function aplicarMascaras(raiz) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// O ESCOLHEDOR DE ARQUIVO EM PORTUGUÊS
+//
+// O campo nativo sai em inglês e cortado ("Choose File / No file chosen"), e
+// não há como traduzi-lo — quem manda é o idioma do aparelho. O jeito é
+// envolvê-lo num rótulo nosso e esconder o nativo; o clique no rótulo abre o
+// mesmo seletor. Depois de escolher, o rótulo mostra o NOME DO ARQUIVO, que é
+// a única coisa que a pessoa quer conferir ali.
+//
+// Mora aqui, na base, pela mesma razão da máscara: tela nova nasce certa sem
+// ninguém lembrar de nada. A exceção se marca no campo (`data-sem-rotulo`).
+// ---------------------------------------------------------------------------
+function aportuguesarEscolhaDeArquivo(raiz) {
+  (raiz || document).querySelectorAll(
+    "input[type=file]:not([data-sem-rotulo]):not([hidden])"
+  ).forEach(campo => {
+    if (campo.dataset.temRotulo) return;
+    if (campo.closest("label.escolher")) return;   // já está dentro de um
+    campo.dataset.temRotulo = "1";
+    const rotulo = document.createElement("label");
+    rotulo.className = "escolher";
+    const texto = document.createElement("span");
+    texto.textContent = campo.dataset.rotulo || "Escolher arquivo ou tirar foto";
+    campo.parentNode.insertBefore(rotulo, campo);
+    rotulo.appendChild(texto);
+    rotulo.appendChild(campo);
+    campo.addEventListener("change", () => {
+      const arq = campo.files && campo.files[0];
+      texto.textContent = arq ? arq.name
+        : (campo.dataset.rotulo || "Escolher arquivo ou tirar foto");
+      rotulo.classList.toggle("cheio", !!arq);
+      rotulo.title = arq ? arq.name : "";
+    });
+  });
+}
+
 const escapar = t => String(t ?? "").replace(/[&<>"']/g,
   c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 
@@ -936,6 +972,14 @@ function aplicarBuscaEmListasLongas(raiz) {
   (raiz || document).querySelectorAll("select:not([data-sem-busca])").forEach(sel => {
     if (sel.dataset.temBusca) return;             // já tem, não refaz
     if (sel.multiple || sel.options.length <= LIMITE_PARA_BUSCA) return;
+    // LISTA DE SIGLA NÃO PRECISA DE BUSCA. As 27 UFs passam do limite, mas
+    // são duas letras em ordem alfabética: quem procura "CE" acha na hora. O
+    // campo de filtro ali só rouba uma linha e faz o <select> embaixo parecer
+    // um segundo campo solto, sem rótulo. O limite existe para lista de NOME
+    // (obra, fornecedor, pessoa), onde ler tudo é inviável.
+    const curtas = [...sel.options].every(
+      o => (o.textContent || "").trim().length <= 4);
+    if (curtas) return;
     comBusca(sel);
   });
 }
@@ -958,8 +1002,13 @@ new MutationObserver(registros => {
       // A MÁSCARA PEGA CARONA no mesmo observador (22/09/2026): quase todo
       // campo de CNPJ do ERP nasce dentro de um diálogo montado na hora, e um
       // segundo observador seria o mesmo trabalho em dobro.
-      if (no.tagName === "INPUT") aplicarMascaras(no.parentNode || document);
-      else if (no.querySelector && no.querySelector("input")) aplicarMascaras(no);
+      if (no.tagName === "INPUT") {
+        aplicarMascaras(no.parentNode || document);
+        aportuguesarEscolhaDeArquivo(no.parentNode || document);
+      } else if (no.querySelector && no.querySelector("input")) {
+        aplicarMascaras(no);
+        aportuguesarEscolhaDeArquivo(no);
+      }
       if (no.tagName === "TR" || (no.querySelector && no.querySelector("td"))) {
         explicarCelulasCortadas(no.closest ? (no.closest(".tabela-rolagem") || no) : no);
       }
@@ -970,6 +1019,7 @@ new MutationObserver(registros => {
 document.addEventListener("DOMContentLoaded", () => {
   aplicarBuscaEmListasLongas();
   aplicarMascaras();
+  aportuguesarEscolhaDeArquivo();
   explicarCelulasCortadas();
 });
 

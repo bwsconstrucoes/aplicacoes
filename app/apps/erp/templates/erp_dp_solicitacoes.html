@@ -216,7 +216,6 @@ async function abrirPedido(id){
   try { ABERTA = (await api(`/erp/api/dp/solicitacoes/${id}`)).solicitacao; }
   catch(e){ aviso("mensagem", e.message, "erro"); return; }
   pintarPedido();
-  els("dlg").showModal();
 }
 
 // O NOME DE CADA CAMPO DO PEDIDO em português. Sem isto a tela mostraria
@@ -293,6 +292,10 @@ function pintarPedido(){
   if (els("s-atender")) els("s-atender").addEventListener("click", atender);
   if (els("s-recusar")) els("s-recusar").addEventListener("click", recusar);
   if (els("s-cancelar")) els("s-cancelar").addEventListener("click", cancelarPedido);
+  // QUEM PREENCHE A JANELA, ABRE A JANELA. Separar as duas coisas é como o
+  // "+ Colaborador" ficou sem fazer nada: um chamador abria, o outro não.
+  // `pintarPedido` também roda depois de uma ação, com a janela já aberta.
+  if (!els("dlg").open) els("dlg").showModal();
 }
 
 async function acao(caminho, corpo){

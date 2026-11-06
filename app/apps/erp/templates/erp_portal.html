@@ -46,14 +46,10 @@
   .recado.erro { background: #FDECEC; color: #A32020; }
   .recado.ok { background: #E8F6EE; color: #1C6B3C; }
   .recado.aviso { background: #FFF6E5; color: #8A5B00; }
-  /* O ESCOLHEDOR DE ARQUIVO do navegador sai em inglês e cortado no celular
-     ("Choose File / No file chosen"). Este rótulo o substitui: em português,
-     e no celular ele abre a câmera direto. */
-  .escolher { flex: 1 1 160px; min-width: 140px; text-align: center;
-         background: #EEF2FA; color: #31507F; border: 1px dashed #C9D3E4;
-         border-radius: 10px; padding: 11px 12px; font-size: 14px;
-         font-weight: 600; cursor: pointer; }
-  .escolher.cheio { background: #E8F6EE; color: #1C6B3C; border-style: solid; }
+  /* O `.escolher` em si vem do `erp.css` — ele vale para o ERP inteiro, e
+     copiá-lo aqui faria duas versões para manter de acordo. Só o que é do
+     celular fica: esticar na linha. */
+  .escolher { flex: 1 1 160px; min-width: 140px; padding: 11px 12px; }
 </style>
 </head>
 <body>
