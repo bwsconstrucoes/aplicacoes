@@ -534,6 +534,7 @@ Quatro pedidos do dono, em sequência, todos na tela de Alertas:
 - Testes: `test_a_mesma_imagem_para_pessoas_diferentes_no_mesmo_aparelho_e_camera_travada`,
   `test_as_faltas_seguidas_ficam_num_alerta_so_o_mais_atual`, `test_a_foto_que_virou_a_de_cadastro_e_depois_foi_trocada_diz_isso`;
   e as duas telas abertas no navegador com dado de teste (o filtro por tipo, as fotos na linha, a janela na aba do rosto).
+**Publicado em 06/11/2026** (com o "pode" do dono, junto com o "Liberar obras no aplicativo") — SEM MIGRAÇÃO.
 
 ## 06/11/2026 (terceira) — A compensação de HORAS; e a crítica da hora extra de quem está devendo
 
@@ -694,7 +695,7 @@ pedidos, administrativo e ronda —, com as obras DIGITADAS por código. Agora a
 lista para marcar, com busca, "Todas as obras" à parte, e o que a pessoa passa a fazer escrito em cima (consulta e faz
 ajustes e pedidos pelas pessoas das obras; quem não bate continua sem bater). Diz também se a pessoa já tem PIN
 (a ficha ganhou `tem_pin`). Salvar manda só as obras — o resto do acesso fica como está.
-**No ramo, esperando o "pode".**
+**Publicado em 06/11/2026** (com o "pode" do dono, junto com os alertas) — SEM MIGRAÇÃO.
 
 ## 04/11/2026 (terceira) — O plantão dobrado do vigia; e o celular "bloqueado" que ninguém entendia
 
