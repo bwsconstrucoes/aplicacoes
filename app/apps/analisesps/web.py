@@ -309,6 +309,21 @@ def _guardar_no_navegador(resposta):
     return resposta
 
 
+@bp.after_request
+def _esquecer_as_outras_folhas(resposta):
+    """Toda gravação numa tela da folha (seleção, ajuste, lista colada, geração)
+    joga fora o cruzamento guardado — ver `folhas_cruzadas`. Assim a etiqueta que
+    a outra tela mostra nunca é a seleção de antes de salvar."""
+    try:
+        if request.method == "POST" and resposta.status_code < 400 and \
+                (request.endpoint or "").startswith("analisesps.folha_"):
+            from . import folhas_cruzadas
+            folhas_cruzadas.esquecer()
+    except Exception:  # noqa: BLE001 — esquecer é conforto; a resposta é o que importa
+        logger.exception("Análise de SPs: falhou esquecer o cruzamento das folhas")
+    return resposta
+
+
 NIVEL_COMPRESSAO = 1        # 6,3% do tamanho por 1,4 ms; o nível 6 chega a
                             # 4,4% mas gasta o dobro, e esta instância tem
                             # 2 GB e histórico de morrer de memória.
@@ -5237,6 +5252,7 @@ def tela_folha_dc():
         agrupamento = dc.AGRUPAMENTO_PADRAO
     return render_template(
         "analisesps_folha_dc.html", aba="folha", subaba="dc",
+        cruzado=_competencia_do_cruzamento(),
         agrupamento=agrupamento, agrupamentos=dc.AGRUPAMENTOS,
         grupos_da_lista=dc.agrupar(lista["pessoas"], agrupamento),
         grupos=subtelas_agrupadas(), resultado=calculado, erro=erro,
@@ -5356,6 +5372,7 @@ def tela_folha_avulso():
         agrupamento = pa.AGRUPAMENTO_PADRAO
     return render_template(
         "analisesps_folha_avulso.html", aba="folha", subaba="avulso",
+        cruzado=_competencia_do_cruzamento(),
         agrupamento=agrupamento, agrupamentos=pa.AGRUPAMENTOS,
         grupos_da_lista=pa.agrupar(lista["pessoas"], agrupamento),
         grupos=subtelas_agrupadas(), resultado=calculado, erro=erro,
@@ -5954,6 +5971,42 @@ def folha_card_lancar():
     except Exception as e:  # noqa: BLE001
         logger.exception("Folha: falhou lançar o card")
         return {"ok": False, "erro": f"Não foi possível lançar: {e}"}, 500
+
+
+def _competencia_do_cruzamento() -> tuple:
+    """(ano, mes) das etiquetas "nas outras folhas" nas telas SEM competência (DC e
+    avulso): a competência sugerida da folha — o mês anterior até o dia 10."""
+    from .folha_apropriacao import competencia_sugerida
+    from .horario import agora
+    return competencia_sugerida(agora().date())
+
+
+@bp.route("/api/folha/outras-folhas")
+@exige_consulta
+def folha_outras_folhas():
+    """As etiquetas "nas outras folhas" de cada pessoa (05/11/2026) — ver
+    `folhas_cruzadas`. Pedida pela tela DEPOIS de abrir (`_outras_folhas.html`):
+    o cruzamento passa por todas as telas da folha, e a tela não espera por ele."""
+    from . import folhas_cruzadas
+    from .formatos import moeda
+    try:
+        ano = int(request.args.get("ano") or 0)
+        mes = int(request.args.get("mes") or 0)
+    except (TypeError, ValueError):
+        ano = mes = 0
+    if not (2000 <= ano <= 2100 and 1 <= mes <= 12):
+        return {"ok": False, "erro": "competência inválida."}, 400
+    tela = str(request.args.get("tela") or "")
+    try:
+        r = folhas_cruzadas.etiquetas_da_tela(ano, mes, tela)
+    except Exception as e:  # noqa: BLE001 — a etiqueta é apoio; a tela segue
+        logger.exception("Folha: falhou cruzar as folhas")
+        return {"ok": False, "erro": f"Não foi possível cruzar as folhas: {e}"}, 500
+    return {"ok": True, "competencia": f"{mes:02d}/{ano}", "avisos": r["avisos"],
+            "pessoas": {cpf: [{"rotulo": e["rotulo"], "valor": moeda(e["valor"]),
+                               "obs": e["obs"], "alerta": e["alerta"], "titulo": e["titulo"]}
+                              for e in lista]
+                        for cpf, lista in r["pessoas"].items()}}
 
 
 @bp.route("/api/folha/feriados/levar-ao-ponto", methods=["POST"])

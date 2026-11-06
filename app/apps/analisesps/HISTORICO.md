@@ -12244,6 +12244,63 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 252 — As outras folhas da pessoa: etiquetas cruzadas nas telas da folha (05/11/2026)
+
+> **Publicado em 05/11/2026.**
+
+- *"Eu preciso fazer conversar as folhas de pagamento (…) enxergar dentro de despesa
+  colaboradores uma informaçãozinha (…) quanto recebeu na folha da contabilidade,
+  com alimentação, transporte, gratificados (…) isso vale para todos (…) o que vai
+  definir se a informação vai ser exibida ou não é o que está ou não selecionado."*
+  Pediu um exemplo em tela antes; viu o desenho (etiquetas embaixo do nome) e
+  aprovou: *"acho que pode ser dessa forma"* — com as duas sugestões: alerta amarelo
+  e contabilidade separada por quinzena e fim do mês.
+- **O que aparece:** embaixo do nome, em todas as telas que pagam (contabilidade
+  aberta, alimentação/transporte, diaristas, DC, avulso, gratificados, via SP), o
+  que a pessoa recebe NAS OUTRAS na mesma competência — só o selecionado. A tela
+  aberta não se repete (na alimentação, o transporte aparece).
+- **Alerta amarelo** (`folhas_cruzadas.ALERTAS`): diarista E contabilidade; alimentação
+  no auxílio E numa DC de alimentação; o mesmo para transporte. Olha todas as folhas
+  da pessoa, inclusive a da tela aberta.
+- **De onde vem cada uma** (as funções das próprias telas, nada recalculado):
+  contabilidade = `folha_arquivo.abrir` da quinzena e do fim do mês, menos os "fora"
+  (`ajustes_do_pagamento`), CPF pelo cadastro quando a linha não tem; auxílios =
+  `folha_auxilio.calcular` (pagar e valor > 0); diaristas e gratificados/via SP = as
+  duas metades do mês; DC e avulso NÃO têm competência — entra o pendente selecionado
+  agora (e, nessas duas telas, a competência das etiquetas é a sugerida da folha: o
+  mês anterior até o dia 10).
+- **Peso:** o cruzamento passa por todas as telas. Por isso: (1) a tela abre sem
+  esperar — as etiquetas chegam depois (`_outras_folhas.html` → rota
+  `folha_outras_folhas`); (2) o resumo fica guardado em memória por competência por
+  10 min e é jogado fora a cada POST de tela da folha (`_esquecer_as_outras_folhas`);
+  (3) uma montagem por competência de cada vez. Fonte que falha vira aviso no recado
+  acima da tabela, e as outras seguem.
+- **Achado no navegador antes de commitar:** o endereço dentro do script saía com
+  "&amp;" e a rota recusava — corrigido com `|tojson`.
+- **De fora:** no celular as etiquetas quebram linha dentro da célula do nome (não
+  testei todas as telas no celular); valor "a receber" dos auxílios é o da competência
+  trabalhada (o mês da tela), não o do mês do pagamento.
+- Testes: `tests/test_analisesps_folhas_cruzadas.py` (regras, alerta, guardado,
+  contabilidade, rota, e as seis fontes com banco de verdade).
+
+#### Leva 251 — O MobPonto "forçado" a entender o feriado nacional (05/11/2026)
+
+> **Publicado em 05/11/2026.**
+
+- O dono confirmou o diagnóstico da leva 250 com o dado na mão: *"Dia 12/10/2026 é
+  feriado (…) depois do dia 16, que é o ponto que vem do ERP, o feriado está sendo
+  aplicado. O que não está é o da quinzena anterior, do MobPonto (…) Você consegue,
+  mesmo sendo MobPonto, forçar a entender que é feriado?"*
+- A leva 250 já tirava o feriado da lista de ausências dos AUXÍLIOS. Esta vai à fonte:
+  na LEITURA do MobPonto (`ponto._feriado_nacional_por_cima`, chamado por
+  `dias_por_cpf`, `dias_de_um_cpf` e `dias_da_pessoa`), o dia sem batida marcado como
+  falta num feriado NACIONAL do ponto passa a ser "Feriado" — em todas as telas da
+  folha (resumo do ponto, gestão, ficha do mês da pessoa), não só nos auxílios. O dia
+  ganha `feriado_forcado` com o nome do feriado.
+- Só o nacional nesta camada (dia sem batida não tem obra); estadual e municipal
+  continuam valendo nos auxílios, que sabem a obra da pessoa. Atestado, abono e quem
+  trabalhou no feriado ficam como vieram. Testes: `test_analisesps_ponto_feriado_mobponto.py`.
+
 #### Leva 250 — Feriado não é falta: o "Aplicar desconto" que aparecia em feriado (05/11/2026)
 
 > **Publicado em 05/11/2026.**

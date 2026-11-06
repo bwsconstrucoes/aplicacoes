@@ -492,6 +492,8 @@
   {% for o in (montado.obras + obras_c_diarios)|unique|sort %}<option value="{{ o }}"></option>{% endfor %}
 </datalist>
 
+{# As etiquetas "nas outras folhas" de cada pessoa (05/11/2026). #}
+{% if folha %}{% with ano=folha.ano, mes=folha.mes, tela="importar" %}{% include "_outras_folhas.html" %}{% endwith %}{% endif %}
 <div class="tabela-wrap">
   <div class="tabela-rolagem">
     <table class="sps" id="tabela-folha">

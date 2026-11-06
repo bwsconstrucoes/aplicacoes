@@ -28,6 +28,7 @@ from typing import Any, Optional
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.apps.erp.core.cadastros import pessoas as svc_pessoas
 from app.apps.erp.core.comum.auditoria import ErroPermissao, ErroValidacao, registrar_evento
 from app.apps.erp.db.models.cadastros import (
     Categoria, Colaborador, Funcao, Obra, PerfilUsuario, Usuario,
@@ -151,6 +152,80 @@ def salvar_colaborador(s: Session, dados: dict[str, Any], usuario: Usuario) -> C
     return c
 
 
+def _apoio_da_lista(s: Session, ids: list[int], pessoas: list) -> tuple:
+    """Cargo, convenção, papel que falta e pendências — em cinco consultas.
+
+    Existe para a tela de gestão poder filtrar e CONTAR sem uma ida ao banco
+    por pessoa: com 575 colaboradores, o jeito ingênuo abriria 2.300 consultas
+    para pintar uma tela.
+    """
+    from sqlalchemy import text as _text
+
+    from app.apps.erp.db.models.cadastros import Cargo, Convencao
+
+    cargos = {c.id: c.nome for c in s.scalars(select(Cargo)).all()}
+    convencoes = {c.id: c.nome for c in s.scalars(select(Convencao)).all()}
+    if not ids:
+        return cargos, convencoes, {}, {}, {}
+
+    # OS PAPÉIS QUE FALTAM, de uma vez: o que cada pessoa TEM, e a conta do que
+    # falta é feita em memória contra a lista da admissão.
+    from app.apps.erp.core.cadastros.pessoas import DOCUMENTOS_DA_ADMISSAO
+    tem: dict[int, set[str]] = {}
+    for linha in s.execute(_text("""
+            SELECT colaborador_id, tipo_codigo FROM documentos
+             WHERE colaborador_id = ANY(:ids)"""), {"ids": ids}).all():
+        tem.setdefault(int(linha[0]), set()).add(linha[1])
+    faltando_papel: dict[int, list[str]] = {}
+    for c in pessoas:
+        so_ctps = (c.vinculo or "CTPS").upper() != "PRESTADOR"
+        meus = tem.get(c.id, set())
+        faltam = [rotulo for codigo, rotulo, exige_ctps in DOCUMENTOS_DA_ADMISSAO
+                  if codigo not in meus and (so_ctps or not exige_ctps)]
+        if faltam:
+            faltando_papel[c.id] = faltam
+
+    # AS PENDÊNCIAS DE FORA: pedido à contabilidade esperando e documento que a
+    # obra não devolveu. As duas tabelas podem não existir ainda (o botão do
+    # banco não foi apertado), e a lista não pode quebrar por causa disso —
+    # senão a tela de Colaboradores morre junto com uma migração pendente.
+    # CADA CONTA NO SEU PONTO DE RETORNO, e isto foi um DEFEITO MEU que o teste
+    # pegou: eu dava `s.rollback()` quando a tabela não existia, e isso jogava
+    # fora o trabalho de QUEM CHAMOU — uma tela abrindo desfaria a transação em
+    # curso. Com `begin_nested`, o que volta é só a consulta que falhou.
+    pedidos = _contar_pendencia(s, ids, """
+        SELECT colaborador_id, count(*) FROM dp_pedidos
+         WHERE colaborador_id = ANY(:ids)
+           AND situacao IN ('RASCUNHO','ENVIADO','COBRADO','RESPONDIDO','DIVERGENTE')
+         GROUP BY colaborador_id""")
+    devolucoes = _contar_pendencia(s, ids, """
+        SELECT colaborador_id, count(*) FROM dp_devolucoes
+         WHERE colaborador_id = ANY(:ids) AND situacao IN ('ABERTA','COBRADA')
+         GROUP BY colaborador_id""")
+    return cargos, convencoes, faltando_papel, pedidos, devolucoes
+
+
+def _contar_pendencia(s: Session, ids: list[int], sql: str) -> dict[int, int]:
+    """A conta, ou zero quando a tabela ainda não existe.
+
+    O código sobe para o Render ANTES de alguém apertar "Aplicar atualizações do
+    banco". Se a listagem quebrasse por causa de uma tabela que ainda não
+    existe, a tela de Colaboradores morreria junto com uma migração pendente —
+    e quem a abrisse não entenderia por quê.
+    """
+    from sqlalchemy import text as _text
+    saida: dict[int, int] = {}
+    try:
+        with s.begin_nested():
+            for linha in s.execute(_text(sql), {"ids": ids}).all():
+                saida[int(linha[0])] = int(linha[1])
+    except Exception:                                       # noqa: BLE001
+        logger.info("ERP: contagem de pendência do DP indisponível "
+                    "(a migração ainda não foi aplicada?)")
+        return {}
+    return saida
+
+
 def listar_colaboradores(s: Session, obra_id: Optional[int] = None,
                          ativos: bool = True,
                          usuario: Optional[Usuario] = None) -> list[dict[str, Any]]:
@@ -183,6 +258,14 @@ def listar_colaboradores(s: Session, obra_id: Optional[int] = None,
         stmt = stmt.where(Colaborador.obra_id == obra_id)
     if ativos:
         stmt = stmt.where(Colaborador.situacao == "ATIVO")
+    pessoas = list(s.scalars(stmt.order_by(Colaborador.nome)).all())
+
+    # AS CONSULTAS DE APOIO, UMA VEZ PARA A LISTA INTEIRA. Fazer isto por
+    # pessoa seriam 575 idas ao banco para abrir uma tela — é a diferença entre
+    # a tela abrir e a tela travar.
+    cargos, convencoes, faltando_papel, pedidos, devolucoes = _apoio_da_lista(
+        s, [c.id for c in pessoas], pessoas)
+
     return [{
         "id": c.id, "nome": c.nome, "cpf": c.cpf, "matricula": c.matricula,
         "funcao": c.funcao.nome if c.funcao else None,
@@ -201,7 +284,32 @@ def listar_colaboradores(s: Session, obra_id: Optional[int] = None,
         "pix_chave": c.pix_chave, "pix_tipo": c.pix_tipo,
         "tem_pagamento": bool(c.pix_chave or c.conta),
         "admissao": c.admissao.isoformat() if c.admissao else None,
-    } for c in s.scalars(stmt.order_by(Colaborador.nome)).all()]
+        "demissao": c.demissao.isoformat() if c.demissao else None,
+        # O QUE A TELA DE GESTÃO PRECISA, e que até 05/11/2026 ela não tinha.
+        # O dono, olhando a lista: *"para gestão, não está legal. (…) o que é
+        # que o DP tem que fazer em relação aos colaboradores? (…) no pipe,
+        # como tem as fases, a gente sabe o que é que tem que fazer, o que é
+        # que está pendente. E aqui, dessa forma, não tem."*
+        #
+        # A ETAPA é a resposta: ela é o que as fases do card davam de graça.
+        # Vem junto na listagem (e não numa consulta por pessoa) porque a tela
+        # filtra e CONTA por ela — uma chamada por linha seriam 575 chamadas.
+        "etapa": (c.etapa or "CONCLUIDO"),
+        "vinculo": c.vinculo or "CTPS",
+        "cargo": cargos.get(c.cargo_id or 0, ""),
+        "cargo_id": c.cargo_id,
+        "convencao": convencoes.get(c.convencao_id or 0, ""),
+        "convencao_id": c.convencao_id,
+        "empresa_id": c.empresa_id,
+        "salario": float(c.salario) if c.salario else None,
+        # O QUE FALTA, calculado aqui para a lista e a ficha dizerem a mesma
+        # coisa. São duas listas separadas de propósito: campo em branco é
+        # digitação que falta; papel em branco é documento que ninguém pediu.
+        "falta": svc_pessoas.o_que_falta(c),
+        "falta_documento": faltando_papel.get(c.id, []),
+        "pedidos_abertos": pedidos.get(c.id, 0),
+        "devolucoes_abertas": devolucoes.get(c.id, 0),
+    } for c in pessoas]
 
 
 # ---------------------------------------------------------------------------
