@@ -588,6 +588,8 @@ def test_o_RELATORIO_sai_DEITADO_e_com_a_DESCRICAO_e_o_ajuste(banco_dc, cliente_
     texto = " ".join(pg.extract_text() for pg in pdf.pages)
     assert "Lanche da equipe" in texto and "acréscimo de teste" in texto
     assert "card 900100" in texto
+    # O "por" é o RESPONSÁVEL (coluna H), não o requerente (I) — dono, 06/11/2026.
+    assert "por JOAO" in texto and "por MARIA" not in texto
 
     planilha = load_workbook(io.BytesIO(cliente_mestre.get("/analisesps/folha/dc/relatorio.xlsx").data))
     aba = planilha["Lançamentos"]
@@ -596,4 +598,5 @@ def test_o_RELATORIO_sai_DEITADO_e_com_a_DESCRICAO_e_o_ajuste(banco_dc, cliente_
     ativo = next(l for l in linhas if l["CPF"] == "997.133.493-34")
     assert ativo["Descrição"] == "Lanche da equipe" and ativo["Card"] == "900100"
     assert (ativo["Valor calculado"], ativo["Acréscimo / desconto"], ativo["Valor"]) == (150.0, 10.0, 160.0)
-    assert ativo["Motivo do ajuste"] == "acréscimo de teste" and ativo["Requerente"] == "MARIA"
+    assert ativo["Motivo do ajuste"] == "acréscimo de teste"
+    assert (ativo["Responsável"], ativo["Requerente"]) == ("JOAO", "MARIA")
