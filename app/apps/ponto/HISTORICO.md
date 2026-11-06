@@ -518,6 +518,7 @@ junto com o `README.md` e o `PLANO.md`.
 - **A obra no resumo do WhatsApp.** *"Tem o nome da pessoa, mas não tem a obra."* Cada urgente termina com "— obra
   CÓDIGO — Nome": a obra em que a pessoa mais bateu nos últimos 30 dias (sem batida, a do alerta).
 - Testes: `test_a_ronda_nao_sai_depois_da_hora_de_sair`, `test_os_repetidos_que_ja_estavam_abertos_saem_e_o_resumo_diz_a_obra`.
+**Publicado em 06/11/2026** (com o "pode" do dono) — SEM MIGRAÇÃO.
 
 ## 06/11/2026 (quinta) — Vários alertas de uma vez
 
@@ -528,6 +529,7 @@ ganhou a caixa de marcar; a do cabeçalho marca o grupo (Urgente, Atenção, Par
 de uma vez. Por trás, `alertas.tratar_varios` (a mesma regra do `tratar`; o que estiver fora das obras de quem
 trata fica de fora, contado), rota `/erp/api/ponto/alertas/tratar-varios` (`tratar_ponto`), até 2000 por vez.
 Teste `test_varios_alertas_resolvidos_ou_dispensados_de_uma_vez`; tela conferida no navegador.
+**Publicado em 06/11/2026** (com o "pode" do dono) — SEM MIGRAÇÃO.
 
 ## 06/11/2026 (quarta) — Alertas: as fotos na linha, o filtro por tipo, a câmera travada e o alerta que crescia
 
