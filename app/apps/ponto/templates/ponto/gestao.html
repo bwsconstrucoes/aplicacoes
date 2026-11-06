@@ -224,8 +224,9 @@
   {% if pode.aprovar_afastamento %}<div id="rl-fech" hidden style="margin-top:10px">
     <div class="campo"><label for="rl-comp">Folha do mês</label><input type="month" id="rl-comp"></div>
     <div class="campo"><label for="rl-he-min">Desconsiderar a hora extra do dia de até (minutos)</label>
-      <input type="number" id="rl-he-min" min="0" max="120" step="1" placeholder="0 = tudo entra">
-      <small class="suave">Ex.: 10 — o dia com 1, 8 ou 10 min de extra não entra no fechamento (fica marcado no calendário).
+      <input type="number" id="rl-he-min" min="0" max="10" step="1" placeholder="0 = tudo entra">
+      <small class="suave">Até 10 — o dia com 1, 8 ou 10 min de extra não entra no fechamento (fica marcado no calendário).
+        <b>A lei permite no máximo 10 min por dia</b> (CLT, art. 58 §1º); acima disso é hora devida.
         A escolha fica guardada; mude e monte de novo para refazer. Vale também para o atraso pequeno.</small></div>
     <label class="opcao" style="margin-top:6px"><input type="checkbox" id="rl-he-abater">
       <span class="rotulo">Abater os atrasos e as saídas antecipadas das horas extras</span></label>
@@ -5072,9 +5073,12 @@ function fechLigarGrade() {
     if (!lista.length) return aviso("mensagem", "Marque no calendário, com um clique, as horas extras que não devem entrar.", "erro");
     const r = await perguntar({titulo: `Negar ${contar(lista.length, "hora extra", "horas extras")}`,
       aviso: "A hora extra desses dias sai de todas as contas: fechamento, arquivo .ps, relatórios e banco de horas. " +
-             "As batidas não mudam. Fica registrado o motivo, quem negou e quando — e dá para voltar a contar.",
-      campos: [{nome: "motivo", rotulo: "Por que não entra", tipo: "textarea", linhas: 2, obrigatorio: true, largura: 6,
-                exemplo: "ex.: hora extra não autorizada pelo engenheiro da obra"}], textoOk: "Negar"});
+             "As batidas não mudam. Fica registrado o motivo, quem negou e quando — e dá para voltar a contar.<br>" +
+             "<b>⚠️ Só para o que NÃO foi trabalho</b> — esqueceu de bater a saída, ficou na obra sem trabalhar. " +
+             "Hora extra TRABALHADA é devida mesmo sem autorização: negá-la é tirar hora da pessoa, e numa ação trabalhista " +
+             "o registro do ponto mostra o horário real.",
+      campos: [{nome: "motivo", rotulo: "Por que não foi trabalho", tipo: "textarea", linhas: 2, obrigatorio: true, largura: 6,
+                exemplo: "ex.: esqueceu de bater a saída — saiu às 17h, confirmado pelo encarregado"}], textoOk: "Negar"});
     if (!r) return;
     try { const d = await postar("/erp/api/ponto/horas-extras/negar", {itens: lista, motivo: r.motivo});
           FECH_MARC.clear(); aviso("mensagem", `${contar(d.alteradas, "hora extra negada", "horas extras negadas")}. Refazendo o fechamento…`, "ok");
