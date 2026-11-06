@@ -732,7 +732,8 @@ def app_api_bater():
             latitude=d.get("latitude"), longitude=d.get("longitude"), precisao=d.get("precisao"),
             timestamp_dispositivo=d.get("timestamp_dispositivo"),
             foto_base64=d.get("foto_base64"), ip=auth.ip_de_quem_chama(),
-            identificacao=identificacao, justificativa=d.get("justificativa"))
+            identificacao=identificacao, justificativa=d.get("justificativa"),
+            camera_travada=bool(d.get("camera_travada")))
         comprovante = _comprovante(conn, marcacao["id"])
     fotos.disparar_envio()
     return _ok(repetida=repetida, comprovante=comprovante,

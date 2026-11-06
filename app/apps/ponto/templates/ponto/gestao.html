@@ -317,6 +317,9 @@
       <option value="ATENCAO">Atenção</option>
       <option value="INFO">Para saber</option>
     </select></div>
+  {# 06/11/2026, o dono: "o tipo de alerta deveria estar no sidebar, nos filtros, para filtrar qual vamos tratar" #}
+  <div class="campo" style="margin-top:10px"><label for="a-tipo">Tipo de alerta</label>
+    <select id="a-tipo" data-sem-busca><option value="">Todos os tipos</option></select></div>
   <button class="btn" id="a-ver" type="button" style="width:100%; margin-top:14px">Ver</button>
   <div class="cartao-dica" style="margin-top:16px">
     <b>Alerta não é palpite.</b> Cada um sai de uma <b>regra escrita</b> (da CLT
@@ -505,6 +508,10 @@
   .dp-foto-cad img, .dp-foto-cad .sem { width:120px; height:120px; border-radius:10px; object-fit:cover; flex:none; background:#EEF1F5;
              display:flex; align-items:center; justify-content:center; color:var(--tinta-suave); font-size:12px; text-align:center; }
   .dp-fotos-batidas { display:flex; flex-wrap:wrap; gap:10px; margin-top:8px; }
+  .a-fotos { display:flex; flex-wrap:wrap; gap:10px; margin:8px 0 4px; }
+  .a-fotos figure { margin:0; width:110px; font-size:11px; text-align:center; }
+  .a-fotos img, .a-fotos .foto-vazia { width:110px; height:110px; object-fit:cover; border-radius:8px; display:block; cursor:zoom-in; }
+  .rosto-mini { width:56px; height:56px; object-fit:cover; border-radius:6px; display:block; cursor:zoom-in; }
   .dp-fotos-batidas figure { margin:0; width:120px; text-align:center; font-size:11px; }
   .dp-fotos-batidas img { width:120px; height:120px; object-fit:cover; border-radius:8px; display:block; cursor:zoom-in; }
   tr.v-grupo td { background:#F6F8FB; border-top:2px solid var(--borda); }
@@ -1506,7 +1513,7 @@ function desenharPainel() {
   const quem = {id: p.id, nome: p.nome, obra: (p.obra_principal || {}).codigo};
   const abas = [["dia", "Dia"], ["mes", "Espelho do mês"], ["pedidos", `Pedidos${pend ? ` (${pend} esperando)` : ""}`],
                 ["aparelhos", `Aparelhos (${(p.aparelhos || []).length})`], ["cadastro", "Cadastro"],
-                ...(p.conferencia_rosto ? [["rosto", `Conferência do rosto${p.conferencia_rosto.codigo === "OBSERVACAO" ? " 🔍" : ""}`]] : [])];
+                ["rosto", `Conferência do rosto${p.conferencia_rosto && p.conferencia_rosto.codigo === "OBSERVACAO" ? " 🔍" : ""}`]];
   els("dp-corpo").innerHTML = `
     <div class="dp-cab"><h2>${escapar(p.nome)}</h2>
       <span>${escapar(p.funcao || "sem função no cadastro")}</span>
@@ -1570,7 +1577,8 @@ function desenharPainel() {
     aprovarAparelho((p.aparelhos || []).find(a => String(a.id) === b.dataset.dpAparelho), recarregarPainel)));
   els("dp-corpo").querySelectorAll("[data-dp-cad]").forEach(b => b.addEventListener("click", () =>
     ({escala: trocarEscala, jornada: jornadaEObras, forma: formaDeBater, codigo: primeiroAcesso, alcance: alcanceNoApp,
-      banco: regimeDoBanco, naoBate: q => marcarBatePonto([q.id], !q.ativo_no_ponto, q.nome), excecao: batePorExcecao})[b.dataset.dpCad](p)));
+      banco: regimeDoBanco, naoBate: q => marcarBatePonto([q.id], !q.ativo_no_ponto, q.nome), excecao: batePorExcecao,
+      obrasApp: liberarObrasNoApp})[b.dataset.dpCad](p)));
   els("dp-corpo").querySelectorAll("[data-foto]").forEach(b => b.addEventListener("click", () =>
     verFoto(b.dataset.foto, b.dataset.legenda)));
 }
@@ -1731,7 +1739,7 @@ function painelMes() {
 // A foto de cadastro na janela: enviar uma nova, escolher uma das batidas, ou tirar (28/10/2026).
 let FOTO_CAD_VERSAO = Date.now();
 function ligarFotoDeCadastro(p) {
-  const depois = msg => { FOTO_CAD_VERSAO = Date.now(); recarregarPainel(); setTimeout(() => aviso("dp-msg", msg, "ok"), 400);
+  const depois = msg => { FOTO_CAD_VERSAO = Date.now(); ROSTO_PAINEL = null; recarregarPainel(); setTimeout(() => aviso("dp-msg", msg, "ok"), 400);
                           if (typeof carregarPessoas === "function") carregarPessoas();
                           if (typeof carregarMosaico === "function" && typeof VERSAO_CADASTRO !== "undefined") {
                             VERSAO_CADASTRO[p.id] = FOTO_CAD_VERSAO; carregarMosaico(); } };
@@ -1762,6 +1770,16 @@ function ligarFotoDeCadastro(p) {
       catch (e) { falhou(e, "dp-msg"); }
     }));
   });
+  document.querySelectorAll("[data-usar-foto-rosto]").forEach(b => b.addEventListener("click", async () => {
+    const r = await perguntar({titulo: "Usar como foto de cadastro", campos: [], textoOk: "Usar esta foto",
+      aviso: "Esta foto passa a ser a de cadastro de " + escapar(p.nome) + ": as próximas batidas são comparadas com ela. " +
+             "Use só se o rosto está de frente e é mesmo da pessoa. As batidas que já falharam não mudam sozinhas — " +
+             "valide-as no botão Decidir."});
+    if (!r) return;
+    try { await postar(`/erp/api/ponto/pessoas/${p.id}/foto-cadastral`, {marcacao_id: Number(b.dataset.usarFotoRosto)});
+          depois("Foto de cadastro trocada pela da batida escolhida."); }
+    catch (e) { falhou(e, "dp-msg"); }
+  }));
   if (els("dp-foto-tirar")) els("dp-foto-tirar").addEventListener("click", async () => {
     const r = await perguntar({titulo: "Tirar a foto de cadastro", campos: [], textoOk: "Tirar",
       aviso: "A pessoa fica sem foto de cadastro: a próxima batida com foto boa vira a nova, sozinha. Para escolher você mesmo, envie uma foto ou escolha uma das batidas."});
@@ -1790,12 +1808,22 @@ function painelRosto() {
   if (R0.carregando) return "carregando…";
   if (R0.erro) return `<div class="aviso erro">${escapar(R0.erro)}</div>`;
   const R = R0.dados, n = R.nivel, [cor, icone] = NIVEL_ROSTO[n.codigo] || ["", ""];
-  const selo = c => { const [k, t] = RESULTADO_DO_ROSTO[c.resultado] || ["outro", c.rotulo]; return `<span class="etq ${k}">${escapar(t)}</span>`; };
-  return `<div class="aviso ${n.codigo === "OBSERVACAO" ? "ambar" : "info"}" style="margin:0 0 10px">
+  const selo = c => {
+    // a que virou a de cadastro e depois foi trocada (06/11/2026): diz que foi, não que é
+    if (c.resultado === "VIROU_CADASTRAL" && !c.e_a_cadastral) return `<span class="etq outro">foi a foto de cadastro — já trocada</span>`;
+    const [k, t] = RESULTADO_DO_ROSTO[c.resultado] || ["outro", c.rotulo];
+    return `<span class="etq ${k}">${escapar(t)}</span>` + (c.e_a_cadastral ? ` <span class="etq azul">⭐ é a foto de cadastro agora</span>` : "");
+  };
+  // 06/11/2026, o dono: "eu preciso resolver daqui mesmo" — a foto de cadastro em cima, e cada batida com a foto
+  // ao lado e o "usar como foto de cadastro", sem ir ao Cadastro nem à tela de Fotos de cadastro.
+  return blocoFotoDeCadastro(p) + `<div class="aviso ${n.codigo === "OBSERVACAO" ? "ambar" : "info"}" style="margin:0 0 10px">
       <b>${icone} ${escapar(n.rotulo)}${n.reincidente ? " · reincidente" : ""}</b> — confere ${n.pct} % das batidas.<br>${escapar(R.porque)}</div>
-    ${R.conferencias.length ? `<table><thead><tr><th class="sem-ordem">Batida</th><th class="sem-ordem">Obra</th>
+    ${R.conferencias.length ? `<table><thead><tr><th class="sem-ordem">Foto</th><th class="sem-ordem">Batida</th><th class="sem-ordem">Obra</th>
         <th class="sem-ordem">Resultado</th><th class="sem-ordem">Semelhança</th><th class="sem-ordem">A batida</th><th class="sem-ordem"></th></tr></thead><tbody>
-      ${R.conferencias.map(c => `<tr class="${c.falha ? "dia-falta" : ""}"><td class="dados"><b>${escapar(c.quando)} ${escapar(c.hora)}</b></td>
+      ${R.conferencias.map(c => `<tr class="${c.falha ? "dia-falta" : ""}">
+        <td>${c.tem_foto ? `<img class="rosto-mini" alt="" loading="lazy" src="/erp/api/ponto/marcacoes/${c.marcacao_id}/foto"
+            onerror="fotoQuebrada(this)" data-foto="${c.marcacao_id}" data-legenda="${escapar(`${p.nome} — ${c.quando} ${c.hora}`)}">` : ""}</td>
+        <td class="dados"><b>${escapar(c.quando)} ${escapar(c.hora)}</b></td>
         <td class="dados">${escapar(c.obra || "—")}</td>
         <td>${selo(c)}${c.falha ? `<small style="color:var(--vermelho)">contou como falha</small>` : ""}
           ${c.falso_alarme ? `<small>validada depois — falso alarme, não conta</small>` : ""}
@@ -1804,11 +1832,15 @@ function painelRosto() {
         <td>${escapar((STATUS_BATIDA[c.status] || [, c.status])[1])}</td>
         <td style="white-space:nowrap">${c.tem_foto ? `<button class="btn secundario" type="button" data-foto="${c.marcacao_id}"
             data-legenda="${escapar(`${p.nome} — ${c.quando} ${c.hora}`)}">📷 Foto</button>` : ""}
-          <button class="btn ${c.status === "EM_ANALISE" ? "" : "secundario"}" type="button" data-mapa-batida="${c.marcacao_id}">${c.status === "EM_ANALISE" ? "Decidir…" : "Abrir"}</button></td></tr>`).join("")}
+          <button class="btn ${c.status === "EM_ANALISE" ? "" : "secundario"}" type="button" data-mapa-batida="${c.marcacao_id}">${c.status === "EM_ANALISE" ? "Decidir…" : "Abrir"}</button>
+          ${c.tem_foto && PODE_TRATAR && !c.e_a_cadastral ? `<br><button class="link-btn" type="button" data-usar-foto-rosto="${c.marcacao_id}"
+            title="Esta foto passa a ser a de cadastro: as próximas batidas são comparadas com ela">⭐ usar como foto de cadastro</button>` : ""}</td></tr>`).join("")}
       </tbody></table>` : `<div class="vazio"><b>Nenhuma conferência ainda</b>as batidas com foto entram na próxima rodada.</div>`}
-    <div class="cartao-dica">Foto com o rosto à vista e “sem rosto” ou “não confere”? Valide a batida (botão Decidir):
+    <div class="cartao-dica">A foto que vale é a de cima. Cada conferência foi feita com a foto de cadastro que valia NA HORA da
+      batida — trocada a foto, as próximas batidas são comparadas com a nova.<br>
+      Foto com o rosto à vista e “sem rosto” ou “não confere”? Valide a batida (botão Decidir):
       batida validada é falso alarme e não conta como falha. Se acontece em série, a foto de cadastro é que está ruim —
-      troque em <a class="elo" href="/erp/ponto/fotos-cadastro">Fotos de cadastro</a>.</div>`;
+      troque aqui mesmo: “⭐ usar como foto de cadastro” numa batida boa, ou envie uma foto nova lá em cima.</div>`;
 }
 const RESULTADO_DO_ROSTO = {MESMA_PESSOA: ["verde", "confere"], OUTRA_PESSOA: ["vermelho", "não confere"],
   SEM_ROSTO: ["ambar", "sem rosto na foto"], SEM_CADASTRAL: ["outro", "sem foto de cadastro"], VIROU_CADASTRAL: ["azul", "virou a foto de cadastro"],
@@ -1871,7 +1903,10 @@ function painelCadastro() {
   const linha = (r, v) => `<tr><th style="width:32%; text-align:left">${r}</th><td>${v}</td></tr>`;
   // A FOTO DE CADASTRO (28/10/2026, o dono: "ver a foto de cadastro e poder alterar"): é com ela
   // que a conferência do rosto compara cada batida.
-  const foto = `<div class="dp-foto-cad">
+  return blocoFotoDeCadastro(p) + painelCadastroTabela(p, esc, linha);
+}
+function blocoFotoDeCadastro(p) {
+  return `<div class="dp-foto-cad">
       ${p.tem_foto_cadastral ? `<img alt="Foto de cadastro" src="/erp/api/ponto/pessoas/${p.id}/foto-cadastral?v=${FOTO_CAD_VERSAO}"
           onerror="fotoQuebrada(this)" style="cursor:zoom-in" data-foto-cad="${p.id}">` : `<div class="sem">sem foto de cadastro</div>`}
       <div><b>Foto de cadastro</b>
@@ -1882,7 +1917,9 @@ function painelCadastro() {
           <button class="btn secundario" type="button" id="dp-foto-escolher">Escolher entre as fotos das batidas…</button>
           ${p.tem_foto_cadastral ? `<button class="link-btn" type="button" id="dp-foto-tirar">tirar a foto de cadastro</button>` : ""}</div>` : ""}
         <div id="dp-fotos-batidas"></div></div></div>`;
-  return foto + `<table>${[
+}
+function painelCadastroTabela(p, esc, linha) {
+  return `<table>${[
     linha("Situação", escapar(p.situacao || "—")),
     linha("Bate ponto?", p.ativo_no_ponto && p.excecao_planilha
       ? `<b>Sim, por exceção</b> — a planilha diz: ${escapar(p.excecao_planilha.planilha || "não bate")}; liberado: ${escapar(p.excecao_planilha.motivo || "")}
@@ -1916,6 +1953,7 @@ function painelCadastro() {
     ${PODE_DP && (p.planilha_tira || p.excecao_planilha) ? (p.excecao_planilha
       ? `<button class="btn secundario" type="button" data-dp-cad="excecao">↩️ Tirar a exceção (volta a valer a planilha)…</button>`
       : `<button class="btn secundario" type="button" data-dp-cad="excecao">✅ Bate ponto por exceção…</button>`) : ""}
+    <button class="btn secundario" type="button" data-dp-cad="obrasApp">🏗️ Liberar obras no aplicativo…</button>
     <button class="btn secundario" type="button" data-dp-cad="forma">Acesso no aplicativo</button>
     <button class="btn secundario" type="button" data-dp-cad="alcance">👥 Quem ela alcança no app</button>
     <button class="btn secundario" type="button" data-dp-cad="codigo">🔑 Código de acesso do aplicativo (PIN)…</button>
@@ -2511,8 +2549,72 @@ function entraNoAplicativo(p) {
     ? (PODE_DP && p.planilha_tira ? botao("excecao", "liberar para bater ponto (exceção à planilha)…") : "")
     : botao("naoBate", "voltar a bater ponto…");
   return `<b style="color:var(--vermelho)">Não</b> — quem não bate ponto só entra para acompanhar outras pessoas
-    (administrativo de obra ou liberado pelo DP).<br>Para entrar e acompanhar a equipe:${botao("forma", "liberar no aplicativo…")}
+    (administrativo de obra ou liberado pelo DP).<br>Para entrar, consultar e fazer ajustes pelas pessoas de algumas obras:${botao("obrasApp", "liberar obras no aplicativo…")}
     ${bater ? `<br>Para bater e ver o próprio ponto:${bater}` : ""}`;
+}
+
+// LIBERAR OBRAS NO APLICATIVO (04/11/2026, o dono: "ela está como não bate ponto (…) eu quero só que ela consiga
+// visualizar as pessoas de algumas obras (…) fazer ajuste de ponto de duas obras específicas. Não está claro, está
+// confuso"). A liberação de obras já existia (migração 023), mas no meio do "Acesso no aplicativo", com as obras
+// digitadas por código. Aqui é uma janela só dela: as obras para marcar, com busca, e o que a pessoa passa a fazer.
+async function liberarObrasNoApp(p) {
+  let obras;
+  try { obras = (await api("/erp/api/ponto/obras")).obras || []; } catch (e) { falhou(e, "dp-msg"); return; }
+  const lib = p.liberado || {};
+  const marcadas = new Set((lib.obras || []).map(o => String(o.id)));
+  let dlg = els("dlg-obras-app");
+  if (!dlg) { dlg = document.createElement("dialog"); dlg.id = "dlg-obras-app"; document.body.appendChild(dlg); }
+  const nome = escapar(p.nome.split(" ")[0]);
+  dlg.innerHTML = `<div class="dlg-topo"><h3>Liberar obras no aplicativo — ${escapar(p.nome)}</h3>
+      <button class="topo-btn" style="margin-left:auto" data-cancelar>Cancelar</button></div>
+    <div class="dlg-corpo">
+      <div class="aviso info">${nome} entra no aplicativo com o CPF e o PIN e, nas obras marcadas, <b>consulta o ponto das
+        pessoas e faz ajustes e pedidos por elas</b> (atestado, ajuste de batida, abono) — os pedidos vão para a validação
+        de sempre. ${p.ativo_no_ponto ? "" : `Como ${nome} não bate ponto, continua sem bater: a liberação é só para acompanhar os outros.`}
+        ${p.tem_pin === false ? `<br><b>${nome} ainda não tem PIN:</b> no primeiro acesso, o código chega no WhatsApp — ou gere em “🔑 Código de acesso do aplicativo”.` : ""}</div>
+      ${PODE_CONFIGURAR ? `<label class="opcao" style="margin:10px 0 6px"><input type="checkbox" id="oa-todas" ${lib.todas_obras ? "checked" : ""}>
+        <span class="rotulo"><b>Todas as obras</b> (acesso geral — vale também para obra cadastrada depois)</span></label>` : ""}
+      <div id="oa-lista-bloco">
+        <input id="oa-busca" placeholder="procurar a obra (código ou nome)" autocomplete="off" data-sem-mascara data-sem-busca
+               style="width:100%; margin:6px 0">
+        <div class="suave" id="oa-conta" style="font-size:13px; margin-bottom:4px"></div>
+        <div id="oa-lista" style="max-height:45vh; overflow:auto; border:1px solid var(--borda); border-radius:8px; padding:6px 10px">
+          ${obras.map(o => `<label class="opcao" data-oa-texto="${escapar(`${o.codigo} ${o.nome || ""}`.toLowerCase())}">
+            <input type="checkbox" data-oa="${o.id}" ${marcadas.has(String(o.id)) ? "checked" : ""}>
+            <span class="rotulo"><b>${escapar(o.codigo)}</b> — ${escapar(o.nome || "")}</span></label>`).join("")}</div>
+      </div>
+      <div id="oa-erro"></div>
+      <div style="margin-top:14px; display:flex; gap:8px">
+        <button class="btn" type="button" data-ok>Salvar</button>
+        <button class="btn secundario" type="button" data-cancelar>Cancelar</button></div>
+    </div>`;
+  const conta = () => {
+    const n = dlg.querySelectorAll("[data-oa]:checked").length, todas = els("oa-todas") && els("oa-todas").checked;
+    els("oa-conta").textContent = todas ? "todas as obras liberadas" : n ? `${n} obra(s) marcada(s)` : "nenhuma obra marcada";
+    els("oa-lista-bloco").style.opacity = todas ? ".45" : "1";
+  };
+  dlg.querySelectorAll("[data-oa]").forEach(c => c.addEventListener("change", conta));
+  if (els("oa-todas")) els("oa-todas").addEventListener("change", conta);
+  els("oa-busca").addEventListener("input", () => {
+    const t = els("oa-busca").value.trim().toLowerCase();
+    dlg.querySelectorAll("[data-oa-texto]").forEach(l => { l.style.display = !t || l.dataset.oaTexto.includes(t) ? "" : "none"; });
+  });
+  conta();
+  dlg.querySelectorAll("[data-cancelar]").forEach(b => b.addEventListener("click", () => dlg.close()));
+  dlg.querySelector("[data-ok]").addEventListener("click", async () => {
+    const ids = [...dlg.querySelectorAll("[data-oa]:checked")].map(c => obras.find(o => String(o.id) === c.dataset.oa).codigo);
+    const corpo = {liberado_obras: ids};
+    if (els("oa-todas")) corpo.liberado_todas_obras = els("oa-todas").checked;
+    try {
+      await postar(`/erp/api/ponto/pessoas/${p.id}/forma-de-bater`, corpo);
+      dlg.close();
+      await depoisDoCadastro(p.id);
+      aviso("dp-msg", corpo.liberado_todas_obras ? `Todas as obras liberadas para ${nome}.` : ids.length
+        ? `Obras liberadas para ${nome}: ${escapar(ids.join(", "))} — no aplicativo, consulta e faz ajustes e pedidos pelas pessoas delas.`
+        : `Liberação de obras tirada de ${nome}.`, "ok");
+    } catch (e) { aviso("oa-erro", escapar(e.message), "erro"); }
+  });
+  dlg.showModal();
 }
 
 async function batePorExcecao(p) {
@@ -5960,10 +6062,17 @@ async function carregarAlertas() {
   const p = new URLSearchParams();
   p.set("situacao", els("a-situacao").value);
   if (els("a-gravidade").value) p.set("gravidade", els("a-gravidade").value);
+  if (els("a-tipo").value) p.set("tipo", els("a-tipo").value);
   try {
     const d = await api(`/erp/api/ponto/alertas?${p}`);
     ALERTAS = d.alertas;
     ROTULOS = d.rotulos || {};
+    // o filtro por tipo, com quantos há de cada um (com a situação e a gravidade escolhidas)
+    const escolhido = els("a-tipo").value, tipos = d.tipos || [];
+    els("a-tipo").innerHTML = `<option value="">Todos os tipos (${tipos.reduce((n, t) => n + t.n, 0)})</option>` +
+      tipos.map(t => `<option value="${escapar(t.codigo)}">${escapar(t.rotulo)} (${t.n})</option>`).join("") +
+      (escolhido && !tipos.some(t => t.codigo === escolhido) ? `<option value="${escapar(escolhido)}">${escapar(ROTULOS[escolhido] || escolhido)} (0)</option>` : "");
+    els("a-tipo").value = escolhido;
     desenharAlertas();
   } catch (e) { falhou(e); }
 }
@@ -5987,13 +6096,27 @@ function desenharAlertas() {
         const [c, t] = SELO_SITUACAO[a.situacao] || ["outro", a.situacao];
         const nome = a.colaborador_id
           ? eloEspelho(a.colaborador_id, (a.data_referencia || hojeISO()).slice(0, 7), "abrir espelho") : "";
+        // o rosto que não confere (06/11/2026, o dono: "olha como é longo o caminho"): direto na conferência do rosto,
+        // com a foto de cadastro e as das batidas lado a lado — e o trocar ali mesmo
+        // AS FOTOS NA PRÓPRIA LINHA (06/11/2026, o dono: "era para aparecer aqui: essa foto está igual a essa outra")
+        const fotosDoAlerta = (a.fotos || []).length ? `<div class="a-fotos">${a.fotos.map(f => `<figure>
+            <img alt="" loading="lazy" src="/erp/api/ponto/marcacoes/${f.marcacao_id}/foto" onerror="fotoQuebrada(this)"
+                 data-foto="${f.marcacao_id}" data-legenda="${escapar(`${a.colaborador || ""} — ${f.rotulo}`)}">
+            <figcaption>${escapar(f.rotulo)}<br><button class="link-btn" type="button" data-mapa-batida="${f.marcacao_id}">abrir a batida</button>
+              ${a.codigo === "ROSTO_NAO_CONFERE" && PODE_TRATAR ? `<br><button class="link-btn" type="button"
+                data-a-usar-foto="${f.marcacao_id}" data-pessoa="${escapar(a.colaborador_id)}">⭐ usar como foto de cadastro</button>` : ""}</figcaption></figure>`).join("")}
+            ${a.codigo === "ROSTO_NAO_CONFERE" && a.colaborador_id ? `<figure><img alt="" loading="lazy"
+                src="/erp/api/ponto/pessoas/${escapar(a.colaborador_id)}/foto-cadastral?v=${FOTO_CAD_ALERTA}" onerror="fotoQuebrada(this)"
+                style="cursor:default"><figcaption>a foto de cadastro<br>(é com ela que comparou)</figcaption></figure>` : ""}</div>` : "";
+        const rosto = a.codigo === "ROSTO_NAO_CONFERE" && a.colaborador_id
+          ? `<button type="button" class="link-btn elo" data-abrir-pessoa="${escapar(a.colaborador_id)}" data-aba="rosto">conferir o rosto e a foto de cadastro</button>` : "";
         // Mosaico pendente e sequência rápida no mesmo aparelho se resolvem
         // olhando as fotos daquele dia, daquela obra.
         const mosaico = ALERTAS_DO_MOSAICO.includes(a.codigo) && a.obra_id && a.data_referencia
           ? `<a class="elo" href="/erp/ponto/mosaico?obra=${encodeURIComponent(a.obra_id)}&data=${encodeURIComponent(a.data_referencia)}">Abrir mosaico</a>` : "";
         return `<tr>
           <td><b>${escapar(a.rotulo || ROTULOS[a.codigo] || a.codigo)}</b></td>
-          <td class="desc">${escapar(a.mensagem)}${[nome, mosaico].filter(Boolean).map(x => `<small>${x}</small>`).join("")}</td>
+          <td class="desc">${escapar(a.mensagem)}${fotosDoAlerta}${[rosto, nome, mosaico].filter(Boolean).map(x => `<small>${x}</small>`).join("")}</td>
           <td class="dados">${escapar(a.obra || "—")}</td>
           <td class="dados">${a.data_referencia ? dataBR(a.data_referencia) : "—"}</td>
           <td><span class="selo ${c}">${escapar(t)}</span>
@@ -6079,6 +6202,26 @@ async function enviarResumo() {
 els("a-ver").addEventListener("click", carregarAlertas);
 els("a-situacao").addEventListener("change", carregarAlertas);
 els("a-gravidade").addEventListener("change", carregarAlertas);
+els("a-tipo").addEventListener("change", carregarAlertas);
+// "⭐ usar como foto de cadastro" direto no alerta do rosto: a foto da batida vira a de cadastro, e o alerta, resolvido
+let FOTO_CAD_ALERTA = Date.now();
+els("a-grupos").addEventListener("click", async ev => {
+  const b = ev.target.closest("[data-a-usar-foto]");
+  if (!b) return;
+  const alerta = ALERTAS.find(x => String(x.colaborador_id) === b.dataset.pessoa && (x.fotos || []).some(f => String(f.marcacao_id) === b.dataset.aUsarFoto));
+  const r = await perguntar({titulo: "Usar como foto de cadastro", campos: [], textoOk: "Usar esta foto",
+    aviso: "A foto desta batida passa a ser a de cadastro: as próximas batidas são comparadas com ela. Use só se o rosto " +
+           "está de frente e é mesmo da pessoa. O alerta fica resolvido; a batida, se estava em conferência, continua lá para validar."});
+  if (!r) return;
+  try {
+    await postar(`/erp/api/ponto/pessoas/${b.dataset.pessoa}/foto-cadastral`, {marcacao_id: Number(b.dataset.aUsarFoto)});
+    if (alerta && alerta.situacao === "ABERTO")
+      await postar(`/erp/api/ponto/alertas/${alerta.id}/tratar`, {situacao: "RESOLVIDO", nota: "foto de cadastro trocada pela desta batida"});
+    FOTO_CAD_ALERTA = Date.now();
+    aviso("mensagem", "Foto de cadastro trocada e alerta resolvido.", "ok");
+    await carregarAlertas();
+  } catch (e) { falhou(e); }
+});
 if (els("a-gerar")) els("a-gerar").addEventListener("click", gerarAlertas);
 if (els("a-enviar")) els("a-enviar").addEventListener("click", enviarResumo);
 carregarAlertas();

@@ -2852,6 +2852,7 @@ async function identificar(quem) {
   }
   // A confirmação: nome e função, e 2 segundos para olhar para a câmera.
   let cancelado = false, n = TB.fluxo ? 2 : 0;
+  const tempoDoVideo = $("t-video").currentTime;            // se não andar até a foto, a câmera travou
   const tela = () => `<h2>${esc(d.nome)}</h2><p>${esc(d.funcao || "")}</p>
     ${d.sem_internet ? `<p>📵 Sem internet${d.desconhecido ? " — CPF fora da lista deste aparelho: a batida vai para conferência" : ""}</p>` : ""}
     ${TB.fluxo ? `<p>Olhe para a câmera</p><div class="contagem">${n}</div>` : `<p>Sem câmera: a batida vai sem foto, para conferência.</p>`}
@@ -2866,14 +2867,14 @@ async function identificar(quem) {
   }
   $("t-cobre").style.background = "";
   if (cancelado) return;
-  const foto = fotoDoVideo();
   const hora = horaDaBatida();
+  const {foto, travada} = await fotoComCameraViva(tempoDoVideo);
   if (d.sem_internet) { await guardarSemInternet(d, foto, hora); atualizarLocalTablet(); return; }
   cobrir("", `<h2>${esc(d.primeiro_nome)}</h2><p>Registrando…</p>`);
   try {
     const local = TB.local;
     const corpo = {bilhete: d.bilhete, obra: $("t-obra").value, timestamp_dispositivo: new Date().toISOString(),
-                   foto_base64: foto || undefined};
+                   foto_base64: foto || undefined, camera_travada: travada || undefined};
     if (local) { corpo.latitude = local.latitude; corpo.longitude = local.longitude; corpo.precisao = local.precisao; }
     const r = await chamar("/ponto/app/api/bater", corpo, undefined, 20000);
     const c = r.comprovante;
@@ -3084,6 +3085,49 @@ function fotoDoVideo() {
   c.width = Math.round(v.videoWidth * k); c.height = Math.round(v.videoHeight * k);
   c.getContext("2d").drawImage(v, 0, 0, c.width, c.height);
   return c.toDataURL("image/jpeg", 0.8);
+}
+// A CÂMERA TRAVADA (06/11/2026, o dono: "a foto da batida é a mesma de outra pessoa (…) é problema de sistema"). A foto
+// do ponto da obra sai da imagem ao vivo da câmera; quando a câmera trava (o aparelho sem memória, outro aplicativo
+// pegou a câmera, o navegador pausou), a imagem fica parada na última pessoa — e ia para a seguinte. A imagem viva
+// muda sempre um pouco (o ruído da câmera, a luz); parada, sai idêntica. Por isso: a impressão (16×16 em cinza) da
+// imagem de agora, comparada com a da foto anterior deste aparelho, e o relógio do vídeo, que para de andar.
+function impressaoDoVideo() {
+  const v = $("t-video");
+  if (!v.videoWidth) return null;
+  const c = document.createElement("canvas");
+  c.width = 16; c.height = 16;
+  const ctx = c.getContext("2d", {willReadFrequently: true});
+  ctx.drawImage(v, 0, 0, 16, 16);
+  const px = ctx.getImageData(0, 0, 16, 16).data, cinza = [];
+  for (let i = 0; i < px.length; i += 4) cinza.push((px[i] * 3 + px[i + 1] * 6 + px[i + 2]) / 10);
+  return cinza;
+}
+function mesmaImagem(a, b) {
+  if (!a || !b || a.length !== b.length) return false;
+  let soma = 0;
+  for (let i = 0; i < a.length; i++) soma += Math.abs(a[i] - b[i]);
+  return soma === 0;                            // idêntica pixel a pixel: a viva sempre muda alguma coisa entre pessoas
+}
+function cameraParada(tempoAntes, compararComAAnterior) {
+  const v = $("t-video"), faixa = TB.fluxo && TB.fluxo.getVideoTracks()[0];
+  if (!faixa || faixa.readyState !== "live" || faixa.muted) return true;
+  if (tempoAntes != null && v.currentTime === tempoAntes) return true;      // o vídeo não andou na contagem
+  return compararComAAnterior && mesmaImagem(impressaoDoVideo(), TB.ultimaImpressao);
+}
+async function fotoComCameraViva(tempoAntes) {
+  if (!TB.fluxo) return {foto: null};
+  if (cameraParada(tempoAntes, true)) {
+    // religa a câmera e tenta de novo; continuou parada, a batida vai sem foto (e não com a de quem bateu antes)
+    try { TB.fluxo.getTracks().forEach(t => t.stop()); } catch (e) {}
+    TB.fluxo = null;
+    await ligarCamera();
+    const religada = $("t-video").currentTime;
+    await new Promise(ok => setTimeout(ok, 1200));
+    if (!TB.fluxo || cameraParada(religada, false)) return {foto: null, travada: true};
+  }
+  const foto = fotoDoVideo();
+  TB.ultimaImpressao = impressaoDoVideo();
+  return {foto};
 }
 
 // =============================================================================
