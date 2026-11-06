@@ -505,6 +505,7 @@
   .dp-foto-cad img, .dp-foto-cad .sem { width:120px; height:120px; border-radius:10px; object-fit:cover; flex:none; background:#EEF1F5;
              display:flex; align-items:center; justify-content:center; color:var(--tinta-suave); font-size:12px; text-align:center; }
   .dp-fotos-batidas { display:flex; flex-wrap:wrap; gap:10px; margin-top:8px; }
+  .rosto-mini { width:56px; height:56px; object-fit:cover; border-radius:6px; display:block; cursor:zoom-in; }
   .dp-fotos-batidas figure { margin:0; width:120px; text-align:center; font-size:11px; }
   .dp-fotos-batidas img { width:120px; height:120px; object-fit:cover; border-radius:8px; display:block; cursor:zoom-in; }
   tr.v-grupo td { background:#F6F8FB; border-top:2px solid var(--borda); }
@@ -1506,7 +1507,7 @@ function desenharPainel() {
   const quem = {id: p.id, nome: p.nome, obra: (p.obra_principal || {}).codigo};
   const abas = [["dia", "Dia"], ["mes", "Espelho do mês"], ["pedidos", `Pedidos${pend ? ` (${pend} esperando)` : ""}`],
                 ["aparelhos", `Aparelhos (${(p.aparelhos || []).length})`], ["cadastro", "Cadastro"],
-                ...(p.conferencia_rosto ? [["rosto", `Conferência do rosto${p.conferencia_rosto.codigo === "OBSERVACAO" ? " 🔍" : ""}`]] : [])];
+                ["rosto", `Conferência do rosto${p.conferencia_rosto && p.conferencia_rosto.codigo === "OBSERVACAO" ? " 🔍" : ""}`]];
   els("dp-corpo").innerHTML = `
     <div class="dp-cab"><h2>${escapar(p.nome)}</h2>
       <span>${escapar(p.funcao || "sem função no cadastro")}</span>
@@ -1732,7 +1733,7 @@ function painelMes() {
 // A foto de cadastro na janela: enviar uma nova, escolher uma das batidas, ou tirar (28/10/2026).
 let FOTO_CAD_VERSAO = Date.now();
 function ligarFotoDeCadastro(p) {
-  const depois = msg => { FOTO_CAD_VERSAO = Date.now(); recarregarPainel(); setTimeout(() => aviso("dp-msg", msg, "ok"), 400);
+  const depois = msg => { FOTO_CAD_VERSAO = Date.now(); ROSTO_PAINEL = null; recarregarPainel(); setTimeout(() => aviso("dp-msg", msg, "ok"), 400);
                           if (typeof carregarPessoas === "function") carregarPessoas();
                           if (typeof carregarMosaico === "function" && typeof VERSAO_CADASTRO !== "undefined") {
                             VERSAO_CADASTRO[p.id] = FOTO_CAD_VERSAO; carregarMosaico(); } };
@@ -1763,6 +1764,16 @@ function ligarFotoDeCadastro(p) {
       catch (e) { falhou(e, "dp-msg"); }
     }));
   });
+  document.querySelectorAll("[data-usar-foto-rosto]").forEach(b => b.addEventListener("click", async () => {
+    const r = await perguntar({titulo: "Usar como foto de cadastro", campos: [], textoOk: "Usar esta foto",
+      aviso: "Esta foto passa a ser a de cadastro de " + escapar(p.nome) + ": as próximas batidas são comparadas com ela. " +
+             "Use só se o rosto está de frente e é mesmo da pessoa. As batidas que já falharam não mudam sozinhas — " +
+             "valide-as no botão Decidir."});
+    if (!r) return;
+    try { await postar(`/erp/api/ponto/pessoas/${p.id}/foto-cadastral`, {marcacao_id: Number(b.dataset.usarFotoRosto)});
+          depois("Foto de cadastro trocada pela da batida escolhida."); }
+    catch (e) { falhou(e, "dp-msg"); }
+  }));
   if (els("dp-foto-tirar")) els("dp-foto-tirar").addEventListener("click", async () => {
     const r = await perguntar({titulo: "Tirar a foto de cadastro", campos: [], textoOk: "Tirar",
       aviso: "A pessoa fica sem foto de cadastro: a próxima batida com foto boa vira a nova, sozinha. Para escolher você mesmo, envie uma foto ou escolha uma das batidas."});
@@ -1791,12 +1802,22 @@ function painelRosto() {
   if (R0.carregando) return "carregando…";
   if (R0.erro) return `<div class="aviso erro">${escapar(R0.erro)}</div>`;
   const R = R0.dados, n = R.nivel, [cor, icone] = NIVEL_ROSTO[n.codigo] || ["", ""];
-  const selo = c => { const [k, t] = RESULTADO_DO_ROSTO[c.resultado] || ["outro", c.rotulo]; return `<span class="etq ${k}">${escapar(t)}</span>`; };
-  return `<div class="aviso ${n.codigo === "OBSERVACAO" ? "ambar" : "info"}" style="margin:0 0 10px">
+  const selo = c => {
+    // a que virou a de cadastro e depois foi trocada (06/11/2026): diz que foi, não que é
+    if (c.resultado === "VIROU_CADASTRAL" && !c.e_a_cadastral) return `<span class="etq outro">foi a foto de cadastro — já trocada</span>`;
+    const [k, t] = RESULTADO_DO_ROSTO[c.resultado] || ["outro", c.rotulo];
+    return `<span class="etq ${k}">${escapar(t)}</span>` + (c.e_a_cadastral ? ` <span class="etq azul">⭐ é a foto de cadastro agora</span>` : "");
+  };
+  // 06/11/2026, o dono: "eu preciso resolver daqui mesmo" — a foto de cadastro em cima, e cada batida com a foto
+  // ao lado e o "usar como foto de cadastro", sem ir ao Cadastro nem à tela de Fotos de cadastro.
+  return blocoFotoDeCadastro(p) + `<div class="aviso ${n.codigo === "OBSERVACAO" ? "ambar" : "info"}" style="margin:0 0 10px">
       <b>${icone} ${escapar(n.rotulo)}${n.reincidente ? " · reincidente" : ""}</b> — confere ${n.pct} % das batidas.<br>${escapar(R.porque)}</div>
-    ${R.conferencias.length ? `<table><thead><tr><th class="sem-ordem">Batida</th><th class="sem-ordem">Obra</th>
+    ${R.conferencias.length ? `<table><thead><tr><th class="sem-ordem">Foto</th><th class="sem-ordem">Batida</th><th class="sem-ordem">Obra</th>
         <th class="sem-ordem">Resultado</th><th class="sem-ordem">Semelhança</th><th class="sem-ordem">A batida</th><th class="sem-ordem"></th></tr></thead><tbody>
-      ${R.conferencias.map(c => `<tr class="${c.falha ? "dia-falta" : ""}"><td class="dados"><b>${escapar(c.quando)} ${escapar(c.hora)}</b></td>
+      ${R.conferencias.map(c => `<tr class="${c.falha ? "dia-falta" : ""}">
+        <td>${c.tem_foto ? `<img class="rosto-mini" alt="" loading="lazy" src="/erp/api/ponto/marcacoes/${c.marcacao_id}/foto"
+            onerror="fotoQuebrada(this)" data-foto="${c.marcacao_id}" data-legenda="${escapar(`${p.nome} — ${c.quando} ${c.hora}`)}">` : ""}</td>
+        <td class="dados"><b>${escapar(c.quando)} ${escapar(c.hora)}</b></td>
         <td class="dados">${escapar(c.obra || "—")}</td>
         <td>${selo(c)}${c.falha ? `<small style="color:var(--vermelho)">contou como falha</small>` : ""}
           ${c.falso_alarme ? `<small>validada depois — falso alarme, não conta</small>` : ""}
@@ -1805,11 +1826,15 @@ function painelRosto() {
         <td>${escapar((STATUS_BATIDA[c.status] || [, c.status])[1])}</td>
         <td style="white-space:nowrap">${c.tem_foto ? `<button class="btn secundario" type="button" data-foto="${c.marcacao_id}"
             data-legenda="${escapar(`${p.nome} — ${c.quando} ${c.hora}`)}">📷 Foto</button>` : ""}
-          <button class="btn ${c.status === "EM_ANALISE" ? "" : "secundario"}" type="button" data-mapa-batida="${c.marcacao_id}">${c.status === "EM_ANALISE" ? "Decidir…" : "Abrir"}</button></td></tr>`).join("")}
+          <button class="btn ${c.status === "EM_ANALISE" ? "" : "secundario"}" type="button" data-mapa-batida="${c.marcacao_id}">${c.status === "EM_ANALISE" ? "Decidir…" : "Abrir"}</button>
+          ${c.tem_foto && PODE_TRATAR && !c.e_a_cadastral ? `<br><button class="link-btn" type="button" data-usar-foto-rosto="${c.marcacao_id}"
+            title="Esta foto passa a ser a de cadastro: as próximas batidas são comparadas com ela">⭐ usar como foto de cadastro</button>` : ""}</td></tr>`).join("")}
       </tbody></table>` : `<div class="vazio"><b>Nenhuma conferência ainda</b>as batidas com foto entram na próxima rodada.</div>`}
-    <div class="cartao-dica">Foto com o rosto à vista e “sem rosto” ou “não confere”? Valide a batida (botão Decidir):
+    <div class="cartao-dica">A foto que vale é a de cima. Cada conferência foi feita com a foto de cadastro que valia NA HORA da
+      batida — trocada a foto, as próximas batidas são comparadas com a nova.<br>
+      Foto com o rosto à vista e “sem rosto” ou “não confere”? Valide a batida (botão Decidir):
       batida validada é falso alarme e não conta como falha. Se acontece em série, a foto de cadastro é que está ruim —
-      troque em <a class="elo" href="/erp/ponto/fotos-cadastro">Fotos de cadastro</a>.</div>`;
+      troque aqui mesmo: “⭐ usar como foto de cadastro” numa batida boa, ou envie uma foto nova lá em cima.</div>`;
 }
 const RESULTADO_DO_ROSTO = {MESMA_PESSOA: ["verde", "confere"], OUTRA_PESSOA: ["vermelho", "não confere"],
   SEM_ROSTO: ["ambar", "sem rosto na foto"], SEM_CADASTRAL: ["outro", "sem foto de cadastro"], VIROU_CADASTRAL: ["azul", "virou a foto de cadastro"],
@@ -1872,7 +1897,10 @@ function painelCadastro() {
   const linha = (r, v) => `<tr><th style="width:32%; text-align:left">${r}</th><td>${v}</td></tr>`;
   // A FOTO DE CADASTRO (28/10/2026, o dono: "ver a foto de cadastro e poder alterar"): é com ela
   // que a conferência do rosto compara cada batida.
-  const foto = `<div class="dp-foto-cad">
+  return blocoFotoDeCadastro(p) + painelCadastroTabela(p, esc, linha);
+}
+function blocoFotoDeCadastro(p) {
+  return `<div class="dp-foto-cad">
       ${p.tem_foto_cadastral ? `<img alt="Foto de cadastro" src="/erp/api/ponto/pessoas/${p.id}/foto-cadastral?v=${FOTO_CAD_VERSAO}"
           onerror="fotoQuebrada(this)" style="cursor:zoom-in" data-foto-cad="${p.id}">` : `<div class="sem">sem foto de cadastro</div>`}
       <div><b>Foto de cadastro</b>
@@ -1883,7 +1911,9 @@ function painelCadastro() {
           <button class="btn secundario" type="button" id="dp-foto-escolher">Escolher entre as fotos das batidas…</button>
           ${p.tem_foto_cadastral ? `<button class="link-btn" type="button" id="dp-foto-tirar">tirar a foto de cadastro</button>` : ""}</div>` : ""}
         <div id="dp-fotos-batidas"></div></div></div>`;
-  return foto + `<table>${[
+}
+function painelCadastroTabela(p, esc, linha) {
+  return `<table>${[
     linha("Situação", escapar(p.situacao || "—")),
     linha("Bate ponto?", p.ativo_no_ponto && p.excecao_planilha
       ? `<b>Sim, por exceção</b> — a planilha diz: ${escapar(p.excecao_planilha.planilha || "não bate")}; liberado: ${escapar(p.excecao_planilha.motivo || "")}
@@ -6053,13 +6083,17 @@ function desenharAlertas() {
         const [c, t] = SELO_SITUACAO[a.situacao] || ["outro", a.situacao];
         const nome = a.colaborador_id
           ? eloEspelho(a.colaborador_id, (a.data_referencia || hojeISO()).slice(0, 7), "abrir espelho") : "";
+        // o rosto que não confere (06/11/2026, o dono: "olha como é longo o caminho"): direto na conferência do rosto,
+        // com a foto de cadastro e as das batidas lado a lado — e o trocar ali mesmo
+        const rosto = a.codigo === "ROSTO_NAO_CONFERE" && a.colaborador_id
+          ? `<button type="button" class="link-btn elo" data-abrir-pessoa="${escapar(a.colaborador_id)}" data-aba="rosto">conferir o rosto e a foto de cadastro</button>` : "";
         // Mosaico pendente e sequência rápida no mesmo aparelho se resolvem
         // olhando as fotos daquele dia, daquela obra.
         const mosaico = ALERTAS_DO_MOSAICO.includes(a.codigo) && a.obra_id && a.data_referencia
           ? `<a class="elo" href="/erp/ponto/mosaico?obra=${encodeURIComponent(a.obra_id)}&data=${encodeURIComponent(a.data_referencia)}">Abrir mosaico</a>` : "";
         return `<tr>
           <td><b>${escapar(a.rotulo || ROTULOS[a.codigo] || a.codigo)}</b></td>
-          <td class="desc">${escapar(a.mensagem)}${[nome, mosaico].filter(Boolean).map(x => `<small>${x}</small>`).join("")}</td>
+          <td class="desc">${escapar(a.mensagem)}${[rosto, nome, mosaico].filter(Boolean).map(x => `<small>${x}</small>`).join("")}</td>
           <td class="dados">${escapar(a.obra || "—")}</td>
           <td class="dados">${a.data_referencia ? dataBR(a.data_referencia) : "—"}</td>
           <td><span class="selo ${c}">${escapar(t)}</span>

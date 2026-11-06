@@ -114,3 +114,30 @@ def test_a_gestao_envia_uma_foto_nova_de_cadastro(app, mundo, banco):
     foto = dp.get(url)
     assert foto.status_code == 200 and foto.mimetype == "image/jpeg"
     assert dp.get(f"/erp/api/ponto/pessoas/{mundo['joao']}").get_json()["pessoa"]["tem_foto_cadastral"] is True
+
+
+def test_a_foto_que_virou_a_de_cadastro_e_depois_foi_trocada_diz_isso(app, mundo, banco):
+    """06/11/2026, o dono: "virou a foto de cadastro, ela não é mais. Ela virou em algum momento" — a conferência do
+    rosto marca a foto de cadastro que vale AGORA, e a que virou e foi trocada diz que foi."""
+    from tests.test_ponto_qr_banco import _foto
+    dp = como(app, mundo["dp"])
+    url = f"/erp/api/ponto/pessoas/{mundo['joao']}/foto-cadastral"
+    primeira = dp.post(url + "/enviar", json={"foto_base64": _foto()}).get_json()["foto_id"]
+    batida = bater_via_chave(app, CPF_JOAO, local(_segunda_passada(), 7, 0))
+    with banco.connect() as conn:                   # a foto desta batida é a que virou a de cadastro
+        conn.execute(text("UPDATE ponto.marcacoes SET foto_id = :f WHERE id = :m"), {"f": primeira, "m": batida["id"]})
+        conn.execute(text("INSERT INTO ponto.conferencias_rosto (marcacao_id, resultado, detalhe) "
+                          "VALUES (:m, 'VIROU_CADASTRAL', 'primeira foto boa')"), {"m": batida["id"]})
+        conn.commit()
+
+    def a_batida():
+        r = dp.get(f"/erp/api/ponto/pessoas/{mundo['joao']}/rosto").get_json()
+        return next(c for c in r["conferencias"] if c["marcacao_id"] == batida["id"])
+    c = a_batida()
+    assert c["e_a_cadastral"] is True and c["rotulo"] == "virou a foto de cadastro"
+    dp.post(url + "/enviar", json={"foto_base64": _foto()})                   # trocada por outra
+    c = a_batida()
+    assert c["e_a_cadastral"] is False and "já trocada" in c["rotulo"]
+    # e ela pode voltar a ser a de cadastro dali mesmo
+    assert dp.post(url, json={"marcacao_id": batida["id"]}).status_code == 200
+    assert a_batida()["e_a_cadastral"] is True
