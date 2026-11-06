@@ -500,6 +500,16 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 06/11/2026 (quinta) — Vários alertas de uma vez
+
+O dono: *"na parte de alerta não consigo selecionar várias para marcar como resolvido ou dispensar"*. Cada alerta
+ganhou a caixa de marcar; a do cabeçalho marca o grupo (Urgente, Atenção, Para saber); a barra mostra quantos e
+"Resolver os marcados…", "Dispensar os marcados…" (a mesma nota para todos, obrigatória como no um por um) e "Reabrir"
+(nos já tratados). Com o filtro "Tipo de alerta", dá para pegar, por exemplo, todas as faltas de um tipo e tratar
+de uma vez. Por trás, `alertas.tratar_varios` (a mesma regra do `tratar`; o que estiver fora das obras de quem
+trata fica de fora, contado), rota `/erp/api/ponto/alertas/tratar-varios` (`tratar_ponto`), até 2000 por vez.
+Teste `test_varios_alertas_resolvidos_ou_dispensados_de_uma_vez`; tela conferida no navegador.
+
 ## 06/11/2026 (quarta) — Alertas: as fotos na linha, o filtro por tipo, a câmera travada e o alerta que crescia
 
 Quatro pedidos do dono, em sequência, todos na tela de Alertas:

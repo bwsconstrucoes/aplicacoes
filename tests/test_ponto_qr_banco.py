@@ -512,3 +512,25 @@ def test_as_faltas_seguidas_ficam_num_alerta_so_o_mais_atual(app, mundo, banco):
     assert len(abertos) == 1
     assert all(t["situacao"] == "RESOLVIDO" and "mais recente" in (t["tratado_por"] or "")
                for t in todos if t["situacao"] != "ABERTO")
+
+
+def test_varios_alertas_resolvidos_ou_dispensados_de_uma_vez(app, mundo, banco):
+    """06/11/2026, o dono: "na parte de alerta não consigo selecionar várias para marcar como resolvido ou dispensar"."""
+    from app.apps.ponto import db
+    from app.apps.ponto.core import alertas
+    with db.conexao() as conn:
+        alertas.gerar(conn, ate=_hoje() - dt.timedelta(days=1))
+    dp, fin = como(app, mundo["dp"]), como(app, mundo["fin"])
+    ids = [a["id"] for a in dp.get("/erp/api/ponto/alertas").get_json()["alertas"]]
+    assert len(ids) >= 2
+    url = "/erp/api/ponto/alertas/tratar-varios"
+    assert fin.post(url, json={"ids": ids[:2], "situacao": "RESOLVIDO"}).status_code == 403
+    assert dp.post(url, json={"ids": ids[:2], "situacao": "DISPENSADO", "nota": ""}).status_code == 400   # pede o porquê
+    assert dp.post(url, json={"ids": [], "situacao": "RESOLVIDO"}).status_code == 400
+    r = dp.post(url, json={"ids": ids[:2] + [999999], "situacao": "DISPENSADO", "nota": "obra parada, já tratado"})
+    assert r.status_code == 200 and r.get_json()["feitos"] == 2 and r.get_json()["fora"] == 1
+    dispensados = {a["id"] for a in dp.get("/erp/api/ponto/alertas?situacao=DISPENSADO").get_json()["alertas"]}
+    assert set(ids[:2]) <= dispensados
+    r = dp.post(url, json={"ids": ids[:2], "situacao": "ABERTO"})
+    assert r.get_json()["feitos"] == 2
+    assert set(ids[:2]) <= {a["id"] for a in dp.get("/erp/api/ponto/alertas").get_json()["alertas"]}

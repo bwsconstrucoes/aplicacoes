@@ -732,6 +732,33 @@ def tratar(conn: Connection, alerta_id: int, *, situacao: str, nota: str, por: s
     return db.um(conn, "SELECT * FROM ponto.alertas WHERE id = :id", id=alerta_id)
 
 
+MAX_TRATAR_DE_UMA_VEZ = 2000
+
+
+def tratar_varios(conn: Connection, ids: list, *, situacao: str, nota: str, por: str,
+                  obras: Optional[list[int]] = None) -> dict:
+    """Vários alertas de uma vez (06/11/2026, o dono: "não consigo selecionar várias para marcar como resolvido ou
+    dispensar"): a mesma regra de um por um — a nota de quem dispensa vale para todos; o que estiver fora das obras de
+    quem trata fica de fora, contado."""
+    from ..erros import ErroDeValidacao, NaoEncontrado
+    try:
+        ids = sorted({int(i) for i in (ids or [])})
+    except (TypeError, ValueError):
+        raise ErroDeValidacao("lista de alertas ilegível", campo="ids") from None
+    if not ids:
+        raise ErroDeValidacao("marque ao menos um alerta", campo="ids")
+    if len(ids) > MAX_TRATAR_DE_UMA_VEZ:
+        raise ErroDeValidacao(f"no máximo {MAX_TRATAR_DE_UMA_VEZ} de uma vez", campo="ids")
+    feitos, fora = 0, 0
+    for i in ids:
+        try:
+            tratar(conn, i, situacao=situacao, nota=nota, por=por, obras=obras)
+            feitos += 1
+        except NaoEncontrado:
+            fora += 1
+    return {"feitos": feitos, "fora": fora}
+
+
 def resumo_do_dia(conn: Connection, dia: Optional[dt.date] = None,
                   obras: Optional[list[int]] = None) -> str:
     """O texto que vai por WhatsApp. Números contados aqui, não escritos por IA."""

@@ -921,6 +921,16 @@
           title="O sistema já faz isso sozinho uma vez por dia">Gerar alertas agora</button>
 </div>
 <div id="a-gerado"></div>
+{% if pode.tratar_ponto %}
+{# 06/11/2026, o dono: "não consigo selecionar várias para marcar como resolvido ou dispensar" #}
+<div class="barra-lote" id="a-lote" hidden>
+  <b id="a-lote-qtd">0 marcados</b>
+  <button class="btn" id="a-lote-resolver" type="button">Resolver os marcados…</button>
+  <button class="btn secundario" id="a-lote-dispensar" type="button">Dispensar os marcados…</button>
+  <button class="btn secundario" id="a-lote-reabrir" type="button" hidden>Reabrir os marcados…</button>
+  <button class="link-btn" id="a-lote-desmarcar" type="button">desmarcar</button>
+</div>
+{% endif %}
 {% endif %}
 <div id="a-grupos">carregando…</div>
 <div class="cartao">
@@ -6082,14 +6092,19 @@ function desenharAlertas() {
   if (!ALERTAS.length) {
     els("a-grupos").innerHTML = `<div class="cartao"><div class="vazio"><b>Nenhum alerta</b>
       com estes filtros.</div></div>`;
+    A_MARCADOS.clear(); aLote();
     return;
   }
+  [...A_MARCADOS].forEach(id => { if (!ALERTAS.some(a => a.id === id)) A_MARCADOS.delete(id); });
   els("a-grupos").innerHTML = GRUPOS.map(([g, nome, classe]) => {
     const do_grupo = ALERTAS.filter(a => a.gravidade === g);
     if (!do_grupo.length) return "";
+    const todos = do_grupo.every(a => A_MARCADOS.has(a.id));
     return `<div class="cartao"><div class="grupo-cab"><span class="selo ${classe}">${nome}</span>
         <small class="suave">${do_grupo.length} alerta(s)</small></div>
-      <div class="tabela-rolagem" style="max-height:none"><table><thead><tr><th class="sem-ordem">Alerta</th>
+      <div class="tabela-rolagem" style="max-height:none"><table><thead><tr>
+        ${PODE_TRATAR ? `<th class="sem-ordem" style="width:28px"><input type="checkbox" data-a-marcar-grupo="${g}" ${todos ? "checked" : ""}
+           title="marcar todos os ${do_grupo.length} deste grupo" aria-label="marcar todos deste grupo"></th>` : ""}<th class="sem-ordem">Alerta</th>
         <th class="sem-ordem">O que aconteceu</th><th class="sem-ordem">Obra</th><th class="sem-ordem">Dia</th>
         <th class="sem-ordem">Situação</th><th class="sem-ordem"></th></tr></thead><tbody>
       ${do_grupo.map(a => {
@@ -6115,6 +6130,7 @@ function desenharAlertas() {
         const mosaico = ALERTAS_DO_MOSAICO.includes(a.codigo) && a.obra_id && a.data_referencia
           ? `<a class="elo" href="/erp/ponto/mosaico?obra=${encodeURIComponent(a.obra_id)}&data=${encodeURIComponent(a.data_referencia)}">Abrir mosaico</a>` : "";
         return `<tr>
+          ${PODE_TRATAR ? `<td><input type="checkbox" data-a-marcar="${a.id}" ${A_MARCADOS.has(a.id) ? "checked" : ""} aria-label="marcar este alerta"></td>` : ""}
           <td><b>${escapar(a.rotulo || ROTULOS[a.codigo] || a.codigo)}</b></td>
           <td class="desc">${escapar(a.mensagem)}${fotosDoAlerta}${[rosto, nome, mosaico].filter(Boolean).map(x => `<small>${x}</small>`).join("")}</td>
           <td class="dados">${escapar(a.obra || "—")}</td>
@@ -6130,12 +6146,60 @@ function desenharAlertas() {
       }).join("")}</tbody></table></div></div>`;
   }).join("");
   const achar = id => ALERTAS.find(a => a.id === Number(id));
+  document.querySelectorAll("[data-a-marcar]").forEach(c => c.addEventListener("change", () => {
+    c.checked ? A_MARCADOS.add(Number(c.dataset.aMarcar)) : A_MARCADOS.delete(Number(c.dataset.aMarcar));
+    desenharAlertas();
+  }));
+  document.querySelectorAll("[data-a-marcar-grupo]").forEach(c => c.addEventListener("change", () => {
+    ALERTAS.filter(a => a.gravidade === c.dataset.aMarcarGrupo).forEach(a => c.checked ? A_MARCADOS.add(a.id) : A_MARCADOS.delete(a.id));
+    desenharAlertas();
+  }));
+  aLote();
   document.querySelectorAll("[data-resolver]").forEach(b =>
     b.addEventListener("click", () => tratarAlerta(achar(b.dataset.resolver), "RESOLVIDO")));
   document.querySelectorAll("[data-dispensar]").forEach(b =>
     b.addEventListener("click", () => tratarAlerta(achar(b.dataset.dispensar), "DISPENSADO")));
   document.querySelectorAll("[data-reabrir]").forEach(b =>
     b.addEventListener("click", () => tratarAlerta(achar(b.dataset.reabrir), "ABERTO")));
+}
+
+// OS MARCADOS, DE UMA VEZ (06/11/2026): resolver, dispensar (a mesma nota para todos) ou reabrir
+const A_MARCADOS = new Set();
+function aLote() {
+  if (!els("a-lote")) return;
+  const marcados = ALERTAS.filter(a => A_MARCADOS.has(a.id));
+  els("a-lote").hidden = !marcados.length;
+  els("a-lote-qtd").textContent = contar(marcados.length, "alerta marcado", "alertas marcados");
+  const abertos = marcados.filter(a => a.situacao === "ABERTO").length;
+  els("a-lote-resolver").hidden = els("a-lote-dispensar").hidden = !abertos;
+  els("a-lote-reabrir").hidden = abertos === marcados.length;
+}
+async function tratarMarcados(situacao) {
+  const alvo = ALERTAS.filter(a => A_MARCADOS.has(a.id) && (situacao === "ABERTO" ? a.situacao !== "ABERTO" : a.situacao === "ABERTO"));
+  if (!alvo.length) return;
+  const nomes = {RESOLVIDO: ["Resolver", "resolvidos"], DISPENSADO: ["Dispensar", "dispensados"], ABERTO: ["Reabrir", "reabertos"]};
+  const tipos = [...new Set(alvo.map(a => a.rotulo || a.codigo))];
+  const r = await perguntar({
+    titulo: `${nomes[situacao][0]} ${contar(alvo.length, "alerta", "alertas")}`,
+    aviso: `${tipos.slice(0, 6).map(escapar).join(" · ")}${tipos.length > 6 ? " · …" : ""}`,
+    campos: [{nome: "nota", rotulo: situacao === "DISPENSADO" ? "Por que não precisam de ação (vale para todos)" : "Nota (vale para todos)",
+              tipo: "textarea", linhas: 2, largura: 3, obrigatorio: situacao === "DISPENSADO",
+              exemplo: situacao === "RESOLVIDO" ? "opcional — ex.: faltas já lançadas no fechamento" : ""}],
+    textoOk: nomes[situacao][0]});
+  if (!r) return;
+  try {
+    const d = await postar("/erp/api/ponto/alertas/tratar-varios", {ids: alvo.map(a => a.id), situacao, nota: r.nota || ""});
+    A_MARCADOS.clear();
+    aviso("mensagem", `${contar(d.feitos, "alerta " + nomes[situacao][1].slice(0, -1), "alertas " + nomes[situacao][1])}.`
+      + (d.fora ? ` ${d.fora} ficaram de fora (fora das suas obras).` : ""), "ok");
+    await carregarAlertas();
+  } catch (e) { falhou(e); }
+}
+if (els("a-lote")) {
+  els("a-lote-resolver").addEventListener("click", () => tratarMarcados("RESOLVIDO"));
+  els("a-lote-dispensar").addEventListener("click", () => tratarMarcados("DISPENSADO"));
+  els("a-lote-reabrir").addEventListener("click", () => tratarMarcados("ABERTO"));
+  els("a-lote-desmarcar").addEventListener("click", () => { A_MARCADOS.clear(); desenharAlertas(); });
 }
 
 async function tratarAlerta(a, situacao) {

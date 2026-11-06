@@ -2508,6 +2508,20 @@ def ponto_api_alerta_tratar(alerta_id: int):
     return _ok(alerta={"id": a["id"], "situacao": a["situacao"]})
 
 
+@bp.route("/erp/api/ponto/alertas/tratar-varios", methods=["POST"])
+@login_obrigatorio
+@permissao("tratar_ponto")
+@_api
+def ponto_api_alertas_tratar_varios():
+    """Os alertas marcados, de uma vez: resolvidos, dispensados (com a nota) ou reabertos."""
+    quem, d = _quem(), _corpo()
+    with db.conexao() as conn:
+        r = alertas.tratar_varios(conn, d.get("ids") or [], situacao=d.get("situacao"), nota=d.get("nota", ""),
+                                  por=quem.nome, obras=quem.obras)
+    logger.info("Ponto: %d alerta(s) %s de uma vez por %s", r["feitos"], str(d.get("situacao") or "").lower(), quem.nome)
+    return _ok(**r)
+
+
 @bp.route("/erp/api/ponto/resumo")
 @login_obrigatorio
 @permissao("ver_ponto")
