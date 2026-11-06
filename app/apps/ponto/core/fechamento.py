@@ -66,7 +66,9 @@ PARAMETRO_HE_MINIMA = "fechamento.he_minima"
 # horas a menos) do período são abatidos das horas extras do mesmo período — primeiro das de menor percentual. A falta
 # parcial e a falta inteira NÃO são abatidas: continuam falta. A mesma tolerância (`he_minima`) vale para o atraso.
 PARAMETRO_ABATER = "fechamento.abater_negativas"
-HE_MINIMA_MAXIMA = 120
+# 06/11/2026, a revisão da Portaria e da CLT com o dono: a tolerância vai até 10 MINUTOS por dia — a CLT, art. 58 §1º,
+# não conta as variações de até 5 min por marcação, no máximo 10 por dia; acima disso é hora devida. Era 120.
+HE_MINIMA_MAXIMA = 10
 CORTE_PADRAO = 25
 
 EVENTO_FALTA = "001"
@@ -96,7 +98,8 @@ def he_minima(conn: Connection, pedida=None, por: str = "") -> int:
         parametros.gravar(conn, PARAMETRO_HE_MINIMA, str(n), por)
         return n
     try:
-        return max(0, int(parametros.ler(conn, PARAMETRO_HE_MINIMA, "0") or 0))
+        # o valor guardado antes da trava (até 120) passa a valer no máximo 10
+        return min(HE_MINIMA_MAXIMA, max(0, int(parametros.ler(conn, PARAMETRO_HE_MINIMA, "0") or 0)))
     except (TypeError, ValueError):
         return 0
 
