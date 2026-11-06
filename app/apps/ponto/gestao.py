@@ -2522,6 +2522,43 @@ def ponto_api_alertas_tratar_varios():
     return _ok(**r)
 
 
+# ---------------------------------------------------------------------------
+# Os arquivos da fiscalização — AFD e AEJ (Portaria 671, 06/11/2026: core/arquivos_fiscais.py)
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/ponto/arquivos-fiscais", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao(GET="fechar_competencia", POST="configurar_ponto")
+@_api
+def ponto_api_arquivos_fiscais():
+    """Os dados do programa (o registro no INPI e o desenvolvedor) e as empresas com batida."""
+    from .core import arquivos_fiscais as af
+    with db.conexao() as conn:
+        if request.method == "POST":
+            cfg = af.gravar_configuracao(conn, _corpo(), _quem().nome)
+        else:
+            cfg = af.configuracao(conn)
+        return _ok(configuracao=cfg, empresas=[{**e, "obras": int(e["obras"])} for e in af.empresas(conn)])
+
+
+@bp.route("/erp/api/ponto/arquivos-fiscais/<tipo>")
+@login_obrigatorio
+@permissao("fechar_competencia")
+@_api
+def ponto_api_arquivo_fiscal(tipo: str):
+    """O AFD ou o AEJ de uma empresa num período, para baixar."""
+    from .core import arquivos_fiscais as af
+    if tipo not in ("afd", "aej"):
+        raise NaoEncontrado("arquivo desconhecido")
+    a = request.args
+    with db.conexao() as conn:
+        nome, conteudo = (af.afd if tipo == "afd" else af.aej)(conn, a.get("empresa_id", type=int) or 0,
+                                                               a.get("de"), a.get("ate"))
+    logger.info("Ponto: %s gerado por %s (%s, %s a %s, %d bytes)", tipo.upper(), _quem().nome,
+                a.get("empresa_id"), a.get("de"), a.get("ate"), len(conteudo))
+    return Response(conteudo, mimetype="text/plain; charset=iso-8859-1",
+                    headers={"Content-Disposition": f'attachment; filename="{nome}"'})
+
+
 @bp.route("/erp/api/ponto/resumo")
 @login_obrigatorio
 @permissao("ver_ponto")
