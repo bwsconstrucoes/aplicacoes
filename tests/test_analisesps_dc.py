@@ -569,6 +569,8 @@ def test_a_rota_do_ajuste_e_a_coluna_na_tela(banco_dc, cliente_mestre):
     assert r.get_json() == {"ok": True}
     html = cliente_mestre.get("/analisesps/folha/dc").get_data(as_text=True)
     assert "Acréscimo / desconto" in html and "dc-extra-btn" in html
+    # Tela e relatório alinhados (06/11/2026): o "por" é o responsável (coluna H).
+    assert "por JOAO" in html and "por MARIA" not in html
     assert "vale" in html and "calculado 150,00" in html
     assert cliente_mestre.post("/analisesps/api/folha/dc/extra",
                                json={"chave": chave, "valor": "5"}).status_code == 400
