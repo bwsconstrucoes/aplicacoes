@@ -500,6 +500,25 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 06/11/2026 (sexta) — A ronda depois da saída; as faltas seguidas que ainda repetiam; a obra no resumo
+
+- **A ronda das 7h para o vigia que já tinha saído.** O dono: *"um vigia recebeu a mensagem da ronda num horário que ele
+  já tinha saído. Recebeu às 7 horas da manhã."* Duas fragilidades: (1) as 4 rondas se espalhavam pela duração do turno
+  A PARTIR DA ENTRADA — quem entrava tarde (20h numa escala 17h–6h) ganhava ronda depois das 6h; (2) a ronda só era
+  cancelada quando a SAÍDA chegava ao servidor e passava pela batida — a saída do ponto da obra sem internet (chega
+  depois), a incluída por ajuste e a que falhou ao cancelar não cancelavam nada. Agora: o turno acaba na hora da
+  ESCALA daquela noite (`rondas.fim_do_turno`; sem escala no dia, 12 h da entrada), e antes de mandar cada ronda o
+  relógio confere se o vigia já bateu a saída (qualquer batida 30 min depois da entrada) — se sim, a ronda é cancelada
+  ("o vigia já tinha batido a saída"). Não verificado: qual dos casos foi o do vigia (o dono não disse o nome/dia).
+- **As faltas seguidas que continuavam repetidas.** A correção da quarta usava o primeiro dia da sequência DENTRO da
+  janela de 4 semanas — na falta longa, a janela anda e o "primeiro dia" andava junto, e o alerta nascia de novo. Agora
+  a sequência que encosta num alerta aberto da pessoa atualiza ESSE; e, a cada rodada, por pessoa e tipo (faltas
+  seguidas, fora da cerca repetido, banco negativo), fica aberto só o mais recente — os repetidos de antes saem
+  resolvidos, ditos ("trocado pelo alerta mais recente").
+- **A obra no resumo do WhatsApp.** *"Tem o nome da pessoa, mas não tem a obra."* Cada urgente termina com "— obra
+  CÓDIGO — Nome": a obra em que a pessoa mais bateu nos últimos 30 dias (sem batida, a do alerta).
+- Testes: `test_a_ronda_nao_sai_depois_da_hora_de_sair`, `test_os_repetidos_que_ja_estavam_abertos_saem_e_o_resumo_diz_a_obra`.
+
 ## 06/11/2026 (quinta) — Vários alertas de uma vez
 
 O dono: *"na parte de alerta não consigo selecionar várias para marcar como resolvido ou dispensar"*. Cada alerta

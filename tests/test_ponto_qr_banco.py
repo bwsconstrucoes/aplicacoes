@@ -534,3 +534,26 @@ def test_varios_alertas_resolvidos_ou_dispensados_de_uma_vez(app, mundo, banco):
     r = dp.post(url, json={"ids": ids[:2], "situacao": "ABERTO"})
     assert r.get_json()["feitos"] == 2
     assert set(ids[:2]) <= {a["id"] for a in dp.get("/erp/api/ponto/alertas").get_json()["alertas"]}
+
+
+def test_os_repetidos_que_ja_estavam_abertos_saem_e_o_resumo_diz_a_obra(app, mundo, banco):
+    """06/11/2026, o dono: "continua aparecendo repetido" (os de antes da regra, com 10, 11, 12 faltas) — por pessoa fica
+    aberto só o mais recente; e "no resumo tem o nome da pessoa, mas não tem a obra" — os urgentes dizem a obra."""
+    from app.apps.ponto import db
+    from app.apps.ponto.core import alertas
+    from tests.test_ponto_gestao_banco import bater_via_chave
+    ontem = _hoje() - dt.timedelta(days=1)
+    bater_via_chave(app, CPF_MARIA, local(ontem - dt.timedelta(days=12), 7, 0))     # a Maria (obra B) bate na A
+    with db.conexao() as conn:
+        for n, d in ((10, ontem - dt.timedelta(days=3)), (11, ontem - dt.timedelta(days=2)), (12, ontem - dt.timedelta(days=1))):
+            db.executar(conn, """INSERT INTO ponto.alertas (chave, codigo, gravidade, colaborador_id, obra_id, data_referencia, mensagem)
+                                 VALUES (:k, 'FALTAS_SEGUIDAS', 'URGENTE', :c, :o, :d, :m)""",
+                        k=f"FALTAS_SEGUIDAS:{mundo['joao']}:{d.isoformat()}", c=mundo["joao"], o=mundo["obra_a"], d=d,
+                        m=f"João Obra A: {n} faltas seguidas")
+        alertas.gerar(conn, ate=ontem)
+        abertos = [a for a in alertas.listar(conn) if a["codigo"] == "FALTAS_SEGUIDAS" and a["colaborador_id"] == mundo["joao"]]
+        texto = alertas.resumo_do_dia(conn, ontem)
+    assert len(abertos) == 1
+    assert "Urgentes:" in texto and "— obra PG-A" in texto
+    linha_maria = next((l for l in texto.splitlines() if "Maria" in l and "⚠️" in l), "")
+    assert not linha_maria or "— obra PG-A" in linha_maria        # a obra em que ela bate, não a do cadastro
