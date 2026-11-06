@@ -12246,6 +12246,8 @@ somente Solicitações de uma conta especifica"*.
 
 #### Leva 253 — DC: relatório detalhado em paisagem e acréscimo/desconto por lançamento (06/11/2026)
 
+> **Publicado em 06/11/2026.**
+
 - *"O relatório de despesa com colaboradores, nem o PDF, nem o Excel está saindo
   detalhado (…) colocar o relatório em paisagem (…) não está saindo a descrição (…)
   adicionar uma coluna de acréscimo e desconto, da mesma forma que tem em
