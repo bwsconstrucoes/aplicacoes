@@ -47,6 +47,7 @@ GRAVIDADE = {
     "SEM_FOTO": "ATENCAO", "FOTO_ESCURA": "ATENCAO", "FOTO_REPETIDA": "URGENTE", "CAMERA_TRAVADA": "ATENCAO",
     "SEQUENCIA_RAPIDA": "ATENCAO", "ROSTO_NAO_CONFERE": "URGENTE", "QR_ANTIGO_USADO": "ATENCAO", "TENTATIVAS_DE_CPF": "ATENCAO",
     "MOSAICO_PENDENTE": "ATENCAO", "BATIDA_RECUSADA_FORA_DA_OBRA": "ATENCAO",
+    "ASSINATURA_PENDENTE": "ATENCAO",
 }
 ROTULO = {
     "FALTA": "Falta sem justificativa", "FALTA_PARCIAL": "Falta parcial", "BATIDA_FALTANDO": "Batida faltando",
@@ -73,6 +74,7 @@ ROTULO = {
     "QR_ANTIGO_USADO": "QR Code antigo usado", "TENTATIVAS_DE_CPF": "CPFs errados em sequência no tablet",
     "MOSAICO_PENDENTE": "Mosaico de fotos sem conferência",
     "BATIDA_RECUSADA_FORA_DA_OBRA": "Tentou bater fora da área da obra",
+    "ASSINATURA_PENDENTE": "Folhas de ponto sem assinatura",
 }
 # Os que nascem do cálculo de UM dia — podem ser resolvidos sozinhos.
 DO_DIA = {"FALTA", "FALTA_PARCIAL", "BATIDA_FALTANDO", "COMPENSACAO_NAO_CUMPRIDA", "TRABALHOU_NA_FOLGA", "ATRASO", "SAIDA_ANTECIPADA", "EXTRA_ACIMA_DE_2H",
@@ -281,6 +283,7 @@ def gerar(conn: Connection, *, ate: Optional[dt.date] = None,
                     contagem["BANCO_NEGATIVO"] += 1
 
     _um_por_pessoa(conn)
+    contagem.update(_assinaturas_pendentes(conn, vistos, ate))
     contagem.update(_dois_lugares(conn, vistos, inicio_dia, ate))
     contagem.update(_parados(conn, vistos))
     if db.tem_003(conn):
@@ -305,6 +308,52 @@ def gerar(conn: Connection, *, ate: Optional[dt.date] = None,
                 ate, len(pessoas), sum(contagem.values()), resolvidos)
     return {"ate": ate.isoformat(), "pessoas": len(pessoas), "alertas": dict(contagem),
             "resolvidos_sozinhos": resolvidos}
+
+
+# A PENDÊNCIA DA ASSINATURA DA FOLHA (06/11/2026, o dono: "colocar dentro da rotina, numa espécie de pendência para
+# os operadores de ponto"): do dia 10 do mês seguinte em diante, uma linha por obra com quantas folhas do mês fechado
+# faltam assinar e o prazo (dia 20). Some quando todas da obra estão assinadas ou recusadas.
+AVISAR_ASSINATURA_DESDE_DIA = 10
+
+
+def _assinaturas_pendentes(conn: Connection, vistos: set, ate: dt.date) -> Counter:
+    from . import assinaturas, competencias
+    contagem: Counter = Counter()
+    if not assinaturas.disponivel(conn):
+        return contagem
+    hoje = ate + dt.timedelta(days=1)
+    comp = (hoje.replace(day=1) - dt.timedelta(days=1)).replace(day=1)
+    if hoje.day < AVISAR_ASSINATURA_DESDE_DIA or not competencias.esta_fechada(conn, comp):
+        return contagem
+    prazo = assinaturas.prazo(comp)
+    linhas = db.todos(conn, """
+        WITH quem AS (
+            SELECT DISTINCT ON (m.colaborador_id) m.colaborador_id, m.obra_id
+              FROM ponto.marcacoes m
+             WHERE m.data_referencia BETWEEN :i AND :f AND m.status <> 'REJEITADA'
+             GROUP BY m.colaborador_id, m.obra_id
+             ORDER BY m.colaborador_id, count(*) DESC)
+        SELECT q.obra_id, o.codigo, o.nome, count(*) AS faltam
+          FROM quem q JOIN public.obras o ON o.id = q.obra_id
+         WHERE NOT EXISTS (SELECT 1 FROM ponto.espelho_assinaturas a WHERE a.colaborador_id = q.colaborador_id
+                             AND a.competencia = :i AND a.situacao <> 'SUBSTITUIDA')
+         GROUP BY q.obra_id, o.codigo, o.nome""", i=comp, f=competencias.ultimo_dia(comp))
+    for l in linhas:
+        dias = (prazo - hoje).days
+        quando = (f"prazo até {prazo:%d/%m} (faltam {dias} dia(s))" if dias >= 0
+                  else f"PRAZO VENCIDO em {prazo:%d/%m}")
+        _registrar(conn, vistos, chave=f"ASSINATURA_PENDENTE:{l['obra_id']}:{comp.isoformat()}", codigo="ASSINATURA_PENDENTE",
+                   mensagem=f"Obra {l['codigo']}: {l['faltam']} folha(s) de ponto de {comp:%m/%Y} sem assinatura — {quando}. "
+                            "No aplicativo: “Assinaturas da folha”.",
+                   obra_id=l["obra_id"], data=prazo)
+        contagem["ASSINATURA_PENDENTE"] += 1
+    # a obra que terminou de assinar: o alerta sai sozinho
+    for a in db.todos(conn, """SELECT id, chave FROM ponto.alertas WHERE codigo = 'ASSINATURA_PENDENTE' AND situacao = 'ABERTO'
+                                AND chave LIKE :c""", c=f"ASSINATURA_PENDENTE:%:{comp.isoformat()}"):
+        if a["chave"] not in vistos:
+            db.executar(conn, "UPDATE ponto.alertas SET situacao = 'RESOLVIDO', tratado_em = now(), "
+                              "tratado_por = 'o próprio sistema (todas as folhas assinadas)' WHERE id = :i", i=a["id"])
+    return contagem
 
 
 def _dois_lugares(conn: Connection, vistos: set, inicio: dt.date, fim: dt.date) -> Counter:

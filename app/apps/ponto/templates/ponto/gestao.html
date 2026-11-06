@@ -1905,8 +1905,19 @@ function painelPedidos() {
           data-legenda="${escapar(`${x.colaborador || ""} — ${x.rotulo}`)}">📎 ver o documento</button>` : ""}</td>
       <td>${x.decidir_em ? `<button class="btn" type="button" data-dp-decidir="${escapar(x.decidir_em)}" data-tipo="PEDIDO" data-sim="1">Aprovar</button>
         <button class="btn secundario" type="button" data-dp-decidir="${escapar(x.decidir_em)}" data-tipo="PEDIDO" data-sim="0">Negar</button>` : ""}</td></tr>`; }).join("");
-  return (conf || ped) ? `<table><thead><tr><th>O quê</th><th>Quando</th><th>Situação</th><th></th></tr></thead>
-      <tbody>${conf}${ped}</tbody></table>` : `<div class="vazio"><b>Nenhum pedido</b>nem batida esperando decisão.</div>`;
+  // as folhas assinadas na tela (06/11/2026): o PDF de cada mês, com o comprovante da assinatura
+  const SIT_ASS = {ASSINADA: ["aprovado", "assinada"], RECUSADA: ["bloqueado", "recusou assinar"], SUBSTITUIDA: ["outro", "substituída"]};
+  const assin = (PAINEL.pessoa.assinaturas || []).length ? `<h4 style="margin:16px 0 6px">Folhas de ponto assinadas</h4>
+    <table><thead><tr><th>Mês</th><th>Situação</th><th>Quando · quem conduziu</th><th></th></tr></thead><tbody>
+    ${PAINEL.pessoa.assinaturas.map(a => { const [c, r] = SIT_ASS[a.situacao] || ["outro", a.situacao]; return `<tr>
+      <td class="dados">${escapar(mesBR(a.competencia))}</td>
+      <td><span class="selo ${c}">${escapar(r)}</span>${a.motivo ? `<small>${escapar(a.motivo)}</small>` : ""}${a.substituida ? `<small>${escapar(a.substituida)}</small>` : ""}</td>
+      <td>${escapar(a.em || "")}<small>${escapar(a.por || "")}</small></td>
+      <td>${a.documento_id ? `<button class="link-btn" type="button" data-documento="${escapar(urlDoDocumento(a.documento_id, false))}"
+          data-legenda="${escapar(`${PAINEL.pessoa.nome} — folha de ${mesBR(a.competencia)} assinada`)}">📄 abrir o PDF</button>` : ""}</td></tr>`; }).join("")}
+    </tbody></table>` : "";
+  return ((conf || ped) ? `<table><thead><tr><th>O quê</th><th>Quando</th><th>Situação</th><th></th></tr></thead>
+      <tbody>${conf}${ped}</tbody></table>` : `<div class="vazio"><b>Nenhum pedido</b>nem batida esperando decisão.</div>`) + assin;
 }
 
 function painelAparelhos() {
