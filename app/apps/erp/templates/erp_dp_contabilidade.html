@@ -76,6 +76,12 @@
 </div>
 
 <div id="painel-pedidos">
+  {# PARA ONDE VÃO OS PEDIDOS, logo acima deles. O endereço da contabilidade
+     é dado de configuração, mas esconder num menu de configurações seria
+     escondê-lo de quem precisa dele: sem ele preenchido, nenhum pedido sai, e
+     a pessoa que vai descobrir isso é a que está tentando enviar. Então ele
+     mora aqui, onde o envio acontece, e GRITA quando está vazio. #}
+  <div id="para-quem" style="margin-bottom:12px"></div>
   <div class="kpis" id="kpis" style="margin-bottom:12px"></div>
   <div class="tabela-wrap">
     <div class="tabela-barra">
@@ -105,6 +111,7 @@
 // na obra ACOMPANHA o pedido da gente dela — e é isso que acaba com o
 // "e aí, saiu?" por WhatsApp.
 const PODE_PEDIR = {{ 'true' if pode.pedir_contabilidade else 'false' }};
+const PODE_CONFIGURAR = {{ 'true' if pode.configurar else 'false' }};
 let PEDIDOS = [], TEMPLATES = [], EMAILS = [], ROTINAS = [], SUGESTOES = [], MODOS = [];
 
 const COR_SITUACAO = {
@@ -167,11 +174,64 @@ function pedidosVisiveis(){
   });
 }
 
+// ---------------------------------------------------------------------------
+// PARA ONDE VÃO OS PEDIDOS
+//
+// O e-mail da contabilidade é dado de configuração, mas o lugar dele é AQUI,
+// acima dos pedidos, e não num menu de configurações: sem ele preenchido
+// nenhum pedido sai, e quem vai descobrir isso é justamente quem está
+// tentando enviar. Vazio, o bloco fica vermelho e diz o que falta.
+// ---------------------------------------------------------------------------
+function pintarParaQuem(){
+  const tem = EMAILS.length > 0;
+  els("para-quem").innerHTML = `
+    <div class="aviso ${tem ? "" : "erro"}"
+         style="display:flex; gap:10px; align-items:center; flex-wrap:wrap">
+      <div style="flex:1; min-width:220px">
+        <b>Para onde vão os pedidos:</b>
+        ${tem ? EMAILS.map(escapar).join(", ")
+              : "<b>ainda não cadastrado</b> — enquanto estiver vazio, nenhum "
+                + "pedido à contabilidade sai do sistema."}
+      </div>
+      ${PODE_CONFIGURAR ? `<button class="btn secundario" id="btn-para-quem"
+         type="button">${tem ? "Trocar" : "Cadastrar o e-mail"}</button>` : ""}
+    </div>`;
+  if (els("btn-para-quem"))
+    els("btn-para-quem").addEventListener("click", trocarParaQuem);
+}
+
+async function trocarParaQuem(){
+  const r = await perguntar({
+    titulo: "O e-mail da contabilidade",
+    aviso: "É para cá que o ERP manda os pedidos (assinatura de CTPS, férias, "
+         + "desligamento) e as cobranças de retorno. Pode pôr MAIS DE UM, "
+         + "separado por vírgula — contabilidade costuma ter mais de uma "
+         + "pessoa no assunto, e mandar só para uma faz o pedido parar nas "
+         + "férias dela.",
+    textoOk: "Salvar",
+    campos: [{nome: "emails", rotulo: "E-mail (ou vários, por vírgula)",
+              largura: 6, valor: EMAILS.join(", "),
+              exemplo: "contabilidade@escritorio.com.br, fulano@escritorio.com.br"}]});
+  if (!r) return;
+  try {
+    const d = await api("/erp/api/dp/contabilidade/emails",
+      {method: "POST", headers: {"Content-Type": "application/json"},
+       body: JSON.stringify({emails: r.emails})});
+    EMAILS = d.emails || [];
+    pintarParaQuem();
+    aviso("mensagem", EMAILS.length
+      ? `Os pedidos passam a ir para ${EMAILS.join(", ")}.`
+      : "Nenhum e-mail cadastrado — os pedidos não vão sair.",
+      EMAILS.length ? "ok" : "alerta");
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
 function pintar(){
   const lista = pedidosVisiveis();
   const atrasados = lista.filter(p => p.atrasado);
   const divergentes = lista.filter(p => p.situacao === "DIVERGENTE");
   const esperando = lista.filter(p => ["ENVIADO","COBRADO"].includes(p.situacao));
+  pintarParaQuem();
   els("kpis").innerHTML = `
     <div class="kpi estatico"><div class="kpi-rotulo">Esperando retorno</div>
       <div class="kpi-valor">${esperando.length}</div></div>

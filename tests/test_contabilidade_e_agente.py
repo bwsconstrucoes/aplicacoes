@@ -471,3 +471,88 @@ def test_o_aviso_nao_trava_o_pedido_de_ferias(sessao_real, dono, pessoa):
     assert any("período aquisitivo" in a for a in r["avisos"])
     eventos = [e["tipo"] for e in ct.ler(sessao_real, r["id"])["eventos"]]
     assert "AVISO" in eventos, "o aviso fica na trilha, não só na tela"
+
+
+# ---------------------------------------------------------------------------
+# O E-MAIL DA CONTABILIDADE, CADASTRADO PELA TELA
+#
+# Pedido do dono em 06/11/2026: *"o e-mail da contabilidade eu acho que tem
+# que ser colocado no aplicativo (…) deixa o campo, cria um local para eu
+# poder adicionar essa informação."* Está certo: endereço que muda é dado de
+# tela, não de variável de ambiente — trocá-lo não pode exigir publicação.
+# ---------------------------------------------------------------------------
+@pytest.mark.banco
+def test_o_email_da_contabilidade_e_gravado_e_lido(sessao_real, dono, banco):
+    from app.apps.erp.core import contabilidade as svc
+
+    assert svc.endereco_padrao(sessao_real) == []
+    r = svc.definir_enderecos(
+        sessao_real, "contabilidade@escritorio.com.br", dono)
+    assert r == ["contabilidade@escritorio.com.br"]
+    assert svc.endereco_padrao(sessao_real) == ["contabilidade@escritorio.com.br"]
+
+
+@pytest.mark.banco
+def test_aceita_mais_de_um_endereco_porque_ferias_acontecem(sessao_real, dono,
+                                                            banco):
+    """Mandar só para uma pessoa faz o pedido parar nas férias dela."""
+    from app.apps.erp.core import contabilidade as svc
+
+    r = svc.definir_enderecos(
+        sessao_real, "um@escritorio.com.br; dois@escritorio.com.br", dono)
+    assert r == ["um@escritorio.com.br", "dois@escritorio.com.br"]
+
+
+@pytest.mark.banco
+def test_endereco_torto_e_recusado_antes_de_gravar(sessao_real, dono, banco):
+    """Endereço errado só apareceria semanas depois, num pedido que a
+    contabilidade nunca recebeu e que o ERP ficou cobrando de ninguém."""
+    from app.apps.erp.core import contabilidade as svc
+    from app.apps.erp.core.comum.auditoria import ErroValidacao
+
+    svc.definir_enderecos(sessao_real, "bom@escritorio.com.br", dono)
+    for torto in ("contabilidade@escritorio", "fulano@gmail,com",
+                  "sem arroba", "tem espaco@escritorio.com.br"):
+        with pytest.raises(ErroValidacao):
+            svc.definir_enderecos(sessao_real, torto, dono)
+    # e o que estava gravado antes continua lá: a recusa não apaga nada
+    assert svc.endereco_padrao(sessao_real) == ["bom@escritorio.com.br"]
+
+
+@pytest.mark.banco
+def test_o_mesmo_endereco_duas_vezes_entra_uma_vez_so(sessao_real, dono, banco):
+    from app.apps.erp.core import contabilidade as svc
+
+    r = svc.definir_enderecos(
+        sessao_real, "a@x.com.br, A@X.com.br, b@x.com.br", dono)
+    assert r == ["a@x.com.br", "b@x.com.br"]
+
+
+@pytest.mark.banco
+def test_trocar_o_endereco_fica_registrado(sessao_real, dono, banco):
+    """Trocar isto desvia TODO pedido novo — desvio silencioso é descoberto
+    tarde demais."""
+    from sqlalchemy import text as _t
+    from app.apps.erp.core import contabilidade as svc
+
+    svc.definir_enderecos(sessao_real, "antes@x.com.br", dono)
+    svc.definir_enderecos(sessao_real, "depois@x.com.br", dono)
+    n = sessao_real.execute(_t(
+        "SELECT count(*) FROM eventos"
+        " WHERE entidade_tipo = 'parametro'"
+        "   AND detalhe->>'chave' = :c"), {"c": svc.CHAVE_EMAILS}).scalar()
+    assert n >= 2
+
+
+@pytest.mark.banco
+def test_sem_endereco_o_pedido_nao_sai_e_a_mensagem_diz_onde_preencher(
+        sessao_real, dono, pessoa, banco):
+    """A recusa tem de dizer ONDE resolver, não só que falta."""
+    from app.apps.erp.core import contabilidade as svc
+    from app.apps.erp.core.comum.auditoria import ErroValidacao
+
+    r = svc.abrir(sessao_real, {"colaborador_id": pessoa.id,
+                                "template": "ASSINATURA_CTPS"}, dono)
+    with pytest.raises(ErroValidacao) as e:
+        svc.enviar(sessao_real, r["id"], dono)
+    assert "Contabilidade" in str(e.value)

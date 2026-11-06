@@ -1696,12 +1696,25 @@ function marcarCampoDigitado(entrada, attrMarca, campo){
   // A aba ativa tem de ficar LEGÍVEL, não só dentro da caixa: a sombra da
   // borda cobre 42px, e "tecnicamente visível" embaixo do degradê é ilegível.
   const SOMBRA = 46;
-  const ativa = abas.querySelector(".topo-aba.ativa");
-  if (ativa) {
+  const trazerAtivaParaAVista = () => {
+    const ativa = abas.querySelector(".topo-aba.ativa");
+    if (!ativa) return;
     const c = abas.getBoundingClientRect(), r = ativa.getBoundingClientRect();
     if (r.right > c.right - SOMBRA) abas.scrollLeft += (r.right - c.right) + SOMBRA;
     else if (r.left < c.left + SOMBRA) abas.scrollLeft -= (c.left - r.left) + SOMBRA;
+    marcarComBotao();
+  };
+  trazerAtivaParaAVista();
+  // DE NOVO DEPOIS QUE AS FONTES CARREGAM. A primeira conta usa a fonte do
+  // sistema, que é mais estreita: as abas ocupam menos, a conta dá "cabe", e
+  // quando a fonte de verdade chega tudo cresce e a aba ativa fica cortada na
+  // borda. Foi exatamente o que apareceu na foto da tela de Contabilidade,
+  // com Pessoal tendo passado a ter 14 abas (o Ponto entrou nela em 06/11).
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(trazerAtivaParaAVista);
   }
+  // E ao virar o celular, ou ao mudar o tamanho da janela.
+  window.addEventListener("resize", trazerAtivaParaAVista);
   marcar();
 })();
 

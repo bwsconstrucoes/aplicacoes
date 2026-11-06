@@ -11250,6 +11250,33 @@ def api_dp_pedidos():
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
+@bp.route("/erp/api/dp/contabilidade/emails", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao(GET="ver_pessoal", POST="configurar")
+def api_dp_contabilidade_emails():
+    """Para onde o ERP manda os pedidos à contabilidade.
+
+    Fica em tabela de parâmetro, não em variável de ambiente: é dado que o
+    dono troca sozinho pela tela, e trocá-lo não pode exigir publicação.
+    """
+    from app.apps.erp.core import contabilidade as svc_ct
+    try:
+        with get_session() as s:
+            if request.method == "GET":
+                return jsonify({"ok": True, "emails": svc_ct.endereco_padrao(s)})
+            usuario = _usuario_logado(s)
+            dados = request.get_json(silent=True) or {}
+            emails = svc_ct.definir_enderecos(s, dados.get("emails") or "",
+                                              usuario)
+            s.commit()
+            return jsonify({"ok": True, "emails": emails})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao gravar o e-mail da contabilidade")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
 @bp.route("/erp/api/dp/pedidos/<int:pedido_id>")
 @login_obrigatorio
 @permissao("ver_pessoal")

@@ -7548,6 +7548,54 @@ banco descartável + schema + `migrar.py` + semear + `seed_admin` + aplicação 
 5055 + Playwright logado, ouvindo `pageerror` e `console`. Os scripts ficam no
 bloco de rascunho da sessão.
 
+## 06/11/2026 (noite) — O E-MAIL DA CONTABILIDADE VIRA CAMPO DE TELA
+
+Ele, com todas as letras: *"o e-mail da contabilidade eu acho que tem que ser
+colocado no aplicativo. Porque tem algum canto ali nas configurações (…) deixa
+o campo, cria um local para eu poder adicionar essa informação."*
+
+Está certo, e a parte de baixo já existia — o endereço sempre foi lido de
+`parametros['contabilidade_emails']`, nunca de variável de ambiente. **O que
+não existia era o campo.** Agora existe: `definir_enderecos()` em
+`core/contabilidade.py`, a rota `/erp/api/dp/contabilidade/emails` e um bloco
+na tela.
+
+**Onde o bloco ficou, e por quê:** em Pessoal › Contabilidade, **acima dos
+pedidos**, não num menu de configurações. Sem esse endereço preenchido nenhum
+pedido sai, e quem vai descobrir isso é justamente quem está tentando enviar.
+Vazio, o bloco fica VERMELHO e diz o que falta; preenchido, mostra para onde
+vão os pedidos, com um botão "Trocar".
+
+**Três decisões que valem registro:**
+
+- **Aceita mais de um endereço** (vírgula ou ponto e vírgula). Contabilidade
+  costuma ter mais de uma pessoa no assunto, e mandar só para uma faz o pedido
+  parar nas férias dela.
+- **O feitio é conferido ANTES de gravar.** Endereço torto
+  ("contabilidade@escritorio", "fulano@gmail,com") só apareceria semanas
+  depois, num pedido que a contabilidade nunca recebeu e que o ERP ficou
+  cobrando de ninguém.
+- **Trocar fica registrado em `eventos`.** Esse endereço desvia TODO pedido
+  novo; um desvio silencioso seria descoberto tarde.
+
+**Um erro meu que o teste pegou na hora:** chamei `registrar_evento` passando
+o objeto `Usuario` onde vai o `usuario_id`, e a chave do parâmetro (texto)
+onde `entidade_id` é BIGINT. O banco recusou. A chave passou para dentro do
+`detalhe` e o id ficou 0. Vale a nota: `entidade_id` é NÚMERO, e parâmetro é
+identificado por texto.
+
+**E um defeito de layout que a foto mostrou:** a aba ativa aparecia CORTADA na
+borda da barra azul. Causa: o cálculo que traz a aba ativa para a vista roda
+antes de as fontes carregarem — mede com a fonte do sistema, que é mais
+estreita, conclui "cabe", e quando a fonte de verdade chega tudo cresce. Agora
+ele roda de novo em `document.fonts.ready` e no `resize`. Isso só apareceu
+porque **Pessoal passou a ter 14 abas** depois que o Ponto entrou nela
+(06/11, de manhã) — com 4 abas o erro de medida não dava para ver.
+
+**Fica anotado para decisão do dono:** 14 abas numa barra só é muito, mesmo com
+rolagem e com o botão "Telas". Vale repensar o agrupamento de Pessoal — mas
+isso é escolha dele sobre o menu dele, não conserto.
+
 ## Coisas pequenas que mordem
 
 - `pip install -r requirements-dev.txt` falha com o pip antigo do sistema
