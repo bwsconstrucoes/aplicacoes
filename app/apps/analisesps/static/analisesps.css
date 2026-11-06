@@ -2723,6 +2723,10 @@ table.sps.mini th, table.sps.mini td { padding: 4px 8px; }
 #tabela-auxilio .aj-extra { margin-top: 4px; color: #166534; }
 #tabela-auxilio .btn-mini { padding: 2px 8px; font-size: 12px; margin-top: 3px; }
 #dialogo-extra input { width: 100%; }
+/* DC (06/11/2026): a mesma coluna de acréscimo/desconto, por lançamento. */
+#tabela-dc td.ajustes { min-width: 120px; max-width: 200px; font-size: 13px; }
+#tabela-dc .aj-extra { color: #166534; }
+#tabela-dc .aj-extra.reduz { color: #b91c1c; }
 
 /* Auxílio (03/10/2026): "Aplicar desconto" com destaque; valor que reduz. */
 #tabela-auxilio .btn-desconto { background: #b45309; border-color: #b45309; color: #fff; }

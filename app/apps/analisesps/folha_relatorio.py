@@ -277,6 +277,12 @@ def montar(montado: dict, contas_por_obra: dict, conta: str = "") -> dict:
         # O contracheque de cada pessoa (folha da contabilidade com analítica
         # importada) — ver `com_contracheques`.
         "contracheques": montado.get("contracheques") or {},
+        # O DETALHAMENTO PRÓPRIO de uma folha (06/11/2026, a DC): colunas que a lista
+        # genérica não tem — a descrição, o card, o acréscimo/desconto. Cada pessoa
+        # traz as suas células em `detalhe_excel` / `detalhe_pdf`; o recorte por conta
+        # continua valendo, porque elas andam junto com a pessoa.
+        "detalhe": montado.get("detalhe") or None,
+        "paisagem": bool(montado.get("paisagem")),
     }
 
 
@@ -361,29 +367,41 @@ def excel(dados: dict) -> bytes:
     resumo.cell(row=4, column=2).number_format = MOEDA
     larguras(resumo, [34, 40])
 
-    # --- A LISTA DA TELA ----------------------------------------------
     from .folha_rateio import cpf_bonito
-    # ⚠️ SEM AS COLUNAS DA CONTABILIDADE, COM A FUNÇÃO (dono, 02/10/2026):
-    # *"Não precisa ter a informação de obra da contabilidade (…) nem o setor
-    # (…) eu quero que seja adicionada a função da pessoa (…) para facilitar a
-    # identificação"*, e os dias trabalhados.
-    lista = aba_nova("Pessoas", [
-        "Nome", "Função", "CPF", "Fase Atual", "Obra do ponto (dias)",
-        "Obra do cadastro", "Conta(s)", "Dias", "Dias trabalhados", "Valor x dia",
-        "Valor", "Situação"])
-    for p in dados["pessoas"]:
-        lista.append([
-            p.get("nome_na_tela") or "", p.get("cargo") or "",
-            cpf_bonito(p.get("cpf") or "") if p.get("cpf") else "",
-            p.get("fase") or "",
-            p.get("obras_resumo") or "", p.get("obra_do_cadastro") or "",
-            ", ".join(c for c in (p.get("contas") or []) if c),
-            float(_dias(p.get("dias_no_ponto"))),
-            datas_txt(p).replace("Dias: ", ""),
-            float(p["valor_por_dia"]) if p.get("valor_por_dia") is not None else None,
-            float(_dinheiro(p.get("valor"))), p.get("situacao_rotulo") or ""])
-    moeda(lista, (9, 10))
-    larguras(lista, [38, 22, 15, 18, 34, 18, 18, 6, 30, 12, 13, 18])
+
+    # --- O DETALHAMENTO PRÓPRIO (a DC, 06/11/2026) — no lugar da lista genérica.
+    detalhe = dados.get("detalhe")
+    if detalhe:
+        espec = detalhe["excel"]
+        aba = aba_nova(detalhe.get("aba") or "Lançamentos", espec["cabecalho"])
+        for p in dados["pessoas"]:
+            aba.append(list(p.get("detalhe_excel") or []))
+        moeda(aba, espec.get("moeda") or ())
+        larguras(aba, espec.get("larguras") or [])
+
+    # --- A LISTA DA TELA ----------------------------------------------
+    if not detalhe:
+        # ⚠️ SEM AS COLUNAS DA CONTABILIDADE, COM A FUNÇÃO (dono, 02/10/2026):
+        # *"Não precisa ter a informação de obra da contabilidade (…) nem o setor
+        # (…) eu quero que seja adicionada a função da pessoa (…) para facilitar a
+        # identificação"*, e os dias trabalhados.
+        lista = aba_nova("Pessoas", [
+            "Nome", "Função", "CPF", "Fase Atual", "Obra do ponto (dias)",
+            "Obra do cadastro", "Conta(s)", "Dias", "Dias trabalhados", "Valor x dia",
+            "Valor", "Situação"])
+        for p in dados["pessoas"]:
+            lista.append([
+                p.get("nome_na_tela") or "", p.get("cargo") or "",
+                cpf_bonito(p.get("cpf") or "") if p.get("cpf") else "",
+                p.get("fase") or "",
+                p.get("obras_resumo") or "", p.get("obra_do_cadastro") or "",
+                ", ".join(c for c in (p.get("contas") or []) if c),
+                float(_dias(p.get("dias_no_ponto"))),
+                datas_txt(p).replace("Dias: ", ""),
+                float(p["valor_por_dia"]) if p.get("valor_por_dia") is not None else None,
+                float(_dinheiro(p.get("valor"))), p.get("situacao_rotulo") or ""])
+        moeda(lista, (9, 10))
+        larguras(lista, [38, 22, 15, 18, 34, 18, 18, 6, 30, 12, 13, 18])
 
     # --- OS AGRUPAMENTOS ----------------------------------------------
     g = dados["grupos"]
@@ -443,7 +461,9 @@ def pdf(dados: dict) -> bytes:
     """Os agrupamentos primeiro (é o que se lê numa reunião) e a lista depois."""
     from .pdf import Folha
 
-    doc = Folha(dados["titulo"], dados["subtitulo"])
+    doc = Folha(dados["titulo"], dados["subtitulo"], paisagem=dados.get("paisagem"))
+    # As larguras abaixo são do A4 em pé (190 mm); deitado, crescem na mesma proporção.
+    k = doc.pdf.epw / 190
     g = dados["grupos"]
     doc.numeros([
         ("Pessoas a pagar", f"{dados['quantas']}"),
@@ -460,7 +480,7 @@ def pdf(dados: dict) -> bytes:
                  _moeda_br(c["valor"]), _pct_br(c["percentual"])]
                 for c in g["por_conta"]]
                + [["Total", "", "", _moeda_br(g["total_pago"]), "100,00%"]],
-               larguras=[24, 104, 18, 26, 18], direita=(2, 3, 4), linhas_max=3)
+               larguras=[x * k for x in (24, 104, 18, 26, 18)], direita=(2, 3, 4), linhas_max=3)
 
     doc.titulo_secao("Por obra (do ponto)")
     doc.tabela(["Obra", "Conta", "Pessoas", "Dias", "Valor", "%"],
@@ -468,19 +488,28 @@ def pdf(dados: dict) -> bytes:
                  _moeda_br(o["valor"]), _pct_br(o["percentual"])]
                 for o in g["por_obra"]]
                + [["Total", "", "", "", _moeda_br(g["total_pago"]), "100,00%"]],
-               larguras=[62, 30, 20, 18, 34, 26], direita=(2, 3, 4, 5))
+               larguras=[x * k for x in (62, 30, 20, 18, 34, 26)], direita=(2, 3, 4, 5))
 
-    doc.titulo_secao(f"Pessoa por pessoa ({dados['quantas']})")
-    doc.tabela(["Nome", "Função", "Obra do ponto", "Conta",
-                "Dias", "Valor", "Situação"],
-               [[(p.get("nome_na_tela") or "", datas_txt(p)), p.get("cargo") or "",
-                 p.get("obras_resumo") or "-",
-                 ", ".join(c for c in (p.get("contas") or []) if c) or "-",
-                 dias_txt(p.get("dias_no_ponto")),
-                 _moeda_br(p.get("valor")), p.get("situacao_rotulo") or ""]
-                for p in dados["pessoas"]],
-               larguras=[54, 32, 40, 18, 10, 20, 16], direita=(4, 5),
-               fonte=7, linhas_max=2)
+    detalhe = dados.get("detalhe")
+    if detalhe:
+        espec = detalhe["pdf"]
+        doc.titulo_secao(f"{detalhe.get('titulo') or 'Detalhamento'} ({dados['quantas']})")
+        doc.tabela(espec["cabecalho"], [p.get("detalhe_pdf") or [] for p in dados["pessoas"]],
+                   larguras=[x * doc.pdf.epw / sum(espec["larguras"]) for x in espec["larguras"]],
+                   direita=tuple(espec.get("direita") or ()), fonte=7,
+                   linhas_max=espec.get("linhas_max", 4))
+    else:
+        doc.titulo_secao(f"Pessoa por pessoa ({dados['quantas']})")
+        doc.tabela(["Nome", "Função", "Obra do ponto", "Conta",
+                    "Dias", "Valor", "Situação"],
+                   [[(p.get("nome_na_tela") or "", datas_txt(p)), p.get("cargo") or "",
+                     p.get("obras_resumo") or "-",
+                     ", ".join(c for c in (p.get("contas") or []) if c) or "-",
+                     dias_txt(p.get("dias_no_ponto")),
+                     _moeda_br(p.get("valor")), p.get("situacao_rotulo") or ""]
+                    for p in dados["pessoas"]],
+                   larguras=[x * k for x in (54, 32, 40, 18, 10, 20, 16)], direita=(4, 5),
+                   fonte=7, linhas_max=2)
 
     # AS AUSÊNCIAS E O DESCONTO (05/10/2026) — para quem vai analisar se há ou
     # não desconto: cada dia, o motivo do ponto e o que se decidiu.

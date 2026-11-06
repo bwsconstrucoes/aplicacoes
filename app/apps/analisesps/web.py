@@ -5292,6 +5292,24 @@ def folha_dc_relatorio(formato: str):
                                mensagem=f"Não foi possível gerar o relatório: {e}"), 500
 
 
+@bp.route("/api/folha/dc/extra", methods=["POST"])
+@exige_operador
+def folha_dc_extra():
+    """Acréscimo ou desconto de UM lançamento da DC (06/11/2026) — ver
+    `dc.ajustar_extra`. Valor vazio tira o ajuste."""
+    from . import dc
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        dc.ajustar_extra(dados.get("chave"), dados.get("valor"), dados.get("motivo"), quem=quem)
+    except dc.ErroDaDC as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou gravar o acréscimo/desconto da DC")
+        return {"ok": False, "erro": f"Não foi possível gravar: {e}"}, 500
+    return {"ok": True}
+
+
 @bp.route("/api/folha/dc/selecao", methods=["POST"])
 @exige_operador
 def folha_dc_selecao():

@@ -347,6 +347,62 @@ def escolher_obra(chave: str, obra: str, quem: str = "") -> None:
 
 
 # ---------------------------------------------------------------------------
+# ACRÉSCIMO E DESCONTO POR LANÇAMENTO (06/11/2026)
+#
+# O dono: *"adicionar uma coluna de acréscimo e desconto, da mesma forma que tem em
+# alimentação e transporte (…) por funcionário, por lançamento."* O mesmo "± valor"
+# dos auxílios, mas por LINHA (a `chave` do lançamento), não por pessoa: a mesma
+# pessoa pode ter dois cards, e o ajuste é de um deles. Valor negativo reduz; o
+# motivo é obrigatório e vai para a linha e para o relatório.
+#
+# Guardado em `analisesps.meta` (como os ajustes dos gratificados): sem migração, e
+# a chave fica depois de gerada — o relatório de um pagamento já feito mostra o
+# ajuste que entrou nele.
+# ---------------------------------------------------------------------------
+CHAVE_DOS_EXTRAS = "dc.extras"
+
+
+def extras() -> dict:
+    """`{chave: {"valor": "12.50", "motivo", "por", "em"}}`."""
+    import json
+    from .db import consultar_um
+    try:
+        linha = consultar_um("SELECT valor FROM analisesps.meta WHERE chave = ?",
+                             (CHAVE_DOS_EXTRAS,))
+        dados = json.loads(linha[0]) if linha and linha[0] else {}
+        return dados if isinstance(dados, dict) else {}
+    except Exception:  # noqa: BLE001 — ajuste ilegível não derruba a tela
+        logger.exception("DC: não consegui ler os acréscimos e descontos")
+        return {}
+
+
+def ajustar_extra(chave: str, valor, motivo: str = "", quem: str = "") -> dict:
+    """Grava (ou, com valor vazio/zero, tira) o acréscimo/desconto de uma linha."""
+    import json
+    from .db import conexao
+    from .horario import agora
+    from .sincronizacao import _meta_gravar
+    chave = str(chave or "").strip()
+    if not chave:
+        raise ErroDaDC("lançamento não informado.")
+    numero = formatos.para_numero(valor) if str(valor or "").strip() else None
+    atual = extras()
+    if not numero:
+        atual.pop(chave, None)
+    else:
+        motivo = " ".join(str(motivo or "").split())[:300]
+        if not motivo:
+            raise ErroDaDC("informe o motivo — ele aparece na linha e no relatório.")
+        atual[chave] = {"valor": str(Decimal(numero).quantize(Decimal("0.01"))),
+                        "motivo": motivo, "por": str(quem or "")[:80],
+                        "em": agora().isoformat(timespec="seconds")}
+    with conexao() as conn:
+        _meta_gravar(conn, CHAVE_DOS_EXTRAS, json.dumps(atual, ensure_ascii=False))
+        conn.commit()
+    return atual.get(chave) or {}
+
+
+# ---------------------------------------------------------------------------
 # O CÁLCULO
 # ---------------------------------------------------------------------------
 # O que a coluna G da aba Data ("valor da diária") traz quando a solicitação
@@ -450,6 +506,7 @@ def calcular(recarregar: bool = False, mostrar_geradas: bool = False) -> dict:
     gerados = _gerados()
     recentes = _recentes()
     mao = ajustes()
+    acrescimos = extras()
     # A SP de cada linha já lançada — só quando as geradas aparecem.
     sps = sps_das_linhas() if mostrar_geradas else {}
 
@@ -463,6 +520,13 @@ def calcular(recarregar: bool = False, mostrar_geradas: bool = False) -> dict:
         ficha = fichas.get(linha["cpf"]) or {}
         aj = mao.get(chave) or {}
         valor, motivos, origem_valor = valor_da_linha(linha, diarias.get(linha["cpf"]))
+        # O ACRÉSCIMO/DESCONTO à mão (06/11/2026) entra no valor que vai para o arquivo.
+        # Nunca abaixo de zero: um desconto maior que a linha não vira cobrança.
+        valor_calculado = valor
+        extra = acrescimos.get(chave) or {}
+        valor_extra = formatos.para_numero(extra.get("valor")) if extra else None
+        if valor_extra:
+            valor = max(Decimal("0.00"), (valor or Decimal("0")) + valor_extra)
         obra_solicitada = " ".join(linha["centro_custo"].split()).upper()
         obra = aj.get("obra") or obra_solicitada
         tipo = " ".join(linha["tipo_despesa"].split())
@@ -495,7 +559,10 @@ def calcular(recarregar: bool = False, mostrar_geradas: bool = False) -> dict:
             "texto_da_diaria": " ".join(linha["valor_diaria_flag"].split())[:60],
             "valor_diaria_informada": formatos.para_numero(linha["valor_diaria"]),
             "valor_diaria_cadastrada": diarias.get(linha["cpf"]),
-            "valor": valor, "descricao": linha["descricao"],
+            "valor": valor, "valor_calculado": valor_calculado,
+            "valor_extra": valor_extra, "motivo_extra": extra.get("motivo") or "",
+            "extra_por": extra.get("por") or "",
+            "descricao": linha["descricao"],
             "requerente": linha["requerente"], "responsavel": linha["responsavel"],
             "periodo": linha["periodo"], "data_solicitacao": linha["data_solicitacao"],
             "data_vencimento": linha["data_vencimento"], "gerada": gerada,
@@ -777,7 +844,9 @@ def montado_do_relatorio(calculado: dict, pessoas=None, filtros=None,
         if so_a_pagar and not entra:
             continue
         por_obra = [{"obra": p["obra"], "dias": p["quantidade"], "valor": p["valor"]}]
+        detalhe_excel, detalhe_pdf = _celulas_do_relatorio(p)
         linhas.append({
+            "detalhe_excel": detalhe_excel, "detalhe_pdf": detalhe_pdf,
             "entra": entra, "cpf": p["cpf"], "nome_na_tela": p["nome"] or p["cpf_bonito"],
             "cargo": p["cargo"], "fase": p["fase"], "por_obra": por_obra, "por_dia": [],
             "dias_no_ponto": p["quantidade"], "valor": p["valor"],
@@ -792,4 +861,72 @@ def montado_do_relatorio(calculado: dict, pessoas=None, filtros=None,
             "prefixo_arquivo": "Despesas com colaboradores",
             "folha": {"competencia": hoje, "rotulo_do_tipo": rotulo},
             "pessoas": linhas, "filtros_texto": [], "filtros": filtros or {},
-            "totais": {"pessoas": len(pessoas)}, "fechamento": None}
+            "totais": {"pessoas": len(pessoas)}, "fechamento": None,
+            # 06/11/2026, o dono: *"nem o PDF, nem o Excel está saindo detalhado (…)
+            # colocar o relatório em paisagem para caber a informação. Ele não está
+            # saindo na descrição, e é uma informação importante para a gente
+            # entender o que é."*
+            "paisagem": True, "detalhe": DETALHE_DO_RELATORIO}
+
+
+# O DETALHAMENTO DO RELATÓRIO DA DC (06/11/2026) — lançamento por lançamento, com a
+# descrição, o card, as datas, quem pediu e o acréscimo/desconto. Ver
+# `folha_relatorio.montar` ("detalhe"). O PDF é deitado: as larguras somam 277 mm.
+DETALHE_DO_RELATORIO = {
+    "titulo": "Lançamento por lançamento", "aba": "Lançamentos",
+    "excel": {
+        "cabecalho": ["Card", "Data da solicitação", "Vencimento", "Requerente",
+                      "Responsável", "Colaborador", "Função", "CPF", "Tipo de despesa",
+                      "Obra", "Conta", "Carteira", "Qtd", "Valor da diária",
+                      "Valor calculado", "Acréscimo / desconto", "Motivo do ajuste",
+                      "Valor", "Descrição", "Situação"],
+        "moeda": (13, 14, 15, 17),
+        "larguras": [11, 13, 12, 18, 18, 34, 20, 15, 26, 16, 10, 20, 6, 12, 13, 13, 30,
+                     13, 70, 22],
+    },
+    "pdf": {
+        "cabecalho": ["Card / data", "Colaborador", "Tipo de despesa", "Obra / conta",
+                      "Qtd x diária", "Calculado", "Ajuste", "Valor", "Descrição"],
+        "larguras": [22, 46, 30, 26, 18, 18, 30, 18, 69],
+        "direita": (4, 5, 7),
+        "linhas_max": 5,
+    },
+}
+
+
+def _celulas_do_relatorio(p: dict) -> tuple:
+    """(células do Excel, células do PDF) de uma linha da DC. No PDF, uma célula em
+    par (principal, miúdo) sai com o miúdo embaixo, em letra menor."""
+    def m(valor):
+        return float(valor) if valor is not None else None
+
+    def br(valor):
+        return formatos.moeda(valor) if valor is not None else "-"
+    diaria = (p.get("valor_diaria_cadastrada") if p.get("origem_valor") == "cadastro"
+              else (p.get("valor_diaria_informada") or p.get("valor_diaria_cadastrada")))
+    qtd = p.get("quantidade") or Decimal("0")
+    qtd_txt = (str(int(qtd)) if qtd == int(qtd) else str(qtd).replace(".", ",")) if qtd else ""
+    extra = p.get("valor_extra")
+    situacao = ("já gerada" if p.get("gerada") else "a pagar" if p.get("pagar") else "não selecionada") \
+        + (f" · SP {p['sp']['id']}" if p.get("sp") else "")
+    excel = [p.get("card_id") or "", p.get("data_solicitacao") or "", p.get("data_vencimento") or "",
+             p.get("requerente") or "", p.get("responsavel") or "",
+             p.get("nome") or p.get("cpf_bonito") or "", p.get("cargo") or "",
+             p.get("cpf_bonito") or "", p.get("tipo_despesa") or "", p.get("obra") or "",
+             p.get("conta") or "", p.get("carteira") or "",
+             float(qtd) if qtd else None, m(diaria), m(p.get("valor_calculado")),
+             m(extra), p.get("motivo_extra") or "", m(p.get("valor")),
+             p.get("descricao") or "", situacao]
+    pdf = [(f"card {p.get('card_id') or '-'}",
+            " · ".join(x for x in [p.get("data_solicitacao") or "",
+                                   f"por {p['requerente']}" if p.get("requerente") else ""] if x)),
+           (p.get("nome") or p.get("cpf_bonito") or "",
+            " · ".join(x for x in [p.get("cargo") or "", p.get("cpf_bonito") or ""] if x)),
+           p.get("tipo_despesa") or "-",
+           (p.get("obra") or "-", p.get("conta") or ""),
+           (f"{qtd_txt} x {br(diaria)}" if qtd_txt and diaria else (qtd_txt or "-")),
+           br(p.get("valor_calculado")),
+           ((("+" if extra > 0 else "") + br(extra)), p.get("motivo_extra") or "") if extra else "-",
+           br(p.get("valor")),
+           p.get("descricao") or "-"]
+    return excel, pdf

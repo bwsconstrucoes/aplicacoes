@@ -264,12 +264,13 @@
           <th title="O centro de custo da solicitação, ou a obra trocada por você">Obra que paga</th>
           <th>Conta</th><th>Carteira BeeVale</th>
           <th class="num">Qtd × diária</th>
+          <th title="Acréscimo ou desconto à mão neste lançamento (06/11/2026)">Acréscimo / desconto</th>
           <th class="num">Valor</th>
         </tr>
       </thead>
       {% for g in grupos_da_lista %}
       <tbody class="grupo-lista">
-        {% if agrupamento %}{{ cabecalho_do_grupo(g, pode_operar, 9) }}{% endif %}
+        {% if agrupamento %}{{ cabecalho_do_grupo(g, pode_operar, 10) }}{% endif %}
       {% for p in g.pessoas %}
         <tr class="{{ 'clicavel' if p.nome }} {{ 'nao-vai' if not p.pagar }} {{ 'linha-alerta' if p.impossivel or not p.conta or p.duplicidade or p.repetido }}"
             data-cpf="{{ p.cpf }}" data-nome="{{ p.nome }}" data-chave="{{ p.chave }}"
@@ -331,15 +332,30 @@
             {% if p.pede_diaria_cadastrada %}<br><span class="cartao-dica">pede a cadastrada</span>
             {% elif p.texto_da_diaria %}<br><span class="cartao-dica" title="O que a solicitação escreveu no campo do valor da diária">“{{ p.texto_da_diaria }}”</span>{% endif %}
           </td>
+          {# ACRÉSCIMO / DESCONTO por lançamento (06/11/2026) — o "± valor" dos
+             auxílios, por linha: a mesma pessoa pode ter dois cards. #}
+          <td class="ajustes">
+            {% if p.valor_extra %}
+              <div class="aj-extra {{ 'reduz' if p.valor_extra < 0 }}"><b>{{ '+' if p.valor_extra > 0 }}{{ p.valor_extra|moeda }}</b>
+                {% if p.motivo_extra %}<br><span class="cartao-dica">{{ p.motivo_extra }}</span>{% endif %}
+                {% if pode_operar and not p.gerada %}<br><button type="button" class="link-btn dc-extra-btn"
+                  data-valor="{{ p.valor_extra }}" data-motivo="{{ p.motivo_extra }}">alterar</button>{% endif %}
+              </div>
+            {% elif pode_operar and not p.gerada %}
+              <button type="button" class="link-btn dc-extra-btn" data-valor="" data-motivo=""
+                      title="Acrescentar (ou, com valor negativo, reduzir) o valor deste lançamento">± valor</button>
+            {% else %}—{% endif %}
+          </td>
           <td class="num valor-final"><b>{{ p.valor|moeda }}</b>
-            {% if p.rotulo_origem_valor %}<br><span class="cartao-dica">{{ p.rotulo_origem_valor }}</span>{% endif %}
+            {% if p.valor_extra %}<br><span class="cartao-dica">calculado {{ p.valor_calculado|moeda }}</span>
+            {% elif p.rotulo_origem_valor %}<br><span class="cartao-dica">{{ p.rotulo_origem_valor }}</span>{% endif %}
           </td>
         </tr>
       {% endfor %}
       </tbody>
       {% endfor %}
       {% if not pessoas %}
-      <tbody><tr><td colspan="11" class="cartao-dica">
+      <tbody><tr><td colspan="12" class="cartao-dica">
           Nenhuma linha corresponde ao filtro. Ajuste os filtros na lateral.
       </td></tr></tbody>
       {% endif %}
@@ -420,6 +436,68 @@
     <button type="button" class="btn" id="dialogo-obra-usar">Usar esta obra</button>
   </div>
 </dialog>
+{% endif %}
+
+{% if pode_operar %}
+<dialog class="dialogo" id="dialogo-extra">
+  <button type="button" class="btn secundario dialogo-fechar"
+          onclick="this.closest('dialog').close()">Fechar</button>
+  <h3>Acréscimo ou desconto <small id="extra-nome"></small></h3>
+  <p class="cartao-dica">Soma ao valor DESTE lançamento (<span id="extra-card"></span>).
+    <b>Valor negativo reduz</b> (ex.: −50,00). Fica registrado com o motivo, na linha e no
+    relatório, e entra no arquivo do pagamento.</p>
+  <label class="rotulo-campo" for="extra-valor">Valor (R$)</label>
+  <input id="extra-valor" inputmode="decimal" placeholder="0,00" data-sem-mascara>
+  <label class="rotulo-campo" for="extra-motivo" style="margin-top:8px">Motivo</label>
+  <input id="extra-motivo" maxlength="300" placeholder="Ex.: desconto do adiantamento">
+  <div class="lat-acoes" style="margin-top:12px">
+    <button type="button" class="btn secundario" id="extra-tirar" hidden>Tirar o valor</button>
+    <button type="button" class="btn" id="extra-salvar">Salvar</button>
+  </div>
+</dialog>
+<script>
+// Acréscimo/desconto por lançamento (06/11/2026). Recarrega a tela ao gravar: se
+// houver seleção mudada e não salva, avisa antes (a recarga a perderia).
+(function () {
+  const dialogo = document.getElementById("dialogo-extra");
+  if (!dialogo) return;
+  let chave = "";
+  async function gravar(corpo) {
+    const r = await fetch({{ url_for('analisesps.folha_dc_extra')|tojson }}, {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(Object.assign({chave: chave}, corpo))});
+    const d = await r.json();
+    if (!d.ok) { alert(d.erro); return false; }
+    return true;
+  }
+  document.querySelectorAll(".dc-extra-btn").forEach(b => b.addEventListener("click", () => {
+    const mudou = [...document.querySelectorAll(".marca-pessoa")].some(
+        c => c.checked !== c.defaultChecked);
+    if (mudou && !confirm("Há seleção mudada e não salva — ela se perde ao gravar o ajuste. Continuar?")) return;
+    const linha = b.closest("tr");
+    chave = linha.dataset.chave;
+    document.getElementById("extra-nome").textContent = linha.dataset.nome || "";
+    const card = linha.querySelector("a[href*='open-cards']");
+    document.getElementById("extra-card").textContent = card ? card.textContent.trim() : "este lançamento";
+    document.getElementById("extra-valor").value =
+      b.dataset.valor ? String(b.dataset.valor).replace(".", ",") : "";
+    document.getElementById("extra-motivo").value = b.dataset.motivo || "";
+    document.getElementById("extra-tirar").hidden = !b.dataset.valor;
+    dialogo.showModal();
+    document.getElementById("extra-valor").focus();
+  }));
+  document.getElementById("extra-salvar").addEventListener("click", async () => {
+    const valor = document.getElementById("extra-valor").value.trim();
+    const motivo = document.getElementById("extra-motivo").value.trim();
+    if (!valor) { alert("Informe o valor."); return; }
+    if (!motivo) { alert("Informe o motivo — ele aparece na linha e no relatório."); return; }
+    if (await gravar({valor: valor, motivo: motivo})) location.reload();
+  });
+  document.getElementById("extra-tirar").addEventListener("click", async () => {
+    if (await gravar({valor: ""})) location.reload();
+  });
+})();
+</script>
 {% endif %}
 
 {% include "_folha_ficha_js.html" %}
