@@ -52,6 +52,8 @@ def quando_do_pedido(o: dict) -> str:
     if o.get("tipo") == "AJUSTE_BATIDA" and o.get("horario"):
         h = horario.para_local(o["horario"])
         return f"{h:%d/%m} às {h:%H:%M}"
+    if o.get("tipo") == "COMPENSACAO" and o.get("dia_trabalhado") and o.get("subtipo") == "HORAS":
+        return f"horas a mais em {o['dia_trabalhado']:%d/%m} compensam {inicio:%d/%m}"
     if o.get("tipo") == "COMPENSACAO" and o.get("dia_trabalhado"):
         return f"trabalhar {o['dia_trabalhado']:%d/%m}, folgar {inicio:%d/%m}"
     if inicio and fim and fim != inicio:

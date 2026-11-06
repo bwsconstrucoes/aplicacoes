@@ -1742,6 +1742,23 @@ def ponto_api_quadro_abonar():
                aprovadas=sum(1 for x in r if x.get("aprovado")))
 
 
+@bp.route("/erp/api/ponto/quadro/compensar-horas", methods=["POST"])
+@login_obrigatorio
+@permissao("aprovar_afastamento")
+@_api
+def ponto_api_quadro_compensar_horas():
+    """A compensação de horas da turma (06/11/2026): as linhas marcadas são o dia mais curto de cada um; o
+    `dia_das_horas_a_mais`, o dia em que ficaram até mais tarde. Uma compensação do DP por pessoa, aprovada."""
+    from .core import quadro
+    quem, d = _quem(), _corpo()
+    r = quadro.compensar_horas_em_lote(quem, d.get("itens") or [], dia_das_horas_a_mais=d.get("dia_das_horas_a_mais"),
+                                       motivo=d.get("motivo") or "")
+    logger.info("Ponto: compensação de horas em lote por %s — %d pedidas, %d feitas", quem.nome, len(r),
+                sum(1 for x in r if x.get("ok")))
+    return _ok(resultados=r, feitas=sum(1 for x in r if x.get("ok")),
+               aprovadas=sum(1 for x in r if x.get("aprovado")))
+
+
 @bp.route("/erp/api/ponto/vigencia", methods=["GET", "POST"])
 @login_obrigatorio
 @permissao(GET="ver_ponto", POST="configurar_ponto")
@@ -2242,7 +2259,7 @@ def ponto_api_criar_ocorrencia():
     licença com o documento — registrados pelo responsável da obra; quem valida
     é a regra de "Quem valida o quê" (atestado: sempre o DP)."""
     quem, d = _quem(), _corpo()
-    if str(d.get("tipo") or "").upper() not in ("AJUSTE_BATIDA", "COMPENSACAO", "PERMUTA", "FOLGA_BANCO",
+    if str(d.get("tipo") or "").upper() not in ("AJUSTE_BATIDA", "COMPENSACAO", "COMPENSACAO_HORAS", "PERMUTA", "FOLGA_BANCO",
                                                 "ATESTADO", "LICENCA", "DECLARACAO", "ABONO"):
         raise ErroDeValidacao("férias e afastamento são lançados pelo DP", campo="tipo")
     with db.conexao() as conn:

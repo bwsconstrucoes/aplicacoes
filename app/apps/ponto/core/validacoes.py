@@ -88,6 +88,8 @@ def listar(conn: Connection, quem: Quem, *, obra_id: Optional[int] = None, de=No
         etapa = p["etapa_atual"]
         if p["tipo"] == "AJUSTE_BATIDA":
             quando = f"{ini:%d/%m/%Y} às {(p['horario'] or '')[11:16]}"
+        elif p["tipo"] == "COMPENSACAO" and p.get("subtipo") == "HORAS":
+            quando = f"horas a mais em {dt.date.fromisoformat(p['dia_trabalhado']):%d/%m} compensam {ini:%d/%m}"
         elif p["tipo"] == "COMPENSACAO":
             quando = f"trabalha {dt.date.fromisoformat(p['dia_trabalhado']):%d/%m}, folga {ini:%d/%m}"
         else:

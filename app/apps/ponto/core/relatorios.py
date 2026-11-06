@@ -180,6 +180,10 @@ def extras(conn: Connection, pessoas: list[dict], inicio: dt.date, fim: dt.date)
     linhas, por_pessoa = [], []
     for p, esp in _espelhos(conn, pessoas, inicio, fim):
         soma = {"UTIL": 0, "DESCANSO": 0, "FERIADO": 0, "noturno": 0, "dias": 0}
+        # as horas que a pessoa DEVE no mesmo período (06/11/2026, o dono: "como é que eu vou pagar a hora extra, se
+        # eu tenho hora devendo daquela pessoa?"): atraso, saída antes e falta parcial — a falta do dia inteiro, não
+        devendo = sum(int(d.get("debito") or 0) for d in esp["dias"]
+                      if d.get("debito") and d.get("situacao") != "FALTA" and not d.get("ocorrencia"))
         for d in esp["dias"]:
             if not d.get("extra"):
                 continue
@@ -193,12 +197,12 @@ def extras(conn: Connection, pessoas: list[dict], inicio: dt.date, fim: dt.date)
                            "batidas": [b["hora"] for b in d["batidas"]]})
         if soma["dias"]:
             por_pessoa.append({**_base(p), "dias": soma["dias"], "util": soma["UTIL"], "descanso": soma["DESCANSO"],
-                               "feriado": soma["FERIADO"], "noturno": soma["noturno"],
+                               "feriado": soma["FERIADO"], "noturno": soma["noturno"], "devendo": devendo,
                                "total": soma["UTIL"] + soma["DESCANSO"] + soma["FERIADO"]})
     por_pessoa.sort(key=lambda x: (-x["total"], x["nome"]))
     return {"linhas": linhas, "por_pessoa": por_pessoa,
             "totais": {k: sum(x[k] for x in por_pessoa) for k in ("util", "descanso", "feriado", "noturno", "total")}
-            | {"pessoas": len(por_pessoa)}}
+            | {"pessoas": len(por_pessoa), "devendo": sum(1 for x in por_pessoa if x["devendo"])}}
 
 
 def banco_de_horas(conn: Connection, pessoas: list[dict], fim: dt.date) -> dict:

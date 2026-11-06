@@ -643,7 +643,8 @@
   {% if pode.tratar_ponto %}<button class="btn" id="qd-incluir" type="button">Incluir uma batida…</button>
   <button class="btn secundario" id="qd-dia-inteiro" type="button">Lançar o dia inteiro pela escala…</button>
   <button class="btn secundario" id="qd-definir-escala" type="button">Definir a escala…</button>{% endif %}
-  {% if pode.aprovar_afastamento %}<button class="btn amarelo" id="qd-abonar" type="button">Abonar a falta…</button>{% endif %}
+  {% if pode.aprovar_afastamento %}<button class="btn amarelo" id="qd-abonar" type="button">Abonar a falta…</button>
+  <button class="btn secundario" id="qd-compensar-horas" type="button">Compensar horas…</button>{% endif %}
   <button class="link-btn" id="qd-desmarcar" type="button">desmarcar</button>
   <small class="suave" style="flex-basis:100%">cada ação vale só para as linhas marcadas em que ela cabe — o número no
     botão diz quantas; as outras ficam de fora, com o porquê. Tudo fica registrado com o motivo e o seu nome.</small>
@@ -1520,6 +1521,7 @@ function desenharPainel() {
     ${PODE_TRATAR ? `<div class="barra-acoes" style="margin-top:10px">
       <button class="btn" type="button" id="dp-ajuste">Ajustar o dia (incluir batida)</button>
       <button class="btn secundario" type="button" id="dp-compensacao">Compensação</button>
+      <button class="btn secundario" type="button" id="dp-compensacao-horas" title="as horas a mais de um dia pagam a saída mais cedo de outro">⏱️ Compensação de horas</button>
       <button class="btn secundario" type="button" id="dp-permuta" title="troca de plantão entre dois vigias do 12x36">🔁 Permuta (vigia)</button>
       <button class="btn secundario" type="button" id="dp-documento">Atestado ou licença</button>
       <button class="btn secundario" type="button" id="dp-abono">Pedir abono</button>
@@ -1535,6 +1537,7 @@ function desenharPainel() {
   const ligar = (id, fn) => { if (els(id)) els(id).addEventListener("click", fn); };
   ligar("dp-ajuste", () => pedirAjuste(quem, P.data, recarregarPainel));
   ligar("dp-compensacao", () => registrarCompensacao(quem, recarregarPainel));
+  ligar("dp-compensacao-horas", () => registrarCompensacaoDeHoras(quem, recarregarPainel));
   ligar("dp-permuta", () => registrarPermuta(quem, recarregarPainel));
   ligar("dp-documento", () => entregarDocumento(quem, recarregarPainel));
   ligar("dp-abono", () => pedirAbono(quem, recarregarPainel));
@@ -2843,6 +2846,31 @@ async function registrarCompensacao(p, depois) {
   } catch (e) { falhou(e); }
 }
 
+// A COMPENSAÇÃO DE HORAS (06/11/2026): as horas a mais de um dia pagam as a menos de outro — sem folga de dia inteiro.
+async function registrarCompensacaoDeHoras(p, depois) {
+  if (!p) return;
+  const r = await perguntar({
+    titulo: `Compensação de horas — ${escapar(p.nome)}`,
+    aviso: `Ficou até mais tarde num dia e sai mais cedo em outro. Não precisa dizer quantas horas: o sistema conta
+      pelas batidas. As horas a mais pagam as a menos; o que sobrar continua hora extra, e o que faltar continua devendo.`,
+    campos: [
+      {nome: "dia_trabalhado", rotulo: "Dia das horas a mais", tipo: "date", obrigatorio: true, largura: 1},
+      {nome: "data_inicio", rotulo: "Dia em que sai mais cedo", tipo: "date", obrigatorio: true, largura: 1},
+      {nome: "descricao", rotulo: "O que foi combinado (opcional)", tipo: "textarea", largura: 3,
+       exemplo: "ex.: ficou até 20h17 na concretagem de quinta; sai ao meio-dia na sexta"},
+    ],
+    textoOk: "Registrar",
+  });
+  if (!r) return;
+  try {
+    await postar("/erp/api/ponto/ocorrencias", {
+      tipo: "COMPENSACAO_HORAS", colaborador_id: p.id, data_inicio: r.data_inicio,
+      dia_trabalhado: r.dia_trabalhado, descricao: r.descricao || ""});
+    aviso("mensagem", "Compensação de horas registrada. Ela aparece em Validações até ser decidida.", "ok");
+    if (depois) await depois();
+  } catch (e) { falhou(e); }
+}
+
 // A PERMUTA DE PLANTÃO (31/10/2026, migração 024): só entre vigias do 12x36. Um pedido; aprovado, o lado do
 // colega entra junto, e o espelho dos dois diz "Permuta com …".
 async function registrarPermuta(p, depois) {
@@ -3795,6 +3823,8 @@ const QD_SERVE = {
   // a falta do dia inteiro, e (29/10/2026) a falta parcial e o dia com horas a menos — aí só as horas que faltaram
   abono: l => !l.ocorrencia && (l.situacao === "FALTA" || (["FALTA_PARCIAL", "INCOMPLETO", "OK"].includes(l.situacao) && l.debito > 0)),
   escala: () => true,
+  // a compensação de horas da turma (06/11/2026): o dia MAIS CURTO — com horas a menos, sem dia justificado
+  horas: l => !l.ocorrencia && l.debito > 0,
 };
 const QD_GRUPOS = {
   todas: () => true,
@@ -3817,7 +3847,8 @@ function qdLote() {
   [["qd-incluir", "batida", "Incluir uma batida", "serve para o dia que já tem alguma batida"],
    ["qd-dia-inteiro", "dia", "Lançar o dia inteiro pela escala", "serve para o dia sem nenhuma batida, com escala"],
    ["qd-definir-escala", "escala", "Definir a escala", "vale para as pessoas marcadas, a partir da data escolhida"],
-   ["qd-abonar", "abono", "Abonar a falta", "serve para o dia de falta e para a falta parcial (só as horas que faltaram)"]].forEach(([id, acao, rotulo, dica]) => {
+   ["qd-abonar", "abono", "Abonar a falta", "serve para o dia de falta e para a falta parcial (só as horas que faltaram)"],
+   ["qd-compensar-horas", "horas", "Compensar horas", "serve para o dia com horas a menos: as horas a mais de outro dia pagam"]].forEach(([id, acao, rotulo, dica]) => {
     const b = els(id);
     if (!b) return;
     const n = acao === "escala" ? new Set(marcadas.map(l => l.colaborador_id)).size : marcadas.filter(QD_SERVE[acao]).length;
@@ -3933,6 +3964,26 @@ async function qdAbonar() {
                     ["falta abonada", "faltas abonadas"]);
 }
 
+// A COMPENSAÇÃO DE HORAS DA TURMA (06/11/2026, o dono: "é uma compensação, não é de um dia, é de horas"): as linhas
+// marcadas são o dia mais curto; pergunta-se o dia das horas a mais. Cada pessoa com a sua conta, pelas batidas.
+async function qdCompensarHoras() {
+  const linhas = qdMarcadas().filter(QD_SERVE.horas);
+  if (!linhas.length) return;
+  const r = await perguntar({titulo: `Compensar horas — ${contar(linhas.length, "pessoa-dia", "pessoas-dia")}`,
+    aviso: "As linhas marcadas são o dia em que a turma <b>saiu mais cedo</b>. Diga o dia em que ela <b>ficou até mais tarde</b>: " +
+           "as horas a mais desse dia pagam as horas a menos das linhas marcadas, pessoa por pessoa, pelas batidas de cada um. " +
+           "O que sobrar continua hora extra; o que faltar continua devendo. Aprovado na hora, com o seu nome.",
+    campos: [{nome: "dia_das_horas_a_mais", rotulo: "Dia das horas a mais (ficaram até mais tarde)", tipo: "date",
+              obrigatorio: true, largura: 3},
+             {nome: "motivo", rotulo: "O que foi combinado (opcional)", tipo: "textarea", largura: 6,
+              exemplo: "ex.: concretagem na quinta até 20h17; a turma sai ao meio-dia na sexta"}],
+    textoOk: "Compensar"});
+  if (!r) return;
+  await qdRodarLote("/erp/api/ponto/quadro/compensar-horas", qdItens(linhas),
+                    {dia_das_horas_a_mais: r.dia_das_horas_a_mais, motivo: r.motivo || ""},
+                    ["compensação lançada", "compensações lançadas"]);
+}
+
 async function qdIncluir() {
   const linhas = qdMarcadas().filter(QD_SERVE.batida);
   if (!linhas.length) return;
@@ -3981,6 +4032,7 @@ if (els("qd-incluir")) els("qd-incluir").addEventListener("click", qdIncluir);
 if (els("qd-dia-inteiro")) els("qd-dia-inteiro").addEventListener("click", qdDiaInteiro);
 if (els("qd-definir-escala")) els("qd-definir-escala").addEventListener("click", qdEscala);
 if (els("qd-abonar")) els("qd-abonar").addEventListener("click", qdAbonar);
+if (els("qd-compensar-horas")) els("qd-compensar-horas").addEventListener("click", qdCompensarHoras);
 els("qd-limpar").addEventListener("click", () => {
   document.querySelectorAll("[data-qd-situacao], [data-qd-batidas], [data-qd-faltando]").forEach(x => { x.checked = false; });
   FP_QD.limpar();
@@ -5163,7 +5215,9 @@ function rlColunas() {
   if (RL.tipo === "extras") return RL_VISAO === "pessoas"
     ? [...pessoa, ["Dias", l => l.dias, "num"], ["Em dia de trabalho", l => hmCelula(l.util), "num"],
        ["Em descanso", l => hmCelula(l.descanso), "num"], ["Em feriado", l => hmCelula(l.feriado), "num"],
-       ["Total", l => hm(l.total), "num"], ["Noturno", l => hmCelula(l.noturno), "num"]]
+       ["Total", l => hm(l.total), "num"], ["Noturno", l => hmCelula(l.noturno), "num"],
+       // 06/11/2026: as horas que a mesma pessoa DEVE no período — não pagar extra de quem está devendo sem conferir
+       ["Devendo no período ⚠️", l => l.devendo ? `⚠️ ${hm(l.devendo)}` : "", "num"]]
     : [...pessoa, ["Dia", l => dataBR(l.data), "dados"], ["", l => l.dia_semana], ["Tipo do dia", l => RL_TIPO_DIA[l.tipo_dia] + (l.feriado ? ` (${l.feriado})` : "")],
        ["Batidas", l => l.batidas.join(" "), "dados"], ["Previsto", l => hm(l.previsto), "num"], ["Trabalhado", l => hm(l.trabalhado), "num"],
        ["Extra", l => hm(l.extra), "num"], ["Noturno", l => hmCelula(l.noturno), "num"]];
@@ -5233,7 +5287,7 @@ function rlDesenhar() {
   els("rl-kpis").innerHTML = `<div class="kpis">${
     RL.tipo === "faltas" ? k("Faltas (dia inteiro)", t.faltas, t.faltas ? "vermelho" : "") + k("Faltas parciais", t.parciais || 0, t.parciais ? "ambar" : "")
       + k("Pessoas com falta", t.pessoas) + k("Horas que faltaram", hm(t.faltou ?? t.previsto))
-    : RL.tipo === "extras" ? k("Hora extra total", hm(t.total), "azul") + k("Em dia de trabalho", hm(t.util)) + k("Em descanso", hm(t.descanso)) + k("Em feriado", hm(t.feriado)) + k("Noturno", hm(t.noturno)) + k("Pessoas", t.pessoas)
+    : RL.tipo === "extras" ? k("Hora extra total", hm(t.total), "azul") + k("Em dia de trabalho", hm(t.util)) + k("Em descanso", hm(t.descanso)) + k("Em feriado", hm(t.feriado)) + k("Noturno", hm(t.noturno)) + k("Pessoas", t.pessoas) + (t.devendo ? k("Com extra e devendo horas", t.devendo, "ambar") : "")
     : RL.tipo === "justificadas" ? k("Ausências", t.pedidos) + k("Dias no período", t.dias) + k("Pessoas", t.pessoas)
     : k("Pessoas com banco", t.pessoas) + k("Saldo positivo", hm(t.positivo), "verde") + k("Saldo negativo", hm(Math.abs(t.negativo)), t.negativo ? "vermelho" : "")}</div>`;
   const visoes = {faltas: [["pessoas", "Por pessoa"], ["dias", "Dia a dia"]], extras: [["pessoas", "Por pessoa"], ["dias", "Dia a dia"]],
