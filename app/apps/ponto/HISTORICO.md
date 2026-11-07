@@ -5,9 +5,9 @@ junto com o `README.md` e o `PLANO.md`.
 
 ## Pendente AGORA
 
-0w. **O TERMO DO PONTO NO CELULAR — feito no ramo, NÃO publicado (07/11/2026, migração 028).** Ver a seção de
-   07/11/2026 abaixo. Ao publicar: apertar "Aplicar atualizações do ponto" no mesmo momento. O INPI ficou para
-   depois, por decisão do dono — quando ele pedir, passar os dados preenchidos (titular, autores, SHA-512 do código).
+0w. **O TERMO DO PONTO NO CELULAR — PUBLICADO em 07/11/2026 (migração 028).** Ver a seção de 07/11/2026 abaixo.
+   Conferir com o dono se apertou "Aplicar atualizações do ponto". O INPI ficou para depois, por decisão do dono —
+   quando ele pedir, passar os dados preenchidos (titular, autores, SHA-512 do código).
 
 0x. **MODELOS JURÍDICOS DO REP-P, PARA O DONO E O ADVOGADO VEREM (07/11/2026).**
    Pedido do dono: *"utilize seus conhecimentos jurídicos e contábeis pra
@@ -564,6 +564,8 @@ passo os dados preenchidos quando ele quiser dar entrada.
   assina duas vezes; quem conduz: a lista, a recusa, sem PIN pede a foto, assinado com foto, não conduz o próprio; ERP:
   ficha, histórico, PDF, coluna; texto mudado volta a faltar; o PDF e o lacre). E as telas no navegador (celular
   simulado: o aviso, o termo, o PIN e o dedo; o operador com a foto; o ERP com o filtro e a ficha).
+**Publicado em 07/11/2026** (com o "pode" do dono; suíte inteira na versão publicada: 10.230 passaram) — **COM A
+MIGRAÇÃO 028** (apertar "Aplicar atualizações do ponto").
 
 ## 06/11/2026 (sexta, quarta parte) — A assinatura da folha na tela (migração 027)
 
