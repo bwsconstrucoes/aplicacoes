@@ -5,6 +5,28 @@ junto com o `README.md` e o `PLANO.md`.
 
 ## Pendente AGORA
 
+0x. **MODELOS JURÍDICOS DO REP-P, PARA O DONO E O ADVOGADO VEREM (07/11/2026).**
+   Pedido do dono: *"utilize seus conhecimentos jurídicos e contábeis pra
+   elaborar os modelos pra eu ver"*. Estão num documento do Claude (fora do
+   repositório): https://claude.ai/artifact/VruVFGqWCdWbWZjtKyvGkT — Modelo 1,
+   Atestado Técnico preenchido no formato oficial do MTE; Modelo 2, roteiro e
+   ficha do registro no INPI; Modelo 3, termo de ciência do colaborador
+   (registro, PIN, assinatura eletrônica, LGPD); Modelo 4, termo novo da
+   assinatura da folha (acrescenta o direito de não assinar); Modelo 5, acordo
+   individual de compensação. Mais uma nota técnica do que falta no sistema
+   ANTES de assinar o atestado, e as fontes (Perguntas e Respostas do MTE).
+
+   **Achado novo, que muda código:** a Pergunta nº 41 do MTE diz que o NSR é
+   **por CNPJ**, começando em 1. O nosso é uma sequência só para o sistema
+   inteiro. **Esperando o dono** (pergunta deixada no próprio documento): pode
+   renumerar as batidas por CNPJ, guardando o número antigo? Também esperando:
+   o e-CNPJ A1 da BWS (assina AFD/AEJ em `.p7s` CAdES e o comprovante em PAdES —
+   Perguntas 28–34, 44), o e-CPF dos dois signatários do atestado, os autores
+   para o INPI (eu gero o SHA-512 do código congelado no dia), o prazo de guarda
+   das fotos (sugerido 5 anos) e a aprovação do texto novo do termo (Modelo 4) —
+   o `TERMO` de `core/assinaturas.py` ainda é o antigo. **Não assinar o atestado
+   antes de NSR e assinaturas digitais estarem feitos.**
+
 0y. **O CADASTRO DE PESSOAS VAI PARA DENTRO DO ERP — levantamento feito,
    implementação NÃO começou (04/11/2026).** O dono: *"essa parte de cadastro de
    colaboradores, a gente ainda está usando o Pipefy, e puxando uma planilha
