@@ -1596,6 +1596,11 @@ async function mostrarAvisosDoPonto(p, pode) {
       <span><b>❌ ${g.itens.length === 1 ? "Pedido negado" : `${g.itens.length} pedidos negados`}: ${esc(dataBR(g.dia).slice(0, 5))}</b>
         <small>${g.para_outro ? `o que você pediu para ${esc(g.pessoa)} · ` : ""}${esc(resumoDosNegados(g.itens))}</small></span>
       <span class="seta">›</span></button>`).join("") + partes.join("");
+  // o termo do ponto ainda não assinado (07/11/2026) vem antes de tudo
+  if (p.termo_pendente) caixa.insertAdjacentHTML("afterbegin", `<button type="button" class="alerta-ponto atencao" data-termo-meu>
+      <span><b>✍️ Falta assinar o termo do ponto</b><small>é rápido: toque para ler e assinar com o dedo</small></span>
+      <span class="seta">›</span></button>`);
+  caixa.querySelectorAll("[data-termo-meu]").forEach(b => b.addEventListener("click", () => abrirMeuTermo()));
   caixa.querySelectorAll("[data-aviso]").forEach(b => b.addEventListener("click", () =>
     b.dataset.aviso === "meu" ? abrirMeuPontoEmDia() : abrirQualidadeEquipe()));
   caixa.querySelectorAll("[data-negativa]").forEach(b => b.addEventListener("click", () =>
@@ -1827,6 +1832,152 @@ async function abrirAssinar(id) {
     if (!motivo) return;
     try { await chamar(`/ponto/app/api/assinaturas/${id}/recusa`, {competencia: ASS.mes, motivo, ...localNoCorpo(await onde())});
           aviso("Recusa registrada.", "ok"); abrirAssinaturas(); }
+    catch (e) { erro(e.message); }
+  };
+}
+// =============================================================================
+// O TERMO DO PONTO (07/11/2026, core/termo.py). O dono: "o mais curto e simples possível (…) o ideal é que eles
+// assinem no próprio celular deles, mas quem não conseguir também poder ser disponibilizado pelo pessoal da obra".
+// No celular da pessoa: ler, PIN, dedo. No aparelho de quem conduz: a lista da equipe; a pessoa digita o PIN dela
+// ou, sem PIN, tira uma foto na hora.
+// =============================================================================
+function quadroDeAssinatura(quadro) {
+  const ctx = quadro.getContext("2d"), k = window.devicePixelRatio || 1;
+  quadro.width = quadro.clientWidth * k; quadro.height = quadro.clientHeight * k;
+  ctx.scale(k, k); ctx.lineWidth = 2.4; ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.strokeStyle = "#0B1F3A";
+  let desenhando = false, tracos = 0;
+  const ponto = ev => { const b = quadro.getBoundingClientRect(); return [ev.clientX - b.left, ev.clientY - b.top]; };
+  quadro.addEventListener("pointerdown", ev => { desenhando = true; tracos++; quadro.setPointerCapture(ev.pointerId);
+    const [x, y] = ponto(ev); ctx.beginPath(); ctx.moveTo(x, y); });
+  quadro.addEventListener("pointermove", ev => { if (!desenhando) return; const [x, y] = ponto(ev); ctx.lineTo(x, y); ctx.stroke(); });
+  ["pointerup", "pointercancel", "pointerleave"].forEach(t => quadro.addEventListener(t, () => { desenhando = false; }));
+  return {vazio: () => !tracos, limpar: () => { ctx.clearRect(0, 0, quadro.width, quadro.height); tracos = 0; },
+          png: () => quadro.toDataURL("image/png")};
+}
+function htmlDoTermo(t) {
+  return `<div style="max-height:42vh; overflow:auto; border:1px solid #DDE3EA; border-radius:8px; padding:8px 12px; background:#FAFBFC">
+    <ol style="margin:0; padding-left:20px; font-size:16px; line-height:1.45">${t.itens.map(i => `<li style="margin:0 0 8px">${esc(i)}</li>`).join("")}</ol>
+    <p style="margin:6px 0 0; font-size:16px"><b>${esc(t.declaracao)}</b></p></div>`;
+}
+// a foto de quem não tem PIN: a câmera do aparelho, reduzida para caber (640 px, JPEG)
+function reduzirFoto(arquivo) {
+  return new Promise((ok, falha) => {
+    const img = new Image(), url = URL.createObjectURL(arquivo);
+    img.onload = () => { const lado = 640, f = Math.min(1, lado / Math.max(img.width, img.height));
+      const c = document.createElement("canvas"); c.width = Math.round(img.width * f); c.height = Math.round(img.height * f);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url); ok(c.toDataURL("image/jpeg", 0.82)); };
+    img.onerror = () => { URL.revokeObjectURL(url); falha(new Error("A foto não abriu. Tire de novo.")); };
+    img.src = url;
+  });
+}
+async function abrirMeuTermo() {
+  $("dlg-corpo").innerHTML = `<h2 style="margin:0 0 6px">Termo do ponto</h2><p class="pequeno">Carregando…</p>`;
+  if (!$("dlg").open) $("dlg").showModal();
+  let d;
+  try { d = await chamar("/ponto/app/api/termo"); }
+  catch (e) { $("dlg-corpo").innerHTML = `<h2 style="margin:0 0 6px">Termo do ponto</h2><div class="aviso erro">${esc(e.message)}</div>`; return; }
+  if (d.situacao.situacao === "ASSINADO") {
+    $("dlg-corpo").innerHTML = `<h2 style="margin:0 0 6px">Termo do ponto</h2>
+      <div class="aviso ok">✅ Você já assinou${d.situacao.em ? ` em ${esc(dataBR(d.situacao.em).slice(0, 5))}` : ""}. Obrigado!</div>
+      ${htmlDoTermo(d.texto)}`;
+    return;
+  }
+  $("dlg-corpo").innerHTML = `<h2 style="margin:0 0 4px">${esc(d.texto.titulo)}</h2>
+    <p class="pequeno" style="margin:0 0 8px">Leia com calma. Se tiver dúvida, pergunte ao pessoal da obra ou ao DP.</p>
+    ${!d.disponivel ? `<div class="aviso erro">O DP precisa aplicar as atualizações do ponto antes.</div>` : ""}
+    ${d.situacao.versao_antiga ? `<div class="aviso ambar">O termo mudou desde a sua última assinatura — assine o novo.</div>` : ""}
+    ${htmlDoTermo(d.texto)}
+    <label for="tm-pin">O seu PIN</label>
+    <input id="tm-pin" type="password" inputmode="numeric" autocomplete="off" maxlength="8">
+    <label>A sua assinatura (com o dedo)</label>
+    <canvas id="tm-quadro" style="width:100%; height:150px; border:2px dashed #9AA6B8; border-radius:8px; background:#fff; touch-action:none"></canvas>
+    <div id="tm-msg" class="aviso erro oculto"></div>
+    <div class="linha"><button class="btn sec" type="button" id="tm-limpar">Limpar</button>
+      <button class="btn" type="button" id="tm-ok">Assinar</button></div>`;
+  const q = quadroDeAssinatura($("tm-quadro"));
+  const erro = t => { $("tm-msg").textContent = t; $("tm-msg").classList.remove("oculto"); };
+  $("tm-limpar").onclick = q.limpar;
+  $("tm-ok").onclick = async () => {
+    if (!$("tm-pin").value) return erro("Digite o seu PIN.");
+    if (q.vazio()) return erro("Falta a assinatura no quadro.");
+    $("tm-ok").disabled = true;
+    try {
+      await chamar("/ponto/app/api/termo", {pin: $("tm-pin").value, assinatura: q.png(), ...localNoCorpo(await onde())});
+      if (INICIO && INICIO.pessoa) INICIO.pessoa.termo_pendente = false;
+      $("dlg").close(); aviso("Termo assinado e guardado. Obrigado!", "ok");
+      if (INICIO) mostrarAvisosDoPonto(INICIO.pessoa, INICIO.pode);
+    } catch (e) { $("tm-ok").disabled = false; erro(e.message); }
+  };
+}
+const TERMOS = {dados: null};
+async function abrirTermos() {
+  $("dlg-corpo").innerHTML = `<h2 style="margin:0 0 6px">Termo do ponto</h2><p class="pequeno">Carregando…</p>`;
+  if (!$("dlg").open) $("dlg").showModal();
+  let d;
+  try { d = await chamar(comLocal("/ponto/app/api/termos", await onde())); }
+  catch (e) { $("dlg-corpo").innerHTML = `<h2 style="margin:0 0 6px">Termo do ponto</h2><div class="aviso erro">${esc(e.message)}</div>`; return; }
+  TERMOS.dados = d;
+  const icone = {ASSINADO: "✅", RECUSADO: "⛔", FALTA: "✍️"};
+  $("dlg-corpo").innerHTML = `<h2 style="margin:0 0 6px">Termo do ponto</h2>
+    ${!d.disponivel ? `<div class="aviso erro">O DP precisa aplicar as atualizações do ponto antes.</div>` : ""}
+    <div class="aviso ${d.faltam ? "ambar" : "ok"}">${d.faltam ? `<b>${d.faltam}</b> de ${d.pessoas.length} ainda sem assinar` : "Todos da equipe já trataram o termo"}.
+      Toque em “Mostrar o termo” e passe o aparelho para a pessoa.</div>
+    ${d.pessoas.map(p => `<div class="dia" style="align-items:center"><div class="corpo"><b>${icone[p.situacao] || ""} ${esc(p.nome)}</b>
+        ${p.funcao ? `<small class="pequeno"> (${esc(p.funcao.toLowerCase())})</small>` : ""}
+        ${p.situacao === "ASSINADO" ? `<small class="pequeno" style="display:block">assinou em ${esc(p.em ? dataBR(p.em).slice(0, 5) : "")}${p.forma === "PELA_PESSOA" ? " · no próprio celular" : p.por ? ` · com ${esc(p.por)}` : ""}</small>` : ""}
+        ${p.situacao === "RECUSADO" ? `<small class="pequeno" style="display:block">recusou: ${esc(p.motivo || "")}</small>` : ""}
+        ${p.versao_antiga ? `<small class="pequeno" style="display:block">o termo mudou — precisa assinar o novo</small>` : ""}</div>
+        ${p.situacao === "FALTA" && d.disponivel ? `<button class="btn" type="button" style="width:auto" data-tm-mostrar="${p.id}">Mostrar o termo</button>` : ""}</div>`).join("")
+      || `<p>Ninguém da sua equipe por aqui.</p>`}`;
+  $("dlg-corpo").querySelectorAll("[data-tm-mostrar]").forEach(b => b.onclick = () => abrirTermoDe(Number(b.dataset.tmMostrar)));
+}
+function abrirTermoDe(id) {
+  const d = TERMOS.dados, p = d.pessoas.find(x => x.id === id);
+  if (!p) return abrirTermos();
+  let foto = null;
+  $("dlg-corpo").innerHTML = `<h2 style="margin:0 0 4px">${esc(d.texto.titulo)}</h2>
+    <p class="pequeno" style="margin:0 0 8px">Para <b>${esc(p.nome)}</b>. Leia junto com a pessoa, se ela preferir.</p>
+    ${htmlDoTermo(d.texto)}
+    ${p.tem_pin ? `<label for="tm-pin">PIN da pessoa (ela digita)</label>
+      <input id="tm-pin" type="password" inputmode="numeric" autocomplete="off" maxlength="8">
+      <small class="pequeno" style="display:block">Esqueceu o PIN? Tire uma foto dela no lugar:</small>`
+      : `<div class="aviso info" style="margin:8px 0">${esc(p.nome.split(" ")[0])} ainda não tem PIN: tire uma foto do rosto dela agora — ela fica junto com a assinatura.</div>`}
+    <label class="btn sec" style="display:block; text-align:center; margin:6px 0">📷 Tirar a foto da pessoa
+      <input id="tm-foto" type="file" accept="image/*" capture="user" style="display:none"></label>
+    <img id="tm-foto-ver" alt="" class="oculto" style="max-width:120px; border-radius:8px; display:block; margin:0 auto 6px">
+    <label>Assinatura da pessoa (com o dedo)</label>
+    <canvas id="tm-quadro" style="width:100%; height:150px; border:2px dashed #9AA6B8; border-radius:8px; background:#fff; touch-action:none"></canvas>
+    <div id="tm-msg" class="aviso erro oculto"></div>
+    <div class="linha"><button class="btn sec" type="button" id="tm-limpar">Limpar</button>
+      <button class="btn" type="button" id="tm-ok">Assinar</button></div>
+    <button class="link" type="button" id="tm-recusa" style="display:block; margin:10px auto 0">A pessoa não quer assinar…</button>
+    <button class="link" type="button" id="tm-voltar" style="display:block; margin:6px auto 0">‹ Voltar à lista</button>`;
+  const q = quadroDeAssinatura($("tm-quadro"));
+  const erro = t => { $("tm-msg").textContent = t; $("tm-msg").classList.remove("oculto"); };
+  $("tm-limpar").onclick = q.limpar;
+  $("tm-voltar").onclick = () => abrirTermos();
+  $("tm-foto").onchange = async ev => {
+    const arq = ev.target.files && ev.target.files[0];
+    if (!arq) return;
+    try { foto = await reduzirFoto(arq); $("tm-foto-ver").src = foto; $("tm-foto-ver").classList.remove("oculto"); }
+    catch (e) { erro(e.message); }
+  };
+  $("tm-ok").onclick = async () => {
+    const pin = $("tm-pin") ? $("tm-pin").value : "";
+    if (!pin && !foto) return erro(p.tem_pin ? "A pessoa digita o PIN dela — ou tire uma foto dela." : "Tire a foto da pessoa antes.");
+    if (q.vazio()) return erro("Falta a assinatura no quadro.");
+    $("tm-ok").disabled = true;
+    try {
+      await chamar(`/ponto/app/api/termos/${id}`, {pin, foto, assinatura: q.png(), ...localNoCorpo(await onde())});
+      aviso(`Termo de ${p.nome.split(" ")[0]} assinado e guardado.`, "ok");
+      abrirTermos();
+    } catch (e) { $("tm-ok").disabled = false; erro(e.message); }
+  };
+  $("tm-recusa").onclick = async () => {
+    const motivo = window.prompt("O que a pessoa disse ao recusar? (fica registrado, com o seu nome)");
+    if (!motivo) return;
+    try { await chamar(`/ponto/app/api/termos/${id}/recusa`, {motivo, ...localNoCorpo(await onde())});
+          aviso("Recusa registrada. O DP fica sabendo.", "ok"); abrirTermos(); }
     catch (e) { erro(e.message); }
   };
 }
@@ -3357,6 +3508,9 @@ async function abrirMenu() {
   // a assinatura da folha do mês (06/11/2026): quem responde pela equipe mostra a folha e a pessoa assina com o dedo
   if (p && ((pode.consultar && !INICIO.da_obra) || pode.qualidade_equipe)) ops.push({icone: "✍️", titulo: "Assinaturas da folha",
     sub: "a folha do mês fechado: cada pessoa confere e assina na tela — até o dia 20", acao: () => abrirAssinaturas()});
+  // o termo do ponto (07/11/2026): quem responde pela equipe mostra o termo a quem ainda não assinou
+  if (p && ((pode.consultar && !INICIO.da_obra) || pode.qualidade_equipe)) ops.push({icone: "📝", titulo: "Termo do ponto",
+    sub: "quem da equipe ainda não assinou: mostre o termo e a pessoa assina aqui", acao: () => abrirTermos()});
   $("m-opcoes").innerHTML = ops.map((o, i) => `<button type="button" class="opcao ${o.principal ? "principal" : ""} ${o.desligada ? "desligada" : ""}" data-op="${i}">
       <span class="icone">${o.icone}</span><span>${esc(o.titulo)}<small>${esc(o.sub)}</small></span></button>`).join("");
   $("m-opcoes").querySelectorAll("[data-op]").forEach(b => b.addEventListener("click", () => {

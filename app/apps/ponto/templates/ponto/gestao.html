@@ -131,6 +131,11 @@
     <div class="qd-marcas">
       <label class="opcao"><input type="checkbox" data-pe-foto="COM"><span class="rotulo">Com foto</span></label>
       <label class="opcao"><input type="checkbox" data-pe-foto="SEM"><span class="rotulo">Sem foto</span></label></div></div>
+  <div class="campo" style="margin-top:8px"><label>Termo do ponto</label>
+    <div class="qd-marcas">
+      <label class="opcao"><input type="checkbox" data-pe-termo="FALTA"><span class="rotulo">Falta assinar <span class="qtd" data-pe-termo-qtd="FALTA"></span></span></label>
+      <label class="opcao"><input type="checkbox" data-pe-termo="ASSINADO"><span class="rotulo">Assinado <span class="qtd" data-pe-termo-qtd="ASSINADO"></span></span></label>
+      <label class="opcao"><input type="checkbox" data-pe-termo="RECUSADO"><span class="rotulo">Recusou <span class="qtd" data-pe-termo-qtd="RECUSADO"></span></span></label></div></div>
   <div class="campo" style="margin-top:8px"><label>Foge do padrão</label>
     <div class="qd-marcas" id="pe-excecoes"></div></div>
   <div class="cartao-dica" style="margin-top:12px">Quem aparece (bate ponto, não bate, afastados, desligados) se
@@ -828,7 +833,7 @@
   <div class="tabela-rolagem"><table>
     <thead><tr>{% if pode.tratar_ponto %}<th class="sem-ordem" style="width:28px"><input type="checkbox" id="pe-todas" title="marcar todas da lista"></th>{% endif %}<th class="sem-ordem">Foto</th><th class="sem-ordem">Nome</th><th class="sem-ordem">Função</th>
       <th class="sem-ordem">Obra do cadastro</th><th class="sem-ordem">Batendo em (30 dias)</th>
-      <th class="sem-ordem">Escala</th><th class="sem-ordem">No ponto</th><th class="sem-ordem">Foge do padrão</th><th class="sem-ordem">PIN</th></tr></thead>
+      <th class="sem-ordem">Escala</th><th class="sem-ordem">No ponto</th><th class="sem-ordem">Foge do padrão</th><th class="sem-ordem">PIN</th><th class="sem-ordem">Termo</th></tr></thead>
     <tbody id="pe-corpo"></tbody></table></div>
   <div class="vazio oculto" id="pe-vazio"></div>
 </div>
@@ -1916,8 +1921,24 @@ function painelPedidos() {
       <td>${a.documento_id ? `<button class="link-btn" type="button" data-documento="${escapar(urlDoDocumento(a.documento_id, false))}"
           data-legenda="${escapar(`${PAINEL.pessoa.nome} — folha de ${mesBR(a.competencia)} assinada`)}">📄 abrir o PDF</button>` : ""}</td></tr>`; }).join("")}
     </tbody></table>` : "";
+  // o termo do ponto (07/11/2026, migração 028): assinado, recusado ou falta, e o PDF de cada assinatura
+  const tm = PAINEL.pessoa.termo || {};
+  const SIT_TM = {ASSINADO: ["aprovado", "assinado"], RECUSADO: ["bloqueado", "recusou assinar"], SUBSTITUIDO: ["outro", "substituído"]};
+  const termoHtml = tm.disponivel ? `<h4 style="margin:16px 0 6px">Termo do ponto</h4>
+    <p style="margin:0 0 6px">${tm.situacao === "ASSINADO" ? `<span class="selo aprovado">assinado</span> em ${escapar(quando(tm.em))}
+        ${tm.forma === "PELA_PESSOA" ? "— no próprio celular" : `— com ${escapar(tm.por || "")}${tm.com_pin ? " (PIN da pessoa)" : " (foto da pessoa)"}`}`
+      : tm.situacao === "RECUSADO" ? `<span class="selo bloqueado">recusou assinar</span> em ${escapar(quando(tm.em))} — “${escapar(tm.motivo || "")}”, com ${escapar(tm.por || "")}`
+      : `<span class="selo aguardando">falta assinar</span>${tm.versao_antiga ? " — o texto do termo mudou desde a última assinatura" : ""}
+        <small style="display:block">A pessoa assina no aplicativo (aviso no começo da tela) ou o operador da obra mostra em “Termo do ponto”.</small>`}</p>
+    ${(tm.historico || []).some(h => h.documento_id) ? `<table><thead><tr><th>Situação</th><th>Quando · como</th><th></th></tr></thead><tbody>
+      ${tm.historico.map(h => { const [c, r] = SIT_TM[h.situacao] || ["outro", h.situacao]; return `<tr>
+        <td><span class="selo ${c}">${escapar(r)}</span>${h.substituido ? `<small>${escapar(h.substituido)}</small>` : ""}</td>
+        <td>${escapar(quando(h.em))}<small>${h.forma === "PELA_PESSOA" ? "no próprio celular" : escapar(h.por || "")} · versão ${escapar(h.versao || "")}</small></td>
+        <td>${h.documento_id ? `<button class="link-btn" type="button" data-documento="${escapar(urlDoDocumento(h.documento_id, false))}"
+            data-legenda="${escapar(`${PAINEL.pessoa.nome} — termo do ponto`)}">📄 abrir o PDF</button>` : ""}</td></tr>`; }).join("")}
+      </tbody></table>` : ""}` : "";
   return ((conf || ped) ? `<table><thead><tr><th>O quê</th><th>Quando</th><th>Situação</th><th></th></tr></thead>
-      <tbody>${conf}${ped}</tbody></table>` : `<div class="vazio"><b>Nenhum pedido</b>nem batida esperando decisão.</div>`) + assin;
+      <tbody>${conf}${ped}</tbody></table>` : `<div class="vazio"><b>Nenhum pedido</b>nem batida esperando decisão.</div>`) + termoHtml + assin;
 }
 
 function painelAparelhos() {
@@ -5554,21 +5575,36 @@ async function carregarPessoas() {
   const busca = FP_PE.valores().busca;
   if (busca) q.set("busca", busca);
   q.set("grupo", PE_GRUPO);
-  els("pe-corpo").innerHTML = `<tr><td colspan="10">carregando…</td></tr>`;
+  els("pe-corpo").innerHTML = `<tr><td colspan="11">carregando…</td></tr>`;
   try { const d = await api(`/erp/api/ponto/pessoas?${q}`); PESSOAS = d.pessoas; PE_FORA = d.fora_da_lista || []; PE_CONTAGEM = d.contagem || {}; }
   catch (e) { falhou(e); return; }
   peGrupos();
   desenharPessoas();
 }
+// o termo do ponto (07/11/2026): ASSINADO, RECUSADO ou FALTA (sem a migração 028, a coluna fica vazia)
+const peTermo = p => (p.termo || {}).situacao || "";
+function peTermoHtml(p) {
+  const t = p.termo;
+  if (!t) return `<span class="suave">—</span>`;
+  if (t.situacao === "ASSINADO") return `<span class="selo aprovado" title="${escapar(t.forma === "PELA_PESSOA" ? "no próprio celular" : `com ${t.por || ""}`)}">assinado</span><small>${escapar(quando(t.em))}</small>`;
+  if (t.situacao === "RECUSADO") return `<span class="selo bloqueado" title="${escapar(t.motivo || "")}">recusou</span>`;
+  return `<span class="selo aguardando">falta</span>${t.versao_antiga ? `<small>o termo mudou</small>` : ""}`;
+}
 function desenharPessoas() {
   const fotos = [...document.querySelectorAll("[data-pe-foto]:checked")].map(x => x.dataset.peFoto);
   const exc = [...document.querySelectorAll("[data-pe-exc]:checked")].map(x => x.dataset.peExc);
+  const termos = [...document.querySelectorAll("[data-pe-termo]:checked")].map(x => x.dataset.peTermo);
   const lista = PESSOAS.filter(p => (!fotos.length || fotos.includes(p.tem_foto_cadastral ? "COM" : "SEM"))
-                                 && (!exc.length || exc.some(c => (p.excecoes || []).includes(c))));
+                                 && (!exc.length || exc.some(c => (p.excecoes || []).includes(c)))
+                                 && (!termos.length || termos.includes(peTermo(p))));
   const sem = PESSOAS.filter(p => !p.tem_foto_cadastral).length;
+  const semTermo = PESSOAS.filter(p => p.grupo === "BATE" && peTermo(p) === "FALTA").length;
+  document.querySelectorAll("[data-pe-termo-qtd]").forEach(x => {
+    const n = PESSOAS.filter(p => peTermo(p) === x.dataset.peTermoQtd).length; x.textContent = n || ""; });
   document.querySelectorAll("[data-pe-exc-qtd]").forEach(x => {
     const n = PESSOAS.filter(p => (p.excecoes || []).includes(x.dataset.peExcQtd)).length; x.textContent = n || ""; });
-  els("pe-sub").textContent = `${contar(lista.length, "pessoa", "pessoas")}${sem ? ` · ${sem} sem foto de cadastro` : ""}`;
+  els("pe-sub").textContent = `${contar(lista.length, "pessoa", "pessoas")}${sem ? ` · ${sem} sem foto de cadastro` : ""}${semTermo
+    ? ` · ${semTermo} sem o termo do ponto assinado` : ""}`;
   els("pe-fora").classList.toggle("oculto", !PE_FORA.length);
   els("pe-fora").innerHTML = PE_FORA.length ? `<b>Fora da lista, com essa busca:</b><ul style="margin:6px 0 0 18px">${PE_FORA.map(x =>
     `<li>${escapar(x.nome)}${x.cpf_final ? ` <small style="display:inline">CPF final ${escapar(x.cpf_final)}</small>` : ""} — ${escapar(x.motivo)}</li>`).join("")}</ul>` : "";
@@ -5595,7 +5631,8 @@ function desenharPessoas() {
       ${p.grupo_motivo ? `<small style="display:block">${escapar(p.grupo_motivo)}</small>` : ""}</td>
     <td>${(p.excecoes || []).map(c => `<span class="etq ${PE_COR_EXC[c] || ""}" style="margin:1px 2px 1px 0">${escapar(PE_EXCECOES[c] || c)}${c === "BANCO"
         ? ` — ${escapar(p.regime_banco_rotulo || "")}` : ""}</span>`).join("") || `<span class="suave">padrão</span>`}</td>
-    <td>${p.tem_pin ? `<span class="selo aprovado">sim</span>` : `<span class="selo outro">não</span>`}</td></tr>`).join("");
+    <td>${p.tem_pin ? `<span class="selo aprovado">sim</span>` : `<span class="selo outro">não</span>`}</td>
+    <td>${peTermoHtml(p)}</td></tr>`).join("");
   els("pe-corpo").querySelectorAll("[data-pe-marcar]").forEach(c => c.addEventListener("change", () => {
     const id = Number(c.dataset.peMarcar); c.checked ? PE_MARCADAS.add(id) : PE_MARCADAS.delete(id);
     c.closest("tr").classList.toggle("marcada", c.checked); peContar(); }));
@@ -5617,7 +5654,10 @@ if (els("pe-lote")) {
   els("pe-nao-bate").addEventListener("click", () => peMarcarBate(false));
   els("pe-volta").addEventListener("click", () => peMarcarBate(true));
 }
-document.querySelectorAll("[data-pe-foto], [data-pe-exc]").forEach(x => x.addEventListener("change", desenharPessoas));
+document.querySelectorAll("[data-pe-foto], [data-pe-exc], [data-pe-termo]").forEach(x => x.addEventListener("change", desenharPessoas));
+// ?termo=FALTA (o link do alerta) já abre a lista filtrada
+(() => { const t = new URLSearchParams(location.search).get("termo");
+  const c = t && document.querySelector(`[data-pe-termo="${CSS.escape(t)}"]`); if (c) c.checked = true; })();
 FP_PE.carregar().then(carregarPessoas);
 // O endereço antigo (/erp/ponto/pessoas?pessoa=N) abre a pessoa por cima da lista.
 (() => { const id = new URLSearchParams(location.search).get("pessoa");
@@ -6182,12 +6222,15 @@ function desenharAlertas() {
           ? `<button type="button" class="link-btn elo" data-abrir-pessoa="${escapar(a.colaborador_id)}" data-aba="rosto">conferir o rosto e a foto de cadastro</button>` : "";
         // Mosaico pendente e sequência rápida no mesmo aparelho se resolvem
         // olhando as fotos daquele dia, daquela obra.
+        // o termo do ponto (07/11/2026): a lista de Pessoas já filtrada em quem falta assinar
+        const termo = a.codigo === "TERMO_PENDENTE"
+          ? `<a class="elo" href="/erp/ponto/pessoas?termo=FALTA">ver quem falta assinar</a>` : "";
         const mosaico = ALERTAS_DO_MOSAICO.includes(a.codigo) && a.obra_id && a.data_referencia
           ? `<a class="elo" href="/erp/ponto/mosaico?obra=${encodeURIComponent(a.obra_id)}&data=${encodeURIComponent(a.data_referencia)}">Abrir mosaico</a>` : "";
         return `<tr>
           ${PODE_TRATAR ? `<td><input type="checkbox" data-a-marcar="${a.id}" ${A_MARCADOS.has(a.id) ? "checked" : ""} aria-label="marcar este alerta"></td>` : ""}
           <td><b>${escapar(a.rotulo || ROTULOS[a.codigo] || a.codigo)}</b></td>
-          <td class="desc">${escapar(a.mensagem)}${fotosDoAlerta}${[incluir, rosto, dia, nome, validar, aparelho, mosaico].filter(Boolean).map(x => `<small>${x}</small>`).join("")}</td>
+          <td class="desc">${escapar(a.mensagem)}${fotosDoAlerta}${[incluir, rosto, dia, nome, validar, aparelho, mosaico, termo].filter(Boolean).map(x => `<small>${x}</small>`).join("")}</td>
           <td class="dados">${escapar(a.obra || "—")}</td>
           <td class="dados">${a.data_referencia ? dataBR(a.data_referencia) : "—"}</td>
           <td><span class="selo ${c}">${escapar(t)}</span>
