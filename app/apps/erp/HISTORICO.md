@@ -21,6 +21,32 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### 📥 A IMPORTAÇÃO DAS PESSOAS: pare de pedir "o arquivo"
+
+**Eu estava pedindo a coisa errada, e por um motivo que vale guardar:** o botão
+da tela se chamava **"Importar do Pipefy"**, o que fazia parecer que a
+importação exigia alguma coisa do Pipefy. Ele perguntou, com razão, em
+07/11/2026: *"você tem insistido em arquivo das 575 pessoas, mas esses dados já
+estão na planilha (…) quando você diz o arquivo é o quê? São os IDs dos
+cards?"*
+
+**Não são IDs de card.** São as linhas das pessoas com os campos. E a fonte é a
+**planilha do DP que ele já usa** — o Pipefy é só mais uma origem aceita, não a
+única. O botão virou **"Importar pessoas de planilha"**, e a instrução dentro
+dele agora diz o caminho (Arquivo › Fazer download › .xlsx) e manda apertar
+"Conferir sem gravar" primeiro.
+
+**Lição que fica:** nome de botão não é enfeite. Um rótulo errado fez o dono
+procurar durante dias um arquivo que ele não precisava ter.
+
+⚑ **DÚVIDA ABERTA, para a próxima sessão perguntar:** ele chamou a fonte de
+**"planilha sediários"**. Esse nome não existe em lugar nenhum deste
+repositório — o que está escrito aqui é a aba **"Dados Documentos"**. Se forem
+abas diferentes, os nomes das colunas dela precisam entrar no de-para de
+`core/importadores/pessoas_planilha.py` (é uma linha por coluna). O
+"Conferir sem gravar" diz quais não reconheceu, então ele descobre sozinho —
+mas quem pegar esta área depois precisa saber que a pergunta existe.
+
 ### ⚠️ MIGRAÇÕES 085 a 091 — apertar "Aplicar atualizações do banco"
 
 Entraram em 05/11/2026 com o cadastro de pessoas. **Sem elas a tela de

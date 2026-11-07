@@ -84,7 +84,7 @@
     + Função</button>
   {% if pode.configurar %}
   <button class="btn secundario" id="btn-importar" style="width:100%; margin-top:6px">
-    Importar do Pipefy</button>
+    Importar pessoas de planilha</button>
   {% endif %}
 {% endblock %}
 
@@ -1346,13 +1346,19 @@ async function abrirAlteracao(){
 // planilha mostra o que divergiu e a decisão fica com quem olha.
 // ---------------------------------------------------------------------------
 function abrirImportacaoDePessoas(){
-  els("dlg-titulo").textContent = "Importar as pessoas do Pipefy";
+  els("dlg-titulo").textContent = "Importar pessoas de uma planilha";
   els("dlg-corpo").innerHTML = `
-    <div class="cartao-dica">Serve o relatório exportado do pipe <b>CADASTRO
-      COLABORADORES</b> ou a planilha do DP — o sistema reconhece as colunas pelo
-      nome, dos dois jeitos, e diz quais não reconheceu. <b>Só entram os ativos.</b>
-      Quem já está no ERP não é sobrescrito: a conferência lista o que está
-      diferente e você decide.</div>
+    <div class="cartao-dica"><b>Serve a planilha do DP que você já usa.</b> No
+      Google Planilhas: <i>Arquivo › Fazer download › Microsoft Excel (.xlsx)</i>
+      — e jogue o arquivo aqui. Também serve o relatório exportado do pipe
+      CADASTRO COLABORADORES, ou um CSV.
+      <br><br>O sistema reconhece as colunas <b>pelo nome do cabeçalho</b>, nos
+      três formatos, e <b>diz quais não reconheceu</b> — por isso vale sempre
+      apertar "Conferir sem gravar" primeiro: ele mostra o relatório inteiro
+      sem tocar no banco.
+      <br><br><b>Só entram os ativos.</b> Quem já está no ERP <b>não é
+      sobrescrito</b>: a conferência lista o que está diferente e você
+      decide.</div>
     <div class="form-grade">
       <div class="campo" style="grid-column:span 3"><label>Planilha (.xlsx ou .csv)</label>
         <input type="file" id="imp-arq" accept=".xlsx,.csv"></div>
