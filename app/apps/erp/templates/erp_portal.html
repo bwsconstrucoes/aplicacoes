@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pedidos ao DP — BWS</title>
+{# PÁGINA PRÓPRIA, NÃO O `erp_base.html`, e isto é de propósito: quem abre é
+   gente de OBRA, no celular, sem login do ERP. O `erp_base` traz o menu de 18
+   telas, a barra de módulos e a sessão do ERP — nada disso existe aqui, e
+   mostrar menu que não abre seria pior que não mostrar menu.
+
+   O portal é leve de verdade: nenhuma biblioteca, nenhum arquivo externo além
+   da folha de estilo do ERP, e três telas numa página só. #}
+<link rel="stylesheet" href="{{ url_for('static', filename='erp.css') }}">
+<style>
+  body { margin: 0; background: var(--papel, #F4F6FA); font-family: system-ui,
+         -apple-system, "Segoe UI", Roboto, sans-serif; color: #10233F; }
+  .topo-portal { background: #0B2C5C; color: #fff; padding: 14px 16px;
+         display: flex; align-items: center; gap: 10px; }
+  .topo-portal b { font-size: 16px; }
+  .topo-portal small { opacity: .8; margin-left: auto; text-align: right;
+         line-height: 1.3; }
+  .caixa { max-width: 760px; margin: 0 auto; padding: 14px 14px 40px; }
+  .bloco { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(16,35,63,.12);
+         padding: 14px; margin-bottom: 12px; }
+  .bloco h3 { margin: 0 0 4px; font-size: 15px; }
+  .bloco p.ajuda { margin: 0 0 10px; font-size: 13px; color: #5A6B85; }
+  .linha { display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+         padding: 10px 0; border-top: 1px solid #E6EAF2; }
+  .linha:first-of-type { border-top: 0; }
+  .linha .cresce { flex: 1 1 auto; min-width: 0; }
+  .etiqueta { font-size: 11.5px; padding: 2px 8px; border-radius: 999px;
+         background: #EEF2FA; color: #31507F; white-space: nowrap; }
+  .etiqueta.vermelha { background: #FDECEC; color: #A32020; }
+  .etiqueta.verde { background: #E8F6EE; color: #1C6B3C; }
+  .btn-portal { background: #F4B942; border: 0; border-radius: 10px; padding: 11px 16px;
+         font-size: 15px; font-weight: 700; color: #10233F; cursor: pointer; }
+  .btn-portal.secundario { background: #EEF2FA; color: #31507F; }
+  .btn-portal[disabled] { opacity: .5; }
+  label.campo-portal { display: block; margin: 10px 0 0; font-size: 13px;
+         font-weight: 600; color: #31507F; }
+  label.campo-portal input, label.campo-portal select, label.campo-portal textarea {
+         width: 100%; box-sizing: border-box; padding: 10px; margin-top: 4px;
+         border: 1px solid #C9D3E4; border-radius: 10px; font-size: 15px; }
+  .recado { padding: 12px; border-radius: 10px; margin-bottom: 12px; font-size: 14px; }
+  .recado.erro { background: #FDECEC; color: #A32020; }
+  .recado.ok { background: #E8F6EE; color: #1C6B3C; }
+  .recado.aviso { background: #FFF6E5; color: #8A5B00; }
+  /* O `.escolher` em si vem do `erp.css` — ele vale para o ERP inteiro, e
+     copiá-lo aqui faria duas versões para manter de acordo. Só o que é do
+     celular fica: esticar na linha. */
+  .escolher { flex: 1 1 160px; min-width: 140px; padding: 11px 12px; }
+</style>
+</head>
+<body>
+<div class="topo-portal">
+  <b>Pedidos ao DP</b>
+  <small id="quem">—</small>
+</div>
+<div class="caixa">
+  <div id="recado"></div>
+
+  {# A DEVOLUÇÃO VEM PRIMEIRO, e não é ordem alfabética: é o que tem prazo e o
+     que o DP está esperando. Pedido novo pode esperar o fim da rolagem; o
+     documento que está na mesa de alguém, não. #}
+  <div class="bloco" id="bloco-devolver" style="display:none">
+    <h3>Documentos a devolver</h3>
+    <p class="ajuda">O DP mandou estes documentos para a obra. Depois de colher
+      a assinatura, envie aqui — <b>não mande por WhatsApp</b>: aqui ele fica
+      guardado no cadastro da pessoa, com data e tipo.</p>
+    <div id="devolucoes"></div>
+  </div>
+
+  <div class="bloco">
+    <h3>Abrir um pedido</h3>
+    <p class="ajuda">Escolha o que precisa. O DP recebe na hora e você acompanha
+      aqui mesmo.</p>
+    <div id="form-pedido"></div>
+  </div>
+
+  <div class="bloco">
+    <h3>O que você já pediu</h3>
+    <p class="ajuda">Os seus pedidos e o que o DP respondeu.</p>
+    <div id="meus"></div>
+  </div>
+</div>
+
+<script>
+const els = id => document.getElementById(id);
+const esc = t => String(t == null ? "" : t).replace(/[&<>"']/g,
+  c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const dataBR = d => d ? String(d).slice(0,10).split("-").reverse().join("/") : "—";
+let DADOS = null;
+
+function recado(texto, tipo){
+  els("recado").innerHTML = texto
+    ? `<div class="recado ${tipo||"aviso"}">${esc(texto)}</div>` : "";
+}
+
+async function chamar(url, opcoes){
+  const r = await fetch(url, Object.assign({headers: {"Content-Type": "application/json"}},
+                                           opcoes || {}));
+  const d = await r.json().catch(() => ({}));
+  if (r.status === 401) { semAcesso(d.erro); throw new Error(d.erro || "entre pelo aplicativo"); }
+  if (!r.ok || d.ok === false) throw new Error(d.erro || "deu problema aqui");
+  return d;
+}
+
+// SEM SESSÃO DO APLICATIVO DO PONTO, a página não mostra nada e DIZ O QUE
+// FAZER. Tela de erro técnico para quem está na obra é tela que vira ligação
+// para o DP.
+function semAcesso(motivo){
+  document.querySelector(".caixa").innerHTML = `
+    <div class="bloco">
+      <h3>Entre pelo aplicativo do ponto</h3>
+      <p class="ajuda">${esc(motivo || "Você precisa estar logado para abrir pedidos.")}
+        É o mesmo aplicativo que você usa para bater o ponto — o mesmo CPF e o
+        mesmo PIN.</p>
+      <a class="btn-portal" href="/ponto/app" style="display:inline-block;
+         text-decoration:none">Abrir o aplicativo do ponto</a>
+    </div>`;
+}
+
+async function carregar(){
+  try { DADOS = await chamar("/erp/portal/api/inicio"); }
+  catch(e){ return; }
+  els("quem").innerHTML = `${esc(DADOS.nome)}<br>${
+    DADOS.administrativo ? "administrativo de obra" : "colaborador"}`;
+  pintarDevolucoes();
+  pintarFormulario();
+  pintarMeus();
+}
+
+function pintarDevolucoes(){
+  const l = DADOS.devolucoes || [];
+  els("bloco-devolver").style.display = l.length ? "" : "none";
+  els("devolucoes").innerHTML = l.map(d => `
+    <div class="linha">
+      <div class="cresce">
+        <b>${esc(d.o_que)}</b><br>
+        <small>${esc(d.pessoa || "")} ${d.obra ? "· " + esc(d.obra) : ""}
+          · devolver: ${esc(d.documento)}</small><br>
+        <span class="etiqueta ${d.atrasada ? "vermelha" : ""}">
+          ${d.prazo ? (d.atrasada ? "venceu em " : "até ") + dataBR(d.prazo) : "sem prazo"}
+        </span>
+      </div>
+      <label class="escolher" for="arq-${d.id}" id="rot-${d.id}">
+        Escolher arquivo ou tirar foto</label>
+      <input type="file" id="arq-${d.id}" accept=".pdf,.png,.jpg,.jpeg,image/*"
+             capture="environment" style="display:none">
+      <button class="btn-portal" data-dev="${d.id}">Enviar</button>
+    </div>`).join("");
+  els("devolucoes").querySelectorAll("[data-dev]").forEach(b =>
+    b.addEventListener("click", () => devolver(+b.dataset.dev, b)));
+  // O NOME DO ARQUIVO aparece no lugar do rótulo: sem isso, quem escolheu a
+  // foto não tem como saber que escolheu, e aperta Enviar duas vezes.
+  l.forEach(d => {
+    const campo = els("arq-" + d.id);
+    if (!campo) return;
+    campo.addEventListener("change", () => {
+      const rot = els("rot-" + d.id);
+      const nome = campo.files.length ? campo.files[0].name : "";
+      rot.textContent = nome || "Escolher arquivo ou tirar foto";
+      rot.classList.toggle("cheio", !!nome);
+    });
+  });
+}
+
+async function devolver(id, botao){
+  const campo = els("arq-" + id);
+  if (!campo.files.length) { recado("Escolha o arquivo do documento.", "erro"); return; }
+  botao.disabled = true;
+  try {
+    const fd = new FormData();
+    fd.append("arquivo", campo.files[0]);
+    const r = await fetch(`/erp/portal/api/devolucoes/${id}`, {method: "POST", body: fd});
+    const d = await r.json().catch(() => ({}));
+    if (r.status === 401) return semAcesso(d.erro);
+    if (!r.ok || d.ok === false) throw new Error(d.erro || "não consegui enviar");
+    recado(`Documento de ${d.numero} enviado. O DP já está vendo.`, "ok");
+    carregar();
+  } catch(e){ recado(e.message, "erro"); botao.disabled = false; }
+}
+
+// OS CAMPOS DE CADA TIPO vêm da API, não daqui: a lista de campos de um pedido
+// é regra de negócio e vive no `pessoal_solicitacoes.py`. Duplicar aqui faria
+// o portal e a tela do DP divergirem no primeiro ajuste.
+const ROTULO = {
+  nome: "Nome completo", cpf: "CPF", obra_id: "Obra", cargo_id: "Cargo",
+  vinculo: "Tipo de vínculo", data_inicio: "Data de início", telefone: "Telefone",
+  data_saida: "Data de saída", aviso_previo: "Data do aviso prévio",
+  ultimo_dia: "Último dia trabalhado", forma_desligamento: "Forma do desligamento",
+  faltas_a_descontar: "Faltas a descontar", observacao: "Observação",
+  vigencia: "A partir de", salario: "Salário", motivo: "Motivo",
+  justificativa: "Justificativa", descricao: "Descreva o pedido",
+  valor: "Valor", valor_total: "Valor total", parcelas: "Parcelas",
+  categoria: "Categoria", dependente_nome: "Nome do dependente",
+  dependente_nascimento: "Nascimento do dependente", dependente_cpf: "CPF do dependente",
+  parentesco: "Parentesco", o_que_muda: "O que muda", primeira_competencia: "A partir do mês",
+  admissao: "Data de admissão", tipo_contrato: "Tipo de contrato",
+  convencao_id: "Convenção coletiva", matricula: "Matrícula",
+  email: "E-mail", pix_tipo: "Tipo da chave Pix", pix_chave: "Chave Pix",
+  cep: "CEP", logradouro: "Rua", numero_endereco: "Número", bairro: "Bairro",
+  municipio: "Cidade", uf: "Estado", data_nascimento: "Data de nascimento",
+  salario_familia: "Pedir salário-família?",
+  dependente_ir: "Conta no imposto de renda?",
+  categoria_alimentacao: "Como paga a alimentação",
+  aux_alimentacao: "Valor da alimentação (R$)",
+  categoria_transporte: "Como paga o transporte",
+  aux_transporte: "Valor do transporte (R$)",
+  conceder: "Conceder ou cancelar?", meio_transporte: "Meio de transporte",
+};
+// CAMPO DE SIM/NÃO É CAIXINHA, não texto livre: senão volta "s", "sim", "SIM"
+// e "pode" para a mesma resposta.
+const SIM_NAO = {
+  salario_familia: ["Sim, pedir", "Não pedir"],
+  dependente_ir: ["Sim, conta", "Não conta"],
+  conceder: ["Conceder", "Cancelar"],
+};
+// CAMPO DE DATA TEM DE ABRIR O CALENDÁRIO DO CELULAR. Data que cai como texto
+// livre volta "12/3", "12-03-26" e "ontem" — e o DP arruma à mão.
+const TIPO_CAMPO = {
+  data_inicio: "date", data_saida: "date", aviso_previo: "date", ultimo_dia: "date",
+  vigencia: "date", dependente_nascimento: "date", data_nascimento: "date",
+  admissao: "date", primeira_competencia: "month",
+  email: "email",
+  observacao: "textarea", descricao: "textarea", justificativa: "textarea",
+  o_que_muda: "textarea", motivo: "textarea",
+};
+// Campo de número abre o TECLADO NUMÉRICO no celular, e não o alfabético.
+const SO_NUMERO = /^(faltas_a_descontar|numero_endereco|parcelas)$/;
+const SO_DIGITO = /^(cpf|telefone|cep|matricula)$/;
+
+function pintarFormulario(){
+  const tipos = DADOS.tipos || [];
+  els("form-pedido").innerHTML = `
+    <label class="campo-portal">O que você precisa
+      <select id="p-tipo">
+        <option value="">escolha…</option>
+        ${tipos.map(t => `<option value="${t.chave}">${esc(t.nome)}</option>`).join("")}
+      </select></label>
+    <p class="ajuda" id="p-explica" style="margin-top:6px"></p>
+    <div id="p-campos"></div>
+    <div style="margin-top:12px">
+      <button class="btn-portal" id="p-enviar" disabled>Enviar o pedido</button>
+    </div>`;
+  els("p-tipo").addEventListener("change", pintarCamposDoTipo);
+  els("p-enviar").addEventListener("click", enviarPedido);
+}
+
+function pintarCamposDoTipo(){
+  const t = (DADOS.tipos || []).find(x => x.chave === els("p-tipo").value);
+  els("p-explica").textContent = t ? t.explicacao : "";
+  els("p-enviar").disabled = !t;
+  if (!t) { els("p-campos").innerHTML = ""; return; }
+  const pessoas = DADOS.pessoas || [];
+  els("p-campos").innerHTML =
+    (t.exige_pessoa ? `<label class="campo-portal">De quem é o pedido
+        <select id="p-pessoa">
+          <option value="">escolha…</option>
+          ${pessoas.map(p => `<option value="${p.id}">${esc(p.nome)}</option>`).join("")}
+        </select></label>` : "")
+    + t.campos.filter(c => c !== "cpf" || !t.exige_pessoa).map(c => {
+        const tipo = TIPO_CAMPO[c] || "text";
+        const rot = ROTULO[c] || c.replace(/_/g, " ");
+        if (tipo === "textarea")
+          return `<label class="campo-portal">${esc(rot)}
+            <textarea id="p-${c}" name="${c}" rows="3"></textarea></label>`;
+        if (c === "obra_id")
+          return `<label class="campo-portal">${esc(rot)}
+            <select id="p-${c}" name="${c}">
+              <option value="">escolha…</option>
+              ${(DADOS.obras_lista || []).map(o =>
+                `<option value="${o.id}">${esc(o.codigo)} — ${esc(o.nome)}</option>`).join("")}
+            </select></label>`;
+        // CAMPO DE LISTA FECHADA VIRA CAIXINHA, nunca texto livre: a obra
+        // digitaria "acordo", "mandado embora" e "pediu pra sair" para a mesma
+        // coisa, e o DP passaria a traduzir à mão o que o sistema já sabe.
+        if (SIM_NAO[c])
+          return `<label class="campo-portal">${esc(rot)}
+            <select id="p-${c}" name="${c}">
+              <option value="">escolha…</option>
+              <option value="1">${esc(SIM_NAO[c][0])}</option>
+              <option value="0">${esc(SIM_NAO[c][1])}</option>
+            </select></label>`;
+        const lista = (DADOS.listas || {})[c];
+        if (lista)
+          return `<label class="campo-portal">${esc(rot)}
+            <select id="p-${c}" name="${c}">
+              <option value="">escolha…</option>
+              ${lista.map(o => `<option value="${esc(o.valor)}">${esc(o.rotulo)}</option>`).join("")}
+            </select></label>`;
+        const modo = SO_NUMERO.test(c) || SO_DIGITO.test(c) ? "numeric"
+                   : (tipo === "text" && /valor|salario|aux_/.test(c)) ? "decimal" : "";
+        return `<label class="campo-portal">${esc(rot)}
+          <input id="p-${c}" name="${c}" type="${tipo}"
+            ${modo ? `inputmode="${modo}"` : ""}></label>`;
+      }).join("");
+}
+
+async function enviarPedido(){
+  const t = (DADOS.tipos || []).find(x => x.chave === els("p-tipo").value);
+  if (!t) return;
+  const corpo = {tipo: t.chave};
+  if (t.exige_pessoa) {
+    const p = els("p-pessoa");
+    if (!p || !p.value) { recado("Escolha de quem é o pedido.", "erro"); return; }
+    corpo.colaborador_id = +p.value;
+  }
+  t.campos.forEach(c => {
+    const campo = els("p-" + c);
+    if (campo && campo.value) corpo[c] = campo.value;
+  });
+  els("p-enviar").disabled = true;
+  try {
+    const d = await chamar("/erp/portal/api/pedidos",
+                           {method: "POST", body: JSON.stringify(corpo)});
+    recado(`Pedido ${d.numero} enviado ao DP.`, "ok");
+    carregar();
+  } catch(e){ recado(e.message, "erro"); }
+  els("p-enviar").disabled = false;
+}
+
+function pintarMeus(){
+  const l = DADOS.pedidos || [];
+  els("meus").innerHTML = l.length ? l.map(p => `
+    <div class="linha">
+      <div class="cresce">
+        <b>${esc(p.tipo)}</b> <small>${esc(p.numero)}</small><br>
+        <small>${esc(p.pessoa || "")} · ${dataBR(p.quando)}</small>
+        ${p.resposta ? `<br><small><b>DP:</b> ${esc(p.resposta)}</small>` : ""}
+      </div>
+      <span class="etiqueta ${p.situacao === "ATENDIDA" ? "verde"
+        : ["RECUSADA","CANCELADA"].includes(p.situacao) ? "vermelha" : ""}">
+        ${esc(p.situacao)}</span>
+    </div>`).join("")
+    : `<p class="ajuda">Você ainda não abriu nenhum pedido.</p>`;
+}
+
+carregar();
+</script>
+</body>
+</html>

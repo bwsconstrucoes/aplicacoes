@@ -961,6 +961,81 @@ def sugerir_para_colaborador(s: Session, colaborador_id: int, tipo_codigo: str,
     }
 
 
+def sugerir_para_nova_pessoa(s: Session, tipo_codigo: str,
+                            dados: dict[str, Any]) -> dict[str, Any]:
+    """O que este documento preencheria numa pessoa que ainda vai ser criada.
+
+    Existe porque o formulário de colaborador NOVO prometia um bloco para
+    jogar o documento e não tinha nenhum — o caminho só existia para quem já
+    estava cadastrado. A regra do dono (17/09/2026) é uma porta só: o
+    documento entra DENTRO do formulário, não num botão ao lado.
+
+    Diferença em relação à pessoa que já existe: não há CPF de cadastro contra
+    o qual conferir, então o CPF lido é DEVOLVIDO para preencher o campo — mas
+    continua indo para conferência de gente, como todo o resto. E a tela avisa
+    quando já existe alguém com aquele CPF, que é o engano que cria pessoa
+    repetida.
+    """
+    tipo = (tipo_codigo or "").strip().upper()
+    permitidos = POR_TIPO_PESSOA.get(tipo, ())
+    extraidos = dados.get("dados_extraidos") or {}
+
+    campos: list[dict[str, Any]] = []
+    for campo in permitidos:
+        rotulo, feitio, _ = CAMPOS_PESSOA[campo]
+        novo_valor = _converter(feitio, extraidos.get(campo))
+        if novo_valor in (None, ""):
+            continue
+        if campo == "funcao_nome":
+            f = _funcao_por_nome(s, novo_valor)
+            if f is None:
+                continue
+            campos.append({"campo": "funcao_id", "rotulo": rotulo,
+                           "feitio": "texto", "valor": f.nome, "valor_id": f.id,
+                           "valor_atual": "", "conflito": False, "marcar": True})
+            continue
+        if campo == "regime":
+            novo_valor = str(novo_valor).strip().upper()
+            if novo_valor not in REGIMES:
+                continue
+        campos.append({
+            "campo": campo, "rotulo": rotulo, "feitio": feitio,
+            "valor": _mostrar(feitio, novo_valor), "valor_atual": "",
+            "conflito": False, "marcar": True,
+        })
+
+    # O CPF É O ÚNICO QUE SAI DA REGRA, e sai nos dois sentidos: para a pessoa
+    # que já existe ele NUNCA é gravado (trocá-lo repontaria pagamento); para a
+    # que ainda não existe ele é justamente o que falta. Mas se já houver
+    # alguém com ele, a tela tem de dizer ANTES — é assim que nasce cadastro
+    # repetido.
+    avisos: list[str] = []
+    cpf_lido = _digitos(extraidos.get("cpf"))
+    ja_existe = None
+    if cpf_lido:
+        c = s.scalars(select(Colaborador).where(
+            Colaborador.cpf == cpf_lido)).first()
+        if c is not None:
+            ja_existe = {"id": c.id, "nome": c.nome}
+            avisos.append(
+                f"Já existe cadastro com este CPF: {c.nome}. Não crie outro — "
+                f"abra o cadastro dela e jogue o documento lá dentro.")
+        else:
+            campos.insert(0, {
+                "campo": "cpf", "rotulo": "CPF", "feitio": "texto",
+                "valor": cpf_lido, "valor_atual": "",
+                "conflito": False, "marcar": True})
+
+    return {
+        "colaborador_id": None, "colaborador": "", "tipo": tipo,
+        "campos": campos, "avisos": avisos,
+        "cpf_lido": cpf_lido or "", "cpf_confere": None,
+        "ja_existe": ja_existe,
+        "nada_a_preencher": not campos,
+        "tipo_nao_preenche": tipo not in POR_TIPO_PESSOA,
+    }
+
+
 def aplicar_no_colaborador(s: Session, colaborador_id: int, escolhas: dict[str, Any], *,
                            tipo_codigo: str = "", documento_id: Optional[int] = None,
                            usuario: Optional[Usuario] = None) -> dict[str, Any]:

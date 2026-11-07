@@ -160,6 +160,63 @@ Colaboradores, Desligados); e o destino dos cinco tipos de pedido que hoje são
 manuais.
 
 
+### 🔗 O PONTO PASSOU A MORAR DENTRO DE PESSOAL (06/11/2026)
+
+> *"a gente tem lá pessoal e tem ponto. Eu tô achando que já seria o momento de
+> integrar isso aí. (…) tem cadastro da pessoa, tem cadastro no ponto. Tem a
+> tela de visualizar pessoas num lado, no outro. Não deveria ser assim, né? A
+> gente tem que falar a mesma linguagem nos dois lados, afinal é a mesma
+> empresa, é o mesmo ERP."*
+
+**O MENU** — `_juntar_ponto_com_pessoal()`, no fim do `routes.py`. As 13 abas do
+ponto passam para a área **Pessoal** (17 no total), e a ordem é **pelo dia a
+dia**, não pela origem: Colaboradores, Quadro, Validações, Espelho, Hoje,
+Solicitações ao DP, Contabilidade, Despesas, e o resto atrás. Juntar na ordem
+de origem poria "Despesas com colaborador" na frente do Quadro.
+
+⚠️ **POR QUE ISSO VIVE NO ARQUIVO DO ERP e não no do ponto:** o menu é do ERP.
+O ponto se registra inserindo o módulo dele na lista (`ponto/gestao.py`,
+`_registrar_no_menu`); quem decide como a lista se organiza é o `routes.py`.
+Assim a junção **não tocou em nenhum arquivo da área do ponto** — e se o ponto
+não carregar, a função não faz nada e o ERP sobe igual. Nenhuma rota mudou,
+nenhuma permissão mudou: as telas do ponto continuam no mesmo endereço, só
+acendem "Pessoal" lá em cima.
+
+**A aba "Pessoas" do ponto virou "Pessoas no ponto"** — é a tela que ele apontou
+como duplicada. Ela continua existindo (é de outra área e tem uso próprio: a
+foto de cadastro), mas o nome passa a dizer qual das duas é.
+
+**O FIM DOS DOIS CADASTROS, que é a parte que importa:** a ficha da pessoa no
+ERP passa a **ler e gravar as marcações do ponto** — bate ponto, entra no
+aplicativo, é administrativo de obra, pede pelo próprio celular, tem PIN, e o
+que impede o acesso. Tudo pelas funções do PRÓPRIO ponto (`papeis.definir`,
+`acesso.diagnostico`), nunca pela tabela dele por fora: se a regra do ponto
+mudar, muda num lugar só. Ponto fora do ar devolve o motivo em português e a
+ficha abre igual — travar a ficha porque o ponto não respondeu seria trocar um
+problema pequeno por um grande.
+
+### 🚪 O PORTAL DA OBRA GANHOU TELA, E ELA É DO ERP (06/11/2026)
+
+Eu havia deixado a tela do portal pendente do chat do ponto. **Não precisava.**
+Ela é uma página só (`/erp/portal`), que **não usa o `erp_base.html`** — quem
+abre é gente de obra no celular, sem login do ERP, e o `erp_base` traria o menu
+de 17 telas e a sessão do ERP, nada disso existe ali.
+
+Faz as três coisas: **devolver documento** (primeiro na tela, porque é o que tem
+prazo), **abrir pedido** (os tipos e os campos vêm da API, nunca duplicados no
+JavaScript) e **acompanhar** o que a pessoa abriu. Sem a sessão do aplicativo do
+ponto, mostra "entre pelo aplicativo" com o link — nunca erro técnico.
+
+⚠️ **A trava das telas aprendeu uma coisa nova:** `test_telas_javascript.py`
+exigia que nenhuma tela redeclarasse os ajudantes da base (`els`, `dataBR`), o
+que é certo para quem herda do `erp_base`. A página solta é o contrário: ela
+**precisa** declarar os próprios. O teste agora separa as duas, e cobra de cada
+uma a regra dela.
+
+**O que ainda falta e é do chat do ponto:** um link para `/erp/portal` dentro do
+aplicativo. Sem ele o portal funciona (a pessoa pode salvar o endereço), mas com
+o link ela chega lá sem saber o endereço.
+
 ### 🧭 A TELA DE COLABORADORES VIROU FERRAMENTA DE GESTÃO (05/11/2026)
 
 Ele abriu a tela que eu havia entregado e cortou, com razão:
@@ -7377,7 +7434,184 @@ O que só isso mostra: erro de JavaScript que mata a tela inteira, tela que
 carrega em branco, botão que não responde, número formatado errado. Nenhuma
 dessas coisas aparece num teste que só olha o HTML que o servidor mandou.
 
+## 06/11/2026 — AS FOTOS DO PORTAL ACHARAM CINCO DEFEITOS QUE A SUÍTE NÃO VIA
+
+O dono pediu *"quero telas"* do portal da obra. Montei uma maquete que usa o
+**template de verdade** e a **folha de estilo de verdade**, só com o `fetch`
+dublado, e fotografei a 390 px de largura (celular). Olhar a foto achou cinco
+defeitos que nenhum teste pegava, porque todos eram de APARÊNCIA, não de
+lógica:
+
+1. **Campo de lista fechada virando texto livre.** `listas_fechadas()` devolvia
+   a chave `categoria`, mas o campo do formulário se chama
+   `categoria_transporte`. A tela não reclama: desenha uma caixa de texto. Sete
+   campos estavam assim (`tipo_contrato`, `pix_tipo`, `uf`,
+   `categoria_alimentacao`, `categoria_transporte` em dois pedidos,
+   `meio_transporte`). A obra ia digitar "moto", "motinha" e "veículo próprio"
+   para a mesma coisa, e o DP ia traduzir à mão.
+2. **22 campos saindo com o nome do banco** — "aux transporte", "conceder",
+   "categoria transporte" — porque o `ROTULO` só cobria os campos que eu tinha
+   olhado.
+3. **`admissao` e `data_nascimento` caindo como texto**, sem abrir calendário.
+   Data em texto livre volta "12/3", "12-03-26" e "ontem".
+4. **Campo de sim/não como texto livre** (`conceder`, `dependente_ir`,
+   `salario_familia`): voltaria "s", "sim", "SIM" e "pode".
+5. **A situação do pedido chegando na obra como `EM_ANALISE`**, em vez de
+   "Em análise". O portal mandava `sol.situacao` cru.
+
+**O conserto de fundo, e é ele que importa:** `listas_fechadas()` passou a ser
+montada a partir do `DA_LISTA` do próprio cadastro (`cadastros/pessoas.py`),
+com a chave sendo o NOME DO CAMPO. Lista que mudar no cadastro muda no portal
+sozinha, e não há mais duas listas para manter de acordo. Cargo e convenção vêm
+do banco. A opção fora de uso (cartão do transporte) não aparece para quem abre
+pedido novo, mas o cadastro antigo que já a tem continua lendo.
+
+**Cinco travas novas em `tests/test_caixa_e_portal.py`**, porque todos esses
+erros eram silenciosos: campo de lista fechada sem caixinha, lista que é cópia
+em vez da do cadastro, opção fora de uso aparecendo, campo de data sem
+calendário, campo sem rótulo em português, e a situação em código. As travas
+percorrem a lista de campos dos tipos de pedido — não a minha memória.
+
+**O que a foto NÃO prova:** o campo de data apareceu como `mm/dd/yyyy` nas
+fotos. Isso é do navegador do contêiner (o Chromium sem interface ignora o
+idioma na hora de desenhar o campo nativo de data); no celular em português
+sai `dd/mm/aaaa`. Não dá para o site mandar nesse formato — quem manda é o
+aparelho.
+
+**Como refazer as fotos:** o gerador da maquete e o script do Playwright ficam
+no bloco de rascunho da sessão; são 20 linhas cada, e o importante é o método —
+**usar o template de verdade, nunca uma cópia escrita à mão.** Uma maquete
+escrita à mão mostra os defeitos que eu inventei, não os que estão no código.
+
+## 06/11/2026 (tarde) — AS TELAS DO CADASTRO, E OS CINCO DEFEITOS QUE ELAS MOSTRARAM
+
+Ele pediu as telas do cadastro de colaborador. Desta vez não foi maquete: subi
+um **banco descartável de verdade** (`erp_olhada` na 5433, schema + as 91
+migrações + 20 pessoas semeadas + um ADMIN), rodei a aplicação na porta 5055 e
+fotografei com o Playwright, logado. É o método que o próprio `HISTORICO.md`
+recomenda, e ele achou cinco coisas que a suíte inteira não via:
+
+1. **O botão "+ Colaborador" NÃO FAZIA NADA.** `formulario()` montava o
+   diálogo inteiro e nunca chamava `showModal()`; só `abrirFichaCompleta`
+   abria. Sem erro no console, sem nada na tela — o botão simplesmente não
+   respondia. Agora quem preenche a janela abre a janela.
+2. **A tela PROMETIA o bloco de jogar documento no cadastro novo e não tinha
+   bloco nenhum.** O caminho só existia para quem já estava cadastrado. Isso
+   feria a regra dele de 17/09 ("uma porta só, o documento entra DENTRO").
+   Construído o que faltava: rota `/erp/api/colaboradores/documento/ler` (irmã
+   das que já existiam para obra nova e empresa nova),
+   `preenchimento.sugerir_para_nova_pessoa()` e o bloco no topo da aba
+   Identificação. **Diferença em relação à pessoa que já existe:** aqui o CPF
+   lido PREENCHE o campo (é o que falta), mas se já houver cadastro com ele a
+   tela para e oferece abrir o existente — é assim que nasce pessoa duplicada.
+3. **"Na contabilidade" aparecia duas vezes com números diferentes:** o painel
+   contava PEDIDOS abertos, o filtro lateral contava PESSOAS na etapa. Lado a
+   lado, 0 e 1. O painel virou "Pedido em aberto / esperando a contabilidade".
+4. **"Choose File / No file chosen" em inglês** em todo o ERP, e cortado no
+   celular. Não dá para traduzir o campo nativo — quem manda é o aparelho. A
+   base agora o envolve num rótulo `.escolher` em português e mostra o nome do
+   arquivo escolhido. **Mora no `erp_base.html` e no `erp.css`**, junto da
+   máscara e da busca: vale para as 18 telas e tela nova nasce certa. O portal
+   deixou de ter a cópia dele.
+5. **Duas janelas mortas** (`erp_agenda.html` e `erp_notas_emitidas.html`):
+   `<dialog id="dlg">` declarado, com botão de fechar, e nunca aberto por
+   ninguém. Removidas.
+
+**E um acabamento:** a busca automática entrava nas 27 UFs (passam do limite de
+12), virando um campo de filtro em cima de um `<select>` órfão, sem rótulo. A
+base agora pula listas em que toda opção tem até 4 letras — sigla se acha de
+olho; o limite existe para lista de NOME (obra, fornecedor, pessoa).
+
+**Três travas novas em `tests/test_telas_javascript.py`**, e duas delas
+acharam sozinhas as janelas mortas:
+
+- tela que declara `<dialog>` precisa chamar `showModal()` nele em algum lugar;
+- função que escreve em `dlg-corpo` precisa abrir a janela ela mesma (separar
+  as duas coisas foi exatamente o defeito do "+ Colaborador": um chamador
+  abria, o outro não);
+- tela que convida a "jogar o documento" precisa ter campo de arquivo.
+
+**O que as fotos NÃO provam:** a leitura do documento na pessoa nova não foi
+exercitada com documento de verdade — não há um RG neste contêiner. O caminho
+é o mesmo que já funciona para obra e para empresa, mas isso é raciocínio, não
+teste.
+
+**Uma fragilidade encontrada de raspão, e deixada em aberto:** o banco aceita
+`colaboradores.etapa` com valor que não existe em `ETAPAS` — descobri porque o
+meu dado semeado gravou `AGUARDANDO_CONTABILIDADE` e a tela mostrou o código
+cru. Pelo sistema isso não acontece (o serviço valida); só por SQL direto. Uma
+trava `CHECK` no banco resolveria, mas é migração nova — perguntei ao dono e
+está esperando resposta.
+
+**Como refazer as fotos** (vale meia hora antes de publicar mudança de tela):
+banco descartável + schema + `migrar.py` + semear + `seed_admin` + aplicação na
+5055 + Playwright logado, ouvindo `pageerror` e `console`. Os scripts ficam no
+bloco de rascunho da sessão.
+
+## 06/11/2026 (noite) — O E-MAIL DA CONTABILIDADE VIRA CAMPO DE TELA
+
+Ele, com todas as letras: *"o e-mail da contabilidade eu acho que tem que ser
+colocado no aplicativo. Porque tem algum canto ali nas configurações (…) deixa
+o campo, cria um local para eu poder adicionar essa informação."*
+
+Está certo, e a parte de baixo já existia — o endereço sempre foi lido de
+`parametros['contabilidade_emails']`, nunca de variável de ambiente. **O que
+não existia era o campo.** Agora existe: `definir_enderecos()` em
+`core/contabilidade.py`, a rota `/erp/api/dp/contabilidade/emails` e um bloco
+na tela.
+
+**Onde o bloco ficou, e por quê:** em Pessoal › Contabilidade, **acima dos
+pedidos**, não num menu de configurações. Sem esse endereço preenchido nenhum
+pedido sai, e quem vai descobrir isso é justamente quem está tentando enviar.
+Vazio, o bloco fica VERMELHO e diz o que falta; preenchido, mostra para onde
+vão os pedidos, com um botão "Trocar".
+
+**Três decisões que valem registro:**
+
+- **Aceita mais de um endereço** (vírgula ou ponto e vírgula). Contabilidade
+  costuma ter mais de uma pessoa no assunto, e mandar só para uma faz o pedido
+  parar nas férias dela.
+- **O feitio é conferido ANTES de gravar.** Endereço torto
+  ("contabilidade@escritorio", "fulano@gmail,com") só apareceria semanas
+  depois, num pedido que a contabilidade nunca recebeu e que o ERP ficou
+  cobrando de ninguém.
+- **Trocar fica registrado em `eventos`.** Esse endereço desvia TODO pedido
+  novo; um desvio silencioso seria descoberto tarde.
+
+**Um erro meu que o teste pegou na hora:** chamei `registrar_evento` passando
+o objeto `Usuario` onde vai o `usuario_id`, e a chave do parâmetro (texto)
+onde `entidade_id` é BIGINT. O banco recusou. A chave passou para dentro do
+`detalhe` e o id ficou 0. Vale a nota: `entidade_id` é NÚMERO, e parâmetro é
+identificado por texto.
+
+**E um defeito de layout que a foto mostrou:** a aba ativa aparecia CORTADA na
+borda da barra azul. Causa: o cálculo que traz a aba ativa para a vista roda
+antes de as fontes carregarem — mede com a fonte do sistema, que é mais
+estreita, conclui "cabe", e quando a fonte de verdade chega tudo cresce. Agora
+ele roda de novo em `document.fonts.ready` e no `resize`. Isso só apareceu
+porque **Pessoal passou a ter 14 abas** depois que o Ponto entrou nela
+(06/11, de manhã) — com 4 abas o erro de medida não dava para ver.
+
+**Fica anotado para decisão do dono:** 14 abas numa barra só é muito, mesmo com
+rolagem e com o botão "Telas". Vale repensar o agrupamento de Pessoal — mas
+isso é escolha dele sobre o menu dele, não conserto.
+
 ## Coisas pequenas que mordem
+
+- **⚠️ DATA FIXA EM FIXTURE DE TESTE É BOMBA-RELÓGIO.** Em 07/11/2026, na hora
+  de publicar, um teste quebrou sem nada no código ter mudado: a admissão do
+  fixture era `"2026-11-01"`, e naquele dia ela completou 6 dias. O aviso "a
+  admissão foi há N dias e o registro só está sendo pedido agora" (regra de 5
+  dias, em `avisos_do_pedido`) passou a disparar, um evento `AVISO` entrou no
+  meio da trilha do pedido, e o teste da ORDEM dos eventos falhou. O
+  calendário virou, só isso. **A regra:** data de fixture que a regra de
+  negócio compara com `date.today()` vai RELATIVA a hoje
+  (`date.today() - timedelta(days=N)`), nunca escrita à mão. E a regra que
+  olha o calendário ganha teste próprio com as datas explícitas, dos dois
+  lados do limite — era o que faltava aqui: ninguém testava aquele aviso, e
+  por isso ninguém sabia que ele entrava na trilha. Não vale proibir data fixa
+  em todo teste (são 66 lugares, a maioria legítima): o perigo é só perto de
+  um limite que o tempo atravessa.
 
 - `pip install -r requirements-dev.txt` falha com o pip antigo do sistema
   (`docopt` não compila). Num venv com pip atualizado funciona.

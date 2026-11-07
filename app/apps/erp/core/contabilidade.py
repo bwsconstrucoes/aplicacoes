@@ -32,6 +32,7 @@ pedido, em vez de discutir o que o sistema hoje acha que pediria.
 from __future__ import annotations
 
 import logging
+import re
 from datetime import date, timedelta
 from typing import Any, Optional
 
@@ -418,7 +419,8 @@ def enviar(s: Session, pedido_id: int, usuario: Optional[Usuario], *,
     if not destinos:
         raise ErroValidacao(
             "Não há e-mail da contabilidade cadastrado. Preencha em "
-            "Configurações antes de enviar.")
+            "Pessoal › Contabilidade, no bloco “Para onde vão os pedidos”, "
+            "antes de enviar.")
     empresa = (s.get(Empresa, p["empresa_id"]) if p["empresa_id"]
                else svc_email.conta_de_envio(s, None))
     if empresa is None:
@@ -465,6 +467,59 @@ def endereco_padrao(s: Session) -> list[str]:
     linha = s.get(Parametro, CHAVE_EMAILS)
     bruto = (linha.valor if linha is not None else "") or ""
     return [e.strip() for e in bruto.replace(";", ",").split(",") if e.strip()]
+
+
+# Um e-mail de verdade, sem inventar RFC: tem arroba, tem ponto depois do
+# arroba, e não tem espaço. Serve para pegar o engano de digitação, que é o
+# que acontece de verdade — "contabilidade@escritorio" e "fulano@gmail,com".
+_PARECE_EMAIL = re.compile(r"^[^@\s,;]+@[^@\s,;]+\.[A-Za-z]{2,}$")
+
+
+def definir_enderecos(s: Session, texto: str,
+                      usuario: Optional[Usuario] = None) -> list[str]:
+    """Grava o e-mail da contabilidade, de Configurações.
+
+    ACEITA MAIS DE UM, separado por vírgula ou ponto e vírgula: contabilidade
+    costuma ter mais de uma pessoa no assunto, e mandar só para uma faz o
+    pedido parar nas férias dela.
+
+    Confere o feitio de cada endereço ANTES de gravar. Endereço torto só
+    apareceria semanas depois, num pedido que a contabilidade nunca recebeu e
+    que o ERP ficou cobrando de ninguém.
+    """
+    from app.apps.erp.db.models.cadastros import Parametro
+
+    brutos = [e.strip() for e in (texto or "").replace(";", ",").split(",")]
+    enderecos: list[str] = []
+    for e in brutos:
+        if not e:
+            continue
+        if not _PARECE_EMAIL.match(e):
+            raise ErroValidacao(
+                f"“{e}” não parece um e-mail. Confira: é o endereço para onde "
+                f"o ERP manda os pedidos à contabilidade.")
+        if e.lower() not in [x.lower() for x in enderecos]:
+            enderecos.append(e)
+
+    antes = endereco_padrao(s)
+    valor = ", ".join(enderecos)
+    linha = s.get(Parametro, CHAVE_EMAILS)
+    if linha is None:
+        s.add(Parametro(chave=CHAVE_EMAILS, valor=valor))
+    else:
+        linha.valor = valor
+    # QUEM MUDOU FICA REGISTRADO: trocar este endereço desvia para onde vai
+    # TODO pedido novo, e um desvio silencioso seria descoberto tarde.
+    #
+    # `entidade_id` é NÚMERO na tabela de eventos, e parâmetro é identificado
+    # por texto — então a chave vai no detalhe e o id fica 0. Tentar passar a
+    # chave no lugar do número explode no banco; foi o que o teste pegou.
+    registrar_evento(s, "parametro", 0, "ALTERADO",
+                     {"chave": CHAVE_EMAILS, "antes": antes,
+                      "depois": enderecos},
+                     usuario.id if usuario else None)
+    s.flush()
+    return enderecos
 
 
 def cobrar(s: Session, pedido_id: int, usuario: Optional[Usuario], *,

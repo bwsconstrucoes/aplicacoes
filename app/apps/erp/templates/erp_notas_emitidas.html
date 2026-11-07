@@ -87,9 +87,6 @@
   <div class="vazio oculto" id="vazio"></div>
 </div>
 
-<dialog id="dlg"><div class="dlg-topo"><h3 id="dlg-titulo">—</h3>
-  <button class="topo-btn" style="margin-left:auto" id="dlg-fechar">Fechar</button></div>
-  <div class="dlg-corpo" id="dlg-corpo"></div></dialog>
 {% endblock %}
 
 {% block scripts %}
@@ -312,7 +309,6 @@ async function cancelar(id){
 }
 
 // -------------------------------------------------------------------------
-els("dlg-fechar").addEventListener("click", () => els("dlg").close());
 els("btn-conferir").addEventListener("click", conferir);
 if (els("btn-registrar")) els("btn-registrar").addEventListener("click", registrarDoPortal);
 ["f-empresa", "f-obra", "f-ambiente", "f-desde", "f-ate"].forEach(id =>

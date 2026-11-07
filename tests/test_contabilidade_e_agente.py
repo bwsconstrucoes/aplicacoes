@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import pytest
 
+from datetime import date, timedelta
+
 from app.apps.erp.core import agente_dp as ag
 from app.apps.erp.core import contabilidade as ct
 from app.apps.erp.core.comum.auditoria import ErroValidacao
@@ -113,7 +115,19 @@ def pessoa(sessao_real, dono):
     return svc.salvar(sessao_real, {
         "cpf": CPF_A, "nome": "Pessoa Para Admitir", "data_nascimento": "1990-03-15",
         "pis": PIS_A, "cargo_id": cargo.id, "obra_id": obra.id,
-        "empresa_id": emp.id, "salario": "2.100,00", "admissao": "2026-11-01",
+        "empresa_id": emp.id, "salario": "2.100,00",
+        # ADMISSÃO RELATIVA A HOJE, NUNCA DATA FIXA.
+        #
+        # Isto quebrou de verdade: a data era "2026-11-01" e o teste da ordem
+        # dos eventos passava todo dia até 06/11. No dia 07 a admissão
+        # completou 6 dias, o aviso "a admissão foi há N dias e o registro só
+        # está sendo pedido agora" passou a disparar, e um evento AVISO entrou
+        # no meio da trilha. Nada no código tinha mudado — só o calendário.
+        #
+        # Data fixa em teste é bomba-relógio: ela não falha quando o código
+        # erra, falha quando o tempo passa, e o estrago aparece justamente no
+        # dia de publicar.
+        "admissao": date.today().isoformat(),
         "vinculo": "CTPS", "tipo_contrato": "CLT_INDETERMINADO",
         "etapa": "CONCLUIDO"}, dono)
 
@@ -200,7 +214,8 @@ def test_o_retorno_que_bate_deixa_concluir(sessao_real, dono, pessoa):
         {"i": r["id"]})
     saida = ct.receber(sessao_real, r["id"], dono, lido={
         "nome": "Pessoa Para Admitir", "cpf": CPF_A, "cargo": "PEDREIRO",
-        "salario": "2100,00", "admissao": "01/11/2026"})
+        "salario": "2100,00",
+        "admissao": date.today().strftime("%d/%m/%Y")})
     assert saida["situacao"] == "RESPONDIDO" and saida["divergencias"] == []
     fim = ct.concluir(sessao_real, r["id"], dono)
     assert fim["concluido"] is True
@@ -215,7 +230,8 @@ def test_o_retorno_que_nao_bate_abre_divergencia_e_nao_conclui(sessao_real, dono
                                "colaborador_id": pessoa.id}, dono)
     saida = ct.receber(sessao_real, r["id"], dono, lido={
         "nome": "Pessoa Para Admitir", "cpf": CPF_A, "cargo": "SERVENTE",
-        "salario": "1800,00", "admissao": "01/11/2026"})
+        "salario": "1800,00",
+        "admissao": date.today().strftime("%d/%m/%Y")})
     assert saida["situacao"] == "DIVERGENTE"
     campos = {d["campo"] for d in saida["divergencias"]}
     assert campos == {"cargo", "salario"}
@@ -471,3 +487,135 @@ def test_o_aviso_nao_trava_o_pedido_de_ferias(sessao_real, dono, pessoa):
     assert any("período aquisitivo" in a for a in r["avisos"])
     eventos = [e["tipo"] for e in ct.ler(sessao_real, r["id"])["eventos"]]
     assert "AVISO" in eventos, "o aviso fica na trilha, não só na tela"
+
+
+# ---------------------------------------------------------------------------
+# O E-MAIL DA CONTABILIDADE, CADASTRADO PELA TELA
+#
+# Pedido do dono em 06/11/2026: *"o e-mail da contabilidade eu acho que tem
+# que ser colocado no aplicativo (…) deixa o campo, cria um local para eu
+# poder adicionar essa informação."* Está certo: endereço que muda é dado de
+# tela, não de variável de ambiente — trocá-lo não pode exigir publicação.
+# ---------------------------------------------------------------------------
+@pytest.mark.banco
+def test_o_email_da_contabilidade_e_gravado_e_lido(sessao_real, dono, banco):
+    from app.apps.erp.core import contabilidade as svc
+
+    assert svc.endereco_padrao(sessao_real) == []
+    r = svc.definir_enderecos(
+        sessao_real, "contabilidade@escritorio.com.br", dono)
+    assert r == ["contabilidade@escritorio.com.br"]
+    assert svc.endereco_padrao(sessao_real) == ["contabilidade@escritorio.com.br"]
+
+
+@pytest.mark.banco
+def test_aceita_mais_de_um_endereco_porque_ferias_acontecem(sessao_real, dono,
+                                                            banco):
+    """Mandar só para uma pessoa faz o pedido parar nas férias dela."""
+    from app.apps.erp.core import contabilidade as svc
+
+    r = svc.definir_enderecos(
+        sessao_real, "um@escritorio.com.br; dois@escritorio.com.br", dono)
+    assert r == ["um@escritorio.com.br", "dois@escritorio.com.br"]
+
+
+@pytest.mark.banco
+def test_endereco_torto_e_recusado_antes_de_gravar(sessao_real, dono, banco):
+    """Endereço errado só apareceria semanas depois, num pedido que a
+    contabilidade nunca recebeu e que o ERP ficou cobrando de ninguém."""
+    from app.apps.erp.core import contabilidade as svc
+    from app.apps.erp.core.comum.auditoria import ErroValidacao
+
+    svc.definir_enderecos(sessao_real, "bom@escritorio.com.br", dono)
+    for torto in ("contabilidade@escritorio", "fulano@gmail,com",
+                  "sem arroba", "tem espaco@escritorio.com.br"):
+        with pytest.raises(ErroValidacao):
+            svc.definir_enderecos(sessao_real, torto, dono)
+    # e o que estava gravado antes continua lá: a recusa não apaga nada
+    assert svc.endereco_padrao(sessao_real) == ["bom@escritorio.com.br"]
+
+
+@pytest.mark.banco
+def test_o_mesmo_endereco_duas_vezes_entra_uma_vez_so(sessao_real, dono, banco):
+    from app.apps.erp.core import contabilidade as svc
+
+    r = svc.definir_enderecos(
+        sessao_real, "a@x.com.br, A@X.com.br, b@x.com.br", dono)
+    assert r == ["a@x.com.br", "b@x.com.br"]
+
+
+@pytest.mark.banco
+def test_trocar_o_endereco_fica_registrado(sessao_real, dono, banco):
+    """Trocar isto desvia TODO pedido novo — desvio silencioso é descoberto
+    tarde demais."""
+    from sqlalchemy import text as _t
+    from app.apps.erp.core import contabilidade as svc
+
+    svc.definir_enderecos(sessao_real, "antes@x.com.br", dono)
+    svc.definir_enderecos(sessao_real, "depois@x.com.br", dono)
+    n = sessao_real.execute(_t(
+        "SELECT count(*) FROM eventos"
+        " WHERE entidade_tipo = 'parametro'"
+        "   AND detalhe->>'chave' = :c"), {"c": svc.CHAVE_EMAILS}).scalar()
+    assert n >= 2
+
+
+@pytest.mark.banco
+def test_sem_endereco_o_pedido_nao_sai_e_a_mensagem_diz_onde_preencher(
+        sessao_real, dono, pessoa, banco):
+    """A recusa tem de dizer ONDE resolver, não só que falta."""
+    from app.apps.erp.core import contabilidade as svc
+    from app.apps.erp.core.comum.auditoria import ErroValidacao
+
+    r = svc.abrir(sessao_real, {"colaborador_id": pessoa.id,
+                                "template": "ASSINATURA_CTPS"}, dono)
+    with pytest.raises(ErroValidacao) as e:
+        svc.enviar(sessao_real, r["id"], dono)
+    assert "Contabilidade" in str(e.value)
+
+
+# ---------------------------------------------------------------------------
+# O AVISO QUE NINGUÉM TESTAVA — e foi ele que quebrou a publicação
+#
+# `avisos_do_pedido` compara a admissão com HOJE. Nenhum teste cobria isso, e
+# por isso ninguém sabia que ele podia entrar na trilha de eventos de um
+# pedido. Em 07/11/2026 a admissão fixa do fixture completou 6 dias, o aviso
+# disparou, e o teste da ordem dos eventos quebrou na hora de publicar — sem
+# nada no código ter mudado.
+#
+# Agora as datas vão EXPLÍCITAS, calculadas a partir de hoje. O teste passa a
+# pinar o comportamento em vez de depender do calendário.
+# ---------------------------------------------------------------------------
+class _Pessoa:
+    """O mínimo que `avisos_do_pedido` lê. Sem banco: a função só olha
+    `nome` e `admissao` no caminho da CTPS."""
+
+    def __init__(self, admissao):
+        self.id = 1
+        self.nome = "Fulano de Tal"
+        self.admissao = admissao
+
+
+@pytest.mark.parametrize("dias, avisa", [
+    (0, False),    # admitido hoje
+    (5, False),    # no limite, ainda não avisa
+    (6, True),     # passou — é aqui que o comportamento vira
+    (40, True),
+])
+def test_o_aviso_de_registro_atrasado_vira_no_sexto_dia(dias, avisa):
+    c = _Pessoa(date.today() - timedelta(days=dias))
+    avisos = ct.avisos_do_pedido(None, "ASSINATURA_CTPS", c)
+    assert bool(avisos) is avisa
+    if avisa:
+        assert "eSocial" in avisos[0]
+
+
+def test_sem_admissao_nao_ha_aviso_de_atraso():
+    """Cadastro sem data de admissão não pode virar aviso de atraso."""
+    assert ct.avisos_do_pedido(None, "ASSINATURA_CTPS", _Pessoa(None)) == []
+
+
+def test_o_aviso_de_atraso_e_so_da_assinatura_de_ctps():
+    c = _Pessoa(date.today() - timedelta(days=90))
+    for outro in ("DEPENDENTE", "CONJUGE", "ALTERACAO_CARGO"):
+        assert ct.avisos_do_pedido(None, outro, c) == []

@@ -338,3 +338,207 @@ def test_cobrar_conta_a_cobranca_e_muda_a_situacao(sessao_real, dono, pessoa,
     minha = next(x for x in svc_portal.devolucoes_abertas(sessao_real)
                  if x["numero"] == r["numero"])
     assert minha["situacao"] == "COBRADA" and minha["cobrancas"] == 1
+
+
+@banco_
+def test_a_tela_do_portal_abre_sem_sessao_e_diz_o_que_fazer(sessao_real, app_real):
+    """A PÁGINA é pública e não traz dado nenhum: quem confere são as APIs. É
+    isso que faz ela abrir no celular com a sessão vencida e DIZER "entre pelo
+    aplicativo" — em vez de devolver erro técnico a quem está na obra."""
+    with app_real.test_client() as c:
+        r = c.get("/erp/portal")
+        assert r.status_code == 200
+        corpo = r.get_data(as_text=True)
+        assert "aplicativo do ponto" in corpo
+        assert "/ponto/app" in corpo
+
+
+@banco_
+def test_o_portal_so_deixa_pedir_por_quem_esta_ao_alcance(sessao_real, dono, pessoa):
+    """Quem não é administrativo de obra só pede por si mesmo — e não é
+    desconfiança: pedir pelo colega sem responder pela obra dele não existe no
+    processo."""
+    from app.apps.erp.core import portal as svc_portal
+    import app.apps.erp.core.portal as mod
+    monkey = {"eu": {"colaborador_id": pessoa.id, "nome": pessoa.nome,
+                     "cpf": pessoa.cpf, "obra_id": pessoa.obra_id,
+                     "pessoa": pessoa}}
+    original_quem, original_adm = mod.quem_esta, mod.e_administrativo_de_obra
+    mod.quem_esta = lambda s: monkey["eu"]
+    mod.e_administrativo_de_obra = lambda s, p: False
+    try:
+        lista = svc_portal.pessoas_ao_alcance(sessao_real)
+        assert [x["id"] for x in lista] == [pessoa.id]
+    finally:
+        mod.quem_esta, mod.e_administrativo_de_obra = original_quem, original_adm
+
+
+# ---------------------------------------------------------------------------
+# UM CADASTRO SÓ: as marcações do ponto dentro da ficha do ERP (06/11/2026)
+#
+# O dono: *"tem cadastro da pessoa, tem cadastro no ponto. Tem a tela de
+# visualizar pessoas num lado, no outro. Não deveria ser assim, né? A gente tem
+# que falar a mesma linguagem nos dois lados."*
+# ---------------------------------------------------------------------------
+@banco_
+def test_as_marcacoes_do_ponto_nunca_derrubam_a_ficha(sessao_real, dono, pessoa):
+    """Travar a ficha da pessoa porque o ponto não respondeu seria trocar um
+    problema pequeno por um grande. Sem o ponto no ar, a resposta diz o motivo
+    em português e a ficha abre igual."""
+    from app.apps.erp.core import portal as svc_portal
+    r = svc_portal.marcacoes_do_ponto(sessao_real, pessoa.id)
+    assert "disponivel" in r
+    if not r["disponivel"]:
+        assert len(r["motivo"]) > 10, "indisponível sem motivo escrito não serve"
+
+
+@banco_
+def test_o_ponto_dentro_de_pessoal_e_um_modulo_so(sessao_real):
+    """O menu junta as duas áreas, e as abas do ponto reapontam para Pessoal —
+    senão a tela do ponto abriria com o menu do Financeiro aceso."""
+    from app.apps.erp import routes as R
+    chaves = [m["chave"] for m in R.MODULOS]
+    assert "ponto" not in chaves, "o módulo Ponto tinha de ter sido absorvido"
+    pessoal = next(m for m in R.MODULOS if m["chave"] == "pessoal")
+    abas = [a[0] for a in pessoal["abas"]]
+    assert "colaboradores" in abas and "ponto_quadro" in abas
+    # A ORDEM é pelo dia a dia: o cadastro primeiro, o quadro do ponto em
+    # seguida — não a despesa, que era o que ficava na frente ao juntar na
+    # ordem de origem.
+    assert abas[0] == "colaboradores" and abas[1] == "ponto_quadro"
+    assert R._MODULO_DA_ABA.get("ponto_espelho") == "pessoal"
+    # E nenhuma aba ficou apontando para um módulo que não existe mais.
+    assert "ponto" not in set(R._MODULO_DA_ABA.values())
+
+
+@banco_
+def test_as_duas_telas_de_pessoas_ficam_com_nomes_diferentes(sessao_real):
+    """A tela de pessoas do ponto continua existindo (é de outra área e tem uso
+    próprio, a foto de cadastro), mas o nome passa a dizer QUAL das duas é."""
+    from app.apps.erp import routes as R
+    pessoal = next(m for m in R.MODULOS if m["chave"] == "pessoal")
+    nomes = {a[0]: a[1] for a in pessoal["abas"]}
+    assert nomes["ponto_pessoas"] == "Pessoas no ponto"
+    assert nomes["colaboradores"] == "Colaboradores"
+
+
+# ---------------------------------------------------------------------------
+# A TRAVA DO CAMPO DE LISTA FECHADA
+#
+# Esta trava nasceu de um erro de verdade: `listas_fechadas()` devolvia a chave
+# "categoria", mas o campo do formulário se chama "categoria_transporte". A
+# tela não reclama — ela simplesmente desenha um campo de texto livre, e a obra
+# passa a digitar "moto", "motinha" e "veículo próprio" para a mesma coisa.
+# Erro silencioso é o pior tipo, então ele vira teste.
+# ---------------------------------------------------------------------------
+def test_todo_campo_de_lista_fechada_do_portal_tem_a_caixinha():
+    from app.apps.erp.core import portal as svc_portal
+    from app.apps.erp.core import pessoal_solicitacoes as svc_sp
+    from app.apps.erp.core.cadastros import pessoas as svc_pessoas
+
+    listas = svc_portal.listas_fechadas()
+    # os que vêm do banco não entram aqui: sem sessão eles não são montados
+    do_banco = {"cargo_id", "convencao_id", "obra_id"}
+
+    fechados = set(svc_pessoas.DA_LISTA) | {
+        "forma_desligamento", "parentesco", "pix_tipo"}
+
+    faltando = []
+    for chave in svc_portal.TIPOS_DO_PORTAL:
+        if chave not in svc_sp.TIPOS:
+            continue
+        for campo in svc_sp.TIPOS[chave]["campos"]:
+            if campo in do_banco or campo not in fechados:
+                continue
+            if not listas.get(campo):
+                faltando.append(f"{chave}.{campo}")
+    assert not faltando, (
+        "campo de lista fechada virando texto livre no portal: "
+        + ", ".join(faltando))
+
+
+def test_a_caixinha_do_portal_usa_a_lista_do_cadastro_e_nao_uma_copia():
+    """Se a lista mudar no cadastro, muda no portal sozinha."""
+    from app.apps.erp.core import portal as svc_portal
+    from app.apps.erp.core.cadastros import pessoas as svc_pessoas
+
+    listas = svc_portal.listas_fechadas()
+    valores = [o["valor"] for o in listas["vinculo"]]
+    assert valores == list(svc_pessoas.VINCULOS)
+    # e o rótulo é o de gente, não o código
+    assert {o["rotulo"] for o in listas["vinculo"]} == set(
+        svc_pessoas.VINCULO_ROTULOS.values())
+
+
+def test_a_opcao_fora_de_uso_nao_aparece_para_quem_abre_pedido():
+    """O cartão do transporte saiu de uso — não se escolhe de novo."""
+    from app.apps.erp.core import portal as svc_portal
+    from app.apps.erp.core.cadastros import pessoas as svc_pessoas
+
+    valores = {o["valor"]
+               for o in svc_portal.listas_fechadas()["categoria_transporte"]}
+    for fora in svc_pessoas.CATEGORIAS_TRANSPORTE_FORA_DE_USO:
+        assert fora not in valores
+
+
+def test_todo_campo_de_data_do_portal_abre_calendario():
+    """Data que cai como texto volta "12/3" e "ontem", e o DP arruma à mão."""
+    import re
+    from pathlib import Path
+    from app.apps.erp.core import portal as svc_portal
+    from app.apps.erp.core import pessoal_solicitacoes as svc_sp
+
+    tela = Path("app/apps/erp/templates/erp_portal.html").read_text(
+        encoding="utf-8")
+    bloco = tela[tela.index("const TIPO_CAMPO"):tela.index("};",
+                                                           tela.index("const TIPO_CAMPO"))]
+    com_calendario = set(re.findall(r"(\w+):\s*\"(?:date|month)\"", bloco))
+
+    faltando = []
+    for chave in svc_portal.TIPOS_DO_PORTAL:
+        if chave not in svc_sp.TIPOS:
+            continue
+        for campo in svc_sp.TIPOS[chave]["campos"]:
+            if campo in ("data_nascimento", "admissao") or campo.startswith(
+                    ("data_", "aviso_", "ultimo_", "vigencia")):
+                if campo not in com_calendario:
+                    faltando.append(f"{chave}.{campo}")
+    assert not faltando, (
+        "campo de data sem calendário no portal: " + ", ".join(faltando))
+
+
+def test_a_situacao_do_pedido_chega_na_obra_em_portugues():
+    """"EM_ANALISE" na tela de quem está na obra é defeito, não detalhe."""
+    import inspect
+    from app.apps.erp.core import portal as svc_portal
+
+    fonte = inspect.getsource(svc_portal.meus_pedidos)
+    assert "SITUACAO_ROTULOS" in fonte
+
+
+def test_nenhum_campo_do_portal_sai_com_nome_tecnico():
+    """"aux_transporte" na tela de quem está na obra é defeito, não detalhe.
+
+    Nasceu de um erro de verdade: 22 campos saíam com o nome do banco, porque
+    o `ROTULO` só cobria os que eu tinha olhado. Agora é a lista de campos que
+    manda, não a minha memória.
+    """
+    import re
+    from pathlib import Path
+    from app.apps.erp.core import portal as svc_portal
+    from app.apps.erp.core import pessoal_solicitacoes as svc_sp
+
+    tela = Path("app/apps/erp/templates/erp_portal.html").read_text(
+        encoding="utf-8")
+    i = tela.index("const ROTULO = {")
+    com_rotulo = set(re.findall(r"(\w+):", tela[i:tela.index("};", i)]))
+
+    faltando = []
+    for chave in svc_portal.TIPOS_DO_PORTAL:
+        if chave not in svc_sp.TIPOS:
+            continue
+        for campo in svc_sp.TIPOS[chave]["campos"]:
+            if campo not in com_rotulo and campo not in faltando:
+                faltando.append(campo)
+    assert not faltando, (
+        "campo do portal sem rótulo em português: " + ", ".join(faltando))

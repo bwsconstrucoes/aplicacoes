@@ -77,9 +77,6 @@
   <div class="vazio oculto" id="vazio"></div>
 </div>
 
-<dialog id="dlg"><div class="dlg-topo"><h3 id="dlg-titulo">—</h3>
-  <button class="topo-btn" style="margin-left:auto" id="dlg-fechar">Fechar</button></div>
-  <div class="dlg-corpo" id="dlg-corpo"></div></dialog>
 {% endblock %}
 
 {% block scripts %}
@@ -305,7 +302,6 @@ async function anotar(valores){
 }
 
 // -------------------------------------------------------------------------
-els("dlg-fechar").addEventListener("click", () => els("dlg").close());
 if (els("btn-anotar")) els("btn-anotar").addEventListener("click", anotar);
 els("f-obra").addEventListener("change", carregar);
 els("f-futuros").addEventListener("change", carregar);
