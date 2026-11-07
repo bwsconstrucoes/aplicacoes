@@ -99,6 +99,10 @@ def app_api_inicio():
         responde_por_equipe = bool(p) and qualidade.e_responsavel(conn, int(p["id"]))
         # os pedidos negados que esta pessoa ainda não viu — os dela e os que pediu por outros
         avisos_de_negativa = negativas.avisos(conn, int(p["id"])) if p else []
+        # o termo do ponto (07/11/2026): quem bate e ainda não assinou vê o aviso no começo da tela
+        from .core import termo
+        termo_pendente = bool(p) and bool(p.get("ativo_no_ponto")) and termo.disponivel(conn) and \
+            termo.situacao_de(conn, [int(p["id"])])[int(p["id"])]["situacao"] == "FALTA"
     # No ponto da obra, "você entrou como" é o papel DA PESSOA aqui — não o do
     # aparelho (10/10/2026: a tela dizia "você entrou como ponto da obra").
     papel_aqui = None
@@ -111,7 +115,7 @@ def app_api_inicio():
         pessoa=({"nome": p["nome"], "primeiro_nome": p["nome"].split(" ")[0],
                  "administrativo": administrativo, "papel_aqui": papel_aqui,
                  # quem não bate ponto e entra pela liberação (31/10/2026): sem "bater", "meu ponto" e "meu QR"
-                 "bate_ponto": bool(p.get("ativo_no_ponto"))} if p else None),
+                 "bate_ponto": bool(p.get("ativo_no_ponto")), "termo_pendente": termo_pendente} if p else None),
         da_obra=bool(da_obra), perfil=(a or {}).get("perfil"),
         pode={"bater_aqui": bool(da_obra), "bater_o_meu": bate_no_meu,
               "entregar_aqui": bool(da_obra), "pedir_o_meu": pede_o_meu,
@@ -480,6 +484,111 @@ def app_api_assinatura_recusa(colaborador_id: int):
                                 conduzida_por={"id": ctx.pessoa["id"], "nome": ctx.pessoa["nome"]},
                                 dispositivo_id=(ctx.aparelho or {}).get("id"), latitude=local.get("latitude"),
                                 longitude=local.get("longitude"), ip=auth.ip_de_quem_chama())
+    return _ok(**r), 201
+
+
+# ---------------------------------------------------------------------------
+# O TERMO DO PONTO (07/11/2026, migração 028, core/termo.py): a pessoa assina no celular dela (entrou com CPF e PIN)
+# ou o operador da obra / o administrativo mostra no aparelho dele — o PIN da pessoa ou, sem PIN, a foto dela na hora.
+# ---------------------------------------------------------------------------
+@bp.route("/app/api/termo")
+@auth.exige_colaborador_ou_aparelho
+def app_api_termo():
+    """O MEU termo: o texto e se já assinei."""
+    from .core import termo
+    with db.conexao() as conn:
+        p = _logado(conn)
+        if not p:
+            raise NaoAutenticado("entre com o seu CPF e PIN")
+        sit = termo.situacao_de(conn, [int(p["id"])])[int(p["id"])] if termo.disponivel(conn) else {"situacao": "FALTA"}
+        return _ok(texto=termo.texto(), situacao=sit, disponivel=termo.disponivel(conn), nome=p["nome"])
+
+
+@bp.route("/app/api/termo", methods=["POST"])
+@auth.exige_colaborador_ou_aparelho
+def app_api_termo_assinar():
+    """Eu assino o meu termo: o meu PIN de novo e o traço do dedo."""
+    from .core import termo
+    d = _corpo()
+    with db.conexao() as conn:
+        p = _logado(conn)
+        if not p:
+            raise NaoAutenticado("entre com o seu CPF e PIN")
+        local = _local(d) or {}
+        a = _aparelho(conn)
+        r = termo.assinar(conn, colaborador_id=int(p["id"]), assinatura=d.get("assinatura"), forma="PELA_PESSOA",
+                          pin=d.get("pin"), conduzida_por={"id": p["id"], "nome": p["nome"]},
+                          dispositivo_id=(a or {}).get("id"), latitude=local.get("latitude"),
+                          longitude=local.get("longitude"), ip=auth.ip_de_quem_chama())
+    return _ok(**r), 201
+
+
+def _equipe_do_termo(conn, ctx: _Contexto) -> list[dict]:
+    """Quem quem conduz alcança e bate ponto (o mesmo conjunto do resumo da equipe, neste mês)."""
+    hoje = horario.hoje()
+    obra_aqui, _ = _pessoas_da_equipe(conn, ctx, hoje.replace(day=1), hoje)
+    pessoas = [p for p in (cadastros.colaborador_por_id(conn, i) for i in obra_aqui) if p]
+    return [p for p in pessoas if cadastros.categoria_no_ponto(p)[0] == "BATE"]
+
+
+def _da_equipe_do_termo(conn, ctx: _Contexto, colaborador_id: int) -> dict:
+    alvo = next((p for p in _equipe_do_termo(conn, ctx) if int(p["id"]) == int(colaborador_id)), None)
+    if not alvo:
+        raise NaoEncontrado("pessoa não encontrada")
+    return alvo
+
+
+@bp.route("/app/api/termos")
+@auth.exige_colaborador_ou_aparelho
+def app_api_termos():
+    """A equipe de quem conduz: quem já assinou o termo, quem recusou e quem falta (os que faltam primeiro)."""
+    from .core import termo
+    with db.conexao() as conn:
+        ctx = _contexto(conn)
+        pessoas = _equipe_do_termo(conn, ctx)
+        ids = [int(p["id"]) for p in pessoas]
+        sit = termo.situacao_de(conn, ids) if termo.disponivel(conn) else {i: {"situacao": "FALTA"} for i in ids}
+        pins = {int(l["colaborador_id"]) for l in db.todos(conn, """SELECT colaborador_id FROM ponto.colaborador_config
+                 WHERE colaborador_id = ANY(:ids) AND pin_hash IS NOT NULL""", ids=ids)} if ids else set()
+        disponivel = termo.disponivel(conn)
+    linhas = sorted(({"id": int(p["id"]), "nome": p["nome"], "funcao": p.get("funcao") or "",
+                      "tem_pin": int(p["id"]) in pins, **sit[int(p["id"])]} for p in pessoas),
+                    key=lambda x: (x["situacao"] != "FALTA", (x["nome"] or "").upper()))
+    return _ok(texto=termo.texto(), pessoas=linhas, disponivel=disponivel,
+               faltam=sum(1 for x in linhas if x["situacao"] == "FALTA"))
+
+
+@bp.route("/app/api/termos/<int:colaborador_id>", methods=["POST"])
+@auth.exige_colaborador_ou_aparelho
+def app_api_termo_conduzido(colaborador_id: int):
+    """A pessoa assina no aparelho de quem conduz: o PIN dela (ou a foto, sem PIN) e o traço do dedo."""
+    from .core import termo
+    d = _corpo()
+    with db.conexao() as conn:
+        ctx = _contexto(conn)
+        _da_equipe_do_termo(conn, ctx, colaborador_id)
+        local = _local(d) or {}
+        r = termo.assinar(conn, colaborador_id=colaborador_id, assinatura=d.get("assinatura"), forma="CONDUZIDA",
+                          pin=d.get("pin"), foto=d.get("foto"),
+                          conduzida_por={"id": ctx.pessoa["id"], "nome": ctx.pessoa["nome"]},
+                          dispositivo_id=(ctx.aparelho or {}).get("id"), latitude=local.get("latitude"),
+                          longitude=local.get("longitude"), ip=auth.ip_de_quem_chama())
+    return _ok(**r), 201
+
+
+@bp.route("/app/api/termos/<int:colaborador_id>/recusa", methods=["POST"])
+@auth.exige_colaborador_ou_aparelho
+def app_api_termo_recusa(colaborador_id: int):
+    from .core import termo
+    d = _corpo()
+    with db.conexao() as conn:
+        ctx = _contexto(conn)
+        _da_equipe_do_termo(conn, ctx, colaborador_id)
+        local = _local(d) or {}
+        r = termo.recusar(conn, colaborador_id=colaborador_id, motivo=d.get("motivo"),
+                          conduzida_por={"id": ctx.pessoa["id"], "nome": ctx.pessoa["nome"]},
+                          dispositivo_id=(ctx.aparelho or {}).get("id"), latitude=local.get("latitude"),
+                          longitude=local.get("longitude"), ip=auth.ip_de_quem_chama())
     return _ok(**r), 201
 
 

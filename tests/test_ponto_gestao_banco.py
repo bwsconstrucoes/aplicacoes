@@ -261,7 +261,7 @@ def test_migracoes_do_ponto_e_feriados_nacionais(banco, mundo):
                      "014_negativa_avisada.sql", "015_uf_da_planilha.sql",
                      "016_alteracoes_do_pedido.sql", "017_tipos_de_ausencia.sql", "018_nao_bate_ponto.sql",
                      "019_hora_extra_negada.sql", "020_declaracao_por_horas.sql", "021_turno_da_noite.sql", "022_turno_da_noite_primeiro_dia.sql", "023_alcance_liberado.sql", "024_permuta.sql", "025_bate_por_excecao.sql", "026_turno_esticado.sql",
-                     "027_assinatura_do_espelho.sql"]
+                     "027_assinatura_do_espelho.sql", "028_termo_do_ponto.sql"]
     assert natal == "Natal"
     assert [s[0] for s in secoes] == ["pon_competencia", "pon_config", "pon_dp", "pon_gestao"]
 

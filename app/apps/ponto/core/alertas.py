@@ -47,7 +47,7 @@ GRAVIDADE = {
     "SEM_FOTO": "ATENCAO", "FOTO_ESCURA": "ATENCAO", "FOTO_REPETIDA": "URGENTE", "CAMERA_TRAVADA": "ATENCAO",
     "SEQUENCIA_RAPIDA": "ATENCAO", "ROSTO_NAO_CONFERE": "URGENTE", "QR_ANTIGO_USADO": "ATENCAO", "TENTATIVAS_DE_CPF": "ATENCAO",
     "MOSAICO_PENDENTE": "ATENCAO", "BATIDA_RECUSADA_FORA_DA_OBRA": "ATENCAO",
-    "ASSINATURA_PENDENTE": "ATENCAO",
+    "ASSINATURA_PENDENTE": "ATENCAO", "TERMO_PENDENTE": "ATENCAO",
 }
 ROTULO = {
     "FALTA": "Falta sem justificativa", "FALTA_PARCIAL": "Falta parcial", "BATIDA_FALTANDO": "Batida faltando",
@@ -75,6 +75,7 @@ ROTULO = {
     "MOSAICO_PENDENTE": "Mosaico de fotos sem conferência",
     "BATIDA_RECUSADA_FORA_DA_OBRA": "Tentou bater fora da área da obra",
     "ASSINATURA_PENDENTE": "Folhas de ponto sem assinatura",
+    "TERMO_PENDENTE": "Termo do ponto sem assinatura",
 }
 # Os que nascem do cálculo de UM dia — podem ser resolvidos sozinhos.
 DO_DIA = {"FALTA", "FALTA_PARCIAL", "BATIDA_FALTANDO", "COMPENSACAO_NAO_CUMPRIDA", "TRABALHOU_NA_FOLGA", "ATRASO", "SAIDA_ANTECIPADA", "EXTRA_ACIMA_DE_2H",
@@ -284,6 +285,7 @@ def gerar(conn: Connection, *, ate: Optional[dt.date] = None,
 
     _um_por_pessoa(conn)
     contagem.update(_assinaturas_pendentes(conn, vistos, ate))
+    contagem.update(_termos_pendentes(conn, vistos, ate))
     contagem.update(_dois_lugares(conn, vistos, inicio_dia, ate))
     contagem.update(_parados(conn, vistos))
     if db.tem_003(conn):
@@ -353,6 +355,42 @@ def _assinaturas_pendentes(conn: Connection, vistos: set, ate: dt.date) -> Count
         if a["chave"] not in vistos:
             db.executar(conn, "UPDATE ponto.alertas SET situacao = 'RESOLVIDO', tratado_em = now(), "
                               "tratado_por = 'o próprio sistema (todas as folhas assinadas)' WHERE id = :i", i=a["id"])
+    return contagem
+
+
+# O TERMO DO PONTO SEM ASSINATURA (07/11/2026, o dono: "toda vida que entrar tem que gerar alguma pendência (…) o
+# próprio DP também tem que visualizar isso dentro dos alertas"): uma linha por obra do cadastro, com quantos e quem
+# faltam. Quem é admitido entra sozinho; o alerta some quando todos da obra assinaram ou recusaram.
+NOMES_NO_ALERTA_DO_TERMO = 8
+
+
+def _termos_pendentes(conn: Connection, vistos: set, ate: dt.date) -> Counter:
+    from . import termo
+    contagem: Counter = Counter()
+    if not termo.disponivel(conn):
+        return contagem
+    por_obra: dict = {}
+    for p in termo.pendentes(conn):
+        por_obra.setdefault(p["obra_id"], []).append(p["nome"])
+    obras = {int(o["id"]): o for o in db.todos(conn, "SELECT id, codigo FROM public.obras WHERE id = ANY(:ids)",
+                                                ids=[int(i) for i in por_obra if i is not None])} if por_obra else {}
+    for obra_id, nomes in por_obra.items():
+        o = obras.get(int(obra_id)) if obra_id is not None else None
+        quem = ", ".join(n.split(" ")[0] + (" " + n.split(" ")[-1] if " " in n else "")
+                         for n in sorted(nomes)[:NOMES_NO_ALERTA_DO_TERMO])
+        if len(nomes) > NOMES_NO_ALERTA_DO_TERMO:
+            quem += f" e mais {len(nomes) - NOMES_NO_ALERTA_DO_TERMO}"
+        onde = f"Obra {o['codigo']}" if o else "Sem obra no cadastro"
+        _registrar(conn, vistos, chave=f"TERMO_PENDENTE:{obra_id or 0}", codigo="TERMO_PENDENTE",
+                   mensagem=f"{onde}: {len(nomes)} pessoa(s) sem o termo do ponto assinado — {quem}. "
+                            "A pessoa assina no aplicativo, ou o operador da obra mostra em “Termo do ponto”.",
+                   obra_id=(o or {}).get("id"), data=ate)
+        contagem["TERMO_PENDENTE"] += 1
+    # a obra em que todos assinaram: o alerta sai sozinho
+    for a in db.todos(conn, "SELECT id, chave FROM ponto.alertas WHERE codigo = 'TERMO_PENDENTE' AND situacao = 'ABERTO'"):
+        if a["chave"] not in vistos:
+            db.executar(conn, "UPDATE ponto.alertas SET situacao = 'RESOLVIDO', tratado_em = now(), "
+                              "tratado_por = 'o próprio sistema (todos assinaram o termo)' WHERE id = :i", i=a["id"])
     return contagem
 
 
