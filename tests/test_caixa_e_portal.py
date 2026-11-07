@@ -243,7 +243,7 @@ def test_numero_que_nao_existe_vira_motivo_escrito(sessao_real, dono):
 # O PORTAL
 # ---------------------------------------------------------------------------
 @banco_
-def test_a_tela_de_pedir_recusa_quem_nao_entrou_no_erp(sessao_real, app_real):
+def test_o_portal_recusa_quem_nao_entrou_no_erp(sessao_real, app_real):
     """A identidade agora é a DO ERP — mudou em 07/11/2026, por decisão do
     dono: o ponto ficou só para o ponto, e quem pede entra no ERP."""
     from app.apps.erp.core import portal as svc_portal
@@ -344,19 +344,16 @@ def test_cobrar_conta_a_cobranca_e_muda_a_situacao(sessao_real, dono, pessoa,
 
 
 @banco_
-def test_a_tela_de_pedir_nao_abre_para_quem_nao_entrou(sessao_real, app_real):
+def test_o_portal_nao_abre_para_quem_nao_entrou(sessao_real, app_real):
     """Era pública e se defendia sozinha pela sessão do ponto. Agora é rota do
     ERP, com login — e a troca de porta é o momento clássico de deixar uma
     aberta sem querer."""
     with app_real.test_client() as c:
-        r = c.get("/erp/pedir")
+        r = c.get("/erp/portal")
         assert r.status_code in (302, 401, 403)
-    # e o endereço antigo não pode continuar de pé
-    with app_real.test_client() as c:
-        assert c.get("/erp/portal").status_code == 404
 
 
-def test_a_tela_de_pedir_manda_para_o_login_do_erp_e_nao_para_o_ponto(sessao_real):
+def test_o_portal_manda_para_o_login_do_erp_e_nao_para_o_ponto(sessao_real):
     """Quem está na obra com a sessão vencida tem de ver o botão que resolve —
     e o botão certo é o do ERP, não o do aplicativo do ponto."""
     from pathlib import Path

@@ -119,13 +119,13 @@ function semAcesso(motivo){
       <p class="ajuda">${esc(motivo || "Você precisa entrar para abrir ou acompanhar pedidos.")}
         É o mesmo e-mail e a mesma senha do sistema — o aplicativo do ponto é
         outra coisa, e serve só para bater ponto.</p>
-      <a class="btn-portal" href="/erp/entrar?proximo=/erp/pedir"
+      <a class="btn-portal" href="/erp/entrar?proximo=/erp/portal"
          style="display:inline-block; text-decoration:none">Entrar</a>
     </div>`;
 }
 
 async function carregar(){
-  try { DADOS = await chamar("/erp/pedir/api/inicio"); }
+  try { DADOS = await chamar("/erp/portal/api/inicio"); }
   catch(e){ return; }
   els("quem").innerHTML = `${esc(DADOS.nome)}<br>${
     DADOS.administrativo ? "administrativo de obra" : "colaborador"}`;
@@ -176,7 +176,7 @@ async function devolver(id, botao){
   try {
     const fd = new FormData();
     fd.append("arquivo", campo.files[0]);
-    const r = await fetch(`/erp/pedir/api/devolucoes/${id}`, {method: "POST", body: fd});
+    const r = await fetch(`/erp/portal/api/devolucoes/${id}`, {method: "POST", body: fd});
     const d = await r.json().catch(() => ({}));
     if (r.status === 401) return semAcesso(d.erro);
     if (!r.ok || d.ok === false) throw new Error(d.erro || "não consegui enviar");
@@ -325,7 +325,7 @@ async function enviarPedido(){
   });
   els("p-enviar").disabled = true;
   try {
-    const d = await chamar("/erp/pedir/api/pedidos",
+    const d = await chamar("/erp/portal/api/pedidos",
                            {method: "POST", body: JSON.stringify(corpo)});
     recado(`Pedido ${d.numero} enviado ao DP.`, "ok");
     carregar();

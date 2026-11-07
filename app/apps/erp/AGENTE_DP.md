@@ -378,7 +378,7 @@ que foi pedido.
 UM sistema de permissão. Gente de fora e parceiro entram pela mesma porta;
 muda só a permissão.
 
-**A tela enxuta é `/erp/pedir`** — rota comum do ERP, com `@login_obrigatorio`
+**A tela enxuta é `/erp/portal`** — rota comum do ERP, com `@login_obrigatorio`
 e ação declarada (`ver_erp` para abrir, `solicitar_dp` para pedir). Ela não usa
 o `erp_base.html`, porque o menu de 18 telas num celular, para quem só quer
 fazer um pedido, é o oposto de "ambiente mais enxuto". Quem quiser o ERP

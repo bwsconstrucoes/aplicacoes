@@ -197,9 +197,9 @@ problema pequeno por um grande.
 
 ### 🚪 O PORTAL DA OBRA GANHOU TELA, E ELA É DO ERP (06/11/2026)
 
-> ⚠️ **SUPERADO EM 07/11/2026.** O endereço virou `/erp/pedir`, a tela saiu de
-> pública e passou a exigir o login DO ERP, e o laço com o aplicativo do ponto
-> foi desfeito. O que está escrito abaixo descreve o desenho antigo — fica
+> ⚠️ **SUPERADO EM 07/11/2026.** A tela saiu de pública e passou a exigir o
+> login DO ERP, e o laço com o aplicativo do ponto foi desfeito. O ENDEREÇO
+> continua `/erp/portal` — cheguei a trocá-lo e o dono preferiu o antigo. O que está escrito abaixo descreve o desenho antigo — fica
 > aqui porque o ERRO é instrutivo. Ver a entrada de 07/11 mais abaixo e a §6-ter
 > do `AGENTE_DP.md`.
 
@@ -358,7 +358,7 @@ pode pedir por outros vêm de `ponto/core/papeis.py`. Duas regras de alcance que
 divergem seria o pior dos mundos.
 
 ~~⚠️ **O QUE FALTA PARA O PORTAL APARECER:** a tela dele mora no aplicativo do
-ponto.~~ **Desfeito em 07/11/2026.** A tela é do ERP, em `/erp/pedir`, com o
+ponto.~~ **Desfeito em 07/11/2026.** A tela é do ERP, em `/erp/portal`, com o
 login do ERP. O chat do ponto não tem nada a fazer aqui.
 
 **O limite do agente está NO CÓDIGO, não só no documento** (`ROTINAS[...]
@@ -7640,7 +7640,7 @@ parte fácil; o que falta na empresa é saber em que pé está o que foi pedido.
 
 | Antes | Agora |
 |---|---|
-| `/erp/portal`, pública | `/erp/pedir`, com `@login_obrigatorio` e ação declarada |
+| `/erp/portal`, pública | `/erp/portal`, com `@login_obrigatorio` e ação declarada |
 | identidade: sessão do app do ponto | identidade: sessão do ERP (`usuario_id`) |
 | alcance: `papeis.obras_recentes` do ponto | alcance: `obras_do_usuario`, o do ERP |
 | autoridade: `papeis.e_administrativo` | autoridade: a ação `solicitar_dp`, que já existia |

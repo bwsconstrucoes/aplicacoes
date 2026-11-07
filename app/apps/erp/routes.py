@@ -11004,16 +11004,19 @@ def api_cargos_importar():
 # rota que não usa o login do ERP — e a conferência de quem é acontece dentro,
 # na primeira linha de cada função.
 # ---------------------------------------------------------------------------
-@bp.route("/erp/pedir")
+@bp.route("/erp/portal")
 @login_obrigatorio
 @permissao("ver_erp")
 def pagina_portal():
     """A TELA ENXUTA — pedir e acompanhar, no celular, dentro do ERP.
 
-    MUDOU DE PORTA EM 07/11/2026. Era `/erp/portal`, pública, lendo a sessão
-    do aplicativo do ponto. O dono desfez: o ponto fica só para o ponto, e
-    quem pede entra no ERP com o login do ERP. Então ela é uma rota comum,
-    com login e com ação declarada como qualquer outra.
+    MUDOU DE DONO EM 07/11/2026, não de endereço. Ela era PÚBLICA e lia a
+    sessão do aplicativo do ponto; agora exige o login DO ERP e declara ação,
+    como qualquer outra rota. O endereço continua `/erp/portal` — cheguei a
+    trocá-lo para `/erp/pedir` e o dono preferiu o antigo ("fica ruim, melhor
+    /erp/portal"), o que é melhor mesmo: endereço que a obra já pode ter
+    salvo no celular não se muda sem motivo, e o motivo aqui era a PORTA, não
+    o nome dela.
 
     A ação é `ver_erp` — a mais baixa que existe — de propósito: QUALQUER um
     que entre no sistema pode abrir esta tela. O que ele vê dentro dela é que
@@ -11028,7 +11031,7 @@ def pagina_portal():
     return render_template("erp_portal.html")
 
 
-@bp.route("/erp/pedir/api/inicio")
+@bp.route("/erp/portal/api/inicio")
 @login_obrigatorio
 @permissao("ver_erp")
 def api_portal_inicio():
@@ -11057,7 +11060,7 @@ def api_portal_inicio():
         return jsonify({"ok": False, "erro": str(e)}), 401
 
 
-@bp.route("/erp/pedir/api/pedidos", methods=["POST"])
+@bp.route("/erp/portal/api/pedidos", methods=["POST"])
 @login_obrigatorio
 @permissao("solicitar_dp")
 def api_portal_abrir():
@@ -11079,7 +11082,7 @@ def api_portal_abrir():
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
-@bp.route("/erp/pedir/api/devolucoes/<int:devolucao_id>", methods=["POST"])
+@bp.route("/erp/portal/api/devolucoes/<int:devolucao_id>", methods=["POST"])
 @login_obrigatorio
 @permissao("solicitar_dp")
 def api_portal_devolver(devolucao_id: int):

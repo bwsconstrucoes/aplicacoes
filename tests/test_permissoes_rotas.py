@@ -149,7 +149,7 @@ def test_o_conjunto_de_rotas_publicas_e_pequeno_e_conhecido():
     > requisição dele. Aí, só que num ambiente, digamos, mais enxuto para
     > utilizar no celular."*
 
-    A tela enxuta virou `/erp/pedir`, rota comum do ERP, com login e com ação
+    A tela enxuta virou `/erp/portal`, rota comum do ERP, com login e com ação
     declarada. **A lista de públicas voltou a ter só o que não pode ter dono**:
     login, saída, saúde, o agente, a porta dos comprovantes (que se defende por
     segredo) e as duas do PWA. Rota pública é superfície de ataque, e esta lista
@@ -160,36 +160,34 @@ def test_o_conjunto_de_rotas_publicas_e_pequeno_e_conhecido():
         "erp.api_comprovantes_lote", "erp.manifesto_pwa", "erp.service_worker"}
 
 
-def test_a_tela_de_pedir_recusa_quem_nao_entrou_no_erp(app):
-    """A tela enxuta (`/erp/pedir`) é do ERP, e se defende como o ERP.
+def test_o_portal_mudou_de_dono_e_nao_de_endereco(app):
+    """O endereço `/erp/portal` CONTINUA — o que mudou é quem o guarda.
 
-    Antes de 07/11/2026 ela era pública e se defendia sozinha com a sessão do
-    aplicativo do ponto. Agora quem defende é o login do ERP — e é exatamente
-    por isso que este teste continua existindo: ao trocar a porta, o jeito mais
-    fácil de errar é deixá-la aberta.
+    Ele era público e se defendia sozinho com a sessão do aplicativo do ponto.
+    Em 07/11/2026 passou a exigir o login do ERP. O endereço ficou o mesmo por
+    escolha do dono — e isso é melhor: endereço que a obra já pode ter salvo no
+    celular não se muda sem motivo, e o motivo era a PORTA, não o nome.
 
-    A API responde em JSON (quem chama é a própria tela, por `fetch`), e a
-    página redireciona para o login. Nenhuma das duas entrega dado a anônimo.
+    **É justamente por continuar no mesmo lugar que este teste precisa
+    existir.** Rota que troca de guarda sem trocar de endereço é a que mais
+    facilmente volta a ficar aberta sem ninguém notar: o endereço parece o
+    mesmo, as telas funcionam, e a diferença é invisível até alguém olhar.
     """
+    from app.apps.erp import routes
+
+    for endpoint in ("erp.pagina_portal", "erp.api_portal_inicio",
+                     "erp.api_portal_abrir", "erp.api_portal_devolver"):
+        assert endpoint not in routes._ENDPOINTS_PUBLICOS, (
+            f"{endpoint} voltou para a lista de rotas públicas")
     with app.test_client() as c:
-        for metodo, url in (("get", "/erp/pedir/api/inicio"),
-                            ("post", "/erp/pedir/api/pedidos"),
-                            ("post", "/erp/pedir/api/devolucoes/1")):
+        for metodo, url in (("get", "/erp/portal"),
+                            ("get", "/erp/portal/api/inicio"),
+                            ("post", "/erp/portal/api/pedidos"),
+                            ("post", "/erp/portal/api/devolucoes/1")):
             r = getattr(c, metodo)(url, json={})
-            assert r.status_code in (302, 401, 403), f"{url} não se defendeu"
-            assert b"solicita" not in r.data.lower(), (
-                f"{url} entregou conteúdo a quem não entrou")
-        pagina = c.get("/erp/pedir")
-        assert pagina.status_code in (302, 401, 403), (
-            "a tela de pedir abriu para quem não entrou no sistema")
-
-
-def test_o_endereco_antigo_do_portal_nao_responde_mais(app):
-    """`/erp/portal` era público. Depois da troca ele não pode continuar de pé:
-    rota pública esquecida é porta aberta que ninguém lembra de fechar."""
-    with app.test_client() as c:
-        for url in ("/erp/portal", "/erp/portal/api/inicio"):
-            assert c.get(url).status_code == 404, f"{url} ainda responde"
+            assert r.status_code in (302, 401, 403), (
+                f"{url} respondeu {r.status_code} a quem não entrou — "
+                f"ela voltou a ser pública?")
 
 
 def test_a_porta_dos_comprovantes_recusa_sem_segredo_e_com_segredo_errado(app, monkeypatch):
