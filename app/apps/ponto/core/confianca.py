@@ -231,18 +231,26 @@ def explicar(conn: Connection, colaborador_id: int, d: dict, limite: int = 15) -
     nivel_atual = da_pessoa(historico(conn, [int(colaborador_id)], d).get(int(colaborador_id)), d)
     linhas = db.todos(conn, """
         SELECT r.marcacao_id, r.resultado, r.semelhanca, r.detalhe, r.conferido_em, r.nivel,
-               m.timestamp_servidor, m.status, m.foto_id IS NOT NULL AS tem_foto, o.codigo AS obra
+               m.timestamp_servidor, m.status, m.foto_id IS NOT NULL AS tem_foto, m.foto_id, o.codigo AS obra
           FROM ponto.conferencias_rosto r JOIN ponto.marcacoes m ON m.id = r.marcacao_id
           JOIN public.obras o ON o.id = m.obra_id
          WHERE m.colaborador_id = :c AND m.data_referencia >= :vale
          ORDER BY r.conferido_em DESC LIMIT :lim""", c=int(colaborador_id), vale=vigencia.inicio(conn), lim=limite)
+    # A FOTO DE CADASTRO QUE VALE AGORA (06/11/2026, o dono: "virou a foto de cadastro, ela não é mais. Ela virou
+    # em algum momento"): a batida cuja foto virou a de cadastro e depois foi trocada diz isso; a que vale agora, também.
+    atual = (db.um(conn, "SELECT foto_cadastral_id FROM ponto.colaborador_config WHERE colaborador_id = :c",
+                   c=int(colaborador_id)) or {}).get("foto_cadastral_id")
     conferencias = []
     for l in linhas:
         local = horario.para_local(l["timestamp_servidor"])
+        e_a_cadastral = bool(atual) and l["foto_id"] == atual
         falha = l["resultado"] in ("OUTRA_PESSOA", "SEM_ROSTO") and l["status"] != "VALIDA"
         conferencias.append({
             "marcacao_id": int(l["marcacao_id"]), "resultado": l["resultado"],
-            "rotulo": ROTULO_RESULTADO.get(l["resultado"], l["resultado"]),
+            "rotulo": ("foi a foto de cadastro — já trocada por outra"
+                       if l["resultado"] == "VIROU_CADASTRAL" and not e_a_cadastral
+                       else ROTULO_RESULTADO.get(l["resultado"], l["resultado"])),
+            "e_a_cadastral": e_a_cadastral,
             "semelhanca": float(l["semelhanca"]) if l["semelhanca"] is not None else None,
             "detalhe": l["detalhe"], "quando": local.strftime("%d/%m"), "hora": local.strftime("%H:%M"),
             "obra": l["obra"], "status": l["status"], "tem_foto": bool(l["tem_foto"]), "falha": falha,

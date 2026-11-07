@@ -500,6 +500,211 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 06/11/2026 (sexta, quarta parte) — A assinatura da folha na tela (migração 027)
+
+O dono: *"o operador do ponto, com o celular, vai mostrar para a pessoa a folha de ponto, e a pessoa vai assinar (…) essa
+assinatura vai ser arquivada (…) para a gente imprimir posteriormente"*. Decidido com ele: **prazo até o dia 20 do mês
+seguinte**; **quem conduz: o operador do ponto da obra e o administrativo** (normalmente a mesma pessoa); **cópia por
+WhatsApp, por enquanto não**.
+- **No aplicativo** ("✍️ Assinaturas da folha", para quem vê o "Ponto da minha equipe"): a equipe do mês — as MESMAS
+  pessoas do resumo da equipe — com ✍️ falta / ✅ assinou / ⛔ recusou e o prazo. "Assinar" mostra a folha; a PRÓPRIA
+  pessoa digita o PIN dela e assina com o dedo num quadro; "a pessoa não quer assinar" registra o que ela disse.
+- **Só mês FECHADO** se assina (a folha não muda mais). Quem conduz não assina a própria por ali.
+- **O que fica guardado** (`core/assinaturas.py`, tabela `ponto.espelho_assinaturas`): o traço do dedo, a hora do
+  servidor, quem conduziu, o aparelho, o local, o IP e o **lacre** — o SHA-256 da folha como foi mostrada. O PDF (a folha
+  + o "Comprovante de assinatura eletrônica" com o termo, a assinatura e os dados) vai para os documentos do ponto (o
+  Drive), como os atestados. No ERP, a janela da pessoa › Pedidos lista as folhas assinadas com "abrir o PDF".
+- **Reaberto o mês e mudada a folha**, o lacre não bate: a assinatura vira SUBSTITUÍDA (guardada, com o motivo) e a
+  pessoa volta a faltar. A recusa seguida de assinatura também fica guardada.
+- **A pendência**: do dia 10 do mês seguinte em diante, um alerta por obra ("Folhas de ponto sem assinatura": quantas
+  faltam e o prazo, ou "PRAZO VENCIDO"), que sai sozinho quando a obra termina.
+- **Juridicamente** (dito ao dono; a confirmar com o advogado): a assinatura do espelho não é obrigatória no REP-P,
+  mas pesa como prova; a eletrônica vale quando prova quem assinou e que o documento não mudou (Lei 14.063/2020; MP
+  2.200-2/2001, art. 10 §2º) — por isso o PIN da própria pessoa e o lacre. Guarda: 5 anos de cada mês e 2 após o
+  desligamento.
+- Achado no ensaio no navegador (celular simulado): a folha abria sem a localização, e o administrativo (que só alcança
+  a equipe dentro da obra) ouvia "você não está na obra" — corrigido.
+- Testes: `test_ponto_assinatura_folha_banco.py` (mês aberto recusa; PIN errado recusa; assinada; o PDF abre no ERP; a
+  recusa; reaberto e mudado, substituída e de volta à lista; a pendência por obra; o PDF e o lacre). E a tela no
+  navegador, do menu até "✅ assinou".
+**COM A MIGRAÇÃO 027** — ao publicar, apertar "Aplicar atualizações do ponto".
+
+## 06/11/2026 (sexta, terceira parte) — A revisão da Portaria 671: a tolerância de 10 min, o AFD e o AEJ
+
+O dono pediu uma revisão do ponto contra a Portaria 671 e a CLT (*"listar onde o nosso ponto pode furar e está furando
+as regras trabalhistas"*), e aprovou a sequência: publicar os alertas; travar a tolerância e o "negar hora extra";
+gerar o AFD e o AEJ; a assinatura da folha na tela (abaixo, quando feita).
+- **Recusado, e dito ao dono com os motivos:** uma "folha para fins trabalhistas" sem o excesso de hora extra, diferente
+  da real. É documento falso (CP art. 299; CLT art. 9º), e o AFD — o registro que a fiscalização pede — o desmente. O
+  caminho legal ficou dito: controlar a extra antes, compensar (a compensação de horas de hoje) ou pagar.
+- **A tolerância da hora extra no fechamento vai até 10 min por dia** (CLT, art. 58 §1º — era até 120). O valor já
+  gravado acima de 10 passa a valer 10 (`fechamento.he_minima`).
+- **"Negar hora extra"**: já pedia motivo; a janela agora diz que é só para o que NÃO foi trabalho (o exemplo antigo
+  era justamente "não autorizada pelo engenheiro" — a extra trabalhada é devida mesmo sem autorização).
+- **AFD e AEJ** (`core/arquivos_fiscais.py`; Configuração › "Arquivos da fiscalização"): o leiaute OFICIAL foi baixado
+  do gov.br (liberado na rede da sessão para isso) e está copiado em `docs/leiaute_afd_portaria_671.txt` e
+  `docs/leiaute_aej_portaria_671.txt`. AFD: cabeçalho "1" com CRC-16/KERMIT, um "7" por marcação ORIGINAL (a incluída
+  por ajuste fica de fora; a rejeitada entra), hash SHA-256 encadeado desde a primeira marcação da empresa, trailer
+  "9" e a linha da assinatura. AEJ: 01, 02 (o REP-P), 03 (vínculos), 04 (horários da escala), 05 (entrada/saída como
+  contaram; "I" a incluída por ajuste com o motivo; "D" a rejeitada e a repetida com o motivo; "P" o intervalo
+  pré-assinalado), 07 (falta não justificada), 08 (o programa), 99. Um arquivo por EMPRESA — a da obra da batida.
+  Os dados do programa (nº do INPI, CNPJ/razão/e-mail do desenvolvedor) ficam na mesma seção.
+- **O que ficou de fora, dito ao dono:** o .p7s da assinatura digital (precisa do certificado ICP-Brasil da empresa);
+  os registros 2, 5 e 6 do AFD (precisariam de NSR próprio na mesma sequência); no AEJ, DSR, folga de feriado e banco
+  de horas. ⚠️ O NSR é uma sequência só — também a batida incluída por ajuste e as das outras empresas usam —, então o
+  AFD de um CNPJ tem saltos de número. ⚠️ O registro do programa no INPI e o atestado técnico/termo de
+  responsabilidade são com o advogado/contabilidade: sem o número do INPI, o sistema não gera os arquivos.
+- Teste `test_ponto_arquivos_fiscais_banco.py` (o CRC do exemplo da Portaria; o tamanho de cada campo; a corrente do
+  hash; o trailer; a assinatura; no AEJ, E/S/D e as contagens).
+
+## 06/11/2026 (sexta, segunda parte) — O alerta com o que é preciso para decidir ali mesmo
+
+O dono: *"batida faltando em 5/11, mas não diz qual é a batida. E seria interessante poder clicar e já abrir um ajuste
+(…) na foto escura não aparece qual é a foto de qual batida (…) veja nos outros alertas o que pode ser incluído — tudo
+para facilitar a tomada de decisão"*.
+- **A mensagem diz o que aconteceu** (`alertas._mensagem`): batida faltando e falta parcial dizem QUAL faltou, com a
+  hora que a escala previa ("faltou: saída (17:00)"); todos os alertas de um dia trazem as batidas feitas ("batidas:
+  07:00 11:00 12:00"); trabalho em descanso/feriado/fora do ciclo, as horas trabalhadas. Os já abertos ganham o texto
+  novo na próxima rodada (a mensagem é reescrita).
+- **"➕ incluir a batida que faltou"** na linha (batida faltando, falta parcial, falta): abre o pedido de ajuste com o
+  dia, a HORA prevista da primeira que faltou e "dia seguinte" quando é a saída de madrugada do turno da noite.
+- **"abrir o dia dd/mm"**: a janela da pessoa naquele dia (batidas, fotos, mapa), em todo alerta de um dia.
+- **As fotos na linha** também na foto escura (as batidas escuras do dia, com a hora — `alertas._fotos_escuras`), em
+  "dois lugares ao mesmo tempo" (as duas batidas) e na batida em análise parada.
+- **Para onde ir**: pedido parado e batida em análise parada levam às Validações; aparelho pendente/vencendo, CPFs
+  errados e câmera travada, aos Aparelhos.
+- De passagem: a barra "0 alertas marcados" aparecia sem nada marcado (o CSS vencia o `hidden`).
+- Teste `test_o_alerta_diz_qual_batida_faltou_e_mostra_a_foto_escura`; tela conferida no navegador (a foto escura na
+  linha; o pedido de ajuste abrindo com 11:00 já preenchido).
+
+## 06/11/2026 (sexta) — A ronda depois da saída; as faltas seguidas que ainda repetiam; a obra no resumo
+
+- **A ronda das 7h para o vigia que já tinha saído.** O dono: *"um vigia recebeu a mensagem da ronda num horário que ele
+  já tinha saído. Recebeu às 7 horas da manhã."* Duas fragilidades: (1) as 4 rondas se espalhavam pela duração do turno
+  A PARTIR DA ENTRADA — quem entrava tarde (20h numa escala 17h–6h) ganhava ronda depois das 6h; (2) a ronda só era
+  cancelada quando a SAÍDA chegava ao servidor e passava pela batida — a saída do ponto da obra sem internet (chega
+  depois), a incluída por ajuste e a que falhou ao cancelar não cancelavam nada. Agora: o turno acaba na hora da
+  ESCALA daquela noite (`rondas.fim_do_turno`; sem escala no dia, 12 h da entrada), e antes de mandar cada ronda o
+  relógio confere se o vigia já bateu a saída (qualquer batida 30 min depois da entrada) — se sim, a ronda é cancelada
+  ("o vigia já tinha batido a saída"). Não verificado: qual dos casos foi o do vigia (o dono não disse o nome/dia).
+- **As faltas seguidas que continuavam repetidas.** A correção da quarta usava o primeiro dia da sequência DENTRO da
+  janela de 4 semanas — na falta longa, a janela anda e o "primeiro dia" andava junto, e o alerta nascia de novo. Agora
+  a sequência que encosta num alerta aberto da pessoa atualiza ESSE; e, a cada rodada, por pessoa e tipo (faltas
+  seguidas, fora da cerca repetido, banco negativo), fica aberto só o mais recente — os repetidos de antes saem
+  resolvidos, ditos ("trocado pelo alerta mais recente").
+- **A obra no resumo do WhatsApp.** *"Tem o nome da pessoa, mas não tem a obra."* Cada urgente termina com "— obra
+  CÓDIGO — Nome": a obra em que a pessoa mais bateu nos últimos 30 dias (sem batida, a do alerta).
+- Testes: `test_a_ronda_nao_sai_depois_da_hora_de_sair`, `test_os_repetidos_que_ja_estavam_abertos_saem_e_o_resumo_diz_a_obra`.
+
+## 06/11/2026 (quinta) — Vários alertas de uma vez
+
+O dono: *"na parte de alerta não consigo selecionar várias para marcar como resolvido ou dispensar"*. Cada alerta
+ganhou a caixa de marcar; a do cabeçalho marca o grupo (Urgente, Atenção, Para saber); a barra mostra quantos e
+"Resolver os marcados…", "Dispensar os marcados…" (a mesma nota para todos, obrigatória como no um por um) e "Reabrir"
+(nos já tratados). Com o filtro "Tipo de alerta", dá para pegar, por exemplo, todas as faltas de um tipo e tratar
+de uma vez. Por trás, `alertas.tratar_varios` (a mesma regra do `tratar`; o que estiver fora das obras de quem
+trata fica de fora, contado), rota `/erp/api/ponto/alertas/tratar-varios` (`tratar_ponto`), até 2000 por vez.
+Teste `test_varios_alertas_resolvidos_ou_dispensados_de_uma_vez`; tela conferida no navegador.
+
+## 06/11/2026 (quarta) — Alertas: as fotos na linha, o filtro por tipo, a câmera travada e o alerta que crescia
+
+Quatro pedidos do dono, em sequência, todos na tela de Alertas:
+- **A foto de cadastro se troca na Conferência do rosto.** *"Olha como é longo o caminho (…) eu precisaria resolver
+  daqui mesmo."* A aba "Conferência do rosto" da janela da pessoa (agora sempre presente) mostra em cima a foto de
+  cadastro que vale, com enviar/escolher/tirar; cada conferência ganha a miniatura da batida e "⭐ usar como foto de
+  cadastro". O alerta "Rosto não confere" abre a pessoa direto nessa aba ("conferir o rosto e a foto de cadastro").
+- **"Virou a foto de cadastro" que já não é** (*"ela virou em algum momento, mas não é mais"*): a conferência compara a
+  foto da batida com a de cadastro que vale AGORA — a que virou e foi trocada diz "foi a foto de cadastro — já
+  trocada", e a que vale ganha "⭐ é a foto de cadastro agora" (`confianca.explicar`, `e_a_cadastral`). A dica explica
+  que cada conferência foi feita com a foto que valia na hora da batida.
+- **As fotos na linha do alerta** (*"500 alertas, como é que eu vou dar 50 cliques para resolver uma pessoa?"*): a
+  mesma foto repetida mostra as duas batidas lado a lado; o rosto que não confere mostra a foto da batida e a de
+  cadastro, com "⭐ usar como foto de cadastro" (troca e resolve o alerta) e "abrir a batida" (validar ali)
+  (`alertas.fotos_do_alerta`, pela chave do alerta). E **o filtro "Tipo de alerta"** na barra, com quantos de cada.
+- **A câmera travada — a causa da "mesma foto de outra pessoa".** O dono: *"é problema de sistema (…) ficou em cache
+  e acabou mandando a mesma foto duas vezes."* Era: no ponto da obra a foto sai da imagem AO VIVO da câmera; quando a
+  câmera trava (sem memória, outro aplicativo, o navegador pausou), a imagem fica parada na última pessoa e ia para a
+  seguinte. O aplicativo agora confere antes de cada foto (a câmera ligada, o relógio do vídeo andando na contagem, a
+  imagem idêntica à foto anterior) e, travada, RELIGA a câmera; continuou travada, a batida vai sem foto, com o motivo
+  "a câmera do aparelho da obra travou" (`marcacoes.MOTIVO_CAMERA_TRAVADA`). Nos alertas, a mesma imagem para pessoas
+  DIFERENTES no MESMO aparelho deixa de ser "foto reaproveitada" (urgente, parece fraude) e vira **"Câmera do aparelho
+  travada"** (atenção), e o "foto repetida" daquele par sai resolvido. O celular pessoal não tem o problema (usa a
+  câmera do próprio celular a cada batida, e a anterior é limpa).
+  ⚠️ **Não verificado num aparelho de verdade:** o travamento não foi reproduzido; o religar foi escrito a partir do
+  código. O que vale olhar depois de publicar: se os "câmera travada" aparecem e se somem com o tempo.
+- **O alerta que crescia** (*"10 faltas seguidas (…) no dia seguinte 11, 12, 13 (…) basta a última"*): a chave era o
+  ÚLTIMO dia da sequência, e cada dia nascia um alerta. Agora é o PRIMEIRO dia — a mesma sequência atualiza o mesmo
+  alerta —, e os antigos da mesma pessoa saem resolvidos ("trocado pelo alerta mais recente"). O mesmo para atraso
+  recorrente, fora da cerca repetido e banco negativo, que nasciam de novo a cada semana/mês. Os repetidos que já estão
+  abertos na produção saem na próxima rodada.
+- Testes: `test_a_mesma_imagem_para_pessoas_diferentes_no_mesmo_aparelho_e_camera_travada`,
+  `test_as_faltas_seguidas_ficam_num_alerta_so_o_mais_atual`, `test_a_foto_que_virou_a_de_cadastro_e_depois_foi_trocada_diz_isso`;
+  e as duas telas abertas no navegador com dado de teste (o filtro por tipo, as fotos na linha, a janela na aba do rosto).
+
+## 06/11/2026 (terceira) — A compensação de HORAS; e a crítica da hora extra de quem está devendo
+
+O dono, depois do ensaio da compensação (abaixo): *"é uma compensação, não é de um dia, é de horas (…) como é que
+deve ser feito isso? O sistema prevê isso?"* E: *"quando a gente for fazer um fechamento, gerar relatório de horas
+extras, essa informação tem que ser criticada (…) pode ser que tenha sido esquecido de ser lançado, e aí o DP não
+pode, não deve pagar horas extras quando a pessoa está devendo."*
+
+- **Não previa direito.** A "Compensação" de antes é de DIA: a folga fica abonada inteira, o dia trabalhado perde
+  TODA a hora extra (sobrasse o que sobrasse), e quem trabalha um pedaço da folga ganha essas horas como extra. No caso
+  de meio dia, a conta saía certa por acaso, mas com o rótulo "compensação não cumprida".
+- **A compensação de horas** (`COMPENSACAO` com subtipo `HORAS`, `espelho.SUBTIPO_HORAS`; sem migração — a coluna
+  `subtipo` já existia): o dia das horas a mais (`dia_trabalhado`) e o dia mais curto (`data_inicio`). Cobre o MENOR
+  entre as horas a mais de um e as a menos do outro, pelas batidas — sem digitar horas. O que sobra do dia longo
+  continua hora extra; o que falta no curto continua devendo; o que se trabalha no dia curto conta normalmente. Os dois
+  dias a até 31 dias um do outro (compensação no mês, CLT art. 59, §6º). Antes de o dia das horas a mais passar, o curto
+  fica "a compensar". Não mexe no ciclo do 12x36 nem no painel do dia (o dia curto não é folga).
+- **Onde se lança:** aplicativo (o próprio e por outra pessoa: "Compensação de horas (ficou até mais tarde num dia e
+  sai mais cedo noutro)"), janela da pessoa no ERP ("⏱️ Compensação de horas") — passam pela validação de sempre — e
+  **a turma inteira pelo Quadro**: marcar as linhas do dia mais curto › "Compensar horas…" › o dia das horas a mais.
+  Aprovado na hora, pelo DP (`aprovar_afastamento`); quem não ficou além do horário no outro dia fica de fora, com o
+  motivo.
+- **A crítica:** o Fechamento › Conferência ganha, por pessoa e por pedaço da folha (mês anterior / corrente), "hora
+  extra com horas devendo" quando, depois do abatimento (se ligado), sobram hora extra E horas a menos (atraso, saída
+  antes, falta parcial — a falta do dia inteiro não entra). O relatório de Horas extras, visão por pessoa, ganha a
+  coluna "Devendo no período ⚠️" e o número "Com extra e devendo horas". Quem tem banco de horas fica de fora (lá, uma
+  já compensa a outra).
+- **Escolha que o dono pode mudar:** a crítica AVISA, não segura a extra — o DP decide (lançar a compensação, ligar o
+  abatimento, ou pagar mesmo assim).
+- **Cuidado dito ao dono:** sair às 20h17 e voltar às 7h dá menos de 11 h de descanso (aviso de interjornada curta) —
+  a compensação resolve a hora extra, não isso.
+- Testes: `test_ponto_compensacao_horas_banco.py` (o caso do dono: 3h17 pagam 3h17 da sexta, ficam 13 min; a sobra
+  continua extra; o futuro "a compensar"; longe demais, recusada; a crítica no fechamento e no relatório, que some
+  depois de lançada; a turma pelo Quadro). Telas renderizadas e o JavaScript conferido; **não** abri o diálogo no
+  navegador.
+
+## 06/11/2026 (segunda) — O manual do vigia; e as horas a mais num dia compensadas no outro
+
+- **Manual, parte 9** ("Vigia: 12x36, plantão dobrado, permuta e ronda"), refeita com o panorama: só duas batidas,
+  o toque duplo, a noite que termina no dia seguinte (até 10h; até o meio-dia se ficou aberto), o revezamento
+  automático, o feriado, o plantão dobrado (o segundo ponto 2 minutos depois, a conferência do DP, o ajuste "entrada"
+  se esqueceu), a noite extra, esqueci de bater, a permuta (um pede pelos dois; a sugestão automática; quem só
+  cobriu) e a ronda. **Corrigido de passagem:** o manual dizia que a ronda depois dos 10 minutos ficava perdida — ela
+  vale até meia hora como ATRASADA (`rondas.TOLERANCIA_ATRASO_MIN`). PDF refeito (29 páginas).
+- **A pergunta do dono** (a turma que saiu às 20h30 na quinta e sai ao meio-dia na sexta, as mesmas horas): ensaiado
+  no banco de teste com a escala padrão (seg–qui 9 h, sex 8 h). Sem nada lançado: quinta **3h30 de extra** (entra no
+  relatório de extras e no fechamento) e sexta **4 h de falta parcial**. Com a **Compensação** lançada (folga =
+  sexta, dia trabalhado = quinta): quinta "compensado", extra zero; sexta com **30 min** de débito (as 4 h da tarde
+  menos as 3h30) — a conta certa. Dois achados, levados ao dono, sem mexer: (1) a sexta sai com o rótulo
+  **"Compensação não cumprida — 3h30 cobertas"**, que soa como erro numa compensação de meio dia combinada; (2) a
+  saída às 20h30 e a volta às 7h dão **10h30 de descanso, abaixo das 11 h da lei** (aviso de interjornada curta —
+  independe da compensação). Também: a compensação é lançada uma pessoa por vez; não há em lote.
+
+## 06/11/2026 — O panorama do vigia (mensagem para o WhatsApp) e as lacunas que ele mostrou
+
+O dono pediu um panorama das particularidades do vigia (escala, 2 batidas, noite que vira o dia, permuta, plantão
+dobrado, a noite extra, as validações) — *"até para a gente saber se todas as possibilidades foram atendidas"*. A
+mensagem foi escrita a partir do código. **Lacunas achadas, levadas ao dono:**
+- **O vigia de DIA que emenda a noite** (6h–18h e segue até as 6h): a regra da noite só vale para quem tem escala ou
+  jornada da noite — a saída das 6h do dia seguinte iria para o dia seguinte como entrada. Não coberto.
+- **Quem só cobriu o colega** (sem a volta): fica extra para um e falta para o outro; o DP decide à mão.
+- **O vigia que sai no meio da noite e volta**: a noite é paga inteira; só as rondas mostram.
+- **Feriado na noite do ciclo**: dia normal (CLT 59-A) — ainda a confirmar com a contabilidade.
+- ❌ Ainda não há lista só dos plantões dobrados.
+
 ## 05/11/2026 (terceira) — Os espelhos da equipe num PDF só
 
 - **O pedido.** Depois de o espelho de um colaborador voltar a abrir, o dono: *"o que a gente precisaria também era

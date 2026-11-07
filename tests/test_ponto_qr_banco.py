@@ -458,3 +458,128 @@ def test_pedir_o_qr_uma_vez_basta(app, mundo, monkeypatch):
             break
         _time.sleep(0.1)
     assert st == "ENVIADO"
+
+
+def test_a_mesma_imagem_para_pessoas_diferentes_no_mesmo_aparelho_e_camera_travada(app, mundo, banco):
+    """06/11/2026, o dono: "a foto da batida é a mesma de outra pessoa (…) é problema de sistema". No ponto da obra, a
+    câmera travada repete a imagem de quem bateu antes: o alerta diz isso (não é fraude da pessoa) e mostra as duas
+    fotos na própria linha; e a batida que o aparelho mandou sem foto por câmera travada diz o motivo."""
+    from app.apps.ponto import db
+    from app.apps.ponto.core import alertas, marcacoes
+    t, h, _ = _tablet(app, mundo)
+    uuid, token = h["X-Device-UUID"], h["X-Device-Token"]
+    ontem = _hoje() - dt.timedelta(days=1)
+    mesma = _foto()
+    with db.conexao() as conn:
+        def bate(cpf, hh, foto, **kw):
+            return marcacoes.registrar(conn, cpf=cpf, obra="PG-A", origem="PWA", device_uuid=uuid, device_token=token,
+                                       latitude=OBRA_A[0], longitude=OBRA_A[1], foto_base64=foto,
+                                       agora=local(ontem, hh).astimezone(dt.timezone.utc), **kw)[0]
+        a = bate(CPF_JOAO, 7, mesma)
+        b = bate(CPF_MARIA, 8, mesma)                    # a imagem do João, na batida da Maria
+        c = bate(CPF_MARIA, 17, None, camera_travada=True)
+        alertas.gerar(conn, ate=ontem)
+        lista = alertas.listar(conn)
+    travada = [x for x in lista if x["codigo"] == "CAMERA_TRAVADA"]
+    assert len(travada) == 1 and "câmera travou" in travada[0]["mensagem"] and "não é fraude" in travada[0]["mensagem"]
+    assert not [x for x in lista if x["codigo"] == "FOTO_REPETIDA"
+                and {str(a["id"]), str(b["id"])} <= set(x["chave"].split(":"))]
+    assert [f["marcacao_id"] for f in travada[0]["fotos"]] == [b["id"], a["id"]]
+    assert "câmera do aparelho da obra travou" in (c.get("motivo_analise") or "")
+    # o filtro por tipo, com a contagem de cada um
+    dp = como(app, mundo["dp"])
+    d = dp.get("/erp/api/ponto/alertas?tipo=CAMERA_TRAVADA").get_json()
+    assert {x["codigo"] for x in d["alertas"]} == {"CAMERA_TRAVADA"}
+    assert any(x["codigo"] == "CAMERA_TRAVADA" and x["n"] == 1 for x in d["tipos"])
+    assert any(x["codigo"] == "SEM_FOTO" for x in d["tipos"])
+
+
+def test_as_faltas_seguidas_ficam_num_alerta_so_o_mais_atual(app, mundo, banco):
+    """06/11/2026, o dono: "eu tinha 10 faltas (…) no dia seguinte, de novo porque eu tenho 11 (…) fica infinito.
+    Basta a última, a mais atual." A mesma sequência de faltas atualiza o mesmo alerta."""
+    from app.apps.ponto import db
+    from app.apps.ponto.core import alertas
+    ontem = _hoje() - dt.timedelta(days=1)
+    with db.conexao() as conn:
+        for dias_atras in (6, 4, 2, 1):
+            alertas.gerar(conn, ate=ontem - dt.timedelta(days=dias_atras - 1))
+        abertos = [a for a in alertas.listar(conn) if a["codigo"] == "FALTAS_SEGUIDAS"
+                   and a["colaborador_id"] == mundo["joao"]]
+        todos = db.todos(conn, "SELECT situacao, tratado_por FROM ponto.alertas WHERE codigo = 'FALTAS_SEGUIDAS' "
+                               "AND colaborador_id = :c", c=mundo["joao"])
+    if not todos:
+        pytest.skip("o João não chegou a 3 faltas seguidas na janela (vigência do ponto recente demais)")
+    assert len(abertos) == 1
+    assert all(t["situacao"] == "RESOLVIDO" and "mais recente" in (t["tratado_por"] or "")
+               for t in todos if t["situacao"] != "ABERTO")
+
+
+def test_varios_alertas_resolvidos_ou_dispensados_de_uma_vez(app, mundo, banco):
+    """06/11/2026, o dono: "na parte de alerta não consigo selecionar várias para marcar como resolvido ou dispensar"."""
+    from app.apps.ponto import db
+    from app.apps.ponto.core import alertas
+    with db.conexao() as conn:
+        alertas.gerar(conn, ate=_hoje() - dt.timedelta(days=1))
+    dp, fin = como(app, mundo["dp"]), como(app, mundo["fin"])
+    ids = [a["id"] for a in dp.get("/erp/api/ponto/alertas").get_json()["alertas"]]
+    assert len(ids) >= 2
+    url = "/erp/api/ponto/alertas/tratar-varios"
+    assert fin.post(url, json={"ids": ids[:2], "situacao": "RESOLVIDO"}).status_code == 403
+    assert dp.post(url, json={"ids": ids[:2], "situacao": "DISPENSADO", "nota": ""}).status_code == 400   # pede o porquê
+    assert dp.post(url, json={"ids": [], "situacao": "RESOLVIDO"}).status_code == 400
+    r = dp.post(url, json={"ids": ids[:2] + [999999], "situacao": "DISPENSADO", "nota": "obra parada, já tratado"})
+    assert r.status_code == 200 and r.get_json()["feitos"] == 2 and r.get_json()["fora"] == 1
+    dispensados = {a["id"] for a in dp.get("/erp/api/ponto/alertas?situacao=DISPENSADO").get_json()["alertas"]}
+    assert set(ids[:2]) <= dispensados
+    r = dp.post(url, json={"ids": ids[:2], "situacao": "ABERTO"})
+    assert r.get_json()["feitos"] == 2
+    assert set(ids[:2]) <= {a["id"] for a in dp.get("/erp/api/ponto/alertas").get_json()["alertas"]}
+
+
+def test_os_repetidos_que_ja_estavam_abertos_saem_e_o_resumo_diz_a_obra(app, mundo, banco):
+    """06/11/2026, o dono: "continua aparecendo repetido" (os de antes da regra, com 10, 11, 12 faltas) — por pessoa fica
+    aberto só o mais recente; e "no resumo tem o nome da pessoa, mas não tem a obra" — os urgentes dizem a obra."""
+    from app.apps.ponto import db
+    from app.apps.ponto.core import alertas
+    from tests.test_ponto_gestao_banco import bater_via_chave
+    ontem = _hoje() - dt.timedelta(days=1)
+    bater_via_chave(app, CPF_MARIA, local(ontem - dt.timedelta(days=12), 7, 0))     # a Maria (obra B) bate na A
+    with db.conexao() as conn:
+        for n, d in ((10, ontem - dt.timedelta(days=3)), (11, ontem - dt.timedelta(days=2)), (12, ontem - dt.timedelta(days=1))):
+            db.executar(conn, """INSERT INTO ponto.alertas (chave, codigo, gravidade, colaborador_id, obra_id, data_referencia, mensagem)
+                                 VALUES (:k, 'FALTAS_SEGUIDAS', 'URGENTE', :c, :o, :d, :m)""",
+                        k=f"FALTAS_SEGUIDAS:{mundo['joao']}:{d.isoformat()}", c=mundo["joao"], o=mundo["obra_a"], d=d,
+                        m=f"João Obra A: {n} faltas seguidas")
+        alertas.gerar(conn, ate=ontem)
+        abertos = [a for a in alertas.listar(conn) if a["codigo"] == "FALTAS_SEGUIDAS" and a["colaborador_id"] == mundo["joao"]]
+        texto = alertas.resumo_do_dia(conn, ontem)
+    assert len(abertos) == 1
+    assert "Urgentes:" in texto and "— obra PG-A" in texto
+    linha_maria = next((l for l in texto.splitlines() if "Maria" in l and "⚠️" in l), "")
+    assert not linha_maria or "— obra PG-A" in linha_maria        # a obra em que ela bate, não a do cadastro
+
+
+def test_o_alerta_diz_qual_batida_faltou_e_mostra_a_foto_escura(app, mundo, banco):
+    """06/11/2026, o dono: "batida faltando em 5/11, mas não diz qual é a batida (…) na foto escura não aparece qual é a
+    foto de qual batida". O alerta diz o que faltou (com a hora da escala) e as batidas do dia; a foto escura vem na linha."""
+    from app.apps.ponto import db
+    from app.apps.ponto.core import alertas, marcacoes
+    from tests.test_ponto_gestao_banco import bater_via_chave
+    t, h, _ = _tablet(app, mundo)
+    ontem = _hoje() - dt.timedelta(days=1)
+    while ontem.weekday() > 4:
+        ontem -= dt.timedelta(days=1)
+    for hh in (7, 11, 12):
+        bater_via_chave(app, CPF_JOAO, local(ontem, hh, 0))                  # faltou a saída
+    preta = _foto(cor=(0, 0, 0), listras=False)
+    with db.conexao() as conn:
+        escura = marcacoes.registrar(conn, cpf=CPF_MARIA, obra="PG-A", origem="PWA", device_uuid=h["X-Device-UUID"],
+                                     device_token=h["X-Device-Token"], latitude=OBRA_A[0], longitude=OBRA_A[1],
+                                     foto_base64=preta, agora=local(ontem, 8, 0).astimezone(dt.timezone.utc))[0]
+        alertas.gerar(conn, ate=ontem)
+        lista = alertas.listar(conn)
+    faltando = next(a for a in lista if a["codigo"] in ("BATIDA_FALTANDO", "FALTA_PARCIAL")
+                    and a["colaborador_id"] == mundo["joao"] and a["data_referencia"] == ontem.isoformat())
+    assert "faltou: saída" in faltando["mensagem"] and "batidas: 07:00 11:00 12:00" in faltando["mensagem"]
+    foto = next(a for a in lista if a["codigo"] == "FOTO_ESCURA" and a["colaborador_id"] == mundo["maria"])
+    assert [f["marcacao_id"] for f in foto["fotos"]] == [escura["id"]] and "08:00" in foto["fotos"][0]["rotulo"]

@@ -224,8 +224,9 @@
   {% if pode.aprovar_afastamento %}<div id="rl-fech" hidden style="margin-top:10px">
     <div class="campo"><label for="rl-comp">Folha do mês</label><input type="month" id="rl-comp"></div>
     <div class="campo"><label for="rl-he-min">Desconsiderar a hora extra do dia de até (minutos)</label>
-      <input type="number" id="rl-he-min" min="0" max="120" step="1" placeholder="0 = tudo entra">
-      <small class="suave">Ex.: 10 — o dia com 1, 8 ou 10 min de extra não entra no fechamento (fica marcado no calendário).
+      <input type="number" id="rl-he-min" min="0" max="10" step="1" placeholder="0 = tudo entra">
+      <small class="suave">Até 10 — o dia com 1, 8 ou 10 min de extra não entra no fechamento (fica marcado no calendário).
+        <b>A lei permite no máximo 10 min por dia</b> (CLT, art. 58 §1º); acima disso é hora devida.
         A escolha fica guardada; mude e monte de novo para refazer. Vale também para o atraso pequeno.</small></div>
     <label class="opcao" style="margin-top:6px"><input type="checkbox" id="rl-he-abater">
       <span class="rotulo">Abater os atrasos e as saídas antecipadas das horas extras</span></label>
@@ -317,6 +318,9 @@
       <option value="ATENCAO">Atenção</option>
       <option value="INFO">Para saber</option>
     </select></div>
+  {# 06/11/2026, o dono: "o tipo de alerta deveria estar no sidebar, nos filtros, para filtrar qual vamos tratar" #}
+  <div class="campo" style="margin-top:10px"><label for="a-tipo">Tipo de alerta</label>
+    <select id="a-tipo" data-sem-busca><option value="">Todos os tipos</option></select></div>
   <button class="btn" id="a-ver" type="button" style="width:100%; margin-top:14px">Ver</button>
   <div class="cartao-dica" style="margin-top:16px">
     <b>Alerta não é palpite.</b> Cada um sai de uma <b>regra escrita</b> (da CLT
@@ -423,7 +427,7 @@
   .chip.qd-falta { background:#FDECEA; color:var(--vermelho); border:1px dashed var(--vermelho); }
   .qd-atalhos { display:flex; flex-wrap:wrap; gap:4px; margin:0 0 8px; }
   .qd-par { display:grid; grid-template-columns:1fr; gap:6px; }
-  #qd-lote[hidden] { display:none !important; }
+  #qd-lote[hidden], .barra-lote[hidden] { display:none !important; }
   .qd-kpis .kpis { grid-template-columns:repeat(auto-fit, minmax(135px, 1fr)); }
   .qd-tabela td.dados, .qd-tabela td:nth-child(3) { white-space:nowrap; }
   .qd-grupo { font-size:11.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--tinta-suave);
@@ -505,6 +509,10 @@
   .dp-foto-cad img, .dp-foto-cad .sem { width:120px; height:120px; border-radius:10px; object-fit:cover; flex:none; background:#EEF1F5;
              display:flex; align-items:center; justify-content:center; color:var(--tinta-suave); font-size:12px; text-align:center; }
   .dp-fotos-batidas { display:flex; flex-wrap:wrap; gap:10px; margin-top:8px; }
+  .a-fotos { display:flex; flex-wrap:wrap; gap:10px; margin:8px 0 4px; }
+  .a-fotos figure { margin:0; width:110px; font-size:11px; text-align:center; }
+  .a-fotos img, .a-fotos .foto-vazia { width:110px; height:110px; object-fit:cover; border-radius:8px; display:block; cursor:zoom-in; }
+  .rosto-mini { width:56px; height:56px; object-fit:cover; border-radius:6px; display:block; cursor:zoom-in; }
   .dp-fotos-batidas figure { margin:0; width:120px; text-align:center; font-size:11px; }
   .dp-fotos-batidas img { width:120px; height:120px; object-fit:cover; border-radius:8px; display:block; cursor:zoom-in; }
   tr.v-grupo td { background:#F6F8FB; border-top:2px solid var(--borda); }
@@ -643,7 +651,8 @@
   {% if pode.tratar_ponto %}<button class="btn" id="qd-incluir" type="button">Incluir uma batida…</button>
   <button class="btn secundario" id="qd-dia-inteiro" type="button">Lançar o dia inteiro pela escala…</button>
   <button class="btn secundario" id="qd-definir-escala" type="button">Definir a escala…</button>{% endif %}
-  {% if pode.aprovar_afastamento %}<button class="btn amarelo" id="qd-abonar" type="button">Abonar a falta…</button>{% endif %}
+  {% if pode.aprovar_afastamento %}<button class="btn amarelo" id="qd-abonar" type="button">Abonar a falta…</button>
+  <button class="btn secundario" id="qd-compensar-horas" type="button">Compensar horas…</button>{% endif %}
   <button class="link-btn" id="qd-desmarcar" type="button">desmarcar</button>
   <small class="suave" style="flex-basis:100%">cada ação vale só para as linhas marcadas em que ela cabe — o número no
     botão diz quantas; as outras ficam de fora, com o porquê. Tudo fica registrado com o motivo e o seu nome.</small>
@@ -913,6 +922,16 @@
           title="O sistema já faz isso sozinho uma vez por dia">Gerar alertas agora</button>
 </div>
 <div id="a-gerado"></div>
+{% if pode.tratar_ponto %}
+{# 06/11/2026, o dono: "não consigo selecionar várias para marcar como resolvido ou dispensar" #}
+<div class="barra-lote" id="a-lote" hidden>
+  <b id="a-lote-qtd">0 marcados</b>
+  <button class="btn" id="a-lote-resolver" type="button">Resolver os marcados…</button>
+  <button class="btn secundario" id="a-lote-dispensar" type="button">Dispensar os marcados…</button>
+  <button class="btn secundario" id="a-lote-reabrir" type="button" hidden>Reabrir os marcados…</button>
+  <button class="link-btn" id="a-lote-desmarcar" type="button">desmarcar</button>
+</div>
+{% endif %}
 {% endif %}
 <div id="a-grupos">carregando…</div>
 <div class="cartao">
@@ -999,6 +1018,7 @@
   <button type="button" data-secao="validacao">Quem valida</button>
   <button type="button" data-secao="mensagens">Mensagens</button>
   <button type="button" data-secao="teste">Teste</button>
+  <button type="button" data-secao="fiscal">Arquivos da fiscalização</button>
 </nav>
 <div id="mensagem"></div>
 
@@ -1082,6 +1102,33 @@
 </div>
 
 {% if pode.configurar_ponto %}
+{# OS ARQUIVOS DA FISCALIZAÇÃO (06/11/2026, a revisão da Portaria 671 com o dono): o AFD e o AEJ #}
+<div class="cartao" data-secao-card="fiscal">
+  <div class="cartao-cab"><h3>Arquivos da fiscalização (AFD e AEJ)</h3><small>Portaria 671/2021</small></div>
+  <div class="cartao-dica" style="margin-top:0">Os dois arquivos que o auditor fiscal do trabalho pede.
+    <b>AFD</b>: as marcações originais, como foram batidas (a batida incluída por ajuste não entra). <b>AEJ</b>: o
+    tratamento — entradas e saídas como contaram, as incluídas por ajuste e as desconsideradas com o motivo, os
+    horários da escala e as faltas. Um arquivo por empresa (CNPJ): a empresa da obra em que a pessoa bateu.
+    <br>⚠️ Falta a <b>assinatura digital</b> (o arquivo .p7s, com o certificado ICP-Brasil da empresa): os arquivos saem
+    com a linha que a indica, sem o .p7s.</div>
+  <h4 style="margin:12px 0 6px">O programa (vai no cabeçalho dos dois arquivos)</h4>
+  <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px">
+    <div class="campo"><label for="af-inpi">Número de registro no INPI</label><input id="af-inpi" data-sem-mascara placeholder="até 17 números"></div>
+    <div class="campo"><label for="af-dev-cnpj">CNPJ do desenvolvedor</label><input id="af-dev-cnpj" name="cnpj"></div>
+    <div class="campo"><label for="af-dev-nome">Razão social do desenvolvedor</label><input id="af-dev-nome"></div>
+    <div class="campo"><label for="af-dev-email">E-mail do desenvolvedor</label><input id="af-dev-email" type="email"></div>
+  </div>
+  {% if pode.configurar_ponto %}<button class="btn secundario" id="af-gravar" type="button" style="margin-top:8px">Gravar os dados do programa</button>{% endif %}
+  <h4 style="margin:16px 0 6px">Gerar</h4>
+  <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end">
+    <div class="campo" style="min-width:260px"><label for="af-empresa">Empresa</label><select id="af-empresa" data-sem-busca></select></div>
+    <div class="campo"><label for="af-de">De</label><input type="date" id="af-de"></div>
+    <div class="campo"><label for="af-ate">Até</label><input type="date" id="af-ate"></div>
+    <button class="btn" id="af-afd" type="button">Baixar o AFD</button>
+    <button class="btn secundario" id="af-aej" type="button">Baixar o AEJ</button>
+  </div>
+  <div id="af-msg" style="margin-top:8px"></div>
+</div>
 <div class="cartao" data-secao-card="teste">
   <div class="cartao-cab"><h3>Modo de teste</h3></div>
   <div class="cartao-dica" style="margin-top:0">Para testar o ponto com você mesmo, sem mexer na planilha
@@ -1505,7 +1552,7 @@ function desenharPainel() {
   const quem = {id: p.id, nome: p.nome, obra: (p.obra_principal || {}).codigo};
   const abas = [["dia", "Dia"], ["mes", "Espelho do mês"], ["pedidos", `Pedidos${pend ? ` (${pend} esperando)` : ""}`],
                 ["aparelhos", `Aparelhos (${(p.aparelhos || []).length})`], ["cadastro", "Cadastro"],
-                ...(p.conferencia_rosto ? [["rosto", `Conferência do rosto${p.conferencia_rosto.codigo === "OBSERVACAO" ? " 🔍" : ""}`]] : [])];
+                ["rosto", `Conferência do rosto${p.conferencia_rosto && p.conferencia_rosto.codigo === "OBSERVACAO" ? " 🔍" : ""}`]];
   els("dp-corpo").innerHTML = `
     <div class="dp-cab"><h2>${escapar(p.nome)}</h2>
       <span>${escapar(p.funcao || "sem função no cadastro")}</span>
@@ -1520,6 +1567,7 @@ function desenharPainel() {
     ${PODE_TRATAR ? `<div class="barra-acoes" style="margin-top:10px">
       <button class="btn" type="button" id="dp-ajuste">Ajustar o dia (incluir batida)</button>
       <button class="btn secundario" type="button" id="dp-compensacao">Compensação</button>
+      <button class="btn secundario" type="button" id="dp-compensacao-horas" title="as horas a mais de um dia pagam a saída mais cedo de outro">⏱️ Compensação de horas</button>
       <button class="btn secundario" type="button" id="dp-permuta" title="troca de plantão entre dois vigias do 12x36">🔁 Permuta (vigia)</button>
       <button class="btn secundario" type="button" id="dp-documento">Atestado ou licença</button>
       <button class="btn secundario" type="button" id="dp-abono">Pedir abono</button>
@@ -1535,6 +1583,7 @@ function desenharPainel() {
   const ligar = (id, fn) => { if (els(id)) els(id).addEventListener("click", fn); };
   ligar("dp-ajuste", () => pedirAjuste(quem, P.data, recarregarPainel));
   ligar("dp-compensacao", () => registrarCompensacao(quem, recarregarPainel));
+  ligar("dp-compensacao-horas", () => registrarCompensacaoDeHoras(quem, recarregarPainel));
   ligar("dp-permuta", () => registrarPermuta(quem, recarregarPainel));
   ligar("dp-documento", () => entregarDocumento(quem, recarregarPainel));
   ligar("dp-abono", () => pedirAbono(quem, recarregarPainel));
@@ -1567,7 +1616,8 @@ function desenharPainel() {
     aprovarAparelho((p.aparelhos || []).find(a => String(a.id) === b.dataset.dpAparelho), recarregarPainel)));
   els("dp-corpo").querySelectorAll("[data-dp-cad]").forEach(b => b.addEventListener("click", () =>
     ({escala: trocarEscala, jornada: jornadaEObras, forma: formaDeBater, codigo: primeiroAcesso, alcance: alcanceNoApp,
-      banco: regimeDoBanco, naoBate: q => marcarBatePonto([q.id], !q.ativo_no_ponto, q.nome), excecao: batePorExcecao})[b.dataset.dpCad](p)));
+      banco: regimeDoBanco, naoBate: q => marcarBatePonto([q.id], !q.ativo_no_ponto, q.nome), excecao: batePorExcecao,
+      obrasApp: liberarObrasNoApp})[b.dataset.dpCad](p)));
   els("dp-corpo").querySelectorAll("[data-foto]").forEach(b => b.addEventListener("click", () =>
     verFoto(b.dataset.foto, b.dataset.legenda)));
 }
@@ -1728,7 +1778,7 @@ function painelMes() {
 // A foto de cadastro na janela: enviar uma nova, escolher uma das batidas, ou tirar (28/10/2026).
 let FOTO_CAD_VERSAO = Date.now();
 function ligarFotoDeCadastro(p) {
-  const depois = msg => { FOTO_CAD_VERSAO = Date.now(); recarregarPainel(); setTimeout(() => aviso("dp-msg", msg, "ok"), 400);
+  const depois = msg => { FOTO_CAD_VERSAO = Date.now(); ROSTO_PAINEL = null; recarregarPainel(); setTimeout(() => aviso("dp-msg", msg, "ok"), 400);
                           if (typeof carregarPessoas === "function") carregarPessoas();
                           if (typeof carregarMosaico === "function" && typeof VERSAO_CADASTRO !== "undefined") {
                             VERSAO_CADASTRO[p.id] = FOTO_CAD_VERSAO; carregarMosaico(); } };
@@ -1759,6 +1809,16 @@ function ligarFotoDeCadastro(p) {
       catch (e) { falhou(e, "dp-msg"); }
     }));
   });
+  document.querySelectorAll("[data-usar-foto-rosto]").forEach(b => b.addEventListener("click", async () => {
+    const r = await perguntar({titulo: "Usar como foto de cadastro", campos: [], textoOk: "Usar esta foto",
+      aviso: "Esta foto passa a ser a de cadastro de " + escapar(p.nome) + ": as próximas batidas são comparadas com ela. " +
+             "Use só se o rosto está de frente e é mesmo da pessoa. As batidas que já falharam não mudam sozinhas — " +
+             "valide-as no botão Decidir."});
+    if (!r) return;
+    try { await postar(`/erp/api/ponto/pessoas/${p.id}/foto-cadastral`, {marcacao_id: Number(b.dataset.usarFotoRosto)});
+          depois("Foto de cadastro trocada pela da batida escolhida."); }
+    catch (e) { falhou(e, "dp-msg"); }
+  }));
   if (els("dp-foto-tirar")) els("dp-foto-tirar").addEventListener("click", async () => {
     const r = await perguntar({titulo: "Tirar a foto de cadastro", campos: [], textoOk: "Tirar",
       aviso: "A pessoa fica sem foto de cadastro: a próxima batida com foto boa vira a nova, sozinha. Para escolher você mesmo, envie uma foto ou escolha uma das batidas."});
@@ -1787,12 +1847,22 @@ function painelRosto() {
   if (R0.carregando) return "carregando…";
   if (R0.erro) return `<div class="aviso erro">${escapar(R0.erro)}</div>`;
   const R = R0.dados, n = R.nivel, [cor, icone] = NIVEL_ROSTO[n.codigo] || ["", ""];
-  const selo = c => { const [k, t] = RESULTADO_DO_ROSTO[c.resultado] || ["outro", c.rotulo]; return `<span class="etq ${k}">${escapar(t)}</span>`; };
-  return `<div class="aviso ${n.codigo === "OBSERVACAO" ? "ambar" : "info"}" style="margin:0 0 10px">
+  const selo = c => {
+    // a que virou a de cadastro e depois foi trocada (06/11/2026): diz que foi, não que é
+    if (c.resultado === "VIROU_CADASTRAL" && !c.e_a_cadastral) return `<span class="etq outro">foi a foto de cadastro — já trocada</span>`;
+    const [k, t] = RESULTADO_DO_ROSTO[c.resultado] || ["outro", c.rotulo];
+    return `<span class="etq ${k}">${escapar(t)}</span>` + (c.e_a_cadastral ? ` <span class="etq azul">⭐ é a foto de cadastro agora</span>` : "");
+  };
+  // 06/11/2026, o dono: "eu preciso resolver daqui mesmo" — a foto de cadastro em cima, e cada batida com a foto
+  // ao lado e o "usar como foto de cadastro", sem ir ao Cadastro nem à tela de Fotos de cadastro.
+  return blocoFotoDeCadastro(p) + `<div class="aviso ${n.codigo === "OBSERVACAO" ? "ambar" : "info"}" style="margin:0 0 10px">
       <b>${icone} ${escapar(n.rotulo)}${n.reincidente ? " · reincidente" : ""}</b> — confere ${n.pct} % das batidas.<br>${escapar(R.porque)}</div>
-    ${R.conferencias.length ? `<table><thead><tr><th class="sem-ordem">Batida</th><th class="sem-ordem">Obra</th>
+    ${R.conferencias.length ? `<table><thead><tr><th class="sem-ordem">Foto</th><th class="sem-ordem">Batida</th><th class="sem-ordem">Obra</th>
         <th class="sem-ordem">Resultado</th><th class="sem-ordem">Semelhança</th><th class="sem-ordem">A batida</th><th class="sem-ordem"></th></tr></thead><tbody>
-      ${R.conferencias.map(c => `<tr class="${c.falha ? "dia-falta" : ""}"><td class="dados"><b>${escapar(c.quando)} ${escapar(c.hora)}</b></td>
+      ${R.conferencias.map(c => `<tr class="${c.falha ? "dia-falta" : ""}">
+        <td>${c.tem_foto ? `<img class="rosto-mini" alt="" loading="lazy" src="/erp/api/ponto/marcacoes/${c.marcacao_id}/foto"
+            onerror="fotoQuebrada(this)" data-foto="${c.marcacao_id}" data-legenda="${escapar(`${p.nome} — ${c.quando} ${c.hora}`)}">` : ""}</td>
+        <td class="dados"><b>${escapar(c.quando)} ${escapar(c.hora)}</b></td>
         <td class="dados">${escapar(c.obra || "—")}</td>
         <td>${selo(c)}${c.falha ? `<small style="color:var(--vermelho)">contou como falha</small>` : ""}
           ${c.falso_alarme ? `<small>validada depois — falso alarme, não conta</small>` : ""}
@@ -1801,11 +1871,15 @@ function painelRosto() {
         <td>${escapar((STATUS_BATIDA[c.status] || [, c.status])[1])}</td>
         <td style="white-space:nowrap">${c.tem_foto ? `<button class="btn secundario" type="button" data-foto="${c.marcacao_id}"
             data-legenda="${escapar(`${p.nome} — ${c.quando} ${c.hora}`)}">📷 Foto</button>` : ""}
-          <button class="btn ${c.status === "EM_ANALISE" ? "" : "secundario"}" type="button" data-mapa-batida="${c.marcacao_id}">${c.status === "EM_ANALISE" ? "Decidir…" : "Abrir"}</button></td></tr>`).join("")}
+          <button class="btn ${c.status === "EM_ANALISE" ? "" : "secundario"}" type="button" data-mapa-batida="${c.marcacao_id}">${c.status === "EM_ANALISE" ? "Decidir…" : "Abrir"}</button>
+          ${c.tem_foto && PODE_TRATAR && !c.e_a_cadastral ? `<br><button class="link-btn" type="button" data-usar-foto-rosto="${c.marcacao_id}"
+            title="Esta foto passa a ser a de cadastro: as próximas batidas são comparadas com ela">⭐ usar como foto de cadastro</button>` : ""}</td></tr>`).join("")}
       </tbody></table>` : `<div class="vazio"><b>Nenhuma conferência ainda</b>as batidas com foto entram na próxima rodada.</div>`}
-    <div class="cartao-dica">Foto com o rosto à vista e “sem rosto” ou “não confere”? Valide a batida (botão Decidir):
+    <div class="cartao-dica">A foto que vale é a de cima. Cada conferência foi feita com a foto de cadastro que valia NA HORA da
+      batida — trocada a foto, as próximas batidas são comparadas com a nova.<br>
+      Foto com o rosto à vista e “sem rosto” ou “não confere”? Valide a batida (botão Decidir):
       batida validada é falso alarme e não conta como falha. Se acontece em série, a foto de cadastro é que está ruim —
-      troque em <a class="elo" href="/erp/ponto/fotos-cadastro">Fotos de cadastro</a>.</div>`;
+      troque aqui mesmo: “⭐ usar como foto de cadastro” numa batida boa, ou envie uma foto nova lá em cima.</div>`;
 }
 const RESULTADO_DO_ROSTO = {MESMA_PESSOA: ["verde", "confere"], OUTRA_PESSOA: ["vermelho", "não confere"],
   SEM_ROSTO: ["ambar", "sem rosto na foto"], SEM_CADASTRAL: ["outro", "sem foto de cadastro"], VIROU_CADASTRAL: ["azul", "virou a foto de cadastro"],
@@ -1831,8 +1905,19 @@ function painelPedidos() {
           data-legenda="${escapar(`${x.colaborador || ""} — ${x.rotulo}`)}">📎 ver o documento</button>` : ""}</td>
       <td>${x.decidir_em ? `<button class="btn" type="button" data-dp-decidir="${escapar(x.decidir_em)}" data-tipo="PEDIDO" data-sim="1">Aprovar</button>
         <button class="btn secundario" type="button" data-dp-decidir="${escapar(x.decidir_em)}" data-tipo="PEDIDO" data-sim="0">Negar</button>` : ""}</td></tr>`; }).join("");
-  return (conf || ped) ? `<table><thead><tr><th>O quê</th><th>Quando</th><th>Situação</th><th></th></tr></thead>
-      <tbody>${conf}${ped}</tbody></table>` : `<div class="vazio"><b>Nenhum pedido</b>nem batida esperando decisão.</div>`;
+  // as folhas assinadas na tela (06/11/2026): o PDF de cada mês, com o comprovante da assinatura
+  const SIT_ASS = {ASSINADA: ["aprovado", "assinada"], RECUSADA: ["bloqueado", "recusou assinar"], SUBSTITUIDA: ["outro", "substituída"]};
+  const assin = (PAINEL.pessoa.assinaturas || []).length ? `<h4 style="margin:16px 0 6px">Folhas de ponto assinadas</h4>
+    <table><thead><tr><th>Mês</th><th>Situação</th><th>Quando · quem conduziu</th><th></th></tr></thead><tbody>
+    ${PAINEL.pessoa.assinaturas.map(a => { const [c, r] = SIT_ASS[a.situacao] || ["outro", a.situacao]; return `<tr>
+      <td class="dados">${escapar(mesBR(a.competencia))}</td>
+      <td><span class="selo ${c}">${escapar(r)}</span>${a.motivo ? `<small>${escapar(a.motivo)}</small>` : ""}${a.substituida ? `<small>${escapar(a.substituida)}</small>` : ""}</td>
+      <td>${escapar(a.em || "")}<small>${escapar(a.por || "")}</small></td>
+      <td>${a.documento_id ? `<button class="link-btn" type="button" data-documento="${escapar(urlDoDocumento(a.documento_id, false))}"
+          data-legenda="${escapar(`${PAINEL.pessoa.nome} — folha de ${mesBR(a.competencia)} assinada`)}">📄 abrir o PDF</button>` : ""}</td></tr>`; }).join("")}
+    </tbody></table>` : "";
+  return ((conf || ped) ? `<table><thead><tr><th>O quê</th><th>Quando</th><th>Situação</th><th></th></tr></thead>
+      <tbody>${conf}${ped}</tbody></table>` : `<div class="vazio"><b>Nenhum pedido</b>nem batida esperando decisão.</div>`) + assin;
 }
 
 function painelAparelhos() {
@@ -1868,7 +1953,10 @@ function painelCadastro() {
   const linha = (r, v) => `<tr><th style="width:32%; text-align:left">${r}</th><td>${v}</td></tr>`;
   // A FOTO DE CADASTRO (28/10/2026, o dono: "ver a foto de cadastro e poder alterar"): é com ela
   // que a conferência do rosto compara cada batida.
-  const foto = `<div class="dp-foto-cad">
+  return blocoFotoDeCadastro(p) + painelCadastroTabela(p, esc, linha);
+}
+function blocoFotoDeCadastro(p) {
+  return `<div class="dp-foto-cad">
       ${p.tem_foto_cadastral ? `<img alt="Foto de cadastro" src="/erp/api/ponto/pessoas/${p.id}/foto-cadastral?v=${FOTO_CAD_VERSAO}"
           onerror="fotoQuebrada(this)" style="cursor:zoom-in" data-foto-cad="${p.id}">` : `<div class="sem">sem foto de cadastro</div>`}
       <div><b>Foto de cadastro</b>
@@ -1879,7 +1967,9 @@ function painelCadastro() {
           <button class="btn secundario" type="button" id="dp-foto-escolher">Escolher entre as fotos das batidas…</button>
           ${p.tem_foto_cadastral ? `<button class="link-btn" type="button" id="dp-foto-tirar">tirar a foto de cadastro</button>` : ""}</div>` : ""}
         <div id="dp-fotos-batidas"></div></div></div>`;
-  return foto + `<table>${[
+}
+function painelCadastroTabela(p, esc, linha) {
+  return `<table>${[
     linha("Situação", escapar(p.situacao || "—")),
     linha("Bate ponto?", p.ativo_no_ponto && p.excecao_planilha
       ? `<b>Sim, por exceção</b> — a planilha diz: ${escapar(p.excecao_planilha.planilha || "não bate")}; liberado: ${escapar(p.excecao_planilha.motivo || "")}
@@ -1913,6 +2003,7 @@ function painelCadastro() {
     ${PODE_DP && (p.planilha_tira || p.excecao_planilha) ? (p.excecao_planilha
       ? `<button class="btn secundario" type="button" data-dp-cad="excecao">↩️ Tirar a exceção (volta a valer a planilha)…</button>`
       : `<button class="btn secundario" type="button" data-dp-cad="excecao">✅ Bate ponto por exceção…</button>`) : ""}
+    <button class="btn secundario" type="button" data-dp-cad="obrasApp">🏗️ Liberar obras no aplicativo…</button>
     <button class="btn secundario" type="button" data-dp-cad="forma">Acesso no aplicativo</button>
     <button class="btn secundario" type="button" data-dp-cad="alcance">👥 Quem ela alcança no app</button>
     <button class="btn secundario" type="button" data-dp-cad="codigo">🔑 Código de acesso do aplicativo (PIN)…</button>
@@ -2508,8 +2599,72 @@ function entraNoAplicativo(p) {
     ? (PODE_DP && p.planilha_tira ? botao("excecao", "liberar para bater ponto (exceção à planilha)…") : "")
     : botao("naoBate", "voltar a bater ponto…");
   return `<b style="color:var(--vermelho)">Não</b> — quem não bate ponto só entra para acompanhar outras pessoas
-    (administrativo de obra ou liberado pelo DP).<br>Para entrar e acompanhar a equipe:${botao("forma", "liberar no aplicativo…")}
+    (administrativo de obra ou liberado pelo DP).<br>Para entrar, consultar e fazer ajustes pelas pessoas de algumas obras:${botao("obrasApp", "liberar obras no aplicativo…")}
     ${bater ? `<br>Para bater e ver o próprio ponto:${bater}` : ""}`;
+}
+
+// LIBERAR OBRAS NO APLICATIVO (04/11/2026, o dono: "ela está como não bate ponto (…) eu quero só que ela consiga
+// visualizar as pessoas de algumas obras (…) fazer ajuste de ponto de duas obras específicas. Não está claro, está
+// confuso"). A liberação de obras já existia (migração 023), mas no meio do "Acesso no aplicativo", com as obras
+// digitadas por código. Aqui é uma janela só dela: as obras para marcar, com busca, e o que a pessoa passa a fazer.
+async function liberarObrasNoApp(p) {
+  let obras;
+  try { obras = (await api("/erp/api/ponto/obras")).obras || []; } catch (e) { falhou(e, "dp-msg"); return; }
+  const lib = p.liberado || {};
+  const marcadas = new Set((lib.obras || []).map(o => String(o.id)));
+  let dlg = els("dlg-obras-app");
+  if (!dlg) { dlg = document.createElement("dialog"); dlg.id = "dlg-obras-app"; document.body.appendChild(dlg); }
+  const nome = escapar(p.nome.split(" ")[0]);
+  dlg.innerHTML = `<div class="dlg-topo"><h3>Liberar obras no aplicativo — ${escapar(p.nome)}</h3>
+      <button class="topo-btn" style="margin-left:auto" data-cancelar>Cancelar</button></div>
+    <div class="dlg-corpo">
+      <div class="aviso info">${nome} entra no aplicativo com o CPF e o PIN e, nas obras marcadas, <b>consulta o ponto das
+        pessoas e faz ajustes e pedidos por elas</b> (atestado, ajuste de batida, abono) — os pedidos vão para a validação
+        de sempre. ${p.ativo_no_ponto ? "" : `Como ${nome} não bate ponto, continua sem bater: a liberação é só para acompanhar os outros.`}
+        ${p.tem_pin === false ? `<br><b>${nome} ainda não tem PIN:</b> no primeiro acesso, o código chega no WhatsApp — ou gere em “🔑 Código de acesso do aplicativo”.` : ""}</div>
+      ${PODE_CONFIGURAR ? `<label class="opcao" style="margin:10px 0 6px"><input type="checkbox" id="oa-todas" ${lib.todas_obras ? "checked" : ""}>
+        <span class="rotulo"><b>Todas as obras</b> (acesso geral — vale também para obra cadastrada depois)</span></label>` : ""}
+      <div id="oa-lista-bloco">
+        <input id="oa-busca" placeholder="procurar a obra (código ou nome)" autocomplete="off" data-sem-mascara data-sem-busca
+               style="width:100%; margin:6px 0">
+        <div class="suave" id="oa-conta" style="font-size:13px; margin-bottom:4px"></div>
+        <div id="oa-lista" style="max-height:45vh; overflow:auto; border:1px solid var(--borda); border-radius:8px; padding:6px 10px">
+          ${obras.map(o => `<label class="opcao" data-oa-texto="${escapar(`${o.codigo} ${o.nome || ""}`.toLowerCase())}">
+            <input type="checkbox" data-oa="${o.id}" ${marcadas.has(String(o.id)) ? "checked" : ""}>
+            <span class="rotulo"><b>${escapar(o.codigo)}</b> — ${escapar(o.nome || "")}</span></label>`).join("")}</div>
+      </div>
+      <div id="oa-erro"></div>
+      <div style="margin-top:14px; display:flex; gap:8px">
+        <button class="btn" type="button" data-ok>Salvar</button>
+        <button class="btn secundario" type="button" data-cancelar>Cancelar</button></div>
+    </div>`;
+  const conta = () => {
+    const n = dlg.querySelectorAll("[data-oa]:checked").length, todas = els("oa-todas") && els("oa-todas").checked;
+    els("oa-conta").textContent = todas ? "todas as obras liberadas" : n ? `${n} obra(s) marcada(s)` : "nenhuma obra marcada";
+    els("oa-lista-bloco").style.opacity = todas ? ".45" : "1";
+  };
+  dlg.querySelectorAll("[data-oa]").forEach(c => c.addEventListener("change", conta));
+  if (els("oa-todas")) els("oa-todas").addEventListener("change", conta);
+  els("oa-busca").addEventListener("input", () => {
+    const t = els("oa-busca").value.trim().toLowerCase();
+    dlg.querySelectorAll("[data-oa-texto]").forEach(l => { l.style.display = !t || l.dataset.oaTexto.includes(t) ? "" : "none"; });
+  });
+  conta();
+  dlg.querySelectorAll("[data-cancelar]").forEach(b => b.addEventListener("click", () => dlg.close()));
+  dlg.querySelector("[data-ok]").addEventListener("click", async () => {
+    const ids = [...dlg.querySelectorAll("[data-oa]:checked")].map(c => obras.find(o => String(o.id) === c.dataset.oa).codigo);
+    const corpo = {liberado_obras: ids};
+    if (els("oa-todas")) corpo.liberado_todas_obras = els("oa-todas").checked;
+    try {
+      await postar(`/erp/api/ponto/pessoas/${p.id}/forma-de-bater`, corpo);
+      dlg.close();
+      await depoisDoCadastro(p.id);
+      aviso("dp-msg", corpo.liberado_todas_obras ? `Todas as obras liberadas para ${nome}.` : ids.length
+        ? `Obras liberadas para ${nome}: ${escapar(ids.join(", "))} — no aplicativo, consulta e faz ajustes e pedidos pelas pessoas delas.`
+        : `Liberação de obras tirada de ${nome}.`, "ok");
+    } catch (e) { aviso("oa-erro", escapar(e.message), "erro"); }
+  });
+  dlg.showModal();
 }
 
 async function batePorExcecao(p) {
@@ -2715,7 +2870,7 @@ async function obrasParaEscolher() {
   return OBRAS_PARA_ESCOLHER;
 }
 
-async function pedirAjuste(p, dia, depois) {
+async function pedirAjuste(p, dia, depois, hora, quando) {
   if (!p) return;
   let obras = [];
   try { obras = await obrasParaEscolher(); } catch (e) { falhou(e); return; }
@@ -2727,8 +2882,8 @@ async function pedirAjuste(p, dia, depois) {
     campos: [
       {nome: "data_inicio", rotulo: "Dia de trabalho", tipo: "date", valor: dia || hojeISO(),
        obrigatorio: true, largura: 1},
-      {nome: "hora", rotulo: "Horário da batida", tipo: "time", obrigatorio: true, largura: 1},
-      {nome: "quando", rotulo: "A batida foi", tipo: "select", valor: "0", largura: 1,
+      {nome: "hora", rotulo: "Horário da batida", tipo: "time", obrigatorio: true, largura: 1, valor: hora || ""},
+      {nome: "quando", rotulo: "A batida foi", tipo: "select", valor: quando || "0", largura: 1,
        opcoes: [{valor: "0", rotulo: "No próprio dia"},
                 {valor: "1", rotulo: "No dia seguinte (turno da noite)"}]},
       {nome: "obra", rotulo: "Obra da batida", tipo: "select", valor: "", largura: 3,
@@ -2773,6 +2928,31 @@ async function registrarCompensacao(p, depois) {
       tipo: "COMPENSACAO", colaborador_id: p.id, data_inicio: r.data_inicio,
       dia_trabalhado: r.dia_trabalhado, descricao: r.descricao});
     aviso("mensagem", "Compensação registrada. Ela segue para o supervisor e depois para o DP.", "ok");
+    if (depois) await depois();
+  } catch (e) { falhou(e); }
+}
+
+// A COMPENSAÇÃO DE HORAS (06/11/2026): as horas a mais de um dia pagam as a menos de outro — sem folga de dia inteiro.
+async function registrarCompensacaoDeHoras(p, depois) {
+  if (!p) return;
+  const r = await perguntar({
+    titulo: `Compensação de horas — ${escapar(p.nome)}`,
+    aviso: `Ficou até mais tarde num dia e sai mais cedo em outro. Não precisa dizer quantas horas: o sistema conta
+      pelas batidas. As horas a mais pagam as a menos; o que sobrar continua hora extra, e o que faltar continua devendo.`,
+    campos: [
+      {nome: "dia_trabalhado", rotulo: "Dia das horas a mais", tipo: "date", obrigatorio: true, largura: 1},
+      {nome: "data_inicio", rotulo: "Dia em que sai mais cedo", tipo: "date", obrigatorio: true, largura: 1},
+      {nome: "descricao", rotulo: "O que foi combinado (opcional)", tipo: "textarea", largura: 3,
+       exemplo: "ex.: ficou até 20h17 na concretagem de quinta; sai ao meio-dia na sexta"},
+    ],
+    textoOk: "Registrar",
+  });
+  if (!r) return;
+  try {
+    await postar("/erp/api/ponto/ocorrencias", {
+      tipo: "COMPENSACAO_HORAS", colaborador_id: p.id, data_inicio: r.data_inicio,
+      dia_trabalhado: r.dia_trabalhado, descricao: r.descricao || ""});
+    aviso("mensagem", "Compensação de horas registrada. Ela aparece em Validações até ser decidida.", "ok");
     if (depois) await depois();
   } catch (e) { falhou(e); }
 }
@@ -3729,6 +3909,8 @@ const QD_SERVE = {
   // a falta do dia inteiro, e (29/10/2026) a falta parcial e o dia com horas a menos — aí só as horas que faltaram
   abono: l => !l.ocorrencia && (l.situacao === "FALTA" || (["FALTA_PARCIAL", "INCOMPLETO", "OK"].includes(l.situacao) && l.debito > 0)),
   escala: () => true,
+  // a compensação de horas da turma (06/11/2026): o dia MAIS CURTO — com horas a menos, sem dia justificado
+  horas: l => !l.ocorrencia && l.debito > 0,
 };
 const QD_GRUPOS = {
   todas: () => true,
@@ -3751,7 +3933,8 @@ function qdLote() {
   [["qd-incluir", "batida", "Incluir uma batida", "serve para o dia que já tem alguma batida"],
    ["qd-dia-inteiro", "dia", "Lançar o dia inteiro pela escala", "serve para o dia sem nenhuma batida, com escala"],
    ["qd-definir-escala", "escala", "Definir a escala", "vale para as pessoas marcadas, a partir da data escolhida"],
-   ["qd-abonar", "abono", "Abonar a falta", "serve para o dia de falta e para a falta parcial (só as horas que faltaram)"]].forEach(([id, acao, rotulo, dica]) => {
+   ["qd-abonar", "abono", "Abonar a falta", "serve para o dia de falta e para a falta parcial (só as horas que faltaram)"],
+   ["qd-compensar-horas", "horas", "Compensar horas", "serve para o dia com horas a menos: as horas a mais de outro dia pagam"]].forEach(([id, acao, rotulo, dica]) => {
     const b = els(id);
     if (!b) return;
     const n = acao === "escala" ? new Set(marcadas.map(l => l.colaborador_id)).size : marcadas.filter(QD_SERVE[acao]).length;
@@ -3867,6 +4050,26 @@ async function qdAbonar() {
                     ["falta abonada", "faltas abonadas"]);
 }
 
+// A COMPENSAÇÃO DE HORAS DA TURMA (06/11/2026, o dono: "é uma compensação, não é de um dia, é de horas"): as linhas
+// marcadas são o dia mais curto; pergunta-se o dia das horas a mais. Cada pessoa com a sua conta, pelas batidas.
+async function qdCompensarHoras() {
+  const linhas = qdMarcadas().filter(QD_SERVE.horas);
+  if (!linhas.length) return;
+  const r = await perguntar({titulo: `Compensar horas — ${contar(linhas.length, "pessoa-dia", "pessoas-dia")}`,
+    aviso: "As linhas marcadas são o dia em que a turma <b>saiu mais cedo</b>. Diga o dia em que ela <b>ficou até mais tarde</b>: " +
+           "as horas a mais desse dia pagam as horas a menos das linhas marcadas, pessoa por pessoa, pelas batidas de cada um. " +
+           "O que sobrar continua hora extra; o que faltar continua devendo. Aprovado na hora, com o seu nome.",
+    campos: [{nome: "dia_das_horas_a_mais", rotulo: "Dia das horas a mais (ficaram até mais tarde)", tipo: "date",
+              obrigatorio: true, largura: 3},
+             {nome: "motivo", rotulo: "O que foi combinado (opcional)", tipo: "textarea", largura: 6,
+              exemplo: "ex.: concretagem na quinta até 20h17; a turma sai ao meio-dia na sexta"}],
+    textoOk: "Compensar"});
+  if (!r) return;
+  await qdRodarLote("/erp/api/ponto/quadro/compensar-horas", qdItens(linhas),
+                    {dia_das_horas_a_mais: r.dia_das_horas_a_mais, motivo: r.motivo || ""},
+                    ["compensação lançada", "compensações lançadas"]);
+}
+
 async function qdIncluir() {
   const linhas = qdMarcadas().filter(QD_SERVE.batida);
   if (!linhas.length) return;
@@ -3915,6 +4118,7 @@ if (els("qd-incluir")) els("qd-incluir").addEventListener("click", qdIncluir);
 if (els("qd-dia-inteiro")) els("qd-dia-inteiro").addEventListener("click", qdDiaInteiro);
 if (els("qd-definir-escala")) els("qd-definir-escala").addEventListener("click", qdEscala);
 if (els("qd-abonar")) els("qd-abonar").addEventListener("click", qdAbonar);
+if (els("qd-compensar-horas")) els("qd-compensar-horas").addEventListener("click", qdCompensarHoras);
 els("qd-limpar").addEventListener("click", () => {
   document.querySelectorAll("[data-qd-situacao], [data-qd-batidas], [data-qd-faltando]").forEach(x => { x.checked = false; });
   FP_QD.limpar();
@@ -4908,9 +5112,12 @@ function fechLigarGrade() {
     if (!lista.length) return aviso("mensagem", "Marque no calendário, com um clique, as horas extras que não devem entrar.", "erro");
     const r = await perguntar({titulo: `Negar ${contar(lista.length, "hora extra", "horas extras")}`,
       aviso: "A hora extra desses dias sai de todas as contas: fechamento, arquivo .ps, relatórios e banco de horas. " +
-             "As batidas não mudam. Fica registrado o motivo, quem negou e quando — e dá para voltar a contar.",
-      campos: [{nome: "motivo", rotulo: "Por que não entra", tipo: "textarea", linhas: 2, obrigatorio: true, largura: 6,
-                exemplo: "ex.: hora extra não autorizada pelo engenheiro da obra"}], textoOk: "Negar"});
+             "As batidas não mudam. Fica registrado o motivo, quem negou e quando — e dá para voltar a contar.<br>" +
+             "<b>⚠️ Só para o que NÃO foi trabalho</b> — esqueceu de bater a saída, ficou na obra sem trabalhar. " +
+             "Hora extra TRABALHADA é devida mesmo sem autorização: negá-la é tirar hora da pessoa, e numa ação trabalhista " +
+             "o registro do ponto mostra o horário real.",
+      campos: [{nome: "motivo", rotulo: "Por que não foi trabalho", tipo: "textarea", linhas: 2, obrigatorio: true, largura: 6,
+                exemplo: "ex.: esqueceu de bater a saída — saiu às 17h, confirmado pelo encarregado"}], textoOk: "Negar"});
     if (!r) return;
     try { const d = await postar("/erp/api/ponto/horas-extras/negar", {itens: lista, motivo: r.motivo});
           FECH_MARC.clear(); aviso("mensagem", `${contar(d.alteradas, "hora extra negada", "horas extras negadas")}. Refazendo o fechamento…`, "ok");
@@ -5097,7 +5304,9 @@ function rlColunas() {
   if (RL.tipo === "extras") return RL_VISAO === "pessoas"
     ? [...pessoa, ["Dias", l => l.dias, "num"], ["Em dia de trabalho", l => hmCelula(l.util), "num"],
        ["Em descanso", l => hmCelula(l.descanso), "num"], ["Em feriado", l => hmCelula(l.feriado), "num"],
-       ["Total", l => hm(l.total), "num"], ["Noturno", l => hmCelula(l.noturno), "num"]]
+       ["Total", l => hm(l.total), "num"], ["Noturno", l => hmCelula(l.noturno), "num"],
+       // 06/11/2026: as horas que a mesma pessoa DEVE no período — não pagar extra de quem está devendo sem conferir
+       ["Devendo no período ⚠️", l => l.devendo ? `⚠️ ${hm(l.devendo)}` : "", "num"]]
     : [...pessoa, ["Dia", l => dataBR(l.data), "dados"], ["", l => l.dia_semana], ["Tipo do dia", l => RL_TIPO_DIA[l.tipo_dia] + (l.feriado ? ` (${l.feriado})` : "")],
        ["Batidas", l => l.batidas.join(" "), "dados"], ["Previsto", l => hm(l.previsto), "num"], ["Trabalhado", l => hm(l.trabalhado), "num"],
        ["Extra", l => hm(l.extra), "num"], ["Noturno", l => hmCelula(l.noturno), "num"]];
@@ -5167,7 +5376,7 @@ function rlDesenhar() {
   els("rl-kpis").innerHTML = `<div class="kpis">${
     RL.tipo === "faltas" ? k("Faltas (dia inteiro)", t.faltas, t.faltas ? "vermelho" : "") + k("Faltas parciais", t.parciais || 0, t.parciais ? "ambar" : "")
       + k("Pessoas com falta", t.pessoas) + k("Horas que faltaram", hm(t.faltou ?? t.previsto))
-    : RL.tipo === "extras" ? k("Hora extra total", hm(t.total), "azul") + k("Em dia de trabalho", hm(t.util)) + k("Em descanso", hm(t.descanso)) + k("Em feriado", hm(t.feriado)) + k("Noturno", hm(t.noturno)) + k("Pessoas", t.pessoas)
+    : RL.tipo === "extras" ? k("Hora extra total", hm(t.total), "azul") + k("Em dia de trabalho", hm(t.util)) + k("Em descanso", hm(t.descanso)) + k("Em feriado", hm(t.feriado)) + k("Noturno", hm(t.noturno)) + k("Pessoas", t.pessoas) + (t.devendo ? k("Com extra e devendo horas", t.devendo, "ambar") : "")
     : RL.tipo === "justificadas" ? k("Ausências", t.pedidos) + k("Dias no período", t.dias) + k("Pessoas", t.pessoas)
     : k("Pessoas com banco", t.pessoas) + k("Saldo positivo", hm(t.positivo), "verde") + k("Saldo negativo", hm(Math.abs(t.negativo)), t.negativo ? "vermelho" : "")}</div>`;
   const visoes = {faltas: [["pessoas", "Por pessoa"], ["dias", "Dia a dia"]], extras: [["pessoas", "Por pessoa"], ["dias", "Dia a dia"]],
@@ -5906,10 +6115,17 @@ async function carregarAlertas() {
   const p = new URLSearchParams();
   p.set("situacao", els("a-situacao").value);
   if (els("a-gravidade").value) p.set("gravidade", els("a-gravidade").value);
+  if (els("a-tipo").value) p.set("tipo", els("a-tipo").value);
   try {
     const d = await api(`/erp/api/ponto/alertas?${p}`);
     ALERTAS = d.alertas;
     ROTULOS = d.rotulos || {};
+    // o filtro por tipo, com quantos há de cada um (com a situação e a gravidade escolhidas)
+    const escolhido = els("a-tipo").value, tipos = d.tipos || [];
+    els("a-tipo").innerHTML = `<option value="">Todos os tipos (${tipos.reduce((n, t) => n + t.n, 0)})</option>` +
+      tipos.map(t => `<option value="${escapar(t.codigo)}">${escapar(t.rotulo)} (${t.n})</option>`).join("") +
+      (escolhido && !tipos.some(t => t.codigo === escolhido) ? `<option value="${escapar(escolhido)}">${escapar(ROTULOS[escolhido] || escolhido)} (0)</option>` : "");
+    els("a-tipo").value = escolhido;
     desenharAlertas();
   } catch (e) { falhou(e); }
 }
@@ -5919,27 +6135,59 @@ function desenharAlertas() {
   if (!ALERTAS.length) {
     els("a-grupos").innerHTML = `<div class="cartao"><div class="vazio"><b>Nenhum alerta</b>
       com estes filtros.</div></div>`;
+    A_MARCADOS.clear(); aLote();
     return;
   }
+  [...A_MARCADOS].forEach(id => { if (!ALERTAS.some(a => a.id === id)) A_MARCADOS.delete(id); });
   els("a-grupos").innerHTML = GRUPOS.map(([g, nome, classe]) => {
     const do_grupo = ALERTAS.filter(a => a.gravidade === g);
     if (!do_grupo.length) return "";
+    const todos = do_grupo.every(a => A_MARCADOS.has(a.id));
     return `<div class="cartao"><div class="grupo-cab"><span class="selo ${classe}">${nome}</span>
         <small class="suave">${do_grupo.length} alerta(s)</small></div>
-      <div class="tabela-rolagem" style="max-height:none"><table><thead><tr><th class="sem-ordem">Alerta</th>
+      <div class="tabela-rolagem" style="max-height:none"><table><thead><tr>
+        ${PODE_TRATAR ? `<th class="sem-ordem" style="width:28px"><input type="checkbox" data-a-marcar-grupo="${g}" ${todos ? "checked" : ""}
+           title="marcar todos os ${do_grupo.length} deste grupo" aria-label="marcar todos deste grupo"></th>` : ""}<th class="sem-ordem">Alerta</th>
         <th class="sem-ordem">O que aconteceu</th><th class="sem-ordem">Obra</th><th class="sem-ordem">Dia</th>
         <th class="sem-ordem">Situação</th><th class="sem-ordem"></th></tr></thead><tbody>
       ${do_grupo.map(a => {
         const [c, t] = SELO_SITUACAO[a.situacao] || ["outro", a.situacao];
         const nome = a.colaborador_id
           ? eloEspelho(a.colaborador_id, (a.data_referencia || hojeISO()).slice(0, 7), "abrir espelho") : "";
+        // o rosto que não confere (06/11/2026, o dono: "olha como é longo o caminho"): direto na conferência do rosto,
+        // com a foto de cadastro e as das batidas lado a lado — e o trocar ali mesmo
+        // AS FOTOS NA PRÓPRIA LINHA (06/11/2026, o dono: "era para aparecer aqui: essa foto está igual a essa outra")
+        const fotosDoAlerta = (a.fotos || []).length ? `<div class="a-fotos">${a.fotos.map(f => `<figure>
+            <img alt="" loading="lazy" src="/erp/api/ponto/marcacoes/${f.marcacao_id}/foto" onerror="fotoQuebrada(this)"
+                 data-foto="${f.marcacao_id}" data-legenda="${escapar(`${a.colaborador || ""} — ${f.rotulo}`)}">
+            <figcaption>${escapar(f.rotulo)}<br><button class="link-btn" type="button" data-mapa-batida="${f.marcacao_id}">abrir a batida</button>
+              ${a.codigo === "ROSTO_NAO_CONFERE" && PODE_TRATAR ? `<br><button class="link-btn" type="button"
+                data-a-usar-foto="${f.marcacao_id}" data-pessoa="${escapar(a.colaborador_id)}">⭐ usar como foto de cadastro</button>` : ""}</figcaption></figure>`).join("")}
+            ${a.codigo === "ROSTO_NAO_CONFERE" && a.colaborador_id ? `<figure><img alt="" loading="lazy"
+                src="/erp/api/ponto/pessoas/${escapar(a.colaborador_id)}/foto-cadastral?v=${FOTO_CAD_ALERTA}" onerror="fotoQuebrada(this)"
+                style="cursor:default"><figcaption>a foto de cadastro<br>(é com ela que comparou)</figcaption></figure>` : ""}</div>` : "";
+        // OS ATALHOS PARA DECIDIR DALI (06/11/2026, o dono: "poder clicar na batida faltando e já abrir um ajuste (…)
+        // tudo para facilitar a tomada de decisão"): o dia da pessoa, incluir a batida que faltou, as Validações
+        const dia = a.colaborador_id && a.data_referencia && ALERTA_DE_DIA.has(a.codigo)
+          ? `<button type="button" class="link-btn elo" data-abrir-pessoa="${escapar(a.colaborador_id)}" data-dia="${escapar(a.data_referencia)}"
+               data-aba="dia">abrir o dia ${escapar(ddmm(a.data_referencia))}</button>` : "";
+        const incluir = PODE_TRATAR && a.situacao === "ABERTO" && a.colaborador_id && a.data_referencia
+          && ["BATIDA_FALTANDO", "FALTA_PARCIAL", "FALTA"].includes(a.codigo)
+          ? `<button type="button" class="link-btn elo" data-a-incluir="${a.id}">➕ incluir a batida que faltou</button>` : "";
+        const validar = ["PEDIDO_PARADO", "BATIDA_EM_ANALISE_PARADA"].includes(a.codigo)
+          ? `<a class="elo" href="/erp/ponto/pendencias">ir para as Validações</a>` : "";
+        const aparelho = ["APARELHO_PENDENTE", "APARELHO_VENCENDO", "TENTATIVAS_DE_CPF", "CAMERA_TRAVADA"].includes(a.codigo)
+          ? `<a class="elo" href="/erp/ponto/configuracao#aparelhos">ver os aparelhos</a>` : "";
+        const rosto = a.codigo === "ROSTO_NAO_CONFERE" && a.colaborador_id
+          ? `<button type="button" class="link-btn elo" data-abrir-pessoa="${escapar(a.colaborador_id)}" data-aba="rosto">conferir o rosto e a foto de cadastro</button>` : "";
         // Mosaico pendente e sequência rápida no mesmo aparelho se resolvem
         // olhando as fotos daquele dia, daquela obra.
         const mosaico = ALERTAS_DO_MOSAICO.includes(a.codigo) && a.obra_id && a.data_referencia
           ? `<a class="elo" href="/erp/ponto/mosaico?obra=${encodeURIComponent(a.obra_id)}&data=${encodeURIComponent(a.data_referencia)}">Abrir mosaico</a>` : "";
         return `<tr>
+          ${PODE_TRATAR ? `<td><input type="checkbox" data-a-marcar="${a.id}" ${A_MARCADOS.has(a.id) ? "checked" : ""} aria-label="marcar este alerta"></td>` : ""}
           <td><b>${escapar(a.rotulo || ROTULOS[a.codigo] || a.codigo)}</b></td>
-          <td class="desc">${escapar(a.mensagem)}${[nome, mosaico].filter(Boolean).map(x => `<small>${x}</small>`).join("")}</td>
+          <td class="desc">${escapar(a.mensagem)}${fotosDoAlerta}${[incluir, rosto, dia, nome, validar, aparelho, mosaico].filter(Boolean).map(x => `<small>${x}</small>`).join("")}</td>
           <td class="dados">${escapar(a.obra || "—")}</td>
           <td class="dados">${a.data_referencia ? dataBR(a.data_referencia) : "—"}</td>
           <td><span class="selo ${c}">${escapar(t)}</span>
@@ -5953,12 +6201,60 @@ function desenharAlertas() {
       }).join("")}</tbody></table></div></div>`;
   }).join("");
   const achar = id => ALERTAS.find(a => a.id === Number(id));
+  document.querySelectorAll("[data-a-marcar]").forEach(c => c.addEventListener("change", () => {
+    c.checked ? A_MARCADOS.add(Number(c.dataset.aMarcar)) : A_MARCADOS.delete(Number(c.dataset.aMarcar));
+    desenharAlertas();
+  }));
+  document.querySelectorAll("[data-a-marcar-grupo]").forEach(c => c.addEventListener("change", () => {
+    ALERTAS.filter(a => a.gravidade === c.dataset.aMarcarGrupo).forEach(a => c.checked ? A_MARCADOS.add(a.id) : A_MARCADOS.delete(a.id));
+    desenharAlertas();
+  }));
+  aLote();
   document.querySelectorAll("[data-resolver]").forEach(b =>
     b.addEventListener("click", () => tratarAlerta(achar(b.dataset.resolver), "RESOLVIDO")));
   document.querySelectorAll("[data-dispensar]").forEach(b =>
     b.addEventListener("click", () => tratarAlerta(achar(b.dataset.dispensar), "DISPENSADO")));
   document.querySelectorAll("[data-reabrir]").forEach(b =>
     b.addEventListener("click", () => tratarAlerta(achar(b.dataset.reabrir), "ABERTO")));
+}
+
+// OS MARCADOS, DE UMA VEZ (06/11/2026): resolver, dispensar (a mesma nota para todos) ou reabrir
+const A_MARCADOS = new Set();
+function aLote() {
+  if (!els("a-lote")) return;
+  const marcados = ALERTAS.filter(a => A_MARCADOS.has(a.id));
+  els("a-lote").hidden = !marcados.length;
+  els("a-lote-qtd").textContent = contar(marcados.length, "alerta marcado", "alertas marcados");
+  const abertos = marcados.filter(a => a.situacao === "ABERTO").length;
+  els("a-lote-resolver").hidden = els("a-lote-dispensar").hidden = !abertos;
+  els("a-lote-reabrir").hidden = abertos === marcados.length;
+}
+async function tratarMarcados(situacao) {
+  const alvo = ALERTAS.filter(a => A_MARCADOS.has(a.id) && (situacao === "ABERTO" ? a.situacao !== "ABERTO" : a.situacao === "ABERTO"));
+  if (!alvo.length) return;
+  const nomes = {RESOLVIDO: ["Resolver", "resolvidos"], DISPENSADO: ["Dispensar", "dispensados"], ABERTO: ["Reabrir", "reabertos"]};
+  const tipos = [...new Set(alvo.map(a => a.rotulo || a.codigo))];
+  const r = await perguntar({
+    titulo: `${nomes[situacao][0]} ${contar(alvo.length, "alerta", "alertas")}`,
+    aviso: `${tipos.slice(0, 6).map(escapar).join(" · ")}${tipos.length > 6 ? " · …" : ""}`,
+    campos: [{nome: "nota", rotulo: situacao === "DISPENSADO" ? "Por que não precisam de ação (vale para todos)" : "Nota (vale para todos)",
+              tipo: "textarea", linhas: 2, largura: 3, obrigatorio: situacao === "DISPENSADO",
+              exemplo: situacao === "RESOLVIDO" ? "opcional — ex.: faltas já lançadas no fechamento" : ""}],
+    textoOk: nomes[situacao][0]});
+  if (!r) return;
+  try {
+    const d = await postar("/erp/api/ponto/alertas/tratar-varios", {ids: alvo.map(a => a.id), situacao, nota: r.nota || ""});
+    A_MARCADOS.clear();
+    aviso("mensagem", `${contar(d.feitos, "alerta " + nomes[situacao][1].slice(0, -1), "alertas " + nomes[situacao][1])}.`
+      + (d.fora ? ` ${d.fora} ficaram de fora (fora das suas obras).` : ""), "ok");
+    await carregarAlertas();
+  } catch (e) { falhou(e); }
+}
+if (els("a-lote")) {
+  els("a-lote-resolver").addEventListener("click", () => tratarMarcados("RESOLVIDO"));
+  els("a-lote-dispensar").addEventListener("click", () => tratarMarcados("DISPENSADO"));
+  els("a-lote-reabrir").addEventListener("click", () => tratarMarcados("ABERTO"));
+  els("a-lote-desmarcar").addEventListener("click", () => { A_MARCADOS.clear(); desenharAlertas(); });
 }
 
 async function tratarAlerta(a, situacao) {
@@ -6025,6 +6321,50 @@ async function enviarResumo() {
 els("a-ver").addEventListener("click", carregarAlertas);
 els("a-situacao").addEventListener("change", carregarAlertas);
 els("a-gravidade").addEventListener("change", carregarAlertas);
+els("a-tipo").addEventListener("change", carregarAlertas);
+// "⭐ usar como foto de cadastro" direto no alerta do rosto: a foto da batida vira a de cadastro, e o alerta, resolvido
+let FOTO_CAD_ALERTA = Date.now();
+// os alertas de UM dia da pessoa: o atalho "abrir o dia" leva à janela dela naquele dia
+const ALERTA_DE_DIA = new Set(["FALTA", "FALTA_PARCIAL", "BATIDA_FALTANDO", "COMPENSACAO_NAO_CUMPRIDA", "TRABALHOU_NA_FOLGA",
+  "ATRASO", "SAIDA_ANTECIPADA", "EXTRA_ACIMA_DE_2H", "INTERVALO_CURTO", "INTERJORNADA_CURTA", "TRABALHO_EM_DESCANSO",
+  "TRABALHO_EM_FERIADO", "FORA_DO_CICLO", "BATIDA_NO_MEIO_DO_TURNO", "BATIDA_EM_DIA_ABONADO", "BATIDA_REPETIDA",
+  "SEM_FOTO", "FOTO_ESCURA", "FOTO_REPETIDA", "CAMERA_TRAVADA", "ROSTO_NAO_CONFERE", "QR_ANTIGO_USADO",
+  "BATIDA_RECUSADA_FORA_DA_OBRA", "DOIS_LUGARES", "BATIDA_EM_ANALISE_PARADA"]);
+// "incluir a batida que faltou": o dia da pessoa diz qual faltou e a hora que a escala previa — o pedido já vem com ela
+els("a-grupos").addEventListener("click", async ev => {
+  const b = ev.target.closest("[data-a-incluir]");
+  if (!b) return;
+  const a = ALERTAS.find(x => x.id === Number(b.dataset.aIncluir));
+  if (!a) return;
+  let falta = null, obra = a.obra || "";
+  try {
+    const esp = await api(`/erp/api/ponto/espelho/${a.colaborador_id}?competencia=${a.data_referencia.slice(0, 7)}`);
+    const d = (esp.dias || []).find(x => x.data === a.data_referencia) || {};
+    falta = (d.faltando || [])[0] || null;
+    obra = (esp.pessoa && esp.pessoa.obra) || obra;
+  } catch (e) { /* sem o dia, o pedido abre sem a hora sugerida */ }
+  const hora = falta && falta.sugestao ? String(falta.sugestao).slice(0, 5) : "";
+  // a saída de madrugada do turno da noite é do dia seguinte
+  const quando = falta && falta.minuto != null && falta.minuto >= 1440 ? "1" : "0";
+  await pedirAjuste({id: a.colaborador_id, nome: a.colaborador || "", obra}, a.data_referencia, carregarAlertas, hora, quando);
+});
+els("a-grupos").addEventListener("click", async ev => {
+  const b = ev.target.closest("[data-a-usar-foto]");
+  if (!b) return;
+  const alerta = ALERTAS.find(x => String(x.colaborador_id) === b.dataset.pessoa && (x.fotos || []).some(f => String(f.marcacao_id) === b.dataset.aUsarFoto));
+  const r = await perguntar({titulo: "Usar como foto de cadastro", campos: [], textoOk: "Usar esta foto",
+    aviso: "A foto desta batida passa a ser a de cadastro: as próximas batidas são comparadas com ela. Use só se o rosto " +
+           "está de frente e é mesmo da pessoa. O alerta fica resolvido; a batida, se estava em conferência, continua lá para validar."});
+  if (!r) return;
+  try {
+    await postar(`/erp/api/ponto/pessoas/${b.dataset.pessoa}/foto-cadastral`, {marcacao_id: Number(b.dataset.aUsarFoto)});
+    if (alerta && alerta.situacao === "ABERTO")
+      await postar(`/erp/api/ponto/alertas/${alerta.id}/tratar`, {situacao: "RESOLVIDO", nota: "foto de cadastro trocada pela desta batida"});
+    FOTO_CAD_ALERTA = Date.now();
+    aviso("mensagem", "Foto de cadastro trocada e alerta resolvido.", "ok");
+    await carregarAlertas();
+  } catch (e) { falhou(e); }
+});
 if (els("a-gerar")) els("a-gerar").addEventListener("click", gerarAlertas);
 if (els("a-enviar")) els("a-enviar").addEventListener("click", enviarResumo);
 carregarAlertas();
@@ -8125,7 +8465,50 @@ const FC_FOTOS = new FiltroDaLista("cff", {busca: "código ou nome da obra", dim
 const FILTROS_CONFIG = {escalas: FC_ESCALAS, obras: FC_OBRAS, aparelhos: FC_APARELHOS, fotos: FC_FOTOS};
 const TITULO_SECAO = {escalas: "Escalas", obras: "Obras e cerca", aparelhos: "Aparelhos", fotos: "Fotos"};
 
-const SECOES = ["geral", "obras", "aparelhos", "fotos", "escalas", "jornada", "ausencias", "validacao", "mensagens", "teste"];
+const SECOES = ["geral", "obras", "aparelhos", "fotos", "escalas", "jornada", "ausencias", "validacao", "mensagens", "teste", "fiscal"];
+// OS ARQUIVOS DA FISCALIZAÇÃO (06/11/2026)
+async function carregarArquivosFiscais() {
+  if (!els("af-empresa")) return;
+  try {
+    const d = await api("/erp/api/ponto/arquivos-fiscais");
+    const c = d.configuracao || {};
+    els("af-inpi").value = c.inpi || ""; els("af-dev-cnpj").value = c.desenvolvedor_cnpj || "";
+    els("af-dev-nome").value = c.desenvolvedor_nome || ""; els("af-dev-email").value = c.desenvolvedor_email || "";
+    els("af-empresa").innerHTML = (d.empresas || []).length
+      ? d.empresas.map(e => `<option value="${e.id}">${escapar(e.razao_social)} — ${escapar(e.cnpj)} (${e.obras} obra(s))</option>`).join("")
+      : `<option value="">nenhuma empresa com obra em que alguém bateu (cadastre a empresa da obra)</option>`;
+    if (!els("af-de").value) {
+      const h = new Date(), ini = new Date(h.getFullYear(), h.getMonth() - 1, 1), fim = new Date(h.getFullYear(), h.getMonth(), 0);
+      const iso = x => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
+      els("af-de").value = iso(ini); els("af-ate").value = iso(fim);
+    }
+  } catch (e) { aviso("af-msg", escapar(e.message), "erro"); }
+}
+async function baixarArquivoFiscal(tipo) {
+  const p = new URLSearchParams({empresa_id: els("af-empresa").value, de: els("af-de").value, ate: els("af-ate").value});
+  if (!p.get("empresa_id")) return aviso("af-msg", "Escolha a empresa.", "erro");
+  aviso("af-msg", `Gerando o ${tipo.toUpperCase()}…`, "info");
+  try {
+    const r = await fetch(`/erp/api/ponto/arquivos-fiscais/${tipo}?${p}`, {credentials: "same-origin"});
+    if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.erro || `erro ${r.status}`); }
+    const nome = (/filename="([^"]+)"/.exec(r.headers.get("Content-Disposition") || "") || [])[1] || `${tipo}.txt`;
+    const url = URL.createObjectURL(await r.blob());
+    const a = document.createElement("a"); a.href = url; a.download = nome; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    aviso("af-msg", `${escapar(nome)} baixado.`, "ok");
+  } catch (e) { aviso("af-msg", escapar(e.message), "erro"); }
+}
+if (els("af-empresa")) {
+  els("af-afd").addEventListener("click", () => baixarArquivoFiscal("afd"));
+  els("af-aej").addEventListener("click", () => baixarArquivoFiscal("aej"));
+  if (els("af-gravar")) els("af-gravar").addEventListener("click", async () => {
+    try { await postar("/erp/api/ponto/arquivos-fiscais", {inpi: els("af-inpi").value, desenvolvedor_cnpj: els("af-dev-cnpj").value,
+                       desenvolvedor_nome: els("af-dev-nome").value, desenvolvedor_email: els("af-dev-email").value});
+          aviso("af-msg", "Dados do programa gravados.", "ok"); }
+    catch (e) { aviso("af-msg", escapar(e.message), "erro"); }
+  });
+  carregarArquivosFiscais();
+}
 function mostrarSecao(secao) {
   if (!SECOES.includes(secao)) secao = "geral";
   document.querySelectorAll("[data-secao-card]").forEach(c => { c.hidden = c.dataset.secaoCard !== secao; });

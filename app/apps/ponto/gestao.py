@@ -573,6 +573,9 @@ def _ficha(quem: Quem, colaborador_id: int) -> dict:
                               c=colaborador_id)
         historico = escalas.historico_da_pessoa(conn, colaborador_id)
         padrao = escalas.escala_padrao(conn)
+        # já criou o PIN? — para quem libera o aplicativo saber se a pessoa já consegue entrar (04/11/2026)
+        tem_pin = bool(db.um(conn, "SELECT 1 FROM ponto.colaborador_config WHERE colaborador_id = :c "
+                                   "AND pin_hash IS NOT NULL", c=colaborador_id))
         # O motivo do bloqueio e o arquivado (16/10/2026: "não aparece dentre os
         # aprovados e está dando bloqueado; já tinha sido aprovado e sumiu"): a ficha
         # diz o que aconteceu, sem caçar na lista de aparelhos.
@@ -590,6 +593,7 @@ def _ficha(quem: Quem, colaborador_id: int) -> dict:
     j = cadastros.colaborador_para_json({**p, "obras_adicionais": adicionais})
     j["obra_do_ponto"] = obra_ponto        # 30/10/2026: a obra é a do ponto; o cadastro, na falta dele
     j["liberado"] = liberado               # 31/10/2026: o que o DP liberou para ela no aplicativo (migração 023)
+    j["tem_pin"] = tem_pin
     j["escalas"] = [{"escala_id": h["escala_id"], "escala": h["escala_nome"], "tipo": h["escala_tipo"],
                      "desde": h["vigencia_inicio"].isoformat(),
                      "ciclo_data_base": h["ciclo_data_base"].isoformat() if h["ciclo_data_base"] else None,
@@ -617,6 +621,9 @@ def _ficha(quem: Quem, colaborador_id: int) -> dict:
             d = confianca.config(rosto.ler(conn))
             j["conferencia_rosto"] = {**confianca.da_pessoa(
                 confianca.historico(conn, [colaborador_id], d).get(colaborador_id), d), "ligada": d["ligada"]}
+        # as folhas assinadas na tela (06/11/2026, migração 027): o PDF de cada mês, para abrir e imprimir
+        from .core import assinaturas
+        j["assinaturas"] = assinaturas.da_pessoa(conn, colaborador_id)
     return j
 
 
@@ -1738,6 +1745,23 @@ def ponto_api_quadro_abonar():
                aprovadas=sum(1 for x in r if x.get("aprovado")))
 
 
+@bp.route("/erp/api/ponto/quadro/compensar-horas", methods=["POST"])
+@login_obrigatorio
+@permissao("aprovar_afastamento")
+@_api
+def ponto_api_quadro_compensar_horas():
+    """A compensação de horas da turma (06/11/2026): as linhas marcadas são o dia mais curto de cada um; o
+    `dia_das_horas_a_mais`, o dia em que ficaram até mais tarde. Uma compensação do DP por pessoa, aprovada."""
+    from .core import quadro
+    quem, d = _quem(), _corpo()
+    r = quadro.compensar_horas_em_lote(quem, d.get("itens") or [], dia_das_horas_a_mais=d.get("dia_das_horas_a_mais"),
+                                       motivo=d.get("motivo") or "")
+    logger.info("Ponto: compensação de horas em lote por %s — %d pedidas, %d feitas", quem.nome, len(r),
+                sum(1 for x in r if x.get("ok")))
+    return _ok(resultados=r, feitas=sum(1 for x in r if x.get("ok")),
+               aprovadas=sum(1 for x in r if x.get("aprovado")))
+
+
 @bp.route("/erp/api/ponto/vigencia", methods=["GET", "POST"])
 @login_obrigatorio
 @permissao(GET="ver_ponto", POST="configurar_ponto")
@@ -2238,7 +2262,7 @@ def ponto_api_criar_ocorrencia():
     licença com o documento — registrados pelo responsável da obra; quem valida
     é a regra de "Quem valida o quê" (atestado: sempre o DP)."""
     quem, d = _quem(), _corpo()
-    if str(d.get("tipo") or "").upper() not in ("AJUSTE_BATIDA", "COMPENSACAO", "PERMUTA", "FOLGA_BANCO",
+    if str(d.get("tipo") or "").upper() not in ("AJUSTE_BATIDA", "COMPENSACAO", "COMPENSACAO_HORAS", "PERMUTA", "FOLGA_BANCO",
                                                 "ATESTADO", "LICENCA", "DECLARACAO", "ABONO"):
         raise ErroDeValidacao("férias e afastamento são lançados pelo DP", campo="tipo")
     with db.conexao() as conn:
@@ -2362,6 +2386,10 @@ def _servir_documento(documento_id: int, *, sigiloso_permitido: bool):
             SELECT colaborador_id FROM ponto.ocorrencias WHERE documento_id = :d
             UNION SELECT colaborador_id FROM ponto.colaborador_config WHERE acordo_documento_id = :d
             LIMIT 1""", d=documento_id)
+        if not dono and db.tem_coluna(conn, "espelho_assinaturas", "documento_id"):
+            # a folha assinada na tela (06/11/2026)
+            dono = db.um(conn, "SELECT colaborador_id FROM ponto.espelho_assinaturas WHERE documento_id = :d LIMIT 1",
+                         d=documento_id)
         if (not f or not dono or (f["sigiloso"] and not sigiloso_permitido)
                 or not ocorrencias.pessoa_no_alcance(conn, quem, dono["colaborador_id"])):
             return jsonify({"ok": False, "erro": "não encontrado"}), 404
@@ -2458,10 +2486,11 @@ def ponto_api_banco_lancar(colaborador_id: int):
 def ponto_api_alertas():
     quem = _quem()
     with db.conexao() as conn:
-        lista = alertas.listar(conn, obras=quem.obras,
-                               situacao=request.args.get("situacao", "ABERTO") or None,
-                               gravidade=request.args.get("gravidade") or None)
-    return _ok(alertas=lista, rotulos=alertas.ROTULO)
+        filtros = {"situacao": request.args.get("situacao", "ABERTO") or None,
+                   "gravidade": request.args.get("gravidade") or None}
+        lista = alertas.listar(conn, obras=quem.obras, codigo=request.args.get("tipo") or None, **filtros)
+        tipos = alertas.contar_por_tipo(conn, obras=quem.obras, **filtros)
+    return _ok(alertas=lista, rotulos=alertas.ROTULO, tipos=tipos)
 
 
 @bp.route("/erp/api/ponto/alertas/gerar", methods=["POST"])
@@ -2484,6 +2513,57 @@ def ponto_api_alerta_tratar(alerta_id: int):
         a = alertas.tratar(conn, alerta_id, situacao=d.get("situacao"), nota=d.get("nota", ""),
                            por=quem.nome, obras=quem.obras)
     return _ok(alerta={"id": a["id"], "situacao": a["situacao"]})
+
+
+@bp.route("/erp/api/ponto/alertas/tratar-varios", methods=["POST"])
+@login_obrigatorio
+@permissao("tratar_ponto")
+@_api
+def ponto_api_alertas_tratar_varios():
+    """Os alertas marcados, de uma vez: resolvidos, dispensados (com a nota) ou reabertos."""
+    quem, d = _quem(), _corpo()
+    with db.conexao() as conn:
+        r = alertas.tratar_varios(conn, d.get("ids") or [], situacao=d.get("situacao"), nota=d.get("nota", ""),
+                                  por=quem.nome, obras=quem.obras)
+    logger.info("Ponto: %d alerta(s) %s de uma vez por %s", r["feitos"], str(d.get("situacao") or "").lower(), quem.nome)
+    return _ok(**r)
+
+
+# ---------------------------------------------------------------------------
+# Os arquivos da fiscalização — AFD e AEJ (Portaria 671, 06/11/2026: core/arquivos_fiscais.py)
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/ponto/arquivos-fiscais", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao(GET="fechar_competencia", POST="configurar_ponto")
+@_api
+def ponto_api_arquivos_fiscais():
+    """Os dados do programa (o registro no INPI e o desenvolvedor) e as empresas com batida."""
+    from .core import arquivos_fiscais as af
+    with db.conexao() as conn:
+        if request.method == "POST":
+            cfg = af.gravar_configuracao(conn, _corpo(), _quem().nome)
+        else:
+            cfg = af.configuracao(conn)
+        return _ok(configuracao=cfg, empresas=[{**e, "obras": int(e["obras"])} for e in af.empresas(conn)])
+
+
+@bp.route("/erp/api/ponto/arquivos-fiscais/<tipo>")
+@login_obrigatorio
+@permissao("fechar_competencia")
+@_api
+def ponto_api_arquivo_fiscal(tipo: str):
+    """O AFD ou o AEJ de uma empresa num período, para baixar."""
+    from .core import arquivos_fiscais as af
+    if tipo not in ("afd", "aej"):
+        raise NaoEncontrado("arquivo desconhecido")
+    a = request.args
+    with db.conexao() as conn:
+        nome, conteudo = (af.afd if tipo == "afd" else af.aej)(conn, a.get("empresa_id", type=int) or 0,
+                                                               a.get("de"), a.get("ate"))
+    logger.info("Ponto: %s gerado por %s (%s, %s a %s, %d bytes)", tipo.upper(), _quem().nome,
+                a.get("empresa_id"), a.get("de"), a.get("ate"), len(conteudo))
+    return Response(conteudo, mimetype="text/plain; charset=iso-8859-1",
+                    headers={"Content-Disposition": f'attachment; filename="{nome}"'})
 
 
 @bp.route("/erp/api/ponto/resumo")

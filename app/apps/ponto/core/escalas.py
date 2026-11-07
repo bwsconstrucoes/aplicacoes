@@ -298,7 +298,7 @@ def dias_trabalhados(conn: Connection, ids: list[int]) -> dict[int, tuple]:
     trocas = db.todos(conn, """
             SELECT colaborador_id, data_inicio AS folga, dia_trabalhado FROM ponto.ocorrencias
              WHERE colaborador_id = ANY(:ids) AND tipo = 'COMPENSACAO' AND status = 'APROVADA'
-               AND dia_trabalhado IS NOT NULL""", ids=[int(i) for i in ids])
+               AND dia_trabalhado IS NOT NULL AND subtipo IS DISTINCT FROM 'HORAS'""", ids=[int(i) for i in ids])
     for t in trocas:
         dias = set(saida.get(int(t["colaborador_id"]), []))
         dias.discard(t["dia_trabalhado"])

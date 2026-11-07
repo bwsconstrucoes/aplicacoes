@@ -232,6 +232,13 @@ def test_o_fechamento_separa_o_inteiro_do_quebrado(app, mundo, banco, banco_anal
         assert fp["totais"]["he_desconsideradas_dias"] == 1 and fp["totais"]["he_desconsideradas_minutos"] == 8
         assert dp.post("/erp/api/ponto/fechamento", json=corpo).get_json()["he_minima"] == 10       # guardada
     assert dp.post("/erp/api/ponto/fechamento", json={**corpo, "he_minima": 500}).status_code == 400
+    # 06/11/2026: a lei permite até 10 min por dia (CLT, art. 58 §1º) — 11 já é recusado, e o 120 de antes vale 10
+    assert dp.post("/erp/api/ponto/fechamento", json={**corpo, "he_minima": 11}).status_code == 400
+    from app.apps.ponto import db as _db
+    from app.apps.ponto.core import parametros as _par
+    with _db.conexao() as conn:
+        _par.gravar(conn, fe.PARAMETRO_HE_MINIMA, "120", "antes da trava")
+        assert fe.he_minima(conn) == 10
     assert dp.post("/erp/api/ponto/fechamento", json={**corpo, "he_minima": 0}).get_json()["he_minima"] == 0
 
     # NEGAR a hora extra do dia na conferência (29/10/2026, migração 019): sai de todas as contas

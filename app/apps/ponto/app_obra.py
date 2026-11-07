@@ -402,6 +402,87 @@ def app_api_equipe_espelho_bilhete(colaborador_id: int):
     return _ok(bilhete=qr.emitir_impressao(colaborador_id, int(ctx.pessoa["id"]), _periodo_da_folha()))
 
 
+# ---------------------------------------------------------------------------
+# A ASSINATURA DA FOLHA NA TELA (06/11/2026, migração 027, core/assinaturas.py): quem conduz — o operador do ponto da
+# obra ou o administrativo — vê a sua equipe do mês (a mesma do resumo), mostra a folha e a pessoa assina com o PIN dela.
+# ---------------------------------------------------------------------------
+def _equipe_do_mes(conn, ctx: _Contexto, competencia) -> tuple[list[dict], "dt.date"]:
+    from .core import competencias
+    comp = competencias.primeiro_dia(competencia or (horario.hoje().replace(day=1) - dt.timedelta(days=1)))
+    obra_aqui, _ = _pessoas_da_equipe(conn, ctx, comp, competencias.ultimo_dia(comp))
+    pessoas = [p for p in (cadastros.colaborador_por_id(conn, i) for i in obra_aqui) if p]
+    return pessoas, comp
+
+
+def _da_equipe(conn, ctx: _Contexto, colaborador_id: int, competencia) -> tuple[dict, "dt.date"]:
+    pessoas, comp = _equipe_do_mes(conn, ctx, competencia)
+    alvo = next((p for p in pessoas if int(p["id"]) == int(colaborador_id)), None)
+    if not alvo:
+        raise NaoEncontrado("pessoa não encontrada")
+    return alvo, comp
+
+
+@bp.route("/app/api/assinaturas")
+@auth.exige_colaborador_ou_aparelho
+def app_api_assinaturas():
+    """As folhas do mês da equipe de quem conduz: quem assinou, quem recusou, quem falta, e o prazo (dia 20)."""
+    from .core import assinaturas
+    with db.conexao() as conn:
+        ctx = _contexto(conn)
+        pessoas, comp = _equipe_do_mes(conn, ctx, request.args.get("competencia"))
+        return _ok(**assinaturas.situacao(conn, pessoas, comp))
+
+
+@bp.route("/app/api/assinaturas/<int:colaborador_id>/folha")
+@auth.exige_colaborador_ou_aparelho
+def app_api_assinatura_folha(colaborador_id: int):
+    """A folha do mês para mostrar à pessoa antes de ela assinar (a mesma que vai no PDF)."""
+    from .core import espelho
+    with db.conexao() as conn:
+        ctx = _contexto(conn)
+        alvo, comp = _da_equipe(conn, ctx, colaborador_id, request.args.get("competencia"))
+        esp = espelho.do_mes(conn, colaborador_id, comp)
+    return _ok(pessoa=pessoa_do_espelho(alvo), competencia=esp["competencia"], resumo=esp["resumo"],
+               dias=[{k: d.get(k) for k in ("data", "dia_semana", "situacao", "previsto", "trabalhado", "extra", "debito")}
+                     | {"batidas": [b["hora"] + (" (aj)" if b["status"] == "AJUSTADA" else "") for b in d["batidas"]
+                                    if b["status"] != "REJEITADA"],
+                        "ocorrencia": (d.get("ocorrencia") or {}).get("rotulo")} for d in esp["dias"]])
+
+
+@bp.route("/app/api/assinaturas/<int:colaborador_id>", methods=["POST"])
+@auth.exige_colaborador_ou_aparelho
+def app_api_assinar(colaborador_id: int):
+    """A pessoa assina: o PIN DELA, o traço do dedo; a folha é lacrada e o PDF, arquivado."""
+    from .core import assinaturas
+    d = _corpo()
+    with db.conexao() as conn:
+        ctx = _contexto(conn)
+        _, comp = _da_equipe(conn, ctx, colaborador_id, d.get("competencia"))
+        local = _local(d) or {}
+        r = assinaturas.assinar(conn, colaborador_id=colaborador_id, competencia=comp, pin=d.get("pin"),
+                                assinatura=d.get("assinatura"), conduzida_por={"id": ctx.pessoa["id"], "nome": ctx.pessoa["nome"]},
+                                dispositivo_id=(ctx.aparelho or {}).get("id"), latitude=local.get("latitude"),
+                                longitude=local.get("longitude"), ip=auth.ip_de_quem_chama())
+    return _ok(**r), 201
+
+
+@bp.route("/app/api/assinaturas/<int:colaborador_id>/recusa", methods=["POST"])
+@auth.exige_colaborador_ou_aparelho
+def app_api_assinatura_recusa(colaborador_id: int):
+    """A pessoa não quis assinar: o motivo e quem conduziu ficam registrados."""
+    from .core import assinaturas
+    d = _corpo()
+    with db.conexao() as conn:
+        ctx = _contexto(conn)
+        _, comp = _da_equipe(conn, ctx, colaborador_id, d.get("competencia"))
+        local = _local(d) or {}
+        r = assinaturas.recusar(conn, colaborador_id=colaborador_id, competencia=comp, motivo=d.get("motivo"),
+                                conduzida_por={"id": ctx.pessoa["id"], "nome": ctx.pessoa["nome"]},
+                                dispositivo_id=(ctx.aparelho or {}).get("id"), latitude=local.get("latitude"),
+                                longitude=local.get("longitude"), ip=auth.ip_de_quem_chama())
+    return _ok(**r), 201
+
+
 # Até quantas folhas num arquivo só: acima disso, escolhe-se a obra (o celular sofre para montar um PDF enorme).
 MAX_FOLHAS_DA_EQUIPE = 150
 
