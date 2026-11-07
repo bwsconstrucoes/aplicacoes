@@ -1,47 +1,58 @@
-# -*- coding: utf-8 -*-
 """
-O PORTAL DA OBRA — o "portal de solicitações" do Pipefy, dentro do ERP.
+O MODO CELULAR DO ERP — a porta enxuta de quem pede, dentro do próprio ERP.
 
-O dono, em 05/11/2026:
+**ESTE ARQUIVO MUDOU DE DESENHO EM 07/11/2026, e o motivo importa mais que o
+código.** A primeira versão era um portal à parte, pendurado no login do
+aplicativo do ponto. O dono olhou e desmontou o argumento:
 
-> *"lembrando que a gente tem que ter um portal, né, de acesso. Semelhante ao
-> que a gente tem no Pipe (…) porque tem o acesso ao ERP mesmo, mas aí o
-> administrativo de obra não vai ter esse mesmo acesso. Ele precisa só entrar e
-> por exemplo, preencher alguns dados, fazer uma requisição e encaminhar por
-> lá. (…) atualmente a gente já tem um acesso via ponto. (…) Aí como é que fica
-> o permissionamento do ERP e esse acesso ao portal e esse acesso ao ponto? Já
-> começa a complicar um pouquinho."*
+> *"como é que funciona hoje? Eles têm um portal do Pipefy e lá eles fazem todo
+> tipo de solicitações. Financeiro, suprimento, diário de obras, cadastro
+> colaboradores, solicitação do departamento pessoal e etc. Só que o Pipe é só
+> um formulário de entrada de dados. Por lá não se gerencia nada (…) a solução
+> nem pode ser somente como Pipefy (…) o ponto fica só para ponto, e o ERP a
+> gente utiliza um outro acesso mais completo. Mas aí, se eu quiser fazer essas
+> solicitações rápidas (…) a gente faz acessando o ERP mesmo. O cara vai ter o
+> login, acesso do ERP e vai fazer a requisição dele. Aí, só que num ambiente,
+> digamos, mais enxuto para utilizar no celular."*
 
-**O PORTAL JÁ EXISTE, E É O APLICATIVO DO PONTO** (`/ponto/app`). Ele tem login
-de gente de obra (CPF + PIN), papéis próprios e recorte por obra. Criar um
-segundo portal com um terceiro login seria a quarta porta da mesma casa — e
-quem usa é a mesma pessoa, no mesmo celular, no mesmo dia.
+**OS DOIS ERROS DA PRIMEIRA VERSÃO:**
 
-TRÊS MUNDOS DE ACESSO, e cada um responde uma pergunta diferente:
+1. **Ela recriava o defeito do Pipefy.** O que torna o Pipefy insuficiente não
+   é o formulário — é que o formulário mora num sistema e a gestão mora em
+   outro. Um portal separado faz isso de novo: um lugar para pedir, outro para
+   acompanhar.
+2. **Solicitação não é assunto do DP.** A obra pede de tudo — pagamento,
+   material, diário de obra, colaborador, DP. Um portal de DP ou vira quatro
+   portais, ou vira um ERP paralelo pela metade.
 
-| Mundo | Quem entra | Como | O que decide |
+**O DESENHO QUE FICOU — uma porta só, duas caras:**
+
+| | Quem entra | Como | O que decide |
 |---|---|---|---|
-| **ERP** | quem opera o escritório | e-mail e senha, sessão | perfil → ações → seções (`core/auth/`) |
-| **Portal / app do ponto** | gente de obra | CPF + PIN | papéis do ponto (`ponto/core/papeis.py`) + a obra onde ESTÁ |
-| **Aparelho** | o celular da obra | token do dispositivo | bate ponto por todos, sem login |
+| **Ponto** | gente de obra, para bater ponto | CPF + PIN | papéis do ponto |
+| **ERP** | TODO o resto, da diretoria ao parceiro | e-mail e senha | perfil → ações → escopo (`core/auth/`) |
 
-**O QUE ESTE ARQUIVO FAZ:** a ponte do segundo mundo para dentro do ERP. Ele NÃO
-cria login nenhum: lê a sessão que o aplicativo do ponto já abriu, e com ela
-descobre quem é a pessoa e quais obras ela alcança.
+O ponto ficou **só para o ponto**. Tudo o mais — inclusive a requisição rápida
+no celular — entra pelo ERP, com UM login e UM sistema de permissão. Gente de
+fora e parceiro entram pela mesma porta; muda só a permissão. Parceiro, por
+decisão dele em 07/11, **só olha**; se precisar que ele peça, nasce um perfil
+novo, não uma segunda porta.
 
-**POR QUE ISSO É SEGURO:** os dois módulos rodam no MESMO processo e dividem o
-mesmo cookie de sessão. Quem não passou pelo CPF+PIN do ponto não tem a chave
-na sessão, e o portal responde "entre pelo aplicativo". Nenhuma permissão do
-ERP é concedida por aqui: o portal não vê título, não vê salário de ninguém e
-não abre tela do ERP — ele faz TRÊS coisas, e só.
+**O QUE ESTE ARQUIVO É, ENTÃO:** a tela enxuta de quem só quer pedir e
+acompanhar, servida pelo ERP, com a identidade e o alcance do ERP. Não há
+login próprio, não há papel próprio, não há recorte próprio — tudo vem de
+`core/auth/permissoes.py`, que é o lugar onde essa regra já mora.
 
-**AS TRÊS COISAS:**
-  1. **abrir requisição** ao DP (os tipos que a obra pode abrir);
-  2. **acompanhar** o que ela mesma abriu, e o que o DP respondeu;
+**O QUE ELA FAZ, e é pouco de propósito:**
+  1. **abrir requisição** — os tipos que o perfil da pessoa alcança;
+  2. **acompanhar** o que ela abriu, e o que foi respondido;
   3. **devolver documento** — a rescisão assinada, por exemplo. *"essa devolução
      não pode ser via WhatsApp. Tem que ser via sistema."*
 
-**O WHATSAPP AVISA E COBRA; O ARQUIVO VOLTA PELO PORTAL.** Foto de documento em
+Quem quiser mais que isso não precisa de outra porta: o ERP inteiro está atrás
+dela, limitado pelo mesmo perfil.
+
+**O WHATSAPP AVISA E COBRA; O ARQUIVO VOLTA PELO SISTEMA.** Foto de documento em
 conversa de WhatsApp não é arquivo: é foto perdida num celular, sem tipo, sem
 dono e sem prazo.
 """
@@ -51,19 +62,19 @@ import logging
 from datetime import date, timedelta
 from typing import Any, Optional
 
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.apps.erp.core.comum.auditoria import (
     ErroNaoEncontrado, ErroValidacao, registrar_evento,
 )
-from app.apps.erp.db.models.cadastros import Colaborador
+from app.apps.erp.db.models.cadastros import Colaborador, Usuario
 
 logger = logging.getLogger(__name__)
 
-# OS TIPOS QUE A OBRA PODE ABRIR pelo portal. É um subconjunto de propósito:
-# desconto em folha, por exemplo, é do DP — a obra não lança desconto no
-# salário de ninguém.
+# OS TIPOS QUE A TELA ENXUTA OFERECE. É um subconjunto de propósito: desconto
+# em folha, por exemplo, é do DP — a obra não lança desconto no salário de
+# ninguém. Quem tem alçada para mais abre pela tela cheia do ERP.
 TIPOS_DO_PORTAL = (
     "PRE_CADASTRO", "DESLIGAMENTO", "READMISSAO", "ADMISSAO_PRESTADOR",
     "ALTERACAO_CARGO", "ATUALIZACAO_DADOS", "DEPENDENTE", "AJUDA_DE_CUSTO",
@@ -72,100 +83,98 @@ TIPOS_DO_PORTAL = (
 
 
 class SemAcesso(Exception):
-    """Não há sessão do aplicativo do ponto. Não é erro: é "entre primeiro"."""
+    """Não há sessão do ERP. Não é erro: é "entre primeiro"."""
 
 
-def id_na_sessao() -> int:
-    """Quem está logado no aplicativo do ponto, SEM TOCAR NO BANCO.
+def quem_esta(s: Session, usuario: Optional[Usuario]) -> dict[str, Any]:
+    """Quem está usando a tela. A IDENTIDADE VEM DE FORA, nunca da sessão.
 
-    Existe separada de `quem_esta` por um motivo prático: a recusa de quem não
-    entrou não pode custar uma conexão de banco. Rota pública que abre conexão
-    antes de conferir quem é vira porta de esgotar o pool com requisição
-    anônima — e, de quebra, não dava para testar a recusa sem banco nenhum.
+    O usuário já chega carregado pela rota (`_usuario_logado`), com as
+    exceções de permissão do cadastro dentro dele. Isso não é detalhe: `pode()`
+    lê essas exceções, e um usuário recarregado aqui pelo ORM viria SEM elas —
+    a pessoa que teve uma permissão concedida ou tirada no cadastro passaria a
+    ser julgada só pelo cargo, em silêncio.
+
+    E a camada de regra não toca na sessão do navegador: quem conhece Flask é
+    a rota. A versão anterior lia a sessão do aplicativo do PONTO aqui dentro,
+    e foi assim que nasceu a segunda porta que o dono mandou desfazer em
+    07/11/2026.
+
+    Devolve também o COLABORADOR ligado ao usuário, quando existe: é ele que
+    diz "por mim mesmo" num pedido. Usuário sem colaborador ligado (gente de
+    escritório que nunca foi folha) simplesmente não tem esse atalho — pede
+    por outra pessoa, se o perfil deixar.
     """
-    try:
-        from flask import session
-
-        from app.apps.ponto import auth as ponto_auth
-    except Exception as e:                              # noqa: BLE001
-        logger.warning("ERP/portal: o módulo do ponto não carregou — %s", e)
-        raise SemAcesso("O aplicativo do ponto está fora do ar.") from e
-    cid = session.get(ponto_auth.SESSAO_COLABORADOR)
-    if not cid:
-        raise SemAcesso("Entre pelo aplicativo do ponto para usar o portal.")
-    return int(cid)
-
-
-def quem_esta(s: Session) -> dict[str, Any]:
-    """Quem está usando o portal, pela sessão do aplicativo do ponto.
-
-    Levanta `SemAcesso` quando não há sessão — e a rota responde 401 com a
-    frase "entre pelo aplicativo do ponto", nunca um erro técnico.
-
-    A IMPORTAÇÃO É PREGUIÇOSA E PROTEGIDA de propósito: se o módulo do ponto
-    quebrar ao carregar, o ERP continua subindo e o portal responde que está
-    fora — em vez de derrubar os catorze blueprints junto.
-    """
-    c = s.get(Colaborador, id_na_sessao())
-    if c is None or (c.situacao or "").upper() != "ATIVO":
+    u = usuario
+    if u is None:
+        raise SemAcesso("Entre no sistema para abrir ou acompanhar pedidos.")
+    if not u.ativo:
         raise SemAcesso("Este acesso não está mais ativo.")
-    return {"colaborador_id": c.id, "nome": c.nome, "cpf": c.cpf,
-            "obra_id": c.obra_id, "pessoa": c}
+    # O vínculo com a folha é pelo CPF, que é a identidade da pessoa no ERP
+    # inteiro. Sem CPF no usuário, não há como ligar — e não se inventa.
+    eu_colaborador = None
+    cpf = _digitos(getattr(u, "cpf", None))
+    if cpf:
+        eu_colaborador = s.scalars(
+            select(Colaborador).where(Colaborador.cpf == cpf)).first()
+    return {"usuario": u, "usuario_id": u.id, "nome": u.nome,
+            "perfil": _perfil(u),
+            "colaborador_id": eu_colaborador.id if eu_colaborador else None,
+            "pessoa": eu_colaborador}
 
 
-def obras_que_alcanca(s: Session, pessoa: Colaborador) -> list[int]:
-    """As obras que esta pessoa alcança — a MESMA regra do aplicativo do ponto.
+def _digitos(v: Any) -> str:
+    return "".join(c for c in str(v or "") if c.isdigit())
 
-    Não reimplemento a regra: chamo a do ponto. Duas regras de alcance que
-    divergem é o pior dos dois mundos — a pessoa vê no ponto o que não vê no
-    portal, e ninguém entende por quê.
 
-    Se o ponto não responder, sobra a obra do cadastro — que é o mínimo
-    honesto, e nunca mais que isso.
+def _perfil(u: Usuario) -> str:
+    p = getattr(u, "perfil", None)
+    return getattr(p, "value", None) or str(p or "")
+
+
+def pode_pedir(s: Session, eu: dict[str, Any]) -> bool:
+    """Este perfil abre pedido, ou só olha?
+
+    NÃO INVENTO AÇÃO NOVA: é a `solicitar_dp` que o ERP já tem. O PARCEIRO
+    (gente de fora, ligada a uma obra) já está de fora dela — então a decisão
+    do dono em 07/11/2026, *"Parceria, a princípio, é só visualização. Se eu
+    entender que é necessário dar, eu posso criar um perfil diferente"*, já é
+    a regra em vigor, sem uma linha de código novo.
+
+    Criar uma ação paralela aqui seria o começo de um segundo sistema de
+    permissão — exatamente o que este arquivo deixou de ser.
     """
-    minimo = [pessoa.obra_id] if pessoa.obra_id else []
-    try:
-        from app.apps.ponto import db as ponto_db
-        from app.apps.ponto.core import papeis
-    except Exception:                                   # noqa: BLE001
-        return minimo
-    try:
-        with ponto_db.conexao() as conn:
-            if not papeis.disponivel(conn):
-                return minimo
-            # A REGRA DO PONTO PARA QUEM ESTÁ NO COMPUTADOR, que é o caso aqui:
-            # o portal abre no navegador e não manda localização, então o
-            # alcance é a obra do cadastro MAIS as obras em que a pessoa bateu
-            # ponto nos últimos dias. Está escrito assim em `ponto/core/
-            # papeis.py` — e a decisão é dele, de 08/10/2026: *"acho que pode
-            # afrouxar mais (…) se precisar lançar algo fora do horário,
-            # deixa."*
-            recentes = papeis.obras_recentes(conn, pessoa.id)
-            return sorted({int(o) for o in (recentes or [])} | set(minimo))
-    except Exception as e:                              # noqa: BLE001
-        logger.warning("ERP/portal: não consegui o alcance do ponto — %s", e)
-        return minimo
+    from app.apps.erp.core.auth.permissoes import pode
+
+    return pode(eu["usuario"], "solicitar_dp")
 
 
-def e_administrativo_de_obra(s: Session, pessoa: Colaborador) -> bool:
-    """Esta pessoa pode pedir POR OUTRAS?
+def obras_que_alcanca(s: Session, eu: dict[str, Any]) -> Optional[list[int]]:
+    """As obras que esta pessoa alcança — a MESMA regra do resto do ERP.
 
-    É a MESMA marcação do aplicativo do ponto (`colaborador_config.
-    administrativo_obra`) — não invento uma segunda. Duas marcações para a mesma
-    autoridade divergiriam no primeiro mês, e aí a pessoa pede no ponto e não
-    pede no portal sem ninguém entender por quê.
+    `None` quer dizer TODAS, e é o que `obras_do_usuario` devolve para quem
+    enxerga a base inteira. Não reimplemento o recorte: duas regras de alcance
+    que divergem é o pior dos dois mundos.
     """
-    try:
-        from app.apps.ponto import db as ponto_db
-        from app.apps.ponto.core import cadastros, papeis
-        with ponto_db.conexao() as conn:
-            if not papeis.disponivel(conn):
-                return False
-            dela = cadastros.colaborador_por_id(conn, pessoa.id)
-            return bool(papeis.e_administrativo(conn, dela))
-    except Exception as e:                              # noqa: BLE001
-        logger.warning("ERP/portal: não consegui o papel do ponto — %s", e)
-        return False
+    from app.apps.erp.core.auth.permissoes import obras_do_usuario
+
+    return obras_do_usuario(s, eu["usuario"])
+
+
+def pode_pedir_por_outros(s: Session, eu: dict[str, Any]) -> bool:
+    """Pede POR OUTRAS pessoas, ou só por si?
+
+    Quem lança para a obra inteira (administrativo de obra, supervisor, gestor,
+    DP) pede por quem está no alcance dele. Quem não tem essa alçada pede só
+    por si — e para ele a pessoa do outro nem aparece na lista.
+    """
+    from app.apps.erp.core.auth.permissoes import pode
+
+    # Quem enxerga a base inteira, ou lança para a obra, pede por outros. Quem
+    # só enxerga o que ele mesmo lançou pede por si — e para ele a pessoa do
+    # outro nem aparece na lista.
+    return pode(eu["usuario"], "ver_pessoal") or pode(
+        eu["usuario"], "editar_colaboradores")
 
 
 def _pode_pela_pessoa(s: Session, eu: dict[str, Any],
@@ -179,15 +188,19 @@ def _pode_pela_pessoa(s: Session, eu: dict[str, Any],
     """
     if not colaborador_id or int(colaborador_id) == eu["colaborador_id"]:
         return                      # por mim mesmo, sempre
-    if not e_administrativo_de_obra(s, eu["pessoa"]):
+    if not pode_pedir_por_outros(s, eu):
         # Não é "sem permissão": para quem não é administrativo, a pessoa do
         # outro simplesmente não existe. É a mesma escolha do resto do ERP.
         raise ErroNaoEncontrado("Pessoa não encontrada.")
     outro = s.get(Colaborador, int(colaborador_id))
     if outro is None:
         raise ErroNaoEncontrado("Pessoa não encontrada.")
-    alcance = set(obras_que_alcanca(s, eu["pessoa"]))
-    if outro.obra_id is None or int(outro.obra_id) not in alcance:
+    alcance = obras_que_alcanca(s, eu)
+    # `None` quer dizer TODAS as obras — é o que `obras_do_usuario` devolve
+    # para quem enxerga a base inteira. Tratar isso como conjunto vazio
+    # proibiria justamente quem pode tudo.
+    if alcance is not None and (outro.obra_id is None
+                                or int(outro.obra_id) not in set(alcance)):
         raise ErroNaoEncontrado("Pessoa não encontrada.")
 
 
@@ -263,7 +276,8 @@ def listas_fechadas(s: Session | None = None) -> dict[str, list[dict[str, str]]]
     return listas
 
 
-def abrir(s: Session, dados: dict[str, Any]) -> dict[str, Any]:
+def abrir(s: Session, dados: dict[str, Any],
+          usuario: Optional[Usuario]) -> dict[str, Any]:
     """Abre a requisição em nome de quem está no portal.
 
     Reusa `pessoal_solicitacoes.abrir` — a MESMA função da tela do ERP, com as
@@ -272,7 +286,7 @@ def abrir(s: Session, dados: dict[str, Any]) -> dict[str, Any]:
     """
     from app.apps.erp.core import pessoal_solicitacoes as svc_sp
 
-    eu = quem_esta(s)
+    eu = quem_esta(s, usuario)
     tipo = str(dados.get("tipo") or "").strip().upper()
     if tipo not in TIPOS_DO_PORTAL:
         raise ErroValidacao(
@@ -298,9 +312,9 @@ def abrir(s: Session, dados: dict[str, Any]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # 2. ACOMPANHAR
 # ---------------------------------------------------------------------------
-def meus_pedidos(s: Session) -> list[dict[str, Any]]:
+def meus_pedidos(s: Session, usuario: Optional[Usuario]) -> list[dict[str, Any]]:
     """O que EU abri, e em que pé está. Sem salário, sem dado de ninguém."""
-    eu = quem_esta(s)
+    eu = quem_esta(s, usuario)
     linhas = s.execute(text("""
         SELECT sol.id, sol.numero, sol.tipo, sol.situacao, sol.criado_em,
                sol.resposta, c.nome AS pessoa
@@ -334,11 +348,16 @@ def meus_pedidos(s: Session) -> list[dict[str, Any]]:
 # Então: o DP abre a pendência, o WhatsApp AVISA e COBRA, e o arquivo volta por
 # aqui — com tipo, com dono e com prazo.
 # ---------------------------------------------------------------------------
-def minhas_devolucoes(s: Session) -> list[dict[str, Any]]:
+def minhas_devolucoes(s: Session, usuario: Optional[Usuario]) -> list[dict[str, Any]]:
     """O que a obra tem de devolver. Aparece para quem alcança a obra."""
-    eu = quem_esta(s)
-    obras = obras_que_alcanca(s, eu["pessoa"])
-    if not obras:
+    eu = quem_esta(s, usuario)
+    obras = obras_que_alcanca(s, eu)
+    # TODAS (None) É DIFERENTE DE NENHUMA ([]). Quem enxerga a base inteira
+    # recebe None de `obras_do_usuario`; tratar isso como lista vazia
+    # esconderia tudo justamente de quem pode ver tudo. Quem enxerga por
+    # AUTORIA também recebe None — e para ele o recorte não é a obra, é o
+    # `solicitante`, que a consulta de pedidos já aplica.
+    if obras is not None and not obras:
         return []
     linhas = s.execute(text("""
         SELECT d.id, d.numero, d.o_que, d.documento_esperado, d.prazo,
@@ -349,9 +368,10 @@ def minhas_devolucoes(s: Session) -> list[dict[str, Any]]:
           LEFT JOIN colaboradores c ON c.id = d.colaborador_id
           LEFT JOIN obras o ON o.id = d.obra_id
           LEFT JOIN documento_tipos t ON t.codigo = d.documento_esperado
-         WHERE d.obra_id = ANY(:obras) AND d.situacao IN ('ABERTA', 'COBRADA')
+         WHERE (:todas OR d.obra_id = ANY(:obras))
+           AND d.situacao IN ('ABERTA', 'COBRADA')
          ORDER BY (d.prazo IS NULL), d.prazo, d.id"""),
-        {"obras": obras}).mappings().all()
+        {"obras": obras or [], "todas": obras is None}).mappings().all()
     hoje = date.today()
     return [{
         "id": l["id"], "numero": l["numero"], "o_que": l["o_que"],
@@ -365,6 +385,7 @@ def minhas_devolucoes(s: Session) -> list[dict[str, Any]]:
 
 
 def devolver(s: Session, devolucao_id: int, conteudo: bytes,
+             usuario: Optional[Usuario],
              nome_arquivo: str) -> dict[str, Any]:
     """A obra devolve o documento assinado. Arquiva no Drive e fecha a pendência.
 
@@ -374,14 +395,15 @@ def devolver(s: Session, devolucao_id: int, conteudo: bytes,
     """
     from app.apps.erp.core.arquivo import service as svc_arq
 
-    eu = quem_esta(s)
+    eu = quem_esta(s, usuario)
     linha = s.execute(text("""
         SELECT id, numero, obra_id, colaborador_id, documento_esperado, situacao
           FROM dp_devolucoes WHERE id = :d"""),
         {"d": devolucao_id}).mappings().first()
     if linha is None:
         raise ErroNaoEncontrado("Pendência não encontrada.")
-    if linha["obra_id"] not in set(obras_que_alcanca(s, eu["pessoa"])):
+    alcance = obras_que_alcanca(s, eu)
+    if alcance is not None and linha["obra_id"] not in set(alcance):
         raise ErroNaoEncontrado("Pendência não encontrada.")
     if linha["situacao"] not in ("ABERTA", "COBRADA"):
         raise ErroValidacao(
@@ -569,35 +591,38 @@ def _telefones_da_obra(s: Session, devolucao_id: int) -> list[str]:
     return [t for t in dict.fromkeys(alvos) if t]
 
 
-def pessoas_ao_alcance(s: Session) -> list[dict[str, Any]]:
+def pessoas_ao_alcance(s: Session, usuario: Optional[Usuario]) -> list[dict[str, Any]]:
     """Por quem esta pessoa pode abrir pedido.
 
     Para o administrativo de obra, a gente das obras que ele alcança. Para
     qualquer outro, só ele mesmo — e isso não é restrição por desconfiança: é
     que pedir pelo colega sem responder pela obra dele não existe no processo.
     """
-    eu = quem_esta(s)
-    if not e_administrativo_de_obra(s, eu["pessoa"]):
+    eu = quem_esta(s, usuario)
+    if not pode_pedir_por_outros(s, eu):
         return [{"id": eu["colaborador_id"], "nome": eu["nome"]}]
-    obras = obras_que_alcanca(s, eu["pessoa"])
-    if not obras:
+    obras = obras_que_alcanca(s, eu)
+    if obras is not None and not obras:
         return [{"id": eu["colaborador_id"], "nome": eu["nome"]}]
     linhas = s.execute(text("""
         SELECT id, nome FROM colaboradores
-         WHERE obra_id = ANY(:obras) AND situacao = 'ATIVO'
-         ORDER BY nome LIMIT 500"""), {"obras": obras}).mappings().all()
+         WHERE (:todas OR obra_id = ANY(:obras)) AND situacao = 'ATIVO'
+         ORDER BY nome LIMIT 500"""),
+        {"obras": obras or [], "todas": obras is None}).mappings().all()
     return [{"id": l["id"], "nome": l["nome"]} for l in linhas]
 
 
-def obras_para_escolher(s: Session) -> list[dict[str, Any]]:
+def obras_para_escolher(s: Session, usuario: Optional[Usuario]) -> list[dict[str, Any]]:
     """As obras que aparecem na caixinha do pedido — só as que ela alcança."""
-    eu = quem_esta(s)
-    obras = obras_que_alcanca(s, eu["pessoa"])
-    if not obras:
+    eu = quem_esta(s, usuario)
+    obras = obras_que_alcanca(s, eu)
+    if obras is not None and not obras:
         return []
     linhas = s.execute(text("""
-        SELECT id, codigo, nome FROM obras WHERE id = ANY(:obras)
-         ORDER BY codigo"""), {"obras": obras}).mappings().all()
+        SELECT id, codigo, nome FROM obras
+         WHERE (:todas OR id = ANY(:obras)) AND status <> 'ENCERRADA'
+         ORDER BY codigo"""),
+        {"obras": obras or [], "todas": obras is None}).mappings().all()
     return [{"id": l["id"], "codigo": l["codigo"], "nome": l["nome"]} for l in linhas]
 
 

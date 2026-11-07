@@ -140,46 +140,56 @@ def test_o_conjunto_de_rotas_publicas_e_pequeno_e_conhecido():
     `tests/test_pwa.py` monta o ERP SEM banco configurado só para provar isso
     — se alguém puser uma consulta ali dentro, aquele arquivo quebra.
 
-    AS TRÊS DO PORTAL entraram em 05/11/2026, com o portal da obra. Elas não
-    usam o login do ERP **porque quem entra não tem login do ERP** — é o
-    administrativo de obra, e o dono foi explícito: *"o administrativo de obra
-    não vai ter esse mesmo acesso. Ele precisa só entrar e preencher alguns
-    dados, fazer uma requisição."*
+    **AS QUATRO DO PORTAL SAÍRAM DAQUI EM 07/11/2026**, e a saída é a notícia.
+    Elas eram públicas porque liam a sessão do APLICATIVO DO PONTO, para quem
+    não tinha login do ERP. O dono desfez esse desenho:
 
-    `pagina_portal` é a TELA do portal (06/11/2026), e ela é pública de
-    propósito: é HTML sem dado nenhum dentro. Quem conferir quem é são as três
-    rotas de API que ela chama — e é isso que faz a página abrir no celular com
-    a sessão vencida e DIZER "entre pelo aplicativo", em vez de devolver um erro
-    técnico a quem está na obra.
+    > *"o ponto fica só para ponto, e o ERP a gente utiliza um outro acesso
+    > mais completo (…) o cara vai ter o login, acesso do ERP e vai fazer a
+    > requisição dele. Aí, só que num ambiente, digamos, mais enxuto para
+    > utilizar no celular."*
 
-    **Públicas não quer dizer abertas.** A primeira linha de cada API chama
-    `portal.quem_esta`, que exige a sessão do APLICATIVO DO PONTO (CPF + PIN) e
-    responde 401 sem ela. O teste logo abaixo prova as três recusas sem sessão.
-    Nenhuma delas aceita número de registro sem conferir o alcance de obra da
-    pessoa, e nenhuma concede ação do ERP.
+    A tela enxuta virou `/erp/pedir`, rota comum do ERP, com login e com ação
+    declarada. **A lista de públicas voltou a ter só o que não pode ter dono**:
+    login, saída, saúde, o agente, a porta dos comprovantes (que se defende por
+    segredo) e as duas do PWA. Rota pública é superfície de ataque, e esta lista
+    só deve encolher.
     """
     assert set(routes._ENDPOINTS_PUBLICOS) == {
         "erp.pagina_login", "erp.sair", "erp.health", "erp.api_agente_rodar",
-        "erp.api_comprovantes_lote", "erp.manifesto_pwa", "erp.service_worker",
-        "erp.api_portal_inicio", "erp.api_portal_abrir",
-        "erp.api_portal_devolver", "erp.pagina_portal"}
+        "erp.api_comprovantes_lote", "erp.manifesto_pwa", "erp.service_worker"}
 
 
-def test_o_portal_recusa_sem_a_sessao_do_aplicativo_do_ponto(app):
-    """As três rotas do portal não usam o login do ERP, então elas têm de se
-    defender sozinhas — e a defesa é a sessão do aplicativo do ponto.
+def test_a_tela_de_pedir_recusa_quem_nao_entrou_no_erp(app):
+    """A tela enxuta (`/erp/pedir`) é do ERP, e se defende como o ERP.
 
-    Sem ela, 401 com a frase que diz o que fazer ("entre pelo aplicativo"), e
-    nunca um erro técnico nem uma tela de login do ERP: quem está do outro lado
-    é gente de obra no celular."""
+    Antes de 07/11/2026 ela era pública e se defendia sozinha com a sessão do
+    aplicativo do ponto. Agora quem defende é o login do ERP — e é exatamente
+    por isso que este teste continua existindo: ao trocar a porta, o jeito mais
+    fácil de errar é deixá-la aberta.
+
+    A API responde em JSON (quem chama é a própria tela, por `fetch`), e a
+    página redireciona para o login. Nenhuma das duas entrega dado a anônimo.
+    """
     with app.test_client() as c:
-        for metodo, url in (("get", "/erp/portal/api/inicio"),
-                            ("post", "/erp/portal/api/pedidos"),
-                            ("post", "/erp/portal/api/devolucoes/1")):
+        for metodo, url in (("get", "/erp/pedir/api/inicio"),
+                            ("post", "/erp/pedir/api/pedidos"),
+                            ("post", "/erp/pedir/api/devolucoes/1")):
             r = getattr(c, metodo)(url, json={})
-            assert r.status_code in (400, 401), f"{url} não se defendeu"
-            if r.status_code == 401:
-                assert "aplicativo" in (r.get_json() or {}).get("erro", "").lower()
+            assert r.status_code in (302, 401, 403), f"{url} não se defendeu"
+            assert b"solicita" not in r.data.lower(), (
+                f"{url} entregou conteúdo a quem não entrou")
+        pagina = c.get("/erp/pedir")
+        assert pagina.status_code in (302, 401, 403), (
+            "a tela de pedir abriu para quem não entrou no sistema")
+
+
+def test_o_endereco_antigo_do_portal_nao_responde_mais(app):
+    """`/erp/portal` era público. Depois da troca ele não pode continuar de pé:
+    rota pública esquecida é porta aberta que ninguém lembra de fechar."""
+    with app.test_client() as c:
+        for url in ("/erp/portal", "/erp/portal/api/inicio"):
+            assert c.get(url).status_code == 404, f"{url} ainda responde"
 
 
 def test_a_porta_dos_comprovantes_recusa_sem_segredo_e_com_segredo_errado(app, monkeypatch):

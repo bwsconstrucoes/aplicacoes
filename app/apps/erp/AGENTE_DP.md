@@ -331,69 +331,79 @@ contabilidade devolve o TRCT  →  ERP arquiva (caixa de entrada)
 
 ---
 
-## 6-ter. O PORTAL — ele já existe, e é o aplicativo do ponto
+## 6-ter. A PORTA DE QUEM PEDE — refeita em 07/11/2026
 
-> *"lembrando que a gente tem que ter um portal, né, de acesso. Semelhante ao
-> que a gente tem no Pipe (…) o administrativo de obra não vai ter esse mesmo
-> acesso. Ele precisa só entrar e preencher alguns dados, fazer uma requisição e
-> encaminhar por lá. (…) atualmente a gente já tem um acesso via ponto. (…) Aí
-> como é que fica o permissionamento do ERP e esse acesso ao portal e esse
-> acesso ao ponto? Já começa a complicar um pouquinho."*
+⚠️ **Esta seção foi reescrita por inteiro. O que estava aqui antes estava
+errado, e vale guardar o erro: ele é instrutivo.**
 
-**Não há portal novo, e isso é a resposta.** O aplicativo do ponto
-(`/ponto/app`) já é um portal de gente de obra, com login próprio (CPF + PIN),
-papéis e recorte por obra. Um segundo portal com um terceiro login seria a
-quarta porta da mesma casa — e quem usa é a mesma pessoa, no mesmo celular, no
-mesmo dia.
+**O que eu tinha escrito:** que o portal já existia e era o aplicativo do
+ponto, e que bastava fazer uma ponte da sessão do ponto para dentro do ERP.
+Construí assim, publiquei, e o dono olhou:
 
-### Os três mundos de acesso, e o que cada um responde
+> *"eu entrei aqui no portal e acho que você não compreendeu bem como é que é a
+> ideia (…) como é que funciona hoje? Eles têm um portal do Pipefy e lá eles
+> fazem todo tipo de solicitações. Financeiro, suprimento, diário de obras,
+> cadastro colaboradores, solicitação do departamento pessoal e etc. Só que o
+> Pipe é só um formulário de entrada de dados. Por lá não se gerencia nada
+> (…) a solução nem pode ser somente como Pipefy (…) o ponto fica só para
+> ponto, e o ERP a gente utiliza um outro acesso mais completo, mais robusto.
+> Mas aí, se eu quiser fazer essas solicitações rápidas (…) a gente faz
+> acessando o ERP mesmo. O cara vai ter o login, acesso do ERP e vai fazer a
+> requisição dele. Aí, só que num ambiente, digamos, mais enxuto para utilizar
+> no celular."*
 
-| Mundo | Quem entra | Como | O que decide |
+### Os dois erros, e eles são do mesmo tipo
+
+1. **Eu recriei o defeito do Pipefy.** O que torna o Pipefy insuficiente não é
+   o formulário — é que o formulário mora num sistema e a gestão mora em
+   outro. Um portal separado faz isso de novo: um lugar para pedir, outro para
+   acompanhar. E a obra, quando quiser *"entender melhor o que já foi
+   solicitado"*, cai no mesmo vazio de hoje.
+2. **Solicitação não é assunto do DP.** A obra pede de tudo — pagamento,
+   material, diário de obra, colaborador, DP. Um portal de DP ou vira quatro
+   portais, ou vira um ERP paralelo pela metade.
+
+O erro comum aos dois: **eu otimizei a entrada e esqueci o acompanhamento.**
+Formulário é a parte fácil; o que falta na empresa é saber em que pé está o
+que foi pedido.
+
+### O desenho que ficou: uma porta, duas caras
+
+| | Quem entra | Como | O que decide |
 |---|---|---|---|
-| **ERP** | quem opera o escritório | e-mail e senha | perfil → ações → seções |
-| **Portal** (app do ponto) | gente de obra | CPF + PIN | papéis do ponto + a obra onde está |
-| **Aparelho** | o celular da obra | token do dispositivo | bate ponto por todos, sem login |
+| **Ponto** | gente de obra, para bater ponto | CPF + PIN | papéis do ponto |
+| **ERP** | TODO o resto, da diretoria ao parceiro | e-mail e senha | perfil → ações → escopo (`core/auth/`) |
 
-**Eles não se misturam, e nada do ERP é concedido pelo portal.** O portal faz
-TRÊS coisas: abrir requisição ao DP, acompanhar o que abriu, e devolver
-documento. Ele não vê título, não vê salário de ninguém e não abre tela do ERP.
+**O ponto ficou só para o ponto.** Tudo o mais entra pelo ERP, com UM login e
+UM sistema de permissão. Gente de fora e parceiro entram pela mesma porta;
+muda só a permissão.
 
-### Como a ponte funciona, sem complicar o permissionamento
+**A tela enxuta é `/erp/pedir`** — rota comum do ERP, com `@login_obrigatorio`
+e ação declarada (`ver_erp` para abrir, `solicitar_dp` para pedir). Ela não usa
+o `erp_base.html`, porque o menu de 18 telas num celular, para quem só quer
+fazer um pedido, é o oposto de "ambiente mais enxuto". Quem quiser o ERP
+inteiro vai nele — está a um endereço de distância, com o mesmo login.
 
-Os dois módulos rodam no MESMO processo e dividem o mesmo cookie de sessão.
-Então o ERP **lê a sessão que o aplicativo do ponto já abriu** — e com ela
-descobre quem é a pessoa. Quem não passou pelo CPF+PIN não tem a chave na
-sessão, e o portal responde "entre pelo aplicativo".
+### O que isso APAGOU de código, e é o melhor da mudança
 
-**As regras de alcance NÃO são reimplementadas**, e é isso que evita a
-complicação que ele temia:
+A ponte com o ponto levava junto uma segunda regra de alcance e uma segunda
+marcação de autoridade (`papeis.obras_recentes`, `papeis.e_administrativo`).
+As duas sumiram. O alcance agora é `obras_do_usuario`, o mesmo do resto do
+ERP; a autoridade para pedir por outros é a ação `solicitar_dp`, que já
+existia. **Nenhuma ação nova foi criada** — e o `PARCEIRO` já estava de fora
+dela, então a decisão do dono (*"Parceria, a princípio, é só visualização"*)
+já era a regra em vigor, sem uma linha de código.
 
-- **quais obras a pessoa alcança** → a regra do ponto (a obra do cadastro mais
-  as obras em que ela bateu ponto nos últimos dias, que é o que vale no
-  computador, sem localização);
-- **quem pode pedir POR OUTROS** → a MESMA marcação do ponto
-  (`administrativo_obra`). Não invento uma segunda: duas marcações para a mesma
-  autoridade divergiriam no primeiro mês, e aí a pessoa pede no ponto e não
-  pede no portal sem ninguém entender por quê.
+Duas regras de permissão em paralelo divergem no primeiro mês. Agora há uma.
 
-Por mim mesmo, qualquer um abre pedido. Por outro, só o administrativo de obra,
-e só de quem está numa obra que ele alcança — e fora disso a pessoa do outro
-**não existe** (404), nunca "sem permissão".
+### O que fica pendente, e depende dele
 
-### O que falta para o portal aparecer na tela
-
-As rotas estão prontas (`/erp/portal/api/...`). **A tela dele mora no aplicativo
-do ponto**, que é outra área deste repositório — e eu não mexo em outra área. O
-que o chat do ponto precisa acrescentar são **três telas** no aplicativo:
-
-1. **Pedidos ao DP** — a lista do que eu abri, lendo `/erp/portal/api/inicio`;
-2. **Novo pedido** — os tipos vêm no mesmo endereço, com os campos de cada um;
-3. **A devolver** — a lista de pendências e o envio do arquivo em
-   `/erp/portal/api/devolucoes/<id>`.
-
-Nenhuma delas precisa de regra nova: o alcance e o papel já são os do ponto.
-
----
+O Pipefy **sai de uma vez, sem paralelo** (decisão dele, 07/11). Isso quer
+dizer que, antes do corte, os tipos de pedido das OUTRAS áreas — financeiro,
+suprimentos, diário de obra — precisam existir aqui. Hoje só os do DP existem.
+O que falta saber, e só ele tem: **quais são os tipos de pedido do portal do
+Pipefy e quais a obra mais usa.** Os exports que chegaram até aqui são só os
+pipes do DP.
 
 ## 7. A ORDEM DE CONSTRUÇÃO, e por que esta
 

@@ -11,7 +11,7 @@
 
    O portal é leve de verdade: nenhuma biblioteca, nenhum arquivo externo além
    da folha de estilo do ERP, e três telas numa página só. #}
-<link rel="stylesheet" href="{{ url_for('static', filename='erp.css') }}">
+<link rel="stylesheet" href="{{ url_for('erp.static', filename='erp.css') }}">
 <style>
   body { margin: 0; background: var(--papel, #F4F6FA); font-family: system-ui,
          -apple-system, "Segoe UI", Roboto, sans-serif; color: #10233F; }
@@ -71,7 +71,7 @@
     <div id="devolucoes"></div>
   </div>
 
-  <div class="bloco">
+  <div class="bloco" id="bloco-pedir">
     <h3>Abrir um pedido</h3>
     <p class="ajuda">Escolha o que precisa. O DP recebe na hora e você acompanha
       aqui mesmo.</p>
@@ -101,7 +101,7 @@ async function chamar(url, opcoes){
   const r = await fetch(url, Object.assign({headers: {"Content-Type": "application/json"}},
                                            opcoes || {}));
   const d = await r.json().catch(() => ({}));
-  if (r.status === 401) { semAcesso(d.erro); throw new Error(d.erro || "entre pelo aplicativo"); }
+  if (r.status === 401) { semAcesso(d.erro); throw new Error(d.erro || "entre no sistema"); }
   if (!r.ok || d.ok === false) throw new Error(d.erro || "deu problema aqui");
   return d;
 }
@@ -109,20 +109,23 @@ async function chamar(url, opcoes){
 // SEM SESSÃO DO APLICATIVO DO PONTO, a página não mostra nada e DIZ O QUE
 // FAZER. Tela de erro técnico para quem está na obra é tela que vira ligação
 // para o DP.
+// SESSÃO VENCIDA NÃO É ERRO TÉCNICO, é "entre de novo". Quem está na obra, no
+// celular, não tem o que fazer com uma mensagem de sistema — tem que ver o
+// botão que resolve.
 function semAcesso(motivo){
   document.querySelector(".caixa").innerHTML = `
     <div class="bloco">
-      <h3>Entre pelo aplicativo do ponto</h3>
-      <p class="ajuda">${esc(motivo || "Você precisa estar logado para abrir pedidos.")}
-        É o mesmo aplicativo que você usa para bater o ponto — o mesmo CPF e o
-        mesmo PIN.</p>
-      <a class="btn-portal" href="/ponto/app" style="display:inline-block;
-         text-decoration:none">Abrir o aplicativo do ponto</a>
+      <h3>Entre no sistema</h3>
+      <p class="ajuda">${esc(motivo || "Você precisa entrar para abrir ou acompanhar pedidos.")}
+        É o mesmo e-mail e a mesma senha do sistema — o aplicativo do ponto é
+        outra coisa, e serve só para bater ponto.</p>
+      <a class="btn-portal" href="/erp/entrar?proximo=/erp/pedir"
+         style="display:inline-block; text-decoration:none">Entrar</a>
     </div>`;
 }
 
 async function carregar(){
-  try { DADOS = await chamar("/erp/portal/api/inicio"); }
+  try { DADOS = await chamar("/erp/pedir/api/inicio"); }
   catch(e){ return; }
   els("quem").innerHTML = `${esc(DADOS.nome)}<br>${
     DADOS.administrativo ? "administrativo de obra" : "colaborador"}`;
@@ -173,7 +176,7 @@ async function devolver(id, botao){
   try {
     const fd = new FormData();
     fd.append("arquivo", campo.files[0]);
-    const r = await fetch(`/erp/portal/api/devolucoes/${id}`, {method: "POST", body: fd});
+    const r = await fetch(`/erp/pedir/api/devolucoes/${id}`, {method: "POST", body: fd});
     const d = await r.json().catch(() => ({}));
     if (r.status === 401) return semAcesso(d.erro);
     if (!r.ok || d.ok === false) throw new Error(d.erro || "não consegui enviar");
@@ -233,6 +236,15 @@ const SO_DIGITO = /^(cpf|telefone|cep|matricula)$/;
 
 function pintarFormulario(){
   const tipos = DADOS.tipos || [];
+  // QUEM SÓ OLHA NÃO GANHA FORMULÁRIO. O parceiro (gente de fora, ligada a uma
+  // obra) acompanha e não pede — decisão do dono em 07/11/2026. A tela não
+  // julga isso: o servidor responde `pode_pedir`, calculado pela mesma regra
+  // de permissão do resto do ERP. Esconder o botão não é a segurança — a rota
+  // recusa igual; é só não oferecer o que vai ser negado.
+  if (!DADOS.pode_pedir) {
+    els("bloco-pedir").style.display = "none";
+    return;
+  }
   els("form-pedido").innerHTML = `
     <label class="campo-portal">O que você precisa
       <select id="p-tipo">
@@ -313,7 +325,7 @@ async function enviarPedido(){
   });
   els("p-enviar").disabled = true;
   try {
-    const d = await chamar("/erp/portal/api/pedidos",
+    const d = await chamar("/erp/pedir/api/pedidos",
                            {method: "POST", body: JSON.stringify(corpo)});
     recado(`Pedido ${d.numero} enviado ao DP.`, "ok");
     carregar();

@@ -350,3 +350,29 @@ def test_a_tela_que_fala_em_jogar_documento_tem_onde_jogar(tela: Path):
         f"{tela.name} convida a jogar o documento e não tem campo de arquivo "
         f"nenhum. A pessoa procura o bloco, não acha, e conclui que o sistema "
         f"está quebrado.")
+
+
+# ---------------------------------------------------------------------------
+# A FOLHA DE ESTILO QUE NÃO CARREGA
+#
+# Defeito de verdade, achado em 07/11/2026: a tela do portal pedia
+# `url_for('static', ...)` — o `static` DA APLICAÇÃO — mas o `erp.css` mora no
+# blueprint do ERP, que é `erp.static`. A página subiu em produção SEM FOLHA DE
+# ESTILO NENHUMA, e nada acusou: o servidor responde 200 na página, o 404 é só
+# do arquivo, e não aparece em teste que olha HTML.
+#
+# Pior: a maquete que eu usei para fotografar a tela carregava uma CÓPIA LOCAL
+# do erp.css, então a foto saía bonita enquanto a página de verdade estava
+# pelada. Maquete com arquivo local esconde exatamente este erro.
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("tela", TELAS + SOLTAS + [BASE], ids=lambda p: p.name)
+def test_a_folha_de_estilo_do_erp_vem_do_blueprint_do_erp(tela: Path):
+    texto = tela.read_text(encoding="utf-8")
+    errados = re.findall(r"url_for\(\s*'static'\s*,\s*filename\s*=\s*'([^']+)'",
+                         texto)
+    errados += re.findall(r'url_for\(\s*"static"\s*,\s*filename\s*=\s*"([^"]+)"',
+                          texto)
+    assert not errados, (
+        f"{tela.name} pede {errados} de `static` (o da aplicação), mas os "
+        f"arquivos do ERP moram em `erp.static`. A página sobe 200 e o arquivo "
+        f"dá 404 — a tela aparece sem estilo e nada acusa.")

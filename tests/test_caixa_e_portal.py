@@ -243,11 +243,14 @@ def test_numero_que_nao_existe_vira_motivo_escrito(sessao_real, dono):
 # O PORTAL
 # ---------------------------------------------------------------------------
 @banco_
-def test_o_portal_recusa_quem_nao_entrou_pelo_aplicativo(sessao_real, app_real):
+def test_a_tela_de_pedir_recusa_quem_nao_entrou_no_erp(sessao_real, app_real):
+    """A identidade agora é a DO ERP — mudou em 07/11/2026, por decisão do
+    dono: o ponto ficou só para o ponto, e quem pede entra no ERP."""
     from app.apps.erp.core import portal as svc_portal
-    with app_real.test_request_context("/erp/portal/api/inicio"):
-        with pytest.raises(svc_portal.SemAcesso):
-            svc_portal.id_na_sessao()
+    # Sem usuário é "não entrou" — e a regra NÃO vai olhar a sessão do
+    # navegador para descobrir isso: quem conhece Flask é a rota.
+    with pytest.raises(svc_portal.SemAcesso):
+        svc_portal.quem_esta(sessao_real, None)
 
 
 @banco_
@@ -341,36 +344,74 @@ def test_cobrar_conta_a_cobranca_e_muda_a_situacao(sessao_real, dono, pessoa,
 
 
 @banco_
-def test_a_tela_do_portal_abre_sem_sessao_e_diz_o_que_fazer(sessao_real, app_real):
-    """A PÁGINA é pública e não traz dado nenhum: quem confere são as APIs. É
-    isso que faz ela abrir no celular com a sessão vencida e DIZER "entre pelo
-    aplicativo" — em vez de devolver erro técnico a quem está na obra."""
+def test_a_tela_de_pedir_nao_abre_para_quem_nao_entrou(sessao_real, app_real):
+    """Era pública e se defendia sozinha pela sessão do ponto. Agora é rota do
+    ERP, com login — e a troca de porta é o momento clássico de deixar uma
+    aberta sem querer."""
     with app_real.test_client() as c:
-        r = c.get("/erp/portal")
-        assert r.status_code == 200
-        corpo = r.get_data(as_text=True)
-        assert "aplicativo do ponto" in corpo
-        assert "/ponto/app" in corpo
+        r = c.get("/erp/pedir")
+        assert r.status_code in (302, 401, 403)
+    # e o endereço antigo não pode continuar de pé
+    with app_real.test_client() as c:
+        assert c.get("/erp/portal").status_code == 404
+
+
+def test_a_tela_de_pedir_manda_para_o_login_do_erp_e_nao_para_o_ponto(sessao_real):
+    """Quem está na obra com a sessão vencida tem de ver o botão que resolve —
+    e o botão certo é o do ERP, não o do aplicativo do ponto."""
+    from pathlib import Path
+    tela = Path("app/apps/erp/templates/erp_portal.html").read_text(
+        encoding="utf-8")
+    assert "/erp/entrar" in tela
+    assert "/ponto/app" not in tela, (
+        "a tela enxuta não manda mais ninguém para o aplicativo do ponto: o "
+        "ponto ficou só para o ponto em 07/11/2026")
 
 
 @banco_
-def test_o_portal_so_deixa_pedir_por_quem_esta_ao_alcance(sessao_real, dono, pessoa):
-    """Quem não é administrativo de obra só pede por si mesmo — e não é
-    desconfiança: pedir pelo colega sem responder pela obra dele não existe no
-    processo."""
-    from app.apps.erp.core import portal as svc_portal
+def test_so_pede_por_outros_quem_tem_alcada_para_isso(sessao_real, dono, pessoa):
+    """Quem não tem alçada pede só por si — e não é desconfiança: pedir pelo
+    colega sem responder pela obra dele não existe no processo.
+
+    A alçada agora vem do PERFIL do ERP, não de uma marcação do ponto.
+    """
     import app.apps.erp.core.portal as mod
-    monkey = {"eu": {"colaborador_id": pessoa.id, "nome": pessoa.nome,
-                     "cpf": pessoa.cpf, "obra_id": pessoa.obra_id,
-                     "pessoa": pessoa}}
-    original_quem, original_adm = mod.quem_esta, mod.e_administrativo_de_obra
-    mod.quem_esta = lambda s: monkey["eu"]
-    mod.e_administrativo_de_obra = lambda s, p: False
+    from app.apps.erp.core import portal as svc_portal
+
+    eu = {"usuario": dono, "usuario_id": dono.id, "nome": dono.nome,
+          "perfil": "ADMINISTRATIVO_OBRA",
+          "colaborador_id": pessoa.id, "pessoa": pessoa}
+    original_quem = mod.quem_esta
+    original_outros = mod.pode_pedir_por_outros
+    mod.quem_esta = lambda s, u=None: eu
+    mod.pode_pedir_por_outros = lambda s, e: False
     try:
-        lista = svc_portal.pessoas_ao_alcance(sessao_real)
+        lista = svc_portal.pessoas_ao_alcance(sessao_real, dono)
         assert [x["id"] for x in lista] == [pessoa.id]
     finally:
-        mod.quem_esta, mod.e_administrativo_de_obra = original_quem, original_adm
+        mod.quem_esta = original_quem
+        mod.pode_pedir_por_outros = original_outros
+
+
+def test_o_parceiro_nao_abre_pedido():
+    """Decisão do dono em 07/11/2026: *"Parceria, a princípio, é só
+    visualização. Se eu entender que é necessário dar, eu posso criar um perfil
+    diferente."*
+
+    E a regra NÃO é uma linha nova no portal: é a ação `solicitar_dp` que o ERP
+    já tem, da qual o PARCEIRO já estava de fora. Este teste existe para que
+    ninguém a conceda sem perceber — e para que, no dia em que ele decidir o
+    contrário, a mudança seja consciente.
+    """
+    from app.apps.erp.core.auth import permissoes as p
+    from app.apps.erp.db.models.cadastros import PerfilUsuario
+
+    assert PerfilUsuario.PARCEIRO not in p.PERMISSOES["solicitar_dp"]
+    # e quem está na obra pede
+    for perfil in (PerfilUsuario.ADMINISTRATIVO_OBRA,
+                   PerfilUsuario.SUPERVISOR_OBRA,
+                   PerfilUsuario.GESTOR_OBRA):
+        assert perfil in p.PERMISSOES["solicitar_dp"]
 
 
 # ---------------------------------------------------------------------------

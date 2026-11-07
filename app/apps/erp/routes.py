@@ -11004,59 +11004,68 @@ def api_cargos_importar():
 # rota que não usa o login do ERP — e a conferência de quem é acontece dentro,
 # na primeira linha de cada função.
 # ---------------------------------------------------------------------------
-@bp.route("/erp/portal")
-@permissao_publica("portal da obra: página própria, sem o menu nem o login do ERP")
+@bp.route("/erp/pedir")
+@login_obrigatorio
+@permissao("ver_erp")
 def pagina_portal():
-    """A TELA do portal, servida pelo próprio ERP.
+    """A TELA ENXUTA — pedir e acompanhar, no celular, dentro do ERP.
 
-    Eu havia deixado isto pendente do chat do ponto, e não precisava: a página
-    é uma só, não usa o `erp_base.html` (que traria o menu de 18 telas e a
-    sessão do ERP, nada disso existe aqui) e se defende sozinha — sem a sessão
-    do aplicativo do ponto, ela mostra "entre pelo aplicativo" com o link, em
-    vez de um erro técnico.
+    MUDOU DE PORTA EM 07/11/2026. Era `/erp/portal`, pública, lendo a sessão
+    do aplicativo do ponto. O dono desfez: o ponto fica só para o ponto, e
+    quem pede entra no ERP com o login do ERP. Então ela é uma rota comum,
+    com login e com ação declarada como qualquer outra.
 
-    Não confere nada aqui de propósito: quem confere são as três rotas de API
-    que a página chama, e elas respondem 401 antes de tocar no banco. Assim a
-    página abre no celular mesmo com a sessão vencida, e DIZ o que fazer.
+    A ação é `ver_erp` — a mais baixa que existe — de propósito: QUALQUER um
+    que entre no sistema pode abrir esta tela. O que ele vê dentro dela é que
+    muda: quem não tem `solicitar_dp` (o PARCEIRO, por exemplo) não ganha o
+    formulário, só a lista do que já existe. A tela não decide isso sozinha —
+    pergunta a `core/auth/permissoes.py`, como todo o resto.
+
+    A página continua SEM o `erp_base.html`: o menu de 18 telas num celular,
+    para quem só quer fazer um pedido, é o oposto de "ambiente mais enxuto".
+    Quem quiser o ERP inteiro vai nele — está a um endereço de distância.
     """
     return render_template("erp_portal.html")
 
 
-@bp.route("/erp/portal/api/inicio")
-@permissao_publica("portal da obra: quem entra é colaborador pelo app do ponto")
+@bp.route("/erp/pedir/api/inicio")
+@login_obrigatorio
+@permissao("ver_erp")
 def api_portal_inicio():
     from app.apps.erp.core import portal as svc_portal
     try:
-        # A CONFERÊNCIA VEM ANTES DO BANCO: recusar quem não entrou não pode
-        # custar uma conexão. Rota pública que abre conexão antes de saber quem
-        # é vira porta de esgotar o pool com requisição anônima.
-        svc_portal.id_na_sessao()
         with get_session() as s:
-            eu = svc_portal.quem_esta(s)
+            # O USUÁRIO VEM DAQUI, JÁ COM AS EXCEÇÕES DE PERMISSÃO DENTRO.
+            # Recarregá-lo pelo ORM lá na regra traria um usuário sem elas, e
+            # quem teve permissão concedida ou tirada no cadastro passaria a
+            # ser julgado só pelo cargo — em silêncio.
+            usuario = _usuario_logado(s)
+            eu = svc_portal.quem_esta(s, usuario)
             return jsonify({
                 "ok": True,
                 "nome": eu["nome"],
-                "administrativo": svc_portal.e_administrativo_de_obra(
-                    s, eu["pessoa"]),
-                "obras": svc_portal.obras_que_alcanca(s, eu["pessoa"]),
+                "pode_pedir": svc_portal.pode_pedir(s, eu),
+                "administrativo": svc_portal.pode_pedir_por_outros(s, eu),
+                "obras": svc_portal.obras_que_alcanca(s, eu),
                 "tipos": svc_portal.tipos(s),
-                "pessoas": svc_portal.pessoas_ao_alcance(s),
-                "obras_lista": svc_portal.obras_para_escolher(s),
+                "pessoas": svc_portal.pessoas_ao_alcance(s, usuario),
+                "obras_lista": svc_portal.obras_para_escolher(s, usuario),
                 "listas": svc_portal.listas_fechadas(s),
-                "pedidos": svc_portal.meus_pedidos(s),
-                "devolucoes": svc_portal.minhas_devolucoes(s)})
+                "pedidos": svc_portal.meus_pedidos(s, usuario),
+                "devolucoes": svc_portal.minhas_devolucoes(s, usuario)})
     except svc_portal.SemAcesso as e:
         return jsonify({"ok": False, "erro": str(e)}), 401
 
 
-@bp.route("/erp/portal/api/pedidos", methods=["POST"])
-@permissao_publica("portal da obra: abrir requisição ao DP")
+@bp.route("/erp/pedir/api/pedidos", methods=["POST"])
+@login_obrigatorio
+@permissao("solicitar_dp")
 def api_portal_abrir():
     from app.apps.erp.core import portal as svc_portal
     try:
-        svc_portal.id_na_sessao()
         with get_session() as s:
-            r = svc_portal.abrir(s, request.get_json(silent=True) or {})
+            r = svc_portal.abrir(s, request.get_json(silent=True) or {},
+                                 _usuario_logado(s))
             s.commit()
             return jsonify({"ok": True, **r})
     except svc_portal.SemAcesso as e:
@@ -11070,21 +11079,19 @@ def api_portal_abrir():
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
-@bp.route("/erp/portal/api/devolucoes/<int:devolucao_id>", methods=["POST"])
-@permissao_publica("portal da obra: devolver documento assinado")
+@bp.route("/erp/pedir/api/devolucoes/<int:devolucao_id>", methods=["POST"])
+@login_obrigatorio
+@permissao("solicitar_dp")
 def api_portal_devolver(devolucao_id: int):
     """A obra devolve o documento assinado. É o "tem que ser via sistema"."""
     from app.apps.erp.core import portal as svc_portal
-    try:
-        svc_portal.id_na_sessao()
-    except svc_portal.SemAcesso as e:
-        return jsonify({"ok": False, "erro": str(e)}), 401
     arquivo = request.files.get("arquivo")
     if arquivo is None:
         return jsonify({"ok": False, "erro": "Escolha o arquivo."}), 400
     try:
         with get_session() as s:
             r = svc_portal.devolver(s, devolucao_id, arquivo.read(),
+                                    _usuario_logado(s),
                                     arquivo.filename or "documento")
             s.commit()
             return jsonify({"ok": True, **r})
