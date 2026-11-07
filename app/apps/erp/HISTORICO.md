@@ -7598,6 +7598,21 @@ isso é escolha dele sobre o menu dele, não conserto.
 
 ## Coisas pequenas que mordem
 
+- **⚠️ DATA FIXA EM FIXTURE DE TESTE É BOMBA-RELÓGIO.** Em 07/11/2026, na hora
+  de publicar, um teste quebrou sem nada no código ter mudado: a admissão do
+  fixture era `"2026-11-01"`, e naquele dia ela completou 6 dias. O aviso "a
+  admissão foi há N dias e o registro só está sendo pedido agora" (regra de 5
+  dias, em `avisos_do_pedido`) passou a disparar, um evento `AVISO` entrou no
+  meio da trilha do pedido, e o teste da ORDEM dos eventos falhou. O
+  calendário virou, só isso. **A regra:** data de fixture que a regra de
+  negócio compara com `date.today()` vai RELATIVA a hoje
+  (`date.today() - timedelta(days=N)`), nunca escrita à mão. E a regra que
+  olha o calendário ganha teste próprio com as datas explícitas, dos dois
+  lados do limite — era o que faltava aqui: ninguém testava aquele aviso, e
+  por isso ninguém sabia que ele entrava na trilha. Não vale proibir data fixa
+  em todo teste (são 66 lugares, a maioria legítima): o perigo é só perto de
+  um limite que o tempo atravessa.
+
 - `pip install -r requirements-dev.txt` falha com o pip antigo do sistema
   (`docopt` não compila). Num venv com pip atualizado funciona.
 - `pytest -q` na linha de comando vira `-qq` (o `pytest.ini` já tem `-q`) e
