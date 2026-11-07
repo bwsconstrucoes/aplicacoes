@@ -5,6 +5,32 @@ junto com o `README.md` e o `PLANO.md`.
 
 ## Pendente AGORA
 
+0w. **O TERMO DO PONTO NO CELULAR — feito no ramo, NÃO publicado (07/11/2026, migração 028).** Ver a seção de
+   07/11/2026 abaixo. Ao publicar: apertar "Aplicar atualizações do ponto" no mesmo momento. O INPI ficou para
+   depois, por decisão do dono — quando ele pedir, passar os dados preenchidos (titular, autores, SHA-512 do código).
+
+0x. **MODELOS JURÍDICOS DO REP-P, PARA O DONO E O ADVOGADO VEREM (07/11/2026).**
+   Pedido do dono: *"utilize seus conhecimentos jurídicos e contábeis pra
+   elaborar os modelos pra eu ver"*. Estão num documento do Claude (fora do
+   repositório): https://claude.ai/artifact/VruVFGqWCdWbWZjtKyvGkT — Modelo 1,
+   Atestado Técnico preenchido no formato oficial do MTE; Modelo 2, roteiro e
+   ficha do registro no INPI; Modelo 3, termo de ciência do colaborador
+   (registro, PIN, assinatura eletrônica, LGPD); Modelo 4, termo novo da
+   assinatura da folha (acrescenta o direito de não assinar); Modelo 5, acordo
+   individual de compensação. Mais uma nota técnica do que falta no sistema
+   ANTES de assinar o atestado, e as fontes (Perguntas e Respostas do MTE).
+
+   **Achado novo, que muda código:** a Pergunta nº 41 do MTE diz que o NSR é
+   **por CNPJ**, começando em 1. O nosso é uma sequência só para o sistema
+   inteiro. **Esperando o dono** (pergunta deixada no próprio documento): pode
+   renumerar as batidas por CNPJ, guardando o número antigo? Também esperando:
+   o e-CNPJ A1 da BWS (assina AFD/AEJ em `.p7s` CAdES e o comprovante em PAdES —
+   Perguntas 28–34, 44), o e-CPF dos dois signatários do atestado, os autores
+   para o INPI (eu gero o SHA-512 do código congelado no dia), o prazo de guarda
+   das fotos (sugerido 5 anos) e a aprovação do texto novo do termo (Modelo 4) —
+   o `TERMO` de `core/assinaturas.py` ainda é o antigo. **Não assinar o atestado
+   antes de NSR e assinaturas digitais estarem feitos.**
+
 0y. **O CADASTRO DE PESSOAS VAI PARA DENTRO DO ERP — levantamento feito,
    implementação NÃO começou (04/11/2026).** O dono: *"essa parte de cadastro de
    colaboradores, a gente ainda está usando o Pipefy, e puxando uma planilha
@@ -499,6 +525,45 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 07/11/2026 (sábado) — O termo do ponto assinado no celular (migração 028)
+
+O dono: *"para fechar a formalização do aplicativo em relação aos funcionários (…) coletar a assinatura deles (…) das
+pessoas que já estão admitidas e das que ainda vão ser admitidas. Toda vida que entrar tem que gerar alguma pendência
+(…) o DP também tem que visualizar (…) um termo jurídico simples, porque o nível de instrução das pessoas é baixo (…)
+o ideal é que eles assinem no próprio celular deles, mas quem não conseguir também poder ser disponibilizado pelo
+pessoal da própria obra. Eu queria que tivesse as duas opções."* Sobre o INPI, ele decidiu: **fica para depois** — eu
+passo os dados preenchidos quando ele quiser dar entrada.
+- **O texto** (`core/termo.py`, num lugar só — o aplicativo e o PDF leem dali): seis frases curtas, na primeira
+  pessoa — o ponto é pelo aplicativo; a foto e o GPS servem só para provar que foi ela e onde; PIN e QR são só dela e
+  bater o de outro é falta grave; pode ver o ponto e pedir correção; assina a folha todo mês; a BWS guarda pelo tempo da
+  lei e a pessoa pode perguntar ao DP o que está guardado. Fecha com "Li, ou leram para mim, e entendi. Assino."
+- **Por que "ciência" e não "consentimento"** (dito ao dono): a base da LGPD para o ponto é a obrigação legal (art. 7º,
+  II) e a prevenção de fraude na biometria (art. 11, II, "g"). Consentimento se retira a qualquer hora — e a empresa
+  ficaria sem poder registrar o ponto de quem retirou. Recusar fica registrado; o ponto continua.
+- **As duas formas**: (1) **no celular da pessoa** — quem entra com CPF e PIN e bate ponto vê, no começo da tela, "✍️
+  Falta assinar o termo do ponto"; lê, digita o PIN de novo e assina com o dedo. (2) **No aparelho de quem conduz** —
+  menu "📝 Termo do ponto" (as mesmas pessoas que veem "Assinaturas da folha"): a equipe, quem falta primeiro; "Mostrar
+  o termo", e a pessoa digita o PIN DELA ou, **sem PIN (ou esquecido), o operador tira uma foto dela na hora** (a câmera
+  do aparelho, reduzida a 640 px). Sem PIN e sem foto não assina. "A pessoa não quer assinar" registra o motivo.
+- **Quem precisa**: quem bate ponto (o grupo "Bate ponto" da tela Pessoas). **Quem é admitido já nasce faltando** — não
+  há nada a fazer além de cadastrar.
+- **Para o DP**: Ponto › Pessoas ganhou a coluna **Termo** (assinado/recusou/falta) e o filtro **Termo do ponto** na
+  barra, com a contagem; o subtítulo diz "N sem o termo do ponto assinado". A janela da pessoa › Pedidos mostra o termo
+  (como e com quem assinou) e o PDF de cada assinatura. **Alertas** › "Termo do ponto sem assinatura": um por obra do
+  cadastro, com quantos e os nomes (até 8), e o atalho "ver quem falta assinar" (a lista de Pessoas já filtrada); sai
+  sozinho quando a obra termina.
+- **O texto tem lacre** (SHA-256): mudou, todos voltam a faltar e a assinatura antiga vira SUBSTITUÍDA, guardada.
+- **O PDF arquivado** (documentos do ponto, no Drive): o termo, a assinatura, a foto (quando houver) e o comprovante —
+  quem, quando, como foi confirmado (PIN ou foto), quem conduziu, aparelho, local e o lacre.
+- **Ficou de fora**: o termo NÃO trava a batida (o ponto é obrigação legal, não depende de aceite); o alerta dispensado
+  pelo DP não reabre sozinho quando chega gente nova na obra (a lista de Pessoas continua mostrando); no ponto da obra
+  sem ninguém logado não há termo — quem conduz entra com CPF e PIN, como na assinatura da folha. O texto longo
+  (Modelo 3 do documento de modelos jurídicos) continua sendo o modelo para quem quiser um papel completo.
+- Testes: `test_ponto_termo_banco.py` (no celular: sem PIN, PIN errado, assinatura ruim, assinado, aviso some, não
+  assina duas vezes; quem conduz: a lista, a recusa, sem PIN pede a foto, assinado com foto, não conduz o próprio; ERP:
+  ficha, histórico, PDF, coluna; texto mudado volta a faltar; o PDF e o lacre). E as telas no navegador (celular
+  simulado: o aviso, o termo, o PIN e o dedo; o operador com a foto; o ERP com o filtro e a ficha).
 
 ## 06/11/2026 (sexta, quarta parte) — A assinatura da folha na tela (migração 027)
 

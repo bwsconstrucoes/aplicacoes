@@ -530,6 +530,9 @@ def ponto_api_pessoas():
         # Quem procura alguém que não está na lista fica sabendo por quê. Só para
         # quem alcança todas as obras: para o preso a obra, dizer o motivo de quem
         # é de outra obra confirmaria que a pessoa existe.
+        # o termo do ponto (07/11/2026, migração 028): assinado, recusado ou falta — coluna e filtro da lista
+        from .core import termo
+        termos = (termo.situacao_de(conn, [int(p["id"]) for p in pessoas]) if termo.disponivel(conn) else {})
         from .core import registro
         fora_da_lista = (registro.por_que_nao_aparece(
             conn, busca, {"".join(ch for ch in (p["cpf"] or "") if ch.isdigit()) for p in pessoas})
@@ -548,6 +551,9 @@ def ponto_api_pessoas():
         j["regime_banco_rotulo"] = banco.ROTULOS.get(j["regime_banco"], j["regime_banco"])
         j["grupo"], j["grupo_motivo"] = categoria[int(p["id"])]
         j["excecoes"] = cadastros.excecoes_da_pessoa(p, int(p["id"]) in liberados)
+        t = termos.get(int(p["id"]))
+        j["termo"] = ({k: t.get(k) for k in ("situacao", "em", "forma", "por", "motivo", "versao_antiga")}
+                      if t else None)
         saida.append(j)
     return _ok(pessoas=saida, quantidade=len(saida), fora_da_lista=fora_da_lista, grupo=grupo, contagem=contagem)
 
@@ -624,6 +630,9 @@ def _ficha(quem: Quem, colaborador_id: int) -> dict:
         # as folhas assinadas na tela (06/11/2026, migração 027): o PDF de cada mês, para abrir e imprimir
         from .core import assinaturas
         j["assinaturas"] = assinaturas.da_pessoa(conn, colaborador_id)
+        # o termo do ponto (07/11/2026, migração 028): a situação e o PDF de cada assinatura
+        from .core import termo
+        j["termo"] = termo.da_pessoa(conn, colaborador_id)
     return j
 
 
@@ -2389,6 +2398,10 @@ def _servir_documento(documento_id: int, *, sigiloso_permitido: bool):
         if not dono and db.tem_coluna(conn, "espelho_assinaturas", "documento_id"):
             # a folha assinada na tela (06/11/2026)
             dono = db.um(conn, "SELECT colaborador_id FROM ponto.espelho_assinaturas WHERE documento_id = :d LIMIT 1",
+                         d=documento_id)
+        if not dono and db.tem_coluna(conn, "termo_aceites", "documento_id"):
+            # o termo do ponto assinado (07/11/2026)
+            dono = db.um(conn, "SELECT colaborador_id FROM ponto.termo_aceites WHERE documento_id = :d LIMIT 1",
                          d=documento_id)
         if (not f or not dono or (f["sigiloso"] and not sigiloso_permitido)
                 or not ocorrencias.pessoa_no_alcance(conn, quem, dono["colaborador_id"])):
