@@ -142,6 +142,7 @@ MODULOS = [
             ("obras", "Painel de obras", "erp.pagina_obras"),
             ("contratos", "Contratos e medições", "erp.pagina_contratos"),
             ("acompanhamento", "Acompanhamento", "erp.pagina_acompanhamento"),
+            ("diario", "Diário de obra", "erp.pagina_diario"),
             ("agenda", "Agenda", "erp.pagina_agenda"),
         ],
     },
@@ -215,6 +216,12 @@ ACOES_NA_TELA = (
                  "autorizar_pedido", "solicitar_suprimento", "configurar",
                  "cruzar_notas", "arquivar", "receber", "emitir_nota",
                  "tratar_agenda", "aprovar",
+                 # O DIÁRIO DE OBRA (08/11/2026): decide se a tela mostra o
+                 # botão de gravar e fechar. Sem isto a tela abre em modo de
+                 # leitura para TODO MUNDO, inclusive para o ADMIN — foi o que
+                 # a primeira foto mostrou, com o formulário inteiro na tela e
+                 # nenhum botão de gravar embaixo dele.
+                 "lancar_diario",
                  # Cancelar título é ação própria desde 12/09/2026: quem lança
                  # cancela o PRÓPRIO lançamento, e a tela precisa saber disso
                  # para mostrar o botão a quem não aprova.
@@ -11004,6 +11011,206 @@ def api_cargos_importar():
 # rota que não usa o login do ERP — e a conferência de quem é acontece dentro,
 # na primeira linha de cada função.
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# O DIÁRIO DE OBRA (migração 092)
+#
+# As MESMAS rotas servem a tela cheia do ERP e a enxuta do portal: o diário é
+# um só, e duplicar a regra por porta seria criar duas verdades sobre o mesmo
+# dia. Quem muda é a tela, não o que ela chama.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/obras/diario")
+@login_obrigatorio
+@permissao("ver_diario")
+def pagina_diario():
+    return render_template("erp_diario.html", **_contexto("diario"))
+
+
+def _dia_do_pedido(bruto: str | None):
+    from datetime import date as _date
+    if not bruto:
+        return _date.today()
+    try:
+        return _date.fromisoformat(str(bruto)[:10])
+    except ValueError:
+        raise ErroValidacao("Data inválida.")
+
+
+@bp.route("/erp/api/diario/<int:obra_id>")
+@login_obrigatorio
+@permissao("ver_diario")
+def api_diario_dia(obra_id: int):
+    """O dia, já preenchido com tudo o que o sistema sabe."""
+    from app.apps.erp.core import diario as svc
+    from app.apps.erp.core.auth.permissoes import exigir_obra_no_escopo
+    try:
+        with get_session() as s:
+            exigir_obra_no_escopo(s, _usuario_logado(s), obra_id)
+            return jsonify({"ok": True,
+                            **svc.abrir_dia(s, obra_id,
+                                            _dia_do_pedido(request.args.get("data")))})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise                # recusa de escopo vira 404, nunca 500
+    except Exception as e:
+        logger.exception("ERP: falha ao abrir o diário da obra %s", obra_id)
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/diario/<int:obra_id>", methods=["POST"])
+@login_obrigatorio
+@permissao("lancar_diario")
+def api_diario_salvar(obra_id: int):
+    from app.apps.erp.core import diario as svc
+    from app.apps.erp.core.auth.permissoes import exigir_obra_no_escopo
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            exigir_obra_no_escopo(s, usuario, obra_id)
+            dados = request.get_json(silent=True) or {}
+            dia = _dia_do_pedido(dados.get("data"))
+            r = svc.salvar(s, obra_id, dia, dados, usuario,
+                           motivo=dados.get("motivo") or "")
+            s.commit()
+            return jsonify({"ok": True, **r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP: falha ao gravar o diário da obra %s", obra_id)
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/diario/<int:obra_id>/fechar", methods=["POST"])
+@login_obrigatorio
+@permissao("lancar_diario")
+def api_diario_fechar(obra_id: int):
+    from app.apps.erp.core import diario as svc
+    from app.apps.erp.core.auth.permissoes import exigir_obra_no_escopo
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            exigir_obra_no_escopo(s, usuario, obra_id)
+            dados = request.get_json(silent=True) or {}
+            r = svc.fechar(s, obra_id, _dia_do_pedido(dados.get("data")), usuario)
+            s.commit()
+            return jsonify({"ok": True, **r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP: falha ao fechar o diário da obra %s", obra_id)
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/diario/<int:obra_id>/fiscalizacao", methods=["POST"])
+@login_obrigatorio
+@permissao("ver_diario")
+def api_diario_fiscalizacao(obra_id: int):
+    """A observação da FISCALIZAÇÃO.
+
+    ⚑ A ação exigida é `ver_diario`, NÃO `lancar_diario`, e isso é de
+    propósito: quem escreve aqui é a fiscalização do contratante, que entra
+    pelo perfil PARCEIRO e não lança diário nenhum. Exigir `lancar_diario`
+    trancaria justamente quem este campo existe para ouvir.
+
+    Quem escreve o quê é decidido em `core/diario.py`: esta função só pode
+    tocar no campo dela, e `salvar` não pode tocar nele de jeito nenhum.
+    """
+    from app.apps.erp.core import diario as svc
+    from app.apps.erp.core.auth.permissoes import exigir_obra_no_escopo
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            exigir_obra_no_escopo(s, usuario, obra_id)
+            dados = request.get_json(silent=True) or {}
+            r = svc.observar_como_fiscalizacao(
+                s, obra_id, _dia_do_pedido(dados.get("data")),
+                dados.get("observacao") or "", usuario)
+            s.commit()
+            return jsonify({"ok": True, **r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP: falha na observação da fiscalização")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/diario/<int:obra_id>/extras", methods=["POST"])
+@login_obrigatorio
+@permissao("lancar_diario")
+def api_diario_extra(obra_id: int):
+    """O terceirizado que trabalhou e não bate ponto aqui."""
+    from app.apps.erp.core import diario as svc
+    from app.apps.erp.core.auth.permissoes import exigir_obra_no_escopo
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            exigir_obra_no_escopo(s, usuario, obra_id)
+            dados = request.get_json(silent=True) or {}
+            dia = _dia_do_pedido(dados.get("data"))
+            if dados.get("remover"):
+                svc.remover_extra(s, obra_id, dia, int(dados["remover"]))
+                s.commit()
+                return jsonify({"ok": True, "removido": True})
+            r = svc.acrescentar_extra(s, obra_id, dia, dados, usuario)
+            s.commit()
+            return jsonify({"ok": True, **r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP: falha no efetivo extra do diário")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/diario/<int:obra_id>/calendario")
+@login_obrigatorio
+@permissao("ver_diario")
+def api_diario_calendario(obra_id: int):
+    """O mês inteiro: o que tem diário, o que falta, o que não era para ter."""
+    from datetime import date as _date
+
+    from app.apps.erp.core import diario as svc
+    from app.apps.erp.core.auth.permissoes import exigir_obra_no_escopo
+    try:
+        hoje = _date.today()
+        ano = request.args.get("ano", type=int) or hoje.year
+        mes = request.args.get("mes", type=int) or hoje.month
+        if not 1 <= mes <= 12:
+            return jsonify({"ok": False, "erro": "Mês inválido."}), 400
+        with get_session() as s:
+            exigir_obra_no_escopo(s, _usuario_logado(s), obra_id)
+            return jsonify({"ok": True, **svc.calendario(s, obra_id, ano, mes)})
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP: falha no calendário do diário")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/diario/pendencias")
+@login_obrigatorio
+@permissao("ver_diario")
+def api_diario_pendencias():
+    """Por qual obra começar — a visão de quem olha todas."""
+    from app.apps.erp.core import diario as svc
+    from app.apps.erp.core.auth.permissoes import obras_do_usuario
+    try:
+        with get_session() as s:
+            permitidas = obras_do_usuario(s, _usuario_logado(s))
+            return jsonify({"ok": True, "obras": svc.pendencias_por_obra(
+                s, obra_ids=list(permitidas) if permitidas is not None else None)})
+    except Exception as e:
+        logger.exception("ERP: falha nas pendências de diário")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
 @bp.route("/erp/portal")
 @login_obrigatorio
 @permissao("ver_erp")

@@ -1,0 +1,418 @@
+{% extends "erp_base.html" %}
+{% block titulo %}Diário de obra — ERP BWS{% endblock %}
+
+{# O DIÁRIO DE OBRA (08/11/2026).
+
+   O PRINCÍPIO, ditado pelo dono: o diário pergunta SÓ o que ninguém sabe além
+   de quem esteve lá. Por isso metade desta tela é CINZA-AZULADA e não tem
+   campo nenhum — é o que o sistema preenche: a obra, o prazo, o efetivo (do
+   ponto) e o material recebido (de Suprimentos).
+
+   Diário que obriga a redigitar o que o ERP já sabe é diário preenchido de
+   qualquer jeito na sexta à tarde, com os cinco dias iguais — e aí ele não
+   serve nem para a obra nem para sustentar pedido de prazo. #}
+
+{% block filtros %}
+  <div class="filtros-cab">
+    <h2>Obra</h2>
+  </div>
+  <div class="campo"><label>Qual obra</label><select id="f-obra"></select></div>
+  <div class="campo"><label>Dia</label><input type="date" id="f-data" name="data"></div>
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>O mês</span><span class="seta">▾</span></button>
+    <div class="filtro-cont"><div id="cal"></div></div>
+  </div>
+  <button class="btn secundario" id="btn-pendencias" style="width:100%; margin-top:12px">
+    Onde está faltando</button>
+{% endblock %}
+
+{% block conteudo %}
+<h2>Diário de obra <small>o relato de cada dia, e o que o sistema já sabe</small></h2>
+<div id="mensagem"></div>
+<div id="painel"></div>
+
+<dialog id="dlg"><div class="dlg-topo"><h3 id="dlg-titulo">—</h3>
+  <button class="topo-btn" style="margin-left:auto" onclick="els('dlg').close()">Fechar</button></div>
+  <div class="dlg-corpo" id="dlg-corpo"></div></dialog>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const PODE_LANCAR = {{ 'true' if pode.lancar_diario else 'false' }};
+let OBRAS = [], DIA = null, HOJE = new Date().toISOString().slice(0, 10);
+
+const ESTADO_ROTULO = {
+  aberto: "aberto", fechado: "fechado", sem_expediente: "sem expediente",
+  falta: "falta o diário", descanso: "descanso", fora: "fora do prazo",
+};
+
+async function iniciar(){
+  els("f-data").value = HOJE;
+  try {
+    OBRAS = (await api("/erp/api/obras")).obras || [];
+  } catch(e){ aviso("mensagem", e.message, "erro"); return; }
+  els("f-obra").innerHTML = OBRAS.map(o =>
+    `<option value="${o.id}">${escapar(o.codigo)} — ${escapar(o.nome)}</option>`).join("");
+  els("f-obra").addEventListener("change", carregar);
+  els("f-data").addEventListener("change", carregar);
+  els("btn-pendencias").addEventListener("click", abrirPendencias);
+  if (OBRAS.length) carregar();
+  else els("painel").innerHTML = `<div class="vazio">Nenhuma obra ao seu alcance.</div>`;
+}
+
+async function carregar(){
+  const obra = els("f-obra").value, data = els("f-data").value || HOJE;
+  if (!obra) return;
+  try {
+    DIA = await api(`/erp/api/diario/${obra}?data=${data}`);
+    pintar();
+    pintarCalendario();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+// ---------------------------------------------------------------------------
+// O QUE O SISTEMA SABE — os blocos que não têm campo nenhum
+// ---------------------------------------------------------------------------
+function blocoDaObra(){
+  const o = DIA.obra, p = o.prazo || {};
+  const atrasada = p.faltam !== null && p.faltam < 0;
+  return `
+    <div class="cartao auto">
+      <div class="selo">preenchido pelo sistema</div>
+      <h3>${escapar(o.codigo)} — ${escapar(o.nome)}</h3>
+      <div class="grade-auto">
+        ${celula("Contrato", o.contrato)}
+        ${celula("Ordem de serviço", dataBR(o.data_ordem_servico))}
+        ${celula("Início", dataBR(o.data_inicio))}
+        ${celula("Término previsto", dataBR(o.data_termino))}
+        ${celula("Responsável técnico", o.responsavel_tecnico)}
+        ${celula("CREA", o.crea)}
+      </div>
+      ${o.objeto ? `<p class="desc" style="margin-top:10px"><b>Objeto:</b>
+        ${escapar(o.objeto)}</p>` : ""}
+      ${p.total ? `
+        <div class="barra-prazo"><i style="width:${Math.min(100, p.pct || 0)}%"></i></div>
+        <div class="desc"><b>Dia ${p.decorridos}</b> de ${p.total} ·
+          ${atrasada
+            ? `<b style="color:var(--vermelho)">${Math.abs(p.faltam)} dia(s) além do prazo</b>`
+            : `faltam <b>${p.faltam}</b> dias`} · ${p.pct}% do prazo decorrido</div>` : ""}
+    </div>`;
+}
+
+function celula(rotulo, valor){
+  return `<div><span>${escapar(rotulo)}</span><b>${escapar(valor || "—")}</b></div>`;
+}
+
+function blocoDoEfetivo(){
+  const e = DIA.efetivo || {}, extras = (DIA.diario.extras || []);
+  const total = (e.total || 0) + extras.reduce((s, x) => s + (x.quantidade || 0), 0);
+  return `
+    <div class="cartao auto">
+      <div class="selo">vem do ponto</div>
+      <h3>Efetivo do dia — ${total} pessoa(s)</h3>
+      <p class="cartao-dica">Quem bateu ponto nesta obra hoje. Não se digita
+        quantidade nem função: se o ponto sabe, o diário sabe.</p>
+      ${e.indisponivel ? `<div class="aviso alerta">${escapar(e.indisponivel)}</div>` : ""}
+      ${(e.por_funcao || []).length ? `<div class="chips-funcao">${
+        e.por_funcao.map(f => `<span class="etiqueta">${escapar(f.funcao)} · ${f.quantidade}</span>`).join("")
+      }</div>` : ""}
+      ${(e.pessoas || []).length ? `<div class="tabela-wrap" style="margin-top:8px">
+        <table><tbody>${e.pessoas.map(p => `<tr>
+          <td><b>${escapar(p.nome)}</b><br><small class="desc">${escapar(p.funcao)}</small></td>
+          <td class="direita"><small class="desc">${escapar(p.entrada || "—")}${
+            p.saida ? " – " + escapar(p.saida) : ""}</small></td></tr>`).join("")}
+        </tbody></table></div>` : `<div class="cartao-dica">Ninguém bateu ponto
+          nesta obra neste dia.</div>`}
+      ${extras.length ? `<div class="tabela-wrap" style="margin-top:8px">
+        <table><tbody>${extras.map(x => `<tr>
+          <td><b>${escapar(x.descricao)}</b><br><small class="desc">${
+            escapar(x.funcao || "—")}${x.empresa ? " · " + escapar(x.empresa) : ""}</small></td>
+          <td class="direita"><span class="etiqueta ambar">${x.quantidade} pessoa(s)</span></td>
+          <td class="direita">${PODE_LANCAR
+            ? `<button class="link-btn" data-remove="${x.id}">tirar</button>` : ""}</td>
+          </tr>`).join("")}</tbody></table></div>` : ""}
+      ${PODE_LANCAR && DIA.existe ? `<button class="btn secundario" id="btn-extra"
+        style="margin-top:10px">+ Acrescentar quem não bate ponto aqui</button>` : ""}
+      ${(DIA.avisos_do_ponto || []).map(a => `<div class="aviso alerta" style="margin-top:8px">
+        <b>${escapar(a.nome)}</b> é lotado nesta obra e bateu ponto na
+        ${escapar(a.onde)} hoje. Confira se houve transferência.</div>`).join("")}
+    </div>`;
+}
+
+function blocoDoMaterial(){
+  const m = DIA.material || [];
+  if (!m.length) return "";
+  return `
+    <div class="cartao auto">
+      <div class="selo">o sistema já sabe</div>
+      <h3>Material recebido hoje</h3>
+      <p class="cartao-dica">Das entregas lançadas em Suprimentos.</p>
+      <div class="tabela-wrap"><table><tbody>${m.map(x => `<tr>
+        <td><b>${escapar(x.item)}</b><br><small class="desc">${
+          escapar(x.fornecedor || "")}${x.nota ? " · NF " + escapar(x.nota) : ""}</small></td>
+        <td class="direita">${escapar(x.quantidade)} ${escapar(x.unidade)}</td>
+        </tr>`).join("")}</tbody></table></div>
+    </div>`;
+}
+// ---------------------------------------------------------------------------
+// O QUE A PESSOA ESCREVE
+// ---------------------------------------------------------------------------
+function blocoDoRelato(){
+  const d = DIA.diario, so_leitura = !PODE_LANCAR;
+  const anterior = DIA.relato_anterior || {};
+  return `
+    <div class="cartao">
+      <h3>O dia</h3>
+      ${DIA.sugere_sem_expediente && !DIA.existe ? `<div class="aviso">
+        <b>${escapar(DIA.motivo_sem_expediente)}.</b> Já vem marcado como
+        “não houve expediente”. Se houve, desmarque e escreva o relato.</div>` : ""}
+      <label class="opcao" style="margin:8px 0">
+        <input type="checkbox" id="d-sem" ${d.sem_expediente ? "checked" : ""}
+               ${so_leitura ? "disabled" : ""}>
+        <span class="rotulo">Não houve expediente neste dia</span></label>
+      <div id="d-corpo" class="${d.sem_expediente ? "oculto" : ""}">
+        <div class="form-grade">
+          {# Os ids vão ESCRITOS aqui, e não só dentro do ajudante: a trava
+             das telas confere que todo `els("x")` tem um `id="x"` em algum
+             lugar da página, e id montado dentro de função some da conferência.
+             Quem monta o <select> é `listaDeTempo`, que recebe o id pronto. #}
+          <div class="campo"><label for="d-manha">Tempo pela manhã</label>
+            ${listaDeTempo("d-manha", d.tempo_manha, so_leitura)}</div>
+          <div class="campo"><label for="d-tarde">Tempo pela tarde</label>
+            ${listaDeTempo("d-tarde", d.tempo_tarde, so_leitura)}</div>
+        </div>
+        ${d.clima_medido ? `<div class="aviso" style="margin-top:8px">☁️
+          <b>O sistema conferiu:</b> ${escapar(JSON.stringify(d.clima_medido))}</div>` : ""}
+        <div class="campo" style="margin-top:10px">
+          <label>Relato diário</label>
+          <textarea id="d-relato" rows="6" ${so_leitura ? "disabled" : ""}
+            placeholder="O que foi feito hoje.">${escapar(d.relato || "")}</textarea></div>
+        ${anterior.relato && PODE_LANCAR ? `<button class="link-btn" id="btn-ontem">
+          ↩ trazer o relato de ${dataBR(anterior.data)}</button>` : ""}
+        <div class="campo" style="margin-top:10px">
+          <label>Ocorrências e observações</label>
+          <textarea id="d-ocorrencias" rows="3" ${so_leitura ? "disabled" : ""}
+            >${escapar(d.ocorrencias || "")}</textarea></div>
+        <label class="opcao" style="margin-top:8px">
+          <input type="checkbox" id="d-fisc" ${d.fiscalizacao_esteve ? "checked" : ""}
+                 ${so_leitura ? "disabled" : ""}>
+          <span class="rotulo">A fiscalização esteve na obra hoje</span></label>
+        <div class="campo"><label>Quem esteve</label>
+          <input id="d-fisc-quem" value="${escapar(d.fiscalizacao_quem || "")}"
+                 ${so_leitura ? "disabled" : ""}></div>
+      </div>
+      ${PODE_LANCAR ? `<div style="margin-top:14px; display:flex; gap:8px; flex-wrap:wrap">
+        <button class="btn" id="btn-salvar">Gravar</button>
+        ${DIA.existe && d.situacao === "ABERTO"
+          ? `<button class="btn secundario" id="btn-fechar">Fechar o dia</button>` : ""}
+        ${d.situacao === "FECHADO"
+          ? `<span class="etiqueta verde">fechado em ${momentoBR(d.fechado_em)}</span>` : ""}
+      </div>` : ""}
+      ${d.situacao === "FECHADO" ? `<p class="cartao-dica">Diário fechado é
+        documento: corrigir daqui em diante pede o motivo, e fica registrado o
+        que mudou.</p>` : ""}
+    </div>`;
+}
+
+function listaDeTempo(id, valor, travado){
+  // id="d-manha" id="d-tarde" — escritos aqui para a trava das telas enxergar
+  return `<select id="${id}" ${travado ? "disabled" : ""}>
+    <option value="">—</option>
+    ${(DIA.tempos || []).map(t =>
+      `<option value="${t.valor}" ${t.valor === valor ? "selected" : ""}
+        >${escapar(t.rotulo)}</option>`).join("")}</select>`;
+}
+
+function blocoDaFiscalizacao(){
+  const d = DIA.diario;
+  return `
+    <div class="cartao fiscal">
+      <h3>Observações da fiscalização</h3>
+      <p class="cartao-dica">Este bloco é da fiscalização, não da BWS. Ela
+        entra com o acesso dela e escreve aqui — <b>a obra não edita</b>, e é
+        isso que dá valor ao registro.</p>
+      ${d.obs_fiscalizacao
+        ? `<div class="aviso">${escapar(d.obs_fiscalizacao)}
+             <br><small class="desc">${escapar(d.obs_fiscalizacao_por)} ·
+             ${momentoBR(d.obs_fiscalizacao_em)}</small></div>`
+        : `<div class="vazio">Aguardando a fiscalização.</div>`}
+      ${DIA.existe ? `<div class="campo" style="margin-top:8px">
+        <label>Escrever como fiscalização</label>
+        <textarea id="d-obs-fisc" rows="3"></textarea></div>
+        <button class="btn secundario" id="btn-obs-fisc">Registrar observação</button>` : ""}
+    </div>`;
+}
+
+function pintar(){
+  const d = DIA.diario;
+  els("painel").innerHTML =
+    blocoDaObra() + blocoDoRelato() + blocoDoEfetivo() + blocoDoMaterial()
+    + blocoDaFiscalizacao();
+
+  const liga = (id, ev, fn) => { if (els(id)) els(id).addEventListener(ev, fn); };
+  liga("d-sem", "change", () => {
+    els("d-corpo").classList.toggle("oculto", els("d-sem").checked);
+  });
+  liga("btn-salvar", "click", gravar);
+  liga("btn-fechar", "click", fecharODia);
+  liga("btn-obs-fisc", "click", registrarObservacao);
+  liga("btn-extra", "click", acrescentarExtra);
+  liga("btn-ontem", "click", () => {
+    els("d-relato").value = (DIA.relato_anterior || {}).relato || "";
+    els("d-relato").focus();
+  });
+  document.querySelectorAll("[data-remove]").forEach(b =>
+    b.addEventListener("click", () => removerExtra(+b.dataset.remove)));
+}
+
+// ---------------------------------------------------------------------------
+// AS AÇÕES
+// ---------------------------------------------------------------------------
+function corpoDoDia(){
+  return {
+    data: els("f-data").value || HOJE,
+    sem_expediente: els("d-sem").checked,
+    tempo_manha: els("d-manha") ? els("d-manha").value : "",
+    tempo_tarde: els("d-tarde") ? els("d-tarde").value : "",
+    relato: els("d-relato") ? els("d-relato").value : "",
+    ocorrencias: els("d-ocorrencias") ? els("d-ocorrencias").value : "",
+    fiscalizacao_esteve: els("d-fisc") ? els("d-fisc").checked : false,
+    fiscalizacao_quem: els("d-fisc-quem") ? els("d-fisc-quem").value : "",
+  };
+}
+
+async function gravar(){
+  const corpo = corpoDoDia();
+  // DIÁRIO FECHADO PEDE O MOTIVO ANTES de mandar — perguntar depois do erro
+  // faria a pessoa digitar o relato duas vezes.
+  if (DIA.diario.situacao === "FECHADO") {
+    const r = await perguntar({titulo: "Corrigir um diário fechado",
+      aviso: "Diário é documento. A correção é gravada com o que estava, o que "
+           + "passou a estar, quem corrigiu e por quê.",
+      campos: [{nome: "motivo", rotulo: "Motivo da correção", obrigatorio: true,
+                largura: 6, exemplo: "errei o elemento concretado"}],
+      textoOk: "Corrigir"});
+    if (!r) return;
+    corpo.motivo = r.motivo;
+  }
+  const b = els("btn-salvar"); b.disabled = true;
+  try {
+    await api(`/erp/api/diario/${els("f-obra").value}`,
+      {method: "POST", headers: {"Content-Type": "application/json"},
+       body: JSON.stringify(corpo)});
+    aviso("mensagem", "Diário gravado.", "ok");
+    await carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+  b.disabled = false;
+}
+
+async function fecharODia(){
+  if (!await perguntar({titulo: "Fechar o diário de " + dataBR(els("f-data").value),
+      aviso: "Depois de fechado, corrigir pede o motivo e fica registrado.",
+      campos: [], textoOk: "Fechar"})) return;
+  try {
+    await api(`/erp/api/diario/${els("f-obra").value}/fechar`,
+      {method: "POST", headers: {"Content-Type": "application/json"},
+       body: JSON.stringify({data: els("f-data").value})});
+    aviso("mensagem", "Diário fechado.", "ok");
+    await carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+async function registrarObservacao(){
+  const texto = els("d-obs-fisc").value.trim();
+  if (!texto) { aviso("mensagem", "Escreva a observação.", "erro"); return; }
+  try {
+    await api(`/erp/api/diario/${els("f-obra").value}/fiscalizacao`,
+      {method: "POST", headers: {"Content-Type": "application/json"},
+       body: JSON.stringify({data: els("f-data").value, observacao: texto})});
+    aviso("mensagem", "Observação registrada.", "ok");
+    await carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+async function acrescentarExtra(){
+  const r = await perguntar({titulo: "Quem trabalhou e não bate ponto aqui",
+    aviso: "O terceirizado que esteve na obra — a equipe de pintura, o "
+         + "empreiteiro. O efetivo próprio já vem do ponto.",
+    campos: [
+      {nome: "descricao", rotulo: "Quem", obrigatorio: true, largura: 4,
+       exemplo: "Equipe Silva Pinturas"},
+      {nome: "quantidade", rotulo: "Quantas pessoas", largura: 2, exemplo: "3"},
+      {nome: "funcao", rotulo: "O que fez", largura: 3, exemplo: "pintura"},
+      {nome: "empresa", rotulo: "Empresa", largura: 3}],
+    textoOk: "Acrescentar"});
+  if (!r) return;
+  try {
+    await api(`/erp/api/diario/${els("f-obra").value}/extras`,
+      {method: "POST", headers: {"Content-Type": "application/json"},
+       body: JSON.stringify({...r, data: els("f-data").value})});
+    await carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+async function removerExtra(id){
+  try {
+    await api(`/erp/api/diario/${els("f-obra").value}/extras`,
+      {method: "POST", headers: {"Content-Type": "application/json"},
+       body: JSON.stringify({remover: id, data: els("f-data").value})});
+    await carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+// ---------------------------------------------------------------------------
+// O CALENDÁRIO — "o que está faltando", como no ponto
+// ---------------------------------------------------------------------------
+async function pintarCalendario(){
+  const data = new Date((els("f-data").value || HOJE) + "T12:00:00");
+  let c;
+  try {
+    c = await api(`/erp/api/diario/${els("f-obra").value}/calendario`
+                  + `?ano=${data.getFullYear()}&mes=${data.getMonth() + 1}`);
+  } catch(e){ return; }
+  const nomes = ["seg", "ter", "qua", "qui", "sex", "sáb", "dom"];
+  els("cal").innerHTML = `
+    <div class="cal-mes">${["janeiro","fevereiro","março","abril","maio","junho",
+      "julho","agosto","setembro","outubro","novembro","dezembro"][c.mes - 1]}
+      de ${c.ano}${c.faltam ? ` · <b style="color:var(--vermelho)">${c.faltam} dia(s)
+      sem diário</b>` : " · em dia"}</div>
+    <div class="cal-grade">
+      ${nomes.map(n => `<div class="cal-cab">${n}</div>`).join("")}
+      ${Array.from({length: c.primeiro_dia_da_semana}, () => `<div></div>`).join("")}
+      ${c.dias.map(d => `<button class="cal-dia ${d.estado}" type="button"
+          data-dia="${d.data}"
+          title="${escapar(dataBR(d.data) + " · " + (ESTADO_ROTULO[d.estado] || d.estado)
+                   + (d.feriado ? " · " + d.feriado : ""))}">${d.dia}</button>`).join("")}
+    </div>`;
+  els("cal").querySelectorAll("[data-dia]").forEach(b =>
+    b.addEventListener("click", () => {
+      els("f-data").value = b.dataset.dia;
+      carregar();
+    }));
+}
+
+async function abrirPendencias(){
+  els("dlg-titulo").textContent = "Onde está faltando diário";
+  els("dlg-corpo").innerHTML = `<div class="cartao-dica">Carregando…</div>`;
+  els("dlg").showModal();
+  try {
+    const r = await api("/erp/api/diario/pendencias");
+    els("dlg-corpo").innerHTML = `
+      <p class="cartao-dica">Os últimos 30 dias, sem contar fim de semana.</p>
+      <div class="tabela-wrap"><table>
+        <thead><tr><th>Obra</th><th class="direita">Faltam</th>
+          <th>Último diário</th></tr></thead>
+        <tbody>${(r.obras || []).map(o => `<tr>
+          <td><b>${escapar(o.codigo)}</b> ${escapar(o.nome)}</td>
+          <td class="direita">${o.faltam
+            ? `<span class="etiqueta vermelha">${o.faltam}</span>`
+            : `<span class="etiqueta verde">em dia</span>`}</td>
+          <td>${o.ultimo ? dataBR(o.ultimo) : "—"}</td></tr>`).join("")}
+        </tbody></table></div>`;
+  } catch(e){ els("dlg-corpo").innerHTML = `<div class="aviso erro">${escapar(e.message)}</div>`; }
+}
+
+iniciar();
+
+</script>
+{% endblock %}

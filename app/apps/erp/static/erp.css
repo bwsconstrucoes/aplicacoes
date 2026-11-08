@@ -950,3 +950,79 @@ dialog::backdrop { background: rgba(7,30,64,.45); }
   background: var(--verde-claro, #E8F6EE); color: var(--verde, #1C6B3C);
   border-style: solid;
 }
+
+/* ---------------------------------------------------------------------------
+   O DIÁRIO DE OBRA (08/11/2026)
+
+   O PRINCÍPIO do diário aparece no estilo: metade da tela é "preenchido pelo
+   sistema" e não tem campo nenhum. Essa metade precisa PARECER diferente —
+   senão a pessoa tenta digitar nela, não consegue, e conclui que a tela está
+   travada. O selo e o fundo azulado dizem "isto já está resolvido".
+   --------------------------------------------------------------------------- */
+.cartao.auto {
+  background: var(--azul-palido, #EEF6FF);
+  border-left: 4px solid var(--azul, #31507F);
+}
+.cartao.auto .selo {
+  display: inline-block; background: var(--azul, #31507F); color: #fff;
+  font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px;
+  letter-spacing: .3px; text-transform: uppercase; margin-bottom: 8px;
+}
+/* O cabeçalho da obra: rótulo em cima, valor embaixo. Sem a grade, o rótulo e
+   o valor ficam grudados ("ContratoCT-2025/0431") — foi assim que a primeira
+   foto saiu. */
+.grade-auto {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px 18px; margin-top: 10px;
+}
+.grade-auto > div { min-width: 0; }
+.grade-auto span {
+  display: block; font-size: 11px; color: var(--tinta-suave, #5A6B85);
+  text-transform: uppercase; letter-spacing: .3px;
+}
+.grade-auto b { font-size: 14px; word-break: break-word; }
+
+.barra-prazo {
+  height: 8px; background: var(--borda, #E6EAF2); border-radius: 999px;
+  margin: 12px 0 5px; overflow: hidden;
+}
+.barra-prazo i { display: block; height: 100%; background: var(--verde, #1C6B3C); }
+
+.chips-funcao { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+
+/* O bloco da fiscalização é AMARELO porque ele não é da BWS. A cor é o aviso
+   visual de que aquela parte tem outro dono — e é ela que dá valor ao
+   documento. */
+.cartao.fiscal {
+  background: var(--ambar-palido, #FFFBF0);
+  border-left: 4px solid var(--amarelo, #F4B942);
+}
+
+/* ---- O calendário de pendências, no feitio do que o ponto já usa ---- */
+.cal-mes { font-size: 13px; margin-bottom: 8px; }
+.cal-grade {
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px;
+}
+.cal-cab {
+  font-size: 10px; text-transform: uppercase; color: var(--tinta-suave, #5A6B85);
+  text-align: center; padding-bottom: 2px;
+}
+.cal-dia {
+  aspect-ratio: 1; border: 1px solid var(--borda, #E6EAF2); border-radius: 6px;
+  background: #fff; font-size: 12px; cursor: pointer; padding: 0;
+  font-family: inherit; color: var(--tinta, #10233F);
+}
+.cal-dia:hover { border-color: var(--azul, #31507F); }
+/* FALTA é o único que grita. Se o fim de semana também gritasse, o calendário
+   nasceria com 104 alarmes por ano e ninguém olharia para ele de novo. */
+.cal-dia.falta { background: var(--vermelho-palido, #FDECEC); border-color: var(--vermelho, #A32020);
+                 color: var(--vermelho, #A32020); font-weight: 700; }
+.cal-dia.fechado { background: var(--verde-palido, #E8F6EE); border-color: var(--verde, #1C6B3C);
+                   color: var(--verde, #1C6B3C); font-weight: 600; }
+.cal-dia.aberto { background: var(--ambar-palido, #FFF6E5); border-color: var(--amarelo, #F4B942);
+                  color: var(--ambar-escuro, #8A5B00); font-weight: 600; }
+.cal-dia.descanso { background: var(--fundo-suave, #F4F6FA); color: var(--tinta-suave, #5A6B85); }
+.cal-dia.sem_expediente { background: var(--fundo-suave, #F4F6FA);
+                          color: var(--tinta-suave, #5A6B85); font-style: italic; }
+.cal-dia.fora { background: transparent; border-color: transparent;
+                color: var(--borda-forte, #C9D3E4); cursor: default; }

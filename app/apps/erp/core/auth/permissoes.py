@@ -225,6 +225,23 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
                            P.GESTOR_OBRA, P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA,
                            P.DEPARTAMENTO_PESSOAL, P.APROVADOR, P.CONSULTA,
                            P.PARCEIRO},
+    # O DIÁRIO DE OBRA (migração 092). Lido por muita gente, escrito por pouca.
+    #
+    # ⚑ O PARCEIRO LÊ, e é por ele que a FISCALIZAÇÃO do contratante alcança o
+    # diário — ela é gente de fora presa a uma obra, que é exatamente o que
+    # esse perfil descreve. É o único lugar do ERP onde o parceiro precisa
+    # ESCREVER alguma coisa, e ainda assim ele não ganha `lancar_diario`: a
+    # observação da fiscalização é um CAMPO, não uma tela, e quem decide quem
+    # escreve nele é `core/obras/diario.py`.
+    "ver_diario":        {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO,
+                          P.GESTOR_OBRA, P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA,
+                          P.DEPARTAMENTO_PESSOAL, P.APROVADOR, P.CONSULTA,
+                          P.PARCEIRO},
+    # ESCREVER O DIÁRIO É DO ADMINISTRATIVO DA OBRA. Decisão do dono em
+    # 08/11/2026: *"quem lança realmente é o administrativo da obra, não é
+    # encarregado, não."* O parceiro fica de fora de propósito.
+    "lancar_diario":     {P.ADMIN, P.GESTOR_OBRA, P.SUPERVISOR_OBRA,
+                          P.ADMINISTRATIVO_OBRA},
     "tocar_processo":     {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO,
                            P.GESTOR_OBRA, P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA,
                            P.DEPARTAMENTO_PESSOAL},
@@ -356,6 +373,8 @@ ACAO_ROTULOS = {
     "configurar_ponto":     "Configurar o ponto: escalas, feriados e aparelhos",
     "ver_mensagens":        "Ver as mensagens enviadas e por onde cada tipo sai",
     "configurar_mensagens": "Decidir por onde cada tipo de mensagem sai e o teto do WhatsApp",
+    "ver_diario":           "Ver o diário de obra",
+    "lancar_diario":        "Lançar o diário de obra",
 }
 
 ROTULOS = {

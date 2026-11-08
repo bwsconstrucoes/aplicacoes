@@ -54,6 +54,10 @@ CATEGORIAS: list[tuple[str, str]] = [
     ("documento",    "Arquivou documento"),
     ("agenda",       "Agenda"),
     ("acompanhamento", "Acompanhou processo"),
+    # O DIÁRIO EM CATEGORIA PRÓPRIA, e não em "cadastro": escrever o diário é
+    # trabalho DIÁRIO de quem está no canteiro, e somá-lo a cadastro esconderia
+    # justamente a pessoa que mais faz isso — o administrativo de obra.
+    ("diario",       "Diário de obra"),
     ("pergunta",     "Perguntou ao sistema"),
     ("configuracao", "Configurou o sistema"),
     ("outro",        "Outros"),
@@ -111,6 +115,7 @@ POR_ENTIDADE: dict[str, str] = {
     # andamento de um aditivo é o trabalho de quem persegue órgão público, e
     # misturá-lo com cadastro esconderia justamente a pessoa que mais faz isso.
     "processo": "acompanhamento",
+    "diario_obra": "diario",
     # Perguntar não é entrega — é consulta. Fica em categoria própria para
     # não inflar a produção de ninguém, e porque saber QUEM pergunta muito é
     # informação útil por si só.
@@ -183,6 +188,7 @@ NOME_DA_ENTIDADE: dict[str, str] = {
     "banco_precos": "banco de preços",
     "agenda": "agenda", "pergunta": "pergunta escrita", "categoria": "conta do plano",
     "processo": "processo de acompanhamento",
+    "diario_obra": "diário de obra",
     "pergunta_agendada": "relatório automático",
     "categoria_depara": "tradução do plano antigo", "parametro": "parâmetro",
     "usuario": "operador", "perfil": "perfil de acesso", "projeto": "projeto",

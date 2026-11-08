@@ -114,8 +114,14 @@ AREAS: tuple[dict[str, Any], ...] = (
         "chave": "obra",
         "nome": "Diário de obra",
         "explicacao": "o que aconteceu na obra no dia",
+        # ⚑ CONSTRUÍDO EM 08/11/2026, mas NÃO LIBERADO — e a diferença entre as
+        # duas coisas é decisão dele: *"eu nem quero que esteja liberado nada
+        # além do DP. A gente vai começar pelo DP."* A tela existe no ERP
+        # (Obras › Diário de obra); o que não existe ainda é a porta do portal.
+        # Ligar é trocar este `False` por `True` e apontar `tela` abaixo.
         "pronta": False,
-        "enquanto_isso": "Continue registrando como você registra hoje.",
+        "tela": "/erp/obras/diario",
+        "enquanto_isso": "Já existe no sistema, pelo computador. No celular, em breve.",
     },
 )
 

@@ -1761,6 +1761,45 @@ torna possíveis. Escritas como o dono perguntaria.
   `colaborador_etapas` guarda as passagens, mas não há função que calcule a
   permanência. É a pergunta que diria onde o cadastro emperra.
 
+## 3y. O DIÁRIO DE OBRA (08/11/2026)
+
+Perguntas que o diário torna possíveis. Escritas como o dono perguntaria.
+
+**Respondidas por código escrito:**
+
+- "Quais obras estão com diário atrasado?" — e quantos dias cada uma deve.
+- "Faltou diário em que dias da obra 081 este mês?"
+- "Quantas pessoas trabalharam na obra tal dia?" — vem do ponto, não digitado.
+- "O que foi feito na obra na semana passada?"
+- "Em que dias choveu na obra?" — ⚑ hoje só o que a pessoa marcou; a medição
+  da estação ainda não está ligada.
+- "Quantos dias a obra parou por chuva?" — ⚠️ **palavra ambígua**: "parou"
+  pode ser o dia inteiro ou parte dele. Hoje o diário guarda o TEMPO por
+  período, não a parada: o campo que eu tinha proposto para isso foi cortado
+  por ele. **O assistente tem de dizer que não sabe responder.**
+- "A fiscalização esteve na obra quantas vezes?"
+- "O que a fiscalização observou?"
+- "Que material chegou na obra naquele dia?" — vem de Suprimentos.
+- "Quem corrigiu o diário depois de fechado, e por quê?"
+
+**Dependem de quem pergunta (escopo por obra):**
+
+- "Como está o diário das minhas obras?" — o administrativo de obra vê as
+  dele; o gestor vê as designadas.
+
+**O sistema AINDA NÃO responde, e o que falta:**
+
+- "Quantos dias de prazo eu posso pedir por chuva?" — falta a medição da
+  estação (`clima_medido` existe e está vazia) e falta o conceito de PARADA,
+  que foi cortado. Sem os dois, qualquer número seria chute.
+- "Gere o diário no modelo do órgão X" — faltam os modelos, que ele vai
+  mandar.
+- "Qual o efetivo médio da obra no mês?" — dá para contar, mas não há função
+  que some; e a resposta mudaria conforme contar ou não o terceirizado.
+- "Este relato é parecido com o de ontem?" — o sistema OFERECE o relato
+  anterior, mas não compara nem avisa quando dez dias seguidos são idênticos.
+  Seria o sinal de diário preenchido no automático.
+
 ## 4. Como esta lista vira código
 
 Cada pergunta daqui vira uma função em `core/perguntas/respostas.py`, com nome,

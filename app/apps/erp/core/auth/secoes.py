@@ -147,6 +147,16 @@ SECOES: list[dict[str, Any]] = [
     {"chave": "obr_agenda", "area": "Obras", "nome": "Agenda de obrigações",
      "explicacao": "vencimentos de certidão, seguro, ART e contrato",
      "ler": ["ver_agenda"], "editar": ["tratar_agenda"]},
+    # ⚑ O DIÁRIO É LIDO POR MAIS GENTE DO QUE ESCRITO, e muito mais: a
+    # FISCALIZAÇÃO do contratante chega nele pelo perfil PARCEIRO. Por isso o
+    # "ler" é largo e o "editar" é estreito — quem lança é o administrativo da
+    # obra, e só ele. A observação da fiscalização NÃO é uma ação aqui: ela é
+    # uma regra sobre QUAL CAMPO a pessoa escreve, e mora em
+    # `core/obras/diario.py`.
+    {"chave": "obr_diario", "area": "Obras", "nome": "Diário de obra",
+     "explicacao": ("o relato de cada dia da obra: tempo, efetivo, serviços, "
+                    "ocorrências e a observação da fiscalização"),
+     "ler": ["ver_diario"], "editar": ["lancar_diario"]},
     {"chave": "obr_acompanhamento", "area": "Obras", "nome": "Acompanhamento",
      "explicacao": ("processos que correm fora da BWS — aditivo, apostilamento, "
                     "licença, protocolo — e o andamento de cada um"),

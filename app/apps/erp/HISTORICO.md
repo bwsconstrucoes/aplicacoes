@@ -7813,11 +7813,37 @@ fica separado dos dois.
 limitação, porque ele era só entrada de dados, ele não era gestão. Mas hoje a
 gente faz a gestão pelo ERP."*
 
-### 📓 O DIÁRIO DE OBRA — o desenho, ditado por ele em 08/11/2026
+### 📓 O DIÁRIO DE OBRA — CONSTRUÍDO em 08/11/2026 (migração 092)
 
-**Ainda não foi construído**, e ele mandou esperar. O que está aqui é o
-desenho que ele passou mais a maquete que eu mostrei. **Quem for construir
-começa daqui, não do zero.**
+Ele olhou a maquete, ajustou quatro coisas e disse *"vamos para frente"*. Está
+construído e **no ERP, em Obras › Diário de obra**. No portal a área existe mas
+está FECHADA, por decisão dele: *"eu nem quero que esteja liberado nada além do
+DP."* Ligar é trocar um `False` em `portal.AREAS`.
+
+**Os ajustes dele sobre a maquete:**
+
+- ❌ **"Deu para trabalhar?" saiu.** Eu tinha proposto; ele cortou.
+- ✅ **A chuva da estação meteorológica entra** — *"eu acho que é interessante
+  sim colocar"*. A coluna `clima_medido` (jsonb) existe e está vazia: falta
+  ligar o serviço, que é dependência nova e ainda não entrou.
+- ✅ **"Serviços executados" virou "Relato diário"** — *"eu acho que fica
+  melhor"*. O nome da COLUNA segue o nome que ele usa: `relato`.
+- ✅ **O cruzamento com Suprimentos fica.**
+
+**O que ele acrescentou e virou código:**
+
+- **O calendário de pendências**, *"até lembrando um pouco o ponto"*: por obra,
+  mês a mês, verde = feito, vermelho = falta, cinza = descanso. Mais o painel
+  "onde está faltando", que ordena as obras por quantos dias devem.
+- **Fim de semana e feriado nascem "sem expediente"** — *"a menos que seja
+  digitado alguma coisa"*. ⚑ **MAS SE ALGUÉM BATEU PONTO, NÃO NASCE ASSIM**:
+  obra que trabalhou no sábado tem diário de sábado. O vigia sozinho não conta
+  como expediente; dois ou mais, conta.
+- **O relato de ontem volta para reaproveitar** — *"é muito comum o relato do
+  dia anterior ser similar ao do dia seguinte"*. Vem num botão, nunca
+  preenchido sozinho: preenchido sozinho, o diário vira cópia-cola e deixa de
+  ser relato. E o resgate **pula o fim de semana** (sexta → segunda).
+- **O relatório com MODELOS** fica para quando ele mandar os modelos.
 
 **O princípio:** o diário pergunta SÓ o que ninguém sabe além de quem esteve
 lá. Todo o resto o sistema já tem — e digitar o que o sistema sabe é onde o
@@ -7864,17 +7890,50 @@ tem órgão que requer um modelo específico. (…) quando a gente for gerar ess
 relatórios, poder selecionar em qual modelo."* Os dados são os mesmos; muda a
 impressão. **Ele vai passar os modelos depois.**
 
-**Minha proposta que depende de decisão dele: a CHUVA AUTOMÁTICA.** O ERP
-buscar a chuva registrada na estação da cidade e guardar junto do dia. Vira
-prova INDEPENDENTE para pleito de prazo — o diário deixa de ser só a palavra da
-obra. Custa uma dependência nova (serviço de meteorologia). **Sem resposta
-ainda.**
+**E ele disse como o relatório vai diferir da tela:** *"provavelmente a gente
+vai visualizar em tela o nome das pessoas, mas eu acredito que talvez a gente
+não vá relacionar nome a nome no diário, vai colocar só quantidade e função."*
+Por isso `efetivo_do_ponto` já devolve as duas coisas — a lista com nomes E a
+contagem `por_funcao`. O relatório escolhe.
 
-⚑ **TRÊS PERGUNTAS ABERTAS:** manhã/tarde ou manhã/noite; diário por dia ou por
-turno; e se a chuva automática vale a dependência.
+### ⚑ AS TRAVAS QUE ESTE TRABALHO DEIXOU, e todas nasceram de erro meu
 
-**A maquete** (HTML solto, só para olhar) ficou no bloco de rascunho da sessão.
-Ela não é código do sistema — é desenho.
+1. **`tests/test_migracoes_nomes_de_perfil.py`** — eu dei a seção do diário ao
+   perfil `'Parceiro'`. Ele se chama **"Parceiro da obra"**. O `INSERT ...
+   JOIN perfis ON nome` **não casou e não inseriu nada, sem erro nenhum** — e
+   justamente o perfil por onde a FISCALIZAÇÃO entra ficou sem acesso. O mesmo
+   arquivo trazia `'Financeiro'`, que também não existe (virou "Administrativo
+   financeiro" na migração 065). ⚑ **E a primeira versão da trava PASSOU com o
+   defeito injetado de propósito**, porque ela lia as DESCRIÇÕES dos perfis
+   como se fossem nomes. Rede que não pega nada é pior que rede nenhuma: ela
+   dá a sensação de que pega.
+2. **`test_campo_de_momento_nao_vai_para_o_ajudante_de_data`** — a tela
+   mostrava *"fechado em 08 17:50:45.327771+00:00/11/2026"*. `dataBR` parte no
+   hífen e inverte; com hora junto, embrulha. O `erp_base.html` tem
+   `momentoBR` para isso, **e o comentário dele avisa com todas as letras** —
+   usei o errado mesmo assim. A trava achou **mais três** na tela de
+   Contabilidade, que eu tinha escrito dias antes. ⚑ A primeira versão dela
+   chutava pelo NOME (`*_em`) e deu metade de alarme falso: `protocolado_em` e
+   `retencao_liberada_em` são DATE. Agora ela LÊ O TIPO DA COLUNA do schema e
+   das migrações.
+
+### ⚑ O DEFEITO QUE MAIS IMPORTA DESTE TRABALHO: o savepoint
+
+Em Postgres, **uma consulta que falha ABORTA A TRANSAÇÃO INTEIRA**. Tudo o que
+vier depois responde "current transaction is aborted" — **mesmo tendo sido
+pego por `except`**. Então `try/except` em volta de um SELECT NÃO BASTA: ele
+engole o erro e deixa a sessão quebrada para o resto do pedido.
+
+Foi exatamente o que aconteceu: num banco sem o schema do ponto, a busca do
+efetivo falhava, o `except` devolvia lista vazia "com elegância", e a busca do
+material logo abaixo morria com um erro que não tinha nada a ver. **O diário
+inteiro caía por causa de uma consulta opcional.**
+
+`_consulta_opcional` em `core/diario.py` abre um SAVEPOINT (`begin_nested`): o
+que falha dentro dele volta sozinho e a transação de quem chamou segue viva. É
+o mesmo conserto que o importador de pessoas precisou quando um PIS repetido
+derrubava todas as linhas seguintes. **Toda consulta a `ponto.*` ou a tabela
+que pode não existir passa por lá.**
 
 ### ⚑ O QUE AINDA ESTÁ COM ELE
 

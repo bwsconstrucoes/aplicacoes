@@ -376,3 +376,65 @@ def test_a_folha_de_estilo_do_erp_vem_do_blueprint_do_erp(tela: Path):
         f"{tela.name} pede {errados} de `static` (o da aplicação), mas os "
         f"arquivos do ERP moram em `erp.static`. A página sobe 200 e o arquivo "
         f"dá 404 — a tela aparece sem estilo e nada acusa.")
+
+
+# ---------------------------------------------------------------------------
+# DATA COM HORA PASSADA PARA O AJUDANTE DE DATA
+#
+# Defeito de verdade, achado ao olhar a tela do diário em 08/11/2026: ela
+# mostrava **"fechado em 08 17:50:45.327771+00:00/11/2026"**.
+#
+# `dataBR` recebe "2026-11-08" e devolve "08/11/2026" — ele parte no hífen e
+# inverte. Dado um TIMESTAMP ("2026-11-08 17:50:45.327771+00:00"), a última
+# parte vira "08 17:50:45.327771+00:00" e o resultado é aquele embrulho. O
+# `erp_base.html` já tem `momentoBR` para isto, e o comentário dele avisa com
+# todas as letras — eu usei o errado mesmo assim.
+#
+# O teste é textual porque o defeito é textual: nada quebra, nada vai para o
+# console, e só aparece para quem abre a tela e lê.
+# ---------------------------------------------------------------------------
+# As colunas que o banco guarda COM HORA, lidas do schema e das migrações —
+# não de uma lista escrita à mão, que envelheceria. A primeira versão desta
+# trava chutava pelo NOME (qualquer `*_em`) e acusou `protocolado_em` e
+# `retencao_liberada_em`, que são DATE: alarme falso em metade dos achados.
+# O que decide é o TIPO da coluna, e ele está escrito no SQL.
+def _colunas_com_hora() -> set[str]:
+    sql = [Path("app/apps/erp/schema.sql")]
+    sql += sorted(Path("app/apps/erp/scripts/migracoes").glob("*.sql"))
+    com_hora: set[str] = set()
+    so_data: set[str] = set()
+    for arq in sql:
+        if not arq.exists():
+            continue
+        for linha in arq.read_text(encoding="utf-8").splitlines():
+            m = re.match(r"\s*(?:ADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?)?"
+                         r"([a-z_]+)\s+(TIMESTAMPTZ|TIMESTAMP|DATE)\b",
+                         linha.strip(), re.I)
+            if not m:
+                continue
+            nome, tipo = m.group(1).lower(), m.group(2).upper()
+            (com_hora if tipo.startswith("TIMESTAMP") else so_data).add(nome)
+    # Nome que aparece como DATE em alguma tabela é ambíguo: a tela pode estar
+    # mostrando a coluna de data. Fora da trava, para não gerar alarme falso.
+    #
+    # ⚑ E NOME CURTO TAMBÉM SAI. Existe uma coluna chamada só `em`
+    # (migração 072). Com ela na lista, a trava acusava `n.recebimento.em` da
+    # tela de notas emitidas, que é um campo de DATA montado em Python e não
+    # tem relação nenhuma com aquela coluna. Nome de duas letras não identifica
+    # coluna; identifica coincidência.
+    return {c for c in (com_hora - so_data) if len(c) > 4}
+
+
+@pytest.mark.parametrize("tela", TELAS + SOLTAS, ids=lambda p: p.name)
+def test_campo_de_momento_nao_vai_para_o_ajudante_de_data(tela: Path):
+    codigo = "\n".join(_blocos(tela))
+    com_hora = _colunas_com_hora()
+    assert com_hora, "não li coluna de TIMESTAMP nenhuma — a trava perdeu a "\
+                     "referência e precisa ser consertada, não ignorada"
+    errados = sorted({
+        achado for achado in re.findall(r"dataBR\(\s*([\w.]+)\s*\)", codigo)
+        if achado.split(".")[-1].lower() in com_hora})
+    assert not errados, (
+        f"{tela.name} passa {errados} para `dataBR`, e o nome diz que é "
+        f"TIMESTAMP. `dataBR` parte no hífen e inverte: com hora junto, sai "
+        f"\"08 17:50:45+00:00/11/2026\" na tela. Use `momentoBR`.")
