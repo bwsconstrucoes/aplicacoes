@@ -11050,6 +11050,7 @@ def api_portal_inicio():
                 "pode_pedir": svc_portal.pode_pedir(s, eu),
                 "administrativo": svc_portal.pode_pedir_por_outros(s, eu),
                 "obras": svc_portal.obras_que_alcanca(s, eu),
+                "areas": svc_portal.areas(s, eu),
                 "tipos": svc_portal.tipos(s),
                 "pessoas": svc_portal.pessoas_ao_alcance(s, usuario),
                 "obras_lista": svc_portal.obras_para_escolher(s, usuario),

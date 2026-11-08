@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Pedidos ao DP — BWS</title>
+<title>Solicitações — BWS</title>
 {# PÁGINA PRÓPRIA, NÃO O `erp_base.html`, e isto é de propósito: quem abre é
    gente de OBRA, no celular, sem login do ERP. O `erp_base` traz o menu de 18
    telas, a barra de módulos e a sessão do ERP — nada disso existe aqui, e
@@ -50,11 +50,28 @@
      copiá-lo aqui faria duas versões para manter de acordo. Só o que é do
      celular fica: esticar na linha. */
   .escolher { flex: 1 1 160px; min-width: 140px; padding: 11px 12px; }
+  /* A ÁREA É UM ALVO GRANDE, porque quem toca está de luva, no sol, segurando
+     o celular com uma mão. Botão pequeno em tela de obra é botão errado. */
+  .area { display: block; width: 100%; text-align: left; margin-bottom: 8px;
+         background: #fff; border: 1px solid #C9D3E4; border-left: 4px solid #0B2C5C;
+         border-radius: 12px; padding: 13px 14px; cursor: pointer;
+         font-family: inherit; color: #10233F; }
+  .area:hover { border-color: #0B2C5C; }
+  .area b { display: block; font-size: 15.5px; }
+  .area small { display: block; font-size: 13px; color: #5A6B85; margin-top: 2px; }
+  .area small.conta { font-size: 12px; color: #31507F; margin-top: 6px; }
+  /* A que ainda não abriu continua VISÍVEL — só não clicável. Ela promete, e
+     diz onde pedir enquanto não chega. */
+  .area.fechada { border-left-color: #C9D3E4; background: #F7F9FC; cursor: default; }
+  .area.fechada b { color: #5A6B85; }
+  .area.fechada small.conta { color: #8A5B00; }
+  .voltar { background: none; border: 0; color: #31507F; font-size: 14px;
+         font-weight: 600; cursor: pointer; padding: 4px 0; font-family: inherit; }
 </style>
 </head>
 <body>
 <div class="topo-portal">
-  <b>Pedidos ao DP</b>
+  <b>Solicitações</b>
   <small id="quem">—</small>
 </div>
 <div class="caixa">
@@ -71,16 +88,23 @@
     <div id="devolucoes"></div>
   </div>
 
+  {# ESCOLHER A ÁREA VEM ANTES DE ESCOLHER O TIPO. Uma lista corrida com os
+     pedidos de quatro áreas misturados obriga a pessoa a ler tudo para achar
+     o dela. E a área que ainda não abriu APARECE, marcada: esconder o que
+     falta faz achar que o sistema só serve para DP — e aí o material continua
+     sendo pedido por WhatsApp, que é o que se quer acabar. #}
   <div class="bloco" id="bloco-pedir">
-    <h3>Abrir um pedido</h3>
-    <p class="ajuda">Escolha o que precisa. O DP recebe na hora e você acompanha
-      aqui mesmo.</p>
+    <h3>Abrir uma solicitação</h3>
+    <p class="ajuda" id="pedir-ajuda">Escolha a área do que você precisa.</p>
+    <div id="areas"></div>
     <div id="form-pedido"></div>
   </div>
 
   <div class="bloco">
     <h3>O que você já pediu</h3>
-    <p class="ajuda">Os seus pedidos e o que o DP respondeu.</p>
+    <p class="ajuda">Tudo o que você abriu, de todas as áreas, e o que
+      responderam. <b>Uma lista só</b> — você quer saber o que está parado, não
+      caçar área por área.</p>
     <div id="meus"></div>
   </div>
 </div>
@@ -245,7 +269,39 @@ function pintarFormulario(){
     els("bloco-pedir").style.display = "none";
     return;
   }
+  pintarAreas();
+}
+
+// A escolha da área. `null` = ainda não escolheu, e é o estado inicial.
+let AREA = null;
+
+function pintarAreas(){
+  const areas = DADOS.areas || [];
+  els("pedir-ajuda").textContent = "Escolha a área do que você precisa.";
+  els("form-pedido").innerHTML = "";
+  els("areas").innerHTML = areas.map(a => `
+    <button class="area ${a.pronta ? "" : "fechada"}" type="button"
+            data-area="${esc(a.chave)}" ${a.pronta ? "" : "disabled"}>
+      <b>${esc(a.nome)}</b>
+      <small>${esc(a.explicacao)}</small>
+      ${a.pronta
+        ? `<small class="conta">${a.tipos} tipo(s) de pedido</small>`
+        : `<small class="conta">ainda não disponível aqui${
+             a.enquanto_isso ? " — " + esc(a.enquanto_isso) : ""}</small>`}
+    </button>`).join("");
+  els("areas").querySelectorAll("[data-area]").forEach(b =>
+    b.addEventListener("click", () => escolherArea(b.dataset.area)));
+}
+
+function escolherArea(chave){
+  AREA = chave;
+  const area = (DADOS.areas || []).find(a => a.chave === chave) || {};
+  const tipos = (DADOS.tipos || []).filter(t => t.area === chave);
+  els("areas").innerHTML = "";
+  els("pedir-ajuda").textContent = "";
   els("form-pedido").innerHTML = `
+    <button class="voltar" type="button" id="p-voltar">← todas as áreas</button>
+    <h4 style="margin:8px 0 2px">${esc(area.nome || "")}</h4>
     <label class="campo-portal">O que você precisa
       <select id="p-tipo">
         <option value="">escolha…</option>
@@ -256,6 +312,7 @@ function pintarFormulario(){
     <div style="margin-top:12px">
       <button class="btn-portal" id="p-enviar" disabled>Enviar o pedido</button>
     </div>`;
+  els("p-voltar").addEventListener("click", pintarAreas);
   els("p-tipo").addEventListener("change", pintarCamposDoTipo);
   els("p-enviar").addEventListener("click", enviarPedido);
 }

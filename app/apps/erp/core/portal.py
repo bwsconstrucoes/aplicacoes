@@ -72,14 +72,88 @@ from app.apps.erp.db.models.cadastros import Colaborador, Usuario
 
 logger = logging.getLogger(__name__)
 
-# OS TIPOS QUE A TELA ENXUTA OFERECE. É um subconjunto de propósito: desconto
-# em folha, por exemplo, é do DP — a obra não lança desconto no salário de
-# ninguém. Quem tem alçada para mais abre pela tela cheia do ERP.
-TIPOS_DO_PORTAL = (
-    "PRE_CADASTRO", "DESLIGAMENTO", "READMISSAO", "ADMISSAO_PRESTADOR",
-    "ALTERACAO_CARGO", "ATUALIZACAO_DADOS", "DEPENDENTE", "AJUDA_DE_CUSTO",
-    "VALE_TRANSPORTE", "DIVERSOS",
+# ---------------------------------------------------------------------------
+# AS ÁREAS DO PORTAL
+#
+# O dono, em 08/11/2026, depois de entrar e ver só pedidos de DP: *"Não
+# liberamos ainda os demais, mas precisa estar dividido em áreas não?"*
+#
+# **SIM, E A ÁREA QUE AINDA NÃO ABRIU TAMBÉM APARECE.** Esconder o que falta faz
+# a pessoa achar que o sistema só serve para DP e continuar pedindo material
+# pelo WhatsApp — que é exatamente o que se quer acabar. Mostrada e marcada,
+# ela diz duas coisas de uma vez: "vai vir" e "por enquanto, peça onde você já
+# pede". Promessa escrita é melhor que ausência silenciosa.
+#
+# `pronta=False` é o estado honesto de hoje: o ERP JÁ TEM a máquina de
+# suprimentos e a de financeiro — o que falta é ligar a porta do portal nelas,
+# e isso depende de decisão do dono sobre o que a obra pode abrir. O diário de
+# obra não existe em lugar nenhum ainda.
+# ---------------------------------------------------------------------------
+AREAS: tuple[dict[str, Any], ...] = (
+    {
+        "chave": "pessoal",
+        "nome": "Pessoal e DP",
+        "explicacao": "admissão, desligamento, férias, vale, dados da pessoa",
+        "pronta": True,
+    },
+    {
+        "chave": "suprimentos",
+        "nome": "Material e compras",
+        "explicacao": "pedir material, ferramenta, locação",
+        "pronta": False,
+        "enquanto_isso": "Continue pedindo material como você pede hoje.",
+    },
+    {
+        "chave": "financeiro",
+        "nome": "Pagamentos",
+        "explicacao": "pedir pagamento de nota, boleto, reembolso",
+        "pronta": False,
+        "enquanto_isso": "Continue pedindo pagamento como você pede hoje.",
+    },
+    {
+        "chave": "obra",
+        "nome": "Diário de obra",
+        "explicacao": "o que aconteceu na obra no dia",
+        "pronta": False,
+        "enquanto_isso": "Continue registrando como você registra hoje.",
+    },
 )
+
+# OS TIPOS QUE A TELA ENXUTA OFERECE, POR ÁREA. É um subconjunto de propósito:
+# desconto em folha, por exemplo, é do DP — a obra não lança desconto no
+# salário de ninguém. Quem tem alçada para mais abre pela tela cheia do ERP.
+TIPOS_POR_AREA: dict[str, tuple[str, ...]] = {
+    "pessoal": (
+        "PRE_CADASTRO", "DESLIGAMENTO", "READMISSAO", "ADMISSAO_PRESTADOR",
+        "ALTERACAO_CARGO", "ATUALIZACAO_DADOS", "DEPENDENTE", "AJUDA_DE_CUSTO",
+        "VALE_TRANSPORTE", "DIVERSOS",
+    ),
+}
+
+# Mantido para quem já usava o nome antigo. É a soma das áreas, não uma
+# segunda lista — duas listas para a mesma coisa divergem no primeiro mês.
+TIPOS_DO_PORTAL = tuple(
+    chave for area in TIPOS_POR_AREA.values() for chave in area)
+
+
+def areas(s: Session, eu: dict[str, Any]) -> list[dict[str, Any]]:
+    """As áreas, com quantos tipos cada uma oferece A ESTA PESSOA.
+
+    A área que ainda não abriu vem com `pronta: False` e a frase do que fazer
+    enquanto isso. A tela não decide nada disso: ela desenha o que vem daqui.
+    """
+    from app.apps.erp.core import pessoal_solicitacoes as svc_sp
+
+    saida = []
+    for a in AREAS:
+        chaves = TIPOS_POR_AREA.get(a["chave"], ())
+        quantos = len([k for k in chaves if k in svc_sp.TIPOS])
+        saida.append({**a, "tipos": quantos,
+                      # Área marcada como pronta mas sem tipo nenhum seria uma
+                      # porta que abre para o vazio. Melhor ela se corrigir
+                      # sozinha do que mentir.
+                      "pronta": bool(a.get("pronta")) and quantos > 0})
+    return saida
 
 
 class SemAcesso(Exception):
@@ -208,13 +282,25 @@ def _pode_pela_pessoa(s: Session, eu: dict[str, Any],
 # 1. ABRIR REQUISIÇÃO
 # ---------------------------------------------------------------------------
 def tipos(s: Session) -> list[dict[str, Any]]:
+    """Os tipos que a tela oferece, CADA UM SABENDO DE QUE ÁREA É.
+
+    A área vem no tipo e não numa segunda lista na tela: assim um tipo novo
+    nasce na área certa sem ninguém lembrar de mexer no JavaScript.
+    """
     from app.apps.erp.core import pessoal_solicitacoes as svc_sp
-    return [{
-        "chave": k, "nome": svc_sp.TIPOS[k]["nome"],
-        "explicacao": svc_sp.TIPOS[k]["explicacao"],
-        "exige_pessoa": svc_sp.TIPOS[k]["exige_pessoa"],
-        "campos": list(svc_sp.TIPOS[k]["campos"]),
-    } for k in TIPOS_DO_PORTAL if k in svc_sp.TIPOS]
+
+    saida = []
+    for area, chaves in TIPOS_POR_AREA.items():
+        for k in chaves:
+            if k not in svc_sp.TIPOS:
+                continue
+            saida.append({
+                "chave": k, "area": area, "nome": svc_sp.TIPOS[k]["nome"],
+                "explicacao": svc_sp.TIPOS[k]["explicacao"],
+                "exige_pessoa": svc_sp.TIPOS[k]["exige_pessoa"],
+                "campos": list(svc_sp.TIPOS[k]["campos"]),
+            })
+    return saida
 
 
 def listas_fechadas(s: Session | None = None) -> dict[str, list[dict[str, str]]]:

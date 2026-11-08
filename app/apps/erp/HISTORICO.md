@@ -7723,6 +7723,74 @@ pipes do DP (`CADASTRO_COLABORADORES` e `SOLICITAÇÕES DP`).
 do portal do Pipefy, e quais três ou quatro a obra mais usa — esses têm de
 estar prontos primeiro.
 
+## 08/11/2026 — O PORTAL DIVIDIDO POR ÁREAS, e a conversa que eu devia ter puxado
+
+Ele entrou no portal publicado e viu só pedidos de DP:
+
+> *"Não liberamos ainda os demais, mas precisa estar dividido em áreas não?
+> Havia comentado pra discutirmos a melhor forma de fazer mas acho que isso não
+> aconteceu."*
+
+**As duas coisas estão certas, e a segunda é a que importa.** Ele pediu, em
+07/11, que discutíssemos a melhor forma. Eu respondi sobre o ACESSO (login,
+permissão, uma porta só), ele concordou, e eu fui implementar — **a estrutura
+dos pedidos em si nunca foi discutida.** O erro não é de desenho, é de
+processo: respondi a parte da pergunta que eu sabia responder e tratei a
+conversa como encerrada.
+
+### O que foi feito agora (porque isso ele já afirmou)
+
+- A tela deixou de se chamar "Pedidos ao DP" e virou **Solicitações**;
+- **escolhe-se a ÁREA antes do tipo** — lista corrida com quatro áreas
+  misturadas obriga a ler tudo para achar o seu;
+- **a área que ainda não abriu APARECE, marcada**, e diz onde pedir enquanto
+  isso. Esconder o que falta ensina que o sistema só serve para DP — e aí o
+  material continua indo por WhatsApp, que é o que se quer acabar;
+- **"O que você já pediu" é UMA lista, de todas as áreas.** A pessoa quer saber
+  o que está parado, não caçar área por área.
+
+As áreas vivem em `portal.AREAS`, e **cada tipo sabe de que área é**
+(`TIPOS_POR_AREA`) — não há segunda lista no JavaScript, senão um tipo novo
+nasce fora de qualquer área e ninguém nota.
+
+### O QUADRO DE VERDADE, que muda o tamanho do trabalho
+
+Fui olhar o que o ERP já tem, e é melhor do que parecia:
+
+| Área | O que já existe |
+|---|---|
+| **Pessoal e DP** | 11 tipos, prontos e no portal |
+| **Material e compras** | `suprimentos/solicitacao.py` — vários itens, acompanhamento POR ITEM. Pronta, fora do portal |
+| **Pagamentos** | o título com solicitante, aval e aprovação. Pronto, fora do portal |
+| **Diário de obra** | **não existe em lugar nenhum** |
+
+**Não são quatro sistemas a construir: são duas portas a ligar no que já
+funciona, e um sistema novo.**
+
+### ⚑ AS TRÊS DECISÕES QUE ESTÃO COM ELE
+
+Perguntadas em 08/11, sem resposta ainda. **Não comece a construir área nova
+sem elas** — foi exatamente assim que eu errei da primeira vez.
+
+1. **O pedido de pagamento da obra é um TÍTULO ou um PEDIDO que o financeiro
+   converte?** O título tem classificação, centro de custo, aval e aprovação; o
+   encarregado não tem esse dado nem essa alçada. Minha proposta: a obra abre
+   um pedido simples (de quem, quanto, por quê, a foto da nota) e o financeiro
+   transforma em título.
+2. **No material, a obra escolhe do catálogo ou escreve livre?** Catálogo dá
+   preço e histórico; livre gera "cimento", "cimento CP-II" e "saco de cimento"
+   como três coisas. Minha proposta: busca no catálogo com a opção de escrever
+   o que não achou, e o escrito livre vira pendência para suprimentos
+   cadastrar.
+3. **O diário de obra entra agora?** É o único que não existe. Se entrar,
+   falta saber o que ele tem hoje (efetivo, clima, ocorrências, fotos).
+
+### ⚑ E A PERGUNTA QUE CONTINUA TRANCANDO O CORTE DO PIPEFY
+
+**Quais tipos de pedido existem no portal do Pipefy, e quais a obra mais usa.**
+Sem paralelo (decisão dele), todos precisam existir aqui antes de desligar. Os
+exports que chegaram a este repositório são só os dois pipes do DP.
+
 ## Coisas pequenas que mordem
 
 - **⚠️ DATA FIXA EM FIXTURE DE TESTE É BOMBA-RELÓGIO.** Em 07/11/2026, na hora
