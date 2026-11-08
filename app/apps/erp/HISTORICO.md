@@ -7767,10 +7767,116 @@ Fui olhar o que o ERP já tem, e é melhor do que parecia:
 **Não são quatro sistemas a construir: são duas portas a ligar no que já
 funciona, e um sistema novo.**
 
-### ⚑ AS TRÊS DECISÕES QUE ESTÃO COM ELE
+### ✅ AS TRÊS DECISÕES — RESPONDIDAS POR ELE EM 08/11/2026
 
-Perguntadas em 08/11, sem resposta ainda. **Não comece a construir área nova
-sem elas** — foi exatamente assim que eu errei da primeira vez.
+**O portal tem QUATRO coisas, e só elas:** lançar solicitação de pagamento,
+lançar solicitação de suprimento, lançar diário de obra, e as requisições de
+DP. *"Todo o resto, quem tem o acesso via ERP, vai poder fazer lá de forma mais
+ampla e mais completa."*
+
+**E nada além do DP é liberado agora:** *"eu nem quero que esteja liberado nada
+além do DP. A gente vai começar pelo DP."*
+
+**1. Pagamento — a obra LANÇA de verdade, não é pedido convertido.** Minha
+proposta estava errada: *"a obra ela faz o lançamento realmente. Lança nota,
+lança boleto, lança categoriza, lança obra e tudo mais."* Com duas exigências
+juntas: **usar IA** para facilitar o preenchimento, e **associar ao pedido de
+compra** — o sistema tenta casar a nota/boleto com o pedido. O Pipefy já faz
+essa associação hoje.
+
+**2. Material — é o mesmo do suprimentos, sem segunda versão.** *"É para ser
+igual ao do suprimento. É a listagem lá dos insumos, quantidade, tudo.
+Aproveitando o sistema, não tem porque que tá criando duas coisas se já existe
+uma."* Catálogo, e ponto.
+
+**E uma coisa que faltava no meu levantamento:** como nem todo mundo pode
+cadastrar insumo, existe a **requisição de cadastro de insumo novo**. É um tipo
+de pedido, não um cadastro direto.
+
+**3. Diário de obra — fica para depois de construir, mas o desenho foi dado**
+(ver a seção dele abaixo).
+
+**O QUE NÃO ENTRA NO PORTAL, por decisão dele:** a área de **engenharia**
+(comercial, controle de documentação, protocolo de documentos, medição, geração
+de título). *"Não necessariamente precisa estar no portal, porque as pessoas
+vão utilizar diretamente o sistema."*
+
+**QUEM LANÇA É O ADMINISTRATIVO DA OBRA**, não o encarregado. *"Quem lança
+realmente é o administrativo da obra, não é encarregado, não."*
+
+**A REGRA GERAL QUE FECHA O DESENHO:** celular = ambiente simples para as
+requisições do dia a dia; computador = o ERP completo, conforme o
+permissionamento, para ver com detalhe, acompanhar, gerar relatório. O ponto
+fica separado dos dois.
+
+**O escopo do Pipefy ENCOLHEU** com isso: *"o Pipefy, ele tinha toda aquela
+limitação, porque ele era só entrada de dados, ele não era gestão. Mas hoje a
+gente faz a gestão pelo ERP."*
+
+### 📓 O DIÁRIO DE OBRA — o desenho, ditado por ele em 08/11/2026
+
+**Ainda não foi construído**, e ele mandou esperar. O que está aqui é o
+desenho que ele passou mais a maquete que eu mostrei. **Quem for construir
+começa daqui, não do zero.**
+
+**O princípio:** o diário pergunta SÓ o que ninguém sabe além de quem esteve
+lá. Todo o resto o sistema já tem — e digitar o que o sistema sabe é onde o
+diário vira trabalho chato e acaba preenchido de qualquer jeito.
+
+**O que o sistema preenche sozinho:**
+
+- **A obra**, do cadastro: contrato, ordem de serviço, início, término
+  previsto, objeto, responsável técnico e CREA. Mais a conta do prazo — *"o
+  sistema vai entender aí a data de início (…) e contabilizar o tempo de
+  execução, quantos dias falta para terminar"*.
+- **O EFETIVO, DO PONTO.** Exigência dele, e é a melhor parte: *"hoje a gente
+  tem um ponto. Então a gente não precisaria colocar quantidade de pessoas e
+  função. Na hora que fosse abrir o dia, já está ali listado (…) já traria do
+  ponto que é quem trabalhou."* Com o botão de **acrescentar quem não bate
+  ponto ali** — *"às vezes você tem um fornecedor terceirizado que também está
+  trabalhando, um pintor terceirizado que não é funcionário"*.
+- **Material recebido no dia**, das entregas lançadas em Suprimentos (meu
+  acréscimo: diário registra material recebido, e o dado já existe).
+
+**O que a pessoa escreve:**
+
+- **O tempo**, por período. ⚑ Ele disse *"período manhã, tempo do período
+  noturno"*; eu desenhei manhã/tarde. **Confirmar com ele.**
+- **"Deu para trabalhar?"** separado do clima (meu acréscimo, e importa): o
+  que justifica prazo depois não é o clima, é a PARADA.
+- **Os serviços executados**, narrados. Com opção de DITAR — quem está na obra,
+  de luva, não digita três parágrafos no celular.
+- **Ocorrências**: se a fiscalização esteve, quem, e o que disse.
+
+**Duas regras que vieram dele e que dão valor jurídico ao registro:**
+
+1. **O bloco da fiscalização é DELA.** *"a gente poder conceder acesso a, por
+   exemplo, a fiscalização, para a fiscalização fazer observações."* Ela entra
+   com o acesso dela e escreve; **a obra não edita**. Diário que a própria obra
+   reescreve não prova nada.
+2. **Assinatura do responsável técnico**, que vem do cadastro da obra — *"no
+   cadastro também da obra vai ter o responsável técnico, e já ter campo para
+   assinatura dele"*. E (meu acréscimo) **depois de fechado só se corrige com
+   registro de quem corrigiu e por quê**: diário é documento, não rascunho.
+
+**OS MODELOS.** *"Existem modelos de diário. A gente tem um nosso modelo, mas
+tem órgão que requer um modelo específico. (…) quando a gente for gerar esses
+relatórios, poder selecionar em qual modelo."* Os dados são os mesmos; muda a
+impressão. **Ele vai passar os modelos depois.**
+
+**Minha proposta que depende de decisão dele: a CHUVA AUTOMÁTICA.** O ERP
+buscar a chuva registrada na estação da cidade e guardar junto do dia. Vira
+prova INDEPENDENTE para pleito de prazo — o diário deixa de ser só a palavra da
+obra. Custa uma dependência nova (serviço de meteorologia). **Sem resposta
+ainda.**
+
+⚑ **TRÊS PERGUNTAS ABERTAS:** manhã/tarde ou manhã/noite; diário por dia ou por
+turno; e se a chuva automática vale a dependência.
+
+**A maquete** (HTML solto, só para olhar) ficou no bloco de rascunho da sessão.
+Ela não é código do sistema — é desenho.
+
+### ⚑ O QUE AINDA ESTÁ COM ELE
 
 1. **O pedido de pagamento da obra é um TÍTULO ou um PEDIDO que o financeiro
    converte?** O título tem classificação, centro de custo, aval e aprovação; o
