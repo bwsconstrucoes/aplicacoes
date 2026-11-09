@@ -7886,9 +7886,57 @@ diário vira trabalho chato e acaba preenchido de qualquer jeito.
    registro de quem corrigiu e por quê**: diário é documento, não rascunho.
 
 **OS MODELOS.** *"Existem modelos de diário. A gente tem um nosso modelo, mas
-tem órgão que requer um modelo específico. (…) quando a gente for gerar esses
-relatórios, poder selecionar em qual modelo."* Os dados são os mesmos; muda a
-impressão. **Ele vai passar os modelos depois.**
+tem órgão que requer um modelo específico."* Os dados são os mesmos; muda a
+impressão. **Ele vai passar os modelos depois** — e em 09/11 pediu o contrário
+primeiro: *"antes de eu lhe mandar os modelos, eu queria que você gerasse um
+seu (…) gere aí um modelo para eu avaliar."*
+
+### 📄 O RDO — o modelo que eu propus (09/11/2026)
+
+`erp_diario_papel.html` e `diario.relatorio()`. Está em
+`/erp/obras/diario/papel/<obra>?de=&ate=`, e é **página de impressão**, sem o
+`erp_base.html`.
+
+**⚑ POR QUE IMPRESSÃO DO NAVEGADOR e não PDF gerado no servidor** — a decisão
+que mais importa aqui: o RDO tem tabela, caixa, quebra de página e bloco de
+assinatura. Montar isso no `fpdf` que o ERP usa seria posicionar cada elemento
+em milímetro, e **cada órgão exige um modelo diferente** — trocar de modelo
+viraria trabalho de milímetro de novo. Em HTML, **modelo é folha de estilo**.
+
+**O custo, e ele é real:** o sistema NÃO produz o arquivo sozinho. Quem gera é
+a pessoa (Ctrl+P › Salvar como PDF), então o RDO ainda não dá para anexar em
+e-mail automático nem guardar no Drive sem alguém apertar. Se isso virar
+requisito, é outro passo.
+
+**As decisões do modelo, para quem for mexer:**
+
+- **O número do RDO é o DIA DA OBRA** (dia 228 de 361), não uma sequência
+  própria. Sequência própria divergiria do prazo no primeiro diário esquecido,
+  e o papel passaria a contar outra história que o contrato. ⚑ O cabeçalho é
+  recalculado POR DIA — um relatório com o mesmo número em todas as páginas
+  seria um relatório errado, e isso tem teste.
+- **O efetivo sai por FUNÇÃO E QUANTIDADE, sem nome** (decisão dele), separando
+  PRÓPRIO de TERCEIRIZADO. Além da preferência dele, é boa prática: o RDO
+  circula fora da empresa, e a fiscalização precisa saber quantos pedreiros
+  havia, não quem eram.
+- **Um dia por folha, com o cabeçalho inteiro repetido.** Folha solta de RDO
+  vai parar anexada a ofício e a processo: ela tem de se sustentar sozinha.
+- **Só os dias escritos saem** por padrão (`so_escritos`). Relatório mensal com
+  30 folhas em branco não é relatório.
+- **A correção depois do fechamento SAI NO PAPEL**, numa tarja. Esconder seria
+  o mesmo que não registrar.
+- **"RASCUNHO" no rodapé** enquanto o diário não foi fechado. Papel que sai do
+  sistema sem esse aviso vira documento sem querer.
+
+**Um defeito de layout que só a prova em PDF mostrou:** as duas colunas (tempo
+e efetivo) fechavam em alturas diferentes, deixando uma caixa aberta no meio da
+folha — num papel que vai assinado, parece erro de impressão. `align-items:
+stretch` resolveu. **Nenhum teste pegaria isso**; só gerar o PDF e olhar.
+
+⚑ **TRÊS PERGUNTAS QUE FORAM A ELE COM O MODELO:** se falta "Equipamentos em
+obra" (o ERP não sabe disso hoje — seria campo digitado); se as assinaturas são
+duas (contratada e contratante) ou três (com preposto); e a confirmação do
+número do RDO.
 
 **E ele disse como o relatório vai diferir da tela:** *"provavelmente a gente
 vai visualizar em tela o nome das pessoas, mas eu acredito que talvez a gente

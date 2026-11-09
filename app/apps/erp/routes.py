@@ -11194,6 +11194,33 @@ def api_diario_calendario(obra_id: int):
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
+@bp.route("/erp/obras/diario/papel/<int:obra_id>")
+@login_obrigatorio
+@permissao("ver_diario")
+def pagina_diario_papel(obra_id: int):
+    """O RDO para imprimir — página própria, feita para a folha A4.
+
+    Sem o `erp_base.html` de propósito: menu de 18 telas e barra azul não
+    existem num documento que vai ser assinado pela fiscalização. Quem gera o
+    PDF é o navegador (Ctrl+P › Salvar como PDF), e é por isso que o modelo é
+    uma folha de estilo e não milímetro de biblioteca — cada órgão exige o
+    seu, e trocar de modelo tem de ser trocar de CSS.
+    """
+    from sqlalchemy import text as _text
+
+    from app.apps.erp.core import diario as svc
+    from app.apps.erp.core.auth.permissoes import exigir_obra_no_escopo
+    with get_session() as s:
+        exigir_obra_no_escopo(s, _usuario_logado(s), obra_id)
+        de = _dia_do_pedido(request.args.get("de"))
+        ate = _dia_do_pedido(request.args.get("ate") or request.args.get("de"))
+        r = svc.relatorio(s, obra_id, de, ate,
+                          so_escritos=request.args.get("todos") != "1")
+        empresa = s.execute(_text(
+            "SELECT razao_social FROM empresas ORDER BY id LIMIT 1")).scalar()
+    return render_template("erp_diario_papel.html", r=r, empresa=empresa or "")
+
+
 @bp.route("/erp/api/diario/pendencias")
 @login_obrigatorio
 @permissao("ver_diario")

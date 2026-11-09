@@ -364,3 +364,91 @@ def test_o_painel_diz_por_qual_obra_comecar(sessao_real, obra):
     linhas = svc.pendencias_por_obra(sessao_real, obra_ids=[obra], dias=10)
     assert linhas and linhas[0]["obra_id"] == obra
     assert linhas[0]["faltam"] >= 0
+
+
+# ---------------------------------------------------------------------------
+# O RELATÓRIO — o papel que vai para a fiscalização
+# ---------------------------------------------------------------------------
+@banco_
+def test_o_papel_leva_contagem_por_funcao_e_nao_nome_de_gente(sessao_real,
+                                                              obra, dono):
+    """Decisão dele: *"provavelmente a gente vai visualizar em tela o nome das
+    pessoas, mas (…) no diário vai colocar só quantidade e função."*
+
+    E é boa prática além da preferência: o RDO circula FORA da empresa. A
+    fiscalização precisa saber quantos pedreiros havia, não quem eram.
+    """
+    dia = date(2026, 3, 10)
+    svc.salvar(sessao_real, obra, dia, {"relato": "Concretagem."}, dono)
+    svc.acrescentar_extra(sessao_real, obra, dia,
+                          {"descricao": "Equipe Silva", "funcao": "Pintor",
+                           "quantidade": 3}, dono)
+    r = svc.relatorio(sessao_real, obra, dia)
+    pagina = r["paginas"][0]
+    assert pagina["efetivo"]["linhas"][0]["funcao"] == "Pintor"
+    assert pagina["efetivo"]["total"] == 3
+    # nenhum nome de pessoa no que vai para o papel
+    assert "pessoas" not in pagina["efetivo"]
+
+
+@banco_
+def test_o_proprio_e_o_terceirizado_saem_separados(sessao_real, obra, dono):
+    """Quem lê o RDO precisa distinguir mão de obra própria da contratada."""
+    dia = date(2026, 3, 10)
+    svc.salvar(sessao_real, obra, dia, {"relato": "x"}, dono)
+    svc.acrescentar_extra(sessao_real, obra, dia,
+                          {"descricao": "Equipe Silva", "funcao": "Pintor",
+                           "quantidade": 3}, dono)
+    linhas = svc.relatorio(sessao_real, obra, dia)["paginas"][0]["efetivo"]
+    assert linhas["total_terceirizado"] == 3
+    assert all(l["tipo"] in ("próprio", "terceirizado") for l in linhas["linhas"])
+
+
+@banco_
+def test_o_numero_do_rdo_e_o_dia_da_obra_e_muda_a_cada_dia(sessao_real, obra,
+                                                           dono):
+    """Não inventei sequência própria: ela divergiria do prazo no primeiro
+    diário esquecido, e o papel passaria a contar outra história."""
+    for d in (date(2026, 3, 10), date(2026, 3, 11)):
+        svc.salvar(sessao_real, obra, d, {"relato": f"dia {d}"}, dono)
+    r = svc.relatorio(sessao_real, obra, date(2026, 3, 10), date(2026, 3, 11))
+    numeros = [p["prazo"]["decorridos"] for p in r["paginas"]]
+    assert numeros == [10, 11], (
+        "o número do RDO repetiu entre páginas — o cabeçalho está sendo "
+        "calculado uma vez só para o período inteiro")
+
+
+@banco_
+def test_a_correcao_depois_do_fechamento_SAI_NO_PAPEL(sessao_real, obra, dono):
+    """Esconder a correção seria o mesmo que não registrá-la: o valor do
+    diário está em o leitor poder ver que algo mudou, quando e por quê."""
+    dia = date(2026, 3, 10)
+    svc.salvar(sessao_real, obra, dia, {"relato": "Laje."}, dono)
+    svc.fechar(sessao_real, obra, dia, dono)
+    svc.salvar(sessao_real, obra, dia, {"relato": "Pilar."}, dono,
+               motivo="errei o elemento")
+    p = svc.relatorio(sessao_real, obra, dia)["paginas"][0]
+    assert p["correcoes"] and p["correcoes"][0]["motivo"] == "errei o elemento"
+
+
+@banco_
+def test_o_relatorio_recusa_periodo_longo_demais(sessao_real, obra):
+    with pytest.raises(ErroValidacao, match="longo"):
+        svc.relatorio(sessao_real, obra, date(2026, 3, 1), date(2026, 12, 31))
+
+
+@banco_
+def test_o_relatorio_recusa_data_final_antes_da_inicial(sessao_real, obra):
+    with pytest.raises(ErroValidacao):
+        svc.relatorio(sessao_real, obra, date(2026, 3, 10), date(2026, 3, 1))
+
+
+@banco_
+def test_por_padrao_o_papel_so_traz_os_dias_escritos(sessao_real, obra, dono):
+    """Um relatório mensal com 30 folhas em branco não é relatório."""
+    svc.salvar(sessao_real, obra, date(2026, 3, 10), {"relato": "x"}, dono)
+    r = svc.relatorio(sessao_real, obra, date(2026, 3, 1), date(2026, 3, 31))
+    assert len(r["paginas"]) == 1
+    todos = svc.relatorio(sessao_real, obra, date(2026, 3, 1), date(2026, 3, 31),
+                          so_escritos=False)
+    assert len(todos["paginas"]) == 31

@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8">
+<title>RDO — {{ r.obra.codigo }} — {{ r.de }}</title>
+{#
+  O RELATÓRIO DIÁRIO DE OBRA — o papel, não a tela.
+
+  PÁGINA PRÓPRIA, sem o `erp_base.html`, e isto não é descuido: o menu de 18
+  telas, a barra azul e o botão de filtros não existem num documento que vai
+  ser impresso e assinado. O que manda aqui é a folha A4.
+
+  ⚑ POR QUE IMPRESSÃO DO NAVEGADOR e não PDF gerado no servidor: este
+  documento tem tabela, caixa, quebra de página controlada e bloco de
+  assinatura. Montar isso na biblioteca de PDF que o ERP usa (fpdf) seria
+  posicionar cada linha em milímetro, e qualquer ajuste de modelo — e eles vão
+  vir, porque cada órgão exige o seu — viraria trabalho de milímetro de novo.
+  Em HTML o modelo é uma folha de estilo.
+
+  O CUSTO DISSO, dito sem rodeio: quem gera é a pessoa, com Ctrl+P › Salvar
+  como PDF. O sistema NÃO produz o arquivo sozinho, então ele ainda não dá
+  para anexar num e-mail automático. Se isso for preciso, é outro passo.
+#}
+<style>
+  /* ---- A FOLHA ---- */
+  @page { size: A4 portrait; margin: 12mm 12mm 14mm; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Helvetica Neue", Arial, sans-serif;
+         font-size: 9.5pt; color: #111; line-height: 1.35; }
+  .folha { page-break-after: always; }
+  .folha:last-child { page-break-after: auto; }
+
+  /* ---- CABEÇALHO ---- */
+  .topo { border: 1.2pt solid #111; }
+  .topo-linha { display: flex; border-bottom: .8pt solid #111; }
+  .topo-linha:last-child { border-bottom: 0; }
+  .cel { padding: 3.5pt 6pt; border-right: .8pt solid #111; flex: 1; min-width: 0; }
+  .cel:last-child { border-right: 0; }
+  .cel span { display: block; font-size: 6.6pt; text-transform: uppercase;
+              letter-spacing: .4pt; color: #555; }
+  .cel b { font-size: 9.5pt; font-weight: 700; }
+  .titulo { text-align: center; padding: 6pt; }
+  .titulo h1 { margin: 0; font-size: 13pt; letter-spacing: .6pt; }
+  .titulo .sub { font-size: 7.5pt; color: #555; letter-spacing: .3pt; }
+  .numero { text-align: center; min-width: 92pt; flex: 0 0 92pt;
+            background: #f2f2f2; }
+  .numero b { font-size: 17pt; line-height: 1.1; }
+
+  /* ---- SEÇÕES ---- */
+  h2 { font-size: 8.4pt; text-transform: uppercase; letter-spacing: .6pt;
+       background: #111; color: #fff; margin: 7pt 0 0; padding: 2.6pt 6pt; }
+  .quadro { border: 1pt solid #111; border-top: 0; padding: 6pt; }
+  .quadro.alto { min-height: 108pt; }
+  .quadro.medio { min-height: 52pt; }
+  .texto { white-space: pre-wrap; }
+  .vazio { color: #888; font-style: italic; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 8.8pt; }
+  th, td { border: .6pt solid #999; padding: 2.6pt 5pt; text-align: left; }
+  th { background: #eee; font-size: 7.2pt; text-transform: uppercase;
+       letter-spacing: .3pt; }
+  td.n, th.n { text-align: right; width: 56pt; }
+  tfoot td { font-weight: 700; background: #f6f6f6; }
+
+  /* As duas colunas têm de terminar na MESMA linha. Sem o `stretch`, o quadro
+     mais curto fecha antes e o documento fica com uma caixa aberta no meio —
+     num papel que vai assinado, isso parece erro de impressão. */
+  .duas { display: flex; gap: 7pt; align-items: stretch; }
+  .duas > div { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .duas > div > .quadro { flex: 1; }
+
+  /* ---- O BLOCO DA FISCALIZAÇÃO ----
+     Ele é VISIVELMENTE de outro dono. Num documento que a fiscalização
+     assina, a parte dela não pode parecer escrita pela obra. */
+  .quadro.fiscal { border-left: 3pt solid #111; background: #fafafa; }
+  .assinou { font-size: 7.6pt; color: #555; margin-top: 4pt; }
+
+  /* ---- ASSINATURAS ---- */
+  .assinaturas { display: flex; gap: 22pt; margin-top: 26pt; }
+  .assinaturas > div { flex: 1; text-align: center; }
+  .linha-assin { border-top: .9pt solid #111; margin-top: 34pt;
+                 padding-top: 3pt; font-size: 8.4pt; }
+  .linha-assin small { display: block; color: #555; font-size: 7.4pt; }
+
+  .rodape { margin-top: 9pt; font-size: 7pt; color: #666;
+            display: flex; justify-content: space-between; }
+  .corrigido { margin-top: 5pt; font-size: 7.4pt; color: #7a4a00;
+               border: .6pt dashed #b98a00; padding: 3pt 5pt; }
+  .sem-exp { text-align: center; padding: 22pt 0; font-size: 11pt;
+             letter-spacing: 1pt; color: #444; }
+
+  @media screen {
+    body { background: #e8eaef; padding: 16px; }
+    .folha { background: #fff; width: 210mm; min-height: 297mm;
+             margin: 0 auto 16px; padding: 12mm 12mm 14mm;
+             box-shadow: 0 2px 10px rgba(0,0,0,.18); }
+  }
+</style>
+</head>
+<body>
+{% for p in r.paginas %}
+<div class="folha">
+
+  <div class="topo">
+    <div class="topo-linha">
+      <div class="cel titulo">
+        <h1>RELATÓRIO DIÁRIO DE OBRA</h1>
+        <div class="sub">{{ empresa or "BWS CONSTRUÇÕES" }}</div>
+      </div>
+      <div class="cel numero">
+        <span>RDO Nº</span>
+        <b>{{ p.prazo.decorridos or "—" }}</b>
+      </div>
+    </div>
+    <div class="topo-linha">
+      <div class="cel" style="flex:2"><span>Obra</span>
+        <b>{{ r.obra.codigo }} — {{ r.obra.nome }}</b></div>
+      <div class="cel"><span>Contrato</span><b>{{ r.obra.contrato or "—" }}</b></div>
+      <div class="cel"><span>Local</span>
+        <b>{{ r.obra.municipio or "—" }}{% if r.obra.uf %}/{{ r.obra.uf }}{% endif %}</b></div>
+    </div>
+    <div class="topo-linha">
+      <div class="cel" style="flex:2"><span>Data</span>
+        <b>{{ p.data[8:10] }}/{{ p.data[5:7] }}/{{ p.data[0:4] }} · {{ p.dia_da_semana }}</b></div>
+      <div class="cel"><span>Ordem de serviço</span>
+        <b>{% if r.obra.data_ordem_servico %}{{ r.obra.data_ordem_servico[8:10] }}/{{ r.obra.data_ordem_servico[5:7] }}/{{ r.obra.data_ordem_servico[0:4] }}{% else %}—{% endif %}</b></div>
+      <div class="cel"><span>Início</span>
+        <b>{% if r.obra.data_inicio %}{{ r.obra.data_inicio[8:10] }}/{{ r.obra.data_inicio[5:7] }}/{{ r.obra.data_inicio[0:4] }}{% else %}—{% endif %}</b></div>
+      <div class="cel"><span>Término previsto</span>
+        <b>{% if r.obra.data_termino %}{{ r.obra.data_termino[8:10] }}/{{ r.obra.data_termino[5:7] }}/{{ r.obra.data_termino[0:4] }}{% else %}—{% endif %}</b></div>
+      <div class="cel"><span>Prazo</span>
+        <b>{% if p.prazo.total %}{{ p.prazo.decorridos }}/{{ p.prazo.total }} dias
+          {%- if p.prazo.faltam is not none %} · {% if p.prazo.faltam < 0 %}{{ -p.prazo.faltam }} além
+          {%- else %}faltam {{ p.prazo.faltam }}{% endif %}{% endif %}
+        {%- else %}—{% endif %}</b></div>
+    </div>
+    {% if r.obra.objeto %}
+    <div class="topo-linha">
+      <div class="cel"><span>Objeto</span><b style="font-weight:400">{{ r.obra.objeto }}</b></div>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if p.sem_expediente %}
+    <h2>1 · Expediente</h2>
+    <div class="quadro"><div class="sem-exp">NÃO HOUVE EXPEDIENTE NESTE DIA</div></div>
+  {% else %}
+
+  <div class="duas">
+    <div>
+      <h2>1 · Condições do tempo</h2>
+      <div class="quadro">
+        <table>
+          <thead><tr><th>Período</th><th>Tempo</th></tr></thead>
+          <tbody>
+            <tr><td>Manhã</td><td>{{ p.tempo_manha }}</td></tr>
+            <tr><td>Tarde</td><td>{{ p.tempo_tarde }}</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div>
+      <h2>2 · Efetivo em obra</h2>
+      <div class="quadro">
+        {% if p.efetivo.linhas %}
+        <table>
+          <thead><tr><th>Função</th><th>Vínculo</th><th class="n">Qtde.</th></tr></thead>
+          <tbody>
+            {% for l in p.efetivo.linhas %}
+            <tr><td>{{ l.funcao }}</td><td>{{ l.tipo }}</td>
+                <td class="n">{{ l.quantidade }}</td></tr>
+            {% endfor %}
+          </tbody>
+          <tfoot><tr><td colspan="2">Total</td>
+            <td class="n">{{ p.efetivo.total }}</td></tr></tfoot>
+        </table>
+        {% else %}
+          <div class="vazio">Sem efetivo registrado neste dia.</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <h2>3 · Relato diário — serviços executados</h2>
+  <div class="quadro alto">
+    {% if p.relato %}<div class="texto">{{ p.relato }}</div>
+    {% else %}<div class="vazio">Não informado.</div>{% endif %}
+  </div>
+
+  {% if p.material %}
+  <h2>4 · Materiais recebidos</h2>
+  <div class="quadro">
+    <table>
+      <thead><tr><th>Material</th><th>Fornecedor</th><th>Nota</th>
+        <th class="n">Qtde.</th></tr></thead>
+      <tbody>
+        {% for m in p.material %}
+        <tr><td>{{ m.item }}</td><td>{{ m.fornecedor or "—" }}</td>
+            <td>{{ m.nota or "—" }}</td>
+            <td class="n">{{ m.quantidade }} {{ m.unidade }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <h2>{% if p.material %}5{% else %}4{% endif %} · Ocorrências e observações</h2>
+  <div class="quadro medio">
+    {% if p.fiscalizacao_esteve %}
+      <div><b>Fiscalização esteve na obra.</b>
+        {% if p.fiscalizacao_quem %}{{ p.fiscalizacao_quem }}{% endif %}</div>
+    {% endif %}
+    {% if p.ocorrencias %}<div class="texto">{{ p.ocorrencias }}</div>
+    {% elif not p.fiscalizacao_esteve %}<div class="vazio">Sem ocorrências.</div>{% endif %}
+  </div>
+  {% endif %}
+
+  <h2>{% if p.sem_expediente %}2{% elif p.material %}6{% else %}5{% endif %} ·
+      Observações da fiscalização</h2>
+  <div class="quadro medio fiscal">
+    {% if p.obs_fiscalizacao %}
+      <div class="texto">{{ p.obs_fiscalizacao }}</div>
+      <div class="assinou">registrado por {{ p.obs_fiscalizacao_por }}</div>
+    {% else %}
+      <div class="vazio">Campo reservado à fiscalização.</div>
+    {% endif %}
+  </div>
+
+  {% if p.correcoes %}
+  <div class="corrigido">
+    <b>Este relatório foi corrigido após o fechamento:</b>
+    {% for c in p.correcoes %}
+      {{ c.campo }} ({{ c.quando }}) — {{ c.motivo }}{% if not loop.last %}; {% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="assinaturas">
+    <div>
+      <div class="linha-assin">
+        {{ r.obra.responsavel_tecnico or "Responsável técnico" }}
+        <small>Responsável técnico
+          {%- if r.obra.crea %} · CREA {{ r.obra.crea }}{% endif %}</small>
+        <small>CONTRATADA</small>
+      </div>
+    </div>
+    <div>
+      <div class="linha-assin">
+        &nbsp;
+        <small>Fiscalização</small>
+        <small>CONTRATANTE</small>
+      </div>
+    </div>
+  </div>
+
+  <div class="rodape">
+    <span>{{ r.obra.codigo }} · RDO {{ p.prazo.decorridos or "—" }} ·
+      {{ p.data[8:10] }}/{{ p.data[5:7] }}/{{ p.data[0:4] }}</span>
+    <span>Emitido pelo ERP BWS em
+      {{ r.gerado_em[8:10] }}/{{ r.gerado_em[5:7] }}/{{ r.gerado_em[0:4] }}{% if p.situacao != "FECHADO" %}
+      · <b>RASCUNHO — diário ainda não fechado</b>{% endif %}</span>
+  </div>
+</div>
+{% endfor %}
+
+{% if not r.paginas %}
+<div class="folha"><div class="sem-exp">Nenhum diário escrito neste período.</div></div>
+{% endif %}
+</body>
+</html>

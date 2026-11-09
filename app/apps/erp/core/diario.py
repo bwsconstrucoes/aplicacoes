@@ -721,3 +721,126 @@ def pendencias_por_obra(s: Session, ate: Optional[date] = None, *,
             "ultimo": str(l["ultimo"]) if l["ultimo"] else None,
         })
     return sorted(saida, key=lambda x: -x["faltam"])
+
+
+# ---------------------------------------------------------------------------
+# 10. O RELATÓRIO — o papel que vai para a fiscalização
+#
+# Pedido dele em 09/11/2026: *"antes de eu lhe mandar os modelos de diário, eu
+# queria que você gerasse um seu (…) gere aí um modelo para eu avaliar."*
+#
+# ⚑ A DIFERENÇA ENTRE A TELA E O PAPEL, e ela é dele: *"provavelmente a gente
+# vai visualizar em tela o nome das pessoas, mas eu acredito que talvez a gente
+# não vá relacionar nome a nome no diário, vai colocar só quantidade e
+# função."* Por isso `efetivo_do_ponto` já devolve as DUAS coisas, e é aqui que
+# a escolha acontece: o papel leva a CONTAGEM POR FUNÇÃO.
+#
+# Faz sentido além da preferência: o RDO é documento contratual, e listar nome
+# e horário de cada pessoa num papel que circula fora da empresa é expor dado
+# de gente sem necessidade — a fiscalização precisa saber QUANTOS pedreiros
+# havia, não quem eram.
+#
+# O NÚMERO DO RDO é o dia de obra (dia 234 de 361). Não inventei sequência
+# própria: ela divergiria do prazo no primeiro diário esquecido, e aí o papel
+# passaria a contar uma história diferente do contrato.
+# ---------------------------------------------------------------------------
+def relatorio(s: Session, obra_id: int, de: date, ate: Optional[date] = None,
+              *, so_escritos: bool = True) -> dict[str, Any]:
+    """Os dias de uma obra, prontos para imprimir. Um dia por página."""
+    ate = ate or de
+    if ate < de:
+        raise ErroValidacao("A data final é anterior à inicial.")
+    if (ate - de).days > 93:
+        raise ErroValidacao(
+            "O período é longo demais para um relatório só (máximo três "
+            "meses). Gere por mês.")
+
+    cab = cabecalho(s, obra_id, ate)
+    escritos = {l["data"]: l for l in s.execute(text("""
+        SELECT * FROM diarios_obra
+         WHERE obra_id = :o AND data BETWEEN :de AND :ate
+         ORDER BY data"""), {"o": obra_id, "de": de, "ate": ate}).mappings().all()}
+
+    paginas = []
+    n = 0
+    while True:
+        dia = de + timedelta(days=n)
+        n += 1
+        if dia > ate:
+            break
+        linha = escritos.get(dia)
+        if linha is None and so_escritos:
+            continue
+        efetivo = efetivo_do_ponto(s, obra_id, dia)
+        extras = []
+        if linha is not None:
+            extras = [{"descricao": e["descricao"], "funcao": e["funcao"] or "",
+                       "quantidade": e["quantidade"], "empresa": e["empresa"] or ""}
+                      for e in s.execute(text("""
+                SELECT descricao, funcao, quantidade, empresa
+                  FROM diario_efetivo_extra WHERE diario_id = :i ORDER BY id"""),
+                {"i": linha["id"]}).mappings().all()]
+        paginas.append({
+            "data": str(dia),
+            "dia_da_semana": _DIA_DA_SEMANA[dia.weekday()],
+            # O cabeçalho é recalculado POR DIA: o "dia 234 de 361" do dia 10
+            # não é o do dia 11, e um relatório com o mesmo número em todas as
+            # páginas seria um relatório errado.
+            "prazo": cabecalho(s, obra_id, dia)["prazo"],
+            "existe": linha is not None,
+            "sem_expediente": bool(linha["sem_expediente"]) if linha else False,
+            "tempo_manha": TEMPO_ROTULOS.get(linha["tempo_manha"] or "", "—") if linha else "—",
+            "tempo_tarde": TEMPO_ROTULOS.get(linha["tempo_tarde"] or "", "—") if linha else "—",
+            "relato": (linha["relato"] or "") if linha else "",
+            "ocorrencias": (linha["ocorrencias"] or "") if linha else "",
+            "fiscalizacao_esteve": bool(linha["fiscalizacao_esteve"]) if linha else False,
+            "fiscalizacao_quem": (linha["fiscalizacao_quem"] or "") if linha else "",
+            "obs_fiscalizacao": (linha["obs_fiscalizacao"] or "") if linha else "",
+            "obs_fiscalizacao_por": (linha["obs_fiscalizacao_por"] or "") if linha else "",
+            "situacao": linha["situacao"] if linha else "ABERTO",
+            # ⚑ A CONTAGEM, NÃO OS NOMES. Decisão dele, e boa prática: o RDO
+            # circula fora da empresa.
+            "efetivo": _efetivo_para_o_papel(efetivo, extras),
+            "material": material_recebido(s, obra_id, dia),
+            "correcoes": _correcoes(s, linha["id"]) if linha else [],
+        })
+
+    return {"obra": cab, "de": str(de), "ate": str(ate), "paginas": paginas,
+            "gerado_em": date.today().isoformat()}
+
+
+_DIA_DA_SEMANA = ("segunda-feira", "terça-feira", "quarta-feira",
+                  "quinta-feira", "sexta-feira", "sábado", "domingo")
+
+
+def _efetivo_para_o_papel(efetivo: dict[str, Any],
+                          extras: list[dict[str, Any]]) -> dict[str, Any]:
+    """Função e quantidade. O próprio e o terceirizado em linhas separadas —
+    quem lê o RDO precisa distinguir mão de obra própria de contratada."""
+    proprio = [{"funcao": f["funcao"], "quantidade": f["quantidade"],
+                "tipo": "próprio"} for f in efetivo.get("por_funcao", [])]
+    de_fora = [{"funcao": (e["funcao"] or e["descricao"]),
+                "quantidade": e["quantidade"], "tipo": "terceirizado",
+                "empresa": e.get("empresa") or e["descricao"]} for e in extras]
+    return {
+        "linhas": proprio + de_fora,
+        "total_proprio": sum(f["quantidade"] for f in proprio),
+        "total_terceirizado": sum(f["quantidade"] for f in de_fora),
+        "total": (sum(f["quantidade"] for f in proprio)
+                  + sum(f["quantidade"] for f in de_fora)),
+        "indisponivel": efetivo.get("indisponivel"),
+    }
+
+
+def _correcoes(s: Session, diario_id: int) -> list[dict[str, Any]]:
+    """As correções feitas depois do fechamento SAEM NO PAPEL.
+
+    Esconder a correção seria o mesmo que não registrá-la: o valor do diário
+    como documento está em o leitor poder ver que algo mudou, quando e por quê.
+    """
+    return [{"campo": l["campo"], "motivo": l["motivo"],
+             "quando": str(l["criado_em"])[:16]}
+            for l in s.execute(text("""
+        SELECT campo, motivo, criado_em FROM diario_correcoes
+         WHERE diario_id = :i ORDER BY criado_em"""),
+        {"i": diario_id}).mappings().all()]
