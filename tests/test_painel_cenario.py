@@ -386,6 +386,66 @@ def test_a_arvore_inteira_se_salva_num_clique(cenario, monkeypatch):
     assert "data-abre-grupo" in html and 'data-herda-do-grupo' in html
 
 
+def test_o_percentual_muda_com_o_tempo():
+    """09/11/2026, o dono: "de janeiro a dezembro de 2021, 50-50; em 2022,
+    60-40". Cada período vale a partir do mês dele até o próximo; antes do
+    primeiro, vale o percentual fixo — ou, sem ele, o nível de cima."""
+    from app.apps.painel import prestacao
+    pesos = {"grupo": {"Pessoal": 30}, "categoria": {}, "lancamento": {},
+             "periodos": {"grupo": {"Pessoal": [("2021-01", 50), ("2022-01", 60)]},
+                          "categoria": {"Salários": [("2023-06", 0)]}}}
+    pc = lambda cat, mes: prestacao.peso_da_conta(pesos, "Pessoal", cat, "", 100, mes=mes)  # noqa: E731
+    assert pc("Férias", "2020-12") == 30           # antes de tudo: o fixo do grupo
+    assert pc("Férias", "2021-07") == 50
+    assert pc("Férias", "2022-01") == 60 and pc("Férias", "2026-11") == 60
+    assert pc("Salários", "2023-05") == 60         # ainda segue o grupo
+    assert pc("Salários", "2023-06") == 0          # o período dela vence
+    # sem mês (a tela) e sem data: o fixo
+    assert prestacao.peso_da_conta(pesos, "Pessoal", "", "", 100) == 30
+    assert pc("Férias", prestacao.SEM_DATA) == 30
+
+
+def test_o_rateio_usa_o_percentual_de_cada_mes():
+    from app.apps.painel import prestacao
+    pesos = {"grupo": {}, "categoria": {}, "lancamento": {},
+             "periodos": {"grupo": {"Pessoal": [("2021-01", 50), ("2022-01", 60)]}}}
+    admin = [{"mes": "2021-06", "grupo": "Pessoal", "categoria": "Salários", "valor": -1000.0},
+             {"mes": "2022-06", "grupo": "Pessoal", "categoria": "Salários", "valor": -1000.0}]
+    driver = [("2021-06", "OBRA", 10.0), ("2022-06", "OBRA", 10.0)]
+    r = prestacao.calcular_rateio_do_cenario(admin, [], driver, {"OBRA": {}}, pesos)
+    assert round(r["alocacoes"][("OBRA", "2021-06")], 2) == -500.0
+    assert round(r["alocacoes"][("OBRA", "2022-06")], 2) == -600.0
+
+
+def test_os_periodos_se_salvam_pela_arvore(cenario, monkeypatch):
+    from app.apps.painel import cenarios
+    cliente = _cliente(monkeypatch)
+    cliente.post("/painel/prestacao/montagem", data={
+        "acao": "pesos_da_arvore", "cenario_id": str(cenario),
+        "item_nivel": ["grupo"], "item_chave": ["Administrativas"], "item_pct": [""],
+        "periodo_presente": ["grupo|Administrativas", "categoria|Aluguel"],
+        "periodo_nivel": ["grupo", "grupo", "grupo", "categoria"],
+        "periodo_chave": ["Administrativas", "Administrativas", "Administrativas", "Aluguel"],
+        "periodo_desde": ["2021-01", "2022-01", "", "2024-03"],
+        "periodo_pct": ["50", "60", "", ""]})
+    per = cenarios.periodos(cenario)
+    assert per["grupo"] == {"Administrativas": [("2021-01", 50.0), ("2022-01", 60.0)]}
+    assert per["categoria"] == {}                    # sem percentual: não grava
+    # duplicar leva os períodos junto
+    copia = cenarios.duplicar(cenario, "cópia")
+    assert cenarios.periodos(copia)["grupo"]["Administrativas"][1] == ("2022-01", 60.0)
+    html = cliente.get(f"/painel/prestacao/montagem?cenario={cenario}").get_data(as_text=True)
+    assert "50% desde 01/2021 · 60% desde 01/2022" in html and "varia" in html
+    # apagar o percentual apaga o período
+    cliente.post("/painel/prestacao/montagem", data={
+        "acao": "pesos_da_arvore", "cenario_id": str(cenario),
+        "periodo_presente": ["grupo|Administrativas"],
+        "periodo_nivel": ["grupo", "grupo"], "periodo_chave": ["Administrativas"] * 2,
+        "periodo_desde": ["2021-01", "2022-01"], "periodo_pct": ["50", ""]})
+    assert cenarios.periodos(cenario)["grupo"] == {"Administrativas": [("2021-01", 50.0)]}
+    cenarios.apagar(copia)
+
+
 def test_quem_esta_preso_a_uma_obra_nao_alcanca_o_cenario(preso, monkeypatch):
     """As duas telas mostram a empresa inteira e configuram a conta de todos.
     Não passam pelo filtro de escopo — então não são de quem está preso.

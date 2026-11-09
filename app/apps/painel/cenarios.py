@@ -26,6 +26,8 @@ Nada aqui calcula: isto lê e grava. A conta mora em `prestacao.py`.
 """
 from __future__ import annotations
 
+import re
+
 from .db import conexao, consultar, consultar_um
 
 CRITERIOS = {
@@ -67,14 +69,65 @@ def buscar(cenario_id) -> dict | None:
 
 
 def pesos(cenario_id) -> dict:
-    """{nível: {chave: percentual}} — o que foi marcado neste cenário."""
+    """{nível: {chave: percentual}} — o que foi marcado neste cenário.
+
+    E, em `periodos`, {nível: {chave: [(desde AAAA-MM, percentual), ...]}} — o
+    percentual que muda com o tempo (migração 024), em ordem de data."""
     saida = {nivel: {} for nivel in NIVEIS}
     for nivel, chave, pct in consultar(
             "SELECT nivel, chave, pct FROM cenario_peso WHERE cenario_id = ?",
             [int(cenario_id)]):
         if nivel in saida:
             saida[nivel][chave] = float(pct or 0)
+    saida["periodos"] = periodos(cenario_id)
     return saida
+
+
+def _tem_periodos() -> bool:
+    """A migração 024 já foi aplicada? Sem ela, nada de período."""
+    try:
+        return bool(consultar(
+            "SELECT 1 FROM information_schema.tables WHERE table_schema = 'painel'"
+            "   AND table_name = 'cenario_peso_periodo'"))
+    except Exception:  # noqa: BLE001 — banco de teste dublado
+        return False
+
+
+def periodos(cenario_id) -> dict:
+    """{nível: {chave: [(desde, percentual), ...]}}, em ordem de data."""
+    saida: dict = {nivel: {} for nivel in NIVEIS}
+    if not _tem_periodos():
+        return saida
+    for nivel, chave, desde, pct in consultar(
+            "SELECT nivel, chave, desde, pct FROM cenario_peso_periodo"
+            " WHERE cenario_id = ? ORDER BY nivel, chave, desde", [int(cenario_id)]):
+        if nivel in saida:
+            saida[nivel].setdefault(chave, []).append((desde, float(pct or 0)))
+    return saida
+
+
+_MES = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
+
+
+def gravar_periodos(cenario_id, nivel: str, chave: str, lista) -> None:
+    """Troca os períodos de UMA conta pelos da lista [(desde, percentual)].
+    Linha sem mês válido ou sem percentual é ignorada; mês repetido, vale o
+    último."""
+    if nivel not in NIVEIS or not (chave or "").strip() or not _tem_periodos():
+        return
+    limpos = {}
+    for desde, pct in lista or []:
+        desde = (desde or "").strip()
+        if _MES.match(desde) and str(pct if pct is not None else "").strip():
+            limpos[desde] = _limpar(pct)
+    with conexao() as conn:
+        conn.execute("DELETE FROM cenario_peso_periodo"
+                     " WHERE cenario_id = ? AND nivel = ? AND chave = ?",
+                     (int(cenario_id), nivel, chave.strip()))
+        for desde, pct in sorted(limpos.items()):
+            conn.execute("INSERT INTO cenario_peso_periodo (cenario_id, nivel, chave, desde, pct)"
+                         " VALUES (?,?,?,?,?)", (int(cenario_id), nivel, chave.strip(), desde, pct))
+        conn.commit()
 
 
 def participacoes(cenario_id) -> list[dict]:
@@ -202,6 +255,31 @@ def marcar_pesos(cenario_id, nivel: str, chaves, pct) -> int:
     return quantos
 
 
+def gravar_periodos_da_arvore(cenario_id, presentes, entradas) -> int:
+    """Os períodos da árvore inteira, de uma vez. `presentes`: as contas cujo
+    editor estava na tela ("nível|chave") — só elas são trocadas, para uma
+    conta que a tela não mostrou não perder os períodos dela. `entradas`:
+    [(nível, chave, desde, percentual)]. Devolve quantas contas mudaram."""
+    atuais = periodos(cenario_id)
+    novos: dict = {}
+    for nivel, chave, desde, pct in entradas:
+        novos.setdefault((nivel, (chave or "").strip()), []).append((desde, pct))
+    mudou = 0
+    for item in presentes:
+        nivel, _, chave = (item or "").partition("|")
+        chave = chave.strip()
+        if nivel not in NIVEIS or not chave:
+            continue
+        lista = novos.get((nivel, chave), [])
+        validos = sorted({(d.strip(), _limpar(p)) for d, p in lista
+                          if _MES.match((d or "").strip()) and str(p or "").strip()})
+        if validos == sorted((d, float(p)) for d, p in (atuais.get(nivel) or {}).get(chave, [])):
+            continue
+        gravar_periodos(cenario_id, nivel, chave, lista)
+        mudou += 1
+    return mudou
+
+
 def marcar_pesos_da_arvore(cenario_id, itens) -> int:
     """A árvore inteira de uma vez: [(nível, chave, percentual digitado)].
 
@@ -291,6 +369,11 @@ def duplicar(cenario_id, nome: str) -> int:
             "INSERT INTO cenario_excluida (cenario_id, item) "
             "SELECT ?, item FROM cenario_excluida WHERE cenario_id = ?",
             (novo, int(cenario_id)))
+        if _tem_periodos():
+            conn.execute(
+                "INSERT INTO cenario_peso_periodo (cenario_id, nivel, chave, desde, pct) "
+                "SELECT ?, nivel, chave, desde, pct FROM cenario_peso_periodo"
+                " WHERE cenario_id = ?", (novo, int(cenario_id)))
         conn.commit()
     return novo
 

@@ -2500,6 +2500,27 @@ digitado e não salvo).
 REGRAS; o cenário tem o resultado próprio. Aposentar as regras é dele, depois
 de conferir que o cenário bate.
 
+## Percentual que muda com o tempo — 09/11/2026
+
+O dono: *"o rateio vai variar no tempo (…) 50-50 em 2021, 60-40 em 2022. Não
+em todas as contas, não em todos os grupos (…) para não estender demais as
+possibilidades, e fácil de executar."*
+
+- Migração **024** (`cenario_peso_periodo`): numa conta da matriz (grupo,
+  categoria ou lançamento) do CENÁRIO, linhas "a partir de AAAA-MM, X%". Cada
+  uma vale até começar a seguinte — sem data de fim, para não haver buraco
+  nem sobreposição. Antes do primeiro período vale o percentual fixo da
+  linha; sem ele, o nível de cima. Lido como "% da conta que entra no
+  rateio" (o resto fica de fora), que é o que o percentual da montagem já é.
+- `prestacao.peso_da_conta` recebe o mês; `calcular_rateio_do_cenario` e a
+  árvore da montagem (Entra / Fica de fora) passam a contar mês a mês.
+- Tela: "📅 por período" em cada grupo e categoria abre a lista ali mesmo;
+  salva junto com os percentuais ("Salvar percentuais"). A linha mostra o
+  resumo ("50% desde 01/2021 · 60% desde 01/2022") e "varia" em "Divide hoje".
+- Duplicar o cenário leva os períodos; a planilha do cenário lista os
+  períodos nos parâmetros.
+- Só no cenário. As REGRAS antigas (Parâmetros) já tinham vigência por regra.
+
 ## Reler os pagamentos de um ano, de alguns ou de todos — 07/10/2026
 
 O dono, vendo a releitura retomada em "2025 (11 de 12 anos, 10 já feitos

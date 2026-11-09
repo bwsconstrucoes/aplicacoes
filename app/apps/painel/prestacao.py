@@ -392,14 +392,27 @@ def sem_as_obras(base: dict, fora) -> dict:
 
 
 def peso_da_conta(pesos: dict, grupo: str, categoria: str, codigo: str,
-                  pct_padrao: float) -> float:
+                  pct_padrao: float, mes: str | None = None) -> float:
     """Quanto desta conta entra no bolo, do mais específico ao mais amplo.
 
     Zero e "não marcado" são coisas DIFERENTES: zero quer dizer "esta conta não
-    se divide"; não marcado quer dizer "segue o nível de cima"."""
+    se divide"; não marcado quer dizer "segue o nível de cima".
+
+    O PERCENTUAL PODE MUDAR COM O TEMPO (09/11/2026, migração 024): com o `mes`
+    (AAAA-MM), vale o último período que começou até ele — "50% a partir de
+    01/2021, 60% a partir de 01/2022". Antes do primeiro período, vale o
+    percentual fixo da linha; sem ele, o nível de cima."""
+    periodos = pesos.get("periodos") or {}
     for nivel, chave in (("lancamento", codigo), ("categoria", categoria),
                          ("grupo", grupo)):
-        if chave and chave in (pesos.get(nivel) or {}):
+        if not chave:
+            continue
+        lista = (periodos.get(nivel) or {}).get(chave) or []
+        if lista and mes and mes != SEM_DATA:
+            valendo = [pct for desde, pct in lista if desde <= mes]
+            if valendo:
+                return float(valendo[-1])
+        if chave in (pesos.get(nivel) or {}):
             return float(pesos[nivel][chave])
     return float(pct_padrao)
 
@@ -460,7 +473,7 @@ def calcular_rateio_do_cenario(despesa_admin, excecoes, driver, obras, pesos,
         chave = (e["mes"], e.get("grupo") or "", e.get("categoria") or "")
         fora[chave] = fora.get(chave, 0.0) + float(e["valor"] or 0)
         pct = peso_da_conta(pesos, e.get("grupo"), e.get("categoria"),
-                            str(e.get("codigo") or ""), pct_padrao)
+                            str(e.get("codigo") or ""), pct_padrao, mes=e["mes"])
         if e["mes"] == SEM_DATA:
             if abs(float(e["valor"] or 0) * pct / 100.0) > 0.005:
                 sobras.append({"origem": f"Lançamento {e.get('codigo')}",
@@ -476,7 +489,7 @@ def calcular_rateio_do_cenario(despesa_admin, excecoes, driver, obras, pesos,
         if abs(valor) <= 0.005:
             continue
         pct = peso_da_conta(pesos, linha.get("grupo"), linha.get("categoria"),
-                            "", pct_padrao)
+                            "", pct_padrao, mes=linha["mes"])
         parte = valor * pct / 100.0
         if abs(parte) <= 0.005:
             continue

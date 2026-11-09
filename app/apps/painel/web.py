@@ -1647,14 +1647,20 @@ def _contas_da_matriz(config, cenario, medida: str) -> dict:
         cat = linha.get("categoria") or "(sem categoria)"
         g = grupos.setdefault(nome, {"grupo": nome, "valor": 0.0, "categorias": {}})
         g["valor"] += linha["valor"]
-        c = g["categorias"].setdefault(cat, {"categoria": cat, "valor": 0.0})
+        c = g["categorias"].setdefault(cat, {"categoria": cat, "valor": 0.0,
+                                             "entra_balde": 0.0})
         c["valor"] += linha["valor"]
+        # mês a mês: o percentual pode mudar com o tempo (09/11/2026)
+        c["entra_balde"] += linha["valor"] * prestacao.peso_da_conta(
+            pesos, nome, cat, "", padrao, mes=linha["mes"]) / 100.0
+    per = pesos.get("periodos") or {}
 
     marcacoes: list[dict] = []
     saida = []
     for g in grupos.values():
         g["pct"] = (pesos.get("grupo") or {}).get(g["grupo"])
         g["pct_efetivo"] = prestacao.peso_da_conta(pesos, g["grupo"], "", "", padrao)
+        g["periodos"] = (per.get("grupo") or {}).get(g["grupo"], [])
         g["entra"] = g["fora"] = g["juros"] = 0.0
         g["excecoes"] = 0
         if g["pct"] is not None:
@@ -1667,17 +1673,25 @@ def _contas_da_matriz(config, cenario, medida: str) -> dict:
             c["pct_efetivo"] = prestacao.peso_da_conta(
                 pesos, g["grupo"], c["categoria"], "", padrao)
             c["grupo"] = g["grupo"]
+            c["periodos"] = (per.get("categoria") or {}).get(c["categoria"], [])
+            # o percentual dela muda com o tempo — dela, ou herdado do grupo
+            c["varia"] = bool(c["periodos"] or (g["periodos"] and c["pct"] is None))
             c["e_juros"] = c["categoria"].strip().lower() in juros
             proprias = por_categoria.get((g["grupo"], c["categoria"]), [])
             c["excecoes"] = len(proprias)
             if c["e_juros"]:
                 c["entra"], c["fora"], c["juros"] = 0.0, 0.0, c["valor"]
             else:
-                no_balde = c["valor"] - sum(e["valor"] for e in proprias)
-                entra = no_balde * c["pct_efetivo"] / 100.0
+                # o balde já foi somado mês a mês; o lançamento marcado sai
+                # dele (pelo percentual da categoria naquele mês) e entra com
+                # o próprio
+                entra = c["entra_balde"]
                 for e in proprias:
+                    mes_e = e.get("mes")
+                    entra -= e["valor"] * prestacao.peso_da_conta(
+                        pesos, g["grupo"], c["categoria"], "", padrao, mes=mes_e) / 100.0
                     pct = prestacao.peso_da_conta(
-                        pesos, g["grupo"], c["categoria"], e["codigo"], padrao)
+                        pesos, g["grupo"], c["categoria"], e["codigo"], padrao, mes=mes_e)
                     entra += e["valor"] * pct / 100.0
                     marcacoes.append({
                         "nivel": "lancamento", "grupo": g["grupo"],
@@ -1798,6 +1812,11 @@ def cenario_gravar():
         cenarios.marcar_pesos_da_arvore(cenario_id, zip(
             request.form.getlist("item_nivel"), request.form.getlist("item_chave"),
             request.form.getlist("item_pct")))
+        # e o percentual por período, de quem tem (09/11/2026)
+        cenarios.gravar_periodos_da_arvore(
+            cenario_id, request.form.getlist("periodo_presente"),
+            zip(request.form.getlist("periodo_nivel"), request.form.getlist("periodo_chave"),
+                request.form.getlist("periodo_desde"), request.form.getlist("periodo_pct")))
     elif acao == "peso_em_lote" and cenario_id:
         cenarios.marcar_pesos(cenario_id, request.form.get("nivel", "lancamento"),
                               request.form.getlist("marcado"),
@@ -2945,6 +2964,14 @@ def baixar(assunto):
             for chave, pct in sorted((atual["pesos"].get(nivel) or {}).items()):
                 parametros.append({"o_que": f"Marcado ({nivel}) {chave}",
                                    "valor": f"{pct:.0f}%"})
+            # o percentual que muda com o tempo (09/11/2026) — memória de
+            # cálculo sem ele não se confere depois
+            for chave, lista in sorted(((atual["pesos"].get("periodos") or {})
+                                        .get(nivel) or {}).items()):
+                for desde, pct in lista:
+                    parametros.append({
+                        "o_que": f"Marcado ({nivel}) {chave}, a partir de {desde[5:]}/{desde[:4]}",
+                        "valor": f"{pct:.0f}%"})
         for p in atual["participacoes"]:
             parametros.append({"o_que": f"{p['socio']} em {p['obra'] or 'todas as obras'}",
                                "valor": f"{p['pct']:.2f}%"})
