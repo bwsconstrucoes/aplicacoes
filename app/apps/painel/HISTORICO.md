@@ -2521,6 +2521,27 @@ possibilidades, e fácil de executar."*
   períodos nos parâmetros.
 - Só no cenário. As REGRAS antigas (Parâmetros) já tinham vigência por regra.
 
+**Os dois lados e quem recebe (mesmo dia, antes de publicar).** O dono
+corrigiu o entendimento: o custo da matriz vai para DOIS lados — o projeto
+principal (BWS CE) e os demais projetos — e *"num determinado período, 40%
+ficou para a BWS CE, os demais 60% para os outros projetos que recebem. Nada
+fica sem dono. Alguns projetos não entram, outros entram até determinada data.
+Não existe terceiro grupo."*
+- Na mesma migração 024 (ainda não aplicada em produção quando foi ampliada):
+  `cenario_peso_periodo.pct_principal` (a parte do principal no período; em
+  branco = sem separar, todas as obras pela régua) e `cenario_projeto`
+  (o principal, e por projeto: não recebe / recebe só de-até).
+- O cálculo (`calcular_rateio_do_cenario`, `lado_de` e `recebe`): o bolo do
+  mês se separa em "livre", "principal" e "demais"; cada parte se divide pela
+  régua só entre as obras daquele lado que RECEBEM no mês. Lado sem ninguém
+  recebendo passa a parte para o outro (decisão do dono: nada sem dono). Só
+  vira sobra se ninguém, dos dois lados, receber no mês.
+- Principal padrão: o `projeto_matriz` da configuração da prestação.
+- "Não recebe" ≠ "fora da análise": o projeto continua no resultado e nas
+  quotas; só não recebe a estrutura.
+- Tela: quadro "Quem recebe o custo da matriz" na montagem; na linha do
+  período, "entra X% · para o BWS CE Y%".
+
 ## Reler os pagamentos de um ano, de alguns ou de todos — 07/10/2026
 
 O dono, vendo a releitura retomada em "2025 (11 de 12 anos, 10 já feitos

@@ -1567,10 +1567,24 @@ def _calcular_cenario(cenario: dict) -> dict:
     if fora:
         driver = [d for d in driver if d[1] not in fora]
 
+    # Os dois lados e quem recebe (09/11/2026): o projeto principal ("BWS CE",
+    # o da matriz na configuracao, se o cenario nao disser outro) contra os
+    # demais; e os projetos que nao recebem, ou so recebem num periodo.
+    quem = cenario.get("projetos") or cenarios.projetos(cenario["id"])
+    principal = (quem.get("principal") or config.get("projeto_matriz") or "").strip()
+    regras_proj = quem.get("regras") or {}
+    lado_de = {o: ("principal" if (info.get("projeto") or "").strip() == principal
+                   else "demais") for o, info in obras.items()}
+
+    def _recebe(obra, mes):
+        projeto = ((obras.get(obra) or {}).get("projeto") or "").strip()
+        return cenarios.recebe_no_mes(regras_proj.get(projeto), mes)
+
     rateio = prestacao.calcular_rateio_do_cenario(
         admin_sem_juros, excecoes, driver, obras, pesos,
         pct_padrao=float(cenario.get("pct_padrao", 100) or 0),
-        janela=str(cenario.get("janela", "1")))
+        janela=str(cenario.get("janela", "1")),
+        lado_de=lado_de if principal else None, recebe=_recebe)
 
     # O caixa e lido UMA vez e devolvido: a tela de resultado desenha a vida de
     # uma obra com ele, e reler significaria varrer o fato inteiro de novo.
@@ -1774,7 +1788,25 @@ def cenario_montagem():
             grupo=aberto_grupo, categoria=aberto_categoria)
             if atual and aberto_categoria else []),
         config=config,
+        # quem recebe o custo da matriz (09/11/2026)
+        principal=((atual or {}).get("projetos", {}).get("principal")
+                   or config.get("projeto_matriz") or ""),
+        regras_projetos=(atual or {}).get("projetos", {}).get("regras", {}),
+        papeis=cenarios.PAPEIS,
     )
+
+
+def _periodos_do_formulario(form) -> list[tuple]:
+    """(nível, chave, desde, percentual, parte do principal) de cada linha de
+    período do formulário. A parte do principal pode faltar (formulário
+    antigo): vira em branco, sem cortar as outras linhas."""
+    niveis = form.getlist("periodo_nivel")
+    colunas = [form.getlist(c) for c in ("periodo_chave", "periodo_desde",
+                                         "periodo_pct", "periodo_principal")]
+    linhas = []
+    for i, nivel in enumerate(niveis):
+        linhas.append((nivel,) + tuple(c[i] if i < len(c) else "" for c in colunas))
+    return linhas
 
 
 @bp.route("/prestacao/montagem", methods=["POST"])
@@ -1815,8 +1847,14 @@ def cenario_gravar():
         # e o percentual por período, de quem tem (09/11/2026)
         cenarios.gravar_periodos_da_arvore(
             cenario_id, request.form.getlist("periodo_presente"),
-            zip(request.form.getlist("periodo_nivel"), request.form.getlist("periodo_chave"),
-                request.form.getlist("periodo_desde"), request.form.getlist("periodo_pct")))
+            _periodos_do_formulario(request.form))
+    elif acao == "projetos" and cenario_id:
+        # quem recebe o custo da matriz, e o projeto principal (09/11/2026)
+        cenarios.gravar_projetos(
+            cenario_id, request.form.get("principal", ""),
+            {p: (papel, d, a) for p, papel, d, a in zip(
+                request.form.getlist("proj_nome"), request.form.getlist("proj_papel"),
+                request.form.getlist("proj_desde"), request.form.getlist("proj_ate"))})
     elif acao == "peso_em_lote" and cenario_id:
         cenarios.marcar_pesos(cenario_id, request.form.get("nivel", "lancamento"),
                               request.form.getlist("marcado"),
@@ -2968,10 +3006,23 @@ def baixar(assunto):
             # cálculo sem ele não se confere depois
             for chave, lista in sorted(((atual["pesos"].get("periodos") or {})
                                         .get(nivel) or {}).items()):
-                for desde, pct in lista:
+                for desde, pct, principal in lista:
+                    lado = (f", {principal:.0f}% para o projeto principal"
+                            if principal is not None else "")
                     parametros.append({
                         "o_que": f"Marcado ({nivel}) {chave}, a partir de {desde[5:]}/{desde[:4]}",
-                        "valor": f"{pct:.0f}%"})
+                        "valor": f"{pct:.0f}%{lado}"})
+        quem = atual.get("projetos") or {}
+        from . import prestacao_dados as _pd
+        parametros.append({"o_que": "Projeto principal",
+                           "valor": quem.get("principal")
+                           or _pd.config().get("projeto_matriz") or "—"})
+        for projeto, (papel, desde, ate) in sorted((quem.get("regras") or {}).items()):
+            parametros.append({
+                "o_que": f"Projeto {projeto}",
+                "valor": ("não recebe" if papel == "nao" else
+                          f"recebe {('de ' + desde[5:] + '/' + desde[:4]) if desde else ''}"
+                          f"{(' até ' + ate[5:] + '/' + ate[:4]) if ate else ''}".strip())})
         for p in atual["participacoes"]:
             parametros.append({"o_que": f"{p['socio']} em {p['obra'] or 'todas as obras'}",
                                "valor": f"{p['pct']:.2f}%"})

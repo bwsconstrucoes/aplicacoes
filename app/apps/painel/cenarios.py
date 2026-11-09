@@ -94,40 +94,127 @@ def _tem_periodos() -> bool:
 
 
 def periodos(cenario_id) -> dict:
-    """{nível: {chave: [(desde, percentual), ...]}}, em ordem de data."""
+    """{nível: {chave: [(desde, percentual, parte do principal | None), ...]}},
+    em ordem de data. A parte do principal é quanto do que entrou vai para o
+    projeto principal (o resto vai para os demais); None = sem separar."""
     saida: dict = {nivel: {} for nivel in NIVEIS}
     if not _tem_periodos():
         return saida
-    for nivel, chave, desde, pct in consultar(
-            "SELECT nivel, chave, desde, pct FROM cenario_peso_periodo"
+    for nivel, chave, desde, pct, principal in consultar(
+            "SELECT nivel, chave, desde, pct, pct_principal FROM cenario_peso_periodo"
             " WHERE cenario_id = ? ORDER BY nivel, chave, desde", [int(cenario_id)]):
         if nivel in saida:
-            saida[nivel].setdefault(chave, []).append((desde, float(pct or 0)))
+            saida[nivel].setdefault(chave, []).append(
+                (desde, float(pct or 0), None if principal is None else float(principal)))
     return saida
 
 
 _MES = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 
 
-def gravar_periodos(cenario_id, nivel: str, chave: str, lista) -> None:
-    """Troca os períodos de UMA conta pelos da lista [(desde, percentual)].
+def _periodos_limpos(lista) -> list[tuple]:
+    """[(desde, percentual, parte do principal | None)] válidos e em ordem.
     Linha sem mês válido ou sem percentual é ignorada; mês repetido, vale o
-    último."""
-    if nivel not in NIVEIS or not (chave or "").strip() or not _tem_periodos():
-        return
+    último. A parte do principal em branco é None (sem separar os lados)."""
     limpos = {}
-    for desde, pct in lista or []:
+    for item in lista or []:
+        desde, pct = item[0], item[1]
+        principal = item[2] if len(item) > 2 else None
         desde = (desde or "").strip()
         if _MES.match(desde) and str(pct if pct is not None else "").strip():
-            limpos[desde] = _limpar(pct)
+            p = None if principal is None or str(principal).strip() == "" else _limpar(principal)
+            limpos[desde] = (_limpar(pct), p)
+    return [(d, pct, p) for d, (pct, p) in sorted(limpos.items())]
+
+
+def gravar_periodos(cenario_id, nivel: str, chave: str, lista) -> None:
+    """Troca os períodos de UMA conta pelos da lista
+    [(desde, percentual[, parte do principal])]."""
+    if nivel not in NIVEIS or not (chave or "").strip() or not _tem_periodos():
+        return
     with conexao() as conn:
         conn.execute("DELETE FROM cenario_peso_periodo"
                      " WHERE cenario_id = ? AND nivel = ? AND chave = ?",
                      (int(cenario_id), nivel, chave.strip()))
-        for desde, pct in sorted(limpos.items()):
-            conn.execute("INSERT INTO cenario_peso_periodo (cenario_id, nivel, chave, desde, pct)"
-                         " VALUES (?,?,?,?,?)", (int(cenario_id), nivel, chave.strip(), desde, pct))
+        for desde, pct, principal in _periodos_limpos(lista):
+            conn.execute("INSERT INTO cenario_peso_periodo"
+                         " (cenario_id, nivel, chave, desde, pct, pct_principal)"
+                         " VALUES (?,?,?,?,?,?)",
+                         (int(cenario_id), nivel, chave.strip(), desde, pct, principal))
         conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# Quem RECEBE o custo da matriz, por projeto (09/11/2026)
+# ---------------------------------------------------------------------------
+PAPEIS = {"": "recebe sempre", "nao": "não recebe",
+          "periodo": "recebe só no período"}
+
+
+def _tem_projetos() -> bool:
+    try:
+        return bool(consultar(
+            "SELECT 1 FROM information_schema.tables WHERE table_schema = 'painel'"
+            "   AND table_name = 'cenario_projeto'"))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def projetos(cenario_id) -> dict:
+    """{"principal": nome ou "", "regras": {projeto: (papel, desde, ate)}}.
+    Projeto sem regra recebe sempre."""
+    saida = {"principal": "", "regras": {}}
+    if not _tem_projetos():
+        return saida
+    for projeto, papel, desde, ate in consultar(
+            "SELECT projeto, papel, desde, ate FROM cenario_projeto"
+            " WHERE cenario_id = ? ORDER BY projeto", [int(cenario_id)]):
+        if papel == "principal":
+            saida["principal"] = projeto
+        elif papel in ("nao", "periodo"):
+            saida["regras"][projeto] = (papel, desde or "", ate or "")
+    return saida
+
+
+def gravar_projetos(cenario_id, principal: str, regras: dict) -> None:
+    """Troca tudo de uma vez: o principal e as regras {projeto: (papel, desde,
+    ate)}. "Recebe sempre" não precisa de linha; período sem as duas datas
+    vira "recebe sempre"."""
+    if not _tem_projetos():
+        return
+    with conexao() as conn:
+        conn.execute("DELETE FROM cenario_projeto WHERE cenario_id = ?", [int(cenario_id)])
+        if (principal or "").strip():
+            conn.execute("INSERT INTO cenario_projeto (cenario_id, projeto, papel)"
+                         " VALUES (?,?,'principal')", (int(cenario_id), principal.strip()))
+        for projeto, (papel, desde, ate) in (regras or {}).items():
+            projeto = (projeto or "").strip()
+            if not projeto or projeto == (principal or "").strip():
+                continue
+            desde = desde.strip() if _MES.match((desde or "").strip()) else ""
+            ate = ate.strip() if _MES.match((ate or "").strip()) else ""
+            if papel == "periodo" and not (desde or ate):
+                continue
+            if papel not in ("nao", "periodo"):
+                continue
+            conn.execute("INSERT INTO cenario_projeto (cenario_id, projeto, papel, desde, ate)"
+                         " VALUES (?,?,?,?,?)", (int(cenario_id), projeto, papel, desde, ate))
+        conn.commit()
+
+
+def recebe_no_mes(regra, mes: str) -> bool:
+    """A regra de um projeto deixa ele receber neste mês (AAAA-MM)?"""
+    if not regra:
+        return True
+    papel, desde, ate = regra
+    if papel == "nao":
+        return False
+    if papel == "periodo":
+        if desde and mes < desde:
+            return False
+        if ate and mes > ate:
+            return False
+    return True
 
 
 def participacoes(cenario_id) -> list[dict]:
@@ -158,6 +245,7 @@ def completo(cenario_id) -> dict | None:
     cenario["pesos"] = pesos(cenario_id)
     cenario["participacoes"] = participacoes(cenario_id)
     cenario["excluidas"] = excluidas(cenario_id)
+    cenario["projetos"] = projetos(cenario_id)
     return cenario
 
 
@@ -262,8 +350,10 @@ def gravar_periodos_da_arvore(cenario_id, presentes, entradas) -> int:
     [(nível, chave, desde, percentual)]. Devolve quantas contas mudaram."""
     atuais = periodos(cenario_id)
     novos: dict = {}
-    for nivel, chave, desde, pct in entradas:
-        novos.setdefault((nivel, (chave or "").strip()), []).append((desde, pct))
+    for entrada in entradas:
+        nivel, chave, desde, pct = entrada[:4]
+        principal = entrada[4] if len(entrada) > 4 else None
+        novos.setdefault((nivel, (chave or "").strip()), []).append((desde, pct, principal))
     mudou = 0
     for item in presentes:
         nivel, _, chave = (item or "").partition("|")
@@ -271,9 +361,7 @@ def gravar_periodos_da_arvore(cenario_id, presentes, entradas) -> int:
         if nivel not in NIVEIS or not chave:
             continue
         lista = novos.get((nivel, chave), [])
-        validos = sorted({(d.strip(), _limpar(p)) for d, p in lista
-                          if _MES.match((d or "").strip()) and str(p or "").strip()})
-        if validos == sorted((d, float(p)) for d, p in (atuais.get(nivel) or {}).get(chave, [])):
+        if _periodos_limpos(lista) == list((atuais.get(nivel) or {}).get(chave, [])):
             continue
         gravar_periodos(cenario_id, nivel, chave, lista)
         mudou += 1
@@ -371,8 +459,13 @@ def duplicar(cenario_id, nome: str) -> int:
             (novo, int(cenario_id)))
         if _tem_periodos():
             conn.execute(
-                "INSERT INTO cenario_peso_periodo (cenario_id, nivel, chave, desde, pct) "
-                "SELECT ?, nivel, chave, desde, pct FROM cenario_peso_periodo"
+                "INSERT INTO cenario_peso_periodo (cenario_id, nivel, chave, desde, pct,"
+                " pct_principal) SELECT ?, nivel, chave, desde, pct, pct_principal"
+                " FROM cenario_peso_periodo WHERE cenario_id = ?", (novo, int(cenario_id)))
+        if _tem_projetos():
+            conn.execute(
+                "INSERT INTO cenario_projeto (cenario_id, projeto, papel, desde, ate)"
+                " SELECT ?, projeto, papel, desde, ate FROM cenario_projeto"
                 " WHERE cenario_id = ?", (novo, int(cenario_id)))
         conn.commit()
     return novo

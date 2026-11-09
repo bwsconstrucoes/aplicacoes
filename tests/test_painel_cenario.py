@@ -429,11 +429,11 @@ def test_os_periodos_se_salvam_pela_arvore(cenario, monkeypatch):
         "periodo_desde": ["2021-01", "2022-01", "", "2024-03"],
         "periodo_pct": ["50", "60", "", ""]})
     per = cenarios.periodos(cenario)
-    assert per["grupo"] == {"Administrativas": [("2021-01", 50.0), ("2022-01", 60.0)]}
+    assert per["grupo"] == {"Administrativas": [("2021-01", 50.0, None), ("2022-01", 60.0, None)]}
     assert per["categoria"] == {}                    # sem percentual: não grava
     # duplicar leva os períodos junto
     copia = cenarios.duplicar(cenario, "cópia")
-    assert cenarios.periodos(copia)["grupo"]["Administrativas"][1] == ("2022-01", 60.0)
+    assert cenarios.periodos(copia)["grupo"]["Administrativas"][1] == ("2022-01", 60.0, None)
     html = cliente.get(f"/painel/prestacao/montagem?cenario={cenario}").get_data(as_text=True)
     assert "50% desde 01/2021 · 60% desde 01/2022" in html and "varia" in html
     # apagar o percentual apaga o período
@@ -442,8 +442,57 @@ def test_os_periodos_se_salvam_pela_arvore(cenario, monkeypatch):
         "periodo_presente": ["grupo|Administrativas"],
         "periodo_nivel": ["grupo", "grupo"], "periodo_chave": ["Administrativas"] * 2,
         "periodo_desde": ["2021-01", "2022-01"], "periodo_pct": ["50", ""]})
-    assert cenarios.periodos(cenario)["grupo"] == {"Administrativas": [("2021-01", 50.0)]}
+    assert cenarios.periodos(cenario)["grupo"] == {"Administrativas": [("2021-01", 50.0, None)]}
     cenarios.apagar(copia)
+
+
+def test_os_dois_lados_e_quem_recebe():
+    """09/11/2026, o dono: "num período, 40% ficou para a BWS CE, os 60% para
+    os demais projetos que recebem. Nada fica sem dono. Alguns projetos não
+    entram, outros entram até determinada data." """
+    from app.apps.painel import cenarios, prestacao
+    pesos = {"grupo": {}, "categoria": {}, "lancamento": {},
+             "periodos": {"grupo": {"Pessoal": [("2021-01", 100, 40)]}}}
+    admin = [{"mes": m, "grupo": "Pessoal", "categoria": "Salários", "valor": -1000.0}
+             for m in ("2021-06", "2022-06")]
+    driver = [(m, o, v) for m in ("2021-06", "2022-06")
+              for o, v in (("CE1", 10.0), ("CE2", 30.0), ("SUL", 10.0), ("NORTE", 10.0), ("FORA", 50.0))]
+    lado_de = {"CE1": "principal", "CE2": "principal", "SUL": "demais",
+               "NORTE": "demais", "FORA": "demais"}
+    regras = {"P-NORTE": ("periodo", "", "2021-12"), "P-FORA": ("nao", "", "")}
+    projeto = {"CE1": "BWS CE", "CE2": "BWS CE", "SUL": "P-SUL", "NORTE": "P-NORTE", "FORA": "P-FORA"}
+    recebe = lambda o, m: cenarios.recebe_no_mes(regras.get(projeto[o]), m)  # noqa: E731
+    obras = {o: {} for o in lado_de}
+    r = prestacao.calcular_rateio_do_cenario(admin, [], driver, obras, pesos,
+                                             lado_de=lado_de, recebe=recebe)
+    a = {k: round(v, 2) for k, v in r["alocacoes"].items()}
+    # 2021: 400 para a CE (pela régua 10/30), 600 para SUL e NORTE (meio a meio)
+    assert a[("CE1", "2021-06")] == -100.0 and a[("CE2", "2021-06")] == -300.0
+    assert a[("SUL", "2021-06")] == -300.0 and a[("NORTE", "2021-06")] == -300.0
+    assert ("FORA", "2021-06") not in a                       # não recebe
+    # 2022: o NORTE já saiu; os 600 ficam todos com o SUL
+    assert a[("SUL", "2022-06")] == -600.0 and ("NORTE", "2022-06") not in a
+    assert round(sum(a.values()), 2) == -2000.0 and not r["sobras"]   # nada sem dono
+    # um lado sem ninguém recebendo passa a parte para o outro
+    so_ce = lambda o, m: lado_de[o] == "principal"  # noqa: E731
+    r = prestacao.calcular_rateio_do_cenario(admin[:1], [], driver, obras, pesos,
+                                             lado_de=lado_de, recebe=so_ce)
+    assert round(sum(r["alocacoes"].values()), 2) == -1000.0
+
+
+def test_quem_recebe_se_salva_pela_tela(cenario, monkeypatch):
+    from app.apps.painel import cenarios
+    cliente = _cliente(monkeypatch)
+    cliente.post("/painel/prestacao/montagem", data={
+        "acao": "projetos", "cenario_id": str(cenario), "principal": "ALFA",
+        "proj_nome": ["ALFA", "BETA", "GAMA", "DELTA"],
+        "proj_papel": ["", "nao", "periodo", "periodo"],
+        "proj_desde": ["", "", "", ""], "proj_ate": ["", "", "2023-12", ""]})
+    quem = cenarios.projetos(cenario)
+    assert quem["principal"] == "ALFA"
+    assert quem["regras"] == {"BETA": ("nao", "", ""), "GAMA": ("periodo", "", "2023-12")}
+    html = cliente.get(f"/painel/prestacao/montagem?cenario={cenario}").get_data(as_text=True)
+    assert "Quem recebe o custo da matriz" in html and "Salvar quem recebe" in html
 
 
 def test_quem_esta_preso_a_uma_obra_nao_alcanca_o_cenario(preso, monkeypatch):
