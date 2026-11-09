@@ -36,7 +36,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Optional
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.apps.erp.core.comum.auditoria import ErroValidacao, registrar_evento
@@ -405,7 +405,7 @@ def salvar(s: Session, dados: dict[str, Any], usuario: Usuario) -> Colaborador:
         # O FLUSH AQUI NÃO É ENFEITE: a sessão do ERP é `autoflush=False`, então
         # objeto pendente não aparece em consulta. Sem isto, quem chama `salvar`
         # e em seguida `vinculo_aberto` na MESMA transação — o atendimento de um
-        # pré-cadastro na fila do DP faz exatamente isso — não acharia o vínculo
+        # pedido de cadastro na fila do DP faz exatamente isso — não acharia o vínculo
         # que acabou de nascer, e abriria um segundo.
         s.flush()
 
@@ -515,6 +515,83 @@ def desligar(s: Session, colaborador_id: int, dados: dict[str, Any],
     registrar_evento(s, "colaborador", c.id, "DESLIGADO",
                      {"data_saida": str(saida), "forma": forma,
                       "motivo": dados.get("motivo")}, usuario.id if usuario else None)
+    bloquear_acesso(s, c, usuario, motivo="desligamento")
+    return c
+
+
+# ---------------------------------------------------------------------------
+# O ACESSO AO SISTEMA DA PESSOA — migração 096
+#
+# Ele, em 09/11/2026: *"nosso cadastro tem o cadastro de colaboradores, tem o
+# cadastro de usuários do sistema. É para haver uma correlação entre isso aí
+# (…) quando uma pessoa for desativada do cadastro, for demitido, sair da
+# empresa, a gente precisaria automaticamente bloquear o acesso dela."*
+#
+# ⚑ ESTE É O TIPO DE COISA QUE NINGUÉM LEMBRA DE FAZER À MÃO, e cujo
+# esquecimento não aparece: o ex-colaborador continua entrando, vendo obra,
+# vendo pagamento, e ninguém descobre porque nada quebra. Automático é a única
+# forma que funciona.
+#
+# O QUE O BLOQUEIO FAZ: desliga o operador (`ativo = False`). **Não apaga.**
+# Apagar levaria junto a autoria de tudo o que a pessoa lançou — e "quem
+# aprovou este pagamento?" viraria uma pergunta sem resposta.
+# ---------------------------------------------------------------------------
+def bloquear_acesso(s: Session, c: Colaborador, usuario: Optional[Usuario],
+                    *, motivo: str) -> bool:
+    """Desliga o acesso ao ERP de quem saiu. Devolve se havia o que desligar."""
+    uid = getattr(c, "usuario_id", None)
+    if not uid:
+        return False
+    operador = s.get(Usuario, uid)
+    if operador is None or not operador.ativo:
+        return False
+    operador.ativo = False
+    s.flush()
+    registrar_evento(s, "usuario", operador.id, "ACESSO_BLOQUEADO",
+                     {"motivo": motivo, "colaborador_id": c.id},
+                     usuario.id if usuario else None)
+    registrar_evento(s, "colaborador", c.id, "ACESSO_BLOQUEADO",
+                     {"motivo": motivo, "usuario_id": operador.id},
+                     usuario.id if usuario else None)
+    logger.info("ERP/pessoas: acesso do operador %s bloqueado por %s",
+                operador.id, motivo)
+    return True
+
+
+def ligar_ao_operador(s: Session, colaborador_id: int, usuario_id: Optional[int],
+                      usuario: Optional[Usuario]) -> Colaborador:
+    """Diz que este colaborador É este operador do ERP (ou desfaz a ligação).
+
+    ⚑ RECUSA LIGAR UM OPERADOR QUE JÁ É DE OUTRA PESSOA. Dois colaboradores
+    apontando para o mesmo login fariam o desligamento de um derrubar o acesso
+    do outro — e o banco tem índice único justamente por isso; aqui a recusa
+    vem com recado de gente em vez de erro de banco.
+    """
+    c = s.get(Colaborador, colaborador_id)
+    if c is None:
+        raise ErroValidacao("Colaborador não encontrado.")
+    if usuario_id in (None, "", 0):
+        c.usuario_id = None
+        s.flush()
+        registrar_evento(s, "colaborador", c.id, "ACESSO_DESVINCULADO", {},
+                         usuario.id if usuario else None)
+        return c
+    uid = int(usuario_id)
+    operador = s.get(Usuario, uid)
+    if operador is None:
+        raise ErroValidacao("Operador não encontrado.")
+    dono = s.execute(text("""
+        SELECT id, nome FROM colaboradores
+         WHERE usuario_id = :u AND id <> :c"""),
+        {"u": uid, "c": c.id}).mappings().first()
+    if dono is not None:
+        raise ErroValidacao(
+            f"Este acesso já é de {dono['nome']}. Um login é de uma pessoa só.")
+    c.usuario_id = uid
+    s.flush()
+    registrar_evento(s, "colaborador", c.id, "ACESSO_VINCULADO",
+                     {"usuario_id": uid, "email": operador.email},
+                     usuario.id if usuario else None)
     return c
 
 
@@ -775,6 +852,18 @@ def ficha(s: Session, colaborador_id: int) -> dict[str, Any]:
     # diferentes, e misturá-las faria a ficha dizer "falta CTPS" tanto para o
     # número quanto para a imagem dela.
     dados["falta_documento"] = documentos_que_faltam(s, c.id, c.vinculo)
+    # O ACESSO AO ERP desta pessoa (migração 096). `usuario_id` já veio junto
+    # com as colunas; o que a tela precisa a mais é o ENDEREÇO com que ela
+    # entra e se o acesso está de pé — "tem login" e "o login funciona" são
+    # perguntas diferentes, e a segunda é a que importa depois de um
+    # desligamento.
+    if getattr(c, "usuario_id", None):
+        operador = s.get(Usuario, c.usuario_id)
+        dados["usuario_email"] = operador.email if operador else ""
+        dados["usuario_ativo"] = bool(operador.ativo) if operador else False
+    else:
+        dados["usuario_email"] = ""
+        dados["usuario_ativo"] = False
     return dados
 
 

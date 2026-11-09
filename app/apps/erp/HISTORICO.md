@@ -7813,6 +7813,82 @@ fica separado dos dois.
 limitação, porque ele era só entrada de dados, ele não era gestão. Mas hoje a
 gente faz a gestão pelo ERP."*
 
+### 📘 O MANUAL DO DP, e as três correções que ele trouxe (09/11/2026, migração 096)
+
+**Há um arquivo novo para ler antes de mexer no DP: `MANUAL_DP.md`.** Ele
+nasceu de um pedido dele, e o pedido vale ser lido inteiro porque explica para
+que serve:
+
+> *"Eu quero entender o que foi que você depreendeu de tudo aquilo e como é
+> que está funcionando a parte das fases (…) como é que a gente está enviando
+> essas informações para a contabilidade (…) o que é que a gente precisa fazer
+> para deixar os e-mails ativos e funcionando, como é que eu faço para testar
+> (…) até para eu já fazer alguma crítica antes de colocar em prática."*
+
+Ele diz, em português e sem código: as três contas de e-mail e o que cada uma
+faz, como sai o pedido à contabilidade (com o texto do e-mail inteiro), como a
+resposta é lida, **os cinco passos para ligar e como testar cada um**, os
+campos e as duas listas de obrigatoriedade, as etapas, e — a parte que mais
+importa — **"o que eu assumi e você precisa confirmar"**, com 11 perguntas
+abertas. Quando ele responder, as respostas entram aqui e no manual.
+
+**TRÊS COISAS ELE CORRIGIU NO MESMO PEDIDO:**
+
+**1. Não existe "pré-cadastro".** *"Você colocou lá pré-cadastro colaborador,
+não existe esse pré-cadastro, existe o cadastro, ponto final. O cadastro já
+tem que vir com documentação e tudo mais."* O tipo da fila dizia "a obra manda
+o nome e o CPF; o DP completa" — eu tinha copiado do Pipefy. ⚑ **A diferença
+não é de palavra, é de quem faz o quê:** daquele jeito o DP ficava perseguindo
+documento por WhatsApp, que é o trabalho que a fila existe para acabar. Agora
+é `CADASTRO`, a obra abre COM os papéis, e o DP CONFERE. A migração renomeia
+as linhas já gravadas — tipo renomeado no código e linha velha no banco seria
+um pedido que some da tela sem ninguém apagar.
+
+**2. Colaborador e usuário do sistema não se conheciam.** *"É para haver uma
+correlação entre isso aí (…) quando uma pessoa for desativada do cadastro, for
+demitido, sair da empresa, a gente precisaria automaticamente bloquear o
+acesso dela."* Agora `colaboradores.usuario_id` liga os dois, e **desligar
+bloqueia o acesso sozinho**. ⚑ É o tipo de esquecimento que NÃO aparece: o
+ex-colaborador continua entrando e vendo obra, pagamento e gente, e nada
+quebra para denunciar. O login é **bloqueado, nunca apagado** — apagar levaria
+junto a autoria de tudo o que a pessoa lançou.
+
+⚑ **A LIGAÇÃO FICA NO COLABORADOR, e não no usuário**, de propósito: nem todo
+operador do ERP é colaborador da BWS (o parceiro da obra, a fiscalização, o
+contador). Pôr a coluna no usuário obrigaria todo mundo a ter um colaborador
+do outro lado.
+
+**3. O primeiro acesso agora é por CONVITE** — desenho dele: *"eu vou
+cadastrar o e-mail da pessoa, configurar o perfil, e disparar um e-mail para
+ela gravar a senha dela."* Operador cadastrado **sem senha** recebe um link e
+escolhe a própria. ⚑ **Isso é melhor por SEGURANÇA, não só por comodidade:**
+hoje alguém escolhe a senha pela pessoa e manda por WhatsApp — a senha passa
+por um terceiro, fica escrita numa conversa que ninguém apaga, e quase nunca é
+trocada. Com o convite, **ninguém além da pessoa conhece a senha dela**.
+
+**O que protege o link:** 32 bytes sorteados, guardado no banco **só como
+resumo SHA-256** (um backup vazado não abre conta nenhuma), **uso único**,
+**7 dias**, convite novo mata o anterior, e **convite não ressuscita acesso
+bloqueado** — sem essa última, bastaria um link velho no e-mail para o
+demitido voltar a entrar. Tudo isso tem teste.
+
+**A OITAVA ROTA PÚBLICA DO ERP**, e a primeira em muito tempo: a tela de
+definir senha. Ela é pública pelo único motivo que justifica — *quem abre o
+link ainda não tem senha*, então não existe login a exigir. A trava
+`test_permissoes_rotas` tem a lista fechada, e a entrada dela foi deliberada.
+
+**E A CONTA DE E-MAIL DO SISTEMA** (Configurações › E-mail do sistema), que
+ele pediu junto: *"a gente vai ter e-mail do DP, e-mail do compras, e-mail do
+sistema."* ⚑ **Por que não a de uma empresa:** as contas das empresas falam em
+nome de um CNPJ; o convite não é nem compras nem DP — quem fala é o sistema, e
+sair por `compras@` faria a pessoa achar que compras mandou e responder para
+lá. E, pendurada numa empresa, arquivar aquela empresa derrubaria o convite de
+acesso da casa inteira sem ninguém relacionar as duas coisas.
+
+**Três telas mexidas:** o cadastro do operador (bloco do convite + aviso de
+deixar a senha em branco), a ficha do colaborador (bloco "Acesso ao ERP") e
+Configurações (a aba nova).
+
 ### 📓 O DIÁRIO DE OBRA — CONSTRUÍDO em 08/11/2026 (migração 092)
 
 Ele olhou a maquete, ajustou quatro coisas e disse *"vamos para frente"*. Está

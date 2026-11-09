@@ -104,7 +104,7 @@ def test_pre_cadastro_de_quem_ja_existe_e_recusado(mundo):
     """É o alerta de duplicado valendo também na fila: no pipe, o cenário do
     Make APAGAVA o card depois de criado."""
     with pytest.raises(ErroValidacao) as e:
-        svc.abrir(mundo["s"], {"tipo": "PRE_CADASTRO", "nome": "José Repetido",
+        svc.abrir(mundo["s"], {"tipo": "CADASTRO", "nome": "José Repetido",
                                "cpf": CPF_A}, mundo["encarregado"])
     assert "já tem cadastro" in str(e.value)
 
@@ -141,7 +141,7 @@ def test_atender_readmissao_READMITE_de_verdade(mundo):
 
 def test_atender_pre_cadastro_CRIA_a_pessoa(mundo):
     p = svc.abrir(mundo["s"], {
-        "tipo": "PRE_CADASTRO", "nome": "Maria Nova De Teste", "cpf": CPF_B,
+        "tipo": "CADASTRO", "nome": "Maria Nova De Teste", "cpf": CPF_B,
         "obra_id": mundo["obra"].id, "vinculo": "CTPS",
         "data_inicio": "2026-04-01"}, mundo["encarregado"])
     assert p["colaborador_id"] is None          # a pessoa ainda não existe
@@ -323,7 +323,7 @@ def test_a_trilha_guarda_quem_mexeu(mundo):
 
 def test_a_fila_filtra_por_obra_de_quem_e_preso_a_obra(mundo):
     """Quem é preso a obra vê o que é da obra dele MAIS o que ele mesmo abriu —
-    o pré-cadastro não tem obra ligada até ser atendido."""
+    o pedido de cadastro não tem obra ligada até ser atendido."""
     from app.apps.erp.db.models.cadastros import Obra
     outra = Obra(codigo="SDP-02", nome="Obra de outro", status="ATIVA")
     mundo["s"].add(outra)

@@ -154,10 +154,19 @@ def test_o_conjunto_de_rotas_publicas_e_pequeno_e_conhecido():
     login, saída, saúde, o agente, a porta dos comprovantes (que se defende por
     segredo) e as duas do PWA. Rota pública é superfície de ataque, e esta lista
     só deve encolher.
+
+    **A OITAVA ENTROU EM 09/11/2026: o primeiro acesso.** Ela é pública pelo
+    único motivo que justifica: *quem abre o link ainda não tem senha*, então
+    não existe login a exigir. O que a protege não é a sessão, é o TOKEN — 32
+    bytes sorteados, guardado no banco só como resumo (SHA-256), de uso único
+    e com prazo de sete dias. Ela não lista nada, não aceita e-mail como
+    entrada e não diz se um token existe: o erro é o mesmo para inexistente,
+    usado e vencido.
     """
     assert set(routes._ENDPOINTS_PUBLICOS) == {
         "erp.pagina_login", "erp.sair", "erp.health", "erp.api_agente_rodar",
-        "erp.api_comprovantes_lote", "erp.manifesto_pwa", "erp.service_worker"}
+        "erp.api_comprovantes_lote", "erp.manifesto_pwa", "erp.service_worker",
+        "erp.pagina_primeiro_acesso"}
 
 
 def test_o_portal_mudou_de_dono_e_nao_de_endereco(app):

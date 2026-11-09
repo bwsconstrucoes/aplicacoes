@@ -8640,8 +8640,17 @@ def api_usuarios():
             cpf = somente_digitos(d.get("cpf") or "")
             if cpf and not cpf_valido(cpf):
                 return jsonify({"ok": False, "erro": "CPF inválido."}), 400
+            # SEM SENHA DIGITADA, A CONTA NASCE COM UMA SORTEADA E JOGADA
+            # FORA — e quem define é a pessoa, pelo convite (09/11/2026).
+            # Pedido dele: *"eu vou cadastrar o e-mail da pessoa, configurar o
+            # perfil, e disparar um e-mail para ela gravar a senha dela."*
+            # Isso é melhor por segurança, não só por comodidade: hoje alguém
+            # escolhe a senha pela pessoa e manda por WhatsApp.
+            import secrets as _secrets
+            convidar = not (d.get("senha") or "").strip()
             u = criar_usuario(s, nome=d.get("nome") or "", email=d.get("email") or "",
-                              senha=d.get("senha") or "", perfil=d.get("perfil") or "CONSULTA",
+                              senha=(d.get("senha") or _secrets.token_urlsafe(32)),
+                              perfil=d.get("perfil") or "CONSULTA",
                               criado_por=atual)
             u.cpf = cpf or None
             u.telefone = somente_digitos(d.get("telefone") or "") or None
@@ -8663,8 +8672,19 @@ def api_usuarios():
                 u.escopo_visao = EscopoVisao.PROPRIOS
             for obra_id in (d.get("obras") or []):
                 s.add(UsuarioObra(usuario_id=u.id, obra_id=int(obra_id)))
+            # O CONVITE SAI AQUI, no cadastro novo e sem senha digitada.
+            convite = {"enviado": False, "erro": "", "link": ""}
+            if convidar and (u.email or "").strip():
+                from app.apps.erp.core.auth import convites as _convites
+                convite = _convites.enviar(s, u.id,
+                                           link_base=_link_do_convite(),
+                                           autor=atual)
             s.commit()
-            return jsonify({"ok": True, "usuario_id": u.id})
+            # O RESULTADO VOLTA PARA A TELA, inclusive quando NÃO saiu:
+            # cadastrar dez pessoas e descobrir depois que nenhuma recebeu o
+            # link é o tipo de silêncio que faz perder uma manhã.
+            return jsonify({"ok": True, "usuario_id": u.id,
+                            "convite": convite})
     except ErroPermissao as e:
         return jsonify({"ok": False, "erro": str(e)}), 403
     except ValueError as e:
@@ -8778,6 +8798,266 @@ def api_editar_usuario(usuario_id: int):
         raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao editar operador")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/colaboradores/<int:colaborador_id>/acesso",
+          methods=["POST", "DELETE"])
+@login_obrigatorio
+@permissao("gerir_usuarios")
+def api_colaborador_acesso(colaborador_id: int):
+    """LIBERAR O ACESSO de um colaborador ao ERP, num passo só.
+
+    É a resposta à pergunta dele: *"estando tudo certo, o que eu vou precisar
+    é só cadastrar as pessoas e liberar o acesso?"* — sim, e é aqui.
+
+    O que acontece num clique: cria o operador com o e-mail e o perfil
+    escolhidos, **liga ao cadastro do colaborador** e manda o convite para a
+    pessoa gravar a própria senha. Se o operador já existir com aquele
+    e-mail, não duplica: liga ao que existe.
+
+    ⚑ EXIGE `gerir_usuarios`, e não `editar_colaboradores`: criar acesso ao
+    sistema é ato de administrador, não de quem opera o DP. Quem cadastra a
+    pessoa e quem dá a chave da casa podem ser a mesma pessoa, mas não é o
+    cadastro que decide isso.
+
+    DELETE desfaz a LIGAÇÃO, não o operador. Apagar o operador levaria junto a
+    autoria de tudo o que ele lançou.
+    """
+    from sqlalchemy import select as sa_select
+
+    from app.apps.erp.core.auth import convites as svc_convites
+    from app.apps.erp.core.auth.service import gerar_hash
+    from app.apps.erp.core.cadastros import pessoas as svc
+    from app.apps.erp.db.models.cadastros import (
+        Colaborador, PerfilUsuario, Usuario,
+    )
+    import secrets as _secrets
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            c = s.get(Colaborador, colaborador_id)
+            if c is None:
+                raise ErroNaoEncontrado("Colaborador não encontrado.")
+            if request.method == "DELETE":
+                svc.ligar_ao_operador(s, colaborador_id, None, atual)
+                s.commit()
+                return jsonify({"ok": True})
+
+            d = request.get_json(silent=True) or {}
+            email = (d.get("email") or c.email or "").strip().lower()
+            if "@" not in email:
+                return jsonify({"ok": False, "erro":
+                                "Informe o e-mail da pessoa — é por ele que "
+                                "ela entra e recebe o convite."}), 400
+            if (c.situacao or "").upper() == "DESLIGADO":
+                return jsonify({"ok": False, "erro":
+                                "Esta pessoa está desligada. Readmita antes "
+                                "de liberar o acesso."}), 400
+            operador = s.scalars(
+                sa_select(Usuario).where(Usuario.email == email)).first()
+            if operador is None:
+                # SENHA SORTEADA E JOGADA FORA: a conta nasce sem senha
+                # utilizável, e quem define é a pessoa, pelo convite. Nasce
+                # com uma senha conhecida seria uma porta aberta até alguém
+                # trocar.
+                operador = Usuario(
+                    nome=c.nome, email=email,
+                    senha_hash=gerar_hash(_secrets.token_urlsafe(32)),
+                    perfil=PerfilUsuario.CONSULTA, ativo=True,
+                    telefone=(c.telefone or None))
+                s.add(operador)
+                s.flush()
+            elif not operador.ativo:
+                operador.ativo = True
+            if d.get("perfil_id"):
+                operador.perfil_id = int(d["perfil_id"])
+            svc.ligar_ao_operador(s, colaborador_id, operador.id, atual)
+            # A OBRA DA PESSOA vira o alcance dela, que é o caso comum de quem
+            # trabalha em obra: sem isto o acesso nasce sem enxergar nada e
+            # alguém teria de ir marcar na outra tela.
+            if c.obra_id and not getattr(operador, "ve_todas_as_obras", False):
+                from app.apps.erp.db.models.cadastros import UsuarioObra
+                ja = s.scalars(sa_select(UsuarioObra).where(
+                    UsuarioObra.usuario_id == operador.id,
+                    UsuarioObra.obra_id == c.obra_id)).first()
+                if ja is None:
+                    s.add(UsuarioObra(usuario_id=operador.id,
+                                      obra_id=c.obra_id))
+            convite = {"enviado": False, "erro": "", "link": ""}
+            if d.get("convidar", True):
+                convite = svc_convites.enviar(
+                    s, operador.id, link_base=_link_do_convite(), autor=atual)
+            s.commit()
+            return jsonify({"ok": True, "usuario_id": operador.id,
+                            "email": email, "convite": convite})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
+    except Exception as e:
+        logger.exception("ERP: falha ao liberar acesso do colaborador %s",
+                         colaborador_id)
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+# ===========================================================================
+# O PRIMEIRO ACESSO — convite por e-mail, a pessoa grava a própria senha
+#
+# Desenho dele (09/11/2026): *"eu vou cadastrar o e-mail da pessoa, configurar
+# o perfil, e disparar um e-mail para ela gravar a senha dela."*
+# ===========================================================================
+def _link_do_convite() -> str:
+    """O endereço público da tela de definir senha, com domínio e tudo.
+
+    `_external=True` monta a partir do que o navegador pediu — então funciona
+    igual no Render e na máquina de quem está testando, sem configuração nova.
+    O `.rstrip` tira o token de exemplo: quem acrescenta o token é o convite.
+    """
+    return url_for("erp.pagina_primeiro_acesso", token="x",
+                   _external=True)[: -len("x")]
+
+
+@bp.route("/erp/api/usuarios/<int:usuario_id>/convite", methods=["POST"])
+@login_obrigatorio
+@permissao("gerir_usuarios")
+def api_usuario_convite(usuario_id: int):
+    """Manda (ou reenvia) o convite de primeiro acesso.
+
+    Reenviar INVALIDA o anterior — dois links abertos é a situação em que a
+    pessoa usa o velho, dá erro, e alguém jura que o sistema está quebrado.
+    """
+    from app.apps.erp.core.auth import convites as svc
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            d = request.get_json(silent=True) or {}
+            tipo = (d.get("tipo") or "PRIMEIRO_ACESSO").upper()
+            r = svc.enviar(s, usuario_id, link_base=_link_do_convite(),
+                           tipo=tipo, autor=atual)
+            s.commit()
+        return jsonify({"ok": True, **r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
+    except Exception as e:
+        logger.exception("ERP: falha ao enviar o convite de acesso")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/usuarios/<int:usuario_id>/convite/situacao")
+@login_obrigatorio
+@permissao("gerir_usuarios")
+def api_usuario_convite_situacao(usuario_id: int):
+    """Há convite aberto para esta pessoa? Venceu? Ela já definiu a senha?
+
+    É o que a ficha mostra para quem pergunta "mandei ou não mandei?" — e o
+    que evita reenviar por via das dúvidas, invalidando um link que a pessoa
+    tinha acabado de receber.
+    """
+    from app.apps.erp.core.auth import convites as svc
+    try:
+        with get_session() as s:
+            return jsonify({"ok": True, "convite": svc.situacao(s, usuario_id)})
+    except Exception as e:
+        logger.exception("ERP: falha ao ler a situação do convite")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/primeiro-acesso/<token>", methods=["GET", "POST"])
+@permissao_publica("definir a própria senha pelo convite — quem abre ainda "
+                   "não tem senha, então não há como exigir login")
+def pagina_primeiro_acesso(token: str):
+    """A pessoa escolhe a senha dela. **Ninguém mais a conhece.**
+
+    ⚑ PÚBLICA DE PROPÓSITO, e é o único jeito: quem abre este link ainda não
+    tem senha para entrar. O que protege é o TOKEN — 32 bytes sorteados,
+    guardado só como resumo, de uso único e com prazo (`core/auth/convites`).
+
+    O erro de link inválido é o mesmo para link inexistente, usado e vencido:
+    dizer qual dos três ajudaria quem está tentando links no escuro.
+    """
+    from app.apps.erp.core.auth import convites as svc
+    if request.method == "GET":
+        try:
+            with get_session() as s:
+                dados = svc.conferir(s, token)
+            return render_template("erp_primeiro_acesso.html", erro=None,
+                                   token=token, pessoa=dados, pronto=False)
+        except ErroValidacao as e:
+            return render_template("erp_primeiro_acesso.html", erro=str(e),
+                                   token=token, pessoa=None, pronto=False)
+    senha = request.form.get("senha") or ""
+    repetida = request.form.get("repetida") or ""
+    try:
+        if senha != repetida:
+            raise ErroValidacao("As duas senhas digitadas não são iguais.")
+        with get_session() as s:
+            dados = svc.usar(s, token, senha)
+            s.commit()
+        logger.info("ERP: senha definida pelo convite para %s", dados["email"])
+        return render_template("erp_primeiro_acesso.html", erro=None,
+                               token=token, pessoa=dados, pronto=True)
+    except ErroValidacao as e:
+        pessoa = None
+        try:
+            with get_session() as s:
+                pessoa = svc.conferir(s, token)
+        except ErroValidacao:
+            pessoa = None
+        return render_template("erp_primeiro_acesso.html", erro=str(e),
+                               token=token, pessoa=pessoa, pronto=False)
+
+
+# ===========================================================================
+# A CONTA DE E-MAIL DO SISTEMA — separada da do DP e da de compras
+# ===========================================================================
+@bp.route("/erp/api/email-sistema", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_email_sistema():
+    """A conta por onde saem as mensagens DO SISTEMA. A senha nunca sai."""
+    from app.apps.erp.core.comum import email_sistema as svc
+    try:
+        with get_session() as s:
+            if request.method == "GET":
+                return jsonify({"ok": True, "config": svc.configuracao(s),
+                                "falta": svc.o_que_falta(s)})
+            r = svc.configurar(s, request.get_json(silent=True) or {},
+                               _usuario_logado(s))
+            s.commit()
+            return jsonify({"ok": True, "config": r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha na conta de e-mail do sistema")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/email-sistema/testar", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_email_sistema_testar():
+    """Manda uma mensagem de teste — o que transforma "acho que configurei"
+    em "está configurado"."""
+    from app.apps.erp.core.comum import email_sistema as svc
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            para = ((request.get_json(silent=True) or {}).get("para")
+                    or (atual.email if atual else "")).strip()
+            if not para:
+                return jsonify({"ok": False,
+                                "erro": "Para qual endereço mando o teste?"}), 400
+            registro = svc.testar(s, para, atual)
+            s.commit()
+            return jsonify({"ok": registro.situacao == "ENVIADO",
+                            "erro": registro.erro, "para": para})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha no teste do e-mail do sistema")
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
@@ -10987,7 +11267,7 @@ def api_dp_solicitacoes():
     """A fila, e abrir pedido novo.
 
     Quem é preso a obra vê o que é da obra dele mais o que ele mesmo abriu — o
-    pré-cadastro não tem obra ligada até ser atendido, e sem a segunda parte
+    pedido de cadastro não tem obra ligada até ser atendido, e sem a segunda parte
     quem pediu não acompanharia o próprio pedido.
     """
     from app.apps.erp.core import pessoal_solicitacoes as svc

@@ -1291,6 +1291,12 @@ class Colaborador(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     nome: Mapped[str] = mapped_column(Text, nullable=False)
     cpf: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    # O OPERADOR DO ERP QUE É ESTA PESSOA (migração 096). Nulo é o normal:
+    # a maioria de quem trabalha não entra no sistema. Quando existe,
+    # desligar o colaborador desliga o acesso dele — que era justamente o que
+    # ninguém lembrava de fazer à mão.
+    usuario_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("usuarios.id"))
     matricula: Mapped[Optional[str]] = mapped_column(Text)
     funcao_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("funcoes.id"))
     obra_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("obras.id"))

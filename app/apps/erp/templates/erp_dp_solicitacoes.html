@@ -322,7 +322,7 @@ async function atender(){
     DEPENDENTE: "cadastra o dependente",
     AJUDA_DE_CUSTO: "atualiza os benefícios no cadastro",
     VALE_TRANSPORTE: "atualiza o transporte no cadastro",
-    PRE_CADASTRO: "CRIA o cadastro da pessoa no ERP",
+    CADASTRO: "CRIA o cadastro da pessoa no ERP",
   }[ABERTA.tipo];
   const r = await perguntar({titulo: `Atender ${ABERTA.numero}`,
     aviso: efeito ? `Ao atender, o sistema ${efeito}.` 

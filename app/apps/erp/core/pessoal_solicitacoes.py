@@ -136,13 +136,24 @@ TIPOS: dict[str, dict[str, Any]] = {
         "checklist": ("Conferir a autorização do colaborador",
                       "Lançar no sistema de pagamento"),
     },
-    "PRE_CADASTRO": {
-        "nome": "Pré-cadastro de colaborador",
-        "explicacao": "a obra manda o nome e o CPF; o DP completa",
+    # ⚑ NÃO EXISTE "PRÉ-CADASTRO", e isso foi ELE quem corrigiu em 09/11/2026:
+    # *"você colocou lá pré-cadastro colaborador, não existe esse pré-cadastro,
+    # existe o cadastro, ponto final. O cadastro já tem que vir com
+    # documentação e tudo mais."*
+    #
+    # A diferença não é de palavra, é de quem faz o quê: no pré-cadastro a obra
+    # mandava nome e CPF e o DP ia atrás do resto — era o DP perseguindo
+    # documento por WhatsApp, que é justamente o trabalho que esta fila existe
+    # para acabar. No cadastro, a obra abre o pedido COM OS PAPÉIS, e o DP
+    # CONFERE. Quem não tem o papel não abre o pedido ainda.
+    "CADASTRO": {
+        "nome": "Cadastro de colaborador",
+        "explicacao": "a obra abre com os dados E os documentos; o DP confere",
         "exige_pessoa": False, "executa": "criar_cadastro",
         "campos": ("nome", "cpf", "obra_id", "cargo_id", "vinculo", "data_inicio",
                    "telefone", "observacao"),
-        "checklist": ("Receber a documentação", "Completar o cadastro",
+        "checklist": ("Conferir se a documentação veio completa",
+                      "Conferir os dados contra os documentos",
                       "Conferir o que falta para admitir"),
     },
     "DIVERSOS": {
@@ -233,7 +244,7 @@ def abrir(s: Session, dados: dict[str, Any], usuario: Usuario) -> dict[str, Any]
     # obra, que é o contrário do que a fila existe para fazer.
     if tipo == "DESLIGAMENTO" and not pedido.get("data_saida"):
         raise ErroValidacao("Informe a data de saída.")
-    if tipo == "PRE_CADASTRO":
+    if tipo == "CADASTRO":
         from app.apps.erp.core.cadastros.validadores import cpf_valido, somente_digitos
         cpf = somente_digitos(pedido.get("cpf") or "")
         if not cpf_valido(cpf):
@@ -510,7 +521,7 @@ def listar(s: Session, *, situacao: str = "", tipo: str = "",
         onde.append("d.colaborador_id = :cid")
         params["cid"] = colaborador_id
     # O ESCOPO POR OBRA: quem é preso a obra vê o que é da obra dele, mais o que
-    # ele mesmo abriu (pedido de pré-cadastro ainda não tem obra ligada).
+    # ele mesmo abriu (pedido de cadastro ainda não tem obra ligada).
     if obra_ids is not None:
         if obra_ids:
             onde.append("(d.obra_id = ANY(:obras) OR d.solicitante_id = :eu)")

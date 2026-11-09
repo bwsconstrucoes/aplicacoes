@@ -946,6 +946,77 @@ function pintarOQueFalta(){
     : "");
 }
 
+// ---------------------------------------------------------------------------
+// O ACESSO DESTA PESSOA AO SISTEMA (09/11/2026)
+//
+// Ele: *"nosso cadastro tem o cadastro de colaboradores, tem o cadastro de
+// usuários do sistema. É para haver uma correlação entre isso aí (…) quando
+// uma pessoa for desativada do cadastro, for demitido, sair da empresa, a
+// gente precisaria automaticamente bloquear o acesso dela. Ao mesmo tempo,
+// facilitar o acesso da pessoa. E facilitar o primeiro acesso."*
+//
+// Fica na aba do ENDEREÇO porque é onde está o e-mail — e é o e-mail que vira
+// o login. Separar as duas coisas faria digitar o mesmo endereço duas vezes.
+// ---------------------------------------------------------------------------
+function blocoDoAcessoAoSistema(c){
+  const tem = !!c.usuario_id;
+  return `
+    <div class="cartao" style="margin-top:12px">
+      <h4 style="margin-top:0">Acesso ao ERP</h4>
+      <div id="ac-situacao" class="desc">${tem
+        ? `Esta pessoa <b>entra no sistema</b> com ${escapar(c.usuario_email || c.email || "—")}.`
+          + (c.usuario_ativo ? "" : ` <span class="etiqueta ambar">acesso bloqueado</span>`)
+        : `Esta pessoa <b>não entra no sistema</b> — é só cadastro de quem trabalha.`}</div>
+      <div style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap">
+        ${tem
+          ? `<button class="btn secundario" type="button" id="ac-tirar">Desligar o acesso</button>`
+          : `<button class="btn secundario" type="button" id="ac-liberar">Liberar acesso e convidar</button>`}
+      </div>
+      <div class="dica">Ao liberar, a pessoa recebe um e-mail para <b>escolher a
+        própria senha</b> — ninguém mais vai saber qual é. E quando ela for
+        <b>desligada</b>, o acesso cai sozinho, sem ninguém precisar lembrar.</div>
+      <div id="ac-msg"></div>
+    </div>`;
+}
+
+function ligarAcessoAoSistema(c){
+  const liberar = els("ac-liberar");
+  if (liberar) liberar.addEventListener("click", async () => {
+    const email = (els("c-email") ? els("c-email").value : "") || c.email || "";
+    if (!email.includes("@")) {
+      aviso("ac-msg", "Preencha o e-mail da pessoa antes — é por ele que ela "
+            + "entra e recebe o convite.", "erro");
+      return;
+    }
+    liberar.disabled = true;
+    try {
+      const r = await api(`/erp/api/colaboradores/${c.id}/acesso`, {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({email})});
+      const cv = r.convite || {};
+      aviso("ac-msg", cv.enviado
+        ? `Acesso liberado. Convite enviado para ${escapar(email)}.`
+        : `Acesso liberado, mas o e-mail NÃO saiu: ${escapar(cv.erro || "motivo não informado")}.`
+          + (cv.link ? `<br>Enquanto isso, o link é: <code>${escapar(cv.link)}</code>` : ""),
+        cv.enviado ? "ok" : "erro");
+      ficha(c.id);
+    } catch(e){ aviso("ac-msg", e.message, "erro"); liberar.disabled = false; }
+  });
+  const tirar = els("ac-tirar");
+  if (tirar) tirar.addEventListener("click", async () => {
+    if (!await perguntar({titulo: "Desligar o acesso",
+      aviso: "O login da pessoa continua existindo, com tudo o que ela lançou. "
+           + "O que se desfaz é a ligação com este cadastro — e, com ela, o "
+           + "bloqueio automático no desligamento.",
+      campos: [], textoOk: "Desligar o acesso"})) return;
+    try {
+      await api(`/erp/api/colaboradores/${c.id}/acesso`, {method:"DELETE"});
+      aviso("ac-msg", "Ligação desfeita.", "ok");
+      ficha(c.id);
+    } catch(e){ aviso("ac-msg", e.message, "erro"); }
+  });
+}
+
 function painelDaFicha(){
   const c = FICHA || {}, o = OPCOES || {};
   const alvo = els("c-painel");
@@ -997,8 +1068,15 @@ function painelDaFicha(){
       ${campoTexto("Município", "c-municipio", c.municipio, 'style="grid-column:span 2"')}
       <div class="campo"><label>UF</label>${lista("c-uf", o.ufs, c.uf)}</div>
       ${campoTexto("Telefone", "c-telefone", c.telefone)}
-      ${campoTexto("E-mail", "c-email", c.email, 'style="grid-column:span 2"')}
-    </div>`;
+      {# O id vai ESCRITO aqui, e não montado dentro do ajudante: o bloco do
+         acesso logo abaixo lê este campo com `els("c-email")`, e a trava das
+         telas confere que todo `els` tem um `id=` em algum lugar da página —
+         id montado dentro de função some da conferência. #}
+      <div class="campo" style="grid-column:span 2"><label for="c-email">E-mail</label>
+        <input id="c-email" value="${escapar(c.email || "")}"></div>
+    </div>
+    ${c.id ? blocoDoAcessoAoSistema(c) : ""}`;
+    if (c.id) ligarAcessoAoSistema(c);
   } else if (ABA_FICHA === 2) {
     alvo.innerHTML = `<div class="form-grade">
       <div class="campo"><label>Vínculo *</label>${lista("c-vinculo", o.vinculos, c.vinculo, "")}</div>

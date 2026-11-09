@@ -260,7 +260,7 @@ def test_o_portal_so_abre_os_tipos_que_a_obra_pode(sessao_real):
     from app.apps.erp.core import portal as svc_portal
     chaves = {t["chave"] for t in svc_portal.tipos(sessao_real)}
     assert "DESCONTO_EM_FOLHA" not in chaves
-    assert "PRE_CADASTRO" in chaves and "DESLIGAMENTO" in chaves
+    assert "CADASTRO" in chaves and "DESLIGAMENTO" in chaves
 
 
 @banco_

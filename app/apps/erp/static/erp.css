@@ -1026,3 +1026,28 @@ dialog::backdrop { background: rgba(7,30,64,.45); }
                           color: var(--tinta-suave, #5A6B85); font-style: italic; }
 .cal-dia.fora { background: transparent; border-color: transparent;
                 color: var(--borda-forte, #C9D3E4); cursor: default; }
+
+/* ---------------------------------------------------------------------------
+   ETIQUETA — a marca pequena de situação, ao lado de um texto
+   
+   ⚑ ELA ERA USADA EM NOVE TELAS E NÃO EXISTIA NO CSS (achado em 09/11/2026,
+   olhando a tela da conta de e-mail do sistema). Sem a regra, `<span
+   class="etiqueta verde">pronta</span>` saía como texto corrido do mesmo
+   tamanho do resto — e a marca que deveria saltar aos olhos virava mais uma
+   frase. É o tipo de defeito que nenhum teste pega e que só aparece olhando.
+
+   É irmã de `.selo`, que marca a SITUAÇÃO DE UM REGISTRO numa lista. A
+   etiqueta é mais discreta: ela qualifica um texto ("pronta para enviar",
+   "acesso bloqueado", "3 pessoas"), e por isso tem fundo mais claro e peso
+   menor. As cores reusam as variáveis do sistema — nada de tom novo.
+   --------------------------------------------------------------------------- */
+.etiqueta { display: inline-block; font-size: 11.5px; font-weight: 600;
+            padding: 1px 8px; border-radius: 999px; white-space: nowrap;
+            background: #EDEFF3; color: var(--cinza); }
+.etiqueta.verde    { background: #E3F3E8; color: var(--verde); }
+.etiqueta.ambar    { background: #FDF1DC; color: var(--ambar); }
+.etiqueta.amarelo  { background: #FFF4D6; color: #6B4A00; }
+.etiqueta.vermelha,
+.etiqueta.vermelho { background: #FBE6E4; color: var(--vermelho); }
+.etiqueta.ciano    { background: #E2F1F6; color: var(--ciano); }
+.etiqueta.azul     { background: #E7EDF7; color: var(--azul); }

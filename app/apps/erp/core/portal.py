@@ -130,7 +130,7 @@ AREAS: tuple[dict[str, Any], ...] = (
 # salário de ninguém. Quem tem alçada para mais abre pela tela cheia do ERP.
 TIPOS_POR_AREA: dict[str, tuple[str, ...]] = {
     "pessoal": (
-        "PRE_CADASTRO", "DESLIGAMENTO", "READMISSAO", "ADMISSAO_PRESTADOR",
+        "CADASTRO", "DESLIGAMENTO", "READMISSAO", "ADMISSAO_PRESTADOR",
         "ALTERACAO_CARGO", "ATUALIZACAO_DADOS", "DEPENDENTE", "AJUDA_DE_CUSTO",
         "VALE_TRANSPORTE", "DIVERSOS",
     ),

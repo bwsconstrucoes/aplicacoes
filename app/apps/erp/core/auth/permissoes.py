@@ -1183,7 +1183,7 @@ def exigir_solicitacao_dp_no_escopo(s: Session, usuario: Usuario,
                                     solicitacao_id: int):
     """A solicitação ao DP é da OBRA dela — mais a de quem a abriu.
 
-    A segunda parte não é cortesia: o **pré-cadastro** não tem obra ligada até
+    A segunda parte não é cortesia: o **pedido de cadastro** não tem obra ligada até
     ser atendido (a pessoa ainda não existe), e sem isso o encarregado que
     pediu não conseguiria acompanhar o próprio pedido.
 

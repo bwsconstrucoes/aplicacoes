@@ -1,5 +1,10 @@
 # O cadastro de pessoas vai para dentro do ERP
 
+> 📘 **Para entender como o DP FUNCIONA HOJE — etapas, campos, e-mails à
+> contabilidade, o que ligar e como testar — leia `MANUAL_DP.md`.** Este
+> arquivo aqui é o LEVANTAMENTO que deu origem àquilo: o apurado do Pipefy e
+> do Make, com o que morreu e o que veio.
+
 Levantamento de 04/11/2026, com o **apurado dos dois pipes do Pipefy e de três
 cenários do Make** que o dono enviou no mesmo dia. Ler antes de escrever
 qualquer linha dessa área.
