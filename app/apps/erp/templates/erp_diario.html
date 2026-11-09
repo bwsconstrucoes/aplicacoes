@@ -24,6 +24,11 @@
   </div>
   <button class="btn secundario" id="btn-pendencias" style="width:100%; margin-top:12px">
     Onde está faltando</button>
+  {# IMPRIMIR. Abre a folha do dia em outra aba, no modelo que o CONTRATO
+     exige. A escolha entre os três modelos fica na própria folha, para ele
+     poder folhear os formatos sem voltar aqui. #}
+  <button class="btn secundario" id="btn-papel" style="width:100%; margin-top:8px">
+    Imprimir / salvar em PDF</button>
 {% endblock %}
 
 {% block conteudo %}
@@ -56,6 +61,11 @@ async function iniciar(){
   els("f-obra").addEventListener("change", carregar);
   els("f-data").addEventListener("change", carregar);
   els("btn-pendencias").addEventListener("click", abrirPendencias);
+  els("btn-papel").addEventListener("click", () => {
+    const obra = els("f-obra").value, data = els("f-data").value || HOJE;
+    if (!obra) return;
+    window.open(`/erp/obras/diario/papel/${obra}?de=${data}`, "_blank");
+  });
   if (OBRAS.length) carregar();
   else els("painel").innerHTML = `<div class="vazio">Nenhuma obra ao seu alcance.</div>`;
 }
@@ -181,6 +191,16 @@ function blocoDoRelato(){
           <div class="campo"><label for="d-tarde">Tempo pela tarde</label>
             ${listaDeTempo("d-tarde", d.tempo_tarde, so_leitura)}</div>
         </div>
+        {# O HORÁRIO JÁ VEM ESCRITO, conforme o dia da semana (7 às 17, e 7 às
+           16 na sexta). Pedido dele em 09/11/2026: *"como se fosse assim,
+           pré-preenchido, a depender do dia da semana. E se necessário, a
+           pessoa que estiver preenchendo o diário muda."* #}
+        <div class="campo" style="margin-top:10px">
+          <label for="d-horario">Horário de trabalho</label>
+          <input id="d-horario" name="horario" value="${escapar(d.horario_trabalho || "")}"
+                 ${so_leitura ? "disabled" : ""} placeholder="7:00 às 17:00">
+          <small class="desc">Já vem preenchido conforme o dia da semana.
+            Se o horário foi outro, basta trocar.</small></div>
         ${d.clima_medido ? `<div class="aviso" style="margin-top:8px">☁️
           <b>O sistema conferiu:</b> ${escapar(JSON.stringify(d.clima_medido))}</div>` : ""}
         <div class="campo" style="margin-top:10px">
@@ -189,10 +209,33 @@ function blocoDoRelato(){
             placeholder="O que foi feito hoje.">${escapar(d.relato || "")}</textarea></div>
         ${anterior.relato && PODE_LANCAR ? `<button class="link-btn" id="btn-ontem">
           ↩ trazer o relato de ${dataBR(anterior.data)}</button>` : ""}
+        {# TRÊS CAMPOS DE TEXTO E NÃO UM, e a separação é do modelo do órgão:
+           o relato é O QUE FOI FEITO; equipamentos é O QUE ESTAVA EM OBRA;
+           ocorrências é O QUE SAIU DO NORMAL; e o histórico é COMO O SERVIÇO
+           VEM CAMINHANDO. Juntar tudo num campo e tentar separar na impressão
+           seria adivinhar. #}
         <div class="campo" style="margin-top:10px">
-          <label>Ocorrências e observações</label>
+          <label>Equipamentos em obra</label>
+          <input id="d-equipamentos" value="${escapar(d.equipamentos || "")}"
+                 ${so_leitura ? "disabled" : ""}
+                 placeholder="01 caçamba, 01 placa vibratória">
+          <small class="desc">O que estava em obra hoje: máquina, caçamba,
+            betoneira, andaime.</small></div>
+        <div class="campo" style="margin-top:10px">
+          <label>Ocorrências</label>
           <textarea id="d-ocorrencias" rows="3" ${so_leitura ? "disabled" : ""}
-            >${escapar(d.ocorrencias || "")}</textarea></div>
+            placeholder="Reunião, visita técnica, acidente, chuva que parou o serviço."
+            >${escapar(d.ocorrencias || "")}</textarea>
+          <small class="desc">O que saiu do normal. Dia comum fica em
+            branco.</small></div>
+        <div class="campo" style="margin-top:10px">
+          <label>Histórico dos serviços</label>
+          <textarea id="d-historico" rows="3" ${so_leitura ? "disabled" : ""}
+            placeholder="Como o serviço vem caminhando."
+            >${escapar(d.historico || "")}</textarea>
+          <small class="desc">O andamento, em poucas linhas. O modelo que a
+            Prefeitura exige imprime isto num quadro separado; nos outros
+            modelos ele entra junto com o relato.</small></div>
         <label class="opcao" style="margin-top:8px">
           <input type="checkbox" id="d-fisc" ${d.fiscalizacao_esteve ? "checked" : ""}
                  ${so_leitura ? "disabled" : ""}>
@@ -276,6 +319,9 @@ function corpoDoDia(){
     tempo_tarde: els("d-tarde") ? els("d-tarde").value : "",
     relato: els("d-relato") ? els("d-relato").value : "",
     ocorrencias: els("d-ocorrencias") ? els("d-ocorrencias").value : "",
+    horario_trabalho: els("d-horario") ? els("d-horario").value : "",
+    equipamentos: els("d-equipamentos") ? els("d-equipamentos").value : "",
+    historico: els("d-historico") ? els("d-historico").value : "",
     fiscalizacao_esteve: els("d-fisc") ? els("d-fisc").checked : false,
     fiscalizacao_quem: els("d-fisc-quem") ? els("d-fisc-quem").value : "",
   };

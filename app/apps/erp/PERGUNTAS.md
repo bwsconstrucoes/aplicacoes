@@ -1781,6 +1781,20 @@ Perguntas que o diário torna possíveis. Escritas como o dono perguntaria.
 - "O que a fiscalização observou?"
 - "Que material chegou na obra naquele dia?" — vem de Suprimentos.
 - "Quem corrigiu o diário depois de fechado, e por quê?"
+- "Que equipamento estava na obra naquele dia?" — texto livre escrito por
+  quem lançou (09/11/2026). ⚠️ **não é consulta de frota**: se ninguém
+  escrever, a resposta é "não informado", e não "nenhum equipamento".
+- "Em que horário a obra trabalhou naquele dia?" — ⚠️ **palavra ambígua**: o
+  campo vem **pré-preenchido** com o padrão do dia da semana (7 às 17, e 7 às
+  16 na sexta) e a pessoa pode trocar. Um dia gravado SEM horário não tem
+  jornada afirmada, e o assistente não deve completar com o padrão.
+
+- "Gere o diário no modelo que a Prefeitura de X exige" — **passou a ser
+  respondida em 09/11/2026**: há três modelos de folha (o nosso ampliado, o
+  da BWS e o do órgão), e a escolha sai do cadastro da obra, aba Contrato.
+- "Qual modelo de diário este contrato exige?" — está no cadastro da obra.
+- "Que obras ainda estão sem a logo do órgão no diário?" — ⚠️ dá para
+  consultar, mas não há função pronta; hoje se vê abrindo o cadastro.
 
 **Dependem de quem pergunta (escopo por obra):**
 
@@ -1792,8 +1806,9 @@ Perguntas que o diário torna possíveis. Escritas como o dono perguntaria.
 - "Quantos dias de prazo eu posso pedir por chuva?" — falta a medição da
   estação (`clima_medido` existe e está vazia) e falta o conceito de PARADA,
   que foi cortado. Sem os dois, qualquer número seria chute.
-- "Gere o diário no modelo do órgão X" — faltam os modelos, que ele vai
-  mandar.
+- "Qual o resumo do andamento da obra?" — o campo HISTÓRICO existe desde
+  09/11/2026 e é escrito dia a dia, mas não há função que junte os históricos
+  de um período numa resposta só.
 - "Qual o efetivo médio da obra no mês?" — dá para contar, mas não há função
   que some; e a resposta mudaria conforme contar ou não o terceirizado.
 - "Este relato é parecido com o de ontem?" — o sistema OFERECE o relato

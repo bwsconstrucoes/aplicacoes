@@ -76,7 +76,94 @@ TEMPO_ROTULOS = {
 CAMPOS_DA_OBRA = (
     "tempo_manha", "tempo_tarde", "relato", "ocorrencias",
     "fiscalizacao_esteve", "fiscalizacao_quem", "sem_expediente",
+    # Migração 093 — vieram do modelo que a Prefeitura de Abreu e Lima exige.
+    # Decisão dele em 09/11/2026: *"como ele é mais amplo, a gente pode tentar
+    # adaptar logo o nosso para esse aí (…) quanto mais amplo, melhor."*
+    "horario_trabalho", "equipamentos", "historico",
 )
+
+# ---------------------------------------------------------------------------
+# O HORÁRIO DE TRABALHO — e por que ele vem PREENCHIDO
+#
+# Ele: *"a gente pode definir um padrão aí de horário de trabalho. Que o
+# normal é 7 às 17. Ou 7 às 16 na sexta-feira (…) como se fosse assim,
+# pré-preenchido, a depender do dia da semana. E se necessário, a pessoa que
+# estiver preenchendo o diário muda."*
+#
+# ⚑ ISTO É SUGESTÃO, NÃO VERDADE. O padrão entra no campo quando o dia ainda
+# não foi escrito; a partir do momento em que alguém gravou, vale o que está
+# gravado — mesmo que seja igual ao padrão, e mesmo que o padrão mude depois.
+# Diário é documento: o que ele afirma é o que a pessoa afirmou, não o que a
+# tabela de horários diria hoje.
+#
+# Por que texto e não hora-início/hora-fim: o papel imprime a FRASE, e obra
+# com turno partido escreve "7:00 às 11:00 e 13:00 às 17:00".
+# ---------------------------------------------------------------------------
+HORARIO_PADRAO = {
+    0: "7:00 às 17:00",     # segunda
+    1: "7:00 às 17:00",
+    2: "7:00 às 17:00",
+    3: "7:00 às 17:00",
+    4: "7:00 às 16:00",     # sexta — ele disse com todas as letras
+    5: "",                  # sábado e domingo nascem sem expediente: deixar
+    6: "",                  # horário aqui seria afirmar jornada que não houve
+}
+
+
+def horario_padrao(dia: date) -> str:
+    """O horário que a tela oferece para ESTE dia da semana."""
+    return HORARIO_PADRAO.get(dia.weekday(), "")
+
+
+# ---------------------------------------------------------------------------
+# OS MODELOS DE PAPEL — três, e a escolha é do CONTRATO
+#
+# Ele mandou dois modelos em 09/11/2026 e pediu: *"você ajusta aí, coloca já
+# esses dois como opção. Na nossa opção, o que tiver a mais pode colocar
+# também."*
+#
+# ⚑ POR QUE A ESCOLHA MORA NA OBRA, e não numa tela de impressão: *"tem um
+# determinado contrato que a gente vai precisar utilizar esse modelo
+# específico de diário de obra."* O modelo é cláusula de contrato. Se fosse
+# escolha de quem imprime, um dia sairia o papel errado para a fiscalização —
+# e um RDO fora do modelo exigido é motivo de glosa.
+#
+# O MESMO DADO alimenta os três. Nenhum modelo pergunta nada que os outros não
+# perguntem: o que varia é o que o papel mostra e como. Foi por isso que valeu
+# "adaptar o nosso para o mais amplo" — um diário por contrato seria três
+# telas de preenchimento, e a obra preencheria mal as três.
+# ---------------------------------------------------------------------------
+MODELOS = {
+    "completo": {
+        "rotulo": "BWS ampliado (recomendado)",
+        "descricao": "O nosso, com tudo o que os dois modelos pedem: efetivo "
+                     "do ponto, equipamentos, histórico, material recebido e "
+                     "o espaço da fiscalização.",
+    },
+    "bws": {
+        "rotulo": "BWS (o de hoje)",
+        "descricao": "O que a empresa já usa: anotações da contratada, "
+                     "anotações da fiscalização e as duas assinaturas.",
+    },
+    "orgao": {
+        "rotulo": "Do órgão (RDO em quadros)",
+        "descricao": "O formato que a Prefeitura de Abreu e Lima exige em "
+                     "contrato: tempo em grade, quadro técnico, equipamentos "
+                     "e ocorrências em quadros separados.",
+    },
+}
+MODELO_PADRAO = "completo"
+
+
+def modelo_valido(nome: str) -> str:
+    """Devolve o modelo pedido, ou o padrão. NUNCA levanta erro.
+
+    Papel de diário não pode falhar por causa de um nome de modelo: se a obra
+    tiver no cadastro um modelo que o sistema não conhece mais, sai o nosso —
+    com dado certo — em vez de uma tela de erro na mão de quem está em obra.
+    """
+    nome = (nome or "").strip().lower()
+    return nome if nome in MODELOS else MODELO_PADRAO
 
 
 # ---------------------------------------------------------------------------
@@ -118,11 +205,22 @@ def cabecalho(s: Session, obra_id: int, dia: date) -> dict[str, Any]:
     conta é feita na hora, sobre as datas que valem hoje.
     """
     o = s.execute(text("""
-        SELECT id, codigo, nome, objeto, contrato,
-               data_inicio, data_termino, ordem_servico, data_ordem_servico,
-               prazo_execucao_dias, responsavel_tecnico, crea_obra,
-               municipio, uf
-          FROM obras WHERE id = :o"""), {"o": obra_id}).mappings().first()
+        SELECT o.id, o.codigo, o.nome, o.objeto, o.contrato,
+               o.data_inicio, o.data_termino, o.ordem_servico,
+               o.data_ordem_servico, o.prazo_execucao_dias,
+               o.responsavel_tecnico, o.crea_obra, o.art_rrt,
+               o.municipio, o.uf, o.endereco, o.numero_endereco, o.bairro,
+               -- O CONTRATANTE, que é quem manda no modelo do papel
+               o.cliente, o.cnpj_cliente, o.orgao_resumido,
+               o.contratante_unidade, o.diario_modelo,
+               (o.contratante_logo IS NOT NULL) AS tem_logo_contratante,
+               -- A EMPRESA que executa: o nome e o CNPJ que assinam o diário
+               e.id AS empresa_id, e.razao_social, e.nome_fantasia,
+               e.cnpj AS cnpj_empresa,
+               (e.logo IS NOT NULL) AS tem_logo_empresa
+          FROM obras o
+          LEFT JOIN empresas e ON e.id = o.empresa_id
+         WHERE o.id = :o"""), {"o": obra_id}).mappings().first()
     if o is None:
         raise ErroNaoEncontrado("Obra não encontrada.")
 
@@ -151,9 +249,34 @@ def cabecalho(s: Session, obra_id: int, dia: date) -> dict[str, Any]:
                                if o["data_ordem_servico"] else None),
         "responsavel_tecnico": o["responsavel_tecnico"] or "",
         "crea": o["crea_obra"] or "",
+        "art_rrt": o["art_rrt"] or "",
         "municipio": o["municipio"] or "", "uf": o["uf"] or "",
+        "endereco": _endereco(o),
+        # ⚑ O CONTRATANTE. É ele que decide qual papel sai: o modelo é do
+        # CONTRATO, não da empresa nem da pessoa que imprime.
+        "contratante": o["cliente"] or "",
+        "contratante_cnpj": o["cnpj_cliente"] or "",
+        "orgao": o["orgao_resumido"] or "",
+        "contratante_unidade": o["contratante_unidade"] or "",
+        "tem_logo_contratante": bool(o["tem_logo_contratante"]),
+        "modelo": (o["diario_modelo"] or "").strip().lower() or MODELO_PADRAO,
+        # A empresa que executa, com o CNPJ que assina.
+        "empresa_id": o["empresa_id"],
+        "empresa": (o["nome_fantasia"] or o["razao_social"] or ""),
+        "empresa_razao": o["razao_social"] or "",
+        "empresa_cnpj": o["cnpj_empresa"] or "",
+        "tem_logo_empresa": bool(o["tem_logo_empresa"]),
         "prazo": prazo,
     }
+
+
+def _endereco(o) -> str:
+    """O endereço numa linha, que é como o papel imprime."""
+    partes = [p for p in (o["endereco"], o["numero_endereco"], o["bairro"])
+              if (p or "").strip()]
+    linha = ", ".join(partes)
+    cidade = " - ".join([p for p in (o["municipio"], o["uf"]) if (p or "").strip()])
+    return " — ".join([p for p in (linha, cidade) if p])
 
 
 # ---------------------------------------------------------------------------
@@ -336,6 +459,10 @@ def abrir_dia(s: Session, obra_id: int, dia: date,
             "tempo_manha": "", "tempo_tarde": "", "relato": "",
             "ocorrencias": "", "fiscalizacao_esteve": False,
             "fiscalizacao_quem": "",
+            # O horário já vem escrito, conforme o dia da semana. Sábado,
+            # domingo e dia sem expediente vêm vazios de propósito.
+            "horario_trabalho": "" if sugere_sem else horario_padrao(dia),
+            "equipamentos": "", "historico": "",
             "sem_expediente": sugere_sem,
             "obs_fiscalizacao": "", "obs_fiscalizacao_por": "",
             "extras": [],
@@ -383,6 +510,9 @@ def _para_tela(s: Session, l) -> dict[str, Any]:
         "id": l["id"], "situacao": l["situacao"],
         "tempo_manha": l["tempo_manha"] or "", "tempo_tarde": l["tempo_tarde"] or "",
         "relato": l["relato"] or "", "ocorrencias": l["ocorrencias"] or "",
+        "horario_trabalho": l["horario_trabalho"] or "",
+        "equipamentos": l["equipamentos"] or "",
+        "historico": l["historico"] or "",
         "fiscalizacao_esteve": bool(l["fiscalizacao_esteve"]),
         "fiscalizacao_quem": l["fiscalizacao_quem"] or "",
         "sem_expediente": bool(l["sem_expediente"]),
@@ -453,8 +583,10 @@ def salvar(s: Session, obra_id: int, dia: date, dados: dict[str, Any],
             INSERT INTO diarios_obra
                 (obra_id, data, tempo_manha, tempo_tarde, relato, ocorrencias,
                  fiscalizacao_esteve, fiscalizacao_quem, sem_expediente,
+                 horario_trabalho, equipamentos, historico,
                  criado_por)
-            VALUES (:o, :d, :tm, :tt, :rel, :oc, :fe, :fq, :se, :u)
+            VALUES (:o, :d, :tm, :tt, :rel, :oc, :fe, :fq, :se,
+                    :ht, :eq, :hi, :u)
             RETURNING id"""),
             {"o": obra_id, "d": dia,
              "tm": limpo.get("tempo_manha"), "tt": limpo.get("tempo_tarde"),
@@ -462,6 +594,12 @@ def salvar(s: Session, obra_id: int, dia: date, dados: dict[str, Any],
              "fe": limpo.get("fiscalizacao_esteve", False),
              "fq": limpo.get("fiscalizacao_quem"),
              "se": limpo.get("sem_expediente", False),
+             # O horário NÃO é preenchido aqui com o padrão: quem grava um dia
+             # sem horário está dizendo que não sabe o horário, e inventar a
+             # jornada num documento é pior que deixar em branco.
+             "ht": limpo.get("horario_trabalho"),
+             "eq": limpo.get("equipamentos"),
+             "hi": limpo.get("historico"),
              "u": usuario.id if usuario else None}).scalar()
         registrar_evento(s, "diario_obra", novo, "ABERTO",
                          {"obra_id": obra_id, "data": str(dia)},
@@ -745,7 +883,8 @@ def pendencias_por_obra(s: Session, ate: Optional[date] = None, *,
 # passaria a contar uma história diferente do contrato.
 # ---------------------------------------------------------------------------
 def relatorio(s: Session, obra_id: int, de: date, ate: Optional[date] = None,
-              *, so_escritos: bool = True) -> dict[str, Any]:
+              *, so_escritos: bool = True,
+              modelo: Optional[str] = None) -> dict[str, Any]:
     """Os dias de uma obra, prontos para imprimir. Um dia por página."""
     ate = ate or de
     if ate < de:
@@ -781,6 +920,12 @@ def relatorio(s: Session, obra_id: int, de: date, ate: Optional[date] = None,
                   FROM diario_efetivo_extra WHERE diario_id = :i ORDER BY id"""),
                 {"i": linha["id"]}).mappings().all()]
         paginas.append({
+            # "FOLHA 1/1", que o modelo do órgão imprime. Contada aqui, e não
+            # na folha de estilo: o número da folha dentro do laço do template
+            # não atravessa para o pedaço incluído, e um papel que diz "1/1"
+            # em todas as páginas de um relatório de três meses seria papel
+            # errado — a fiscalização numera por folha.
+            "folha": len(paginas) + 1,
             "data": str(dia),
             "dia_da_semana": _DIA_DA_SEMANA[dia.weekday()],
             # O cabeçalho é recalculado POR DIA: o "dia 234 de 361" do dia 10
@@ -793,6 +938,12 @@ def relatorio(s: Session, obra_id: int, de: date, ate: Optional[date] = None,
             "tempo_tarde": TEMPO_ROTULOS.get(linha["tempo_tarde"] or "", "—") if linha else "—",
             "relato": (linha["relato"] or "") if linha else "",
             "ocorrencias": (linha["ocorrencias"] or "") if linha else "",
+            "historico": (linha["historico"] or "") if linha else "",
+            "equipamentos": (linha["equipamentos"] or "") if linha else "",
+            # O horário SAI VAZIO num dia que ninguém escreveu. O padrão da
+            # semana é sugestão de tela; no papel, afirmar jornada que nenhuma
+            # pessoa confirmou seria inventar prova.
+            "horario_trabalho": (linha["horario_trabalho"] or "") if linha else "",
             "fiscalizacao_esteve": bool(linha["fiscalizacao_esteve"]) if linha else False,
             "fiscalizacao_quem": (linha["fiscalizacao_quem"] or "") if linha else "",
             "obs_fiscalizacao": (linha["obs_fiscalizacao"] or "") if linha else "",
@@ -805,12 +956,82 @@ def relatorio(s: Session, obra_id: int, de: date, ate: Optional[date] = None,
             "correcoes": _correcoes(s, linha["id"]) if linha else [],
         })
 
+    for pag in paginas:
+        pag["folhas"] = len(paginas)
+
     return {"obra": cab, "de": str(de), "ate": str(ate), "paginas": paginas,
-            "gerado_em": date.today().isoformat()}
+            "gerado_em": date.today().isoformat(),
+            # O modelo do CONTRATO manda. O parâmetro existe para ele poder
+            # VER os três antes de decidir qual cada contrato exige — e, por
+            # isso mesmo, não grava nada: é espiada, não configuração.
+            "modelo": modelo_valido(modelo or cab.get("modelo")),
+            "modelo_da_obra": modelo_valido(cab.get("modelo")),
+            "modelos": [{"valor": k, **v} for k, v in MODELOS.items()],
+            "logos": logos(s, obra_id)}
 
 
 _DIA_DA_SEMANA = ("segunda-feira", "terça-feira", "quarta-feira",
                   "quinta-feira", "sexta-feira", "sábado", "domingo")
+
+
+# ---------------------------------------------------------------------------
+# AS LOGOS — e por que elas vão DENTRO da folha, não por um endereço
+#
+# Ele: *"dentro do cadastro da empresa (…) colocar logo da empresa para ela
+# ser colocada dentro do diário também. Tanto a logo da empresa, quanto outras
+# logos (…) no caso, nós temos a logo da prefeitura."*
+#
+# ⚑ EMBUTIDAS COMO DADO, e isso resolve dois problemas de uma vez:
+#
+# 1. **Permissão.** A rota que serve a logo da empresa exige "configurar", que
+#    o administrativo de obra não tem. Se o papel fosse buscar a imagem por
+#    endereço, o cabeçalho sairia quebrado justamente para quem imprime o
+#    diário todo dia. Aqui a folha já nasce com a imagem dentro, e a permissão
+#    conferida é a do diário — a mesma do resto da página.
+# 2. **O PDF.** Papel de diário é salvo em PDF e mandado por e-mail. Imagem
+#    por endereço depende de sessão: o PDF abriria sem logo na mão de quem
+#    recebeu, e a folha assinada ficaria diferente da arquivada.
+#
+# O TETO É O MESMO DO CADASTRO (`empresas.LIMITE_LOGO`), e isso importa: teto
+# menor aqui daria logo aceita no cadastro e sumida na impressão, e quem
+# descobriria é quem está com a folha na mão, na obra, na hora de entregar à
+# fiscalização. Acima do teto sai sem logo — nunca uma página que não carrega.
+# Há teste amarrando os dois números (tests/test_diario_de_obra.py); o número
+# está repetido aqui, e não importado, para não atar a regra do diário ao
+# cadastro de empresas por causa de uma constante.
+#
+# E a imagem entra UMA VEZ no documento, numa regra de estilo, não em cada
+# <img>: relatório de três meses tem 90 folhas, e repetir a logo em cada uma
+# faria um arquivo de dezenas de megabytes para mandar por e-mail.
+# ---------------------------------------------------------------------------
+TETO_DA_LOGO = 512 * 1024
+
+
+def logos(s: Session, obra_id: int) -> dict[str, str]:
+    """As duas logos do cabeçalho, já prontas para entrar na folha."""
+    linha = s.execute(text("""
+        SELECT o.contratante_logo, o.contratante_logo_mime,
+               e.logo AS logo_empresa, e.logo_mime AS mime_empresa
+          FROM obras o LEFT JOIN empresas e ON e.id = o.empresa_id
+         WHERE o.id = :o"""), {"o": obra_id}).mappings().first()
+    if linha is None:
+        return {"empresa": "", "contratante": ""}
+    return {
+        "empresa": _embutir(linha["logo_empresa"], linha["mime_empresa"]),
+        "contratante": _embutir(linha["contratante_logo"],
+                                linha["contratante_logo_mime"]),
+    }
+
+
+def _embutir(dados: Optional[bytes], mime: Optional[str]) -> str:
+    if not dados or len(dados) > TETO_DA_LOGO:
+        if dados:
+            logger.warning("ERP/diário: logo de %s bytes acima do teto — "
+                           "a folha sai sem ela", len(dados))
+        return ""
+    import base64
+    tipo = (mime or "image/png").strip() or "image/png"
+    return f"data:{tipo};base64,{base64.b64encode(bytes(dados)).decode()}"
 
 
 def _efetivo_para_o_papel(efetivo: dict[str, Any],

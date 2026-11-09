@@ -7843,7 +7843,8 @@ DP."* Ligar é trocar um `False` em `portal.AREAS`.
   dia anterior ser similar ao do dia seguinte"*. Vem num botão, nunca
   preenchido sozinho: preenchido sozinho, o diário vira cópia-cola e deixa de
   ser relato. E o resgate **pula o fim de semana** (sexta → segunda).
-- **O relatório com MODELOS** fica para quando ele mandar os modelos.
+- **O relatório com MODELOS** — ✅ **feito em 09/11/2026**: ele mandou os
+  dois dele, e agora são três modelos de folha (ver a seção da migração 093).
 
 **O princípio:** o diário pergunta SÓ o que ninguém sabe além de quem esteve
 lá. Todo o resto o sistema já tem — e digitar o que o sistema sabe é onde o
@@ -7887,9 +7888,10 @@ diário vira trabalho chato e acaba preenchido de qualquer jeito.
 
 **OS MODELOS.** *"Existem modelos de diário. A gente tem um nosso modelo, mas
 tem órgão que requer um modelo específico."* Os dados são os mesmos; muda a
-impressão. **Ele vai passar os modelos depois** — e em 09/11 pediu o contrário
-primeiro: *"antes de eu lhe mandar os modelos, eu queria que você gerasse um
-seu (…) gere aí um modelo para eu avaliar."*
+impressão. Em 09/11 ele pediu o contrário primeiro (*"antes de eu lhe mandar os
+modelos, eu queria que você gerasse um seu (…) gere aí um modelo para eu
+avaliar"*) e, no mesmo dia, **mandou os dois dele**. ✅ **Resolvido** — ver a
+seção da migração 093 mais abaixo.
 
 ### 📄 O RDO — o modelo que eu propus (09/11/2026)
 
@@ -7943,6 +7945,170 @@ vai visualizar em tela o nome das pessoas, mas eu acredito que talvez a gente
 não vá relacionar nome a nome no diário, vai colocar só quantidade e função."*
 Por isso `efetivo_do_ponto` já devolve as duas coisas — a lista com nomes E a
 contagem `por_funcao`. O relatório escolhe.
+
+### 📑 OS TRÊS MODELOS DE DIÁRIO — ele mandou os dele (09/11/2026, migração 093)
+
+Ele mandou **dois modelos**: o PDF que a BWS usa hoje e a planilha (RDO.xlsx)
+que a **Prefeitura de Abreu e Lima exige em contrato**. E decidiu:
+
+> *"Tem um determinado contrato que a gente vai precisar utilizar esse modelo
+> específico de diário de obra. Veja que ele é mais amplo (…) como ele é mais
+> amplo, a gente pode tentar adaptar logo o nosso para esse aí (…) se os dados
+> que a gente estiver coletando estiverem mais amplos, vamos incorporar
+> também. Acho que quanto mais amplo, melhor."*
+
+**Agora são TRÊS modelos de folha**, e a escolha é do CONTRATO:
+
+| modelo | o que é |
+|---|---|
+| `completo` | o nosso, ampliado — padrão de quem não escolheu |
+| `bws` | o que a empresa usa hoje (o PDF dele) |
+| `orgao` | o RDO em quadros que a Prefeitura exige |
+
+**⚑ OS TRÊS LEEM O MESMO DADO.** Nenhum modelo pergunta nada que os outros não
+perguntem: o que varia é o que o papel mostra e como. Foi por isso que valeu
+"adaptar o nosso para o mais amplo" — um diário por contrato seriam três telas
+de preenchimento, e a obra preencheria mal as três. O que o modelo antigo não
+tem espaço para mostrar **não some**: no modelo `bws`, equipamentos, histórico,
+ocorrências e material entram como parágrafos marcados dentro de "Anotações da
+contratada".
+
+**A escolha mora no CADASTRO DA OBRA, aba Contrato** — não numa tela de
+impressão. Modelo de diário é cláusula; se fosse escolha de quem imprime, um
+dia sairia o papel errado para a fiscalização, e RDO fora do modelo exigido é
+motivo de glosa. A barra no alto da folha troca o modelo **só para ver**, e não
+grava nada (há teste).
+
+**O QUE A MIGRAÇÃO 093 ACRESCENTOU:**
+
+- Em `diarios_obra`: **`horario_trabalho`**, **`equipamentos`** e
+  **`historico`** — os três campos que o modelo do órgão tem e o nosso não
+  tinha.
+- Em `obras`: **`contratante_unidade`** (a linha abaixo do órgão, "Secretaria
+  de Obras e Defesa Civil"), **`contratante_logo`** + mime, e
+  **`diario_modelo`**.
+
+**O HORÁRIO VEM PREENCHIDO, por dia da semana** — pedido dele: *"o normal é 7
+às 17. Ou 7 às 16 na sexta-feira (…) como se fosse pré-preenchido, a depender
+do dia da semana. E se necessário, a pessoa que estiver preenchendo o diário
+muda."* ⚑ **É sugestão de TELA, não verdade gravada:** dia gravado sem horário
+fica sem horário no papel. Preencher a jornada por conta própria num documento
+que sustenta pedido de prazo seria inventar prova. Sábado e domingo não sugerem
+horário nenhum.
+
+**POR QUE TRÊS CAMPOS DE TEXTO E NÃO UM.** O modelo do órgão separa, e a
+separação tem sentido: SERVIÇOS EXECUTADOS é o que foi feito; OCORRÊNCIAS é o
+que saiu do normal (reunião, visita técnica, acidente); HISTÓRICO é o resumo do
+andamento. Juntar os três e tentar separá-los na impressão seria adivinhar.
+
+**AS LOGOS.** *"Dentro do cadastro da empresa (…) colocar logo da empresa para
+ela ser colocada dentro do diário também. Tanto a logo da empresa, quanto
+outras logos (…) no caso, nós temos a logo da prefeitura."* A da **empresa** já
+existia (cadastro de Empresas). A do **contratante** é nova e fica **na obra**,
+porque a mesma empresa atende prefeituras diferentes e cada contrato tem o seu
+cabeçalho. Ela entra pelo formulário do contrato — regra de 17/09: uma porta
+só, o documento é atalho dentro dela.
+
+⚑ **AS LOGOS VÃO EMBUTIDAS NA FOLHA, não buscadas por endereço**, e isso
+resolve dois problemas de uma vez: (1) a rota que serve a logo da empresa exige
+"configurar", que o administrativo de obra **não tem** — o cabeçalho sairia
+quebrado justamente para quem imprime todo dia; (2) o PDF vai por e-mail e
+abriria sem logo na mão de quem recebeu. A imagem entra **uma vez** no
+documento, numa regra de estilo: repetir num relatório de 90 folhas faria
+dezenas de megabytes. Acima do teto (512 KB, o mesmo do cadastro — há teste
+amarrando os dois números) a folha sai **sem** a logo, nunca com erro.
+
+**O VISUAL, refeito.** Ele: *"achei ele meio grosseiro, as cores. Dá uma
+melhorada no visual, na formatação. Vê se consegue fazer algo mais bonito."* A
+primeira versão usava faixa **preta com letra branca** em cada seção. Agora é
+tinta azul-escura sobre cinza-claro, com fio fino — leitura de documento, não
+de cartaz.
+
+**UMA FOLHA SÓ.** *"O ideal é que o diário esteja sempre em uma única página
+(…) se precisar reduzir margens, cabeçalho, rodapé e nas laterais para caber
+mais coisa dentro."* Margens de 9 mm, corpo de 8,6 pt, e a folha é uma coluna
+que ocupa a página inteira com as assinaturas empurradas para o pé (sem isso, a
+linha de assinatura flutuava no meio da folha e o papel parecia cortado).
+**Conferido em PDF nos três modelos: uma página.** Com um relato de 14
+parágrafos repetidos, ainda uma página, e o texto inteiro lá.
+
+⚑ **O QUE NÃO FOI FEITO, de propósito:** cortar texto para caber. Relato muito
+longo transborda para uma segunda folha. Sumir com três linhas do que a obra
+escreveu — num documento que sustenta pedido de prazo — é pior que uma folha a
+mais.
+
+**O DEFEITO QUE DEIXOU TRAVA, e ele é típico desta tela:** as três folhas
+respondiam **500**. A folha pedia o número dela com `loop.index`, e **o número
+do laço não atravessa para o pedaço incluído** do template. Nada disso aparece
+lendo o arquivo nem rodando a regra de negócio — só renderizando. Virou teste
+que PEDE A PÁGINA nos três modelos e confere que o conteúdo do dia chegou ao
+papel; conferido injetando o defeito de volta, e ele quebra.
+
+**O que foi conferido de verdade nesta leva:** os três modelos impressos em
+PDF com dado real (uma página cada, inclusive com relato longo), a numeração
+"folha 1/4 … 4/4" num período de quatro dias, o envio e a retirada da logo pela
+tela, e as telas do diário e do cadastro do contrato abertas no navegador.
+**Não conferido:** impressão em impressora de papel (só PDF do navegador), e
+nenhum dos modelos foi visto por um fiscal de órgão.
+
+### ❓ TRÊS PERGUNTAS DELE SOBRE ACESSO, respondidas em 09/11/2026 (migração 094)
+
+**1. "O relato que se repete de um dia para o outro — a gente vai ter esse
+vínculo?"** ✅ **Tem, desde 08/11.** A tela oferece *"↩ trazer o relato de
+04/11/2026"* num botão. ⚑ **Nunca preenche sozinho** — preenchido sozinho o
+diário vira cópia-cola e deixa de ser relato, e aí não sustenta nada. E o
+resgate **pula o fim de semana** (sexta → segunda).
+
+**2. "A gente pode ter um perfil só para diário de obras?"** ✅ **Pode, e já
+vem pronto**: a migração 094 cria o perfil **"Diário de obra"**, que abre a
+tela do diário e **nada mais** — nem título, nem pagamento, nem pessoal.
+Não é "de sistema": dá para editar e apagar em Configurações › Perfis.
+⚑ **As OBRAS continuam sendo do cadastro da pessoa**, não do perfil: duas
+pessoas com este mesmo perfil alcançam obras diferentes.
+
+**3. "Posso vincular mais de um perfil de acesso à mesma pessoa? Digamos que
+ela é do financeiro, mas eu quero que acesse diário de obras."**
+
+**Hoje é UM perfil por pessoa — mas o que ele quer já existe, e por um caminho
+melhor:** em **Configurações › Operadores**, o cadastro de cada pessoa tem a
+lista de ações com caixinhas. Marcar **"Lançar o diário de obra"** em alguém do
+Financeiro dá exatamente isso, sem mexer no perfil de ninguém. Desmarcar tira.
+A tela mostra, ação por ação, o que o perfil já dá e o que foi **ajustado à
+mão** (migração 032).
+
+⚑ **POR QUE ISSO É MELHOR QUE DOIS PERFIS, e não é desculpa:** com dois
+perfis, alguém tem de decidir o que acontece quando eles **discordam** — um dá
+"cancelar título", o outro tira. Toda vez que um perfil mudasse, mudaria em
+silêncio o que a pessoa pode fazer nos outros. Com a marcação por pessoa a
+resposta é única e está escrita no cadastro dela: dá para olhar e entender.
+E o padrão continua sendo NEGAR.
+
+**O que ele perde:** não dá para dizer *"este fulano é Financeiro + Diário"*
+numa palavra só — são duas caixinhas marcadas. Se um dia houver **muita**
+gente na mesma combinação, o certo é criar um perfil com esse nome, não ligar
+dois.
+
+### 🖼️ AS DUAS LOGOS NO CADASTRO DA OBRA (09/11/2026)
+
+Ele, olhando a folha: *"lembrar de colocar local para a gente fazer isso no
+cadastro da obra. Que isso, inclusive, vai servir para o futuro, para outros
+documentos que a gente for criar a partir do sistema."*
+
+Na aba **Contrato** da obra ficam as duas, lado a lado — e a tela diz que são
+**de donos diferentes**:
+
+- **Logo do contratante (órgão)**: é **desta obra**. Cada contrato tem o seu.
+- **Logo da empresa**: é do **cadastro da empresa** e vale para **todas as
+  obras daquele CNPJ** e para os documentos que o sistema vier a emitir. Dá
+  para enviar daqui por comodidade, mas o aviso na tela é explícito.
+
+⚑ **UMA ROTA SÓ PARA MOSTRAR, e ela existe por um motivo de permissão:** a
+rota da logo da empresa exige **"configurar"**, que o administrativo de obra
+não tem. Se a ficha da obra buscasse a imagem por lá, apareceria um quadrado
+quebrado justamente para quem imprime o diário todo dia. Então há
+`/erp/api/obras/<id>/logo-empresa`, **só GET**, com conferência de escopo da
+obra: quem pode ver a obra vê o cabeçalho que vai sair no diário dela; trocar
+continua sendo coisa do cadastro da empresa. Há teste das duas pontas.
 
 ### ⚑ AS TRAVAS QUE ESTE TRABALHO DEIXOU, e todas nasceram de erro meu
 

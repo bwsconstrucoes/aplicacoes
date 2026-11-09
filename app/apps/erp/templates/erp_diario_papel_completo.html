@@ -1,0 +1,148 @@
+{# ===========================================================================
+   MODELO "COMPLETO" — O NOSSO, AMPLIADO (09/11/2026)
+
+   Decisão dele, vendo o modelo que a Prefeitura exige: *"como ele é mais
+   amplo, a gente pode tentar adaptar logo o nosso para esse aí (…) na nossa
+   opção, o que tiver a mais pode colocar também. Acho que quanto mais amplo,
+   melhor."*
+
+   O QUE ESTE MODELO TEM QUE NENHUM DOS DOIS DELE TINHA:
+
+     · o PRAZO contado (dia 234 de 361, e quantos faltam) no cabeçalho;
+     · o EFETIVO com vínculo separado (próprio × terceirizado), vindo do ponto;
+     · o MATERIAL RECEBIDO, que vem de Suprimentos e ninguém digita;
+     · as CORREÇÕES feitas depois do fechamento, impressas no pé.
+
+   E ele carrega tudo o que os outros dois pedem: horário de trabalho,
+   equipamentos, histórico, ocorrências e os dois blocos de assinatura.
+   =========================================================================== #}
+{% import "erp_diario_papel_macros.html" as m %}
+
+<div class="marca">
+  <i class="logo {{ 'logo-contratante' if r.logos.contratante else 'vazia' }}"></i>
+  <div class="meio">
+    <h1>DIÁRIO DE OBRA</h1>
+    {% if r.obra.contratante %}<div class="orgao">{{ r.obra.contratante }}</div>{% endif %}
+    {% if r.obra.contratante_unidade %}
+      <div class="unidade">{{ r.obra.contratante_unidade }}</div>{% endif %}
+    <div class="sub">{{ r.obra.empresa or "" }}
+      {%- if r.obra.empresa_cnpj %} · CNPJ {{ r.obra.empresa_cnpj }}{% endif %}</div>
+  </div>
+  <i class="logo {{ 'logo-empresa' if r.logos.empresa else 'vazia' }}"></i>
+</div>
+
+<div class="topo">
+  <div class="topo-linha">
+    {{ m.cel("Obra", r.obra.codigo ~ " — " ~ r.obra.nome, 4) }}
+    {{ m.cel("Contrato nº", r.obra.contrato, 2) }}
+    <div class="cel numero"><span>Dia de obra</span>
+      <b>{{ p.prazo.decorridos or "—" }}</b></div>
+  </div>
+  <div class="topo-linha">
+    {{ m.cel("Data", m.br(p.data) ~ " · " ~ p.dia_da_semana, 3) }}
+    {{ m.cel("Horário de trabalho", p.horario_trabalho, 2) }}
+    {{ m.cel("Ordem de serviço", r.obra.ordem_servico, 2) }}
+    {{ m.cel("Folha", p.folha ~ "/" ~ p.folhas, 1) }}
+  </div>
+  <div class="topo-linha">
+    {{ m.cel("Início", m.br(r.obra.data_inicio), 1) }}
+    {{ m.cel("Término previsto", m.br(r.obra.data_termino), 1) }}
+    {{ m.cel("Prazo", m.prazo(p.prazo), 2) }}
+    {{ m.cel("Local", r.obra.endereco, 3) }}
+  </div>
+  {% if r.obra.objeto %}
+  <div class="topo-linha">
+    <div class="cel leve"><span>Objeto</span><b>{{ r.obra.objeto }}</b></div>
+  </div>
+  {% endif %}
+</div>
+
+{% if p.sem_expediente %}
+  <h2>1 · Expediente</h2>
+  <div class="quadro"><div class="sem-exp">NÃO HOUVE EXPEDIENTE NESTE DIA</div></div>
+  {% set n = 1 %}
+{% else %}
+
+<div class="duas">
+  <div>
+    <h2>1 · Condições do tempo</h2>
+    <div class="quadro">
+      <table>
+        <thead><tr><th>Período</th><th>Tempo</th></tr></thead>
+        <tbody>
+          <tr><td>Manhã</td><td>{{ p.tempo_manha }}</td></tr>
+          <tr><td>Tarde</td><td>{{ p.tempo_tarde }}</td></tr>
+        </tbody>
+      </table>
+      <div style="margin-top:4pt"><span class="papel">Equipamentos em obra</span>
+        {{ m.texto(p.equipamentos, "Não informado.") }}</div>
+    </div>
+  </div>
+  <div>
+    <h2>2 · Efetivo em obra <small>vem do ponto eletrônico</small></h2>
+    <div class="quadro">{{ m.efetivo(p.efetivo) }}</div>
+  </div>
+</div>
+
+<h2>3 · Relato diário — serviços executados</h2>
+<div class="quadro alto">{{ m.texto(p.relato) }}</div>
+
+{% if p.historico %}
+<h2>4 · Histórico dos serviços</h2>
+<div class="quadro baixo">{{ m.texto(p.historico) }}</div>
+{% endif %}
+
+{% set n = 4 if not p.historico else 5 %}
+
+{% if p.material %}
+<h2>{{ n }} · Materiais recebidos <small>vem de Suprimentos</small></h2>
+<div class="quadro">{{ m.material(p.material) }}</div>
+{% set n = n + 1 %}
+{% endif %}
+
+<h2>{{ n }} · Ocorrências</h2>
+<div class="quadro medio">
+  {% if p.fiscalizacao_esteve %}
+    <div><b>A fiscalização esteve na obra.</b>
+      {% if p.fiscalizacao_quem %}{{ p.fiscalizacao_quem }}{% endif %}</div>
+  {% endif %}
+  {% if p.ocorrencias %}<div class="texto">{{ p.ocorrencias }}</div>
+  {% elif not p.fiscalizacao_esteve %}<div class="vazio">Sem ocorrências.</div>{% endif %}
+</div>
+{% endif %}
+
+<h2>{{ (n + 1) if not p.sem_expediente else 2 }} · Observações da fiscalização</h2>
+<div class="quadro medio fiscal">
+  {% if p.obs_fiscalizacao %}
+    <div class="texto">{{ p.obs_fiscalizacao }}</div>
+    <div class="assinou">registrado por {{ p.obs_fiscalizacao_por }}</div>
+  {% else %}
+    <div class="vazio">Campo reservado à fiscalização.</div>
+  {% endif %}
+</div>
+
+{{ m.correcoes(p.correcoes) }}
+
+<div class="assinaturas">
+  <div><div class="linha-assin">
+    <b>{{ r.obra.responsavel_tecnico or "&nbsp;" | safe }}</b>
+    <small>Responsável técnico
+      {%- if r.obra.crea %} · CREA {{ r.obra.crea }}{% endif %}
+      {%- if r.obra.art_rrt %} · ART {{ r.obra.art_rrt }}{% endif %}</small>
+    <small>{{ r.obra.empresa_razao or r.obra.empresa or "" }}</small>
+    <span class="papel">Contratada</span>
+  </div></div>
+  <div><div class="linha-assin">
+    <b>&nbsp;</b>
+    <small>Fiscal do contrato · nome, cargo e registro</small>
+    <small>{{ r.obra.contratante or "" }}</small>
+    <span class="papel">Contratante · fiscalização</span>
+  </div></div>
+</div>
+
+<div class="rodape">
+  <span>{{ r.obra.codigo }} · dia de obra {{ p.prazo.decorridos or "—" }} ·
+    {{ m.br(p.data) }}</span>
+  <span>Emitido pelo ERP BWS em {{ m.br(r.gerado_em) }}{% if p.situacao != "FECHADO" %}
+    · <span class="rascunho">RASCUNHO — diário ainda não fechado</span>{% endif %}</span>
+</div>

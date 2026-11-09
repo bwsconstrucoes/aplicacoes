@@ -985,7 +985,14 @@ def pagina_receber():
 @login_obrigatorio
 @permissao("ver_obras")
 def pagina_obras():
-    return render_template("erp_obras.html", **_contexto("obras"))
+    # Os modelos de diário vêm da REGRA, não da tela: a lista está em
+    # core/diario.py e é a mesma que o papel usa. Repetida aqui, um modelo
+    # novo apareceria na impressão e não no cadastro.
+    from app.apps.erp.core.diario import MODELOS as MODELOS_DE_DIARIO
+    return render_template(
+        "erp_obras.html",
+        modelos_diario=[{"valor": k, **v} for k, v in MODELOS_DE_DIARIO.items()],
+        **_contexto("obras"))
 
 
 # ---------------------------------------------------------------------------
@@ -2679,6 +2686,97 @@ def api_empresa_logo(empresa_id: int):
         return jsonify({"ok": False, "erro": str(e)}), 400
     except Exception as e:
         logger.exception("ERP: falha na logo da empresa")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/obras/<int:obra_id>/logo-empresa")
+@login_obrigatorio
+@permissao("ver_erp")
+def api_obra_logo_empresa(obra_id: int):
+    """A logo da EMPRESA que executa esta obra — só para mostrar.
+
+    ⚑ POR QUE NÃO USAR A ROTA DA EMPRESA: aquela exige "configurar", porque
+    recebe o número de uma empresa qualquer. Esta recebe o número de uma OBRA
+    e confere o escopo dela, então quem pode ver a obra pode ver o cabeçalho
+    que vai sair no diário dela. Sem isto, a ficha da obra mostraria um
+    quadrado quebrado no lugar da logo para quem não configura o sistema.
+
+    Só GET: TROCAR a logo continua sendo coisa do cadastro da empresa, porque
+    ela vale para todas as obras daquele CNPJ.
+    """
+    from flask import Response
+    from sqlalchemy import text as _text
+    from app.apps.erp.core.auth.permissoes import exigir_obra_no_escopo
+    try:
+        with get_session() as s:
+            exigir_obra_no_escopo(s, _usuario_logado(s), obra_id)
+            linha = s.execute(_text("""
+                SELECT e.logo, e.logo_mime FROM obras o
+                  JOIN empresas e ON e.id = o.empresa_id
+                 WHERE o.id = :o"""), {"o": obra_id}).first()
+            if linha is None or not linha[0]:
+                raise ErroNaoEncontrado("Esta obra não tem logo de empresa.")
+            return Response(bytes(linha[0]), mimetype=linha[1] or "image/png",
+                            headers={"Cache-Control": "private, max-age=300"})
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP: falha na logo da empresa da obra %s", obra_id)
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/obras/<int:obra_id>/logo-contratante",
+          methods=["GET", "POST", "DELETE"])
+@login_obrigatorio
+@permissao(GET="ver_erp", POST="configurar", DELETE="configurar")
+def api_obra_logo_contratante(obra_id: int):
+    """A logo do ÓRGÃO que contrata esta obra: GET mostra, POST troca, DELETE tira.
+
+    Ela entra no cabeçalho do diário impresso junto com a da empresa — padrão
+    que ele pediu em 09/11/2026, vendo o modelo da Prefeitura de Abreu e Lima:
+    *"usar esse padrão, logo do órgão e logo da prefeitura."*
+
+    ⚑ O GET é "ver_erp" e NÃO "configurar", e a diferença é prática: quem
+    imprime o diário todo dia é o administrativo da obra, que não configura
+    nada. Ler a imagem do cabeçalho de uma obra que ele já pode ver não expõe
+    nada; exigir "configurar" para isso é que deixaria o papel sem cabeçalho
+    na mão de quem trabalha com ele.
+
+    E a rota confere o ESCOPO da obra, porque recebe número de registro: obra
+    fora do alcance responde 404 "não encontrado", nunca 403.
+    """
+    from flask import Response
+    from app.apps.erp.core.auth.permissoes import exigir_obra_no_escopo
+    from app.apps.erp.core.cadastros import obras as svc
+    from app.apps.erp.db.models.cadastros import Obra
+    try:
+        with get_session() as s:
+            exigir_obra_no_escopo(s, _usuario_logado(s), obra_id)
+            if request.method == "GET":
+                obra = s.get(Obra, obra_id)
+                if obra is None or not obra.contratante_logo:
+                    raise ErroNaoEncontrado("Esta obra não tem logo do contratante.")
+                return Response(obra.contratante_logo,
+                                mimetype=obra.contratante_logo_mime or "image/png",
+                                headers={"Cache-Control": "private, max-age=300"})
+            atual = _usuario_logado(s)
+            if request.method == "DELETE":
+                svc.remover_logo_contratante(s, obra_id, atual)
+                s.commit()
+                return jsonify({"ok": True})
+            arquivo = request.files.get("arquivo")
+            if arquivo is None:
+                return jsonify({"ok": False, "erro": "Anexe o arquivo da logo."}), 400
+            svc.definir_logo_contratante(s, obra_id, arquivo.mimetype or "",
+                                         arquivo.read(), atual)
+            s.commit()
+            return jsonify({"ok": True})
+    except ErroNaoEncontrado:
+        raise                # recusa de escopo e logo ausente viram 404
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha na logo do contratante da obra %s", obra_id)
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
@@ -5944,6 +6042,7 @@ def api_criar_obra():
 def api_obra(obra_id: int):
     """Cadastro completo da obra: identificação, endereço, contrato e tributação."""
     from sqlalchemy import select
+    from sqlalchemy import text as _text
     from app.apps.erp.core.titulos.tributacao import resumo_tributacao
     from app.apps.erp.db.models.cadastros import Obra, ObraAditivo
     from app.apps.erp.core.comum.auditoria import registrar_evento
@@ -5967,7 +6066,12 @@ def api_obra(obra_id: int):
                 texto = ("nome objeto cliente cnpj_cliente contrato municipio uf cno endereco "
                          "bairro numero_endereco complemento cep responsavel_tecnico art_rrt "
                          "engenheiro_fiscal ordem_servico indice_reajuste regime_obra "
-                         "observacoes_fiscais orgao_resumido status seguro_garantia").split()
+                         "observacoes_fiscais orgao_resumido status seguro_garantia "
+                         # O CONTRATANTE NO PAPEL DO DIÁRIO (09/11/2026): a
+                         # unidade é a linha abaixo do órgão ("Secretaria de
+                         # Obras e Defesa Civil") e o modelo é o formato de
+                         # diário que ESTE contrato exige.
+                         "contratante_unidade diario_modelo").split()
                 if "conta_bancaria_id" in d:
                     obra.conta_bancaria_id = (int(d["conta_bancaria_id"])
                                               if d["conta_bancaria_id"] else None)
@@ -6116,6 +6220,9 @@ def api_obra(obra_id: int):
                 "bairro numero_endereco complemento cep responsavel_tecnico art_rrt "
                 "engenheiro_fiscal ordem_servico indice_reajuste regime_obra status "
                 "observacoes_fiscais orgao_resumido codigo_omie_depto ref_pipefy "
+                # Voltam junto, senão o formulário remonta vazio e o
+                # salvamento seguinte apaga — o defeito do seguro-garantia.
+                "contratante_unidade diario_modelo "
                 "iss_retido inss_retido aceita_deducao_material prazo_execucao_dias "
                 # SEGURO-GARANTIA, VALIDADE E CAUÇÃO voltam junto (22/09/2026),
                 # pelo mesmo motivo da conta: gravados e nunca devolvidos, o
@@ -6138,6 +6245,21 @@ def api_obra(obra_id: int):
                 v = getattr(obra, campo, None)
                 dados[campo] = v.isoformat() if v else None
             dados["federais_retidos"] = list(obra.federais_retidos or [])
+            # SÓ O "TEM OU NÃO TEM": a imagem da logo não volta no JSON do
+            # cadastro. Meio megabyte em base64 a cada abertura de ficha é
+            # peso puro — a tela precisa saber se há logo para mostrar o
+            # quadrinho, e a imagem vem pela rota dela.
+            dados["tem_logo_contratante"] = bool(obra.contratante_logo)
+            # A logo da EMPRESA mora no cadastro dela, mas quem monta o
+            # cabeçalho do diário está aqui, na obra — e ele pediu em
+            # 09/11/2026 que desse para resolver as duas no mesmo lugar. A
+            # tela mostra o quadrinho e manda para a rota da empresa; o dado
+            # continua sendo um só, da empresa, e serve aos outros documentos
+            # que o sistema vier a emitir.
+            dados["tem_logo_empresa"] = bool(
+                obra.empresa_id and s.execute(
+                    _text("SELECT logo IS NOT NULL FROM empresas WHERE id = :e"),
+                    {"e": obra.empresa_id}).scalar())
             dados["resumo_tributacao"] = resumo_tributacao(obra)
             dados["valor_vigente"] = round(float(obra.valor_contrato or 0) + acrescimo, 2)
             dados["aditivos"] = [{
@@ -11206,19 +11328,19 @@ def pagina_diario_papel(obra_id: int):
     uma folha de estilo e não milímetro de biblioteca — cada órgão exige o
     seu, e trocar de modelo tem de ser trocar de CSS.
     """
-    from sqlalchemy import text as _text
-
     from app.apps.erp.core import diario as svc
     from app.apps.erp.core.auth.permissoes import exigir_obra_no_escopo
     with get_session() as s:
         exigir_obra_no_escopo(s, _usuario_logado(s), obra_id)
         de = _dia_do_pedido(request.args.get("de"))
         ate = _dia_do_pedido(request.args.get("ate") or request.args.get("de"))
+        # `modelo` é ESPIADA, não configuração: serve para ver os três
+        # formatos lado a lado. O que vale sai do cadastro da obra, porque o
+        # modelo é cláusula do contrato.
         r = svc.relatorio(s, obra_id, de, ate,
-                          so_escritos=request.args.get("todos") != "1")
-        empresa = s.execute(_text(
-            "SELECT razao_social FROM empresas ORDER BY id LIMIT 1")).scalar()
-    return render_template("erp_diario_papel.html", r=r, empresa=empresa or "")
+                          so_escritos=request.args.get("todos") != "1",
+                          modelo=request.args.get("modelo"))
+    return render_template("erp_diario_papel.html", r=r)
 
 
 @bp.route("/erp/api/diario/pendencias")

@@ -1,0 +1,88 @@
+{# ===========================================================================
+   OS AJUDANTES DAS TRÊS FOLHAS DE DIÁRIO
+
+   Ficam num arquivo só porque os três modelos imprimem a MESMA data, a mesma
+   célula de rótulo e o mesmo quadro de texto. Quando a data saía escrita à
+   mão em cada modelo, bastava um deles esquecer o dia da semana para a
+   fiscalização receber folhas diferentes da mesma obra.
+   =========================================================================== #}
+
+{# A data como se lê em português. Vem "2026-11-09" e sai "09/11/2026". #}
+{% macro br(iso) -%}
+{%- if iso %}{{ iso[8:10] }}/{{ iso[5:7] }}/{{ iso[0:4] }}{% else %}—{% endif -%}
+{% endmacro %}
+
+{# Uma célula do cabeçalho: rótulo pequeno em cima, valor embaixo. #}
+{% macro cel(rotulo, valor, peso=2) -%}
+<div class="cel" style="flex:{{ peso }}"><span>{{ rotulo }}</span>
+  <b>{{ valor if valor else "—" }}</b></div>
+{%- endmacro %}
+
+{# Um quadro de texto escrito por gente: respeita a quebra de linha de quem
+   digitou, e diz "não informado" em vez de ficar em branco — campo vazio num
+   documento assinado dá margem a dizer que foi apagado. #}
+{% macro texto(valor, vazio="Não informado.") -%}
+{%- if valor %}<div class="texto">{{ valor }}</div>
+{%- else %}<div class="vazio">{{ vazio }}</div>{% endif -%}
+{% endmacro %}
+
+{# O PRAZO numa frase: "dia 234 de 361 · faltam 127". Obra fora do prazo diz
+   isso em voz alta, e não mostra zero. #}
+{% macro prazo(p) -%}
+{%- if p.total %}{{ p.decorridos }} de {{ p.total }} dias
+  {%- if p.faltam is not none %} ·
+    {%- if p.faltam < 0 %} <b>{{ -p.faltam }} além do prazo</b>
+    {%- else %} faltam {{ p.faltam }}{% endif %}
+  {%- endif %}
+{%- else %}—{% endif -%}
+{% endmacro %}
+
+{# O EFETIVO em tabela de função e quantidade. Sem nomes, de propósito: o RDO
+   circula fora da empresa, e a fiscalização precisa saber QUANTOS pedreiros
+   havia, não quem eram. #}
+{% macro efetivo(e, so_proprio=false) -%}
+{%- set linhas = e.linhas | selectattr("tipo", "equalto", "próprio") | list
+                 if so_proprio else e.linhas %}
+{%- if linhas %}
+<table>
+  <thead><tr><th>Função</th>{% if not so_proprio %}<th>Vínculo</th>{% endif %}
+    <th class="n">Qtde.</th></tr></thead>
+  <tbody>
+    {% for l in linhas %}
+    <tr><td>{{ l.funcao }}</td>
+      {% if not so_proprio %}<td>{{ l.tipo }}</td>{% endif %}
+      <td class="n">{{ l.quantidade }}</td></tr>
+    {% endfor %}
+  </tbody>
+  <tfoot><tr><td{% if not so_proprio %} colspan="2"{% endif %}>Total</td>
+    <td class="n">{{ linhas | sum(attribute="quantidade") }}</td></tr></tfoot>
+</table>
+{%- elif e.indisponivel %}<div class="vazio">{{ e.indisponivel }}</div>
+{%- else %}<div class="vazio">Sem efetivo registrado neste dia.</div>{% endif -%}
+{% endmacro %}
+
+{# O MATERIAL RECEBIDO, que vem de Suprimentos e ninguém digita. #}
+{% macro material(itens) -%}
+<table>
+  <thead><tr><th>Material</th><th>Fornecedor</th><th>Nota</th>
+    <th class="n">Qtde.</th></tr></thead>
+  <tbody>
+    {% for m in itens %}
+    <tr><td>{{ m.item }}</td><td>{{ m.fornecedor or "—" }}</td>
+      <td>{{ m.nota or "—" }}</td>
+      <td class="n">{{ m.quantidade }} {{ m.unidade }}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{%- endmacro %}
+
+{# AS CORREÇÕES FEITAS DEPOIS DO FECHAMENTO SAEM NO PAPEL. Esconder a correção
+   seria o mesmo que não registrá-la: o valor do diário como documento está em
+   o leitor poder ver que algo mudou, quando e por quê. #}
+{% macro correcoes(lista) -%}
+{%- if lista %}
+<div class="corrigido"><b>Este relatório foi corrigido após o fechamento:</b>
+  {% for c in lista %}{{ c.campo }} ({{ c.quando }}) — {{ c.motivo }}
+  {%- if not loop.last %}; {% endif %}{% endfor %}</div>
+{%- endif -%}
+{% endmacro %}

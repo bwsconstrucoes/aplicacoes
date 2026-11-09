@@ -452,3 +452,310 @@ def test_por_padrao_o_papel_so_traz_os_dias_escritos(sessao_real, obra, dono):
     todos = svc.relatorio(sessao_real, obra, date(2026, 3, 1), date(2026, 3, 31),
                           so_escritos=False)
     assert len(todos["paginas"]) == 31
+
+
+# ===========================================================================
+# MIGRAÇÃO 093 — OS MODELOS DE PAPEL, O HORÁRIO E AS LOGOS (09/11/2026)
+#
+# Ele mandou dois modelos de diário e pediu que o nosso fosse adaptado ao mais
+# amplo: *"se os dados que a gente estiver coletando estiverem mais amplos,
+# vamos incorporar também. Acho que quanto mais amplo, melhor."*
+# ===========================================================================
+def test_o_horario_vem_preenchido_conforme_o_dia_da_semana():
+    """Pedido dele com todas as letras: *"o normal é 7 às 17. Ou 7 às 16 na
+    sexta-feira (…) como se fosse assim, pré-preenchido, a depender do dia da
+    semana."*"""
+    # 09/11/2026 é segunda; 13/11 é sexta.
+    assert svc.horario_padrao(date(2026, 11, 9)) == "7:00 às 17:00"
+    assert svc.horario_padrao(date(2026, 11, 12)) == "7:00 às 17:00"
+    assert svc.horario_padrao(date(2026, 11, 13)) == "7:00 às 16:00"
+
+
+def test_sabado_e_domingo_nao_sugerem_horario():
+    """Dia que nasce sem expediente não pode oferecer jornada: horário escrito
+    num dia que não houve é afirmação errada num documento."""
+    assert svc.horario_padrao(date(2026, 11, 14)) == ""   # sábado
+    assert svc.horario_padrao(date(2026, 11, 15)) == ""   # domingo
+
+
+def test_os_campos_novos_sao_da_obra_e_a_fiscalizacao_continua_de_fora():
+    for campo in ("horario_trabalho", "equipamentos", "historico"):
+        assert campo in svc.CAMPOS_DA_OBRA
+    assert "obs_fiscalizacao" not in svc.CAMPOS_DA_OBRA
+
+
+def test_os_tres_modelos_existem_e_cada_um_se_explica():
+    assert set(svc.MODELOS) == {"completo", "bws", "orgao"}
+    for nome, m in svc.MODELOS.items():
+        assert m["rotulo"] and m["descricao"], f"{nome} sem texto de gente"
+    assert svc.MODELO_PADRAO in svc.MODELOS
+
+
+def test_modelo_desconhecido_cai_no_nosso_em_vez_de_quebrar():
+    """Papel de diário não pode falhar por nome de modelo: quem está em obra
+    receberia uma tela de erro em vez da folha."""
+    assert svc.modelo_valido("inexistente") == svc.MODELO_PADRAO
+    assert svc.modelo_valido("") == svc.MODELO_PADRAO
+    assert svc.modelo_valido(None) == svc.MODELO_PADRAO
+    assert svc.modelo_valido(" ORGAO ") == "orgao"
+
+
+def test_o_teto_da_logo_do_papel_e_o_mesmo_do_cadastro():
+    """Teto menor aqui daria logo aceita no cadastro e sumida na impressão —
+    e quem descobriria é quem está com a folha na mão, na obra."""
+    from app.apps.erp.core.cadastros.empresas import LIMITE_LOGO
+    assert svc.TETO_DA_LOGO == LIMITE_LOGO
+
+
+@banco_
+def test_o_dia_em_branco_ja_abre_com_o_horario_da_semana(sessao_real, obra):
+    d = svc.abrir_dia(sessao_real, obra, date(2026, 11, 13))      # sexta
+    assert d["diario"]["horario_trabalho"] == "7:00 às 16:00"
+    assert d["diario"]["equipamentos"] == ""
+    assert d["diario"]["historico"] == ""
+
+
+@banco_
+def test_dia_que_nasce_sem_expediente_abre_sem_horario(sessao_real, obra):
+    d = svc.abrir_dia(sessao_real, obra, date(2026, 11, 14))      # sábado
+    assert d["sugere_sem_expediente"] is True
+    assert d["diario"]["horario_trabalho"] == ""
+
+
+@banco_
+def test_os_tres_campos_novos_gravam_e_voltam(sessao_real, obra, dono):
+    svc.salvar(sessao_real, obra, date(2026, 3, 10), {
+        "relato": "Concretagem da laje.",
+        "horario_trabalho": "7:00 às 16:00",
+        "equipamentos": "01 betoneira, 01 placa vibratória",
+        "historico": "Estrutura concluída até o 3º pavimento.",
+    }, dono)
+    d = svc.abrir_dia(sessao_real, obra, date(2026, 3, 10))["diario"]
+    assert d["horario_trabalho"] == "7:00 às 16:00"
+    assert d["equipamentos"] == "01 betoneira, 01 placa vibratória"
+    assert d["historico"].startswith("Estrutura concluída")
+
+
+@banco_
+def test_gravar_sem_horario_nao_inventa_o_padrao(sessao_real, obra, dono):
+    """O padrão é SUGESTÃO DE TELA. Quem grava um dia sem horário está
+    dizendo que não sabe o horário — e inventar jornada num documento que
+    sustenta pedido de prazo é pior que deixar em branco."""
+    svc.salvar(sessao_real, obra, date(2026, 3, 11), {"relato": "x"}, dono)
+    d = svc.abrir_dia(sessao_real, obra, date(2026, 3, 11))["diario"]
+    assert d["horario_trabalho"] == ""
+
+
+@banco_
+def test_o_papel_leva_os_campos_novos(sessao_real, obra, dono):
+    svc.salvar(sessao_real, obra, date(2026, 3, 12), {
+        "relato": "Alvenaria do bloco A.",
+        "horario_trabalho": "7:00 às 17:00",
+        "equipamentos": "01 andaime",
+        "historico": "Dentro do cronograma.",
+    }, dono)
+    p = svc.relatorio(sessao_real, obra, date(2026, 3, 12))["paginas"][0]
+    assert p["horario_trabalho"] == "7:00 às 17:00"
+    assert p["equipamentos"] == "01 andaime"
+    assert p["historico"] == "Dentro do cronograma."
+
+
+@banco_
+def test_o_papel_numera_a_folha_de_1_ate_o_total(sessao_real, obra, dono):
+    """"Folha: 1/1" é do modelo do órgão. Num relatório de vários dias, repetir
+    "1/1" em todas seria papel errado — a fiscalização numera por folha."""
+    for dia in (10, 11, 12):
+        svc.salvar(sessao_real, obra, date(2026, 4, dia), {"relato": "x"}, dono)
+    r = svc.relatorio(sessao_real, obra, date(2026, 4, 10), date(2026, 4, 12))
+    assert [p["folha"] for p in r["paginas"]] == [1, 2, 3]
+    assert {p["folhas"] for p in r["paginas"]} == {3}
+
+
+@banco_
+def test_o_modelo_sai_do_cadastro_da_obra(sessao_real, obra, dono):
+    """A escolha é CLÁUSULA DO CONTRATO: *"tem um determinado contrato que a
+    gente vai precisar utilizar esse modelo específico de diário de obra."*"""
+    svc.salvar(sessao_real, obra, date(2026, 5, 10), {"relato": "x"}, dono)
+    sessao_real.execute(text("UPDATE obras SET diario_modelo = 'orgao' "
+                             "WHERE id = :o"), {"o": obra})
+    r = svc.relatorio(sessao_real, obra, date(2026, 5, 10))
+    assert r["modelo"] == "orgao"
+    assert r["modelo_da_obra"] == "orgao"
+
+
+@banco_
+def test_espiar_outro_modelo_nao_muda_o_do_contrato(sessao_real, obra, dono):
+    """A barra da folha troca o modelo só para VER. Se trocasse de verdade,
+    um dia sairia o papel errado para a fiscalização."""
+    svc.salvar(sessao_real, obra, date(2026, 5, 11), {"relato": "x"}, dono)
+    sessao_real.execute(text("UPDATE obras SET diario_modelo = 'orgao' "
+                             "WHERE id = :o"), {"o": obra})
+    r = svc.relatorio(sessao_real, obra, date(2026, 5, 11), modelo="bws")
+    assert r["modelo"] == "bws"            # o que sai agora
+    assert r["modelo_da_obra"] == "orgao"  # o que o contrato exige
+    assert sessao_real.execute(
+        text("SELECT diario_modelo FROM obras WHERE id = :o"),
+        {"o": obra}).scalar() == "orgao"
+
+
+@banco_
+def test_as_logos_entram_na_folha_como_dado(sessao_real, obra):
+    """Embutidas, e não buscadas por endereço: o PDF vai por e-mail e abriria
+    sem cabeçalho na mão de quem recebeu."""
+    sessao_real.execute(text("""
+        UPDATE obras SET contratante_logo = :l,
+                         contratante_logo_mime = 'image/png' WHERE id = :o"""),
+        {"l": b"\x89PNG-de-mentira", "o": obra})
+    logos = svc.logos(sessao_real, obra)
+    assert logos["contratante"].startswith("data:image/png;base64,")
+    assert logos["empresa"] == ""          # a obra de teste não tem empresa
+
+
+@banco_
+def test_logo_acima_do_teto_sai_de_fora_sem_derrubar_a_folha(sessao_real, obra):
+    """Nunca uma página que não carrega: logo grande demais some, o diário
+    sai."""
+    sessao_real.execute(text("""
+        UPDATE obras SET contratante_logo = :l,
+                         contratante_logo_mime = 'image/png' WHERE id = :o"""),
+        {"l": b"x" * (svc.TETO_DA_LOGO + 1), "o": obra})
+    assert svc.logos(sessao_real, obra)["contratante"] == ""
+
+
+@banco_
+def test_o_cabecalho_traz_o_contratante_para_o_papel(sessao_real, obra):
+    """O cabeçalho do modelo do órgão é DELE: *"Prefeitura Municipal de Abreu
+    e Lima, Secretaria de Obras e Defesa Civil (…) isso aí vai estar
+    relacionado ao contratante."*"""
+    sessao_real.execute(text("""
+        UPDATE obras SET cliente = 'Prefeitura de Exemplo',
+                         contratante_unidade = 'Secretaria de Obras'
+         WHERE id = :o"""), {"o": obra})
+    cab = svc.cabecalho(sessao_real, obra, date(2026, 3, 10))
+    assert cab["contratante"] == "Prefeitura de Exemplo"
+    assert cab["contratante_unidade"] == "Secretaria de Obras"
+    assert cab["modelo"] == svc.MODELO_PADRAO
+
+
+# ---------------------------------------------------------------------------
+# AS TRÊS FOLHAS RENDERIZAM DE VERDADE
+#
+# ⚑ ESTE TESTE NASCEU DE UM DEFEITO DESTE MESMO DIA. A folha pedia o número
+# dela com `loop.index`, e o número do laço NÃO atravessa para o pedaço
+# incluído: as três folhas respondiam 500. Nada disso aparece lendo o
+# template, nem rodando a regra de negócio — só aparece renderizando.
+#
+# Por isso o teste pede a PÁGINA, nos três modelos, e confere que o conteúdo
+# do dia chegou ao papel. Modelo novo que não renderizar quebra aqui, e não na
+# mão de quem está em obra.
+# ---------------------------------------------------------------------------
+@banco_
+@pytest.mark.parametrize("modelo", ["completo", "bws", "orgao"])
+def test_a_folha_de_cada_modelo_renderiza_com_o_dia_dentro(
+        app_real, sessao_real, obra, dono, modelo):
+    from tests.conftest import como
+    sessao_real.execute(text("""
+        UPDATE obras SET cliente = 'Prefeitura de Exemplo',
+                         contratante_unidade = 'Secretaria de Obras'
+         WHERE id = :o"""), {"o": obra})
+    svc.salvar(sessao_real, obra, date(2026, 3, 10), {
+        "relato": "Concretagem da laje do terceiro pavimento.",
+        "horario_trabalho": "7:00 às 16:00",
+        "equipamentos": "01 betoneira e 01 placa vibratória",
+        "historico": "Estrutura dentro do cronograma.",
+        "ocorrencias": "Visita técnica da fiscalização.",
+    }, dono)
+    sessao_real.flush()
+
+    r = como(app_real, dono.id).get(
+        f"/erp/obras/diario/papel/{obra}?de=2026-03-10&modelo={modelo}")
+    assert r.status_code == 200, r.data[:400]
+    folha = r.data.decode()
+    assert "Concretagem da laje" in folha
+    assert "7:00 às 16:00" in folha          # o horário sai nos três
+    assert "betoneira" in folha              # os equipamentos também
+    assert "Prefeitura de Exemplo" in folha  # e o contratante
+    assert "10/03/2026" in folha
+
+
+# ---------------------------------------------------------------------------
+# O CADASTRO DO CONTRATO: a unidade, o modelo e a logo do órgão
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def admin(sessao_real):
+    from app.apps.erp.core.auth.service import gerar_hash
+    from app.apps.erp.db.models.cadastros import PerfilUsuario, Usuario
+    u = Usuario(nome="Dona do sistema", email="admin@diario.teste", ativo=True,
+                senha_hash=gerar_hash("senha-de-teste-123"),
+                perfil=PerfilUsuario.ADMIN, telefone="5585900000010")
+    sessao_real.add(u)
+    sessao_real.flush()
+    return u
+
+
+@banco_
+def test_o_contrato_grava_a_unidade_e_o_modelo_do_diario(app_real, sessao_real,
+                                                         obra, admin):
+    """Eles entram na lista de campos gravados — a lista que já deixou o
+    seguro-garantia cair em silêncio quando foi esquecida."""
+    from tests.conftest import como
+    r = como(app_real, admin.id).post(f"/erp/api/obras/{obra}", json={
+        "contratante_unidade": "Secretaria de Obras e Defesa Civil",
+        "diario_modelo": "orgao"})
+    assert r.status_code == 200, r.data[:300]
+    volta = como(app_real, admin.id).get(f"/erp/api/obras/{obra}").get_json()["obra"]
+    assert volta["contratante_unidade"] == "Secretaria de Obras e Defesa Civil"
+    assert volta["diario_modelo"] == "orgao"
+
+
+@banco_
+def test_a_logo_do_contratante_sobe_e_desce_pela_tela(app_real, sessao_real,
+                                                      obra, admin):
+    from io import BytesIO
+    from tests.conftest import como
+    c = como(app_real, admin.id)
+    assert c.get(f"/erp/api/obras/{obra}/logo-contratante").status_code == 404
+
+    r = c.post(f"/erp/api/obras/{obra}/logo-contratante",
+               data={"arquivo": (BytesIO(b"<svg/>"), "orgao.svg", "image/svg+xml")},
+               content_type="multipart/form-data")
+    assert r.status_code == 200, r.data[:300]
+    assert c.get(f"/erp/api/obras/{obra}/logo-contratante").status_code == 200
+
+    assert c.delete(f"/erp/api/obras/{obra}/logo-contratante").status_code == 200
+    assert c.get(f"/erp/api/obras/{obra}/logo-contratante").status_code == 404
+
+
+@banco_
+def test_arquivo_que_nao_e_imagem_e_recusado_com_recado_de_gente(
+        app_real, sessao_real, obra, admin):
+    from io import BytesIO
+    from tests.conftest import como
+    r = como(app_real, admin.id).post(
+        f"/erp/api/obras/{obra}/logo-contratante",
+        data={"arquivo": (BytesIO(b"%PDF-1.4"), "contrato.pdf", "application/pdf")},
+        content_type="multipart/form-data")
+    assert r.status_code == 400
+    assert "PNG" in r.get_json()["erro"]
+
+
+@banco_
+def test_a_logo_da_empresa_aparece_para_quem_ve_a_obra(app_real, sessao_real,
+                                                       obra, dono):
+    """A rota da EMPRESA exige "configurar", que o administrativo de obra não
+    tem. Se a ficha da obra buscasse a logo por lá, apareceria um quadrado
+    quebrado justamente para quem imprime o diário todo dia."""
+    from tests.conftest import como
+    eid = sessao_real.execute(text("""
+        INSERT INTO empresas (razao_social, cnpj, logo, logo_mime)
+        VALUES ('Construtora de Teste Ltda', '11.111.111/0001-11',
+                :l, 'image/png')
+        RETURNING id"""), {"l": b"\x89PNG-de-mentira"}).scalar()
+    sessao_real.execute(text("UPDATE obras SET empresa_id = :e WHERE id = :o"),
+                        {"e": eid, "o": obra})
+    sessao_real.flush()
+
+    c = como(app_real, dono.id)
+    assert c.get(f"/erp/api/obras/{obra}/logo-empresa").status_code == 200
+    # E a mesma pessoa continua SEM poder mexer no cadastro da empresa.
+    assert c.get(f"/erp/api/empresas/{eid}/logo").status_code == 403
