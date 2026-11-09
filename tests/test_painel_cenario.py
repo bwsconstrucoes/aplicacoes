@@ -585,6 +585,20 @@ def test_projeto_fora_da_analise_tira_todas_as_obras_dele(cenario):
     assert sorted(conta["excluidas"]) == ["MUITA GENTE", "POUCA GENTE"]
 
 
+def test_projeto_que_nao_recebe_some_da_prestacao(cenario):
+    """09/11/2026, o dono: "os projetos que não receberam nenhum percentual
+    não precisam aparecer, porque realmente não interessa"."""
+    from app.apps.painel import cenarios
+    cenarios.gravar_projetos(cenario, "", {"ALFA": ("nao", "", "")})
+    conta = _calcular(cenario)
+    assert conta["por_obra"] == {}
+    assert sorted(conta["excluidas"]) == ["MUITA GENTE", "POUCA GENTE"]
+    # recebe só num período: continua na prestação
+    cenarios.gravar_projetos(cenario, "", {"ALFA": ("periodo", "", "2020-12")})
+    assert _calcular(cenario)["por_obra"]
+    cenarios.gravar_projetos(cenario, "", {})
+
+
 def test_tirar_e_voltar_pela_tela(cenario, monkeypatch):
     from app.apps.painel import cenarios
     cliente = _cliente(monkeypatch)

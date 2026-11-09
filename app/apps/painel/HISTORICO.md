@@ -2541,6 +2541,11 @@ Não existe terceiro grupo."*
   quotas; só não recebe a estrutura.
 - Tela: quadro "Quem recebe o custo da matriz" na montagem; na linha do
   período, "entra X% · para o BWS CE Y%".
+- Logo depois, o dono: *"os projetos que não receberam nenhum percentual não
+  precisam aparecer, porque realmente não interessa"*. Projeto "não recebe"
+  passou a sair da prestação do cenário como "fora da análise" (sem
+  estrutura, sem juros, fora das quotas). O que "recebe só no período"
+  continua no resultado.
 
 ## Reler os pagamentos de um ano, de alguns ou de todos — 07/10/2026
 

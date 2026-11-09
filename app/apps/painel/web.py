@@ -1533,7 +1533,16 @@ def _calcular_cenario(cenario: dict) -> dict:
     # ela. Assim "tirar o Ceara de tudo" se faz uma vez, e "e se sem a obra
     # X?" continua sendo coisa de um cenario so.
     itens_gerais = prestacao_dados.fora_da_analise(config)
-    fora = _obras_fora(config, list(itens_gerais) + list(itens_fora or []),
+    # PROJETO QUE NÃO RECEBE não aparece na prestação (dono, 09/11/2026: "os
+    # projetos que não receberam nenhum percentual não precisam aparecer,
+    # porque realmente não interessa"). Sai como "fora da análise": não
+    # recebe estrutura nem juros, não pesa na régua e não vai para as quotas.
+    quem = cenario.get("projetos")
+    if quem is None:
+        quem = cenarios.projetos(cenario["id"])
+    nao_recebem = [f"projeto:{p}" for p, (papel, _d, _a) in (quem.get("regras") or {}).items()
+                   if papel == "nao"]
+    fora = _obras_fora(config, list(itens_gerais) + list(itens_fora or []) + nao_recebem,
                        apuracao)
     if fora:
         apuracao = [l for l in apuracao if (l.get("obra") or "").strip() not in fora]
@@ -1570,7 +1579,6 @@ def _calcular_cenario(cenario: dict) -> dict:
     # Os dois lados e quem recebe (09/11/2026): o projeto principal ("BWS CE",
     # o da matriz na configuracao, se o cenario nao disser outro) contra os
     # demais; e os projetos que nao recebem, ou so recebem num periodo.
-    quem = cenario.get("projetos") or cenarios.projetos(cenario["id"])
     principal = (quem.get("principal") or config.get("projeto_matriz") or "").strip()
     regras_proj = quem.get("regras") or {}
     lado_de = {o: ("principal" if (info.get("projeto") or "").strip() == principal
