@@ -370,6 +370,37 @@ def test_conferir_a_declaracao_termina_o_servico_quando_a_nota_saiu(cenario, mon
     assert "3281" in r2.get_data(as_text=True)
 
 
+def test_conferir_a_declaracao_nao_grava_se_o_card_nao_bate_com_a_nota(cenario, monkeypatch):
+    """A mesma trava de valor das outras duas telas — ver os incidentes de
+    09/11/2026 no HISTORICO. Aqui ela pega a consulta de uma declaração ANTIGA,
+    de card que já concluiu e teve os campos de entrada limpos."""
+    cliente, _ = cenario
+    import emitir_dps
+    import montar_dps
+
+    dps = nac.montar_dps_xml(montar_dps.montar(
+        card=_card(), obra=ObraFalsa(), r=_calculo(), dados_rps=_dados_rps(),
+        numero_nota=3281, ibge_obra=2601607, data_emissao="2026-10-07", producao=True))
+    xml_nac = nfse_exemplo.como_texto(dps, numero_nfse="3281")
+
+    monkeypatch.setattr(emitir_dps, "consultar",
+                        lambda ctx, id_dps, token, producao: emitir_dps.dados_da_nota(xml_nac))
+    feito = {}
+    servindo = sys.modules["app.apps.emissaonf.web"]
+    monkeypatch.setattr(servindo._concluir, "concluir",
+                        lambda *a, **k: feito.update(numero=a[1]))
+    # o card recalculado agora dá outro valor (o BDI diferenciado foi limpo)
+    base = servindo._worker.preparar(CARD)
+    base["r"] = _calculo(valor="40000.00")
+    monkeypatch.setattr(servindo._worker, "preparar", lambda *a, **k: dict(base))
+
+    corpo = cliente.post("/emissao/declaracao",
+                         data={"token": TOKEN, "id_dps": ID_DPS_3281, "card_id": CARD},
+                         follow_redirects=True).get_data(as_text=True)
+    assert feito == {}, "não pode gravar retenção diferente da que a nota destacou"
+    assert "NÃO GRAVEI NADA" in corpo
+
+
 def test_sem_o_card_a_tela_diz_que_a_nota_saiu_mas_falta_terminar(cenario, monkeypatch):
     cliente, _ = cenario
     import emitir_dps
@@ -910,7 +941,15 @@ def nota_do_portal():
 
 @pytest.fixture
 def portal(monkeypatch):
-    """A tela, com o pós-emissão dublado — ele escreve em planilha, Omie e Drive."""
+    """A tela, com o pós-emissão dublado — ele escreve em planilha, Omie e Drive.
+
+    O `preparar` também é dublado, e devolve o MESMO cálculo de que a nota de
+    exemplo foi feita. Isso não é detalhe de montagem: desde 09/11/2026 a tela
+    confere os valores que o card calcula hoje contra o XML da nota antes de
+    gravar (`conferir_emitido`), porque a conclusão limpa os campos de entrada do
+    card e o recálculo de uma nota que já concluiu sai errado. Card batendo com a
+    nota ⇒ grava; o caso que NÃO bate tem o seu próprio teste, abaixo.
+    """
     monkeypatch.setenv("EMISSAO_NF_TOKEN", TOKEN)
     servindo = sys.modules["app.apps.emissaonf.web"]
     feito = {}
@@ -922,7 +961,12 @@ def portal(monkeypatch):
         with open(caminho, encoding="utf-8") as fh:
             feito["xml_recebido"] = fh.read()
 
+    def falso_preparar(card_id, **kw):
+        return {"cred": {"PIPEFY_TOKEN": "t"}, "card": _card(), "gc": _GoogleFalso(),
+                "r": _calculo()}
+
     monkeypatch.setattr(servindo._concluir, "concluir", falso_concluir)
+    monkeypatch.setattr(servindo._worker, "preparar", falso_preparar)
     return app_real.test_client(), feito
 
 
@@ -949,6 +993,43 @@ def test_o_xml_colado_dispara_o_processamento_completo(portal, nota_do_portal):
     assert feito["nacional"] is True
     assert len(feito["chave"]) == 50
     assert feito["data"] == "2026-10-07"
+
+
+def test_card_que_nao_bate_com_a_nota_nao_grava_nada(portal, nota_do_portal, monkeypatch):
+    """⚠️ A trava de valor desta tela, e ela guarda dinheiro.
+
+    Esta é a tela da substituição manual: o card JÁ concluiu uma nota antes, e a
+    conclusão limpou os doze campos de entrada dele (entre eles o Valor BDI
+    diferenciado). Recalcular agora dá uma nota diferente da que foi emitida — e
+    era essa que iria para o Omie e para a planilha, em silêncio.
+    """
+    cliente, feito = portal
+    servindo = sys.modules["app.apps.emissaonf.web"]
+
+    def preparar_card_limpo(card_id, **kw):
+        # o mesmo card, com o valor da medição menor (BDI limpo) -> ISS/INSS diferentes
+        return {"cred": {"PIPEFY_TOKEN": "t"}, "card": _card(), "gc": _GoogleFalso(),
+                "r": _calculo(valor="40000.00")}
+
+    monkeypatch.setattr(servindo._worker, "preparar", preparar_card_limpo)
+    corpo = _enviar(cliente, xml=nota_do_portal).get_data(as_text=True)
+    assert feito == {}, "não pode gravar retenção diferente da que a nota destacou"
+    assert "NÃO GRAVEI NADA" in corpo
+    assert "Valor BDI diferenciado" in corpo
+
+
+def test_card_que_nao_bate_grava_quando_o_dono_manda(portal, nota_do_portal, monkeypatch):
+    """A decisão é dele — mas explícita, e o log diz que não foi conferido."""
+    cliente, feito = portal
+    servindo = sys.modules["app.apps.emissaonf.web"]
+    monkeypatch.setattr(servindo._worker, "preparar",
+                        lambda card_id, **kw: {"cred": {"PIPEFY_TOKEN": "t"},
+                                               "card": _card(), "gc": _GoogleFalso(),
+                                               "r": _calculo(valor="40000.00")})
+    corpo = _enviar(cliente, xml=nota_do_portal,
+                    ignorar_divergencia="on").get_data(as_text=True)
+    assert feito["numero"] == "3281"
+    assert "NÃO foram conferidos" in corpo
 
 
 def test_o_xml_como_ARQUIVO_tambem_vale(portal, nota_do_portal):
@@ -984,9 +1065,12 @@ def test_nota_do_modelo_antigo_tambem_e_aceita(portal):
     antigo = """<?xml version="1.0"?><CompNfse><Nfse><InfNfse>
         <Numero>3070</Numero><CodigoVerificacao>ABC123</CodigoVerificacao>
         <DataEmissao>2026-09-15T09:00:00</DataEmissao></InfNfse></Nfse></CompNfse>"""
-    _enviar(cliente, xml=antigo)
+    corpo = _enviar(cliente, xml=antigo).get_data(as_text=True)
     assert feito["numero"] == "3070"
     assert feito["nacional"] is False
+    # XML sem bloco de valores: não há o que conferir, então NÃO se trava — mas
+    # tem de ficar escrito que não foi conferido, senão o silêncio engana.
+    assert "não traz os valores" in corpo
 
 
 def test_sem_o_card_nada_e_processado(portal, nota_do_portal):
