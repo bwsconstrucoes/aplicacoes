@@ -2083,6 +2083,9 @@ def prestacao_parametros():
         fora=prestacao_dados.fora_da_analise(),
         obras_do_painel=_opcoes_no_escopo().get("obras", []) if not consultas.base_vazia() else [],
         projetos_do_painel=_opcoes_no_escopo().get("projetos", []) if not consultas.base_vazia() else [],
+        # as categorias com cara de juro vêm primeiro na lista dos juros
+        parecidas_com_juro=[c for c in listas.get("categorias", [])
+                            if re.search(r"jur|iof|empr[eé]st|financ|banc|tarifa", c, re.I)],
         **listas,
     )
 
@@ -2132,6 +2135,15 @@ def _aplicar_mudanca_da_prestacao(dados, form):
                       "categoria_juros", "juros_por_deficit", "juros_sem_deficit"):
             if chave in form:
                 dados.salvar_config(chave, form[chave])
+        # as categorias dos juros, marcadas numa lista (09/11/2026); gravadas
+        # no mesmo formato de antes ("a; b; c"), que é o que o cálculo lê
+        if "categoria_juros_lista" in form:
+            marcadas = []
+            for c in form.getlist("categoria_juros_item"):
+                c = (c or "").strip()
+                if c and c not in marcadas:
+                    marcadas.append(c)
+            dados.salvar_config("categoria_juros", "; ".join(marcadas))
 
 
 # ---------------------------------------------------------------------------

@@ -2547,6 +2547,17 @@ Não existe terceiro grupo."*
   estrutura, sem juros, fora das quotas). O que "recebe só no período"
   continua no resultado.
 
+## Categorias dos juros: uma lista para marcar — 09/11/2026
+
+O dono: *"quanto à categoria, coloca dentro dos parâmetros para eu definir
+quais seriam"*. O campo existia (Parâmetros › Geral), mas era texto com os
+nomes exatos separados por ponto-e-vírgula. Virou uma lista das categorias de
+despesa da base para marcar, com busca; as que têm cara de juro (juros, IOF,
+empréstimo, financeira, banco, tarifa) vêm primeiro, e as marcadas no topo.
+Grava no mesmo formato ("a; b; c") que o cálculo já lia — nada mudou na conta.
+Sobre "mês em que ninguém estava no vermelho": o dono observou que, se há
+empréstimo, alguma obra estava no vermelho; a opção ficou como está.
+
 ## Reler os pagamentos de um ano, de alguns ou de todos — 07/10/2026
 
 O dono, vendo a releitura retomada em "2025 (11 de 12 anos, 10 já feitos

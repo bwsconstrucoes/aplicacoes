@@ -599,6 +599,20 @@ def test_projeto_que_nao_recebe_some_da_prestacao(cenario):
     cenarios.gravar_projetos(cenario, "", {})
 
 
+def test_as_categorias_dos_juros_se_marcam_numa_lista(cenario, monkeypatch):
+    """09/11/2026, o dono: "quanto à categoria, coloca dentro dos parâmetros
+    para eu definir quais seriam". Lista para marcar, gravada no formato que o
+    cálculo já lia."""
+    from app.apps.painel import prestacao_dados
+    cliente = _cliente(monkeypatch)
+    html = cliente.get("/painel/prestacao/parametros?aba=geral").get_data(as_text=True)
+    assert 'name="categoria_juros_item" value="Juros sobre Empréstimos" checked' in html
+    cliente.post("/painel/prestacao/parametros", data={
+        "acao": "config", "aba": "geral", "categoria_juros_lista": "1",
+        "categoria_juros_item": ["Juros sobre Empréstimos", "IOF", "IOF"]})
+    assert prestacao_dados.config()["categoria_juros"] == "Juros sobre Empréstimos; IOF"
+
+
 def test_tirar_e_voltar_pela_tela(cenario, monkeypatch):
     from app.apps.painel import cenarios
     cliente = _cliente(monkeypatch)

@@ -567,14 +567,45 @@
       </select>
       <p class="dica">"Não é rateado" faz o custo sumir da conta das obras — só use sabendo disso.</p>
     </div>
-    <div class="campo">
-      <label for="categoria_juros">Categoria dos juros de empréstimo</label>
-      <input id="categoria_juros" name="categoria_juros"
-             value="{{ config.categoria_juros or 'Juros sobre Empréstimos' }}">
-      <p class="dica">O nome exato como está no OMIE — <b>várias, separadas por
-        ponto-e-vírgula</b> (ex.: Juros sobre Empréstimos; IOF; Juros Bancários).
-        É por ele que o juro é separado do resto do custo da matriz. A
-        conferência "Onde estão os juros" mostra os nomes que existem na base.</p>
+    {# 09/11/2026, o dono: "quanto à categoria, coloca dentro dos parâmetros
+       para eu definir quais seriam". Era um campo de texto com os nomes
+       separados por ponto-e-vírgula; virou uma lista para marcar. As que têm
+       cara de juro aparecem primeiro; as marcadas, no topo. #}
+    {% set marcadas = (config.categoria_juros or 'Juros sobre Empréstimos').split(';')|map('trim')|reject('equalto', '')|list %}
+    {% set parecidas = parecidas_com_juro or [] %}
+    <div class="campo" style="grid-column: 1 / -1">
+      <label>Categorias dos juros de empréstimo</label>
+      <input type="hidden" name="categoria_juros_lista" value="1">
+      <input type="search" id="filtro-juros" placeholder="procurar categoria…" data-sem-busca
+             style="max-width:320px; margin-bottom:6px">
+      <style>
+        #lista-juros label { align-items: center; padding: 3px 0; cursor: pointer; }
+        #lista-juros input[type="checkbox"] { width: auto; flex: none; margin: 0; }
+        #lista-juros .rotulo { font-size: 13px; color: var(--tinta); }
+      </style>
+      <div id="lista-juros" style="max-height:260px; overflow:auto; border:1px solid var(--borda);
+           border-radius:var(--raio-p); padding:6px 10px; columns:2; column-gap:24px">
+        {% for c in marcadas %}
+          <label class="opcao" style="display:flex; gap:6px; break-inside:avoid">
+            <input type="checkbox" name="categoria_juros_item" value="{{ c }}" checked>
+            <span class="rotulo"><b>{{ c }}</b>{% if c not in categorias %} <small>(não está mais na base)</small>{% endif %}</span></label>
+        {% endfor %}
+        {% for c in parecidas if c not in marcadas %}
+          <label class="opcao" style="display:flex; gap:6px; break-inside:avoid">
+            <input type="checkbox" name="categoria_juros_item" value="{{ c }}">
+            <span class="rotulo">{{ c }} <small>· parece juro</small></span></label>
+        {% endfor %}
+        {% for c in categorias if c not in marcadas and c not in parecidas %}
+          <label class="opcao" style="display:flex; gap:6px; break-inside:avoid">
+            <input type="checkbox" name="categoria_juros_item" value="{{ c }}">
+            <span class="rotulo">{{ c }}</span></label>
+        {% endfor %}
+      </div>
+      <p class="dica">Marque as categorias do OMIE que são juro de empréstimo
+        (juros, IOF, encargos bancários…). Elas saem do custo da matriz antes do
+        rateio e seguem a régua do caixa: vão, mês a mês, para as obras que
+        estavam no vermelho. A lista mostra as categorias de despesa da base; as
+        que têm cara de juro vêm primeiro.</p>
     </div>
     <div class="campo">
       <label for="juros_por_deficit">Quem paga os juros de empréstimo</label>
@@ -606,4 +637,21 @@
   </form>
 </div>
 {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+// procurar na lista de categorias dos juros (09/11/2026)
+(function () {
+  const filtro = els("filtro-juros"), lista = els("lista-juros");
+  if (!filtro || !lista) return;
+  const sem = t => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  filtro.addEventListener("input", () => {
+    const q = sem(filtro.value.trim());
+    lista.querySelectorAll("label").forEach(l => {
+      l.style.display = (!q || sem(l.textContent).includes(q)) ? "flex" : "none";
+    });
+  });
+})();
+</script>
 {% endblock %}
