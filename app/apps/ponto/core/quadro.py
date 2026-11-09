@@ -458,6 +458,32 @@ def abonar_em_lote(quem: Quem, itens: list[dict], *, motivo: str, subtipo: str =
     return _cada_item(quem, itens, abonar)
 
 
+def compensar_horas_em_lote(quem: Quem, itens: list[dict], *, dia_das_horas_a_mais, motivo: str = "") -> list[dict]:
+    """A COMPENSAÇÃO DE HORAS DA TURMA (06/11/2026, o dono: a turma ficou até as 20h17 na quinta e sai mais cedo na
+    sexta). As linhas marcadas são o dia MAIS CURTO de cada pessoa; `dia_das_horas_a_mais`, o dia em que ficaram até
+    mais tarde. Uma compensação de horas do DP por pessoa, aprovada na hora: as horas a mais pagam as a menos, contadas
+    pelas batidas de cada um — o que sobra continua hora extra, o que falta continua devendo."""
+    from . import ocorrencias
+    if not quem.dp:
+        raise ErroDeValidacao("a compensação em lote é lançada pelo DP", campo="tipo")
+    a_mais = _data(dia_das_horas_a_mais, "dia_das_horas_a_mais")
+    motivo = str(motivo or "").strip()
+    _conferir_itens(itens)
+
+    def compensar(conn, pessoa, d, dia):
+        if a_mais < horario.hoje():
+            outro = espelho.montar(conn, int(pessoa["id"]), a_mais, a_mais)["dias"][0]
+            if not outro.get("extra"):
+                raise ErroDeValidacao(f"não ficou além do horário em {a_mais:%d/%m} — não há horas a mais para compensar")
+        o = ocorrencias.criar(conn, quem, {
+            "tipo": ocorrencias.COMPENSACAO_HORAS, "colaborador_id": int(pessoa["id"]), "data_inicio": dia.isoformat(),
+            "dia_trabalhado": a_mais.isoformat(), "aprovar_ja": True,
+            **({"descricao": motivo} if motivo else {})}, origem="GESTAO")
+        return {"status": o["status"], "aprovado": o["status"] == "APROVADA", "pedido_id": o["id"]}
+
+    return _cada_item(quem, itens, compensar)
+
+
 # ---------------------------------------------------------------------------
 # A qualidade e as rondas do recorte (27/10/2026: as abas saíram do menu e viraram
 # visões do Quadro — com o MESMO filtro de funcionários e o mesmo período)

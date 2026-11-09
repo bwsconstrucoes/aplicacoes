@@ -12244,6 +12244,130 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 253 — DC: relatório detalhado em paisagem e acréscimo/desconto por lançamento (06/11/2026)
+
+> **Publicado em 06/11/2026.**
+
+- **Depois (06/11/2026, publicado no mesmo dia):** o "por" do card, no PDF e na tela, é o
+  RESPONSÁVEL (coluna H da aba Data), não o requerente (I) — *"relatório e tela precisam
+  estar alinhados"*. O requerente fica no passar do mouse na tela e numa coluna do Excel.
+
+- *"O relatório de despesa com colaboradores, nem o PDF, nem o Excel está saindo
+  detalhado (…) colocar o relatório em paisagem (…) não está saindo a descrição (…)
+  adicionar uma coluna de acréscimo e desconto, da mesma forma que tem em
+  alimentação e transporte (…) por funcionário, por lançamento."*
+- **Relatório:** o relatório é o compartilhado das folhas (`folha_relatorio`), que só
+  conhecia "pessoa por pessoa". Ganhou um DETALHAMENTO opcional (`montado["detalhe"]`,
+  células por pessoa em `detalhe_excel`/`detalhe_pdf`) e o modo paisagem
+  (`pdf.Folha(paisagem=True)`, larguras escaladas). Só a DC usa
+  (`dc.DETALHE_DO_RELATORIO`): PDF deitado com card/data/requerente, colaborador,
+  tipo, obra/conta, qtd × diária, calculado, ajuste com motivo, valor e DESCRIÇÃO
+  (até 5 linhas); Excel com a aba "Lançamentos" (todas as colunas, descrição inteira,
+  responsável, vencimento, carteira, situação/SP) no lugar de "Pessoas". As outras
+  folhas não mudaram.
+- **Acréscimo/desconto:** coluna nova na tela, o "± valor" dos auxílios, por
+  LANÇAMENTO (a `chave` da linha). Motivo obrigatório; valor negativo reduz; nunca
+  abaixo de zero (zerado sai do pagamento). Entra no valor da linha — no arquivo, na
+  SP e no relatório. Guardado em `analisesps.meta` › `dc.extras` (sem migração).
+  Rota `folha_dc_extra` (Operador). Lançamento já gerado não se ajusta.
+- Conferido: PDF deitado olhado na imagem; botão clicado no navegador (−30,00 →
+  150,00 vira 120,00, com o motivo); testes em `test_analisesps_dc.py`.
+
+#### Leva 252 — As outras folhas da pessoa: etiquetas cruzadas nas telas da folha (05/11/2026)
+
+> **Publicado em 05/11/2026.**
+
+- *"Eu preciso fazer conversar as folhas de pagamento (…) enxergar dentro de despesa
+  colaboradores uma informaçãozinha (…) quanto recebeu na folha da contabilidade,
+  com alimentação, transporte, gratificados (…) isso vale para todos (…) o que vai
+  definir se a informação vai ser exibida ou não é o que está ou não selecionado."*
+  Pediu um exemplo em tela antes; viu o desenho (etiquetas embaixo do nome) e
+  aprovou: *"acho que pode ser dessa forma"* — com as duas sugestões: alerta amarelo
+  e contabilidade separada por quinzena e fim do mês.
+- **O que aparece:** embaixo do nome, em todas as telas que pagam (contabilidade
+  aberta, alimentação/transporte, diaristas, DC, avulso, gratificados, via SP), o
+  que a pessoa recebe NAS OUTRAS na mesma competência — só o selecionado. A tela
+  aberta não se repete (na alimentação, o transporte aparece).
+- **Alerta amarelo** (`folhas_cruzadas.ALERTAS`): diarista E contabilidade; alimentação
+  no auxílio E numa DC de alimentação; o mesmo para transporte. Olha todas as folhas
+  da pessoa, inclusive a da tela aberta.
+- **De onde vem cada uma** (as funções das próprias telas, nada recalculado):
+  contabilidade = `folha_arquivo.abrir` da quinzena e do fim do mês, menos os "fora"
+  (`ajustes_do_pagamento`), CPF pelo cadastro quando a linha não tem; auxílios =
+  `folha_auxilio.calcular` (pagar e valor > 0); diaristas e gratificados/via SP = as
+  duas metades do mês; DC e avulso NÃO têm competência — entra o pendente selecionado
+  agora (e, nessas duas telas, a competência das etiquetas é a sugerida da folha: o
+  mês anterior até o dia 10).
+- **Peso:** o cruzamento passa por todas as telas. Por isso: (1) a tela abre sem
+  esperar — as etiquetas chegam depois (`_outras_folhas.html` → rota
+  `folha_outras_folhas`); (2) o resumo fica guardado em memória por competência por
+  10 min e é jogado fora a cada POST de tela da folha (`_esquecer_as_outras_folhas`);
+  (3) uma montagem por competência de cada vez. Fonte que falha vira aviso no recado
+  acima da tabela, e as outras seguem.
+- **Achado no navegador antes de commitar:** o endereço dentro do script saía com
+  "&amp;" e a rota recusava — corrigido com `|tojson`.
+- **De fora:** no celular as etiquetas quebram linha dentro da célula do nome (não
+  testei todas as telas no celular); valor "a receber" dos auxílios é o da competência
+  trabalhada (o mês da tela), não o do mês do pagamento.
+- Testes: `tests/test_analisesps_folhas_cruzadas.py` (regras, alerta, guardado,
+  contabilidade, rota, e as seis fontes com banco de verdade).
+
+#### Leva 251 — O MobPonto "forçado" a entender o feriado nacional (05/11/2026)
+
+> **Publicado em 05/11/2026.**
+
+- O dono confirmou o diagnóstico da leva 250 com o dado na mão: *"Dia 12/10/2026 é
+  feriado (…) depois do dia 16, que é o ponto que vem do ERP, o feriado está sendo
+  aplicado. O que não está é o da quinzena anterior, do MobPonto (…) Você consegue,
+  mesmo sendo MobPonto, forçar a entender que é feriado?"*
+- A leva 250 já tirava o feriado da lista de ausências dos AUXÍLIOS. Esta vai à fonte:
+  na LEITURA do MobPonto (`ponto._feriado_nacional_por_cima`, chamado por
+  `dias_por_cpf`, `dias_de_um_cpf` e `dias_da_pessoa`), o dia sem batida marcado como
+  falta num feriado NACIONAL do ponto passa a ser "Feriado" — em todas as telas da
+  folha (resumo do ponto, gestão, ficha do mês da pessoa), não só nos auxílios. O dia
+  ganha `feriado_forcado` com o nome do feriado.
+- Só o nacional nesta camada (dia sem batida não tem obra); estadual e municipal
+  continuam valendo nos auxílios, que sabem a obra da pessoa. Atestado, abono e quem
+  trabalhou no feriado ficam como vieram. Testes: `test_analisesps_ponto_feriado_mobponto.py`.
+
+#### Leva 250 — Feriado não é falta: o "Aplicar desconto" que aparecia em feriado (05/11/2026)
+
+> **Publicado em 05/11/2026.**
+
+- *"Tem feriado cadastrado, mas não tá aparecendo como feriado e tá mandando aplicar
+  desconto, por exemplo em despesas com alimentação. Curiosamente o feriado estadual
+  deu certo e o nacional não."*
+- **Causa:** a lista de ausências (`folha_auxilio.ausencias_do_mes`) lia só o texto do
+  dia do ponto, sem olhar o calendário. Os dias ANTES de 16/10/2026 vêm do MobPonto,
+  que escreve FALTA no feriado que não estava cadastrado lá — o nacional de 12/10
+  (Nossa Senhora Aparecida) virava falta e o "Aplicar desconto" aparecia. O estadual
+  que "deu certo" (19/10, Piauí) é do ponto eletrônico, que já escreve "Feriado".
+  E na alimentação o dia saía descontado DUAS vezes: na base, como feriado, e na
+  proposta de desconto, como falta.
+- **Correção:** dia que é feriado na obra da pessoa (base única, a do ponto) nunca
+  é ausência — nas duas verbas, venha o dia do MobPonto ou do ponto eletrônico.
+- Não verificado com o dado de produção (o diagnóstico é pelo código e pelo padrão
+  que o dono descreveu); o teste reproduz o caso.
+
+#### Leva 249 — Feriados buscados sozinhos pelas obras em andamento (05/11/2026)
+
+> **Publicado em 05/11/2026.**
+
+- *"Existe alguma base de informação de feriado (…) e eu queria que o sistema
+  buscasse (…) nacional, estadual e municipal (…) baseado nas obras em andamento.
+  Cadastrou-se uma obra nova, talvez esse seria o momento do start, além de ser por
+  ano."* O código mora no ponto (`ponto/core/feriados_busca.py`), porque a base de
+  feriados é a dele — ver o `HISTORICO.md` do ponto, 05/11/2026, com as regras.
+- Aqui: a etapa de apoios (`tarefas.py`) confere os feriados de hora em hora; a tela
+  Feriados e férias ganhou o quadro "Busca automática de feriados" e o botão "Buscar
+  agora" (rota `folha_feriados_buscar`, Operador).
+- Fonte: base pública feriados-brasil no GitHub (gratuita). APIs pagas com fonte
+  oficial por município existem (feriadosapi.com, muhbianco) — decisão do dono, se a
+  qualidade da gratuita não bastar.
+- **A pergunta da leva 248 explicada ao dono** (05/11): a aba "Feriados" da planilha
+  de credenciais serve só para a AGENDA DE PAGAMENTOS — vencimento que cai em feriado
+  vai para o próximo dia útil. Aguardando a decisão dele.
+
 #### Leva 248 — Os feriados vêm do ponto: uma base só (04/11/2026)
 
 > **Publicado em 04/11/2026.**

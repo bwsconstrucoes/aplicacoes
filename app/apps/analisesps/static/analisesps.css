@@ -2723,6 +2723,10 @@ table.sps.mini th, table.sps.mini td { padding: 4px 8px; }
 #tabela-auxilio .aj-extra { margin-top: 4px; color: #166534; }
 #tabela-auxilio .btn-mini { padding: 2px 8px; font-size: 12px; margin-top: 3px; }
 #dialogo-extra input { width: 100%; }
+/* DC (06/11/2026): a mesma coluna de acréscimo/desconto, por lançamento. */
+#tabela-dc td.ajustes { min-width: 120px; max-width: 200px; font-size: 13px; }
+#tabela-dc .aj-extra { color: #166534; }
+#tabela-dc .aj-extra.reduz { color: #b91c1c; }
 
 /* Auxílio (03/10/2026): "Aplicar desconto" com destaque; valor que reduz. */
 #tabela-auxilio .btn-desconto { background: #b45309; border-color: #b45309; color: #fff; }
@@ -3017,3 +3021,14 @@ table.conciliacao tr.com-sp { cursor: pointer; }
 .substituir-comprovante[open] > summary { margin-bottom: 8px; }
 .form-substituir-comprovante { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px;
   background: #f6f8fb; border: 1px solid var(--borda, #e3e7ee); border-radius: 8px; max-width: 420px; }
+
+/* AS OUTRAS FOLHAS DA PESSOA (05/11/2026) — `outras_folhas` em _folha_macros.html.
+   Pequenas e discretas: são para conferir, não para competir com o valor da linha. */
+.outras-folhas { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; max-width: 100%; }
+.chip-folha {
+  font-size: 11px; line-height: 1.4; padding: 1px 7px; border-radius: 10px;
+  background: #EEF2F7; color: #33475B; border: 1px solid #D5DDE7;
+  white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+}
+.chip-folha b { font-weight: 700; }
+.chip-folha.alerta { background: #FFF4D6; color: #7A5300; border-color: #F0D58A; }

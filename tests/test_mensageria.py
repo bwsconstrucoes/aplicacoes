@@ -170,11 +170,28 @@ def test_todo_tipo_do_catalogo_tem_nome_modulo_e_politica_valida():
         assert chave in chaves
 
 
+# OS DOIS AVISOS DO ERP QUE NASCEM NO WHATSAPP, e o motivo.
+#
+# A decisão de 05/10/2026 foi "ponto no WhatsApp, o resto no Telegram". Em
+# 05/11/2026 o dono abriu uma exceção explícita, ao definir os canais do ciclo
+# do DP: *"a interação entre os requisitores de informação vai ser feita via
+# WhatsApp, né, que é o pessoal administrativo de obra."*
+#
+# É exceção e não mudança de regra: quem está na obra não tem Telegram, e um
+# aviso que não chega é pior que aviso nenhum — ele cria a impressão de que a
+# obra foi avisada. Os outros avisos do ERP vão para quem opera o escritório, e
+# continuam no Telegram.
+DO_ERP_NO_WHATSAPP = {"erp.dp_devolucao", "erp.dp_pedido"}
+
+
 def test_ponto_nasce_liberado_no_whatsapp_e_o_resto_so_telegram():
-    """A decisão do dono em 05/10/2026, gravada no catálogo."""
+    """As decisões do dono em 05/10/2026 e a exceção de 05/11/2026."""
     por = {t["chave"]: t["politica"] for t in core.CATALOGO}
     assert all(v == core.WHATSAPP for k, v in por.items() if k.startswith("ponto."))
-    assert all(v == core.TELEGRAM for k, v in por.items() if k.startswith("erp."))
+    assert all(v == core.TELEGRAM for k, v in por.items()
+               if k.startswith("erp.") and k not in DO_ERP_NO_WHATSAPP)
+    assert all(por[k] == core.WHATSAPP for k in DO_ERP_NO_WHATSAPP), \
+        "os avisos do DP para a OBRA saem por WhatsApp: a obra não tem Telegram"
     assert por["telegram.aviso_cadastro"] == core.DESLIGADO
 
 

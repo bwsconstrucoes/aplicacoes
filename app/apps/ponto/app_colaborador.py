@@ -615,6 +615,34 @@ def folha_do_espelho(conn, colaborador_id: int, gerado_por: str):
                            gerado_por=gerado_por)
 
 
+def folhas_da_equipe(conn, ids: list[int], gerado_por: str):
+    """As folhas de VÁRIAS pessoas num arquivo só (05/11/2026, o dono: "a pessoa tem 40 pessoas que emitem a folha e
+    fazer isso um por um"), uma página por pessoa, em ordem de nome. O cálculo é o MESMO da folha de uma pessoa — o
+    `espelho.Lote` só lê o banco de uma vez para todas."""
+    periodo = periodo_pedido()
+    if periodo:
+        inicio, fim = periodo
+    else:
+        inicio = competencias.primeiro_dia(request.args.get("competencia") or horario.hoje())
+        fim = competencias.ultimo_dia(inicio)
+    pessoas = sorted((p for p in (cadastros.colaborador_por_id(conn, i) for i in sorted(set(ids))) if p),
+                     key=lambda p: (p.get("nome") or "").upper())
+    if not pessoas:
+        raise NaoEncontrado("ninguém da equipe no período")
+    fechada = (competencias.esta_fechada(conn, competencias.primeiro_dia(inicio))
+               and competencias.esta_fechada(conn, competencias.primeiro_dia(fim)))
+    lote = espelho.Lote(conn, pessoas, inicio, fim)
+    folhas = []
+    for p in pessoas:
+        esp = espelho.montar(conn, int(p["id"]), inicio, fim, lote=lote)
+        esp["competencia"], esp["competencia_fechada"], esp["periodo"] = f"{inicio:%Y-%m}", fechada, bool(periodo)
+        folhas.append(esp)
+    return render_template("ponto/espelho_impressao.html", folhas=folhas, do_aplicativo=True,
+                           imprimir_ja=request.args.get("imprimir") == "1",
+                           gerado_em=horario.para_local(horario.agora()).strftime("%d/%m/%Y %H:%M"),
+                           gerado_por=gerado_por)
+
+
 def folha_que_nao_abriu(erro: Exception):
     """A folha é uma PÁGINA (não um JSON): o erro também volta como página, com o caminho de volta."""
     from markupsafe import escape
@@ -704,7 +732,8 @@ def app_api_bater():
             latitude=d.get("latitude"), longitude=d.get("longitude"), precisao=d.get("precisao"),
             timestamp_dispositivo=d.get("timestamp_dispositivo"),
             foto_base64=d.get("foto_base64"), ip=auth.ip_de_quem_chama(),
-            identificacao=identificacao, justificativa=d.get("justificativa"))
+            identificacao=identificacao, justificativa=d.get("justificativa"),
+            camera_travada=bool(d.get("camera_travada")))
         comprovante = _comprovante(conn, marcacao["id"])
     fotos.disparar_envio()
     return _ok(repetida=repetida, comprovante=comprovante,

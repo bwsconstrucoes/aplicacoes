@@ -80,3 +80,27 @@ def test_liberar_todas_as_obras(app, mundo):
     dp.post(f"/erp/api/ponto/pessoas/{mundo['joao']}/forma-de-bater",
             json={"liberado_todas_obras": False, "liberado_pessoas": []})
     assert alcance().vazio
+
+
+def test_liberar_duas_obras_para_quem_nao_bate_ponto_pela_ficha(app, mundo, monkeypatch):
+    """04/11/2026, o dono: "ela está como não bate ponto (…) quero só que ela consiga visualizar as pessoas de algumas
+    obras (…) fazer ajuste de ponto de duas obras específicas". A janela "Liberar obras no aplicativo" manda só as
+    obras (o resto do acesso fica como está); a ficha diz se a pessoa já tem PIN."""
+    from app.apps.ponto import db
+    from app.apps.ponto.core import cadastros, papeis
+    from tests.test_ponto_gestao_banco import como
+    dp = como(app, mundo["dp"])
+    with db.conexao() as conn:
+        cadastros.marcar_bate_ponto(conn, mundo["joao"], False, "trabalha no escritório", "teste")
+    ficha = dp.get(f"/erp/api/ponto/pessoas/{mundo['joao']}/painel").get_json()["pessoa"]
+    assert ficha["tem_pin"] is False and not ficha["ativo_no_ponto"]
+    assert dp.post(f"/erp/api/ponto/pessoas/{mundo['joao']}/forma-de-bater",
+                   json={"liberado_obras": ["PG-A", "PG-B"]}).status_code == 200
+    ficha = dp.get(f"/erp/api/ponto/pessoas/{mundo['joao']}/painel").get_json()["pessoa"]
+    assert {o["codigo"] for o in ficha["liberado"]["obras"]} == {"PG-A", "PG-B"}
+    assert ficha["bate_no_celular"] in (None, False) and not ficha["administrativo_obra"]   # o resto, como estava
+    with db.conexao() as conn:
+        p = cadastros.colaborador_por_id(conn, mundo["joao"])
+        assert papeis.entra_no_app(conn, p)
+        a = papeis.alcance(conn, p, None, None)
+        assert a.pode_pedir and set(a.obras) >= {mundo["obra_a"]}

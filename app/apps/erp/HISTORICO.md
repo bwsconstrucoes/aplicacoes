@@ -21,6 +21,352 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⚠️ MIGRAÇÕES 085 a 091 — apertar "Aplicar atualizações do banco"
+
+Entraram em 05/11/2026 com o cadastro de pessoas. **Sem elas a tela de
+Colaboradores e a de Cargos respondem erro**, porque as colunas e as tabelas não
+existem. Nada do que já estava em produção quebra: `funcao_id`, `valor_diaria` e
+os auxílios continuam onde estavam, e o cargo novo entra AO LADO da função, não
+no lugar.
+
+- **085** cargos, convenções, o cruzamento e o histórico do piso;
+- **086** os ~55 campos de admissão no cadastro da pessoa;
+- **087** dependentes, vínculos com começo e fim, alterações de salário/cargo;
+- **088** a fila de solicitações do DP (11 tipos, checklist e trilha), e as
+  ações `solicitar_dp` (abrir, de quem está na obra) e `atender_dp` (o DP);
+- **089** as ETAPAS do cadastro, com a trilha de quem moveu o quê e quando;
+- **090** os pedidos formais à contabilidade e as rotinas do agente de DP
+  — **todas semeadas DESLIGADAS**, e a ação `pedir_contabilidade`;
+- **091** a leitura da CAIXA DE ENTRADA (o agente recebendo e-mail), as
+  DEVOLUÇÕES da obra e o autor-colaborador da solicitação (o portal).
+
+Depois de apertar o botão do banco, apertar **uma vez** "Instalar o catálogo de
+tipos", na tela do Arquivo: ele traz os seis tipos de documento novos (os quatro
+de pessoa e os dois que a contabilidade devolve).
+
+### 👥 O CADASTRO DE PESSOAS VAI PARA DENTRO DO ERP — em construção (04 e 05/11/2026)
+
+O dono: *"a gente ainda está usando o Pipefy, e puxando uma planilha (…) isso
+está gerando muito conflito (…) é importante a gente colocar logo o cadastro das
+pessoas dentro do ERP e começar a trabalhar nele."*
+
+**O apurado inteiro está em `CADASTRO_DE_PESSOAS.md`, nesta pasta** — e desde
+04/11/2026 ele já inclui a leitura dos DOIS PIPES e de TRÊS CENÁRIOS DO MAKE que
+o dono enviou: o que está morto, as gambiarras que o ERP resolve de graça, o
+cadastro campo por campo, os 28 tipos de solicitação com o destino de cada um, e
+as decisões que ele já tomou. **Ler de lá, não refazer.** Os campos dos pipes
+ficam versionados em `referencia_pipefy/`, porque o Pipefy vai morrer e depois
+disso não haverá outra descrição do que o DP coletava.
+
+**As decisões dele, para não serem perguntadas de novo:** Pipefy e planilha
+MORREM (e até lá o ERP passa a ALIMENTAR as planilhas de transporte/GM/diaristas
+— o sentido inverte); todos os pedidos vão para o DP; colaborador e prestador
+são UM cadastro só, mantendo CTPS/Prestador e o tipo de contrato como campos; e
+importa-se **só quem está ativo** (~575 pessoas, não 3.664 — os 2.960 desligados
+ficam na planilha como base morta).
+
+**O QUE JÁ ESTÁ CONSTRUÍDO (05/11/2026), e nada aplicado ao banco ainda:**
+migrações **085 a 088**; `core/cadastros/cargos.py` e `pessoas.py`; os
+importadores `cargos_planilha.py` (rodado de verdade: 135 linhas → 62 cargos ×
+13 convenções) e `pessoas_planilha.py`; a fila do DP com 13 tipos
+(`core/pessoal_solicitacoes.py`); a ficha em seis abas, a tela de cargos e a de
+solicitações. **129 testes novos.**
+
+**A IMPORTAÇÃO DAS PESSOAS espera só o arquivo** (Pessoal › Colaboradores ›
+"Importar do Pipefy"). Ela confere antes de gravar, reconhece a coluna pelo
+nome nos três formatos (rótulo do pipe, aba "Dados Documentos", nome do ERP),
+**não sobrescreve quem já está no ERP** — lista o que divergiu — e mostra as
+colunas que não reconheceu, porque silêncio aí seria perder dado sem ninguém
+ver. Detalhe na seção 7a do `CADASTRO_DE_PESSOAS.md`.
+
+**Dois defeitos achados fazendo, que valem para quem mexer nesta área:**
+
+1. **O PIS repetido da planilha.** O PIS é único no banco (migração 086) e a
+   planilha do Pipefy repete — digitado à mão por anos. Sem conferir antes, o
+   banco estourava no meio e **todas as linhas seguintes falhavam em cascata**.
+   Agora cada linha tem ponto de retorno próprio e o repetido é recusado com o
+   nome do outro cadastro.
+2. **`autoflush=False` esconde o que acabou de ser criado.** `salvar()` criava o
+   primeiro vínculo com `s.add` e não dava `flush`; quem chamasse
+   `vinculo_aberto()` na mesma transação (o atendimento de pré-cadastro na fila
+   do DP) não o achava e **abriria um segundo vínculo**. Regra geral: nesta
+   sessão, objeto novo que vai ser LIDO na mesma transação precisa de `flush`.
+
+**AS DECISÕES DELE DE 05/11/2026, que fecham três perguntas:**
+
+1. **A aba "Dados Documentos" é substituída pela base de colaboradores do ERP**
+   (*"Dados Documentos não será substituída pela base de dados dos
+   colaboradores do ERP?"* — sim). Quem precisar daquele dado passa a ler o ERP.
+   **O que ainda falta é o COMO:** as planilhas de transporte, GM e diaristas, e
+   a cópia `analisesps.colaborador` que a folha usa, vão **ler do ERP** ou o
+   **ERP vai escrever nelas**? São dois trabalhos diferentes.
+2. **Todo papel do cadastro vai para o GOOGLE DRIVE** (*"todo documento, anexo,
+   pdf, imagem que for ser salvo dos cadastros dos colaboradores, lembrar de
+   salvar no Google Drive"*). É o que o Arquivo do ERP já faz — privado, com
+   `GOOGLE_CREDENTIALS_BASE64`. **É uma troca de lugar:** o Pipefy guardava no
+   **Dropbox**, em `/BWS DP/FUNCIONÁRIOS/<Nome>`. Esse passivo é trabalho à
+   parte. E o catálogo ganhou os quatro tipos que faltavam (comprovante de
+   endereço do colaborador, foto, documento de dependente e outro documento da
+   pessoa) — entram apertando "Instalar o catálogo de tipos".
+3. **Riscos e EPI do cargo estão vazios de verdade** (*"o que foi vazio na
+   tabela de cargos é pq tá vazio mesmo"*). Não há o que importar.
+
+**O SENTIDO DA LEITURA FICOU DECIDIDO (05/11/2026), e ele encurta o trabalho:**
+*"o analisesps na parte de Folha de PGT, ele fará a leitura das informações e
+ponto a partir do ERP pra poder montar os dados de pgt. (…) em breve vamos
+migrar todas essas telas de pagamento de colaboradores para o ERP tb, pq o
+analisesps tb será desativado. Estamos num processo de migração entre omie,
+planilha, pipefy, analisesps para ERP."*
+
+→ **O ERP não escreve em planilha nenhuma.** Quem precisa do cadastro **lê
+daqui**. A fase de "inverter o sentido" foi CANCELADA, e no lugar dela entraram
+duas peças:
+
+1. **`pessoas.para_folha()`** — o cadastro de quem recebe, com os nomes de campo
+   **da tabela `analisesps.colaborador`**, para trocar a ORIGEM sem reescrever a
+   folha. É função e não rota HTTP porque os dois módulos rodam no mesmo
+   processo e no mesmo banco: rota exigiria segredo novo (proibido pelo
+   `CLAUDE.md`) e uma volta de rede dentro da máquina. A rota
+   `/erp/api/colaboradores/para-folha` existe para a TELA, com
+   `editar_colaboradores` — ela carrega salário, PIS e chave Pix.
+   **Para o chat do Análise de SPs:** é só trocar quem alimenta
+   `analisesps.colaborador`. Não mexi em nada daquela área.
+2. **A conferência lado a lado**, para o período em paralelo que ele pediu
+   (*"ficaremos com os dados em paralelo por alguns dias"*). Rodar a importação
+   em "Conferir sem gravar" com a planilha do dia mostra os dois lados: o que
+   divergiu em quem existe nos dois (tudo o que a folha lê — auxílios, diária,
+   cargo, obra, datas, não só nome e salário) e **quem está no ERP e não está na
+   planilha**. Nada é mexido, e ninguém é desligado por faltar num arquivo.
+
+⚠️ **ORDEM QUE ELE DEFINIU, e não pode ser invertida:** a leitura da planilha só
+é desligada **depois** de o cadastro do ERP estar rodando e testado com gente de
+verdade dentro. Até lá, os dois mundos vivos.
+
+**O cenário `Card Movido` chegou e foi lido** (190 módulos, o maior deles): ele
+**não escreve nenhuma coluna** que a atualização não escreva, então o mapa das
+74 está completo e a importação não precisou de retrabalho. O que ele revelou de
+novo está em `referencia_pipefy/cenarios_do_make.md`: o Dropbox como lugar dos
+papéis, o **MobPonto** (cadastro e inativação por API, com e-mail ao DP quando
+falha) e duas planilhas que só serviam para gerar documento.
+
+⚠️ **Pergunta aberta que não é desta área:** quem cadastra a pessoa no
+**MobPonto** quando o Pipefy morrer. O ponto do ERP é REP-P e tem cadastro
+próprio; o MobPonto ainda aparece no Análise de SPs.
+
+**O que ainda falta saber** (seção 8 do arquivo): os outros até 6 cenários do
+Make — em especial o que ESCREVE a linha nova na aba "Dados Documentos", porque
+nenhum dos três que vieram escreve; o conteúdo das tabelas do Pipefy (Cargos,
+Colaboradores, Desligados); e o destino dos cinco tipos de pedido que hoje são
+manuais.
+
+
+### 🔗 O PONTO PASSOU A MORAR DENTRO DE PESSOAL (06/11/2026)
+
+> *"a gente tem lá pessoal e tem ponto. Eu tô achando que já seria o momento de
+> integrar isso aí. (…) tem cadastro da pessoa, tem cadastro no ponto. Tem a
+> tela de visualizar pessoas num lado, no outro. Não deveria ser assim, né? A
+> gente tem que falar a mesma linguagem nos dois lados, afinal é a mesma
+> empresa, é o mesmo ERP."*
+
+**O MENU** — `_juntar_ponto_com_pessoal()`, no fim do `routes.py`. As 13 abas do
+ponto passam para a área **Pessoal** (17 no total), e a ordem é **pelo dia a
+dia**, não pela origem: Colaboradores, Quadro, Validações, Espelho, Hoje,
+Solicitações ao DP, Contabilidade, Despesas, e o resto atrás. Juntar na ordem
+de origem poria "Despesas com colaborador" na frente do Quadro.
+
+⚠️ **POR QUE ISSO VIVE NO ARQUIVO DO ERP e não no do ponto:** o menu é do ERP.
+O ponto se registra inserindo o módulo dele na lista (`ponto/gestao.py`,
+`_registrar_no_menu`); quem decide como a lista se organiza é o `routes.py`.
+Assim a junção **não tocou em nenhum arquivo da área do ponto** — e se o ponto
+não carregar, a função não faz nada e o ERP sobe igual. Nenhuma rota mudou,
+nenhuma permissão mudou: as telas do ponto continuam no mesmo endereço, só
+acendem "Pessoal" lá em cima.
+
+**A aba "Pessoas" do ponto virou "Pessoas no ponto"** — é a tela que ele apontou
+como duplicada. Ela continua existindo (é de outra área e tem uso próprio: a
+foto de cadastro), mas o nome passa a dizer qual das duas é.
+
+**O FIM DOS DOIS CADASTROS, que é a parte que importa:** a ficha da pessoa no
+ERP passa a **ler e gravar as marcações do ponto** — bate ponto, entra no
+aplicativo, é administrativo de obra, pede pelo próprio celular, tem PIN, e o
+que impede o acesso. Tudo pelas funções do PRÓPRIO ponto (`papeis.definir`,
+`acesso.diagnostico`), nunca pela tabela dele por fora: se a regra do ponto
+mudar, muda num lugar só. Ponto fora do ar devolve o motivo em português e a
+ficha abre igual — travar a ficha porque o ponto não respondeu seria trocar um
+problema pequeno por um grande.
+
+### 🚪 O PORTAL DA OBRA GANHOU TELA, E ELA É DO ERP (06/11/2026)
+
+> ⚠️ **SUPERADO EM 07/11/2026.** A tela saiu de pública e passou a exigir o
+> login DO ERP, e o laço com o aplicativo do ponto foi desfeito. O ENDEREÇO
+> continua `/erp/portal` — cheguei a trocá-lo e o dono preferiu o antigo. O que está escrito abaixo descreve o desenho antigo — fica
+> aqui porque o ERRO é instrutivo. Ver a entrada de 07/11 mais abaixo e a §6-ter
+> do `AGENTE_DP.md`.
+
+Eu havia deixado a tela do portal pendente do chat do ponto. **Não precisava.**
+Ela é uma página só (`/erp/portal`), que **não usa o `erp_base.html`** — quem
+abre é gente de obra no celular, sem login do ERP, e o `erp_base` traria o menu
+de 17 telas e a sessão do ERP, nada disso existe ali.
+
+Faz as três coisas: **devolver documento** (primeiro na tela, porque é o que tem
+prazo), **abrir pedido** (os tipos e os campos vêm da API, nunca duplicados no
+JavaScript) e **acompanhar** o que a pessoa abriu. Sem a sessão do aplicativo do
+ponto, mostra "entre pelo aplicativo" com o link — nunca erro técnico.
+
+⚠️ **A trava das telas aprendeu uma coisa nova:** `test_telas_javascript.py`
+exigia que nenhuma tela redeclarasse os ajudantes da base (`els`, `dataBR`), o
+que é certo para quem herda do `erp_base`. A página solta é o contrário: ela
+**precisa** declarar os próprios. O teste agora separa as duas, e cobra de cada
+uma a regra dela.
+
+~~**O que ainda falta e é do chat do ponto:** um link para `/erp/portal`
+dentro do aplicativo.~~ **Isto deixou de existir em 07/11/2026:** o ponto ficou
+só para o ponto, e não há mais link nenhum do ponto para o ERP.
+
+### 🧭 A TELA DE COLABORADORES VIROU FERRAMENTA DE GESTÃO (05/11/2026)
+
+Ele abriu a tela que eu havia entregado e cortou, com razão:
+
+> *"para gestão, não está legal. (…) o que é que o DP tem que fazer em relação
+> aos colaboradores? Onde é que a gente vai tratar isso? (…) no pipe, como tem
+> as fases, a gente tem subdivisões lá que a gente sabe o que é que tem que
+> fazer, o que é que tem que cuidar, o que é que está pendente. E aqui, dessa
+> forma, não tem. O filtros não, praticamente não tem nada. Super pobre."*
+
+**O que mudou:**
+
+1. **Filtro lateral, o padrão do ERP** (ele: *"eu já tinha falado que isso é
+   para ser padrão para todo o ERP"*). Etapa do cadastro, situação, vínculo,
+   obra, cargo, convenção, forma de pagamento — e um bloco "o que está
+   pendente" com falta de dado, falta de papel, pedido na contabilidade,
+   documento na obra, ativo sem obra e sem forma de pagamento.
+2. **Painéis de pendência que SÃO filtros.** Número solto não serve: o valor
+   está em ir de "12 sem papel" para as 12 pessoas em um clique. A conta de
+   cada painel é feita sobre o recorte dos outros filtros, mas ANTES do painel
+   escolhido — senão clicar num zeraria a conta dos outros.
+3. **A etapa aparece na linha**, com a conta ao lado de cada etapa no filtro.
+   É o quadro do Pipefy virado lista: a pergunta "quem está parado e onde" tem
+   resposta sem abrir ficha nenhuma.
+4. **As pendências aparecem na própria linha** (quantos dados, quantos papéis,
+   quantos pedidos), com o detalhe no `title` — o DP vê o que fazer sem clicar.
+
+**A FICHA DA PESSOA VIROU QUATRO ABAS** (Resumo · Ponto e espelho · Pagamentos ·
+Documentos), porque ele cobrou: *"o cadastro da pessoa é para bater com o
+cadastro ponto, é para ser tudo integrado (…) preciso ver a folha de ponto, ver
+espelho, poder exportar os espelhos, poder ver histórico de pagamentos (…) você
+aqui está restringindo muita informação."*
+
+⚠️ **O PONTO NÃO É REIMPLEMENTADO AQUI.** A aba chama a API do próprio módulo
+(`/erp/api/ponto/espelho/<id>`) e o botão de exportar abre a tela de impressão
+dele. Duas contas de ponto divergiriam no primeiro mês, e aí ninguém saberia
+qual é a certa. A aba só aparece para quem tem `ver_ponto`.
+
+**DOIS DEFEITOS MEUS, e os dois valem registro:**
+
+1. **Texto branco em fundo branco.** Eu usei a classe das abas da BARRA AZUL
+   (`topo-aba`, texto branco) dentro de uma janela branca. Ele viu na hora:
+   *"está branco, aí a gente quase não consegue visualizar. Está quase
+   apagado."* A classe certa para fundo claro é `subaba`, que passou a servir
+   para `<button>` também — antes só estava pensada para `<a>`.
+2. **`rollback` que jogava fora o trabalho de quem chamou.** A contagem de
+   pendências do DP é protegida (as tabelas podem não existir antes do botão do
+   banco), e eu desfazia a sessão inteira no erro — uma tela abrindo
+   desfaria uma transação em curso. Agora cada contagem roda no seu ponto de
+   retorno. **Regra geral: `except` em consulta de apoio usa `begin_nested`,
+   nunca `s.rollback()`.**
+
+**CARGOS E CONVENÇÕES SAIU DO MENU.** Ele: *"foi dado muito destaque a uma tela
+dessa. Isso aqui é para estar dentro de uma espécie de configurações."* Está em
+**Configurações › Cargos e convenções**, pelo mesmo motivo que Empresas saiu do
+topo em 10/09/2026: é tabela que se mexe quando sai dissídio, não trabalho de
+todo dia.
+
+**DESPESAS COM COLABORADOR ficou como está, por decisão dele:** *"isso aqui a
+gente não vai mexer agora, que isso aqui a gente vai migrar a parte de folha de
+pagamento para cá. Ela vai englobar tudo que já tem no Análise de SPs."*
+
+### 🤝 O CICLO DP ↔ CONTABILIDADE, E O AGENTE (05/11/2026)
+
+**A metodologia inteira está em `AGENTE_DP.md`, nesta pasta.** Ler lá antes de
+mexer: este resumo não substitui o desenho.
+
+O dono explicou o fluxo que o Pipefy fazia e pediu *"vá além em relação ao
+agente de DP. O que ele deveria fazer? Quais rotinas ele deveria cuidar? Quais
+interações entre DP, Contabilidade e os administrativos de obra que fazem as
+requisições ele deveria fazer, e como?"*
+
+**O FLUXO, agora dentro do ERP:** a obra pede (fila do DP, migração 088) → o DP
+confere e completa o que está nos documentos → **o cadastro BIFURCA pelo
+vínculo** (migração 089): prestador resolve no DP (PJ gera contrato a assinar;
+diarista e autônomo mensalista concluem ali), CTPS vai para a contabilidade → o
+ERP **pede, cobra e confere o retorno** (migração 090) → conclui.
+
+**O QUE ESTÁ CONSTRUÍDO:**
+
+- **sete templates de pedido à contabilidade** — assinatura de CTPS (admissão),
+  alteração de cargo, férias, dependente, cônjuge, desligamento e cancelamento
+  de desligamento. Cada um com o que **espera de volta** (tipo do catálogo), o
+  **prazo em dias úteis**, o teto de cobranças e **a lista de campos que têm de
+  bater** no documento que voltar. A *documentação rescisória* não é template:
+  ela é o RETORNO do desligamento, e foi ele quem disse por quê;
+- **o texto do e-mail é guardado, não recalculado** — o modelo muda com o tempo,
+  e o pedido de março tem de continuar mostrando o texto de março. É o que
+  permite discutir com a contabilidade o que foi pedido;
+- **retorno que não bate NÃO conclui**: abre divergência com o de/para campo por
+  campo. Para fechar, ou o cadastro é corrigido, ou alguém aceita a divergência
+  **com motivo escrito**. Carimbar como certo um documento errado é justamente o
+  problema que ninguém pega hoje;
+- **as sete rotinas do agente**, cada uma com três modos (DESLIGADA / SUGERE /
+  FAZ) e parâmetros próprios. **Todas nascem desligadas** — pedido dele.
+  **CINCO das sete não usam IA nenhuma** (triagem, despacho, cobrança, vigia,
+  relator): são regra de negócio e conta de calendário. O agente começa útil e
+  burro, e fica inteligente depois.
+
+**O PONTO CEGO FOI FECHADO NO MESMO DIA, e eu estava errado sobre o custo.** Eu
+havia registrado que o ERP não lê caixa de entrada e que fechar isso exigiria
+credencial nova. Ele derrubou: *"Que agente é esse que depende de uma
+intervenção humana? Aí não é agente. (…) o ERP precisa estar fazendo a leitura
+das caixas de entrada, baixando anexo de forma completamente autônoma."*
+
+E o custo que eu apontei não existia: **`imaplib` e `email` são da biblioteca
+padrão** (nenhuma dependência nova) e a senha da caixa fica **cifrada no banco**,
+configurada na tela — a mesma mecânica da senha de SMTP das empresas, sem envvar
+nova e sem deploy para ligar.
+
+**A leitura casa a resposta com o pedido em três tentativas:** o `Message-ID`
+que o ERP gerou ao enviar (o certo), a marca `[CT-00001]` no assunto (quando o
+cabeçalho não volta) e o CPF no texto (só com UM pedido aberto da pessoa). Com
+dois, **não escolhe** — anexar a rescisão no pedido de férias é pior que não
+anexar, e a mensagem fica "sem dono" com o motivo escrito.
+
+**OS CANAIS, decididos por ele:** contabilidade por **e-mail** nos dois
+sentidos; administrativo de obra por **WhatsApp** (avisar e cobrar); e a
+**devolução de documento pelo SISTEMA, nunca por WhatsApp** — *"foto de
+documento em conversa não é arquivo"*. Os dois tipos novos da mensageria
+(`erp.dp_devolucao`, `erp.dp_pedido`) nascem no WhatsApp, que é exceção à regra
+de 05/10/2026 e está registrada no teste da mensageria com o motivo: quem está
+na obra não tem Telegram.
+
+**O PORTAL JÁ EXISTE, E É O APLICATIVO DO PONTO.** Ele perguntou como ficaria o
+permissionamento entre ERP, portal e ponto — e a resposta é que não há portal
+novo. São TRÊS mundos de acesso que não se misturam: o ERP (e-mail e senha,
+perfil → ações → seções), o portal (CPF + PIN do app do ponto, papéis do ponto)
+e o aparelho (token do dispositivo). O ERP **lê a sessão** que o app do ponto
+abriu — os dois rodam no mesmo processo e dividem o cookie — e **não
+reimplementa nenhuma regra de alcance**: quais obras a pessoa alcança e quem
+pode pedir por outros vêm de `ponto/core/papeis.py`. Duas regras de alcance que
+divergem seria o pior dos mundos.
+
+~~⚠️ **O QUE FALTA PARA O PORTAL APARECER:** a tela dele mora no aplicativo do
+ponto.~~ **Desfeito em 07/11/2026.** A tela é do ERP, em `/erp/portal`, com o
+login do ERP. O chat do ponto não tem nada a fazer aqui.
+
+**O limite do agente está NO CÓDIGO, não só no documento** (`ROTINAS[...]
+["nao_analisa"]`, e um teste que exige a frase): ele não desliga, não admite,
+não muda salário nem cargo por conta própria; não manda e-mail sem pedido
+registrado com autor humano; não conclui com divergência; não sobrescreve o que
+alguém digitou; e tudo o que faz fica marcado como dele.
+
 ### ✉️ A TELA MENSAGENS ENTROU NO ERP (05/10/2026) — feita pelo chat da Mensageria
 
 Mesmo encaixe do ponto: as rotas moram em `app/apps/mensageria/gestao.py` e se
@@ -7092,7 +7438,281 @@ O que só isso mostra: erro de JavaScript que mata a tela inteira, tela que
 carrega em branco, botão que não responde, número formatado errado. Nenhuma
 dessas coisas aparece num teste que só olha o HTML que o servidor mandou.
 
+## 06/11/2026 — AS FOTOS DO PORTAL ACHARAM CINCO DEFEITOS QUE A SUÍTE NÃO VIA
+
+O dono pediu *"quero telas"* do portal da obra. Montei uma maquete que usa o
+**template de verdade** e a **folha de estilo de verdade**, só com o `fetch`
+dublado, e fotografei a 390 px de largura (celular). Olhar a foto achou cinco
+defeitos que nenhum teste pegava, porque todos eram de APARÊNCIA, não de
+lógica:
+
+1. **Campo de lista fechada virando texto livre.** `listas_fechadas()` devolvia
+   a chave `categoria`, mas o campo do formulário se chama
+   `categoria_transporte`. A tela não reclama: desenha uma caixa de texto. Sete
+   campos estavam assim (`tipo_contrato`, `pix_tipo`, `uf`,
+   `categoria_alimentacao`, `categoria_transporte` em dois pedidos,
+   `meio_transporte`). A obra ia digitar "moto", "motinha" e "veículo próprio"
+   para a mesma coisa, e o DP ia traduzir à mão.
+2. **22 campos saindo com o nome do banco** — "aux transporte", "conceder",
+   "categoria transporte" — porque o `ROTULO` só cobria os campos que eu tinha
+   olhado.
+3. **`admissao` e `data_nascimento` caindo como texto**, sem abrir calendário.
+   Data em texto livre volta "12/3", "12-03-26" e "ontem".
+4. **Campo de sim/não como texto livre** (`conceder`, `dependente_ir`,
+   `salario_familia`): voltaria "s", "sim", "SIM" e "pode".
+5. **A situação do pedido chegando na obra como `EM_ANALISE`**, em vez de
+   "Em análise". O portal mandava `sol.situacao` cru.
+
+**O conserto de fundo, e é ele que importa:** `listas_fechadas()` passou a ser
+montada a partir do `DA_LISTA` do próprio cadastro (`cadastros/pessoas.py`),
+com a chave sendo o NOME DO CAMPO. Lista que mudar no cadastro muda no portal
+sozinha, e não há mais duas listas para manter de acordo. Cargo e convenção vêm
+do banco. A opção fora de uso (cartão do transporte) não aparece para quem abre
+pedido novo, mas o cadastro antigo que já a tem continua lendo.
+
+**Cinco travas novas em `tests/test_caixa_e_portal.py`**, porque todos esses
+erros eram silenciosos: campo de lista fechada sem caixinha, lista que é cópia
+em vez da do cadastro, opção fora de uso aparecendo, campo de data sem
+calendário, campo sem rótulo em português, e a situação em código. As travas
+percorrem a lista de campos dos tipos de pedido — não a minha memória.
+
+**O que a foto NÃO prova:** o campo de data apareceu como `mm/dd/yyyy` nas
+fotos. Isso é do navegador do contêiner (o Chromium sem interface ignora o
+idioma na hora de desenhar o campo nativo de data); no celular em português
+sai `dd/mm/aaaa`. Não dá para o site mandar nesse formato — quem manda é o
+aparelho.
+
+**Como refazer as fotos:** o gerador da maquete e o script do Playwright ficam
+no bloco de rascunho da sessão; são 20 linhas cada, e o importante é o método —
+**usar o template de verdade, nunca uma cópia escrita à mão.** Uma maquete
+escrita à mão mostra os defeitos que eu inventei, não os que estão no código.
+
+## 06/11/2026 (tarde) — AS TELAS DO CADASTRO, E OS CINCO DEFEITOS QUE ELAS MOSTRARAM
+
+Ele pediu as telas do cadastro de colaborador. Desta vez não foi maquete: subi
+um **banco descartável de verdade** (`erp_olhada` na 5433, schema + as 91
+migrações + 20 pessoas semeadas + um ADMIN), rodei a aplicação na porta 5055 e
+fotografei com o Playwright, logado. É o método que o próprio `HISTORICO.md`
+recomenda, e ele achou cinco coisas que a suíte inteira não via:
+
+1. **O botão "+ Colaborador" NÃO FAZIA NADA.** `formulario()` montava o
+   diálogo inteiro e nunca chamava `showModal()`; só `abrirFichaCompleta`
+   abria. Sem erro no console, sem nada na tela — o botão simplesmente não
+   respondia. Agora quem preenche a janela abre a janela.
+2. **A tela PROMETIA o bloco de jogar documento no cadastro novo e não tinha
+   bloco nenhum.** O caminho só existia para quem já estava cadastrado. Isso
+   feria a regra dele de 17/09 ("uma porta só, o documento entra DENTRO").
+   Construído o que faltava: rota `/erp/api/colaboradores/documento/ler` (irmã
+   das que já existiam para obra nova e empresa nova),
+   `preenchimento.sugerir_para_nova_pessoa()` e o bloco no topo da aba
+   Identificação. **Diferença em relação à pessoa que já existe:** aqui o CPF
+   lido PREENCHE o campo (é o que falta), mas se já houver cadastro com ele a
+   tela para e oferece abrir o existente — é assim que nasce pessoa duplicada.
+3. **"Na contabilidade" aparecia duas vezes com números diferentes:** o painel
+   contava PEDIDOS abertos, o filtro lateral contava PESSOAS na etapa. Lado a
+   lado, 0 e 1. O painel virou "Pedido em aberto / esperando a contabilidade".
+4. **"Choose File / No file chosen" em inglês** em todo o ERP, e cortado no
+   celular. Não dá para traduzir o campo nativo — quem manda é o aparelho. A
+   base agora o envolve num rótulo `.escolher` em português e mostra o nome do
+   arquivo escolhido. **Mora no `erp_base.html` e no `erp.css`**, junto da
+   máscara e da busca: vale para as 18 telas e tela nova nasce certa. O portal
+   deixou de ter a cópia dele.
+5. **Duas janelas mortas** (`erp_agenda.html` e `erp_notas_emitidas.html`):
+   `<dialog id="dlg">` declarado, com botão de fechar, e nunca aberto por
+   ninguém. Removidas.
+
+**E um acabamento:** a busca automática entrava nas 27 UFs (passam do limite de
+12), virando um campo de filtro em cima de um `<select>` órfão, sem rótulo. A
+base agora pula listas em que toda opção tem até 4 letras — sigla se acha de
+olho; o limite existe para lista de NOME (obra, fornecedor, pessoa).
+
+**Três travas novas em `tests/test_telas_javascript.py`**, e duas delas
+acharam sozinhas as janelas mortas:
+
+- tela que declara `<dialog>` precisa chamar `showModal()` nele em algum lugar;
+- função que escreve em `dlg-corpo` precisa abrir a janela ela mesma (separar
+  as duas coisas foi exatamente o defeito do "+ Colaborador": um chamador
+  abria, o outro não);
+- tela que convida a "jogar o documento" precisa ter campo de arquivo.
+
+**O que as fotos NÃO provam:** a leitura do documento na pessoa nova não foi
+exercitada com documento de verdade — não há um RG neste contêiner. O caminho
+é o mesmo que já funciona para obra e para empresa, mas isso é raciocínio, não
+teste.
+
+**Uma fragilidade encontrada de raspão, e deixada em aberto:** o banco aceita
+`colaboradores.etapa` com valor que não existe em `ETAPAS` — descobri porque o
+meu dado semeado gravou `AGUARDANDO_CONTABILIDADE` e a tela mostrou o código
+cru. Pelo sistema isso não acontece (o serviço valida); só por SQL direto. Uma
+trava `CHECK` no banco resolveria, mas é migração nova — perguntei ao dono e
+está esperando resposta.
+
+**Como refazer as fotos** (vale meia hora antes de publicar mudança de tela):
+banco descartável + schema + `migrar.py` + semear + `seed_admin` + aplicação na
+5055 + Playwright logado, ouvindo `pageerror` e `console`. Os scripts ficam no
+bloco de rascunho da sessão.
+
+## 06/11/2026 (noite) — O E-MAIL DA CONTABILIDADE VIRA CAMPO DE TELA
+
+Ele, com todas as letras: *"o e-mail da contabilidade eu acho que tem que ser
+colocado no aplicativo. Porque tem algum canto ali nas configurações (…) deixa
+o campo, cria um local para eu poder adicionar essa informação."*
+
+Está certo, e a parte de baixo já existia — o endereço sempre foi lido de
+`parametros['contabilidade_emails']`, nunca de variável de ambiente. **O que
+não existia era o campo.** Agora existe: `definir_enderecos()` em
+`core/contabilidade.py`, a rota `/erp/api/dp/contabilidade/emails` e um bloco
+na tela.
+
+**Onde o bloco ficou, e por quê:** em Pessoal › Contabilidade, **acima dos
+pedidos**, não num menu de configurações. Sem esse endereço preenchido nenhum
+pedido sai, e quem vai descobrir isso é justamente quem está tentando enviar.
+Vazio, o bloco fica VERMELHO e diz o que falta; preenchido, mostra para onde
+vão os pedidos, com um botão "Trocar".
+
+**Três decisões que valem registro:**
+
+- **Aceita mais de um endereço** (vírgula ou ponto e vírgula). Contabilidade
+  costuma ter mais de uma pessoa no assunto, e mandar só para uma faz o pedido
+  parar nas férias dela.
+- **O feitio é conferido ANTES de gravar.** Endereço torto
+  ("contabilidade@escritorio", "fulano@gmail,com") só apareceria semanas
+  depois, num pedido que a contabilidade nunca recebeu e que o ERP ficou
+  cobrando de ninguém.
+- **Trocar fica registrado em `eventos`.** Esse endereço desvia TODO pedido
+  novo; um desvio silencioso seria descoberto tarde.
+
+**Um erro meu que o teste pegou na hora:** chamei `registrar_evento` passando
+o objeto `Usuario` onde vai o `usuario_id`, e a chave do parâmetro (texto)
+onde `entidade_id` é BIGINT. O banco recusou. A chave passou para dentro do
+`detalhe` e o id ficou 0. Vale a nota: `entidade_id` é NÚMERO, e parâmetro é
+identificado por texto.
+
+**E um defeito de layout que a foto mostrou:** a aba ativa aparecia CORTADA na
+borda da barra azul. Causa: o cálculo que traz a aba ativa para a vista roda
+antes de as fontes carregarem — mede com a fonte do sistema, que é mais
+estreita, conclui "cabe", e quando a fonte de verdade chega tudo cresce. Agora
+ele roda de novo em `document.fonts.ready` e no `resize`. Isso só apareceu
+porque **Pessoal passou a ter 14 abas** depois que o Ponto entrou nela
+(06/11, de manhã) — com 4 abas o erro de medida não dava para ver.
+
+**Fica anotado para decisão do dono:** 14 abas numa barra só é muito, mesmo com
+rolagem e com o botão "Telas". Vale repensar o agrupamento de Pessoal — mas
+isso é escolha dele sobre o menu dele, não conserto.
+
+## 07/11/2026 — UMA PORTA SÓ: o portal separado foi desfeito
+
+**A decisão mais importante desta área até agora, e ela é dele.** Eu tinha
+construído um portal à parte, pendurado no login do aplicativo do ponto. Ele
+entrou, olhou, e desmontou:
+
+> *"eu entrei aqui no portal e acho que você não compreendeu bem como é que é
+> a ideia (…) como é que funciona hoje? Eles têm um portal do Pipefy e lá eles
+> fazem todo tipo de solicitações. Financeiro, suprimento, diário de obras,
+> cadastro colaboradores, solicitação do departamento pessoal e etc. Só que o
+> Pipe é só um formulário de entrada de dados. Por lá não se gerencia nada
+> (…) o ponto fica só para ponto, e o ERP a gente utiliza um outro acesso mais
+> completo (…) o cara vai ter o login, acesso do ERP e vai fazer a requisição
+> dele. Aí, só que num ambiente, digamos, mais enxuto para utilizar no
+> celular."*
+
+**Os dois erros que eu cometi, e eles são do mesmo tipo:**
+
+1. **O portal separado recriava o defeito do Pipefy.** O que torna o Pipefy
+   insuficiente não é o formulário — é que o formulário mora num sistema e a
+   gestão mora em outro. Um portal à parte faz isso de novo.
+2. **Solicitação não é assunto do DP.** A obra pede de tudo. Um portal de DP ou
+   vira quatro portais, ou vira um ERP paralelo pela metade.
+
+O erro comum: **otimizei a entrada e esqueci o acompanhamento.** Formulário é a
+parte fácil; o que falta na empresa é saber em que pé está o que foi pedido.
+
+### O que ficou decidido (por ele, em 07/11)
+
+- **O ponto é só para o ponto.** CPF e PIN, para bater ponto. Nada mais.
+- **Todo o resto entra pelo ERP**, com um login e um sistema de permissão.
+- **Gente de fora e parceiro entram pela mesma porta**, mudando só a permissão.
+- **PARCEIRO só olha**, por enquanto: *"Se eu entender que é necessário dar, eu
+  posso criar um perfil diferente."*
+- **O Pipefy sai de uma vez, sem paralelo.**
+
+### O que mudou no código
+
+| Antes | Agora |
+|---|---|
+| `/erp/portal`, pública | `/erp/portal`, com `@login_obrigatorio` e ação declarada |
+| identidade: sessão do app do ponto | identidade: sessão do ERP (`usuario_id`) |
+| alcance: `papeis.obras_recentes` do ponto | alcance: `obras_do_usuario`, o do ERP |
+| autoridade: `papeis.e_administrativo` | autoridade: a ação `solicitar_dp`, que já existia |
+| 4 rotas na lista de públicas | **lista de públicas voltou a ter só 7** |
+
+**A melhor parte é o que SUMIU:** a ponte carregava uma segunda regra de
+alcance e uma segunda marcação de autoridade. As duas foram apagadas. **Nenhuma
+ação nova foi criada** — e o `PARCEIRO` já estava fora de `solicitar_dp`, então
+a decisão dele já era a regra em vigor, sem uma linha de código novo. Duas
+regras de permissão em paralelo divergem no primeiro mês; agora há uma.
+
+### O que a tela faz com quem só olha
+
+Quem não tem `solicitar_dp` não vê o formulário — só a lista do que existe.
+**Esconder o botão não é a segurança**: a rota recusa igual. É só não oferecer
+o que vai ser negado.
+
+### As travas
+
+- `test_permissoes_rotas.py` cobrava a lista de públicas e **pegou as quatro
+  rotas saindo** — era para isso que ela existia. Ganhou também um teste de que
+  `/erp/portal` responde 404: rota pública esquecida é porta aberta que ninguém
+  lembra de fechar.
+- `test_caixa_e_portal.py` ganhou o teste de que o `PARCEIRO` não abre pedido —
+  para que ninguém conceda sem perceber, e para que o dia em que ele decidir o
+  contrário seja uma mudança consciente.
+- E um teste de que a tela **não manda mais ninguém para `/ponto/app`**.
+
+### 🩹 E A TELA ESTAVA SEM ESTILO EM PRODUÇÃO DESDE 06/11
+
+Achado ao abrir a tela de verdade no navegador: ela pedia
+`url_for('static', …)` — o `static` DA APLICAÇÃO — mas o `erp.css` mora no
+blueprint do ERP, que é `erp.static`. **A página subiu em produção sem folha de
+estilo nenhuma**, e nada acusou: o servidor responde 200 na página, o 404 é só
+do arquivo, e isso não aparece em teste que olha HTML.
+
+**O pior é por que eu não vi:** a maquete que usei para fotografar carregava
+uma CÓPIA LOCAL do `erp.css`. A foto saía bonita enquanto a página de verdade
+estava pelada. **Maquete com arquivo local esconde exatamente este erro** — e é
+por isso que a foto desta vez foi tirada da aplicação no ar, com banco de
+verdade, e não de maquete.
+
+Virou trava: `test_telas_javascript.py` recusa `url_for('static', …)` em
+qualquer tela do ERP.
+
+### ⚑ O QUE DEPENDE DELE, e trava o corte do Pipefy
+
+Como **não vai haver paralelo**, antes do corte os tipos de pedido das outras
+áreas — financeiro, suprimentos, diário de obra — precisam existir aqui. **Hoje
+só os do DP existem.** Os exports que chegaram a este repositório são só os
+pipes do DP (`CADASTRO_COLABORADORES` e `SOLICITAÇÕES DP`).
+
+**Perguntar a ele, no começo da próxima sessão:** quais são os tipos de pedido
+do portal do Pipefy, e quais três ou quatro a obra mais usa — esses têm de
+estar prontos primeiro.
+
 ## Coisas pequenas que mordem
+
+- **⚠️ DATA FIXA EM FIXTURE DE TESTE É BOMBA-RELÓGIO.** Em 07/11/2026, na hora
+  de publicar, um teste quebrou sem nada no código ter mudado: a admissão do
+  fixture era `"2026-11-01"`, e naquele dia ela completou 6 dias. O aviso "a
+  admissão foi há N dias e o registro só está sendo pedido agora" (regra de 5
+  dias, em `avisos_do_pedido`) passou a disparar, um evento `AVISO` entrou no
+  meio da trilha do pedido, e o teste da ORDEM dos eventos falhou. O
+  calendário virou, só isso. **A regra:** data de fixture que a regra de
+  negócio compara com `date.today()` vai RELATIVA a hoje
+  (`date.today() - timedelta(days=N)`), nunca escrita à mão. E a regra que
+  olha o calendário ganha teste próprio com as datas explícitas, dos dois
+  lados do limite — era o que faltava aqui: ninguém testava aquele aviso, e
+  por isso ninguém sabia que ele entrava na trilha. Não vale proibir data fixa
+  em todo teste (são 66 lugares, a maioria legítima): o perigo é só perto de
+  um limite que o tempo atravessa.
 
 - `pip install -r requirements-dev.txt` falha com o pip antigo do sistema
   (`docopt` não compila). Num venv com pip atualizado funciona.

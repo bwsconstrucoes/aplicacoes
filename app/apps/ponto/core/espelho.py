@@ -70,6 +70,8 @@ def rotulo_da_ocorrencia(o: dict) -> str:
     if o.get("tipo") == "ATESTADO" and o.get("subtipo") in NOME_DECLARACAO:
         return NOME_DECLARACAO[o["subtipo"]]
     # a troca de plantão confirmada (31/10/2026, trocas.py): o espelho diz com quem
+    if o.get("tipo") == "COMPENSACAO" and o.get("subtipo") == "HORAS":
+        return "Compensação de horas"
     if o.get("tipo") == "COMPENSACAO" and str(o.get("descricao") or "").startswith(("Troca de plantão com", "Permuta com")):
         return str(o["descricao"]).split(":")[0]
     return ROTULO_TIPO[o["tipo"]]
@@ -174,7 +176,28 @@ def _rendeu_na_compensacao(conn: Connection, colaborador_id: int, o: dict, por_d
                            fim: dt.date, vigencias, calendario, pessoa: dict, pre_assinaladas: set) -> int:
     """Os minutos que o DIA TRABALHADO de uma compensação rendeu além do previsto dele (29/10/2026): é o que paga
     a folga. Num dia de descanso, tudo o que trabalhou; num dia de trabalho, só o que passou da escala."""
-    dia = o["dia_trabalhado"]
+    return int(_apurar_um_dia(conn, colaborador_id, o["dia_trabalhado"], por_dia, inicio, fim, vigencias, calendario,
+                              pessoa, pre_assinaladas).extra or 0)
+
+
+# A COMPENSAÇÃO DE HORAS (06/11/2026, o dono: "é uma compensação, não é de um dia, é de horas"): a turma ficou até
+# as 20h17 na quinta e sai mais cedo na sexta. As horas a mais de um dia (`dia_trabalhado`) pagam as horas a menos
+# de outro (`data_inicio`) — nem mais, nem menos: o que sobra da quinta continua hora extra; o que falta na sexta
+# continua devendo. Ninguém ganha "folga" de dia inteiro, e o que se trabalha no dia mais curto conta normalmente.
+SUBTIPO_HORAS = "HORAS"
+
+
+def compensacao_de_horas(o: dict) -> bool:
+    return o.get("tipo") == "COMPENSACAO" and o.get("subtipo") == SUBTIPO_HORAS
+
+
+def _hm(minutos: int) -> str:
+    return f"{int(minutos) // 60}h{int(minutos) % 60:02d}"
+
+
+def _apurar_um_dia(conn: Connection, colaborador_id: int, dia: dt.date, por_dia: dict, inicio: dt.date,
+                   fim: dt.date, vigencias, calendario, pessoa: dict, pre_assinaladas: set):
+    """O cálculo cru de um dia (sem abono), lendo do banco se ele está fora do período montado."""
     if inicio - dt.timedelta(days=1) <= dia <= fim:
         do_dia = por_dia.get(dia, [])
     else:
@@ -184,9 +207,8 @@ def _rendeu_na_compensacao(conn: Connection, colaborador_id: int, o: dict, por_d
     escala, _ = vigencias.no_dia(dia)
     cal = calendario if inicio <= dia <= fim else feriados.Calendario(conn, dia, dia)
     obra = do_dia[0]["obra_id"] if do_dia else pessoa.get("obra_id")
-    r = apuracao.apurar_dia(dia, escala, [horario.para_local(b["timestamp_servidor"]) for b in do_dia],
-                            feriado=bool(cal.feriado(dia, obra)), intervalo_pre_assinalado=obra in pre_assinaladas)
-    return int(r.extra or 0)
+    return apuracao.apurar_dia(dia, escala, [horario.para_local(b["timestamp_servidor"]) for b in do_dia],
+                               feriado=bool(cal.feriado(dia, obra)), intervalo_pre_assinalado=obra in pre_assinaladas)
 
 
 def _pre_assinaladas(conn: Connection) -> set[int]:
@@ -282,6 +304,21 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
             sobra = max(0, sobra - precisa)
         return 0
 
+    # a compensação de horas: quanto cada uma cobre = o menor entre as horas a mais do dia trabalhado e as horas a
+    # menos do dia curto (as duas contas cruas, sem abono) — e só depois de o dia trabalhado ter passado
+    horas_aprovadas = [o for o in ocorrencias if o["status"] == "APROVADA" and compensacao_de_horas(o)
+                       and o.get("dia_trabalhado")]
+    cobertura: dict[int, int] = {}
+    for o in horas_aprovadas:
+        if o["dia_trabalhado"] >= hoje or o["data_inicio"] >= hoje:
+            cobertura[o["id"]] = 0
+            continue
+        a_mais = _apurar_um_dia(conn, int(colaborador_id), o["dia_trabalhado"], por_dia, inicio, fim, vigencias,
+                                calendario, pessoa, pre_assinaladas)
+        a_menos = _apurar_um_dia(conn, int(colaborador_id), o["data_inicio"], por_dia, inicio, fim, vigencias,
+                                 calendario, pessoa, pre_assinaladas)
+        cobertura[o["id"]] = max(0, min(int(a_mais.extra or 0), int(a_menos.debito or 0)))
+
     dias, anterior_ultima = [], None
     vespera = por_dia.get(inicio - dt.timedelta(days=1)) or []
     if vespera:
@@ -300,7 +337,7 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
         obra_do_dia = (do_dia[0]["obra_id"] if do_dia
                        else obra_vizinha(dias_com_batida, por_dia, dia) or pessoa.get("obra_id"))
         nome_feriado = calendario.feriado(dia, obra_do_dia)
-        aprovadas = [o for o in ocorrencias if o["status"] == "APROVADA"
+        aprovadas = [o for o in ocorrencias if o["status"] == "APROVADA" and not compensacao_de_horas(o)
                      and o["data_inicio"] <= dia <= o["data_fim"] and o["tipo"] in ABONO_POR_TIPO]
         # A declaração de comparecimento (27/10/2026): abona o dia todo só se quem aprovou
         # escolheu "o dia todo"; "só o período" abona os minutos declarados; "nada", nada.
@@ -331,9 +368,21 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
                             or (o["tipo"] == "ABONO" and (o["tipo"], o.get("subtipo")) not in nao_abonam))
         if compensacao_falhou:
             abono_parcial += compensacao_falhou["minutos"]                  # o que o dia trabalhado cobriu
+        # a compensação de horas: no dia mais curto, as horas a mais do outro dia cobrem o que faltou
+        horas_aqui = []
+        for o in horas_aprovadas:
+            if o["data_inicio"] != dia:
+                continue
+            c = cobertura.get(o["id"], 0)
+            abono_parcial += c
+            rot = (f"Compensação de horas — {_hm(c)} cobertas pelas horas a mais de {o['dia_trabalhado']:%d/%m}" if c
+                   else f"Compensação de horas — a compensar com as horas a mais de {o['dia_trabalhado']:%d/%m}"
+                   if o["dia_trabalhado"] >= hoje
+                   else f"Compensação de horas — {o['dia_trabalhado']:%d/%m} não teve horas a mais; nada coberto")
+            horas_aqui.append({"id": o["id"], "rotulo": rot, "subtipo": SUBTIPO_HORAS, "minutos": c})
         pendentes = [o for o in ocorrencias if o["status"].startswith("AGUARDANDO")
                      and (o["data_inicio"] <= dia <= o["data_fim"] or o["dia_trabalhado"] == dia)]
-        compensa = [o for o in ocorrencias if o["status"] == "APROVADA"
+        compensa = [o for o in ocorrencias if o["status"] == "APROVADA" and not compensacao_de_horas(o)
                     and o["tipo"] == "COMPENSACAO" and o["dia_trabalhado"] == dia]
         if dia < vale_desde:                  # antes do ponto valer: nada conta, nada aparece
             aprovadas, pendentes, compensa = [], [], []
@@ -356,6 +405,8 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
             elif r.debito:
                 r.debito = max(0, r.debito - abono_parcial)
                 # a falta parcial toda abonada (29/10/2026): o dia fica certo — o que faltou está justificado
+                if not r.debito:                 # o que faltou está todo pago: o aviso de atraso/saída sai junto
+                    r.alertas = [a for a in r.alertas if a not in ("ATRASO", "SAIDA_ANTECIPADA")]
                 if not r.debito and r.situacao in apuracao.SITUACOES_PARCIAIS:
                     r.situacao, coberto = "OK", True
                     r.alertas = [a for a in r.alertas if a not in ("FALTA_PARCIAL", "BATIDA_FALTANDO")]
@@ -363,6 +414,8 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
             r.alertas.append("COMPENSACAO_NAO_CUMPRIDA")
             if r.situacao == "FALTA" and compensacao_falhou["minutos"]:
                 r.situacao, r.falta = "FALTA_PARCIAL", False
+        if r.situacao == "FALTA" and any(h["minutos"] for h in horas_aqui) and not r.abonado:
+            r.situacao, r.falta = "FALTA_PARCIAL", False      # faltou o dia, mas parte dele está paga em horas
         # trabalhou no dia da folga compensatória: as horas contam (como dia de descanso trabalhado)
         if (r.abonado and do_dia and aprovadas and aprovadas[0]["tipo"] == "COMPENSACAO"):
             r.extra = r.trabalhado
@@ -373,6 +426,10 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
             r.alertas = [a for a in r.alertas if a not in ("TRABALHO_EM_DESCANSO",
                                                            "TRABALHO_EM_FERIADO")]
             r.situacao = "COMPENSADO"
+        # a compensação de horas: no dia das horas a mais, sai da hora extra só o que pagou o outro dia
+        horas_usadas = [o for o in horas_aprovadas if o["dia_trabalhado"] == dia]
+        if horas_usadas and r.extra:
+            r.extra = max(0, r.extra - sum(cobertura.get(o["id"], 0) for o in horas_usadas))
         # O 12x36 automático (30/10/2026, o dono: "deixe tentar de forma automática, e se tiver alguma
         # anormalidade, o sistema critica e pede para o DP decidir"): a noite trabalhada fora do ciclo
         # que as batidas mostram é troca de plantão ou extra — quem sabe é o DP.
@@ -450,11 +507,16 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
             "ocorrencia": ({"id": aprovadas[0]["id"], "tipo": aprovadas[0]["tipo"],
                             "subtipo": aprovadas[0].get("subtipo"),
                             "rotulo": rotulo_da_ocorrencia(aprovadas[0])} if aprovadas else None),
-            "compensacao": ({"id": compensa[0]["id"], "rotulo": rotulo_da_ocorrencia(compensa[0])} if compensa else None),
+            "compensacao": ({"id": compensa[0]["id"], "rotulo": rotulo_da_ocorrencia(compensa[0])} if compensa
+                            else {"id": horas_usadas[0]["id"], "subtipo": SUBTIPO_HORAS,
+                                  "rotulo": "Compensação de horas — " + ", ".join(
+                                      f"{_hm(cobertura.get(o['id'], 0))} pagam {o['data_inicio']:%d/%m}"
+                                      for o in horas_usadas)} if horas_usadas else None),
             # a declaração que abonou só o período, ou nada — o dia continua julgado
             "declaracoes": [{"id": o["id"], "rotulo": rotulo_da_ocorrencia(o), "subtipo": o["subtipo"],
                              "minutos": int(o.get("minutos") or 0)} for o in declaracoes]
-                           + ([compensacao_falhou] if compensacao_falhou and julgavel else []),
+                           + ([compensacao_falhou] if compensacao_falhou and julgavel else [])
+                           + (horas_aqui if julgavel else []),
             "compensacao_a_cumprir": (a_cumprir["dia_trabalhado"].isoformat()
                                       if a_cumprir and dia >= vale_desde else None),
             "pendentes": [{"id": o["id"], "tipo": o["tipo"], "rotulo": rotulo_da_ocorrencia(o),

@@ -116,7 +116,42 @@ def _declarados(codigo: str) -> set[str]:
 
 
 NOMES_DA_BASE = set().union(*(_declarados(_sem_jinja(b)) for b in _blocos(BASE)))
-TELAS = sorted(p for p in TEMPLATES.glob("erp_*.html") if p != BASE)
+
+
+def _estende_a_base(p: Path) -> bool:
+    """A tela herda do `erp_base.html`?
+
+    QUASE TODAS herdam, e para elas as travas deste arquivo valem. A exceção é
+    a PÁGINA SOLTA: o portal da obra (06/11/2026) é HTML inteiro, sem o menu e
+    sem a sessão do ERP, porque quem o abre é gente de obra sem login do ERP.
+    Nela não há base nenhuma para chocar — e exigir os ajudantes da base seria
+    exigir um arquivo que ela não carrega.
+    """
+    return "{% extends" in p.read_text(encoding="utf-8")[:400]
+
+
+TELAS = sorted(p for p in TEMPLATES.glob("erp_*.html")
+               if p != BASE and _estende_a_base(p))
+SOLTAS = sorted(p for p in TEMPLATES.glob("erp_*.html")
+                if p != BASE and not _estende_a_base(p))
+
+
+@pytest.mark.parametrize("tela", SOLTAS, ids=lambda p: p.name)
+def test_a_pagina_solta_traz_os_proprios_ajudantes(tela: Path):
+    """Página que não herda a base tem de declarar o que usa.
+
+    É o outro lado da moeda: a tela que herda não pode REDECLARAR `els`; a que
+    não herda é obrigada a DECLARAR. Sem isto, a página solta abriria com
+    "els is not defined" no console e em branco na tela — e quem a abre é gente
+    de obra no celular, que não vai abrir console nenhum.
+    """
+    codigo = "\n".join(_sem_jinja(b) for b in _blocos(tela))
+    declarados = _declarados(codigo)
+    for usado in ("els", "esc"):
+        if usado + "(" in codigo:
+            assert usado in declarados, (
+                f"{tela.name} usa `{usado}(` e não declara — a página abre em "
+                f"branco, porque ela não carrega os ajudantes da base.")
 
 
 def test_a_base_declara_os_ajudantes_que_as_telas_usam():
@@ -231,3 +266,113 @@ def test_a_tela_nao_procura_elemento_que_nao_existe(tela: Path):
         f"{tela.name} procura o(s) elemento(s) {faltando}, que não existe(m) "
         f"em lugar nenhum da página. No navegador `els(...)` devolve nulo e a "
         f"tela quebra — normalmente dentro de um try, sem aviso no console.")
+
+
+# ---------------------------------------------------------------------------
+# BOTÃO QUE NÃO FAZ NADA
+#
+# Esta trava nasceu de um defeito de verdade: o "+ Colaborador" montava o
+# formulário inteiro e NUNCA ABRIA A JANELA. Nenhum erro no console, nenhuma
+# mensagem — o botão simplesmente não respondia. A única coisa que pega isso é
+# olhar a tela, e olhar a tela não roda na suíte. Então a suíte confere o que
+# dá para conferir: toda tela que tem uma janela `<dialog>` precisa abri-la em
+# algum lugar, e a função que a preenche tem de ser a mesma que a abre.
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("tela", TELAS + SOLTAS, ids=lambda p: p.name)
+def test_a_tela_que_tem_janela_sabe_abrir_a_janela(tela: Path):
+    texto = tela.read_text(encoding="utf-8")
+    codigo = "\n".join(_blocos(tela))
+    if "<dialog" not in texto:
+        return
+    # ids de <dialog> declarados nesta tela
+    janelas = set(re.findall(r'<dialog[^>]*\bid="([\w-]+)"', texto))
+    if not janelas:
+        return
+    abertas = set(re.findall(r'els\("([\w-]+)"\)\.showModal\(\)', codigo))
+    abertas |= set(re.findall(r'getElementById\("([\w-]+)"\)\.showModal\(\)',
+                              codigo))
+    nunca_abertas = sorted(janelas - abertas)
+    assert not nunca_abertas, (
+        f"{tela.name} declara a(s) janela(s) {nunca_abertas} e nunca chama "
+        f"showModal() nela(s). No navegador o botão que deveria abri-la não "
+        f"faz nada, e não aparece erro nenhum no console.")
+
+
+@pytest.mark.parametrize("tela", TELAS + SOLTAS, ids=lambda p: p.name)
+def test_quem_preenche_a_janela_tambem_a_abre(tela: Path):
+    """Preencher sem abrir é o defeito exato do "+ Colaborador"."""
+    codigo = "\n".join(_blocos(tela))
+    # as funções que escrevem no corpo de uma janela
+    for m in re.finditer(r"(?:async\s+)?function\s+(\w+)\s*\([^)]*\)\s*\{",
+                         codigo):
+        nome = m.group(1)
+        # o corpo da função, por contagem de chaves
+        i = codigo.index("{", m.start())
+        nivel, j = 0, i
+        while j < len(codigo):
+            if codigo[j] == "{":
+                nivel += 1
+            elif codigo[j] == "}":
+                nivel -= 1
+                if nivel == 0:
+                    break
+            j += 1
+        corpo = codigo[i:j]
+        if 'els("dlg-corpo").innerHTML' not in corpo:
+            continue
+        assert "showModal()" in corpo, (
+            f"{tela.name}: a função {nome}() escreve no corpo da janela mas "
+            f"não a abre. No navegador o botão que chama {nome}() não faz "
+            f"nada, sem erro nenhum no console.")
+
+
+# ---------------------------------------------------------------------------
+# A TELA NÃO PODE PROMETER O QUE NÃO TEM
+#
+# Regra do dono, 17/09/2026: o documento entra DENTRO do formulário, como um
+# bloco no topo. A tela de colaborador chegou a escrever "jogue o documento no
+# bloco abaixo" e NÃO TINHA BLOCO NENHUM — o caminho só existia para quem já
+# estava cadastrado. Promessa sem botão é pior que não prometer: a pessoa
+# procura, não acha, e conclui que o sistema está quebrado.
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("tela", TELAS + SOLTAS, ids=lambda p: p.name)
+def test_a_tela_que_fala_em_jogar_documento_tem_onde_jogar(tela: Path):
+    texto = tela.read_text(encoding="utf-8")
+    if not re.search(r"[Jj]ogue o documento|[Jj]ogue aqui|arraste o documento",
+                     texto):
+        return
+    # um campo de arquivo, escrito no HTML, montado em JavaScript, ou pedido
+    # ao `perguntar()` da base com `tipo: "arquivo"`
+    tem_onde = ('type="file"' in texto or "type='file'" in texto
+                or 'type=\\"file\\"' in texto
+                or re.search(r'tipo:\s*"arquivo"', texto) is not None)
+    assert tem_onde, (
+        f"{tela.name} convida a jogar o documento e não tem campo de arquivo "
+        f"nenhum. A pessoa procura o bloco, não acha, e conclui que o sistema "
+        f"está quebrado.")
+
+
+# ---------------------------------------------------------------------------
+# A FOLHA DE ESTILO QUE NÃO CARREGA
+#
+# Defeito de verdade, achado em 07/11/2026: a tela do portal pedia
+# `url_for('static', ...)` — o `static` DA APLICAÇÃO — mas o `erp.css` mora no
+# blueprint do ERP, que é `erp.static`. A página subiu em produção SEM FOLHA DE
+# ESTILO NENHUMA, e nada acusou: o servidor responde 200 na página, o 404 é só
+# do arquivo, e não aparece em teste que olha HTML.
+#
+# Pior: a maquete que eu usei para fotografar a tela carregava uma CÓPIA LOCAL
+# do erp.css, então a foto saía bonita enquanto a página de verdade estava
+# pelada. Maquete com arquivo local esconde exatamente este erro.
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("tela", TELAS + SOLTAS + [BASE], ids=lambda p: p.name)
+def test_a_folha_de_estilo_do_erp_vem_do_blueprint_do_erp(tela: Path):
+    texto = tela.read_text(encoding="utf-8")
+    errados = re.findall(r"url_for\(\s*'static'\s*,\s*filename\s*=\s*'([^']+)'",
+                         texto)
+    errados += re.findall(r'url_for\(\s*"static"\s*,\s*filename\s*=\s*"([^"]+)"',
+                          texto)
+    assert not errados, (
+        f"{tela.name} pede {errados} de `static` (o da aplicação), mas os "
+        f"arquivos do ERP moram em `erp.static`. A página sobe 200 e o arquivo "
+        f"dá 404 — a tela aparece sem estilo e nada acusa.")

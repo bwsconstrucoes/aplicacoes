@@ -66,12 +66,14 @@ class Folha:
     Não é uma classe genérica de PDF: é só o suficiente para os dois
     relatórios que existem. Uma camada a mais aqui seria peso sem uso."""
 
-    def __init__(self, titulo: str, subtitulo: str = ""):
+    def __init__(self, titulo: str, subtitulo: str = "", paisagem: bool = False):
+        """`paisagem`: A4 deitado (277 mm úteis em vez de 190) — para relatório de
+        muitas colunas, como o da DC com a descrição (dono, 06/11/2026)."""
         from fpdf import FPDF
 
         self.titulo = _texto(titulo)
         self.subtitulo = _texto(subtitulo)
-        self.pdf = FPDF(format="A4")
+        self.pdf = FPDF(orientation="L" if paisagem else "P", format="A4")
         self.pdf.set_auto_page_break(auto=True, margin=15)
         self.pdf.add_page()
         self._cabecalho()
@@ -184,7 +186,7 @@ class Folha:
         consideravelmente pra caber mais informação (…) e pode usar a quebra de
         linha"*. Com `linhas_max=1` o comportamento é o de antes."""
         if larguras is None:
-            larguras = [LARGURA_UTIL / len(cabecalho)] * len(cabecalho)
+            larguras = [self.pdf.epw / len(cabecalho)] * len(cabecalho)
         altura = fonte * 0.5          # entrelinha proporcional ao corpo
 
         def escrever_cabecalho():

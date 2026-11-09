@@ -139,10 +139,55 @@ def test_o_conjunto_de_rotas_publicas_e_pequeno_e_conhecido():
     banco**: uma é a ficha do ícone, a outra é código de navegador. O teste
     `tests/test_pwa.py` monta o ERP SEM banco configurado só para provar isso
     — se alguém puser uma consulta ali dentro, aquele arquivo quebra.
+
+    **AS QUATRO DO PORTAL SAÍRAM DAQUI EM 07/11/2026**, e a saída é a notícia.
+    Elas eram públicas porque liam a sessão do APLICATIVO DO PONTO, para quem
+    não tinha login do ERP. O dono desfez esse desenho:
+
+    > *"o ponto fica só para ponto, e o ERP a gente utiliza um outro acesso
+    > mais completo (…) o cara vai ter o login, acesso do ERP e vai fazer a
+    > requisição dele. Aí, só que num ambiente, digamos, mais enxuto para
+    > utilizar no celular."*
+
+    A tela enxuta virou `/erp/portal`, rota comum do ERP, com login e com ação
+    declarada. **A lista de públicas voltou a ter só o que não pode ter dono**:
+    login, saída, saúde, o agente, a porta dos comprovantes (que se defende por
+    segredo) e as duas do PWA. Rota pública é superfície de ataque, e esta lista
+    só deve encolher.
     """
     assert set(routes._ENDPOINTS_PUBLICOS) == {
         "erp.pagina_login", "erp.sair", "erp.health", "erp.api_agente_rodar",
         "erp.api_comprovantes_lote", "erp.manifesto_pwa", "erp.service_worker"}
+
+
+def test_o_portal_mudou_de_dono_e_nao_de_endereco(app):
+    """O endereço `/erp/portal` CONTINUA — o que mudou é quem o guarda.
+
+    Ele era público e se defendia sozinho com a sessão do aplicativo do ponto.
+    Em 07/11/2026 passou a exigir o login do ERP. O endereço ficou o mesmo por
+    escolha do dono — e isso é melhor: endereço que a obra já pode ter salvo no
+    celular não se muda sem motivo, e o motivo era a PORTA, não o nome.
+
+    **É justamente por continuar no mesmo lugar que este teste precisa
+    existir.** Rota que troca de guarda sem trocar de endereço é a que mais
+    facilmente volta a ficar aberta sem ninguém notar: o endereço parece o
+    mesmo, as telas funcionam, e a diferença é invisível até alguém olhar.
+    """
+    from app.apps.erp import routes
+
+    for endpoint in ("erp.pagina_portal", "erp.api_portal_inicio",
+                     "erp.api_portal_abrir", "erp.api_portal_devolver"):
+        assert endpoint not in routes._ENDPOINTS_PUBLICOS, (
+            f"{endpoint} voltou para a lista de rotas públicas")
+    with app.test_client() as c:
+        for metodo, url in (("get", "/erp/portal"),
+                            ("get", "/erp/portal/api/inicio"),
+                            ("post", "/erp/portal/api/pedidos"),
+                            ("post", "/erp/portal/api/devolucoes/1")):
+            r = getattr(c, metodo)(url, json={})
+            assert r.status_code in (302, 401, 403), (
+                f"{url} respondeu {r.status_code} a quem não entrou — "
+                f"ela voltou a ser pública?")
 
 
 def test_a_porta_dos_comprovantes_recusa_sem_segredo_e_com_segredo_errado(app, monkeypatch):

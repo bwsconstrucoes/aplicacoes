@@ -309,6 +309,21 @@ def _guardar_no_navegador(resposta):
     return resposta
 
 
+@bp.after_request
+def _esquecer_as_outras_folhas(resposta):
+    """Toda gravação numa tela da folha (seleção, ajuste, lista colada, geração)
+    joga fora o cruzamento guardado — ver `folhas_cruzadas`. Assim a etiqueta que
+    a outra tela mostra nunca é a seleção de antes de salvar."""
+    try:
+        if request.method == "POST" and resposta.status_code < 400 and \
+                (request.endpoint or "").startswith("analisesps.folha_"):
+            from . import folhas_cruzadas
+            folhas_cruzadas.esquecer()
+    except Exception:  # noqa: BLE001 — esquecer é conforto; a resposta é o que importa
+        logger.exception("Análise de SPs: falhou esquecer o cruzamento das folhas")
+    return resposta
+
+
 NIVEL_COMPRESSAO = 1        # 6,3% do tamanho por 1,4 ms; o nível 6 chega a
                             # 4,4% mas gasta o dobro, e esta instância tem
                             # 2 GB e histórico de morrer de memória.
@@ -4767,12 +4782,22 @@ def tela_folha_calendario():
     except Exception as e:  # noqa: BLE001
         logger.exception("Folha: não consegui ler os feriados do ponto")
         erro_feriados = str(e)
+    # A BUSCA AUTOMÁTICA (05/11/2026): o que já foi buscado em cada ano.
+    busca = None
+    try:
+        from app.apps.ponto import db as banco_do_ponto
+        from app.apps.ponto.core import feriados_busca
+        from .horario import agora as _agora
+        with banco_do_ponto.conexao() as conn:
+            busca = feriados_busca.situacao(conn, _agora().date())
+    except Exception:  # noqa: BLE001 — o quadro é apoio; a lista continua
+        logger.exception("Folha: não consegui ler a situação da busca de feriados")
 
     from .horario import agora
     return render_template(
         "analisesps_folha_calendario.html", aba="folha", subaba="calendario",
         grupos=subtelas_agrupadas(), pronto=pronto, feriados=feriados,
-        antigos=antigos, erro_feriados=erro_feriados,
+        antigos=antigos, erro_feriados=erro_feriados, busca=busca,
         ferias=ferias, procurado=procurado, ano=ano,
         ano_padrao=agora().year, erro=erro,
         pode_operar=auth.pode_operar(),
@@ -5227,6 +5252,7 @@ def tela_folha_dc():
         agrupamento = dc.AGRUPAMENTO_PADRAO
     return render_template(
         "analisesps_folha_dc.html", aba="folha", subaba="dc",
+        cruzado=_competencia_do_cruzamento(),
         agrupamento=agrupamento, agrupamentos=dc.AGRUPAMENTOS,
         grupos_da_lista=dc.agrupar(lista["pessoas"], agrupamento),
         grupos=subtelas_agrupadas(), resultado=calculado, erro=erro,
@@ -5264,6 +5290,24 @@ def folha_dc_relatorio(formato: str):
         logger.exception("Folha: falhou o relatório da DC")
         return render_template("analisesps_erro.html", titulo="Relatório da DC",
                                mensagem=f"Não foi possível gerar o relatório: {e}"), 500
+
+
+@bp.route("/api/folha/dc/extra", methods=["POST"])
+@exige_operador
+def folha_dc_extra():
+    """Acréscimo ou desconto de UM lançamento da DC (06/11/2026) — ver
+    `dc.ajustar_extra`. Valor vazio tira o ajuste."""
+    from . import dc
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        dc.ajustar_extra(dados.get("chave"), dados.get("valor"), dados.get("motivo"), quem=quem)
+    except dc.ErroDaDC as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou gravar o acréscimo/desconto da DC")
+        return {"ok": False, "erro": f"Não foi possível gravar: {e}"}, 500
+    return {"ok": True}
 
 
 @bp.route("/api/folha/dc/selecao", methods=["POST"])
@@ -5346,6 +5390,7 @@ def tela_folha_avulso():
         agrupamento = pa.AGRUPAMENTO_PADRAO
     return render_template(
         "analisesps_folha_avulso.html", aba="folha", subaba="avulso",
+        cruzado=_competencia_do_cruzamento(),
         agrupamento=agrupamento, agrupamentos=pa.AGRUPAMENTOS,
         grupos_da_lista=pa.agrupar(lista["pessoas"], agrupamento),
         grupos=subtelas_agrupadas(), resultado=calculado, erro=erro,
@@ -5946,6 +5991,42 @@ def folha_card_lancar():
         return {"ok": False, "erro": f"Não foi possível lançar: {e}"}, 500
 
 
+def _competencia_do_cruzamento() -> tuple:
+    """(ano, mes) das etiquetas "nas outras folhas" nas telas SEM competência (DC e
+    avulso): a competência sugerida da folha — o mês anterior até o dia 10."""
+    from .folha_apropriacao import competencia_sugerida
+    from .horario import agora
+    return competencia_sugerida(agora().date())
+
+
+@bp.route("/api/folha/outras-folhas")
+@exige_consulta
+def folha_outras_folhas():
+    """As etiquetas "nas outras folhas" de cada pessoa (05/11/2026) — ver
+    `folhas_cruzadas`. Pedida pela tela DEPOIS de abrir (`_outras_folhas.html`):
+    o cruzamento passa por todas as telas da folha, e a tela não espera por ele."""
+    from . import folhas_cruzadas
+    from .formatos import moeda
+    try:
+        ano = int(request.args.get("ano") or 0)
+        mes = int(request.args.get("mes") or 0)
+    except (TypeError, ValueError):
+        ano = mes = 0
+    if not (2000 <= ano <= 2100 and 1 <= mes <= 12):
+        return {"ok": False, "erro": "competência inválida."}, 400
+    tela = str(request.args.get("tela") or "")
+    try:
+        r = folhas_cruzadas.etiquetas_da_tela(ano, mes, tela)
+    except Exception as e:  # noqa: BLE001 — a etiqueta é apoio; a tela segue
+        logger.exception("Folha: falhou cruzar as folhas")
+        return {"ok": False, "erro": f"Não foi possível cruzar as folhas: {e}"}, 500
+    return {"ok": True, "competencia": f"{mes:02d}/{ano}", "avisos": r["avisos"],
+            "pessoas": {cpf: [{"rotulo": e["rotulo"], "valor": moeda(e["valor"]),
+                               "obs": e["obs"], "alerta": e["alerta"], "titulo": e["titulo"]}
+                              for e in lista]
+                        for cpf, lista in r["pessoas"].items()}}
+
+
 @bp.route("/api/folha/feriados/levar-ao-ponto", methods=["POST"])
 @exige_operador
 def folha_feriados_levar_ao_ponto():
@@ -5960,6 +6041,28 @@ def folha_feriados_levar_ao_ponto():
         logger.exception("Folha: falhou levar os feriados para o ponto")
         return {"ok": False, "erro": f"Não foi possível gravar no ponto: {e}"}, 500
     return {"ok": True, **r}
+
+
+@bp.route("/api/folha/feriados/buscar", methods=["POST"])
+@exige_operador
+def folha_feriados_buscar():
+    """"Buscar agora" (05/11/2026): busca já os feriados nacional, estaduais e
+    municipais que faltam para as obras em andamento — ver
+    `ponto/core/feriados_busca.py`. A busca automática faz o mesmo sozinha."""
+    from app.apps.ponto import db as banco_do_ponto
+    from app.apps.ponto.core import feriados_busca
+    from . import folha_calendario as fc
+    from .horario import agora
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        with banco_do_ponto.conexao() as conn:
+            r = feriados_busca.buscar(conn, agora().date(), por=f"{quem} (botão)")
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+        logger.exception("Folha: falhou buscar os feriados")
+        return {"ok": False, "erro": f"Não foi possível buscar os feriados: {e}"}, 500
+    fc.esquecer_leituras()
+    return {"ok": True, "gravados": r["gravados"], "avisos": r["avisos"],
+            "anos": {str(k): v for k, v in r["anos"].items()}}
 
 
 @bp.route("/api/folha/ferias", methods=["POST"])

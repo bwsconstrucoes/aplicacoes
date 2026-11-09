@@ -267,6 +267,12 @@ a { color: var(--azul-claro); }
 .subaba {
   padding: 8px 14px; font-size: 13px; font-weight: 600; color: var(--tinta-suave);
   text-decoration: none; border-bottom: 2px solid transparent; border-radius: 6px 6px 0 0;
+  /* SERVE PARA <a> E PARA <button> (05/11/2026). A faixa de abas dentro de uma
+     janela é montada na hora, com botão — e sem estas três linhas o botão vinha
+     com a borda e o fundo cinza do navegador. A armadilha que custou isto: usar
+     a classe `topo-aba`, que é da BARRA AZUL (texto branco), dentro de uma
+     janela BRANCA — branco no branco, invisível. */
+  background: none; border: 0; cursor: pointer; font-family: inherit;
 }
 .subaba:hover { background: #F2F5FA; color: var(--tinta); }
 .subaba.ativa { color: var(--azul); border-bottom-color: var(--azul); background: #F2F5FA; }
@@ -916,4 +922,31 @@ dialog::backdrop { background: rgba(7,30,64,.45); }
     right: 8px; left: 8px; bottom: 8px; width: auto;
     max-width: none; max-height: 86vh;
   }
+}
+
+/* ---------------------------------------------------------------------------
+   O ESCOLHEDOR DE ARQUIVO EM PORTUGUÊS
+
+   O campo nativo do navegador sai em inglês e cortado ("Choose File / No file
+   chosen"), e não há como traduzi-lo: quem manda é o idioma do aparelho. O
+   jeito é esconder o campo e pôr um rótulo nosso no lugar dele — o clique no
+   rótulo abre o mesmo seletor.
+
+   Vale para TODAS as telas, por isso mora aqui e não dentro de uma delas:
+   quem escreve `<label class="escolher">` com um `<input type="file">`
+   dentro já nasce certo. A base liga o nome do arquivo escolhido sozinha.
+   --------------------------------------------------------------------------- */
+.escolher {
+  display: inline-block; text-align: center; background: var(--fundo-suave, #EEF2FA);
+  color: var(--azul, #31507F); border: 1px dashed var(--borda-forte, #C9D3E4);
+  border-radius: 10px; padding: 9px 14px; font-size: 14px; font-weight: 600;
+  cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.escolher:hover { border-color: var(--azul, #31507F); }
+.escolher input[type=file] { display: none; }
+/* Com arquivo escolhido, o rótulo mostra o nome dele e muda de cara. */
+.escolher.cheio {
+  background: var(--verde-claro, #E8F6EE); color: var(--verde, #1C6B3C);
+  border-style: solid;
 }

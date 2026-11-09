@@ -62,6 +62,7 @@ def hoje(conn: Connection, *, dia: Optional[dt.date] = None, obras: Optional[lis
         SELECT colaborador_id, tipo, status FROM ponto.ocorrencias
          WHERE colaborador_id = ANY(:ids) AND status NOT IN ('NEGADA', 'CANCELADA')
            AND data_inicio <= :d AND data_fim >= :d
+           AND NOT (tipo = 'COMPENSACAO' AND subtipo IS NOT DISTINCT FROM 'HORAS')   -- o dia curto não é folga
     """, d=dia, ids=ids):
         ocorr[o["colaborador_id"]].append(o)
     vigencias = defaultdict(list)

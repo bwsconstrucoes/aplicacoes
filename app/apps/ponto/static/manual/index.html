@@ -204,7 +204,7 @@ details.duvida p { margin-top: 8px; }
       <li><a href="#obra">Para o responsável do ponto da obra</a></li>
       <li><a href="#administrativo">Administrativo da obra e quem o DP liberou</a></li>
       <li><a href="#equipe">Ponto da minha equipe</a></li>
-      <li><a href="#vigia">Vigia: 12x36, permuta e ronda</a></li>
+      <li><a href="#vigia">Vigia: 12x36, plantão dobrado, permuta e ronda</a></li>
       <li><a href="#regras">O que pode e o que não pode</a></li>
       <li><a href="#mensagens">Mensagens na tela e o que fazer</a></li>
       <li><a href="#duvidas">Dúvidas comuns</a></li>
@@ -455,6 +455,7 @@ details.duvida p { margin-top: 8px; }
         <li><b>Declaração de comparecimento</b> (consulta, exame): o dia, o horário escrito na declaração e a foto dela. O DP confere e decide se abona o dia todo, só aquele horário ou nada.</li>
         <li><b>Esqueci de bater o ponto</b>: o dia (ou vários dias) e os horários que faltaram, com o motivo.</li>
         <li><b>Trabalhar num dia no lugar de outro</b>: a compensação combinada com a obra — o dia em que vai trabalhar (ou trabalhou) e o dia da folga no lugar.</li>
+        <li><b>Compensação de horas</b>: ficou até mais tarde num dia e vai sair mais cedo em outro (ou o contrário). Diga só os dois dias: o sistema conta as horas pelas batidas. As horas a mais pagam as horas a menos; o que sobrar continua hora extra, e o que faltar continua devendo.</li>
         <li><b>Permuta de plantão com um colega</b>: só para vigia do 12x36 (<a href="#vigia">parte 9</a>).</li>
         <li><b>Licença</b>: casamento, luto, paternidade e as outras da lei, com o documento quando houver (certidão, por exemplo).</li>
         <li><b>Folga do banco de horas</b>: só para quem tem banco de horas.</li>
@@ -595,6 +596,15 @@ details.duvida p { margin-top: 8px; }
         <li>Toque em <span class="botao">Abrir o ponto e corrigir</span> para ir direto ao mês da pessoa e fazer o pedido.</li>
         <li>Para mandar o resumo no grupo da obra, toque em <span class="botao">Compartilhar (WhatsApp)</span>.</li>
       </ol>
+      <h3>Assinaturas da folha do mês</h3>
+      <p>Depois que o DP fecha o mês, cada pessoa da equipe confere e assina a folha dela na tela. <b>Prazo: até o dia 20 do mês seguinte.</b></p>
+      <ol>
+        <li>Na tela inicial, toque em <span class="botao">✍️ Assinaturas da folha</span>. Aparecem as pessoas do mês: ✍️ falta assinar, ✅ assinou, ⛔ recusou.</li>
+        <li>Toque em <span class="botao">Assinar</span> na pessoa e entregue o celular a ela: a folha do mês aparece para conferir.</li>
+        <li><b>A própria pessoa digita o PIN dela</b> e assina com o dedo no quadro. Toque em <span class="botao">Assinar</span>.</li>
+        <li>Se ela não quiser assinar, toque em “A pessoa não quer assinar…” e escreva o que ela disse. Fica registrado com o seu nome.</li>
+      </ol>
+      <div class="nota info">A folha assinada vira um PDF guardado, com a assinatura, a data e a hora, quem conduziu e um lacre que muda se qualquer número mudar. Se o mês for reaberto e a folha mudar, a pessoa assina de novo.</div>
       <h3>O que cada sinal quer dizer</h3>
       <ul>
         <li>❌ <b>Falta</b>: dia de trabalho sem batida.</li>
@@ -615,17 +625,43 @@ details.duvida p { margin-top: 8px; }
 
 <!-- 9 -->
 <section class="parte" id="vigia">
-  <header><span class="rotulo">Só para vigias</span><h2>9. Vigia: 12x36, permuta e ronda</h2>
-    <p>O vigia que trabalha à noite tem regras próprias para a saída de manhã, para a troca de noite com um colega e, quando marcado no cadastro, para a ronda.</p></header>
+  <header><span class="rotulo">Só para vigias</span><h2>9. Vigia: 12x36, plantão dobrado, permuta e ronda</h2>
+    <p>O vigia tem regras próprias: só duas batidas, a noite que termina no dia seguinte, o revezamento 12x36, o plantão dobrado, a noite extra, a troca de noite com um colega e a ronda. Veja o que fazer em cada caso.</p></header>
   <div class="passo sem-tela">
     <div class="texto">
-      <h3>A noite de trabalho</h3>
+      <h3>O básico: só duas batidas</h3>
       <ul>
-        <li>Bata a <b>entrada</b> à noite e a <b>saída</b> de manhã. A saída da manhã seguinte conta para a noite em que você entrou.</li>
-        <li>A saída conta para a noite anterior quando é batida <b>até as 10h</b>. Precisou ficar mais? Até o <b>meio-dia</b>, a batida ainda fecha o turno que ficou aberto.</li>
-        <li>Não bata no meio da noite: batida no meio do turno aparece como erro para quem acompanha o ponto da obra.</li>
-        <li>No <b>12x36</b> (noite sim, noite não), o sistema acompanha o seu revezamento pelas suas próprias batidas. Você não precisa avisar qual é a sua noite.</li>
+        <li>Bata a <b>entrada</b> quando chegar e a <b>saída</b> quando for embora. Vigia <b>não tem intervalo</b>: o ajuste e o espelho mostram só entrada e saída.</li>
+        <li><b>Não bata no meio do turno.</b> A batida no meio da noite não conta como saída: fica guardada e aparece como erro para quem acompanha o ponto da obra.</li>
+        <li><b>Tocou duas vezes sem querer?</b> Duas batidas com menos de 10 minutos de diferença contam como uma só.</li>
       </ul>
+      <h3>A noite que termina no dia seguinte</h3>
+      <ul>
+        <li>Entrou às 17h e saiu às 6h do outro dia? É <b>um turno só</b>, do dia em que você <b>entrou</b>. Você não precisa fazer nada.</li>
+        <li>A saída de manhã conta para a noite anterior quando é batida <b>até as 10h</b>. Precisou ficar mais? Até o <b>meio-dia</b>, a batida ainda fecha o turno que ficou aberto.</li>
+      </ul>
+      <h3>O revezamento 12x36</h3>
+      <ul>
+        <li>O sistema descobre sozinho quais noites são suas, pelas suas próprias batidas. Você não precisa avisar qual é a sua noite.</li>
+        <li>Noite sua <b>sem batida</b> é <b>falta</b>. Noite de folga <b>trabalhada</b> é <b>hora extra</b>, e o DP confere.</li>
+        <li><b>Feriado</b> que cai na sua noite de trabalho é dia normal da escala (a lei considera o feriado compensado no 12x36). Feriado trabalhado na sua folga é hora extra.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="passo sem-tela">
+    <div class="texto">
+      <h3>Dobrei o plantão: trabalhei a noite e segui o dia</h3>
+      <ol>
+        <li>De manhã, bata a <b>saída da noite</b> no horário de sempre (por exemplo, 6h).</li>
+        <li>Espere <b>pelo menos 2 minutos</b> e bata de novo. Essa é a <b>entrada do dia</b>.</li>
+        <li>No fim do dia, bata a <b>saída</b> (por exemplo, 18h).</li>
+      </ol>
+      <p>A segunda batida da manhã vai para a <b>conferência do DP</b> como “possível plantão dobrado”. Validada, as horas do dia entram como <b>hora extra</b> (era o seu dia de descanso). Se foi um toque a mais por engano, o DP descarta.</p>
+      <div class="nota info"><b>Esqueceu a segunda batida da manhã?</b> Peça o ajuste do dia do plantão, o dia seguinte à noite trabalhada (✏️ em <b>Meu ponto</b>). Como o dia tem uma batida só, o aplicativo pergunta se a que faltou foi a <b>entrada</b> ou a <b>saída</b>: escolha <b>entrada</b> e informe o horário.</div>
+      <h3>Fiz uma noite extra: saí de manhã e voltei à noite, na minha folga</h3>
+      <p>Bata normalmente: entrada e saída. A noite aparece como <b>noite fora do revezamento</b>, com as horas em extra, para o DP confirmar se foi hora extra ou troca com um colega.</p>
+      <h3>Esqueci de bater</h3>
+      <p>Em <b>Meu ponto</b>, toque no ✏️ do dia e informe o horário. Se o dia tem só uma batida, o aplicativo pergunta se a que faltou foi a <b>entrada</b> ou a <b>saída</b>. O DP aprova.</p>
     </div>
   </div>
   <div class="passo">
@@ -633,12 +669,12 @@ details.duvida p { margin-top: 8px; }
       <h3>Trocou de noite com um colega? Peça a permuta</h3>
       <p>Quando dois vigias do 12x36 trocam de noite, um pedido só acerta os dois:</p>
       <ol>
-        <li>Em <b>Pedidos</b> (ou no aparelho da obra), escolha <b>Permuta de plantão com um colega</b>.</li>
+        <li>Em <b>Atestados e pedidos</b> (ou no aparelho da obra), escolha <b>Permuta de plantão com um colega</b>.</li>
         <li>Digite o <b>CPF do colega</b>.</li>
         <li>Preencha a <b>noite que você trabalhou no lugar dele</b> e a <b>noite sua que ele trabalhou</b>.</li>
-        <li>Envie. O DP aprova, e as duas pessoas ficam acertadas de uma vez.</li>
+        <li>Envie. Basta <b>um dos dois</b> pedir. O DP aprova, e somem a falta e a hora extra dos dois. O espelho mostra “Permuta com…”.</li>
       </ol>
-      <div class="nota info"><b>Só entre vigias da escala 12x36.</b> Sem a permuta, a noite trocada aparece como falta para um e como noite fora do revezamento para o outro.</div>
+      <div class="nota info"><b>Só entre vigias da escala 12x36.</b> Se ninguém pedir, o sistema percebe a troca pelas batidas e <b>sugere a permuta ao DP</b>, que aplica com um toque. Quem só cobriu o colega, sem a volta, fica com a hora extra; o colega, com a falta, e o DP decide.</div>
     </div>
     <div class="telas">
       <figure class="tela"><img src="telas/25-pedido-permuta.jpg" alt="Formulário de permuta de plantão com o CPF do colega e as duas noites" width="600" height="1298"><figcaption>Permuta de plantão</figcaption></figure>
@@ -648,12 +684,12 @@ details.duvida p { margin-top: 8px; }
     <div class="texto">
       <h3>A ronda (vigia noturno marcado no cadastro)</h3>
       <ol>
-        <li>Bata a <b>entrada</b> normalmente, à tarde ou à noite. As rondas começam só depois da entrada.</li>
+        <li>Bata a <b>entrada</b> normalmente, à tarde ou à noite. As rondas começam só depois da entrada: noite sem entrada não tem ronda.</li>
         <li>Durante a noite chegam <b>4 mensagens de ronda</b> no seu WhatsApp, em horários surpresa.</li>
         <li>Abra o link da mensagem, tire a <b>foto</b> e confirme, com a <b>localização ligada</b>, em até <b>10 minutos</b>.</li>
         <li>Na <b>saída</b>, as rondas que ainda não chegaram são canceladas.</li>
       </ol>
-      <div class="nota atencao"><b>Ronda que passa dos 10 minutos fica como perdida</b>, e a administração da obra é avisada na hora. Use o celular que foi liberado para a ronda.</div>
+      <div class="nota atencao"><b>Passou dos 10 minutos?</b> Até meia hora depois, a ronda ainda vale, marcada como atrasada. Sem resposta, fica <b>perdida</b>, e a administração da obra é avisada na hora. Use o celular que foi liberado para a ronda.</div>
     </div>
   </div>
 </section>

@@ -175,6 +175,41 @@
      target="_blank" rel="noopener">Cadastrar ou excluir feriado no Ponto</a>
 </div>
 
+{# A BUSCA AUTOMÁTICA (05/11/2026): nacional calculado; estadual e municipal da base
+   pública, para os lugares das obras em andamento. Ver ponto/core/feriados_busca.py. #}
+{% if busca %}
+<div class="cartao">
+  <label class="rotulo-campo">Busca automática de feriados</label>
+  <p class="cartao-dica" style="margin:0 0 6px">
+    O sistema busca sozinho os feriados <b>nacionais</b>, os <b>estaduais</b> dos estados
+    com obra em andamento e os <b>municipais</b> dos municípios com obra em andamento — no
+    começo de cada ano (o seguinte, a partir de 1º de dezembro) e quando entra obra em
+    estado ou município novo. Feriado excluído no ponto não volta.
+  </p>
+  {% for a, info in busca.anos|dictsort %}
+    <div class="cartao-dica" style="margin:4px 0">
+      <b>{{ a }}:</b>
+      {% if info.ultima %}buscado em {{ info.ultima[8:10] }}/{{ info.ultima[5:7] }}/{{ info.ultima[:4] }}
+        — estados: {{ info.ufs|join(', ') or '—' }}; municípios: {{ info.municipios|length }}
+      {% else %}ainda não buscado{% endif %}
+      {% if info.nao_publicado %} · <i>a base pública ainda não publicou este ano; nova tentativa em uma semana</i>{% endif %}
+      {% if info.sem_feriado %}<br>Sem feriado municipal na base (confira à mão): {{ info.sem_feriado|join(', ') }}{% endif %}
+      {% if info.nao_reconhecidos %}<br><span class="erro">Município não reconhecido (nome diferente do IBGE — corrija o
+        cadastro da obra):</span> {{ info.nao_reconhecidos|join(', ') }}{% endif %}
+    </div>
+  {% endfor %}
+  {% if busca.falta %}
+    <p class="cartao-dica" style="margin:6px 0 0">Falta buscar:
+      {% for a, f in busca.falta|dictsort %}{{ a }} ({% if f.nacional %}nacional, {% endif %}{{ f.ufs|length }} estado(s), {{ f.municipios|length }} município(s)){% if not loop.last %}; {% endif %}{% endfor %}
+      — a busca automática faz isso na próxima hora.</p>
+  {% endif %}
+  {% if pode_operar %}
+    <button class="btn secundario" id="btn-buscar-feriados" type="button" style="margin-top:8px">Buscar agora</button>
+    <span id="recado-buscar" class="cartao-dica" style="margin:0"></span>
+  {% endif %}
+</div>
+{% endif %}
+
 {% if erro_feriados %}
   <div class="aviso erro"><b>Não foi possível ler os feriados do ponto.</b>
     {{ erro_feriados }} — enquanto isso, o auxílio alimentação sai sem desconto de
@@ -344,6 +379,23 @@ if (btnFerias) btnFerias.addEventListener("click", async () => {
   } catch (e) {
     diz("recado-ferias", "Não foi possível gravar as férias: " + e, "erro");
     btnFerias.disabled = false;
+  }
+});
+
+// --- buscar agora os feriados das obras em andamento (05/11/2026) ----------
+const btnBuscar = document.getElementById("btn-buscar-feriados");
+if (btnBuscar) btnBuscar.addEventListener("click", async () => {
+  btnBuscar.disabled = true;
+  diz("recado-buscar", "Buscando — pode levar até um minuto…");
+  try {
+    const d = await mandar("{{ url_for('analisesps.folha_feriados_buscar') }}", {});
+    if (!d.ok) { diz("recado-buscar", d.erro, "erro"); btnBuscar.disabled = false; return; }
+    alert(d.gravados + " feriado(s) novo(s) gravado(s) no ponto."
+          + (d.avisos && d.avisos.length ? "\n\n" + d.avisos.join("\n") : ""));
+    location.reload();
+  } catch (e) {
+    diz("recado-buscar", "Não foi possível buscar: " + e, "erro");
+    btnBuscar.disabled = false;
   }
 });
 

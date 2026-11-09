@@ -23,7 +23,7 @@ import logging
 from flask import request, session
 
 from . import auth, db, horario
-from .app_colaborador import _corpo, _ok, folha_do_espelho, folha_que_nao_abriu, pessoa_do_espelho
+from .app_colaborador import _corpo, _ok, folha_do_espelho, folha_que_nao_abriu, folhas_da_equipe, pessoa_do_espelho
 from .core import cadastros, dispositivos, espelho, forma_de_bater, ocorrencias, papeis
 from .core.ocorrencias import Quem
 from .erros import ErroDeValidacao, NaoAutenticado, NaoEncontrado, Recusada
@@ -99,6 +99,10 @@ def app_api_inicio():
         responde_por_equipe = bool(p) and qualidade.e_responsavel(conn, int(p["id"]))
         # os pedidos negados que esta pessoa ainda não viu — os dela e os que pediu por outros
         avisos_de_negativa = negativas.avisos(conn, int(p["id"])) if p else []
+        # o termo do ponto (07/11/2026): quem bate e ainda não assinou vê o aviso no começo da tela
+        from .core import termo
+        termo_pendente = bool(p) and bool(p.get("ativo_no_ponto")) and termo.disponivel(conn) and \
+            termo.situacao_de(conn, [int(p["id"])])[int(p["id"])]["situacao"] == "FALTA"
     # No ponto da obra, "você entrou como" é o papel DA PESSOA aqui — não o do
     # aparelho (10/10/2026: a tela dizia "você entrou como ponto da obra").
     papel_aqui = None
@@ -111,7 +115,7 @@ def app_api_inicio():
         pessoa=({"nome": p["nome"], "primeiro_nome": p["nome"].split(" ")[0],
                  "administrativo": administrativo, "papel_aqui": papel_aqui,
                  # quem não bate ponto e entra pela liberação (31/10/2026): sem "bater", "meu ponto" e "meu QR"
-                 "bate_ponto": bool(p.get("ativo_no_ponto"))} if p else None),
+                 "bate_ponto": bool(p.get("ativo_no_ponto")), "termo_pendente": termo_pendente} if p else None),
         da_obra=bool(da_obra), perfil=(a or {}).get("perfil"),
         pode={"bater_aqui": bool(da_obra), "bater_o_meu": bate_no_meu,
               "entregar_aqui": bool(da_obra), "pedir_o_meu": pede_o_meu,
@@ -254,6 +258,26 @@ def app_api_equipe():
     return _ok(alcance=_alcance_json(ctx.alcance), competencia=competencia[:7], pessoas=pessoas)
 
 
+def _pessoas_da_equipe(conn, ctx: _Contexto, inicio, fim) -> tuple[dict, set]:
+    """Quem é da equipe de quem pede, no período: {id: obra em que aparece (ou None)} e os ids que ele abre daqui.
+    O MESMO conjunto para o resumo da equipe e para as folhas da equipe (05/11/2026)."""
+    from .core import qualidade
+    eu = int(ctx.pessoa["id"])
+    obra_aqui, abre = {}, set()
+    if not ctx.pelo_aparelho and not ctx.alcance.vazio:
+        for p in papeis.pessoas_do_alcance(conn, ctx.alcance, f"{fim:%Y-%m}", exceto=eu):
+            obra_aqui[int(p["id"])] = p.get("obra_aqui")
+            abre.add(int(p["id"]))
+    if qualidade.e_responsavel(conn, eu):
+        for i in qualidade.equipe_do_responsavel(conn, eu, inicio, fim):
+            if i != eu:
+                obra_aqui.setdefault(int(i), None)
+    if not obra_aqui:
+        raise Recusada(ctx.alcance.sem_alcance or "o resumo é de quem responde pelo ponto de uma obra ou consulta o "
+                                                "ponto das pessoas")
+    return obra_aqui, abre
+
+
 @bp.route("/app/api/equipe/resumo")
 @auth.exige_colaborador_ou_aparelho
 def app_api_equipe_resumo():
@@ -268,18 +292,7 @@ def app_api_equipe_resumo():
         if not eu:
             raise NaoAutenticado("entre com o seu CPF e PIN")
         inicio, fim, rotulo = resumo_equipe.periodo(request.args.get("periodo"), horario.hoje())
-        obra_aqui, abre = {}, set()
-        if not ctx.pelo_aparelho and not ctx.alcance.vazio:
-            for p in papeis.pessoas_do_alcance(conn, ctx.alcance, f"{fim:%Y-%m}", exceto=eu):
-                obra_aqui[int(p["id"])] = p.get("obra_aqui")
-                abre.add(int(p["id"]))
-        if qualidade.e_responsavel(conn, eu):
-            for i in qualidade.equipe_do_responsavel(conn, eu, inicio, fim):
-                if i != eu:
-                    obra_aqui.setdefault(int(i), None)
-        if not obra_aqui:
-            raise Recusada(ctx.alcance.sem_alcance or "o resumo é de quem responde pelo ponto de uma obra ou consulta o "
-                                                    "ponto das pessoas")
+        obra_aqui, abre = _pessoas_da_equipe(conn, ctx, inicio, fim)
         obra = (request.args.get("obra") or "").strip().upper()
         if obra:
             obra_aqui = {i: o for i, o in obra_aqui.items() if (o or "").upper() == obra or o is None}
@@ -373,19 +386,301 @@ def app_api_equipe_mes(colaborador_id: int):
                obras=list(ctx.alcance.obras.values()), pelo_aparelho=ctx.pelo_aparelho)
 
 
+def _periodo_da_folha() -> str:
+    """O período pedido, como vai no bilhete de impressão (o mês ou o de–até)."""
+    return "|".join(str(request.args.get(k) or "") for k in ("competencia", "de", "ate"))
+
+
+@bp.route("/app/api/equipe/<int:colaborador_id>/espelho/bilhete", methods=["POST"])
+@auth.exige_colaborador_ou_aparelho
+def app_api_equipe_espelho_bilhete(colaborador_id: int):
+    """O bilhete para abrir a folha de outra pessoa (05/11/2026, `qr.emitir_impressao`): pedido pela chamada do
+    aplicativo — que leva a identificação do aparelho —, com o MESMO alcance da consulta."""
+    from .core import competencias, qr
+    from .app_colaborador import periodo_pedido
+    with db.conexao() as conn:
+        ctx = _contexto(conn)
+        periodo = periodo_pedido()
+        competencia = request.args.get("competencia") or horario.hoje().strftime("%Y-%m")
+        _alvo(conn, ctx, colaborador_id, *(periodo or (competencias.primeiro_dia(competencia),)))
+    return _ok(bilhete=qr.emitir_impressao(colaborador_id, int(ctx.pessoa["id"]), _periodo_da_folha()))
+
+
+# ---------------------------------------------------------------------------
+# A ASSINATURA DA FOLHA NA TELA (06/11/2026, migração 027, core/assinaturas.py): quem conduz — o operador do ponto da
+# obra ou o administrativo — vê a sua equipe do mês (a mesma do resumo), mostra a folha e a pessoa assina com o PIN dela.
+# ---------------------------------------------------------------------------
+def _equipe_do_mes(conn, ctx: _Contexto, competencia) -> tuple[list[dict], "dt.date"]:
+    from .core import competencias
+    comp = competencias.primeiro_dia(competencia or (horario.hoje().replace(day=1) - dt.timedelta(days=1)))
+    obra_aqui, _ = _pessoas_da_equipe(conn, ctx, comp, competencias.ultimo_dia(comp))
+    pessoas = [p for p in (cadastros.colaborador_por_id(conn, i) for i in obra_aqui) if p]
+    return pessoas, comp
+
+
+def _da_equipe(conn, ctx: _Contexto, colaborador_id: int, competencia) -> tuple[dict, "dt.date"]:
+    pessoas, comp = _equipe_do_mes(conn, ctx, competencia)
+    alvo = next((p for p in pessoas if int(p["id"]) == int(colaborador_id)), None)
+    if not alvo:
+        raise NaoEncontrado("pessoa não encontrada")
+    return alvo, comp
+
+
+@bp.route("/app/api/assinaturas")
+@auth.exige_colaborador_ou_aparelho
+def app_api_assinaturas():
+    """As folhas do mês da equipe de quem conduz: quem assinou, quem recusou, quem falta, e o prazo (dia 20)."""
+    from .core import assinaturas
+    with db.conexao() as conn:
+        ctx = _contexto(conn)
+        pessoas, comp = _equipe_do_mes(conn, ctx, request.args.get("competencia"))
+        return _ok(**assinaturas.situacao(conn, pessoas, comp))
+
+
+@bp.route("/app/api/assinaturas/<int:colaborador_id>/folha")
+@auth.exige_colaborador_ou_aparelho
+def app_api_assinatura_folha(colaborador_id: int):
+    """A folha do mês para mostrar à pessoa antes de ela assinar (a mesma que vai no PDF)."""
+    from .core import espelho
+    with db.conexao() as conn:
+        ctx = _contexto(conn)
+        alvo, comp = _da_equipe(conn, ctx, colaborador_id, request.args.get("competencia"))
+        esp = espelho.do_mes(conn, colaborador_id, comp)
+    return _ok(pessoa=pessoa_do_espelho(alvo), competencia=esp["competencia"], resumo=esp["resumo"],
+               dias=[{k: d.get(k) for k in ("data", "dia_semana", "situacao", "previsto", "trabalhado", "extra", "debito")}
+                     | {"batidas": [b["hora"] + (" (aj)" if b["status"] == "AJUSTADA" else "") for b in d["batidas"]
+                                    if b["status"] != "REJEITADA"],
+                        "ocorrencia": (d.get("ocorrencia") or {}).get("rotulo")} for d in esp["dias"]])
+
+
+@bp.route("/app/api/assinaturas/<int:colaborador_id>", methods=["POST"])
+@auth.exige_colaborador_ou_aparelho
+def app_api_assinar(colaborador_id: int):
+    """A pessoa assina: o PIN DELA, o traço do dedo; a folha é lacrada e o PDF, arquivado."""
+    from .core import assinaturas
+    d = _corpo()
+    with db.conexao() as conn:
+        ctx = _contexto(conn)
+        _, comp = _da_equipe(conn, ctx, colaborador_id, d.get("competencia"))
+        local = _local(d) or {}
+        r = assinaturas.assinar(conn, colaborador_id=colaborador_id, competencia=comp, pin=d.get("pin"),
+                                assinatura=d.get("assinatura"), conduzida_por={"id": ctx.pessoa["id"], "nome": ctx.pessoa["nome"]},
+                                dispositivo_id=(ctx.aparelho or {}).get("id"), latitude=local.get("latitude"),
+                                longitude=local.get("longitude"), ip=auth.ip_de_quem_chama())
+    return _ok(**r), 201
+
+
+@bp.route("/app/api/assinaturas/<int:colaborador_id>/recusa", methods=["POST"])
+@auth.exige_colaborador_ou_aparelho
+def app_api_assinatura_recusa(colaborador_id: int):
+    """A pessoa não quis assinar: o motivo e quem conduziu ficam registrados."""
+    from .core import assinaturas
+    d = _corpo()
+    with db.conexao() as conn:
+        ctx = _contexto(conn)
+        _, comp = _da_equipe(conn, ctx, colaborador_id, d.get("competencia"))
+        local = _local(d) or {}
+        r = assinaturas.recusar(conn, colaborador_id=colaborador_id, competencia=comp, motivo=d.get("motivo"),
+                                conduzida_por={"id": ctx.pessoa["id"], "nome": ctx.pessoa["nome"]},
+                                dispositivo_id=(ctx.aparelho or {}).get("id"), latitude=local.get("latitude"),
+                                longitude=local.get("longitude"), ip=auth.ip_de_quem_chama())
+    return _ok(**r), 201
+
+
+# ---------------------------------------------------------------------------
+# O TERMO DO PONTO (07/11/2026, migração 028, core/termo.py): a pessoa assina no celular dela (entrou com CPF e PIN)
+# ou o operador da obra / o administrativo mostra no aparelho dele — o PIN da pessoa ou, sem PIN, a foto dela na hora.
+# ---------------------------------------------------------------------------
+@bp.route("/app/api/termo")
+@auth.exige_colaborador_ou_aparelho
+def app_api_termo():
+    """O MEU termo: o texto e se já assinei."""
+    from .core import termo
+    with db.conexao() as conn:
+        p = _logado(conn)
+        if not p:
+            raise NaoAutenticado("entre com o seu CPF e PIN")
+        sit = termo.situacao_de(conn, [int(p["id"])])[int(p["id"])] if termo.disponivel(conn) else {"situacao": "FALTA"}
+        return _ok(texto=termo.texto(), situacao=sit, disponivel=termo.disponivel(conn), nome=p["nome"])
+
+
+@bp.route("/app/api/termo", methods=["POST"])
+@auth.exige_colaborador_ou_aparelho
+def app_api_termo_assinar():
+    """Eu assino o meu termo: o meu PIN de novo e o traço do dedo."""
+    from .core import termo
+    d = _corpo()
+    with db.conexao() as conn:
+        p = _logado(conn)
+        if not p:
+            raise NaoAutenticado("entre com o seu CPF e PIN")
+        local = _local(d) or {}
+        a = _aparelho(conn)
+        r = termo.assinar(conn, colaborador_id=int(p["id"]), assinatura=d.get("assinatura"), forma="PELA_PESSOA",
+                          pin=d.get("pin"), conduzida_por={"id": p["id"], "nome": p["nome"]},
+                          dispositivo_id=(a or {}).get("id"), latitude=local.get("latitude"),
+                          longitude=local.get("longitude"), ip=auth.ip_de_quem_chama())
+    return _ok(**r), 201
+
+
+def _equipe_do_termo(conn, ctx: _Contexto) -> list[dict]:
+    """Quem quem conduz alcança e bate ponto (o mesmo conjunto do resumo da equipe, neste mês)."""
+    hoje = horario.hoje()
+    obra_aqui, _ = _pessoas_da_equipe(conn, ctx, hoje.replace(day=1), hoje)
+    pessoas = [p for p in (cadastros.colaborador_por_id(conn, i) for i in obra_aqui) if p]
+    return [p for p in pessoas if cadastros.categoria_no_ponto(p)[0] == "BATE"]
+
+
+def _da_equipe_do_termo(conn, ctx: _Contexto, colaborador_id: int) -> dict:
+    alvo = next((p for p in _equipe_do_termo(conn, ctx) if int(p["id"]) == int(colaborador_id)), None)
+    if not alvo:
+        raise NaoEncontrado("pessoa não encontrada")
+    return alvo
+
+
+@bp.route("/app/api/termos")
+@auth.exige_colaborador_ou_aparelho
+def app_api_termos():
+    """A equipe de quem conduz: quem já assinou o termo, quem recusou e quem falta (os que faltam primeiro)."""
+    from .core import termo
+    with db.conexao() as conn:
+        ctx = _contexto(conn)
+        pessoas = _equipe_do_termo(conn, ctx)
+        ids = [int(p["id"]) for p in pessoas]
+        sit = termo.situacao_de(conn, ids) if termo.disponivel(conn) else {i: {"situacao": "FALTA"} for i in ids}
+        pins = {int(l["colaborador_id"]) for l in db.todos(conn, """SELECT colaborador_id FROM ponto.colaborador_config
+                 WHERE colaborador_id = ANY(:ids) AND pin_hash IS NOT NULL""", ids=ids)} if ids else set()
+        disponivel = termo.disponivel(conn)
+    linhas = sorted(({"id": int(p["id"]), "nome": p["nome"], "funcao": p.get("funcao") or "",
+                      "tem_pin": int(p["id"]) in pins, **sit[int(p["id"])]} for p in pessoas),
+                    key=lambda x: (x["situacao"] != "FALTA", (x["nome"] or "").upper()))
+    return _ok(texto=termo.texto(), pessoas=linhas, disponivel=disponivel,
+               faltam=sum(1 for x in linhas if x["situacao"] == "FALTA"))
+
+
+@bp.route("/app/api/termos/<int:colaborador_id>", methods=["POST"])
+@auth.exige_colaborador_ou_aparelho
+def app_api_termo_conduzido(colaborador_id: int):
+    """A pessoa assina no aparelho de quem conduz: o PIN dela (ou a foto, sem PIN) e o traço do dedo."""
+    from .core import termo
+    d = _corpo()
+    with db.conexao() as conn:
+        ctx = _contexto(conn)
+        _da_equipe_do_termo(conn, ctx, colaborador_id)
+        local = _local(d) or {}
+        r = termo.assinar(conn, colaborador_id=colaborador_id, assinatura=d.get("assinatura"), forma="CONDUZIDA",
+                          pin=d.get("pin"), foto=d.get("foto"),
+                          conduzida_por={"id": ctx.pessoa["id"], "nome": ctx.pessoa["nome"]},
+                          dispositivo_id=(ctx.aparelho or {}).get("id"), latitude=local.get("latitude"),
+                          longitude=local.get("longitude"), ip=auth.ip_de_quem_chama())
+    return _ok(**r), 201
+
+
+@bp.route("/app/api/termos/<int:colaborador_id>/recusa", methods=["POST"])
+@auth.exige_colaborador_ou_aparelho
+def app_api_termo_recusa(colaborador_id: int):
+    from .core import termo
+    d = _corpo()
+    with db.conexao() as conn:
+        ctx = _contexto(conn)
+        _da_equipe_do_termo(conn, ctx, colaborador_id)
+        local = _local(d) or {}
+        r = termo.recusar(conn, colaborador_id=colaborador_id, motivo=d.get("motivo"),
+                          conduzida_por={"id": ctx.pessoa["id"], "nome": ctx.pessoa["nome"]},
+                          dispositivo_id=(ctx.aparelho or {}).get("id"), latitude=local.get("latitude"),
+                          longitude=local.get("longitude"), ip=auth.ip_de_quem_chama())
+    return _ok(**r), 201
+
+
+# Até quantas folhas num arquivo só: acima disso, escolhe-se a obra (o celular sofre para montar um PDF enorme).
+MAX_FOLHAS_DA_EQUIPE = 150
+
+
+@bp.route("/app/api/equipe/espelhos/bilhete", methods=["POST"])
+@auth.exige_colaborador_ou_aparelho
+def app_api_equipe_espelhos_bilhete():
+    """O bilhete das folhas da EQUIPE (05/11/2026, o dono: "a pessoa tem 40 pessoas que emitem a folha e fazer isso
+    um por um"): as pessoas do resumo da equipe no período pedido — `obra` para só uma —, decididas aqui, pela
+    chamada do aplicativo, que leva a identificação do aparelho. A página das folhas só confere a assinatura."""
+    from .core import cadastros as cad, competencias, qr
+    from .app_colaborador import periodo_pedido
+    with db.conexao() as conn:
+        ctx = _contexto(conn)
+        if not ctx.pessoa:
+            raise NaoAutenticado("entre com o seu CPF e PIN")
+        periodo = periodo_pedido()
+        if periodo:
+            inicio, fim = periodo
+        else:
+            inicio = competencias.primeiro_dia(request.args.get("competencia") or horario.hoje())
+            fim = competencias.ultimo_dia(inicio)
+        obra_aqui, _ = _pessoas_da_equipe(conn, ctx, inicio, fim)
+        obra = (request.args.get("obra") or "").strip().upper()
+        if obra:
+            # quem veio pelo aparelho de que a pessoa é responsável não traz a obra: vale a em que mais bateu no
+            # período, ou a do cadastro — a MESMA regra que agrupa o resumo da equipe (resumo_equipe.montar)
+            sem_obra = [p for p in (cad.colaborador_por_id(conn, i) for i, o in obra_aqui.items() if o is None) if p]
+            if sem_obra:
+                lote = espelho.Lote(conn, sem_obra, inicio, fim)
+                for p in sem_obra:
+                    dias = espelho.montar(conn, int(p["id"]), inicio, fim, lote=lote)["dias"]
+                    obra_aqui[int(p["id"])] = cad.obra_mais_batida(dias) or p.get("obra_codigo") or ""
+            ids = [i for i, o in obra_aqui.items() if (o or "").upper() == obra]
+        else:
+            ids = list(obra_aqui)
+        if not ids:
+            raise NaoEncontrado("ninguém da equipe nessa obra no período")
+        if len(ids) > MAX_FOLHAS_DA_EQUIPE:
+            raise Recusada(f"são {len(ids)} pessoas — escolha uma obra (até {MAX_FOLHAS_DA_EQUIPE} folhas por vez)")
+        logger.info("Ponto: folhas da equipe (%d pessoas, obra %s) pedidas por %s", len(ids), obra or "todas",
+                    ctx.pessoa["nome"])
+    return _ok(pessoas=len(ids), bilhete=qr.emitir_impressao_equipe(sorted(ids), int(ctx.pessoa["id"]),
+                                                                    _periodo_da_folha()))
+
+
+@bp.route("/app/equipe/espelhos/imprimir")
+@auth.exige_colaborador_ou_aparelho
+def app_equipe_espelhos_imprimir():
+    """As folhas da equipe num arquivo só, com o bilhete pedido pelo aplicativo (acima)."""
+    from .core import qr
+    from .erros import ErroDoPonto
+    try:
+        with db.conexao() as conn:
+            quem = _logado(conn)
+            if not quem:
+                raise NaoAutenticado("entre com o seu CPF e PIN")
+            ids = qr.conferir_impressao_equipe(request.args.get("bilhete"), int(quem["id"]), _periodo_da_folha())
+            if ids is None:
+                raise NaoEncontrado("o pedido de impressão venceu — toque de novo em Espelhos da equipe")
+            logger.info("Ponto: folhas da equipe (%d) abertas por %s", len(ids), quem["nome"])
+            return folhas_da_equipe(conn, ids, quem["nome"])
+    except ErroDoPonto as e:
+        return folha_que_nao_abriu(e)
+
+
 @bp.route("/app/equipe/<int:colaborador_id>/espelho/imprimir")
 @auth.exige_colaborador_ou_aparelho
 def app_equipe_espelho_imprimir(colaborador_id: int):
     """O espelho de uma pessoa da obra para imprimir (28/10/2026): o mesmo alcance da
     consulta — o responsável e o administrativo, só de quem é da obra ou bateu nela;
-    no ponto da obra, só da pessoa consultada pelo CPF agora há pouco."""
-    from .core import competencias
+    no ponto da obra, só da pessoa consultada pelo CPF agora há pouco. Desde 05/11/2026, com o `bilhete` pedido pelo
+    aplicativo: a página não leva a identificação do aparelho, e sem ela o ponto da obra não achava a pessoa."""
+    from .core import competencias, qr
     from .erros import ErroDoPonto
     try:
         with db.conexao() as conn:
-            ctx = _contexto(conn)
             from .app_colaborador import periodo_pedido
             periodo = periodo_pedido()
+            bilhete = request.args.get("bilhete")
+            if bilhete:
+                quem = _logado(conn)
+                if not quem:
+                    raise NaoAutenticado("entre com o seu CPF e PIN")
+                if not qr.conferir_impressao(bilhete, colaborador_id, int(quem["id"]), _periodo_da_folha()):
+                    raise NaoEncontrado("o pedido de impressão venceu — toque de novo em Baixar o espelho")
+                logger.info("Ponto: espelho de %s aberto para imprimir por %s (bilhete)", colaborador_id, quem["nome"])
+                return folha_do_espelho(conn, colaborador_id, quem["nome"])
+            ctx = _contexto(conn)
             competencia = request.args.get("competencia") or horario.hoje().strftime("%Y-%m")
             _alvo(conn, ctx, colaborador_id, *(periodo or (competencias.primeiro_dia(competencia),)))
             logger.info("Ponto: espelho de %s aberto para imprimir por %s", colaborador_id, ctx.pessoa["nome"])

@@ -513,3 +513,92 @@ def test_o_FILTRO_mostra_so_quem_se_repete(com_repetidos, cliente_mestre):
     mesmo = cliente_mestre.get("/analisesps/folha/dc?agrupar=&repeticao=mesmo_pleito"
                                ).get_data(as_text=True)
     assert "card 900300" in mesmo and "mesmo tipo e valor (2)" in mesmo
+
+
+# ---------------------------------------------------------------------------
+# ACRÉSCIMO / DESCONTO POR LANÇAMENTO e o RELATÓRIO DETALHADO (06/11/2026)
+#
+# O dono: *"nem o PDF, nem o Excel está saindo detalhado (…) em paisagem (…) não
+# está saindo a descrição (…) adicionar uma coluna de acréscimo e desconto, da
+# mesma forma que tem em alimentação e transporte (…) por funcionário, por
+# lançamento."*
+# ---------------------------------------------------------------------------
+def _linha_do(cpf):
+    from app.apps.analisesps import dc
+    return next(p for p in dc.calcular()["pessoas"] if p["cpf"] == cpf)
+
+
+def test_o_ACRESCIMO_entra_no_valor_e_no_ARQUIVO_do_pagamento(banco_dc):
+    from app.apps.analisesps import dc
+    p = _linha_do(ATIVO)
+    assert p["valor"] == D("150.00") and not p["valor_extra"]
+    dc.ajustar_extra(p["chave"], "25,50", "lanche extra do sábado", quem="MARCELO")
+    p = _linha_do(ATIVO)
+    assert (p["valor_calculado"], p["valor_extra"], p["valor"]) == (D("150.00"), D("25.50"), D("175.50"))
+    assert p["motivo_extra"] == "lanche extra do sábado"
+    no_arquivo = next(l for l in dc.linhas_a_pagar() if l["chave"] == p["chave"])
+    assert no_arquivo["valor"] == D("175.50")
+    # Só NESTE lançamento: a outra linha do mesmo card não muda.
+    assert _linha_do(OUTRO)["valor_extra"] is None
+
+
+def test_o_DESCONTO_reduz_e_nunca_deixa_o_valor_negativo(banco_dc):
+    from app.apps.analisesps import dc
+    chave = _linha_do(ATIVO)["chave"]
+    dc.ajustar_extra(chave, "-50", "adiantamento descontado")
+    assert _linha_do(ATIVO)["valor"] == D("100.00")
+    dc.ajustar_extra(chave, "-500", "desconto maior que a linha")
+    p = _linha_do(ATIVO)
+    assert p["valor"] == D("0.00") and p["pagar"] is False, "zerado não vai para o arquivo"
+
+
+def test_o_ajuste_pede_MOTIVO_e_valor_vazio_TIRA(banco_dc):
+    from app.apps.analisesps import dc
+    chave = _linha_do(ATIVO)["chave"]
+    with pytest.raises(dc.ErroDaDC):
+        dc.ajustar_extra(chave, "10", "")
+    dc.ajustar_extra(chave, "10", "motivo")
+    dc.ajustar_extra(chave, "", "")
+    assert _linha_do(ATIVO)["valor_extra"] is None
+
+
+def test_a_rota_do_ajuste_e_a_coluna_na_tela(banco_dc, cliente_mestre):
+    chave = _linha_do(ATIVO)["chave"]
+    r = cliente_mestre.post("/analisesps/api/folha/dc/extra",
+                            json={"chave": chave, "valor": "-20,00", "motivo": "vale"})
+    assert r.get_json() == {"ok": True}
+    html = cliente_mestre.get("/analisesps/folha/dc").get_data(as_text=True)
+    assert "Acréscimo / desconto" in html and "dc-extra-btn" in html
+    # Tela e relatório alinhados (06/11/2026): o "por" é o responsável (coluna H).
+    assert "por JOAO" in html and "por MARIA" not in html
+    assert "vale" in html and "calculado 150,00" in html
+    assert cliente_mestre.post("/analisesps/api/folha/dc/extra",
+                               json={"chave": chave, "valor": "5"}).status_code == 400
+
+
+def test_o_RELATORIO_sai_DEITADO_e_com_a_DESCRICAO_e_o_ajuste(banco_dc, cliente_mestre):
+    import io
+
+    from openpyxl import load_workbook
+    from PyPDF2 import PdfReader
+    from app.apps.analisesps import dc
+    dc.ajustar_extra(_linha_do(ATIVO)["chave"], "10", "acréscimo de teste")
+
+    pdf = PdfReader(io.BytesIO(cliente_mestre.get("/analisesps/folha/dc/relatorio.pdf").data))
+    caixa = pdf.pages[0].mediabox
+    assert float(caixa.width) > float(caixa.height), "o PDF tem de sair em paisagem"
+    texto = " ".join(pg.extract_text() for pg in pdf.pages)
+    assert "Lanche da equipe" in texto and "acréscimo de teste" in texto
+    assert "card 900100" in texto
+    # O "por" é o RESPONSÁVEL (coluna H), não o requerente (I) — dono, 06/11/2026.
+    assert "por JOAO" in texto and "por MARIA" not in texto
+
+    planilha = load_workbook(io.BytesIO(cliente_mestre.get("/analisesps/folha/dc/relatorio.xlsx").data))
+    aba = planilha["Lançamentos"]
+    cab = [c.value for c in aba[1]]
+    linhas = [dict(zip(cab, [c.value for c in l])) for l in aba.iter_rows(min_row=2)]
+    ativo = next(l for l in linhas if l["CPF"] == "997.133.493-34")
+    assert ativo["Descrição"] == "Lanche da equipe" and ativo["Card"] == "900100"
+    assert (ativo["Valor calculado"], ativo["Acréscimo / desconto"], ativo["Valor"]) == (150.0, 10.0, 160.0)
+    assert ativo["Motivo do ajuste"] == "acréscimo de teste"
+    assert (ativo["Responsável"], ativo["Requerente"]) == ("JOAO", "MARIA")

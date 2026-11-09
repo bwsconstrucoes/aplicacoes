@@ -1,0 +1,461 @@
+{% extends "erp_base.html" %}
+{% block titulo %}Solicitações ao DP — ERP BWS{% endblock %}
+
+{# FILTRO LATERAL, o padrão do ERP. Entrou em 06/11/2026, depois de ele cobrar
+   de novo: *"elas não têm filtragem no sidebar. Ou seja, a gente tem que,
+   conforme vinha conversando, tem que manter o padrão. Já alertei isso várias
+   vezes."* Ele está certo, e a cobrança foi minha culpa duas vezes: esta tela e
+   a de Contabilidade nasceram com barra em cima, fora do padrão. #}
+{% block filtros %}
+  <div class="filtros-cab">
+    <h2>Filtros</h2>
+    <button class="link-btn" id="btn-limpar">Limpar</button>
+  </div>
+  <div class="busca">
+    <span class="lupa">⌕</span>
+    <input id="f-busca" type="search" placeholder="número, pessoa, obra…">
+  </div>
+
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Situação</span>
+      <span class="seta">▾</span></button>
+    <div class="filtro-cont">
+      <label class="opcao"><input type="radio" name="sit" value="ABERTAS" checked>
+        <span class="rotulo">Só as abertas</span></label>
+      <label class="opcao"><input type="radio" name="sit" value="">
+        <span class="rotulo">Todas</span></label>
+      <label class="opcao"><input type="radio" name="sit" value="ATENDIDA">
+        <span class="rotulo">Atendidas</span></label>
+      <label class="opcao"><input type="radio" name="sit" value="RECUSADA">
+        <span class="rotulo">Recusadas</span></label>
+      <label class="opcao"><input type="radio" name="sit" value="CANCELADA">
+        <span class="rotulo">Canceladas</span></label>
+    </div>
+  </div>
+
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Tipo de pedido</span>
+      <span class="seta">▾</span></button>
+    <div class="filtro-cont" id="f-tipos"></div>
+  </div>
+
+  <div class="filtro">
+    <button class="filtro-cab" type="button"><span>O que está pendente</span>
+      <span class="seta">▾</span></button>
+    <div class="filtro-cont">
+      <label class="opcao"><input type="checkbox" id="f-sem-checklist">
+        <span class="rotulo">Checklist não começado</span></label>
+      <label class="opcao"><input type="checkbox" id="f-checklist-meio">
+        <span class="rotulo">Checklist pela metade</span></label>
+      <label class="opcao"><input type="checkbox" id="f-parada">
+        <span class="rotulo">Aberta há mais de 3 dias</span></label>
+    </div>
+  </div>
+
+  <div class="campo"><label>Obra</label><select id="f-obra"></select></div>
+  <div class="campo"><label>Quem pediu</label><select id="f-quem"></select></div>
+
+  <button class="btn amarelo" id="btn-nova" style="width:100%; margin-top:12px">
+    + Solicitação</button>
+{% endblock %}
+
+{% block conteudo %}
+<h2>Solicitações ao DP <small>o que a obra pede e o DP resolve</small></h2>
+<div id="mensagem"></div>
+
+<div class="kpis" id="kpis" style="margin-bottom:12px"></div>
+
+<div class="tabela-wrap">
+  <div class="tabela-barra">
+    <span id="resumo-lista" class="desc"></span>
+    <span class="espaco"></span>
+    <span id="exportar" style="display:flex; gap:6px"></span>
+  </div>
+  <div class="tabela-rolagem">
+  <table><thead><tr><th>Nº</th><th>Tipo</th><th>Pessoa</th><th>Obra</th>
+    <th>Pediu</th><th>Quando</th><th>Parada</th><th>Checklist</th>
+    <th>Situação</th></tr></thead>
+    <tbody id="corpo"></tbody></table>
+</div><div class="vazio oculto" id="vazio"></div></div>
+
+<dialog id="dlg"><div class="dlg-topo"><h3 id="dlg-titulo">—</h3>
+  <button class="topo-btn" style="margin-left:auto" onclick="els('dlg').close()">Fechar</button></div>
+  <div class="dlg-corpo" id="dlg-corpo"></div></dialog>
+{% endblock %}
+{% block scripts %}
+<script>
+{# ATENDER é do DP; ABRIR e acompanhar é de quem está na obra. A tela esconde o
+   que a pessoa não pode — mas a trava de verdade é o @permissao da rota. #}
+const PODE_ATENDER = {{ 'true' if pode.atender_dp else 'false' }};
+let DADOS = {solicitacoes: [], tipos: [], indicadores: {}};
+let ABERTA = null;
+
+// A SITUAÇÃO é o único filtro que volta ao banco (a API recorta por ela). Todos
+// os outros recortam em memória: a lista já está aqui, e ir ao banco a cada
+// clique faria a tela piscar.
+function situacaoEscolhida(){
+  const r = document.querySelector("input[name=sit]:checked");
+  return r ? r.value : "ABERTAS";
+}
+
+async function carregar(){
+  const q = new URLSearchParams();
+  const sit = situacaoEscolhida();
+  // "Atendidas", "Recusadas" e "Canceladas" vêm da lista inteira e são
+  // recortadas aqui — a API só conhece "abertas" e "todas".
+  if (sit === "ABERTAS") q.set("situacao", "ABERTAS");
+  try { DADOS = await api(`/erp/api/dp/solicitacoes?${q}`); }
+  catch(e){ aviso("mensagem", e.message, "erro"); return; }
+  montarFiltrosLaterais();
+  desenhar();
+}
+
+function montarFiltrosLaterais(){
+  // O TIPO vira lista de marcar, não caixinha: são onze tipos, e marcar dois ao
+  // mesmo tempo ("desligamento e readmissão") é o que o DP faz de verdade.
+  const marcados = new Set([...document.querySelectorAll("input[name=tipo]:checked")]
+    .map(i => i.value));
+  els("f-tipos").innerHTML = (DADOS.tipos || []).map(t => `
+    <label class="opcao"><input type="checkbox" name="tipo" value="${t.valor}"
+      ${marcados.has(t.valor) ? "checked" : ""}>
+      <span class="rotulo">${escapar(t.rotulo)}
+        <small data-conta-tipo="${t.valor}"></small></span></label>`).join("");
+  els("f-tipos").querySelectorAll("input[name=tipo]").forEach(i =>
+    i.addEventListener("change", desenhar));
+
+  const obras = [...new Set((DADOS.solicitacoes || [])
+    .map(x => x.obra).filter(Boolean))].sort();
+  const antesObra = els("f-obra").value;
+  els("f-obra").innerHTML = `<option value="">todas</option>`
+    + obras.map(o => `<option value="${escapar(o)}">${escapar(o)}</option>`).join("");
+  els("f-obra").value = antesObra;
+
+  const quem = [...new Set((DADOS.solicitacoes || [])
+    .map(x => x.solicitante).filter(Boolean))].sort();
+  const antesQuem = els("f-quem").value;
+  els("f-quem").innerHTML = `<option value="">qualquer um</option>`
+    + quem.map(q => `<option value="${escapar(q)}">${escapar(q)}</option>`).join("");
+  els("f-quem").value = antesQuem;
+}
+
+function diasAberta(x){
+  if (!x.criado_em) return 0;
+  return Math.floor((Date.now() - new Date(x.criado_em).getTime()) / 86400000);
+}
+
+function visiveis(){
+  const b = (els("f-busca").value || "").toLowerCase().trim();
+  const sit = situacaoEscolhida();
+  const tipos = new Set([...document.querySelectorAll("input[name=tipo]:checked")]
+    .map(i => i.value));
+  const obra = els("f-obra").value, quem = els("f-quem").value;
+  const ABERTAS = ["ABERTA", "EM_ANALISE"];
+  return (DADOS.solicitacoes || []).filter(x => {
+    if (b && !`${x.numero} ${x.pessoa||""} ${x.obra||""} ${x.tipo_rotulo}`
+              .toLowerCase().includes(b)) return false;
+    if (sit === "ABERTAS" && !ABERTAS.includes(x.situacao)) return false;
+    if (sit && sit !== "ABERTAS" && x.situacao !== sit) return false;
+    if (tipos.size && !tipos.has(x.tipo)) return false;
+    if (obra && x.obra !== obra) return false;
+    if (quem && x.solicitante !== quem) return false;
+    if (els("f-sem-checklist").checked && !(x.total_itens && !x.feitos)) return false;
+    if (els("f-checklist-meio").checked
+        && !(x.total_itens && x.feitos && x.feitos < x.total_itens)) return false;
+    if (els("f-parada").checked
+        && !(ABERTAS.includes(x.situacao) && diasAberta(x) > 3)) return false;
+    return true;
+  });
+}
+
+function desenhar(){
+  const l = visiveis(), i = DADOS.indicadores || {};
+  els("kpis").innerHTML = `
+    <div class="kpi estatico ${i.abertas ? "ambar" : ""}"><div class="kpi-rotulo">Abertas</div>
+      <div class="kpi-valor">${i.abertas || 0}</div>
+      <div class="kpi-sub">esperando o DP</div></div>
+    <div class="kpi estatico"><div class="kpi-rotulo">Em andamento</div>
+      <div class="kpi-valor">${i.em_andamento || 0}</div>
+      <div class="kpi-sub">checklist começado</div></div>
+    <div class="kpi estatico verde"><div class="kpi-rotulo">Atendidas</div>
+      <div class="kpi-valor">${i.atendidas || 0}</div></div>
+    <div class="kpi estatico"><div class="kpi-rotulo">Recusadas</div>
+      <div class="kpi-valor">${i.recusadas || 0}</div></div>`;
+  // A conta de cada tipo, dentro do filtro lateral.
+  els("f-tipos").querySelectorAll("[data-conta-tipo]").forEach(s => {
+    const n = l.filter(x => x.tipo === s.dataset.contaTipo).length;
+    s.textContent = n ? ` · ${n}` : "";
+  });
+  els("resumo-lista").textContent =
+    l.length === (DADOS.solicitacoes || []).length
+      ? `${l.length} pedido(s)`
+      : `${l.length} de ${(DADOS.solicitacoes || []).length} pedido(s)`;
+  els("vazio").classList.toggle("oculto", l.length > 0);
+  if (!l.length) els("vazio").innerHTML =
+    "<b>Nada neste recorte</b>Troque o filtro ao lado, ou use Limpar.";
+  els("corpo").innerHTML = l.map(x => `<tr data-s="${x.id}" style="cursor:pointer">
+    <td class="dados">${escapar(x.numero)}</td>
+    <td><b>${escapar(x.tipo_rotulo)}</b></td>
+    <td>${escapar(x.pessoa || "—")}</td>
+    <td class="dados">${escapar(x.obra || "—")}</td>
+    <td><small>${escapar(x.solicitante)}</small></td>
+    <td class="dados">${dataBR(x.criado_em.slice(0, 10))}</td>
+    <td class="dados">${["ABERTA","EM_ANALISE"].includes(x.situacao)
+      ? (diasAberta(x) > 3 ? `<b class="aviso-texto">${diasAberta(x)} dias</b>`
+                           : `${diasAberta(x)} dia(s)`)
+      : "—"}</td>
+    <td class="dados">${x.total_itens ? `${x.feitos}/${x.total_itens}` : "—"}</td>
+    <td><span class="selo ${x.situacao === "ATENDIDA" ? "aprovado"
+      : x.situacao === "RECUSADA" || x.situacao === "CANCELADA" ? "bloqueado"
+      : "aguardando"}">${escapar(x.situacao_rotulo)}</span></td>
+  </tr>`).join("");
+  els("corpo").querySelectorAll("[data-s]").forEach(tr =>
+    tr.addEventListener("click", () => abrirPedido(+tr.dataset.s)));
+}
+
+async function abrirPedido(id){
+  try { ABERTA = (await api(`/erp/api/dp/solicitacoes/${id}`)).solicitacao; }
+  catch(e){ aviso("mensagem", e.message, "erro"); return; }
+  pintarPedido();
+}
+
+// O NOME DE CADA CAMPO DO PEDIDO em português. Sem isto a tela mostraria
+// "categoria_transporte", que é o nome da coluna — e o dono lê o nome do negócio.
+const ROTULO_CAMPO = {
+  data_saida: "Data de saída", aviso_previo: "Data do aviso prévio",
+  ultimo_dia: "Último dia trabalhado", forma_desligamento: "Forma de desligamento",
+  faltas_a_descontar: "Faltas a descontar", observacao: "Observação",
+  admissao: "Data de admissão", vinculo: "Vínculo", tipo_contrato: "Tipo de contrato",
+  cargo_id: "Cargo", convencao_id: "Convenção", obra_id: "Obra", salario: "Salário",
+  matricula: "Matrícula", vigencia: "A partir de", motivo: "Motivo",
+  justificativa: "Justificativa", o_que_muda: "O que muda",
+  telefone: "Telefone", email: "E-mail", pix_tipo: "Tipo da chave Pix",
+  pix_chave: "Chave Pix", cep: "CEP", logradouro: "Logradouro",
+  numero_endereco: "Número", bairro: "Bairro", municipio: "Município", uf: "UF",
+  nome: "Nome", parentesco: "Parentesco", data_nascimento: "Nascimento", cpf: "CPF",
+  salario_familia: "Entra no salário-família", dependente_ir: "Dependente de IR",
+  categoria_alimentacao: "Categoria da alimentação", aux_alimentacao: "Valor da alimentação",
+  categoria_transporte: "Categoria do transporte", aux_transporte: "Valor do transporte",
+  meio_transporte: "Meio de transporte", conceder: "Conceder?",
+  valor_total: "Valor total", parcelas: "Parcelas",
+  primeira_competencia: "Primeira competência", qual_cartao: "Qual cartão",
+  data_inicio: "Data de início", qual_documentacao: "Qual documentação",
+  descricao: "Descrição",
+};
+
+function pintarPedido(){
+  const p = ABERTA;
+  els("dlg-titulo").textContent = `${p.numero} — ${p.tipo_rotulo}`;
+  const linhas = Object.entries(p.dados || {})
+    .map(([k, v]) => `<tr><td>${escapar(ROTULO_CAMPO[k] || k)}</td>
+      <td class="dados">${escapar(String(v))}</td></tr>`).join("");
+  els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
+    <div class="kpis">
+      <div class="kpi estatico"><div class="kpi-rotulo">Situação</div>
+        <div class="kpi-valor" style="font-size:16px">${escapar(p.situacao_rotulo)}</div>
+        <div class="kpi-sub">${p.atendente ? "por " + escapar(p.atendente) : ""}</div></div>
+      <div class="kpi estatico"><div class="kpi-rotulo">Pessoa</div>
+        <div class="kpi-valor" style="font-size:15px">${escapar(p.pessoa || "—")}</div>
+        <div class="kpi-sub">${p.pessoa_cpf ? documento(p.pessoa_cpf) : ""}</div></div>
+      <div class="kpi estatico"><div class="kpi-rotulo">Pediu</div>
+        <div class="kpi-valor" style="font-size:15px">${escapar(p.solicitante || "—")}</div>
+        <div class="kpi-sub">${p.obra ? "obra " + escapar(p.obra) : ""}</div></div>
+    </div>
+    ${p.resposta ? `<div class="aviso ${p.situacao === "RECUSADA" ? "erro" : "ok"}"
+      style="margin-top:10px"><b>${p.situacao === "RECUSADA" ? "Recusado" : "Resposta"}:</b>
+      ${escapar(p.resposta)}</div>` : ""}
+    ${p.motivo_cancelamento ? `<div class="aviso alerta" style="margin-top:10px">
+      <b>Cancelado:</b> ${escapar(p.motivo_cancelamento)}</div>` : ""}
+    <h4>O que foi pedido</h4>
+    <table><tbody>${linhas || `<tr><td colspan="2" class="cartao-dica">Sem detalhe.</td></tr>`}</tbody></table>
+    ${(p.itens || []).length ? `<h4>Checklist do atendimento (${p.feitos}/${p.total_itens})</h4>
+      <div class="cartao-dica">São os passos que o DP faz, na ordem. Serve para mais de
+        uma pessoa trabalhar no mesmo pedido sem repetir etapa.</div>
+      <table><tbody>${p.itens.map(i => `<tr>
+        <td style="width:34px">${PODE_ATENDER && p.aberta
+          ? `<input type="checkbox" data-item="${i.id}" ${i.feito ? "checked" : ""}>`
+          : (i.feito ? "✔" : "—")}</td>
+        <td>${i.feito ? `<s>${escapar(i.descricao)}</s>` : escapar(i.descricao)}</td>
+        <td><small>${i.por ? escapar(i.por) + " · " + dataBR((i.em || "").slice(0, 10)) : ""}</small></td>
+      </tr>`).join("")}</tbody></table>` : ""}
+    <h4>Histórico</h4>
+    <table><tbody>${(p.eventos || []).map(e => `<tr>
+      <td class="dados">${dataBR(e.em.slice(0, 10))}</td><td>${rotulo(e.acao)}</td>
+      <td><small>${escapar(e.por)}</small></td></tr>`).join("")}</tbody></table>
+    ${p.aberta ? `<div style="margin-top:14px; display:flex; gap:8px; flex-wrap:wrap">
+      ${PODE_ATENDER ? `<button class="btn" id="s-atender">Atender</button>
+        <button class="btn secundario" id="s-recusar">Recusar</button>` : ""}
+      <button class="link-btn" id="s-cancelar">Cancelar o pedido</button>
+    </div>` : ""}`;
+  els("dlg-corpo").querySelectorAll("[data-item]").forEach(c =>
+    c.addEventListener("change", () => acao("item",
+      {item_id: +c.dataset.item, feito: c.checked})));
+  if (els("s-atender")) els("s-atender").addEventListener("click", atender);
+  if (els("s-recusar")) els("s-recusar").addEventListener("click", recusar);
+  if (els("s-cancelar")) els("s-cancelar").addEventListener("click", cancelarPedido);
+  // QUEM PREENCHE A JANELA, ABRE A JANELA. Separar as duas coisas é como o
+  // "+ Colaborador" ficou sem fazer nada: um chamador abria, o outro não.
+  // `pintarPedido` também roda depois de uma ação, com a janela já aberta.
+  if (!els("dlg").open) els("dlg").showModal();
+}
+
+async function acao(caminho, corpo){
+  try {
+    const r = await api(`/erp/api/dp/solicitacoes/${ABERTA.id}/${caminho}`,
+      {method: "POST", headers: {"Content-Type": "application/json"},
+       body: JSON.stringify(corpo || {})});
+    ABERTA = r.solicitacao;
+    pintarPedido();
+    carregar();
+  } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+}
+
+async function atender(){
+  // O AVISO DIZ O QUE VAI ACONTECER NO CADASTRO. É a diferença em relação ao
+  // Pipefy, onde atender era mover o card e alguém mexia no cadastro depois —
+  // e o pedido podia dizer uma coisa e o cadastro ficar outra.
+  const efeito = {
+    DESLIGAMENTO: "fecha o vínculo da pessoa, grava a data de saída e o acesso ao ponto cai",
+    READMISSAO: "traz a pessoa de volta a ativa, com vínculo novo (o anterior fica no histórico)",
+    ADMISSAO_PRESTADOR: "fecha o vínculo de prestador e abre o de carteira no dia seguinte",
+    ALTERACAO_CARGO: "grava a alteração de cargo/salário com o de→para",
+    ATUALIZACAO_DADOS: "atualiza o cadastro da pessoa",
+    DEPENDENTE: "cadastra o dependente",
+    AJUDA_DE_CUSTO: "atualiza os benefícios no cadastro",
+    VALE_TRANSPORTE: "atualiza o transporte no cadastro",
+    PRE_CADASTRO: "CRIA o cadastro da pessoa no ERP",
+  }[ABERTA.tipo];
+  const r = await perguntar({titulo: `Atender ${ABERTA.numero}`,
+    aviso: efeito ? `Ao atender, o sistema ${efeito}.` 
+                  : "Este tipo não mexe no cadastro — o atendimento é o registro do que foi feito.",
+    textoOk: "Atender",
+    campos: [{nome: "resposta", rotulo: "Resposta (opcional)", tipo: "textarea",
+              largura: 6, linhas: 2}]});
+  if (r) acao("atender", r);
+}
+
+async function recusar(){
+  const r = await perguntar({titulo: `Recusar ${ABERTA.numero}`,
+    aviso: "Quem pediu precisa saber o que corrigir para pedir de novo.",
+    textoOk: "Recusar",
+    campos: [{nome: "resposta", rotulo: "Por quê?", tipo: "textarea",
+              obrigatorio: true, largura: 6, linhas: 2}]});
+  if (r) acao("recusar", r);
+}
+
+async function cancelarPedido(){
+  const r = await perguntar({titulo: `Cancelar ${ABERTA.numero}`,
+    aviso: "O pedido fica no histórico como cancelado — não desaparece.",
+    textoOk: "Cancelar o pedido",
+    campos: [{nome: "motivo", rotulo: "Por quê?", obrigatorio: true, largura: 6}]});
+  if (r) acao("cancelar", r);
+}
+
+// ---------------------------------------------------------------------------
+// ABRIR PEDIDO: o tipo decide os campos
+//
+// No pipe era UM formulário com 106 campos e condições à mão, e metade ficava
+// vazia em cada card. Aqui o tipo é escolhido primeiro e só os campos dele
+// aparecem.
+// ---------------------------------------------------------------------------
+const CAMPO_PEDIDO = {
+  data_saida: {tipo: "date"}, aviso_previo: {tipo: "date"}, ultimo_dia: {tipo: "date"},
+  admissao: {tipo: "date"}, vigencia: {tipo: "date"}, data_nascimento: {tipo: "date"},
+  data_inicio: {tipo: "date"}, primeira_competencia: {tipo: "month"},
+  observacao: {tipo: "textarea", largura: 6}, justificativa: {tipo: "textarea", largura: 6},
+  descricao: {tipo: "textarea", largura: 6, obrigatorio: true},
+  o_que_muda: {tipo: "textarea", largura: 6, obrigatorio: true},
+  salario: {exemplo: "2.230,00"}, valor_total: {exemplo: "500,00", obrigatorio: true},
+  aux_alimentacao: {exemplo: "25,00"}, aux_transporte: {exemplo: "11,00"},
+  parcelas: {exemplo: "3"}, faltas_a_descontar: {exemplo: "2"},
+  cpf: {nome_campo: "cpf"}, telefone: {nome_campo: "telefone"}, cep: {nome_campo: "cep"},
+  nome: {largura: 4, obrigatorio: true},
+};
+const LISTA_DO_CAMPO = {
+  forma_desligamento: "formas_desligamento", vinculo: "vinculos",
+  tipo_contrato: "tipos_contrato", parentesco: "parentescos",
+  categoria_alimentacao: "categorias_alimentacao",
+  categoria_transporte: "categorias_transporte", meio_transporte: "meios_transporte",
+  motivo: "motivos_alteracao", uf: "ufs",
+  salario_familia: "sim_nao", dependente_ir: "sim_nao", conceder: "sim_nao",
+  qual_cartao: "cartoes", qual_documentacao: "documentacoes",
+};
+
+async function novaSolicitacao(){
+  const o = await api("/erp/api/colaboradores/opcoes");
+  const escolha = await perguntar({titulo: "Nova solicitação ao DP",
+    textoOk: "Continuar",
+    campos: [{nome: "tipo", rotulo: "O que você precisa?", tipo: "select",
+              obrigatorio: true, largura: 6,
+              opcoes: DADOS.tipos.map(t => ({valor: t.valor, rotulo: t.rotulo}))}]});
+  if (!escolha) return;
+  const regra = DADOS.tipos.find(t => t.valor === escolha.tipo);
+  const listas = {...o, sim_nao: [{valor: "1", rotulo: "Sim"}, {valor: "", rotulo: "Não"}],
+    cartoes: [{valor: "PAGAMENTO", rotulo: "Cartão de pagamento"},
+              {valor: "VALE_TRANSPORTE", rotulo: "Cartão de vale-transporte"}],
+    documentacoes: [{valor: "ADMISSAO", rotulo: "Documentação de admissão"},
+                    {valor: "RESCISAO", rotulo: "Documentação de rescisão"}]};
+  const campos = [];
+  if (regra.exige_pessoa) {
+    const pessoas = (await api("/erp/api/colaboradores")).colaboradores;
+    campos.push({nome: "colaborador_id", rotulo: "Pessoa", tipo: "select",
+      obrigatorio: true, largura: 6,
+      opcoes: pessoas.map(p => ({valor: p.id, rotulo: `${p.nome} — ${documento(p.cpf)}`}))});
+  }
+  for (const c of regra.campos) {
+    const extra = CAMPO_PEDIDO[c] || {};
+    const nomeLista = LISTA_DO_CAMPO[c];
+    if (nomeLista && listas[nomeLista]) {
+      campos.push({nome: c, rotulo: ROTULO_CAMPO[c] || c, tipo: "select",
+                   largura: extra.largura || 3, opcoes: listas[nomeLista]});
+    } else if (c === "cargo_id" || c === "convencao_id") {
+      const fonte = c === "cargo_id" ? (o.cargos || []) : (o.convencoes || []);
+      campos.push({nome: c, rotulo: ROTULO_CAMPO[c], tipo: "select", largura: 3,
+                   opcoes: [{valor: "", rotulo: "—"}].concat(
+                     fonte.map(x => ({valor: x.id, rotulo: x.nome})))});
+    } else if (c === "obra_id") {
+      campos.push({nome: c, rotulo: "Obra", tipo: "select", largura: 3,
+                   opcoes: [{valor: "", rotulo: "—"}].concat(
+                     (o.obras || []).map(x => ({valor: x.id, rotulo: x.codigo})))});
+    } else {
+      campos.push({nome: c, rotulo: ROTULO_CAMPO[c] || c, largura: extra.largura || 3,
+                   ...extra});
+    }
+  }
+  const r = await perguntar({titulo: regra.rotulo,
+    aviso: `${regra.explicacao}. O pedido vai para o DP.`,
+    textoOk: "Abrir a solicitação", campos});
+  if (!r) return;
+  try {
+    const d = await api("/erp/api/dp/solicitacoes", {method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({tipo: escolha.tipo, ...r})});
+    aviso("mensagem", `Solicitação ${d.solicitacao.numero} aberta.`, "ok");
+    carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+els("btn-nova").addEventListener("click", novaSolicitacao);
+els("f-busca").addEventListener("input", desenhar);
+document.querySelectorAll("input[name=sit]").forEach(i =>
+  i.addEventListener("change", carregar));
+["f-obra", "f-quem"].forEach(i => els(i).addEventListener("change", desenhar));
+["f-sem-checklist", "f-checklist-meio", "f-parada"].forEach(i =>
+  els(i).addEventListener("change", desenhar));
+
+els("btn-limpar").addEventListener("click", () => {
+  els("f-busca").value = "";
+  ["f-obra", "f-quem"].forEach(i => els(i).value = "");
+  ["f-sem-checklist", "f-checklist-meio", "f-parada"].forEach(i =>
+    els(i).checked = false);
+  document.querySelectorAll("input[name=tipo]").forEach(i => i.checked = false);
+  document.querySelector("input[name=sit][value=ABERTAS]").checked = true;
+  carregar();
+});
+
+// As gavetas do filtro lateral abrem e fecham, como no resto do ERP.
+document.querySelectorAll(".filtro-cab").forEach(b =>
+  b.addEventListener("click", () => b.parentElement.classList.toggle("aberto")));
+carregar();
+botoesDeExportar("exportar");
+</script>
+{% endblock %}

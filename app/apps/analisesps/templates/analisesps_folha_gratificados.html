@@ -212,6 +212,8 @@
 {% endif %}
 
 {% set colunas = 11 if via == 'sp' else 10 %}
+{# As etiquetas "nas outras folhas" de cada pessoa (05/11/2026). #}
+{% with ano=ano, mes=mes, tela=("gratificados" if via == "gm" else "viasp") %}{% include "_outras_folhas.html" %}{% endwith %}
 <div class="tabela-wrap">
   <div class="tabela-rolagem livre">
     <table class="sps" id="tabela-gm">

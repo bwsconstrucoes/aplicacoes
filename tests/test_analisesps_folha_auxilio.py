@@ -795,6 +795,28 @@ def test_as_ausencias_contam_so_nos_dias_da_modalidade():
     assert len(fx.ausencias_do_mes(dias, INICIO, FIM, "Segunda à Quinta")) == 1
 
 
+def test_FALTA_do_MobPonto_em_FERIADO_nao_vira_desconto(banco_auxilio):
+    """05/11/2026, o dono: *"tem feriado cadastrado, mas não tá aparecendo como
+    feriado e tá mandando aplicar desconto (…) o estadual deu certo e o nacional
+    não."* O MobPonto escreve FALTA no feriado que não estava cadastrado lá; o
+    feriado (do ponto, a base única) manda. Sem isto, a alimentação descontava o
+    dia duas vezes: na base, como feriado, e de novo como falta."""
+    from app.apps.analisesps import folha_auxilio as fx
+    banco_auxilio.nacional(dt.date(2026, 9, 7), "Independência")       # segunda
+    banco_auxilio.obra("FC-OLINDA", "CREPEOLINDA", uf="PE", municipio="Olinda")
+    banco_auxilio.estadual(dt.date(2026, 9, 9), "PE")                    # quarta
+    ponto = [_dia(dt.date(2026, 9, 7), "FALTA NÃO JUSTIFICADA"),
+             _dia(dt.date(2026, 9, 8), "FALTA NÃO JUSTIFICADA"),
+             _dia(dt.date(2026, 9, 9), "FALTA NÃO JUSTIFICADA")]
+    for tipo in (fx.ALIMENTACAO, fx.TRANSPORTE):
+        r = fx.calcular_pessoa(tipo, ficha(), INICIO, FIM, ausencias=ponto)
+        assert [a["data"] for a in r["ausencias"]] == [dt.date(2026, 9, 8)], tipo
+    # Quem é de OUTRA obra (outro estado) tem o 09/09 como falta de verdade.
+    r = fx.calcular_pessoa(fx.ALIMENTACAO, ficha(obra_cadastro="CREPEAREIAS"), INICIO, FIM,
+                           ausencias=ponto)
+    assert [a["data"] for a in r["ausencias"]] == [dt.date(2026, 9, 8), dt.date(2026, 9, 9)]
+
+
 def test_o_desconto_das_ausencias_e_PROPOSTO_e_so_vale_APLICADO(banco_auxilio):
     """*"que isso fosse uma opção de aplicar ou não o desconto"* — e só no
     transporte."""

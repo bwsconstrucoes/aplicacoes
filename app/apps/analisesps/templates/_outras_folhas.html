@@ -1,0 +1,59 @@
+{# ---------------------------------------------------------------------------
+   AS OUTRAS FOLHAS DA PESSOA (05/11/2026) — ver `folhas_cruzadas.py`.
+
+   Embaixo do nome de cada pessoa, o que ela recebe NAS OUTRAS telas da folha na
+   mesma competência — só o que está selecionado lá. A tela abre sem esperar: as
+   etiquetas chegam depois, de `folha_outras_folhas`, e entram em toda linha que
+   tenha `data-cpf`. Amarela = combinação que pede conferência.
+
+   Uso: {% with ano=…, mes=…, tela="dc" %}{% include "_outras_folhas.html" %}{% endwith %}
+   --------------------------------------------------------------------------- #}
+<p class="cartao-dica" id="outras-folhas-recado" hidden></p>
+<script>
+function outrasFolhas() {
+  const linhas = document.querySelectorAll("tr[data-cpf]");
+  const recado = document.getElementById("outras-folhas-recado");
+  if (!linhas.length) return;
+  // `tojson`: dentro do script o "&" do endereço não pode virar "&amp;".
+  const url = {{ url_for('analisesps.folha_outras_folhas', ano=ano, mes=mes, tela=tela)|tojson }};
+  fetch(url, {credentials: "same-origin"}).then(r => r.json()).then(d => {
+    if (!d.ok) return;
+    let com = 0;
+    linhas.forEach(tr => {
+      const lista = d.pessoas[tr.dataset.cpf];
+      if (!lista || tr.querySelector(".outras-folhas")) return;
+      const celula = Array.from(tr.children).find(
+          c => c.tagName === "TD" && !c.classList.contains("marca"));
+      if (!celula) return;
+      const caixa = document.createElement("div");
+      caixa.className = "outras-folhas";
+      caixa.title = "O que esta pessoa recebe nas outras folhas da competência "
+                    + d.competencia + " (só o que está selecionado lá)";
+      lista.forEach(e => {
+        const chip = document.createElement("span");
+        chip.className = "chip-folha" + (e.alerta ? " alerta" : "");
+        if (e.titulo) chip.title = e.titulo;
+        chip.append(e.rotulo + " ");
+        const valor = document.createElement("b");
+        valor.textContent = e.valor;
+        chip.append(valor);
+        if (e.obs) chip.append(" · " + e.obs);
+        caixa.append(chip);
+      });
+      celula.append(caixa);
+      com++;
+    });
+    if (recado) {
+      recado.textContent = "Embaixo do nome: o que a pessoa recebe nas outras folhas da "
+          + "competência " + d.competencia + " (só o selecionado em cada uma"
+          + "; despesas com colaboradores e avulso: o que está pendente agora). "
+          + com + " pessoa(s) com etiqueta."
+          + (d.avisos && d.avisos.length ? " Não deu para ler: " + d.avisos.join("; ") + "." : "");
+      recado.hidden = false;
+    }
+  }).catch(() => {});
+}
+// Incluído ANTES da tabela (o recado fica em cima dela): espera as linhas existirem.
+if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", outrasFolhas);
+else outrasFolhas();
+</script>

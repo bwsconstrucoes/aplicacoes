@@ -802,6 +802,86 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 06/11/2026 — O Ponto passa a morar dentro de Pessoal (menu e cadastro)
+
+**Em ramo, não publicado.** Decisão do dono: *"a gente tem lá pessoal e tem
+ponto (…) tem cadastro da pessoa, tem cadastro no ponto (…) a gente tem que
+falar a mesma linguagem nos dois lados, afinal é a mesma empresa, é o mesmo
+ERP."*
+
+**Atravessa áreas, mas NÃO toca em arquivo de outra área.** A junção vive em
+`_juntar_ponto_com_pessoal()`, no fim de `app/apps/erp/routes.py`: as 13 abas do
+módulo "ponto" passam para "pessoal" (17 no total, ordenadas pelo dia a dia) e o
+mapa aba → módulo reaponta. O ponto continua se registrando como antes
+(`ponto/gestao.py`, `_registrar_no_menu`); quem reorganiza a lista é o ERP,
+porque o menu é dele. Protegida por `try`: se o ponto não carregar, o ERP sobe
+igual, com os dois módulos separados.
+
+**E a ficha da pessoa no ERP passa a ler e gravar as marcações do ponto**
+(`erp/core/portal.py`: `marcacoes_do_ponto`, `definir_marcacoes_do_ponto`),
+chamando `ponto/core/papeis.definir` e `ponto/core/acesso.diagnostico` — nunca a
+tabela `ponto.colaborador_config` por fora. Se a regra do ponto mudar, muda num
+lugar só.
+
+⚠️ **Uma rota pública nova**, `erp.pagina_portal` (`/erp/portal`): a TELA do
+portal da obra, servida pelo ERP. É HTML sem dado dentro; quem confere quem é
+são as três rotas de API do portal. Declarada em `_ENDPOINTS_PUBLICOS` e provada
+em `tests/test_permissoes_rotas.py`.
+
+⚠️ **`tests/test_telas_javascript.py` passou a separar dois tipos de tela:** a
+que herda do `erp_base.html` (não pode redeclarar `els`, `dataBR`…) e a
+**página solta** (tem de declarar os próprios ajudantes). O portal é a primeira
+página solta do ERP.
+
+### 05/11/2026 — O ERP passa a RECEBER e-mail, e o portal da obra é o app do ponto
+
+**Em ramo, não publicado.** Duas decisões do dono que atravessam áreas, no dia
+em que ele desenhou o ciclo DP ↔ contabilidade (detalhe em
+`app/apps/erp/AGENTE_DP.md`).
+
+**1. O ERP lê caixa de entrada** (`app/apps/erp/core/comum/email_entrada.py`).
+Ele: *"Que agente é esse que depende de uma intervenção humana? Aí não é
+agente."* Usa `imaplib` e `email`, da **biblioteca padrão** — nenhuma
+dependência nova — e a senha da caixa fica **cifrada na tabela `parametros`**
+(mesma mecânica da senha de SMTP das empresas, `core/comum/segredos.py`):
+**nenhuma envvar nova para credencial**, como manda o `CLAUDE.md`. O módulo de
+e-mail passou a **gerar o próprio `Message-ID`** (coluna nova em
+`envios_email`), porque é por ele que a resposta é casada com o que a originou.
+Tetos para não derrubar o monorepo: 25 MB por anexo e 40 mensagens por rodada.
+
+**2. O PORTAL DA OBRA É O APLICATIVO DO PONTO** (`app/apps/erp/core/portal.py`).
+Ele perguntou como ficaria o permissionamento entre ERP, portal e ponto. Não há
+portal novo: o ERP **lê a sessão do app do ponto** (os dois blueprints rodam no
+mesmo processo e dividem o cookie) e **não reimplementa regra de alcance** —
+quais obras a pessoa alcança e quem pode pedir por outros vêm de
+`app/apps/ponto/core/papeis.py`. São três mundos de acesso que não se misturam:
+ERP (sessão + perfil), portal (CPF+PIN do ponto) e aparelho (token).
+
+⚠️ **Três rotas públicas novas** (`erp.api_portal_inicio`,
+`erp.api_portal_abrir`, `erp.api_portal_devolver`), declaradas em
+`_ENDPOINTS_PUBLICOS` e provadas no `tests/test_permissoes_rotas.py`: públicas
+porque quem entra não tem login do ERP, e **não abertas** — a primeira linha de
+cada uma exige a sessão do ponto e responde 401 sem ela, **antes de abrir
+conexão de banco** (rota pública que abre conexão antes de saber quem é vira
+porta de esgotar o pool).
+
+⚠️ **Dois tipos novos no catálogo da mensageria** (`app/apps/mensageria/
+core.py`): `erp.dp_devolucao` e `erp.dp_pedido`, e eles nascem **no WhatsApp** —
+exceção à decisão de 05/10/2026 ("ponto no WhatsApp, o resto no Telegram"),
+porque quem está na obra não tem Telegram. Registrada no
+`tests/test_mensageria.py` com o motivo.
+
+### 05/11/2026 — Busca automática de feriados numa base pública (`ponto/core/feriados_busca.py`)
+
+**Publicado em 05/11/2026.** Primeira fonte externa de
+feriados: os arquivos JSON da base pública **feriados-brasil** (GitHub
+`joaopbini/feriados-brasil`, MIT), baixados de `raw.githubusercontent.com` com teto de 15 MB
+por arquivo (§3.7). Sem dependência nova (`requests` já existe) e sem credencial. Grava em
+`ponto.feriados` só para UFs e municípios de obras ativas, nunca antes do mês anterior, sem
+sobrescrever e sem recriar o que foi excluído à mão. Disparada pela etapa de apoios do Análise
+de SPs (de hora em hora) e pela leitura da base de obras do ponto. Detalhe no `HISTORICO.md`
+do ponto.
+
 ### 04/11/2026 — Uma base só de feriados: a do ponto (Análise de SPs lê `ponto.feriados`)
 
 **Publicado em 04/11/2026.** Pedido do dono: *"a parte de
