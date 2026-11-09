@@ -684,6 +684,30 @@ function formOperador(u){
         <div class="dica">Diz <b>o que</b> esta pessoa faz. Cria-se e edita-se em
           <b>Perfis de acesso</b>, na faixa acima. Sem perfil escolhido, vale o
           cargo antigo — o campo de baixo.</div></div>
+      {# MAIS DE UM PERFIL NA MESMA PESSOA (migração 095). Pedido dele em
+         09/11/2026: *"pode ser que eu queira que uma pessoa utilize mais de
+         um perfil de acesso. Digamos que uma pessoa é do financeiro, mas eu
+         quero que ele acesse diário de obras."*
+
+         ⚑ A TELA PRECISA DIZER QUE PERFIL SÓ SOMA. Sem essa frase, alguém um
+         dia marca um perfil pequeno achando que ele RESTRINGE a pessoa — e
+         estaria dando acesso, não tirando. #}
+      <div class="campo" id="op-perfis-extras-bloco"><label>Também com o acesso de</label>
+        <div id="op-perfis-extras" class="filtro-opcoes"
+             style="max-height:150px; border:1px solid var(--borda);
+                    border-radius:8px; padding:6px">
+          ${PERFIS_CADASTRADOS.filter(p=>p.id!==u.perfil_id).map(p=>`
+            <label class="opcao"><input type="checkbox" class="op-perfil-extra"
+              value="${p.id}" ${(u.perfis_extras||[]).includes(p.id)?"checked":""}>
+              <span class="rotulo">${escapar(p.nome)}</span></label>`).join("")
+            || `<small class="desc">Nenhum outro perfil cadastrado.</small>`}
+        </div>
+        <div class="dica">Para quem faz duas coisas — alguém do Financeiro que
+          também lança o diário de obra. <b>Perfil só SOMA acesso, nunca
+          tira:</b> marcar aqui só acrescenta telas. Para TIRAR alguma coisa,
+          use as caixinhas de <b>ajuste fino</b>, lá no fim deste cadastro.
+          As <b>obras</b> continuam sendo as marcadas aqui embaixo, iguais
+          para todos os perfis dela.</div></div>
       <div class="campo"><label>Obras que esta pessoa enxerga</label>
         <select id="op-todas-obras">
           <option value="0" ${u.ve_todas_as_obras?"":"selected"}>Só as obras marcadas abaixo</option>
@@ -977,6 +1001,18 @@ function formOperador(u){
       + `É sugestão — desmarque o que não quiser antes de salvar.`, "ok");
   }
   els("op-perfil").addEventListener("change", aplicarPresetDoPerfil);
+  // Trocar o perfil PRINCIPAL tira ele da lista de acréscimos na hora: ver o
+  // mesmo perfil marcado nos dois lugares faria qualquer um duvidar de qual
+  // está valendo.
+  els("op-perfil-cad").addEventListener("change", () => {
+    const principal = +els("op-perfil-cad").value || 0;
+    document.querySelectorAll(".op-perfil-extra").forEach(i => {
+      const mesmo = +i.value === principal;
+      i.disabled = mesmo;
+      if (mesmo) i.checked = false;
+      i.closest(".opcao").style.opacity = mesmo ? ".45" : "";
+    });
+  });
 
   montarContasDoPlano(u.categorias || []);
   // Cadastro novo já nasce com a receita do perfil escolhido; ao EDITAR
@@ -1004,6 +1040,7 @@ function formOperador(u){
     const corpo = {nome: els("op-nome").value, telefone: els("op-tel").value,
       perfil: els("op-perfil").value, ativo: els("op-ativo").value === "1",
       perfil_id: els("op-perfil-cad").value || null,
+      perfis_extras: [...document.querySelectorAll(".op-perfil-extra:checked")].map(i=>+i.value),
       ve_todas_as_obras: els("op-todas-obras").value === "1",
       escopo_visao: els("op-escopo").value,
       ff_autorizado: els("op-ff").value === "1",
@@ -1265,9 +1302,15 @@ function desenhar(){
     <tr style="cursor:pointer" data-op="${u.id}" title="Clique para editar">
       <td>${u.nome}</td><td>${u.email}</td>
       <td class="dados">${u.cpf||"—"}</td><td class="dados">${u.telefone||"—"}</td>
+      {# O perfil principal e, embaixo, os ACRESCENTADOS (migração 095). Sem
+         mostrar aqui, uma pessoa com dois perfis pareceria ter só um — e
+         quem confere a lista não veria o acesso a mais. #}
       <td>${u.perfil_id
         ? escapar((PERFIS_CADASTRADOS.find(p=>p.id===u.perfil_id)||{}).nome || u.perfil_rotulo)
-        : `<span style="color:var(--tinta-suave)">${u.perfil_rotulo} <small>(cargo)</small></span>`}</td>
+        : `<span style="color:var(--tinta-suave)">${u.perfil_rotulo} <small>(cargo)</small></span>`}
+        ${(u.perfis_extras||[]).length ? `<br><small class="desc">+ ${
+          u.perfis_extras.map(x=>escapar((PERFIS_CADASTRADOS.find(p=>p.id===x)||{}).nome || x))
+            .join(" · ")}</small>` : ""}</td>
       <td><small>${u.ff_autorizado
         ? `até ${u.ff_teto_item?moeda(u.ff_teto_item):"—"} / despesa`
         : `<span style="color:var(--tinta-suave)">não usa</span>`}</small></td>

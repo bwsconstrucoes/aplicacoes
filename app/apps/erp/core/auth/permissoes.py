@@ -457,7 +457,10 @@ def _excecoes_no_banco(s: Session, usuario_id: int) -> dict[str, bool]:
 
 
 def acoes_do_perfil_no_banco(s: Session, usuario_id: int) -> Optional[set[str]]:
-    """As ações que o PERFIL CADASTRADO desta pessoa concede (migração 065).
+    """As ações que os PERFIS CADASTRADOS desta pessoa concedem.
+
+    Perfil principal (`usuarios.perfil_id`, migração 065) **mais** os perfis
+    acrescentados (`usuario_perfis`, migração 095).
 
     Devolve `None` quando não há o que ler — a tabela ainda não existe, ou a
     pessoa não foi apontada para perfil nenhum. `None` quer dizer "não sei", e
@@ -468,7 +471,27 @@ def acoes_do_perfil_no_banco(s: Session, usuario_id: int) -> Optional[set[str]]:
     Note a diferença entre `None` e conjunto VAZIO: vazio quer dizer "perfil
     cadastrado que não concede nada", e aí a pessoa não entra em lugar nenhum.
     É o padrão NADA, e ele tem de ser respeitado.
+
+    ⚑ DOIS PERFIS SOMAM, NUNCA TIRAM (migração 095). Pedido dele em
+    09/11/2026: *"pode ser que eu queira que uma pessoa utilize mais de um
+    perfil de acesso."* Cada seção fica no MAIOR nível entre os perfis — um
+    diz "só olhar", outro diz "olhar e mexer", vale "olhar e mexer". Sem essa
+    regra, haveria a pergunta "qual perfil ganha?", e um cadastro que ninguém
+    mais entende seis meses depois. Quem TIRA é a marcação por pessoa
+    (migração 032), que continua vencendo os perfis.
     """
+    from app.apps.erp.core.auth import secoes as cat
+
+    marcacoes = _marcacoes_do_perfil_principal(s, usuario_id)
+    extras = _marcacoes_dos_perfis_acrescentados(s, usuario_id)
+    if marcacoes is None and not extras:
+        return None
+    return cat.acoes_do_perfil(_somar_niveis(marcacoes or {}, extras))
+
+
+def _marcacoes_do_perfil_principal(s: Session,
+                                   usuario_id: int) -> Optional[dict[str, str]]:
+    """As seções do perfil principal. `None` = não sei (vale o cargo antigo)."""
     from sqlalchemy import text as _text
 
     try:
@@ -483,13 +506,59 @@ def acoes_do_perfil_no_banco(s: Session, usuario_id: int) -> Optional[set[str]]:
     if not linhas:
         return None          # sem perfil cadastrado: vale o cargo antigo
     try:
-        marcacoes = {linha[0]: linha[1] for linha in linhas if linha[0]}
+        return {linha[0]: linha[1] for linha in linhas if linha[0]}
     except (TypeError, IndexError, ValueError):
         # Resposta com formato inesperado (a sessão dublada dos testes é um
         # caso). "Não sei" é a resposta honesta, e ela cai no cargo antigo.
         return None
+
+
+def _marcacoes_dos_perfis_acrescentados(s: Session,
+                                        usuario_id: int) -> dict[str, str]:
+    """As seções dos perfis ACRESCENTADOS (migração 095).
+
+    ⚑ CONSULTA SEPARADA, E ISSO É O PONTO. Se ela estivesse junto com a do
+    perfil principal, bastaria a migração 095 não ter rodado ainda para a
+    consulta inteira falhar — e TODA a empresa cairia no cargo antigo na
+    janela entre publicar e apertar o botão. Separada, o que falha aqui é só o
+    acréscimo: ninguém perde o que o perfil principal dá.
+
+    Devolve `{}` quando não há tabela ou não há acréscimo, nunca `None`:
+    "nenhum perfil a mais" é resposta, não dúvida.
+    """
+    from sqlalchemy import text as _text
+
+    try:
+        linhas = s.execute(_text(
+            "SELECT ps.secao, ps.nivel "
+            "  FROM usuario_perfis up "
+            "  JOIN perfis p ON p.id = up.perfil_id AND p.ativo "
+            "  JOIN perfil_secoes ps ON ps.perfil_id = p.id "
+            " WHERE up.usuario_id = :i"), {"i": usuario_id}).all()
+    except Exception:
+        return {}            # migração 095 ainda não aplicada
+    try:
+        return _somar_niveis(*[{linha[0]: linha[1]} for linha in linhas
+                               if linha and linha[0]])
+    except (TypeError, IndexError, ValueError):
+        return {}
+
+
+def _somar_niveis(*conjuntos: dict[str, str]) -> dict[str, str]:
+    """Junta marcações de vários perfis ficando com o MAIOR nível de cada seção.
+
+    "Maior" é EDITAR > LER > NADA, e a ordem vem de `secoes.NIVEIS` — não de
+    uma lista repetida aqui, que um dia divergiria.
+    """
     from app.apps.erp.core.auth import secoes as cat
-    return cat.acoes_do_perfil(marcacoes)
+
+    peso = {nivel: i for i, nivel in enumerate(cat.NIVEIS)}
+    junto: dict[str, str] = {}
+    for conjunto in conjuntos:
+        for secao, nivel in (conjunto or {}).items():
+            if peso.get(nivel, 0) > peso.get(junto.get(secao, cat.NADA), 0):
+                junto[secao] = nivel
+    return junto
 
 
 def pode(usuario: Usuario, acao: str) -> bool:

@@ -8069,24 +8069,36 @@ pessoas com este mesmo perfil alcançam obras diferentes.
 **3. "Posso vincular mais de um perfil de acesso à mesma pessoa? Digamos que
 ela é do financeiro, mas eu quero que acesse diário de obras."**
 
-**Hoje é UM perfil por pessoa — mas o que ele quer já existe, e por um caminho
-melhor:** em **Configurações › Operadores**, o cadastro de cada pessoa tem a
-lista de ações com caixinhas. Marcar **"Lançar o diário de obra"** em alguém do
-Financeiro dá exatamente isso, sem mexer no perfil de ninguém. Desmarcar tira.
-A tela mostra, ação por ação, o que o perfil já dá e o que foi **ajustado à
-mão** (migração 032).
+✅ **FEITO, migração 095** — e vale registrar o caminho, porque ele mostra
+como a conversa deve funcionar. **Eu recomendei o contrário:** disse que a
+marcação ação a ação (migração 032) já resolvia e que dois perfis trariam a
+ambiguidade de "qual deles ganha". Ele ouviu e respondeu **"ainda assim
+prefiro"**. É decisão dele, e é a melhor para o uso real: *"esta pessoa é
+Financeiro + Diário de obra"* é uma frase que ele escreve, confere e entende
+seis meses depois; vinte caixinhas marcadas à mão, não.
 
-⚑ **POR QUE ISSO É MELHOR QUE DOIS PERFIS, e não é desculpa:** com dois
-perfis, alguém tem de decidir o que acontece quando eles **discordam** — um dá
-"cancelar título", o outro tira. Toda vez que um perfil mudasse, mudaria em
-silêncio o que a pessoa pode fazer nos outros. Com a marcação por pessoa a
-resposta é única e está escrita no cadastro dela: dá para olhar e entender.
-E o padrão continua sendo NEGAR.
+**Como ficou:** no cadastro do operador há **"Também com o acesso de"**, com a
+lista de perfis. O principal continua sendo um; os outros são acréscimos.
 
-**O que ele perde:** não dá para dizer *"este fulano é Financeiro + Diário"*
-numa palavra só — são duas caixinhas marcadas. Se um dia houver **muita**
-gente na mesma combinação, o certo é criar um perfil com esse nome, não ligar
-dois.
+⚑ **A AMBIGUIDADE FOI RESOLVIDA NA REGRA, NÃO ADIADA: perfil SÓ SOMA acesso,
+nunca tira.** Quem tem dois perfis fica com o **maior nível de cada seção** —
+um diz "só olhar", o outro "olhar e mexer", vale "olhar e mexer". Assim não
+existe a pergunta "qual deles ganha". Quem TIRA continua sendo a marcação por
+pessoa, que vence os perfis. A ordem final: **os perfis somam → a marcação da
+pessoa corrige → o ADMIN não se tranca para fora.** Essa ordem já existia; só
+o primeiro passo passou de "um perfil" para "a soma dos perfis".
+
+⚑ **A LEITURA DOS ACRÉSCIMOS É UMA CONSULTA SEPARADA, e isso é o cuidado que
+mais importa aqui.** Se ela estivesse junto com a do perfil principal,
+bastaria a migração 095 não ter rodado ainda para a consulta inteira falhar —
+e **a empresa toda cairia no cargo antigo** na janela entre publicar e apertar
+o botão. Separada, o que falha é só o acréscimo. Há teste disso, com uma
+sessão que recusa a tabela.
+
+**O que a tela diz, com todas as letras:** que perfil só soma, e que para
+TIRAR alguma coisa o caminho é o ajuste fino. Sem essa frase, alguém um dia
+marcaria um perfil pequeno achando que **restringe** a pessoa — e estaria
+dando acesso.
 
 ### 🖼️ AS DUAS LOGOS NO CADASTRO DA OBRA (09/11/2026)
 

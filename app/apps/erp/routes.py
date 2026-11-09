@@ -8491,19 +8491,75 @@ def _empresas_cadastradas(s) -> list[dict]:
         return []
 
 
-def _aplicar_perfil_cadastrado(u, d: dict) -> None:
+def _aplicar_perfil_cadastrado(u, d: dict, s=None, autor=None) -> None:
     """Grava o perfil de acesso e a marca "enxerga todas as obras".
 
     As duas coisas são diferentes de propósito, e foi o dono quem separou:
     *"só que tem uma diferença do banco, porque tem a questão da obra"*. O
     perfil diz O QUE a pessoa faz; as obras, ONDE. Duas pessoas do mesmo perfil
     acompanham obras diferentes.
+
+    E desde a migração 095 a pessoa pode ter MAIS DE UM perfil: um principal e
+    quantos acréscimos forem precisos. Eles SOMAM acesso, nunca tiram.
     """
     if "perfil_id" in d:
         valor = d.get("perfil_id")
         u.perfil_id = int(valor) if valor not in (None, "", 0, "0") else None
     if "ve_todas_as_obras" in d:
         u.ve_todas_as_obras = bool(d.get("ve_todas_as_obras"))
+    if s is not None and "perfis_extras" in d:
+        _gravar_perfis_extras(s, u, d.get("perfis_extras") or [], autor)
+
+
+def _perfis_extras_do_usuario(s, usuario_id: int) -> list[int]:
+    """Os perfis ACRESCENTADOS a esta pessoa (migração 095).
+
+    Protegida como todo o resto do acesso: enquanto a tabela não existir, a
+    resposta é "nenhum", e o cadastro continua abrindo.
+    """
+    from sqlalchemy import text as _text
+    try:
+        return [linha[0] for linha in s.execute(_text(
+            "SELECT perfil_id FROM usuario_perfis WHERE usuario_id = :i "
+            "ORDER BY perfil_id"), {"i": usuario_id}).all()]
+    except Exception:
+        return []
+
+
+def _gravar_perfis_extras(s, u, pedidos, autor) -> None:
+    """Troca a lista de perfis acrescentados desta pessoa.
+
+    ⚑ O PERFIL PRINCIPAL NUNCA ENTRA AQUI. Se ele entrasse, trocar o principal
+    deixaria para trás um acréscimo invisível com o perfil velho — e a pessoa
+    continuaria com um acesso que a tela diz que ela não tem mais.
+    """
+    from sqlalchemy import text as _text
+    from app.apps.erp.core.comum.auditoria import registrar_evento
+    try:
+        novos = {int(x) for x in pedidos if str(x).strip() not in ("", "0", "None")}
+    except (TypeError, ValueError):
+        raise ErroValidacao("Perfil de acesso inválido na lista.")
+    novos.discard(u.perfil_id or 0)
+    atuais = set(_perfis_extras_do_usuario(s, u.id))
+    if novos == atuais:
+        return
+    validos = {linha[0] for linha in s.execute(_text(
+        "SELECT id FROM perfis WHERE ativo")).all()}
+    desconhecidos = novos - validos
+    if desconhecidos:
+        raise ErroValidacao("Perfil de acesso que não existe mais foi pedido.")
+    s.execute(_text("DELETE FROM usuario_perfis WHERE usuario_id = :i"),
+              {"i": u.id})
+    for pid in sorted(novos):
+        s.execute(_text(
+            "INSERT INTO usuario_perfis (usuario_id, perfil_id, criado_por) "
+            "VALUES (:u, :p, :a)"),
+            {"u": u.id, "p": pid, "a": autor.id if autor else None})
+    # Mudança de ACESSO é das que têm de deixar rastro: fica no registro quem
+    # mudou, quando, e de quais perfis para quais.
+    registrar_evento(s, "usuario", u.id, "PERFIS_EXTRAS_ALTERADOS",
+                     {"antes": sorted(atuais), "depois": sorted(novos)},
+                     autor.id if autor else None)
 
 
 @bp.route("/erp/api/usuarios", methods=["GET", "POST"])
@@ -8551,6 +8607,9 @@ def api_usuarios():
                     # É aqui que o dono mexe agora — o cargo acima ficou de
                     # herança e sai quando nada mais o ler.
                     "perfil_id": getattr(u, "perfil_id", None),
+                    # Os perfis ACRESCENTADOS (migração 095). Eles somam ao
+                    # principal; a tela mostra os dois juntos.
+                    "perfis_extras": _perfis_extras_do_usuario(s, u.id),
                     "ve_todas_as_obras": getattr(u, "ve_todas_as_obras", None),
                     # O alcance dito por PROJETO e por EMPRESA (migração 066).
                     # A obra continua sendo a unidade: estes dois são jeitos de
@@ -8587,7 +8646,10 @@ def api_usuarios():
             u.cpf = cpf or None
             u.telefone = somente_digitos(d.get("telefone") or "") or None
             u.observacoes = (d.get("observacoes") or "").strip() or None
-            _aplicar_perfil_cadastrado(u, d)
+            # O flush vem ANTES porque os perfis acrescentados precisam do id
+            # da pessoa, e no cadastro novo ele só existe depois dele.
+            s.flush()
+            _aplicar_perfil_cadastrado(u, d, s, atual)
             if d.get("projetos") or d.get("empresas"):
                 from app.apps.erp.core.cadastros import vinculos as _vinc
                 s.flush()
@@ -8680,7 +8742,7 @@ def api_editar_usuario(usuario_id: int):
                     except _IE:
                         return jsonify({"ok": False,
                                         "erro": f"Valor inválido em {campo}."}), 400
-            _aplicar_perfil_cadastrado(u, d)
+            _aplicar_perfil_cadastrado(u, d, s, atual)
             if "projetos" in d or "empresas" in d:
                 from app.apps.erp.core.cadastros import vinculos as _vinc
                 _vinc.definir_alcance_do_operador(
@@ -8707,6 +8769,11 @@ def api_editar_usuario(usuario_id: int):
         return jsonify({"ok": True})
     except ErroPermissao as e:
         return jsonify({"ok": False, "erro": str(e)}), 403
+    except ErroValidacao as e:
+        # Recado de gente para pedido errado — perfil que não existe mais,
+        # por exemplo. Sem isto virava 500, e a tela dizia "falha no sistema"
+        # para uma coisa que a pessoa consegue corrigir sozinha.
+        return jsonify({"ok": False, "erro": str(e)}), 400
     except ErroNaoEncontrado:
         raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
