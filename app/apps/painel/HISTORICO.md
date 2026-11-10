@@ -690,9 +690,23 @@ causa DESTE lançamento não está confirmada. O que o código mostra:
    nCodLanc. Hoje são iguais (confirmado em produção em 07/10), mas o fato
    agora procura pelos dois — uma diferença futura não some em silêncio.
 
-**Reler os pagamentos de 2020 não é preciso para este lançamento**: se ele tem
-número no painel, o movimento já está guardado inteiro; falta só perguntar a
-obra. Reler é para as linhas SEM número ("—" no Explorador).
+**Reler os pagamentos também resolve, se for de 1 ou 2 anos por vez**: essa
+releitura pergunta a obra de TODOS os lançamentos de conta daqueles anos, sem
+o teto de 600 (é por isso que 2026, relido sozinho, ficou certo). Relendo
+"todos os anos" de uma vez, vale o teto. O botão novo faz só a parte da obra,
+de todos os anos, sem reler os pagamentos. As linhas SEM número ("—" no
+Explorador) só se resolvem relendo os pagamentos do período.
+
+O dono, na mesma conversa: *"foram feitas mudanças na interpretação dos
+títulos. Esses títulos estão apropriados e antes não tinha esse problema."*
+O que o código diz sobre "antes": até 07/10/2026 o pagamento que o OMIE manda
+SEM título ligado (é o único que ganha a marca "[lançamento de conta
+corrente]") não entrava no painel — nem como "(não apropriado)", nem em
+número nenhum. Teste combinado para confirmar com dado: "Baixar um lançamento
+de conta corrente do OMIE" com 709793529 — se vier com a obra, é lançamento de
+conta apropriado que o painel ainda não perguntou; se o OMIE disser "não
+cadastrado", a leitura acima está errada e é preciso olhar o dia cru
+(28/12/2020).
 
 ## O Explorador e as tarifas: trocar a obra de lançamento de conta — 10/11/2026
 
