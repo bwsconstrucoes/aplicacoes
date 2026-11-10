@@ -1051,3 +1051,15 @@ dialog::backdrop { background: rgba(7,30,64,.45); }
 .etiqueta.vermelho { background: #FBE6E4; color: var(--vermelho); }
 .etiqueta.ciano    { background: #E2F1F6; color: var(--ciano); }
 .etiqueta.azul     { background: #E7EDF7; color: var(--azul); }
+
+/* A lista de resultados da busca de pessoa (campo `tipo: "pessoa"` do
+   `perguntar`). Cada achado é um BOTÃO, e não uma linha de texto: no celular,
+   alvo de toque pequeno demais faz escolher a pessoa errada — e aqui escolher
+   errado é abrir o pedido no cadastro de outro. */
+.busca-achados { margin-top: 4px; display: flex; flex-direction: column; gap: 2px; }
+.busca-achado { text-align: left; background: #fff; border: 1px solid var(--borda);
+                border-radius: 8px; padding: 7px 10px; cursor: pointer;
+                font: inherit; line-height: 1.25; }
+.busca-achado:hover, .busca-achado:focus { background: #F2F6FC;
+                border-color: var(--azul-claro); }
+.busca-achado small { display: block; color: var(--cinza); font-size: 11.5px; }

@@ -396,10 +396,18 @@ async function novaSolicitacao(){
                     {valor: "RESCISAO", rotulo: "Documentação de rescisão"}]};
   const campos = [];
   if (regra.exige_pessoa) {
-    const pessoas = (await api("/erp/api/colaboradores")).colaboradores;
-    campos.push({nome: "colaborador_id", rotulo: "Pessoa", tipo: "select",
+    {# A PESSOA SE BUSCA, NÃO SE ESCOLHE NUMA LISTA (10/11/2026).
+
+       Antes isto carregava `/erp/api/colaboradores` inteiro num <select>:
+       quem abrisse a janela via os 575 nomes de uma vez, e o código da página
+       dava a lista para copiar. Ele apontou: *"talvez pela LGPD a gente não
+       possa expor uma lista de funcionários, mas a gente começar a digitar
+       algum nome, ele já começar a ir aparecendo."* Agora são três letras ou
+       o CPF, e no máximo oito resultados. #}
+    campos.push({nome: "colaborador_id", rotulo: "Pessoa", tipo: "pessoa",
       obrigatorio: true, largura: 6,
-      opcoes: pessoas.map(p => ({valor: p.id, rotulo: `${p.nome} — ${documento(p.cpf)}`}))});
+      exemplo: "digite parte do nome ou o CPF",
+      dica: "Três letras já bastam. O CPF pode ser digitado com ou sem ponto."});
   }
   for (const c of regra.campos) {
     const extra = CAMPO_PEDIDO[c] || {};

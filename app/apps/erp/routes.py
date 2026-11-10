@@ -8801,6 +8801,102 @@ def api_editar_usuario(usuario_id: int):
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
+@bp.route("/erp/api/colaboradores/buscar")
+@login_obrigatorio
+@permissao("ver_pessoal")
+def api_colaboradores_buscar():
+    """Acha a pessoa por PARTE DO NOME ou pelo CPF. Nunca devolve a lista toda.
+
+    Pedido dele em 10/11/2026, abrindo uma solicitação: *"vamos buscar a
+    pessoa na nossa base de dados, digitando algum dado, um CPF, e já poder
+    visualizar o funcionário. Talvez pela LGPD a gente não possa expor uma
+    lista de funcionários, mas a gente começar a digitar algum nome, ele já
+    começar a ir aparecendo."*
+
+    ⚑ EXIGE TRÊS LETRAS E DEVOLVE NO MÁXIMO OITO, e as duas coisas são a
+    resposta à preocupação dele. Antes, a tela de abrir solicitação carregava
+    **o cadastro inteiro** num `<select>`: qualquer pessoa com acesso ao
+    Pessoal via os 575 nomes de uma vez, e bastava abrir o código da página
+    para copiar a lista. Com busca, só aparece quem já se sabia procurar.
+
+    ⚑ O CPF É PROCURADO POR DÍGITOS, e não pelo que foi digitado: quem digita
+    "123.456" não acharia nada se a comparação fosse literal, porque o banco
+    guarda só os números.
+
+    O ESCOPO VALE AQUI TAMBÉM: quem é preso a obra só acha gente das obras
+    dele. É o mesmo `aplicar_escopo` da listagem — regra de escopo escrita
+    duas vezes diverge no primeiro mês.
+    """
+    from sqlalchemy import or_, select as _select
+
+    from app.apps.erp.core.auth.permissoes import obras_do_usuario
+    from app.apps.erp.core.cadastros.validadores import somente_digitos
+    from app.apps.erp.db.models.cadastros import Colaborador, Obra
+    procurado = (request.args.get("q") or "").strip()
+    digitos = somente_digitos(procurado)
+    if len(procurado) < 3 and len(digitos) < 3:
+        return jsonify({"ok": True, "pessoas": [], "curto": True})
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            consulta = _select(Colaborador)
+            filtros = [Colaborador.nome.ilike(f"%{procurado}%")]
+            if digitos:
+                filtros.append(Colaborador.cpf.like(f"%{digitos}%"))
+                filtros.append(Colaborador.matricula.ilike(f"%{digitos}%"))
+            consulta = consulta.where(or_(*filtros)).order_by(Colaborador.nome)
+            # O ESCOPO POR OBRA. `None` quer dizer "alcança todas"; uma lista
+            # vazia quer dizer "nenhuma", e aí não acha ninguém — que é o
+            # certo, e não o contrário.
+            permitidas = obras_do_usuario(s, atual)
+            if permitidas is not None:
+                consulta = consulta.where(
+                    Colaborador.obra_id.in_(list(permitidas) or [-1]))
+            achados = list(s.scalars(consulta.limit(8)).all())
+            return jsonify({"ok": True, "pessoas": [{
+                "id": c.id, "nome": c.nome, "cpf": c.cpf,
+                "situacao": c.situacao or "ATIVO",
+                # A OBRA VAI JUNTO porque é o que distingue dois homônimos —
+                # e homônimo em obra é comum.
+                "obra": (s.get(Obra, c.obra_id).codigo
+                         if c.obra_id and s.get(Obra, c.obra_id) else ""),
+            } for c in achados]})
+    except Exception as e:
+        logger.exception("ERP: falha na busca de colaborador")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/colaboradores/<int:colaborador_id>/foto")
+@login_obrigatorio
+@permissao("ver_pessoal")
+def api_colaborador_foto(colaborador_id: int):
+    """A foto da pessoa — e ela VEM DO PONTO, não de um anexo.
+
+    Decisão dele em 10/11/2026: *"a foto vai ser alimentada pelo ponto (…) a
+    primeira foto do ponto que ele começar a usar, ele coloca como cadastro."*
+    Ninguém mais sobe foto de colaborador: ela já existe, batida todo dia.
+
+    Confere o escopo porque recebe número de registro, e responde 404 quando
+    não há foto — a tela esconde o quadro em vez de mostrar imagem quebrada.
+    """
+    from flask import Response
+    from app.apps.erp.core.auth.permissoes import exigir_colaborador_no_escopo
+    from app.apps.erp.core.cadastros import pessoas as svc
+    try:
+        with get_session() as s:
+            exigir_colaborador_no_escopo(s, _usuario_logado(s), colaborador_id)
+            foto = svc.foto_do_ponto(s, colaborador_id)
+            if foto is None:
+                raise ErroNaoEncontrado("Esta pessoa ainda não tem foto do ponto.")
+            return Response(foto["conteudo"], mimetype=foto["mime"],
+                            headers={"Cache-Control": "private, max-age=600"})
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP: falha ao servir a foto da pessoa %s", colaborador_id)
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
 @bp.route("/erp/api/colaboradores/<int:colaborador_id>/acesso",
           methods=["POST", "DELETE"])
 @login_obrigatorio
@@ -8963,6 +9059,35 @@ def api_usuario_convite_situacao(usuario_id: int):
     except Exception as e:
         logger.exception("ERP: falha ao ler a situação do convite")
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/esqueci-a-senha", methods=["GET", "POST"])
+@permissao_publica("pedir o link de nova senha — quem esqueceu a senha não "
+                   "tem como entrar para pedir")
+def pagina_esqueci_a_senha():
+    """A pessoa pede o link e redefine sozinha.
+
+    Ele, em 10/11/2026: *"esqueci minha senha, é interessante, né? É
+    necessário. Não deixar a autonomia."*
+
+    ⚑ A RESPOSTA É SEMPRE A MESMA, exista a conta ou não. Dizer "não há conta
+    com esse e-mail" transformaria esta tela numa máquina de descobrir quem
+    trabalha na empresa — basta ir testando endereços. O que de fato
+    aconteceu fica no log, não na tela.
+    """
+    from app.apps.erp.core.auth import convites as svc
+    if request.method == "GET":
+        return render_template("erp_esqueci_senha.html", pronto=False)
+    email = (request.form.get("email") or "").strip()
+    try:
+        with get_session() as s:
+            svc.pedir_nova_senha(s, email, link_base=_link_do_convite())
+            s.commit()
+    except Exception:                                   # noqa: BLE001
+        # Nem a falha muda a resposta: um erro aqui que aparecesse na tela
+        # também contaria se a conta existe.
+        logger.exception("ERP: falha ao atender pedido de nova senha")
+    return render_template("erp_esqueci_senha.html", pronto=True)
 
 
 @bp.route("/erp/primeiro-acesso/<token>", methods=["GET", "POST"])

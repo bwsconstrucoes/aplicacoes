@@ -7813,6 +7813,92 @@ fica separado dos dois.
 limitação, porque ele era só entrada de dados, ele não era gestão. Mas hoje a
 gente faz a gestão pelo ERP."*
 
+### 📗 A CRÍTICA DELE AO MANUAL — o que eu tinha errado (10/11/2026)
+
+Ele leu o `MANUAL_DP.md` e devolveu uma lista. **Quatro erros meus**, e cada
+um vale guardar porque o mecanismo se repete.
+
+**1. O "pré-cadastro" era invenção minha, e não do Pipefy.** Eu tinha
+escrito no manual que copiei a ideia do pipe. Ele: *"nunca existiu
+pré-cadastro. O pipe de cadastro de colaboradores é COMPLETÍSSIMO, ele tem
+todas as informações."* ⚑ **O mecanismo do erro:** vi um pipe com 7 fases,
+li "Cadastro Inicial" no nome da primeira e concluí que o cadastro entrava
+pela metade. O nome da fase descreve **em que pé está a conferência**, não
+quanta informação chegou. Atribuí ao sistema dele um desenho que era meu.
+
+**2. Eu propus cortar campos de PAGAMENTO achando que eram enfeite.** Tinha
+listado *cesta básica extra*, *adicional de transferência*, *parcela única*,
+*recebe via SP* e *id_fortes* como candidatos a sumir. Ele desfez e deu a
+régua certa: *"tem muita coluna no Pipe porque na planilha tem informações
+que não têm nada a ver, apenas para movimentação dentro do processo (…) o
+importante são os campos cadastrais. Aí tem campos que refletem no
+pagamento, que não são obrigatórios, são opcionais, que a pessoa pode não
+ter."* ⚑ **A régua não é "quantos campos", é QUEM USA O CAMPO:** campo que
+alimenta cálculo de pagamento fica, mesmo que só 20 pessoas o preencham;
+campo que existia para mover card sai.
+
+**3. O ID Fortes era o pior da minha lista, e é a chave do sistema.** Ele:
+*"é o registro do colaborador na contabilidade. Na folha da contabilidade
+não tem CPF: ele usa o ID e o nome. Se houver um homônimo, vai ser
+distinguido através do ID."* O Análise de SPs **já depende dele** — sem o
+de/para, gente cadastrada aparece na folha como "fora do cadastro", sem
+pagamento. Falta a atualização em lote por arquivo, que ele deixou para
+depois.
+
+**4. ASO e CTPS obrigatórios eram zelo meu.** *"ASO seria o correto, mas não
+vamos colocar como obrigatório ainda"*; *"carteira de trabalho para quem não
+é prestador não fica mais obrigatório"*. ⚑ **Obrigatoriedade que a empresa
+não pratica vira aviso que todo mundo aprende a ignorar — e aí o aviso de
+verdade some junto.** Os três (com a foto) continuam no catálogo e continuam
+sendo arquivados; o que saiu foi o "falta isto para admitir".
+
+**O QUE FOI LIDO NO ANÁLISE DE SPs**, a pedido dele (*"você verifica na
+Análise de SPs o que é necessário lá"*), e está no manual §2.3-ter: **são SEIS
+folhas**, cada uma puxando campos distintos — contabilidade (CTPS), diaristas,
+auxílio-alimentação, auxílio-transporte, gratificados/mensalistas e pagamento
+via SP. Três descobertas que mudam o desenho: **o vínculo é decidido POR DIA,
+não por pessoa** (daí data de início E data de admissão serem campos
+diferentes); **"Cartão" no transporte quer dizer NÃO pagar em dinheiro** (foi
+origem de pagamento em dobro); e **o autônomo mensalista não entra em folha
+nenhuma** — gera registro de pagamento, como PJ.
+
+**O QUE FOI CONSTRUÍDO NO MESMO DIA:**
+
+- **A foto vem do PONTO** (`pessoas.foto_do_ponto`): a escolhida na tela do
+  ponto, ou, não havendo escolha, **a primeira que a pessoa bateu** — que é o
+  que ele descreveu. ⚑ **Só LEITURA, e protegida por savepoint:** o schema do
+  ponto é de outra área e pode não existir; em Postgres, consulta que falha
+  aborta a transação inteira mesmo pega por `except`. E o ERP **não grava** no
+  ponto — fixar a escolha lá é mudança na área dele.
+- **A busca de pessoa** (`/erp/api/colaboradores/buscar`): três letras ou o
+  CPF, no máximo oito resultados, com escopo por obra. ⚑ Substituiu um
+  `<select>` que carregava **o cadastro inteiro** na página — bastava abrir o
+  código para copiar os 575 nomes. Preocupação dele: *"talvez pela LGPD a
+  gente não possa expor uma lista de funcionários."* O campo `tipo: "pessoa"`
+  do `perguntar()` é novo e serve a qualquer tela.
+- **"Esqueci minha senha"** (`/erp/esqueci-a-senha`): *"é necessário. Não
+  deixar a autonomia."* ⚑ **Três cuidados, e cada um fecha um buraco:** a
+  resposta é **idêntica** exista a conta ou não (senão a tela vira máquina de
+  descobrir quem trabalha na empresa); **um pedido a cada dez minutos** por
+  pessoa (senão qualquer um enche a caixa de alguém — e, pior, cada pedido
+  invalida o link anterior, então bastaria repetir para impedir a pessoa de
+  entrar); e **conta bloqueada não recebe link**.
+- **`AGENTE_DP.md` §6-quater e §6-quinquies**: a escala de autonomia que ele
+  ditou (dependente, dado cadastral e cobrança o agente faz sozinho; cadastrar,
+  desligar, mexer em cargo/salário e encaminhar rescisória exigem pessoa) e
+  **como a documentação da contabilidade é conferida**. ⚑ A resposta à
+  pergunta dele sobre o tipo do documento: **o sistema não adivinha** — o tipo
+  vem do PEDIDO que originou a resposta. E o ERP **confere, não recalcula**: um
+  número meu divergindo da contabilidade por centavos criaria uma discussão por
+  mês.
+
+**E UMA MUDANÇA DE CALENDÁRIO:** *"eu sei que a gente vai sair do Pipefy aos
+poucos, mas na totalidade (…) a cada maturação de cada processo a gente vai
+liberando."* Antes estava registrado que o Pipefy sairia **de uma vez**, o que
+obrigava financeiro e suprimentos a existirem aqui antes do corte. **Saindo
+por processo, o DP pode sair sozinho** assim que estiver maduro — como já
+aconteceu com o MobPonto. Isso destrava o calendário.
+
 ### 📘 O MANUAL DO DP, e as três correções que ele trouxe (09/11/2026, migração 096)
 
 **Há um arquivo novo para ler antes de mexer no DP: `MANUAL_DP.md`.** Ele

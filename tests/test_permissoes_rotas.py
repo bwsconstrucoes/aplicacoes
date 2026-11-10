@@ -155,6 +155,12 @@ def test_o_conjunto_de_rotas_publicas_e_pequeno_e_conhecido():
     segredo) e as duas do PWA. Rota pública é superfície de ataque, e esta lista
     só deve encolher.
 
+    **A NONA ENTROU EM 10/11/2026: "esqueci minha senha".** Pelo mesmo motivo
+    da oitava — quem esqueceu a senha não tem como entrar para pedir. Ela não
+    diz se a conta existe (a resposta é idêntica nos dois casos), não lista
+    nada, e só aceita um pedido a cada dez minutos por pessoa, para não virar
+    máquina de encher caixa de e-mail nem de invalidar o link de alguém.
+
     **A OITAVA ENTROU EM 09/11/2026: o primeiro acesso.** Ela é pública pelo
     único motivo que justifica: *quem abre o link ainda não tem senha*, então
     não existe login a exigir. O que a protege não é a sessão, é o TOKEN — 32
@@ -166,7 +172,7 @@ def test_o_conjunto_de_rotas_publicas_e_pequeno_e_conhecido():
     assert set(routes._ENDPOINTS_PUBLICOS) == {
         "erp.pagina_login", "erp.sair", "erp.health", "erp.api_agente_rodar",
         "erp.api_comprovantes_lote", "erp.manifesto_pwa", "erp.service_worker",
-        "erp.pagina_primeiro_acesso"}
+        "erp.pagina_primeiro_acesso", "erp.pagina_esqueci_a_senha"}
 
 
 def test_o_portal_mudou_de_dono_e_nao_de_endereco(app):

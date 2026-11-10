@@ -50,11 +50,20 @@ pré-cadastro, existe o cadastro, ponto final. O cadastro já tem que vir com
 documentação e tudo mais."*
 
 Estava errado e foi trocado. O tipo da fila chamava-se *Pré-cadastro* e dizia
-"a obra manda o nome e o CPF; o DP completa" — eu tinha copiado a ideia do
-Pipefy. **A diferença não é de palavra, é de quem faz o quê:** daquele jeito o
-DP ficava perseguindo documento por WhatsApp, que é justamente o trabalho que
+"a obra manda o nome e o CPF; o DP completa".
+
+⚠️ **E eu errei duas vezes, não uma.** Escrevi aqui que a ideia vinha do
+Pipefy — não vinha. Ele corrigiu em 10/11/2026: *"nunca existiu pré-cadastro.
+O pipe de cadastro de colaboradores é completíssimo, ele tem todas as
+informações."* **O pré-cadastro foi invenção minha.** Fica registrado porque o
+erro é instrutivo: eu olhei um pipe com 7 fases, vi que a primeira se chamava
+"Cadastro Inicial" e concluí que o cadastro entrava pela metade. O nome da
+fase descreve **em que pé está a conferência**, não quanta informação chegou.
+
+**A diferença não é de palavra, é de quem faz o quê:** no pré-cadastro o DP
+ficava perseguindo documento por WhatsApp, que é justamente o trabalho que
 esta fila existe para acabar. Agora o tipo é **Cadastro de colaborador**, a
-obra abre **com os papéis**, e o DP **confere**.
+obra abre **com os dados e os papéis**, e o DP **confere**.
 
 ### 2.2 O que é obrigatório — e são duas listas diferentes
 
@@ -79,15 +88,44 @@ ADMITIR**, que aparece no alto da ficha e é a mesma lista que o DP persegue:
 |---|---|
 | documento de identificação (RG, CNH ou CPF) | todos |
 | comprovante de endereço | todos |
-| foto do colaborador | todos |
-| ASO (atestado de saúde ocupacional) | todos |
-| carteira de trabalho | só quem é CTPS |
 
 Campo em branco é digitação que falta; papel em branco é documento que ninguém
 pediu à pessoa. Por isso os dois avisos são separados na tela.
 
-**A foto vem do ponto**, como você disse — e ela também é um dos papéis acima,
-porque é o que vai no crachá e na ficha.
+**A lista encolheu em 10/11/2026, por decisão sua** — e as três saídas ficam
+registradas para ninguém recolocá-las achando que foi descuido:
+
+| Saiu | Por quê, nas suas palavras |
+|---|---|
+| **ASO** | *"esse seria o correto, mas não. Não vamos colocar ele como obrigatório ainda."* |
+| **Carteira de trabalho** | *"para quem não é prestador não fica mais obrigatório."* |
+| **Foto do colaborador** | *"a foto vai ser alimentada pelo ponto."* |
+
+⚠️ **Sair da lista não é sumir:** os três continuam no catálogo do Arquivo,
+continuam podendo ser anexados e continuam aparecendo na ficha. O que mudou é
+que a ficha **não diz mais "falta isto para admitir"** por causa deles.
+Obrigatoriedade que a empresa não pratica vira aviso que todo mundo aprende a
+ignorar — e aí o aviso de verdade some junto.
+
+### 2.2-bis A FOTO VEM DO PONTO, e ninguém anexa nada
+
+Você: *"a primeira foto do ponto que ele começar a usar, ele coloca como
+cadastro, que isso aí facilita. A gente já vai ter uma imagem no documento que
+foi encaminhado."*
+
+**Feito.** A ficha do colaborador mostra a foto da pessoa, buscada no ponto,
+nesta ordem:
+
+1. a foto que alguém **escolheu** como cadastral na tela do ponto;
+2. não havendo escolha, **a primeira foto que a pessoa bateu**.
+
+Escolha de gente vence o automático: quem foi lá e marcou uma foto melhor fez
+isso por um motivo.
+
+⚠️ **O que eu NÃO fiz, e é de propósito:** gravar essa escolha dentro do
+ponto. O ERP só **lê** — fixar a foto cadastral lá é mudança na área do ponto,
+que tem o chat dela. Do seu lado não muda nada: a foto aparece igual. Se você
+quiser que fique gravado lá também, é um pedido para aquele chat.
 
 ### 2.3 Os campos que existem, por grupo
 
@@ -113,10 +151,86 @@ São 83 colunas. Por grupo, para você ver se sobra ou falta:
 - **Desligamento:** aviso prévio, último dia, data de saída, forma.
 - **Controle:** situação (ativo/desligado), etapa, requerente, responsável.
 
+### 2.3-bis OS CAMPOS DE PAGAMENTO NÃO SÃO SUPÉRFLUOS — eu estava errado
+
+Eu tinha proposto cortar *cesta básica extra*, *adicional de transferência*,
+*parcela única*, *recebe via SP* e *id_fortes*. **Você desfez, e explicou por
+quê.** Fica registrado porque o motivo vale mais que a lista:
+
+> *"Tem muita coluna no Pipe porque na planilha tem uma série de informações
+> que não têm nada a ver, apenas para a movimentação dentro do processo — às
+> vezes são campos temporários. O que é o importante? São os campos
+> cadastrais. Aí tem campos que refletem no pagamento, que não são
+> obrigatórios, são opcionais, que a pessoa pode não ter."*
+
+**A régua, então, não é "quantos campos" — é QUEM USA O CAMPO.** Campo que
+alimenta um cálculo de pagamento fica, mesmo que só 20 pessoas o preencham.
+Campo que existia para mover card no Pipefy sai.
+
+### 2.3-ter COMO O CADASTRO VIRA PAGAMENTO — o que li no Análise de SPs
+
+Você mandou: *"você verifica na Análise de SPs o que é necessário lá para a
+gente poder trabalhar aqui."* Fui ler. **São SEIS folhas diferentes**, e cada
+uma puxa campos distintos do cadastro:
+
+| A folha | Quem entra | Os campos do cadastro que ela usa |
+|---|---|---|
+| **Folha da contabilidade** (CTPS) | vínculo CTPS | salário, admissão, cargo, convenção, **ID Fortes** |
+| **Diaristas** | quem tem dia de diária no mês | **valor da diária**, data de início, data de admissão, obra, função |
+| **Auxílio-alimentação** | quem tem categoria preenchida | **categoria** (Mês / Mensal / Seg-Sex / Seg-Qui) + **valor** |
+| **Auxílio-transporte** | idem, menos quem tem "Cartão" | **categoria** (9 opções, incluindo Diário e Vale Transporte) + **valor** |
+| **Gratificados e mensalistas** | tipo de contrato PJ / Pró-labore / Autônomo Mensalista / Estágio, **ou** marcado "recebe gratificação" | **valor da gratificação**, **valor do mês**, **parcela única**, obra |
+| **Pagamento via SP** | marcado **"recebe via SP"** | o mesmo, mas gera **uma SP por pessoa**, com rateio |
+
+**Três coisas que eu não sabia e que mudam o desenho:**
+
+1. **O vínculo é decidido POR DIA, não por pessoa.** A mesma pessoa tem dias
+   de diária e dias de CTPS no mês em que foi registrada: do começo até a
+   admissão é diária; do registro em diante é CTPS. É por isso que **data de
+   início e data de admissão** são campos diferentes e os dois importam.
+2. **"Cartão" no transporte quer dizer NÃO PAGAR em dinheiro.** Foi a origem
+   de um pagamento em dobro. O ERP manda a palavra inteira para a folha, de
+   propósito.
+3. **O autônomo mensalista não entra em folha nenhuma:** gera um registro de
+   pagamento, como PJ — exatamente como você descreveu.
+
+### 2.3-quater O ID FORTES: eu chamei de lixo, e é o contrário
+
+Você: *"o ID Fortes, na verdade, é o registro do colaborador na
+contabilidade. Na folha da contabilidade não tem CPF: ele utiliza o ID e o
+nome da pessoa. Já na nossa, o documento principal é o CPF. Se houver um
+homônimo na folha, vai ser distinguido através do ID."*
+
+**É a CHAVE que liga os dois mundos**, e o Análise de SPs já depende dela: a
+Folha Sintética da contabilidade traz código e nome, e tudo do nosso lado é
+por CPF. Sem o de/para, gente cadastrada aparece na folha como "fora do
+cadastro", sem pagamento.
+
+O campo **já existe** no cadastro do ERP e **já sai** na leitura para a folha.
+O que falta é o que você mesmo apontou: **a atualização por arquivo** — pegar
+o arquivo da contabilidade de tempos em tempos e atualizar os códigos em
+lote. Isso eu não construí, e é um pedido seu quando quiser.
+
+### 2.3-quinquies O VALOR DA DIÁRIA, e os acréscimos
+
+Você: *"o pessoal que é diarista, o valor da diária é importante para o
+cálculo. A gente coloca uns acréscimos dos fins de semana e feriados. Outras
+pessoas que são CTPS, mas que às vezes trabalham no fim de semana, às vezes a
+gente define o valor da diária também. Porém, atualmente a gente está
+preferindo pagar hora extra, que é o correto."*
+
+O Análise de SPs hoje **sabe dizer quem tem dia de diária e quantos**, mas
+**não sabe quanto pagar** — porque o valor da diária não vinha da planilha que
+ele lê. **No ERP esse campo existe** (`valor_diaria`) e já sai na leitura para
+a folha. Os acréscimos que estão escritos lá como regra: **+20 em feriado, +10
+no sábado, +20 no domingo, e vigia fora**. ⚠️ Confirme se esses números ainda
+valem — eles vêm de uma fórmula antiga.
+
 ⚠️ **Aqui é onde eu mais posso ter errado**, e é o que eu queria que você
 olhasse: *"quanto menos informação desnecessária, melhor."* Esta lista veio
 dos 51 campos do pipe mais as 74 colunas da planilha. **Qualquer campo daqui
-que você disser que não serve, eu tiro.**
+que você disser que não serve, eu tiro** — agora sabendo que campo de
+pagamento não é campo supérfluo.
 
 ### 2.4 As etapas — "o que falta fazer neste cadastro"
 
@@ -385,48 +499,44 @@ que eu não posso fazer:
 
 ---
 
-## 6. O QUE EU ASSUMI E VOCÊ PRECISA CONFIRMAR
+## 6. O QUE VOCÊ JÁ RESPONDEU, E O QUE AINDA FALTA
 
-Esta é a parte que eu mais queria que você lesse. **Nada aqui está decidido —
-é tudo coisa que eu escolhi para o sistema funcionar no primeiro dia.**
+### ✅ Respondido em 10/11/2026 — já aplicado
 
-### Sobre os campos
+| Pergunta | Sua resposta | O que mudou |
+|---|---|---|
+| ASO obrigatório? | *"seria o correto, mas não. Não vamos colocar ainda."* | saiu da lista |
+| CTPS obrigatória? | *"para quem não é prestador não fica mais obrigatório"* | saiu da lista |
+| Foto do colaborador | *"alimentada pelo ponto"* | vem do ponto, ninguém anexa |
+| Os campos de benefício sobram? | **não** — refletem no pagamento | todos ficam |
+| ID Fortes serve? | é a **chave da folha da contabilidade** | fica, e é importante |
+| Prazos da contabilidade | *"vamos começar nesses aí"* | 2, 3 e 5 dias úteis |
+| Prestador vai direto a concluído? | **sim** — RPA, PJ e mensalista não dependem da contabilidade | mantido |
+| "Outra solicitação" fica? | **sim** | mantida |
+| Quem libera acesso ao sistema? | *"vai ser sempre o administrador. DP não."* | mantido como está |
+| "Esqueci minha senha"? | *"é necessário. Não deixar a autonomia."* | **construído** |
+| Escolher a pessoa na solicitação | buscar por nome/CPF, sem expor lista | **construído** |
+| As etapas e a bifurcação | *"acho que ficou correto"* | mantidas |
 
-1. **Os 83 campos do cadastro.** Vieram dos 51 do pipe + as 74 colunas da
-   planilha. Você disse "quanto menos, melhor". **Quais sobram?** Meus
-   candidatos a cortar: *cesta básica extra*, *adicional de transferência*,
-   *parcela única*, *recebe via SP*, *id_fortes*, *ref_pipefy*.
-2. **A lista do que falta para admitir** (§2.2). Está certa? Falta alguma
-   coisa, sobra alguma?
-3. **Os cinco papéis obrigatórios.** O pipe exigia seis; eu juntei as duas
-   páginas da CTPS numa só. E acrescentei o **ASO** como obrigatório — no pipe
-   ele era opcional. Está certo?
+### ❓ O que ainda falta você dizer
 
-### Sobre os e-mails
-
-4. **Os prazos da contabilidade** (2, 3 e 5 dias úteis) são chute meu com cara
-   de razoável. Qual é o prazo real que a sua contabilidade cumpre?
-5. **Três cobranças, a cada três dias**, e depois avisa você. É muito? Pouco?
-6. **O que conferir no retorno de cada pedido** — hoje: nome, CPF, cargo,
-   salário e datas. Falta alguma coisa que já deu problema?
-
-### Sobre o processo
-
-7. **O cadastro nasce em "Cadastro inicial" e precisa passar por
-   "Conferência".** Isso é um passo a mais para o DP em todo cadastro. Vale?
-8. **Prestador que não é PJ vai direto para concluído**, sem contabilidade.
-   Confere?
-9. **"Outra solicitação"** continua existindo na fila. Foi decisão minha — é a
-   única porta para o caso incomum. Se você quiser fechar, é uma linha.
-
-### Sobre o acesso
-
-10. **Quem pode liberar acesso ao sistema** exige hoje a permissão de
-    *administrador*. O DP deveria poder fazer isso sozinho?
-11. **Não existe "esqueci minha senha"** para a pessoa se virar sozinha — hoje
-    alguém do administrativo precisa reenviar o convite. Quer que eu faça?
-
----
+1. **Os 83 campos do cadastro.** Agora sabendo que campo de pagamento fica, a
+   pergunta encolheu: sobra algum campo que **não** é cadastral nem de
+   pagamento? Meus candidatos restantes: `ref_pipefy` (o número do card, que
+   morre com o Pipefy) e `requerente` em texto livre.
+2. **Os acréscimos da diária** — +20 feriado, +10 sábado, +20 domingo, vigia
+   fora. Esses números ainda valem?
+3. **O que conferir no retorno de cada pedido** — hoje: nome, CPF, cargo,
+   salário e datas. Na rescisão acrescentei o que você listou (data de saída,
+   aviso prévio, dias trabalhados, saldo de salário, faltas). Falta algo?
+4. **O cadastro passa por "Conferência" sempre.** É um passo a mais em todo
+   cadastro. Vale, ou cadastro que chega completo e com papel deveria poder
+   ir direto?
+5. **A atualização do ID Fortes por arquivo** — você disse "mais na frente".
+   Quando quiser, é meio dia de trabalho.
+6. **A obra na solicitação.** Você disse que hoje é menos necessária porque o
+   ponto cruza, mas que importa saber de onde a pessoa é. Hoje ela é
+   **opcional** e o pedido guarda **quem solicitou** sempre. Confirma?
 
 ## 7. O QUE AINDA NÃO FUNCIONA, para não haver surpresa
 
@@ -439,5 +549,16 @@ Esta é a parte que eu mais queria que você lesse. **Nada aqui está decidido �
 - **O WhatsApp para a obra** está desenhado em `AGENTE_DP.md` e não
   construído.
 - **Os tipos de pedido das outras áreas** (financeiro, suprimentos) ainda não
-  existem no portal. Só os do DP. Isso trava a saída do Pipefy, que você
-  decidiu que sai de uma vez.
+  existem no portal. Só os do DP.
+
+  ⚠️ **E isso mudou de peso hoje:** você disse *"eu sei que a gente vai sair
+  do Pipefy aos poucos, mas na totalidade (…) a cada maturação de cada
+  processo a gente vai liberando"*. Antes eu tinha registrado que o Pipefy
+  sairia **de uma vez**, o que obrigava todas as áreas a existirem aqui antes
+  do corte. Saindo por processo — como já aconteceu com o MobPonto —, o DP
+  pode sair sozinho assim que estiver maduro, sem esperar suprimentos e
+  financeiro. **Isso destrava o calendário.**
+
+- **A atualização do ID Fortes por arquivo** (§2.3-quater).
+- **Os acréscimos da diária** ainda não são calculados no ERP: o campo do
+  valor existe, a regra dos +10/+20 está no Análise de SPs.

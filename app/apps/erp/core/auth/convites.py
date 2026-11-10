@@ -174,6 +174,60 @@ def enviar(s: Session, usuario_id: int, *, link_base: str,
             "para": pessoa.email}
 
 
+# ---------------------------------------------------------------------------
+# "ESQUECI MINHA SENHA" — a pessoa se resolve sozinha (10/11/2026)
+#
+# Ele: *"esqueci minha senha, é interessante, né? É necessário. Não deixar a
+# autonomia."* Sem isto, toda senha esquecida é um telefonema para o
+# administrativo, e quem está em obra espera a boa vontade de alguém.
+#
+# ⚑ TRÊS CUIDADOS, E CADA UM FECHA UM BURACO CONHECIDO:
+#
+# 1. **A RESPOSTA É SEMPRE A MESMA**, exista a conta ou não. Dizer "não há
+#    conta com esse e-mail" transforma esta tela numa máquina de descobrir
+#    quem trabalha na empresa — basta ir testando endereços.
+# 2. **UM PEDIDO A CADA DEZ MINUTOS por pessoa.** Sem isso, qualquer um que
+#    saiba o e-mail de alguém enche a caixa dela de convites — e, pior, cada
+#    pedido novo invalida o link anterior, então bastaria repetir para
+#    impedir a pessoa de entrar.
+# 3. **CONTA BLOQUEADA NÃO RECEBE LINK.** Quem foi desligado não reabre o
+#    próprio acesso pedindo senha nova.
+# ---------------------------------------------------------------------------
+MINUTOS_ENTRE_PEDIDOS = 10
+
+
+def pedir_nova_senha(s: Session, email: str, *, link_base: str) -> dict[str, Any]:
+    """A pessoa pediu o link pela tela de entrada. Devolve o que ACONTECEU.
+
+    Quem chama **não mostra** este resultado para a pessoa: a tela responde
+    sempre a mesma frase. O retorno existe para o log e para o teste.
+    """
+    endereco = (email or "").strip().lower()
+    if "@" not in endereco:
+        return {"enviado": False, "motivo": "endereço sem arroba"}
+    pessoa = s.execute(text(
+        "SELECT id, ativo FROM usuarios WHERE lower(email) = :e"),
+        {"e": endereco}).mappings().first()
+    if pessoa is None:
+        logger.info("ERP/convite: pedido de senha para e-mail que não existe")
+        return {"enviado": False, "motivo": "não existe conta"}
+    if not pessoa["ativo"]:
+        logger.warning("ERP/convite: pedido de senha de conta BLOQUEADA (%s)",
+                       endereco)
+        return {"enviado": False, "motivo": "conta bloqueada"}
+    recente = s.execute(text("""
+        SELECT 1 FROM usuario_convites
+         WHERE usuario_id = :u AND usado_em IS NULL
+           AND criado_em > now() - make_interval(mins => :m)"""),
+        {"u": pessoa["id"], "m": MINUTOS_ENTRE_PEDIDOS}).first()
+    if recente is not None:
+        logger.info("ERP/convite: pedido repetido dentro de %s minutos",
+                    MINUTOS_ENTRE_PEDIDOS)
+        return {"enviado": False, "motivo": "pedido repetido"}
+    r = enviar(s, pessoa["id"], link_base=link_base, tipo="NOVA_SENHA")
+    return {"enviado": r["enviado"], "motivo": r.get("erro") or ""}
+
+
 def conferir(s: Session, token: str) -> dict[str, Any]:
     """O convite existe, está no prazo e não foi usado? Devolve de quem é.
 

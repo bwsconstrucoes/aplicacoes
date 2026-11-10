@@ -319,3 +319,98 @@ def test_nao_se_libera_acesso_para_quem_ja_saiu(app_real, sessao_real, admin):
                                       json={"email": "jasaiu@teste"})
     assert r.status_code == 400
     assert "desligada" in r.get_json()["erro"]
+
+
+# ---------------------------------------------------------------------------
+# "ESQUECI MINHA SENHA" (10/11/2026)
+#
+# Ele: *"esqueci minha senha, é interessante, né? É necessário. Não deixar a
+# autonomia."* Os testes aqui protegem os TRÊS cuidados, não a comodidade.
+# ---------------------------------------------------------------------------
+@banco_
+def test_a_tela_responde_igual_exista_ou_nao_a_conta(app_real):
+    """⚑ O CUIDADO MAIS IMPORTANTE. Dizer "não há conta com esse e-mail"
+    transformaria esta tela numa máquina de descobrir quem trabalha na
+    empresa — basta ir testando endereços."""
+    c = app_real.test_client()
+    existe = c.post("/erp/esqueci-a-senha", data={"email": "joao.obra@teste"})
+    nao_existe = c.post("/erp/esqueci-a-senha",
+                        data={"email": "ninguem@lugar-nenhum.teste"})
+    assert existe.status_code == nao_existe.status_code == 200
+    assert existe.data == nao_existe.data, "a resposta denuncia se a conta existe"
+
+
+@banco_
+def test_conta_bloqueada_nao_recebe_link_de_senha_nova(sessao_real, pessoa, admin):
+    """Quem foi desligado não reabre o próprio acesso pedindo senha nova."""
+    svc.desligar(sessao_real, pessoa.id,
+                 {"data_saida": "2026-06-30", "forma_desligamento": "AVISO_INDENIZADO"},
+                 admin)
+    sessao_real.flush()
+    r = convites.pedir_nova_senha(sessao_real, "joao.obra@teste",
+                                  link_base="https://exemplo/erp/primeiro-acesso")
+    assert r["enviado"] is False
+    assert r["motivo"] == "conta bloqueada"
+
+
+@banco_
+def test_pedido_repetido_em_dez_minutos_e_ignorado(sessao_real, pessoa, admin):
+    """Sem isto, quem souber o e-mail de alguém enche a caixa dela — e, pior,
+    cada pedido novo invalida o link anterior, então bastaria repetir para
+    impedir a pessoa de entrar."""
+    convites.criar(sessao_real, pessoa.usuario_id, tipo="NOVA_SENHA", autor=admin)
+    sessao_real.flush()
+    r = convites.pedir_nova_senha(sessao_real, "joao.obra@teste",
+                                  link_base="https://exemplo/erp/primeiro-acesso")
+    assert r["motivo"] == "pedido repetido"
+
+
+@banco_
+def test_a_entrada_mostra_o_caminho_de_quem_esqueceu(app_real):
+    """O link fica na tela de ENTRADA, não escondido numa ajuda: quem esqueceu
+    a senha está justamente ali, travado."""
+    texto = app_real.test_client().get("/erp/entrar").data.decode()
+    assert "Esqueci minha senha" in texto
+    assert "/erp/esqueci-a-senha" in texto
+
+
+# ---------------------------------------------------------------------------
+# A BUSCA DE PESSOA (10/11/2026) — e por que ela substituiu a lista
+# ---------------------------------------------------------------------------
+@banco_
+def test_a_busca_exige_tres_letras(app_real, admin):
+    from tests.conftest import como
+    r = como(app_real, admin.id).get("/erp/api/colaboradores/buscar?q=jo")
+    assert r.get_json()["pessoas"] == []
+    assert r.get_json()["curto"] is True
+
+
+@banco_
+def test_acha_por_parte_do_nome_e_pelo_CPF(app_real, sessao_real, pessoa, admin):
+    """Ele: *"a gente começar a digitar algum nome, ele já começar a ir
+    aparecendo através do CPF."*"""
+    from tests.conftest import como
+    c = como(app_real, admin.id)
+    por_nome = c.get("/erp/api/colaboradores/buscar?q=João").get_json()["pessoas"]
+    assert any(p["id"] == pessoa.id for p in por_nome)
+    # O CPF com pontos também acha: a busca compara só os dígitos.
+    por_cpf = c.get("/erp/api/colaboradores/buscar?q=529.982").get_json()["pessoas"]
+    assert any(p["id"] == pessoa.id for p in por_cpf)
+
+
+@banco_
+def test_a_busca_nunca_devolve_a_lista_inteira(app_real, sessao_real, admin):
+    """⚑ É ISTO que a busca resolve: a tela carregava o cadastro inteiro num
+    `<select>`, e bastava abrir o código da página para copiar os 575 nomes.
+    Ele: *"talvez pela LGPD a gente não possa expor uma lista de
+    funcionários."*"""
+    from tests.conftest import como
+    from app.apps.erp.db.models.cadastros import Colaborador
+    for i in range(12):
+        sessao_real.add(Colaborador(nome=f"Fulano Numero {i:02d}",
+                                    cpf=f"9{i:010d}", situacao="ATIVO",
+                                    vinculo="CTPS", admissao=date(2026, 1, 5)))
+    sessao_real.flush()
+    achados = como(app_real, admin.id).get(
+        "/erp/api/colaboradores/buscar?q=Fulano").get_json()["pessoas"]
+    assert len(achados) == 8, "a busca tem de ter teto"

@@ -857,6 +857,9 @@ def ficha(s: Session, colaborador_id: int) -> dict[str, Any]:
     # entra e se o acesso está de pé — "tem login" e "o login funciona" são
     # perguntas diferentes, e a segunda é a que importa depois de um
     # desligamento.
+    # A FOTO vem do ponto (10/11/2026). Aqui só o "tem ou não tem": a imagem
+    # vai pela rota dela, para a ficha não carregar meio megabyte toda vez.
+    dados["tem_foto"] = tem_foto_do_ponto(s, c.id)
     if getattr(c, "usuario_id", None):
         operador = s.get(Usuario, c.usuario_id)
         dados["usuario_email"] = operador.email if operador else ""
@@ -885,12 +888,26 @@ CAMPOS_OBRIGATORIOS_CTPS = (
 # Google Drive, pelo Arquivo, e a obrigatoriedade virou ESTA LISTA: o cadastro
 # salva sem os papéis (senão ninguém consegue começar), mas a ficha diz, em
 # letras, o que falta para a pessoa ser admitida de verdade.
+# ⚑ TRÊS SAÍRAM DA LISTA EM 10/11/2026, e cada uma por um motivo dele:
+#
+#   · **ASO** — *"esse seria o correto, mas não. Não vamos colocar ele como
+#     obrigatório ainda."* Fica no catálogo e continua sendo arquivado; o que
+#     ele não faz mais é travar a admissão.
+#   · **Carteira de trabalho** — *"carteira de trabalho para quem não é
+#     prestador não fica mais obrigatório."*
+#   · **Foto do colaborador** — ela não é mais PEDIDA a ninguém: *"a foto vai
+#     ser alimentada pelo ponto (…) a primeira foto do ponto que ele começar a
+#     usar, ele coloca como cadastro, que isso aí facilita."* Cobrar um papel
+#     que o sistema busca sozinho é cobrar trabalho que não existe.
+#
+# ⚑ O QUE ISSO NÃO QUER DIZER: que o papel não serve. Os três continuam no
+# catálogo do Arquivo e aparecem na ficha; o que mudou é que a ficha não diz
+# mais "falta isto para admitir" por causa deles. Obrigatoriedade que a empresa
+# não pratica vira aviso que todo mundo aprende a ignorar — e aí o aviso de
+# verdade some junto.
 DOCUMENTOS_DA_ADMISSAO = (
     ("DOC-IDENTIDADE", "documento de identificação (RG, CNH ou CPF)", False),
     ("COMPROVANTE-ENDERECO-PESSOA", "comprovante de endereço", False),
-    ("FOTO-COLABORADOR", "foto do colaborador", False),
-    ("ASO", "ASO (atestado de saúde ocupacional)", False),
-    ("CTPS", "carteira de trabalho", True),
 )
 
 
@@ -908,6 +925,69 @@ def documentos_que_faltam(s: Session, colaborador_id: int,
     so_ctps = (vinculo or "CTPS").upper() != "PRESTADOR"
     return [rotulo for codigo, rotulo, exige_ctps in DOCUMENTOS_DA_ADMISSAO
             if codigo not in tem and (so_ctps or not exige_ctps)]
+
+
+# ---------------------------------------------------------------------------
+# A FOTO VEM DO PONTO — e ninguém anexa nada (10/11/2026)
+#
+# Ele: *"foto do colaborador, eu gostaria de deixar, como eu disse, a partir do
+# ponto mesmo. (…) a primeira foto do ponto que ele começar a usar, ele coloca
+# como cadastro, que isso aí facilita. A gente já vai ter uma imagem no
+# documento que foi encaminhado."*
+#
+# ⚑ DUAS FONTES, NESTA ORDEM, e a ordem é a regra:
+#
+#   1. a foto que alguém ESCOLHEU como cadastral no ponto
+#      (`ponto.colaborador_config.foto_cadastral_id`);
+#   2. não havendo escolha, **a PRIMEIRA foto que a pessoa bateu** — que é
+#      exatamente o que ele descreveu.
+#
+# Escolha de gente vence o automático: quem foi até a tela do ponto e marcou
+# uma foto melhor fez isso por um motivo, e o automático não pode desfazer.
+#
+# ⚑ SÓ LEITURA, E PROTEGIDA. O schema do ponto nasce das migrações DELE, que
+# são de outra área: num banco onde o ponto nunca rodou, estas consultas
+# falham — e em Postgres uma consulta que falha ABORTA A TRANSAÇÃO INTEIRA,
+# mesmo pega por `except`. Por isso o savepoint, igual ao do diário de obra.
+# E por isso o ERP não GRAVA nada no ponto: fixar a escolha lá é mudança na
+# área do ponto, não daqui.
+# ---------------------------------------------------------------------------
+def foto_do_ponto(s: Session, colaborador_id: int) -> Optional[dict[str, Any]]:
+    """A foto desta pessoa, vinda do ponto. `None` quando não há nenhuma."""
+    try:
+        with s.begin_nested():
+            linha = s.execute(text("""
+                SELECT f.conteudo, f.mime, f.criado_em, TRUE AS escolhida
+                  FROM ponto.colaborador_config c
+                  JOIN ponto.fotos f ON f.id = c.foto_cadastral_id
+                 WHERE c.colaborador_id = :i AND f.conteudo IS NOT NULL
+                 UNION ALL
+                SELECT f.conteudo, f.mime, f.criado_em, FALSE
+                  FROM ponto.marcacoes m
+                  JOIN ponto.fotos f ON f.id = m.foto_id
+                 WHERE m.colaborador_id = :i AND f.conteudo IS NOT NULL
+                 ORDER BY escolhida DESC, criado_em ASC
+                 LIMIT 1"""), {"i": colaborador_id}).first()
+    except Exception as e:                              # noqa: BLE001
+        logger.warning("ERP/pessoas: foto do ponto indisponível — %s", e)
+        return None
+    if linha is None or not linha[0]:
+        return None
+    return {"conteudo": bytes(linha[0]), "mime": linha[1] or "image/jpeg",
+            "escolhida": bool(linha[3]), "quando": str(linha[2])[:16]}
+
+
+def tem_foto_do_ponto(s: Session, colaborador_id: int) -> bool:
+    """Só o "tem ou não tem", para a ficha não carregar a imagem à toa."""
+    try:
+        with s.begin_nested():
+            return bool(s.execute(text("""
+                SELECT 1 FROM ponto.marcacoes m
+                  JOIN ponto.fotos f ON f.id = m.foto_id
+                 WHERE m.colaborador_id = :i AND f.conteudo IS NOT NULL
+                 LIMIT 1"""), {"i": colaborador_id}).first())
+    except Exception:                                   # noqa: BLE001
+        return False
 
 
 def o_que_falta(c: Colaborador) -> list[str]:

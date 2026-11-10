@@ -1023,6 +1023,19 @@ function painelDaFicha(){
   if (ABA_FICHA === 0) {
     alvo.innerHTML = `
       ${!c.id && PODE_ARQUIVAR ? blocoDeDocumentoDaPessoaNova() : ""}
+      {# A FOTO VEM DO PONTO, e ninguém a anexa (10/11/2026). Ele: *"a foto vai
+         ser alimentada pelo ponto (…) a primeira foto do ponto que ele começar
+         a usar, ele coloca como cadastro."* Quando não há batida com foto, o
+         quadro simplesmente não aparece — moldura vazia com "sem foto" é ruído
+         numa ficha que já tem muita coisa. #}
+      ${c.tem_foto ? `<div style="display:flex; gap:12px; align-items:flex-start;
+           margin-bottom:12px">
+        <img src="/erp/api/colaboradores/${c.id}/foto" alt="foto de ${escapar(c.nome || "")}"
+             style="width:92px; height:92px; object-fit:cover; border-radius:10px;
+                    border:1px solid var(--borda)">
+        <div class="cartao-dica" style="margin:0">Esta foto <b>vem do ponto</b> —
+          ninguém precisa anexar. Para trocar, é no ponto, em
+          <b>“Fotos de cadastro”</b>.</div></div>` : ""}
       <div class="form-grade">
         <div class="campo" style="grid-column:span 3"><label>Nome completo *</label>
           <input id="c-nome" value="${escapar(c.nome || "")}"></div>
