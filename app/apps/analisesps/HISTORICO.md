@@ -12249,7 +12249,7 @@ somente Solicitações de uma conta especifica"*.
 > **Publicado em 10/11/2026.** Pendente AGORA: a primeira complementar real — conferir
 > com calma quem aparece "sem CPF" antes de gerar.
 
-- **Depois (10/11/2026):** *"basta eu colar os novos arquivos estando em folha e o sistema
+- **Depois (10/11/2026, publicado no mesmo dia):** *"basta eu colar os novos arquivos estando em folha e o sistema
   já entende que é complementar?"* — importar a folha de um mês JÁ PAGO leva direto à
   Complementar (a resposta da importação traz `ir`); mês não pago vai para a folha. E a
   Complementar não tem a barra lateral de propósito: não há filtros nela, e as ações
