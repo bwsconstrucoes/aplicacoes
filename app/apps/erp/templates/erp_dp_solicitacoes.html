@@ -421,8 +421,15 @@ async function novaSolicitacao(){
                    opcoes: [{valor: "", rotulo: "—"}].concat(
                      fonte.map(x => ({valor: x.id, rotulo: x.nome})))});
     } else if (c === "obra_id") {
+      {# A OBRA É OBRIGATÓRIA desde 10/11/2026. Ele: *"eu quero que seja
+         obrigatória, porque a gente não sabe de onde é que está vindo aquela
+         pessoa, para onde está indo trabalhar."* Sem o "—" na lista: deixar a
+         opção vazia à mostra convida a pular o campo e descobrir o erro só ao
+         confirmar. #}
       campos.push({nome: c, rotulo: "Obra", tipo: "select", largura: 3,
-                   opcoes: [{valor: "", rotulo: "—"}].concat(
+                   obrigatorio: true,
+                   dica: "De onde vem a pessoa, ou para onde ela vai trabalhar.",
+                   opcoes: [{valor: "", rotulo: "escolha a obra…"}].concat(
                      (o.obras || []).map(x => ({valor: x.id, rotulo: x.codigo})))});
     } else {
       campos.push({nome: c, rotulo: ROTULO_CAMPO[c] || c, largura: extra.largura || 3,

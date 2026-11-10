@@ -294,6 +294,14 @@ Onze tipos. **Atender EXECUTA**, na mesma transação — não é mover card:
 | Desconto em folha | registra (o lançamento é fora) |
 | Outra solicitação | texto livre |
 
+**⚑ A OBRA É OBRIGATÓRIA EM TODO PEDIDO** (10/11/2026). Você: *"eu quero que
+seja obrigatória, porque a gente não sabe de onde é que está vindo aquela
+pessoa, para onde está indo trabalhar."* Ela pode vir de dois lugares, e a
+ordem importa: **o que o pedido diz vence**, e só na falta dele vale a obra do
+cadastro da pessoa. É o caso da transferência — a obra que pede é a de
+**destino**, e deixar o cadastro vencer mandaria o pedido para a obra de onde
+a pessoa está saindo. No portal, quem alcança uma obra só já a vê escolhida.
+
 **A diferença que isso faz:** no Pipefy, atender era mover o card — e alguém
 depois mexia no cadastro à mão. O pedido dizia uma coisa e o cadastro ficava
 outra. Aqui, pedido que não pode ser executado é **recusado com o motivo**,
@@ -520,28 +528,44 @@ que eu não posso fazer:
 | Os acréscimos da diária | valem, mas *"deve ficar dentro de uma configuração"* | **Configurações › Diárias** |
 | A conferência atrasa o ponto? | *"não quero que impacte (…) a obra pediu, libera"* | **conferido e amarrado com trava** |
 
+### ✅ Respondido em 10/11/2026 (segunda rodada) — já aplicado
+
+| Pergunta | Sua resposta | O que mudou |
+|---|---|---|
+| Os campos que sobravam | *"Pipefy e número não precisa mais"*; *"elimina requerente por enquanto"* | os dois saíram de uso |
+| A obra na solicitação | *"eu quero que seja obrigatória"* | **pedido sem obra é recusado** |
+| Valor da diária do CTPS | *"pode deixar à vista"* | mantido, com a explicação do porquê |
+| Gratificação quinzenal × mensal | a regra é a **parcela única** (abaixo) | nada a mudar — já era assim |
+| Acréscimos da diária | valem, mas vão para configuração | **Configurações › Diárias** |
+| ID Fortes por arquivo | *"depois eu mando o modelo"* | esperando o modelo |
+
+### A GRATIFICAÇÃO — a regra, nas suas palavras
+
+> *"Se ela é parcela única, ela é paga apenas no final do mês. Quando não é
+> parcela única, ela é dividida entre a quinzena e o final do mês."*
+
+**Não falta campo nenhum.** A marca **"parcela única"** já diz as duas coisas,
+e a conta no Análise de SPs já faz exatamente isso:
+
+| Parcela única? | Na quinzena (1 a 15) | No fim do mês (16 ao último) |
+|---|---|---|
+| **sim** | nada | o valor **inteiro** |
+| **não** | **metade** | o resto |
+
+*(O centavo da divisão ímpar fica no fim do mês — R$ 301,00 vira R$ 150,50 e
+R$ 150,50; R$ 301,01 vira R$ 150,50 e R$ 150,51.)*
+
 ### ❓ O que ainda falta você dizer
 
-1. **Os 83 campos do cadastro.** Agora sabendo que campo de pagamento fica, a
-   pergunta encolheu: sobra algum campo que **não** é cadastral nem de
-   pagamento? Meus candidatos restantes: `ref_pipefy` (o número do card, que
-   morre com o Pipefy) e `requerente` em texto livre.
-2. **O que conferir no retorno de cada pedido** — hoje: nome, CPF, cargo,
+1. **O que conferir no retorno de cada pedido** — hoje: nome, CPF, cargo,
    salário e datas. Na rescisão acrescentei o que você listou (data de saída,
    aviso prévio, dias trabalhados, saldo de salário, faltas). **Falta algo?**
-3. **A atualização do ID Fortes por arquivo** — você disse "mais na frente".
-   Quando quiser, é meio dia de trabalho.
-4. **A obra na solicitação.** Você disse que hoje é menos necessária porque o
-   ponto cruza, mas que importa saber de onde a pessoa é. Hoje ela é
-   **opcional** e o pedido guarda **quem solicitou** sempre. Confirma?
-5. **O valor da diária de quem é CTPS.** Você contou que às vezes define
-   diária para CTPS que trabalha no fim de semana, mas que *"atualmente a
-   gente está preferindo pagar hora extra, que é o correto"*. O campo existe
-   e continua funcionando — só quero saber se é para mantê-lo à vista no
-   cadastro de CTPS ou escondê-lo.
-6. **A gratificação quinzenal x mensal.** Você falou das duas; o cadastro tem
-   hoje **um** valor de gratificação e a marca "parcela única". Isso cobre as
-   duas, ou falta dizer a periodicidade em separado?
+2. **O modelo do arquivo do ID Fortes** — você vai mandar.
+
+### 📌 Anotado para depois (você mesmo disse "depois a gente pensa nisso")
+
+- **A rescisão vai gerar rateio pelo ponto da pessoa.** Registrado aqui para
+  não se perder; não comecei nada.
 
 ## 7. O QUE AINDA NÃO FUNCIONA, para não haver surpresa
 

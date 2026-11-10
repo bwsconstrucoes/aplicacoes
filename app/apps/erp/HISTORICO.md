@@ -7813,6 +7813,57 @@ fica separado dos dois.
 limitação, porque ele era só entrada de dados, ele não era gestão. Mas hoje a
 gente faz a gestão pelo ERP."*
 
+### ✅ A SEGUNDA RODADA DE RESPOSTAS DELE (10/11/2026)
+
+Respondeu as seis perguntas que tinham sobrado no `MANUAL_DP.md`. Cinco
+viraram código no mesmo dia; uma ficou esperando um arquivo dele.
+
+**1. A OBRA É OBRIGATÓRIA EM TODO PEDIDO.** *"Eu quero que seja obrigatória,
+porque a gente não sabe de onde é que está vindo aquela pessoa, para onde
+está indo trabalhar."* ⚑ **A ordem das duas fontes é a parte que importa: o
+que o PEDIDO diz vence, e só na falta dele vale a obra do cadastro.** O caso
+que define isso é a TRANSFERÊNCIA — a obra que pede é a de DESTINO, e deixar o
+cadastro vencer mandaria o pedido para a obra de onde a pessoa está saindo.
+
+A obra entra em todos os tipos por `tipos_para_tela()`, **não copiada em cada
+um**: esquecer de copiá-la no tipo número doze seria o defeito garantido, e ele
+só apareceria quando alguém tentasse abrir justamente aquele pedido, com tudo
+já digitado. Há trava. No portal, quem alcança **uma obra só** já a vê
+escolhida — perguntar o que tem uma resposta só é um toque a mais no celular.
+
+**2. "REQUERENTE" SAIU DE USO.** *"Requerente era assim: eu solicito por
+alguém; aí esse alguém é o requerente. Mas vamos deixar de fora por
+enquanto."* ⚑ **A COLUNA FICA, e isso é escolha:** há pedidos e cadastros
+gravados com ela, e apagá-los tiraria a resposta de "quem pediu isto?" de
+registros que já existem. O que saiu foi PERGUNTAR. E a coluna da planilha
+entrou em `IGNORADAS_DE_PROPOSITO` no importador — coluna que o sistema deixa
+de guardar tem de aparecer no relatório com o motivo, senão o dado some da
+planilha para o ERP sem ninguém ver.
+
+**3. O NÚMERO DO CARD DO PIPEFY não é mais campo de cadastro.** Ninguém digita
+nem vê. ⚠️ **O valor continua saindo para a folha enquanto o Pipefy viver:** o
+Análise de SPs monta com ele o link para o card, e zerá-lo hoje quebraria esse
+link para quem veio da importação. Ele morre junto com o Pipefy.
+
+**4. O VALOR DA DIÁRIA FICA À VISTA PARA TODO MUNDO**, inclusive CTPS: *"pode
+deixar à vista"*. Quem é CTPS às vezes trabalha no fim de semana e recebe
+diária por esse dia (hoje a empresa prefere hora extra, mas o caso existe).
+Esconder o campo obrigaria a trocar o tipo da pessoa para preenchê-lo.
+
+**5. A GRATIFICAÇÃO NÃO PRECISA DE CAMPO NOVO.** Eu tinha perguntado se
+faltava dizer a periodicidade; não falta. A regra, nas palavras dele: *"se ela
+é parcela única, é paga apenas no final do mês; quando não é, é dividida entre
+a quinzena e o final do mês."* ⚑ **A marca "parcela única" já diz as duas
+coisas** — e `analisesps/gratificados.partes_do_mes()` já fazia exatamente
+isso desde 17/10. Conferi antes de propor campo novo; **a pergunta era minha,
+não uma lacuna do sistema.**
+
+**6. O ID FORTES POR ARQUIVO fica esperando:** *"depois eu mando o modelo."*
+
+**ANOTADO PARA DEPOIS, por ele:** *"mais na frente, a rescisão vai gerar um
+rateio baseado no ponto da pessoa. Mas aí depois a gente pensa nisso."* Nada
+começado — fica aqui para não se perder.
+
 ### 🔓 A CONFERÊNCIA DO DP NÃO TRAVA O PONTO, e os acréscimos viraram configuração (10/11/2026)
 
 **DUAS DECISÕES, e a primeira é das que mudam o desenho.**

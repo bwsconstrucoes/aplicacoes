@@ -335,13 +335,21 @@ function pintarCamposDoTipo(){
         if (tipo === "textarea")
           return `<label class="campo-portal">${esc(rot)}
             <textarea id="p-${c}" name="${c}" rows="3"></textarea></label>`;
-        if (c === "obra_id")
-          return `<label class="campo-portal">${esc(rot)}
+        {# A OBRA É OBRIGATÓRIA desde 10/11/2026 — ver `pessoal_solicitacoes`.
+           Quando a obra que alcança é UMA só (o caso do administrativo de uma
+           obra), ela já vem escolhida: perguntar o que só tem uma resposta é
+           pedir um toque a mais no celular. #}
+        if (c === "obra_id") {
+          const obras = DADOS.obras_lista || [];
+          const unica = obras.length === 1 ? obras[0].id : "";
+          return `<label class="campo-portal">${esc(rot)} *
             <select id="p-${c}" name="${c}">
-              <option value="">escolha…</option>
-              ${(DADOS.obras_lista || []).map(o =>
-                `<option value="${o.id}">${esc(o.codigo)} — ${esc(o.nome)}</option>`).join("")}
+              ${unica ? "" : `<option value="">escolha a obra…</option>`}
+              ${obras.map(o => `<option value="${o.id}"
+                ${String(o.id) === String(unica) ? "selected" : ""}
+                >${esc(o.codigo)} — ${esc(o.nome)}</option>`).join("")}
             </select></label>`;
+        }
         // CAMPO DE LISTA FECHADA VIRA CAIXINHA, nunca texto livre: a obra
         // digitaria "acordo", "mandado embora" e "pediu pra sair" para a mesma
         // coisa, e o DP passaria a traduzir à mão o que o sistema já sabe.
@@ -380,6 +388,12 @@ async function enviarPedido(){
     const campo = els("p-" + c);
     if (campo && campo.value) corpo[c] = campo.value;
   });
+  // A OBRA É OBRIGATÓRIA. Conferida aqui também, e não só no servidor, para
+  // quem está no celular não perder o que digitou numa recusa.
+  if (t.campos.includes("obra_id") && !corpo.obra_id) {
+    recado("Escolha a obra — é ela que diz de onde vem a pessoa.", "erro");
+    return;
+  }
   els("p-enviar").disabled = true;
   try {
     const d = await chamar("/erp/portal/api/pedidos",

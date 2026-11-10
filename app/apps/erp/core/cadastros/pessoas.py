@@ -298,7 +298,12 @@ TEXTOS = (
     "ctps_numero", "ctps_serie", "cep", "logradouro", "numero_endereco",
     "complemento", "bairro", "municipio", "email", "cnpj_admissao",
     "razao_social_pj", "cnpj_pj", "contrato_experiencia", "observacao_auxilio",
-    "requerente", "id_fortes", "convencao_categoria", "observacoes",
+    # ⚑ "REQUERENTE" SAIU EM 10/11/2026. Ele: *"requerente era assim: eu
+    # solicito por alguém; aí esse alguém é o requerente. Mas vamos deixar de
+    # fora por enquanto."* A COLUNA FICA — há cadastros importados com ela
+    # preenchida, e apagá-los tiraria informação que já existe. O que saiu foi
+    # o campo ser GRAVÁVEL pelo cadastro.
+    "id_fortes", "convencao_categoria", "observacoes",
     "pix_chave", "pix_tipo", "banco", "agencia", "conta", "telefone",
 )
 DATAS = ("data_nascimento", "rg_emissao", "ctps_emissao", "data_inicio",
@@ -1075,6 +1080,12 @@ def para_folha(s: Session, *, so_ativos: bool = True,
             "matricula": c.matricula or "", "celular": c.telefone or "",
             # O número do card do Pipefy, enquanto ele existir: é o que liga
             # esta pessoa ao histórico que ficou lá.
+            # ⚑ O NÚMERO DO CARD CONTINUA SAINDO ENQUANTO O PIPEFY VIVER.
+            # Ele disse que não precisa mais (10/11/2026) — e não precisa, no
+            # CADASTRO: ninguém digita nem vê. Mas o Análise de SPs monta com
+            # ele o link para o card, e tirar o valor hoje quebraria esse link
+            # para as pessoas que vieram da importação. Ele morre junto com o
+            # Pipefy, que é o que já está decidido.
             "card_pipefy": c.ref_pipefy or "",
             "id_fortes": c.id_fortes or "",
             "cargo": cargos.get(c.cargo_id or 0) or funcoes.get(c.funcao_id or 0, ""),
