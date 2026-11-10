@@ -47,6 +47,144 @@ abas diferentes, os nomes das colunas dela precisam entrar no de-para de
 "Conferir sem gravar" diz quais não reconheceu, então ele descobre sozinho —
 mas quem pegar esta área depois precisa saber que a pergunta existe.
 
+### 📓 O DIÁRIO EM USO: quatro coisas que ele apontou na tela (10/11/2026)
+
+Ele abriu o diário em produção e mandou quatro recados, de uma vez. Todos
+foram atendidos. **Entra com a migração 097** — ver a seção das migrações
+pendentes logo abaixo.
+
+**1. A obra aparecia duas vezes — e eu já tinha consertado isso antes.**
+
+Ele: *"a obra ela está aparecendo duplicado. O nome dela, Aero Aracati, tá
+aparecendo duas vezes."*
+
+A causa dói de tão boba: eu escrevi `${o.codigo} — ${o.nome}` à mão na tela do
+diário, em três lugares, e nos modelos de papel. Existe um ajudante no
+`erp_base.html` chamado `rotuloObra` desde **10/09/2026 — criado porque ele
+reclamou exatamente disto da primeira vez**: quando o nome da obra já começa
+com o código ("081 Aero Aracati"), colar o código de novo produz
+"081 — 081 Aero Aracati".
+
+Consertado em dois lugares, porque são dois mundos: `rotuloObra` no JavaScript
+e **`rotulo_da_obra()` em `core/diario.py`** para o papel. O `cabecalho()` agora
+devolve `"rotulo"` pronto, e a tela não monta mais nada.
+
+**⚑ E ganhou TRAVA**, que é o que impede a terceira vez: o teste
+`test_nenhuma_tela_do_diario_escreve_codigo_e_nome_a_mao` varre as telas
+procurando código e nome colados à mão. Quem repetir o erro descobre antes de
+chegar a ele.
+
+**E a trava achou MUITO MAIS do que o diário.** Quando a varredura passou a
+olhar todas as telas do ERP — e não só as do diário —, apareceram **mais onze
+lugares com o mesmo defeito**, em seis telas que ele ainda não tinha olhado:
+Obras (a lista de projetos, o título do diálogo da obra, a caixinha de projeto
+e a escolha de obras do projeto), Relatórios (duas caixinhas e o cabeçalho do
+agrupamento), Configurações (as obras e os projetos do operador), Importar,
+Compras e **o PORTAL DA OBRA**. Todos consertados.
+
+O portal era o pior deles, porque **nem usa o `erp_base.html`** — não tinha o
+ajudante para usar. Por isso a regra saiu do `core/diario.py` e virou
+**`core/comum/rotulos.py`**, e o portal agora recebe o rótulo **pronto do
+servidor**, em vez de montar nada. Um lugar só sabe a regra.
+
+A única exceção escrita na trava é a **lista de bancos** ("001 · Banco do
+Brasil"): ali o código e o nome são coisas diferentes de verdade, e nunca um
+contém o outro.
+
+**2. O efetivo não mostrava a função.**
+
+Ele: *"não tem aqui a função da pessoa, tá só o nome. Eu queria que tivesse
+aqui o nome e a função. Nome, função, inclusive um resumo. De quantas pessoas e
+tal."*
+
+Duas coisas estavam erradas. A primeira: a função **estava** na tela, numa
+linha cinzenta pequena embaixo do nome — pequena demais para contar como
+estar. Virou coluna, numa tabela `Nome | Função | Horário`.
+
+A segunda era de verdade: eu buscava a função só em `cargos`/`funcoes` do ERP,
+e **a função da maioria mora em `analisesps.colaborador.cargo`** — o Registro
+de Colaboradores, que é de onde o próprio ponto lê. A consulta passou a tentar
+nesta ordem: cargo do ERP → função antiga → Registro. ⚑ E tenta **duas vezes,
+protegida por savepoint**: com e sem o `JOIN` no `analisesps`, porque num banco
+sem aquele schema a consulta inteira morreria e o diário cairia junto.
+
+O resumo é uma frase montada **na regra, não na tela** — "9 pessoa(s): 1
+armador, 1 carpinteiro, 1 pedreiro…" — porque o papel usa a mesma, e duas
+versões divergiriam no primeiro ajuste. Sem ninguém no ponto, o resumo é
+**vazio**, e não "0 pessoas": resposta onde não há dado é pior que resposta
+nenhuma.
+
+**3. Procurar um diário pelo que foi relatado.**
+
+Ele: *"a parte da filtragem, era interessante, será que dá para a gente
+pesquisar, eu quero localizar um diário através de alguma informação que eu
+relatei?"*
+
+É a pergunta certa a fazer de um diário: ninguém lembra a DATA em que a laje
+foi concretada — lembra que foi concretada. Há uma caixa de busca no filtro
+lateral que varre relato, ocorrências, histórico, equipamentos, a observação da
+fiscalização e **a lista de equipamento**, diz EM QUAL campo achou e mostra o
+trecho em volta. Clicar no achado abre aquele dia.
+
+Três decisões que vale guardar:
+
+- **Ignora acento sem depender da extensão `unaccent`** (que não está instalada
+  no banco): os dois lados passam por um `translate` que troca as vogais
+  acentuadas pelas secas. Quem digita "ocorrencia" acha "ocorrência" — e é
+  assim que se digita no celular, com pressa.
+- **Acha PEDAÇO de palavra**, não raiz. Quem procura "P12" ou "bloco B" quer o
+  trecho. Por isso não é `tsvector`.
+- **Respeita o escopo por obra**: quem é preso a obra não acha diário da obra de
+  outro — e a resposta diz que não achou, não que existe.
+
+**4. "A parte dos equipamentos."**
+
+A frase dele terminou aí, cortada. **Resolvi com o padrão que os outros três
+recados desenham**, e a escolha está escrita aqui para ele poder derrubar:
+ele estava descendo a tela apontando o mesmo defeito em cada bloco — **texto
+onde devia haver conta**.
+
+Equipamento era UMA LINHA DE TEXTO ("01 caçamba, 01 placa vibratória"). Serve
+para escrever e não serve para ler: de trinta dias assim ninguém tira quantos
+dias a retroescavadeira ficou na obra, e **é essa conta que sustenta pleito de
+prazo e medição de mobilização**.
+
+Virou LISTA, no mesmo molde do efetivo terceirizado: descrição, quantidade e
+observação ("parada por manutenção" é informação que vale dinheiro num
+pleito), com o mesmo resumo em uma frase. E, como **retroescavadeira não vai
+embora à noite**, o dia novo abre oferecendo a lista do último dia que tinha
+equipamento, por um botão — pelo mesmo princípio do relato de ontem: **vem
+oferecido, nunca gravado sozinho**. Repetir duas vezes é recusado, em vez de
+dobrar o parque de máquinas.
+
+**⚑ O CAMPO DE TEXTO NÃO FOI APAGADO**, e a coluna no banco também não. Diário
+é documento: o que foi escrito e assinado antes da lista existir continua
+escrito, e o papel imprime o texto quando não houver lista. Apagar a coluna
+seria reescrever o passado.
+
+**O que isso deixa torto, e ele decide:** a lista só abre **depois** de o dia
+ser gravado (o equipamento pende do diário, como o efetivo extra já pendia).
+Antes da primeira gravação, só o campo de texto. Se isso incomodar na obra, dá
+para gravar o dia sozinho ao acrescentar o primeiro equipamento.
+
+**Dois consertos que vieram de brinde, achados ao exercitar a tela:**
+
+- **Quantidade "0" virava 1 em silêncio**, no equipamento e no efetivo extra —
+  `int(x or 1)`. Agora campo em branco é 1 e "0" digitado é erro: são coisas
+  diferentes, e um diário que declara "0 betoneira" declara o que não houve.
+- **O modelo do órgão imprimia uma SEGUNDA PÁGINA contendo só o rodapé.** Ele
+  estourava a folha por poucos milímetros. O rodapé agora é empurrado para o pé
+  da folha e o respiro caiu de 7pt para 3pt. Os três modelos foram conferidos
+  em PDF de verdade: **uma página cada**. Esse defeito **já estava em
+  produção** desde 09/11/2026.
+
+**Como isso foi conferido, e não só testado:** banco Postgres local com as
+migrações do ERP e **as do ponto**, nove pessoas batendo ponto numa obra, dois
+dias de diário, e a tela dirigida por navegador de verdade — gravar,
+acrescentar dois equipamentos, repetir do dia anterior, procurar por
+"retroescavadeira" e por "manutencao" sem acento, e imprimir os três modelos em
+PDF. Zero erro de console.
+
 ### ⚠️ MIGRAÇÕES 085 a 091 — apertar "Aplicar atualizações do banco"
 
 Entraram em 05/11/2026 com o cadastro de pessoas. **Sem elas a tela de
@@ -65,6 +203,12 @@ no lugar.
   — **todas semeadas DESLIGADAS**, e a ação `pedir_contabilidade`;
 - **091** a leitura da CAIXA DE ENTRADA (o agente recebendo e-mail), as
   DEVOLUÇÕES da obra e o autor-colaborador da solicitação (o portal).
+
+**E a 097, de 10/11/2026** (`diario_equipamentos`): a lista de equipamento do
+diário. ⚑ **Sem ela o diário NÃO quebra** — foi feito de propósito, porque o
+código sobe para o Render antes de alguém apertar o botão: a tela mostra o
+cartão vazio, o campo de texto continua valendo e a busca simplesmente não
+varre a lista. Depois do botão, o cartão passa a funcionar sozinho.
 
 Depois de apertar o botão do banco, apertar **uma vez** "Instalar o catálogo de
 tipos", na tela do Arquivo: ele traz os seis tipos de documento novos (os quatro

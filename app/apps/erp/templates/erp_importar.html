@@ -67,7 +67,7 @@ async function preencher(){
     els("cat-padrao").innerHTML = `<option value="">— deixar pendente —</option>` +
       d.dados.categorias.map(c=>`<option value="${c.id}">${c.codigo} · ${c.descricao}</option>`).join("");
     els("obra-padrao").innerHTML = `<option value="">— deixar pendente —</option>` +
-      d.dados.obras.map(o=>`<option value="${o.id}">${o.codigo} · ${o.nome}</option>`).join("");
+      d.dados.obras.map(o=>`<option value="${o.id}">${escapar(rotuloObra(o))}</option>`).join("");
     // O nome da EMPRESA junto: importar o extrato na conta de outra empresa
     // suja a conciliação inteira, e o erro só aparece depois, quando nada casa.
     const nomeEmp = Object.fromEntries((d.dados.empresas||[]).map(e=>[e.id, e.nome]));

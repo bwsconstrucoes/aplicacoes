@@ -715,7 +715,13 @@ def obras_para_escolher(s: Session, usuario: Optional[Usuario]) -> list[dict[str
          WHERE (:todas OR id = ANY(:obras)) AND status <> 'ENCERRADA'
          ORDER BY codigo"""),
         {"obras": obras or [], "todas": obras is None}).mappings().all()
-    return [{"id": l["id"], "codigo": l["codigo"], "nome": l["nome"]} for l in linhas]
+    # ⚑ O RÓTULO VAI PRONTO. Montar "código — nome" na tela é o defeito que o
+    # dono já reclamou duas vezes ("está aparecendo duplicado o nome da obra"):
+    # muita obra tem código dentro do nome, e os dois lado a lado parecem erro
+    # de digitação. A regra mora em `core/comum/rotulos.py`, num lugar só.
+    from app.apps.erp.core.comum.rotulos import rotulo_da_obra
+    return [{"id": l["id"], "codigo": l["codigo"], "nome": l["nome"],
+             "rotulo": rotulo_da_obra(l["codigo"], l["nome"])} for l in linhas]
 
 
 # ---------------------------------------------------------------------------

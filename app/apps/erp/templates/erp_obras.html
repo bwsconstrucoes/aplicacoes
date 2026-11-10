@@ -104,7 +104,7 @@ function montarFiltros(){
   els("opcoes-projeto").innerHTML = PROJETOS.map(p=>`
     <label class="opcao ${contP[p.id]?"":"zerada"}">
       <input type="checkbox" data-projeto="${p.id}" ${F.projeto.has(String(p.id))?"checked":""}>
-      <span class="rotulo">${escapar(p.codigo)} · ${escapar(p.nome)}</span>
+      <span class="rotulo">${escapar(rotuloObra(p))}</span>
       <span class="qtd">${contP[p.id]||0}</span></label>`).join("") +
     `<label class="opcao ${contP["sem"]?"":"zerada"}">
       <input type="checkbox" data-projeto="sem" ${F.projeto.has("sem")?"checked":""}>
@@ -425,7 +425,7 @@ function mesPassado(){
 // ------------------------------------------------------------------ detalhe
 async function abrir(id, aba=0, foco=null){
   const o = OBRAS.find(x=>x.id===id);
-  els("dlg-titulo").textContent = `${o.codigo} — ${o.nome}`;
+  els("dlg-titulo").textContent = rotuloObra(o);
   els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
     <div style="margin-bottom:10px">${botaoDeLink(o.codigo, o.nome)}</div>
     <div class="topo-abas" style="background:var(--azul); border-radius:8px; padding:4px; margin-bottom:14px">
@@ -575,7 +575,7 @@ async function desenharPainel(i, id){
             e a tributação. Obra sem empresa trava as três.</div></div>
         <div class="campo"><label>Projeto</label>
           <select id="o-projeto"><option value="">— sem projeto —</option>
-          ${(PROJETOS||[]).map(x=>`<option value="${x.id}" ${String(d.projeto_id)===String(x.id)?"selected":""}>${escapar(x.codigo)} · ${escapar(x.nome)}</option>`).join("")}
+          ${(PROJETOS||[]).map(x=>`<option value="${x.id}" ${String(d.projeto_id)===String(x.id)?"selected":""}>${escapar(rotuloObra(x))}</option>`).join("")}
           </select><div class="dica">Projeto agrupa obras que você quer olhar
           SOMADAS — em relatório, em custo, em resultado. Obra sem projeto é o
           caso comum.</div></div>
@@ -1284,7 +1284,7 @@ function formProjeto(p){
         ${OBRAS.map(o=>`<label class="opcao"><input type="checkbox" class="pj-obra"
            value="${o.id}" ${dentro.has(o.id)?"checked":""}
            ${(o.projeto_id && !dentro.has(o.id)) ? "disabled" : ""}>
-          <span class="rotulo">${escapar(o.codigo)} · ${escapar(o.nome)}${
+          <span class="rotulo">${escapar(rotuloObra(o))}${
             (o.projeto_id && !dentro.has(o.id)) ? " — já está em outro projeto" : ""}</span>
         </label>`).join("")}
       </div>

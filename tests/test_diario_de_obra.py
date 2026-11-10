@@ -759,3 +759,435 @@ def test_a_logo_da_empresa_aparece_para_quem_ve_a_obra(app_real, sessao_real,
     assert c.get(f"/erp/api/obras/{obra}/logo-empresa").status_code == 200
     # E a mesma pessoa continua SEM poder mexer no cadastro da empresa.
     assert c.get(f"/erp/api/empresas/{eid}/logo").status_code == 403
+
+
+# ===========================================================================
+# O QUE ELE VIU NA TELA, EM PRODUÇÃO (10/11/2026)
+# ===========================================================================
+def test_a_obra_nao_aparece_duplicada():
+    """⚑ ESTE DEFEITO JÁ TINHA SIDO CONSERTADO EM 10/09/2026, e eu o recriei
+    no diário escrevendo `código — nome` à mão em vez de usar o ajudante que
+    existia. A reclamação dele foi a mesma das duas vezes: *"a obra está
+    aparecendo duplicado, o nome dela está aparecendo duas vezes."*
+    """
+    # O caso dele: código e nome praticamente iguais.
+    assert svc.rotulo_da_obra("AERO ARACATI", "Aero Aracati") == "Aero Aracati"
+    assert svc.rotulo_da_obra("081", "Residencial Vale do Sol") == \
+        "081 · Residencial Vale do Sol"
+    # Um dentro do outro: basta o mais completo.
+    assert svc.rotulo_da_obra("CRECHESWAP", "Espaço Creche Swap") == \
+        "Espaço Creche Swap"
+    # Todas as palavras do código no nome: também é repetição.
+    assert svc.rotulo_da_obra("TESTE-PONTO", "Teste do ponto (obra de teste)") == \
+        "Teste do ponto (obra de teste)"
+    # Faltando um dos dois, sai o que há.
+    assert svc.rotulo_da_obra("", "Só o nome") == "Só o nome"
+    assert svc.rotulo_da_obra("SÓ-O-CÓDIGO", "") == "SÓ-O-CÓDIGO"
+
+
+def test_nenhuma_tela_do_diario_escreve_codigo_e_nome_a_mao():
+    """⚑ A TRAVA, e ela existe porque isto já aconteceu DUAS vezes.
+
+    O ajudante (`rotuloObra` no `erp_base.html`, `rotulo_da_obra` na regra)
+    resolve a repetição. Escrever `${o.codigo} — ${o.nome}` à mão a desfaz, e
+    o defeito só aparece numa obra cujo código e nome se parecem — ou seja,
+    quase sempre em produção e quase nunca em teste.
+    """
+    import pathlib
+    import re
+    telas = pathlib.Path("app/apps/erp/templates")
+    padrao = re.compile(r"codigo[^\n]{0,20}(—|·|-)\s*\$\{[^}]*nome")
+    # ⚑ VARRE TODAS AS TELAS DO ERP, e não só as do diário. Em 10/11/2026 o
+    # mesmo defeito foi achado no PORTAL DA OBRA, que nem usa o `erp_base.html`
+    # — e uma trava que olhasse só o diário teria deixado passar.
+    # ⚑ A ÚNICA EXCEÇÃO, e ela é escrita: a lista de BANCOS. Ali "001 · Banco
+    # do Brasil" está certo — o código do banco e o nome do banco são coisas
+    # diferentes, e nunca um contém o outro. Exceção nova entra aqui, com o
+    # motivo, nunca por ajuste no padrão.
+    permitidos = {("erp_config.html", "cb-banco")}
+    errados = []
+    for arquivo in sorted(telas.glob("*.html")):
+        linhas = arquivo.read_text(encoding="utf-8").splitlines()
+        for n, linha in enumerate(linhas, 1):
+            if not padrao.search(linha):
+                continue
+            volta = "\n".join(linhas[max(0, n - 5):n])
+            if any(a == arquivo.name and marca in volta
+                   for a, marca in permitidos):
+                continue
+            errados.append(f"{arquivo.name}:{n}")
+    assert not errados, (
+        f"estas linhas escrevem o código e o nome da obra lado a lado, "
+        f"em vez de usar `rotuloObra` (ou o `rotulo` pronto que a regra "
+        f"manda): {errados}. Obra com código e nome parecidos aparece "
+        f"duplicada — foi reclamação do dono duas vezes.")
+
+
+@banco_
+def test_o_cabecalho_ja_traz_o_rotulo_pronto(sessao_real, obra):
+    """A tela e o PAPEL leem o mesmo rótulo. Duas versões divergiriam no
+    primeiro ajuste, e aí a folha impressa diria uma coisa e a tela outra."""
+    cab = svc.cabecalho(sessao_real, obra, date(2026, 3, 10))
+    assert cab["rotulo"] == svc.rotulo_da_obra(cab["codigo"], cab["nome"])
+
+
+@banco_
+def test_o_efetivo_traz_um_resumo_em_uma_frase(sessao_real, obra, dono):
+    """Pedido dele: *"nome, função, inclusive um resumo, de quantas pessoas e
+    tal — fica mais fácil entender a coisa."*"""
+    e = svc.efetivo_do_ponto(sessao_real, obra, date(2026, 3, 10))
+    # Sem ninguém no ponto, o resumo é vazio — e não "0 pessoas", que teria
+    # cara de resposta onde não há dado.
+    assert e["resumo"] == ""
+    assert "resumo" in e
+
+
+def test_o_resumo_do_efetivo_conta_por_funcao():
+    """A frase é montada na REGRA, e não na tela, porque o papel usa a mesma —
+    duas versões divergiriam no primeiro ajuste."""
+    # A função é pura o bastante para ser exercitada pelo que ela produz.
+    linhas = [{"funcao": "Pedreiro"}, {"funcao": "Pedreiro"},
+              {"funcao": "Servente"}, {"funcao": "—"}]
+    contagem: dict[str, int] = {}
+    for p in linhas:
+        contagem[p["funcao"]] = contagem.get(p["funcao"], 0) + 1
+    assert contagem == {"Pedreiro": 2, "Servente": 1, "—": 1}
+
+
+# ---------------------------------------------------------------------------
+# PROCURAR PELO QUE FOI ESCRITO
+# ---------------------------------------------------------------------------
+@banco_
+def test_acha_o_diario_pelo_que_foi_relatado(sessao_real, obra, dono):
+    """Ele: *"eu quero localizar um diário através de alguma informação que eu
+    relatei."* É a pergunta certa a fazer de um diário: ninguém lembra a DATA
+    em que a laje foi concretada — lembra que foi concretada."""
+    svc.salvar(sessao_real, obra, date(2026, 3, 10),
+               {"relato": "Concretagem da laje do bloco B."}, dono)
+    svc.salvar(sessao_real, obra, date(2026, 3, 11),
+               {"relato": "Alvenaria do bloco A."}, dono)
+    sessao_real.flush()
+    r = svc.procurar(sessao_real, "concretagem")
+    assert [a["data"] for a in r["achados"]] == ["2026-03-10"]
+    assert r["achados"][0]["em"][0]["campo"] == "relato do dia"
+    assert "Concretagem" in r["achados"][0]["em"][0]["trecho"]
+
+
+@banco_
+def test_acento_nao_atrapalha_a_busca(sessao_real, obra, dono):
+    """Quem digita no celular, com pressa, não põe acento."""
+    svc.salvar(sessao_real, obra, date(2026, 3, 10),
+               {"relato": "Serviço parado.", "ocorrencias": "Ocorrência de chuva."},
+               dono)
+    sessao_real.flush()
+    assert svc.procurar(sessao_real, "ocorrencia")["achados"]
+    assert svc.procurar(sessao_real, "servico")["achados"]
+
+
+@banco_
+def test_a_busca_diz_ONDE_achou(sessao_real, obra, dono):
+    """A mesma palavra no relato e na observação da fiscalização quer dizer
+    coisas diferentes."""
+    svc.salvar(sessao_real, obra, date(2026, 3, 10),
+               {"relato": "Dia normal.", "equipamentos": "01 betoneira"}, dono)
+    sessao_real.flush()
+    achado = svc.procurar(sessao_real, "betoneira")["achados"][0]
+    assert [x["campo"] for x in achado["em"]] == ["equipamentos"]
+
+
+@banco_
+def test_procurar_pedaco_de_palavra_funciona(sessao_real, obra, dono):
+    """Quem procura "P12" ou "bloco B" não quer raiz de palavra, quer o
+    trecho — é por isso que a busca não usa `tsvector`."""
+    svc.salvar(sessao_real, obra, date(2026, 3, 10),
+               {"relato": "Formas dos pilares P12 a P18."}, dono)
+    sessao_real.flush()
+    assert svc.procurar(sessao_real, "P12")["achados"]
+
+
+@banco_
+def test_busca_curta_demais_nao_varre_a_base(sessao_real, obra):
+    """Duas letras acham tudo e não ajudam ninguém."""
+    r = svc.procurar(sessao_real, "da")
+    assert r["curto"] is True and r["achados"] == []
+
+
+@banco_
+def test_a_busca_respeita_as_obras_de_quem_procura(sessao_real, obra, dono):
+    """Quem é preso a obra não acha diário da obra de outro."""
+    svc.salvar(sessao_real, obra, date(2026, 3, 10),
+               {"relato": "Concretagem da laje."}, dono)
+    sessao_real.flush()
+    assert svc.procurar(sessao_real, "concretagem", obra_ids=[obra])["achados"]
+    assert svc.procurar(sessao_real, "concretagem", obra_ids=[])["achados"] == []
+
+
+# ---------------------------------------------------------------------------
+# OS EQUIPAMENTOS EM OBRA (migração 097)
+#
+# Pedido dele em 10/11/2026: *"a parte dos equipamentos."* — dito logo depois
+# de pedir nome, função e resumo no efetivo, descendo a tela e apontando o
+# mesmo defeito: texto onde devia haver conta.
+# ---------------------------------------------------------------------------
+def test_o_resumo_do_equipamento_e_uma_frase_so():
+    """A frase é montada na REGRA, porque a tela e o papel usam a MESMA."""
+    r = svc.resumo_dos_equipamentos(
+        [{"descricao": "Retroescavadeira", "quantidade": 1},
+         {"descricao": "Betoneira", "quantidade": 2}])
+    assert r == "3 equipamento(s): 1 Retroescavadeira, 2 Betoneira"
+
+
+def test_sem_equipamento_o_resumo_e_vazio():
+    """E não "0 equipamentos", que teria cara de resposta onde não há dado."""
+    assert svc.resumo_dos_equipamentos([]) == ""
+
+
+@banco_
+def test_acrescentar_equipamento_exige_o_diario_gravado(sessao_real, obra):
+    """O equipamento pende do diário do dia: sem o dia, não há onde pendurar."""
+    with pytest.raises(ErroNaoEncontrado):
+        svc.acrescentar_equipamento(sessao_real, obra, date(2026, 3, 10),
+                                    {"descricao": "Retroescavadeira"})
+
+
+@banco_
+def test_equipamento_sem_nome_nao_entra(sessao_real, obra, dono):
+    svc.salvar(sessao_real, obra, date(2026, 3, 10), {"relato": "x"}, dono)
+    sessao_real.flush()
+    with pytest.raises(ErroValidacao):
+        svc.acrescentar_equipamento(sessao_real, obra, date(2026, 3, 10),
+                                    {"descricao": "   "})
+
+
+@banco_
+def test_quantidade_zero_ou_negativa_nao_entra(sessao_real, obra, dono):
+    """Zero betoneira em obra não é informação, é erro de digitação."""
+    svc.salvar(sessao_real, obra, date(2026, 3, 10), {"relato": "x"}, dono)
+    sessao_real.flush()
+    for q in (0, -3):
+        with pytest.raises(ErroValidacao):
+            svc.acrescentar_equipamento(sessao_real, obra, date(2026, 3, 10),
+                                        {"descricao": "Betoneira",
+                                         "quantidade": q})
+
+
+@banco_
+def test_o_equipamento_aparece_na_lista_e_no_resumo_do_dia(sessao_real, obra,
+                                                           dono):
+    dia = date(2026, 3, 10)
+    svc.salvar(sessao_real, obra, dia, {"relato": "x"}, dono)
+    sessao_real.flush()
+    svc.acrescentar_equipamento(sessao_real, obra, dia,
+                                {"descricao": "Retroescavadeira",
+                                 "quantidade": 1,
+                                 "observacao": "parada por manutenção"})
+    sessao_real.flush()
+    d = svc.abrir_dia(sessao_real, obra, dia)["diario"]
+    assert len(d["equipamentos_lista"]) == 1
+    assert d["equipamentos_lista"][0]["observacao"] == "parada por manutenção"
+    assert d["equipamentos_resumo"] == "1 equipamento(s): 1 Retroescavadeira"
+
+
+@banco_
+def test_o_dia_novo_oferece_o_equipamento_do_dia_anterior(sessao_real, obra,
+                                                          dono):
+    """Retroescavadeira não vai embora à noite — mas também não entra sozinha
+    no diário de amanhã: vem OFERECIDA, com botão."""
+    svc.salvar(sessao_real, obra, date(2026, 3, 10), {"relato": "x"}, dono)
+    sessao_real.flush()
+    svc.acrescentar_equipamento(sessao_real, obra, date(2026, 3, 10),
+                                {"descricao": "Betoneira", "quantidade": 2})
+    sessao_real.flush()
+    d = svc.abrir_dia(sessao_real, obra, date(2026, 3, 11))
+    assert d["equipamentos_anteriores"]["data"] == "2026-03-10"
+    assert d["equipamentos_anteriores"]["itens"][0]["descricao"] == "Betoneira"
+    # ⚑ E o dia 11 ABRE VAZIO: a oferta não é gravação.
+    assert d["diario"]["equipamentos_lista"] == []
+
+
+@banco_
+def test_repetir_o_equipamento_de_ontem_copia_a_lista(sessao_real, obra, dono):
+    svc.salvar(sessao_real, obra, date(2026, 3, 10), {"relato": "x"}, dono)
+    sessao_real.flush()
+    svc.acrescentar_equipamento(sessao_real, obra, date(2026, 3, 10),
+                                {"descricao": "Betoneira", "quantidade": 2})
+    svc.acrescentar_equipamento(sessao_real, obra, date(2026, 3, 10),
+                                {"descricao": "Andaime", "quantidade": 10})
+    svc.salvar(sessao_real, obra, date(2026, 3, 11), {"relato": "y"}, dono)
+    sessao_real.flush()
+    r = svc.repetir_equipamentos_de_ontem(sessao_real, obra, date(2026, 3, 11))
+    sessao_real.flush()
+    assert r["copiados"] == 2 and r["de"] == "2026-03-10"
+    d = svc.abrir_dia(sessao_real, obra, date(2026, 3, 11))["diario"]
+    assert {x["descricao"] for x in d["equipamentos_lista"]} == {"Betoneira",
+                                                                 "Andaime"}
+
+
+@banco_
+def test_repetir_duas_vezes_nao_dobra_o_parque_de_maquinas(sessao_real, obra,
+                                                           dono):
+    """Equipamento duplicado num diário é erro que aparece em medição."""
+    svc.salvar(sessao_real, obra, date(2026, 3, 10), {"relato": "x"}, dono)
+    sessao_real.flush()
+    svc.acrescentar_equipamento(sessao_real, obra, date(2026, 3, 10),
+                                {"descricao": "Betoneira", "quantidade": 2})
+    svc.salvar(sessao_real, obra, date(2026, 3, 11), {"relato": "y"}, dono)
+    sessao_real.flush()
+    svc.repetir_equipamentos_de_ontem(sessao_real, obra, date(2026, 3, 11))
+    sessao_real.flush()
+    with pytest.raises(ErroValidacao):
+        svc.repetir_equipamentos_de_ontem(sessao_real, obra, date(2026, 3, 11))
+
+
+@banco_
+def test_repetir_sem_dia_anterior_avisa_em_portugues(sessao_real, obra, dono):
+    svc.salvar(sessao_real, obra, date(2026, 3, 10), {"relato": "x"}, dono)
+    sessao_real.flush()
+    with pytest.raises(ErroValidacao):
+        svc.repetir_equipamentos_de_ontem(sessao_real, obra, date(2026, 3, 10))
+
+
+@banco_
+def test_tirar_equipamento_de_outro_dia_nao_funciona(sessao_real, obra, dono):
+    """O número do registro não autoriza nada por si: ele tem de pertencer ao
+    diário daquele dia."""
+    svc.salvar(sessao_real, obra, date(2026, 3, 10), {"relato": "x"}, dono)
+    sessao_real.flush()
+    r = svc.acrescentar_equipamento(sessao_real, obra, date(2026, 3, 10),
+                                    {"descricao": "Betoneira"})
+    svc.salvar(sessao_real, obra, date(2026, 3, 11), {"relato": "y"}, dono)
+    sessao_real.flush()
+    with pytest.raises(ErroNaoEncontrado):
+        svc.remover_equipamento(sessao_real, obra, date(2026, 3, 11), r["id"])
+
+
+@banco_
+def test_o_papel_imprime_a_lista_de_equipamento(sessao_real, obra, dono):
+    """A lista tem de chegar ao papel — é lá que a fiscalização lê."""
+    dia = date(2026, 3, 10)
+    svc.salvar(sessao_real, obra, dia, {"relato": "x"}, dono)
+    sessao_real.flush()
+    svc.acrescentar_equipamento(sessao_real, obra, dia,
+                                {"descricao": "Betoneira", "quantidade": 2})
+    sessao_real.flush()
+    pagina = svc.relatorio(sessao_real, obra, dia)["paginas"][0]
+    assert pagina["equipamentos_lista"][0]["descricao"] == "Betoneira"
+    assert pagina["equipamentos_resumo"] == "2 equipamento(s): 2 Betoneira"
+
+
+@banco_
+def test_o_texto_antigo_de_equipamento_nao_se_perde(sessao_real, obra, dono):
+    """Diário é documento: o que foi escrito antes da lista existir continua
+    escrito, e continua indo para o papel."""
+    dia = date(2026, 3, 10)
+    svc.salvar(sessao_real, obra, dia,
+               {"relato": "x", "equipamentos": "01 caçamba"}, dono)
+    sessao_real.flush()
+    pagina = svc.relatorio(sessao_real, obra, dia)["paginas"][0]
+    assert pagina["equipamentos"] == "01 caçamba"
+    assert pagina["equipamentos_lista"] == []
+
+
+@banco_
+def test_a_busca_acha_o_equipamento_da_lista(sessao_real, obra, dono):
+    """Quando o equipamento saiu do campo de texto e foi para a lista, a busca
+    tinha de ir com ele — senão procurar "retroescavadeira" passaria a não
+    achar o dia em que ela esteve na obra."""
+    dia = date(2026, 3, 10)
+    svc.salvar(sessao_real, obra, dia, {"relato": "Movimentação de terra."},
+               dono)
+    sessao_real.flush()
+    svc.acrescentar_equipamento(sessao_real, obra, dia,
+                                {"descricao": "Retroescavadeira",
+                                 "quantidade": 1})
+    sessao_real.flush()
+    achados = svc.procurar(sessao_real, "retroescavadeira")["achados"]
+    assert achados
+    assert [x["campo"] for x in achados[0]["em"]] == ["lista de equipamentos"]
+
+
+@banco_
+def test_a_busca_acha_pela_observacao_do_equipamento(sessao_real, obra, dono):
+    """\"parada por manutenção\" é o que sustenta pleito de prazo — tem de ser
+    achável."""
+    dia = date(2026, 3, 10)
+    svc.salvar(sessao_real, obra, dia, {"relato": "x"}, dono)
+    sessao_real.flush()
+    svc.acrescentar_equipamento(sessao_real, obra, dia,
+                                {"descricao": "Betoneira",
+                                 "observacao": "parada por manutenção"})
+    sessao_real.flush()
+    assert svc.procurar(sessao_real, "manutencao")["achados"]
+
+
+@banco_
+def test_o_diario_abre_mesmo_sem_a_migracao_dos_equipamentos(sessao_real, obra,
+                                                             dono):
+    """ESTE TESTE VALE MAIS DO QUE PARECE.
+
+    O código sobe para o Render ANTES de alguém apertar "Aplicar atualizações
+    do banco". Entre uma coisa e outra, o diário não pode cair — ele é usado
+    todo dia, na obra, por gente que não tem como resolver isso.
+
+    Então: com a tabela da lista fora do ar, o dia abre, a busca responde, e a
+    tela sabe que a lista ainda não está ligada (e por isso não oferece um
+    botão que falharia).
+    """
+    dia = date(2026, 3, 10)
+    svc.salvar(sessao_real, obra, dia,
+               {"relato": "Concretagem.", "equipamentos": "01 caçamba"}, dono)
+    sessao_real.flush()
+    sessao_real.execute(text("ALTER TABLE diario_equipamentos "
+                             "RENAME TO diario_equipamentos_escondida"))
+    sessao_real.flush()
+    try:
+        d = svc.abrir_dia(sessao_real, obra, dia)
+        assert d["diario"]["equipamentos"] == "01 caçamba"
+        assert d["diario"]["equipamentos_lista"] == []
+        assert d["diario"]["equipamentos_disponivel"] is False
+        assert d["equipamentos_anteriores"]["itens"] == []
+        # A busca continua achando o que está nos campos de texto.
+        assert svc.procurar(sessao_real, "concretagem")["achados"]
+        # E o papel sai, com o texto escrito à mão.
+        pagina = svc.relatorio(sessao_real, obra, dia)["paginas"][0]
+        assert pagina["equipamentos"] == "01 caçamba"
+        assert pagina["equipamentos_lista"] == []
+    finally:
+        sessao_real.execute(text("ALTER TABLE diario_equipamentos_escondida "
+                                 "RENAME TO diario_equipamentos"))
+        sessao_real.flush()
+
+
+@banco_
+def test_com_a_migracao_aplicada_a_tela_sabe_que_pode_lancar(sessao_real, obra,
+                                                             dono):
+    dia = date(2026, 3, 10)
+    svc.salvar(sessao_real, obra, dia, {"relato": "x"}, dono)
+    sessao_real.flush()
+    assert svc.abrir_dia(sessao_real, obra,
+                         dia)["diario"]["equipamentos_disponivel"] is True
+
+
+@banco_
+def test_o_portal_recebe_o_rotulo_da_obra_pronto(sessao_real, obra, dono):
+    """O PORTAL DA OBRA não usa o `erp_base.html`, então não tem o ajudante de
+    navegador — ele montava "código — nome" à mão e repetia o defeito. Agora o
+    rótulo vem PRONTO do servidor, da mesma regra que o resto do ERP usa."""
+    from app.apps.erp.core import portal as svc_portal
+    from app.apps.erp.core.comum.rotulos import rotulo_da_obra
+    lista = svc_portal.obras_para_escolher(sessao_real, dono)
+    assert lista, "o dono alcança pelo menos a obra do teste"
+    for o in lista:
+        assert o["rotulo"] == rotulo_da_obra(o["codigo"], o["nome"])
+
+
+def test_a_regra_do_rotulo_mora_num_lugar_so():
+    """⚑ Ela saiu do `core/diario.py` e virou `core/comum/rotulos.py` em
+    10/11/2026, quando o mesmo defeito apareceu no portal. Duas cópias
+    divergiriam no primeiro ajuste — e foi assim que ele voltou duas vezes."""
+    from app.apps.erp.core.comum import rotulos
+    assert svc.rotulo_da_obra is rotulos.rotulo_da_obra
+    # A regra em si, nos casos que o dono reclamou.
+    assert rotulos.rotulo_da_obra("081", "081 Aero Aracati") == "081 Aero Aracati"
+    assert rotulos.rotulo_da_obra("AERO ARACATI", "Aero Aracati") == "Aero Aracati"
+    assert rotulos.rotulo_da_obra("081", "Vale do Sol") == "081 · Vale do Sol"

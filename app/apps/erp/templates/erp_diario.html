@@ -22,6 +22,18 @@
     <button class="filtro-cab" type="button"><span>O mês</span><span class="seta">▾</span></button>
     <div class="filtro-cont"><div id="cal"></div></div>
   </div>
+  {# PROCURAR PELO QUE FOI ESCRITO (10/11/2026). Ele: *"eu quero localizar um
+     diário através de alguma informação que eu relatei."* Fica no filtro
+     lateral, junto com obra e dia, porque é um jeito de CHEGAR no dia — e não
+     uma tela à parte. #}
+  <div class="campo" style="margin-top:12px">
+    <label for="f-procurar">Procurar no que foi escrito</label>
+    <input type="search" id="f-procurar" autocomplete="off"
+           placeholder="concretagem, chuva, P12…">
+    <small class="desc">Procura no relato, nas ocorrências, no histórico, nos
+      equipamentos e no que a fiscalização escreveu. Acento não atrapalha.</small>
+  </div>
+  <div id="achados"></div>
   <button class="btn secundario" id="btn-pendencias" style="width:100%; margin-top:12px">
     Onde está faltando</button>
   {# IMPRIMIR. Abre a folha do dia em outra aba, no modelo que o CONTRATO
@@ -57,10 +69,11 @@ async function iniciar(){
     OBRAS = (await api("/erp/api/obras")).obras || [];
   } catch(e){ aviso("mensagem", e.message, "erro"); return; }
   els("f-obra").innerHTML = OBRAS.map(o =>
-    `<option value="${o.id}">${escapar(o.codigo)} — ${escapar(o.nome)}</option>`).join("");
+    `<option value="${o.id}">${escapar(rotuloObra(o))}</option>`).join("");
   els("f-obra").addEventListener("change", carregar);
   els("f-data").addEventListener("change", carregar);
   els("btn-pendencias").addEventListener("click", abrirPendencias);
+  ligarBusca();
   els("btn-papel").addEventListener("click", () => {
     const obra = els("f-obra").value, data = els("f-data").value || HOJE;
     if (!obra) return;
@@ -68,6 +81,51 @@ async function iniciar(){
   });
   if (OBRAS.length) carregar();
   else els("painel").innerHTML = `<div class="vazio">Nenhuma obra ao seu alcance.</div>`;
+}
+
+// ---------------------------------------------------------------------------
+// PROCURAR NO QUE FOI ESCRITO
+//
+// ⚑ A ESPERA DE 350ms existe pelo mesmo motivo da busca de pessoa: sem ela
+// cada tecla vira uma consulta, e a resposta de "concretag" pode chegar
+// depois da de "concretagem" e pintar a tela com o resultado errado.
+// ---------------------------------------------------------------------------
+function ligarBusca(){
+  const campo = els("f-procurar"), alvo = els("achados");
+  let espera = null, pedido = 0;
+  campo.addEventListener("input", () => {
+    clearTimeout(espera);
+    const termo = campo.value.trim();
+    if (termo.length < 3) { alvo.innerHTML = ""; return; }
+    espera = setTimeout(async () => {
+      const meu = ++pedido;
+      alvo.innerHTML = `<small class="desc">procurando…</small>`;
+      try {
+        const r = await api(`/erp/api/diario/procurar?q=${encodeURIComponent(termo)}`);
+        if (meu !== pedido) return;
+        if (!r.achados.length) {
+          alvo.innerHTML = `<small class="desc">Nenhum diário fala disso.</small>`;
+          return;
+        }
+        alvo.innerHTML = `<div class="achados-diario">${r.achados.map(a => `
+          <button type="button" class="achado-diario"
+                  data-obra="${a.obra_id}" data-dia="${a.data}">
+            <b>${dataBR(a.data)}</b> <small>${escapar(a.dia_da_semana)} ·
+              ${escapar(a.obra)}</small>
+            ${a.em.map(x => `<small class="onde"><i>${escapar(x.campo)}:</i>
+              ${escapar(x.trecho)}</small>`).join("")}
+          </button>`).join("")}
+          ${r.tem_mais ? `<small class="desc">Há mais resultados — escreva
+            mais para apertar a busca.</small>` : ""}</div>`;
+        alvo.querySelectorAll(".achado-diario").forEach(b =>
+          b.addEventListener("click", () => {
+            els("f-obra").value = b.dataset.obra;
+            els("f-data").value = b.dataset.dia;
+            carregar();
+          }));
+      } catch(e){ alvo.innerHTML = `<small class="desc">${escapar(e.message)}</small>`; }
+    }, 350);
+  });
 }
 
 async function carregar(){
@@ -89,7 +147,10 @@ function blocoDaObra(){
   return `
     <div class="cartao auto">
       <div class="selo">preenchido pelo sistema</div>
-      <h3>${escapar(o.codigo)} — ${escapar(o.nome)}</h3>
+      {# `rotuloObra` em vez de "código — nome" à mão: muita obra tem os dois
+         iguais ("AERO ARACATI" / "Aero Aracati") e a linha aparecia repetida.
+         O ajudante já existia desde 10/09/2026 — eu é que não o usei. #}
+      <h3>${escapar(rotuloObra(o))}</h3>
       <div class="grade-auto">
         ${celula("Contrato", o.contrato)}
         ${celula("Ordem de serviço", dataBR(o.data_ordem_servico))}
@@ -120,17 +181,32 @@ function blocoDoEfetivo(){
     <div class="cartao auto">
       <div class="selo">vem do ponto</div>
       <h3>Efetivo do dia — ${total} pessoa(s)</h3>
+      {# O RESUMO EM UMA FRASE, pedido dele em 10/11/2026: *"nome, função,
+         inclusive um resumo, de quantas pessoas e tal — fica mais fácil
+         entender a coisa."* Ele vem pronto da regra, e não é montado aqui: o
+         papel usa a mesma frase, e duas versões divergiriam no primeiro
+         ajuste. #}
+      ${e.resumo ? `<p class="cartao-resumo">${escapar(e.resumo)}</p>` : ""}
       <p class="cartao-dica">Quem bateu ponto nesta obra hoje. Não se digita
         quantidade nem função: se o ponto sabe, o diário sabe.</p>
       ${e.indisponivel ? `<div class="aviso alerta">${escapar(e.indisponivel)}</div>` : ""}
       ${(e.por_funcao || []).length ? `<div class="chips-funcao">${
         e.por_funcao.map(f => `<span class="etiqueta">${escapar(f.funcao)} · ${f.quantidade}</span>`).join("")
       }</div>` : ""}
+      {# NOME E FUNÇÃO EM COLUNAS, e não a função escondida numa linha
+         cinzenta embaixo do nome. Ele olhou a tela e disse: *"não tem aqui a
+         função da pessoa, está só o nome."* Estava lá — pequena demais para
+         contar como estar. #}
       ${(e.pessoas || []).length ? `<div class="tabela-wrap" style="margin-top:8px">
-        <table><tbody>${e.pessoas.map(p => `<tr>
-          <td><b>${escapar(p.nome)}</b><br><small class="desc">${escapar(p.funcao)}</small></td>
-          <td class="direita"><small class="desc">${escapar(p.entrada || "—")}${
-            p.saida ? " – " + escapar(p.saida) : ""}</small></td></tr>`).join("")}
+        <table><thead><tr><th>Nome</th><th>Função</th>
+          <th class="direita">Horário</th></tr></thead>
+        <tbody>${e.pessoas.map(p => `<tr>
+          <td><b>${escapar(p.nome)}</b></td>
+          <td>${p.funcao && p.funcao !== "—"
+            ? escapar(p.funcao)
+            : `<span class="desc">sem função no cadastro</span>`}</td>
+          <td class="direita dados">${escapar(p.entrada || "—")}${
+            p.saida ? " – " + escapar(p.saida) : ""}</td></tr>`).join("")}
         </tbody></table></div>` : `<div class="cartao-dica">Ninguém bateu ponto
           nesta obra neste dia.</div>`}
       ${extras.length ? `<div class="tabela-wrap" style="margin-top:8px">
@@ -146,6 +222,64 @@ function blocoDoEfetivo(){
       ${(DIA.avisos_do_ponto || []).map(a => `<div class="aviso alerta" style="margin-top:8px">
         <b>${escapar(a.nome)}</b> é lotado nesta obra e bateu ponto na
         ${escapar(a.onde)} hoje. Confira se houve transferência.</div>`).join("")}
+    </div>`;
+}
+
+{# ---------------------------------------------------------------------------
+   OS EQUIPAMENTOS EM OBRA — lista, não frase
+
+   Pedido dele em 10/11/2026, descendo a tela: *"a parte dos equipamentos."*
+   Era o mesmo defeito que ele acabara de apontar no efetivo — texto onde
+   devia haver conta. "01 caçamba, 01 placa vibratória" escrito à mão não
+   responde quantos dias a caçamba ficou na obra, e é essa conta que sustenta
+   pleito de prazo.
+
+   Como retroescavadeira não vai embora à noite, o dia novo oferece a lista do
+   último dia que tinha equipamento — com BOTÃO, nunca sozinho: diário que
+   declara máquina já devolvida é diário errado.
+   --------------------------------------------------------------------------- #}
+function blocoDosEquipamentos(){
+  const lista = DIA.diario.equipamentos_lista || [];
+  const resumo = DIA.diario.equipamentos_resumo || "";
+  const ontem = DIA.equipamentos_anteriores || {};
+  const texto = DIA.diario.equipamentos || "";
+  // ⚑ A tabela da lista nasce na migração 097, e o código sobe para o Render
+  // ANTES de alguém apertar "Aplicar atualizações do banco". Enquanto isso o
+  // cartão explica a situação em vez de oferecer um botão que vai falhar.
+  const temTabela = DIA.diario.equipamentos_disponivel !== false;
+  return `
+    <div class="cartao auto">
+      <h3>Equipamentos em obra${lista.length ? "" : " — nenhum registrado"}</h3>
+      ${resumo ? `<p class="cartao-resumo">${escapar(resumo)}</p>` : ""}
+      <p class="cartao-dica">O que estava em obra hoje: máquina, caçamba,
+        betoneira, andaime. Com quantidade, para dar conta depois.</p>
+      ${lista.length ? `<div class="tabela-wrap" style="margin-top:8px">
+        <table><thead><tr><th>Equipamento</th><th class="direita">Quantidade</th>
+          <th>Observação</th><th></th></tr></thead>
+        <tbody>${lista.map(q => `<tr>
+          <td><b>${escapar(q.descricao)}</b></td>
+          <td class="direita dados">${q.quantidade}</td>
+          <td>${q.observacao
+            ? escapar(q.observacao)
+            : `<span class="desc">—</span>`}</td>
+          <td class="direita">${PODE_LANCAR
+            ? `<button class="link-btn" data-remove-eq="${q.id}">tirar</button>`
+            : ""}</td></tr>`).join("")}
+        </tbody></table></div>` : ""}
+      ${!temTabela ? `<div class="aviso alerta">A lista de equipamento ainda não
+        foi ligada neste banco. Um ADMIN precisa apertar <b>Aplicar
+        atualizações do banco</b>, em Configurações. Até lá, use o campo de
+        texto do dia.</div>` : ""}
+      ${temTabela && PODE_LANCAR && DIA.existe ? `<button class="btn secundario"
+        id="btn-equip" style="margin-top:10px">+ Acrescentar equipamento</button>` : ""}
+      ${temTabela && PODE_LANCAR && DIA.existe && !lista.length && (ontem.itens || []).length
+        ? `<button class="link-btn" id="btn-equip-ontem" style="margin-left:8px"
+            >↩ repetir os de ${dataBR(ontem.data)} (${escapar(ontem.resumo)})</button>`
+        : ""}
+      ${temTabela && !DIA.existe && PODE_LANCAR ? `<div class="cartao-dica">Grave
+        o diário do dia e a lista de equipamento abre aqui.</div>` : ""}
+      ${texto ? `<div class="aviso" style="margin-top:8px">📝 <b>Escrito à
+        mão neste dia:</b> ${escapar(texto)}</div>` : ""}
     </div>`;
 }
 
@@ -214,13 +348,20 @@ function blocoDoRelato(){
            ocorrências é O QUE SAIU DO NORMAL; e o histórico é COMO O SERVIÇO
            VEM CAMINHANDO. Juntar tudo num campo e tentar separar na impressão
            seria adivinhar. #}
+        {# ⚑ O CAMPO DE TEXTO CONTINUA, e de propósito. A lista de
+           equipamento (com quantidade) é o que conta, e vive no cartão
+           "Equipamentos em obra" ao lado. Mas o texto é o único lugar onde
+           escrever ANTES da primeira gravação do dia, e é o que sustenta os
+           diários antigos, escritos quando a lista não existia. Apagar o
+           campo apagaria o passado. #}
         <div class="campo" style="margin-top:10px">
-          <label>Equipamentos em obra</label>
+          <label>Equipamentos — texto livre</label>
           <input id="d-equipamentos" value="${escapar(d.equipamentos || "")}"
                  ${so_leitura ? "disabled" : ""}
                  placeholder="01 caçamba, 01 placa vibratória">
-          <small class="desc">O que estava em obra hoje: máquina, caçamba,
-            betoneira, andaime.</small></div>
+          <small class="desc">A lista com quantidade fica no cartão
+            <b>Equipamentos em obra</b>, ao lado — é ela que soma. Use este
+            campo para o que não cabe na lista.</small></div>
         <div class="campo" style="margin-top:10px">
           <label>Ocorrências</label>
           <textarea id="d-ocorrencias" rows="3" ${so_leitura ? "disabled" : ""}
@@ -289,7 +430,8 @@ function blocoDaFiscalizacao(){
 function pintar(){
   const d = DIA.diario;
   els("painel").innerHTML =
-    blocoDaObra() + blocoDoRelato() + blocoDoEfetivo() + blocoDoMaterial()
+    blocoDaObra() + blocoDoRelato() + blocoDoEfetivo()
+    + blocoDosEquipamentos() + blocoDoMaterial()
     + blocoDaFiscalizacao();
 
   const liga = (id, ev, fn) => { if (els(id)) els(id).addEventListener(ev, fn); };
@@ -300,12 +442,16 @@ function pintar(){
   liga("btn-fechar", "click", fecharODia);
   liga("btn-obs-fisc", "click", registrarObservacao);
   liga("btn-extra", "click", acrescentarExtra);
+  liga("btn-equip", "click", acrescentarEquipamento);
+  liga("btn-equip-ontem", "click", repetirEquipamentosDeOntem);
   liga("btn-ontem", "click", () => {
     els("d-relato").value = (DIA.relato_anterior || {}).relato || "";
     els("d-relato").focus();
   });
   document.querySelectorAll("[data-remove]").forEach(b =>
     b.addEventListener("click", () => removerExtra(+b.dataset.remove)));
+  document.querySelectorAll("[data-remove-eq]").forEach(b =>
+    b.addEventListener("click", () => removerEquipamento(+b.dataset.removeEq)));
 }
 
 // ---------------------------------------------------------------------------
@@ -397,6 +543,45 @@ async function acrescentarExtra(){
   } catch(e){ aviso("mensagem", e.message, "erro"); }
 }
 
+async function acrescentarEquipamento(){
+  const r = await perguntar({
+    titulo: "Equipamento em obra",
+    campos: [
+      {nome: "descricao", rotulo: "Equipamento", obrigatorio: true, largura: 6,
+       exemplo: "Retroescavadeira"},
+      {nome: "quantidade", rotulo: "Quantidade", largura: 2, exemplo: "1"},
+      {nome: "observacao", rotulo: "Observação", largura: 4,
+       exemplo: "parada por manutenção"}],
+    textoOk: "Acrescentar"});
+  if (!r) return;
+  try {
+    await api(`/erp/api/diario/${els("f-obra").value}/equipamentos`,
+      {method: "POST", headers: {"Content-Type": "application/json"},
+       body: JSON.stringify({...r, data: els("f-data").value})});
+    await carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+async function removerEquipamento(id){
+  try {
+    await api(`/erp/api/diario/${els("f-obra").value}/equipamentos`,
+      {method: "POST", headers: {"Content-Type": "application/json"},
+       body: JSON.stringify({remover: id, data: els("f-data").value})});
+    await carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+async function repetirEquipamentosDeOntem(){
+  try {
+    const r = await api(`/erp/api/diario/${els("f-obra").value}/equipamentos`,
+      {method: "POST", headers: {"Content-Type": "application/json"},
+       body: JSON.stringify({repetir_ontem: true, data: els("f-data").value})});
+    aviso("mensagem", `${r.copiados} equipamento(s) trazido(s) do dia `
+      + `${dataBR(r.de)}. Confira e tire o que já saiu da obra.`, "ok");
+    await carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
 async function removerExtra(id){
   try {
     await api(`/erp/api/diario/${els("f-obra").value}/extras`,
@@ -449,7 +634,7 @@ async function abrirPendencias(){
         <thead><tr><th>Obra</th><th class="direita">Faltam</th>
           <th>Último diário</th></tr></thead>
         <tbody>${(r.obras || []).map(o => `<tr>
-          <td><b>${escapar(o.codigo)}</b> ${escapar(o.nome)}</td>
+          <td><b>${escapar(rotuloObra(o))}</b></td>
           <td class="direita">${o.faltam
             ? `<span class="etiqueta vermelha">${o.faltam}</span>`
             : `<span class="etiqueta verde">em dia</span>`}</td>
