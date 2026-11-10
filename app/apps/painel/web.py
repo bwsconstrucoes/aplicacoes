@@ -1471,7 +1471,7 @@ def prestacao_contas():
                       key=lambda kv: -kv[1]["resultado"])
     sem_projeto = sorted(o for o, info in calculo["obras"].items()
                          if not (info.get("projeto") or "").strip()
-                         and o != consultas.SEM_OBRA)
+                         and o not in consultas.SEM_OBRA_OU_NAO_LIDA)
     # As duas sobras aparecem juntas: para quem le, "custo que nao coube em
     # obra nenhuma" e uma coisa so, venha ela da estrutura ou do juro.
     sobras = calculo["rateio"]["sobras"] + calculo["juros"]["sobras"]
@@ -1573,7 +1573,7 @@ def _calcular_cenario(cenario: dict) -> dict:
     # A tela lista as obras sem projeto pelo nome, para dar para corrigir.
     sem_projeto = sorted(o for o, info in obras.items()
                          if not (info.get("projeto") or "").strip()
-                         and o != consultas.SEM_OBRA)
+                         and o not in consultas.SEM_OBRA_OU_NAO_LIDA)
 
     pesos = cenario.get("pesos") or cenarios.pesos(cenario["id"])
     excecoes = consultas.lancamentos_administrativos_por_codigo(
@@ -1605,7 +1605,7 @@ def _calcular_cenario(cenario: dict) -> dict:
     # (para serem vistas), mas não recebem estrutura nem juros, não pesam na
     # régua e não entram no caixa de lado nenhum.
     def _sem_lado(obra, info):
-        return obra == consultas.SEM_OBRA or not (info.get("projeto") or "").strip()
+        return obra in consultas.SEM_OBRA_OU_NAO_LIDA or not (info.get("projeto") or "").strip()
 
     lado_de = {o: ("principal" if (info.get("projeto") or "").strip() == principal
                    else "demais") for o, info in obras.items()
@@ -1661,7 +1661,7 @@ def _calcular_cenario(cenario: dict) -> dict:
         "driver": driver, "caixa": caixa, "excluidas": sorted(fora),
         "excluidas_gerais": list(itens_gerais),
         "sem_projeto": sem_projeto,
-        "tem_nao_apropriado": consultas.SEM_OBRA in obras,
+        "tem_nao_apropriado": any(o in obras for o in consultas.SEM_OBRA_OU_NAO_LIDA),
         "posicao": prestacao.posicao_dos_socios(quotas, ajustes),
         "sobras": rateio["sobras"] + juros["sobras"],
         # O BATIMENTO (10/11/2026): o custo global da matriz contra a soma do
@@ -2551,6 +2551,36 @@ def rateio_administracao():
     )
 
 
+def _situacao_das_obras_cc():
+    """Quantos lançamentos de conta têm a obra lida do OMIE, e quantos não
+    (10/11/2026) — ver `apropriacao_cc.situacao`."""
+    from .db import conexao
+    from .sync import apropriacao_cc
+    with conexao() as conn:
+        return apropriacao_cc.situacao(conn)
+
+
+@bp.route("/conferir/lancamento-cc/painel")
+def conferir_lancamento_cc_no_painel():
+    """O que o PAINEL tem de um lançamento de conta: o movimento, a resposta
+    guardada da consulta da obra (ou o erro) e as linhas que ele virou — com
+    uma frase dizendo por que está como está. Não chama o OMIE. So do
+    administrador (prefixo painel.conferir_)."""
+    import json as _json
+    from flask import Response
+    from .db import conexao
+    from .sync import apropriacao_cc
+    codigo = (request.args.get("codigo") or "").strip()
+    if not codigo.isdigit():
+        return jsonify({"ok": False, "erro": "Informe o número do lançamento."}), 400
+    with conexao() as conn:
+        dados = apropriacao_cc.diagnostico(conn, int(codigo))
+    return Response(_json.dumps(dados, ensure_ascii=False, indent=2, default=str),
+                    mimetype="application/json",
+                    headers={"Content-Disposition":
+                             f'attachment; filename="painel_lancamento_cc_{codigo}.json"'})
+
+
 def _conferir(funcao, erros: list, nome: str = "Conferência"):
     """Roda uma conferência sem deixar a falha dela derrubar a tela.
 
@@ -2661,7 +2691,7 @@ def configuracoes():
         conferir = request.args.get("conferir") == "1"
         procurado = consultas._valor_procurado(request.args.get("procurar", ""))
         conferencia = sumidos = aportes_conf = observacoes = fora = None
-        contas_conf = aportes_base = juros_conf = None
+        contas_conf = aportes_base = juros_conf = obras_cc = None
         if not vazia and (conferir or procurado is not None):
             # CADA UMA POR SI. Em 20/09/2026 o dono apertou o botão e "não
             # apresentou resultado" — e não havia como saber se tinha dado erro,
@@ -2686,6 +2716,8 @@ def configuracoes():
             fora = _conferir(consultas.movimentos_fora_do_painel,
                              conferencias_com_erro,
                              "Movimentos fora do painel")
+            obras_cc = _conferir(_situacao_das_obras_cc, conferencias_com_erro,
+                                 "Obras dos lançamentos de conta")
             contas_conf = _conferir(consultas.conferencia_das_contas,
                                     conferencias_com_erro,
                                     "Conta de onde o dinheiro saiu")
@@ -2714,6 +2746,7 @@ def configuracoes():
         aportes_base=aportes_base,
         observacoes=observacoes,
         fora=fora,
+        obras_cc=obras_cc,
         contas_conf=contas_conf,
         juros_conf=juros_conf,
         modos=tarefas.MODOS, rotulos_dos_modos=tarefas.ROTULOS,

@@ -44,7 +44,7 @@ def base():
     with painel_db.conexao() as conn:
         for t in ("fato", "fato_recebimentos", "titulos", "movimentos",
                   "movimentos_sem_titulo", "rateio", "cat", "clientes",
-                  "contas_correntes", "depto_projeto"):
+                  "contas_correntes", "depto_projeto", "apropriacao_lancamentos_cc"):
             conn.execute(f"TRUNCATE TABLE {t}")
         conn.execute("DELETE FROM config WHERE chave IN ('projeto_da_obra',"
                      " 'releitura_pagamentos_anos', 'atualizacao_periodo')")
@@ -86,8 +86,12 @@ def test_o_lancamento_da_sicredi_entra_rateado_nas_duas_obras(base):
                  deps=[{"cCodDepartamento": "10", "nDistrPercentual": 50},
                        {"cCodDepartamento": "20", "nDistrPercentual": 50}]),
             _mov(556, "09/01/2026", 300.0, liquidado="N"),           # previsão
-            _mov(557, "12/01/2026", 80.0),                            # sem apropriação
+            _mov(557, "12/01/2026", 80.0),                # obra nunca perguntada
+            _mov(559, "13/01/2026", 70.0),                # o OMIE disse: sem obra
         ])
+        conn.execute("INSERT INTO apropriacao_lancamentos_cc (ncodmovcc, bruto,"
+                     " tentativas, lido_em) VALUES (559, '{\"cabecalho\": {}}', 1, now())")
+        conn.commit()   # o recálculo lê por outra conexão
         fato.reconstruir_fato(conn)
         linhas = conn.execute(
             "SELECT codigo_lancamento, departamento, projeto, pago_recebido::float8,"
@@ -97,7 +101,11 @@ def test_o_lancamento_da_sicredi_entra_rateado_nas_duas_obras(base):
     assert [(c, d, p, v) for c, d, p, v, *_ in linhas] == [
         (555, "CRECHESUAPE", "PROJ-A", -50000.0),
         (555, "ESCPE18", "", -50000.01),          # o centavo, na última parte
-        (557, "(não apropriado)", "(não apropriado)", -80.0)]
+        # 10/11/2026: sem perguntar ao OMIE, o painel não sabe se tem obra —
+        # e não pode dizer "(não apropriado)" (o dono achou um de 2020 assim,
+        # apropriado no OMIE)
+        (557, "(obra ainda não lida do OMIE)", "", -80.0),
+        (559, "(não apropriado)", "(não apropriado)", -70.0)]
     _c, _d, _p, _v, conta, quem, analise, pago = linhas[0]
     assert (conta, quem, analise, pago) == ("Sicredi LC", "IMOBILIARIA SUL", "DRE", True)
 

@@ -126,12 +126,13 @@ def _marca_cc() -> str:
 def _obras_do_lancamento_cc(codigo: int) -> list[str]:
     """Em quantas obras o lançamento de conta está dividido, pelo fato (é lá
     que a apropriação lida do OMIE vira linha)."""
-    from .sync.fato import NAO_APROP, TRANSFERENCIA_ENTRE_CONTAS
+    from .sync.fato import NAO_APROP, OBRA_NAO_LIDA, TRANSFERENCIA_ENTRE_CONTAS
     return [d for (d,) in consultar(
         "SELECT DISTINCT departamento FROM fato"
         " WHERE codigo_lancamento = ? AND observacao = ?"
-        "   AND COALESCE(TRIM(departamento),'') NOT IN ('', ?, ?)",
-        (int(codigo), _marca_cc(), NAO_APROP, TRANSFERENCIA_ENTRE_CONTAS))]
+        "   AND COALESCE(TRIM(departamento),'') NOT IN ('', ?, ?, ?)",
+        (int(codigo), _marca_cc(), NAO_APROP, OBRA_NAO_LIDA,
+         TRANSFERENCIA_ENTRE_CONTAS))]
 
 
 def titulos_para_alterar(codigos) -> list[dict]:

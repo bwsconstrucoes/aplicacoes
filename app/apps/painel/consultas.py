@@ -341,6 +341,11 @@ SEM_OBRA = "(não apropriado)"
 # (`sync.fato.TRANSFERENCIA_ENTRE_CONTAS`, 10/11/2026) — fica fora das listas
 # de obra da barra lateral
 TRANSFERENCIA_ENTRE_CONTAS = "(transferência entre contas)"
+# o lançamento de conta cuja obra o painel ainda não perguntou ao OMIE
+# (`sync.fato.OBRA_NAO_LIDA`, 10/11/2026). Para a prestação vale o mesmo que
+# "(não apropriado)": sem obra conhecida, não tem lado.
+OBRA_NAO_LIDA = "(obra ainda não lida do OMIE)"
+SEM_OBRA_OU_NAO_LIDA = (SEM_OBRA, OBRA_NAO_LIDA)
 # Mesmo padrao do SEM_OBRA: um rotulo so, em toda a tela, para o que
 # nao tem fornecedor — senao filtrar por ele vira adivinhacao.
 SEM_FORNECEDOR = "(sem fornecedor)"

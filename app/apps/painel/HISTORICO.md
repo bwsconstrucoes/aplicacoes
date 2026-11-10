@@ -651,6 +651,49 @@ nunca rodou contra a base real**. Ele passou pelo parser do Postgres, pelo teste
 de portabilidade e pelos testes com dublê — nenhum dos três olha o número que
 sai.
 
+## "(não apropriado)" no painel, apropriado no OMIE — 10/11/2026
+
+O dono achou o lançamento 709.793.529 (28/12/2020, tarifa do Cartão Brasil,
+R$ 1.280,31) como "(não apropriado)" no painel e apropriado no OMIE —
+*"situação gravíssima"*. Lembrou também que "em algum momento não tínhamos
+tantos não apropriados, depois surgiu muitos".
+
+**O que se sabe, e o que não.** A base de produção não abre daqui, então a
+causa DESTE lançamento não está confirmada. O que o código mostra:
+- desde 07/10/2026 os lançamentos feitos direto na conta entram no painel —
+  antes nem apareciam. É isso que bate com "depois surgiu muitos";
+- a obra deles vem de uma consulta ao OMIE, uma por lançamento. As
+  atualizações comuns perguntam até 600 por vez, do mais recente para trás, e
+  só "Reler os pagamentos" de 1 ou 2 anos pergunta todos daquele ano. Um
+  lançamento de 2020 pode simplesmente nunca ter sido perguntado;
+- quem o OMIE recusou 3 vezes deixava de ser perguntado para sempre;
+- e o painel mostrava TUDO isso como "(não apropriado)" — o mesmo nome de
+  "o OMIE disse que não tem obra". Era o painel afirmando o que não sabia.
+
+**O que mudou:**
+1. Rótulo próprio: **"(obra ainda não lida do OMIE)"** para o lançamento que
+   não foi perguntado (ou foi recusado). "(não apropriado)" passa a ser só o
+   que o OMIE respondeu sem obra. Na prestação os dois valem igual (sem lado).
+2. Botão novo, **"Ler as obras dos lançamentos de conta"**: pergunta TODOS os
+   que faltam, de todos os anos, inclusive os recusados 3 vezes, e refaz os
+   números. Só lê do OMIE. Pode parar e continuar (o respondido fica guardado).
+   NÃO MEDIDO: quantos são em produção, nem quanto tempo leva — o quadro novo
+   (abaixo) diz quantos faltam antes de apertar.
+3. Em Configurações › Conferências, o quadro dos lançamentos de conta diz
+   quantos estão com obra lida, sem obra pelo OMIE, não perguntados (por
+   ano), recusados e sem número.
+4. No cartão "Baixar um lançamento de conta corrente", o botão **"O que o
+   painel tem dele"**: o movimento, a resposta guardada (ou o erro) e as
+   linhas do painel, com uma frase dizendo por que está assim. Não chama o
+   OMIE. É como se confirma a causa do 709.793.529.
+5. A resposta é guardada pelo número PERGUNTADO (nCodMovCC) e a linha leva o
+   nCodLanc. Hoje são iguais (confirmado em produção em 07/10), mas o fato
+   agora procura pelos dois — uma diferença futura não some em silêncio.
+
+**Reler os pagamentos de 2020 não é preciso para este lançamento**: se ele tem
+número no painel, o movimento já está guardado inteiro; falta só perguntar a
+obra. Reler é para as linhas SEM número ("—" no Explorador).
+
 ## O Explorador e as tarifas: trocar a obra de lançamento de conta — 10/11/2026
 
 O dono filtrou "Taxas, Tarifas Bancárias e IOF" (~600 linhas, quase todas
