@@ -1278,11 +1278,10 @@ def semear_analise_do_pipefy(anotar=None, forcar: bool = False) -> dict:
 # a aba de 59 mil linhas, não para uma de trinta.
 # ---------------------------------------------------------------------------
 def sincronizar_agenda(anotar=None) -> dict:
-    """Traz a aba Agenda e a aba Feriados."""
+    """Traz a aba Agenda. (Os feriados vêm do ponto — ver `agenda.feriados_do_ponto`.)"""
     from . import agenda
     from .credenciais import SHEET_CREDENCIAIS
     from .db import conexao
-    from .formatos import para_data
 
     anotar = anotar or (lambda *a, **k: None)
     anotar("trazendo a agenda")
@@ -1310,22 +1309,10 @@ def sincronizar_agenda(anotar=None) -> dict:
     except Exception:  # noqa: BLE001 — agenda que falta não derruba a carga
         logger.exception("Análise de SPs: falhou ler a aba Agenda")
 
-    feriados = 0
-    try:
-        valores = com_retry(
-            _aba(SHEET_CREDENCIAIS, agenda.ABA_FERIADOS).get_all_values)
-        dias = []
-        for linha in (valores[1:] if valores else []):
-            dia = para_data(linha[0]) if linha else None
-            if dia:
-                nome = str(linha[1]).strip() if len(linha) > 1 else ""
-                dias.append((dia, nome))
-        with conexao() as conn:
-            feriados = agenda.gravar_feriados(conn, dias)
-    except Exception:  # noqa: BLE001 — a aba de feriados é opcional
-        logger.info("Análise de SPs: sem aba de feriados locais (é opcional).")
-
-    return {"compromissos": compromissos, "feriados": feriados}
+    # A aba "Feriados" NÃO é mais lida (10/11/2026): os feriados da agenda vêm do
+    # cadastro do ponto (`agenda.feriados_do_ponto`). O dono: *"os feriados devem
+    # vir do cadastro do app ponto"*.
+    return {"compromissos": compromissos}
 
 
 def escrever_compromisso(registro: dict) -> None:

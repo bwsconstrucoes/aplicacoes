@@ -146,16 +146,29 @@ class ErroDaGeracao(RuntimeError):
 # ---------------------------------------------------------------------------
 def rotulo_da_verba(verba: str) -> str:
     verba = str(verba or "").strip().lower()
+    if "." in verba:
+        # O pagamento de UMA empresa (10/11/2026; `empresa_da_folha`):
+        # "diaria.112…" → "Diárias — <empresa>".
+        from . import empresa_da_folha
+        base, empresa = empresa_da_folha.separar(verba)
+        return f"{rotulo_da_verba(base)} — {empresa_da_folha.rotulo_curto(empresa)}"
+    if verba.startswith("complementar"):
+        # A folha complementar (10/11/2026): "complementar1" → "Folha complementar 1".
+        return ("Folha complementar " + verba[len("complementar"):]).strip()
     return ROTULO_DA_VERBA.get(verba, verba.capitalize() or "(sem verba)")
 
 
 def carteira_da_verba(verba: str) -> str:
     """A carteira do BeeVale desta verba (ver `CARTEIRA_DA_VERBA`)."""
-    return CARTEIRA_DA_VERBA.get(str(verba or "").strip().lower(), CARTEIRA)
+    base = str(verba or "").strip().lower().split(".", 1)[0]     # sem a empresa
+    return CARTEIRA_DA_VERBA.get(base, CARTEIRA)
 
 
 def natureza(verba: str) -> str:
-    verba = str(verba or "").strip().lower()
+    verba = str(verba or "").strip().lower().split(".", 1)[0]     # sem a empresa
+    if verba.startswith("complementar"):
+        # A complementar é a mesma natureza da folha: é a folha, corrigida.
+        return NATUREZA_DA_VERBA["folha"]
     return NATUREZA_DA_VERBA.get(verba, rotulo_da_verba(verba))
 
 

@@ -455,6 +455,10 @@ def _consultar_falso(sql, params=()):
     genérico. E o final é um erro de propósito — consulta nova sem resposta
     aqui tem de aparecer no teste, não passar batida devolvendo zero.
     """
+    # o aporte líquido por obra e mês, que abate o buraco de caixa na régua
+    # dos juros (10/11/2026). Três colunas; aqui, nenhum aporte.
+    if "to_char(data, 'YYYY-MM')" in sql and "Devolução de Aporte" in sql:
+        return []
     for marca, resposta in RESPOSTAS_FALSAS.items():
         if marca in sql:
             return resposta

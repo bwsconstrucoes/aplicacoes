@@ -482,3 +482,43 @@ def test_a_REGRA_DE_RATEIO_divide_a_diaria_entre_as_obras(banco_diaristas):
     pagas = fp.linhas_para_pagar(2026, 9, "quinzena", ["diaria"])
     assert sorted((l["obra"], l["valor"]) for l in pagas) == [
         ("CREPEAREIAS", D("165.00")), ("CREPEOLINDA", D("165.00"))]
+
+
+# ---------------------------------------------------------------------------
+# O cálculo guardado entre um clique de filtro e outro (10/11/2026)
+# ---------------------------------------------------------------------------
+def test_o_filtro_usa_a_conta_guardada_e_gravar_joga_fora(monkeypatch):
+    contas = []
+    monkeypatch.setattr(fd, "calcular", lambda a, m, q="quinzena", e="": contas.append(1) or {"n": len(contas)})
+    fd.esquecer_o_guardado()
+    assert fd.calcular_guardado(2026, 9, "quinzena") == {"n": 1}
+    assert fd.calcular_guardado(2026, 9, "quinzena") == {"n": 1}, "o segundo clique não refaz"
+    assert fd.calcular_guardado(2026, 9, "fim_de_mes") == {"n": 2}
+    fd.esquecer_o_guardado()
+    assert fd.calcular_guardado(2026, 9, "quinzena") == {"n": 3}
+    fd.esquecer_o_guardado()
+
+
+def test_a_leitura_do_ponto_joga_fora_a_conta_guardada(monkeypatch):
+    from app.apps.analisesps import ponto
+    fd._guardados[(2026, 9, "quinzena")] = (10 ** 12, {"velho": True})
+    monkeypatch.setattr(ponto, "_pronto", lambda: False)
+    try:
+        ponto.atualizar_pessoa(2026, 9, "123")
+    except Exception:  # noqa: BLE001 — o que importa é o esquecer no fim
+        pass
+    assert fd._guardados == {}
+
+
+def test_os_acrescimos_sao_lidos_uma_vez_por_quinzena_e_nao_por_pessoa(monkeypatch):
+    lidos = []
+    monkeypatch.setattr(fd, "acrescimos_configurados",
+                        lambda sessao=None: lidos.append(1) or {
+                            "feriado": D("0"), "sabado": D("0"), "domingo": D("0"),
+                            "sem_diaria": []})
+    ficha = {"cpf": "1", "nome": "X", "tipo": "Prestador de Serviço",
+             "tipo_contrato": "Autônomo (RPA)"}
+    fd.calcular_pessoa(ficha, [], dt.date(2026, 9, 1), dt.date(2026, 9, 15), D("100"), None,
+                       {}, acrescimos={"feriado": D("0"), "sabado": D("0"), "domingo": D("0"),
+                                       "sem_diaria": []})
+    assert lidos == [], "quem chama passa os acréscimos; a pessoa não vai ao banco"

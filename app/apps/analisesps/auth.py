@@ -619,6 +619,12 @@ TELA_DA_ROTA = {
     "analisesps.folha_outras_folhas": ("folha",),
     # 06/11/2026: acréscimo/desconto por lançamento na DC.
     "analisesps.folha_dc_extra": ("folha",),
+    # 10/11/2026: a folha complementar (a diferença de uma folha já paga).
+    "analisesps.tela_folha_complementar": ("folha",),
+    "analisesps.folha_complementar_relatorio": ("folha",),
+    "analisesps.folha_complementar_selecao": ("folha",),
+    "analisesps.folha_complementar_a_descontar": ("folha",),
+    "analisesps.folha_a_descontar_descontado": ("folha",),
     "analisesps.folha_ferias_gravar": ("folha",),
     "analisesps.folha_ferias_apagar": ("folha",),
     # A Listagem de Férias do Fortes (05/10/2026).

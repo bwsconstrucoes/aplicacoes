@@ -249,9 +249,38 @@
   <p class="cartao-dica">
     Datas que caem em fim de semana ou feriado são movidas: impostos, FGTS e
     parcelamentos <b>antecipam</b> (pagar depois tem multa); o resto
-    <b>posterga</b>. Feriados nacionais são calculados, inclusive os que dependem
-    da Páscoa; os estaduais e municipais vêm da aba "Feriados".
+    <b>posterga</b>. Os feriados vêm do <b>cadastro de feriados do ponto</b>: os
+    nacionais e os estaduais e municipais da cidade da sede (os de obra não contam).
+    Os nacionais também são calculados, inclusive os que dependem da Páscoa.
   </p>
+</div>
+
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Feriados que movem as datas — {{ ano }}</h3>
+    <small>do cadastro do ponto · sede:
+      {% if sede.municipio %}{{ sede.municipio }}/{{ sede.uf }}{% elif sede.uf %}{{ sede.uf }}{% else %}não escolhida (só nacionais){% endif %}</small>
+  </div>
+  {% if pode_operar %}
+    <form method="post" class="filtros-linha" style="display:flex; gap:8px; flex-wrap:wrap; align-items:end; margin-bottom:10px">
+      <input type="hidden" name="acao" value="sede">
+      <div><label class="rotulo-campo">UF da sede</label>
+        <input type="text" name="uf" maxlength="2" size="3" value="{{ sede.uf }}" placeholder="PE"></div>
+      <div><label class="rotulo-campo">Município da sede</label>
+        <input type="text" name="municipio" maxlength="80" value="{{ sede.municipio }}" placeholder="Recife"></div>
+      <button class="btn" type="submit">Guardar cidade da sede</button>
+    </form>
+  {% endif %}
+  {% if feriados_da_agenda %}
+    <p class="cartao-dica" style="margin:0">
+      {% for d, n in feriados_da_agenda %}<span style="white-space:nowrap">{{ d|data_br }} {{ n }}</span>{{ " · " if not loop.last }}{% endfor %}
+    </p>
+  {% else %}
+    <p class="cartao-dica" style="margin:0">Nenhum feriado de {{ ano }} no cadastro do ponto
+      (ficam valendo os nacionais calculados).</p>
+  {% endif %}
+  <p class="cartao-dica">Para incluir ou tirar um feriado, use a tela de feriados do ponto.
+    A aba "Feriados" da planilha de credenciais não é mais lida.</p>
 </div>
 
 <div class="cartao">

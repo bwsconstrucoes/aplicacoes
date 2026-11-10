@@ -6667,7 +6667,7 @@ def test_competencia_torta_na_URL_cai_no_mes_de_hoje(app, monkeypatch):
     monkeypatch.setattr(sincronizacao, "referencias_rateio",
                         lambda: {"obras": [], "categorias": []})
 
-    def espiar(tipo, ano, mes):
+    def espiar(tipo, ano, mes, empresa=""):
         visto.update({"tipo": tipo, "ano": ano, "mes": mes})
         return _auxilio_calculado()
 
