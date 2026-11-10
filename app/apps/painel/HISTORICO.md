@@ -651,6 +651,51 @@ nunca rodou contra a base real**. Ele passou pelo parser do Postgres, pelo teste
 de portabilidade e pelos testes com dublê — nenhum dos três olha o número que
 sai.
 
+## O Explorador e as tarifas: trocar a obra de lançamento de conta — 10/11/2026
+
+O dono filtrou "Taxas, Tarifas Bancárias e IOF" (~600 linhas, quase todas
+"(não apropriado)") para pôr tudo numa obra só, e trouxe três coisas:
+
+1. **"Tem horas que você marca um e ele marca vários."** Duas causas. Uma é de
+   propósito: o título (ou lançamento) dividido entre obras aparece em várias
+   linhas, e no OMIE é um registro só. A outra era defeito: o lançamento de
+   conta lido antes da migração 021 está guardado **sem número**, e a linha saía
+   com o número "None" — todas as sem número viravam "o mesmo título". Agora a
+   linha sem número não tem caixa de marcar nem é editável (a dica diz: releia
+   os pagamentos do período e o número aparece).
+2. **Trocou a obra de uma tarifa e o OMIE respondeu "Lançamento não cadastrado
+   para o Código [11266605823]".** Nada foi alterado. A tarifa é lançamento
+   feito direto na conta corrente, não título, e o painel perguntava por ela no
+   endereço dos títulos. Agora o lançamento de conta (reconhecido pela marca
+   na observação do fato) vai pelo endereço dele: consulta `ConsultaLancCC`
+   (a mesma da apropriação, conferida em produção) e grava com
+   **`AlterarLancCC`** — partindo do lançamento consultado, com a obra inteira
+   em VALOR (`cCodDep` + `nValDep`, o formato do `IncluirLancCC` que o Make do
+   dono usa). **NÃO CONFERIDO contra o OMIE real:** o nome do método e se o
+   OMIE aceita o lançamento inteiro de volta. Protocolo: ensaio → UMA tarifa
+   → conferir no OMIE → lote. Também não se sabe se o OMIE deixa alterar
+   lançamento já conciliado; se recusar, o motivo aparece na coluna Resultado.
+   - A trava do rateio vale para ele (dividido entre obras é recusado, salvo
+     "aceito desfazer"); "(não apropriado)" não conta como obra.
+   - **Excluir recusa lançamento de conta**: o número dele, mandado ao
+     endereço dos títulos, poderia apagar o título que tivesse o mesmo número.
+3. **"Qual atualização eu faço para aparecer no painel?"** Para o lançamento de
+   conta a resposta antiga era pior que "uma atualização": nenhuma trazia — a
+   apropriação guardada nunca é perguntada de novo. Agora o que o OMIE aceita
+   **vai para o painel na hora** (`saneamento.refletir_no_painel`): obra,
+   projeto e categoria nas linhas do fato; no lançamento de conta também a
+   apropriação guardada (o lançamento COMO FOI ENVIADO — consultar de novo em
+   segundos é "consumo redundante" para o OMIE) e a categoria do movimento,
+   para "Só refazer os números" não desfazer nada. Título continua com o
+   espelho antigo até a "Atualização do dia", que relê os alterados.
+
+**Lote acima de 200:** o teto continua 200 por envio (decisão antiga: engano de
+seleção não vira estrago de mil). Mas agora o envio manda os 200 primeiros (com
+aviso) em vez de recusar tudo, e "mudar a obra dos marcados" pula quem já está
+na obra escolhida. Para 600 tarifas: marcar todos → mudar a obra → alterar;
+repetir três vezes — as já enviadas saem sozinhas, porque a lista volta com a
+obra nova.
+
 ## O Explorador foi reprovado e refeito — 13/09/2026
 
 O dono abriu a primeira versão e reprovou, com razão. Três defeitos, e nenhum

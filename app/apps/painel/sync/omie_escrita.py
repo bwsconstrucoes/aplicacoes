@@ -26,7 +26,7 @@ from __future__ import annotations
 import logging
 
 from .omie_client import (TETO_DE_ESPERA_NA_TELA, OmieClient,
-                          URL_CONTAPAGAR, URL_CONTARECEBER)
+                          URL_CONTAPAGAR, URL_CONTARECEBER, URL_LANC_CC)
 
 logger = logging.getLogger("painel.omie_escrita")
 
@@ -59,6 +59,16 @@ EXCLUSOES = {
     "pagar": (URL_CONTAPAGAR, "ExcluirContaPagar"),
     "receber": (URL_CONTARECEBER, "ExcluirContaReceber"),
 }
+
+
+# O lançamento feito DIRETO na conta corrente (tarifa, IOF, aporte) não é título:
+# a consulta é a mesma que a leitura da apropriação já usa (`ConsultaLancCC`,
+# conferida em produção em 07/10/2026) e a gravação é a irmã dela.
+# ⚠️ NÃO CONFERIDO contra o OMIE real: o nome `AlterarLancCC` segue o
+# `IncluirLancCC` que o Make do dono usa há anos. Se o OMIE disser que o método
+# não existe, o erro aparece na coluna Resultado e nada é gravado.
+ALTERAR_LANC_CC = "AlterarLancCC"
+SO_LEITURA_CC = ("info",)
 
 
 def tipo_do_titulo(tipo_do_fato: str) -> str:
@@ -96,6 +106,16 @@ class OmieEscrita(OmieClient):
         sobrando, e a mensagem dele não diz qual foi o culpado."""
         url, excluir = EXCLUSOES[tipo]
         return self._call(url, excluir, {"codigo_lancamento_omie": int(codigo)})
+
+    def alterar_lancamento_cc(self, lancamento: dict) -> dict:
+        """Grava o lançamento de conta corrente alterado (tarifa, aporte, IOF —
+        o que foi lançado direto na conta, sem título).
+
+        10/11/2026: o dono tentou trocar a obra de uma tarifa do Bradesco pelo
+        Explorador e o OMIE respondeu "Lançamento não cadastrado para o
+        Código [11266605823]". O painel perguntava por ela como TÍTULO; ela é
+        um lançamento da conta, e mora noutro endereço do OMIE."""
+        return self._call(URL_LANC_CC, ALTERAR_LANC_CC, lancamento)
 
     def listar_departamentos(self, **kwargs):
         return self._listar(URL_DEPARTAMENTOS, "ListarDepartamentos",
@@ -138,6 +158,73 @@ def preparar_alteracao(cadastro: dict, codigo_categoria=None,
                    and float(distribuicao[0].get("nPerDep") or 0) == 100.0)
         if not ja_esta:
             novo["distribuicao"] = [{"cCodDep": str(cod_departamento), "nPerDep": 100}]
+            mudancas.append(f"Departamento: {antes} → {cod_departamento} (100%)")
+
+    return novo, mudancas
+
+
+def _registro_do_lancamento(resposta, profundidade=0):
+    """O lançamento dentro da resposta da consulta: o bloco que tem `cabecalho`.
+    O formato exato da resposta não foi conferido — procurar pelo nome da chave
+    serve às duas formas prováveis (o registro solto, ou embrulhado)."""
+    if profundidade > 3:
+        return None
+    if isinstance(resposta, dict):
+        if isinstance(resposta.get("cabecalho"), dict):
+            return resposta
+        for valor in resposta.values():
+            achado = _registro_do_lancamento(valor, profundidade + 1)
+            if achado is not None:
+                return achado
+    elif isinstance(resposta, list):
+        for valor in resposta:
+            achado = _registro_do_lancamento(valor, profundidade + 1)
+            if achado is not None:
+                return achado
+    return None
+
+
+def preparar_alteracao_cc(resposta: dict, codigo: int, codigo_categoria=None,
+                          cod_departamento=None) -> tuple[dict, list[str]]:
+    """O mesmo que `preparar_alteracao`, para o lançamento de conta corrente.
+
+    Parte do lançamento CONSULTADO, com uma coisa trocada — pelo mesmo motivo
+    do título: o que não for enviado de volta pode se perder.
+
+    A obra vai em VALOR (`nValDep`), o lançamento inteiro nela — é o formato que
+    o Make do dono usa para incluir lançamento de conta com departamento
+    (`analisesps/conciliacao_omie.py`). Se o lançamento já vinha em percentual,
+    o percentual vai junto (100)."""
+    import copy
+    registro = _registro_do_lancamento(resposta)
+    if registro is None:
+        raise ValueError("o OMIE não devolveu o lançamento (resposta sem "
+                         "'cabecalho') — nada foi enviado")
+    novo = {c: copy.deepcopy(v) for c, v in registro.items() if c not in SO_LEITURA_CC}
+    novo["nCodLanc"] = int(registro.get("nCodLanc") or codigo)
+    mudancas = []
+
+    detalhes = novo.get("detalhes") if isinstance(novo.get("detalhes"), dict) else {}
+    if codigo_categoria and str(detalhes.get("cCodCateg") or "") != str(codigo_categoria):
+        antes = str(detalhes.get("cCodCateg") or "—")
+        detalhes["cCodCateg"] = str(codigo_categoria)
+        detalhes.pop("categorias", None)
+        novo["detalhes"] = detalhes
+        mudancas.append(f"Categoria: {antes} → {codigo_categoria}")
+
+    if cod_departamento:
+        chave = next((k for k in ("departamentos", "distribuicao")
+                      if isinstance(registro.get(k), list)), "departamentos")
+        atuais = [d for d in (registro.get(chave) or []) if isinstance(d, dict)]
+        codigo_de = lambda d: str(d.get("cCodDep") or d.get("cCodDepartamento") or "")
+        antes = ", ".join(codigo_de(d) or "?" for d in atuais) or "—"
+        ja_esta = len(atuais) == 1 and codigo_de(atuais[0]) == str(cod_departamento)
+        if not ja_esta:
+            valor = abs(float((novo.get("cabecalho") or {}).get("nValorLanc") or 0))
+            parte = {"cCodDep": str(cod_departamento), "nValDep": round(valor, 2)}
+            if any(k.startswith("nPer") for d in atuais for k in d):
+                parte["nPerDep"] = 100
+            novo[chave] = [parte]
             mudancas.append(f"Departamento: {antes} → {cod_departamento} (100%)")
 
     return novo, mudancas
