@@ -543,6 +543,7 @@ calada em 500 (o teto da consulta), sem dizer que havia mais.
 - "Marcar todos do grupo" marca os da página aberta.
 - Testes: `test_ponto_alertas_pagina_banco.py` (páginas, página além do fim, por página, período, datas trocadas, data
   inválida, obra, pessoa, ordem). E a tela no navegador com 148 alertas.
+**Publicado em 10/11/2026** (com o "pode" do dono; suíte inteira na versão publicada: 10.327 passaram). Sem migração.
 
 ## 07/11/2026 (sábado) — O termo do ponto assinado no celular (migração 028)
 
