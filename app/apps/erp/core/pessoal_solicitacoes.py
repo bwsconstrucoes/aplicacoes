@@ -148,6 +148,10 @@ TIPOS: dict[str, dict[str, Any]] = {
         "obrigatorios": ("num_ctps", "num_pis", "salario_familia"),
         "campos_do_dp": ("cargo_id", "salario", "matricula", "convencao_id"),
         "documentos": ("CTPS-FOTO", "CTPS-INFORMACOES"),
+        # Mesma regra do cadastro: o número sai da foto da carteira que este
+        # pedido JÁ exige. Ninguém transcreve onze dígitos à mão.
+        "vem_do_documento": {"num_ctps": "CTPS-INFORMACOES",
+                             "num_pis": "CTPS-INFORMACOES"},
         "checklist": ("Conferir a documentação de admissão",
                       "Registrar na carteira", "Cadastro no sistema de pagamento"),
     },
@@ -184,8 +188,14 @@ TIPOS: dict[str, dict[str, Any]] = {
         # da obra vai entender isso aqui, vai saber responder isso aqui? Conta
         # no imposto de renda ou não conta? Não vai saber."* E, de fato, o
         # Pipe não pergunta isso. Parentesco no Pipe é só Filho ou Cônjuge.
+        # ⚑ AQUI "nome" e "cpf" são DO DEPENDENTE, não do colaborador — e o
+        # rótulo precisa dizer isso, senão a tela pede duas vezes o nome de
+        # quem já foi escolhido na busca. `rotulos_proprios` manda sobre o
+        # `ROTULOS` geral.
         "campos": ("nome", "parentesco", "data_nascimento", "dependentes",
                    "observacao"),
+        "rotulos_proprios": {"nome": "Nome do Dependente",
+                             "cpf": "CPF do Dependente"},
         "obrigatorios": ("nome", "parentesco", "data_nascimento"),
         "campos_do_dp": ("cpf", "dependente_ir", "salario_familia"),
         "documentos": ("DOC-DEPENDENTE",),
@@ -328,9 +338,13 @@ CATEGORIAS: dict[str, tuple[str, ...]] = {
     "meio_transporte": ("Nenhum", "Transporte Coletivo", "Moto", "Bicicleta"),
     "categoria_alimentacao": ("Segunda à Quinta", "Segunda à Sexta",
                               "Mensal", "Mês"),
+    # ⚑ SEM "Cartão": ele existe na FASE do cadastro (o DP pode marcar), mas
+    # não no formulário de quem pede — e a lista do pedido é a do formulário.
+    # Oferecer no pedido uma opção que o Pipe só dá ao DP é recriar aqui uma
+    # escolha que lá já foi tirada de quem abre.
     "categoria_transporte": ("Diário", "Mensal", "Segunda e Sexta",
                              "Vale Transporte", "Diário e Vale Transporte",
-                             "Veículo", "Motocicleta", "Bicicleta", "Cartão"),
+                             "Veículo", "Motocicleta", "Bicicleta"),
     "pix_tipo": ("E-mail", "Telefone", "CPF", "Aleatória"),
     "solicitacao": ("Solicitar ou Atualizar", "Cancelar"),
     "conceder": ("Sim", "Não"),
@@ -524,6 +538,7 @@ def tipos_para_tela() -> list[dict[str, Any]]:
         # não é."* A lista é a do Pipe, tipo por tipo.
         obrigatorios = ["obra_id"] + [x for x in d.get("obrigatorios", ())
                                       if x != "obra_id"]
+        proprios = d.get("rotulos_proprios") or {}
         saida.append({"valor": c, "rotulo": d["nome"],
                       "explicacao": d["explicacao"],
                       "exige_pessoa": d["exige_pessoa"], "campos": campos,
@@ -539,13 +554,15 @@ def tipos_para_tela() -> list[dict[str, Any]]:
                       # quando a leitura não achou.
                       "vem_do_documento": dict(d.get("vem_do_documento") or {}),
                       # O rótulo e as opções de cada campo, como no Pipe.
-                      "rotulos": {x: ROTULOS.get(x, x) for x in campos},
+                      "rotulos": {x: proprios.get(x, ROTULOS.get(x, x))
+                                  for x in campos},
                       "opcoes": {x: list(CATEGORIAS[x]) for x in campos
                                  if x in CATEGORIAS},
                       # O mesmo, para os campos que o DP preenche ao atender:
                       # a tela dele lê daqui, e não de uma segunda lista.
-                      "rotulos_do_dp": {x: ROTULOS.get(x, ROTULOS_DO_DP.get(x, x))
-                                        for x in d.get("campos_do_dp", ())},
+                      "rotulos_do_dp": {
+                          x: proprios.get(x, ROTULOS_DO_DP.get(x, ROTULOS.get(x, x)))
+                          for x in d.get("campos_do_dp", ())},
                       "opcoes_do_dp": {x: list(CATEGORIAS[x])
                                        for x in d.get("campos_do_dp", ())
                                        if x in CATEGORIAS}})

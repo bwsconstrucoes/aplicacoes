@@ -725,3 +725,46 @@ def test_nenhum_campo_do_DP_ficou_orfao():
         tem_dono |= set(d.get("campos_do_dp", ()))
     assert saiu_da_obra <= tem_dono, (
         f"sem dono: {saiu_da_obra - tem_dono}")
+
+
+def test_no_dependente_o_nome_e_do_DEPENDENTE_e_nao_do_colaborador():
+    """⚑ A LISTAGEM DOS TIPOS REVELOU ISTO. O rótulo geral de `nome` é "Nome
+    do Colaborador", e no pedido de dependente isso faria a tela pedir duas
+    vezes o nome de quem já foi escolhido na busca. O que se pede ali é o
+    nome do FILHO."""
+    d = next(t for t in svc.tipos_para_tela() if t["valor"] == "DEPENDENTE")
+    assert d["rotulos"]["nome"] == "Nome do Dependente"
+    assert d["rotulos_do_dp"]["cpf"] == "CPF do Dependente"
+    # E no cadastro ele continua sendo o do colaborador.
+    c = next(t for t in svc.tipos_para_tela() if t["valor"] == "CADASTRO")
+    assert c["rotulos"]["nome"] == "Nome do Colaborador"
+
+
+def test_o_numero_da_carteira_sai_do_documento_nos_DOIS_pedidos_que_o_pedem():
+    """Ele: *"isso aí a gente já vai ler os documentos."* Vale no cadastro e
+    na admissão de prestador — os dois exigem a foto da carteira."""
+    for codigo in ("CADASTRO", "ADMISSAO_PRESTADOR"):
+        t = next(x for x in svc.tipos_para_tela() if x["valor"] == codigo)
+        assert t["vem_do_documento"].get("num_ctps") == "CTPS-INFORMACOES"
+        assert t["vem_do_documento"].get("num_pis") == "CTPS-INFORMACOES"
+
+
+def test_campo_que_vem_do_documento_exige_o_documento_que_o_traz():
+    """Prometer que o campo "sai do documento" sem exigir aquele documento
+    seria uma promessa que o pedido não cumpre."""
+    for t in svc.tipos_para_tela():
+        exigidos = set(t["documentos"])
+        for mapa in (svc.TIPOS[t["valor"]].get("documentos_se") or {}).values():
+            for papeis in mapa.values():
+                exigidos |= set(papeis)
+        for campo, papel in t["vem_do_documento"].items():
+            assert papel in exigidos, (
+                f"{t['valor']}: {campo} diz sair de {papel}, e esse papel não "
+                f"é exigido em lugar nenhum do pedido")
+
+
+def test_o_cartao_do_transporte_nao_aparece_para_quem_pede():
+    """No Pipe ele existe na FASE do cadastro (o DP marca), não no formulário.
+    Oferecer no pedido o que lá só o DP escolhe é recriar a escolha que foi
+    tirada de quem abre."""
+    assert "Cartão" not in svc.CATEGORIAS["categoria_transporte"]
