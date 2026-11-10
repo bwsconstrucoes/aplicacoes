@@ -43,9 +43,16 @@ def mundo(sessao_real):
     c = svc_pessoas.salvar(sessao_real, {
         "cpf": CPF_A, "nome": "José Da Fila", "admissao": "2024-01-05",
         "obra_id": obra.id, "salario": "1800", "vinculo": "CTPS"}, dp)
+    # O "Cargo Pleiteado" é obrigatório no Pipe em readmissão, alteração de
+    # cargo e cadastro — por isso o mundo de teste tem um cargo.
+    from sqlalchemy import text as _t
+    cargo_id = sessao_real.execute(_t("""
+        INSERT INTO cargos (nome, ativo) VALUES ('Pedreiro de teste', TRUE)
+        RETURNING id""")).scalar()
     sessao_real.flush()
+    cargo = type("Cargo", (), {"id": cargo_id})()
     return {"s": sessao_real, "dp": dp, "encarregado": encarregado,
-            "obra": obra, "pessoa": c}
+            "obra": obra, "pessoa": c, "cargo": cargo}
 
 
 # ---------------------------------------------------------------------------
@@ -69,7 +76,9 @@ def test_tipo_inventado_e_recusado(mundo):
 
 def test_tipo_que_exige_pessoa_cobra_a_pessoa(mundo):
     with pytest.raises(ErroValidacao) as e:
-        svc.abrir(mundo["s"], {"tipo": "DESLIGAMENTO", "data_saida": "2026-03-31"},
+        svc.abrir(mundo["s"], {"tipo": "DESLIGAMENTO",
+                               "forma_desligamento": "Demissão com Aviso Trabalhado",
+                               "aviso_previo": "2026-03-01"},
                   mundo["dp"])
     assert "escolha a pessoa" in str(e.value).lower()
 
@@ -79,11 +88,57 @@ def test_o_pedido_guarda_SO_os_campos_do_tipo(mundo):
     e foi assim que o pipe terminou com 106 campos e metade vazia em cada card."""
     p = svc.abrir(mundo["s"], {
         "tipo": "DEPENDENTE", "colaborador_id": mundo["pessoa"].id,
-        "nome": "Filho de Teste", "parentesco": "FILHO",
+        "nome": "Filho de Teste", "parentesco": "Filho",
+        "data_nascimento": "2020-05-01",
         "forma_desligamento": "AVISO_INDENIZADO",     # campo de OUTRO tipo
         "valor_total": "999",                          # idem
+        "matricula": "12345",                 # campo do DP, não de quem pede
     }, mundo["encarregado"])
-    assert set(p["dados"]) == {"nome", "parentesco"}
+    assert set(p["dados"]) == {"nome", "parentesco", "data_nascimento"}
+    # ⚑ O rótulo do Pipe entra; o CÓDIGO é o que fica gravado.
+    assert p["dados"]["parentesco"] == "FILHO"
+
+
+def test_campo_do_DP_nao_entra_no_formulario_de_quem_pede():
+    """⚑ A TRAVA DA SEPARAÇÃO, e ela nasce de uma bronca dele (10/11/2026):
+    *"matrícula, não é o funcionário que decide. Como é que a pessoa vai
+    readmitir uma pessoa, botar uma matrícula? Quem solicita define uma
+    matrícula? Que porra é essa?"* — e, sobre a convenção coletiva,
+    *"indecível, é DP quem decide"*.
+
+    No Pipe a separação é física: o que está no formulário INICIAL é da obra,
+    o que está numa FASE é do DP. Aqui ela é esta lista.
+    """
+    for codigo, d in svc.TIPOS.items():
+        comuns = set(d["campos"]) & set(d.get("campos_do_dp", ()))
+        assert not comuns, (
+            f"{codigo}: {comuns} está nos DOIS lados — ou é da obra, ou é do "
+            f"DP, nunca dos dois")
+    # Os quatro que ele apontou, um por um.
+    for codigo in ("READMISSAO", "CADASTRO"):
+        campos = svc.TIPOS[codigo]["campos"]
+        for proibido in ("matricula", "convencao_id", "salario"):
+            assert proibido not in campos, (
+                f"{proibido} voltou ao formulário de quem pede, em {codigo}")
+    assert "faltas_a_descontar" not in svc.TIPOS["DESLIGAMENTO"]["campos"]
+    assert "ultimo_dia" not in svc.TIPOS["DESLIGAMENTO"]["campos"]
+    assert "dependente_ir" not in svc.TIPOS["DEPENDENTE"]["campos"]
+
+
+def test_os_rotulos_sao_os_do_pipe_e_nao_os_meus():
+    """Ele: *"por que não está usando o termo que está no Pipe? Por que está
+    querendo inventar a roda de novo?"* A fonte é DE_PARA_PIPEFY_DP.md."""
+    nomes = {d["nome"] for d in svc.TIPOS.values()}
+    assert "Admissão de Prestador de Serviço" in nomes
+    assert "Prestador que passa a ter carteira" not in nomes   # inventado
+    assert "Desligamento de Prestador de Serviço" in nomes
+    assert svc.ROTULOS["categoria_alimentacao"] == "Categoria Auxílio Alimentação"
+    assert svc.CATEGORIAS["categoria_alimentacao"][0] == "Segunda à Quinta"
+    assert svc.ROTULOS["tipo_readmissao"] == "Tipo de Readmissão"
+    # As quatro formas de desligamento, como estão lá.
+    assert svc.CATEGORIAS["forma_desligamento"] == (
+        "À Pedido do Colaborador", "Encerramento de Contrato de Experiência",
+        "Demissão com Aviso Trabalhado", "Demissão com Aviso Indenizado")
 
 
 def test_o_checklist_do_tipo_nasce_com_o_pedido(mundo):
@@ -91,7 +146,8 @@ def test_o_checklist_do_tipo_nasce_com_o_pedido(mundo):
     atendimento é trabalho de vários dias e mais de uma pessoa."""
     p = svc.abrir(mundo["s"], {"tipo": "DESLIGAMENTO",
                                "colaborador_id": mundo["pessoa"].id,
-                               "data_saida": "2026-03-31"}, mundo["dp"])
+                               "forma_desligamento": "Demissão com Aviso Trabalhado",
+                               "aviso_previo": "2026-03-01"}, mundo["dp"])
     assert p["total_itens"] == 11 and p["feitos"] == 0
     assert any("TRCT" in i["descricao"] for i in p["itens"])
 
@@ -106,7 +162,8 @@ def test_pre_cadastro_de_quem_ja_existe_e_recusado(mundo):
     """É o alerta de duplicado valendo também na fila: no pipe, o cenário do
     Make APAGAVA o card depois de criado."""
     with pytest.raises(ErroValidacao) as e:
-        svc.abrir(mundo["s"], {"tipo": "CADASTRO", "nome": "José Repetido",
+        svc.abrir(mundo["s"], {"tipo": "CADASTRO", "tipo_documentacao": "CTPS",
+        "pagamento": "Mensalista", "cargo_pleiteado_id": mundo["cargo"].id, "data_inicio": "2026-05-01", "nome": "José Repetido",
                                "cpf": CPF_A,
                                "obra_id": mundo["obra"].id}, mundo["encarregado"])
     assert "já tem cadastro" in str(e.value)
@@ -118,8 +175,15 @@ def test_pre_cadastro_de_quem_ja_existe_e_recusado(mundo):
 def test_atender_desligamento_DESLIGA_de_verdade(mundo):
     p = svc.abrir(mundo["s"], {
         "tipo": "DESLIGAMENTO", "colaborador_id": mundo["pessoa"].id,
-        "data_saida": "2026-03-31", "forma_desligamento": "AVISO_TRABALHADO"}, mundo["dp"])
-    svc.atender(mundo["s"], p["id"], {"resposta": "feito"}, mundo["dp"])
+        "aviso_previo": "2026-03-01",
+        # O rótulo do Pipe; o que fica gravado é PEDIDO_COLABORADOR.
+        "forma_desligamento": "Demissão com Aviso Trabalhado"}, mundo["dp"])
+    # ⚑ A DATA DE SAÍDA É DO DP, e vai ao ATENDER. Ele, em 10/11/2026: *"de
+    # saída, o último dia trabalhado, não é a pessoa que está pedindo que vai
+    # dizer. Ele vai colocar só a data do aviso prévio."*
+    svc.atender(mundo["s"], p["id"],
+                {"resposta": "feito", "dados": {"data_saida": "2026-03-31"}},
+                mundo["dp"])
     mundo["s"].flush()
 
     f = svc_pessoas.ficha(mundo["s"], mundo["pessoa"].id)
@@ -131,10 +195,14 @@ def test_atender_readmissao_READMITE_de_verdade(mundo):
     svc_pessoas.desligar(mundo["s"], mundo["pessoa"].id,
                          {"data_saida": "2025-06-30"}, mundo["dp"])
     mundo["s"].flush()
-    p = svc.abrir(mundo["s"], {"tipo": "READMISSAO",
-                               "colaborador_id": mundo["pessoa"].id,
-                               "admissao": "2026-02-01", "salario": "2230"}, mundo["dp"])
-    svc.atender(mundo["s"], p["id"], {}, mundo["dp"])
+    p = svc.abrir(mundo["s"], {"tipo": "READMISSAO", "tipo_readmissao": "CTPS", "data_inicio": "2026-05-01",
+                               "cnpj_admissao": "00.079.526/0001-09 - MATRIZ/CE",
+                               "cargo_pleiteado_id": mundo["cargo"].id,
+                               "colaborador_id": mundo["pessoa"].id}, mundo["dp"])
+    # Salário e a data de admissão efetiva são do DP: a obra pede o cargo.
+    svc.atender(mundo["s"], p["id"],
+                {"dados": {"admissao": "2026-02-01", "salario": "2230"}},
+                mundo["dp"])
     mundo["s"].flush()
 
     f = svc_pessoas.ficha(mundo["s"], mundo["pessoa"].id)
@@ -144,7 +212,8 @@ def test_atender_readmissao_READMITE_de_verdade(mundo):
 
 def test_atender_pre_cadastro_CRIA_a_pessoa(mundo):
     p = svc.abrir(mundo["s"], {
-        "tipo": "CADASTRO", "nome": "Maria Nova De Teste", "cpf": CPF_B,
+        "tipo": "CADASTRO", "tipo_documentacao": "CTPS",
+        "pagamento": "Mensalista", "cargo_pleiteado_id": mundo["cargo"].id, "data_inicio": "2026-05-01", "nome": "Maria Nova De Teste", "cpf": CPF_B,
         "obra_id": mundo["obra"].id, "vinculo": "CTPS",
         "data_inicio": "2026-04-01"}, mundo["encarregado"])
     assert p["colaborador_id"] is None          # a pessoa ainda não existe
@@ -161,8 +230,10 @@ def test_atender_dependente_CADASTRA_o_dependente(mundo):
     p = svc.abrir(mundo["s"], {
         "tipo": "DEPENDENTE", "colaborador_id": mundo["pessoa"].id,
         "nome": "Filha De Teste", "parentesco": "FILHO",
-        "data_nascimento": "2020-05-01", "salario_familia": "1"}, mundo["encarregado"])
-    svc.atender(mundo["s"], p["id"], {}, mundo["dp"])
+        "data_nascimento": "2020-05-01"}, mundo["encarregado"])
+    # Salário-família é marcação do DP: a obra não sabe se cabe.
+    svc.atender(mundo["s"], p["id"], {"dados": {"salario_familia": "1"}},
+                mundo["dp"])
     mundo["s"].flush()
 
     d = svc_pessoas.ficha(mundo["s"], mundo["pessoa"].id)["dependentes"]
@@ -173,9 +244,13 @@ def test_atender_dependente_CADASTRA_o_dependente(mundo):
 def test_atender_alteracao_GRAVA_o_de_para(mundo):
     p = svc.abrir(mundo["s"], {
         "tipo": "ALTERACAO_CARGO", "colaborador_id": mundo["pessoa"].id,
-        "vigencia": "2026-06-01", "salario": "2500", "motivo": "MERITO",
-        "justificativa": "assumiu a frente"}, mundo["encarregado"])
-    svc.atender(mundo["s"], p["id"], {}, mundo["dp"])
+        "cargo_pleiteado_id": mundo["cargo"].id,
+        "data_inicio": "2026-06-01", "justificativa": "assumiu a frente"},
+        mundo["encarregado"])
+    # Salário e motivo são do DP — a obra pede o CARGO, não o salário.
+    svc.atender(mundo["s"], p["id"],
+                {"dados": {"vigencia": "2026-06-01", "salario": "2500",
+                           "motivo": "MERITO"}}, mundo["dp"])
     mundo["s"].flush()
 
     a = svc_pessoas.ficha(mundo["s"], mundo["pessoa"].id)["alteracoes"][0]
@@ -188,9 +263,12 @@ def test_o_DP_pode_corrigir_o_pedido_ao_atender(mundo):
     gravado é o que foi EXECUTADO, não o que foi pedido."""
     p = svc.abrir(mundo["s"], {
         "tipo": "ALTERACAO_CARGO", "colaborador_id": mundo["pessoa"].id,
-        "vigencia": "2026-06-01", "salario": "2200", "motivo": "ENQUADRAMENTO"},
+        "cargo_pleiteado_id": mundo["cargo"].id,
+        "data_inicio": "2026-06-01", "justificativa": "piso novo"},
         mundo["encarregado"])
-    r = svc.atender(mundo["s"], p["id"], {"dados": {"salario": "2230"}}, mundo["dp"])
+    r = svc.atender(mundo["s"], p["id"],
+                    {"dados": {"vigencia": "2026-06-01", "salario": "2230",
+                               "motivo": "ENQUADRAMENTO"}}, mundo["dp"])
     mundo["s"].flush()
 
     assert r["dados"]["salario"] == "2230"
@@ -200,7 +278,9 @@ def test_o_DP_pode_corrigir_o_pedido_ao_atender(mundo):
 def test_pedido_impossivel_nao_e_atendido_pela_metade(mundo):
     """Readmitir quem está ativo é recusado pela regra do cadastro — e o pedido
     NÃO pode ficar "atendido" com o cadastro intacto."""
-    p = svc.abrir(mundo["s"], {"tipo": "READMISSAO",
+    p = svc.abrir(mundo["s"], {"tipo": "READMISSAO", "tipo_readmissao": "CTPS", "data_inicio": "2026-05-01",
+                               "cnpj_admissao": "00.079.526/0001-09 - MATRIZ/CE",
+                               "cargo_pleiteado_id": mundo["cargo"].id,
                                "colaborador_id": mundo["pessoa"].id,
                                "admissao": "2026-02-01"}, mundo["dp"])
     with pytest.raises(ErroValidacao):
@@ -238,7 +318,8 @@ def test_cancelar_nao_apaga_o_pedido(mundo):
     aconteceu com aquele desligamento?" sem resposta."""
     p = svc.abrir(mundo["s"], {"tipo": "DESLIGAMENTO",
                                "colaborador_id": mundo["pessoa"].id,
-                               "data_saida": "2026-03-31"}, mundo["dp"])
+                               "forma_desligamento": "Demissão com Aviso Trabalhado",
+                               "aviso_previo": "2026-03-01"}, mundo["dp"])
     r = svc.cancelar(mundo["s"], p["id"], {"motivo": "a pessoa desistiu de sair"},
                      mundo["dp"])
     assert r["situacao"] == "CANCELADA" and "desistiu" in r["motivo_cancelamento"]
@@ -264,14 +345,17 @@ def test_marcar_item_poe_o_pedido_em_analise(mundo):
     andamento", o que trava o DP."""
     p = svc.abrir(mundo["s"], {"tipo": "DESLIGAMENTO",
                                "colaborador_id": mundo["pessoa"].id,
-                               "data_saida": "2026-03-31"}, mundo["dp"])
+                               "forma_desligamento": "Demissão com Aviso Trabalhado",
+                               "aviso_previo": "2026-03-01"}, mundo["dp"])
     assert p["situacao"] == "ABERTA"
     r = svc.marcar_item(mundo["s"], p["id"], p["itens"][0]["id"], True, mundo["dp"])
     assert r["situacao"] == "EM_ANALISE" and r["feitos"] == 1
 
 
 def test_desmarcar_item_volta_atras(mundo):
-    p = svc.abrir(mundo["s"], {"tipo": "READMISSAO",
+    p = svc.abrir(mundo["s"], {"tipo": "READMISSAO", "tipo_readmissao": "CTPS", "data_inicio": "2026-05-01",
+                               "cnpj_admissao": "00.079.526/0001-09 - MATRIZ/CE",
+                               "cargo_pleiteado_id": mundo["cargo"].id,
                                "colaborador_id": mundo["pessoa"].id,
                                "admissao": "2026-02-01"}, mundo["dp"])
     svc.marcar_item(mundo["s"], p["id"], p["itens"][0]["id"], True, mundo["dp"])
@@ -282,7 +366,8 @@ def test_desmarcar_item_volta_atras(mundo):
 def test_item_de_outro_pedido_e_recusado(mundo):
     p1 = svc.abrir(mundo["s"], {"tipo": "DESLIGAMENTO",
                                 "colaborador_id": mundo["pessoa"].id,
-                                "data_saida": "2026-03-31"}, mundo["dp"])
+                                "forma_desligamento": "Demissão com Aviso Trabalhado",
+                                "aviso_previo": "2026-03-01"}, mundo["dp"])
     p2 = svc.abrir(mundo["s"], {"tipo": "DIVERSOS", "descricao": "outro",
                            "obra_id": mundo["obra"].id}, mundo["dp"])
     with pytest.raises(ErroValidacao):
@@ -310,7 +395,8 @@ def test_a_fila_poe_as_abertas_na_frente(mundo):
 def test_em_andamento_conta_o_checklist_comecado_e_nao_terminado(mundo):
     p = svc.abrir(mundo["s"], {"tipo": "DESLIGAMENTO",
                                "colaborador_id": mundo["pessoa"].id,
-                               "data_saida": "2026-03-31"}, mundo["dp"])
+                               "forma_desligamento": "Demissão com Aviso Trabalhado",
+                               "aviso_previo": "2026-03-01"}, mundo["dp"])
     svc.marcar_item(mundo["s"], p["id"], p["itens"][0]["id"], True, mundo["dp"])
     mundo["s"].flush()
     assert svc.listar(mundo["s"])["indicadores"]["em_andamento"] == 1
@@ -319,7 +405,7 @@ def test_em_andamento_conta_o_checklist_comecado_e_nao_terminado(mundo):
 def test_a_trilha_guarda_quem_mexeu(mundo):
     """O pipe guardava isso no histórico do card — e o card vai morrer. Sem a
     trilha, "quem autorizou essa ajuda de custo?" fica sem resposta."""
-    p = svc.abrir(mundo["s"], {"tipo": "AJUDA_DE_CUSTO",
+    p = svc.abrir(mundo["s"], {"tipo": "AJUDA_DE_CUSTO", "solicitacao": "Solicitar ou Atualizar",
                                "colaborador_id": mundo["pessoa"].id,
                                "aux_alimentacao": "25,00"}, mundo["encarregado"])
     svc.atender(mundo["s"], p["id"], {"resposta": "autorizado"}, mundo["dp"])
@@ -388,7 +474,7 @@ def test_a_obra_do_PEDIDO_vence_a_do_cadastro(mundo):
     mundo["s"].flush()
     r = svc.abrir(mundo["s"], {"tipo": "ATUALIZACAO_DADOS",
                                "colaborador_id": mundo["pessoa"].id,
-                               "o_que_muda": "mudou de obra",
+                               "descricao": "mudou de obra",
                                "obra_id": destino.id}, mundo["dp"])
     mundo["s"].flush()
     assert svc.ler(mundo["s"], r["id"])["obra_id"] == destino.id
@@ -399,7 +485,7 @@ def test_sem_dizer_a_obra_vale_a_do_cadastro_da_pessoa(mundo):
     pergunta duas vezes o que o sistema já sabe."""
     r = svc.abrir(mundo["s"], {"tipo": "ATUALIZACAO_DADOS",
                                "colaborador_id": mundo["pessoa"].id,
-                               "o_que_muda": "telefone"}, mundo["dp"])
+                               "descricao": "telefone"}, mundo["dp"])
     mundo["s"].flush()
     assert svc.ler(mundo["s"], r["id"])["obra_id"] == mundo["obra"].id
 

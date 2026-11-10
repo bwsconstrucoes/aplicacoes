@@ -297,6 +297,49 @@ CATEGORIAS: dict[str, tuple[str, ...]] = {
     "salario_familia": ("Sim", "Não"),
 }
 
+# ---------------------------------------------------------------------------
+# O RÓTULO DO PIPE ↔ O CÓDIGO QUE O ERP GRAVA
+#
+# ⚑ O BANCO NÃO MUDA. "À Pedido do Colaborador" é o que a pessoa LÊ; o que
+# fica gravado continua sendo `PEDIDO_COLABORADOR`, que é o que a regra de
+# desligamento e os relatórios já entendem. Trocar o conteúdo da coluna para
+# casar com o rótulo seria reescrever o passado de quem já foi desligado.
+#
+# A tradução é feita na BORDA (ao abrir e ao atender o pedido), num lugar só.
+# ---------------------------------------------------------------------------
+DO_PIPE_PARA_O_CODIGO: dict[str, dict[str, str]] = {
+    "forma_desligamento": {
+        "À Pedido do Colaborador": "PEDIDO_COLABORADOR",
+        "Encerramento de Contrato de Experiência": "FIM_EXPERIENCIA",
+        "Demissão com Aviso Trabalhado": "AVISO_TRABALHADO",
+        "Demissão com Aviso Indenizado": "AVISO_INDENIZADO",
+    },
+    "tipo_readmissao": {"Prestador de Serviço": "PRESTADOR", "CTPS": "CTPS"},
+    "tipo_documentacao": {"Prestador de Serviço": "PRESTADOR", "CTPS": "CTPS"},
+    "parentesco": {"Filho": "FILHO", "Cônjuge": "CONJUGE"},
+    "pagamento": {"Diarista": "DIARISTA", "Mensalista": "MENSALISTA"},
+    "salario_familia": {"Sim": "1", "Não": "0"},
+    "conceder": {"Sim": "1", "Não": "0"},
+    "pix_tipo": {"E-mail": "EMAIL", "Telefone": "TELEFONE", "CPF": "CPF",
+                 "Aleatória": "ALEATORIA"},
+}
+
+
+def traduzir_do_pipe(dados: dict[str, Any]) -> dict[str, Any]:
+    """Troca o rótulo que a pessoa escolheu pelo código que o ERP grava.
+
+    Aceita os DOIS: quem mandar o código direto (um teste, uma importação)
+    passa reto. É isso que permite trocar o rótulo na tela sem mexer em nada
+    mais embaixo.
+    """
+    saida = dict(dados)
+    for campo, mapa in DO_PIPE_PARA_O_CODIGO.items():
+        v = saida.get(campo)
+        if isinstance(v, str) and v in mapa:
+            saida[campo] = mapa[v]
+    return saida
+
+
 # O rótulo de cada campo, como está no Pipe. A tela lê daqui — não escreve
 # nome de campo à mão.
 ROTULOS: dict[str, str] = {
@@ -443,13 +486,22 @@ def abrir(s: Session, dados: dict[str, Any], usuario: Usuario) -> dict[str, Any]
     # O PEDIDO SÓ GUARDA OS CAMPOS DO TIPO. Sem esta peneira, o formulário de um
     # tipo deixaria lixo do outro no JSONB — e foi assim que o pipe terminou com
     # 106 campos e metade vazia em cada card.
-    pedido = {c: dados.get(c) for c in regra["campos"] if dados.get(c) not in (None, "")}
+    pedido = traduzir_do_pipe(
+        {c: dados.get(c) for c in regra["campos"] if dados.get(c) not in (None, "")})
 
     # Duas conferências que evitam fila com pedido impossível. O resto é do
     # atendimento: conferir tudo na abertura empurraria o trabalho do DP para a
     # obra, que é o contrário do que a fila existe para fazer.
-    if tipo == "DESLIGAMENTO" and not pedido.get("data_saida"):
-        raise ErroValidacao("Informe a data de saída.")
+    # ⚑ O QUE FALTA É O QUE O PIPE MARCA COMO OBRIGATÓRIO, e nada além disso.
+    # Antes eu exigia a DATA DE SAÍDA no desligamento — campo que, no Pipe,
+    # não está neste formulário. Ele, em 10/11/2026: *"de saída, o último dia
+    # trabalhado, não é a pessoa que está pedindo que vai dizer. Ele vai
+    # colocar só a data do aviso prévio."* A data de saída é do DP, e entra
+    # no atendimento.
+    faltando = [ROTULOS.get(c, c) for c in regra.get("obrigatorios", ())
+                if not pedido.get(c)]
+    if faltando:
+        raise ErroValidacao("Falta preencher: " + ", ".join(faltando) + ".")
     # ⚑ A OBRA É OBRIGATÓRIA EM TODO PEDIDO (10/11/2026). O dono: *"eu quero
     # que seja obrigatória, porque a gente não sabe de onde é que está vindo
     # aquela pessoa, para onde está indo trabalhar."*
@@ -555,8 +607,9 @@ def atender(s: Session, solicitacao_id: int, dados: dict[str, Any],
     regra = TIPOS[p["tipo"]]
     # O que vale é o pedido, com o que o DP corrigiu em cima. Corrigir é normal:
     # a obra pede "salário 2200" e o DP acerta no piso da convenção.
-    pedido = {**p["dados"], **{k: v for k, v in (dados.get("dados") or {}).items()
-                               if v not in (None, "")}}
+    pedido = traduzir_do_pipe(
+        {**p["dados"], **{k: v for k, v in (dados.get("dados") or {}).items()
+                          if v not in (None, "")}})
     efeito: dict[str, Any] = {}
     executa = regra["executa"]
     if executa and p["colaborador_id"]:
