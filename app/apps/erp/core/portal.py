@@ -316,11 +316,27 @@ def tipos(s: Session) -> list[dict[str, Any]]:
         for k in chaves:
             if k not in svc_sp.TIPOS:
                 continue
+            d = svc_sp.TIPOS[k]
+            campos = list(d["campos"])
+            if "obra_id" not in campos:
+                campos.insert(0, "obra_id")
             saida.append({
-                "chave": k, "area": area, "nome": svc_sp.TIPOS[k]["nome"],
-                "explicacao": svc_sp.TIPOS[k]["explicacao"],
-                "exige_pessoa": svc_sp.TIPOS[k]["exige_pessoa"],
-                "campos": list(svc_sp.TIPOS[k]["campos"]),
+                "chave": k, "area": area, "nome": d["nome"],
+                "explicacao": d["explicacao"],
+                "exige_pessoa": d["exige_pessoa"],
+                "campos": campos,
+                # ⚑ O ASTERISCO E OS PAPÉIS VÊM DA REGRA, que os tirou do
+                # Pipe. A tela não decide nem um nem outro — se decidisse,
+                # divergiriam do que o servidor exige, e a pessoa descobriria
+                # isso só na recusa do envio.
+                "obrigatorios": ["obra_id"] + [x for x in d.get("obrigatorios", ())
+                                               if x != "obra_id"],
+                "documentos": list(d.get("documentos", ())),
+                "documentos_se": {c: {v: list(p) for v, p in mapa.items()}
+                                  for c, mapa in (d.get("documentos_se") or {}).items()},
+                "obrigatorios_se": {c: {v: list(p) for v, p in mapa.items()}
+                                    for c, mapa in (d.get("obrigatorios_se") or {}).items()},
+                "repete": bool(d.get("repete")),
             })
     return saida
 
@@ -381,6 +397,23 @@ def listas_fechadas(s: Session | None = None) -> dict[str, list[dict[str, str]]]
             for l in s.execute(text(
                 "SELECT id, nome FROM convencoes WHERE ativo IS NOT FALSE"
                 " ORDER BY nome")).mappings().all()]
+        # ⚑ "Cargo Pleiteado" e "Cargo Deferido" são o nome do Pipe para a
+        # MESMA lista de cargos. Sem estas duas linhas eles saíam como texto
+        # livre — e ele viu: *"o cargo. Se o cara já tem cargo, já era para
+        # estar pré-selecionado aqui."*
+        listas["cargo_pleiteado_id"] = listas["cargo_id"]
+        listas["cargo_deferido_id"] = listas["cargo_id"]
+
+    # ⚑ AS CAIXINHAS DO PIPE, com as opções exatas. A fonte é o `CATEGORIAS`
+    # de `pessoal_solicitacoes`, que as tirou do arquivo exportado — não uma
+    # segunda cópia aqui. Campo do Pipe que vira texto livre é a obra
+    # digitando a mesma coisa de dez jeitos, que é o que esta tela existe
+    # para acabar.
+    from app.apps.erp.core import pessoal_solicitacoes as svc_sp
+    for campo, opcoes in svc_sp.CATEGORIAS.items():
+        if campo in listas:
+            continue           # o cadastro já tem uma lista para este campo
+        listas[campo] = [{"valor": o, "rotulo": o} for o in opcoes]
     return listas
 
 
@@ -718,6 +751,87 @@ def pessoas_ao_alcance(s: Session, usuario: Optional[Usuario]) -> list[dict[str,
          ORDER BY nome LIMIT 500"""),
         {"obras": obras or [], "todas": obras is None}).mappings().all()
     return [{"id": l["id"], "nome": l["nome"]} for l in linhas]
+
+
+# ---------------------------------------------------------------------------
+# PROCURAR A PESSOA — por nome OU por CPF (10/11/2026)
+#
+# Ele: *"não está pesquisável o nome da pessoa. Eu até comentei pesquisar
+# nome, pesquisar CPF, trazer alguém. Não está pesquisável."*
+#
+# ⚑ A BUSCA É NO SERVIDOR, e não um filtro na lista que já desceu. A caixinha
+# descia com até 500 pessoas, e pôr o CPF de todas no navegador para poder
+# filtrar ali seria expor o cadastro inteiro a quem abrir o código da página.
+# Aqui só aparece quem já se sabia procurar.
+#
+# ⚑ E A RESPOSTA TRAZ CARGO E VÍNCULO. Ele, no mesmo dia: *"o cargo. Se o cara
+# já tem cargo, já era para estar pré-selecionado aqui, já era para estar
+# aparecendo. Eu cliquei na pessoa, cadê o cargo? Quem é? Ela é o que agora?
+# (…) Cadê a correlação com a base que já existe?"*
+# ---------------------------------------------------------------------------
+MINIMO_DA_BUSCA_DE_PESSOA = 3
+TETO_DA_BUSCA_DE_PESSOA = 20
+
+
+def _sem_acento(texto: Any) -> str:
+    import unicodedata as _u
+    cru = _u.normalize("NFD", str(texto or "").lower())
+    return "".join(c for c in cru if _u.category(c) != "Mn")
+
+
+def _cpf_do_fim(cpf: Any) -> str:
+    """"…901" — o bastante para conferir que é a pessoa certa, e só isso.
+
+    Mostrar o CPF inteiro numa lista de resultado é espalhar documento de
+    gente por tela de celular. Os três últimos dígitos resolvem a dúvida de
+    quem já sabe quem está procurando.
+    """
+    so_digito = "".join(c for c in str(cpf or "") if c.isdigit())
+    return ("…" + so_digito[-3:]) if len(so_digito) >= 3 else ""
+
+
+def procurar_pessoas(s: Session, usuario: Optional[Usuario],
+                     termo: str) -> list[dict[str, Any]]:
+    """Quem bate com o que foi digitado, dentro do alcance de quem procura."""
+    procurado = str(termo or "").strip()
+    so_digito = "".join(c for c in procurado if c.isdigit())
+    if len(procurado) < MINIMO_DA_BUSCA_DE_PESSOA and len(so_digito) < 3:
+        return []
+    eu = quem_esta(s, usuario)
+    if not pode_pedir_por_outros(s, eu):
+        # Quem só pede por si não procura ninguém: devolve a si mesmo.
+        return [x for x in pessoas_ao_alcance(s, usuario)
+                if procurado.lower() in str(x["nome"]).lower()]
+    obras = obras_que_alcanca(s, eu)
+    if obras is not None and not obras:
+        return []
+    linhas = s.execute(text("""
+        SELECT c.id, c.nome, c.cpf, c.vinculo,
+               COALESCE(NULLIF(btrim(g.nome), ''), NULLIF(btrim(f.nome), ''), '')
+                 AS cargo,
+               g.id AS cargo_id, c.obra_id
+          FROM colaboradores c
+          LEFT JOIN cargos  g ON g.id = c.cargo_id
+          LEFT JOIN funcoes f ON f.id = c.funcao_id
+         WHERE (:todas OR c.obra_id = ANY(:obras))
+           AND c.situacao = 'ATIVO'
+           AND (translate(lower(c.nome),
+                          'áàâãäéèêëíìîïóòôõöúùûüç',
+                          'aaaaaeeeeiiiiooooouuuuc') LIKE :nome
+                OR (:digitos <> '' AND regexp_replace(c.cpf, '\D', '', 'g')
+                    LIKE :digitos || '%'))
+         ORDER BY c.nome
+         LIMIT :teto"""),
+        {"obras": obras or [], "todas": obras is None,
+         # ⚑ Sem acento dos dois lados, e sem depender da extensão
+         # `unaccent` (que não está instalada): quem digita "jose" acha
+         # "José", que é como se digita no celular, com pressa.
+         "nome": "%" + _sem_acento(procurado) + "%", "digitos": so_digito,
+         "teto": TETO_DA_BUSCA_DE_PESSOA}).mappings().all()
+    return [{"id": l["id"], "nome": l["nome"], "cargo": l["cargo"],
+             "cargo_id": l["cargo_id"], "vinculo": l["vinculo"],
+             "obra_id": l["obra_id"], "cpf": _cpf_do_fim(l["cpf"])}
+            for l in linhas]
 
 
 def obras_para_escolher(s: Session, usuario: Optional[Usuario]) -> list[dict[str, Any]]:
