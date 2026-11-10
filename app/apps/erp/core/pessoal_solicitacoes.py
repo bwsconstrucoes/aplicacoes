@@ -245,17 +245,39 @@ TIPOS: dict[str, dict[str, Any]] = {
         # Os rótulos vêm do pipe CADASTRO COLABORADORES. "Tipo de Documentação
         # para Cadastro" é o nome certo do que eu chamava de "tipo de
         # contrato"; "Função" é o nome certo de cargo neste formulário.
-        "campos": ("nome", "cpf", "tipo_documentacao", "data_inicio",
-                   "cargo_pleiteado_id", "pagamento", "valor_diaria",
-                   "valor_mes", "telefone", "meio_transporte", "observacao"),
+        "campos": ("nome", "cpf", "tipo_documentacao", "num_ctps", "num_pis",
+                   "data_inicio", "cargo_pleiteado_id", "pagamento",
+                   "valor_diaria", "valor_mes", "telefone", "meio_transporte",
+                   "observacao"),
         "obrigatorios": ("nome", "cpf", "tipo_documentacao", "data_inicio",
                          "cargo_pleiteado_id", "pagamento"),
+        # ⚑ SE FOR CTPS, A CARTEIRA E O PIS SÃO OBRIGATÓRIOS TAMBÉM. Ele, em
+        # 10/11/2026: *"se for CTPS, os dados da carteira são obrigatórios,
+        # PIS também."*
+        "obrigatorios_se": {"tipo_documentacao": {
+            "CTPS": ("num_ctps", "num_pis")}},
         # ⚑ Matrícula e convenção são do DP — estão em FASE no Pipe, não no
         # formulário. Os auxílios também.
         "campos_do_dp": ("matricula", "convencao_id", "cargo_id", "salario",
                          "categoria_alimentacao", "aux_alimentacao",
                          "categoria_transporte", "aux_transporte"),
-        "documentos": ("DOC-IDENTIDADE", "CPF-DOC", "COMPROVANTE-ENDERECO-PESSOA"),
+        # ⚑ OS PAPÉIS SÃO OBRIGATÓRIOS, E O PEDIDO NÃO SAI SEM ELES.
+        #
+        # Eu tinha proposto deixar entrar incompleto, e ele derrubou — com o
+        # argumento que eu não tinha: *"se você permitir que entre funcionário
+        # sem os documentos, esse documento para ele voltar e ser concluído é
+        # um Deus nos acuda. (…) Não se consegue pagar o funcionário no
+        # SomaPay se não tiver CPF, não se consegue fazer o cadastro se não
+        # tiver comprovante de endereço e CPF."*
+        #
+        # Isso muda a conta inteira: deixar passar NÃO evita o mal que eu
+        # queria evitar — a pessoa continua sem receber —, e ainda cria um
+        # cadastro pela metade que ninguém fecha. Pendência de documento não é
+        # dívida que se paga depois; é dívida que ninguém paga.
+        "documentos": ("DOC-IDENTIDADE", "CPF-DOC",
+                       "COMPROVANTE-ENDERECO-PESSOA"),
+        "documentos_se": {"tipo_documentacao": {
+            "CTPS": ("CTPS-FOTO", "CTPS-INFORMACOES")}},
         "checklist": ("Conferir se a documentação veio completa",
                       "Conferir os dados contra os documentos",
                       "Conferir o que falta para admitir"),
@@ -323,6 +345,53 @@ DO_PIPE_PARA_O_CODIGO: dict[str, dict[str, str]] = {
     "pix_tipo": {"E-mail": "EMAIL", "Telefone": "TELEFONE", "CPF": "CPF",
                  "Aleatória": "ALEATORIA"},
 }
+
+
+# ---------------------------------------------------------------------------
+# O QUE ESTE PEDIDO EXIGE — campos e papéis, inclusive os que dependem de
+# outra resposta
+# ---------------------------------------------------------------------------
+ROTULOS_DE_DOCUMENTO = {
+    "DOC-IDENTIDADE": "documento de identificação (RG, CNH ou CTPS)",
+    "CPF-DOC": "CPF",
+    "COMPROVANTE-ENDERECO-PESSOA": "comprovante de endereço",
+    "CTPS-FOTO": "CTPS (página com a foto)",
+    "CTPS-INFORMACOES": "CTPS (página com as informações)",
+    "DOC-DEPENDENTE": "documento do dependente (certidão ou RG)",
+}
+
+
+def _condicionais(regra: dict[str, Any], chave: str,
+                  pedido: dict[str, Any]) -> tuple[str, ...]:
+    """O que `obrigatorios_se` / `documentos_se` acrescentam, conforme a
+    resposta já dada. Ex.: escolher CTPS passa a exigir a carteira e o PIS."""
+    extra: list[str] = []
+    for campo, mapa in (regra.get(chave) or {}).items():
+        valor = pedido.get(campo)
+        if isinstance(valor, str):
+            extra += list(mapa.get(valor, ()))
+    return tuple(extra)
+
+
+def exigencias(tipo: str, pedido: Optional[dict[str, Any]] = None
+               ) -> dict[str, Any]:
+    """O que falta para este pedido poder sair — campos E papéis.
+
+    A tela chama isto a cada mudança, para a lista ir se marcando sozinha
+    enquanto a pessoa preenche. Assim o bloqueio não é uma parede no fim: é
+    uma lista que a pessoa vê desde o começo.
+    """
+    regra = TIPOS[tipo]
+    p = traduzir_do_pipe(pedido or {})
+    campos = tuple(regra.get("obrigatorios", ())) + _condicionais(
+        regra, "obrigatorios_se", p)
+    papeis = tuple(regra.get("documentos", ())) + _condicionais(
+        regra, "documentos_se", p)
+    return {
+        "campos": list(dict.fromkeys(campos)),
+        "documentos": [{"codigo": c, "rotulo": ROTULOS_DE_DOCUMENTO.get(c, c)}
+                       for c in dict.fromkeys(papeis)],
+    }
 
 
 def traduzir_do_pipe(dados: dict[str, Any]) -> dict[str, Any]:
@@ -498,10 +567,22 @@ def abrir(s: Session, dados: dict[str, Any], usuario: Usuario) -> dict[str, Any]
     # trabalhado, não é a pessoa que está pedindo que vai dizer. Ele vai
     # colocar só a data do aviso prévio."* A data de saída é do DP, e entra
     # no atendimento.
-    faltando = [ROTULOS.get(c, c) for c in regra.get("obrigatorios", ())
-                if not pedido.get(c)]
+    exige = exigencias(tipo, pedido)
+    faltando = [ROTULOS.get(c, c) for c in exige["campos"] if not pedido.get(c)]
     if faltando:
         raise ErroValidacao("Falta preencher: " + ", ".join(faltando) + ".")
+
+    # ⚑ E OS PAPÉIS. `documentos` vem da tela: os códigos dos tipos que já
+    # foram anexados ao pedido (o arquivo em si já subiu e está esperando).
+    anexados = {str(x).strip().upper() for x in (dados.get("documentos") or [])}
+    sem_papel = [d["rotulo"] for d in exige["documentos"]
+                 if d["codigo"] not in anexados]
+    if sem_papel:
+        porque = (" Sem esses papéis o cadastro não se faz e a pessoa não "
+                  "entra no sistema de pagamento — por isso o pedido não sai "
+                  "incompleto." if tipo == "CADASTRO" else
+                  " O pedido não sai sem eles.")
+        raise ErroValidacao("Falta anexar: " + ", ".join(sem_papel) + "." + porque)
     # ⚑ A OBRA É OBRIGATÓRIA EM TODO PEDIDO (10/11/2026). O dono: *"eu quero
     # que seja obrigatória, porque a gente não sabe de onde é que está vindo
     # aquela pessoa, para onde está indo trabalhar."*

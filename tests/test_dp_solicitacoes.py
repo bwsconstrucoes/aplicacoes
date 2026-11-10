@@ -89,7 +89,7 @@ def test_o_pedido_guarda_SO_os_campos_do_tipo(mundo):
     p = svc.abrir(mundo["s"], {
         "tipo": "DEPENDENTE", "colaborador_id": mundo["pessoa"].id,
         "nome": "Filho de Teste", "parentesco": "Filho",
-        "data_nascimento": "2020-05-01",
+        "data_nascimento": "2020-05-01", "documentos": ["DOC-DEPENDENTE"],
         "forma_desligamento": "AVISO_INDENIZADO",     # campo de OUTRO tipo
         "valor_total": "999",                          # idem
         "matricula": "12345",                 # campo do DP, não de quem pede
@@ -162,7 +162,8 @@ def test_pre_cadastro_de_quem_ja_existe_e_recusado(mundo):
     """É o alerta de duplicado valendo também na fila: no pipe, o cenário do
     Make APAGAVA o card depois de criado."""
     with pytest.raises(ErroValidacao) as e:
-        svc.abrir(mundo["s"], {"tipo": "CADASTRO", "tipo_documentacao": "CTPS",
+        svc.abrir(mundo["s"], {"tipo": "CADASTRO", "tipo_documentacao": "Prestador de Serviço",
+        "documentos": ["DOC-IDENTIDADE", "CPF-DOC", "COMPROVANTE-ENDERECO-PESSOA"],
         "pagamento": "Mensalista", "cargo_pleiteado_id": mundo["cargo"].id, "data_inicio": "2026-05-01", "nome": "José Repetido",
                                "cpf": CPF_A,
                                "obra_id": mundo["obra"].id}, mundo["encarregado"])
@@ -212,7 +213,8 @@ def test_atender_readmissao_READMITE_de_verdade(mundo):
 
 def test_atender_pre_cadastro_CRIA_a_pessoa(mundo):
     p = svc.abrir(mundo["s"], {
-        "tipo": "CADASTRO", "tipo_documentacao": "CTPS",
+        "tipo": "CADASTRO", "tipo_documentacao": "Prestador de Serviço",
+        "documentos": ["DOC-IDENTIDADE", "CPF-DOC", "COMPROVANTE-ENDERECO-PESSOA"],
         "pagamento": "Mensalista", "cargo_pleiteado_id": mundo["cargo"].id, "data_inicio": "2026-05-01", "nome": "Maria Nova De Teste", "cpf": CPF_B,
         "obra_id": mundo["obra"].id, "vinculo": "CTPS",
         "data_inicio": "2026-04-01"}, mundo["encarregado"])
@@ -230,7 +232,8 @@ def test_atender_dependente_CADASTRA_o_dependente(mundo):
     p = svc.abrir(mundo["s"], {
         "tipo": "DEPENDENTE", "colaborador_id": mundo["pessoa"].id,
         "nome": "Filha De Teste", "parentesco": "FILHO",
-        "data_nascimento": "2020-05-01"}, mundo["encarregado"])
+        "data_nascimento": "2020-05-01",
+        "documentos": ["DOC-DEPENDENTE"]}, mundo["encarregado"])
     # Salário-família é marcação do DP: a obra não sabe se cabe.
     svc.atender(mundo["s"], p["id"], {"dados": {"salario_familia": "1"}},
                 mundo["dp"])
@@ -508,3 +511,112 @@ def test_o_requerente_saiu_de_uso():
     fora por enquanto."* A COLUNA fica — há pedidos gravados com ela."""
     for t in svc.tipos_para_tela():
         assert "requerente" not in t["campos"]
+
+
+# ---------------------------------------------------------------------------
+# OS PAPÉIS SÃO OBRIGATÓRIOS — e o pedido não sai sem eles (10/11/2026)
+#
+# ⚑ EU PROPUS O CONTRÁRIO, E ELE DERRUBOU COM UM ARGUMENTO QUE EU NÃO TINHA.
+# Minha proposta era deixar o cadastro entrar incompleto, para a pessoa não
+# ficar sem registro. Ele:
+#
+#   *"Se você permitir que entre funcionário sem os documentos, esse documento
+#   para ele voltar e ser concluído é um Deus nos acuda. (…) Não se consegue
+#   pagar o funcionário no SomaPay se não tiver CPF, não se consegue fazer o
+#   cadastro do funcionário se não tiver comprovante de endereço e CPF."*
+#
+# Isso muda a conta inteira: deixar passar não evita o mal que eu queria
+# evitar — a pessoa continua sem receber — e ainda cria um cadastro pela
+# metade que ninguém fecha.
+# ---------------------------------------------------------------------------
+def _cadastro(mundo, **extra):
+    base = {"tipo": "CADASTRO", "nome": "Novo De Teste", "cpf": CPF_B,
+            "obra_id": mundo["obra"].id, "tipo_documentacao": "Prestador de Serviço",
+            "pagamento": "Diarista", "cargo_pleiteado_id": mundo["cargo"].id,
+            "data_inicio": "2026-05-01"}
+    base.update(extra)
+    return base
+
+
+def test_cadastro_sem_os_papeis_NAO_SAI(mundo):
+    with pytest.raises(ErroValidacao) as e:
+        svc.abrir(mundo["s"], _cadastro(mundo), mundo["encarregado"])
+    recado = str(e.value)
+    assert "Falta anexar" in recado
+    for papel in ("documento de identificação", "CPF", "comprovante de endereço"):
+        assert papel in recado
+    # O recado diz POR QUE, e não só "falta documento".
+    assert "pagamento" in recado
+
+
+def test_cadastro_com_os_tres_papeis_sai(mundo):
+    p = svc.abrir(mundo["s"], _cadastro(mundo, documentos=[
+        "DOC-IDENTIDADE", "CPF-DOC", "COMPROVANTE-ENDERECO-PESSOA"]),
+        mundo["encarregado"])
+    assert p["id"]
+
+
+def test_faltando_UM_papel_o_recado_diz_qual(mundo):
+    with pytest.raises(ErroValidacao) as e:
+        svc.abrir(mundo["s"], _cadastro(mundo, documentos=[
+            "DOC-IDENTIDADE", "CPF-DOC"]), mundo["encarregado"])
+    recado = str(e.value)
+    assert "comprovante de endereço" in recado
+    # E NÃO repete o que já veio.
+    assert "documento de identificação" not in recado
+
+
+def test_escolher_CTPS_passa_a_exigir_a_carteira_e_o_PIS(mundo):
+    """Ele: *"se for CTPS, os dados da carteira são obrigatórios, PIS
+    também."* Prestador de serviço não tem carteira, e não se pede."""
+    exige_prestador = svc.exigencias(
+        "CADASTRO", {"tipo_documentacao": "Prestador de Serviço"})
+    assert "num_ctps" not in exige_prestador["campos"]
+    assert not any(d["codigo"].startswith("CTPS")
+                   for d in exige_prestador["documentos"])
+
+    exige_ctps = svc.exigencias("CADASTRO", {"tipo_documentacao": "CTPS"})
+    assert "num_ctps" in exige_ctps["campos"] and "num_pis" in exige_ctps["campos"]
+    assert {"CTPS-FOTO", "CTPS-INFORMACOES"} <= {
+        d["codigo"] for d in exige_ctps["documentos"]}
+
+
+def test_cadastro_CTPS_sem_a_carteira_nao_sai(mundo):
+    with pytest.raises(ErroValidacao) as e:
+        svc.abrir(mundo["s"], _cadastro(
+            mundo, tipo_documentacao="CTPS",
+            documentos=["DOC-IDENTIDADE", "CPF-DOC",
+                        "COMPROVANTE-ENDERECO-PESSOA"]),
+            mundo["encarregado"])
+    assert "Nº CTPS" in str(e.value) or "CTPS" in str(e.value)
+
+
+def test_cadastro_CTPS_completo_sai(mundo):
+    p = svc.abrir(mundo["s"], _cadastro(
+        mundo, tipo_documentacao="CTPS", num_ctps="123456", num_pis="12345678901",
+        documentos=["DOC-IDENTIDADE", "CPF-DOC", "COMPROVANTE-ENDERECO-PESSOA",
+                    "CTPS-FOTO", "CTPS-INFORMACOES"]), mundo["encarregado"])
+    assert p["id"]
+
+
+def test_a_tela_sabe_o_que_falta_ANTES_de_tentar_enviar(mundo):
+    """⚑ É ISTO QUE IMPEDE O BLOQUEIO DE VIRAR UMA PAREDE: a lista existe
+    desde o primeiro clique, e vai se marcando sozinha enquanto a pessoa
+    anexa. Ninguém preenche vinte campos para descobrir no fim que faltava
+    um papel."""
+    exige = svc.exigencias("CADASTRO", {})
+    assert [d["rotulo"] for d in exige["documentos"]] == [
+        "documento de identificação (RG, CNH ou CTPS)", "CPF",
+        "comprovante de endereço"]
+    assert "cpf" in exige["campos"] and "nome" in exige["campos"]
+
+
+def test_pedido_que_nao_exige_papel_nenhum_continua_simples(mundo):
+    """A exigência é do CADASTRO, não da fila inteira. Atualizar um telefone
+    não pede documento."""
+    assert svc.exigencias("ATUALIZACAO_DADOS", {})["documentos"] == []
+    p = svc.abrir(mundo["s"], {"tipo": "ATUALIZACAO_DADOS",
+                               "colaborador_id": mundo["pessoa"].id,
+                               "descricao": "trocou de telefone"},
+                  mundo["encarregado"])
+    assert p["id"]

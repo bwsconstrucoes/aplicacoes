@@ -61,6 +61,39 @@ solicita: *último dia trabalhado*, *faltas a descontar*, *data de saída*
 de renda*, *tipo de contrato* (o nome certo é **Tipo de Readmissão** na
 readmissão, e **Tipo de Documentação para Cadastro** no cadastro).
 
+## ⚑ OS PAPÉIS DO CADASTRO SÃO OBRIGATÓRIOS — e eu errei aqui
+
+Eu propus deixar o cadastro entrar incompleto, para a pessoa não ficar sem
+registro, e ele derrubou — com o argumento que eu não tinha (10/11/2026):
+
+> *"Se você permitir que entre funcionário sem os documentos, esse documento
+> para ele voltar e ser concluído é um Deus nos acuda. (…) Não se consegue
+> pagar o funcionário no SomaPay se não tiver CPF, não se consegue fazer o
+> cadastro do funcionário se não tiver comprovante de endereço e CPF. Então
+> essa parte cadastral documental básica — dados da pessoa com CPF, CTPS, PIS
+> e comprovante de endereço — isso é o básico do cadastro."*
+
+**Por que o argumento dele vence:** deixar passar não evita o mal que eu
+queria evitar. O SomaPay recusa sem CPF, então a pessoa continua sem receber —
+e ainda sobra um cadastro pela metade que ninguém fecha. Pendência de
+documento não é dívida que se paga depois; é dívida que ninguém paga.
+
+**O básico, e o pedido não sai sem ele:**
+
+| Sempre | Só quando o vínculo é CTPS |
+|---|---|
+| documento de identificação (RG, CNH ou a própria CTPS) | CTPS (página com a foto) |
+| CPF | CTPS (página com as informações) |
+| comprovante de endereço | Nº CTPS e Nº PIS (campos) |
+
+**A foto do colaborador NÃO entra** — vem do ponto, decisão dele de
+10/11/2026. Eram oito anexos no Pipe; ficaram três (cinco no caso CTPS).
+
+**E o bloqueio não é uma parede**, porque a lista existe desde o primeiro
+clique e vai se marcando sozinha enquanto a pessoa anexa: ninguém preenche
+vinte campos para descobrir no fim que faltava um papel. É o que
+`exigencias(tipo, pedido)` devolve, e a tela chama a cada mudança.
+
 ---
 
 # Pipe SOLICITAÇÕES DP
