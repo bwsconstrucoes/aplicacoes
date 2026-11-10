@@ -80,6 +80,7 @@ job_nacional.py       fecha a parte NACIONAL depois (é assíncrono)
   danfse.py           a DANFSe nacional em PDF
 
 substituicao.py       os efeitos internos de uma nota que substitui outra
+conferir_emitido.py   compara o que o card calcula com o que a nota destacou
 completar_imediato.py refaz só a ENTREGA (Drive/links) sem tocar no bookkeeping
 credenciais.py        Google + leitura dos segredos da aba "Credenciais"
 gspread_retry.py      espera e tenta de novo quando o Sheets devolve 429
@@ -477,7 +478,7 @@ Todas pedem o mesmo `token` na URL. Não há login: quem tem o link, entra.
 | Rota | Para quê |
 |---|---|
 | `/emissao?card_id=…` | a tela principal: espelho, discriminação editável, emitir |
-| `/emissao/recuperar` | nota **já emitida** cujo pós-emissão falhou ou nem rodou. Cola-se o XML; com "completo" marcado refaz tudo (tem trava anti-duplicação), sem marcar refaz só a entrega no Drive |
+| `/emissao/recuperar` | nota **já emitida** cujo pós-emissão falhou ou nem rodou. Cola-se o XML; com "completo" marcado refaz tudo (tem trava anti-duplicação e **trava de valor contra o XML**), sem marcar refaz só a entrega no Drive. Preencher o nº da **nota substituída** cancela a antiga no card, na planilha e no título do Omie — número curto ou longo, tanto faz |
 | `/emissao/regerar` | regrava os PDFs de notas já concluídas com o layout atual, no mesmo link |
 | `/emissao/nacional` | roda o fechamento nacional na mão |
 | `/emissao/nacional_chave` | fecha uma nota colando a **chave** de 50 dígitos |
@@ -508,10 +509,45 @@ ensaiado sem antes emitir uma nota de verdade para substituir. Fazer isso no
 escuro, num documento que não se apaga, é pior do que não fazer.
 
 **Então hoje substituir é:** o botão **"Substituir" do portal** da prefeitura e,
-depois, o `/emissao/recuperar` com o número da nota antiga no campo "nota
-substituída" — ele refaz os efeitos internos (Pipefy, Omie, Drive, planilha,
-WhatsApp). É o mesmo caminho que já se usava para nota emitida manualmente, e a
-tela de emissão explica isso em vez de deixar tentar e falhar.
+depois, o `/emissao/recuperar` — colando o XML da nota NOVA, com o número da nota
+antiga no campo "nota substituída" e a caixa **"concluir completo"** marcada. Ele
+faz as duas metades: registra a nota nova (Notas BWS, Omie, slot, Drive,
+Descrição) e cancela a antiga. É o mesmo caminho que já se usava para nota
+emitida manualmente, e a tela de emissão explica isso em vez de deixar tentar e
+falhar.
+
+**Três coisas que mudaram em 09/11/2026**, depois de uma substituição que não
+cancelou a nota antiga em lugar nenhum (incidente no `HISTORICO.md`):
+
+- **O número pode ser o curto ou o longo.** `3352` e `2600000003352` encontram a
+  mesma nota. Antes a comparação era por dígitos crus, e o curto nunca batia com
+  o que está gravado no slot e na planilha.
+- **O cancelamento não depende de "concluir completo".** Preencher o nº da nota
+  substituída já cancela a antiga, com ou sem a caixa marcada, e um erro no
+  registro da nota nova não leva o cancelamento embora.
+- **O resultado dos três lugares aparece no topo da tela**, com ✅ ou ❌ em cada
+  um — slot do card, planilha e número no título do Omie — e o que fazer à mão
+  quando algum falha. Antes era uma linha no meio do log.
+
+### ⚠️ A trava de valor, e ela guarda dinheiro
+
+`/emissao/recuperar` com "concluir completo", e `/emissao/manual`, gravam as
+retenções a partir de um **recálculo do card feito na hora** — não dos valores do
+XML. E a conclusão de uma nota **limpa doze campos de entrada do card**, entre
+eles o **Valor BDI diferenciado**. Numa nota que já concluiu uma vez — o caso de
+**toda** substituição manual — o recálculo sai do card vazio.
+
+Na nota de 09/11/2026, de BDI R$ 1.313.502,08, isso gravaria R$ 72.242,62 de INSS
+e R$ 13.135,02 de ISS **a mais** do que a nota destacou, no Omie e na planilha,
+sem ninguém ver.
+
+Por isso as duas telas agora comparam o que o card calcula com o que a nota
+destacou no XML (valor, ISS, INSS e os federais retidos). Divergindo mais de um
+centavo, **nada é gravado**: a tela diz o que divergiu e manda repreencher o
+campo no card e rodar de novo. A caixa **"gravar mesmo divergindo"** passa por
+cima — a decisão é do dono, mas explícita, e o log registra que não foi
+conferido. **O cancelamento da nota antiga não passa pela trava**, porque não
+depende de valor nenhum.
 
 ### O RPS morreu com o modelo antigo — e com ele um impedimento antigo
 

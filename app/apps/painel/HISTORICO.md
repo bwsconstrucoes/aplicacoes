@@ -2500,6 +2500,64 @@ digitado e não salvo).
 REGRAS; o cenário tem o resultado próprio. Aposentar as regras é dele, depois
 de conferir que o cenário bate.
 
+## Percentual que muda com o tempo — 09/11/2026
+
+O dono: *"o rateio vai variar no tempo (…) 50-50 em 2021, 60-40 em 2022. Não
+em todas as contas, não em todos os grupos (…) para não estender demais as
+possibilidades, e fácil de executar."*
+
+- Migração **024** (`cenario_peso_periodo`): numa conta da matriz (grupo,
+  categoria ou lançamento) do CENÁRIO, linhas "a partir de AAAA-MM, X%". Cada
+  uma vale até começar a seguinte — sem data de fim, para não haver buraco
+  nem sobreposição. Antes do primeiro período vale o percentual fixo da
+  linha; sem ele, o nível de cima. Lido como "% da conta que entra no
+  rateio" (o resto fica de fora), que é o que o percentual da montagem já é.
+- `prestacao.peso_da_conta` recebe o mês; `calcular_rateio_do_cenario` e a
+  árvore da montagem (Entra / Fica de fora) passam a contar mês a mês.
+- Tela: "📅 por período" em cada grupo e categoria abre a lista ali mesmo;
+  salva junto com os percentuais ("Salvar percentuais"). A linha mostra o
+  resumo ("50% desde 01/2021 · 60% desde 01/2022") e "varia" em "Divide hoje".
+- Duplicar o cenário leva os períodos; a planilha do cenário lista os
+  períodos nos parâmetros.
+- Só no cenário. As REGRAS antigas (Parâmetros) já tinham vigência por regra.
+
+**Os dois lados e quem recebe (mesmo dia, antes de publicar).** O dono
+corrigiu o entendimento: o custo da matriz vai para DOIS lados — o projeto
+principal (BWS CE) e os demais projetos — e *"num determinado período, 40%
+ficou para a BWS CE, os demais 60% para os outros projetos que recebem. Nada
+fica sem dono. Alguns projetos não entram, outros entram até determinada data.
+Não existe terceiro grupo."*
+- Na mesma migração 024 (ainda não aplicada em produção quando foi ampliada):
+  `cenario_peso_periodo.pct_principal` (a parte do principal no período; em
+  branco = sem separar, todas as obras pela régua) e `cenario_projeto`
+  (o principal, e por projeto: não recebe / recebe só de-até).
+- O cálculo (`calcular_rateio_do_cenario`, `lado_de` e `recebe`): o bolo do
+  mês se separa em "livre", "principal" e "demais"; cada parte se divide pela
+  régua só entre as obras daquele lado que RECEBEM no mês. Lado sem ninguém
+  recebendo passa a parte para o outro (decisão do dono: nada sem dono). Só
+  vira sobra se ninguém, dos dois lados, receber no mês.
+- Principal padrão: o `projeto_matriz` da configuração da prestação.
+- "Não recebe" ≠ "fora da análise": o projeto continua no resultado e nas
+  quotas; só não recebe a estrutura.
+- Tela: quadro "Quem recebe o custo da matriz" na montagem; na linha do
+  período, "entra X% · para o BWS CE Y%".
+- Logo depois, o dono: *"os projetos que não receberam nenhum percentual não
+  precisam aparecer, porque realmente não interessa"*. Projeto "não recebe"
+  passou a sair da prestação do cenário como "fora da análise" (sem
+  estrutura, sem juros, fora das quotas). O que "recebe só no período"
+  continua no resultado.
+
+## Categorias dos juros: uma lista para marcar — 09/11/2026
+
+O dono: *"quanto à categoria, coloca dentro dos parâmetros para eu definir
+quais seriam"*. O campo existia (Parâmetros › Geral), mas era texto com os
+nomes exatos separados por ponto-e-vírgula. Virou uma lista das categorias de
+despesa da base para marcar, com busca; as que têm cara de juro (juros, IOF,
+empréstimo, financeira, banco, tarifa) vêm primeiro, e as marcadas no topo.
+Grava no mesmo formato ("a; b; c") que o cálculo já lia — nada mudou na conta.
+Sobre "mês em que ninguém estava no vermelho": o dono observou que, se há
+empréstimo, alguma obra estava no vermelho; a opção ficou como está.
+
 ## Reler os pagamentos de um ano, de alguns ou de todos — 07/10/2026
 
 O dono, vendo a releitura retomada em "2025 (11 de 12 anos, 10 já feitos

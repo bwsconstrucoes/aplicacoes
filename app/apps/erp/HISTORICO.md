@@ -197,6 +197,12 @@ problema pequeno por um grande.
 
 ### 🚪 O PORTAL DA OBRA GANHOU TELA, E ELA É DO ERP (06/11/2026)
 
+> ⚠️ **SUPERADO EM 07/11/2026.** A tela saiu de pública e passou a exigir o
+> login DO ERP, e o laço com o aplicativo do ponto foi desfeito. O ENDEREÇO
+> continua `/erp/portal` — cheguei a trocá-lo e o dono preferiu o antigo. O que está escrito abaixo descreve o desenho antigo — fica
+> aqui porque o ERRO é instrutivo. Ver a entrada de 07/11 mais abaixo e a §6-ter
+> do `AGENTE_DP.md`.
+
 Eu havia deixado a tela do portal pendente do chat do ponto. **Não precisava.**
 Ela é uma página só (`/erp/portal`), que **não usa o `erp_base.html`** — quem
 abre é gente de obra no celular, sem login do ERP, e o `erp_base` traria o menu
@@ -213,9 +219,9 @@ que é certo para quem herda do `erp_base`. A página solta é o contrário: ela
 **precisa** declarar os próprios. O teste agora separa as duas, e cobra de cada
 uma a regra dela.
 
-**O que ainda falta e é do chat do ponto:** um link para `/erp/portal` dentro do
-aplicativo. Sem ele o portal funciona (a pessoa pode salvar o endereço), mas com
-o link ela chega lá sem saber o endereço.
+~~**O que ainda falta e é do chat do ponto:** um link para `/erp/portal`
+dentro do aplicativo.~~ **Isto deixou de existir em 07/11/2026:** o ponto ficou
+só para o ponto, e não há mais link nenhum do ponto para o ERP.
 
 ### 🧭 A TELA DE COLABORADORES VIROU FERRAMENTA DE GESTÃO (05/11/2026)
 
@@ -351,11 +357,9 @@ reimplementa nenhuma regra de alcance**: quais obras a pessoa alcança e quem
 pode pedir por outros vêm de `ponto/core/papeis.py`. Duas regras de alcance que
 divergem seria o pior dos mundos.
 
-⚠️ **O QUE FALTA PARA O PORTAL APARECER:** as rotas estão prontas
-(`/erp/portal/api/...`), mas **a tela dele mora no aplicativo do ponto**, que é
-outra área. O chat do ponto precisa acrescentar três telas — "Pedidos ao DP",
-"Novo pedido" e "A devolver". Está escrito o que cada uma consome na §6-ter do
-`AGENTE_DP.md`. Nenhuma precisa de regra nova.
+~~⚠️ **O QUE FALTA PARA O PORTAL APARECER:** a tela dele mora no aplicativo do
+ponto.~~ **Desfeito em 07/11/2026.** A tela é do ERP, em `/erp/portal`, com o
+login do ERP. O chat do ponto não tem nada a fazer aqui.
 
 **O limite do agente está NO CÓDIGO, não só no documento** (`ROTINAS[...]
 ["nao_analisa"]`, e um teste que exige a frase): ele não desliga, não admite,
@@ -7595,6 +7599,103 @@ porque **Pessoal passou a ter 14 abas** depois que o Ponto entrou nela
 **Fica anotado para decisão do dono:** 14 abas numa barra só é muito, mesmo com
 rolagem e com o botão "Telas". Vale repensar o agrupamento de Pessoal — mas
 isso é escolha dele sobre o menu dele, não conserto.
+
+## 07/11/2026 — UMA PORTA SÓ: o portal separado foi desfeito
+
+**A decisão mais importante desta área até agora, e ela é dele.** Eu tinha
+construído um portal à parte, pendurado no login do aplicativo do ponto. Ele
+entrou, olhou, e desmontou:
+
+> *"eu entrei aqui no portal e acho que você não compreendeu bem como é que é
+> a ideia (…) como é que funciona hoje? Eles têm um portal do Pipefy e lá eles
+> fazem todo tipo de solicitações. Financeiro, suprimento, diário de obras,
+> cadastro colaboradores, solicitação do departamento pessoal e etc. Só que o
+> Pipe é só um formulário de entrada de dados. Por lá não se gerencia nada
+> (…) o ponto fica só para ponto, e o ERP a gente utiliza um outro acesso mais
+> completo (…) o cara vai ter o login, acesso do ERP e vai fazer a requisição
+> dele. Aí, só que num ambiente, digamos, mais enxuto para utilizar no
+> celular."*
+
+**Os dois erros que eu cometi, e eles são do mesmo tipo:**
+
+1. **O portal separado recriava o defeito do Pipefy.** O que torna o Pipefy
+   insuficiente não é o formulário — é que o formulário mora num sistema e a
+   gestão mora em outro. Um portal à parte faz isso de novo.
+2. **Solicitação não é assunto do DP.** A obra pede de tudo. Um portal de DP ou
+   vira quatro portais, ou vira um ERP paralelo pela metade.
+
+O erro comum: **otimizei a entrada e esqueci o acompanhamento.** Formulário é a
+parte fácil; o que falta na empresa é saber em que pé está o que foi pedido.
+
+### O que ficou decidido (por ele, em 07/11)
+
+- **O ponto é só para o ponto.** CPF e PIN, para bater ponto. Nada mais.
+- **Todo o resto entra pelo ERP**, com um login e um sistema de permissão.
+- **Gente de fora e parceiro entram pela mesma porta**, mudando só a permissão.
+- **PARCEIRO só olha**, por enquanto: *"Se eu entender que é necessário dar, eu
+  posso criar um perfil diferente."*
+- **O Pipefy sai de uma vez, sem paralelo.**
+
+### O que mudou no código
+
+| Antes | Agora |
+|---|---|
+| `/erp/portal`, pública | `/erp/portal`, com `@login_obrigatorio` e ação declarada |
+| identidade: sessão do app do ponto | identidade: sessão do ERP (`usuario_id`) |
+| alcance: `papeis.obras_recentes` do ponto | alcance: `obras_do_usuario`, o do ERP |
+| autoridade: `papeis.e_administrativo` | autoridade: a ação `solicitar_dp`, que já existia |
+| 4 rotas na lista de públicas | **lista de públicas voltou a ter só 7** |
+
+**A melhor parte é o que SUMIU:** a ponte carregava uma segunda regra de
+alcance e uma segunda marcação de autoridade. As duas foram apagadas. **Nenhuma
+ação nova foi criada** — e o `PARCEIRO` já estava fora de `solicitar_dp`, então
+a decisão dele já era a regra em vigor, sem uma linha de código novo. Duas
+regras de permissão em paralelo divergem no primeiro mês; agora há uma.
+
+### O que a tela faz com quem só olha
+
+Quem não tem `solicitar_dp` não vê o formulário — só a lista do que existe.
+**Esconder o botão não é a segurança**: a rota recusa igual. É só não oferecer
+o que vai ser negado.
+
+### As travas
+
+- `test_permissoes_rotas.py` cobrava a lista de públicas e **pegou as quatro
+  rotas saindo** — era para isso que ela existia. Ganhou também um teste de que
+  `/erp/portal` responde 404: rota pública esquecida é porta aberta que ninguém
+  lembra de fechar.
+- `test_caixa_e_portal.py` ganhou o teste de que o `PARCEIRO` não abre pedido —
+  para que ninguém conceda sem perceber, e para que o dia em que ele decidir o
+  contrário seja uma mudança consciente.
+- E um teste de que a tela **não manda mais ninguém para `/ponto/app`**.
+
+### 🩹 E A TELA ESTAVA SEM ESTILO EM PRODUÇÃO DESDE 06/11
+
+Achado ao abrir a tela de verdade no navegador: ela pedia
+`url_for('static', …)` — o `static` DA APLICAÇÃO — mas o `erp.css` mora no
+blueprint do ERP, que é `erp.static`. **A página subiu em produção sem folha de
+estilo nenhuma**, e nada acusou: o servidor responde 200 na página, o 404 é só
+do arquivo, e isso não aparece em teste que olha HTML.
+
+**O pior é por que eu não vi:** a maquete que usei para fotografar carregava
+uma CÓPIA LOCAL do `erp.css`. A foto saía bonita enquanto a página de verdade
+estava pelada. **Maquete com arquivo local esconde exatamente este erro** — e é
+por isso que a foto desta vez foi tirada da aplicação no ar, com banco de
+verdade, e não de maquete.
+
+Virou trava: `test_telas_javascript.py` recusa `url_for('static', …)` em
+qualquer tela do ERP.
+
+### ⚑ O QUE DEPENDE DELE, e trava o corte do Pipefy
+
+Como **não vai haver paralelo**, antes do corte os tipos de pedido das outras
+áreas — financeiro, suprimentos, diário de obra — precisam existir aqui. **Hoje
+só os do DP existem.** Os exports que chegaram a este repositório são só os
+pipes do DP (`CADASTRO_COLABORADORES` e `SOLICITAÇÕES DP`).
+
+**Perguntar a ele, no começo da próxima sessão:** quais são os tipos de pedido
+do portal do Pipefy, e quais três ou quatro a obra mais usa — esses têm de
+estar prontos primeiro.
 
 ## Coisas pequenas que mordem
 

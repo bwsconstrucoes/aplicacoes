@@ -1930,6 +1930,90 @@ nem qual número ela devolve. A primeira emissão de verdade é a primeira prova
 
 ## Incidentes
 
+### A substituição que não cancelou a nota antiga — 09/11/2026
+
+**O que o dono viu:** ele substituiu a NF `2600000003352` pelo botão
+"Substituir" do portal da prefeitura, rodou o `/emissao/recuperar` com o número
+dela no campo "nota substituída" — e **a nota antiga não foi cancelada em lugar
+nenhum**. Continuou válida no slot do card e sem marca na planilha. Ele descobriu
+olhando, cancelou os dois à mão, e pediu: *"ajustasse isso aí para poder
+funcionar como era antes"*.
+
+**O que era: três defeitos somados, e qualquer um deles bastava.**
+
+1. **O número não casava.** No padrão nacional a nota é gravada com 13 dígitos
+   (ano + sequencial): o slot do card e a coluna F da planilha têm
+   `2600000003352`. Quem digita no campo põe o número que tem na mão, e às vezes
+   é o curto, `3352`. A comparação era por dígitos crus — `"3352"` nunca ia bater
+   com `"2600000003352"`. Nada era encontrado, e o aviso saía como **uma linha no
+   meio de um log de dezenas de linhas**.
+2. **O cancelamento só rodava com "concluir completo" marcado.** A chamada estava
+   dentro do `if completo:`. Sem a marca, o número da nota substituída era lido,
+   guardado e **ignorado em silêncio** — a tela dizia "Reprocessado" do mesmo
+   jeito.
+3. **Um erro no `concluir` levava o cancelamento embora.** Os dois estavam no
+   mesmo `try`: qualquer exceção no registro da nota nova pulava o cancelamento
+   da antiga, e o log mostrava só o erro do `concluir`.
+
+**Conserto.** A comparação passou a ser pelo **sequencial** da nota, então curto
+e longo encontram a mesma nota nos dois sentidos (e `3.352`, com ponto, também —
+o Pipefy às vezes devolve assim). O cancelamento saiu de dentro do `if completo:`
+e roda **sempre que o número da nota substituída foi informado**. Cada passo
+ganhou o seu próprio `try`, então nada que falhe antes impede o cancelamento. E o
+resultado dos três lugares (slot do card, planilha, número no título do Omie)
+aparece **em destaque no topo da resposta**, com ✅ ou ❌ em cada um e o que fazer
+à mão quando algum falha — porque o defeito nº 4, o que impediu de perceber os
+outros três, era o aviso estar no meio do log.
+
+**A regra que ficou:** aviso de "não consegui" em operação que mexe em documento
+fiscal **não vai para o log**. Vai para o topo da tela, em vermelho, dizendo o que
+ficou pendente de fazer à mão.
+
+**Coberto por teste:** `tests/test_emissaonf_substituicao.py`. Rodado contra o
+código velho, 12 dos testes falham — um por defeito, mais os da tela.
+
+### A trava de valor da recuperação: o BDI que a conclusão apaga — 09/11/2026
+
+Encontrado ao consertar o incidente acima, no mesmo caminho, e é **dinheiro**.
+
+**O mecanismo.** A tela `/emissao/recuperar` com "concluir completo" marcado, e a
+tela `/emissao/manual`, rodam o pós-emissão inteiro: gravam a linha da
+'Notas BWS' e, principalmente, **escrevem as retenções no título do Omie**. Os
+números que elas gravam **não saem do XML da nota** — saem de um recálculo do
+card, feito na hora.
+
+E a conclusão de uma nota **limpa doze campos de entrada do card**, entre eles o
+`valor_bdi_diferenciado`, o `valor_parcial` e as alíquotas. Então, numa nota que
+JÁ concluiu uma vez — **que é exatamente o caso de toda substituição manual** e
+de qualquer conserto feito dias depois — o recálculo acontece com o BDI em
+branco.
+
+**A conta, na nota de 09/11/2026**, de BDI diferenciado R$ 1.313.502,08: o
+recálculo com o campo vazio gravaria **R$ 72.242,62 de INSS e R$ 13.135,02 de ISS
+a mais** do que a nota destacou, no título do Omie e na planilha, em silêncio.
+
+**Conserto.** Antes de gravar, as duas telas comparam o que o card calcula hoje
+com o que a nota **realmente destacou no XML** (`conferir_emitido.py`): valor da
+nota, ISS, INSS e os federais retidos. Divergindo mais de um centavo, **nada é
+gravado** — a tela diz o que divergiu, explica que a causa quase sempre é o campo
+limpo no card, e manda repreencher e rodar de novo. Quem quiser gravar assim
+mesmo marca **"gravar mesmo divergindo"**: a decisão é do dono, mas explícita, e
+o log registra que não foi conferido.
+
+**O que NÃO é divergência**, e isso importa para não travar emissão legítima:
+tributo federal **não retido** (o modelo nacional só traz no XML o que foi
+retido — regra do E0699 — e o motor fiscal só retém o que a categoria manda);
+diferença de até um centavo de arredondamento; e **XML sem bloco de valores**
+(nesse caso não se trava, avisa-se que não foi conferido e segue — travar por
+falta de informação impediria um conserto legítimo sem proteger nada).
+
+**O cancelamento da nota antiga NÃO passa pela trava.** Ele não depende de valor
+nenhum, e precisa acontecer de todo jeito — tem teste garantindo isso.
+
+**Coberto por teste:** `tests/test_emissaonf_substituicao.py` (a trava, o escape,
+o centavo, o XML sem valores, o modelo antigo) e
+`tests/test_emissaonf_emissao_ponta_a_ponta.py` (a tela `/emissao/manual`).
+
 ### A obra que existia e o sistema dizia não existir — 21/09/2026
 
 **O que aparecia na tela:** `Erro ao carregar o card 1447316614: KeyError: "Obra
@@ -2065,7 +2149,11 @@ script novo.
 - **`/emissao/recuperar`** — refaz o pós-emissão de uma nota já emitida, colando
   o XML. Sem "completo", refaz só a entrega (Drive, links, Descrição). Com
   "completo", refaz tudo — e tem trava anti-duplicação. É o que fecha o ciclo
-  de uma substituição feita pelo portal.
+  de uma substituição feita pelo portal: preencher o nº da **nota substituída**
+  cancela a antiga no slot do card, na planilha e no número do título do Omie
+  (curto ou longo, tanto faz), e o resultado dos três aparece no topo da tela.
+  Com "completo", os valores são **conferidos contra o XML** antes de gravar —
+  ver os dois incidentes de 09/11/2026.
 - **`/emissao/regerar`** — regrava os PDFs de notas já concluídas com o layout
   atual, subindo com o mesmo nome: mesmo link, nada duplicado na planilha nem no
   card.
@@ -2087,11 +2175,19 @@ script novo.
 3. **Nota emitida não se apaga.** Antes de mexer em qualquer coisa do caminho de
    emissão, lembrar que o teste é uma nota fiscal de verdade. Não existe
    ambiente de homologação em uso nesta área.
-4. **Mudança no caminho da emissão exige olhar o espelho antes de clicar.** Não
-   há teste automatizado nenhum aqui para segurar erro.
+4. **Mudança no caminho da emissão exige olhar o espelho antes de clicar.** A
+   suíte segura muita coisa hoje, mas não o envio à prefeitura — ali o primeiro
+   teste de verdade é uma nota fiscal.
 5. **Antes de publicar, perguntar se há carga do painel ou sincronização do
    Análise de SPs em andamento** — publicar reinicia o serviço e mata trabalho
    longo. Vale para todas as áreas, e já aconteceu.
+6. **Aviso de "não consegui" em operação que mexe em documento fiscal não vai
+   para o log.** Vai para o topo da tela, em vermelho, dizendo o que ficou
+   pendente de fazer à mão. Regra nascida da substituição que não cancelou
+   (09/11/2026): a mensagem existia, e passou batida no meio do log.
+7. **Valor que vai para o Omie ou para a planilha se confere contra o XML da
+   nota.** O card é recalculado na hora, e a conclusão limpa os campos de
+   entrada dele — recalcular depois dá número errado. O XML é o documento.
 
 ---
 
@@ -2103,8 +2199,11 @@ script novo.
 - **Município que não seja Eusébio/CE.** O código do município, o endereço do
   webservice, o código da DPS e o brasão estão fixos no código. Emitir para
   outra prefeitura é outro trabalho, não um parâmetro.
-- **Teste automatizado.** Não há nenhum, e escrever um que exercite o caminho de
-  emissão esbarra em não existir ambiente de homologação em uso.
+- **Teste automatizado do envio de verdade.** A suíte cobre a montagem da
+  declaração, as telas, a numeração, a planilha, o Omie e as travas de valor —
+  o que falta é um teste que exercite o **envio** à prefeitura, e isso esbarra
+  em não existir ambiente de homologação em uso. Era "não há nenhum" em
+  21/09/2026; hoje é "não há do envio".
 - **Login de verdade.** A porta é o token na URL. E, diferente do resto do
   repositório, se o token não estiver configurado a tela **libera** em vez de
   recusar. Fica registrado como fraqueza conhecida, não como decisão defendida.

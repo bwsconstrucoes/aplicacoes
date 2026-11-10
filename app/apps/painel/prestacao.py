@@ -391,17 +391,43 @@ def sem_as_obras(base: dict, fora) -> dict:
     return saida
 
 
-def peso_da_conta(pesos: dict, grupo: str, categoria: str, codigo: str,
-                  pct_padrao: float) -> float:
-    """Quanto desta conta entra no bolo, do mais específico ao mais amplo.
+def peso_e_divisao(pesos: dict, grupo: str, categoria: str, codigo: str,
+                   pct_padrao: float, mes: str | None = None) -> tuple:
+    """(quanto desta conta entra no bolo, parte do projeto principal | None).
 
-    Zero e "não marcado" são coisas DIFERENTES: zero quer dizer "esta conta não
-    se divide"; não marcado quer dizer "segue o nível de cima"."""
+    Do mais específico ao mais amplo. Zero e "não marcado" são coisas
+    DIFERENTES: zero quer dizer "esta conta não se divide"; não marcado quer
+    dizer "segue o nível de cima".
+
+    O PERCENTUAL PODE MUDAR COM O TEMPO (09/11/2026, migração 024): com o `mes`
+    (AAAA-MM), vale o último período que começou até ele — "50% a partir de
+    01/2021, 60% a partir de 01/2022". Antes do primeiro período, vale o
+    percentual fixo da linha; sem ele, o nível de cima.
+
+    E O PERÍODO PODE SEPARAR OS DOIS LADOS: "40% para a BWS CE, 60% para os
+    demais projetos". A parte do principal vem do mesmo período que deu o
+    percentual; None quer dizer "sem separar" — a conta se divide entre todas
+    as obras que recebem, pela régua."""
+    periodos = pesos.get("periodos") or {}
     for nivel, chave in (("lancamento", codigo), ("categoria", categoria),
                          ("grupo", grupo)):
-        if chave and chave in (pesos.get(nivel) or {}):
-            return float(pesos[nivel][chave])
-    return float(pct_padrao)
+        if not chave:
+            continue
+        lista = (periodos.get(nivel) or {}).get(chave) or []
+        if lista and mes and mes != SEM_DATA:
+            valendo = [p for p in lista if p[0] <= mes]
+            if valendo:
+                ultimo = valendo[-1]
+                return float(ultimo[1]), (ultimo[2] if len(ultimo) > 2 else None)
+        if chave in (pesos.get(nivel) or {}):
+            return float(pesos[nivel][chave]), None
+    return float(pct_padrao), None
+
+
+def peso_da_conta(pesos: dict, grupo: str, categoria: str, codigo: str,
+                  pct_padrao: float, mes: str | None = None) -> float:
+    """Só o percentual que entra no bolo — ver `peso_e_divisao`."""
+    return peso_e_divisao(pesos, grupo, categoria, codigo, pct_padrao, mes)[0]
 
 
 def pesos_por_mes(driver, meses, janela: str = "1") -> dict:
@@ -439,7 +465,8 @@ def pesos_por_mes(driver, meses, janela: str = "1") -> dict:
 
 def calcular_rateio_do_cenario(despesa_admin, excecoes, driver, obras, pesos,
                                *, pct_padrao: float = 100.0,
-                               janela: str = "1") -> dict:
+                               janela: str = "1", lado_de=None,
+                               recebe=None) -> dict:
     """Divide o custo da matriz entre as obras, pelo cenário.
 
     `despesa_admin` é o agregado por (mês, grupo, categoria); `excecoes` são os
@@ -451,23 +478,39 @@ def calcular_rateio_do_cenario(despesa_admin, excecoes, driver, obras, pesos,
     é detalhe: é custo real da empresa que ficou sem dono, e a tela mostra isso
     em vez de esconder."""
     pesos = pesos or {}
+    # Os DOIS LADOS (09/11/2026): o projeto principal ("BWS CE") e os demais.
+    # `lado_de` diz o lado de cada obra; `recebe(obra, mes)` diz se o projeto
+    # dela recebe custo da matriz naquele mês. Sem eles, tudo como antes.
+    lado_de = lado_de or {}
+    recebe = recebe or (lambda _obra, _mes: True)
 
     # 1. As exceções saem do balde a que pertencem.
     fora: dict[tuple, float] = {}
     pool: dict[str, float] = {}
+    # parte de cada bolo mensal que já vem destinada a um lado
+    para_lado: dict[tuple, float] = {}
     sobras: list[dict] = []
+
+    def _destinar(mes, parte, principal):
+        """Soma ao bolo do mês; se o período separa os lados, guarda quanto
+        vai para cada um."""
+        pool[mes] = pool.get(mes, 0.0) + parte
+        if principal is not None:
+            p = max(min(float(principal), 100.0), 0.0) / 100.0
+            para_lado[(mes, "principal")] = para_lado.get((mes, "principal"), 0.0) + parte * p
+            para_lado[(mes, "demais")] = para_lado.get((mes, "demais"), 0.0) + parte * (1 - p)
     for e in excecoes or []:
         chave = (e["mes"], e.get("grupo") or "", e.get("categoria") or "")
         fora[chave] = fora.get(chave, 0.0) + float(e["valor"] or 0)
-        pct = peso_da_conta(pesos, e.get("grupo"), e.get("categoria"),
-                            str(e.get("codigo") or ""), pct_padrao)
+        pct, principal = peso_e_divisao(pesos, e.get("grupo"), e.get("categoria"),
+                                        str(e.get("codigo") or ""), pct_padrao, mes=e["mes"])
         if e["mes"] == SEM_DATA:
             if abs(float(e["valor"] or 0) * pct / 100.0) > 0.005:
                 sobras.append({"origem": f"Lançamento {e.get('codigo')}",
                                "mes": SEM_DATA, "valor": float(e["valor"]) * pct / 100.0,
                                "motivo": "lançamento sem data: não dá para ratear por mês"})
             continue
-        pool[e["mes"]] = pool.get(e["mes"], 0.0) + float(e["valor"]) * pct / 100.0
+        _destinar(e["mes"], float(e["valor"]) * pct / 100.0, principal)
 
     # 2. O que sobrou de cada balde entra pelo percentual do seu nível.
     for linha in despesa_admin:
@@ -475,8 +518,8 @@ def calcular_rateio_do_cenario(despesa_admin, excecoes, driver, obras, pesos,
         valor = float(linha["valor"] or 0) - fora.get(chave, 0.0)
         if abs(valor) <= 0.005:
             continue
-        pct = peso_da_conta(pesos, linha.get("grupo"), linha.get("categoria"),
-                            "", pct_padrao)
+        pct, principal = peso_e_divisao(pesos, linha.get("grupo"), linha.get("categoria"),
+                                        "", pct_padrao, mes=linha["mes"])
         parte = valor * pct / 100.0
         if abs(parte) <= 0.005:
             continue
@@ -486,7 +529,7 @@ def calcular_rateio_do_cenario(despesa_admin, excecoes, driver, obras, pesos,
                            "mes": SEM_DATA, "valor": parte,
                            "motivo": "lançamento sem data: não dá para ratear por mês"})
             continue
-        pool[linha["mes"]] = pool.get(linha["mes"], 0.0) + parte
+        _destinar(linha["mes"], parte, principal)
 
     # 3. O bolo de cada mês se divide pela régua escolhida.
     meses = _meses_ordenados(set(pool), {m for m, _o, _v in driver})
@@ -497,14 +540,36 @@ def calcular_rateio_do_cenario(despesa_admin, excecoes, driver, obras, pesos,
     memoria: list[dict] = []
     for mes in meses:
         bolo = pool.get(mes, 0.0)
-        fatias = fracoes.get(mes) or {}
+        # só quem RECEBE neste mês (projeto que não recebe, ou que já saiu,
+        # fica de fora) — a régua se refaz entre os que ficam
+        fatias = {o: f for o, f in (fracoes.get(mes) or {}).items() if recebe(o, mes)}
+        do_lado = {lado: {o: f for o, f in fatias.items() if lado_de.get(o) == lado}
+                   for lado in ("principal", "demais")}
+        a_principal = para_lado.get((mes, "principal"), 0.0)
+        a_demais = para_lado.get((mes, "demais"), 0.0)
+        # NADA FICA SEM DONO entre os lados (dono, 09/11/2026: "ou é da BWS
+        # CE, ou é dos demais"): o lado sem ninguém recebendo no mês passa a
+        # parte dele para o outro
+        if not do_lado["principal"]:
+            a_demais, a_principal = a_demais + a_principal, 0.0
+        if not do_lado["demais"]:
+            a_principal, a_demais = a_principal + a_demais, 0.0
+        livre = bolo - a_principal - a_demais
         if abs(bolo) > 0.005 and not fatias:
             sobras.append({"origem": "Custo da matriz", "mes": mes, "valor": bolo,
-                           "motivo": "nenhuma obra com movimento na régua escolhida "
-                                     "neste mês"})
-        for obra, fracao in fatias.items():
-            if abs(bolo * fracao) > 0.005:
-                alocacoes[(obra, mes)] = alocacoes.get((obra, mes), 0.0) + bolo * fracao
+                           "motivo": "nenhuma obra que recebe, com movimento na régua "
+                                     "escolhida, neste mês"})
+            fatias = {}
+        for valor, grupo_de_obras in ((livre, fatias),
+                                      (a_principal, do_lado["principal"]),
+                                      (a_demais, do_lado["demais"])):
+            total = sum(grupo_de_obras.values())
+            if abs(valor) <= 0.005 or total <= 0:
+                continue
+            for obra, fracao in grupo_de_obras.items():
+                parte = valor * fracao / total
+                if abs(parte) > 0.005:
+                    alocacoes[(obra, mes)] = alocacoes.get((obra, mes), 0.0) + parte
         memoria.append({
             "mes": mes,
             "pool": round(bolo, 2),
