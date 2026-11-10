@@ -12246,6 +12246,9 @@ somente Solicitações de uma conta especifica"*.
 
 #### Leva 254 — A folha complementar: pagar só a diferença de uma folha já paga (10/11/2026)
 
+> **Publicado em 10/11/2026.** Pendente AGORA: a primeira complementar real — conferir
+> com calma quem aparece "sem CPF" antes de gerar.
+
 - *"Encerrada a folha, feitos os pagamentos, foram detectados ajustes de ponto (…) eu
   preciso importar a nova folha e, a partir dela, gerar um arquivo de pagamento com a
   diferença (…) quem foi a mais, quem foi a menos (o a menos só ilustrativo) (…) quem
