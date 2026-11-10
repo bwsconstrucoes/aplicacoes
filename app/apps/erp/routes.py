@@ -11849,9 +11849,18 @@ def api_diario_sugerir_texto(obra_id: int):
             # O escopo é conferido mesmo não gravando nada: o texto é da obra,
             # e quem não alcança a obra não lê o relato dela nem para melhorar.
             exigir_obra_no_escopo(s, usuario, obra_id)
-            dados = request.get_json(silent=True) or {}
-            r = svc_texto.sugerir(dados.get("campo"), dados.get("texto"),
-                                  usuario_id=usuario.id if usuario else None)
+            quem = usuario.id if usuario else None
+    except ErroNaoEncontrado:
+        raise
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    dados = request.get_json(silent=True) or {}
+    # ⚑ FORA do `try`, pelo mesmo motivo: a recusa por teto é 402, e o
+    # `except Exception` abaixo a viraria "falha do sistema".
+    _exigir_saldo_de_ia()
+    try:
+        r = svc_texto.sugerir(dados.get("campo"), dados.get("texto"),
+                              usuario_id=quem)
         return jsonify({"ok": True, **r})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
@@ -12070,6 +12079,75 @@ def api_portal_inicio():
                 "devolucoes": svc_portal.minhas_devolucoes(s, usuario)})
     except svc_portal.SemAcesso as e:
         return jsonify({"ok": False, "erro": str(e)}), 401
+
+
+@bp.route("/erp/portal/api/pessoas")
+@permissao_publica("o portal tem autenticação própria, do ponto — ver "
+                   "core/portal.quem_esta")
+def api_portal_pessoas():
+    """Procura a pessoa por NOME ou por CPF, dentro do alcance de quem pede.
+
+    ⚑ NO SERVIDOR, e não filtrando a lista que já desceu: a caixinha trazia
+    até 500 pessoas, e pôr o CPF de todas no navegador para poder filtrar ali
+    seria expor o cadastro a quem abrir o código da página. Aqui só aparece
+    quem já se sabia procurar, e o CPF volta com os três últimos dígitos.
+    """
+    from app.apps.erp.core import portal as svc_portal
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            svc_portal.quem_esta(s, usuario)            # 401 se não entrou
+            achados = svc_portal.procurar_pessoas(
+                s, usuario, request.args.get("q", ""))
+        return jsonify({"ok": True, "pessoas": achados})
+    except svc_portal.SemAcesso as e:
+        return jsonify({"ok": False, "erro": str(e)}), 401
+    except Exception as e:
+        logger.exception("ERP/portal: falha ao procurar pessoa")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/portal/api/ler-documento", methods=["POST"])
+@permissao_publica("o portal tem autenticação própria, do ponto — ver "
+                   "core/portal.quem_esta")
+def api_portal_ler_documento():
+    """Lê o papel que acabou de ser fotografado e devolve o que entendeu.
+
+    ⚑ AVISA, NÃO BARRA. A leitura preenche campo vazio e aponta o que parece
+    errado ("você pôs a CTPS no lugar do comprovante de endereço"), mas quem
+    decide é a pessoa: a IA erra, e um aviso que impede o envio vira uma
+    parede justamente quando ela erra. O único bloqueio objetivo, esse no
+    servidor, é não ter anexado nada.
+
+    ⚑ E A CONFERÊNCIA ACONTECE NA HORA, que é o ponto todo: com a pessoa ainda
+    ao lado do colaborador e os papéis na mão. Hoje o DP descobre o problema
+    três dias depois, quando a obra já dispersou.
+    """
+    from app.apps.erp.core import portal as svc_portal
+    from app.apps.erp.core import documentos_de_pessoa as svc_doc
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            svc_portal.quem_esta(s, usuario)            # 401 se não entrou
+    except svc_portal.SemAcesso as e:
+        return jsonify({"ok": False, "erro": str(e)}), 401
+    arquivo = request.files.get("arquivo")
+    if arquivo is None:
+        return jsonify({"ok": False, "erro": "Nenhum arquivo."}), 400
+    # ⚑ O TETO DE IA DO MÊS, e FORA do `try`: a recusa por teto tem resposta
+    # própria (402), e dentro do `try` o `except Exception` a transformaria em
+    # "falha do sistema". Foi uma trava do repositório que pegou esta
+    # omissão — a rota gastava IA sem olhar o teto.
+    _exigir_saldo_de_ia()
+    try:
+        r = svc_doc.ler(arquivo.read(), arquivo.filename or "",
+                        str(request.form.get("tipo") or ""))
+        return jsonify({"ok": True, **r})
+    except Exception as e:
+        logger.exception("ERP/portal: falha ao ler o documento")
+        # ⚑ 200 de propósito: a tela trata "não consegui ler" como ANEXADO,
+        # e não como falha do anexo. O papel já subiu.
+        return jsonify({"ok": False, "erro": recado_de_falha(e)})
 
 
 @bp.route("/erp/portal/api/pedidos", methods=["POST"])

@@ -8767,6 +8767,106 @@ que pode não existir passa por lá.**
 Sem paralelo (decisão dele), todos precisam existir aqui antes de desligar. Os
 exports que chegaram a este repositório são só os dois pipes do DP.
 
+## 10/11/2026 (noite) — O FORMULÁRIO PARA DE PERGUNTAR O QUE O SISTEMA JÁ SABE
+
+Três pedidos dele, na mesma mensagem:
+
+> *"Desligamento de colaborador. Não precisa de chave Pix mais. Admissão de
+> prestador de serviço. Vamos requerer os dados. Se não tivermos, né? Acho que
+> é interessante uma consulta, ver se tem CTPS, se tem PIS. Dados cadastrais
+> pode ser telefone, chave Pix, endereço, né? Acho que faltou endereço aí.
+> Desconto em folha, ok, deixa assim, mas não vou publicar agora."*
+
+**Está tudo no ramo `claude/oi-vjvrn8`. NÃO foi publicado** — ele disse com
+todas as letras que não ia publicar agora.
+
+### 1. O desligamento perdeu a chave Pix
+
+Ela existe no Pipe, para as verbas rescisórias. Aqui ela JÁ ESTÁ no cadastro
+da pessoa — e perguntar de novo não é só um campo a mais: é a porta para
+alguém digitar uma chave diferente da cadastrada bem na hora de pagar a
+rescisão, que é o pagamento que não dá para refazer sem dor.
+
+### 2. A admissão de prestador consulta o cadastro antes de exigir
+
+A pessoa JÁ EXISTE neste pedido (é um prestador virando carteira assinada), e
+o cadastro dela pode já ter o PIS e o número da CTPS. Agora:
+
+- a regra do tipo declara **de qual coluna cada campo vem**
+  (`ja_no_cadastro`, em `core/pessoal_solicitacoes.py`);
+- a **busca de pessoa do portal** traz essas colunas JUNTO com a pessoa — não
+  numa segunda ida ao servidor depois do clique, porque no celular, na obra,
+  cada ida é um tempo em que a tela parece travada;
+- ao escolher a pessoa, o campo **nasce preenchido** e o recado vira *"já está
+  no cadastro — confira se bate com o documento"*;
+- quem **não** tem continua sendo perguntado, com o recado de sempre;
+- **trocar de pessoa limpa o valor da anterior** — senão o pedido sairia com o
+  PIS de outro.
+
+O campo fica **editável**: carteira velha com número errado no cadastro
+existe, e quem está com o papel na mão é quem corrige.
+
+⚑ **O mapa é do servidor, nunca da tela.** Se a tela decidisse de onde vem
+cada campo, ela e o servidor divergiriam — e a pessoa descobriria a diferença
+só na recusa do envio. A lista de colunas (`COLUNAS_JA_NO_CADASTRO`) nasce da
+regra, e o formato do nome é conferido **na importação do módulo**: tipo novo
+que escreva uma coluna estranha quebra ali, e não em produção, porque esse
+nome entra em SQL por interpolação (não dá para parametrizar nome de coluna).
+
+### 3. Atualização de dados ganhou o endereço — e o nome
+
+CEP, rua, número, bairro, cidade e estado. Os rótulos saíram do Pipe
+("Endereço (Logradouro)", "Município", "UF (Endereço)") e foram trocados pelas
+palavras que o resto do ERP já usa (**Rua, Cidade, Estado**): duas palavras
+para o mesmo campo em duas telas é o tipo de diferença que faz alguém achar
+que são coisas diferentes.
+
+⚑ **E achei um defeito do mesmo tipo do "férias no portal":** a explicação
+deste tipo diz *"telefone, chave Pix, endereço, nome"* — e **nome não tinha
+campo**. Agora tem (`nome_novo`, "Nome completo (só se mudou)"). Ele tem nome
+próprio de propósito: `nome` solto no corpo do pedido seria o nome ANTIGO
+voltando por cima do atual no atendimento.
+
+**O atendimento também foi acertado:** ele chamava `salvar` forçando
+`nome=c.nome`, então um nome novo seria ignorado em silêncio. Agora o nome
+muda **só** quando o pedido traz um; o **CPF nunca muda** — é a identidade da
+pessoa no sistema e é por ele que o pagamento a acha.
+
+### As travas que este trabalho deixou
+
+- toda coluna de `ja_no_cadastro` **existe** em `colaboradores` (teste com
+  banco de verdade — coluna errada derrubaria a busca de pessoa INTEIRA, não
+  só o tipo que consulta);
+- todo campo consultado no cadastro **é campo do próprio tipo** (consulta para
+  campo que o formulário não tem é consulta que nunca aparece, e nada
+  reclama);
+- o que o servidor expõe para a tela **é igual** ao que a regra declara;
+- a busca devolve **só o que está preenchido** (campo vazio virando "já no
+  cadastro" faria a pessoa deixar de preencher o que falta);
+- o endereço **chega ao cadastro** no atendimento, e o nome só muda com
+  `nome_novo`.
+
+⚑ **E um recado que mentia:** a tela dizia *"preenchido à mão"* para o número
+que tinha vindo do cadastro. Recado mentiroso é pior que recado nenhum — quem
+lê para de conferir. Agora cada caso tem a sua frase.
+
+### Conferido na tela, não só no teste
+
+iPhone 13, no aplicativo de olhada: João Batista (prestador com PIS, sem CTPS)
+abre o pedido com o PIS preenchido e em verde, a CTPS vazia pedindo o
+documento, e o botão dizendo *"Falta: obra, nº ctps e mais 3"*. Trocando para
+a Ana Cláudia (tem os dois), os dois vêm preenchidos. Desligamento sem Pix,
+dados cadastrais com os seis campos de endereço e o estado em caixinha.
+
+### O que ficou de fora, e por quê
+
+- **Não foi publicado.** Decisão dele.
+- **"Desconto em folha, ok, deixa assim"** — nada mexido ali.
+- **Continua sem decisão dele** o destino de três tipos do Pipe: *Gerar
+  Crachá*, *Planilhas de Cadastro (DP)* e *Contrato/Etiqueta/Termos (DP)*.
+- **A leitura de documento por IA continua sem teste com chave de verdade** —
+  não há chave neste ambiente.
+
 ## Coisas pequenas que mordem
 
 - **⚠️ DATA FIXA EM FIXTURE DE TESTE É BOMBA-RELÓGIO.** Em 07/11/2026, na hora
