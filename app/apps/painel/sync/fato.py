@@ -41,6 +41,11 @@ TAMANHO_BLOCO = 4000
 
 REC, PAG = "1. Contas a Receber", "2. Contas a Pagar"
 NAO_APROP = "(não apropriado)"
+# Transferência entre contas da EMPRESA não tem obra, e não é para ter
+# (10/11/2026, o dono: "não é uma simples transferência? Como é que isso vai
+# estar apropriado?"). Com rótulo próprio ela não cai no "(não apropriado)",
+# que é a lista do que alguém precisa ir apropriar no OMIE.
+TRANSFERENCIA_ENTRE_CONTAS = "(transferência entre contas)"
 TOL = 0.10
 
 # Nomes das colunas como as telas antigas as chamavam. Ficam aqui porque a
@@ -1444,8 +1449,11 @@ def gerar_linhas_lancamentos_cc(conn):
         total = round(sinal * valor, 2)
         valores = [round(total * frac, 2) for _c, frac in partes]
         valores[-1] = round(total - sum(valores[:-1]), 2)
+        transferencia = analise == "TRF" and _e_transferencia(bruto, ccat)
         for (cod_dep, _frac), parte in zip(partes, valores):
-            if cod_dep is None:
+            if cod_dep is None and transferencia:
+                dep, projeto = TRANSFERENCIA_ENTRE_CONTAS, ""
+            elif cod_dep is None:
                 dep, projeto = NAO_APROP, NAO_APROP
             else:
                 dep = nomes_dep.get(cod_dep) or cod_dep

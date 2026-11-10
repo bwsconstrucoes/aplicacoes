@@ -185,7 +185,8 @@ def opcoes_de_filtro() -> dict:
             "SELECT DISTINCT projeto FROM fato WHERE COALESCE(projeto,'') <> '' ORDER BY projeto")]
         obras = [d for (d,) in consultar(
             "SELECT DISTINCT departamento FROM fato "
-            " WHERE COALESCE(departamento,'') <> '' ORDER BY departamento")]
+            " WHERE COALESCE(departamento,'') <> '' ORDER BY departamento")
+                 if d != TRANSFERENCIA_ENTRE_CONTAS]
         contas = [c for (c,) in consultar(
             "SELECT DISTINCT conta_corrente FROM fato "
             " WHERE COALESCE(conta_corrente,'') <> '' ORDER BY conta_corrente")]
@@ -336,6 +337,10 @@ def caixa_por_ano(f: Filtros) -> list[dict]:
 # Um lugar so: o Explorador filtra por ele, e dois nomes diferentes para a mesma
 # coisa fariam a busca nao achar nada.
 SEM_OBRA = "(não apropriado)"
+# a transferência entre contas da empresa: sem obra, e não é para ter
+# (`sync.fato.TRANSFERENCIA_ENTRE_CONTAS`, 10/11/2026) — fica fora das listas
+# de obra da barra lateral
+TRANSFERENCIA_ENTRE_CONTAS = "(transferência entre contas)"
 # Mesmo padrao do SEM_OBRA: um rotulo so, em toda a tela, para o que
 # nao tem fornecedor — senao filtrar por ele vira adivinhacao.
 SEM_FORNECEDOR = "(sem fornecedor)"
@@ -2702,7 +2707,8 @@ def opcoes_do_explorador() -> dict:
             "analises": _distintos("analise"),
             "grupos": _distintos("grupo"),
             "categorias": _distintos("categoria", SEM_CATEGORIA),
-            "obras": _distintos("departamento", SEM_OBRA),
+            "obras": [o for o in _distintos("departamento", SEM_OBRA)
+                      if o != TRANSFERENCIA_ENTRE_CONTAS],
             "projetos": _distintos("projeto"),
             "contas": _distintos("conta_corrente"),
             "situacoes": _distintos("situacao"),

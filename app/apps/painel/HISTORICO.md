@@ -2697,6 +2697,26 @@ a olhar no batimento.
 **Estado:** tudo no ramo `claude/exciting-wright-0zlwmj`, **não publicado**;
 sem migração. Falta o dono conferir o batimento com a base real e dizer "pode".
 
+## Transferência entre contas saiu do "(não apropriado)"; o ramo do outro chat — 10/11/2026
+
+**O ramo do outro chat.** A revisão da prestação (seção "Revisão da conta do
+cenário…", 10/11) foi feita num chat paralelo, no ramo
+`claude/exciting-wright-0zlwmj`, e NÃO tinha sido publicada nem trazida para
+este. O dono pediu para resgatar: o ramo foi juntado aqui, sem conflito, com
+todos os testes do painel passando. Ao começar uma sessão nesta área, conferir
+se há ramo de outro chat com trabalho do painel por publicar.
+
+**As transferências no "(não apropriado)".** O dono, no Explorador: *"muita
+coisa que é saída de transferência e entrada de transferência (…) não é uma
+simples transferência? Como é que isso vai estar apropriado? Antes isso nunca
+tinha acontecido."* Causa: desde 07/10/2026 os lançamentos de conta corrente
+entram no fato, e as transferências entre contas da empresa (TRAP/TRAR, tipo
+TRA, categoria 0.01.x) entravam sem obra — logo como "(não apropriado)", a
+lista do que alguém precisa apropriar. Agora levam o rótulo
+`(transferência entre contas)`, sem projeto, e esse rótulo não aparece na
+lista de obras da barra lateral. Continuam TRF (fora das telas no filtro
+padrão). Vale depois do próximo recálculo ("Só refazer os números" basta).
+
 ## Reler os pagamentos de um ano, de alguns ou de todos — 07/10/2026
 
 O dono, vendo a releitura retomada em "2025 (11 de 12 anos, 10 já feitos
