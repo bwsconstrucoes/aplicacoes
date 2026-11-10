@@ -2558,6 +2558,49 @@ Grava no mesmo formato ("a; b; c") que o cálculo já lia — nada mudou na cont
 Sobre "mês em que ninguém estava no vermelho": o dono observou que, se há
 empréstimo, alguma obra estava no vermelho; a opção ficou como está.
 
+## Revisão da conta do cenário contra o que o dono pediu — 10/11/2026
+
+Pedido do dono: revisar o desenho e a conta (05 a 09/11), **sem mexer em
+código**. Nada foi alterado; o que segue é o que a revisão achou, conferido
+rodando `prestacao.py` com números pequenos. **Nenhum item foi consertado —
+esperam a decisão dele.**
+
+Dá número errado (confirmado na conta):
+
+1. **Lançamento marcado um a um é descontado duas vezes** quando a mesma
+   categoria, no mesmo mês, existe nos dois departamentos administrativos
+   (matriz e filial). `calcular_rateio_do_cenario` guarda o desconto por
+   (mês, grupo, categoria), mas `despesa_administrativa` devolve uma linha por
+   departamento — e o desconto sai de cada uma. Ex.: 1.000 + 300, lançamento de
+   400 marcado com 100% → rateia 900 em vez de 1.300. A árvore da montagem
+   soma certo, então tela e conta divergem.
+2. **Afinar a categoria faz ela perder os dois lados.** A parte do principal
+   só vem do período que deu o percentual (`peso_e_divisao`). Categoria com
+   percentual fixo, ou com período próprio sem a parte do principal, ou
+   lançamento marcado, dentro de um grupo "40% BWS CE", vira "sem separar" —
+   em branco ali não quer dizer "segue o grupo", ao contrário do percentual.
+3. **O que "fica de fora" não vai para ninguém** — nem para sobra. Com
+   "entra" abaixo de 100% (ou percentual padrão do cenário abaixo de 100), o
+   resto some do resultado. O dono disse "nada fica sem dono".
+4. **Lado sem obra na régua no mês entrega a parte ao outro lado**, sem
+   aviso (ex.: nenhuma obra do BWS CE com mão de obra naquele mês → 100% para
+   os demais). Foi lido de "nada fica sem dono"; ele não pediu isso com essas
+   palavras. Com régua de faturamento e janela de 1 mês acontece mais.
+
+Decisão dele, não defeito:
+
+5. Projeto "não recebe" sai também da régua dos **juros** — o buraco dele não
+   conta e as outras obras pagam.
+6. Obra encerrada no prejuízo fica no vermelho para sempre e segue levando
+   juro todo mês. "(não apropriado)" entra como obra: recebe estrutura e juro.
+7. Aporte não abate o buraco da obra (pendência de 21/09, ainda sem resposta).
+
+Menores: participações que não somam 100% não têm aviso; "(nenhum)" no
+projeto principal volta para o `projeto_matriz`; sem principal nenhum, a parte
+separada some sem virar sobra; a memória mês a mês não mostra quanto foi para
+cada lado; sem a migração 024 aplicada, os períodos digitados não são gravados
+e a tela não avisa.
+
 ## Reler os pagamentos de um ano, de alguns ou de todos — 07/10/2026
 
 O dono, vendo a releitura retomada em "2025 (11 de 12 anos, 10 já feitos
