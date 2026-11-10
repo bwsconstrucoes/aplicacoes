@@ -1832,6 +1832,22 @@ Perguntas que o diário torna possíveis. Escritas como o dono perguntaria.
 - "Que obras ainda estão sem a logo do órgão no diário?" — ⚠️ dá para
   consultar, mas não há função pronta; hoje se vê abrindo o cadastro.
 
+- "O que foi feito na obra em março do ano passado?" — **passou a ter resposta
+  em 10/11/2026**, com a importação dos 1.427 diários da planilha antiga
+  (fevereiro de 2025 em diante). ⚠️ **a cobertura é desigual**: são 14 obras, e
+  o que não estava na planilha continua sem diário. Antes de responder "não
+  houve obra nesse dia", o assistente tem de saber distinguir **não houve** de
+  **não foi importado**.
+- "Este diário foi escrito aqui ou veio da planilha antiga?" — fica gravado
+  (`importado_de`), e importa para ler o resto: num dia importado **não há
+  batida de ponto nenhuma**, e o efetivo é o que a obra declarou por função.
+- "Quem informou este diário?" — nos importados, o nome de quem preencheu no
+  sistema antigo, que **não é** um usuário do ERP.
+- "A IA pode melhorar este relato?" — pode, no relato, nas ocorrências, no
+  histórico e nos equipamentos. ⚠️ **Nunca na observação da fiscalização**, e
+  isso não é configuração: a recusa é por lista fechada na regra. A sugestão
+  **não grava** — vai para o campo e a pessoa decide.
+
 **Dependem de quem pergunta (escopo por obra):**
 
 - "Como está o diário das minhas obras?" — o administrativo de obra vê as
@@ -1859,6 +1875,14 @@ Perguntas que o diário torna possíveis. Escritas como o dono perguntaria.
   com um botão, então um dia em que ninguém lançou nada **não quer dizer** que
   a máquina saiu da obra — quer dizer que ninguém lançou. Somar sem dizer isso
   daria um número menor com cara de certo.
+- "A obra parou quantos dias esperando licença?" — os 106 dias de "AGUARDANDO
+  LICENÇA" da planilha antiga estão lá, e **de propósito não foram marcados
+  como "sem expediente"**: obra parada esperando terceiro é pleito de prazo,
+  não folga. Mas não há função que some esses dias por obra.
+- "Quantos dias esta obra ficou sem expediente?" — dá para contar o campo,
+  mas ⚠️ **nos diários importados a marca veio de uma leitura do texto**
+  ("FOLGA", "FERIADO - NÃO HOUVE EXPEDIENTE"), não de alguém ter clicado. A
+  resposta tem de dizer isso.
 - "Alguma máquina está lançada há semanas sem aparecer no relato?" — seria o
   sinal de equipamento esquecido na lista, repetido todo dia pelo botão depois
   de já ter ido embora. Não há função que cruze as duas coisas.

@@ -176,10 +176,21 @@ function celula(rotulo, valor){
 
 function blocoDoEfetivo(){
   const e = DIA.efetivo || {}, extras = (DIA.diario.extras || []);
-  const total = (e.total || 0) + extras.reduce((s, x) => s + (x.quantidade || 0), 0);
+  // O efetivo de um dia IMPORTADO da planilha antiga: vem por função, sem
+  // nome, porque o ponto eletrônico não existia naquela obra. Conta como
+  // efetivo próprio — chamar de terceirizado seria mentir no documento.
+  const vindos = DIA.diario.efetivo_importado || [];
+  const total = (e.total || 0)
+    + extras.reduce((s, x) => s + (x.quantidade || 0), 0)
+    + vindos.reduce((s, x) => s + (x.quantidade || 0), 0);
+  const soImportado = vindos.length > 0 && !(e.pessoas || []).length;
   return `
     <div class="cartao auto">
-      <div class="selo">vem do ponto</div>
+      {# ⚑ O SELO "VEM DO PONTO" SOME NUM DIA IMPORTADO, e a dica abaixo
+         também. Num diário vindo da planilha antiga não há batida nenhuma:
+         dizer "quem bateu ponto nesta obra hoje" em cima de uma lista de 23
+         pessoas seria afirmar o que não aconteceu. #}
+      ${!soImportado ? `<div class="selo">vem do ponto</div>` : ""}
       <h3>Efetivo do dia — ${total} pessoa(s)</h3>
       {# O RESUMO EM UMA FRASE, pedido dele em 10/11/2026: *"nome, função,
          inclusive um resumo, de quantas pessoas e tal — fica mais fácil
@@ -187,8 +198,9 @@ function blocoDoEfetivo(){
          papel usa a mesma frase, e duas versões divergiriam no primeiro
          ajuste. #}
       ${e.resumo ? `<p class="cartao-resumo">${escapar(e.resumo)}</p>` : ""}
-      <p class="cartao-dica">Quem bateu ponto nesta obra hoje. Não se digita
-        quantidade nem função: se o ponto sabe, o diário sabe.</p>
+      ${!soImportado ? `<p class="cartao-dica">Quem bateu ponto nesta obra hoje.
+        Não se digita quantidade nem função: se o ponto sabe, o diário
+        sabe.</p>` : ""}
       ${e.indisponivel ? `<div class="aviso alerta">${escapar(e.indisponivel)}</div>` : ""}
       ${(e.por_funcao || []).length ? `<div class="chips-funcao">${
         e.por_funcao.map(f => `<span class="etiqueta">${escapar(f.funcao)} · ${f.quantidade}</span>`).join("")
@@ -197,6 +209,17 @@ function blocoDoEfetivo(){
          cinzenta embaixo do nome. Ele olhou a tela e disse: *"não tem aqui a
          função da pessoa, está só o nome."* Estava lá — pequena demais para
          contar como estar. #}
+      ${vindos.length ? `<div class="tabela-wrap" style="margin-top:8px">
+        <div class="cartao-dica"><b>Efetivo do diário antigo</b>, importado da
+          planilha${DIA.diario.informado_por
+            ? ` — informado por ${escapar(DIA.diario.informado_por)}` : ""}.
+          Vem por função, sem nome: naquele dia o ponto eletrônico ainda não
+          estava nesta obra.</div>
+        <table><thead><tr><th>Função</th>
+          <th class="direita">Quantidade</th></tr></thead>
+        <tbody>${vindos.map(f => `<tr><td>${escapar(f.funcao)}</td>
+          <td class="direita dados">${f.quantidade}</td></tr>`).join("")}
+        </tbody></table></div>` : ""}
       ${(e.pessoas || []).length ? `<div class="tabela-wrap" style="margin-top:8px">
         <table><thead><tr><th>Nome</th><th>Função</th>
           <th class="direita">Horário</th></tr></thead>
@@ -207,8 +230,8 @@ function blocoDoEfetivo(){
             : `<span class="desc">sem função no cadastro</span>`}</td>
           <td class="direita dados">${escapar(p.entrada || "—")}${
             p.saida ? " – " + escapar(p.saida) : ""}</td></tr>`).join("")}
-        </tbody></table></div>` : `<div class="cartao-dica">Ninguém bateu ponto
-          nesta obra neste dia.</div>`}
+        </tbody></table></div>` : (vindos.length ? "" : `<div class="cartao-dica">
+          Ninguém bateu ponto nesta obra neste dia.</div>`)}
       ${extras.length ? `<div class="tabela-wrap" style="margin-top:8px">
         <table><tbody>${extras.map(x => `<tr>
           <td><b>${escapar(x.descricao)}</b><br><small class="desc">${
@@ -351,6 +374,8 @@ function blocoDoRelato(){
             placeholder="O que foi feito hoje.">${escapar(d.relato || "")}</textarea></div>
         ${anterior.relato && PODE_LANCAR ? `<button class="link-btn" id="btn-ontem">
           ↩ trazer o relato de ${dataBR(anterior.data)}</button>` : ""}
+        ${PODE_LANCAR && !so_leitura ? `<button class="link-btn"
+          data-melhorar="relato">✨ melhorar o texto</button>` : ""}
         {# TRÊS CAMPOS DE TEXTO E NÃO UM, e a separação é do modelo do órgão:
            o relato é O QUE FOI FEITO; equipamentos é O QUE ESTAVA EM OBRA;
            ocorrências é O QUE SAIU DO NORMAL; e o histórico é COMO O SERVIÇO
@@ -372,7 +397,9 @@ function blocoDoRelato(){
             placeholder="Reunião, visita técnica, acidente, chuva que parou o serviço."
             >${escapar(d.ocorrencias || "")}</textarea>
           <small class="desc">O que saiu do normal. Dia comum fica em
-            branco.</small></div>
+            branco.</small>
+          ${PODE_LANCAR && !so_leitura ? `<button class="link-btn"
+            data-melhorar="ocorrencias">✨ melhorar o texto</button>` : ""}</div>
         <div class="campo" style="margin-top:10px">
           <label>Histórico dos serviços</label>
           <textarea id="d-historico" rows="3" ${so_leitura ? "disabled" : ""}
@@ -380,7 +407,9 @@ function blocoDoRelato(){
             >${escapar(d.historico || "")}</textarea>
           <small class="desc">O andamento, em poucas linhas. O modelo que a
             Prefeitura exige imprime isto num quadro separado; nos outros
-            modelos ele entra junto com o relato.</small></div>
+            modelos ele entra junto com o relato.</small>
+          ${PODE_LANCAR && !so_leitura ? `<button class="link-btn"
+            data-melhorar="historico">✨ melhorar o texto</button>` : ""}</div>
         <label class="opcao" style="margin-top:8px">
           <input type="checkbox" id="d-fisc" ${d.fiscalizacao_esteve ? "checked" : ""}
                  ${so_leitura ? "disabled" : ""}>
@@ -452,6 +481,8 @@ function pintar(){
     els("d-relato").value = (DIA.relato_anterior || {}).relato || "";
     els("d-relato").focus();
   });
+  document.querySelectorAll("[data-melhorar]").forEach(b =>
+    b.addEventListener("click", () => melhorarTexto(b.dataset.melhorar)));
   document.querySelectorAll("[data-remove]").forEach(b =>
     b.addEventListener("click", () => removerExtra(+b.dataset.remove)));
   document.querySelectorAll("[data-remove-eq]").forEach(b =>
@@ -557,6 +588,69 @@ async function acrescentarExtra(){
 // Suprimentos cadastrar depois. A saída é o último item da caixinha, e não um
 // segundo caminho ao lado — quem tem o equipamento na lista nem repara nela.
 const FORA_DA_LISTA = "__fora";
+
+// ---------------------------------------------------------------------------
+// ✨ MELHORAR O TEXTO COM IA
+//
+// Pedido dele em 10/11/2026: *"eu gostaria que a IA fizesse a leitura do
+// relato (…) poder sugerir um melhor texto (…) correção ortográfica, um
+// melhor português, numa linguagem inclusive um pouco mais de obra, mais
+// técnica (…) E quando ela sugerisse, eu pudesse editar a sugestão e gravar."*
+//
+// ⚑ TRÊS COISAS QUE ESTA FUNÇÃO NÃO FAZ, e cada uma é de propósito:
+//
+// 1. Não toca na OBSERVAÇÃO DA FISCALIZAÇÃO. Ele mesmo disse — e a recusa não
+//    está aqui, está na regra, com lista fechada de campos. Aqui não existe
+//    nem botão.
+// 2. Não grava. Põe o texto no campo e deixa o dia SUJO, esperando o Gravar
+//    de sempre. Sugestão que grava sozinha é a IA escrevendo o documento.
+// 3. Não substitui às cegas: mostra o ORIGINAL e a SUGESTÃO lado a lado, e a
+//    sugestão vem num campo editável — ele ajusta antes de usar.
+// ---------------------------------------------------------------------------
+const ROTULOS_DO_TEXTO = {relato: "Relato diário", ocorrencias: "Ocorrências",
+                          historico: "Histórico dos serviços"};
+
+async function melhorarTexto(campo){
+  const caixa = els("d-" + campo);
+  if (!caixa) return;
+  const original = caixa.value || "";
+  let r;
+  const botoes = document.querySelectorAll("[data-melhorar]");
+  botoes.forEach(b => { b.disabled = true; });
+  try {
+    r = await api(`/erp/api/diario/${els("f-obra").value}/sugerir-texto`,
+      {method: "POST", headers: {"Content-Type": "application/json"},
+       body: JSON.stringify({campo: campo, texto: original})});
+  } catch(e){
+    botoes.forEach(b => { b.disabled = false; });
+    aviso("mensagem", e.message, "erro");
+    return;
+  }
+  botoes.forEach(b => { b.disabled = false; });
+  if (!r.mudou) {
+    aviso("mensagem", "A IA não achou o que melhorar neste texto.", "info");
+    return;
+  }
+  const escolha = await perguntar({
+    titulo: `Sugestão para ${ROTULOS_DO_TEXTO[campo] || campo}`,
+    aviso: "A sugestão corrige português e deixa a linguagem mais técnica. "
+         + "<b>Ela não inventa serviço</b> — se vier algo que não aconteceu, "
+         + "apague antes de usar. Nada é gravado agora: o texto vai para o "
+         + "campo e você ainda precisa apertar Gravar.",
+    campos: [
+      {nome: "antes", rotulo: "Como está hoje", tipo: "textarea", linhas: 7,
+       largura: 6, valor: r.original},
+      {nome: "sugestao", rotulo: "Sugestão (edite à vontade)",
+       tipo: "textarea", linhas: 7, largura: 6, valor: r.sugestao}],
+    textoOk: "Usar este texto"});
+  if (!escolha) return;
+  const novo = (escolha.sugestao || "").trim();
+  if (!novo) { aviso("mensagem", "A sugestão ficou vazia.", "erro"); return; }
+  caixa.value = novo;
+  caixa.focus();
+  aviso("mensagem", "Texto trocado no campo. Confira e aperte <b>Gravar</b> "
+      + "— ainda não foi salvo.", "info");
+}
 
 async function acrescentarEquipamento(){
   // O dia precisa existir para o equipamento pendurar nele. Em vez de mandar

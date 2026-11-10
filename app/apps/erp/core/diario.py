@@ -521,7 +521,8 @@ def abrir_dia(s: Session, obra_id: int, dia: date,
             "equipamentos": "", "historico": "",
             "sem_expediente": sugere_sem,
             "obs_fiscalizacao": "", "obs_fiscalizacao_por": "",
-            "extras": [],
+            "extras": [], "efetivo_importado": [],
+            "informado_por": "", "importado_de": "",
             "equipamentos_lista": [], "equipamentos_resumo": "",
             "equipamentos_disponivel": _tem_equipamentos_em_tabela(s),
         },
@@ -567,10 +568,20 @@ def _relato_anterior(s: Session, obra_id: int, dia: date) -> dict[str, Any]:
 
 
 def _para_tela(s: Session, l) -> dict[str, Any]:
-    extras = s.execute(text("""
-        SELECT id, descricao, funcao, quantidade, empresa
-          FROM diario_efetivo_extra WHERE diario_id = :i ORDER BY id"""),
-        {"i": l["id"]}).mappings().all()
+    # ⚑ `origem` separa duas coisas que NÃO são a mesma: o terceirizado que
+    # trabalhou e não bate ponto aqui (OBRA), e o efetivo próprio de um dia
+    # importado da planilha antiga, quando o ponto eletrônico ainda não
+    # existia naquela obra (IMPORTADO). Chamar o segundo de "terceirizado"
+    # seria mentir no documento.
+    extras = _consulta_opcional(s, """
+        SELECT id, descricao, funcao, quantidade, empresa, origem
+          FROM diario_efetivo_extra WHERE diario_id = :i ORDER BY id""",
+        i=l["id"])
+    if extras is None:                       # banco sem a migração 099
+        extras = [dict(e, origem="OBRA") for e in s.execute(text("""
+            SELECT id, descricao, funcao, quantidade, empresa
+              FROM diario_efetivo_extra WHERE diario_id = :i ORDER BY id"""),
+            {"i": l["id"]}).mappings().all()]
     # ⚑ `None` e `[]` querem dizer coisas DIFERENTES aqui: `None` é "a tabela
     # ainda não existe neste banco" (o código sobe para o Render antes de
     # alguém apertar o botão das migrações), `[]` é "existe e está vazia". A
@@ -601,7 +612,14 @@ def _para_tela(s: Session, l) -> dict[str, Any]:
         "clima_medido": l["clima_medido"],
         "extras": [{"id": e["id"], "descricao": e["descricao"],
                     "funcao": e["funcao"] or "", "quantidade": e["quantidade"],
-                    "empresa": e["empresa"] or ""} for e in extras],
+                    "empresa": e["empresa"] or ""}
+                   for e in extras if e["origem"] != "IMPORTADO"],
+        "efetivo_importado": [
+            {"funcao": e["funcao"] or e["descricao"],
+             "quantidade": e["quantidade"]}
+            for e in extras if e["origem"] == "IMPORTADO"],
+        "informado_por": (l["informado_por"] or "") if "informado_por" in l.keys() else "",
+        "importado_de": (l["importado_de"] or "") if "importado_de" in l.keys() else "",
         "equipamentos_lista": [
             {"id": q["id"], "descricao": q["descricao"],
              "quantidade": q["quantidade"],
@@ -1188,14 +1206,26 @@ def relatorio(s: Session, obra_id: int, de: date, ate: Optional[date] = None,
         if linha is None and so_escritos:
             continue
         efetivo = efetivo_do_ponto(s, obra_id, dia)
-        extras = []
+        extras, importado = [], []
         if linha is not None:
+            linhas_extra = _consulta_opcional(s, """
+                SELECT descricao, funcao, quantidade, empresa, origem
+                  FROM diario_efetivo_extra WHERE diario_id = :i ORDER BY id""",
+                i=linha["id"])
+            if linhas_extra is None:         # banco sem a migração 099
+                linhas_extra = [dict(e, origem="OBRA") for e in s.execute(text("""
+                    SELECT descricao, funcao, quantidade, empresa
+                      FROM diario_efetivo_extra WHERE diario_id = :i
+                     ORDER BY id"""), {"i": linha["id"]}).mappings().all()]
             extras = [{"descricao": e["descricao"], "funcao": e["funcao"] or "",
                        "quantidade": e["quantidade"], "empresa": e["empresa"] or ""}
-                      for e in s.execute(text("""
-                SELECT descricao, funcao, quantidade, empresa
-                  FROM diario_efetivo_extra WHERE diario_id = :i ORDER BY id"""),
-                {"i": linha["id"]}).mappings().all()]
+                      for e in linhas_extra if e["origem"] != "IMPORTADO"]
+            # ⚑ O EFETIVO IMPORTADO ENTRA NO QUADRO TÉCNICO, não no de
+            # terceiros: num dia da planilha antiga ele É o efetivo próprio da
+            # obra. Sem isto o papel de 1.380 dias sairia com "0 pessoas".
+            importado = [{"funcao": e["funcao"] or e["descricao"],
+                          "quantidade": e["quantidade"]}
+                         for e in linhas_extra if e["origem"] == "IMPORTADO"]
         # A LISTA de equipamento do dia. O papel imprime a lista quando ela
         # existe e o texto antigo quando não — nenhum diário já assinado perde
         # o que tinha escrito.
@@ -1239,7 +1269,7 @@ def relatorio(s: Session, obra_id: int, de: date, ate: Optional[date] = None,
             "situacao": linha["situacao"] if linha else "ABERTO",
             # ⚑ A CONTAGEM, NÃO OS NOMES. Decisão dele, e boa prática: o RDO
             # circula fora da empresa.
-            "efetivo": _efetivo_para_o_papel(efetivo, extras),
+            "efetivo": _efetivo_para_o_papel(efetivo, extras, importado),
             "material": material_recebido(s, obra_id, dia),
             "correcoes": _correcoes(s, linha["id"]) if linha else [],
         })
@@ -1482,11 +1512,21 @@ def _embutir(dados: Optional[bytes], mime: Optional[str]) -> str:
 
 
 def _efetivo_para_o_papel(efetivo: dict[str, Any],
-                          extras: list[dict[str, Any]]) -> dict[str, Any]:
+                          extras: list[dict[str, Any]],
+                          importado: Optional[list[dict[str, Any]]] = None
+                          ) -> dict[str, Any]:
     """Função e quantidade. O próprio e o terceirizado em linhas separadas —
-    quem lê o RDO precisa distinguir mão de obra própria de contratada."""
+    quem lê o RDO precisa distinguir mão de obra própria de contratada.
+
+    ⚑ `importado` conta como PRÓPRIO, e tem de contar: num diário vindo da
+    planilha antiga ele é o efetivo da obra naquele dia. O ponto eletrônico
+    não existia ali, então `por_funcao` vem vazio — e sem somar o importado o
+    papel de 1.380 dias sairia declarando zero pessoa em obra.
+    """
     proprio = [{"funcao": f["funcao"], "quantidade": f["quantidade"],
                 "tipo": "próprio"} for f in efetivo.get("por_funcao", [])]
+    proprio += [{"funcao": f["funcao"], "quantidade": f["quantidade"],
+                 "tipo": "próprio"} for f in (importado or [])]
     de_fora = [{"funcao": (e["funcao"] or e["descricao"]),
                 "quantidade": e["quantidade"], "tipo": "terceirizado",
                 "empresa": e.get("empresa") or e["descricao"]} for e in extras]

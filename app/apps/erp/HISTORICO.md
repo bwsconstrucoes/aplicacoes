@@ -238,6 +238,127 @@ acrescentar dois equipamentos, repetir do dia anterior, procurar por
 "retroescavadeira" e por "manutencao" sem acento, e imprimir os três modelos em
 PDF. Zero erro de console.
 
+### 📥 OS 1.427 DIÁRIOS JÁ ESCRITOS ENTRARAM, E A IA PASSOU A REVISAR O TEXTO (10/11/2026)
+
+Dois pedidos na mesma mensagem, com a planilha anexada.
+
+#### 1. A importação (migração 099)
+
+> *"Eu gostaria de importar essa base que nós temos aí para dentro do diário
+> de obras, porque aí a gente poderia dar prosseguimento ao que a gente já
+> tem. (…) Nós temos o código da obra, temos o dia, temos questão dos
+> colaboradores. Não vai ter, da mesma forma, porque aí não tem nome do
+> colaborador, só tem as funções. (…) Pelo código da obra você vai puxar as
+> outras informações."*
+
+**O arquivo:** 1.427 linhas, 14 obras, de 01/02/2025 a 09/11/2026. Colunas
+úteis: código da obra, data, tempo manhã/tarde, relato, quem informou, efetivo
+total e o efetivo por função (`1 - ENGENHEIRO CIVIL`, `17 - SERVENTE`, uma por
+linha). As colunas Contrato, Objeto, Endereço, Município e Responsável Técnico
+vêm **vazias** — e está certo: isso mora no cadastro da obra, e o diário busca
+de lá na hora de mostrar. Comentários da Fiscalização também vêm vazios, o que
+poupou a pergunta mais delicada.
+
+**Onde está:** `Importar` › cartão **Diários de obra (planilha)**. Dois botões,
+e a ordem é imposta pela tela: *Conferir sem gravar* acende o *Gravar*, e
+trocar o arquivo apaga a conferência.
+
+**As cinco decisões que valem mais que o código:**
+
+1. **Dia que já existe no ERP NÃO é sobrescrito, nunca.** Diário é documento.
+   A planilha não manda no que o sistema já tem — a linha é devolvida como
+   "este dia já tem diário".
+2. **A planilha NÃO cria obra.** Código que não casa é devolvido na
+   conferência com uma caixinha para o dono apontar qual é. Inventar obra a
+   partir de um código encheria o cadastro de duplicata, e ninguém perceberia
+   até a primeira medição sair errada. (No arquivo dele, 12 dos 14 códigos
+   casaram; `ESCGUARUJA` e `REFORMAETI` ficaram para ele apontar.)
+3. **Linha repetida é JUNTADA, não descartada.** 38 pares obra+dia vêm duas
+   vezes, e são dois casos diferentes: o mesmo relato enviado duas vezes, e
+   **dois relatos diferentes do mesmo dia**. Escolher "o último" jogaria fora
+   meio dia de obra sem ninguém perceber. Relato igual vira um; relatos
+   diferentes viram um texto com os dois. Do efetivo fica o maior.
+4. **Rodar o arquivo duas vezes é inofensivo.** Índice único em
+   (origem, id do registro antigo) mais o de obra+dia que já existia. É o
+   acidente mais comum de importação: sem isso, o segundo passe dobraria o
+   efetivo de 1.380 dias.
+5. **O dia sem obra é reconhecido por MARCADOR, e só em relato curto.** A
+   mesma coisa aparece como "FOLGA", `"FOLGA"`, "FERIADO - NÃO HOUVE
+   EXPEDIENTE", "* SEM ATIVIDADES REALIZADAS NO DIA." e "SEM EXPENDIENTE
+   ( CARNAVAL )" — com o erro de digitação. Casamento exato deixaria dezenas
+   passando, e cada uma viraria dia trabalhado no papel. ⚠️ **O limite de 60
+   caracteres é a trava**: num relato de verdade a palavra "feriado" aparece
+   ("concretagem adiantada por causa do feriado"), e marcar aquele dia
+   apagaria um dia de trabalho do documento.
+
+**⚠️ E "AGUARDANDO LICENÇA" NÃO É FOLGA.** São 106 linhas do arquivo, e a
+diferença vale dinheiro: é obra **parada esperando terceiro**, que é
+justamente o que sustenta pleito de prazo. Virar "não houve expediente"
+apagaria o pleito.
+
+**O efetivo importado é efetivo PRÓPRIO, não terceirizado.** Ele reusa a
+tabela `diario_efetivo_extra` (que já guarda função + quantidade), mas com
+`origem = 'IMPORTADO'`, e a tela mostra num bloco separado — "efetivo do
+diário antigo, informado por Fulano". ⚑ **No papel ele soma no quadro técnico
+como próprio**: sem isso, o RDO de 1.380 dias sairia declarando zero pessoa em
+obra. E o selo "vem do ponto" some nesses dias, porque não houve batida
+nenhuma.
+
+**Os diários entram ABERTOS**, não fechados — ele ainda vai querer passar a
+revisão de texto neles.
+
+**Conferido com o arquivo de verdade:** 1.427 linhas lidas, 40 juntadas, 1.380
+diários gravados em **2,8 segundos**; o segundo passe gravou **zero**. Nenhuma
+linha de efetivo ficou sem entender, e a soma das funções bateu com o "Efetivo
+Total" da planilha em **todas** as 1.427 linhas.
+
+#### 2. A revisão do texto por IA
+
+> *"Eu gostaria que a IA fizesse a leitura do relato, tanto dos serviços como
+> não da parte da fiscalização, que a gente não pode alterar, mas outros
+> dados, a parte de ocorrência, a parte dos serviços, poder sugerir um melhor
+> texto. (…) correção ortográfica, um melhor português, numa linguagem
+> inclusive um pouco mais de obra, mais técnica, caso esteja uma linguagem
+> ruim. (…) E quando ela sugerisse, eu pudesse editar a sugestão e gravar."*
+
+Um link **✨ melhorar o texto** embaixo do relato, das ocorrências e do
+histórico. Abre um diálogo com o texto de hoje de um lado e a sugestão do
+outro, **editável**, e o botão põe o texto no campo — **sem gravar**. O Gravar
+continua sendo dele.
+
+**⚑ A OBSERVAÇÃO DA FISCALIZAÇÃO NÃO TEM O LINK, e não é só isso:** a recusa
+mora na regra (`diario_texto.CAMPOS`, lista fechada), não na tela. Quem
+chamar a rota à mão pedindo `obs_fiscalizacao` leva 400. Ele mesmo disse
+"que a gente não pode alterar" — e é a regra 1 do diário inteiro: o que dá
+valor jurídico ao documento é a parte que a obra NÃO controla.
+
+**A instrução proíbe inventar, com todas as letras**, e isso está testado: o
+pedido que viaja diz para não acrescentar serviço, material, quantidade,
+medida, local, hora nem data que não esteja no original, e para não remover
+nada. **Um diário com um serviço a mais é prova falsa.** Temperatura 0,2 —
+revisão de documento não é lugar para criatividade.
+
+Detalhes que a tela cuida: texto com menos de 15 caracteres nem chega a
+custar chamada ("FOLGA" não tem o que melhorar); sugestão igual ao original
+não abre diálogo; sugestão vazia é recusada, para o pior resultado possível
+(trocar o relato por nada) não acontecer; e qualquer falha diz **"o texto que
+você escreveu não se perdeu"**, porque é o que a pessoa precisa ouvir.
+
+⚑ **E um buraco antigo foi fechado no caminho:** o `perguntar()` do
+`erp_base.html` injetava o valor dos campos **sem escapar**. Nunca tinha dado
+problema porque os valores eram curtos e controlados — mas agora o diálogo
+recebe RELATO DE OBRA, texto livre de verdade. Um `<` no meio de "laje < 10cm"
+fechava a caixa e comia o resto do relato. Vale para **todos** os diálogos do
+ERP, que são dezenas.
+
+### ⚠️ MIGRAÇÃO 099 — e as 097 e 098, no mesmo botão
+
+A 099 acrescenta a procedência do diário (`informado_por`, `importado_de`,
+`importado_id` com índice único) e a coluna `origem` no efetivo extra. ⚑ **Sem
+ela o diário não quebra**, pelo mesmo cuidado das anteriores: as consultas
+novas são protegidas por savepoint e o dia abre igual; só a importação fica
+indisponível.
+
 ### ⚠️ MIGRAÇÕES 085 a 091 — apertar "Aplicar atualizações do banco"
 
 Entraram em 05/11/2026 com o cadastro de pessoas. **Sem elas a tela de

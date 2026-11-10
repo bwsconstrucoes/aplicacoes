@@ -11830,6 +11830,87 @@ def api_diario_equipamentos(obra_id: int):
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
+@bp.route("/erp/api/diario/<int:obra_id>/sugerir-texto", methods=["POST"])
+@login_obrigatorio
+@permissao("lancar_diario")
+def api_diario_sugerir_texto(obra_id: int):
+    """A IA lê o que foi escrito e devolve uma versão melhor — para a pessoa
+    editar e gravar, nunca para gravar sozinha.
+
+    ⚑ A OBSERVAÇÃO DA FISCALIZAÇÃO NÃO PASSA POR AQUI, e a recusa mora na
+    regra (`diario_texto.CAMPOS`, lista fechada), não nesta rota: assim ela
+    vale para qualquer caminho que venha a chamar a sugestão.
+    """
+    from app.apps.erp.core import diario_texto as svc_texto
+    from app.apps.erp.core.auth.permissoes import exigir_obra_no_escopo
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            # O escopo é conferido mesmo não gravando nada: o texto é da obra,
+            # e quem não alcança a obra não lê o relato dela nem para melhorar.
+            exigir_obra_no_escopo(s, usuario, obra_id)
+            dados = request.get_json(silent=True) or {}
+            r = svc_texto.sugerir(dados.get("campo"), dados.get("texto"),
+                                  usuario_id=usuario.id if usuario else None)
+        return jsonify({"ok": True, **r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP: falha na sugestão de texto do diário")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/diario/importar", methods=["POST"])
+@login_obrigatorio
+@permissao("importar")
+def api_diario_importar():
+    """Carga dos diários já escritos, de uma planilha .xlsx.
+
+    ⚑ `simular=1` é o PADRÃO: sem mandar `gravar=1` de propósito, nada é
+    escrito. Importação de mil linhas que dá errado no meio é trabalho de dias
+    para desfazer, e a conferência custa um clique.
+
+    `mapa` é {código da planilha: id da obra}, para o dono amarrar à mão o
+    código que não casou sozinho. A planilha NÃO cria obra.
+    """
+    from app.apps.erp.core import diario_importacao as imp
+    arquivo = request.files.get("arquivo")
+    if arquivo is None:
+        return jsonify({"ok": False, "erro": "Escolha o arquivo .xlsx."}), 400
+    nome = (arquivo.filename or "").lower()
+    if not nome.endswith(".xlsx"):
+        return jsonify({"ok": False, "erro":
+                        "O arquivo precisa ser .xlsx. Se for .xls antigo, "
+                        "abra no Excel e salve como .xlsx."}), 400
+    gravar = request.form.get("gravar") in ("1", "true", "sim")
+    mapa = {}
+    bruto = request.form.get("mapa") or ""
+    if bruto.strip():
+        import json as _json
+        try:
+            mapa = {str(k): int(v) for k, v in _json.loads(bruto).items() if v}
+        except Exception:                                      # noqa: BLE001
+            return jsonify({"ok": False,
+                            "erro": "Não entendi o apontamento das obras."}), 400
+    try:
+        conteudo = arquivo.read()
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            rel = imp.importar(s, conteudo,
+                               usuario.id if usuario else None,
+                               simular=not gravar, mapa_obras=mapa)
+            if gravar:
+                s.commit()
+        return jsonify({"ok": True, "resultado": rel})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha na importação de diários")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
 @bp.route("/erp/api/diario/<int:obra_id>/calendario")
 @login_obrigatorio
 @permissao("ver_diario")
