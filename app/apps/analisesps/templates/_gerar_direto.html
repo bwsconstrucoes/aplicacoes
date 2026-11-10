@@ -96,7 +96,16 @@
     corpo.innerHTML =
       "<p><b>" + esc(d.rotulo) + "</b></p>" +
       // A TRAVA É O ARQUIVO GERADO (06/10/2026): o mesmo pagamento já saiu.
-      (jaGerado.length ? '<div class="aviso erro"><b>Este pagamento já foi gerado</b> em ' +
+      // A FOLHA JÁ PAGA NÃO SE GERA DE NOVO (10/11/2026): a correção sai pela
+      // Complementar, que paga só a diferença. O servidor recusa também.
+      (jaGerado.length && ORIGEM === "folha" ? '<div class="aviso erro"><b>Esta folha já foi paga</b> em ' +
+        jaGerado.map(a => esc(a.quando) + (a.por ? " por " + esc(a.por) : "") +
+                          " (" + real(a.total) + ")").join("; ") +
+        '. Gerar de novo pagaria a folha inteira outra vez. Para pagar a correção, use a <a href="' +
+        "{{ url_for('analisesps.tela_folha_complementar', folha_id=0) }}".replace("/0/", "/" + DADOS.folha_id + "/") +
+        '"><b>Complementar</b></a> — ela paga só a diferença. Se a geração anterior não valeu, ' +
+        "exclua-a em Arquivos gerados.</div>" :
+      jaGerado.length ? '<div class="aviso erro"><b>Este pagamento já foi gerado</b> em ' +
         jaGerado.map(a => esc(a.quando) + (a.por ? " por " + esc(a.por) : "") +
                           " (" + real(a.total) + ")").join("; ") +
         ". Gerar de novo pagaria duas vezes. Para refazer, exclua a geração anterior em " +

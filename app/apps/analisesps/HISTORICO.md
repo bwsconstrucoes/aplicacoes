@@ -12244,6 +12244,45 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 254 — A folha complementar: pagar só a diferença de uma folha já paga (10/11/2026)
+
+> **Publicado em 10/11/2026.** Pendente AGORA: a primeira complementar real — conferir
+> com calma quem aparece "sem CPF" antes de gerar.
+
+- *"Encerrada a folha, feitos os pagamentos, foram detectados ajustes de ponto (…) eu
+  preciso importar a nova folha e, a partir dela, gerar um arquivo de pagamento com a
+  diferença (…) quem foi a mais, quem foi a menos (o a menos só ilustrativo) (…) quem
+  não foi pago, exibir desmarcado."* Discutido antes; exemplo em tela aprovado
+  (*"pode construir"*), com as sugestões aceitas: pago a mais vai para "a descontar";
+  obra da diferença = a da folha nova; mesmo caminho de arquivo/SP; tela dentro da
+  Folha da contabilidade.
+- **O risco que existia:** refechar uma folha já paga APAGAVA o registro do que foi
+  pago (o fechamento é um só por competência/verba) e o "gerar mesmo assim" pagaria a
+  folha inteira de novo. **Agora:** `folha_gestao.fechar` recusa folha com geração no
+  log (o "Gerar arquivos" da folha diz "já foi paga — use a Complementar"); o caminho
+  limpo para uma geração que não valeu continua sendo excluí-la em Arquivos gerados.
+- **Como funciona** (`folha_complementar.py`, tela `/folha/<id>/complementar`):
+  - O PAGO é o fechamento de cada verba GERADA da competência — a `folha` e as
+    complementares já feitas (`complementar1`, `complementar2`…), somadas por CPF.
+  - A FOLHA NOVA é a folha importada agora, apropriada com a mesma conta da tela, mas
+    sem o "fora" (quem ficou fora precisa de obra se for pago agora).
+  - Grupos: a receber (marcado, paga a diferença), não pago antes (desmarcado, diz por
+    que ficou fora), pago a mais (informativo; inclui quem saiu da folha) e sem mudança.
+  - A diferença é dividida nas obras na proporção da folha nova (centavo na última).
+  - Gerar = `gerar_direto` com origem "complementar": grava um FECHAMENTO com verba
+    própria (`complementarN`, rótulo "Folha complementar N", natureza da folha) e gera
+    o arquivo dele; depois guarda o pago a mais em "a descontar" e zera a seleção.
+  - "A descontar" (`analisesps.meta` › `folha.a_descontar`): lista com "já descontado";
+    aparece na Complementar e um aviso na folha. O sistema não desconta sozinho.
+  - Relatório PDF (paisagem) e Excel com todos os grupos (`detalhe_todos` no relatório
+    compartilhado).
+- Sem migração (usa as tabelas de fechamento e `meta`).
+- Conferido: ciclo completo no banco de teste (pagou a folha → complementar com
+  512,80 → a seguinte já vê esse pagamento); tela no navegador (marcar, salvar, janela
+  de gerar com só a diferença). Testes: `test_analisesps_folha_complementar.py`.
+- **Não verificado com folha de verdade:** o casamento de CPF depende do cadastro (quem
+  não casa aparece "sem CPF — não dá para pagar").
+
 #### Leva 253 — DC: relatório detalhado em paisagem e acréscimo/desconto por lançamento (06/11/2026)
 
 > **Publicado em 06/11/2026.**
