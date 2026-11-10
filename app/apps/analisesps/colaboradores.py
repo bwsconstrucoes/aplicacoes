@@ -301,13 +301,18 @@ COLUNAS_DO_PAGAMENTO = {
     "pix_cnpj": ["Pix CNPJ", "CNPJ Pix", "CNPJ do Pix"],
     "pix_tipo": ["Chave Pix Tipo", "Tipo Chave Pix", "Tipo da Chave Pix", "Tipo de Chave Pix"],
     "pix_chave": ["Chave Pix", "Chave PIX"],
+    # A coluna BT — a empresa que admitiu (10/11/2026; `empresa_da_folha`). O dono:
+    # *"a coluna BT, CNPJ admissão. Eu preciso diferenciar as empresas."*
+    "cnpj_admissao": ["CNPJ Admissão", "CNPJ Admissao", "CNPJ de Admissão",
+                      "CNPJ da Admissão", "CNPJ Empresa Admissão"],
 }
 # Sem o nome, a posição (a partir de zero) — mas só se o cabeçalho dali tiver a
 # palavra esperada. Posição sem conferência pagaria pela coluna errada no dia em
 # que alguém inserir uma coluna.
 POSICAO_DO_PAGAMENTO = {"recebe_gratificacao": (56, "gratifica"),
                         "valor_mensal": (58, "valor"),
-                        "recebe_via_sp": (60, "via sp")}
+                        "recebe_via_sp": (60, "via sp"),
+                        "cnpj_admissao": (71, "cnpj")}       # a coluna BT
 # ⚠️ A FALTA DELAS NÃO AVISA AQUI, na carga: a lista de avisos do cadastro tem de
 # caber na tela (ver COLUNAS_QUE_AVISAM). Quem avisa é a tela Gratificados, onde a
 # falta muda dinheiro — `gratificados.calcular` diz quais colunas não vieram.

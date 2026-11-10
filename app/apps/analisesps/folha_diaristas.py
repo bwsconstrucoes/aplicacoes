@@ -624,14 +624,18 @@ def _tipo_do_ajuste(qual: str) -> str:
     return f"{VERBA}_{qual}"
 
 
-def calcular(ano: int, mes: int, qual: str = "quinzena") -> dict:
-    """Os diaristas do período, com o valor de cada um e os totais."""
+def calcular(ano: int, mes: int, qual: str = "quinzena", empresa: str = "") -> dict:
+    """Os diaristas do período, com o valor de cada um e os totais.
+
+    `empresa`: o CNPJ de admissão (`empresa_da_folha`) — recorta a lista ANTES dos
+    totais; vazio = todas."""
     from . import folha_auxilio
     if qual not in PERIODOS:
         qual = "quinzena"
     ano, mes = int(ano), int(mes)
     inicio, fim = periodo(ano, mes, qual)
-    base = {"ano": ano, "mes": mes, "qual": qual, "rotulo_periodo": PERIODOS[qual],
+    base = {"empresa": "", "empresas": [],
+            "ano": ano, "mes": mes, "qual": qual, "rotulo_periodo": PERIODOS[qual],
             "competencia": f"{mes:02d}/{ano}", "inicio": inicio, "fim": fim,
             "tem_ponto": False, "tem_coluna_da_diaria": colaboradores.tem_valor_diaria(),
             "pessoas": [], "sem_cadastro": [], "total": Decimal("0.00"),
@@ -676,6 +680,13 @@ def calcular(ano: int, mes: int, qual: str = "quinzena") -> dict:
         if regras.get(cpf):
             aplicar_regra_de_rateio(p, regras[cpf])
         pessoas.append(p)
+
+    from . import empresa_da_folha
+    base["empresa"] = empresa_da_folha.normalizar(empresa)
+    pessoas, base["empresas"] = empresa_da_folha.preparar(pessoas, empresa)
+    if base["empresa"]:
+        # Sem cadastro não há CNPJ: só aparecem no recorte "sem CNPJ".
+        sem_cadastro = sem_cadastro if base["empresa"] == empresa_da_folha.SEM_CNPJ else []
 
     if sem_cadastro:
         # O nome como veio do ponto: é o que permite achar a pessoa no Mobponto.
@@ -728,13 +739,13 @@ VALIDADE_DO_GUARDADO_S = 90
 _guardados: dict = {}
 
 
-def calcular_guardado(ano: int, mes: int, qual: str = "quinzena") -> dict:
+def calcular_guardado(ano: int, mes: int, qual: str = "quinzena", empresa: str = "") -> dict:
     import time
-    chave = (int(ano), int(mes), str(qual))
+    chave = (int(ano), int(mes), str(qual), str(empresa or ""))
     guardado = _guardados.get(chave)
     if guardado and time.monotonic() - guardado[0] < VALIDADE_DO_GUARDADO_S:
         return guardado[1]
-    resultado = calcular(ano, mes, qual)
+    resultado = calcular(ano, mes, qual, empresa)
     if len(_guardados) > 6:
         _guardados.clear()
     _guardados[chave] = (time.monotonic(), resultado)
@@ -842,10 +853,11 @@ def apropriado(calculado: dict) -> dict:
             "total_apropriado": total, "fecha": True}
 
 
-def fechar(ano: int, mes: int, qual: str, quem: str = "") -> dict:
-    """Congela a diária do período, para o arquivo poder sair."""
+def fechar(ano: int, mes: int, qual: str, quem: str = "", empresa: str = "") -> dict:
+    """Congela a diária do período, para o arquivo poder sair. `empresa`: só as
+    pessoas daquele CNPJ de admissão (`empresa_da_folha`)."""
     from . import folha_apropriacao_guardada as guardada
-    calculado = calcular(ano, mes, qual)
+    calculado = calcular(ano, mes, qual, empresa)
     if not calculado["tem_ponto"]:
         raise guardada.ErroDaApropriacao(
             "o ponto desta competência ainda não foi importado — não há diária para fechar.")

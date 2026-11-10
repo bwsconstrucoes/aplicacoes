@@ -3843,7 +3843,8 @@ def folha_diaristas_relatorio(formato: str):
                                mensagem="Este formato de relatório não existe."), 404
     try:
         ano, mes = int(request.args.get("ano") or 0), int(request.args.get("mes") or 0)
-        calculado = fd.calcular(ano, mes, request.args.get("periodo") or "quinzena")
+        calculado = fd.calcular(ano, mes, request.args.get("periodo") or "quinzena",
+                                request.args.get("empresa") or "")
         lista = folha_lista.filtrar(calculado.get("pessoas") or [], request.args,
                                     escondidas=folha_lista.ESCONDIDAS_NOS_DIARISTAS)
         contas = fpg.conta_por_obra()
@@ -3871,7 +3872,7 @@ def folha_auxilio_relatorio(formato: str):
                                mensagem="Auxílio não reconhecido."), 404
     try:
         ano, mes = int(request.args.get("ano") or 0), int(request.args.get("mes") or 0)
-        resultado = fx.calcular(tipo, ano, mes)
+        resultado = fx.calcular(tipo, ano, mes, request.args.get("empresa") or "")
         lista = folha_lista.filtrar(list(resultado.get("pessoas") or []),
                                     request.args, campo_da_obra="obra",
                                     escondidas=folha_lista.ESCONDIDAS_NOS_AUXILIOS)
@@ -4936,7 +4937,7 @@ def tela_folha_auxilio():
     erro = None
     try:
         if pronto:
-            resultado = fx.calcular(tipo, ano, mes)
+            resultado = fx.calcular(tipo, ano, mes, request.args.get("empresa") or "")
     except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
         logger.exception("Folha: não consegui calcular o auxílio")
         erro = str(e)
@@ -5334,7 +5335,8 @@ def tela_folha_dc():
     mostrar_geradas = request.args.get("geradas") == "1"
     calculado, erro = None, None
     try:
-        calculado = dc.calcular(recarregar=recarregar, mostrar_geradas=mostrar_geradas)
+        calculado = dc.calcular(recarregar=recarregar, mostrar_geradas=mostrar_geradas,
+                                empresa=request.args.get("empresa") or "")
     except dc.ErroDaDC as e:
         erro = str(e)
     except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
@@ -5379,7 +5381,8 @@ def folha_dc_relatorio(formato: str):
         # Com as já geradas à mostra, elas entram no relatório — e cada uma leva
         # o número da SP que a pagou (dono, 06/10/2026).
         geradas = request.args.get("geradas") == "1"
-        calculado = dc.calcular(mostrar_geradas=geradas)
+        calculado = dc.calcular(mostrar_geradas=geradas,
+                                empresa=request.args.get("empresa") or "")
         lista = _dc_lista(calculado, request.args)
         contas = fpg.conta_por_obra()
         montado = dc.montado_do_relatorio(calculado, lista["pessoas"], lista["filtros"],
@@ -5847,7 +5850,7 @@ def tela_folha_diaristas():
     resultado = {"tem_ponto": False, "pessoas": [], "sem_cadastro": []}
     erro = None
     try:
-        resultado = fd.calcular_guardado(ano, mes, qual)
+        resultado = fd.calcular_guardado(ano, mes, qual, request.args.get("empresa") or "")
     except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
         logger.exception("Folha: não consegui calcular os diaristas")
         erro = str(e)

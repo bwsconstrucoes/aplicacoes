@@ -12244,6 +12244,41 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 257 — Empresa (CNPJ de admissão) recorta Alimentação/Transporte, Diaristas e DC (10/11/2026)
+
+- *"Na C. Diários (…) Dados Documentos (…) a coluna BT, CNPJ admissão. Eu preciso
+  diferenciar as empresas. (…) gerar a folha de diaristas, mas exibir somente os que
+  estão cadastrados para uma empresa (…) antes de gerar qualquer informação. (…)
+  alimentação e transporte, diaristas, despesa com colaboradores."*
+- **Leitura:** a coluna BT entra na carga do cadastro (`COLUNAS_DO_PAGAMENTO
+  ["cnpj_admissao"]`, nome "CNPJ Admissão" ou, sem o nome, a posição 72 conferindo a
+  palavra "cnpj"), no JSON `documentos` — sem migração. **Só aparece depois de um
+  "Atualizar cadastro"**; até lá todo mundo está "sem CNPJ de admissão".
+- **Na tela** (`empresa_da_folha.py`, include `_empresa_da_folha.html`): um seletor
+  "Empresa (CNPJ de admissão)" na barra do mês das três telas. O recorte é feito DENTRO
+  do cálculo (`calcular(..., empresa)`), antes dos totais: KPIs, obras, lista,
+  relatório, divisão e GERAÇÃO saem só com aquela empresa. "Sem CNPJ de admissão" é
+  uma opção, para ninguém sumir sem ser visto. O nome vem do cadastro de Empresas do
+  ERP pelo CNPJ; sem ele, o CNPJ formatado.
+- **Geração por empresa:** na DC funciona naturalmente (o que foi gerado sai da tela).
+  Nos auxílios e diaristas o FECHAMENTO é um só por competência e verba: gerar a
+  primeira empresa funciona; a SEGUNDA no mesmo período é RECUSADA, mesmo com "gerar
+  mesmo assim" — passaria por cima do registro da primeira (e travaria a SP dela).
+  **Pendente com o dono:** se ele gera uma empresa de cada vez no mesmo período, é
+  preciso separar o fechamento por empresa (decisão de desenho, não feita).
+- Testes: `test_analisesps_empresa_da_folha.py`.
+
+#### Leva 256 — Diaristas: filtro de obra lento (10/11/2026)
+
+- *"Clico nas obras pra filtrar mas leva uma eternidade."* Cada pessoa lia os
+  acréscimos de diária do ERP DUAS vezes (4 consultas cada) — ~3.200 idas ao banco
+  numa quinzena de 400 diaristas, a cada clique. Agora uma leitura por cálculo
+  (`calcular_pessoa(..., acrescimos=)`), e a TELA guarda a conta por 90 s
+  (`folha_diaristas.calcular_guardado`), jogada fora em qualquer gravação do módulo e
+  no fim de toda leitura do ponto. Medido no banco de teste com 400 pessoas: 1,8 s →
+  0,5 s para calcular; o clique de filtro, 0,2 s. Quem grava (seleção, fechar, gerar)
+  continua calculando na hora.
+
 #### Leva 255 — Agenda: os feriados vêm do cadastro do ponto (10/11/2026)
 
 - A pergunta que estava aberta desde 04/11: a aba "Feriados" da planilha de credenciais

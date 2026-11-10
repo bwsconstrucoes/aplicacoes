@@ -759,7 +759,8 @@ def _pedido_direto(origem: str, dados: dict) -> dict:
         from .horario import agora
         hoje = agora().date()
         return {"ano": hoje.year, "mes": hoje.month, "tipo": dc.TIPO, "verba": dc.VERBA,
-                "linhas": dc.linhas_a_pagar(),
+                "empresa": str(dados.get("empresa") or ""),
+                "linhas": dc.linhas_a_pagar(empresa=str(dados.get("empresa") or "")),
                 "rotulo": f"Despesas com colaboradores {hoje.strftime('%d/%m/%Y')}"}
     if origem == "avulso":
         # O PAGAMENTO AVULSO (15/10/2026): a lista colada na tela, sem
@@ -815,9 +816,11 @@ def _pedido_direto(origem: str, dados: dict) -> dict:
     ano, mes = int(dados.get("ano") or 0), int(dados.get("mes") or 0)
     if origem == "diaria":
         periodo = str(dados.get("periodo") or "quinzena")
-        calculado = folha_diaristas.calcular(ano, mes, periodo)
+        empresa = str(dados.get("empresa") or "")
+        calculado = folha_diaristas.calcular(ano, mes, periodo, empresa)
         tipo = folha_diaristas.TIPO_DO_FECHAMENTO[calculado["qual"]]
         return {"ano": ano, "mes": mes, "tipo": tipo, "verba": "diaria",
+                "empresa": calculado.get("empresa") or "",
                 "periodo": calculado["qual"],
                 "linhas": _linhas_do_apropriado(
                     folha_diaristas.apropriado(calculado), "diaria"),
@@ -825,9 +828,9 @@ def _pedido_direto(origem: str, dados: dict) -> dict:
     pagamento = str(dados.get("pagamento") or "fim_de_mes")
     if pagamento not in folha_auxilio.TIPOS_DO_FECHAMENTO:
         raise ErroDoPagamento("selecione se o auxílio sai na quinzena ou no fim de mês.")
-    calculado = folha_auxilio.calcular(origem, ano, mes)
+    calculado = folha_auxilio.calcular(origem, ano, mes, str(dados.get("empresa") or ""))
     return {"ano": ano, "mes": mes, "tipo": pagamento, "verba": origem,
-            "pagamento": pagamento,
+            "pagamento": pagamento, "empresa": calculado.get("empresa") or "",
             "linhas": _linhas_do_apropriado(folha_auxilio.apropriado(calculado), origem),
             "rotulo": f"{folha_auxilio.ROTULO_DO_TIPO[origem]} {mes:02d}/{ano}"}
 
@@ -902,6 +905,16 @@ def gerar_direto(origem: str, dados: dict, destino: str, quem: str = "",
     saem do mesmo cálculo."""
     from . import folha_auxilio, folha_diaristas, folha_gestao
     pedido = resumo_direto(origem, dados, destino, destinos)
+    if pedido["resumo"]["ja_gerado"] and pedido.get("empresa") \
+            and origem in ("diaria",) + tuple(folha_auxilio.TIPOS):
+        # ⚠️ UMA EMPRESA DEPOIS DA OUTRA, NO MESMO PERÍODO, AINDA NÃO (10/11/2026). O
+        # fechamento é um só por competência e verba: gerar a segunda empresa por cima
+        # APAGARIA o registro da primeira (e a SP dela no Pipefy ficaria travada). Nem
+        # o "gerar mesmo assim" passa aqui — falta a decisão de como separar.
+        raise ErroDoPagamento(
+            "este pagamento já foi gerado neste período (outra empresa ou todas). "
+            "Gerar por empresa, uma depois da outra no mesmo período, ainda não é "
+            "possível: o registro da primeira geração seria substituído.")
     if pedido["resumo"]["ja_gerado"] and not forcar:
         anterior = pedido["resumo"]["ja_gerado"][0]
         raise ErroDoPagamento(
@@ -971,10 +984,11 @@ def gerar_direto(origem: str, dados: dict, destino: str, quem: str = "",
             raise ErroDoPagamento(str(e)) from e
     elif origem == "diaria":
         folha_diaristas.fechar(pedido["ano"], pedido["mes"], pedido["periodo"],
-                               quem=quem)
+                               quem=quem, empresa=pedido.get("empresa") or "")
     else:
         folha_auxilio.fechar(origem, pedido["ano"], pedido["mes"],
-                             pedido["pagamento"], quem=quem)
+                             pedido["pagamento"], quem=quem,
+                             empresa=pedido.get("empresa") or "")
     return gerar(pedido["ano"], pedido["mes"], pedido["tipo"], [pedido["verba"]],
                  destino, quem=quem, forcar=forcar, destinos=destinos,
                  relatorio=_relatorio_por_conta(origem, dados, pedido), cadastro=True)
@@ -991,7 +1005,8 @@ def _relatorio_por_conta(origem: str, dados: dict, pedido: dict):
         if origem == "dc":
             from . import dc
             contas = conta_por_obra()
-            montado = dc.montado_do_relatorio(dc.calcular(), so_a_pagar=True)
+            montado = dc.montado_do_relatorio(
+                dc.calcular(empresa=pedido.get("empresa") or ""), so_a_pagar=True)
         elif origem == "avulso":
             from . import pagamento_avulso as pa
             contas = conta_por_obra()
@@ -1011,7 +1026,7 @@ def _relatorio_por_conta(origem: str, dados: dict, pedido: dict):
             contas = folha_gestao._contas_das_obras()
         elif origem == "diaria":
             calculado = folha_diaristas.calcular(pedido["ano"], pedido["mes"],
-                                                 pedido["periodo"])
+                                                 pedido["periodo"], pedido.get("empresa") or "")
             lista = folha_lista.filtrar(
                 calculado.get("pessoas") or [], MultiDict(),
                 escondidas=folha_lista.ESCONDIDAS_NOS_DIARISTAS)
@@ -1019,7 +1034,8 @@ def _relatorio_por_conta(origem: str, dados: dict, pedido: dict):
             montado = fr.montado_das_diarias(calculado, lista["pessoas"],
                                              lista["filtros"], contas)
         else:
-            resultado = folha_auxilio.calcular(origem, pedido["ano"], pedido["mes"])
+            resultado = folha_auxilio.calcular(origem, pedido["ano"], pedido["mes"],
+                                               pedido.get("empresa") or "")
             lista = folha_lista.filtrar(
                 list(resultado.get("pessoas") or []), MultiDict(),
                 campo_da_obra="obra", escondidas=folha_lista.ESCONDIDAS_NOS_AUXILIOS)

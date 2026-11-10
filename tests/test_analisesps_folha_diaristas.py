@@ -489,7 +489,7 @@ def test_a_REGRA_DE_RATEIO_divide_a_diaria_entre_as_obras(banco_diaristas):
 # ---------------------------------------------------------------------------
 def test_o_filtro_usa_a_conta_guardada_e_gravar_joga_fora(monkeypatch):
     contas = []
-    monkeypatch.setattr(fd, "calcular", lambda a, m, q="quinzena": contas.append(1) or {"n": len(contas)})
+    monkeypatch.setattr(fd, "calcular", lambda a, m, q="quinzena", e="": contas.append(1) or {"n": len(contas)})
     fd.esquecer_o_guardado()
     assert fd.calcular_guardado(2026, 9, "quinzena") == {"n": 1}
     assert fd.calcular_guardado(2026, 9, "quinzena") == {"n": 1}, "o segundo clique não refaz"
