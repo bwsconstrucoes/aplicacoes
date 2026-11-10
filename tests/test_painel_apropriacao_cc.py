@@ -149,7 +149,9 @@ def test_o_lancamento_da_sicredi_entra_nas_duas_obras(base):
             " WHERE observacao = ?",
             (fato.MARCA_LANCAMENTO_CC,)).fetchall()
     # ordenado aqui, não no banco: a ordem do "(" muda com o idioma do servidor
-    assert sorted(linhas) == [("(não apropriado)", -23972.14, "TRF"),
+    # a transferência entre contas não é "não apropriado": não é para ter obra
+    # (dono, 10/11/2026)
+    assert sorted(linhas) == [("(transferência entre contas)", -23972.14, "TRF"),
                       ("CRECHESUAPE", -50000.0, "DRE"),
                       ("ESCPE18", -50000.01, "DRE")]
 

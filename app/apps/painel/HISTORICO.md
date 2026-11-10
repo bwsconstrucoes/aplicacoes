@@ -2558,6 +2558,165 @@ Grava no mesmo formato ("a; b; c") que o cálculo já lia — nada mudou na cont
 Sobre "mês em que ninguém estava no vermelho": o dono observou que, se há
 empréstimo, alguma obra estava no vermelho; a opção ficou como está.
 
+## Revisão da conta do cenário contra o que o dono pediu — 10/11/2026
+
+Pedido do dono: revisar o desenho e a conta (05 a 09/11), **sem mexer em
+código**. Nada foi alterado; o que segue é o que a revisão achou, conferido
+rodando `prestacao.py` com números pequenos. O que foi feito com cada um
+está logo abaixo, em "O que o dono decidiu".
+
+Dá número errado (confirmado na conta):
+
+1. **Lançamento marcado um a um é descontado duas vezes** quando a mesma
+   categoria, no mesmo mês, existe nos dois departamentos administrativos
+   (matriz e filial). `calcular_rateio_do_cenario` guarda o desconto por
+   (mês, grupo, categoria), mas `despesa_administrativa` devolve uma linha por
+   departamento — e o desconto sai de cada uma. Ex.: 1.000 + 300, lançamento de
+   400 marcado com 100% → rateia 900 em vez de 1.300. A árvore da montagem
+   soma certo, então tela e conta divergem.
+2. **Afinar a categoria faz ela perder os dois lados.** A parte do principal
+   só vem do período que deu o percentual (`peso_e_divisao`). Categoria com
+   percentual fixo, ou com período próprio sem a parte do principal, ou
+   lançamento marcado, dentro de um grupo "40% BWS CE", vira "sem separar" —
+   em branco ali não quer dizer "segue o grupo", ao contrário do percentual.
+3. **O que "fica de fora" não vai para ninguém** — nem para sobra. Com
+   "entra" abaixo de 100% (ou percentual padrão do cenário abaixo de 100), o
+   resto some do resultado. O dono disse "nada fica sem dono".
+4. **Lado sem obra na régua no mês entrega a parte ao outro lado**, sem
+   aviso (ex.: nenhuma obra do BWS CE com mão de obra naquele mês → 100% para
+   os demais). Foi lido de "nada fica sem dono"; ele não pediu isso com essas
+   palavras. Com régua de faturamento e janela de 1 mês acontece mais.
+
+Decisão dele, não defeito:
+
+5. Projeto "não recebe" sai também da régua dos **juros** — o buraco dele não
+   conta e as outras obras pagam.
+6. Obra encerrada no prejuízo fica no vermelho para sempre e segue levando
+   juro todo mês. "(não apropriado)" entra como obra: recebe estrutura e juro.
+7. Aporte não abate o buraco da obra (pendência de 21/09, ainda sem resposta).
+
+Menores: participações que não somam 100% não têm aviso; "(nenhum)" no
+projeto principal volta para o `projeto_matriz`; sem principal nenhum, a parte
+separada some sem virar sobra; a memória mês a mês não mostra quanto foi para
+cada lado; sem a migração 024 aplicada, os períodos digitados não são gravados
+e a tela não avisa.
+
+### O que o dono decidiu, e o que foi feito — 10/11/2026 (mesmo dia)
+
+> *"O que fica de fora some. Tem que somar 100%, né? Se não somou, tem que ser
+> criticado para ajustar. Todo mês vai ter mão de obra, então não se preocupe
+> em relação ao 4. O projeto que terminou com prejuízo, acho que ele tem que
+> encerrar. A gente tem que fazer um ponto de corte. Terminou de gastar com
+> mão de obra, terminou de receber juros. E é muito importante esse batimento
+> (…) o próprio sistema fazer esse somatório e identificar que bate com o valor
+> global (…) e a gente, com o relatório, poder fazer a checagem manual também."*
+
+- **Itens 1 e 2 consertados** (`calcular_rateio_do_cenario` soma a conta
+  antes de tirar o lançamento marcado; em `peso_e_divisao` a parte do
+  principal em branco segue o nível de cima). Sem projeto principal, a parte
+  separada volta para a régua comum em vez de sumir.
+- **Item 3 — critica, não bloqueia.** A conta passa a guardar o que ficou de
+  fora (por mês e por conta). A montagem avisa em vermelho quando há valor de
+  fora; o batimento do resultado diz "não fecha" enquanto houver. Não foi
+  proibido salvar abaixo de 100%: *interpretação minha* de "criticado para
+  ajustar" — se ele quiser impedir, é trocar o aviso por recusa.
+- **Item 4 — fica como está**, por decisão dele.
+- **Item 6 — ponto de corte dos juros** (`corte_dos_juros`): a obra deixa de
+  receber juro depois do último mês com custo de pessoal. Obra que nunca teve
+  pessoal usa o último mês com movimento de caixa (*escolha minha*, para ela
+  não ficar isenta para sempre). Vale no cenário **e na Prestação antiga** —
+  os números de juros por obra das duas telas mudam. Juro de mês em que
+  ninguém mais conta vira "sem dono", visível.
+- **Batimento** (`prestacao.batimento`): custo global da matriz = estrutura
+  para o principal + para os demais + juros nas obras + sem dono + ficou de
+  fora, mês a mês, com tolerância de R$ 1,00 por mês (centavos da divisão).
+  Quadro novo na tela de resultado do cenário, e duas abas na planilha
+  ("Batimento" e "Ficou de fora"). Critica também participações que não somam
+  100%. O "custo global" sai da mesma leitura da conta (departamentos
+  administrativos, análise DRE) — a conferência de fora é comparar esse número
+  com o DRE filtrado pelos dois departamentos.
+- Itens 5 e 7: respondidos logo depois — ver a seção seguinte.
+- Sem migração. **Não verificado:** a tela com a base real — só testes.
+
+### O caixa é de cada lado, e aporte abate o buraco — 10/11/2026 (mesmo dia)
+
+A resposta do dono aos itens 5 e 7:
+
+> *"O caixa gerado em BWSCE dá suporte a obras que ainda não receberam de um
+> lado. E do outro lado, todos os demais projetos se ajudam, ou seja, o caixa
+> gerado pelas obras serve para cobrir o buraco de obra que ainda não recebeu,
+> e aporte abate buraco sim."*
+
+Como foi lido, e feito (`alocar_juros_por_deficit`, parâmetro `lado_de`):
+
+- **O que demanda dinheiro emprestado é o buraco LÍQUIDO de cada lado** — a
+  soma do caixa acumulado de todas as obras do lado, as que sobram cobrindo as
+  que faltam. O juro do mês se reparte entre os dois lados pela falta líquida
+  de cada um; dentro do lado, entre as obras no vermelho, pelo buraco de cada
+  uma. **Lado que se cobre sozinho não paga juro**, mesmo com obra no
+  vermelho dentro dele. Se os dois se cobrem, o juro do mês fica "sem dono".
+- **Aporte abate:** o aporte líquido da obra (entrou menos devolveu, pela
+  MESMA regra do bloco de aportes do DRE — `consultas.aporte_mensal_por_obra`)
+  soma no caixa dela. O gráfico da vida da obra passa a mostrar o caixa já
+  com o aporte.
+- **Projeto que "não recebe" volta a contar nos juros:** continua fora do
+  resultado e das quotas, mas o caixa das obras dele entra na conta do lado
+  (ajuda quando sobra, pesa quando falta). Se uma obra dele estiver no
+  vermelho, o juro que cabe a ela aparece na lista de juros por obra e numa
+  nota do batimento — não some. "Fora da análise" continua fora de tudo.
+- A memória mês a mês dos juros (planilha) ganhou a falta de caixa de cada
+  lado. Vale também na Prestação antiga (matriz × filial são os dois lados).
+
+*Escolhas minhas, a confirmar:* (a) **dividendo pago não reduz o caixa da
+obra** — só aporte e devolução de aporte entram; obra que lucrou e distribuiu
+continua aparecendo como "sobrando" e cobrindo as outras; (b) a sobra de obra
+já encerrada continua ajudando o lado, o buraco dela não conta (ponto de
+corte); (c) obra sem projeto e "(não apropriado)" ficam no lado dos demais.
+
+**Não coberto por teste:** o caminho do projeto "não recebe" dentro dos juros
+(a base de teste tem um projeto só). **Não verificado:** nada disto com a base
+real — é provável que o total de juros "sem dono" suba, e é o primeiro número
+a olhar no batimento.
+
+### As três escolhas, respondidas pelo dono — 10/11/2026 (noite)
+
+> *"O dividendo pago diminui caixa. E a obra encerrada, a sobra continua
+> ajudando. (…) Não apropriado não fica em canto nenhum. Não apropriado eu
+> tenho que analisar e apropriar. E obra sem projeto não é para ter (…) todos
+> é para ter projeto."*
+
+- **Dividendo pago diminui o caixa da obra** na régua dos juros (só o que
+  SAI, critério do quadro de dividendos) — em `aporte_mensal_por_obra`.
+- **Sobra de obra encerrada continua ajudando o lado** — já era assim.
+- **"(não apropriado)" e obra sem projeto não ficam em lado nenhum** (só no
+  cenário): aparecem no resultado para serem vistas e corrigidas, mas não
+  recebem estrutura nem juros, não pesam na régua e o caixa delas não entra em
+  lado nenhum. O aviso da tela de resultado diz isso. O dono vai conferir se
+  existe obra sem projeto — "não é para ter".
+
+**Estado:** tudo no ramo `claude/exciting-wright-0zlwmj`, **não publicado**;
+sem migração. Falta o dono conferir o batimento com a base real e dizer "pode".
+
+## Transferência entre contas saiu do "(não apropriado)"; o ramo do outro chat — 10/11/2026
+
+**O ramo do outro chat.** A revisão da prestação (seção "Revisão da conta do
+cenário…", 10/11) foi feita num chat paralelo, no ramo
+`claude/exciting-wright-0zlwmj`, e NÃO tinha sido publicada nem trazida para
+este. O dono pediu para resgatar: o ramo foi juntado aqui, sem conflito, com
+todos os testes do painel passando. Ao começar uma sessão nesta área, conferir
+se há ramo de outro chat com trabalho do painel por publicar.
+
+**As transferências no "(não apropriado)".** O dono, no Explorador: *"muita
+coisa que é saída de transferência e entrada de transferência (…) não é uma
+simples transferência? Como é que isso vai estar apropriado? Antes isso nunca
+tinha acontecido."* Causa: desde 07/10/2026 os lançamentos de conta corrente
+entram no fato, e as transferências entre contas da empresa (TRAP/TRAR, tipo
+TRA, categoria 0.01.x) entravam sem obra — logo como "(não apropriado)", a
+lista do que alguém precisa apropriar. Agora levam o rótulo
+`(transferência entre contas)`, sem projeto, e esse rótulo não aparece na
+lista de obras da barra lateral. Continuam TRF (fora das telas no filtro
+padrão). Vale depois do próximo recálculo ("Só refazer os números" basta).
+
 ## Reler os pagamentos de um ano, de alguns ou de todos — 07/10/2026
 
 O dono, vendo a releitura retomada em "2025 (11 de 12 anos, 10 já feitos

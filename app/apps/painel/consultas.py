@@ -185,7 +185,8 @@ def opcoes_de_filtro() -> dict:
             "SELECT DISTINCT projeto FROM fato WHERE COALESCE(projeto,'') <> '' ORDER BY projeto")]
         obras = [d for (d,) in consultar(
             "SELECT DISTINCT departamento FROM fato "
-            " WHERE COALESCE(departamento,'') <> '' ORDER BY departamento")]
+            " WHERE COALESCE(departamento,'') <> '' ORDER BY departamento")
+                 if d != TRANSFERENCIA_ENTRE_CONTAS]
         contas = [c for (c,) in consultar(
             "SELECT DISTINCT conta_corrente FROM fato "
             " WHERE COALESCE(conta_corrente,'') <> '' ORDER BY conta_corrente")]
@@ -336,6 +337,10 @@ def caixa_por_ano(f: Filtros) -> list[dict]:
 # Um lugar so: o Explorador filtra por ele, e dois nomes diferentes para a mesma
 # coisa fariam a busca nao achar nada.
 SEM_OBRA = "(não apropriado)"
+# a transferência entre contas da empresa: sem obra, e não é para ter
+# (`sync.fato.TRANSFERENCIA_ENTRE_CONTAS`, 10/11/2026) — fica fora das listas
+# de obra da barra lateral
+TRANSFERENCIA_ENTRE_CONTAS = "(transferência entre contas)"
 # Mesmo padrao do SEM_OBRA: um rotulo so, em toda a tela, para o que
 # nao tem fornecedor — senao filtrar por ele vira adivinhacao.
 SEM_FORNECEDOR = "(sem fornecedor)"
@@ -658,6 +663,36 @@ def caixa_mensal_por_obra() -> list[tuple]:
            AND NOT (tipo = ? AND {RETIDO})
          GROUP BY 1, 2 ORDER BY 1, 2"""
     return [(mes, obra, float(valor or 0)) for mes, obra, valor in consultar(sql, [REC])]
+
+
+def aporte_mensal_por_obra() -> list[tuple]:
+    """O aporte líquido que cada obra recebeu, mês a mês: o que entrou menos o
+    que foi devolvido. Devolve ('AAAA-MM', obra, valor).
+
+    10/11/2026, o dono: "aporte abate buraco sim". O caixa da régua dos juros
+    é o da operação; sem isto, a obra que o sócio bancou parecia viver de
+    dinheiro emprestado e pagava juro por um buraco que já estava tapado.
+
+    A regra do que é aporte e do que é devolução é a MESMA do bloco de aportes
+    do DRE (`_APORTADO` / `_DEVOLVIDO`): só conta o que entra na obra como
+    aporte e o que sai como devolução — o lado de onde o dinheiro saiu não.
+
+    E O DIVIDENDO PAGO DIMINUI O CAIXA (dono, 10/11/2026, mais tarde: "o
+    dividendo pago diminui caixa"): dinheiro que a obra distribuiu aos sócios
+    não está mais lá para cobrir o buraco das outras. Só o que SAI conta — o
+    mesmo critério do quadro de dividendos."""
+    where, params = Filtros(excluir_trf=False).where(
+        f"{PAGO} AND data IS NOT NULL"
+        f" AND (({TIPO_APORTE}) IN ({NO_SALDO}) OR ({TIPO_APORTE}) = 'Dividendos')")
+    sql = f"""
+        SELECT to_char(data, 'YYYY-MM'), {OBRA_OU_SEM},
+               {_APORTADO} - {_DEVOLVIDO}
+               + SUM(CASE WHEN ({TIPO_APORTE}) = 'Dividendos' AND pago_recebido < 0
+                          THEN pago_recebido ELSE 0 END)
+          FROM fato{where}
+         GROUP BY 1, 2"""
+    return [(mes, obra, float(valor or 0)) for mes, obra, valor in consultar(sql, params)
+            if abs(float(valor or 0)) > 0.005]
 
 
 def financeiro_mensal() -> list[dict]:
@@ -2672,7 +2707,8 @@ def opcoes_do_explorador() -> dict:
             "analises": _distintos("analise"),
             "grupos": _distintos("grupo"),
             "categorias": _distintos("categoria", SEM_CATEGORIA),
-            "obras": _distintos("departamento", SEM_OBRA),
+            "obras": [o for o in _distintos("departamento", SEM_OBRA)
+                      if o != TRANSFERENCIA_ENTRE_CONTAS],
             "projetos": _distintos("projeto"),
             "contas": _distintos("conta_corrente"),
             "situacoes": _distintos("situacao"),
