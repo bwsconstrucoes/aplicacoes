@@ -2635,9 +2635,48 @@ e a tela não avisa.
   100%. O "custo global" sai da mesma leitura da conta (departamentos
   administrativos, análise DRE) — a conferência de fora é comparar esse número
   com o DRE filtrado pelos dois departamentos.
-- **Sem resposta ainda:** itens 5 (projeto que não recebe continua fora dos
-  juros) e 7 (aporte não abate o buraco). Ficaram como estavam.
+- Itens 5 e 7: respondidos logo depois — ver a seção seguinte.
 - Sem migração. **Não verificado:** a tela com a base real — só testes.
+
+### O caixa é de cada lado, e aporte abate o buraco — 10/11/2026 (mesmo dia)
+
+A resposta do dono aos itens 5 e 7:
+
+> *"O caixa gerado em BWSCE dá suporte a obras que ainda não receberam de um
+> lado. E do outro lado, todos os demais projetos se ajudam, ou seja, o caixa
+> gerado pelas obras serve para cobrir o buraco de obra que ainda não recebeu,
+> e aporte abate buraco sim."*
+
+Como foi lido, e feito (`alocar_juros_por_deficit`, parâmetro `lado_de`):
+
+- **O que demanda dinheiro emprestado é o buraco LÍQUIDO de cada lado** — a
+  soma do caixa acumulado de todas as obras do lado, as que sobram cobrindo as
+  que faltam. O juro do mês se reparte entre os dois lados pela falta líquida
+  de cada um; dentro do lado, entre as obras no vermelho, pelo buraco de cada
+  uma. **Lado que se cobre sozinho não paga juro**, mesmo com obra no
+  vermelho dentro dele. Se os dois se cobrem, o juro do mês fica "sem dono".
+- **Aporte abate:** o aporte líquido da obra (entrou menos devolveu, pela
+  MESMA regra do bloco de aportes do DRE — `consultas.aporte_mensal_por_obra`)
+  soma no caixa dela. O gráfico da vida da obra passa a mostrar o caixa já
+  com o aporte.
+- **Projeto que "não recebe" volta a contar nos juros:** continua fora do
+  resultado e das quotas, mas o caixa das obras dele entra na conta do lado
+  (ajuda quando sobra, pesa quando falta). Se uma obra dele estiver no
+  vermelho, o juro que cabe a ela aparece na lista de juros por obra e numa
+  nota do batimento — não some. "Fora da análise" continua fora de tudo.
+- A memória mês a mês dos juros (planilha) ganhou a falta de caixa de cada
+  lado. Vale também na Prestação antiga (matriz × filial são os dois lados).
+
+*Escolhas minhas, a confirmar:* (a) **dividendo pago não reduz o caixa da
+obra** — só aporte e devolução de aporte entram; obra que lucrou e distribuiu
+continua aparecendo como "sobrando" e cobrindo as outras; (b) a sobra de obra
+já encerrada continua ajudando o lado, o buraco dela não conta (ponto de
+corte); (c) obra sem projeto e "(não apropriado)" ficam no lado dos demais.
+
+**Não coberto por teste:** o caminho do projeto "não recebe" dentro dos juros
+(a base de teste tem um projeto só). **Não verificado:** nada disto com a base
+real — é provável que o total de juros "sem dono" suba, e é o primeiro número
+a olhar no batimento.
 
 ## Reler os pagamentos de um ano, de alguns ou de todos — 07/10/2026
 

@@ -660,6 +660,28 @@ def caixa_mensal_por_obra() -> list[tuple]:
     return [(mes, obra, float(valor or 0)) for mes, obra, valor in consultar(sql, [REC])]
 
 
+def aporte_mensal_por_obra() -> list[tuple]:
+    """O aporte líquido que cada obra recebeu, mês a mês: o que entrou menos o
+    que foi devolvido. Devolve ('AAAA-MM', obra, valor).
+
+    10/11/2026, o dono: "aporte abate buraco sim". O caixa da régua dos juros
+    é o da operação; sem isto, a obra que o sócio bancou parecia viver de
+    dinheiro emprestado e pagava juro por um buraco que já estava tapado.
+
+    A regra do que é aporte e do que é devolução é a MESMA do bloco de aportes
+    do DRE (`_APORTADO` / `_DEVOLVIDO`): só conta o que entra na obra como
+    aporte e o que sai como devolução — o lado de onde o dinheiro saiu não."""
+    where, params = Filtros(excluir_trf=False).where(
+        f"{PAGO} AND data IS NOT NULL AND ({TIPO_APORTE}) IN ({NO_SALDO})")
+    sql = f"""
+        SELECT to_char(data, 'YYYY-MM'), {OBRA_OU_SEM},
+               {_APORTADO} - {_DEVOLVIDO}
+          FROM fato{where}
+         GROUP BY 1, 2"""
+    return [(mes, obra, float(valor or 0)) for mes, obra, valor in consultar(sql, params)
+            if abs(float(valor or 0)) > 0.005]
+
+
 def financeiro_mensal() -> list[dict]:
     """As fontes de dinheiro que NÃO vêm da operação, mês a mês.
 

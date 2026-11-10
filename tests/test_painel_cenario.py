@@ -233,22 +233,67 @@ def test_padrao_zero_so_divide_o_que_foi_marcado(cenario):
 # ===========================================================================
 # 3. Os juros seguem a OUTRA régua
 # ===========================================================================
+def _aprofundar_o_buraco():
+    """MUITA GENTE gasta mais 5.000: o buraco dela passa a ser maior do que a
+    sobra da POUCA GENTE, e o lado inteiro fica devendo."""
+    from app.apps.painel import consultas
+    from app.apps.painel import db as painel_db
+    with painel_db.conexao() as conn:
+        _por_pagar(conn, 899, "MUITA GENTE", -5000)
+        conn.commit()
+    consultas.esquecer_listas()
+
+
 def test_o_juro_nao_entra_no_bolo_da_estrutura(cenario):
     """Se entrasse, seria repartido pelo pessoal — e cobrado de obra que se
     paga sozinha. Os 600 de juros ficam fora dos 1.200."""
+    _aprofundar_o_buraco()
     conta = _calcular(cenario)
     assert sum(conta["rateio"]["alocacoes"].values()) == pytest.approx(-1200, abs=0.02)
     assert sum(conta["juros"]["alocacoes"].values()) == pytest.approx(-600, abs=0.02)
 
 
 def test_o_juro_cai_em_quem_ficou_negativo(cenario):
-    """MUITA GENTE recebeu 1.000 e gastou 2.000, mais 800 de estrutura: está no
-    vermelho. POUCA GENTE recebeu 5.000 e gastou 1.400: está no azul, e não
-    paga juro nenhum."""
+    """Com o lado devendo, o juro cai em quem está no vermelho (MUITA GENTE) e
+    não em quem está no azul (POUCA GENTE)."""
+    _aprofundar_o_buraco()
     conta = _calcular(cenario)
     por_obra = conta["por_obra"]
     assert por_obra["MUITA GENTE"]["juros"] == pytest.approx(-600, abs=0.02)
     assert por_obra["POUCA GENTE"]["juros"] == pytest.approx(0, abs=0.02)
+    assert conta["batimento"]["soma_fecha"]
+
+
+def test_lado_que_se_cobre_sozinho_nao_paga_juro(cenario):
+    """10/11/2026, o dono: "o caixa gerado pelas obras serve para cobrir o
+    buraco de obra que ainda não recebeu". MUITA GENTE está no vermelho, mas a
+    sobra da POUCA GENTE (mesmo lado) cobre: ninguém paga, e os 600 ficam
+    visíveis como custo sem dono — o batimento continua somando."""
+    conta = _calcular(cenario)
+    assert conta["juros"]["alocacoes"] == {}
+    assert sum(s["valor"] for s in conta["juros"]["sobras"]) == pytest.approx(-600, abs=0.02)
+    assert conta["batimento"]["soma_fecha"]
+
+
+def test_aporte_abate_o_buraco_da_obra(cenario):
+    """10/11/2026, o dono: "aporte abate buraco sim"."""
+    from app.apps.painel import consultas
+    from app.apps.painel import db as painel_db
+    _aprofundar_o_buraco()
+    with painel_db.conexao() as conn:
+        conn.execute(
+            "INSERT INTO fato (codigo_lancamento, tipo, analise, situacao,"
+            " situacao_vencimento, categoria, grupo, departamento, projeto,"
+            " razao_social, data, ano, pago_recebido, a_pagar_receber, juros, multa,"
+            " tipo_aporte)"
+            " VALUES (898,'1. Contas a Receber','Fluxo de Caixa','RECEBIDO','Quitado',"
+            "         'Aportes Parceiros','Aportes','MUITA GENTE','ALFA','SOCIO Z',"
+            "         '2025-03-05',2025,9000,0,0,0,'Aporte de Parceiro')")
+        conn.commit()
+    consultas.esquecer_listas()
+    assert consultas.aporte_mensal_por_obra() == [("2025-03", "MUITA GENTE", 9000.0)]
+    conta = _calcular(cenario)
+    assert conta["juros"]["alocacoes"] == {}            # o aporte tapou o buraco
 
 
 def test_desligar_a_regua_do_deficit_devolve_o_juro_ao_bolo(cenario):
@@ -902,3 +947,36 @@ def test_critica_de_participacoes_que_nao_somam_cem():
     gente = [{"obra": "", "pct": 60}, {"obra": "", "pct": 40},
              {"obra": "X", "pct": 50}, {"obra": "X", "pct": 30}]
     assert prestacao.criticas_das_participacoes(gente) == [{"obra": "X", "soma": 80.0}]
+
+
+def test_o_caixa_e_de_cada_lado_e_o_juro_segue_o_buraco_liquido():
+    """10/11/2026, o dono: "o caixa gerado em BWSCE dá suporte a obras que
+    ainda não receberam de um lado. E do outro lado, todos os demais projetos
+    se ajudam"."""
+    from app.apps.painel import prestacao
+    obras = {o: {} for o in ("CE1", "CE2", "PE1", "PE2", "PE3")}
+    lado = {"CE1": "principal", "CE2": "principal",
+            "PE1": "demais", "PE2": "demais", "PE3": "demais"}
+    # principal: CE1 sobra 1000 e cobre o buraco de 400 da CE2 — não falta nada
+    # demais: PE1 sobra 100; PE2 deve 300 e PE3 deve 100 — faltam 300 no lado
+    caixa = [("2022-01", "CE1", 1000.0), ("2022-01", "CE2", -400.0),
+             ("2022-01", "PE1", 100.0), ("2022-01", "PE2", -300.0),
+             ("2022-01", "PE3", -100.0)]
+    r = prestacao.alocar_juros_por_deficit(caixa, {"2022-01": -80.0}, obras, lado_de=lado)
+    a = {o: round(v, 2) for (o, _m), v in r["alocacoes"].items()}
+    assert a == {"PE2": -60.0, "PE3": -20.0}            # a CE2 não paga: o lado a cobre
+    assert r["memoria"][0]["falta_principal"] == 0.0
+    assert r["memoria"][0]["falta_demais"] == 300.0
+    # os dois lados com falta: o juro se reparte pela falta líquida de cada um
+    caixa.append(("2022-02", "CE1", -900.0))            # principal passa a faltar 300
+    r = prestacao.alocar_juros_por_deficit(caixa, {"2022-02": -120.0}, obras, lado_de=lado)
+    a = {o: round(v, 2) for (o, _m), v in r["alocacoes"].items()}
+    assert a == {"CE2": -60.0, "PE2": -45.0, "PE3": -15.0}
+    # aporte entra como caixa da obra: tapou o buraco, acabou o juro dela
+    caixa.append(("2022-02", "PE2", 300.0))
+    r = prestacao.alocar_juros_por_deficit(caixa, {"2022-02": -120.0}, obras, lado_de=lado)
+    a = {o: round(v, 2) for (o, _m), v in r["alocacoes"].items()}
+    assert a == {"CE2": -120.0}                         # os demais agora se cobrem
+    # lado que se cobre sozinho, dos dois lados: ninguém paga, e fica visível
+    r = prestacao.alocar_juros_por_deficit(caixa[:3], {"2022-01": -80.0}, obras, lado_de=lado)
+    assert not r["alocacoes"] and len(r["sobras"]) == 1

@@ -305,6 +305,8 @@ COLUNAS = {
     "cenario_juros_mes": [("mes", "Mês"), ("juros", "Juros pagos"),
                           ("obras_no_vermelho", "Obras no vermelho"),
                           ("deficit_total", "Buraco somado"),
+                          ("falta_principal", "Falta de caixa — projeto principal"),
+                          ("falta_demais", "Falta de caixa — demais projetos"),
                           ("maior", "Maior devedora"), ("criterio", "Régua")],
     "cenario_trilha": [("rotulo", "Mês"), ("caixa_do_mes", "Caixa do mês"),
                        ("rateio", "Estrutura recebida"),

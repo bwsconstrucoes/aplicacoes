@@ -234,7 +234,7 @@ def _meses_ordenados(*conjuntos) -> list[str]:
 def alocar_juros_por_deficit(caixa_por_obra_mes, juros_por_mes, obras, *,
                              rateio_recebido=None,
                              sem_deficit: str = "sobra",
-                             corte=None) -> dict:
+                             corte=None, lado_de=None) -> dict:
     """Divide o juro de cada mês entre as obras que estavam no vermelho nele.
 
     Proporcional ao tamanho do buraco: quem devia o dobro paga o dobro.
@@ -246,7 +246,17 @@ def alocar_juros_por_deficit(caixa_por_obra_mes, juros_por_mes, obras, *,
 
     `corte` é {obra: último mês em que ela ainda paga juro} — ver
     `corte_dos_juros`. Depois dele o buraco da obra deixa de contar: obra
-    encerrada no prejuízo não fica pagando juro para sempre."""
+    encerrada no prejuízo não fica pagando juro para sempre.
+
+    `lado_de` é {obra: "principal" | "demais"}. Com ele, O CAIXA É DE CADA
+    LADO (dono, 10/11/2026): "o caixa gerado em BWSCE dá suporte a obras que
+    ainda não receberam de um lado. E do outro lado, todos os demais projetos
+    se ajudam — o caixa gerado pelas obras serve para cobrir o buraco de obra
+    que ainda não recebeu". Então o que demanda dinheiro emprestado é o buraco
+    LÍQUIDO do lado: soma-se o acumulado de todas as obras dele, as que sobram
+    cobrindo as que faltam. O juro do mês se reparte entre os lados pelo buraco
+    líquido de cada um e, dentro do lado, entre as obras no vermelho, pelo
+    tamanho do buraco de cada uma. Lado que se cobre sozinho não paga juro."""
     corte = corte or {}
     if sem_deficit not in SEM_DEFICIT:
         sem_deficit = "sobra"
@@ -279,12 +289,32 @@ def alocar_juros_por_deficit(caixa_por_obra_mes, juros_por_mes, obras, *,
     for mes in meses:
         for obra, serie in saldo.items():
             acumulado[obra] += serie.get(mes, 0.0)
+        def _ativa(o, _mes=mes):
+            return not (corte.get(o) and _mes > corte[o])
+
         deficits = {o: -v for o, v in acumulado.items()
-                    if v < -0.005 and not (corte.get(o) and mes > corte[o])}
-        total = sum(deficits.values())
+                    if v < -0.005 and _ativa(o)}
         juro = juros_por_mes.get(mes, 0.0)
 
         pesos, criterio = deficits, "déficit de caixa"
+        necessidade: dict[str, float] = {}
+        if lado_de is not None:
+            # o buraco LÍQUIDO de cada lado: as obras que sobram cobrem as que
+            # faltam. O buraco de obra já encerrada (depois do corte) não
+            # conta; o que ela deixou de sobra continua ajudando.
+            pesos, criterio = {}, "déficit de caixa, por lado"
+            for lado in ("principal", "demais"):
+                do_lado = [o for o in acumulado
+                           if (lado_de.get(o) or "demais") == lado]
+                liquido = sum(acumulado[o] for o in do_lado
+                              if acumulado[o] > 0 or _ativa(o))
+                necessidade[lado] = max(0.0, -liquido)
+                buracos = {o: deficits[o] for o in do_lado if o in deficits}
+                soma = sum(buracos.values())
+                if necessidade[lado] > 0.005 and soma > 0:
+                    for o, buraco in buracos.items():
+                        pesos[o] = necessidade[lado] * buraco / soma
+        total = sum(pesos.values())
         if total <= 0.005:
             pesos, criterio = {}, "ninguém no vermelho"
             if sem_deficit == "estrutura" and rateio_do_mes.get(mes):
@@ -307,6 +337,8 @@ def alocar_juros_por_deficit(caixa_por_obra_mes, juros_por_mes, obras, *,
             "juros": round(juro, 2),
             "criterio": criterio,
             "deficit_total": round(sum(deficits.values()), 2),
+            "falta_principal": round(necessidade.get("principal", 0.0), 2),
+            "falta_demais": round(necessidade.get("demais", 0.0), 2),
             "obras_no_vermelho": len(deficits),
             "maior": (max(deficits.items(), key=lambda kv: kv[1])[0]
                       if deficits else ""),

@@ -263,7 +263,10 @@
           <td class="dados direita">{{ brl(bt.principal) }}</td></tr>
         <tr><td class="desc">Estrutura rateada para os demais projetos</td>
           <td class="dados direita">{{ brl(bt.demais) }}</td></tr>
-        <tr><td class="desc">Juros apropriados nas obras</td>
+        <tr><td class="desc">Juros apropriados nas obras
+          {% if juros_fora_do_resultado|abs > 0.005 %}<br><small>dos quais {{ brl(juros_fora_do_resultado) }}
+          em obras de projeto que não recebe estrutura — não aparecem no
+          resultado, mas estão na lista de juros por obra</small>{% endif %}</td>
           <td class="dados direita">{{ brl(bt.juros) }}</td></tr>
         <tr><td class="desc">Sem dono (não coube em obra nenhuma)</td>
           <td class="dados direita">{{ brl(bt.sem_dono) }}</td></tr>

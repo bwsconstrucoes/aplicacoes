@@ -1347,8 +1347,11 @@ def _base_da_prestacao(config, medida: str) -> dict:
         # a regua dos juros e "quem estava sem dinheiro no mes", e conta a
         # pagar nao tira dinheiro de ninguem. Vem com o mes em texto para
         # casar com o resto da prestacao, que usa 'AAAA-MM'.
+        # ... e o aporte que a obra recebeu abate o buraco dela (dono,
+        # 10/11/2026: "aporte abate buraco sim")
         "caixa": [(mes.strftime("%Y-%m"), obra, valor)
-                  for mes, obra, valor in consultas.caixa_mensal_por_obra()],
+                  for mes, obra, valor in consultas.caixa_mensal_por_obra()]
+                 + consultas.aporte_mensal_por_obra(),
     }
     # O que o dono tirou da analise em Parametros sai AQUI, antes de qualquer
     # conta — e por isso vale para a prestacao, para os cenarios de rateio e
@@ -1407,7 +1410,10 @@ def _apurar_com(regras, config, base) -> dict:
             # ponto de corte (dono, 10/11/2026): acabou a mão de obra,
             # acabou o juro
             corte=prestacao.corte_dos_juros(base.get("pessoal", []),
-                                            base.get("caixa", []), obras))
+                                            base.get("caixa", []), obras),
+            # o caixa é de cada lado: a matriz de um, os demais do outro
+            lado_de={o: ("principal" if info.get("lado") == prestacao.MATRIZ
+                         else "demais") for o, info in obras.items()})
     else:
         juros = {"alocacoes": {}, "sobras": [], "memoria": []}
 
@@ -1546,6 +1552,15 @@ def _calcular_cenario(cenario: dict) -> dict:
         quem = cenarios.projetos(cenario["id"])
     nao_recebem = [f"projeto:{p}" for p, (papel, _d, _a) in (quem.get("regras") or {}).items()
                    if papel == "nao"]
+    # ... MAS O CAIXA DELE CONTA NOS JUROS (dono, 10/11/2026): "todos os demais
+    # projetos se ajudam — o caixa gerado pelas obras serve para cobrir o
+    # buraco de obra que ainda não recebeu". Por isso há duas listas: a de quem
+    # está fora de TUDO, e a de quem só não aparece no resultado.
+    fora_de_tudo = _obras_fora(config, list(itens_gerais) + list(itens_fora or []),
+                               apuracao)
+    obras_do_caixa = prestacao.classificar_obras(
+        [l for l in apuracao if (l.get("obra") or "").strip() not in fora_de_tudo],
+        config)
     fora = _obras_fora(config, list(itens_gerais) + list(itens_fora or []) + nao_recebem,
                        apuracao)
     if fora:
@@ -1599,17 +1614,24 @@ def _calcular_cenario(cenario: dict) -> dict:
 
     # O caixa e lido UMA vez e devolvido: a tela de resultado desenha a vida de
     # uma obra com ele, e reler significaria varrer o fato inteiro de novo.
-    caixa = [(mes.strftime("%Y-%m"), obra, valor)
-             for mes, obra, valor in consultas.caixa_mensal_por_obra()
-             if obra not in fora]
+    # O aporte que a obra recebeu abate o buraco dela (dono, 10/11/2026).
+    caixa = [(mes, obra, valor) for mes, obra, valor in
+             [(m.strftime("%Y-%m"), o, v)
+              for m, o, v in consultas.caixa_mensal_por_obra()]
+             + consultas.aporte_mensal_por_obra()
+             if obra not in fora_de_tudo]
+    lado_do_caixa = {o: ("principal" if principal and
+                         (info.get("projeto") or "").strip() == principal
+                         else "demais") for o, info in obras_do_caixa.items()}
     if por_deficit:
         juros = prestacao.alocar_juros_por_deficit(
-            caixa, juros_por_mes, obras,
+            caixa, juros_por_mes, obras_do_caixa,
             rateio_recebido=rateio["alocacoes"],
             sem_deficit=str(cenario.get("juros_sem_deficit", "sobra")),
             # ponto de corte (dono, 10/11/2026): "terminou de gastar com mão
             # de obra, terminou de receber juros"
-            corte=prestacao.corte_dos_juros(pessoal, caixa, obras))
+            corte=prestacao.corte_dos_juros(pessoal, caixa, obras_do_caixa),
+            lado_de=lado_do_caixa)
     else:
         juros = {"alocacoes": {}, "sobras": [], "memoria": []}
 
@@ -1635,6 +1657,10 @@ def _calcular_cenario(cenario: dict) -> dict:
         "batimento": prestacao.batimento(admin, rateio, juros, lado_de),
         "fora_por_conta": rateio.get("fora_por_conta", []),
         "criticas_participacoes": prestacao.criticas_das_participacoes(participacoes),
+        # juro que caiu em obra de projeto que "não recebe": conta no
+        # batimento, mas a obra não aparece no resultado
+        "juros_fora_do_resultado": sum(v for (o, _m), v in juros["alocacoes"].items()
+                                       if o not in obras),
         "principal": principal,
     }
 
@@ -1961,6 +1987,7 @@ def cenario_resultado():
         batimento=calculo["batimento"],
         fora_por_conta=calculo["fora_por_conta"],
         criticas_participacoes=calculo["criticas_participacoes"],
+        juros_fora_do_resultado=calculo["juros_fora_do_resultado"],
         principal=calculo["principal"],
         obra_grafico=obra, trilha=trilha, grafico=grafico,
         obras_para_grafico=[nome for nome, _n in por_obra],
