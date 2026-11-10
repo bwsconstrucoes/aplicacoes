@@ -88,6 +88,40 @@
   </div>
   <div id="resultado-diario"></div>
 </div>
+
+{# ⚑ TRAZER DO PIPEFY O CADASTRO DAS PESSOAS (10/11/2026).
+   Ele: *"tem o número do card do pipe, certo? Então, tu não consegue fazer
+   logo essa importação, não? Faz a leitura do card, baixa os documentos,
+   importa para o ERP. Só das pessoas que você já sabe que tem que estar."*
+
+   A tela diz ANTES o que vai acontecer e para quantas pessoas. Importação é a
+   operação em que o engano custa mais caro para desfazer, então conferir sem
+   gravar é o caminho normal, não o cuidadoso. #}
+<div class="cartao">
+  <div class="cartao-cab"><h3>Cadastro das pessoas (Pipefy)</h3>
+    <small>traz os documentos e preenche o que está vazio — nunca troca o que já está aqui</small></div>
+  <div id="pipefy-cadastro-situacao" class="cartao-dica">olhando…</div>
+  <div class="form-grade">
+    <div class="campo"><label for="pc-quantas">Quantas pessoas nesta rodada</label>
+      <input type="number" id="pc-quantas" min="1" max="300" value="50"></div>
+    <div class="campo"><label for="pc-quem">Quem entra</label>
+      <select id="pc-quem">
+        <option value="ativos">só quem está trabalhando</option>
+        <option value="todos">todo mundo que tem card, inclusive desligados</option>
+      </select></div>
+  </div>
+  <div class="dica" style="margin-top:8px">Entram <b>documento de
+    identificação, CTPS (as duas páginas), CPF, comprovante de endereço, foto,
+    documento de dependente e documentos diversos</b>, mais os campos do
+    cadastro que estiverem <b>em branco</b> aqui. O que já está preenchido no
+    ERP <b>não é trocado</b>. Rodar de novo <b>não traz nada duas vezes</b>.
+    O <b>ASO não vem</b>: ele vence, e o card não diz até quando vale.</div>
+  <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap">
+    <button class="btn secundario" id="btn-conferir-pc">Conferir sem gravar</button>
+    <button class="btn" id="btn-gravar-pc" disabled>Trazer do Pipefy</button>
+  </div>
+  <div id="resultado-pc"></div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -365,6 +399,138 @@ if (els("btn-conferir-diario"))
 if (els("btn-gravar-diario"))
   els("btn-gravar-diario").addEventListener("click", () => mandarDiario(true));
 
+// ---------------------------------------------------------------------------
+// TRAZER DO PIPEFY O CADASTRO DAS PESSOAS
+//
+// ⚑ O BOTÃO DE GRAVAR NASCE TRAVADO e só abre depois de uma conferência. É a
+// mesma trava dos diários, e ela existe porque importação errada de 575
+// pessoas é trabalho de dias para desfazer.
+// ---------------------------------------------------------------------------
+let PC_CONFERIDO = false;
+
+async function situacaoDoCadastroPipefy(){
+  const onde = els("pipefy-cadastro-situacao");
+  if (!onde) return;
+  try {
+    const d = await api("/erp/api/importar/pipefy-cadastro/situacao");
+    const x = d.dados || {};
+    if (!x.tem_token) {
+      // Oferecer um botão que vai falhar é fazer a pessoa descobrir no erro o
+      // que dava para saber na porta.
+      onde.innerHTML = `<b>Este servidor não tem o token do Pipefy.</b>
+        Sem ele não dá para ler os cards.`;
+      ["btn-conferir-pc", "btn-gravar-pc"].forEach(b => {
+        if (els(b)) els(b).disabled = true; });
+      return;
+    }
+    onde.innerHTML = `<b>${x.ativos_com_card}</b> pessoa(s) trabalhando com
+      número de card` + (x.sem_card ? ` · <b>${x.sem_card}</b> sem card (essas
+      não entram)` : "") + (x.cards_ja_lidos ? ` · já vieram
+      <b>${x.ja_guardados}</b> documento(s) de ${x.cards_ja_lidos} card(s)` : "")
+      + (x.ja_falharam ? ` · <b>${x.ja_falharam}</b> não desceu(desceram)` : "");
+  } catch(e){ onde.textContent = e.message; }
+}
+
+function pintarRelatorioPC(rel){
+  if (!rel) return "";
+  const linhas = [];
+  linhas.push(`<div class="cartao-dica"><b>${rel.pessoas_lidas}</b> pessoa(s)
+    lida(s) de ${rel.pessoas_na_fila} na fila · <b>${rel.documentos_guardados}</b>
+    documento(s) ${rel.simulado ? "entrariam" : "guardados"} ·
+    <b>${rel.campos_preenchidos}</b> campo(s) preenchido(s) ·
+    ${rel.documentos_ja_tinha} já tinha · ${rel.documentos_que_falharam} não veio</div>`);
+  if ((rel.cards_sem_resposta || []).length)
+    linhas.push(`<h4>Cards que o Pipefy não devolveu (${rel.cards_sem_resposta.length})</h4>
+      <table><thead><tr><th>Card</th><th>Motivo</th></tr></thead><tbody>${
+      rel.cards_sem_resposta.map(c=>`<tr><td class="dados">${escapar(c.card)}</td>
+        <td>${escapar(c.motivo)}</td></tr>`).join("")}</tbody></table>`);
+  if ((rel.falhas || []).length)
+    linhas.push(`<h4>Arquivos que não vieram (${rel.falhas.length})</h4>
+      <div class="cartao-dica">Estes precisam de mão humana — o resto entrou.</div>
+      <table><thead><tr><th>Pessoa</th><th>Arquivo</th><th>Motivo</th></tr></thead>
+      <tbody>${rel.falhas.map(f=>`<tr><td>${escapar(f.nome)}</td>
+        <td class="dados">${escapar(f.arquivo)}</td>
+        <td>${escapar(f.motivo)}</td></tr>`).join("")}</tbody></table>`);
+  const comCoisa = (rel.por_pessoa || []).filter(
+    p => (p.documentos || []).length || Object.keys(p.campos || {}).length);
+  if (comCoisa.length)
+    linhas.push(`<h4>Pessoa a pessoa (${comCoisa.length})</h4>
+      <table><thead><tr><th>Pessoa</th><th>Documentos</th><th>Campos</th></tr></thead>
+      <tbody>${comCoisa.map(p=>`<tr><td>${escapar(p.nome)}</td>
+        <td>${(p.documentos||[]).map(d=>`${escapar(d.tipo)} <small>(${
+          escapar(d.situacao)})</small>`).join("<br>") || "—"}</td>
+        <td>${Object.keys(p.campos||{}).join(", ") || "—"}</td></tr>`).join("")}</tbody></table>`);
+  return linhas.join("");
+}
+
+async function mandarCadastroPipefy(gravar){
+  const onde = els("resultado-pc");
+  const corpo = {
+    gravar: !!gravar,
+    so_ativos: els("pc-quem") ? els("pc-quem").value === "ativos" : true,
+    teto_de_pessoas: els("pc-quantas") ? Number(els("pc-quantas").value) : 50,
+  };
+  ["btn-conferir-pc", "btn-gravar-pc"].forEach(b => {
+    if (els(b)) els(b).disabled = true; });
+  onde.innerHTML = `<div class="cartao-dica">Na fila. Isso leva alguns
+    minutos — pode sair desta tela, o trabalho continua.</div>
+    <div id="andamento-pc"></div>`;
+  try {
+    const d = await api("/erp/api/importar/pipefy-cadastro",
+                        {method:"POST", body: JSON.stringify(corpo),
+                         headers: {"Content-Type":"application/json"}});
+    const fim = await acompanharTarefa(d.tarefa.id,
+                                       {alvo: "andamento-pc", intervalo: 2000});
+    if (!fim) {
+      aviso("mensagem", "O trabalho continua rodando — veja o andamento em "
+          + "Configurações.", "info");
+      return;
+    }
+    if (fim.situacao !== "CONCLUIDA") {
+      PC_CONFERIDO = false;
+      aviso("mensagem", "Não terminou: " + (fim.erro || "motivo não informado"),
+            "erro");
+      return;
+    }
+    const rel = (fim.resultado || {}).relatorio;
+    onde.innerHTML = pintarRelatorioPC(rel);
+    if (gravar) {
+      PC_CONFERIDO = false;
+      aviso("mensagem", (fim.resultado || {}).resumo || "Terminado.", "ok");
+    } else {
+      PC_CONFERIDO = true;
+      aviso("mensagem", "Conferido. Nada foi gravado — leia o resumo e, se "
+          + "estiver certo, aperte Trazer do Pipefy.", "info");
+    }
+    situacaoDoCadastroPipefy();
+  } catch(e){
+    PC_CONFERIDO = false;
+    onde.innerHTML = "";
+    aviso("mensagem", e.message, "erro");
+  } finally {
+    // ⚑ `finally`, e não duas linhas soltas no fim: há `return` lá dentro
+    // (trabalho que demorou demais, trabalho que falhou), e sem isto os dois
+    // botões ficariam travados para sempre — a tela pareceria quebrada.
+    if (els("btn-conferir-pc")) els("btn-conferir-pc").disabled = false;
+    if (els("btn-gravar-pc")) els("btn-gravar-pc").disabled = !PC_CONFERIDO;
+  }
+}
+
+// Mudar o filtro invalida a conferência: conferiu 50 ativos e gravou 300 de
+// todo mundo seria exatamente o engano que a trava existe para evitar.
+["pc-quantas", "pc-quem"].forEach(c => {
+  if (els(c)) els(c).addEventListener("change", () => {
+    PC_CONFERIDO = false;
+    if (els("btn-gravar-pc")) els("btn-gravar-pc").disabled = true;
+    if (els("resultado-pc")) els("resultado-pc").innerHTML = "";
+  });
+});
+if (els("btn-conferir-pc"))
+  els("btn-conferir-pc").addEventListener("click", () => mandarCadastroPipefy(false));
+if (els("btn-gravar-pc"))
+  els("btn-gravar-pc").addEventListener("click", () => mandarCadastroPipefy(true));
+
+situacaoDoCadastroPipefy();
 preencher();
 </script>
 {% endblock %}

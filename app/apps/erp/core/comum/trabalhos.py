@@ -82,6 +82,40 @@ def importar_pipefy(s: Session, parametros: dict[str, Any], andamento) -> dict[s
 
 
 # ---------------------------------------------------------------------------
+# Trazer do Pipefy o cadastro das pessoas
+# ---------------------------------------------------------------------------
+def importar_cadastro_pipefy(s: Session, parametros: dict[str, Any],
+                             andamento) -> dict[str, Any]:
+    """Os documentos das pessoas que ficaram no Pipefy.
+
+    Vai para a fila pelo mesmo motivo da importação de cards: são dezenas de
+    pessoas, cada uma com até oito arquivos para baixar. Num clique, isso
+    seguraria uma das quatro linhas de atendimento do serviço por minutos — e
+    todo mundo sentiria o sistema pesado sem saber por quê.
+    """
+    from app.apps.erp.core.pipefy import cadastro_importacao as imp
+
+    simular = bool(parametros.get("simular", True))
+    andamento(0, 1, "Lendo os cards no Pipefy…")
+    rel = imp.importar(
+        s, _usuario(s, parametros), simular=simular,
+        so_ativos=bool(parametros.get("so_ativos", True)),
+        obra_id=parametros.get("obra_id"),
+        teto_de_pessoas=parametros.get("teto_de_pessoas") or imp.POR_RODADA)
+    if not simular:
+        s.commit()
+    andamento(1, 1, "Terminado.")
+    verbo = "entrariam" if simular else "guardados"
+    return {
+        "relatorio": rel,
+        "resumo": (f"{rel['pessoas_lidas']} pessoa(s) lida(s), "
+                   f"{rel['documentos_guardados']} documento(s) {verbo}, "
+                   f"{rel['campos_preenchidos']} campo(s) preenchido(s), "
+                   f"{rel['documentos_que_falharam']} não veio(vieram)."),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Sincronizar a agenda
 # ---------------------------------------------------------------------------
 def sincronizar_agenda(s: Session, parametros: dict[str, Any], andamento) -> dict[str, Any]:
@@ -298,6 +332,7 @@ def equalizar_fornecedores(s: Session, parametros: dict[str, Any],
 def registrar_todos() -> None:
     """Liga os executores à fila. Chamado uma vez, no import das rotas."""
     tarefas.registrar("importar_pipefy", importar_pipefy)
+    tarefas.registrar("importar_cadastro_pipefy", importar_cadastro_pipefy)
     tarefas.registrar("sincronizar_agenda", sincronizar_agenda)
     tarefas.registrar("emitir_nota", emitir_nota)
     tarefas.registrar("texto_dos_documentos", texto_dos_documentos)

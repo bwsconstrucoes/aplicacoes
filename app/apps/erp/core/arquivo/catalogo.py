@@ -109,6 +109,15 @@ CATALOGO: tuple[tuple[Any, ...], ...] = (
     # e os papéis ficavam no Dropbox do Pipefy, onde ninguém mais procura.
     ("COMPROVANTE-ENDERECO-PESSOA", "Comprovante de endereço (colaborador)", "PESSOA", "PESSOA", False, None, False, "PESSOAL"),
     ("FOTO-COLABORADOR", "Foto do colaborador", "PESSOA", "PESSOA", False, None, False, "PESSOAL"),
+    # ⚑ OS TRÊS DA MIGRAÇÃO 100 entram AQUI TAMBÉM, e isso não é repetição: a
+    # migração cria a linha uma vez, no banco que já existe; esta lista é a
+    # fonte de verdade do catálogo (`aplicar`), e é dela que sai a ORDEM em
+    # que os tipos aparecem na tela. Tipo que só existe na migração nasce no
+    # fim da lista e some de qualquer banco criado do zero — foi exatamente o
+    # que a trava da importação do Pipefy pegou, em 10/11/2026.
+    ("CPF-DOC", "CPF (Cadastro de Pessoa Física)", "PESSOA", "PESSOA", False, None, False, "PESSOAL"),
+    ("CTPS-FOTO", "CTPS (página com a foto do colaborador)", "PESSOA", "PESSOA", False, None, False, "PESSOAL"),
+    ("CTPS-INFORMACOES", "CTPS (página com as informações do colaborador)", "PESSOA", "PESSOA", False, None, False, "PESSOAL"),
     ("DOC-DEPENDENTE", "Certidão ou RG de dependente", "PESSOA", "PESSOA", False, None, False, "PESSOAL"),
     ("DOC-PESSOA-OUTRO", "Outro documento do colaborador", "PESSOA", "PESSOA", False, None, False, "PESSOAL"),
     # OS DOIS QUE A CONTABILIDADE DEVOLVE (05/11/2026). Cada pedido formal
