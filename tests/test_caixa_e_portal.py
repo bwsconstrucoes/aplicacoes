@@ -736,3 +736,81 @@ def test_todo_tipo_que_o_portal_oferece_existe_de_verdade():
             assert k in svc_sp.TIPOS, (
                 f"o portal oferece {k!r} na área {area!r} e esse tipo não "
                 f"existe em pessoal_solicitacoes.TIPOS")
+
+
+# ---------------------------------------------------------------------------
+# O QUE O CADASTRO JÁ TEM NÃO SE PERGUNTA DE NOVO
+#
+# Ele, em 10/11/2026, sobre a admissão de prestador: *"vamos requerer os dados.
+# Se não tivermos, né? Acho que é interessante uma consulta, ver se tem CTPS,
+# se tem PIS."*
+#
+# O defeito que estes testes defendem é de DADO, não de tela: pedir de novo o
+# número que o sistema tem abre a porta para alguém digitar um diferente — e
+# aí o cadastro e o pedido discordam na hora de registrar a carteira.
+# ---------------------------------------------------------------------------
+def test_o_tipo_leva_para_a_tela_de_onde_cada_campo_vem():
+    """O mapa é do servidor. Se a tela decidisse, divergiriam — e a pessoa
+    descobriria a diferença só na recusa do envio."""
+    from app.apps.erp.core import portal as svc_portal
+    from app.apps.erp.core import pessoal_solicitacoes as svc_sp
+    lista = svc_portal.tipos(None)
+    for t in lista:
+        regra = svc_sp.TIPOS[t["chave"]]
+        assert t["ja_no_cadastro"] == dict(regra.get("ja_no_cadastro") or {})
+    prestador = next(t for t in lista if t["chave"] == "ADMISSAO_PRESTADOR")
+    assert prestador["ja_no_cadastro"] == {"num_ctps": "ctps_numero",
+                                           "num_pis": "pis"}
+
+
+def test_todo_campo_consultado_no_cadastro_e_campo_do_proprio_tipo():
+    """Consultar uma coluna para um campo que o formulário não tem é consulta
+    que nunca aparece — e ninguém descobre, porque nada reclama."""
+    from app.apps.erp.core import pessoal_solicitacoes as svc_sp
+    for chave, regra in svc_sp.TIPOS.items():
+        for campo in (regra.get("ja_no_cadastro") or {}):
+            assert campo in regra["campos"], (
+                f"{chave}: consulta o cadastro para {campo!r}, que não é "
+                f"campo deste tipo")
+
+
+@banco_
+def test_toda_coluna_consultada_existe_na_tabela_de_colaboradores(sessao_real,
+                                                                  banco):
+    """Coluna errada derrubaria a BUSCA DE PESSOA do portal inteira — não só o
+    tipo que a consulta. Vale um teste com banco de verdade."""
+    from sqlalchemy import text
+    from app.apps.erp.core import pessoal_solicitacoes as svc_sp
+    existem = {l[0] for l in sessao_real.execute(text(
+        "SELECT column_name FROM information_schema.columns "
+        " WHERE table_name = 'colaboradores'")).all()}
+    for coluna in svc_sp.COLUNAS_JA_NO_CADASTRO:
+        assert coluna in existem, (
+            f"ja_no_cadastro aponta para colaboradores.{coluna}, que não "
+            f"existe")
+
+
+@banco_
+def test_a_busca_de_pessoa_devolve_o_que_o_cadastro_tem(sessao_real, dono,
+                                                        pessoa, banco):
+    """E só o que ESTÁ preenchido: campo vazio virando 'já no cadastro' faria
+    a pessoa deixar de preencher o que falta."""
+    from app.apps.erp.core import portal as svc_portal
+    achados = svc_portal.procurar_pessoas(sessao_real, dono, "Pessoa Da Caixa")
+    eu = next(x for x in achados if x["id"] == pessoa.id)
+    # Esta pessoa tem PIS no cadastro e NÃO tem número de CTPS.
+    assert eu["cadastro"]["pis"] == PIS_A
+    assert "ctps_numero" not in eu["cadastro"]
+
+
+@banco_
+def test_o_pedido_nasce_com_o_que_o_cadastro_tem_e_nao_exige_de_novo(
+        sessao_real, dono, pessoa, banco):
+    from app.apps.erp.core import pessoal_solicitacoes as svc_sp
+    ja = svc_sp.o_que_o_cadastro_ja_tem(sessao_real, "ADMISSAO_PRESTADOR",
+                                        pessoa.id)
+    assert ja == {"num_pis": PIS_A}
+    exige = svc_sp.exigencias("ADMISSAO_PRESTADOR", {}, ja)
+    assert "num_pis" not in exige["campos"]
+    # O que o cadastro NÃO tem continua sendo perguntado.
+    assert "num_ctps" in exige["campos"]

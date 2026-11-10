@@ -282,6 +282,7 @@ const ROTULO = {
   admissao: "Data de admissão", tipo_contrato: "Tipo de contrato",
   convencao_id: "Convenção coletiva", matricula: "Matrícula",
   email: "E-mail", pix_tipo: "Tipo da chave Pix", pix_chave: "Chave Pix",
+  nome_novo: "Nome completo (só se mudou)",
   cep: "CEP", logradouro: "Rua", numero_endereco: "Número", bairro: "Bairro",
   municipio: "Cidade", uf: "Estado", data_nascimento: "Data de nascimento",
   salario_familia: "Pedir salário-família?",
@@ -480,6 +481,16 @@ function pintarCamposDoTipo(){
         // outra forma."* Transcrever onze dígitos de uma foto recém-tirada é
         // trabalho dobrado, e é onde se troca um algarismo.
         const dePapel = (t.vem_do_documento || {})[c];
+        // Campo que o CADASTRO responde, sem ser de documento, também nasce
+        // com a linha do recado — senão não teria onde dizer "já está no
+        // cadastro".
+        if (!dePapel && (t.ja_no_cadastro || {})[c])
+          return `<label class="campo-portal">${esc(rot)}
+            <input id="p-${c}" name="${c}" type="${tipo}"
+              ${modo ? `inputmode="${modo}"` : ""}>
+            <small class="do-papel" id="pd-${c}">escolha o colaborador — se o
+              cadastro tiver, já vem preenchido</small>
+          </label>`;
         if (dePapel)
           return `<label class="campo-portal" id="pw-${c}" data-de-papel="${c}">
             ${esc(rot)}
@@ -619,21 +630,28 @@ async function procurarPessoa(termo){
       suas obras.</div>`;
     return;
   }
+  // ⚑ A PESSOA INTEIRA fica guardada, não só os pedacinhos que cabem num
+  // `data-`: o que o cadastro dela já tem vem num objeto, e objeto não entra
+  // em atributo de HTML sem virar texto remendado.
+  ACHADOS_POR_ID = {};
+  achados.forEach(p => { ACHADOS_POR_ID[String(p.id)] = p; });
   onde.innerHTML = achados.map(p => `
-    <button type="button" class="achado-pessoa" data-pessoa="${p.id}"
-            data-nome="${esc(p.nome)}" data-cargo="${esc(p.cargo || "")}"
-            data-vinculo="${esc(p.vinculo || "")}">
+    <button type="button" class="achado-pessoa" data-pessoa="${p.id}">
       <b>${esc(p.nome)}</b>
       <small>${esc(p.cargo || "sem cargo no cadastro")}${
         p.cpf ? " · CPF " + esc(p.cpf) : ""}</small>
     </button>`).join("");
   onde.querySelectorAll("[data-pessoa]").forEach(b =>
-    b.addEventListener("click", () => escolherPessoa(b.dataset)));
+    b.addEventListener("click",
+      () => escolherPessoa(ACHADOS_POR_ID[b.dataset.pessoa])));
 }
 
+let ACHADOS_POR_ID = {};
+
 function escolherPessoa(d){
+  if (!d) return;
   PESSOA_ESCOLHIDA = d;
-  els("p-pessoa").value = d.pessoa;
+  els("p-pessoa").value = d.id;
   els("p-pessoa-achados").innerHTML = "";
   els("p-pessoa-busca").value = d.nome;
   const caixa = els("p-pessoa-escolhida");
@@ -645,7 +663,46 @@ function escolherPessoa(d){
     <small>hoje: ${esc(d.cargo || "sem cargo no cadastro")}${
       d.vinculo ? " · " + esc(ROTULO_VINCULO[d.vinculo] || d.vinculo) : ""}</small>`;
   const t = (DADOS.tipos || []).find(x => x.chave === els("p-tipo").value);
-  if (t) conferirOQueFalta(t);
+  if (t) { preencherOQueOCadastroTem(t, d); conferirOQueFalta(t); }
+}
+
+// ---------------------------------------------------------------------------
+// O QUE O CADASTRO JÁ TEM: preenchido, não perguntado
+//
+// Ele, em 10/11/2026, sobre a admissão de prestador: *"vamos requerer os
+// dados. Se não tivermos, né? Acho que é interessante uma consulta, ver se tem
+// CTPS, se tem PIS."*
+//
+// ⚑ O MAPA É DO SERVIDOR (`ja_no_cadastro`), nunca desta tela. Se a tela
+// decidisse de onde vem cada campo, ela e o servidor divergiriam — e a pessoa
+// descobriria a diferença só na recusa do envio.
+//
+// Preenchido e NÃO travado: o número fica editável. Carteira velha com número
+// errado no cadastro existe, e quem está com o papel na mão é quem corrige.
+// ---------------------------------------------------------------------------
+function preencherOQueOCadastroTem(t, pessoa){
+  const mapa = t.ja_no_cadastro || {};
+  const tem = (pessoa && pessoa.cadastro) || {};
+  Object.entries(mapa).forEach(([campo, coluna]) => {
+    const caixa = els("p-" + campo);
+    if (!caixa) return;
+    const valor = tem[coluna];
+    if (!valor) {
+      // Pessoa sem o dado: o campo volta a ser pergunta. (Trocar de pessoa
+      // depois de ter escolhido outra acontece, e o número da anterior não
+      // pode ficar para trás — seria o pedido com o PIS de outro.)
+      if (caixa.dataset.doCadastro) {
+        caixa.value = ""; delete caixa.dataset.doCadastro;
+      }
+      return;
+    }
+    // Não sobrescreve o que foi digitado ou lido do documento: o papel na
+    // mão vale mais que o cadastro antigo.
+    if (!caixa.value || caixa.dataset.doCadastro) {
+      caixa.value = valor;
+      caixa.dataset.doCadastro = "1";
+    }
+  });
 }
 
 const ROTULO_VINCULO = {CTPS: "carteira assinada",
@@ -762,14 +819,25 @@ async function anexarPapel(t, codigo, campo){
 // Depois de cada leitura, cada campo diz em que pé está: preenchido pelo
 // documento, ou "não achei na foto, digite".
 function recadoDosCamposDePapel(t){
-  Object.entries(t.vem_do_documento || {}).forEach(([c, papel]) => {
+  const deOndeVem = Object.assign({}, t.ja_no_cadastro || {},
+                                  t.vem_do_documento || {});
+  Object.keys(deOndeVem).forEach(c => {
+    const papel = (t.vem_do_documento || {})[c];
     const campo = els("p-" + c), dica = els("pd-" + c);
     if (!campo || !dica) return;
-    const anexado = !!PAPEIS[papel];
-    if (campo.value) {
+    const anexado = !!(papel && PAPEIS[papel]);
+    // ⚑ "PREENCHIDO À MÃO" SERIA MENTIRA quando o número veio do cadastro, e
+    // mentira de recado é pior que recado nenhum: quem lê para de conferir.
+    if (campo.value && campo.dataset.doCadastro) {
+      dica.textContent = "já está no cadastro — confira se bate com o documento";
+      dica.className = "do-papel ok";
+    } else if (campo.value) {
       dica.textContent = anexado ? "veio do documento — confira"
                                  : "preenchido à mão";
       dica.className = "do-papel ok";
+    } else if (!papel) {
+      dica.textContent = "não está no cadastro desta pessoa — digite";
+      dica.className = "do-papel pede";
     } else if (!anexado) {
       dica.textContent = "sai do documento — anexe "
         + (ROTULO_PAPEL[papel] || papel) + " e ele se preenche";

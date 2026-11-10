@@ -338,6 +338,12 @@ def tipos(s: Session) -> list[dict[str, Any]]:
                                     for c, mapa in (d.get("obrigatorios_se") or {}).items()},
                 "repete": bool(d.get("repete")),
                 "vem_do_documento": dict(d.get("vem_do_documento") or {}),
+                # ⚑ O QUE O CADASTRO JÁ TEM não se pergunta de novo. Ele, em
+                # 10/11/2026: *"vamos requerer os dados. Se não tivermos, né?
+                # Acho que é interessante uma consulta, ver se tem CTPS, se
+                # tem PIS."* O mapa diz de qual coluna cada campo vem; a tela
+                # preenche ao escolher a pessoa e marca como conferência.
+                "ja_no_cadastro": dict(d.get("ja_no_cadastro") or {}),
             })
     return saida
 
@@ -819,8 +825,16 @@ def procurar_pessoas(s: Session, usuario: Optional[Usuario],
     obras = obras_que_alcanca(s, eu)
     if obras is not None and not obras:
         return []
-    linhas = s.execute(text("""
-        SELECT c.id, c.nome, c.cpf, c.vinculo,
+    # ⚑ AS COLUNAS QUE OS TIPOS CONSULTAM vêm JUNTO com a pessoa, e não numa
+    # segunda chamada depois do clique: no celular, na obra, cada ida ao
+    # servidor é um tempo em que a tela parece travada. A lista é da regra
+    # (`COLUNAS_JA_NO_CADASTRO`), não escrita aqui — tipo novo que consulte
+    # outra coluna passa a trazê-la sozinho.
+    from app.apps.erp.core import pessoal_solicitacoes as svc_sp
+    extras = svc_sp.COLUNAS_JA_NO_CADASTRO
+    colunas_extras = "".join(f", c.{c} AS ja_{c}" for c in extras)
+    linhas = s.execute(text(f"""
+        SELECT c.id, c.nome, c.cpf, c.vinculo{colunas_extras},
                COALESCE(NULLIF(btrim(g.nome), ''), NULLIF(btrim(f.nome), ''), '')
                  AS cargo,
                g.id AS cargo_id, c.obra_id
@@ -844,7 +858,12 @@ def procurar_pessoas(s: Session, usuario: Optional[Usuario],
          "teto": TETO_DA_BUSCA_DE_PESSOA}).mappings().all()
     return [{"id": l["id"], "nome": l["nome"], "cargo": l["cargo"],
              "cargo_id": l["cargo_id"], "vinculo": l["vinculo"],
-             "obra_id": l["obra_id"], "cpf": _cpf_do_fim(l["cpf"])}
+             "obra_id": l["obra_id"], "cpf": _cpf_do_fim(l["cpf"]),
+             # Só o que ESTÁ preenchido: campo vazio aqui viraria "já no
+             # cadastro" na tela, e a pessoa não preencheria o que falta.
+             "cadastro": {c: str(l[f"ja_{c}"]).strip() for c in extras
+                          if l[f"ja_{c}"] is not None
+                          and str(l[f"ja_{c}"]).strip()}}
             for l in linhas]
 
 

@@ -1887,6 +1887,55 @@ Perguntas que o diário torna possíveis. Escritas como o dono perguntaria.
   sinal de equipamento esquecido na lista, repetido todo dia pelo botão depois
   de já ter ido embora. Não há função que cruze as duas coisas.
 
+## 3z. O PEDIDO QUE JÁ VEM PREENCHIDO (10/11/2026)
+
+Três mudanças pequenas nas solicitações do DP, e todas mexem no mesmo lugar:
+**o que o sistema já sabe deixa de ser perguntado.**
+
+1. **Desligamento não pede mais a chave Pix.** Ela já está no cadastro da
+   pessoa. Pedir de novo abria a porta para digitarem uma chave diferente da
+   cadastrada bem na hora de pagar a rescisão.
+2. **Admissão de prestador consulta o cadastro** antes de exigir CTPS e PIS:
+   quem já tem o número vê o campo preenchido, com o recado "já está no
+   cadastro — confira se bate com o documento"; quem não tem continua sendo
+   perguntado.
+3. **Atualização de dados cadastrais ganhou o endereço** (CEP, rua, número,
+   bairro, cidade, estado) e o **nome** — que a própria explicação do tipo já
+   prometia e o formulário não tinha.
+
+### O que dá para perguntar agora
+
+- "Quantas pessoas estão sem PIS no cadastro?" — e a mesma para o número de
+  CTPS. É a conta que diz quanto a consulta ao cadastro está economizando de
+  digitação, e quanto ainda falta preencher.
+- "Quem mudou de endereço este mês?" — pelos pedidos de atualização de dados
+  atendidos que traziam CEP.
+- "Quantos desligamentos foram atendidos sem a chave Pix no cadastro da
+  pessoa?" — ⚠️ **esta é a pergunta que vigia a mudança 1**: se houver gente
+  desligada sem chave no cadastro, tirar o campo do formulário transferiu o
+  problema para o DP em vez de resolvê-lo.
+- "Esta pessoa tem o cadastro completo para entrar na folha?" — CPF,
+  documento de identidade, comprovante de endereço, PIS e, para CTPS, os
+  dados da carteira. É a lista que ele definiu em 10/11/2026.
+
+### ⚠️ Palavras que mudam a resposta aqui
+
+- **"sem PIS"** pode ser *nunca preenchido* ou *preenchido com número
+  inválido*. O cadastro recusa PIS inválido desde o começo, mas os registros
+  importados da base antiga entraram antes dessa conferência.
+- **"mudou de endereço"** é o pedido ATENDIDO, não o aberto. Pedido aberto é
+  intenção; o cadastro só mudou quando o DP atendeu.
+
+### O que o sistema ainda NÃO responde
+
+- "O endereço desta pessoa confere com o comprovante que ela anexou?" — o
+  comprovante é exigido e fica arquivado, mas ninguém compara o que está
+  escrito nele com o que está no cadastro.
+- "Quantas vezes o número de CTPS do pedido veio diferente do que estava no
+  cadastro?" — seria o sinal de cadastro errado (ou de pessoa errada
+  escolhida na busca). O campo é editável de propósito, mas a divergência não
+  é registrada em lugar nenhum.
+
 ## 4. Como esta lista vira código
 
 Cada pergunta daqui vira uma função em `core/perguntas/respostas.py`, com nome,

@@ -12,6 +12,7 @@ transação, usando as mesmas funções da tela.
 from __future__ import annotations
 
 import pytest
+from sqlalchemy import text
 
 from app.apps.erp.core import pessoal_solicitacoes as svc
 from app.apps.erp.core.cadastros import pessoas as svc_pessoas
@@ -768,3 +769,155 @@ def test_o_cartao_do_transporte_nao_aparece_para_quem_pede():
     Oferecer no pedido o que lá só o DP escolhe é recriar a escolha que foi
     tirada de quem abre."""
     assert "Cartão" not in svc.CATEGORIAS["categoria_transporte"]
+
+
+# ---------------------------------------------------------------------------
+# AS TRÊS CORREÇÕES DE 10/11/2026 (depois de ele ler a lista dos tipos)
+# ---------------------------------------------------------------------------
+def test_o_desligamento_nao_pede_mais_a_chave_pix():
+    """Ele: *"desligamento de colaborador, não precisa de chave Pix mais."*
+
+    Ela existe no Pipe (para as verbas), mas o ERP já tem a chave no cadastro
+    da pessoa. Pedir de novo abre a porta para digitarem uma chave diferente
+    da cadastrada bem na hora de pagar a rescisão."""
+    campos = svc.TIPOS["DESLIGAMENTO"]["campos"]
+    assert "pix_tipo" not in campos and "pix_chave" not in campos
+
+
+def test_a_atualizacao_de_dados_tem_o_endereco():
+    """Ele: *"dados cadastrais pode ser telefone, chave Pix, endereço, né?
+    Acho que faltou endereço aí."*
+
+    ⚑ E a explicação do tipo JÁ PROMETIA endereço — é a mesma classe de
+    defeito da porta do portal que anunciava férias e não tinha."""
+    campos = set(svc.TIPOS["ATUALIZACAO_DADOS"]["campos"])
+    assert {"cep", "logradouro", "numero_endereco", "bairro", "municipio",
+            "uf"} <= campos
+    # O que a explicação promete tem de existir.
+    for palavra, campo in (("telefone", "telefone"), ("endereço", "logradouro"),
+                           ("Pix", "pix_chave")):
+        assert palavra.lower() in svc.TIPOS["ATUALIZACAO_DADOS"]["explicacao"].lower()
+        assert campo in campos
+
+
+def test_nao_se_pede_a_CTPS_de_quem_ja_tem_no_cadastro(sessao_real, mundo):
+    """Ele: *"vamos requerer os dados. Se não tivermos, né? Acho que é
+    interessante uma consulta, ver se tem CTPS, se tem PIS."*
+
+    ⚑ PEDIR O QUE O SISTEMA JÁ SABE é o defeito mais caro de um formulário:
+    cansa quem preenche e abre a porta para digitarem um número diferente do
+    cadastrado."""
+    sessao_real.execute(text(
+        "UPDATE colaboradores SET ctps_numero = '998877', pis = '12345678901'"
+        " WHERE id = :i"), {"i": mundo["pessoa"].id})
+    sessao_real.flush()
+    ja = svc.o_que_o_cadastro_ja_tem(sessao_real, "ADMISSAO_PRESTADOR",
+                                     mundo["pessoa"].id)
+    assert ja == {"num_ctps": "998877", "num_pis": "12345678901"}
+    # Com os dois no cadastro, o pedido não os exige mais.
+    exige = svc.exigencias("ADMISSAO_PRESTADOR", {}, ja)
+    assert "num_ctps" not in exige["campos"] and "num_pis" not in exige["campos"]
+
+    p = svc.abrir(sessao_real, {
+        "tipo": "ADMISSAO_PRESTADOR", "colaborador_id": mundo["pessoa"].id,
+        "obra_id": mundo["obra"].id, "salario_familia": "Não",
+        "documentos": ["CTPS-FOTO", "CTPS-INFORMACOES"]}, mundo["encarregado"])
+    # ⚑ E O NÚMERO ENTRA NO PEDIDO: o DP vê sem abrir a ficha ao lado.
+    assert p["dados"]["num_ctps"] == "998877"
+
+
+def test_quem_NAO_tem_no_cadastro_continua_sendo_perguntado(sessao_real, mundo):
+    """A consulta tira a pergunta; ela não tira a exigência."""
+    sessao_real.execute(text(
+        "UPDATE colaboradores SET ctps_numero = NULL, pis = NULL WHERE id = :i"),
+        {"i": mundo["pessoa"].id})
+    sessao_real.flush()
+    assert svc.o_que_o_cadastro_ja_tem(
+        sessao_real, "ADMISSAO_PRESTADOR", mundo["pessoa"].id) == {}
+    with pytest.raises(ErroValidacao) as e:
+        svc.abrir(sessao_real, {
+            "tipo": "ADMISSAO_PRESTADOR", "colaborador_id": mundo["pessoa"].id,
+            "obra_id": mundo["obra"].id, "salario_familia": "Não",
+            "documentos": ["CTPS-FOTO", "CTPS-INFORMACOES"]},
+            mundo["encarregado"])
+    assert "Nº CTPS" in str(e.value)
+
+
+def test_so_metade_no_cadastro_pergunta_so_a_outra_metade(sessao_real, mundo):
+    sessao_real.execute(text(
+        "UPDATE colaboradores SET ctps_numero = '554433', pis = NULL"
+        " WHERE id = :i"), {"i": mundo["pessoa"].id})
+    sessao_real.flush()
+    with pytest.raises(ErroValidacao) as e:
+        svc.abrir(sessao_real, {
+            "tipo": "ADMISSAO_PRESTADOR", "colaborador_id": mundo["pessoa"].id,
+            "obra_id": mundo["obra"].id, "salario_familia": "Não",
+            "documentos": ["CTPS-FOTO", "CTPS-INFORMACOES"]},
+            mundo["encarregado"])
+    recado = str(e.value)
+    assert "Nº PIS" in recado and "Nº CTPS" not in recado
+
+
+def test_a_consulta_ao_cadastro_so_vale_onde_foi_declarada():
+    """`ja_no_cadastro` é do tipo. Um pedido que não declarou nada continua
+    pedindo tudo — não há adivinhação de coluna."""
+    assert svc.o_que_o_cadastro_ja_tem(None, "DIVERSOS", 1) == {}
+    assert svc.o_que_o_cadastro_ja_tem(None, "ADMISSAO_PRESTADOR", None) == {}
+
+
+def test_a_atualizacao_de_dados_grava_o_endereco_no_cadastro(mundo):
+    """Campo na tela que não chega ao cadastro é pior que campo nenhum: quem
+    preencheu acha que mudou, e o DP continua com o endereço velho."""
+    p = svc.abrir(mundo["s"], {
+        "tipo": "ATUALIZACAO_DADOS", "colaborador_id": mundo["pessoa"].id,
+        "obra_id": mundo["obra"].id,
+        "descricao": "mudou de casa", "cep": "60000000",
+        "logradouro": "Rua Nova", "numero_endereco": "123",
+        "bairro": "Centro", "municipio": "Fortaleza", "uf": "CE"},
+        mundo["encarregado"])
+    svc.atender(mundo["s"], p["id"], {}, mundo["dp"])
+    mundo["s"].flush()
+    c = mundo["pessoa"]
+    mundo["s"].refresh(c)
+    assert (c.cep, c.logradouro, c.numero_endereco) == ("60000000", "Rua Nova", "123")
+    assert (c.bairro, c.municipio, c.uf) == ("Centro", "Fortaleza", "CE")
+
+
+def test_o_nome_so_muda_quando_o_pedido_traz_um_nome_novo(mundo):
+    """O corpo do pedido NÃO pode devolver o nome antigo por cima do atual —
+    por isso o campo tem nome próprio (`nome_novo`)."""
+    p = svc.abrir(mundo["s"], {
+        "tipo": "ATUALIZACAO_DADOS", "colaborador_id": mundo["pessoa"].id,
+        "obra_id": mundo["obra"].id,
+        "descricao": "mudou o telefone", "telefone": "5585999990000"},
+        mundo["encarregado"])
+    svc.atender(mundo["s"], p["id"], {}, mundo["dp"])
+    mundo["s"].flush()
+    mundo["s"].refresh(mundo["pessoa"])
+    assert mundo["pessoa"].nome == "José Da Fila"
+
+    p2 = svc.abrir(mundo["s"], {
+        "tipo": "ATUALIZACAO_DADOS", "colaborador_id": mundo["pessoa"].id,
+        "obra_id": mundo["obra"].id,
+        "descricao": "casou", "nome_novo": "José Da Fila Rocha"},
+        mundo["encarregado"])
+    svc.atender(mundo["s"], p2["id"], {}, mundo["dp"])
+    mundo["s"].flush()
+    mundo["s"].refresh(mundo["pessoa"])
+    assert mundo["pessoa"].nome == "José Da Fila Rocha"
+
+
+def test_o_cpf_nunca_muda_por_atualizacao_de_dados(mundo):
+    """O CPF é a identidade da pessoa no sistema — e é por ele que o pagamento
+    acha a pessoa no SomaPay."""
+    p = svc.abrir(mundo["s"], {
+        "tipo": "ATUALIZACAO_DADOS", "colaborador_id": mundo["pessoa"].id,
+        "obra_id": mundo["obra"].id,
+        "descricao": "tentando trocar o CPF"},
+        mundo["encarregado"])
+    # Mesmo o DP mandando outro CPF no atendimento, vale o da pessoa: trocar
+    # o CPF aqui criaria um segundo cadastro, não corrigiria o primeiro.
+    svc.atender(mundo["s"], p["id"], {"dados": {"cpf": CPF_B}}, mundo["dp"])
+    mundo["s"].flush()
+    mundo["s"].refresh(mundo["pessoa"])
+    assert mundo["pessoa"].cpf == CPF_A

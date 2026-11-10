@@ -24,6 +24,8 @@ desliga, alteração de cargo altera. O pedido e o efeito deixam de poder diverg
 """
 from __future__ import annotations
 
+import re
+
 import logging
 from datetime import date
 from decimal import Decimal, InvalidOperation
@@ -78,8 +80,13 @@ TIPOS: dict[str, dict[str, Any]] = {
         # vai colocar só a data do aviso prévio. Faltas a descontar também
         # não. Quem vai olhar isso aqui é o DP."* No Pipe, de fato, nenhum dos
         # dois existe neste formulário.
-        "campos": ("forma_desligamento", "aviso_previo", "pix_tipo",
-                   "pix_chave", "observacao"),
+        # ⚑ A CHAVE PIX SAIU em 10/11/2026, a pedido dele: *"desligamento de
+        # colaborador, não precisa de chave Pix mais."* Ela existe no Pipe
+        # (para as verbas rescisórias), mas o ERP já tem a chave no cadastro
+        # da pessoa — pedir de novo no desligamento é pedir o que o sistema
+        # sabe, e abrir uma porta para digitarem uma chave diferente da
+        # cadastrada bem na hora de pagar a rescisão.
+        "campos": ("forma_desligamento", "aviso_previo", "observacao"),
         "obrigatorios": ("forma_desligamento", "aviso_previo"),
         "campos_do_dp": ("ultimo_dia", "data_saida", "faltas_a_descontar"),
         # Os ONZE itens do checklist do pipe, na ordem em que o DP faz.
@@ -144,8 +151,18 @@ TIPOS: dict[str, dict[str, Any]] = {
         "nome": "Admissão de Prestador de Serviço",
         "explicacao": "o prestador passa a ter registro em carteira",
         "exige_pessoa": True, "executa": "trocar_vinculo",
+        # ⚑ SÓ SE PEDE O QUE O CADASTRO NÃO TEM. Ele, em 10/11/2026:
+        # *"admissão de prestador de serviço, vamos requerer os dados. Se não
+        # tivermos, né? Acho que é interessante uma consulta, ver se tem
+        # CTPS, se tem PIS."*
+        #
+        # A pessoa JÁ EXISTE neste pedido (é um prestador virando CTPS), e o
+        # cadastro dela pode já ter os dois números. `ja_no_cadastro` diz de
+        # qual coluna cada campo vem; quando ela está preenchida, o campo sai
+        # da exigência e aparece só para conferir.
         "campos": ("num_ctps", "num_pis", "salario_familia", "observacao"),
         "obrigatorios": ("num_ctps", "num_pis", "salario_familia"),
+        "ja_no_cadastro": {"num_ctps": "ctps_numero", "num_pis": "pis"},
         "campos_do_dp": ("cargo_id", "salario", "matricula", "convencao_id"),
         "documentos": ("CTPS-FOTO", "CTPS-INFORMACOES"),
         # Mesma regra do cadastro: o número sai da foto da carteira que este
@@ -174,7 +191,18 @@ TIPOS: dict[str, dict[str, Any]] = {
         # No Pipe é UM campo de texto ("Descreva as Informações a serem
         # atualizadas"), e não onze caixinhas. Quem pede escreve o que mudou;
         # o DP altera o cadastro com o documento na mão.
-        "campos": ("descricao", "telefone", "pix_tipo", "pix_chave"),
+        # ⚑ O ENDEREÇO FALTAVA, e a explicação do tipo já o prometia
+        # ("telefone, chave Pix, endereço, nome") — a mesma classe de defeito
+        # da porta do portal que anunciava férias. Ele viu: *"dados
+        # cadastrais pode ser telefone, chave Pix, endereço, né? Acho que
+        # faltou endereço aí."*
+        # ⚑ A EXPLICAÇÃO DESTE TIPO diz "telefone, chave Pix, endereço,
+        # nome" — então o nome também tem campo. Prometer na vitrine o que o
+        # formulário não tem é o mesmo defeito do portal que anunciava férias
+        # e não tinha; em miniatura, mas é.
+        "campos": ("descricao", "telefone", "pix_tipo", "pix_chave",
+                   "cep", "logradouro", "numero_endereco", "bairro",
+                   "municipio", "uf", "nome_novo"),
         "obrigatorios": ("descricao",),
         "campos_do_dp": (),
         "checklist": ("Conferir o documento que comprova", "Atualizar o cadastro",
@@ -405,8 +433,57 @@ def _condicionais(regra: dict[str, Any], chave: str,
     return tuple(extra)
 
 
-def exigencias(tipo: str, pedido: Optional[dict[str, Any]] = None
-               ) -> dict[str, Any]:
+# As colunas de `colaboradores` que qualquer tipo consulta. A busca de pessoa
+# do portal traz TODAS elas de uma vez, para a tela já nascer preenchida — sem
+# uma segunda ida ao servidor depois de escolher a pessoa.
+#
+# ⚑ Nome de coluna entra em SQL por interpolação (não dá para parametrizar
+# nome de coluna), então o formato é conferido aqui: só letra minúscula,
+# dígito e sublinhado. Tipo novo que escreva outra coisa quebra na importação
+# do módulo, e não em produção.
+COLUNAS_JA_NO_CADASTRO: tuple[str, ...] = tuple(sorted({
+    coluna
+    for regra in TIPOS.values()
+    for coluna in (regra.get("ja_no_cadastro") or {}).values()
+}))
+for _c in COLUNAS_JA_NO_CADASTRO:
+    if not re.fullmatch(r"[a-z][a-z0-9_]*", _c):
+        raise ValueError(
+            f"ja_no_cadastro: {_c!r} não é nome de coluna aceitável.")
+
+
+def o_que_o_cadastro_ja_tem(s: Session, tipo: str,
+                            colaborador_id: Optional[int]) -> dict[str, Any]:
+    """O que esta pessoa já tem no cadastro, dos campos que o pedido pediria.
+
+    ⚑ PEDIR O QUE O SISTEMA JÁ SABE É O DEFEITO MAIS CARO de um formulário:
+    cansa quem preenche, e abre a porta para alguém digitar um número
+    diferente do cadastrado. Ele, em 10/11/2026: *"admissão de prestador de
+    serviço, vamos requerer os dados. Se não tivermos, né? Acho que é
+    interessante uma consulta, ver se tem CTPS, se tem PIS."*
+
+    Devolve `{campo: valor}` só do que ESTÁ preenchido. A tela mostra o valor
+    para conferência e o campo sai da exigência.
+    """
+    de_onde = (TIPOS.get(tipo) or {}).get("ja_no_cadastro") or {}
+    if not de_onde or not colaborador_id:
+        return {}
+    colunas = ", ".join(sorted(set(de_onde.values())))
+    linha = s.execute(
+        text(f"SELECT {colunas} FROM colaboradores WHERE id = :i"),
+        {"i": colaborador_id}).mappings().first()
+    if linha is None:
+        return {}
+    achados = {}
+    for campo, coluna in de_onde.items():
+        valor = linha.get(coluna)
+        if valor is not None and str(valor).strip():
+            achados[campo] = str(valor).strip()
+    return achados
+
+
+def exigencias(tipo: str, pedido: Optional[dict[str, Any]] = None,
+               ja_tem: Optional[dict[str, Any]] = None) -> dict[str, Any]:
     """O que falta para este pedido poder sair — campos E papéis.
 
     A tela chama isto a cada mudança, para a lista ir se marcando sozinha
@@ -417,6 +494,9 @@ def exigencias(tipo: str, pedido: Optional[dict[str, Any]] = None
     p = traduzir_do_pipe(pedido or {})
     campos = tuple(regra.get("obrigatorios", ())) + _condicionais(
         regra, "obrigatorios_se", p)
+    # O que o cadastro já tem sai da exigência: não se pergunta de novo.
+    if ja_tem:
+        campos = tuple(c for c in campos if not str(ja_tem.get(c) or "").strip())
     papeis = tuple(regra.get("documentos", ())) + _condicionais(
         regra, "documentos_se", p)
     return {
@@ -479,6 +559,19 @@ ROTULOS: dict[str, str] = {
     "parcelas": "Quantidade de Parcelas",
     "valor_parcela": "Valor da Parcela",
     "data": "Data",
+    # O Pipe escreve "Endereço (Logradouro)", "Município" e "UF (Endereço)".
+    # Aqui vale a palavra que o resto do ERP já usa para o mesmo campo (Rua,
+    # Cidade, Estado): duas palavras para o mesmo campo em duas telas é o tipo
+    # de diferença que faz alguém achar que são coisas diferentes.
+    "cep": "CEP",
+    "logradouro": "Rua",
+    "numero_endereco": "Número",
+    "bairro": "Bairro",
+    "municipio": "Cidade",
+    "uf": "Estado",
+    # Casamento, divórcio, correção de grafia na certidão. Fica por último no
+    # formulário porque é o menos frequente dos quatro.
+    "nome_novo": "Nome completo (só se mudou)",
     "descricao": "Descreva sua Solicitação:",
     "observacao": "Observações:",
 }
@@ -630,7 +723,12 @@ def abrir(s: Session, dados: dict[str, Any], usuario: Usuario) -> dict[str, Any]
     # trabalhado, não é a pessoa que está pedindo que vai dizer. Ele vai
     # colocar só a data do aviso prévio."* A data de saída é do DP, e entra
     # no atendimento.
-    exige = exigencias(tipo, pedido)
+    ja_tem = o_que_o_cadastro_ja_tem(s, tipo, colaborador_id)
+    # O que já estava no cadastro entra no pedido: ele fica completo, e o DP
+    # vê o número sem ter de abrir a ficha ao lado.
+    for campo, valor in ja_tem.items():
+        pedido.setdefault(campo, valor)
+    exige = exigencias(tipo, pedido, ja_tem)
     # ⚑ PEDIDO QUE ACEITA VÁRIOS (dependente) confere CADA UM, e não o corpo.
     # Ele: *"dependente tem que ser um a um, não posso adicionar outro, não,
     # para pedir mais de um."* Com a lista preenchida, exigir os campos no
@@ -805,7 +903,13 @@ def atender(s: Session, solicitacao_id: int, dados: dict[str, Any],
                 svc_pessoas.salvar_dependente(s, alvo, pedido, usuario)
         elif executa in ("atualizar_cadastro", "beneficios"):
             c = s.get(Colaborador, alvo)
-            svc_pessoas.salvar(s, {**pedido, "cpf": c.cpf, "nome": c.nome}, usuario)
+            # ⚑ O CPF NÃO SE TROCA — é a identidade da pessoa no sistema. O
+            # NOME troca (casamento, divórcio, correção na certidão), mas só
+            # quando o pedido traz um: `nome` sozinho no corpo do pedido seria
+            # o nome ANTIGO vindo de volta, por isso o campo tem nome próprio.
+            novo_nome = " ".join(str(pedido.get("nome_novo") or "").split())
+            svc_pessoas.salvar(s, {**pedido, "cpf": c.cpf,
+                                   "nome": novo_nome or c.nome}, usuario)
         efeito["executou"] = executa
     elif executa == "criar_cadastro":
         c = svc_pessoas.salvar(s, {**pedido, "admissao": pedido.get("data_inicio")}, usuario)
