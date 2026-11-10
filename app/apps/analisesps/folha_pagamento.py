@@ -735,7 +735,7 @@ def gerencial(ano: int, mes: int) -> dict:
 # passos juntos, para o arquivo nunca sair de um fechamento antigo.
 # ---------------------------------------------------------------------------
 ORIGENS = ("folha", "diaria", "alimentacao", "transporte", "dc", "avulso",
-           "gratificacao", "viasp")
+           "gratificacao", "viasp", "complementar")
 
 
 def _linhas_do_apropriado(apropriado: dict, verba: str) -> list:
@@ -792,6 +792,21 @@ def _pedido_direto(origem: str, dados: dict) -> dict:
                 "linhas": gm.linhas_a_pagar(calculado),
                 "rotulo": f"{calculado['rotulo']} {calculado['competencia']} — "
                           f"{calculado['rotulo_periodo']}"}
+    if origem == "complementar":
+        # A FOLHA COMPLEMENTAR (10/11/2026): só a diferença entre a folha importada de
+        # novo e o que já foi pago — ver `folha_complementar`.
+        from . import folha_complementar as fcomp
+        try:
+            montado = fcomp.montar(int(dados.get("folha_id") or 0))
+        except fcomp.ErroDaComplementar as e:
+            raise ErroDoPagamento(str(e)) from e
+        if not montado["ja_paga"]:
+            raise ErroDoPagamento("esta folha ainda não foi paga — gere o arquivo da folha normal.")
+        n = fcomp.numero(montado["verba"])
+        return {"ano": montado["ano"], "mes": montado["mes"], "tipo": montado["tipo"],
+                "verba": montado["verba"], "montado": montado,
+                "linhas": fcomp.linhas_a_pagar(montado),
+                "rotulo": f"Folha complementar {n} {montado['mes']:02d}/{montado['ano']}"}
     if origem == "folha":
         folha, _apropriado, linhas = linhas_da_previa(int(dados.get("folha_id") or 0))
         return {"ano": folha["ano"], "mes": folha["mes"], "tipo": folha["tipo"],
@@ -938,8 +953,22 @@ def gerar_direto(origem: str, dados: dict, destino: str, quem: str = "",
                        None)
         gm.registrar_lote(analise, pedido["calculado"], quem=quem)
         return saida
+    if origem == "complementar":
+        from . import folha_complementar as fcomp
+        try:
+            fcomp.fechar(pedido["montado"], quem=quem)
+        except fcomp.ErroDaComplementar as e:
+            raise ErroDoPagamento(str(e)) from e
+        saida = gerar(pedido["ano"], pedido["mes"], pedido["tipo"], [pedido["verba"]],
+                      destino, quem=quem, forcar=forcar, destinos=destinos,
+                      relatorio=_relatorio_por_conta(origem, dados, pedido), cadastro=True)
+        fcomp.depois_de_gerar(pedido["montado"], quem=quem)
+        return saida
     if origem == "folha":
-        folha_gestao.fechar(int(dados.get("folha_id") or 0), quem=quem)
+        try:
+            folha_gestao.fechar(int(dados.get("folha_id") or 0), quem=quem)
+        except folha_gestao.ErroDaGestao as e:
+            raise ErroDoPagamento(str(e)) from e
     elif origem == "diaria":
         folha_diaristas.fechar(pedido["ano"], pedido["mes"], pedido["periodo"],
                                quem=quem)
@@ -971,6 +1000,10 @@ def _relatorio_por_conta(origem: str, dados: dict, pedido: dict):
             from . import gratificados as gm
             contas = conta_por_obra()
             montado = gm.montado_do_relatorio(pedido["calculado"], so_a_pagar=True)
+        elif origem == "complementar":
+            from . import folha_complementar as fcomp
+            contas = conta_por_obra()
+            montado = fcomp.montado_do_relatorio(pedido["montado"], so_a_pagar=True)
         elif origem == "folha":
             from . import folha_gestao
             montado = fr.com_contracheques(

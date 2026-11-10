@@ -283,6 +283,13 @@ def montar(montado: dict, contas_por_obra: dict, conta: str = "") -> dict:
         # continua valendo, porque elas andam junto com a pessoa.
         "detalhe": montado.get("detalhe") or None,
         "paisagem": bool(montado.get("paisagem")),
+        # Quem aparece no detalhamento: só quem entra no pagamento — ou, com
+        # `detalhe_todos` (a complementar, 10/11/2026), também quem NÃO recebe agora
+        # (pago a mais, não pago antes), que é a informação do relatório. No recorte
+        # por conta, só quem recebe por aquela conta.
+        "pessoas_do_detalhe": (
+            [p for p in (montado.get("pessoas") or [])]
+            if montado.get("detalhe_todos") and not conta else pessoas),
     }
 
 
@@ -374,7 +381,7 @@ def excel(dados: dict) -> bytes:
     if detalhe:
         espec = detalhe["excel"]
         aba = aba_nova(detalhe.get("aba") or "Lançamentos", espec["cabecalho"])
-        for p in dados["pessoas"]:
+        for p in dados.get("pessoas_do_detalhe") or dados["pessoas"]:
             aba.append(list(p.get("detalhe_excel") or []))
         moeda(aba, espec.get("moeda") or ())
         larguras(aba, espec.get("larguras") or [])
@@ -493,8 +500,9 @@ def pdf(dados: dict) -> bytes:
     detalhe = dados.get("detalhe")
     if detalhe:
         espec = detalhe["pdf"]
-        doc.titulo_secao(f"{detalhe.get('titulo') or 'Detalhamento'} ({dados['quantas']})")
-        doc.tabela(espec["cabecalho"], [p.get("detalhe_pdf") or [] for p in dados["pessoas"]],
+        no_detalhe = dados.get("pessoas_do_detalhe") or dados["pessoas"]
+        doc.titulo_secao(f"{detalhe.get('titulo') or 'Detalhamento'} ({len(no_detalhe)})")
+        doc.tabela(espec["cabecalho"], [p.get("detalhe_pdf") or [] for p in no_detalhe],
                    larguras=[x * doc.pdf.epw / sum(espec["larguras"]) for x in espec["larguras"]],
                    direita=tuple(espec.get("direita") or ()), fonte=7,
                    linhas_max=espec.get("linhas_max", 4))

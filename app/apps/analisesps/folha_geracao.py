@@ -146,6 +146,9 @@ class ErroDaGeracao(RuntimeError):
 # ---------------------------------------------------------------------------
 def rotulo_da_verba(verba: str) -> str:
     verba = str(verba or "").strip().lower()
+    if verba.startswith("complementar"):
+        # A folha complementar (10/11/2026): "complementar1" → "Folha complementar 1".
+        return ("Folha complementar " + verba[len("complementar"):]).strip()
     return ROTULO_DA_VERBA.get(verba, verba.capitalize() or "(sem verba)")
 
 
@@ -156,6 +159,9 @@ def carteira_da_verba(verba: str) -> str:
 
 def natureza(verba: str) -> str:
     verba = str(verba or "").strip().lower()
+    if verba.startswith("complementar"):
+        # A complementar é a mesma natureza da folha: é a folha, corrigida.
+        return NATUREZA_DA_VERBA["folha"]
     return NATUREZA_DA_VERBA.get(verba, rotulo_da_verba(verba))
 
 

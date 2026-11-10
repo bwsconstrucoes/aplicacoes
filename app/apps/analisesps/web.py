@@ -3595,6 +3595,90 @@ def tela_folha():
     return redirect(url_for(permitidas[0][2]))
 
 
+@bp.route("/folha/<int:folha_id>/complementar")
+@exige_consulta
+def tela_folha_complementar(folha_id: int):
+    """A FOLHA COMPLEMENTAR (10/11/2026): a folha importada de novo depois de paga,
+    comparada com o que foi pago — e o arquivo só da diferença. Ver
+    `folha_complementar`."""
+    from . import folha_arquivo as fa, folha_complementar as fcomp
+    erro, montado = None, None
+    try:
+        montado = fcomp.montar(folha_id)
+    except fcomp.ErroDaComplementar as e:
+        erro = str(e)
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+        logger.exception("Folha: não consegui montar a complementar")
+        erro = f"Não foi possível montar a complementar: {e}"
+    folha = (montado or {}).get("folha") or fa.abrir(folha_id)
+    if folha is None:
+        return render_template("analisesps_erro.html", titulo="Não encontrado",
+                               mensagem="Esta folha não existe."), 404
+    return render_template(
+        "analisesps_folha_complementar.html", aba="folha", subaba="importar",
+        grupos=subtelas_agrupadas(), folha=folha, montado=montado, erro=erro,
+        rotulos=fcomp.ROTULO_DO_GRUPO, a_descontar=fcomp.a_descontar(),
+        pode_operar=auth.pode_operar(), pode_gerar=auth.e_mestre(),
+        destinos=_destinos_do_pagamento(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""), nome=auth.nome_atual())
+
+
+@bp.route("/folha/<int:folha_id>/complementar/relatorio.<formato>")
+@exige_consulta
+def folha_complementar_relatorio(folha_id: int, formato: str):
+    from . import folha_complementar as fcomp, folha_pagamento as fpg
+    if formato not in ("xlsx", "pdf"):
+        return render_template("analisesps_erro.html", titulo="Não encontrado",
+                               mensagem="Este formato de relatório não existe."), 404
+    try:
+        montado = fcomp.montado_do_relatorio(fcomp.montar(folha_id))
+        return _resposta_do_relatorio(montado, fpg.conta_por_obra(), formato)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou o relatório da complementar")
+        return render_template("analisesps_erro.html", titulo="Relatório da complementar",
+                               mensagem=f"Não foi possível gerar o relatório: {e}"), 500
+
+
+@bp.route("/api/folha/complementar/selecao", methods=["POST"])
+@exige_operador
+def folha_complementar_selecao():
+    from . import folha_arquivo as fa, folha_complementar as fcomp
+    dados = request.get_json(silent=True) or {}
+    folha = fa.abrir(int(dados.get("folha_id") or 0))
+    if folha is None:
+        return {"ok": False, "erro": "folha não encontrada."}, 404
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    return {"ok": True, **fcomp.salvar_selecao(folha["ano"], folha["mes"], folha["tipo"],
+                                                dados.get("decisoes") or [], quem=quem)}
+
+
+@bp.route("/api/folha/complementar/a-descontar", methods=["POST"])
+@exige_operador
+def folha_complementar_a_descontar():
+    """Guarda o "pago a mais" desta complementar na lista "a descontar na próxima
+    folha" (a geração também guarda sozinha)."""
+    from . import folha_complementar as fcomp
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        novos = fcomp.guardar_a_descontar(fcomp.montar(int(dados.get("folha_id") or 0)), quem=quem)
+    except fcomp.ErroDaComplementar as e:
+        return {"ok": False, "erro": str(e)}, 400
+    return {"ok": True, "novos": novos}
+
+
+@bp.route("/api/folha/a-descontar/descontado", methods=["POST"])
+@exige_operador
+def folha_a_descontar_descontado():
+    from . import folha_complementar as fcomp
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    if not fcomp.marcar_descontado(str(dados.get("cpf") or ""),
+                                   str(dados.get("competencia_chave") or ""), quem=quem):
+        return {"ok": False, "erro": "item não encontrado na lista."}, 404
+    return {"ok": True}
+
+
 @bp.route("/folha/<int:folha_id>")
 @exige_consulta
 def tela_folha_aberta(folha_id: int):
@@ -3665,6 +3749,10 @@ def tela_folha_aberta(folha_id: int):
         fila_do_ponto=_fila_do_ponto_recente(),
         obras_c_diarios=_obras_c_diarios(),
         mudancas=(fa.mudancas(folha_id) if montado else None),
+        # A complementar (10/11/2026): os pagamentos já feitos desta folha e o
+        # que está "a descontar" de folhas anteriores.
+        pagamentos_feitos=_pagamentos_da_folha(montado),
+        a_descontar=_a_descontar_seguro(),
         analitica=(_analitica_da_folha(montado.get("folha")) if montado else None),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
@@ -5989,6 +6077,27 @@ def folha_card_lancar():
     except Exception as e:  # noqa: BLE001
         logger.exception("Folha: falhou lançar o card")
         return {"ok": False, "erro": f"Não foi possível lançar: {e}"}, 500
+
+
+def _pagamentos_da_folha(montado) -> list:
+    from . import folha_complementar as fcomp
+    folha = (montado or {}).get("folha")
+    if not folha:
+        return []
+    try:
+        return fcomp.pagamentos_feitos(folha["ano"], folha["mes"], folha["tipo"])
+    except Exception:  # noqa: BLE001 — aviso de apoio; a folha abre sem ele
+        logger.exception("Folha: não consegui ler os pagamentos feitos")
+        return []
+
+
+def _a_descontar_seguro() -> list:
+    from . import folha_complementar as fcomp
+    try:
+        return fcomp.a_descontar()
+    except Exception:  # noqa: BLE001
+        logger.exception("Folha: não consegui ler a lista a descontar")
+        return []
 
 
 def _competencia_do_cruzamento() -> tuple:
