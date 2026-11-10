@@ -254,3 +254,33 @@ def test_linha_sem_numero_do_omie_nao_e_marcavel():
             / "templates" / "painel_explorador.html").read_text(encoding="utf-8")
     assert "{% set tem_codigo = l.codigo_lancamento is not none %}" in html
     assert '{% if tem_codigo %}data-codigo="{{ l.codigo_lancamento }}"{% endif %}' in html
+
+
+# A RESPOSTA DE VERDADE do OMIE (o dono baixou em 10/11/2026 pelo cartão
+# "Baixar um lançamento de conta corrente"): tarifa de 28/12/2020 apropriada
+# no OMIE e "(não apropriado)" no painel — que nunca tinha perguntado.
+RESPOSTA_REAL = {
+    "nCodLanc": 709793529, "cCodIntLanc": "", "nCodAgrup": 709793529,
+    "cabecalho": {"dDtLanc": "28/12/2020", "nCodCC": 584262226, "nValorLanc": 1280.31},
+    "detalhes": {"aCodCateg": [], "cCodCateg": "2.05.04", "cNumDoc": "",
+                 "cObs": "ENCARGOS FINANC ROTATIVO", "cTipo": "99999",
+                 "nCodCliente": 0, "nCodProjeto": 0},
+    "transferencia": {"nCodCCDestino": 0},
+    "departamentos": [{"cCodDep": "583753491", "nPerDep": 100, "nValDep": 1280.31}],
+    "diversos": {"cNatureza": "P", "cOrigem": "EXTP", "dDtConc": "08/03/2021"},
+    "info": {"dAlt": "08/03/2021", "dInc": "08/03/2021"},
+}
+
+
+def test_a_resposta_real_do_omie_e_lida_com_a_obra():
+    from app.apps.painel.sync import fato
+    assert fato._departamentos_do_bruto(RESPOSTA_REAL) == [("583753491", 1.0)]
+
+
+def test_a_resposta_real_vira_alteracao_com_o_mesmo_vocabulario():
+    novo, mudancas = omie_escrita.preparar_alteracao_cc(
+        RESPOSTA_REAL, 709793529, codigo_categoria="2.05.05", cod_departamento="D9")
+    assert novo["departamentos"] == [{"cCodDep": "D9", "nValDep": 1280.31, "nPerDep": 100}]
+    assert novo["detalhes"]["cCodCateg"] == "2.05.05"
+    assert "aCodCateg" not in novo["detalhes"] and "info" not in novo
+    assert len(mudancas) == 2

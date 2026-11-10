@@ -208,6 +208,9 @@ def preparar_alteracao_cc(resposta: dict, codigo: int, codigo_categoria=None,
     if codigo_categoria and str(detalhes.get("cCodCateg") or "") != str(codigo_categoria):
         antes = str(detalhes.get("cCodCateg") or "—")
         detalhes["cCodCateg"] = str(codigo_categoria)
+        # a categoria MÚLTIPLA (`aCodCateg`, como veio do OMIE em 10/11/2026);
+        # deixá-la junto faz o OMIE não saber qual das duas vale
+        detalhes.pop("aCodCateg", None)
         detalhes.pop("categorias", None)
         novo["detalhes"] = detalhes
         mudancas.append(f"Categoria: {antes} → {codigo_categoria}")

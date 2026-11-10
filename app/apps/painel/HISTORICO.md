@@ -708,6 +708,15 @@ conta apropriado que o painel ainda não perguntou; se o OMIE disser "não
 cadastrado", a leitura acima está errada e é preciso olhar o dia cru
 (28/12/2020).
 
+**CONFIRMADO no mesmo dia.** O dono baixou o 709793529 e o OMIE devolveu o
+lançamento com `departamentos: [{cCodDep: 583753491, nPerDep: 100, nValDep:
+1280.31}]` (origem EXTP, conciliado em 08/03/2021). É lançamento de conta,
+apropriado no OMIE, que o painel nunca tinha perguntado. A resposta real virou
+teste (`test_painel_explorador_lancamento_cc.py`, `RESPOSTA_REAL`), e é a
+primeira vez que se vê o formato inteiro da consulta: `nCodAgrup`,
+`detalhes.aCodCateg` (categoria múltipla — tirada ao trocar a categoria),
+`transferencia`, `diversos` (dados da conciliação) e `info`.
+
 ## O Explorador e as tarifas: trocar a obra de lançamento de conta — 10/11/2026
 
 O dono filtrou "Taxas, Tarifas Bancárias e IOF" (~600 linhas, quase todas
