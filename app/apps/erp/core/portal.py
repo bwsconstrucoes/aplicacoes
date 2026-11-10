@@ -93,7 +93,15 @@ AREAS: tuple[dict[str, Any], ...] = (
     {
         "chave": "pessoal",
         "nome": "Pessoal e DP",
-        "explicacao": "admissão, desligamento, férias, vale, dados da pessoa",
+        # ⚑ A EXPLICAÇÃO SÓ PODE PROMETER O QUE A ÁREA TEM. Ela dizia
+        # "férias", e férias NÃO É pedido de DP aqui — é do ponto. Ele viu, em
+        # 10/11/2026: *"lá no resumo do portal tinha lá férias, e quando você
+        # entrava, não tinha solicitação de férias. Estava tudo errado."*
+        # Porta que anuncia o que não tem é pior que porta fechada: a pessoa
+        # entra, não acha, e deixa de confiar no resto da tela. Há teste
+        # conferindo cada palavra daqui contra os tipos da área.
+        "explicacao": "cadastro, desligamento, readmissão, dados da pessoa, "
+                      "dependente, ajuda de custo e vale-transporte",
         "pronta": True,
     },
     {
@@ -114,14 +122,17 @@ AREAS: tuple[dict[str, Any], ...] = (
         "chave": "obra",
         "nome": "Diário de obra",
         "explicacao": "o que aconteceu na obra no dia",
-        # ⚑ CONSTRUÍDO EM 08/11/2026, mas NÃO LIBERADO — e a diferença entre as
-        # duas coisas é decisão dele: *"eu nem quero que esteja liberado nada
-        # além do DP. A gente vai começar pelo DP."* A tela existe no ERP
-        # (Obras › Diário de obra); o que não existe ainda é a porta do portal.
-        # Ligar é trocar este `False` por `True` e apontar `tela` abaixo.
-        "pronta": False,
+        # ⚑ LIGADO EM 10/11/2026, a pedido dele: *"eu quero deixar ativo no
+        # portal o diário de obras também."* Até então estava construído e
+        # fechado de propósito (*"eu nem quero que esteja liberado nada além
+        # do DP, a gente vai começar pelo DP"*) — e agora o DP andou.
+        #
+        # ⚑ ESTA ÁREA NÃO TEM TIPO DE SOLICITAÇÃO, e por isso ela não passa
+        # pela conta de `TIPOS_POR_AREA`: o diário não é um pedido, é uma
+        # TELA. Quem clica vai direto para ela. Ver `so_tela` abaixo.
+        "pronta": True,
+        "so_tela": True,
         "tela": "/erp/obras/diario",
-        "enquanto_isso": "Já existe no sistema, pelo computador. No celular, em breve.",
     },
 )
 
@@ -158,7 +169,12 @@ def areas(s: Session, eu: dict[str, Any]) -> list[dict[str, Any]]:
                       # Área marcada como pronta mas sem tipo nenhum seria uma
                       # porta que abre para o vazio. Melhor ela se corrigir
                       # sozinha do que mentir.
-                      "pronta": bool(a.get("pronta")) and quantos > 0})
+                      #
+                      # ⚑ A exceção é a área que é SÓ TELA (o diário): ela não
+                      # oferece pedido nenhum e mesmo assim está pronta —
+                      # clicar leva à tela.
+                      "pronta": bool(a.get("pronta"))
+                                and (quantos > 0 or bool(a.get("so_tela")))})
     return saida
 
 

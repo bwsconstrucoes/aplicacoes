@@ -236,6 +236,29 @@ const ROTULO = {
   categoria_transporte: "Como paga o transporte",
   aux_transporte: "Valor do transporte (R$)",
   conceder: "Conceder ou cancelar?", meio_transporte: "Meio de transporte",
+  // ⚑ OS RÓTULOS DO PIPE (10/11/2026). Ele: *"por que não está usando o
+  // termo que está no Pipe? O pessoal já está acostumado com o que está
+  // lá."* A fonte é DE_PARA_PIPEFY_DP.md, e há teste exigindo que todo campo
+  // oferecido pelo portal tenha rótulo aqui.
+  tipo_documentacao: "Tipo de Documentação para Cadastro",
+  num_ctps: "Nº CTPS",
+  num_pis: "Nº PIS",
+  cargo_pleiteado_id: "Cargo Pleiteado",
+  cargo_deferido_id: "Cargo Deferido",
+  pagamento: "Pagamento",
+  valor_diaria: "Valor da Diária",
+  valor_mes: "Valor do Mês",
+  tipo_readmissao: "Tipo de Readmissão",
+  cnpj_admissao: "CNPJ para Admissão",
+  solicitacao: "Solicitação",
+  meio_transporte: "Meio de Transporte para chegar à Obra?",
+  aviso_previo: "Data do Aviso Prévio",
+  data_inicio: "Data de Início",
+  justificativa: "Justificativa de Alteração do Cargo",
+  conceder: "Conceder Vale Transporte?",
+  valor_total: "Valor Total do Desconto",
+  parcelas: "Quantidade de Parcelas",
+  valor_parcela: "Valor da Parcela",
 };
 // CAMPO DE SIM/NÃO É CAIXINHA, não texto livre: senão volta "s", "sim", "SIM"
 // e "pode" para a mesma resposta.
@@ -285,12 +308,22 @@ function pintarAreas(){
       <b>${esc(a.nome)}</b>
       <small>${esc(a.explicacao)}</small>
       ${a.pronta
-        ? `<small class="conta">${a.tipos} tipo(s) de pedido</small>`
+        ? (a.so_tela
+            ? `<small class="conta">abrir a tela</small>`
+            : `<small class="conta">${a.tipos} tipo(s) de pedido</small>`)
         : `<small class="conta">ainda não disponível aqui${
              a.enquanto_isso ? " — " + esc(a.enquanto_isso) : ""}</small>`}
     </button>`).join("");
   els("areas").querySelectorAll("[data-area]").forEach(b =>
-    b.addEventListener("click", () => escolherArea(b.dataset.area)));
+    b.addEventListener("click", () => {
+      // ⚑ Área que é SÓ TELA (o diário de obra, ligado em 10/11/2026) não
+      // abre formulário de pedido: leva direto para a tela. Mandar a pessoa
+      // escolher "o tipo do pedido" para chegar ao diário seria um degrau
+      // inventado.
+      const a = (DADOS.areas || []).find(x => x.chave === b.dataset.area);
+      if (a && a.so_tela && a.tela) { window.location.href = a.tela; return; }
+      escolherArea(b.dataset.area);
+    }));
 }
 
 function escolherArea(chave){
