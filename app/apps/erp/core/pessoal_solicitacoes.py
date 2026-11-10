@@ -44,13 +44,44 @@ logger = logging.getLogger(__name__)
 # `executa` diz o que o atendimento faz no cadastro. `campos` é o que o
 # formulário pede, e vira o JSONB do pedido.
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# OS TIPOS — e, desde 10/11/2026, com os RÓTULOS DO PIPE, letra por letra
+#
+# Ele, olhando a tela: *"Prestador que passa a ter carteira. Qual foi o termo
+# que eu usei? Por que não está usando o termo que está no Pipe? Por que está
+# querendo inventar a roda de novo? Uma coisa que já está certa, já está
+# funcionando, já está consolidada. Para que inventar?"*
+#
+# ⚑ A FONTE É `DE_PARA_PIPEFY_DP.md`, na pasta do ERP: os dois pipes
+# exportados pelo GraphQL, com rótulo, tipo, obrigatoriedade e opções. Campo
+# novo aqui se confere LÁ primeiro. Se o Pipe não tem, o ERP não inventa.
+#
+# ⚑ E A SEGUNDA LEITURA, que é a que eu tinha quebrado: no Pipe, o que está no
+# FORMULÁRIO INICIAL é da obra; o que está numa FASE é do DP. Matrícula,
+# convenção e os dois auxílios estão em FASE. Ele: *"matrícula, não é o
+# funcionário que decide. Como é que a pessoa vai readmitir uma pessoa, botar
+# uma matrícula? Quem solicita define uma matrícula?"*
+#
+# Por isso cada tipo tem DUAS listas:
+#   · `campos`        — o que a OBRA preenche no pedido;
+#   · `campos_do_dp`  — o que o DP preenche ao atender, na tela dele.
+# Campo de DP que aparecesse no formulário da obra é defeito, e há teste.
+# ---------------------------------------------------------------------------
 TIPOS: dict[str, dict[str, Any]] = {
     "DESLIGAMENTO": {
-        "nome": "Desligamento de colaborador",
+        # Pipe: "Desligamento de Colaborador".
+        "nome": "Desligamento de Colaborador",
         "explicacao": "fecha o vínculo e tira o acesso ao ponto",
         "exige_pessoa": True, "executa": "desligar",
-        "campos": ("data_saida", "aviso_previo", "ultimo_dia", "forma_desligamento",
-                   "faltas_a_descontar", "observacao"),
+        # ⚑ SAÍRAM, e foi ele quem apontou: "último dia trabalhado" e "faltas
+        # a descontar". *"Não é a pessoa que está pedindo que vai dizer. Ele
+        # vai colocar só a data do aviso prévio. Faltas a descontar também
+        # não. Quem vai olhar isso aqui é o DP."* No Pipe, de fato, nenhum dos
+        # dois existe neste formulário.
+        "campos": ("forma_desligamento", "aviso_previo", "pix_tipo",
+                   "pix_chave", "observacao"),
+        "obrigatorios": ("forma_desligamento", "aviso_previo"),
+        "campos_do_dp": ("ultimo_dia", "data_saida", "faltas_a_descontar"),
         # Os ONZE itens do checklist do pipe, na ordem em que o DP faz.
         "checklist": (
             "Solicitação de aviso prévio ou encerramento de contrato",
@@ -66,73 +97,135 @@ TIPOS: dict[str, dict[str, Any]] = {
             "Desativação no sistema de ponto",
         ),
     },
+    # ⚑ O PIPE TEM DOIS DESLIGAMENTOS, e eles pedem coisas diferentes: o do
+    # prestador não tem aviso prévio (não há), tem DATA DE SAÍDA. Eu tinha
+    # juntado os dois num só e pedido os campos dos dois ao mesmo tempo.
+    "DESLIGAMENTO_PRESTADOR": {
+        "nome": "Desligamento de Prestador de Serviço",
+        "explicacao": "encerra a prestação de serviço",
+        "exige_pessoa": True, "executa": "desligar",
+        "campos": ("data_saida", "observacao"),
+        "obrigatorios": ("data_saida",),
+        "campos_do_dp": (),
+        "checklist": ("Conferir o período prestado",
+                      "Encerrar no sistema de pagamento",
+                      "Desativação no sistema de ponto"),
+    },
+    "CANCELAR_DESLIGAMENTO": {
+        "nome": "Cancelar Solicitação de Desligamento",
+        "explicacao": "desfaz o pedido de desligamento antes de ele ser feito",
+        "exige_pessoa": True, "executa": None,
+        "campos": ("observacao",),
+        "obrigatorios": (),
+        "campos_do_dp": (),
+        "checklist": ("Conferir se o desligamento ainda não foi processado",
+                      "Cancelar o pedido"),
+    },
     "READMISSAO": {
-        "nome": "Readmissão de colaborador",
+        "nome": "Readmissão de Colaborador",
         "explicacao": "traz a pessoa de volta sem refazer o cadastro",
         "exige_pessoa": True, "executa": "readmitir",
-        "campos": ("admissao", "vinculo", "tipo_contrato", "cargo_id", "convencao_id",
-                   "obra_id", "salario", "matricula", "observacao"),
+        # ⚑ "Tipo de Readmissão" é o nome no Pipe — eu tinha escrito "tipo de
+        # contrato", que não existe em lugar nenhum. E saíram daqui convenção,
+        # salário e matrícula: ele, com todas as letras, *"convenção coletiva,
+        # é DP quem decide"* e *"matrícula, não é o funcionário que decide"*.
+        "campos": ("data_inicio", "tipo_readmissao", "cargo_pleiteado_id",
+                   "cnpj_admissao", "observacao"),
+        "obrigatorios": ("data_inicio", "tipo_readmissao", "cargo_pleiteado_id",
+                         "cnpj_admissao"),
+        "campos_do_dp": ("cargo_id", "convencao_id", "salario", "matricula"),
         "checklist": ("Atualizar a data de admissão", "Conferir cargo e convenção",
                       "Conferir a obra", "Atualizar a matrícula",
                       "Reativar no sistema de pagamento"),
     },
     "ADMISSAO_PRESTADOR": {
-        "nome": "Prestador que passa a ter carteira",
-        "explicacao": "troca o vínculo sem apagar o período de prestador",
+        # Pipe: "Admissão de Prestador de Serviço". Eu tinha chamado de
+        # "Prestador que passa a ter carteira" — inventado.
+        "nome": "Admissão de Prestador de Serviço",
+        "explicacao": "o prestador passa a ter registro em carteira",
         "exige_pessoa": True, "executa": "trocar_vinculo",
-        "campos": ("admissao", "vinculo", "tipo_contrato", "cargo_id", "salario",
-                   "observacao"),
+        "campos": ("num_ctps", "num_pis", "salario_familia", "observacao"),
+        "obrigatorios": ("num_ctps", "num_pis", "salario_familia"),
+        "campos_do_dp": ("cargo_id", "salario", "matricula", "convencao_id"),
+        "documentos": ("CTPS-FOTO", "CTPS-INFORMACOES"),
         "checklist": ("Conferir a documentação de admissão",
                       "Registrar na carteira", "Cadastro no sistema de pagamento"),
     },
     "ALTERACAO_CARGO": {
-        "nome": "Alteração de cargo ou salário",
-        "explicacao": "com o de→para e o motivo gravados",
+        "nome": "Solicitação de Alteração de Cargo",
+        "explicacao": "com o cargo pleiteado e a justificativa",
         "exige_pessoa": True, "executa": "alteracao",
-        "campos": ("vigencia", "cargo_id", "salario", "motivo", "justificativa"),
+        # No Pipe quem pede informa o CARGO PLEITEADO e a justificativa; o
+        # "Cargo Deferido" é a resposta, e salário é consequência dele.
+        "campos": ("data_inicio", "cargo_pleiteado_id", "justificativa"),
+        "obrigatorios": ("data_inicio", "cargo_pleiteado_id", "justificativa"),
+        "campos_do_dp": ("cargo_deferido_id", "salario"),
         "checklist": ("Conferir o piso da convenção", "Registrar a alteração",
                       "Atualizar no sistema de pagamento"),
     },
     "ATUALIZACAO_DADOS": {
-        "nome": "Atualização de dados cadastrais",
+        "nome": "Atualização de Dados Cadastrais",
         "explicacao": "telefone, chave Pix, endereço, nome",
         "exige_pessoa": True, "executa": "atualizar_cadastro",
-        "campos": ("o_que_muda", "telefone", "email", "pix_tipo", "pix_chave",
-                   "cep", "logradouro", "numero_endereco", "bairro", "municipio", "uf"),
+        # No Pipe é UM campo de texto ("Descreva as Informações a serem
+        # atualizadas"), e não onze caixinhas. Quem pede escreve o que mudou;
+        # o DP altera o cadastro com o documento na mão.
+        "campos": ("descricao", "telefone", "pix_tipo", "pix_chave"),
+        "obrigatorios": ("descricao",),
+        "campos_do_dp": (),
         "checklist": ("Conferir o documento que comprova", "Atualizar o cadastro",
                       "Atualizar no sistema de pagamento"),
     },
     "DEPENDENTE": {
-        "nome": "Cadastro de dependente",
-        "explicacao": "para salário-família e IR",
+        "nome": "Solicitação de Cadastro de Dependente",
+        "explicacao": "para salário-família",
         "exige_pessoa": True, "executa": "dependente",
-        "campos": ("nome", "parentesco", "data_nascimento", "cpf",
-                   "salario_familia", "dependente_ir", "observacao"),
+        # ⚑ SAIU "conta no imposto de renda". Ele: *"você acha que a pessoa lá
+        # da obra vai entender isso aqui, vai saber responder isso aqui? Conta
+        # no imposto de renda ou não conta? Não vai saber."* E, de fato, o
+        # Pipe não pergunta isso. Parentesco no Pipe é só Filho ou Cônjuge.
+        "campos": ("nome", "parentesco", "data_nascimento", "observacao"),
+        "obrigatorios": ("nome", "parentesco", "data_nascimento"),
+        "campos_do_dp": ("cpf", "dependente_ir", "salario_familia"),
+        "documentos": ("DOC-DEPENDENTE",),
+        # ⚑ VÁRIOS DE UMA VEZ. Ele: *"dependente tem que ser um a um, não
+        # posso adicionar outro, não, para pedir mais de um."*
+        "repete": True,
         "checklist": ("Receber a certidão", "Cadastrar o dependente",
                       "Solicitar o salário-família"),
     },
     "AJUDA_DE_CUSTO": {
-        "nome": "Ajuda de custo",
-        "explicacao": "alimentação, transporte e observação",
+        "nome": "Solicitação de Ajuda de Custo",
+        "explicacao": "auxílio alimentação e auxílio transporte",
         "exige_pessoa": True, "executa": "beneficios",
-        "campos": ("categoria_alimentacao", "aux_alimentacao", "categoria_transporte",
-                   "aux_transporte", "obra_id", "observacao"),
+        # ⚑ OS RÓTULOS E AS OPÇÕES SÃO OS DO PIPE. Ele: *"pagar alimentação,
+        # aí segunda, quinta, esse termo está errado. Como é que estava no
+        # Pipe? Para usar igual."* São "Categoria Auxílio Alimentação" e
+        # "Categoria Auxílio Transporte", e as opções estão em CATEGORIAS.
+        "campos": ("solicitacao", "categoria_alimentacao", "categoria_transporte",
+                   "observacao"),
+        "obrigatorios": ("solicitacao",),
+        "campos_do_dp": ("aux_alimentacao", "aux_transporte"),
         "checklist": ("Conferir o valor com a obra", "Atualizar o cadastro"),
     },
     "VALE_TRANSPORTE": {
-        "nome": "Vale-transporte",
-        "explicacao": "conceder, trocar a modalidade ou cancelar",
+        "nome": "Solicitação de Vale Transporte",
+        "explicacao": "conceder ou cancelar o vale-transporte",
         "exige_pessoa": True, "executa": "beneficios",
-        "campos": ("conceder", "categoria_transporte", "aux_transporte",
-                   "meio_transporte", "observacao"),
-        "checklist": ("Cadastro no sistema de transporte",
-                      "Encaminhamento do cartão"),
+        "campos": ("conceder", "observacao"),
+        "obrigatorios": ("conceder",),
+        "campos_do_dp": ("categoria_transporte", "aux_transporte"),
+        "checklist": ("Cadastro no Sistema de Transporte",
+                      "Encaminhamento do Cartão"),
     },
     "DESCONTO_EM_FOLHA": {
-        "nome": "Desconto em folha",
+        "nome": "Lançar Desconto em Folha",
         "explicacao": "valor total e número de parcelas",
         "exige_pessoa": True, "executa": None,
-        "campos": ("valor_total", "parcelas", "primeira_competencia", "observacao"),
+        "campos": ("valor_total", "parcelas", "valor_parcela", "data",
+                   "observacao"),
+        "obrigatorios": ("valor_total",),
+        "campos_do_dp": ("primeira_competencia",),
         "checklist": ("Conferir a autorização do colaborador",
                       "Lançar no sistema de pagamento"),
     },
@@ -141,28 +234,109 @@ TIPOS: dict[str, dict[str, Any]] = {
     # existe o cadastro, ponto final. O cadastro já tem que vir com
     # documentação e tudo mais."*
     #
-    # A diferença não é de palavra, é de quem faz o quê: no pré-cadastro a obra
-    # mandava nome e CPF e o DP ia atrás do resto — era o DP perseguindo
-    # documento por WhatsApp, que é justamente o trabalho que esta fila existe
-    # para acabar. No cadastro, a obra abre o pedido COM OS PAPÉIS, e o DP
-    # CONFERE. Quem não tem o papel não abre o pedido ainda.
+    # ⚑ E OS DOIS PIPES VIRAM UM. Ele, em 10/11/2026: *"a gente está meio que
+    # unificando. Vai ser tudo DP, porque tudo é solicitação DP. O cadastro e
+    # as outras solicitações."* Por isso o cadastro é um TIPO desta fila, e
+    # não uma tela à parte.
     "CADASTRO": {
-        "nome": "Cadastro de colaborador",
+        "nome": "Cadastro de Colaborador",
         "explicacao": "a obra abre com os dados E os documentos; o DP confere",
         "exige_pessoa": False, "executa": "criar_cadastro",
-        "campos": ("nome", "cpf", "obra_id", "cargo_id", "vinculo", "data_inicio",
-                   "telefone", "observacao"),
+        # Os rótulos vêm do pipe CADASTRO COLABORADORES. "Tipo de Documentação
+        # para Cadastro" é o nome certo do que eu chamava de "tipo de
+        # contrato"; "Função" é o nome certo de cargo neste formulário.
+        "campos": ("nome", "cpf", "tipo_documentacao", "data_inicio",
+                   "cargo_pleiteado_id", "pagamento", "valor_diaria",
+                   "valor_mes", "telefone", "meio_transporte", "observacao"),
+        "obrigatorios": ("nome", "cpf", "tipo_documentacao", "data_inicio",
+                         "cargo_pleiteado_id", "pagamento"),
+        # ⚑ Matrícula e convenção são do DP — estão em FASE no Pipe, não no
+        # formulário. Os auxílios também.
+        "campos_do_dp": ("matricula", "convencao_id", "cargo_id", "salario",
+                         "categoria_alimentacao", "aux_alimentacao",
+                         "categoria_transporte", "aux_transporte"),
+        "documentos": ("DOC-IDENTIDADE", "CPF-DOC", "COMPROVANTE-ENDERECO-PESSOA"),
         "checklist": ("Conferir se a documentação veio completa",
                       "Conferir os dados contra os documentos",
                       "Conferir o que falta para admitir"),
     },
     "DIVERSOS": {
-        "nome": "Outra solicitação",
+        "nome": "Solicitações Diversas",
         "explicacao": "o que não cabe nos tipos acima",
         "exige_pessoa": False, "executa": None,
         "campos": ("descricao",),
+        "obrigatorios": ("descricao",),
+        "campos_do_dp": (),
         "checklist": (),
     },
+}
+
+# ---------------------------------------------------------------------------
+# AS CAIXINHAS, com as opções do Pipe — palavra por palavra
+# ---------------------------------------------------------------------------
+CATEGORIAS: dict[str, tuple[str, ...]] = {
+    "forma_desligamento": (
+        "À Pedido do Colaborador", "Encerramento de Contrato de Experiência",
+        "Demissão com Aviso Trabalhado", "Demissão com Aviso Indenizado"),
+    "tipo_readmissao": ("Prestador de Serviço", "CTPS"),
+    "tipo_documentacao": ("Prestador de Serviço", "CTPS"),
+    "cnpj_admissao": ("00.079.526/0001-09 - MATRIZ/CE",
+                      "50.422.792/0001-09 - INFRADENDE",
+                      "20.198.694/0001-20 - C3"),
+    "parentesco": ("Filho", "Cônjuge"),
+    "pagamento": ("Diarista", "Mensalista"),
+    "meio_transporte": ("Nenhum", "Transporte Coletivo", "Moto", "Bicicleta"),
+    "categoria_alimentacao": ("Segunda à Quinta", "Segunda à Sexta",
+                              "Mensal", "Mês"),
+    "categoria_transporte": ("Diário", "Mensal", "Segunda e Sexta",
+                             "Vale Transporte", "Diário e Vale Transporte",
+                             "Veículo", "Motocicleta", "Bicicleta", "Cartão"),
+    "pix_tipo": ("E-mail", "Telefone", "CPF", "Aleatória"),
+    "solicitacao": ("Solicitar ou Atualizar", "Cancelar"),
+    "conceder": ("Sim", "Não"),
+    "salario_familia": ("Sim", "Não"),
+}
+
+# O rótulo de cada campo, como está no Pipe. A tela lê daqui — não escreve
+# nome de campo à mão.
+ROTULOS: dict[str, str] = {
+    "obra_id": "Código da Obra",
+    "forma_desligamento": "Forma de Desligamento",
+    "aviso_previo": "Data do Aviso Prévio",
+    "data_saida": "Data de Saída",
+    "data_inicio": "Data de Início",
+    "tipo_readmissao": "Tipo de Readmissão",
+    "tipo_documentacao": "Tipo de Documentação para Cadastro",
+    "cargo_pleiteado_id": "Cargo Pleiteado",
+    "cargo_deferido_id": "Cargo Deferido",
+    "cnpj_admissao": "CNPJ para Admissão",
+    "justificativa": "Justificativa de Alteração do Cargo",
+    "num_ctps": "Nº CTPS",
+    "num_pis": "Nº PIS",
+    "salario_familia": "Solicitar Salário Família?",
+    "nome": "Nome do Colaborador",
+    "cpf": "CPF do Colaborador",
+    "parentesco": "Parentesco",
+    "data_nascimento": "Data de Nascimento do Dependente",
+    "telefone": "Telefone",
+    "pix_tipo": "Chave Pix",
+    "pix_chave": "Chave Pix (o dado)",
+    "pagamento": "Pagamento",
+    "valor_diaria": "Valor da Diária",
+    "valor_mes": "Valor do Mês",
+    "meio_transporte": "Meio de Transporte para chegar à Obra?",
+    "categoria_alimentacao": "Categoria Auxílio Alimentação",
+    "categoria_transporte": "Categoria Auxílio Transporte",
+    "aux_alimentacao": "Valor (Auxílio Alimentação)",
+    "aux_transporte": "Valor (Auxílio Transporte)",
+    "solicitacao": "Solicitação",
+    "conceder": "Conceder Vale Transporte?",
+    "valor_total": "Valor Total do Desconto",
+    "parcelas": "Quantidade de Parcelas",
+    "valor_parcela": "Valor da Parcela",
+    "data": "Data",
+    "descricao": "Descreva sua Solicitação:",
+    "observacao": "Observações:",
 }
 
 # OS DOIS TIPOS QUE SAÍRAM, em 05/11/2026, e por quê — para ninguém recriá-los
@@ -174,9 +348,6 @@ TIPOS: dict[str, dict[str, Any]] = {
 #     ter dono de verdade: a ficha da pessoa diz quais papéis faltam, e o pedido
 #     à contabilidade cobra o retorno dela. Pedido solto não era rastreio, era
 #     lembrete.
-#
-# "Outra solicitação" FICOU, e foi decisão minha: é a única porta para o caso
-# incomum, e ela não custa nada. Se ele quiser fechar também, é uma linha.
 
 SITUACOES = ("ABERTA", "EM_ANALISE", "ATENDIDA", "RECUSADA", "CANCELADA")
 ABERTAS = ("ABERTA", "EM_ANALISE")
@@ -199,11 +370,27 @@ def tipos_para_tela() -> list[dict[str, Any]]:
         campos = list(d["campos"])
         if "obra_id" not in campos:
             campos.insert(0, "obra_id")
+        # ⚑ O ASTERISCO VEM DAQUI, e agora ele é de verdade. Ele, em
+        # 10/11/2026: *"Pipe, todo campo obrigatório, ele tem um asterisco,
+        # facilita. Aqui não, ninguém sabe o que é obrigatório, o que é que
+        # não é."* A lista é a do Pipe, tipo por tipo.
+        obrigatorios = ["obra_id"] + [x for x in d.get("obrigatorios", ())
+                                      if x != "obra_id"]
         saida.append({"valor": c, "rotulo": d["nome"],
                       "explicacao": d["explicacao"],
                       "exige_pessoa": d["exige_pessoa"], "campos": campos,
-                      # A tela marca o asterisco a partir desta lista.
-                      "obrigatorios": ["obra_id"]})
+                      "obrigatorios": obrigatorios,
+                      # O que o DP preenche ao atender — NÃO vai no formulário
+                      # de quem pede. A tela de atendimento lê daqui.
+                      "campos_do_dp": list(d.get("campos_do_dp", ())),
+                      # Os papéis que este pedido exige, quando exige.
+                      "documentos": list(d.get("documentos", ())),
+                      # Pedido que aceita vários de uma vez (dependente).
+                      "repete": bool(d.get("repete")),
+                      # O rótulo e as opções de cada campo, como no Pipe.
+                      "rotulos": {x: ROTULOS.get(x, x) for x in campos},
+                      "opcoes": {x: list(CATEGORIAS[x]) for x in campos
+                                 if x in CATEGORIAS}})
     return saida
 
 
