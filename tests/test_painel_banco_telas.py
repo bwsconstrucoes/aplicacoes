@@ -756,6 +756,34 @@ def test_a_tela_do_explorador_abre_e_procura(base_para_explorar, monkeypatch):
     assert "Fluxo de Caixa" in html
 
 
+def test_o_explorador_ordena_do_maior_para_o_menor_valor(base_para_explorar, monkeypatch):
+    """10/11/2026, o dono: "não consigo fazer a classificação por valor, do
+    maior pro menor — é importante". A ordem é feita no banco: com o teto de
+    linhas, os maiores têm de ser os maiores da seleção inteira."""
+    from app.apps.painel import consultas
+    valor = lambda l: abs(l["pago_recebido"] + l["a_pagar_receber"])  # noqa: E731
+    linhas = consultas.explorar(_pedido_padrao(com_trf=True, ordem="valor_maior"))["linhas"]
+    valores = [valor(l) for l in linhas]
+    assert len(valores) > 1 and valores == sorted(valores, reverse=True)
+    linhas = consultas.explorar(_pedido_padrao(com_trf=True, ordem="valor_menor"))["linhas"]
+    assert [valor(l) for l in linhas] == sorted(valores)
+    # um só, com o teto: vem o maior de todos
+    assert valor(consultas.explorar(_pedido_padrao(com_trf=True, ordem="valor_maior"),
+                                    limite=1)["linhas"][0]) == max(valores)
+
+    monkeypatch.setenv("PAINEL_SENHA", "segredo-de-teste")
+    from app.main import create_app
+    app = create_app()
+    app.config.update(TESTING=True)
+    cliente = app.test_client()
+    cliente.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    html = cliente.get("/painel/explorador?busca=A&ordem=valor_maior").get_data(as_text=True)
+    assert "Valor, do maior para o menor" in html and "ordem=valor_menor" in html
+    # ordem desconhecida vira a de sempre, por data
+    html = cliente.get("/painel/explorador?busca=A&ordem=xyz").get_data(as_text=True)
+    assert 'value="data" selected' in html
+
+
 def test_o_explorador_nao_esta_no_menu_principal(base_para_explorar, monkeypatch):
     """O dono pediu explicitamente: tela de manutenção não fica exposta ao lado
     dos relatórios. Chega-se a ela por Configurações."""
