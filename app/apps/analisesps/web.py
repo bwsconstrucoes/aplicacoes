@@ -4570,8 +4570,19 @@ def folha_importar():
     except Exception as e:  # noqa: BLE001
         logger.exception("Folha: falhou importar o arquivo da contabilidade")
         return {"ok": False, "erro": f"Não foi possível importar: {e}"}, 500
-    return {"ok": True, **{k: str(v) if k == "total" else v
-                           for k, v in resultado.items()}}
+    # PARA ONDE A TELA VAI (10/11/2026): a folha que acabou de entrar — e, se aquele
+    # mês JÁ FOI PAGO, direto a Complementar, que é o que se faz com a folha
+    # corrigida (o dono: *"basta eu colar os novos arquivos e o sistema já entende
+    # que é complementar?"*).
+    ir = url_for("analisesps.tela_folha_aberta", folha_id=resultado["id"])
+    try:
+        from . import folha_complementar
+        if folha_complementar.ja_paga(resultado["ano"], resultado["mes"], resultado["tipo"]):
+            ir = url_for("analisesps.tela_folha_complementar", folha_id=resultado["id"])
+    except Exception:  # noqa: BLE001 — sem a conferência, vai para a folha
+        logger.exception("Folha: não consegui conferir se a folha já foi paga")
+    return {"ok": True, "ir": ir, **{k: str(v) if k == "total" else v
+                                     for k, v in resultado.items()}}
 
 
 @bp.route("/api/folha/apagar", methods=["POST"])

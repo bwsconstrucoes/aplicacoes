@@ -179,3 +179,21 @@ def test_a_TELA_e_o_relatorio_da_complementar(paga, app):
         "/analisesps/folha/7/complementar/relatorio.xlsx").data))
     situacoes = [r[0].value for r in planilha["Complementar"].iter_rows(min_row=2)]
     assert {"A receber", "Não foi pago antes", "Pago a mais"} <= set(situacoes)
+
+
+@pytest.mark.banco
+def test_importar_a_folha_de_um_mes_JA_PAGO_leva_direto_a_complementar(paga, app, monkeypatch):
+    """O dono: *"basta eu colar os novos arquivos e o sistema já entende que é
+    complementar?"* — sim: a tela vai direto para a Complementar."""
+    import io
+
+    from app.apps.analisesps import folha_arquivo
+    cliente = _como_mestre(app)
+    for (ano, mes), destino in (((ANO, MES), "/folha/7/complementar"), ((ANO, 9), "/folha/7")):
+        monkeypatch.setattr(folha_arquivo, "importar", lambda *a, ano=ano, mes=mes, **k: {
+            "id": 7, "ano": ano, "mes": mes, "tipo": TIPO, "pessoas": 3, "total": D("1"),
+            "avisos": [], "substituiu": True, "fecha": True, "casadas": 3, "pendentes": 0})
+        d = cliente.post("/analisesps/api/folha/importar",
+                         data={"folha": (io.BytesIO(b"x"), "folha.xls")},
+                         content_type="multipart/form-data").get_json()
+        assert d["ok"] and d["ir"].endswith(destino), (mes, d)
