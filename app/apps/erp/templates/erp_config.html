@@ -989,7 +989,7 @@ function formOperador(u){
             ${PROJETOS_CAD.length ? PROJETOS_CAD.map(p=>`<label class="opcao">
               <input type="checkbox" class="op-projeto" value="${p.id}"
                 ${(u.projetos||[]).includes(p.id)?"checked":""}>
-              <span class="rotulo">${escapar(p.codigo)} · ${escapar(p.nome)}
+              <span class="rotulo">${escapar(rotuloObra(p))}
                 <small>(${p.quantas_obras} obra(s))</small></span></label>`).join("")
               : `<small>Nenhum projeto cadastrado. Crie em Obras › ▦ Projetos.</small>`}
           </div></div>
@@ -1001,7 +1001,7 @@ function formOperador(u){
       <div class="filtro-opcoes" style="max-height:220px; border:1px solid var(--borda); border-radius:8px; padding:6px">
         ${DADOS.obras.map(o=>`<div style="display:flex; align-items:center; gap:10px">
           <label class="opcao" style="flex:1"><input type="checkbox" class="op-obra" value="${o.id}"
-            ${u.obras.includes(o.codigo)?"checked":""}><span class="rotulo">${o.codigo} · ${o.nome}</span></label>
+            ${u.obras.includes(o.codigo)?"checked":""}><span class="rotulo">${escapar(rotuloObra(o))}</span></label>
           <label class="opcao" title="Recebe a conferência mensal dos equipamentos desta obra"
                  style="white-space:nowrap"><input type="checkbox" class="op-resp" value="${o.id}"
             ${(u.obras_responsavel||[]).includes(o.id)?"checked":""}

@@ -80,13 +80,13 @@ async function cadastros(){
   try {
     const d = await api("/erp/api/config");
     els("f-obra").innerHTML = `<option value="">Todas</option>` +
-      d.dados.obras.map(o=>`<option value="${o.id}">${o.codigo} · ${o.nome}</option>`).join("");
+      d.dados.obras.map(o=>`<option value="${o.id}">${escapar(rotuloObra(o))}</option>`).join("");
     els("f-empresa").innerHTML = `<option value="">Todas</option>` +
       (d.dados.empresas || []).map(e=>`<option value="${e.id}">${escapar(e.nome)}</option>`).join("");
     try {
       const pj = await api("/erp/api/projetos");
       els("f-projeto").innerHTML = `<option value="">Todos</option>` +
-        pj.projetos.map(p=>`<option value="${p.id}">${escapar(p.codigo)} · ${escapar(p.nome)}</option>`).join("");
+        pj.projetos.map(p=>`<option value="${p.id}">${escapar(rotuloObra(p))}</option>`).join("");
     } catch(e) { /* migração 066 pendente: o filtro fica só com "Todos" */ }
     const grupos = {};
     d.dados.categorias.forEach(c => grupos[c.grupo_codigo] = c.grupo_nome);
@@ -267,7 +267,7 @@ function desenharDre(d){
   const bloco = (titulo, grupos, dica) => `
     <div class="cartao"><div class="cartao-cab"><h3>${titulo}</h3><small>${dica}</small></div>
     <table><tbody>${grupos.map(g=>`
-      <tr style="background:#F7F9FC"><td><b>${g.codigo} · ${g.nome}</b></td>
+      <tr style="background:#F7F9FC"><td><b>${escapar(rotuloObra(g))}</b></td>
         <td class="direita dados"><b>${numero(g.total)}</b></td></tr>
       ${g.subgrupos.map(sg=>`<tr><td style="padding-left:26px">${sg.codigo} ${sg.nome}</td>
         <td class="direita dados">${numero(sg.total)}</td></tr>`).join("")}`).join("")}

@@ -33,7 +33,7 @@
 
 <div class="topo">
   <div class="topo-linha">
-    {{ m.cel("Obra", r.obra.codigo ~ " — " ~ r.obra.nome, 3) }}
+    {{ m.cel("Obra", r.obra.rotulo, 3) }}
     {{ m.cel("Endereço", r.obra.endereco, 3) }}
     {{ m.cel("Data", m.br(p.data) ~ " · " ~ p.dia_da_semana, 2) }}
   </div>
@@ -73,9 +73,9 @@
     <div class="texto">{{ p.historico }}</div></div>
   {% endif %}
 
-  {% if p.equipamentos %}
+  {% if p.equipamentos or p.equipamentos_lista %}
   <div style="margin-top:6pt"><span class="papel">Equipamentos em obra</span>
-    <div class="texto">{{ p.equipamentos }}</div></div>
+    {{ m.equipamentos(p) }}</div>
   {% endif %}
 
   {% if p.ocorrencias or p.fiscalizacao_esteve %}

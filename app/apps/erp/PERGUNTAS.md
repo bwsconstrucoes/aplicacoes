@@ -1772,6 +1772,16 @@ Perguntas que o diário torna possíveis. Escritas como o dono perguntaria.
 - "Quais obras estão com diário atrasado?" — e quantos dias cada uma deve.
 - "Faltou diário em que dias da obra 081 este mês?"
 - "Quantas pessoas trabalharam na obra tal dia?" — vem do ponto, não digitado.
+- "Quem trabalhou na obra naquele dia, e fazendo o quê?" — **passou a trazer a
+  FUNÇÃO em 10/11/2026**, e ela vem de três lugares, nesta ordem: o cargo do
+  cadastro do ERP, a função antiga, e o cargo do Registro de Colaboradores (o
+  mesmo que o ponto usa). ⚠️ **pessoa sem nenhum dos três aparece sem função**
+  — a resposta deve dizer "sem função no cadastro", nunca inventar uma.
+- "Em que diário eu falei de concretagem da laje?" — **passou a ser respondida
+  em 10/11/2026**: a busca varre relato, ocorrências, histórico, equipamentos
+  e o que a fiscalização escreveu, ignorando acento e maiúscula, e diz em qual
+  campo achou. ⚠️ **ela acha PEDAÇO de palavra** ("P12", "bloco B"), e por
+  isso termo com menos de 3 letras é recusado em vez de devolver tudo.
 - "O que foi feito na obra na semana passada?"
 - "Em que dias choveu na obra?" — ⚑ hoje só o que a pessoa marcou; a medição
   da estação ainda não está ligada.
@@ -1783,9 +1793,33 @@ Perguntas que o diário torna possíveis. Escritas como o dono perguntaria.
 - "O que a fiscalização observou?"
 - "Que material chegou na obra naquele dia?" — vem de Suprimentos.
 - "Quem corrigiu o diário depois de fechado, e por quê?"
-- "Que equipamento estava na obra naquele dia?" — texto livre escrito por
-  quem lançou (09/11/2026). ⚠️ **não é consulta de frota**: se ninguém
-  escrever, a resposta é "não informado", e não "nenhum equipamento".
+- "Que equipamento estava na obra naquele dia?" — **passou a ser uma LISTA em
+  10/11/2026** (migrações 097 e 098): descrição, quantidade, observação e o
+  **laço com o cadastro de insumos** (os marcados como locáveis). O campo de
+  texto livre saiu da tela no mesmo dia, mas **os diários antigos ainda o
+  usam**, então a resposta tem de olhar os DOIS.
+  ⚠️ **não é consulta de frota**: se ninguém lançar, a resposta é "não
+  informado", e não "nenhum equipamento esteve na obra".
+- "Quantos dias a retroescavadeira ficou na obra 081?" — **agora dá para
+  contar**, nos dias lançados pela lista. ⚠️ **a conta só vale a partir do dia
+  em que a obra passou a usar a lista**: dia com equipamento escrito no texto
+  livre não entra na soma, e a resposta tem de dizer isso em vez de devolver um
+  número menor com cara de certo.
+- "Em que diário aparece a betoneira?" — **passou a ser respondida em
+  10/11/2026**: a busca por texto do diário varre também a lista de
+  equipamento e a observação dela ("parada por manutenção").
+- "Que equipamento ficou parado, e em que dias?" — ⚠️ **depende de alguém ter
+  escrito o motivo na observação**. O sistema não sabe sozinho que uma máquina
+  parou; ele guarda o que a obra escreveu.
+- "Em quais obras a retroescavadeira esteve este mês?" — **passou a dar para
+  responder sem erro de nome** (098): o equipamento escolhido na lista carrega
+  o número do insumo, então contar não depende de alguém ter digitado igual.
+  ⚠️ **mas só conta o que veio da lista**: equipamento lançado como "não está
+  na lista" entra marcado e fica de fora da soma por insumo. A resposta tem de
+  dizer quantos ficaram de fora, nunca devolver só o número.
+- "Que equipamento foi lançado sem estar no cadastro?" — dá para listar, e é a
+  pergunta que mantém a nomenclatura limpa: cada um desses é um insumo que
+  Suprimentos precisa cadastrar como locável. Ainda não há função pronta.
 - "Em que horário a obra trabalhou naquele dia?" — ⚠️ **palavra ambígua**: o
   campo vem **pré-preenchido** com o padrão do dia da semana (7 às 17, e 7 às
   16 na sexta) e a pessoa pode trocar. Um dia gravado SEM horário não tem
@@ -1798,10 +1832,29 @@ Perguntas que o diário torna possíveis. Escritas como o dono perguntaria.
 - "Que obras ainda estão sem a logo do órgão no diário?" — ⚠️ dá para
   consultar, mas não há função pronta; hoje se vê abrindo o cadastro.
 
+- "O que foi feito na obra em março do ano passado?" — **passou a ter resposta
+  em 10/11/2026**, com a importação dos 1.427 diários da planilha antiga
+  (fevereiro de 2025 em diante). ⚠️ **a cobertura é desigual**: são 14 obras, e
+  o que não estava na planilha continua sem diário. Antes de responder "não
+  houve obra nesse dia", o assistente tem de saber distinguir **não houve** de
+  **não foi importado**.
+- "Este diário foi escrito aqui ou veio da planilha antiga?" — fica gravado
+  (`importado_de`), e importa para ler o resto: num dia importado **não há
+  batida de ponto nenhuma**, e o efetivo é o que a obra declarou por função.
+- "Quem informou este diário?" — nos importados, o nome de quem preencheu no
+  sistema antigo, que **não é** um usuário do ERP.
+- "A IA pode melhorar este relato?" — pode, no relato, nas ocorrências, no
+  histórico e nos equipamentos. ⚠️ **Nunca na observação da fiscalização**, e
+  isso não é configuração: a recusa é por lista fechada na regra. A sugestão
+  **não grava** — vai para o campo e a pessoa decide.
+
 **Dependem de quem pergunta (escopo por obra):**
 
 - "Como está o diário das minhas obras?" — o administrativo de obra vê as
   dele; o gestor vê as designadas.
+- "Em que diário eu falei de concretagem?" — a busca por texto só varre as
+  obras que quem procura alcança. Quem é preso a obra não acha diário da obra
+  de outro, e a resposta **não diz que existe** — diz que não achou.
 
 **O sistema AINDA NÃO responde, e o que falta:**
 
@@ -1816,6 +1869,23 @@ Perguntas que o diário torna possíveis. Escritas como o dono perguntaria.
 - "Este relato é parecido com o de ontem?" — o sistema OFERECE o relato
   anterior, mas não compara nem avisa quando dez dias seguidos são idênticos.
   Seria o sinal de diário preenchido no automático.
+- "Quantos dias-máquina a obra consumiu no mês?" — a lista de equipamento tem
+  a quantidade por dia, mas não há função que multiplique e some o período.
+  ⚠️ **e a conta tem uma armadilha**: o equipamento é repetido do dia anterior
+  com um botão, então um dia em que ninguém lançou nada **não quer dizer** que
+  a máquina saiu da obra — quer dizer que ninguém lançou. Somar sem dizer isso
+  daria um número menor com cara de certo.
+- "A obra parou quantos dias esperando licença?" — os 106 dias de "AGUARDANDO
+  LICENÇA" da planilha antiga estão lá, e **de propósito não foram marcados
+  como "sem expediente"**: obra parada esperando terceiro é pleito de prazo,
+  não folga. Mas não há função que some esses dias por obra.
+- "Quantos dias esta obra ficou sem expediente?" — dá para contar o campo,
+  mas ⚠️ **nos diários importados a marca veio de uma leitura do texto**
+  ("FOLGA", "FERIADO - NÃO HOUVE EXPEDIENTE"), não de alguém ter clicado. A
+  resposta tem de dizer isso.
+- "Alguma máquina está lançada há semanas sem aparecer no relato?" — seria o
+  sinal de equipamento esquecido na lista, repetido todo dia pelo botão depois
+  de já ter ido embora. Não há função que cruze as duas coisas.
 
 ## 4. Como esta lista vira código
 

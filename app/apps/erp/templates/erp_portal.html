@@ -347,7 +347,7 @@ function pintarCamposDoTipo(){
               ${unica ? "" : `<option value="">escolha a obra…</option>`}
               ${obras.map(o => `<option value="${o.id}"
                 ${String(o.id) === String(unica) ? "selected" : ""}
-                >${esc(o.codigo)} — ${esc(o.nome)}</option>`).join("")}
+                >${esc(o.rotulo || o.nome)}</option>`).join("")}
             </select></label>`;
         }
         // CAMPO DE LISTA FECHADA VIRA CAIXINHA, nunca texto livre: a obra

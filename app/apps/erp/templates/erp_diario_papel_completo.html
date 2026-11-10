@@ -33,7 +33,7 @@
 
 <div class="topo">
   <div class="topo-linha">
-    {{ m.cel("Obra", r.obra.codigo ~ " — " ~ r.obra.nome, 4) }}
+    {{ m.cel("Obra", r.obra.rotulo, 4) }}
     {{ m.cel("Contrato nº", r.obra.contrato, 2) }}
     <div class="cel numero"><span>Dia de obra</span>
       <b>{{ p.prazo.decorridos or "—" }}</b></div>
@@ -75,7 +75,7 @@
         </tbody>
       </table>
       <div style="margin-top:4pt"><span class="papel">Equipamentos em obra</span>
-        {{ m.texto(p.equipamentos, "Não informado.") }}</div>
+        {{ m.equipamentos(p, "Não informado.") }}</div>
     </div>
   </div>
   <div>

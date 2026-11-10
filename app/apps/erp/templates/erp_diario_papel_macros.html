@@ -26,6 +26,19 @@
 {%- else %}<div class="vazio">{{ vazio }}</div>{% endif -%}
 {% endmacro %}
 
+{# OS EQUIPAMENTOS: a LISTA quando existe, o texto escrito à mão quando não.
+   Diário já assinado não perde o que tinha — e diário novo imprime a conta,
+   que é o que a fiscalização e o pleito de prazo leem. Uma linha só, porque
+   o papel tem de caber numa página. #}
+{% macro equipamentos(p, vazio="Não informado.") -%}
+{%- if p.equipamentos_lista %}<div class="texto">{% for q in p.equipamentos_lista -%}
+{%- if not loop.first %} · {% endif -%}
+{{ q.quantidade }} {{ q.descricao }}{% if q.observacao %} ({{ q.observacao }}){% endif -%}
+{%- endfor %}{% if p.equipamentos %} — {{ p.equipamentos }}{% endif %}</div>
+{%- elif p.equipamentos %}<div class="texto">{{ p.equipamentos }}</div>
+{%- else %}<div class="vazio">{{ vazio }}</div>{% endif -%}
+{% endmacro %}
+
 {# O PRAZO numa frase: "dia 234 de 361 · faltam 127". Obra fora do prazo diz
    isso em voz alta, e não mostra zero. #}
 {% macro prazo(p) -%}

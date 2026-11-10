@@ -48,12 +48,14 @@ efetivo vazio e um recado — nunca com erro na cara de quem está na obra.
 from __future__ import annotations
 
 import logging
+import unicodedata
 from datetime import date, timedelta
 from typing import Any, Optional
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.apps.erp.core.comum.rotulos import rotulo_da_obra  # noqa: F401
 from app.apps.erp.core.comum.auditoria import (
     ErroNaoEncontrado, ErroValidacao, registrar_evento,
 )
@@ -197,6 +199,8 @@ def _consulta_opcional(s: Session, sql: str, **params):
 # ---------------------------------------------------------------------------
 # 1. O CABEÇALHO DA OBRA — e a conta de prazo
 # ---------------------------------------------------------------------------
+
+
 def cabecalho(s: Session, obra_id: int, dia: date) -> dict[str, Any]:
     """O que vem do cadastro da obra. NADA DISSO É DIGITADO NO DIÁRIO.
 
@@ -241,6 +245,8 @@ def cabecalho(s: Session, obra_id: int, dia: date) -> dict[str, Any]:
 
     return {
         "obra_id": o["id"], "codigo": o["codigo"], "nome": o["nome"],
+        # O nome que as telas e o papel mostram — sem repetição.
+        "rotulo": rotulo_da_obra(o["codigo"], o["nome"]),
         "objeto": o["objeto"] or "", "contrato": o["contrato"] or "",
         "data_inicio": str(inicio) if inicio else None,
         "data_termino": str(fim) if fim else None,
@@ -295,10 +301,32 @@ def efetivo_do_ponto(s: Session, obra_id: int, dia: date) -> dict[str, Any]:
     um recado. Diário que não abre porque o ponto está fora é pior que diário
     sem efetivo automático.
     """
-    vazio = {"pessoas": [], "total": 0, "por_funcao": [], "indisponivel": None}
-    linhas = _consulta_opcional(s, """
+    vazio = {"pessoas": [], "total": 0, "por_funcao": [], "resumo": "",
+             "indisponivel": None}
+    # ⚑ A FUNÇÃO VEM DE TRÊS LUGARES, e descobrir isso custou uma reclamação
+    # dele em 10/11/2026: *"não tem aqui a função da pessoa, está só o nome."*
+    #
+    # Eu procurava só nos `cargos` e nas `funcoes` do ERP. Acontece que, hoje,
+    # a função da maioria mora no **Registro de Colaboradores**
+    # (`analisesps.colaborador.cargo`) — a cópia da planilha do DP, que é de
+    # onde o PRÓPRIO PONTO lê a função que mostra no tablet
+    # (`ponto/core/registro.py`: `COALESCE(NULLIF(btrim(r.cargo),''), f.nome)`).
+    # Os cargos do ERP só se enchem quando a planilha de cargos for importada,
+    # o que ainda não aconteceu.
+    #
+    # A ORDEM: o cargo do ERP primeiro (é o que o DP mantém daqui para a
+    # frente), depois a função antiga, e por último o Registro. Assim a
+    # correção feita no ERP vence a planilha, e não o contrário.
+    #
+    # DUAS TENTATIVAS, cada uma protegida: num banco sem o schema
+    # `analisesps`, a primeira falha INTEIRA e levaria o efetivo junto — e aí
+    # voltaríamos ao "o ponto não respondeu" por causa de uma tabela que nem é
+    # do ponto.
+    de_onde = """
             SELECT c.id, c.nome,
-                   COALESCE(cg.nome, f.nome, '') AS funcao,
+                   COALESCE(NULLIF(btrim(cg.nome), ''),
+                            NULLIF(btrim(f.nome), ''),
+                            {registro}'') AS funcao,
                    MIN(m.timestamp_servidor) AS entrada,
                    MAX(m.timestamp_servidor) AS saida,
                    count(*) AS batidas
@@ -306,11 +334,23 @@ def efetivo_do_ponto(s: Session, obra_id: int, dia: date) -> dict[str, Any]:
               JOIN colaboradores c ON c.id = m.colaborador_id
               LEFT JOIN cargos cg ON cg.id = c.cargo_id
               LEFT JOIN funcoes f ON f.id = c.funcao_id
+              {junta}
              WHERE m.obra_id = :o
                AND m.data_referencia = :d
                AND m.status <> 'CANCELADA'
-             GROUP BY c.id, c.nome, cg.nome, f.nome
-             ORDER BY c.nome""", o=obra_id, d=dia)
+             GROUP BY c.id, c.nome, cg.nome, f.nome{mais}
+             ORDER BY c.nome"""
+    linhas = _consulta_opcional(
+        s, de_onde.format(
+            registro="NULLIF(btrim(r.cargo), ''), ",
+            junta=("LEFT JOIN analisesps.colaborador r "
+                   "ON regexp_replace(r.cpf, '\\D', '', 'g') = "
+                   "regexp_replace(c.cpf, '\\D', '', 'g')"),
+            mais=", r.cargo"),
+        o=obra_id, d=dia)
+    if linhas is None:
+        linhas = _consulta_opcional(
+            s, de_onde.format(registro="", junta="", mais=""), o=obra_id, d=dia)
     if linhas is None:
         return {**vazio,
                 "indisponivel": "O ponto não respondeu. O efetivo pode ser "
@@ -327,10 +367,26 @@ def efetivo_do_ponto(s: Session, obra_id: int, dia: date) -> dict[str, Any]:
     contagem: dict[str, int] = {}
     for p in pessoas:
         contagem[p["funcao"]] = contagem.get(p["funcao"], 0) + 1
+    # Ordena pela QUANTIDADE e, empatando, pelo nome da função: sem o segundo
+    # critério a lista dança de ordem a cada abertura, e quem confere o mesmo
+    # dia duas vezes acha que mudou alguma coisa.
     por_funcao = [{"funcao": f, "quantidade": q}
-                  for f, q in sorted(contagem.items(), key=lambda x: -x[1])]
+                  for f, q in sorted(contagem.items(), key=lambda x: (-x[1], x[0]))]
+    # O RESUMO EM UMA FRASE, pedido dele em 10/11/2026: *"nome, função,
+    # inclusive um resumo, de quantas pessoas e tal — fica mais fácil entender
+    # a coisa."* Montado aqui, e não na tela, porque o papel precisa da mesma
+    # frase: duas versões divergiriam no primeiro ajuste.
+    resumo = ""
+    if pessoas:
+        partes = [f"{x['quantidade']} {x['funcao'].lower()}"
+                  for x in por_funcao if x["funcao"] != "—"]
+        sem_funcao = contagem.get("—", 0)
+        if sem_funcao:
+            partes.append(f"{sem_funcao} sem função no cadastro")
+        resumo = (f"{len(pessoas)} pessoa(s)"
+                  + (": " + ", ".join(partes) if partes else ""))
     return {"pessoas": pessoas, "total": len(pessoas),
-            "por_funcao": por_funcao, "indisponivel": None}
+            "por_funcao": por_funcao, "resumo": resumo, "indisponivel": None}
 
 
 def lotados_que_bateram_em_outra(s: Session, obra_id: int,
@@ -465,7 +521,10 @@ def abrir_dia(s: Session, obra_id: int, dia: date,
             "equipamentos": "", "historico": "",
             "sem_expediente": sugere_sem,
             "obs_fiscalizacao": "", "obs_fiscalizacao_por": "",
-            "extras": [],
+            "extras": [], "efetivo_importado": [],
+            "informado_por": "", "importado_de": "",
+            "equipamentos_lista": [], "equipamentos_resumo": "",
+            "equipamentos_disponivel": _tem_equipamentos_em_tabela(s),
         },
         "sugere_sem_expediente": sugere_sem,
         "motivo_sem_expediente": motivo_sem,
@@ -479,6 +538,13 @@ def abrir_dia(s: Session, obra_id: int, dia: date,
         # oferece um botão — nunca preenche sozinho, senão o diário vira
         # cópia-cola e deixa de ser relato.
         "relato_anterior": _relato_anterior(s, obra_id, dia),
+        # ⚑ O EQUIPAMENTO DE ONTEM, pelo mesmo motivo: retroescavadeira não vai
+        # embora à noite. Vem oferecido com um botão — não entra sozinho, senão
+        # o diário passa a declarar máquina que já saiu da obra.
+        "equipamentos_anteriores": equipamentos_do_dia_anterior(s, obra_id, dia),
+        # A lista de locáveis vai junto, para a caixinha não precisar de uma
+        # segunda ida ao servidor na hora em que a pessoa já está esperando.
+        "equipamentos_do_catalogo": equipamentos_do_catalogo(s),
         "tempos": [{"valor": t, "rotulo": TEMPO_ROTULOS[t]} for t in TEMPOS],
     }
 
@@ -502,10 +568,30 @@ def _relato_anterior(s: Session, obra_id: int, dia: date) -> dict[str, Any]:
 
 
 def _para_tela(s: Session, l) -> dict[str, Any]:
-    extras = s.execute(text("""
-        SELECT id, descricao, funcao, quantidade, empresa
-          FROM diario_efetivo_extra WHERE diario_id = :i ORDER BY id"""),
-        {"i": l["id"]}).mappings().all()
+    # ⚑ `origem` separa duas coisas que NÃO são a mesma: o terceirizado que
+    # trabalhou e não bate ponto aqui (OBRA), e o efetivo próprio de um dia
+    # importado da planilha antiga, quando o ponto eletrônico ainda não
+    # existia naquela obra (IMPORTADO). Chamar o segundo de "terceirizado"
+    # seria mentir no documento.
+    extras = _consulta_opcional(s, """
+        SELECT id, descricao, funcao, quantidade, empresa, origem
+          FROM diario_efetivo_extra WHERE diario_id = :i ORDER BY id""",
+        i=l["id"])
+    if extras is None:                       # banco sem a migração 099
+        extras = [dict(e, origem="OBRA") for e in s.execute(text("""
+            SELECT id, descricao, funcao, quantidade, empresa
+              FROM diario_efetivo_extra WHERE diario_id = :i ORDER BY id"""),
+            {"i": l["id"]}).mappings().all()]
+    # ⚑ `None` e `[]` querem dizer coisas DIFERENTES aqui: `None` é "a tabela
+    # ainda não existe neste banco" (o código sobe para o Render antes de
+    # alguém apertar o botão das migrações), `[]` é "existe e está vazia". A
+    # tela precisa saber a diferença para não oferecer um botão que vai falhar.
+    equipamentos = _consulta_opcional(s, """
+        SELECT id, descricao, quantidade, observacao, insumo_id
+          FROM diario_equipamentos WHERE diario_id = :i ORDER BY id""",
+        i=l["id"])
+    tem_tabela = equipamentos is not None
+    equipamentos = equipamentos or []
     return {
         "id": l["id"], "situacao": l["situacao"],
         "tempo_manha": l["tempo_manha"] or "", "tempo_tarde": l["tempo_tarde"] or "",
@@ -526,7 +612,26 @@ def _para_tela(s: Session, l) -> dict[str, Any]:
         "clima_medido": l["clima_medido"],
         "extras": [{"id": e["id"], "descricao": e["descricao"],
                     "funcao": e["funcao"] or "", "quantidade": e["quantidade"],
-                    "empresa": e["empresa"] or ""} for e in extras],
+                    "empresa": e["empresa"] or ""}
+                   for e in extras if e["origem"] != "IMPORTADO"],
+        "efetivo_importado": [
+            {"funcao": e["funcao"] or e["descricao"],
+             "quantidade": e["quantidade"]}
+            for e in extras if e["origem"] == "IMPORTADO"],
+        "informado_por": (l["informado_por"] or "") if "informado_por" in l.keys() else "",
+        "importado_de": (l["importado_de"] or "") if "importado_de" in l.keys() else "",
+        "equipamentos_lista": [
+            {"id": q["id"], "descricao": q["descricao"],
+             "quantidade": q["quantidade"],
+             "observacao": q["observacao"] or "",
+             "insumo_id": q["insumo_id"],
+             # A MARCA de quem entrou fora do cadastro. Não é erro — a obra
+             # começa às 7 e não espera cadastro —, é trabalho para
+             # Suprimentos arrumar depois.
+             "fora_da_lista": q["insumo_id"] is None} for q in equipamentos],
+        "equipamentos_resumo": resumo_dos_equipamentos(
+            [dict(q) for q in equipamentos]),
+        "equipamentos_disponivel": tem_tabela,
     }
 
 
@@ -709,10 +814,15 @@ def acrescentar_extra(s: Session, obra_id: int, dia: date, dados: dict[str, Any]
     descricao = str(dados.get("descricao") or "").strip()
     if not descricao:
         raise ErroValidacao("Diga quem trabalhou (a pessoa ou a equipe).")
-    try:
-        quantidade = int(dados.get("quantidade") or 1)
-    except (TypeError, ValueError):
-        raise ErroValidacao("Quantidade inválida.")
+    # Mesma regra do equipamento: em branco é 1, "0" digitado é erro.
+    bruto = dados.get("quantidade")
+    if bruto is None or str(bruto).strip() == "":
+        quantidade = 1
+    else:
+        try:
+            quantidade = int(str(bruto).strip())
+        except (TypeError, ValueError):
+            raise ErroValidacao("Quantidade inválida.")
     if quantidade < 1:
         raise ErroValidacao("A quantidade tem de ser pelo menos 1.")
     novo = s.execute(text("""
@@ -737,6 +847,191 @@ def remover_extra(s: Session, obra_id: int, dia: date, extra_id: int) -> None:
     if not apagou:
         raise ErroNaoEncontrado("Registro não encontrado.")
     s.flush()
+
+
+# ---------------------------------------------------------------------------
+# 8-bis. OS EQUIPAMENTOS EM OBRA — lista, não frase
+#
+# Pedido dele em 10/11/2026, na mesma conversa em que pediu nome + função +
+# resumo no efetivo: *"a parte dos equipamentos."*
+#
+# Ele estava descendo a tela e apontando o mesmo defeito em cada bloco: o
+# diário mostrava TEXTO onde devia mostrar CONTA. Um campo "equipamentos" com
+# "1 retroescavadeira, 2 betoneira e uma serra" serve para escrever e não
+# serve para ler: de trinta dias assim ninguém tira quantos dias a
+# retroescavadeira ficou na obra — e é essa conta que sustenta pleito de
+# prazo e medição de mobilização.
+#
+# Então equipamento virou LISTA, igual ao efetivo terceirizado: descrição,
+# quantidade e uma observação ("parada por manutenção" é informação que vale
+# dinheiro num pleito). E, como retroescavadeira não vai embora à noite, o dia
+# novo já abre com a lista do último dia que tinha equipamento — pelo mesmo
+# princípio do relato de ontem: VEM OFERECIDO, nunca gravado sozinho.
+#
+# ⚑ O CAMPO DE TEXTO CONTINUA. Diário é documento: o que foi escrito e
+# assinado antes de hoje continua escrito, e o papel imprime o texto quando não
+# houver lista. Apagar a coluna seria reescrever o passado.
+# ---------------------------------------------------------------------------
+def equipamentos_do_catalogo(s: Session) -> list[dict[str, Any]]:
+    """Os insumos marcados como LOCÁVEIS — a lista que a caixinha oferece.
+
+    ⚑ É a mesma base de Suprimentos, e isso é o ponto: equipamento digitado à
+    mão produz "retro", "retroescavadeira" e "Retro-escavadeira" para a MESMA
+    máquina, e aí nenhuma conta de dias-máquina fecha.
+    """
+    linhas = _consulta_opcional(s, """
+        SELECT id, codigo, descricao, unidade
+          FROM insumos
+         WHERE ativo IS TRUE AND locavel IS TRUE
+         ORDER BY descricao""")
+    return [{"id": l["id"], "codigo": l["codigo"], "descricao": l["descricao"],
+             "unidade": l["unidade"] or ""} for l in (linhas or [])]
+
+
+def _insumo_locavel(s: Session, insumo_id: int) -> dict[str, Any]:
+    linha = s.execute(text("""
+        SELECT id, descricao, unidade, ativo, locavel
+          FROM insumos WHERE id = :i"""), {"i": insumo_id}).mappings().first()
+    if linha is None:
+        raise ErroNaoEncontrado("Equipamento não encontrado no cadastro.")
+    if not linha["ativo"]:
+        raise ErroValidacao(
+            f"“{linha['descricao']}” está inativo no cadastro de insumos.")
+    if not linha["locavel"]:
+        raise ErroValidacao(
+            f"“{linha['descricao']}” não está marcado como locável. Marque em "
+            f"Suprimentos › Insumos para ele aparecer como equipamento.")
+    return dict(linha)
+
+
+def resumo_dos_equipamentos(linhas: list[dict[str, Any]]) -> str:
+    """"3 equipamentos: 1 retroescavadeira, 2 betoneira" — montado aqui, na
+    regra, porque a tela e o papel usam a MESMA frase. Duas versões
+    divergiriam no primeiro ajuste."""
+    if not linhas:
+        return ""
+    total = sum(int(l.get("quantidade") or 1) for l in linhas)
+    partes = [f"{int(l.get('quantidade') or 1)} {str(l.get('descricao') or '').strip()}"
+              for l in linhas if str(l.get("descricao") or "").strip()]
+    if not partes:
+        return ""
+    return f"{total} equipamento(s): " + ", ".join(partes)
+
+
+def equipamentos_do_dia_anterior(s: Session, obra_id: int,
+                                 dia: date) -> dict[str, Any]:
+    """O último dia COM EQUIPAMENTO antes deste. Pula o fim de semana sozinho,
+    igual ao relato de ontem."""
+    linhas = _consulta_opcional(s, """
+        SELECT d.data, q.descricao, q.quantidade, q.observacao, q.insumo_id
+          FROM diario_equipamentos q
+          JOIN diarios_obra d ON d.id = q.diario_id
+         WHERE d.obra_id = :o AND d.data < :dia
+           AND d.data = (SELECT MAX(d2.data)
+                           FROM diarios_obra d2
+                           JOIN diario_equipamentos q2 ON q2.diario_id = d2.id
+                          WHERE d2.obra_id = :o AND d2.data < :dia)
+         ORDER BY q.id""", o=obra_id, dia=dia)
+    if not linhas:
+        return {"data": None, "itens": [], "resumo": ""}
+    itens = [{"descricao": l["descricao"], "quantidade": l["quantidade"],
+              "observacao": l["observacao"] or "",
+              "insumo_id": l["insumo_id"]} for l in linhas]
+    return {"data": str(linhas[0]["data"]), "itens": itens,
+            "resumo": resumo_dos_equipamentos([dict(l) for l in linhas])}
+
+
+def acrescentar_equipamento(s: Session, obra_id: int, dia: date,
+                            dados: dict[str, Any]) -> dict[str, Any]:
+    """Uma linha de equipamento no dia."""
+    linha = _linha(s, obra_id, dia)
+    if linha is None:
+        raise ErroNaoEncontrado(
+            "Abra e grave o diário do dia antes de acrescentar equipamento.")
+    # ⚑ O EQUIPAMENTO VEM DO CADASTRO quando dá. A descrição é gravada
+    # assim mesmo: o insumo pode ser renomeado amanhã, e o diário tem de dizer
+    # o que foi escrito NAQUELE dia. O `insumo_id` serve para contar; a
+    # descrição, para provar.
+    insumo_id = dados.get("insumo_id") or None
+    if insumo_id:
+        try:
+            insumo_id = int(insumo_id)
+        except (TypeError, ValueError):
+            raise ErroValidacao("Equipamento inválido.")
+        descricao = _insumo_locavel(s, insumo_id)["descricao"]
+    else:
+        descricao = str(dados.get("descricao") or "").strip()
+    if not descricao:
+        raise ErroValidacao("Diga qual é o equipamento.")
+    # ⚑ CAMPO EM BRANCO É 1; "0" DIGITADO É ERRO. São coisas diferentes:
+    # quem não digita quantidade quer dizer "um"; quem digita zero errou a
+    # tecla, e "zero betoneira em obra" não é informação — é um diário que
+    # declara o que não houve.
+    bruto = dados.get("quantidade")
+    if bruto is None or str(bruto).strip() == "":
+        quantidade = 1
+    else:
+        try:
+            quantidade = int(str(bruto).strip())
+        except (TypeError, ValueError):
+            raise ErroValidacao("Quantidade inválida.")
+    if quantidade < 1:
+        raise ErroValidacao("A quantidade tem de ser pelo menos 1.")
+    novo = s.execute(text("""
+        INSERT INTO diario_equipamentos
+            (diario_id, descricao, quantidade, observacao, insumo_id)
+        VALUES (:i, :d, :q, :obs, :ins) RETURNING id"""),
+        {"i": linha["id"], "d": descricao, "q": quantidade,
+         "obs": str(dados.get("observacao") or "").strip() or None,
+         "ins": insumo_id}).scalar()
+    s.flush()
+    return {"id": novo}
+
+
+def remover_equipamento(s: Session, obra_id: int, dia: date,
+                        equipamento_id: int) -> None:
+    linha = _linha(s, obra_id, dia)
+    if linha is None:
+        raise ErroNaoEncontrado("Diário não encontrado.")
+    apagou = s.execute(text(
+        "DELETE FROM diario_equipamentos WHERE id = :e AND diario_id = :i"),
+        {"e": equipamento_id, "i": linha["id"]}).rowcount
+    if not apagou:
+        raise ErroNaoEncontrado("Registro não encontrado.")
+    s.flush()
+
+
+def repetir_equipamentos_de_ontem(s: Session, obra_id: int,
+                                  dia: date) -> dict[str, Any]:
+    """Copia para hoje a lista do último dia que tinha equipamento.
+
+    ⚑ Não acumula: se hoje já tem lista, o pedido é recusado em vez de dobrar
+    o parque de máquinas. Quem quer trocar apaga o que está errado primeiro —
+    equipamento duplicado num diário é erro que aparece em medição."""
+    linha = _linha(s, obra_id, dia)
+    if linha is None:
+        raise ErroNaoEncontrado(
+            "Abra e grave o diário do dia antes de repetir o equipamento.")
+    ja = _consulta_opcional(
+        s, "SELECT id FROM diario_equipamentos WHERE diario_id = :i",
+        i=linha["id"])
+    if ja:
+        raise ErroValidacao(
+            "Este dia já tem equipamento na lista. Apague o que não serve "
+            "antes de repetir o dia anterior.")
+    anterior = equipamentos_do_dia_anterior(s, obra_id, dia)
+    if not anterior["itens"]:
+        raise ErroValidacao("Nenhum dia anterior desta obra tem equipamento.")
+    for item in anterior["itens"]:
+        s.execute(text("""
+            INSERT INTO diario_equipamentos
+                (diario_id, descricao, quantidade, observacao, insumo_id)
+            VALUES (:i, :d, :q, :obs, :ins)"""),
+            {"i": linha["id"], "d": item["descricao"],
+             "q": item["quantidade"], "obs": item["observacao"] or None,
+             "ins": item.get("insumo_id")})
+    s.flush()
+    return {"copiados": len(anterior["itens"]), "de": anterior["data"]}
 
 
 # ---------------------------------------------------------------------------
@@ -911,14 +1206,35 @@ def relatorio(s: Session, obra_id: int, de: date, ate: Optional[date] = None,
         if linha is None and so_escritos:
             continue
         efetivo = efetivo_do_ponto(s, obra_id, dia)
-        extras = []
+        extras, importado = [], []
         if linha is not None:
+            linhas_extra = _consulta_opcional(s, """
+                SELECT descricao, funcao, quantidade, empresa, origem
+                  FROM diario_efetivo_extra WHERE diario_id = :i ORDER BY id""",
+                i=linha["id"])
+            if linhas_extra is None:         # banco sem a migração 099
+                linhas_extra = [dict(e, origem="OBRA") for e in s.execute(text("""
+                    SELECT descricao, funcao, quantidade, empresa
+                      FROM diario_efetivo_extra WHERE diario_id = :i
+                     ORDER BY id"""), {"i": linha["id"]}).mappings().all()]
             extras = [{"descricao": e["descricao"], "funcao": e["funcao"] or "",
                        "quantidade": e["quantidade"], "empresa": e["empresa"] or ""}
-                      for e in s.execute(text("""
-                SELECT descricao, funcao, quantidade, empresa
-                  FROM diario_efetivo_extra WHERE diario_id = :i ORDER BY id"""),
-                {"i": linha["id"]}).mappings().all()]
+                      for e in linhas_extra if e["origem"] != "IMPORTADO"]
+            # ⚑ O EFETIVO IMPORTADO ENTRA NO QUADRO TÉCNICO, não no de
+            # terceiros: num dia da planilha antiga ele É o efetivo próprio da
+            # obra. Sem isto o papel de 1.380 dias sairia com "0 pessoas".
+            importado = [{"funcao": e["funcao"] or e["descricao"],
+                          "quantidade": e["quantidade"]}
+                         for e in linhas_extra if e["origem"] == "IMPORTADO"]
+        # A LISTA de equipamento do dia. O papel imprime a lista quando ela
+        # existe e o texto antigo quando não — nenhum diário já assinado perde
+        # o que tinha escrito.
+        equipamentos = []
+        if linha is not None:
+            equipamentos = [dict(q) for q in (_consulta_opcional(s, """
+                SELECT descricao, quantidade, observacao
+                  FROM diario_equipamentos WHERE diario_id = :i ORDER BY id""",
+                i=linha["id"]) or [])]
         paginas.append({
             # "FOLHA 1/1", que o modelo do órgão imprime. Contada aqui, e não
             # na folha de estilo: o número da folha dentro do laço do template
@@ -940,6 +1256,8 @@ def relatorio(s: Session, obra_id: int, de: date, ate: Optional[date] = None,
             "ocorrencias": (linha["ocorrencias"] or "") if linha else "",
             "historico": (linha["historico"] or "") if linha else "",
             "equipamentos": (linha["equipamentos"] or "") if linha else "",
+            "equipamentos_lista": equipamentos,
+            "equipamentos_resumo": resumo_dos_equipamentos(equipamentos),
             # O horário SAI VAZIO num dia que ninguém escreveu. O padrão da
             # semana é sugestão de tela; no papel, afirmar jornada que nenhuma
             # pessoa confirmou seria inventar prova.
@@ -951,7 +1269,7 @@ def relatorio(s: Session, obra_id: int, de: date, ate: Optional[date] = None,
             "situacao": linha["situacao"] if linha else "ABERTO",
             # ⚑ A CONTAGEM, NÃO OS NOMES. Decisão dele, e boa prática: o RDO
             # circula fora da empresa.
-            "efetivo": _efetivo_para_o_papel(efetivo, extras),
+            "efetivo": _efetivo_para_o_papel(efetivo, extras, importado),
             "material": material_recebido(s, obra_id, dia),
             "correcoes": _correcoes(s, linha["id"]) if linha else [],
         })
@@ -968,6 +1286,165 @@ def relatorio(s: Session, obra_id: int, de: date, ate: Optional[date] = None,
             "modelo_da_obra": modelo_valido(cab.get("modelo")),
             "modelos": [{"valor": k, **v} for k, v in MODELOS.items()],
             "logos": logos(s, obra_id)}
+
+
+# ===========================================================================
+# PROCURAR UM DIÁRIO PELO QUE FOI ESCRITO (10/11/2026)
+#
+# Ele: *"será que dá para a gente pesquisar? Eu quero localizar um diário
+# através de alguma informação que eu relatei."*
+#
+# Dá, e é a pergunta certa a fazer de um diário: ninguém lembra a DATA em que
+# a laje do bloco B foi concretada — lembra que foi concretada. Sem busca, o
+# diário vira um arquivo que só serve para quem já sabe onde olhar.
+#
+# ⚑ POR QUE `ILIKE` E NÃO BUSCA DE TEXTO DE VERDADE (`tsvector`): a busca
+# completa do Postgres acha "concretagem" procurando "concretar", o que é
+# melhor — mas exige índice próprio, migração, e ela IGNORA pedaço de palavra.
+# Quem procura "P12" ou "bloco B" não quer raiz de palavra, quer o trecho. O
+# `ILIKE` acha os dois, e com alguns milhares de diários ele é instantâneo. Se
+# um dia a base crescer a ponto de pesar, aí vale o índice — e a troca é só
+# aqui dentro.
+#
+# ⚑ ACENTO NÃO ATRAPALHA, e sem depender da extensão `unaccent` (que pode não
+# estar instalada no banco): a comparação passa os dois lados por um
+# `translate` que troca as vogais acentuadas pelas secas. Quem digita "ocorrencia"
+# acha "ocorrência" — e é assim que se digita no celular, com pressa.
+# ===========================================================================
+CAMPOS_DA_BUSCA = (
+    ("relato", "relato do dia"),
+    ("ocorrencias", "ocorrências"),
+    ("historico", "histórico dos serviços"),
+    ("equipamentos", "equipamentos"),
+    ("obs_fiscalizacao", "observação da fiscalização"),
+    ("fiscalizacao_quem", "quem da fiscalização esteve"),
+)
+MINIMO_DA_BUSCA = 3
+TETO_DA_BUSCA = 60
+# O quanto do texto sai em volta da palavra achada.
+VOLTA_DO_TRECHO = 90
+
+_COM_ACENTO = "áàâãäéèêëíìîïóòôõöúùûüçÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇ"
+_SEM_ACENTO = "aaaaaeeeeiiiiooooouuuucAAAAAEEEEIIIIOOOOOUUUUC"
+
+
+# A LISTA DE EQUIPAMENTO TAMBÉM É PROCURÁVEL. Quando o equipamento virou
+# lista (migração 097), procurar "retroescavadeira" deixaria de achar o dia em
+# que ela esteve na obra — a informação saiu do campo de texto e foi para a
+# tabela. Então a busca varre as duas coisas.
+#
+# ⚑ E varre SÓ SE A TABELA EXISTIR. O código sobe para o Render antes de
+# alguém apertar "Aplicar atualizações do banco": uma busca que exige a tabela
+# nova devolveria erro na cara de quem procura, por dias.
+_CAMPO_EQUIPAMENTO_LISTA = "lista de equipamentos"
+
+
+def _tem_equipamentos_em_tabela(s: Session) -> bool:
+    return _consulta_opcional(
+        s, "SELECT 1 FROM diario_equipamentos LIMIT 1") is not None
+
+
+def _sem_acento(texto: Any) -> str:
+    cru = unicodedata.normalize("NFD", str(texto or ""))
+    return "".join(c for c in cru if unicodedata.category(c) != "Mn").lower()
+
+
+def _trecho(texto: str, procurado: str) -> str:
+    """O pedaço do texto em volta da palavra achada, com reticências.
+
+    Devolver o relato inteiro faria a lista de resultados ter parágrafos; não
+    devolver nada obrigaria a abrir cada dia para ver se era aquele. O trecho
+    é o que responde "é este?" sem sair da lista.
+    """
+    inteiro = str(texto or "")
+    onde = _sem_acento(inteiro).find(_sem_acento(procurado))
+    if onde < 0:
+        return inteiro[:VOLTA_DO_TRECHO * 2]
+    comeco = max(0, onde - VOLTA_DO_TRECHO)
+    fim = min(len(inteiro), onde + len(procurado) + VOLTA_DO_TRECHO)
+    return (("…" if comeco else "") + inteiro[comeco:fim].strip()
+            + ("…" if fim < len(inteiro) else ""))
+
+
+def procurar(s: Session, texto: str, *, obra_id: Optional[int] = None,
+             obra_ids: Optional[list[int]] = None,
+             de: Optional[date] = None, ate: Optional[date] = None) -> dict[str, Any]:
+    """Os diários que falam disto, do mais novo para o mais velho.
+
+    `obra_ids` é o recorte de quem só alcança algumas obras — `None` quer
+    dizer "todas". Lista vazia acha nada, que é o certo.
+    """
+    procurado = str(texto or "").strip()
+    if len(procurado) < MINIMO_DA_BUSCA:
+        return {"termo": procurado, "curto": True, "achados": []}
+
+    traducao = (f"translate(lower({{coluna}}), '{_COM_ACENTO}', '{_SEM_ACENTO}')")
+    # A lista de equipamento vira UMA coluna de texto ("1 Retroescavadeira
+    # parada por manutenção · 2 Betoneira"), para ser procurada igual aos
+    # campos escritos à mão.
+    tem_lista = _tem_equipamentos_em_tabela(s)
+    coluna_lista = ("""(SELECT string_agg(
+                            q.descricao || ' ' || coalesce(q.observacao, ''),
+                            ' · ' ORDER BY q.id)
+                          FROM diario_equipamentos q
+                         WHERE q.diario_id = d.id)""" if tem_lista else "''")
+    alvos = [f"{traducao.format(coluna='d.' + campo)} LIKE :q"
+             for campo, _rotulo in CAMPOS_DA_BUSCA]
+    if tem_lista:
+        coluna = f"coalesce({coluna_lista}, '')"
+        alvos.append(f"{traducao.format(coluna=coluna)} LIKE :q")
+    onde = " OR ".join(alvos)
+    filtros = [f"({onde})"]
+    params: dict[str, Any] = {"q": f"%{_sem_acento(procurado)}%"}
+    if obra_id:
+        filtros.append("d.obra_id = :obra")
+        params["obra"] = obra_id
+    elif obra_ids is not None:
+        filtros.append("d.obra_id = ANY(:obras)")
+        params["obras"] = list(obra_ids) or [-1]
+    if de:
+        filtros.append("d.data >= :de")
+        params["de"] = de
+    if ate:
+        filtros.append("d.data <= :ate")
+        params["ate"] = ate
+
+    linhas = s.execute(text(f"""
+        SELECT d.id, d.obra_id, d.data, d.situacao, d.sem_expediente,
+               d.relato, d.ocorrencias, d.historico, d.equipamentos,
+               d.obs_fiscalizacao, d.fiscalizacao_quem,
+               {coluna_lista} AS equipamentos_lista_txt,
+               o.codigo, o.nome
+          FROM diarios_obra d
+          JOIN obras o ON o.id = d.obra_id
+         WHERE {' AND '.join(filtros)}
+         ORDER BY d.data DESC
+         LIMIT {TETO_DA_BUSCA + 1}"""), params).mappings().all()
+
+    achados = []
+    for l in linhas[:TETO_DA_BUSCA]:
+        # ONDE ACHOU, e não só que achou: a mesma palavra no relato e na
+        # observação da fiscalização querem dizer coisas diferentes.
+        em = []
+        for campo, rotulo in CAMPOS_DA_BUSCA:
+            if _sem_acento(procurado) in _sem_acento(l[campo]):
+                em.append({"campo": rotulo, "trecho": _trecho(l[campo], procurado)})
+        lista_txt = l["equipamentos_lista_txt"] or ""
+        if _sem_acento(procurado) in _sem_acento(lista_txt):
+            em.append({"campo": _CAMPO_EQUIPAMENTO_LISTA,
+                       "trecho": _trecho(lista_txt, procurado)})
+        achados.append({
+            "id": l["id"], "obra_id": l["obra_id"], "data": str(l["data"]),
+            "dia_da_semana": _DIA_DA_SEMANA[l["data"].weekday()],
+            "obra": rotulo_da_obra(l["codigo"], l["nome"]),
+            "situacao": l["situacao"],
+            "sem_expediente": bool(l["sem_expediente"]),
+            "em": em,
+        })
+    return {"termo": procurado, "curto": False, "achados": achados,
+            # "tem mais" é diferente de "são 60": a lista diz para apertar a
+            # busca em vez de deixar a pessoa achando que viu tudo.
+            "tem_mais": len(linhas) > TETO_DA_BUSCA}
 
 
 _DIA_DA_SEMANA = ("segunda-feira", "terça-feira", "quarta-feira",
@@ -1035,11 +1512,21 @@ def _embutir(dados: Optional[bytes], mime: Optional[str]) -> str:
 
 
 def _efetivo_para_o_papel(efetivo: dict[str, Any],
-                          extras: list[dict[str, Any]]) -> dict[str, Any]:
+                          extras: list[dict[str, Any]],
+                          importado: Optional[list[dict[str, Any]]] = None
+                          ) -> dict[str, Any]:
     """Função e quantidade. O próprio e o terceirizado em linhas separadas —
-    quem lê o RDO precisa distinguir mão de obra própria de contratada."""
+    quem lê o RDO precisa distinguir mão de obra própria de contratada.
+
+    ⚑ `importado` conta como PRÓPRIO, e tem de contar: num diário vindo da
+    planilha antiga ele é o efetivo da obra naquele dia. O ponto eletrônico
+    não existia ali, então `por_funcao` vem vazio — e sem somar o importado o
+    papel de 1.380 dias sairia declarando zero pessoa em obra.
+    """
     proprio = [{"funcao": f["funcao"], "quantidade": f["quantidade"],
                 "tipo": "próprio"} for f in efetivo.get("por_funcao", [])]
+    proprio += [{"funcao": f["funcao"], "quantidade": f["quantidade"],
+                 "tipo": "próprio"} for f in (importado or [])]
     de_fora = [{"funcao": (e["funcao"] or e["descricao"]),
                 "quantidade": e["quantidade"], "tipo": "terceirizado",
                 "empresa": e.get("empresa") or e["descricao"]} for e in extras]

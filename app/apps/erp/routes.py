@@ -11796,6 +11796,121 @@ def api_diario_extra(obra_id: int):
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
+@bp.route("/erp/api/diario/<int:obra_id>/equipamentos", methods=["POST"])
+@login_obrigatorio
+@permissao("lancar_diario")
+def api_diario_equipamentos(obra_id: int):
+    """A lista de equipamento em obra: acrescentar, apagar, ou repetir a do
+    último dia que tinha (retroescavadeira não vai embora à noite)."""
+    from app.apps.erp.core import diario as svc
+    from app.apps.erp.core.auth.permissoes import exigir_obra_no_escopo
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            exigir_obra_no_escopo(s, usuario, obra_id)
+            dados = request.get_json(silent=True) or {}
+            dia = _dia_do_pedido(dados.get("data"))
+            if dados.get("remover"):
+                svc.remover_equipamento(s, obra_id, dia, int(dados["remover"]))
+                s.commit()
+                return jsonify({"ok": True, "removido": True})
+            if dados.get("repetir_ontem"):
+                r = svc.repetir_equipamentos_de_ontem(s, obra_id, dia)
+                s.commit()
+                return jsonify({"ok": True, **r})
+            r = svc.acrescentar_equipamento(s, obra_id, dia, dados)
+            s.commit()
+            return jsonify({"ok": True, **r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP: falha nos equipamentos do diário")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/diario/<int:obra_id>/sugerir-texto", methods=["POST"])
+@login_obrigatorio
+@permissao("lancar_diario")
+def api_diario_sugerir_texto(obra_id: int):
+    """A IA lê o que foi escrito e devolve uma versão melhor — para a pessoa
+    editar e gravar, nunca para gravar sozinha.
+
+    ⚑ A OBSERVAÇÃO DA FISCALIZAÇÃO NÃO PASSA POR AQUI, e a recusa mora na
+    regra (`diario_texto.CAMPOS`, lista fechada), não nesta rota: assim ela
+    vale para qualquer caminho que venha a chamar a sugestão.
+    """
+    from app.apps.erp.core import diario_texto as svc_texto
+    from app.apps.erp.core.auth.permissoes import exigir_obra_no_escopo
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            # O escopo é conferido mesmo não gravando nada: o texto é da obra,
+            # e quem não alcança a obra não lê o relato dela nem para melhorar.
+            exigir_obra_no_escopo(s, usuario, obra_id)
+            dados = request.get_json(silent=True) or {}
+            r = svc_texto.sugerir(dados.get("campo"), dados.get("texto"),
+                                  usuario_id=usuario.id if usuario else None)
+        return jsonify({"ok": True, **r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP: falha na sugestão de texto do diário")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/diario/importar", methods=["POST"])
+@login_obrigatorio
+@permissao("importar")
+def api_diario_importar():
+    """Carga dos diários já escritos, de uma planilha .xlsx.
+
+    ⚑ `simular=1` é o PADRÃO: sem mandar `gravar=1` de propósito, nada é
+    escrito. Importação de mil linhas que dá errado no meio é trabalho de dias
+    para desfazer, e a conferência custa um clique.
+
+    `mapa` é {código da planilha: id da obra}, para o dono amarrar à mão o
+    código que não casou sozinho. A planilha NÃO cria obra.
+    """
+    from app.apps.erp.core import diario_importacao as imp
+    arquivo = request.files.get("arquivo")
+    if arquivo is None:
+        return jsonify({"ok": False, "erro": "Escolha o arquivo .xlsx."}), 400
+    nome = (arquivo.filename or "").lower()
+    if not nome.endswith(".xlsx"):
+        return jsonify({"ok": False, "erro":
+                        "O arquivo precisa ser .xlsx. Se for .xls antigo, "
+                        "abra no Excel e salve como .xlsx."}), 400
+    gravar = request.form.get("gravar") in ("1", "true", "sim")
+    mapa = {}
+    bruto = request.form.get("mapa") or ""
+    if bruto.strip():
+        import json as _json
+        try:
+            mapa = {str(k): int(v) for k, v in _json.loads(bruto).items() if v}
+        except Exception:                                      # noqa: BLE001
+            return jsonify({"ok": False,
+                            "erro": "Não entendi o apontamento das obras."}), 400
+    try:
+        conteudo = arquivo.read()
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            rel = imp.importar(s, conteudo,
+                               usuario.id if usuario else None,
+                               simular=not gravar, mapa_obras=mapa)
+            if gravar:
+                s.commit()
+        return jsonify({"ok": True, "resultado": rel})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha na importação de diários")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
 @bp.route("/erp/api/diario/<int:obra_id>/calendario")
 @login_obrigatorio
 @permissao("ver_diario")
@@ -11846,6 +11961,41 @@ def pagina_diario_papel(obra_id: int):
                           so_escritos=request.args.get("todos") != "1",
                           modelo=request.args.get("modelo"))
     return render_template("erp_diario_papel.html", r=r)
+
+
+@bp.route("/erp/api/diario/procurar")
+@login_obrigatorio
+@permissao("ver_diario")
+def api_diario_procurar():
+    """Acha o diário pelo que foi ESCRITO nele.
+
+    Ele, em 10/11/2026: *"será que dá para a gente pesquisar? Eu quero
+    localizar um diário através de alguma informação que eu relatei."*
+
+    É a pergunta certa a fazer de um diário: ninguém lembra a DATA em que a
+    laje do bloco B foi concretada — lembra que foi concretada.
+
+    O escopo vale aqui: quem é preso a obra só acha diário das obras dele.
+    """
+    from app.apps.erp.core import diario as svc
+    from app.apps.erp.core.auth.permissoes import obras_do_usuario
+    try:
+        with get_session() as s:
+            permitidas = obras_do_usuario(s, _usuario_logado(s))
+            obra = request.args.get("obra_id")
+            return jsonify({"ok": True, **svc.procurar(
+                s, request.args.get("q") or "",
+                obra_id=int(obra) if obra else None,
+                obra_ids=(list(permitidas) if permitidas is not None else None),
+                de=(_dia_do_pedido(request.args.get("de"))
+                    if request.args.get("de") else None),
+                ate=(_dia_do_pedido(request.args.get("ate"))
+                     if request.args.get("ate") else None))})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao procurar no diário")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
 @bp.route("/erp/api/diario/pendencias")

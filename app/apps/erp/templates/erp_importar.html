@@ -57,6 +57,37 @@
   <div style="margin-top:12px"><button class="btn" id="btn-importar-ofx">Importar extrato</button></div>
   <div id="resultado-ofx"></div>
 </div>
+
+{# ---------------------------------------------------------------------------
+   OS DIÁRIOS JÁ ESCRITOS (10/11/2026)
+
+   Ele: *"eu gostaria de importar essa base que nós temos aí para dentro do
+   diário de obras, porque aí a gente poderia dar prosseguimento ao que a
+   gente já tem."*
+
+   ⚑ DOIS BOTÕES, E A ORDEM IMPORTA: "Conferir sem gravar" primeiro, sempre.
+   O de gravar só acende depois da conferência, e some de novo se o arquivo
+   mudar. Importação de mil linhas que entra errada é trabalho de dias para
+   desfazer. #}
+<div class="cartao">
+  <div class="cartao-cab"><h3>Diários de obra (planilha)</h3>
+    <small>traz os diários já escritos — reenviar o mesmo arquivo não duplica</small></div>
+  <div class="form-grade">
+    <div class="campo"><label for="arq-diario">Arquivo .xlsx</label>
+      <input type="file" id="arq-diario" accept=".xlsx"></div>
+  </div>
+  <div class="dica" style="margin-top:8px">A planilha precisa ter as colunas
+    <b>Obra</b> (o código), <b>Data do Diário</b>, <b>Relato Diário</b>,
+    <b>Tempo Manhã</b>, <b>Tempo Tarde</b>, <b>Efetivo 1</b> (uma linha por
+    função, no formato <i>17 - SERVENTE</i>) e <b>ID</b>. O que já tem diário
+    no sistema <b>não é sobrescrito</b>, e a planilha <b>não cria obra</b>:
+    código que não casar aparece abaixo para você apontar qual é.</div>
+  <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap">
+    <button class="btn secundario" id="btn-conferir-diario">Conferir sem gravar</button>
+    <button class="btn" id="btn-gravar-diario" disabled>Gravar os diários</button>
+  </div>
+  <div id="resultado-diario"></div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -67,7 +98,10 @@ async function preencher(){
     els("cat-padrao").innerHTML = `<option value="">— deixar pendente —</option>` +
       d.dados.categorias.map(c=>`<option value="${c.id}">${c.codigo} · ${c.descricao}</option>`).join("");
     els("obra-padrao").innerHTML = `<option value="">— deixar pendente —</option>` +
-      d.dados.obras.map(o=>`<option value="${o.id}">${o.codigo} · ${o.nome}</option>`).join("");
+      d.dados.obras.map(o=>`<option value="${o.id}">${escapar(rotuloObra(o))}</option>`).join("");
+    // A mesma lista serve para APONTAR a obra de um código que a planilha de
+    // diários trouxe e o cadastro não reconheceu.
+    OBRAS_PARA_MAPA = d.dados.obras || [];
     // O nome da EMPRESA junto: importar o extrato na conta de outra empresa
     // suja a conciliação inteira, e o erro só aparece depois, quando nada casa.
     const nomeEmp = Object.fromEntries((d.dados.empresas||[]).map(e=>[e.id, e.nome]));
@@ -180,6 +214,156 @@ els("btn-importar-ofx").addEventListener("click", async () => {
       + `${d.relatorio.duplicadas} já existiam.`, "ok");
   } catch(e){ aviso("mensagem", e.message, "erro"); }
 });
+
+// ---------------------------------------------------------------------------
+// OS DIÁRIOS JÁ ESCRITOS
+//
+// ⚑ A CONFERÊNCIA É OBRIGATÓRIA, e isso é imposto pela tela: o botão de
+// gravar nasce desligado e só acende depois de uma conferência bem-sucedida
+// do arquivo que está escolhido AGORA. Trocar o arquivo apaga a conferência.
+// ---------------------------------------------------------------------------
+let OBRAS_PARA_MAPA = [];         // as obras do cadastro, para apontar à mão
+let DIARIO_CONFERIDO = null;      // o nome+tamanho do arquivo já conferido
+let MAPA_OBRAS = {};              // código da planilha -> id da obra
+
+function assinaturaDoArquivo(arq){
+  return arq ? `${arq.name}|${arq.size}|${arq.lastModified}` : "";
+}
+
+function travarGravarDiario(){
+  DIARIO_CONFERIDO = null;
+  if (els("btn-gravar-diario")) els("btn-gravar-diario").disabled = true;
+}
+
+if (els("arq-diario")) els("arq-diario").addEventListener("change", () => {
+  MAPA_OBRAS = {};
+  els("resultado-diario").innerHTML = "";
+  travarGravarDiario();
+});
+
+function pintarResultadoDoDiario(r){
+  const linhas = [];
+  linhas.push(`<div class="cartao-resumo">${
+    r.simulado
+      ? `Seriam criados <b>${r.gravaria}</b> diário(s)`
+      : `<b>${r.gravados}</b> diário(s) criado(s)`}${
+    r.periodo && r.periodo[0]
+      ? `, de ${dataBR(r.periodo[0])} a ${dataBR(r.periodo[1])}` : ""}.</div>`);
+
+  const recados = [];
+  if (r.linhas_juntadas)
+    recados.push(`${r.linhas_juntadas} linha(s) repetida(s) do mesmo dia foram `
+      + `<b>juntadas</b> — o relato de uma entrou no do outro, em vez de uma `
+      + `delas ser descartada.`);
+  if (r.sem_expediente)
+    recados.push(`${r.sem_expediente} dia(s) foram marcados como <b>sem `
+      + `expediente</b> (o relato dizia folga, domingo, feriado ou recesso). `
+      + `O texto continua escrito.`);
+  if (r.efetivo_divergente)
+    recados.push(`${r.efetivo_divergente} dia(s) têm a soma das funções `
+      + `<b>diferente</b> do “Efetivo Total” da planilha. Importei a soma das `
+      + `funções, que é a que dá para conferir.`);
+  if (recados.length)
+    linhas.push(`<div class="aviso">${recados.map(x=>`<div>${x}</div>`).join("")}</div>`);
+
+  if ((r.obras_nao_encontradas || []).length) {
+    linhas.push(`<div class="aviso alerta"><b>${r.obras_nao_encontradas.length}
+      código(s) de obra não casaram com o cadastro.</b> Os diários deles ficam
+      de fora. Aponte qual é cada um e confira de novo:</div>
+      <div class="form-grade" style="margin-top:8px">${
+        r.obras_nao_encontradas.map((c,i)=>`
+        <div class="campo" style="grid-column:span 4">
+          <label>${escapar(c)}</label>
+          <select data-codigo="${escapar(c)}" class="mapa-obra">
+            <option value="">— deixar de fora —</option>
+            ${(OBRAS_PARA_MAPA||[]).map(o=>`<option value="${o.id}"
+              >${escapar(rotuloObra(o))}</option>`).join("")}
+          </select></div>`).join("")}</div>`);
+  }
+  if ((r.obras_encontradas || []).length)
+    linhas.push(`<div class="dica" style="margin-top:8px">Obras casadas: ${
+      r.obras_encontradas.map(o=>`<b>${escapar(o.codigo_na_planilha)}</b> → ${
+        escapar(rotuloObra(o))}`).join(" · ")}</div>`);
+
+  if ((r.pulados || []).length) {
+    const porMotivo = {};
+    r.pulados.forEach(x => { porMotivo[x.motivo] = (porMotivo[x.motivo]||0)+1; });
+    linhas.push(`<div class="dica" style="margin-top:8px">Fora da importação: ${
+      Object.entries(porMotivo).map(([m,n])=>`${n} × ${escapar(m)}`).join(" · ")}</div>`);
+  }
+  if ((r.problemas || []).length)
+    linhas.push(`<div class="aviso alerta" style="margin-top:8px">${
+      r.problemas.length} linha(s) com problema: ${
+      r.problemas.slice(0,5).map(x=>`linha ${x.linha} (${escapar(x.motivo)})`).join(", ")}${
+      r.problemas.length > 5 ? "…" : ""}</div>`);
+
+  if ((r.amostra || []).length)
+    linhas.push(`<div class="tabela-wrap" style="margin-top:10px">
+      <table><thead><tr><th>Obra</th><th>Dia</th><th>Relato</th>
+        <th class="direita">Pessoas</th></tr></thead>
+      <tbody>${r.amostra.map(a=>`<tr>
+        <td class="dados">${escapar(a.obra)}</td>
+        <td class="dados">${dataBR(a.data)}</td>
+        <td><small>${escapar((a.relato||"").replace(/\s+/g," ").slice(0,110))}${
+          (a.relato||"").length > 110 ? "…" : ""}</small>${
+          a.sem_expediente ? ` <span class="etiqueta">sem expediente</span>` : ""}</td>
+        <td class="direita dados">${a.pessoas || "—"}</td></tr>`).join("")}
+      </tbody></table>
+      <div class="dica">Mostrando as ${r.amostra.length} primeiras.</div></div>`);
+
+  els("resultado-diario").innerHTML = linhas.join("");
+  document.querySelectorAll(".mapa-obra").forEach(sel => {
+    if (typeof comBusca === "function") comBusca(sel, "escolha a obra…");
+    sel.addEventListener("change", () => {
+      MAPA_OBRAS[sel.dataset.codigo] = sel.value || null;
+      travarGravarDiario();      // mudou o apontamento: confira de novo
+      aviso("mensagem", "Apontamento anotado. Confira de novo para valer.",
+            "info");
+    });
+  });
+}
+
+async function mandarDiario(gravar){
+  const arq = els("arq-diario").files[0];
+  if (!arq) { aviso("mensagem", "Escolha o arquivo .xlsx.", "erro"); return; }
+  if (gravar && DIARIO_CONFERIDO !== assinaturaDoArquivo(arq)) {
+    aviso("mensagem", "Confira sem gravar antes — o arquivo mudou desde a "
+        + "última conferência.", "erro");
+    travarGravarDiario();
+    return;
+  }
+  const fd = new FormData();
+  fd.append("arquivo", arq);
+  if (gravar) fd.append("gravar", "1");
+  const limpo = {};
+  Object.entries(MAPA_OBRAS).forEach(([k,v]) => { if (v) limpo[k] = v; });
+  if (Object.keys(limpo).length) fd.append("mapa", JSON.stringify(limpo));
+  const botoes = ["btn-conferir-diario", "btn-gravar-diario"];
+  botoes.forEach(b => { if (els(b)) els(b).disabled = true; });
+  try {
+    const d = await api("/erp/api/diario/importar", {method:"POST", body: fd});
+    pintarResultadoDoDiario(d.resultado);
+    if (gravar) {
+      DIARIO_CONFERIDO = null;
+      aviso("mensagem", `${d.resultado.gravados} diário(s) importado(s).`, "ok");
+    } else {
+      DIARIO_CONFERIDO = assinaturaDoArquivo(arq);
+      aviso("mensagem", "Conferido. Nada foi gravado — leia o resumo e, se "
+          + "estiver certo, aperte Gravar.", "info");
+    }
+  } catch(e){
+    travarGravarDiario();
+    aviso("mensagem", e.message, "erro");
+  }
+  if (els("btn-conferir-diario")) els("btn-conferir-diario").disabled = false;
+  if (els("btn-gravar-diario"))
+    els("btn-gravar-diario").disabled = DIARIO_CONFERIDO === null;
+}
+
+if (els("btn-conferir-diario"))
+  els("btn-conferir-diario").addEventListener("click", () => mandarDiario(false));
+if (els("btn-gravar-diario"))
+  els("btn-gravar-diario").addEventListener("click", () => mandarDiario(true));
 
 preencher();
 </script>

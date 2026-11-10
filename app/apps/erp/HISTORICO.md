@@ -47,6 +47,318 @@ abas diferentes, os nomes das colunas dela precisam entrar no de-para de
 "Conferir sem gravar" diz quais não reconheceu, então ele descobre sozinho —
 mas quem pegar esta área depois precisa saber que a pergunta existe.
 
+### 📓 O DIÁRIO EM USO: quatro coisas que ele apontou na tela (10/11/2026)
+
+Ele abriu o diário em produção e mandou quatro recados, de uma vez. Todos
+foram atendidos. **Entra com a migração 097** — ver a seção das migrações
+pendentes logo abaixo.
+
+**1. A obra aparecia duas vezes — e eu já tinha consertado isso antes.**
+
+Ele: *"a obra ela está aparecendo duplicado. O nome dela, Aero Aracati, tá
+aparecendo duas vezes."*
+
+A causa dói de tão boba: eu escrevi `${o.codigo} — ${o.nome}` à mão na tela do
+diário, em três lugares, e nos modelos de papel. Existe um ajudante no
+`erp_base.html` chamado `rotuloObra` desde **10/09/2026 — criado porque ele
+reclamou exatamente disto da primeira vez**: quando o nome da obra já começa
+com o código ("081 Aero Aracati"), colar o código de novo produz
+"081 — 081 Aero Aracati".
+
+Consertado em dois lugares, porque são dois mundos: `rotuloObra` no JavaScript
+e **`rotulo_da_obra()` em `core/diario.py`** para o papel. O `cabecalho()` agora
+devolve `"rotulo"` pronto, e a tela não monta mais nada.
+
+**⚑ E ganhou TRAVA**, que é o que impede a terceira vez: o teste
+`test_nenhuma_tela_do_diario_escreve_codigo_e_nome_a_mao` varre as telas
+procurando código e nome colados à mão. Quem repetir o erro descobre antes de
+chegar a ele.
+
+**E a trava achou MUITO MAIS do que o diário.** Quando a varredura passou a
+olhar todas as telas do ERP — e não só as do diário —, apareceram **mais onze
+lugares com o mesmo defeito**, em seis telas que ele ainda não tinha olhado:
+Obras (a lista de projetos, o título do diálogo da obra, a caixinha de projeto
+e a escolha de obras do projeto), Relatórios (duas caixinhas e o cabeçalho do
+agrupamento), Configurações (as obras e os projetos do operador), Importar,
+Compras e **o PORTAL DA OBRA**. Todos consertados.
+
+O portal era o pior deles, porque **nem usa o `erp_base.html`** — não tinha o
+ajudante para usar. Por isso a regra saiu do `core/diario.py` e virou
+**`core/comum/rotulos.py`**, e o portal agora recebe o rótulo **pronto do
+servidor**, em vez de montar nada. Um lugar só sabe a regra.
+
+A única exceção escrita na trava é a **lista de bancos** ("001 · Banco do
+Brasil"): ali o código e o nome são coisas diferentes de verdade, e nunca um
+contém o outro.
+
+**2. O efetivo não mostrava a função.**
+
+Ele: *"não tem aqui a função da pessoa, tá só o nome. Eu queria que tivesse
+aqui o nome e a função. Nome, função, inclusive um resumo. De quantas pessoas e
+tal."*
+
+Duas coisas estavam erradas. A primeira: a função **estava** na tela, numa
+linha cinzenta pequena embaixo do nome — pequena demais para contar como
+estar. Virou coluna, numa tabela `Nome | Função | Horário`.
+
+A segunda era de verdade: eu buscava a função só em `cargos`/`funcoes` do ERP,
+e **a função da maioria mora em `analisesps.colaborador.cargo`** — o Registro
+de Colaboradores, que é de onde o próprio ponto lê. A consulta passou a tentar
+nesta ordem: cargo do ERP → função antiga → Registro. ⚑ E tenta **duas vezes,
+protegida por savepoint**: com e sem o `JOIN` no `analisesps`, porque num banco
+sem aquele schema a consulta inteira morreria e o diário cairia junto.
+
+O resumo é uma frase montada **na regra, não na tela** — "9 pessoa(s): 1
+armador, 1 carpinteiro, 1 pedreiro…" — porque o papel usa a mesma, e duas
+versões divergiriam no primeiro ajuste. Sem ninguém no ponto, o resumo é
+**vazio**, e não "0 pessoas": resposta onde não há dado é pior que resposta
+nenhuma.
+
+**3. Procurar um diário pelo que foi relatado.**
+
+Ele: *"a parte da filtragem, era interessante, será que dá para a gente
+pesquisar, eu quero localizar um diário através de alguma informação que eu
+relatei?"*
+
+É a pergunta certa a fazer de um diário: ninguém lembra a DATA em que a laje
+foi concretada — lembra que foi concretada. Há uma caixa de busca no filtro
+lateral que varre relato, ocorrências, histórico, equipamentos, a observação da
+fiscalização e **a lista de equipamento**, diz EM QUAL campo achou e mostra o
+trecho em volta. Clicar no achado abre aquele dia.
+
+Três decisões que vale guardar:
+
+- **Ignora acento sem depender da extensão `unaccent`** (que não está instalada
+  no banco): os dois lados passam por um `translate` que troca as vogais
+  acentuadas pelas secas. Quem digita "ocorrencia" acha "ocorrência" — e é
+  assim que se digita no celular, com pressa.
+- **Acha PEDAÇO de palavra**, não raiz. Quem procura "P12" ou "bloco B" quer o
+  trecho. Por isso não é `tsvector`.
+- **Respeita o escopo por obra**: quem é preso a obra não acha diário da obra de
+  outro — e a resposta diz que não achou, não que existe.
+
+**4. "A parte dos equipamentos."**
+
+A frase dele terminou aí, cortada. **Resolvi com o padrão que os outros três
+recados desenham**, e a escolha está escrita aqui para ele poder derrubar:
+ele estava descendo a tela apontando o mesmo defeito em cada bloco — **texto
+onde devia haver conta**.
+
+Equipamento era UMA LINHA DE TEXTO ("01 caçamba, 01 placa vibratória"). Serve
+para escrever e não serve para ler: de trinta dias assim ninguém tira quantos
+dias a retroescavadeira ficou na obra, e **é essa conta que sustenta pleito de
+prazo e medição de mobilização**.
+
+Virou LISTA, no mesmo molde do efetivo terceirizado: descrição, quantidade e
+observação ("parada por manutenção" é informação que vale dinheiro num
+pleito), com o mesmo resumo em uma frase. E, como **retroescavadeira não vai
+embora à noite**, o dia novo abre oferecendo a lista do último dia que tinha
+equipamento, por um botão — pelo mesmo princípio do relato de ontem: **vem
+oferecido, nunca gravado sozinho**. Repetir duas vezes é recusado, em vez de
+dobrar o parque de máquinas.
+
+**⚑ O CAMPO DE TEXTO NÃO FOI APAGADO DO BANCO.** Diário é documento: o que
+foi escrito e assinado antes da lista existir continua escrito, e o papel
+imprime o texto quando não houver lista. Apagar a coluna seria reescrever o
+passado.
+
+### 🔁 E AÍ ELE OLHOU DE NOVO (ainda 10/11/2026): a duplicidade e a nomenclatura
+
+Duas correções dele sobre o que acabei de entregar, e as duas certas:
+
+> *"Nós temos aqui o campo equipamentos, texto livre, e equipamentos em obra.
+> Eles são a mesma coisa, por que teriam os dois textos? Ou é um ou é o outro.
+> E eu acho que a opção da forma que ficou equipamentos em obra ficou melhor.
+> E esses equipamentos, o ideal é que a gente possa buscar dentro da nossa
+> lista de insumos, né? Até por questão de nomenclatura. São os equipamentos
+> inclusive categorizados como locáveis."*
+
+**1. O texto livre saiu do formulário.** Eu tinha deixado os dois lado a lado
+"para não perder o passado" — e com isso criei exatamente o que o `CLAUDE.md`
+proíbe desde 17/09/2026: **dois caminhos para a mesma coisa**, obrigando a
+pessoa a escolher antes de saber a diferença.
+
+⚑ **E a saída não foi apagar a coluna, foi PARAR DE MANDÁ-LA.** A tela não
+envia mais `equipamentos` no pedido, e `salvar()` ignora campo que não vem. Se
+a tela mandasse o campo vazio, **todo diário antigo reaberto perderia o que
+tinha escrito** — há teste para os dois lados: um varrendo a tela
+(`d-equipamentos` não pode voltar) e outro gravando duas vezes pela regra e
+exigindo que o texto antigo continue lá. O texto aparece no cartão, só para
+ler, com a etiqueta "escrito à mão neste dia, antes de a lista existir".
+
+**2. O equipamento agora vem do cadastro de insumos** (migração 098), dos
+marcados como **locáveis** — a mesma base de Suprimentos. O motivo é a
+nomenclatura, e ele é prático: digitado à mão, a mesma máquina vira "retro",
+"retroescavadeira" e "Retro-escavadeira", e aí **nenhuma conta de dias-máquina
+fecha**.
+
+Três decisões dentro disso:
+
+- **A descrição continua gravada na linha, mesmo vindo do cadastro.** Não é
+  redundância: o insumo pode ser renomeado amanhã, e o diário tem de dizer o
+  que foi escrito NAQUELE dia. O `insumo_id` serve para **contar**; a
+  descrição, para **provar**. Há teste que renomeia o insumo e exige que o
+  diário de ontem não mude.
+- **Existe saída para o que não está cadastrado**, e ela é o último item da
+  caixinha ("não está na lista"). ⚑ **A obra começa às 7 da manhã e não pode
+  parar porque uma máquina não foi cadastrada.** O equipamento entra com o
+  nome digitado e fica **marcado na tela** ("fora da lista"), para Suprimentos
+  cadastrar depois. Se ele preferir fechar essa porta, é uma linha.
+- **Cimento não é equipamento**: insumo sem a marca "locável", ou inativo, é
+  recusado — e o recado diz onde marcar.
+
+⚑ **Uma consequência de permissão, dita por escrito:** quem só tem o perfil
+"Diário de obra" (migração 094) passa a **enxergar a lista de equipamentos
+locáveis** ao abrir o diário — é o que a caixinha oferece. Não vai preço nem
+nada de Suprimentos junto, só o nome e a unidade, e sem isso a tela não teria
+como pedir o equipamento pelo nome certo. Se ele preferir fechar, a lista pode
+ficar restrita às obras ou sair de vez, com a saída "não está na lista" virando
+o único caminho.
+
+**3. O degrau de "grave o dia primeiro" sumiu.** Com o texto livre fora, ele
+viraria uma parede: sem gravar, não havia onde escrever equipamento nenhum.
+Agora o botão grava o dia sozinho e segue. Só pede o relato antes, que é a
+regra que já existia.
+
+**Dois consertos que vieram de brinde, achados ao exercitar a tela:**
+
+- **Quantidade "0" virava 1 em silêncio**, no equipamento e no efetivo extra —
+  `int(x or 1)`. Agora campo em branco é 1 e "0" digitado é erro: são coisas
+  diferentes, e um diário que declara "0 betoneira" declara o que não houve.
+- **O modelo do órgão imprimia uma SEGUNDA PÁGINA contendo só o rodapé.** Ele
+  estourava a folha por poucos milímetros. O rodapé agora é empurrado para o pé
+  da folha e o respiro caiu de 7pt para 3pt. Os três modelos foram conferidos
+  em PDF de verdade: **uma página cada**. Esse defeito **já estava em
+  produção** desde 09/11/2026.
+
+**Como isso foi conferido, e não só testado:** banco Postgres local com as
+migrações do ERP e **as do ponto**, nove pessoas batendo ponto numa obra, dois
+dias de diário, e a tela dirigida por navegador de verdade — gravar,
+acrescentar dois equipamentos, repetir do dia anterior, procurar por
+"retroescavadeira" e por "manutencao" sem acento, e imprimir os três modelos em
+PDF. Zero erro de console.
+
+### 📥 OS 1.427 DIÁRIOS JÁ ESCRITOS ENTRARAM, E A IA PASSOU A REVISAR O TEXTO (10/11/2026)
+
+Dois pedidos na mesma mensagem, com a planilha anexada.
+
+#### 1. A importação (migração 099)
+
+> *"Eu gostaria de importar essa base que nós temos aí para dentro do diário
+> de obras, porque aí a gente poderia dar prosseguimento ao que a gente já
+> tem. (…) Nós temos o código da obra, temos o dia, temos questão dos
+> colaboradores. Não vai ter, da mesma forma, porque aí não tem nome do
+> colaborador, só tem as funções. (…) Pelo código da obra você vai puxar as
+> outras informações."*
+
+**O arquivo:** 1.427 linhas, 14 obras, de 01/02/2025 a 09/11/2026. Colunas
+úteis: código da obra, data, tempo manhã/tarde, relato, quem informou, efetivo
+total e o efetivo por função (`1 - ENGENHEIRO CIVIL`, `17 - SERVENTE`, uma por
+linha). As colunas Contrato, Objeto, Endereço, Município e Responsável Técnico
+vêm **vazias** — e está certo: isso mora no cadastro da obra, e o diário busca
+de lá na hora de mostrar. Comentários da Fiscalização também vêm vazios, o que
+poupou a pergunta mais delicada.
+
+**Onde está:** `Importar` › cartão **Diários de obra (planilha)**. Dois botões,
+e a ordem é imposta pela tela: *Conferir sem gravar* acende o *Gravar*, e
+trocar o arquivo apaga a conferência.
+
+**As cinco decisões que valem mais que o código:**
+
+1. **Dia que já existe no ERP NÃO é sobrescrito, nunca.** Diário é documento.
+   A planilha não manda no que o sistema já tem — a linha é devolvida como
+   "este dia já tem diário".
+2. **A planilha NÃO cria obra.** Código que não casa é devolvido na
+   conferência com uma caixinha para o dono apontar qual é. Inventar obra a
+   partir de um código encheria o cadastro de duplicata, e ninguém perceberia
+   até a primeira medição sair errada. (No arquivo dele, 12 dos 14 códigos
+   casaram; `ESCGUARUJA` e `REFORMAETI` ficaram para ele apontar.)
+3. **Linha repetida é JUNTADA, não descartada.** 38 pares obra+dia vêm duas
+   vezes, e são dois casos diferentes: o mesmo relato enviado duas vezes, e
+   **dois relatos diferentes do mesmo dia**. Escolher "o último" jogaria fora
+   meio dia de obra sem ninguém perceber. Relato igual vira um; relatos
+   diferentes viram um texto com os dois. Do efetivo fica o maior.
+4. **Rodar o arquivo duas vezes é inofensivo.** Índice único em
+   (origem, id do registro antigo) mais o de obra+dia que já existia. É o
+   acidente mais comum de importação: sem isso, o segundo passe dobraria o
+   efetivo de 1.380 dias.
+5. **O dia sem obra é reconhecido por MARCADOR, e só em relato curto.** A
+   mesma coisa aparece como "FOLGA", `"FOLGA"`, "FERIADO - NÃO HOUVE
+   EXPEDIENTE", "* SEM ATIVIDADES REALIZADAS NO DIA." e "SEM EXPENDIENTE
+   ( CARNAVAL )" — com o erro de digitação. Casamento exato deixaria dezenas
+   passando, e cada uma viraria dia trabalhado no papel. ⚠️ **O limite de 60
+   caracteres é a trava**: num relato de verdade a palavra "feriado" aparece
+   ("concretagem adiantada por causa do feriado"), e marcar aquele dia
+   apagaria um dia de trabalho do documento.
+
+**⚠️ E "AGUARDANDO LICENÇA" NÃO É FOLGA.** São 106 linhas do arquivo, e a
+diferença vale dinheiro: é obra **parada esperando terceiro**, que é
+justamente o que sustenta pleito de prazo. Virar "não houve expediente"
+apagaria o pleito.
+
+**O efetivo importado é efetivo PRÓPRIO, não terceirizado.** Ele reusa a
+tabela `diario_efetivo_extra` (que já guarda função + quantidade), mas com
+`origem = 'IMPORTADO'`, e a tela mostra num bloco separado — "efetivo do
+diário antigo, informado por Fulano". ⚑ **No papel ele soma no quadro técnico
+como próprio**: sem isso, o RDO de 1.380 dias sairia declarando zero pessoa em
+obra. E o selo "vem do ponto" some nesses dias, porque não houve batida
+nenhuma.
+
+**Os diários entram ABERTOS**, não fechados — ele ainda vai querer passar a
+revisão de texto neles.
+
+**Conferido com o arquivo de verdade:** 1.427 linhas lidas, 40 juntadas, 1.380
+diários gravados em **2,8 segundos**; o segundo passe gravou **zero**. Nenhuma
+linha de efetivo ficou sem entender, e a soma das funções bateu com o "Efetivo
+Total" da planilha em **todas** as 1.427 linhas.
+
+#### 2. A revisão do texto por IA
+
+> *"Eu gostaria que a IA fizesse a leitura do relato, tanto dos serviços como
+> não da parte da fiscalização, que a gente não pode alterar, mas outros
+> dados, a parte de ocorrência, a parte dos serviços, poder sugerir um melhor
+> texto. (…) correção ortográfica, um melhor português, numa linguagem
+> inclusive um pouco mais de obra, mais técnica, caso esteja uma linguagem
+> ruim. (…) E quando ela sugerisse, eu pudesse editar a sugestão e gravar."*
+
+Um link **✨ melhorar o texto** embaixo do relato, das ocorrências e do
+histórico. Abre um diálogo com o texto de hoje de um lado e a sugestão do
+outro, **editável**, e o botão põe o texto no campo — **sem gravar**. O Gravar
+continua sendo dele.
+
+**⚑ A OBSERVAÇÃO DA FISCALIZAÇÃO NÃO TEM O LINK, e não é só isso:** a recusa
+mora na regra (`diario_texto.CAMPOS`, lista fechada), não na tela. Quem
+chamar a rota à mão pedindo `obs_fiscalizacao` leva 400. Ele mesmo disse
+"que a gente não pode alterar" — e é a regra 1 do diário inteiro: o que dá
+valor jurídico ao documento é a parte que a obra NÃO controla.
+
+**A instrução proíbe inventar, com todas as letras**, e isso está testado: o
+pedido que viaja diz para não acrescentar serviço, material, quantidade,
+medida, local, hora nem data que não esteja no original, e para não remover
+nada. **Um diário com um serviço a mais é prova falsa.** Temperatura 0,2 —
+revisão de documento não é lugar para criatividade.
+
+Detalhes que a tela cuida: texto com menos de 15 caracteres nem chega a
+custar chamada ("FOLGA" não tem o que melhorar); sugestão igual ao original
+não abre diálogo; sugestão vazia é recusada, para o pior resultado possível
+(trocar o relato por nada) não acontecer; e qualquer falha diz **"o texto que
+você escreveu não se perdeu"**, porque é o que a pessoa precisa ouvir.
+
+⚑ **E um buraco antigo foi fechado no caminho:** o `perguntar()` do
+`erp_base.html` injetava o valor dos campos **sem escapar**. Nunca tinha dado
+problema porque os valores eram curtos e controlados — mas agora o diálogo
+recebe RELATO DE OBRA, texto livre de verdade. Um `<` no meio de "laje < 10cm"
+fechava a caixa e comia o resto do relato. Vale para **todos** os diálogos do
+ERP, que são dezenas.
+
+### ⚠️ MIGRAÇÃO 099 — e as 097 e 098, no mesmo botão
+
+A 099 acrescenta a procedência do diário (`informado_por`, `importado_de`,
+`importado_id` com índice único) e a coluna `origem` no efetivo extra. ⚑ **Sem
+ela o diário não quebra**, pelo mesmo cuidado das anteriores: as consultas
+novas são protegidas por savepoint e o dia abre igual; só a importação fica
+indisponível.
+
 ### ⚠️ MIGRAÇÕES 085 a 091 — apertar "Aplicar atualizações do banco"
 
 Entraram em 05/11/2026 com o cadastro de pessoas. **Sem elas a tela de
@@ -65,6 +377,13 @@ no lugar.
   — **todas semeadas DESLIGADAS**, e a ação `pedir_contabilidade`;
 - **091** a leitura da CAIXA DE ENTRADA (o agente recebendo e-mail), as
   DEVOLUÇÕES da obra e o autor-colaborador da solicitação (o portal).
+
+**E a 097 e a 098, de 10/11/2026**: a lista de equipamento do diário
+(`diario_equipamentos`) e o laço dela com o cadastro de insumos
+(`insumo_id`). ⚑ **Sem elas o diário NÃO quebra** — foi feito de propósito, porque o
+código sobe para o Render antes de alguém apertar o botão: a tela mostra o
+cartão vazio, o campo de texto continua valendo e a busca simplesmente não
+varre a lista. Depois do botão, o cartão passa a funcionar sozinho.
 
 Depois de apertar o botão do banco, apertar **uma vez** "Instalar o catálogo de
 tipos", na tela do Arquivo: ele traz os seis tipos de documento novos (os quatro

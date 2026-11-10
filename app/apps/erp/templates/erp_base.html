@@ -1048,9 +1048,13 @@ function perguntar({titulo, campos, textoOk = "Confirmar", aviso: avisoTexto}) {
           ${campos.map((c, i) => `
             <div class="campo" style="grid-column:span ${c.largura || 3}">
               <label>${c.rotulo}${c.obrigatorio ? " *" : ""}</label>
+              {# ⚑ O VALOR VAI ESCAPADO, e isto não é zelo: desde 10/11/2026 o
+                 diálogo recebe RELATO DE OBRA (a sugestão de texto por IA),
+                 que é texto livre de verdade. Um `<` no meio de "laje < 10cm"
+                 fechava a caixa e comia o resto do relato. #}
               ${c.tipo === "textarea"
                 ? `<textarea id="pg-${i}" rows="${c.linhas || 4}"
-                     placeholder="${c.exemplo || ""}">${c.valor || ""}</textarea>`
+                     placeholder="${escapar(c.exemplo || "")}">${escapar(c.valor || "")}</textarea>`
                 : c.tipo === "select"
                 ? `<select id="pg-${i}">${(c.opcoes || []).map(o =>
                     `<option value="${o.valor}" ${o.valor === c.valor ? "selected" : ""}>${o.rotulo}</option>`).join("")}</select>`
@@ -1074,7 +1078,7 @@ function perguntar({titulo, campos, textoOk = "Confirmar", aviso: avisoTexto}) {
                    <input id="pg-${i}-id" type="hidden" value="">
                    <div id="pg-${i}-achados" class="busca-achados"></div>`
                 : `<input id="pg-${i}" name="${c.nome || ""}" type="${c.tipo || "text"}"
-                     value="${c.valor || ""}" placeholder="${c.exemplo || ""}">`}
+                     value="${escapar(c.valor || "")}" placeholder="${escapar(c.exemplo || "")}">`}
               ${c.dica ? `<div class="dica">${c.dica}</div>` : ""}
             </div>`).join("")}
         </div>

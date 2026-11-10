@@ -85,7 +85,7 @@
      documento parecia cortado — e documento que parece cortado é documento
      que a fiscalização devolve. */
   .folha { page-break-after: always; display: flex; flex-direction: column;
-           min-height: 277mm; }
+           min-height: 274mm; }
   .folha:last-child { page-break-after: auto; }
 
   /* ======================= CABEÇALHO ======================= */
@@ -173,7 +173,12 @@
   .papel { font-size: 6.8pt; text-transform: uppercase; letter-spacing: .6pt;
            color: var(--forte); font-weight: 700; }
 
-  .rodape { margin-top: 7pt; padding-top: 3pt;
+  /* ⚑ `margin-top: auto` empurra o rodapé para o PÉ da folha (a folha é uma
+     coluna flex), em vez de deixá-lo colado no último quadro. E o respiro
+     caiu de 7pt para 3pt porque o modelo da Prefeitura estourava por poucos
+     milímetros e saía com uma SEGUNDA PÁGINA contendo só o rodapé — papel com
+     página em branco atrás é papel que a fiscalização devolve. */
+  .rodape { margin-top: auto; padding-top: 3pt;
             border-top: .4pt solid var(--fio); font-size: 6.8pt;
             color: var(--rotulo); display: flex; justify-content: space-between; }
   .rascunho { color: #9a3412; font-weight: 700; }
