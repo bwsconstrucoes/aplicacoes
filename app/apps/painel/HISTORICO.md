@@ -2678,6 +2678,25 @@ corte); (c) obra sem projeto e "(não apropriado)" ficam no lado dos demais.
 real — é provável que o total de juros "sem dono" suba, e é o primeiro número
 a olhar no batimento.
 
+### As três escolhas, respondidas pelo dono — 10/11/2026 (noite)
+
+> *"O dividendo pago diminui caixa. E a obra encerrada, a sobra continua
+> ajudando. (…) Não apropriado não fica em canto nenhum. Não apropriado eu
+> tenho que analisar e apropriar. E obra sem projeto não é para ter (…) todos
+> é para ter projeto."*
+
+- **Dividendo pago diminui o caixa da obra** na régua dos juros (só o que
+  SAI, critério do quadro de dividendos) — em `aporte_mensal_por_obra`.
+- **Sobra de obra encerrada continua ajudando o lado** — já era assim.
+- **"(não apropriado)" e obra sem projeto não ficam em lado nenhum** (só no
+  cenário): aparecem no resultado para serem vistas e corrigidas, mas não
+  recebem estrutura nem juros, não pesam na régua e o caixa delas não entra em
+  lado nenhum. O aviso da tela de resultado diz isso. O dono vai conferir se
+  existe obra sem projeto — "não é para ter".
+
+**Estado:** tudo no ramo `claude/exciting-wright-0zlwmj`, **não publicado**;
+sem migração. Falta o dono conferir o batimento com a base real e dizer "pode".
+
 ## Reler os pagamentos de um ano, de alguns ou de todos — 07/10/2026
 
 O dono, vendo a releitura retomada em "2025 (11 de 12 anos, 10 já feitos

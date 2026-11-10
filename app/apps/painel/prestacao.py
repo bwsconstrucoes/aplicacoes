@@ -304,8 +304,9 @@ def alocar_juros_por_deficit(caixa_por_obra_mes, juros_por_mes, obras, *,
             # conta; o que ela deixou de sobra continua ajudando.
             pesos, criterio = {}, "déficit de caixa, por lado"
             for lado in ("principal", "demais"):
-                do_lado = [o for o in acumulado
-                           if (lado_de.get(o) or "demais") == lado]
+                # obra sem lado (sem projeto, ou "(não apropriado)") não
+                # entra em canto nenhum
+                do_lado = [o for o in acumulado if lado_de.get(o) == lado]
                 liquido = sum(acumulado[o] for o in do_lado
                               if acumulado[o] > 0 or _ativa(o))
                 necessidade[lado] = max(0.0, -liquido)

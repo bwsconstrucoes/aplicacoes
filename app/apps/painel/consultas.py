@@ -670,12 +670,20 @@ def aporte_mensal_por_obra() -> list[tuple]:
 
     A regra do que é aporte e do que é devolução é a MESMA do bloco de aportes
     do DRE (`_APORTADO` / `_DEVOLVIDO`): só conta o que entra na obra como
-    aporte e o que sai como devolução — o lado de onde o dinheiro saiu não."""
+    aporte e o que sai como devolução — o lado de onde o dinheiro saiu não.
+
+    E O DIVIDENDO PAGO DIMINUI O CAIXA (dono, 10/11/2026, mais tarde: "o
+    dividendo pago diminui caixa"): dinheiro que a obra distribuiu aos sócios
+    não está mais lá para cobrir o buraco das outras. Só o que SAI conta — o
+    mesmo critério do quadro de dividendos."""
     where, params = Filtros(excluir_trf=False).where(
-        f"{PAGO} AND data IS NOT NULL AND ({TIPO_APORTE}) IN ({NO_SALDO})")
+        f"{PAGO} AND data IS NOT NULL"
+        f" AND (({TIPO_APORTE}) IN ({NO_SALDO}) OR ({TIPO_APORTE}) = 'Dividendos')")
     sql = f"""
         SELECT to_char(data, 'YYYY-MM'), {OBRA_OU_SEM},
                {_APORTADO} - {_DEVOLVIDO}
+               + SUM(CASE WHEN ({TIPO_APORTE}) = 'Dividendos' AND pago_recebido < 0
+                          THEN pago_recebido ELSE 0 END)
           FROM fato{where}
          GROUP BY 1, 2"""
     return [(mes, obra, float(valor or 0)) for mes, obra, valor in consultar(sql, params)

@@ -1599,10 +1599,22 @@ def _calcular_cenario(cenario: dict) -> dict:
     # demais; e os projetos que nao recebem, ou so recebem num periodo.
     principal = (quem.get("principal") or config.get("projeto_matriz") or "").strip()
     regras_proj = quem.get("regras") or {}
+    # SEM PROJETO NÃO FICA EM CANTO NENHUM (dono, 10/11/2026): "não apropriado
+    # eu tenho que analisar e apropriar. E obra sem projeto não é para ter."
+    # Enquanto o dado não for corrigido, essas linhas aparecem no resultado
+    # (para serem vistas), mas não recebem estrutura nem juros, não pesam na
+    # régua e não entram no caixa de lado nenhum.
+    def _sem_lado(obra, info):
+        return obra == consultas.SEM_OBRA or not (info.get("projeto") or "").strip()
+
     lado_de = {o: ("principal" if (info.get("projeto") or "").strip() == principal
-                   else "demais") for o, info in obras.items()}
+                   else "demais") for o, info in obras.items()
+               if not _sem_lado(o, info)}
+    driver = [d for d in driver if d[1] in lado_de]
 
     def _recebe(obra, mes):
+        if obra not in lado_de:
+            return False
         projeto = ((obras.get(obra) or {}).get("projeto") or "").strip()
         return cenarios.recebe_no_mes(regras_proj.get(projeto), mes)
 
@@ -1610,7 +1622,7 @@ def _calcular_cenario(cenario: dict) -> dict:
         admin_sem_juros, excecoes, driver, obras, pesos,
         pct_padrao=float(cenario.get("pct_padrao", 100) or 0),
         janela=str(cenario.get("janela", "1")),
-        lado_de=lado_de if principal else None, recebe=_recebe)
+        lado_de=lado_de, recebe=_recebe)
 
     # O caixa e lido UMA vez e devolvido: a tela de resultado desenha a vida de
     # uma obra com ele, e reler significaria varrer o fato inteiro de novo.
@@ -1622,7 +1634,8 @@ def _calcular_cenario(cenario: dict) -> dict:
              if obra not in fora_de_tudo]
     lado_do_caixa = {o: ("principal" if principal and
                          (info.get("projeto") or "").strip() == principal
-                         else "demais") for o, info in obras_do_caixa.items()}
+                         else "demais") for o, info in obras_do_caixa.items()
+                     if not _sem_lado(o, info)}
     if por_deficit:
         juros = prestacao.alocar_juros_por_deficit(
             caixa, juros_por_mes, obras_do_caixa,

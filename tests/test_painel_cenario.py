@@ -980,3 +980,41 @@ def test_o_caixa_e_de_cada_lado_e_o_juro_segue_o_buraco_liquido():
     # lado que se cobre sozinho, dos dois lados: ninguém paga, e fica visível
     r = prestacao.alocar_juros_por_deficit(caixa[:3], {"2022-01": -80.0}, obras, lado_de=lado)
     assert not r["alocacoes"] and len(r["sobras"]) == 1
+
+
+def test_dividendo_pago_diminui_o_caixa_e_sem_projeto_nao_fica_em_lado_nenhum(cenario):
+    """10/11/2026, o dono: "o dividendo pago diminui caixa" e "não apropriado
+    não fica em canto nenhum (…) obra sem projeto não é para ter"."""
+    from app.apps.painel import consultas
+    from app.apps.painel import db as painel_db
+    with painel_db.conexao() as conn:
+        # POUCA GENTE distribui 4.000: a sobra dela deixa de cobrir a outra
+        conn.execute(
+            "INSERT INTO fato (codigo_lancamento, tipo, analise, situacao,"
+            " situacao_vencimento, categoria, grupo, departamento, projeto,"
+            " razao_social, data, ano, pago_recebido, a_pagar_receber, juros, multa,"
+            " tipo_aporte)"
+            " VALUES (897,'2. Contas a Pagar','Fluxo de Caixa','PAGO','Quitado',"
+            "         'Dividendos','Dividendos','POUCA GENTE','ALFA','SOCIO Z',"
+            "         '2025-03-06',2025,-4000,0,0,0,'Dividendos')")
+        # e uma obra sem projeto, com gente e com buraco
+        conn.execute(
+            "INSERT INTO fato (codigo_lancamento, tipo, analise, situacao,"
+            " situacao_vencimento, categoria, grupo, departamento, projeto,"
+            " razao_social, data, ano, pago_recebido, a_pagar_receber, juros, multa)"
+            " VALUES (896,'2. Contas a Pagar','DRE','PAGO','Quitado','Salários',"
+            "         'Despesas com Pessoal','SOLTA','','X','2025-03-10',2025,"
+            "         -3000,0,0,0)")
+        conn.commit()
+    consultas.esquecer_listas()
+    assert ("2025-03", "POUCA GENTE", -4000.0) in consultas.aporte_mensal_por_obra()
+    conta = _calcular(cenario)
+    por_obra = conta["por_obra"]
+    # com o dividendo, a POUCA GENTE também ficou no vermelho (400) e o lado
+    # passou a dever: os 600 se repartem pelos buracos, 1.800 e 400
+    assert por_obra["MUITA GENTE"]["juros"] == pytest.approx(-490.91, abs=0.02)
+    assert por_obra["POUCA GENTE"]["juros"] == pytest.approx(-109.09, abs=0.02)
+    # a obra sem projeto aparece, mas não leva estrutura nem juro
+    assert por_obra["SOLTA"]["rateio"] == 0 and por_obra["SOLTA"]["juros"] == 0
+    assert sum(conta["rateio"]["alocacoes"].values()) == pytest.approx(-1200, abs=0.02)
+    assert conta["batimento"]["soma_fecha"]
