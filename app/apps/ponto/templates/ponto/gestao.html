@@ -316,6 +316,21 @@
       <option value="DISPENSADO">Dispensados</option>
       <option value="">Todos</option>
     </select></div>
+  {# O PERÍODO (10/11/2026, o dono: "não posso filtrar por data, período (…) eu quero visualizar só coisa do mês anterior,
+     para tratar"): o DIA do alerta. Com período, o alerta sem dia (aparelho esperando aprovação…) não entra. #}
+  <div class="campo" style="margin-top:10px"><label>Período (o dia do alerta)</label>
+    <div class="qd-atalhos">
+      <button class="chip" type="button" data-a-periodo="mes">Este mês</button>
+      <button class="chip" type="button" data-a-periodo="anterior">Mês anterior</button>
+      <button class="chip" type="button" data-a-periodo="7">7 dias</button>
+      <button class="chip" type="button" data-a-periodo="tudo">Tudo</button></div>
+    <div class="qd-par">
+      <div class="campo"><label for="a-de">De</label><input type="date" id="a-de"></div>
+      <div class="campo"><label for="a-ate">Até</label><input type="date" id="a-ate"></div></div></div>
+  <div class="campo" style="margin-top:10px"><label for="a-obra">Obra</label>
+    <select id="a-obra"><option value="">Todas as obras</option></select></div>
+  <div class="campo" style="margin-top:10px"><label for="a-busca">Pessoa</label>
+    <input id="a-busca" placeholder="nome ou CPF" autocomplete="off" data-sem-mascara></div>
   <div class="campo" style="margin-top:10px"><label for="a-gravidade">Gravidade</label>
     <select id="a-gravidade">
       <option value="">Todas</option>
@@ -326,6 +341,12 @@
   {# 06/11/2026, o dono: "o tipo de alerta deveria estar no sidebar, nos filtros, para filtrar qual vamos tratar" #}
   <div class="campo" style="margin-top:10px"><label for="a-tipo">Tipo de alerta</label>
     <select id="a-tipo" data-sem-busca><option value="">Todos os tipos</option></select></div>
+  <div class="campo" style="margin-top:10px"><label for="a-ordem">Ordem</label>
+    <select id="a-ordem" data-sem-busca><option value="RECENTES">Os mais recentes primeiro</option>
+      <option value="ANTIGOS">Os mais antigos primeiro</option></select></div>
+  <div class="campo" style="margin-top:10px"><label for="a-por-pagina">Por página</label>
+    <select id="a-por-pagina" data-sem-busca><option value="50">50</option><option value="100" selected>100</option>
+      <option value="200">200</option></select></div>
   <button class="btn" id="a-ver" type="button" style="width:100%; margin-top:14px">Ver</button>
   <div class="cartao-dica" style="margin-top:16px">
     <b>Alerta não é palpite.</b> Cada um sai de uma <b>regra escrita</b> (da CLT
@@ -431,6 +452,9 @@
   /* O quadro do ponto (21/10/2026). */
   .chip.qd-falta { background:#FDECEA; color:var(--vermelho); border:1px dashed var(--vermelho); }
   .qd-atalhos { display:flex; flex-wrap:wrap; gap:4px; margin:0 0 8px; }
+  .a-paginas { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:0 0 10px; }
+  .a-paginas:empty { display:none; }
+  button.chip[aria-pressed="true"] { background:var(--azul, #12345A); color:#fff; border-color:var(--azul, #12345A); }
   .qd-par { display:grid; grid-template-columns:1fr; gap:6px; }
   #qd-lote[hidden], .barra-lote[hidden] { display:none !important; }
   .qd-kpis .kpis { grid-template-columns:repeat(auto-fit, minmax(135px, 1fr)); }
@@ -938,7 +962,9 @@
 </div>
 {% endif %}
 {% endif %}
+<div class="a-paginas" id="a-paginas"></div>
 <div id="a-grupos">carregando…</div>
+<div class="a-paginas" id="a-paginas2"></div>
 <div class="cartao">
   <div class="cartao-cab"><h3>Resumo de hoje</h3>
     <small>o texto que vai por WhatsApp para a gestão</small></div>
@@ -6151,15 +6177,59 @@ const SELO_SITUACAO = {ABERTO: ["aguardando", "aberto"], RESOLVIDO: ["aprovado",
                        DISPENSADO: ["outro", "dispensado"]};
 const ALERTAS_DO_MOSAICO = ["MOSAICO_PENDENTE", "SEQUENCIA_RAPIDA"];
 
+// A PÁGINA E O PERÍODO (10/11/2026, o dono: "está exibindo 500 por página, só que não tem paginação (…) não posso
+// filtrar por data, período (…) só coisa do mês anterior, para tratar. Está tudo misturado"). Mudar um filtro volta para
+// a página 1; tratar um alerta recarrega a MESMA página.
+const A_PAG = {pagina: 1, dados: null};
+function periodoDoAtalho(qual) {
+  const h = new Date();
+  if (qual === "mes") return [isoLocal(new Date(h.getFullYear(), h.getMonth(), 1)), isoLocal(h)];
+  if (qual === "anterior") return [isoLocal(new Date(h.getFullYear(), h.getMonth() - 1, 1)), isoLocal(new Date(h.getFullYear(), h.getMonth(), 0))];
+  if (qual === "7") return [isoLocal(new Date(h.getFullYear(), h.getMonth(), h.getDate() - 6)), isoLocal(h)];
+  return ["", ""];
+}
+function marcarAtalhoDoPeriodo() {
+  document.querySelectorAll("[data-a-periodo]").forEach(b => {
+    const [de, ate] = periodoDoAtalho(b.dataset.aPeriodo);
+    b.setAttribute("aria-pressed", String(els("a-de").value === de && els("a-ate").value === ate)); });
+}
+function desenharPaginas() {
+  const d = A_PAG.dados;
+  const html = !d || d.paginas <= 1 ? "" : `<button class="btn secundario" type="button" data-a-pagina="${d.pagina - 1}" ${d.pagina <= 1 ? "disabled" : ""}>‹ Anterior</button>
+    <span>Página <b>${d.pagina}</b> de <b>${d.paginas}</b></span>
+    <button class="btn secundario" type="button" data-a-pagina="${d.pagina + 1}" ${d.pagina >= d.paginas ? "disabled" : ""}>Próxima ›</button>
+    <small class="suave">${(d.pagina - 1) * d.por_pagina + 1}–${Math.min(d.pagina * d.por_pagina, d.total)} de ${d.total}</small>`;
+  ["a-paginas", "a-paginas2"].forEach(id => {
+    els(id).innerHTML = html;
+    els(id).querySelectorAll("[data-a-pagina]").forEach(b => b.addEventListener("click", () => {
+      A_PAG.pagina = Number(b.dataset.aPagina); carregarAlertas().then(() => els("a-grupos").scrollIntoView({block: "start"})); }));
+  });
+}
+function filtrosDosAlertasMudaram() { A_PAG.pagina = 1; marcarAtalhoDoPeriodo(); carregarAlertas(); }
+
 async function carregarAlertas() {
   const p = new URLSearchParams();
   p.set("situacao", els("a-situacao").value);
   if (els("a-gravidade").value) p.set("gravidade", els("a-gravidade").value);
   if (els("a-tipo").value) p.set("tipo", els("a-tipo").value);
+  if (els("a-de").value) p.set("de", els("a-de").value);
+  if (els("a-ate").value) p.set("ate", els("a-ate").value);
+  if (els("a-obra").value) p.set("obra", els("a-obra").value);
+  if (els("a-busca").value.trim()) p.set("busca", els("a-busca").value.trim());
+  p.set("ordem", els("a-ordem").value);
+  p.set("por_pagina", els("a-por-pagina").value);
+  p.set("pagina", A_PAG.pagina);
   try {
     const d = await api(`/erp/api/ponto/alertas?${p}`);
     ALERTAS = d.alertas;
     ROTULOS = d.rotulos || {};
+    A_PAG.dados = d; A_PAG.pagina = d.pagina;
+    // a obra, com quantos há em cada uma (com os outros filtros escolhidos)
+    const obraEsc = els("a-obra").value, obras = d.obras || [];
+    els("a-obra").innerHTML = `<option value="">Todas as obras (${obras.reduce((n, o) => n + o.n, 0)})</option>` +
+      obras.filter(o => o.obra_id != null).map(o => `<option value="${o.obra_id}">${escapar(o.codigo)}${o.nome ? ` — ${escapar(o.nome)}` : ""} (${o.n})</option>`).join("") +
+      (obraEsc && !obras.some(o => String(o.obra_id) === obraEsc) ? `<option value="${escapar(obraEsc)}">a obra escolhida (0)</option>` : "");
+    els("a-obra").value = obraEsc;
     // o filtro por tipo, com quantos há de cada um (com a situação e a gravidade escolhidas)
     const escolhido = els("a-tipo").value, tipos = d.tipos || [];
     els("a-tipo").innerHTML = `<option value="">Todos os tipos (${tipos.reduce((n, t) => n + t.n, 0)})</option>` +
@@ -6171,7 +6241,10 @@ async function carregarAlertas() {
 }
 
 function desenharAlertas() {
-  els("a-sub").textContent = `${ALERTAS.length} alerta(s)`;
+  const tot = A_PAG.dados ? A_PAG.dados.total : ALERTAS.length;
+  els("a-sub").textContent = `${tot} alerta(s)${els("a-de").value || els("a-ate").value
+    ? ` · dia ${els("a-de").value ? dataBR(els("a-de").value) : "…"} a ${els("a-ate").value ? dataBR(els("a-ate").value) : "…"}` : ""}`;
+  desenharPaginas();
   if (!ALERTAS.length) {
     els("a-grupos").innerHTML = `<div class="cartao"><div class="vazio"><b>Nenhum alerta</b>
       com estes filtros.</div></div>`;
@@ -6361,10 +6434,13 @@ async function enviarResumo() {
   b.disabled = false;
 }
 
-els("a-ver").addEventListener("click", carregarAlertas);
-els("a-situacao").addEventListener("change", carregarAlertas);
-els("a-gravidade").addEventListener("change", carregarAlertas);
-els("a-tipo").addEventListener("change", carregarAlertas);
+els("a-ver").addEventListener("click", filtrosDosAlertasMudaram);
+["a-situacao", "a-gravidade", "a-tipo", "a-obra", "a-ordem", "a-por-pagina", "a-de", "a-ate"].forEach(id =>
+  els(id).addEventListener("change", filtrosDosAlertasMudaram));
+els("a-busca").addEventListener("keydown", ev => { if (ev.key === "Enter") filtrosDosAlertasMudaram(); });
+document.querySelectorAll("[data-a-periodo]").forEach(b => b.addEventListener("click", () => {
+  [els("a-de").value, els("a-ate").value] = periodoDoAtalho(b.dataset.aPeriodo); filtrosDosAlertasMudaram(); }));
+marcarAtalhoDoPeriodo();
 // "⭐ usar como foto de cadastro" direto no alerta do rosto: a foto da batida vira a de cadastro, e o alerta, resolvido
 let FOTO_CAD_ALERTA = Date.now();
 // os alertas de UM dia da pessoa: o atalho "abrir o dia" leva à janela dela naquele dia

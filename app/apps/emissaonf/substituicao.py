@@ -24,16 +24,33 @@ def _so_digitos(v) -> str:
     return "".join(c for c in str(v or "") if c.isdigit())
 
 
+def _chave_numero(v) -> str:
+    """O número da nota reduzido ao SEQUENCIAL, para comparar.
+
+    ⚠️ **Sem isto a substituição não acha a nota antiga, e foi o que aconteceu em
+    09/11/2026.** No padrão nacional a nota é gravada com 13 dígitos (ano +
+    sequencial): o slot do card e a coluna F da planilha têm `2600000003352`.
+    Quem vai substituir digita o número que tem na mão — e às vezes é o curto,
+    `3352`. A comparação por dígitos crus dava "não encontrado", **a nota antiga
+    continuava válida no card e na planilha**, e o aviso passava no meio do log.
+
+    Comparar pelo sequencial faz os dois formatos casarem, nos dois sentidos.
+    """
+    from worker import sequencial_da_nota
+    seq = sequencial_da_nota(v)
+    return str(seq) if seq else _so_digitos(v)
+
+
 def localizar_slot_por_numero(card: dict, numero) -> str | None:
     """Slot A–E cujo campo 'número da nota' == numero. None se não achar.
     Compara só por dígitos (robusto a '3.076' vindo do Pipefy)."""
     por_id = card.get("campos_por_id", {}) or {}
-    alvo = _so_digitos(numero)
+    alvo = _chave_numero(numero)
     if not alvo:
         return None
     for s in "ABCDE":
         f = pf.CAMPOS_SLOT[s]
-        if _so_digitos(por_id.get(f["numero"])) == alvo:
+        if _chave_numero(por_id.get(f["numero"])) == alvo:
             return s
     return None
 
@@ -43,7 +60,9 @@ def cancelar_no_card(card: dict, numero, token: str, novo_numero=None) -> dict:
     slot = localizar_slot_por_numero(card, numero)
     if not slot:
         return {"ok": False, "slot": None,
-                "msg": f"nº {numero} não encontrado nos slots A–E do card (nada cancelado no card)"}
+                "msg": f"⚠️ NÃO CANCELADO NO CARD: o nº {numero} não está em "
+                       f"nenhum dos slots A–E. A nota antiga continua valendo lá — "
+                       f"confira o número e marque o slot à mão se preciso"}
     fid = pf.CAMPOS_SLOT[slot]["status"]
     mutation = "mutation {\n" + f"c1: {pf._campo(card['card_id'], fid, STATUS_CANCELADA)}" + "\n}"
     pf.executar(mutation, token)
@@ -55,11 +74,13 @@ def cancelar_na_planilha(ws_notas, numero, novo_numero=None) -> dict:
     """Marca a linha da nota antiga na 'Notas BWS' (coluna L = Observação).
     Localiza pela coluna F (Nº Nota)."""
     col = ws_notas.col_values(6)  # F = Nº Nota
-    alvo = _so_digitos(numero)
+    alvo = _chave_numero(numero)
     obs = "CANCELADA" + (f" — substituída pela NF {novo_numero}" if novo_numero else "")
     for i, v in enumerate(col, start=1):
-        if _so_digitos(v) == alvo:
+        if _chave_numero(v) == alvo:
             ws_notas.update(f"L{i}", [[obs]], value_input_option="USER_ENTERED")
             return {"ok": True, "linha": i, "msg": f"linha {i} da 'Notas BWS' marcada: {obs}"}
     return {"ok": False, "linha": None,
-            "msg": f"nº {numero} não encontrado na coluna F da 'Notas BWS' (nada marcado na planilha)"}
+            "msg": f"⚠️ NÃO MARCADO NA PLANILHA: o nº {numero} não está na coluna "
+                   f"'Nº Nota' da 'Notas BWS'. A linha da nota antiga continua "
+                   f"sem a marca de cancelada"}

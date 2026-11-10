@@ -386,6 +386,115 @@ def test_a_arvore_inteira_se_salva_num_clique(cenario, monkeypatch):
     assert "data-abre-grupo" in html and 'data-herda-do-grupo' in html
 
 
+def test_o_percentual_muda_com_o_tempo():
+    """09/11/2026, o dono: "de janeiro a dezembro de 2021, 50-50; em 2022,
+    60-40". Cada período vale a partir do mês dele até o próximo; antes do
+    primeiro, vale o percentual fixo — ou, sem ele, o nível de cima."""
+    from app.apps.painel import prestacao
+    pesos = {"grupo": {"Pessoal": 30}, "categoria": {}, "lancamento": {},
+             "periodos": {"grupo": {"Pessoal": [("2021-01", 50), ("2022-01", 60)]},
+                          "categoria": {"Salários": [("2023-06", 0)]}}}
+    pc = lambda cat, mes: prestacao.peso_da_conta(pesos, "Pessoal", cat, "", 100, mes=mes)  # noqa: E731
+    assert pc("Férias", "2020-12") == 30           # antes de tudo: o fixo do grupo
+    assert pc("Férias", "2021-07") == 50
+    assert pc("Férias", "2022-01") == 60 and pc("Férias", "2026-11") == 60
+    assert pc("Salários", "2023-05") == 60         # ainda segue o grupo
+    assert pc("Salários", "2023-06") == 0          # o período dela vence
+    # sem mês (a tela) e sem data: o fixo
+    assert prestacao.peso_da_conta(pesos, "Pessoal", "", "", 100) == 30
+    assert pc("Férias", prestacao.SEM_DATA) == 30
+
+
+def test_o_rateio_usa_o_percentual_de_cada_mes():
+    from app.apps.painel import prestacao
+    pesos = {"grupo": {}, "categoria": {}, "lancamento": {},
+             "periodos": {"grupo": {"Pessoal": [("2021-01", 50), ("2022-01", 60)]}}}
+    admin = [{"mes": "2021-06", "grupo": "Pessoal", "categoria": "Salários", "valor": -1000.0},
+             {"mes": "2022-06", "grupo": "Pessoal", "categoria": "Salários", "valor": -1000.0}]
+    driver = [("2021-06", "OBRA", 10.0), ("2022-06", "OBRA", 10.0)]
+    r = prestacao.calcular_rateio_do_cenario(admin, [], driver, {"OBRA": {}}, pesos)
+    assert round(r["alocacoes"][("OBRA", "2021-06")], 2) == -500.0
+    assert round(r["alocacoes"][("OBRA", "2022-06")], 2) == -600.0
+
+
+def test_os_periodos_se_salvam_pela_arvore(cenario, monkeypatch):
+    from app.apps.painel import cenarios
+    cliente = _cliente(monkeypatch)
+    cliente.post("/painel/prestacao/montagem", data={
+        "acao": "pesos_da_arvore", "cenario_id": str(cenario),
+        "item_nivel": ["grupo"], "item_chave": ["Administrativas"], "item_pct": [""],
+        "periodo_presente": ["grupo|Administrativas", "categoria|Aluguel"],
+        "periodo_nivel": ["grupo", "grupo", "grupo", "categoria"],
+        "periodo_chave": ["Administrativas", "Administrativas", "Administrativas", "Aluguel"],
+        "periodo_desde": ["2021-01", "2022-01", "", "2024-03"],
+        "periodo_pct": ["50", "60", "", ""]})
+    per = cenarios.periodos(cenario)
+    assert per["grupo"] == {"Administrativas": [("2021-01", 50.0, None), ("2022-01", 60.0, None)]}
+    assert per["categoria"] == {}                    # sem percentual: não grava
+    # duplicar leva os períodos junto
+    copia = cenarios.duplicar(cenario, "cópia")
+    assert cenarios.periodos(copia)["grupo"]["Administrativas"][1] == ("2022-01", 60.0, None)
+    html = cliente.get(f"/painel/prestacao/montagem?cenario={cenario}").get_data(as_text=True)
+    assert "50% desde 01/2021 · 60% desde 01/2022" in html and "varia" in html
+    # apagar o percentual apaga o período
+    cliente.post("/painel/prestacao/montagem", data={
+        "acao": "pesos_da_arvore", "cenario_id": str(cenario),
+        "periodo_presente": ["grupo|Administrativas"],
+        "periodo_nivel": ["grupo", "grupo"], "periodo_chave": ["Administrativas"] * 2,
+        "periodo_desde": ["2021-01", "2022-01"], "periodo_pct": ["50", ""]})
+    assert cenarios.periodos(cenario)["grupo"] == {"Administrativas": [("2021-01", 50.0, None)]}
+    cenarios.apagar(copia)
+
+
+def test_os_dois_lados_e_quem_recebe():
+    """09/11/2026, o dono: "num período, 40% ficou para a BWS CE, os 60% para
+    os demais projetos que recebem. Nada fica sem dono. Alguns projetos não
+    entram, outros entram até determinada data." """
+    from app.apps.painel import cenarios, prestacao
+    pesos = {"grupo": {}, "categoria": {}, "lancamento": {},
+             "periodos": {"grupo": {"Pessoal": [("2021-01", 100, 40)]}}}
+    admin = [{"mes": m, "grupo": "Pessoal", "categoria": "Salários", "valor": -1000.0}
+             for m in ("2021-06", "2022-06")]
+    driver = [(m, o, v) for m in ("2021-06", "2022-06")
+              for o, v in (("CE1", 10.0), ("CE2", 30.0), ("SUL", 10.0), ("NORTE", 10.0), ("FORA", 50.0))]
+    lado_de = {"CE1": "principal", "CE2": "principal", "SUL": "demais",
+               "NORTE": "demais", "FORA": "demais"}
+    regras = {"P-NORTE": ("periodo", "", "2021-12"), "P-FORA": ("nao", "", "")}
+    projeto = {"CE1": "BWS CE", "CE2": "BWS CE", "SUL": "P-SUL", "NORTE": "P-NORTE", "FORA": "P-FORA"}
+    recebe = lambda o, m: cenarios.recebe_no_mes(regras.get(projeto[o]), m)  # noqa: E731
+    obras = {o: {} for o in lado_de}
+    r = prestacao.calcular_rateio_do_cenario(admin, [], driver, obras, pesos,
+                                             lado_de=lado_de, recebe=recebe)
+    a = {k: round(v, 2) for k, v in r["alocacoes"].items()}
+    # 2021: 400 para a CE (pela régua 10/30), 600 para SUL e NORTE (meio a meio)
+    assert a[("CE1", "2021-06")] == -100.0 and a[("CE2", "2021-06")] == -300.0
+    assert a[("SUL", "2021-06")] == -300.0 and a[("NORTE", "2021-06")] == -300.0
+    assert ("FORA", "2021-06") not in a                       # não recebe
+    # 2022: o NORTE já saiu; os 600 ficam todos com o SUL
+    assert a[("SUL", "2022-06")] == -600.0 and ("NORTE", "2022-06") not in a
+    assert round(sum(a.values()), 2) == -2000.0 and not r["sobras"]   # nada sem dono
+    # um lado sem ninguém recebendo passa a parte para o outro
+    so_ce = lambda o, m: lado_de[o] == "principal"  # noqa: E731
+    r = prestacao.calcular_rateio_do_cenario(admin[:1], [], driver, obras, pesos,
+                                             lado_de=lado_de, recebe=so_ce)
+    assert round(sum(r["alocacoes"].values()), 2) == -1000.0
+
+
+def test_quem_recebe_se_salva_pela_tela(cenario, monkeypatch):
+    from app.apps.painel import cenarios
+    cliente = _cliente(monkeypatch)
+    cliente.post("/painel/prestacao/montagem", data={
+        "acao": "projetos", "cenario_id": str(cenario), "principal": "ALFA",
+        "proj_nome": ["ALFA", "BETA", "GAMA", "DELTA"],
+        "proj_papel": ["", "nao", "periodo", "periodo"],
+        "proj_desde": ["", "", "", ""], "proj_ate": ["", "", "2023-12", ""]})
+    quem = cenarios.projetos(cenario)
+    assert quem["principal"] == "ALFA"
+    assert quem["regras"] == {"BETA": ("nao", "", ""), "GAMA": ("periodo", "", "2023-12")}
+    html = cliente.get(f"/painel/prestacao/montagem?cenario={cenario}").get_data(as_text=True)
+    assert "Quem recebe o custo da matriz" in html and "Salvar quem recebe" in html
+
+
 def test_quem_esta_preso_a_uma_obra_nao_alcanca_o_cenario(preso, monkeypatch):
     """As duas telas mostram a empresa inteira e configuram a conta de todos.
     Não passam pelo filtro de escopo — então não são de quem está preso.
@@ -474,6 +583,34 @@ def test_projeto_fora_da_analise_tira_todas_as_obras_dele(cenario):
     conta = _calcular(cenario)
     assert conta["por_obra"] == {}
     assert sorted(conta["excluidas"]) == ["MUITA GENTE", "POUCA GENTE"]
+
+
+def test_projeto_que_nao_recebe_some_da_prestacao(cenario):
+    """09/11/2026, o dono: "os projetos que não receberam nenhum percentual
+    não precisam aparecer, porque realmente não interessa"."""
+    from app.apps.painel import cenarios
+    cenarios.gravar_projetos(cenario, "", {"ALFA": ("nao", "", "")})
+    conta = _calcular(cenario)
+    assert conta["por_obra"] == {}
+    assert sorted(conta["excluidas"]) == ["MUITA GENTE", "POUCA GENTE"]
+    # recebe só num período: continua na prestação
+    cenarios.gravar_projetos(cenario, "", {"ALFA": ("periodo", "", "2020-12")})
+    assert _calcular(cenario)["por_obra"]
+    cenarios.gravar_projetos(cenario, "", {})
+
+
+def test_as_categorias_dos_juros_se_marcam_numa_lista(cenario, monkeypatch):
+    """09/11/2026, o dono: "quanto à categoria, coloca dentro dos parâmetros
+    para eu definir quais seriam". Lista para marcar, gravada no formato que o
+    cálculo já lia."""
+    from app.apps.painel import prestacao_dados
+    cliente = _cliente(monkeypatch)
+    html = cliente.get("/painel/prestacao/parametros?aba=geral").get_data(as_text=True)
+    assert 'name="categoria_juros_item" value="Juros sobre Empréstimos" checked' in html
+    cliente.post("/painel/prestacao/parametros", data={
+        "acao": "config", "aba": "geral", "categoria_juros_lista": "1",
+        "categoria_juros_item": ["Juros sobre Empréstimos", "IOF", "IOF"]})
+    assert prestacao_dados.config()["categoria_juros"] == "Juros sobre Empréstimos; IOF"
 
 
 def test_tirar_e_voltar_pela_tela(cenario, monkeypatch):

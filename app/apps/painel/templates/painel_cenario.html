@@ -169,6 +169,118 @@
   </form>
 </div>
 
+{# O PERCENTUAL POR PERÍODO (09/11/2026): "a partir de MM/AAAA, X%". Cada um
+   vale até começar o seguinte. Linha com o mês ou o percentual em branco não
+   é gravada — é assim que se apaga um período. #}
+{% macro periodos_da_conta(nivel, chave, lista, alvo, colunas) %}
+<tr class="linha-periodos" data-periodos-de="{{ alvo }}" hidden>
+  <td colspan="{{ colunas }}" style="padding:6px 10px 10px 40px; background:var(--papel)">
+    <input type="hidden" name="periodo_presente" value="{{ nivel }}|{{ chave }}">
+    <div style="display:flex; flex-direction:column; gap:6px">
+      <small><b>Por período</b> — cada linha vale a partir do mês dela até a próxima.
+        A parte do <b>{{ principal or 'projeto principal' }}</b> é quanto do que entrou vai para ele;
+        o resto vai para os demais projetos que recebem. Em branco: todas as obras juntas, pela régua.</small>
+      {% for desde, pct, parte in lista %}
+      <span style="display:inline-flex; gap:6px; align-items:center; flex-wrap:wrap">
+        <input type="hidden" name="periodo_nivel" value="{{ nivel }}">
+        <input type="hidden" name="periodo_chave" value="{{ chave }}">
+        <small>a partir de</small>
+        <input type="month" name="periodo_desde" value="{{ desde }}" data-original="{{ desde }}">
+        <small>entra</small>
+        <input name="periodo_pct" value="{{ '%.0f'|format(pct) }}" data-original="{{ '%.0f'|format(pct) }}"
+               inputmode="decimal" data-sem-mascara style="width:60px" aria-label="percentual que entra"> %
+        <small>· para o {{ principal or 'principal' }}</small>
+        <input name="periodo_principal" value="{{ '' if parte is none else '%.0f'|format(parte) }}"
+               data-original="{{ '' if parte is none else '%.0f'|format(parte) }}"
+               inputmode="decimal" data-sem-mascara style="width:60px" placeholder="—"
+               aria-label="parte do projeto principal"> %
+      </span>
+      {% endfor %}
+      <span style="display:inline-flex; gap:6px; align-items:center; flex-wrap:wrap">
+        <input type="hidden" name="periodo_nivel" value="{{ nivel }}">
+        <input type="hidden" name="periodo_chave" value="{{ chave }}">
+        <small>{{ 'e a partir de' if lista else 'a partir de' }}</small>
+        <input type="month" name="periodo_desde" data-original="">
+        <small>entra</small>
+        <input name="periodo_pct" data-original="" inputmode="decimal" data-sem-mascara
+               style="width:60px" placeholder="%" aria-label="percentual que entra"> %
+        <small>· para o {{ principal or 'principal' }}</small>
+        <input name="periodo_principal" data-original="" inputmode="decimal" data-sem-mascara
+               style="width:60px" placeholder="—" aria-label="parte do projeto principal"> %
+      </span>
+    </div>
+    <small class="dica">Antes do primeiro período vale o percentual da linha acima
+      (ou o do nível de cima, se ela estiver em branco). Para apagar um período,
+      apague o "entra" dele e salve. Depois de salvar, aparece um campo novo
+      para o próximo.</small>
+  </td>
+</tr>
+{% endmacro %}
+
+{% macro resumo_periodos(lista) %}{% if lista %}<small class="selo neutro" title="o percentual muda com o tempo">{% for desde, pct, parte in lista %}{{ '%.0f'|format(pct) }}% desde {{ desde[5:] }}/{{ desde[:4] }}{% if parte is not none %} ({{ '%.0f'|format(parte) }}% {{ principal or 'principal' }}){% endif %}{{ ' · ' if not loop.last }}{% endfor %}</small>{% endif %}{% endmacro %}
+
+<!-- ============ QUEM RECEBE O CUSTO DA MATRIZ — 09/11/2026 ============ -->
+{% if cenario %}
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Quem recebe o custo da matriz</h3>
+    <small>o projeto principal, e os projetos que não recebem ou só recebem num período</small>
+  </div>
+  <p class="cartao-dica" style="margin-top:0">
+    O custo da matriz vai para dois lados: o <b>projeto principal</b> e os
+    <b>demais projetos</b>. Quanto vai para cada lado se diz em cada conta, em
+    "📅 por período" (ex.: Salários, a partir de 01/2021, 40% para o principal).
+    Aqui se diz quem recebe: um projeto que <b>não recebe</b> sai da prestação
+    deste cenário (não aparece, não recebe estrutura nem juros, não entra nas
+    quotas); um que <b>recebe só no período</b> sai da divisão no mês seguinte
+    ao "até", mas continua no resultado. Nada fica sem dono: se num mês nenhum
+    projeto de um lado recebe, a parte dele vai para o outro.
+  </p>
+  <form method="post">
+    <input type="hidden" name="acao" value="projetos">
+    <input type="hidden" name="cenario_id" value="{{ cenario.id }}">
+    <div class="form-grade" style="max-width:520px">
+      <div class="campo">
+        <label for="principal">Projeto principal</label>
+        <select id="principal" name="principal">
+          <option value="" {% if not principal %}selected{% endif %}>(nenhum — sem separar os lados)</option>
+          {% if principal and principal not in projetos_do_painel %}<option value="{{ principal }}" selected>{{ principal }}</option>{% endif %}
+          {% for p in projetos_do_painel %}
+            <option value="{{ p }}" {% if p == principal %}selected{% endif %}>{{ p }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="tabela-rolagem" style="max-height:420px; margin-top:10px">
+      <table>
+        <thead><tr><th class="sem-ordem">Projeto</th><th class="sem-ordem">Recebe?</th>
+          <th class="sem-ordem">De</th><th class="sem-ordem">Até</th></tr></thead>
+        <tbody>
+          {% for p in projetos_do_painel %}
+          {% set r = regras_projetos.get(p) or ('', '', '') %}
+          <tr>
+            <td class="desc">{{ p }}{% if p == principal %} <small class="selo neutro">principal</small>{% endif %}</td>
+            <td>
+              <input type="hidden" name="proj_nome" value="{{ p }}">
+              <select name="proj_papel" aria-label="{{ p }} recebe?">
+                {% for valor, rotulo in papeis.items() %}
+                  <option value="{{ valor }}" {% if r[0] == valor %}selected{% endif %}>{{ rotulo }}</option>
+                {% endfor %}
+              </select>
+            </td>
+            <td><input type="month" name="proj_desde" value="{{ r[1] }}" aria-label="recebe a partir de"></td>
+            <td><input type="month" name="proj_ate" value="{{ r[2] }}" aria-label="recebe até"></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="dica">"Recebe só no período": preencha o De, o Até ou os dois (o mês do Até ainda recebe).</p>
+    <button class="btn" type="submit">Salvar quem recebe</button>
+  </form>
+</div>
+{% endif %}
+
 <!-- ===================== O QUE SE DIVIDE ===================== -->
 <div class="cartao">
   <div class="cartao-cab">
@@ -236,23 +348,28 @@
                     aria-expanded="{{ 'true' if aberto_grupo == g.grupo else 'false' }}">
               <span class="seta">{{ '▾' if aberto_grupo == g.grupo else '▸' }}</span> <b>{{ g.grupo }}</b></button>
             <small>{{ g.categorias|length }} categoria{{ '' if g.categorias|length == 1 else 's' }}</small>
+            <button type="button" class="link-btn" data-abre-periodos="g{{ n }}"
+                    title="o percentual deste grupo muda com o tempo?"><small>📅 por período</small></button>
+            {{ resumo_periodos(g.periodos) }}
             {% if g.excecoes %}<span class="selo neutro" title="lançamentos marcados um a um dentro deste grupo">{{ g.excecoes }} exceção(ões)</span>{% endif %}
           </td>
           <td class="dados direita">{{ brl(g.valor) }}</td>
           <td class="dados direita v-pos">{{ brl(g.entra) }}</td>
           <td class="dados direita">{{ brl(g.fora) }}{% if g.juros %}<br><small>+ {{ brl(g.juros) }} de juros</small>{% endif %}</td>
-          <td class="dados direita"><b>{{ '%.0f'|format(g.pct_efetivo) }}%</b></td>
+          <td class="dados direita"><b>{% if g.periodos %}varia{% else %}{{ '%.0f'|format(g.pct_efetivo) }}%{% endif %}</b></td>
           <td class="direita">
             <input type="hidden" name="item_nivel" value="grupo">
             <input type="hidden" name="item_chave" value="{{ g.grupo }}">
             <input name="item_pct" value="{{ '' if g.pct is none else '%.0f'|format(g.pct) }}"
                    data-original="{{ '' if g.pct is none else '%.0f'|format(g.pct) }}"
-                   data-grupo-pct="{{ n }}" inputmode="decimal" data-sem-mascara
+                   data-grupo-pct="{{ n }}" {% if g.periodos %}data-grupo-varia{% endif %} inputmode="decimal" data-sem-mascara
                    style="width:130px" placeholder="{{ '%.0f'|format(cenario.pct_padrao) }} (padrão)"
                    aria-label="Percentual do grupo {{ g.grupo }}">
           </td>
         </tr>
+        {{ periodos_da_conta('grupo', g.grupo, g.periodos, 'g' ~ n, 6) }}
           {% for c in g.categorias %}
+          {% set m = loop.index %}
           <tr class="mov-parte" data-categoria-do-grupo="{{ n }}" {% if aberto_grupo != g.grupo %}hidden{% endif %}>
             <td class="desc" style="padding-left:28px">
               {{ c.categoria }}
@@ -260,6 +377,9 @@
                                   grupo=g.grupo,
                                   categoria=('' if aberto_categoria == c.categoria else c.categoria)) }}"
                  title="abrir os lançamentos desta categoria (salve antes o que digitou)"><small>lançamentos ›</small></a>
+              {% if not c.e_juros %}<button type="button" class="link-btn" data-abre-periodos="c{{ n }}-{{ m }}"
+                      title="o percentual desta categoria muda com o tempo?"><small>📅 por período</small></button>
+              {{ resumo_periodos(c.periodos) }}{% endif %}
               {% if c.excecoes %}<span class="selo neutro" title="lançamentos marcados um a um">{{ c.excecoes }} exceção(ões)</span>{% endif %}
             </td>
             <td class="dados direita">{{ brl(c.valor) }}</td>
@@ -268,7 +388,7 @@
             {% else %}
             <td class="dados direita v-pos">{{ brl(c.entra) }}</td>
             <td class="dados direita">{{ brl(c.fora) }}</td>
-            <td class="dados direita">{{ '%.0f'|format(c.pct_efetivo) }}%</td>
+            <td class="dados direita">{% if c.varia %}varia{% else %}{{ '%.0f'|format(c.pct_efetivo) }}%{% endif %}</td>
             <td class="direita">
               <input type="hidden" name="item_nivel" value="categoria">
               <input type="hidden" name="item_chave" value="{{ c.categoria }}">
@@ -280,6 +400,7 @@
             </td>
             {% endif %}
           </tr>
+          {% if not c.e_juros %}{{ periodos_da_conta('categoria', c.categoria, c.periodos, 'c' ~ n ~ '-' ~ m, 6) }}{% endif %}
           {% endfor %}
         {% endfor %}
       </tbody>
@@ -630,6 +751,15 @@
       b.querySelector(".seta").textContent = aberto ? "▾" : "▸";
       form.querySelectorAll(`[data-categoria-do-grupo="${b.dataset.abreGrupo}"]`)
           .forEach(tr => { tr.hidden = !aberto; });
+      if (!aberto)   // fechar o grupo fecha também os períodos das categorias
+        form.querySelectorAll(`[data-periodos-de^="c${b.dataset.abreGrupo}-"]`)
+            .forEach(tr => { tr.hidden = true; });
+    }));
+
+  form.querySelectorAll("[data-abre-periodos]").forEach(b =>
+    b.addEventListener("click", () => {
+      const tr = form.querySelector(`[data-periodos-de="${b.dataset.abrePeriodos}"]`);
+      if (tr) tr.hidden = !tr.hidden;
     }));
 
   // a categoria em branco mostra o que vai herdar do grupo, já com o digitado
@@ -637,8 +767,9 @@
   function herancas(n) {
     const g = form.querySelector(`[data-grupo-pct="${n}"]`);
     const vale = (g && g.value.trim()) || padrao;
+    const varia = g && g.hasAttribute("data-grupo-varia");
     form.querySelectorAll(`[data-herda-do-grupo="${n}"]`).forEach(c => {
-      c.placeholder = `segue o grupo (${vale}%)`;
+      c.placeholder = varia ? "segue o grupo (varia)" : `segue o grupo (${vale}%)`;
     });
   }
   form.querySelectorAll("[data-grupo-pct]").forEach(g => {
@@ -647,7 +778,7 @@
   });
 
   // o que mudou e ainda não foi salvo fica marcado
-  const campos = [...form.querySelectorAll('input[name="item_pct"]')];
+  const campos = [...form.querySelectorAll('input[name="item_pct"], input[name="periodo_pct"], input[name="periodo_desde"], input[name="periodo_principal"]')];
   function pendentes() {
     let n = 0;
     campos.forEach(c => {
@@ -660,7 +791,7 @@
       : "Digite os percentuais e salve tudo de uma vez.";
     return n;
   }
-  campos.forEach(c => c.addEventListener("input", pendentes));
+  campos.forEach(c => { c.addEventListener("input", pendentes); c.addEventListener("change", pendentes); });
   form.addEventListener("submit", () => { salvando = true; });
   window.addEventListener("beforeunload", e => {
     if (!salvando && pendentes()) { e.preventDefault(); e.returnValue = ""; }

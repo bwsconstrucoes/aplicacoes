@@ -2497,13 +2497,33 @@ def ponto_api_banco_lancar(colaborador_id: int):
 @permissao("ver_ponto")
 @_api
 def ponto_api_alertas():
+    """A lista paginada (10/11/2026): situação, gravidade, tipo, obra, pessoa e período (o DIA do alerta), e as
+    contagens de tipo e obra para os filtros da barra."""
     quem = _quem()
+
+    def _data(nome):
+        v = (request.args.get(nome) or "").strip()
+        if not v:
+            return None
+        try:
+            return dt.date.fromisoformat(v[:10])
+        except ValueError:
+            raise ErroDeValidacao(f"data inválida: {v}", campo=nome)
+
+    def _inteiro(nome, padrao=None):
+        v = (request.args.get(nome) or "").strip()
+        return int(v) if v.isdigit() else padrao
+
+    de, ate = _data("de"), _data("ate")
+    if de and ate and de > ate:
+        de, ate = ate, de
     with db.conexao() as conn:
-        filtros = {"situacao": request.args.get("situacao", "ABERTO") or None,
-                   "gravidade": request.args.get("gravidade") or None}
-        lista = alertas.listar(conn, obras=quem.obras, codigo=request.args.get("tipo") or None, **filtros)
-        tipos = alertas.contar_por_tipo(conn, obras=quem.obras, **filtros)
-    return _ok(alertas=lista, rotulos=alertas.ROTULO, tipos=tipos)
+        r = alertas.pagina(conn, obras=quem.obras, situacao=request.args.get("situacao", "ABERTO") or None,
+                           gravidade=request.args.get("gravidade") or None, codigo=request.args.get("tipo") or None,
+                           obra_id=_inteiro("obra"), de=de, ate=ate, busca=request.args.get("busca") or None,
+                           pagina=_inteiro("pagina", 1), por_pagina=_inteiro("por_pagina", 100),
+                           ordem=(request.args.get("ordem") or "RECENTES").upper())
+    return _ok(rotulos=alertas.ROTULO, **r)
 
 
 @bp.route("/erp/api/ponto/alertas/gerar", methods=["POST"])

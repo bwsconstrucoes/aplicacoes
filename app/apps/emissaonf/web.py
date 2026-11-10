@@ -40,6 +40,7 @@ import pipefy as _pipefy
 import notas_bws as _notas
 import base_faturamento as _bfat
 import omie_conferencia as _ocf
+import conferir_emitido as _conf
 from decimal import Decimal
 import completar_imediato as _compl
 
@@ -160,12 +161,21 @@ def _efeitos_substituicao(ctx, nota_sub, numero, buf):
     """Efeitos internos da substituição (a nova nota JÁ foi concluída): cancela a
     nota antiga no card (slot Válida->Cancelada), marca CANCELADA na planilha 'Notas BWS'
     e ajusta o título no Omie. O Omie é feito numa ÚNICA chamada (remove o nº antigo +
-    adiciona o novo), evitando a trava de registro do Omie. Devolve um dict de status."""
-    info = {"numero_antigo": nota_sub, "card": "", "planilha": "", "omie": ""}
+    adiciona o novo), evitando a trava de registro do Omie.
+
+    Devolve um dict com a mensagem E o resultado de cada um dos três passos
+    (`ok_card`, `ok_planilha`, `ok_omie`). **Os flags existem para que a tela
+    possa gritar**: em 09/11/2026 o cancelamento não aconteceu e a mensagem
+    ficou no meio do log, que ninguém lê linha por linha — o dono descobriu
+    olhando a planilha e cancelou à mão.
+    """
+    info = {"numero_antigo": nota_sub, "card": "", "planilha": "", "omie": "",
+            "ok_card": False, "ok_planilha": False, "ok_omie": False}
     try:
         tk = ctx["cred"]["PIPEFY_TOKEN"]
         rc = _sub.cancelar_no_card(ctx["card"], nota_sub, tk, novo_numero=numero)
         info["card"] = rc["msg"]
+        info["ok_card"] = bool(rc.get("ok"))
         buf.write(f"\n>>> SUBSTITUIÇÃO (card): {rc['msg']}")
     except Exception as e:
         info["card"] = f"ERRO ao cancelar no card: {type(e).__name__}: {e}"
@@ -174,6 +184,7 @@ def _efeitos_substituicao(ctx, nota_sub, numero, buf):
         ws_notas = _worker.abrir_aba(ctx["gc"].open_by_key(_worker.ID_PROC), _worker.ABA_NOTAS)
         rp = _sub.cancelar_na_planilha(ws_notas, nota_sub, novo_numero=numero)
         info["planilha"] = rp["msg"]
+        info["ok_planilha"] = bool(rp.get("ok"))
         buf.write(f"\n>>> SUBSTITUIÇÃO (planilha): {rp['msg']}")
     except Exception as e:
         info["planilha"] = f"ERRO ao marcar na planilha: {type(e).__name__}: {e}"
@@ -185,11 +196,41 @@ def _efeitos_substituicao(ctx, nota_sub, numero, buf):
             info["omie"] = f"nº {nota_sub} → {numero} no título (documento agora: {doc_omie or '(vazio)'})"
         else:
             info["omie"] = "card sem omie_integracao — nada a ajustar no Omie"
+        info["ok_omie"] = True
         buf.write(f"\n>>> SUBSTITUIÇÃO (Omie): {info['omie']}")
     except Exception as e:
         info["omie"] = f"ERRO no Omie: {type(e).__name__}: {e}"
         buf.write(f"\n>>> SUBSTITUIÇÃO (Omie) ERRO: {e}")
     return info
+
+
+def _painel_substituicao(info) -> str:
+    """O resultado da substituição em destaque no topo da página de recuperação.
+
+    Sem isto o aviso de "não achei a nota antiga" vira uma linha no meio do log.
+    Verde quando os três passos deram certo; vermelho com o que FALTA FAZER À MÃO
+    quando algum falhou."""
+    if not info:
+        return ""
+    passos = [("Slot do card (Pipefy)", info.get("ok_card"), info.get("card")),
+              ("Planilha 'Notas BWS'", info.get("ok_planilha"), info.get("planilha")),
+              ("Título no Omie", info.get("ok_omie"), info.get("omie"))]
+    linhas = "".join(
+        f"<li>{'✅' if ok else '❌'} <b>{html.escape(nome)}</b>: {html.escape(str(msg or '(sem retorno)'))}</li>"
+        for nome, ok, msg in passos)
+    falhou = [nome for nome, ok, _ in passos if not ok]
+    if falhou:
+        cabeca = (f"<div class='err'><b>⚠️ A nota antiga nº "
+                  f"{html.escape(str(info.get('numero_antigo') or ''))} NÃO foi cancelada "
+                  f"em: {html.escape(', '.join(falhou))}.</b><br>"
+                  "Isso precisa da sua mão — confira o número da nota substituída e "
+                  "repita a recuperação, ou marque o que falta direto no card / na "
+                  "planilha / no título do Omie.</div>")
+    else:
+        cabeca = (f"<div class='ok'>Nota antiga nº "
+                  f"{html.escape(str(info.get('numero_antigo') or ''))} cancelada nos três "
+                  "lugares (card, planilha e título do Omie).</div>")
+    return cabeca + f"<div class='card'><b>Substituição</b><ul>{linhas}</ul></div>"
 
 
 @bp.route("/", methods=["GET"])
@@ -249,11 +290,15 @@ def emitir():
             f"um evento registrado sobre a nota, e esse caminho ainda não está "
             f"pronto aqui.<br><br>"
             f"<b>O que fazer agora:</b> substitua a NF {html.escape(nota_sub)} pelo "
-            f"botão \"Substituir\" do portal da prefeitura e depois use o "
-            f"<b>/emissao/recuperar</b> com o número dela no campo "
-            f"\"nota substituída\" — ele refaz os efeitos internos (Pipefy, Omie, "
-            f"Drive, planilha, WhatsApp). É o mesmo caminho que já se usava para "
-            f"nota emitida manualmente."), mimetype="text/html")
+            f"botão \"Substituir\" do portal da prefeitura. Depois, no "
+            f"<b>/emissao/recuperar</b>: cole o XML da nota NOVA, ponha "
+            f"{html.escape(nota_sub)} no campo \"nota substituída\" e "
+            f"<b>marque \"concluir completo\"</b>. Ele faz as duas metades — "
+            f"registra a nota nova (Notas BWS, Omie, slot, Drive, Descrição) e "
+            f"cancela a {html.escape(nota_sub)} no slot do card, na planilha e no "
+            f"título do Omie, mostrando no fim se cada um dos três deu certo. É o "
+            f"mesmo caminho que já se usava para nota emitida manualmente."),
+            mimetype="text/html")
 
     with _LOCK:
         if card_id in _EMITINDO:
@@ -462,15 +507,38 @@ def manual():
     tmp = os.path.join(_DIR, f"manual_{numero}.xml")
     with open(tmp, "w", encoding="utf-8") as fh:
         fh.write(xml_texto)
+    forcar_valores = request.form.get("ignorar_divergencia") == "on"
     buf = io.StringIO()
     try:
         with contextlib.redirect_stdout(buf):
             print(f">>> NOTA EMITIDA NO PORTAL — nº {numero}, modelo "
                   f"{'NACIONAL' if eh_nacional else 'antigo (ABRASF)'}"
                   f"{', com o PDF oficial anexado' if pdf_bytes else ''}.")
-            _concluir.concluir(card_id, numero, codigo, data_iso, tmp,
-                               nacional=eh_nacional, chave_nacional=chave_nac,
-                               pdf_municipal=pdf_bytes)
+            # ⚠️ Mesma trava de valor do /emissao/recuperar, e pelo mesmo motivo:
+            # o concluir grava as retenções a partir de um RECÁLCULO do card, e a
+            # conclusão anterior limpa os campos de entrada dele. Esta tela é o
+            # caminho da substituição manual — card que JÁ concluiu uma vez —, então
+            # é justamente aqui que o recálculo sai errado.
+            ctx_m = _worker.preparar(card_id)
+            if not _conf.conferivel(xml_texto):
+                print(">>> AVISO: o XML não traz os valores da nota, então NÃO deu para "
+                      "conferir o que o card calcula contra o que foi emitido. Confira "
+                      "na mão a retenção que foi para o Omie.")
+            divs = [] if forcar_valores else _conf.divergencias(ctx_m["r"], xml_texto)
+            if divs:
+                print(">>> NÃO GRAVEI NADA. O que o card calcula hoje não é o que a nota "
+                      "destacou:\n    " + "\n    ".join(divs) +
+                      "\n    A causa quase sempre é a conclusão anterior ter limpado os "
+                      "campos de entrada do card (Valor BDI diferenciado, valor parcial, "
+                      "alíquotas). Repreencha o campo que falta no card e rode de novo — "
+                      "ou marque \"gravar mesmo divergindo\" se quiser gravar assim.")
+            else:
+                if forcar_valores:
+                    print(">>> ATENÇÃO: \"gravar mesmo divergindo\" marcado — os valores do "
+                          "card NÃO foram conferidos contra o XML.")
+                _concluir.concluir(card_id, numero, codigo, data_iso, tmp, ctx=ctx_m,
+                                   nacional=eh_nacional, chave_nacional=chave_nac,
+                                   pdf_municipal=pdf_bytes)
     except Exception as e:
         buf.write(f"\n>>> ERRO no processamento: {type(e).__name__}: {e}")
     finally:
@@ -522,11 +590,18 @@ def _pagina_manual(token, card_id, aviso=""):
           <label class='lbl'><b>3. Número do card no Pipefy</b>
             <input name='card_id' value='{html.escape(card_id)}' style='padding:8px;
                    border:1px solid #c8d0da;border-radius:6px'></label>
+          <label class='lbl'><input type='checkbox' name='ignorar_divergencia'>
+            <b>gravar mesmo divergindo</b> (deixe DESMARCADO)</label>
           <input type='hidden' name='token' value='{t}'>
           <button type='submit'>Registrar a nota e completar tudo</button>
         </form>
         <p class='sub'>Tem trava contra fazer duas vezes: se o número já estiver na
         "Notas BWS", ele avisa e não duplica nada.</p>
+        <p class='sub'>E tem trava de valor: antes de gravar, os valores que o card
+        calcula hoje são conferidos contra o XML da nota. Se o card já concluiu uma
+        nota antes — o caso de toda substituição —, os campos de entrada dele foram
+        limpos, e o recálculo daria retenção diferente da que a nota destacou. Nesse
+        caso nada é gravado e a tela diz o que divergiu.</p>
       </div>""")
 
 
@@ -1119,8 +1194,21 @@ def declaracao():
         pass
     try:
         with contextlib.redirect_stdout(buf):
-            _concluir.concluir(card_id, numero, "", data_iso, nota_path, ctx=ctx,
-                               nacional=True, chave_nacional=chave, id_dps=id_dps)
+            # Mesma trava de valor das outras duas telas. Aqui o risco é menor (a
+            # nota acabou de sair e o card ainda não concluiu), mas consultar uma
+            # declaração antiga, de card já concluído, cai no mesmo problema: o
+            # recálculo sai do card com os campos de entrada limpos.
+            divs = _conf.divergencias(ctx["r"], res["xml_nacional"]) if ctx.get("r") else []
+            if divs:
+                print(">>> NÃO GRAVEI NADA. O que o card calcula hoje não é o que a nota "
+                      "destacou:\n    " + "\n    ".join(divs) +
+                      "\n    A causa quase sempre é a conclusão anterior ter limpado os "
+                      "campos de entrada do card (Valor BDI diferenciado, valor parcial, "
+                      "alíquotas). Repreencha o campo que falta no card e use a tela "
+                      "\"Nota emitida no portal\" com o XML desta nota.")
+            else:
+                _concluir.concluir(card_id, numero, "", data_iso, nota_path, ctx=ctx,
+                                   nacional=True, chave_nacional=chave, id_dps=id_dps)
     except Exception as e:
         buf.write(f"\n>>> ERRO no concluir: {type(e).__name__}: {e}")
     try:
@@ -1380,14 +1468,24 @@ def _pagina_recuperar(token):
           <textarea name='xml' rows='12' placeholder='<?xml ...><CompNfse>...'></textarea>
           <label class='lbl'>Nº da nota substituída (opcional — só se esta nota substituiu outra
             que você cancelou/substituiu manualmente no portal):
-            <input name='nota_substituida' placeholder='ex.: 3069'
+            <input name='nota_substituida' placeholder='ex.: 3352 ou 2600000003352'
                    style='padding:8px;border:1px solid #c8d0da;border-radius:6px'></label>
+          <p class='sub' style='margin:-8px 0 12px'>Pode escrever o número curto (3352) ou o
+            longo (2600000003352) — os dois encontram a mesma nota. <b>Preencher este campo já
+            cancela a nota antiga</b> nos três lugares (slot do card, planilha 'Notas BWS' e
+            número no título do Omie), com ou sem a caixa "concluir completo" abaixo. O
+            resultado de cada um dos três aparece em destaque no fim.</p>
           <label class='lbl'><input type='checkbox' name='reenviar_whatsapp'> reenviar WhatsApp
             (deixe DESMARCADO — já foi enviado na emissão)</label>
           <label class='lbl'><input type='checkbox' name='completo'> rodar <b>concluir completo</b>
             (marque SÓ se a nota foi emitida mas NÃO rodou bookkeeping — ex.: erro no concluir,
-            ou substituição manual. Faz Notas BWS + Omie + slots + entrega. Se preencher o nº da
-            nota substituída acima, também cancela a antiga. Tem trava anti-duplicação.)</label>
+            ou substituição manual. Faz Notas BWS + Omie + slots + entrega. Tem trava
+            anti-duplicação.)</label>
+          <label class='lbl'><input type='checkbox' name='ignorar_divergencia'>
+            <b>gravar mesmo divergindo</b> (deixe DESMARCADO. Com "concluir completo", os
+            valores são conferidos contra o XML da nota antes de gravar: divergindo, nada é
+            gravado, porque iria retenção errada para o Omie. Marque só depois de ler a
+            divergência e decidir que quer gravar assim.)</label>
           <input type='hidden' name='token' value='{t}'>
           <button type='submit'>Reprocessar entrega</button>
         </form>
@@ -1406,6 +1504,7 @@ def recuperar():
     xml_texto = (request.form.get("xml") or "").strip()
     zap = request.form.get("reenviar_whatsapp") == "on"
     completo = request.form.get("completo") == "on"
+    forcar_valores = request.form.get("ignorar_divergencia") == "on"
     nota_sub = _so_num(request.form.get("nota_substituida"))
     if not card_id or not xml_texto:
         return Response(_pagina_erro("Informe o card_id e cole o XML da nota."), mimetype="text/html")
@@ -1423,23 +1522,85 @@ def recuperar():
     with open(tmp, "w", encoding="utf-8") as fh:
         fh.write(xml_texto)
     buf = io.StringIO()
+    info_sub = None
+    divergencias = []
+    # ⚠️ **Os três passos abaixo têm cada um o seu try, e a ordem importa.**
+    # Em 09/11/2026 o cancelamento da nota antiga não aconteceu porque ele estava
+    # DENTRO do `if completo:` e DENTRO do mesmo try do concluir: bastava o dono
+    # não marcar "completo", ou o concluir levantar no meio, para a nota antiga
+    # continuar valendo no card, na planilha e no Omie — em silêncio. Agora o
+    # cancelamento roda SEMPRE que o nº da nota substituída foi informado, e nada
+    # que falhe antes dele o impede de rodar.
     try:
         with contextlib.redirect_stdout(buf):
             print(f">>> XML reconhecido como modelo "
                   f"{'NACIONAL (DPS)' if eh_nacional else 'antigo (ABRASF)'}.")
+
+            # [1] o card, necessário tanto para o concluir quanto para cancelar a antiga
+            ctx_sub = None
+            if nota_sub or completo:
+                try:
+                    ctx_sub = _worker.preparar(card_id)
+                except Exception as e:
+                    buf.write(f"\n>>> ERRO ao carregar o card {card_id}: "
+                              f"{type(e).__name__}: {e}")
+
+            # [2] bookkeeping da nota NOVA (não impede o passo [3] se falhar)
             if completo:
+                # ⚠️ TRAVA DE VALOR. O concluir grava as retenções no Omie e na
+                # planilha a partir de um RECÁLCULO do card — e a conclusão
+                # anterior limpou os campos de entrada dele (BDI diferenciado,
+                # valor parcial, alíquotas). Numa nota que já concluiu uma vez, o
+                # recálculo sai errado e ninguém vê. Então confere-se contra o
+                # XML, que é o documento, antes de escrever.
+                if ctx_sub is None:
+                    buf.write("\n>>> NÃO GRAVEI nada da nota nova: o card não carregou "
+                              "(veja o erro acima). Sem o card não há como conferir os "
+                              "valores contra o XML, e gravar sem conferir é o que levou "
+                              "retenção errada ao Omie antes.")
+                elif forcar_valores:
+                    buf.write("\n>>> ATENÇÃO: \"gravar mesmo divergindo\" marcado — os valores "
+                              "do card NÃO foram conferidos contra o XML.")
+                else:
+                    if not _conf.conferivel(xml_texto):
+                        buf.write("\n>>> AVISO: o XML não traz os valores da nota, então "
+                                  "NÃO deu para conferir o que o card calcula contra o que "
+                                  "foi emitido. Confira na mão a retenção que foi para o "
+                                  "Omie.")
+                    try:
+                        divergencias = _conf.divergencias(ctx_sub["r"], xml_texto)
+                    except Exception as e:
+                        buf.write(f"\n>>> AVISO: não deu para conferir os valores do card "
+                                  f"contra o XML ({type(e).__name__}: {e}) — segui em frente.")
+                    if divergencias:
+                        buf.write("\n>>> NÃO GRAVEI: o que o card calcula hoje não é o que a "
+                                  "nota destacou.\n    " + "\n    ".join(divergencias))
+
                 # nota emitida sem bookkeeping: roda o concluir inteiro (tem trava ja_existe)
-                ctx_sub = _worker.preparar(card_id) if nota_sub else None
-                _concluir.concluir(card_id, numero, codigo, data_iso, tmp, ctx=ctx_sub,
-                                   nota_substituida=(nota_sub or None),
-                                   nacional=eh_nacional, chave_nacional=chave_nac)
-                # substituição manual: cancela a nota antiga (card + planilha + Omie)
-                if nota_sub:
-                    _efeitos_substituicao(ctx_sub, nota_sub, numero, buf)
+                if ctx_sub is not None and not divergencias:
+                    try:
+                        _concluir.concluir(card_id, numero, codigo, data_iso, tmp, ctx=ctx_sub,
+                                           nota_substituida=(nota_sub or None),
+                                           nacional=eh_nacional, chave_nacional=chave_nac)
+                    except Exception as e:
+                        buf.write(f"\n>>> ERRO no concluir completo: {type(e).__name__}: {e}")
             else:
-                _compl.completar(card_id, numero, codigo, data_iso, tmp,
-                                 enviar_whatsapp=zap, discriminacao="",
-                                 nacional=eh_nacional)
+                try:
+                    _compl.completar(card_id, numero, codigo, data_iso, tmp,
+                                     enviar_whatsapp=zap, discriminacao="",
+                                     nacional=eh_nacional)
+                except Exception as e:
+                    buf.write(f"\n>>> ERRO na entrega: {type(e).__name__}: {e}")
+
+            # [3] substituição manual: cancela a nota antiga (card + planilha + Omie)
+            if nota_sub and ctx_sub is not None:
+                info_sub = _efeitos_substituicao(ctx_sub, nota_sub, numero, buf)
+            elif nota_sub:
+                info_sub = {"numero_antigo": nota_sub,
+                            "card": "não tentado — o card não carregou (veja o log)",
+                            "planilha": "não tentado — o card não carregou (veja o log)",
+                            "omie": "não tentado — o card não carregou (veja o log)",
+                            "ok_card": False, "ok_planilha": False, "ok_omie": False}
     except Exception as e:
         buf.write(f"\n>>> ERRO: {type(e).__name__}: {e}")
     finally:
@@ -1449,9 +1610,26 @@ def recuperar():
             pass
 
     modo = "concluir completo" if completo else "entrega"
+    cabeca = (f"<div class='ok'>Reprocessado — card {html.escape(card_id)}, "
+              f"código {html.escape(codigo)}, emissão {html.escape(data_iso)}.</div>")
+    if divergencias:
+        itens = "".join(f"<li>{html.escape(d)}</li>" for d in divergencias)
+        cabeca = (
+            "<div class='err'><b>⚠️ NADA foi gravado da nota nova — os valores não "
+            "batem com o XML.</b><br>O card, recalculado agora, produz uma nota "
+            "diferente da que foi emitida. Gravar assim escreveria retenção errada "
+            "no título do Omie e na planilha.</div>"
+            f"<div class='card'><b>O que divergiu</b><ul>{itens}</ul>"
+            "<p class='sub'>A causa quase sempre é a mesma: <b>a conclusão anterior "
+            "limpou os campos de entrada do card</b> (BDI diferenciado, valor parcial, "
+            "alíquotas), então o recálculo sai do card vazio. O caminho é repreencher "
+            "no card o campo que falta — normalmente o <b>Valor BDI diferenciado</b> — "
+            "e rodar esta tela de novo. Se os valores do XML estiverem certos e você "
+            "quiser gravar assim mesmo, marque <b>\"gravar mesmo divergindo\"</b> no "
+            "formulário.</p></div>")
     corpo = (f"<h1>Recuperação da NF {html.escape(numero)} ({modo})</h1>"
-             f"<div class='ok'>Reprocessado — card {html.escape(card_id)}, "
-             f"código {html.escape(codigo)}, emissão {html.escape(data_iso)}.</div>"
+             + cabeca
+             + _painel_substituicao(info_sub) +
              f"<div class='card'><b>Log</b><pre>{html.escape(buf.getvalue())}</pre></div>"
              "<p class='sub'>Confira no log se cada passo concluiu sem ERRO.</p>")
     return Response(_doc("Recuperação", corpo), mimetype="text/html")
