@@ -12288,6 +12288,14 @@ somente Solicitações de uma conta especifica"*.
   de gerar com só a diferença). Testes: `test_analisesps_folha_complementar.py`.
 - **Não verificado com folha de verdade:** o casamento de CPF depende do cadastro (quem
   não casa aparece "sem CPF — não dá para pagar").
+- **Depois (10/11/2026) — "Lançar no Pipefy" recusava a complementar** ("o cenário do
+  Make não possui grupo para ela"). Não dependia do Make: era a tabela de grupos copiada
+  dele (`folha_cards.GRUPOS`), que só conhecia "folha". O dono: *"isso é igual ao Folha da
+  Contabilidade, mas na descrição pode pôr Complementar"*. Agora `complementarN` lança
+  com o grupo, o tipo de despesa (Salários e Ordenados) e a categoria da folha
+  (`verba_do_grupo`); o TÍTULO da SP ganha " - Complementar N" (para não se confundir
+  com a SP da folha do mesmo mês) e a descrição já dizia "Folha complementar N —
+  competência…". Teste ponta a ponta no banco (gerar → prévia → lançar).
 
 #### Leva 253 — DC: relatório detalhado em paisagem e acréscimo/desconto por lançamento (06/11/2026)
 
