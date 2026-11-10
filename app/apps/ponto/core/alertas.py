@@ -783,38 +783,21 @@ def fotos_do_alerta(codigo: str, chave: str) -> list[dict]:
     return [{"marcacao_id": int(i), "rotulo": r} for i, r in zip(ids, rotulos) if i.isdigit()]
 
 
-def contar_por_tipo(conn: Connection, *, obras: Optional[list[int]] = None, situacao: str = "ABERTO",
-                    gravidade: Optional[str] = None) -> list[dict]:
-    """Quantos alertas de cada tipo, com os mesmos filtros da lista — para o filtro "Tipo de alerta"."""
+# OS FILTROS DA TELA (10/11/2026, o dono: "está exibindo 500 por página, só que não tem paginação (…) não posso filtrar
+# por data, período (…) eu quero visualizar só coisa do mês anterior, para tratar. Está tudo misturado"). Um lugar só
+# monta o WHERE: a lista, a contagem por tipo, a contagem por obra e o total usam o MESMO recorte.
+POR_PAGINA = (50, 100, 200)
+
+
+def _onde(conn: Connection, *, obras: Optional[list[int]] = None, situacao: Optional[str] = "ABERTO",
+          gravidade: Optional[str] = None, codigo: Optional[str] = None, de: Optional[dt.date] = None,
+          ate: Optional[dt.date] = None, obra_id: Optional[int] = None, busca: Optional[str] = None) -> tuple[str, dict]:
+    """O WHERE dos alertas (com o JOIN da pessoa já feito como `c`). O período é o DIA do alerta (data_referencia):
+    com período, o alerta sem dia não entra."""
     from . import vigencia
-    sql = """SELECT codigo, count(*) AS n FROM ponto.alertas a
-              WHERE (a.data_referencia IS NULL OR a.data_referencia >= :vale)"""
-    params: dict = {"vale": vigencia.inicio(conn)}
-    if situacao:
-        sql += " AND a.situacao = :s"
-        params["s"] = situacao
-    if gravidade:
-        sql += " AND a.gravidade = :g"
-        params["g"] = gravidade
-    if obras is not None:
-        sql += " AND a.obra_id = ANY(:obras)"
-        params["obras"] = list(obras) or [0]
-    sql += " GROUP BY codigo"
-    linhas = db.todos(conn, sql, **params)
-    return sorted(({"codigo": l["codigo"], "rotulo": ROTULO.get(l["codigo"], l["codigo"]), "n": int(l["n"])}
-                   for l in linhas), key=lambda x: (-x["n"], x["rotulo"]))
-
-
-def listar(conn: Connection, *, obras: Optional[list[int]] = None, situacao: str = "ABERTO",
-           gravidade: Optional[str] = None, limite: int = 500, codigo: Optional[str] = None) -> list[dict]:
-    sql = """SELECT a.*, c.nome AS colaborador, o.codigo AS obra
-               FROM ponto.alertas a
-               LEFT JOIN public.colaboradores c ON c.id = a.colaborador_id
-               LEFT JOIN public.obras o ON o.id = a.obra_id
-              WHERE (a.data_referencia IS NULL OR a.data_referencia >= :vale)"""
+    sql = " WHERE (a.data_referencia IS NULL OR a.data_referencia >= :vale)"
     # O ponto vale a partir de 16/10/2026 (vigencia.py): alerta de antes não aparece.
-    from . import vigencia
-    params: dict = {"lim": max(1, min(int(limite), 2000)), "vale": vigencia.inicio(conn)}
+    params: dict = {"vale": vigencia.inicio(conn)}
     if situacao:
         sql += " AND a.situacao = :s"
         params["s"] = situacao
@@ -827,10 +810,56 @@ def listar(conn: Connection, *, obras: Optional[list[int]] = None, situacao: str
     if obras is not None:
         sql += " AND a.obra_id = ANY(:obras)"
         params["obras"] = list(obras) or [0]
-    sql += """ ORDER BY CASE a.gravidade WHEN 'URGENTE' THEN 0 WHEN 'ATENCAO' THEN 1 ELSE 2 END,
-                        a.data_referencia DESC NULLS LAST, a.id DESC LIMIT :lim"""
+    if obra_id:
+        sql += " AND a.obra_id = :obra"
+        params["obra"] = int(obra_id)
+    if de:
+        sql += " AND a.data_referencia >= :de"
+        params["de"] = de
+    if ate:
+        sql += " AND a.data_referencia <= :ate"
+        params["ate"] = ate
+    busca = " ".join(str(busca or "").split())
+    if busca:
+        digitos = "".join(ch for ch in busca if ch.isdigit())
+        sql += " AND (c.nome ILIKE :busca" + (" OR c.cpf LIKE :dig" if digitos else "") + ")"
+        params["busca"] = f"%{busca}%"
+        if digitos:
+            params["dig"] = f"%{digitos}%"
+    return sql, params
+
+
+_DE = """ FROM ponto.alertas a
+          LEFT JOIN public.colaboradores c ON c.id = a.colaborador_id
+          LEFT JOIN public.obras o ON o.id = a.obra_id"""
+
+
+def contar_por_tipo(conn: Connection, *, codigo: Optional[str] = None, **filtros) -> list[dict]:
+    """Quantos alertas de cada tipo, com os mesmos filtros da lista (menos o próprio tipo) — para o filtro "Tipo"."""
+    onde, params = _onde(conn, **filtros)
+    linhas = db.todos(conn, "SELECT a.codigo, count(*) AS n" + _DE + onde + " GROUP BY a.codigo", **params)
+    return sorted(({"codigo": l["codigo"], "rotulo": ROTULO.get(l["codigo"], l["codigo"]), "n": int(l["n"])}
+                   for l in linhas), key=lambda x: (-x["n"], x["rotulo"]))
+
+
+def contar_por_obra(conn: Connection, *, obra_id: Optional[int] = None, **filtros) -> list[dict]:
+    """Quantos alertas de cada obra, com os mesmos filtros (menos a própria obra) — para o filtro "Obra"."""
+    onde, params = _onde(conn, **filtros)
+    linhas = db.todos(conn, "SELECT a.obra_id, o.codigo, o.nome, count(*) AS n" + _DE + onde
+                      + " GROUP BY a.obra_id, o.codigo, o.nome", **params)
+    return sorted(({"obra_id": l["obra_id"], "codigo": l["codigo"] or "sem obra", "nome": l["nome"] or "",
+                    "n": int(l["n"])} for l in linhas), key=lambda x: (x["obra_id"] is None, x["codigo"]))
+
+
+def _ordem(ordem: str) -> str:
+    dia = "ASC NULLS LAST" if ordem == "ANTIGOS" else "DESC NULLS LAST"
+    return f""" ORDER BY CASE a.gravidade WHEN 'URGENTE' THEN 0 WHEN 'ATENCAO' THEN 1 ELSE 2 END,
+                        a.data_referencia {dia}, a.id {"ASC" if ordem == "ANTIGOS" else "DESC"}"""
+
+
+def _preparar(conn: Connection, linhas: list[dict]) -> list[dict]:
     saida = []
-    for a in db.todos(conn, sql, **params):
+    for a in linhas:
         a["rotulo"] = ROTULO.get(a["codigo"], a["codigo"])
         a["fotos"] = fotos_do_alerta(a["codigo"], a["chave"])
         saida.append(a)
@@ -840,6 +869,29 @@ def listar(conn: Connection, *, obras: Optional[list[int]] = None, situacao: str
         a["criado_em"] = horario.texto(a["criado_em"])
         a["tratado_em"] = horario.texto(a["tratado_em"])
     return saida
+
+
+def listar(conn: Connection, *, obras: Optional[list[int]] = None, situacao: str = "ABERTO",
+           gravidade: Optional[str] = None, limite: int = 500, codigo: Optional[str] = None) -> list[dict]:
+    onde, params = _onde(conn, obras=obras, situacao=situacao, gravidade=gravidade, codigo=codigo)
+    params["lim"] = max(1, min(int(limite), 2000))
+    return _preparar(conn, db.todos(conn, "SELECT a.*, c.nome AS colaborador, o.codigo AS obra" + _DE + onde
+                                    + _ordem("RECENTES") + " LIMIT :lim", **params))
+
+
+def pagina(conn: Connection, *, pagina: int = 1, por_pagina: int = 100, ordem: str = "RECENTES", **filtros) -> dict:
+    """Uma página da lista, com o total do recorte e as contagens para os filtros da barra."""
+    por_pagina = int(por_pagina) if int(por_pagina or 0) in POR_PAGINA else 100
+    onde, params = _onde(conn, **filtros)
+    total = int(db.um(conn, "SELECT count(*) AS n" + _DE + onde, **params)["n"])
+    paginas = max(1, -(-total // por_pagina))
+    pagina = min(max(1, int(pagina or 1)), paginas)
+    params.update(lim=por_pagina, desloc=(pagina - 1) * por_pagina)
+    lista = _preparar(conn, db.todos(conn, "SELECT a.*, c.nome AS colaborador, o.codigo AS obra" + _DE + onde
+                                     + _ordem(ordem) + " LIMIT :lim OFFSET :desloc", **params))
+    return {"alertas": lista, "total": total, "pagina": pagina, "paginas": paginas, "por_pagina": por_pagina,
+            "tipos": contar_por_tipo(conn, **filtros),
+            "obras": contar_por_obra(conn, **filtros)}
 
 
 def _fotos_escuras(conn: Connection, lista: list[dict]) -> None:

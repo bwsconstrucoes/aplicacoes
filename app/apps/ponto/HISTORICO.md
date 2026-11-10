@@ -526,6 +526,24 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 10/11/2026 (terça) — Alertas com período, obra, pessoa e páginas
+
+O dono: *"está exibindo 500 por página, só que não tem paginação, não posso mudar de página, não posso filtrar por
+data, período (…) eu quero visualizar só coisa do mês anterior, para tratar. Está tudo misturado."* A lista parava
+calada em 500 (o teto da consulta), sem dizer que havia mais.
+- **Na barra**: "Período (o dia do alerta)" com os atalhos Este mês / Mês anterior / 7 dias / Tudo e as datas De e
+  Até; **Obra** (com quantos há em cada uma); **Pessoa** (nome ou CPF); **Ordem** (os mais recentes ou os mais antigos
+  primeiro — para tratar do mais velho); **Por página** (50, 100 ou 200).
+- **As páginas**: "‹ Anterior · Página X de Y · Próxima ›", em cima e embaixo, com "101–200 de 348". O título diz o total
+  do recorte e o período. Mudar um filtro volta à página 1; resolver ou dispensar um alerta recarrega a MESMA página.
+- **O período é o DIA do alerta** (`data_referencia`). Com período escolhido, o alerta sem dia (aparelho esperando
+  aprovação) não entra. As contagens de tipo e de obra seguem os outros filtros.
+- **Um lugar só monta o filtro** (`alertas._onde`): a lista, o total, a contagem por tipo e a por obra usam o mesmo
+  recorte — não há como o número da barra e a lista divergirem.
+- "Marcar todos do grupo" marca os da página aberta.
+- Testes: `test_ponto_alertas_pagina_banco.py` (páginas, página além do fim, por página, período, datas trocadas, data
+  inválida, obra, pessoa, ordem). E a tela no navegador com 148 alertas.
+
 ## 07/11/2026 (sábado) — O termo do ponto assinado no celular (migração 028)
 
 O dono: *"para fechar a formalização do aplicativo em relação aos funcionários (…) coletar a assinatura deles (…) das
