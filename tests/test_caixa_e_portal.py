@@ -260,7 +260,7 @@ def test_o_portal_so_abre_os_tipos_que_a_obra_pode(sessao_real):
     from app.apps.erp.core import portal as svc_portal
     chaves = {t["chave"] for t in svc_portal.tipos(sessao_real)}
     assert "DESCONTO_EM_FOLHA" not in chaves
-    assert "PRE_CADASTRO" in chaves and "DESLIGAMENTO" in chaves
+    assert "CADASTRO" in chaves and "DESLIGAMENTO" in chaves
 
 
 @banco_
@@ -580,3 +580,73 @@ def test_nenhum_campo_do_portal_sai_com_nome_tecnico():
                 faltando.append(campo)
     assert not faltando, (
         "campo do portal sem rótulo em português: " + ", ".join(faltando))
+
+
+# ---------------------------------------------------------------------------
+# AS ÁREAS DO PORTAL (08/11/2026)
+#
+# O dono, depois de entrar e ver só pedidos de DP: *"Não liberamos ainda os
+# demais, mas precisa estar dividido em áreas não?"* — sim, e a área que ainda
+# não abriu TAMBÉM aparece. Esconder o que falta faz achar que o sistema só
+# serve para DP, e aí o material continua sendo pedido por WhatsApp.
+# ---------------------------------------------------------------------------
+def test_toda_area_do_portal_diz_o_que_e_e_o_que_fazer_enquanto_nao_abre():
+    from app.apps.erp.core import portal as svc
+
+    assert svc.AREAS, "o portal ficou sem área nenhuma"
+    for a in svc.AREAS:
+        assert a.get("nome"), f"área {a.get('chave')} sem nome de gente"
+        assert a.get("explicacao"), (
+            f"área {a['chave']} não diz o que se pede nela — e quem está na "
+            f"obra decide pelo que lê, não pelo nome da área")
+        if not a.get("pronta"):
+            assert a.get("enquanto_isso"), (
+                f"a área {a['chave']} está fechada e não diz onde pedir "
+                f"enquanto isso. Porta fechada sem recado vira ligação para o "
+                f"escritório.")
+
+
+def test_nenhum_tipo_do_portal_fica_orfao_de_area():
+    """Tipo numa área que não existe some da tela sem ninguém perceber."""
+    from app.apps.erp.core import portal as svc
+
+    chaves_de_area = {a["chave"] for a in svc.AREAS}
+    orfas = set(svc.TIPOS_POR_AREA) - chaves_de_area
+    assert not orfas, f"tipos em área inexistente: {sorted(orfas)}"
+
+
+def test_area_marcada_pronta_sem_tipo_nenhum_se_corrige_sozinha(sessao_real):
+    """Porta que abre para o vazio é pior que porta fechada: a pessoa entra,
+    não acha nada, e conclui que o sistema está quebrado."""
+    from app.apps.erp.core import portal as svc
+
+    eu = {"usuario": None}
+    for a in svc.areas(sessao_real, eu):
+        if a["pronta"]:
+            assert a["tipos"] > 0, (
+                f"a área {a['chave']} diz estar pronta e não oferece tipo "
+                f"nenhum")
+
+
+def test_cada_tipo_do_portal_sabe_de_que_area_e(sessao_real):
+    """A área vem NO TIPO, não numa segunda lista na tela — senão um tipo novo
+    nasce fora de qualquer área e ninguém nota."""
+    from app.apps.erp.core import portal as svc
+
+    chaves_de_area = {a["chave"] for a in svc.AREAS}
+    tipos = svc.tipos(sessao_real)
+    assert tipos, "o portal ficou sem tipo nenhum"
+    for t in tipos:
+        assert t.get("area") in chaves_de_area, (
+            f"o tipo {t['chave']} não pertence a área nenhuma")
+
+
+def test_a_tela_do_portal_nao_se_chama_mais_so_do_dp():
+    """O portal é de TODAS as áreas, mesmo com só uma aberta. Um título que diz
+    "Pedidos ao DP" ensina a pessoa que o resto não existe aqui."""
+    from pathlib import Path
+
+    tela = Path("app/apps/erp/templates/erp_portal.html").read_text(
+        encoding="utf-8")
+    assert "<title>Solicitações" in tela
+    assert "Pedidos ao DP" not in tela

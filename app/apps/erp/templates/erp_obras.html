@@ -104,7 +104,7 @@ function montarFiltros(){
   els("opcoes-projeto").innerHTML = PROJETOS.map(p=>`
     <label class="opcao ${contP[p.id]?"":"zerada"}">
       <input type="checkbox" data-projeto="${p.id}" ${F.projeto.has(String(p.id))?"checked":""}>
-      <span class="rotulo">${escapar(p.codigo)} · ${escapar(p.nome)}</span>
+      <span class="rotulo">${escapar(rotuloObra(p))}</span>
       <span class="qtd">${contP[p.id]||0}</span></label>`).join("") +
     `<label class="opcao ${contP["sem"]?"":"zerada"}">
       <input type="checkbox" data-projeto="sem" ${F.projeto.has("sem")?"checked":""}>
@@ -425,7 +425,7 @@ function mesPassado(){
 // ------------------------------------------------------------------ detalhe
 async function abrir(id, aba=0, foco=null){
   const o = OBRAS.find(x=>x.id===id);
-  els("dlg-titulo").textContent = `${o.codigo} — ${o.nome}`;
+  els("dlg-titulo").textContent = rotuloObra(o);
   els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
     <div style="margin-bottom:10px">${botaoDeLink(o.codigo, o.nome)}</div>
     <div class="topo-abas" style="background:var(--azul); border-radius:8px; padding:4px; margin-bottom:14px">
@@ -575,7 +575,7 @@ async function desenharPainel(i, id){
             e a tributação. Obra sem empresa trava as três.</div></div>
         <div class="campo"><label>Projeto</label>
           <select id="o-projeto"><option value="">— sem projeto —</option>
-          ${(PROJETOS||[]).map(x=>`<option value="${x.id}" ${String(d.projeto_id)===String(x.id)?"selected":""}>${escapar(x.codigo)} · ${escapar(x.nome)}</option>`).join("")}
+          ${(PROJETOS||[]).map(x=>`<option value="${x.id}" ${String(d.projeto_id)===String(x.id)?"selected":""}>${escapar(rotuloObra(x))}</option>`).join("")}
           </select><div class="dica">Projeto agrupa obras que você quer olhar
           SOMADAS — em relatório, em custo, em resultado. Obra sem projeto é o
           caso comum.</div></div>
@@ -623,6 +623,86 @@ async function desenharPainel(i, id){
         ${campo("Seguro válido até","c-segfim",d.seguro_vigencia_fim,"date")}
         ${campo("Caução (%)","c-caucao",d.caucao_pct)}
       </div>
+      {# ───────────────────────────────────────────────────────────────────
+         O DIÁRIO DE OBRA DESTE CONTRATO (09/11/2026).
+
+         Mora na aba CONTRATO, e não numa tela de impressão, porque o modelo
+         do diário é CLÁUSULA: *"tem um determinado contrato que a gente vai
+         precisar utilizar esse modelo específico de diário de obra."* Se
+         fosse escolha de quem imprime, um dia sairia o papel errado para a
+         fiscalização — e RDO fora do modelo exigido é motivo de glosa.
+
+         E a logo entra DENTRO do formulário, não num botão à parte: é a regra
+         de 17/09/2026 — uma porta só, o documento é atalho dentro dela. #}
+      <h4 style="margin-top:18px">O diário de obra deste contrato</h4>
+      <div class="cartao-dica" style="margin-bottom:8px">Define como sai a
+        <b>folha do diário</b> impressa nesta obra: o formato, o nome do órgão
+        no cabeçalho e a logo dele. O resto — obra, prazo, efetivo — o sistema
+        já preenche.</div>
+      <div class="form-grade">
+        <div class="campo"><label>Modelo da folha</label>
+          <select id="c-modelo">
+            {% for m in modelos_diario %}
+            <option value="{{ m.valor }}"
+              ${(d.diario_modelo || "completo") === "{{ m.valor }}" ? "selected" : ""}
+              >{{ m.rotulo }}</option>
+            {% endfor %}
+          </select>
+          <div class="dica">
+            {% for m in modelos_diario %}<b>{{ m.rotulo }}:</b> {{ m.descricao }}<br>
+            {% endfor %}</div></div>
+        ${campo("Unidade do contratante","c-unidade",d.contratante_unidade)}
+      </div>
+      {# AS DUAS LOGOS DO CABEÇALHO, NO MESMO LUGAR (09/11/2026).
+
+         Ele, vendo a folha: *"tem a logo do órgão (…) lembrar de colocar
+         local para a gente fazer isso no cadastro da obra. Que isso, inclusive,
+         vai servir para o futuro, para outros documentos que a gente for criar
+         a partir do sistema."*
+
+         ⚑ AS DUAS SÃO DE DONOS DIFERENTES, e a tela diz isso: a do
+         CONTRATANTE é desta obra; a da EMPRESA é do cadastro da empresa e
+         vale para TODAS as obras dela — e para os documentos que o sistema
+         vier a emitir. Estão aqui juntas porque quem monta o cabeçalho do
+         diário está aqui, não porque viraram a mesma coisa. #}
+      <div class="form-grade" style="margin-top:6px">
+        <div class="campo">
+          <label for="c-logo-arquivo">Logo do contratante (órgão)</label>
+          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap">
+            <div id="c-logo-atual" style="min-width:110px">${d.tem_logo_contratante
+              ? `<img src="/erp/api/obras/${id}/logo-contratante?v=${Date.now()}"
+                   alt="logo do contratante"
+                   style="max-height:52px; max-width:170px; border:1px solid var(--borda);
+                          border-radius:6px; padding:4px; background:#fff">`
+              : `<span class="desc">Nenhuma logo ainda.</span>`}</div>
+            <input type="file" id="c-logo-arquivo"
+                   accept="image/png,image/jpeg,image/webp,image/svg+xml">
+            <button class="btn secundario" type="button" id="c-logo-enviar">Enviar</button>
+            ${d.tem_logo_contratante
+              ? `<button class="btn secundario" type="button" id="c-logo-tirar">Tirar</button>` : ""}
+          </div>
+          <div class="dica">É <b>desta obra</b> — cada contrato tem o seu
+            órgão. PNG, JPG, WEBP ou SVG, até 512 KB.</div></div>
+
+        <div class="campo">
+          <label for="c-logoemp-arquivo">Logo da empresa</label>
+          ${!d.empresa_id ? `<div class="aviso">Escolha a <b>empresa</b> da obra
+            na aba Cadastro primeiro. A logo é dela, não da obra.</div>` : `
+          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap">
+            <div id="c-logoemp-atual" style="min-width:110px">${d.tem_logo_empresa
+              ? `<img src="/erp/api/obras/${id}/logo-empresa?v=${Date.now()}"
+                   alt="logo da empresa"
+                   style="max-height:52px; max-width:170px; border:1px solid var(--borda);
+                          border-radius:6px; padding:4px; background:#fff">`
+              : `<span class="desc">Nenhuma logo ainda.</span>`}</div>
+            <input type="file" id="c-logoemp-arquivo"
+                   accept="image/png,image/jpeg,image/webp,image/svg+xml">
+            <button class="btn secundario" type="button" id="c-logoemp-enviar">Enviar</button>
+          </div>`}
+          <div class="dica">⚠️ Esta é a logo <b>da empresa</b>: trocar aqui
+            troca em <b>todas as obras dela</b> e nos documentos que o sistema
+            emitir. Ela também pode ser trocada em Empresas.</div></div>
+      </div>
       <div style="margin-top:12px"><button class="btn" id="o-salvar">Salvar contrato</button></div>
       <h4>Aditivos — valor vigente ${moeda(d.valor_vigente)} (${d.dias_aditivados||0} dias aditivados)</h4>
       <table><thead><tr><th>Nº</th><th>Tipo</th><th class="direita">Valor</th>
@@ -651,10 +731,39 @@ async function desenharPainel(i, id){
         vigencia_fim:"c-fim", prazo_execucao_dias:"c-prazo", data_base_orcamento:"c-base",
         indice_reajuste:"c-indice", ordem_servico:"c-os", data_ordem_servico:"c-osdata",
         seguro_garantia:"c-seguro", seguro_vigencia_fim:"c-segfim", caucao_pct:"c-caucao",
+        contratante_unidade:"c-unidade", diario_modelo:"c-modelo",
         valor_contrato:"c-valor"},
         // O valor aparece como "1.500.000,00" e sobe como número: é o mesmo
         // campo, lido do jeito daqui e gravado do jeito do banco.
         null, ["valor_contrato"]);
+      aportuguesarEscolhaDeArquivo(els("c-logo-arquivo"));
+      els("c-logo-enviar").addEventListener("click", async () => {
+        const f = els("c-logo-arquivo").files[0];
+        if (!f) { aviso("dlg-msg", "Escolha o arquivo da logo primeiro.", "erro"); return; }
+        const corpo = new FormData(); corpo.append("arquivo", f);
+        try {
+          await api(`/erp/api/obras/${id}/logo-contratante`, {method:"POST", body: corpo});
+          aviso("dlg-msg", "Logo do contratante gravada.", "ok"); painel(2, id);
+        } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+      });
+      if (els("c-logoemp-arquivo")) {
+        aportuguesarEscolhaDeArquivo(els("c-logoemp-arquivo"));
+        els("c-logoemp-enviar").addEventListener("click", async () => {
+          const f = els("c-logoemp-arquivo").files[0];
+          if (!f) { aviso("dlg-msg", "Escolha o arquivo da logo primeiro.", "erro"); return; }
+          const corpo = new FormData(); corpo.append("arquivo", f);
+          try {
+            await api(`/erp/api/empresas/${d.empresa_id}/logo`, {method:"POST", body: corpo});
+            aviso("dlg-msg", "Logo da empresa gravada.", "ok"); painel(2, id);
+          } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+        });
+      }
+      if (els("c-logo-tirar")) els("c-logo-tirar").addEventListener("click", async () => {
+        try {
+          await api(`/erp/api/obras/${id}/logo-contratante`, {method:"DELETE"});
+          aviso("dlg-msg", "Logo retirada.", "ok"); painel(2, id);
+        } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+      });
       els("a-salvar").addEventListener("click", async () => {
         try {
           await api(`/erp/api/obras/${id}/aditivos`, {method:"POST",
@@ -1175,7 +1284,7 @@ function formProjeto(p){
         ${OBRAS.map(o=>`<label class="opcao"><input type="checkbox" class="pj-obra"
            value="${o.id}" ${dentro.has(o.id)?"checked":""}
            ${(o.projeto_id && !dentro.has(o.id)) ? "disabled" : ""}>
-          <span class="rotulo">${escapar(o.codigo)} · ${escapar(o.nome)}${
+          <span class="rotulo">${escapar(rotuloObra(o))}${
             (o.projeto_id && !dentro.has(o.id)) ? " — já está em outro projeto" : ""}</span>
         </label>`).join("")}
       </div>

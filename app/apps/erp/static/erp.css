@@ -950,3 +950,137 @@ dialog::backdrop { background: rgba(7,30,64,.45); }
   background: var(--verde-claro, #E8F6EE); color: var(--verde, #1C6B3C);
   border-style: solid;
 }
+
+/* ---------------------------------------------------------------------------
+   O DIÁRIO DE OBRA (08/11/2026)
+
+   O PRINCÍPIO do diário aparece no estilo: metade da tela é "preenchido pelo
+   sistema" e não tem campo nenhum. Essa metade precisa PARECER diferente —
+   senão a pessoa tenta digitar nela, não consegue, e conclui que a tela está
+   travada. O selo e o fundo azulado dizem "isto já está resolvido".
+   --------------------------------------------------------------------------- */
+.cartao.auto {
+  background: var(--azul-palido, #EEF6FF);
+  border-left: 4px solid var(--azul, #31507F);
+}
+.cartao.auto .selo {
+  display: inline-block; background: var(--azul, #31507F); color: #fff;
+  font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px;
+  letter-spacing: .3px; text-transform: uppercase; margin-bottom: 8px;
+}
+/* O cabeçalho da obra: rótulo em cima, valor embaixo. Sem a grade, o rótulo e
+   o valor ficam grudados ("ContratoCT-2025/0431") — foi assim que a primeira
+   foto saiu. */
+.grade-auto {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px 18px; margin-top: 10px;
+}
+.grade-auto > div { min-width: 0; }
+.grade-auto span {
+  display: block; font-size: 11px; color: var(--tinta-suave, #5A6B85);
+  text-transform: uppercase; letter-spacing: .3px;
+}
+.grade-auto b { font-size: 14px; word-break: break-word; }
+
+.barra-prazo {
+  height: 8px; background: var(--borda, #E6EAF2); border-radius: 999px;
+  margin: 12px 0 5px; overflow: hidden;
+}
+.barra-prazo i { display: block; height: 100%; background: var(--verde, #1C6B3C); }
+
+.chips-funcao { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+
+/* O bloco da fiscalização é AMARELO porque ele não é da BWS. A cor é o aviso
+   visual de que aquela parte tem outro dono — e é ela que dá valor ao
+   documento. */
+.cartao.fiscal {
+  background: var(--ambar-palido, #FFFBF0);
+  border-left: 4px solid var(--amarelo, #F4B942);
+}
+
+/* ---- O calendário de pendências, no feitio do que o ponto já usa ---- */
+.cal-mes { font-size: 13px; margin-bottom: 8px; }
+.cal-grade {
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px;
+}
+.cal-cab {
+  font-size: 10px; text-transform: uppercase; color: var(--tinta-suave, #5A6B85);
+  text-align: center; padding-bottom: 2px;
+}
+.cal-dia {
+  aspect-ratio: 1; border: 1px solid var(--borda, #E6EAF2); border-radius: 6px;
+  background: #fff; font-size: 12px; cursor: pointer; padding: 0;
+  font-family: inherit; color: var(--tinta, #10233F);
+}
+.cal-dia:hover { border-color: var(--azul, #31507F); }
+/* FALTA é o único que grita. Se o fim de semana também gritasse, o calendário
+   nasceria com 104 alarmes por ano e ninguém olharia para ele de novo. */
+.cal-dia.falta { background: var(--vermelho-palido, #FDECEC); border-color: var(--vermelho, #A32020);
+                 color: var(--vermelho, #A32020); font-weight: 700; }
+.cal-dia.fechado { background: var(--verde-palido, #E8F6EE); border-color: var(--verde, #1C6B3C);
+                   color: var(--verde, #1C6B3C); font-weight: 600; }
+.cal-dia.aberto { background: var(--ambar-palido, #FFF6E5); border-color: var(--amarelo, #F4B942);
+                  color: var(--ambar-escuro, #8A5B00); font-weight: 600; }
+.cal-dia.descanso { background: var(--fundo-suave, #F4F6FA); color: var(--tinta-suave, #5A6B85); }
+.cal-dia.sem_expediente { background: var(--fundo-suave, #F4F6FA);
+                          color: var(--tinta-suave, #5A6B85); font-style: italic; }
+.cal-dia.fora { background: transparent; border-color: transparent;
+                color: var(--borda-forte, #C9D3E4); cursor: default; }
+
+/* ---------------------------------------------------------------------------
+   ETIQUETA — a marca pequena de situação, ao lado de um texto
+   
+   ⚑ ELA ERA USADA EM NOVE TELAS E NÃO EXISTIA NO CSS (achado em 09/11/2026,
+   olhando a tela da conta de e-mail do sistema). Sem a regra, `<span
+   class="etiqueta verde">pronta</span>` saía como texto corrido do mesmo
+   tamanho do resto — e a marca que deveria saltar aos olhos virava mais uma
+   frase. É o tipo de defeito que nenhum teste pega e que só aparece olhando.
+
+   É irmã de `.selo`, que marca a SITUAÇÃO DE UM REGISTRO numa lista. A
+   etiqueta é mais discreta: ela qualifica um texto ("pronta para enviar",
+   "acesso bloqueado", "3 pessoas"), e por isso tem fundo mais claro e peso
+   menor. As cores reusam as variáveis do sistema — nada de tom novo.
+   --------------------------------------------------------------------------- */
+.etiqueta { display: inline-block; font-size: 11.5px; font-weight: 600;
+            padding: 1px 8px; border-radius: 999px; white-space: nowrap;
+            background: #EDEFF3; color: var(--cinza); }
+.etiqueta.verde    { background: #E3F3E8; color: var(--verde); }
+.etiqueta.ambar    { background: #FDF1DC; color: var(--ambar); }
+.etiqueta.amarelo  { background: #FFF4D6; color: #6B4A00; }
+.etiqueta.vermelha,
+.etiqueta.vermelho { background: #FBE6E4; color: var(--vermelho); }
+.etiqueta.ciano    { background: #E2F1F6; color: var(--ciano); }
+.etiqueta.azul     { background: #E7EDF7; color: var(--azul); }
+
+/* A lista de resultados da busca de pessoa (campo `tipo: "pessoa"` do
+   `perguntar`). Cada achado é um BOTÃO, e não uma linha de texto: no celular,
+   alvo de toque pequeno demais faz escolher a pessoa errada — e aqui escolher
+   errado é abrir o pedido no cadastro de outro. */
+.busca-achados { margin-top: 4px; display: flex; flex-direction: column; gap: 2px; }
+.busca-achado { text-align: left; background: #fff; border: 1px solid var(--borda);
+                border-radius: 8px; padding: 7px 10px; cursor: pointer;
+                font: inherit; line-height: 1.25; }
+.busca-achado:hover, .busca-achado:focus { background: #F2F6FC;
+                border-color: var(--azul-claro); }
+.busca-achado small { display: block; color: var(--cinza); font-size: 11.5px; }
+
+/* O RESUMO DE UM CARTÃO — uma frase que diz o conjunto antes da lista.
+   Nasceu do efetivo do diário (10/11/2026), quando o dono pediu *"um resumo,
+   de quantas pessoas e tal — fica mais fácil entender a coisa"*. É mais forte
+   que `.cartao-dica` (que explica a tela) e mais leve que um título: ela
+   afirma um FATO do dia. */
+.cartao-resumo { margin: 2px 0 8px; font-size: 13.5px; font-weight: 600;
+                 color: var(--tinta); }
+
+/* OS ACHADOS DA BUSCA NO DIÁRIO (10/11/2026). Cada achado é um BOTÃO que leva
+   ao dia — a busca é um jeito de CHEGAR no diário, não uma lista para ler. O
+   trecho do texto vem junto para responder "é este?" sem precisar abrir. */
+.achados-diario { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.achado-diario { text-align: left; background: #fff; border: 1px solid var(--borda);
+                 border-radius: 8px; padding: 7px 9px; cursor: pointer;
+                 font: inherit; line-height: 1.3; }
+.achado-diario:hover, .achado-diario:focus { background: #F2F6FC;
+                 border-color: var(--azul-claro); }
+.achado-diario small { display: block; color: var(--cinza); font-size: 11.5px; }
+.achado-diario small.onde { margin-top: 3px; color: var(--tinta); }
+.achado-diario small.onde i { color: var(--cinza); font-style: normal; }

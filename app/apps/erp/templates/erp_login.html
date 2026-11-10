@@ -31,6 +31,11 @@
     <label for="senha">Senha</label>
     <input id="senha" name="senha" type="password" autocomplete="current-password" required>
     <button class="btn" type="submit">Entrar</button>
+    {# ESQUECI MINHA SENHA (10/11/2026). Fica aqui, e não escondido numa
+       ajuda: quem esqueceu a senha está justamente nesta tela, travado. #}
+    <a href="{{ url_for('erp.pagina_esqueci_a_senha') }}"
+       style="display:block; margin-top:12px; text-align:center;
+              font-size:13px">Esqueci minha senha</a>
   </form>
 </main>
 </body>

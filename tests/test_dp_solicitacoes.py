@@ -54,8 +54,10 @@ def mundo(sessao_real):
 def test_o_numero_do_pedido_e_humano_e_sequencial(mundo):
     """SDP-000001, como o "Nº SDP" do pipe: é por ele que a obra e o DP se
     referem ao pedido."""
-    p1 = svc.abrir(mundo["s"], {"tipo": "DIVERSOS", "descricao": "primeira"}, mundo["dp"])
-    p2 = svc.abrir(mundo["s"], {"tipo": "DIVERSOS", "descricao": "segunda"}, mundo["dp"])
+    p1 = svc.abrir(mundo["s"], {"tipo": "DIVERSOS", "descricao": "primeira",
+                           "obra_id": mundo["obra"].id}, mundo["dp"])
+    p2 = svc.abrir(mundo["s"], {"tipo": "DIVERSOS", "descricao": "segunda",
+                           "obra_id": mundo["obra"].id}, mundo["dp"])
     assert p1["numero"].startswith("SDP-") and len(p1["numero"]) == 10
     assert p2["numero"] != p1["numero"]
 
@@ -104,8 +106,9 @@ def test_pre_cadastro_de_quem_ja_existe_e_recusado(mundo):
     """É o alerta de duplicado valendo também na fila: no pipe, o cenário do
     Make APAGAVA o card depois de criado."""
     with pytest.raises(ErroValidacao) as e:
-        svc.abrir(mundo["s"], {"tipo": "PRE_CADASTRO", "nome": "José Repetido",
-                               "cpf": CPF_A}, mundo["encarregado"])
+        svc.abrir(mundo["s"], {"tipo": "CADASTRO", "nome": "José Repetido",
+                               "cpf": CPF_A,
+                               "obra_id": mundo["obra"].id}, mundo["encarregado"])
     assert "já tem cadastro" in str(e.value)
 
 
@@ -141,7 +144,7 @@ def test_atender_readmissao_READMITE_de_verdade(mundo):
 
 def test_atender_pre_cadastro_CRIA_a_pessoa(mundo):
     p = svc.abrir(mundo["s"], {
-        "tipo": "PRE_CADASTRO", "nome": "Maria Nova De Teste", "cpf": CPF_B,
+        "tipo": "CADASTRO", "nome": "Maria Nova De Teste", "cpf": CPF_B,
         "obra_id": mundo["obra"].id, "vinculo": "CTPS",
         "data_inicio": "2026-04-01"}, mundo["encarregado"])
     assert p["colaborador_id"] is None          # a pessoa ainda não existe
@@ -206,7 +209,8 @@ def test_pedido_impossivel_nao_e_atendido_pela_metade(mundo):
 
 
 def test_atender_duas_vezes_e_recusado(mundo):
-    p = svc.abrir(mundo["s"], {"tipo": "DIVERSOS", "descricao": "teste"}, mundo["dp"])
+    p = svc.abrir(mundo["s"], {"tipo": "DIVERSOS", "descricao": "teste",
+                           "obra_id": mundo["obra"].id}, mundo["dp"])
     svc.atender(mundo["s"], p["id"], {}, mundo["dp"])
     mundo["s"].flush()
     with pytest.raises(ErroValidacao) as e:
@@ -220,7 +224,8 @@ def test_atender_duas_vezes_e_recusado(mundo):
 def test_recusar_exige_o_motivo(mundo):
     """O pipe tinha "Por quê?" obrigatório na recusa: quem pediu precisa saber o
     que corrigir para pedir de novo."""
-    p = svc.abrir(mundo["s"], {"tipo": "DIVERSOS", "descricao": "teste"}, mundo["dp"])
+    p = svc.abrir(mundo["s"], {"tipo": "DIVERSOS", "descricao": "teste",
+                           "obra_id": mundo["obra"].id}, mundo["dp"])
     with pytest.raises(ErroValidacao):
         svc.recusar(mundo["s"], p["id"], {}, mundo["dp"])
     r = svc.recusar(mundo["s"], p["id"], {"resposta": "falta a autorização da obra"},
@@ -243,7 +248,8 @@ def test_cancelar_nao_apaga_o_pedido(mundo):
 
 
 def test_cancelar_pedido_ja_atendido_e_recusado(mundo):
-    p = svc.abrir(mundo["s"], {"tipo": "DIVERSOS", "descricao": "teste"}, mundo["dp"])
+    p = svc.abrir(mundo["s"], {"tipo": "DIVERSOS", "descricao": "teste",
+                           "obra_id": mundo["obra"].id}, mundo["dp"])
     svc.atender(mundo["s"], p["id"], {}, mundo["dp"])
     mundo["s"].flush()
     with pytest.raises(ErroValidacao):
@@ -277,7 +283,8 @@ def test_item_de_outro_pedido_e_recusado(mundo):
     p1 = svc.abrir(mundo["s"], {"tipo": "DESLIGAMENTO",
                                 "colaborador_id": mundo["pessoa"].id,
                                 "data_saida": "2026-03-31"}, mundo["dp"])
-    p2 = svc.abrir(mundo["s"], {"tipo": "DIVERSOS", "descricao": "outro"}, mundo["dp"])
+    p2 = svc.abrir(mundo["s"], {"tipo": "DIVERSOS", "descricao": "outro",
+                           "obra_id": mundo["obra"].id}, mundo["dp"])
     with pytest.raises(ErroValidacao):
         svc.marcar_item(mundo["s"], p2["id"], p1["itens"][0]["id"], True, mundo["dp"])
 
@@ -286,9 +293,11 @@ def test_item_de_outro_pedido_e_recusado(mundo):
 # A fila e a trilha
 # ---------------------------------------------------------------------------
 def test_a_fila_poe_as_abertas_na_frente(mundo):
-    p1 = svc.abrir(mundo["s"], {"tipo": "DIVERSOS", "descricao": "vai ser atendida"},
+    p1 = svc.abrir(mundo["s"], {"tipo": "DIVERSOS", "descricao": "vai ser atendida",
+                           "obra_id": mundo["obra"].id},
                    mundo["dp"])
-    svc.abrir(mundo["s"], {"tipo": "DIVERSOS", "descricao": "fica aberta"}, mundo["dp"])
+    svc.abrir(mundo["s"], {"tipo": "DIVERSOS", "descricao": "fica aberta",
+                           "obra_id": mundo["obra"].id}, mundo["dp"])
     svc.atender(mundo["s"], p1["id"], {}, mundo["dp"])
     mundo["s"].flush()
 
@@ -323,7 +332,7 @@ def test_a_trilha_guarda_quem_mexeu(mundo):
 
 def test_a_fila_filtra_por_obra_de_quem_e_preso_a_obra(mundo):
     """Quem é preso a obra vê o que é da obra dele MAIS o que ele mesmo abriu —
-    o pré-cadastro não tem obra ligada até ser atendido."""
+    o pedido de cadastro não tem obra ligada até ser atendido."""
     from app.apps.erp.db.models.cadastros import Obra
     outra = Obra(codigo="SDP-02", nome="Obra de outro", status="ATIVA")
     mundo["s"].add(outra)
@@ -340,10 +349,76 @@ def test_a_fila_filtra_por_obra_de_quem_e_preso_a_obra(mundo):
 
 
 def test_quem_nao_alcanca_obra_nenhuma_ve_so_o_que_abriu(mundo):
-    svc.abrir(mundo["s"], {"tipo": "DIVERSOS", "descricao": "do encarregado"},
+    svc.abrir(mundo["s"], {"tipo": "DIVERSOS", "descricao": "do encarregado",
+                           "obra_id": mundo["obra"].id},
               mundo["encarregado"])
-    svc.abrir(mundo["s"], {"tipo": "DIVERSOS", "descricao": "do dp"}, mundo["dp"])
+    svc.abrir(mundo["s"], {"tipo": "DIVERSOS", "descricao": "do dp",
+                           "obra_id": mundo["obra"].id}, mundo["dp"])
     mundo["s"].flush()
     # `eu` é quem está consultando — a consulta usa o solicitante_id
     fila = svc.listar(mundo["s"], obra_ids=[])
     assert isinstance(fila["solicitacoes"], list)
+
+
+# ---------------------------------------------------------------------------
+# A OBRA É OBRIGATÓRIA EM TODO PEDIDO (10/11/2026)
+#
+# O dono: *"a obra na solicitação, eu quero que seja obrigatória, porque a
+# gente não sabe de onde é que está vindo aquela pessoa, para onde está indo
+# trabalhar."*
+#
+# ⚑ O VALOR DISSO NÃO É O CAMPO PREENCHIDO: é o DP saber, ao abrir a fila, de
+# onde veio cada pedido — sem precisar perguntar por WhatsApp, que é o
+# trabalho que esta fila existe para acabar.
+# ---------------------------------------------------------------------------
+
+def test_pedido_sem_obra_nenhuma_e_recusado(mundo):
+    with pytest.raises(ErroValidacao, match="Informe a obra"):
+        svc.abrir(mundo["s"], {"tipo": "DIVERSOS", "descricao": "sem obra"},
+                  mundo["dp"])
+
+
+def test_a_obra_do_PEDIDO_vence_a_do_cadastro(mundo):
+    """⚑ A ORDEM IMPORTA, e o caso que a define é a TRANSFERÊNCIA: a obra que
+    pede é a de DESTINO. Deixar o cadastro vencer mandaria o pedido para a
+    obra de onde a pessoa está saindo."""
+    from app.apps.erp.db.models.cadastros import Obra
+    destino = Obra(codigo="SDP-99", nome="Obra de destino", status="ATIVA")
+    mundo["s"].add(destino)
+    mundo["s"].flush()
+    r = svc.abrir(mundo["s"], {"tipo": "ATUALIZACAO_DADOS",
+                               "colaborador_id": mundo["pessoa"].id,
+                               "o_que_muda": "mudou de obra",
+                               "obra_id": destino.id}, mundo["dp"])
+    mundo["s"].flush()
+    assert svc.ler(mundo["s"], r["id"])["obra_id"] == destino.id
+
+
+def test_sem_dizer_a_obra_vale_a_do_cadastro_da_pessoa(mundo):
+    """O caminho comum: o pedido é da pessoa, e a pessoa tem obra. Não se
+    pergunta duas vezes o que o sistema já sabe."""
+    r = svc.abrir(mundo["s"], {"tipo": "ATUALIZACAO_DADOS",
+                               "colaborador_id": mundo["pessoa"].id,
+                               "o_que_muda": "telefone"}, mundo["dp"])
+    mundo["s"].flush()
+    assert svc.ler(mundo["s"], r["id"])["obra_id"] == mundo["obra"].id
+
+
+def test_todo_tipo_oferece_a_obra_na_tela():
+    """⚑ A TRAVA. A obra é acrescentada em `tipos_para_tela`, e não copiada em
+    cada tipo: esquecer de copiá-la no tipo número doze seria o defeito
+    garantido — e ele só apareceria quando alguém tentasse abrir justamente
+    aquele pedido, com o pedido já digitado."""
+    for t in svc.tipos_para_tela():
+        assert "obra_id" in t["campos"], f"{t['valor']} não pergunta a obra"
+    # E no tipo que NÃO a declarava, ela entra na frente: "de qual obra é
+    # isto?" é a primeira pergunta de quem abre um pedido, não a última.
+    diversos = next(t for t in svc.tipos_para_tela() if t["valor"] == "DIVERSOS")
+    assert diversos["campos"][0] == "obra_id"
+
+
+def test_o_requerente_saiu_de_uso():
+    """*"Requerente era assim: eu solicito por alguém (…) mas vamos deixar de
+    fora por enquanto."* A COLUNA fica — há pedidos gravados com ela."""
+    for t in svc.tipos_para_tela():
+        assert "requerente" not in t["campos"]

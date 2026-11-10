@@ -21,6 +21,344 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### 📥 A IMPORTAÇÃO DAS PESSOAS: pare de pedir "o arquivo"
+
+**Eu estava pedindo a coisa errada, e por um motivo que vale guardar:** o botão
+da tela se chamava **"Importar do Pipefy"**, o que fazia parecer que a
+importação exigia alguma coisa do Pipefy. Ele perguntou, com razão, em
+07/11/2026: *"você tem insistido em arquivo das 575 pessoas, mas esses dados já
+estão na planilha (…) quando você diz o arquivo é o quê? São os IDs dos
+cards?"*
+
+**Não são IDs de card.** São as linhas das pessoas com os campos. E a fonte é a
+**planilha do DP que ele já usa** — o Pipefy é só mais uma origem aceita, não a
+única. O botão virou **"Importar pessoas de planilha"**, e a instrução dentro
+dele agora diz o caminho (Arquivo › Fazer download › .xlsx) e manda apertar
+"Conferir sem gravar" primeiro.
+
+**Lição que fica:** nome de botão não é enfeite. Um rótulo errado fez o dono
+procurar durante dias um arquivo que ele não precisava ter.
+
+⚑ **DÚVIDA ABERTA, para a próxima sessão perguntar:** ele chamou a fonte de
+**"planilha sediários"**. Esse nome não existe em lugar nenhum deste
+repositório — o que está escrito aqui é a aba **"Dados Documentos"**. Se forem
+abas diferentes, os nomes das colunas dela precisam entrar no de-para de
+`core/importadores/pessoas_planilha.py` (é uma linha por coluna). O
+"Conferir sem gravar" diz quais não reconheceu, então ele descobre sozinho —
+mas quem pegar esta área depois precisa saber que a pergunta existe.
+
+### 📓 O DIÁRIO EM USO: quatro coisas que ele apontou na tela (10/11/2026)
+
+Ele abriu o diário em produção e mandou quatro recados, de uma vez. Todos
+foram atendidos. **Entra com a migração 097** — ver a seção das migrações
+pendentes logo abaixo.
+
+**1. A obra aparecia duas vezes — e eu já tinha consertado isso antes.**
+
+Ele: *"a obra ela está aparecendo duplicado. O nome dela, Aero Aracati, tá
+aparecendo duas vezes."*
+
+A causa dói de tão boba: eu escrevi `${o.codigo} — ${o.nome}` à mão na tela do
+diário, em três lugares, e nos modelos de papel. Existe um ajudante no
+`erp_base.html` chamado `rotuloObra` desde **10/09/2026 — criado porque ele
+reclamou exatamente disto da primeira vez**: quando o nome da obra já começa
+com o código ("081 Aero Aracati"), colar o código de novo produz
+"081 — 081 Aero Aracati".
+
+Consertado em dois lugares, porque são dois mundos: `rotuloObra` no JavaScript
+e **`rotulo_da_obra()` em `core/diario.py`** para o papel. O `cabecalho()` agora
+devolve `"rotulo"` pronto, e a tela não monta mais nada.
+
+**⚑ E ganhou TRAVA**, que é o que impede a terceira vez: o teste
+`test_nenhuma_tela_do_diario_escreve_codigo_e_nome_a_mao` varre as telas
+procurando código e nome colados à mão. Quem repetir o erro descobre antes de
+chegar a ele.
+
+**E a trava achou MUITO MAIS do que o diário.** Quando a varredura passou a
+olhar todas as telas do ERP — e não só as do diário —, apareceram **mais onze
+lugares com o mesmo defeito**, em seis telas que ele ainda não tinha olhado:
+Obras (a lista de projetos, o título do diálogo da obra, a caixinha de projeto
+e a escolha de obras do projeto), Relatórios (duas caixinhas e o cabeçalho do
+agrupamento), Configurações (as obras e os projetos do operador), Importar,
+Compras e **o PORTAL DA OBRA**. Todos consertados.
+
+O portal era o pior deles, porque **nem usa o `erp_base.html`** — não tinha o
+ajudante para usar. Por isso a regra saiu do `core/diario.py` e virou
+**`core/comum/rotulos.py`**, e o portal agora recebe o rótulo **pronto do
+servidor**, em vez de montar nada. Um lugar só sabe a regra.
+
+A única exceção escrita na trava é a **lista de bancos** ("001 · Banco do
+Brasil"): ali o código e o nome são coisas diferentes de verdade, e nunca um
+contém o outro.
+
+**2. O efetivo não mostrava a função.**
+
+Ele: *"não tem aqui a função da pessoa, tá só o nome. Eu queria que tivesse
+aqui o nome e a função. Nome, função, inclusive um resumo. De quantas pessoas e
+tal."*
+
+Duas coisas estavam erradas. A primeira: a função **estava** na tela, numa
+linha cinzenta pequena embaixo do nome — pequena demais para contar como
+estar. Virou coluna, numa tabela `Nome | Função | Horário`.
+
+A segunda era de verdade: eu buscava a função só em `cargos`/`funcoes` do ERP,
+e **a função da maioria mora em `analisesps.colaborador.cargo`** — o Registro
+de Colaboradores, que é de onde o próprio ponto lê. A consulta passou a tentar
+nesta ordem: cargo do ERP → função antiga → Registro. ⚑ E tenta **duas vezes,
+protegida por savepoint**: com e sem o `JOIN` no `analisesps`, porque num banco
+sem aquele schema a consulta inteira morreria e o diário cairia junto.
+
+O resumo é uma frase montada **na regra, não na tela** — "9 pessoa(s): 1
+armador, 1 carpinteiro, 1 pedreiro…" — porque o papel usa a mesma, e duas
+versões divergiriam no primeiro ajuste. Sem ninguém no ponto, o resumo é
+**vazio**, e não "0 pessoas": resposta onde não há dado é pior que resposta
+nenhuma.
+
+**3. Procurar um diário pelo que foi relatado.**
+
+Ele: *"a parte da filtragem, era interessante, será que dá para a gente
+pesquisar, eu quero localizar um diário através de alguma informação que eu
+relatei?"*
+
+É a pergunta certa a fazer de um diário: ninguém lembra a DATA em que a laje
+foi concretada — lembra que foi concretada. Há uma caixa de busca no filtro
+lateral que varre relato, ocorrências, histórico, equipamentos, a observação da
+fiscalização e **a lista de equipamento**, diz EM QUAL campo achou e mostra o
+trecho em volta. Clicar no achado abre aquele dia.
+
+Três decisões que vale guardar:
+
+- **Ignora acento sem depender da extensão `unaccent`** (que não está instalada
+  no banco): os dois lados passam por um `translate` que troca as vogais
+  acentuadas pelas secas. Quem digita "ocorrencia" acha "ocorrência" — e é
+  assim que se digita no celular, com pressa.
+- **Acha PEDAÇO de palavra**, não raiz. Quem procura "P12" ou "bloco B" quer o
+  trecho. Por isso não é `tsvector`.
+- **Respeita o escopo por obra**: quem é preso a obra não acha diário da obra de
+  outro — e a resposta diz que não achou, não que existe.
+
+**4. "A parte dos equipamentos."**
+
+A frase dele terminou aí, cortada. **Resolvi com o padrão que os outros três
+recados desenham**, e a escolha está escrita aqui para ele poder derrubar:
+ele estava descendo a tela apontando o mesmo defeito em cada bloco — **texto
+onde devia haver conta**.
+
+Equipamento era UMA LINHA DE TEXTO ("01 caçamba, 01 placa vibratória"). Serve
+para escrever e não serve para ler: de trinta dias assim ninguém tira quantos
+dias a retroescavadeira ficou na obra, e **é essa conta que sustenta pleito de
+prazo e medição de mobilização**.
+
+Virou LISTA, no mesmo molde do efetivo terceirizado: descrição, quantidade e
+observação ("parada por manutenção" é informação que vale dinheiro num
+pleito), com o mesmo resumo em uma frase. E, como **retroescavadeira não vai
+embora à noite**, o dia novo abre oferecendo a lista do último dia que tinha
+equipamento, por um botão — pelo mesmo princípio do relato de ontem: **vem
+oferecido, nunca gravado sozinho**. Repetir duas vezes é recusado, em vez de
+dobrar o parque de máquinas.
+
+**⚑ O CAMPO DE TEXTO NÃO FOI APAGADO DO BANCO.** Diário é documento: o que
+foi escrito e assinado antes da lista existir continua escrito, e o papel
+imprime o texto quando não houver lista. Apagar a coluna seria reescrever o
+passado.
+
+### 🔁 E AÍ ELE OLHOU DE NOVO (ainda 10/11/2026): a duplicidade e a nomenclatura
+
+Duas correções dele sobre o que acabei de entregar, e as duas certas:
+
+> *"Nós temos aqui o campo equipamentos, texto livre, e equipamentos em obra.
+> Eles são a mesma coisa, por que teriam os dois textos? Ou é um ou é o outro.
+> E eu acho que a opção da forma que ficou equipamentos em obra ficou melhor.
+> E esses equipamentos, o ideal é que a gente possa buscar dentro da nossa
+> lista de insumos, né? Até por questão de nomenclatura. São os equipamentos
+> inclusive categorizados como locáveis."*
+
+**1. O texto livre saiu do formulário.** Eu tinha deixado os dois lado a lado
+"para não perder o passado" — e com isso criei exatamente o que o `CLAUDE.md`
+proíbe desde 17/09/2026: **dois caminhos para a mesma coisa**, obrigando a
+pessoa a escolher antes de saber a diferença.
+
+⚑ **E a saída não foi apagar a coluna, foi PARAR DE MANDÁ-LA.** A tela não
+envia mais `equipamentos` no pedido, e `salvar()` ignora campo que não vem. Se
+a tela mandasse o campo vazio, **todo diário antigo reaberto perderia o que
+tinha escrito** — há teste para os dois lados: um varrendo a tela
+(`d-equipamentos` não pode voltar) e outro gravando duas vezes pela regra e
+exigindo que o texto antigo continue lá. O texto aparece no cartão, só para
+ler, com a etiqueta "escrito à mão neste dia, antes de a lista existir".
+
+**2. O equipamento agora vem do cadastro de insumos** (migração 098), dos
+marcados como **locáveis** — a mesma base de Suprimentos. O motivo é a
+nomenclatura, e ele é prático: digitado à mão, a mesma máquina vira "retro",
+"retroescavadeira" e "Retro-escavadeira", e aí **nenhuma conta de dias-máquina
+fecha**.
+
+Três decisões dentro disso:
+
+- **A descrição continua gravada na linha, mesmo vindo do cadastro.** Não é
+  redundância: o insumo pode ser renomeado amanhã, e o diário tem de dizer o
+  que foi escrito NAQUELE dia. O `insumo_id` serve para **contar**; a
+  descrição, para **provar**. Há teste que renomeia o insumo e exige que o
+  diário de ontem não mude.
+- **Existe saída para o que não está cadastrado**, e ela é o último item da
+  caixinha ("não está na lista"). ⚑ **A obra começa às 7 da manhã e não pode
+  parar porque uma máquina não foi cadastrada.** O equipamento entra com o
+  nome digitado e fica **marcado na tela** ("fora da lista"), para Suprimentos
+  cadastrar depois. Se ele preferir fechar essa porta, é uma linha.
+- **Cimento não é equipamento**: insumo sem a marca "locável", ou inativo, é
+  recusado — e o recado diz onde marcar.
+
+⚑ **Uma consequência de permissão, dita por escrito:** quem só tem o perfil
+"Diário de obra" (migração 094) passa a **enxergar a lista de equipamentos
+locáveis** ao abrir o diário — é o que a caixinha oferece. Não vai preço nem
+nada de Suprimentos junto, só o nome e a unidade, e sem isso a tela não teria
+como pedir o equipamento pelo nome certo. Se ele preferir fechar, a lista pode
+ficar restrita às obras ou sair de vez, com a saída "não está na lista" virando
+o único caminho.
+
+**3. O degrau de "grave o dia primeiro" sumiu.** Com o texto livre fora, ele
+viraria uma parede: sem gravar, não havia onde escrever equipamento nenhum.
+Agora o botão grava o dia sozinho e segue. Só pede o relato antes, que é a
+regra que já existia.
+
+**Dois consertos que vieram de brinde, achados ao exercitar a tela:**
+
+- **Quantidade "0" virava 1 em silêncio**, no equipamento e no efetivo extra —
+  `int(x or 1)`. Agora campo em branco é 1 e "0" digitado é erro: são coisas
+  diferentes, e um diário que declara "0 betoneira" declara o que não houve.
+- **O modelo do órgão imprimia uma SEGUNDA PÁGINA contendo só o rodapé.** Ele
+  estourava a folha por poucos milímetros. O rodapé agora é empurrado para o pé
+  da folha e o respiro caiu de 7pt para 3pt. Os três modelos foram conferidos
+  em PDF de verdade: **uma página cada**. Esse defeito **já estava em
+  produção** desde 09/11/2026.
+
+**Como isso foi conferido, e não só testado:** banco Postgres local com as
+migrações do ERP e **as do ponto**, nove pessoas batendo ponto numa obra, dois
+dias de diário, e a tela dirigida por navegador de verdade — gravar,
+acrescentar dois equipamentos, repetir do dia anterior, procurar por
+"retroescavadeira" e por "manutencao" sem acento, e imprimir os três modelos em
+PDF. Zero erro de console.
+
+### 📥 OS 1.427 DIÁRIOS JÁ ESCRITOS ENTRARAM, E A IA PASSOU A REVISAR O TEXTO (10/11/2026)
+
+Dois pedidos na mesma mensagem, com a planilha anexada.
+
+#### 1. A importação (migração 099)
+
+> *"Eu gostaria de importar essa base que nós temos aí para dentro do diário
+> de obras, porque aí a gente poderia dar prosseguimento ao que a gente já
+> tem. (…) Nós temos o código da obra, temos o dia, temos questão dos
+> colaboradores. Não vai ter, da mesma forma, porque aí não tem nome do
+> colaborador, só tem as funções. (…) Pelo código da obra você vai puxar as
+> outras informações."*
+
+**O arquivo:** 1.427 linhas, 14 obras, de 01/02/2025 a 09/11/2026. Colunas
+úteis: código da obra, data, tempo manhã/tarde, relato, quem informou, efetivo
+total e o efetivo por função (`1 - ENGENHEIRO CIVIL`, `17 - SERVENTE`, uma por
+linha). As colunas Contrato, Objeto, Endereço, Município e Responsável Técnico
+vêm **vazias** — e está certo: isso mora no cadastro da obra, e o diário busca
+de lá na hora de mostrar. Comentários da Fiscalização também vêm vazios, o que
+poupou a pergunta mais delicada.
+
+**Onde está:** `Importar` › cartão **Diários de obra (planilha)**. Dois botões,
+e a ordem é imposta pela tela: *Conferir sem gravar* acende o *Gravar*, e
+trocar o arquivo apaga a conferência.
+
+**As cinco decisões que valem mais que o código:**
+
+1. **Dia que já existe no ERP NÃO é sobrescrito, nunca.** Diário é documento.
+   A planilha não manda no que o sistema já tem — a linha é devolvida como
+   "este dia já tem diário".
+2. **A planilha NÃO cria obra.** Código que não casa é devolvido na
+   conferência com uma caixinha para o dono apontar qual é. Inventar obra a
+   partir de um código encheria o cadastro de duplicata, e ninguém perceberia
+   até a primeira medição sair errada. (No arquivo dele, 12 dos 14 códigos
+   casaram; `ESCGUARUJA` e `REFORMAETI` ficaram para ele apontar.)
+3. **Linha repetida é JUNTADA, não descartada.** 38 pares obra+dia vêm duas
+   vezes, e são dois casos diferentes: o mesmo relato enviado duas vezes, e
+   **dois relatos diferentes do mesmo dia**. Escolher "o último" jogaria fora
+   meio dia de obra sem ninguém perceber. Relato igual vira um; relatos
+   diferentes viram um texto com os dois. Do efetivo fica o maior.
+4. **Rodar o arquivo duas vezes é inofensivo.** Índice único em
+   (origem, id do registro antigo) mais o de obra+dia que já existia. É o
+   acidente mais comum de importação: sem isso, o segundo passe dobraria o
+   efetivo de 1.380 dias.
+5. **O dia sem obra é reconhecido por MARCADOR, e só em relato curto.** A
+   mesma coisa aparece como "FOLGA", `"FOLGA"`, "FERIADO - NÃO HOUVE
+   EXPEDIENTE", "* SEM ATIVIDADES REALIZADAS NO DIA." e "SEM EXPENDIENTE
+   ( CARNAVAL )" — com o erro de digitação. Casamento exato deixaria dezenas
+   passando, e cada uma viraria dia trabalhado no papel. ⚠️ **O limite de 60
+   caracteres é a trava**: num relato de verdade a palavra "feriado" aparece
+   ("concretagem adiantada por causa do feriado"), e marcar aquele dia
+   apagaria um dia de trabalho do documento.
+
+**⚠️ E "AGUARDANDO LICENÇA" NÃO É FOLGA.** São 106 linhas do arquivo, e a
+diferença vale dinheiro: é obra **parada esperando terceiro**, que é
+justamente o que sustenta pleito de prazo. Virar "não houve expediente"
+apagaria o pleito.
+
+**O efetivo importado é efetivo PRÓPRIO, não terceirizado.** Ele reusa a
+tabela `diario_efetivo_extra` (que já guarda função + quantidade), mas com
+`origem = 'IMPORTADO'`, e a tela mostra num bloco separado — "efetivo do
+diário antigo, informado por Fulano". ⚑ **No papel ele soma no quadro técnico
+como próprio**: sem isso, o RDO de 1.380 dias sairia declarando zero pessoa em
+obra. E o selo "vem do ponto" some nesses dias, porque não houve batida
+nenhuma.
+
+**Os diários entram ABERTOS**, não fechados — ele ainda vai querer passar a
+revisão de texto neles.
+
+**Conferido com o arquivo de verdade:** 1.427 linhas lidas, 40 juntadas, 1.380
+diários gravados em **2,8 segundos**; o segundo passe gravou **zero**. Nenhuma
+linha de efetivo ficou sem entender, e a soma das funções bateu com o "Efetivo
+Total" da planilha em **todas** as 1.427 linhas.
+
+#### 2. A revisão do texto por IA
+
+> *"Eu gostaria que a IA fizesse a leitura do relato, tanto dos serviços como
+> não da parte da fiscalização, que a gente não pode alterar, mas outros
+> dados, a parte de ocorrência, a parte dos serviços, poder sugerir um melhor
+> texto. (…) correção ortográfica, um melhor português, numa linguagem
+> inclusive um pouco mais de obra, mais técnica, caso esteja uma linguagem
+> ruim. (…) E quando ela sugerisse, eu pudesse editar a sugestão e gravar."*
+
+Um link **✨ melhorar o texto** embaixo do relato, das ocorrências e do
+histórico. Abre um diálogo com o texto de hoje de um lado e a sugestão do
+outro, **editável**, e o botão põe o texto no campo — **sem gravar**. O Gravar
+continua sendo dele.
+
+**⚑ A OBSERVAÇÃO DA FISCALIZAÇÃO NÃO TEM O LINK, e não é só isso:** a recusa
+mora na regra (`diario_texto.CAMPOS`, lista fechada), não na tela. Quem
+chamar a rota à mão pedindo `obs_fiscalizacao` leva 400. Ele mesmo disse
+"que a gente não pode alterar" — e é a regra 1 do diário inteiro: o que dá
+valor jurídico ao documento é a parte que a obra NÃO controla.
+
+**A instrução proíbe inventar, com todas as letras**, e isso está testado: o
+pedido que viaja diz para não acrescentar serviço, material, quantidade,
+medida, local, hora nem data que não esteja no original, e para não remover
+nada. **Um diário com um serviço a mais é prova falsa.** Temperatura 0,2 —
+revisão de documento não é lugar para criatividade.
+
+Detalhes que a tela cuida: texto com menos de 15 caracteres nem chega a
+custar chamada ("FOLGA" não tem o que melhorar); sugestão igual ao original
+não abre diálogo; sugestão vazia é recusada, para o pior resultado possível
+(trocar o relato por nada) não acontecer; e qualquer falha diz **"o texto que
+você escreveu não se perdeu"**, porque é o que a pessoa precisa ouvir.
+
+⚑ **E um buraco antigo foi fechado no caminho:** o `perguntar()` do
+`erp_base.html` injetava o valor dos campos **sem escapar**. Nunca tinha dado
+problema porque os valores eram curtos e controlados — mas agora o diálogo
+recebe RELATO DE OBRA, texto livre de verdade. Um `<` no meio de "laje < 10cm"
+fechava a caixa e comia o resto do relato. Vale para **todos** os diálogos do
+ERP, que são dezenas.
+
+### ⚠️ MIGRAÇÃO 099 — e as 097 e 098, no mesmo botão
+
+A 099 acrescenta a procedência do diário (`informado_por`, `importado_de`,
+`importado_id` com índice único) e a coluna `origem` no efetivo extra. ⚑ **Sem
+ela o diário não quebra**, pelo mesmo cuidado das anteriores: as consultas
+novas são protegidas por savepoint e o dia abre igual; só a importação fica
+indisponível.
+
 ### ⚠️ MIGRAÇÕES 085 a 091 — apertar "Aplicar atualizações do banco"
 
 Entraram em 05/11/2026 com o cadastro de pessoas. **Sem elas a tela de
@@ -39,6 +377,13 @@ no lugar.
   — **todas semeadas DESLIGADAS**, e a ação `pedir_contabilidade`;
 - **091** a leitura da CAIXA DE ENTRADA (o agente recebendo e-mail), as
   DEVOLUÇÕES da obra e o autor-colaborador da solicitação (o portal).
+
+**E a 097 e a 098, de 10/11/2026**: a lista de equipamento do diário
+(`diario_equipamentos`) e o laço dela com o cadastro de insumos
+(`insumo_id`). ⚑ **Sem elas o diário NÃO quebra** — foi feito de propósito, porque o
+código sobe para o Render antes de alguém apertar o botão: a tela mostra o
+cartão vazio, o campo de texto continua valendo e a busca simplesmente não
+varre a lista. Depois do botão, o cartão passa a funcionar sozinho.
 
 Depois de apertar o botão do banco, apertar **uma vez** "Instalar o catálogo de
 tipos", na tela do Arquivo: ele traz os seis tipos de documento novos (os quatro
@@ -7696,6 +8041,731 @@ pipes do DP (`CADASTRO_COLABORADORES` e `SOLICITAÇÕES DP`).
 **Perguntar a ele, no começo da próxima sessão:** quais são os tipos de pedido
 do portal do Pipefy, e quais três ou quatro a obra mais usa — esses têm de
 estar prontos primeiro.
+
+## 08/11/2026 — O PORTAL DIVIDIDO POR ÁREAS, e a conversa que eu devia ter puxado
+
+Ele entrou no portal publicado e viu só pedidos de DP:
+
+> *"Não liberamos ainda os demais, mas precisa estar dividido em áreas não?
+> Havia comentado pra discutirmos a melhor forma de fazer mas acho que isso não
+> aconteceu."*
+
+**As duas coisas estão certas, e a segunda é a que importa.** Ele pediu, em
+07/11, que discutíssemos a melhor forma. Eu respondi sobre o ACESSO (login,
+permissão, uma porta só), ele concordou, e eu fui implementar — **a estrutura
+dos pedidos em si nunca foi discutida.** O erro não é de desenho, é de
+processo: respondi a parte da pergunta que eu sabia responder e tratei a
+conversa como encerrada.
+
+### O que foi feito agora (porque isso ele já afirmou)
+
+- A tela deixou de se chamar "Pedidos ao DP" e virou **Solicitações**;
+- **escolhe-se a ÁREA antes do tipo** — lista corrida com quatro áreas
+  misturadas obriga a ler tudo para achar o seu;
+- **a área que ainda não abriu APARECE, marcada**, e diz onde pedir enquanto
+  isso. Esconder o que falta ensina que o sistema só serve para DP — e aí o
+  material continua indo por WhatsApp, que é o que se quer acabar;
+- **"O que você já pediu" é UMA lista, de todas as áreas.** A pessoa quer saber
+  o que está parado, não caçar área por área.
+
+As áreas vivem em `portal.AREAS`, e **cada tipo sabe de que área é**
+(`TIPOS_POR_AREA`) — não há segunda lista no JavaScript, senão um tipo novo
+nasce fora de qualquer área e ninguém nota.
+
+### O QUADRO DE VERDADE, que muda o tamanho do trabalho
+
+Fui olhar o que o ERP já tem, e é melhor do que parecia:
+
+| Área | O que já existe |
+|---|---|
+| **Pessoal e DP** | 11 tipos, prontos e no portal |
+| **Material e compras** | `suprimentos/solicitacao.py` — vários itens, acompanhamento POR ITEM. Pronta, fora do portal |
+| **Pagamentos** | o título com solicitante, aval e aprovação. Pronto, fora do portal |
+| **Diário de obra** | **não existe em lugar nenhum** |
+
+**Não são quatro sistemas a construir: são duas portas a ligar no que já
+funciona, e um sistema novo.**
+
+### ✅ AS TRÊS DECISÕES — RESPONDIDAS POR ELE EM 08/11/2026
+
+**O portal tem QUATRO coisas, e só elas:** lançar solicitação de pagamento,
+lançar solicitação de suprimento, lançar diário de obra, e as requisições de
+DP. *"Todo o resto, quem tem o acesso via ERP, vai poder fazer lá de forma mais
+ampla e mais completa."*
+
+**E nada além do DP é liberado agora:** *"eu nem quero que esteja liberado nada
+além do DP. A gente vai começar pelo DP."*
+
+**1. Pagamento — a obra LANÇA de verdade, não é pedido convertido.** Minha
+proposta estava errada: *"a obra ela faz o lançamento realmente. Lança nota,
+lança boleto, lança categoriza, lança obra e tudo mais."* Com duas exigências
+juntas: **usar IA** para facilitar o preenchimento, e **associar ao pedido de
+compra** — o sistema tenta casar a nota/boleto com o pedido. O Pipefy já faz
+essa associação hoje.
+
+**2. Material — é o mesmo do suprimentos, sem segunda versão.** *"É para ser
+igual ao do suprimento. É a listagem lá dos insumos, quantidade, tudo.
+Aproveitando o sistema, não tem porque que tá criando duas coisas se já existe
+uma."* Catálogo, e ponto.
+
+**E uma coisa que faltava no meu levantamento:** como nem todo mundo pode
+cadastrar insumo, existe a **requisição de cadastro de insumo novo**. É um tipo
+de pedido, não um cadastro direto.
+
+**3. Diário de obra — fica para depois de construir, mas o desenho foi dado**
+(ver a seção dele abaixo).
+
+**O QUE NÃO ENTRA NO PORTAL, por decisão dele:** a área de **engenharia**
+(comercial, controle de documentação, protocolo de documentos, medição, geração
+de título). *"Não necessariamente precisa estar no portal, porque as pessoas
+vão utilizar diretamente o sistema."*
+
+**QUEM LANÇA É O ADMINISTRATIVO DA OBRA**, não o encarregado. *"Quem lança
+realmente é o administrativo da obra, não é encarregado, não."*
+
+**A REGRA GERAL QUE FECHA O DESENHO:** celular = ambiente simples para as
+requisições do dia a dia; computador = o ERP completo, conforme o
+permissionamento, para ver com detalhe, acompanhar, gerar relatório. O ponto
+fica separado dos dois.
+
+**O escopo do Pipefy ENCOLHEU** com isso: *"o Pipefy, ele tinha toda aquela
+limitação, porque ele era só entrada de dados, ele não era gestão. Mas hoje a
+gente faz a gestão pelo ERP."*
+
+### ✅ A SEGUNDA RODADA DE RESPOSTAS DELE (10/11/2026)
+
+Respondeu as seis perguntas que tinham sobrado no `MANUAL_DP.md`. Cinco
+viraram código no mesmo dia; uma ficou esperando um arquivo dele.
+
+**1. A OBRA É OBRIGATÓRIA EM TODO PEDIDO.** *"Eu quero que seja obrigatória,
+porque a gente não sabe de onde é que está vindo aquela pessoa, para onde
+está indo trabalhar."* ⚑ **A ordem das duas fontes é a parte que importa: o
+que o PEDIDO diz vence, e só na falta dele vale a obra do cadastro.** O caso
+que define isso é a TRANSFERÊNCIA — a obra que pede é a de DESTINO, e deixar o
+cadastro vencer mandaria o pedido para a obra de onde a pessoa está saindo.
+
+A obra entra em todos os tipos por `tipos_para_tela()`, **não copiada em cada
+um**: esquecer de copiá-la no tipo número doze seria o defeito garantido, e ele
+só apareceria quando alguém tentasse abrir justamente aquele pedido, com tudo
+já digitado. Há trava. No portal, quem alcança **uma obra só** já a vê
+escolhida — perguntar o que tem uma resposta só é um toque a mais no celular.
+
+**2. "REQUERENTE" SAIU DE USO.** *"Requerente era assim: eu solicito por
+alguém; aí esse alguém é o requerente. Mas vamos deixar de fora por
+enquanto."* ⚑ **A COLUNA FICA, e isso é escolha:** há pedidos e cadastros
+gravados com ela, e apagá-los tiraria a resposta de "quem pediu isto?" de
+registros que já existem. O que saiu foi PERGUNTAR. E a coluna da planilha
+entrou em `IGNORADAS_DE_PROPOSITO` no importador — coluna que o sistema deixa
+de guardar tem de aparecer no relatório com o motivo, senão o dado some da
+planilha para o ERP sem ninguém ver.
+
+**3. O NÚMERO DO CARD DO PIPEFY não é mais campo de cadastro.** Ninguém digita
+nem vê. ⚠️ **O valor continua saindo para a folha enquanto o Pipefy viver:** o
+Análise de SPs monta com ele o link para o card, e zerá-lo hoje quebraria esse
+link para quem veio da importação. Ele morre junto com o Pipefy.
+
+**4. O VALOR DA DIÁRIA FICA À VISTA PARA TODO MUNDO**, inclusive CTPS: *"pode
+deixar à vista"*. Quem é CTPS às vezes trabalha no fim de semana e recebe
+diária por esse dia (hoje a empresa prefere hora extra, mas o caso existe).
+Esconder o campo obrigaria a trocar o tipo da pessoa para preenchê-lo.
+
+**5. A GRATIFICAÇÃO NÃO PRECISA DE CAMPO NOVO.** Eu tinha perguntado se
+faltava dizer a periodicidade; não falta. A regra, nas palavras dele: *"se ela
+é parcela única, é paga apenas no final do mês; quando não é, é dividida entre
+a quinzena e o final do mês."* ⚑ **A marca "parcela única" já diz as duas
+coisas** — e `analisesps/gratificados.partes_do_mes()` já fazia exatamente
+isso desde 17/10. Conferi antes de propor campo novo; **a pergunta era minha,
+não uma lacuna do sistema.**
+
+**6. O ID FORTES POR ARQUIVO fica esperando:** *"depois eu mando o modelo."*
+
+**ANOTADO PARA DEPOIS, por ele:** *"mais na frente, a rescisão vai gerar um
+rateio baseado no ponto da pessoa. Mas aí depois a gente pensa nisso."* Nada
+começado — fica aqui para não se perder.
+
+### 🔓 A CONFERÊNCIA DO DP NÃO TRAVA O PONTO, e os acréscimos viraram configuração (10/11/2026)
+
+**DUAS DECISÕES, e a primeira é das que mudam o desenho.**
+
+**1. "A obra pediu, libera."** Ele:
+
+> *"Eu não quero que a conferência impacte no ponto, porque eu quero que a
+> pessoa cadastre e, a partir daquele dia, ele já consiga bater ponto no ato
+> do cadastro. Fica lá para o DP terminar de conferir (…) **quem diz que é
+> para admitir ou não é a obra.** O DP vai intermediar ali para ver se a
+> pessoa está no cargo correto, se o dia da assinatura vai ser aquele mesmo
+> ou um pouquinho mais na frente. Mas a obra pediu, libera."*
+
+**Conferi: já era assim.** O ponto olha a **situação** (ativo/desligado/
+afastado), nunca a **etapa** — a distinção ETAPA ≠ SITUAÇÃO, que nasceu em
+05/11, é exatamente o que torna isso possível. Quem é cadastrado hoje nasce
+ATIVO e bate hoje.
+
+⚑ **MAS HAVIA UM BURACO, E ELE IA MORDER NESSE CENÁRIO EXATO.** O caminho que
+lê o cadastro DO ERP usava **só `c.admissao`** para saber quando o contrato
+começa. Na descrição dele, o DP pondera a data da assinatura — e empurrar essa
+data faria **quem já vinha batendo ponto PARAR DE BATER**, sem ninguém
+entender por quê. Agora é `LEAST(c.data_inicio, c.admissao)`: o primeiro dia
+em que a pessoa trabalhou. ⚠️ **O caminho que lê a PLANILHA já fazia assim**
+(`registro.py`) — era o do ERP que divergia, e ele é justamente o que fica
+quando a planilha morrer. Defeito que só apareceria depois do desligamento da
+planilha, quando ninguém mais lembrasse de procurar aqui.
+
+**Virou trava estrutural** (`tests/test_diarias_e_ponto_liberado.py`): se
+alguém escrever "etapa" na regra de quem bate ponto — por zelo, achando que
+cadastro não conferido não devia bater —, a suíte quebra. Conferido injetando
+o defeito de volta.
+
+**2. Os acréscimos da diária saíram do código.** Ele: *"esses números ainda
+valem atualmente, mas isso é algo que deva ficar dentro de uma configuração."*
+Eram constantes em `analisesps/folha_diaristas.py` (20 feriado, 10 sábado, 20
+domingo, vigia fora): mudar um número de negócio exigia programador e deploy.
+
+Agora: **Configurações › Diárias**, em `core/diarias.py`. ⚑ **Os padrões são
+exatamente os números de hoje**, e isso não é detalhe — configuração nova que
+muda o resultado no primeiro dia é armadilha: o número muda, ninguém mexeu em
+nada, e a desconfiança cai no sistema inteiro. Duas regras que o módulo
+guarda e têm teste: **feriado vence o dia da semana e não soma com ele**
+(feriado no sábado paga feriado, e só) e **"VIGIA NOTURNO" continua recebendo
+diária** (igualdade, nunca "começa com" — trocar isso tiraria o pagamento de
+um turno inteiro).
+
+⚑ **A CONFIGURAÇÃO MORA NO ERP e a conta continua no Análise de SPs**, que lê
+daqui. Mora aqui porque o cadastro está aqui e a folha está vindo para cá —
+parâmetro guardado no sistema que vai ser desligado mudaria de casa duas
+vezes. E a leitura **nunca levanta**: sem resposta, valem os padrões e fica o
+aviso no log. Folha não pode parar por causa de um parâmetro.
+
+### 📗 A CRÍTICA DELE AO MANUAL — o que eu tinha errado (10/11/2026)
+
+Ele leu o `MANUAL_DP.md` e devolveu uma lista. **Quatro erros meus**, e cada
+um vale guardar porque o mecanismo se repete.
+
+**1. O "pré-cadastro" era invenção minha, e não do Pipefy.** Eu tinha
+escrito no manual que copiei a ideia do pipe. Ele: *"nunca existiu
+pré-cadastro. O pipe de cadastro de colaboradores é COMPLETÍSSIMO, ele tem
+todas as informações."* ⚑ **O mecanismo do erro:** vi um pipe com 7 fases,
+li "Cadastro Inicial" no nome da primeira e concluí que o cadastro entrava
+pela metade. O nome da fase descreve **em que pé está a conferência**, não
+quanta informação chegou. Atribuí ao sistema dele um desenho que era meu.
+
+**2. Eu propus cortar campos de PAGAMENTO achando que eram enfeite.** Tinha
+listado *cesta básica extra*, *adicional de transferência*, *parcela única*,
+*recebe via SP* e *id_fortes* como candidatos a sumir. Ele desfez e deu a
+régua certa: *"tem muita coluna no Pipe porque na planilha tem informações
+que não têm nada a ver, apenas para movimentação dentro do processo (…) o
+importante são os campos cadastrais. Aí tem campos que refletem no
+pagamento, que não são obrigatórios, são opcionais, que a pessoa pode não
+ter."* ⚑ **A régua não é "quantos campos", é QUEM USA O CAMPO:** campo que
+alimenta cálculo de pagamento fica, mesmo que só 20 pessoas o preencham;
+campo que existia para mover card sai.
+
+**3. O ID Fortes era o pior da minha lista, e é a chave do sistema.** Ele:
+*"é o registro do colaborador na contabilidade. Na folha da contabilidade
+não tem CPF: ele usa o ID e o nome. Se houver um homônimo, vai ser
+distinguido através do ID."* O Análise de SPs **já depende dele** — sem o
+de/para, gente cadastrada aparece na folha como "fora do cadastro", sem
+pagamento. Falta a atualização em lote por arquivo, que ele deixou para
+depois.
+
+**4. ASO e CTPS obrigatórios eram zelo meu.** *"ASO seria o correto, mas não
+vamos colocar como obrigatório ainda"*; *"carteira de trabalho para quem não
+é prestador não fica mais obrigatório"*. ⚑ **Obrigatoriedade que a empresa
+não pratica vira aviso que todo mundo aprende a ignorar — e aí o aviso de
+verdade some junto.** Os três (com a foto) continuam no catálogo e continuam
+sendo arquivados; o que saiu foi o "falta isto para admitir".
+
+**O QUE FOI LIDO NO ANÁLISE DE SPs**, a pedido dele (*"você verifica na
+Análise de SPs o que é necessário lá"*), e está no manual §2.3-ter: **são SEIS
+folhas**, cada uma puxando campos distintos — contabilidade (CTPS), diaristas,
+auxílio-alimentação, auxílio-transporte, gratificados/mensalistas e pagamento
+via SP. Três descobertas que mudam o desenho: **o vínculo é decidido POR DIA,
+não por pessoa** (daí data de início E data de admissão serem campos
+diferentes); **"Cartão" no transporte quer dizer NÃO pagar em dinheiro** (foi
+origem de pagamento em dobro); e **o autônomo mensalista não entra em folha
+nenhuma** — gera registro de pagamento, como PJ.
+
+**O QUE FOI CONSTRUÍDO NO MESMO DIA:**
+
+- **A foto vem do PONTO** (`pessoas.foto_do_ponto`): a escolhida na tela do
+  ponto, ou, não havendo escolha, **a primeira que a pessoa bateu** — que é o
+  que ele descreveu. ⚑ **Só LEITURA, e protegida por savepoint:** o schema do
+  ponto é de outra área e pode não existir; em Postgres, consulta que falha
+  aborta a transação inteira mesmo pega por `except`. E o ERP **não grava** no
+  ponto — fixar a escolha lá é mudança na área dele.
+- **A busca de pessoa** (`/erp/api/colaboradores/buscar`): três letras ou o
+  CPF, no máximo oito resultados, com escopo por obra. ⚑ Substituiu um
+  `<select>` que carregava **o cadastro inteiro** na página — bastava abrir o
+  código para copiar os 575 nomes. Preocupação dele: *"talvez pela LGPD a
+  gente não possa expor uma lista de funcionários."* O campo `tipo: "pessoa"`
+  do `perguntar()` é novo e serve a qualquer tela.
+- **"Esqueci minha senha"** (`/erp/esqueci-a-senha`): *"é necessário. Não
+  deixar a autonomia."* ⚑ **Três cuidados, e cada um fecha um buraco:** a
+  resposta é **idêntica** exista a conta ou não (senão a tela vira máquina de
+  descobrir quem trabalha na empresa); **um pedido a cada dez minutos** por
+  pessoa (senão qualquer um enche a caixa de alguém — e, pior, cada pedido
+  invalida o link anterior, então bastaria repetir para impedir a pessoa de
+  entrar); e **conta bloqueada não recebe link**.
+- **`AGENTE_DP.md` §6-quater e §6-quinquies**: a escala de autonomia que ele
+  ditou (dependente, dado cadastral e cobrança o agente faz sozinho; cadastrar,
+  desligar, mexer em cargo/salário e encaminhar rescisória exigem pessoa) e
+  **como a documentação da contabilidade é conferida**. ⚑ A resposta à
+  pergunta dele sobre o tipo do documento: **o sistema não adivinha** — o tipo
+  vem do PEDIDO que originou a resposta. E o ERP **confere, não recalcula**: um
+  número meu divergindo da contabilidade por centavos criaria uma discussão por
+  mês.
+
+**E UMA MUDANÇA DE CALENDÁRIO:** *"eu sei que a gente vai sair do Pipefy aos
+poucos, mas na totalidade (…) a cada maturação de cada processo a gente vai
+liberando."* Antes estava registrado que o Pipefy sairia **de uma vez**, o que
+obrigava financeiro e suprimentos a existirem aqui antes do corte. **Saindo
+por processo, o DP pode sair sozinho** assim que estiver maduro — como já
+aconteceu com o MobPonto. Isso destrava o calendário.
+
+### 📘 O MANUAL DO DP, e as três correções que ele trouxe (09/11/2026, migração 096)
+
+**Há um arquivo novo para ler antes de mexer no DP: `MANUAL_DP.md`.** Ele
+nasceu de um pedido dele, e o pedido vale ser lido inteiro porque explica para
+que serve:
+
+> *"Eu quero entender o que foi que você depreendeu de tudo aquilo e como é
+> que está funcionando a parte das fases (…) como é que a gente está enviando
+> essas informações para a contabilidade (…) o que é que a gente precisa fazer
+> para deixar os e-mails ativos e funcionando, como é que eu faço para testar
+> (…) até para eu já fazer alguma crítica antes de colocar em prática."*
+
+Ele diz, em português e sem código: as três contas de e-mail e o que cada uma
+faz, como sai o pedido à contabilidade (com o texto do e-mail inteiro), como a
+resposta é lida, **os cinco passos para ligar e como testar cada um**, os
+campos e as duas listas de obrigatoriedade, as etapas, e — a parte que mais
+importa — **"o que eu assumi e você precisa confirmar"**, com 11 perguntas
+abertas. Quando ele responder, as respostas entram aqui e no manual.
+
+**TRÊS COISAS ELE CORRIGIU NO MESMO PEDIDO:**
+
+**1. Não existe "pré-cadastro".** *"Você colocou lá pré-cadastro colaborador,
+não existe esse pré-cadastro, existe o cadastro, ponto final. O cadastro já
+tem que vir com documentação e tudo mais."* O tipo da fila dizia "a obra manda
+o nome e o CPF; o DP completa" — eu tinha copiado do Pipefy. ⚑ **A diferença
+não é de palavra, é de quem faz o quê:** daquele jeito o DP ficava perseguindo
+documento por WhatsApp, que é o trabalho que a fila existe para acabar. Agora
+é `CADASTRO`, a obra abre COM os papéis, e o DP CONFERE. A migração renomeia
+as linhas já gravadas — tipo renomeado no código e linha velha no banco seria
+um pedido que some da tela sem ninguém apagar.
+
+**2. Colaborador e usuário do sistema não se conheciam.** *"É para haver uma
+correlação entre isso aí (…) quando uma pessoa for desativada do cadastro, for
+demitido, sair da empresa, a gente precisaria automaticamente bloquear o
+acesso dela."* Agora `colaboradores.usuario_id` liga os dois, e **desligar
+bloqueia o acesso sozinho**. ⚑ É o tipo de esquecimento que NÃO aparece: o
+ex-colaborador continua entrando e vendo obra, pagamento e gente, e nada
+quebra para denunciar. O login é **bloqueado, nunca apagado** — apagar levaria
+junto a autoria de tudo o que a pessoa lançou.
+
+⚑ **A LIGAÇÃO FICA NO COLABORADOR, e não no usuário**, de propósito: nem todo
+operador do ERP é colaborador da BWS (o parceiro da obra, a fiscalização, o
+contador). Pôr a coluna no usuário obrigaria todo mundo a ter um colaborador
+do outro lado.
+
+**3. O primeiro acesso agora é por CONVITE** — desenho dele: *"eu vou
+cadastrar o e-mail da pessoa, configurar o perfil, e disparar um e-mail para
+ela gravar a senha dela."* Operador cadastrado **sem senha** recebe um link e
+escolhe a própria. ⚑ **Isso é melhor por SEGURANÇA, não só por comodidade:**
+hoje alguém escolhe a senha pela pessoa e manda por WhatsApp — a senha passa
+por um terceiro, fica escrita numa conversa que ninguém apaga, e quase nunca é
+trocada. Com o convite, **ninguém além da pessoa conhece a senha dela**.
+
+**O que protege o link:** 32 bytes sorteados, guardado no banco **só como
+resumo SHA-256** (um backup vazado não abre conta nenhuma), **uso único**,
+**7 dias**, convite novo mata o anterior, e **convite não ressuscita acesso
+bloqueado** — sem essa última, bastaria um link velho no e-mail para o
+demitido voltar a entrar. Tudo isso tem teste.
+
+**A OITAVA ROTA PÚBLICA DO ERP**, e a primeira em muito tempo: a tela de
+definir senha. Ela é pública pelo único motivo que justifica — *quem abre o
+link ainda não tem senha*, então não existe login a exigir. A trava
+`test_permissoes_rotas` tem a lista fechada, e a entrada dela foi deliberada.
+
+**E A CONTA DE E-MAIL DO SISTEMA** (Configurações › E-mail do sistema), que
+ele pediu junto: *"a gente vai ter e-mail do DP, e-mail do compras, e-mail do
+sistema."* ⚑ **Por que não a de uma empresa:** as contas das empresas falam em
+nome de um CNPJ; o convite não é nem compras nem DP — quem fala é o sistema, e
+sair por `compras@` faria a pessoa achar que compras mandou e responder para
+lá. E, pendurada numa empresa, arquivar aquela empresa derrubaria o convite de
+acesso da casa inteira sem ninguém relacionar as duas coisas.
+
+**Três telas mexidas:** o cadastro do operador (bloco do convite + aviso de
+deixar a senha em branco), a ficha do colaborador (bloco "Acesso ao ERP") e
+Configurações (a aba nova).
+
+### 📓 O DIÁRIO DE OBRA — CONSTRUÍDO em 08/11/2026 (migração 092)
+
+Ele olhou a maquete, ajustou quatro coisas e disse *"vamos para frente"*. Está
+construído e **no ERP, em Obras › Diário de obra**. No portal a área existe mas
+está FECHADA, por decisão dele: *"eu nem quero que esteja liberado nada além do
+DP."* Ligar é trocar um `False` em `portal.AREAS`.
+
+**Os ajustes dele sobre a maquete:**
+
+- ❌ **"Deu para trabalhar?" saiu.** Eu tinha proposto; ele cortou.
+- ✅ **A chuva da estação meteorológica entra** — *"eu acho que é interessante
+  sim colocar"*. A coluna `clima_medido` (jsonb) existe e está vazia: falta
+  ligar o serviço, que é dependência nova e ainda não entrou.
+- ✅ **"Serviços executados" virou "Relato diário"** — *"eu acho que fica
+  melhor"*. O nome da COLUNA segue o nome que ele usa: `relato`.
+- ✅ **O cruzamento com Suprimentos fica.**
+
+**O que ele acrescentou e virou código:**
+
+- **O calendário de pendências**, *"até lembrando um pouco o ponto"*: por obra,
+  mês a mês, verde = feito, vermelho = falta, cinza = descanso. Mais o painel
+  "onde está faltando", que ordena as obras por quantos dias devem.
+- **Fim de semana e feriado nascem "sem expediente"** — *"a menos que seja
+  digitado alguma coisa"*. ⚑ **MAS SE ALGUÉM BATEU PONTO, NÃO NASCE ASSIM**:
+  obra que trabalhou no sábado tem diário de sábado. O vigia sozinho não conta
+  como expediente; dois ou mais, conta.
+- **O relato de ontem volta para reaproveitar** — *"é muito comum o relato do
+  dia anterior ser similar ao do dia seguinte"*. Vem num botão, nunca
+  preenchido sozinho: preenchido sozinho, o diário vira cópia-cola e deixa de
+  ser relato. E o resgate **pula o fim de semana** (sexta → segunda).
+- **O relatório com MODELOS** — ✅ **feito em 09/11/2026**: ele mandou os
+  dois dele, e agora são três modelos de folha (ver a seção da migração 093).
+
+**O princípio:** o diário pergunta SÓ o que ninguém sabe além de quem esteve
+lá. Todo o resto o sistema já tem — e digitar o que o sistema sabe é onde o
+diário vira trabalho chato e acaba preenchido de qualquer jeito.
+
+**O que o sistema preenche sozinho:**
+
+- **A obra**, do cadastro: contrato, ordem de serviço, início, término
+  previsto, objeto, responsável técnico e CREA. Mais a conta do prazo — *"o
+  sistema vai entender aí a data de início (…) e contabilizar o tempo de
+  execução, quantos dias falta para terminar"*.
+- **O EFETIVO, DO PONTO.** Exigência dele, e é a melhor parte: *"hoje a gente
+  tem um ponto. Então a gente não precisaria colocar quantidade de pessoas e
+  função. Na hora que fosse abrir o dia, já está ali listado (…) já traria do
+  ponto que é quem trabalhou."* Com o botão de **acrescentar quem não bate
+  ponto ali** — *"às vezes você tem um fornecedor terceirizado que também está
+  trabalhando, um pintor terceirizado que não é funcionário"*.
+- **Material recebido no dia**, das entregas lançadas em Suprimentos (meu
+  acréscimo: diário registra material recebido, e o dado já existe).
+
+**O que a pessoa escreve:**
+
+- **O tempo**, por período. ⚑ Ele disse *"período manhã, tempo do período
+  noturno"*; eu desenhei manhã/tarde. **Confirmar com ele.**
+- **"Deu para trabalhar?"** separado do clima (meu acréscimo, e importa): o
+  que justifica prazo depois não é o clima, é a PARADA.
+- **Os serviços executados**, narrados. Com opção de DITAR — quem está na obra,
+  de luva, não digita três parágrafos no celular.
+- **Ocorrências**: se a fiscalização esteve, quem, e o que disse.
+
+**Duas regras que vieram dele e que dão valor jurídico ao registro:**
+
+1. **O bloco da fiscalização é DELA.** *"a gente poder conceder acesso a, por
+   exemplo, a fiscalização, para a fiscalização fazer observações."* Ela entra
+   com o acesso dela e escreve; **a obra não edita**. Diário que a própria obra
+   reescreve não prova nada.
+2. **Assinatura do responsável técnico**, que vem do cadastro da obra — *"no
+   cadastro também da obra vai ter o responsável técnico, e já ter campo para
+   assinatura dele"*. E (meu acréscimo) **depois de fechado só se corrige com
+   registro de quem corrigiu e por quê**: diário é documento, não rascunho.
+
+**OS MODELOS.** *"Existem modelos de diário. A gente tem um nosso modelo, mas
+tem órgão que requer um modelo específico."* Os dados são os mesmos; muda a
+impressão. Em 09/11 ele pediu o contrário primeiro (*"antes de eu lhe mandar os
+modelos, eu queria que você gerasse um seu (…) gere aí um modelo para eu
+avaliar"*) e, no mesmo dia, **mandou os dois dele**. ✅ **Resolvido** — ver a
+seção da migração 093 mais abaixo.
+
+### 📄 O RDO — o modelo que eu propus (09/11/2026)
+
+`erp_diario_papel.html` e `diario.relatorio()`. Está em
+`/erp/obras/diario/papel/<obra>?de=&ate=`, e é **página de impressão**, sem o
+`erp_base.html`.
+
+**⚑ POR QUE IMPRESSÃO DO NAVEGADOR e não PDF gerado no servidor** — a decisão
+que mais importa aqui: o RDO tem tabela, caixa, quebra de página e bloco de
+assinatura. Montar isso no `fpdf` que o ERP usa seria posicionar cada elemento
+em milímetro, e **cada órgão exige um modelo diferente** — trocar de modelo
+viraria trabalho de milímetro de novo. Em HTML, **modelo é folha de estilo**.
+
+**O custo, e ele é real:** o sistema NÃO produz o arquivo sozinho. Quem gera é
+a pessoa (Ctrl+P › Salvar como PDF), então o RDO ainda não dá para anexar em
+e-mail automático nem guardar no Drive sem alguém apertar. Se isso virar
+requisito, é outro passo.
+
+**As decisões do modelo, para quem for mexer:**
+
+- **O número do RDO é o DIA DA OBRA** (dia 228 de 361), não uma sequência
+  própria. Sequência própria divergiria do prazo no primeiro diário esquecido,
+  e o papel passaria a contar outra história que o contrato. ⚑ O cabeçalho é
+  recalculado POR DIA — um relatório com o mesmo número em todas as páginas
+  seria um relatório errado, e isso tem teste.
+- **O efetivo sai por FUNÇÃO E QUANTIDADE, sem nome** (decisão dele), separando
+  PRÓPRIO de TERCEIRIZADO. Além da preferência dele, é boa prática: o RDO
+  circula fora da empresa, e a fiscalização precisa saber quantos pedreiros
+  havia, não quem eram.
+- **Um dia por folha, com o cabeçalho inteiro repetido.** Folha solta de RDO
+  vai parar anexada a ofício e a processo: ela tem de se sustentar sozinha.
+- **Só os dias escritos saem** por padrão (`so_escritos`). Relatório mensal com
+  30 folhas em branco não é relatório.
+- **A correção depois do fechamento SAI NO PAPEL**, numa tarja. Esconder seria
+  o mesmo que não registrar.
+- **"RASCUNHO" no rodapé** enquanto o diário não foi fechado. Papel que sai do
+  sistema sem esse aviso vira documento sem querer.
+
+**Um defeito de layout que só a prova em PDF mostrou:** as duas colunas (tempo
+e efetivo) fechavam em alturas diferentes, deixando uma caixa aberta no meio da
+folha — num papel que vai assinado, parece erro de impressão. `align-items:
+stretch` resolveu. **Nenhum teste pegaria isso**; só gerar o PDF e olhar.
+
+⚑ **TRÊS PERGUNTAS QUE FORAM A ELE COM O MODELO:** se falta "Equipamentos em
+obra" (o ERP não sabe disso hoje — seria campo digitado); se as assinaturas são
+duas (contratada e contratante) ou três (com preposto); e a confirmação do
+número do RDO.
+
+**E ele disse como o relatório vai diferir da tela:** *"provavelmente a gente
+vai visualizar em tela o nome das pessoas, mas eu acredito que talvez a gente
+não vá relacionar nome a nome no diário, vai colocar só quantidade e função."*
+Por isso `efetivo_do_ponto` já devolve as duas coisas — a lista com nomes E a
+contagem `por_funcao`. O relatório escolhe.
+
+### 📑 OS TRÊS MODELOS DE DIÁRIO — ele mandou os dele (09/11/2026, migração 093)
+
+Ele mandou **dois modelos**: o PDF que a BWS usa hoje e a planilha (RDO.xlsx)
+que a **Prefeitura de Abreu e Lima exige em contrato**. E decidiu:
+
+> *"Tem um determinado contrato que a gente vai precisar utilizar esse modelo
+> específico de diário de obra. Veja que ele é mais amplo (…) como ele é mais
+> amplo, a gente pode tentar adaptar logo o nosso para esse aí (…) se os dados
+> que a gente estiver coletando estiverem mais amplos, vamos incorporar
+> também. Acho que quanto mais amplo, melhor."*
+
+**Agora são TRÊS modelos de folha**, e a escolha é do CONTRATO:
+
+| modelo | o que é |
+|---|---|
+| `completo` | o nosso, ampliado — padrão de quem não escolheu |
+| `bws` | o que a empresa usa hoje (o PDF dele) |
+| `orgao` | o RDO em quadros que a Prefeitura exige |
+
+**⚑ OS TRÊS LEEM O MESMO DADO.** Nenhum modelo pergunta nada que os outros não
+perguntem: o que varia é o que o papel mostra e como. Foi por isso que valeu
+"adaptar o nosso para o mais amplo" — um diário por contrato seriam três telas
+de preenchimento, e a obra preencheria mal as três. O que o modelo antigo não
+tem espaço para mostrar **não some**: no modelo `bws`, equipamentos, histórico,
+ocorrências e material entram como parágrafos marcados dentro de "Anotações da
+contratada".
+
+**A escolha mora no CADASTRO DA OBRA, aba Contrato** — não numa tela de
+impressão. Modelo de diário é cláusula; se fosse escolha de quem imprime, um
+dia sairia o papel errado para a fiscalização, e RDO fora do modelo exigido é
+motivo de glosa. A barra no alto da folha troca o modelo **só para ver**, e não
+grava nada (há teste).
+
+**O QUE A MIGRAÇÃO 093 ACRESCENTOU:**
+
+- Em `diarios_obra`: **`horario_trabalho`**, **`equipamentos`** e
+  **`historico`** — os três campos que o modelo do órgão tem e o nosso não
+  tinha.
+- Em `obras`: **`contratante_unidade`** (a linha abaixo do órgão, "Secretaria
+  de Obras e Defesa Civil"), **`contratante_logo`** + mime, e
+  **`diario_modelo`**.
+
+**O HORÁRIO VEM PREENCHIDO, por dia da semana** — pedido dele: *"o normal é 7
+às 17. Ou 7 às 16 na sexta-feira (…) como se fosse pré-preenchido, a depender
+do dia da semana. E se necessário, a pessoa que estiver preenchendo o diário
+muda."* ⚑ **É sugestão de TELA, não verdade gravada:** dia gravado sem horário
+fica sem horário no papel. Preencher a jornada por conta própria num documento
+que sustenta pedido de prazo seria inventar prova. Sábado e domingo não sugerem
+horário nenhum.
+
+**POR QUE TRÊS CAMPOS DE TEXTO E NÃO UM.** O modelo do órgão separa, e a
+separação tem sentido: SERVIÇOS EXECUTADOS é o que foi feito; OCORRÊNCIAS é o
+que saiu do normal (reunião, visita técnica, acidente); HISTÓRICO é o resumo do
+andamento. Juntar os três e tentar separá-los na impressão seria adivinhar.
+
+**AS LOGOS.** *"Dentro do cadastro da empresa (…) colocar logo da empresa para
+ela ser colocada dentro do diário também. Tanto a logo da empresa, quanto
+outras logos (…) no caso, nós temos a logo da prefeitura."* A da **empresa** já
+existia (cadastro de Empresas). A do **contratante** é nova e fica **na obra**,
+porque a mesma empresa atende prefeituras diferentes e cada contrato tem o seu
+cabeçalho. Ela entra pelo formulário do contrato — regra de 17/09: uma porta
+só, o documento é atalho dentro dela.
+
+⚑ **AS LOGOS VÃO EMBUTIDAS NA FOLHA, não buscadas por endereço**, e isso
+resolve dois problemas de uma vez: (1) a rota que serve a logo da empresa exige
+"configurar", que o administrativo de obra **não tem** — o cabeçalho sairia
+quebrado justamente para quem imprime todo dia; (2) o PDF vai por e-mail e
+abriria sem logo na mão de quem recebeu. A imagem entra **uma vez** no
+documento, numa regra de estilo: repetir num relatório de 90 folhas faria
+dezenas de megabytes. Acima do teto (512 KB, o mesmo do cadastro — há teste
+amarrando os dois números) a folha sai **sem** a logo, nunca com erro.
+
+**O VISUAL, refeito.** Ele: *"achei ele meio grosseiro, as cores. Dá uma
+melhorada no visual, na formatação. Vê se consegue fazer algo mais bonito."* A
+primeira versão usava faixa **preta com letra branca** em cada seção. Agora é
+tinta azul-escura sobre cinza-claro, com fio fino — leitura de documento, não
+de cartaz.
+
+**UMA FOLHA SÓ.** *"O ideal é que o diário esteja sempre em uma única página
+(…) se precisar reduzir margens, cabeçalho, rodapé e nas laterais para caber
+mais coisa dentro."* Margens de 9 mm, corpo de 8,6 pt, e a folha é uma coluna
+que ocupa a página inteira com as assinaturas empurradas para o pé (sem isso, a
+linha de assinatura flutuava no meio da folha e o papel parecia cortado).
+**Conferido em PDF nos três modelos: uma página.** Com um relato de 14
+parágrafos repetidos, ainda uma página, e o texto inteiro lá.
+
+⚑ **O QUE NÃO FOI FEITO, de propósito:** cortar texto para caber. Relato muito
+longo transborda para uma segunda folha. Sumir com três linhas do que a obra
+escreveu — num documento que sustenta pedido de prazo — é pior que uma folha a
+mais.
+
+**O DEFEITO QUE DEIXOU TRAVA, e ele é típico desta tela:** as três folhas
+respondiam **500**. A folha pedia o número dela com `loop.index`, e **o número
+do laço não atravessa para o pedaço incluído** do template. Nada disso aparece
+lendo o arquivo nem rodando a regra de negócio — só renderizando. Virou teste
+que PEDE A PÁGINA nos três modelos e confere que o conteúdo do dia chegou ao
+papel; conferido injetando o defeito de volta, e ele quebra.
+
+**O que foi conferido de verdade nesta leva:** os três modelos impressos em
+PDF com dado real (uma página cada, inclusive com relato longo), a numeração
+"folha 1/4 … 4/4" num período de quatro dias, o envio e a retirada da logo pela
+tela, e as telas do diário e do cadastro do contrato abertas no navegador.
+**Não conferido:** impressão em impressora de papel (só PDF do navegador), e
+nenhum dos modelos foi visto por um fiscal de órgão.
+
+### ❓ TRÊS PERGUNTAS DELE SOBRE ACESSO, respondidas em 09/11/2026 (migração 094)
+
+**1. "O relato que se repete de um dia para o outro — a gente vai ter esse
+vínculo?"** ✅ **Tem, desde 08/11.** A tela oferece *"↩ trazer o relato de
+04/11/2026"* num botão. ⚑ **Nunca preenche sozinho** — preenchido sozinho o
+diário vira cópia-cola e deixa de ser relato, e aí não sustenta nada. E o
+resgate **pula o fim de semana** (sexta → segunda).
+
+**2. "A gente pode ter um perfil só para diário de obras?"** ✅ **Pode, e já
+vem pronto**: a migração 094 cria o perfil **"Diário de obra"**, que abre a
+tela do diário e **nada mais** — nem título, nem pagamento, nem pessoal.
+Não é "de sistema": dá para editar e apagar em Configurações › Perfis.
+⚑ **As OBRAS continuam sendo do cadastro da pessoa**, não do perfil: duas
+pessoas com este mesmo perfil alcançam obras diferentes.
+
+**3. "Posso vincular mais de um perfil de acesso à mesma pessoa? Digamos que
+ela é do financeiro, mas eu quero que acesse diário de obras."**
+
+✅ **FEITO, migração 095** — e vale registrar o caminho, porque ele mostra
+como a conversa deve funcionar. **Eu recomendei o contrário:** disse que a
+marcação ação a ação (migração 032) já resolvia e que dois perfis trariam a
+ambiguidade de "qual deles ganha". Ele ouviu e respondeu **"ainda assim
+prefiro"**. É decisão dele, e é a melhor para o uso real: *"esta pessoa é
+Financeiro + Diário de obra"* é uma frase que ele escreve, confere e entende
+seis meses depois; vinte caixinhas marcadas à mão, não.
+
+**Como ficou:** no cadastro do operador há **"Também com o acesso de"**, com a
+lista de perfis. O principal continua sendo um; os outros são acréscimos.
+
+⚑ **A AMBIGUIDADE FOI RESOLVIDA NA REGRA, NÃO ADIADA: perfil SÓ SOMA acesso,
+nunca tira.** Quem tem dois perfis fica com o **maior nível de cada seção** —
+um diz "só olhar", o outro "olhar e mexer", vale "olhar e mexer". Assim não
+existe a pergunta "qual deles ganha". Quem TIRA continua sendo a marcação por
+pessoa, que vence os perfis. A ordem final: **os perfis somam → a marcação da
+pessoa corrige → o ADMIN não se tranca para fora.** Essa ordem já existia; só
+o primeiro passo passou de "um perfil" para "a soma dos perfis".
+
+⚑ **A LEITURA DOS ACRÉSCIMOS É UMA CONSULTA SEPARADA, e isso é o cuidado que
+mais importa aqui.** Se ela estivesse junto com a do perfil principal,
+bastaria a migração 095 não ter rodado ainda para a consulta inteira falhar —
+e **a empresa toda cairia no cargo antigo** na janela entre publicar e apertar
+o botão. Separada, o que falha é só o acréscimo. Há teste disso, com uma
+sessão que recusa a tabela.
+
+**O que a tela diz, com todas as letras:** que perfil só soma, e que para
+TIRAR alguma coisa o caminho é o ajuste fino. Sem essa frase, alguém um dia
+marcaria um perfil pequeno achando que **restringe** a pessoa — e estaria
+dando acesso.
+
+### 🖼️ AS DUAS LOGOS NO CADASTRO DA OBRA (09/11/2026)
+
+Ele, olhando a folha: *"lembrar de colocar local para a gente fazer isso no
+cadastro da obra. Que isso, inclusive, vai servir para o futuro, para outros
+documentos que a gente for criar a partir do sistema."*
+
+Na aba **Contrato** da obra ficam as duas, lado a lado — e a tela diz que são
+**de donos diferentes**:
+
+- **Logo do contratante (órgão)**: é **desta obra**. Cada contrato tem o seu.
+- **Logo da empresa**: é do **cadastro da empresa** e vale para **todas as
+  obras daquele CNPJ** e para os documentos que o sistema vier a emitir. Dá
+  para enviar daqui por comodidade, mas o aviso na tela é explícito.
+
+⚑ **UMA ROTA SÓ PARA MOSTRAR, e ela existe por um motivo de permissão:** a
+rota da logo da empresa exige **"configurar"**, que o administrativo de obra
+não tem. Se a ficha da obra buscasse a imagem por lá, apareceria um quadrado
+quebrado justamente para quem imprime o diário todo dia. Então há
+`/erp/api/obras/<id>/logo-empresa`, **só GET**, com conferência de escopo da
+obra: quem pode ver a obra vê o cabeçalho que vai sair no diário dela; trocar
+continua sendo coisa do cadastro da empresa. Há teste das duas pontas.
+
+### ⚑ AS TRAVAS QUE ESTE TRABALHO DEIXOU, e todas nasceram de erro meu
+
+1. **`tests/test_migracoes_nomes_de_perfil.py`** — eu dei a seção do diário ao
+   perfil `'Parceiro'`. Ele se chama **"Parceiro da obra"**. O `INSERT ...
+   JOIN perfis ON nome` **não casou e não inseriu nada, sem erro nenhum** — e
+   justamente o perfil por onde a FISCALIZAÇÃO entra ficou sem acesso. O mesmo
+   arquivo trazia `'Financeiro'`, que também não existe (virou "Administrativo
+   financeiro" na migração 065). ⚑ **E a primeira versão da trava PASSOU com o
+   defeito injetado de propósito**, porque ela lia as DESCRIÇÕES dos perfis
+   como se fossem nomes. Rede que não pega nada é pior que rede nenhuma: ela
+   dá a sensação de que pega.
+2. **`test_campo_de_momento_nao_vai_para_o_ajudante_de_data`** — a tela
+   mostrava *"fechado em 08 17:50:45.327771+00:00/11/2026"*. `dataBR` parte no
+   hífen e inverte; com hora junto, embrulha. O `erp_base.html` tem
+   `momentoBR` para isso, **e o comentário dele avisa com todas as letras** —
+   usei o errado mesmo assim. A trava achou **mais três** na tela de
+   Contabilidade, que eu tinha escrito dias antes. ⚑ A primeira versão dela
+   chutava pelo NOME (`*_em`) e deu metade de alarme falso: `protocolado_em` e
+   `retencao_liberada_em` são DATE. Agora ela LÊ O TIPO DA COLUNA do schema e
+   das migrações.
+
+### ⚑ O DEFEITO QUE MAIS IMPORTA DESTE TRABALHO: o savepoint
+
+Em Postgres, **uma consulta que falha ABORTA A TRANSAÇÃO INTEIRA**. Tudo o que
+vier depois responde "current transaction is aborted" — **mesmo tendo sido
+pego por `except`**. Então `try/except` em volta de um SELECT NÃO BASTA: ele
+engole o erro e deixa a sessão quebrada para o resto do pedido.
+
+Foi exatamente o que aconteceu: num banco sem o schema do ponto, a busca do
+efetivo falhava, o `except` devolvia lista vazia "com elegância", e a busca do
+material logo abaixo morria com um erro que não tinha nada a ver. **O diário
+inteiro caía por causa de uma consulta opcional.**
+
+`_consulta_opcional` em `core/diario.py` abre um SAVEPOINT (`begin_nested`): o
+que falha dentro dele volta sozinho e a transação de quem chamou segue viva. É
+o mesmo conserto que o importador de pessoas precisou quando um PIS repetido
+derrubava todas as linhas seguintes. **Toda consulta a `ponto.*` ou a tabela
+que pode não existir passa por lá.**
+
+### ⚑ O QUE AINDA ESTÁ COM ELE
+
+1. **O pedido de pagamento da obra é um TÍTULO ou um PEDIDO que o financeiro
+   converte?** O título tem classificação, centro de custo, aval e aprovação; o
+   encarregado não tem esse dado nem essa alçada. Minha proposta: a obra abre
+   um pedido simples (de quem, quanto, por quê, a foto da nota) e o financeiro
+   transforma em título.
+2. **No material, a obra escolhe do catálogo ou escreve livre?** Catálogo dá
+   preço e histórico; livre gera "cimento", "cimento CP-II" e "saco de cimento"
+   como três coisas. Minha proposta: busca no catálogo com a opção de escrever
+   o que não achou, e o escrito livre vira pendência para suprimentos
+   cadastrar.
+3. **O diário de obra entra agora?** É o único que não existe. Se entrar,
+   falta saber o que ele tem hoje (efetivo, clima, ocorrências, fotos).
+
+### ⚑ E A PERGUNTA QUE CONTINUA TRANCANDO O CORTE DO PIPEFY
+
+**Quais tipos de pedido existem no portal do Pipefy, e quais a obra mais usa.**
+Sem paralelo (decisão dele), todos precisam existir aqui antes de desligar. Os
+exports que chegaram a este repositório são só os dois pipes do DP.
 
 ## Coisas pequenas que mordem
 

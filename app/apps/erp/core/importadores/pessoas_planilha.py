@@ -129,7 +129,6 @@ COLUNAS: dict[str, tuple[str, ...]] = {
     "cesta_basica_extra": ("cesta basica extra",),
     "diversos": ("diversos",),
     # requisição
-    "requerente": ("requerente",),
     "responsavel": ("responsavel pela solicitacao", "responsavel"),
     # situação / desligamento
     "fase": ("fase atual", "fase", "current phase", "situacao", "etiqueta"),
@@ -154,7 +153,14 @@ IGNORADAS_DE_PROPOSITO = {
     "objeto obra": "o objeto é da obra, e a obra já tem o campo",
     "salario extenso": "o ERP escreve o extenso quando precisa (num2words)",
     "alguma observacao em relacao a funcao?": "virou observação do cadastro",
-    "requisicao solicitada por um terceiro?": "o requerente já diz isso",
+    # ⚑ O REQUERENTE SAIU EM 10/11/2026, por decisão dele: *"requerente era
+    # assim: eu solicito por alguém; aí esse alguém é o requerente. Mas vamos
+    # deixar de fora por enquanto."* Fica AQUI, e não some da lista de
+    # colunas: coluna que o sistema deixa de guardar tem de aparecer no
+    # relatório com o motivo — senão o dado some da planilha para o ERP sem
+    # ninguém ver, que é o pior jeito de perder informação.
+    "requerente": "campo deixado de fora por enquanto (10/11/2026)",
+    "requisicao solicitada por um terceiro?": "o requerente saiu de uso",
     "quantidade de dependentes": "os dependentes vêm pelos nomes, sem teto",
     "id do card": "número do Pipefy, que morre com ele",
     "table record id": "número do Pipefy, que morre com ele",
@@ -511,7 +517,7 @@ def _uma(s: Session, linha: dict[str, str], n: int, achadas: dict[str, str],
                   "matricula", "salario", "valor_diaria", "valor_mes",
                   "cnpj_admissao", "razao_social_pj", "cnpj_pj", "data_inicio",
                   "admissao", "aux_alimentacao", "aux_transporte",
-                  "valor_gratificacao", "observacao_auxilio", "requerente",
+                  "valor_gratificacao", "observacao_auxilio",
                   "id_fortes", "pix_chave", "aviso_previo", "ultimo_dia"):
         v = val(campo)
         if v:

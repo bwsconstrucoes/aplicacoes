@@ -1,0 +1,149 @@
+{# ===========================================================================
+   MODELO "BWS" — O QUE A EMPRESA USA HOJE
+
+   Copiado do PDF que ele mandou em 09/11/2026 ("Diário Modelo BWS —
+   Relatório"), na ordem do papel dele: as duas logos, a identificação da
+   obra, o prazo com DECORRIDO e RESTANTE, o tempo de manhã e de tarde, a
+   caixa grande de ANOTAÇÕES DA CONTRATADA com a equipe listada dentro, a
+   caixa da FISCALIZAÇÃO e as duas assinaturas com data.
+
+   ⚑ O QUE A GENTE COLETA A MAIS CABE DENTRO DA CAIXA DA CONTRATADA —
+   equipamentos, histórico, ocorrências e material recebido entram como
+   parágrafos marcados, e não somem. Modelo antigo não é motivo para perder
+   dado: a obra preencheu, o papel mostra. Quem precisa do formato antigo
+   precisa do FORMATO, não de menos informação.
+
+   E A EQUIPE É CONTADA PELO PONTO. No modelo dele a frase era digitada à mão
+   ("Equipe composta por 10 colaboradores efetivos relacionados abaixo") e a
+   lista, redigitada embaixo. Aqui as duas saem do ponto eletrônico — era
+   justamente a parte que, segundo ele, dava trabalho todo dia.
+   =========================================================================== #}
+{% import "erp_diario_papel_macros.html" as m %}
+
+<div class="marca">
+  <i class="logo {{ 'logo-contratante' if r.logos.contratante else 'vazia' }}"></i>
+  <div class="meio">
+    <h1>DIÁRIO DE OBRA</h1>
+    {% if r.obra.contratante %}<div class="orgao">{{ r.obra.contratante }}</div>{% endif %}
+    {% if r.obra.contratante_unidade %}
+      <div class="unidade">{{ r.obra.contratante_unidade }}</div>{% endif %}
+  </div>
+  <i class="logo {{ 'logo-empresa' if r.logos.empresa else 'vazia' }}"></i>
+</div>
+
+<div class="topo">
+  <div class="topo-linha">
+    {{ m.cel("Obra", r.obra.rotulo, 3) }}
+    {{ m.cel("Endereço", r.obra.endereco, 3) }}
+    {{ m.cel("Data", m.br(p.data) ~ " · " ~ p.dia_da_semana, 2) }}
+  </div>
+  <div class="topo-linha">
+    {{ m.cel("Empresa", r.obra.empresa, 3) }}
+    {{ m.cel("Contrato nº", r.obra.contrato, 2) }}
+    {{ m.cel("Ordem de serviço", r.obra.ordem_servico, 2) }}
+    {{ m.cel("Prazo decorrido", (p.prazo.decorridos ~ " dias") if p.prazo.decorridos else "—", 2) }}
+    {{ m.cel("Prazo restante",
+             ((p.prazo.faltam ~ " dias") if p.prazo.faltam is not none and p.prazo.faltam >= 0
+              else ((-p.prazo.faltam) ~ " dias além") if p.prazo.faltam is not none else "—"), 2) }}
+  </div>
+  <div class="topo-linha">
+    {{ m.cel("Tempo — manhã", p.tempo_manha, 2) }}
+    {{ m.cel("Tempo — tarde", p.tempo_tarde, 2) }}
+    {{ m.cel("Horário de trabalho", p.horario_trabalho, 2) }}
+    {{ m.cel("Folha", p.folha ~ "/" ~ p.folhas, 1) }}
+  </div>
+  {% if r.obra.objeto %}
+  <div class="topo-linha">
+    <div class="cel leve"><span>Objeto</span><b>{{ r.obra.objeto }}</b></div>
+  </div>
+  {% endif %}
+</div>
+
+{% if p.sem_expediente %}
+  <h2>Expediente</h2>
+  <div class="quadro"><div class="sem-exp">NÃO HOUVE EXPEDIENTE NESTE DIA</div></div>
+{% else %}
+
+<h2>Anotações da contratada</h2>
+<div class="quadro alto">
+  {{ m.texto(p.relato) }}
+
+  {% if p.historico %}
+  <div style="margin-top:6pt"><span class="papel">Histórico dos serviços</span>
+    <div class="texto">{{ p.historico }}</div></div>
+  {% endif %}
+
+  {% if p.equipamentos or p.equipamentos_lista %}
+  <div style="margin-top:6pt"><span class="papel">Equipamentos em obra</span>
+    {{ m.equipamentos(p) }}</div>
+  {% endif %}
+
+  {% if p.ocorrencias or p.fiscalizacao_esteve %}
+  <div style="margin-top:6pt"><span class="papel">Ocorrências</span>
+    {% if p.fiscalizacao_esteve %}<div><b>A fiscalização esteve na obra.</b>
+      {% if p.fiscalizacao_quem %}{{ p.fiscalizacao_quem }}{% endif %}</div>{% endif %}
+    {% if p.ocorrencias %}<div class="texto">{{ p.ocorrencias }}</div>{% endif %}</div>
+  {% endif %}
+
+  {% if p.material %}
+  <div style="margin-top:6pt"><span class="papel">Material recebido</span>
+    {{ m.material(p.material) }}</div>
+  {% endif %}
+
+  {# A EQUIPE, na frase do modelo dele — e contada pelo ponto. #}
+  <div style="margin-top:7pt"><span class="papel">Equipe técnica / produção</span>
+    {% if p.efetivo.linhas %}
+      <div>Equipe composta por <b>{{ p.efetivo.total }}</b>
+        colaborador(es){% if p.efetivo.total_terceirizado %}
+        — {{ p.efetivo.total_proprio }} efetivo(s) e
+        {{ p.efetivo.total_terceirizado }} terceirizado(s){% endif %},
+        relacionados abaixo:</div>
+      <div style="margin-top:3pt; columns:2; column-gap:14pt">
+        {% for l in p.efetivo.linhas %}
+        <div>{{ "%02d" | format(l.quantidade) }} — {{ l.funcao | upper }}
+          {%- if l.tipo != "próprio" %} <small>({{ l.tipo }}
+            {%- if l.empresa %} · {{ l.empresa }}{% endif %})</small>{% endif %}</div>
+        {% endfor %}
+      </div>
+    {% elif p.efetivo.indisponivel %}
+      <div class="vazio">{{ p.efetivo.indisponivel }}</div>
+    {% else %}
+      <div class="vazio">Sem efetivo registrado neste dia.</div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+<h2>Anotações da fiscalização</h2>
+<div class="quadro medio fiscal">
+  {% if p.obs_fiscalizacao %}
+    <div class="texto">{{ p.obs_fiscalizacao }}</div>
+    <div class="assinou">registrado por {{ p.obs_fiscalizacao_por }}</div>
+  {% else %}
+    <div class="vazio">Campo reservado à fiscalização.</div>
+  {% endif %}
+</div>
+
+{{ m.correcoes(p.correcoes) }}
+
+<div class="assinaturas">
+  <div><div class="linha-assin">
+    <b>&nbsp;</b>
+    <small>Fiscal do contrato</small>
+    <small>Data: ____ / ____ / ________</small>
+    <span class="papel">Fiscalização</span>
+  </div></div>
+  <div><div class="linha-assin">
+    <b>{{ r.obra.responsavel_tecnico or "&nbsp;" | safe }}</b>
+    <small>Responsável técnico
+      {%- if r.obra.crea %} · CREA {{ r.obra.crea }}{% endif %}</small>
+    <small>Data: {{ m.br(p.data) }}</small>
+    <span class="papel">Contratada</span>
+  </div></div>
+</div>
+
+<div class="rodape">
+  <span>{{ r.obra.codigo }} · {{ m.br(p.data) }} · {{ p.dia_da_semana }}</span>
+  <span>Emitido pelo ERP BWS em {{ m.br(r.gerado_em) }}{% if p.situacao != "FECHADO" %}
+    · <span class="rascunho">RASCUNHO — diário ainda não fechado</span>{% endif %}</span>
+</div>

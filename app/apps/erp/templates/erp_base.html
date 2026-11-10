@@ -1048,16 +1048,37 @@ function perguntar({titulo, campos, textoOk = "Confirmar", aviso: avisoTexto}) {
           ${campos.map((c, i) => `
             <div class="campo" style="grid-column:span ${c.largura || 3}">
               <label>${c.rotulo}${c.obrigatorio ? " *" : ""}</label>
+              {# ⚑ O VALOR VAI ESCAPADO, e isto não é zelo: desde 10/11/2026 o
+                 diálogo recebe RELATO DE OBRA (a sugestão de texto por IA),
+                 que é texto livre de verdade. Um `<` no meio de "laje < 10cm"
+                 fechava a caixa e comia o resto do relato. #}
               ${c.tipo === "textarea"
                 ? `<textarea id="pg-${i}" rows="${c.linhas || 4}"
-                     placeholder="${c.exemplo || ""}">${c.valor || ""}</textarea>`
+                     placeholder="${escapar(c.exemplo || "")}">${escapar(c.valor || "")}</textarea>`
                 : c.tipo === "select"
                 ? `<select id="pg-${i}">${(c.opcoes || []).map(o =>
                     `<option value="${o.valor}" ${o.valor === c.valor ? "selected" : ""}>${o.rotulo}</option>`).join("")}</select>`
                 : c.tipo === "arquivo"
                 ? `<input id="pg-${i}" type="file" ${c.aceita ? `accept="${c.aceita}"` : ""}>`
+                {# CAMPO DE PESSOA (10/11/2026). Ele, abrindo uma solicitação:
+                   *"vamos buscar a pessoa na nossa base de dados, digitando
+                   algum dado, um CPF (…) talvez pela LGPD a gente não possa
+                   expor uma lista de funcionários, mas a gente começar a
+                   digitar algum nome, ele já começar a ir aparecendo."*
+
+                   ⚑ NÃO É UM <select> COM TODO MUNDO DENTRO, e essa é a
+                   diferença que importa: a caixa de escolha carregava o
+                   cadastro inteiro na página, e bastava abrir o código para
+                   copiar os 575 nomes. Aqui só aparece quem já se sabia
+                   procurar — e no celular, digitar três letras é mais rápido
+                   que rolar uma lista de 575. #}
+                : c.tipo === "pessoa"
+                ? `<input id="pg-${i}" type="search" autocomplete="off"
+                     placeholder="${c.exemplo || "digite o nome ou o CPF"}">
+                   <input id="pg-${i}-id" type="hidden" value="">
+                   <div id="pg-${i}-achados" class="busca-achados"></div>`
                 : `<input id="pg-${i}" name="${c.nome || ""}" type="${c.tipo || "text"}"
-                     value="${c.valor || ""}" placeholder="${c.exemplo || ""}">`}
+                     value="${escapar(c.valor || "")}" placeholder="${escapar(c.exemplo || "")}">`}
               ${c.dica ? `<div class="dica">${c.dica}</div>` : ""}
             </div>`).join("")}
         </div>
@@ -1087,6 +1108,19 @@ function perguntar({titulo, campos, textoOk = "Confirmar", aviso: avisoTexto}) {
           saida[campos[i].nome] = arquivo;
           continue;
         }
+        // CAMPO DE PESSOA devolve o NÚMERO da pessoa escolhida, nunca o
+        // texto digitado: nome digitado à mão é o caminho para o pedido cair
+        // no cadastro errado, que é o que ele quis evitar.
+        if (campos[i].tipo === "pessoa") {
+          const escolhido = (els(`pg-${i}-id`).value || "").trim();
+          if (campos[i].obrigatorio && !escolhido) {
+            aviso("pg-erro", "Escolha a pessoa na lista — digite parte do nome "
+                  + "ou o CPF e clique no resultado.", "erro");
+            return;
+          }
+          saida[campos[i].nome] = escolhido;
+          continue;
+        }
         const valor = (els(`pg-${i}`).value || "").trim();
         if (campos[i].obrigatorio && !valor) {
           aviso("pg-erro", `Preencha ${campos[i].rotulo.toLowerCase()}.`, "erro");
@@ -1096,9 +1130,52 @@ function perguntar({titulo, campos, textoOk = "Confirmar", aviso: avisoTexto}) {
       }
       fechar(saida);
     });
+    campos.forEach((c, i) => { if (c.tipo === "pessoa") ligarBuscaDePessoa(i); });
     dlg.addEventListener("cancel", () => fechar(null), {once: true});
     dlg.showModal();
     setTimeout(() => els("pg-0") && els("pg-0").focus(), 50);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// A BUSCA DE PESSOA — três letras, no máximo oito resultados
+//
+// ⚑ A ESPERA DE 300ms NÃO É ENFEITE: sem ela, cada tecla vira uma consulta ao
+// banco. Quem digita "francisco" dispararia nove buscas, e a nona — a única
+// que importa — chegaria depois das outras, podendo pintar a tela com o
+// resultado de "francisc". Por isso a resposta velha é descartada pelo
+// contador de pedido.
+// ---------------------------------------------------------------------------
+function ligarBuscaDePessoa(i){
+  const campo = els(`pg-${i}`), oculto = els(`pg-${i}-id`),
+        achados = els(`pg-${i}-achados`);
+  let espera = null, pedido = 0;
+  campo.addEventListener("input", () => {
+    oculto.value = "";                 // digitou de novo: a escolha caiu
+    clearTimeout(espera);
+    const texto = campo.value.trim();
+    if (texto.length < 3) { achados.innerHTML = ""; return; }
+    espera = setTimeout(async () => {
+      const meu = ++pedido;
+      achados.innerHTML = `<small class="desc">procurando…</small>`;
+      try {
+        const r = await api(`/erp/api/colaboradores/buscar?q=${encodeURIComponent(texto)}`);
+        if (meu !== pedido) return;    // chegou atrasada: a tela já mudou
+        achados.innerHTML = (r.pessoas || []).length
+          ? r.pessoas.map(p => `<button type="button" class="busca-achado"
+              data-id="${p.id}" data-nome="${escapar(p.nome)}">
+              <b>${escapar(p.nome)}</b>
+              <small>${documento(p.cpf)}${p.obra ? " · obra " + escapar(p.obra) : ""}${
+                p.situacao === "DESLIGADO" ? " · desligado" : ""}</small></button>`).join("")
+          : `<small class="desc">Ninguém encontrado com isso.</small>`;
+        achados.querySelectorAll(".busca-achado").forEach(b =>
+          b.addEventListener("click", () => {
+            oculto.value = b.dataset.id;
+            campo.value = b.dataset.nome;
+            achados.innerHTML = `<small class="desc">✓ escolhido</small>`;
+          }));
+      } catch(e){ achados.innerHTML = `<small class="desc">${escapar(e.message)}</small>`; }
+    }, 300);
   });
 }
 

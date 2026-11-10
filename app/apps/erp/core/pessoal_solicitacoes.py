@@ -136,13 +136,24 @@ TIPOS: dict[str, dict[str, Any]] = {
         "checklist": ("Conferir a autorização do colaborador",
                       "Lançar no sistema de pagamento"),
     },
-    "PRE_CADASTRO": {
-        "nome": "Pré-cadastro de colaborador",
-        "explicacao": "a obra manda o nome e o CPF; o DP completa",
+    # ⚑ NÃO EXISTE "PRÉ-CADASTRO", e isso foi ELE quem corrigiu em 09/11/2026:
+    # *"você colocou lá pré-cadastro colaborador, não existe esse pré-cadastro,
+    # existe o cadastro, ponto final. O cadastro já tem que vir com
+    # documentação e tudo mais."*
+    #
+    # A diferença não é de palavra, é de quem faz o quê: no pré-cadastro a obra
+    # mandava nome e CPF e o DP ia atrás do resto — era o DP perseguindo
+    # documento por WhatsApp, que é justamente o trabalho que esta fila existe
+    # para acabar. No cadastro, a obra abre o pedido COM OS PAPÉIS, e o DP
+    # CONFERE. Quem não tem o papel não abre o pedido ainda.
+    "CADASTRO": {
+        "nome": "Cadastro de colaborador",
+        "explicacao": "a obra abre com os dados E os documentos; o DP confere",
         "exige_pessoa": False, "executa": "criar_cadastro",
         "campos": ("nome", "cpf", "obra_id", "cargo_id", "vinculo", "data_inicio",
                    "telefone", "observacao"),
-        "checklist": ("Receber a documentação", "Completar o cadastro",
+        "checklist": ("Conferir se a documentação veio completa",
+                      "Conferir os dados contra os documentos",
                       "Conferir o que falta para admitir"),
     },
     "DIVERSOS": {
@@ -172,9 +183,28 @@ ABERTAS = ("ABERTA", "EM_ANALISE")
 
 
 def tipos_para_tela() -> list[dict[str, Any]]:
-    return [{"valor": c, "rotulo": d["nome"], "explicacao": d["explicacao"],
-             "exige_pessoa": d["exige_pessoa"], "campos": list(d["campos"])}
-            for c, d in TIPOS.items()]
+    """Os tipos, com os campos que cada um pede.
+
+    ⚑ A OBRA ENTRA EM TODOS, mesmo nos tipos que não a listavam (10/11/2026):
+    ela passou a ser obrigatória em todo pedido. Acrescentada AQUI, e não
+    copiada em cada tipo lá em cima, porque esquecer de copiá-la no tipo
+    número doze é o defeito garantido — e ele só apareceria quando alguém
+    tentasse abrir justamente aquele pedido.
+
+    Ela vai na FRENTE da lista: "de qual obra é isto?" é a primeira pergunta
+    de quem abre um pedido, não a última.
+    """
+    saida = []
+    for c, d in TIPOS.items():
+        campos = list(d["campos"])
+        if "obra_id" not in campos:
+            campos.insert(0, "obra_id")
+        saida.append({"valor": c, "rotulo": d["nome"],
+                      "explicacao": d["explicacao"],
+                      "exige_pessoa": d["exige_pessoa"], "campos": campos,
+                      # A tela marca o asterisco a partir desta lista.
+                      "obrigatorios": ["obra_id"]})
+    return saida
 
 
 def _dec(v: Any, campo: str) -> Optional[Decimal]:
@@ -233,7 +263,26 @@ def abrir(s: Session, dados: dict[str, Any], usuario: Usuario) -> dict[str, Any]
     # obra, que é o contrário do que a fila existe para fazer.
     if tipo == "DESLIGAMENTO" and not pedido.get("data_saida"):
         raise ErroValidacao("Informe a data de saída.")
-    if tipo == "PRE_CADASTRO":
+    # ⚑ A OBRA É OBRIGATÓRIA EM TODO PEDIDO (10/11/2026). O dono: *"eu quero
+    # que seja obrigatória, porque a gente não sabe de onde é que está vindo
+    # aquela pessoa, para onde está indo trabalhar."*
+    #
+    # Ela pode vir de dois lugares, e a ordem importa: o que o pedido DISSE
+    # vence, e só na falta dele vale a obra do cadastro da pessoa. É o caso da
+    # transferência — a obra que pede é a de DESTINO, e sobrescrevê-la pela do
+    # cadastro mandaria o pedido para a obra de onde a pessoa está saindo.
+    #
+    # Quando não há nem uma nem outra, o pedido é RECUSADO em vez de entrar
+    # sem obra: pedido sem obra é pedido que ninguém sabe de onde veio, e
+    # quem for atendê-lo vai perguntar por WhatsApp — que é o trabalho que
+    # esta fila existe para acabar.
+    obra_do_pedido = (int(dados["obra_id"]) if dados.get("obra_id")
+                      else (pessoa.obra_id if pessoa else None))
+    if not obra_do_pedido:
+        raise ErroValidacao(
+            "Informe a obra. Sem ela não dá para saber de onde vem a pessoa "
+            "nem para onde ela vai trabalhar.")
+    if tipo == "CADASTRO":
         from app.apps.erp.core.cadastros.validadores import cpf_valido, somente_digitos
         cpf = somente_digitos(pedido.get("cpf") or "")
         if not cpf_valido(cpf):
@@ -254,10 +303,17 @@ def abrir(s: Session, dados: dict[str, Any], usuario: Usuario) -> dict[str, Any]
         "numero": numero, "tipo": tipo, "colaborador_id": colaborador_id,
         "nome": (pessoa.nome if pessoa else (pedido.get("nome") or None)),
         "cpf": (pessoa.cpf if pessoa else (pedido.get("cpf") or None)),
-        "obra_id": (int(dados["obra_id"]) if dados.get("obra_id")
-                    else (pessoa.obra_id if pessoa else None)),
+        "obra_id": obra_do_pedido,
         "solicitante": usuario.id if usuario else None,
-        "requerente": (str(dados.get("requerente") or "").strip() or None),
+        # ⚑ "REQUERENTE" SAIU DE USO EM 10/11/2026, por decisão dele:
+        # *"requerente era assim: eu solicito por alguém; aí esse alguém é o
+        # requerente. Mas vamos deixar de fora por enquanto."*
+        #
+        # A COLUNA FICA, e isso é escolha: há pedidos gravados com ela, e
+        # apagá-los tiraria a resposta de "quem pediu isto?" de registros que
+        # já existem. O que saiu foi PERGUNTAR. "Por enquanto" é a palavra
+        # dele — voltar é reabrir o campo, não refazer a tabela.
+        "requerente": None,
         "dados": __import__("json").dumps(pedido, ensure_ascii=False, default=str),
         "ref": _data(pedido.get("data_saida") or pedido.get("admissao")
                      or pedido.get("vigencia") or pedido.get("data_nascimento"), "data"),
@@ -510,7 +566,7 @@ def listar(s: Session, *, situacao: str = "", tipo: str = "",
         onde.append("d.colaborador_id = :cid")
         params["cid"] = colaborador_id
     # O ESCOPO POR OBRA: quem é preso a obra vê o que é da obra dele, mais o que
-    # ele mesmo abriu (pedido de pré-cadastro ainda não tem obra ligada).
+    # ele mesmo abriu (pedido de cadastro ainda não tem obra ligada).
     if obra_ids is not None:
         if obra_ids:
             onde.append("(d.obra_id = ANY(:obras) OR d.solicitante_id = :eu)")

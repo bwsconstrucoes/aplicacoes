@@ -322,7 +322,7 @@ async function atender(){
     DEPENDENTE: "cadastra o dependente",
     AJUDA_DE_CUSTO: "atualiza os benefícios no cadastro",
     VALE_TRANSPORTE: "atualiza o transporte no cadastro",
-    PRE_CADASTRO: "CRIA o cadastro da pessoa no ERP",
+    CADASTRO: "CRIA o cadastro da pessoa no ERP",
   }[ABERTA.tipo];
   const r = await perguntar({titulo: `Atender ${ABERTA.numero}`,
     aviso: efeito ? `Ao atender, o sistema ${efeito}.` 
@@ -396,10 +396,18 @@ async function novaSolicitacao(){
                     {valor: "RESCISAO", rotulo: "Documentação de rescisão"}]};
   const campos = [];
   if (regra.exige_pessoa) {
-    const pessoas = (await api("/erp/api/colaboradores")).colaboradores;
-    campos.push({nome: "colaborador_id", rotulo: "Pessoa", tipo: "select",
+    {# A PESSOA SE BUSCA, NÃO SE ESCOLHE NUMA LISTA (10/11/2026).
+
+       Antes isto carregava `/erp/api/colaboradores` inteiro num <select>:
+       quem abrisse a janela via os 575 nomes de uma vez, e o código da página
+       dava a lista para copiar. Ele apontou: *"talvez pela LGPD a gente não
+       possa expor uma lista de funcionários, mas a gente começar a digitar
+       algum nome, ele já começar a ir aparecendo."* Agora são três letras ou
+       o CPF, e no máximo oito resultados. #}
+    campos.push({nome: "colaborador_id", rotulo: "Pessoa", tipo: "pessoa",
       obrigatorio: true, largura: 6,
-      opcoes: pessoas.map(p => ({valor: p.id, rotulo: `${p.nome} — ${documento(p.cpf)}`}))});
+      exemplo: "digite parte do nome ou o CPF",
+      dica: "Três letras já bastam. O CPF pode ser digitado com ou sem ponto."});
   }
   for (const c of regra.campos) {
     const extra = CAMPO_PEDIDO[c] || {};
@@ -413,8 +421,15 @@ async function novaSolicitacao(){
                    opcoes: [{valor: "", rotulo: "—"}].concat(
                      fonte.map(x => ({valor: x.id, rotulo: x.nome})))});
     } else if (c === "obra_id") {
+      {# A OBRA É OBRIGATÓRIA desde 10/11/2026. Ele: *"eu quero que seja
+         obrigatória, porque a gente não sabe de onde é que está vindo aquela
+         pessoa, para onde está indo trabalhar."* Sem o "—" na lista: deixar a
+         opção vazia à mostra convida a pular o campo e descobrir o erro só ao
+         confirmar. #}
       campos.push({nome: c, rotulo: "Obra", tipo: "select", largura: 3,
-                   opcoes: [{valor: "", rotulo: "—"}].concat(
+                   obrigatorio: true,
+                   dica: "De onde vem a pessoa, ou para onde ela vai trabalhar.",
+                   opcoes: [{valor: "", rotulo: "escolha a obra…"}].concat(
                      (o.obras || []).map(x => ({valor: x.id, rotulo: x.codigo})))});
     } else {
       campos.push({nome: c, rotulo: ROTULO_CAMPO[c] || c, largura: extra.largura || 3,

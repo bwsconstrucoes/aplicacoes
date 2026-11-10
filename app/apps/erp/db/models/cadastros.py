@@ -469,6 +469,18 @@ class Obra(Base):
     data_inicio: Mapped[Optional[date]] = mapped_column(Date)
     data_termino: Mapped[Optional[date]] = mapped_column(Date)
     orgao_resumido: Mapped[Optional[str]] = mapped_column(Text)
+    # O CONTRATANTE NO PAPEL DO DIÁRIO — migração 093. A unidade é a linha
+    # abaixo do nome do órgão ("SECRETARIA DE OBRAS E DEFESA CIVIL"), e a logo
+    # é a do órgão, que entra no cabeçalho junto com a da empresa. Ficam na
+    # obra e não num cadastro de órgãos porque o modelo é cláusula DO
+    # CONTRATO: a mesma prefeitura pode exigir papéis diferentes em dois
+    # contratos.
+    contratante_unidade: Mapped[Optional[str]] = mapped_column(Text)
+    contratante_logo: Mapped[Optional[bytes]] = mapped_column(LargeBinary)
+    contratante_logo_mime: Mapped[Optional[str]] = mapped_column(Text)
+    # Qual dos modelos de diário este contrato exige (ver core/diario.py).
+    # Nulo = o nosso, o mais amplo.
+    diario_modelo: Mapped[Optional[str]] = mapped_column(Text)
     ref_pipefy: Mapped[Optional[str]] = mapped_column(Text)
     # endereço completo (serve de local de entrega nas compras)
     cep: Mapped[Optional[str]] = mapped_column(Text)
@@ -1279,6 +1291,12 @@ class Colaborador(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     nome: Mapped[str] = mapped_column(Text, nullable=False)
     cpf: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    # O OPERADOR DO ERP QUE É ESTA PESSOA (migração 096). Nulo é o normal:
+    # a maioria de quem trabalha não entra no sistema. Quando existe,
+    # desligar o colaborador desliga o acesso dele — que era justamente o que
+    # ninguém lembrava de fazer à mão.
+    usuario_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("usuarios.id"))
     matricula: Mapped[Optional[str]] = mapped_column(Text)
     funcao_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("funcoes.id"))
     obra_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("obras.id"))

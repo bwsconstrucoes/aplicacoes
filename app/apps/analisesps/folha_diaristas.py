@@ -188,9 +188,55 @@ def periodo_sugerido(hoje) -> tuple:
     return hoje.year, hoje.month, "quinzena"
 VERBA = "diaria"
 
+# ⚑ OS ACRÉSCIMOS AGORA SÃO CONFIGURAÇÃO, NO ERP (10/11/2026). O dono:
+# *"esses números ainda valem atualmente, mas isso é algo que deva ficar
+# dentro de uma configuração, o acréscimo da diária."*
+#
+# Os valores abaixo continuam sendo os PADRÕES — e é de propósito que sejam
+# exatamente os de antes: quem nunca abrir a tela de configuração continua
+# com a conta que a empresa já faz. Configuração que muda o resultado no
+# primeiro dia é armadilha.
+#
+# A configuração mora no ERP (`app.apps.erp.core.diarias`) porque o cadastro
+# mora lá, a folha está indo para lá, e os dois módulos rodam no MESMO
+# processo e no MESMO banco — ler de lá não custa uma volta de rede.
 ADICIONAL_FERIADO = Decimal("20.00")
 ADICIONAL_SABADO = Decimal("10.00")
 ADICIONAL_DOMINGO = Decimal("20.00")
+
+
+def acrescimos_configurados(sessao=None) -> dict:
+    """Os acréscimos que o ERP tem gravados, ou os padrões daqui.
+
+    `sessao` é opcional e existe para quem JÁ TEM uma sessão do ERP aberta —
+    o teste, e qualquer chamada que venha de dentro de uma transação. Abrir
+    uma segunda sessão nesse caso não enxergaria o que ainda não foi gravado.
+
+    ⚠️ **NUNCA LEVANTA.** A folha de diaristas não pode parar porque a tabela
+    de parâmetros do ERP não respondeu: sem resposta, valem os padrões — que
+    são os números em vigor — e fica o aviso no log.
+    """
+    try:
+        from app.apps.erp.core import diarias
+        if sessao is not None:
+            c = diarias.configuracao(sessao)
+            return {"feriado": Decimal(str(c["feriado"])),
+                    "sabado": Decimal(str(c["sabado"])),
+                    "domingo": Decimal(str(c["domingo"])),
+                    "sem_diaria": [str(f).upper() for f in c["sem_diaria"]]}
+        from app.apps.erp.db.database import get_session
+        with get_session() as s:
+            c = diarias.configuracao(s)
+        return {"feriado": Decimal(str(c["feriado"])),
+                "sabado": Decimal(str(c["sabado"])),
+                "domingo": Decimal(str(c["domingo"])),
+                "sem_diaria": [str(f).upper() for f in c["sem_diaria"]]}
+    except Exception as e:                              # noqa: BLE001
+        logger.warning("analisesps/diaristas: acréscimos do ERP indisponíveis "
+                       "(%s) — valendo os padrões", e)
+        return {"feriado": ADICIONAL_FERIADO, "sabado": ADICIONAL_SABADO,
+                "domingo": ADICIONAL_DOMINGO,
+                "sem_diaria": ["VIGIA"]}
 
 
 def periodo(ano: int, mes: int, qual: str) -> tuple:
@@ -206,10 +252,16 @@ def _sem_acento(texto) -> str:
                     .lower().split())
 
 
-def e_vigia(ficha: dict) -> bool:
-    """A função é VIGIA? Igualdade, como a planilha (`W != 'VIGIA'`) — "VIGIA
-    NOTURNO" é outra função e recebe diária."""
-    return _sem_acento(ficha.get("cargo")) == "vigia"
+def e_vigia(ficha: dict, sem_diaria: list = None) -> bool:
+    """A função NÃO recebe diária? Igualdade, como a planilha (`W != 'VIGIA'`)
+    — "VIGIA NOTURNO" é outra função e recebe diária.
+
+    A lista vem da configuração do ERP (10/11/2026); sem ela, o VIGIA de
+    sempre. O nome da função ficou `e_vigia` para não quebrar quem chama —
+    o que ela responde é "está na lista de quem não recebe".
+    """
+    lista = sem_diaria if sem_diaria is not None else ["VIGIA"]
+    return _sem_acento(ficha.get("cargo")) in {_sem_acento(f) for f in lista}
 
 
 # ===========================================================================
@@ -398,13 +450,24 @@ def _e_feriado(data, obra: str, feriados, codigo_por_nome: dict) -> bool:
     return bool(feriados and feriados.feriado(data, obra))
 
 
-def adicional_do_dia(data, e_feriado: bool) -> tuple:
+def adicional_do_dia(data, e_feriado: bool, acrescimos: dict = None) -> tuple:
+    """Quanto se soma à diária NESTE dia, e por quê.
+
+    ⚑ FERIADO VENCE O DIA DA SEMANA, e não soma com ele: feriado que cai no
+    sábado paga o acréscimo de feriado, e só. Somar seria pagar duas vezes
+    pela mesma condição.
+
+    `acrescimos` vem de `acrescimos_configurados()`. Sem ele, valem os
+    padrões — assim nenhuma chamada antiga quebra.
+    """
+    a = acrescimos or {"feriado": ADICIONAL_FERIADO, "sabado": ADICIONAL_SABADO,
+                       "domingo": ADICIONAL_DOMINGO}
     if e_feriado:
-        return ADICIONAL_FERIADO, "feriado"
+        return a["feriado"], "feriado"
     if data.weekday() == 5:
-        return ADICIONAL_SABADO, "sábado"
+        return a["sabado"], "sábado"
     if data.weekday() == 6:
-        return ADICIONAL_DOMINGO, "domingo"
+        return a["domingo"], "domingo"
     return Decimal("0.00"), ""
 
 
@@ -434,10 +497,16 @@ def calcular_pessoa(ficha: dict, dias_lidos: list, inicio, fim,
         "valor": Decimal("0.00"), "por_obra": [], "obra": "",
         "dias_de_ctps": 0, "dias_sem_decidir": 0,
         "motivos": [], "pagar": True, "impossivel": False,
-        "desligado": False, "vigia": e_vigia(ficha), "sem_diaria": False,
+        "desligado": False,
+        "vigia": e_vigia(ficha, acrescimos_configurados()["sem_diaria"]),
+        "sem_diaria": False,
         "ajuste_pagar": ajuste.get("pagar"),
     }
     por_obra: dict = {}
+    # UMA LEITURA SÓ, antes do laço: os acréscimos não mudam no meio do mês, e
+    # consultá-los por dia seria uma ida ao banco por dia de ponto de cada
+    # pessoa — ~500 pessoas × 15 dias numa instância de 2 GB.
+    acrescimos = acrescimos_configurados()
     for lido in sorted(dias_lidos or [], key=lambda d: d.get("data") or dt.date.min):
         data = lido.get("data")
         if not isinstance(data, dt.date) or not (inicio <= data <= fim):
@@ -461,7 +530,8 @@ def calcular_pessoa(ficha: dict, dias_lidos: list, inicio, fim,
             motivo = "; ".join(x for x in (
                 motivo, "obra não informada no ponto: atribuída à obra do cadastro") if x)
         feriado = _e_feriado(data, obra, feriados, codigo_por_nome)
-        adicional, porque = adicional_do_dia(data, feriado) if qtd else (Decimal("0.00"), "")
+        adicional, porque = (adicional_do_dia(data, feriado, acrescimos)
+                             if qtd else (Decimal("0.00"), ""))
         valor = ((qtd * valor_diaria + adicional).quantize(CENTAVO)
                  if valor_diaria is not None and qtd else Decimal("0.00"))
         saida["dias"].append({
