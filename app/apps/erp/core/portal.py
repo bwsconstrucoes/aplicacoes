@@ -337,6 +337,7 @@ def tipos(s: Session) -> list[dict[str, Any]]:
                 "obrigatorios_se": {c: {v: list(p) for v, p in mapa.items()}
                                     for c, mapa in (d.get("obrigatorios_se") or {}).items()},
                 "repete": bool(d.get("repete")),
+                "vem_do_documento": dict(d.get("vem_do_documento") or {}),
             })
     return saida
 

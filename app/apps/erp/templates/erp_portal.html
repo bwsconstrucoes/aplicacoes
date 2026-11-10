@@ -83,6 +83,10 @@
               color: #0B2C5C; border-radius: 8px; padding: 9px 12px;
               font: inherit; font-size: 14px; width: 100%; cursor: pointer; }
 
+  .do-papel { display: block; color: #5A6B85; font-size: 12px; margin-top: 3px; }
+  .do-papel.ok { color: #1A7F4B; }
+  .do-papel.pede { color: #8A5B00; font-weight: 600; }
+
   /* OS PAPÉIS — a lista que se marca sozinha enquanto a pessoa anexa. */
   .papeis { margin-top: 14px; padding: 10px; border-radius: 10px;
             background: #F7F9FC; border: 1px solid #C9D3E4; }
@@ -469,6 +473,21 @@ function pintarCamposDoTipo(){
             </select></label>`;
         const modo = SO_NUMERO.test(c) || SO_DIGITO.test(c) ? "numeric"
                    : (tipo === "text" && /valor|salario|aux_/.test(c)) ? "decimal" : "";
+        // ⚑ CAMPO QUE VEM DO DOCUMENTO NASCE EM ESPERA, não como pergunta.
+        // Ele, em 10/11/2026: *"eu vi que você está pedindo para que seja
+        // escrito PIS, CTPS, mas isso aí a gente já vai ler os documentos. O
+        // ideal era (…) se não encontrasse nos documentos, aí exigisse de
+        // outra forma."* Transcrever onze dígitos de uma foto recém-tirada é
+        // trabalho dobrado, e é onde se troca um algarismo.
+        const dePapel = (t.vem_do_documento || {})[c];
+        if (dePapel)
+          return `<label class="campo-portal" id="pw-${c}" data-de-papel="${c}">
+            ${esc(rot)}
+            <input id="p-${c}" name="${c}" type="${tipo}"
+              ${modo ? `inputmode="${modo}"` : ""}>
+            <small class="do-papel" id="pd-${c}">sai do documento — anexe
+              ${esc(ROTULO_PAPEL[dePapel] || dePapel)} e ele se preenche</small>
+          </label>`;
         return `<label class="campo-portal">${esc(rot)}
           <input id="p-${c}" name="${c}" type="${tipo}"
             ${modo ? `inputmode="${modo}"` : ""}></label>`;
@@ -740,8 +759,32 @@ async function anexarPapel(t, codigo, campo){
 // ---------------------------------------------------------------------------
 // O QUE FALTA — à vista, o tempo todo
 // ---------------------------------------------------------------------------
+// Depois de cada leitura, cada campo diz em que pé está: preenchido pelo
+// documento, ou "não achei na foto, digite".
+function recadoDosCamposDePapel(t){
+  Object.entries(t.vem_do_documento || {}).forEach(([c, papel]) => {
+    const campo = els("p-" + c), dica = els("pd-" + c);
+    if (!campo || !dica) return;
+    const anexado = !!PAPEIS[papel];
+    if (campo.value) {
+      dica.textContent = anexado ? "veio do documento — confira"
+                                 : "preenchido à mão";
+      dica.className = "do-papel ok";
+    } else if (!anexado) {
+      dica.textContent = "sai do documento — anexe "
+        + (ROTULO_PAPEL[papel] || papel) + " e ele se preenche";
+      dica.className = "do-papel";
+    } else {
+      // ⚑ A leitura rodou e não achou: AGORA sim vira pergunta.
+      dica.textContent = "não achei este número no documento — digite";
+      dica.className = "do-papel pede";
+    }
+  });
+}
+
 function conferirOQueFalta(t){
   if (!t) return;
+  recadoDosCamposDePapel(t);
   const falta = [];
   if (t.exige_pessoa && !(els("p-pessoa") && els("p-pessoa").value))
     falta.push("o colaborador");

@@ -255,8 +255,25 @@ TIPOS: dict[str, dict[str, Any]] = {
         # ⚑ SE FOR CTPS, A CARTEIRA E O PIS SÃO OBRIGATÓRIOS TAMBÉM. Ele, em
         # 10/11/2026: *"se for CTPS, os dados da carteira são obrigatórios,
         # PIS também."*
+        #
+        # ⚑ MAS NINGUÉM DIGITA: eles saem da LEITURA das páginas da carteira,
+        # que já são anexadas no mesmo pedido. Ele, logo depois: *"eu vi que
+        # você está pedindo para que seja escrito PIS, CTPS, mas isso aí a
+        # gente já vai ler os documentos. O ideal era (…) se não encontrasse
+        # nos documentos, aí exigisse de outra forma."*
+        #
+        # Pedir para transcrever um número de onze dígitos de uma foto que
+        # acabou de ser tirada é trabalho dobrado — e é exatamente onde se
+        # troca um algarismo. `vem_do_documento` diz à tela que o campo nasce
+        # preenchido pela leitura e só vira pergunta quando ela não achar.
         "obrigatorios_se": {"tipo_documentacao": {
             "CTPS": ("num_ctps", "num_pis")}},
+        "vem_do_documento": {
+            "num_ctps": "CTPS-INFORMACOES",
+            "num_pis": "CTPS-INFORMACOES",
+            "nome": "DOC-IDENTIDADE",
+            "cpf": "DOC-IDENTIDADE",
+        },
         # ⚑ Matrícula e convenção são do DP — estão em FASE no Pipe, não no
         # formulário. Os auxílios também.
         "campos_do_dp": ("matricula", "convencao_id", "cargo_id", "salario",
@@ -518,6 +535,9 @@ def tipos_para_tela() -> list[dict[str, Any]]:
                       "documentos": list(d.get("documentos", ())),
                       # Pedido que aceita vários de uma vez (dependente).
                       "repete": bool(d.get("repete")),
+                      # Qual papel preenche qual campo — a tela só pergunta
+                      # quando a leitura não achou.
+                      "vem_do_documento": dict(d.get("vem_do_documento") or {}),
                       # O rótulo e as opções de cada campo, como no Pipe.
                       "rotulos": {x: ROTULOS.get(x, x) for x in campos},
                       "opcoes": {x: list(CATEGORIAS[x]) for x in campos

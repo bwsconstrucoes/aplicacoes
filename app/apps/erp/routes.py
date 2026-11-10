@@ -11849,9 +11849,18 @@ def api_diario_sugerir_texto(obra_id: int):
             # O escopo é conferido mesmo não gravando nada: o texto é da obra,
             # e quem não alcança a obra não lê o relato dela nem para melhorar.
             exigir_obra_no_escopo(s, usuario, obra_id)
-            dados = request.get_json(silent=True) or {}
-            r = svc_texto.sugerir(dados.get("campo"), dados.get("texto"),
-                                  usuario_id=usuario.id if usuario else None)
+            quem = usuario.id if usuario else None
+    except ErroNaoEncontrado:
+        raise
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    dados = request.get_json(silent=True) or {}
+    # ⚑ FORA do `try`, pelo mesmo motivo: a recusa por teto é 402, e o
+    # `except Exception` abaixo a viraria "falha do sistema".
+    _exigir_saldo_de_ia()
+    try:
+        r = svc_texto.sugerir(dados.get("campo"), dados.get("texto"),
+                              usuario_id=quem)
         return jsonify({"ok": True, **r})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
@@ -12120,14 +12129,20 @@ def api_portal_ler_documento():
         with get_session() as s:
             usuario = _usuario_logado(s)
             svc_portal.quem_esta(s, usuario)            # 401 se não entrou
-        arquivo = request.files.get("arquivo")
-        if arquivo is None:
-            return jsonify({"ok": False, "erro": "Nenhum arquivo."}), 400
+    except svc_portal.SemAcesso as e:
+        return jsonify({"ok": False, "erro": str(e)}), 401
+    arquivo = request.files.get("arquivo")
+    if arquivo is None:
+        return jsonify({"ok": False, "erro": "Nenhum arquivo."}), 400
+    # ⚑ O TETO DE IA DO MÊS, e FORA do `try`: a recusa por teto tem resposta
+    # própria (402), e dentro do `try` o `except Exception` a transformaria em
+    # "falha do sistema". Foi uma trava do repositório que pegou esta
+    # omissão — a rota gastava IA sem olhar o teto.
+    _exigir_saldo_de_ia()
+    try:
         r = svc_doc.ler(arquivo.read(), arquivo.filename or "",
                         str(request.form.get("tipo") or ""))
         return jsonify({"ok": True, **r})
-    except svc_portal.SemAcesso as e:
-        return jsonify({"ok": False, "erro": str(e)}), 401
     except Exception as e:
         logger.exception("ERP/portal: falha ao ler o documento")
         # ⚑ 200 de propósito: a tela trata "não consegui ler" como ANEXADO,

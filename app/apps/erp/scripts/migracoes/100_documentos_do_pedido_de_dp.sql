@@ -45,10 +45,10 @@ ALTER TABLE documentos ADD CONSTRAINT ck_documento_um_dono CHECK (
 -- Os tipos de documento que o cadastro exige. `ON CONFLICT DO NOTHING`
 -- porque os três primeiros já existem desde a migração do Arquivo.
 INSERT INTO documento_tipos (codigo, nome, grupo, dono)
-VALUES ('DOC-IDENTIDADE',              'Documento de identificação (RG, CNH ou CTPS)', 'PESSOAL', 'PESSOA'),
-       ('CPF-DOC',                     'CPF (Cadastro de Pessoa Física)',              'PESSOAL', 'PESSOA'),
-       ('COMPROVANTE-ENDERECO-PESSOA', 'Comprovante de endereço',                      'PESSOAL', 'PESSOA'),
-       ('CTPS-FOTO',                   'CTPS (página com a foto do colaborador)',      'PESSOAL', 'PESSOA'),
-       ('CTPS-INFORMACOES',            'CTPS (página com as informações do colaborador)', 'PESSOAL', 'PESSOA'),
-       ('DOC-DEPENDENTE',              'Documento do dependente (certidão ou RG)',     'PESSOAL', 'PESSOA')
+VALUES ('DOC-IDENTIDADE',              'Documento de identificação (RG, CNH ou CTPS)', 'PESSOA', 'PESSOA'),
+       ('CPF-DOC',                     'CPF (Cadastro de Pessoa Física)',              'PESSOA', 'PESSOA'),
+       ('COMPROVANTE-ENDERECO-PESSOA', 'Comprovante de endereço',                      'PESSOA', 'PESSOA'),
+       ('CTPS-FOTO',                   'CTPS (página com a foto do colaborador)',      'PESSOA', 'PESSOA'),
+       ('CTPS-INFORMACOES',            'CTPS (página com as informações do colaborador)', 'PESSOA', 'PESSOA'),
+       ('DOC-DEPENDENTE',              'Documento do dependente (certidão ou RG)',     'PESSOA', 'PESSOA')
 ON CONFLICT (codigo) DO NOTHING;
