@@ -1185,6 +1185,9 @@ def test_a_descricao_sai_menor_e_com_o_texto_inteiro_no_title(app, monkeypatch):
         "/analisesps/solicitacoes").get_data(as_text=True)
     assert 'class="texto-longo"' in html
     assert longo in html, "o texto inteiro tem de ficar no title"
+    # 10/11/2026: até DUAS linhas, na mesma largura de antes (medido no navegador:
+    # coluna de 340 e tabela da mesma largura; só a linha fica mais alta).
+    assert '<div class="duas-linhas">' in html
 
 
 def test_as_colunas_sao_as_mesmas_nas_duas_telas(app_lote, monkeypatch):
