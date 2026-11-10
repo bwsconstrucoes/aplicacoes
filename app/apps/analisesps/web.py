@@ -8530,7 +8530,15 @@ def tela_agenda():
     if request.method == "POST":
         acao = request.form.get("acao", "salvar")
         try:
-            if acao == "desligar":
+            if acao == "sede":
+                # A cidade cujos feriados estaduais e municipais (do cadastro do
+                # ponto) movem as datas da agenda — ver `agenda.CHAVE_SEDE`.
+                s_ = agenda.gravar_sede(request.form.get("uf", ""),
+                                        request.form.get("municipio", ""))
+                aviso = ("Cidade da sede: " + (f"{s_['municipio']}/{s_['uf']}" if s_["municipio"]
+                                               else s_["uf"] or "nenhuma (só feriados nacionais)")
+                         + ".")
+            elif acao == "desligar":
                 atual = agenda.um(request.form.get("id", "")) or {}
                 if not atual:
                     raise ValueError("Compromisso não encontrado.")
@@ -8587,6 +8595,10 @@ def tela_agenda():
     except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
         logger.exception("Análise de SPs: falhou montar a agenda")
         proximos, alertas, compromissos, grade, erro = [], [], [], None, str(e)
+    # Os feriados do cadastro do ponto que movem as datas, do ano à vista.
+    sede = agenda.sede()
+    feriados_da_agenda = sorted((d, n) for d, n in agenda.feriados_do_ponto().items()
+                                if d.year == ano)
 
     anterior = agenda.mes_vizinho(ano, mes, -1)
     seguinte = agenda.mes_vizinho(ano, mes, 1)
@@ -8606,6 +8618,7 @@ def tela_agenda():
         aviso=request.args.get("aviso") or None,
         categorias=agenda.CATEGORIAS, recorrencias=agenda.RECORRENCIAS,
         ajustes=agenda.AJUSTES, agenda_ativo=agenda.esta_ativo,
+        sede=sede, feriados_da_agenda=feriados_da_agenda,
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())

@@ -12244,6 +12244,24 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 255 — Agenda: os feriados vêm do cadastro do ponto (10/11/2026)
+
+- A pergunta que estava aberta desde 04/11: a aba "Feriados" da planilha de credenciais
+  (a que move o vencimento das contas da Agenda para dia útil) vinha à mão. O dono: *"os
+  feriados devem vir do cadastro do app ponto"*.
+- **Agora:** `agenda.feriados_do_ponto()` lê `ponto.feriados`. Valem os NACIONAIS e os
+  ESTADUAIS/MUNICIPAIS da **cidade da sede** (escolhida na própria tela da Agenda, guardada
+  em `analisesps.meta` › `agenda.sede`); os de OBRA nunca. Motivo: a agenda é de contas e
+  impostos da empresa — o feriado municipal da cidade de uma obra não muda o vencimento do
+  FGTS, e postergar por causa dele faria pagar atrasado. Os nacionais calculados (Páscoa
+  etc.) continuam somados, como rede de segurança.
+- A aba "Feriados" deixou de ser lida na sincronização (`sincronizar_agenda`) e
+  `agenda.gravar_feriados` saiu; a tabela `analisesps.feriados` ficou sem uso (sem
+  migração para apagá-la).
+- **Pendente com o dono:** a cidade da sede. Enquanto ninguém escolher, só os nacionais
+  movem as datas (antes, o que estivesse na aba também movia).
+- Testes: `test_analisesps_agenda_feriados_ponto.py` (regra pura + no banco, com o ponto).
+
 #### Leva 254 — A folha complementar: pagar só a diferença de uma folha já paga (10/11/2026)
 
 > **Publicado em 10/11/2026.** Pendente AGORA: a primeira complementar real — conferir
