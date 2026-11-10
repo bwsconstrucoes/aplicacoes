@@ -184,7 +184,8 @@ TIPOS: dict[str, dict[str, Any]] = {
         # da obra vai entender isso aqui, vai saber responder isso aqui? Conta
         # no imposto de renda ou não conta? Não vai saber."* E, de fato, o
         # Pipe não pergunta isso. Parentesco no Pipe é só Filho ou Cônjuge.
-        "campos": ("nome", "parentesco", "data_nascimento", "observacao"),
+        "campos": ("nome", "parentesco", "data_nascimento", "dependentes",
+                   "observacao"),
         "obrigatorios": ("nome", "parentesco", "data_nascimento"),
         "campos_do_dp": ("cpf", "dependente_ir", "salario_familia"),
         "documentos": ("DOC-DEPENDENTE",),
@@ -451,6 +452,24 @@ ROTULOS: dict[str, str] = {
     "observacao": "Observações:",
 }
 
+# Os campos que SÓ o DP preenche não estão no Pipe com rótulo próprio (eles
+# vivem nas fases, onde o nome da fase já diz o contexto). Estes são os nomes
+# que a tela do DP mostra.
+ROTULOS_DO_DP: dict[str, str] = {
+    "ultimo_dia": "Último dia trabalhado",
+    "faltas_a_descontar": "Faltas a descontar",
+    "matricula": "Matrícula",
+    "convencao_id": "Convenção",
+    "cargo_id": "Cargo",
+    "salario": "Salário",
+    "admissao": "Data de admissão efetiva",
+    "vigencia": "Vigência da alteração",
+    "motivo": "Motivo da alteração",
+    "dependente_ir": "Conta como dependente no IR",
+    "primeira_competencia": "Primeira competência do desconto",
+    "cpf": "CPF do dependente",
+}
+
 # OS DOIS TIPOS QUE SAÍRAM, em 05/11/2026, e por quê — para ninguém recriá-los
 # achando que foi esquecimento. O dono: *"esse negócio de pedido manual, segunda
 # via do cartão, documentação diversa, aqui acho que não tem necessidade."*
@@ -502,7 +521,14 @@ def tipos_para_tela() -> list[dict[str, Any]]:
                       # O rótulo e as opções de cada campo, como no Pipe.
                       "rotulos": {x: ROTULOS.get(x, x) for x in campos},
                       "opcoes": {x: list(CATEGORIAS[x]) for x in campos
-                                 if x in CATEGORIAS}})
+                                 if x in CATEGORIAS},
+                      # O mesmo, para os campos que o DP preenche ao atender:
+                      # a tela dele lê daqui, e não de uma segunda lista.
+                      "rotulos_do_dp": {x: ROTULOS.get(x, ROTULOS_DO_DP.get(x, x))
+                                        for x in d.get("campos_do_dp", ())},
+                      "opcoes_do_dp": {x: list(CATEGORIAS[x])
+                                       for x in d.get("campos_do_dp", ())
+                                       if x in CATEGORIAS}})
     return saida
 
 
@@ -568,7 +594,30 @@ def abrir(s: Session, dados: dict[str, Any], usuario: Usuario) -> dict[str, Any]
     # colocar só a data do aviso prévio."* A data de saída é do DP, e entra
     # no atendimento.
     exige = exigencias(tipo, pedido)
-    faltando = [ROTULOS.get(c, c) for c in exige["campos"] if not pedido.get(c)]
+    # ⚑ PEDIDO QUE ACEITA VÁRIOS (dependente) confere CADA UM, e não o corpo.
+    # Ele: *"dependente tem que ser um a um, não posso adicionar outro, não,
+    # para pedir mais de um."* Com a lista preenchida, exigir os campos no
+    # topo seria exigir um quarto dependente solto.
+    varios = pedido.get("dependentes")
+    if regra.get("repete") and isinstance(varios, list) and varios:
+        de_cada = [c for c in exige["campos"]
+                   if c not in ("obra_id", "dependentes")]
+        for n, um in enumerate(varios, 1):
+            falta = [ROTULOS.get(c, c) for c in de_cada
+                     if not (um or {}).get(c)]
+            if falta:
+                raise ErroValidacao(
+                    f"No {n}º dependente, falta preencher: "
+                    + ", ".join(falta) + ".")
+        faltando = []
+    else:
+        faltando = [ROTULOS.get(c, c) for c in exige["campos"]
+                    if c != "dependentes" and not pedido.get(c)]
+    # ⚑ A OBRA SAI DESTA CONTA, e tem conferência PRÓPRIA logo abaixo: ela
+    # pode vir do pedido OU do cadastro da pessoa, e exigi-la aqui recusaria
+    # o caso comum (pedido da pessoa, que já tem obra) antes de olhar o
+    # cadastro.
+    faltando = [x for x in faltando if x != ROTULOS["obra_id"]]
     if faltando:
         raise ErroValidacao("Falta preencher: " + ", ".join(faltando) + ".")
 
@@ -704,7 +753,19 @@ def atender(s: Session, solicitacao_id: int, dados: dict[str, Any],
         elif executa == "alteracao":
             svc_pessoas.registrar_alteracao(s, alvo, pedido, usuario)
         elif executa == "dependente":
-            svc_pessoas.salvar_dependente(s, alvo, pedido, usuario)
+            # ⚑ VÁRIOS DE UMA VEZ. Ele, em 10/11/2026: *"dependente tem que
+            # ser um a um, não posso adicionar outro, não, para pedir mais de
+            # um."* Um pedido com três filhos cadastra os três; o formato
+            # antigo (um dependente solto no corpo) continua valendo, porque
+            # é o que os pedidos já abertos têm gravado.
+            varios = pedido.get("dependentes")
+            if isinstance(varios, list) and varios:
+                for um in varios:
+                    svc_pessoas.salvar_dependente(
+                        s, alvo, traduzir_do_pipe(um), usuario)
+                efeito["dependentes"] = len(varios)
+            else:
+                svc_pessoas.salvar_dependente(s, alvo, pedido, usuario)
         elif executa in ("atualizar_cadastro", "beneficios"):
             c = s.get(Colaborador, alvo)
             svc_pessoas.salvar(s, {**pedido, "cpf": c.cpf, "nome": c.nome}, usuario)

@@ -324,13 +324,45 @@ async function atender(){
     VALE_TRANSPORTE: "atualiza o transporte no cadastro",
     CADASTRO: "CRIA o cadastro da pessoa no ERP",
   }[ABERTA.tipo];
+  // ⚑ OS CAMPOS DO DP ENTRAM AQUI, e não no formulário de quem pede.
+  //
+  // Ele, em 10/11/2026: *"matrícula, não é o funcionário que decide. Como é
+  // que a pessoa vai readmitir uma pessoa, botar uma matrícula? Quem solicita
+  // define uma matrícula?"* E, sobre a convenção: *"é DP quem decide."* E
+  // sobre o desligamento: *"o último dia trabalhado não é a pessoa que está
+  // pedindo que vai dizer. Quem vai olhar isso aqui é o DP."*
+  //
+  // No Pipe a separação é física — formulário inicial é da obra, FASE é do
+  // DP. Aqui ela é a lista `campos_do_dp` do tipo, e este é o lugar dela.
+  const tipo = (DADOS.tipos || []).find(
+    x => (x.valor || x.chave) === ABERTA.tipo) || {};
+  const doDP = (tipo.campos_do_dp || []).filter(c => CAMPO_PEDIDO[c] !== false);
+  const campos = doDP.map(c => {
+    const rot = (tipo.rotulos_do_dp || {})[c] || c.replace(/_/g, " ");
+    const opcoes = (tipo.opcoes_do_dp || {})[c];
+    if (opcoes)
+      return {nome: c, rotulo: rot, tipo: "select", largura: 3,
+              opcoes: [{valor: "", rotulo: "— deixar como está —"}].concat(
+                opcoes.map(o => (typeof o === "string"
+                  ? {valor: o, rotulo: o} : o)))};
+    return {nome: c, rotulo: rot, largura: 3,
+            tipo: /data|vigencia|ultimo_dia|admissao/.test(c) ? "date" : "text"};
+  });
   const r = await perguntar({titulo: `Atender ${ABERTA.numero}`,
-    aviso: efeito ? `Ao atender, o sistema ${efeito}.` 
-                  : "Este tipo não mexe no cadastro — o atendimento é o registro do que foi feito.",
+    aviso: (efeito ? `Ao atender, o sistema ${efeito}.` : "Este tipo não mexe "
+            + "no cadastro — o atendimento é o registro do que foi feito.")
+           + (campos.length ? " <b>Os campos abaixo são do DP</b>: a obra não "
+              + "os informa, e é aqui que eles entram." : ""),
     textoOk: "Atender",
-    campos: [{nome: "resposta", rotulo: "Resposta (opcional)", tipo: "textarea",
-              largura: 6, linhas: 2}]});
-  if (r) acao("atender", r);
+    campos: campos.concat([
+      {nome: "resposta", rotulo: "Resposta (opcional)", tipo: "textarea",
+       largura: 6, linhas: 2}])});
+  if (!r) return;
+  // O que o DP preencheu vai como `dados`; a resposta vai separada.
+  const dados = {};
+  doDP.forEach(c => { if (r[c]) dados[c] = r[c]; });
+  acao("atender", {resposta: r.resposta,
+                   ...(Object.keys(dados).length ? {dados} : {})});
 }
 
 async function recusar(){

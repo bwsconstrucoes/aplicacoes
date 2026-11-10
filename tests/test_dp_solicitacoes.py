@@ -620,3 +620,108 @@ def test_pedido_que_nao_exige_papel_nenhum_continua_simples(mundo):
                                "descricao": "trocou de telefone"},
                   mundo["encarregado"])
     assert p["id"]
+
+
+# ---------------------------------------------------------------------------
+# VÁRIOS DEPENDENTES NO MESMO PEDIDO (10/11/2026)
+#
+# Ele: *"dependente tem que ser um a um, não posso adicionar outro, não, para
+# pedir mais de um."* Quem tem três filhos abria três pedidos.
+# ---------------------------------------------------------------------------
+def _dependente(mundo, **extra):
+    base = {"tipo": "DEPENDENTE", "colaborador_id": mundo["pessoa"].id,
+            "obra_id": mundo["obra"].id, "documentos": ["DOC-DEPENDENTE"]}
+    base.update(extra)
+    return base
+
+
+def test_tres_dependentes_num_pedido_so_cadastram_os_tres(mundo):
+    p = svc.abrir(mundo["s"], _dependente(mundo, dependentes=[
+        {"nome": "Filho Um", "parentesco": "Filho",
+         "data_nascimento": "2015-01-10"},
+        {"nome": "Filha Dois", "parentesco": "Filho",
+         "data_nascimento": "2018-06-20"},
+        {"nome": "Esposa Tres", "parentesco": "Cônjuge",
+         "data_nascimento": "1990-02-02"}]), mundo["encarregado"])
+    svc.atender(mundo["s"], p["id"], {}, mundo["dp"])
+    mundo["s"].flush()
+    nomes = {d["nome"] for d in
+             svc_pessoas.ficha(mundo["s"], mundo["pessoa"].id)["dependentes"]}
+    assert nomes == {"Filho Um", "Filha Dois", "Esposa Tres"}
+    # A trilha registra quantos entraram — é o que o DP lê depois.
+    eventos = svc.ler(mundo["s"], p["id"])["eventos"]
+    atendida = [e for e in eventos if e["acao"] == "ATENDIDA"][0]
+    assert atendida["detalhe"]["dependentes"] == 3
+
+
+def test_o_rotulo_do_pipe_vale_em_cada_dependente_da_lista(mundo):
+    """"Cônjuge" é o que a pessoa escolhe; CONJUGE é o que fica gravado."""
+    p = svc.abrir(mundo["s"], _dependente(mundo, dependentes=[
+        {"nome": "Esposa De Teste", "parentesco": "Cônjuge",
+         "data_nascimento": "1990-02-02"}]), mundo["encarregado"])
+    svc.atender(mundo["s"], p["id"], {}, mundo["dp"])
+    mundo["s"].flush()
+    d = svc_pessoas.ficha(mundo["s"], mundo["pessoa"].id)["dependentes"][0]
+    assert d["parentesco"] == "CONJUGE"
+
+
+def test_dependente_incompleto_na_lista_diz_QUAL_deles(mundo):
+    """Com três na tela, "falta a data de nascimento" não ajuda ninguém."""
+    with pytest.raises(ErroValidacao) as e:
+        svc.abrir(mundo["s"], _dependente(mundo, dependentes=[
+            {"nome": "Filho Um", "parentesco": "Filho",
+             "data_nascimento": "2015-01-10"},
+            {"nome": "Filha Dois", "parentesco": "Filho"}]),
+            mundo["encarregado"])
+    assert "2º dependente" in str(e.value)
+    assert "Data de Nascimento do Dependente" in str(e.value)
+
+
+def test_um_dependente_solto_continua_funcionando(mundo):
+    """⚑ O FORMATO ANTIGO NÃO MORRE: é o que os pedidos JÁ ABERTOS têm
+    gravado, e eles ainda vão ser atendidos."""
+    p = svc.abrir(mundo["s"], _dependente(
+        mundo, nome="Filho Sozinho", parentesco="Filho",
+        data_nascimento="2015-01-10"), mundo["encarregado"])
+    svc.atender(mundo["s"], p["id"], {}, mundo["dp"])
+    mundo["s"].flush()
+    assert svc_pessoas.ficha(
+        mundo["s"], mundo["pessoa"].id)["dependentes"][0]["nome"] == "Filho Sozinho"
+
+
+def test_so_o_dependente_aceita_varios(mundo):
+    """`repete` é do tipo, não da fila: ninguém desliga três pessoas num
+    pedido só."""
+    assert svc.TIPOS["DEPENDENTE"]["repete"] is True
+    for codigo, d in svc.TIPOS.items():
+        if codigo != "DEPENDENTE":
+            assert not d.get("repete"), f"{codigo} não deveria aceitar vários"
+
+
+def test_a_tela_do_DP_recebe_rotulo_e_opcoes_dos_campos_dela():
+    """⚑ OS CAMPOS DO DP TÊM DE TER ONDE APARECER. Tirá-los do formulário da
+    obra sem pô-los na tela de quem atende seria perder a informação, não
+    corrigir o lugar dela. Ele, em 10/11/2026: *"quem vai olhar isso aqui é o
+    DP."*"""
+    for t in svc.tipos_para_tela():
+        for c in t["campos_do_dp"]:
+            rot = t["rotulos_do_dp"].get(c)
+            assert rot and rot != c, (
+                f"{t['valor']}: o campo do DP {c!r} não tem rótulo de gente — "
+                f"ele apareceria com o nome do banco na tela de quem atende")
+            # Campo de lista fechada leva as opções junto; senão virava texto
+            # livre justamente onde o dado tem de ser exato.
+            if c in svc.CATEGORIAS:
+                assert t["opcoes_do_dp"].get(c), f"{c} sem opções"
+
+
+def test_nenhum_campo_do_DP_ficou_orfao():
+    """Campo que saiu do formulário da obra e não entrou em `campos_do_dp`
+    sumiu do sistema — é o jeito silencioso de perder dado."""
+    saiu_da_obra = {"ultimo_dia", "faltas_a_descontar", "matricula",
+                    "convencao_id", "dependente_ir"}
+    tem_dono = set()
+    for d in svc.TIPOS.values():
+        tem_dono |= set(d.get("campos_do_dp", ()))
+    assert saiu_da_obra <= tem_dono, (
+        f"sem dono: {saiu_da_obra - tem_dono}")

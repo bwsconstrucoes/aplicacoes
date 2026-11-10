@@ -69,6 +69,20 @@
   .pessoa-escolhida b { display: block; font-size: 15px; }
   .pessoa-escolhida small { display: block; color: #31507F; font-size: 12.5px; }
 
+  /* VÁRIOS DE UMA VEZ — cada dependente num quadro próprio, numerado, para
+     a pessoa saber qual está incompleto quando o sistema reclamar. */
+  .repetido { border: 1px solid #C9D3E4; border-radius: 10px; padding: 10px;
+              margin-top: 10px; background: #fff; }
+  .repetido-cab { display: flex; align-items: center; gap: 8px;
+                  margin-bottom: 4px; }
+  .repetido-cab b { font-size: 14px; }
+  .link-tirar { margin-left: auto; background: none; border: 0; padding: 0;
+                color: #9B2C2C; font: inherit; font-size: 13px;
+                text-decoration: underline; cursor: pointer; }
+  .btn-mais { margin-top: 8px; background: #fff; border: 1px dashed #0B2C5C;
+              color: #0B2C5C; border-radius: 8px; padding: 9px 12px;
+              font: inherit; font-size: 14px; width: 100%; cursor: pointer; }
+
   /* OS PAPÉIS — a lista que se marca sozinha enquanto a pessoa anexa. */
   .papeis { margin-top: 14px; padding: 10px; border-radius: 10px;
             background: #F7F9FC; border: 1px solid #C9D3E4; }
@@ -277,6 +291,9 @@ const ROTULO = {
   // termo que está no Pipe? O pessoal já está acostumado com o que está
   // lá."* A fonte é DE_PARA_PIPEFY_DP.md, e há teste exigindo que todo campo
   // oferecido pelo portal tenha rótulo aqui.
+  // Campo que o BLOCO REPETIDO cuida: nunca sai como caixinha solta, mas
+  // precisa de rótulo para o teste que varre os campos do portal.
+  dependentes: "Dependentes",
   tipo_documentacao: "Tipo de Documentação para Cadastro",
   num_ctps: "Nº CTPS",
   num_pis: "Nº PIS",
@@ -406,7 +423,8 @@ function pintarCamposDoTipo(){
         <div id="p-pessoa-achados" class="achados-pessoa"></div>
         <div id="p-pessoa-escolhida" class="pessoa-escolhida oculto"></div>
       </label>` : "")
-    + t.campos.filter(c => c !== "cpf" || !t.exige_pessoa).map(c => {
+    + (t.repete ? blocoRepetido(t) : "")
+    + t.campos.filter(c => campoSolto(t, c)).map(c => {
         const tipo = TIPO_CAMPO[c] || "text";
         // ⚑ O ASTERISCO. Ele: *"Pipe, todo campo obrigatório, ele tem um
         // asterisco, facilita. Aqui não, ninguém sabe o que é obrigatório."*
@@ -457,9 +475,88 @@ function pintarCamposDoTipo(){
       }).join("")
     + blocoDosPapeis(t);
   ligarBuscaDePessoa();
+  ligarRepetidos(t);
   ligarFiltroDeObra();
   ligarPapeis(t);
   conferirOQueFalta(t);
+}
+
+// ---------------------------------------------------------------------------
+// VÁRIOS DE UMA VEZ — hoje só o dependente
+//
+// Ele, em 10/11/2026: *"dependente tem que ser um a um, não posso adicionar
+// outro, não, para pedir mais de um."* Quem tem três filhos abria três
+// pedidos, e o DP atendia três vezes a mesma coisa.
+//
+// ⚑ O TIPO É QUEM DIZ se aceita vários (`repete`, que vem da regra). Não é a
+// tela que decide: ninguém desliga três pessoas num pedido só.
+// ---------------------------------------------------------------------------
+let REPETIDOS = [];          // cada item é {campo: valor}
+
+// Os campos que o bloco repetido já cuida não aparecem soltos no formulário.
+function campoSolto(t, c){
+  if (c === "cpf" && t.exige_pessoa) return false;
+  if (c === "dependentes") return false;
+  if (t.repete && CAMPOS_REPETIDOS.includes(c)) return false;
+  return true;
+}
+
+const CAMPOS_REPETIDOS = ["nome", "parentesco", "data_nascimento"];
+
+function blocoRepetido(t){
+  REPETIDOS = [{}];
+  return `<div class="repetidos" id="p-repetidos"></div>
+    <button type="button" class="btn-mais" id="p-mais">+ outro dependente</button>`;
+}
+
+function pintarRepetidos(t){
+  const onde = els("p-repetidos");
+  if (!onde) return;
+  onde.innerHTML = REPETIDOS.map((item, i) => `
+    <div class="repetido">
+      <div class="repetido-cab">
+        <b>${i + 1}º dependente</b>
+        ${REPETIDOS.length > 1
+          ? `<button type="button" class="link-tirar" data-tirar="${i}">tirar</button>`
+          : ""}
+      </div>
+      ${CAMPOS_REPETIDOS.map(c => {
+        const rot = (ROTULO[c] || c.replace(/_/g, " ")) + " *";
+        const lista = (DADOS.listas || {})[c];
+        if (lista)
+          return `<label class="campo-portal">${esc(rot)}
+            <select data-rep="${i}" data-campo="${c}">
+              <option value="">escolha…</option>
+              ${lista.map(o => `<option value="${esc(o.valor)}"
+                ${item[c] === o.valor ? "selected" : ""}
+                >${esc(o.rotulo)}</option>`).join("")}
+            </select></label>`;
+        return `<label class="campo-portal">${esc(rot)}
+          <input data-rep="${i}" data-campo="${c}"
+                 type="${TIPO_CAMPO[c] || "text"}"
+                 value="${esc(item[c] || "")}"></label>`;
+      }).join("")}
+    </div>`).join("");
+  onde.querySelectorAll("[data-rep]").forEach(el =>
+    el.addEventListener("input", () => {
+      REPETIDOS[+el.dataset.rep][el.dataset.campo] = el.value;
+      conferirOQueFalta(t);
+    }));
+  onde.querySelectorAll("[data-tirar]").forEach(b =>
+    b.addEventListener("click", () => {
+      REPETIDOS.splice(+b.dataset.tirar, 1);
+      pintarRepetidos(t); conferirOQueFalta(t);
+    }));
+}
+
+function ligarRepetidos(t){
+  if (!t.repete) { REPETIDOS = []; return; }
+  pintarRepetidos(t);
+  const mais = els("p-mais");
+  if (mais) mais.addEventListener("click", () => {
+    REPETIDOS.push({});
+    pintarRepetidos(t); conferirOQueFalta(t);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -649,9 +746,16 @@ function conferirOQueFalta(t){
   if (t.exige_pessoa && !(els("p-pessoa") && els("p-pessoa").value))
     falta.push("o colaborador");
   (t.obrigatorios || []).forEach(c => {
+    if (t.repete && CAMPOS_REPETIDOS.includes(c)) return;   // cuidado abaixo
     const campo = els("p-" + c);
     if (campo && !campo.value) falta.push((ROTULO[c] || c).toLowerCase());
   });
+  if (t.repete)
+    REPETIDOS.forEach((item, i) => {
+      const faltam = CAMPOS_REPETIDOS.filter(
+        c => (t.obrigatorios || []).includes(c) && !item[c]);
+      if (faltam.length) falta.push(`${i + 1}º dependente`);
+    });
   papeisExigidos(t).forEach(c => {
     if (!PAPEIS[c]) falta.push(ROTULO_PAPEL[c] || c);
   });
@@ -709,6 +813,10 @@ async function enviarPedido(){
   // ⚑ Os papéis vão junto, e o servidor confere de novo: a tela já barrou,
   // mas quem mexe no navegador contorna a tela.
   corpo.documentos = Object.keys(PAPEIS);
+  // ⚑ Vários de uma vez (hoje só o dependente). O servidor confere cada um e
+  // diz QUAL está incompleto — "falta a data de nascimento" não ajudaria
+  // ninguém com três na tela.
+  if (t.repete && REPETIDOS.length) corpo.dependentes = REPETIDOS;
   els("p-enviar").disabled = true;
   try {
     const d = await chamar("/erp/portal/api/pedidos",

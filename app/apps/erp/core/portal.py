@@ -410,9 +410,22 @@ def listas_fechadas(s: Session | None = None) -> dict[str, list[dict[str, str]]]
     # digitando a mesma coisa de dez jeitos, que é o que esta tela existe
     # para acabar.
     from app.apps.erp.core import pessoal_solicitacoes as svc_sp
+
+    # ⚑ QUEM VENCE QUANDO OS DOIS TÊM LISTA, e a divisão tem motivo:
+    #
+    # · O PIPE vence no que é escolha DO PEDIDO. "Parentesco", no pedido, é
+    #   Filho ou Cônjuge — é quem dá direito a salário-família, e é o que a
+    #   equipe escolhe há anos. O cadastro tem oito parentescos porque o DP
+    #   registra enteado e avó depois; isso é do cadastro, não do pedido.
+    #
+    # · O CADASTRO vence nos BENEFÍCIOS, e por uma razão prática: ele aposenta
+    #   opção que não se oferece mais ("Cartão", no transporte). Deixar o Pipe
+    #   vencer aqui reabriria a opção aposentada, e alguém escolheria.
+    MANDA_O_CADASTRO = {"categoria_alimentacao", "categoria_transporte",
+                        "meio_transporte"}
     for campo, opcoes in svc_sp.CATEGORIAS.items():
-        if campo in listas:
-            continue           # o cadastro já tem uma lista para este campo
+        if campo in MANDA_O_CADASTRO and campo in listas:
+            continue
         listas[campo] = [{"valor": o, "rotulo": o} for o in opcoes]
     return listas
 
