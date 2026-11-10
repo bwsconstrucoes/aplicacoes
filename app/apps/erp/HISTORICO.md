@@ -157,15 +157,68 @@ equipamento, por um botão — pelo mesmo princípio do relato de ontem: **vem
 oferecido, nunca gravado sozinho**. Repetir duas vezes é recusado, em vez de
 dobrar o parque de máquinas.
 
-**⚑ O CAMPO DE TEXTO NÃO FOI APAGADO**, e a coluna no banco também não. Diário
-é documento: o que foi escrito e assinado antes da lista existir continua
-escrito, e o papel imprime o texto quando não houver lista. Apagar a coluna
-seria reescrever o passado.
+**⚑ O CAMPO DE TEXTO NÃO FOI APAGADO DO BANCO.** Diário é documento: o que
+foi escrito e assinado antes da lista existir continua escrito, e o papel
+imprime o texto quando não houver lista. Apagar a coluna seria reescrever o
+passado.
 
-**O que isso deixa torto, e ele decide:** a lista só abre **depois** de o dia
-ser gravado (o equipamento pende do diário, como o efetivo extra já pendia).
-Antes da primeira gravação, só o campo de texto. Se isso incomodar na obra, dá
-para gravar o dia sozinho ao acrescentar o primeiro equipamento.
+### 🔁 E AÍ ELE OLHOU DE NOVO (ainda 10/11/2026): a duplicidade e a nomenclatura
+
+Duas correções dele sobre o que acabei de entregar, e as duas certas:
+
+> *"Nós temos aqui o campo equipamentos, texto livre, e equipamentos em obra.
+> Eles são a mesma coisa, por que teriam os dois textos? Ou é um ou é o outro.
+> E eu acho que a opção da forma que ficou equipamentos em obra ficou melhor.
+> E esses equipamentos, o ideal é que a gente possa buscar dentro da nossa
+> lista de insumos, né? Até por questão de nomenclatura. São os equipamentos
+> inclusive categorizados como locáveis."*
+
+**1. O texto livre saiu do formulário.** Eu tinha deixado os dois lado a lado
+"para não perder o passado" — e com isso criei exatamente o que o `CLAUDE.md`
+proíbe desde 17/09/2026: **dois caminhos para a mesma coisa**, obrigando a
+pessoa a escolher antes de saber a diferença.
+
+⚑ **E a saída não foi apagar a coluna, foi PARAR DE MANDÁ-LA.** A tela não
+envia mais `equipamentos` no pedido, e `salvar()` ignora campo que não vem. Se
+a tela mandasse o campo vazio, **todo diário antigo reaberto perderia o que
+tinha escrito** — há teste para os dois lados: um varrendo a tela
+(`d-equipamentos` não pode voltar) e outro gravando duas vezes pela regra e
+exigindo que o texto antigo continue lá. O texto aparece no cartão, só para
+ler, com a etiqueta "escrito à mão neste dia, antes de a lista existir".
+
+**2. O equipamento agora vem do cadastro de insumos** (migração 098), dos
+marcados como **locáveis** — a mesma base de Suprimentos. O motivo é a
+nomenclatura, e ele é prático: digitado à mão, a mesma máquina vira "retro",
+"retroescavadeira" e "Retro-escavadeira", e aí **nenhuma conta de dias-máquina
+fecha**.
+
+Três decisões dentro disso:
+
+- **A descrição continua gravada na linha, mesmo vindo do cadastro.** Não é
+  redundância: o insumo pode ser renomeado amanhã, e o diário tem de dizer o
+  que foi escrito NAQUELE dia. O `insumo_id` serve para **contar**; a
+  descrição, para **provar**. Há teste que renomeia o insumo e exige que o
+  diário de ontem não mude.
+- **Existe saída para o que não está cadastrado**, e ela é o último item da
+  caixinha ("não está na lista"). ⚑ **A obra começa às 7 da manhã e não pode
+  parar porque uma máquina não foi cadastrada.** O equipamento entra com o
+  nome digitado e fica **marcado na tela** ("fora da lista"), para Suprimentos
+  cadastrar depois. Se ele preferir fechar essa porta, é uma linha.
+- **Cimento não é equipamento**: insumo sem a marca "locável", ou inativo, é
+  recusado — e o recado diz onde marcar.
+
+⚑ **Uma consequência de permissão, dita por escrito:** quem só tem o perfil
+"Diário de obra" (migração 094) passa a **enxergar a lista de equipamentos
+locáveis** ao abrir o diário — é o que a caixinha oferece. Não vai preço nem
+nada de Suprimentos junto, só o nome e a unidade, e sem isso a tela não teria
+como pedir o equipamento pelo nome certo. Se ele preferir fechar, a lista pode
+ficar restrita às obras ou sair de vez, com a saída "não está na lista" virando
+o único caminho.
+
+**3. O degrau de "grave o dia primeiro" sumiu.** Com o texto livre fora, ele
+viraria uma parede: sem gravar, não havia onde escrever equipamento nenhum.
+Agora o botão grava o dia sozinho e segue. Só pede o relato antes, que é a
+regra que já existia.
 
 **Dois consertos que vieram de brinde, achados ao exercitar a tela:**
 
@@ -204,8 +257,9 @@ no lugar.
 - **091** a leitura da CAIXA DE ENTRADA (o agente recebendo e-mail), as
   DEVOLUÇÕES da obra e o autor-colaborador da solicitação (o portal).
 
-**E a 097, de 10/11/2026** (`diario_equipamentos`): a lista de equipamento do
-diário. ⚑ **Sem ela o diário NÃO quebra** — foi feito de propósito, porque o
+**E a 097 e a 098, de 10/11/2026**: a lista de equipamento do diário
+(`diario_equipamentos`) e o laço dela com o cadastro de insumos
+(`insumo_id`). ⚑ **Sem elas o diário NÃO quebra** — foi feito de propósito, porque o
 código sobe para o Render antes de alguém apertar o botão: a tela mostra o
 cartão vazio, o campo de texto continua valendo e a busca simplesmente não
 varre a lista. Depois do botão, o cartão passa a funcionar sozinho.

@@ -541,6 +541,9 @@ def abrir_dia(s: Session, obra_id: int, dia: date,
         # embora à noite. Vem oferecido com um botão — não entra sozinho, senão
         # o diário passa a declarar máquina que já saiu da obra.
         "equipamentos_anteriores": equipamentos_do_dia_anterior(s, obra_id, dia),
+        # A lista de locáveis vai junto, para a caixinha não precisar de uma
+        # segunda ida ao servidor na hora em que a pessoa já está esperando.
+        "equipamentos_do_catalogo": equipamentos_do_catalogo(s),
         "tempos": [{"valor": t, "rotulo": TEMPO_ROTULOS[t]} for t in TEMPOS],
     }
 
@@ -573,7 +576,7 @@ def _para_tela(s: Session, l) -> dict[str, Any]:
     # alguém apertar o botão das migrações), `[]` é "existe e está vazia". A
     # tela precisa saber a diferença para não oferecer um botão que vai falhar.
     equipamentos = _consulta_opcional(s, """
-        SELECT id, descricao, quantidade, observacao
+        SELECT id, descricao, quantidade, observacao, insumo_id
           FROM diario_equipamentos WHERE diario_id = :i ORDER BY id""",
         i=l["id"])
     tem_tabela = equipamentos is not None
@@ -602,7 +605,12 @@ def _para_tela(s: Session, l) -> dict[str, Any]:
         "equipamentos_lista": [
             {"id": q["id"], "descricao": q["descricao"],
              "quantidade": q["quantidade"],
-             "observacao": q["observacao"] or ""} for q in equipamentos],
+             "observacao": q["observacao"] or "",
+             "insumo_id": q["insumo_id"],
+             # A MARCA de quem entrou fora do cadastro. Não é erro — a obra
+             # começa às 7 e não espera cadastro —, é trabalho para
+             # Suprimentos arrumar depois.
+             "fora_da_lista": q["insumo_id"] is None} for q in equipamentos],
         "equipamentos_resumo": resumo_dos_equipamentos(
             [dict(q) for q in equipamentos]),
         "equipamentos_disponivel": tem_tabela,
@@ -846,6 +854,38 @@ def remover_extra(s: Session, obra_id: int, dia: date, extra_id: int) -> None:
 # assinado antes de hoje continua escrito, e o papel imprime o texto quando não
 # houver lista. Apagar a coluna seria reescrever o passado.
 # ---------------------------------------------------------------------------
+def equipamentos_do_catalogo(s: Session) -> list[dict[str, Any]]:
+    """Os insumos marcados como LOCÁVEIS — a lista que a caixinha oferece.
+
+    ⚑ É a mesma base de Suprimentos, e isso é o ponto: equipamento digitado à
+    mão produz "retro", "retroescavadeira" e "Retro-escavadeira" para a MESMA
+    máquina, e aí nenhuma conta de dias-máquina fecha.
+    """
+    linhas = _consulta_opcional(s, """
+        SELECT id, codigo, descricao, unidade
+          FROM insumos
+         WHERE ativo IS TRUE AND locavel IS TRUE
+         ORDER BY descricao""")
+    return [{"id": l["id"], "codigo": l["codigo"], "descricao": l["descricao"],
+             "unidade": l["unidade"] or ""} for l in (linhas or [])]
+
+
+def _insumo_locavel(s: Session, insumo_id: int) -> dict[str, Any]:
+    linha = s.execute(text("""
+        SELECT id, descricao, unidade, ativo, locavel
+          FROM insumos WHERE id = :i"""), {"i": insumo_id}).mappings().first()
+    if linha is None:
+        raise ErroNaoEncontrado("Equipamento não encontrado no cadastro.")
+    if not linha["ativo"]:
+        raise ErroValidacao(
+            f"“{linha['descricao']}” está inativo no cadastro de insumos.")
+    if not linha["locavel"]:
+        raise ErroValidacao(
+            f"“{linha['descricao']}” não está marcado como locável. Marque em "
+            f"Suprimentos › Insumos para ele aparecer como equipamento.")
+    return dict(linha)
+
+
 def resumo_dos_equipamentos(linhas: list[dict[str, Any]]) -> str:
     """"3 equipamentos: 1 retroescavadeira, 2 betoneira" — montado aqui, na
     regra, porque a tela e o papel usam a MESMA frase. Duas versões
@@ -865,7 +905,7 @@ def equipamentos_do_dia_anterior(s: Session, obra_id: int,
     """O último dia COM EQUIPAMENTO antes deste. Pula o fim de semana sozinho,
     igual ao relato de ontem."""
     linhas = _consulta_opcional(s, """
-        SELECT d.data, q.descricao, q.quantidade, q.observacao
+        SELECT d.data, q.descricao, q.quantidade, q.observacao, q.insumo_id
           FROM diario_equipamentos q
           JOIN diarios_obra d ON d.id = q.diario_id
          WHERE d.obra_id = :o AND d.data < :dia
@@ -877,7 +917,8 @@ def equipamentos_do_dia_anterior(s: Session, obra_id: int,
     if not linhas:
         return {"data": None, "itens": [], "resumo": ""}
     itens = [{"descricao": l["descricao"], "quantidade": l["quantidade"],
-              "observacao": l["observacao"] or ""} for l in linhas]
+              "observacao": l["observacao"] or "",
+              "insumo_id": l["insumo_id"]} for l in linhas]
     return {"data": str(linhas[0]["data"]), "itens": itens,
             "resumo": resumo_dos_equipamentos([dict(l) for l in linhas])}
 
@@ -889,7 +930,19 @@ def acrescentar_equipamento(s: Session, obra_id: int, dia: date,
     if linha is None:
         raise ErroNaoEncontrado(
             "Abra e grave o diário do dia antes de acrescentar equipamento.")
-    descricao = str(dados.get("descricao") or "").strip()
+    # ⚑ O EQUIPAMENTO VEM DO CADASTRO quando dá. A descrição é gravada
+    # assim mesmo: o insumo pode ser renomeado amanhã, e o diário tem de dizer
+    # o que foi escrito NAQUELE dia. O `insumo_id` serve para contar; a
+    # descrição, para provar.
+    insumo_id = dados.get("insumo_id") or None
+    if insumo_id:
+        try:
+            insumo_id = int(insumo_id)
+        except (TypeError, ValueError):
+            raise ErroValidacao("Equipamento inválido.")
+        descricao = _insumo_locavel(s, insumo_id)["descricao"]
+    else:
+        descricao = str(dados.get("descricao") or "").strip()
     if not descricao:
         raise ErroValidacao("Diga qual é o equipamento.")
     # ⚑ CAMPO EM BRANCO É 1; "0" DIGITADO É ERRO. São coisas diferentes:
@@ -907,10 +960,12 @@ def acrescentar_equipamento(s: Session, obra_id: int, dia: date,
     if quantidade < 1:
         raise ErroValidacao("A quantidade tem de ser pelo menos 1.")
     novo = s.execute(text("""
-        INSERT INTO diario_equipamentos (diario_id, descricao, quantidade, observacao)
-        VALUES (:i, :d, :q, :obs) RETURNING id"""),
+        INSERT INTO diario_equipamentos
+            (diario_id, descricao, quantidade, observacao, insumo_id)
+        VALUES (:i, :d, :q, :obs, :ins) RETURNING id"""),
         {"i": linha["id"], "d": descricao, "q": quantidade,
-         "obs": str(dados.get("observacao") or "").strip() or None}).scalar()
+         "obs": str(dados.get("observacao") or "").strip() or None,
+         "ins": insumo_id}).scalar()
     s.flush()
     return {"id": novo}
 
@@ -952,10 +1007,11 @@ def repetir_equipamentos_de_ontem(s: Session, obra_id: int,
     for item in anterior["itens"]:
         s.execute(text("""
             INSERT INTO diario_equipamentos
-                (diario_id, descricao, quantidade, observacao)
-            VALUES (:i, :d, :q, :obs)"""),
+                (diario_id, descricao, quantidade, observacao, insumo_id)
+            VALUES (:i, :d, :q, :obs, :ins)"""),
             {"i": linha["id"], "d": item["descricao"],
-             "q": item["quantidade"], "obs": item["observacao"] or None})
+             "q": item["quantidade"], "obs": item["observacao"] or None,
+             "ins": item.get("insumo_id")})
     s.flush()
     return {"copiados": len(anterior["itens"]), "de": anterior["data"]}
 

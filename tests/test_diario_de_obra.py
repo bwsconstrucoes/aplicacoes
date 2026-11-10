@@ -1191,3 +1191,177 @@ def test_a_regra_do_rotulo_mora_num_lugar_so():
     assert rotulos.rotulo_da_obra("081", "081 Aero Aracati") == "081 Aero Aracati"
     assert rotulos.rotulo_da_obra("AERO ARACATI", "Aero Aracati") == "Aero Aracati"
     assert rotulos.rotulo_da_obra("081", "Vale do Sol") == "081 · Vale do Sol"
+
+
+# ---------------------------------------------------------------------------
+# O EQUIPAMENTO VEM DO CADASTRO DE INSUMOS (migração 098)
+#
+# Ele, em 10/11/2026, olhando a tela que a 097 criou: *"nós temos aqui o campo
+# equipamentos, texto livre, e equipamentos em obra. Eles são a mesma coisa,
+# por que teriam os dois textos? Ou é um ou é o outro. (…) esses equipamentos,
+# o ideal é que a gente possa buscar dentro da nossa lista de insumos, né? Até
+# por questão de nomenclatura. São os equipamentos inclusive categorizados
+# como locáveis."*
+# ---------------------------------------------------------------------------
+def _insumo(sessao, descricao, *, locavel=True, ativo=True, codigo=None):
+    import uuid
+    cod = codigo or ("EQ" + uuid.uuid4().hex[:8].upper())
+    return sessao.execute(text("""
+        INSERT INTO insumos (codigo, descricao, unidade, locavel, ativo)
+        VALUES (:c, :d, 'un', :l, :a) RETURNING id"""),
+        {"c": cod, "d": descricao, "l": locavel, "a": ativo}).scalar()
+
+
+@banco_
+def test_o_catalogo_traz_so_os_locaveis_ativos(sessao_real):
+    """A caixinha oferece equipamento, não a base inteira de insumos."""
+    alvo = _insumo(sessao_real, "Retroescavadeira ZZ")
+    _insumo(sessao_real, "Cimento CP-II ZZ", locavel=False)
+    _insumo(sessao_real, "Betoneira velha ZZ", ativo=False)
+    sessao_real.flush()
+    nomes = [i["descricao"] for i in svc.equipamentos_do_catalogo(sessao_real)]
+    assert "Retroescavadeira ZZ" in nomes
+    assert "Cimento CP-II ZZ" not in nomes
+    assert "Betoneira velha ZZ" not in nomes
+    assert alvo in [i["id"] for i in svc.equipamentos_do_catalogo(sessao_real)]
+
+
+@banco_
+def test_o_equipamento_escolhido_na_lista_grava_o_nome_do_cadastro(sessao_real,
+                                                                   obra, dono):
+    """⚑ A DESCRIÇÃO É GRAVADA MESMO VINDO DO CADASTRO, e não é redundância: o
+    insumo pode ser renomeado amanhã, e o diário é DOCUMENTO — tem de dizer o
+    que foi escrito NAQUELE dia. O `insumo_id` serve para CONTAR; a descrição,
+    para PROVAR."""
+    dia = date(2026, 3, 10)
+    i = _insumo(sessao_real, "Retroescavadeira 4x4")
+    svc.salvar(sessao_real, obra, dia, {"relato": "x"}, dono)
+    sessao_real.flush()
+    # A tela manda o número; o nome NÃO vai junto — e mesmo assim ele é gravado.
+    svc.acrescentar_equipamento(sessao_real, obra, dia,
+                                {"insumo_id": i, "quantidade": 1})
+    sessao_real.flush()
+    linha = svc.abrir_dia(sessao_real, obra, dia)["diario"]["equipamentos_lista"][0]
+    assert linha["descricao"] == "Retroescavadeira 4x4"
+    assert linha["insumo_id"] == i
+    assert linha["fora_da_lista"] is False
+
+    # Renomear o cadastro NÃO reescreve o diário de ontem.
+    sessao_real.execute(text("UPDATE insumos SET descricao = :d WHERE id = :i"),
+                        {"d": "Retroescavadeira (nome novo)", "i": i})
+    sessao_real.flush()
+    de_novo = svc.abrir_dia(sessao_real, obra, dia)["diario"]["equipamentos_lista"][0]
+    assert de_novo["descricao"] == "Retroescavadeira 4x4"
+
+
+@banco_
+def test_insumo_que_nao_e_locavel_e_recusado(sessao_real, obra, dono):
+    """Cimento não é equipamento. E o recado diz o que fazer."""
+    dia = date(2026, 3, 10)
+    i = _insumo(sessao_real, "Cimento CP-II", locavel=False)
+    svc.salvar(sessao_real, obra, dia, {"relato": "x"}, dono)
+    sessao_real.flush()
+    with pytest.raises(ErroValidacao) as e:
+        svc.acrescentar_equipamento(sessao_real, obra, dia, {"insumo_id": i})
+    assert "locável" in str(e.value)
+
+
+@banco_
+def test_insumo_inativo_e_recusado(sessao_real, obra, dono):
+    dia = date(2026, 3, 10)
+    i = _insumo(sessao_real, "Betoneira aposentada", ativo=False)
+    svc.salvar(sessao_real, obra, dia, {"relato": "x"}, dono)
+    sessao_real.flush()
+    with pytest.raises(ErroValidacao):
+        svc.acrescentar_equipamento(sessao_real, obra, dia, {"insumo_id": i})
+
+
+@banco_
+def test_insumo_que_nao_existe_responde_nao_encontrado(sessao_real, obra, dono):
+    dia = date(2026, 3, 10)
+    svc.salvar(sessao_real, obra, dia, {"relato": "x"}, dono)
+    sessao_real.flush()
+    with pytest.raises(ErroNaoEncontrado):
+        svc.acrescentar_equipamento(sessao_real, obra, dia,
+                                    {"insumo_id": 99999999})
+
+
+@banco_
+def test_equipamento_fora_da_lista_entra_marcado(sessao_real, obra, dono):
+    """⚑ A OBRA COMEÇA ÀS 7 DA MANHÃ e não para porque uma máquina ainda não
+    foi cadastrada. Ela entra com o nome digitado — e MARCADA, para
+    Suprimentos cadastrar depois."""
+    dia = date(2026, 3, 10)
+    svc.salvar(sessao_real, obra, dia, {"relato": "x"}, dono)
+    sessao_real.flush()
+    svc.acrescentar_equipamento(sessao_real, obra, dia,
+                                {"descricao": "Guincho emprestado"})
+    sessao_real.flush()
+    linha = svc.abrir_dia(sessao_real, obra, dia)["diario"]["equipamentos_lista"][0]
+    assert linha["descricao"] == "Guincho emprestado"
+    assert linha["insumo_id"] is None
+    assert linha["fora_da_lista"] is True
+
+
+@banco_
+def test_repetir_de_ontem_leva_o_insumo_junto(sessao_real, obra, dono):
+    """Senão o equipamento repetido viraria "fora da lista" no dia seguinte, e
+    a conta de dias-máquina quebraria na virada do dia."""
+    i = _insumo(sessao_real, "Placa vibratória")
+    svc.salvar(sessao_real, obra, date(2026, 3, 10), {"relato": "x"}, dono)
+    sessao_real.flush()
+    svc.acrescentar_equipamento(sessao_real, obra, date(2026, 3, 10),
+                                {"insumo_id": i, "quantidade": 2})
+    svc.salvar(sessao_real, obra, date(2026, 3, 11), {"relato": "y"}, dono)
+    sessao_real.flush()
+    svc.repetir_equipamentos_de_ontem(sessao_real, obra, date(2026, 3, 11))
+    sessao_real.flush()
+    linha = svc.abrir_dia(sessao_real, obra,
+                          date(2026, 3, 11))["diario"]["equipamentos_lista"][0]
+    assert linha["insumo_id"] == i
+    assert linha["fora_da_lista"] is False
+
+
+@banco_
+def test_o_dia_oferece_o_catalogo_junto(sessao_real, obra, dono):
+    """A caixinha não pode precisar de uma segunda ida ao servidor na hora em
+    que a pessoa já está esperando o diálogo abrir."""
+    _insumo(sessao_real, "Andaime tubular")
+    sessao_real.flush()
+    d = svc.abrir_dia(sessao_real, obra, date(2026, 3, 10))
+    assert any(i["descricao"] == "Andaime tubular"
+               for i in d["equipamentos_do_catalogo"])
+
+
+def test_a_tela_do_diario_nao_manda_mais_o_texto_de_equipamentos():
+    """⚑ A TRAVA DA DUPLICIDADE, e ela protege o passado.
+
+    Ele: *"eles são a mesma coisa, por que teriam os dois textos? Ou é um ou é
+    o outro."* O campo saiu do formulário — mas a COLUNA ficou, porque os
+    diários antigos a usam e já foram assinados. Se a tela voltar a mandar
+    `equipamentos` no pedido, ela mandaria VAZIO, e todo dia antigo reaberto
+    perderia o que tinha escrito.
+    """
+    import pathlib
+    tela = pathlib.Path(
+        "app/apps/erp/templates/erp_diario.html").read_text(encoding="utf-8")
+    assert "d-equipamentos" not in tela, (
+        "o campo de texto de equipamentos voltou ao formulário do diário — "
+        "ele é a mesma coisa que a lista, e reabrir um dia antigo apagaria o "
+        "que estava escrito")
+    assert "equipamentos_lista" in tela, "a lista tem de continuar na tela"
+
+
+@banco_
+def test_reabrir_e_gravar_o_dia_nao_apaga_o_texto_antigo(sessao_real, obra,
+                                                         dono):
+    """O mesmo risco, provado pela regra e não só pela tela: gravar sem mandar
+    o campo deixa o que estava escrito onde estava."""
+    dia = date(2026, 3, 10)
+    svc.salvar(sessao_real, obra, dia,
+               {"relato": "x", "equipamentos": "01 caçamba"}, dono)
+    sessao_real.flush()
+    svc.salvar(sessao_real, obra, dia, {"relato": "x, corrigido"}, dono)
+    sessao_real.flush()
+    assert svc.abrir_dia(sessao_real, obra,
+                         dia)["diario"]["equipamentos"] == "01 caçamba"

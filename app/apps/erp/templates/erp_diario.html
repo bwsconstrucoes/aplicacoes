@@ -259,9 +259,12 @@ function blocoDosEquipamentos(){
         <tbody>${lista.map(q => `<tr>
           <td><b>${escapar(q.descricao)}</b></td>
           <td class="direita dados">${q.quantidade}</td>
-          <td>${q.observacao
-            ? escapar(q.observacao)
-            : `<span class="desc">—</span>`}</td>
+          <td>${q.observacao ? escapar(q.observacao) : `<span class="desc">—</span>`}${
+            q.fora_da_lista
+              ? ` <span class="etiqueta ambar" title="Este equipamento não veio
+                  do cadastro de insumos. Suprimentos pode cadastrá-lo como
+                  locável para padronizar o nome.">fora da lista</span>`
+              : ""}</td>
           <td class="direita">${PODE_LANCAR
             ? `<button class="link-btn" data-remove-eq="${q.id}">tirar</button>`
             : ""}</td></tr>`).join("")}
@@ -270,16 +273,21 @@ function blocoDosEquipamentos(){
         foi ligada neste banco. Um ADMIN precisa apertar <b>Aplicar
         atualizações do banco</b>, em Configurações. Até lá, use o campo de
         texto do dia.</div>` : ""}
-      ${temTabela && PODE_LANCAR && DIA.existe ? `<button class="btn secundario"
+      {# O BOTÃO APARECE MESMO COM O DIA AINDA NÃO GRAVADO: ele grava sozinho e
+         segue. Antes ficava escondido com um recado "grave o diário primeiro",
+         e isso era um degrau inventado — a pessoa já está escrevendo o dia. #}
+      ${temTabela && PODE_LANCAR ? `<button class="btn secundario"
         id="btn-equip" style="margin-top:10px">+ Acrescentar equipamento</button>` : ""}
-      ${temTabela && PODE_LANCAR && DIA.existe && !lista.length && (ontem.itens || []).length
+      ${temTabela && PODE_LANCAR && !lista.length && (ontem.itens || []).length
         ? `<button class="link-btn" id="btn-equip-ontem" style="margin-left:8px"
             >↩ repetir os de ${dataBR(ontem.data)} (${escapar(ontem.resumo)})</button>`
         : ""}
-      ${temTabela && !DIA.existe && PODE_LANCAR ? `<div class="cartao-dica">Grave
-        o diário do dia e a lista de equipamento abre aqui.</div>` : ""}
-      ${texto ? `<div class="aviso" style="margin-top:8px">📝 <b>Escrito à
-        mão neste dia:</b> ${escapar(texto)}</div>` : ""}
+      {# O TEXTO ESCRITO À MÃO nos diários antigos, antes da lista existir.
+         Aparece só para LER: o campo saiu do formulário em 10/11/2026 porque
+         era a mesma coisa que a lista, mas apagá-lo seria reescrever o
+         passado de um documento já assinado. #}
+      ${texto ? `<div class="aviso" style="margin-top:8px">📝 <b>Escrito à mão
+        neste dia, antes de a lista existir:</b> ${escapar(texto)}</div>` : ""}
     </div>`;
 }
 
@@ -348,20 +356,16 @@ function blocoDoRelato(){
            ocorrências é O QUE SAIU DO NORMAL; e o histórico é COMO O SERVIÇO
            VEM CAMINHANDO. Juntar tudo num campo e tentar separar na impressão
            seria adivinhar. #}
-        {# ⚑ O CAMPO DE TEXTO CONTINUA, e de propósito. A lista de
-           equipamento (com quantidade) é o que conta, e vive no cartão
-           "Equipamentos em obra" ao lado. Mas o texto é o único lugar onde
-           escrever ANTES da primeira gravação do dia, e é o que sustenta os
-           diários antigos, escritos quando a lista não existia. Apagar o
-           campo apagaria o passado. #}
-        <div class="campo" style="margin-top:10px">
-          <label>Equipamentos — texto livre</label>
-          <input id="d-equipamentos" value="${escapar(d.equipamentos || "")}"
-                 ${so_leitura ? "disabled" : ""}
-                 placeholder="01 caçamba, 01 placa vibratória">
-          <small class="desc">A lista com quantidade fica no cartão
-            <b>Equipamentos em obra</b>, ao lado — é ela que soma. Use este
-            campo para o que não cabe na lista.</small></div>
+        {# ⚑ O CAMPO DE TEXTO DE EQUIPAMENTOS SAIU DAQUI em 10/11/2026, e o
+           motivo é dele: *"nós temos aqui o campo equipamentos, texto livre, e
+           equipamentos em obra. Eles são a mesma coisa, por que teriam os dois
+           textos? Ou é um ou é o outro."* Ficou a LISTA, no cartão
+           "Equipamentos em obra" — é ela que soma e é ela que vem do cadastro.
+
+           A COLUNA NO BANCO NÃO FOI APAGADA, e esta tela não manda mais o
+           campo no pedido: assim o que foi escrito nos diários antigos
+           continua lá, aparece no cartão e sai no papel. Mandar o campo vazio
+           apagaria o passado de todo dia que fosse reaberto. #}
         <div class="campo" style="margin-top:10px">
           <label>Ocorrências</label>
           <textarea id="d-ocorrencias" rows="3" ${so_leitura ? "disabled" : ""}
@@ -466,7 +470,6 @@ function corpoDoDia(){
     relato: els("d-relato") ? els("d-relato").value : "",
     ocorrencias: els("d-ocorrencias") ? els("d-ocorrencias").value : "",
     horario_trabalho: els("d-horario") ? els("d-horario").value : "",
-    equipamentos: els("d-equipamentos") ? els("d-equipamentos").value : "",
     historico: els("d-historico") ? els("d-historico").value : "",
     fiscalizacao_esteve: els("d-fisc") ? els("d-fisc").checked : false,
     fiscalizacao_quem: els("d-fisc-quem") ? els("d-fisc-quem").value : "",
@@ -543,21 +546,71 @@ async function acrescentarExtra(){
   } catch(e){ aviso("mensagem", e.message, "erro"); }
 }
 
+// O EQUIPAMENTO VEM DA LISTA DE INSUMOS LOCÁVEIS. Pedido dele em 10/11/2026:
+// *"esses equipamentos, o ideal é que a gente possa buscar dentro da nossa
+// lista de insumos, né? Até por questão de nomenclatura. São os equipamentos
+// inclusive categorizados como locáveis."*
+//
+// ⚑ MAS A OBRA COMEÇA ÀS 7 DA MANHÃ e não pode parar porque uma máquina
+// ainda não foi cadastrada. Por isso existe a saída "não está na lista": o
+// equipamento entra com o nome digitado e fica MARCADO na tela, para
+// Suprimentos cadastrar depois. A saída é o último item da caixinha, e não um
+// segundo caminho ao lado — quem tem o equipamento na lista nem repara nela.
+const FORA_DA_LISTA = "__fora";
+
 async function acrescentarEquipamento(){
+  // O dia precisa existir para o equipamento pendurar nele. Em vez de mandar
+  // a pessoa "gravar primeiro", grava sozinho e segue — era o único motivo
+  // pelo qual o botão ficava escondido.
+  if (!DIA.existe) {
+    if (!(els("d-relato").value || "").trim() && !els("d-sem").checked) {
+      aviso("mensagem", "Escreva o relato do dia antes de lançar o "
+          + "equipamento — o diário precisa existir para pendurar a lista.",
+          "erro");
+      return;
+    }
+    await gravar();
+    if (!DIA.existe) return;            // a gravação falhou e já avisou
+  }
+  const catalogo = DIA.equipamentos_do_catalogo || [];
   const r = await perguntar({
     titulo: "Equipamento em obra",
     campos: [
-      {nome: "descricao", rotulo: "Equipamento", obrigatorio: true, largura: 6,
-       exemplo: "Retroescavadeira"},
+      {nome: "insumo_id", rotulo: "Equipamento", tipo: "select", largura: 6,
+       dica: "Vem do cadastro de insumos, os marcados como locáveis.",
+       opcoes: [{valor: "", rotulo: "escolha o equipamento…"}]
+         .concat(catalogo.map(i => ({
+            valor: String(i.id),
+            rotulo: i.descricao + (i.unidade ? ` (${i.unidade})` : "")})))
+         .concat([{valor: FORA_DA_LISTA,
+                   rotulo: "— não está na lista (escrever o nome)"}])},
+      {nome: "descricao", rotulo: "Se não está na lista, qual", largura: 6,
+       exemplo: "Retroescavadeira",
+       dica: "Só preencha se escolheu “não está na lista” acima."},
       {nome: "quantidade", rotulo: "Quantidade", largura: 2, exemplo: "1"},
       {nome: "observacao", rotulo: "Observação", largura: 4,
        exemplo: "parada por manutenção"}],
     textoOk: "Acrescentar"});
   if (!r) return;
+  const corpo = {quantidade: r.quantidade, observacao: r.observacao,
+                 data: els("f-data").value};
+  if (r.insumo_id && r.insumo_id !== FORA_DA_LISTA) {
+    corpo.insumo_id = r.insumo_id;
+  } else if (r.insumo_id === FORA_DA_LISTA) {
+    if (!(r.descricao || "").trim()) {
+      aviso("mensagem", "Escreva o nome do equipamento que não está na "
+          + "lista.", "erro");
+      return;
+    }
+    corpo.descricao = r.descricao;
+  } else {
+    aviso("mensagem", "Escolha o equipamento na lista.", "erro");
+    return;
+  }
   try {
     await api(`/erp/api/diario/${els("f-obra").value}/equipamentos`,
       {method: "POST", headers: {"Content-Type": "application/json"},
-       body: JSON.stringify({...r, data: els("f-data").value})});
+       body: JSON.stringify(corpo)});
     await carregar();
   } catch(e){ aviso("mensagem", e.message, "erro"); }
 }
@@ -572,6 +625,15 @@ async function removerEquipamento(id){
 }
 
 async function repetirEquipamentosDeOntem(){
+  if (!DIA.existe) {
+    if (!(els("d-relato").value || "").trim() && !els("d-sem").checked) {
+      aviso("mensagem", "Escreva o relato do dia antes de repetir o "
+          + "equipamento de ontem.", "erro");
+      return;
+    }
+    await gravar();
+    if (!DIA.existe) return;
+  }
   try {
     const r = await api(`/erp/api/diario/${els("f-obra").value}/equipamentos`,
       {method: "POST", headers: {"Content-Type": "application/json"},

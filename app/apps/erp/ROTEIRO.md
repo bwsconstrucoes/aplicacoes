@@ -47,13 +47,14 @@
 
 ## Em andamento
 
-- [ ] **DIÁRIO DE OBRA** — migrações 092, 093 e **097**. **Pronto:** o dia que
+- [ ] **DIÁRIO DE OBRA** — migrações 092, 093, **097 e 098**. **Pronto:** o dia que
       abre já preenchido (efetivo do ponto com nome e função, material de
       Suprimentos, tempo, horário da semana), o calendário de pendências por
       obra, a observação que só a fiscalização escreve, os três modelos de
       papel (BWS, completo e o do órgão) numa página cada, a **lista de
-      equipamento com quantidade** repetindo do dia anterior por botão, e a
-      **busca pelo que foi relatado**. **Falta:** a medição de chuva da estação
+      equipamento com quantidade**, vinda do cadastro de insumos locáveis e
+      repetindo do dia anterior por botão, e a **busca pelo que foi
+      relatado**. **Falta:** a medição de chuva da estação
       (`clima_medido` existe e está vazia), e o conceito de PARADA — sem os
       dois não dá para responder "quantos dias de prazo posso pedir por
       chuva". Ele também vai mandar os modelos de diário que as prefeituras

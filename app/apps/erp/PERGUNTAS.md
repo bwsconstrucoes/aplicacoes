@@ -1794,9 +1794,10 @@ Perguntas que o diário torna possíveis. Escritas como o dono perguntaria.
 - "Que material chegou na obra naquele dia?" — vem de Suprimentos.
 - "Quem corrigiu o diário depois de fechado, e por quê?"
 - "Que equipamento estava na obra naquele dia?" — **passou a ser uma LISTA em
-  10/11/2026** (migração 097): descrição, quantidade e observação, uma linha
-  por equipamento. O campo de texto livre continua existindo e sustenta os
-  diários escritos antes disso, então a resposta tem de olhar os DOIS.
+  10/11/2026** (migrações 097 e 098): descrição, quantidade, observação e o
+  **laço com o cadastro de insumos** (os marcados como locáveis). O campo de
+  texto livre saiu da tela no mesmo dia, mas **os diários antigos ainda o
+  usam**, então a resposta tem de olhar os DOIS.
   ⚠️ **não é consulta de frota**: se ninguém lançar, a resposta é "não
   informado", e não "nenhum equipamento esteve na obra".
 - "Quantos dias a retroescavadeira ficou na obra 081?" — **agora dá para
@@ -1810,6 +1811,15 @@ Perguntas que o diário torna possíveis. Escritas como o dono perguntaria.
 - "Que equipamento ficou parado, e em que dias?" — ⚠️ **depende de alguém ter
   escrito o motivo na observação**. O sistema não sabe sozinho que uma máquina
   parou; ele guarda o que a obra escreveu.
+- "Em quais obras a retroescavadeira esteve este mês?" — **passou a dar para
+  responder sem erro de nome** (098): o equipamento escolhido na lista carrega
+  o número do insumo, então contar não depende de alguém ter digitado igual.
+  ⚠️ **mas só conta o que veio da lista**: equipamento lançado como "não está
+  na lista" entra marcado e fica de fora da soma por insumo. A resposta tem de
+  dizer quantos ficaram de fora, nunca devolver só o número.
+- "Que equipamento foi lançado sem estar no cadastro?" — dá para listar, e é a
+  pergunta que mantém a nomenclatura limpa: cada um desses é um insumo que
+  Suprimentos precisa cadastrar como locável. Ainda não há função pronta.
 - "Em que horário a obra trabalhou naquele dia?" — ⚠️ **palavra ambígua**: o
   campo vem **pré-preenchido** com o padrão do dia da semana (7 às 17, e 7 às
   16 na sexta) e a pessoa pode trocar. Um dia gravado SEM horário não tem
