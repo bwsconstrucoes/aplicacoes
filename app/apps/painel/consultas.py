@@ -2942,6 +2942,25 @@ def _onde_do_explorador(pedido: dict) -> tuple[str, list]:
     return where, params
 
 
+# A ordem da lista do Explorador (10/11/2026, o dono: "não consigo fazer a
+# classificação por valor, do maior pro menor — é importante"). No BANCO, e não
+# na tela: com o teto de linhas, ordenar só o que veio mostraria os maiores
+# entre os mais recentes, e não os maiores de verdade.
+_VALOR_DA_LINHA = "ABS(COALESCE(pago_recebido, 0) + COALESCE(a_pagar_receber, 0))"
+ORDENS_DO_EXPLORADOR = {
+    "data": ("Data, a mais recente primeiro",
+             "data DESC NULLS LAST, codigo_lancamento DESC"),
+    "valor_maior": ("Valor, do maior para o menor",
+                    f"{_VALOR_DA_LINHA} DESC, data DESC NULLS LAST"),
+    "valor_menor": ("Valor, do menor para o maior",
+                    f"{_VALOR_DA_LINHA} ASC, data DESC NULLS LAST"),
+    "data_antiga": ("Data, a mais antiga primeiro",
+                    "data ASC NULLS LAST, codigo_lancamento"),
+    "fornecedor": ("Cliente ou fornecedor, de A a Z",
+                   "razao_social ASC NULLS LAST, data DESC NULLS LAST"),
+}
+
+
 def explorar(pedido: dict, limite: int = TETO_DO_EXPLORADOR) -> dict:
     """Os lançamentos que atendem ao pedido, com os totais da seleção INTEIRA.
 
@@ -2958,7 +2977,8 @@ def explorar(pedido: dict, limite: int = TETO_DO_EXPLORADOR) -> dict:
     colunas = ", ".join(COLUNAS_DO_EXPLORADOR)
     linhas = [dict(zip(COLUNAS_DO_EXPLORADOR, bruta)) for bruta in consultar(
         f"""SELECT {colunas} FROM fato{where}
-             ORDER BY data DESC NULLS LAST, codigo_lancamento DESC
+             ORDER BY {ORDENS_DO_EXPLORADOR.get(pedido.get("ordem") or "data",
+                                                ORDENS_DO_EXPLORADOR["data"])[1]}
              LIMIT {int(limite)}""", params)]
     for linha in linhas:
         for campo in ("pago_recebido", "a_pagar_receber"):

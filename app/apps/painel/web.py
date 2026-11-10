@@ -2211,7 +2211,9 @@ def _aplicar_mudanca_da_prestacao(dados, form):
 # mais escondida, para nao ser algo tao exposto".
 def _pedido_do_explorador():
     """Le da URL o que a pessoa escolheu nos filtros."""
+    from .consultas import ORDENS_DO_EXPLORADOR
     de, ate = _faixa_de_data()
+    ordem = (request.args.get("ordem") or "data").strip()
     return {
         "tipo": request.args.get("tipo", ""),
         "analises": request.args.getlist("analise"),
@@ -2225,6 +2227,8 @@ def _pedido_do_explorador():
         "busca": (request.args.get("busca") or "").strip(),
         "com_trf": request.args.get("trf") == "1",
         "de": de, "ate": ate,
+        # a ordem da lista (10/11/2026): só as conhecidas, o resto vira data
+        "ordem": ordem if ordem in ORDENS_DO_EXPLORADOR else "data",
     }
 
 
@@ -2250,6 +2254,7 @@ def explorador():
         "painel_explorador.html",
         aba_ativa="config", abas=ABAS,
         pedido=pedido, escolheu=escolheu, dados=dados,
+        ordens=consultas.ORDENS_DO_EXPLORADOR,
         resumo=consultas.resumo_do_explorador(pedido) if escolheu else [],
         opcoes=consultas.opcoes_do_explorador(),
         fornecedores=consultas.fornecedores_do_recorte(dados),
@@ -2315,7 +2320,7 @@ def explorador_alterar():
         "painel_explorador.html",
         aba_ativa="config", abas=ABAS,
         pedido=pedido, escolheu=True,
-        dados=dados,
+        dados=dados, ordens=consultas.ORDENS_DO_EXPLORADOR,
         resumo=consultas.resumo_do_explorador(pedido),
         opcoes=consultas.opcoes_do_explorador(),
         fornecedores=consultas.fornecedores_do_recorte(dados),
