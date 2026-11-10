@@ -793,3 +793,112 @@ def test_a_conferencia_lista_toda_categoria_que_fala_em_juro(base, monkeypatch):
 
     html = _cliente(monkeypatch).get("/painel/configuracoes?conferir=1").get_data(as_text=True)
     assert "Onde estão os juros de empréstimo" in html
+
+
+# ---------------------------------------------------------------------------
+# 10/11/2026 — a revisão da conta: dois consertos, o corte dos juros e o batimento
+# ---------------------------------------------------------------------------
+_OBRAS_REV = {"CE1": {"projeto": "BWSCE"}, "PE1": {"projeto": "PE"}, "PE2": {"projeto": "PE"}}
+_LADO_REV = {"CE1": "principal", "PE1": "demais", "PE2": "demais"}
+_REGUA_REV = [("2022-01", "CE1", 100), ("2022-01", "PE1", 50), ("2022-01", "PE2", 50)]
+
+
+def _por_obra_rev(rateio):
+    total = {}
+    for (obra, _mes), valor in rateio["alocacoes"].items():
+        total[obra] = round(total.get(obra, 0.0) + valor, 2)
+    return total
+
+
+def test_lancamento_marcado_nao_e_descontado_uma_vez_por_departamento():
+    """Matriz e filial com a mesma categoria no mesmo mês: o lançamento
+    marcado saía das DUAS linhas, e 400 sumiam da conta."""
+    from app.apps.painel import prestacao
+    admin = [{"mes": "2022-01", "depto": "M", "grupo": "G", "categoria": "A", "valor": -1000.0},
+             {"mes": "2022-01", "depto": "F", "grupo": "G", "categoria": "A", "valor": -300.0}]
+    marcado = [{"mes": "2022-01", "grupo": "G", "categoria": "A", "codigo": "7", "valor": -400.0}]
+    r = prestacao.calcular_rateio_do_cenario(admin, marcado, _REGUA_REV, _OBRAS_REV,
+                                             {"lancamento": {"7": 100.0}}, lado_de=_LADO_REV)
+    assert round(sum(r["alocacoes"].values()), 2) == -1300.0
+    r = prestacao.calcular_rateio_do_cenario(admin, marcado, _REGUA_REV, _OBRAS_REV,
+                                             {"lancamento": {"7": 0.0}}, lado_de=_LADO_REV)
+    assert round(sum(r["alocacoes"].values()), 2) == -900.0
+    assert round(sum(r["fora_por_mes"].values()), 2) == -400.0
+
+
+def test_categoria_afinada_continua_com_os_dois_lados_do_grupo():
+    """Grupo "40% para o principal"; a categoria com percentual próprio (fixo,
+    ou por período sem a parte do principal) segue o 40/60 do grupo."""
+    from app.apps.painel import prestacao
+    admin = [{"mes": "2022-01", "grupo": "G", "categoria": c, "valor": -1000.0} for c in "AB"]
+    grupo = {"G": [("2021-01", 100.0, 40.0)]}
+    esperado = {"CE1": -800.0, "PE1": -600.0, "PE2": -600.0}
+    for pesos in ({"categoria": {"B": 100.0}, "periodos": {"grupo": grupo}},
+                  {"periodos": {"grupo": grupo, "categoria": {"B": [("2021-06", 100.0, None)]}}}):
+        r = prestacao.calcular_rateio_do_cenario(admin, [], _REGUA_REV, _OBRAS_REV, pesos,
+                                                 lado_de=_LADO_REV)
+        assert _por_obra_rev(r) == esperado
+    # e a categoria que diz a própria parte fica com a dela
+    pesos = {"periodos": {"grupo": grupo, "categoria": {"B": [("2021-06", 100.0, 100.0)]}}}
+    r = prestacao.calcular_rateio_do_cenario(admin, [], _REGUA_REV, _OBRAS_REV, pesos,
+                                             lado_de=_LADO_REV)
+    assert _por_obra_rev(r)["CE1"] == -1400.0
+
+
+def test_sem_projeto_principal_nada_some():
+    from app.apps.painel import prestacao
+    admin = [{"mes": "2022-01", "grupo": "G", "categoria": "A", "valor": -1000.0}]
+    pesos = {"periodos": {"grupo": {"G": [("2021-01", 100.0, 40.0)]}}}
+    r = prestacao.calcular_rateio_do_cenario(admin, [], _REGUA_REV, _OBRAS_REV, pesos)
+    assert round(sum(r["alocacoes"].values()), 2) == -1000.0
+
+
+def test_juros_param_no_ponto_de_corte_da_obra():
+    """O dono: "terminou de gastar com mão de obra, terminou de receber juros"."""
+    from app.apps.painel import prestacao
+    caixa = [("2021-01", "CE1", -1000.0), ("2023-06", "PE1", -10.0), ("2021-03", "PE2", -5.0)]
+    pessoal = [("2021-01", "CE1", 500.0), ("2021-06", "CE1", 500.0), ("2025-12", "PE1", 1.0)]
+    corte = prestacao.corte_dos_juros(pessoal, caixa, _OBRAS_REV)
+    # PE2 nunca teve pessoal: vale o último mês em que mexeu no caixa
+    assert corte == {"CE1": "2021-06", "PE1": "2025-12", "PE2": "2021-03"}
+    juros = {"2021-02": -100.0, "2021-06": -100.0, "2021-07": -100.0, "2023-06": -100.0}
+    r = prestacao.alocar_juros_por_deficit(caixa, juros, _OBRAS_REV, corte=corte)
+    a = {k: round(v, 2) for k, v in r["alocacoes"].items()}
+    assert a[("CE1", "2021-02")] == -100.0 and a[("CE1", "2021-06")] == -100.0
+    assert ("CE1", "2021-07") not in a and ("CE1", "2023-06") not in a
+    assert a[("PE1", "2023-06")] == -100.0          # só quem ainda está em obra
+    assert [s["mes"] for s in r["sobras"]] == ["2021-07"]     # e o resto fica visível
+
+
+def test_batimento_fecha_e_acusa_o_que_ficou_de_fora():
+    """O dono: "o próprio sistema fazer esse somatório e identificar que bate
+    com o valor global"."""
+    from app.apps.painel import prestacao
+    admin = [{"mes": "2022-01", "grupo": "G", "categoria": "A", "valor": -1000.0},
+             {"mes": "2022-01", "grupo": "G", "categoria": "Juros", "valor": -200.0},
+             {"mes": "2022-02", "grupo": "G", "categoria": "A", "valor": -500.0}]
+    sem_juros, juros_mes = prestacao.separar_juros(admin, "Juros")
+
+    def rodar(pesos):
+        rateio = prestacao.calcular_rateio_do_cenario(sem_juros, [], _REGUA_REV, _OBRAS_REV,
+                                                      pesos, lado_de=_LADO_REV)
+        juros = prestacao.alocar_juros_por_deficit([("2022-01", "PE1", -50.0)], juros_mes,
+                                                   _OBRAS_REV)
+        return prestacao.batimento(admin, rateio, juros, _LADO_REV)
+
+    b = rodar({"periodos": {"grupo": {"G": [("2021-01", 100.0, 40.0)]}}})
+    # fevereiro não tem régua: os 500 viram "sem dono", e a soma continua batendo
+    assert b["fecha"] and b["total"]["diferenca"] == 0.0
+    assert b["total"] == {"matriz": -1700.0, "principal": -400.0, "demais": -600.0,
+                          "juros": -200.0, "sem_dono": -500.0, "fora": 0.0, "diferenca": 0.0}
+    # com a conta entrando 60%, a soma bate mas o batimento NÃO fecha: critica
+    b = rodar({"grupo": {"G": 60.0}})
+    assert b["soma_fecha"] and not b["tudo_distribuido"] and not b["fecha"]
+    assert b["total"]["fora"] == -600.0
+
+
+def test_critica_de_participacoes_que_nao_somam_cem():
+    from app.apps.painel import prestacao
+    gente = [{"obra": "", "pct": 60}, {"obra": "", "pct": 40},
+             {"obra": "X", "pct": 50}, {"obra": "X", "pct": 30}]
+    assert prestacao.criticas_das_participacoes(gente) == [{"obra": "X", "soma": 80.0}]

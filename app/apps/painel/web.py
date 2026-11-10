@@ -1403,7 +1403,11 @@ def _apurar_com(regras, config, base) -> dict:
         juros = prestacao.alocar_juros_por_deficit(
             base.get("caixa", []), juros_por_mes, obras,
             rateio_recebido=rateio["alocacoes"],
-            sem_deficit=str(config.get("juros_sem_deficit", "sobra")))
+            sem_deficit=str(config.get("juros_sem_deficit", "sobra")),
+            # ponto de corte (dono, 10/11/2026): acabou a mão de obra,
+            # acabou o juro
+            corte=prestacao.corte_dos_juros(base.get("pessoal", []),
+                                            base.get("caixa", []), obras))
     else:
         juros = {"alocacoes": {}, "sobras": [], "memoria": []}
 
@@ -1569,10 +1573,9 @@ def _calcular_cenario(cenario: dict) -> dict:
         else (admin, {}))
 
     # A regua de quem recebe: mao de obra ou faturamento, como o dono escolheu.
+    pessoal = consultas.custo_de_pessoal_por_obra_mes(config["grupo_pessoal"], medida)
     driver = (consultas.receita_por_obra_mes(medida)
-              if cenario.get("criterio") == "faturamento"
-              else consultas.custo_de_pessoal_por_obra_mes(
-                  config["grupo_pessoal"], medida))
+              if cenario.get("criterio") == "faturamento" else pessoal)
     if fora:
         driver = [d for d in driver if d[1] not in fora]
 
@@ -1603,7 +1606,10 @@ def _calcular_cenario(cenario: dict) -> dict:
         juros = prestacao.alocar_juros_por_deficit(
             caixa, juros_por_mes, obras,
             rateio_recebido=rateio["alocacoes"],
-            sem_deficit=str(cenario.get("juros_sem_deficit", "sobra")))
+            sem_deficit=str(cenario.get("juros_sem_deficit", "sobra")),
+            # ponto de corte (dono, 10/11/2026): "terminou de gastar com mão
+            # de obra, terminou de receber juros"
+            corte=prestacao.corte_dos_juros(pessoal, caixa, obras))
     else:
         juros = {"alocacoes": {}, "sobras": [], "memoria": []}
 
@@ -1623,6 +1629,13 @@ def _calcular_cenario(cenario: dict) -> dict:
         "tem_nao_apropriado": consultas.SEM_OBRA in obras,
         "posicao": prestacao.posicao_dos_socios(quotas, ajustes),
         "sobras": rateio["sobras"] + juros["sobras"],
+        # O BATIMENTO (10/11/2026): o custo global da matriz contra a soma do
+        # que foi para cada lado, dos juros, do sem dono e do que ficou de
+        # fora — o sistema confere, e o relatório deixa conferir à mão.
+        "batimento": prestacao.batimento(admin, rateio, juros, lado_de),
+        "fora_por_conta": rateio.get("fora_por_conta", []),
+        "criticas_participacoes": prestacao.criticas_das_participacoes(participacoes),
+        "principal": principal,
     }
 
 
@@ -1945,6 +1958,10 @@ def cenario_resultado():
         juros_total=sum(calculo["juros"]["alocacoes"].values()),
         sobras=sorted(sobras, key=lambda s: abs(s["valor"]), reverse=True)[:40],
         total_sobras=sum(s["valor"] for s in sobras),
+        batimento=calculo["batimento"],
+        fora_por_conta=calculo["fora_por_conta"],
+        criticas_participacoes=calculo["criticas_participacoes"],
+        principal=calculo["principal"],
         obra_grafico=obra, trilha=trilha, grafico=grafico,
         obras_para_grafico=[nome for nome, _n in por_obra],
         criterios=cenarios.CRITERIOS,
@@ -3070,6 +3087,11 @@ def baixar(assunto):
              prestacao.total_por_obra(calculo["juros"]["alocacoes"])),
             ("Juros mes a mes", C["cenario_juros_mes"], calculo["juros"]["memoria"]),
             ("Sem dono", C["cenario_sobras"], calculo["sobras"]),
+            # o batimento mês a mês, com a linha do total — para conferir à mão
+            ("Batimento", C["cenario_batimento"],
+             calculo["batimento"]["linhas"]
+             + [dict(mes="TOTAL", **calculo["batimento"]["total"])]),
+            ("Ficou de fora", C["cenario_fora"], calculo["fora_por_conta"]),
         ]
         if trilha:
             abas.append((f"Mes a mes {obra[:18]}", C["cenario_trilha"], trilha))

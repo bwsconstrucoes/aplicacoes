@@ -312,4 +312,12 @@ COLUNAS = {
                        ("juros_acumulado", "Juros acumulados")],
     "cenario_sobras": [("origem", "De onde veio"), ("mes", "Mês"),
                        ("valor", "Valor"), ("motivo", "Por quê")],
+    "cenario_batimento": [("mes", "Mês"), ("matriz", "Custo da matriz"),
+                          ("principal", "Estrutura — projeto principal"),
+                          ("demais", "Estrutura — demais projetos"),
+                          ("juros", "Juros nas obras"),
+                          ("sem_dono", "Sem dono"), ("fora", "Ficou de fora"),
+                          ("diferenca", "Diferença")],
+    "cenario_fora": [("grupo", "Grupo"), ("categoria", "Categoria"),
+                     ("valor", "Ficou de fora")],
 }

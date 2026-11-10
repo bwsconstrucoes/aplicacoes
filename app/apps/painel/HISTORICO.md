@@ -2562,8 +2562,8 @@ empréstimo, alguma obra estava no vermelho; a opção ficou como está.
 
 Pedido do dono: revisar o desenho e a conta (05 a 09/11), **sem mexer em
 código**. Nada foi alterado; o que segue é o que a revisão achou, conferido
-rodando `prestacao.py` com números pequenos. **Nenhum item foi consertado —
-esperam a decisão dele.**
+rodando `prestacao.py` com números pequenos. O que foi feito com cada um
+está logo abaixo, em "O que o dono decidiu".
 
 Dá número errado (confirmado na conta):
 
@@ -2600,6 +2600,44 @@ projeto principal volta para o `projeto_matriz`; sem principal nenhum, a parte
 separada some sem virar sobra; a memória mês a mês não mostra quanto foi para
 cada lado; sem a migração 024 aplicada, os períodos digitados não são gravados
 e a tela não avisa.
+
+### O que o dono decidiu, e o que foi feito — 10/11/2026 (mesmo dia)
+
+> *"O que fica de fora some. Tem que somar 100%, né? Se não somou, tem que ser
+> criticado para ajustar. Todo mês vai ter mão de obra, então não se preocupe
+> em relação ao 4. O projeto que terminou com prejuízo, acho que ele tem que
+> encerrar. A gente tem que fazer um ponto de corte. Terminou de gastar com
+> mão de obra, terminou de receber juros. E é muito importante esse batimento
+> (…) o próprio sistema fazer esse somatório e identificar que bate com o valor
+> global (…) e a gente, com o relatório, poder fazer a checagem manual também."*
+
+- **Itens 1 e 2 consertados** (`calcular_rateio_do_cenario` soma a conta
+  antes de tirar o lançamento marcado; em `peso_e_divisao` a parte do
+  principal em branco segue o nível de cima). Sem projeto principal, a parte
+  separada volta para a régua comum em vez de sumir.
+- **Item 3 — critica, não bloqueia.** A conta passa a guardar o que ficou de
+  fora (por mês e por conta). A montagem avisa em vermelho quando há valor de
+  fora; o batimento do resultado diz "não fecha" enquanto houver. Não foi
+  proibido salvar abaixo de 100%: *interpretação minha* de "criticado para
+  ajustar" — se ele quiser impedir, é trocar o aviso por recusa.
+- **Item 4 — fica como está**, por decisão dele.
+- **Item 6 — ponto de corte dos juros** (`corte_dos_juros`): a obra deixa de
+  receber juro depois do último mês com custo de pessoal. Obra que nunca teve
+  pessoal usa o último mês com movimento de caixa (*escolha minha*, para ela
+  não ficar isenta para sempre). Vale no cenário **e na Prestação antiga** —
+  os números de juros por obra das duas telas mudam. Juro de mês em que
+  ninguém mais conta vira "sem dono", visível.
+- **Batimento** (`prestacao.batimento`): custo global da matriz = estrutura
+  para o principal + para os demais + juros nas obras + sem dono + ficou de
+  fora, mês a mês, com tolerância de R$ 1,00 por mês (centavos da divisão).
+  Quadro novo na tela de resultado do cenário, e duas abas na planilha
+  ("Batimento" e "Ficou de fora"). Critica também participações que não somam
+  100%. O "custo global" sai da mesma leitura da conta (departamentos
+  administrativos, análise DRE) — a conferência de fora é comparar esse número
+  com o DRE filtrado pelos dois departamentos.
+- **Sem resposta ainda:** itens 5 (projeto que não recebe continua fora dos
+  juros) e 7 (aporte não abate o buraco). Ficaram como estavam.
+- Sem migração. **Não verificado:** a tela com a base real — só testes.
 
 ## Reler os pagamentos de um ano, de alguns ou de todos — 07/10/2026
 

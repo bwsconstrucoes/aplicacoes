@@ -311,6 +311,17 @@
       <div class="kpi-sub">caem em quem demandou caixa</div></div>
     {% endif %}
   </div>
+  {# 10/11/2026, o dono: "tem que somar 100%. Se não somou, tem que ser
+     criticado para ajustar." #}
+  {% if resumo_matriz.fora|abs > 1 %}
+  <div class="aviso erro">
+    <b>{{ brl(resumo_matriz.fora) }} estão ficando de fora.</b> Há conta
+    entrando com menos de 100%, e essa parte não vai para nenhum dos dois
+    lados. Ajuste as linhas com valor na coluna "Fica de fora" — ou confirme
+    que é isso mesmo que você quer. O batimento do resultado acusa enquanto
+    houver valor aqui.
+  </div>
+  {% endif %}
   {% endif %}
 
   {# A ÁRVORE INTEIRA NUM FORMULÁRIO SÓ (05/11/2026). O dono: "da forma que

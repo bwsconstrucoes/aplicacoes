@@ -212,6 +212,120 @@
 </div>
 {% endif %}
 
+<!-- ===================== BATIMENTO ===================== -->
+{# 10/11/2026, o dono: "é muito importante esse batimento (…) o próprio sistema
+   fazer esse somatório e identificar que bate com o valor global". #}
+{% set bt = batimento.total %}
+<div class="cartao" id="batimento">
+  <div class="cartao-cab">
+    <h3>Batimento — o custo da matriz foi inteiro para algum lugar?</h3>
+    <small>o sistema confere a soma; a planilha traz o mesmo quadro, mês a mês</small>
+  </div>
+
+  {% if batimento.fecha %}
+  <div class="aviso ok"><b>Bate.</b> Tudo o que a matriz gastou
+    ({{ brl(bt.matriz) }}) está distribuído: a soma das partes abaixo dá o
+    valor global, e nada ficou de fora.</div>
+  {% else %}
+  <div class="aviso erro">
+    <b>Não fecha.</b>
+    {% if not batimento.soma_fecha %}
+    A soma das partes difere do custo da matriz em <b>{{ brl(bt.diferenca) }}</b>
+    ({{ batimento.meses_que_nao_batem|length }} mês(es):
+    {{ batimento.meses_que_nao_batem[:12]|join(', ') }}{{ '…' if batimento.meses_que_nao_batem|length > 12 }}).
+    Isso é erro de conta — avise.
+    {% endif %}
+    {% if not batimento.tudo_distribuido %}
+    <b>{{ brl(bt.fora) }}</b> ficaram de fora do rateio: há conta da matriz
+    entrando com menos de 100%. Esse valor não foi para nenhum dos dois lados.
+    <a href="{{ url_for('painel.cenario_montagem', cenario=cenario.id) }}">Ajuste em Montar</a>
+    — as contas estão listadas abaixo.
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if criticas_participacoes %}
+  <div class="aviso erro">
+    <b>Percentuais de quem divide não somam 100%:</b>
+    {% for c in criticas_participacoes %}{{ c.obra }} soma {{ '%.2f'|format(c.soma) }}%{{ ' · ' if not loop.last }}{% endfor %}.
+    Com a soma errada, as quotas não fecham com o resultado da obra.
+  </div>
+  {% endif %}
+
+  <div class="tabela-rolagem">
+    <table>
+      <thead><tr><th class="sem-ordem">Parte</th>
+        <th class="sem-ordem direita">Valor</th></tr></thead>
+      <tbody>
+        <tr><td class="desc"><b>Custo global da matriz</b> (matriz e filial, com os juros)</td>
+          <td class="dados direita"><b>{{ brl(bt.matriz) }}</b></td></tr>
+        <tr><td class="desc">Estrutura rateada para o {{ principal or 'projeto principal' }}</td>
+          <td class="dados direita">{{ brl(bt.principal) }}</td></tr>
+        <tr><td class="desc">Estrutura rateada para os demais projetos</td>
+          <td class="dados direita">{{ brl(bt.demais) }}</td></tr>
+        <tr><td class="desc">Juros apropriados nas obras</td>
+          <td class="dados direita">{{ brl(bt.juros) }}</td></tr>
+        <tr><td class="desc">Sem dono (não coube em obra nenhuma)</td>
+          <td class="dados direita">{{ brl(bt.sem_dono) }}</td></tr>
+        <tr><td class="desc">Ficou de fora (conta com menos de 100%)</td>
+          <td class="dados direita {{ 'v-neg' if not batimento.tudo_distribuido }}">{{ brl(bt.fora) }}</td></tr>
+        <tr><td class="desc"><b>Diferença</b> (tem de ser zero)</td>
+          <td class="dados direita {{ 'v-neg' if not batimento.soma_fecha }}"><b>{{ brl(bt.diferenca) }}</b></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  {% if fora_por_conta %}
+  <details {{ 'open' if not batimento.tudo_distribuido }}>
+    <summary style="cursor:pointer; padding:6px 0"><b>Contas que ficaram de fora</b></summary>
+    <div class="tabela-rolagem" style="max-height:320px; margin-top:10px">
+      <table>
+        <thead><tr><th class="sem-ordem">Grupo</th><th class="sem-ordem">Categoria</th>
+          <th class="sem-ordem direita">Ficou de fora</th></tr></thead>
+        <tbody>
+          {% for l in fora_por_conta %}
+          <tr><td class="desc">{{ l.grupo }}</td><td class="desc">{{ l.categoria }}</td>
+            <td class="dados direita">{{ brl(l.valor) }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+  {% endif %}
+
+  <details>
+    <summary style="cursor:pointer; padding:6px 0"><b>Mês a mês</b></summary>
+    <div class="tabela-rolagem" style="max-height:360px; margin-top:10px">
+      <table>
+        <thead><tr>
+          <th class="sem-ordem">Mês</th>
+          <th class="sem-ordem direita">Custo da matriz</th>
+          <th class="sem-ordem direita">{{ principal or 'Principal' }}</th>
+          <th class="sem-ordem direita">Demais</th>
+          <th class="sem-ordem direita">Juros</th>
+          <th class="sem-ordem direita">Sem dono</th>
+          <th class="sem-ordem direita">De fora</th>
+          <th class="sem-ordem direita">Diferença</th>
+        </tr></thead>
+        <tbody>
+          {% for l in batimento.linhas|reverse %}
+          <tr>
+            <td class="desc">{{ l.mes }}</td>
+            <td class="dados direita">{{ brl(l.matriz) }}</td>
+            <td class="dados direita">{{ brl(l.principal) }}</td>
+            <td class="dados direita">{{ brl(l.demais) }}</td>
+            <td class="dados direita">{{ brl(l.juros) }}</td>
+            <td class="dados direita">{{ brl(l.sem_dono) }}</td>
+            <td class="dados direita">{{ brl(l.fora) }}</td>
+            <td class="dados direita {{ 'v-neg' if not l.bate }}">{{ brl(l.diferenca) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+</div>
+
 <!-- ===================== AUDITORIA ===================== -->
 <div class="cartao">
   <div class="cartao-cab">
