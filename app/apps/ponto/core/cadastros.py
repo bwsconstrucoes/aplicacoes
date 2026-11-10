@@ -47,8 +47,28 @@ _SQL_COLABORADOR = """
 """
 # O cadastro do ERP puro. Com o Registro de Colaboradores como base (registro.py),
 # os mesmos campos vêm de lá quando a pessoa está nele.
+# ⚑ O INÍCIO DO CONTRATO É A MENOR DAS DUAS DATAS, e isto alinha o caminho do
+# ERP com o do Registro de Colaboradores, que já fazia assim (`registro.py`,
+# linha do `LEAST`). O diarista COMEÇA A TRABALHAR antes de a carteira ser
+# assinada: `data_inicio` é o primeiro dia na obra, `admissao` é o dia do
+# registro, e elas podem ser semanas diferentes.
+#
+# POR QUE ISSO IMPORTA AGORA (10/11/2026). O dono: *"eu não quero que a
+# conferência impacte no ponto, porque eu quero que a pessoa cadastre e a
+# partir daquele dia já consiga bater ponto no ato do cadastro (…) quem diz
+# que é para admitir ou não é a obra. A obra pediu, libera."*
+#
+# Sem o LEAST, bastava o DP ajustar a data de admissão para a frente — que é
+# justamente a ponderação dele, *"se o dia da assinatura vai ser aquele mesmo
+# ou um pouquinho mais na frente"* — para alguém que vinha batendo ponto
+# PARAR DE BATER, sem ninguém entender por quê. O trabalho já aconteceu; mudar
+# a data do papel não pode apagar o direito de registrar o dia.
+#
+# `LEAST` ignora vazio no Postgres: só uma data preenchida continua valendo, e
+# nenhuma das duas não trava nada.
 _DO_ERP = {"nome": "c.nome", "obra_id": "c.obra_id", "situacao": "c.situacao",
-           "admissao": "c.admissao", "demissao": "c.demissao", "telefone": "c.telefone",
+           "admissao": "LEAST(c.data_inicio, c.admissao)",
+           "demissao": "c.demissao", "telefone": "c.telefone",
            "funcao": "f.nome", "no_registro": "NULL::boolean", "fase": "NULL::text", "join": "",
            "nao_bate": "NULL::text", "tipo_cadastro": "NULL::text"}
 _SEM_EXCECAO = ("FALSE AS bate_por_excecao, NULL::text AS excecao_motivo, NULL::text AS excecao_por, "

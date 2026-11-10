@@ -517,6 +517,8 @@ que eu não posso fazer:
 | "Esqueci minha senha"? | *"é necessário. Não deixar a autonomia."* | **construído** |
 | Escolher a pessoa na solicitação | buscar por nome/CPF, sem expor lista | **construído** |
 | As etapas e a bifurcação | *"acho que ficou correto"* | mantidas |
+| Os acréscimos da diária | valem, mas *"deve ficar dentro de uma configuração"* | **Configurações › Diárias** |
+| A conferência atrasa o ponto? | *"não quero que impacte (…) a obra pediu, libera"* | **conferido e amarrado com trava** |
 
 ### ❓ O que ainda falta você dizer
 
@@ -524,19 +526,22 @@ que eu não posso fazer:
    pergunta encolheu: sobra algum campo que **não** é cadastral nem de
    pagamento? Meus candidatos restantes: `ref_pipefy` (o número do card, que
    morre com o Pipefy) e `requerente` em texto livre.
-2. **Os acréscimos da diária** — +20 feriado, +10 sábado, +20 domingo, vigia
-   fora. Esses números ainda valem?
-3. **O que conferir no retorno de cada pedido** — hoje: nome, CPF, cargo,
+2. **O que conferir no retorno de cada pedido** — hoje: nome, CPF, cargo,
    salário e datas. Na rescisão acrescentei o que você listou (data de saída,
-   aviso prévio, dias trabalhados, saldo de salário, faltas). Falta algo?
-4. **O cadastro passa por "Conferência" sempre.** É um passo a mais em todo
-   cadastro. Vale, ou cadastro que chega completo e com papel deveria poder
-   ir direto?
-5. **A atualização do ID Fortes por arquivo** — você disse "mais na frente".
+   aviso prévio, dias trabalhados, saldo de salário, faltas). **Falta algo?**
+3. **A atualização do ID Fortes por arquivo** — você disse "mais na frente".
    Quando quiser, é meio dia de trabalho.
-6. **A obra na solicitação.** Você disse que hoje é menos necessária porque o
+4. **A obra na solicitação.** Você disse que hoje é menos necessária porque o
    ponto cruza, mas que importa saber de onde a pessoa é. Hoje ela é
    **opcional** e o pedido guarda **quem solicitou** sempre. Confirma?
+5. **O valor da diária de quem é CTPS.** Você contou que às vezes define
+   diária para CTPS que trabalha no fim de semana, mas que *"atualmente a
+   gente está preferindo pagar hora extra, que é o correto"*. O campo existe
+   e continua funcionando — só quero saber se é para mantê-lo à vista no
+   cadastro de CTPS ou escondê-lo.
+6. **A gratificação quinzenal x mensal.** Você falou das duas; o cadastro tem
+   hoje **um** valor de gratificação e a marca "parcela única". Isso cobre as
+   duas, ou falta dizer a periodicidade em separado?
 
 ## 7. O QUE AINDA NÃO FUNCIONA, para não haver surpresa
 

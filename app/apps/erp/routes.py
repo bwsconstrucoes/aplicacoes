@@ -9138,6 +9138,39 @@ def pagina_primeiro_acesso(token: str):
 # ===========================================================================
 # A CONTA DE E-MAIL DO SISTEMA — separada da do DP e da de compras
 # ===========================================================================
+@bp.route("/erp/api/diarias", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao(GET="ver_pessoal", POST="configurar")
+def api_diarias():
+    """Os acréscimos da diária — feriado, sábado, domingo e quem não recebe.
+
+    Ele, em 10/11/2026: *"esses números ainda valem atualmente, mas isso é
+    algo que deva ficar dentro de uma configuração, o acréscimo da diária."*
+
+    ⚑ LER é de quem vê o Pessoal; MUDAR é de quem configura. A diferença
+    importa: quem confere uma folha precisa saber com que acréscimo a conta
+    foi feita, e isso não é o mesmo que poder mudá-lo.
+    """
+    from app.apps.erp.core import diarias as svc
+    try:
+        with get_session() as s:
+            if request.method == "GET":
+                return jsonify({"ok": True, "config": svc.configuracao(s),
+                                "padrao": {"feriado": 20.0, "sabado": 10.0,
+                                           "domingo": 20.0,
+                                           "sem_diaria": list(
+                                               svc.FUNCOES_SEM_DIARIA_PADRAO)}})
+            r = svc.configurar(s, request.get_json(silent=True) or {},
+                               _usuario_logado(s))
+            s.commit()
+            return jsonify({"ok": True, "config": r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha nos acréscimos da diária")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
 @bp.route("/erp/api/email-sistema", methods=["GET", "POST"])
 @login_obrigatorio
 @permissao("configurar")

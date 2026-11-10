@@ -25,6 +25,7 @@
   {# A CONTA DE E-MAIL DO SISTEMA (09/11/2026). Fica em Configurações e não em
      Empresas porque ela não é de CNPJ nenhum: quem fala por ela é o SISTEMA. #}
   <a class="subaba" href="#emailsistema" data-ir="emailsistema">E-mail do sistema</a>
+  <a class="subaba" href="#diarias" data-ir="diarias">Diárias</a>
   <a class="subaba" href="#documentos" data-ir="documentos">Tipos de documento</a>
   <a class="subaba" href="#ia" data-ir="ia">Consumo de IA</a>
   <a class="subaba" href="#anexos" data-ir="anexos">Onde ficam os documentos</a>
@@ -107,6 +108,40 @@
    Documento arquivado antes de 12/09/2026 pode não ter o texto de dentro
    guardado — e sem o texto ele não aparece na busca e não dá para perguntar
    sobre ele. Isto extrai o texto do próprio PDF: não gasta IA nenhuma. #}
+{# ===========================================================================
+   OS ACRÉSCIMOS DA DIÁRIA (10/11/2026)
+
+   Ele: *"esses números ainda valem atualmente, mas isso é algo que deva ficar
+   dentro de uma configuração, o acréscimo da diária."* Eles estavam escritos
+   no código do Análise de SPs: mudar um número de negócio exigia programador
+   e deploy.
+   =========================================================================== #}
+<div class="cartao" data-secao="diarias">
+  <div class="cartao-cab"><h3>Acréscimos da diária</h3>
+    <small>quanto se soma ao valor do dia em feriado e fim de semana</small></div>
+  <div class="cartao-dica">Vale para quem é pago <b>por diária</b>. O acréscimo
+    entra <b>por dia trabalhado</b>, somado ao valor da diária da pessoa.
+    <b>Feriado não soma com fim de semana:</b> feriado que cai no sábado paga o
+    acréscimo de feriado, e só.</div>
+  <div id="di-situacao" class="desc" style="margin:8px 0">carregando…</div>
+  <div class="form-grade">
+    <div class="campo"><label for="di-feriado">Feriado (R$)</label>
+      <input id="di-feriado" inputmode="decimal" placeholder="20,00"></div>
+    <div class="campo"><label for="di-sabado">Sábado (R$)</label>
+      <input id="di-sabado" inputmode="decimal" placeholder="10,00"></div>
+    <div class="campo"><label for="di-domingo">Domingo (R$)</label>
+      <input id="di-domingo" inputmode="decimal" placeholder="20,00"></div>
+    <div class="campo" style="grid-column:span 2">
+      <label for="di-sem">Funções que NÃO recebem diária</label>
+      <input id="di-sem" placeholder="VIGIA">
+      <div class="dica">Separadas por vírgula. O nome tem de ser
+        <b>igual</b> ao da função: “VIGIA NOTURNO” é outra função e
+        <b>recebe</b> diária.</div></div>
+  </div>
+  <div style="margin-top:12px"><button class="btn" id="di-salvar">Salvar</button></div>
+  <div id="di-msg"></div>
+</div>
+
 {# ===========================================================================
    A CONTA DE E-MAIL DO SISTEMA (09/11/2026)
 
@@ -608,6 +643,42 @@ function ligarEmailDoSistema(){
   });
 }
 document.addEventListener("DOMContentLoaded", ligarEmailDoSistema);
+
+// ---------------------------------------------------------------------------
+// OS ACRÉSCIMOS DA DIÁRIA
+// ---------------------------------------------------------------------------
+async function carregarDiarias(){
+  try {
+    const d = await api("/erp/api/diarias");
+    const c = d.config || {};
+    els("di-feriado").value = numero(c.feriado);
+    els("di-sabado").value = numero(c.sabado);
+    els("di-domingo").value = numero(c.domingo);
+    els("di-sem").value = (c.sem_diaria || []).join(", ");
+    els("di-situacao").innerHTML = c.no_padrao
+      ? `<span class="etiqueta">nos valores combinados</span>
+         <small>feriado R$ 20, sábado R$ 10, domingo R$ 20, vigia fora</small>`
+      : `<span class="etiqueta ambar">alterado</span>
+         <small>diferente dos valores que vinham de antes</small>`;
+  } catch(e){ els("di-situacao").textContent = "não foi possível ler: " + e.message; }
+}
+
+function ligarDiarias(){
+  if (!els("di-salvar")) return;
+  els("di-salvar").addEventListener("click", async () => {
+    try {
+      await api("/erp/api/diarias", {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({feriado: els("di-feriado").value,
+          sabado: els("di-sabado").value, domingo: els("di-domingo").value,
+          sem_diaria: els("di-sem").value})});
+      aviso("di-msg", "Acréscimos salvos. Eles valem da próxima conta em diante.", "ok");
+      carregarDiarias();
+    } catch(e){ aviso("di-msg", e.message, "erro"); }
+  });
+  carregarDiarias();
+}
+document.addEventListener("DOMContentLoaded", ligarDiarias);
 
 let DADOS = {categorias: [], obras: [], contas: [], usuarios: []};
 let OPCOES_CAT = "";

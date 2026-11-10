@@ -7813,6 +7813,59 @@ fica separado dos dois.
 limitação, porque ele era só entrada de dados, ele não era gestão. Mas hoje a
 gente faz a gestão pelo ERP."*
 
+### 🔓 A CONFERÊNCIA DO DP NÃO TRAVA O PONTO, e os acréscimos viraram configuração (10/11/2026)
+
+**DUAS DECISÕES, e a primeira é das que mudam o desenho.**
+
+**1. "A obra pediu, libera."** Ele:
+
+> *"Eu não quero que a conferência impacte no ponto, porque eu quero que a
+> pessoa cadastre e, a partir daquele dia, ele já consiga bater ponto no ato
+> do cadastro. Fica lá para o DP terminar de conferir (…) **quem diz que é
+> para admitir ou não é a obra.** O DP vai intermediar ali para ver se a
+> pessoa está no cargo correto, se o dia da assinatura vai ser aquele mesmo
+> ou um pouquinho mais na frente. Mas a obra pediu, libera."*
+
+**Conferi: já era assim.** O ponto olha a **situação** (ativo/desligado/
+afastado), nunca a **etapa** — a distinção ETAPA ≠ SITUAÇÃO, que nasceu em
+05/11, é exatamente o que torna isso possível. Quem é cadastrado hoje nasce
+ATIVO e bate hoje.
+
+⚑ **MAS HAVIA UM BURACO, E ELE IA MORDER NESSE CENÁRIO EXATO.** O caminho que
+lê o cadastro DO ERP usava **só `c.admissao`** para saber quando o contrato
+começa. Na descrição dele, o DP pondera a data da assinatura — e empurrar essa
+data faria **quem já vinha batendo ponto PARAR DE BATER**, sem ninguém
+entender por quê. Agora é `LEAST(c.data_inicio, c.admissao)`: o primeiro dia
+em que a pessoa trabalhou. ⚠️ **O caminho que lê a PLANILHA já fazia assim**
+(`registro.py`) — era o do ERP que divergia, e ele é justamente o que fica
+quando a planilha morrer. Defeito que só apareceria depois do desligamento da
+planilha, quando ninguém mais lembrasse de procurar aqui.
+
+**Virou trava estrutural** (`tests/test_diarias_e_ponto_liberado.py`): se
+alguém escrever "etapa" na regra de quem bate ponto — por zelo, achando que
+cadastro não conferido não devia bater —, a suíte quebra. Conferido injetando
+o defeito de volta.
+
+**2. Os acréscimos da diária saíram do código.** Ele: *"esses números ainda
+valem atualmente, mas isso é algo que deva ficar dentro de uma configuração."*
+Eram constantes em `analisesps/folha_diaristas.py` (20 feriado, 10 sábado, 20
+domingo, vigia fora): mudar um número de negócio exigia programador e deploy.
+
+Agora: **Configurações › Diárias**, em `core/diarias.py`. ⚑ **Os padrões são
+exatamente os números de hoje**, e isso não é detalhe — configuração nova que
+muda o resultado no primeiro dia é armadilha: o número muda, ninguém mexeu em
+nada, e a desconfiança cai no sistema inteiro. Duas regras que o módulo
+guarda e têm teste: **feriado vence o dia da semana e não soma com ele**
+(feriado no sábado paga feriado, e só) e **"VIGIA NOTURNO" continua recebendo
+diária** (igualdade, nunca "começa com" — trocar isso tiraria o pagamento de
+um turno inteiro).
+
+⚑ **A CONFIGURAÇÃO MORA NO ERP e a conta continua no Análise de SPs**, que lê
+daqui. Mora aqui porque o cadastro está aqui e a folha está vindo para cá —
+parâmetro guardado no sistema que vai ser desligado mudaria de casa duas
+vezes. E a leitura **nunca levanta**: sem resposta, valem os padrões e fica o
+aviso no log. Folha não pode parar por causa de um parâmetro.
+
 ### 📗 A CRÍTICA DELE AO MANUAL — o que eu tinha errado (10/11/2026)
 
 Ele leu o `MANUAL_DP.md` e devolveu uma lista. **Quatro erros meus**, e cada
