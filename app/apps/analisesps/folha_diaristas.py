@@ -722,7 +722,7 @@ def calcular(ano: int, mes: int, qual: str = "quinzena", empresa: str = "") -> d
         "quantos": len(pessoas), "quantos_a_pagar": len(a_pagar),
         "total": sum((p["valor"] for p in a_pagar), Decimal("0.00")),
         "por_obra": sorted(por_obra.values(), key=lambda o: -o["total"]),
-        "fechamento": _fechamento(ano, mes, qual),
+        "fechamento": _fechamento(ano, mes, qual, base["empresa"]),
     })
     return base
 
@@ -777,10 +777,11 @@ def aplicar_regra_de_rateio(p: dict, regra: dict) -> dict:
     return p
 
 
-def _fechamento(ano: int, mes: int, qual: str):
-    from . import folha_apropriacao_guardada as guardada
+def _fechamento(ano: int, mes: int, qual: str, empresa: str = ""):
+    from . import empresa_da_folha, folha_apropriacao_guardada as guardada
     try:
-        return guardada.fechamento(ano, mes, TIPO_DO_FECHAMENTO[qual], VERBA)
+        return guardada.fechamento(ano, mes, TIPO_DO_FECHAMENTO[qual],
+                                   empresa_da_folha.verba_da_empresa(VERBA, empresa))
     except Exception:  # noqa: BLE001
         logger.exception("Diaristas: não consegui ler o fechamento")
         return None
@@ -869,8 +870,10 @@ def fechar(ano: int, mes: int, qual: str, quem: str = "", empresa: str = "") -> 
         raise guardada.ErroDaApropriacao(
             "há diária sem obra (sem marcação no ponto e sem obra no cadastro): "
             + ", ".join(sem_obra[:5]) + ". Sem obra não há conta de pagamento.")
+    from . import empresa_da_folha
     novo = guardada.fechar(ano, mes, TIPO_DO_FECHAMENTO[calculado["qual"]],
-                           apropriado(calculado), verba=VERBA, quem=quem)
+                           apropriado(calculado),
+                           verba=empresa_da_folha.verba_da_empresa(VERBA, empresa), quem=quem)
     return {"id": novo, "pessoas": calculado["quantos_a_pagar"],
             "total": calculado["total"],
             "tipo": TIPO_DO_FECHAMENTO[calculado["qual"]]}

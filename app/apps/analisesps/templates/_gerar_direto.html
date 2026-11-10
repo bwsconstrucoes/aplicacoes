@@ -105,6 +105,11 @@
         "{{ url_for('analisesps.tela_folha_complementar', folha_id=0) }}".replace("/0/", "/" + DADOS.folha_id + "/") +
         '"><b>Complementar</b></a> — ela paga só a diferença. Se a geração anterior não valeu, ' +
         "exclua-a em Arquivos gerados.</div>" :
+      jaGerado.some(a => a.mistura) ? '<div class="aviso erro"><b>Juntas e por empresa não se misturam no mesmo período.</b> Já houve ' +
+        jaGerado.filter(a => a.mistura).map(a => esc(a.como) + " em " + esc(a.quando) +
+                          (a.por ? " por " + esc(a.por) : "") + " (" + real(a.total) + ")").join("; ") +
+        ". Gerar agora pagaria de novo quem já está naquela geração — o sistema recusa, mesmo " +
+        "com a opção abaixo. Para trocar a forma, exclua a geração anterior em Arquivos gerados.</div>" :
       jaGerado.length ? '<div class="aviso erro"><b>Este pagamento já foi gerado</b> em ' +
         jaGerado.map(a => esc(a.quando) + (a.por ? " por " + esc(a.por) : "") +
                           " (" + real(a.total) + ")").join("; ") +

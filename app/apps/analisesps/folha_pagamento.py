@@ -749,7 +749,7 @@ def _linhas_do_apropriado(apropriado: dict, verba: str) -> list:
 
 def _pedido_direto(origem: str, dados: dict) -> dict:
     """Competência, pagamento, verba e as linhas de AGORA — sem gravar nada."""
-    from . import folha_auxilio, folha_diaristas
+    from . import empresa_da_folha, folha_auxilio, folha_diaristas
     if origem not in ORIGENS:
         raise ErroDoPagamento(f'origem "{origem}" não reconhecida.')
     if origem == "dc":
@@ -819,20 +819,23 @@ def _pedido_direto(origem: str, dados: dict) -> dict:
         empresa = str(dados.get("empresa") or "")
         calculado = folha_diaristas.calcular(ano, mes, periodo, empresa)
         tipo = folha_diaristas.TIPO_DO_FECHAMENTO[calculado["qual"]]
-        return {"ano": ano, "mes": mes, "tipo": tipo, "verba": "diaria",
+        verba = empresa_da_folha.verba_da_empresa("diaria", calculado.get("empresa"))
+        return {"ano": ano, "mes": mes, "tipo": tipo, "verba": verba,
                 "empresa": calculado.get("empresa") or "",
                 "periodo": calculado["qual"],
                 "linhas": _linhas_do_apropriado(
-                    folha_diaristas.apropriado(calculado), "diaria"),
-                "rotulo": f"Diárias {mes:02d}/{ano} — {calculado['rotulo_periodo']}"}
+                    folha_diaristas.apropriado(calculado), verba),
+                "rotulo": f"{geracao.rotulo_da_verba(verba)} {mes:02d}/{ano} — "
+                          f"{calculado['rotulo_periodo']}"}
     pagamento = str(dados.get("pagamento") or "fim_de_mes")
     if pagamento not in folha_auxilio.TIPOS_DO_FECHAMENTO:
         raise ErroDoPagamento("selecione se o auxílio sai na quinzena ou no fim de mês.")
     calculado = folha_auxilio.calcular(origem, ano, mes, str(dados.get("empresa") or ""))
-    return {"ano": ano, "mes": mes, "tipo": pagamento, "verba": origem,
+    verba = empresa_da_folha.verba_da_empresa(origem, calculado.get("empresa"))
+    return {"ano": ano, "mes": mes, "tipo": pagamento, "verba": verba,
             "pagamento": pagamento, "empresa": calculado.get("empresa") or "",
-            "linhas": _linhas_do_apropriado(folha_auxilio.apropriado(calculado), origem),
-            "rotulo": f"{folha_auxilio.ROTULO_DO_TIPO[origem]} {mes:02d}/{ano}"}
+            "linhas": _linhas_do_apropriado(folha_auxilio.apropriado(calculado), verba),
+            "rotulo": f"{geracao.rotulo_da_verba(verba)} {mes:02d}/{ano}"}
 
 
 def resumo_direto(origem: str, dados: dict, destino: str,
@@ -885,15 +888,23 @@ def ja_gerado(origem: str, pedido: dict) -> list:
     O auxílio é UM por mês, saia na quinzena ou no fim do mês — qualquer dos
     dois conta. Diárias e folha têm um pagamento por período, e só o mesmo
     período conta."""
-    from . import folha_auxilio
+    from . import empresa_da_folha, folha_auxilio
     verba = pedido["verba"]
     um_por_mes = origem in folha_auxilio.TIPOS
-    return [{"id": a["id"], "criado_em": a["criado_em"], "criado_por": a["criado_por"],
-             "total": a["total"], "tipo": a["tipo"]}
-            for a in log(teto=400, ano=pedido["ano"], mes=pedido["mes"])
-            if a["destino"] == ANALISE
-            and verba in (a["verbas"] or "").split("+")
-            and (um_por_mes or a["tipo"] == pedido["tipo"])]
+    saida = []
+    for a in log(teto=400, ano=pedido["ano"], mes=pedido["mes"]):
+        if a["destino"] != ANALISE or not (um_por_mes or a["tipo"] == pedido["tipo"]):
+            continue
+        # Junto × por empresa (10/11/2026; `empresa_da_folha.conflita`): a mesma
+        # geração, ou uma que MISTURA as duas formas no mesmo período.
+        como = next((c for c in (empresa_da_folha.conflita(verba, v)
+                                 for v in (a["verbas"] or "").split("+") if v) if c), "")
+        if como:
+            saida.append({"id": a["id"], "criado_em": a["criado_em"],
+                          "criado_por": a["criado_por"], "total": a["total"],
+                          "tipo": a["tipo"], "mistura": como == "mistura",
+                          "verbas": a["verbas"]})
+    return saida
 
 
 def gerar_direto(origem: str, dados: dict, destino: str, quem: str = "",
@@ -905,16 +916,19 @@ def gerar_direto(origem: str, dados: dict, destino: str, quem: str = "",
     saem do mesmo cálculo."""
     from . import folha_auxilio, folha_diaristas, folha_gestao
     pedido = resumo_direto(origem, dados, destino, destinos)
-    if pedido["resumo"]["ja_gerado"] and pedido.get("empresa") \
-            and origem in ("diaria",) + tuple(folha_auxilio.TIPOS):
-        # ⚠️ UMA EMPRESA DEPOIS DA OUTRA, NO MESMO PERÍODO, AINDA NÃO (10/11/2026). O
-        # fechamento é um só por competência e verba: gerar a segunda empresa por cima
-        # APAGARIA o registro da primeira (e a SP dela no Pipefy ficaria travada). Nem
-        # o "gerar mesmo assim" passa aqui — falta a decisão de como separar.
+    misturada = next((a for a in pedido["resumo"]["ja_gerado"] if a.get("mistura")), None)
+    if misturada:
+        # ⚠️ JUNTO × POR EMPRESA NO MESMO PERÍODO (10/11/2026): nem o "gerar mesmo
+        # assim" passa — pagaria duas vezes quem já está na outra geração.
         raise ErroDoPagamento(
-            "este pagamento já foi gerado neste período (outra empresa ou todas). "
-            "Gerar por empresa, uma depois da outra no mesmo período, ainda não é "
-            "possível: o registro da primeira geração seria substituído.")
+            "neste período já houve geração "
+            + ("de todas as empresas juntas" if "." not in (misturada.get("verbas") or "")
+               else "por empresa (" + ", ".join(
+                   geracao.rotulo_da_verba(v) for v in (misturada.get("verbas") or "").split("+")
+                   if v) + ")")
+            + f", em {formatos.momento_br(misturada['criado_em'])}. Juntas e por empresa "
+            "não se misturam no mesmo período: quem já está numa geração receberia de "
+            "novo. Exclua a geração anterior em Arquivos gerados para trocar a forma.")
     if pedido["resumo"]["ja_gerado"] and not forcar:
         anterior = pedido["resumo"]["ja_gerado"][0]
         raise ErroDoPagamento(

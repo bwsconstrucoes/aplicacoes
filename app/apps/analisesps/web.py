@@ -4975,7 +4975,8 @@ def tela_folha_auxilio():
             (resultado or {}).get("pessoas"), lista["pessoas"]),
         auditoria=(fx.auditoria(tipo, ano, mes, resultado)["resumo"]
                    if resultado else None),
-        ultima_geracao=_ultima_geracao(tipo, ano, mes) if resultado else None,
+        ultima_geracao=(_ultima_geracao(_verba_da_tela(tipo, resultado), ano, mes)
+                        if resultado else None),
         divisao=_divisao_da_tela(resultado, tipo, fx.apropriado) if resultado else {},
         tipos=[(t, fx.ROTULO_DO_TIPO[t]) for t in fx.TIPOS],
         pagamentos=list(fx.TIPOS_DO_FECHAMENTO.items()),
@@ -4983,6 +4984,13 @@ def tela_folha_auxilio():
         pode_operar=auth.pode_operar(), pode_gerar=auth.e_mestre(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
+
+
+def _verba_da_tela(verba: str, resultado) -> str:
+    """A verba do pagamento que a tela está mostrando — a da empresa escolhida, ou a
+    de todas juntas (`empresa_da_folha.verba_da_empresa`)."""
+    from . import empresa_da_folha
+    return empresa_da_folha.verba_da_empresa(verba, (resultado or {}).get("empresa"))
 
 
 def _ultima_geracao(verba: str, ano: int, mes: int, tipo: str | None = None):
@@ -5865,7 +5873,7 @@ def tela_folha_diaristas():
         pessoas=lista["pessoas"], ano=ano, mes=mes, qual=qual, divisao=divisao,
         fora_do_filtro=_marcados_fora_do_filtro(resultado.get("pessoas"),
                                                 lista["pessoas"]),
-        ultima_geracao=(_ultima_geracao("diaria", ano, mes,
+        ultima_geracao=(_ultima_geracao(_verba_da_tela("diaria", resultado), ano, mes,
                                         fd.TIPO_DO_FECHAMENTO.get(resultado.get("qual")))
                         if resultado.get("qual") else None),
         periodos=list(fd.PERIODOS.items()), ano_padrao=hoje.year,
@@ -5983,7 +5991,11 @@ def folha_gerar_direto_resumo():
                        "pode_gerar": plano["resumo"]["pode_gerar"],
                        "ja_gerado": [{"quando": formatos.momento_br(a["criado_em"]),
                                       "por": a["criado_por"] or "",
-                                      "total": float(a["total"])}
+                                      "total": float(a["total"]),
+                                      "mistura": bool(a.get("mistura")),
+                                      "como": " + ".join(
+                                          geracao.rotulo_da_verba(v) for v in
+                                          (a.get("verbas") or "").split("+") if v)}
                                      for a in plano["resumo"]["ja_gerado"]]},
             "lotes": [{"conta": l["conta"], "quantos": l["quantos"],
                        "destino": l["destino"],

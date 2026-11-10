@@ -202,7 +202,7 @@ def verba_do_grupo(verba: str) -> str:
     Contabilidade, mas você na descrição pode pôr Complementar"*. Por isso
     "complementar1" lança como "folha" — o que a distingue é o título e a
     descrição, não o grupo."""
-    verba = str(verba or "").strip().lower()
+    verba = str(verba or "").strip().lower().split(".", 1)[0]     # sem a empresa
     return "folha" if verba.startswith("complementar") else verba
 
 
@@ -210,10 +210,15 @@ def grupo_da_verba(verba: str, tipo: str) -> tuple:
     verba = str(verba or "").strip().lower()
     base = verba_do_grupo(verba)
     achado = GRUPOS.get((base, tipo if base == "folha" else ""))
-    if achado and base != verba:
+    if achado and verba.startswith("complementar"):
         # O título da SP diz que é a complementar — senão o card some no meio
         # das folhas normais do mês, com o mesmo nome.
         achado = (f"{achado[0]} - {geracao.rotulo_da_verba(verba)[len('Folha '):].capitalize()}",
+                  ) + tuple(achado[1:])
+    elif achado and "." in verba:
+        # O pagamento de UMA empresa (10/11/2026): o título diz qual.
+        from . import empresa_da_folha
+        achado = (f"{achado[0]} - {empresa_da_folha.rotulo_curto(empresa_da_folha.separar(verba)[1])}",
                   ) + tuple(achado[1:])
     if not achado:
         raise ErroDosCards(

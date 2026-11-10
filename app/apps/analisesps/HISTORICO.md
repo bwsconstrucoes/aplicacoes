@@ -12260,12 +12260,22 @@ somente Solicitações de uma conta especifica"*.
   relatório, divisão e GERAÇÃO saem só com aquela empresa. "Sem CNPJ de admissão" é
   uma opção, para ninguém sumir sem ser visto. O nome vem do cadastro de Empresas do
   ERP pelo CNPJ; sem ele, o CNPJ formatado.
-- **Geração por empresa:** na DC funciona naturalmente (o que foi gerado sai da tela).
-  Nos auxílios e diaristas o FECHAMENTO é um só por competência e verba: gerar a
-  primeira empresa funciona; a SEGUNDA no mesmo período é RECUSADA, mesmo com "gerar
-  mesmo assim" — passaria por cima do registro da primeira (e travaria a SP dela).
-  **Pendente com o dono:** se ele gera uma empresa de cada vez no mesmo período, é
-  preciso separar o fechamento por empresa (decisão de desenho, não feita).
+- **Geração: junto OU por empresa** (o dono, no mesmo dia: *"acho que devemos fechar
+  por empresa"* e *"quero poder fazer junto ou por empresa"*). A empresa entra no NOME
+  DA VERBA do fechamento e da geração: `diaria` = todas juntas (como sempre);
+  `diaria.00079526000109` = só aquela empresa (`empresa_da_folha.verba_da_empresa`).
+  Cada empresa tem fechamento, arquivo e SP próprios; rótulo ("Diárias — BWS"),
+  natureza, carteira e grupo do Pipefy olham a verba base (título da SP ganha
+  " - BWS"). Na DC funciona naturalmente (o gerado sai da tela).
+  - ⚠️ **Junto × por empresa não se misturam no mesmo período**
+    (`empresa_da_folha.conflita`): depois de gerar todas juntas, gerar uma empresa
+    (ou o contrário) é recusado SEMPRE, mesmo com "gerar mesmo assim" — pagaria duas
+    vezes. Empresas diferentes entre si não conflitam. Repetir a mesma geração segue a
+    regra antiga (recusa; "gerar mesmo assim" passa).
+- **O rótulo da empresa** (correção do dono no mesmo dia): a BT vem escrita
+  "00.079.526/0001-09 - BWS". O filtro mostrava o nome do cadastro de Empresas do ERP;
+  agora mostra o texto da coluna (`ler_coluna`: o CNPJ separa, o nome depois do traço
+  é o que se lê; o ERP só completa CNPJ sem nome na planilha).
 - Testes: `test_analisesps_empresa_da_folha.py`.
 
 #### Leva 256 — Diaristas: filtro de obra lento (10/11/2026)

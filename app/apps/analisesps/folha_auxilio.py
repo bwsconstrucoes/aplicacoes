@@ -802,7 +802,7 @@ def calcular(tipo: str, ano: int, mes: int, empresa: str = "") -> dict:
         "com_ausencia": [p for p in pessoas if p.get("ausencias")
                          and not p.get("desconto_aplicado")
                          and p.get("desconto_proposto")],
-        "fechamento": fechamento(tipo, ano, mes),
+        "fechamento": fechamento(tipo, ano, mes, empresa),
     }
 
 
@@ -1104,12 +1104,13 @@ def salvar_selecao(tipo: str, ano: int, mes: int, decisoes, quem: str = "") -> d
 TIPOS_DO_FECHAMENTO = {"fim_de_mes": "Fim de mês", "quinzena": "Quinzena"}
 
 
-def fechamento(tipo: str, ano: int, mes: int) -> dict | None:
+def fechamento(tipo: str, ano: int, mes: int, empresa: str = "") -> dict | None:
     """O fechamento desta verba no mês, em qualquer dos dois pagamentos."""
-    from . import folha_apropriacao_guardada as guardada
+    from . import empresa_da_folha, folha_apropriacao_guardada as guardada
     for pagamento in TIPOS_DO_FECHAMENTO:
         try:
-            achado = guardada.fechamento(ano, mes, pagamento, tipo)
+            achado = guardada.fechamento(ano, mes, pagamento,
+                                         empresa_da_folha.verba_da_empresa(tipo, empresa))
         except Exception:  # noqa: BLE001
             logger.exception("Auxílio: não consegui ler o fechamento")
             achado = None
@@ -1379,10 +1380,12 @@ def fechar(tipo: str, ano: int, mes: int, pagamento: str = "fim_de_mes",
             '"outra obra…"). Sem obra não há conta de pagamento.')
     # Fechar um pagamento tira o fechamento do outro — senão a mesma verba do
     # mês sairia duas vezes.
+    from . import empresa_da_folha
+    verba = empresa_da_folha.verba_da_empresa(tipo, empresa)
     for outro in TIPOS_DO_FECHAMENTO:
         if outro != pagamento:
-            guardada.reabrir(ano, mes, outro, tipo, quem=quem)
+            guardada.reabrir(ano, mes, outro, verba, quem=quem)
     novo = guardada.fechar(ano, mes, pagamento, apropriado(calculado),
-                           verba=tipo, quem=quem)
+                           verba=verba, quem=quem)
     return {"id": novo, "pessoas": len(a_pagar), "total": calculado["total"],
             "pagamento": pagamento}
