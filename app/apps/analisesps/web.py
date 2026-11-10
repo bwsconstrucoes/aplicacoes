@@ -5847,7 +5847,7 @@ def tela_folha_diaristas():
     resultado = {"tem_ponto": False, "pessoas": [], "sem_cadastro": []}
     erro = None
     try:
-        resultado = fd.calcular(ano, mes, qual)
+        resultado = fd.calcular_guardado(ano, mes, qual)
     except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
         logger.exception("Folha: não consegui calcular os diaristas")
         erro = str(e)
@@ -5869,6 +5869,15 @@ def tela_folha_diaristas():
         pode_operar=auth.pode_operar(), pode_gerar=auth.e_mestre(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
+
+
+@bp.after_request
+def _esquecer_os_diaristas(resposta):
+    """Toda gravação no Análise de SPs joga fora o cálculo guardado dos diaristas."""
+    if request.method != "GET":
+        from . import folha_diaristas
+        folha_diaristas.esquecer_o_guardado()
+    return resposta
 
 
 @bp.route("/api/folha/diaristas/selecao", methods=["POST"])
