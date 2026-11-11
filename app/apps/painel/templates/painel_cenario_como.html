@@ -63,13 +63,18 @@
 <div class="cartao"><div class="passo"><span class="numero">1</span><div>
   <h3>De quanto estamos falando</h3>
   <p class="frase">
-    A estrutura da empresa (matriz e filial) custou
+    A matriz da empresa custou
     <b>{{ v(e.resumo.total) }}</b>{% if e.primeiro_mes %} desde {{ e.primeiro_mes[5:] }}/{{ e.primeiro_mes[:4] }}{% endif %}.
     Esse custo não é de nenhuma obra em particular — por isso ele é
     <b>dividido entre as obras</b>, para cada uma mostrar o resultado de verdade.
+    {% if e.resumo.filial and e.resumo.filial.centros and e.resumo.filial.rateia|abs > 0.005 %}
+    A filial ({{ e.resumo.filial.centros|join(' e ') }}) custou mais
+    <b>{{ v(e.resumo.filial.rateia) }}</b>, que vão <b>inteiros só para as demais obras</b>{% if e.principal %}
+    — o {{ e.principal }} não recebe nada dela{% endif %}.
+    {% endif %}
   </p>
   <div class="seta-lados">
-    <div class="caixa"><small>Custo da estrutura</small><b>{{ v(e.resumo.total) }}</b></div>
+    <div class="caixa"><small>Custo da matriz</small><b>{{ v(e.resumo.total) }}</b></div>
     <div class="caixa"><small>Entra na divisão</small><b>{{ v(e.resumo.entra) }}</b></div>
     {% if e.resumo.fora|abs > 0.005 %}
     <div class="caixa"><small>Fica de fora (não se divide)</small><b>{{ v(e.resumo.fora) }}</b></div>

@@ -389,31 +389,40 @@ document.addEventListener("click", function (e) {
     <input type="hidden" name="acao" value="config">
     <input type="hidden" name="aba" value="geral">
     <div class="campo">
-      <label for="projeto_matriz">Projeto da matriz</label>
+      <label for="projeto_matriz">Projeto principal</label>
       <input id="projeto_matriz" name="projeto_matriz" value="{{ config.projeto_matriz }}">
-      <p class="dica">Obras deste projeto contam como matriz; as demais, filial.</p>
+      <p class="dica">É o projeto que divide o custo da matriz com as demais obras
+        (hoje, o BWSCE). Cada cenário pode trocar.</p>
+    </div>
+    {# MATRIZ E FILIAL SÃO LISTAS DE CENTROS DE CUSTO (11/11/2026, o dono:
+       "Centro de custo da estrutura (1) (…) na verdade são dois centros: o BWS
+       Construções e o CON - Escritório Central. Ambos formam o projeto BWS.
+       (…) Centro de custo da estrutura (2) é totalmente rateável apenas entre
+       demais obras, fora BWSCE"). Antes cada campo aceitava um centro só, e
+       nenhum dizia para que servia. Um campo por centro já escolhido, e
+       sempre dois em branco para acrescentar. #}
+    {% macro centros(nome, escolhidos, rotulo) %}
+      {% for atual in escolhidos + ['', ''] %}
+      <select name="{{ nome }}" aria-label="{{ rotulo }}" style="margin-bottom:6px">
+        <option value="">{{ '(tirar este)' if atual else '(acrescentar um centro de custo)' }}</option>
+        {% if atual and atual not in obras_do_painel %}
+        <option value="{{ atual }}" selected>{{ atual }} (não existe na base)</option>{% endif %}
+        {% for o in obras_do_painel %}<option value="{{ o }}" {{ 'selected' if o == atual }}>{{ o }}</option>{% endfor %}
+      </select>
+      {% endfor %}
+    {% endmacro %}
+    <div class="campo">
+      <label>Centros de custo da MATRIZ</label>
+      {{ centros('depto_admin_matriz', centros_matriz, 'Centro de custo da matriz') }}
+      <p class="dica"><b>É o custo que se divide entre o projeto principal e as demais
+        obras</b>, pelos percentuais do cenário. Pode ser mais de um centro de custo —
+        juntos, eles são “o que a matriz gastou”.</p>
     </div>
     <div class="campo">
-      {# ESCOLHER, NÃO DIGITAR (11/11/2026). O dono viu "a matriz gastou 15,4
-         milhões" e, somando os dois centros de custo que ele entende como a
-         estrutura, deu 14,2: o número vem destes dois campos, que eram texto
-         livre e de fábrica vêm "BWS Construções" e "BWSNE". #}
-      <label for="depto_admin_matriz">Centro de custo da estrutura (1)</label>
-      <select id="depto_admin_matriz" name="depto_admin_matriz">
-        {% if config.depto_admin_matriz and config.depto_admin_matriz not in obras_do_painel %}
-        <option value="{{ config.depto_admin_matriz }}" selected>{{ config.depto_admin_matriz }} (não existe na base)</option>{% endif %}
-        {% for o in obras_do_painel %}<option value="{{ o }}" {{ 'selected' if o == config.depto_admin_matriz }}>{{ o }}</option>{% endfor %}
-      </select>
-      <p class="dica">O custo destes dois centros de custo é “o que a matriz gastou” — o que se divide entre as obras.</p>
-    </div>
-    <div class="campo">
-      <label for="depto_admin_filial">Centro de custo da estrutura (2)</label>
-      <select id="depto_admin_filial" name="depto_admin_filial">
-        <option value="" {{ 'selected' if not config.depto_admin_filial }}>(nenhum — a estrutura é um centro de custo só)</option>
-        {% if config.depto_admin_filial and config.depto_admin_filial not in obras_do_painel %}
-        <option value="{{ config.depto_admin_filial }}" selected>{{ config.depto_admin_filial }} (não existe na base)</option>{% endif %}
-        {% for o in obras_do_painel %}<option value="{{ o }}" {{ 'selected' if o == config.depto_admin_filial }}>{{ o }}</option>{% endfor %}
-      </select>
+      <label>Centros de custo da FILIAL</label>
+      {{ centros('depto_admin_filial', centros_filial, 'Centro de custo da filial') }}
+      <p class="dica"><b>Vai inteiro só para as demais obras</b> — o projeto principal
+        não recebe nada dele. Deixe em branco se não houver.</p>
     </div>
     <div class="campo">
       <label for="grupo_pessoal">Grupo que serve de referência do rateio</label>

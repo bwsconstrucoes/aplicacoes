@@ -214,15 +214,30 @@
     {% if resumo_matriz.juros %}
     <div class="kpi ambar estatico"><div class="kpi-rotulo">Juros de empréstimo</div>
       <div class="kpi-valor">{{ brl(resumo_matriz.juros) }}</div>
-      <div class="kpi-sub">categoria: {{ categorias_de_juros|map('title')|join(' · ') }} — caem em quem demandou caixa</div></div>
+      <div class="kpi-sub">categoria: {{ categorias_de_juros|join(' · ') }} — caem em quem demandou caixa{% if resumo_matriz.filial.juros|abs > 0.005 %}
+        · {{ brl(resumo_matriz.juros_da_matriz) }} da matriz e {{ brl(resumo_matriz.filial.juros) }} da filial{% endif %}</div></div>
     {% endif %}
   </div>
+  {# A FILIAL (11/11/2026, o dono: "é totalmente rateável apenas entre demais
+     obras, fora BWSCE"). Não entra na árvore abaixo: não tem percentual a
+     escolher. #}
+  {% if resumo_matriz.filial.centros %}
+  <p class="cartao-dica" style="margin:0 0 10px; border-left:4px solid var(--azul); padding-left:10px">
+    <b>Filial — {{ resumo_matriz.filial.centros|join(' e ') }}: {{ brl(resumo_matriz.filial.rateia) }}.</b>
+    Vai <b>inteiro só para as demais obras</b>{% if principal %} (o {{ principal }} não recebe nada dele){% endif %},
+    pela mesma régua. Não entra na lista abaixo, que é só da matriz.
+    {% if resumo_matriz.filial.juros|abs > 0.005 %}Os juros de empréstimo lançados nela
+    ({{ brl(resumo_matriz.filial.juros) }}) seguem a régua dos juros.{% endif %}
+    <small>Os centros de custo se trocam em
+    <a href="{{ url_for('painel.prestacao_parametros', aba='geral') }}">Cadastros › Parâmetros gerais</a>.</small>
+  </p>
+  {% endif %}
   {# DE ONDE VEM ESSE NÚMERO (11/11/2026, o dono: "15,4 milhões (…) de onde é
      que está sendo puxado esse valor?"). #}
   {% if origem_da_matriz %}
   <p class="cartao-dica" style="margin:0 0 10px">
     <b>De onde vem “a matriz gastou”:</b> é a soma das despesas (DRE) dos centros de custo
-    configurados como estrutura —
+    da matriz —
     {% for depto, valor in origem_da_matriz.por_depto %}<b>{{ depto }}</b> {{ brl(valor) }}{{ ' + ' if not loop.last }}{% endfor %}
     — pelo <b>{{ 'pago (executado)' if origem_da_matriz.medida == 'executado' else 'comprometido (pago mais a pagar)' }}</b>,
     com os juros e multas pagos,
@@ -244,7 +259,7 @@
       {% if cp.projetos|length == 1 %}do projeto {{ cp.projetos[0][0] }}{% else %}dos projetos {{ cp.projetos|map(attribute=0)|join(' e ') }}{% endif %}:
       diferença de {{ brl(cp.diferenca|abs) }}.</b>
     Os dois somam a despesa do mesmo jeito. A diferença está em <b>quais centros de
-    custo entram</b>: aqui entram os dois marcados como estrutura em Cadastros;
+    custo entram</b>: aqui entram os marcados como matriz em Cadastros;
     no DRE do projeto entram todos os centros de custo que pertencem ao projeto.
     <div class="tabela-rolagem" style="margin-top:8px; background:var(--branco)">
       <table>
@@ -260,12 +275,12 @@
             <td class="desc"><b>{{ c.depto }}</b></td>
             <td class="desc">{{ c.projeto or '(sem projeto)' }}</td>
             <td class="dados direita">{{ brl(c.valor) }}</td>
-            <td class="desc">{% if c.estrutura %}sim — marcado como estrutura
-              {% else %}<b style="color:var(--vermelho)">não</b> — é do projeto, mas não está marcado como estrutura{% endif %}</td>
+            <td class="desc">{% if c.estrutura %}sim — marcado como matriz
+              {% else %}<b style="color:var(--vermelho)">não</b> — é do projeto, mas não está marcado como matriz{% endif %}</td>
           </tr>
           {% endfor %}
           <tr class="total">
-            <td class="desc" colspan="2"><b>A matriz gastou</b> (os marcados como estrutura)</td>
+            <td class="desc" colspan="2"><b>A matriz gastou</b> (os marcados como matriz)</td>
             <td class="dados direita"><b>{{ brl(cp.estrutura) }}</b></td><td></td>
           </tr>
           {% for projeto, valor in cp.projetos %}
@@ -277,7 +292,7 @@
         </tbody>
       </table>
     </div>
-    <small>Para os dois baterem, os centros de custo marcados como estrutura têm de ser os
+    <small>Para os dois baterem, os centros de custo marcados como matriz têm de ser os
       mesmos do projeto. Troque-os em
       <a href="{{ url_for('painel.prestacao_parametros', aba='geral') }}">Cadastros › Parâmetros gerais</a>
       — ou acerte o projeto da obra em
@@ -286,7 +301,7 @@
   </div>
   {% elif cp and cp.projetos %}
   <p class="cartao-dica" style="margin:0 0 10px">✔ Bate com o DRE do projeto
-    {{ cp.projetos|map(attribute=0)|join(' e ') }}: os centros de custo da estrutura são os mesmos do projeto.</p>
+    {{ cp.projetos|map(attribute=0)|join(' e ') }}: os centros de custo da matriz são os mesmos do projeto.</p>
   {% endif %}
   {% endif %}
   {# 10/11/2026, o dono: "tem que somar 100%. Se não somou, tem que ser
@@ -733,7 +748,7 @@
         primeira opção ele cai mês a mês nas obras que estavam com o caixa
         negativo, na proporção do buraco.
         {% if resumo_matriz and resumo_matriz.juros %}<b>Neste cenário: {{ brl(resumo_matriz.juros|abs) }}</b>,
-        da categoria {{ categorias_de_juros|map('title')|join(' · ') }}.{% endif %}
+        da categoria {{ categorias_de_juros|join(' · ') }}.{% endif %}
         <small>A categoria se escolhe em
         <a href="{{ url_for('painel.prestacao_parametros', aba='geral') }}">Cadastros › Parâmetros gerais</a>.</small></p>
     </div>

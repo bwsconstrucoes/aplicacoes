@@ -1407,9 +1407,10 @@ def prestacao_contas():
 # O cenario e o objeto: trocar de cenario troca o resultado inteiro, e o
 # anterior continua intacto para comparar.
 def _deptos_administrativos(config) -> list[str]:
-    """Os departamentos que sao a ESTRUTURA — o bolo a repartir, nao destino."""
-    return [d for d in (config.get("depto_admin_matriz"),
-                        config.get("depto_admin_filial")) if d]
+    """Os centros de custo que sao a ESTRUTURA (matriz e filial) — o bolo a
+    repartir, nao destino."""
+    from . import prestacao
+    return prestacao.centros_da_estrutura(config)
 
 
 def _calcular_cenario(cenario: dict) -> dict:
@@ -1476,8 +1477,12 @@ def _calcular_cenario(cenario: dict) -> dict:
                          and o not in consultas.SEM_OBRA_OU_NAO_LIDA)
 
     pesos = cenario.get("pesos") or cenarios.pesos(cenario["id"])
+    # MATRIZ × FILIAL (11/11/2026): os percentuais da árvore e os lançamentos
+    # marcados um a um são da MATRIZ; a filial vai inteira para os demais.
+    da_filial = set(prestacao.centros_da_filial(config))
     excecoes = consultas.lancamentos_administrativos_por_codigo(
-        deptos, list((pesos.get("lancamento") or {}).keys()), medida)
+        prestacao.centros_da_matriz(config),
+        list((pesos.get("lancamento") or {}).keys()), medida)
 
     # Os juros saem do bolo ANTES do rateio: regua propria, a do deficit.
     categoria_juros = (config.get("categoria_juros")
@@ -1523,10 +1528,12 @@ def _calcular_cenario(cenario: dict) -> dict:
         return cenarios.recebe_no_mes(regras_proj.get(projeto), mes)
 
     rateio = prestacao.calcular_rateio_do_cenario(
-        admin_sem_juros, excecoes, driver, obras, pesos,
+        [l for l in admin_sem_juros if l.get("depto") not in da_filial],
+        excecoes, driver, obras, pesos,
         pct_padrao=float(cenario.get("pct_padrao", 100) or 0),
         janela=str(cenario.get("janela", "1")),
-        lado_de=lado_de, recebe=_recebe)
+        lado_de=lado_de, recebe=_recebe,
+        so_dos_demais=[l for l in admin_sem_juros if l.get("depto") in da_filial])
 
     # O caixa e lido UMA vez e devolvido: a tela de resultado desenha a vida de
     # uma obra com ele, e reler significaria varrer o fato inteiro de novo.
@@ -1612,7 +1619,11 @@ def _contas_da_matriz(config, cenario, medida: str) -> dict:
     from . import consultas, prestacao
     pesos = cenario.get("pesos") or {}
     padrao = float(cenario.get("pct_padrao", 100) or 0)
-    deptos = _deptos_administrativos(config)
+    # SÓ A MATRIZ (11/11/2026): é ela que se divide entre o projeto principal
+    # e os demais, e é dela que são os percentuais. A filial vai inteira para
+    # os demais e aparece num quadro à parte (`resumo["filial"]`).
+    deptos = prestacao.centros_da_matriz(config)
+    centros_da_filial = prestacao.centros_da_filial(config)
     # As categorias de juro seguem a regua do deficit, nao a do rateio: a
     # arvore as mostra, mas nao como coisa que se divide por aqui.
     juros = (prestacao.categorias_de_juros(config.get("categoria_juros")
@@ -1717,11 +1728,21 @@ def _contas_da_matriz(config, cenario, medida: str) -> dict:
         g["categorias"] = sorted(cats, key=lambda c: c["valor"])
         saida.append(g)
     contas = sorted(saida, key=lambda g: g["valor"])
+    # a filial: o total, e quanto dele é juro (que segue a régua do déficit)
+    filial = {"centros": centros_da_filial, "total": 0.0, "juros": 0.0}
+    for linha in consultas.despesa_administrativa(centros_da_filial, medida):
+        filial["total"] += linha["valor"]
+        if (linha.get("categoria") or "").strip().lower() in juros:
+            filial["juros"] += linha["valor"]
+    filial["rateia"] = filial["total"] - filial["juros"]
     resumo = {
         "total": sum(g["valor"] for g in contas),
         "entra": sum(g["entra"] for g in contas),
         "fora": sum(g["fora"] for g in contas),
-        "juros": sum(g["juros"] for g in contas),
+        # os juros de empréstimo da estrutura INTEIRA — matriz e filial
+        "juros": sum(g["juros"] for g in contas) + filial["juros"],
+        "juros_da_matriz": sum(g["juros"] for g in contas),
+        "filial": filial,
         "marcacoes": len(marcacoes),
     }
     ordem = {"grupo": 0, "categoria": 1, "lancamento": 2}
@@ -1844,12 +1865,14 @@ def cenario_montagem():
         # parâmetros gerais (…) bastaria demonstrar o valor dos juros e a
         # categoria"). A conferência categoria por categoria continua em
         # Configurações › Conferências.
-        categorias_de_juros=sorted(prestacao.categorias_de_juros(
-            config.get("categoria_juros") or prestacao.CATEGORIA_JUROS_PADRAO)),
+        # com a grafia que o dono escolheu ("IOF", não "Iof")
+        categorias_de_juros=[c.strip() for c in re.split(r"[;\n]", str(
+            config.get("categoria_juros") or prestacao.CATEGORIA_JUROS_PADRAO))
+            if c.strip()],
         aberto_grupo=aberto_grupo,
         aberto_categoria=aberto_categoria,
         lancamentos=(consultas.lancamentos_administrativos(
-            _deptos_administrativos(config), atual.get("medida", "comprometido"),
+            prestacao.centros_da_matriz(config), atual.get("medida", "comprometido"),
             grupo=aberto_grupo, categoria=aberto_categoria)
             if atual and aberto_categoria else []),
         config=config,
@@ -2224,7 +2247,7 @@ def prestacao_cenarios_gravar():
 @bp.route("/prestacao/parametros", methods=["GET", "POST"])
 def prestacao_parametros():
     """Socios, participacoes, regras de rateio e ajustes."""
-    from . import consultas, prestacao_dados
+    from . import consultas, prestacao, prestacao_dados
 
     if request.method == "POST":
         try:
@@ -2271,6 +2294,8 @@ def prestacao_parametros():
                 _projetos_e_obras_da_montagem(prestacao_dados.config(), None))
                      if aba == "fora" and not consultas.base_vazia() else []),
         obras_do_painel=_opcoes_no_escopo().get("obras", []) if not consultas.base_vazia() else [],
+        centros_matriz=prestacao.centros_da_matriz(prestacao_dados.config()),
+        centros_filial=prestacao.centros_da_filial(prestacao_dados.config()),
         projetos_do_painel=_opcoes_no_escopo().get("projetos", []) if not consultas.base_vazia() else [],
         # as categorias com cara de juro vêm primeiro na lista dos juros
         parecidas_com_juro=[c for c in listas.get("categorias", [])
@@ -2504,11 +2529,27 @@ def _aplicar_mudanca_da_prestacao(dados, form):
         dados.definir_projeto_da_obra(form.get("codigo", ""),
                                       "" if form.get("tirar") else form.get("projeto", ""))
     elif acao == "config":
-        for chave in ("projeto_matriz", "depto_admin_matriz", "depto_admin_filial",
+        for chave in ("projeto_matriz",
                       "grupo_pessoal", "taxa_adm_pct", "residual",
                       "categoria_juros", "juros_por_deficit", "juros_sem_deficit"):
             if chave in form:
                 dados.salvar_config(chave, form[chave])
+        # A MATRIZ E A FILIAL SÃO LISTAS de centros de custo (11/11/2026): a
+        # tela manda um campo por centro; gravam-se juntos, separados por ";".
+        # O que está na matriz não fica também na filial.
+        from . import prestacao as _p
+        if "depto_admin_matriz" in form or "depto_admin_filial" in form:
+            atual = dados.config()
+            matriz = (form.getlist("depto_admin_matriz") if "depto_admin_matriz" in form
+                      else _p.centros_da_matriz(atual))
+            if not _p.centros_de_custo(_p.juntar_centros(matriz)):
+                raise ValueError("A matriz precisa de pelo menos um centro de custo.")
+            filial = (form.getlist("depto_admin_filial") if "depto_admin_filial" in form
+                      else _p.centros_de_custo(atual.get("depto_admin_filial")))
+            dados.salvar_config("depto_admin_matriz", _p.juntar_centros(matriz))
+            dados.salvar_config("depto_admin_filial", _p.juntar_centros(
+                c for c in _p.centros_de_custo(_p.juntar_centros(filial))
+                if c not in _p.centros_de_custo(_p.juntar_centros(matriz))))
         # as categorias dos juros, marcadas numa lista (09/11/2026); gravadas
         # no mesmo formato de antes ("a; b; c"), que é o que o cálculo lê
         if "categoria_juros_lista" in form:

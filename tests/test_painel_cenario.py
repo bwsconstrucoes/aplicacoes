@@ -1679,8 +1679,8 @@ def test_a_estrutura_e_conferida_contra_o_dre_do_projeto_dela(cenario, monkeypat
     assert [(c["depto"], c["estrutura"]) for c in cp["centros"]] == [
         (MATRIZ, True), ("Escritório Central", False)]
 
-    # marcado o segundo centro de custo, bate — e a tela diz isso
-    config["depto_admin_filial"] = "Escritório Central"
+    # marcados os DOIS centros de custo como matriz, bate — e a tela diz isso
+    config["depto_admin_matriz"] = MATRIZ + ";Escritório Central"
     cp = _contas_da_matriz(config, cenarios.completo(cenario), "comprometido")[
         "origem"]["contra_o_projeto"]
     assert cp["bate"] and cp["estrutura"] == pytest.approx(-2210.0)
@@ -1710,10 +1710,10 @@ def test_a_montagem_acusa_a_diferenca_e_mostra_os_juros_numa_linha(cenario, monk
         for chave in ("depto_admin_matriz", "depto_admin_filial"):
             prestacao_dados.salvar_config(chave, antes.get(chave, ""))
     assert "não bate com o DRE" in html and "Escritório Central" in html
-    assert "não está marcado como estrutura" in html
+    assert "não está marcado como matriz" in html
     # os juros: só o valor e a categoria — o quadro grande saiu da montagem
     assert "Onde estão os juros de empréstimo" not in html
-    assert "Juros de empréstimo" in html and "Juros Sobre Empréstimos" in html
+    assert "Juros de empréstimo" in html and "categoria: " in html
 
 
 def test_o_quadro_dos_juros_soma_o_encargo_como_a_conta(base):
@@ -1733,3 +1733,127 @@ def test_o_quadro_dos_juros_soma_o_encargo_como_a_conta(base):
     c = cenarios.completo(cenarios.criar("Juros", criterio="pessoal", pct_padrao=100))
     config = dict(prestacao_dados.config(), depto_admin_matriz=MATRIZ, depto_admin_filial="")
     assert _contas_da_matriz(config, c, "comprometido")["resumo"]["juros"] == pytest.approx(-610.0)
+
+
+
+# ===========================================================================
+# 11/11/2026 — matriz (vários centros de custo) × filial (só para os demais)
+# ===========================================================================
+def test_os_centros_de_custo_da_matriz_e_da_filial_sao_listas():
+    from app.apps.painel import prestacao
+    config = {"depto_admin_matriz": "BWS Construções; CON - Escritório Central;;BWS Construções",
+              "depto_admin_filial": "BWSNE;BWS Construções"}
+    assert prestacao.centros_da_matriz(config) == ["BWS Construções", "CON - Escritório Central"]
+    assert prestacao.centros_da_filial(config) == ["BWSNE"]        # o da matriz não repete
+    assert prestacao.centros_da_estrutura(config) == [
+        "BWS Construções", "CON - Escritório Central", "BWSNE"]
+    # um nome só, como sempre foi gravado, continua valendo
+    assert prestacao.centros_da_matriz({"depto_admin_matriz": "BWS Construções"}) == ["BWS Construções"]
+    assert prestacao.centros_da_filial({}) == []
+    assert prestacao.juntar_centros(["A", "", "B", "A"]) == "A;B"
+
+
+def test_a_filial_vai_inteira_so_para_os_demais():
+    """O dono: "Centro de custo da estrutura (2) é totalmente rateável apenas
+    entre demais obras, fora BWSCE." A matriz (1.000, metade para o principal)
+    se divide entre os dois lados; a filial (600) vai só para as obras dos
+    demais, pela régua — e os percentuais da árvore não mexem nela."""
+    from app.apps.painel import prestacao
+    matriz = [{"mes": "2025-03", "grupo": "Adm", "categoria": "Aluguel", "valor": -1000.0}]
+    filial = [{"mes": "2025-03", "grupo": "Adm", "categoria": "Aluguel", "valor": -600.0}]
+    regua = [("2025-03", "CE 1", 100.0), ("2025-03", "PE 1", 300.0), ("2025-03", "PE 2", 100.0)]
+    obras = {"CE 1": {"projeto": "BWSCE"}, "PE 1": {"projeto": "PE"}, "PE 2": {"projeto": "PE"}}
+    lado_de = {"CE 1": "principal", "PE 1": "demais", "PE 2": "demais"}
+    pesos = {"grupo": {"Adm": 50.0},        # só metade da MATRIZ entra
+             "periodos": {"grupo": {"Adm": [("1900-01", 50.0, 50.0)]}}}
+    r = prestacao.calcular_rateio_do_cenario(
+        matriz, [], regua, obras, pesos, lado_de=lado_de, so_dos_demais=filial)
+    a = r["alocacoes"]
+    # matriz: entram 500; 250 para o principal, 250 para os demais (3:1)
+    # filial: 600 inteiros para os demais (3:1) — 450 e 150
+    assert a[("CE 1", "2025-03")] == pytest.approx(-250.0)
+    assert a[("PE 1", "2025-03")] == pytest.approx(-187.5 - 450.0)
+    assert a[("PE 2", "2025-03")] == pytest.approx(-62.5 - 150.0)
+    assert not r["sobras"]
+    # o batimento fecha: 1.600 = 250 + 850 + 500 que ficaram de fora
+    bate = prestacao.batimento(matriz + filial, r, {"alocacoes": {}, "sobras": []}, lado_de)
+    assert bate["soma_fecha"] and bate["total"]["fora"] == pytest.approx(-500.0)
+
+    # sem obra dos demais recebendo, a filial NÃO vai para o principal: fica à vista
+    r = prestacao.calcular_rateio_do_cenario(
+        matriz, [], regua[:1], obras, pesos, lado_de=lado_de, so_dos_demais=filial)
+    assert r["alocacoes"] == {("CE 1", "2025-03"): pytest.approx(-500.0)}
+    assert [(s["origem"], s["valor"]) for s in r["sobras"]] == [("Custo da filial", -600.0)]
+
+    # sem projeto principal não há lados: tudo pela régua, entre todas
+    r = prestacao.calcular_rateio_do_cenario(
+        matriz, [], regua, obras, {}, so_dos_demais=filial)
+    assert sum(r["alocacoes"].values()) == pytest.approx(-1600.0)
+
+
+def test_o_cenario_inteiro_separa_a_matriz_da_filial(cenario, monkeypatch):
+    """De ponta a ponta, com banco: POUCA GENTE é o projeto principal; a
+    filial (500) cai inteira em MUITA GENTE; e a tela mostra a matriz na
+    árvore e a filial no quadro dela."""
+    from app.apps.painel import cenarios, consultas, prestacao_dados
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("UPDATE fato SET projeto = 'BWSCE' WHERE departamento = 'POUCA GENTE'")
+        conn.execute("UPDATE fato SET projeto = 'PE' WHERE departamento = 'MUITA GENTE'")
+        conn.execute("UPDATE fato SET projeto = 'BWS' WHERE departamento = ?", (MATRIZ,))
+        _por_pagar(conn, 960, "FILIAL NE", -500, grupo="Administrativas", categoria="Aluguel")
+        conn.execute("UPDATE fato SET projeto = 'NE' WHERE departamento = 'FILIAL NE'")
+        conn.commit()
+    consultas.esquecer_listas()
+    antes = prestacao_dados.config()
+    prestacao_dados.salvar_config("depto_admin_matriz", MATRIZ)
+    prestacao_dados.salvar_config("depto_admin_filial", "FILIAL NE")
+    try:
+        cenarios.gravar_projetos(cenario, "BWSCE", {})
+        cenarios.gravar_periodos(cenario, "grupo", "Administrativas", [("", 100, 50)])
+        calculo = _calcular(cenario)
+        rateio = {}
+        for (obra, _mes), valor in calculo["rateio"]["alocacoes"].items():
+            rateio[obra] = rateio.get(obra, 0.0) + valor
+        # matriz sem juros: 900 de aluguel (metade para cada lado) + 300 de
+        # patrimônio (sem lado: pela régua, 2:1). Filial: 500 só para MUITA GENTE.
+        assert rateio["POUCA GENTE"] == pytest.approx(-450.0 - 100.0)
+        assert rateio["MUITA GENTE"] == pytest.approx(-450.0 - 200.0 - 500.0)
+        assert "FILIAL NE" not in calculo["obras"]          # é estrutura, não obra
+        assert calculo["batimento"]["soma_fecha"]
+        html = _cliente(monkeypatch).get(
+            f"/painel/prestacao/montagem?cenario={cenario}").get_data(as_text=True)
+        assert "Filial — FILIAL NE" in html and "inteiro só para as demais obras" in html
+        como = _cliente(monkeypatch).get(
+            f"/painel/prestacao/como?cenario={cenario}").get_data(as_text=True)
+        assert "inteiros só para as demais obras" in como
+    finally:
+        for chave in ("depto_admin_matriz", "depto_admin_filial"):
+            prestacao_dados.salvar_config(chave, antes.get(chave, ""))
+
+
+def test_os_parametros_gravam_varios_centros_de_custo(base, monkeypatch):
+    from werkzeug.datastructures import MultiDict
+    from app.apps.painel import prestacao, prestacao_dados
+    antes = prestacao_dados.config()
+    cliente = _cliente(monkeypatch)
+    try:
+        r = cliente.post("/painel/prestacao/parametros", data=MultiDict([
+            ("acao", "config"), ("aba", "geral"),
+            ("depto_admin_matriz", MATRIZ), ("depto_admin_matriz", "MUITA GENTE"),
+            ("depto_admin_matriz", ""), ("depto_admin_filial", "POUCA GENTE"),
+            ("depto_admin_filial", MATRIZ), ("depto_admin_filial", "")]))
+        assert r.status_code == 302 and "erro=" not in r.headers["Location"]
+        config = prestacao_dados.config()
+        assert prestacao.centros_da_matriz(config) == [MATRIZ, "MUITA GENTE"]
+        assert prestacao.centros_da_filial(config) == ["POUCA GENTE"]
+        html = cliente.get("/painel/prestacao/parametros?aba=geral").get_data(as_text=True)
+        assert "Centros de custo da MATRIZ" in html and "Centros de custo da FILIAL" in html
+        assert html.count('name="depto_admin_matriz"') == 4       # dois escolhidos + dois em branco
+        # sem nenhum centro de custo na matriz, recusa
+        r = cliente.post("/painel/prestacao/parametros", data={
+            "acao": "config", "aba": "geral", "depto_admin_matriz": ""})
+        assert "erro=" in r.headers["Location"]
+    finally:
+        for chave in ("depto_admin_matriz", "depto_admin_filial"):
+            prestacao_dados.salvar_config(chave, antes.get(chave, ""))

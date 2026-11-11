@@ -33,6 +33,55 @@ SEM_DATA = "(sem data)"
 
 
 # ---------------------------------------------------------------------------
+# 0. Os centros de custo da estrutura: a MATRIZ e a FILIAL
+# ---------------------------------------------------------------------------
+# 11/11/2026, o dono, olhando os Parâmetros gerais: "Centro de custo da
+# estrutura (1) é o que será rateado entre BWSCE e demais obras, só que ele na
+# verdade são DOIS centros: o BWS Construções e o CON - Escritório Central.
+# Ambos formam o projeto BWS. (…) Centro de custo da estrutura (2) é totalmente
+# rateável apenas entre demais obras, fora BWSCE."
+#
+# Duas coisas estavam erradas: cada campo só aceitava UM centro de custo, e a
+# conta do cenário juntava os dois num bolo só (a filial também era dividida
+# com o projeto principal). Agora cada campo guarda uma LISTA, separada por
+# ";" na mesma chave de sempre — um nome só continua valendo como lista de um.
+SEPARADOR_DE_CENTROS = ";"
+
+
+def centros_de_custo(valor) -> list[str]:
+    """ "A; B" -> ["A", "B"], sem repetir e sem vazio."""
+    vistos, saida = set(), []
+    for nome in str(valor or "").split(SEPARADOR_DE_CENTROS):
+        nome = nome.strip()
+        if nome and nome not in vistos:
+            vistos.add(nome)
+            saida.append(nome)
+    return saida
+
+
+def juntar_centros(nomes) -> str:
+    return SEPARADOR_DE_CENTROS.join(centros_de_custo(SEPARADOR_DE_CENTROS.join(
+        (n or "").replace(SEPARADOR_DE_CENTROS, ",") for n in nomes or ())))
+
+
+def centros_da_matriz(config) -> list[str]:
+    """O que se divide entre o projeto principal e as demais obras."""
+    return centros_de_custo((config or {}).get("depto_admin_matriz"))
+
+
+def centros_da_filial(config) -> list[str]:
+    """O que vai inteiro só para as demais obras. O que também estiver na
+    matriz vale como matriz — um centro de custo não fica nos dois."""
+    da_matriz = set(centros_da_matriz(config))
+    return [c for c in centros_de_custo((config or {}).get("depto_admin_filial"))
+            if c not in da_matriz]
+
+
+def centros_da_estrutura(config) -> list[str]:
+    return centros_da_matriz(config) + centros_da_filial(config)
+
+
+# ---------------------------------------------------------------------------
 # 1. Quem é obra, quem é estrutura
 # ---------------------------------------------------------------------------
 def classificar_obras(apuracao, config) -> dict:
@@ -42,7 +91,7 @@ def classificar_obras(apuracao, config) -> dict:
     O lado (matriz ou filial) sai do projeto: o que é do projeto da matriz é
     matriz, o resto é filial. É o que permite uma regra dizer "isto só se
     divide entre as obras da filial"."""
-    admin = {config["depto_admin_matriz"], config["depto_admin_filial"]}
+    admin = set(centros_da_estrutura(config))
     contagem: dict[str, dict[str, int]] = {}
     for linha in apuracao:
         obra = (linha["obra"] or "").strip()
@@ -157,7 +206,7 @@ def calcular_rateio(despesa_admin, pessoal, obras, regras, config) -> dict:
             resto = total - capturado.get((depto, mes), 0.0)
             if abs(resto) <= 0.005:
                 continue
-            lado = MATRIZ if depto == config["depto_admin_matriz"] else FILIAL
+            lado = MATRIZ if depto in centros_da_matriz(config) else FILIAL
             _distribuir(mes, resto, lado, f"Resíduo: {depto}")
 
     return {"alocacoes": alocacoes, "sobras": sobras}
@@ -618,12 +667,18 @@ def pesos_por_mes(driver, meses, janela: str = "1") -> dict:
 def calcular_rateio_do_cenario(despesa_admin, excecoes, driver, obras, pesos,
                                *, pct_padrao: float = 100.0,
                                janela: str = "1", lado_de=None,
-                               recebe=None) -> dict:
+                               recebe=None, so_dos_demais=None) -> dict:
     """Divide o custo da matriz entre as obras, pelo cenário.
 
     `despesa_admin` é o agregado por (mês, grupo, categoria); `excecoes` são os
     lançamentos marcados um a um — eles saem do agregado e entram com o
     percentual próprio, senão o mesmo dinheiro contaria duas vezes.
+
+    `so_dos_demais` é o custo da FILIAL (11/11/2026, o dono: "é totalmente
+    rateável apenas entre demais obras, fora BWSCE"): entra inteiro — os
+    percentuais da árvore são da matriz, não dele — e vai só para o lado dos
+    demais, pela régua. Sem projeto principal não há lados, e ele se divide
+    entre todas as obras como o resto.
 
     Devolve as alocações — (obra, mês) -> valor —, as **sobras** (custo que não
     coube em obra nenhuma, com o motivo) e a **memória** mês a mês. A sobra não
@@ -707,6 +762,22 @@ def calcular_rateio_do_cenario(despesa_admin, excecoes, driver, obras, pesos,
             continue
         _destinar(mes_l, parte, principal)
 
+    # 2b. A filial: inteira, e só para os demais.
+    da_filial: dict[str, float] = {}
+    sem_data_da_filial = 0.0
+    for linha in so_dos_demais or []:
+        valor = float(linha["valor"] or 0)
+        if linha["mes"] == SEM_DATA:
+            sem_data_da_filial += valor
+            continue
+        pool[linha["mes"]] = pool.get(linha["mes"], 0.0) + valor
+        if separa:
+            da_filial[linha["mes"]] = da_filial.get(linha["mes"], 0.0) + valor
+    if abs(sem_data_da_filial) > 0.005:
+        sobras.append({"origem": "Custo da filial", "mes": SEM_DATA,
+                       "valor": sem_data_da_filial,
+                       "motivo": "lançamento sem data: não dá para ratear por mês"})
+
     # 3. O bolo de cada mês se divide pela régua escolhida.
     meses = _meses_ordenados(set(pool), {m for m, _o, _v in driver})
     fracoes = pesos_por_mes([(m, o, v) for m, o, v in driver if o in obras],
@@ -730,15 +801,24 @@ def calcular_rateio_do_cenario(despesa_admin, excecoes, driver, obras, pesos,
             a_demais, a_principal = a_demais + a_principal, 0.0
         if not do_lado["demais"]:
             a_principal, a_demais = a_principal + a_demais, 0.0
-        livre = bolo - a_principal - a_demais
+        # a filial não passa para o outro lado: sem obra dos demais recebendo
+        # no mês, o custo dela fica à vista, como custo sem dono
+        a_filial = da_filial.get(mes, 0.0)
+        livre = bolo - a_principal - a_demais - a_filial
         if abs(bolo) > 0.005 and not fatias:
             sobras.append({"origem": "Custo da matriz", "mes": mes, "valor": bolo,
                            "motivo": "nenhuma obra que recebe, com movimento na régua "
                                      "escolhida, neste mês"})
             fatias = {}
+        elif abs(a_filial) > 0.005 and not do_lado["demais"]:
+            sobras.append({"origem": "Custo da filial", "mes": mes, "valor": a_filial,
+                           "motivo": "nenhuma obra dos demais projetos recebendo neste "
+                                     "mês — o custo da filial não vai para o projeto "
+                                     "principal"})
         for valor, grupo_de_obras in ((livre, fatias),
                                       (a_principal, do_lado["principal"]),
-                                      (a_demais, do_lado["demais"])):
+                                      (a_demais, do_lado["demais"]),
+                                      (a_filial, do_lado["demais"])):
             total = sum(grupo_de_obras.values())
             if abs(valor) <= 0.005 or total <= 0:
                 continue

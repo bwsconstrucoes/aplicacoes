@@ -651,6 +651,91 @@ nunca rodou contra a base real**. Ele passou pelo parser do Postgres, pelo teste
 de portabilidade e pelos testes com dublê — nenhum dos três olha o número que
 sai.
 
+## MATRIZ × FILIAL: a regra que a conta do cenário tinha perdido — 11/11/2026 (fim da tarde)
+
+**NÃO PUBLICADO ainda** — está no ramo, à espera do "pode" do dono.
+
+O dono colou dois números que não batiam — "a matriz gastou" 15.514.876,82 na
+montagem contra 14.699.912,50 no DRE do projeto BWS — e depois, olhando os
+Parâmetros gerais, disse a regra com todas as letras:
+
+> *"Centro de custo da estrutura (1) é o que será rateado entre BWSCE e demais
+> obras que selecionarmos, só que ele na verdade são dois centros: o BWS
+> Construções e o CON - Escritório Central. Ambos formam o projeto BWS. (…)
+> Centro de custo da estrutura (2) é totalmente rateável apenas entre demais
+> obras, fora BWSCE."*
+
+Eram **dois defeitos**, e nenhum era da tela:
+
+1. cada campo só aceitava **um** centro de custo — o "CON - Escritório
+   Central" não tinha onde entrar, e o BWSNE estava somado no lugar dele (é a
+   diferença dos 815 mil; a configuração da produção era `BWS Construções` +
+   `BWSNE`, vista no print dele);
+2. a conta do cenário **juntava matriz e filial num bolo só** — a filial
+   também era dividida com o projeto principal. O modelo antigo (Streamlit,
+   regras com escopo) separava; o cenário, quando nasceu, perdeu isso.
+
+**O que mudou:**
+
+- `depto_admin_matriz` e `depto_admin_filial` guardam **listas**, separadas
+  por ";" na mesma chave (`prestacao.centros_da_matriz / centros_da_filial /
+  centros_da_estrutura`). Um nome só continua valendo. **Sem migração.**
+- **Matriz** = o que se divide entre o projeto principal e os demais, pelos
+  percentuais da árvore. **Filial** = entra inteira (os percentuais da árvore
+  não mexem nela) e vai **só para as obras dos demais**, pela régua
+  (`calcular_rateio_do_cenario(..., so_dos_demais=)`). Mês sem obra dos demais
+  recebendo: o custo da filial vira "custo sem dono", à vista — **não** passa
+  para o principal (a regra "nada fica sem dono entre os lados" é da matriz).
+- A árvore do passo 2 e os lançamentos marcados um a um são **só da matriz**;
+  a filial aparece numa linha própria, com o valor. "A matriz gastou" passa a
+  ser, por construção, o DRE dos centros de custo da matriz.
+- **Conferência na tela** (`_estrutura_contra_o_projeto`): os centros de custo
+  da matriz contra todos os do projeto a que pertencem, com valor. Se a lista
+  difere, a tela mostra qual centro falta ou sobra; se bate, diz "✔ bate com o
+  DRE do projeto".
+- Os **juros de empréstimo** continuam indo pela régua do déficit, somando os
+  da matriz e os da filial. **Decisão minha, não confirmada com o dono:** o
+  juro lançado na filial pode cair em obra do projeto principal que estava no
+  vermelho. Se ele quiser o juro da filial só nos demais, é mudança pequena em
+  `alocar_juros_por_deficit`.
+
+**O que o dono precisa fazer depois de publicado:** em Cadastros › Parâmetros
+gerais, acrescentar "CON - Escritório Central" na MATRIZ e deixar o BWSNE na
+FILIAL. Enquanto não fizer, a montagem acusa a diferença com o nome do centro.
+
+**Os números do resultado MUDAM** com esta publicação (BWSCE deixa de receber
+parte do BWSNE) e de novo quando ele acertar os centros de custo. É o
+conserto, mas é para ser dito antes de alguém comparar com um relatório já
+tirado.
+
+### O mesmo dia, antes disso
+
+- **"Não salvou: o servidor respondeu 500"** no Salvar tudo. Reproduzido: a
+  montagem mandava a página inteira em `multipart`, e o Werkzeug recusa acima
+  de 1.000 campos (cada conta leva 34, quase todos de linhas de período em
+  branco). O erro genérico do painel transformava o 413 em 500. Agora a tela
+  manda em texto simples, sem as linhas em branco (3.988 campos → 745 no
+  ensaio); o painel aceita formulário grande (`TETO_DE_CAMPOS`); o 413 tem
+  mensagem própria; e, se falhar, a barra mostra o **motivo** que o servidor
+  deu. Não vi o log da produção — a causa foi reproduzida aqui, não lida lá.
+- **Sócios**: botão **Excluir** (recusado para quem tem ajuste lançado —
+  ajuste é dinheiro registrado; os percentuais vão junto) e **posição** por
+  setas ▲▼. A posição fica em `config` (`ordem_dos_socios`), não em coluna
+  nova, para não pedir atualização do banco; vale nas colunas do "Quem
+  divide", na página "Como é feita" e nos quadros do resultado.
+- **"Quem divide"** abre cada projeto nas obras dele, como o passo 1; a obra
+  em branco mostra em cinza o percentual que está valendo (do projeto ou de
+  "Todas as obras").
+- **Os juros na montagem** viraram valor e categoria (o dono: "essas
+  informações geram confusão"). O quadro grande ficou só em Configurações ›
+  Conferências — e passou a somar os juros e multas pagos, como a conta: eram
+  R$ 3.039.343,02 num quadro e R$ 3.030.809,67 no outro. A causa (o encargo)
+  está no código; a diferença exata de 8.533,35 **não foi conferida na base**.
+- **Armadilha de teste achada:** teste que grava `config` e não devolve deixa
+  o banco do trabalhador do xdist sujo **entre execuções** (os bancos
+  `erp_teste_gwN` não são recriados). Um teste antigo falhou por isso, uma
+  vez. Quem mexer em `config` num teste devolve no `finally`.
+
 ## "Onde estão as configurações de rateio dos grupos e categorias?" — 11/11/2026 (tarde)
 
 O dono: *"só vejo a parte de juros de empréstimo."* Ele estava em Cadastros
