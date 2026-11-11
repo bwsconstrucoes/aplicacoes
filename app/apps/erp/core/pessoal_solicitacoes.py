@@ -371,6 +371,12 @@ CATEGORIAS: dict[str, tuple[str, ...]] = {
         "Demissão com Aviso Trabalhado", "Demissão com Aviso Indenizado"),
     "tipo_readmissao": ("Prestador de Serviço", "CTPS"),
     "tipo_documentacao": ("Prestador de Serviço", "CTPS"),
+    # ⚑ ESTA LISTA É SÓ O SOCORRO. A de verdade sai do CADASTRO DE EMPRESAS
+    # (`opcoes_de_empresa`), pela mesma regra das outras caixinhas: *"a fonte é
+    # o cadastro, não uma cópia; lista que mudar lá muda aqui sozinha"*.
+    # Empresa nova do grupo tinha de ser digitada aqui dentro do código, e
+    # ninguém ia lembrar. Ficam estas três para o caso de a tela ser montada
+    # sem banco (teste, e o próprio arquivo sendo lido por fora).
     "cnpj_admissao": ("00.079.526/0001-09 - MATRIZ/CE",
                       "50.422.792/0001-09 - INFRADENDE",
                       "20.198.694/0001-20 - C3"),
@@ -621,7 +627,40 @@ SITUACOES = ("ABERTA", "EM_ANALISE", "ATENDIDA", "RECUSADA", "CANCELADA")
 ABERTAS = ("ABERTA", "EM_ANALISE")
 
 
-def tipos_para_tela() -> list[dict[str, Any]]:
+def _opcoes(s: Optional[Session], campo: str) -> list[str]:
+    """As opções de um campo de caixinha — do cadastro quando houver."""
+    if campo == "cnpj_admissao":
+        return opcoes_de_empresa(s)
+    return list(CATEGORIAS.get(campo, ()))
+
+
+def opcoes_de_empresa(s: Optional[Session] = None) -> list[str]:
+    """As empresas do grupo, como a caixinha mostra: "CNPJ - nome".
+
+    ⚑ UMA INFORMAÇÃO, UMA FONTE. Ele, em 11/11/2026: *"empresa para registro e
+    CNPJ para admissão é campo duplicado. É a mesma informação."* Tem razão — e
+    era pior do que parecia: a lista das três empresas estava DIGITADA no
+    código, enquanto o cadastro de Empresas tinha as mesmas três com razão
+    social e CNPJ. Empresa nova do grupo precisaria ser escrita aqui dentro.
+
+    O formato "CNPJ - nome" é mantido porque é o que os pedidos já abertos têm
+    gravado: trocar a forma faria o pedido de ontem e o de hoje parecerem
+    empresas diferentes.
+    """
+    if s is None:
+        return list(CATEGORIAS.get("cnpj_admissao", ()))
+    linhas = s.execute(text("""
+        SELECT cnpj, COALESCE(NULLIF(btrim(nome_fantasia), ''), razao_social) AS nome
+          FROM empresas
+         WHERE ativo IS NOT FALSE AND COALESCE(btrim(cnpj), '') <> ''
+         ORDER BY nome""")).mappings().all()
+    achadas = [f"{l['cnpj']} - {l['nome']}" for l in linhas]
+    # Cadastro vazio não pode deixar a caixinha vazia: aí o pedido não sairia
+    # e ninguém entenderia por quê.
+    return achadas or list(CATEGORIAS.get("cnpj_admissao", ()))
+
+
+def tipos_para_tela(s: Optional[Session] = None) -> list[dict[str, Any]]:
     """Os tipos, com os campos que cada um pede.
 
     ⚑ A OBRA ENTRA EM TODOS, mesmo nos tipos que não a listavam (10/11/2026):
@@ -662,14 +701,14 @@ def tipos_para_tela() -> list[dict[str, Any]]:
                       # O rótulo e as opções de cada campo, como no Pipe.
                       "rotulos": {x: proprios.get(x, ROTULOS.get(x, x))
                                   for x in campos},
-                      "opcoes": {x: list(CATEGORIAS[x]) for x in campos
+                      "opcoes": {x: _opcoes(s, x) for x in campos
                                  if x in CATEGORIAS},
                       # O mesmo, para os campos que o DP preenche ao atender:
                       # a tela dele lê daqui, e não de uma segunda lista.
                       "rotulos_do_dp": {
                           x: proprios.get(x, ROTULOS_DO_DP.get(x, ROTULOS.get(x, x)))
                           for x in d.get("campos_do_dp", ())},
-                      "opcoes_do_dp": {x: list(CATEGORIAS[x])
+                      "opcoes_do_dp": {x: _opcoes(s, x)
                                        for x in d.get("campos_do_dp", ())
                                        if x in CATEGORIAS}})
     return saida
@@ -1151,6 +1190,6 @@ def listar(s: Session, *, situacao: str = "", tipo: str = "",
             "em_andamento": sum(1 for x in fila
                                 if x["aberta"] and 0 < x["feitos"] < x["total_itens"]),
         },
-        "tipos": tipos_para_tela(),
+        "tipos": tipos_para_tela(s),
         "situacoes": [{"valor": c, "rotulo": r} for c, r in SITUACAO_ROTULOS.items()],
     }

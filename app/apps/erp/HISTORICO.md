@@ -9009,6 +9009,53 @@ a duplicidade que ele já derrubou no diário (*"ou é um ou é o outro"*).
 empresa tem de dizer em qual, e nenhum pode perguntar isso duas vezes. Tipo
 novo do mesmo feitio nasce com a pergunta ou quebra a suíte.
 
+## 11/11/2026 (tarde) — "EMPRESA" E "CNPJ DE ADMISSÃO" ERAM O MESMO CAMPO
+
+Ele, depois do conserto da manhã: *"empresa para registro e CNPJ para admissão
+é campo duplicado. É a mesma informação. confirma se tá tudo ok."*
+
+**Estava certo, e era PIOR do que ele viu.** Três camadas do mesmo defeito:
+
+1. **A ficha do colaborador tinha os dois lado a lado** — uma caixinha
+   "Empresa do grupo" e um campo de TEXTO LIVRE "CNPJ de admissão". Dava para
+   escolher a MATRIZ na caixinha e digitar o CNPJ da INFRADENDE ao lado, e o
+   sistema guardava as duas coisas.
+2. ⚑ **A caixinha NUNCA FUNCIONOU.** A lista de empresas não era mandada para
+   a tela (`pessoas.opcoes()` não devolvia `empresas`), então ela estava
+   **sempre vazia** — e o único jeito de dizer a empresa era digitar o CNPJ no
+   texto ao lado. Era por isso que os dois campos conviviam: um deles estava
+   morto, e ninguém percebeu porque o outro resolvia.
+3. **A lista dos três CNPJs do pedido estava DIGITADA no código**, enquanto o
+   cadastro de Empresas tinha as mesmas empresas com razão social e CNPJ.
+   Empresa nova do grupo precisaria ser escrita dentro do código.
+
+E o próprio código já confessava: `core/contabilidade.py` faz
+`c.empresa_id or c.cnpj_admissao` — tenta uma coluna e cai na outra, porque
+não sabe qual está preenchida.
+
+### Como ficou
+
+- **A ficha tem UM campo**: "Empresa de registro", caixinha que agora vem
+  cheia, com a razão social e o CNPJ juntos no rótulo.
+- **O CNPJ segue a empresa**: escolhida a empresa, `cnpj_admissao` é
+  preenchido do cadastro dela, no servidor. Não se digita mais.
+- **Quem já tinha só o CNPJ gravado continua vendo o que está lá**, com o
+  recado de escolher a empresa para ligar ao cadastro. Nada foi apagado.
+- **Quem manda só o CNPJ continua funcionando**: a importação de planilha, a
+  do Pipefy e o pedido vindo da obra não têm `empresa_id`. Quebrar isso seria
+  trocar um defeito por três.
+- **A lista do pedido sai do cadastro de Empresas** (`opcoes_de_empresa`), com
+  as três de antes como socorro para quando a tela é montada sem banco.
+
+### As travas
+
+- a ficha **recebe** as empresas (sem isso a caixinha nasce vazia de novo);
+- escolher a empresa **preenche o CNPJ sozinho**;
+- quem manda **só o CNPJ** continua gravando;
+- a lista do pedido **sai do cadastro**, e empresa nova aparece sozinha;
+- e uma trava de TEXTO na tela: o campo de CNPJ **não pode voltar** a ser
+  digitável na ficha, nem voltar a ser enviado junto com a empresa.
+
 ## Coisas pequenas que mordem
 
 - **⚠️ DATA FIXA EM FIXTURE DE TESTE É BOMBA-RELÓGIO.** Em 07/11/2026, na hora

@@ -1094,9 +1094,29 @@ function painelDaFicha(){
     alvo.innerHTML = `<div class="form-grade">
       <div class="campo"><label>Vínculo *</label>${lista("c-vinculo", o.vinculos, c.vinculo, "")}</div>
       <div class="campo"><label>Tipo de contrato</label>${lista("c-contrato", o.tipos_contrato, c.tipo_contrato)}</div>
-      <div class="campo"><label>Empresa do grupo</label>${lista("c-empresa",
-        (o.empresas || []).map(e => ({valor: e.id, rotulo: e.razao_social})), c.empresa_id)}</div>
-      ${campoTexto("CNPJ de admissão", "c-cnpjadm", c.cnpj_admissao, 'name="cnpj"')}
+      {# ⚑ UM CAMPO SÓ. Ele, em 11/11/2026: *"empresa para registro e CNPJ
+         para admissão é campo duplicado. É a mesma informação."* Tinha razão,
+         e era pior: um era caixinha do cadastro de Empresas e o outro era
+         TEXTO LIVRE — dava para escolher a MATRIZ na caixinha e digitar o
+         CNPJ da INFRADENDE ao lado, e o sistema guardava os dois. O próprio
+         código já tratava os dois como a mesma coisa (`empresa_id or
+         cnpj_admissao`, em `core/contabilidade.py`).
+
+         Agora se escolhe a EMPRESA, e o CNPJ aparece ao lado só para
+         conferir. Quem já tem só o CNPJ gravado (importação antiga, pedido
+         vindo da obra) continua vendo o que está lá — escolher a empresa é
+         que o substitui. #}
+      <div class="campo"><label>Empresa de registro</label>${lista("c-empresa",
+        (o.empresas || []).map(e => ({valor: e.id,
+          rotulo: e.cnpj ? `${e.razao_social} — ${e.cnpj}` : e.razao_social})),
+        c.empresa_id)}
+        <small class="ajuda" id="c-cnpjadm-recado">${
+          c.empresa_id ? "o CNPJ vem do cadastro da empresa"
+          : c.cnpj_admissao
+            ? `hoje está gravado só o CNPJ <b>${escapar(c.cnpj_admissao)}</b> —
+               escolha a empresa para ligar ao cadastro`
+            : "é por esta empresa que a pessoa é registrada na folha"}</small>
+      </div>
       <div class="campo"><label>Cargo</label>${lista("c-cargo",
         (o.cargos || []).map(x => ({valor: x.id, rotulo: x.cbo ? `${x.nome} (${x.cbo})` : x.nome})),
         c.cargo_id)}</div>
@@ -1273,7 +1293,10 @@ function corpoDoCadastro(){
     "c-compl": "complemento", "c-bairro": "bairro", "c-municipio": "municipio",
     "c-uf": "uf", "c-telefone": "telefone", "c-email": "email",
     "c-vinculo": "vinculo", "c-contrato": "tipo_contrato", "c-empresa": "empresa_id",
-    "c-cnpjadm": "cnpj_admissao", "c-cargo": "cargo_id", "c-convencao": "convencao_id",
+    // "c-cnpjadm" SAIU: o CNPJ não é mais digitado, ele vem da empresa
+    // escolhida (ver `pessoas.salvar`). Mandá-lo daqui faria os dois voltarem
+    // a poder divergir, que é o defeito que acabou de ser consertado.
+    "c-cargo": "cargo_id", "c-convencao": "convencao_id",
     "c-obra": "obra_id", "c-mat": "matricula", "c-exper": "contrato_experiencia",
     "c-admissao": "admissao", "c-salario": "salario", "c-mensalista": "mensalista",
     "c-diaria": "valor_diaria", "c-sit": "situacao", "c-pixtipo": "pix_tipo",

@@ -11362,7 +11362,7 @@ def api_colaboradores_opcoes():
         # SEM O PISO: esta rota é aberta a quem tem `ver_pessoal` (inclui
         # supervisor de obra e parceiro), e eles precisam da lista de cargos
         # para a caixinha — não da tabela salarial da empresa.
-        return jsonify({"ok": True, **svc_pessoas.opcoes(),
+        return jsonify({"ok": True, **svc_pessoas.opcoes(s),
                         **svc_cargos.listar(s, com_salario=False)})
 
 
