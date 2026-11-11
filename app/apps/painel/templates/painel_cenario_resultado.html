@@ -128,6 +128,7 @@
       <thead>
         <tr>
           <th class="sem-ordem">Obra</th>
+          <th class="sem-ordem direita">Receita bruta</th>
           <th class="sem-ordem direita">Receita líquida</th>
           <th class="sem-ordem direita">Despesas</th>
           <th class="sem-ordem direita">Resultado direto</th>
@@ -140,6 +141,7 @@
         {% for nome, n in por_obra %}
         <tr>
           <td class="desc"><b>{{ nome }}</b></td>
+          <td class="dados direita">{{ brl(n.receita_bruta) }}</td>
           <td class="dados direita">{{ brl(n.receita_liquida) }}</td>
           <td class="dados direita">{{ brl(n.despesas) }}</td>
           <td class="dados direita {{ classe_valor(n.resultado_direto) }}">{{ brl(n.resultado_direto) }}</td>
@@ -152,6 +154,8 @@
     </table>
   </div>
   <p class="cartao-dica">
+    <b>Receita bruta</b> é a medição inteira; a <b>líquida</b> é sem os impostos
+    que o cliente reteve na fonte — é ela que entra no resultado.
     <b>Resultado direto</b> é só o que aconteceu na obra. <b>Estrutura</b> é o
     pedaço do custo da matriz que coube a ela, pela régua do cenário.
     <b>Juros</b> é o preço do dinheiro que ela fez faltar — obra que se paga

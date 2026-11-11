@@ -181,8 +181,15 @@ def voltar_para_analise(item: str) -> list[str]:
 
 
 def salvar_socio(nome: str, tipo: str = "Interno", socio_id=None) -> None:
+    nome = (nome or "").strip()
+    if not nome:
+        raise ValueError("O nome do sócio não pode ficar vazio.")
     with conexao() as conn:
         if socio_id:
+            outro = conn.execute("SELECT 1 FROM socios WHERE nome = ? AND id <> ?",
+                                 (nome, int(socio_id))).fetchone()
+            if outro:
+                raise ValueError(f"Já existe um sócio chamado {nome}.")
             conn.execute("UPDATE socios SET nome=?, tipo=? WHERE id=?",
                          (nome.strip(), tipo, int(socio_id)))
         else:
@@ -200,13 +207,62 @@ def desativar_socio(socio_id: int) -> None:
         conn.commit()
 
 
+def reativar_socio(socio_id: int) -> None:
+    """O desativado volta (11/11/2026): desativar por engano não tinha volta."""
+    with conexao() as conn:
+        conn.execute("UPDATE socios SET ativo = 1 WHERE id = ?", (int(socio_id),))
+        conn.commit()
+
+
+def _percentual(valor) -> float:
+    """Percentual digitado por gente: "33,33" vale. Fora de 0–100 é recusado
+    — participação de 150% é engano, não configuração."""
+    v = float(str(valor).replace(",", ".").strip())
+    if not 0 <= v <= 100:
+        raise ValueError("O percentual tem de ficar entre 0 e 100.")
+    return v
+
+
 def salvar_participacao(projeto: str, socio_id: int, pct: float) -> None:
+    pct = _percentual(pct)
     with conexao() as conn:
         conn.execute(
             "INSERT INTO participacoes (projeto, socio_id, pct) VALUES (?,?,?) "
             "ON CONFLICT (projeto, socio_id) DO UPDATE SET pct = excluded.pct",
             (projeto.strip(), int(socio_id), float(pct)))
         conn.commit()
+
+
+def gravar_participacoes_em_grade(celulas: dict) -> int:
+    """Grava a grade inteira de uma vez: `{(projeto, socio_id): "50"}`.
+
+    11/11/2026, o dono: *"tá muito difícil e lento de configurar as
+    participações"* — era uma participação por envio, escolhendo projeto,
+    sócio e percentual em três campos. Agora a tela é uma grade (projeto ×
+    sócio) e um Salvar só. Célula vazia = sem participação (apaga a que
+    havia). Confere TUDO antes de gravar: um percentual errado não deixa a
+    grade gravada pela metade. Devolve quantas células têm percentual."""
+    limpas = {}
+    for (projeto, socio_id), valor in celulas.items():
+        texto = str(valor or "").strip()
+        try:
+            limpas[(projeto.strip(), int(socio_id))] = (
+                _percentual(texto) if texto else None)
+        except ValueError:
+            raise ValueError(f"Percentual inválido em {projeto}: \"{texto}\" "
+                             f"(use um número de 0 a 100).") from None
+    with conexao() as conn:
+        for (projeto, socio_id), pct in limpas.items():
+            if pct is None:
+                conn.execute("DELETE FROM participacoes WHERE projeto = ? AND socio_id = ?",
+                             (projeto, socio_id))
+            else:
+                conn.execute(
+                    "INSERT INTO participacoes (projeto, socio_id, pct) VALUES (?,?,?) "
+                    "ON CONFLICT (projeto, socio_id) DO UPDATE SET pct = excluded.pct",
+                    (projeto, socio_id, pct))
+        conn.commit()
+    return sum(1 for v in limpas.values() if v is not None)
 
 
 def apagar_participacao(participacao_id: int) -> None:

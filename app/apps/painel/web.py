@@ -1471,7 +1471,7 @@ def prestacao_contas():
                       key=lambda kv: -kv[1]["resultado"])
     sem_projeto = sorted(o for o, info in calculo["obras"].items()
                          if not (info.get("projeto") or "").strip()
-                         and o != consultas.SEM_OBRA)
+                         and o not in consultas.SEM_OBRA_OU_NAO_LIDA)
     # As duas sobras aparecem juntas: para quem le, "custo que nao coube em
     # obra nenhuma" e uma coisa so, venha ela da estrutura ou do juro.
     sobras = calculo["rateio"]["sobras"] + calculo["juros"]["sobras"]
@@ -1573,7 +1573,7 @@ def _calcular_cenario(cenario: dict) -> dict:
     # A tela lista as obras sem projeto pelo nome, para dar para corrigir.
     sem_projeto = sorted(o for o, info in obras.items()
                          if not (info.get("projeto") or "").strip()
-                         and o != consultas.SEM_OBRA)
+                         and o not in consultas.SEM_OBRA_OU_NAO_LIDA)
 
     pesos = cenario.get("pesos") or cenarios.pesos(cenario["id"])
     excecoes = consultas.lancamentos_administrativos_por_codigo(
@@ -1586,6 +1586,8 @@ def _calcular_cenario(cenario: dict) -> dict:
     admin_sem_juros, juros_por_mes = (
         prestacao.separar_juros(admin, categoria_juros) if por_deficit
         else (admin, {}))
+    if por_deficit:
+        excecoes = prestacao.tirar_juros_das_excecoes(excecoes, categoria_juros)
 
     # A regua de quem recebe: mao de obra ou faturamento, como o dono escolheu.
     pessoal = consultas.custo_de_pessoal_por_obra_mes(config["grupo_pessoal"], medida)
@@ -1605,7 +1607,7 @@ def _calcular_cenario(cenario: dict) -> dict:
     # (para serem vistas), mas não recebem estrutura nem juros, não pesam na
     # régua e não entram no caixa de lado nenhum.
     def _sem_lado(obra, info):
-        return obra == consultas.SEM_OBRA or not (info.get("projeto") or "").strip()
+        return obra in consultas.SEM_OBRA_OU_NAO_LIDA or not (info.get("projeto") or "").strip()
 
     lado_de = {o: ("principal" if (info.get("projeto") or "").strip() == principal
                    else "demais") for o, info in obras.items()
@@ -1661,7 +1663,7 @@ def _calcular_cenario(cenario: dict) -> dict:
         "driver": driver, "caixa": caixa, "excluidas": sorted(fora),
         "excluidas_gerais": list(itens_gerais),
         "sem_projeto": sem_projeto,
-        "tem_nao_apropriado": consultas.SEM_OBRA in obras,
+        "tem_nao_apropriado": any(o in obras for o in consultas.SEM_OBRA_OU_NAO_LIDA),
         "posicao": prestacao.posicao_dos_socios(quotas, ajustes),
         "sobras": rateio["sobras"] + juros["sobras"],
         # O BATIMENTO (10/11/2026): o custo global da matriz contra a soma do
@@ -1834,6 +1836,7 @@ def cenario_montagem():
         socios=prestacao_dados.socios(apenas_ativos=True),
         obras_do_painel=_opcoes_no_escopo().get("obras", []),
         projetos_do_painel=_opcoes_no_escopo().get("projetos", []),
+        **_grade_quem_divide(atual, _opcoes_no_escopo().get("obras", [])),
         excluidas_gerais=prestacao_dados.fora_da_analise(config),
         # onde estao os juros na base, categoria por categoria — e quais a
         # prestacao esta contando. E a resposta para "na controladoria tem
@@ -1925,6 +1928,13 @@ def cenario_gravar():
                                      request.form.get("obra", ""))
     elif acao == "apagar_participacao" and cenario_id:
         cenarios.apagar_participacao(request.form["participacao_id"])
+    elif acao == "participacoes_em_grade" and cenario_id:
+        try:
+            cenarios.gravar_participacoes_em_grade(cenario_id,
+                                                   _celulas_da_grade(request.form))
+        except ValueError as e:
+            return redirect(url_for("painel.cenario_montagem", cenario=cenario_id,
+                                    erro=str(e)))
     elif acao == "excluir" and cenario_id:
         for item in request.form.getlist("item"):
             cenarios.excluir(cenario_id, item)
@@ -2114,7 +2124,14 @@ def prestacao_parametros():
     from . import consultas, prestacao_dados
 
     if request.method == "POST":
-        _aplicar_mudanca_da_prestacao(prestacao_dados, request.form)
+        try:
+            _aplicar_mudanca_da_prestacao(prestacao_dados, request.form)
+        except ValueError as e:
+            # engano de digitação volta para a tela dito em português, não
+            # como página de erro (11/11/2026, edição na própria linha)
+            return redirect(url_for("painel.prestacao_parametros",
+                                    aba=request.form.get("aba", "socios"),
+                                    erro=str(e)))
         return redirect(url_for("painel.prestacao_parametros",
                                 aba=request.form.get("aba", "socios")))
 
@@ -2132,6 +2149,9 @@ def prestacao_parametros():
         socios=prestacao_dados.socios(),
         socios_ativos=prestacao_dados.socios(apenas_ativos=True),
         participacoes=prestacao_dados.participacoes(),
+        **_grade_dos_projetos(prestacao_dados.participacoes(),
+                              consultas.opcoes_de_filtro()["projetos"]
+                              if not consultas.base_vazia() else []),
         regras=prestacao_dados.regras(),
         ajustes=prestacao_dados.ajustes(),
         tipos_ajuste=prestacao_dados.TIPOS_AJUSTE,
@@ -2147,6 +2167,45 @@ def prestacao_parametros():
     )
 
 
+def _grade_dos_projetos(participacoes, projetos) -> dict:
+    """As linhas e os valores da grade de Parâmetros › Participações: todos os
+    projetos do painel (e os que só existem na participação), com os já
+    preenchidos primeiro."""
+    grade: dict = {}
+    for p in participacoes:
+        grade.setdefault(p["projeto"], {})[p["socio_id"]] = p["pct"]
+    nomes = sorted(set(projetos) | set(grade), key=lambda n: (n not in grade, n.lower()))
+    return {"grade": grade,
+            "linhas_da_grade": [{"chave": n, "rotulo": n} for n in nomes]}
+
+
+def _grade_quem_divide(cenario, obras) -> dict:
+    """A grade do "Quem divide" do cenário: "Todas as obras" primeiro, depois
+    as obras com percentual próprio, depois as outras (que aparecem ao
+    procurar)."""
+    grade: dict = {}
+    for p in (cenario or {}).get("participacoes") or []:
+        grade.setdefault(p["obra"] or "", {})[p["socio_id"]] = p["pct"]
+    outras = sorted((set(obras) | set(grade)) - {""},
+                    key=lambda n: (n not in grade, n.lower()))
+    linhas = [{"chave": "", "rotulo": "Todas as obras", "fixa": True}] + [
+        {"chave": o, "rotulo": o} for o in outras]
+    return {"grade_quem_divide": grade, "linhas_quem_divide": linhas}
+
+
+def _celulas_da_grade(form) -> dict:
+    """A grade de participações vem como `linha` (o projeto, ou a obra, na
+    ordem da tela) e células `pct_<i>_<sócio>`. O nome do projeto não vai no
+    nome do campo: nome de obra tem espaço, barra e acento."""
+    celulas = {}
+    for i, linha in enumerate(form.getlist("linha")):
+        for chave in form:
+            prefixo = f"pct_{i}_"
+            if chave.startswith(prefixo) and chave[len(prefixo):].isdigit():
+                celulas[(linha, int(chave[len(prefixo):]))] = form.get(chave, "")
+    return celulas
+
+
 def _aplicar_mudanca_da_prestacao(dados, form):
     """Uma acao por envio; o formulario diz qual em `acao`."""
     acao = form.get("acao", "")
@@ -2155,10 +2214,14 @@ def _aplicar_mudanca_da_prestacao(dados, form):
                            form.get("socio_id") or None)
     elif acao == "desativar_socio":
         dados.desativar_socio(form["socio_id"])
+    elif acao == "reativar_socio":
+        dados.reativar_socio(form["socio_id"])
     elif acao == "participacao":
         dados.salvar_participacao(form["projeto"], form["socio_id"], form["pct"])
     elif acao == "apagar_participacao":
         dados.apagar_participacao(form["participacao_id"])
+    elif acao == "participacoes_em_grade":
+        dados.gravar_participacoes_em_grade(_celulas_da_grade(form))
     elif acao == "regra":
         dados.salvar_regra({
             "nome": form["nome"], "depto": form["depto"],
@@ -2551,6 +2614,36 @@ def rateio_administracao():
     )
 
 
+def _situacao_das_obras_cc():
+    """Quantos lançamentos de conta têm a obra lida do OMIE, e quantos não
+    (10/11/2026) — ver `apropriacao_cc.situacao`."""
+    from .db import conexao
+    from .sync import apropriacao_cc
+    with conexao() as conn:
+        return apropriacao_cc.situacao(conn)
+
+
+@bp.route("/conferir/lancamento-cc/painel")
+def conferir_lancamento_cc_no_painel():
+    """O que o PAINEL tem de um lançamento de conta: o movimento, a resposta
+    guardada da consulta da obra (ou o erro) e as linhas que ele virou — com
+    uma frase dizendo por que está como está. Não chama o OMIE. So do
+    administrador (prefixo painel.conferir_)."""
+    import json as _json
+    from flask import Response
+    from .db import conexao
+    from .sync import apropriacao_cc
+    codigo = (request.args.get("codigo") or "").strip()
+    if not codigo.isdigit():
+        return jsonify({"ok": False, "erro": "Informe o número do lançamento."}), 400
+    with conexao() as conn:
+        dados = apropriacao_cc.diagnostico(conn, int(codigo))
+    return Response(_json.dumps(dados, ensure_ascii=False, indent=2, default=str),
+                    mimetype="application/json",
+                    headers={"Content-Disposition":
+                             f'attachment; filename="painel_lancamento_cc_{codigo}.json"'})
+
+
 def _conferir(funcao, erros: list, nome: str = "Conferência"):
     """Roda uma conferência sem deixar a falha dela derrubar a tela.
 
@@ -2661,7 +2754,7 @@ def configuracoes():
         conferir = request.args.get("conferir") == "1"
         procurado = consultas._valor_procurado(request.args.get("procurar", ""))
         conferencia = sumidos = aportes_conf = observacoes = fora = None
-        contas_conf = aportes_base = juros_conf = None
+        contas_conf = aportes_base = juros_conf = obras_cc = None
         if not vazia and (conferir or procurado is not None):
             # CADA UMA POR SI. Em 20/09/2026 o dono apertou o botão e "não
             # apresentou resultado" — e não havia como saber se tinha dado erro,
@@ -2686,6 +2779,8 @@ def configuracoes():
             fora = _conferir(consultas.movimentos_fora_do_painel,
                              conferencias_com_erro,
                              "Movimentos fora do painel")
+            obras_cc = _conferir(_situacao_das_obras_cc, conferencias_com_erro,
+                                 "Obras dos lançamentos de conta")
             contas_conf = _conferir(consultas.conferencia_das_contas,
                                     conferencias_com_erro,
                                     "Conta de onde o dinheiro saiu")
@@ -2714,6 +2809,7 @@ def configuracoes():
         aportes_base=aportes_base,
         observacoes=observacoes,
         fora=fora,
+        obras_cc=obras_cc,
         contas_conf=contas_conf,
         juros_conf=juros_conf,
         modos=tarefas.MODOS, rotulos_dos_modos=tarefas.ROTULOS,

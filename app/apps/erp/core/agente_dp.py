@@ -329,20 +329,29 @@ def recusar_sugestao(s: Session, sugestao_id: int, usuario: Optional[Usuario],
 # ===========================================================================
 # R1 · TRIAGEM — determinística, sem IA
 # ===========================================================================
-def triagem(s: Session, solicitacao_id: int) -> dict[str, Any]:
+def triagem(s: Session, solicitacao_id: int,
+            rascunho: Optional[dict[str, Any]] = None) -> dict[str, Any]:
     """Analisa uma solicitação que chegou da obra. NÃO MUDA NADA.
 
     Devolve `{"falta": [...], "incoerencias": [...], "resumo": "..."}`. A
     diferença entre as duas listas importa: `falta` é dado que não veio e
     volta para quem pediu; `incoerencia` é pedido impossível ou suspeito, e
     quem decide é o DP.
+
+    ⚑ `rascunho` É O QUE O DP ESTÁ PRESTES A GRAVAR, e ele existe desde
+    10/11/2026 por uma consequência da separação de campos: salário, cargo
+    deferido e matrícula saíram do formulário da obra e passaram a ser do DP.
+    Sem isto, a conferência do PISO deixaria de acontecer — ela olhava um
+    salário que a obra não informa mais. Agora ela olha o que o DP digitou na
+    tela de atender, que é o momento certo: é ali que o valor nasce.
     """
     from app.apps.erp.core import pessoal_solicitacoes as svc_sp
 
     p = svc_sp.ler(s, solicitacao_id)
     regra = svc_sp.TIPOS.get(p["tipo"], {})
     par = parametros(s, "triagem")
-    dados = p.get("dados") or {}
+    dados = {**(p.get("dados") or {}),
+             **{k: v for k, v in (rascunho or {}).items() if v not in (None, "")}}
     falta, incoerencias = [], []
 
     # 1. Os campos obrigatórios DAQUELE tipo.

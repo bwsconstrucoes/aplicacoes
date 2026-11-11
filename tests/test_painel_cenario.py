@@ -1018,3 +1018,109 @@ def test_dividendo_pago_diminui_o_caixa_e_sem_projeto_nao_fica_em_lado_nenhum(ce
     assert por_obra["SOLTA"]["rateio"] == 0 and por_obra["SOLTA"]["juros"] == 0
     assert sum(conta["rateio"]["alocacoes"].values()) == pytest.approx(-1200, abs=0.02)
     assert conta["batimento"]["soma_fecha"]
+
+
+# ===========================================================================
+# 11/11/2026 — "as participações e os sócios não podem ser editadas" /
+# "tá muito difícil e lento de configurar as participações"
+# ===========================================================================
+def _dois_socios():
+    from app.apps.painel import prestacao_dados
+    prestacao_dados.salvar_socio("Sócio A")
+    prestacao_dados.salvar_socio("Parceiro", "Externo")
+    return {s["nome"]: s["id"] for s in prestacao_dados.socios()}
+
+
+def test_a_grade_do_cenario_grava_tudo_de_uma_vez(cenario):
+    from app.apps.painel import cenarios
+    s = _dois_socios()
+    n = cenarios.gravar_participacoes_em_grade(cenario, {
+        ("", s["Sócio A"]): "100", ("", s["Parceiro"]): "",
+        ("POUCA GENTE", s["Sócio A"]): "50", ("POUCA GENTE", s["Parceiro"]): "50,0"})
+    assert n == 3
+    gravadas = {(p["obra"], p["socio"]): p["pct"] for p in cenarios.participacoes(cenario)}
+    assert gravadas == {("", "Sócio A"): 100, ("POUCA GENTE", "Sócio A"): 50,
+                        ("POUCA GENTE", "Parceiro"): 50}
+    # esvaziar a célula tira a participação
+    cenarios.gravar_participacoes_em_grade(cenario, {("POUCA GENTE", s["Parceiro"]): ""})
+    assert ("POUCA GENTE", "Parceiro") not in {
+        (p["obra"], p["socio"]) for p in cenarios.participacoes(cenario)}
+
+
+def test_um_percentual_errado_nao_grava_a_grade_pela_metade(cenario):
+    from app.apps.painel import cenarios
+    s = _dois_socios()
+    with pytest.raises(ValueError, match="POUCA GENTE"):
+        cenarios.gravar_participacoes_em_grade(cenario, {
+            ("", s["Sócio A"]): "100", ("POUCA GENTE", s["Parceiro"]): "cinquenta"})
+    assert cenarios.participacoes(cenario) == []
+
+
+def test_a_grade_de_parametros_grava_e_apaga(base):
+    from app.apps.painel import prestacao_dados
+    s = _dois_socios()
+    prestacao_dados.gravar_participacoes_em_grade({
+        ("ALFA", s["Sócio A"]): "60", ("ALFA", s["Parceiro"]): "40"})
+    prestacao_dados.gravar_participacoes_em_grade({
+        ("ALFA", s["Sócio A"]): "70", ("ALFA", s["Parceiro"]): ""})
+    assert {(p["projeto"], p["socio"]): p["pct"]
+            for p in prestacao_dados.participacoes()} == {("ALFA", "Sócio A"): 70}
+    with pytest.raises(ValueError):
+        prestacao_dados.gravar_participacoes_em_grade({("ALFA", s["Sócio A"]): "150"})
+
+
+def test_socio_e_renomeado_e_reativado(base):
+    from app.apps.painel import prestacao_dados
+    s = _dois_socios()
+    prestacao_dados.salvar_socio("Sócio Alfa", "Interno", s["Sócio A"])
+    prestacao_dados.desativar_socio(s["Parceiro"])
+    prestacao_dados.reativar_socio(s["Parceiro"])
+    por_id = {x["id"]: x for x in prestacao_dados.socios()}
+    assert por_id[s["Sócio A"]]["nome"] == "Sócio Alfa"
+    assert por_id[s["Parceiro"]]["ativo"]
+    with pytest.raises(ValueError, match="Já existe"):
+        prestacao_dados.salvar_socio("Parceiro", "Interno", s["Sócio A"])
+
+
+def test_as_grades_aparecem_e_gravam_pela_tela(cenario, monkeypatch):
+    from app.apps.painel import cenarios
+    s = _dois_socios()
+    cliente = _cliente(monkeypatch)
+    html = cliente.get(f"/painel/prestacao/montagem?cenario={cenario}").get_data(as_text=True)
+    assert "grade-participacoes" in html and "Todas as obras" in html
+    # a linha 0 é "Todas as obras"; as obras vêm depois
+    r = cliente.post("/painel/prestacao/montagem", data={
+        "acao": "participacoes_em_grade", "cenario_id": cenario,
+        "linha": ["", "POUCA GENTE"],
+        f"pct_0_{s['Sócio A']}": "100", f"pct_0_{s['Parceiro']}": "",
+        f"pct_1_{s['Sócio A']}": "30", f"pct_1_{s['Parceiro']}": "70"})
+    assert r.status_code == 302
+    assert {(p["obra"], p["socio"]): p["pct"] for p in cenarios.participacoes(cenario)} == {
+        ("", "Sócio A"): 100, ("POUCA GENTE", "Sócio A"): 30,
+        ("POUCA GENTE", "Parceiro"): 70}
+    errado = cliente.post("/painel/prestacao/montagem", data={
+        "acao": "participacoes_em_grade", "cenario_id": cenario,
+        "linha": [""], f"pct_0_{s['Sócio A']}": "abc"})
+    assert "erro=" in errado.headers["Location"]
+
+    html = cliente.get("/painel/prestacao/parametros?aba=participacoes").get_data(as_text=True)
+    assert "grade-participacoes" in html and "Salvar tudo" in html
+    html = cliente.get("/painel/prestacao/parametros?aba=socios").get_data(as_text=True)
+    assert f'id="socio-{s["Sócio A"]}"' in html
+
+
+def test_juro_marcado_um_a_um_nao_e_contado_duas_vezes(cenario):
+    """11/11/2026, o dono: "acho que o juro de empréstimo está sendo contado
+    duas vezes, dentro de rateio recebido e em juros de empréstimo". Estava,
+    num caso: o lançamento de juro marcado UM A UM na árvore entrava no bolo
+    do rateio como exceção E no rateio dos juros pelo déficit."""
+    from app.apps.painel import cenarios
+    cenarios.marcar_pesos(cenario, "lancamento", ["807"], 100)
+    conta = _calcular(cenario)
+    rateado = sum(conta["rateio"]["alocacoes"].values()) + sum(
+        s["valor"] for s in conta["rateio"]["sobras"])
+    juros = sum(conta["juros"]["alocacoes"].values()) + sum(
+        s["valor"] for s in conta["juros"]["sobras"])
+    # aluguel 900 + patrimônio 300 no rateio; os 600 de juro só nos juros
+    assert rateado == pytest.approx(-1200, abs=0.05)
+    assert juros == pytest.approx(-600, abs=0.05)

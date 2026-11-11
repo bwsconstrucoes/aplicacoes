@@ -651,6 +651,217 @@ nunca rodou contra a base real**. Ele passou pelo parser do Postgres, pelo teste
 de portabilidade e pelos testes com dublê — nenhum dos três olha o número que
 sai.
 
+## "Painel muito lento hoje" — 11/11/2026
+
+**Achado e confirmado em teste:** o recálculo ("Recalculando os números do
+painel", que fecha toda atualização) esvaziava o fato com `TRUNCATE` dentro da
+transação. TRUNCATE trava a tabela INTEIRA até o commit: durante os minutos do
+recálculo, toda tela que lê o fato ESPERA — o dono: *"cliquei Receitas na DRE
+e já tá há muito tempo rodando e não mostra a tela"*. Com 4 vias de
+atendimento, quatro telas presas param o serviço inteiro (ERP junto). O
+comentário da função prometia que as telas continuavam vendo o fato antigo;
+com TRUNCATE não viam. Agora é `DELETE` (fato e recebimentos): a leitura
+concorrente volta na hora, com os números de antes. Teste:
+`test_as_telas_leem_o_fato_antigo_durante_o_recalculo` (falha com TRUNCATE,
+passa com DELETE). Preço: linhas mortas até o autovacuum passar. Não confirmado
+que era ESTA a lentidão dele hoje — mas casa com atualizações tentando rodar
+o dia todo.
+
+Com a releitura de todos os pagamentos tentando terminar a cada atualização.
+Não medido em produção (a causa não está confirmada). Feito o que é seguro: o
+processo da atualização entra com prioridade baixa (`os.nice(10)`, em
+`executar_sync`) — divide o servidor com as telas e com o ERP. Não alivia o
+BANCO; se a lentidão vier dele, o rodapé de cada tela ("Tela montada em X ms
+— N consultas, Y ms delas") mostra.
+
+## O juro de empréstimo contado duas vezes — 11/11/2026
+
+O dono: *"não sei se tô certo, mas tô achando que o juro de empréstimo tá
+sendo contado duas vezes, dentro de rateio recebido e em juros de
+empréstimo"*. **Estava certo, num caso, reproduzido em teste:** o lançamento
+de juro com percentual PRÓPRIO na árvore do cenário (marcado um a um ou em
+lote). `separar_juros` tirava o juro do agregado e o mandava para a régua do
+déficit, mas a exceção (o lançamento marcado) entrava no bolo do rateio do
+mesmo jeito. No teste: matriz com 900 + 300 + 600 de juro, o juro marcado a
+100% — o rateio distribuía 1.800 em vez de 1.200, e os juros mais 600.
+
+A árvore da tela já mostrava certo (juro na coluna dos juros, fora do
+"entra"); só a conta errava — o resultado não batia com a árvore.
+
+**Conserto:** `prestacao.tirar_juros_das_excecoes` — com o juro pelo déficit
+ligado, lançamento de categoria de juro não entra como exceção no rateio.
+Teste: `test_juro_marcado_um_a_um_nao_e_contado_duas_vezes`.
+NÃO VERIFICADO com o cenário real dele: se o caso dele é esse (juro marcado na
+árvore) ou outro. Outra causa possível, que não é contagem dupla: categoria de
+juro que NÃO está marcada na lista de juros (Parâmetros gerais) vai para o
+rateio pela régua da estrutura, e não para o déficit.
+
+## Sócios e participações: editar na linha, e a grade — 11/11/2026
+
+O dono: *"as participações e os sócios não podem ser editadas"* e, em
+seguida, *"tá muito difícil e lento de configurar as participações"*. Era uma
+participação por envio (escolher projeto/obra, sócio, percentual, salvar,
+esperar a página) e nada se editava: para mudar um percentual, remover e
+cadastrar de novo; sócio não se renomeava.
+
+**O que mudou:**
+- **Participações viraram uma GRADE**, nas duas telas: linhas = projetos
+  (Parâmetros › Participações) ou obras ("Quem divide" do cenário, com
+  "Todas as obras" na primeira linha), colunas = sócios ativos, **um "Salvar
+  tudo"**. Célula vazia = não participa (apaga a que havia). A soma de cada
+  linha aparece ao lado, verde em 100%, vermelha fora disso. Busca por nome;
+  "só os que já têm percentual" (no cenário vem marcado — são ~150 obras, e
+  procurar uma mostra a linha dela mesmo vazia). Em Parâmetros, "Copiar a 1ª
+  linha nas vazias". No cenário NÃO há copiar: preencher uma obra a tira da
+  regra geral, e copiar em massa criaria 150 exceções.
+- A grade confere TUDO antes de gravar: um percentual inválido (texto, fora de
+  0–100) volta para a tela com o aviso e nada é gravado.
+- **Sócio edita na linha**: nome e tipo, com Salvar por linha; nome repetido é
+  recusado. Desativado ganha **Reativar** (antes não tinha volta).
+- Os campos da grade são `linha` (o nome, na ordem) e `pct_<i>_<sócio>` — o
+  nome da obra não vai no nome do campo (tem espaço, barra, acento).
+
+## "Tento, tento e nunca fecha": a releitura de pagamentos passa a ser mês a mês — 11/11/2026
+
+O dono rodou "Reler os pagamentos" e a tela mostrou "2021: página 324 de 378 —
+depois dele, mais 5 ano(s)", e o passo das obras dos lançamentos de conta com
+✖. *"Fica impossível assim. Tento, tento e nunca fecha."*
+
+**O que o código mostra (a mensagem de erro da execução não chegou a ser
+vista — pedida ao dono):**
+- a releitura gravava ANO A ANO, cada ano numa transação: 2021 tem 378
+  páginas. Se a execução morre no meio (reinício do serviço, espera do OMIE
+  maior que 10 min, publicação), o ano inteiro volta para a página 1;
+- a releitura aberta e não terminada TRAVA o recálculo de todas as
+  atualizações (regra de 06/10/2026: recalcular com pagamentos faltando
+  mostraria o painel errado). Então toda atualização — inclusive a da
+  madrugada — tentava terminar 2021 e os 5 anos seguintes;
+- escolher anos na tela não troca uma releitura aberta: ela é terminada
+  primeiro. Por isso "mais 5 anos" mesmo que o dono tenha marcado só dois;
+- a tela pôs o texto da releitura ("2021: página 324") no passo das obras:
+  o sinal de vida das chamadas ao OMIE repetia o texto da última etapa
+  anunciada pela leitura.
+
+**O que mudou:**
+1. A releitura grava **mês a mês** (`CHAVE_MESES_RELIDOS`): cada mês é apagado
+   e regravado numa transação, com a marca junto. Um corte custa no máximo o
+   mês em que estava; a tentativa seguinte (inclusive a retomada automática e
+   a atualização da madrugada) segue do mês seguinte. A releitura aberta hoje
+   em produção (anos sem marca de mês) recomeça 2021 de janeiro — mas agora
+   cada mês fica.
+2. Mudar de etapa troca também o texto que o sinal de vida repete.
+
+## "(não apropriado)" no painel, apropriado no OMIE — 10/11/2026
+
+O dono achou o lançamento 709.793.529 (28/12/2020, tarifa do Cartão Brasil,
+R$ 1.280,31) como "(não apropriado)" no painel e apropriado no OMIE —
+*"situação gravíssima"*. Lembrou também que "em algum momento não tínhamos
+tantos não apropriados, depois surgiu muitos".
+
+**O que se sabe, e o que não.** A base de produção não abre daqui, então a
+causa DESTE lançamento não está confirmada. O que o código mostra:
+- desde 07/10/2026 os lançamentos feitos direto na conta entram no painel —
+  antes nem apareciam. É isso que bate com "depois surgiu muitos";
+- a obra deles vem de uma consulta ao OMIE, uma por lançamento. As
+  atualizações comuns perguntam até 600 por vez, do mais recente para trás, e
+  só "Reler os pagamentos" de 1 ou 2 anos pergunta todos daquele ano. Um
+  lançamento de 2020 pode simplesmente nunca ter sido perguntado;
+- quem o OMIE recusou 3 vezes deixava de ser perguntado para sempre;
+- e o painel mostrava TUDO isso como "(não apropriado)" — o mesmo nome de
+  "o OMIE disse que não tem obra". Era o painel afirmando o que não sabia.
+
+**O que mudou:**
+1. Rótulo próprio: **"(obra ainda não lida do OMIE)"** para o lançamento que
+   não foi perguntado (ou foi recusado). "(não apropriado)" passa a ser só o
+   que o OMIE respondeu sem obra. Na prestação os dois valem igual (sem lado).
+2. Botão novo, **"Ler as obras dos lançamentos de conta"**: pergunta TODOS os
+   que faltam, de todos os anos, inclusive os recusados 3 vezes, e refaz os
+   números. Só lê do OMIE. Pode parar e continuar (o respondido fica guardado).
+   NÃO MEDIDO: quantos são em produção, nem quanto tempo leva — o quadro novo
+   (abaixo) diz quantos faltam antes de apertar.
+3. Em Configurações › Conferências, o quadro dos lançamentos de conta diz
+   quantos estão com obra lida, sem obra pelo OMIE, não perguntados (por
+   ano), recusados e sem número.
+4. No cartão "Baixar um lançamento de conta corrente", o botão **"O que o
+   painel tem dele"**: o movimento, a resposta guardada (ou o erro) e as
+   linhas do painel, com uma frase dizendo por que está assim. Não chama o
+   OMIE. É como se confirma a causa do 709.793.529.
+5. A resposta é guardada pelo número PERGUNTADO (nCodMovCC) e a linha leva o
+   nCodLanc. Hoje são iguais (confirmado em produção em 07/10), mas o fato
+   agora procura pelos dois — uma diferença futura não some em silêncio.
+
+**Reler os pagamentos também resolve, se for de 1 ou 2 anos por vez**: essa
+releitura pergunta a obra de TODOS os lançamentos de conta daqueles anos, sem
+o teto de 600 (é por isso que 2026, relido sozinho, ficou certo). Relendo
+"todos os anos" de uma vez, vale o teto. O botão novo faz só a parte da obra,
+de todos os anos, sem reler os pagamentos. As linhas SEM número ("—" no
+Explorador) só se resolvem relendo os pagamentos do período.
+
+O dono, na mesma conversa: *"foram feitas mudanças na interpretação dos
+títulos. Esses títulos estão apropriados e antes não tinha esse problema."*
+O que o código diz sobre "antes": até 07/10/2026 o pagamento que o OMIE manda
+SEM título ligado (é o único que ganha a marca "[lançamento de conta
+corrente]") não entrava no painel — nem como "(não apropriado)", nem em
+número nenhum. Teste combinado para confirmar com dado: "Baixar um lançamento
+de conta corrente do OMIE" com 709793529 — se vier com a obra, é lançamento de
+conta apropriado que o painel ainda não perguntou; se o OMIE disser "não
+cadastrado", a leitura acima está errada e é preciso olhar o dia cru
+(28/12/2020).
+
+**CONFIRMADO no mesmo dia.** O dono baixou o 709793529 e o OMIE devolveu o
+lançamento com `departamentos: [{cCodDep: 583753491, nPerDep: 100, nValDep:
+1280.31}]` (origem EXTP, conciliado em 08/03/2021). É lançamento de conta,
+apropriado no OMIE, que o painel nunca tinha perguntado. A resposta real virou
+teste (`test_painel_explorador_lancamento_cc.py`, `RESPOSTA_REAL`), e é a
+primeira vez que se vê o formato inteiro da consulta: `nCodAgrup`,
+`detalhes.aCodCateg` (categoria múltipla — tirada ao trocar a categoria),
+`transferencia`, `diversos` (dados da conciliação) e `info`.
+
+## O Explorador e as tarifas: trocar a obra de lançamento de conta — 10/11/2026
+
+O dono filtrou "Taxas, Tarifas Bancárias e IOF" (~600 linhas, quase todas
+"(não apropriado)") para pôr tudo numa obra só, e trouxe três coisas:
+
+1. **"Tem horas que você marca um e ele marca vários."** Duas causas. Uma é de
+   propósito: o título (ou lançamento) dividido entre obras aparece em várias
+   linhas, e no OMIE é um registro só. A outra era defeito: o lançamento de
+   conta lido antes da migração 021 está guardado **sem número**, e a linha saía
+   com o número "None" — todas as sem número viravam "o mesmo título". Agora a
+   linha sem número não tem caixa de marcar nem é editável (a dica diz: releia
+   os pagamentos do período e o número aparece).
+2. **Trocou a obra de uma tarifa e o OMIE respondeu "Lançamento não cadastrado
+   para o Código [11266605823]".** Nada foi alterado. A tarifa é lançamento
+   feito direto na conta corrente, não título, e o painel perguntava por ela no
+   endereço dos títulos. Agora o lançamento de conta (reconhecido pela marca
+   na observação do fato) vai pelo endereço dele: consulta `ConsultaLancCC`
+   (a mesma da apropriação, conferida em produção) e grava com
+   **`AlterarLancCC`** — partindo do lançamento consultado, com a obra inteira
+   em VALOR (`cCodDep` + `nValDep`, o formato do `IncluirLancCC` que o Make do
+   dono usa). **NÃO CONFERIDO contra o OMIE real:** o nome do método e se o
+   OMIE aceita o lançamento inteiro de volta. Protocolo: ensaio → UMA tarifa
+   → conferir no OMIE → lote. Também não se sabe se o OMIE deixa alterar
+   lançamento já conciliado; se recusar, o motivo aparece na coluna Resultado.
+   - A trava do rateio vale para ele (dividido entre obras é recusado, salvo
+     "aceito desfazer"); "(não apropriado)" não conta como obra.
+   - **Excluir recusa lançamento de conta**: o número dele, mandado ao
+     endereço dos títulos, poderia apagar o título que tivesse o mesmo número.
+3. **"Qual atualização eu faço para aparecer no painel?"** Para o lançamento de
+   conta a resposta antiga era pior que "uma atualização": nenhuma trazia — a
+   apropriação guardada nunca é perguntada de novo. Agora o que o OMIE aceita
+   **vai para o painel na hora** (`saneamento.refletir_no_painel`): obra,
+   projeto e categoria nas linhas do fato; no lançamento de conta também a
+   apropriação guardada (o lançamento COMO FOI ENVIADO — consultar de novo em
+   segundos é "consumo redundante" para o OMIE) e a categoria do movimento,
+   para "Só refazer os números" não desfazer nada. Título continua com o
+   espelho antigo até a "Atualização do dia", que relê os alterados.
+
+**Lote acima de 200:** o teto continua 200 por envio (decisão antiga: engano de
+seleção não vira estrago de mil). Mas agora o envio manda os 200 primeiros (com
+aviso) em vez de recusar tudo, e "mudar a obra dos marcados" pula quem já está
+na obra escolhida. Para 600 tarifas: marcar todos → mudar a obra → alterar;
+repetir três vezes — as já enviadas saem sozinhas, porque a lista volta com a
+obra nova.
+
 ## O Explorador foi reprovado e refeito — 13/09/2026
 
 O dono abriu a primeira versão e reprovou, com razão. Três defeitos, e nenhum

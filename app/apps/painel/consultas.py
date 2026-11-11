@@ -341,6 +341,11 @@ SEM_OBRA = "(não apropriado)"
 # (`sync.fato.TRANSFERENCIA_ENTRE_CONTAS`, 10/11/2026) — fica fora das listas
 # de obra da barra lateral
 TRANSFERENCIA_ENTRE_CONTAS = "(transferência entre contas)"
+# o lançamento de conta cuja obra o painel ainda não perguntou ao OMIE
+# (`sync.fato.OBRA_NAO_LIDA`, 10/11/2026). Para a prestação vale o mesmo que
+# "(não apropriado)": sem obra conhecida, não tem lado.
+OBRA_NAO_LIDA = "(obra ainda não lida do OMIE)"
+SEM_OBRA_OU_NAO_LIDA = (SEM_OBRA, OBRA_NAO_LIDA)
 # Mesmo padrao do SEM_OBRA: um rotulo so, em toda a tela, para o que
 # nao tem fornecedor — senao filtrar por ele vira adivinhacao.
 SEM_FORNECEDOR = "(sem fornecedor)"
@@ -584,14 +589,18 @@ def resultado_por(f: Filtros, nivel: str = "projeto", medida: str = "comprometid
     sql = f"""
         SELECT COALESCE(NULLIF({coluna},''), '(sem {coluna})'),
                SUM(CASE WHEN tipo = ? AND NOT ({RETIDO}) THEN {valor} ELSE 0 END),
-               SUM(CASE WHEN tipo = ? THEN {valor_desp} ELSE 0 END)
+               SUM(CASE WHEN tipo = ? THEN {valor_desp} ELSE 0 END),
+               SUM(CASE WHEN tipo = ? THEN {valor} ELSE 0 END)
           FROM fato{where} GROUP BY 1
          ORDER BY {resultado} DESC LIMIT {int(limite)}"""
     saida = []
-    # ordem dos parametros: os dois do SELECT, os do WHERE, os dois do ORDER BY
-    for nome, receita, despesa in consultar(sql, [REC, PAG] + params + [REC, PAG]):
+    # ordem dos parametros: os três do SELECT, os do WHERE, os dois do ORDER BY
+    for nome, receita, despesa, bruta in consultar(sql, [REC, PAG, REC] + params + [REC, PAG]):
         receita, despesa = float(receita or 0), float(despesa or 0)
+        # a BRUTA (11/11/2026, o dono: "no resultado por obra deveria ter a
+        # receita bruta") — a mesma régua do DRE: a líquida mais as retenções
         saida.append({"nome": nome, "receita": receita, "despesa": despesa,
+                      "receita_bruta": float(bruta or 0),
                       "resultado": receita + despesa})
     return saida
 

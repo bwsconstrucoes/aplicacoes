@@ -407,6 +407,40 @@ def salvar_participacao(cenario_id, socio_id, pct, obra: str = "") -> None:
         conn.commit()
 
 
+def gravar_participacoes_em_grade(cenario_id, celulas: dict) -> int:
+    """A grade "quem divide" inteira de uma vez: `{(obra, socio_id): "50"}`,
+    obra "" = todas as obras. Célula vazia apaga. Confere tudo antes de
+    gravar (11/11/2026 — ver `prestacao_dados.gravar_participacoes_em_grade`)."""
+    limpas = {}
+    for (obra, socio_id), valor in celulas.items():
+        texto = str(valor or "").strip()
+        if not texto:
+            limpas[((obra or "").strip(), int(socio_id))] = None
+            continue
+        try:
+            v = float(texto.replace(",", "."))
+        except ValueError:
+            v = -1
+        if not 0 <= v <= 100:
+            raise ValueError(f"Percentual inválido em {obra or 'Todas as obras'}: "
+                             f"\"{texto}\" (use um número de 0 a 100).")
+        limpas[((obra or "").strip(), int(socio_id))] = v
+    with conexao() as conn:
+        for (obra, socio_id), pct in limpas.items():
+            if pct is None:
+                conn.execute("DELETE FROM cenario_participacao WHERE cenario_id = ?"
+                             " AND obra = ? AND socio_id = ?",
+                             (int(cenario_id), obra, socio_id))
+            else:
+                conn.execute(
+                    "INSERT INTO cenario_participacao (cenario_id, obra, socio_id, pct) "
+                    "VALUES (?,?,?,?) ON CONFLICT (cenario_id, obra, socio_id) "
+                    "DO UPDATE SET pct = excluded.pct",
+                    (int(cenario_id), obra, socio_id, pct))
+        conn.commit()
+    return sum(1 for v in limpas.values() if v is not None)
+
+
 def apagar_participacao(participacao_id) -> None:
     with conexao() as conn:
         conn.execute("DELETE FROM cenario_participacao WHERE id = ?",
