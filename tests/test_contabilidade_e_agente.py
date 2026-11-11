@@ -395,8 +395,10 @@ def test_a_triagem_aponta_desligamento_de_quem_ja_saiu(sessao_real, dono, pessoa
     svc.desligar(sessao_real, pessoa.id, {"data_saida": "2026-11-30",
                                           "forma_desligamento": "AVISO_TRABALHADO"},
                  dono)
-    p = sp.abrir(sessao_real, {"tipo": "DESLIGAMENTO", "colaborador_id": pessoa.id,
-                               "data_saida": "2026-12-15"}, dono)
+    p = sp.abrir(sessao_real, {
+        "tipo": "DESLIGAMENTO", "colaborador_id": pessoa.id,
+        "forma_desligamento": "Demissão com Aviso Trabalhado",
+        "aviso_previo": "2026-12-01"}, dono)
     r = ag.triagem(sessao_real, p["id"])
     assert any("já está desligado" in x for x in r["incoerencias"])
 
@@ -417,9 +419,14 @@ def test_a_triagem_aponta_salario_abaixo_do_piso(sessao_real, dono, pessoa):
                             vigencia=date(2026, 1, 1), usuario=dono)
     p = sp.abrir(sessao_real, {"tipo": "ALTERACAO_CARGO",
                                "colaborador_id": pessoa.id,
-                               "cargo_id": pessoa.cargo_id,
-                               "salario": "1.500,00"}, dono)
-    r = ag.triagem(sessao_real, p["id"])
+                               "cargo_pleiteado_id": pessoa.cargo_id,
+                               "data_inicio": "2026-06-01",
+                               "justificativa": "assumiu a frente"}, dono)
+    # ⚑ O SALÁRIO É DO DP desde 10/11/2026 — a obra pede o CARGO. A
+    # conferência do piso passou a olhar o que o DP está prestes a gravar, na
+    # tela de atender, que é onde o valor nasce.
+    r = ag.triagem(sessao_real, p["id"],
+                   {"cargo_id": pessoa.cargo_id, "salario": "1.500,00"})
     assert any("ABAIXO do piso" in x for x in r["incoerencias"])
 
 
@@ -429,9 +436,11 @@ def test_a_triagem_nao_julga_merito(sessao_real, dono, pessoa):
     from app.apps.erp.core import pessoal_solicitacoes as sp
     p = sp.abrir(sessao_real, {"tipo": "ALTERACAO_CARGO",
                                "colaborador_id": pessoa.id,
-                               "cargo_id": pessoa.cargo_id,
-                               "salario": "90.000,00"}, dono)
-    r = ag.triagem(sessao_real, p["id"])
+                               "cargo_pleiteado_id": pessoa.cargo_id,
+                               "data_inicio": "2026-06-01",
+                               "justificativa": "merece"}, dono)
+    r = ag.triagem(sessao_real, p["id"],
+                   {"cargo_id": pessoa.cargo_id, "salario": "90.000,00"})
     assert r["incoerencias"] == [], "salário alto não é incoerência, é decisão"
 
 

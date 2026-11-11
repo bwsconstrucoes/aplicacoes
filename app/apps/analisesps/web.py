@@ -3843,7 +3843,8 @@ def folha_diaristas_relatorio(formato: str):
                                mensagem="Este formato de relatório não existe."), 404
     try:
         ano, mes = int(request.args.get("ano") or 0), int(request.args.get("mes") or 0)
-        calculado = fd.calcular(ano, mes, request.args.get("periodo") or "quinzena")
+        calculado = fd.calcular(ano, mes, request.args.get("periodo") or "quinzena",
+                                request.args.get("empresa") or "")
         lista = folha_lista.filtrar(calculado.get("pessoas") or [], request.args,
                                     escondidas=folha_lista.ESCONDIDAS_NOS_DIARISTAS)
         contas = fpg.conta_por_obra()
@@ -3871,7 +3872,7 @@ def folha_auxilio_relatorio(formato: str):
                                mensagem="Auxílio não reconhecido."), 404
     try:
         ano, mes = int(request.args.get("ano") or 0), int(request.args.get("mes") or 0)
-        resultado = fx.calcular(tipo, ano, mes)
+        resultado = fx.calcular(tipo, ano, mes, request.args.get("empresa") or "")
         lista = folha_lista.filtrar(list(resultado.get("pessoas") or []),
                                     request.args, campo_da_obra="obra",
                                     escondidas=folha_lista.ESCONDIDAS_NOS_AUXILIOS)
@@ -4936,7 +4937,7 @@ def tela_folha_auxilio():
     erro = None
     try:
         if pronto:
-            resultado = fx.calcular(tipo, ano, mes)
+            resultado = fx.calcular(tipo, ano, mes, request.args.get("empresa") or "")
     except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
         logger.exception("Folha: não consegui calcular o auxílio")
         erro = str(e)
@@ -4974,7 +4975,8 @@ def tela_folha_auxilio():
             (resultado or {}).get("pessoas"), lista["pessoas"]),
         auditoria=(fx.auditoria(tipo, ano, mes, resultado)["resumo"]
                    if resultado else None),
-        ultima_geracao=_ultima_geracao(tipo, ano, mes) if resultado else None,
+        ultima_geracao=(_ultima_geracao(_verba_da_tela(tipo, resultado), ano, mes)
+                        if resultado else None),
         divisao=_divisao_da_tela(resultado, tipo, fx.apropriado) if resultado else {},
         tipos=[(t, fx.ROTULO_DO_TIPO[t]) for t in fx.TIPOS],
         pagamentos=list(fx.TIPOS_DO_FECHAMENTO.items()),
@@ -4982,6 +4984,13 @@ def tela_folha_auxilio():
         pode_operar=auth.pode_operar(), pode_gerar=auth.e_mestre(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
+
+
+def _verba_da_tela(verba: str, resultado) -> str:
+    """A verba do pagamento que a tela está mostrando — a da empresa escolhida, ou a
+    de todas juntas (`empresa_da_folha.verba_da_empresa`)."""
+    from . import empresa_da_folha
+    return empresa_da_folha.verba_da_empresa(verba, (resultado or {}).get("empresa"))
 
 
 def _ultima_geracao(verba: str, ano: int, mes: int, tipo: str | None = None):
@@ -5334,7 +5343,8 @@ def tela_folha_dc():
     mostrar_geradas = request.args.get("geradas") == "1"
     calculado, erro = None, None
     try:
-        calculado = dc.calcular(recarregar=recarregar, mostrar_geradas=mostrar_geradas)
+        calculado = dc.calcular(recarregar=recarregar, mostrar_geradas=mostrar_geradas,
+                                empresa=request.args.get("empresa") or "")
     except dc.ErroDaDC as e:
         erro = str(e)
     except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
@@ -5379,7 +5389,8 @@ def folha_dc_relatorio(formato: str):
         # Com as já geradas à mostra, elas entram no relatório — e cada uma leva
         # o número da SP que a pagou (dono, 06/10/2026).
         geradas = request.args.get("geradas") == "1"
-        calculado = dc.calcular(mostrar_geradas=geradas)
+        calculado = dc.calcular(mostrar_geradas=geradas,
+                                empresa=request.args.get("empresa") or "")
         lista = _dc_lista(calculado, request.args)
         contas = fpg.conta_por_obra()
         montado = dc.montado_do_relatorio(calculado, lista["pessoas"], lista["filtros"],
@@ -5847,7 +5858,7 @@ def tela_folha_diaristas():
     resultado = {"tem_ponto": False, "pessoas": [], "sem_cadastro": []}
     erro = None
     try:
-        resultado = fd.calcular(ano, mes, qual)
+        resultado = fd.calcular_guardado(ano, mes, qual, request.args.get("empresa") or "")
     except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
         logger.exception("Folha: não consegui calcular os diaristas")
         erro = str(e)
@@ -5862,13 +5873,22 @@ def tela_folha_diaristas():
         pessoas=lista["pessoas"], ano=ano, mes=mes, qual=qual, divisao=divisao,
         fora_do_filtro=_marcados_fora_do_filtro(resultado.get("pessoas"),
                                                 lista["pessoas"]),
-        ultima_geracao=(_ultima_geracao("diaria", ano, mes,
+        ultima_geracao=(_ultima_geracao(_verba_da_tela("diaria", resultado), ano, mes,
                                         fd.TIPO_DO_FECHAMENTO.get(resultado.get("qual")))
                         if resultado.get("qual") else None),
         periodos=list(fd.PERIODOS.items()), ano_padrao=hoje.year,
         pode_operar=auth.pode_operar(), pode_gerar=auth.e_mestre(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
+
+
+@bp.after_request
+def _esquecer_os_diaristas(resposta):
+    """Toda gravação no Análise de SPs joga fora o cálculo guardado dos diaristas."""
+    if request.method != "GET":
+        from . import folha_diaristas
+        folha_diaristas.esquecer_o_guardado()
+    return resposta
 
 
 @bp.route("/api/folha/diaristas/selecao", methods=["POST"])
@@ -5971,7 +5991,11 @@ def folha_gerar_direto_resumo():
                        "pode_gerar": plano["resumo"]["pode_gerar"],
                        "ja_gerado": [{"quando": formatos.momento_br(a["criado_em"]),
                                       "por": a["criado_por"] or "",
-                                      "total": float(a["total"])}
+                                      "total": float(a["total"]),
+                                      "mistura": bool(a.get("mistura")),
+                                      "como": " + ".join(
+                                          geracao.rotulo_da_verba(v) for v in
+                                          (a.get("verbas") or "").split("+") if v)}
                                      for a in plano["resumo"]["ja_gerado"]]},
             "lotes": [{"conta": l["conta"], "quantos": l["quantos"],
                        "destino": l["destino"],
@@ -8530,7 +8554,15 @@ def tela_agenda():
     if request.method == "POST":
         acao = request.form.get("acao", "salvar")
         try:
-            if acao == "desligar":
+            if acao == "sede":
+                # A cidade cujos feriados estaduais e municipais (do cadastro do
+                # ponto) movem as datas da agenda — ver `agenda.CHAVE_SEDE`.
+                s_ = agenda.gravar_sede(request.form.get("uf", ""),
+                                        request.form.get("municipio", ""))
+                aviso = ("Cidade da sede: " + (f"{s_['municipio']}/{s_['uf']}" if s_["municipio"]
+                                               else s_["uf"] or "nenhuma (só feriados nacionais)")
+                         + ".")
+            elif acao == "desligar":
                 atual = agenda.um(request.form.get("id", "")) or {}
                 if not atual:
                     raise ValueError("Compromisso não encontrado.")
@@ -8587,6 +8619,10 @@ def tela_agenda():
     except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
         logger.exception("Análise de SPs: falhou montar a agenda")
         proximos, alertas, compromissos, grade, erro = [], [], [], None, str(e)
+    # Os feriados do cadastro do ponto que movem as datas, do ano à vista.
+    sede = agenda.sede()
+    feriados_da_agenda = sorted((d, n) for d, n in agenda.feriados_do_ponto().items()
+                                if d.year == ano)
 
     anterior = agenda.mes_vizinho(ano, mes, -1)
     seguinte = agenda.mes_vizinho(ano, mes, 1)
@@ -8606,6 +8642,7 @@ def tela_agenda():
         aviso=request.args.get("aviso") or None,
         categorias=agenda.CATEGORIAS, recorrencias=agenda.RECORRENCIAS,
         ajustes=agenda.AJUSTES, agenda_ativo=agenda.esta_ativo,
+        sede=sede, feriados_da_agenda=feriados_da_agenda,
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())

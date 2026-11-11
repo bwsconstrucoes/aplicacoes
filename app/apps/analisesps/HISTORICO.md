@@ -12244,6 +12244,69 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 257 — Empresa (CNPJ de admissão) recorta Alimentação/Transporte, Diaristas e DC (10/11/2026)
+
+- *"Na C. Diários (…) Dados Documentos (…) a coluna BT, CNPJ admissão. Eu preciso
+  diferenciar as empresas. (…) gerar a folha de diaristas, mas exibir somente os que
+  estão cadastrados para uma empresa (…) antes de gerar qualquer informação. (…)
+  alimentação e transporte, diaristas, despesa com colaboradores."*
+- **Leitura:** a coluna BT entra na carga do cadastro (`COLUNAS_DO_PAGAMENTO
+  ["cnpj_admissao"]`, nome "CNPJ Admissão" ou, sem o nome, a posição 72 conferindo a
+  palavra "cnpj"), no JSON `documentos` — sem migração. **Só aparece depois de um
+  "Atualizar cadastro"**; até lá todo mundo está "sem CNPJ de admissão".
+- **Na tela** (`empresa_da_folha.py`, include `_empresa_da_folha.html`): um seletor
+  "Empresa (CNPJ de admissão)" na barra do mês das três telas. O recorte é feito DENTRO
+  do cálculo (`calcular(..., empresa)`), antes dos totais: KPIs, obras, lista,
+  relatório, divisão e GERAÇÃO saem só com aquela empresa. "Sem CNPJ de admissão" é
+  uma opção, para ninguém sumir sem ser visto. O nome vem do cadastro de Empresas do
+  ERP pelo CNPJ; sem ele, o CNPJ formatado.
+- **Geração: junto OU por empresa** (o dono, no mesmo dia: *"acho que devemos fechar
+  por empresa"* e *"quero poder fazer junto ou por empresa"*). A empresa entra no NOME
+  DA VERBA do fechamento e da geração: `diaria` = todas juntas (como sempre);
+  `diaria.00079526000109` = só aquela empresa (`empresa_da_folha.verba_da_empresa`).
+  Cada empresa tem fechamento, arquivo e SP próprios; rótulo ("Diárias — BWS"),
+  natureza, carteira e grupo do Pipefy olham a verba base (título da SP ganha
+  " - BWS"). Na DC funciona naturalmente (o gerado sai da tela).
+  - ⚠️ **Junto × por empresa não se misturam no mesmo período**
+    (`empresa_da_folha.conflita`): depois de gerar todas juntas, gerar uma empresa
+    (ou o contrário) é recusado SEMPRE, mesmo com "gerar mesmo assim" — pagaria duas
+    vezes. Empresas diferentes entre si não conflitam. Repetir a mesma geração segue a
+    regra antiga (recusa; "gerar mesmo assim" passa).
+- **O rótulo da empresa** (correção do dono no mesmo dia): a BT vem escrita
+  "00.079.526/0001-09 - BWS". O filtro mostrava o nome do cadastro de Empresas do ERP;
+  agora mostra o texto da coluna (`ler_coluna`: o CNPJ separa, o nome depois do traço
+  é o que se lê; o ERP só completa CNPJ sem nome na planilha).
+- Testes: `test_analisesps_empresa_da_folha.py`.
+
+#### Leva 256 — Diaristas: filtro de obra lento (10/11/2026)
+
+- *"Clico nas obras pra filtrar mas leva uma eternidade."* Cada pessoa lia os
+  acréscimos de diária do ERP DUAS vezes (4 consultas cada) — ~3.200 idas ao banco
+  numa quinzena de 400 diaristas, a cada clique. Agora uma leitura por cálculo
+  (`calcular_pessoa(..., acrescimos=)`), e a TELA guarda a conta por 90 s
+  (`folha_diaristas.calcular_guardado`), jogada fora em qualquer gravação do módulo e
+  no fim de toda leitura do ponto. Medido no banco de teste com 400 pessoas: 1,8 s →
+  0,5 s para calcular; o clique de filtro, 0,2 s. Quem grava (seleção, fechar, gerar)
+  continua calculando na hora.
+
+#### Leva 255 — Agenda: os feriados vêm do cadastro do ponto (10/11/2026)
+
+- A pergunta que estava aberta desde 04/11: a aba "Feriados" da planilha de credenciais
+  (a que move o vencimento das contas da Agenda para dia útil) vinha à mão. O dono: *"os
+  feriados devem vir do cadastro do app ponto"*.
+- **Agora:** `agenda.feriados_do_ponto()` lê `ponto.feriados`. Valem os NACIONAIS e os
+  ESTADUAIS/MUNICIPAIS da **cidade da sede** (escolhida na própria tela da Agenda, guardada
+  em `analisesps.meta` › `agenda.sede`); os de OBRA nunca. Motivo: a agenda é de contas e
+  impostos da empresa — o feriado municipal da cidade de uma obra não muda o vencimento do
+  FGTS, e postergar por causa dele faria pagar atrasado. Os nacionais calculados (Páscoa
+  etc.) continuam somados, como rede de segurança.
+- A aba "Feriados" deixou de ser lida na sincronização (`sincronizar_agenda`) e
+  `agenda.gravar_feriados` saiu; a tabela `analisesps.feriados` ficou sem uso (sem
+  migração para apagá-la).
+- **Pendente com o dono:** a cidade da sede. Enquanto ninguém escolher, só os nacionais
+  movem as datas (antes, o que estivesse na aba também movia).
+- Testes: `test_analisesps_agenda_feriados_ponto.py` (regra pura + no banco, com o ponto).
+
 #### Leva 254 — A folha complementar: pagar só a diferença de uma folha já paga (10/11/2026)
 
 > **Publicado em 10/11/2026.** Pendente AGORA: a primeira complementar real — conferir
@@ -12288,6 +12351,14 @@ somente Solicitações de uma conta especifica"*.
   de gerar com só a diferença). Testes: `test_analisesps_folha_complementar.py`.
 - **Não verificado com folha de verdade:** o casamento de CPF depende do cadastro (quem
   não casa aparece "sem CPF — não dá para pagar").
+- **Depois (10/11/2026) — "Lançar no Pipefy" recusava a complementar** ("o cenário do
+  Make não possui grupo para ela"). Não dependia do Make: era a tabela de grupos copiada
+  dele (`folha_cards.GRUPOS`), que só conhecia "folha". O dono: *"isso é igual ao Folha da
+  Contabilidade, mas na descrição pode pôr Complementar"*. Agora `complementarN` lança
+  com o grupo, o tipo de despesa (Salários e Ordenados) e a categoria da folha
+  (`verba_do_grupo`); o TÍTULO da SP ganha " - Complementar N" (para não se confundir
+  com a SP da folha do mesmo mês) e a descrição já dizia "Folha complementar N —
+  competência…". Teste ponta a ponta no banco (gerar → prévia → lançar).
 
 #### Leva 253 — DC: relatório detalhado em paisagem e acréscimo/desconto por lançamento (06/11/2026)
 

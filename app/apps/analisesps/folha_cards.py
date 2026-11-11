@@ -196,9 +196,30 @@ def campos_do_par(n: int) -> tuple:
             f"departamento_omie_c_digo_centro_de_custo_{n}")
 
 
+def verba_do_grupo(verba: str) -> str:
+    """A verba que decide grupo, tipo de despesa e categoria. A folha complementar
+    (10/11/2026) é a FOLHA, corrigida: o dono, *"isso é igual ao Folha da
+    Contabilidade, mas você na descrição pode pôr Complementar"*. Por isso
+    "complementar1" lança como "folha" — o que a distingue é o título e a
+    descrição, não o grupo."""
+    verba = str(verba or "").strip().lower().split(".", 1)[0]     # sem a empresa
+    return "folha" if verba.startswith("complementar") else verba
+
+
 def grupo_da_verba(verba: str, tipo: str) -> tuple:
     verba = str(verba or "").strip().lower()
-    achado = GRUPOS.get((verba, tipo if verba == "folha" else ""))
+    base = verba_do_grupo(verba)
+    achado = GRUPOS.get((base, tipo if base == "folha" else ""))
+    if achado and verba.startswith("complementar"):
+        # O título da SP diz que é a complementar — senão o card some no meio
+        # das folhas normais do mês, com o mesmo nome.
+        achado = (f"{achado[0]} - {geracao.rotulo_da_verba(verba)[len('Folha '):].capitalize()}",
+                  ) + tuple(achado[1:])
+    elif achado and "." in verba:
+        # O pagamento de UMA empresa (10/11/2026): o título diz qual.
+        from . import empresa_da_folha
+        achado = (f"{achado[0]} - {empresa_da_folha.rotulo_curto(empresa_da_folha.separar(verba)[1])}",
+                  ) + tuple(achado[1:])
     if not achado:
         raise ErroDosCards(
             f'não é possível lançar a verba "{geracao.rotulo_da_verba(verba)}" no Pipefy: '
@@ -664,7 +685,7 @@ def _previa(analise_id: int, ler_pipes: bool = True, contas=None) -> tuple:
 
         # O tipo de despesa e a categoria do OMIE, pelo nome da verba.
         descricao_verba = (lote_avulso["tipo_despesa"] if lote_avulso
-                           else DESCRICAO_DA_VERBA.get(verba, ""))
+                           else DESCRICAO_DA_VERBA.get(verba_do_grupo(verba), ""))
         tipo_sp = achar_tipo(descricao_verba) if descricao_verba else None
         if ler_pipes and not tipo_sp:
             reserva = getattr(achar_tipo, "reserva", None)

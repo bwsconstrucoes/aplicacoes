@@ -1010,30 +1010,6 @@ def test_a_agenda_grava_e_le(banco_analisesps):
     assert agenda.um("1")["categoria"] == "FGTS"
 
 
-def test_os_feriados_locais_sao_substituidos_e_nao_acumulados(banco_analisesps):
-    """Um feriado tirado da planilha tem de sumir daqui, senão o ajuste de dia
-    útil continuaria desviando de uma data que já não é feriado."""
-    from app.apps.analisesps import agenda
-    from app.apps.analisesps.db import conexao
-    with conexao() as conn:
-        agenda.gravar_feriados(conn, [(dt.date(2026, 3, 19), "São José"),
-                                      (dt.date(2026, 8, 15), "Padroeira")])
-    assert len(agenda.feriados_extra()) == 2
-    with conexao() as conn:
-        agenda.gravar_feriados(conn, [(dt.date(2026, 3, 19), "São José")])
-    assert agenda.feriados_extra() == {dt.date(2026, 3, 19)}
-
-
-def test_o_feriado_local_entra_no_calculo_do_ano(banco_analisesps):
-    from app.apps.analisesps import agenda
-    from app.apps.analisesps.db import conexao
-    with conexao() as conn:
-        agenda.gravar_feriados(conn, [(dt.date(2026, 3, 19), "São José")])
-    do_ano = agenda.feriados_do_ano(2026)
-    assert dt.date(2026, 3, 19) in do_ano       # o local
-    assert dt.date(2026, 12, 25) in do_ano      # e os nacionais continuam
-
-
 # ---------------------------------------------------------------------------
 # QUEM É QUEM: o lote e os filtros de cada pessoa
 #

@@ -13,7 +13,7 @@
 {% block filtros %}
 {% if r.tem_ponto %}
 {% set url_tela = url_for('analisesps.tela_folha_diaristas') %}
-{% set base_qs = '?ano=' ~ ano ~ '&mes=' ~ mes ~ '&periodo=' ~ qual %}
+{% set base_qs = '?ano=' ~ ano ~ '&mes=' ~ mes ~ '&periodo=' ~ qual ~ ('&empresa=' ~ r.empresa if r.empresa else '') %}
 
 {# --- 1. PAGAMENTO — os mesmos números da folha da contabilidade ---------- #}
 <div class="cartao lateral-folha">
@@ -45,7 +45,7 @@
     <div class="lat-acoes">
       {% if pode_gerar %}
         {% set gd_origem = 'diaria' %}
-        {% set gd_dados = {'ano': ano, 'mes': mes, 'periodo': qual} %}
+        {% set gd_dados = {'ano': ano, 'mes': mes, 'periodo': qual, 'empresa': r.empresa or ''} %}
         {% set gd_destino = '' %}
         {% set gd_pagamento = '' %}
         {% include "_gerar_direto.html" %}
@@ -95,6 +95,7 @@
   <input type="hidden" name="ano" value="{{ ano }}">
   <input type="hidden" name="mes" value="{{ mes }}">
   <input type="hidden" name="periodo" value="{{ qual }}">
+  {% if r.empresa %}<input type="hidden" name="empresa" value="{{ r.empresa }}">{% endif %}
   <div class="filtros-cab">
     <h2>Filtros</h2>
     <a class="link-btn" href="{{ url_tela }}{{ base_qs }}">Limpar</a>
@@ -147,6 +148,8 @@
       {% endfor %}
     </select>
   </label>
+  {% set emp_opcoes, emp_atual = r.empresas, r.empresa %}
+  {% include "_empresa_da_folha.html" %}
   <button class="btn secundario" type="submit">Consultar</button>
   {% if r.inicio %}
     <span class="barra-mes-dica">Período de apuração: <b>{{ r.inicio|data_br }}</b> a <b>{{ r.fim|data_br }}</b></span>

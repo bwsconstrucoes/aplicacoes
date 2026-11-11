@@ -93,7 +93,15 @@ AREAS: tuple[dict[str, Any], ...] = (
     {
         "chave": "pessoal",
         "nome": "Pessoal e DP",
-        "explicacao": "admissão, desligamento, férias, vale, dados da pessoa",
+        # ⚑ A EXPLICAÇÃO SÓ PODE PROMETER O QUE A ÁREA TEM. Ela dizia
+        # "férias", e férias NÃO É pedido de DP aqui — é do ponto. Ele viu, em
+        # 10/11/2026: *"lá no resumo do portal tinha lá férias, e quando você
+        # entrava, não tinha solicitação de férias. Estava tudo errado."*
+        # Porta que anuncia o que não tem é pior que porta fechada: a pessoa
+        # entra, não acha, e deixa de confiar no resto da tela. Há teste
+        # conferindo cada palavra daqui contra os tipos da área.
+        "explicacao": "cadastro, desligamento, readmissão, dados da pessoa, "
+                      "dependente, ajuda de custo e vale-transporte",
         "pronta": True,
     },
     {
@@ -114,14 +122,17 @@ AREAS: tuple[dict[str, Any], ...] = (
         "chave": "obra",
         "nome": "Diário de obra",
         "explicacao": "o que aconteceu na obra no dia",
-        # ⚑ CONSTRUÍDO EM 08/11/2026, mas NÃO LIBERADO — e a diferença entre as
-        # duas coisas é decisão dele: *"eu nem quero que esteja liberado nada
-        # além do DP. A gente vai começar pelo DP."* A tela existe no ERP
-        # (Obras › Diário de obra); o que não existe ainda é a porta do portal.
-        # Ligar é trocar este `False` por `True` e apontar `tela` abaixo.
-        "pronta": False,
+        # ⚑ LIGADO EM 10/11/2026, a pedido dele: *"eu quero deixar ativo no
+        # portal o diário de obras também."* Até então estava construído e
+        # fechado de propósito (*"eu nem quero que esteja liberado nada além
+        # do DP, a gente vai começar pelo DP"*) — e agora o DP andou.
+        #
+        # ⚑ ESTA ÁREA NÃO TEM TIPO DE SOLICITAÇÃO, e por isso ela não passa
+        # pela conta de `TIPOS_POR_AREA`: o diário não é um pedido, é uma
+        # TELA. Quem clica vai direto para ela. Ver `so_tela` abaixo.
+        "pronta": True,
+        "so_tela": True,
         "tela": "/erp/obras/diario",
-        "enquanto_isso": "Já existe no sistema, pelo computador. No celular, em breve.",
     },
 )
 
@@ -158,7 +169,12 @@ def areas(s: Session, eu: dict[str, Any]) -> list[dict[str, Any]]:
                       # Área marcada como pronta mas sem tipo nenhum seria uma
                       # porta que abre para o vazio. Melhor ela se corrigir
                       # sozinha do que mentir.
-                      "pronta": bool(a.get("pronta")) and quantos > 0})
+                      #
+                      # ⚑ A exceção é a área que é SÓ TELA (o diário): ela não
+                      # oferece pedido nenhum e mesmo assim está pronta —
+                      # clicar leva à tela.
+                      "pronta": bool(a.get("pronta"))
+                                and (quantos > 0 or bool(a.get("so_tela")))})
     return saida
 
 
@@ -300,11 +316,34 @@ def tipos(s: Session) -> list[dict[str, Any]]:
         for k in chaves:
             if k not in svc_sp.TIPOS:
                 continue
+            d = svc_sp.TIPOS[k]
+            campos = list(d["campos"])
+            if "obra_id" not in campos:
+                campos.insert(0, "obra_id")
             saida.append({
-                "chave": k, "area": area, "nome": svc_sp.TIPOS[k]["nome"],
-                "explicacao": svc_sp.TIPOS[k]["explicacao"],
-                "exige_pessoa": svc_sp.TIPOS[k]["exige_pessoa"],
-                "campos": list(svc_sp.TIPOS[k]["campos"]),
+                "chave": k, "area": area, "nome": d["nome"],
+                "explicacao": d["explicacao"],
+                "exige_pessoa": d["exige_pessoa"],
+                "campos": campos,
+                # ⚑ O ASTERISCO E OS PAPÉIS VÊM DA REGRA, que os tirou do
+                # Pipe. A tela não decide nem um nem outro — se decidisse,
+                # divergiriam do que o servidor exige, e a pessoa descobriria
+                # isso só na recusa do envio.
+                "obrigatorios": ["obra_id"] + [x for x in d.get("obrigatorios", ())
+                                               if x != "obra_id"],
+                "documentos": list(d.get("documentos", ())),
+                "documentos_se": {c: {v: list(p) for v, p in mapa.items()}
+                                  for c, mapa in (d.get("documentos_se") or {}).items()},
+                "obrigatorios_se": {c: {v: list(p) for v, p in mapa.items()}
+                                    for c, mapa in (d.get("obrigatorios_se") or {}).items()},
+                "repete": bool(d.get("repete")),
+                "vem_do_documento": dict(d.get("vem_do_documento") or {}),
+                # ⚑ O QUE O CADASTRO JÁ TEM não se pergunta de novo. Ele, em
+                # 10/11/2026: *"vamos requerer os dados. Se não tivermos, né?
+                # Acho que é interessante uma consulta, ver se tem CTPS, se
+                # tem PIS."* O mapa diz de qual coluna cada campo vem; a tela
+                # preenche ao escolher a pessoa e marca como conferência.
+                "ja_no_cadastro": dict(d.get("ja_no_cadastro") or {}),
             })
     return saida
 
@@ -365,6 +404,36 @@ def listas_fechadas(s: Session | None = None) -> dict[str, list[dict[str, str]]]
             for l in s.execute(text(
                 "SELECT id, nome FROM convencoes WHERE ativo IS NOT FALSE"
                 " ORDER BY nome")).mappings().all()]
+        # ⚑ "Cargo Pleiteado" e "Cargo Deferido" são o nome do Pipe para a
+        # MESMA lista de cargos. Sem estas duas linhas eles saíam como texto
+        # livre — e ele viu: *"o cargo. Se o cara já tem cargo, já era para
+        # estar pré-selecionado aqui."*
+        listas["cargo_pleiteado_id"] = listas["cargo_id"]
+        listas["cargo_deferido_id"] = listas["cargo_id"]
+
+    # ⚑ AS CAIXINHAS DO PIPE, com as opções exatas. A fonte é o `CATEGORIAS`
+    # de `pessoal_solicitacoes`, que as tirou do arquivo exportado — não uma
+    # segunda cópia aqui. Campo do Pipe que vira texto livre é a obra
+    # digitando a mesma coisa de dez jeitos, que é o que esta tela existe
+    # para acabar.
+    from app.apps.erp.core import pessoal_solicitacoes as svc_sp
+
+    # ⚑ QUEM VENCE QUANDO OS DOIS TÊM LISTA, e a divisão tem motivo:
+    #
+    # · O PIPE vence no que é escolha DO PEDIDO. "Parentesco", no pedido, é
+    #   Filho ou Cônjuge — é quem dá direito a salário-família, e é o que a
+    #   equipe escolhe há anos. O cadastro tem oito parentescos porque o DP
+    #   registra enteado e avó depois; isso é do cadastro, não do pedido.
+    #
+    # · O CADASTRO vence nos BENEFÍCIOS, e por uma razão prática: ele aposenta
+    #   opção que não se oferece mais ("Cartão", no transporte). Deixar o Pipe
+    #   vencer aqui reabriria a opção aposentada, e alguém escolheria.
+    MANDA_O_CADASTRO = {"categoria_alimentacao", "categoria_transporte",
+                        "meio_transporte"}
+    for campo, opcoes in svc_sp.CATEGORIAS.items():
+        if campo in MANDA_O_CADASTRO and campo in listas:
+            continue
+        listas[campo] = [{"valor": o, "rotulo": o} for o in opcoes]
     return listas
 
 
@@ -702,6 +771,100 @@ def pessoas_ao_alcance(s: Session, usuario: Optional[Usuario]) -> list[dict[str,
          ORDER BY nome LIMIT 500"""),
         {"obras": obras or [], "todas": obras is None}).mappings().all()
     return [{"id": l["id"], "nome": l["nome"]} for l in linhas]
+
+
+# ---------------------------------------------------------------------------
+# PROCURAR A PESSOA — por nome OU por CPF (10/11/2026)
+#
+# Ele: *"não está pesquisável o nome da pessoa. Eu até comentei pesquisar
+# nome, pesquisar CPF, trazer alguém. Não está pesquisável."*
+#
+# ⚑ A BUSCA É NO SERVIDOR, e não um filtro na lista que já desceu. A caixinha
+# descia com até 500 pessoas, e pôr o CPF de todas no navegador para poder
+# filtrar ali seria expor o cadastro inteiro a quem abrir o código da página.
+# Aqui só aparece quem já se sabia procurar.
+#
+# ⚑ E A RESPOSTA TRAZ CARGO E VÍNCULO. Ele, no mesmo dia: *"o cargo. Se o cara
+# já tem cargo, já era para estar pré-selecionado aqui, já era para estar
+# aparecendo. Eu cliquei na pessoa, cadê o cargo? Quem é? Ela é o que agora?
+# (…) Cadê a correlação com a base que já existe?"*
+# ---------------------------------------------------------------------------
+MINIMO_DA_BUSCA_DE_PESSOA = 3
+TETO_DA_BUSCA_DE_PESSOA = 20
+
+
+def _sem_acento(texto: Any) -> str:
+    import unicodedata as _u
+    cru = _u.normalize("NFD", str(texto or "").lower())
+    return "".join(c for c in cru if _u.category(c) != "Mn")
+
+
+def _cpf_do_fim(cpf: Any) -> str:
+    """"…901" — o bastante para conferir que é a pessoa certa, e só isso.
+
+    Mostrar o CPF inteiro numa lista de resultado é espalhar documento de
+    gente por tela de celular. Os três últimos dígitos resolvem a dúvida de
+    quem já sabe quem está procurando.
+    """
+    so_digito = "".join(c for c in str(cpf or "") if c.isdigit())
+    return ("…" + so_digito[-3:]) if len(so_digito) >= 3 else ""
+
+
+def procurar_pessoas(s: Session, usuario: Optional[Usuario],
+                     termo: str) -> list[dict[str, Any]]:
+    """Quem bate com o que foi digitado, dentro do alcance de quem procura."""
+    procurado = str(termo or "").strip()
+    so_digito = "".join(c for c in procurado if c.isdigit())
+    if len(procurado) < MINIMO_DA_BUSCA_DE_PESSOA and len(so_digito) < 3:
+        return []
+    eu = quem_esta(s, usuario)
+    if not pode_pedir_por_outros(s, eu):
+        # Quem só pede por si não procura ninguém: devolve a si mesmo.
+        return [x for x in pessoas_ao_alcance(s, usuario)
+                if procurado.lower() in str(x["nome"]).lower()]
+    obras = obras_que_alcanca(s, eu)
+    if obras is not None and not obras:
+        return []
+    # ⚑ AS COLUNAS QUE OS TIPOS CONSULTAM vêm JUNTO com a pessoa, e não numa
+    # segunda chamada depois do clique: no celular, na obra, cada ida ao
+    # servidor é um tempo em que a tela parece travada. A lista é da regra
+    # (`COLUNAS_JA_NO_CADASTRO`), não escrita aqui — tipo novo que consulte
+    # outra coluna passa a trazê-la sozinho.
+    from app.apps.erp.core import pessoal_solicitacoes as svc_sp
+    extras = svc_sp.COLUNAS_JA_NO_CADASTRO
+    colunas_extras = "".join(f", c.{c} AS ja_{c}" for c in extras)
+    linhas = s.execute(text(f"""
+        SELECT c.id, c.nome, c.cpf, c.vinculo{colunas_extras},
+               COALESCE(NULLIF(btrim(g.nome), ''), NULLIF(btrim(f.nome), ''), '')
+                 AS cargo,
+               g.id AS cargo_id, c.obra_id
+          FROM colaboradores c
+          LEFT JOIN cargos  g ON g.id = c.cargo_id
+          LEFT JOIN funcoes f ON f.id = c.funcao_id
+         WHERE (:todas OR c.obra_id = ANY(:obras))
+           AND c.situacao = 'ATIVO'
+           AND (translate(lower(c.nome),
+                          'áàâãäéèêëíìîïóòôõöúùûüç',
+                          'aaaaaeeeeiiiiooooouuuuc') LIKE :nome
+                OR (:digitos <> '' AND regexp_replace(c.cpf, '\D', '', 'g')
+                    LIKE :digitos || '%'))
+         ORDER BY c.nome
+         LIMIT :teto"""),
+        {"obras": obras or [], "todas": obras is None,
+         # ⚑ Sem acento dos dois lados, e sem depender da extensão
+         # `unaccent` (que não está instalada): quem digita "jose" acha
+         # "José", que é como se digita no celular, com pressa.
+         "nome": "%" + _sem_acento(procurado) + "%", "digitos": so_digito,
+         "teto": TETO_DA_BUSCA_DE_PESSOA}).mappings().all()
+    return [{"id": l["id"], "nome": l["nome"], "cargo": l["cargo"],
+             "cargo_id": l["cargo_id"], "vinculo": l["vinculo"],
+             "obra_id": l["obra_id"], "cpf": _cpf_do_fim(l["cpf"]),
+             # Só o que ESTÁ preenchido: campo vazio aqui viraria "já no
+             # cadastro" na tela, e a pessoa não preencheria o que falta.
+             "cadastro": {c: str(l[f"ja_{c}"]).strip() for c in extras
+                          if l[f"ja_{c}"] is not None
+                          and str(l[f"ja_{c}"]).strip()}}
+            for l in linhas]
 
 
 def obras_para_escolher(s: Session, usuario: Optional[Usuario]) -> list[dict[str, Any]]:

@@ -29,7 +29,6 @@ from datetime import date, datetime, timedelta
 logger = logging.getLogger("analisesps.agenda")
 
 ABA_AGENDA = "Agenda"
-ABA_FERIADOS = "Feriados"
 
 COLUNAS = ["id", "titulo", "descricao", "categoria", "data_base", "recorrencia",
            "dia_mes", "ajuste_dia_util", "alerta_dias_antes", "status",
@@ -98,7 +97,7 @@ def _ultimo_dia(ano: int, mes: int) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Feriados (nacionais calculados + extras da planilha)
+# Feriados (nacionais calculados + o cadastro do ponto)
 # ---------------------------------------------------------------------------
 
 def _pascoa(ano: int) -> date:
@@ -133,19 +132,87 @@ def feriados_nacionais(ano: int) -> set:
     return set(fixos + moveis)
 
 
-def feriados_extra() -> set:
-    """Feriados estaduais e municipais, lidos da tabela.
+# ⚠️ DESDE 10/11/2026 OS FERIADOS DA AGENDA VÊM DO CADASTRO DO PONTO (`ponto.feriados`),
+# não mais da aba "Feriados" da planilha de credenciais. O dono: *"os feriados devem
+# vir do cadastro do app ponto"* — um cadastro só, o mesmo que a folha já lê.
+#
+# QUAIS FERIADOS DO PONTO VALEM PARA A AGENDA: os NACIONAIS sempre; os ESTADUAIS e
+# MUNICIPAIS só os da CIDADE DA SEDE (`CHAVE_SEDE`, escolhida na tela da Agenda). A
+# agenda é de contas e impostos da empresa: um feriado municipal da cidade de uma obra
+# não muda o vencimento do FGTS — e postergar por causa dele faria pagar atrasado. Os
+# de OBRA nunca entram. Sem sede escolhida, só os nacionais.
+CHAVE_SEDE = "agenda.sede"
 
-    Falha aqui NUNCA derruba a tela: sem os feriados locais a agenda continua
-    certa nos nacionais, e um ajuste de dia útil a menos é muito melhor do que
-    a tela não abrir."""
+
+def sede() -> dict:
+    """A cidade da sede, `{"uf", "municipio"}` — vazia se ninguém escolheu ainda."""
+    import json
     try:
         from .db import consultar
-        return {linha[0] for linha in
-                consultar("SELECT dia FROM analisesps.feriados") if linha[0]}
+        linhas = consultar("SELECT valor FROM analisesps.meta WHERE chave = ?", (CHAVE_SEDE,))
+        dado = json.loads(linhas[0][0]) if linhas and linhas[0][0] else {}
+    except Exception:  # noqa: BLE001 — sem sede, ficam os nacionais
+        logger.exception("Análise de SPs: não consegui ler a cidade da sede da agenda")
+        dado = {}
+    return {"uf": str(dado.get("uf") or "").strip().upper(),
+            "municipio": str(dado.get("municipio") or "").strip()}
+
+
+def gravar_sede(uf: str, municipio: str) -> dict:
+    import json
+    from .db import conexao
+    from .sincronizacao import _meta_gravar
+    uf = str(uf or "").strip().upper()
+    municipio = " ".join(str(municipio or "").split())
+    if uf and (len(uf) != 2 or not uf.isalpha()):
+        raise ValueError("UF são duas letras (ex.: PE).")
+    if municipio and not uf:
+        raise ValueError("Informe a UF junto com o município.")
+    with conexao() as conn:
+        _meta_gravar(conn, CHAVE_SEDE, json.dumps({"uf": uf, "municipio": municipio},
+                                                  ensure_ascii=False))
+    return {"uf": uf, "municipio": municipio}
+
+
+def feriados_que_valem(linhas, sede_: dict) -> dict:
+    """PURA. Dos feriados do ponto (`[{data, nome, abrangencia, uf, municipio}]`), os
+    que valem para a agenda: `{data: nome}`. A comparação de UF e município é sem
+    acento e sem caixa — a mesma do ponto."""
+    from app.apps.ponto.core.feriados import _sem_acento
+    uf, municipio = _sem_acento(sede_.get("uf")), _sem_acento(sede_.get("municipio"))
+    saida = {}
+    for f in linhas or []:
+        a = str(f.get("abrangencia") or "").upper()
+        if (a == "NACIONAL"
+                or (a == "ESTADUAL" and uf and _sem_acento(f.get("uf")) == uf)
+                or (a == "MUNICIPAL" and uf and municipio and _sem_acento(f.get("uf")) == uf
+                    and _sem_acento(f.get("municipio")) == municipio)):
+            if f.get("data"):
+                saida.setdefault(f["data"], f.get("nome") or "")
+    return saida
+
+
+def feriados_do_ponto() -> dict:
+    """`{data: nome}` dos feriados do ponto que valem para a agenda.
+
+    Falha aqui NUNCA derruba a tela: sem o ponto a agenda continua certa nos
+    nacionais (calculados abaixo), e um ajuste de dia útil a menos é muito melhor
+    do que a tela não abrir."""
+    try:
+        from app.apps.ponto import db as banco_do_ponto
+        with banco_do_ponto.conexao() as conn:
+            linhas = banco_do_ponto.todos(
+                conn, "SELECT data, nome, abrangencia, uf, municipio FROM ponto.feriados "
+                      " WHERE abrangencia IN ('NACIONAL', 'ESTADUAL', 'MUNICIPAL')")
+        return feriados_que_valem(linhas, sede())
     except Exception:  # noqa: BLE001
-        logger.exception("Análise de SPs: não consegui ler os feriados locais")
-        return set()
+        logger.exception("Análise de SPs: não consegui ler os feriados do ponto")
+        return {}
+
+
+def feriados_extra() -> set:
+    """Os dias de feriado do cadastro do ponto que valem para a agenda."""
+    return set(feriados_do_ponto())
 
 
 def feriados_do_ano(ano: int) -> set:
@@ -339,22 +406,6 @@ def gravar(conn, registros: list[dict]) -> int:
         valores)
     conn.commit()
     return len(valores)
-
-
-def gravar_feriados(conn, dias: list) -> int:
-    """Substitui a lista de feriados locais.
-
-    Apaga e regrava em vez de acumular: um feriado tirado da planilha tem de
-    sumir daqui, senão o ajuste de dia útil continuaria desviando de uma data
-    que já não é feriado."""
-    conn.execute("DELETE FROM analisesps.feriados")
-    if dias:
-        conn.executemany(
-            "INSERT INTO analisesps.feriados (dia, nome) VALUES (?, ?) "
-            "ON CONFLICT (dia) DO NOTHING",
-            [(d, nome) for d, nome in dias])
-    conn.commit()
-    return len(dias)
 
 
 # ---------------------------------------------------------------------------
