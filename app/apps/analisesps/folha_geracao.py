@@ -144,6 +144,18 @@ class ErroDaGeracao(RuntimeError):
 # ---------------------------------------------------------------------------
 # Feitio de dado
 # ---------------------------------------------------------------------------
+# A COMPLEMENTAR DAS DIÁRIAS (11/11/2026; `diaristas_complementar`): "diaria_c1",
+# "diaria_c2"… — a mesma família da "diaria" para natureza, carteira e Pipefy.
+_DIARIA_COMPLEMENTAR = re.compile(r"diaria_c(\d+)")
+
+
+def verba_base(verba: str) -> str:
+    """A verba que decide natureza, carteira e grupo: sem a empresa
+    (`empresa_da_folha`) e com a complementar das diárias virando "diaria"."""
+    v = str(verba or "").strip().lower().split(".", 1)[0]
+    return "diaria" if _DIARIA_COMPLEMENTAR.fullmatch(v) else v
+
+
 def rotulo_da_verba(verba: str) -> str:
     verba = str(verba or "").strip().lower()
     if "." in verba:
@@ -152,6 +164,9 @@ def rotulo_da_verba(verba: str) -> str:
         from . import empresa_da_folha
         base, empresa = empresa_da_folha.separar(verba)
         return f"{rotulo_da_verba(base)} — {empresa_da_folha.rotulo_curto(empresa)}"
+    achado = _DIARIA_COMPLEMENTAR.fullmatch(verba)
+    if achado:
+        return f"Diárias complementar {achado.group(1)}"
     if verba.startswith("complementar"):
         # A folha complementar (10/11/2026): "complementar1" → "Folha complementar 1".
         return ("Folha complementar " + verba[len("complementar"):]).strip()
@@ -160,12 +175,11 @@ def rotulo_da_verba(verba: str) -> str:
 
 def carteira_da_verba(verba: str) -> str:
     """A carteira do BeeVale desta verba (ver `CARTEIRA_DA_VERBA`)."""
-    base = str(verba or "").strip().lower().split(".", 1)[0]     # sem a empresa
-    return CARTEIRA_DA_VERBA.get(base, CARTEIRA)
+    return CARTEIRA_DA_VERBA.get(verba_base(verba), CARTEIRA)
 
 
 def natureza(verba: str) -> str:
-    verba = str(verba or "").strip().lower().split(".", 1)[0]     # sem a empresa
+    verba = verba_base(verba)
     if verba.startswith("complementar"):
         # A complementar é a mesma natureza da folha: é a folha, corrigida.
         return NATUREZA_DA_VERBA["folha"]

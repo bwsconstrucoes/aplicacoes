@@ -114,7 +114,12 @@
         jaGerado.map(a => esc(a.quando) + (a.por ? " por " + esc(a.por) : "") +
                           " (" + real(a.total) + ")").join("; ") +
         ". Gerar de novo pagaria duas vezes. Para refazer, exclua a geração anterior em " +
-        "Arquivos gerados; para gerar assim mesmo, marque a opção abaixo.</div>" : "") +
+        "Arquivos gerados; para gerar assim mesmo, marque a opção abaixo." +
+        // AS DIÁRIAS JÁ PAGAS (11/11/2026): a diferença do ponto corrigido sai pela Complementar.
+        (ORIGEM === "diaria" ? ' Se o ponto foi corrigido e é para pagar só a diferença, use a <a href="' +
+          "{{ url_for('analisesps.tela_folha_diaristas_complementar') }}?" +
+          new URLSearchParams(Object.fromEntries(Object.entries(DADOS).filter(([k, v]) => v))).toString() +
+          '"><b>Complementar</b></a>.' : "") + "</div>" : "") +
       '<div class="tabela-rolagem livre"><table class="sps"><thead><tr><th>Conta</th>' +
       "<th>Destino</th>" +
       '<th class="num">Colaboradores</th><th class="num">Total</th><th>Avisos</th>' +

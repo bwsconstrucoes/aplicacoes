@@ -2070,7 +2070,7 @@ def andamento():
     # `?pista=cadastro` acompanha a atualização dos colaboradores, que roda na
     # pista dela (migração 054) — a geral é a da sincronização.
     pista = request.args.get("pista") if request.args.get("pista") in (
-        "pessoa", "cadastro", "ponto", "apoios") else "geral"
+        "pessoa", "cadastro", "ponto", "apoios", "comprovantes") else "geral"
     estado = tarefas.estado(pista)
     if pista == "cadastro" and not estado["rodando"] and tarefas.estado()["rodando"] \
             and tarefas._pedido_pendente("colaboradores"):
@@ -3623,6 +3623,56 @@ def tela_folha_complementar(folha_id: int):
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""), nome=auth.nome_atual())
 
 
+@bp.route("/folha/<int:folha_id>/centros-de-custo")
+@exige_consulta
+def tela_folha_centros_de_custo(folha_id: int):
+    """OS CENTROS DE CUSTO DA CONTABILIDADE × O PONTO (11/11/2026): onde cada pessoa
+    está na folha e onde ela trabalhou — o relatório de remanejos para a
+    contabilidade. Ver `centros_de_custo`."""
+    from . import centros_de_custo as cc, folha_arquivo as fa
+    erro, montado = None, None
+    try:
+        montado = cc.montar(folha_id, recarregar=request.args.get("recarregar") == "1")
+    except ValueError:
+        return render_template("analisesps_erro.html", titulo="Não encontrado",
+                               mensagem="Esta folha não existe."), 404
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+        logger.exception("Folha: não consegui montar os centros de custo")
+        erro = f"Não foi possível montar a conferência: {e}"
+    folha = (montado or {}).get("folha") or fa.abrir(folha_id)
+    if folha is None:
+        return render_template("analisesps_erro.html", titulo="Não encontrado",
+                               mensagem="Esta folha não existe."), 404
+    situacao = request.args.get("situacao") or ""
+    pessoas = [p for p in (montado or {}).get("pessoas") or []
+               if not situacao or p["situacao"] == situacao]
+    return render_template(
+        "analisesps_folha_centros_de_custo.html", aba="folha", subaba="importar",
+        grupos=subtelas_agrupadas(), folha=folha, montado=montado, erro=erro,
+        pessoas=pessoas, situacao=situacao, rotulos=cc.ROTULO, ordem=cc.ORDEM,
+        pode_operar=auth.pode_operar(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""), nome=auth.nome_atual())
+
+
+@bp.route("/folha/<int:folha_id>/centros-de-custo.xlsx")
+@exige_consulta
+def folha_centros_de_custo_planilha(folha_id: int):
+    from . import centros_de_custo as cc
+    try:
+        montado = cc.montar(folha_id)
+    except ValueError:
+        return render_template("analisesps_erro.html", titulo="Não encontrado",
+                               mensagem="Esta folha não existe."), 404
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou a planilha dos centros de custo")
+        return render_template("analisesps_erro.html", titulo="Centros de custo",
+                               mensagem=f"Não foi possível gerar a planilha: {e}"), 500
+    nome = f"Centros de custo {montado['mes']:02d}-{montado['ano']}.xlsx"
+    return Response(cc.planilha(montado), mimetype=(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+        headers={"Content-Disposition": f'attachment; filename="{nome}"'})
+
+
 @bp.route("/folha/<int:folha_id>/complementar/relatorio.<formato>")
 @exige_consulta
 def folha_complementar_relatorio(folha_id: int, formato: str):
@@ -3662,6 +3712,101 @@ def folha_complementar_a_descontar():
     quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
     try:
         novos = fcomp.guardar_a_descontar(fcomp.montar(int(dados.get("folha_id") or 0)), quem=quem)
+    except fcomp.ErroDaComplementar as e:
+        return {"ok": False, "erro": str(e)}, 400
+    return {"ok": True, "novos": novos}
+
+
+# ---------------------------------------------------------------------------
+# A COMPLEMENTAR DAS DIÁRIAS (11/11/2026) — ver `diaristas_complementar`.
+# ---------------------------------------------------------------------------
+def _competencia_dos_diaristas(args) -> tuple:
+    """(ano, mes, periodo, empresa) do endereço, com o padrão da tela dos Diaristas."""
+    from . import folha_diaristas as fd
+    from .horario import agora
+    padrao_ano, padrao_mes, padrao_periodo = fd.periodo_sugerido(agora().date())
+    try:
+        ano = int(args.get("ano") or padrao_ano)
+        mes = int(args.get("mes") or padrao_mes)
+    except (TypeError, ValueError):
+        ano, mes = padrao_ano, padrao_mes
+    if not (2000 <= ano <= 2100) or not (1 <= mes <= 12):
+        ano, mes = padrao_ano, padrao_mes
+    qual = args.get("periodo") or padrao_periodo
+    if qual not in fd.PERIODOS:
+        qual = padrao_periodo
+    return ano, mes, qual, str(args.get("empresa") or "")
+
+
+@bp.route("/folha/diaristas/complementar")
+@exige_consulta
+def tela_folha_diaristas_complementar():
+    """As diárias de uma quinzena já paga, recalculadas com o ponto corrigido, contra o
+    que foi pago — e o arquivo só da diferença."""
+    from . import diaristas_complementar as dcomp, folha_complementar as fcomp
+    from . import folha_diaristas as fd
+    from .horario import agora
+    ano, mes, qual, empresa = _competencia_dos_diaristas(request.args)
+    erro, montado = None, None
+    try:
+        montado = dcomp.montar(ano, mes, qual, empresa)
+    except fcomp.ErroDaComplementar as e:
+        erro = str(e)
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+        logger.exception("Folha: não consegui montar a complementar das diárias")
+        erro = f"Não foi possível montar a complementar: {e}"
+    from . import folha_geracao as geracao
+    empresa = (montado or {}).get("empresa") or ""
+    qs = {"ano": ano, "mes": mes, "periodo": qual, **({"empresa": empresa} if empresa else {})}
+    return render_template(
+        "analisesps_folha_diaristas_complementar.html", aba="folha", subaba="diaristas",
+        grupos=subtelas_agrupadas(), montado=montado, erro=erro, qs=qs,
+        rotulo_arquivo=geracao.rotulo_da_verba((montado or {}).get("verba") or ""),
+        ano=ano, mes=mes, qual=qual, empresa=empresa,
+        periodos=list(fd.PERIODOS.items()), ano_padrao=agora().date().year,
+        rotulos=fcomp.ROTULO_DO_GRUPO, a_descontar=_a_descontar_seguro(),
+        pode_operar=auth.pode_operar(), pode_gerar=auth.e_mestre(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""), nome=auth.nome_atual())
+
+
+@bp.route("/folha/diaristas/complementar/relatorio.<formato>")
+@exige_consulta
+def folha_diaristas_complementar_relatorio(formato: str):
+    from . import diaristas_complementar as dcomp, folha_complementar as fcomp
+    from . import folha_pagamento as fpg
+    if formato not in ("xlsx", "pdf"):
+        return render_template("analisesps_erro.html", titulo="Não encontrado",
+                               mensagem="Este formato de relatório não existe."), 404
+    try:
+        ano, mes, qual, empresa = _competencia_dos_diaristas(request.args)
+        montado = fcomp.montado_do_relatorio(dcomp.montar(ano, mes, qual, empresa))
+        return _resposta_do_relatorio(montado, fpg.conta_por_obra(), formato)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou o relatório da complementar das diárias")
+        return render_template("analisesps_erro.html", titulo="Relatório da complementar",
+                               mensagem=f"Não foi possível gerar o relatório: {e}"), 500
+
+
+@bp.route("/api/folha/diaristas/complementar/selecao", methods=["POST"])
+@exige_operador
+def folha_diaristas_complementar_selecao():
+    from . import diaristas_complementar as dcomp
+    dados = request.get_json(silent=True) or {}
+    ano, mes, qual, empresa = _competencia_dos_diaristas(dados)
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    return {"ok": True, **dcomp.salvar_selecao(ano, mes, qual, dados.get("decisoes") or [],
+                                                empresa=empresa, quem=quem)}
+
+
+@bp.route("/api/folha/diaristas/complementar/a-descontar", methods=["POST"])
+@exige_operador
+def folha_diaristas_complementar_a_descontar():
+    from . import diaristas_complementar as dcomp, folha_complementar as fcomp
+    dados = request.get_json(silent=True) or {}
+    ano, mes, qual, empresa = _competencia_dos_diaristas(dados)
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        novos = fcomp.guardar_a_descontar(dcomp.montar(ano, mes, qual, empresa), quem=quem)
     except fcomp.ErroDaComplementar as e:
         return {"ok": False, "erro": str(e)}, 400
     return {"ok": True, "novos": novos}
@@ -8340,7 +8485,7 @@ def tela_comprovantes():
 
     return render_template(
         "analisesps_comprovantes.html", aba="comprovantes", base=base,
-        historico=historico, andamento=tarefas.estado(),
+        historico=historico, andamento=tarefas.estado("comprovantes"),
         por_leva=comprovantes.POR_LEVA,
         maximo_mb=comprovantes.MAXIMO_POR_ARQUIVO // (1024 * 1024),
         maximo_arquivos=comprovantes.MAXIMO_DE_ARQUIVOS,
@@ -8455,7 +8600,7 @@ def estado_comprovantes():
         lotes = comprovantes.historico(quantos=5)
     except Exception:  # noqa: BLE001 — migração ainda não aplicada
         return {"ok": False, "rodando": False, "lotes": []}
-    andamento = tarefas.estado()
+    andamento = tarefas.estado("comprovantes")       # a pista dela (migração 056)
     return {
         "ok": True,
         "rodando": bool(andamento.get("rodando")),
@@ -8491,16 +8636,28 @@ def tela_bradesco():
         if not colado.strip():
             erro = "Cole o texto da tela de operações do Bradesco."
         else:
+            # Guarda o texto e abre a conferência por ENDEREÇO (11/11/2026): recarregar
+            # a resposta de um formulário fazia o navegador perguntar se reenviava.
+            # Ver `bradesco.guardar_colado`.
             try:
-                resultado = bradesco.cruzar_tudo(colado, _candidatas_bradesco(),
-                                                 foco_agendados=foco)
-            except Exception as e:  # noqa: BLE001
-                logger.exception("Análise de SPs: falhou cruzar o extrato")
-                erro = str(e)
+                codigo = bradesco.guardar_colado(colado, foco, quem=auth.nome_atual() or "")
+                return redirect(url_for("analisesps.tela_bradesco", c=codigo))
+            except Exception:  # noqa: BLE001 — sem guardar, confere na hora como antes
+                logger.exception("Análise de SPs: não consegui guardar o extrato colado")
+                resultado, erro = _conferir_bradesco(colado, foco)
+    elif request.args.get("c"):
+        guardado = bradesco.ler_colado(request.args.get("c"))
+        if guardado is None:
+            erro = ("Esta conferência não está mais guardada (os textos ficam "
+                    f"{bradesco.DIAS_DO_COLADO} dias). Cole o extrato de novo.")
+        else:
+            colado, foco = guardado.get("texto") or "", bool(guardado.get("foco"))
+            resultado, erro = _conferir_bradesco(colado, foco)
 
     return render_template(
         "analisesps_bradesco.html", aba="bradesco", base=base,
         colado=colado, resultado=resultado, erro=erro, foco=foco,
+        numeros=bradesco.resumo(resultado) if resultado else None,
         # As colunas vêm do módulo que monta a linha — ver o comentário grande
         # em `bradesco.py`. Escritas no template, elas já divergiram uma vez e
         # a tela ficou com 47 linhas em branco.
@@ -8509,6 +8666,16 @@ def tela_bradesco():
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
+
+
+def _conferir_bradesco(colado: str, foco: bool) -> tuple:
+    """(resultado, erro) da conferência — com os status de AGORA."""
+    from . import bradesco
+    try:
+        return bradesco.cruzar_tudo(colado, _candidatas_bradesco(), foco_agendados=foco), None
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Análise de SPs: falhou cruzar o extrato")
+        return None, str(e)
 
 
 def _candidatas_bradesco() -> list[dict]:

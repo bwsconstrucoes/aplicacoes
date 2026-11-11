@@ -495,6 +495,9 @@ def _linha_pix(op, reg, classe, conf, alertas) -> dict:
         "Vencimento": reg.get("vencimento", ""), "Conta (SP)": reg.get("conta", ""),
         "Diferença": _diff(op.get("valor_num", 0), reg) if reg else "",
         "Alertas": " · ".join(a for a in alertas if a),
+        # Para a seleção e os totais da tela (11/11/2026) — não são colunas.
+        "_valor_banco": float(op.get("valor_num", 0) or 0),
+        "_valor_sp": float(reg.get("valor_num", 0) or 0) if reg else 0.0,
     }
 
 
@@ -524,18 +527,19 @@ COLUNAS_BOLETO = [
     ("Alertas", "Alertas"), ("Empresa", "Empresa"),
     ("Conta", "Conta (Bradesco)"), ("Valor", "Valor (Bradesco)"),
     ("SP no banco", "SP (Bradesco)"), ("SP", "SP"),
+    ("Agendamento", "Status Agend"), ("Status Pgt", "Status Pgt"),
     ("Credor", "Credor (SP)"), ("Validação", "Validação"),
     ("Cód. barras", "Cód. barras"), ("Vencimento", "Vencimento"),
-    ("Status Pgt", "Status Pgt"), ("Diferença", "Diferença"),
+    ("Diferença", "Diferença"),
 ]
 
 COLUNAS_PIX = [
     ("Alertas", "Alertas"), ("Empresa", "Empresa"),
     ("Conta", "Conta (Bradesco)"), ("Valor", "Valor (Bradesco)"),
     ("Nome no banco", "Nome (Bradesco)"), ("SP", "SP"),
+    ("Agendamento", "Status Agend"), ("Status Pgt", "Status Pgt"),
     ("Credor", "Credor (SP)"), ("Classificação", "Classificação"),
-    ("Confiança", "Confiança"), ("Status Pgt", "Status Pgt"),
-    ("Diferença", "Diferença"),
+    ("Confiança", "Confiança"), ("Diferença", "Diferença"),
 ]
 
 
@@ -558,6 +562,9 @@ def _linha_doc(op, reg, classe, conf, alertas) -> dict:
         "Vencimento": reg.get("vencimento", ""), "Conta (SP)": reg.get("conta", ""),
         "Diferença": _diff(op.get("valor_num", 0), reg) if reg else "",
         "Alertas": " · ".join(a for a in alertas if a),
+        # Para a seleção e os totais da tela (11/11/2026) — não são colunas.
+        "_valor_banco": float(op.get("valor_num", 0) or 0),
+        "_valor_sp": float(reg.get("valor_num", 0) or 0) if reg else 0.0,
     }
 
 
@@ -653,3 +660,140 @@ def cruzar_tudo(raw: str, df, foco_agendados: bool = True) -> dict:
 def cruzar(raw: str, tipo: str, df):   # compat. antiga
     r = cruzar_tudo(raw, df)
     return r["boletos"] + r["pix"]
+
+# ---------------------------------------------------------------------------
+# OS NÚMEROS DA CONFERÊNCIA (11/11/2026). O dono: *"não tem KPIs, totalizados,
+# somatórios, por conta também. Tudo isso facilita a aprovação."* Somados das
+# operações coladas (o valor do BANCO): quantas, quanto, quantas acharam a SP, quais
+# pedem olho, e a divisão por status de agendamento e por conta de débito.
+# ---------------------------------------------------------------------------
+def pede_conferencia(linha: dict) -> bool:
+    """A operação que pede olho: sem SP, com a validação/classificação fora de "OK",
+    ou com um alerta de status (⚠️ já pago, pago parcial…). A frase que só explica
+    o acerto ("Nº da SP e código de barras conferem") não conta."""
+    if not linha.get("SP"):
+        return True
+    classe = str(linha.get("Validação") or linha.get("Classificação") or "").upper()
+    if classe and not (classe.startswith("OK") or classe.startswith("NOME OK")):
+        return True
+    return "⚠" in str(linha.get("Alertas") or "")
+
+
+ORDEM_DO_AGENDAMENTO = ["Agendar", "Agendado", "Falha Agendar", "Verificar", "Pago", ""]
+
+
+def resumo(resultado: dict) -> dict:
+    """PURA. Os KPIs, o status de agendamento e as contas das operações coladas."""
+    linhas = list((resultado or {}).get("boletos") or []) + list((resultado or {}).get("pix") or [])
+
+    def soma(itens):
+        return round(sum(float(i.get("_valor_banco") or 0) for i in itens), 2)
+
+    com_sp = [i for i in linhas if i.get("SP")]
+    sem_sp = [i for i in linhas if not i.get("SP")]
+    com_alerta = [i for i in linhas if pede_conferencia(i)]
+    agend: dict = {}
+    for i in com_sp:
+        # O status de agendamento só existe para SP em "Pagar"; a já paga conta como
+        # "Pago" (é o que o extrato confirma).
+        chave = str(i.get("Status Agend") or "") or (
+            "Pago" if str(i.get("Status Pgt") or "").strip().lower().startswith("pago") else "")
+        agend.setdefault(chave, []).append(i)
+    por_agend = [{"status": k or "Sem agendamento", "quantos": len(agend[k]),
+                  "total": soma(agend[k])}
+                 for k in ORDEM_DO_AGENDAMENTO + sorted(set(agend) - set(ORDEM_DO_AGENDAMENTO))
+                 if k in agend]
+    contas: dict = {}
+    for i in linhas:
+        chave = str(i.get("Conta (Bradesco)") or "").strip() or "(sem conta)"
+        c = contas.setdefault(chave, {"conta": chave, "empresa": i.get("Empresa") or "",
+                                      "quantos": 0, "total": 0.0, "com_sp": 0, "sem_sp": 0,
+                                      "com_alerta": 0})
+        c["quantos"] += 1
+        c["total"] = round(c["total"] + float(i.get("_valor_banco") or 0), 2)
+        c["com_sp" if i.get("SP") else "sem_sp"] += 1
+        c["com_alerta"] += 1 if pede_conferencia(i) else 0
+    return {
+        "quantos": len(linhas), "total": soma(linhas),
+        "boletos": len((resultado or {}).get("boletos") or []),
+        "pix": len((resultado or {}).get("pix") or []),
+        "com_sp": len(com_sp), "total_com_sp": soma(com_sp),
+        "sem_sp": len(sem_sp), "total_sem_sp": soma(sem_sp),
+        "com_alerta": len(com_alerta), "total_com_alerta": soma(com_alerta),
+        "por_agendamento": por_agend,
+        "por_conta": sorted(contas.values(), key=lambda c: -c["total"]),
+    }
+
+
+# ---------------------------------------------------------------------------
+# O TEXTO COLADO FICA GUARDADO, E A CONFERÊNCIA ABRE POR ENDEREÇO (11/11/2026).
+# O dono: *"por que aparece isso toda hora na tela Bradesco? Para exibir esta
+# página, o Firefox precisa enviar informações que repetirão qualquer ação…"* A
+# conferência era a RESPOSTA de um formulário enviado: qualquer recarga (a tela se
+# atualiza sozinha quando uma sincronização termina, a barra de ações depois de
+# agendar, o F5) fazia o navegador perguntar se reenviava. Agora o "Conferir" guarda
+# o texto (`analisesps.meta`, chave `bradesco.colado.<código>`) e manda para
+# `/bradesco?c=<código>`; recarregar só refaz a conferência, com os status de agora.
+# Fica guardado por DIAS_DO_COLADO dias; os mais velhos saem a cada conferência.
+# ---------------------------------------------------------------------------
+PREFIXO_DO_COLADO = "bradesco.colado."
+DIAS_DO_COLADO = 3
+
+
+def guardar_colado(texto: str, foco: bool, quem: str = "") -> str:
+    import json
+    import secrets
+    from .db import conexao
+    from .horario import agora
+    from .sincronizacao import _meta_gravar
+    codigo = secrets.token_urlsafe(9)
+    with conexao() as conn:
+        _meta_gravar(conn, PREFIXO_DO_COLADO + codigo, json.dumps(
+            {"texto": texto, "foco": bool(foco), "quem": str(quem or "")[:80],
+             "quando": agora().isoformat(timespec="seconds")}, ensure_ascii=False))
+    _esquecer_colados_velhos()
+    return codigo
+
+
+def ler_colado(codigo: str) -> dict | None:
+    import json
+    from .db import consultar_um
+    codigo = "".join(c for c in str(codigo or "") if c.isalnum() or c in "-_")[:40]
+    if not codigo:
+        return None
+    linha = consultar_um("SELECT valor FROM analisesps.meta WHERE chave = ?",
+                         (PREFIXO_DO_COLADO + codigo,))
+    try:
+        dado = json.loads(linha[0]) if linha and linha[0] else None
+    except ValueError:
+        return None
+    return dado if isinstance(dado, dict) else None
+
+
+def _esquecer_colados_velhos() -> None:
+    import datetime as _dt
+    import json
+    from .db import conexao, consultar
+    from .horario import agora
+    try:
+        limite = agora() - _dt.timedelta(days=DIAS_DO_COLADO)
+        velhos = []
+        for chave, valor in consultar("SELECT chave, valor FROM analisesps.meta "
+                                      " WHERE chave LIKE ?", (PREFIXO_DO_COLADO + "%",)):
+            try:
+                quando = _dt.datetime.fromisoformat(json.loads(valor).get("quando"))
+                if quando.tzinfo is None and limite.tzinfo is not None:
+                    quando = quando.replace(tzinfo=limite.tzinfo)
+                if quando < limite:
+                    velhos.append(chave)
+            except Exception:  # noqa: BLE001 — ilegível também sai
+                velhos.append(chave)
+        if velhos:
+            with conexao() as conn:
+                for chave in velhos:
+                    conn.execute("DELETE FROM analisesps.meta WHERE chave = ?", (chave,))
+                conn.commit()
+    except Exception:  # noqa: BLE001 — limpar é conforto; a conferência segue
+        import logging
+        logging.getLogger("analisesps.bradesco").exception(
+            "Bradesco: não consegui apagar os textos colados antigos")

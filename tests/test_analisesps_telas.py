@@ -1870,6 +1870,19 @@ def test_a_tela_de_codigos_tem_o_botao_de_agendar(app_codigos):
         assert f'data-valor="{valor}"' in html, f"faltou {valor}"
 
 
+def test_a_tela_de_codigos_mostra_o_STATUS_DO_AGENDAMENTO(app, monkeypatch):
+    """11/11/2026: *"na tela dos QR code, Códigos de pagamento, não é exibido o
+    status do agendamento do registro."*"""
+    from app.apps.analisesps import consultas, pagamentos
+    monkeypatch.setattr(consultas, "uma", lambda i: linha_falsa(
+        i, forma_pagamento="Pix", info_pgt="Chave Pix: x@y.com", status_pgt="Pagar",
+        status_agend="Agendado" if i == "1" else ""))
+    monkeypatch.setattr(pagamentos, "gerar_pix", lambda *a, **k: ("QRFALSO", "carga-pix"))
+    html = como(app, SENHA_OPERADOR).get("/analisesps/codigos?id=1&id=2").get_data(as_text=True)
+    assert '<span class="selo agendado">Agendado</span>' in html
+    assert "sem agendamento" in html
+
+
 def test_as_sps_ja_chegam_marcadas_na_tela_de_codigos(app_codigos):
     """Quem chegou aqui foi porque escolheu estas SPs. Obrigar a marcar de
     novo seria repetir o trabalho que acabou de ser feito."""
@@ -2413,7 +2426,7 @@ def test_bradesco_abre_pedindo_o_extrato(app):
 
 def test_bradesco_sem_texto_avisa(app):
     html = como(app, SENHA_CONSULTA).post(
-        "/analisesps/bradesco", data={"extrato": "  "}).get_data(as_text=True)
+        "/analisesps/bradesco", data={"extrato": "  "}, follow_redirects=True).get_data(as_text=True)
     assert "Cole o texto" in html
 
 
@@ -2435,7 +2448,7 @@ def test_bradesco_cruza_o_que_foi_colado(app, monkeypatch):
             "SP OK", 99, [])],
         "pix": []})
     html = como(app, SENHA_CONSULTA).post(
-        "/analisesps/bradesco", data={"extrato": "qualquer coisa"}).get_data(as_text=True)
+        "/analisesps/bradesco", data={"extrato": "qualquer coisa"}, follow_redirects=True).get_data(as_text=True)
     assert "1384831053" in html
     assert "6.750,00" in html
     assert "ACME" in html
@@ -2498,7 +2511,7 @@ def test_bradesco_DE_PONTA_A_PONTA_desenha_o_que_o_codigo_produz(app, monkeypatc
          "forma_pagamento": "Boleto"}])
 
     html = como(app, SENHA_CONSULTA).post(
-        "/analisesps/bradesco", data={"extrato": EXTRATO_COLADO}
+        "/analisesps/bradesco", data={"extrato": EXTRATO_COLADO}, follow_redirects=True
         ).get_data(as_text=True)
 
     assert "1 operação(ões)" in html          # um boleto
@@ -2506,6 +2519,58 @@ def test_bradesco_DE_PONTA_A_PONTA_desenha_o_que_o_codigo_produz(app, monkeypatc
     assert "OK (ID+barras)" in html, "a coluna da validação saiu vazia"
     assert "SEM MATCH" in html, "a tabela do Pix saiu vazia"
     assert "BWS CONSTRUCOES LTDA" in html, "a coluna da empresa saiu vazia"
+
+
+def test_bradesco_mostra_o_AGENDAMENTO_os_TOTAIS_e_deixa_SELECIONAR(app, monkeypatch):
+    """11/11/2026: *"não aparece o status do agendamento de cada registro (…) os
+    registros serem selecionados e poder alterar esses status (…) não tem KPIs,
+    totalizados, somatórios, por conta também."*"""
+    from app.apps.analisesps import web
+    monkeypatch.setattr(web, "_candidatas_bradesco", lambda: [
+        {"id": "1384831053", "credor": "ACME MATERIAIS", "valor_num": 6750.0,
+         "status_agend": "Agendado", "status_pgt": "Pagar",
+         "codigo_barras": "34191790010104351004", "vencimento": "20/09/2026",
+         "conta": "", "centro_custo": "", "forma_pagamento": "Boleto"}])
+    html = como(app, SENHA_OPERADOR).post(
+        "/analisesps/bradesco", data={"extrato": EXTRATO_COLADO}, follow_redirects=True).get_data(as_text=True)
+    assert '<span class="selo agendado">Agendado</span>' in html, "a coluna Agendamento"
+    assert "Por conta de débito" in html and "1251 | 0002541-0" in html
+    assert "7.950,00" in html, "o total das duas operações (6.750 + 1.200)"
+    assert 'class="marca" value="1384831053"' in html, "a linha com SP se marca"
+    assert 'id="barra-acoes"' in html and 'data-valor="Agendar"' in html
+
+
+@pytest.mark.banco
+def test_bradesco_CONFERIR_abre_por_endereco_e_RECARREGAR_nao_reenvia(app, monkeypatch,
+                                                                      banco_analisesps):
+    """11/11/2026: *"por que aparece isso toda hora na tela Bradesco? Para exibir
+    esta página, o Firefox precisa enviar informações que repetirão qualquer ação"*.
+    O Conferir guarda o texto e redireciona; o endereço refaz a conferência."""
+    from app.apps.analisesps import web
+    monkeypatch.setattr(web, "_candidatas_bradesco", lambda: [])
+    c = como(app, SENHA_OPERADOR)
+    r = c.post("/analisesps/bradesco", data={"extrato": EXTRATO_COLADO, "foco": "1"})
+    assert r.status_code == 302 and "c=" in r.headers["Location"]
+    for _ in range(2):                         # recarregar = abrir o endereço de novo
+        html = c.get(r.headers["Location"]).get_data(as_text=True)
+        assert "Pix e transferências" in html and "JOSE THIAGO DA SILVA" in html
+    assert "não está mais guardada" in c.get("/analisesps/bradesco?c=naoexiste").get_data(as_text=True)
+
+
+def test_bradesco_os_numeros_somam_por_status_e_por_conta():
+    from app.apps.analisesps import bradesco as b
+    r = b.resumo({"boletos": [
+        {"SP": "1", "Status Agend": "Agendar", "Status Pgt": "Pagar", "_valor_banco": 100.0,
+         "Conta (Bradesco)": "A", "Validação": "OK (ID+barras)",
+         "Alertas": "Nº da SP e código de barras conferem."},
+        {"SP": "2", "Status Agend": "", "Status Pgt": "Pago", "_valor_banco": 50.0,
+         "Conta (Bradesco)": "B", "Alertas": "⚠️ JÁ PAGO"}],
+        "pix": [{"SP": "", "_valor_banco": 30.0, "Conta (Bradesco)": "A", "Alertas": "x"}]})
+    assert (r["quantos"], r["total"], r["com_sp"], r["sem_sp"], r["com_alerta"]) == (3, 180.0, 2, 1, 2)
+    assert [(a["status"], a["quantos"], a["total"]) for a in r["por_agendamento"]] == [
+        ("Agendar", 1, 100.0), ("Pago", 1, 50.0)]
+    assert [(c["conta"], c["quantos"], c["total"]) for c in r["por_conta"]] == [
+        ("A", 2, 130.0), ("B", 1, 50.0)]
 
 
 def test_bradesco_nao_conclui_no_lugar_de_quem_le(app, monkeypatch):
@@ -2516,7 +2581,7 @@ def test_bradesco_nao_conclui_no_lugar_de_quem_le(app, monkeypatch):
     monkeypatch.setattr(bradesco, "cruzar_tudo",
                         lambda raw, df, foco_agendados=True: {"boletos": [], "pix": []})
     html = como(app, SENHA_CONSULTA).post(
-        "/analisesps/bradesco", data={"extrato": "x"}).get_data(as_text=True)
+        "/analisesps/bradesco", data={"extrato": "x"}, follow_redirects=True).get_data(as_text=True)
     assert "não quer dizer pagamento indevido" in html
 
 
@@ -3963,7 +4028,7 @@ def test_a_tela_do_bradesco_diz_quando_nao_reconhece_nada(app_bradesco):
     leu, se travou, ou se não havia o que conferir."""
     html = como(app_bradesco, SENHA_OPERADOR).post(
         "/analisesps/bradesco",
-        data={"extrato": "isto não é um extrato"}).get_data(as_text=True)
+        data={"extrato": "isto não é um extrato"}, follow_redirects=True).get_data(as_text=True)
     assert "Não reconheci nenhuma operação" in html
     assert "agência | conta" in html, "tem de dizer o que falta na linha"
     assert "linha(s)" in html, "tem de dizer quanto foi colado"
@@ -3986,8 +4051,8 @@ def test_a_caixinha_de_foco_desmarcada_desliga_o_foco(app_bradesco):
     try:
         cliente = como(app_bradesco, SENHA_OPERADOR)
         cliente.post("/analisesps/bradesco",
-                     data={"extrato": EXTRATO_DO_DONO, "foco": "1"})
-        cliente.post("/analisesps/bradesco", data={"extrato": EXTRATO_DO_DONO})
+                     data={"extrato": EXTRATO_DO_DONO, "foco": "1"}, follow_redirects=True)
+        cliente.post("/analisesps/bradesco", data={"extrato": EXTRATO_DO_DONO}, follow_redirects=True)
     finally:
         bradesco.cruzar_tudo = original
 

@@ -2,21 +2,36 @@
 {% block titulo %}Bradesco — Análise de SPs{% endblock %}
 {% block classe_corpo %}sem-filtros{% endblock %}
 
-{% macro tabela(titulo, itens, colunas) %}
+{% macro tabela(titulo, itens, colunas, grupo) %}
   <div class="cartao">
     <div class="cartao-cab">
       <h3>{{ titulo }}</h3>
-      <small>{{ itens|length }} operação(ões)</small>
+      <small>{{ itens|length }} operação(ões) ·
+        {{ itens|sum(attribute='_valor_banco')|moeda }}</small>
     </div>
     {% if itens %}
       <div class="tabela-rolagem">
         <table class="sps">
           <thead>
-            <tr>{% for rotulo, _ in colunas %}<th>{{ rotulo }}</th>{% endfor %}</tr>
+            <tr>
+              {# A SELEÇÃO (11/11/2026): marca as linhas que acharam a SP e usa a
+                 barra do alto — agendar, desagendar, marcar pago, Omie… #}
+              <th class="marca"><input type="checkbox" class="marcar-todas" data-grupo="{{ grupo }}"
+                  aria-label="Marcar todas as de {{ titulo }}"></th>
+              {% for rotulo, _ in colunas %}<th>{{ rotulo }}</th>{% endfor %}</tr>
           </thead>
           <tbody>
             {% for i in itens %}
               <tr>
+                <td class="marca">
+                  {% if i.SP %}
+                    <input type="checkbox" class="marca" value="{{ i.SP }}" data-grupo="{{ grupo }}"
+                           data-chave="{{ grupo }}-{{ loop.index }}-{{ i.SP }}"
+                           data-valor="{{ i._valor_sp or i._valor_banco }}"
+                           data-conta="{{ i['Conta (Bradesco)'] }}"
+                           aria-label="Marcar a SP {{ i.SP }}">
+                  {% endif %}
+                </td>
                 {% for _, campo in colunas %}
                   {% set v = i.get(campo) %}
                   <td class="cortar" title="{{ v }}">
@@ -24,6 +39,10 @@
                       <a href="{{ url_for('analisesps.detalhe', sp_id=v) }}">{{ v }}</a>
                     {% elif campo == 'Alertas' and v %}
                       <span class="selo falha">{{ v if v is string else v|join(' · ') }}</span>
+                    {% elif campo == 'Status Agend' %}
+                      {% set ag = (v or '')|lower %}
+                      {% if ag %}<span class="selo {{ 'agendar' if ag == 'agendar' else ('agendado' if ag == 'agendado' else ('falha' if 'falha' in ag else 'verificar')) }}">{{ v }}</span>
+                      {% elif i.SP %}<span class="cartao-dica">—</span>{% endif %}
                     {% else %}{{ v if v is not none else '' }}{% endif %}
                   </td>
                 {% endfor %}
@@ -39,13 +58,20 @@
 {% endmacro %}
 
 {% block conteudo %}
+{% if resultado and (resultado.boletos or resultado.pix) %}
+  {# A BARRA DE AÇÕES das Solicitações (11/11/2026): vale para as linhas marcadas
+     abaixo. Depois de agir, a conferência é refeita (`recarregarTela`). #}
+  {% set origem = 'bradesco' %}
+  {% set com_pgt = true %}
+  {% include "analisesps_barra_acoes.html" %}
+{% endif %}
 <h2>Conferência do Bradesco <small>extrato × SPs</small></h2>
 
 {% if erro %}<div class="aviso erro">{{ erro }}</div>{% endif %}
 
 <div class="cartao">
   <div class="cartao-cab"><h3>Cole o extrato</h3></div>
-  <form method="post">
+  <form method="post" id="form-extrato">
     <textarea name="extrato" rows="10" class="campo-largo"
               placeholder="Cole aqui a tela Detalhes das Operações do Bradesco. Pode misturar boleto, Pix e outros.">{{ colado }}</textarea>
     <div style="display:flex; gap:12px; align-items:center; margin-top:10px; flex-wrap:wrap">
@@ -89,9 +115,59 @@
      nomes em português ("Valor (Bradesco)", "Credor (SP)"): nenhuma chave
      batia, e a tela mostrava "47 operação(ões)" com 47 linhas EM BRANCO.
      Campo que aparece em dois arquivos vira dois nomes diferentes. #}
-  {{ tabela('Boletos', resultado.boletos, colunas_boleto) }}
+  {% set r = numeros %}
+  {# OS NÚMEROS (11/11/2026): *"não tem KPIs, totalizados, somatórios, por conta
+     também. Tudo isso facilita a aprovação."* Do valor do BANCO. #}
+  <div class="kpis">
+    <div class="kpi estatico"><div class="kpi-rotulo">Operações · {{ r.boletos }} boleto(s) · {{ r.pix }} Pix</div>
+      <div class="kpi-valor">{{ r.total|moeda }}</div><div class="cartao-dica">{{ r.quantos }} operação(ões)</div></div>
+    <div class="kpi estatico"><div class="kpi-rotulo">Com SP encontrada · {{ r.com_sp }}</div>
+      <div class="kpi-valor">{{ r.total_com_sp|moeda }}</div></div>
+    <div class="kpi estatico {{ 'ambar' if r.sem_sp }}"><div class="kpi-rotulo">Sem SP · {{ r.sem_sp }}</div>
+      <div class="kpi-valor">{{ r.total_sem_sp|moeda }}</div></div>
+    <div class="kpi estatico {{ 'vermelho' if r.com_alerta }}"><div class="kpi-rotulo">Pedem conferência · {{ r.com_alerta }}</div>
+      <div class="kpi-valor">{{ r.total_com_alerta|moeda }}</div></div>
+  </div>
 
-  {{ tabela('Pix e transferências', resultado.pix, colunas_pix) }}
+  <div class="cartao">
+    <div class="cartao-cab"><h3>Por status de agendamento</h3><small>das operações com SP</small></div>
+    <div class="faixa-agend">
+      {% for a in r.por_agendamento %}
+        {% set ag = a.status|lower %}
+        <span class="chip-agend"><span class="selo {{ 'agendar' if ag == 'agendar' else ('agendado' if ag == 'agendado' else ('falha' if 'falha' in ag else ('pago' if ag == 'pago' else 'verificar'))) }}">{{ a.status }}</span>
+          <b>{{ a.quantos }}</b> · {{ a.total|moeda }}</span>
+      {% else %}<span class="cartao-dica">Nenhuma operação achou a SP.</span>{% endfor %}
+    </div>
+  </div>
+
+  <div class="cartao">
+    <div class="cartao-cab"><h3>Por conta de débito</h3><small>{{ r.por_conta|length }} conta(s)</small></div>
+    <div class="tabela-rolagem livre"><table class="sps">
+      <thead><tr><th>Conta</th><th>Empresa</th><th class="num">Operações</th><th class="num">Com SP</th>
+        <th class="num">Sem SP</th><th class="num">Pedem conferência</th><th class="num">Total</th></tr></thead>
+      <tbody>
+        {% for c in r.por_conta %}
+          <tr><td><b>{{ c.conta }}</b></td><td>{{ c.empresa }}</td><td class="num">{{ c.quantos }}</td>
+            <td class="num">{{ c.com_sp }}</td><td class="num">{{ c.sem_sp or '—' }}</td>
+            <td class="num">{{ c.com_alerta or '—' }}</td><td class="num"><b>{{ c.total|moeda }}</b></td></tr>
+        {% endfor %}
+      </tbody>
+      <tfoot><tr><th>Total</th><th></th><th class="num">{{ r.quantos }}</th><th class="num">{{ r.com_sp }}</th>
+        <th class="num">{{ r.sem_sp }}</th><th class="num">{{ r.com_alerta }}</th><th class="num">{{ r.total|moeda }}</th></tr></tfoot>
+    </table></div>
+  </div>
+
+  {{ tabela('Boletos', resultado.boletos, colunas_boleto, 'boletos') }}
+
+  {{ tabela('Pix e transferências', resultado.pix, colunas_pix, 'pix') }}
+
+  <style>
+    .faixa-agend { display:flex; gap:10px; flex-wrap:wrap; }
+    .chip-agend { display:inline-flex; gap:6px; align-items:center; padding:6px 10px;
+      border:1px solid var(--borda); border-radius:8px; background:#fff; font-size:13px; }
+  </style>
+  {# Recarregar refaz a conferência: a tela abre por endereço (`?c=`), não pela
+     resposta do formulário — ver `bradesco.guardar_colado`. #}
 
   <p class="cartao-dica">
     Uma operação sem SP encontrada não quer dizer pagamento indevido — pode ser

@@ -14,7 +14,7 @@
 {% block titulo %}Ponto — {{ {
   "ponto_hoje": "Hoje", "ponto_espelho": "Espelho", "ponto_pendencias": "Validações",
   "ponto_mosaico": "Mosaico", "ponto_fotos": "Fotos de cadastro", "ponto_pessoas": "Pessoas", "ponto_banco": "Banco de horas", "ponto_relatorios": "Relatórios", "ponto_alertas": "Alertas",
-  "ponto_qualidade": "Qualidade",
+  "ponto_qualidade": "Qualidade", "ponto_painel": "Painel",
   "ponto_config": "Configuração"}.get(aba_ponto, "Ponto") }} — ERP BWS{% endblock %}
 {% block classe_corpo %}{% if aba_ponto in ("ponto_banco", "ponto_rondas") %}sem-filtros{% endif %}{% endblock %}
 
@@ -282,6 +282,35 @@
     A foto de cadastro nasce sozinha: é a <b>primeira foto boa</b> da pessoa. Se ela for de teste, de outra
     pessoa ou do chão, as batidas seguintes passam a "não conferir" — é assim que a errada aparece aqui.
     <br><a class="elo" href="/erp/ponto/mosaico">voltar ao mosaico</a></div>
+
+{% elif aba_ponto == "ponto_painel" %}
+  {# O PAINEL (11/11/2026, o dono: "um dashboard para visualizar dentro do mês (…) poder comparar um período com
+     outro: esta quinzena com a anterior, um mês com o outro (…) se uma obra piorou, se manteve"). #}
+  <div class="filtros-cab"><h2>Painel</h2></div>
+  <div class="campo"><label>Comparar</label>
+    <div class="qd-atalhos">
+      <button class="chip" type="button" data-pn-atalho="mes">Este mês × o anterior</button>
+      <button class="chip" type="button" data-pn-atalho="quinzena">Esta quinzena × a anterior</button>
+      <button class="chip" type="button" data-pn-atalho="mes-anterior">Mês passado × o de antes</button>
+      <button class="chip" type="button" data-pn-atalho="quinzena-anterior">Quinzena passada × a de antes</button></div></div>
+  <h3 class="qd-grupo"><span class="pn-marca a" aria-hidden="true"></span> Período</h3>
+  <div class="qd-par">
+    <div class="campo"><label for="pn-de">De</label><input type="date" id="pn-de"></div>
+    <div class="campo"><label for="pn-ate">Até</label><input type="date" id="pn-ate"></div></div>
+  <h3 class="qd-grupo"><span class="pn-marca b" aria-hidden="true"></span> Comparar com
+    <label class="opcao" style="display:inline-flex; margin-left:6px"><input type="checkbox" id="pn-comparar" checked><span class="rotulo">sim</span></label></h3>
+  <div class="qd-par" id="pn-antes">
+    <div class="campo"><label for="pn-antes-de">De</label><input type="date" id="pn-antes-de"></div>
+    <div class="campo"><label for="pn-antes-ate">Até</label><input type="date" id="pn-antes-ate"></div></div>
+  <div class="campo" style="margin-top:10px"><label for="pn-obra">Obra</label>
+    <select id="pn-obra"><option value="">Todas as minhas obras</option></select></div>
+  <button class="btn" id="pn-ver" type="button" style="width:100%; margin-top:14px">Montar o painel</button>
+  <div class="cartao-dica" style="margin-top:16px">
+    As contas são as da tela <b>Qualidade</b>: <b>dia em dia</b> é o dia de trabalho com todas as batidas feitas na
+    hora; <b>corrigida</b> é a batida que entrou por ajuste; a <b>nota</b> vai de 0 a 100. O período vai até
+    <b>ontem</b> (hoje ainda está acontecendo). Quando os dois períodos têm tamanhos diferentes, a comparação das
+    quantidades é feita <b>por dia</b>. Uma obra que mexeu até 3 pontos na nota “manteve”.
+  </div>
 
 {% elif aba_ponto == "ponto_qualidade" %}
   <div class="filtros-cab"><h2>Qualidade</h2></div>
@@ -976,6 +1005,60 @@
   </div>
   {% endif %}
   <div id="a-enviado"></div>
+</div>
+
+{% elif aba_ponto == "ponto_painel" %}
+{# ---------------------------------------------------------------- PAINEL #}
+<style>
+  .pn-raiz { --pn-a:#2a78d6; --pn-a2:#eb6834; --pn-b:#9aa3ad; --pn-bom:#0ca30c; --pn-aviso:#fab219;
+             --pn-serio:#ec835a; --pn-critico:#d03b3b; --pn-grade:#e6e9ef; }
+  .pn-marca { display:inline-block; width:10px; height:10px; border-radius:2px; vertical-align:baseline; }
+  .pn-marca.a { background:#2a78d6; } .pn-marca.b { background:#9aa3ad; }
+  .pn-cartoes { display:grid; grid-template-columns:repeat(auto-fill, minmax(190px, 1fr)); gap:10px; margin:0 0 14px; }
+  .pn-cartao { background:var(--fundo-cartao, #fff); border:1px solid var(--borda); border-radius:10px; padding:12px 14px; }
+  .pn-cartao .r { font-size:12.5px; color:var(--tinta-suave, #5b6475); font-weight:600; }
+  .pn-cartao .v { font-size:26px; font-weight:700; color:var(--tinta); line-height:1.15; margin-top:4px;
+                  font-variant-numeric:tabular-nums; }
+  .pn-cartao .s { font-size:12.5px; color:var(--tinta-suave, #5b6475); margin-top:2px; }
+  .pn-delta { display:inline-block; font-size:12.5px; font-weight:700; margin-top:6px; color:var(--tinta-suave, #5b6475); }
+  .pn-delta.bom::before { content:""; display:inline-block; width:8px; height:8px; border-radius:50%; background:#0ca30c; margin-right:5px; }
+  .pn-delta.ruim::before { content:""; display:inline-block; width:8px; height:8px; border-radius:50%; background:#d03b3b; margin-right:5px; }
+  .pn-legenda { display:flex; flex-wrap:wrap; gap:14px; font-size:13px; color:var(--tinta-suave, #5b6475); margin:2px 0 8px; }
+  .pn-legenda span { display:inline-flex; align-items:center; gap:6px; }
+  .pn-legenda i { display:inline-block; width:12px; height:12px; border-radius:3px; }
+  .pn-legenda i.linha { height:0; border-top:2px dashed #9aa3ad; border-radius:0; width:16px; }
+  .pn-grafico { position:relative; }
+  .pn-grafico svg { display:block; width:100%; height:auto; }
+  .pn-dica { position:absolute; pointer-events:none; background:#14213A; color:#fff; font-size:12.5px; padding:6px 9px;
+             border-radius:6px; white-space:nowrap; z-index:5; display:none; }
+  .pn-tend { font-weight:700; font-size:12.5px; }
+  .pn-tend.PIOROU { color:#b42323; } .pn-tend.MELHOROU { color:#1d7a1d; } .pn-tend.MANTEVE, .pn-tend.NOVA, .pn-tend.SEM_DADOS { color:#5b6475; }
+</style>
+<div class="pn-raiz">
+<h2>Painel do ponto <small id="pn-sub"></small></h2>
+<div id="mensagem"></div>
+<div class="pn-legenda" id="pn-periodos"></div>
+<div class="pn-cartoes" id="pn-cartoes"><div class="vazio">Escolha os períodos na barra e aperte “Montar o painel”.</div></div>
+<div class="cartao">
+  <div class="cartao-cab"><h3>Batidas por dia</h3><small>as corretas e as corrigidas por ajuste; a linha é o período de comparação, dia a dia</small></div>
+  <div class="pn-legenda"><span><i style="background:#2a78d6"></i>corretas</span><span><i style="background:#eb6834"></i>corrigidas por ajuste</span>
+    <span id="pn-leg-b"><i class="linha"></i>comparação (total do dia)</span></div>
+  <div class="pn-grafico" id="pn-dias"></div>
+</div>
+<div class="cartao">
+  <div class="cartao-cab"><h3>Os dias de trabalho</h3><small>de cada 100 dias de trabalho, quantos ficaram em dia — e o que aconteceu com os outros</small></div>
+  <div class="pn-legenda"><span><i style="background:#0ca30c"></i>✓ em dia</span><span><i style="background:#fab219"></i>✎ com batida corrigida</span>
+    <span><i style="background:#ec835a"></i>… batida faltando</span><span><i style="background:#d03b3b"></i>✕ falta</span></div>
+  <div class="pn-grafico" id="pn-compo"></div>
+</div>
+<div class="cartao">
+  <div class="cartao-cab"><h3>As obras: melhorou, manteve ou piorou</h3><small>pela nota do ponto (0 a 100), do período de comparação para o período — as que pioraram primeiro</small></div>
+  <div class="pn-legenda" id="pn-obras-resumo"></div>
+  <div class="tabela-rolagem" style="max-height:none"><table><thead><tr>
+    <th class="sem-ordem">Obra</th><th class="sem-ordem">Pessoas</th><th class="sem-ordem">Nota: comparação → período</th>
+    <th class="sem-ordem">Diferença</th><th class="sem-ordem">Ponto em dia</th><th class="sem-ordem">% corrigidas</th>
+    <th class="sem-ordem">Faltas</th></tr></thead><tbody id="pn-obras"></tbody></table></div>
+</div>
 </div>
 
 {% elif aba_ponto == "ponto_qualidade" %}
@@ -6488,6 +6571,222 @@ if (els("a-gerar")) els("a-gerar").addEventListener("click", gerarAlertas);
 if (els("a-enviar")) els("a-enviar").addEventListener("click", enviarResumo);
 carregarAlertas();
 carregarResumo();
+
+{% elif aba_ponto == "ponto_painel" %}
+// ===========================================================================
+// O PAINEL DO PONTO (11/11/2026, core/indicadores.py). Dois períodos — o escolhido (azul) e o de comparação
+// (cinza) —, os números com a diferença, as batidas dia a dia, os dias de trabalho e as obras com a tendência.
+// ===========================================================================
+const PN = {dados: null, tentativas: 0};
+const pnIso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+function pnAtalho(qual) {
+  const h = new Date(), ontem = new Date(h.getFullYear(), h.getMonth(), h.getDate() - 1);
+  const ultimo = (a, m) => new Date(a, m + 1, 0);
+  const quinzena = d => d.getDate() <= 15 ? [new Date(d.getFullYear(), d.getMonth(), 1), new Date(d.getFullYear(), d.getMonth(), 15)]
+                                          : [new Date(d.getFullYear(), d.getMonth(), 16), ultimo(d.getFullYear(), d.getMonth())];
+  const antesDa = ([i]) => quinzena(new Date(i.getFullYear(), i.getMonth(), i.getDate() - 1));
+  let a, b;
+  if (qual === "mes") { a = [new Date(ontem.getFullYear(), ontem.getMonth(), 1), ultimo(ontem.getFullYear(), ontem.getMonth())];
+                        b = [new Date(a[0].getFullYear(), a[0].getMonth() - 1, 1), ultimo(a[0].getFullYear(), a[0].getMonth() - 1)]; }
+  else if (qual === "mes-anterior") { a = [new Date(ontem.getFullYear(), ontem.getMonth() - 1, 1), ultimo(ontem.getFullYear(), ontem.getMonth() - 1)];
+                                      b = [new Date(a[0].getFullYear(), a[0].getMonth() - 1, 1), ultimo(a[0].getFullYear(), a[0].getMonth() - 1)]; }
+  else if (qual === "quinzena") { a = quinzena(ontem); b = antesDa(a); }
+  else { a = antesDa(quinzena(ontem)); b = antesDa(a); }
+  if (a[1] > ontem) a[1] = ontem;                // o período vai até ontem (hoje ainda está acontecendo)
+  [els("pn-de").value, els("pn-ate").value, els("pn-antes-de").value, els("pn-antes-ate").value] = [...a, ...b].map(pnIso);
+  els("pn-comparar").checked = true; els("pn-antes").classList.remove("oculto");
+  document.querySelectorAll("[data-pn-atalho]").forEach(x => x.setAttribute("aria-pressed", String(x.dataset.pnAtalho === qual)));
+}
+const pnFmt = n => n == null ? "—" : Number(n).toLocaleString("pt-BR");
+const pnPeriodo = p => `${dataBR(p.de)} a ${dataBR(p.ate)}`;
+// os cartões: [chave, rótulo, o que é melhor (1 sobe, -1 desce, 0 nenhum), é %?, subtítulo]
+const PN_CARTOES = [
+  ["funcionarios_batendo", "Funcionários batendo", 0, false, n => ""],
+  ["batidas", "Batidas", 0, false, n => ""],
+  ["corretas", "Batidas corretas", 0, false, n => n.batidas ? `${Math.round(100 * n.corretas / n.batidas)}% das batidas` : ""],
+  ["corrigidas", "Batidas corrigidas por ajuste", -1, false, n => n.pct_corrigidas != null ? `${n.pct_corrigidas}% das batidas` : ""],
+  ["dias_faltando", "Dias com batida faltando", -1, false, n => ""],
+  ["faltas", "Faltas", -1, false, n => ""],
+  ["atestados", "Atestados", 0, false, n => `${pnFmt(n.dias_de_atestado)} dia(s) de atestado${n.declaracoes ? ` · ${n.declaracoes} declaração(ões)` : ""}`],
+  ["ajustes_pedidos", "Ajustes pedidos", -1, false, n => ""],
+  ["indice", "Ponto em dia", 1, true, n => `${pnFmt(n.dias_em_dia)} de ${pnFmt(n.dias_trabalho)} dias de trabalho`],
+  ["pontos", "Nota do ponto", 1, false, n => n.selo ? n.selo.rotulo || "" : ""],
+];
+function pnDelta(chave, melhor, pct, a, b, diasA, diasB) {
+  const va = a.numeros[chave], vb = b && b.numeros[chave];
+  if (va == null || vb == null) return "";
+  let dif, texto;
+  if (pct || chave === "pontos" || chave === "funcionarios_batendo") {
+    dif = va - vb;
+    texto = `${dif > 0 ? "+" : ""}${dif}${pct ? " p.p." : chave === "pontos" ? " pontos" : ""}`;
+  } else {
+    // períodos de tamanhos diferentes: compara a média por dia
+    const ra = diasA !== diasB ? va / diasA : va, rb = diasA !== diasB ? vb / diasB : vb;
+    if (!rb) return ra ? `<span class="pn-delta">antes: 0</span>` : "";
+    dif = (ra - rb) / rb * 100;
+    texto = `${dif > 0 ? "+" : ""}${Math.round(dif)}%${diasA !== diasB ? " por dia" : ""}`;
+  }
+  const classe = !melhor || Math.abs(dif) < 0.5 ? "" : (dif > 0) === (melhor > 0) ? "bom" : "ruim";
+  const palavra = classe === "bom" ? " · melhor" : classe === "ruim" ? " · pior" : "";
+  return `<span class="pn-delta ${classe}">${texto}${palavra} <span style="font-weight:400">(antes ${pnFmt(vb)}${pct ? "%" : ""})</span></span>`;
+}
+function pnCartoes() {
+  const {agora: a, antes: b} = PN.dados;
+  els("pn-cartoes").innerHTML = PN_CARTOES.map(([k, r, melhor, pct, sub]) => `<div class="pn-cartao">
+      <div class="r">${escapar(r)}</div>
+      <div class="v">${pnFmt(a.numeros[k])}${pct && a.numeros[k] != null ? "%" : ""}</div>
+      <div class="s">${escapar(sub(a.numeros))}</div>
+      ${b ? pnDelta(k, melhor, pct, a, b, a.dias, b.dias) : ""}</div>`).join("");
+}
+// a dica que segue o mouse
+function pnDica(caixa, ev, html) {
+  let d = caixa.querySelector(".pn-dica");
+  if (!d) { d = document.createElement("div"); d.className = "pn-dica"; caixa.appendChild(d); }
+  if (!html) { d.style.display = "none"; return; }
+  d.innerHTML = html; d.style.display = "block";
+  const r = caixa.getBoundingClientRect();
+  let x = ev.clientX - r.left + 12;
+  if (x + d.offsetWidth > r.width) x = ev.clientX - r.left - d.offsetWidth - 12;
+  d.style.left = `${Math.max(0, x)}px`; d.style.top = `${ev.clientY - r.top - 10}px`;
+}
+function pnDias() {
+  const {agora: a, antes: b} = PN.dados, caixa = els("pn-dias");
+  els("pn-leg-b").style.display = b ? "" : "none";
+  const n = Math.max(a.por_dia.length, b ? b.por_dia.length : 0);
+  const max = Math.max(1, ...a.por_dia.map(d => d.batidas), ...(b ? b.por_dia.map(d => d.batidas) : []));
+  const L = 980, H = 260, esq = 44, dir = 8, topo = 10, base = 30, w = (L - esq - dir) / n, alt = H - topo - base;
+  const y = v => topo + alt - v / max * alt;
+  const passo = Math.pow(10, Math.floor(Math.log10(max))) * (max / Math.pow(10, Math.floor(Math.log10(max))) > 5 ? 2 : 1);
+  let g = "";
+  for (let v = 0; v <= max; v += passo) g += `<line x1="${esq}" x2="${L - dir}" y1="${y(v)}" y2="${y(v)}" stroke="#e6e9ef"/>
+    <text x="${esq - 6}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="#5b6475">${pnFmt(v)}</text>`;
+  const bw = Math.max(2, w - 3);
+  a.por_dia.forEach((d, i) => {
+    const x = esq + i * w + (w - bw) / 2, corretas = d.batidas - d.corrigidas;
+    const yc = y(corretas), yt = y(d.batidas), r = Math.min(4, bw / 2);
+    if (d.batidas) {
+      // a parte de baixo (corretas) presa na base; a de cima (corrigidas) com 2 px de folga e a ponta arredondada
+      if (corretas) g += `<path d="M${x},${topo + alt} V${yc + (d.corrigidas ? 0 : r)} ${d.corrigidas ? "" : `Q${x},${yc} ${x + r},${yc} H${x + bw - r} Q${x + bw},${yc} ${x + bw},${yc + r}`} ${d.corrigidas ? `H${x + bw}` : ""} V${topo + alt} Z" fill="#2a78d6"/>`;
+      if (d.corrigidas) { const y0 = yc - (corretas ? 2 : 0), h = Math.max(1, y0 - yt);
+        g += `<path d="M${x},${y0} V${y0 - h + Math.min(r, h)} Q${x},${y0 - h} ${x + Math.min(r, bw / 2)},${y0 - h} H${x + bw - Math.min(r, bw / 2)} Q${x + bw},${y0 - h} ${x + bw},${y0 - h + Math.min(r, h)} V${y0} Z" fill="#eb6834"/>`; }
+    }
+    if (n <= 31 || i % 2 === 0) g += `<text x="${x + bw / 2}" y="${H - base + 16}" text-anchor="middle" font-size="11" fill="#5b6475">${d.dia.slice(8, 10)}</text>`;
+  });
+  if (b) {
+    const pts = b.por_dia.map((d, i) => `${esq + i * w + w / 2},${y(d.batidas)}`).join(" ");
+    g += `<polyline points="${pts}" fill="none" stroke="#9aa3ad" stroke-width="2" stroke-dasharray="5 4"/>`;
+  }
+  for (let i = 0; i < n; i++) g += `<rect data-pn-i="${i}" x="${esq + i * w}" y="${topo}" width="${w}" height="${alt}" fill="transparent"/>`;
+  caixa.innerHTML = `<svg viewBox="0 0 ${L} ${H}" role="img" aria-label="Batidas por dia">${g}</svg>
+    <details style="margin-top:6px"><summary class="suave" style="cursor:pointer">ver em tabela</summary>
+    <div class="tabela-rolagem"><table><thead><tr><th>Dia</th><th>Batidas</th><th>Corrigidas</th><th>Pessoas</th>${b ? "<th>Comparação: dia</th><th>Batidas</th>" : ""}</tr></thead><tbody>
+    ${Array.from({length: n}, (_, i) => { const d = a.por_dia[i], e = b && b.por_dia[i];
+      return `<tr><td>${d ? dataBR(d.dia) : "—"}</td><td>${d ? pnFmt(d.batidas) : ""}</td><td>${d ? pnFmt(d.corrigidas) : ""}</td><td>${d ? pnFmt(d.pessoas) : ""}</td>
+        ${b ? `<td>${e ? dataBR(e.dia) : "—"}</td><td>${e ? pnFmt(e.batidas) : ""}</td>` : ""}</tr>`; }).join("")}</tbody></table></div></details>`;
+  caixa.querySelectorAll("[data-pn-i]").forEach(r => {
+    r.addEventListener("mousemove", ev => { const i = Number(r.dataset.pnI), d = a.por_dia[i], e = b && b.por_dia[i];
+      pnDica(caixa, ev, `${d ? `<b>${dataBR(d.dia)}</b>: ${pnFmt(d.batidas)} batidas (${pnFmt(d.corrigidas)} corrigidas) · ${pnFmt(d.pessoas)} pessoas` : ""}
+        ${e ? `<br>comparação, ${dataBR(e.dia)}: ${pnFmt(e.batidas)} batidas` : ""}`); });
+    r.addEventListener("mouseleave", ev => pnDica(caixa, ev, ""));
+  });
+}
+function pnComposicao() {
+  const {agora: a, antes: b} = PN.dados, caixa = els("pn-compo");
+  const partes = [["dias_em_dia", "em dia", "#0ca30c", "✓"], ["dias_com_ajuste", "com batida corrigida", "#fab219", "✎"],
+                  ["dias_faltando", "batida faltando", "#ec835a", "…"], ["faltas", "falta", "#d03b3b", "✕"]];
+  const L = 980, rot = 150, alturaBarra = 30;
+  const linhas = [[a, "Período"], ...(b ? [[b, "Comparação"]] : [])];
+  let g = "";
+  linhas.forEach(([p, nome], k) => {
+    const total = p.numeros.dias_trabalho || 0, y = 6 + k * (alturaBarra + 22);
+    g += `<text x="0" y="${y + 13}" font-size="12.5" font-weight="700" fill="#14213A">${nome}</text>
+          <text x="0" y="${y + 28}" font-size="11" fill="#5b6475">${pnFmt(total)} dias de trabalho</text>`;
+    let x = rot;
+    const larg = L - rot;
+    partes.forEach(([c, r, cor, icone]) => {
+      const v = p.numeros[c] || 0;
+      if (!total || !v) return;
+      const w = v / total * larg, pct = Math.round(100 * v / total);
+      g += `<rect data-pn-tip="${escapar(`${nome}: ${icone} ${r} — ${pnFmt(v)} dia(s), ${pct}%`)}" x="${x}" y="${y}" width="${Math.max(1, w - 2)}" height="${alturaBarra}" rx="3" fill="${cor}"/>`;
+      if (w > 46) g += `<text x="${x + 6}" y="${y + 20}" font-size="12" font-weight="700" fill="#14213A" pointer-events="none">${icone} ${pct}%</text>`;
+      x += w;
+    });
+    if (!total) g += `<text x="${rot}" y="${y + 20}" font-size="12" fill="#5b6475">sem dias de trabalho no período</text>`;
+  });
+  const H = 6 + linhas.length * (alturaBarra + 22);
+  caixa.innerHTML = `<svg viewBox="0 0 ${L} ${H}" role="img" aria-label="Os dias de trabalho">${g}</svg>`;
+  caixa.querySelectorAll("[data-pn-tip]").forEach(r => {
+    r.addEventListener("mousemove", ev => pnDica(caixa, ev, escapar(r.dataset.pnTip)));
+    r.addEventListener("mouseleave", ev => pnDica(caixa, ev, "")); });
+}
+const PN_TEND = {PIOROU: "▼ piorou", MELHOROU: "▲ melhorou", MANTEVE: "＝ manteve", NOVA: "nova no período", SEM_DADOS: "sem dias de trabalho agora"};
+function pnNota(antes, agora) {
+  // a régua de 0 a 100: o ponto cinza é a comparação, o azul é o período
+  const x = v => 4 + v / 100 * 112;
+  return `<svg width="120" height="16" viewBox="0 0 120 16" aria-hidden="true" style="vertical-align:middle; margin-right:6px">
+    <line x1="4" x2="116" y1="8" y2="8" stroke="#e6e9ef" stroke-width="4" stroke-linecap="round"/>
+    ${antes != null && agora != null ? `<line x1="${x(antes)}" x2="${x(agora)}" y1="8" y2="8" stroke="#9aa3ad" stroke-width="2"/>` : ""}
+    ${antes != null ? `<circle cx="${x(antes)}" cy="8" r="4.5" fill="#9aa3ad" stroke="#fff" stroke-width="2"/>` : ""}
+    ${agora != null ? `<circle cx="${x(agora)}" cy="8" r="4.5" fill="#2a78d6" stroke="#fff" stroke-width="2"/>` : ""}</svg>`;
+}
+function pnObras() {
+  const {obras, nomes, antes: b} = PN.dados;
+  const conta = t => obras.filter(o => o.tendencia === t).length;
+  els("pn-obras-resumo").innerHTML = b ? `<span class="pn-tend PIOROU">▼ ${conta("PIOROU")} piorou</span>
+      <span class="pn-tend MANTEVE">＝ ${conta("MANTEVE")} manteve</span><span class="pn-tend MELHOROU">▲ ${conta("MELHOROU")} melhorou</span>
+      ${conta("NOVA") ? `<span class="pn-tend NOVA">${conta("NOVA")} nova(s)</span>` : ""}`
+    : `<span>Marque “Comparar com” para ver a tendência de cada obra.</span>`;
+  const par = (o1, o2, k, suf) => `${o2 && o2[k] != null ? `<span class="suave">${pnFmt(o2[k])}${suf} → </span>` : ""}${o1 && o1[k] != null ? `<b>${pnFmt(o1[k])}${suf}</b>` : "—"}`;
+  els("pn-obras").innerHTML = obras.map(o => `<tr>
+      <td><b>${escapar(o.obra)}</b>${nomes[o.obra] ? `<small>${escapar(nomes[o.obra])}</small>` : ""}</td>
+      <td class="dados">${pnFmt((o.agora || o.antes || {}).pessoas)}</td>
+      <td>${pnNota(o.antes ? o.antes.pontos : null, o.agora ? o.agora.pontos : null)}${par(o.agora, o.antes, "pontos", "")}</td>
+      <td>${o.diferenca != null ? `${o.diferenca > 0 ? "+" : ""}${o.diferenca}` : "—"} <span class="pn-tend ${o.tendencia}">${b ? PN_TEND[o.tendencia] : ""}</span></td>
+      <td>${par(o.agora, o.antes, "indice", "%")}</td>
+      <td>${par(o.agora, o.antes, "pct_corrigidas", "%")}</td>
+      <td>${par(o.agora, o.antes, "faltas", "")}</td></tr>`).join("")
+    || `<tr><td colspan="7"><div class="vazio"><b>Nenhuma obra</b>com dias de trabalho nesses períodos.</div></td></tr>`;
+}
+async function carregarPainel() {
+  if (!els("pn-de").value || !els("pn-ate").value) pnAtalho("mes");
+  const p = new URLSearchParams({de: els("pn-de").value, ate: els("pn-ate").value});
+  if (els("pn-comparar").checked && els("pn-antes-de").value && els("pn-antes-ate").value) {
+    p.set("antes_de", els("pn-antes-de").value); p.set("antes_ate", els("pn-antes-ate").value); }
+  if (els("pn-obra").value) p.set("obra", els("pn-obra").value);
+  els("pn-sub").textContent = "montando… (com muita gente, pode levar até um minuto)";
+  els("pn-ver").disabled = true;
+  try {
+    PN.dados = await api(`/erp/api/ponto/painel?${p}`);
+    PN.tentativas = 0;
+  } catch (e) {
+    els("pn-ver").disabled = false;
+    // a conta da Qualidade é uma por vez: se outra estiver rodando, tenta de novo sozinho
+    if (e.dados && e.dados.ocupado && PN.tentativas < 10) {
+      PN.tentativas++; els("pn-sub").textContent = "outra conta do ponto está rodando — tentando de novo em instantes…";
+      setTimeout(carregarPainel, 6000); return; }
+    els("pn-sub").textContent = ""; falhou(e); return;
+  }
+  els("pn-ver").disabled = false;
+  const {agora: a, antes: b} = PN.dados;
+  els("pn-sub").textContent = `${pnPeriodo(a)}${b ? ` × ${pnPeriodo(b)}` : ""}${els("pn-obra").value ? ` · obra ${els("pn-obra").selectedOptions[0].textContent}` : ""}`;
+  els("pn-periodos").innerHTML = `<span><i style="background:#2a78d6"></i>período: ${pnPeriodo(a)} (${a.dias} dias)</span>
+    ${b ? `<span><i style="background:#9aa3ad"></i>comparação: ${pnPeriodo(b)} (${b.dias} dias)</span>` : ""}`;
+  pnCartoes(); pnDias(); pnComposicao(); pnObras();
+}
+(async () => {
+  try {
+    const d = await api("/erp/api/ponto/obras");
+    els("pn-obra").innerHTML = `<option value="">Todas as minhas obras</option>`
+      + d.obras.map(o => `<option value="${o.id}">${escapar(rotuloObra(o))}</option>`).join("");
+  } catch (e) { /* sem a lista, o painel vale para todas */ }
+})();
+document.querySelectorAll("[data-pn-atalho]").forEach(b => b.addEventListener("click", () => { pnAtalho(b.dataset.pnAtalho); carregarPainel(); }));
+els("pn-comparar").addEventListener("change", () => els("pn-antes").classList.toggle("oculto", !els("pn-comparar").checked));
+["pn-de", "pn-ate", "pn-antes-de", "pn-antes-ate"].forEach(id => els(id).addEventListener("change", () =>
+  document.querySelectorAll("[data-pn-atalho]").forEach(x => x.setAttribute("aria-pressed", "false"))));
+els("pn-ver").addEventListener("click", carregarPainel);
+pnAtalho("mes");
+carregarPainel();
 
 {% elif aba_ponto == "ponto_qualidade" %}
 // ===========================================================================

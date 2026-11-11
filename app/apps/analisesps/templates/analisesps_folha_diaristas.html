@@ -122,6 +122,27 @@
 {% include "analisesps_folha_abas.html" %}
 
 <h2>Diaristas</h2>
+{# A COMPLEMENTAR DAS DIÁRIAS (11/11/2026): a diferença de uma quinzena já paga. #}
+{% set qs_comp = {'ano': ano, 'mes': mes, 'periodo': qual} %}
+{% if r.empresa %}{% set qs_comp = {'ano': ano, 'mes': mes, 'periodo': qual, 'empresa': r.empresa} %}{% endif %}
+<nav class="faixa-folha">
+  <a href="{{ url_for('analisesps.tela_folha_diaristas', **qs_comp) }}" class="ativa">Diaristas</a>
+  <a href="{{ url_for('analisesps.tela_folha_diaristas_complementar', **qs_comp) }}">Complementar</a>
+</nav>
+{% if ultima_geracao %}
+  <div class="aviso atencao">
+    <b>Estas diárias já foram pagas</b> em {{ ultima_geracao.criado_em|momento_br }}{% if ultima_geracao.criado_por %}
+    por {{ ultima_geracao.criado_por }}{% endif %}. Se o ponto foi corrigido depois, a diferença sai
+    pela <a href="{{ url_for('analisesps.tela_folha_diaristas_complementar', **qs_comp) }}"><b>Complementar</b></a>
+    — ela compara com o que foi pago e gera um arquivo só da diferença.
+  </div>
+{% endif %}
+<style>
+  .faixa-folha { display:flex; gap:6px; margin:4px 0 14px; }
+  .faixa-folha a { padding:7px 14px; border-radius:8px; border:1px solid var(--borda); background:#fff;
+    font-weight:700; font-size:13px; color:var(--tinta-suave); text-decoration:none; }
+  .faixa-folha a.ativa { background:var(--azul); color:#fff; border-color:var(--azul); }
+</style>
 
 <form class="barra-mes" method="get" action="{{ url_for('analisesps.tela_folha_diaristas') }}">
   <label class="campo-mes"><span>Mês</span>

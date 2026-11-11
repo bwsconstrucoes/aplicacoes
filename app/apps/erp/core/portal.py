@@ -404,6 +404,14 @@ def listas_fechadas(s: Session | None = None) -> dict[str, list[dict[str, str]]]
             for l in s.execute(text(
                 "SELECT id, nome FROM convencoes WHERE ativo IS NOT FALSE"
                 " ORDER BY nome")).mappings().all()]
+        # ⚑ AS EMPRESAS DO GRUPO vêm do CADASTRO, não de uma lista digitada
+        # no código. Ele, em 11/11/2026: *"empresa para registro e CNPJ para
+        # admissão é campo duplicado. É a mesma informação."* Empresa nova do
+        # grupo entra sozinha aqui, sem ninguém lembrar de mexer em código.
+        from app.apps.erp.core import pessoal_solicitacoes as svc_sp_emp
+        listas["cnpj_admissao"] = [
+            {"valor": x, "rotulo": x}
+            for x in svc_sp_emp.opcoes_de_empresa(s)]
         # ⚑ "Cargo Pleiteado" e "Cargo Deferido" são o nome do Pipe para a
         # MESMA lista de cargos. Sem estas duas linhas eles saíam como texto
         # livre — e ele viu: *"o cargo. Se o cara já tem cargo, já era para

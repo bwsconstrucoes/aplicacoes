@@ -366,11 +366,14 @@
 {# A FOLHA JÁ PAGA (10/11/2026): a correção sai pela Complementar, que paga só a
    diferença — refechar e gerar de novo está travado (pagaria tudo outra vez). #}
 {% set folha_paga = pagamentos_feitos|selectattr('verba', 'equalto', 'folha')|list %}
-{% if folha_paga %}
+{# A FAIXA aparece sempre (11/11/2026): "Centros de custo" vale para qualquer
+   folha; "Complementar", só para a já paga. #}
 <nav class="faixa-folha">
   <a href="{{ url_for('analisesps.tela_folha_aberta', folha_id=folha.id) }}" class="ativa">Folha</a>
-  <a href="{{ url_for('analisesps.tela_folha_complementar', folha_id=folha.id) }}">Complementar</a>
+  {% if folha_paga %}<a href="{{ url_for('analisesps.tela_folha_complementar', folha_id=folha.id) }}">Complementar</a>{% endif %}
+  <a href="{{ url_for('analisesps.tela_folha_centros_de_custo', folha_id=folha.id) }}">Centros de custo</a>
 </nav>
+{% if folha_paga %}
 <div class="aviso ok">
   <b>Esta folha já foi paga</b> em {{ folha_paga[0].criado_em|momento_br }}{% if folha_paga[0].criado_por %}
   por {{ folha_paga[0].criado_por }}{% endif %} ({{ folha_paga[0].total|moeda }}){% if pagamentos_feitos|length > 1 %},

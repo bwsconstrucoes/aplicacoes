@@ -12244,6 +12244,144 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 262 — Centros de custo da contabilidade × o ponto (11/11/2026)
+
+- *"A folha da contabilidade tem determinado centro de custo, só que na nomenclatura
+  diferente da nossa (…) na aba C. Diários eu adicionei a última coluna, a coluna AN,
+  o centro de custo da contabilidade (…) gerar um relatório onde o funcionário está
+  trabalhando no ponto (…) comparar a folha da contabilidade e entender se aqueles
+  cadastros estão ok ou se precisa haver remanejo (…) esse relatório eu vou passar
+  para a contabilidade."* Particularidade: AFASTADO INSS e DESATIVAR sem ponto estão
+  coerentes; com ponto, crítica.
+- **Onde:** dentro da folha da contabilidade, faixa "Folha | Complementar | Centros de
+  custo" (`/folha/<id>/centros-de-custo`; a faixa agora aparece SEMPRE na folha
+  aberta). Planilha para a contabilidade em `.xlsx` (abas "Remanejos" e
+  "Conferência").
+- **Como** (`centros_de_custo.py`): o centro na folha é o setor da Folha Sintética
+  (`folha_linha.setor_codigo/nome`, "001.07 - …"); a obra é a de MAIS DIAS no ponto do
+  MÊS INTEIRO da competência (`obra_do_dia`); o esperado é a coluna AN da C. Diários
+  da planilha "Bases de Dados Pipefy", lida pelo leitor do ponto
+  (`base_obras.ler_planilha`, guardada 5 min; pelo nome — "Centro de Custo
+  Contabilidade" e variações — ou, sem o nome, a posição AN, com aviso). Compara pelo
+  CÓDIGO ("140.01"; o nível de cima "140" também casa). Situações: ok, coerente,
+  remanejar (de X para Y), conferir (mais de uma obra e a folha numa que não é a
+  principal; afastado/desativar com ponto; sem ponto; obra sem AN; ID Fortes sem CPF).
+- **A pergunta do dono (folha ou complementar?):** a importação da complementar
+  SUBSTITUI a folha da mesma competência e tipo — a guardada já é a mais nova. Entre
+  quinzena e fim de mês, vale qualquer uma; a tela aponta a outra do mesmo mês e diz
+  que a de fim de mês é a completa.
+- **Não verificado com dado real:** o nome exato da coluna AN e o formato do texto dela
+  (o exemplo do dono: "001.07 - CONSTRUTORA/ESCRITORIO NORDESTE"); o código da obra que
+  o ponto escreve casar com a C. Diários (código primário, coluna A ou nome).
+- Testes: `test_analisesps_centros_de_custo.py`.
+
+#### Leva 261 — Bradesco: agendamento, seleção, KPIs e totais por conta (11/11/2026)
+
+- *"Na parte do Bradesco, não aparece o status do agendamento de cada registro.
+  Deveria (…) os registros serem selecionados e poder alterar esses status, ter mais
+  gestão sobre eles."* E logo depois: *"não tem KPIs, totalizados, somatórios, por
+  conta também. Tudo isso facilita a aprovação."*
+- **Coluna "Agendamento"** nas duas tabelas (boletos e Pix), logo depois da SP, com o
+  selo de cor das outras telas. O dado já vinha na linha (`Status Agend`); faltava
+  na lista de colunas.
+- **Seleção + a barra de ações das Solicitações** (`analisesps_barra_acoes.html`,
+  `origem='bradesco'`, com Marcar Pago/Pagar): cada operação que achou a SP tem
+  caixinha; Agendar/Agendado/Falha Agendar/Desagendar com as MESMAS travas do
+  servidor (não validada, Pix "Atualizar Chave", sem obra), total marcado e por conta.
+  Depois de agir, a conferência é REFEITA com o mesmo texto colado
+  (`window.recarregarTela` — recarregar pediria para reenviar o formulário; a barra em
+  `analisesps.js` agora chama `recarregar()`, que usa o gancho quando a tela o define).
+- **Os números** (`bradesco.resumo`, do valor do banco): operações (boletos/Pix) e
+  total, com SP, sem SP, "pedem conferência" (`pede_conferencia`: sem SP, validação
+  fora de OK ou alerta ⚠️ — a frase que só explica o acerto não conta), por status de
+  agendamento (a já paga conta como "Pago") e a tabela por conta de débito.
+- **O aviso do Firefox** (*"por que aparece isso toda hora na tela Bradesco? (…) o
+  Firefox precisa enviar informações que repetirão qualquer ação"*): a conferência
+  era a RESPOSTA do formulário — qualquer recarga (a tela se atualiza quando uma
+  sincronização termina; a barra depois de agir; o F5) pedia para reenviar. Agora o
+  "Conferir" guarda o texto (`analisesps.meta`, `bradesco.colado.<código>`, por 3
+  dias) e redireciona para `/bradesco?c=<código>`; recarregar refaz a conferência com
+  os status de agora. O gancho `window.recarregarTela` saiu da tela (fica no
+  `analisesps.js`, sem uso). Sem banco para guardar, confere na hora, como antes.
+- **Códigos de pagamento (QR / boleto)**, no mesmo dia: *"não é exibido o status do
+  agendamento do registro. Coloca."* Cada SP mostra o selo do agendamento (ou "sem
+  agendamento") e o do status de pagamento, ao lado do valor e do vencimento.
+- Testes: `test_analisesps_telas.py` (`-k "bradesco or codigos"`).
+
+#### Leva 260 — A baixa dos comprovantes em pista própria (migração 056, 11/11/2026)
+
+- *"Já existe uma atualização em andamento (dando baixa nos comprovantes —
+  Bradesco_11112026_081401.PDF: leva 2 de 2, desde 08:31). Espere ela terminar. (…)
+  esse comprovante tão sempre demorando muito."*
+- A baixa (o robô do BaixaBradesco, leva de 10 páginas por vez: leitura, Omie,
+  planilha, Pipefy) corria na pista GERAL, a mesma da sincronização e da fila de envio
+  para a planilha — um segurava o outro. Ela não escreve em `analisesps.sps`, só na
+  planilha (pelo robô, que já roda pelo Make junto com a sincronização). Agora tem a
+  pista `comprovantes` (`tarefas.MODOS_DOS_COMPROVANTES`, índice
+  `ux_execucao_viva_por_pista6`): roda junto da sincronização, uma baixa por vez.
+- A tela de Comprovantes acompanha a pista dela; ao fim de uma baixa, o que chegou de
+  comprovante enquanto ela rodava começa sozinho (`encadear_comprovantes`).
+- **A demora do robô em si NÃO mudou** — ela é do BaixaBradesco (outra área). O que
+  mudou é que ela não trava mais o resto.
+- ⚠️ **Migração 056: apertar "Aplicar atualizações do banco" no MESMO momento da
+  publicação.** Sem ela, a baixa continua na geral como antes (o pedido recusado
+  pede o botão; o lote fica esperando e entra depois).
+
+#### Leva 259 — Sincronização: linhas mudadas em faixas contínuas (11/11/2026)
+
+- *"Alterado aqui, mas o envio para a planilha ficou na fila: Já existe uma
+  atualização em andamento (trazendo as SPs alteradas — 28200 de 52350, desde 08:04)
+  (…) ela trava toda a operação. Já tem 24 minutos. Não tem sentido."*
+- **Causa da demora:** quando quase a planilha inteira aparece como alterada (52.350
+  linhas — carimbo novo em tudo, provavelmente um script que reescreveu a SPsBD), o
+  delta pedia UMA FAIXA POR LINHA, 200 por ida: ~20 linhas/s, quase uma hora com a
+  pista das SPs ocupada — e a fila de envio para a planilha esperando atrás.
+- **Agora:** linhas vizinhas viram uma faixa só (`faixas_continuas`, `lotes_de_faixas`),
+  até 5.000 linhas por ida, como a carga inicial. O caso "tudo mudou" passa a custar o
+  mesmo que uma carga (minutos). O log diz POR QUE as linhas vieram (novas na base,
+  carimbo novo desde X, conteúdo sem carimbo) — para achar o script que carimba tudo.
+- **E a LÓGICA estava errada** (o dono, logo depois: *"1000 de 52363, desde 08:42 (…)
+  tem algo bem errado na lógica dessa atualização"* — a rodada recomeçou trazendo a
+  planilha inteira de novo). A linha vinha quando o carimbo era "maior que a marca
+  d'água" — comparação de TEXTO, com a marca gravada só no FIM da rodada. Com carimbo
+  num formato que não ordena como texto (dd/mm/aaaa), ou com uma rodada que morre
+  antes do fim, a planilha inteira voltava como alterada, rodada após rodada. **Agora
+  a linha vem quando o carimbo da planilha é DIFERENTE do guardado na base** (cada SP
+  guarda o seu). Rodada interrompida não refaz o que já trouxe; o formato deixa de
+  importar. O segundo da borda da marca d'água continua relido (`_na_borda`, só com
+  datas aaaa-mm-dd). A conferência do `status_pgt` (linha sem carimbo) não mudou.
+- A alteração feita pela tela fica na fila e desce na próxima sincronização — não se
+  perde.
+- Testes: `test_analisesps_banco.py` (faixas contínuas; 1.200 linhas = 1 ida).
+
+#### Leva 258 — Complementar das diárias (11/11/2026)
+
+- *"Fizemos o pagamento (…) da última quinzena. Só que aí o pessoal precisou corrigir
+  ponto (…) a gente precisaria pagar a diferença (…) peguei o relatório anterior, gerei
+  um novo (…) joguei na IA para fazer o confronto (…) queria que a gente pudesse fazer
+  isso dentro do sistema (…) como na folha da contabilidade a gente tem aquele
+  complemento."*
+- **Onde:** Diaristas › faixa "Diaristas | Complementar" (rota
+  `/folha/diaristas/complementar`, mesma competência/período/empresa da tela). A tela
+  dos Diaristas avisa quando o período já foi pago, e a janela "Gerar arquivos" (já
+  gerado) aponta para a Complementar.
+- **Como** (`diaristas_complementar.py`, sobre a parte comum de `folha_complementar`:
+  `comparar`, `finalizar`, `fechar`, `linhas_a_pagar`, "a descontar", relatório):
+  - PAGO = soma por CPF do fechamento de cada geração de diárias do período: `diaria`,
+    `diaria.<cnpj>` e as complementares (`diaria_c1`, `diaria_c2`… com ou sem empresa).
+  - NOVO = a conta de hoje da tela dos Diaristas (ponto corrigido), de quem tem diária
+    a receber; quem está desmarcado na tela vem em "não pago antes", desmarcado.
+  - Os grupos, a seleção e o arquivo são os da folha; verba própria `diaria_cN`
+    (rótulo "Diárias complementar N", natureza/carteira/grupo do Pipefy da diária,
+    título da SP " - Complementar N"; `folha_geracao.verba_base`).
+  - Com empresa escolhida, só as pessoas dela (o pago é recortado pelo CNPJ).
+  - Pago a mais vai para a mesma lista "a descontar", com a competência "Diárias
+    MM/AAAA período" (chave `diaria-AAAA-MM-tipo`, separada da folha).
+- A tela da Complementar da folha virou um corpo compartilhado
+  (`_complementar_corpo.html` + `_complementar_fim.html`), usado pelas duas.
+- Testes: `test_analisesps_diaristas_complementar.py` (paga → corrige o ponto →
+  complementar só da diferença → a seguinte já soma; não pago; pago a mais).
+
 #### Leva 257 — Empresa (CNPJ de admissão) recorta Alimentação/Transporte, Diaristas e DC (10/11/2026)
 
 - *"Na C. Diários (…) Dados Documentos (…) a coluna BT, CNPJ admissão. Eu preciso
