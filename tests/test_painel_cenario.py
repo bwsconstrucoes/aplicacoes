@@ -1489,3 +1489,101 @@ def test_o_projeto_abre_nas_obras_dele(cenario, monkeypatch):
     html = _cliente(monkeypatch).get(
         f"/painel/prestacao/montagem?cenario={cenario}").get_data(as_text=True)
     assert 'data-pai="projeto:ALFA"' in html and "data-fora-abre" in html
+
+
+# ===========================================================================
+# 11/11/2026 — "Não salvou: o servidor respondeu 500" no Salvar tudo
+# ===========================================================================
+@pytest.mark.parametrize("formato", ["multipart/form-data",
+                                     "application/x-www-form-urlencoded"])
+def test_salvar_tudo_aceita_a_pagina_de_uma_empresa_de_verdade(cenario, monkeypatch, formato):
+    """A montagem manda a página inteira num envio. O teto padrão do servidor
+    era de 1.000 campos, e uma empresa de verdade passa disso só com as linhas
+    de período em branco — o dono recebia "o servidor respondeu 500" e não
+    tinha como gravar nada. Aqui vão mais de 6.000 campos."""
+    from werkzeug.datastructures import MultiDict
+    from app.apps.painel import cenarios
+    s = _dois_socios()
+    campos = [("acao", "tudo"), ("cenario_id", str(cenario)),
+              ("linha", ""), (f"pct_0_{s['Sócio A']}", "100")]
+    for i in range(1200):
+        conta = f"Categoria número {i} com nome comprido"
+        campos += [("periodo_presente", f"categoria|{conta}"),
+                   ("periodo_nivel", "categoria"), ("periodo_chave", conta),
+                   ("periodo_desde", ""), ("periodo_pct", "100"),
+                   ("periodo_principal", "")]
+    r = _cliente(monkeypatch).post("/painel/prestacao/montagem",
+                                   data=MultiDict(campos), content_type=formato)
+    assert r.status_code == 302 and "erro=" not in r.headers["Location"]
+    assert {(p["obra"], p["socio"]): p["pct"]
+            for p in cenarios.participacoes(cenario)} == {("", "Sócio A"): 100}
+
+
+def test_formulario_acima_do_teto_diz_o_motivo_e_nao_500(cenario, monkeypatch):
+    from werkzeug.datastructures import MultiDict
+    from app.apps.painel import web
+    monkeypatch.setattr(web, "TETO_DE_CAMPOS", 50)
+    campos = [("acao", "tudo"), ("cenario_id", str(cenario))] + [
+        ("periodo_desde", "")] * 200
+    r = _cliente(monkeypatch).post("/painel/prestacao/montagem", data=MultiDict(campos),
+                                   content_type="multipart/form-data")
+    assert r.status_code == 413
+    assert "mais dados do que o servidor aceita" in r.get_data(as_text=True)
+
+
+def test_a_grade_e_lida_numa_passada_e_ignora_campo_estranho():
+    from werkzeug.datastructures import MultiDict
+    from app.apps.painel.web import _celulas_da_grade
+    form = MultiDict([("linha", ""), ("linha", "obra com _ no nome"),
+                      ("pct_0_7", "100"), ("pct_1_7", "60"), ("pct_1_9", ""),
+                      ("pct_5_7", "10"),          # linha que não veio
+                      ("pct_padrao", "90"), ("pct_x_7", "1")])
+    assert _celulas_da_grade(form) == {
+        ("", 7): "100", ("obra com _ no nome", 7): "60", ("obra com _ no nome", 9): ""}
+
+
+def test_a_tela_salva_sem_mandar_as_linhas_em_branco(cenario, monkeypatch):
+    """A tela desliga as linhas de período em branco antes de juntar os dados
+    e manda em texto simples — o contrato fica preso aqui."""
+    html = _cliente(monkeypatch).get(
+        f"/painel/prestacao/montagem?cenario={cenario}").get_data(as_text=True)
+    assert "linhasEmBranco()" in html and "new URLSearchParams()" in html
+    assert "data-erro-do-servidor" in html     # mostra o motivo, não só o número
+
+
+# ===========================================================================
+# 11/11/2026 — "Não tem onde editar ou excluir os sócios"
+# ===========================================================================
+def test_socio_e_excluido_com_os_percentuais_dele(cenario):
+    from app.apps.painel import cenarios, prestacao_dados
+    s = _dois_socios()
+    cenarios.gravar_participacoes_em_grade(cenario, {
+        ("", s["Sócio A"]): "60", ("", s["Parceiro"]): "40"})
+    assert prestacao_dados.excluir_socio(s["Parceiro"]) == "Parceiro"
+    assert [x["nome"] for x in prestacao_dados.socios()] == ["Sócio A"]
+    assert {p["socio"] for p in cenarios.participacoes(cenario)} == {"Sócio A"}
+    with pytest.raises(ValueError, match="não existe"):
+        prestacao_dados.excluir_socio(s["Parceiro"])
+
+
+def test_socio_com_ajuste_lancado_nao_e_excluido(base):
+    from app.apps.painel import prestacao_dados
+    s = _dois_socios()
+    prestacao_dados.salvar_ajuste(s["Parceiro"], "Aporte", 1000, "2025-01-10")
+    with pytest.raises(ValueError, match="1 ajuste"):
+        prestacao_dados.excluir_socio(s["Parceiro"])
+    assert len(prestacao_dados.socios()) == 2
+
+
+def test_a_tela_de_socios_tem_excluir_e_a_montagem_leva_ate_ela(cenario, monkeypatch):
+    s = _dois_socios()
+    cliente = _cliente(monkeypatch)
+    html = cliente.get("/painel/prestacao/parametros?aba=socios").get_data(as_text=True)
+    assert 'value="excluir_socio"' in html and "Salvar tudo" in html
+    montagem = cliente.get(f"/painel/prestacao/montagem?cenario={cenario}").get_data(as_text=True)
+    assert "Cadastrar, renomear ou excluir sócio" in montagem
+    r = cliente.post("/painel/prestacao/parametros",
+                     data={"acao": "excluir_socio", "aba": "socios", "socio_id": s["Parceiro"]})
+    assert r.status_code == 302 and "erro=" not in r.headers["Location"]
+    assert "Parceiro" not in cliente.get(
+        "/painel/prestacao/parametros?aba=socios").get_data(as_text=True)

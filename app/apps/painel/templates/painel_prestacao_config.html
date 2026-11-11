@@ -44,7 +44,7 @@
 <div class="cartao">
   <div class="cartao-cab">
     <h3>Sócios</h3>
-    <small>edite na linha, preencha as linhas em branco para cadastrar vários, e salve tudo de uma vez</small>
+    <small>para renomear ou trocar o tipo, escreva na própria linha e clique em “Salvar tudo”</small>
   </div>
   <form method="post" id="socios-lista">
     <input type="hidden" name="acao" value="socios_em_lista">
@@ -78,6 +78,14 @@
                       {% if s.ativo %}onclick="return confirm('Desativar {{ s.nome }}? O histórico dele fica.')"{% endif %}>
                 {{ 'Desativar' if s.ativo else 'Reativar' }}</button>
             </form>
+            <form method="post" style="display:inline">
+              <input type="hidden" name="acao" value="excluir_socio">
+              <input type="hidden" name="aba" value="socios">
+              <input type="hidden" name="socio_id" value="{{ s.id }}">
+              <button class="btn secundario" type="submit" style="color:var(--vermelho)"
+                      onclick="return confirm('Excluir {{ s.nome }} de vez? Os percentuais dele, em todos os cenários, são apagados junto. Não dá para desfazer.')">
+                Excluir</button>
+            </form>
           </td>
         </tr>
         {% endfor %}
@@ -103,8 +111,9 @@
   </div>
   <div style="display:flex; margin-top:10px; gap:10px; align-items:center">
     <span class="cartao-dica" style="margin:0">Externo muda a conta: ele não paga a
-      estrutura da construtora. Sócio nunca é apagado, só desativado — as quotas
-      e os ajustes dele continuam no histórico.</span>
+      estrutura da construtora. <b>Desativar</b> tira o sócio das contas e guarda
+      o que foi lançado para ele. <b>Excluir</b> apaga de vez, com os percentuais
+      dele — e só é aceito para quem não tem ajuste lançado.</span>
     <span style="flex:1"></span>
     <button class="btn secundario" type="button"
             onclick="[...document.querySelectorAll('tr[data-socio-novo][hidden]')].slice(0,3).forEach(t => t.hidden = false)">＋ mais linhas</button>

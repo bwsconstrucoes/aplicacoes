@@ -582,6 +582,12 @@
     (procure pelo nome) substitui a do projeto só nela — é assim que entra o
     parceiro de uma obra só.
   </p>
+  <p style="margin:0 0 10px">
+    <a class="btn secundario" style="text-decoration:none; display:inline-block"
+       href="{{ url_for('painel.prestacao_parametros', aba='socios') }}">✎ Cadastrar, renomear ou excluir sócio</a>
+    <small>— as colunas abaixo são os sócios ativos; o cadastro deles fica em Cadastros › Sócios.
+      Salve esta tela antes de sair.</small>
+  </p>
 
   {# UMA GRADE, UM SALVAR (11/11/2026, o dono: "tá muito difícil e lento de
      configurar as participações"). A primeira linha é "Todas as obras"; uma
@@ -743,27 +749,61 @@
     // o botão de qualquer passo grava a página inteira
     f.addEventListener("submit", e => { e.preventDefault(); salvar(); });
   });
+  // A linha de período ainda em branco (sem mês e sem a parte do principal)
+  // não é dado: o servidor a ignora. Cada conta traz seis delas escondidas, e
+  // mandá-las era o grosso do envio — foi o que estourou o teto do servidor
+  // em 11/11/2026 ("o servidor respondeu 500").
+  function linhasEmBranco() {
+    const campos = [];
+    document.querySelectorAll("form[data-secao] [data-periodo-novo]").forEach(l => {
+      const mes = l.querySelector('[name="periodo_desde"]');
+      const parte = l.querySelector('[name="periodo_principal"]');
+      if (mes && parte && !mes.value && !parte.value.trim()) {
+        l.querySelectorAll("input[name]").forEach(c => { if (!c.disabled) campos.push(c); });
+      }
+    });
+    return campos;
+  }
+  async function motivo(r) {
+    // a página de erro do painel traz o motivo; mostra-o em vez de só o número
+    try {
+      const pagina = new DOMParser().parseFromString(await r.text(), "text/html");
+      const texto = (pagina.querySelector("[data-erro-do-servidor]") || {}).textContent;
+      if (texto && texto.trim()) return texto.trim().slice(0, 400);
+    } catch (_e) {}
+    return "o servidor respondeu " + r.status;
+  }
   async function salvar() {
-    const dados = new FormData();
+    // campo desligado não entra no envio: desliga as linhas em branco só
+    // enquanto junta os dados
+    const fora = linhasEmBranco();
+    fora.forEach(c => { c.disabled = true; });
+    // texto simples (e não "multipart"): é o formato que o servidor lê sem
+    // contar campo por campo
+    const dados = new URLSearchParams();
     dados.append("acao", "tudo");
     dados.append("cenario_id", "{{ cenario.id }}");
     secoes.forEach(f => {
       for (const [chave, valor] of new FormData(f)) {
-        if (chave !== "acao" && chave !== "cenario_id") dados.append(chave, valor);
+        if (chave !== "acao" && chave !== "cenario_id" && typeof valor === "string") {
+          dados.append(chave, valor);
+        }
       }
     });
+    fora.forEach(c => { c.disabled = false; });
     botao.disabled = true;
     estado.textContent = "Salvando…";
     try {
       const r = await fetch(window.location.pathname, {method: "POST", body: dados,
                                                        credentials: "same-origin"});
-      if (!r.ok) throw new Error("o servidor respondeu " + r.status);
+      if (!r.ok) throw new Error(await motivo(r));
       window.__salvandoTudo = true;
       try { sessionStorage.setItem("montagem-rolagem", String(window.scrollY)); } catch (_e) {}
       window.location.href = r.url;       // a montagem de volta, já com o salvo
     } catch (erro) {
       botao.disabled = false;
-      estado.innerHTML = "<b>Não salvou:</b> " + erro.message + ". Nada foi perdido — tente de novo.";
+      estado.innerHTML = "<b>Não salvou:</b> <span></span> Nada foi perdido — tente de novo.";
+      estado.querySelector("span").textContent = erro.message + ".";
     }
   }
   botao.addEventListener("click", salvar);

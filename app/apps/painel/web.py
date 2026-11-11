@@ -62,7 +62,28 @@ def _porta_de_entrada():
     from . import db
     db.iniciar_medicao()
     g._painel_comeco = time.perf_counter()
+    # A MONTAGEM MANDA A PÁGINA INTEIRA NUM ENVIO (11/11/2026): o teto padrão
+    # do Werkzeug — 1.000 campos e 500 kB de formulário — é menor que a tela
+    # de uma empresa de verdade, e estourar virava "o servidor respondeu 500"
+    # no Salvar tudo. O teto continua existindo, só que acima do que a tela faz.
+    request.max_form_parts = TETO_DE_CAMPOS
+    request.max_form_memory_size = TETO_DO_FORMULARIO
     return auth.exigir_login()
+
+
+TETO_DE_CAMPOS = 100_000
+TETO_DO_FORMULARIO = 16 * 1024 * 1024
+
+
+@bp.errorhandler(413)
+def _formulario_grande_demais(e):
+    """Formulário acima do teto: diz isso, em vez de um 500 sem motivo."""
+    logger.warning("Painel: formulário grande demais em %s", request.path)
+    texto = ("A tela mandou mais dados do que o servidor aceita de uma vez. "
+             "Nada foi gravado.")
+    if request.path.startswith("/painel/api/"):
+        return jsonify({"ok": False, "erro": texto}), 413
+    return render_template("painel_erro.html", erro=texto), 413
 
 
 @bp.context_processor
@@ -2335,13 +2356,18 @@ def _filtro_item_fora(item) -> str:
 def _celulas_da_grade(form) -> dict:
     """A grade de participações vem como `linha` (o projeto, ou a obra, na
     ordem da tela) e células `pct_<i>_<sócio>`. O nome do projeto não vai no
-    nome do campo: nome de obra tem espaço, barra e acento."""
+    nome do campo: nome de obra tem espaço, barra e acento.
+
+    Uma passada só pelos campos (11/11/2026): antes era uma por linha da
+    grade, e a página inteira num envio tem milhares de campos."""
+    linhas = form.getlist("linha")
     celulas = {}
-    for i, linha in enumerate(form.getlist("linha")):
-        for chave in form:
-            prefixo = f"pct_{i}_"
-            if chave.startswith(prefixo) and chave[len(prefixo):].isdigit():
-                celulas[(linha, int(chave[len(prefixo):]))] = form.get(chave, "")
+    for chave in form:
+        partes = chave.split("_")
+        if (len(partes) == 3 and partes[0] == "pct"
+                and partes[1].isdigit() and partes[2].isdigit()
+                and int(partes[1]) < len(linhas)):
+            celulas[(linhas[int(partes[1])], int(partes[2]))] = form.get(chave, "")
     return celulas
 
 
@@ -2358,6 +2384,8 @@ def _aplicar_mudanca_da_prestacao(dados, form):
         dados.desativar_socio(form["socio_id"])
     elif acao == "reativar_socio":
         dados.reativar_socio(form["socio_id"])
+    elif acao == "excluir_socio":
+        dados.excluir_socio(form["socio_id"])
     elif acao == "participacao":
         dados.salvar_participacao(form["projeto"], form["socio_id"], form["pct"])
     elif acao == "apagar_participacao":

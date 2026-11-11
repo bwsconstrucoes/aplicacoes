@@ -268,6 +268,33 @@ def reativar_socio(socio_id: int) -> None:
         conn.commit()
 
 
+def excluir_socio(socio_id: int) -> str:
+    """Apaga o sócio de vez (11/11/2026, o dono: "não tem onde editar ou
+    excluir os sócios" — só havia "Desativar", e nome cadastrado errado ficava
+    na lista para sempre). Os percentuais dele, em todos os cenários, vão
+    junto. Devolve o nome apagado.
+
+    Quem tem AJUSTE lançado não é apagado: ajuste é dinheiro registrado
+    (aporte, retirada), e sumir com ele mudaria o saldo dos outros sem
+    ninguém ver. Para esse, o caminho é desativar — ou apagar os ajustes
+    antes, de propósito."""
+    with conexao() as conn:
+        linha = conn.execute("SELECT nome FROM socios WHERE id = ?",
+                             (int(socio_id),)).fetchone()
+        if not linha:
+            raise ValueError("Esse sócio não existe mais.")
+        ajustes = conn.execute("SELECT COUNT(*) FROM ajustes WHERE socio_id = ?",
+                               (int(socio_id),)).fetchone()[0]
+        if ajustes:
+            raise ValueError(
+                f"{linha[0]} tem {ajustes} ajuste(s) lançado(s) e por isso não pode "
+                "ser excluído — o dinheiro registrado sumiria junto. Desative-o, "
+                "ou apague antes os ajustes dele (aba Ajustes).")
+        conn.execute("DELETE FROM socios WHERE id = ?", (int(socio_id),))
+        conn.commit()
+    return linha[0]
+
+
 def _percentual(valor) -> float:
     """Percentual digitado por gente: "33,33" vale. Fora de 0–100 é recusado
     — participação de 150% é engano, não configuração."""
