@@ -70,104 +70,21 @@
 </div>
 
 {% if cenario %}
-<!-- ===================== A RÉGUA ===================== -->
-<div class="cartao">
-  <div class="cartao-cab">
-    <h3>A régua</h3>
-    <small>por qual medida o custo da estrutura se divide entre as obras</small>
-  </div>
-  <form method="post" class="form-grade">
-    <input type="hidden" name="acao" value="regua">
-    <input type="hidden" name="cenario_id" value="{{ cenario.id }}">
-
-    <div class="campo">
-      <label for="nome">Nome do cenário</label>
-      <input id="nome" name="nome" value="{{ cenario.nome }}" required>
-    </div>
-
-    <div class="campo">
-      <label for="criterio">Dividir na proporção de</label>
-      <select id="criterio" name="criterio">
-        {% for chave, rotulo in criterios.items() %}
-        <option value="{{ chave }}" {% if cenario.criterio == chave %}selected{% endif %}>
-          {{ rotulo }}</option>
-        {% endfor %}
-      </select>
-      <p class="dica">Mão de obra é o padrão: o custo de pessoal mede a energia
-        que a obra exige — mais gente, mais DP, mais engenharia, obra mais
-        complexa.</p>
-    </div>
-
-    <div class="campo">
-      <label for="janela">Somar quantos meses antes de comparar</label>
-      <select id="janela" name="janela">
-        {% for chave, rotulo in janelas.items() %}
-        <option value="{{ chave }}" {% if cenario.janela == chave %}selected{% endif %}>
-          {{ rotulo }}</option>
-        {% endfor %}
-      </select>
-      <p class="dica">Janela curta reage rápido e balança; janela longa é
-        estável e demora a reagir.</p>
-    </div>
-
-    <div class="campo">
-      <label for="pct_padrao">Conta que você não marcar divide</label>
-      <input id="pct_padrao" name="pct_padrao" value="{{ '%.0f'|format(cenario.pct_padrao) }}">
-      <p class="dica">Em por cento. Com 100, tudo da matriz se divide, menos o
-        que você abaixar. Com 0, só divide o que você marcar.</p>
-    </div>
-
-    <div class="campo">
-      <label for="medida">Base do cálculo</label>
-      <select id="medida" name="medida">
-        <option value="comprometido" {% if cenario.medida == 'comprometido' %}selected{% endif %}>
-          Comprometido — tudo que foi ganho e gasto</option>
-        <option value="executado" {% if cenario.medida == 'executado' %}selected{% endif %}>
-          Executado — só o que já foi pago e recebido</option>
-      </select>
-    </div>
-
-    <div class="campo">
-      <label for="juros_por_deficit">Quem paga os juros de empréstimo</label>
-      <select id="juros_por_deficit" name="juros_por_deficit">
-        <option value="1" {% if cenario.juros_por_deficit %}selected{% endif %}>
-          Quem demandou caixa (recomendado)</option>
-        <option value="0" {% if not cenario.juros_por_deficit %}selected{% endif %}>
-          Junto com o resto da estrutura</option>
-      </select>
-      <p class="dica">Juro não é estrutura: é o preço de faltar dinheiro. Pela
-        primeira opção ele cai mês a mês nas obras que estavam com o caixa
-        negativo, na proporção do buraco.</p>
-    </div>
-
-    <div class="campo">
-      <label for="juros_sem_deficit">Mês em que ninguém estava no vermelho</label>
-      <select id="juros_sem_deficit" name="juros_sem_deficit">
-        <option value="sobra" {% if cenario.juros_sem_deficit == 'sobra' %}selected{% endif %}>
-          Ninguém paga — aparece como custo sem dono</option>
-        <option value="estrutura" {% if cenario.juros_sem_deficit == 'estrutura' %}selected{% endif %}>
-          Segue a régua da estrutura</option>
-      </select>
-    </div>
-
-    <div class="campo">
-      <label for="taxa_adm_pct">Taxa de administração (%)</label>
-      <input id="taxa_adm_pct" name="taxa_adm_pct" value="{{ '%.2f'|format(cenario.taxa_adm_pct) }}">
-      <p class="dica">Cobrada da obra com parceiro, sobre a receita bruta. Ela é
-        o que faz o parceiro não pagar a estrutura da construtora.</p>
-    </div>
-
-    <div class="campo">
-      <label for="observacao">Para que serve este cenário</label>
-      <input id="observacao" name="observacao" value="{{ cenario.observacao }}"
-             placeholder="Ex.: o que vou apresentar na reunião de outubro">
-    </div>
-
-    <div class="campo" style="align-self:end">
-      <button class="btn" type="submit">Salvar a régua</button>
-    </div>
-  </form>
-</div>
+{# OS PASSOS, NA ORDEM EM QUE SE CONFIGURA (11/11/2026, o dono: "ficou muito
+   segregado" e "faça algo realmente bom e fácil"). O que se mexe sempre vem
+   primeiro; a régua e os juros, que se escolhem uma vez, vão para o fim. #}
+<nav class="chips nao-imprime" style="margin:0 0 14px; position:sticky; top:0; z-index:5;
+     background:var(--fundo, #f2f4f8); padding:8px 0">
+  {% for alvo, rotulo in [('passo-divide','1 · O que se divide'), ('passo-recebe','2 · Quem recebe'),
+                          ('passo-socios','3 · Quem divide o resultado'), ('passo-fora','4 · Fora da análise'),
+                          ('passo-regua','5 · Régua e juros')] %}
+  <a class="modulo-btn" href="#{{ alvo }}"
+     style="background:var(--branco); color:var(--tinta-suave); border:1px solid var(--borda); text-decoration:none">{{ rotulo }}</a>
+  {% endfor %}
+  <span style="flex:1"></span>
+  <a class="btn" style="text-decoration:none"
+     href="{{ url_for('painel.cenario_como', cenario=cenario.id) }}">📄 Como é feita (para mostrar)</a>
+</nav>
 
 {# O PERCENTUAL POR PERÍODO (09/11/2026): "a partir de MM/AAAA, X%". Cada um
    vale até começar o seguinte. Linha com o mês ou o percentual em branco não
@@ -242,72 +159,10 @@
 </button>
 {% endmacro %}
 
-<!-- ============ QUEM RECEBE O CUSTO DA MATRIZ — 09/11/2026 ============ -->
-{% if cenario %}
-<div class="cartao">
-  <div class="cartao-cab">
-    <h3>Quem recebe o custo da matriz</h3>
-    <small>o projeto principal, e os projetos que não recebem ou só recebem num período</small>
-  </div>
-  <p class="cartao-dica" style="margin-top:0">
-    O custo da matriz vai para dois lados: o <b>projeto principal</b> e os
-    <b>demais projetos</b>. Quanto vai para cada lado se diz em cada conta, em
-    na coluna "Para o {{ principal or 'projeto principal' }}" de "O que se divide", logo abaixo (ex.: Pessoal, a partir de 01/2021, 40% para ele).
-    Aqui se diz quem recebe: um projeto que <b>não recebe</b> sai da prestação
-    deste cenário (não aparece, não recebe estrutura nem juros, não entra nas
-    quotas); um que <b>recebe só no período</b> sai da divisão no mês seguinte
-    ao "até", mas continua no resultado. Nada fica sem dono: se num mês nenhum
-    projeto de um lado recebe, a parte dele vai para o outro.
-  </p>
-  <form method="post">
-    <input type="hidden" name="acao" value="projetos">
-    <input type="hidden" name="cenario_id" value="{{ cenario.id }}">
-    <div class="form-grade" style="max-width:520px">
-      <div class="campo">
-        <label for="principal">Projeto principal</label>
-        <select id="principal" name="principal">
-          <option value="" {% if not principal %}selected{% endif %}>(nenhum — sem separar os lados)</option>
-          {% if principal and principal not in projetos_do_painel %}<option value="{{ principal }}" selected>{{ principal }}</option>{% endif %}
-          {% for p in projetos_do_painel %}
-            <option value="{{ p }}" {% if p == principal %}selected{% endif %}>{{ p }}</option>
-          {% endfor %}
-        </select>
-      </div>
-    </div>
-    <div class="tabela-rolagem" style="max-height:420px; margin-top:10px">
-      <table>
-        <thead><tr><th class="sem-ordem">Projeto</th><th class="sem-ordem">Recebe?</th>
-          <th class="sem-ordem">De</th><th class="sem-ordem">Até</th></tr></thead>
-        <tbody>
-          {% for p in projetos_do_painel %}
-          {% set r = regras_projetos.get(p) or ('', '', '') %}
-          <tr>
-            <td class="desc">{{ p }}{% if p == principal %} <small class="selo neutro">principal</small>{% endif %}</td>
-            <td>
-              <input type="hidden" name="proj_nome" value="{{ p }}">
-              <select name="proj_papel" aria-label="{{ p }} recebe?">
-                {% for valor, rotulo in papeis.items() %}
-                  <option value="{{ valor }}" {% if r[0] == valor %}selected{% endif %}>{{ rotulo }}</option>
-                {% endfor %}
-              </select>
-            </td>
-            <td><input type="month" name="proj_desde" value="{{ r[1] }}" aria-label="recebe a partir de"></td>
-            <td><input type="month" name="proj_ate" value="{{ r[2] }}" aria-label="recebe até"></td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    <p class="dica">"Recebe só no período": preencha o De, o Até ou os dois (o mês do Até ainda recebe).</p>
-    <button class="btn" type="submit">Salvar quem recebe</button>
-  </form>
-</div>
-{% endif %}
-
 <!-- ===================== O QUE SE DIVIDE ===================== -->
 <div class="cartao">
   <div class="cartao-cab">
-    <h3>O que se divide</h3>
+    <h3 id="passo-divide" style="scroll-margin-top:64px">1 · O que se divide</h3>
     <small>o que a matriz gastou, do maior para o menor</small>
   </div>
   <p class="cartao-dica" style="margin-top:0">
@@ -598,10 +453,72 @@
 </div>
 {% endif %}
 
+<!-- ============ QUEM RECEBE O CUSTO DA MATRIZ — 09/11/2026 ============ -->
+{% if cenario %}
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3 id="passo-recebe" style="scroll-margin-top:64px">2 · Quem recebe o custo da matriz</h3>
+    <small>o projeto principal, e os projetos que não recebem ou só recebem num período</small>
+  </div>
+  <p class="cartao-dica" style="margin-top:0">
+    O custo da matriz vai para dois lados: o <b>projeto principal</b> e os
+    <b>demais projetos</b>. Quanto vai para cada lado se diz em cada conta, em
+    na coluna "Para o {{ principal or 'projeto principal' }}" do passo 1, "O que se divide" (ex.: Pessoal, a partir de 01/2021, 40% para ele).
+    Aqui se diz quem recebe: um projeto que <b>não recebe</b> sai da prestação
+    deste cenário (não aparece, não recebe estrutura nem juros, não entra nas
+    quotas); um que <b>recebe só no período</b> sai da divisão no mês seguinte
+    ao "até", mas continua no resultado. Nada fica sem dono: se num mês nenhum
+    projeto de um lado recebe, a parte dele vai para o outro.
+  </p>
+  <form method="post">
+    <input type="hidden" name="acao" value="projetos">
+    <input type="hidden" name="cenario_id" value="{{ cenario.id }}">
+    <div class="form-grade" style="max-width:520px">
+      <div class="campo">
+        <label for="principal">Projeto principal</label>
+        <select id="principal" name="principal">
+          <option value="" {% if not principal %}selected{% endif %}>(nenhum — sem separar os lados)</option>
+          {% if principal and principal not in projetos_do_painel %}<option value="{{ principal }}" selected>{{ principal }}</option>{% endif %}
+          {% for p in projetos_do_painel %}
+            <option value="{{ p }}" {% if p == principal %}selected{% endif %}>{{ p }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="tabela-rolagem" style="max-height:420px; margin-top:10px">
+      <table>
+        <thead><tr><th class="sem-ordem">Projeto</th><th class="sem-ordem">Recebe?</th>
+          <th class="sem-ordem">De</th><th class="sem-ordem">Até</th></tr></thead>
+        <tbody>
+          {% for p in projetos_do_painel %}
+          {% set r = regras_projetos.get(p) or ('', '', '') %}
+          <tr>
+            <td class="desc">{{ p }}{% if p == principal %} <small class="selo neutro">principal</small>{% endif %}</td>
+            <td>
+              <input type="hidden" name="proj_nome" value="{{ p }}">
+              <select name="proj_papel" aria-label="{{ p }} recebe?">
+                {% for valor, rotulo in papeis.items() %}
+                  <option value="{{ valor }}" {% if r[0] == valor %}selected{% endif %}>{{ rotulo }}</option>
+                {% endfor %}
+              </select>
+            </td>
+            <td><input type="month" name="proj_desde" value="{{ r[1] }}" aria-label="recebe a partir de"></td>
+            <td><input type="month" name="proj_ate" value="{{ r[2] }}" aria-label="recebe até"></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="dica">"Recebe só no período": preencha o De, o Até ou os dois (o mês do Até ainda recebe).</p>
+    <button class="btn" type="submit">Salvar quem recebe</button>
+  </form>
+</div>
+{% endif %}
+
 <!-- ===================== QUEM DIVIDE ===================== -->
 <div class="cartao">
   <div class="cartao-cab">
-    <h3>Quem divide</h3>
+    <h3 id="passo-socios" style="scroll-margin-top:64px">3 · Quem divide o resultado</h3>
     <small>sócios da BWS e parceiros de obra</small>
   </div>
   <p class="cartao-dica" style="margin-top:0">
@@ -639,7 +556,7 @@
 <!-- ===================== FORA DA ANÁLISE ===================== -->
 <div class="cartao">
   <div class="cartao-cab">
-    <h3>Fora da análise</h3>
+    <h3 id="passo-fora" style="scroll-margin-top:64px">4 · Fora da análise</h3>
     <small>obras e projetos que este cenário não considera</small>
   </div>
   <p class="cartao-dica" style="margin-top:0">
@@ -661,6 +578,105 @@
     <input type="hidden" name="acao" value="fora_em_lista">
     <input type="hidden" name="cenario_id" value="{{ cenario.id }}">
     {{ lista_fora(linhas_fora) }}
+  </form>
+</div>
+
+<!-- ===================== A RÉGUA ===================== -->
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3 id="passo-regua" style="scroll-margin-top:64px">5 · Régua e juros</h3>
+    <small>por qual medida o custo da estrutura se divide entre as obras</small>
+  </div>
+  <form method="post" class="form-grade">
+    <input type="hidden" name="acao" value="regua">
+    <input type="hidden" name="cenario_id" value="{{ cenario.id }}">
+
+    <div class="campo">
+      <label for="nome">Nome do cenário</label>
+      <input id="nome" name="nome" value="{{ cenario.nome }}" required>
+    </div>
+
+    <div class="campo">
+      <label for="criterio">Dividir na proporção de</label>
+      <select id="criterio" name="criterio">
+        {% for chave, rotulo in criterios.items() %}
+        <option value="{{ chave }}" {% if cenario.criterio == chave %}selected{% endif %}>
+          {{ rotulo }}</option>
+        {% endfor %}
+      </select>
+      <p class="dica">Mão de obra é o padrão: o custo de pessoal mede a energia
+        que a obra exige — mais gente, mais DP, mais engenharia, obra mais
+        complexa.</p>
+    </div>
+
+    <div class="campo">
+      <label for="janela">Somar quantos meses antes de comparar</label>
+      <select id="janela" name="janela">
+        {% for chave, rotulo in janelas.items() %}
+        <option value="{{ chave }}" {% if cenario.janela == chave %}selected{% endif %}>
+          {{ rotulo }}</option>
+        {% endfor %}
+      </select>
+      <p class="dica">Janela curta reage rápido e balança; janela longa é
+        estável e demora a reagir.</p>
+    </div>
+
+    <div class="campo">
+      <label for="pct_padrao">Conta que você não marcar divide</label>
+      <input id="pct_padrao" name="pct_padrao" value="{{ '%.0f'|format(cenario.pct_padrao) }}">
+      <p class="dica">Em por cento. Com 100, tudo da matriz se divide, menos o
+        que você abaixar. Com 0, só divide o que você marcar.</p>
+    </div>
+
+    <div class="campo">
+      <label for="medida">Base do cálculo</label>
+      <select id="medida" name="medida">
+        <option value="comprometido" {% if cenario.medida == 'comprometido' %}selected{% endif %}>
+          Comprometido — tudo que foi ganho e gasto</option>
+        <option value="executado" {% if cenario.medida == 'executado' %}selected{% endif %}>
+          Executado — só o que já foi pago e recebido</option>
+      </select>
+    </div>
+
+    <div class="campo">
+      <label for="juros_por_deficit">Quem paga os juros de empréstimo</label>
+      <select id="juros_por_deficit" name="juros_por_deficit">
+        <option value="1" {% if cenario.juros_por_deficit %}selected{% endif %}>
+          Quem demandou caixa (recomendado)</option>
+        <option value="0" {% if not cenario.juros_por_deficit %}selected{% endif %}>
+          Junto com o resto da estrutura</option>
+      </select>
+      <p class="dica">Juro não é estrutura: é o preço de faltar dinheiro. Pela
+        primeira opção ele cai mês a mês nas obras que estavam com o caixa
+        negativo, na proporção do buraco.</p>
+    </div>
+
+    <div class="campo">
+      <label for="juros_sem_deficit">Mês em que ninguém estava no vermelho</label>
+      <select id="juros_sem_deficit" name="juros_sem_deficit">
+        <option value="sobra" {% if cenario.juros_sem_deficit == 'sobra' %}selected{% endif %}>
+          Ninguém paga — aparece como custo sem dono</option>
+        <option value="estrutura" {% if cenario.juros_sem_deficit == 'estrutura' %}selected{% endif %}>
+          Segue a régua da estrutura</option>
+      </select>
+    </div>
+
+    <div class="campo">
+      <label for="taxa_adm_pct">Taxa de administração (%)</label>
+      <input id="taxa_adm_pct" name="taxa_adm_pct" value="{{ '%.2f'|format(cenario.taxa_adm_pct) }}">
+      <p class="dica">Cobrada da obra com parceiro, sobre a receita bruta. Ela é
+        o que faz o parceiro não pagar a estrutura da construtora.</p>
+    </div>
+
+    <div class="campo">
+      <label for="observacao">Para que serve este cenário</label>
+      <input id="observacao" name="observacao" value="{{ cenario.observacao }}"
+             placeholder="Ex.: o que vou apresentar na reunião de outubro">
+    </div>
+
+    <div class="campo" style="align-self:end">
+      <button class="btn" type="submit">Salvar a régua</button>
+    </div>
   </form>
 </div>
 

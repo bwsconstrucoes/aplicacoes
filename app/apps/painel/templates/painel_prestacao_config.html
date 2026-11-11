@@ -4,10 +4,14 @@
 
 {% macro menu_da_prestacao() %}
 <div class="chips" style="margin-bottom:16px">
-  {% for chave, rotulo in [('socios','Sócios'), ('participacoes','Participações'),
-                           ('regras','Regras de rateio'), ('ajustes','Ajustes'),
+  {# As duas últimas só servem à Prestação de Contas ANTIGA; o cenário tem as
+     suas próprias (montagem). Foram para o fim, com o nome dizendo
+     (11/11/2026, o dono: "ficou muito segregado"). #}
+  {% for chave, rotulo in [('socios','Sócios'), ('ajustes','Ajustes'),
                            ('fora','Fora da análise'), ('projetos','Projeto das obras'),
-                           ('geral','Parâmetros gerais')] %}
+                           ('geral','Parâmetros gerais'),
+                           ('participacoes','Participações (prestação antiga)'),
+                           ('regras','Regras de rateio (prestação antiga)')] %}
     <a class="modulo-btn {% if aba == chave %}ativo{% endif %}"
        style="background:{{ 'var(--amarelo)' if aba == chave else 'var(--branco)' }};
               color:{{ 'var(--azul)' if aba == chave else 'var(--tinta-suave)' }};

@@ -1992,6 +1992,124 @@ def cenario_gravar():
                             categoria=request.form.get("categoria") or None))
 
 
+def _periodos_por_extenso(lista, nome_principal) -> str:
+    """ "50% desde 01/2021 · 40% desde 01/2022" — a parte do projeto principal
+    de uma conta, para ler sem abrir nada. Vazio quando a conta não separa."""
+    partes = []
+    for desde, _pct, parte in lista or []:
+        if parte is None:
+            continue
+        quando = ("sempre" if desde == "1900-01"
+                  else f"a partir de {desde[5:]}/{desde[:4]}")
+        partes.append(f"{parte:.0f}% {quando}")
+    return " · ".join(partes)
+
+
+def _explicacao_do_cenario(cenario, config) -> dict:
+    """O cenário dito em português, para a tela "Como é feita" (11/11/2026, o
+    dono: "eu quero mostrar essa tela para os outros sócios (…) eles precisam
+    bater o olho e entender como é que a gente está fazendo").
+
+    Não calcula nada novo: lê a mesma árvore da montagem e as mesmas listas, e
+    as arruma na ordem em que a conta acontece."""
+    from . import cenarios, prestacao, prestacao_dados
+    P = prestacao.PROJETO_NA_PARTICIPACAO
+    medida = cenario.get("medida") or "comprometido"
+    arvore = _contas_da_matriz(config, cenario, medida)
+    quem = cenario.get("projetos") or {}
+    principal = (quem.get("principal") or config.get("projeto_matriz") or "").strip()
+
+    grupos = []
+    for g in arvore["contas"]:
+        excecoes = []
+        for c in g["categorias"]:
+            if c.get("e_juros"):
+                continue
+            parte = _periodos_por_extenso(c.get("periodos"), principal)
+            if c.get("pct") is not None or c.get("periodos"):
+                excecoes.append({
+                    "categoria": c["categoria"], "valor": c["valor"],
+                    "entra_pct": ("varia" if c.get("varia") and not parte
+                                  else f"{c['pct_efetivo']:.0f}%"),
+                    "parte": parte})
+        grupos.append({
+            "grupo": g["grupo"], "valor": g["valor"], "entra": g["entra"],
+            "fora": g["fora"], "juros": g.get("juros") or 0.0,
+            "entra_pct": ("varia" if g.get("periodos") and not
+                          _periodos_por_extenso(g.get("periodos"), principal)
+                          else f"{g['pct_efetivo']:.0f}%"),
+            "parte": _periodos_por_extenso(g.get("periodos"), principal),
+            "excecoes": excecoes})
+
+    regras = quem.get("regras") or {}
+    nao_recebem = sorted(p for p, r in regras.items() if r[0] == "nao")
+    so_periodo = sorted((p, r[1], r[2]) for p, r in regras.items() if r[0] == "periodo")
+
+    # quem divide: uma linha por "todas as obras", por projeto e por obra
+    socios = {s["id"]: s for s in prestacao_dados.socios()}
+    linhas: dict[str, dict] = {}
+    for p in cenario.get("participacoes") or []:
+        linhas.setdefault(p["obra"] or "", {})[p["socio_id"]] = p["pct"]
+    colunas = sorted({sid for l in linhas.values() for sid in l},
+                     key=lambda i: (socios.get(i, {}).get("nome") or "").lower())
+
+    def _rotulo(chave):
+        if not chave:
+            return "Todas as obras"
+        return "Projeto " + chave[len(P):] if chave.startswith(P) else chave
+    ordem = sorted(linhas, key=lambda k: (k != "", not k.startswith(P), k.lower()))
+    quem_divide = [{"rotulo": _rotulo(k),
+                    "pcts": [linhas[k].get(sid) for sid in colunas],
+                    "soma": sum(linhas[k].values())} for k in ordem]
+
+    itens_fora = list(prestacao_dados.fora_da_analise(config)) + list(cenario.get("excluidas") or [])
+    fora_total, fora_ate = [], []
+    for item in itens_fora:
+        tipo, nome, ate = prestacao.ler_item_fora(item)
+        if not tipo:
+            continue
+        rotulo = ("Projeto " if tipo == "projeto" else "") + nome
+        (fora_ate if ate else fora_total).append(
+            rotulo + (f" (até {ate[5:]}/{ate[:4]})" if ate else ""))
+
+    return {
+        "resumo": arvore["resumo"], "grupos": grupos, "principal": principal,
+        "primeiro_mes": arvore.get("primeiro_mes", ""),
+        "regua": cenarios.CRITERIOS.get(cenario.get("criterio"), "").split(" — ")[0],
+        "regua_e_pessoal": cenario.get("criterio") != "faturamento",
+        "janela": cenarios.JANELAS.get(str(cenario.get("janela", "1")), ""),
+        "nao_recebem": nao_recebem, "so_periodo": so_periodo,
+        "juros_por_deficit": bool(cenario.get("juros_por_deficit", 1)),
+        "juros_sem_deficit": str(cenario.get("juros_sem_deficit", "sobra")),
+        "categorias_de_juros": sorted(prestacao.categorias_de_juros(
+            config.get("categoria_juros") or prestacao.CATEGORIA_JUROS_PADRAO)),
+        "socios": [socios.get(i, {"nome": "?", "tipo": ""}) for i in colunas],
+        "quem_divide": quem_divide,
+        "taxa_adm": float(cenario.get("taxa_adm_pct", 0) or 0),
+        "tem_externo": any((socios.get(i, {}).get("tipo") or "") == "Externo" for i in colunas),
+        "fora_total": fora_total, "fora_ate": fora_ate,
+        "medida_e_caixa": medida == "executado",
+    }
+
+
+@bp.route("/prestacao/como")
+def cenario_como():
+    """Como esta prestação é feita — o cenário explicado em passos, só para
+    ler e mostrar. Nada se edita aqui."""
+    from . import cenarios, consultas, prestacao_dados
+    if consultas.base_vazia():
+        return redirect(url_for("painel.configuracoes", primeira="1"))
+    lista = cenarios.listar()
+    atual = cenarios.completo(request.args.get("cenario") or
+                              (lista[0]["id"] if lista else 0))
+    if atual is None:
+        return redirect(url_for("painel.cenario_montagem"))
+    return render_template(
+        "painel_cenario_como.html", **_contexto_comum("prestacao"),
+        cenarios=lista, cenario=atual,
+        e=_explicacao_do_cenario(atual, prestacao_dados.config()))
+
+
 @bp.route("/prestacao/resultado")
 def cenario_resultado():
     """O resultado do cenario: por obra, por pessoa, e a conta aberta.
@@ -2016,9 +2134,22 @@ def cenario_resultado():
     # vem na URL, e sem escolha vale a que mais consumiu caixa — que e a que o
     # dono vai querer olhar primeiro.
     obras_com_juros = prestacao.total_por_obra(calculo["juros"]["alocacoes"])
+    # O QUE ESTÁ FORA DA PRESTAÇÃO NÃO APARECE PELO NOME (11/11/2026, o dono:
+    # "desconsidera para efeito de rateio, mas ainda aparece na tela. Não quero
+    # que apareça"). O caixa de projeto que não recebe conta nos juros, e a
+    # obra dele saía na lista de juros; agora vira uma linha só, sem nome.
+    visiveis = {nome for nome, _n in por_obra}
+    escondidas = [l for l in obras_com_juros if l["obra"] not in visiveis]
+    obras_com_juros = [l for l in obras_com_juros if l["obra"] in visiveis]
+    if escondidas:
+        obras_com_juros.append({
+            "obra": f"Obras fora desta prestação ({len(escondidas)})",
+            "valor": sum(l["valor"] for l in escondidas)})
     obra = request.args.get("obra_grafico") or (
-        obras_com_juros[0]["obra"] if obras_com_juros else
-        (por_obra[0][0] if por_obra else ""))
+        next((l["obra"] for l in obras_com_juros if l["obra"] in visiveis), "")
+        or (por_obra[0][0] if por_obra else ""))
+    if obra not in visiveis:
+        obra = por_obra[0][0] if por_obra else ""
     trilha = []
     if obra:
         trilha = prestacao.trilha_da_obra(

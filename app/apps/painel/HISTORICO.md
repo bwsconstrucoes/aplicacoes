@@ -651,6 +651,44 @@ nunca rodou contra a base real**. Ele passou pelo parser do Postgres, pelo teste
 de portabilidade e pelos testes com dublê — nenhum dos três olha o número que
 sai.
 
+## "Como é feita", a montagem em passos e a obra fora que ainda aparecia — 11/11/2026 (noite)
+
+O dono: *"vá além do que eu comentei na parte da facilitação (…) eu quero
+mostrar essa tela para os outros sócios, para eles entenderem como é que a
+coisa está sendo feita. Eles precisam bater o olho e entender."* E: *"queria
+parâmetro para não exibir uma determinada obra na tela da prestação (…) acho
+que desconsidera para efeito de rateio, mas ainda aparece na tela. Não quero
+que apareça."* E perguntou se já existe projeto que entra no rateio do custo
+da matriz só até uma data.
+
+- **Página nova, só de leitura: "Como esta prestação é feita"**
+  (`/painel/prestacao/como`, `_explicacao_do_cenario`). O cenário dito em
+  português, na ordem em que a conta acontece, com os valores: (1) quanto a
+  estrutura custou e quanto entra; (2) quanto de cada despesa vai para o
+  projeto principal e quanto para os demais, por período, com as categorias
+  que fogem do grupo; (3) a régua dentro de cada lado e quem não recebe ou só
+  recebe até um mês; (4) os juros; (5) quem divide, por projeto e por obra;
+  (6) o que fica de fora (só a contagem; os nomes recolhidos). Tem "Imprimir".
+  Não calcula nada novo: lê a mesma árvore da montagem.
+- **A obra fora aparecia, sim** — ele tinha razão: o nome ficava num aviso no
+  topo do resultado ("Fora da análise neste cenário: …"), e a obra de projeto
+  que "não recebe" saía pelo nome na lista de juros por obra (o caixa dela
+  conta nos juros). Agora os nomes ficam recolhidos ("N obra(s) fora desta
+  prestação — ver quais"), a lista de juros junta as de fora numa linha sem
+  nome, e o gráfico nunca abre numa obra de fora. NÃO foi criado um parâmetro
+  novo: "Fora totalmente" já é "não considerar E não mostrar".
+- **A montagem em passos numerados**, na ordem em que se configura, com um
+  índice fixo no topo: 1 O que se divide · 2 Quem recebe · 3 Quem divide o
+  resultado · 4 Fora da análise · 5 Régua e juros (foi para o fim: escolhe-se
+  uma vez). Os cartões são os mesmos, reordenados.
+- **Parâmetros:** as abas "Participações" e "Regras de rateio" foram para o
+  fim do menu com "(prestação antiga)" no nome. Não foram apagadas — o dono
+  não respondeu se aposenta a Prestação de Contas antiga.
+- **Projeto que recebe só até uma data:** já existia (passo 2, "recebe só no
+  período", com De/Até) e foi confirmado ao dono. Diferença para "Fora da
+  análise › considerar só até": lá a obra sai da prestação inteira depois do
+  mês; aqui ela só deixa de receber custo da matriz e continua no resultado.
+
 ## A parte do BWS CE à vista, quem divide por projeto, sócios em lote — 11/11/2026 (noite)
 
 O dono, depois de usar: *"eu vou incluir um sócio, clica, demora um tempo para

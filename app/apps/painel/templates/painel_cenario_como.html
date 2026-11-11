@@ -1,0 +1,249 @@
+{% extends "painel_base.html" %}
+{% block titulo %}Como a prestação é feita — Painel Financeiro BWS{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{# COMO ESTA PRESTAÇÃO É FEITA (11/11/2026). O dono: "eu quero mostrar essa
+   tela para os outros sócios, para eles entenderem como é que a coisa está
+   sendo feita. Eles precisam bater o olho e entender."
+   Só leitura: o cenário dito em português, na ordem em que a conta acontece,
+   com os valores. Quem quiser mudar algo vai para "Montar". #}
+
+{# custo dito como custo: sem o sinal de menos, que numa frase só atrapalha #}
+{% macro v(x) %}{{ brl(x|abs) }}{% endmacro %}
+
+{% block conteudo %}
+<style>
+  .como td.dados { white-space: nowrap; }
+  .como { max-width: 980px; }
+  .como .passo { display: flex; gap: 14px; align-items: flex-start; }
+  .como .numero { flex: 0 0 34px; height: 34px; border-radius: 50%; background: var(--azul);
+                  color: #fff; font-weight: 700; display: flex; align-items: center;
+                  justify-content: center; margin-top: 2px; }
+  .como .passo > div { flex: 1; min-width: 0; }
+  .como h3 { margin: 4px 0 6px; }
+  .como p.frase { font-size: 15px; line-height: 1.55; margin: 0 0 10px; }
+  .como .seta-lados { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+                      gap: 10px; margin: 10px 0 4px; }
+  .como .caixa { border: 1px solid var(--borda); border-radius: 10px; padding: 10px 12px; }
+  .como .caixa small { display: block; color: var(--tinta-suave); text-transform: uppercase;
+                       letter-spacing: .04em; font-size: 11px; }
+  .como .caixa b { font-size: 18px; }
+  .como td.sub { padding-left: 26px; color: var(--tinta-suave); }
+  @media print {
+    .cabecalho, .abas, .nao-imprime, .rodape-tempo { display: none !important; }
+    .como { max-width: none; }
+    .cartao { box-shadow: none; border: 1px solid #ccc; break-inside: avoid; }
+  }
+</style>
+
+<div class="como">
+<h2>Como esta prestação é feita
+  <small>o cenário “{{ cenario.nome }}”, passo a passo</small>
+</h2>
+
+<form method="get" class="tabela-barra nao-imprime" style="border:0; padding:0 0 12px">
+  <div class="campo" style="max-width:360px">
+    <label for="cenario">Cenário</label>
+    <select id="cenario" name="cenario" onchange="this.form.submit()">
+      {% for c in cenarios %}
+      <option value="{{ c.id }}" {% if c.id == cenario.id %}selected{% endif %}>{{ c.nome }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <span class="espaco"></span>
+  <button type="button" class="btn secundario" style="align-self:flex-end"
+          onclick="window.print()">🖨 Imprimir</button>
+  <a class="btn secundario" style="text-decoration:none; align-self:flex-end"
+     href="{{ url_for('painel.cenario_resultado', cenario=cenario.id) }}">Ver o resultado →</a>
+  <a class="btn secundario" style="text-decoration:none; align-self:flex-end"
+     href="{{ url_for('painel.cenario_montagem', cenario=cenario.id) }}">← Montar</a>
+</form>
+
+{% if cenario.observacao %}<p class="cartao-dica">{{ cenario.observacao }}</p>{% endif %}
+
+{# ---------------------------------------------------------------- 1 #}
+<div class="cartao"><div class="passo"><span class="numero">1</span><div>
+  <h3>De quanto estamos falando</h3>
+  <p class="frase">
+    A estrutura da empresa (matriz e filial) custou
+    <b>{{ v(e.resumo.total) }}</b>{% if e.primeiro_mes %} desde {{ e.primeiro_mes[5:] }}/{{ e.primeiro_mes[:4] }}{% endif %}.
+    Esse custo não é de nenhuma obra em particular — por isso ele é
+    <b>dividido entre as obras</b>, para cada uma mostrar o resultado de verdade.
+  </p>
+  <div class="seta-lados">
+    <div class="caixa"><small>Custo da estrutura</small><b>{{ v(e.resumo.total) }}</b></div>
+    <div class="caixa"><small>Entra na divisão</small><b>{{ v(e.resumo.entra) }}</b></div>
+    {% if e.resumo.fora|abs > 0.005 %}
+    <div class="caixa"><small>Fica de fora (não se divide)</small><b>{{ v(e.resumo.fora) }}</b></div>
+    {% endif %}
+    {% if e.resumo.juros|abs > 0.005 %}
+    <div class="caixa"><small>Juros de empréstimo (passo 4)</small><b>{{ v(e.resumo.juros) }}</b></div>
+    {% endif %}
+  </div>
+  <small class="dica">Valores {{ 'pelo que já foi pago (caixa)' if e.medida_e_caixa else 'pelo comprometido (pago mais o que está a pagar)' }}.</small>
+</div></div></div>
+
+{# ---------------------------------------------------------------- 2 #}
+<div class="cartao"><div class="passo"><span class="numero">2</span><div>
+  <h3>Quanto vai para {{ ('o ' ~ e.principal) if e.principal else 'cada lado' }} e quanto para os demais projetos</h3>
+  {% if e.principal %}
+  <p class="frase">
+    Cada tipo de despesa da estrutura tem a sua divisão: uma parte vai para as obras do
+    <b>{{ e.principal }}</b> e <b>o resto vai para os demais projetos</b>. Quando o
+    percentual muda com o tempo, vale o do período.
+  </p>
+  {% else %}
+  <p class="frase">Este cenário não separa um projeto principal: todo o custo se divide
+    entre todas as obras, pela régua do passo 3.</p>
+  {% endif %}
+  <div class="tabela-rolagem">
+    <table>
+      <thead><tr>
+        <th class="sem-ordem">Despesa da estrutura</th>
+        <th class="sem-ordem direita">Custo</th>
+        <th class="sem-ordem direita">Entra na divisão</th>
+        {% if e.principal %}
+        <th class="sem-ordem">Para o {{ e.principal }}</th>
+        <th class="sem-ordem">Para os demais</th>
+        {% endif %}
+      </tr></thead>
+      <tbody>
+        {% for g in e.grupos %}
+        <tr>
+          <td class="desc"><b>{{ g.grupo }}</b></td>
+          <td class="dados direita">{{ v(g.valor) }}</td>
+          <td class="dados direita">{{ v(g.entra) }} <small>({{ g.entra_pct }})</small>
+            {% if g.juros|abs > 0.005 %}<br><small>+ {{ v(g.juros) }} de juros (passo 4)</small>{% endif %}</td>
+          {% if e.principal %}
+          {% if g.parte %}
+          <td>{{ g.parte }}</td><td>o restante</td>
+          {% else %}
+          <td colspan="2"><small>sem separar — divide entre todas as obras que recebem</small></td>
+          {% endif %}
+          {% endif %}
+        </tr>
+          {% for c in g.excecoes %}
+          <tr>
+            <td class="desc sub">↳ {{ c.categoria }} <small>(diferente do grupo)</small></td>
+            <td class="dados direita">{{ v(c.valor) }}</td>
+            <td class="dados direita"><small>{{ c.entra_pct }}</small></td>
+            {% if e.principal %}
+            {% if c.parte %}<td>{{ c.parte }}</td><td>o restante</td>
+            {% else %}<td colspan="2"><small>como o grupo</small></td>{% endif %}
+            {% endif %}
+          </tr>
+          {% endfor %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div></div></div>
+
+{# ---------------------------------------------------------------- 3 #}
+<div class="cartao"><div class="passo"><span class="numero">3</span><div>
+  <h3>Dentro de cada lado, quanto cabe a cada obra</h3>
+  <p class="frase">
+    A parte de cada lado é repartida entre as obras dele <b>na proporção
+    {{ 'do custo de mão de obra' if e.regua_e_pessoal else 'do faturamento' }}</b>
+    de cada uma{% if e.janela %} ({{ e.janela }}){% endif %}, mês a mês.
+    {% if e.regua_e_pessoal %}Obra com mais gente usa mais a estrutura — DP,
+    engenharia, compras — e por isso carrega uma parte maior.{% endif %}
+  </p>
+  {% if e.nao_recebem or e.so_periodo %}
+  <p class="frase">
+    {% if e.nao_recebem %}<b>Não recebem</b> custo da estrutura (e não entram nesta prestação):
+      {{ e.nao_recebem|join(' · ') }}.<br>{% endif %}
+    {% for p, de, ate in e.so_periodo %}
+      <b>{{ p }}</b> recebe só
+      {% if de %}a partir de {{ de[5:] }}/{{ de[:4] }}{% endif %}
+      {% if ate %}até {{ ate[5:] }}/{{ ate[:4] }}{% endif %}; depois disso a parte dele
+      é dividida entre os outros.<br>
+    {% endfor %}
+  </p>
+  {% else %}
+  <p class="frase"><small>Todos os projetos recebem custo da estrutura, o tempo todo.</small></p>
+  {% endif %}
+</div></div></div>
+
+{# ---------------------------------------------------------------- 4 #}
+<div class="cartao"><div class="passo"><span class="numero">4</span><div>
+  <h3>Os juros de empréstimo</h3>
+  {% if e.juros_por_deficit %}
+  <p class="frase">
+    Juro não é estrutura: é o preço de faltar dinheiro. Então o juro de cada mês vai
+    <b>só para as obras que estavam com o caixa negativo naquele mês</b>, na proporção
+    do buraco de cada uma. Obra que se paga sozinha não carrega juro.
+    {% if e.juros_sem_deficit == 'estrutura' %}No mês em que nenhuma obra estava no
+    vermelho, o juro é dividido como a estrutura.{% else %}No mês em que nenhuma obra
+    estava no vermelho, o juro fica como custo da empresa, sem ir para obra nenhuma.{% endif %}
+  </p>
+  <small class="dica">Contam como juros: {{ e.categorias_de_juros|join(' · ') }}.</small>
+  {% else %}
+  <p class="frase">Neste cenário os juros de empréstimo são divididos junto com o resto
+    da estrutura, pela mesma régua.</p>
+  {% endif %}
+</div></div></div>
+
+{# ---------------------------------------------------------------- 5 #}
+<div class="cartao"><div class="passo"><span class="numero">5</span><div>
+  <h3>Quem divide o resultado de cada obra</h3>
+  {% if e.quem_divide %}
+  <p class="frase">
+    Com a estrutura e os juros dentro, cada obra tem o seu resultado. Ele é dividido assim —
+    a linha do <b>projeto</b> vale para todas as obras dele, e a de uma <b>obra</b> vale
+    só nela:
+  </p>
+  <div class="tabela-rolagem">
+    <table>
+      <thead><tr>
+        <th class="sem-ordem">Onde</th>
+        {% for s in e.socios %}<th class="sem-ordem direita">{{ s.nome }}<br><small>{{ s.tipo }}</small></th>{% endfor %}
+        <th class="sem-ordem direita">Soma</th>
+      </tr></thead>
+      <tbody>
+        {% for l in e.quem_divide %}
+        <tr>
+          <td class="desc"><b>{{ l.rotulo }}</b></td>
+          {% for v in l.pcts %}<td class="dados direita">{{ ('%.2f'|format(v)).rstrip('0').rstrip('.') ~ '%' if v is not none else '—' }}</td>{% endfor %}
+          <td class="dados direita" style="color:{{ 'var(--verde)' if (l.soma - 100)|abs < 0.01 else 'var(--vermelho)' }}">{{ ('%.2f'|format(l.soma)).rstrip('0').rstrip('.') }}%</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if e.tem_externo %}
+  <p class="frase" style="margin-top:10px">
+    <b>Obra com parceiro de fora:</b> o parceiro entrou na obra, não na empresa — ele não
+    paga a estrutura. A obra paga uma <b>taxa de administração de {{ ('%.2f'|format(e.taxa_adm)).rstrip('0').rstrip('.') }}%</b>
+    sobre a receita bruta; o que todos dividem é o resultado direto da obra, mais os juros,
+    menos essa taxa. A taxa e a estrutura voltam só para os sócios da BWS.
+  </p>
+  {% endif %}
+  {% else %}
+  <p class="frase">Ainda não foi dito quem divide.
+    <a href="{{ url_for('painel.cenario_montagem', cenario=cenario.id) }}">Preencha em Montar</a>.</p>
+  {% endif %}
+</div></div></div>
+
+{# ---------------------------------------------------------------- 6 #}
+{% if e.fora_total or e.fora_ate %}
+<div class="cartao"><div class="passo"><span class="numero">6</span><div>
+  <h3>O que não entra nesta prestação</h3>
+  <p class="frase">
+    {% if e.fora_total %}{{ e.fora_total|length }} obra(s) ou projeto(s) estão fora: não
+    recebem estrutura nem juros e não entram na parte de ninguém.{% endif %}
+    {% if e.fora_ate %}{{ e.fora_ate|length }} contam só até um mês e saem dali em diante.{% endif %}
+  </p>
+  <details><summary style="cursor:pointer"><small>ver quais</small></summary>
+    <p class="cartao-dica">{{ (e.fora_total + e.fora_ate)|join(' · ') }}</p>
+  </details>
+</div></div></div>
+{% endif %}
+
+<p class="cartao-dica nao-imprime">
+  Esta página só explica. Os números de cada obra e de cada sócio estão em
+  <a href="{{ url_for('painel.cenario_resultado', cenario=cenario.id) }}">Ver o resultado</a>;
+  para mudar qualquer regra, <a href="{{ url_for('painel.cenario_montagem', cenario=cenario.id) }}">Montar</a>.
+</p>
+</div>
+{% endblock %}

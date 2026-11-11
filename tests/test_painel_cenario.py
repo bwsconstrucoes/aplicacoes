@@ -665,7 +665,9 @@ def test_tirar_e_voltar_pela_tela(cenario, monkeypatch):
         "acao": "excluir", "cenario_id": str(cenario), "item": ["obra:MUITA GENTE"]})
     assert cenarios.excluidas(cenario) == ["obra:MUITA GENTE"]
     html = cliente.get(f"/painel/prestacao/resultado?cenario={cenario}").get_data(as_text=True)
-    assert "Fora da análise neste cenário" in html and "MUITA GENTE" in html
+    # desde 11/11/2026 o nome fica recolhido ("ver quais"): a tela é mostrada
+    # aos sócios, e obra fora da prestação não aparece à primeira vista
+    assert "1 obra(s) fora desta prestação" in html and "MUITA GENTE" in html
     cliente.post("/painel/prestacao/montagem", data={
         "acao": "reincluir", "cenario_id": str(cenario), "item": "obra:MUITA GENTE"})
     assert cenarios.excluidas(cenario) == []
@@ -724,7 +726,7 @@ def test_a_prestacao_antiga_tambem_respeita_a_lista_e_mostra_por_obra(base, monk
     html = cliente.get("/painel/prestacao").get_data(as_text=True)
     assert "Resultado por obra" in html
     assert "MUITA GENTE" in html
-    assert "Fora da análise:" in html and "POUCA GENTE" in html
+    assert "1 obra(s) fora desta prestação" in html and "POUCA GENTE" in html
     # a planilha da prestação leva a conta por obra
     resposta = cliente.get("/painel/baixar/posicao")
     assert resposta.status_code == 200
@@ -1327,3 +1329,51 @@ def test_a_montagem_mostra_a_parte_do_principal_numa_coluna(cenario, monkeypatch
         f"/painel/prestacao/montagem?cenario={cenario}").get_data(as_text=True)
     assert "Para o ALFA" in html and "desde 01/2025" in html
     assert "＋ definir" in html and "Projeto — ALFA" in html
+
+
+# ===========================================================================
+# 11/11/2026 (noite) — "eu quero mostrar essa tela para os outros sócios (…)
+# eles precisam bater o olho e entender" / "não quero que apareça na tela"
+# ===========================================================================
+def test_a_pagina_como_e_feita_explica_o_cenario(cenario, monkeypatch):
+    from app.apps.painel import cenarios
+    s = _dois_socios()
+    cenarios.gravar_projetos(cenario, "ALFA", {})
+    cenarios.gravar_periodos(cenario, "grupo", "Administrativas",
+                             [("2025-01", 100, 50), ("2026-01", 100, 40)])
+    cenarios.gravar_participacoes_em_grade(cenario, {
+        ("projeto:ALFA", s["Sócio A"]): "60", ("projeto:ALFA", s["Parceiro"]): "40"})
+    cenarios.gravar_fora(cenario, ["obra:POUCA GENTE"])
+    html = _cliente(monkeypatch).get(
+        f"/painel/prestacao/como?cenario={cenario}").get_data(as_text=True)
+    assert "Como esta prestação é feita" in html
+    assert "50% a partir de 01/2025 · 40% a partir de 01/2026" in html
+    assert "Para o ALFA" in html and "o restante" in html
+    assert "Projeto ALFA" in html and "60%" in html
+    assert "custo de mão de obra" in html and "caixa negativo" in html
+    assert "taxa de administração" in html          # tem parceiro de fora
+    # o que está fora fica recolhido: a contagem aparece, o nome só ao abrir
+    assert "1 obra(s) ou projeto(s) estão fora" in html
+
+
+def test_a_obra_fora_nao_aparece_pelo_nome_no_resultado(cenario, monkeypatch):
+    from app.apps.painel import cenarios
+    cenarios.gravar_fora(cenario, ["obra:POUCA GENTE"])
+    html = _cliente(monkeypatch).get(
+        f"/painel/prestacao/resultado?cenario={cenario}").get_data(as_text=True)
+    assert "1 obra(s) fora desta prestação" in html
+    # o nome só existe dentro do bloco recolhido ("ver quais")
+    antes, _, depois = html.partition("<details")
+    recolhido, _, resto = depois.partition("</details>")
+    assert "POUCA GENTE" in recolhido
+    assert "POUCA GENTE" not in antes and "POUCA GENTE" not in resto
+
+
+def test_a_montagem_vem_em_passos(cenario, monkeypatch):
+    html = _cliente(monkeypatch).get(
+        f"/painel/prestacao/montagem?cenario={cenario}").get_data(as_text=True)
+    ordem = [html.index(t) for t in ('id="passo-divide"', 'id="passo-recebe"',
+                                     'id="passo-socios"', 'id="passo-fora"',
+                                     'id="passo-regua"')]
+    assert ordem == sorted(ordem)
+    assert "Como é feita" in html
