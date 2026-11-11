@@ -526,6 +526,21 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 11/11/2026 (quarta) — O teste do fechamento que quebrava em novembro (Finados, de novo)
+
+`test_o_fechamento_separa_o_inteiro_do_quebrado` falhava na `main` desde 10/11. O teste mede a "hora extra pequena
+desconsiderada" batendo 8 min de extra num dia "uma semana antes" do dia escolhido — era `dia - 7` cru. Com hoje em
+11/11, o dia escolhido é 09/11, e uma semana antes é **02/11, Finados**. No feriado o dia trabalhado INTEIRO é extra
+(9h08, não 8 min), então ele não é "pequeno" e não sai da conta. **A regra acertou; o teste é que escolheu mal o dia.**
+- **O conserto (só no teste):** o dia da extra pequena agora vem de `_dia_util_antes` — segunda a quinta, fora de
+  feriado nacional, antes do dia escolhido e no mesmo mês; de preferência uma semana antes, senão o mais perto.
+  Mesmo caminho do `_dia_do_corrente`, que tinha quebrado pelo mesmo Finados em 03/11.
+- **Conferido** contra o calendário de feriados do banco de teste, simulando "hoje" em cada dia de mar/2026 a
+  dez/2027: o dia escolhido nunca cai em feriado nem fora do mês (em 8 dos 670 dias não há dia útil antes no mesmo
+  mês, e esse trecho do teste é pulado, como já era). O arquivo inteiro passa com banco de verdade.
+- Fica a lição para quem escrever teste de ponto com data relativa a hoje: **nunca `dia ± N` cru** — passe por
+  `dias_de_trabalho_antes`, que pula feriado.
+
 ## 10/11/2026 (terça) — Alertas com período, obra, pessoa e páginas
 
 O dono: *"está exibindo 500 por página, só que não tem paginação, não posso mudar de página, não posso filtrar por

@@ -136,6 +136,21 @@ def _dia_do_corrente(banco, hoje: dt.date) -> dt.date | None:
     return None
 
 
+def _dia_util_antes(banco, dia: dt.date) -> dt.date | None:
+    """O dia da "hora extra pequena": de segunda a quinta, não feriado, antes de
+    `dia` e no mesmo mês — de preferência uma semana antes ou mais.
+
+    ⚠️ FERIADO CONTA DE NOVO (11/11/2026): era `dia - 7` cru. Com `dia` em
+    09/11, caiu em 02/11 (Finados), e no feriado o dia trabalhado INTEIRO é
+    extra (9h08, não 8 min) — a regra acertou, o teste é que escolheu mal.
+    """
+    from tests.test_ponto_gestao_banco import dias_de_trabalho_antes
+    mesmo_mes = [d for d in dias_de_trabalho_antes(banco, dia, quantos=20, dias_da_semana=(0, 1, 2, 3))
+                 if d.month == dia.month]
+    longe = [d for d in mesmo_mes if d <= dia - dt.timedelta(days=7)]
+    return (longe or mesmo_mes or [None])[-1]
+
+
 @pytest.mark.banco
 def test_o_fechamento_separa_o_inteiro_do_quebrado(app, mundo, banco, banco_analisesps):
     from app.apps.ponto import horario
@@ -220,8 +235,8 @@ def test_o_fechamento_separa_o_inteiro_do_quebrado(app, mundo, banco, banco_anal
 
     # a hora extra pequena DESCONSIDERADA (30/10/2026): o dia com até N minutos de extra não entra; a escolha fica
     # guardada até mudar
-    pequeno = dia - dt.timedelta(days=7)                # uma semana antes: 8 min de extra no dia
-    if pequeno.month == dia.month:
+    pequeno = _dia_util_antes(banco, dia)               # um dia de trabalho antes, no mesmo mês: 8 min de extra
+    if pequeno:
         for h, m in ((7, 0), (11, 0), (12, 0), (17, 8)):
             bater_via_chave(app, CPF_JOAO, local(pequeno, h, m))
         fp = dp.post("/erp/api/ponto/fechamento", json={**corpo, "he_minima": 10}).get_json()
