@@ -651,6 +651,31 @@ nunca rodou contra a base real**. Ele passou pelo parser do Postgres, pelo teste
 de portabilidade e pelos testes com dublê — nenhum dos três olha o número que
 sai.
 
+## Sócios e participações: editar na linha, e a grade — 11/11/2026
+
+O dono: *"as participações e os sócios não podem ser editadas"* e, em
+seguida, *"tá muito difícil e lento de configurar as participações"*. Era uma
+participação por envio (escolher projeto/obra, sócio, percentual, salvar,
+esperar a página) e nada se editava: para mudar um percentual, remover e
+cadastrar de novo; sócio não se renomeava.
+
+**O que mudou:**
+- **Participações viraram uma GRADE**, nas duas telas: linhas = projetos
+  (Parâmetros › Participações) ou obras ("Quem divide" do cenário, com
+  "Todas as obras" na primeira linha), colunas = sócios ativos, **um "Salvar
+  tudo"**. Célula vazia = não participa (apaga a que havia). A soma de cada
+  linha aparece ao lado, verde em 100%, vermelha fora disso. Busca por nome;
+  "só os que já têm percentual" (no cenário vem marcado — são ~150 obras, e
+  procurar uma mostra a linha dela mesmo vazia). Em Parâmetros, "Copiar a 1ª
+  linha nas vazias". No cenário NÃO há copiar: preencher uma obra a tira da
+  regra geral, e copiar em massa criaria 150 exceções.
+- A grade confere TUDO antes de gravar: um percentual inválido (texto, fora de
+  0–100) volta para a tela com o aviso e nada é gravado.
+- **Sócio edita na linha**: nome e tipo, com Salvar por linha; nome repetido é
+  recusado. Desativado ganha **Reativar** (antes não tinha volta).
+- Os campos da grade são `linha` (o nome, na ordem) e `pct_<i>_<sócio>` — o
+  nome da obra não vai no nome do campo (tem espaço, barra, acento).
+
 ## "Tento, tento e nunca fecha": a releitura de pagamentos passa a ser mês a mês — 11/11/2026
 
 O dono rodou "Reler os pagamentos" e a tela mostrou "2021: página 324 de 378 —

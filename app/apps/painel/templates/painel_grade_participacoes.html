@@ -1,0 +1,111 @@
+{# A grade de participações: linhas (projetos ou obras) × sócios, um Salvar
+   só. Usada em Parâmetros › Participações e no "Quem divide" do cenário
+   (11/11/2026, o dono: "tá muito difícil e lento de configurar as
+   participações"). Os campos: `linha` (o nome, na ordem da tela) e
+   `pct_<i>_<sócio>`. #}
+{% macro grade_participacoes(linhas, socios, grade, rotulo_da_linha, copiar=True, so_preenchidas=False) %}
+<div class="grade-part-barra" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:8px">
+  <input type="search" placeholder="Procurar {{ rotulo_da_linha|lower }}…" data-grade-busca
+         data-sem-busca style="max-width:260px">
+  <label class="cartao-dica" style="margin:0">
+    <input type="checkbox" data-grade-so-preenchidas {{ 'checked' if so_preenchidas }}> só os que já têm percentual
+  </label>
+  <span class="espaco" style="flex:1"></span>
+  <button class="btn" type="submit">Salvar tudo</button>
+</div>
+<p class="dica" style="margin-top:0">Deixe em branco quem não participa. A soma de
+  cada linha aparece à direita; fica vermelha se não der 100%.
+  {% if copiar %}“Copiar a 1ª linha” repete os percentuais da primeira linha nas que estão vazias.{% endif %}
+  Procurar mostra também as linhas vazias.</p>
+<div class="tabela-rolagem" style="max-height:560px">
+  <table class="grade-participacoes">
+    <thead>
+      <tr>
+        <th class="sem-ordem">{{ rotulo_da_linha }}</th>
+        {% for s in socios %}
+        <th class="sem-ordem direita" title="{{ s.tipo }}">{{ s.nome }}
+          <br><small>{{ s.tipo }}</small></th>
+        {% endfor %}
+        <th class="sem-ordem direita">Soma</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for linha in linhas %}
+      {% set i = loop.index0 %}
+      {% set desta = grade.get(linha.chave, {}) %}
+      <tr data-grade-linha data-texto="{{ linha.rotulo|lower }}" {{ 'data-grade-fixa' if linha.fixa }}>
+        <td class="desc">
+          <input type="hidden" name="linha" value="{{ linha.chave }}">
+          {{ linha.rotulo }}
+        </td>
+        {% for s in socios %}
+        {% set v = desta.get(s.id) %}
+        <td class="direita">
+          <input name="pct_{{ i }}_{{ s.id }}" inputmode="decimal" data-grade-pct
+                 value="{{ ('%.2f'|format(v)).rstrip('0').rstrip('.') if v is not none else '' }}"
+                 aria-label="{{ s.nome }} em {{ linha.rotulo }}"
+                 style="width:70px; text-align:right">
+        </td>
+        {% endfor %}
+        <td class="dados direita" data-grade-soma></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div style="display:flex; gap:10px; margin-top:8px; flex-wrap:wrap">
+  {% if copiar %}
+  <button class="btn secundario" type="button" data-grade-copiar>Copiar a 1ª linha nas vazias</button>
+  {% endif %}
+  <span class="espaco" style="flex:1"></span>
+  <button class="btn" type="submit">Salvar tudo</button>
+</div>
+<script>
+(function () {
+  const tabelas = document.querySelectorAll("table.grade-participacoes");
+  const tabela = tabelas[tabelas.length - 1];
+  const caixa = tabela.closest("form") || document;
+  const num = t => { const v = parseFloat(String(t || "").replace(",", ".")); return isNaN(v) ? null : v; };
+  function somar(tr) {
+    const vals = [...tr.querySelectorAll("[data-grade-pct]")].map(i => num(i.value)).filter(v => v !== null);
+    const celula = tr.querySelector("[data-grade-soma]");
+    if (!vals.length) { celula.textContent = "—"; celula.style.color = ""; return; }
+    const soma = vals.reduce((a, b) => a + b, 0);
+    celula.textContent = soma.toLocaleString("pt-BR", {maximumFractionDigits: 2}) + "%";
+    celula.style.color = Math.abs(soma - 100) < 0.005 ? "var(--verde)" : "var(--vermelho)";
+  }
+  const linhas = () => [...tabela.querySelectorAll("tr[data-grade-linha]")];
+  linhas().forEach(somar);
+  tabela.addEventListener("input", e => { const tr = e.target.closest("tr"); if (tr) somar(tr); });
+  const busca = caixa.querySelector("[data-grade-busca]");
+  const so = caixa.querySelector("[data-grade-so-preenchidas]");
+  function filtrar() {
+    const termo = (busca.value || "").toLowerCase().trim();
+    linhas().forEach(tr => {
+      const tem = [...tr.querySelectorAll("[data-grade-pct]")].some(i => i.value.trim());
+      // procurando, aparece mesmo vazia: é assim que se acha a linha a preencher
+      const mostra = tr.hasAttribute("data-grade-fixa")
+        || (termo ? tr.dataset.texto.includes(termo) : (!so.checked || tem));
+      tr.style.display = mostra ? "" : "none";
+    });
+  }
+  filtrar();
+  busca.addEventListener("input", filtrar);
+  so.addEventListener("change", filtrar);
+  busca.addEventListener("keydown", e => { if (e.key === "Enter") e.preventDefault(); });
+  const copiar = caixa.querySelector("[data-grade-copiar]");
+  if (copiar) copiar.addEventListener("click", () => {
+    const [primeira, ...resto] = linhas();
+    if (!primeira) return;
+    const modelo = [...primeira.querySelectorAll("[data-grade-pct]")].map(i => i.value);
+    resto.forEach(tr => {
+      if (tr.style.display === "none") return;
+      const campos = [...tr.querySelectorAll("[data-grade-pct]")];
+      if (campos.some(i => i.value.trim())) return;
+      campos.forEach((i, k) => { i.value = modelo[k]; });
+      somar(tr);
+    });
+  });
+})();
+</script>
+{% endmacro %}

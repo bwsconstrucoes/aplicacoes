@@ -586,74 +586,26 @@
     que entra o parceiro de uma obra só, sem refazer o resto.
   </p>
 
+  {% if request.args.get('erro') %}
+  <div class="aviso erro">{{ request.args.get('erro') }} Nada foi gravado.</div>
+  {% endif %}
+  {# UMA GRADE, UM SALVAR (11/11/2026, o dono: "tá muito difícil e lento de
+     configurar as participações"). A primeira linha é "Todas as obras"; uma
+     obra preenchida substitui essa linha nela. Abre mostrando só o que já
+     tem percentual — procurar uma obra mostra a linha dela para preencher. #}
   {% if socios %}
-  <form method="post" class="form-grade">
-    <input type="hidden" name="acao" value="participacao">
+  {% from "painel_grade_participacoes.html" import grade_participacoes %}
+  <form method="post">
+    <input type="hidden" name="acao" value="participacoes_em_grade">
     <input type="hidden" name="cenario_id" value="{{ cenario.id }}">
-    <div class="campo">
-      <label for="socio_id">Quem</label>
-      <select id="socio_id" name="socio_id" required>
-        {% for s in socios %}
-        <option value="{{ s.id }}">{{ s.nome }} — {{ s.tipo }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="campo">
-      <label for="obra">Em qual obra</label>
-      <select id="obra" name="obra">
-        <option value="">Todas as obras</option>
-        {% for o in obras_do_painel %}
-        <option value="{{ o }}">{{ o }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="campo">
-      <label for="pct_socio">Percentual</label>
-      <input id="pct_socio" name="pct" required placeholder="Ex.: 50">
-    </div>
-    <div class="campo" style="align-self:end">
-      <button class="btn" type="submit">Salvar</button>
-    </div>
+    {{ grade_participacoes(linhas_quem_divide, socios, grade_quem_divide, 'Obra',
+                           copiar=False, so_preenchidas=True) }}
   </form>
   {% else %}
   <div class="aviso erro">
     Nenhum sócio cadastrado ainda.
     <a href="{{ url_for('painel.prestacao_parametros', aba='socios') }}">Cadastre em Sócios</a>
     — é lá que se diz quem é sócio da BWS e quem é parceiro de obra.
-  </div>
-  {% endif %}
-
-  {% if cenario.participacoes %}
-  <div class="tabela-rolagem" style="max-height:320px; margin-top:10px">
-    <table>
-      <thead>
-        <tr>
-          <th class="sem-ordem">Quem</th>
-          <th class="sem-ordem">Tipo</th>
-          <th class="sem-ordem">Obra</th>
-          <th class="sem-ordem direita">Percentual</th>
-          <th class="sem-ordem"></th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for p in cenario.participacoes %}
-        <tr>
-          <td class="desc">{{ p.socio }}</td>
-          <td class="desc">{{ p.tipo }}</td>
-          <td class="desc">{{ p.obra or 'Todas as obras' }}</td>
-          <td class="dados direita">{{ '%.2f'|format(p.pct) }}%</td>
-          <td>
-            <form method="post">
-              <input type="hidden" name="acao" value="apagar_participacao">
-              <input type="hidden" name="cenario_id" value="{{ cenario.id }}">
-              <input type="hidden" name="participacao_id" value="{{ p.id }}">
-              <button class="btn secundario" type="submit">Tirar</button>
-            </form>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
   </div>
   {% endif %}
 </div>

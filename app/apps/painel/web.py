@@ -1834,6 +1834,7 @@ def cenario_montagem():
         socios=prestacao_dados.socios(apenas_ativos=True),
         obras_do_painel=_opcoes_no_escopo().get("obras", []),
         projetos_do_painel=_opcoes_no_escopo().get("projetos", []),
+        **_grade_quem_divide(atual, _opcoes_no_escopo().get("obras", [])),
         excluidas_gerais=prestacao_dados.fora_da_analise(config),
         # onde estao os juros na base, categoria por categoria — e quais a
         # prestacao esta contando. E a resposta para "na controladoria tem
@@ -1925,6 +1926,13 @@ def cenario_gravar():
                                      request.form.get("obra", ""))
     elif acao == "apagar_participacao" and cenario_id:
         cenarios.apagar_participacao(request.form["participacao_id"])
+    elif acao == "participacoes_em_grade" and cenario_id:
+        try:
+            cenarios.gravar_participacoes_em_grade(cenario_id,
+                                                   _celulas_da_grade(request.form))
+        except ValueError as e:
+            return redirect(url_for("painel.cenario_montagem", cenario=cenario_id,
+                                    erro=str(e)))
     elif acao == "excluir" and cenario_id:
         for item in request.form.getlist("item"):
             cenarios.excluir(cenario_id, item)
@@ -2114,7 +2122,14 @@ def prestacao_parametros():
     from . import consultas, prestacao_dados
 
     if request.method == "POST":
-        _aplicar_mudanca_da_prestacao(prestacao_dados, request.form)
+        try:
+            _aplicar_mudanca_da_prestacao(prestacao_dados, request.form)
+        except ValueError as e:
+            # engano de digitação volta para a tela dito em português, não
+            # como página de erro (11/11/2026, edição na própria linha)
+            return redirect(url_for("painel.prestacao_parametros",
+                                    aba=request.form.get("aba", "socios"),
+                                    erro=str(e)))
         return redirect(url_for("painel.prestacao_parametros",
                                 aba=request.form.get("aba", "socios")))
 
@@ -2132,6 +2147,9 @@ def prestacao_parametros():
         socios=prestacao_dados.socios(),
         socios_ativos=prestacao_dados.socios(apenas_ativos=True),
         participacoes=prestacao_dados.participacoes(),
+        **_grade_dos_projetos(prestacao_dados.participacoes(),
+                              consultas.opcoes_de_filtro()["projetos"]
+                              if not consultas.base_vazia() else []),
         regras=prestacao_dados.regras(),
         ajustes=prestacao_dados.ajustes(),
         tipos_ajuste=prestacao_dados.TIPOS_AJUSTE,
@@ -2147,6 +2165,45 @@ def prestacao_parametros():
     )
 
 
+def _grade_dos_projetos(participacoes, projetos) -> dict:
+    """As linhas e os valores da grade de Parâmetros › Participações: todos os
+    projetos do painel (e os que só existem na participação), com os já
+    preenchidos primeiro."""
+    grade: dict = {}
+    for p in participacoes:
+        grade.setdefault(p["projeto"], {})[p["socio_id"]] = p["pct"]
+    nomes = sorted(set(projetos) | set(grade), key=lambda n: (n not in grade, n.lower()))
+    return {"grade": grade,
+            "linhas_da_grade": [{"chave": n, "rotulo": n} for n in nomes]}
+
+
+def _grade_quem_divide(cenario, obras) -> dict:
+    """A grade do "Quem divide" do cenário: "Todas as obras" primeiro, depois
+    as obras com percentual próprio, depois as outras (que aparecem ao
+    procurar)."""
+    grade: dict = {}
+    for p in (cenario or {}).get("participacoes") or []:
+        grade.setdefault(p["obra"] or "", {})[p["socio_id"]] = p["pct"]
+    outras = sorted((set(obras) | set(grade)) - {""},
+                    key=lambda n: (n not in grade, n.lower()))
+    linhas = [{"chave": "", "rotulo": "Todas as obras", "fixa": True}] + [
+        {"chave": o, "rotulo": o} for o in outras]
+    return {"grade_quem_divide": grade, "linhas_quem_divide": linhas}
+
+
+def _celulas_da_grade(form) -> dict:
+    """A grade de participações vem como `linha` (o projeto, ou a obra, na
+    ordem da tela) e células `pct_<i>_<sócio>`. O nome do projeto não vai no
+    nome do campo: nome de obra tem espaço, barra e acento."""
+    celulas = {}
+    for i, linha in enumerate(form.getlist("linha")):
+        for chave in form:
+            prefixo = f"pct_{i}_"
+            if chave.startswith(prefixo) and chave[len(prefixo):].isdigit():
+                celulas[(linha, int(chave[len(prefixo):]))] = form.get(chave, "")
+    return celulas
+
+
 def _aplicar_mudanca_da_prestacao(dados, form):
     """Uma acao por envio; o formulario diz qual em `acao`."""
     acao = form.get("acao", "")
@@ -2155,10 +2212,14 @@ def _aplicar_mudanca_da_prestacao(dados, form):
                            form.get("socio_id") or None)
     elif acao == "desativar_socio":
         dados.desativar_socio(form["socio_id"])
+    elif acao == "reativar_socio":
+        dados.reativar_socio(form["socio_id"])
     elif acao == "participacao":
         dados.salvar_participacao(form["projeto"], form["socio_id"], form["pct"])
     elif acao == "apagar_participacao":
         dados.apagar_participacao(form["participacao_id"])
+    elif acao == "participacoes_em_grade":
+        dados.gravar_participacoes_em_grade(_celulas_da_grade(form))
     elif acao == "regra":
         dados.salvar_regra({
             "nome": form["nome"], "depto": form["depto"],
