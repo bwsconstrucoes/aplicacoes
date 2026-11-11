@@ -8986,6 +8986,29 @@ Por isso a conferência sem gravar é o padrão, e por isso ela **não baixa
 nada**: se o formato vier diferente do esperado, a simulação mostra isso sem
 ter tocado em nenhum cadastro.
 
+## 11/11/2026 — O CADASTRO NÃO PERGUNTAVA POR QUAL EMPRESA
+
+Ele: *"uma coisa a mais. na readmissão ou no cadastro de colaborador pergunta
+qual empresa?"*
+
+Fui olhar: **a readmissão perguntava; o cadastro não.** E é justamente o
+cadastro que CRIA a pessoa. O DP recebia um colaborador novo sem saber por
+qual das três empresas registrar (MATRIZ/CE, INFRADENDE ou C3), e ia perguntar
+por fora do sistema — que é exatamente o tipo de ida e volta que este ERP
+existe para acabar.
+
+**No Pipe o campo está no formulário de ABERTURA**, ou seja, é de quem pede —
+não é decisão do DP, como convenção e matrícula são. Então entrou igual à
+readmissão: caixinha fechada com os três CNPJs, obrigatória.
+
+⚑ **UM campo só, e não dois.** No Pipe há "Empresa para Registro" E "CNPJ para
+Admissão", mas as três empresas SÃO os três CNPJs. Perguntar as duas coisas é
+a duplicidade que ele já derrubou no diário (*"ou é um ou é o outro"*).
+
+**A trava é por CLASSE, não por tipo:** todo pedido que registra alguém numa
+empresa tem de dizer em qual, e nenhum pode perguntar isso duas vezes. Tipo
+novo do mesmo feitio nasce com a pergunta ou quebra a suíte.
+
 ## Coisas pequenas que mordem
 
 - **⚠️ DATA FIXA EM FIXTURE DE TESTE É BOMBA-RELÓGIO.** Em 07/11/2026, na hora

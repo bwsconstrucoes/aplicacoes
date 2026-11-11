@@ -167,6 +167,7 @@ def test_pre_cadastro_de_quem_ja_existe_e_recusado(mundo):
         "documentos": ["DOC-IDENTIDADE", "CPF-DOC", "COMPROVANTE-ENDERECO-PESSOA"],
         "pagamento": "Mensalista", "cargo_pleiteado_id": mundo["cargo"].id, "data_inicio": "2026-05-01", "nome": "José Repetido",
                                "cpf": CPF_A,
+                               "cnpj_admissao": "00.079.526/0001-09 - MATRIZ/CE",
                                "obra_id": mundo["obra"].id}, mundo["encarregado"])
     assert "já tem cadastro" in str(e.value)
 
@@ -217,6 +218,7 @@ def test_atender_pre_cadastro_CRIA_a_pessoa(mundo):
         "tipo": "CADASTRO", "tipo_documentacao": "Prestador de Serviço",
         "documentos": ["DOC-IDENTIDADE", "CPF-DOC", "COMPROVANTE-ENDERECO-PESSOA"],
         "pagamento": "Mensalista", "cargo_pleiteado_id": mundo["cargo"].id, "data_inicio": "2026-05-01", "nome": "Maria Nova De Teste", "cpf": CPF_B,
+        "cnpj_admissao": "00.079.526/0001-09 - MATRIZ/CE",
         "obra_id": mundo["obra"].id, "vinculo": "CTPS",
         "data_inicio": "2026-04-01"}, mundo["encarregado"])
     assert p["colaborador_id"] is None          # a pessoa ainda não existe
@@ -534,6 +536,9 @@ def _cadastro(mundo, **extra):
     base = {"tipo": "CADASTRO", "nome": "Novo De Teste", "cpf": CPF_B,
             "obra_id": mundo["obra"].id, "tipo_documentacao": "Prestador de Serviço",
             "pagamento": "Diarista", "cargo_pleiteado_id": mundo["cargo"].id,
+            # Desde 11/11/2026 o cadastro também diz POR QUAL EMPRESA — a
+            # readmissão já perguntava, e quem cria a pessoa é este aqui.
+            "cnpj_admissao": "00.079.526/0001-09 - MATRIZ/CE",
             "data_inicio": "2026-05-01"}
     base.update(extra)
     return base
@@ -921,3 +926,44 @@ def test_o_cpf_nunca_muda_por_atualizacao_de_dados(mundo):
     mundo["s"].flush()
     mundo["s"].refresh(mundo["pessoa"])
     assert mundo["pessoa"].cpf == CPF_A
+
+
+def test_todo_tipo_que_ADMITE_alguem_pergunta_por_qual_empresa(mundo):
+    """⚑ A pergunta dele em 11/11/2026: *"na readmissão ou no cadastro de
+    colaborador pergunta qual empresa?"* A readmissão perguntava; o cadastro,
+    que é justamente quem CRIA a pessoa, não.
+
+    Esta trava é por CLASSE, não por tipo: todo pedido que registra alguém
+    numa empresa tem de dizer em qual. Tipo novo do mesmo feitio nasce com a
+    pergunta, ou quebra aqui."""
+    ADMITEM = ("CADASTRO", "READMISSAO")
+    for chave in ADMITEM:
+        regra = svc.TIPOS[chave]
+        assert "cnpj_admissao" in regra["campos"], (
+            f"{chave} registra alguém numa empresa e não pergunta qual")
+        assert "cnpj_admissao" in regra["obrigatorios"], (
+            f"{chave} pergunta a empresa mas deixa passar em branco — o DP "
+            f"ficaria sem saber por qual das três registrar")
+
+
+def test_a_empresa_e_perguntada_UMA_vez_so(mundo):
+    """No Pipe há "Empresa para Registro" E "CNPJ para Admissão". As três
+    empresas SÃO os três CNPJs: perguntar as duas coisas é a duplicidade que
+    ele já derrubou no diário ("ou é um ou é o outro")."""
+    for chave, regra in svc.TIPOS.items():
+        campos = set(regra["campos"]) | set(regra.get("campos_do_dp", ()))
+        assert not ("cnpj_admissao" in campos and "empresa_id" in campos), (
+            f"{chave} pergunta a empresa duas vezes")
+
+
+def test_o_cadastro_sem_a_empresa_e_recusado(mundo):
+    with pytest.raises(ErroValidacao) as e:
+        svc.abrir(mundo["s"], {
+            "tipo": "CADASTRO", "nome": "Maria Sem Empresa", "cpf": CPF_B,
+            "tipo_documentacao": "CTPS", "data_inicio": "2026-05-01",
+            "cargo_pleiteado_id": mundo["cargo"].id, "pagamento": "Mensalista",
+            "obra_id": mundo["obra"].id,
+            "documentos": ["DOC-IDENTIDADE", "CPF-DOC",
+                           "COMPROVANTE-ENDERECO-PESSOA", "CTPS-FOTO",
+                           "CTPS-INFORMACOES"]}, mundo["encarregado"])
+    assert "CNPJ para Admissão" in str(e.value)

@@ -284,12 +284,25 @@ TIPOS: dict[str, dict[str, Any]] = {
         # Os rótulos vêm do pipe CADASTRO COLABORADORES. "Tipo de Documentação
         # para Cadastro" é o nome certo do que eu chamava de "tipo de
         # contrato"; "Função" é o nome certo de cargo neste formulário.
-        "campos": ("nome", "cpf", "tipo_documentacao", "num_ctps", "num_pis",
+        # ⚑ O CNPJ DA ADMISSÃO ENTROU EM 11/11/2026, quando ele reparou:
+        # *"na readmissão ou no cadastro de colaborador pergunta qual
+        # empresa?"* A readmissão perguntava; o CADASTRO NÃO — e é justamente
+        # ele que cria a pessoa. Sem isso o DP recebia um colaborador novo sem
+        # saber por qual das três empresas registrar, e ia perguntar por fora
+        # do sistema. No Pipe o campo está no formulário de ABERTURA, ou seja,
+        # é de quem pede — não é decisão do DP, como convenção e matrícula.
+        #
+        # UM campo só, e não dois: no Pipe há "Empresa para Registro" E "CNPJ
+        # para Admissão", mas as três empresas SÃO os três CNPJs. Perguntar as
+        # duas coisas é a duplicidade que ele já derrubou no diário ("ou é um
+        # ou é o outro").
+        "campos": ("nome", "cpf", "tipo_documentacao", "cnpj_admissao",
+                   "num_ctps", "num_pis",
                    "data_inicio", "cargo_pleiteado_id", "pagamento",
                    "valor_diaria", "valor_mes", "telefone", "meio_transporte",
                    "observacao"),
-        "obrigatorios": ("nome", "cpf", "tipo_documentacao", "data_inicio",
-                         "cargo_pleiteado_id", "pagamento"),
+        "obrigatorios": ("nome", "cpf", "tipo_documentacao", "cnpj_admissao",
+                         "data_inicio", "cargo_pleiteado_id", "pagamento"),
         # ⚑ SE FOR CTPS, A CARTEIRA E O PIS SÃO OBRIGATÓRIOS TAMBÉM. Ele, em
         # 10/11/2026: *"se for CTPS, os dados da carteira são obrigatórios,
         # PIS também."*
