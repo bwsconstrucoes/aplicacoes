@@ -52,11 +52,17 @@
   </form>
   <div class="tabela-rolagem">
     <table>
-      <thead><tr><th class="sem-ordem">Nome</th><th class="sem-ordem">Tipo</th>
+      <thead><tr><th class="sem-ordem" style="width:76px">Posição</th><th class="sem-ordem">Nome</th><th class="sem-ordem">Tipo</th>
         <th class="sem-ordem">Situação</th><th class="sem-ordem"></th></tr></thead>
       <tbody>
         {% for s in socios %}
-        <tr>
+        <tr data-socio-linha>
+          <td style="white-space:nowrap">
+            <button type="button" class="btn secundario" data-socio-sobe title="subir"
+                    aria-label="Subir {{ s.nome }}" style="padding:2px 8px">▲</button>
+            <button type="button" class="btn secundario" data-socio-desce title="descer"
+                    aria-label="Descer {{ s.nome }}" style="padding:2px 8px">▼</button>
+          </td>
           <td class="desc">
             <input type="hidden" name="socio_id" form="socios-lista" value="{{ s.id }}">
             <input name="nome" form="socios-lista" value="{{ s.nome }}"
@@ -91,6 +97,7 @@
         {% endfor %}
         {% for i in range(20) %}
         <tr data-socio-novo {{ 'hidden' if i >= 3 }}>
+          <td></td>
           <td class="desc">
             <input type="hidden" name="socio_id" form="socios-lista" value="">
             <input name="nome" form="socios-lista" placeholder="novo sócio — nome"
@@ -117,9 +124,26 @@
     <span style="flex:1"></span>
     <button class="btn secundario" type="button"
             onclick="[...document.querySelectorAll('tr[data-socio-novo][hidden]')].slice(0,3).forEach(t => t.hidden = false)">＋ mais linhas</button>
+    <span id="socios-ordem-aviso" class="cartao-dica" style="margin:0" hidden><b>Posição mudada — falta salvar.</b></span>
     <button class="btn" type="submit" form="socios-lista">Salvar tudo</button>
   </div>
+  <p class="dica">As setas <b>▲ ▼</b> mudam a posição do sócio. É nessa ordem que eles
+    aparecem nas colunas de “Quem divide o resultado” e nos quadros do resultado. Vale depois de salvar.</p>
 </div>
+<script>
+// A POSIÇÃO DO SÓCIO (11/11/2026): as setas trocam a linha de lugar na tela;
+// o "Salvar tudo" grava a lista na ordem em que ela está.
+document.addEventListener("click", function (e) {
+  const sobe = e.target.closest("[data-socio-sobe]"), desce = e.target.closest("[data-socio-desce]");
+  if (!sobe && !desce) return;
+  const tr = (sobe || desce).closest("tr");
+  const vizinha = sobe ? tr.previousElementSibling : tr.nextElementSibling;
+  if (!vizinha || !vizinha.hasAttribute("data-socio-linha")) return;
+  sobe ? tr.parentNode.insertBefore(tr, vizinha) : tr.parentNode.insertBefore(vizinha, tr);
+  document.getElementById("socios-ordem-aviso").hidden = false;
+  (sobe || desce).focus();
+});
+</script>
 {% endif %}
 
 {# As abas "Participações" e "Regras de rateio" saíram em 11/11/2026, com a

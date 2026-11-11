@@ -1612,3 +1612,33 @@ def test_quem_divide_abre_o_projeto_nas_obras_dele():
     assert por_chave["projeto:PROJ B"]["aberto"] and por_chave["projeto:PROJ B"]["obras"] == 2
     assert not por_chave["projeto:PROJ A"]["aberto"]
     assert "obra:FORA" not in r["grade_quem_divide"]
+
+
+def test_a_posicao_dos_socios_e_a_ordem_da_lista_salva(cenario):
+    """11/11/2026, o dono: "não consigo (…) mudar a posição". A ordem em que a
+    lista é salva vira a posição de cada um — nas colunas e no resultado."""
+    from app.apps.painel import cenarios, prestacao_dados
+    s = _dois_socios()
+    assert [x["nome"] for x in prestacao_dados.socios()] == ["Parceiro", "Sócio A"]   # por nome
+    prestacao_dados.salvar_socios_em_lista([
+        (s["Sócio A"], "Sócio A", "Interno"), (s["Parceiro"], "Parceiro", "Externo"),
+        ("", "Zé Novo", "Interno"), ("", "", "Interno")])
+    assert [x["nome"] for x in prestacao_dados.socios()] == ["Sócio A", "Parceiro", "Zé Novo"]
+    # cadastrado por fora da lista: vai para o fim, sem quebrar nada
+    prestacao_dados.salvar_socio("Ana")
+    assert [x["nome"] for x in prestacao_dados.socios(apenas_ativos=True)] == [
+        "Sócio A", "Parceiro", "Zé Novo", "Ana"]
+    # e o resultado segue a posição escolhida
+    cenarios.gravar_participacoes_em_grade(cenario, {
+        ("", s["Sócio A"]): "50", ("", s["Parceiro"]): "50"})
+    posicao = [p["socio"] for p in _calcular(cenario)["posicao"]]
+    assert posicao == ["Sócio A", "Parceiro"]
+    # excluir quem está na ordem não atrapalha
+    prestacao_dados.excluir_socio(s["Sócio A"])
+    assert [x["nome"] for x in prestacao_dados.socios()] == ["Parceiro", "Zé Novo", "Ana"]
+
+
+def test_a_tela_de_socios_tem_as_setas_de_posicao(base, monkeypatch):
+    _dois_socios()
+    html = _cliente(monkeypatch).get("/painel/prestacao/parametros?aba=socios").get_data(as_text=True)
+    assert html.count("data-socio-sobe") >= 2 and "data-socio-desce" in html

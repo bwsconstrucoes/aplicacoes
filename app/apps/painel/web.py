@@ -1561,6 +1561,14 @@ def _calcular_cenario(cenario: dict) -> dict:
         por_obra, participacoes, float(cenario.get("taxa_adm_pct", 0) or 0),
         projeto_de={o: info.get("projeto") or "" for o, info in obras.items()})
     ajustes = prestacao_dados.ajustes()
+    posicao = prestacao.posicao_dos_socios(quotas, ajustes)
+    # A POSIÇÃO ESCOLHIDA em Cadastros › Sócios vale também aqui (11/11/2026).
+    # Sem posição escolhida, fica como sempre foi: quotas por nome, e a
+    # posição de cada um do maior saldo para o menor.
+    if prestacao_dados.ordem_dos_socios(config):
+        lugar = {s["nome"]: n for n, s in enumerate(prestacao_dados.socios())}
+        quotas.sort(key=lambda q: (lugar.get(q["socio"], len(lugar)), q["obra"]))
+        posicao.sort(key=lambda p: lugar.get(p["socio"], len(lugar)))
     return {
         "cenario": cenario, "obras": obras, "rateio": rateio, "juros": juros,
         "apurado": apurado, "por_obra": por_obra, "quotas": quotas,
@@ -1569,7 +1577,7 @@ def _calcular_cenario(cenario: dict) -> dict:
         "excluidas_gerais": list(itens_gerais),
         "sem_projeto": sem_projeto,
         "tem_nao_apropriado": any(o in obras for o in consultas.SEM_OBRA_OU_NAO_LIDA),
-        "posicao": prestacao.posicao_dos_socios(quotas, ajustes),
+        "posicao": posicao,
         "sobras": rateio["sobras"] + juros["sobras"],
         # O BATIMENTO (10/11/2026): o custo global da matriz contra a soma do
         # que foi para cada lado, dos juros, do sem dono e do que ficou de
@@ -1991,8 +1999,10 @@ def _explicacao_do_cenario(cenario, config) -> dict:
     linhas: dict[str, dict] = {}
     for p in cenario.get("participacoes") or []:
         linhas.setdefault(p["obra"] or "", {})[p["socio_id"]] = p["pct"]
+    # na posição escolhida em Cadastros › Sócios (a lista já vem nela)
+    lugar = {i: n for n, i in enumerate(socios)}
     colunas = sorted({sid for l in linhas.values() for sid in l},
-                     key=lambda i: (socios.get(i, {}).get("nome") or "").lower())
+                     key=lambda i: lugar.get(i, len(lugar)))
 
     def _rotulo(chave):
         if not chave:

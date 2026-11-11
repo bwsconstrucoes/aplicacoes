@@ -22,11 +22,33 @@ def config() -> dict:
     return dict(consultar("SELECT chave, valor FROM config"))
 
 
+# A POSIÇÃO DE CADA SÓCIO na lista e nas colunas (11/11/2026, o dono: "não
+# consigo (…) mudar a posição"). Fica na `config` — os números de cadastro, na
+# ordem escolhida — e não numa coluna nova: assim não pede atualização do banco.
+CHAVE_ORDEM_DOS_SOCIOS = "ordem_dos_socios"
+
+
+def ordem_dos_socios(config_lida: dict | None = None) -> list[int]:
+    dados = config_lida if config_lida is not None else config()
+    return [int(x) for x in (dados.get(CHAVE_ORDEM_DOS_SOCIOS) or "").split(",")
+            if x.strip().isdigit()]
+
+
+def posicao_do_socio(ordem=None):
+    """Chave de ordenação: quem tem posição escolhida vem primeiro, na ordem
+    dela; os outros, depois, por nome. Serve para qualquer lista de sócios —
+    recebe (id, nome)."""
+    lugar = {i: n for n, i in enumerate(ordem if ordem is not None else ordem_dos_socios())}
+    return lambda socio_id, nome="": (lugar.get(socio_id, len(lugar)), (nome or "").lower())
+
+
 def socios(apenas_ativos: bool = False) -> list[dict]:
     extra = " WHERE ativo = 1" if apenas_ativos else ""
-    return [{"id": i, "nome": n, "tipo": t, "ativo": bool(a)}
-            for i, n, t, a in consultar(
-                f"SELECT id, nome, tipo, ativo FROM socios{extra} ORDER BY nome")]
+    lista = [{"id": i, "nome": n, "tipo": t, "ativo": bool(a)}
+             for i, n, t, a in consultar(
+                 f"SELECT id, nome, tipo, ativo FROM socios{extra} ORDER BY nome")]
+    chave = posicao_do_socio()
+    return sorted(lista, key=lambda s: chave(s["id"], s["nome"]))
 
 
 def participacoes() -> list[dict]:
@@ -241,14 +263,22 @@ def salvar_socios_em_lista(linhas) -> dict:
                 if n.strip().lower() == nome.lower() and outro != socio_id and (
                         outro not in ids_da_lista or socio_id is None):
                     raise ValueError(f"Já existe um sócio chamado {nome}.")
+        ordem = []
         for socio_id, nome, tipo in limpas:
             if socio_id is None:
                 conn.execute("INSERT INTO socios (nome, tipo) VALUES (?,?)", (nome, tipo))
+                socio_id = conn.execute("SELECT id FROM socios WHERE nome = ?",
+                                        (nome,)).fetchone()[0]
                 novos += 1
             elif atuais.get(socio_id) != (nome, tipo):
                 conn.execute("UPDATE socios SET nome=?, tipo=? WHERE id=?",
                              (nome, tipo, socio_id))
                 alterados += 1
+            ordem.append(int(socio_id))
+        # a ordem da tela é a posição de cada um, em toda lista e coluna
+        conn.execute("INSERT INTO config (chave, valor) VALUES (?,?) "
+                     "ON CONFLICT (chave) DO UPDATE SET valor = excluded.valor",
+                     (CHAVE_ORDEM_DOS_SOCIOS, ",".join(str(i) for i in ordem)))
         conn.commit()
     return {"novos": novos, "alterados": alterados}
 
