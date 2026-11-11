@@ -12264,7 +12264,10 @@ somente Solicitações de uma conta especifica"*.
   total, com SP, sem SP, "pedem conferência" (`pede_conferencia`: sem SP, validação
   fora de OK ou alerta ⚠️ — a frase que só explica o acerto não conta), por status de
   agendamento (a já paga conta como "Pago") e a tabela por conta de débito.
-- Testes: `test_analisesps_telas.py` (`-k bradesco`).
+- **Códigos de pagamento (QR / boleto)**, no mesmo dia: *"não é exibido o status do
+  agendamento do registro. Coloca."* Cada SP mostra o selo do agendamento (ou "sem
+  agendamento") e o do status de pagamento, ao lado do valor e do vencimento.
+- Testes: `test_analisesps_telas.py` (`-k "bradesco or codigos"`).
 
 #### Leva 260 — A baixa dos comprovantes em pista própria (migração 056, 11/11/2026)
 

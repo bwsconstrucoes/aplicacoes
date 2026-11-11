@@ -1870,6 +1870,19 @@ def test_a_tela_de_codigos_tem_o_botao_de_agendar(app_codigos):
         assert f'data-valor="{valor}"' in html, f"faltou {valor}"
 
 
+def test_a_tela_de_codigos_mostra_o_STATUS_DO_AGENDAMENTO(app, monkeypatch):
+    """11/11/2026: *"na tela dos QR code, Códigos de pagamento, não é exibido o
+    status do agendamento do registro."*"""
+    from app.apps.analisesps import consultas, pagamentos
+    monkeypatch.setattr(consultas, "uma", lambda i: linha_falsa(
+        i, forma_pagamento="Pix", info_pgt="Chave Pix: x@y.com", status_pgt="Pagar",
+        status_agend="Agendado" if i == "1" else ""))
+    monkeypatch.setattr(pagamentos, "gerar_pix", lambda *a, **k: ("QRFALSO", "carga-pix"))
+    html = como(app, SENHA_OPERADOR).get("/analisesps/codigos?id=1&id=2").get_data(as_text=True)
+    assert '<span class="selo agendado">Agendado</span>' in html
+    assert "sem agendamento" in html
+
+
 def test_as_sps_ja_chegam_marcadas_na_tela_de_codigos(app_codigos):
     """Quem chegou aqui foi porque escolheu estas SPs. Obrigar a marcar de
     novo seria repetir o trabalho que acabou de ser feito."""
