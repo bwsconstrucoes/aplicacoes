@@ -3,6 +3,23 @@
 Memória da área. Escrito para quem nunca viu a conversa. Ler antes de mexer,
 junto com o `README.md` e o `PLANO.md`.
 
+## 11/11/2026 — o teste do fechamento quebrou DE NOVO por feriado (conserto do chat do ERP)
+
+⚠️ **Mexi num arquivo desta área sem ser o chat dela, e por isso fica anotado
+aqui.** Foi só no teste (`tests/test_ponto_fechamento_banco.py`), nada do ponto
+em si — mas a suíte inteira estava vermelha e isso trava todo mundo.
+
+`test_o_fechamento_separa_o_inteiro_do_quebrado` escolhe os dias a partir de
+HOJE. O dia principal já era escolhido pulando feriado (conserto de
+03/11/2026). **O dia da "extra pequena" não**: ele era `dia - 7` na marra, e em
+11/11/2026 isso caiu em **02/11, Finados**. Em feriado a extra vira 100% e a
+regra de desconsiderar não vale igual, então o teste falhava.
+
+Agora os dois dias saem do mesmo filtro (`_dia_do_corrente`, que pula feriado
+nacional). **É o mesmo defeito do conserto anterior, no outro dia que o teste
+usa** — vale a pena olhar se há mais alguma data calculada por subtração neste
+arquivo.
+
 ## Pendente AGORA
 
 0w. **O TERMO DO PONTO NO CELULAR — feito no ramo, NÃO publicado (07/11/2026, migração 028).** Ver a seção de
