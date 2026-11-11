@@ -1470,3 +1470,22 @@ def test_a_montagem_diz_de_onde_vem_o_custo_da_matriz(cenario, monkeypatch):
         f"/painel/prestacao/montagem?cenario={cenario}").get_data(as_text=True)
     assert "De onde vem “a matriz gastou”" in html
     assert f"<b>{MATRIZ}</b>" in html and "Abrir o DRE só desses centros de custo" in html
+
+
+def test_o_projeto_abre_nas_obras_dele(cenario, monkeypatch):
+    """11/11/2026, o dono: "deveria podermos expandir o projeto e ver as obras
+    e poder editar cada obra de dentro do projeto"."""
+    from app.apps.painel import cenarios, prestacao_dados
+    from app.apps.painel.web import _linhas_fora, _projetos_e_obras_da_montagem
+    cenarios.gravar_fora(cenario, ["obra:POUCA GENTE@2025-02"])
+    nomes = _projetos_e_obras_da_montagem(prestacao_dados.config(), cenarios.completo(cenario))
+    linhas = _linhas_fora(cenarios.excluidas(cenario), nomes["projetos"], nomes["obras"],
+                          projeto_de=nomes["projeto_de"])
+    # o projeto, e logo abaixo as obras dele; já vem aberto, porque uma tem situação
+    assert [(l["rotulo"], l["pai"]) for l in linhas] == [
+        ("Projeto — ALFA", ""), ("MUITA GENTE", "ALFA"), ("POUCA GENTE", "ALFA")]
+    assert linhas[0]["obras"] == 2 and linhas[0]["aberto"] is True
+    assert linhas[2]["modo"] == "ate" and linhas[2]["ate"] == "2025-02"
+    html = _cliente(monkeypatch).get(
+        f"/painel/prestacao/montagem?cenario={cenario}").get_data(as_text=True)
+    assert 'data-pai="projeto:ALFA"' in html and "data-fora-abre" in html

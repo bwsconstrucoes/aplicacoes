@@ -651,6 +651,45 @@ nunca rodou contra a base real**. Ele passou pelo parser do Postgres, pelo teste
 de portabilidade e pelos testes com dublê — nenhum dos três olha o número que
 sai.
 
+## A tarifa que o OMIE "bloqueou", e o projeto que abre nas obras — 11/11/2026 (tarde)
+
+**1. Trocar a obra de uma tarifa (lançamento de conta) — primeira tentativa
+real.** O dono tentou o 11307316641 e leu só: *"A Omie bloqueou as chamadas por
+consumo excessivo e pediu 59 segundos."* A consulta tinha funcionado (a tela
+mostrou "Departamento: — → 10691072391"); o bloqueio veio na gravação.
+
+O que o código mostrava (a causa não foi confirmada — o log do servidor não
+abre daqui): uma resposta 500 do OMIE que não estivesse na lista de "erros
+definitivos" era tratada como passageira e a MESMA chamada era repetida. O
+OMIE pune a repetição com "consumo redundante, aguarde 59 segundos" — e a
+primeira resposta, que é o motivo de verdade, ficava só no log. É o mesmo
+enredo de 21/09/2026 (período contábil fechado). E o que era enviado tinha
+bloco que a gravação provavelmente não aceita.
+
+Conserto:
+- **Gravação não se repete** (`_call(uma_vez=True)` em alterar/excluir título
+  e alterar lançamento de conta): uma chamada, e o erro do OMIE como veio.
+- **O bloqueio conta o que veio antes**: `OmieBloqueada` leva o texto do OMIE
+  e a primeira recusa.
+- **`AlterarLancCC` só manda o que é da gravação**: saem `diversos` (os dados
+  da conciliação), `nCodAgrup`, `info`, a transferência sem conta de destino e
+  a lista vazia de categorias.
+- A tela diz "Nada foi alterado no OMIE" em vez de "0 alterados — e já no
+  painel".
+**CONTINUA NÃO VERIFICADO** se o OMIE aceita `AlterarLancCC` com esse formato,
+e se deixa alterar lançamento conciliado. A próxima tentativa do dono mostra o
+erro de verdade, se houver. Outra hipótese, que não exclui a primeira: o
+"Ler as obras dos lançamentos de conta" rodando ao mesmo tempo consome a
+mesma API.
+
+**2. "No fora da análise, deveria podermos expandir o projeto e ver as obras
+e editar cada obra de dentro do projeto."** No passo 1 da montagem (e em
+Cadastros › Fora da análise) cada projeto abre (▸) nas obras DELE; já vem
+aberto quando alguma obra tem situação própria. Obra de projeto que está fora
+aparece como "fora — pelo projeto". Procurar uma obra mostra o projeto dela em
+cima. "Abrir todos os projetos" no lugar de "mostrar todas as obras". A obra
+sem projeto fica no fim, solta.
+
 ## Publicado em 11/11/2026, 18:08 (UTC) — e uma falha de CI não explicada
 
 Foi para a `main` (`4625cb9b`): o passo 1 "o que entra", o Salvar tudo, os

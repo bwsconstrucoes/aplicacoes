@@ -2,16 +2,16 @@
    "o ideal é manter o quadro com a obra e a condição que está" e "considerar
    não é a regra? Tá esquisito"). Entrar é a regra e não se escreve: a linha
    tem uma caixinha para TIRAR e um mês opcional para "entra só até".
-   Todos os projetos ficam sempre à vista; as obras aparecem quando têm
-   situação própria, ou ao procurar.
+   Todos os projetos ficam sempre à vista; cada um ABRE nas obras dele (▸),
+   para tirar ou limitar uma obra só.
    Campos: `fora_chave` (por linha), `fora_total` (a caixinha, com a chave) e
    `fora_ate` (por linha). #}
 {% macro lista_fora(linhas, botao=True) %}
 <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:8px">
-  <input type="search" placeholder="Procurar uma obra para tirar…" data-fora-busca
+  <input type="search" placeholder="Procurar uma obra…" data-fora-busca
          data-sem-busca style="max-width:280px">
   <label class="cartao-dica" style="margin:0">
-    <input type="checkbox" data-fora-todas> mostrar todas as obras
+    <input type="checkbox" data-fora-todas> abrir todos os projetos
   </label>
   <span style="flex:1"></span>
   {% if botao %}<button class="btn" type="submit">Salvar</button>{% endif %}
@@ -26,9 +26,21 @@
     </tr></thead>
     <tbody>
       {% for l in linhas %}
+      {# o projeto abre nas obras DELE (11/11/2026): `data-pai` liga a obra ao
+         projeto; a obra sem projeto fica no fim, solta #}
       <tr data-fora-linha data-tipo="{{ l.tipo }}" data-texto="{{ l.rotulo|lower }}"
+          {% if l.tipo == 'projeto' %}data-projeto="{{ l.chave }}" {{ 'data-aberto' if l.aberto }}{% endif %}
+          {% if l.pai %}data-pai="projeto:{{ l.pai }}"{% endif %}
           {{ 'data-fixa' if l.tipo == 'projeto' or l.modo }}>
-        <td class="desc">{% if l.tipo == 'projeto' %}<b>{{ l.rotulo }}</b>{% else %}{{ l.rotulo }}{% endif %}</td>
+        <td class="desc" {% if l.pai %}style="padding-left:34px"{% endif %}>
+          {% if l.tipo == 'projeto' %}
+            {% if l.obras %}<button type="button" class="link-btn" data-fora-abre
+               aria-expanded="false" title="abrir as obras deste projeto"><span data-seta>▸</span>
+               <b>{{ l.rotulo }}</b></button>
+               <small>{{ l.obras }} obra{{ '' if l.obras == 1 else 's' }}</small>
+            {% else %}<b>{{ l.rotulo }}</b> <small>sem obras</small>{% endif %}
+          {% else %}{{ l.rotulo }}{% endif %}
+        </td>
         <td data-fora-situacao></td>
         {% if l.travada %}
         <td colspan="2"><small>{{ 'fora' if l.modo == 'total' else 'só até ' ~ l.ate[5:] ~ '/' ~ l.ate[:4] }}
@@ -51,7 +63,8 @@
     </tbody>
   </table>
 </div>
-<p class="dica">Sem marcar nada, o projeto ou a obra <b>entra</b> — é a regra. <b>Tirar</b>
+<p class="dica">Clique no <b>▸</b> do projeto para ver as obras dele e mexer numa só.
+  Sem marcar nada, o projeto ou a obra <b>entra</b> — é a regra. <b>Tirar</b>
   um projeto tira todas as obras dele: não recebem estrutura nem juros, não entram na
   parte de ninguém e deixam de aparecer nos quadros abaixo e no resultado.
   <b>Entra só até</b>: conta o que aconteceu até aquele mês, inclusive, e sai dali em diante.</p>
@@ -79,20 +92,57 @@
     if (ate) ate.closest("td").style.visibility = total.checked ? "hidden" : "";
     tr.style.opacity = (texto === "fora") ? ".6" : "";
   }
+  const abertos = new Set(linhas.filter(tr => tr.hasAttribute("data-aberto"))
+                                 .map(tr => tr.dataset.projeto));
+  const projetoFora = chave => {
+    const tr = tabela.querySelector(`tr[data-projeto="${CSS.escape(chave)}"]`);
+    if (!tr) return false;
+    const total = tr.querySelector("[data-fora-total]");
+    const travada = tr.querySelector("[data-fora-travada]");
+    return (total && total.checked) || (travada && travada.value === "total");
+  };
   function filtrar() {
     const termo = (busca.value || "").toLowerCase().trim();
     linhas.forEach(tr => {
-      const total = tr.querySelector("[data-fora-total]");
-      const ate = tr.querySelector("[data-fora-ate]");
-      const marcada = tr.hasAttribute("data-fixa") || (total && total.checked) || (ate && ate.value);
-      const mostra = termo ? tr.dataset.texto.includes(termo)
-                           : (marcada || todas.checked);
+      const pai = tr.dataset.pai;
+      let mostra;
+      if (termo) {
+        // procurando: a obra que casa aparece, com o projeto dela em cima
+        mostra = tr.dataset.texto.includes(termo)
+          || (tr.dataset.projeto && linhas.some(f => f.dataset.pai === tr.dataset.projeto
+                                                    && f.dataset.texto.includes(termo)));
+      } else if (pai) {
+        mostra = todas.checked || abertos.has(pai);
+      } else {
+        const total = tr.querySelector("[data-fora-total]");
+        const ate = tr.querySelector("[data-fora-ate]");
+        mostra = tr.hasAttribute("data-fixa") || (total && total.checked)
+          || (ate && ate.value) || todas.checked;
+      }
       tr.style.display = mostra ? "" : "none";
+      if (tr.dataset.projeto) {
+        const aberto = todas.checked || abertos.has(tr.dataset.projeto);
+        const seta = tr.querySelector("[data-seta]");
+        if (seta) seta.textContent = aberto ? "▾" : "▸";
+      }
+      // a obra de um projeto que está fora: fora junto, e diz por quê
+      if (pai) {
+        const sit = tr.querySelector("[data-fora-situacao]");
+        if (projetoFora(pai)) { sit.innerHTML = '<b style="color:var(--vermelho)">fora — pelo projeto</b>'; tr.style.opacity = ".6"; }
+        else ajustar(tr);
+      }
     });
   }
+  tabela.addEventListener("click", e => {
+    const botao = e.target.closest("[data-fora-abre]");
+    if (!botao) return;
+    const chave = botao.closest("tr").dataset.projeto;
+    abertos.has(chave) ? abertos.delete(chave) : abertos.add(chave);
+    filtrar();
+  });
   linhas.forEach(ajustar);
   filtrar();
-  tabela.addEventListener("change", e => { const tr = e.target.closest("tr"); if (tr) ajustar(tr); });
+  tabela.addEventListener("change", e => { const tr = e.target.closest("tr"); if (tr) { ajustar(tr); filtrar(); } });
   tabela.addEventListener("input", e => { const tr = e.target.closest("tr"); if (tr) ajustar(tr); });
   busca.addEventListener("input", filtrar);
   busca.addEventListener("keydown", e => { if (e.key === "Enter") e.preventDefault(); });

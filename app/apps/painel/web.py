@@ -1749,7 +1749,8 @@ def cenario_montagem():
                              esconder=nomes["fora"]),
         linhas_fora=_linhas_fora((atual or {}).get("excluidas") or [],
                                  nomes["projetos"], nomes["obras"],
-                                 gerais=prestacao_dados.fora_da_analise(config)),
+                                 gerais=prestacao_dados.fora_da_analise(config),
+                                 projeto_de=nomes["projeto_de"]),
         excluidas_gerais=prestacao_dados.fora_da_analise(config),
         # onde estao os juros na base, categoria por categoria — e quais a
         # prestacao esta contando. E a resposta para "na controladoria tem
@@ -2175,10 +2176,10 @@ def prestacao_parametros():
         escopos=prestacao_dados.ESCOPOS,
         projetos=consultas.opcoes_de_filtro()["projetos"] if not consultas.base_vazia() else [],
         fora=prestacao_dados.fora_da_analise(),
-        linhas_fora=(_linhas_fora(
-            prestacao_dados.fora_da_analise(),
-            *(lambda n: (n["projetos"], n["obras"]))(
-                _projetos_e_obras_da_montagem(prestacao_dados.config(), None)))
+        linhas_fora=((lambda n: _linhas_fora(
+            prestacao_dados.fora_da_analise(), n["projetos"], n["obras"],
+            projeto_de=n["projeto_de"]))(
+                _projetos_e_obras_da_montagem(prestacao_dados.config(), None))
                      if aba == "fora" and not consultas.base_vazia() else []),
         obras_do_painel=_opcoes_no_escopo().get("obras", []) if not consultas.base_vazia() else [],
         projetos_do_painel=_opcoes_no_escopo().get("projetos", []) if not consultas.base_vazia() else [],
@@ -2218,6 +2219,7 @@ def _projetos_e_obras_da_montagem(config, cenario) -> dict:
         "obras_dentro": [o for o in obras if o not in obras_fora],
         "fora": ({prestacao.PROJETO_NA_PARTICIPACAO + p for p in projetos_fora}
                  | obras_fora),
+        "projeto_de": mapa,
     }
 
 
@@ -2269,13 +2271,20 @@ def _itens_fora_do_formulario(form) -> list[str]:
     return itens
 
 
-def _linhas_fora(itens, projetos, obras, gerais=()) -> list[dict]:
-    """As linhas do quadro "o que entra na análise": TODOS os projetos (sempre
-    à vista) e depois as obras — as que têm situação própria em cima.
+def _linhas_fora(itens, projetos, obras, gerais=(), projeto_de=None) -> list[dict]:
+    """As linhas do quadro "o que entra na análise".
+
+    Cada PROJETO é uma linha sempre à vista, e as obras dele vêm LOGO ABAIXO,
+    para abrir e editar de dentro do projeto (11/11/2026, o dono: "deveria
+    podermos expandir o projeto e ver as obras e poder editar cada obra de
+    dentro do projeto"). `pai` é o projeto da obra; a obra sem projeto fica no
+    fim, solta. `aberto` diz que o projeto já vem aberto — quando alguma obra
+    dele tem situação própria.
 
     `gerais` são os itens tirados em Cadastros (valem para todo cenário): a
     linha aparece com a situação, mas só se muda lá (`travada`)."""
     from . import prestacao
+    projeto_de = projeto_de or {}
     estado, travadas = {}, set()
     for origem, lista in (("geral", gerais), ("cenario", itens)):
         for item in lista or ():
@@ -2284,15 +2293,31 @@ def _linhas_fora(itens, projetos, obras, gerais=()) -> list[dict]:
                 estado[f"{tipo}:{nome}"] = ("ate" if ate else "total", ate or "")
                 if origem == "geral":
                     travadas.add(f"{tipo}:{nome}")
+
+    def _linha(tipo, nome, pai=""):
+        chave = f"{tipo}:{nome}"
+        modo, ate = estado.get(chave, ("", ""))
+        return {"chave": chave, "rotulo": ("Projeto — " if tipo == "projeto" else "") + nome,
+                "tipo": tipo, "modo": modo, "ate": ate, "travada": chave in travadas,
+                "pai": pai, "obras": 0, "aberto": False}
+
+    def _nomes(tipo, lista):
+        return sorted(set(lista or []) | {k.split(":", 1)[1] for k in estado
+                                          if k.startswith(tipo + ":")}, key=str.lower)
+
+    todas_as_obras = _nomes("obra", obras)
     linhas = []
-    for tipo, nomes, rotulo in (("projeto", projetos, "Projeto — "), ("obra", obras, "")):
-        todos = set(nomes or []) | {k.split(":", 1)[1] for k in estado
-                                    if k.startswith(tipo + ":")}
-        for nome in sorted(todos, key=lambda n: (f"{tipo}:{n}" not in estado, n.lower())):
-            chave = f"{tipo}:{nome}"
-            modo, ate = estado.get(chave, ("", ""))
-            linhas.append({"chave": chave, "rotulo": rotulo + nome, "tipo": tipo,
-                           "modo": modo, "ate": ate, "travada": chave in travadas})
+    for projeto in _nomes("projeto", projetos):
+        do_projeto = [o for o in todas_as_obras if (projeto_de.get(o) or "") == projeto]
+        cabeca = _linha("projeto", projeto)
+        cabeca["obras"] = len(do_projeto)
+        filhas = [_linha("obra", o, pai=projeto) for o in do_projeto]
+        cabeca["aberto"] = any(f["modo"] for f in filhas)
+        linhas.append(cabeca)
+        linhas.extend(filhas)
+    com_pai = {l["chave"] for l in linhas if l["tipo"] == "obra"}
+    soltas = [_linha("obra", o) for o in todas_as_obras if f"obra:{o}" not in com_pai]
+    linhas.extend(sorted(soltas, key=lambda l: (not l["modo"], l["rotulo"].lower())))
     return linhas
 
 
