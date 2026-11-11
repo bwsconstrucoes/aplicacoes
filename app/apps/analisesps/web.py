@@ -8596,6 +8596,7 @@ def tela_bradesco():
     return render_template(
         "analisesps_bradesco.html", aba="bradesco", base=base,
         colado=colado, resultado=resultado, erro=erro, foco=foco,
+        numeros=bradesco.resumo(resultado) if resultado else None,
         # As colunas vêm do módulo que monta a linha — ver o comentário grande
         # em `bradesco.py`. Escritas no template, elas já divergiram uma vez e
         # a tela ficou com 47 linhas em branco.

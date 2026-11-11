@@ -12244,6 +12244,28 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 261 — Bradesco: agendamento, seleção, KPIs e totais por conta (11/11/2026)
+
+- *"Na parte do Bradesco, não aparece o status do agendamento de cada registro.
+  Deveria (…) os registros serem selecionados e poder alterar esses status, ter mais
+  gestão sobre eles."* E logo depois: *"não tem KPIs, totalizados, somatórios, por
+  conta também. Tudo isso facilita a aprovação."*
+- **Coluna "Agendamento"** nas duas tabelas (boletos e Pix), logo depois da SP, com o
+  selo de cor das outras telas. O dado já vinha na linha (`Status Agend`); faltava
+  na lista de colunas.
+- **Seleção + a barra de ações das Solicitações** (`analisesps_barra_acoes.html`,
+  `origem='bradesco'`, com Marcar Pago/Pagar): cada operação que achou a SP tem
+  caixinha; Agendar/Agendado/Falha Agendar/Desagendar com as MESMAS travas do
+  servidor (não validada, Pix "Atualizar Chave", sem obra), total marcado e por conta.
+  Depois de agir, a conferência é REFEITA com o mesmo texto colado
+  (`window.recarregarTela` — recarregar pediria para reenviar o formulário; a barra em
+  `analisesps.js` agora chama `recarregar()`, que usa o gancho quando a tela o define).
+- **Os números** (`bradesco.resumo`, do valor do banco): operações (boletos/Pix) e
+  total, com SP, sem SP, "pedem conferência" (`pede_conferencia`: sem SP, validação
+  fora de OK ou alerta ⚠️ — a frase que só explica o acerto não conta), por status de
+  agendamento (a já paga conta como "Pago") e a tabela por conta de débito.
+- Testes: `test_analisesps_telas.py` (`-k bradesco`).
+
 #### Leva 260 — A baixa dos comprovantes em pista própria (migração 056, 11/11/2026)
 
 - *"Já existe uma atualização em andamento (dando baixa nos comprovantes —

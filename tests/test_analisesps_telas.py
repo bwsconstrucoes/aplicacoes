@@ -2508,6 +2508,42 @@ def test_bradesco_DE_PONTA_A_PONTA_desenha_o_que_o_codigo_produz(app, monkeypatc
     assert "BWS CONSTRUCOES LTDA" in html, "a coluna da empresa saiu vazia"
 
 
+def test_bradesco_mostra_o_AGENDAMENTO_os_TOTAIS_e_deixa_SELECIONAR(app, monkeypatch):
+    """11/11/2026: *"não aparece o status do agendamento de cada registro (…) os
+    registros serem selecionados e poder alterar esses status (…) não tem KPIs,
+    totalizados, somatórios, por conta também."*"""
+    from app.apps.analisesps import web
+    monkeypatch.setattr(web, "_candidatas_bradesco", lambda: [
+        {"id": "1384831053", "credor": "ACME MATERIAIS", "valor_num": 6750.0,
+         "status_agend": "Agendado", "status_pgt": "Pagar",
+         "codigo_barras": "34191790010104351004", "vencimento": "20/09/2026",
+         "conta": "", "centro_custo": "", "forma_pagamento": "Boleto"}])
+    html = como(app, SENHA_OPERADOR).post(
+        "/analisesps/bradesco", data={"extrato": EXTRATO_COLADO}).get_data(as_text=True)
+    assert '<span class="selo agendado">Agendado</span>' in html, "a coluna Agendamento"
+    assert "Por conta de débito" in html and "1251 | 0002541-0" in html
+    assert "7.950,00" in html, "o total das duas operações (6.750 + 1.200)"
+    assert 'class="marca" value="1384831053"' in html, "a linha com SP se marca"
+    assert 'id="barra-acoes"' in html and 'data-valor="Agendar"' in html
+    assert "window.recarregarTela" in html
+
+
+def test_bradesco_os_numeros_somam_por_status_e_por_conta():
+    from app.apps.analisesps import bradesco as b
+    r = b.resumo({"boletos": [
+        {"SP": "1", "Status Agend": "Agendar", "Status Pgt": "Pagar", "_valor_banco": 100.0,
+         "Conta (Bradesco)": "A", "Validação": "OK (ID+barras)",
+         "Alertas": "Nº da SP e código de barras conferem."},
+        {"SP": "2", "Status Agend": "", "Status Pgt": "Pago", "_valor_banco": 50.0,
+         "Conta (Bradesco)": "B", "Alertas": "⚠️ JÁ PAGO"}],
+        "pix": [{"SP": "", "_valor_banco": 30.0, "Conta (Bradesco)": "A", "Alertas": "x"}]})
+    assert (r["quantos"], r["total"], r["com_sp"], r["sem_sp"], r["com_alerta"]) == (3, 180.0, 2, 1, 2)
+    assert [(a["status"], a["quantos"], a["total"]) for a in r["por_agendamento"]] == [
+        ("Agendar", 1, 100.0), ("Pago", 1, 50.0)]
+    assert [(c["conta"], c["quantos"], c["total"]) for c in r["por_conta"]] == [
+        ("A", 2, 130.0), ("B", 1, 50.0)]
+
+
 def test_bradesco_nao_conclui_no_lugar_de_quem_le(app, monkeypatch):
     """Operação sem SP encontrada não é pagamento indevido. A tela aponta o que
     merece um olhar; a conclusão é de quem confere."""
