@@ -669,6 +669,19 @@ divide" abrindo nas obras, juros numa linha).
 **Perguntar ao dono no próximo chat:** se os três itens acima aconteceram, e
 se o Salvar tudo voltou a gravar.
 
+**Incidente da própria publicação (21:15 → 21:37 UTC):** com a migração 025
+pendente, **Configurações não abria** — "cannot access local variable
+'obras_cc'" — e é lá que fica o botão de aplicar a migração. O defeito era de
+horas antes (a variável `obras_cc` só ganhava valor no ramo "sem migração
+pendente") e nunca tinha aparecido porque não havia migração a aplicar. O
+dono avisou, o conserto (`7e3ef08d`) foi publicado com o "pode" dele às 21:37
+(UTC), com a bateria verde aqui e no GitHub.
+**A lição:** publicação com migração tem de abrir Configurações COM a
+migração pendente antes de ir ao ar — a suíte só abria a tela com o banco em
+dia. Agora há um teste que a abre com uma pendente
+(`test_configuracoes_abre_com_migracao_pendente`); variável nova nessa rota
+entra nos DOIS ramos.
+
 O dono explicou a regra três vezes, a última com exemplos, e fechou os nomes:
 
 - **BWS** — custos da matriz (rateável entre tudo);
