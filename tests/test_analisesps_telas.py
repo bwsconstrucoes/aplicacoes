@@ -2426,7 +2426,7 @@ def test_bradesco_abre_pedindo_o_extrato(app):
 
 def test_bradesco_sem_texto_avisa(app):
     html = como(app, SENHA_CONSULTA).post(
-        "/analisesps/bradesco", data={"extrato": "  "}).get_data(as_text=True)
+        "/analisesps/bradesco", data={"extrato": "  "}, follow_redirects=True).get_data(as_text=True)
     assert "Cole o texto" in html
 
 
@@ -2448,7 +2448,7 @@ def test_bradesco_cruza_o_que_foi_colado(app, monkeypatch):
             "SP OK", 99, [])],
         "pix": []})
     html = como(app, SENHA_CONSULTA).post(
-        "/analisesps/bradesco", data={"extrato": "qualquer coisa"}).get_data(as_text=True)
+        "/analisesps/bradesco", data={"extrato": "qualquer coisa"}, follow_redirects=True).get_data(as_text=True)
     assert "1384831053" in html
     assert "6.750,00" in html
     assert "ACME" in html
@@ -2511,7 +2511,7 @@ def test_bradesco_DE_PONTA_A_PONTA_desenha_o_que_o_codigo_produz(app, monkeypatc
          "forma_pagamento": "Boleto"}])
 
     html = como(app, SENHA_CONSULTA).post(
-        "/analisesps/bradesco", data={"extrato": EXTRATO_COLADO}
+        "/analisesps/bradesco", data={"extrato": EXTRATO_COLADO}, follow_redirects=True
         ).get_data(as_text=True)
 
     assert "1 operação(ões)" in html          # um boleto
@@ -2532,13 +2532,29 @@ def test_bradesco_mostra_o_AGENDAMENTO_os_TOTAIS_e_deixa_SELECIONAR(app, monkeyp
          "codigo_barras": "34191790010104351004", "vencimento": "20/09/2026",
          "conta": "", "centro_custo": "", "forma_pagamento": "Boleto"}])
     html = como(app, SENHA_OPERADOR).post(
-        "/analisesps/bradesco", data={"extrato": EXTRATO_COLADO}).get_data(as_text=True)
+        "/analisesps/bradesco", data={"extrato": EXTRATO_COLADO}, follow_redirects=True).get_data(as_text=True)
     assert '<span class="selo agendado">Agendado</span>' in html, "a coluna Agendamento"
     assert "Por conta de débito" in html and "1251 | 0002541-0" in html
     assert "7.950,00" in html, "o total das duas operações (6.750 + 1.200)"
     assert 'class="marca" value="1384831053"' in html, "a linha com SP se marca"
     assert 'id="barra-acoes"' in html and 'data-valor="Agendar"' in html
-    assert "window.recarregarTela" in html
+
+
+@pytest.mark.banco
+def test_bradesco_CONFERIR_abre_por_endereco_e_RECARREGAR_nao_reenvia(app, monkeypatch,
+                                                                      banco_analisesps):
+    """11/11/2026: *"por que aparece isso toda hora na tela Bradesco? Para exibir
+    esta página, o Firefox precisa enviar informações que repetirão qualquer ação"*.
+    O Conferir guarda o texto e redireciona; o endereço refaz a conferência."""
+    from app.apps.analisesps import web
+    monkeypatch.setattr(web, "_candidatas_bradesco", lambda: [])
+    c = como(app, SENHA_OPERADOR)
+    r = c.post("/analisesps/bradesco", data={"extrato": EXTRATO_COLADO, "foco": "1"})
+    assert r.status_code == 302 and "c=" in r.headers["Location"]
+    for _ in range(2):                         # recarregar = abrir o endereço de novo
+        html = c.get(r.headers["Location"]).get_data(as_text=True)
+        assert "Pix e transferências" in html and "JOSE THIAGO DA SILVA" in html
+    assert "não está mais guardada" in c.get("/analisesps/bradesco?c=naoexiste").get_data(as_text=True)
 
 
 def test_bradesco_os_numeros_somam_por_status_e_por_conta():
@@ -2565,7 +2581,7 @@ def test_bradesco_nao_conclui_no_lugar_de_quem_le(app, monkeypatch):
     monkeypatch.setattr(bradesco, "cruzar_tudo",
                         lambda raw, df, foco_agendados=True: {"boletos": [], "pix": []})
     html = como(app, SENHA_CONSULTA).post(
-        "/analisesps/bradesco", data={"extrato": "x"}).get_data(as_text=True)
+        "/analisesps/bradesco", data={"extrato": "x"}, follow_redirects=True).get_data(as_text=True)
     assert "não quer dizer pagamento indevido" in html
 
 
@@ -4012,7 +4028,7 @@ def test_a_tela_do_bradesco_diz_quando_nao_reconhece_nada(app_bradesco):
     leu, se travou, ou se não havia o que conferir."""
     html = como(app_bradesco, SENHA_OPERADOR).post(
         "/analisesps/bradesco",
-        data={"extrato": "isto não é um extrato"}).get_data(as_text=True)
+        data={"extrato": "isto não é um extrato"}, follow_redirects=True).get_data(as_text=True)
     assert "Não reconheci nenhuma operação" in html
     assert "agência | conta" in html, "tem de dizer o que falta na linha"
     assert "linha(s)" in html, "tem de dizer quanto foi colado"
@@ -4035,8 +4051,8 @@ def test_a_caixinha_de_foco_desmarcada_desliga_o_foco(app_bradesco):
     try:
         cliente = como(app_bradesco, SENHA_OPERADOR)
         cliente.post("/analisesps/bradesco",
-                     data={"extrato": EXTRATO_DO_DONO, "foco": "1"})
-        cliente.post("/analisesps/bradesco", data={"extrato": EXTRATO_DO_DONO})
+                     data={"extrato": EXTRATO_DO_DONO, "foco": "1"}, follow_redirects=True)
+        cliente.post("/analisesps/bradesco", data={"extrato": EXTRATO_DO_DONO}, follow_redirects=True)
     finally:
         bradesco.cruzar_tudo = original
 

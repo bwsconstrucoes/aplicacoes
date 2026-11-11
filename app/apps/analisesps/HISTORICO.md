@@ -12244,6 +12244,37 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 262 — Centros de custo da contabilidade × o ponto (11/11/2026)
+
+- *"A folha da contabilidade tem determinado centro de custo, só que na nomenclatura
+  diferente da nossa (…) na aba C. Diários eu adicionei a última coluna, a coluna AN,
+  o centro de custo da contabilidade (…) gerar um relatório onde o funcionário está
+  trabalhando no ponto (…) comparar a folha da contabilidade e entender se aqueles
+  cadastros estão ok ou se precisa haver remanejo (…) esse relatório eu vou passar
+  para a contabilidade."* Particularidade: AFASTADO INSS e DESATIVAR sem ponto estão
+  coerentes; com ponto, crítica.
+- **Onde:** dentro da folha da contabilidade, faixa "Folha | Complementar | Centros de
+  custo" (`/folha/<id>/centros-de-custo`; a faixa agora aparece SEMPRE na folha
+  aberta). Planilha para a contabilidade em `.xlsx` (abas "Remanejos" e
+  "Conferência").
+- **Como** (`centros_de_custo.py`): o centro na folha é o setor da Folha Sintética
+  (`folha_linha.setor_codigo/nome`, "001.07 - …"); a obra é a de MAIS DIAS no ponto do
+  MÊS INTEIRO da competência (`obra_do_dia`); o esperado é a coluna AN da C. Diários
+  da planilha "Bases de Dados Pipefy", lida pelo leitor do ponto
+  (`base_obras.ler_planilha`, guardada 5 min; pelo nome — "Centro de Custo
+  Contabilidade" e variações — ou, sem o nome, a posição AN, com aviso). Compara pelo
+  CÓDIGO ("140.01"; o nível de cima "140" também casa). Situações: ok, coerente,
+  remanejar (de X para Y), conferir (mais de uma obra e a folha numa que não é a
+  principal; afastado/desativar com ponto; sem ponto; obra sem AN; ID Fortes sem CPF).
+- **A pergunta do dono (folha ou complementar?):** a importação da complementar
+  SUBSTITUI a folha da mesma competência e tipo — a guardada já é a mais nova. Entre
+  quinzena e fim de mês, vale qualquer uma; a tela aponta a outra do mesmo mês e diz
+  que a de fim de mês é a completa.
+- **Não verificado com dado real:** o nome exato da coluna AN e o formato do texto dela
+  (o exemplo do dono: "001.07 - CONSTRUTORA/ESCRITORIO NORDESTE"); o código da obra que
+  o ponto escreve casar com a C. Diários (código primário, coluna A ou nome).
+- Testes: `test_analisesps_centros_de_custo.py`.
+
 #### Leva 261 — Bradesco: agendamento, seleção, KPIs e totais por conta (11/11/2026)
 
 - *"Na parte do Bradesco, não aparece o status do agendamento de cada registro.
@@ -12264,6 +12295,14 @@ somente Solicitações de uma conta especifica"*.
   total, com SP, sem SP, "pedem conferência" (`pede_conferencia`: sem SP, validação
   fora de OK ou alerta ⚠️ — a frase que só explica o acerto não conta), por status de
   agendamento (a já paga conta como "Pago") e a tabela por conta de débito.
+- **O aviso do Firefox** (*"por que aparece isso toda hora na tela Bradesco? (…) o
+  Firefox precisa enviar informações que repetirão qualquer ação"*): a conferência
+  era a RESPOSTA do formulário — qualquer recarga (a tela se atualiza quando uma
+  sincronização termina; a barra depois de agir; o F5) pedia para reenviar. Agora o
+  "Conferir" guarda o texto (`analisesps.meta`, `bradesco.colado.<código>`, por 3
+  dias) e redireciona para `/bradesco?c=<código>`; recarregar refaz a conferência com
+  os status de agora. O gancho `window.recarregarTela` saiu da tela (fica no
+  `analisesps.js`, sem uso). Sem banco para guardar, confere na hora, como antes.
 - **Códigos de pagamento (QR / boleto)**, no mesmo dia: *"não é exibido o status do
   agendamento do registro. Coloca."* Cada SP mostra o selo do agendamento (ou "sem
   agendamento") e o do status de pagamento, ao lado do valor e do vencimento.

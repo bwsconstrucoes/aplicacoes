@@ -166,11 +166,8 @@
     .chip-agend { display:inline-flex; gap:6px; align-items:center; padding:6px 10px;
       border:1px solid var(--borda); border-radius:8px; background:#fff; font-size:13px; }
   </style>
-  <script>
-    // Depois de agir pela barra, refaz a conferência com o mesmo texto colado (a
-    // tela é resultado de um formulário: recarregar pediria para reenviar).
-    window.recarregarTela = () => document.getElementById("form-extrato").submit();
-  </script>
+  {# Recarregar refaz a conferência: a tela abre por endereço (`?c=`), não pela
+     resposta do formulário — ver `bradesco.guardar_colado`. #}
 
   <p class="cartao-dica">
     Uma operação sem SP encontrada não quer dizer pagamento indevido — pode ser
