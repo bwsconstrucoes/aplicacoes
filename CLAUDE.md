@@ -185,9 +185,21 @@ histórico **perdeu** o que aprendeu — o chat não é memória, o repositório
 **Juntar na `main` publica no Render na hora.** Regras:
 
 1. Só com o dono dizendo "pode". Trabalho em ramo é seguro; a `main` é produção.
-2. **Perguntar antes se há carga do painel ou sincronização do Análise de SPs
-   em andamento**: publicar reinicia o serviço e mata o trabalho longo. Já
-   aconteceu, causado por outro chat que não sabia.
+2. **Perguntar UMA VEZ POR CHAT se há carga do painel ou sincronização do
+   Análise de SPs em andamento**: publicar reinicia o serviço e mata o
+   trabalho longo. Já aconteceu, causado por outro chat que não sabia.
+
+   ⚠️ **UMA VEZ. Não a cada publicação.** Em 11/11/2026 ele cobrou:
+   *"Agora não pode mais. Pq tá perguntando duas vezes? Já havia afirmado."*
+   Ele tinha respondido "não tem nada rodando" horas antes, no mesmo chat, e
+   a pergunta voltou na publicação seguinte.
+
+   **Respondida, vale para o chat inteiro.** Um "pode publicar" depois disso
+   JÁ CARREGA a resposta — repetir a pergunta é pedir de novo o que ele já
+   deu, que é a mesma irritação da pausa no meio da fila, e custa as mesmas
+   horas. Se o chat durar dias e o estado do mundo puder ter mudado, a
+   pergunta cabe de novo **dizendo por que** ("faz dois dias que você
+   respondeu isso"); fora disso, não.
 3. Ramo com migração de banco: avisar o dono para apertar "Aplicar
    atualizações do banco" **no mesmo momento** da junção — ERP em
    Configurações, painel e Análise de SPs nas telas de configuração deles.
