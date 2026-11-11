@@ -651,6 +651,43 @@ nunca rodou contra a base real**. Ele passou pelo parser do Postgres, pelo teste
 de portabilidade e pelos testes com dublê — nenhum dos três olha o número que
 sai.
 
+## ⏳ AGUARDANDO O DONO VALIDAR: cada conta da matriz em TRÊS partes — 11/11/2026
+
+**Nada disto está feito.** É o entendimento que devolvi a ele para validar; só
+se constrói depois do "é isso".
+
+Ele explicou duas vezes, a segunda com exemplos: BWS é o custo a ratear;
+BWSCE e BWSNE (as demais obras) são os dois lados; e há custo lançado no BWS
+que na verdade é do BWSNE. Para cada grupo, categoria ou lançamento, e podendo
+mudar por período, ele quer dizer **três partes que somam 100%**:
+
+| Parte | Para onde vai |
+|---|---|
+| **fica no BWSCE** | só entre as obras do BWSCE, pelo pessoal de cada uma |
+| **é do BWSNE** | só entre as demais obras, pelo pessoal de cada uma |
+| **rateia** (o resto) | entre TODAS as obras, dos dois lados, pelo pessoal |
+
+Os exemplos dele: categoria X = 100% rateia; Y = 20% BWSNE + 80% rateia;
+Z = 100% BWSNE; e "de 20.000, 10.000 ficam no BWSCE e 10.000 se rateiam —
+o BWSCE recebe os 10.000 mais a cota dele nos outros 10.000".
+
+**O que a conta faz HOJE, e não é isso:** "% que entra" (o que não entra
+*some*, fica de fora de todos) e "para o BWSCE" (do que entra, p% para o
+BWSCE e **o resto só para os demais** — não "entre todos").
+
+**O que construir, quando ele validar:** as três partes por conta e por
+período (provável coluna nova em `cenario_peso_periodo` → migração 025), a
+conversão do que já está gravado (o "fica de fora" vira "fica no BWSCE"), a
+tela do passo 2 com os três campos, a página "Como é feita" e o batimento
+(a coluna "ficou de fora" deixa de existir).
+
+**Perguntas que fiz a ele e estão sem resposta:**
+1. "BWSNE" como lado é **toda obra que não é do BWSCE** (como a conta trata
+   hoje), ou só as obras do projeto BWSNE?
+2. Regra geral por período ("em 2022, metade do BWS fica no BWSCE") junto com
+   regra de categoria: **vale a mais específica** (como hoje) ou as duas se
+   combinam?
+
 ## MATRIZ × FILIAL: a regra que a conta do cenário tinha perdido — 11/11/2026 (fim da tarde)
 
 **NÃO PUBLICADO ainda** — está no ramo, à espera do "pode" do dono.
