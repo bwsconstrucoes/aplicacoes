@@ -1767,7 +1767,7 @@ def cenario_montagem():
         projetos_do_painel=nomes["projetos_dentro"],
         projetos_para_principal=nomes["projetos"],
         **_grade_quem_divide(atual, nomes["obras_dentro"], nomes["projetos_dentro"],
-                             esconder=nomes["fora"]),
+                             esconder=nomes["fora"], projeto_de=nomes["projeto_de"]),
         linhas_fora=_linhas_fora((atual or {}).get("excluidas") or [],
                                  nomes["projetos"], nomes["obras"],
                                  gerais=prestacao_dados.fora_da_analise(config),
@@ -2244,11 +2244,16 @@ def _projetos_e_obras_da_montagem(config, cenario) -> dict:
     }
 
 
-def _grade_quem_divide(cenario, obras, projetos=(), esconder=()) -> dict:
+def _grade_quem_divide(cenario, obras, projetos=(), esconder=(), projeto_de=None) -> dict:
     """A grade do "Quem divide" do cenário: "Todas as obras" primeiro, depois
-    cada PROJETO (sempre à vista — é por onde se configura), depois as obras
-    com percentual próprio; as outras obras aparecem ao procurar."""
+    cada PROJETO (sempre à vista — é por onde se configura) com as obras DELE
+    logo abaixo, para abrir e preencher de dentro do projeto — igual ao passo
+    "o que entra" (11/11/2026, o dono: "deveria expandir os centros de custo
+    similar ao Fora da análise"). `pai` é a linha do projeto da obra; `aberto`
+    diz que o projeto já vem aberto, quando alguma obra dele tem percentual
+    próprio. A obra sem projeto fica no fim, solta."""
     from .prestacao import PROJETO_NA_PARTICIPACAO as P
+    projeto_de = projeto_de or {}
     grade: dict = {}
     for p in (cenario or {}).get("participacoes") or []:
         if (p["obra"] or "") in esconder:      # fora da análise: não aparece
@@ -2256,12 +2261,21 @@ def _grade_quem_divide(cenario, obras, projetos=(), esconder=()) -> dict:
         grade.setdefault(p["obra"] or "", {})[p["socio_id"]] = p["pct"]
     dos_projetos = sorted({P + n for n in projetos if n}
                           | {k for k in grade if k.startswith(P)}, key=str.lower)
-    outras = sorted((set(obras) | {k for k in grade if not k.startswith(P)}) - {""},
-                    key=lambda n: (n not in grade, n.lower()))
-    linhas = ([{"chave": "", "rotulo": "Todas as obras", "fixa": True}]
-              + [{"chave": k, "rotulo": "Projeto — " + k[len(P):], "fixa": True}
-                 for k in dos_projetos]
-              + [{"chave": o, "rotulo": o} for o in outras])
+    todas = sorted((set(obras) | {k for k in grade if not k.startswith(P)}) - {""},
+                   key=str.lower)
+    linhas = [{"chave": "", "rotulo": "Todas as obras", "tipo": "geral"}]
+    com_pai = set()
+    for chave in dos_projetos:
+        filhas = [o for o in todas if P + (projeto_de.get(o) or "") == chave]
+        com_pai.update(filhas)
+        linhas.append({"chave": chave, "rotulo": "Projeto — " + chave[len(P):],
+                       "tipo": "projeto", "obras": len(filhas),
+                       "aberto": any(o in grade for o in filhas)})
+        linhas.extend({"chave": o, "rotulo": o, "tipo": "obra", "pai": chave}
+                      for o in filhas)
+    soltas = [o for o in todas if o not in com_pai]
+    linhas.extend({"chave": o, "rotulo": o, "tipo": "obra", "pai": ""}
+                  for o in sorted(soltas, key=lambda n: (n not in grade, n.lower())))
     return {"grade_quem_divide": grade, "linhas_quem_divide": linhas}
 
 

@@ -579,8 +579,8 @@
     Preencha a linha <b>Todas as obras</b> com quem divide tudo. Se um
     <b>projeto</b> tem outros sócios, preencha a linha dele: ela <b>substitui</b>
     a geral em todas as obras daquele projeto. E uma <b>obra</b> preenchida
-    (procure pelo nome) substitui a do projeto só nela — é assim que entra o
-    parceiro de uma obra só.
+    (abra o projeto no ▸, ou procure pelo nome) substitui a do projeto só nela
+    — é assim que entra o parceiro de uma obra só.
   </p>
   <p style="margin:0 0 10px">
     <a class="btn secundario" style="text-decoration:none; display:inline-block"
@@ -598,8 +598,7 @@
   <form method="post" data-secao="socios">
     <input type="hidden" name="acao" value="participacoes_em_grade">
     <input type="hidden" name="cenario_id" value="{{ cenario.id }}">
-    {{ grade_participacoes(linhas_quem_divide, socios, grade_quem_divide, 'Projeto ou obra',
-                           copiar=False, so_preenchidas=True) }}
+    {{ grade_participacoes(linhas_quem_divide, socios, grade_quem_divide, 'Projeto ou obra') }}
   </form>
   {% else %}
   <div class="aviso erro">

@@ -1587,3 +1587,28 @@ def test_a_tela_de_socios_tem_excluir_e_a_montagem_leva_ate_ela(cenario, monkeyp
     assert r.status_code == 302 and "erro=" not in r.headers["Location"]
     assert "Parceiro" not in cliente.get(
         "/painel/prestacao/parametros?aba=socios").get_data(as_text=True)
+
+
+def test_quem_divide_abre_o_projeto_nas_obras_dele():
+    """11/11/2026, o dono: "Quem divide o resultado deveria expandir os centros
+    de custo similar ao Fora da análise". As obras vêm logo abaixo do projeto
+    delas; o projeto com obra de percentual próprio já vem aberto."""
+    from app.apps.painel.web import _grade_quem_divide
+    cenario = {"participacoes": [
+        {"obra": "", "socio_id": 1, "pct": 100},
+        {"obra": "OBRA B2", "socio_id": 2, "pct": 50},
+        {"obra": "obra:FORA", "socio_id": 2, "pct": 50}]}
+    r = _grade_quem_divide(
+        cenario, ["OBRA A1", "OBRA B1", "OBRA B2", "SOLTA"], ["PROJ A", "PROJ B"],
+        esconder={"obra:FORA"},
+        projeto_de={"OBRA A1": "PROJ A", "OBRA B1": "PROJ B", "OBRA B2": "PROJ B"})
+    linhas = r["linhas_quem_divide"]
+    assert [(l["chave"], l.get("pai", "-")) for l in linhas] == [
+        ("", "-"),
+        ("projeto:PROJ A", "-"), ("OBRA A1", "projeto:PROJ A"),
+        ("projeto:PROJ B", "-"), ("OBRA B1", "projeto:PROJ B"), ("OBRA B2", "projeto:PROJ B"),
+        ("SOLTA", "")]
+    por_chave = {l["chave"]: l for l in linhas}
+    assert por_chave["projeto:PROJ B"]["aberto"] and por_chave["projeto:PROJ B"]["obras"] == 2
+    assert not por_chave["projeto:PROJ A"]["aberto"]
+    assert "obra:FORA" not in r["grade_quem_divide"]
