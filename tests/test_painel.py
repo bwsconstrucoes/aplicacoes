@@ -650,6 +650,10 @@ def _consultar_falso(sql, params=()):
         return [("FORNECEDOR A LTDA", -3000.0, -200.0, 12)]
     if "ABS(SUM(" in sql:                                       # comprometido x exec
         return [("Obra Um", -8000.0, -2000.0), ("Obra Dois", -3000.0, -500.0)]
+    if "GROUP BY 1" in sql and sql.count("SUM(CASE WHEN tipo") >= 5:
+        # resultado por obra/projeto: líquida, despesa e (desde 11/11/2026) a
+        # bruta — três somas no SELECT e duas no ORDER BY
+        return [("PROJ-A", 12000.0, -9000.0, 12500.0), ("PROJ-B", 4000.0, -6000.0, 4000.0)]
     if "GROUP BY 1" in sql and sql.count("SUM(CASE WHEN tipo") >= 2:
         return [("PROJ-A", 12000.0, -9000.0), ("PROJ-B", 4000.0, -6000.0)]
     if "GROUP BY 1" in sql:                                     # receita por obra
@@ -878,7 +882,7 @@ def test_prestacao_avisa_quando_nao_ha_participacao(painel):
 
 def test_parametros_da_prestacao_abrem_em_todas_as_abas(painel):
     painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
-    for aba, marca in [("socios", "Adicionar ou renomear sócio"),
+    for aba, marca in [("socios", "Adicionar sócio"),
                        ("participacoes", "Quem participa de qual projeto"),
                        ("regras", "Nova regra"),
                        ("ajustes", "Novo ajuste"),

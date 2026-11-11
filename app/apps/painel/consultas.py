@@ -589,14 +589,18 @@ def resultado_por(f: Filtros, nivel: str = "projeto", medida: str = "comprometid
     sql = f"""
         SELECT COALESCE(NULLIF({coluna},''), '(sem {coluna})'),
                SUM(CASE WHEN tipo = ? AND NOT ({RETIDO}) THEN {valor} ELSE 0 END),
-               SUM(CASE WHEN tipo = ? THEN {valor_desp} ELSE 0 END)
+               SUM(CASE WHEN tipo = ? THEN {valor_desp} ELSE 0 END),
+               SUM(CASE WHEN tipo = ? THEN {valor} ELSE 0 END)
           FROM fato{where} GROUP BY 1
          ORDER BY {resultado} DESC LIMIT {int(limite)}"""
     saida = []
-    # ordem dos parametros: os dois do SELECT, os do WHERE, os dois do ORDER BY
-    for nome, receita, despesa in consultar(sql, [REC, PAG] + params + [REC, PAG]):
+    # ordem dos parametros: os três do SELECT, os do WHERE, os dois do ORDER BY
+    for nome, receita, despesa, bruta in consultar(sql, [REC, PAG, REC] + params + [REC, PAG]):
         receita, despesa = float(receita or 0), float(despesa or 0)
+        # a BRUTA (11/11/2026, o dono: "no resultado por obra deveria ter a
+        # receita bruta") — a mesma régua do DRE: a líquida mais as retenções
         saida.append({"nome": nome, "receita": receita, "despesa": despesa,
+                      "receita_bruta": float(bruta or 0),
                       "resultado": receita + despesa})
     return saida
 
