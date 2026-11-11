@@ -1,0 +1,21 @@
+{# A MESMA BARRA NAS QUATRO TELAS DA PRESTAÇÃO (11/11/2026, o dono: "onde
+   estão as configurações de rateio dos grupos e categorias? Só vejo a parte de
+   juros de empréstimo" — ele estava em Cadastros, e o que procurava fica na
+   montagem). Cada botão diz o que tem lá dentro. `onde` é a tela atual. #}
+{% macro nav_da_prestacao(onde, cenario_id=None) %}
+<div class="chips nao-imprime" style="margin:0 0 14px; gap:8px">
+  {% for chave, rotulo, dica, destino in [
+      ('resultado', 'Resultado', 'por obra e por sócio', url_for('painel.cenario_resultado', cenario=cenario_id)),
+      ('como', 'Como é feita', 'para mostrar aos sócios', url_for('painel.cenario_como', cenario=cenario_id)),
+      ('montagem', 'Montar o cenário', 'o que entra, percentuais dos grupos e categorias, quem recebe, quem divide',
+       url_for('painel.cenario_montagem', cenario=cenario_id)),
+      ('cadastros', 'Cadastros', 'sócios, ajustes, centros de custo da estrutura, categorias dos juros',
+       url_for('painel.prestacao_parametros'))] %}
+  <a class="modulo-btn {% if onde == chave %}ativo{% endif %}" href="{{ destino }}"
+     style="background:{{ 'var(--amarelo)' if onde == chave else 'var(--branco)' }};
+            color:{{ 'var(--azul)' if onde == chave else 'var(--tinta-suave)' }};
+            border:1px solid var(--borda); text-decoration:none; line-height:1.25; padding:6px 12px">
+    <b>{{ rotulo }}</b><br><small style="font-weight:400">{{ dica }}</small></a>
+  {% endfor %}
+</div>
+{% endmacro %}

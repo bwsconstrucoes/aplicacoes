@@ -8,6 +8,8 @@
 <h2>Montar o cenário
   <small>a régua, o que se divide e quem divide — num lugar só</small>
 </h2>
+{% from "painel_prestacao_nav.html" import nav_da_prestacao %}
+{{ nav_da_prestacao('montagem', cenario.id if cenario else None) }}
 
 <!-- ===================== QUAL CENÁRIO ===================== -->
 <div class="cartao">
@@ -82,11 +84,6 @@
      style="background:var(--branco); color:var(--tinta-suave); border:1px solid var(--borda); text-decoration:none">{{ rotulo }}</a>
   {% endfor %}
   <span style="flex:1"></span>
-  <a class="btn secundario" style="text-decoration:none"
-     href="{{ url_for('painel.prestacao_parametros') }}"
-     title="sócios, ajustes, projeto das obras e parâmetros gerais">⚙ Cadastros</a>
-  <a class="btn" style="text-decoration:none"
-     href="{{ url_for('painel.cenario_como', cenario=cenario.id) }}">📄 Como é feita (para mostrar)</a>
 </nav>
 {% if request.args.get('erro') %}
 <div class="aviso erro"><b>Não salvou:</b> {{ request.args.get('erro') }} Nada foi gravado — corrija e salve de novo.</div>
@@ -278,6 +275,15 @@
         </tr>
       </thead>
       <tbody>
+        {% if not contas %}
+        <tr><td colspan="7" class="vazio">
+          <b>Nenhuma despesa nos centros de custo da estrutura.</b>
+          {% if origem_da_matriz %}Hoje a estrutura é:
+            {{ origem_da_matriz.por_depto|map(attribute=0)|join(' e ') or 'nenhum centro de custo' }}.{% endif %}
+          Confira em <a href="{{ url_for('painel.prestacao_parametros', aba='geral') }}">Cadastros › Parâmetros gerais</a>
+          se os dois centros de custo da estrutura são os certos.
+        </td></tr>
+        {% endif %}
         {% for g in contas %}
         {% set n = loop.index %}
         <tr class="mov-grupo">

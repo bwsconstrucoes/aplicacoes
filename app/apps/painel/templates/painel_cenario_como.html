@@ -40,6 +40,8 @@
 <h2>Como esta prestação é feita
   <small>o cenário “{{ cenario.nome }}”, passo a passo</small>
 </h2>
+{% from "painel_prestacao_nav.html" import nav_da_prestacao %}
+{{ nav_da_prestacao('como', cenario.id) }}
 
 <form method="get" class="tabela-barra nao-imprime" style="border:0; padding:0 0 12px">
   <div class="campo" style="max-width:360px">
@@ -53,10 +55,6 @@
   <span class="espaco"></span>
   <button type="button" class="btn secundario" style="align-self:flex-end"
           onclick="window.print()">🖨 Imprimir</button>
-  <a class="btn secundario" style="text-decoration:none; align-self:flex-end"
-     href="{{ url_for('painel.cenario_resultado', cenario=cenario.id) }}">Ver o resultado →</a>
-  <a class="btn secundario" style="text-decoration:none; align-self:flex-end"
-     href="{{ url_for('painel.cenario_montagem', cenario=cenario.id) }}">← Montar</a>
 </form>
 
 {% if cenario.observacao %}<p class="cartao-dica">{{ cenario.observacao }}</p>{% endif %}

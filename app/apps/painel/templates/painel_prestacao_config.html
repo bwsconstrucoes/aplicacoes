@@ -21,12 +21,14 @@
   <small>os cadastros de apoio — os percentuais e quem divide ficam na montagem do cenário</small>
 </h2>
 
-<p style="margin:-6px 0 12px">
-  <a href="{{ url_for('painel.cenario_montagem') }}" class="btn secundario"
-     style="text-decoration:none; display:inline-block">← Montar o cenário</a>
-  <a href="{{ url_for('painel.cenario_resultado') }}" class="btn secundario"
-     style="text-decoration:none; display:inline-block">Ver o resultado →</a>
-</p>
+{% from "painel_prestacao_nav.html" import nav_da_prestacao %}
+{{ nav_da_prestacao('cadastros') }}
+<div class="aviso info">
+  <b>Procurando os percentuais de rateio dos grupos e das categorias?</b> Eles ficam em
+  <a href="{{ url_for('painel.cenario_montagem') }}#passo-divide"><b>Montar o cenário › 2 · O que se divide</b></a>:
+  cada grupo com o valor e o percentual ao lado, abrindo nas categorias, e a parte do projeto principal por período.
+  Aqui em Cadastros ficam só os dados de apoio.
+</div>
 
 {{ menu_da_prestacao() }}
 {% if request.args.get('erro') %}

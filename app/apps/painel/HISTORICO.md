@@ -651,6 +651,21 @@ nunca rodou contra a base real**. Ele passou pelo parser do Postgres, pelo teste
 de portabilidade e pelos testes com dublê — nenhum dos três olha o número que
 sai.
 
+## "Onde estão as configurações de rateio dos grupos e categorias?" — 11/11/2026 (tarde)
+
+O dono: *"só vejo a parte de juros de empréstimo."* Ele estava em Cadastros
+(a antiga Parâmetros), onde a aba "Regras de rateio" tinha saído com a
+prestação antiga; os percentuais ficam na montagem, passo 2 — e o caminho até
+lá era um botão pequeno ("← Montar") no resultado.
+
+- **A mesma barra nas quatro telas da prestação** (`painel_prestacao_nav.html`):
+  Resultado · Como é feita · Montar o cenário · Cadastros, cada botão dizendo
+  o que tem dentro ("percentuais dos grupos e categorias" está escrito no de
+  Montar). Os botões soltos de ir de uma tela a outra saíram.
+- Cadastros abre com um aviso que leva direto ao passo 2 da montagem.
+- A árvore vazia diz por quê (nenhuma despesa nos centros de custo da
+  estrutura, e quais são) em vez de aparecer só o cabeçalho.
+
 ## A tarifa que o OMIE "bloqueou", e o projeto que abre nas obras — 11/11/2026 (tarde)
 
 **1. Trocar a obra de uma tarifa (lançamento de conta) — primeira tentativa
