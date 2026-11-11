@@ -814,3 +814,94 @@ def test_o_pedido_nasce_com_o_que_o_cadastro_tem_e_nao_exige_de_novo(
     assert "num_pis" not in exige["campos"]
     # O que o cadastro NÃO tem continua sendo perguntado.
     assert "num_ctps" in exige["campos"]
+
+
+# ---------------------------------------------------------------------------
+# UMA INFORMAÇÃO, UMA FONTE: a empresa de registro
+#
+# Ele, em 11/11/2026: *"empresa para registro e CNPJ para admissão é campo
+# duplicado. É a mesma informação."*
+#
+# Tinha razão, e era pior do que parecia:
+#   1. a ficha do colaborador tinha os DOIS — caixinha de empresa e texto
+#      livre de CNPJ —, então dava para escolher uma e digitar outra;
+#   2. a caixinha NUNCA funcionou: a lista de empresas não era mandada para a
+#      tela, então ela estava sempre vazia e só o texto livre servia;
+#   3. a lista de CNPJs do pedido estava DIGITADA no código, enquanto o
+#      cadastro de Empresas tinha as mesmas empresas.
+# ---------------------------------------------------------------------------
+@banco_
+def test_a_ficha_recebe_as_empresas_para_a_caixinha(sessao_real, banco):
+    """Sem isto a caixinha "Empresa de registro" nasce vazia — que foi
+    exatamente o que aconteceu, e obrigou o CNPJ a virar texto livre."""
+    from app.apps.erp.core.cadastros import pessoas as svc
+    from app.apps.erp.db.models.cadastros import Empresa
+    sessao_real.add(Empresa(razao_social="BWS MATRIZ LTDA",
+                            cnpj="00079526000109", nome_fantasia="MATRIZ/CE"))
+    sessao_real.flush()
+    o = svc.opcoes(sessao_real)
+    assert o["empresas"], "a ficha ficaria com a caixinha de empresa vazia"
+    uma = o["empresas"][0]
+    assert uma["cnpj"] and uma["razao_social"]
+
+
+@banco_
+def test_escolher_a_empresa_preenche_o_CNPJ_sozinho(sessao_real, dono, banco):
+    """O CNPJ deixa de ser digitado: ele SEGUE a empresa. Sem isto os dois
+    podiam divergir — a MATRIZ na caixinha e o CNPJ da INFRADENDE ao lado."""
+    from app.apps.erp.core.cadastros import pessoas as svc
+    from app.apps.erp.db.models.cadastros import Empresa, Obra
+    emp = Empresa(razao_social="INFRADENDE LTDA", cnpj="50422792000109",
+                  nome_fantasia="INFRADENDE")
+    obra = Obra(codigo="EMP-01", nome="Obra da empresa", status="ATIVA")
+    sessao_real.add_all([emp, obra])
+    sessao_real.flush()
+    c = svc.salvar(sessao_real, {
+        "cpf": CPF_B, "nome": "Pessoa Da Empresa", "obra_id": obra.id,
+        "empresa_id": emp.id, "vinculo": "CTPS", "admissao": "2026-01-05"}, dono)
+    sessao_real.flush()
+    assert c.cnpj_admissao == "50422792000109"
+
+
+@banco_
+def test_quem_manda_so_o_CNPJ_continua_funcionando(sessao_real, dono, banco):
+    """A importação de planilha, a do Pipefy e o pedido vindo da obra mandam o
+    CNPJ sem empresa. Quebrar isso seria trocar um defeito por três."""
+    from app.apps.erp.core.cadastros import pessoas as svc
+    from app.apps.erp.db.models.cadastros import Obra
+    obra = Obra(codigo="EMP-02", nome="Obra sem empresa", status="ATIVA")
+    sessao_real.add(obra)
+    sessao_real.flush()
+    c = svc.salvar(sessao_real, {
+        "cpf": CPF_A, "nome": "Pessoa Sem Empresa", "obra_id": obra.id,
+        "cnpj_admissao": "00.079.526/0001-09 - MATRIZ/CE",
+        "vinculo": "CTPS", "admissao": "2026-01-05"}, dono)
+    sessao_real.flush()
+    assert c.cnpj_admissao == "00.079.526/0001-09 - MATRIZ/CE"
+
+
+@banco_
+def test_a_lista_de_empresas_do_pedido_sai_do_CADASTRO(sessao_real, banco):
+    """Empresa nova do grupo tem de aparecer sozinha na caixinha do pedido —
+    sem ninguém lembrar de digitar o CNPJ dentro do código."""
+    from app.apps.erp.core import pessoal_solicitacoes as svc_sp
+    from app.apps.erp.db.models.cadastros import Empresa
+    sessao_real.add(Empresa(razao_social="EMPRESA NOVA DO GRUPO LTDA",
+                            cnpj="11222333000181", nome_fantasia="NOVA"))
+    sessao_real.flush()
+    achadas = svc_sp.opcoes_de_empresa(sessao_real)
+    assert any("11222333000181" in x and "NOVA" in x for x in achadas), achadas
+
+
+def test_nenhuma_tela_pergunta_a_empresa_duas_vezes():
+    """A ficha tinha "Empresa do grupo" E "CNPJ de admissão", lado a lado.
+    Esta trava é de TEXTO porque o defeito era de tela: o campo de CNPJ não
+    pode voltar a ser digitável na ficha."""
+    from pathlib import Path
+    ficha = Path("app/apps/erp/templates/erp_colaboradores.html").read_text(
+        encoding="utf-8")
+    assert 'campoTexto("CNPJ de admissão"' not in ficha, (
+        "o CNPJ voltou a ser digitado na ficha — ele vem da empresa escolhida")
+    assert '"c-cnpjadm": "cnpj_admissao"' not in ficha, (
+        "a ficha voltou a mandar o CNPJ junto com a empresa, e os dois podem "
+        "divergir de novo")

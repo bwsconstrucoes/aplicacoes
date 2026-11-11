@@ -1936,6 +1936,51 @@ Três mudanças pequenas nas solicitações do DP, e todas mexem no mesmo lugar:
   escolhida na busca). O campo é editável de propósito, mas a divergência não
   é registrada em lugar nenhum.
 
+## 3z-bis. O QUE VEIO DO PIPEFY (10/11/2026)
+
+O número do card já estava no cadastro (`colaboradores.ref_pipefy`). Agora o
+ERP sabe ler esse card, baixar os documentos da pessoa e preencher o que está
+em branco — e, principalmente, **sabe dizer de onde cada coisa veio**.
+
+### O que dá para perguntar agora
+
+- "Quantas pessoas já tiveram os documentos trazidos do Pipefy?" — e quantas
+  ainda faltam.
+- "De onde veio a CTPS desta pessoa: alguém fotografou ou foi a importação?"
+  — está em `pipefy_importado` e em `documentos.origem`.
+- "Quais arquivos não desceram, e por quê?" — é a lista que precisa de mão
+  humana, e é a pergunta que impede "importação concluída" de esconder trinta
+  falhas.
+- "Quantas pessoas ativas ainda estão sem número de card?" — essas nunca vão
+  ser alcançadas pela importação, e é por aí que se descobre quem entrou no
+  ERP por fora do Pipefy.
+- "Esta pessoa está com o cadastro documental completo?" — CPF, documento de
+  identificação, comprovante de endereço e, no caso CTPS, as duas páginas.
+
+### ⚠️ Palavras que mudam a resposta aqui
+
+- **"importado"** pode ser *o card foi lido* ou *o documento foi guardado*. Um
+  card lido cujos oito anexos falharam conta como lido e não trouxe nada.
+- **"já veio"** é por (card, campo, arquivo) — não por pessoa. Pessoa com seis
+  documentos pode ter cinco guardados e um pendente.
+- **"todas as pessoas"**: o padrão da importação é **quem está trabalhando**.
+  O pipe tem 3.664 cards e o ERP não precisa do histórico de quem saiu há
+  cinco anos.
+
+### O que o sistema ainda NÃO responde
+
+- "O documento que veio do Pipefy está legível?" — ele é guardado como veio.
+  Foto torta ou ilegível entra do mesmo jeito, e ninguém confere.
+- "O que está no card diverge do que está no cadastro?" — a importação só
+  preenche o que está VAZIO, de propósito. Ela não compara nem avisa quando o
+  card diz uma coisa e o cadastro diz outra — e essa divergência é justamente
+  o sinal de cadastro desatualizado de um dos dois lados.
+- "Quantas pessoas do pipe não existem no ERP?" — a importação não cria
+  pessoa, então quem está só no Pipefy é invisível aqui. Responder isso
+  exigiria ler os 3.664 cards, que é outra operação.
+- "O ASO desta pessoa está válido?" — o ASO **não é importado**: ele vence, e
+  o card não diz até quando vale. Continua sendo anexado à mão, com a data.
+
 ## 4. Como esta lista vira código
 
 Cada pergunta daqui vira uma função em `core/perguntas/respostas.py`, com nome,

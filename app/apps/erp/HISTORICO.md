@@ -8867,6 +8867,195 @@ dados cadastrais com os seis campos de endereço e o estado em caixinha.
 - **A leitura de documento por IA continua sem teste com chave de verdade** —
   não há chave neste ambiente.
 
+## 10/11/2026 (noite, depois de publicar) — TRAZER DO PIPEFY O QUE FICOU LÁ
+
+Ele, olhando o cadastro das pessoas:
+
+> *"Olhando os cadastros, a planilha lá, dados e documentos, tem o número do
+> card do pipe, certo? Então, tu não consegue fazer logo essa importação, não?
+> Faz a leitura do card, baixa os documentos, importa para o ERP. Só das
+> pessoas que você já sabe que tem que estar."*
+
+Ele está certo nas duas pontas: o número do card já está em
+`colaboradores.ref_pipefy`, e o pipe guarda os documentos que o ERP não tem.
+
+**Está no ramo `claude/oi-vjvrn8`. NÃO foi publicado.**
+
+### Onde isso roda, e por que não aqui
+
+Eu comecei querendo ler um card de verdade do ambiente de desenvolvimento, e
+pedi o token numa janela segura. **Não deu**: a sessão já estava longa demais
+para guardar credencial, e `api.pipefy.com` não está liberado no ambiente de
+desenvolvimento.
+
+⚑ **E o desenho ficou melhor por causa disso.** A importação roda **dentro do
+ERP, em produção**, onde o `PIPEFY_API_TOKEN` **já existe** — o BaixaBradesco,
+o Análise de SPs e a Emissão de NF-e usam esse mesmo token há meses. Não se
+criou variável nova (regra do `CLAUDE.md`), e ele pode repetir a importação
+quando quiser, sem depender de mim.
+
+### A dúvida que eu ia resolver no chute, e o repositório respondeu
+
+O campo de anexo do Pipefy devolve ora o endereço completo do arquivo, ora só
+um caminho. Eu ia **montar** o endereço a partir do caminho, chutando a raiz
+do armazenamento.
+
+Não foi preciso: **este monorepo já baixa anexos do Pipefy em produção**
+(`core/importadores/pipefy_cards.py`), e o código que funciona há meses aceita
+**só o que começa com http**. Nesta conta, o anexo vem com o endereço
+completo. Então a regra aqui é a mesma, e o que não for endereço completo vira
+**linha do relatório**, não endereço inventado — chutar a raiz daria um
+endereço que ou não responde, ou responde OUTRA COISA, e aí o arquivo de
+alguém entraria no cadastro de outra pessoa. Há teste disso.
+
+### As quatro regras
+
+1. **Conferir sem gravar, depois gravar.** Igual aos diários: a simulação lê
+   tudo, monta o relatório e **não baixa um arquivo sequer**. O botão de
+   gravar nasce travado e só abre depois de uma conferência — e **mudar o
+   filtro trava de novo** (conferir 50 e gravar 300 seria o engano exato que a
+   trava existe para evitar).
+2. **Nunca sobrescrever.** Só entra em campo **vazio**. O cadastro daqui foi
+   conferido por gente; o card pode ter dois anos e um endereço antigo.
+3. **Só quem tem que estar.** O padrão é **pessoa ativa com card**. O pipe tem
+   3.664 cards.
+4. **O que não entrou é dito**, com o motivo, pessoa por pessoa.
+
+### O que entra, e o que ficou de fora de propósito
+
+**Entram** oito tipos de documento: identificação, CTPS (as duas páginas),
+CPF, comprovante de endereço, foto, documento de dependente e documentos
+diversos. E os campos simples que estiverem em branco (PIS, nº e série da
+CTPS, RG, nome da mãe e do pai, matrícula, endereço, telefone, datas, e as
+caixinhas).
+
+**Ficaram de fora, e cada um por um motivo:**
+
+- **O ASO.** Ele vence, e o card não diz até quando vale. Inventar essa data
+  criaria um aviso que não significa nada.
+- **Cargo, obra, função, município, convenção e empresa.** No Pipefy são
+  CONECTORES: guardam o id de um registro de lá, não o nome. Casar isso com o
+  cadastro daqui é adivinhação, e adivinhação em cargo vira salário errado.
+- **Dinheiro** (salário, diária, auxílios). O valor do card pode ser de dois
+  anos atrás, e salário errado no cadastro vira folha errada. É o único campo
+  onde "preencher o que está vazio" deixa de ser inofensivo.
+- **Criar pessoa.** A importação atende quem **já está** no ERP. Criar gente a
+  partir de card é outra decisão, e é dele.
+
+### Três defeitos que este trabalho achou
+
+1. **Eu comparava os textos das caixinhas "parecendo"** (sem acento, sem
+   caixa, aceitando começo igual). Isso traduziu *"Divorciado em 2020"* como
+   DIVORCIADO e *"Masculino"* como **M** — este último **por acaso**, porque M
+   é o começo de Masculino. ⚑ Acertar por acaso é pior que errar: funciona no
+   teste e erra no dado real. As opções dos dois lados são fechadas e
+   conhecidas, então agora a tradução é uma **tabela escrita**, e o que não
+   estiver nela não entra.
+2. **Os três tipos de documento da migração 100 só existiam na migração**, não
+   no catálogo escrito (`core/arquivo/catalogo.py`). Como é do catálogo que
+   sai a ordem dos tipos na tela — e é ele que recria o que falta —, esses
+   três sumiriam de qualquer banco criado do zero. A trava da importação pegou
+   isso.
+3. **Os botões ficariam travados para sempre** quando o trabalho demorasse
+   demais ou falhasse: havia `return` dentro do `try` e o destravamento estava
+   solto depois dele. Virou `finally`.
+
+### Repetir não traz nada duas vezes — e sem baixar de novo
+
+O ERP já recusava guardar duas vezes o mesmo arquivo da mesma pessoa (compara
+o conteúdo, não o nome). ⚑ **Só que, para comparar, precisa TER BAIXADO.** Com
+575 pessoas e até oito anexos cada, a segunda passada seriam ~4.600 downloads
+para concluir que nada mudou. A migração 101 (`pipefy_importado`) responde
+"esse já veio" **antes** de sair baixando — e é também o relatório de qual
+card e qual campo deu origem a cada documento.
+
+### Cada arquivo no seu savepoint
+
+Mesma lição do `_consulta_opcional` do diário: em Postgres, uma consulta que
+falha **aborta a transação inteira**, mesmo pega por `except`. Sem savepoint
+por arquivo, um anexo problemático derrubaria as 49 pessoas seguintes da
+mesma rodada, com um erro que não tem nada a ver com elas.
+
+### O que NÃO foi verificado, e é o risco desta entrega
+
+**Nenhum card de verdade foi lido.** Não há token nem rede para o Pipefy no
+ambiente de desenvolvimento. Os 17 testes rodam com cards de mentira e cobrem
+a regra, o de-para e as falhas — mas **a primeira leitura real vai ser a dele**.
+
+Por isso a conferência sem gravar é o padrão, e por isso ela **não baixa
+nada**: se o formato vier diferente do esperado, a simulação mostra isso sem
+ter tocado em nenhum cadastro.
+
+## 11/11/2026 — O CADASTRO NÃO PERGUNTAVA POR QUAL EMPRESA
+
+Ele: *"uma coisa a mais. na readmissão ou no cadastro de colaborador pergunta
+qual empresa?"*
+
+Fui olhar: **a readmissão perguntava; o cadastro não.** E é justamente o
+cadastro que CRIA a pessoa. O DP recebia um colaborador novo sem saber por
+qual das três empresas registrar (MATRIZ/CE, INFRADENDE ou C3), e ia perguntar
+por fora do sistema — que é exatamente o tipo de ida e volta que este ERP
+existe para acabar.
+
+**No Pipe o campo está no formulário de ABERTURA**, ou seja, é de quem pede —
+não é decisão do DP, como convenção e matrícula são. Então entrou igual à
+readmissão: caixinha fechada com os três CNPJs, obrigatória.
+
+⚑ **UM campo só, e não dois.** No Pipe há "Empresa para Registro" E "CNPJ para
+Admissão", mas as três empresas SÃO os três CNPJs. Perguntar as duas coisas é
+a duplicidade que ele já derrubou no diário (*"ou é um ou é o outro"*).
+
+**A trava é por CLASSE, não por tipo:** todo pedido que registra alguém numa
+empresa tem de dizer em qual, e nenhum pode perguntar isso duas vezes. Tipo
+novo do mesmo feitio nasce com a pergunta ou quebra a suíte.
+
+## 11/11/2026 (tarde) — "EMPRESA" E "CNPJ DE ADMISSÃO" ERAM O MESMO CAMPO
+
+Ele, depois do conserto da manhã: *"empresa para registro e CNPJ para admissão
+é campo duplicado. É a mesma informação. confirma se tá tudo ok."*
+
+**Estava certo, e era PIOR do que ele viu.** Três camadas do mesmo defeito:
+
+1. **A ficha do colaborador tinha os dois lado a lado** — uma caixinha
+   "Empresa do grupo" e um campo de TEXTO LIVRE "CNPJ de admissão". Dava para
+   escolher a MATRIZ na caixinha e digitar o CNPJ da INFRADENDE ao lado, e o
+   sistema guardava as duas coisas.
+2. ⚑ **A caixinha NUNCA FUNCIONOU.** A lista de empresas não era mandada para
+   a tela (`pessoas.opcoes()` não devolvia `empresas`), então ela estava
+   **sempre vazia** — e o único jeito de dizer a empresa era digitar o CNPJ no
+   texto ao lado. Era por isso que os dois campos conviviam: um deles estava
+   morto, e ninguém percebeu porque o outro resolvia.
+3. **A lista dos três CNPJs do pedido estava DIGITADA no código**, enquanto o
+   cadastro de Empresas tinha as mesmas empresas com razão social e CNPJ.
+   Empresa nova do grupo precisaria ser escrita dentro do código.
+
+E o próprio código já confessava: `core/contabilidade.py` faz
+`c.empresa_id or c.cnpj_admissao` — tenta uma coluna e cai na outra, porque
+não sabe qual está preenchida.
+
+### Como ficou
+
+- **A ficha tem UM campo**: "Empresa de registro", caixinha que agora vem
+  cheia, com a razão social e o CNPJ juntos no rótulo.
+- **O CNPJ segue a empresa**: escolhida a empresa, `cnpj_admissao` é
+  preenchido do cadastro dela, no servidor. Não se digita mais.
+- **Quem já tinha só o CNPJ gravado continua vendo o que está lá**, com o
+  recado de escolher a empresa para ligar ao cadastro. Nada foi apagado.
+- **Quem manda só o CNPJ continua funcionando**: a importação de planilha, a
+  do Pipefy e o pedido vindo da obra não têm `empresa_id`. Quebrar isso seria
+  trocar um defeito por três.
+- **A lista do pedido sai do cadastro de Empresas** (`opcoes_de_empresa`), com
+  as três de antes como socorro para quando a tela é montada sem banco.
+
+### As travas
+
+- a ficha **recebe** as empresas (sem isso a caixinha nasce vazia de novo);
+- escolher a empresa **preenche o CNPJ sozinho**;
+- quem manda **só o CNPJ** continua gravando;
+- a lista do pedido **sai do cadastro**, e empresa nova aparece sozinha;
+- e uma trava de TEXTO na tela: o campo de CNPJ **não pode voltar** a ser
+  digitável na ficha, nem voltar a ser enviado junto com a empresa.
+
 ## Coisas pequenas que mordem
 
 - **⚠️ DATA FIXA EM FIXTURE DE TESTE É BOMBA-RELÓGIO.** Em 07/11/2026, na hora
