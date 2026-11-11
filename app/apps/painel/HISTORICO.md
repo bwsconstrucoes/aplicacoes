@@ -651,6 +651,45 @@ nunca rodou contra a base real**. Ele passou pelo parser do Postgres, pelo teste
 de portabilidade e pelos testes com dublê — nenhum dos três olha o número que
 sai.
 
+## A prestação de contas ANTIGA saiu — 11/11/2026 (noite)
+
+O dono: *"eu não sei o que é essa prestação de conta antiga. Se não tá
+servindo (…) se não interessa mais, pode tirar."*
+
+**O que era:** a aba "Prestação de Contas" do menu abria uma conta PARALELA à
+do cenário — com as suas regras (Parâmetros › Regras de rateio) e as suas
+participações por projeto (Parâmetros › Participações), mais um simulador
+("cenários de rateio", `/prestacao/cenarios`). Dois caminhos para a mesma
+pergunta, com números que podiam divergir; e tudo o que ele pediu desde 09/11
+(BWS CE × demais, por período, juros por lado, batimento) só existe no cenário.
+
+**O que mudou:**
+- A aba **"Prestação de Contas" abre o resultado do cenário** (sem cenário,
+  a montagem). Os endereços antigos (`/prestacao/cenarios`, e as abas
+  `participacoes` e `regras` de Parâmetros) redirecionam para a montagem.
+- Saíram: as telas `painel_prestacao.html` e `painel_prestacao_cenarios.html`,
+  as abas Participações e Regras de rateio de Parâmetros (inclusive a árvore
+  de regras feita na manhã do mesmo dia — nunca foi publicada), as planilhas
+  "posicao"/"quotas" e as funções da conta antiga no `web.py`
+  (`_calcular_prestacao`, `_apurar_com`, `_base_da_prestacao`,
+  `_cenario_do_pedido`).
+- Parâmetros ficou com os cadastros de apoio: Sócios, Ajustes, Fora da
+  análise, Projeto das obras, Parâmetros gerais. A montagem ganhou o botão
+  "⚙ Cadastros".
+- **NADA FOI APAGADO DO BANCO:** as tabelas `regras` e `participacoes`
+  continuam com o que tinham. As funções de cálculo em `prestacao.py`
+  (`calcular_rateio`, `quotas_por_socio`…) e as de dados em
+  `prestacao_dados.py` ficaram, com os testes delas — voltar é religar a tela.
+
+**⚠️ MUDANÇA DE ACESSO, dita ao dono antes de publicar:** a tela antiga era
+liberável a quem tem login próprio (a caixinha "Prestação de Contas" no
+cadastro de acesso) — e mostrava a empresa inteira, sem filtro de obra. O
+cenário é só do administrador. Então quem tinha essa tela marcada **deixa de
+ver a aba**; a caixinha saiu do cadastro (`usuarios.TELAS`) e a aba não
+aparece mais no menu de quem não é o administrador
+(`web.ABAS_SO_DO_ADMINISTRADOR`). Se um parceiro precisar ver a parte dele, é
+uma tela nova, com filtro — não a volta da antiga.
+
 ## "Como é feita", a montagem em passos e a obra fora que ainda aparecia — 11/11/2026 (noite)
 
 O dono: *"vá além do que eu comentei na parte da facilitação (…) eu quero

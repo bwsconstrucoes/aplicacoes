@@ -46,7 +46,8 @@ TELAS = {
     "obras": "Resultado por Obra",
     "execucao": "Comprometido × Executado",
     "caixa": "Necessidade de Caixa",
-    "prestacao": "Prestação de Contas",
+    # "prestacao" saiu em 11/11/2026: a aba abre o cenário, que mostra a empresa
+    # inteira e a parte de cada sócio — é só do administrador.
     "extrato": "Extrato de Conta Corrente",
     "calendario": "Calendário",
 }

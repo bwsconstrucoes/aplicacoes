@@ -82,6 +82,9 @@
      style="background:var(--branco); color:var(--tinta-suave); border:1px solid var(--borda); text-decoration:none">{{ rotulo }}</a>
   {% endfor %}
   <span style="flex:1"></span>
+  <a class="btn secundario" style="text-decoration:none"
+     href="{{ url_for('painel.prestacao_parametros') }}"
+     title="sócios, ajustes, projeto das obras e parâmetros gerais">⚙ Cadastros</a>
   <a class="btn" style="text-decoration:none"
      href="{{ url_for('painel.cenario_como', cenario=cenario.id) }}">📄 Como é feita (para mostrar)</a>
 </nav>

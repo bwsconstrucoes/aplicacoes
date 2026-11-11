@@ -4,14 +4,9 @@
 
 {% macro menu_da_prestacao() %}
 <div class="chips" style="margin-bottom:16px">
-  {# As duas últimas só servem à Prestação de Contas ANTIGA; o cenário tem as
-     suas próprias (montagem). Foram para o fim, com o nome dizendo
-     (11/11/2026, o dono: "ficou muito segregado"). #}
   {% for chave, rotulo in [('socios','Sócios'), ('ajustes','Ajustes'),
                            ('fora','Fora da análise'), ('projetos','Projeto das obras'),
-                           ('geral','Parâmetros gerais'),
-                           ('participacoes','Participações (prestação antiga)'),
-                           ('regras','Regras de rateio (prestação antiga)')] %}
+                           ('geral','Parâmetros gerais')] %}
     <a class="modulo-btn {% if aba == chave %}ativo{% endif %}"
        style="background:{{ 'var(--amarelo)' if aba == chave else 'var(--branco)' }};
               color:{{ 'var(--azul)' if aba == chave else 'var(--tinta-suave)' }};
@@ -23,12 +18,14 @@
 
 {% block conteudo %}
 <h2>Parâmetros da Prestação de Contas
-  <small>quem participa, e como o custo da estrutura se divide</small>
+  <small>os cadastros de apoio — os percentuais e quem divide ficam na montagem do cenário</small>
 </h2>
 
 <p style="margin:-6px 0 12px">
-  <a href="{{ com_filtros('painel.prestacao_contas') }}" class="btn secundario"
-     style="text-decoration:none; display:inline-block">← Voltar ao resultado</a>
+  <a href="{{ url_for('painel.cenario_montagem') }}" class="btn secundario"
+     style="text-decoration:none; display:inline-block">← Montar o cenário</a>
+  <a href="{{ url_for('painel.cenario_resultado') }}" class="btn secundario"
+     style="text-decoration:none; display:inline-block">Ver o resultado →</a>
 </p>
 
 {{ menu_da_prestacao() }}
@@ -113,253 +110,9 @@
 </div>
 {% endif %}
 
-{# ============================ PARTICIPAÇÕES ============================ #}
-{# UMA GRADE, UM SALVAR (11/11/2026, o dono: "tá muito difícil e lento de
-   configurar as participações"). Era uma participação por envio: escolher
-   projeto, sócio, percentual, salvar, esperar a página voltar — e outra vez.
-   Agora cada projeto é uma linha, cada sócio uma coluna, e tudo vai junto.
-   Célula vazia = não participa. #}
-{% if aba == 'participacoes' %}
-{% from "painel_grade_participacoes.html" import grade_participacoes %}
-<div class="cartao">
-  <div class="cartao-cab">
-    <h3>Quem participa de qual projeto</h3>
-    <small>preencha os percentuais e salve tudo de uma vez</small>
-  </div>
-  {% if socios_ativos %}
-  <form method="post">
-    <input type="hidden" name="acao" value="participacoes_em_grade">
-    <input type="hidden" name="aba" value="participacoes">
-    {{ grade_participacoes(linhas_da_grade, socios_ativos, grade, 'Projeto') }}
-  </form>
-  {% else %}
-  <div class="aviso erro">Nenhum sócio ativo.
-    <a href="{{ url_for('painel.prestacao_parametros', aba='socios') }}">Cadastre em Sócios</a>.</div>
-  {% endif %}
-</div>
-{% endif %}
-
-{# ============================ REGRAS ============================ #}
-{% if aba == 'regras' %}
-{# 05/11/2026, o dono: "eu queria que tivesse os grupos e ao lado eu já pudesse
-   definir o percentual; se expandir o grupo, afino a categoria". Isso existe
-   na montagem do cenário — o aviso leva até lá. #}
-<div class="aviso info">
-  <b>Quer dar o percentual por GRUPO e ajustar só algumas categorias?</b> É a
-  <a href="{{ url_for('painel.cenario_montagem') }}">montagem do cenário</a>:
-  os grupos com o percentual ao lado, que abrem para as categorias; a categoria
-  em branco segue o grupo, e tudo se salva num clique. As regras abaixo são o
-  jeito antigo, uma por uma — e são elas que a Prestação de Contas antiga usa.
-</div>
-<div class="aviso info">
-  Uma regra diz <b>que parte do custo administrativo se divide entre as obras</b>,
-  em que percentual e em que período. O que nenhuma regra pegar fica 100% no
-  próprio lado (matriz ou filial) — assim nenhum custo desaparece.
-</div>
-
-{# A ÁRVORE (11/11/2026, o dono: "na hora de criar regras de rateio não tá
-   tendo correlação entre o grupo e a categoria. Tá terrível"). Eram duas
-   listas soltas — todos os grupos numa, todas as categorias na outra, sem
-   dizer qual categoria é de qual grupo. Agora cada grupo abre nas categorias
-   DELE, com o valor ao lado; marcar o grupo pega todas as categorias dele.
-   E a regra criada pode ser EDITADA (antes só apagar e refazer). #}
-{% set e = regra_em_edicao %}
-<div class="cartao" id="form-regra">
-  <div class="cartao-cab">
-    <h3>{{ 'Editar a regra “' ~ e.nome ~ '”' if e else 'Nova regra' }}</h3>
-    {% if e %}<a class="btn secundario" style="text-decoration:none"
-       href="{{ url_for('painel.prestacao_parametros', aba='regras') }}">Cancelar a edição</a>{% endif %}
-  </div>
-  <form method="post">
-    <input type="hidden" name="acao" value="regra">
-    <input type="hidden" name="aba" value="regras">
-    {% if e %}<input type="hidden" name="regra_id" value="{{ e.id }}">{% endif %}
-    <div class="form-grade">
-      <div class="campo">
-        <label for="rnome">Nome</label>
-        <input id="rnome" name="nome" required value="{{ e.nome if e else '' }}"
-               placeholder="Ex.: pessoal compartilhado da matriz">
-      </div>
-      <div class="campo">
-        <label for="rdepto">Departamento de origem</label>
-        <select id="rdepto" name="depto" required>
-          <option value="{{ config.depto_admin_matriz }}" {{ 'selected' if e and e.depto == config.depto_admin_matriz }}>{{ config.depto_admin_matriz }} (matriz)</option>
-          <option value="{{ config.depto_admin_filial }}" {{ 'selected' if e and e.depto == config.depto_admin_filial }}>{{ config.depto_admin_filial }} (filial)</option>
-        </select>
-      </div>
-      <div class="campo">
-        <label for="rpct">% que se divide</label>
-        <input id="rpct" name="pct" type="number" step="1" min="0" max="100"
-               value="{{ (e.pct|round|int) if e else 100 }}">
-      </div>
-      <div class="campo">
-        <label for="rescopo">Vai para</label>
-        <select id="rescopo" name="escopo">
-          {% for valor, rotulo in escopos.items() %}
-            <option value="{{ valor }}" {{ 'selected' if e and e.escopo == valor }}>{{ rotulo }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="campo">
-        <label for="rini">De (vazio = desde sempre)</label>
-        <input id="rini" name="mes_ini" type="month" value="{{ e.mes_ini if e else '' }}">
-      </div>
-      <div class="campo">
-        <label for="rfim">Até (vazio = até hoje)</label>
-        <input id="rfim" name="mes_fim" type="month" value="{{ e.mes_fim if e else '' }}">
-      </div>
-    </div>
-
-    <label class="opcao" style="margin:12px 0 6px">
-      <input type="checkbox" name="todas" value="1" id="regra-todas"
-             {{ 'checked' if e and e.todas }}>
-      <span class="rotulo">Todas as despesas deste departamento</span>
-    </label>
-
-    <div id="regra-arvore">
-      <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin:6px 0">
-        <b>Ou só estes grupos e categorias</b>
-        <input type="search" placeholder="Procurar grupo ou categoria…" data-arvore-busca
-               data-sem-busca style="max-width:280px">
-        <span class="cartao-dica" style="margin:0" id="regra-conta"></span>
-      </div>
-      <p class="dica" style="margin-top:0">Marcar o <b>grupo</b> pega todas as categorias
-        dele (inclusive as que surgirem depois). Para pegar só algumas, abra o grupo
-        (▸) e marque as categorias. O valor ao lado é o total da matriz e da filial.</p>
-      <div class="tabela-rolagem" style="max-height:420px; border:1px solid var(--borda); border-radius:8px; padding:6px 10px">
-        {% for g in arvore_regras %}
-        <details class="arvore-grupo" data-texto="{{ g.rotulo|lower }}" {{ 'open' if g.aberto }}>
-          <summary style="cursor:pointer; padding:4px 0; display:flex; gap:8px; align-items:center">
-            {% if g.com_caixa %}
-            <input type="checkbox" name="grupos" value="{{ g.grupo }}" data-arvore-grupo
-                   {{ 'checked' if g.marcado }} onclick="event.stopPropagation()"
-                   aria-label="Grupo {{ g.rotulo }}">
-            {% endif %}
-            <b>{{ g.rotulo }}</b>
-            <small>{{ g.categorias|length }} categoria(s)</small>
-            <span style="flex:1"></span>
-            <span class="dados">{{ brl(g.valor) }}</span>
-          </summary>
-          <div style="padding:0 0 6px 26px">
-            {% for c in g.categorias %}
-            <label class="arvore-cat" data-texto="{{ c.rotulo|lower }}"
-                   style="display:flex; gap:8px; align-items:center; padding:2px 0; font-weight:400">
-              <input type="checkbox" name="categorias" value="{{ c.categoria }}"
-                     data-arvore-cat {{ 'checked' if c.marcada }}>
-              <span>{{ c.rotulo }}</span>
-              <span style="flex:1"></span>
-              <span class="dados">{{ brl(c.valor) }}</span>
-            </label>
-            {% endfor %}
-          </div>
-        </details>
-        {% else %}
-        <p class="cartao-dica">Nenhuma despesa nos departamentos administrativos ainda.</p>
-        {% endfor %}
-      </div>
-    </div>
-
-    <label class="opcao" style="margin:10px 0 12px">
-      <input type="checkbox" name="ativo" value="1" {{ 'checked' if (not e) or e.ativo }}>
-      <span class="rotulo">Regra ativa</span>
-    </label>
-    <button class="btn" type="submit">{{ 'Salvar a regra' if e else 'Criar regra' }}</button>
-  </form>
-</div>
-<script>
-(function () {
-  const caixa = document.getElementById("form-regra");
-  if (!caixa) return;
-  const arvore = document.getElementById("regra-arvore");
-  const todas = document.getElementById("regra-todas");
-  const conta = document.getElementById("regra-conta");
-  const grupos = [...arvore.querySelectorAll("details.arvore-grupo")];
-  function ajustarGrupo(d) {
-    const g = d.querySelector("[data-arvore-grupo]");
-    if (!g) return;
-    // grupo marcado: as categorias dele vão junto — aparecem marcadas e
-    // travadas, e só o grupo é enviado
-    d.querySelectorAll("[data-arvore-cat]").forEach(c => {
-      if (g.checked) { c.dataset.antes = c.dataset.antes ?? (c.checked ? "1" : ""); c.checked = true; c.disabled = true; }
-      else if (c.disabled) { c.disabled = false; c.checked = c.dataset.antes === "1"; delete c.dataset.antes; }
-    });
-  }
-  function contar() {
-    const g = arvore.querySelectorAll("[data-arvore-grupo]:checked").length;
-    const c = arvore.querySelectorAll("[data-arvore-cat]:checked:not(:disabled)").length;
-    conta.textContent = todas.checked ? "" :
-      (g || c) ? `${g} grupo(s) inteiro(s) e ${c} categoria(s) avulsa(s) marcados` : "nada marcado ainda";
-    arvore.style.display = todas.checked ? "none" : "";
-  }
-  grupos.forEach(ajustarGrupo);
-  contar();
-  arvore.addEventListener("change", e => {
-    if (e.target.matches("[data-arvore-grupo]")) ajustarGrupo(e.target.closest("details"));
-    contar();
-  });
-  todas.addEventListener("change", contar);
-  const busca = arvore.querySelector("[data-arvore-busca]");
-  busca.addEventListener("keydown", e => { if (e.key === "Enter") e.preventDefault(); });
-  busca.addEventListener("input", () => {
-    const termo = busca.value.toLowerCase().trim();
-    grupos.forEach(d => {
-      const doGrupo = d.dataset.texto.includes(termo);
-      let alguma = false;
-      d.querySelectorAll(".arvore-cat").forEach(l => {
-        const casa = !termo || doGrupo || l.dataset.texto.includes(termo);
-        l.style.display = casa ? "flex" : "none";
-        if (casa && termo && !doGrupo) alguma = true;
-      });
-      d.style.display = (!termo || doGrupo || alguma) ? "" : "none";
-      if (termo && alguma) d.open = true;   // achou pela categoria: abre o grupo
-    });
-  });
-  caixa.querySelector("form").addEventListener("submit", e => {
-    if (!todas.checked && !arvore.querySelector("[data-arvore-grupo]:checked, [data-arvore-cat]:checked")) {
-      e.preventDefault();
-      alert("Marque ao menos um grupo ou uma categoria — ou “Todas as despesas deste departamento”.");
-    }
-  });
-})();
-</script>
-
-<div class="tabela-wrap">
-  <div class="tabela-rolagem">
-    <table>
-      <thead><tr><th class="sem-ordem">Regra</th><th class="sem-ordem">Origem</th>
-        <th class="sem-ordem">O que pega</th><th class="sem-ordem direita">%</th>
-        <th class="sem-ordem">Vai para</th><th class="sem-ordem">Período</th>
-        <th class="sem-ordem"></th></tr></thead>
-      <tbody>
-        {% for r in regras %}
-        <tr class="{% if not r.ativo %}linha-sub{% endif %}">
-          <td class="desc">{{ r.nome }}{% if not r.ativo %} <small>(inativa)</small>{% endif %}</td>
-          <td>{{ r.depto }}</td>
-          <td class="desc"><small>{{ r.resumo }}</small></td>
-          <td class="dados direita">{{ r.pct|round|int }}%</td>
-          <td>{{ escopos.get(r.escopo, r.escopo) }}</td>
-          <td class="dados"><small>{{ (r.mes_ini[5:] ~ '/' ~ r.mes_ini[:4]) if r.mes_ini else '…' }} a {{ (r.mes_fim[5:] ~ '/' ~ r.mes_fim[:4]) if r.mes_fim else '…' }}</small></td>
-          <td class="direita" style="white-space:nowrap">
-            <a class="btn" style="text-decoration:none"
-               href="{{ url_for('painel.prestacao_parametros', aba='regras', editar=r.id) }}#form-regra">Editar</a>
-            <form method="post" style="display:inline">
-              <input type="hidden" name="acao" value="apagar_regra">
-              <input type="hidden" name="aba" value="regras">
-              <input type="hidden" name="regra_id" value="{{ r.id }}">
-              <button class="btn secundario" type="submit"
-                      onclick="return confirm('Apagar a regra {{ r.nome }}?')">Apagar</button>
-            </form>
-          </td>
-        </tr>
-        {% else %}
-        <tr><td colspan="7" class="vazio">Nenhuma regra. Sem regras, todo o custo
-          administrativo fica no próprio lado.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</div>
-{% endif %}
+{# As abas "Participações" e "Regras de rateio" saíram em 11/11/2026, com a
+   prestação antiga: quem divide e o que se divide moram na montagem do
+   cenário. #}
 
 {# ============================ AJUSTES ============================ #}
 {% if aba == 'ajustes' %}

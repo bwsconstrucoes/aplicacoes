@@ -702,36 +702,6 @@ def test_o_que_sai_em_parametros_sai_de_todo_cenario(cenario):
     assert "MUITA GENTE" in _calcular(cenario)["por_obra"]
 
 
-def test_a_prestacao_antiga_tambem_respeita_a_lista_e_mostra_por_obra(base, monkeypatch):
-    """A Prestação de Contas ganhou a visão por obra ("dá para ver por obra
-    também?") — e a obra tirada em Parâmetros some dela."""
-    from app.apps.painel import prestacao_dados
-    from app.apps.painel.web import _calcular_prestacao
-    from app.main import create_app
-    app = create_app()
-    with app.test_request_context("/painel/prestacao"):
-        conta = _calcular_prestacao("comprometido")
-    assert set(conta["por_obra"]) == {"MUITA GENTE", "POUCA GENTE"}
-    assert conta["excluidas"] == []
-
-    prestacao_dados.tirar_da_analise(["projeto:ALFA"])
-    with app.test_request_context("/painel/prestacao"):
-        conta = _calcular_prestacao("comprometido")
-    assert conta["por_obra"] == {}
-    assert conta["excluidas"] == ["MUITA GENTE", "POUCA GENTE"]
-
-    prestacao_dados.voltar_para_analise("projeto:ALFA")
-    prestacao_dados.tirar_da_analise(["obra:POUCA GENTE"])
-    cliente = _cliente(monkeypatch)
-    html = cliente.get("/painel/prestacao").get_data(as_text=True)
-    assert "Resultado por obra" in html
-    assert "MUITA GENTE" in html
-    assert "1 obra(s) fora desta prestação" in html and "POUCA GENTE" in html
-    # a planilha da prestação leva a conta por obra
-    resposta = cliente.get("/painel/baixar/posicao")
-    assert resposta.status_code == 200
-
-
 def test_tirar_e_voltar_pela_aba_de_parametros(cenario, monkeypatch):
     from app.apps.painel import prestacao_dados
     cliente = _cliente(monkeypatch)
@@ -1118,8 +1088,6 @@ def test_as_grades_aparecem_e_gravam_pela_tela(cenario, monkeypatch):
         "linha": [""], f"pct_0_{s['Sócio A']}": "abc"})
     assert "erro=" in errado.headers["Location"]
 
-    html = cliente.get("/painel/prestacao/parametros?aba=participacoes").get_data(as_text=True)
-    assert "grade-participacoes" in html and "Salvar tudo" in html
     html = cliente.get("/painel/prestacao/parametros?aba=socios").get_data(as_text=True)
     assert 'id="socios-lista"' in html and 'placeholder="novo sócio — nome"' in html
 
@@ -1202,44 +1170,6 @@ def test_a_lista_fora_grava_pela_tela(cenario, monkeypatch):
 # 11/11/2026 — "na hora de criar regras de rateio não tá tendo correlação
 # entre o grupo e a categoria (…) tá muito complicado de lançar cada ajuste"
 # ===========================================================================
-def test_a_arvore_das_regras_poe_cada_categoria_no_grupo_dela(base):
-    from app.apps.painel import prestacao_dados
-    from app.apps.painel.web import _arvore_das_regras
-    arvore = {g["grupo"]: g for g in _arvore_das_regras(prestacao_dados.config())}
-    assert set(arvore) == {"Administrativas", "Patrimônio", "Financeiras"}
-    assert [c["categoria"] for c in arvore["Administrativas"]["categorias"]] == ["Aluguel"]
-    assert arvore["Financeiras"]["valor"] == pytest.approx(-600)
-
-
-def test_a_regra_e_editada_e_a_arvore_volta_com_o_que_ela_marca(base, monkeypatch):
-    import json
-
-    from app.apps.painel import prestacao_dados
-    cliente = _cliente(monkeypatch)
-    cliente.post("/painel/prestacao/parametros", data={
-        "acao": "regra", "aba": "regras", "nome": "Estrutura", "depto": MATRIZ,
-        "pct": "100", "escopo": "AMBAS", "grupos": ["Administrativas"],
-        "categorias": ["Equipamento", "Categoria Antiga"], "ativo": "1"})
-    regra = prestacao_dados.regras()[0]
-    html = cliente.get(f"/painel/prestacao/parametros?aba=regras&editar={regra['id']}"
-                       ).get_data(as_text=True)
-    assert "Editar a regra" in html and 'name="regra_id"' in html
-    assert "Categorias marcadas que não aparecem mais na base" in html
-    assert 'value="Administrativas" data-arvore-grupo\n                   checked' in html
-    # editar troca o que a regra pega, sem criar outra
-    cliente.post("/painel/prestacao/parametros", data={
-        "acao": "regra", "aba": "regras", "regra_id": regra["id"], "nome": "Estrutura 2",
-        "depto": MATRIZ, "pct": "80", "escopo": "AMBAS", "categorias": ["Aluguel"],
-        "mes_ini": "2025-01", "ativo": "1"})
-    regras = prestacao_dados.regras()
-    assert len(regras) == 1 and regras[0]["nome"] == "Estrutura 2"
-    assert json.loads(regras[0]["grupos"]) == [] and regras[0]["pct"] == 80
-    assert json.loads(regras[0]["categorias"]) == ["Aluguel"]
-    with __import__("app.apps.painel.db", fromlist=["conexao"]).conexao() as conn:
-        conn.execute("DELETE FROM regras")
-        conn.commit()
-
-
 def test_o_ajuste_e_corrigido_na_linha(base, monkeypatch):
     from app.apps.painel import prestacao_dados
     s = _dois_socios()
@@ -1377,3 +1307,37 @@ def test_a_montagem_vem_em_passos(cenario, monkeypatch):
                                      'id="passo-regua"')]
     assert ordem == sorted(ordem)
     assert "Como é feita" in html
+
+
+# ===========================================================================
+# 11/11/2026 (noite) — a prestação ANTIGA saiu. O dono: "eu não sei o que é
+# essa prestação de conta antiga (…) se não interessa mais, pode tirar".
+# ===========================================================================
+def test_a_aba_prestacao_de_contas_abre_o_resultado_do_cenario(cenario, monkeypatch):
+    cliente = _cliente(monkeypatch)
+    r = cliente.get("/painel/prestacao")
+    assert r.status_code == 302 and r.headers["Location"].endswith("/painel/prestacao/resultado")
+    # os endereços antigos não dão erro: levam à montagem
+    for antigo in ("/painel/prestacao/cenarios", "/painel/prestacao/parametros?aba=regras",
+                   "/painel/prestacao/parametros?aba=participacoes"):
+        r = cliente.get(antigo)
+        assert r.status_code == 302 and "/painel/prestacao/montagem" in r.headers["Location"], antigo
+    html = cliente.get("/painel/prestacao/parametros").get_data(as_text=True)
+    assert "prestação antiga" not in html and "Regras de rateio" not in html
+
+
+def test_sem_cenario_a_aba_leva_a_montagem(base, monkeypatch):
+    r = _cliente(monkeypatch).get("/painel/prestacao")
+    assert r.status_code == 302 and r.headers["Location"].endswith("/painel/prestacao/montagem")
+
+
+def test_quem_tem_login_proprio_nao_ve_mais_a_aba_da_prestacao(preso, monkeypatch):
+    """A aba abre o cenário, que mostra a empresa inteira e a parte de cada
+    sócio. O `preso` tinha a tela "prestacao" marcada: ela some do menu dele,
+    e o endereço não abre."""
+    from app.apps.painel import usuarios
+    assert "prestacao" not in usuarios.TELAS
+    cliente = _cliente_preso(monkeypatch)
+    assert cliente.get("/painel/prestacao").status_code == 404
+    html = cliente.get("/painel/dre").get_data(as_text=True)
+    assert "Prestação de Contas" not in html
