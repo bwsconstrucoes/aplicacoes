@@ -651,6 +651,29 @@ nunca rodou contra a base real**. Ele passou pelo parser do Postgres, pelo teste
 de portabilidade e pelos testes com dublê — nenhum dos três olha o número que
 sai.
 
+## Regras de rateio em árvore, e regra e ajuste editáveis — 11/11/2026
+
+O dono: *"na hora de criar regras de rateio não tá tendo correlação entre o
+grupo e a categoria. Tá terrível. Na verdade toda a parte de parâmetros ficou
+super complicada de configurar, considerando que são várias regras, vários
+projetos, vários sócios, várias participações. Tá muito complicado de lançar
+cada ajuste."*
+
+- **Regras:** as duas listas soltas (todos os grupos numa, todas as categorias
+  na outra) viraram uma ÁRVORE — cada grupo abre nas categorias dele, com o
+  valor ao lado (matriz + filial). Marcar o grupo pega todas as categorias
+  (elas aparecem marcadas e travadas; só o grupo é gravado). Busca por grupo
+  ou categoria. Só aparecem as despesas dos departamentos administrativos, que
+  é o que a regra alcança. O período virou campo de mês (MM/AAAA).
+- **Regra editável:** botão "Editar" na lista abre a regra no formulário, com a
+  árvore já marcada. O que ela marca e não existe mais na base aparece num
+  grupo à parte, para não sumir ao salvar. Antes: apagar e refazer.
+- **Ajuste editável na linha** (data, sócio, tipo, valor, descrição).
+- Com isto, e com o que entrou hoje (participações em grade, sócio na linha,
+  fora da análise numa lista), toda aba de Parâmetros edita no lugar. O que NÃO
+  foi feito: juntar tudo num assistente só / importar de planilha. Se ainda
+  estiver pesado, a pergunta para o dono é em qual aba ele gasta mais tempo.
+
 ## Fora da análise: totalmente, ou só até um mês — 11/11/2026
 
 O dono: *"o fora da análise não tá direito (…) colocar totalmente fora da

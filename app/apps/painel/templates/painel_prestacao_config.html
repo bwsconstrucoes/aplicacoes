@@ -165,70 +165,171 @@
   próprio lado (matriz ou filial) — assim nenhum custo desaparece.
 </div>
 
-<div class="cartao">
-  <div class="cartao-cab"><h3>Nova regra</h3></div>
+{# A ÁRVORE (11/11/2026, o dono: "na hora de criar regras de rateio não tá
+   tendo correlação entre o grupo e a categoria. Tá terrível"). Eram duas
+   listas soltas — todos os grupos numa, todas as categorias na outra, sem
+   dizer qual categoria é de qual grupo. Agora cada grupo abre nas categorias
+   DELE, com o valor ao lado; marcar o grupo pega todas as categorias dele.
+   E a regra criada pode ser EDITADA (antes só apagar e refazer). #}
+{% set e = regra_em_edicao %}
+<div class="cartao" id="form-regra">
+  <div class="cartao-cab">
+    <h3>{{ 'Editar a regra “' ~ e.nome ~ '”' if e else 'Nova regra' }}</h3>
+    {% if e %}<a class="btn secundario" style="text-decoration:none"
+       href="{{ url_for('painel.prestacao_parametros', aba='regras') }}">Cancelar a edição</a>{% endif %}
+  </div>
   <form method="post">
     <input type="hidden" name="acao" value="regra">
     <input type="hidden" name="aba" value="regras">
+    {% if e %}<input type="hidden" name="regra_id" value="{{ e.id }}">{% endif %}
     <div class="form-grade">
       <div class="campo">
         <label for="rnome">Nome</label>
-        <input id="rnome" name="nome" required placeholder="Ex.: pessoal compartilhado da matriz">
+        <input id="rnome" name="nome" required value="{{ e.nome if e else '' }}"
+               placeholder="Ex.: pessoal compartilhado da matriz">
       </div>
       <div class="campo">
         <label for="rdepto">Departamento de origem</label>
         <select id="rdepto" name="depto" required>
-          <option value="{{ config.depto_admin_matriz }}">{{ config.depto_admin_matriz }} (matriz)</option>
-          <option value="{{ config.depto_admin_filial }}">{{ config.depto_admin_filial }} (filial)</option>
+          <option value="{{ config.depto_admin_matriz }}" {{ 'selected' if e and e.depto == config.depto_admin_matriz }}>{{ config.depto_admin_matriz }} (matriz)</option>
+          <option value="{{ config.depto_admin_filial }}" {{ 'selected' if e and e.depto == config.depto_admin_filial }}>{{ config.depto_admin_filial }} (filial)</option>
         </select>
       </div>
       <div class="campo">
         <label for="rpct">% que se divide</label>
-        <input id="rpct" name="pct" type="number" step="1" min="0" max="100" value="100">
+        <input id="rpct" name="pct" type="number" step="1" min="0" max="100"
+               value="{{ (e.pct|round|int) if e else 100 }}">
       </div>
       <div class="campo">
         <label for="rescopo">Vai para</label>
         <select id="rescopo" name="escopo">
           {% for valor, rotulo in escopos.items() %}
-            <option value="{{ valor }}">{{ rotulo }}</option>
+            <option value="{{ valor }}" {{ 'selected' if e and e.escopo == valor }}>{{ rotulo }}</option>
           {% endfor %}
         </select>
       </div>
       <div class="campo">
-        <label for="rini">De (AAAA-MM, vazio = desde sempre)</label>
-        <input id="rini" name="mes_ini" placeholder="2024-01">
+        <label for="rini">De (vazio = desde sempre)</label>
+        <input id="rini" name="mes_ini" type="month" value="{{ e.mes_ini if e else '' }}">
       </div>
       <div class="campo">
-        <label for="rfim">Até (AAAA-MM, vazio = até hoje)</label>
-        <input id="rfim" name="mes_fim" placeholder="2025-10">
+        <label for="rfim">Até (vazio = até hoje)</label>
+        <input id="rfim" name="mes_fim" type="month" value="{{ e.mes_fim if e else '' }}">
       </div>
     </div>
 
     <label class="opcao" style="margin:12px 0 6px">
-      <input type="checkbox" name="todas" value="1">
+      <input type="checkbox" name="todas" value="1" id="regra-todas"
+             {{ 'checked' if e and e.todas }}>
       <span class="rotulo">Todas as despesas deste departamento</span>
     </label>
-    <div class="form-grade">
-      <div class="campo">
-        <label for="rgrupos">Ou só estes grupos</label>
-        <select id="rgrupos" name="grupos" multiple size="6">
-          {% for g in grupos %}<option value="{{ g }}">{{ g }}</option>{% endfor %}
-        </select>
+
+    <div id="regra-arvore">
+      <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin:6px 0">
+        <b>Ou só estes grupos e categorias</b>
+        <input type="search" placeholder="Procurar grupo ou categoria…" data-arvore-busca
+               data-sem-busca style="max-width:280px">
+        <span class="cartao-dica" style="margin:0" id="regra-conta"></span>
       </div>
-      <div class="campo">
-        <label for="rcats">E/ou estas categorias</label>
-        <select id="rcats" name="categorias" multiple size="6">
-          {% for c in categorias %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
-        </select>
+      <p class="dica" style="margin-top:0">Marcar o <b>grupo</b> pega todas as categorias
+        dele (inclusive as que surgirem depois). Para pegar só algumas, abra o grupo
+        (▸) e marque as categorias. O valor ao lado é o total da matriz e da filial.</p>
+      <div class="tabela-rolagem" style="max-height:420px; border:1px solid var(--borda); border-radius:8px; padding:6px 10px">
+        {% for g in arvore_regras %}
+        <details class="arvore-grupo" data-texto="{{ g.rotulo|lower }}" {{ 'open' if g.aberto }}>
+          <summary style="cursor:pointer; padding:4px 0; display:flex; gap:8px; align-items:center">
+            {% if g.com_caixa %}
+            <input type="checkbox" name="grupos" value="{{ g.grupo }}" data-arvore-grupo
+                   {{ 'checked' if g.marcado }} onclick="event.stopPropagation()"
+                   aria-label="Grupo {{ g.rotulo }}">
+            {% endif %}
+            <b>{{ g.rotulo }}</b>
+            <small>{{ g.categorias|length }} categoria(s)</small>
+            <span style="flex:1"></span>
+            <span class="dados">{{ brl(g.valor) }}</span>
+          </summary>
+          <div style="padding:0 0 6px 26px">
+            {% for c in g.categorias %}
+            <label class="arvore-cat" data-texto="{{ c.rotulo|lower }}"
+                   style="display:flex; gap:8px; align-items:center; padding:2px 0; font-weight:400">
+              <input type="checkbox" name="categorias" value="{{ c.categoria }}"
+                     data-arvore-cat {{ 'checked' if c.marcada }}>
+              <span>{{ c.rotulo }}</span>
+              <span style="flex:1"></span>
+              <span class="dados">{{ brl(c.valor) }}</span>
+            </label>
+            {% endfor %}
+          </div>
+        </details>
+        {% else %}
+        <p class="cartao-dica">Nenhuma despesa nos departamentos administrativos ainda.</p>
+        {% endfor %}
       </div>
     </div>
-    <label class="opcao" style="margin:6px 0 12px">
-      <input type="checkbox" name="ativo" value="1" checked>
+
+    <label class="opcao" style="margin:10px 0 12px">
+      <input type="checkbox" name="ativo" value="1" {{ 'checked' if (not e) or e.ativo }}>
       <span class="rotulo">Regra ativa</span>
     </label>
-    <button class="btn" type="submit">Criar regra</button>
+    <button class="btn" type="submit">{{ 'Salvar a regra' if e else 'Criar regra' }}</button>
   </form>
 </div>
+<script>
+(function () {
+  const caixa = document.getElementById("form-regra");
+  if (!caixa) return;
+  const arvore = document.getElementById("regra-arvore");
+  const todas = document.getElementById("regra-todas");
+  const conta = document.getElementById("regra-conta");
+  const grupos = [...arvore.querySelectorAll("details.arvore-grupo")];
+  function ajustarGrupo(d) {
+    const g = d.querySelector("[data-arvore-grupo]");
+    if (!g) return;
+    // grupo marcado: as categorias dele vão junto — aparecem marcadas e
+    // travadas, e só o grupo é enviado
+    d.querySelectorAll("[data-arvore-cat]").forEach(c => {
+      if (g.checked) { c.dataset.antes = c.dataset.antes ?? (c.checked ? "1" : ""); c.checked = true; c.disabled = true; }
+      else if (c.disabled) { c.disabled = false; c.checked = c.dataset.antes === "1"; delete c.dataset.antes; }
+    });
+  }
+  function contar() {
+    const g = arvore.querySelectorAll("[data-arvore-grupo]:checked").length;
+    const c = arvore.querySelectorAll("[data-arvore-cat]:checked:not(:disabled)").length;
+    conta.textContent = todas.checked ? "" :
+      (g || c) ? `${g} grupo(s) inteiro(s) e ${c} categoria(s) avulsa(s) marcados` : "nada marcado ainda";
+    arvore.style.display = todas.checked ? "none" : "";
+  }
+  grupos.forEach(ajustarGrupo);
+  contar();
+  arvore.addEventListener("change", e => {
+    if (e.target.matches("[data-arvore-grupo]")) ajustarGrupo(e.target.closest("details"));
+    contar();
+  });
+  todas.addEventListener("change", contar);
+  const busca = arvore.querySelector("[data-arvore-busca]");
+  busca.addEventListener("keydown", e => { if (e.key === "Enter") e.preventDefault(); });
+  busca.addEventListener("input", () => {
+    const termo = busca.value.toLowerCase().trim();
+    grupos.forEach(d => {
+      const doGrupo = d.dataset.texto.includes(termo);
+      let alguma = false;
+      d.querySelectorAll(".arvore-cat").forEach(l => {
+        const casa = !termo || doGrupo || l.dataset.texto.includes(termo);
+        l.style.display = casa ? "flex" : "none";
+        if (casa && termo && !doGrupo) alguma = true;
+      });
+      d.style.display = (!termo || doGrupo || alguma) ? "" : "none";
+      if (termo && alguma) d.open = true;   // achou pela categoria: abre o grupo
+    });
+  });
+  caixa.querySelector("form").addEventListener("submit", e => {
+    if (!todas.checked && !arvore.querySelector("[data-arvore-grupo]:checked, [data-arvore-cat]:checked")) {
+      e.preventDefault();
+      alert("Marque ao menos um grupo ou uma categoria — ou “Todas as despesas deste departamento”.");
+    }
+  });
+})();
+</script>
 
 <div class="tabela-wrap">
   <div class="tabela-rolagem">
@@ -245,8 +346,10 @@
           <td class="desc"><small>{{ r.resumo }}</small></td>
           <td class="dados direita">{{ r.pct|round|int }}%</td>
           <td>{{ escopos.get(r.escopo, r.escopo) }}</td>
-          <td class="dados"><small>{{ r.mes_ini or '…' }} a {{ r.mes_fim or '…' }}</small></td>
-          <td class="direita">
+          <td class="dados"><small>{{ (r.mes_ini[5:] ~ '/' ~ r.mes_ini[:4]) if r.mes_ini else '…' }} a {{ (r.mes_fim[5:] ~ '/' ~ r.mes_fim[:4]) if r.mes_fim else '…' }}</small></td>
+          <td class="direita" style="white-space:nowrap">
+            <a class="btn" style="text-decoration:none"
+               href="{{ url_for('painel.prestacao_parametros', aba='regras', editar=r.id) }}#form-regra">Editar</a>
             <form method="post" style="display:inline">
               <input type="hidden" name="acao" value="apagar_regra">
               <input type="hidden" name="aba" value="regras">
@@ -318,14 +421,36 @@
         <th class="sem-ordem">Tipo</th><th class="sem-ordem direita">Valor</th>
         <th class="sem-ordem">Descrição</th><th class="sem-ordem"></th></tr></thead>
       <tbody>
+        {# editável na própria linha (11/11/2026): antes era apagar e lançar de novo #}
         {% for a in ajustes %}
         <tr>
-          <td class="dados">{{ a.data or '—' }}</td>
-          <td class="desc">{{ a.socio }}</td>
-          <td>{{ a.tipo }}</td>
-          <td class="dados direita">{{ brl(a.valor) }}</td>
-          <td class="desc"><small>{{ a.descricao }}</small></td>
-          <td class="direita">
+          <td class="dados"><input type="date" name="data" form="aj-{{ a.id }}" value="{{ a.data }}"
+                 data-sem-troca aria-label="Data"></td>
+          <td class="desc">
+            <select name="socio_id" form="aj-{{ a.id }}" aria-label="Sócio">
+              {% for s in socios %}{% if s.ativo or s.id == a.socio_id %}
+              <option value="{{ s.id }}" {{ 'selected' if s.id == a.socio_id }}>{{ s.nome }}</option>
+              {% endif %}{% endfor %}
+            </select>
+          </td>
+          <td>
+            <select name="tipo" form="aj-{{ a.id }}" aria-label="Tipo">
+              {% for t in tipos_ajuste %}<option value="{{ t }}" {{ 'selected' if t == a.tipo }}>{{ t }}</option>{% endfor %}
+            </select>
+          </td>
+          <td class="dados direita"><input name="valor" form="aj-{{ a.id }}" type="number" step="0.01"
+                 value="{{ '%.2f'|format(a.valor) }}" required aria-label="Valor"
+                 style="width:130px; text-align:right"></td>
+          <td class="desc"><input name="descricao" form="aj-{{ a.id }}" value="{{ a.descricao }}"
+                 aria-label="Descrição" style="width:100%; min-width:160px"></td>
+          <td class="direita" style="white-space:nowrap">
+            <form method="post" id="aj-{{ a.id }}" style="display:inline">
+              <input type="hidden" name="acao" value="ajuste">
+              <input type="hidden" name="aba" value="ajustes">
+              <input type="hidden" name="ajuste_id" value="{{ a.id }}">
+              <input type="hidden" name="projeto" value="{{ a.projeto }}">
+              <button class="btn" type="submit">Salvar</button>
+            </form>
             <form method="post" style="display:inline">
               <input type="hidden" name="acao" value="apagar_ajuste">
               <input type="hidden" name="aba" value="ajustes">

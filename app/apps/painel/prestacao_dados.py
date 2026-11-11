@@ -341,8 +341,23 @@ def apagar_regra(regra_id: int) -> None:
 
 
 def salvar_ajuste(socio_id: int, tipo: str, valor: float, data: str = "",
-                  projeto: str = "", descricao: str = "") -> None:
+                  projeto: str = "", descricao: str = "", ajuste_id=None) -> None:
+    """Lança um ajuste — ou, com `ajuste_id`, corrige o que já existe
+    (11/11/2026: antes era apagar e lançar de novo)."""
+    try:
+        valor = float(str(valor).replace(".", "").replace(",", ".")
+                      if "," in str(valor) else valor)
+    except (TypeError, ValueError):
+        raise ValueError("O valor do ajuste não é um número.") from None
     with conexao() as conn:
+        if ajuste_id:
+            conn.execute(
+                "UPDATE ajustes SET socio_id=?, projeto=?, data=?, tipo=?, valor=?,"
+                " descricao=? WHERE id=?",
+                (int(socio_id), projeto.strip(), data.strip(), tipo, valor,
+                 descricao.strip(), int(ajuste_id)))
+            conn.commit()
+            return
         conn.execute(
             "INSERT INTO ajustes (socio_id, projeto, data, tipo, valor, descricao) "
             "VALUES (?,?,?,?,?,?)",

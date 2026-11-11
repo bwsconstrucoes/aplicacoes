@@ -1194,3 +1194,68 @@ def test_a_lista_fora_grava_pela_tela(cenario, monkeypatch):
     assert len(cenarios.excluidas(cenario)) == 2      # nada mudou
     html = cliente.get("/painel/prestacao/parametros?aba=fora").get_data(as_text=True)
     assert "lista-fora" in html
+
+
+# ===========================================================================
+# 11/11/2026 — "na hora de criar regras de rateio não tá tendo correlação
+# entre o grupo e a categoria (…) tá muito complicado de lançar cada ajuste"
+# ===========================================================================
+def test_a_arvore_das_regras_poe_cada_categoria_no_grupo_dela(base):
+    from app.apps.painel import prestacao_dados
+    from app.apps.painel.web import _arvore_das_regras
+    arvore = {g["grupo"]: g for g in _arvore_das_regras(prestacao_dados.config())}
+    assert set(arvore) == {"Administrativas", "Patrimônio", "Financeiras"}
+    assert [c["categoria"] for c in arvore["Administrativas"]["categorias"]] == ["Aluguel"]
+    assert arvore["Financeiras"]["valor"] == pytest.approx(-600)
+
+
+def test_a_regra_e_editada_e_a_arvore_volta_com_o_que_ela_marca(base, monkeypatch):
+    import json
+
+    from app.apps.painel import prestacao_dados
+    cliente = _cliente(monkeypatch)
+    cliente.post("/painel/prestacao/parametros", data={
+        "acao": "regra", "aba": "regras", "nome": "Estrutura", "depto": MATRIZ,
+        "pct": "100", "escopo": "AMBAS", "grupos": ["Administrativas"],
+        "categorias": ["Equipamento", "Categoria Antiga"], "ativo": "1"})
+    regra = prestacao_dados.regras()[0]
+    html = cliente.get(f"/painel/prestacao/parametros?aba=regras&editar={regra['id']}"
+                       ).get_data(as_text=True)
+    assert "Editar a regra" in html and 'name="regra_id"' in html
+    assert "Categorias marcadas que não aparecem mais na base" in html
+    assert 'value="Administrativas" data-arvore-grupo\n                   checked' in html
+    # editar troca o que a regra pega, sem criar outra
+    cliente.post("/painel/prestacao/parametros", data={
+        "acao": "regra", "aba": "regras", "regra_id": regra["id"], "nome": "Estrutura 2",
+        "depto": MATRIZ, "pct": "80", "escopo": "AMBAS", "categorias": ["Aluguel"],
+        "mes_ini": "2025-01", "ativo": "1"})
+    regras = prestacao_dados.regras()
+    assert len(regras) == 1 and regras[0]["nome"] == "Estrutura 2"
+    assert json.loads(regras[0]["grupos"]) == [] and regras[0]["pct"] == 80
+    assert json.loads(regras[0]["categorias"]) == ["Aluguel"]
+    with __import__("app.apps.painel.db", fromlist=["conexao"]).conexao() as conn:
+        conn.execute("DELETE FROM regras")
+        conn.commit()
+
+
+def test_o_ajuste_e_corrigido_na_linha(base, monkeypatch):
+    from app.apps.painel import prestacao_dados
+    s = _dois_socios()
+    cliente = _cliente(monkeypatch)
+    cliente.post("/painel/prestacao/parametros", data={
+        "acao": "ajuste", "aba": "ajustes", "socio_id": s["Sócio A"],
+        "tipo": prestacao_dados.TIPOS_AJUSTE[0], "valor": "1000", "data": "2025-03-01"})
+    ajuste = prestacao_dados.ajustes()[0]
+    html = cliente.get("/painel/prestacao/parametros?aba=ajustes").get_data(as_text=True)
+    assert f'id="aj-{ajuste["id"]}"' in html
+    cliente.post("/painel/prestacao/parametros", data={
+        "acao": "ajuste", "aba": "ajustes", "ajuste_id": ajuste["id"],
+        "socio_id": s["Parceiro"], "tipo": ajuste["tipo"], "valor": "1500.50",
+        "data": "2025-04-01", "descricao": "corrigido"})
+    ajustes = prestacao_dados.ajustes()
+    assert len(ajustes) == 1
+    assert (ajustes[0]["socio"], ajustes[0]["valor"], ajustes[0]["descricao"]) == (
+        "Parceiro", 1500.50, "corrigido")
+    with __import__("app.apps.painel.db", fromlist=["conexao"]).conexao() as conn:
+        conn.execute("DELETE FROM ajustes")
+        conn.commit()

@@ -2192,6 +2192,7 @@ def prestacao_parametros():
                               consultas.opcoes_de_filtro()["projetos"]
                               if not consultas.base_vazia() else []),
         regras=prestacao_dados.regras(),
+        **_contexto_das_regras(aba, prestacao_dados),
         ajustes=prestacao_dados.ajustes(),
         tipos_ajuste=prestacao_dados.TIPOS_AJUSTE,
         escopos=prestacao_dados.ESCOPOS,
@@ -2234,6 +2235,59 @@ def _grade_quem_divide(cenario, obras) -> dict:
     linhas = [{"chave": "", "rotulo": "Todas as obras", "fixa": True}] + [
         {"chave": o, "rotulo": o} for o in outras]
     return {"grade_quem_divide": grade, "linhas_quem_divide": linhas}
+
+
+def _contexto_das_regras(aba, prestacao_dados) -> dict:
+    """A árvore e a regra em edição — só na aba delas (lê a base)."""
+    from . import consultas
+    if aba != "regras" or consultas.base_vazia():
+        return {"arvore_regras": [], "regra_em_edicao": None}
+    editar = (request.args.get("editar") or "").strip()
+    regra = next((r for r in prestacao_dados.regras()
+                  if editar.isdigit() and r["id"] == int(editar)), None)
+    return {"arvore_regras": _arvore_das_regras(prestacao_dados.config(), regra),
+            "regra_em_edicao": regra}
+
+
+def _arvore_das_regras(config, regra=None) -> list[dict]:
+    """Os grupos de despesa da matriz e da filial, cada um com as categorias
+    DELE e o valor — é onde a regra de rateio marca o que pega (11/11/2026).
+
+    Com `regra` (a que está sendo editada), vem com o que ela já marca; o que
+    ela marca e não existe mais na base aparece num grupo à parte, marcado,
+    para não sumir ao salvar."""
+    import json as _json
+    from . import consultas
+    grupos: dict[str, dict] = {}
+    for l in consultas.despesa_administrativa(
+            [config["depto_admin_matriz"], config["depto_admin_filial"]], "comprometido"):
+        g = grupos.setdefault(l["grupo"] or "", {})
+        g[l["categoria"] or ""] = g.get(l["categoria"] or "", 0.0) + l["valor"]
+    marc_g = set(_json.loads((regra or {}).get("grupos") or "[]"))
+    marc_c = set(_json.loads((regra or {}).get("categorias") or "[]"))
+    saida, vistas = [], set()
+    # `grupo`/`categoria` são o nome como está na base (é o que a regra
+    # compara); `rotulo` é o que a tela mostra quando o nome é vazio
+    for nome in sorted(grupos, key=str.lower):
+        cats = [{"categoria": c, "rotulo": c or "(sem categoria)", "valor": v,
+                 "marcada": c in marc_c}
+                for c, v in sorted(grupos[nome].items(), key=lambda kv: kv[0].lower())]
+        vistas |= {c["categoria"] for c in cats}
+        saida.append({"grupo": nome, "rotulo": nome or "(sem grupo)",
+                      "valor": sum(c["valor"] for c in cats),
+                      "categorias": cats, "marcado": nome in marc_g, "com_caixa": True,
+                      "aberto": any(c["marcada"] for c in cats) and nome not in marc_g})
+    for nome in sorted(marc_g - set(grupos)):
+        saida.append({"grupo": nome, "rotulo": nome + " (não aparece mais na base)",
+                      "valor": 0.0, "categorias": [], "marcado": True,
+                      "com_caixa": True, "aberto": False})
+    orfas = sorted(marc_c - vistas)
+    if orfas:
+        saida.append({"grupo": "", "rotulo": "Categorias marcadas que não aparecem mais na base",
+                      "valor": 0.0, "com_caixa": False, "marcado": False, "aberto": True,
+                      "categorias": [{"categoria": c, "rotulo": c, "valor": 0.0,
+                                      "marcada": True} for c in orfas]})
+    return saida
 
 
 def _itens_fora_do_formulario(form) -> list[str]:
@@ -2332,7 +2386,7 @@ def _aplicar_mudanca_da_prestacao(dados, form):
     elif acao == "ajuste":
         dados.salvar_ajuste(form["socio_id"], form["tipo"], form["valor"],
                             form.get("data", ""), form.get("projeto", ""),
-                            form.get("descricao", ""))
+                            form.get("descricao", ""), form.get("ajuste_id") or None)
     elif acao == "apagar_ajuste":
         dados.apagar_ajuste(form["ajuste_id"])
     elif acao == "fora_em_lista":
