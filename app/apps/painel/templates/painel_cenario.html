@@ -75,8 +75,8 @@
    primeiro; a régua e os juros, que se escolhem uma vez, vão para o fim. #}
 <nav class="chips nao-imprime" style="margin:0 0 14px; position:sticky; top:0; z-index:5;
      background:var(--fundo, #f2f4f8); padding:8px 0">
-  {% for alvo, rotulo in [('passo-divide','1 · O que se divide'), ('passo-recebe','2 · Quem recebe'),
-                          ('passo-socios','3 · Quem divide o resultado'), ('passo-fora','4 · Fora da análise'),
+  {% for alvo, rotulo in [('passo-fora','1 · O que entra'), ('passo-divide','2 · O que se divide'),
+                          ('passo-recebe','3 · Quem recebe'), ('passo-socios','4 · Quem divide o resultado'),
                           ('passo-regua','5 · Régua e juros')] %}
   <a class="modulo-btn" href="#{{ alvo }}"
      style="background:var(--branco); color:var(--tinta-suave); border:1px solid var(--borda); text-decoration:none">{{ rotulo }}</a>
@@ -88,6 +88,9 @@
   <a class="btn" style="text-decoration:none"
      href="{{ url_for('painel.cenario_como', cenario=cenario.id) }}">📄 Como é feita (para mostrar)</a>
 </nav>
+{% if request.args.get('erro') %}
+<div class="aviso erro"><b>Não salvou:</b> {{ request.args.get('erro') }} Nada foi gravado — corrija e salve de novo.</div>
+{% endif %}
 
 {# O PERCENTUAL POR PERÍODO (09/11/2026): "a partir de MM/AAAA, X%". Cada um
    vale até começar o seguinte. Linha com o mês ou o percentual em branco não
@@ -119,10 +122,15 @@
                inputmode="decimal" data-sem-mascara style="width:60px" aria-label="percentual que entra"> %
       </span>
       {% endfor %}
-      <span style="display:inline-flex; gap:6px; align-items:center; flex-wrap:wrap">
+      {# VÁRIAS LINHAS NOVAS ANTES DE SALVAR (11/11/2026, o dono: "por que eu
+         não posso abrir várias caixinhas (…) e depois gravar tudo de uma vez?").
+         Antes era uma por salvada. As extras já estão na página, escondidas;
+         "＋ outro período" mostra a seguinte. #}
+      {% for k in range(6) %}
+      <span data-periodo-novo {{ 'hidden' if k }} style="display:{{ 'none' if k else 'inline-flex' }}; gap:6px; align-items:center; flex-wrap:wrap">
         <input type="hidden" name="periodo_nivel" value="{{ nivel }}">
         <input type="hidden" name="periodo_chave" value="{{ chave }}">
-        <small>{{ 'e a partir de' if lista else 'a partir de' }}</small>
+        <small>{{ 'e a partir de' if (lista or k) else 'a partir de' }}</small>
         <input type="month" name="periodo_desde" data-original="">
         <small>· para o {{ principal or 'principal' }}</small>
         <input name="periodo_principal" data-original="" inputmode="decimal" data-sem-mascara
@@ -133,13 +141,15 @@
                inputmode="decimal" data-sem-mascara
                style="width:60px" aria-label="percentual que entra"> %
       </span>
+      {% endfor %}
+      <span><button type="button" class="link-btn" data-mais-periodo><small>＋ outro período</small></button></span>
     </div>
     <small class="dica">Exemplo: “a partir de 01/2021, 50% para o {{ principal or 'principal' }}” e
       “a partir de 01/2022, 40%” — 2021 inteiro fica em 50, e de 2022 em diante em 40.
       {% if primeiro_mes %}A matriz tem custo desde <b>{{ primeiro_mes[5:] }}/{{ primeiro_mes[:4] }}</b>:
       antes da primeira linha, a conta não separa os lados (divide entre todas as obras, pela régua).{% endif %}
       Para apagar uma linha, apague a parte do {{ principal or 'principal' }} (ou o “entra”) e salve.
-      Depois de salvar, aparece uma linha nova em branco para o próximo período.</small>
+      Precisa de mais de um período? Clique em “＋ outro período” e preencha todos antes de salvar.</small>
   </td>
 </tr>
 {% endmacro %}
@@ -162,10 +172,28 @@
 </button>
 {% endmacro %}
 
+<!-- ===================== O QUE ENTRA NA ANÁLISE ===================== -->
+{# PRIMEIRO PASSO (11/11/2026, o dono: "isso aqui era para ser uma das
+   primeiras perguntas (…) na hora que eu colocar aqui fora da análise, não era
+   mais nem para aparecer em quem divide o resultado, quem recebe o custo da
+   matriz"). O que for tirado aqui some dos quadros de baixo. #}
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3 id="passo-fora" style="scroll-margin-top:64px">1 · Quais projetos e obras entram</h3>
+    <small>o que sair daqui não aparece nos passos seguintes nem no resultado</small>
+  </div>
+  {% from "painel_lista_fora.html" import lista_fora %}
+  <form method="post" data-secao="fora">
+    <input type="hidden" name="acao" value="fora_em_lista">
+    <input type="hidden" name="cenario_id" value="{{ cenario.id }}">
+    {{ lista_fora(linhas_fora, botao=False) }}
+  </form>
+</div>
+
 <!-- ===================== O QUE SE DIVIDE ===================== -->
 <div class="cartao">
   <div class="cartao-cab">
-    <h3 id="passo-divide" style="scroll-margin-top:64px">1 · O que se divide</h3>
+    <h3 id="passo-divide" style="scroll-margin-top:64px">2 · O que se divide</h3>
     <small>o que a matriz gastou, do maior para o menor</small>
   </div>
   <p class="cartao-dica" style="margin-top:0">
@@ -192,6 +220,23 @@
       <div class="kpi-sub">caem em quem demandou caixa</div></div>
     {% endif %}
   </div>
+  {# DE ONDE VEM ESSE NÚMERO (11/11/2026, o dono: "15,4 milhões (…) de onde é
+     que está sendo puxado esse valor?"). #}
+  {% if origem_da_matriz %}
+  <p class="cartao-dica" style="margin:0 0 10px">
+    <b>De onde vem “a matriz gastou”:</b> é a soma das despesas (DRE) dos centros de custo
+    configurados como estrutura —
+    {% for depto, valor in origem_da_matriz.por_depto %}<b>{{ depto }}</b> {{ brl(valor) }}{{ ' + ' if not loop.last }}{% endfor %}
+    — pelo <b>{{ 'pago (executado)' if origem_da_matriz.medida == 'executado' else 'comprometido (pago mais a pagar)' }}</b>,
+    com os juros e multas pagos,
+    {% if origem_da_matriz.primeiro_mes %}de {{ origem_da_matriz.primeiro_mes[5:] }}/{{ origem_da_matriz.primeiro_mes[:4] }}
+    a {{ origem_da_matriz.ultimo_mes[5:] }}/{{ origem_da_matriz.ultimo_mes[:4] }} (todos os anos){% endif %}{% if origem_da_matriz.sem_data|abs > 0.005 %},
+    mais {{ brl(origem_da_matriz.sem_data) }} sem data{% endif %}.
+    <a href="{{ url_for('painel.dre', obra=origem_da_matriz.por_depto|map(attribute=0)|list) }}" target="_blank" rel="noopener">Abrir o DRE só desses centros de custo ↗</a>
+    · Os centros de custo se trocam em
+    <a href="{{ url_for('painel.prestacao_parametros', aba='geral') }}">Cadastros › Parâmetros gerais</a>.
+  </p>
+  {% endif %}
   {# 10/11/2026, o dono: "tem que somar 100%. Se não somou, tem que ser
      criticado para ajustar." #}
   {% if resumo_matriz.fora|abs > 1 %}
@@ -209,7 +254,7 @@
      tá, um pouquinho complicado de lançar um a um". Digita-se o grupo, abre-se
      ele ALI MESMO (sem recarregar, para não perder o que já foi digitado),
      ajustam-se as categorias que fogem do grupo e salva-se tudo num clique. #}
-  <form method="post" id="pesos-da-arvore">
+  <form method="post" id="pesos-da-arvore" data-secao="arvore">
   <input type="hidden" name="acao" value="pesos_da_arvore">
   <input type="hidden" name="cenario_id" value="{{ cenario.id }}">
   <input type="hidden" name="grupo" value="{{ aberto_grupo }}">
@@ -460,20 +505,20 @@
 {% if cenario %}
 <div class="cartao">
   <div class="cartao-cab">
-    <h3 id="passo-recebe" style="scroll-margin-top:64px">2 · Quem recebe o custo da matriz</h3>
+    <h3 id="passo-recebe" style="scroll-margin-top:64px">3 · Quem recebe o custo da matriz</h3>
     <small>o projeto principal, e os projetos que não recebem ou só recebem num período</small>
   </div>
   <p class="cartao-dica" style="margin-top:0">
     O custo da matriz vai para dois lados: o <b>projeto principal</b> e os
     <b>demais projetos</b>. Quanto vai para cada lado se diz em cada conta, em
-    na coluna "Para o {{ principal or 'projeto principal' }}" do passo 1, "O que se divide" (ex.: Pessoal, a partir de 01/2021, 40% para ele).
+    na coluna "Para o {{ principal or 'projeto principal' }}" do passo 2, "O que se divide" (ex.: Pessoal, a partir de 01/2021, 40% para ele).
     Aqui se diz quem recebe: um projeto que <b>não recebe</b> sai da prestação
     deste cenário (não aparece, não recebe estrutura nem juros, não entra nas
     quotas); um que <b>recebe só no período</b> sai da divisão no mês seguinte
     ao "até", mas continua no resultado. Nada fica sem dono: se num mês nenhum
     projeto de um lado recebe, a parte dele vai para o outro.
   </p>
-  <form method="post">
+  <form method="post" data-secao="recebe">
     <input type="hidden" name="acao" value="projetos">
     <input type="hidden" name="cenario_id" value="{{ cenario.id }}">
     <div class="form-grade" style="max-width:520px">
@@ -481,8 +526,8 @@
         <label for="principal">Projeto principal</label>
         <select id="principal" name="principal">
           <option value="" {% if not principal %}selected{% endif %}>(nenhum — sem separar os lados)</option>
-          {% if principal and principal not in projetos_do_painel %}<option value="{{ principal }}" selected>{{ principal }}</option>{% endif %}
-          {% for p in projetos_do_painel %}
+          {% if principal and principal not in projetos_para_principal %}<option value="{{ principal }}" selected>{{ principal }}</option>{% endif %}
+          {% for p in projetos_para_principal %}
             <option value="{{ p }}" {% if p == principal %}selected{% endif %}>{{ p }}</option>
           {% endfor %}
         </select>
@@ -521,7 +566,7 @@
 <!-- ===================== QUEM DIVIDE ===================== -->
 <div class="cartao">
   <div class="cartao-cab">
-    <h3 id="passo-socios" style="scroll-margin-top:64px">3 · Quem divide o resultado</h3>
+    <h3 id="passo-socios" style="scroll-margin-top:64px">4 · Quem divide o resultado</h3>
     <small>sócios da BWS e parceiros de obra</small>
   </div>
   <p class="cartao-dica" style="margin-top:0">
@@ -532,16 +577,13 @@
     parceiro de uma obra só.
   </p>
 
-  {% if request.args.get('erro') %}
-  <div class="aviso erro">{{ request.args.get('erro') }} Nada foi gravado.</div>
-  {% endif %}
   {# UMA GRADE, UM SALVAR (11/11/2026, o dono: "tá muito difícil e lento de
      configurar as participações"). A primeira linha é "Todas as obras"; uma
      obra preenchida substitui essa linha nela. Abre mostrando só o que já
      tem percentual — procurar uma obra mostra a linha dela para preencher. #}
   {% if socios %}
   {% from "painel_grade_participacoes.html" import grade_participacoes %}
-  <form method="post">
+  <form method="post" data-secao="socios">
     <input type="hidden" name="acao" value="participacoes_em_grade">
     <input type="hidden" name="cenario_id" value="{{ cenario.id }}">
     {{ grade_participacoes(linhas_quem_divide, socios, grade_quem_divide, 'Projeto ou obra',
@@ -556,41 +598,13 @@
   {% endif %}
 </div>
 
-<!-- ===================== FORA DA ANÁLISE ===================== -->
-<div class="cartao">
-  <div class="cartao-cab">
-    <h3 id="passo-fora" style="scroll-margin-top:64px">4 · Fora da análise</h3>
-    <small>obras e projetos que este cenário não considera</small>
-  </div>
-  <p class="cartao-dica" style="margin-top:0">
-    O que sair daqui <b>não recebe estrutura, não recebe juros, não entra na
-    quota de ninguém e não pesa na régua</b>. Cada cenário tem a sua lista:
-    comparar "com o Ceará" e "sem o Ceará" é duplicar o cenário e tirar num só.
-    O que foi tirado em
-    <a href="{{ url_for('painel.prestacao_parametros', aba='fora') }}">Parâmetros › Fora da análise</a>
-    já está fora de <b>todos</b> os cenários e só volta por lá.
-  </p>
-  {% if excluidas_gerais %}
-  <p class="cartao-dica" style="margin-top:0">
-    <b>Fora por Parâmetros:</b>
-    {% for item in excluidas_gerais %}{% if not loop.first %} · {% endif %}{{ item|item_fora }}{% endfor %}.
-  </p>
-  {% endif %}
-  {% from "painel_lista_fora.html" import lista_fora %}
-  <form method="post">
-    <input type="hidden" name="acao" value="fora_em_lista">
-    <input type="hidden" name="cenario_id" value="{{ cenario.id }}">
-    {{ lista_fora(linhas_fora) }}
-  </form>
-</div>
-
 <!-- ===================== A RÉGUA ===================== -->
 <div class="cartao">
   <div class="cartao-cab">
     <h3 id="passo-regua" style="scroll-margin-top:64px">5 · Régua e juros</h3>
     <small>por qual medida o custo da estrutura se divide entre as obras</small>
   </div>
-  <form method="post" class="form-grade">
+  <form method="post" class="form-grade" data-secao="regua">
     <input type="hidden" name="acao" value="regua">
     <input type="hidden" name="cenario_id" value="{{ cenario.id }}">
 
@@ -685,6 +699,79 @@
 
 {% if juros_conf %}{% include "painel_juros_conferencia.html" %}{% endif %}
 
+{# UM SALVAR PARA A PÁGINA INTEIRA (11/11/2026, o dono: "por que eu não posso
+   abrir várias caixinhas, colocar uma coisa, colocar outra, e depois gravar
+   tudo de uma vez? Isso vale para tudo que houver aí"). A barra fica presa no
+   pé da tela; qualquer botão "Salvar" dos passos grava a página inteira
+   também — nada do que foi digitado em outro passo se perde. #}
+<div id="barra-salvar-tudo" class="nao-imprime"
+     style="position:fixed; left:0; right:0; bottom:0; z-index:20; background:var(--azul);
+            color:#fff; padding:10px 22px; display:flex; gap:14px; align-items:center;
+            box-shadow:0 -2px 10px rgba(0,0,0,.18)">
+  <span id="salvar-tudo-estado">Nada para salvar.</span>
+  <span style="flex:1"></span>
+  <button type="button" class="btn amarelo" id="salvar-tudo">Salvar tudo</button>
+</div>
+<div style="height:64px"></div>
+<script>
+(function () {
+  const secoes = [...document.querySelectorAll("form[data-secao]")];
+  const botao = document.getElementById("salvar-tudo");
+  const estado = document.getElementById("salvar-tudo-estado");
+  if (!secoes.length || !botao) return;
+  let mexidas = new Set();
+  const NOMES = {fora: "o que entra", arvore: "o que se divide", recebe: "quem recebe",
+                 socios: "quem divide", regua: "régua e juros"};
+  function pintar() {
+    estado.innerHTML = mexidas.size
+      ? "<b>Alterações ainda não salvas</b> em: " + [...mexidas].map(s => NOMES[s] || s).join(" · ")
+      : "Nada para salvar.";
+  }
+  secoes.forEach(f => {
+    const marcar = e => {
+      if (!e.target.name) return;          // busca e filtros não são dado
+      mexidas.add(f.dataset.secao); pintar();
+    };
+    f.addEventListener("input", marcar);
+    f.addEventListener("change", marcar);
+    // o botão de qualquer passo grava a página inteira
+    f.addEventListener("submit", e => { e.preventDefault(); salvar(); });
+  });
+  async function salvar() {
+    const dados = new FormData();
+    dados.append("acao", "tudo");
+    dados.append("cenario_id", "{{ cenario.id }}");
+    secoes.forEach(f => {
+      for (const [chave, valor] of new FormData(f)) {
+        if (chave !== "acao" && chave !== "cenario_id") dados.append(chave, valor);
+      }
+    });
+    botao.disabled = true;
+    estado.textContent = "Salvando…";
+    try {
+      const r = await fetch(window.location.pathname, {method: "POST", body: dados,
+                                                       credentials: "same-origin"});
+      if (!r.ok) throw new Error("o servidor respondeu " + r.status);
+      window.__salvandoTudo = true;
+      try { sessionStorage.setItem("montagem-rolagem", String(window.scrollY)); } catch (_e) {}
+      window.location.href = r.url;       // a montagem de volta, já com o salvo
+    } catch (erro) {
+      botao.disabled = false;
+      estado.innerHTML = "<b>Não salvou:</b> " + erro.message + ". Nada foi perdido — tente de novo.";
+    }
+  }
+  botao.addEventListener("click", salvar);
+  window.addEventListener("beforeunload", e => {
+    if (!window.__salvandoTudo && mexidas.size) { e.preventDefault(); e.returnValue = ""; }
+  });
+  // volta para onde estava depois de salvar
+  try {
+    const y = sessionStorage.getItem("montagem-rolagem");
+    if (y !== null) { sessionStorage.removeItem("montagem-rolagem"); window.scrollTo(0, Number(y)); }
+  } catch (_e) {}
+})();
+</script>
+
 <!-- ===================== APAGAR ===================== -->
 <div class="cartao">
   <div class="cartao-cab"><h3>Apagar este cenário</h3></div>
@@ -721,6 +808,16 @@
       if (!aberto)   // fechar o grupo fecha também os períodos das categorias
         form.querySelectorAll(`[data-periodos-de^="c${b.dataset.abreGrupo}-"]`)
             .forEach(tr => { tr.hidden = true; });
+    }));
+
+  form.querySelectorAll("[data-mais-periodo]").forEach(b =>
+    b.addEventListener("click", () => {
+      const proxima = b.closest("td").querySelector("[data-periodo-novo][hidden]");
+      if (proxima) { proxima.hidden = false; proxima.style.display = "inline-flex"; }
+      if (!b.closest("td").querySelector("[data-periodo-novo][hidden]")) {
+        b.disabled = true;
+        b.innerHTML = "<small>salve para abrir mais linhas</small>";
+      }
     }));
 
   form.querySelectorAll("[data-abre-periodos]").forEach(b =>
@@ -761,7 +858,7 @@
   campos.forEach(c => { c.addEventListener("input", pendentes); c.addEventListener("change", pendentes); });
   form.addEventListener("submit", () => { salvando = true; });
   window.addEventListener("beforeunload", e => {
-    if (!salvando && pendentes()) { e.preventDefault(); e.returnValue = ""; }
+    if (!salvando && !window.__salvandoTudo && pendentes()) { e.preventDefault(); e.returnValue = ""; }
   });
 })();
 </script>

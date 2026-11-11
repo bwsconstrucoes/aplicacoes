@@ -79,8 +79,8 @@
           </td>
         </tr>
         {% endfor %}
-        {% for i in range(5) %}
-        <tr>
+        {% for i in range(20) %}
+        <tr data-socio-novo {{ 'hidden' if i >= 3 }}>
           <td class="desc">
             <input type="hidden" name="socio_id" form="socios-lista" value="">
             <input name="nome" form="socios-lista" placeholder="novo sócio — nome"
@@ -102,9 +102,10 @@
   <div style="display:flex; margin-top:10px; gap:10px; align-items:center">
     <span class="cartao-dica" style="margin:0">Externo muda a conta: ele não paga a
       estrutura da construtora. Sócio nunca é apagado, só desativado — as quotas
-      e os ajustes dele continuam no histórico. Precisa de mais de cinco novos?
-      Salve e as linhas em branco voltam.</span>
+      e os ajustes dele continuam no histórico.</span>
     <span style="flex:1"></span>
+    <button class="btn secundario" type="button"
+            onclick="[...document.querySelectorAll('tr[data-socio-novo][hidden]')].slice(0,3).forEach(t => t.hidden = false)">＋ mais linhas</button>
     <button class="btn" type="submit" form="socios-lista">Salvar tudo</button>
   </div>
 </div>
@@ -358,12 +359,26 @@
       <p class="dica">Obras deste projeto contam como matriz; as demais, filial.</p>
     </div>
     <div class="campo">
-      <label for="depto_admin_matriz">Departamento administrativo da matriz</label>
-      <input id="depto_admin_matriz" name="depto_admin_matriz" value="{{ config.depto_admin_matriz }}">
+      {# ESCOLHER, NÃO DIGITAR (11/11/2026). O dono viu "a matriz gastou 15,4
+         milhões" e, somando os dois centros de custo que ele entende como a
+         estrutura, deu 14,2: o número vem destes dois campos, que eram texto
+         livre e de fábrica vêm "BWS Construções" e "BWSNE". #}
+      <label for="depto_admin_matriz">Centro de custo da estrutura (1)</label>
+      <select id="depto_admin_matriz" name="depto_admin_matriz">
+        {% if config.depto_admin_matriz and config.depto_admin_matriz not in obras_do_painel %}
+        <option value="{{ config.depto_admin_matriz }}" selected>{{ config.depto_admin_matriz }} (não existe na base)</option>{% endif %}
+        {% for o in obras_do_painel %}<option value="{{ o }}" {{ 'selected' if o == config.depto_admin_matriz }}>{{ o }}</option>{% endfor %}
+      </select>
+      <p class="dica">O custo destes dois centros de custo é “o que a matriz gastou” — o que se divide entre as obras.</p>
     </div>
     <div class="campo">
-      <label for="depto_admin_filial">Departamento administrativo da filial</label>
-      <input id="depto_admin_filial" name="depto_admin_filial" value="{{ config.depto_admin_filial }}">
+      <label for="depto_admin_filial">Centro de custo da estrutura (2)</label>
+      <select id="depto_admin_filial" name="depto_admin_filial">
+        <option value="" {{ 'selected' if not config.depto_admin_filial }}>(nenhum — a estrutura é um centro de custo só)</option>
+        {% if config.depto_admin_filial and config.depto_admin_filial not in obras_do_painel %}
+        <option value="{{ config.depto_admin_filial }}" selected>{{ config.depto_admin_filial }} (não existe na base)</option>{% endif %}
+        {% for o in obras_do_painel %}<option value="{{ o }}" {{ 'selected' if o == config.depto_admin_filial }}>{{ o }}</option>{% endfor %}
+      </select>
     </div>
     <div class="campo">
       <label for="grupo_pessoal">Grupo que serve de referência do rateio</label>

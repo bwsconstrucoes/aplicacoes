@@ -416,10 +416,10 @@ def salvar_participacao(cenario_id, socio_id, pct, obra: str = "") -> None:
         conn.commit()
 
 
-def gravar_participacoes_em_grade(cenario_id, celulas: dict) -> int:
-    """A grade "quem divide" inteira de uma vez: `{(obra, socio_id): "50"}`,
-    obra "" = todas as obras. Célula vazia apaga. Confere tudo antes de
-    gravar (11/11/2026 — ver `prestacao_dados.gravar_participacoes_em_grade`)."""
+def conferir_grade(celulas: dict) -> dict:
+    """A grade conferida, sem gravar: `{(obra, sócio): percentual | None}`.
+    Separada para o "Salvar tudo" da montagem conferir ANTES de gravar
+    qualquer seção — um percentual errado não deixa a página salva pela metade."""
     limpas = {}
     for (obra, socio_id), valor in celulas.items():
         texto = str(valor or "").strip()
@@ -434,6 +434,14 @@ def gravar_participacoes_em_grade(cenario_id, celulas: dict) -> int:
             raise ValueError(f"Percentual inválido em {obra or 'Todas as obras'}: "
                              f"\"{texto}\" (use um número de 0 a 100).")
         limpas[((obra or "").strip(), int(socio_id))] = v
+    return limpas
+
+
+def gravar_participacoes_em_grade(cenario_id, celulas: dict) -> int:
+    """A grade "quem divide" inteira de uma vez: `{(obra, socio_id): "50"}`,
+    obra "" = todas as obras. Célula vazia apaga. Confere tudo antes de
+    gravar (11/11/2026 — ver `prestacao_dados.gravar_participacoes_em_grade`)."""
+    limpas = conferir_grade(celulas)
     with conexao() as conn:
         for (obra, socio_id), pct in limpas.items():
             if pct is None:

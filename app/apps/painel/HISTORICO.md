@@ -651,6 +651,57 @@ nunca rodou contra a base real**. Ele passou pelo parser do Postgres, pelo teste
 de portabilidade e pelos testes com dublê — nenhum dos três olha o número que
 sai.
 
+## A montagem depois de o dono usar: o que entra primeiro, Salvar tudo, de onde vem o custo — 11/11/2026 (noite)
+
+O dono, usando a versão publicada às 01:55:
+- *"Fora da análise era para ser uma das primeiras perguntas. Na hora que eu
+  colocar fora, não era mais nem para aparecer em quem divide o resultado,
+  quem recebe o custo da matriz. A gente tira num canto, aí ele fica
+  aparecendo no outro."*
+- *"A gente grava, aí ele some e fica só um textozinho (…) o ideal é manter o
+  quadro com a obra e a condição que está."* e *"considerar não é a regra? Tá
+  esquisito."*
+- *"Eu tenho que gravar um por um. Por que eu não posso abrir várias
+  caixinhas (…) e depois gravar tudo de uma vez? Isso vale para tudo."*
+- *"O projeto BWS é exatamente os custos da matriz, não é? Acho que não era
+  para ele aparecer aqui."*
+- *"A matriz gastou 15,4 milhões (…) os dois centros de custo que compõem
+  [a estrutura] dão 13,2 executado e 14,19 comprometido. De onde é que está
+  sendo puxado esse outro valor?"*
+
+**O que mudou:**
+1. **Passo 1 = "Quais projetos e obras entram"** (era o 4, "Fora da análise").
+   Um quadro que não some: TODOS os projetos sempre à vista, com a situação
+   escrita (entra / fora / entra só até MM/AAAA); as obras aparecem quando têm
+   situação própria ou ao procurar. Entrar é a regra e não se escolhe: a linha
+   tem uma caixinha "Tirar da análise" e um mês opcional "ou entra só até".
+   O que foi tirado em Cadastros (vale para todo cenário) aparece no mesmo
+   quadro, travado. Campos: `fora_chave`, `fora_total`, `fora_ate`.
+2. **O que está fora some dos passos seguintes**: "quem recebe" e "quem
+   divide" só listam o que entra (`_projetos_e_obras_da_montagem`). A regra de
+   "quem recebe" e a participação de quem saiu NÃO são apagadas — voltam se o
+   projeto voltar (`_gravar_quem_recebe` preserva as regras que não vieram no
+   formulário).
+3. **Projeto que é só a estrutura não aparece**: só entra nas listas o projeto
+   com ao menos uma obra que não seja centro de custo da estrutura. Era só
+   aparência — projeto sem obra nunca recebeu nem dividiu nada.
+4. **"Salvar tudo"**: barra fixa no pé da montagem. Grava os cinco passos num
+   envio só (`acao=tudo`); o botão de qualquer passo faz o mesmo. Confere o
+   que pode recusar (mês faltando, percentual inválido) ANTES de gravar
+   qualquer seção. Avisa em quais passos há alteração não salva e volta para
+   onde a tela estava.
+5. **Vários períodos antes de salvar**: "＋ outro período" abre até seis linhas
+   novas por conta. Sócios: "＋ mais linhas" (até 20 novos por salvada).
+6. **De onde vem "a matriz gastou"**: a tela agora escreve — a soma das
+   despesas (DRE) dos DOIS centros de custo configurados como estrutura, cada
+   um com o seu valor, a medida (comprometido/executado), o período (todos os
+   anos) e o que está sem data, com link para o DRE filtrado por eles.
+   **Suspeita não confirmada** (a base não abre daqui): a configuração de
+   fábrica é "BWS Construções" + "BWSNE" (migração 002), e ele descreveu a
+   estrutura como "BWS Construções" + "Escritório Central". Os dois campos de
+   Parâmetros gerais deixaram de ser texto livre: viraram lista dos centros
+   de custo da base ("Centro de custo da estrutura (1) e (2)").
+
 ## "Onde estão os juros de empréstimo": o quadro reescrito — 11/11/2026 (noite)
 
 O dono colou o quadro ("o que a prestação conta hoje: R$ 2.358.331,00", um
