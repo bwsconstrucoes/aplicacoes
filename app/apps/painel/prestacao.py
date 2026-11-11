@@ -47,6 +47,12 @@ SEM_DATA = "(sem data)"
 # ";" na mesma chave de sempre — um nome só continua valendo como lista de um.
 SEPARADOR_DE_CENTROS = ";"
 
+# O nome do lado que não é o projeto principal: TODAS as obras que não são do
+# BWSCE. O dono, 11/11/2026: "quando eu me referi a BWSNE, melhor chamarmos de
+# BWSFILIAL — todas as obras que não são obras da BWSCE". (BWSNE é o centro de
+# custo da filial, que é outra coisa: o custo que só elas dividem.)
+NOME_DOS_DEMAIS = "BWSFILIAL"
+
 
 def centros_de_custo(valor) -> list[str]:
     """ "A; B" -> ["A", "B"], sem repetir e sem vazio."""
@@ -582,53 +588,53 @@ def sem_as_obras(base: dict, fora) -> dict:
     return saida
 
 
-def peso_e_divisao(pesos: dict, grupo: str, categoria: str, codigo: str,
-                   pct_padrao: float, mes: str | None = None) -> tuple:
-    """(quanto desta conta entra no bolo, parte do projeto principal | None).
+# o "mês" da regra que vale desde sempre (o mesmo de `cenarios.DESDE_O_INICIO`)
+_DESDE_O_INICIO = "1900-01"
 
-    Do mais específico ao mais amplo. Zero e "não marcado" são coisas
-    DIFERENTES: zero quer dizer "esta conta não se divide"; não marcado quer
-    dizer "segue o nível de cima".
 
-    O PERCENTUAL PODE MUDAR COM O TEMPO (09/11/2026, migração 024): com o `mes`
-    (AAAA-MM), vale o último período que começou até ele — "50% a partir de
-    01/2021, 60% a partir de 01/2022". Antes do primeiro período, vale o
-    percentual fixo da linha; sem ele, o nível de cima.
+def partes_da_conta(pesos: dict, grupo: str, categoria: str, codigo: str,
+                    pct_padrao: float, mes: str | None = None) -> tuple:
+    """(% que fica no projeto principal, % que é da filial) de uma conta da
+    matriz. O que falta para 100 se RATEIA entre todas as obras, pela régua.
 
-    E O PERÍODO PODE SEPARAR OS DOIS LADOS: "40% para a BWS CE, 60% para os
-    demais projetos". A parte do principal vem do mesmo período que deu o
-    percentual; None quer dizer "sem separar" — a conta se divide entre todas
-    as obras que recebem, pela régua."""
+    A REGRA DAS TRÊS PARTES (11/11/2026). O dono, com exemplos: "Categoria X:
+    ratear 100% entre todas. Categoria Y: jogar 20% para BWSNE e ratear 80%.
+    Categoria Z: jogar 100% para BWSNE" — e "de 20.000, 10.000 não entram na
+    conta de rateio e ficam em BWSCE; os 10.000 que sobram são rateados entre
+    BWSCE e a filial". Antes havia "quanto entra" (o resto SUMIA) e "quanto
+    vai para o principal" (o resto ia SÓ para os demais).
+
+    Vale a regra do nível MAIS ESPECÍFICO que disser alguma coisa: lançamento,
+    depois categoria, depois grupo, depois o padrão do cenário. Em cada nível,
+    a regra pode mudar com o tempo: com o `mes` (AAAA-MM), vale a última que
+    começou até ele; "1900-01" é a que vale desde o início. Uma regra de
+    categoria NÃO se combina com a do grupo — substitui.
+
+    O percentual fixo (`pesos[nível][chave]`, formato antigo, hoje só do
+    lançamento marcado um a um) é "quanto se rateia": o resto fica no
+    principal."""
     periodos = pesos.get("periodos") or {}
-    # O percentual vem do nível mais específico que disser algum. A parte do
-    # principal TAMBÉM — mas em branco quer dizer "segue o nível de cima", como
-    # no percentual (10/11/2026): afinar uma categoria dentro de um grupo
-    # "40% para o BWS CE" não pode fazê-la perder os dois lados.
-    pct, principal = None, None
+    quando = mes if mes and mes != SEM_DATA else _DESDE_O_INICIO
     for nivel, chave in (("lancamento", codigo), ("categoria", categoria),
                          ("grupo", grupo)):
         if not chave:
             continue
-        lista = (periodos.get(nivel) or {}).get(chave) or []
-        valendo = ([p for p in lista if p[0] <= mes]
-                   if lista and mes and mes != SEM_DATA else [])
+        valendo = [p for p in (periodos.get(nivel) or {}).get(chave) or []
+                   if p[0] <= quando]
         if valendo:
             ultimo = valendo[-1]
-            if pct is None:
-                pct = float(ultimo[1])
-            if principal is None and len(ultimo) > 2 and ultimo[2] is not None:
-                principal = ultimo[2]
-        elif pct is None and chave in (pesos.get(nivel) or {}):
-            pct = float(pesos[nivel][chave])
-        if pct is not None and principal is not None:
-            break
-    return (float(pct_padrao) if pct is None else pct), principal
+            return float(ultimo[1] or 0), float((ultimo[2] if len(ultimo) > 2 else 0) or 0)
+        if chave in (pesos.get(nivel) or {}):
+            return 100.0 - float(pesos[nivel][chave]), 0.0
+    return 100.0 - float(pct_padrao), 0.0
 
 
 def peso_da_conta(pesos: dict, grupo: str, categoria: str, codigo: str,
                   pct_padrao: float, mes: str | None = None) -> float:
-    """Só o percentual que entra no bolo — ver `peso_e_divisao`."""
-    return peso_e_divisao(pesos, grupo, categoria, codigo, pct_padrao, mes)[0]
+    """Quanto da conta se RATEIA entre todas as obras, em por cento — o que
+    sobra das duas partes com destino certo. Ver `partes_da_conta`."""
+    fica, filial = partes_da_conta(pesos, grupo, categoria, codigo, pct_padrao, mes)
+    return 100.0 - fica - filial
 
 
 def pesos_por_mes(driver, meses, janela: str = "1") -> dict:
@@ -692,17 +698,11 @@ def calcular_rateio_do_cenario(despesa_admin, excecoes, driver, obras, pesos,
     recebe = recebe or (lambda _obra, _mes: True)
     # sem projeto principal não há dois lados: tudo pela régua, entre todas
     separa = any(lado == "principal" for lado in lado_de.values())
-    # O QUE FICOU DE FORA (10/11/2026): a parte de cada conta que não entrou
-    # no bolo. Antes sumia sem rastro; agora é contada, por mês e por conta,
-    # para o batimento acusar e a tela criticar.
+    # NADA FICA DE FORA (11/11/2026): cada conta tem três partes com destino —
+    # fica no principal, é da filial (os demais) ou se rateia entre todas. As
+    # duas listas continuam na resposta, vazias, para o batimento e as telas.
     fora_por_mes: dict[str, float] = {}
     fora_por_conta: dict[tuple, float] = {}
-
-    def _ficou_fora(mes, grupo, categoria, valor):
-        if abs(valor) > 0.005:
-            fora_por_mes[mes] = fora_por_mes.get(mes, 0.0) + valor
-            chave = (grupo or "(sem grupo)", categoria or "(sem categoria)")
-            fora_por_conta[chave] = fora_por_conta.get(chave, 0.0) + valor
 
     # 1. As exceções saem do balde a que pertencem.
     fora: dict[tuple, float] = {}
@@ -711,34 +711,34 @@ def calcular_rateio_do_cenario(despesa_admin, excecoes, driver, obras, pesos,
     para_lado: dict[tuple, float] = {}
     sobras: list[dict] = []
 
-    def _destinar(mes, parte, principal):
-        """Soma ao bolo do mês; se o período separa os lados, guarda quanto
-        vai para cada um."""
-        pool[mes] = pool.get(mes, 0.0) + parte
-        if principal is not None and separa:
-            p = max(min(float(principal), 100.0), 0.0) / 100.0
-            para_lado[(mes, "principal")] = para_lado.get((mes, "principal"), 0.0) + parte * p
-            para_lado[(mes, "demais")] = para_lado.get((mes, "demais"), 0.0) + parte * (1 - p)
+    def _destinar(mes, valor, fica, filial):
+        """Soma ao bolo do mês e guarda quanto já tem lado: o que fica no
+        principal e o que é da filial. O resto se rateia entre todas."""
+        pool[mes] = pool.get(mes, 0.0) + valor
+        if separa:
+            para_lado[(mes, "principal")] = (para_lado.get((mes, "principal"), 0.0)
+                                             + valor * fica / 100.0)
+            para_lado[(mes, "demais")] = (para_lado.get((mes, "demais"), 0.0)
+                                          + valor * filial / 100.0)
     for e in excecoes or []:
         chave = (e["mes"], e.get("grupo") or "", e.get("categoria") or "")
-        fora[chave] = fora.get(chave, 0.0) + float(e["valor"] or 0)
-        pct, principal = peso_e_divisao(pesos, e.get("grupo"), e.get("categoria"),
-                                        str(e.get("codigo") or ""), pct_padrao, mes=e["mes"])
-        _ficou_fora(e["mes"], e.get("grupo"), e.get("categoria"),
-                    float(e["valor"] or 0) * (1 - pct / 100.0))
+        valor = float(e["valor"] or 0)
+        fora[chave] = fora.get(chave, 0.0) + valor
         if e["mes"] == SEM_DATA:
-            if abs(float(e["valor"] or 0) * pct / 100.0) > 0.005:
+            if abs(valor) > 0.005:
                 sobras.append({"origem": f"Lançamento {e.get('codigo')}",
-                               "mes": SEM_DATA, "valor": float(e["valor"]) * pct / 100.0,
+                               "mes": SEM_DATA, "valor": valor,
                                "motivo": "lançamento sem data: não dá para ratear por mês"})
             continue
-        _destinar(e["mes"], float(e["valor"]) * pct / 100.0, principal)
+        _destinar(e["mes"], valor, *partes_da_conta(
+            pesos, e.get("grupo"), e.get("categoria"), str(e.get("codigo") or ""),
+            pct_padrao, mes=e["mes"]))
 
-    # 2. O que sobrou de cada balde entra pelo percentual do seu nível.
-    # A mesma conta pode vir em mais de uma linha (matriz e filial têm a mesma
-    # categoria no mesmo mês). Soma-se ANTES de tirar as exceções: tirando
-    # linha a linha, o lançamento marcado era descontado uma vez por
-    # departamento (achado em 10/11/2026).
+    # 2. O que sobrou de cada balde segue a regra do seu nível.
+    # A mesma conta pode vir em mais de uma linha (dois centros de custo da
+    # matriz têm a mesma categoria no mesmo mês). Soma-se ANTES de tirar as
+    # exceções: tirando linha a linha, o lançamento marcado era descontado uma
+    # vez por centro de custo (achado em 10/11/2026).
     baldes: dict[tuple, float] = {}
     for linha in despesa_admin:
         chave = (linha["mes"], linha.get("grupo") or "", linha.get("categoria") or "")
@@ -748,19 +748,14 @@ def calcular_rateio_do_cenario(despesa_admin, excecoes, driver, obras, pesos,
         valor = bruto - fora.get(chave, 0.0)
         if abs(valor) <= 0.005:
             continue
-        pct, principal = peso_e_divisao(pesos, grupo_l, categoria_l,
-                                        "", pct_padrao, mes=mes_l)
-        parte = valor * pct / 100.0
-        _ficou_fora(mes_l, grupo_l, categoria_l, valor - parte)
-        if abs(parte) <= 0.005:
-            continue
         if mes_l == SEM_DATA:
             sobras.append({"origem": f"{grupo_l or '(sem grupo)'} › "
                                      f"{categoria_l or '(sem categoria)'}",
-                           "mes": SEM_DATA, "valor": parte,
+                           "mes": SEM_DATA, "valor": valor,
                            "motivo": "lançamento sem data: não dá para ratear por mês"})
             continue
-        _destinar(mes_l, parte, principal)
+        _destinar(mes_l, valor, *partes_da_conta(
+            pesos, grupo_l, categoria_l, "", pct_padrao, mes=mes_l))
 
     # 2b. A filial: inteira, e só para os demais.
     da_filial: dict[str, float] = {}

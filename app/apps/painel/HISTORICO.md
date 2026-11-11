@@ -651,42 +651,72 @@ nunca rodou contra a base real**. Ele passou pelo parser do Postgres, pelo teste
 de portabilidade e pelos testes com dublê — nenhum dos três olha o número que
 sai.
 
-## ⏳ AGUARDANDO O DONO VALIDAR: cada conta da matriz em TRÊS partes — 11/11/2026
+## Cada conta da matriz em TRÊS PARTES — 11/11/2026 (noite)
 
-**Nada disto está feito.** É o entendimento que devolvi a ele para validar; só
-se constrói depois do "é isso".
+**NÃO PUBLICADO ainda** — está no ramo, à espera do "pode" do dono. **Tem
+migração (025):** ao publicar, ele aperta "Aplicar atualizações do banco" no
+mesmo momento.
 
-Ele explicou duas vezes, a segunda com exemplos: BWS é o custo a ratear;
-BWSCE e BWSNE (as demais obras) são os dois lados; e há custo lançado no BWS
-que na verdade é do BWSNE. Para cada grupo, categoria ou lançamento, e podendo
-mudar por período, ele quer dizer **três partes que somam 100%**:
+O dono explicou a regra três vezes, a última com exemplos, e fechou os nomes:
+
+- **BWS** — custos da matriz (rateável entre tudo);
+- **BWSCE** — as obras da matriz (o projeto principal);
+- **BWSNE** — custos da filial (rateável só entre as obras da filial);
+- **BWSFILIAL** — *"todas as obras que não são obras da BWSCE"*. É o nome do
+  lado; está em `prestacao.NOME_DOS_DEMAIS`.
+
+Cada grupo, categoria ou lançamento do BWS tem **três destinos que somam 100%**:
 
 | Parte | Para onde vai |
 |---|---|
-| **fica no BWSCE** | só entre as obras do BWSCE, pelo pessoal de cada uma |
-| **é do BWSNE** | só entre as demais obras, pelo pessoal de cada uma |
-| **rateia** (o resto) | entre TODAS as obras, dos dois lados, pelo pessoal |
+| **fica no BWSCE** | só entre as obras do BWSCE, pela régua |
+| **é da BWSFILIAL** | só entre as demais obras, pela régua |
+| **rateia** (o que falta para 100) | entre TODAS as obras, dos dois lados |
 
-Os exemplos dele: categoria X = 100% rateia; Y = 20% BWSNE + 80% rateia;
-Z = 100% BWSNE; e "de 20.000, 10.000 ficam no BWSCE e 10.000 se rateiam —
-o BWSCE recebe os 10.000 mais a cota dele nos outros 10.000".
+Os exemplos dele, que viraram teste: "X: ratear 100%"; "Y: jogar 20% para
+BWSNE e ratear 80%"; "Z: jogar 100% para BWSNE"; "de 20.000, 10.000 ficam em
+BWSCE e os outros 10.000 se rateiam — BWSCE recebe 10.000 mais a cota dele".
 
-**O que a conta faz HOJE, e não é isso:** "% que entra" (o que não entra
-*some*, fica de fora de todos) e "para o BWSCE" (do que entra, p% para o
-BWSCE e **o resto só para os demais** — não "entre todos").
+**O que a conta fazia, e por que estava errado:** "% que entra" (o que não
+entrava **sumia**) e "para o BWSCE" (do que entrava, o resto ia **só para os
+demais**). Nenhum dos dois é o que ele descreveu.
 
-**O que construir, quando ele validar:** as três partes por conta e por
-período (provável coluna nova em `cenario_peso_periodo` → migração 025), a
-conversão do que já está gravado (o "fica de fora" vira "fica no BWSCE"), a
-tela do passo 2 com os três campos, a página "Como é feita" e o batimento
-(a coluna "ficou de fora" deixa de existir).
+**Decisões:**
 
-**Perguntas que fiz a ele e estão sem resposta:**
-1. "BWSNE" como lado é **toda obra que não é do BWSCE** (como a conta trata
-   hoje), ou só as obras do projeto BWSNE?
-2. Regra geral por período ("em 2022, metade do BWS fica no BWSCE") junto com
-   regra de categoria: **vale a mais específica** (como hoje) ou as duas se
-   combinam?
+- **Vale a regra do nível mais específico** (lançamento › categoria › grupo ›
+  padrão do cenário), e ela **substitui** a de cima — não se combinam. Ele
+  confirmou o caso que importava: "metade de 2022 fica em BWSCE" vale para o
+  grupo Despesas com Pessoal, porque no começo a filial não tinha estrutura.
+- **A regra pode mudar com o tempo** em cada nível; a linha da conta é a regra
+  "desde o início" (`1900-01`) e as outras valem a partir de um mês.
+- **"Fica de fora" deixou de existir.** O padrão do cenário abaixo de 100 e o
+  lançamento marcado com menos de 100 (formato antigo, "quanto rateia")
+  deixam o resto **no BWSCE**. O batimento continua com a coluna, sempre zero.
+- **O que já estava gravado é convertido pelo que ele disse que queria** — não
+  pelo que a conta antiga fazia: o que não entrava fica no BWSCE; "para o
+  BWSCE p%" fica nele; o resto **rateia entre todas** (antes ia só para os
+  demais). Mesma fórmula na migração 025 e em
+  `cenarios.partes_do_formato_antigo`, que lê a linha enquanto a migração não
+  foi aplicada. **Os números de cenário já montado mudam** — avisado a ele.
+- **Sem a migração, o painel continua de pé**: lê tudo no formato antigo e
+  grava o que couber nele; só a parte "é da BWSFILIAL" é recusada, com o
+  aviso de aplicar a atualização.
+- A linha de regra em branco **não é enviada** pela tela (era o grosso do
+  envio que estourava o servidor).
+
+**Onde está:** `prestacao.partes_da_conta` (a regra), `calcular_rateio_do_cenario`
+(a conta), `cenarios.periodos / gravar_periodos / conferir_periodos` (o banco),
+`web._contas_da_matriz` (a árvore, com fica / filial / rateia em reais),
+`painel_cenario.html` passo 2 (dois campos por conta e o "rateia" calculado na
+hora), `painel_cenario_como.html` passo 2 (para os sócios).
+
+**Não verificado com dado real:** nenhum número da base dele. A regra está
+conferida à mão nos testes, com valores pequenos.
+
+**Achado de passagem:** o leitor de `multipart` do Werkzeug 3.1.9 se perde com
+vários campos **vazios** seguidos (lê o cabeçalho do campo seguinte como
+valor). A montagem não manda mais nesse formato; se algum dia uma tela do
+painel voltar a mandar formulário grande em `multipart`, é por aí que quebra.
 
 ## MATRIZ × FILIAL: a regra que a conta do cenário tinha perdido — 11/11/2026 (fim da tarde)
 

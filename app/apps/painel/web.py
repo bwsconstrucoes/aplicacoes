@@ -1600,6 +1600,38 @@ def _calcular_cenario(cenario: dict) -> dict:
     }
 
 
+def _num(v) -> str:
+    """50 -> "50"; 33.333 -> "33,33" — percentual para ler, sem zero sobrando."""
+    return (f"{float(v):.2f}".rstrip("0").rstrip(".")).replace(".", ",")
+
+
+def _partes_por_extenso(fica, filial, principal: str = "") -> str:
+    """As três partes de uma regra, em palavras: "20% fica no BWSCE · 80%
+    rateia entre todas". Parte zerada não é dita."""
+    rateia = 100.0 - float(fica) - float(filial)
+    partes = []
+    if fica > 0.005:
+        partes.append(f"{_num(fica)}% fica no {principal or 'projeto principal'}")
+    if filial > 0.005:
+        from .prestacao import NOME_DOS_DEMAIS
+        partes.append(f"{_num(filial)}% é da {NOME_DOS_DEMAIS}")
+    if rateia > 0.005:
+        partes.append(f"{_num(rateia)}% rateia entre todas")
+    return " · ".join(partes)
+
+
+def _regras_por_extenso(regra, datadas, principal: str = "") -> str:
+    """A regra de uma conta com os períodos: "sempre: …; a partir de 01/2022: …"."""
+    trechos = []
+    if regra is not None:
+        trechos.append((("desde o início: " if datadas else "")
+                        + _partes_por_extenso(regra[0], regra[1], principal)))
+    for desde, fica, filial in datadas or []:
+        trechos.append(f"a partir de {desde[5:]}/{desde[:4]}: "
+                       + _partes_por_extenso(fica, filial, principal))
+    return "; ".join(trechos)
+
+
 def _contas_da_matriz(config, cenario, medida: str) -> dict:
     """A arvore do que a matriz gastou, com o percentual de cada linha — e
     quanto ENTRA no bolo e quanto FICA DE FORA, em dinheiro, em cada nivel.
@@ -1645,8 +1677,8 @@ def _contas_da_matriz(config, cenario, medida: str) -> dict:
     primeiro_mes = ultimo_mes = ""
     # DE ONDE VEM O "A MATRIZ GASTOU" (11/11/2026, o dono: "está aparecendo
     # 15,4 milhões (…) de onde é que está sendo puxado esse valor?"). É a soma
-    # dos centros de custo configurados como estrutura — e a tela não dizia
-    # quais. Agora vem aberto por centro de custo, com o período.
+    # dos centros de custo da matriz — e a tela não dizia quais. Agora vem
+    # aberto por centro de custo, com o período.
     por_depto = {d: 0.0 for d in deptos}
     sem_data = 0.0
     for linha in consultas.despesa_administrativa(deptos, medida):
@@ -1663,66 +1695,84 @@ def _contas_da_matriz(config, cenario, medida: str) -> dict:
         g = grupos.setdefault(nome, {"grupo": nome, "valor": 0.0, "categorias": {}})
         g["valor"] += linha["valor"]
         c = g["categorias"].setdefault(cat, {"categoria": cat, "valor": 0.0,
-                                             "entra_balde": 0.0})
+                                             "fica": 0.0, "filial": 0.0})
         c["valor"] += linha["valor"]
-        # mês a mês: o percentual pode mudar com o tempo (09/11/2026)
-        c["entra_balde"] += linha["valor"] * prestacao.peso_da_conta(
-            pesos, nome, cat, "", padrao, mes=linha["mes"]) / 100.0
+        # mês a mês: a regra pode mudar com o tempo
+        fica, filial = prestacao.partes_da_conta(pesos, nome, cat, "", padrao,
+                                                 mes=linha["mes"])
+        c["fica"] += linha["valor"] * fica / 100.0
+        c["filial"] += linha["valor"] * filial / 100.0
     per = pesos.get("periodos") or {}
+    INICIO = "1900-01"
+
+    def _regra_propria(nivel, chave):
+        """((fica, filial) que vale desde o início | None, [regras com data]).
+        O percentual fixo antigo conta como regra desde o início."""
+        lista = (per.get(nivel) or {}).get(chave, [])
+        desde_sempre = next(((f, n) for d, f, n in lista if d == INICIO), None)
+        if desde_sempre is None and chave in (pesos.get(nivel) or {}):
+            desde_sempre = (100.0 - float(pesos[nivel][chave]), 0.0)
+        return desde_sempre, [p for p in lista if p[0] != INICIO]
+
+    def _texto(regra, datadas):
+        return _regras_por_extenso(regra, datadas)
 
     marcacoes: list[dict] = []
     saida = []
     for g in grupos.values():
-        g["pct"] = (pesos.get("grupo") or {}).get(g["grupo"])
-        g["pct_efetivo"] = prestacao.peso_da_conta(pesos, g["grupo"], "", "", padrao)
-        g["periodos"] = (per.get("grupo") or {}).get(g["grupo"], [])
-        g["entra"] = g["fora"] = g["juros"] = 0.0
+        g["regra"], g["periodos"] = _regra_propria("grupo", g["grupo"])
+        g["herda"] = (100.0 - padrao, 0.0)       # sem regra própria: o padrão
+        g["fica"] = g["filial"] = g["rateia"] = g["juros"] = 0.0
         g["excecoes"] = 0
-        if g["pct"] is not None:
+        if g["regra"] is not None or g["periodos"]:
             marcacoes.append({"nivel": "grupo", "grupo": g["grupo"], "categoria": "",
                               "chave": g["grupo"], "rotulo": g["grupo"],
-                              "valor": g["valor"], "pct": g["pct"]})
+                              "valor": g["valor"],
+                              "texto": _texto(g["regra"], g["periodos"])})
         cats = []
         for c in g["categorias"].values():
-            c["pct"] = (pesos.get("categoria") or {}).get(c["categoria"])
+            c["regra"], c["periodos"] = _regra_propria("categoria", c["categoria"])
+            # sem regra própria, vale a do grupo (ou o padrão)
+            c["herda"] = g["regra"] if g["regra"] is not None else g["herda"]
+            c["grupo"] = g["grupo"]
+            c["tem_regra"] = c["regra"] is not None or bool(c["periodos"])
+            # a regra dela muda com o tempo — dela, ou herdada do grupo
+            c["varia"] = bool(c["periodos"] or (g["periodos"] and not c["tem_regra"]))
+            # quanto dela se rateia hoje, sem olhar o mês (para a lista dos lançamentos)
             c["pct_efetivo"] = prestacao.peso_da_conta(
                 pesos, g["grupo"], c["categoria"], "", padrao)
-            c["grupo"] = g["grupo"]
-            c["periodos"] = (per.get("categoria") or {}).get(c["categoria"], [])
-            # o percentual dela muda com o tempo — dela, ou herdado do grupo
-            c["varia"] = bool(c["periodos"] or (g["periodos"] and c["pct"] is None))
             c["e_juros"] = c["categoria"].strip().lower() in juros
             proprias = por_categoria.get((g["grupo"], c["categoria"]), [])
             c["excecoes"] = len(proprias)
             if c["e_juros"]:
-                c["entra"], c["fora"], c["juros"] = 0.0, 0.0, c["valor"]
+                c["fica"], c["filial"], c["rateia"], c["juros"] = 0.0, 0.0, 0.0, c["valor"]
             else:
-                # o balde já foi somado mês a mês; o lançamento marcado sai
-                # dele (pelo percentual da categoria naquele mês) e entra com
-                # o próprio
-                entra = c["entra_balde"]
+                # o lançamento marcado sai da regra da categoria (a do mês
+                # dele) e entra com a própria
                 for e in proprias:
                     mes_e = e.get("mes")
-                    entra -= e["valor"] * prestacao.peso_da_conta(
-                        pesos, g["grupo"], c["categoria"], "", padrao, mes=mes_e) / 100.0
-                    pct = prestacao.peso_da_conta(
+                    f0, n0 = prestacao.partes_da_conta(
+                        pesos, g["grupo"], c["categoria"], "", padrao, mes=mes_e)
+                    f1, n1 = prestacao.partes_da_conta(
                         pesos, g["grupo"], c["categoria"], e["codigo"], padrao, mes=mes_e)
-                    entra += e["valor"] * pct / 100.0
+                    c["fica"] += e["valor"] * (f1 - f0) / 100.0
+                    c["filial"] += e["valor"] * (n1 - n0) / 100.0
                     marcacoes.append({
                         "nivel": "lancamento", "grupo": g["grupo"],
                         "categoria": c["categoria"], "chave": e["codigo"],
                         "rotulo": f"{e.get('credor') or '—'} · {e.get('documento') or 'sem documento'} "
                                   f"({e.get('mes')})",
-                        "valor": e["valor"], "pct": pct})
-                c["entra"], c["fora"], c["juros"] = entra, c["valor"] - entra, 0.0
-            if c["pct"] is not None:
+                        "valor": e["valor"],
+                        "texto": _partes_por_extenso(f1, n1)})
+                c["rateia"], c["juros"] = c["valor"] - c["fica"] - c["filial"], 0.0
+            if c["tem_regra"]:
                 marcacoes.append({"nivel": "categoria", "grupo": g["grupo"],
                                   "categoria": c["categoria"], "chave": c["categoria"],
                                   "rotulo": f"{g['grupo']} › {c['categoria']}",
-                                  "valor": c["valor"], "pct": c["pct"]})
-            g["entra"] += c["entra"]
-            g["fora"] += c["fora"]
-            g["juros"] += c["juros"]
+                                  "valor": c["valor"],
+                                  "texto": _texto(c["regra"], c["periodos"])})
+            for parte in ("fica", "filial", "rateia", "juros"):
+                g[parte] += c[parte]
             g["excecoes"] += c["excecoes"]
             cats.append(c)
         g["categorias"] = sorted(cats, key=lambda c: c["valor"])
@@ -1737,8 +1787,10 @@ def _contas_da_matriz(config, cenario, medida: str) -> dict:
     filial["rateia"] = filial["total"] - filial["juros"]
     resumo = {
         "total": sum(g["valor"] for g in contas),
-        "entra": sum(g["entra"] for g in contas),
-        "fora": sum(g["fora"] for g in contas),
+        # as três partes do custo da matriz (sem os juros)
+        "fica": sum(g["fica"] for g in contas),
+        "para_a_filial": sum(g["filial"] for g in contas),
+        "rateia": sum(g["rateia"] for g in contas),
         # os juros de empréstimo da estrutura INTEIRA — matriz e filial
         "juros": sum(g["juros"] for g in contas) + filial["juros"],
         "juros_da_matriz": sum(g["juros"] for g in contas),
@@ -1866,6 +1918,7 @@ def cenario_montagem():
         # categoria"). A conferência categoria por categoria continua em
         # Configurações › Conferências.
         # com a grafia que o dono escolheu ("IOF", não "Iof")
+        filial_nome=prestacao.NOME_DOS_DEMAIS,
         categorias_de_juros=[c.strip() for c in re.split(r"[;\n]", str(
             config.get("categoria_juros") or prestacao.CATEGORIA_JUROS_PADRAO))
             if c.strip()],
@@ -1885,12 +1938,12 @@ def cenario_montagem():
 
 
 def _periodos_do_formulario(form) -> list[tuple]:
-    """(nível, chave, desde, percentual, parte do principal) de cada linha de
-    período do formulário. A parte do principal pode faltar (formulário
-    antigo): vira em branco, sem cortar as outras linhas."""
+    """(nível, chave, desde, fica no principal, é da filial) de cada linha de
+    regra do formulário. `desde` vem "inicio" na linha principal da conta e
+    AAAA-MM nas linhas de período."""
     niveis = form.getlist("periodo_nivel")
     colunas = [form.getlist(c) for c in ("periodo_chave", "periodo_desde",
-                                         "periodo_pct", "periodo_principal")]
+                                         "periodo_fica", "periodo_filial")]
     linhas = []
     for i, nivel in enumerate(niveis):
         linhas.append((nivel,) + tuple(c[i] if i < len(c) else "" for c in colunas))
@@ -1908,12 +1961,14 @@ def _gravar_regua(cenario_id, form) -> None:
 
 
 def _gravar_arvore(cenario_id, form) -> None:
-    """A árvore inteira num clique (05/11/2026): grupo e categorias juntos, e
-    o percentual por período de quem tem (09/11/2026)."""
+    """As regras da árvore inteira num clique: de cada grupo e categoria, a
+    regra de sempre e as que valem a partir de um mês (11/11/2026)."""
     from . import cenarios
-    cenarios.marcar_pesos_da_arvore(cenario_id, zip(
-        form.getlist("item_nivel"), form.getlist("item_chave"),
-        form.getlist("item_pct")))
+    if "periodo_nivel" in form and "periodo_fica" not in form:
+        # página aberta antes das três partes: os campos são outros, e lê-los
+        # com o sentido novo gravaria número errado
+        raise ValueError("Esta página estava aberta de antes de uma atualização "
+                         "do painel. Recarregue-a e salve de novo.")
     cenarios.gravar_periodos_da_arvore(
         cenario_id, form.getlist("periodo_presente"), _periodos_do_formulario(form))
 
@@ -1964,6 +2019,11 @@ def cenario_gravar():
                           if "fora_chave" in form else None)
             if "linha" in form:
                 cenarios.conferir_grade(_celulas_da_grade(form))
+            if "periodo_presente" in form:
+                if "periodo_nivel" in form and "periodo_fica" not in form:
+                    raise ValueError("Esta página estava aberta de antes de uma "
+                                     "atualização do painel. Recarregue-a e salve de novo.")
+                cenarios.conferir_periodos(_periodos_do_formulario(form))
         except ValueError as e:
             return redirect(url_for("painel.cenario_montagem", cenario=cenario_id,
                                     erro=str(e)))
@@ -1973,7 +2033,7 @@ def cenario_gravar():
             _gravar_regua(cenario_id, form)
         if "proj_nome" in form or "principal" in form:
             _gravar_quem_recebe(cenario_id, form)
-        if "item_nivel" in form:
+        if "periodo_presente" in form:
             _gravar_arvore(cenario_id, form)
         if "linha" in form:
             cenarios.gravar_participacoes_em_grade(cenario_id, _celulas_da_grade(form))
@@ -1984,7 +2044,11 @@ def cenario_gravar():
                              request.form.get("chave", ""),
                              request.form.get("pct"))
     elif acao == "pesos_da_arvore" and cenario_id:
-        _gravar_arvore(cenario_id, request.form)
+        try:
+            _gravar_arvore(cenario_id, request.form)
+        except ValueError as e:      # mês faltando, partes acima de 100%
+            return redirect(url_for("painel.cenario_montagem", cenario=cenario_id,
+                                    erro=str(e)))
     elif acao == "projetos" and cenario_id:
         _gravar_quem_recebe(cenario_id, request.form)
     elif acao == "peso_em_lote" and cenario_id:
@@ -2022,19 +2086,6 @@ def cenario_gravar():
                             categoria=request.form.get("categoria") or None))
 
 
-def _periodos_por_extenso(lista, nome_principal) -> str:
-    """ "50% desde 01/2021 · 40% desde 01/2022" — a parte do projeto principal
-    de uma conta, para ler sem abrir nada. Vazio quando a conta não separa."""
-    partes = []
-    for desde, _pct, parte in lista or []:
-        if parte is None:
-            continue
-        quando = ("sempre" if desde == "1900-01"
-                  else f"a partir de {desde[5:]}/{desde[:4]}")
-        partes.append(f"{parte:.0f}% {quando}")
-    return " · ".join(partes)
-
-
 def _explicacao_do_cenario(cenario, config) -> dict:
     """O cenário dito em português, para a tela "Como é feita" (11/11/2026, o
     dono: "eu quero mostrar essa tela para os outros sócios (…) eles precisam
@@ -2053,22 +2104,18 @@ def _explicacao_do_cenario(cenario, config) -> dict:
     for g in arvore["contas"]:
         excecoes = []
         for c in g["categorias"]:
-            if c.get("e_juros"):
+            if c.get("e_juros") or not c.get("tem_regra"):
                 continue
-            parte = _periodos_por_extenso(c.get("periodos"), principal)
-            if c.get("pct") is not None or c.get("periodos"):
-                excecoes.append({
-                    "categoria": c["categoria"], "valor": c["valor"],
-                    "entra_pct": ("varia" if c.get("varia") and not parte
-                                  else f"{c['pct_efetivo']:.0f}%"),
-                    "parte": parte})
+            excecoes.append({
+                "categoria": c["categoria"], "valor": c["valor"],
+                "fica": c["fica"], "filial": c["filial"], "rateia": c["rateia"],
+                "regra": _regras_por_extenso(c["regra"], c["periodos"], principal)})
+        proprio = g["regra"] is not None or bool(g["periodos"])
         grupos.append({
-            "grupo": g["grupo"], "valor": g["valor"], "entra": g["entra"],
-            "fora": g["fora"], "juros": g.get("juros") or 0.0,
-            "entra_pct": ("varia" if g.get("periodos") and not
-                          _periodos_por_extenso(g.get("periodos"), principal)
-                          else f"{g['pct_efetivo']:.0f}%"),
-            "parte": _periodos_por_extenso(g.get("periodos"), principal),
+            "grupo": g["grupo"], "valor": g["valor"], "juros": g.get("juros") or 0.0,
+            "fica": g["fica"], "filial": g["filial"], "rateia": g["rateia"],
+            "regra": (_regras_por_extenso(g["regra"], g["periodos"], principal) if proprio
+                      else _partes_por_extenso(*g["herda"], principal)),
             "excecoes": excecoes})
 
     regras = quem.get("regras") or {}
@@ -2106,6 +2153,7 @@ def _explicacao_do_cenario(cenario, config) -> dict:
 
     return {
         "resumo": arvore["resumo"], "grupos": grupos, "principal": principal,
+        "filial_nome": prestacao.NOME_DOS_DEMAIS,
         "primeiro_mes": arvore.get("primeiro_mes", ""),
         "regua": cenarios.CRITERIOS.get(cenario.get("criterio"), "").split(" — ")[0],
         "regua_e_pessoal": cenario.get("criterio") != "faturamento",
