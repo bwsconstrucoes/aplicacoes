@@ -1935,3 +1935,22 @@ def test_os_parametros_gravam_varios_centros_de_custo(base, monkeypatch):
     finally:
         for chave in ("depto_admin_matriz", "depto_admin_filial"):
             prestacao_dados.salvar_config(chave, antes.get(chave, ""))
+
+
+# ===========================================================================
+# 11/11/2026 — Configurações quebrava com atualização do banco pendente
+# ===========================================================================
+def test_configuracoes_abre_com_migracao_pendente(base, monkeypatch):
+    """Publicada a migração 025, o dono foi a Configurações apertar "Aplicar
+    atualizações do banco" e recebeu "cannot access local variable 'obras_cc'":
+    a tela onde se aplica a migração não abria justamente quando havia
+    migração a aplicar. Aqui a tela é aberta com uma pendente (de verdade, a
+    última desmarcada na tabela de controle) e tem de mostrar o botão."""
+    from app.apps.painel import migracoes_runner
+    real = migracoes_runner.listar_estado()
+    assert real["pendentes"] == []
+    falso = dict(real, pendentes=["025_tres_partes_por_conta.sql"])
+    monkeypatch.setattr(migracoes_runner, "listar_estado", lambda: falso)
+    r = _cliente(monkeypatch).get("/painel/configuracoes")
+    assert r.status_code == 200
+    assert "Aplicar atualizações do banco" in r.get_data(as_text=True)

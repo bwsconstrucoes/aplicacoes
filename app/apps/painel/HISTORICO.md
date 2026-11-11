@@ -653,9 +653,21 @@ sai.
 
 ## Cada conta da matriz em TRÊS PARTES — 11/11/2026 (noite)
 
-**NÃO PUBLICADO ainda** — está no ramo, à espera do "pode" do dono. **Tem
-migração (025):** ao publicar, ele aperta "Aplicar atualizações do banco" no
-mesmo momento.
+**PUBLICADO em 11/11/2026, 21:15 (UTC)** — `5afe2908`, com o "pode" do dono,
+a bateria completa verde aqui (10.953) e no GitHub. Foi junto tudo o que está
+nas duas seções abaixo (matriz × filial, o 500 do Salvar tudo, sócios, "Quem
+divide" abrindo nas obras, juros numa linha).
+
+**Fica com o dono, e eu não tenho como conferir daqui:**
+1. apertar **"Aplicar atualizações do banco"** (migração 025) — sem ela o
+   painel funciona, mas recusa gravar a parte "é da BWSFILIAL";
+2. em Cadastros › Parâmetros gerais, pôr na MATRIZ o BWS Construções e o
+   CON - Escritório Central, e na FILIAL o BWSNE;
+3. conferir, no passo 2 da montagem, as linhas que ele já tinha gravado (foram
+   convertidas) e se "a matriz gastou" agora bate com o DRE do projeto BWS.
+
+**Perguntar ao dono no próximo chat:** se os três itens acima aconteceram, e
+se o Salvar tudo voltou a gravar.
 
 O dono explicou a regra três vezes, a última com exemplos, e fechou os nomes:
 
@@ -720,7 +732,7 @@ painel voltar a mandar formulário grande em `multipart`, é por aí que quebra.
 
 ## MATRIZ × FILIAL: a regra que a conta do cenário tinha perdido — 11/11/2026 (fim da tarde)
 
-**NÃO PUBLICADO ainda** — está no ramo, à espera do "pode" do dono.
+Publicado em 11/11/2026, 21:15 (UTC), junto com a seção de cima.
 
 O dono colou dois números que não batiam — "a matriz gastou" 15.514.876,82 na
 montagem contra 14.699.912,50 no DRE do projeto BWS — e depois, olhando os
