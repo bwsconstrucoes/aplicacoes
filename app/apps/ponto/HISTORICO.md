@@ -571,6 +571,7 @@ anterior, um mês com o outro (…) se uma obra estava num patamar e piorou, se 
 - Testes: `test_ponto_painel_banco.py` (tendência, período desvirado e cortado em ontem, período longo, comparação das
   obras; o painel com batidas de verdade, a comparação, a obra, o alcance do supervisor). E a tela no navegador com
   dois meses de batidas.
+**Publicado em 11/11/2026** (com o "pode" do dono; suíte inteira na versão publicada: 10.922 passaram). Sem migração.
 
 ## 10/11/2026 (terça) — Alertas com período, obra, pessoa e páginas
 
