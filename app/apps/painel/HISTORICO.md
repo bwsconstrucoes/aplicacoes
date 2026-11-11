@@ -651,6 +651,29 @@ nunca rodou contra a base real**. Ele passou pelo parser do Postgres, pelo teste
 de portabilidade e pelos testes com dublê — nenhum dos três olha o número que
 sai.
 
+## Publicado em 11/11/2026, 18:08 (UTC) — e uma falha de CI não explicada
+
+Foi para a `main` (`4625cb9b`): o passo 1 "o que entra", o Salvar tudo, os
+vários períodos, o custo da matriz aberto por centro de custo, o quadro dos
+juros reescrito — com a `main` de outros chats trazida antes.
+
+**Fica anotado:** a verificação do GitHub FALHOU no commit `386dc5cc` (antes de
+trazer a `main`) e o teste que falhou não foi identificado — o registro que a
+ferramenta devolve é só o fim do job, que é o log do Postgres. Não reproduziu:
+a suíte inteira passou aqui (com a biblioteca de imagens consertada nesta
+máquina: `python3 -m pip install --ignore-installed Pillow`) e passou no
+GitHub no commit seguinte (`4625cb9b`, com a `main` dentro). Se voltar a
+falhar sem motivo, o primeiro suspeito é teste que depende da ordem dos
+arquivos no mesmo trabalhador — a montagem passou a lembrar a despesa da
+matriz até a próxima carga (`consultas._lembrando`), e teste que grava no
+`fato` sem chamar `consultas.esquecer_listas()` leria o guardado de outro.
+
+**Pendente do dono depois desta publicação:** apertar "Ler as obras dos
+lançamentos de conta" (ele viu um de 03/01/2025, R$ 79.346,96, como "(obra
+ainda não lida do OMIE)" — nunca tinha apertado); conferir em Cadastros ›
+Parâmetros gerais os dois centros de custo da estrutura (ele entende que são
+"BWS Construções" e "Escritório Central"; de fábrica o segundo é "BWSNE").
+
 ## A montagem depois de o dono usar: o que entra primeiro, Salvar tudo, de onde vem o custo — 11/11/2026 (noite)
 
 O dono, usando a versão publicada às 01:55:
