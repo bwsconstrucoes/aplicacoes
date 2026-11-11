@@ -1736,7 +1736,8 @@ def cenario_montagem():
         # 1,6 milhao e aqui 191 mil".
         juros_conf=consultas.conferencia_dos_juros(
             prestacao.categorias_de_juros(config.get("categoria_juros")
-                                          or prestacao.CATEGORIA_JUROS_PADRAO)),
+                                          or prestacao.CATEGORIA_JUROS_PADRAO),
+            _deptos_administrativos(config)),
         aberto_grupo=aberto_grupo,
         aberto_categoria=aberto_categoria,
         lancamentos=(consultas.lancamentos_administrativos(
@@ -2791,9 +2792,11 @@ def configuracoes():
                                     "Conta de onde o dinheiro saiu")
             from . import prestacao, prestacao_dados
             juros_conf = _conferir(
-                lambda: consultas.conferencia_dos_juros(prestacao.categorias_de_juros(
-                    prestacao_dados.config().get("categoria_juros")
-                    or prestacao.CATEGORIA_JUROS_PADRAO)),
+                lambda: consultas.conferencia_dos_juros(
+                    prestacao.categorias_de_juros(
+                        prestacao_dados.config().get("categoria_juros")
+                        or prestacao.CATEGORIA_JUROS_PADRAO),
+                    _deptos_administrativos(prestacao_dados.config())),
                 conferencias_com_erro, "Onde estão os juros de empréstimo")
     return render_template(
         "painel_config.html", **contexto,

@@ -821,8 +821,23 @@ def test_a_conferencia_lista_toda_categoria_que_fala_em_juro(base, monkeypatch):
     assert por_nome["Empréstimos - Amortização"]["analise"] == "Fluxo de Caixa"
     assert conf["total_configurado_dre"] == pytest.approx(600.0)
 
+    # 11/11/2026, o dono leu o quadro e respondeu "não entendi": o número do
+    # topo somava a categoria na empresa inteira. Com os departamentos da
+    # estrutura, o quadro separa o que a prestação distribui (lançado na
+    # matriz/filial) do que já é despesa da própria obra.
+    with conexao() as conn:
+        _por_pagar(conn, 902, "MUITA GENTE", -250, grupo="Financeiras",
+                   categoria="Juros sobre Empréstimos")
+        conn.commit()
+    conf = consultas.conferencia_dos_juros({"juros sobre empréstimos"}, [MATRIZ])
+    assert conf["distribui"] == pytest.approx(600.0)
+    assert conf["ja_nas_obras"] == pytest.approx(250.0)
+    assert conf["total_contado"] == pytest.approx(850.0)
+
     html = _cliente(monkeypatch).get("/painel/configuracoes?conferir=1").get_data(as_text=True)
     assert "Onde estão os juros de empréstimo" in html
+    assert "É este que a prestação distribui" in html
+    assert "Não é juro de empréstimo" not in html or "por atraso" in html
 
 
 # ---------------------------------------------------------------------------

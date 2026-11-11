@@ -651,6 +651,32 @@ nunca rodou contra a base real**. Ele passou pelo parser do Postgres, pelo teste
 de portabilidade e pelos testes com dublê — nenhum dos três olha o número que
 sai.
 
+## "Onde estão os juros de empréstimo": o quadro reescrito — 11/11/2026 (noite)
+
+O dono colou o quadro ("o que a prestação conta hoje: R$ 2.358.331,00", um
+parágrafo sobre DRE × Fluxo de Caixa, e "Fora desta lista: −R$ 1.960.842,91
+de juros e multa por atraso") e escreveu: *"Não entendi!"*. A categoria dele
+é uma só: Despesas Financeiras › Juros sobre Empréstimos.
+
+Dois defeitos no quadro:
+- o número do topo somava a categoria na EMPRESA INTEIRA (matriz, filial e
+  obras, só o pago). A prestação só distribui pelo caixa o juro lançado na
+  matriz/filial; o lançado direto numa obra já é despesa dela
+  (`prestacao.separar_juros`). O número não era o que a conta usa;
+- o texto explicava o mecanismo (DRE, Fluxo de Caixa, "contada") em vez de
+  dizer o que acontece com o dinheiro.
+
+Agora (`consultas.conferencia_dos_juros(configuradas, deptos_admin)`): quais
+categorias contam, e três números com uma frase cada — **lançado na matriz e
+na filial** (é o que se distribui), **lançado direto numa obra** (fica nela) e
+**juros e multa por atraso** (não é juro de empréstimo; fica na obra que
+atrasou). A tabela categoria por categoria ficou recolhida ("Conferir"), com
+as colunas "na matriz/filial" e "direto em obra". Categoria marcada que o OMIE
+não trata como despesa ganha um aviso vermelho próprio.
+
+NÃO VERIFICADO com os números dele: quanto dos R$ 2,36 milhões está na
+matriz/filial e quanto está direto em obra — é o que o quadro novo vai dizer.
+
 ## A prestação de contas ANTIGA saiu — 11/11/2026 (noite)
 
 O dono: *"eu não sei o que é essa prestação de conta antiga. Se não tá
