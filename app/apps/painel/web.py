@@ -3066,7 +3066,10 @@ def configuracoes():
     if estado_migracoes["pendentes"]:
         atualizacao, vazia, etapas = None, True, []
         conferencia = sumidos = aportes_conf = observacoes = fora = None
-        contas_conf = aportes_base = juros_conf = None
+        # `obras_cc` faltava aqui (11/11/2026): com migração pendente a tela de
+        # Configurações quebrava — justo a tela onde se aplica a migração. O
+        # dono ficou sem o botão logo depois de uma publicação com migração.
+        contas_conf = aportes_base = juros_conf = obras_cc = None
         conferir = False
         recarga = None
     else:
