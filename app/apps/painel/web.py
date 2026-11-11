@@ -1586,6 +1586,8 @@ def _calcular_cenario(cenario: dict) -> dict:
     admin_sem_juros, juros_por_mes = (
         prestacao.separar_juros(admin, categoria_juros) if por_deficit
         else (admin, {}))
+    if por_deficit:
+        excecoes = prestacao.tirar_juros_das_excecoes(excecoes, categoria_juros)
 
     # A regua de quem recebe: mao de obra ou faturamento, como o dono escolheu.
     pessoal = consultas.custo_de_pessoal_por_obra_mes(config["grupo_pessoal"], medida)

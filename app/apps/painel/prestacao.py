@@ -231,6 +231,19 @@ def _meses_ordenados(*conjuntos) -> list[str]:
     return sorted(meses)
 
 
+def tirar_juros_das_excecoes(excecoes, categoria_juros) -> list:
+    """Os lançamentos marcados um a um, sem os de juro de empréstimo.
+
+    11/11/2026, o dono: *"acho que o juro de empréstimo está sendo contado duas
+    vezes, dentro de rateio recebido e em juros de empréstimo"*. Estava, quando
+    o lançamento de juro tinha percentual próprio na árvore: `separar_juros`
+    o tirava do agregado e o levava para o déficit, mas a exceção entrava no
+    bolo do rateio do mesmo jeito. O juro segue SÓ a régua do déficit."""
+    alvos = categorias_de_juros(categoria_juros)
+    return [e for e in (excecoes or [])
+            if (e.get("categoria") or "").strip().lower() not in alvos]
+
+
 def alocar_juros_por_deficit(caixa_por_obra_mes, juros_por_mes, obras, *,
                              rateio_recebido=None,
                              sem_deficit: str = "sobra",

@@ -1107,3 +1107,20 @@ def test_as_grades_aparecem_e_gravam_pela_tela(cenario, monkeypatch):
     assert "grade-participacoes" in html and "Salvar tudo" in html
     html = cliente.get("/painel/prestacao/parametros?aba=socios").get_data(as_text=True)
     assert f'id="socio-{s["Sócio A"]}"' in html
+
+
+def test_juro_marcado_um_a_um_nao_e_contado_duas_vezes(cenario):
+    """11/11/2026, o dono: "acho que o juro de empréstimo está sendo contado
+    duas vezes, dentro de rateio recebido e em juros de empréstimo". Estava,
+    num caso: o lançamento de juro marcado UM A UM na árvore entrava no bolo
+    do rateio como exceção E no rateio dos juros pelo déficit."""
+    from app.apps.painel import cenarios
+    cenarios.marcar_pesos(cenario, "lancamento", ["807"], 100)
+    conta = _calcular(cenario)
+    rateado = sum(conta["rateio"]["alocacoes"].values()) + sum(
+        s["valor"] for s in conta["rateio"]["sobras"])
+    juros = sum(conta["juros"]["alocacoes"].values()) + sum(
+        s["valor"] for s in conta["juros"]["sobras"])
+    # aluguel 900 + patrimônio 300 no rateio; os 600 de juro só nos juros
+    assert rateado == pytest.approx(-1200, abs=0.05)
+    assert juros == pytest.approx(-600, abs=0.05)

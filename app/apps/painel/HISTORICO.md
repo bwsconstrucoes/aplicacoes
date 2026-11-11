@@ -651,6 +651,28 @@ nunca rodou contra a base real**. Ele passou pelo parser do Postgres, pelo teste
 de portabilidade e pelos testes com dublê — nenhum dos três olha o número que
 sai.
 
+## O juro de empréstimo contado duas vezes — 11/11/2026
+
+O dono: *"não sei se tô certo, mas tô achando que o juro de empréstimo tá
+sendo contado duas vezes, dentro de rateio recebido e em juros de
+empréstimo"*. **Estava certo, num caso, reproduzido em teste:** o lançamento
+de juro com percentual PRÓPRIO na árvore do cenário (marcado um a um ou em
+lote). `separar_juros` tirava o juro do agregado e o mandava para a régua do
+déficit, mas a exceção (o lançamento marcado) entrava no bolo do rateio do
+mesmo jeito. No teste: matriz com 900 + 300 + 600 de juro, o juro marcado a
+100% — o rateio distribuía 1.800 em vez de 1.200, e os juros mais 600.
+
+A árvore da tela já mostrava certo (juro na coluna dos juros, fora do
+"entra"); só a conta errava — o resultado não batia com a árvore.
+
+**Conserto:** `prestacao.tirar_juros_das_excecoes` — com o juro pelo déficit
+ligado, lançamento de categoria de juro não entra como exceção no rateio.
+Teste: `test_juro_marcado_um_a_um_nao_e_contado_duas_vezes`.
+NÃO VERIFICADO com o cenário real dele: se o caso dele é esse (juro marcado na
+árvore) ou outro. Outra causa possível, que não é contagem dupla: categoria de
+juro que NÃO está marcada na lista de juros (Parâmetros gerais) vai para o
+rateio pela régua da estrutura, e não para o déficit.
+
 ## Sócios e participações: editar na linha, e a grade — 11/11/2026
 
 O dono: *"as participações e os sócios não podem ser editadas"* e, em
