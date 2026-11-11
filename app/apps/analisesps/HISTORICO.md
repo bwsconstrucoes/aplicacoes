@@ -12244,6 +12244,34 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 258 — Complementar das diárias (11/11/2026)
+
+- *"Fizemos o pagamento (…) da última quinzena. Só que aí o pessoal precisou corrigir
+  ponto (…) a gente precisaria pagar a diferença (…) peguei o relatório anterior, gerei
+  um novo (…) joguei na IA para fazer o confronto (…) queria que a gente pudesse fazer
+  isso dentro do sistema (…) como na folha da contabilidade a gente tem aquele
+  complemento."*
+- **Onde:** Diaristas › faixa "Diaristas | Complementar" (rota
+  `/folha/diaristas/complementar`, mesma competência/período/empresa da tela). A tela
+  dos Diaristas avisa quando o período já foi pago, e a janela "Gerar arquivos" (já
+  gerado) aponta para a Complementar.
+- **Como** (`diaristas_complementar.py`, sobre a parte comum de `folha_complementar`:
+  `comparar`, `finalizar`, `fechar`, `linhas_a_pagar`, "a descontar", relatório):
+  - PAGO = soma por CPF do fechamento de cada geração de diárias do período: `diaria`,
+    `diaria.<cnpj>` e as complementares (`diaria_c1`, `diaria_c2`… com ou sem empresa).
+  - NOVO = a conta de hoje da tela dos Diaristas (ponto corrigido), de quem tem diária
+    a receber; quem está desmarcado na tela vem em "não pago antes", desmarcado.
+  - Os grupos, a seleção e o arquivo são os da folha; verba própria `diaria_cN`
+    (rótulo "Diárias complementar N", natureza/carteira/grupo do Pipefy da diária,
+    título da SP " - Complementar N"; `folha_geracao.verba_base`).
+  - Com empresa escolhida, só as pessoas dela (o pago é recortado pelo CNPJ).
+  - Pago a mais vai para a mesma lista "a descontar", com a competência "Diárias
+    MM/AAAA período" (chave `diaria-AAAA-MM-tipo`, separada da folha).
+- A tela da Complementar da folha virou um corpo compartilhado
+  (`_complementar_corpo.html` + `_complementar_fim.html`), usado pelas duas.
+- Testes: `test_analisesps_diaristas_complementar.py` (paga → corrige o ponto →
+  complementar só da diferença → a seguinte já soma; não pago; pago a mais).
+
 #### Leva 257 — Empresa (CNPJ de admissão) recorta Alimentação/Transporte, Diaristas e DC (10/11/2026)
 
 - *"Na C. Diários (…) Dados Documentos (…) a coluna BT, CNPJ admissão. Eu preciso
