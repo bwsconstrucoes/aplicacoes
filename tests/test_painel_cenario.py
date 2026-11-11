@@ -665,7 +665,9 @@ def test_tirar_e_voltar_pela_tela(cenario, monkeypatch):
         "acao": "excluir", "cenario_id": str(cenario), "item": ["obra:MUITA GENTE"]})
     assert cenarios.excluidas(cenario) == ["obra:MUITA GENTE"]
     html = cliente.get(f"/painel/prestacao/resultado?cenario={cenario}").get_data(as_text=True)
-    assert "Fora da análise neste cenário" in html and "MUITA GENTE" in html
+    # desde 11/11/2026 o nome fica recolhido ("ver quais"): a tela é mostrada
+    # aos sócios, e obra fora da prestação não aparece à primeira vista
+    assert "1 obra(s) fora desta prestação" in html and "MUITA GENTE" in html
     cliente.post("/painel/prestacao/montagem", data={
         "acao": "reincluir", "cenario_id": str(cenario), "item": "obra:MUITA GENTE"})
     assert cenarios.excluidas(cenario) == []
@@ -700,41 +702,12 @@ def test_o_que_sai_em_parametros_sai_de_todo_cenario(cenario):
     assert "MUITA GENTE" in _calcular(cenario)["por_obra"]
 
 
-def test_a_prestacao_antiga_tambem_respeita_a_lista_e_mostra_por_obra(base, monkeypatch):
-    """A Prestação de Contas ganhou a visão por obra ("dá para ver por obra
-    também?") — e a obra tirada em Parâmetros some dela."""
-    from app.apps.painel import prestacao_dados
-    from app.apps.painel.web import _calcular_prestacao
-    from app.main import create_app
-    app = create_app()
-    with app.test_request_context("/painel/prestacao"):
-        conta = _calcular_prestacao("comprometido")
-    assert set(conta["por_obra"]) == {"MUITA GENTE", "POUCA GENTE"}
-    assert conta["excluidas"] == []
-
-    prestacao_dados.tirar_da_analise(["projeto:ALFA"])
-    with app.test_request_context("/painel/prestacao"):
-        conta = _calcular_prestacao("comprometido")
-    assert conta["por_obra"] == {}
-    assert conta["excluidas"] == ["MUITA GENTE", "POUCA GENTE"]
-
-    prestacao_dados.voltar_para_analise("projeto:ALFA")
-    prestacao_dados.tirar_da_analise(["obra:POUCA GENTE"])
-    cliente = _cliente(monkeypatch)
-    html = cliente.get("/painel/prestacao").get_data(as_text=True)
-    assert "Resultado por obra" in html
-    assert "MUITA GENTE" in html
-    assert "Fora da análise:" in html and "POUCA GENTE" in html
-    # a planilha da prestação leva a conta por obra
-    resposta = cliente.get("/painel/baixar/posicao")
-    assert resposta.status_code == 200
-
-
 def test_tirar_e_voltar_pela_aba_de_parametros(cenario, monkeypatch):
     from app.apps.painel import prestacao_dados
     cliente = _cliente(monkeypatch)
     html = cliente.get("/painel/prestacao/parametros?aba=fora").get_data(as_text=True)
-    assert "Fora da análise" in html and "Nada fora" in html
+    # desde 11/11/2026 a aba é uma lista só (considerar / fora / só até)
+    assert "Fora da análise" in html and "lista-fora" in html
     resposta = cliente.post("/painel/prestacao/parametros", data={
         "acao": "tirar_da_analise", "aba": "fora",
         "item": ["obra:MUITA GENTE", "projeto:ALFA"]})
@@ -745,6 +718,18 @@ def test_tirar_e_voltar_pela_aba_de_parametros(cenario, monkeypatch):
     cliente.post("/painel/prestacao/parametros", data={
         "acao": "voltar_para_analise", "aba": "fora", "item": "projeto:ALFA"})
     assert prestacao_dados.fora_da_analise() == ["obra:MUITA GENTE"]
+    # a lista nova grava tudo de uma vez, com o mês de quem é "só até"
+    cliente.post("/painel/prestacao/parametros", data={
+        "acao": "fora_em_lista", "aba": "fora",
+        "fora_chave": ["obra:MUITA GENTE", "projeto:ALFA"],
+        "fora_modo": ["total", "ate"], "fora_ate": ["", "2025-06"]})
+    assert prestacao_dados.fora_da_analise() == ["obra:MUITA GENTE",
+                                                 "projeto:ALFA@2025-06"]
+    html = cliente.get("/painel/prestacao/montagem").get_data(as_text=True)
+    assert "Projeto — ALFA (até 06/2025)" in html
+    cliente.post("/painel/prestacao/parametros", data={
+        "acao": "fora_em_lista", "aba": "fora",
+        "fora_chave": ["obra:MUITA GENTE"], "fora_modo": ["total"], "fora_ate": [""]})
     # a montagem do cenário avisa o que já está fora por Parâmetros
     html = cliente.get("/painel/prestacao/montagem").get_data(as_text=True)
     assert "Fora por Parâmetros" in html and "MUITA GENTE" in html
@@ -1103,10 +1088,8 @@ def test_as_grades_aparecem_e_gravam_pela_tela(cenario, monkeypatch):
         "linha": [""], f"pct_0_{s['Sócio A']}": "abc"})
     assert "erro=" in errado.headers["Location"]
 
-    html = cliente.get("/painel/prestacao/parametros?aba=participacoes").get_data(as_text=True)
-    assert "grade-participacoes" in html and "Salvar tudo" in html
     html = cliente.get("/painel/prestacao/parametros?aba=socios").get_data(as_text=True)
-    assert f'id="socio-{s["Sócio A"]}"' in html
+    assert 'id="socios-lista"' in html and 'placeholder="novo sócio — nome"' in html
 
 
 def test_juro_marcado_um_a_um_nao_e_contado_duas_vezes(cenario):
@@ -1124,3 +1107,237 @@ def test_juro_marcado_um_a_um_nao_e_contado_duas_vezes(cenario):
     # aluguel 900 + patrimônio 300 no rateio; os 600 de juro só nos juros
     assert rateado == pytest.approx(-1200, abs=0.05)
     assert juros == pytest.approx(-600, abs=0.05)
+
+
+# ===========================================================================
+# 11/11/2026 — "colocar totalmente fora da análise ou colocar até determinado
+# período"
+# ===========================================================================
+def test_o_item_fora_guarda_o_mes():
+    from app.apps.painel import prestacao
+    assert prestacao.ler_item_fora("obra:CASA") == ("obra", "CASA", None)
+    assert prestacao.ler_item_fora("projeto:A / B@2024-06") == ("projeto", "A / B", "2024-06")
+    assert prestacao.montar_item_fora("obra", "CASA", "2024-06") == "obra:CASA@2024-06"
+    mapa = {"C1": "ALFA", "C2": "ALFA", "C3": "BETA"}
+    itens = ["obra:C3", "projeto:ALFA@2024-06", "obra:C1@2024-01"]
+    assert prestacao.obras_fora_da_analise(itens, mapa, mapa) == {"C3"}
+    assert prestacao.cortes_da_analise(itens, mapa, mapa) == {"C1": "2024-01", "C2": "2024-06"}
+    assert not prestacao.depois_do_corte("2024-06", "C2", {"C2": "2024-06"})
+    assert prestacao.depois_do_corte("2024-07", "C2", {"C2": "2024-06"})
+    assert prestacao.depois_do_corte(prestacao.SEM_DATA, "C2", {"C2": "2024-06"})
+    assert not prestacao.depois_do_corte("2030-01", "C9", {"C2": "2024-06"})
+
+
+def test_obra_so_ate_um_mes_sai_dali_em_diante(cenario):
+    """MUITA GENTE só até 02/2025: o movimento dela é de 03/2025, então sai da
+    conta inteira — e o custo da matriz vai todo para POUCA GENTE."""
+    from app.apps.painel import cenarios
+    cenarios.atualizar(cenario, juros_por_deficit=0)
+    cenarios.gravar_fora(cenario, ["obra:MUITA GENTE@2025-02"])
+    conta = _calcular(cenario)
+    assert conta["cortes"] == {"MUITA GENTE": "2025-02"}
+    assert "MUITA GENTE" not in conta["por_obra"]
+    obras_rateadas = {o for (o, _m) in conta["rateio"]["alocacoes"]}
+    assert obras_rateadas == {"POUCA GENTE"}
+    # até 03/2025, inclusive: entra de novo
+    cenarios.gravar_fora(cenario, ["obra:MUITA GENTE@2025-03"])
+    assert "MUITA GENTE" in _calcular(cenario)["por_obra"]
+
+
+def test_a_lista_fora_grava_pela_tela(cenario, monkeypatch):
+    from app.apps.painel import cenarios
+    cliente = _cliente(monkeypatch)
+    html = cliente.get(f"/painel/prestacao/montagem?cenario={cenario}").get_data(as_text=True)
+    assert "lista-fora" in html and "Considerar só até" in html
+    r = cliente.post("/painel/prestacao/montagem", data={
+        "acao": "fora_em_lista", "cenario_id": cenario,
+        "fora_chave": ["obra:MUITA GENTE", "obra:POUCA GENTE", "projeto:ALFA"],
+        "fora_modo": ["ate", "total", ""],
+        "fora_ate": ["2025-02", "", ""]})
+    assert r.status_code == 302
+    assert sorted(cenarios.excluidas(cenario)) == ["obra:MUITA GENTE@2025-02",
+                                                   "obra:POUCA GENTE"]
+    sem_mes = cliente.post("/painel/prestacao/montagem", data={
+        "acao": "fora_em_lista", "cenario_id": cenario,
+        "fora_chave": ["obra:MUITA GENTE"], "fora_modo": ["ate"], "fora_ate": [""]})
+    assert "erro=" in sem_mes.headers["Location"]
+    assert len(cenarios.excluidas(cenario)) == 2      # nada mudou
+    html = cliente.get("/painel/prestacao/parametros?aba=fora").get_data(as_text=True)
+    assert "lista-fora" in html
+
+
+# ===========================================================================
+# 11/11/2026 — "na hora de criar regras de rateio não tá tendo correlação
+# entre o grupo e a categoria (…) tá muito complicado de lançar cada ajuste"
+# ===========================================================================
+def test_o_ajuste_e_corrigido_na_linha(base, monkeypatch):
+    from app.apps.painel import prestacao_dados
+    s = _dois_socios()
+    cliente = _cliente(monkeypatch)
+    cliente.post("/painel/prestacao/parametros", data={
+        "acao": "ajuste", "aba": "ajustes", "socio_id": s["Sócio A"],
+        "tipo": prestacao_dados.TIPOS_AJUSTE[0], "valor": "1000", "data": "2025-03-01"})
+    ajuste = prestacao_dados.ajustes()[0]
+    html = cliente.get("/painel/prestacao/parametros?aba=ajustes").get_data(as_text=True)
+    assert f'id="aj-{ajuste["id"]}"' in html
+    cliente.post("/painel/prestacao/parametros", data={
+        "acao": "ajuste", "aba": "ajustes", "ajuste_id": ajuste["id"],
+        "socio_id": s["Parceiro"], "tipo": ajuste["tipo"], "valor": "1500.50",
+        "data": "2025-04-01", "descricao": "corrigido"})
+    ajustes = prestacao_dados.ajustes()
+    assert len(ajustes) == 1
+    assert (ajustes[0]["socio"], ajustes[0]["valor"], ajustes[0]["descricao"]) == (
+        "Parceiro", 1500.50, "corrigido")
+    with __import__("app.apps.painel.db", fromlist=["conexao"]).conexao() as conn:
+        conn.execute("DELETE FROM ajustes")
+        conn.commit()
+
+
+# ===========================================================================
+# 11/11/2026 (noite) — "eu vou incluir um sócio, clica, demora (…) um projeto
+# às vezes tem 4 sócios, eu tenho que adicionar de um por um"
+# ===========================================================================
+def test_varios_socios_de_uma_vez(base, monkeypatch):
+    from app.apps.painel import prestacao_dados
+    cliente = _cliente(monkeypatch)
+    cliente.post("/painel/prestacao/parametros", data={
+        "acao": "socios_em_lista", "aba": "socios",
+        "socio_id": ["", "", "", ""], "nome": ["Ana", "Beto", "", "Caio"],
+        "tipo": ["Interno", "Externo", "Interno", "Interno"]})
+    socios = {s["nome"]: s for s in prestacao_dados.socios()}
+    assert set(socios) == {"Ana", "Beto", "Caio"} and socios["Beto"]["tipo"] == "Externo"
+    # editar um e cadastrar outro, no mesmo Salvar
+    r = prestacao_dados.salvar_socios_em_lista([
+        (socios["Ana"]["id"], "Ana Maria", "Interno"), (socios["Beto"]["id"], "Beto", "Externo"),
+        ("", "Davi", "Interno")])
+    assert r == {"novos": 1, "alterados": 1}
+    # nome repetido não grava nada
+    with pytest.raises(ValueError, match="Já existe"):
+        prestacao_dados.salvar_socios_em_lista([("", "Caio", "Interno"), ("", "Eva", "Interno")])
+    assert "Eva" not in {s["nome"] for s in prestacao_dados.socios()}
+
+
+def test_quem_divide_por_projeto_vale_para_as_obras_dele(cenario):
+    """Obra nomeada > projeto > todas as obras. As duas obras do teste são do
+    projeto ALFA."""
+    from app.apps.painel import cenarios, prestacao
+    s = _dois_socios()
+    cenarios.gravar_participacoes_em_grade(cenario, {
+        ("", s["Sócio A"]): "100",
+        ("projeto:ALFA", s["Sócio A"]): "60", ("projeto:ALFA", s["Parceiro"]): "40",
+        ("POUCA GENTE", s["Sócio A"]): "50", ("POUCA GENTE", s["Parceiro"]): "50"})
+    conta = _calcular(cenario)
+    pct = {(q["obra"], q["socio"]): q["pct"] for q in conta["quotas"]}
+    assert pct[("MUITA GENTE", "Sócio A")] == 60 and pct[("MUITA GENTE", "Parceiro")] == 40
+    assert pct[("POUCA GENTE", "Sócio A")] == 50
+    # sem projeto conhecido, vale a linha geral
+    geral = prestacao.participantes_da_obra(cenarios.participacoes(cenario), "OUTRA", "BETA")
+    assert [(p["socio"], p["pct"]) for p in geral] == [("Sócio A", 100)]
+
+
+def test_a_parte_do_principal_sem_mes_vale_desde_o_inicio(cenario):
+    from app.apps.painel import cenarios, prestacao
+    cenarios.gravar_periodos(cenario, "grupo", "Administrativas", [("", 100, 40)])
+    pesos = cenarios.pesos(cenario)
+    assert pesos["periodos"]["grupo"]["Administrativas"] == [
+        (cenarios.DESDE_O_INICIO, 100.0, 40.0)]
+    assert prestacao.peso_e_divisao(pesos, "Administrativas", "Aluguel", "", 100,
+                                    mes="2015-01") == (100.0, 40.0)
+    # linha nova sem mês e sem a parte do principal não é período nenhum
+    cenarios.gravar_periodos(cenario, "grupo", "Patrimônio", [("", 100, "")])
+    assert "Patrimônio" not in cenarios.pesos(cenario)["periodos"]["grupo"]
+    # a tela mostra a coluna, não mais o link pequeno
+    from app.apps.painel.web import _calcular_cenario  # noqa: F401 — a conta roda
+    assert _calcular(cenario)["rateio"]["alocacoes"]
+
+
+def test_a_montagem_mostra_a_parte_do_principal_numa_coluna(cenario, monkeypatch):
+    from app.apps.painel import cenarios
+    cenarios.gravar_projetos(cenario, "ALFA", {})
+    cenarios.gravar_periodos(cenario, "grupo", "Administrativas", [("2025-01", 100, 40)])
+    html = _cliente(monkeypatch).get(
+        f"/painel/prestacao/montagem?cenario={cenario}").get_data(as_text=True)
+    assert "Para o ALFA" in html and "desde 01/2025" in html
+    assert "＋ definir" in html and "Projeto — ALFA" in html
+
+
+# ===========================================================================
+# 11/11/2026 (noite) — "eu quero mostrar essa tela para os outros sócios (…)
+# eles precisam bater o olho e entender" / "não quero que apareça na tela"
+# ===========================================================================
+def test_a_pagina_como_e_feita_explica_o_cenario(cenario, monkeypatch):
+    from app.apps.painel import cenarios
+    s = _dois_socios()
+    cenarios.gravar_projetos(cenario, "ALFA", {})
+    cenarios.gravar_periodos(cenario, "grupo", "Administrativas",
+                             [("2025-01", 100, 50), ("2026-01", 100, 40)])
+    cenarios.gravar_participacoes_em_grade(cenario, {
+        ("projeto:ALFA", s["Sócio A"]): "60", ("projeto:ALFA", s["Parceiro"]): "40"})
+    cenarios.gravar_fora(cenario, ["obra:POUCA GENTE"])
+    html = _cliente(monkeypatch).get(
+        f"/painel/prestacao/como?cenario={cenario}").get_data(as_text=True)
+    assert "Como esta prestação é feita" in html
+    assert "50% a partir de 01/2025 · 40% a partir de 01/2026" in html
+    assert "Para o ALFA" in html and "o restante" in html
+    assert "Projeto ALFA" in html and "60%" in html
+    assert "custo de mão de obra" in html and "caixa negativo" in html
+    assert "taxa de administração" in html          # tem parceiro de fora
+    # o que está fora fica recolhido: a contagem aparece, o nome só ao abrir
+    assert "1 obra(s) ou projeto(s) estão fora" in html
+
+
+def test_a_obra_fora_nao_aparece_pelo_nome_no_resultado(cenario, monkeypatch):
+    from app.apps.painel import cenarios
+    cenarios.gravar_fora(cenario, ["obra:POUCA GENTE"])
+    html = _cliente(monkeypatch).get(
+        f"/painel/prestacao/resultado?cenario={cenario}").get_data(as_text=True)
+    assert "1 obra(s) fora desta prestação" in html
+    # o nome só existe dentro do bloco recolhido ("ver quais")
+    antes, _, depois = html.partition("<details")
+    recolhido, _, resto = depois.partition("</details>")
+    assert "POUCA GENTE" in recolhido
+    assert "POUCA GENTE" not in antes and "POUCA GENTE" not in resto
+
+
+def test_a_montagem_vem_em_passos(cenario, monkeypatch):
+    html = _cliente(monkeypatch).get(
+        f"/painel/prestacao/montagem?cenario={cenario}").get_data(as_text=True)
+    ordem = [html.index(t) for t in ('id="passo-divide"', 'id="passo-recebe"',
+                                     'id="passo-socios"', 'id="passo-fora"',
+                                     'id="passo-regua"')]
+    assert ordem == sorted(ordem)
+    assert "Como é feita" in html
+
+
+# ===========================================================================
+# 11/11/2026 (noite) — a prestação ANTIGA saiu. O dono: "eu não sei o que é
+# essa prestação de conta antiga (…) se não interessa mais, pode tirar".
+# ===========================================================================
+def test_a_aba_prestacao_de_contas_abre_o_resultado_do_cenario(cenario, monkeypatch):
+    cliente = _cliente(monkeypatch)
+    r = cliente.get("/painel/prestacao")
+    assert r.status_code == 302 and r.headers["Location"].endswith("/painel/prestacao/resultado")
+    # os endereços antigos não dão erro: levam à montagem
+    for antigo in ("/painel/prestacao/cenarios", "/painel/prestacao/parametros?aba=regras",
+                   "/painel/prestacao/parametros?aba=participacoes"):
+        r = cliente.get(antigo)
+        assert r.status_code == 302 and "/painel/prestacao/montagem" in r.headers["Location"], antigo
+    html = cliente.get("/painel/prestacao/parametros").get_data(as_text=True)
+    assert "prestação antiga" not in html and "Regras de rateio" not in html
+
+
+def test_sem_cenario_a_aba_leva_a_montagem(base, monkeypatch):
+    r = _cliente(monkeypatch).get("/painel/prestacao")
+    assert r.status_code == 302 and r.headers["Location"].endswith("/painel/prestacao/montagem")
+
+
+def test_quem_tem_login_proprio_nao_ve_mais_a_aba_da_prestacao(preso, monkeypatch):
+    """A aba abre o cenário, que mostra a empresa inteira e a parte de cada
+    sócio. O `preso` tinha a tela "prestacao" marcada: ela some do menu dele,
+    e o endereço não abre."""
+    from app.apps.painel import usuarios
+    assert "prestacao" not in usuarios.TELAS
+    cliente = _cliente_preso(monkeypatch)
+    assert cliente.get("/painel/prestacao").status_code == 404
+    html = cliente.get("/painel/dre").get_data(as_text=True)
+    assert "Prestação de Contas" not in html

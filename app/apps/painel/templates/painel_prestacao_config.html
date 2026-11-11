@@ -4,8 +4,7 @@
 
 {% macro menu_da_prestacao() %}
 <div class="chips" style="margin-bottom:16px">
-  {% for chave, rotulo in [('socios','Sócios'), ('participacoes','Participações'),
-                           ('regras','Regras de rateio'), ('ajustes','Ajustes'),
+  {% for chave, rotulo in [('socios','Sócios'), ('ajustes','Ajustes'),
                            ('fora','Fora da análise'), ('projetos','Projeto das obras'),
                            ('geral','Parâmetros gerais')] %}
     <a class="modulo-btn {% if aba == chave %}ativo{% endif %}"
@@ -19,12 +18,14 @@
 
 {% block conteudo %}
 <h2>Parâmetros da Prestação de Contas
-  <small>quem participa, e como o custo da estrutura se divide</small>
+  <small>os cadastros de apoio — os percentuais e quem divide ficam na montagem do cenário</small>
 </h2>
 
 <p style="margin:-6px 0 12px">
-  <a href="{{ com_filtros('painel.prestacao_contas') }}" class="btn secundario"
-     style="text-decoration:none; display:inline-block">← Voltar ao resultado</a>
+  <a href="{{ url_for('painel.cenario_montagem') }}" class="btn secundario"
+     style="text-decoration:none; display:inline-block">← Montar o cenário</a>
+  <a href="{{ url_for('painel.cenario_resultado') }}" class="btn secundario"
+     style="text-decoration:none; display:inline-block">Ver o resultado →</a>
 </p>
 
 {{ menu_da_prestacao() }}
@@ -33,238 +34,85 @@
 {% endif %}
 
 {# ============================ SÓCIOS ============================ #}
+{# UMA LISTA, UM SALVAR (11/11/2026, o dono: "eu vou incluir um sócio, clica,
+   demora um tempo para cadastrar, e vai isso de um por um"). Os que existem
+   são editados na linha; as linhas em branco do fim servem para cadastrar
+   VÁRIOS de uma vez. Linha em branco é ignorada. #}
 {% if aba == 'socios' %}
 <div class="cartao">
-  <div class="cartao-cab"><h3>Adicionar sócio</h3>
-    <small>para renomear ou trocar o tipo, edite na lista abaixo</small></div>
-  <form method="post" class="form-grade">
-    <input type="hidden" name="acao" value="socio">
+  <div class="cartao-cab">
+    <h3>Sócios</h3>
+    <small>edite na linha, preencha as linhas em branco para cadastrar vários, e salve tudo de uma vez</small>
+  </div>
+  <form method="post" id="socios-lista">
+    <input type="hidden" name="acao" value="socios_em_lista">
     <input type="hidden" name="aba" value="socios">
-    <div class="campo">
-      <label for="nome">Nome</label>
-      <input id="nome" name="nome" required>
-    </div>
-    <div class="campo">
-      <label for="tipo">Tipo</label>
-      <select id="tipo" name="tipo">
-        <option value="Interno">Interno — sócio da BWS</option>
-        <option value="Externo">Externo — parceiro numa obra</option>
-      </select>
-      <p class="dica">Externo muda a conta: ele não paga a estrutura da construtora.</p>
-    </div>
-    <div class="campo" style="align-self:end">
-      <button class="btn" type="submit">Salvar</button>
-    </div>
   </form>
-</div>
-
-<div class="tabela-wrap">
   <div class="tabela-rolagem">
     <table>
-      <thead><tr><th class="sem-ordem">Sócio</th><th class="sem-ordem">Tipo</th>
+      <thead><tr><th class="sem-ordem">Nome</th><th class="sem-ordem">Tipo</th>
         <th class="sem-ordem">Situação</th><th class="sem-ordem"></th></tr></thead>
       <tbody>
-        {# EDITÁVEL NA PRÓPRIA LINHA (11/11/2026, o dono: "as participações e
-           os sócios não podem ser editadas"). O nome e o tipo se trocam aqui;
-           as participações e os ajustes seguem o sócio, porque apontam para
-           o cadastro, não para o nome. #}
         {% for s in socios %}
         <tr>
           <td class="desc">
-            <input name="nome" form="socio-{{ s.id }}" value="{{ s.nome }}" required
-                   aria-label="Nome do sócio" style="width:100%; min-width:180px">
+            <input type="hidden" name="socio_id" form="socios-lista" value="{{ s.id }}">
+            <input name="nome" form="socios-lista" value="{{ s.nome }}"
+                   aria-label="Nome do sócio" style="width:100%; min-width:200px">
           </td>
           <td>
-            <select name="tipo" form="socio-{{ s.id }}" aria-label="Tipo">
-              <option value="Interno" {{ 'selected' if s.tipo != 'Externo' }}>Interno</option>
-              <option value="Externo" {{ 'selected' if s.tipo == 'Externo' }}>Externo</option>
+            <select name="tipo" form="socios-lista" aria-label="Tipo">
+              <option value="Interno" {{ 'selected' if s.tipo != 'Externo' }}>Interno — sócio da BWS</option>
+              <option value="Externo" {{ 'selected' if s.tipo == 'Externo' }}>Externo — parceiro numa obra</option>
             </select>
           </td>
           <td>{{ 'Ativo' if s.ativo else 'Inativo' }}</td>
           <td class="direita" style="white-space:nowrap">
-            <form method="post" id="socio-{{ s.id }}" style="display:inline">
-              <input type="hidden" name="acao" value="socio">
-              <input type="hidden" name="aba" value="socios">
-              <input type="hidden" name="socio_id" value="{{ s.id }}">
-              <button class="btn" type="submit">Salvar</button>
-            </form>
-            {% if not s.ativo %}
             <form method="post" style="display:inline">
-              <input type="hidden" name="acao" value="reativar_socio">
-              <input type="hidden" name="aba" value="socios">
-              <input type="hidden" name="socio_id" value="{{ s.id }}">
-              <button class="btn secundario" type="submit">Reativar</button>
-            </form>
-            {% endif %}
-            {% if s.ativo %}
-            <form method="post" style="display:inline">
-              <input type="hidden" name="acao" value="desativar_socio">
+              <input type="hidden" name="acao" value="{{ 'desativar_socio' if s.ativo else 'reativar_socio' }}">
               <input type="hidden" name="aba" value="socios">
               <input type="hidden" name="socio_id" value="{{ s.id }}">
               <button class="btn secundario" type="submit"
-                      onclick="return confirm('Desativar {{ s.nome }}? O histórico dele fica.')">
-                Desativar</button>
+                      {% if s.ativo %}onclick="return confirm('Desativar {{ s.nome }}? O histórico dele fica.')"{% endif %}>
+                {{ 'Desativar' if s.ativo else 'Reativar' }}</button>
             </form>
-            {% endif %}
           </td>
         </tr>
-        {% else %}
-        <tr><td colspan="4" class="vazio">Nenhum sócio cadastrado.</td></tr>
+        {% endfor %}
+        {% for i in range(5) %}
+        <tr>
+          <td class="desc">
+            <input type="hidden" name="socio_id" form="socios-lista" value="">
+            <input name="nome" form="socios-lista" placeholder="novo sócio — nome"
+                   aria-label="Nome do novo sócio" style="width:100%; min-width:200px">
+          </td>
+          <td>
+            <select name="tipo" form="socios-lista" aria-label="Tipo do novo sócio">
+              <option value="Interno">Interno — sócio da BWS</option>
+              <option value="Externo">Externo — parceiro numa obra</option>
+            </select>
+          </td>
+          <td><small>novo</small></td>
+          <td></td>
+        </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
-</div>
-<p class="cartao-dica">
-  Sócio nunca é apagado, só desativado — as quotas e os ajustes dele continuam
-  no histórico.
-</p>
-{% endif %}
-
-{# ============================ PARTICIPAÇÕES ============================ #}
-{# UMA GRADE, UM SALVAR (11/11/2026, o dono: "tá muito difícil e lento de
-   configurar as participações"). Era uma participação por envio: escolher
-   projeto, sócio, percentual, salvar, esperar a página voltar — e outra vez.
-   Agora cada projeto é uma linha, cada sócio uma coluna, e tudo vai junto.
-   Célula vazia = não participa. #}
-{% if aba == 'participacoes' %}
-{% from "painel_grade_participacoes.html" import grade_participacoes %}
-<div class="cartao">
-  <div class="cartao-cab">
-    <h3>Quem participa de qual projeto</h3>
-    <small>preencha os percentuais e salve tudo de uma vez</small>
-  </div>
-  {% if socios_ativos %}
-  <form method="post">
-    <input type="hidden" name="acao" value="participacoes_em_grade">
-    <input type="hidden" name="aba" value="participacoes">
-    {{ grade_participacoes(linhas_da_grade, socios_ativos, grade, 'Projeto') }}
-  </form>
-  {% else %}
-  <div class="aviso erro">Nenhum sócio ativo.
-    <a href="{{ url_for('painel.prestacao_parametros', aba='socios') }}">Cadastre em Sócios</a>.</div>
-  {% endif %}
-</div>
-{% endif %}
-
-{# ============================ REGRAS ============================ #}
-{% if aba == 'regras' %}
-{# 05/11/2026, o dono: "eu queria que tivesse os grupos e ao lado eu já pudesse
-   definir o percentual; se expandir o grupo, afino a categoria". Isso existe
-   na montagem do cenário — o aviso leva até lá. #}
-<div class="aviso info">
-  <b>Quer dar o percentual por GRUPO e ajustar só algumas categorias?</b> É a
-  <a href="{{ url_for('painel.cenario_montagem') }}">montagem do cenário</a>:
-  os grupos com o percentual ao lado, que abrem para as categorias; a categoria
-  em branco segue o grupo, e tudo se salva num clique. As regras abaixo são o
-  jeito antigo, uma por uma — e são elas que a Prestação de Contas antiga usa.
-</div>
-<div class="aviso info">
-  Uma regra diz <b>que parte do custo administrativo se divide entre as obras</b>,
-  em que percentual e em que período. O que nenhuma regra pegar fica 100% no
-  próprio lado (matriz ou filial) — assim nenhum custo desaparece.
-</div>
-
-<div class="cartao">
-  <div class="cartao-cab"><h3>Nova regra</h3></div>
-  <form method="post">
-    <input type="hidden" name="acao" value="regra">
-    <input type="hidden" name="aba" value="regras">
-    <div class="form-grade">
-      <div class="campo">
-        <label for="rnome">Nome</label>
-        <input id="rnome" name="nome" required placeholder="Ex.: pessoal compartilhado da matriz">
-      </div>
-      <div class="campo">
-        <label for="rdepto">Departamento de origem</label>
-        <select id="rdepto" name="depto" required>
-          <option value="{{ config.depto_admin_matriz }}">{{ config.depto_admin_matriz }} (matriz)</option>
-          <option value="{{ config.depto_admin_filial }}">{{ config.depto_admin_filial }} (filial)</option>
-        </select>
-      </div>
-      <div class="campo">
-        <label for="rpct">% que se divide</label>
-        <input id="rpct" name="pct" type="number" step="1" min="0" max="100" value="100">
-      </div>
-      <div class="campo">
-        <label for="rescopo">Vai para</label>
-        <select id="rescopo" name="escopo">
-          {% for valor, rotulo in escopos.items() %}
-            <option value="{{ valor }}">{{ rotulo }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="campo">
-        <label for="rini">De (AAAA-MM, vazio = desde sempre)</label>
-        <input id="rini" name="mes_ini" placeholder="2024-01">
-      </div>
-      <div class="campo">
-        <label for="rfim">Até (AAAA-MM, vazio = até hoje)</label>
-        <input id="rfim" name="mes_fim" placeholder="2025-10">
-      </div>
-    </div>
-
-    <label class="opcao" style="margin:12px 0 6px">
-      <input type="checkbox" name="todas" value="1">
-      <span class="rotulo">Todas as despesas deste departamento</span>
-    </label>
-    <div class="form-grade">
-      <div class="campo">
-        <label for="rgrupos">Ou só estes grupos</label>
-        <select id="rgrupos" name="grupos" multiple size="6">
-          {% for g in grupos %}<option value="{{ g }}">{{ g }}</option>{% endfor %}
-        </select>
-      </div>
-      <div class="campo">
-        <label for="rcats">E/ou estas categorias</label>
-        <select id="rcats" name="categorias" multiple size="6">
-          {% for c in categorias %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
-        </select>
-      </div>
-    </div>
-    <label class="opcao" style="margin:6px 0 12px">
-      <input type="checkbox" name="ativo" value="1" checked>
-      <span class="rotulo">Regra ativa</span>
-    </label>
-    <button class="btn" type="submit">Criar regra</button>
-  </form>
-</div>
-
-<div class="tabela-wrap">
-  <div class="tabela-rolagem">
-    <table>
-      <thead><tr><th class="sem-ordem">Regra</th><th class="sem-ordem">Origem</th>
-        <th class="sem-ordem">O que pega</th><th class="sem-ordem direita">%</th>
-        <th class="sem-ordem">Vai para</th><th class="sem-ordem">Período</th>
-        <th class="sem-ordem"></th></tr></thead>
-      <tbody>
-        {% for r in regras %}
-        <tr class="{% if not r.ativo %}linha-sub{% endif %}">
-          <td class="desc">{{ r.nome }}{% if not r.ativo %} <small>(inativa)</small>{% endif %}</td>
-          <td>{{ r.depto }}</td>
-          <td class="desc"><small>{{ r.resumo }}</small></td>
-          <td class="dados direita">{{ r.pct|round|int }}%</td>
-          <td>{{ escopos.get(r.escopo, r.escopo) }}</td>
-          <td class="dados"><small>{{ r.mes_ini or '…' }} a {{ r.mes_fim or '…' }}</small></td>
-          <td class="direita">
-            <form method="post" style="display:inline">
-              <input type="hidden" name="acao" value="apagar_regra">
-              <input type="hidden" name="aba" value="regras">
-              <input type="hidden" name="regra_id" value="{{ r.id }}">
-              <button class="btn secundario" type="submit"
-                      onclick="return confirm('Apagar a regra {{ r.nome }}?')">Apagar</button>
-            </form>
-          </td>
-        </tr>
-        {% else %}
-        <tr><td colspan="7" class="vazio">Nenhuma regra. Sem regras, todo o custo
-          administrativo fica no próprio lado.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  <div style="display:flex; margin-top:10px; gap:10px; align-items:center">
+    <span class="cartao-dica" style="margin:0">Externo muda a conta: ele não paga a
+      estrutura da construtora. Sócio nunca é apagado, só desativado — as quotas
+      e os ajustes dele continuam no histórico. Precisa de mais de cinco novos?
+      Salve e as linhas em branco voltam.</span>
+    <span style="flex:1"></span>
+    <button class="btn" type="submit" form="socios-lista">Salvar tudo</button>
   </div>
 </div>
 {% endif %}
+
+{# As abas "Participações" e "Regras de rateio" saíram em 11/11/2026, com a
+   prestação antiga: quem divide e o que se divide moram na montagem do
+   cenário. #}
 
 {# ============================ AJUSTES ============================ #}
 {% if aba == 'ajustes' %}
@@ -318,14 +166,36 @@
         <th class="sem-ordem">Tipo</th><th class="sem-ordem direita">Valor</th>
         <th class="sem-ordem">Descrição</th><th class="sem-ordem"></th></tr></thead>
       <tbody>
+        {# editável na própria linha (11/11/2026): antes era apagar e lançar de novo #}
         {% for a in ajustes %}
         <tr>
-          <td class="dados">{{ a.data or '—' }}</td>
-          <td class="desc">{{ a.socio }}</td>
-          <td>{{ a.tipo }}</td>
-          <td class="dados direita">{{ brl(a.valor) }}</td>
-          <td class="desc"><small>{{ a.descricao }}</small></td>
-          <td class="direita">
+          <td class="dados"><input type="date" name="data" form="aj-{{ a.id }}" value="{{ a.data }}"
+                 data-sem-troca aria-label="Data"></td>
+          <td class="desc">
+            <select name="socio_id" form="aj-{{ a.id }}" aria-label="Sócio">
+              {% for s in socios %}{% if s.ativo or s.id == a.socio_id %}
+              <option value="{{ s.id }}" {{ 'selected' if s.id == a.socio_id }}>{{ s.nome }}</option>
+              {% endif %}{% endfor %}
+            </select>
+          </td>
+          <td>
+            <select name="tipo" form="aj-{{ a.id }}" aria-label="Tipo">
+              {% for t in tipos_ajuste %}<option value="{{ t }}" {{ 'selected' if t == a.tipo }}>{{ t }}</option>{% endfor %}
+            </select>
+          </td>
+          <td class="dados direita"><input name="valor" form="aj-{{ a.id }}" type="number" step="0.01"
+                 value="{{ '%.2f'|format(a.valor) }}" required aria-label="Valor"
+                 style="width:130px; text-align:right"></td>
+          <td class="desc"><input name="descricao" form="aj-{{ a.id }}" value="{{ a.descricao }}"
+                 aria-label="Descrição" style="width:100%; min-width:160px"></td>
+          <td class="direita" style="white-space:nowrap">
+            <form method="post" id="aj-{{ a.id }}" style="display:inline">
+              <input type="hidden" name="acao" value="ajuste">
+              <input type="hidden" name="aba" value="ajustes">
+              <input type="hidden" name="ajuste_id" value="{{ a.id }}">
+              <input type="hidden" name="projeto" value="{{ a.projeto }}">
+              <button class="btn" type="submit">Salvar</button>
+            </form>
             <form method="post" style="display:inline">
               <input type="hidden" name="acao" value="apagar_ajuste">
               <input type="hidden" name="aba" value="ajustes">
@@ -358,55 +228,12 @@
     destino dela. Cada cenário pode ainda tirar mais coisa só para ele, na
     montagem dele.
   </p>
-  <form method="post" class="form-grade">
-    <input type="hidden" name="acao" value="tirar_da_analise">
+  {% from "painel_lista_fora.html" import lista_fora %}
+  <form method="post">
+    <input type="hidden" name="acao" value="fora_em_lista">
     <input type="hidden" name="aba" value="fora">
-    <div class="campo" style="grid-column: 1 / span 2">
-      <label for="item">Tirar da análise</label>
-      <select id="item" name="item" multiple size="8">
-        {% if projetos_do_painel %}
-        <optgroup label="Projetos inteiros">
-          {% for p in projetos_do_painel %}
-          <option value="projeto:{{ p }}">Projeto — {{ p }}</option>
-          {% endfor %}
-        </optgroup>
-        {% endif %}
-        <optgroup label="Obras">
-          {% for o in obras_do_painel %}
-          <option value="obra:{{ o }}">{{ o }}</option>
-          {% endfor %}
-        </optgroup>
-      </select>
-      <p class="dica">Segure Ctrl (ou ⌘) para marcar vários.</p>
-    </div>
-    <div class="campo" style="align-self:end">
-      <button class="btn" type="submit">Tirar</button>
-    </div>
+    {{ lista_fora(linhas_fora) }}
   </form>
-  {% if fora %}
-  <div class="tabela-rolagem" style="max-height:320px; margin-top:10px">
-    <table>
-      <thead><tr><th class="sem-ordem">Fora</th><th class="sem-ordem"></th></tr></thead>
-      <tbody>
-        {% for item in fora %}
-        <tr>
-          <td class="desc">{% if item.startswith('projeto:') %}Projeto — {{ item[8:] }}{% else %}{{ item[5:] }}{% endif %}</td>
-          <td>
-            <form method="post">
-              <input type="hidden" name="acao" value="voltar_para_analise">
-              <input type="hidden" name="aba" value="fora">
-              <input type="hidden" name="item" value="{{ item }}">
-              <button class="btn secundario" type="submit">Voltar</button>
-            </form>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% else %}
-  <p class="cartao-dica">Nada fora: toda obra da base entra na conta.</p>
-  {% endif %}
 </div>
 {% endif %}
 

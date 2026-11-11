@@ -1043,19 +1043,29 @@ def despesa_administrativa(deptos_admin, medida: str = "comprometido") -> list[d
            AND departamento = ANY(?)
          GROUP BY 1, 2, 3, 4 HAVING ABS(SUM({valor})) > 0.005"""
     campos = ("mes", "depto", "grupo", "categoria", "valor")
-    return [dict(zip(campos, (l[0], l[1], l[2], l[3], float(l[4] or 0))))
-            for l in consultar(sql, [PAG, list(deptos_admin)])]
+    # Lembrado até a próxima carga (11/11/2026): a montagem do cenário relê
+    # isto a cada "Salvar", e a base não muda entre uma salvada e outra.
+    # Devolve CÓPIAS — quem recebe pode mexer nas linhas sem sujar o guardado.
+    guardado = _lembrando(
+        ("despesa_administrativa", tuple(deptos_admin), medida),
+        lambda: [dict(zip(campos, (l[0], l[1], l[2], l[3], float(l[4] or 0))))
+                 for l in consultar(sql, [PAG, list(deptos_admin)])])
+    return [dict(l) for l in guardado]
 
 
 def grupos_e_categorias() -> dict:
-    """O que existe na base, para montar as regras sem digitar nome à mão."""
-    grupos = [g for (g,) in consultar(
-        "SELECT DISTINCT TRIM(grupo) FROM fato "
-        " WHERE analise='DRE' AND COALESCE(TRIM(grupo),'') <> '' ORDER BY 1")]
-    categorias = [c for (c,) in consultar(
-        "SELECT DISTINCT TRIM(categoria) FROM fato "
-        " WHERE analise='DRE' AND COALESCE(TRIM(categoria),'') <> '' ORDER BY 1")]
-    return {"grupos": grupos, "categorias": categorias}
+    """O que existe na base, para montar as regras sem digitar nome à mão.
+    Lembrado até a próxima carga: são duas varreduras da base inteira."""
+    def calcular():
+        grupos = [g for (g,) in consultar(
+            "SELECT DISTINCT TRIM(grupo) FROM fato "
+            " WHERE analise='DRE' AND COALESCE(TRIM(grupo),'') <> '' ORDER BY 1")]
+        categorias = [c for (c,) in consultar(
+            "SELECT DISTINCT TRIM(categoria) FROM fato "
+            " WHERE analise='DRE' AND COALESCE(TRIM(categoria),'') <> '' ORDER BY 1")]
+        return {"grupos": grupos, "categorias": categorias}
+    guardado = _lembrando(("grupos_e_categorias",), calcular)
+    return {"grupos": list(guardado["grupos"]), "categorias": list(guardado["categorias"])}
 
 
 def execucao_em_andamento() -> dict | None:

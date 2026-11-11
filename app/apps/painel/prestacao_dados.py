@@ -173,6 +173,18 @@ def tirar_da_analise(itens) -> list[str]:
     return atual
 
 
+def gravar_fora(itens) -> list[str]:
+    """A lista inteira de uma vez — é como a tela grava desde 11/11/2026
+    (fora totalmente, ou só até um mês; ver `prestacao.ler_item_fora`)."""
+    limpos = []
+    for item in itens or ():
+        item = (item or "").strip()
+        if item and item not in limpos:
+            limpos.append(item)
+    salvar_config(CHAVE_FORA_DA_ANALISE, ";".join(limpos))
+    return limpos
+
+
 def voltar_para_analise(item: str) -> list[str]:
     """Traz de volta o que tinha sido tirado."""
     atual = [i for i in fora_da_analise() if i != (item or "").strip()]
@@ -197,6 +209,48 @@ def salvar_socio(nome: str, tipo: str = "Interno", socio_id=None) -> None:
                          "ON CONFLICT (nome) DO UPDATE SET tipo = excluded.tipo",
                          (nome.strip(), tipo))
         conn.commit()
+
+
+def salvar_socios_em_lista(linhas) -> dict:
+    """A lista de sócios inteira de uma vez: `[(id ou "", nome, tipo), ...]`.
+
+    Com id, renomeia/troca o tipo; sem id e com nome, cadastra. Linha sem nome
+    é ignorada (as linhas em branco da tela). Confere TUDO antes de gravar —
+    nome repetido, na lista ou contra quem já existe, não grava nada."""
+    limpas, vistos = [], set()
+    for socio_id, nome, tipo in linhas or ():
+        nome = (nome or "").strip()
+        if not nome:
+            if str(socio_id or "").strip():
+                raise ValueError("O nome de um sócio que já existe não pode ficar vazio.")
+            continue
+        if nome.lower() in vistos:
+            raise ValueError(f"O nome {nome} aparece duas vezes na lista.")
+        vistos.add(nome.lower())
+        limpas.append((int(socio_id) if str(socio_id or "").strip() else None, nome,
+                       "Externo" if tipo == "Externo" else "Interno"))
+    novos = alterados = 0
+    with conexao() as conn:
+        atuais = {i: (n, t) for i, n, t in conn.execute(
+            "SELECT id, nome, tipo FROM socios").fetchall()}
+        ids_da_lista = {i for i, _n, _t in limpas if i}
+        for socio_id, nome, _tipo in limpas:
+            # nome já usado por um sócio que NÃO está nesta lista (ou por
+            # outro id): seria dois cadastros com o mesmo nome
+            for outro, (n, _t) in atuais.items():
+                if n.strip().lower() == nome.lower() and outro != socio_id and (
+                        outro not in ids_da_lista or socio_id is None):
+                    raise ValueError(f"Já existe um sócio chamado {nome}.")
+        for socio_id, nome, tipo in limpas:
+            if socio_id is None:
+                conn.execute("INSERT INTO socios (nome, tipo) VALUES (?,?)", (nome, tipo))
+                novos += 1
+            elif atuais.get(socio_id) != (nome, tipo):
+                conn.execute("UPDATE socios SET nome=?, tipo=? WHERE id=?",
+                             (nome, tipo, socio_id))
+                alterados += 1
+        conn.commit()
+    return {"novos": novos, "alterados": alterados}
 
 
 def desativar_socio(socio_id: int) -> None:
@@ -329,8 +383,23 @@ def apagar_regra(regra_id: int) -> None:
 
 
 def salvar_ajuste(socio_id: int, tipo: str, valor: float, data: str = "",
-                  projeto: str = "", descricao: str = "") -> None:
+                  projeto: str = "", descricao: str = "", ajuste_id=None) -> None:
+    """Lança um ajuste — ou, com `ajuste_id`, corrige o que já existe
+    (11/11/2026: antes era apagar e lançar de novo)."""
+    try:
+        valor = float(str(valor).replace(".", "").replace(",", ".")
+                      if "," in str(valor) else valor)
+    except (TypeError, ValueError):
+        raise ValueError("O valor do ajuste não é um número.") from None
     with conexao() as conn:
+        if ajuste_id:
+            conn.execute(
+                "UPDATE ajustes SET socio_id=?, projeto=?, data=?, tipo=?, valor=?,"
+                " descricao=? WHERE id=?",
+                (int(socio_id), projeto.strip(), data.strip(), tipo, valor,
+                 descricao.strip(), int(ajuste_id)))
+            conn.commit()
+            return
         conn.execute(
             "INSERT INTO ajustes (socio_id, projeto, data, tipo, valor, descricao) "
             "VALUES (?,?,?,?,?,?)",

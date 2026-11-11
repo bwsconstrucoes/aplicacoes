@@ -651,6 +651,171 @@ nunca rodou contra a base real**. Ele passou pelo parser do Postgres, pelo teste
 de portabilidade e pelos testes com dublê — nenhum dos três olha o número que
 sai.
 
+## A prestação de contas ANTIGA saiu — 11/11/2026 (noite)
+
+O dono: *"eu não sei o que é essa prestação de conta antiga. Se não tá
+servindo (…) se não interessa mais, pode tirar."*
+
+**O que era:** a aba "Prestação de Contas" do menu abria uma conta PARALELA à
+do cenário — com as suas regras (Parâmetros › Regras de rateio) e as suas
+participações por projeto (Parâmetros › Participações), mais um simulador
+("cenários de rateio", `/prestacao/cenarios`). Dois caminhos para a mesma
+pergunta, com números que podiam divergir; e tudo o que ele pediu desde 09/11
+(BWS CE × demais, por período, juros por lado, batimento) só existe no cenário.
+
+**O que mudou:**
+- A aba **"Prestação de Contas" abre o resultado do cenário** (sem cenário,
+  a montagem). Os endereços antigos (`/prestacao/cenarios`, e as abas
+  `participacoes` e `regras` de Parâmetros) redirecionam para a montagem.
+- Saíram: as telas `painel_prestacao.html` e `painel_prestacao_cenarios.html`,
+  as abas Participações e Regras de rateio de Parâmetros (inclusive a árvore
+  de regras feita na manhã do mesmo dia — nunca foi publicada), as planilhas
+  "posicao"/"quotas" e as funções da conta antiga no `web.py`
+  (`_calcular_prestacao`, `_apurar_com`, `_base_da_prestacao`,
+  `_cenario_do_pedido`).
+- Parâmetros ficou com os cadastros de apoio: Sócios, Ajustes, Fora da
+  análise, Projeto das obras, Parâmetros gerais. A montagem ganhou o botão
+  "⚙ Cadastros".
+- **NADA FOI APAGADO DO BANCO:** as tabelas `regras` e `participacoes`
+  continuam com o que tinham. As funções de cálculo em `prestacao.py`
+  (`calcular_rateio`, `quotas_por_socio`…) e as de dados em
+  `prestacao_dados.py` ficaram, com os testes delas — voltar é religar a tela.
+
+**⚠️ MUDANÇA DE ACESSO, dita ao dono antes de publicar:** a tela antiga era
+liberável a quem tem login próprio (a caixinha "Prestação de Contas" no
+cadastro de acesso) — e mostrava a empresa inteira, sem filtro de obra. O
+cenário é só do administrador. Então quem tinha essa tela marcada **deixa de
+ver a aba**; a caixinha saiu do cadastro (`usuarios.TELAS`) e a aba não
+aparece mais no menu de quem não é o administrador
+(`web.ABAS_SO_DO_ADMINISTRADOR`). Se um parceiro precisar ver a parte dele, é
+uma tela nova, com filtro — não a volta da antiga.
+
+## "Como é feita", a montagem em passos e a obra fora que ainda aparecia — 11/11/2026 (noite)
+
+O dono: *"vá além do que eu comentei na parte da facilitação (…) eu quero
+mostrar essa tela para os outros sócios, para eles entenderem como é que a
+coisa está sendo feita. Eles precisam bater o olho e entender."* E: *"queria
+parâmetro para não exibir uma determinada obra na tela da prestação (…) acho
+que desconsidera para efeito de rateio, mas ainda aparece na tela. Não quero
+que apareça."* E perguntou se já existe projeto que entra no rateio do custo
+da matriz só até uma data.
+
+- **Página nova, só de leitura: "Como esta prestação é feita"**
+  (`/painel/prestacao/como`, `_explicacao_do_cenario`). O cenário dito em
+  português, na ordem em que a conta acontece, com os valores: (1) quanto a
+  estrutura custou e quanto entra; (2) quanto de cada despesa vai para o
+  projeto principal e quanto para os demais, por período, com as categorias
+  que fogem do grupo; (3) a régua dentro de cada lado e quem não recebe ou só
+  recebe até um mês; (4) os juros; (5) quem divide, por projeto e por obra;
+  (6) o que fica de fora (só a contagem; os nomes recolhidos). Tem "Imprimir".
+  Não calcula nada novo: lê a mesma árvore da montagem.
+- **A obra fora aparecia, sim** — ele tinha razão: o nome ficava num aviso no
+  topo do resultado ("Fora da análise neste cenário: …"), e a obra de projeto
+  que "não recebe" saía pelo nome na lista de juros por obra (o caixa dela
+  conta nos juros). Agora os nomes ficam recolhidos ("N obra(s) fora desta
+  prestação — ver quais"), a lista de juros junta as de fora numa linha sem
+  nome, e o gráfico nunca abre numa obra de fora. NÃO foi criado um parâmetro
+  novo: "Fora totalmente" já é "não considerar E não mostrar".
+- **A montagem em passos numerados**, na ordem em que se configura, com um
+  índice fixo no topo: 1 O que se divide · 2 Quem recebe · 3 Quem divide o
+  resultado · 4 Fora da análise · 5 Régua e juros (foi para o fim: escolhe-se
+  uma vez). Os cartões são os mesmos, reordenados.
+- **Parâmetros:** as abas "Participações" e "Regras de rateio" foram para o
+  fim do menu com "(prestação antiga)" no nome. Não foram apagadas — o dono
+  não respondeu se aposenta a Prestação de Contas antiga.
+- **Projeto que recebe só até uma data:** já existia (passo 2, "recebe só no
+  período", com De/Até) e foi confirmado ao dono. Diferença para "Fora da
+  análise › considerar só até": lá a obra sai da prestação inteira depois do
+  mês; aqui ela só deixa de receber custo da matriz e continua no resultado.
+
+## A parte do BWS CE à vista, quem divide por projeto, sócios em lote — 11/11/2026 (noite)
+
+O dono, depois de usar: *"eu vou incluir um sócio, clica, demora um tempo para
+cadastrar, e vai isso de um por um (…) tem uns 10 projetos, um projeto às
+vezes tem 4 sócios, eu tenho que adicionar de um por um (…) eu boto 100 pro
+grupo, mas se eu botar uma categoria específica, meio a meio, vai funcionar?
+(…) o grupo de pessoal eu vou variar o percentual por ano (…) vou definir o
+período e o percentual do BWS CE naquele período — **e eu nem enxerguei isso
+aí**. Eu tenho que completar todos os períodos, né?"*
+
+**O que já existia e ele não achou:** na montagem do cenário, o grupo tem o
+percentual, a categoria em branco segue o grupo, a categoria preenchida ganha
+dele, e cada conta pode ter períodos "a partir de MM/AAAA" com a parte do
+projeto principal. Estava atrás de um link pequeno, "📅 por período".
+
+**O que mudou:**
+- **Coluna "Para o BWS CE"** em "O que se divide": mostra por extenso o que a
+  linha tem ("50% desde 01/2021 · 40% desde 01/2022") e é o botão que abre os
+  períodos; sem nada, "＋ definir"; na categoria, "segue o grupo ✎".
+- A linha de período pede primeiro a parte do principal; o "entra no rateio"
+  já vem com o percentual que a linha divide hoje. **Mês em branco = desde o
+  início** (`cenarios.DESDE_O_INICIO` = "1900-01") — o caso de um percentual
+  só não pede mês. A dica diz desde quando a matriz tem custo e que NÃO é
+  preciso completar todos os períodos: cada linha vale até a próxima começar.
+- **Quem divide por PROJETO** (cálculo novo): a grade do cenário ganhou uma
+  linha por projeto, sempre à vista. Precedência: obra nomeada > projeto >
+  "Todas as obras". Sem migração: a participação do projeto é gravada com a
+  obra `projeto:NOME` (`prestacao.PROJETO_NA_PARTICIPACAO`).
+- **Sócios em lote:** a aba virou uma lista com um "Salvar tudo" — os
+  existentes editam na linha, e cinco linhas em branco cadastram vários de uma
+  vez. Nome repetido não grava nada.
+- **Mais rápido de salvar:** a aba de Parâmetros lia, a cada salvada de
+  QUALQUER aba, duas listas que varrem a base inteira (grupos e categorias);
+  agora só na aba que usa, e lembradas até a próxima carga. A despesa da
+  matriz (que a montagem relê a cada Salvar) também fica lembrada. NÃO MEDIDO
+  em produção quanto isso tira da espera.
+
+**Duas telas, e qual usar (dito ao dono):** a montagem do cenário é onde vale
+"grupo 100, categoria diferente, parte do BWS CE por período". Parâmetros ›
+Regras de rateio e Parâmetros › Participações alimentam só a Prestação de
+Contas antiga. Decisão que fica com ele: aposentar a antiga.
+
+## Regras de rateio em árvore, e regra e ajuste editáveis — 11/11/2026
+
+O dono: *"na hora de criar regras de rateio não tá tendo correlação entre o
+grupo e a categoria. Tá terrível. Na verdade toda a parte de parâmetros ficou
+super complicada de configurar, considerando que são várias regras, vários
+projetos, vários sócios, várias participações. Tá muito complicado de lançar
+cada ajuste."*
+
+- **Regras:** as duas listas soltas (todos os grupos numa, todas as categorias
+  na outra) viraram uma ÁRVORE — cada grupo abre nas categorias dele, com o
+  valor ao lado (matriz + filial). Marcar o grupo pega todas as categorias
+  (elas aparecem marcadas e travadas; só o grupo é gravado). Busca por grupo
+  ou categoria. Só aparecem as despesas dos departamentos administrativos, que
+  é o que a regra alcança. O período virou campo de mês (MM/AAAA).
+- **Regra editável:** botão "Editar" na lista abre a regra no formulário, com a
+  árvore já marcada. O que ela marca e não existe mais na base aparece num
+  grupo à parte, para não sumir ao salvar. Antes: apagar e refazer.
+- **Ajuste editável na linha** (data, sócio, tipo, valor, descrição).
+- Com isto, e com o que entrou hoje (participações em grade, sócio na linha,
+  fora da análise numa lista), toda aba de Parâmetros edita no lugar. O que NÃO
+  foi feito: juntar tudo num assistente só / importar de planilha. Se ainda
+  estiver pesado, a pergunta para o dono é em qual aba ele gasta mais tempo.
+
+## Fora da análise: totalmente, ou só até um mês — 11/11/2026
+
+O dono: *"o fora da análise não tá direito (…) colocar totalmente fora da
+análise ou colocar até determinado período. É isso que eu preciso em relação a
+considerar a obra ou projeto, ou não."*
+
+- Cada projeto e cada obra escolhe, numa lista só com um Salvar: **Considerar**,
+  **Fora totalmente** ou **Considerar só até MM/AAAA**. Vale em Parâmetros ›
+  Fora da análise (para tudo) e na montagem de cada cenário (só para ele).
+- "Só até 06/2024" = entra com o que aconteceu até 06/2024, inclusive; dali em
+  diante sai da apuração (receita e despesa), da régua (pessoal ou
+  faturamento) e do caixa dos juros. Lançamento SEM DATA de obra com corte
+  também sai. Obra nomeada por ela e pelo projeto: vale o mês mais cedo.
+- Sem migração: o mês vai no próprio item — `obra:CASA@2024-06`
+  (`prestacao.ler_item_fora`). O item sem mês continua sendo "fora totalmente",
+  então o que já estava gravado segue valendo igual.
+- As telas de resultado (prestação e cenário) avisam quais obras estão
+  "consideradas só até".
+- NÃO PERGUNTADO ao dono, assumido: "até determinado período" = considerar ATÉ
+  o mês e tirar depois (obra que saiu da sociedade/encerrou). Se for o
+  contrário (fora até o mês, e entra depois), é trocar o sinal em
+  `depois_do_corte` — e o texto da tela.
+
 ## "Painel muito lento hoje" — 11/11/2026
 
 **Achado e confirmado em teste:** o recálculo ("Recalculando os números do

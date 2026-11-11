@@ -67,6 +67,9 @@ SO_DO_ADMINISTRADOR = (
     # brecha ficava pior: mudar o projeto de uma obra muda quem a enxerga pelo
     # acesso por projeto.
     "painel.prestacao_parametros", "painel.prestacao_cenarios",
+    # A aba "Prestação de Contas" passou a abrir o cenário (11/11/2026): a
+    # prestação antiga saiu, e o cenário é da empresa inteira.
+    "painel.prestacao_contas",
 )
 
 # Rotas que podem responder sem login. Cada uma com o motivo escrito.
@@ -219,7 +222,6 @@ _ABAS_POR_ENDPOINT = {
     "painel.obras": "obras",
     "painel.execucao": "execucao",
     "painel.necessidade_caixa": "caixa",
-    "painel.prestacao_contas": "prestacao",
     "painel.extrato": "extrato",
     "painel.calendario": "calendario",
     "painel.calendario_dia": "calendario",

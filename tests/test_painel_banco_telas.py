@@ -356,43 +356,6 @@ def test_o_cenario_nao_faz_custo_sumir(base_para_cenario):
         assert abs(movido) < 0.01, f"{mudanca} fez custo aparecer ou sumir: {movido}"
 
 
-def test_a_tela_de_cenarios_desenha_a_comparacao_com_banco_de_verdade(
-        base_para_cenario, monkeypatch):
-    """A tela inteira, com o banco por trás: tabela, gráfico e botão de gravar.
-    É o teste que pega um erro de SQL — que este módulo já mandou três vezes
-    para a produção."""
-    monkeypatch.setenv("PAINEL_SENHA", "segredo-de-teste")
-    from app.main import create_app
-    app = create_app()
-    app.config.update(TESTING=True)
-    cliente = app.test_client()
-    cliente.post("/painel/entrar", data={"senha": "segredo-de-teste"})
-
-    rid = base_para_cenario
-    html = cliente.get(
-        f"/painel/prestacao/cenarios?viu_{rid}=1&ativo_{rid}=on"
-        f"&pct_{rid}=100&escopo_{rid}=MATRIZ").get_data(as_text=True)
-
-    assert "Δ Resultado" in html, "a tabela de comparação apareceu"
-    assert "CASA" in html and "PONTE" in html
-    # o gráfico colore pelo sinal: há obra que piora e obra que melhora
-    assert 'class="b-despesa"' in html and 'class="b-receita"' in html
-    assert "Gravar cenário como oficial" in html
-    # e nada foi gravado só por abrir a tela
-    from app.apps.painel import prestacao_dados
-    assert prestacao_dados.regras()[0]["escopo"] == "AMBAS"
-
-
-# ---------------------------------------------------------------------------
-# A Visão do Analítico tem de FILTRAR
-# ---------------------------------------------------------------------------
-# Defeito achado pelo dono em 04/09/2026: escolher "Só a pagar" e clicar em
-# Aplicar não mudava nada. A visão só decidia por qual coluna ordenar; as contas
-# já quitadas continuavam na lista, mostrando zero na coluna "A pagar".
-#
-# Precisa de banco de verdade: a diferença está no WHERE, e o dublê de sessão
-# ignora WHERE — ele devolveria as mesmas linhas nos três casos e o teste
-# passaria sem provar nada.
 @pytest.fixture()
 def base_paga_e_em_aberto(painel_no_banco):
     """Três despesas: uma quitada, uma inteiramente em aberto e uma em que só

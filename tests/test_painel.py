@@ -874,17 +874,9 @@ def test_necessidade_de_caixa_pede_o_conjunto_antes_de_calcular(painel):
     assert "Escolha ao menos uma obra ou projeto" in html
 
 
-def test_prestacao_avisa_quando_nao_ha_participacao(painel):
-    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
-    html = painel.get("/painel/prestacao").get_data(as_text=True)
-    assert "Nenhuma participação cadastrada" in html
-
-
 def test_parametros_da_prestacao_abrem_em_todas_as_abas(painel):
     painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
-    for aba, marca in [("socios", "Adicionar sócio"),
-                       ("participacoes", "Quem participa de qual projeto"),
-                       ("regras", "Nova regra"),
+    for aba, marca in [("socios", "socios-lista"),
                        ("ajustes", "Novo ajuste"),
                        ("geral", "Parâmetros gerais")]:
         html = painel.get(f"/painel/prestacao/parametros?aba={aba}").get_data(as_text=True)
@@ -1430,43 +1422,6 @@ def painel_com_regra(painel, monkeypatch):
     return painel
 
 
-def test_a_tela_de_cenarios_abre_e_mostra_a_regra(painel_com_regra):
-    html = painel_com_regra.get("/painel/prestacao/cenarios").get_data(as_text=True)
-    assert "Administrativo matriz" in html
-    assert 'name="pct_7"' in html
-    assert "Nada alterado ainda" in html, "sem mexer, a tela diz que nada mudou"
-
-
-def test_sem_regra_nenhuma_a_tela_avisa_em_vez_de_quebrar(painel):
-    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
-    r = painel.get("/painel/prestacao/cenarios")
-    assert r.status_code == 200
-    assert "Nenhuma regra de rateio cadastrada" in r.get_data(as_text=True)
-
-
-def test_o_cenario_viaja_na_url_e_sobrevive_a_recarregar(painel_com_regra):
-    """O serviço roda com um worker e reinicia a cada ~150 requisições: estado
-    de simulação em memória não sobreviveria. Na URL, sobrevive — e o link
-    ainda dá para mandar para outra pessoa."""
-    html = painel_com_regra.get(
-        "/painel/prestacao/cenarios?pct_7=40&viu_7=1&ativo_7=on").get_data(as_text=True)
-    assert 'value="40.0"' in html, "o valor simulado volta preenchido na tela"
-    assert "Nada alterado ainda" not in html
-
-
-def test_a_tela_de_cenarios_nao_grava_nada_sozinha(painel_com_regra, monkeypatch):
-    """A promessa da tela. Abrir e simular não pode encostar no banco."""
-    from app.apps.painel import prestacao_dados
-
-    def _proibido(*a, **k):
-        raise AssertionError("a tela de cenários gravou sem ninguém mandar")
-
-    monkeypatch.setattr(prestacao_dados, "salvar_parametros_das_regras", _proibido)
-    monkeypatch.setattr(prestacao_dados, "salvar_config", _proibido)
-    assert painel_com_regra.get(
-        "/painel/prestacao/cenarios?pct_7=10&viu_7=1").status_code == 200
-
-
 def test_gravar_sem_confirmar_nao_grava(painel_com_regra, monkeypatch):
     """A caixa de confirmação não é enfeite: gravar troca as regras que
     dividem o resultado entre os sócios."""
@@ -1481,26 +1436,6 @@ def test_gravar_sem_confirmar_nao_grava(painel_com_regra, monkeypatch):
     assert not gravou, "sem a confirmação marcada, nada pode ser gravado"
 
 
-def test_gravar_com_confirmacao_leva_os_parametros_simulados(painel_com_regra, monkeypatch):
-    from app.apps.painel import prestacao_dados
-    gravou = []
-    monkeypatch.setattr(prestacao_dados, "salvar_parametros_das_regras",
-                        lambda regras: gravou.append(regras))
-
-    r = painel_com_regra.post(
-        "/painel/prestacao/cenarios/gravar",
-        data={"confirma": "1", "pct_7": "40", "escopo_7": "MATRIZ", "viu_7": "1"})
-    assert r.status_code == 302
-    assert "/painel/prestacao" in r.headers["Location"]
-    assert len(gravou) == 1
-    assert gravou[0][0]["pct"] == 40.0
-    assert gravou[0][0]["escopo"] == "MATRIZ"
-    assert gravou[0][0]["ativo"] == 0, "caixa não enviada = regra desligada"
-
-
-# ---------------------------------------------------------------------------
-# O relatório em PDF
-# ---------------------------------------------------------------------------
 def test_o_mesmo_endereco_baixa_excel_ou_pdf(painel):
     """`formato=pdf` é o único acréscimo: os filtros continuam sendo os da tela.
     Duas rotas separadas divergiriam no dia em que alguém mexesse numa só."""
