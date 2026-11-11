@@ -69,7 +69,7 @@ def base():
         conn.execute("DELETE FROM cenario")
         conn.execute("DELETE FROM socios")
         conn.execute("DELETE FROM usuarios")
-        conn.execute("DELETE FROM config WHERE chave = 'fora_da_analise'")
+        conn.execute("DELETE FROM config WHERE chave IN ('fora_da_analise', 'ordem_dos_socios')")
         # pessoal: 2.000 numa, 1.000 na outra
         _por_pagar(conn, 801, "MUITA GENTE", -2000, grupo="Despesas com Pessoal",
                    categoria="Salários")
@@ -94,7 +94,7 @@ def base():
         conn.execute("DELETE FROM cenario")
         conn.execute("DELETE FROM socios")
         conn.execute("DELETE FROM usuarios")
-        conn.execute("DELETE FROM config WHERE chave = 'fora_da_analise'")
+        conn.execute("DELETE FROM config WHERE chave IN ('fora_da_analise', 'ordem_dos_socios')")
         conn.commit()
 
 
@@ -1642,3 +1642,94 @@ def test_a_tela_de_socios_tem_as_setas_de_posicao(base, monkeypatch):
     _dois_socios()
     html = _cliente(monkeypatch).get("/painel/prestacao/parametros?aba=socios").get_data(as_text=True)
     assert html.count("data-socio-sobe") >= 2 and "data-socio-desce" in html
+
+
+
+# ===========================================================================
+# 11/11/2026 — "veja que não bate os juros e nem o que a matriz gastou"
+# ===========================================================================
+def test_a_estrutura_e_conferida_contra_o_dre_do_projeto_dela(cenario, monkeypatch):
+    """O dono colou "a matriz gastou" (15,5 mi) e o DRE do projeto BWS (14,7
+    mi). Os dois somam igual; o que muda é a lista de centros de custo. A
+    conferência mostra, com nome e valor, o centro de custo que é do projeto
+    e não está marcado como estrutura — e o marcado que é de outro projeto."""
+    from app.apps.painel import consultas, prestacao_dados
+    from app.apps.painel.db import conexao
+    from app.apps.painel.web import _contas_da_matriz
+    from app.apps.painel import cenarios
+    with conexao() as conn:
+        conn.execute("UPDATE fato SET projeto = 'BWS' WHERE departamento = ?", (MATRIZ,))
+        conn.execute("UPDATE fato SET projeto = 'OBRAS' WHERE departamento <> ?", (MATRIZ,))
+        # o segundo centro de custo do projeto, que NÃO está marcado como estrutura
+        conn.execute(
+            "INSERT INTO fato (codigo_lancamento, tipo, analise, situacao,"
+            " situacao_vencimento, categoria, grupo, departamento, projeto,"
+            " razao_social, data, ano, pago_recebido, a_pagar_receber, juros, multa)"
+            " VALUES (950,'2. Contas a Pagar','DRE','PAGO','Quitado','Aluguel',"
+            "         'Administrativas','Escritório Central','BWS','X','2025-03-10',2025,-400,0,-10,0)")
+        conn.commit()
+    consultas.esquecer_listas()
+    config = dict(prestacao_dados.config(), depto_admin_matriz=MATRIZ, depto_admin_filial="")
+    cp = _contas_da_matriz(config, cenarios.completo(cenario), "comprometido")[
+        "origem"]["contra_o_projeto"]
+    assert not cp["bate"]
+    assert cp["estrutura"] == pytest.approx(-1800.0)
+    assert cp["projetos"] == [("BWS", pytest.approx(-2210.0))]      # com o encargo de 10
+    assert cp["diferenca"] == pytest.approx(410.0)
+    assert [(c["depto"], c["estrutura"]) for c in cp["centros"]] == [
+        (MATRIZ, True), ("Escritório Central", False)]
+
+    # marcado o segundo centro de custo, bate — e a tela diz isso
+    config["depto_admin_filial"] = "Escritório Central"
+    cp = _contas_da_matriz(config, cenarios.completo(cenario), "comprometido")[
+        "origem"]["contra_o_projeto"]
+    assert cp["bate"] and cp["estrutura"] == pytest.approx(-2210.0)
+
+
+def test_a_montagem_acusa_a_diferenca_e_mostra_os_juros_numa_linha(cenario, monkeypatch):
+    from app.apps.painel import consultas, prestacao_dados
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("UPDATE fato SET projeto = 'BWS' WHERE departamento = ?", (MATRIZ,))
+        conn.execute("UPDATE fato SET projeto = 'OBRAS' WHERE departamento <> ?", (MATRIZ,))
+        conn.execute(
+            "INSERT INTO fato (codigo_lancamento, tipo, analise, situacao,"
+            " situacao_vencimento, categoria, grupo, departamento, projeto,"
+            " razao_social, data, ano, pago_recebido, a_pagar_receber, juros, multa)"
+            " VALUES (951,'2. Contas a Pagar','DRE','PAGO','Quitado','Aluguel',"
+            "         'Administrativas','Escritório Central','BWS','X','2025-03-10',2025,-400,0,0,0)")
+        conn.commit()
+    consultas.esquecer_listas()
+    antes = prestacao_dados.config()
+    prestacao_dados.salvar_config("depto_admin_matriz", MATRIZ)
+    prestacao_dados.salvar_config("depto_admin_filial", "")
+    try:
+        html = _cliente(monkeypatch).get(
+            f"/painel/prestacao/montagem?cenario={cenario}").get_data(as_text=True)
+    finally:      # a configuração é do banco inteiro: devolve como estava
+        for chave in ("depto_admin_matriz", "depto_admin_filial"):
+            prestacao_dados.salvar_config(chave, antes.get(chave, ""))
+    assert "não bate com o DRE" in html and "Escritório Central" in html
+    assert "não está marcado como estrutura" in html
+    # os juros: só o valor e a categoria — o quadro grande saiu da montagem
+    assert "Onde estão os juros de empréstimo" not in html
+    assert "Juros de empréstimo" in html and "Juros Sobre Empréstimos" in html
+
+
+def test_o_quadro_dos_juros_soma_o_encargo_como_a_conta(base):
+    """R$ 3.039.343,02 num quadro e R$ 3.030.809,67 no outro, na mesma tela:
+    a conta distribui o juro COM os juros e multas pagos por atraso; o quadro
+    de conferência somava sem. Agora os dois dão o mesmo número."""
+    from app.apps.painel import consultas, cenarios
+    from app.apps.painel.db import conexao
+    from app.apps.painel.web import _contas_da_matriz
+    from app.apps.painel import prestacao_dados
+    with conexao() as conn:
+        conn.execute("UPDATE fato SET juros = -7, multa = -3 WHERE codigo_lancamento = 807")
+        conn.commit()
+    consultas.esquecer_listas()
+    conf = consultas.conferencia_dos_juros({"juros sobre empréstimos"}, [MATRIZ])
+    assert conf["distribui"] == pytest.approx(610.0)
+    c = cenarios.completo(cenarios.criar("Juros", criterio="pessoal", pct_padrao=100))
+    config = dict(prestacao_dados.config(), depto_admin_matriz=MATRIZ, depto_admin_filial="")
+    assert _contas_da_matriz(config, c, "comprometido")["resumo"]["juros"] == pytest.approx(-610.0)

@@ -3337,11 +3337,23 @@ def conferencia_dos_juros(configuradas, deptos_admin=()) -> dict:
     # O número somava a categoria na empresa INTEIRA; a prestação só distribui
     # pelo caixa o juro lançado na matriz/filial. O juro lançado direto numa
     # obra já é despesa dela e não passa pela divisão. A tela agora separa.
+    # COM OS JUROS E MULTAS PAGOS (11/11/2026): a conta distribui a despesa
+    # com o encargo dentro, e este quadro somava sem — o dono viu
+    # R$ 3.039.343,02 num lugar e R$ 3.030.809,67 no outro, na mesma tela.
+    encargo_pago = f"CASE WHEN tipo = '{PAG}' THEN {ENCARGO} ELSE 0 END"
+    encargos = {(cat, analise or "", "Receber" if tipo == REC else "Pagar"): float(v or 0)
+                for cat, analise, tipo, v in consultar(f"""
+        SELECT TRIM(categoria), analise, tipo, COALESCE(SUM({encargo_pago}), 0)
+          FROM fato
+         WHERE translate(lower(COALESCE(categoria,'')), 'áàâãéêíóôõúç', 'aaaaeeiooouc')
+               ~ '(jur|emprest|financ|\\miof\\M|encarg|amortiz)'
+         GROUP BY 1, 2, 3""")}
     na_estrutura: dict[tuple, float] = {}
     if deptos_admin:
         for cat, analise, tipo, valor in consultar(f"""
             SELECT TRIM(categoria), analise, tipo,
                    COALESCE(SUM({EXECUTADO}), 0) + COALESCE(SUM(a_pagar_receber), 0)
+                   + COALESCE(SUM({encargo_pago}), 0)
               FROM fato
              WHERE translate(lower(COALESCE(categoria,'')), 'áàâãéêíóôõúç', 'aaaaeeiooouc')
                    ~ '(jur|emprest|financ|\\miof\\M|encarg|amortiz)'
@@ -3349,7 +3361,8 @@ def conferencia_dos_juros(configuradas, deptos_admin=()) -> dict:
              GROUP BY 1, 2, 3""", [list(deptos_admin)]):
             na_estrutura[(cat, analise or "", "Receber" if tipo == REC else "Pagar")] = float(valor or 0)
     for l in linhas:
-        l["total"] = l["pago"] + l["aberto"]
+        l["total"] = (l["pago"] + l["aberto"]
+                      + encargos.get((l["categoria"], l["analise"], l["tipo"]), 0.0))
         l["na_estrutura"] = na_estrutura.get((l["categoria"], l["analise"], l["tipo"]), 0.0)
         l["nas_obras"] = l["total"] - l["na_estrutura"]
         l["contada"] = bool(l["configurada"] and l["analise"] == "DRE")

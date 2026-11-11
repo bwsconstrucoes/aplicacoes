@@ -1730,7 +1730,65 @@ def _contas_da_matriz(config, cenario, medida: str) -> dict:
             "primeiro_mes": primeiro_mes,
             "origem": {"por_depto": sorted(por_depto.items(), key=lambda kv: kv[1]),
                        "primeiro_mes": primeiro_mes, "ultimo_mes": ultimo_mes,
-                       "sem_data": sem_data, "medida": medida}}
+                       "sem_data": sem_data, "medida": medida,
+                       "contra_o_projeto": _estrutura_contra_o_projeto(
+                           por_depto, medida)}}
+
+
+MAXIMO_DE_VIZINHOS = 12
+
+
+def _estrutura_contra_o_projeto(por_depto: dict, medida: str) -> dict:
+    """A estrutura (os centros de custo marcados em Cadastros) contra o DRE do
+    PROJETO a que eles pertencem — centro de custo por centro de custo.
+
+    11/11/2026, o dono colou os dois números: "a matriz gastou" 15.514.876,82
+    e o DRE do projeto BWS 14.699.912,50 — "veja que não bate (…) o DRE do
+    projeto BWS é o que é pra ser distribuído". Os dois lados somam a despesa
+    pela MESMA regra (análise DRE, com juros e multas pagos); o que pode
+    diferir é QUAIS centros de custo entram: aqui, os dois marcados como
+    estrutura; lá, todos os que pertencem ao projeto. Esta conferência põe as
+    duas listas lado a lado, com o valor de cada centro de custo, para a
+    diferença aparecer com nome — sem ninguém ter de supor de onde ela vem.
+
+    Devolve {"centros": [...], "projetos": [(projeto, total no DRE)],
+    "estrutura": total, "diferenca": ..., "bate": bool}."""
+    from . import consultas
+    mapa = consultas.obra_para_projeto()
+    especiais = set(consultas.SEM_OBRA_OU_NAO_LIDA) | {consultas.TRANSFERENCIA_ENTRE_CONTAS, ""}
+    projetos = sorted({mapa.get(d) or "" for d in por_depto} - especiais, key=str.lower)
+    vizinhos = sorted((o for o, p in mapa.items()
+                       if p in projetos and o not in por_depto and o not in especiais),
+                      key=str.lower)
+    dos_vizinhos = {o: 0.0 for o in vizinhos}
+    for linha in consultas.despesa_administrativa(vizinhos, medida):
+        dos_vizinhos[linha["depto"]] += linha["valor"]
+    centros = ([{"depto": d, "projeto": mapa.get(d) or "", "valor": v, "estrutura": True}
+                for d, v in por_depto.items()]
+               + [{"depto": o, "projeto": mapa.get(o) or "", "valor": v, "estrutura": False}
+                  for o, v in dos_vizinhos.items() if abs(v) > 0.005])
+    centros.sort(key=lambda c: (c["projeto"].lower(), not c["estrutura"], c["valor"]))
+    # projeto que mistura estrutura e obra de verdade teria dezenas de linhas:
+    # ficam os maiores, e o resto vira uma linha só (a soma não muda)
+    de_fora = [c for c in centros if not c["estrutura"]]
+    if len(de_fora) > MAXIMO_DE_VIZINHOS:
+        resto = sorted(de_fora, key=lambda c: abs(c["valor"]))[:-MAXIMO_DE_VIZINHOS]
+        centros = [c for c in centros if c not in resto]
+        por_proj: dict[str, list] = {}
+        for c in resto:
+            por_proj.setdefault(c["projeto"], []).append(c)
+        centros += [{"depto": f"outros {len(lista)} centros de custo", "projeto": p,
+                     "valor": sum(c["valor"] for c in lista), "estrutura": False}
+                    for p, lista in por_proj.items()]
+    por_projeto = {p: sum(c["valor"] for c in centros if c["projeto"] == p) for p in projetos}
+    estrutura = sum(por_depto.values())
+    do_dre = sum(por_projeto.values())
+    return {"centros": centros, "projetos": sorted(por_projeto.items()),
+            "estrutura": estrutura, "dre": do_dre, "diferenca": estrutura - do_dre,
+            # sem projeto nenhum não há com o que comparar — não acusa
+            "bate": (not projetos) or (abs(estrutura - do_dre) < 0.01
+                                       and all(c["estrutura"] for c in centros)
+                                       and all(c["projeto"] for c in centros))}
 
 
 @bp.route("/prestacao/montagem")
@@ -1781,13 +1839,13 @@ def cenario_montagem():
                                  gerais=prestacao_dados.fora_da_analise(config),
                                  projeto_de=nomes["projeto_de"]),
         excluidas_gerais=prestacao_dados.fora_da_analise(config),
-        # onde estao os juros na base, categoria por categoria — e quais a
-        # prestacao esta contando. E a resposta para "na controladoria tem
-        # 1,6 milhao e aqui 191 mil".
-        juros_conf=consultas.conferencia_dos_juros(
-            prestacao.categorias_de_juros(config.get("categoria_juros")
-                                          or prestacao.CATEGORIA_JUROS_PADRAO),
-            _deptos_administrativos(config)),
+        # Os juros na montagem são só o valor e a categoria (11/11/2026, o
+        # dono: "essas informações geram confusão. Já defini os juros nos
+        # parâmetros gerais (…) bastaria demonstrar o valor dos juros e a
+        # categoria"). A conferência categoria por categoria continua em
+        # Configurações › Conferências.
+        categorias_de_juros=sorted(prestacao.categorias_de_juros(
+            config.get("categoria_juros") or prestacao.CATEGORIA_JUROS_PADRAO)),
         aberto_grupo=aberto_grupo,
         aberto_categoria=aberto_categoria,
         lancamentos=(consultas.lancamentos_administrativos(

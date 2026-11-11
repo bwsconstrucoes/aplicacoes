@@ -212,9 +212,9 @@
     <div class="kpi vermelho estatico"><div class="kpi-rotulo">Fica de fora</div>
       <div class="kpi-valor">{{ brl(resumo_matriz.fora) }}</div></div>
     {% if resumo_matriz.juros %}
-    <div class="kpi ambar estatico"><div class="kpi-rotulo">Juros — régua própria</div>
+    <div class="kpi ambar estatico"><div class="kpi-rotulo">Juros de empréstimo</div>
       <div class="kpi-valor">{{ brl(resumo_matriz.juros) }}</div>
-      <div class="kpi-sub">caem em quem demandou caixa</div></div>
+      <div class="kpi-sub">categoria: {{ categorias_de_juros|map('title')|join(' · ') }} — caem em quem demandou caixa</div></div>
     {% endif %}
   </div>
   {# DE ONDE VEM ESSE NÚMERO (11/11/2026, o dono: "15,4 milhões (…) de onde é
@@ -233,6 +233,61 @@
     · Os centros de custo se trocam em
     <a href="{{ url_for('painel.prestacao_parametros', aba='geral') }}">Cadastros › Parâmetros gerais</a>.
   </p>
+  {# A ESTRUTURA CONTRA O DRE DO PROJETO (11/11/2026, o dono: "veja que não
+     bate (…) o que a matriz gastou" com o "DRE do projeto BWS, que é o que é
+     pra ser distribuído"). Os dois somam pela mesma regra; o que muda é a
+     lista de centros de custo. Aparece só quando as listas diferem. #}
+  {% set cp = origem_da_matriz.contra_o_projeto %}
+  {% if cp and not cp.bate %}
+  <div class="aviso info" style="margin:0 0 10px; border-left:4px solid var(--ambar)">
+    <b>“A matriz gastou” não bate com o DRE
+      {% if cp.projetos|length == 1 %}do projeto {{ cp.projetos[0][0] }}{% else %}dos projetos {{ cp.projetos|map(attribute=0)|join(' e ') }}{% endif %}:
+      diferença de {{ brl(cp.diferenca|abs) }}.</b>
+    Os dois somam a despesa do mesmo jeito. A diferença está em <b>quais centros de
+    custo entram</b>: aqui entram os dois marcados como estrutura em Cadastros;
+    no DRE do projeto entram todos os centros de custo que pertencem ao projeto.
+    <div class="tabela-rolagem" style="margin-top:8px; background:var(--branco)">
+      <table>
+        <thead><tr>
+          <th class="sem-ordem">Centro de custo</th>
+          <th class="sem-ordem">Projeto dele</th>
+          <th class="sem-ordem direita">Despesa</th>
+          <th class="sem-ordem">Entra em “a matriz gastou”?</th>
+        </tr></thead>
+        <tbody>
+          {% for c in cp.centros %}
+          <tr>
+            <td class="desc"><b>{{ c.depto }}</b></td>
+            <td class="desc">{{ c.projeto or '(sem projeto)' }}</td>
+            <td class="dados direita">{{ brl(c.valor) }}</td>
+            <td class="desc">{% if c.estrutura %}sim — marcado como estrutura
+              {% else %}<b style="color:var(--vermelho)">não</b> — é do projeto, mas não está marcado como estrutura{% endif %}</td>
+          </tr>
+          {% endfor %}
+          <tr class="total">
+            <td class="desc" colspan="2"><b>A matriz gastou</b> (os marcados como estrutura)</td>
+            <td class="dados direita"><b>{{ brl(cp.estrutura) }}</b></td><td></td>
+          </tr>
+          {% for projeto, valor in cp.projetos %}
+          <tr class="total">
+            <td class="desc" colspan="2"><b>DRE do projeto {{ projeto }}</b> (todos os centros de custo dele)</td>
+            <td class="dados direita"><b>{{ brl(valor) }}</b></td><td></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <small>Para os dois baterem, os centros de custo marcados como estrutura têm de ser os
+      mesmos do projeto. Troque-os em
+      <a href="{{ url_for('painel.prestacao_parametros', aba='geral') }}">Cadastros › Parâmetros gerais</a>
+      — ou acerte o projeto da obra em
+      <a href="{{ url_for('painel.prestacao_parametros', aba='projetos') }}">Cadastros › Projeto das obras</a>.
+      Os valores são de todos os anos; no DRE, tire o filtro de ano para comparar.</small>
+  </div>
+  {% elif cp and cp.projetos %}
+  <p class="cartao-dica" style="margin:0 0 10px">✔ Bate com o DRE do projeto
+    {{ cp.projetos|map(attribute=0)|join(' e ') }}: os centros de custo da estrutura são os mesmos do projeto.</p>
+  {% endif %}
   {% endif %}
   {# 10/11/2026, o dono: "tem que somar 100%. Se não somou, tem que ser
      criticado para ajustar." #}
@@ -676,7 +731,11 @@
       </select>
       <p class="dica">Juro não é estrutura: é o preço de faltar dinheiro. Pela
         primeira opção ele cai mês a mês nas obras que estavam com o caixa
-        negativo, na proporção do buraco.</p>
+        negativo, na proporção do buraco.
+        {% if resumo_matriz and resumo_matriz.juros %}<b>Neste cenário: {{ brl(resumo_matriz.juros|abs) }}</b>,
+        da categoria {{ categorias_de_juros|map('title')|join(' · ') }}.{% endif %}
+        <small>A categoria se escolhe em
+        <a href="{{ url_for('painel.prestacao_parametros', aba='geral') }}">Cadastros › Parâmetros gerais</a>.</small></p>
     </div>
 
     <div class="campo">
@@ -708,7 +767,11 @@
   </form>
 </div>
 
-{% if juros_conf %}{% include "painel_juros_conferencia.html" %}{% endif %}
+{# O quadro "Onde estão os juros de empréstimo" saiu daqui em 11/11/2026 (o
+   dono: "essas informações geram confusão (…) bastaria demonstrar o valor dos
+   juros e a categoria"). O valor e a categoria estão no quadro do passo 2 e na
+   linha acima; a conferência categoria por categoria ficou só em
+   Configurações › Conferências. #}
 
 {# UM SALVAR PARA A PÁGINA INTEIRA (11/11/2026, o dono: "por que eu não posso
    abrir várias caixinhas, colocar uma coisa, colocar outra, e depois gravar
