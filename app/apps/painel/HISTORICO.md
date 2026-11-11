@@ -651,6 +651,15 @@ nunca rodou contra a base real**. Ele passou pelo parser do Postgres, pelo teste
 de portabilidade e pelos testes com dublê — nenhum dos três olha o número que
 sai.
 
+## "Painel muito lento hoje" — 11/11/2026
+
+Com a releitura de todos os pagamentos tentando terminar a cada atualização.
+Não medido em produção (a causa não está confirmada). Feito o que é seguro: o
+processo da atualização entra com prioridade baixa (`os.nice(10)`, em
+`executar_sync`) — divide o servidor com as telas e com o ERP. Não alivia o
+BANCO; se a lentidão vier dele, o rodapé de cada tela ("Tela montada em X ms
+— N consultas, Y ms delas") mostra.
+
 ## O juro de empréstimo contado duas vezes — 11/11/2026
 
 O dono: *"não sei se tô certo, mas tô achando que o juro de empréstimo tá
