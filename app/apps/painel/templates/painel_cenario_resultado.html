@@ -7,6 +7,8 @@
 <h2>Resultado do cenário
   <small>o resultado final por obra, e quanto é de direito de cada um</small>
 </h2>
+{% from "painel_prestacao_nav.html" import nav_da_prestacao %}
+{{ nav_da_prestacao('resultado', cenario.id) }}
 
 <form method="get" class="tabela-barra" style="border:0; padding:0 0 12px">
   <div class="campo" style="max-width:360px">
@@ -31,10 +33,6 @@
   <a class="btn secundario" style="text-decoration:none; align-self:flex-end"
      href="{{ url_for('painel.baixar', assunto='cenario', formato='pdf',
                       cenario=cenario.id, obra_grafico=obra_grafico) }}">⬇ PDF</a>
-  <a class="btn secundario" style="text-decoration:none; align-self:flex-end"
-     href="{{ url_for('painel.cenario_como', cenario=cenario.id) }}">📄 Como é feita</a>
-  <a class="btn secundario" style="text-decoration:none; align-self:flex-end"
-     href="{{ url_for('painel.cenario_montagem', cenario=cenario.id) }}">← Montar</a>
 </form>
 
 <p class="cartao-dica" style="margin:-4px 0 14px">

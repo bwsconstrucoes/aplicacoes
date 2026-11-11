@@ -1,22 +1,28 @@
-{# A grade de participações: linhas (projetos ou obras) × sócios, um Salvar
-   só. Usada em Parâmetros › Participações e no "Quem divide" do cenário
-   (11/11/2026, o dono: "tá muito difícil e lento de configurar as
-   participações"). Os campos: `linha` (o nome, na ordem da tela) e
-   `pct_<i>_<sócio>`. #}
-{% macro grade_participacoes(linhas, socios, grade, rotulo_da_linha, copiar=True, so_preenchidas=False) %}
+{# A grade de participações: linhas (todas as obras, projetos e obras) ×
+   sócios, um Salvar só — o "Quem divide" do cenário (11/11/2026, o dono: "tá
+   muito difícil e lento de configurar as participações").
+
+   CADA PROJETO ABRE NAS OBRAS DELE (▸), igual ao passo "o que entra"
+   (11/11/2026, o dono: "deveria expandir os centros de custo similar ao Fora
+   da análise"). A obra em branco SEGUE o projeto dela — ou "Todas as obras",
+   se o projeto também está em branco — e mostra em cinza o percentual que
+   está valendo, para ninguém ter de adivinhar.
+
+   Os campos: `linha` (a chave, na ordem da tela) e `pct_<i>_<sócio>`. #}
+{% macro grade_participacoes(linhas, socios, grade, rotulo_da_linha) %}
 <div class="grade-part-barra" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:8px">
-  <input type="search" placeholder="Procurar {{ rotulo_da_linha|lower }}…" data-grade-busca
+  <input type="search" placeholder="Procurar uma obra…" data-grade-busca
          data-sem-busca style="max-width:260px">
   <label class="cartao-dica" style="margin:0">
-    <input type="checkbox" data-grade-so-preenchidas {{ 'checked' if so_preenchidas }}> só os que já têm percentual
+    <input type="checkbox" data-grade-todas> abrir todos os projetos
   </label>
   <span class="espaco" style="flex:1"></span>
   <button class="btn" type="submit">Salvar tudo</button>
 </div>
-<p class="dica" style="margin-top:0">Deixe em branco quem não participa. A soma de
-  cada linha aparece à direita; fica vermelha se não der 100%.
-  {% if copiar %}“Copiar a 1ª linha” repete os percentuais da primeira linha nas que estão vazias.{% endif %}
-  Procurar mostra também as linhas vazias.</p>
+<p class="dica" style="margin-top:0">Clique no <b>▸</b> do projeto para ver as obras dele.
+  Deixe em branco quem não participa. A obra em branco <b>segue o projeto</b> (o
+  número em cinza é o que está valendo nela); preenchida, vale o que está nela.
+  A soma de cada linha aparece à direita; fica vermelha se não der 100%.</p>
 <div class="tabela-rolagem" style="max-height:560px">
   <table class="grade-participacoes">
     <thead>
@@ -33,10 +39,20 @@
       {% for linha in linhas %}
       {% set i = loop.index0 %}
       {% set desta = grade.get(linha.chave, {}) %}
-      <tr data-grade-linha data-texto="{{ linha.rotulo|lower }}" {{ 'data-grade-fixa' if linha.fixa }}>
-        <td class="desc">
+      <tr data-grade-linha data-tipo="{{ linha.tipo }}" data-texto="{{ linha.rotulo|lower }}"
+          {% if linha.tipo == 'projeto' %}data-projeto="{{ linha.chave }}" {{ 'data-aberto' if linha.aberto }}{% endif %}
+          {% if linha.tipo == 'obra' %}data-pai="{{ linha.pai }}"{% endif %}>
+        <td class="desc" {% if linha.tipo == 'obra' and linha.pai %}style="padding-left:34px"{% endif %}>
           <input type="hidden" name="linha" value="{{ linha.chave }}">
-          {{ linha.rotulo }}
+          {% if linha.tipo == 'projeto' and linha.obras %}
+            <button type="button" class="link-btn" data-grade-abre
+                    title="abrir as obras deste projeto"><span data-seta>▸</span>
+              <b>{{ linha.rotulo }}</b></button>
+            <small>{{ linha.obras }} obra{{ '' if linha.obras == 1 else 's' }}</small>
+          {% elif linha.tipo == 'obra' %}{{ linha.rotulo }}
+          {% else %}<b>{{ linha.rotulo }}</b>{% if linha.tipo == 'projeto' %} <small>sem obras</small>{% endif %}
+          {% endif %}
+          <small data-grade-segue style="display:block; color:var(--tinta-suave)"></small>
         </td>
         {% for s in socios %}
         {% set v = desta.get(s.id) %}
@@ -54,9 +70,6 @@
   </table>
 </div>
 <div style="display:flex; gap:10px; margin-top:8px; flex-wrap:wrap">
-  {% if copiar %}
-  <button class="btn secundario" type="button" data-grade-copiar>Copiar a 1ª linha nas vazias</button>
-  {% endif %}
   <span class="espaco" style="flex:1"></span>
   <button class="btn" type="submit">Salvar tudo</button>
 </div>
@@ -66,46 +79,71 @@
   const tabela = tabelas[tabelas.length - 1];
   const caixa = tabela.closest("form") || document;
   const num = t => { const v = parseFloat(String(t || "").replace(",", ".")); return isNaN(v) ? null : v; };
+  const linhas = [...tabela.querySelectorAll("tr[data-grade-linha]")];
+  const campos = tr => [...tr.querySelectorAll("[data-grade-pct]")];
+  const tem = tr => campos(tr).some(i => i.value.trim());
+  const geral = linhas.find(tr => tr.dataset.tipo === "geral");
+  const doProjeto = chave => linhas.find(tr => tr.dataset.projeto === chave);
+  // de quem a linha em branco herda: a obra, do projeto; o projeto, da geral
+  function origem(tr) {
+    if (tr.dataset.tipo === "obra") {
+      const pai = tr.dataset.pai && doProjeto(tr.dataset.pai);
+      if (pai && tem(pai)) return [pai, "segue o projeto"];
+    }
+    if (tr.dataset.tipo !== "geral" && geral && tem(geral)) return [geral, "segue “Todas as obras”"];
+    return [null, ""];
+  }
   function somar(tr) {
-    const vals = [...tr.querySelectorAll("[data-grade-pct]")].map(i => num(i.value)).filter(v => v !== null);
+    const vals = campos(tr).map(i => num(i.value)).filter(v => v !== null);
     const celula = tr.querySelector("[data-grade-soma]");
+    const segue = tr.querySelector("[data-grade-segue]");
+    const [de, texto] = tem(tr) ? [null, ""] : origem(tr);
+    campos(tr).forEach((c, k) => { c.placeholder = de ? campos(de)[k].value : ""; });
+    if (segue) segue.textContent = tem(tr) ? (tr.dataset.tipo === "obra" ? "percentual próprio" : "")
+                                           : (texto || (tr.dataset.tipo === "geral" ? "" : "sem ninguém"));
     if (!vals.length) { celula.textContent = "—"; celula.style.color = ""; return; }
     const soma = vals.reduce((a, b) => a + b, 0);
     celula.textContent = soma.toLocaleString("pt-BR", {maximumFractionDigits: 2}) + "%";
     celula.style.color = Math.abs(soma - 100) < 0.005 ? "var(--verde)" : "var(--vermelho)";
   }
-  const linhas = () => [...tabela.querySelectorAll("tr[data-grade-linha]")];
-  linhas().forEach(somar);
-  tabela.addEventListener("input", e => { const tr = e.target.closest("tr"); if (tr) somar(tr); });
   const busca = caixa.querySelector("[data-grade-busca]");
-  const so = caixa.querySelector("[data-grade-so-preenchidas]");
+  const todas = caixa.querySelector("[data-grade-todas]");
+  const abertos = new Set(linhas.filter(tr => tr.hasAttribute("data-aberto"))
+                                 .map(tr => tr.dataset.projeto));
   function filtrar() {
     const termo = (busca.value || "").toLowerCase().trim();
-    linhas().forEach(tr => {
-      const tem = [...tr.querySelectorAll("[data-grade-pct]")].some(i => i.value.trim());
-      // procurando, aparece mesmo vazia: é assim que se acha a linha a preencher
-      const mostra = tr.hasAttribute("data-grade-fixa")
-        || (termo ? tr.dataset.texto.includes(termo) : (!so.checked || tem));
+    linhas.forEach(tr => {
+      const tipo = tr.dataset.tipo;
+      let mostra = true;
+      if (termo) {
+        // procurando: a obra que casa aparece, com o projeto dela em cima
+        mostra = tipo === "geral" || tr.dataset.texto.includes(termo)
+          || (tipo === "projeto" && linhas.some(f => f.dataset.pai === tr.dataset.projeto
+                                                      && f.dataset.texto.includes(termo)));
+      } else if (tipo === "obra") {
+        mostra = todas.checked || (tr.dataset.pai ? abertos.has(tr.dataset.pai) : tem(tr));
+      }
       tr.style.display = mostra ? "" : "none";
+      if (tipo === "projeto") {
+        const seta = tr.querySelector("[data-seta]");
+        if (seta) seta.textContent = (todas.checked || abertos.has(tr.dataset.projeto)) ? "▾" : "▸";
+      }
     });
   }
+  linhas.forEach(somar);
   filtrar();
-  busca.addEventListener("input", filtrar);
-  so.addEventListener("change", filtrar);
-  busca.addEventListener("keydown", e => { if (e.key === "Enter") e.preventDefault(); });
-  const copiar = caixa.querySelector("[data-grade-copiar]");
-  if (copiar) copiar.addEventListener("click", () => {
-    const [primeira, ...resto] = linhas();
-    if (!primeira) return;
-    const modelo = [...primeira.querySelectorAll("[data-grade-pct]")].map(i => i.value);
-    resto.forEach(tr => {
-      if (tr.style.display === "none") return;
-      const campos = [...tr.querySelectorAll("[data-grade-pct]")];
-      if (campos.some(i => i.value.trim())) return;
-      campos.forEach((i, k) => { i.value = modelo[k]; });
-      somar(tr);
-    });
+  tabela.addEventListener("click", e => {
+    const botao = e.target.closest("[data-grade-abre]");
+    if (!botao) return;
+    const chave = botao.closest("tr").dataset.projeto;
+    abertos.has(chave) ? abertos.delete(chave) : abertos.add(chave);
+    filtrar();
   });
+  // mexer no projeto (ou na geral) muda o que as linhas em branco herdam
+  tabela.addEventListener("input", e => { if (e.target.closest("tr")) linhas.forEach(somar); });
+  busca.addEventListener("input", filtrar);
+  todas.addEventListener("change", filtrar);
+  busca.addEventListener("keydown", e => { if (e.key === "Enter") e.preventDefault(); });
 })();
 </script>
 {% endmacro %}

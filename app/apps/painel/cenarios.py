@@ -68,44 +68,80 @@ def buscar(cenario_id) -> dict | None:
     return _linha(t) if t else None
 
 
-def pesos(cenario_id) -> dict:
-    """{nível: {chave: percentual}} — o que foi marcado neste cenário.
-
-    E, em `periodos`, {nível: {chave: [(desde AAAA-MM, percentual), ...]}} — o
-    percentual que muda com o tempo (migração 024), em ordem de data."""
+def pesos_fixos(cenario_id) -> dict:
+    """{nível: {chave: percentual}} — o percentual fixo de cada conta, no
+    formato antigo: QUANTO SE RATEIA entre todas (o resto fica no principal).
+    Hoje só o lançamento marcado um a um nasce aqui; grupo e categoria passaram
+    para as regras por período, e o que restar deles aqui é herança."""
     saida = {nivel: {} for nivel in NIVEIS}
     for nivel, chave, pct in consultar(
             "SELECT nivel, chave, pct FROM cenario_peso WHERE cenario_id = ?",
             [int(cenario_id)]):
         if nivel in saida:
             saida[nivel][chave] = float(pct or 0)
+    return saida
+
+
+def pesos(cenario_id) -> dict:
+    """{nível: {chave: percentual fixo}} — ver `pesos_fixos` — e, em
+    `periodos`, {nível: {chave: [(desde, fica no principal, é da filial)]}}:
+    as três partes de cada conta (11/11/2026), em ordem de data."""
+    saida = pesos_fixos(cenario_id)
     saida["periodos"] = periodos(cenario_id)
     return saida
 
 
+def _colunas_dos_periodos() -> set:
+    """As colunas de `cenario_peso_periodo` — vazio se a migração 024 ainda não
+    foi aplicada. Diz também se a 025 (as três partes) já chegou."""
+    try:
+        return {c for (c,) in consultar(
+            "SELECT column_name FROM information_schema.columns"
+            " WHERE table_schema = 'painel' AND table_name = 'cenario_peso_periodo'")}
+    except Exception:  # noqa: BLE001 — banco de teste dublado
+        return set()
+
+
 def _tem_periodos() -> bool:
     """A migração 024 já foi aplicada? Sem ela, nada de período."""
-    try:
-        return bool(consultar(
-            "SELECT 1 FROM information_schema.tables WHERE table_schema = 'painel'"
-            "   AND table_name = 'cenario_peso_periodo'"))
-    except Exception:  # noqa: BLE001 — banco de teste dublado
-        return False
+    return bool(_colunas_dos_periodos())
+
+
+def _tem_tres_partes() -> bool:
+    """A migração 025 já foi aplicada? Sem ela não há onde guardar a parte da
+    filial — a parte que fica no principal ainda cabe nas colunas antigas."""
+    return "pct_fica" in _colunas_dos_periodos()
+
+
+def partes_do_formato_antigo(pct, principal=None) -> tuple:
+    """(fica no principal, é da filial) de uma linha gravada antes das três
+    partes: `pct` era "quanto entra" e `principal` "quanto do que entra vai
+    para o principal". O que não entrava FICA no principal; o resto se rateia
+    entre todas. É a mesma conversão da migração 025."""
+    entra = float(pct or 0)
+    return (100.0 - entra) + entra * float(principal or 0) / 100.0, 0.0
 
 
 def periodos(cenario_id) -> dict:
-    """{nível: {chave: [(desde, percentual, parte do principal | None), ...]}},
-    em ordem de data. A parte do principal é quanto do que entrou vai para o
-    projeto principal (o resto vai para os demais); None = sem separar."""
+    """{nível: {chave: [(desde, fica no principal, é da filial), ...]}}, em
+    ordem de data. Os dois em por cento do valor da conta; o que falta para
+    100 se rateia entre todas as obras. `desde` "1900-01" é a regra que vale
+    desde o início."""
     saida: dict = {nivel: {} for nivel in NIVEIS}
-    if not _tem_periodos():
+    colunas = _colunas_dos_periodos()
+    if not colunas:
         return saida
-    for nivel, chave, desde, pct, principal in consultar(
-            "SELECT nivel, chave, desde, pct, pct_principal FROM cenario_peso_periodo"
+    novas = "pct_fica, pct_filial" if "pct_fica" in colunas else "NULL, NULL"
+    for nivel, chave, desde, pct, principal, fica, filial in consultar(
+            f"SELECT nivel, chave, desde, pct, pct_principal, {novas}"
+            "  FROM cenario_peso_periodo"
             " WHERE cenario_id = ? ORDER BY nivel, chave, desde", [int(cenario_id)]):
-        if nivel in saida:
-            saida[nivel].setdefault(chave, []).append(
-                (desde, float(pct or 0), None if principal is None else float(principal)))
+        if nivel not in saida:
+            continue
+        if fica is None:
+            fica, filial = partes_do_formato_antigo(pct, principal)
+        saida[nivel].setdefault(chave, []).append(
+            (desde, float(fica), float(filial or 0)))
     return saida
 
 
@@ -116,40 +152,61 @@ _MES = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 DESDE_O_INICIO = "1900-01"
 
 
+def _preenchido(valor) -> bool:
+    return str(valor if valor is not None else "").strip() != ""
+
+
 def _periodos_limpos(lista) -> list[tuple]:
-    """[(desde, percentual, parte do principal | None)] válidos e em ordem.
-    Linha sem mês válido ou sem percentual é ignorada; mês repetido, vale o
-    último. A parte do principal em branco é None (sem separar os lados)."""
+    """[(desde, fica no principal, é da filial)] válidos e em ordem.
+
+    Linha com as duas partes em branco é ignorada (é assim que se apaga);
+    mês em branco quer dizer "desde o início"; mês repetido, vale o último.
+    As duas partes não podem passar de 100 — o que falta é o que se rateia."""
     limpos = {}
     for item in lista or []:
-        desde, pct = item[0], item[1]
-        principal = item[2] if len(item) > 2 else None
-        desde = (desde or "").strip()
-        # MÊS EM BRANCO COM A PARTE DO PRINCIPAL = "desde o início"
-        # (11/11/2026): o caso mais comum é um percentual só, que vale sempre,
-        # e pedir um mês para isso era um passo a mais sem sentido
-        if not desde and str(principal if principal is not None else "").strip():
-            desde = DESDE_O_INICIO
-        if _MES.match(desde) and str(pct if pct is not None else "").strip():
-            p = None if principal is None or str(principal).strip() == "" else _limpar(principal)
-            limpos[desde] = (_limpar(pct), p)
-    return [(d, pct, p) for d, (pct, p) in sorted(limpos.items())]
+        desde, fica, filial = (list(item) + [None, None])[:3]
+        if not _preenchido(fica) and not _preenchido(filial):
+            continue
+        desde = (desde or "").strip() or DESDE_O_INICIO
+        if not _MES.match(desde):
+            continue
+        f = _limpar(fica) if _preenchido(fica) else 0.0
+        n = _limpar(filial) if _preenchido(filial) else 0.0
+        if f + n > 100.005:
+            raise ValueError(
+                f"as partes somam {f + n:.0f}% — o que fica no projeto principal "
+                "mais o que é da filial não pode passar de 100%")
+        limpos[desde] = (f, n)
+    return [(d, f, n) for d, (f, n) in sorted(limpos.items())]
 
 
 def gravar_periodos(cenario_id, nivel: str, chave: str, lista) -> None:
-    """Troca os períodos de UMA conta pelos da lista
-    [(desde, percentual[, parte do principal])]."""
+    """Troca as regras de UMA conta pelas da lista
+    [(desde, fica no principal, é da filial)]."""
     if nivel not in NIVEIS or not (chave or "").strip() or not _tem_periodos():
         return
+    limpos = _periodos_limpos(lista)
+    tres = _tem_tres_partes()
+    if not tres and any(n > 0.005 for _d, _f, n in limpos):
+        raise ValueError(
+            "Para dizer que parte de uma conta é da filial, aplique antes as "
+            "atualizações do banco (Configurações › Aplicar atualizações do banco).")
     with conexao() as conn:
         conn.execute("DELETE FROM cenario_peso_periodo"
                      " WHERE cenario_id = ? AND nivel = ? AND chave = ?",
                      (int(cenario_id), nivel, chave.strip()))
-        for desde, pct, principal in _periodos_limpos(lista):
-            conn.execute("INSERT INTO cenario_peso_periodo"
-                         " (cenario_id, nivel, chave, desde, pct, pct_principal)"
-                         " VALUES (?,?,?,?,?,?)",
-                         (int(cenario_id), nivel, chave.strip(), desde, pct, principal))
+        for desde, fica, filial in limpos:
+            if tres:
+                conn.execute(
+                    "INSERT INTO cenario_peso_periodo (cenario_id, nivel, chave, desde,"
+                    " pct, pct_principal, pct_fica, pct_filial) VALUES (?,?,?,?,?,NULL,?,?)",
+                    (int(cenario_id), nivel, chave.strip(), desde,
+                     100.0 - fica - filial, fica, filial))
+            else:   # sem a 025: a parte que fica cabe no formato antigo
+                conn.execute(
+                    "INSERT INTO cenario_peso_periodo (cenario_id, nivel, chave, desde,"
+                    " pct, pct_principal) VALUES (?,?,?,?,?,NULL)",
+                    (int(cenario_id), nivel, chave.strip(), desde, 100.0 - fica))
         conn.commit()
 
 
@@ -352,17 +409,42 @@ def marcar_pesos(cenario_id, nivel: str, chaves, pct) -> int:
     return quantos
 
 
+def conferir_periodos(entradas) -> dict:
+    """{(nível, chave): [(desde, fica, filial)]} já limpo — ou ValueError com o
+    nome da conta. Roda ANTES de gravar qualquer coisa: o "Salvar tudo" não
+    pode gravar metade da página e recusar a outra."""
+    brutos: dict = {}
+    for entrada in entradas or ():
+        nivel, chave, desde, fica, filial = (list(entrada) + [None] * 5)[:5]
+        chave = (chave or "").strip()
+        if (_preenchido(fica) or _preenchido(filial)) and not (desde or "").strip():
+            raise ValueError(f"Falta o mês em {chave}: a linha de período tem "
+                             "percentual, mas não diz a partir de quando.")
+        if (desde or "").strip() == "inicio":       # a linha principal da conta
+            desde = DESDE_O_INICIO
+        brutos.setdefault((nivel, chave), []).append((desde, fica, filial))
+    limpos = {}
+    for (nivel, chave), lista in brutos.items():
+        try:
+            limpos[(nivel, chave)] = _periodos_limpos(lista)
+        except ValueError as e:
+            raise ValueError(f"{chave}: {e}.") from None
+    return limpos
+
+
 def gravar_periodos_da_arvore(cenario_id, presentes, entradas) -> int:
-    """Os períodos da árvore inteira, de uma vez. `presentes`: as contas cujo
-    editor estava na tela ("nível|chave") — só elas são trocadas, para uma
-    conta que a tela não mostrou não perder os períodos dela. `entradas`:
-    [(nível, chave, desde, percentual)]. Devolve quantas contas mudaram."""
+    """As regras da árvore inteira, de uma vez. `presentes`: as contas cuja
+    linha estava na tela ("nível|chave") — só elas são trocadas, para uma
+    conta que a tela não mostrou não perder a regra dela. `entradas`:
+    [(nível, chave, desde, fica no principal, é da filial)], com `desde`
+    "inicio" na linha principal da conta. Devolve quantas contas mudaram.
+
+    A linha principal é a regra "desde o início": o percentual fixo antigo
+    (`cenario_peso`) da conta sai junto, senão ele voltaria a valer quando a
+    pessoa apagasse a linha."""
+    novos = conferir_periodos(entradas)
     atuais = periodos(cenario_id)
-    novos: dict = {}
-    for entrada in entradas:
-        nivel, chave, desde, pct = entrada[:4]
-        principal = entrada[4] if len(entrada) > 4 else None
-        novos.setdefault((nivel, (chave or "").strip()), []).append((desde, pct, principal))
+    fixos = pesos_fixos(cenario_id)
     mudou = 0
     for item in presentes:
         nivel, _, chave = (item or "").partition("|")
@@ -370,9 +452,16 @@ def gravar_periodos_da_arvore(cenario_id, presentes, entradas) -> int:
         if nivel not in NIVEIS or not chave:
             continue
         lista = novos.get((nivel, chave), [])
-        if _periodos_limpos(lista) == list((atuais.get(nivel) or {}).get(chave, [])):
+        tem_fixo = chave in (fixos.get(nivel) or {})
+        if lista == list((atuais.get(nivel) or {}).get(chave, [])) and not tem_fixo:
             continue
         gravar_periodos(cenario_id, nivel, chave, lista)
+        if tem_fixo:
+            with conexao() as conn:
+                conn.execute("DELETE FROM cenario_peso"
+                             " WHERE cenario_id = ? AND nivel = ? AND chave = ?",
+                             (int(cenario_id), nivel, chave))
+                conn.commit()
         mudou += 1
     return mudou
 
@@ -416,10 +505,10 @@ def salvar_participacao(cenario_id, socio_id, pct, obra: str = "") -> None:
         conn.commit()
 
 
-def gravar_participacoes_em_grade(cenario_id, celulas: dict) -> int:
-    """A grade "quem divide" inteira de uma vez: `{(obra, socio_id): "50"}`,
-    obra "" = todas as obras. Célula vazia apaga. Confere tudo antes de
-    gravar (11/11/2026 — ver `prestacao_dados.gravar_participacoes_em_grade`)."""
+def conferir_grade(celulas: dict) -> dict:
+    """A grade conferida, sem gravar: `{(obra, sócio): percentual | None}`.
+    Separada para o "Salvar tudo" da montagem conferir ANTES de gravar
+    qualquer seção — um percentual errado não deixa a página salva pela metade."""
     limpas = {}
     for (obra, socio_id), valor in celulas.items():
         texto = str(valor or "").strip()
@@ -434,6 +523,14 @@ def gravar_participacoes_em_grade(cenario_id, celulas: dict) -> int:
             raise ValueError(f"Percentual inválido em {obra or 'Todas as obras'}: "
                              f"\"{texto}\" (use um número de 0 a 100).")
         limpas[((obra or "").strip(), int(socio_id))] = v
+    return limpas
+
+
+def gravar_participacoes_em_grade(cenario_id, celulas: dict) -> int:
+    """A grade "quem divide" inteira de uma vez: `{(obra, socio_id): "50"}`,
+    obra "" = todas as obras. Célula vazia apaga. Confere tudo antes de
+    gravar (11/11/2026 — ver `prestacao_dados.gravar_participacoes_em_grade`)."""
+    limpas = conferir_grade(celulas)
     with conexao() as conn:
         for (obra, socio_id), pct in limpas.items():
             if pct is None:
@@ -518,9 +615,11 @@ def duplicar(cenario_id, nome: str) -> int:
             "SELECT ?, item FROM cenario_excluida WHERE cenario_id = ?",
             (novo, int(cenario_id)))
         if _tem_periodos():
+            colunas = "nivel, chave, desde, pct, pct_principal" + (
+                ", pct_fica, pct_filial" if _tem_tres_partes() else "")
             conn.execute(
-                "INSERT INTO cenario_peso_periodo (cenario_id, nivel, chave, desde, pct,"
-                " pct_principal) SELECT ?, nivel, chave, desde, pct, pct_principal"
+                f"INSERT INTO cenario_peso_periodo (cenario_id, {colunas})"
+                f" SELECT ?, {colunas}"
                 " FROM cenario_peso_periodo WHERE cenario_id = ?", (novo, int(cenario_id)))
         if _tem_projetos():
             conn.execute(

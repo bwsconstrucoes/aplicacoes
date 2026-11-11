@@ -1,94 +1,152 @@
-{# "Fora da análise" numa lista só (11/11/2026, o dono: "colocar totalmente
-   fora da análise ou colocar até determinado período"). Cada projeto e cada
-   obra escolhe: considerar, fora totalmente, ou considerar SÓ ATÉ um mês (e
-   sair dali em diante). Um Salvar para a lista inteira. #}
-{% macro lista_fora(linhas) %}
+{# O QUE ENTRA NA ANÁLISE — um quadro só, que não some (11/11/2026, o dono:
+   "o ideal é manter o quadro com a obra e a condição que está" e "considerar
+   não é a regra? Tá esquisito"). Entrar é a regra e não se escreve: a linha
+   tem uma caixinha para TIRAR e um mês opcional para "entra só até".
+   Todos os projetos ficam sempre à vista; cada um ABRE nas obras dele (▸),
+   para tirar ou limitar uma obra só.
+   Campos: `fora_chave` (por linha), `fora_total` (a caixinha, com a chave) e
+   `fora_ate` (por linha). #}
+{% macro lista_fora(linhas, botao=True) %}
 <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:8px">
-  <input type="search" placeholder="Procurar obra ou projeto…" data-fora-busca
+  <input type="search" placeholder="Procurar uma obra…" data-fora-busca
          data-sem-busca style="max-width:280px">
   <label class="cartao-dica" style="margin:0">
-    <input type="checkbox" data-fora-so checked> só o que está fora ou com mês
+    <input type="checkbox" data-fora-todas> abrir todos os projetos
   </label>
   <span style="flex:1"></span>
-  <button class="btn" type="submit">Salvar</button>
+  {% if botao %}<button class="btn" type="submit">Salvar</button>{% endif %}
 </div>
-<p class="dica" style="margin-top:0">
-  <b>Fora totalmente</b>: a obra (ou todas as do projeto) não entra em nada.
-  <b>Só até</b>: entra com o que aconteceu até aquele mês, inclusive; dali em
-  diante sai — receita, despesa, régua e caixa. Procurar mostra também quem
-  está sendo considerado, para tirar.
-</p>
-<div class="tabela-rolagem" style="max-height:480px">
+<div class="tabela-rolagem" style="max-height:520px">
   <table class="lista-fora">
     <thead><tr>
-      <th class="sem-ordem">Obra ou projeto</th>
-      <th class="sem-ordem">Na análise</th>
-      <th class="sem-ordem">Último mês considerado</th>
+      <th class="sem-ordem">Projeto ou obra</th>
+      <th class="sem-ordem">Situação</th>
+      <th class="sem-ordem" style="text-align:center">Tirar da análise</th>
+      <th class="sem-ordem">Ou entra só até o mês</th>
     </tr></thead>
     <tbody>
       {% for l in linhas %}
-      <tr data-fora-linha data-texto="{{ l.rotulo|lower }}">
-        <td class="desc">
+      {# o projeto abre nas obras DELE (11/11/2026): `data-pai` liga a obra ao
+         projeto; a obra sem projeto fica no fim, solta #}
+      <tr data-fora-linha data-tipo="{{ l.tipo }}" data-texto="{{ l.rotulo|lower }}"
+          {% if l.tipo == 'projeto' %}data-projeto="{{ l.chave }}" {{ 'data-aberto' if l.aberto }}{% endif %}
+          {% if l.pai %}data-pai="projeto:{{ l.pai }}"{% endif %}
+          {{ 'data-fixa' if l.tipo == 'projeto' or l.modo }}>
+        <td class="desc" {% if l.pai %}style="padding-left:34px"{% endif %}>
+          {% if l.tipo == 'projeto' %}
+            {% if l.obras %}<button type="button" class="link-btn" data-fora-abre
+               aria-expanded="false" title="abrir as obras deste projeto"><span data-seta>▸</span>
+               <b>{{ l.rotulo }}</b></button>
+               <small>{{ l.obras }} obra{{ '' if l.obras == 1 else 's' }}</small>
+            {% else %}<b>{{ l.rotulo }}</b> <small>sem obras</small>{% endif %}
+          {% else %}{{ l.rotulo }}{% endif %}
+        </td>
+        <td data-fora-situacao></td>
+        {% if l.travada %}
+        <td colspan="2"><small>{{ 'fora' if l.modo == 'total' else 'só até ' ~ l.ate[5:] ~ '/' ~ l.ate[:4] }}
+          em todos os cenários — muda em
+          <a href="{{ url_for('painel.prestacao_parametros', aba='fora') }}">Cadastros › Fora da análise</a></small>
+          <input type="hidden" data-fora-travada value="{{ l.modo }}"></td>
+        {% else %}
+        <td style="text-align:center">
           <input type="hidden" name="fora_chave" value="{{ l.chave }}">
-          {{ l.rotulo }}
+          <input type="checkbox" name="fora_total" value="{{ l.chave }}" data-fora-total
+                 {{ 'checked' if l.modo == 'total' }} aria-label="Tirar {{ l.rotulo }} da análise">
         </td>
         <td>
-          <select name="fora_modo" data-fora-modo aria-label="{{ l.rotulo }} na análise">
-            <option value="" {{ 'selected' if not l.modo }}>Considerar</option>
-            <option value="total" {{ 'selected' if l.modo == 'total' }}>Fora totalmente</option>
-            <option value="ate" {{ 'selected' if l.modo == 'ate' }}>Considerar só até…</option>
-          </select>
+          <input type="month" name="fora_ate" value="{{ l.ate if l.modo == 'ate' else '' }}" data-fora-ate
+                 aria-label="{{ l.rotulo }} entra só até o mês">
         </td>
-        <td>
-          <input type="month" name="fora_ate" value="{{ l.ate }}" data-fora-ate
-                 aria-label="último mês de {{ l.rotulo }}">
-        </td>
+        {% endif %}
       </tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
-<div style="display:flex; margin-top:8px"><span style="flex:1"></span>
-  <button class="btn" type="submit">Salvar</button></div>
+<p class="dica">Clique no <b>▸</b> do projeto para ver as obras dele e mexer numa só.
+  Sem marcar nada, o projeto ou a obra <b>entra</b> — é a regra. <b>Tirar</b>
+  um projeto tira todas as obras dele: não recebem estrutura nem juros, não entram na
+  parte de ninguém e deixam de aparecer nos quadros abaixo e no resultado.
+  <b>Entra só até</b>: conta o que aconteceu até aquele mês, inclusive, e sai dali em diante.</p>
 <script>
 (function () {
   const listas = document.querySelectorAll("table.lista-fora");
   const tabela = listas[listas.length - 1];
-  const caixa = tabela.closest("form");
+  const caixa = tabela.closest("form") || tabela.parentElement.parentElement;
   const busca = caixa.querySelector("[data-fora-busca]");
-  const so = caixa.querySelector("[data-fora-so]");
+  const todas = caixa.querySelector("[data-fora-todas]");
   const linhas = [...tabela.querySelectorAll("tr[data-fora-linha]")];
+  const mesBr = v => v ? v.slice(5) + "/" + v.slice(0, 4) : "";
   function ajustar(tr) {
-    const modo = tr.querySelector("[data-fora-modo]").value;
-    // o mês só vale para "só até"; nas outras opções a célula some
-    tr.querySelectorAll("td")[2].style.visibility = modo === "ate" ? "" : "hidden";
+    const total = tr.querySelector("[data-fora-total]");
+    const ate = tr.querySelector("[data-fora-ate]");
+    const travada = tr.querySelector("[data-fora-travada]");
+    const sit = tr.querySelector("[data-fora-situacao]");
+    let texto = "entra", cor = "var(--verde)";
+    if (travada) { texto = travada.value === "total" ? "fora" : "entra só até um mês";
+                   cor = travada.value === "total" ? "var(--vermelho)" : "var(--ambar-escuro, #8a5a00)"; }
+    else if (total.checked) { texto = "fora"; cor = "var(--vermelho)"; }
+    else if (ate.value) { texto = "entra só até " + mesBr(ate.value); cor = "var(--ambar-escuro, #8a5a00)"; }
+    sit.innerHTML = `<b style="color:${cor}">${texto}</b>`;
+    // marcado "tirar", o mês não vale: o campo dele some
+    if (ate) ate.closest("td").style.visibility = total.checked ? "hidden" : "";
+    tr.style.opacity = (texto === "fora") ? ".6" : "";
   }
+  const abertos = new Set(linhas.filter(tr => tr.hasAttribute("data-aberto"))
+                                 .map(tr => tr.dataset.projeto));
+  const projetoFora = chave => {
+    const tr = tabela.querySelector(`tr[data-projeto="${CSS.escape(chave)}"]`);
+    if (!tr) return false;
+    const total = tr.querySelector("[data-fora-total]");
+    const travada = tr.querySelector("[data-fora-travada]");
+    return (total && total.checked) || (travada && travada.value === "total");
+  };
   function filtrar() {
     const termo = (busca.value || "").toLowerCase().trim();
     linhas.forEach(tr => {
-      const marcada = tr.querySelector("[data-fora-modo]").value !== "";
-      const mostra = termo ? tr.dataset.texto.includes(termo) : (!so.checked || marcada);
+      const pai = tr.dataset.pai;
+      let mostra;
+      if (termo) {
+        // procurando: a obra que casa aparece, com o projeto dela em cima
+        mostra = tr.dataset.texto.includes(termo)
+          || (tr.dataset.projeto && linhas.some(f => f.dataset.pai === tr.dataset.projeto
+                                                    && f.dataset.texto.includes(termo)));
+      } else if (pai) {
+        mostra = todas.checked || abertos.has(pai);
+      } else {
+        const total = tr.querySelector("[data-fora-total]");
+        const ate = tr.querySelector("[data-fora-ate]");
+        mostra = tr.hasAttribute("data-fixa") || (total && total.checked)
+          || (ate && ate.value) || todas.checked;
+      }
       tr.style.display = mostra ? "" : "none";
+      if (tr.dataset.projeto) {
+        const aberto = todas.checked || abertos.has(tr.dataset.projeto);
+        const seta = tr.querySelector("[data-seta]");
+        if (seta) seta.textContent = aberto ? "▾" : "▸";
+      }
+      // a obra de um projeto que está fora: fora junto, e diz por quê
+      if (pai) {
+        const sit = tr.querySelector("[data-fora-situacao]");
+        if (projetoFora(pai)) { sit.innerHTML = '<b style="color:var(--vermelho)">fora — pelo projeto</b>'; tr.style.opacity = ".6"; }
+        else ajustar(tr);
+      }
     });
   }
+  tabela.addEventListener("click", e => {
+    const botao = e.target.closest("[data-fora-abre]");
+    if (!botao) return;
+    const chave = botao.closest("tr").dataset.projeto;
+    abertos.has(chave) ? abertos.delete(chave) : abertos.add(chave);
+    filtrar();
+  });
   linhas.forEach(ajustar);
   filtrar();
-  tabela.addEventListener("change", e => {
-    const tr = e.target.closest("tr");
-    if (tr && e.target.matches("[data-fora-modo]")) ajustar(tr);
-  });
+  tabela.addEventListener("change", e => { const tr = e.target.closest("tr"); if (tr) { ajustar(tr); filtrar(); } });
+  tabela.addEventListener("input", e => { const tr = e.target.closest("tr"); if (tr) ajustar(tr); });
   busca.addEventListener("input", filtrar);
   busca.addEventListener("keydown", e => { if (e.key === "Enter") e.preventDefault(); });
-  so.addEventListener("change", filtrar);
-  caixa.addEventListener("submit", e => {
-    const falta = linhas.find(tr => tr.querySelector("[data-fora-modo]").value === "ate"
-                              && !tr.querySelector("[data-fora-ate]").value);
-    if (falta) {
-      e.preventDefault();
-      falta.style.display = "";
-      alert("Falta o mês em " + falta.dataset.texto.toUpperCase() + ": “só até” pede o último mês considerado.");
-    }
-  });
+  todas.addEventListener("change", filtrar);
 })();
 </script>
 {% endmacro %}

@@ -651,6 +651,312 @@ nunca rodou contra a base real**. Ele passou pelo parser do Postgres, pelo teste
 de portabilidade e pelos testes com dublê — nenhum dos três olha o número que
 sai.
 
+## Cada conta da matriz em TRÊS PARTES — 11/11/2026 (noite)
+
+**NÃO PUBLICADO ainda** — está no ramo, à espera do "pode" do dono. **Tem
+migração (025):** ao publicar, ele aperta "Aplicar atualizações do banco" no
+mesmo momento.
+
+O dono explicou a regra três vezes, a última com exemplos, e fechou os nomes:
+
+- **BWS** — custos da matriz (rateável entre tudo);
+- **BWSCE** — as obras da matriz (o projeto principal);
+- **BWSNE** — custos da filial (rateável só entre as obras da filial);
+- **BWSFILIAL** — *"todas as obras que não são obras da BWSCE"*. É o nome do
+  lado; está em `prestacao.NOME_DOS_DEMAIS`.
+
+Cada grupo, categoria ou lançamento do BWS tem **três destinos que somam 100%**:
+
+| Parte | Para onde vai |
+|---|---|
+| **fica no BWSCE** | só entre as obras do BWSCE, pela régua |
+| **é da BWSFILIAL** | só entre as demais obras, pela régua |
+| **rateia** (o que falta para 100) | entre TODAS as obras, dos dois lados |
+
+Os exemplos dele, que viraram teste: "X: ratear 100%"; "Y: jogar 20% para
+BWSNE e ratear 80%"; "Z: jogar 100% para BWSNE"; "de 20.000, 10.000 ficam em
+BWSCE e os outros 10.000 se rateiam — BWSCE recebe 10.000 mais a cota dele".
+
+**O que a conta fazia, e por que estava errado:** "% que entra" (o que não
+entrava **sumia**) e "para o BWSCE" (do que entrava, o resto ia **só para os
+demais**). Nenhum dos dois é o que ele descreveu.
+
+**Decisões:**
+
+- **Vale a regra do nível mais específico** (lançamento › categoria › grupo ›
+  padrão do cenário), e ela **substitui** a de cima — não se combinam. Ele
+  confirmou o caso que importava: "metade de 2022 fica em BWSCE" vale para o
+  grupo Despesas com Pessoal, porque no começo a filial não tinha estrutura.
+- **A regra pode mudar com o tempo** em cada nível; a linha da conta é a regra
+  "desde o início" (`1900-01`) e as outras valem a partir de um mês.
+- **"Fica de fora" deixou de existir.** O padrão do cenário abaixo de 100 e o
+  lançamento marcado com menos de 100 (formato antigo, "quanto rateia")
+  deixam o resto **no BWSCE**. O batimento continua com a coluna, sempre zero.
+- **O que já estava gravado é convertido pelo que ele disse que queria** — não
+  pelo que a conta antiga fazia: o que não entrava fica no BWSCE; "para o
+  BWSCE p%" fica nele; o resto **rateia entre todas** (antes ia só para os
+  demais). Mesma fórmula na migração 025 e em
+  `cenarios.partes_do_formato_antigo`, que lê a linha enquanto a migração não
+  foi aplicada. **Os números de cenário já montado mudam** — avisado a ele.
+- **Sem a migração, o painel continua de pé**: lê tudo no formato antigo e
+  grava o que couber nele; só a parte "é da BWSFILIAL" é recusada, com o
+  aviso de aplicar a atualização.
+- A linha de regra em branco **não é enviada** pela tela (era o grosso do
+  envio que estourava o servidor).
+
+**Onde está:** `prestacao.partes_da_conta` (a regra), `calcular_rateio_do_cenario`
+(a conta), `cenarios.periodos / gravar_periodos / conferir_periodos` (o banco),
+`web._contas_da_matriz` (a árvore, com fica / filial / rateia em reais),
+`painel_cenario.html` passo 2 (dois campos por conta e o "rateia" calculado na
+hora), `painel_cenario_como.html` passo 2 (para os sócios).
+
+**Não verificado com dado real:** nenhum número da base dele. A regra está
+conferida à mão nos testes, com valores pequenos.
+
+**Achado de passagem:** o leitor de `multipart` do Werkzeug 3.1.9 se perde com
+vários campos **vazios** seguidos (lê o cabeçalho do campo seguinte como
+valor). A montagem não manda mais nesse formato; se algum dia uma tela do
+painel voltar a mandar formulário grande em `multipart`, é por aí que quebra.
+
+## MATRIZ × FILIAL: a regra que a conta do cenário tinha perdido — 11/11/2026 (fim da tarde)
+
+**NÃO PUBLICADO ainda** — está no ramo, à espera do "pode" do dono.
+
+O dono colou dois números que não batiam — "a matriz gastou" 15.514.876,82 na
+montagem contra 14.699.912,50 no DRE do projeto BWS — e depois, olhando os
+Parâmetros gerais, disse a regra com todas as letras:
+
+> *"Centro de custo da estrutura (1) é o que será rateado entre BWSCE e demais
+> obras que selecionarmos, só que ele na verdade são dois centros: o BWS
+> Construções e o CON - Escritório Central. Ambos formam o projeto BWS. (…)
+> Centro de custo da estrutura (2) é totalmente rateável apenas entre demais
+> obras, fora BWSCE."*
+
+Eram **dois defeitos**, e nenhum era da tela:
+
+1. cada campo só aceitava **um** centro de custo — o "CON - Escritório
+   Central" não tinha onde entrar, e o BWSNE estava somado no lugar dele (é a
+   diferença dos 815 mil; a configuração da produção era `BWS Construções` +
+   `BWSNE`, vista no print dele);
+2. a conta do cenário **juntava matriz e filial num bolo só** — a filial
+   também era dividida com o projeto principal. O modelo antigo (Streamlit,
+   regras com escopo) separava; o cenário, quando nasceu, perdeu isso.
+
+**O que mudou:**
+
+- `depto_admin_matriz` e `depto_admin_filial` guardam **listas**, separadas
+  por ";" na mesma chave (`prestacao.centros_da_matriz / centros_da_filial /
+  centros_da_estrutura`). Um nome só continua valendo. **Sem migração.**
+- **Matriz** = o que se divide entre o projeto principal e os demais, pelos
+  percentuais da árvore. **Filial** = entra inteira (os percentuais da árvore
+  não mexem nela) e vai **só para as obras dos demais**, pela régua
+  (`calcular_rateio_do_cenario(..., so_dos_demais=)`). Mês sem obra dos demais
+  recebendo: o custo da filial vira "custo sem dono", à vista — **não** passa
+  para o principal (a regra "nada fica sem dono entre os lados" é da matriz).
+- A árvore do passo 2 e os lançamentos marcados um a um são **só da matriz**;
+  a filial aparece numa linha própria, com o valor. "A matriz gastou" passa a
+  ser, por construção, o DRE dos centros de custo da matriz.
+- **Conferência na tela** (`_estrutura_contra_o_projeto`): os centros de custo
+  da matriz contra todos os do projeto a que pertencem, com valor. Se a lista
+  difere, a tela mostra qual centro falta ou sobra; se bate, diz "✔ bate com o
+  DRE do projeto".
+- Os **juros de empréstimo** continuam indo pela régua do déficit, somando os
+  da matriz e os da filial. **Decisão minha, não confirmada com o dono:** o
+  juro lançado na filial pode cair em obra do projeto principal que estava no
+  vermelho. Se ele quiser o juro da filial só nos demais, é mudança pequena em
+  `alocar_juros_por_deficit`.
+
+**O que o dono precisa fazer depois de publicado:** em Cadastros › Parâmetros
+gerais, acrescentar "CON - Escritório Central" na MATRIZ e deixar o BWSNE na
+FILIAL. Enquanto não fizer, a montagem acusa a diferença com o nome do centro.
+
+**Os números do resultado MUDAM** com esta publicação (BWSCE deixa de receber
+parte do BWSNE) e de novo quando ele acertar os centros de custo. É o
+conserto, mas é para ser dito antes de alguém comparar com um relatório já
+tirado.
+
+### O mesmo dia, antes disso
+
+- **"Não salvou: o servidor respondeu 500"** no Salvar tudo. Reproduzido: a
+  montagem mandava a página inteira em `multipart`, e o Werkzeug recusa acima
+  de 1.000 campos (cada conta leva 34, quase todos de linhas de período em
+  branco). O erro genérico do painel transformava o 413 em 500. Agora a tela
+  manda em texto simples, sem as linhas em branco (3.988 campos → 745 no
+  ensaio); o painel aceita formulário grande (`TETO_DE_CAMPOS`); o 413 tem
+  mensagem própria; e, se falhar, a barra mostra o **motivo** que o servidor
+  deu. Não vi o log da produção — a causa foi reproduzida aqui, não lida lá.
+- **Sócios**: botão **Excluir** (recusado para quem tem ajuste lançado —
+  ajuste é dinheiro registrado; os percentuais vão junto) e **posição** por
+  setas ▲▼. A posição fica em `config` (`ordem_dos_socios`), não em coluna
+  nova, para não pedir atualização do banco; vale nas colunas do "Quem
+  divide", na página "Como é feita" e nos quadros do resultado.
+- **"Quem divide"** abre cada projeto nas obras dele, como o passo 1; a obra
+  em branco mostra em cinza o percentual que está valendo (do projeto ou de
+  "Todas as obras").
+- **Os juros na montagem** viraram valor e categoria (o dono: "essas
+  informações geram confusão"). O quadro grande ficou só em Configurações ›
+  Conferências — e passou a somar os juros e multas pagos, como a conta: eram
+  R$ 3.039.343,02 num quadro e R$ 3.030.809,67 no outro. A causa (o encargo)
+  está no código; a diferença exata de 8.533,35 **não foi conferida na base**.
+- **Armadilha de teste achada:** teste que grava `config` e não devolve deixa
+  o banco do trabalhador do xdist sujo **entre execuções** (os bancos
+  `erp_teste_gwN` não são recriados). Um teste antigo falhou por isso, uma
+  vez. Quem mexer em `config` num teste devolve no `finally`.
+
+## "Onde estão as configurações de rateio dos grupos e categorias?" — 11/11/2026 (tarde)
+
+O dono: *"só vejo a parte de juros de empréstimo."* Ele estava em Cadastros
+(a antiga Parâmetros), onde a aba "Regras de rateio" tinha saído com a
+prestação antiga; os percentuais ficam na montagem, passo 2 — e o caminho até
+lá era um botão pequeno ("← Montar") no resultado.
+
+- **A mesma barra nas quatro telas da prestação** (`painel_prestacao_nav.html`):
+  Resultado · Como é feita · Montar o cenário · Cadastros, cada botão dizendo
+  o que tem dentro ("percentuais dos grupos e categorias" está escrito no de
+  Montar). Os botões soltos de ir de uma tela a outra saíram.
+- Cadastros abre com um aviso que leva direto ao passo 2 da montagem.
+- A árvore vazia diz por quê (nenhuma despesa nos centros de custo da
+  estrutura, e quais são) em vez de aparecer só o cabeçalho.
+
+## A tarifa que o OMIE "bloqueou", e o projeto que abre nas obras — 11/11/2026 (tarde)
+
+**1. Trocar a obra de uma tarifa (lançamento de conta) — primeira tentativa
+real.** O dono tentou o 11307316641 e leu só: *"A Omie bloqueou as chamadas por
+consumo excessivo e pediu 59 segundos."* A consulta tinha funcionado (a tela
+mostrou "Departamento: — → 10691072391"); o bloqueio veio na gravação.
+
+O que o código mostrava (a causa não foi confirmada — o log do servidor não
+abre daqui): uma resposta 500 do OMIE que não estivesse na lista de "erros
+definitivos" era tratada como passageira e a MESMA chamada era repetida. O
+OMIE pune a repetição com "consumo redundante, aguarde 59 segundos" — e a
+primeira resposta, que é o motivo de verdade, ficava só no log. É o mesmo
+enredo de 21/09/2026 (período contábil fechado). E o que era enviado tinha
+bloco que a gravação provavelmente não aceita.
+
+Conserto:
+- **Gravação não se repete** (`_call(uma_vez=True)` em alterar/excluir título
+  e alterar lançamento de conta): uma chamada, e o erro do OMIE como veio.
+- **O bloqueio conta o que veio antes**: `OmieBloqueada` leva o texto do OMIE
+  e a primeira recusa.
+- **`AlterarLancCC` só manda o que é da gravação**: saem `diversos` (os dados
+  da conciliação), `nCodAgrup`, `info`, a transferência sem conta de destino e
+  a lista vazia de categorias.
+- A tela diz "Nada foi alterado no OMIE" em vez de "0 alterados — e já no
+  painel".
+**CONTINUA NÃO VERIFICADO** se o OMIE aceita `AlterarLancCC` com esse formato,
+e se deixa alterar lançamento conciliado. A próxima tentativa do dono mostra o
+erro de verdade, se houver. Outra hipótese, que não exclui a primeira: o
+"Ler as obras dos lançamentos de conta" rodando ao mesmo tempo consome a
+mesma API.
+
+**2. "No fora da análise, deveria podermos expandir o projeto e ver as obras
+e editar cada obra de dentro do projeto."** No passo 1 da montagem (e em
+Cadastros › Fora da análise) cada projeto abre (▸) nas obras DELE; já vem
+aberto quando alguma obra tem situação própria. Obra de projeto que está fora
+aparece como "fora — pelo projeto". Procurar uma obra mostra o projeto dela em
+cima. "Abrir todos os projetos" no lugar de "mostrar todas as obras". A obra
+sem projeto fica no fim, solta.
+
+## Publicado em 11/11/2026, 18:08 (UTC) — e uma falha de CI não explicada
+
+Foi para a `main` (`4625cb9b`): o passo 1 "o que entra", o Salvar tudo, os
+vários períodos, o custo da matriz aberto por centro de custo, o quadro dos
+juros reescrito — com a `main` de outros chats trazida antes.
+
+**Fica anotado:** a verificação do GitHub FALHOU no commit `386dc5cc` (antes de
+trazer a `main`) e o teste que falhou não foi identificado — o registro que a
+ferramenta devolve é só o fim do job, que é o log do Postgres. Não reproduziu:
+a suíte inteira passou aqui (com a biblioteca de imagens consertada nesta
+máquina: `python3 -m pip install --ignore-installed Pillow`) e passou no
+GitHub no commit seguinte (`4625cb9b`, com a `main` dentro). Se voltar a
+falhar sem motivo, o primeiro suspeito é teste que depende da ordem dos
+arquivos no mesmo trabalhador — a montagem passou a lembrar a despesa da
+matriz até a próxima carga (`consultas._lembrando`), e teste que grava no
+`fato` sem chamar `consultas.esquecer_listas()` leria o guardado de outro.
+
+**Pendente do dono depois desta publicação:** apertar "Ler as obras dos
+lançamentos de conta" (ele viu um de 03/01/2025, R$ 79.346,96, como "(obra
+ainda não lida do OMIE)" — nunca tinha apertado); conferir em Cadastros ›
+Parâmetros gerais os dois centros de custo da estrutura (ele entende que são
+"BWS Construções" e "Escritório Central"; de fábrica o segundo é "BWSNE").
+
+## A montagem depois de o dono usar: o que entra primeiro, Salvar tudo, de onde vem o custo — 11/11/2026 (noite)
+
+O dono, usando a versão publicada às 01:55:
+- *"Fora da análise era para ser uma das primeiras perguntas. Na hora que eu
+  colocar fora, não era mais nem para aparecer em quem divide o resultado,
+  quem recebe o custo da matriz. A gente tira num canto, aí ele fica
+  aparecendo no outro."*
+- *"A gente grava, aí ele some e fica só um textozinho (…) o ideal é manter o
+  quadro com a obra e a condição que está."* e *"considerar não é a regra? Tá
+  esquisito."*
+- *"Eu tenho que gravar um por um. Por que eu não posso abrir várias
+  caixinhas (…) e depois gravar tudo de uma vez? Isso vale para tudo."*
+- *"O projeto BWS é exatamente os custos da matriz, não é? Acho que não era
+  para ele aparecer aqui."*
+- *"A matriz gastou 15,4 milhões (…) os dois centros de custo que compõem
+  [a estrutura] dão 13,2 executado e 14,19 comprometido. De onde é que está
+  sendo puxado esse outro valor?"*
+
+**O que mudou:**
+1. **Passo 1 = "Quais projetos e obras entram"** (era o 4, "Fora da análise").
+   Um quadro que não some: TODOS os projetos sempre à vista, com a situação
+   escrita (entra / fora / entra só até MM/AAAA); as obras aparecem quando têm
+   situação própria ou ao procurar. Entrar é a regra e não se escolhe: a linha
+   tem uma caixinha "Tirar da análise" e um mês opcional "ou entra só até".
+   O que foi tirado em Cadastros (vale para todo cenário) aparece no mesmo
+   quadro, travado. Campos: `fora_chave`, `fora_total`, `fora_ate`.
+2. **O que está fora some dos passos seguintes**: "quem recebe" e "quem
+   divide" só listam o que entra (`_projetos_e_obras_da_montagem`). A regra de
+   "quem recebe" e a participação de quem saiu NÃO são apagadas — voltam se o
+   projeto voltar (`_gravar_quem_recebe` preserva as regras que não vieram no
+   formulário).
+3. **Projeto que é só a estrutura não aparece**: só entra nas listas o projeto
+   com ao menos uma obra que não seja centro de custo da estrutura. Era só
+   aparência — projeto sem obra nunca recebeu nem dividiu nada.
+4. **"Salvar tudo"**: barra fixa no pé da montagem. Grava os cinco passos num
+   envio só (`acao=tudo`); o botão de qualquer passo faz o mesmo. Confere o
+   que pode recusar (mês faltando, percentual inválido) ANTES de gravar
+   qualquer seção. Avisa em quais passos há alteração não salva e volta para
+   onde a tela estava.
+5. **Vários períodos antes de salvar**: "＋ outro período" abre até seis linhas
+   novas por conta. Sócios: "＋ mais linhas" (até 20 novos por salvada).
+6. **De onde vem "a matriz gastou"**: a tela agora escreve — a soma das
+   despesas (DRE) dos DOIS centros de custo configurados como estrutura, cada
+   um com o seu valor, a medida (comprometido/executado), o período (todos os
+   anos) e o que está sem data, com link para o DRE filtrado por eles.
+   **Suspeita não confirmada** (a base não abre daqui): a configuração de
+   fábrica é "BWS Construções" + "BWSNE" (migração 002), e ele descreveu a
+   estrutura como "BWS Construções" + "Escritório Central". Os dois campos de
+   Parâmetros gerais deixaram de ser texto livre: viraram lista dos centros
+   de custo da base ("Centro de custo da estrutura (1) e (2)").
+
+## "Onde estão os juros de empréstimo": o quadro reescrito — 11/11/2026 (noite)
+
+O dono colou o quadro ("o que a prestação conta hoje: R$ 2.358.331,00", um
+parágrafo sobre DRE × Fluxo de Caixa, e "Fora desta lista: −R$ 1.960.842,91
+de juros e multa por atraso") e escreveu: *"Não entendi!"*. A categoria dele
+é uma só: Despesas Financeiras › Juros sobre Empréstimos.
+
+Dois defeitos no quadro:
+- o número do topo somava a categoria na EMPRESA INTEIRA (matriz, filial e
+  obras, só o pago). A prestação só distribui pelo caixa o juro lançado na
+  matriz/filial; o lançado direto numa obra já é despesa dela
+  (`prestacao.separar_juros`). O número não era o que a conta usa;
+- o texto explicava o mecanismo (DRE, Fluxo de Caixa, "contada") em vez de
+  dizer o que acontece com o dinheiro.
+
+Agora (`consultas.conferencia_dos_juros(configuradas, deptos_admin)`): quais
+categorias contam, e três números com uma frase cada — **lançado na matriz e
+na filial** (é o que se distribui), **lançado direto numa obra** (fica nela) e
+**juros e multa por atraso** (não é juro de empréstimo; fica na obra que
+atrasou). A tabela categoria por categoria ficou recolhida ("Conferir"), com
+as colunas "na matriz/filial" e "direto em obra". Categoria marcada que o OMIE
+não trata como despesa ganha um aviso vermelho próprio.
+
+NÃO VERIFICADO com os números dele: quanto dos R$ 2,36 milhões está na
+matriz/filial e quanto está direto em obra — é o que o quadro novo vai dizer.
+
 ## A prestação de contas ANTIGA saiu — 11/11/2026 (noite)
 
 O dono: *"eu não sei o que é essa prestação de conta antiga. Se não tá

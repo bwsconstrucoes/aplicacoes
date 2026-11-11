@@ -802,6 +802,23 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 11/11/2026 — a pergunta da publicação é UMA POR CHAT
+
+Ele: *"Agora não pode mais. Pq tá perguntando duas vezes? Já havia afirmado."*
+
+A regra de perguntar se há carga do painel ou sincronização do Análise de SPs
+em andamento antes de juntar na `main` estava escrita sem dizer **quantas
+vezes** — e eu a repeti na segunda publicação do mesmo chat, horas depois de
+ele já ter respondido "não tem nada rodando".
+
+**Respondida, vale para o chat inteiro.** Um "pode publicar" seguinte já
+carrega a resposta; repetir é pedir de novo o que ele já deu, que é a mesma
+irritação da pausa no meio da fila. Corrigido em `CLAUDE.md` › "Juntar na
+`main`", item 2.
+
+⚠️ **E tem um custo concreto nesta vez:** a publicação foi cancelada por causa
+da pergunta repetida. O trabalho ficou pronto e verde no ramo, esperando.
+
 ### 10/11/2026 — Duas mudanças que ATRAVESSAM ÁREAS (ERP ⇄ ponto ⇄ Análise de SPs)
 
 **Em ramo, não publicado.** Registradas aqui porque tocam arquivo de outra

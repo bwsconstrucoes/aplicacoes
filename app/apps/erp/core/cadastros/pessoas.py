@@ -141,11 +141,28 @@ MOTIVO_ALTERACAO_ROTULOS = {
 }
 
 
-def opcoes() -> dict[str, Any]:
+def opcoes(s: Optional[Session] = None) -> dict[str, Any]:
     """Tudo que a tela precisa para montar as caixinhas, de uma vez."""
     def par(chaves, rotulos):
         return [{"valor": c, "rotulo": rotulos.get(c, c)} for c in chaves]
+    # ⚑ AS EMPRESAS FALTAVAM AQUI — e a ficha tem uma caixinha "Empresa" que
+    # lê justamente desta lista. Ou seja: a caixinha estava SEMPRE VAZIA, e o
+    # único jeito de dizer a empresa era digitar o CNPJ no campo de texto ao
+    # lado. Era por isso que os dois campos conviviam.
+    #
+    # Achado em 11/11/2026, quando ele disse: *"empresa para registro e CNPJ
+    # para admissão é campo duplicado. É a mesma informação."*
+    empresas = []
+    if s is not None:
+        empresas = [
+            {"id": l["id"], "razao_social": l["razao_social"],
+             "nome": l["nome_fantasia"] or l["razao_social"], "cnpj": l["cnpj"]}
+            for l in s.execute(text(
+                "SELECT id, razao_social, nome_fantasia, cnpj FROM empresas"
+                " WHERE ativo IS NOT FALSE ORDER BY razao_social"
+            )).mappings().all()]
     return {
+        "empresas": empresas,
         "vinculos": par(VINCULOS, VINCULO_ROTULOS),
         "tipos_contrato": par(TIPOS_CONTRATO, TIPO_CONTRATO_ROTULOS),
         "sexos": par(SEXOS, SEXO_ROTULOS),
@@ -368,6 +385,24 @@ def salvar(s: Session, dados: dict[str, Any], usuario: Usuario) -> Colaborador:
         if campo in dados:
             bruto = dados[campo]
             setattr(c, campo, int(bruto) if bruto not in (None, "", 0, "0") else None)
+    # ⚑ O CNPJ DE ADMISSÃO SEGUE A EMPRESA, e não o contrário.
+    #
+    # Ele, em 11/11/2026: *"empresa para registro e CNPJ para admissão é campo
+    # duplicado. É a mesma informação."* Eram duas colunas para um fato só, e
+    # o código já tratava assim — `core/contabilidade.py` faz `c.empresa_id or
+    # c.cnpj_admissao`, ou seja, tenta uma e cai na outra.
+    #
+    # Escolhida a empresa, o CNPJ vem do cadastro dela. Quem NÃO manda empresa
+    # (a importação de planilha, a importação do Pipefy, o pedido que vem da
+    # obra com o CNPJ numa caixinha) continua podendo mandar o texto — senão a
+    # correção aqui quebraria três caminhos que funcionam.
+    if dados.get("empresa_id"):
+        da_empresa = s.execute(
+            text("SELECT cnpj FROM empresas WHERE id = :i"),
+            {"i": int(dados["empresa_id"])}).scalar()
+        if da_empresa and str(da_empresa).strip():
+            c.cnpj_admissao = str(da_empresa).strip()
+
     if "situacao" in dados:
         c.situacao = (str(dados["situacao"]).strip().upper() or "ATIVO")
     if "regime" in dados:

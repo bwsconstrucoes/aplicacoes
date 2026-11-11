@@ -62,7 +62,28 @@ def _porta_de_entrada():
     from . import db
     db.iniciar_medicao()
     g._painel_comeco = time.perf_counter()
+    # A MONTAGEM MANDA A PÁGINA INTEIRA NUM ENVIO (11/11/2026): o teto padrão
+    # do Werkzeug — 1.000 campos e 500 kB de formulário — é menor que a tela
+    # de uma empresa de verdade, e estourar virava "o servidor respondeu 500"
+    # no Salvar tudo. O teto continua existindo, só que acima do que a tela faz.
+    request.max_form_parts = TETO_DE_CAMPOS
+    request.max_form_memory_size = TETO_DO_FORMULARIO
     return auth.exigir_login()
+
+
+TETO_DE_CAMPOS = 100_000
+TETO_DO_FORMULARIO = 16 * 1024 * 1024
+
+
+@bp.errorhandler(413)
+def _formulario_grande_demais(e):
+    """Formulário acima do teto: diz isso, em vez de um 500 sem motivo."""
+    logger.warning("Painel: formulário grande demais em %s", request.path)
+    texto = ("A tela mandou mais dados do que o servidor aceita de uma vez. "
+             "Nada foi gravado.")
+    if request.path.startswith("/painel/api/"):
+        return jsonify({"ok": False, "erro": texto}), 413
+    return render_template("painel_erro.html", erro=texto), 413
 
 
 @bp.context_processor
@@ -1386,9 +1407,10 @@ def prestacao_contas():
 # O cenario e o objeto: trocar de cenario troca o resultado inteiro, e o
 # anterior continua intacto para comparar.
 def _deptos_administrativos(config) -> list[str]:
-    """Os departamentos que sao a ESTRUTURA — o bolo a repartir, nao destino."""
-    return [d for d in (config.get("depto_admin_matriz"),
-                        config.get("depto_admin_filial")) if d]
+    """Os centros de custo que sao a ESTRUTURA (matriz e filial) — o bolo a
+    repartir, nao destino."""
+    from . import prestacao
+    return prestacao.centros_da_estrutura(config)
 
 
 def _calcular_cenario(cenario: dict) -> dict:
@@ -1455,8 +1477,12 @@ def _calcular_cenario(cenario: dict) -> dict:
                          and o not in consultas.SEM_OBRA_OU_NAO_LIDA)
 
     pesos = cenario.get("pesos") or cenarios.pesos(cenario["id"])
+    # MATRIZ × FILIAL (11/11/2026): os percentuais da árvore e os lançamentos
+    # marcados um a um são da MATRIZ; a filial vai inteira para os demais.
+    da_filial = set(prestacao.centros_da_filial(config))
     excecoes = consultas.lancamentos_administrativos_por_codigo(
-        deptos, list((pesos.get("lancamento") or {}).keys()), medida)
+        prestacao.centros_da_matriz(config),
+        list((pesos.get("lancamento") or {}).keys()), medida)
 
     # Os juros saem do bolo ANTES do rateio: regua propria, a do deficit.
     categoria_juros = (config.get("categoria_juros")
@@ -1502,10 +1528,12 @@ def _calcular_cenario(cenario: dict) -> dict:
         return cenarios.recebe_no_mes(regras_proj.get(projeto), mes)
 
     rateio = prestacao.calcular_rateio_do_cenario(
-        admin_sem_juros, excecoes, driver, obras, pesos,
+        [l for l in admin_sem_juros if l.get("depto") not in da_filial],
+        excecoes, driver, obras, pesos,
         pct_padrao=float(cenario.get("pct_padrao", 100) or 0),
         janela=str(cenario.get("janela", "1")),
-        lado_de=lado_de, recebe=_recebe)
+        lado_de=lado_de, recebe=_recebe,
+        so_dos_demais=[l for l in admin_sem_juros if l.get("depto") in da_filial])
 
     # O caixa e lido UMA vez e devolvido: a tela de resultado desenha a vida de
     # uma obra com ele, e reler significaria varrer o fato inteiro de novo.
@@ -1540,6 +1568,14 @@ def _calcular_cenario(cenario: dict) -> dict:
         por_obra, participacoes, float(cenario.get("taxa_adm_pct", 0) or 0),
         projeto_de={o: info.get("projeto") or "" for o, info in obras.items()})
     ajustes = prestacao_dados.ajustes()
+    posicao = prestacao.posicao_dos_socios(quotas, ajustes)
+    # A POSIÇÃO ESCOLHIDA em Cadastros › Sócios vale também aqui (11/11/2026).
+    # Sem posição escolhida, fica como sempre foi: quotas por nome, e a
+    # posição de cada um do maior saldo para o menor.
+    if prestacao_dados.ordem_dos_socios(config):
+        lugar = {s["nome"]: n for n, s in enumerate(prestacao_dados.socios())}
+        quotas.sort(key=lambda q: (lugar.get(q["socio"], len(lugar)), q["obra"]))
+        posicao.sort(key=lambda p: lugar.get(p["socio"], len(lugar)))
     return {
         "cenario": cenario, "obras": obras, "rateio": rateio, "juros": juros,
         "apurado": apurado, "por_obra": por_obra, "quotas": quotas,
@@ -1548,7 +1584,7 @@ def _calcular_cenario(cenario: dict) -> dict:
         "excluidas_gerais": list(itens_gerais),
         "sem_projeto": sem_projeto,
         "tem_nao_apropriado": any(o in obras for o in consultas.SEM_OBRA_OU_NAO_LIDA),
-        "posicao": prestacao.posicao_dos_socios(quotas, ajustes),
+        "posicao": posicao,
         "sobras": rateio["sobras"] + juros["sobras"],
         # O BATIMENTO (10/11/2026): o custo global da matriz contra a soma do
         # que foi para cada lado, dos juros, do sem dono e do que ficou de
@@ -1562,6 +1598,38 @@ def _calcular_cenario(cenario: dict) -> dict:
                                        if o not in obras),
         "principal": principal,
     }
+
+
+def _num(v) -> str:
+    """50 -> "50"; 33.333 -> "33,33" — percentual para ler, sem zero sobrando."""
+    return (f"{float(v):.2f}".rstrip("0").rstrip(".")).replace(".", ",")
+
+
+def _partes_por_extenso(fica, filial, principal: str = "") -> str:
+    """As três partes de uma regra, em palavras: "20% fica no BWSCE · 80%
+    rateia entre todas". Parte zerada não é dita."""
+    rateia = 100.0 - float(fica) - float(filial)
+    partes = []
+    if fica > 0.005:
+        partes.append(f"{_num(fica)}% fica no {principal or 'projeto principal'}")
+    if filial > 0.005:
+        from .prestacao import NOME_DOS_DEMAIS
+        partes.append(f"{_num(filial)}% é da {NOME_DOS_DEMAIS}")
+    if rateia > 0.005:
+        partes.append(f"{_num(rateia)}% rateia entre todas")
+    return " · ".join(partes)
+
+
+def _regras_por_extenso(regra, datadas, principal: str = "") -> str:
+    """A regra de uma conta com os períodos: "sempre: …; a partir de 01/2022: …"."""
+    trechos = []
+    if regra is not None:
+        trechos.append((("desde o início: " if datadas else "")
+                        + _partes_por_extenso(regra[0], regra[1], principal)))
+    for desde, fica, filial in datadas or []:
+        trechos.append(f"a partir de {desde[5:]}/{desde[:4]}: "
+                       + _partes_por_extenso(fica, filial, principal))
+    return "; ".join(trechos)
 
 
 def _contas_da_matriz(config, cenario, medida: str) -> dict:
@@ -1583,7 +1651,11 @@ def _contas_da_matriz(config, cenario, medida: str) -> dict:
     from . import consultas, prestacao
     pesos = cenario.get("pesos") or {}
     padrao = float(cenario.get("pct_padrao", 100) or 0)
-    deptos = _deptos_administrativos(config)
+    # SÓ A MATRIZ (11/11/2026): é ela que se divide entre o projeto principal
+    # e os demais, e é dela que são os percentuais. A filial vai inteira para
+    # os demais e aparece num quadro à parte (`resumo["filial"]`).
+    deptos = prestacao.centros_da_matriz(config)
+    centros_da_filial = prestacao.centros_da_filial(config)
     # As categorias de juro seguem a regua do deficit, nao a do rateio: a
     # arvore as mostra, mas nao como coisa que se divide por aqui.
     juros = (prestacao.categorias_de_juros(config.get("categoria_juros")
@@ -1602,91 +1674,194 @@ def _contas_da_matriz(config, cenario, medida: str) -> dict:
         por_categoria.setdefault(chave, []).append(e)
 
     grupos: dict[str, dict] = {}
-    primeiro_mes = ""
+    primeiro_mes = ultimo_mes = ""
+    # DE ONDE VEM O "A MATRIZ GASTOU" (11/11/2026, o dono: "está aparecendo
+    # 15,4 milhões (…) de onde é que está sendo puxado esse valor?"). É a soma
+    # dos centros de custo da matriz — e a tela não dizia quais. Agora vem
+    # aberto por centro de custo, com o período.
+    por_depto = {d: 0.0 for d in deptos}
+    sem_data = 0.0
     for linha in consultas.despesa_administrativa(deptos, medida):
-        if linha["mes"] != consultas.SEM_DATA and (not primeiro_mes or linha["mes"] < primeiro_mes):
-            primeiro_mes = linha["mes"]
+        por_depto[linha["depto"]] = por_depto.get(linha["depto"], 0.0) + linha["valor"]
+        if linha["mes"] == consultas.SEM_DATA:
+            sem_data += linha["valor"]
+        else:
+            if not primeiro_mes or linha["mes"] < primeiro_mes:
+                primeiro_mes = linha["mes"]
+            if linha["mes"] > ultimo_mes:
+                ultimo_mes = linha["mes"]
         nome = linha.get("grupo") or "(sem grupo)"
         cat = linha.get("categoria") or "(sem categoria)"
         g = grupos.setdefault(nome, {"grupo": nome, "valor": 0.0, "categorias": {}})
         g["valor"] += linha["valor"]
         c = g["categorias"].setdefault(cat, {"categoria": cat, "valor": 0.0,
-                                             "entra_balde": 0.0})
+                                             "fica": 0.0, "filial": 0.0})
         c["valor"] += linha["valor"]
-        # mês a mês: o percentual pode mudar com o tempo (09/11/2026)
-        c["entra_balde"] += linha["valor"] * prestacao.peso_da_conta(
-            pesos, nome, cat, "", padrao, mes=linha["mes"]) / 100.0
+        # mês a mês: a regra pode mudar com o tempo
+        fica, filial = prestacao.partes_da_conta(pesos, nome, cat, "", padrao,
+                                                 mes=linha["mes"])
+        c["fica"] += linha["valor"] * fica / 100.0
+        c["filial"] += linha["valor"] * filial / 100.0
     per = pesos.get("periodos") or {}
+    INICIO = "1900-01"
+
+    def _regra_propria(nivel, chave):
+        """((fica, filial) que vale desde o início | None, [regras com data]).
+        O percentual fixo antigo conta como regra desde o início."""
+        lista = (per.get(nivel) or {}).get(chave, [])
+        desde_sempre = next(((f, n) for d, f, n in lista if d == INICIO), None)
+        if desde_sempre is None and chave in (pesos.get(nivel) or {}):
+            desde_sempre = (100.0 - float(pesos[nivel][chave]), 0.0)
+        return desde_sempre, [p for p in lista if p[0] != INICIO]
+
+    def _texto(regra, datadas):
+        return _regras_por_extenso(regra, datadas)
 
     marcacoes: list[dict] = []
     saida = []
     for g in grupos.values():
-        g["pct"] = (pesos.get("grupo") or {}).get(g["grupo"])
-        g["pct_efetivo"] = prestacao.peso_da_conta(pesos, g["grupo"], "", "", padrao)
-        g["periodos"] = (per.get("grupo") or {}).get(g["grupo"], [])
-        g["entra"] = g["fora"] = g["juros"] = 0.0
+        g["regra"], g["periodos"] = _regra_propria("grupo", g["grupo"])
+        g["herda"] = (100.0 - padrao, 0.0)       # sem regra própria: o padrão
+        g["fica"] = g["filial"] = g["rateia"] = g["juros"] = 0.0
         g["excecoes"] = 0
-        if g["pct"] is not None:
+        if g["regra"] is not None or g["periodos"]:
             marcacoes.append({"nivel": "grupo", "grupo": g["grupo"], "categoria": "",
                               "chave": g["grupo"], "rotulo": g["grupo"],
-                              "valor": g["valor"], "pct": g["pct"]})
+                              "valor": g["valor"],
+                              "texto": _texto(g["regra"], g["periodos"])})
         cats = []
         for c in g["categorias"].values():
-            c["pct"] = (pesos.get("categoria") or {}).get(c["categoria"])
+            c["regra"], c["periodos"] = _regra_propria("categoria", c["categoria"])
+            # sem regra própria, vale a do grupo (ou o padrão)
+            c["herda"] = g["regra"] if g["regra"] is not None else g["herda"]
+            c["grupo"] = g["grupo"]
+            c["tem_regra"] = c["regra"] is not None or bool(c["periodos"])
+            # a regra dela muda com o tempo — dela, ou herdada do grupo
+            c["varia"] = bool(c["periodos"] or (g["periodos"] and not c["tem_regra"]))
+            # quanto dela se rateia hoje, sem olhar o mês (para a lista dos lançamentos)
             c["pct_efetivo"] = prestacao.peso_da_conta(
                 pesos, g["grupo"], c["categoria"], "", padrao)
-            c["grupo"] = g["grupo"]
-            c["periodos"] = (per.get("categoria") or {}).get(c["categoria"], [])
-            # o percentual dela muda com o tempo — dela, ou herdado do grupo
-            c["varia"] = bool(c["periodos"] or (g["periodos"] and c["pct"] is None))
             c["e_juros"] = c["categoria"].strip().lower() in juros
             proprias = por_categoria.get((g["grupo"], c["categoria"]), [])
             c["excecoes"] = len(proprias)
             if c["e_juros"]:
-                c["entra"], c["fora"], c["juros"] = 0.0, 0.0, c["valor"]
+                c["fica"], c["filial"], c["rateia"], c["juros"] = 0.0, 0.0, 0.0, c["valor"]
             else:
-                # o balde já foi somado mês a mês; o lançamento marcado sai
-                # dele (pelo percentual da categoria naquele mês) e entra com
-                # o próprio
-                entra = c["entra_balde"]
+                # o lançamento marcado sai da regra da categoria (a do mês
+                # dele) e entra com a própria
                 for e in proprias:
                     mes_e = e.get("mes")
-                    entra -= e["valor"] * prestacao.peso_da_conta(
-                        pesos, g["grupo"], c["categoria"], "", padrao, mes=mes_e) / 100.0
-                    pct = prestacao.peso_da_conta(
+                    f0, n0 = prestacao.partes_da_conta(
+                        pesos, g["grupo"], c["categoria"], "", padrao, mes=mes_e)
+                    f1, n1 = prestacao.partes_da_conta(
                         pesos, g["grupo"], c["categoria"], e["codigo"], padrao, mes=mes_e)
-                    entra += e["valor"] * pct / 100.0
+                    c["fica"] += e["valor"] * (f1 - f0) / 100.0
+                    c["filial"] += e["valor"] * (n1 - n0) / 100.0
                     marcacoes.append({
                         "nivel": "lancamento", "grupo": g["grupo"],
                         "categoria": c["categoria"], "chave": e["codigo"],
                         "rotulo": f"{e.get('credor') or '—'} · {e.get('documento') or 'sem documento'} "
                                   f"({e.get('mes')})",
-                        "valor": e["valor"], "pct": pct})
-                c["entra"], c["fora"], c["juros"] = entra, c["valor"] - entra, 0.0
-            if c["pct"] is not None:
+                        "valor": e["valor"],
+                        "texto": _partes_por_extenso(f1, n1)})
+                c["rateia"], c["juros"] = c["valor"] - c["fica"] - c["filial"], 0.0
+            if c["tem_regra"]:
                 marcacoes.append({"nivel": "categoria", "grupo": g["grupo"],
                                   "categoria": c["categoria"], "chave": c["categoria"],
                                   "rotulo": f"{g['grupo']} › {c['categoria']}",
-                                  "valor": c["valor"], "pct": c["pct"]})
-            g["entra"] += c["entra"]
-            g["fora"] += c["fora"]
-            g["juros"] += c["juros"]
+                                  "valor": c["valor"],
+                                  "texto": _texto(c["regra"], c["periodos"])})
+            for parte in ("fica", "filial", "rateia", "juros"):
+                g[parte] += c[parte]
             g["excecoes"] += c["excecoes"]
             cats.append(c)
         g["categorias"] = sorted(cats, key=lambda c: c["valor"])
         saida.append(g)
     contas = sorted(saida, key=lambda g: g["valor"])
+    # a filial: o total, e quanto dele é juro (que segue a régua do déficit)
+    filial = {"centros": centros_da_filial, "total": 0.0, "juros": 0.0}
+    for linha in consultas.despesa_administrativa(centros_da_filial, medida):
+        filial["total"] += linha["valor"]
+        if (linha.get("categoria") or "").strip().lower() in juros:
+            filial["juros"] += linha["valor"]
+    filial["rateia"] = filial["total"] - filial["juros"]
     resumo = {
         "total": sum(g["valor"] for g in contas),
-        "entra": sum(g["entra"] for g in contas),
-        "fora": sum(g["fora"] for g in contas),
-        "juros": sum(g["juros"] for g in contas),
+        # as três partes do custo da matriz (sem os juros)
+        "fica": sum(g["fica"] for g in contas),
+        "para_a_filial": sum(g["filial"] for g in contas),
+        "rateia": sum(g["rateia"] for g in contas),
+        # os juros de empréstimo da estrutura INTEIRA — matriz e filial
+        "juros": sum(g["juros"] for g in contas) + filial["juros"],
+        "juros_da_matriz": sum(g["juros"] for g in contas),
+        "filial": filial,
         "marcacoes": len(marcacoes),
     }
     ordem = {"grupo": 0, "categoria": 1, "lancamento": 2}
     marcacoes.sort(key=lambda m: (ordem[m["nivel"]], m["grupo"], m["categoria"], m["rotulo"]))
     return {"contas": contas, "resumo": resumo, "marcacoes": marcacoes,
-            "primeiro_mes": primeiro_mes}
+            "primeiro_mes": primeiro_mes,
+            "origem": {"por_depto": sorted(por_depto.items(), key=lambda kv: kv[1]),
+                       "primeiro_mes": primeiro_mes, "ultimo_mes": ultimo_mes,
+                       "sem_data": sem_data, "medida": medida,
+                       "contra_o_projeto": _estrutura_contra_o_projeto(
+                           por_depto, medida)}}
+
+
+MAXIMO_DE_VIZINHOS = 12
+
+
+def _estrutura_contra_o_projeto(por_depto: dict, medida: str) -> dict:
+    """A estrutura (os centros de custo marcados em Cadastros) contra o DRE do
+    PROJETO a que eles pertencem — centro de custo por centro de custo.
+
+    11/11/2026, o dono colou os dois números: "a matriz gastou" 15.514.876,82
+    e o DRE do projeto BWS 14.699.912,50 — "veja que não bate (…) o DRE do
+    projeto BWS é o que é pra ser distribuído". Os dois lados somam a despesa
+    pela MESMA regra (análise DRE, com juros e multas pagos); o que pode
+    diferir é QUAIS centros de custo entram: aqui, os dois marcados como
+    estrutura; lá, todos os que pertencem ao projeto. Esta conferência põe as
+    duas listas lado a lado, com o valor de cada centro de custo, para a
+    diferença aparecer com nome — sem ninguém ter de supor de onde ela vem.
+
+    Devolve {"centros": [...], "projetos": [(projeto, total no DRE)],
+    "estrutura": total, "diferenca": ..., "bate": bool}."""
+    from . import consultas
+    mapa = consultas.obra_para_projeto()
+    especiais = set(consultas.SEM_OBRA_OU_NAO_LIDA) | {consultas.TRANSFERENCIA_ENTRE_CONTAS, ""}
+    projetos = sorted({mapa.get(d) or "" for d in por_depto} - especiais, key=str.lower)
+    vizinhos = sorted((o for o, p in mapa.items()
+                       if p in projetos and o not in por_depto and o not in especiais),
+                      key=str.lower)
+    dos_vizinhos = {o: 0.0 for o in vizinhos}
+    for linha in consultas.despesa_administrativa(vizinhos, medida):
+        dos_vizinhos[linha["depto"]] += linha["valor"]
+    centros = ([{"depto": d, "projeto": mapa.get(d) or "", "valor": v, "estrutura": True}
+                for d, v in por_depto.items()]
+               + [{"depto": o, "projeto": mapa.get(o) or "", "valor": v, "estrutura": False}
+                  for o, v in dos_vizinhos.items() if abs(v) > 0.005])
+    centros.sort(key=lambda c: (c["projeto"].lower(), not c["estrutura"], c["valor"]))
+    # projeto que mistura estrutura e obra de verdade teria dezenas de linhas:
+    # ficam os maiores, e o resto vira uma linha só (a soma não muda)
+    de_fora = [c for c in centros if not c["estrutura"]]
+    if len(de_fora) > MAXIMO_DE_VIZINHOS:
+        resto = sorted(de_fora, key=lambda c: abs(c["valor"]))[:-MAXIMO_DE_VIZINHOS]
+        centros = [c for c in centros if c not in resto]
+        por_proj: dict[str, list] = {}
+        for c in resto:
+            por_proj.setdefault(c["projeto"], []).append(c)
+        centros += [{"depto": f"outros {len(lista)} centros de custo", "projeto": p,
+                     "valor": sum(c["valor"] for c in lista), "estrutura": False}
+                    for p, lista in por_proj.items()]
+    por_projeto = {p: sum(c["valor"] for c in centros if c["projeto"] == p) for p in projetos}
+    estrutura = sum(por_depto.values())
+    do_dre = sum(por_projeto.values())
+    return {"centros": centros, "projetos": sorted(por_projeto.items()),
+            "estrutura": estrutura, "dre": do_dre, "diferenca": estrutura - do_dre,
+            # sem projeto nenhum não há com o que comparar — não acusa
+            "bate": (not projetos) or (abs(estrutura - do_dre) < 0.01
+                                       and all(c["estrutura"] for c in centros)
+                                       and all(c["projeto"] for c in centros))}
 
 
 @bp.route("/prestacao/montagem")
@@ -1715,6 +1890,7 @@ def cenario_montagem():
     categoria_aberta = next(
         (c for g in arvore["contas"] if g["grupo"] == aberto_grupo
          for c in g["categorias"] if c["categoria"] == aberto_categoria), None)
+    nomes = _projetos_e_obras_da_montagem(config, atual)
     return render_template(
         "painel_cenario.html", **contexto,
         cenarios=lista, cenario=atual,
@@ -1722,25 +1898,34 @@ def cenario_montagem():
         contas=arvore["contas"], resumo_matriz=arvore["resumo"],
         marcacoes=arvore["marcacoes"], categoria_aberta=categoria_aberta,
         primeiro_mes=arvore.get("primeiro_mes", ""),
+        origem_da_matriz=arvore.get("origem"),
         socios=prestacao_dados.socios(apenas_ativos=True),
-        obras_do_painel=_opcoes_no_escopo().get("obras", []),
-        projetos_do_painel=_opcoes_no_escopo().get("projetos", []),
-        **_grade_quem_divide(atual, _opcoes_no_escopo().get("obras", []),
-                             _opcoes_no_escopo().get("projetos", [])),
+        obras_do_painel=nomes["obras_dentro"],
+        # só os projetos que ENTRAM: o que está fora da análise não aparece
+        # em "quem recebe" nem em "quem divide" (dono, 11/11/2026)
+        projetos_do_painel=nomes["projetos_dentro"],
+        projetos_para_principal=nomes["projetos"],
+        **_grade_quem_divide(atual, nomes["obras_dentro"], nomes["projetos_dentro"],
+                             esconder=nomes["fora"], projeto_de=nomes["projeto_de"]),
         linhas_fora=_linhas_fora((atual or {}).get("excluidas") or [],
-                                 _opcoes_no_escopo().get("projetos", []),
-                                 _opcoes_no_escopo().get("obras", [])),
+                                 nomes["projetos"], nomes["obras"],
+                                 gerais=prestacao_dados.fora_da_analise(config),
+                                 projeto_de=nomes["projeto_de"]),
         excluidas_gerais=prestacao_dados.fora_da_analise(config),
-        # onde estao os juros na base, categoria por categoria — e quais a
-        # prestacao esta contando. E a resposta para "na controladoria tem
-        # 1,6 milhao e aqui 191 mil".
-        juros_conf=consultas.conferencia_dos_juros(
-            prestacao.categorias_de_juros(config.get("categoria_juros")
-                                          or prestacao.CATEGORIA_JUROS_PADRAO)),
+        # Os juros na montagem são só o valor e a categoria (11/11/2026, o
+        # dono: "essas informações geram confusão. Já defini os juros nos
+        # parâmetros gerais (…) bastaria demonstrar o valor dos juros e a
+        # categoria"). A conferência categoria por categoria continua em
+        # Configurações › Conferências.
+        # com a grafia que o dono escolheu ("IOF", não "Iof")
+        filial_nome=prestacao.NOME_DOS_DEMAIS,
+        categorias_de_juros=[c.strip() for c in re.split(r"[;\n]", str(
+            config.get("categoria_juros") or prestacao.CATEGORIA_JUROS_PADRAO))
+            if c.strip()],
         aberto_grupo=aberto_grupo,
         aberto_categoria=aberto_categoria,
         lancamentos=(consultas.lancamentos_administrativos(
-            _deptos_administrativos(config), atual.get("medida", "comprometido"),
+            prestacao.centros_da_matriz(config), atual.get("medida", "comprometido"),
             grupo=aberto_grupo, categoria=aberto_categoria)
             if atual and aberto_categoria else []),
         config=config,
@@ -1753,16 +1938,55 @@ def cenario_montagem():
 
 
 def _periodos_do_formulario(form) -> list[tuple]:
-    """(nível, chave, desde, percentual, parte do principal) de cada linha de
-    período do formulário. A parte do principal pode faltar (formulário
-    antigo): vira em branco, sem cortar as outras linhas."""
+    """(nível, chave, desde, fica no principal, é da filial) de cada linha de
+    regra do formulário. `desde` vem "inicio" na linha principal da conta e
+    AAAA-MM nas linhas de período."""
     niveis = form.getlist("periodo_nivel")
     colunas = [form.getlist(c) for c in ("periodo_chave", "periodo_desde",
-                                         "periodo_pct", "periodo_principal")]
+                                         "periodo_fica", "periodo_filial")]
     linhas = []
     for i, nivel in enumerate(niveis):
         linhas.append((nivel,) + tuple(c[i] if i < len(c) else "" for c in colunas))
     return linhas
+
+
+def _gravar_regua(cenario_id, form) -> None:
+    from . import cenarios
+    cenarios.atualizar(cenario_id, **{
+        c: form[c] for c in
+        ("nome", "criterio", "janela", "pct_padrao", "medida",
+         "juros_sem_deficit", "taxa_adm_pct", "observacao")
+        if c in form})
+    cenarios.atualizar(cenario_id, juros_por_deficit=form.get("juros_por_deficit", "0"))
+
+
+def _gravar_arvore(cenario_id, form) -> None:
+    """As regras da árvore inteira num clique: de cada grupo e categoria, a
+    regra de sempre e as que valem a partir de um mês (11/11/2026)."""
+    from . import cenarios
+    if "periodo_nivel" in form and "periodo_fica" not in form:
+        # página aberta antes das três partes: os campos são outros, e lê-los
+        # com o sentido novo gravaria número errado
+        raise ValueError("Esta página estava aberta de antes de uma atualização "
+                         "do painel. Recarregue-a e salve de novo.")
+    cenarios.gravar_periodos_da_arvore(
+        cenario_id, form.getlist("periodo_presente"), _periodos_do_formulario(form))
+
+
+def _gravar_quem_recebe(cenario_id, form) -> None:
+    """Quem recebe o custo da matriz, e o projeto principal (09/11/2026).
+
+    A gravação troca a lista inteira; o projeto que NÃO veio no formulário
+    (está fora da análise, e por isso não aparece no quadro) mantém a regra
+    que tinha — tirar da análise não pode apagar o que foi combinado para ele."""
+    from . import cenarios
+    do_formulario = {p: (papel, d, a) for p, papel, d, a in zip(
+        form.getlist("proj_nome"), form.getlist("proj_papel"),
+        form.getlist("proj_desde"), form.getlist("proj_ate"))}
+    guardadas = (cenarios.projetos(cenario_id).get("regras") or {})
+    regras = {p: r for p, r in guardadas.items() if p not in do_formulario}
+    regras.update(do_formulario)
+    cenarios.gravar_projetos(cenario_id, form.get("principal", ""), regras)
 
 
 @bp.route("/prestacao/montagem", methods=["POST"])
@@ -1783,34 +2007,50 @@ def cenario_gravar():
     elif acao == "apagar" and cenario_id:
         cenarios.apagar(cenario_id)
         cenario_id = ""
+    elif acao == "tudo" and cenario_id:
+        # UM SALVAR PARA A PÁGINA INTEIRA (11/11/2026, o dono: "por que eu não
+        # posso abrir várias caixinhas, colocar uma coisa, colocar outra, e
+        # depois gravar tudo de uma vez? Isso vale para tudo"). A tela manda
+        # todas as seções juntas; o que pode recusar (mês faltando, percentual
+        # inválido) é conferido ANTES de gravar qualquer uma.
+        form = request.form
+        try:
+            itens_fora = (_itens_fora_do_formulario(form)
+                          if "fora_chave" in form else None)
+            if "linha" in form:
+                cenarios.conferir_grade(_celulas_da_grade(form))
+            if "periodo_presente" in form:
+                if "periodo_nivel" in form and "periodo_fica" not in form:
+                    raise ValueError("Esta página estava aberta de antes de uma "
+                                     "atualização do painel. Recarregue-a e salve de novo.")
+                cenarios.conferir_periodos(_periodos_do_formulario(form))
+        except ValueError as e:
+            return redirect(url_for("painel.cenario_montagem", cenario=cenario_id,
+                                    erro=str(e)))
+        if itens_fora is not None:
+            cenarios.gravar_fora(cenario_id, itens_fora)
+        if "criterio" in form:
+            _gravar_regua(cenario_id, form)
+        if "proj_nome" in form or "principal" in form:
+            _gravar_quem_recebe(cenario_id, form)
+        if "periodo_presente" in form:
+            _gravar_arvore(cenario_id, form)
+        if "linha" in form:
+            cenarios.gravar_participacoes_em_grade(cenario_id, _celulas_da_grade(form))
     elif acao == "regua" and cenario_id:
-        cenarios.atualizar(cenario_id, **{
-            c: request.form[c] for c in
-            ("nome", "criterio", "janela", "pct_padrao", "medida",
-             "juros_sem_deficit", "taxa_adm_pct", "observacao")
-            if c in request.form})
-        cenarios.atualizar(cenario_id,
-                           juros_por_deficit=request.form.get("juros_por_deficit", "0"))
+        _gravar_regua(cenario_id, request.form)
     elif acao == "peso" and cenario_id:
         cenarios.marcar_peso(cenario_id, request.form.get("nivel", ""),
                              request.form.get("chave", ""),
                              request.form.get("pct"))
     elif acao == "pesos_da_arvore" and cenario_id:
-        # a árvore inteira num clique (05/11/2026): grupo e categorias juntos
-        cenarios.marcar_pesos_da_arvore(cenario_id, zip(
-            request.form.getlist("item_nivel"), request.form.getlist("item_chave"),
-            request.form.getlist("item_pct")))
-        # e o percentual por período, de quem tem (09/11/2026)
-        cenarios.gravar_periodos_da_arvore(
-            cenario_id, request.form.getlist("periodo_presente"),
-            _periodos_do_formulario(request.form))
+        try:
+            _gravar_arvore(cenario_id, request.form)
+        except ValueError as e:      # mês faltando, partes acima de 100%
+            return redirect(url_for("painel.cenario_montagem", cenario=cenario_id,
+                                    erro=str(e)))
     elif acao == "projetos" and cenario_id:
-        # quem recebe o custo da matriz, e o projeto principal (09/11/2026)
-        cenarios.gravar_projetos(
-            cenario_id, request.form.get("principal", ""),
-            {p: (papel, d, a) for p, papel, d, a in zip(
-                request.form.getlist("proj_nome"), request.form.getlist("proj_papel"),
-                request.form.getlist("proj_desde"), request.form.getlist("proj_ate"))})
+        _gravar_quem_recebe(cenario_id, request.form)
     elif acao == "peso_em_lote" and cenario_id:
         cenarios.marcar_pesos(cenario_id, request.form.get("nivel", "lancamento"),
                               request.form.getlist("marcado"),
@@ -1846,19 +2086,6 @@ def cenario_gravar():
                             categoria=request.form.get("categoria") or None))
 
 
-def _periodos_por_extenso(lista, nome_principal) -> str:
-    """ "50% desde 01/2021 · 40% desde 01/2022" — a parte do projeto principal
-    de uma conta, para ler sem abrir nada. Vazio quando a conta não separa."""
-    partes = []
-    for desde, _pct, parte in lista or []:
-        if parte is None:
-            continue
-        quando = ("sempre" if desde == "1900-01"
-                  else f"a partir de {desde[5:]}/{desde[:4]}")
-        partes.append(f"{parte:.0f}% {quando}")
-    return " · ".join(partes)
-
-
 def _explicacao_do_cenario(cenario, config) -> dict:
     """O cenário dito em português, para a tela "Como é feita" (11/11/2026, o
     dono: "eu quero mostrar essa tela para os outros sócios (…) eles precisam
@@ -1877,22 +2104,18 @@ def _explicacao_do_cenario(cenario, config) -> dict:
     for g in arvore["contas"]:
         excecoes = []
         for c in g["categorias"]:
-            if c.get("e_juros"):
+            if c.get("e_juros") or not c.get("tem_regra"):
                 continue
-            parte = _periodos_por_extenso(c.get("periodos"), principal)
-            if c.get("pct") is not None or c.get("periodos"):
-                excecoes.append({
-                    "categoria": c["categoria"], "valor": c["valor"],
-                    "entra_pct": ("varia" if c.get("varia") and not parte
-                                  else f"{c['pct_efetivo']:.0f}%"),
-                    "parte": parte})
+            excecoes.append({
+                "categoria": c["categoria"], "valor": c["valor"],
+                "fica": c["fica"], "filial": c["filial"], "rateia": c["rateia"],
+                "regra": _regras_por_extenso(c["regra"], c["periodos"], principal)})
+        proprio = g["regra"] is not None or bool(g["periodos"])
         grupos.append({
-            "grupo": g["grupo"], "valor": g["valor"], "entra": g["entra"],
-            "fora": g["fora"], "juros": g.get("juros") or 0.0,
-            "entra_pct": ("varia" if g.get("periodos") and not
-                          _periodos_por_extenso(g.get("periodos"), principal)
-                          else f"{g['pct_efetivo']:.0f}%"),
-            "parte": _periodos_por_extenso(g.get("periodos"), principal),
+            "grupo": g["grupo"], "valor": g["valor"], "juros": g.get("juros") or 0.0,
+            "fica": g["fica"], "filial": g["filial"], "rateia": g["rateia"],
+            "regra": (_regras_por_extenso(g["regra"], g["periodos"], principal) if proprio
+                      else _partes_por_extenso(*g["herda"], principal)),
             "excecoes": excecoes})
 
     regras = quem.get("regras") or {}
@@ -1904,8 +2127,10 @@ def _explicacao_do_cenario(cenario, config) -> dict:
     linhas: dict[str, dict] = {}
     for p in cenario.get("participacoes") or []:
         linhas.setdefault(p["obra"] or "", {})[p["socio_id"]] = p["pct"]
+    # na posição escolhida em Cadastros › Sócios (a lista já vem nela)
+    lugar = {i: n for n, i in enumerate(socios)}
     colunas = sorted({sid for l in linhas.values() for sid in l},
-                     key=lambda i: (socios.get(i, {}).get("nome") or "").lower())
+                     key=lambda i: lugar.get(i, len(lugar)))
 
     def _rotulo(chave):
         if not chave:
@@ -1928,6 +2153,7 @@ def _explicacao_do_cenario(cenario, config) -> dict:
 
     return {
         "resumo": arvore["resumo"], "grupos": grupos, "principal": principal,
+        "filial_nome": prestacao.NOME_DOS_DEMAIS,
         "primeiro_mes": arvore.get("primeiro_mes", ""),
         "regua": cenarios.CRITERIOS.get(cenario.get("criterio"), "").split(" — ")[0],
         "regua_e_pessoal": cenario.get("criterio") != "faturamento",
@@ -2069,7 +2295,7 @@ def prestacao_cenarios_gravar():
 @bp.route("/prestacao/parametros", methods=["GET", "POST"])
 def prestacao_parametros():
     """Socios, participacoes, regras de rateio e ajustes."""
-    from . import consultas, prestacao_dados
+    from . import consultas, prestacao, prestacao_dados
 
     if request.method == "POST":
         try:
@@ -2110,11 +2336,14 @@ def prestacao_parametros():
         escopos=prestacao_dados.ESCOPOS,
         projetos=consultas.opcoes_de_filtro()["projetos"] if not consultas.base_vazia() else [],
         fora=prestacao_dados.fora_da_analise(),
-        linhas_fora=(_linhas_fora(prestacao_dados.fora_da_analise(),
-                                  _opcoes_no_escopo().get("projetos", []),
-                                  _opcoes_no_escopo().get("obras", []))
+        linhas_fora=((lambda n: _linhas_fora(
+            prestacao_dados.fora_da_analise(), n["projetos"], n["obras"],
+            projeto_de=n["projeto_de"]))(
+                _projetos_e_obras_da_montagem(prestacao_dados.config(), None))
                      if aba == "fora" and not consultas.base_vazia() else []),
         obras_do_painel=_opcoes_no_escopo().get("obras", []) if not consultas.base_vazia() else [],
+        centros_matriz=prestacao.centros_da_matriz(prestacao_dados.config()),
+        centros_filial=prestacao.centros_da_filial(prestacao_dados.config()),
         projetos_do_painel=_opcoes_no_escopo().get("projetos", []) if not consultas.base_vazia() else [],
         # as categorias com cara de juro vêm primeiro na lista dos juros
         parecidas_com_juro=[c for c in listas.get("categorias", [])
@@ -2123,62 +2352,148 @@ def prestacao_parametros():
     )
 
 
-def _grade_quem_divide(cenario, obras, projetos=()) -> dict:
+def _projetos_e_obras_da_montagem(config, cenario) -> dict:
+    """Os projetos e as obras que a montagem oferece — e quais estão fora.
+
+    Duas limpezas pedidas pelo dono em 11/11/2026:
+    - **o projeto que é só a estrutura** (onde só há a matriz e a filial) não é
+      destino de nada: "o projeto BWS é exatamente os custos da matriz — acho
+      que não era para ele aparecer aqui". Só entra na lista o projeto que tem
+      ao menos uma obra de verdade;
+    - **o que está fora da análise** (totalmente; em Cadastros ou no cenário)
+      não aparece em "quem recebe" nem em "quem divide": "a gente tira num
+      canto, aí ele fica aparecendo no outro"."""
+    from . import consultas, prestacao, prestacao_dados
+    estrutura = set(_deptos_administrativos(config))
+    especiais = set(consultas.SEM_OBRA_OU_NAO_LIDA) | {consultas.TRANSFERENCIA_ENTRE_CONTAS}
+    mapa = {o: p for o, p in consultas.obra_para_projeto().items()
+            if o not in estrutura and o not in especiais}
+    obras = sorted(mapa, key=str.lower)
+    projetos = sorted({p for p in mapa.values() if p and p not in especiais}, key=str.lower)
+    itens = (list(prestacao_dados.fora_da_analise(config))
+             + list((cenario or {}).get("excluidas") or []))
+    obras_fora = prestacao.obras_fora_da_analise(itens, mapa, set(mapa))
+    projetos_fora = {nome for tipo, nome, ate in map(prestacao.ler_item_fora, itens)
+                     if tipo == "projeto" and not ate}
+    return {
+        "projetos": projetos, "obras": obras,
+        "projetos_dentro": [p for p in projetos if p not in projetos_fora],
+        "obras_dentro": [o for o in obras if o not in obras_fora],
+        "fora": ({prestacao.PROJETO_NA_PARTICIPACAO + p for p in projetos_fora}
+                 | obras_fora),
+        "projeto_de": mapa,
+    }
+
+
+def _grade_quem_divide(cenario, obras, projetos=(), esconder=(), projeto_de=None) -> dict:
     """A grade do "Quem divide" do cenário: "Todas as obras" primeiro, depois
-    cada PROJETO (sempre à vista — é por onde se configura), depois as obras
-    com percentual próprio; as outras obras aparecem ao procurar."""
+    cada PROJETO (sempre à vista — é por onde se configura) com as obras DELE
+    logo abaixo, para abrir e preencher de dentro do projeto — igual ao passo
+    "o que entra" (11/11/2026, o dono: "deveria expandir os centros de custo
+    similar ao Fora da análise"). `pai` é a linha do projeto da obra; `aberto`
+    diz que o projeto já vem aberto, quando alguma obra dele tem percentual
+    próprio. A obra sem projeto fica no fim, solta."""
     from .prestacao import PROJETO_NA_PARTICIPACAO as P
+    projeto_de = projeto_de or {}
     grade: dict = {}
     for p in (cenario or {}).get("participacoes") or []:
+        if (p["obra"] or "") in esconder:      # fora da análise: não aparece
+            continue
         grade.setdefault(p["obra"] or "", {})[p["socio_id"]] = p["pct"]
     dos_projetos = sorted({P + n for n in projetos if n}
                           | {k for k in grade if k.startswith(P)}, key=str.lower)
-    outras = sorted((set(obras) | {k for k in grade if not k.startswith(P)}) - {""},
-                    key=lambda n: (n not in grade, n.lower()))
-    linhas = ([{"chave": "", "rotulo": "Todas as obras", "fixa": True}]
-              + [{"chave": k, "rotulo": "Projeto — " + k[len(P):], "fixa": True}
-                 for k in dos_projetos]
-              + [{"chave": o, "rotulo": o} for o in outras])
+    todas = sorted((set(obras) | {k for k in grade if not k.startswith(P)}) - {""},
+                   key=str.lower)
+    linhas = [{"chave": "", "rotulo": "Todas as obras", "tipo": "geral"}]
+    com_pai = set()
+    for chave in dos_projetos:
+        filhas = [o for o in todas if P + (projeto_de.get(o) or "") == chave]
+        com_pai.update(filhas)
+        linhas.append({"chave": chave, "rotulo": "Projeto — " + chave[len(P):],
+                       "tipo": "projeto", "obras": len(filhas),
+                       "aberto": any(o in grade for o in filhas)})
+        linhas.extend({"chave": o, "rotulo": o, "tipo": "obra", "pai": chave}
+                      for o in filhas)
+    soltas = [o for o in todas if o not in com_pai]
+    linhas.extend({"chave": o, "rotulo": o, "tipo": "obra", "pai": ""}
+                  for o in sorted(soltas, key=lambda n: (n not in grade, n.lower())))
     return {"grade_quem_divide": grade, "linhas_quem_divide": linhas}
 
 
 def _itens_fora_do_formulario(form) -> list[str]:
-    """A lista "fora da análise" como a tela manda: para cada linha, a chave
-    ("obra:X" / "projeto:Y"), o modo ("" considera, "total", "ate") e o mês."""
+    """A lista "fora da análise" como a tela manda: para cada linha a chave
+    ("obra:X" / "projeto:Y") e o mês de "só até"; e, à parte, as chaves com a
+    caixinha "fora" marcada. Sem caixinha e sem mês = entra (é a regra, não
+    se escreve). O formato antigo (`fora_modo`) continua aceito."""
     from . import prestacao
+    chaves, ates = form.getlist("fora_chave"), form.getlist("fora_ate")
+    modos = form.getlist("fora_modo")
+    marcadas = set(form.getlist("fora_total"))
     itens = []
-    for chave, modo, ate in zip(form.getlist("fora_chave"), form.getlist("fora_modo"),
-                                form.getlist("fora_ate")):
+    for i, chave in enumerate(chaves):
         tipo, nome, _ = prestacao.ler_item_fora(chave)
-        if not tipo or modo not in ("total", "ate"):
+        if not tipo:
             continue
-        if modo == "ate":
-            ate = (ate or "").strip()[:7]
-            if not re.match(r"^\d{4}-\d{2}$", ate):
-                raise ValueError(f"Falta o mês em {nome} (\"só até\" pede o mês).")
-            itens.append(prestacao.montar_item_fora(tipo, nome, ate))
-        else:
+        ate = (ates[i] if i < len(ates) else "").strip()[:7]
+        modo = modos[i] if i < len(modos) else ""
+        if chave in marcadas or modo == "total":
             itens.append(prestacao.montar_item_fora(tipo, nome))
+        elif modo == "ate" and not re.match(r"^\d{4}-\d{2}$", ate):
+            raise ValueError(f"Falta o mês em {nome} (\"só até\" pede o mês).")
+        elif ate and (modo == "ate" or not modos):
+            if not re.match(r"^\d{4}-\d{2}$", ate):
+                raise ValueError(f"O mês de {nome} não é válido.")
+            itens.append(prestacao.montar_item_fora(tipo, nome, ate))
     return itens
 
 
-def _linhas_fora(itens, projetos, obras) -> list[dict]:
-    """As linhas da lista "fora da análise": projetos primeiro, depois obras;
-    as que já estão fora (ou com mês) em cima."""
+def _linhas_fora(itens, projetos, obras, gerais=(), projeto_de=None) -> list[dict]:
+    """As linhas do quadro "o que entra na análise".
+
+    Cada PROJETO é uma linha sempre à vista, e as obras dele vêm LOGO ABAIXO,
+    para abrir e editar de dentro do projeto (11/11/2026, o dono: "deveria
+    podermos expandir o projeto e ver as obras e poder editar cada obra de
+    dentro do projeto"). `pai` é o projeto da obra; a obra sem projeto fica no
+    fim, solta. `aberto` diz que o projeto já vem aberto — quando alguma obra
+    dele tem situação própria.
+
+    `gerais` são os itens tirados em Cadastros (valem para todo cenário): a
+    linha aparece com a situação, mas só se muda lá (`travada`)."""
     from . import prestacao
-    estado = {}
-    for item in itens or ():
-        tipo, nome, ate = prestacao.ler_item_fora(item)
-        if tipo:
-            estado[f"{tipo}:{nome}"] = ("ate" if ate else "total", ate or "")
+    projeto_de = projeto_de or {}
+    estado, travadas = {}, set()
+    for origem, lista in (("geral", gerais), ("cenario", itens)):
+        for item in lista or ():
+            tipo, nome, ate = prestacao.ler_item_fora(item)
+            if tipo:
+                estado[f"{tipo}:{nome}"] = ("ate" if ate else "total", ate or "")
+                if origem == "geral":
+                    travadas.add(f"{tipo}:{nome}")
+
+    def _linha(tipo, nome, pai=""):
+        chave = f"{tipo}:{nome}"
+        modo, ate = estado.get(chave, ("", ""))
+        return {"chave": chave, "rotulo": ("Projeto — " if tipo == "projeto" else "") + nome,
+                "tipo": tipo, "modo": modo, "ate": ate, "travada": chave in travadas,
+                "pai": pai, "obras": 0, "aberto": False}
+
+    def _nomes(tipo, lista):
+        return sorted(set(lista or []) | {k.split(":", 1)[1] for k in estado
+                                          if k.startswith(tipo + ":")}, key=str.lower)
+
+    todas_as_obras = _nomes("obra", obras)
     linhas = []
-    for tipo, nomes, rotulo in (("projeto", projetos, "Projeto — "), ("obra", obras, "")):
-        todos = set(nomes or []) | {k.split(":", 1)[1] for k in estado
-                                    if k.startswith(tipo + ":")}
-        for nome in sorted(todos, key=lambda n: (f"{tipo}:{n}" not in estado, n.lower())):
-            modo, ate = estado.get(f"{tipo}:{nome}", ("", ""))
-            linhas.append({"chave": f"{tipo}:{nome}", "rotulo": rotulo + nome,
-                           "modo": modo, "ate": ate})
+    for projeto in _nomes("projeto", projetos):
+        do_projeto = [o for o in todas_as_obras if (projeto_de.get(o) or "") == projeto]
+        cabeca = _linha("projeto", projeto)
+        cabeca["obras"] = len(do_projeto)
+        filhas = [_linha("obra", o, pai=projeto) for o in do_projeto]
+        cabeca["aberto"] = any(f["modo"] for f in filhas)
+        linhas.append(cabeca)
+        linhas.extend(filhas)
+    com_pai = {l["chave"] for l in linhas if l["tipo"] == "obra"}
+    soltas = [_linha("obra", o) for o in todas_as_obras if f"obra:{o}" not in com_pai]
+    linhas.extend(sorted(soltas, key=lambda l: (not l["modo"], l["rotulo"].lower())))
     return linhas
 
 
@@ -2196,13 +2511,18 @@ def _filtro_item_fora(item) -> str:
 def _celulas_da_grade(form) -> dict:
     """A grade de participações vem como `linha` (o projeto, ou a obra, na
     ordem da tela) e células `pct_<i>_<sócio>`. O nome do projeto não vai no
-    nome do campo: nome de obra tem espaço, barra e acento."""
+    nome do campo: nome de obra tem espaço, barra e acento.
+
+    Uma passada só pelos campos (11/11/2026): antes era uma por linha da
+    grade, e a página inteira num envio tem milhares de campos."""
+    linhas = form.getlist("linha")
     celulas = {}
-    for i, linha in enumerate(form.getlist("linha")):
-        for chave in form:
-            prefixo = f"pct_{i}_"
-            if chave.startswith(prefixo) and chave[len(prefixo):].isdigit():
-                celulas[(linha, int(chave[len(prefixo):]))] = form.get(chave, "")
+    for chave in form:
+        partes = chave.split("_")
+        if (len(partes) == 3 and partes[0] == "pct"
+                and partes[1].isdigit() and partes[2].isdigit()
+                and int(partes[1]) < len(linhas)):
+            celulas[(linhas[int(partes[1])], int(partes[2]))] = form.get(chave, "")
     return celulas
 
 
@@ -2219,6 +2539,8 @@ def _aplicar_mudanca_da_prestacao(dados, form):
         dados.desativar_socio(form["socio_id"])
     elif acao == "reativar_socio":
         dados.reativar_socio(form["socio_id"])
+    elif acao == "excluir_socio":
+        dados.excluir_socio(form["socio_id"])
     elif acao == "participacao":
         dados.salvar_participacao(form["projeto"], form["socio_id"], form["pct"])
     elif acao == "apagar_participacao":
@@ -2255,11 +2577,27 @@ def _aplicar_mudanca_da_prestacao(dados, form):
         dados.definir_projeto_da_obra(form.get("codigo", ""),
                                       "" if form.get("tirar") else form.get("projeto", ""))
     elif acao == "config":
-        for chave in ("projeto_matriz", "depto_admin_matriz", "depto_admin_filial",
+        for chave in ("projeto_matriz",
                       "grupo_pessoal", "taxa_adm_pct", "residual",
                       "categoria_juros", "juros_por_deficit", "juros_sem_deficit"):
             if chave in form:
                 dados.salvar_config(chave, form[chave])
+        # A MATRIZ E A FILIAL SÃO LISTAS de centros de custo (11/11/2026): a
+        # tela manda um campo por centro; gravam-se juntos, separados por ";".
+        # O que está na matriz não fica também na filial.
+        from . import prestacao as _p
+        if "depto_admin_matriz" in form or "depto_admin_filial" in form:
+            atual = dados.config()
+            matriz = (form.getlist("depto_admin_matriz") if "depto_admin_matriz" in form
+                      else _p.centros_da_matriz(atual))
+            if not _p.centros_de_custo(_p.juntar_centros(matriz)):
+                raise ValueError("A matriz precisa de pelo menos um centro de custo.")
+            filial = (form.getlist("depto_admin_filial") if "depto_admin_filial" in form
+                      else _p.centros_de_custo(atual.get("depto_admin_filial")))
+            dados.salvar_config("depto_admin_matriz", _p.juntar_centros(matriz))
+            dados.salvar_config("depto_admin_filial", _p.juntar_centros(
+                c for c in _p.centros_de_custo(_p.juntar_centros(filial))
+                if c not in _p.centros_de_custo(_p.juntar_centros(matriz))))
         # as categorias dos juros, marcadas numa lista (09/11/2026); gravadas
         # no mesmo formato de antes ("a; b; c"), que é o que o cálculo lê
         if "categoria_juros_lista" in form:
@@ -2791,9 +3129,11 @@ def configuracoes():
                                     "Conta de onde o dinheiro saiu")
             from . import prestacao, prestacao_dados
             juros_conf = _conferir(
-                lambda: consultas.conferencia_dos_juros(prestacao.categorias_de_juros(
-                    prestacao_dados.config().get("categoria_juros")
-                    or prestacao.CATEGORIA_JUROS_PADRAO)),
+                lambda: consultas.conferencia_dos_juros(
+                    prestacao.categorias_de_juros(
+                        prestacao_dados.config().get("categoria_juros")
+                        or prestacao.CATEGORIA_JUROS_PADRAO),
+                    _deptos_administrativos(prestacao_dados.config())),
                 conferencias_com_erro, "Onde estão os juros de empréstimo")
     return render_template(
         "painel_config.html", **contexto,

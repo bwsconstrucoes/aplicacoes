@@ -284,3 +284,83 @@ def test_a_resposta_real_vira_alteracao_com_o_mesmo_vocabulario():
     assert novo["detalhes"]["cCodCateg"] == "2.05.05"
     assert "aCodCateg" not in novo["detalhes"] and "info" not in novo
     assert len(mudancas) == 2
+
+
+# ===========================================================================
+# 11/11/2026 — o dono tentou trocar a obra de uma tarifa e leu só "A Omie
+# bloqueou as chamadas por consumo excessivo e pediu 59 segundos".
+# ===========================================================================
+class _Resposta:
+    def __init__(self, status, corpo):
+        self.status_code, self._corpo, self.headers = status, corpo, {}
+        self.text = json.dumps(corpo)
+
+    def json(self):
+        return self._corpo
+
+    def raise_for_status(self):
+        raise AssertionError("não era para chegar aqui")
+
+
+class _Sessao:
+    """Um OMIE que responde, na ordem, o que estiver na fila."""
+
+    def __init__(self, *respostas):
+        self.fila, self.chamadas = list(respostas), 0
+
+    def post(self, url, data=None, timeout=None):
+        self.chamadas += 1
+        return self.fila.pop(0)
+
+
+def _cliente_com(*respostas):
+    from app.apps.painel.sync.omie_escrita import OmieEscrita
+    # o teto curto é o da tela (`de_ambiente` o põe): acima dele não se espera
+    cli = OmieEscrita("k", "s", pausa_entre_chamadas=0, backoff_base=0.001,
+                      teto_de_espera=30)
+    cli.sessao = _Sessao(*respostas)
+    return cli
+
+
+def test_gravacao_recusada_nao_e_repetida_e_mostra_o_motivo():
+    """Repetir a gravação que o OMIE recusou é o que gera o "consumo
+    redundante" — e esconde o motivo. Uma chamada só, e o erro como veio."""
+    from app.apps.painel.sync.omie_client import OmieAPIError
+    cli = _cliente_com(_Resposta(500, {"faultstring": "ERROR: Tag [DIVERSOS] não faz parte da estrutura"}),
+                       _Resposta(200, {"ok": True}))
+    with pytest.raises(OmieAPIError) as e:
+        cli.alterar_lancamento_cc({"nCodLanc": 1})
+    assert "DIVERSOS" in str(e.value)
+    assert cli.sessao.chamadas == 1
+
+
+def test_o_bloqueio_conta_o_que_o_omie_disse_antes():
+    """Na LEITURA a chamada ainda é repetida; se a repetição virar bloqueio, a
+    mensagem leva a primeira resposta — que é o motivo de verdade."""
+    from app.apps.painel.sync.omie_client import OmieBloqueada
+    cli = _cliente_com(
+        _Resposta(500, {"faultstring": "ERROR: lançamento com problema X"}),
+        _Resposta(500, {"faultstring": "Consumo redundante detectado. Aguarde 59 segundos."}))
+    with pytest.raises(OmieBloqueada) as e:
+        cli.consultar_lancamento_cc(1)
+    texto = str(e.value)
+    assert "Consumo redundante" in texto and "lançamento com problema X" in texto
+    assert e.value.segundos >= 59
+
+
+def test_gravacao_bloqueada_de_cara_continua_sendo_bloqueio():
+    from app.apps.painel.sync.omie_client import OmieBloqueada
+    cli = _cliente_com(_Resposta(425, {"faultstring": "API bloqueada por consumo indevido. Tente novamente em 664 segundos."}))
+    with pytest.raises(OmieBloqueada) as e:
+        cli.alterar_lancamento_cc({"nCodLanc": 1})
+    assert e.value.segundos >= 664 and cli.sessao.chamadas == 1
+
+
+def test_a_gravacao_so_manda_o_que_e_da_gravacao():
+    """`diversos` (os dados da conciliação), `info` e `nCodAgrup` vêm na
+    consulta e não voltam; bloco vazio também não."""
+    novo, _ = omie_escrita.preparar_alteracao_cc(RESPOSTA_REAL, 709793529,
+                                                 cod_departamento="D9")
+    assert set(novo) == {"nCodLanc", "cCodIntLanc", "cabecalho", "detalhes", "departamentos"}
+    assert "aCodCateg" not in novo["detalhes"]
+    assert novo["detalhes"]["cCodCateg"] == "2.05.04"

@@ -4439,6 +4439,86 @@ def api_tarefa_acao(tarefa_id: int, acao: str):
         raise        # recusa de escopo vira 404, nunca 500
 
 
+# ---------------------------------------------------------------------------
+# TRAZER DO PIPEFY O CADASTRO DAS PESSOAS (10/11/2026)
+#
+# Ele: *"tem o número do card do pipe, certo? Então, tu não consegue fazer logo
+# essa importação, não? Faz a leitura do card, baixa os documentos, importa
+# para o ERP."*
+#
+# Duas rotas: uma SÓ OLHA (quantos têm card, se o servidor tem o token) e outra
+# põe o trabalho na fila. A conferência sem gravar é o padrão; gravar exige
+# dizer `gravar: true` com todas as letras.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/importar/pipefy-cadastro/situacao")
+@login_obrigatorio
+@permissao("importar")
+def api_pipefy_cadastro_situacao():
+    from app.apps.erp.core.pipefy import cadastro_importacao as imp
+    try:
+        with get_session() as s:
+            return jsonify({"ok": True, "dados": imp.situacao(s)})
+    except Exception as e:
+        logger.exception("ERP: falha ao olhar a situação da importação do Pipefy")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/importar/pipefy-cadastro", methods=["POST"])
+@login_obrigatorio
+@permissao("importar")
+def api_importar_pipefy_cadastro():
+    """Põe na fila a leitura dos cards e a busca dos documentos.
+
+    ⚑ VAI PARA A FILA, não roda no clique: são dezenas de pessoas com até oito
+    arquivos cada. No clique, isso seguraria uma das quatro linhas de
+    atendimento do serviço por minutos."""
+    from app.apps.erp.core.comum import tarefas, trabalhos
+    from app.apps.erp.core.pipefy import cadastro_importacao as imp
+    from app.apps.erp.core.pipefy import cliente as cli
+
+    d = request.get_json(silent=True) or {}
+    gravar = bool(d.get("gravar"))
+    if not cli.tem_token():
+        return jsonify({"ok": False, "erro": (
+            "Este servidor não tem o token do Pipefy configurado "
+            "(PIPEFY_API_TOKEN). Sem ele não dá para ler os cards.")}), 400
+    try:
+        teto = int(d.get("teto_de_pessoas") or imp.POR_RODADA)
+    except (TypeError, ValueError):
+        teto = imp.POR_RODADA
+    teto = max(1, min(teto, 300))
+    try:
+        trabalhos.registrar_todos()
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            quantos = len(imp.quem_tem_card(
+                s, so_ativos=bool(d.get("so_ativos", True)),
+                obra_id=(int(d["obra_id"]) if d.get("obra_id") else None),
+                teto=teto))
+            if not quantos:
+                return jsonify({"ok": False, "erro": (
+                    "Nenhuma pessoa com número de card do Pipefy nesse "
+                    "filtro.")}), 400
+            t = tarefas.enfileirar(
+                s, "importar_cadastro_pipefy",
+                {"simular": not gravar,
+                 "so_ativos": bool(d.get("so_ativos", True)),
+                 "obra_id": (int(d["obra_id"]) if d.get("obra_id") else None),
+                 "teto_de_pessoas": teto,
+                 "usuario_id": usuario.id if usuario else None},
+                rotulo=("Conferir sem gravar: " if not gravar
+                        else "Trazer do Pipefy: ") + f"{quantos} pessoa(s)",
+                usuario=usuario)
+            linha = tarefas.ler(s, t.id)
+            s.commit()
+        return jsonify({"ok": True, "tarefa": linha})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao enfileirar a importação do cadastro")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
 @bp.route("/erp/api/importar/csv", methods=["POST"])
 @login_obrigatorio
 @permissao("importar")
@@ -11282,7 +11362,7 @@ def api_colaboradores_opcoes():
         # SEM O PISO: esta rota é aberta a quem tem `ver_pessoal` (inclui
         # supervisor de obra e parceiro), e eles precisam da lista de cargos
         # para a caixinha — não da tabela salarial da empresa.
-        return jsonify({"ok": True, **svc_pessoas.opcoes(),
+        return jsonify({"ok": True, **svc_pessoas.opcoes(s),
                         **svc_cargos.listar(s, com_salario=False)})
 
 

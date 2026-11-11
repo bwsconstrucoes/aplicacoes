@@ -66,6 +66,7 @@ ABAS = [
     ("ponto_mosaico", "Mosaico", "erp.ponto_pagina_mosaico"),
     ("ponto_fotos", "Fotos de cadastro", "erp.ponto_pagina_fotos_cadastro"),
     ("ponto_alertas", "Alertas", "erp.ponto_pagina_alertas"),
+    ("ponto_painel", "Painel", "erp.ponto_pagina_painel"),          # 11/11/2026: os gráficos e a comparação
     ("ponto_qualidade", "Qualidade", "erp.ponto_pagina_qualidade"),
     ("ponto_rondas", "Rondas", "erp.ponto_pagina_rondas"),
     ("ponto_banco", "Banco de horas", "erp.ponto_pagina_banco"),
@@ -294,6 +295,13 @@ def ponto_pagina_qualidade():
     return _pagina("ponto_qualidade")
 
 
+@bp.route("/erp/ponto/painel")
+@login_obrigatorio
+@permissao("ver_ponto")
+def ponto_pagina_painel():
+    return _pagina("ponto_painel")
+
+
 @bp.route("/erp/ponto/rondas")
 @login_obrigatorio
 @permissao("ver_ponto")
@@ -415,6 +423,48 @@ def ponto_api_qualidade():
         except qualidade.Ocupado as e:        # 21/10/2026: nunca duas contas pesadas juntas
             return jsonify({"ok": False, "erro": str(e), "ocupado": True}), 503
     return _ok(**r, competencia=f"{inicio:%Y-%m}")
+
+
+def _ids_do_painel(conn, quem, de: dt.date, ate: dt.date) -> list[int]:
+    """Quem entra na conta de um período do Painel: com `?obra=`, quem bateu nela; sem, quem bate ponto hoje no
+    alcance E quem bateu no período (o desligado depois continua contando no mês em que trabalhou)."""
+    if request.args.get("obra"):
+        o = _obra_no_alcance(conn, quem, request.args.get("obra"))
+        return [int(p["id"]) for p in filtros.pessoas_com_batida(conn, int(o["id"]), de, ate)]
+    ids = {int(p["id"]) for p in cadastros.listar_colaboradores(conn, so_ativos=True)}
+    ids |= {int(l["c"]) for l in db.todos(conn, """SELECT DISTINCT colaborador_id AS c FROM ponto.marcacoes
+                                                    WHERE data_referencia BETWEEN :de AND :ate AND status <> 'REJEITADA'""",
+                                          de=de, ate=ate)}
+    return sorted(i for i in ids if ocorrencias.pessoa_no_alcance(conn, quem, i))
+
+
+@bp.route("/erp/api/ponto/painel")
+@login_obrigatorio
+@permissao("ver_ponto")
+@_api
+def ponto_api_painel():
+    """O PAINEL (11/11/2026): o período (`de`, `ate`) e, se vier, o de comparação (`antes_de`, `antes_ate`) — os
+    números, as batidas dia a dia e as obras com a tendência. As contas são as da Qualidade (core/indicadores.py)."""
+    from .core import indicadores
+    quem = _quem()
+    hoje = horario.hoje()
+    de, ate = indicadores.periodo_valido(_data(request.args.get("de"), hoje.replace(day=1)),
+                                         _data(request.args.get("ate"), hoje))
+    antes = None
+    if request.args.get("antes_de") and request.args.get("antes_ate"):
+        antes = indicadores.periodo_valido(_data(request.args.get("antes_de"), de),
+                                           _data(request.args.get("antes_ate"), ate))
+    with db.conexao() as conn:
+        try:
+            agora = indicadores.do_periodo(conn, _ids_do_painel(conn, quem, de, ate), de, ate)
+            anterior = (indicadores.do_periodo(conn, _ids_do_painel(conn, quem, *antes), *antes) if antes else None)
+        except qualidade.Ocupado as e:
+            return jsonify({"ok": False, "erro": str(e), "ocupado": True}), 503
+        codigos = sorted(set(agora["obras"]) | set((anterior or {}).get("obras", {})))
+        nomes = ({o["codigo"]: o["nome"] for o in db.todos(
+            conn, "SELECT codigo, nome FROM public.obras WHERE codigo = ANY(:c)", c=codigos)} if codigos else {})
+    return _ok(agora=agora, antes=anterior, obras=indicadores.comparar(agora, anterior), nomes=nomes,
+               patamar=indicadores.PATAMAR)
 
 
 @bp.route("/erp/api/ponto/qualidade/mensagem")
