@@ -17,6 +17,7 @@
 <nav class="faixa-folha">
   <a href="{{ url_for('analisesps.tela_folha_aberta', folha_id=folha.id) }}">Folha</a>
   <a href="{{ url_for('analisesps.tela_folha_complementar', folha_id=folha.id) }}" class="ativa">Complementar</a>
+  <a href="{{ url_for('analisesps.tela_folha_centros_de_custo', folha_id=folha.id) }}">Centros de custo</a>
 </nav>
 
 {% set comp_titulo_pago = "Este mês já foi pago" %}

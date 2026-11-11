@@ -3623,6 +3623,56 @@ def tela_folha_complementar(folha_id: int):
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""), nome=auth.nome_atual())
 
 
+@bp.route("/folha/<int:folha_id>/centros-de-custo")
+@exige_consulta
+def tela_folha_centros_de_custo(folha_id: int):
+    """OS CENTROS DE CUSTO DA CONTABILIDADE × O PONTO (11/11/2026): onde cada pessoa
+    está na folha e onde ela trabalhou — o relatório de remanejos para a
+    contabilidade. Ver `centros_de_custo`."""
+    from . import centros_de_custo as cc, folha_arquivo as fa
+    erro, montado = None, None
+    try:
+        montado = cc.montar(folha_id, recarregar=request.args.get("recarregar") == "1")
+    except ValueError:
+        return render_template("analisesps_erro.html", titulo="Não encontrado",
+                               mensagem="Esta folha não existe."), 404
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+        logger.exception("Folha: não consegui montar os centros de custo")
+        erro = f"Não foi possível montar a conferência: {e}"
+    folha = (montado or {}).get("folha") or fa.abrir(folha_id)
+    if folha is None:
+        return render_template("analisesps_erro.html", titulo="Não encontrado",
+                               mensagem="Esta folha não existe."), 404
+    situacao = request.args.get("situacao") or ""
+    pessoas = [p for p in (montado or {}).get("pessoas") or []
+               if not situacao or p["situacao"] == situacao]
+    return render_template(
+        "analisesps_folha_centros_de_custo.html", aba="folha", subaba="importar",
+        grupos=subtelas_agrupadas(), folha=folha, montado=montado, erro=erro,
+        pessoas=pessoas, situacao=situacao, rotulos=cc.ROTULO, ordem=cc.ORDEM,
+        pode_operar=auth.pode_operar(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""), nome=auth.nome_atual())
+
+
+@bp.route("/folha/<int:folha_id>/centros-de-custo.xlsx")
+@exige_consulta
+def folha_centros_de_custo_planilha(folha_id: int):
+    from . import centros_de_custo as cc
+    try:
+        montado = cc.montar(folha_id)
+    except ValueError:
+        return render_template("analisesps_erro.html", titulo="Não encontrado",
+                               mensagem="Esta folha não existe."), 404
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou a planilha dos centros de custo")
+        return render_template("analisesps_erro.html", titulo="Centros de custo",
+                               mensagem=f"Não foi possível gerar a planilha: {e}"), 500
+    nome = f"Centros de custo {montado['mes']:02d}-{montado['ano']}.xlsx"
+    return Response(cc.planilha(montado), mimetype=(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+        headers={"Content-Disposition": f'attachment; filename="{nome}"'})
+
+
 @bp.route("/folha/<int:folha_id>/complementar/relatorio.<formato>")
 @exige_consulta
 def folha_complementar_relatorio(folha_id: int, formato: str):

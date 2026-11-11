@@ -1,0 +1,94 @@
+{% extends "analisesps_base.html" %}
+{# ---------------------------------------------------------------------------
+   OS CENTROS DE CUSTO DA CONTABILIDADE × O PONTO (11/11/2026) — ver
+   `centros_de_custo.py`. Onde cada pessoa está na folha e onde trabalhou no
+   ponto; o que remanejar vai numa planilha para a contabilidade.
+   --------------------------------------------------------------------------- #}
+{% block titulo %}Centros de custo {{ folha.competencia }} — Análise de SPs{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% block conteudo %}
+{% include "analisesps_folha_abas.html" %}
+
+<h2>Folha da contabilidade · {{ folha.competencia }} · {{ folha.rotulo_do_tipo }}</h2>
+<nav class="faixa-folha">
+  <a href="{{ url_for('analisesps.tela_folha_aberta', folha_id=folha.id) }}">Folha</a>
+  <a href="{{ url_for('analisesps.tela_folha_centros_de_custo', folha_id=folha.id) }}" class="ativa">Centros de custo</a>
+</nav>
+
+<p class="cartao-dica" style="margin:0 0 12px">
+  Para cada pessoa da folha: o <b>centro de custo da contabilidade</b> (o setor da Folha Sintética)
+  × a <b>obra onde ela trabalhou</b> no ponto de {{ folha.competencia }} — a de mais dias —, levada ao
+  centro de custo da contabilidade pela coluna
+  {{ (montado.mapa.coluna if montado and montado.mapa else '') or 'AN' }} da C. Diários.
+  Afastado INSS e Desativar sem ponto estão coerentes.
+</p>
+
+{% if erro %}
+  <div class="aviso erro"><b>Não foi possível montar a conferência.</b> {{ erro }}</div>
+{% else %}
+  {% for o in montado.outras_folhas %}
+    <div class="aviso atencao">Há também a folha de <b>{{ o.rotulo_do_tipo }}</b> deste mês
+      (importada em {{ o.importado_em|momento_br }}) —
+      <a href="{{ url_for('analisesps.tela_folha_centros_de_custo', folha_id=o.id) }}">conferir por ela</a>.
+      {% if o.tipo == 'fim_de_mes' %}A de fim de mês é a completa.{% endif %}</div>
+  {% endfor %}
+  {% for a in montado.avisos %}<div class="aviso atencao">{{ a }}</div>{% endfor %}
+
+  {% set c = montado.contagem %}
+  <div class="kpis">
+    {% for s in ordem %}
+      <a class="kpi {{ 'vermelho' if s == 'remanejar' and c[s] else ('ambar' if s == 'conferir' and c[s] else '') }} {{ 'ativo' if situacao == s }}"
+         href="{{ url_for('analisesps.tela_folha_centros_de_custo', folha_id=folha.id, situacao=('' if situacao == s else s)) }}">
+        <div class="kpi-rotulo">{{ rotulos[s] }}</div><div class="kpi-valor">{{ c[s] }}</div></a>
+    {% endfor %}
+  </div>
+
+  <div class="cab-com-acoes" style="margin-top:14px">
+    <h3>{{ rotulos[situacao] if situacao else 'Todas as pessoas' }} <small>{{ pessoas|length }}</small></h3>
+    <span class="sobra">
+      {% if situacao %}<a class="link-btn" href="{{ url_for('analisesps.tela_folha_centros_de_custo', folha_id=folha.id) }}">mostrar todas</a>{% endif %}
+      <a class="btn secundario" href="{{ url_for('analisesps.tela_folha_centros_de_custo', folha_id=folha.id, recarregar=1, situacao=situacao) }}"
+         title="Lê a coluna do centro de custo da contabilidade na C. Diários de novo">Ler a C. Diários de novo</a>
+      <a class="btn" href="{{ url_for('analisesps.folha_centros_de_custo_planilha', folha_id=folha.id) }}">Planilha para a contabilidade</a>
+    </span>
+  </div>
+
+  <div class="tabela-wrap"><div class="tabela-rolagem livre">
+  <table class="sps" id="tabela-centros">
+    <thead><tr><th>Situação</th><th>Colaborador</th><th>Centro de custo na folha</th>
+      <th>Obra(s) no ponto</th><th>Centro de custo pelo ponto</th><th>Observação</th></tr></thead>
+    <tbody>
+    {% for p in pessoas %}
+      <tr class="sit-{{ p.situacao }}">
+        <td><span class="selo {{ {'ok': 'aprovado', 'coerente': 'aprovado', 'remanejar': 'risco', 'conferir': 'saindo'}[p.situacao] }}">{{ rotulos[p.situacao] }}</span></td>
+        <td><b>{{ p.nome }}</b><br><span class="cartao-dica">cód. {{ p.id_fortes }}</span></td>
+        <td>{{ p.centro_folha or '—' }}</td>
+        <td>{% for o in p.obras %}{{ o.obra }} <span class="cartao-dica">{{ o.dias }} dia(s)</span>{% if not loop.last %}<br>{% endif %}{% else %}<span class="cartao-dica">sem ponto</span>{% endfor %}</td>
+        <td>{{ p.centro_esperado or '—' }}</td>
+        <td class="cartao-dica">{{ p.critica }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="cartao-dica">Ninguém nesta situação.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div></div>
+
+  {% if montado.mapa and montado.mapa.obras_sem_centro %}
+    <details style="margin-top:12px"><summary class="cartao-dica">{{ montado.mapa.obras_sem_centro|length }}
+      obra(s) da C. Diários sem o centro de custo da contabilidade (coluna {{ montado.mapa.coluna }})</summary>
+      <p class="cartao-dica">{{ montado.mapa.obras_sem_centro|join(', ') }}</p></details>
+  {% endif %}
+{% endif %}
+
+<style>
+  .faixa-folha { display:flex; gap:6px; margin:4px 0 14px; }
+  .faixa-folha a { padding:7px 14px; border-radius:8px; border:1px solid var(--borda); background:#fff;
+    font-weight:700; font-size:13px; color:var(--tinta-suave); text-decoration:none; }
+  .faixa-folha a.ativa { background:var(--azul); color:#fff; border-color:var(--azul); }
+  .kpis a.kpi { text-decoration:none; color:inherit; }
+  .kpis a.kpi.ativo { outline:2px solid var(--azul); }
+  #tabela-centros tr.sit-remanejar td { background:#FEF2F2; }
+</style>
+{% endblock %}

@@ -219,6 +219,8 @@ TODAS_AS_TELAS = [
     ("POST", "/analisesps/api/folha/dc/extra"),
     ("GET", "/analisesps/folha/123/complementar"),
     ("GET", "/analisesps/folha/123/complementar/relatorio.pdf"),
+    ("GET", "/analisesps/folha/123/centros-de-custo"),
+    ("GET", "/analisesps/folha/123/centros-de-custo.xlsx"),
     ("POST", "/analisesps/api/folha/complementar/selecao"),
     ("POST", "/analisesps/api/folha/complementar/a-descontar"),
     ("POST", "/analisesps/api/folha/a-descontar/descontado"),
