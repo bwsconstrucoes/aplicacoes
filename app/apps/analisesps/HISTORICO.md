@@ -12244,6 +12244,25 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 260 — A baixa dos comprovantes em pista própria (migração 056, 11/11/2026)
+
+- *"Já existe uma atualização em andamento (dando baixa nos comprovantes —
+  Bradesco_11112026_081401.PDF: leva 2 de 2, desde 08:31). Espere ela terminar. (…)
+  esse comprovante tão sempre demorando muito."*
+- A baixa (o robô do BaixaBradesco, leva de 10 páginas por vez: leitura, Omie,
+  planilha, Pipefy) corria na pista GERAL, a mesma da sincronização e da fila de envio
+  para a planilha — um segurava o outro. Ela não escreve em `analisesps.sps`, só na
+  planilha (pelo robô, que já roda pelo Make junto com a sincronização). Agora tem a
+  pista `comprovantes` (`tarefas.MODOS_DOS_COMPROVANTES`, índice
+  `ux_execucao_viva_por_pista6`): roda junto da sincronização, uma baixa por vez.
+- A tela de Comprovantes acompanha a pista dela; ao fim de uma baixa, o que chegou de
+  comprovante enquanto ela rodava começa sozinho (`encadear_comprovantes`).
+- **A demora do robô em si NÃO mudou** — ela é do BaixaBradesco (outra área). O que
+  mudou é que ela não trava mais o resto.
+- ⚠️ **Migração 056: apertar "Aplicar atualizações do banco" no MESMO momento da
+  publicação.** Sem ela, a baixa continua na geral como antes (o pedido recusado
+  pede o botão; o lote fica esperando e entra depois).
+
 #### Leva 259 — Sincronização: linhas mudadas em faixas contínuas (11/11/2026)
 
 - *"Alterado aqui, mas o envio para a planilha ficou na fila: Já existe uma

@@ -2070,7 +2070,7 @@ def andamento():
     # `?pista=cadastro` acompanha a atualização dos colaboradores, que roda na
     # pista dela (migração 054) — a geral é a da sincronização.
     pista = request.args.get("pista") if request.args.get("pista") in (
-        "pessoa", "cadastro", "ponto", "apoios") else "geral"
+        "pessoa", "cadastro", "ponto", "apoios", "comprovantes") else "geral"
     estado = tarefas.estado(pista)
     if pista == "cadastro" and not estado["rodando"] and tarefas.estado()["rodando"] \
             and tarefas._pedido_pendente("colaboradores"):
@@ -8435,7 +8435,7 @@ def tela_comprovantes():
 
     return render_template(
         "analisesps_comprovantes.html", aba="comprovantes", base=base,
-        historico=historico, andamento=tarefas.estado(),
+        historico=historico, andamento=tarefas.estado("comprovantes"),
         por_leva=comprovantes.POR_LEVA,
         maximo_mb=comprovantes.MAXIMO_POR_ARQUIVO // (1024 * 1024),
         maximo_arquivos=comprovantes.MAXIMO_DE_ARQUIVOS,
@@ -8550,7 +8550,7 @@ def estado_comprovantes():
         lotes = comprovantes.historico(quantos=5)
     except Exception:  # noqa: BLE001 — migração ainda não aplicada
         return {"ok": False, "rodando": False, "lotes": []}
-    andamento = tarefas.estado()
+    andamento = tarefas.estado("comprovantes")       # a pista dela (migração 056)
     return {
         "ok": True,
         "rodando": bool(andamento.get("rodando")),
