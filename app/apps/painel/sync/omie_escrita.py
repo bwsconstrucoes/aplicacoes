@@ -68,7 +68,13 @@ EXCLUSOES = {
 # `IncluirLancCC` que o Make do dono usa há anos. Se o OMIE disser que o método
 # não existe, o erro aparece na coluna Resultado e nada é gravado.
 ALTERAR_LANC_CC = "AlterarLancCC"
-SO_LEITURA_CC = ("info",)
+# O que a consulta devolve e a gravação não recebe de volta. Em 11/11/2026 a
+# resposta real de um lançamento (709793529) mostrou o que vem além do que o
+# `IncluirLancCC` aceita: `info` (quem incluiu/alterou), `diversos` (os dados
+# da CONCILIAÇÃO — origem, usuário, data) e `nCodAgrup`. Mandar bloco que não
+# é da gravação faz o OMIE recusar a chamada inteira; e o estado da
+# conciliação não é nosso para regravar.
+SO_LEITURA_CC = ("info", "diversos", "nCodAgrup")
 
 
 def tipo_do_titulo(tipo_do_fato: str) -> str:
@@ -96,7 +102,7 @@ class OmieEscrita(OmieClient):
 
     def alterar_titulo(self, cadastro: dict, tipo: str) -> dict:
         url, _consultar, alterar = OPERACOES[tipo]
-        return self._call(url, alterar, cadastro)
+        return self._call(url, alterar, cadastro, uma_vez=True)
 
     def excluir_titulo(self, codigo: int, tipo: str) -> dict:
         """Apaga o título NO OMIE. Não há desfazer.
@@ -105,7 +111,8 @@ class OmieEscrita(OmieClient):
         Mandar o cadastro inteiro aqui seria convidar a recusa por campo
         sobrando, e a mensagem dele não diz qual foi o culpado."""
         url, excluir = EXCLUSOES[tipo]
-        return self._call(url, excluir, {"codigo_lancamento_omie": int(codigo)})
+        return self._call(url, excluir, {"codigo_lancamento_omie": int(codigo)},
+                          uma_vez=True)
 
     def alterar_lancamento_cc(self, lancamento: dict) -> dict:
         """Grava o lançamento de conta corrente alterado (tarifa, aporte, IOF —
@@ -115,7 +122,7 @@ class OmieEscrita(OmieClient):
         Explorador e o OMIE respondeu "Lançamento não cadastrado para o
         Código [11266605823]". O painel perguntava por ela como TÍTULO; ela é
         um lançamento da conta, e mora noutro endereço do OMIE."""
-        return self._call(URL_LANC_CC, ALTERAR_LANC_CC, lancamento)
+        return self._call(URL_LANC_CC, ALTERAR_LANC_CC, lancamento, uma_vez=True)
 
     def listar_departamentos(self, **kwargs):
         return self._listar(URL_DEPARTAMENTOS, "ListarDepartamentos",
@@ -202,6 +209,12 @@ def preparar_alteracao_cc(resposta: dict, codigo: int, codigo_categoria=None,
                          "'cabecalho') — nada foi enviado")
     novo = {c: copy.deepcopy(v) for c, v in registro.items() if c not in SO_LEITURA_CC}
     novo["nCodLanc"] = int(registro.get("nCodLanc") or codigo)
+    # bloco vazio não vai: transferência sem conta de destino, e a lista de
+    # categorias múltiplas vazia
+    if not ((novo.get("transferencia") or {}).get("nCodCCDestino")):
+        novo.pop("transferencia", None)
+    if isinstance(novo.get("detalhes"), dict) and not novo["detalhes"].get("aCodCateg"):
+        novo["detalhes"].pop("aCodCateg", None)
     mudancas = []
 
     detalhes = novo.get("detalhes") if isinstance(novo.get("detalhes"), dict) else {}
