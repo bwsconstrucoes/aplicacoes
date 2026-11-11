@@ -8586,12 +8586,23 @@ def tela_bradesco():
         if not colado.strip():
             erro = "Cole o texto da tela de operações do Bradesco."
         else:
+            # Guarda o texto e abre a conferência por ENDEREÇO (11/11/2026): recarregar
+            # a resposta de um formulário fazia o navegador perguntar se reenviava.
+            # Ver `bradesco.guardar_colado`.
             try:
-                resultado = bradesco.cruzar_tudo(colado, _candidatas_bradesco(),
-                                                 foco_agendados=foco)
-            except Exception as e:  # noqa: BLE001
-                logger.exception("Análise de SPs: falhou cruzar o extrato")
-                erro = str(e)
+                codigo = bradesco.guardar_colado(colado, foco, quem=auth.nome_atual() or "")
+                return redirect(url_for("analisesps.tela_bradesco", c=codigo))
+            except Exception:  # noqa: BLE001 — sem guardar, confere na hora como antes
+                logger.exception("Análise de SPs: não consegui guardar o extrato colado")
+                resultado, erro = _conferir_bradesco(colado, foco)
+    elif request.args.get("c"):
+        guardado = bradesco.ler_colado(request.args.get("c"))
+        if guardado is None:
+            erro = ("Esta conferência não está mais guardada (os textos ficam "
+                    f"{bradesco.DIAS_DO_COLADO} dias). Cole o extrato de novo.")
+        else:
+            colado, foco = guardado.get("texto") or "", bool(guardado.get("foco"))
+            resultado, erro = _conferir_bradesco(colado, foco)
 
     return render_template(
         "analisesps_bradesco.html", aba="bradesco", base=base,
@@ -8605,6 +8616,16 @@ def tela_bradesco():
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
+
+
+def _conferir_bradesco(colado: str, foco: bool) -> tuple:
+    """(resultado, erro) da conferência — com os status de AGORA."""
+    from . import bradesco
+    try:
+        return bradesco.cruzar_tudo(colado, _candidatas_bradesco(), foco_agendados=foco), None
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Análise de SPs: falhou cruzar o extrato")
+        return None, str(e)
 
 
 def _candidatas_bradesco() -> list[dict]:

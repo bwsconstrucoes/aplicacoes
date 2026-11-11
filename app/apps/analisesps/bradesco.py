@@ -723,3 +723,77 @@ def resumo(resultado: dict) -> dict:
         "por_agendamento": por_agend,
         "por_conta": sorted(contas.values(), key=lambda c: -c["total"]),
     }
+
+
+# ---------------------------------------------------------------------------
+# O TEXTO COLADO FICA GUARDADO, E A CONFERÊNCIA ABRE POR ENDEREÇO (11/11/2026).
+# O dono: *"por que aparece isso toda hora na tela Bradesco? Para exibir esta
+# página, o Firefox precisa enviar informações que repetirão qualquer ação…"* A
+# conferência era a RESPOSTA de um formulário enviado: qualquer recarga (a tela se
+# atualiza sozinha quando uma sincronização termina, a barra de ações depois de
+# agendar, o F5) fazia o navegador perguntar se reenviava. Agora o "Conferir" guarda
+# o texto (`analisesps.meta`, chave `bradesco.colado.<código>`) e manda para
+# `/bradesco?c=<código>`; recarregar só refaz a conferência, com os status de agora.
+# Fica guardado por DIAS_DO_COLADO dias; os mais velhos saem a cada conferência.
+# ---------------------------------------------------------------------------
+PREFIXO_DO_COLADO = "bradesco.colado."
+DIAS_DO_COLADO = 3
+
+
+def guardar_colado(texto: str, foco: bool, quem: str = "") -> str:
+    import json
+    import secrets
+    from .db import conexao
+    from .horario import agora
+    from .sincronizacao import _meta_gravar
+    codigo = secrets.token_urlsafe(9)
+    with conexao() as conn:
+        _meta_gravar(conn, PREFIXO_DO_COLADO + codigo, json.dumps(
+            {"texto": texto, "foco": bool(foco), "quem": str(quem or "")[:80],
+             "quando": agora().isoformat(timespec="seconds")}, ensure_ascii=False))
+    _esquecer_colados_velhos()
+    return codigo
+
+
+def ler_colado(codigo: str) -> dict | None:
+    import json
+    from .db import consultar_um
+    codigo = "".join(c for c in str(codigo or "") if c.isalnum() or c in "-_")[:40]
+    if not codigo:
+        return None
+    linha = consultar_um("SELECT valor FROM analisesps.meta WHERE chave = ?",
+                         (PREFIXO_DO_COLADO + codigo,))
+    try:
+        dado = json.loads(linha[0]) if linha and linha[0] else None
+    except ValueError:
+        return None
+    return dado if isinstance(dado, dict) else None
+
+
+def _esquecer_colados_velhos() -> None:
+    import datetime as _dt
+    import json
+    from .db import conexao, consultar
+    from .horario import agora
+    try:
+        limite = agora() - _dt.timedelta(days=DIAS_DO_COLADO)
+        velhos = []
+        for chave, valor in consultar("SELECT chave, valor FROM analisesps.meta "
+                                      " WHERE chave LIKE ?", (PREFIXO_DO_COLADO + "%",)):
+            try:
+                quando = _dt.datetime.fromisoformat(json.loads(valor).get("quando"))
+                if quando.tzinfo is None and limite.tzinfo is not None:
+                    quando = quando.replace(tzinfo=limite.tzinfo)
+                if quando < limite:
+                    velhos.append(chave)
+            except Exception:  # noqa: BLE001 — ilegível também sai
+                velhos.append(chave)
+        if velhos:
+            with conexao() as conn:
+                for chave in velhos:
+                    conn.execute("DELETE FROM analisesps.meta WHERE chave = ?", (chave,))
+                conn.commit()
+    except Exception:  # noqa: BLE001 — limpar é conforto; a conferência segue
+        import logging
+        logging.getLogger("analisesps.bradesco").exception(
+            "Bradesco: não consegui apagar os textos colados antigos")

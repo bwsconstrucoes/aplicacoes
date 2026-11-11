@@ -12264,6 +12264,14 @@ somente Solicitações de uma conta especifica"*.
   total, com SP, sem SP, "pedem conferência" (`pede_conferencia`: sem SP, validação
   fora de OK ou alerta ⚠️ — a frase que só explica o acerto não conta), por status de
   agendamento (a já paga conta como "Pago") e a tabela por conta de débito.
+- **O aviso do Firefox** (*"por que aparece isso toda hora na tela Bradesco? (…) o
+  Firefox precisa enviar informações que repetirão qualquer ação"*): a conferência
+  era a RESPOSTA do formulário — qualquer recarga (a tela se atualiza quando uma
+  sincronização termina; a barra depois de agir; o F5) pedia para reenviar. Agora o
+  "Conferir" guarda o texto (`analisesps.meta`, `bradesco.colado.<código>`, por 3
+  dias) e redireciona para `/bradesco?c=<código>`; recarregar refaz a conferência com
+  os status de agora. O gancho `window.recarregarTela` saiu da tela (fica no
+  `analisesps.js`, sem uso). Sem banco para guardar, confere na hora, como antes.
 - **Códigos de pagamento (QR / boleto)**, no mesmo dia: *"não é exibido o status do
   agendamento do registro. Coloca."* Cada SP mostra o selo do agendamento (ou "sem
   agendamento") e o do status de pagamento, ao lado do valor e do vencimento.
