@@ -31,6 +31,7 @@ def base():
         conn.execute("TRUNCATE TABLE movimentos")
         conn.execute("TRUNCATE TABLE movimentos_sem_titulo")
         conn.execute("DELETE FROM config WHERE chave = ?", (espelho.CHAVE_ANOS_RELIDOS,))
+        conn.execute("DELETE FROM config WHERE chave = ?", (espelho.CHAVE_MESES_RELIDOS,))
         # um pagamento VELHO de 2016, que a releitura tem de trocar
         conn.execute("INSERT INTO movimentos (ncodtitulo, cnatureza, ddtpagamento, nvalpago,"
                      " cliquidado, sync_em) VALUES (1, 'P', '10/03/2016', 999, 'S', 'x')")
@@ -38,6 +39,7 @@ def base():
     yield painel_db
     with painel_db.conexao() as conn:   # a campanha aberta não vaza para outro teste
         conn.execute("DELETE FROM config WHERE chave = ?", (espelho.CHAVE_ANOS_RELIDOS,))
+        conn.execute("DELETE FROM config WHERE chave = ?", (espelho.CHAVE_MESES_RELIDOS,))
         conn.commit()
     painel_db._engine = None
 
@@ -47,19 +49,31 @@ def _mov(cod, dia):
             "resumo": {"cLiquidado": "S", "nValPago": 100.0}}
 
 
+def _janela(param_extra):
+    de = dt.datetime.strptime(param_extra["dDtPagtoDe"], "%d/%m/%Y").date()
+    ate = dt.datetime.strptime(param_extra["dDtPagtoAte"], "%d/%m/%Y").date()
+    return de, ate
+
+
 class ClienteFalso:
-    """Um pagamento por ano; pode cair num ano escolhido."""
+    """Um pagamento por ano, em 10/03; pode cair num ano escolhido. Desde
+    11/11/2026 a releitura pergunta mês a mês: responde só a janela pedida."""
 
     def __init__(self, cair_em=None):
         self.cair_em = cair_em
         self.anos_lidos = []
+        self.janelas = []
 
     def listar_movimentos(self, *, param_extra=None, **_k):
-        ano = int(param_extra["dDtPagtoDe"][-4:])
-        if ano == self.cair_em:
+        de, ate = _janela(param_extra)
+        self.janelas.append((de, ate))
+        if de.year == self.cair_em:
             raise RuntimeError("o serviço reiniciou")
-        self.anos_lidos.append(ano)
-        yield 1, 1, 1, [_mov(ano, f"10/03/{ano}")]
+        if de.year not in self.anos_lidos:
+            self.anos_lidos.append(de.year)
+        marco = dt.date(de.year, 3, 10)
+        yield 1, 1, 1, ([_mov(de.year, marco.strftime("%d/%m/%Y"))]
+                        if de <= marco <= ate else [])
 
 
 def _contar(base, ano):
@@ -95,17 +109,17 @@ def test_o_corte_no_meio_nao_manda_de_volta_ao_comeco(base):
 
 @pytest.mark.banco
 def test_o_ano_que_caiu_no_meio_nao_fica_pela_metade(base):
-    """O ano é apagado e regravado na mesma transação: se cair no meio dele, o
+    """O MÊS é apagado e regravado na mesma transação: se cair no meio dele, o
     que havia antes continua lá."""
     from app.apps.painel.sync import espelho
 
     class CaiNaSegundaPagina(ClienteFalso):
         def listar_movimentos(self, *, param_extra=None, **_k):
-            ano = int(param_extra["dDtPagtoDe"][-4:])
-            if ano == 2016:
+            de, _ate = _janela(param_extra)
+            if (de.year, de.month) == (2016, 3):
                 yield 1, 2, 2, [_mov(2016, "11/03/2016")]
                 raise RuntimeError("caiu na página 2")
-            yield 1, 1, 1, [_mov(ano, f"10/03/{ano}")]
+            yield from super().listar_movimentos(param_extra=param_extra)
 
     with pytest.raises(RuntimeError):
         espelho.reler_pagamentos_por_ano(hoje=dt.date(2017, 1, 1), cli=CaiNaSegundaPagina())
@@ -199,3 +213,45 @@ def test_o_botao_manda_os_anos(base, monkeypatch):
         conn.execute("TRUNCATE TABLE execucoes")
         conn.commit()
     assert 2025 not in feitos and 2024 in feitos
+
+
+@pytest.mark.banco
+def test_o_corte_no_meio_do_ano_segue_do_mes_seguinte(base):
+    """11/11/2026, o dono: "tento, tento e nunca fecha" — 2021 morria na página
+    324 de 378 e a tentativa seguinte recomeçava 2021 da página 1."""
+    from app.apps.painel.sync import espelho
+
+    class CaiEmJunho(ClienteFalso):
+        def listar_movimentos(self, *, param_extra=None, **_k):
+            de, _ate = _janela(param_extra)
+            if (de.year, de.month) == (2016, 6):
+                raise RuntimeError("o serviço reiniciou")
+            yield from super().listar_movimentos(param_extra=param_extra)
+
+    hoje = dt.date(2016, 12, 31)
+    with base.conexao() as conn:
+        espelho._marcar_anos_relidos(conn, [2015])
+        conn.commit()
+    with pytest.raises(RuntimeError):
+        espelho.reler_pagamentos_por_ano(hoje=hoje, cli=CaiEmJunho())
+    # janeiro a maio ficaram gravados, março com o pagamento novo
+    assert tuple(_contar(base, 2016)) == (1, 100)
+    with base.conexao() as conn:
+        assert espelho._meses_relidos(conn) == {2016: [1, 2, 3, 4, 5]}
+
+    segue = ClienteFalso()
+    r = espelho.reler_pagamentos_por_ano(hoje=hoje, cli=segue)
+    assert [j[0].month for j in segue.janelas] == [6, 7, 8, 9, 10, 11, 12]
+    assert r["relidos"] == [2016]
+    with base.conexao() as conn:
+        assert espelho._meses_relidos(conn) == {}
+        assert espelho._anos_relidos(conn) == []
+
+
+def test_a_etapa_nova_nao_herda_o_texto_da_anterior():
+    """A tela mostrava "obras dos lançamentos" com "2021: página 324 de 378"."""
+    import inspect
+
+    from app.apps.painel import tarefas
+    assert "espelho._ultimo_andamento[:] = [etapa, detalhe]" in inspect.getsource(
+        tarefas.executar_trabalho)

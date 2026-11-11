@@ -651,6 +651,36 @@ nunca rodou contra a base real**. Ele passou pelo parser do Postgres, pelo teste
 de portabilidade e pelos testes com dublê — nenhum dos três olha o número que
 sai.
 
+## "Tento, tento e nunca fecha": a releitura de pagamentos passa a ser mês a mês — 11/11/2026
+
+O dono rodou "Reler os pagamentos" e a tela mostrou "2021: página 324 de 378 —
+depois dele, mais 5 ano(s)", e o passo das obras dos lançamentos de conta com
+✖. *"Fica impossível assim. Tento, tento e nunca fecha."*
+
+**O que o código mostra (a mensagem de erro da execução não chegou a ser
+vista — pedida ao dono):**
+- a releitura gravava ANO A ANO, cada ano numa transação: 2021 tem 378
+  páginas. Se a execução morre no meio (reinício do serviço, espera do OMIE
+  maior que 10 min, publicação), o ano inteiro volta para a página 1;
+- a releitura aberta e não terminada TRAVA o recálculo de todas as
+  atualizações (regra de 06/10/2026: recalcular com pagamentos faltando
+  mostraria o painel errado). Então toda atualização — inclusive a da
+  madrugada — tentava terminar 2021 e os 5 anos seguintes;
+- escolher anos na tela não troca uma releitura aberta: ela é terminada
+  primeiro. Por isso "mais 5 anos" mesmo que o dono tenha marcado só dois;
+- a tela pôs o texto da releitura ("2021: página 324") no passo das obras:
+  o sinal de vida das chamadas ao OMIE repetia o texto da última etapa
+  anunciada pela leitura.
+
+**O que mudou:**
+1. A releitura grava **mês a mês** (`CHAVE_MESES_RELIDOS`): cada mês é apagado
+   e regravado numa transação, com a marca junto. Um corte custa no máximo o
+   mês em que estava; a tentativa seguinte (inclusive a retomada automática e
+   a atualização da madrugada) segue do mês seguinte. A releitura aberta hoje
+   em produção (anos sem marca de mês) recomeça 2021 de janeiro — mas agora
+   cada mês fica.
+2. Mudar de etapa troca também o texto que o sinal de vida repete.
+
 ## "(não apropriado)" no painel, apropriado no OMIE — 10/11/2026
 
 O dono achou o lançamento 709.793.529 (28/12/2020, tarifa do Cartão Brasil,

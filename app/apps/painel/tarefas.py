@@ -313,6 +313,11 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
 
     def _etapa(etapa: str, detalhe: str = "") -> None:
         """Mudança de etapa: vai na hora, sem esperar o intervalo."""
+        # o sinal de vida das chamadas ao OMIE repete a ÚLTIMA etapa que a
+        # leitura anunciou; sem trocar aqui, a etapa nova aparecia na tela com
+        # o texto da anterior (11/11/2026: "obras dos lançamentos" mostrando
+        # "2021: página 324 de 378")
+        espelho._ultimo_andamento[:] = [etapa, detalhe]
         ultimo[0] = time.time()
         etapa_gravada[0] = etapa
         _carimbar(execucao_id, etapa, detalhe)
