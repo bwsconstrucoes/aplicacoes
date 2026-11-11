@@ -1518,7 +1518,16 @@ def reconstruir_fato(conn, tamanho_lote=2000):
     from ..db import conexao as _conexao_leitura
 
     with _conexao_leitura() as leitura:
-        conn.execute("TRUNCATE TABLE fato")
+        # DELETE, NÃO TRUNCATE (11/11/2026, o dono: "cliquei Receitas na DRE e
+        # já tá há muito tempo rodando e não mostra a tela"). O TRUNCATE trava
+        # a tabela INTEIRA até o fim da transação: durante os minutos do
+        # recálculo, toda tela que lia o fato ficava esperando — e, com 4 vias
+        # de atendimento, quatro telas presas paravam o serviço inteiro, ERP
+        # junto. O comentário acima prometia "as telas continuam enxergando o
+        # anterior inteiro"; com TRUNCATE era mentira. Com DELETE é verdade
+        # (conferido no banco: a leitura concorrente volta na hora, com o
+        # fato antigo). O preço: linhas mortas até o autovacuum passar.
+        conn.execute("DELETE FROM fato")
         sql = _insert_de("fato", COLUNAS_FATO)
         lote, total = [], 0
         # os títulos e, desde 07/10/2026, os lançamentos de conta corrente
@@ -1554,7 +1563,7 @@ def reconstruir_recebimentos(conn, tamanho_lote=2000):
 
     with _conexao_leitura() as leitura:
         registros = montar_recebimentos(leitura)
-    conn.execute("TRUNCATE TABLE fato_recebimentos")
+    conn.execute("DELETE FROM fato_recebimentos")   # não TRUNCATE: ver reconstruir_fato
     if not registros:
         conn.commit()
         return 0

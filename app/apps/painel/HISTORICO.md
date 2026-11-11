@@ -653,6 +653,20 @@ sai.
 
 ## "Painel muito lento hoje" — 11/11/2026
 
+**Achado e confirmado em teste:** o recálculo ("Recalculando os números do
+painel", que fecha toda atualização) esvaziava o fato com `TRUNCATE` dentro da
+transação. TRUNCATE trava a tabela INTEIRA até o commit: durante os minutos do
+recálculo, toda tela que lê o fato ESPERA — o dono: *"cliquei Receitas na DRE
+e já tá há muito tempo rodando e não mostra a tela"*. Com 4 vias de
+atendimento, quatro telas presas param o serviço inteiro (ERP junto). O
+comentário da função prometia que as telas continuavam vendo o fato antigo;
+com TRUNCATE não viam. Agora é `DELETE` (fato e recebimentos): a leitura
+concorrente volta na hora, com os números de antes. Teste:
+`test_as_telas_leem_o_fato_antigo_durante_o_recalculo` (falha com TRUNCATE,
+passa com DELETE). Preço: linhas mortas até o autovacuum passar. Não confirmado
+que era ESTA a lentidão dele hoje — mas casa com atualizações tentando rodar
+o dia todo.
+
 Com a releitura de todos os pagamentos tentando terminar a cada atualização.
 Não medido em produção (a causa não está confirmada). Feito o que é seguro: o
 processo da atualização entra com prioridade baixa (`os.nice(10)`, em

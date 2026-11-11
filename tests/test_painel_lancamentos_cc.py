@@ -168,3 +168,38 @@ def test_o_periodo_e_validado_e_guardado(base, monkeypatch):
     with base.conexao() as conn:
         conn.execute("TRUNCATE TABLE execucoes")
         conn.commit()
+
+
+@pytest.mark.banco
+def test_as_telas_leem_o_fato_antigo_durante_o_recalculo(base, monkeypatch):
+    """11/11/2026, o dono: "cliquei Receitas na DRE e já tá há muito tempo
+    rodando e não mostra a tela". O recálculo esvaziava o fato com TRUNCATE,
+    que trava a tabela até o fim: toda tela ficava esperando minutos. No meio
+    do recálculo, uma leitura por outra conexão tem de voltar na hora."""
+    import psycopg2
+
+    from app.apps.painel.sync import espelho
+    with base.conexao() as conn:
+        espelho.gravar_movimentos(conn, [_mov(555, "09/01/2026", 10.0)])
+        fato.reconstruir_fato(conn)
+        antes = conn.execute("SELECT COUNT(*) FROM fato").fetchone()[0]
+    assert antes == 1
+
+    vistos = []
+    original = fato.gerar_linhas_fato
+
+    def no_meio(leitura):
+        tela = psycopg2.connect(os.environ["DATABASE_URL"])
+        try:
+            cur = tela.cursor()
+            cur.execute("SET statement_timeout = 3000")
+            cur.execute("SELECT COUNT(*) FROM painel.fato")
+            vistos.append(cur.fetchone()[0])
+        finally:
+            tela.close()
+        yield from original(leitura)
+
+    monkeypatch.setattr(fato, "gerar_linhas_fato", no_meio)
+    with base.conexao() as conn:
+        fato.reconstruir_fato(conn)
+    assert vistos == [antes]      # leu na hora, e viu o fato de antes
