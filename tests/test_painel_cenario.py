@@ -1426,7 +1426,9 @@ def test_quem_tem_login_proprio_nao_ve_mais_a_aba_da_prestacao(preso, monkeypatc
     sócio. O `preso` tinha a tela "prestacao" marcada: ela some do menu dele,
     e o endereço não abre."""
     from app.apps.painel import usuarios
-    assert "prestacao" not in usuarios.TELAS
+    # a chave antiga não volta: a leitura da prestação tem chave PRÓPRIA, para
+    # quem tinha a antiga marcada não ganhar a empresa inteira sem ninguém decidir
+    assert "prestacao" not in usuarios.TELAS and "prestacao_leitura" in usuarios.TELAS
     cliente = _cliente_preso(monkeypatch)
     assert cliente.get("/painel/prestacao").status_code == 404
     html = cliente.get("/painel/dre").get_data(as_text=True)
@@ -1954,3 +1956,102 @@ def test_configuracoes_abre_com_migracao_pendente(base, monkeypatch):
     r = _cliente(monkeypatch).get("/painel/configuracoes")
     assert r.status_code == 200
     assert "Aplicar atualizações do banco" in r.get_data(as_text=True)
+
+
+# ===========================================================================
+# 11/11/2026 — a prestação compartilhada, só para leitura
+# ===========================================================================
+@pytest.fixture()
+def socio_que_so_le(base):
+    """Um sócio: só a Prestação de Contas, nenhuma obra marcada."""
+    from app.apps.painel import usuarios
+    r = usuarios.criar("socio", "senha-do-socio", telas=["prestacao_leitura"])
+    assert r["ok"], r
+    return r["id"]
+
+
+def _cliente_do_socio(monkeypatch):
+    monkeypatch.setenv("PAINEL_SENHA", SENHA_MESTRE)
+    from app.main import create_app
+    app = create_app()
+    app.config.update(TESTING=True)
+    cliente = app.test_client()
+    r = cliente.post("/painel/entrar", data={"usuario": "socio", "senha": "senha-do-socio"})
+    return cliente, r
+
+
+def test_quem_tem_a_prestacao_liberada_ve_tudo_dela(cenario, socio_que_so_le, monkeypatch):
+    """O dono: "compartilhar prestação de conta com um determinado usuário:
+    ele vai poder visualizar parâmetros etc., mas não pode mexer em nada"."""
+    _dois_socios()
+    cliente, entrada = _cliente_do_socio(monkeypatch)
+    # entra sem obra marcada, e cai direto na prestação
+    assert entrada.status_code == 302 and entrada.headers["Location"].endswith("/painel/prestacao")
+    for url in (f"/painel/prestacao/resultado?cenario={cenario}",
+                f"/painel/prestacao/como?cenario={cenario}",
+                f"/painel/prestacao/montagem?cenario={cenario}",
+                "/painel/prestacao/parametros?aba=socios",
+                "/painel/prestacao/parametros?aba=ajustes",
+                "/painel/prestacao/parametros?aba=fora",
+                "/painel/prestacao/parametros?aba=projetos",
+                "/painel/prestacao/parametros?aba=geral"):
+        r = cliente.get(url)
+        html = r.get_data(as_text=True)
+        assert r.status_code == 200, url
+        assert "modo de leitura" in html, url
+    # o menu dele só tem a prestação
+    assert "Prestação de Contas" in html and "Configurações" not in html
+    assert ">DRE<" not in html
+    # e baixa o relatório da prestação — é a mesma informação da tela
+    assert cliente.get(f"/painel/baixar/cenario?cenario={cenario}").status_code == 200
+
+
+def test_quem_so_le_a_prestacao_nao_grava_nada(cenario, socio_que_so_le, monkeypatch):
+    from app.apps.painel import cenarios, prestacao_dados
+    s = _dois_socios()
+    antes = cenarios.completo(cenario)
+    cliente, _ = _cliente_do_socio(monkeypatch)
+    tentativas = [
+        ("/painel/prestacao/montagem", {
+            "acao": "tudo", "cenario_id": cenario, "nome": "Invadido", "criterio": "faturamento",
+            "linha": [""], f"pct_0_{s['Sócio A']}": "100",
+            "periodo_presente": ["grupo|Administrativas"], "periodo_nivel": ["grupo"],
+            "periodo_chave": ["Administrativas"], "periodo_desde": ["inicio"],
+            "periodo_fica": ["50"], "periodo_filial": [""]}),
+        ("/painel/prestacao/montagem", {"acao": "apagar", "cenario_id": cenario}),
+        ("/painel/prestacao/montagem", {"acao": "novo", "nome": "Outro"}),
+        ("/painel/prestacao/parametros", {"acao": "excluir_socio", "aba": "socios",
+                                          "socio_id": s["Parceiro"]}),
+        ("/painel/prestacao/parametros", {"acao": "config", "aba": "geral",
+                                          "depto_admin_matriz": "MUITA GENTE"}),
+    ]
+    for url, dados in tentativas:
+        assert cliente.post(url, data=dados).status_code == 404, dados["acao"]
+    depois = cenarios.completo(cenario)
+    assert depois["nome"] == antes["nome"] and depois["pesos"] == antes["pesos"]
+    assert depois["participacoes"] == antes["participacoes"]
+    assert len(prestacao_dados.socios()) == 2 and len(cenarios.listar()) == 1
+    # e o resto do painel continua fechado para ele
+    for url in ("/painel/configuracoes", "/painel/explorador", "/painel/dre",
+                "/painel/baixar/quotas", "/painel/baixar/dre"):
+        assert cliente.get(url).status_code == 404, url
+
+
+def test_o_administrador_nao_ve_o_aviso_de_leitura(cenario, monkeypatch):
+    html = _cliente(monkeypatch).get(
+        f"/painel/prestacao/montagem?cenario={cenario}").get_data(as_text=True)
+    assert "modo de leitura" not in html and 'id="salvar-tudo"' in html
+
+
+def test_sem_a_prestacao_marcada_ela_continua_fechada(base, monkeypatch):
+    from app.apps.painel import usuarios
+    assert usuarios.criar("so-dre", "senha-dele", obras=["MUITA GENTE"], telas=["dre"])["ok"]
+    monkeypatch.setenv("PAINEL_SENHA", SENHA_MESTRE)
+    from app.main import create_app
+    app = create_app()
+    app.config.update(TESTING=True)
+    cliente = app.test_client()
+    cliente.post("/painel/entrar", data={"usuario": "so-dre", "senha": "senha-dele"})
+    for url in ("/painel/prestacao", "/painel/prestacao/montagem",
+                "/painel/prestacao/parametros", "/painel/baixar/cenario"):
+        assert cliente.get(url).status_code == 404, url

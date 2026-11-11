@@ -23,6 +23,7 @@
 
 {% from "painel_prestacao_nav.html" import nav_da_prestacao %}
 {{ nav_da_prestacao('cadastros') }}
+{% if so_leitura %}{% include "painel_so_leitura.html" %}{% endif %}
 <div class="aviso info">
   <b>Procurando os percentuais de rateio dos grupos e das categorias?</b> Eles ficam em
   <a href="{{ url_for('painel.cenario_montagem') }}#passo-divide"><b>Montar o cenário › 2 · O que se divide</b></a>:
@@ -58,9 +59,9 @@
         {% for s in socios %}
         <tr data-socio-linha>
           <td style="white-space:nowrap">
-            <button type="button" class="btn secundario" data-socio-sobe title="subir"
+            <button type="button" class="btn secundario" data-so-admin data-socio-sobe title="subir"
                     aria-label="Subir {{ s.nome }}" style="padding:2px 8px">▲</button>
-            <button type="button" class="btn secundario" data-socio-desce title="descer"
+            <button type="button" class="btn secundario" data-so-admin data-socio-desce title="descer"
                     aria-label="Descer {{ s.nome }}" style="padding:2px 8px">▼</button>
           </td>
           <td class="desc">
@@ -122,7 +123,7 @@
       o que foi lançado para ele. <b>Excluir</b> apaga de vez, com os percentuais
       dele — e só é aceito para quem não tem ajuste lançado.</span>
     <span style="flex:1"></span>
-    <button class="btn secundario" type="button"
+    <button data-so-admin class="btn secundario" type="button"
             onclick="[...document.querySelectorAll('tr[data-socio-novo][hidden]')].slice(0,3).forEach(t => t.hidden = false)">＋ mais linhas</button>
     <span id="socios-ordem-aviso" class="cartao-dica" style="margin:0" hidden><b>Posição mudada — falta salvar.</b></span>
     <button class="btn" type="submit" form="socios-lista">Salvar tudo</button>

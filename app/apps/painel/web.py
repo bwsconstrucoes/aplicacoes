@@ -296,7 +296,10 @@ def entrar():
                 erro="Usuário ou senha incorretos. Se você é o dono, apague o "
                      "que estiver no campo Usuário — o navegador às vezes "
                      "preenche sozinho — e digite só a senha."), 401
-        if not pessoa.get("obras") or not pessoa.get("telas"):
+        # quem só tem a prestação (um sócio) entra sem obra marcada: ela
+        # mostra a empresa inteira, e é a única tela que ele abre
+        so_prestacao = auth.le_a_prestacao(pessoa) and not pessoa.get("obras")
+        if not pessoa.get("telas") or (not pessoa.get("obras") and not so_prestacao):
             logger.warning("Painel: %s entrou sem obra ou sem tela liberada.", login)
             return render_template(
                 "painel_login.html", sem_senha=False,
@@ -304,8 +307,7 @@ def entrar():
                      "Fale com o responsável pelo painel."), 403
         auth.entrar_na_sessao(usuario_id=pessoa["id"])
         usuarios.marcar_acesso(pessoa["id"])
-        primeira = next((a for a in ABAS if a[0] in set(pessoa["telas"])
-                         - ABAS_SO_DO_ADMINISTRADOR), None)
+        primeira = next(iter(_abas_da_pessoa(pessoa)), None)
         return redirect(url_for(primeira[2]) if primeira
                         else url_for("painel.entrar"))
 
@@ -457,10 +459,20 @@ def _nivel_do_pedido() -> str:
     return "obra" if request.args.get("nivel") == "obra" else "projeto"
 
 
-# A "Prestação de Contas" abre o cenário, que mostra a empresa inteira e a
-# parte de cada sócio — só do administrador (11/11/2026). Quem tinha a tela
-# liberada no cadastro de acesso não a vê mais no menu.
-ABAS_SO_DO_ADMINISTRADOR = frozenset({"prestacao"})
+def _abas_da_pessoa(pessoa) -> list:
+    """As abas que uma pessoa (não o administrador) pode abrir: as telas
+    marcadas no cadastro dela. Sem obra marcada, as telas de obra não têm o
+    que mostrar — sobra a Prestação de Contas, que é da empresa inteira."""
+    liberadas = set(pessoa.get("telas") or [])
+    le_a_prestacao = auth.TELA_DA_PRESTACAO in liberadas
+    if not pessoa.get("obras"):
+        liberadas = set()
+    # a aba "prestacao" do menu é de quem tem a LEITURA liberada — a chave
+    # antiga ("prestacao", da prestação que saiu) não abre nada
+    liberadas.discard("prestacao")
+    if le_a_prestacao:
+        liberadas.add("prestacao")
+    return [aba for aba in ABAS if aba[0] in liberadas]
 
 
 def _abas_visiveis():
@@ -472,8 +484,7 @@ def _abas_visiveis():
     pessoa = auth.usuario_da_sessao()
     if pessoa is None:
         return ABAS
-    liberadas = set(pessoa.get("telas") or []) - ABAS_SO_DO_ADMINISTRADOR
-    return [aba for aba in ABAS if aba[0] in liberadas]
+    return _abas_da_pessoa(pessoa)
 
 
 def _opcoes_no_escopo():
@@ -532,6 +543,8 @@ def _contexto_comum(aba: str):
         # so o DRE. Sem isto o botao levava a "pagina nao encontrada" —
         # 22/09/2026, visto pelo dono no acesso de um usuario.
         "administrador": auth.e_administrador(),
+        # a prestação compartilhada: quem não é o administrador só lê
+        "so_leitura": auth.so_leitura(),
         # o relatório completo: o dono, e quem tem todas as telas que ele junta
         "pode_baixar_completo": auth.pode_baixar("completo"),
         "opcoes": _opcoes_no_escopo(),

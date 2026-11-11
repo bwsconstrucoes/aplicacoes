@@ -1,0 +1,41 @@
+{# A PRESTAÇÃO COMPARTILHADA, SÓ PARA LEITURA (11/11/2026, o dono: "ele vai
+   poder visualizar parâmetros etc., mas não pode mexer em nada").
+
+   QUEM GARANTE é o servidor: para quem não é o administrador, toda gravação
+   destas telas responde "não encontrado" (`auth.exigir_login`). O que está
+   aqui é só para a pessoa não ver botão que não funciona: os campos ficam
+   travados e os botões de gravar somem. Abrir grupo, projeto, período e
+   procurar continuam funcionando — é assim que se lê. #}
+<div class="aviso info nao-imprime" style="border-left:4px solid var(--azul)">
+  <b>Você está vendo a prestação de contas em modo de leitura.</b>
+  Dá para abrir tudo — o resultado, como a conta é feita, a montagem e os
+  cadastros — mas só o administrador do painel altera.
+</div>
+<style>
+  body.so-leitura #barra-salvar-tudo,
+  body.so-leitura #arvore-pendente,
+  body.so-leitura [data-so-admin],
+  body.so-leitura tr[data-socio-novo],
+  body.so-leitura [data-periodo-novo] { display: none !important; }
+  body.so-leitura input:disabled, body.so-leitura select:disabled,
+  body.so-leitura textarea:disabled { background: var(--papel); color: var(--tinta); opacity: 1; }
+</style>
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  document.body.classList.add("so-leitura");
+  var grava = function (f) { return f && (f.getAttribute("method") || "").toLowerCase() === "post"; };
+  // os campos que seriam gravados ficam travados (busca e filtro não têm nome)
+  document.querySelectorAll("input[name], select[name], textarea[name]").forEach(function (c) {
+    if (grava(c.form)) c.disabled = true;
+  });
+  // dentro de formulário de gravar, só ficam os botões que servem para LER
+  var paraLer = "[data-abre-grupo], [data-abre-periodos], [data-fora-abre], [data-grade-abre]";
+  document.querySelectorAll("button").forEach(function (b) {
+    if (grava(b.form) && !b.matches(paraLer)) b.style.display = "none";
+  });
+  // e nenhum deles sai — nem por Enter
+  document.querySelectorAll("form").forEach(function (f) {
+    if (grava(f)) f.addEventListener("submit", function (e) { e.preventDefault(); e.stopImmediatePropagation(); }, true);
+  });
+});
+</script>

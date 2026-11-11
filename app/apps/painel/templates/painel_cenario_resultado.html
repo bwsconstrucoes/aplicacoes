@@ -9,6 +9,7 @@
 </h2>
 {% from "painel_prestacao_nav.html" import nav_da_prestacao %}
 {{ nav_da_prestacao('resultado', cenario.id) }}
+{% if so_leitura %}{% include "painel_so_leitura.html" %}{% endif %}
 
 <form method="get" class="tabela-barra" style="border:0; padding:0 0 12px">
   <div class="campo" style="max-width:360px">

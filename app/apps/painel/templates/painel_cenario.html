@@ -10,6 +10,7 @@
 </h2>
 {% from "painel_prestacao_nav.html" import nav_da_prestacao %}
 {{ nav_da_prestacao('montagem', cenario.id if cenario else None) }}
+{% if so_leitura %}{% include "painel_so_leitura.html" %}{% endif %}
 
 <!-- ===================== QUAL CENÁRIO ===================== -->
 <div class="cartao">
@@ -242,8 +243,8 @@
     {% if origem_da_matriz.primeiro_mes %}de {{ origem_da_matriz.primeiro_mes[5:] }}/{{ origem_da_matriz.primeiro_mes[:4] }}
     a {{ origem_da_matriz.ultimo_mes[5:] }}/{{ origem_da_matriz.ultimo_mes[:4] }} (todos os anos){% endif %}{% if origem_da_matriz.sem_data|abs > 0.005 %},
     mais {{ brl(origem_da_matriz.sem_data) }} sem data{% endif %}.
-    <a href="{{ url_for('painel.dre', obra=origem_da_matriz.por_depto|map(attribute=0)|list) }}" target="_blank" rel="noopener">Abrir o DRE só desses centros de custo ↗</a>
-    · Os centros de custo se trocam em
+    {% if administrador %}<a href="{{ url_for('painel.dre', obra=origem_da_matriz.por_depto|map(attribute=0)|list) }}" target="_blank" rel="noopener">Abrir o DRE só desses centros de custo ↗</a>
+    · {% endif %}Os centros de custo se trocam em
     <a href="{{ url_for('painel.prestacao_parametros', aba='geral') }}">Cadastros › Parâmetros gerais</a>.
   </p>
   {# A ESTRUTURA CONTRA O DRE DO PROJETO (11/11/2026, o dono: "veja que não

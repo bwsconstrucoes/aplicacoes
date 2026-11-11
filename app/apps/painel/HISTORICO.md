@@ -651,6 +651,40 @@ nunca rodou contra a base real**. Ele passou pelo parser do Postgres, pelo teste
 de portabilidade e pelos testes com dublê — nenhum dos três olha o número que
 sai.
 
+## A prestação compartilhada, só para leitura — 11/11/2026 (noite)
+
+**NÃO PUBLICADO ainda** — está no ramo, à espera do "pode" do dono. Sem
+migração.
+
+O dono: *"compartilhar prestação de conta com um determinado usuário: ele vai
+poder visualizar parâmetros etc., mas não pode mexer em nada."*
+
+De manhã a prestação tinha virado só do administrador (ela mostra a empresa
+inteira e a parte de cada sócio). Volta como **decisão dele, pessoa por
+pessoa, e só como leitura**:
+
+- No cadastro de acesso (Configurações) há a caixinha **"Prestação de Contas —
+  só ver (mostra a empresa inteira e a parte de cada sócio)"**. O rótulo diz o
+  que ela entrega porque **ela não respeita as obras marcadas** da pessoa.
+- Quem a tem abre, **só com GET**: o resultado, "Como é feita", a montagem e
+  os cadastros (`auth.LEITURA_DA_PRESTACAO` — lista fechada, por nome; rota
+  nova da prestação nasce fechada). Baixa o relatório do cenário. **Qualquer
+  gravação responde "não encontrado"** — é o servidor que garante.
+- Nas telas, um aviso "modo de leitura", os campos travados e os botões de
+  gravar escondidos (`painel_so_leitura.html`). Isso é só para a pessoa não
+  ver botão que não funciona; a proteção não depende disso.
+- **Entra sem obra marcada**: um sócio que só vê a prestação não precisa de
+  obra. Nesse caso o menu dele tem só a Prestação de Contas.
+
+**A chave é nova de propósito** (`prestacao_leitura`, não `prestacao`). Quem
+tinha a prestação ANTIGA marcada continua com `prestacao` gravado no banco;
+reaproveitar a chave daria a essas pessoas a empresa inteira sem ninguém
+decidir. A chave antiga não abre nada.
+
+**Fica com o dono:** marcar a caixinha para quem ele quiser, em Configurações
+› acessos. **Não decidido:** se algum dia alguém além dele vai poder ALTERAR
+a prestação — hoje, ninguém.
+
 ## Cada conta da matriz em TRÊS PARTES — 11/11/2026 (noite)
 
 **PUBLICADO em 11/11/2026, 21:15 (UTC)** — `5afe2908`, com o "pode" do dono,
