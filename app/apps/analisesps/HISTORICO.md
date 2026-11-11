@@ -12244,6 +12244,24 @@ somente Solicitações de uma conta especifica"*.
   8.650 verdes, com a main de outro chat trazida antes). Falta ele: lançar a DC
   de novo e confirmar que "Salários e Ordenados" é a classificação certa.
 
+#### Leva 259 — Sincronização: linhas mudadas em faixas contínuas (11/11/2026)
+
+- *"Alterado aqui, mas o envio para a planilha ficou na fila: Já existe uma
+  atualização em andamento (trazendo as SPs alteradas — 28200 de 52350, desde 08:04)
+  (…) ela trava toda a operação. Já tem 24 minutos. Não tem sentido."*
+- **Causa da demora:** quando quase a planilha inteira aparece como alterada (52.350
+  linhas — carimbo novo em tudo, provavelmente um script que reescreveu a SPsBD), o
+  delta pedia UMA FAIXA POR LINHA, 200 por ida: ~20 linhas/s, quase uma hora com a
+  pista das SPs ocupada — e a fila de envio para a planilha esperando atrás.
+- **Agora:** linhas vizinhas viram uma faixa só (`faixas_continuas`, `lotes_de_faixas`),
+  até 5.000 linhas por ida, como a carga inicial. O caso "tudo mudou" passa a custar o
+  mesmo que uma carga (minutos). O log diz POR QUE as linhas vieram (novas na base,
+  carimbo novo desde X, conteúdo sem carimbo) — para achar o script que carimba tudo.
+- **Não muda:** a marca d'água só é gravada no fim (gravar no meio perderia linhas de
+  carimbo menor ainda não lidas); a alteração feita pela tela fica na fila e desce na
+  próxima sincronização — não se perde.
+- Testes: `test_analisesps_banco.py` (faixas contínuas; 1.200 linhas = 1 ida).
+
 #### Leva 258 — Complementar das diárias (11/11/2026)
 
 - *"Fizemos o pagamento (…) da última quinzena. Só que aí o pessoal precisou corrigir

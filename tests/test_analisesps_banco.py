@@ -1306,8 +1306,10 @@ class AbaFalsa:
         self.faixas_pedidas.extend(faixas)
         saida = []
         for faixa in faixas:
-            n = int(re.search(r"A(\d+):", faixa).group(1))
-            saida.append([self.linhas[n - 1]])
+            # "A2:AK5" — a faixa inteira, como o Google devolve (11/11/2026: o delta
+            # passou a pedir faixas contínuas, não uma linha por faixa).
+            a, b = (int(x) for x in re.search(r"A(\d+):[A-Z]+(\d+)", faixa).groups())
+            saida.append([self.linhas[n - 1] for n in range(a, b + 1)])
         return saida
 
 
@@ -7524,3 +7526,27 @@ def test_o_DESEMPATE_reenvia_juntos_e_grava_o_resultado(banco_analisesps, monkey
     assert [(l[1], l[2]) for l in linhas] == [("BAIXADO", "1442670864"),
                                               ("BAIXADO", "1442703969")]
     assert "Reenviado junto" in linhas[0][3]
+
+
+# ---------------------------------------------------------------------------
+# AS LINHAS MUDADAS EM FAIXAS CONTÍNUAS (11/11/2026) — o delta de 52 mil linhas
+# levava quase uma hora pedindo uma linha por faixa.
+# ---------------------------------------------------------------------------
+def test_as_linhas_vizinhas_viram_UMA_faixa_e_respeitam_o_teto():
+    from app.apps.analisesps import sincronizacao as s
+    assert s.faixas_continuas([5, 2, 3, 4, 9, 11, 10]) == [(2, 5), (9, 11)]
+    assert s.faixas_continuas(range(2, 12), teto=4) == [(2, 5), (6, 9), (10, 11)]
+    assert s.faixas_continuas([]) == []
+    lotes = s.lotes_de_faixas([(2, 5), (9, 11), (20, 20)], max_faixas=2, max_linhas=100)
+    assert lotes == [[(2, 5), (9, 11)], [(20, 20)]]
+    assert s.lotes_de_faixas([(2, 60), (70, 120)], max_linhas=100) == [[(2, 60)], [(70, 120)]]
+
+
+@pytest.mark.banco
+def test_a_planilha_INTEIRA_com_carimbo_novo_sai_em_poucas_idas(banco_analisesps, monkeypatch):
+    """Um script reescreveu tudo: 1.200 linhas com carimbo novo viram UMA faixa."""
+    linhas = [_linha_da_planilha(str(1000 + i), "Pagar", "2026-11-11 08:00:00")
+              for i in range(1200)]
+    resultado, aba = _sincronizar(monkeypatch, linhas)
+    assert resultado["alteradas"] == 1200
+    assert len(aba.faixas_pedidas) == 1, aba.faixas_pedidas[:3]

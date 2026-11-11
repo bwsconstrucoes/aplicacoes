@@ -176,6 +176,43 @@ LINHAS_POR_BLOCO = 5000
 FAIXAS_POR_LOTE = 200
 
 
+# ⚠️ AS LINHAS MUDADAS SÃO PEDIDAS EM FAIXAS CONTÍNUAS (11/11/2026). O dono, preso
+# atrás da sincronização: *"trazendo as SPs alteradas — 28200 de 52350, desde
+# 08:04 (…) ela trava toda a operação. Já tem 24 minutos. Não tem sentido."* Quando
+# quase a planilha inteira muda de carimbo (um script que reescreve tudo), o delta
+# pedia UMA FAIXA POR LINHA, 200 por vez: ~20 linhas por segundo, quase uma hora
+# segurando a pista das SPs (e a fila de envio para a planilha atrás dela). Agora
+# linhas vizinhas viram uma faixa só ("A2:AK5001"), com o mesmo teto de linhas por
+# ida da carga inicial — o caso de tudo mudado custa o mesmo que uma carga.
+def faixas_continuas(numeros, teto: int = LINHAS_POR_BLOCO) -> list:
+    """PURA. `[(primeira, última)]` das linhas, juntando as vizinhas; nenhuma faixa
+    passa de `teto` linhas."""
+    faixas: list = []
+    for n in sorted(set(int(x) for x in numeros or [])):
+        if faixas and n == faixas[-1][1] + 1 and n - faixas[-1][0] < teto:
+            faixas[-1][1] = n
+        else:
+            faixas.append([n, n])
+    return [tuple(f) for f in faixas]
+
+
+def lotes_de_faixas(faixas: list, max_faixas: int = FAIXAS_POR_LOTE,
+                    max_linhas: int = LINHAS_POR_BLOCO) -> list:
+    """PURA. As faixas agrupadas por ida ao Google: até `max_faixas` faixas e
+    `max_linhas` linhas por pedido."""
+    lotes, atual, linhas = [], [], 0
+    for a, b in faixas:
+        tamanho = b - a + 1
+        if atual and (len(atual) >= max_faixas or linhas + tamanho > max_linhas):
+            lotes.append(atual)
+            atual, linhas = [], 0
+        atual.append((a, b))
+        linhas += tamanho
+    if atual:
+        lotes.append(atual)
+    return lotes
+
+
 def _aba(planilha_id: str, nome: str):
     return com_retry(lambda: cliente().open_by_key(planilha_id).worksheet(nome))
 
@@ -433,6 +470,7 @@ def sincronizar_delta(anotar=None) -> dict:
     linhas_mudadas: list[int] = []
     ids_na_planilha: set[str] = set()
     pelo_conteudo = 0
+    novas_no_banco = pelo_carimbo = 0
     for numero in range(colunas.PRIMEIRA_LINHA_DADOS, len(coluna_ids) + 1):
         sp_id = str(coluna_ids[numero - 1] or "").strip()
         if not sp_id:
@@ -441,6 +479,10 @@ def sincronizar_delta(anotar=None) -> dict:
         marca = _celula(coluna_marcas, numero)
         if sp_id not in ids_no_banco or (marca and marca > ultimo):
             linhas_mudadas.append(numero)
+            if sp_id not in ids_no_banco:
+                novas_no_banco += 1
+            else:
+                pelo_carimbo += 1
             continue
         # O carimbo não acusou. Confere o conteúdo das colunas que decidem
         # dinheiro: é aqui que entra a linha que um script mudou sem carimbar.
@@ -464,16 +506,24 @@ def sincronizar_delta(anotar=None) -> dict:
         anotar("conferindo o que mudou na planilha",
                f"{pelo_conteudo} sem carimbo novo")
 
-    # Busca em lote apenas as linhas mudadas, fatiado para não estourar o
-    # tamanho do pedido quando muitas mudam de uma vez.
+    # O PORQUÊ do número, no log e na tela: quando ele é a planilha quase inteira,
+    # é aqui que se vê se foi carimbo novo em tudo (um script reescreveu a
+    # planilha), SP que a base não tinha, ou conteúdo diferente sem carimbo.
+    if linhas_mudadas:
+        logger.info("Análise de SPs: %d linha(s) a trazer — %d novas na base, %d por "
+                    "carimbo novo (desde %s), %d por conteúdo sem carimbo.",
+                    len(linhas_mudadas), novas_no_banco, pelo_carimbo, ultimo or "—",
+                    pelo_conteudo)
+
+    # Busca em lote apenas as linhas mudadas, em faixas contínuas (ver
+    # `faixas_continuas`), fatiado para não estourar o tamanho do pedido.
     novas = 0
     maior = ultimo
-    for inicio in range(0, len(linhas_mudadas), FAIXAS_POR_LOTE):
-        fatia = linhas_mudadas[inicio:inicio + FAIXAS_POR_LOTE]
-        faixas = [f"A{n}:{colunas.ULTIMA_LETRA}{n}" for n in fatia]
+    for lote in lotes_de_faixas(faixas_continuas(linhas_mudadas)):
+        faixas = [f"A{a}:{colunas.ULTIMA_LETRA}{b}" for a, b in lote]
         blocos = com_retry(lambda f=faixas: aba.batch_get(f))
-        registros = [colunas.linha_para_dicionario(b[0])
-                     for b in blocos if b and b[0]]
+        registros = [colunas.linha_para_dicionario(v)
+                     for b in blocos if b for v in b if v and str(v[0]).strip()]
         if registros:
             with conexao() as conn:
                 novas += gravar_registros(conn, registros)
