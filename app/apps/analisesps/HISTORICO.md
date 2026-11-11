@@ -12276,9 +12276,18 @@ somente Solicitações de uma conta especifica"*.
   até 5.000 linhas por ida, como a carga inicial. O caso "tudo mudou" passa a custar o
   mesmo que uma carga (minutos). O log diz POR QUE as linhas vieram (novas na base,
   carimbo novo desde X, conteúdo sem carimbo) — para achar o script que carimba tudo.
-- **Não muda:** a marca d'água só é gravada no fim (gravar no meio perderia linhas de
-  carimbo menor ainda não lidas); a alteração feita pela tela fica na fila e desce na
-  próxima sincronização — não se perde.
+- **E a LÓGICA estava errada** (o dono, logo depois: *"1000 de 52363, desde 08:42 (…)
+  tem algo bem errado na lógica dessa atualização"* — a rodada recomeçou trazendo a
+  planilha inteira de novo). A linha vinha quando o carimbo era "maior que a marca
+  d'água" — comparação de TEXTO, com a marca gravada só no FIM da rodada. Com carimbo
+  num formato que não ordena como texto (dd/mm/aaaa), ou com uma rodada que morre
+  antes do fim, a planilha inteira voltava como alterada, rodada após rodada. **Agora
+  a linha vem quando o carimbo da planilha é DIFERENTE do guardado na base** (cada SP
+  guarda o seu). Rodada interrompida não refaz o que já trouxe; o formato deixa de
+  importar. O segundo da borda da marca d'água continua relido (`_na_borda`, só com
+  datas aaaa-mm-dd). A conferência do `status_pgt` (linha sem carimbo) não mudou.
+- A alteração feita pela tela fica na fila e desce na próxima sincronização — não se
+  perde.
 - Testes: `test_analisesps_banco.py` (faixas contínuas; 1.200 linhas = 1 ida).
 
 #### Leva 258 — Complementar das diárias (11/11/2026)

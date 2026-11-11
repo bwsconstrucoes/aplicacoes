@@ -436,6 +436,18 @@ def _marca_dagua(maior_carimbo: str) -> str:
     return (quando - dt.timedelta(seconds=1)).strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _na_borda(marca: str, ultimo: str) -> bool:
+    """O carimbo está no segundo da borda da marca d'água (a marca é guardada UM
+    segundo atrás do maior visto — `_marca_dagua`)? Só vale quando os dois são datas
+    no formato da planilha; senão, False."""
+    try:
+        m = dt.datetime.strptime(str(marca)[:19], "%Y-%m-%d %H:%M:%S")
+        u = dt.datetime.strptime(str(ultimo)[:19], "%Y-%m-%d %H:%M:%S")
+    except (ValueError, TypeError):
+        return False
+    return dt.timedelta(0) < m - u <= dt.timedelta(seconds=1)
+
+
 def sincronizar_delta(anotar=None) -> dict:
     """Lê ID e carimbo, busca só as linhas que mudaram, remove as excluídas.
 
@@ -458,8 +470,13 @@ def sincronizar_delta(anotar=None) -> dict:
         ultimo = _meta_ler(conn, "ultimo_carimbo", "")
         campos = ", ".join(f'"{c}"' for c in conferidas)
         cur = conn.execute(
-            f"SELECT id{', ' + campos if campos else ''} FROM analisesps.sps")
-        no_banco = {str(r[0]): r[1:] for r in cur.fetchall()}
+            f'SELECT id, "{colunas.CHAVE_CARIMBO}"{", " + campos if campos else ""} '
+            "  FROM analisesps.sps")
+        carimbo_no_banco = {}
+        no_banco = {}
+        for r in cur.fetchall():
+            carimbo_no_banco[str(r[0])] = str(r[1] or "").strip()
+            no_banco[str(r[0])] = r[2:]
         cur.close()
     ids_no_banco = set(no_banco)
 
@@ -477,7 +494,18 @@ def sincronizar_delta(anotar=None) -> dict:
             continue
         ids_na_planilha.add(sp_id)
         marca = _celula(coluna_marcas, numero)
-        if sp_id not in ids_no_banco or (marca and marca > ultimo):
+        # ⚠️ CARIMBO DIFERENTE DO GUARDADO, não "maior que a marca d'água" (11/11/2026).
+        # O dono: *"trazendo as SPs alteradas — 1000 de 52363 (…) tem algo bem errado
+        # na lógica dessa atualização"*. A comparação "maior que" era de TEXTO: com o
+        # carimbo num formato que não ordena como texto (dd/mm/aaaa), ou com uma
+        # rodada que morreu antes de gravar a marca no fim, a planilha INTEIRA voltava
+        # como alterada, rodada após rodada. A base guarda o carimbo de cada SP: a
+        # linha vem quando o da planilha é outro. Uma rodada interrompida não refaz o
+        # que já trouxe, e o formato do carimbo deixa de importar. A borda da marca
+        # d'água continua relida (`_na_borda`): duas edições no mesmo segundo.
+        if sp_id not in ids_no_banco or (
+                marca and (marca != carimbo_no_banco.get(sp_id, "")
+                           or _na_borda(marca, ultimo))):
             linhas_mudadas.append(numero)
             if sp_id not in ids_no_banco:
                 novas_no_banco += 1
@@ -510,8 +538,8 @@ def sincronizar_delta(anotar=None) -> dict:
     # é aqui que se vê se foi carimbo novo em tudo (um script reescreveu a
     # planilha), SP que a base não tinha, ou conteúdo diferente sem carimbo.
     if linhas_mudadas:
-        logger.info("Análise de SPs: %d linha(s) a trazer — %d novas na base, %d por "
-                    "carimbo novo (desde %s), %d por conteúdo sem carimbo.",
+        logger.info("Análise de SPs: %d linha(s) a trazer — %d novas na base, %d com "
+                    "carimbo diferente do guardado (marca %s), %d por conteúdo sem carimbo.",
                     len(linhas_mudadas), novas_no_banco, pelo_carimbo, ultimo or "—",
                     pelo_conteudo)
 

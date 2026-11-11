@@ -7550,3 +7550,30 @@ def test_a_planilha_INTEIRA_com_carimbo_novo_sai_em_poucas_idas(banco_analisesps
     resultado, aba = _sincronizar(monkeypatch, linhas)
     assert resultado["alteradas"] == 1200
     assert len(aba.faixas_pedidas) == 1, aba.faixas_pedidas[:3]
+
+
+@pytest.mark.banco
+def test_a_rodada_seguinte_NAO_traz_de_novo_o_que_ja_veio(banco_analisesps, monkeypatch):
+    """11/11/2026: *"trazendo as SPs alteradas — 1000 de 52363 (…) tem algo bem errado
+    na lógica"*. Uma rodada que já trouxe as linhas — mesmo que tenha morrido antes de
+    gravar a marca d'água — não as traz outra vez: o carimbo guardado é o mesmo."""
+    from app.apps.analisesps import sincronizacao
+    from app.apps.analisesps.db import conexao
+    linhas = [_linha_da_planilha(str(5000 + i), "Pagar", "2026-11-11 08:00:00")
+              for i in range(300)]
+    primeira, _ = _sincronizar(monkeypatch, linhas)
+    assert primeira["alteradas"] == 300
+    with conexao() as conn:          # a rodada "morreu" antes de gravar a marca no fim
+        sincronizacao._meta_gravar(conn, "ultimo_carimbo", "")
+    segunda, aba = _sincronizar(monkeypatch, linhas)
+    assert segunda["alteradas"] == 0 and aba.faixas_pedidas == []
+
+
+@pytest.mark.banco
+def test_carimbo_em_DIA_MES_ANO_nao_faz_a_planilha_inteira_voltar(banco_analisesps, monkeypatch):
+    linhas = [_linha_da_planilha("6001", "Pagar", "28/10/2026 10:00:00"),
+              _linha_da_planilha("6002", "Pagar", "11/11/2026 08:00:00")]
+    _sincronizar(monkeypatch, linhas)
+    linhas[1] = _linha_da_planilha("6002", "Pago", "11/11/2026 09:30:00")      # só ela mudou
+    resultado, _ = _sincronizar(monkeypatch, linhas)
+    assert resultado["alteradas"] == 1
