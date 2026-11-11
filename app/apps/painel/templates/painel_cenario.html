@@ -315,6 +315,11 @@
   <input type="hidden" name="categoria" value="{{ aberto_categoria }}">
   <div class="tabela-barra">
     <span class="resumo" id="arvore-pendente">Digite os percentuais e salve tudo de uma vez.</span>
+    {# 11/11/2026, o dono: "que eles sejam expansíveis também, para exibir
+       grupo e categoria de despesa" — cada grupo abre no ▸; isto abre todos #}
+    <label class="cartao-dica" style="margin:0 0 0 14px">
+      <input type="checkbox" id="arvore-abrir-todos"> abrir todos os grupos
+    </label>
     <span class="espaco"></span>
     <button class="btn" type="submit">Salvar percentuais</button>
   </div>
@@ -906,6 +911,13 @@
         form.querySelectorAll(`[data-periodos-de^="c${b.dataset.abreGrupo}-"]`)
             .forEach(tr => { tr.hidden = true; });
     }));
+
+  const abrirTodos = els("arvore-abrir-todos");
+  if (abrirTodos) abrirTodos.addEventListener("change", () => {
+    form.querySelectorAll("[data-abre-grupo]").forEach(b => {
+      if ((b.getAttribute("aria-expanded") === "true") !== abrirTodos.checked) b.click();
+    });
+  });
 
   form.querySelectorAll("[data-mais-periodo]").forEach(b =>
     b.addEventListener("click", () => {
