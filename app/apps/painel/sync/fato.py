@@ -46,6 +46,10 @@ NAO_APROP = "(não apropriado)"
 # estar apropriado?"). Com rótulo próprio ela não cai no "(não apropriado)",
 # que é a lista do que alguém precisa ir apropriar no OMIE.
 TRANSFERENCIA_ENTRE_CONTAS = "(transferência entre contas)"
+# O lançamento de conta cuja obra o painel AINDA NÃO PERGUNTOU ao OMIE (ou o
+# OMIE recusou a pergunta). Não é "(não apropriado)": pode muito bem ter obra
+# lá. Rótulo próprio desde 10/11/2026 — ver `gerar_linhas_lancamentos_cc`.
+OBRA_NAO_LIDA = "(obra ainda não lida do OMIE)"
 TOL = 0.10
 
 # Nomes das colunas como as telas antigas as chamavam. Ficam aqui porque a
@@ -1374,6 +1378,21 @@ def _e_transferencia(bruto, codigo_categoria) -> bool:
             or str(d.get("cTipo") or "").upper() == "TRA")
 
 
+def _codigo_perguntado(bruto):
+    """O número com que a obra é perguntada ao OMIE (o mesmo de
+    `apropriacao_cc._CODIGO`: nCodMovCC, senão nCodLanc)."""
+    import json
+    try:
+        d = (json.loads(bruto) if isinstance(bruto, str) else (bruto or {})).get("detalhes") or {}
+    except (TypeError, ValueError, AttributeError):
+        return None
+    for chave in ("nCodMovCC", "nCodLanc"):
+        v = d.get(chave)
+        if str(v or "").strip().isdigit():
+            return int(v)
+    return None
+
+
 def _codigo_do_bruto(bruto):
     """O número do lançamento no OMIE, quando o movimento traz."""
     import json
@@ -1441,9 +1460,22 @@ def gerar_linhas_lancamentos_cc(conn):
         chave = f"COD:{codigo or 'CC' + str(mid)}"
         # a apropriação: do próprio movimento, se um dia vier; senão, da
         # consulta do lançamento no OMIE (migração 022) — é de onde ela vem hoje
+        # A resposta é guardada pelo número que foi PERGUNTADO (o nCodMovCC,
+        # ver `apropriacao_cc._CODIGO`); a linha leva o nCodLanc. Hoje são o
+        # mesmo número — procurar pelos dois é o que impede uma diferença
+        # futura de deixar o lançamento sem obra em silêncio.
+        resposta = apropriacoes.get(codigo)
+        if resposta is None:
+            resposta = apropriacoes.get(_codigo_perguntado(bruto))
         partes = (_departamentos_do_bruto(bruto)
-                  or _departamentos_do_bruto(apropriacoes.get(codigo))
+                  or _departamentos_do_bruto(resposta)
                   or [(None, 1.0)])
+        # SEM OBRA tem dois motivos, e eles não podem ter o mesmo nome
+        # (10/11/2026, o dono: um lançamento de 2020 "(não apropriado)" no
+        # painel e apropriado no OMIE — "situação gravíssima"). "(não
+        # apropriado)" é o OMIE dizendo que não tem obra; se o painel nem
+        # perguntou ainda, a linha diz isso.
+        nao_lida = resposta is None and not _departamentos_do_bruto(bruto)
         # o centavo que sobra do rateio vai para a última parte: a soma das
         # obras tem de dar o lançamento, ao centavo (100.000,01 em 50/50)
         total = round(sinal * valor, 2)
@@ -1453,6 +1485,8 @@ def gerar_linhas_lancamentos_cc(conn):
         for (cod_dep, _frac), parte in zip(partes, valores):
             if cod_dep is None and transferencia:
                 dep, projeto = TRANSFERENCIA_ENTRE_CONTAS, ""
+            elif cod_dep is None and nao_lida:
+                dep, projeto = OBRA_NAO_LIDA, ""
             elif cod_dep is None:
                 dep, projeto = NAO_APROP, NAO_APROP
             else:
@@ -1484,7 +1518,16 @@ def reconstruir_fato(conn, tamanho_lote=2000):
     from ..db import conexao as _conexao_leitura
 
     with _conexao_leitura() as leitura:
-        conn.execute("TRUNCATE TABLE fato")
+        # DELETE, NÃO TRUNCATE (11/11/2026, o dono: "cliquei Receitas na DRE e
+        # já tá há muito tempo rodando e não mostra a tela"). O TRUNCATE trava
+        # a tabela INTEIRA até o fim da transação: durante os minutos do
+        # recálculo, toda tela que lia o fato ficava esperando — e, com 4 vias
+        # de atendimento, quatro telas presas paravam o serviço inteiro, ERP
+        # junto. O comentário acima prometia "as telas continuam enxergando o
+        # anterior inteiro"; com TRUNCATE era mentira. Com DELETE é verdade
+        # (conferido no banco: a leitura concorrente volta na hora, com o
+        # fato antigo). O preço: linhas mortas até o autovacuum passar.
+        conn.execute("DELETE FROM fato")
         sql = _insert_de("fato", COLUNAS_FATO)
         lote, total = [], 0
         # os títulos e, desde 07/10/2026, os lançamentos de conta corrente
@@ -1520,7 +1563,7 @@ def reconstruir_recebimentos(conn, tamanho_lote=2000):
 
     with _conexao_leitura() as leitura:
         registros = montar_recebimentos(leitura)
-    conn.execute("TRUNCATE TABLE fato_recebimentos")
+    conn.execute("DELETE FROM fato_recebimentos")   # não TRUNCATE: ver reconstruir_fato
     if not registros:
         conn.commit()
         return 0

@@ -735,7 +735,7 @@ def gerencial(ano: int, mes: int) -> dict:
 # passos juntos, para o arquivo nunca sair de um fechamento antigo.
 # ---------------------------------------------------------------------------
 ORIGENS = ("folha", "diaria", "alimentacao", "transporte", "dc", "avulso",
-           "gratificacao", "viasp", "complementar")
+           "gratificacao", "viasp", "complementar", "diaria_complementar")
 
 
 def _linhas_do_apropriado(apropriado: dict, verba: str) -> list:
@@ -814,6 +814,20 @@ def _pedido_direto(origem: str, dados: dict) -> dict:
                 "verba": guardada.VERBA_FOLHA, "linhas": linhas,
                 "rotulo": f"Folha da contabilidade {folha.get('competencia') or ''}"}
     ano, mes = int(dados.get("ano") or 0), int(dados.get("mes") or 0)
+    if origem == "diaria_complementar":
+        # A COMPLEMENTAR DAS DIÁRIAS (11/11/2026; `diaristas_complementar`): só a
+        # diferença de uma quinzena já paga, depois do ponto corrigido.
+        from . import diaristas_complementar as dcomp, folha_complementar as fcomp
+        montado = dcomp.montar(ano, mes, str(dados.get("periodo") or "quinzena"),
+                               str(dados.get("empresa") or ""))
+        if not montado["ja_paga"]:
+            raise ErroDoPagamento("estas diárias ainda não foram pagas: gere o arquivo "
+                                  "na própria tela dos Diaristas.")
+        return {"ano": ano, "mes": mes, "tipo": montado["tipo"], "verba": montado["verba"],
+                "periodo": montado["qual"], "empresa": montado["empresa"],
+                "montado": montado, "linhas": fcomp.linhas_a_pagar(montado),
+                "rotulo": f"{geracao.rotulo_da_verba(montado['verba'])} {mes:02d}/{ano} — "
+                          f"{montado['rotulo_periodo']}"}
     if origem == "diaria":
         periodo = str(dados.get("periodo") or "quinzena")
         empresa = str(dados.get("empresa") or "")
@@ -980,7 +994,9 @@ def gerar_direto(origem: str, dados: dict, destino: str, quem: str = "",
                        None)
         gm.registrar_lote(analise, pedido["calculado"], quem=quem)
         return saida
-    if origem == "complementar":
+    if origem in ("complementar", "diaria_complementar"):
+        # As duas complementares (folha e diárias): o fechamento da diferença, com
+        # verba própria, e depois o arquivo dele.
         from . import folha_complementar as fcomp
         try:
             fcomp.fechar(pedido["montado"], quem=quem)
@@ -1029,7 +1045,7 @@ def _relatorio_por_conta(origem: str, dados: dict, pedido: dict):
             from . import gratificados as gm
             contas = conta_por_obra()
             montado = gm.montado_do_relatorio(pedido["calculado"], so_a_pagar=True)
-        elif origem == "complementar":
+        elif origem in ("complementar", "diaria_complementar"):
             from . import folha_complementar as fcomp
             contas = conta_por_obra()
             montado = fcomp.montado_do_relatorio(pedido["montado"], so_a_pagar=True)

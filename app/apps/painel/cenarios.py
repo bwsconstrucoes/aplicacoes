@@ -112,6 +112,10 @@ def periodos(cenario_id) -> dict:
 _MES = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 
 
+# o "mês" do período que vale desde sempre — antes de qualquer lançamento
+DESDE_O_INICIO = "1900-01"
+
+
 def _periodos_limpos(lista) -> list[tuple]:
     """[(desde, percentual, parte do principal | None)] válidos e em ordem.
     Linha sem mês válido ou sem percentual é ignorada; mês repetido, vale o
@@ -121,6 +125,11 @@ def _periodos_limpos(lista) -> list[tuple]:
         desde, pct = item[0], item[1]
         principal = item[2] if len(item) > 2 else None
         desde = (desde or "").strip()
+        # MÊS EM BRANCO COM A PARTE DO PRINCIPAL = "desde o início"
+        # (11/11/2026): o caso mais comum é um percentual só, que vale sempre,
+        # e pedir um mês para isso era um passo a mais sem sentido
+        if not desde and str(principal if principal is not None else "").strip():
+            desde = DESDE_O_INICIO
         if _MES.match(desde) and str(pct if pct is not None else "").strip():
             p = None if principal is None or str(principal).strip() == "" else _limpar(principal)
             limpos[desde] = (_limpar(pct), p)
@@ -407,6 +416,40 @@ def salvar_participacao(cenario_id, socio_id, pct, obra: str = "") -> None:
         conn.commit()
 
 
+def gravar_participacoes_em_grade(cenario_id, celulas: dict) -> int:
+    """A grade "quem divide" inteira de uma vez: `{(obra, socio_id): "50"}`,
+    obra "" = todas as obras. Célula vazia apaga. Confere tudo antes de
+    gravar (11/11/2026 — ver `prestacao_dados.gravar_participacoes_em_grade`)."""
+    limpas = {}
+    for (obra, socio_id), valor in celulas.items():
+        texto = str(valor or "").strip()
+        if not texto:
+            limpas[((obra or "").strip(), int(socio_id))] = None
+            continue
+        try:
+            v = float(texto.replace(",", "."))
+        except ValueError:
+            v = -1
+        if not 0 <= v <= 100:
+            raise ValueError(f"Percentual inválido em {obra or 'Todas as obras'}: "
+                             f"\"{texto}\" (use um número de 0 a 100).")
+        limpas[((obra or "").strip(), int(socio_id))] = v
+    with conexao() as conn:
+        for (obra, socio_id), pct in limpas.items():
+            if pct is None:
+                conn.execute("DELETE FROM cenario_participacao WHERE cenario_id = ?"
+                             " AND obra = ? AND socio_id = ?",
+                             (int(cenario_id), obra, socio_id))
+            else:
+                conn.execute(
+                    "INSERT INTO cenario_participacao (cenario_id, obra, socio_id, pct) "
+                    "VALUES (?,?,?,?) ON CONFLICT (cenario_id, obra, socio_id) "
+                    "DO UPDATE SET pct = excluded.pct",
+                    (int(cenario_id), obra, socio_id, pct))
+        conn.commit()
+    return sum(1 for v in limpas.values() if v is not None)
+
+
 def apagar_participacao(participacao_id) -> None:
     with conexao() as conn:
         conn.execute("DELETE FROM cenario_participacao WHERE id = ?",
@@ -423,6 +466,23 @@ def excluir(cenario_id, item: str) -> None:
     with conexao() as conn:
         conn.execute("INSERT INTO cenario_excluida (cenario_id, item) VALUES (?,?) "
                      "ON CONFLICT DO NOTHING", (int(cenario_id), item))
+        conn.commit()
+
+
+def gravar_fora(cenario_id, itens) -> None:
+    """A lista "fora da análise" deste cenário inteira, de uma vez (11/11/2026):
+    fora totalmente ("obra:X") ou só depois de um mês ("obra:X@2024-06")."""
+    limpos = []
+    for item in itens or ():
+        item = (item or "").strip()
+        if (item.startswith(("obra:", "projeto:")) and len(item) >= 6
+                and item not in limpos):
+            limpos.append(item)
+    with conexao() as conn:
+        conn.execute("DELETE FROM cenario_excluida WHERE cenario_id = ?", (int(cenario_id),))
+        for item in limpos:
+            conn.execute("INSERT INTO cenario_excluida (cenario_id, item) VALUES (?,?)",
+                         (int(cenario_id), item))
         conn.commit()
 
 

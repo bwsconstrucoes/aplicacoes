@@ -19,207 +19,24 @@
   <a href="{{ url_for('analisesps.tela_folha_complementar', folha_id=folha.id) }}" class="ativa">Complementar</a>
 </nav>
 
+{% set comp_titulo_pago = "Este mês já foi pago" %}
+{% set comp_rotulo_novo = "Folha nova" %}
+{% set comp_rotulo_arquivo = "Folha complementar " ~ ((montado.verba if montado else "")[12:]) %}
+{% set comp_url_pdf = url_for('analisesps.folha_complementar_relatorio', folha_id=folha.id, formato='pdf') %}
+{% set comp_url_xlsx = url_for('analisesps.folha_complementar_relatorio', folha_id=folha.id, formato='xlsx') %}
+{% set comp_url_selecao = url_for('analisesps.folha_complementar_selecao') %}
+{% set comp_url_a_descontar = url_for('analisesps.folha_complementar_a_descontar') %}
+{% set comp_corpo = {'folha_id': folha.id} %}
+{% set gd_origem = 'complementar' %}
+{% set gd_dados = {'folha_id': folha.id} %}
 {% if erro %}
   <div class="aviso erro"><b>Não foi possível montar a complementar.</b> {{ erro }}</div>
 {% elif not montado.ja_paga %}
   <div class="aviso atencao"><b>Esta folha ainda não foi paga.</b> A complementar só existe
     depois do pagamento: gere o arquivo na própria folha.</div>
 {% else %}
-{% set t = montado.totais %}
-
-<div class="aviso atencao">
-  <b>Este mês já foi pago</b> —
-  {% for p in montado.pagamentos %}{{ 'Folha' if p.verba == 'folha' else 'Complementar ' ~ p.verba[12:] }}
-    em {{ p.criado_em|momento_br }}{% if p.criado_por %} por {{ p.criado_por }}{% endif %}
-    ({{ p.total|moeda }}){{ '; ' if not loop.last }}{% endfor %}.
-  Abaixo, cada pessoa: o que foi pago × a folha importada agora.
-  <b>O arquivo desta tela paga só a diferença</b> (sai como
-  "Folha complementar {{ montado.verba[12:] }}").
-</div>
-
-<div class="kpis">
-  <div class="kpi estatico"><div class="kpi-rotulo">Já pago</div><div class="kpi-valor">{{ t.pago_antes|moeda }}</div></div>
-  <div class="kpi estatico"><div class="kpi-rotulo">Folha nova</div><div class="kpi-valor">{{ t.folha_nova|moeda }}</div></div>
-  <div class="kpi estatico"><div class="kpi-rotulo">A receber · {{ t.quantos_a_receber }} pessoa(s)</div><div class="kpi-valor">{{ t.a_receber|moeda }}</div></div>
-  <div class="kpi estatico {{ 'ambar' if t.quantos_nao_pago }}"><div class="kpi-rotulo">Não pago antes · {{ t.quantos_nao_pago }} pessoa(s)</div><div class="kpi-valor">{{ t.nao_pago|moeda }}</div></div>
-  <div class="kpi estatico {{ 'vermelho' if t.quantos_pago_a_mais }}"><div class="kpi-rotulo">Pago a mais · {{ t.quantos_pago_a_mais }} pessoa(s)</div><div class="kpi-valor">{{ t.pago_a_mais|moeda }}</div></div>
-</div>
-
-<div class="cab-com-acoes" style="margin-top:18px">
-  <h3>Pessoa por pessoa</h3>
-  <span class="sobra">
-    <a class="btn secundario" href="{{ url_for('analisesps.folha_complementar_relatorio', folha_id=folha.id, formato='pdf') }}">PDF</a>
-    <a class="btn secundario" href="{{ url_for('analisesps.folha_complementar_relatorio', folha_id=folha.id, formato='xlsx') }}">Excel</a>
-    {% if pode_gerar and montado.a_pagar %}
-      {% set gd_origem = 'complementar' %}
-      {% set gd_dados = {'folha_id': folha.id} %}
-      {% set gd_destino = '' %}
-      {% set gd_pagamento = '' %}
-      {% include "_gerar_direto.html" %}
-    {% endif %}
-  </span>
-</div>
-{% if pode_gerar %}<p class="cartao-dica" style="margin:0 0 8px">Salve a seleção antes de gerar: o arquivo sai do que está salvo.</p>{% endif %}
-
-<div class="tabela-wrap"><div class="tabela-rolagem livre">
-<table class="sps" id="tabela-complementar">
-  <thead><tr>
-    <th class="marca"></th>
-    <th>Colaborador</th><th>Situação</th><th>Obra(s) da diferença</th>
-    <th class="num">Pago antes</th><th class="num">Folha nova</th>
-    <th class="num">Diferença</th><th class="num">Paga agora</th>
-  </tr></thead>
-  {% for g in ['a_receber', 'nao_pago', 'pago_a_mais'] %}
-    {% set lista = montado.grupos[g] %}
-    {% if lista %}
-    <tbody class="grupo-{{ g }}">
-      <tr class="grupo-cab"><td class="marca"></td><td colspan="7"><b>{{ rotulos[g] }}</b>
-        — {{ lista|length }} pessoa(s) · {{ t[g]|moeda }}
-        <span class="cartao-dica">
-        {% if g == 'a_receber' %}vêm marcadas; o arquivo paga só a diferença.
-        {% elif g == 'nao_pago' %}vêm desmarcadas; marque quem é para pagar agora.
-        {% else %}só informativo: não há como receber de volta no pagamento — fica na lista "a descontar na próxima folha".{% endif %}
-        </span></td></tr>
-      {% for l in lista %}
-      <tr class="{{ 'pago-a-mais' if g == 'pago_a_mais' }} {{ 'nao-vai' if g != 'pago_a_mais' and not l.pagar }}"
-          data-cpf="{{ l.cpf }}" data-nome="{{ l.nome }}" data-diferenca="{{ l.diferenca }}">
-        <td class="marca">
-          {% if g != 'pago_a_mais' and pode_operar %}
-            <input type="checkbox" class="marca-pessoa" {% if l.pagar %}checked{% endif %}
-                   {% if not l.pode_pagar %}disabled{% endif %}
-                   aria-label="Pagar a diferença de {{ l.nome }}">
-          {% endif %}
-        </td>
-        <td><b>{{ l.nome or '(sem nome)' }}</b>
-          <br><span class="cartao-dica">{{ l.cpf_bonito or 'sem CPF' }}{% if l.id_fortes %} · cód. {{ l.id_fortes }}{% endif %}</span>
-          {% for m in l.motivos %}<br><span class="cartao-dica">⚠ {{ m }}</span>{% endfor %}</td>
-        <td>
-          {% if g == 'a_receber' %}<span class="selo aprovado">a receber</span>
-          {% elif g == 'nao_pago' %}<span class="selo saindo">não pago antes</span>
-          {% else %}<span class="selo risco">pago a mais</span>{% endif %}
-        </td>
-        <td>{% for p in l.obras_da_diferenca %}{{ p.obra }} {{ p.valor|moeda }}{% if not loop.last %}<br>{% endif %}{% else %}—{% endfor %}</td>
-        <td class="num">{{ l.antes|moeda if l.antes else '—' }}</td>
-        <td class="num">{{ l.novo|moeda if l.novo else '—' }}</td>
-        <td class="num {{ 'dif-mais' if l.diferenca > 0 else 'dif-menos' }}">{{ '+' if l.diferenca > 0 }}{{ l.diferenca|moeda }}</td>
-        <td class="num paga-agora">{% if l.pagar %}<b>{{ l.diferenca|moeda }}</b>{% else %}—{% endif %}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-    {% endif %}
-  {% endfor %}
-  {% if montado.grupos.igual %}
-  <tbody><tr class="sem-mudanca"><td class="marca"></td><td colspan="7">
-    <details><summary>{{ montado.grupos.igual|length }} pessoa(s) sem mudança — pagas e iguais na folha nova · mostrar</summary>
-      <div style="margin-top:6px">{% for l in montado.grupos.igual %}{{ l.nome }} ({{ l.novo|moeda }}){{ ', ' if not loop.last }}{% endfor %}</div>
-    </details></td></tr></tbody>
-  {% endif %}
-  {% if not montado.pessoas %}
-  <tbody><tr><td colspan="8" class="cartao-dica">A folha importada não tem ninguém.</td></tr></tbody>
-  {% endif %}
-</table>
-</div></div>
-
-{% if montado.grupos.pago_a_mais and pode_operar %}
-  <p class="cartao-dica" style="margin-top:8px">
-    <button type="button" class="btn secundario" id="btn-a-descontar">Guardar o pago a mais na lista "a descontar"</button>
-    <span id="recado-a-descontar"></span>
-    A geração do arquivo também guarda sozinha.
-  </p>
+{% include "_complementar_corpo.html" %}
 {% endif %}
 
-{% if pode_operar and (montado.grupos.a_receber or montado.grupos.nao_pago) %}
-<div class="barra-salvar" id="barra-salvar">
-  <span class="conta-selecao">Selecionados para pagamento: <span id="quantos-marcados">{{ montado.a_pagar|length }}</span>
-    <span class="total-selecao" id="total-marcado">{{ montado.total_a_pagar|moeda }}</span></span>
-  <span class="cartao-dica">só as diferenças · a obra de cada diferença segue a folha nova</span>
-  <span class="cartao-dica" id="recado-selecao"></span>
-  {# Desabilitado sem mudança pendente: é o que a janela "Gerar arquivos" confere
-     antes de abrir (o arquivo sai da seleção SALVA). #}
-  <span class="sobra"><button class="btn" type="button" id="btn-salvar-selecao" disabled>Salvar seleção</button></span>
-</div>
-{% endif %}
-{% endif %}
-
-{% if a_descontar %}
-<h3 style="margin-top:24px">A descontar na próxima folha <small>{{ a_descontar|length }}</small></h3>
-<p class="cartao-dica">Pago a mais em folhas anteriores. O sistema não desconta sozinho: peça o
-  desconto à contabilidade e marque aqui quando estiver feito.</p>
-<div class="tabela-wrap"><div class="tabela-rolagem livre"><table class="sps" id="tabela-a-descontar">
-  <thead><tr><th>Colaborador</th><th>Competência</th><th class="num">Valor</th><th>Motivo</th><th></th></tr></thead>
-  <tbody>
-  {% for x in a_descontar %}
-    <tr data-cpf="{{ x.cpf }}" data-competencia="{{ x.competencia_chave }}">
-      <td><b>{{ x.nome }}</b><br><span class="cartao-dica">{{ x.cpf_bonito or x.cpf }}</span></td>
-      <td>{{ x.competencia }}</td><td class="num">{{ x.valor|moeda }}</td><td>{{ x.motivo }}</td>
-      <td>{% if pode_operar %}<button type="button" class="link-btn marcar-descontado">já descontado</button>{% endif %}</td>
-    </tr>
-  {% endfor %}
-  </tbody></table></div></div>
-{% endif %}
-
-<style>
-  .faixa-folha { display:flex; gap:6px; margin:4px 0 14px; }
-  .faixa-folha a { padding:7px 14px; border-radius:8px; border:1px solid var(--borda); background:#fff;
-    font-weight:700; font-size:13px; color:var(--tinta-suave); text-decoration:none; }
-  .faixa-folha a.ativa { background:var(--azul); color:#fff; border-color:var(--azul); }
-  #tabela-complementar .dif-mais { color:#166534; font-weight:700; }
-  #tabela-complementar .dif-menos { color:#b91c1c; font-weight:700; }
-  #tabela-complementar tr.pago-a-mais td { background:#FEF2F2; }
-  #tabela-complementar tr.sem-mudanca td { color:var(--tinta-suave); }
-  #tabela-complementar .grupo-cab td { background:#F3F6FA; }
-</style>
-
-<script>
-(function () {
-  async function postar(url, corpo) {
-    const r = await fetch(url, {method: "POST", headers: {"Content-Type": "application/json"},
-                                body: JSON.stringify(corpo)});
-    return r.json();
-  }
-  const brl = n => n.toLocaleString("pt-BR", {minimumFractionDigits: 2, maximumFractionDigits: 2});
-  const caixas = [...document.querySelectorAll("#tabela-complementar .marca-pessoa")];
-  function somar() {
-    let n = 0, total = 0;
-    caixas.forEach(c => {
-      const tr = c.closest("tr");
-      tr.classList.toggle("nao-vai", !c.checked);
-      tr.querySelector(".paga-agora").innerHTML = c.checked
-        ? "<b>" + brl(parseFloat(tr.dataset.diferenca)) + "</b>" : "—";
-      if (c.checked) { n++; total += parseFloat(tr.dataset.diferenca); }
-    });
-    const q = document.getElementById("quantos-marcados"), t = document.getElementById("total-marcado");
-    if (q) q.textContent = n;
-    if (t) t.textContent = brl(total);
-    const salvarBtn = document.getElementById("btn-salvar-selecao");
-    if (salvarBtn) salvarBtn.disabled = !caixas.some(c => c.checked !== c.defaultChecked);
-  }
-  caixas.forEach(c => c.addEventListener("change", somar));
-  const salvar = document.getElementById("btn-salvar-selecao");
-  if (salvar) salvar.addEventListener("click", async () => {
-    salvar.disabled = true;
-    document.getElementById("recado-selecao").textContent = "Salvando…";
-    const d = await postar({{ url_for('analisesps.folha_complementar_selecao')|tojson }}, {
-      folha_id: {{ folha.id }},
-      decisoes: caixas.filter(c => !c.disabled).map(c => ({cpf: c.closest("tr").dataset.cpf, pagar: c.checked}))});
-    if (!d.ok) { alert(d.erro); salvar.disabled = false; return; }
-    location.reload();
-  });
-  const guardar = document.getElementById("btn-a-descontar");
-  if (guardar) guardar.addEventListener("click", async () => {
-    guardar.disabled = true;
-    const d = await postar({{ url_for('analisesps.folha_complementar_a_descontar')|tojson }}, {folha_id: {{ folha.id }}});
-    if (!d.ok) { alert(d.erro); guardar.disabled = false; return; }
-    location.reload();
-  });
-  document.querySelectorAll(".marcar-descontado").forEach(b => b.addEventListener("click", async () => {
-    const tr = b.closest("tr");
-    if (!confirm("Marcar o desconto de " + tr.querySelector("b").textContent + " como feito?")) return;
-    const d = await postar({{ url_for('analisesps.folha_a_descontar_descontado')|tojson }},
-                           {cpf: tr.dataset.cpf, competencia_chave: tr.dataset.competencia});
-    if (!d.ok) { alert(d.erro); return; }
-    tr.remove();
-  }));
-})();
-</script>
+{% include "_complementar_fim.html" %}
 {% endblock %}

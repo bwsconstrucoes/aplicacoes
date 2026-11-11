@@ -32,6 +32,8 @@
      href="{{ url_for('painel.baixar', assunto='cenario', formato='pdf',
                       cenario=cenario.id, obra_grafico=obra_grafico) }}">⬇ PDF</a>
   <a class="btn secundario" style="text-decoration:none; align-self:flex-end"
+     href="{{ url_for('painel.cenario_como', cenario=cenario.id) }}">📄 Como é feita</a>
+  <a class="btn secundario" style="text-decoration:none; align-self:flex-end"
      href="{{ url_for('painel.cenario_montagem', cenario=cenario.id) }}">← Montar</a>
 </form>
 
@@ -43,11 +45,24 @@
   meses depois.
 </p>
 
-{% if excluidas %}
-<div class="aviso info">
-  <b>Fora da análise neste cenário:</b> {{ excluidas|join(' · ') }}.
-  Não recebem estrutura nem juros e não entram na quota de ninguém.
-</div>
+{# OS NOMES FICAM RECOLHIDOS (11/11/2026, o dono: "não quero que apareça na
+   tela" — ele mostra esta tela aos outros sócios). Quem precisa conferir
+   abre; quem só olha não vê obra que não é da prestação. #}
+{% if cortes or excluidas %}
+<details class="cartao-dica" style="margin:0 0 12px">
+  <summary style="cursor:pointer">
+    {% if excluidas %}{{ excluidas|length }} obra(s) fora desta prestação{% endif %}{% if cortes and excluidas %} · {% endif %}{% if cortes %}{{ cortes|length }} considerada(s) só até um mês{% endif %}
+    — ver quais
+  </summary>
+  {% if excluidas %}
+  <p style="margin:6px 0 0"><b>Fora:</b> {{ excluidas|join(' · ') }}.
+    Não recebem estrutura nem juros e não entram na quota de ninguém.</p>
+  {% endif %}
+  {% if cortes %}
+  <p style="margin:6px 0 0"><b>Só até um mês</b> (depois dele não entram em conta nenhuma):
+    {% for obra, ate in cortes|dictsort %}{% if not loop.first %} · {% endif %}{{ obra }} — até {{ ate[5:] }}/{{ ate[:4] }}{% endfor %}.</p>
+  {% endif %}
+</details>
 {% endif %}
 
 {% if sem_projeto or tem_nao_apropriado %}
@@ -128,6 +143,7 @@
       <thead>
         <tr>
           <th class="sem-ordem">Obra</th>
+          <th class="sem-ordem direita">Receita bruta</th>
           <th class="sem-ordem direita">Receita líquida</th>
           <th class="sem-ordem direita">Despesas</th>
           <th class="sem-ordem direita">Resultado direto</th>
@@ -140,6 +156,7 @@
         {% for nome, n in por_obra %}
         <tr>
           <td class="desc"><b>{{ nome }}</b></td>
+          <td class="dados direita">{{ brl(n.receita_bruta) }}</td>
           <td class="dados direita">{{ brl(n.receita_liquida) }}</td>
           <td class="dados direita">{{ brl(n.despesas) }}</td>
           <td class="dados direita {{ classe_valor(n.resultado_direto) }}">{{ brl(n.resultado_direto) }}</td>
@@ -152,6 +169,8 @@
     </table>
   </div>
   <p class="cartao-dica">
+    <b>Receita bruta</b> é a medição inteira; a <b>líquida</b> é sem os impostos
+    que o cliente reteve na fonte — é ela que entra no resultado.
     <b>Resultado direto</b> é só o que aconteceu na obra. <b>Estrutura</b> é o
     pedaço do custo da matriz que coube a ela, pela régua do cenário.
     <b>Juros</b> é o preço do dinheiro que ela fez faltar — obra que se paga

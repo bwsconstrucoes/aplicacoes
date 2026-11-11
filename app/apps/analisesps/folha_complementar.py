@@ -276,7 +276,12 @@ def montar(folha_id: int) -> dict:
     pagos = pago_por_cpf(ano, mes, tipo, pagamentos)
     apropriado, ajustes = _apropriado_sem_fora(folha)
     linhas = comparar(apropriado.get("pessoas") or [], pagos, ajustes)
-    escolhas = selecao(ano, mes, tipo)
+    return finalizar(base, linhas, selecao(ano, mes, tipo))
+
+
+def finalizar(base: dict, linhas: list, escolhas: dict) -> dict:
+    """A parte comum das complementares (folha e diárias): quem pode e quem vai ser
+    pago, os grupos e os totais."""
     for l in linhas:
         padrao = l["grupo"] == A_RECEBER
         pode = l["grupo"] in (A_RECEBER, NAO_PAGO) and not l["impossivel"] \
@@ -337,7 +342,8 @@ def fechar(montado: dict, quem: str = "") -> int:
 def depois_de_gerar(montado: dict, quem: str = "") -> None:
     """Depois do arquivo: o pago a mais vai para "a descontar", e a seleção zera."""
     guardar_a_descontar(montado, quem=quem)
-    _gravar_meta(_chave_da_selecao(montado["ano"], montado["mes"], montado["tipo"]), {})
+    _gravar_meta(montado.get("chave_da_selecao")
+                 or _chave_da_selecao(montado["ano"], montado["mes"], montado["tipo"]), {})
 
 
 def a_descontar(so_pendentes: bool = True) -> list:
@@ -350,11 +356,12 @@ def guardar_a_descontar(montado: dict, quem: str = "") -> int:
     """Grava (ou atualiza) o pago a mais desta competência na lista "a descontar
     na próxima folha". Uma entrada por pessoa e competência."""
     from .horario import agora
-    rotulo = f"{montado['mes']:02d}/{montado['ano']} " + (
-        "quinzena" if montado["tipo"] == "quinzena" else "fim do mês")
+    rotulo = montado.get("rotulo_a_descontar") or (
+        f"{montado['mes']:02d}/{montado['ano']} "
+        + ("quinzena" if montado["tipo"] == "quinzena" else "fim do mês"))
     lista = _ler_meta(CHAVE_A_DESCONTAR)
     lista = lista if isinstance(lista, list) else []
-    chave = f"{montado['ano']}-{montado['mes']:02d}-{montado['tipo']}"
+    chave = montado.get("chave_a_descontar") or f"{montado['ano']}-{montado['mes']:02d}-{montado['tipo']}"
     por_chave = {(x.get("cpf"), x.get("competencia_chave")): x for x in lista}
     novos = 0
     for l in montado["grupos"].get(PAGO_A_MAIS) or []:
@@ -446,10 +453,12 @@ def montado_do_relatorio(montado: dict, so_a_pagar: bool = False) -> dict:
             "contas": [], "dias_no_ponto": 0, "por_dia": [],
             "detalhe_excel": excel, "detalhe_pdf": pdf})
     competencia = f"{montado['mes']:02d}/{montado['ano']}"
-    rotulo = f"Folha complementar {numero(montado['verba'])} · " + (
-        "quinzena" if montado["tipo"] == "quinzena" else "fim do mês")
-    return {"titulo": f"Folha complementar {competencia}",
-            "prefixo_arquivo": "Folha complementar",
+    rotulo = montado.get("rotulo_do_relatorio") or (
+        f"Folha complementar {numero(montado['verba'])} · "
+        + ("quinzena" if montado["tipo"] == "quinzena" else "fim do mês"))
+    prefixo = montado.get("prefixo_do_relatorio") or "Folha complementar"
+    return {"titulo": f"{prefixo} {competencia}",
+            "prefixo_arquivo": prefixo,
             "folha": {"competencia": competencia, "rotulo_do_tipo": rotulo},
             "pessoas": pessoas, "filtros_texto": [], "filtros": {},
             "totais": {"pessoas": len(pessoas)}, "fechamento": None,

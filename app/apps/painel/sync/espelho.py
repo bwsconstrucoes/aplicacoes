@@ -1589,6 +1589,38 @@ def _marcar_anos_relidos(conn, anos) -> None:
                  (CHAVE_ANOS_RELIDOS, json.dumps(sorted(set(anos)))))
 
 
+# Os meses já relidos do ano que ficou pela metade (11/11/2026).
+CHAVE_MESES_RELIDOS = "releitura_pagamentos_meses"
+
+
+def _meses_relidos(conn) -> dict[int, list[int]]:
+    import json
+    linha = conn.execute("SELECT valor FROM config WHERE chave = ?",
+                         (CHAVE_MESES_RELIDOS,)).fetchone()
+    try:
+        bruto = json.loads(linha[0] if linha else "{}")
+        return {int(a): sorted(int(m) for m in ms) for a, ms in bruto.items()}
+    except (TypeError, ValueError, AttributeError):
+        return {}
+
+
+def _marcar_meses_relidos(conn, ano, meses) -> None:
+    """Guarda os meses feitos de `ano`; `meses=None` apaga (o ano fechou)."""
+    import json
+    todos = _meses_relidos(conn)
+    if meses is None:
+        todos.pop(int(ano), None)
+    else:
+        todos[int(ano)] = sorted(set(meses))
+    conn.execute("INSERT INTO config (chave, valor) VALUES (?, ?) "
+                 "ON CONFLICT (chave) DO UPDATE SET valor = excluded.valor",
+                 (CHAVE_MESES_RELIDOS, json.dumps({str(a): m for a, m in todos.items()})))
+
+
+def _ultimo_dia(ano, mes) -> dt.date:
+    return (dt.date(ano + (mes == 12), mes % 12 + 1, 1) - dt.timedelta(days=1))
+
+
 def anos_da_releitura(hoje=None) -> list[int]:
     hoje = hoje or dt.date.today()
     return list(range(PRIMEIRO_DIA_DOS_PAGAMENTOS.year, hoje.year + 1))
@@ -1652,8 +1684,10 @@ def reler_pagamentos_por_ano(env=".env", hoje=None, cli=None) -> dict:
     """Relê do OMIE os pagamentos de todos os anos, um ano por vez.
 
     Devolve {"relidos": [...anos desta rodada], "pulados": [...já feitos],
-    "movimentos": n}. Cada ano grava e marca na mesma transação: se o serviço
-    cair entre dois anos, nada fica pela metade e nada se perde."""
+    "movimentos": n}. Cada MÊS grava e marca na mesma transação: se o serviço
+    cair no meio, nada fica pela metade e a próxima tentativa segue do mês
+    seguinte (até 11/11/2026 era cada ano — e um ano de 378 páginas nunca
+    chegava ao fim)."""
     hoje = hoje or dt.date.today()
     cli = cli or OmieClient.de_ambiente(env)
     conn = conectar()
@@ -1666,32 +1700,46 @@ def reler_pagamentos_por_ano(env=".env", hoje=None, cli=None) -> dict:
         conn.commit()
         anos = anos_da_releitura(hoje)
         relidos, total = [], 0
-        for i, ano in enumerate(anos, 1):
+        # MÊS A MÊS, cada um gravado ao terminar (11/11/2026). Ano a ano não
+        # fechava: o dono viu 2021 morrer na página 324 de 378 e recomeçar da
+        # página 1 a cada tentativa — "tento, tento e nunca fecha". Um corte
+        # agora custa no máximo o mês em que estava.
+        meses_feitos = _meses_relidos(conn)
+        for ano in anos:
             if ano in feitos:
                 continue
-            ini = max(dt.date(ano, 1, 1), PRIMEIRO_DIA_DOS_PAGAMENTOS)
-            fim = min(dt.date(ano, 12, 31), hoje)
-            ini_str, fim_str = ini.strftime("%d/%m/%Y"), fim.strftime("%d/%m/%Y")
-            apagados = _apagar_movimentos_janela(conn, ini, fim, confirmar=False)
-            n_ano = 0
             depois = sum(1 for a in anos if a > ano and a not in feitos)
-            for pagina, total_paginas, _tr, registros in cli.listar_movimentos(
-                    param_extra={"dDtPagtoDe": ini_str, "dDtPagtoAte": fim_str}):
-                _progresso("relendo os pagamentos no OMIE, ano a ano",
-                           f"{ano}: página {pagina} de {total_paginas}"
-                           + (f" — depois dele, mais {depois} ano(s)" if depois
-                              else " — é o último ano"))
-                qm, _ = gravar_movimentos(conn, registros, confirmar=False)
-                n_ano += qm
+            ja_do_ano = set(meses_feitos.get(ano, []))
+            n_ano = 0
+            for mes in range(1, 13):
+                ini = max(dt.date(ano, mes, 1), PRIMEIRO_DIA_DOS_PAGAMENTOS)
+                fim = min(_ultimo_dia(ano, mes), hoje)
+                if ini > fim or mes in ja_do_ano:
+                    continue
+                ini_str, fim_str = ini.strftime("%d/%m/%Y"), fim.strftime("%d/%m/%Y")
+                _apagar_movimentos_janela(conn, ini, fim, confirmar=False)
+                for pagina, total_paginas, _tr, registros in cli.listar_movimentos(
+                        param_extra={"dDtPagtoDe": ini_str, "dDtPagtoAte": fim_str}):
+                    _progresso("relendo os pagamentos no OMIE, ano a ano",
+                               f"{mes:02d}/{ano}: página {pagina} de {total_paginas}"
+                               + (f" — depois deste ano, mais {depois} ano(s)" if depois
+                                  else " — é o último ano"))
+                    qm, _ = gravar_movimentos(conn, registros, confirmar=False)
+                    n_ano += qm
+                ja_do_ano.add(mes)
+                _marcar_meses_relidos(conn, ano, ja_do_ano)
+                conn.commit()                  # o mês e a marca, juntos
             feitos.add(ano)
             _marcar_anos_relidos(conn, feitos)
-            conn.commit()                      # o ano e a marca, juntos
+            _marcar_meses_relidos(conn, ano, None)
+            conn.commit()                      # o ano fechado e a marca, juntos
             relidos.append(ano)
             total += n_ano
-            log.info("Releitura: %d apagou %d, regravou %d.", ano, apagados, n_ano)
+            log.info("Releitura: %d regravou %d.", ano, n_ano)
         pulados = sorted(set(anos) - set(relidos))
         # campanha completa: a proxima releitura comeca do zero
         conn.execute("DELETE FROM config WHERE chave = ?", (CHAVE_ANOS_RELIDOS,))
+        conn.execute("DELETE FROM config WHERE chave = ?", (CHAVE_MESES_RELIDOS,))
         conn.execute("UPDATE sync_state SET ultima_sync=?, total_registros="
                      "(SELECT COUNT(*) FROM movimentos) WHERE entidade='movimentos'",
                      (dt.datetime.now().isoformat(timespec="seconds"),))

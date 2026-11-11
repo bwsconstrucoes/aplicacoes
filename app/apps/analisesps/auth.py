@@ -624,6 +624,11 @@ TELA_DA_ROTA = {
     "analisesps.folha_complementar_relatorio": ("folha",),
     "analisesps.folha_complementar_selecao": ("folha",),
     "analisesps.folha_complementar_a_descontar": ("folha",),
+    # 11/11/2026: a complementar das diárias (a diferença de uma quinzena já paga).
+    "analisesps.tela_folha_diaristas_complementar": ("folha",),
+    "analisesps.folha_diaristas_complementar_relatorio": ("folha",),
+    "analisesps.folha_diaristas_complementar_selecao": ("folha",),
+    "analisesps.folha_diaristas_complementar_a_descontar": ("folha",),
     "analisesps.folha_a_descontar_descontado": ("folha",),
     "analisesps.folha_ferias_gravar": ("folha",),
     "analisesps.folha_ferias_apagar": ("folha",),

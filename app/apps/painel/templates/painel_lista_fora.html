@@ -1,0 +1,94 @@
+{# "Fora da análise" numa lista só (11/11/2026, o dono: "colocar totalmente
+   fora da análise ou colocar até determinado período"). Cada projeto e cada
+   obra escolhe: considerar, fora totalmente, ou considerar SÓ ATÉ um mês (e
+   sair dali em diante). Um Salvar para a lista inteira. #}
+{% macro lista_fora(linhas) %}
+<div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:8px">
+  <input type="search" placeholder="Procurar obra ou projeto…" data-fora-busca
+         data-sem-busca style="max-width:280px">
+  <label class="cartao-dica" style="margin:0">
+    <input type="checkbox" data-fora-so checked> só o que está fora ou com mês
+  </label>
+  <span style="flex:1"></span>
+  <button class="btn" type="submit">Salvar</button>
+</div>
+<p class="dica" style="margin-top:0">
+  <b>Fora totalmente</b>: a obra (ou todas as do projeto) não entra em nada.
+  <b>Só até</b>: entra com o que aconteceu até aquele mês, inclusive; dali em
+  diante sai — receita, despesa, régua e caixa. Procurar mostra também quem
+  está sendo considerado, para tirar.
+</p>
+<div class="tabela-rolagem" style="max-height:480px">
+  <table class="lista-fora">
+    <thead><tr>
+      <th class="sem-ordem">Obra ou projeto</th>
+      <th class="sem-ordem">Na análise</th>
+      <th class="sem-ordem">Último mês considerado</th>
+    </tr></thead>
+    <tbody>
+      {% for l in linhas %}
+      <tr data-fora-linha data-texto="{{ l.rotulo|lower }}">
+        <td class="desc">
+          <input type="hidden" name="fora_chave" value="{{ l.chave }}">
+          {{ l.rotulo }}
+        </td>
+        <td>
+          <select name="fora_modo" data-fora-modo aria-label="{{ l.rotulo }} na análise">
+            <option value="" {{ 'selected' if not l.modo }}>Considerar</option>
+            <option value="total" {{ 'selected' if l.modo == 'total' }}>Fora totalmente</option>
+            <option value="ate" {{ 'selected' if l.modo == 'ate' }}>Considerar só até…</option>
+          </select>
+        </td>
+        <td>
+          <input type="month" name="fora_ate" value="{{ l.ate }}" data-fora-ate
+                 aria-label="último mês de {{ l.rotulo }}">
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div style="display:flex; margin-top:8px"><span style="flex:1"></span>
+  <button class="btn" type="submit">Salvar</button></div>
+<script>
+(function () {
+  const listas = document.querySelectorAll("table.lista-fora");
+  const tabela = listas[listas.length - 1];
+  const caixa = tabela.closest("form");
+  const busca = caixa.querySelector("[data-fora-busca]");
+  const so = caixa.querySelector("[data-fora-so]");
+  const linhas = [...tabela.querySelectorAll("tr[data-fora-linha]")];
+  function ajustar(tr) {
+    const modo = tr.querySelector("[data-fora-modo]").value;
+    // o mês só vale para "só até"; nas outras opções a célula some
+    tr.querySelectorAll("td")[2].style.visibility = modo === "ate" ? "" : "hidden";
+  }
+  function filtrar() {
+    const termo = (busca.value || "").toLowerCase().trim();
+    linhas.forEach(tr => {
+      const marcada = tr.querySelector("[data-fora-modo]").value !== "";
+      const mostra = termo ? tr.dataset.texto.includes(termo) : (!so.checked || marcada);
+      tr.style.display = mostra ? "" : "none";
+    });
+  }
+  linhas.forEach(ajustar);
+  filtrar();
+  tabela.addEventListener("change", e => {
+    const tr = e.target.closest("tr");
+    if (tr && e.target.matches("[data-fora-modo]")) ajustar(tr);
+  });
+  busca.addEventListener("input", filtrar);
+  busca.addEventListener("keydown", e => { if (e.key === "Enter") e.preventDefault(); });
+  so.addEventListener("change", filtrar);
+  caixa.addEventListener("submit", e => {
+    const falta = linhas.find(tr => tr.querySelector("[data-fora-modo]").value === "ate"
+                              && !tr.querySelector("[data-fora-ate]").value);
+    if (falta) {
+      e.preventDefault();
+      falta.style.display = "";
+      alert("Falta o mês em " + falta.dataset.texto.toUpperCase() + ": “só até” pede o último mês considerado.");
+    }
+  });
+})();
+</script>
+{% endmacro %}

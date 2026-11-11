@@ -1,0 +1,81 @@
+{% extends "analisesps_base.html" %}
+{# ---------------------------------------------------------------------------
+   A COMPLEMENTAR DAS DIÁRIAS (11/11/2026) — ver `diaristas_complementar.py`.
+
+   Uma quinzena de diaristas já paga, recalculada com o ponto corrigido, contra o
+   que foi pago: a receber (vem marcado, paga só a diferença), não pago antes (vem
+   desmarcado), pago a mais (só informa e vai para "a descontar") e sem mudança. A
+   mesma tela da Complementar da folha (`_complementar_corpo.html`).
+   --------------------------------------------------------------------------- #}
+{% block titulo %}Diárias complementar — Análise de SPs{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% block conteudo %}
+{% include "analisesps_folha_abas.html" %}
+
+{% set rotulo_periodo = (periodos|selectattr(0, 'equalto', qual)|map(attribute=1)|first) or qual %}
+<h2>Diaristas · {{ '%02d'|format(mes) }}/{{ ano }} · {{ rotulo_periodo }}</h2>
+<nav class="faixa-folha">
+  <a href="{{ url_for('analisesps.tela_folha_diaristas', **qs) }}">Diaristas</a>
+  <a href="{{ url_for('analisesps.tela_folha_diaristas_complementar', **qs) }}" class="ativa">Complementar</a>
+</nav>
+
+<form class="barra-mes" method="get" action="{{ url_for('analisesps.tela_folha_diaristas_complementar') }}">
+  <label class="campo-mes"><span>Mês</span>
+    <select name="mes" aria-label="Mês">
+      {% for n, nome_mes in [(1,'janeiro'),(2,'fevereiro'),(3,'março'),(4,'abril'),
+                             (5,'maio'),(6,'junho'),(7,'julho'),(8,'agosto'),
+                             (9,'setembro'),(10,'outubro'),(11,'novembro'),
+                             (12,'dezembro')] %}
+        <option value="{{ n }}" {% if mes == n %}selected{% endif %}>{{ nome_mes }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="campo-mes"><span>Ano</span>
+    <select name="ano" class="ano" aria-label="Ano">
+      {% for a in range(ano_padrao - 3, ano_padrao + 2) %}
+        <option value="{{ a }}" {% if ano == a %}selected{% endif %}>{{ a }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="campo-mes"><span>Período</span>
+    <select name="periodo" aria-label="Período">
+      {% for chave, rotulo in periodos %}
+        <option value="{{ chave }}" {% if qual == chave %}selected{% endif %}>{{ rotulo }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  {% set emp_opcoes, emp_atual = ((montado.empresas if montado else []) or []), empresa %}
+  {% include "_empresa_da_folha.html" %}
+  <button class="btn secundario" type="submit">Consultar</button>
+</form>
+
+{% set comp_titulo_pago = "Esta quinzena já foi paga" if qual == "quinzena" else "Este período já foi pago" %}
+{% set comp_rotulo_novo = "Conta de hoje" %}
+{% set comp_rotulo_arquivo = rotulo_arquivo %}
+{% set comp_url_pdf = url_for('analisesps.folha_diaristas_complementar_relatorio', formato='pdf', **qs) %}
+{% set comp_url_xlsx = url_for('analisesps.folha_diaristas_complementar_relatorio', formato='xlsx', **qs) %}
+{% set comp_url_selecao = url_for('analisesps.folha_diaristas_complementar_selecao') %}
+{% set comp_url_a_descontar = url_for('analisesps.folha_diaristas_complementar_a_descontar') %}
+{% set comp_corpo = qs %}
+{% set gd_origem = 'diaria_complementar' %}
+{% set gd_dados = qs %}
+
+<p class="cartao-dica" style="margin:0 0 14px">
+  A <b>conta de hoje</b> é a da tela dos Diaristas, com o ponto como está agora (corrigido).
+  O <b>pago antes</b> é a soma do que saiu nos arquivos já gerados deste período
+  (inclusive complementares anteriores e gerações por empresa).
+</p>
+
+{% if erro %}
+  <div class="aviso erro"><b>Não foi possível montar a complementar.</b> {{ erro }}</div>
+{% elif not montado.ja_paga %}
+  <div class="aviso atencao"><b>Estas diárias ainda não foram pagas.</b> A complementar só existe
+    depois do pagamento: gere o arquivo na própria tela dos
+    <a href="{{ url_for('analisesps.tela_folha_diaristas', **qs) }}">Diaristas</a>.</div>
+{% else %}
+{% include "_complementar_corpo.html" %}
+{% endif %}
+
+{% include "_complementar_fim.html" %}
+{% endblock %}

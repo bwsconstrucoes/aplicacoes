@@ -83,7 +83,7 @@ def test_as_PISTAS_do_PONTO_e_dos_APOIOS_nao_seguram_as_SPs(app, monkeypatch):
     for modo, pista in (("notas_receita", "apoios"), ("apoios", "apoios"),
                         ("faturamento", "apoios"), ("ponto", "ponto"),
                         ("ponto_diario", "ponto"), ("sincronizar", "geral"),
-                        ("comprovantes", "geral")):
+                        ("comprovantes", "comprovantes")):
         assert tarefas.pista_do(modo) == pista, modo
     with conexao() as conn:
         conn.execute("INSERT INTO analisesps.execucoes (tipo, disparo, etapa, visto_em) "
@@ -100,6 +100,18 @@ def test_as_PISTAS_do_PONTO_e_dos_APOIOS_nao_seguram_as_SPs(app, monkeypatch):
         with conexao() as conn:      # uma viva por pista, continua valendo
             conn.execute("INSERT INTO analisesps.execucoes (tipo, disparo, visto_em) "
                          " VALUES ('notas_receita', 'manual', now())")
+            conn.commit()
+    # A BAIXA DOS COMPROVANTES corre junto da sincronização (migração 056, 11/11/2026).
+    with conexao() as conn:
+        conn.execute("INSERT INTO analisesps.execucoes (tipo, disparo, etapa, visto_em) "
+                     " VALUES ('comprovantes', 'manual', 'dando baixa nos comprovantes', now())")
+        conn.commit()
+    assert tarefas.estado("comprovantes")["detalhe"]["tipo"] == "comprovantes"
+    assert tarefas.estado()["detalhe"]["tipo"] == "sincronizar", "a geral não vê a baixa"
+    with pytest.raises(Exception):
+        with conexao() as conn:      # uma baixa viva por vez
+            conn.execute("INSERT INTO analisesps.execucoes (tipo, disparo, visto_em) "
+                         " VALUES ('comprovantes', 'manual', now())")
             conn.commit()
 
 
